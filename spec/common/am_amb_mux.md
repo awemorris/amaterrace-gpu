@@ -1,6 +1,6 @@
 # am_amb_mux
 
-RTL: `rtl/common/am_amb_mux.v`.  Parent: any block with several memory users behind one MC client (atg_cp: ring, fence, dbg; atg_su: icache, cbank; atg_cpu: dma).  Implemented in: p004 (first user: atg_cp).
+RTL: `rtl/common/am_amb_mux.v`.  Parent: any block with several memory users behind one MC client (atg_cp: ring, fence, dbg; atg_su: icache, cbank; atg_cpu: dma).  Implemented in: p004 (done; first user: atg_cp).
 
 ## 1. Purpose and place
 
@@ -93,4 +93,4 @@ design §4.1 (AMB), `rtl/gpu/mc/atg_mc.v` (the client port), docs/style.md (hand
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  118 lines.  First user: atg_cp (N 3: ring, fence, dbg).

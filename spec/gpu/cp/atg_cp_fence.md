@@ -1,6 +1,6 @@
 # atg_cp_fence
 
-RTL: `rtl/gpu/cp/atg_cp_fence.v`.  Parent: atg_cp.  Implemented in: p004.
+RTL: `rtl/gpu/cp/atg_cp_fence.v`.  Parent: atg_cp.  Implemented in: p004 (done).
 
 ## 1. Purpose and place
 
@@ -13,6 +13,7 @@ Writes fences and results to memory, polls WAIT_FENCE words, keeps FENCE_LAST an
 | `ADDR_W` | `32` | GPU address width. |
 | `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
+| `POLL` | `64` | WAIT_FENCE: cycles between two reads (1..255). |
 
 ## 3. Ports
 
@@ -81,7 +82,10 @@ One fence per AMB write round trip.
 
 ## 7. Corner cases and errors
 
-- rsp_error: fault kind 1 (aperture) with f_addr; nothing else is written.
+- rsp_error: fault kind 1 (aperture) with f_addr; nothing else is written; the unit stops (f_ready 0)
+  until the core reset.  A WAIT_FENCE never satisfied is ended by the watchdog (the sequencer's
+  cmd_active stays 1).
+- `fault_tag` is 0 (the sequencer's fault report carries the command's tag; a fence error does not).
 
 ## 8. What the TB checks
 
@@ -99,4 +103,5 @@ design §2.4.3 (FENCE, RESULT, WAIT_FENCE), §2.5.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  182 lines, one FSM (IDLE, REQ, RSP, GAP, DEAD).  Spec change in p004: the
+`POLL` parameter.  Measured only in simulation.

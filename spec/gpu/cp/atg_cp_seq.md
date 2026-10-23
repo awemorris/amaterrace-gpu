@@ -1,6 +1,6 @@
 # atg_cp_seq
 
-RTL: `rtl/gpu/cp/atg_cp_seq.v`.  Parent: atg_cp.  Implemented in: p004.
+RTL: `rtl/gpu/cp/atg_cp_seq.v`.  Parent: atg_cp.  Implemented in: p004 (done).
 
 ## 1. Purpose and place
 
@@ -8,7 +8,10 @@ The class N µop sequencer: takes µop packets from the ring or from the firmwar
 
 ## 2. Parameters
 
-None.
+| Name | Default | Meaning |
+| --- | --- | --- |
+| `UNITS` | `8'h03` | Present blocks in STATUS busy-bit order; a µop of an absent unit (DRAW: VF, DISPATCH/LOAD_CONST: SU, DRAW_RAW: RX, BLIT: BLT) is a fault of kind 2. |
+| `HAS_VSYNC` | `0` | 1: WAIT_VSYNC is accepted (CAPS[10]); 0: fault kind 2. |
 
 ## 3. Ports
 
@@ -77,6 +80,14 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   0x1E0-0x1E8, raw_kick), DBG_MARK (STATE 0x1FF).  Unknown op → fault kind 2.
 - Source select: `fw_active` 1 → fw_*, else n_*.  The ring does not hand over a new packet while a
   class V packet is open, so the order is the ring's.
+- As implemented: SET_REG to the BLT range waits while the BLT is busy (its state must not change
+  under a blit); DISPATCH and LOAD_CONST payload writes wait while the SUs are busy, DRAW_RAW's while
+  the RX is; BLIT waits for the BLT idle before its kick; a wait after a kick starts one cycle later.
+  RESULT waits for every block idle and `f_busy` 0; FENCE for every block idle (the fence unit takes
+  one request at a time).  A SET_REG with odd n is short (kind 3); `fault_addr` of a bad index is the
+  index.
+- The parent (atg_cp) drives `halt` only in FAULTED and RESETTING: in HALTING/HALTED the ring
+  already stops at packet boundaries, and a packet handed over (also by STEP) runs to its end.
 - `cmd_active` is 1 from a header until its µop has finished; while waiting on fw_valid = 0
   (the firmware is computing) it is 0, so the watchdog does not count the firmware's DMA waits twice
   (atg_cpu reports its own stalls).
@@ -113,4 +124,6 @@ design §2.4.3 (µops), §2.5 (FENCE), §3.8 (DRAW order), §2.3 (STATE).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  397 lines, one FSM (IDLE, PAY, EXEC, POST, FREQ, FWAIT, VSYNC, DEAD).  Spec
+change in p004: the parameters `UNITS`, `HAS_VSYNC`.  Not checked against real VF/SU/RX blocks (they
+are later Phases); the TB uses busy models.

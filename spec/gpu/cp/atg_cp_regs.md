@@ -1,6 +1,6 @@
 # atg_cp_regs
 
-RTL: `rtl/gpu/cp/atg_cp_regs.v`.  Parent: atg_cp.  Implemented in: p004.
+RTL: `rtl/gpu/cp/atg_cp_regs.v`.  Parent: atg_cp.  Implemented in: p004 (done).
 
 ## 1. Purpose and place
 
@@ -21,6 +21,7 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `VEND` | `256'd0` | The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0. |
 | `XCAP_MASK` | `8'h04` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7). |
 | `DISP_OFFSET` | `32'h00010000` | Where the DISP entry points (KC705 +0x10000). |
+| `PERF_SRC` | `32'hFFFFFFFF` | PERF_SRC0..3 (byte n = PERF_SRCn; 0xFF unused). Amaterrace 2D: 0xFFFF0801 (BLT busy, memory). |
 
 ## 3. Ports
 
@@ -72,7 +73,9 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   (MAGIC, VERSION, VENDOR_ID, DEVICE_ID, ISA_ID, DEVICE_VERSION, EXTCAP = 0x100, GCLK_HZ, CAPS, CAPS2,
   SCRATCH, COUNTER, NATIVE_ISA_ID, VEND, PERF0-3, PERF_CTRL, PERF_SRCn, the EXTCAP list at 0x100) OR
   the `*_rdata` inputs, or `state_rdata` for the alias range, or 0 elsewhere.
-- EXTCAP list at 0x100: one 2-word entry per set bit of XCAP_MASK in id order (PERF keeps its
+- EXTCAP list at 0x100: one 2-word entry per set bit of XCAP_MASK in id order; the first two at 0x100
+  and 0x108, the others from 0x180 (0x110-0x17F hold PERF, CPFW and SA registers); EXTCAP reads 0
+  when XCAP_MASK is 0 (PERF keeps its
   registers at 0x110, design §2.4.10; VEND 0x0C0; CPFW 0x120; SA 0x140; DISP at DISP_OFFSET; DBG 0).
 - COUNTER counts every clk.  PERFn counts cycles with `perf_busy[n]`; cleared by PERF_CTRL[0] or
   `perf_reset`.
@@ -90,6 +93,8 @@ Register read latency 1 cycle (the am_axi_regs contract).
 - A write with partial WSTRB to the alias is dropped (and reported by atg_cp_state only for whole
   words written while locked).
 - Addresses 0x01800-0x0FFFF read 0.
+- The read answer is combinational from the registered index (`hcr_ridx`) and the modules'
+  `*_rdata`, valid the cycle after `reg_rd` (the am_axi_regs contract).
 
 ## 8. What the TB checks
 
@@ -107,4 +112,5 @@ design §2.2, §2.4.10 (offsets of the v3 additions), include/ghci_regs.vh, the 
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  216 lines.  Spec change in p004: the `PERF_SRC` parameter, the list layout
+above.

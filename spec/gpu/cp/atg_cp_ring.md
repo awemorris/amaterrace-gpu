@@ -1,6 +1,6 @@
 # atg_cp_ring
 
-RTL: `rtl/gpu/cp/atg_cp_ring.v`.  Parent: atg_cp.  Implemented in: p004.
+RTL: `rtl/gpu/cp/atg_cp_ring.v`.  Parent: atg_cp.  Implemented in: p004 (done).
 
 ## 1. Purpose and place
 
@@ -13,6 +13,7 @@ The command ring: RING_BASE/SIZE/WPTR/RPTR, line reads of the ring through the C
 | `ADDR_W` | `32` | GPU address width. |
 | `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
+| `CLASS_V` | `1` | 1: class V packets go to the CPU (`v_*`); 0 (no firmware, `HAS_CPU` = 0): a class V header is a fault of kind 2 (design §8 p004). |
 
 ## 3. Ports
 
@@ -21,7 +22,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | Name | Dir | Width | Meaning, handshake and timing |
 | --- | --- | --- | --- |
 | `clk` | in | 1 | Clock (gclk). |
-| `rst_n` | in | 1 | Synchronous reset, active low. |
+| `rst_n` | in | 1 | Board reset: RING_BASE/SIZE. |
+| `core_rst_n` | in | 1 | Core reset (CTRL.RESET): WPTR, RPTR, the fetch state. |
 | **HCR register snoop (from atg_cp_regs)** | | | |
 | `hcr_we` | in | 1 | One-cycle write strobe to an HCR word (0x000-0xFFC). |
 | `hcr_widx` | in | 10 | Word index of the write (byte offset >> 2). |
@@ -68,7 +70,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-40 ports.
+41 signals; 26 ports counting the HCR snoop and the AMB port as one group each.
 
 ## 4. Behaviour
 
@@ -81,8 +83,13 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   (N: last dword taken; V: v_done) and `retire` pulses.
 - A packet whose end passes WPTR, or which crosses the ring end, is fault kind 3 (RING) with
   `fault_addr` = the packet's address; nothing of it is handed over.
-- AMB tags: one read outstanding at a time is enough for v1 (tag 0); prefetching the next line up to
-  WPTR is an optimisation the implementation may add.
+- AMB tags: one read outstanding at a time (tag 0), one line buffer.  No prefetch beyond the line in
+  use.
+- Doorbell rule as implemented: a doorbell marks the line buffer stale; a **header** is decoded only
+  from a line fetched after the last doorbell, so a line read before it (whose dwords past the old
+  WPTR may be the previous lap's) is read again.  The payload of a packet already accepted lies below
+  WPTR and is streamed from the buffer as it is.
+- RING_WPTR is kept modulo the ring's dword count; RING_BASE/SIZE are taken only when `open`.
 
 ## 5. State machine
 
@@ -99,7 +106,8 @@ One dword per cycle on n_* within a line, plus one AMB round trip per line (abou
 - RING_SIZE out of 10..20 is clamped by the driver contract; the module treats other values as 10.
 - AMB error on a ring read: fault kind 5 (AXI) or 1 (aperture, the MC already raised it) — report
   kind 3 only for envelope errors; for rsp_error report kind 1 with the ring address.
-- Core reset clears RPTR and WPTR (design §2.6) but not BASE/SIZE.
+- `core_rst_n` clears RPTR and WPTR (design §2.6), `rst_n` BASE/SIZE.
+- After a fault the ring stays stopped until the core reset.
 
 ## 8. What the TB checks
 
@@ -119,4 +127,6 @@ design §2.4.2 (envelope), §2.7 (ring rules), §2.2 (registers), include/ghci_p
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  303 lines, one FSM (IDLE, HDR, N, V, ADV, REQ, RSP, FAULT).  Spec changes in
+p004: `CLASS_V`, `core_rst_n`.  The TB runs with 32- and 64-byte lines.  Throughput: one dword per
+cycle within a line, one AMB round trip per line (no prefetch).

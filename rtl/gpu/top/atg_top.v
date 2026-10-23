@@ -295,6 +295,8 @@ module atg_top #(
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
 		.GCLK_HZ(GCLK_HZ),
+		.UNITS({HAS_SA != 0, NSU != 0, HAS_TU != 0, HAS_ROP != 0, HAS_RX != 0, HAS_VF != 0,
+			2'b11}),
 		.HAS_CPU(HAS_CPU)
 	) cp (
 		.clk(clk),

@@ -1,6 +1,6 @@
 # atg_cp_dbg
 
-RTL: `rtl/gpu/cp/atg_cp_dbg.v`.  Parent: atg_cp.  Implemented in: p004.
+RTL: `rtl/gpu/cp/atg_cp_dbg.v`.  Parent: atg_cp.  Implemented in: p004 (done).
 
 ## 1. Purpose and place
 
@@ -30,6 +30,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `hcr_ridx` | in | 10 | Word index being read; the read data is due in the same cycle (combinational from this registered index). |
 | `hcr_rdata` | out | 32 | Read data of this module's registers at `hcr_ridx`, 0 for other indices (the parent ORs them). |
 | `ev_done` | out | 1 | One-cycle pulse: an access finished (IRQ DBG_DONE). |
+| `dbg_busy` | out | 1 | Level: DBG_STATUS.busy (ORed into STATUS[0], ghci.md §2). |
 | **AMB client port (design §4.1)** | | | |
 | `req_valid` | out | 1 | Request valid; payload held until `req_ready`. |
 | `req_ready` | in | 1 | The MC (or mux) takes the request this cycle. |
@@ -44,7 +45,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-21 ports.
+22 ports.
 
 ## 4. Behaviour
 
@@ -52,6 +53,10 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   data to DBG_ADDR (byte enables from WSTRB).  DBG_DATA reads the last read value; DBG_STATUS [0] busy,
   [1] error.  A write to DBG_ADDR/DATA while busy is dropped.
 - Works in every CP state (debug needs it in FAULTED too); the MC still checks the aperture.
+  **Bug 2 of p023 (fixed in p004):** the MC's quiesce held the debug request in HALTED and FAULTED.
+  atg_cp now lifts `mc_quiesce` while its MC client 0 has a request valid (the MC grants client 0
+  before every other, `HIGH_MASK`), so the port answers in every state.
+- `rst_n` is the core reset: CTRL.RESET clears DBG_ADDR/DATA/STATUS (as in CP v0).
 
 ## 5. State machine
 
@@ -80,4 +85,5 @@ design §2.2 (DBG registers), the inline debug port of `rtl/gpu/cp/atg_cp.v`.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)), moved from the inline debug port of CP v0.  132 lines.  Spec change in p004:
+the `dbg_busy` port.

@@ -64,6 +64,7 @@ No encoded FSM. State: `rr_next` (round-robin pointer) and the refusal register 
 - Aperture outside (including an empty aperture, the reset value base = limit = 0): refused, error response, fault pulse. The CP ignores faults of client 0 (its debug port: DBG_STATUS.error only).
 - Two refusals: the second waits (`err_v` blocks grants) until the first's response is out.
 - Under `quiesce` a client's request just waits; `axi_idle` comes when every granted request is answered.
+- **The CP's exception (WS288 p004):** atg_cp lowers `quiesce` while its client 0 has a request valid. Since client 0 is in `HIGH_MASK`, the selection then offers only client 0, so the CP's own requests (the debug port in HALTED and FAULTED, a ring line or fence already requested) are granted while the blocks stay frozen. `HIGH_MASK` must keep client 0 alone at the top for this.
 - `rsp_rdata` of a refusal is the AXI master's last read data (meaningless).
 - Atomics (ATOM port, design §4.1) are not implemented.
 
