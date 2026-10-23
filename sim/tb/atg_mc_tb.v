@@ -6,15 +6,22 @@
  */
 
 /*
- * atg_mc_tb: atg_mc with three clients (client 0 of fixed priority, 1 and
- * 2 round-robin) on one axi_mem.  Each client runs random reads and
+ * atg_mc_tb: atg_mc in two shapes, each on its own axi_mem: (A) three
+ * clients (client 0 with the priority bit, 1 and 2 taking turns) in a
+ * two-level router tree; (B) five clients with client 4 one hop from the
+ * root (ROOT_CLIENT, the DC's place) and clients 0 and 4 with the priority
+ * bit, and a 1 MiB VRAM window (VRAM_AW 20), where some refused requests
+ * are outside the window as well.  Each client runs random reads and
  * byte-masked writes on its own lines and checks its responses (data
  * against a reference, tags in order per direction).  Some requests fall
  * outside the aperture: they must get an error response without reaching
  * memory, and the MC's fault pulse must name the client, the line and the
  * direction.  Quiesce is raised at random: nothing may be granted under it
  * and axi_idle must come within a bound.  At the end every client must
- * have been granted.
+ * have been granted.  Responses are routed per client through the tree: a
+ * response that reached the wrong client fails the data or the order
+ * check of the receiver.  The router's priority and turn-taking are
+ * checked in detail by atg_rt_tb.
  */
 
 `timescale 1ns / 1ps
@@ -23,7 +30,8 @@
 module atg_mc_client #(
 	parameter ID = 0,
 	parameter NREQ = 600,
-	parameter SEED = 1
+	parameter SEED = 1,
+	parameter FAR = 0	/* some refused requests also outside a 1 MiB VRAM window */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -144,7 +152,10 @@ module atg_mc_client #(
 				@(posedge clk);
 			end else begin
 				req_write <= wr;
-				req_line <= (bad ? OUTSIDE : BASE) + line;
+				/* With FAR, half of the refused requests alias a good line of
+				 * the 1 MiB window: only the window check refuses them. */
+				req_line <= (bad ? ((FAR != 0 && line[0]) ? BASE + 27'h8000 : OUTSIDE) : BASE) +
+					line;
 				for (b = 0; b < 32; b = b + 1)
 					req_be[b] <= $random(seed);
 				for (b = 0; b < 8; b = b + 1)
@@ -195,26 +206,30 @@ module atg_mc_client #(
 	wire unused_ok = &{1'b0, stop};
 endmodule
 
-module atg_mc_tb;
-	localparam N = 3;
-
-	reg clk = 1'b0;
+module atg_mc_case #(
+	parameter N = 3,
+	parameter [N-1:0] HIGH = 1,
+	parameter ROOT = -1,
+	parameter VRAM_AW = 32,
+	parameter FAR = 0,
+	parameter SEED0 = 3
+) (
+	input wire clk,
+	output reg done,
+	output integer errors
+);
 	reg rst_n = 1'b0;
 	reg quiesce = 1'b0;
-	integer errors = 0;
-	integer seed = 3;
-
-	always #5 clk = !clk;
+	integer seed;
 
 	wire [N-1:0] c_req_valid, c_req_ready, c_req_write;
 	wire [N*27-1:0] c_req_line;
 	wire [N*32-1:0] c_req_be;
 	wire [N*256-1:0] c_req_wdata;
 	wire [N*8-1:0] c_req_tag;
-	wire [N-1:0] rsp_valid;
-	wire rsp_write, rsp_error;
-	wire [7:0] rsp_tag;
-	wire [255:0] rsp_rdata;
+	wire [N-1:0] rsp_valid, rsp_write, rsp_error;
+	wire [N*8-1:0] rsp_tag;
+	wire [N*256-1:0] rsp_rdata;
 	wire axi_idle, fault, fault_write;
 	wire [7:0] fault_client;
 	wire [31:0] fault_addr;
@@ -232,7 +247,7 @@ module atg_mc_tb;
 	wire [63:0] wdata, rdata;
 	wire [7:0] wstrb;
 
-	atg_mc #(.NCLIENT(N), .HIGH_MASK(3'b001)) dut (
+	atg_mc #(.NCLIENT(N), .HIGH_MASK(HIGH), .ROOT_CLIENT(ROOT), .VRAM_AW(VRAM_AW)) dut (
 		.clk(clk), .rst_n(rst_n),
 		.c_req_valid(c_req_valid), .c_req_ready(c_req_ready), .c_req_write(c_req_write),
 		.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
@@ -265,14 +280,15 @@ module atg_mc_tb;
 	genvar g;
 	generate
 		for (g = 0; g < N; g = g + 1) begin : cl
-			atg_mc_client #(.ID(g), .SEED(100 + g)) c (
+			atg_mc_client #(.ID(g), .SEED(SEED0 * 100 + g), .FAR(FAR)) c (
 				.clk(clk), .rst_n(rst_n), .stop(quiesce),
 				.req_valid(c_req_valid[g]), .req_ready(c_req_ready[g]),
 				.req_write(c_req_write[g]), .req_line(c_req_line[g*27 +: 27]),
 				.req_be(c_req_be[g*32 +: 32]), .req_wdata(c_req_wdata[g*256 +: 256]),
 				.req_tag(c_req_tag[g*8 +: 8]), .rsp_valid(rsp_valid[g]),
-				.rsp_write(rsp_write), .rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata),
-				.rsp_error(rsp_error), .finished(fin[g]), .errors(cerr[g]),
+				.rsp_write(rsp_write[g]), .rsp_tag(rsp_tag[g*8 +: 8]),
+				.rsp_rdata(rsp_rdata[g*256 +: 256]),
+				.rsp_error(rsp_error[g]), .finished(fin[g]), .errors(cerr[g]),
 				.bad_issued(cbad[g])
 			);
 		end
@@ -287,13 +303,10 @@ module atg_mc_tb;
 
 	always @(posedge clk) begin
 		if (rst_n) begin
-			if (quiesce && c_req_ready != 0) begin
+			/* Requests may enter the tree under quiesce; the root grants none. */
+			if (quiesce && dut.granted) begin
 				errors = errors + 1;
 				$display("FAIL atg_mc: grant under quiesce");
-			end
-			if ((c_req_ready & (c_req_ready - 1'b1)) != 0) begin
-				errors = errors + 1;
-				$display("FAIL atg_mc: two grants in one cycle");
 			end
 			for (k = 0; k < N; k = k + 1)
 				if (c_req_ready[k] && c_req_valid[k])
@@ -307,8 +320,11 @@ module atg_mc_tb;
 				end else begin
 					faults[fault_client] = faults[fault_client] + 1;
 					line_k = fault_addr[31:5];
-					if (line_k < 27'h7000 + fault_client * 32 ||
-					    line_k >= 27'h7000 + fault_client * 32 + 32) begin
+					/* The root reports the window offset over VRAM_BASE (0). */
+					if ((line_k < 27'h7000 + fault_client * 32 ||
+					    line_k >= 27'h7000 + fault_client * 32 + 32) &&
+					    !(FAR != 0 && line_k >= 27'h100 + fault_client * 32 &&
+					    line_k < 27'h100 + fault_client * 32 + 32)) begin
 						errors = errors + 1;
 						$display("FAIL atg_mc: fault address %h for client %0d",
 							fault_addr, fault_client);
@@ -323,8 +339,11 @@ module atg_mc_tb;
 	end
 
 	initial begin
+		done = 1'b0;
+		errors = 0;
+		seed = SEED0;
 		if ($value$plusargs("seed=%d", seed))
-			;
+			seed = seed + SEED0;
 		for (k = 0; k < N; k = k + 1) begin
 			grants[k] = 0;
 			faults[k] = 0;
@@ -364,13 +383,35 @@ module atg_mc_tb;
 			end
 		end
 		errors = errors + mem.errors;
-		if (errors == 0)
+		done = 1'b1;
+	end
+endmodule
+
+module atg_mc_tb;
+	reg clk = 1'b0;
+	wire done_a, done_b;
+	wire [31:0] err_a, err_b;
+
+	always #5 clk = !clk;
+
+	atg_mc_case #(.N(3), .HIGH(3'b001), .ROOT(-1), .VRAM_AW(32), .FAR(0), .SEED0(3)) a (
+		.clk(clk), .done(done_a), .errors(err_a)
+	);
+	atg_mc_case #(.N(5), .HIGH(5'b10001), .ROOT(4), .VRAM_AW(20), .FAR(1), .SEED0(7)) b (
+		.clk(clk), .done(done_b), .errors(err_b)
+	);
+
+	initial begin
+		wait (done_a && done_b);
+		if (err_a == 0 && err_b == 0)
 			$display("PASS atg_mc");
+		else
+			$display("FAIL atg_mc: %0d + %0d errors", err_a, err_b);
 		$finish;
 	end
 
 	initial begin
-		#20000000;
+		#40000000;
 		$display("FAIL atg_mc: timeout");
 		$finish;
 	end

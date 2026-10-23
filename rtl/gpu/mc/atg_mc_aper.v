@@ -9,8 +9,8 @@
  * atg_mc_aper: The aperture check of an AMB request: the line is inside
  * [APERTURE_BASE, APERTURE_LIMIT) (line granularity).
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/mc/atg_mc_aper.md.
+ * The behaviour is specified in spec/gpu/mc/atg_mc_aper.md (implemented
+ * in WS288 p023 with the router tree).
  */
 
 `timescale 1ns / 1ps
@@ -26,11 +26,12 @@ module atg_mc_aper #(
 	output wire ok
 );
 	/* spec/gpu/mc/atg_mc_aper.md */
-	assign ok = 1'd0;
+	wire [ADDR_W-LINE_SHIFT-1:0] b = base[ADDR_W-1:LINE_SHIFT];
+	wire [ADDR_W-LINE_SHIFT-1:0] l = limit[ADDR_W-1:LINE_SHIFT];
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		line, base, limit};
+	assign ok = line >= b && line < l;
+
+	wire unused_ok = &{1'b0, base[LINE_SHIFT-1:0], limit[LINE_SHIFT-1:0]};
 endmodule
 
 `default_nettype wire

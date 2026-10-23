@@ -269,10 +269,10 @@ module atg_top #(
 	wire [NCLIENT*LINE_BITS-1:0] c_req_wdata;
 	wire [NCLIENT*8-1:0] c_req_tag;
 	wire [NCLIENT-1:0] rsp_valid;
-	wire rsp_write;
-	wire [7:0] rsp_tag;
-	wire [LINE_BITS-1:0] rsp_rdata;
-	wire rsp_error;
+	wire [NCLIENT-1:0] rsp_write_v;
+	wire [NCLIENT*8-1:0] rsp_tag_v;
+	wire [NCLIENT*LINE_BITS-1:0] rsp_rdata_v;
+	wire [NCLIENT-1:0] rsp_error_v;
 
 	/* The CP's links to the blocks of design §7.6 (p023). */
 	wire draw_kick, cs_kick, lc_kick, raw_kick;
@@ -333,10 +333,10 @@ module atg_top #(
 		.req_wdata(c_req_wdata[0*LINE_BITS +: LINE_BITS]),
 		.req_tag(c_req_tag[0*8 +: 8]),
 		.rsp_valid(rsp_valid[0]),
-		.rsp_write(rsp_write),
-		.rsp_tag(rsp_tag),
-		.rsp_rdata(rsp_rdata),
-		.rsp_error(rsp_error),
+		.rsp_write(rsp_write_v[0]),
+		.rsp_tag(rsp_tag_v[0*8 +: 8]),
+		.rsp_rdata(rsp_rdata_v[0*LINE_BITS +: LINE_BITS]),
+		.rsp_error(rsp_error_v[0]),
 		.draw_kick(draw_kick),
 		.cs_kick(cs_kick),
 		.lc_kick(lc_kick),
@@ -399,15 +399,16 @@ module atg_top #(
 		.req_wdata(c_req_wdata[1*LINE_BITS +: LINE_BITS]),
 		.req_tag(c_req_tag[1*8 +: 8]),
 		.rsp_valid(rsp_valid[1]),
-		.rsp_write(rsp_write),
-		.rsp_tag(rsp_tag),
-		.rsp_rdata(rsp_rdata),
-		.rsp_error(rsp_error)
+		.rsp_write(rsp_write_v[1]),
+		.rsp_tag(rsp_tag_v[1*8 +: 8]),
+		.rsp_rdata(rsp_rdata_v[1*LINE_BITS +: LINE_BITS]),
+		.rsp_error(rsp_error_v[1])
 	);
 
 	atg_mc #(
 		.NCLIENT(NCLIENT),
 		.HIGH_MASK(HIGH),
+		.ROOT_CLIENT(EXT_CLIENT != 0 ? C_EXT : -1),
 		.ADDR_W(32),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
@@ -424,10 +425,10 @@ module atg_top #(
 		.c_req_wdata(c_req_wdata),
 		.c_req_tag(c_req_tag),
 		.rsp_valid(rsp_valid),
-		.rsp_write(rsp_write),
-		.rsp_tag(rsp_tag),
-		.rsp_rdata(rsp_rdata),
-		.rsp_error(rsp_error),
+		.rsp_write(rsp_write_v),
+		.rsp_tag(rsp_tag_v),
+		.rsp_rdata(rsp_rdata_v),
+		.rsp_error(rsp_error_v),
 		.quiesce(mc_quiesce),
 		.flush(mc_flush),
 		.aperture_base(aperture_base),
@@ -491,8 +492,8 @@ module atg_top #(
 			.req_be(c_req_be[C_CPU*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_CPU*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_CPU*8 +: 8]),
-			.rsp_valid(rsp_valid[C_CPU]), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
-			.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
+			.rsp_valid(rsp_valid[C_CPU]), .rsp_write(rsp_write_v[C_CPU]), .rsp_tag(rsp_tag_v[C_CPU*8 +: 8]),
+			.rsp_rdata(rsp_rdata_v[C_CPU*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_CPU])
 		);
 	end else begin : g_no_cpu
 		assign cpu_hcr_rdata = 32'd0;
@@ -592,8 +593,8 @@ module atg_top #(
 			.req_be(c_req_be[C_VF*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_VF*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_VF*8 +: 8]),
-			.rsp_valid(rsp_valid[C_VF]), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
-			.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
+			.rsp_valid(rsp_valid[C_VF]), .rsp_write(rsp_write_v[C_VF]), .rsp_tag(rsp_tag_v[C_VF*8 +: 8]),
+			.rsp_rdata(rsp_rdata_v[C_VF*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_VF])
 		);
 	end else begin : g_no_vf
 		assign vf_busy = 1'b0;
@@ -670,8 +671,8 @@ module atg_top #(
 			.req_be(c_req_be[C_TU*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_TU*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_TU*8 +: 8]),
-			.rsp_valid(rsp_valid[C_TU]), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
-			.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
+			.rsp_valid(rsp_valid[C_TU]), .rsp_write(rsp_write_v[C_TU]), .rsp_tag(rsp_tag_v[C_TU*8 +: 8]),
+			.rsp_rdata(rsp_rdata_v[C_TU*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_TU])
 		);
 	end else begin : g_no_tu
 		assign tu_busy = 1'b0;
@@ -702,8 +703,8 @@ module atg_top #(
 			.req_be(c_req_be[C_ROP*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_ROP*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_ROP*8 +: 8]),
-			.rsp_valid(rsp_valid[C_ROP]), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
-			.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
+			.rsp_valid(rsp_valid[C_ROP]), .rsp_write(rsp_write_v[C_ROP]), .rsp_tag(rsp_tag_v[C_ROP*8 +: 8]),
+			.rsp_rdata(rsp_rdata_v[C_ROP*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_ROP])
 		);
 	end else begin : g_no_rop
 		assign rop_busy = 1'b0;
@@ -728,8 +729,8 @@ module atg_top #(
 			.req_be(c_req_be[C_SA*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_SA*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_SA*8 +: 8]),
-			.rsp_valid(rsp_valid[C_SA]), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
-			.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
+			.rsp_valid(rsp_valid[C_SA]), .rsp_write(rsp_write_v[C_SA]), .rsp_tag(rsp_tag_v[C_SA*8 +: 8]),
+			.rsp_rdata(rsp_rdata_v[C_SA*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_SA])
 		);
 	end else begin : g_no_sa
 		assign sa_busy = 1'b0;
@@ -753,18 +754,22 @@ module atg_top #(
 		assign c_req_wdata[C_EXT*LINE_BITS +: LINE_BITS] = x_req_wdata;
 		assign c_req_tag[C_EXT*8 +: 8] = x_req_tag;
 		assign x_rsp_valid = rsp_valid[C_EXT];
+		assign x_rsp_write = rsp_write_v[C_EXT];
+		assign x_rsp_tag = rsp_tag_v[C_EXT*8 +: 8];
+		assign x_rsp_rdata = rsp_rdata_v[C_EXT*LINE_BITS +: LINE_BITS];
+		assign x_rsp_error = rsp_error_v[C_EXT];
 	end else begin : g_no_ext
 		assign x_req_ready = 1'b0;
 		assign x_rsp_valid = 1'b0;
+		assign x_rsp_write = 1'b0;
+		assign x_rsp_tag = 8'd0;
+		assign x_rsp_rdata = {LINE_BITS{1'b0}};
+		assign x_rsp_error = 1'b0;
 		wire unused_ext = &{1'b0, x_req_valid, x_req_write, x_req_line, x_req_be, x_req_wdata,
 			x_req_tag};
 	end
 	endgenerate
 
-	assign x_rsp_write = rsp_write;
-	assign x_rsp_tag = rsp_tag;
-	assign x_rsp_rdata = rsp_rdata;
-	assign x_rsp_error = rsp_error;
 
 	/* The SUs, and the MC's atomic unit they share. */
 	genvar k;
@@ -818,15 +823,15 @@ module atg_top #(
 			.d_req_be(c_req_be[CD*LINE_BYTES +: LINE_BYTES]),
 			.d_req_wdata(c_req_wdata[CD*LINE_BITS +: LINE_BITS]),
 			.d_req_tag(c_req_tag[CD*8 +: 8]),
-			.d_rsp_valid(rsp_valid[CD]), .d_rsp_write(rsp_write), .d_rsp_tag(rsp_tag),
-			.d_rsp_rdata(rsp_rdata), .d_rsp_error(rsp_error),
+			.d_rsp_valid(rsp_valid[CD]), .d_rsp_write(rsp_write_v[CD]), .d_rsp_tag(rsp_tag_v[CD*8 +: 8]),
+			.d_rsp_rdata(rsp_rdata_v[CD*LINE_BITS +: LINE_BITS]), .d_rsp_error(rsp_error_v[CD]),
 			.i_req_valid(c_req_valid[CI]), .i_req_ready(c_req_ready[CI]),
 			.i_req_write(c_req_write[CI]), .i_req_line(c_req_line[CI*LA_W +: LA_W]),
 			.i_req_be(c_req_be[CI*LINE_BYTES +: LINE_BYTES]),
 			.i_req_wdata(c_req_wdata[CI*LINE_BITS +: LINE_BITS]),
 			.i_req_tag(c_req_tag[CI*8 +: 8]),
-			.i_rsp_valid(rsp_valid[CI]), .i_rsp_write(rsp_write), .i_rsp_tag(rsp_tag),
-			.i_rsp_rdata(rsp_rdata), .i_rsp_error(rsp_error),
+			.i_rsp_valid(rsp_valid[CI]), .i_rsp_write(rsp_write_v[CI]), .i_rsp_tag(rsp_tag_v[CI*8 +: 8]),
+			.i_rsp_rdata(rsp_rdata_v[CI*LINE_BITS +: LINE_BITS]), .i_rsp_error(rsp_error_v[CI]),
 			.at_valid(at_valid[k]), .at_ready(at_ready[k]), .at_op(at_op[k*4 +: 4]),
 			.at_addr(at_addr[k*30 +: 30]), .at_a(at_a[k*32 +: 32]), .at_b(at_b[k*32 +: 32]),
 			.at_rsp_valid(at_rsp_valid[k]), .at_old(at_old), .at_error(at_error),
@@ -893,8 +898,8 @@ module atg_top #(
 			.req_be(c_req_be[C_ATOM*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_ATOM*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_ATOM*8 +: 8]),
-			.rsp_valid(rsp_valid[C_ATOM]), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
-			.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
+			.rsp_valid(rsp_valid[C_ATOM]), .rsp_write(rsp_write_v[C_ATOM]), .rsp_tag(rsp_tag_v[C_ATOM*8 +: 8]),
+			.rsp_rdata(rsp_rdata_v[C_ATOM*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_ATOM])
 		);
 	end else begin : g_no_su
 		assign su_busy = 1'b0;
