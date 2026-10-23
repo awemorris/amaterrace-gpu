@@ -17,6 +17,7 @@
  * "PASS verilator" on success.
  */
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -256,6 +257,131 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
 		}
 }
 
+
+#ifdef RASTER
+uint32_t crc_table[256];
+
+uint32_t crc32(const uint8_t *p, size_t n, uint32_t c = 0xFFFFFFFFu)
+{
+	if (!crc_table[1])
+		for (uint32_t i = 0; i < 256; i++) {
+			uint32_t v = i;
+			for (int k = 0; k < 8; k++)
+				v = v & 1 ? 0xEDB88320u ^ (v >> 1) : v >> 1;
+			crc_table[i] = v;
+		}
+	for (size_t i = 0; i < n; i++)
+		c = crc_table[(c ^ p[i]) & 255] ^ (c >> 8);
+	return c;
+}
+
+void put_be32(std::vector<uint8_t> &v, uint32_t x)
+{
+	for (int i = 3; i >= 0; i--)
+		v.push_back((uint8_t)(x >> (8 * i)));
+}
+
+void png_chunk(FILE *f, const char *type, const std::vector<uint8_t> &data)
+{
+	std::vector<uint8_t> c;
+	put_be32(c, (uint32_t)data.size());
+	c.insert(c.end(), type, type + 4);
+	c.insert(c.end(), data.begin(), data.end());
+	uint32_t crc = crc32(c.data() + 4, c.size() - 4) ^ 0xFFFFFFFFu;
+	put_be32(c, crc);
+	fwrite(c.data(), 1, c.size(), f);
+}
+
+/* An RGBA PNG of the BGRA8 image at base (stored deflate blocks, no zlib). */
+void write_png(const char *path, uint32_t base, unsigned w, unsigned h, unsigned stride)
+{
+	std::vector<uint8_t> raw;
+	for (unsigned y = 0; y < h; y++) {
+		raw.push_back(0);
+		for (unsigned x = 0; x < w; x++) {
+			uint32_t p = peek32(base + y * stride + x * 4);
+			raw.push_back((uint8_t)(p >> 16));
+			raw.push_back((uint8_t)(p >> 8));
+			raw.push_back((uint8_t)p);
+			raw.push_back(255);
+		}
+	}
+	std::vector<uint8_t> z = {0x78, 0x01};
+	uint32_t a = 1, b = 0;
+	for (uint8_t c : raw) {
+		a = (a + c) % 65521;
+		b = (b + a) % 65521;
+	}
+	for (size_t off = 0; off < raw.size(); off += 65535) {
+		size_t n = std::min<size_t>(65535, raw.size() - off);
+		z.push_back(off + n == raw.size() ? 1 : 0);
+		z.push_back((uint8_t)n);
+		z.push_back((uint8_t)(n >> 8));
+		z.push_back((uint8_t)~n);
+		z.push_back((uint8_t)(~n >> 8));
+		z.insert(z.end(), raw.begin() + off, raw.begin() + off + n);
+	}
+	put_be32(z, (b << 16) | a);
+	FILE *f = std::fopen(path, "wb");
+	if (!f)
+		return;
+	static const uint8_t sig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+	fwrite(sig, 1, 8, f);
+	std::vector<uint8_t> ihdr;
+	put_be32(ihdr, w);
+	put_be32(ihdr, h);
+	ihdr.insert(ihdr.end(), {8, 6, 0, 0, 0});
+	png_chunk(f, "IHDR", ihdr);
+	png_chunk(f, "IDAT", z);
+	png_chunk(f, "IEND", {});
+	std::fclose(f);
+}
+
+/* The scene of sim/vec/raster_scene.txt (tools/rx-raster-scene.py) through
+ * the ring; the colour and depth buffers against the model; the colour
+ * buffer to build/verilator/raster.png. */
+int raster_main()
+{
+	FILE *f = std::fopen("sim/vec/raster_scene.txt", "r");
+	if (!f) {
+		std::printf("FAIL verilator raster: no sim/vec/raster_scene.txt\n");
+		return 1;
+	}
+	const uint32_t ring = 0x5F000;
+	uint32_t wp = 0, a, v, nr;
+	char k[4];
+	std::vector<std::pair<uint32_t, uint32_t>> exp;
+	if (std::fscanf(f, "%3s %u", k, &nr) != 2)
+		return 1;
+	while (std::fscanf(f, "%3s", k) == 1) {
+		if (k[0] == 'I' && std::fscanf(f, "%x %x", &a, &v) == 2)
+			poke32(a, v);
+		else if (k[0] == 'R' && std::fscanf(f, "%x", &v) == 1)
+			poke32(ring + 4 * wp++, v);
+		else if (k[0] == 'E' && std::fscanf(f, "%x %x", &a, &v) == 2)
+			exp.push_back({a, v});
+	}
+	std::fclose(f);
+	host_write(GHCI_APERTURE_BASE, 0x20000);
+	host_write(GHCI_APERTURE_LIMIT, 0x60000);
+	host_write(GHCI_RING_BASE, ring);
+	host_write(GHCI_RING_SIZE, 10);
+	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
+	host_write(GHCI_RING_WPTR, wp);
+	for (int i = 0; i < 200000 && host_read(GHCI_FENCE_LAST) != 1; i++)
+		;
+	expect("FENCE_LAST", host_read(GHCI_FENCE_LAST), 1);
+	unsigned bad = 0;
+	for (auto &e : exp)
+		if (peek32(e.first) != e.second)
+			bad++;
+	expect("raster words differing from the model", bad, 0);
+	write_png("build/verilator/raster.png", 0x20000, 64, 48, 256);
+	std::printf("verilator raster: %u ring words, %zu words checked, %llu cycles, "
+	    "build/verilator/raster.png\n", wp, exp.size(), (unsigned long long)cycles);
+	return errors ? 1 : 0;
+}
+#endif
 } // namespace
 
 int main(int argc, char **argv)
@@ -274,6 +400,16 @@ int main(int argc, char **argv)
 		tick();
 	top->rst_n = 1;
 	tick();
+#ifdef RASTER
+	{
+		int rc = raster_main();
+		top->final();
+		delete top;
+		if (rc == 0)
+			std::printf("PASS verilator raster\n");
+		return rc;
+	}
+#endif
 
 	expect("GHCI_MAGIC", host_read(GHCI_MAGIC), GHCI_MAGIC_VALUE);
 	expect("GHCI_VERSION", host_read(GHCI_VERSION) >> 16, GHCI_VERSION_MAJOR);
