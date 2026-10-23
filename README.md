@@ -55,25 +55,23 @@ Blocks:
 
 GHCI (GPU Host Controller Interface):
 - A public, versioned host interface for Vulkan-class GPUs, in the spirit of
-  AHCI/xHCI. What it standardizes: the host control registers (magic, version,
-  vendor/device/ISA IDs, capabilities, extended-capability list, control/status/
-  IRQ, command ring base/size/pointers, address aperture, fault, watchdog, perf,
-  debug port), the command processor state machine and ring rules, the packet
-  envelope and the standard opcodes (NOP, SET_REG, BLIT, DRAW, DISPATCH, FENCE,
-  WAIT_IDLE, WAIT_FENCE, LOAD_CONST, LOAD_PROGRAM, WAIT_VSYNC, INVALIDATE), the
-  standard state register file for fixed-function state (vertex attributes,
-  viewport/scissor/cull, depth/stencil/blend, render targets, textures/samplers,
-  program bases), fence/interrupt/fault/reset semantics, and the display
-  controller as an extended capability.
-- Vendor-specific: the shader ISA, binary format and execution model (identified
-  by ISA_ID), texture tiling, vendor opcodes (0x80-0xFF), vendor state and the
-  VEND capability registers. Amaterrace GPU implements GHCI 1.0 with vendor
-  "AMAT", device "ATG1", ISA "ATS1".
-- What a generic GHCI driver gets without vendor code: the host interface, 2D
-  blits and the display controller. Shaders need an ISA back end in the driver
-  (zedBSD's driver selects it by ISA_ID).
-- The specification lives in docs/ghci.md; the C headers in include/
-  (ghci_regs.h, ghci_packets.h, ats1_isa.h) are the ones an OS driver copies.
+  AHCI/xHCI. It standardizes the host control registers (identification,
+  capabilities, extended-capability list, control/status/IRQ, command ring,
+  address aperture, fault, watchdog, performance counters, debug memory port),
+  the command processor's states and ring rules, complete fences, the
+  interrupt/fault/quiesce/reset semantics, the state register file, the display
+  controller as an extended capability, and a standard shader ISA.
+- Commands: the ring carries zedBSD's GPU command protocol (Kei GPU command
+  protocol, whose numbers follow the Venus wire format).
+- Shader ISA: a standard ISA based on RISC-V (not bound to the RISC-V
+  specification), taking in what is common across GPUs. A GPU runs it natively
+  or has its command processor translate it to a native ISA; a driver may also
+  submit programs in the GPU's native ISA directly. Native ISAs are vendor-
+  specific and optional, as are texture tiling and vendor state and registers.
+- Amaterrace GPU implements GHCI 1.0 with vendor "AMAT", device "ATG1"; its
+  native ISA is the standard one.
+- The specification is docs/ghci.md (draft; the command set and ISA sections
+  are pending); the C headers in include/ are the ones an OS driver copies.
 
 Shader Unit:
 - Warp: 32 lanes, scalar 32-bit per lane, with 16-bit packed (2 x fp16/int16
@@ -89,7 +87,7 @@ Shader Unit:
 - Per unit: BRAM register file, small instruction and data caches, shared
   memory (LDS), constant bank, post-transform buffer and primitive table for
   varying interpolation, one shared transcendental unit and one divider.
-- ISA "ATS1": 64-bit fixed-width instructions (docs/ats1.md).
+- ISA: the GHCI standard ISA (RISC-V based; being designed).
 
 Targets:
 - Digilent ZYBO (XC7Z010): workflow bring-up with per-block bitstreams
