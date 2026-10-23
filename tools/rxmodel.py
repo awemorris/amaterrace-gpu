@@ -613,20 +613,28 @@ def rop_quad(st, mem, x, y, mask, z, colors):
         ps = 2 if fmt == 2 else 4
         ca = st[S_RT_BASE] + py * st[S_RT_STRIDE] + px * ps
         dpx = mem.rd16(ca) if ps == 2 else mem.rd32(ca)
-        d = unpack_px(fmt, dpx)
-        s = [f2u8(colors[ln][c]) for c in range(4)]
-        o = blend(st[S_BLEND], st[S_BLEND_CONST], s, d)
-        wm = st[S_WRITE_MASK]
-        o = [o[c] if wm >> c & 1 else d[c] for c in range(4)]
-        if fmt == 2:
-            # channels kept by WRITE_MASK keep their original bits
-            p = pack_px(2, o)
-            old = dpx
-            keep = (0 if wm & 1 else 0xF800) | (0 if wm & 2 else 0x07E0) | (0 if wm & 4 else 0x001F)
-            mem.wr16(ca, (p & ~keep) | (old & keep))
+        p = blend_pixel(st, colors[ln], dpx)
+        if ps == 2:
+            mem.wr16(ca, p)
         else:
-            p = pack_px(fmt, o)
             mem.wr32(ca, p)
+
+
+def blend_pixel(st, color, dpx):
+    """One pixel through atg_rop_blend: fp32 RGBA color over the pixel dpx
+    (RT_FORMAT bits), BLEND, WRITE_MASK; returns the new pixel bits."""
+    fmt = st[S_RT_FORMAT] & 3
+    d = unpack_px(fmt, dpx)
+    s = [f2u8(color[c]) for c in range(4)]
+    o = blend(st[S_BLEND], st[S_BLEND_CONST], s, d)
+    wm = st[S_WRITE_MASK]
+    o = [o[c] if wm >> c & 1 else d[c] for c in range(4)]
+    if fmt == 2:
+        # channels kept by WRITE_MASK keep their original bits
+        p = pack_px(2, o)
+        keep = (0 if wm & 1 else 0xF800) | (0 if wm & 2 else 0x07E0) | (0 if wm & 4 else 0x001F)
+        return (p & ~keep) | (dpx & keep)
+    return pack_px(fmt, o)
 
 
 def draw_tri(st, mem, tri):

@@ -204,12 +204,49 @@ def clip_vectors(r):
     return out
 
 
+def blend_vectors(r):
+    """atg_rop_blend: STATE words, 4 sources, 4 destinations, mask, result."""
+    out = []
+    for n in range(3000):
+        st = M.State()
+        fmt = n % 3
+        bl = r.getrandbits(23) | 1 if n % 7 else 0
+        if n % 5 == 0:	# source-over, the common case
+            bl = 1 | (6 << 1) | (7 << 5) | (1 << 12) | (7 << 16)
+        st.set(M.S_RT_FORMAT, fmt)
+        st.set(M.S_BLEND, bl)
+        st.set(M.S_BLEND_CONST, r.getrandbits(32))
+        st.set(M.S_WRITE_MASK, 15 if n % 3 else r.getrandbits(4))
+        src = []
+        for _ in range(4):
+            px = []
+            for _ in range(4):
+                k = r.random()
+                if k < 0.1:
+                    px.append(r.choice([0, 0x80000000, M.ONE, 0x7FC00000, 0x7F800000, 0xBF800000,
+                                        0x3F7FFFFF, 0x3B800000, 0x3A800000, 0x00400000]))
+                elif k < 0.2:
+                    px.append(M.UNORM8[r.randrange(256)])
+                else:
+                    px.append(f(r.uniform(-0.1, 1.1)))
+            src.append(px)
+        dst = [r.getrandbits(32 if fmt < 2 else 16) for _ in range(4)]
+        mask = r.getrandbits(4)
+        res = [M.blend_pixel(st, src[ln], dst[ln]) if mask >> ln & 1 else dst[ln] for ln in range(4)]
+        out.append('%x %06x %08x %x %s %s %x %s' % (
+            fmt, bl, st[M.S_BLEND_CONST], st[M.S_WRITE_MASK],
+            ' '.join('%08x' % w for px in src for w in px), ' '.join('%08x' % d for d in dst),
+            mask, ' '.join('%08x' % p for p in res)))
+    return out
+
+
 def main():
     r = random.Random(288007)
     put('rx_fp.hex', fp_vectors(r))
     put('rx_setup.txt', setup_vectors(r))
     put('rx_scan.txt', scan_vectors(r))
     put('rx_clip.txt', clip_vectors(r))
+    put('rop_blend.txt', blend_vectors(r))
 
 
 if __name__ == '__main__':

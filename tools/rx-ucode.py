@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 # rx-ucode.py: writes include/atg_rx_setup_uc.vh, the micro-program of
-# atg_rx_setup (spec/gpu/rx/atg_rx_setup.md §4), from the listing below.
+# atg_rx_setup (spec/gpu/rx/atg_rx_setup.md §4), from the listing below,
+# and include/atg_rop_unorm8.vh, the table c -> fp32(c / 255) of the ROP's
+# DEBUG_COLOR (tools/rxmodel.py's UNORM8).
 # A micro-instruction is {op[3:0], d[6:0], a[6:0], b[6:0]}; the fp
 # register numbers are the spec's.
 #   tools/rx-ucode.py
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import os
+import sys
 
 OPS = {'END': 0, 'ADD': 1, 'SUB': 2, 'MUL': 3, 'DIV': 4, 'MOV': 5, 'INT': 6, 'JMP': 7,
        'ENDR': 8}
@@ -103,6 +106,19 @@ def main():
                      % (pc, OPS[op], d, a, b, op))
         fp.write("\tdefault: atg_rx_uc = 25'd0;\n\tendcase\nendfunction\n")
     print('rx-ucode: %s (%d micro-instructions)' % (out, len(prog)))
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import rxmodel as M
+    out = os.path.join(root, 'include', 'atg_rop_unorm8.vh')
+    with open(out, 'w') as fp:
+        fp.write('/*\n * Amaterrace GPU\n * Copyright (C) 2026 Awe Morris\n *\n'
+                 ' * SPDX-License-Identifier: Zlib\n */\n\n'
+                 '/*\n * atg_rop_unorm8.vh: c -> fp32(c / 255), round to nearest even, written\n'
+                 ' * by tools/rx-ucode.py (do not edit).\n */\n\n')
+        fp.write('function [31:0] atg_rop_unorm8;\n\tinput [7:0] c;\n\tcase (c)\n')
+        for c in range(256):
+            fp.write("\t8'd%d: atg_rop_unorm8 = 32'h%08x;\n" % (c, M.UNORM8[c]))
+        fp.write("\tdefault: atg_rop_unorm8 = 32'd0;\n\tendcase\nendfunction\n")
+    print('rx-ucode: %s' % out)
 
 
 if __name__ == '__main__':
