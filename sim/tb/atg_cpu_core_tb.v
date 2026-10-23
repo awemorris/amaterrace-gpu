@@ -10,8 +10,8 @@
  * tools/cpu-tests.sh; rv32i and rv32m are generated with their expected
  * values by gen.py) on atg_cpu_core with a behavioural IMEM (synchronous
  * read, held while i_en is 0) and a data memory at 0x0001_0000.  A
- * program reports through TOHOST (0xF000_0000: 1 pass, 2n+1 check n
- * failed); IRQ_REQ (0xF000_0004) raises irq after the stored number of
+ * program reports through TOHOST (0xF000_0000: 1 pass) or FAILHOST
+ * (0xF000_0010: check n failed); IRQ_REQ (0xF000_0004) raises irq after the stored number of
  * cycles and IRQ_ACK (0xF000_0008) drops it.  The data port may answer at
  * once or after random waits, and run may be dropped at random; the
  * testbench checks the valid/ready rule of the data port, that the core
@@ -69,6 +69,7 @@ module atg_cpu_core_tb;
 	integer waited = 0;
 	integer want_wait = 0;
 	integer tohost = 0;
+	integer failcode = 0;
 	integer irq_at = -1;
 	integer irq_reqs = 0;
 	integer irq_entries = 0;
@@ -112,6 +113,10 @@ module atg_cpu_core_tb;
 			if (d_write && in_io) begin
 				case (d_addr[7:0])
 				8'h00: tohost = d_wdata;
+				8'h10: begin
+					tohost = -1;
+					failcode = d_wdata;
+				end
 				8'h04: begin
 					irq_at = cycles + d_wdata;
 					irq_reqs = irq_reqs + 1;
@@ -188,6 +193,9 @@ module atg_cpu_core_tb;
 				imem[i] = 32'd0;
 				dmem[i] = 32'd0;
 			end
+			/* Registers start with garbage, not X (X would hide stale reads). */
+			for (i = 1; i < 32; i = i + 1)
+				dut.rf[i] = $random(seed);
 			$sformat(f, "sim/tb/cpu/%0s.imem.hex", name);
 			fd = $fopen(f, "r");
 			for (i = 0; i < 16384 && $fscanf(fd, "%h", w) == 1; i = i + 1)
@@ -230,8 +238,8 @@ module atg_cpu_core_tb;
 				n = n + 1;
 			end
 			if (tohost != 1) begin
-				$display("FAIL %0s: tohost %0d (check %0d) faults %0d pc %h after %0d cycles",
-					name, tohost, tohost >> 1, faults, dut.pc_e, n);
+				$display("FAIL %0s: tohost %0d (failed check %0d) faults %0d pc %h after %0d cycles",
+					name, tohost, failcode, faults, dut.pc_e, n);
 				errors = errors + 1;
 			end
 		end

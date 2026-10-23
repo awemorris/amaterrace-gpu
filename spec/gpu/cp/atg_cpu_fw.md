@@ -4,7 +4,22 @@ RTL: `rtl/gpu/cp/atg_cpu_fw.v`.  Parent: atg_cpu.  Implemented in: p017.
 
 ## 1. Purpose and place
 
-The CPFW extended capability (design §2.4.10): CPFW_CTRL/STATUS/IBASE/IWORDS/DBASE/DWORDS/VERSION/MBOX0-3 on the HCR (0x120-0x13F), the image reload sequence, the core's run/reset, and the firmware fault report.
+The CPFW extended capability (design §2.4.10): CPFW_CTRL/STATUS/IBASE/IWORDS/DBASE/DWORDS/VERSION on the HCR (0x120-0x138) and CPFW_MBOX0-3 (0x150-0x15C), the image reload sequence, the core's run/reset, and the firmware fault report.
+
+HCR layout (p017, Q1 2026-10-23: the 11 registers do not fit 0x120-0x13F and SA is fixed at
+0x140; offsets in `include/ghci_regs.vh`/`.h` as `GHCI_CPFW_*`):
+
+| Offset | Name | Access | Meaning |
+| --- | --- | --- | --- |
+| 0x120 | CPFW_CTRL | RW | [0] LOAD (W1S; reads 1 while loading), [1] RUN, [2] HALT |
+| 0x124 | CPFW_STATUS | R | [0] READY, [1] FAULT, [2] ALIVE, [3] STOPPED (core stopped or held in reset), [4] LOADING, [15:8] firmware state |
+| 0x128 | CPFW_IBASE | RW | GPU address of the IMEM image (line aligned) |
+| 0x12C | CPFW_IWORDS | RW | its words |
+| 0x130 | CPFW_DBASE | RW | GPU address of the DMEM image |
+| 0x134 | CPFW_DWORDS | RW | its words |
+| 0x138 | CPFW_VERSION | R | written by the firmware (window 0x25) |
+| 0x13C | - | R | 0 |
+| 0x150-0x15C | CPFW_MBOX0-3 | RW | shared with the firmware (window 0x21-0x24) |
 
 ## 2. Parameters
 
@@ -54,12 +69,21 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-- CPFW_CTRL [0] LOAD (W1S: only when open and the core is stopped; else ignored), [1] RUN, [2] HALT.
-  LOAD: hold core reset, load IMEM from IBASE/IWORDS, DMEM from DBASE/DWORDS, then READY.
-- CPFW_STATUS [0] READY (image present: 1 after reset because the bitstream holds it), [1] FAULT,
-  [2] ALIVE (toggles on each firmware FW_STATUS write), [15:8] the firmware's state.
-- IBASE/IWORDS/DBASE/DWORDS survive core_rst_n (design §2.6); this module is on rst_n.
-- MBOX0-3 are shared: host and firmware both read and write them (last writer wins).
+- CPFW_CTRL [0] LOAD (W1S: only when open and the core is stopped or held in reset, and no load
+  runs; else ignored), [1] RUN, [2] HALT.  LOAD: hold core reset, load IMEM from IBASE/IWORDS, DMEM
+  from DBASE/DWORDS, then READY; the core restarts at 0 (if RUN) when the reset is released.
+- CPFW_STATUS [0] READY (image present: 1 from configuration because the bitstream holds it, 0
+  from LOAD until it succeeds), [1] FAULT, [2] ALIVE (toggles on each firmware FW_STATUS write),
+  [3] STOPPED, [4] LOADING, [15:8] the firmware's state.
+- rst_n is atg_cpu's rst_n, the CP's core_rst_n (CTRL.RESET).  IBASE/IWORDS/DBASE/DWORDS and READY
+  survive it (design §2.6): they have no reset (initial values 0 and READY 1 from configuration).
+  CTRL, FAULT, ALIVE, the state, VERSION and MBOX0-3 are cleared by it.
+- Halt: core_run = RUN && !(PARK && (CTRL.HALT || halt_req)).  The firmware sees the halt request
+  (window IRQ[2]), finishes its packet and writes FW_STATUS with [16] PARK = 1; the core then stops
+  at the next instruction boundary (so it never stops inside a packet).  PARK clears when no halt
+  is requested, and the core runs on.  Clearing RUN stops the core at once (for LOAD while IDLE).
+- MBOX0-3 are shared: host and firmware both read and write them (last writer wins; the
+  firmware's write wins a same-cycle collision).  Host writes use WSTRB.
 
 ## 5. State machine
 
@@ -71,7 +95,9 @@ IDLE →(LOAD)→ LOAD_I →(ld_done)→ LOAD_D →(ld_done)→ IDLE (READY).  C
 
 ## 7. Corner cases and errors
 
-- A load error leaves READY 0 and FAULT 1.
+- A load error leaves READY 0 and FAULT 1 and the core held in reset; a later good LOAD clears
+  FAULT and sets READY.
+- A core fault: FAULT 1, `fault` pulse with the PC, the core held in reset until RESET (or LOAD).
 
 ## 8. What the TB checks
 
@@ -88,4 +114,7 @@ design §2.4.7, §2.4.10 (CPFW registers), §2.6 (kept over RESET).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p017 (P2, branch p2-cpu); `sim/tb/atg_cpu_fw_tb.v` passes.  p017 spec
+changes: the HCR layout (MBOX at 0x150, agreed with Q1), STATUS [3] STOPPED and [4] LOADING, the
+PARK handshake for HALT, the reset rules (kept registers without reset), LOAD also while the core
+is held in reset.

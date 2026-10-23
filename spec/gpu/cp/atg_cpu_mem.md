@@ -59,13 +59,18 @@ One access per port per cycle, read latency 1.  BRAM36: IMEM 8 + DMEM 4 at the d
 ## 7. Corner cases and errors
 
 - Addresses beyond the size wrap (the core faults fetches outside IMEM before they get here).
+- Reads are read-first (a write returns the old word); each read output holds until the next
+  enabled read of its port (atg_cpu_core relies on this for i_rdata).
+- The two ports of one RAM writing (or one writing, one reading) the same word in the same cycle
+  is undefined; the users never do it (the DMA writes IMEM only with the core in reset, and the
+  firmware does not touch a DMEM buffer while its DMA runs).
 
 ## 8. What the TB checks
 
 `sim/tb/atg_cpu_mem_tb.v` prints, in this order:
 
+- `PASS atg_cpu_mem.init` — the init files appear in IMEM and DMEM (checked first, before writes)
 - `PASS atg_cpu_mem.ports` — the three ports read and write independently; byte enables work
-- `PASS atg_cpu_mem.init` — the init files appear in IMEM and DMEM
 - `PASS atg_cpu_mem` at the end.
 
 ## 9. References
@@ -74,4 +79,6 @@ design §2.4.7 (IMEM 32 KiB, DMEM 16 KiB, $readmemh, CPFW reload).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p017 (P2, branch p2-cpu); `sim/tb/atg_cpu_mem_tb.v` passes (IMEM 64 /
+DMEM 32 words with `sim/tb/cpu/mem_init_*.hex`).  p017 spec changes: §7 (read-first, held output,
+same-word collisions), §8 order.
