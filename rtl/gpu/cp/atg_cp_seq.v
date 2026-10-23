@@ -362,8 +362,13 @@ module atg_cp_seq #(
 					if (p == 8'd2)
 						a2 <= in_data;
 					p <= p + 8'd1;
-					if (p + 8'd1 == n)
+					/* The last payload word reaches the blocks a cycle later
+					 * (atg_cp registers the STATE broadcast), so the kick
+					 * waits a cycle (settle). */
+					if (p + 8'd1 == n) begin
 						st <= Q_EXEC;
+						settle <= 1'b1;
+					end
 				end
 			Q_EXEC:
 				if (exec_go) begin
