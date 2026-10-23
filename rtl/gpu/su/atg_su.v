@@ -107,6 +107,7 @@ module atg_su #(
 	output wire [511:0] ex_color,
 	output wire [127:0] ex_depth,
 	output wire ex_last,
+	input wire [15:0] ex_next,
 	/* AMB client port (design §4.1) */
 	output wire d_req_valid,
 	input wire d_req_ready,
@@ -582,6 +583,7 @@ module atg_su #(
 		.x_info(x_info), .x_ready(exp_ready),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
+		.ex_next(ex_next),
 		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
 		.pt_ok(pt_ok), .pt_take(vl_gnt), .pt_base(vl_ptbase),

@@ -204,7 +204,16 @@ module atg_zybo_2d (
 		.m_rresp(hp_rresp),
 		.m_rlast(hp_rlast),
 		.m_rvalid(hp_rvalid),
-		.m_rready(hp_rready)
+		.m_rready(hp_rready),
+		/* WS288 p023: nothing outside the GPU here. */
+		.xr_wr(), .xr_waddr(), .xr_wdata(), .xr_wstrb(), .xr_rd(), .xr_raddr(),
+		.xr_rdata(32'd0),
+		.x_req_valid(1'b0), .x_req_ready(), .x_req_write(1'b0), .x_req_line(27'd0),
+		.x_req_be(32'd0), .x_req_wdata(256'd0), .x_req_tag(8'd0),
+		.x_rsp_valid(), .x_rsp_write(), .x_rsp_tag(), .x_rsp_rdata(), .x_rsp_error(),
+		.x_vsync(1'b0),
+		.j_wr(1'b0), .j_waddr(17'd0), .j_wdata(32'd0), .j_wstrb(4'd0), .j_rd(1'b0),
+		.j_raddr(17'd0), .j_rdata(), .j_busy()
 	);
 
 	reg [25:0] beat = 26'd0;
