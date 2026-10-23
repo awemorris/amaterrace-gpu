@@ -11,13 +11,13 @@
  * UOP_FIFO, STATE read, FENCE_LAST, cycle counter, RESULT, interrupt), and
  * the sub-bus to atg_cpu_dma and atg_cpu_fw.
  *
- * Decode of d_addr: 0x0001_xxxx DMEM (a load answers the next cycle with
- * m_rdata, a store at once); 0xF000_00xx the window, word index d_addr[7:2]
- * (whole words; d_be is ignored): 0x00-0x0F this module's registers
- * (answer at once, except STATE_DATA one cycle later and UOP/UOP_LAST
- * while the FIFO is full: wait, stall = 1), 0x10-0x3F the sub-bus
- * (one-cycle sb_we/sb_re, read data at once); anything else answers at
- * once with 0 and drops a store.
+ * Every access is answered (d_ready) the cycle after it is taken; a
+ * UOP/UOP_LAST write waits while the FIFO is full (stall = 1).  Decode of
+ * d_addr: 0x0001_xxxx DMEM (m_* in the cycle it is taken, the load data
+ * is m_rdata in the answer cycle); 0xF000_00xx the window, word index
+ * d_addr[7:2] (whole words; d_be is ignored): 0x00-0x0F this module's
+ * registers, 0x10-0x3F the sub-bus (one-cycle sb_we/sb_re); anything
+ * else answers with 0 and drops a store.
  *
  * Class V packet: PKT_INFO[31] = v_valid until DONE (then 0 until v_valid
  * falls); reading PKT_INFO with [31] = 1 takes the packet (its interrupt
@@ -97,12 +97,15 @@ module atg_cpu_win #(
 
 	localparam [UOP_DEPTH_LOG2:0] DEPTH = 1 << UOP_DEPTH_LOG2;
 
-	/* Access FSM: IDLE, or one wait cycle for a DMEM load or STATE_DATA. */
+	/* Access FSM: IDLE takes the access (and waits there while a UOP write
+	 * finds the FIFO full), ACK answers it one cycle later from registers
+	 * (d_ready never depends on d_addr in the same cycle: timing). */
 	localparam S_IDLE = 1'b0;
-	localparam S_WAIT1 = 1'b1;
+	localparam S_ACK = 1'b1;
 
 	reg state;
-	reg w_state;	/* the waiting read is STATE_DATA (else DMEM) */
+	reg a_dmem;	/* the access was a DMEM one: data from m_rdata */
+	reg [31:0] rd_q;	/* read data of a window or unmapped access */
 
 	wire in_dmem = d_addr[31:16] == 16'h0001;
 	wire in_win = d_addr[31:8] == 24'hF0_0000;
@@ -154,29 +157,30 @@ module atg_cpu_win #(
 	assign sb_idx = idx;
 	assign sb_wdata = d_wdata;
 
-	/* Ready: one wait for DMEM loads and STATE_DATA, UOP waits while full. */
-	wire need_wait = !d_write && (in_dmem || (own && idx == W_STATE_DATA));
+	assign d_ready = state == S_ACK;
+	always @(*)
+		d_rdata = a_dmem ? m_rdata : rd_q;
 
-	assign d_ready = d_valid && (state == S_WAIT1 || (!need_wait && !stall));
+	/* Read data of the access being taken. */
+	reg [31:0] rdata;
 
 	always @(*) begin
-		d_rdata = 32'd0;
-		if (state == S_WAIT1)
-			d_rdata = w_state ? st_rdata : m_rdata;
-		else if (sub)
-			d_rdata = dma_rdata | fw_rdata;
+		rdata = 32'd0;
+		if (sub)
+			rdata = dma_rdata | fw_rdata;
 		else if (own)
 			case (idx)
-			W_PKT_ADDR: d_rdata = v_addr;
-			W_PKT_DWORDS: d_rdata = {16'd0, v_dwords};
-			W_PKT_INFO: d_rdata = {pkt, 23'd0, v_tag};
-			W_UOP_FREE: d_rdata = {{(31 - UOP_DEPTH_LOG2){1'b0}}, DEPTH - f_count};
-			W_STATE_IDX: d_rdata = {23'd0, st_idx};
-			W_FENCE_LAST: d_rdata = fence_last;
-			W_CYCLE: d_rdata = cycle;
-			W_IRQ: d_rdata = {29'd0, cause};
-			W_IRQ_EN: d_rdata = {29'd0, irq_en};
-			default: d_rdata = 32'd0;
+			W_PKT_ADDR: rdata = v_addr;
+			W_PKT_DWORDS: rdata = {16'd0, v_dwords};
+			W_PKT_INFO: rdata = {pkt, 23'd0, v_tag};
+			W_UOP_FREE: rdata = {{(31 - UOP_DEPTH_LOG2){1'b0}}, DEPTH - f_count};
+			W_STATE_IDX: rdata = {23'd0, st_idx};
+			W_STATE_DATA: rdata = st_rdata;
+			W_FENCE_LAST: rdata = fence_last;
+			W_CYCLE: rdata = cycle;
+			W_IRQ: rdata = {29'd0, cause};
+			W_IRQ_EN: rdata = {29'd0, irq_en};
+			default: rdata = 32'd0;
 			endcase
 	end
 
@@ -186,7 +190,8 @@ module atg_cpu_win #(
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
-			w_state <= 1'b0;
+			a_dmem <= 1'b0;
+			rd_q <= 32'd0;
 			st_idx <= 9'd0;
 			cycle <= 32'd0;
 			irq_en <= 3'd0;
@@ -202,9 +207,10 @@ module atg_cpu_win #(
 			ev_result <= 1'b0;
 			case (state)
 			S_IDLE:
-				if (acc && need_wait) begin
-					state <= S_WAIT1;
-					w_state <= !in_dmem;
+				if (acc && !stall) begin
+					state <= S_ACK;
+					a_dmem <= in_dmem && !d_write;
+					rd_q <= d_write ? 32'd0 : rdata;
 				end
 			default:
 				state <= S_IDLE;

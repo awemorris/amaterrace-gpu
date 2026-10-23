@@ -210,7 +210,9 @@ module atg_cpu_core (
 	wire [31:0] md_y;
 
 	/* Faults of the instruction in E. */
-	wire [1:0] ea = alu_y[1:0];
+	/* The data address has its own adder (not through the ALU's result mux: timing). */
+	wire [31:0] ea_full = rs1 + (is_st ? imm_s : imm_i);
+	wire [1:0] ea = ea_full[1:0];
 	wire mis_mem = is_mem && (f3[1:0] == 2'd2 ? ea != 2'd0 :
 		f3[1:0] == 2'd1 ? ea[0] : 1'b0);
 	wire mis_jump = taken && target[1:0] != 2'd0;
@@ -249,7 +251,7 @@ module atg_cpu_core (
 	/* Data port. */
 	assign d_valid = ok && is_mem;
 	assign d_write = is_st;
-	assign d_addr = alu_y;
+	assign d_addr = ea_full;
 
 	always @(*) begin
 		case (f3[1:0])

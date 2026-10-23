@@ -162,7 +162,7 @@ module atg_cpu_win_tb;
 		/* decode */
 		e0 = errors;
 		access(1, 32'h0001_0100, 32'h1234_5678);
-		expect("dmem store lat", lat, 1);
+		expect("dmem store lat", lat, 2);
 		access(0, 32'h0001_0100, 0);
 		expect("dmem load", rd, 32'h1234_5678);
 		expect("dmem load lat", lat, 2);
@@ -172,7 +172,7 @@ module atg_cpu_win_tb;
 		access(1, WIN + 4 * 6'h10, 32'hAB);	/* DMA_AMB */
 		expect("sb idx", last_sb_idx, 6'h10);
 		expect("sb data", last_sb_data, 32'hAB);
-		expect("sb lat", lat, 1);
+		expect("sb lat", lat, 2);
 		access(0, WIN + 4 * 6'h13, 0);
 		expect("sb dma read", rd, 32'h0D13);
 		access(0, WIN + 4 * 6'h22, 0);
@@ -183,7 +183,7 @@ module atg_cpu_win_tb;
 		access(0, WIN + 4 * 6'h0A, 0);
 		n = rd;
 		access(0, WIN + 4 * 6'h0A, 0);
-		if (rd - n < 1 || rd - n > 3) begin
+		if (rd - n < 2 || rd - n > 4) begin
 			$display("FAIL CYCLE %0d then %0d", n, rd);
 			errors = errors + 1;
 		end
@@ -197,7 +197,7 @@ module atg_cpu_win_tb;
 		access(1, 32'hF000_0100, 32'h55);
 		access(0, 32'h8000_0000, 0);
 		expect("unmapped", rd, 0);
-		expect("unmapped lat", lat, 1);
+		expect("unmapped lat", lat, 2);
 		access(0, WIN + 4 * 6'h0E, 0);
 		expect("own unused", rd, 0);
 		expect("m_accesses 2", m_accesses, 3);
