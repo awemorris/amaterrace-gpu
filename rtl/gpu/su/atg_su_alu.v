@@ -11,8 +11,10 @@
  * min/max/andn/orn/xnor, sel (bitwise), lui/movi; results on the short
  * pipeline.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_alu.md.
+ * Takes every group of a uop whose unit is ALU (x_ready is always 1) and
+ * presents its result on s_* exactly SHORT_LAT cycles after x_valid, in
+ * order.  Operand b is the immediate when OP bit ATG_ALU_IMMB is set.
+ * s_lanes = the EXEC lanes of the group; lanes outside are not written.
  */
 
 `timescale 1ns / 1ps
@@ -51,19 +53,79 @@ module atg_su_alu #(
 	output wire [NPHYS*32-1:0] s_data,
 	output wire [NPHYS-1:0] s_lanes
 );
-	/* spec/gpu/su/atg_su_alu.md */
-	assign x_ready = 1'd0;
-	assign s_valid = 1'd0;
-	assign s_warp = {WARP_W{1'b0}};
-	assign s_grp = {GRP_W{1'b0}};
-	assign s_rd = 7'd0;
-	assign s_data = {(NPHYS*32){1'b0}};
-	assign s_lanes = {NPHYS{1'b0}};
+`include "atg_su_uop.vh"
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, x_valid, x_warp, x_grp, x_last, x_sbe, x_pc, x_uop, x_a, x_b, x_c, x_mask,
-		x_info, (NWARPS != 0), (SHORT_LAT != 0)};
+	localparam DW = NPHYS * 32;
+	/* One pipeline entry: {valid, warp, grp, rd, lanes, data}. */
+	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS + DW;
+
+	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_ALU && x_uop[ATG_UOP_WRD];
+	wire [4:0] op = x_uop[ATG_UOP_OP +: 5];
+	wire immb = x_uop[ATG_UOP_OP + ATG_ALU_IMMB];
+	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
+
+	function [31:0] alu;
+		input [4:0] o;
+		input [31:0] a, b, c, i;
+		begin
+			case (o)
+			ATG_ALU_ADD: alu = a + b;
+			ATG_ALU_SUB: alu = a - b;
+			ATG_ALU_SLL: alu = a << b[4:0];
+			ATG_ALU_SLT: alu = {32{$signed(a) < $signed(b)}};
+			ATG_ALU_SLTU: alu = {32{a < b}};
+			ATG_ALU_XOR: alu = a ^ b;
+			ATG_ALU_SRL: alu = a >> b[4:0];
+			ATG_ALU_SRA: alu = $unsigned($signed(a) >>> b[4:0]);
+			ATG_ALU_OR: alu = a | b;
+			ATG_ALU_AND: alu = a & b;
+			ATG_ALU_MIN: alu = $signed(a) < $signed(b) ? a : b;
+			ATG_ALU_MAX: alu = $signed(a) < $signed(b) ? b : a;
+			ATG_ALU_MINU: alu = a < b ? a : b;
+			ATG_ALU_MAXU: alu = a < b ? b : a;
+			ATG_ALU_ANDN: alu = a & ~b;
+			ATG_ALU_ORN: alu = a | ~b;
+			ATG_ALU_XNOR: alu = ~(a ^ b);
+			ATG_ALU_SEL: alu = (a & b) | (~a & c);
+			ATG_ALU_MOVI: alu = i;
+			default: alu = 32'd0;
+			endcase
+		end
+	endfunction
+
+	reg [DW-1:0] y;
+	integer l;
+	always @(*) begin
+		for (l = 0; l < NPHYS; l = l + 1)
+			y[l*32 +: 32] = alu(op, x_a[l*32 +: 32], immb ? imm : x_b[l*32 +: 32],
+				x_c[l*32 +: 32], imm);
+	end
+
+	/* SHORT_LAT stages; stage 0 is registered from x_*. */
+	reg [EW-1:0] pipe [0:SHORT_LAT-1];
+	integer k;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			for (k = 0; k < SHORT_LAT; k = k + 1)
+				pipe[k] <= {EW{1'b0}};
+		end else begin
+			pipe[0] <= {mine, x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0], y};
+			for (k = 1; k < SHORT_LAT; k = k + 1)
+				pipe[k] <= pipe[k-1];
+		end
+	end
+
+	wire [EW-1:0] o = pipe[SHORT_LAT-1];
+	assign s_valid = o[EW-1];
+	assign s_warp = o[EW-2 -: WARP_W];
+	assign s_grp = o[EW-2-WARP_W -: GRP_W];
+	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];
+	assign s_lanes = o[DW +: NPHYS];
+	assign s_data = o[DW-1:0];
+	assign x_ready = 1'b1;
+
+	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
+		(NWARPS != 0)};
 endmodule
 
 `default_nettype wire

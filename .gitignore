@@ -12,3 +12,5 @@
 obj_dir/
 # Editor backups.
 *~
+# Python byte code.
+__pycache__/
