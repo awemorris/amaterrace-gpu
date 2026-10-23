@@ -24,8 +24,9 @@
  * HALT quiesces at once (the blocks freeze at their next memory access,
  * the p003 choice): HALTED waits only for memory idle and the ring's
  * packet boundary.  quiesce is 1 in HALTING, HALTED, FAULTED and the RESET
- * order.  The watchdog counts cycles with cmd_active while WDT_EN; at
- * WDT_CYCLES it is a fault of kind 4 (and ev_wdt).  The hardware never
+ * order.  The watchdog counts cycles with cmd_active while WDT_EN, except
+ * those with wdt_hold (the count pauses); at WDT_CYCLES it is a fault of
+ * kind 4 (and ev_wdt).  The hardware never
  * resets itself.
  *
  * Faults, first one wins (priority in one cycle: the MC, this module's own
@@ -65,6 +66,7 @@ module atg_cp_ctl #(
 	input wire ring_empty,
 	input wire ring_busy,
 	input wire cmd_active,
+	input wire wdt_hold,	/* p017: the count pauses (the CPU waits on its FIFO or memory) */
 	input wire replay_busy,
 	input wire mc_fault,
 	input wire [7:0] mc_fault_client,
@@ -235,10 +237,12 @@ module atg_cp_ctl #(
 				ap_limit <= ((ap_limit & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & AP_MASK;
 
 			/* The watchdog. */
-			if (ctrl_wdt_en && cmd_active && !faulted)
-				wdt_count <= wdt_count + 32'd1;
-			else
+			if (ctrl_wdt_en && cmd_active && !faulted) begin
+				if (!wdt_hold)
+					wdt_count <= wdt_count + 32'd1;
+			end else begin
 				wdt_count <= 32'd0;
+			end
 
 			/* AXI_STUCK: quiesced for 4 * WDT_CYCLES without AXI_IDLE. */
 			if (quiesce && !mc_idle) begin

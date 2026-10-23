@@ -39,6 +39,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ring_empty` | in | 1 | RING_EMPTY. |
 | `ring_busy` | in | 1 | The ring is inside a packet: HALTING waits for it to be 0 (a packet boundary). |
 | `cmd_active` | in | 1 | The watchdog counts while 1. |
+| `wdt_hold` | in | 1 | The count pauses while 1 (p017: the CPU waits on its full µop FIFO or on memory, design §2.4.7). |
 | `replay_busy` | in | 1 | atg_cp_state's replay after the RESET pulse: RESETTING lasts while 1. |
 | `mc_fault` | in | 1 | Aperture/AXI fault pulse from the MC. |
 | `mc_fault_client` | in | 8 | Its client. |
@@ -64,7 +65,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `aperture_base` | out | 32 | APERTURE_BASE (0x060), line-aligned, written only when open, kept over RESET. |
 | `aperture_limit` | out | 32 | APERTURE_LIMIT (0x064), the same. |
 
-37 ports.
+38 ports.
 
 ## 4. Behaviour
 
@@ -88,8 +89,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 - First-fault priority in one cycle: the MC, KICK (6), KICK absent (2), locked (7), the watchdog (4),
   then src 0..NSRC-1.  FAULT_INFO of src k: {tag, SRC_BLOCK[k], kind, 4'b0, SRC_CLIENT[k]}; of KICK,
   locked and watchdog: {0, 0, kind, 0, 0}; of the MC: {0, client, 1, 3'b0, write, client}.  AXI_STUCK after 4 × WDT_CYCLES waiting for mc_idle.
-- Watchdog: when WDT_EN, a counter of cycles with `cmd_active`; reset when cmd_active falls; at
-  WDT_CYCLES → fault kind 4 and ev_wdt.
+- Watchdog: when WDT_EN, a counter of cycles with `cmd_active` and not `wdt_hold`; reset when
+  cmd_active falls, kept while wdt_hold; at WDT_CYCLES → fault kind 4 and ev_wdt.
 
 ## 5. State machine
 

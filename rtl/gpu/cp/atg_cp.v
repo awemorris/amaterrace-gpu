@@ -199,7 +199,8 @@ module atg_cp #(
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_ctl_rdata),
 		.mc_idle(mc_idle), .mem_ready(mem_ready),
 		.busy_in({busy_ext[7:2], blt_busy, s_seq_busy || s_ring_busy || s_dbg_busy}),
-		.ring_empty(s_ring_empty), .ring_busy(s_ring_busy), .cmd_active(s_cmd_active),
+		.ring_empty(s_ring_empty), .ring_busy(s_ring_busy), .cmd_active(s_cmd_active || v_valid),
+		.wdt_hold(!s_cmd_active && cpu_stall),
 		.replay_busy(s_replay_busy),
 		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
 		.mc_fault_write(mc_fault_write),
@@ -363,7 +364,7 @@ module atg_cp #(
 		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
 	);
 
-	wire unused_ok = &{1'b0, cpu_stall, busy_ext[1:0], s_i_rsp_tag};
+	wire unused_ok = &{1'b0, busy_ext[1:0], s_i_rsp_tag};
 endmodule
 
 `default_nettype wire

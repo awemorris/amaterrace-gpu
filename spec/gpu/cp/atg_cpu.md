@@ -149,4 +149,5 @@ design §2.4.7, §2.4.8, §2.4.10.
 
 Wiring written in WS288 p023; the children implemented in WS288 p017 (P2, branch p2-cpu), with
 `sim/tb/atg_cpu_tb.v`.  p017 spec changes: window IRQ_EN (0x0D), FW_STATUS [16] PARK, the CPFW HCR
-layout (MBOX0-3 at 0x150, see atg_cpu_fw).
+layout (MBOX0-3 at 0x150, see atg_cpu_fw).  With the firmware (fw/cp/, p017 part 2):
+`sim/tb/atg_top_fw_tb.v` runs atg_top with HAS_CPU and the firmware images (spec/gpu/cp/atg_cp.md §8).
