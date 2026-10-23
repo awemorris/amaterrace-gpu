@@ -192,6 +192,19 @@ module atg_top_raster_harness #(
 		finished = 1'b1;
 	end
 
+
+	/* Assert: DRAW_RAW kicks the clip only after all nine payload words have
+	 * reached it (the CP registers the STATE broadcast; WS288 p007 found the
+	 * kick a cycle early, the third vertex's z still unwritten). */
+	integer k9;
+	always @(posedge clk)
+		if (dut.g_rx.rx.clip.raw_kick)
+			for (k9 = 0; k9 < 9; k9 = k9 + 1)
+				if (^dut.g_rx.rx.clip.rw[k9] === 1'bx) begin
+					errors = errors + 1;
+					$display("FAIL atg_top_raster(%0s): DRAW_RAW kicked with word %0d unwritten", NAME, k9);
+				end
+
 	task check;
 		input [31:0] addr;
 		input [31:0] want;
