@@ -6,12 +6,17 @@
  */
 
 /*
- * atg_su_rf: The SU's register file: NWARPS × NREGS × 32 lanes × 32 bits
- * in block RAM, three copies for three reads per cycle (design §3.5), one
- * write port (from atg_su_wb), banked per physical lane.
+ * atg_su_rf: The SU register file (design §3.5): three copies of
+ * NWARPS × NREGS × 32 lanes × 32 bits so that three sources are read in
+ * one cycle, one bank per physical lane (NPHYS banks, each holding
+ * 32/NPHYS architectural lanes).
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_rf.md.
+ * Write: w_en writes register w_reg of lane group w_grp of warp w_warp in
+ * the lanes of w_lanes, in every copy.  Read: r_en reads r_reg1/2/3 of
+ * one lane group; r_data1/2/3 are valid the cycle after r_en and hold
+ * until the next r_en.  A read of a register written in the same cycle
+ * returns the old value (no bypass).  Address = {warp, reg, grp}.  The
+ * contents are not reset.
  */
 
 `timescale 1ns / 1ps
@@ -44,15 +49,54 @@ module atg_su_rf #(
 	output wire [NPHYS*32-1:0] r_data2,
 	output wire [NPHYS*32-1:0] r_data3
 );
-	/* spec/gpu/su/atg_su_rf.md */
-	assign r_data1 = {(NPHYS*32){1'b0}};
-	assign r_data2 = {(NPHYS*32){1'b0}};
-	assign r_data3 = {(NPHYS*32){1'b0}};
+	localparam G = 32 / NPHYS;	/* lane groups per warp */
+	localparam DEPTH = NWARPS * NREGS * G;
+	localparam A_W = $clog2(DEPTH);
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, w_en, w_warp, w_grp, w_reg, w_data, w_lanes, r_en, r_warp, r_grp, r_reg1,
-		r_reg2, r_reg3, (NWARPS != 0), (NREGS != 0)};
+	function [A_W-1:0] addr;
+		input [WARP_W-1:0] w;
+		input [5:0] r;
+		input [GRP_W-1:0] g;
+		reg [31:0] a;
+		begin
+			a = ({{(32-WARP_W){1'b0}}, w} * NREGS + {26'd0, r} % NREGS) * G +
+				{{(32-GRP_W){1'b0}}, g} % G;
+			addr = a[A_W-1:0];
+		end
+	endfunction
+
+	wire [A_W-1:0] wa = addr(w_warp, w_reg, w_grp);
+	wire [A_W-1:0] ra1 = addr(r_warp, r_reg1, r_grp);
+	wire [A_W-1:0] ra2 = addr(r_warp, r_reg2, r_grp);
+	wire [A_W-1:0] ra3 = addr(r_warp, r_reg3, r_grp);
+
+	/* One bank per lane and copy: a simple dual-port RAM (one write, one read port). */
+	genvar l;
+	generate
+		for (l = 0; l < NPHYS; l = l + 1) begin : lane
+			reg [31:0] m1 [0:DEPTH-1];
+			reg [31:0] m2 [0:DEPTH-1];
+			reg [31:0] m3 [0:DEPTH-1];
+			reg [31:0] q1, q2, q3;
+			always @(posedge clk) begin
+				if (w_en && w_lanes[l]) begin
+					m1[wa] <= w_data[l*32 +: 32];
+					m2[wa] <= w_data[l*32 +: 32];
+					m3[wa] <= w_data[l*32 +: 32];
+				end
+				if (r_en) begin
+					q1 <= m1[ra1];
+					q2 <= m2[ra2];
+					q3 <= m3[ra3];
+				end
+			end
+			assign r_data1[l*32 +: 32] = q1;
+			assign r_data2[l*32 +: 32] = q2;
+			assign r_data3[l*32 +: 32] = q3;
+		end
+	endgenerate
+
+	wire unused_ok = &{1'b0, rst_n};
 endmodule
 
 `default_nettype wire
