@@ -77,16 +77,26 @@ module atg_rop_blend #(
 		end
 	endfunction
 
-	/* round(x / 255) for x <= 2 x 255 x 255 (exact: (x + 128) x 65793 >> 24). */
+	/* round(x / 255) for x <= 2 x 255 x 255 without a wide adder:
+	 * y = x + 128; the low bytes give only a carry,
+	 * c = (y[7:0] + y[15:8] + y[18:16]) >> 8, and the result is
+	 * (y >> 8) + (y >> 16) + c.  Equal to (y + (y >> 8) + (y >> 16)) >> 8,
+	 * checked exact against round(x / 255) over the whole range on
+	 * 2026-10-24 (the earlier (x + 128) x 65793 >> 24 used 36-bit adds). */
+	/* verilator lint_off UNUSEDSIGNAL */
 	function [8:0] div255;
 		input [17:0] x;
-		reg [35:0] y;
+		reg [18:0] y;
+		reg [9:0] lo;
+		reg [10:0] hi;
 		begin
-			y = {18'd0, x} + 36'd128;
-			y = (y << 16) + (y << 8) + y;
-			div255 = y[32:24];
+			y = {1'b0, x} + 19'd128;
+			lo = {2'd0, y[7:0]} + {2'd0, y[15:8]} + {7'd0, y[18:16]};
+			hi = y[18:8] + {8'd0, y[18:16]} + {9'd0, lo[9:8]};
+			div255 = hi[8:0];
 		end
 	endfunction
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	function [7:0] factor;
 		input [3:0] f;
