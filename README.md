@@ -32,4 +32,4 @@ Shader Architecture:
 - Register File: xxx
 ```
 
-Synthesis goal is 200MHz on KC705 board.
+Synthesis goal is 200MHz on KC705 board and 800MHz for ASIC processes.
