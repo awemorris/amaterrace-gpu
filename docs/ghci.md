@@ -410,9 +410,14 @@ MEM_READY there.  Offsets from the capability's register offset:
 | 0x54 | FRAME_COUNT | R | Vsync count, cleared by the controller's reset |
 | 0x58 | PCLK_SEL | RW | Pixel clock choice among the controller's modes |
 | 0x60..0x6C | I2C_CTRL, I2C_DATA, I2C_STATUS | RW | A small I2C master for an external transmitter (DC_CAPS[2]) |
+| 0x70..0x7C | vendor | R | Implementation-defined (Amaterrace: 0x70 SCAN_SUM, 0x74 SCAN_WORDS, the sum and number of the pixel words read in the last frame) |
 
 The controller has its own reset (its CTRL.RESET) and is not reset by the
-GPU's.  To detach, the driver clears ENABLE and waits for STATUS.idle.
+GPU's.  To detach, the driver clears ENABLE and waits for STATUS.idle.  The
+timing, FB_STRIDE, FB_SIZE, FORMAT and PCLK_SEL are changed only with
+ENABLE = 0.  FB_NEXT written while ENABLE = 0 takes effect at once (there
+is no vsync); STATUS.underflow is cleared when ENABLE goes from 0 to 1.
+A frame starts with a vsync after ENABLE.
 
 13. Memory model
 ----------------
@@ -439,6 +444,15 @@ accepts only the major versions it knows.
 
 Appendix: Amaterrace's implementation status
 --------------------------------------------
+
+WS288 p005 (bitstream 2, "DC", DEVICE "ATDC", DC_VERSION 0.1): the display
+controller alone in the ZYBO's window (header at 0x000, DISP at 0x200,
+IRQ_F2P[0]), its memory read on S_AXI_HP1.  640x480 (PCLK_SEL 0, 25.185
+MHz) and 1280x720 (PCLK_SEL 1, 74.219 MHz), formats BGRA8, RGBA8 and
+RGB565, TEST_PATTERN (eight colour bars and a white border), flips at
+vsync, the VSYNC, UNDERFLOW and FLIP_DONE interrupts, VGA (5-6-5) and
+HDMI (TMDS, OSERDESE2) outputs at the same time (CTRL.OUTPUT does not
+switch anything).  Measured on the ZYBO: 1.98k LUTs.
 
 WS288 p004 (DEVICE_VERSION 0.3): the CP with the ring (CAPS[0] = 1, CAPS2 =
 one ring): the packet envelope and every standard micro-op of section 9
