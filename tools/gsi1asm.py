@@ -509,7 +509,7 @@ def dec_table(path, seed=1):
         vec.append(rnd.getrandbits(64))
     with open(path, "w") as f:
         for w in vec:
-            f.write("%016x %026x %026x\n" % (w, decode(w, CFGS[0]), decode(w, CFGS[1])))
+            f.write("%016x%026x%026x\n" % (w, decode(w, CFGS[0]), decode(w, CFGS[1])))
     return len(vec)
 
 

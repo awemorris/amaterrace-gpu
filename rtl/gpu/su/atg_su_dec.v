@@ -61,7 +61,7 @@ module atg_su_dec #(
 	wire [31:0] hi = {{12{w1[31]}}, w1[31:22], 10'd0} << 2;
 	wire [31:0] imm_i = {{20{w0[31]}}, w0[31:20]} + hi;
 	wire [31:0] imm_s = {{20{w0[31]}}, w0[31:25], w0[11:7]} + hi;
-	wire [31:0] imm_b = {{20{w0[31]}}, w0[7], w0[30:25], w0[11:8]} + hi;
+	wire [31:0] imm_b = {{21{w0[31]}}, w0[7], w0[30:25], w0[11:8]} + hi;
 	wire [31:0] imm_u = {w0[31:12], w1[13:2]};
 	/* rm: 0-4 and 7 (no CSR: dynamic is RNE); fround: 0-3. */
 	wire rm_ok = f3 != 3'd5 && f3 != 3'd6;
