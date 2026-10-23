@@ -22,17 +22,19 @@
  * receiver takes rsp_valid when it comes.  R is always ready; B waits for
  * a cycle in which no read response is made.
  *
- * Up to OUTSTANDING reads and OUTSTANDING writes are in flight.  A write
+ * Up to 2^OUTSTANDING_LOG2 reads and as many writes are in flight.  A write
  * is accepted when its address and all of its beats can go out, and its
  * beats follow from a line buffer, so W never waits for a request.
  *
  * Quiesce: while halt is 1 no new request is accepted (req_ready is 0);
  * an accepted write still sends all of its beats and every outstanding
- * burst still gets its response.  idle is 1 when nothing is accepted and
- * unanswered.  The AXI signals follow AXI4; an AXI3 port (a Zynq HP port)
- * takes the low four bits of m_awlen/m_arlen and the low two of
- * m_awsize/m_arsize, and m_wid is 0.  AxCACHE is 0011 (normal,
- * non-cacheable, bufferable), AxPROT 000, AxBURST INCR.
+ * burst still gets its response.  idle is 1 when every accepted request's
+ * response has been delivered (rsp_valid included).
+ *
+ * The AXI signals follow AXI4; an AXI3 port (a Zynq HP port) takes the low
+ * four bits of m_awlen/m_arlen and the low two of m_awsize/m_arsize, and
+ * its WID is 0.  AxCACHE is 0011 (normal, non-cacheable, bufferable),
+ * AxPROT 000, AxBURST INCR.
  */
 
 `timescale 1ns / 1ps
@@ -150,7 +152,7 @@ module am_axi_master #(
 	wire rd_take = req_valid && req_ready && !req_write;
 
 	assign idle = !aw_v && !w_busy && !ar_v && wq_count == {(O + 1){1'b0}} &&
-		rq_count == {(O + 1){1'b0}};
+		rq_count == {(O + 1){1'b0}} && !rsp_valid;
 
 	assign m_awaddr = {aw_line, {LINE_SHIFT{1'b0}}};
 	assign m_awvalid = aw_v;

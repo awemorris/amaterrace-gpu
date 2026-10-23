@@ -30,6 +30,9 @@
  * (both line-aligned; the low bits are ignored) is not executed.  It gets
  * an error response and a one-cycle fault pulse with the client, address
  * and direction; nothing is granted while that response waits to go out.
+ * That error response may come before the responses of the client's
+ * earlier requests (the CP treats the fault as a device fault, quiesces
+ * and waits for RESET).
  *
  * Quiesce: while quiesce is 1 nothing new is granted and axi_idle becomes 1
  * when every granted request is answered.  flush (with quiesce held)
