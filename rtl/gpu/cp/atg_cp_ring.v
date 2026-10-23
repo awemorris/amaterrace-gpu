@@ -128,9 +128,14 @@ module atg_cp_ring #(
 	reg [LA_W-1:0] buf_line;
 	reg [LINE_BYTES*8-1:0] buf_data;
 
-	/* The dword wanted: the header or dword k of the packet. */
-	wire [17:0] want = st == R_N || (st != R_HDR && ret_n) ? cur + {2'd0, k} : cur;
-	wire [31:0] want_addr = base + {12'd0, want, 2'b00};
+	/*
+	 * The dword wanted (the header, or dword k of the packet) as a byte
+	 * address in a register, so that the line compare and the dword's
+	 * select need no adder (the timing path into the sequencer and the
+	 * blocks' state).  A packet never crosses the ring's end.
+	 */
+	reg [31:0] pa;
+	wire [31:0] want_addr = pa;
 	wire [LA_W-1:0] want_line = want_addr[ADDR_W-1:LINE_SHIFT];
 	wire [WS-1:0] want_word = want_addr[LINE_SHIFT-1:2];
 	wire [31:0] want_data = buf_data[{want_word, 5'd0} +: 32];
@@ -168,7 +173,7 @@ module atg_cp_ring #(
 	assign n_last = k == n;
 
 	assign v_valid = st == R_V;
-	assign v_addr = base + {12'd0, cur + 18'd1, 2'b00};
+	assign v_addr = pa + 32'd4;	/* pa is the header's address in R_V */
 	assign v_dwords = n;
 	assign v_tag = tag;
 
@@ -199,6 +204,7 @@ module atg_cp_ring #(
 			rptr <= 18'd0;
 			st <= R_IDLE;
 			ret_n <= 1'b0;
+			pa <= 32'd0;
 			cur <= 18'd0;
 			n <= 16'd0;
 			k <= 16'd0;
@@ -228,6 +234,7 @@ module atg_cp_ring #(
 			R_IDLE:
 				if (go && rptr != wptr) begin
 					cur <= rptr;
+					pa <= base + {12'd0, rptr, 2'b00};
 					step_pend <= 1'b0;
 					st <= R_HDR;
 				end
@@ -258,10 +265,12 @@ module atg_cp_ring #(
 					ret_n <= 1'b1;
 					st <= R_REQ;
 				end else if (n_ready) begin
-					if (k == n)
+					if (k == n) begin
 						st <= R_ADV;
-					else
+					end else begin
 						k <= k + 16'd1;
+						pa <= pa + 32'd4;
+					end
 				end
 			R_V:
 				if (v_done)
