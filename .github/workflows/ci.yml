@@ -39,7 +39,7 @@ jobs:
           if-no-files-found: ignore
 
   openxc7-synth:
-    name: openXC7 synthesis (KC705)
+    name: openXC7 synthesis (GPU core, KC705 shape)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -50,13 +50,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y yosys
 
-      - name: Synthesize the KC705 top (yosys synth_xilinx)
-        run: make oxc-synth
+      - name: Synthesize the GPU core (yosys synth_xilinx)
+        run: make oxc-core
 
       - name: Keep the synthesis log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: openxc7-synth-log
-          path: build/openxc7/*/yosys.log
+          path: |
+            build/openxc7/core/yosys.log
+            build/openxc7/core/stat.txt
           if-no-files-found: ignore
