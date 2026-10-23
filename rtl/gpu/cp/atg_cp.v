@@ -23,10 +23,10 @@
  *
  * The ring, the fence unit and the debug port share MC client 0 through
  * am_amb_mux (priority ring, fence, debug; the requester in tag bits
- * [7:6]).  The MC's quiesce is lifted while that client has a request
- * valid: the MC grants client 0 before all others (HIGH_MASK), so this
- * lets the CP's own accesses (the debug port in HALTED and FAULTED, a ring
- * line or fence already requested) through without letting a block move.
+ * [7:6]).  The MC's quiesce does not hold client 0 (atg_top sets the MC's
+ * QUIESCE_EXEMPT), so the CP's own accesses (the debug port in HALTED and
+ * FAULTED, a ring line or fence already requested) go on while the blocks
+ * are held.
  * rst_n is the board reset; core_rst_n (CTRL.RESET's pulse) resets the
  * ring's pointers, the sequencer, the fence unit, the debug port,
  * IRQ_STATUS and the blocks outside.
@@ -265,8 +265,8 @@ module atg_cp #(
 		.o_rsp_rdata(rsp_rdata), .o_rsp_error(rsp_error)
 	);
 
-	/* The MC stops granting the blocks; the CP's own requests pass. */
-	assign mc_quiesce = s_quiesce && !req_valid;
+	/* The MC holds the blocks' new requests; its client 0 (this) is exempt. */
+	assign mc_quiesce = s_quiesce;
 
 	/* The ring. */
 	wire s_n_valid, s_n_ready, s_n_last;

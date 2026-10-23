@@ -1,12 +1,19 @@
 # atg_cp
 
-RTL: `rtl/gpu/cp/atg_cp.v`. Written from the RTL at amaterrace-gpu main a217bf8 (WS288 p023 part 2); the RTL is authoritative.
-
-**Port list will grow:** in p023 part 1 (P1) `atg_cp` gets more ports (for the new blocks, with constant outputs) and instantiates its planned children (`atg_cp_regs`, `atg_cp_state`, `atg_cp_ring`, `atg_cp_seq`, `atg_cp_fence`, `atg_cp_ctl`, `atg_cp_irq`, `atg_cp_dbg`) as shadow instances; `spec/README.md` (P1) describes that. This spec describes the module as it is at a217bf8; Q1 reconciles the two on merge.
+RTL: `rtl/gpu/cp/atg_cp.v`.  Parent: `atg_top` (instance `cp`).  A **wiring module** (README rule:
+no logic of its own beyond a few `assign`s; exempt from the port and line limits).  Rewritten in
+WS288 p004 from the CP v0 spec (p023 part 2).
 
 ## 1. Purpose and place
 
-The command processor, version 0 (WS288 p003): the host side of GHCI without the ring. It holds the GHCI host control registers (HCR) on the register bus of `am_axi_regs`, the state register file STATE[0..511], the controls of the other blocks (KICK, quiesce, RESET order, aperture), fault capture, interrupts, the PERF capability and the asynchronous debug port (its own AMB client 0). Parent: `atg_top` (instance `cp`). Children: none today (planned split above, design §7.6).
+The command processor: the GHCI host control registers, the state register file, the command ring
+with the class N sequencer, fences, interrupts, faults, the RESET order and the debug port.  Children
+(spec/gpu/cp/): `atg_cp_regs` (register bus, identification, CAPS, EXTCAP, PERF; the HCR snoop bus and
+the STATE alias), `atg_cp_state` (STATE[0..511], broadcast, replay), `atg_cp_ctl` (CTRL/STATUS, CP
+states, KICK, quiesce, RESET order, watchdog, aperture, FAULT_*), `atg_cp_ring`, `atg_cp_seq`,
+`atg_cp_fence`, `atg_cp_irq`, `atg_cp_dbg`, and `am_amb_mux` (ring, fence, dbg behind MC client 0).
+The CPU (`atg_cpu`) is outside, in `atg_top`, connected through the `hcr_*`, `v_*`, `fw_*`,
+`cpu_*` ports.
 
 ## 2. Parameters
 
@@ -15,138 +22,89 @@ The command processor, version 0 (WS288 p003): the host side of GHCI without the
 | `ADDR_W` | 32 | GPU address width | 32 |
 | `LINE_BYTES` | 32 | AMB line size | 32, 64 |
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`); also CAPS[23:20] | 5, 6 |
-| `GCLK_HZ` | 100000000 | Read back as GCLK_HZ | the core clock |
+| `GCLK_HZ` | 100000000 | GCLK_HZ | the core clock |
 | `VENDOR_ID` | 0x414D4154 ("AMAT") | VENDOR_ID | — |
 | `DEVICE_ID` | 0x41544731 ("ATG1") | DEVICE_ID | — |
-| `DEVICE_VERSION` | 0x00000002 (0.2) | DEVICE_VERSION | — |
+| `DEVICE_VERSION` | 0x00000003 (0.3) | DEVICE_VERSION (0.3: p004, CP with the ring) | — |
+| `UNITS` | 8'h03 | Present blocks in STATUS busy-bit order (CP, BLT, VF, RX, ROP, TU, SU, SA); set by `atg_top` from its `HAS_*`/`NSU` | — |
+| `HAS_CPU` | 0 | `atg_cpu` takes class V packets (else they fault, kind 2); CAPS[17], [18]; CPFW in the EXTCAP list | 0, 1 |
+| `HAS_VSYNC` | 0 | A display's vsync reaches the CP: CAPS[10], WAIT_VSYNC | 0, 1 |
 
-Register offsets and fields come from `include/ghci_regs.vh`.
+Derived: CAPS = {8'd0, LS, 0, HAS_CPU, HAS_CPU, 0, state version 1, 4x4 tiles 1, HAS_VSYNC, 0, 0,
+SU ? 5 : 0, 0, UNITS[6], UNITS[1], 1} (ZYBO 2D: 0x00501803); CAPS2 = 1 (one ring); ISA_ID =
+NATIVE_ISA_ID = "GSI1" with an SU, else 0; EXTCAP list: PERF (+ CPFW with the CPU); PERF0 = BLT busy,
+PERF1 = memory busy (PERF_SRC 1, 8, 0xFF, 0xFF).
 
 ## 3. Ports
 
-All in domain `clk`. 39 ports.
+All in domain `clk`.  The CP v0 ports keep their meaning (see the children for the registers); new
+or changed in p004:
 
-| Name | Dir | Width | Meaning, handshake, timing |
+| Name | Dir | Width | Meaning |
 | --- | --- | --- | --- |
-| `clk` | in | 1 | Core clock (`gclk`) |
-| `rst_n` | in | 1 | Board reset of the whole GPU, synchronous active low |
-| `reg_wr`, `reg_waddr`, `reg_wdata`, `reg_wstrb` | in | 1, 17, 32, 4 | Register-bus write: one-cycle pulse per beat (from `am_axi_regs`) |
-| `reg_rd`, `reg_raddr` | in | 1, 17 | Register-bus read pulse and byte offset |
-| `reg_rdata` | out | 32 | Answer, valid in the cycle after `reg_rd` (registered; never waits) |
-| `irq` | out | 1 | Level interrupt: OR(IRQ_STATUS & IRQ_ENABLE) |
-| `mem_ready` | in | 1 | Level, STATUS[12] (ZYBO: 1; KC705: MIG calibration) |
-| `core_rst_n` | out | 1 | Core reset (= `rst_n` and not the RESET pulse cycle). Resets the BLT and the CP's own core registers |
-| `mc_quiesce` | out | 1 | Level: HALT, FAULTED or RESETTING |
-| `mc_flush` | out | 1 | One-cycle pulse in the RESET pulse cycle |
-| `aperture_base`, `aperture_limit` | out | 32 | APERTURE_BASE/LIMIT (line-aligned) |
-| `mc_idle` | in | 1 | Level, the MC's `axi_idle` (STATUS.AXI_IDLE) |
-| `mc_fault` | in | 1 | One-cycle pulse from the MC: an aperture refusal |
-| `mc_fault_client`, `mc_fault_addr`, `mc_fault_write` | in | 8, 32, 1 | Its client, address, direction (valid with the pulse) |
-| `st_we`, `st_idx`, `st_wdata` | out | 1, 9, 32 | One-cycle pulse per accepted STATE write: index and word, for the blocks' shadow copies |
-| `blt_kick` | out | 1 | One-cycle pulse: start the BLT |
-| `blt_busy` | in | 1 | Level, STATUS[1] |
-| `blt_error`, `blt_error_kind` | in | 1, 4 | One-cycle pulse and FAULT_INFO kind from the BLT |
-| `req_valid` / `req_ready` | out / in | 1 | AMB request handshake of client 0 (the debug port); valid held until ready |
-| `req_write`, `req_line`, `req_be`, `req_wdata`, `req_tag` | out | 1, `ADDR_W-LINE_SHIFT`, `LINE_BYTES`, `LINE_BYTES*8`, 8 | The request: the word replicated over the line, the enables of the word; tag 0 |
-| `rsp_valid` | in | 1 | One-cycle pulse, this client's response (no back-pressure) |
-| `rsp_write`, `rsp_rdata`, `rsp_error` | in | 1, `LINE_BYTES*8`, 1 | Response fields |
+| `reg_*` | in/out | — | Register bus from `am_axi_regs`; `reg_rdata` the cycle after `reg_rd` |
+| `irq` | out | 1 | Level interrupt, registered: OR(IRQ_STATUS & IRQ_ENABLE) |
+| `core_rst_n` | out | 1 | Core reset: low for one cycle in the RESET order (the blocks outside) |
+| `mc_quiesce` | out | 1 | `atg_cp_ctl`'s quiesce, lifted while MC client 0 (this module) has a request valid |
+| `mc_flush` | out | 1 | One-cycle pulse with the core reset |
+| `aperture_base/limit` | out | 32 | From `atg_cp_ctl` |
+| `mc_idle`, `mc_fault*` | in | — | From the MC; refusals of client 0 are reported by ring/fence/dbg themselves |
+| `st_we/idx/wdata` | out | 1, 9, 32 | From `atg_cp_state`: every accepted write and the replay |
+| `blt_kick`, `draw_kick`, `cs_kick` | out | 1 | KICK (host, `atg_cp_ctl`) OR the sequencer's µop |
+| `lc_kick`, `raw_kick`, `inv` | out | 1, 1, 4 | From the sequencer |
+| `blt_busy`, `busy_ext[7:2]`, `blt_error*`, `x_fault*` | in | — | Busy levels and fault sources (STATUS, waits, FAULT_INFO) |
+| `req_*`, `rsp_*` | — | AMB | MC client 0 through `am_amb_mux` (requester 0 ring, 1 fence, 2 dbg in tag bits [7:6]); **`rsp_tag` is new in p004** (the mux routes by it) |
+| `hcr_*`, `x_rdata`, `v_*`, `fw_*`, `cpu_st_*`, `cp_fence_last`, `cp_fence_ev`, `cp_halt`, `cp_open`, `cpu_*` | — | — | To and from `atg_cpu` (spec/gpu/cp/atg_cpu.md) |
 
 ## 4. Behaviour
 
-Write decode: HCR at `reg_waddr[16:12]` = 0 (offsets 0x000–0xFFF, `wa = reg_waddr[11:0]`), STATE alias at 0x1000–0x17FF. Writes honour WSTRB (`merge`) except where noted. Reads: HCR from 0x000–0xFFF, STATE from 0x1000–0x17FF, 0 elsewhere (including 0x10000, DISP_KC705).
-
-| Register | RTL behaviour |
-| --- | --- |
-| MAGIC, VERSION, VENDOR_ID, DEVICE_ID, DEVICE_VERSION, GCLK_HZ | Constants. ISA_ID = 0, CAPS2 = 0 |
-| CAPS | `{8'd0, LINE_SHIFT[3:0], 4'd0, 4'd1 (state v1), 4'b1000 ([11] 4x4 tiles), 4'd0, 4'b0010 ([1] BLT)}`; CAPS[0] (ring) = 0. ZYBO 0x00501802 |
-| EXTCAP | 0x100. List: 0x100 = `{0, next 0, ver 1, id PERF}`, 0x104 = 0x110; 0x110..0x11C PERF_SRC0..3 = 1 (BLT busy), 8 (memory), 0xFF, 0xFF |
-| SCRATCH | RW, board reset only |
-| COUNTER | Free-running cycle count, board reset only |
-| CTRL | [0] RUN, [2] HALT written together (byte 0) in the core part; [1] RESET is W1S and starts the RESET order from any state; [4] WDT_EN stored only. Read: `{WDT_EN, 0, HALT, resetting, RUN}`. STEP does nothing |
-| STATUS | [0] dbg busy or resetting, [1] BLT busy, [8] `mc_idle`, [9] faulted, [10] halted, [11] RING_WPTR == 0, [12] `mem_ready`, [13] AXI_STUCK, [14] quiesce, [19:16] CP state; others 0 |
-| IRQ_STATUS | 7 bits, W1C (byte 0). Raised: [1] FAULT (first fault), [4] DBG_DONE (debug response), [5] SOFT (IRQ_SET[5]), [6] HALTED (rising edge of `halted`). [0] FENCE, [2], [3] never raised |
-| IRQ_ENABLE | 7 bits, board reset only |
-| WDT_CYCLES | RW, reset 0x10000000; used only for AXI_STUCK (4 × WDT_CYCLES) |
-| RING_BASE (32-byte aligned), RING_SIZE (clamped 10..20, reset 12), APERTURE_BASE/LIMIT (line-aligned, reset 0) | Written only in IDLE/HALTED; otherwise ignored and a LOCKED fault (kind 7). Board reset only |
-| RING_WPTR, FENCE_LAST | Plain RW, cleared by RESET (core part) |
-| FAULT_ADDR / FAULT_INFO | First fault since reset (see below), cleared by RESET |
-| PERF0 / PERF1 (0x80 / 0x84) | BLT busy cycles / cycles with `!mc_idle`; PERF_CTRL[0] write clears both; board reset only |
-| DBG_ADDR / DBG_DATA / DBG_STATUS | Debug port, below |
-| KICK (0xF00) | [0] BLIT: `blt_kick` if the state is IDLE or HALTED and the BLT is not busy, else KICK fault (kind 6). [1] DRAW or [2] DISPATCH: OPCODE fault (kind 2) |
-| STATE[0..511] (0x1000 + 4i) | 512 × 32 BRAM. A write with all four strobes is taken in IDLE/HALTED unless the index is in the BLT range (< 0x20) while the BLT is busy; then it is written to the BRAM and pulsed on `st_we`. A full write when locked is ignored and a LOCKED fault; a partial-strobe write is ignored silently. Reads come from the BRAM. Kept over RESET |
-
-CP state (`STATUS[19:16]`, derived each cycle, priority order): RESETTING if the RESET order runs; else FAULTED if faulted; else HALTED if HALT and `mc_idle`, HALTING if HALT; else RUNNING if RUN; else IDLE. "Open" states (KICK, STATE, locked registers allowed) are IDLE and HALTED.
-
-Faults: the first of, in priority order in one cycle, (1) an MC refusal of a client other than 0 → FAULT_INFO `{0, block = client, kind 1, 0, write, client}`, FAULT_ADDR = the refused address; (2) `blt_error` → `{0, block 1, kind, 0, 0, client 1}`, FAULT_ADDR 0; (3) KICK fault → kind 6; (4) KICK of an absent unit → kind 2; (5) locked write → kind 7. It sets `faulted` (quiesce until RESET) and IRQ_STATUS.FAULT. Later faults are not recorded.
-
-Debug port: a write to DBG_ADDR (when not busy) sets the word address (4-byte aligned) and starts a read; a write to DBG_DATA (when not busy) stores the value and starts a write of it with its byte strobes to DBG_ADDR. Both set busy and clear error; the request goes to the MC as client 0. The response clears busy, sets DBG_STATUS.error = `rsp_error` (aperture refusal or AXI error; never a device fault), and a read loads DBG_DATA with the addressed word. Writes while busy are ignored.
-
-RESET order (design §1.3): quiesce (the MC stops granting), wait for `mc_idle`, one cycle with `core_rst_n` = 0 and `mc_flush` = 1, then IDLE. AXI_STUCK is set when quiesced for 4 × WDT_CYCLES without `mc_idle`, cleared by the reset pulse.
+- Register map, CP states, ring, fences, faults, RESET: docs/ghci.md §2-§9 and the children's specs.
+- Resets: `rst_n` (board) for regs, ctl, state, the ring's BASE/SIZE, IRQ_ENABLE, the mux;
+  `core_rst_n` (from ctl) for the ring's pointers, seq, fence, dbg, IRQ_STATUS and the blocks.
+- The sequencer's `halt` is driven only in FAULTED and RESETTING (the ring stops at packet boundaries
+  in HALTING/HALTED).
+- STATUS[0] (CP busy) = ring busy, sequencer busy or a debug access; RESETTING sets it too.
+- The STATE replay after the RESET pulse (bug 1 of p023): the blocks' copies of STATE match the
+  STATE that survives RESET (design §2.6).
+- The debug port answers in HALTED and FAULTED (bug 2 of p023) through the quiesce exception above.
 
 ## 5. State machine
 
-RESET sequencer `rs` (the only encoded FSM):
-
-- `RS_NONE` →(CTRL write with [1] RESET)→ `RS_QUIESCE`
-- `RS_QUIESCE` →(`mc_idle`)→ `RS_PULSE`
-- `RS_PULSE` →(always; core reset and MC flush in this cycle)→ `RS_NONE`
-
-The GHCI CP state is derived (§4), not a register. Its transitions as seen by the host: IDLE →(RUN = 1)→ RUNNING; IDLE/RUNNING →(HALT = 1)→ HALTING →(`mc_idle`)→ HALTED →(HALT = 0)→ RUNNING or IDLE; any →(fault)→ FAULTED; any →(RESET)→ RESETTING →(`mc_idle`, pulse)→ IDLE (RUN, HALT cleared). Other per-feature state: debug port idle →(DBG write)→ busy →(response)→ idle; `faulted` flag; `halted_q` for the HALTED edge.
+None of its own (the CP states are in `atg_cp_ctl`).
 
 ## 6. Latency and throughput
 
-- Register read: answer in the cycle after `reg_rd` (HCR mux or BRAM).
-- KICK → `blt_kick` in the same cycle as `reg_wr`.
-- STATE write → `st_we` in the same cycle.
-- Debug access: request valid from the cycle after the write; done with the response (some tens of cycles on the ZYBO).
-- RESET: 2 cycles after `mc_idle`.
-- Fault → `faulted`/IRQ the next cycle; `irq` follows IRQ_STATUS combinationally.
+As the children: register read 1 cycle; KICK → `blt_kick` in the cycle of `reg_wr`; a STATE write →
+`st_we` in the same cycle; the ring one dword per cycle within a line plus one AMB round trip per
+line; RESET: `mc_idle`, 1 pulse cycle, 513 replay cycles.
 
 ## 7. Corner cases and errors
 
-- KICK with both BLIT and DRAW set: the BLT may start and an OPCODE fault is recorded.
-- KICK while the BLT is busy (even in IDLE) is a KICK fault (kind 6), and a full STATE write to the BLT range while busy is a LOCKED fault.
-- In HALTED the MC is quiesced, so a KICK.BLIT is accepted but the blit makes no memory access until HALT is released, and **a debug access in HALTED or FAULTED waits until HALT is released or RESET** (see §10).
-- HALT during a blit: HALTED comes when the MC is idle, with the BLT still busy and frozen; it resumes on HALT = 0 (the TB checks the result).
-- A locked write during RESETTING may record a fault that the reset pulse then clears.
-- If AXI never goes idle, RESET never completes; AXI_STUCK tells the driver.
-- Faults of client 0 (debug) are not device faults.
+- The quiesce exception relies on the MC's `HIGH_MASK` holding client 0 alone at the top (atg_mc.md).
+- A fence or ring request already waiting for a grant when a block faults is granted (it was
+  requested before the fault); the debug port's request waits behind it (priority ring, fence, dbg).
 
 ## 8. What the TB checks
 
-No `sim/tb/atg_cp_tb.v`. Checked through `sim/tb/atg_top_tb.v` (`PASS atg_top`, ZYBO and KC705 shapes) and the Verilator harness (`PASS verilator`): identification, CAPS, DEVICE_VERSION, EXTCAP list and PERF_SRC, 0 at unmapped offsets (0x120, 0xF04, 0x10000); SCRATCH with byte strobes; STATUS at reset; STATE alias write/read and a partial-strobe write ignored; aperture alignment; DBG read, write, read-back, DBG_DONE IRQ, an outside address → DBG_STATUS.error and no FAULT; PERF0/1 count and PERF_CTRL clears; HALT in the middle of a COPY → HALTED with BLT busy → resume, same result; aperture fault → FAULTED, QUIESCED, FAULT_INFO (kind 1, client 1, write), FAULT_ADDR, IRQ and the line, a STATE write while FAULTED (made, but its read-back is compared with mask 0, so not actually checked), RESET → IDLE, FAULT_INFO and IRQ_STATUS 0, aperture kept, the next FILL works; OPCODE faults (pixel size 2, tile blend, KICK.DRAW); HALT/HALTED IRQ, IRQ_SET soft IRQ and W1C. On the ZYBO (p003) `plan/tools/zybo/ghci-blt-board.py` (zedBSD) checks the same paths through `fpgareg`. Not checked: RUNNING-state locked writes and KICK fault kind 6, AXI_STUCK, RING_SIZE clamping, KICK with several bits, a debug access while HALTED, the STATE contents seen by the BLT after RESET.
+No `atg_cp_tb.v` (a wiring module).  Through `sim/tb/atg_top_tb.v` (ZYBO and KC705 shapes), besides
+the CP v0 checks: CAPS[0], DEVICE_VERSION 0.3; a STATE write in FAULTED refused (read back with a full
+mask); the debug port in FAULTED and HALTED; a FILL on the STATE kept over RESET (the replay); the
+ring: SET_REG+BLIT FILL and FENCE with IRQ and RETIRE, padding and wrap, RESULT, DBG_MARK, WAIT_FENCE
+released by a debug write, HALT with STEP one packet at a time, KICK (6) and STATE (7) in RUNNING,
+class V without firmware (2, address, tag), fault → RESET → the ring from 0 again, a packet past WPTR
+(3), a fence outside the aperture (1, client 0), the watchdog (4).  The Verilator harness: a ring FILL
+and FENCE with its interrupt.  The children's unit TBs: their specs §8.
 
 ## 9. References
 
-- design.md §1.3 (RESET order, quiesce), §2.2 (HCR), §2.3 (STATE), §2.5 (faults), §2.6 (CP states), §7.6 (planned split).
-- `docs/ghci.md` §2 (HCR), §3 (EXTCAP), §4 (CP states), §7 (faults, reset), §8 (STATE), §11 (debug port and KICK), Appendix (implementation status).
-- Related specs: `spec/common/am_axi_regs.md`, `spec/gpu/blt/atg_blt.md`, `spec/gpu/mc/atg_mc.md`, `spec/gpu/top/atg_top.md`; the planned `spec/gpu/cp/atg_cp_*.md` (P1).
+design.md §1.3, §2.2-§2.7, §7.6, §8 (p004); docs/ghci.md; the children's specs; spec/common/am_amb_mux.md;
+spec/gpu/mc/atg_mc.md (quiesce exception).
 
 ## 10. Status
 
-Implemented (p002 70aaff5, p003 a2af156; unchanged at a217bf8). Measured on the ZYBO (p003): 610 LUT, 531 FF, 0.5 BRAM (the STATE BRAM18).
-
-**U38: 481 lines > 400**, 39 ports (at the limit), one encoded FSM (RESET) but several independent state holders (CP state, debug port, faults, IRQ). Not refactored here. Proposed split (matches design §7.6): `atg_cp_regs` (write decode, plain registers, read mux with EXTCAP/PERF; about 180 lines), `atg_cp_state` (BRAM, alias, lock test, `st_*`; about 50), `atg_cp_ctl` (RUN/HALT, derived CP state, RESET sequencer, AXI_STUCK, fault capture and FAULT_ADDR/INFO; about 130), `atg_cp_irq` (IRQ_STATUS/ENABLE/SET, raise and W1C; about 40), `atg_cp_dbg` (debug port and its AMB request; about 70), and `atg_cp` as wiring. With the ring and fence (p004) the CP needs an internal arbiter for its single MC client (debug, ring fetch, fence writes) or more MC clients.
-
-Differences between the RTL and design.md / docs/ghci.md (to fix in an implementation Phase, not here):
-
-1. **BLT parameters after RESET**: ghci.md §4 and design §2.6 say STATE survives RESET. The BRAM does, but the BLT's shadow copy (fed by `st_we`) is reset by `core_rst_n`, so after RESET the BLT runs with zero parameters until the host rewrites them, while the STATE alias still reads the old values. The TB rewrites every field before each blit, so it does not see this.
-2. **Debug port in HALTED/FAULTED**: ghci.md §4 lets HALTED take the debug port like IDLE; in the RTL `mc_quiesce` holds the debug request until HALT = 0 or RESET.
-3. HALTED does not wait for the BLT to finish (design §2.6: HALTING waits for the current command including the blocks' work); the RTL halts at memory idle and freezes the blit. This was the p003 choice and the TB checks it.
-4. RESET from RUNNING goes straight to RESETTING (design §2.6: through HALTING); the quiesce is the same.
-5. RING_EMPTY is `RING_WPTR == 0` (no RPTR yet).
-6. FAULT_INFO[23:16] for an aperture fault is the client number, not the block number of ghci.md §2 (equal for the BLT, client 1 = block 1). FAULT_INFO[31:24] (job tag) is always 0. A memory error from the BLT reports no address and no direction.
-7. No watchdog (WDT_EN is stored), no ring, no STEP, no fence; IRQ bits [8:7] (RESULT, RETIRE, design v3) are absent; ISA_ID is 0.
-
-**WS288 p023 (P1) additions to the RTL**: (a) new ports for the blocks of design §7.6 —
-`draw_kick`, `cs_kick`, `lc_kick`, `raw_kick`, `inv[3:0]`, `busy_ext[7:0]`, `vsync`,
-`x_fault[1:0]`/`x_fault_kind`/`x_fault_addr`/`x_fault_tag` (fault sources 4 = SUs, 7 = other
-blocks), the HCR snoop bus `hcr_*` and `x_rdata` (atg_cpu's CPFW registers), the class V packet
-`v_*`, the firmware µop stream `fw_*`, `cpu_st_ridx/cpu_st_rdata`, `cp_fence_last`,
-`cp_fence_ev`, `cp_halt`, `cp_open`, `cpu_fault`, `cpu_fault_addr`, `cpu_stall`, `cpu_result`
-(see spec/gpu/cp/atg_cpu.md and the children's specs); (b) a scaffold at the end of the file
-that instantiates the proposed children (`atg_cp_regs`, `atg_cp_state`, `atg_cp_ring`,
-`atg_cp_seq`, `atg_cp_fence`, `atg_cp_ctl`, `atg_cp_irq`, `atg_cp_dbg`, `am_amb_mux` for
-ring/fence/dbg) wired to the real inputs; they are stubs, their outputs drive only the new
-ports, and the inline logic still does all the work.  p004 moves the inline logic into the
-children, connects `am_amb_mux` to MC client 0 and removes the inline code.
+WS288 p004 (P3): the inline CP v0 logic moved into the children; this module is wiring (369 lines).
+Resolved p023 differences: 1 (BLT state after RESET: replay), 2 (debug port in HALTED/FAULTED),
+5 (RING_EMPTY is WPTR = RPTR), 7 (ring, fence, watchdog, STEP, IRQ [8:7]; ISA_ID with an SU).
+Remaining: 3 (HALTED does not wait for the blocks' work: they freeze, the p003 choice), 4 (RESET from
+RUNNING skips HALTING), 6 (FAULT_INFO[23:16] of an MC refusal is the client number; the job tag of a
+BLT error and of the watchdog is 0).

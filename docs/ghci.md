@@ -16,7 +16,7 @@ Status of this draft:
 | --- | --- |
 | Host control registers, extended capabilities, CP states, ring mechanics, fences, interrupts, faults, quiesce and reset, memory model, debug port, display capability | Draft 1.0 (this document) |
 | The state register file | The mechanism (section 8) and the blitter range are draft; the other ranges follow the command set |
-| The command set (packet format and opcodes) | **Pending design v3**: it becomes zedBSD's GPU command protocol (section 9) |
+| The command set | Draft: the packet envelope and the native micro-ops (section 9, design v3); the class V gpu-ops follow zedBSD's GPU command protocol |
 | The shader ISA | **Pending design v3**: a GHCI standard ISA, RISC-V based (section 10) |
 
 `include/ghci_regs.h` (C) and `include/ghci_regs.vh` (RTL) hold the values
@@ -59,8 +59,8 @@ of this document.  An OS driver copies the C header.
 | 0x02C | COUNTER | R | Free-running core clock count |
 | 0x030 | CTRL | RW | [0] RUN, [1] RESET (W1S, falls when the reset is done), [2] HALT, [3] STEP, [4] WDT_EN |
 | 0x034 | STATUS | R | See below |
-| 0x038 | IRQ_STATUS | R/W1C | [0] FENCE, [1] FAULT, [2] RING_EMPTY, [3] WATCHDOG, [4] DBG_DONE, [5] SOFT, [6] HALTED |
-| 0x03C | IRQ_ENABLE | RW | [6:0], the same bits |
+| 0x038 | IRQ_STATUS | R/W1C | [0] FENCE, [1] FAULT, [2] RING_EMPTY, [3] WATCHDOG, [4] DBG_DONE, [5] SOFT, [6] HALTED, [7] RESULT (the firmware wrote a result), [8] RETIRE (RING_RPTR moved past a packet) |
+| 0x03C | IRQ_ENABLE | RW | [8:0], the same bits |
 | 0x040 | IRQ_SET | W1S | [5] sets IRQ_STATUS.SOFT |
 | 0x044 | WDT_CYCLES | RW | Watchdog limit for one command, in core cycles (reset value 2^28) |
 | 0x050 | RING_BASE | RW | GPU address of the ring, 32-byte aligned (low bits read 0) |
@@ -166,12 +166,13 @@ counter reads 0).
 | 0 IDLE | After reset, or RUN = 0 | Every register write, KICK, the STATE alias, the debug port | RUN = 1: RUNNING |
 | 1 RUNNING | RUN = 1 | RING_WPTR (doorbell), IRQ_*, SCRATCH, the debug port, HALT, RESET.  RING_BASE/SIZE, APERTURE_*, the STATE alias and KICK are ignored and raise a fault (kind 6 or 7) | HALT: HALTING; a fault: FAULTED; RUN = 0: IDLE after the current command (the doorbell is kept) |
 | 2 HALTING | HALT = 1 | Reads | When the current command (and the asynchronous work it started) has finished or stopped and the memory accesses are quiesced: HALTED, IRQ_STATUS.HALTED |
-| 3 HALTED | After HALTING | As IDLE, plus STEP (one command) | HALT = 0: back to RUNNING or IDLE; RESET: RESETTING |
-| 4 FAULTED | A fault | Reads; quiesces by itself | RESET only |
+| 3 HALTED | After HALTING | As IDLE (the debug port included), plus STEP (one command) | HALT = 0: back to RUNNING or IDLE; RESET: RESETTING |
+| 4 FAULTED | A fault | Reads, the debug port, IRQ_STATUS/ENABLE; quiesces by itself | RESET only |
 | 5 RESETTING | RESET = 1, from any state | Reads | Quiesced and AXI_IDLE: the core is reset, the memory clients' queues are flushed, CTRL.RESET falls, IDLE |
 
 A reset keeps APERTURE_*, RING_BASE/SIZE, IRQ_ENABLE, WDT_CYCLES, SCRATCH
-and the state register file.  It clears RING_WPTR/RPTR, IRQ_STATUS,
+and the state register file; the units see the kept state again after the
+reset (Amaterrace replays it to them while RESETTING).  It clears RING_WPTR/RPTR, IRQ_STATUS,
 FAULT_ADDR/INFO, FENCE_LAST, CTRL.RUN/HALT and everything inside the
 blocks (caches, queues, warps).  After a reset the driver starts the ring
 again from its beginning.
@@ -214,8 +215,8 @@ again from its beginning.
   memory only after every earlier command, including asynchronous blits,
   draws and dispatches, has finished, every pending write is flushed and
   every write response has returned; FENCE_LAST is updated and the FENCE
-  interrupt raised only after the fence write's own response.  (The fence
-  command's encoding comes with the command set, section 9.)
+  interrupt raised only after the fence write's own response (FENCE,
+  section 9).
 - After a reset the driver writes the last completed fence value to its
   fence memory and to FENCE_LAST before RUN.
 - The interrupt is a level: OR(IRQ_STATUS & IRQ_ENABLE).  The handler
@@ -296,14 +297,53 @@ rectangle is clipped to the clip rectangle; the source moves with it.
   multiples of 16 x ps bytes.
 - A combination the blitter does not do is a fault of kind 2 (block 1).
 
-9. The command set — pending design v3
---------------------------------------
+9. The command set
+------------------
 
-The ring's packet format and opcodes are being redesigned: GHCI takes the
-command protocol of zedBSD's GPU interface (`include/uapi/gpu-op.h`, the
-Venus-derived wire numbers) as its command set (decision of 2026-10-23).
-The rules of sections 5-7 (ring, complete fences, faults, reset) hold for
-it.  `include/ghci_packets.h` is a placeholder until then.
+The ring carries packets of 32-bit dwords (`include/ghci_packets.h`).  Every
+packet starts with dword0:
+
+| Bits | Class 0/1 (native micro-ops) | Class 2 (V, a gpu-op) | Class 3 (padding) |
+| --- | --- | --- | --- |
+| [31:30] | 0 standard, 1 vendor | 2 | 3 |
+| [29:24] | op | 0 | 0 |
+| [23:16] | job tag (FAULT_INFO[31:24]) | job tag | 0 |
+| [15:0] | [15:8] flags, [7:0] n | n | n |
+
+n is the number of dwords after dword0.  A packet never wraps around the
+ring's end (pad to the end with class 3); a packet whose end passes
+RING_WPTR is a fault of kind 3.  Class 2 packets carry zedBSD's GPU command
+protocol (gpu-op) for the CP's firmware: dword1 the gpu-op number, dword2
+[0] REPLY [1] RESULT, dword3 the result's address, then the gpu-op's
+arguments; a GPU without firmware (CAPS[17] = 0) faults with kind 2.  The
+packets are processed in ring order; while the firmware works on a class 2
+packet the CP takes no other packet.
+
+Standard micro-ops (class 0):
+
+| Op | Name | Payload | Meaning |
+| --- | --- | --- | --- |
+| 0 | NOP | n (skipped) | |
+| 1 | SET_REG | (index, value) x n/2 | STATE[index] = value; index >= 512 or odd n: fault 3 |
+| 2 | BLIT | 0 | Starts the blitter on the state; flags[0]: wait for its end |
+| 3 | DRAW | 0 | Starts the vertex fetcher; invalidates the data and texture caches |
+| 4 | DISPATCH | 3: gx, gy, gz | A compute dispatch |
+| 5 | FENCE | 2: addr, value | A complete fence (section 6); flags[0]: IRQ_STATUS.FENCE |
+| 6 | WAIT_IDLE | 0 | Waits until the units of flags (STATUS busy-bit mask, 0 = all) are idle |
+| 7 | LOAD_CONST | 3: region, addr, words | Loads a constant region (waits for the shader units) |
+| 8 | LOAD_PROGRAM | 1: stage | A stage's program changed: invalidates the instruction cache |
+| 9 | WAIT_FENCE | 2: addr, value | Polls the word until (int32)(mem - value) >= 0; the watchdog applies |
+| 10 | PERF_RESET | 0 | Clears PERF0..3 |
+| 11 | WAIT_VSYNC | 0 | Waits for one display vsync (CAPS[10] only) |
+| 12 | INVALIDATE | 0 | flags: [0] data cache, [1] texture cache, [2] constants, [3] instruction cache |
+| 13 | RESULT | 3: addr, status, aux | Writes {status, aux} to addr (8-byte aligned) after the earlier work |
+| 14-63 | reserved | | Fault 2 |
+
+Vendor micro-ops (class 1) are the vendor's; Amaterrace: 0 DRAW_RAW (9
+dwords: one triangle straight to the rasterizer), 1 DBG_MARK (1 dword:
+STATE[0x1FF] = payload).  A payload shorter than the op needs is a fault of
+kind 3, a longer one is skipped; an op of a unit the GPU does not have is a
+fault of kind 2.
 
 10. The shader ISA — pending design v3
 --------------------------------------
@@ -400,10 +440,17 @@ accepts only the major versions it knows.
 Appendix: Amaterrace's implementation status
 --------------------------------------------
 
+WS288 p004 (DEVICE_VERSION 0.3): the CP with the ring (CAPS[0] = 1, CAPS2 =
+one ring): the packet envelope and every standard micro-op of section 9
+(those of absent units fault with kind 2), DBG_MARK, complete fences,
+RESULT, WAIT_FENCE, the watchdog, STEP, the RETIRE interrupt, faults of
+kinds 1-7 and the RESET order with the state replayed to the units.  HALT
+quiesces at once: the units freeze at their next memory access and
+continue after HALT = 0.  A class V packet faults (kind 2) until the CP's
+firmware (WS288 p017).  The debug port works in every state.
+
 WS288 p003 (bitstream 1, "2D", DEVICE_VERSION 0.2): CP version 0, without
-the ring: CAPS[0] is 0, ISA_ID 0; RUN moves the CP to RUNNING but nothing
-is fetched, STEP does nothing, and RING_*, WDT_CYCLES and FENCE_LAST are
-plain registers.  Implemented: identification, SCRATCH, COUNTER, CTRL (RUN,
+the ring: CAPS[0] was 0, ISA_ID 0.  Implemented: identification, SCRATCH, COUNTER, CTRL (RUN,
 HALT, RESET in the order of section 7), STATUS, the interrupt registers,
 the aperture, FAULT_ADDR/INFO for aperture, memory, blitter and
 KICK/locked faults, the STATE alias, KICK.BLIT, the debug port, and the

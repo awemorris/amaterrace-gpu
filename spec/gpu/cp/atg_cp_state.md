@@ -1,6 +1,6 @@
 # atg_cp_state
 
-RTL: `rtl/gpu/cp/atg_cp_state.v`.  Parent: atg_cp.  Implemented in: p004.
+RTL: `rtl/gpu/cp/atg_cp_state.v`.  Parent: atg_cp.  Implemented in: p004 (done).
 
 ## 1. Purpose and place
 
@@ -39,17 +39,25 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **CPU read port (atg_cpu window)** | | | |
 | `cpu_ridx` | in | 9 | Read index. |
 | `cpu_rdata` | out | 32 | STATE[cpu_ridx] one cycle later. |
+| **Replay after RESET (from atg_cp_ctl)** | | | |
+| `replay` | in | 1 | One-cycle pulse (the RESET pulse, `mc_flush`): broadcast STATE again. |
+| `replay_busy` | out | 1 | 1 while the replay runs (513 cycles from the cycle after `replay`). |
 
-18 ports.
+20 ports.
 
 ## 4. Behaviour
 
 - Accepted writes go to the RAM and out on `st_*` in the same cycle.  A µop write and a host write
   never meet (the host can write only in IDLE/HALTED, when the sequencer is idle); if they do, the µop
   write wins and the host write is refused with `lock_fault`.
-- Two read ports: host (`alias_*`) and CPU (`cpu_*`); with a true dual-port BRAM the write port is
-  shared with the CPU read port in a cycle without a write (the CPU waits a cycle, its window allows
-  it) — or the RAM is duplicated; the implementation picks one and records it here.
+- Two read ports: host (`alias_*`) and CPU (`cpu_*`).  **The RAM is duplicated** (two BRAM18 with
+  the same writes): copy A answers the host alias, copy B the CPU port and the replay.
+- **Replay (bug 1 of p023, fixed in p004):** design §2.6 keeps STATE over CTRL.RESET, but the blocks'
+  copies (fed by `st_*`) are cleared by the core reset.  On `replay` the module reads STATE[0..511]
+  from copy B and broadcasts each word on `st_*`, one per cycle, from the second cycle after the
+  pulse; `replay_busy` is 1 for 513 cycles from the cycle after the pulse and atg_cp_ctl stays in
+  RESETTING until it falls (5.1 µs at 100 MHz).  During the replay `cpu_rdata` is undefined (the CPU
+  is held in RESETTING) and no write is expected (nothing is open, the sequencer is reset).
 - Vendor area 0x1E0-0x1FF (Amaterrace): 0x1E0-0x1E8 DRAW_RAW's 9 words, 0x1E9-0x1EB DISPATCH gx/gy/gz,
   0x1EC-0x1EE LOAD_CONST region/address/words, 0x1FF DBG_MARK.  The sequencer writes these with
   `uop_we` before its kick pulse; the blocks read them from the broadcast like any STATE word.
@@ -73,6 +81,7 @@ One write per cycle; reads 1 cycle.
 - `PASS atg_cp_state.write` — host and µop writes appear on st_* and read back
 - `PASS atg_cp_state.lock` — host write while !open or to the BLT range while blt_busy: no write, lock_fault
 - `PASS atg_cp_state.cpu` — the CPU port reads what was written
+- `PASS atg_cp_state.replay` — a replay broadcasts the 512 words in order in 513 cycles
 - `PASS atg_cp_state` at the end.
 
 ## 9. References
@@ -81,4 +90,6 @@ design §2.3 (STATE map), §2.4.3 (µops), §2.4.7 (CPU reads STATE, writes only
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  117 lines, no FSM (a replay counter).  Spec changes in p004: the `replay` /
+`replay_busy` ports and the duplicated RAM (both above).  A µop write in the same cycle as a host
+write wins and the host write gets `lock_fault`.

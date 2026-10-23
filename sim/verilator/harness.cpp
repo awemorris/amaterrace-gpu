@@ -11,8 +11,10 @@
  * port and a host on its register port that uses include/ghci_regs.h, as
  * the zedBSD driver will.  The scene: identification, the aperture, a FILL
  * and a COPY checked against a C++ reference, a word read back through
- * DBG_ADDR/DATA.  Later Phases add the ring and its commands (design v3),
- * the ISA model and PNG output here.  Prints "PASS verilator" on success.
+ * DBG_ADDR/DATA, then (WS288 p004) a FILL and a FENCE through the ring
+ * (include/ghci_packets.h) with the fence's interrupt.  Later Phases add
+ * class V packets, the ISA model and PNG output here.  Prints
+ * "PASS verilator" on success.
  */
 
 #include <cstdint>
@@ -25,6 +27,7 @@
 #include "verilated.h"
 
 extern "C" {
+#include "ghci_packets.h"
 #include "ghci_regs.h"
 }
 
@@ -299,6 +302,48 @@ int main(int argc, char **argv)
 	wait_clear(GHCI_STATUS_CP_BUSY);
 	expect("DBG_DATA", host_read(GHCI_DBG_DATA), peek32(0x40000 + 3 * 512 + 2 * 4));
 	expect("DBG_STATUS", host_read(GHCI_DBG_STATUS), 0);
+
+	/* The ring: a FILL from SET_REG and BLIT, then a FENCE with its IRQ. */
+	const uint32_t ring = 0x48000, fence = 0x47F00;
+	uint32_t wp = 0;
+	auto put = [&](uint32_t v) {
+		poke32(ring + 4 * wp, v);
+		wp++;
+	};
+	const uint32_t regs[][2] = {{GHCI_S_BLT_OP, GHCI_BLT_FILL}, {GHCI_S_BLT_DST_BASE, 0x30000},
+	    {GHCI_S_BLT_DST_STRIDE, 256}, {GHCI_S_BLT_DST_XY, GHCI_XY(3, 1)},
+	    {GHCI_S_BLT_SIZE, GHCI_XY(10, 4)}, {GHCI_S_BLT_COLOR, 0x13572468},
+	    {GHCI_S_BLT_CLIP_MAX, 0}};
+	put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_SET_REG, 1, 0, 14));
+	for (const auto &r : regs) {
+		put(r[0]);
+		put(r[1]);
+	}
+	put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_BLIT, 2, 0, 0));
+	put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_FENCE, 3, GHCI_FENCE_IRQ, 2));
+	put(fence);
+	put(77);
+	for (unsigned y = 1; y < 5; y++)
+		for (unsigned x = 3; x < 13; x++)
+			for (int i = 0; i < 4; i++)
+				ref[0x30000 + y * 256 + x * 4 + i] = (uint8_t)(0x13572468u >> (8 * i));
+	host_write(GHCI_RING_BASE, ring);
+	host_write(GHCI_RING_SIZE, 10);
+	host_write(GHCI_IRQ_ENABLE, GHCI_IRQ_FENCE);
+	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
+	host_write(GHCI_RING_WPTR, wp);
+	for (int i = 0; i < 10000 && host_read(GHCI_FENCE_LAST) != 77; i++)
+		;
+	expect("FENCE_LAST", host_read(GHCI_FENCE_LAST), 77);
+	expect("fence word", peek32(fence), 77);
+	expect("RING_RPTR", host_read(GHCI_RING_RPTR), wp);
+	expect("IRQ FENCE", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FENCE, GHCI_IRQ_FENCE);
+	expect("irq line", top->irq, 1);
+	bad = 0;
+	for (uint32_t a = 0x30000; a < 0x31000; a++)
+		if (mem[a] != ref[a])
+			bad++;
+	expect("ring FILL bytes differing", bad, 0);
 
 	std::printf("verilator: %llu cycles\n", (unsigned long long)cycles);
 	top->final();
