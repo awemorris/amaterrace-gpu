@@ -165,4 +165,38 @@ localparam [7:0] GHCI_XCAP_PERF = 8'd3;
 localparam [7:0] GHCI_XCAP_VEND = 8'd4;
 localparam [7:0] GHCI_XCAP_MMU = 8'd5;
 
+/* The display controller's registers (DISP capability, docs/ghci.md
+ * section 12): offsets from the capability's register offset. */
+localparam [31:0] GHCI_DC_ID_VALUE = 32'h41544443;	/* "ATDC" */
+localparam [16:0] GHCI_DC_ID = 17'h00;
+localparam [16:0] GHCI_DC_VERSION = 17'h04;
+localparam [16:0] GHCI_DC_CAPS = 17'h08;
+localparam [16:0] GHCI_DC_CTRL = 17'h10;
+localparam [16:0] GHCI_DC_STATUS = 17'h14;
+localparam [16:0] GHCI_DC_IRQ_STATUS = 17'h18;
+localparam [16:0] GHCI_DC_IRQ_ENABLE = 17'h1C;
+localparam [16:0] GHCI_DC_FB_BASE = 17'h20;
+localparam [16:0] GHCI_DC_FB_NEXT = 17'h24;
+localparam [16:0] GHCI_DC_FB_STRIDE = 17'h28;
+localparam [16:0] GHCI_DC_FB_SIZE = 17'h2C;
+localparam [16:0] GHCI_DC_TIMING = 17'h30;	/* 0x30..0x50: H_ACTIVE..V_BP, SYNC_POL */
+localparam [16:0] GHCI_DC_SYNC_POL = 17'h50;
+localparam [16:0] GHCI_DC_FRAME_COUNT = 17'h54;
+localparam [16:0] GHCI_DC_PCLK_SEL = 17'h58;
+localparam [16:0] GHCI_DC_I2C = 17'h60;	/* 0x60 CTRL, 0x64 DATA, 0x68 STATUS */
+localparam [16:0] GHCI_DC_SCAN_SUM = 17'h70;	/* Amaterrace: sum of the last frame's pixel words */
+localparam [16:0] GHCI_DC_SCAN_WORDS = 17'h74;	/* Amaterrace: pixel words of the last frame */
+localparam [16:0] GHCI_DC_STANDALONE_DISP = 17'h200;	/* DISP of a DC-only window */
+localparam GHCI_DC_CTRL_ENABLE = 0;
+localparam GHCI_DC_CTRL_RESET = 1;
+localparam GHCI_DC_CTRL_TEST_PATTERN = 2;
+localparam GHCI_DC_CTRL_FORMAT = 4;	/* [5:4] */
+localparam GHCI_DC_CTRL_OUTPUT = 6;
+localparam [1:0] GHCI_DC_FMT_BGRA8 = 2'd0;
+localparam [1:0] GHCI_DC_FMT_RGBA8 = 2'd1;
+localparam [1:0] GHCI_DC_FMT_RGB565 = 2'd2;
+localparam GHCI_DC_IRQ_VSYNC = 0;
+localparam GHCI_DC_IRQ_UNDERFLOW = 1;
+localparam GHCI_DC_IRQ_FLIP_DONE = 2;
+
 /* verilator lint_on UNUSEDPARAM */

@@ -75,7 +75,7 @@ Clock/reset domain: clk (gclk) and pclk as marked unless the row says otherwise.
 
 ## 4. Behaviour
 
-Wiring with the only clock crossing of the DC: am_afifo for pixels, am_sync for ENABLE (to pclk) and for the event toggles and the line number (to gclk), plus a 3-bit register for the toggle edges.  The quasi-static configuration (timing, format, test pattern) goes to pclk directly (see atg_dc_regs §7).
+Wiring with the only clock crossing of the DC: am_afifo for pixels, am_sync for ENABLE and CTRL.RESET (to pclk: the 32-cycle dc_reset pulse resets the pixel side too, so both sides of am_afifo are reset together) and for the event toggles and the line number (to gclk), plus a 3-bit register for the toggle edges.  scan_sum/scan_words go from the DMA to the registers.  The quasi-static configuration (timing, format, test pattern) goes to pclk directly (see atg_dc_regs §7).
 
 ## 5. State machine
 
@@ -91,7 +91,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): covered by the parent's testbench and `tools/lint.sh`.
+`sim/tb/atg_dc_tb.v` (added in p005; it covers the clock crossings): `PASS atg_dc.scanout` — frames compared with the framebuffer, vsync IRQ and FRAME_COUNT, a flip, SCAN_WORDS, RGB565, idle, CTRL.RESET — and `PASS atg_dc`.
 
 ## 9. References
 
@@ -99,4 +99,4 @@ design §5, §1.3 (pclk, pclk5).
 
 ## 10. Status
 
-Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+Wiring written in WS288 p023, completed in p005 (children implemented except atg_dc_i2c, p012).

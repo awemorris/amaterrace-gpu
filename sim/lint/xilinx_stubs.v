@@ -10,8 +10,10 @@
  * board tops instantiate (tools/lint.sh uses them, nothing else does): the
  * ports the tops use, every output 0.  The PS7 port names and widths are
  * those of Vivado 2026.1's unisims PS7.v (Values referenced: interface
- * names and widths only); BUFG is I/O.  Never used for simulation or
- * synthesis.
+ * names and widths only); BUFG is I/O; PLLE2_BASE, MMCME2_BASE, BUFGMUX,
+ * OSERDESE2 and OBUFDS (the ZYBO DC) have the ports and parameters the tops
+ * use.
+ * Never used for simulation or synthesis.
  */
 
 `timescale 1ns / 1ps
@@ -19,6 +21,7 @@
 
 /* verilator lint_off UNUSEDSIGNAL */
 /* verilator lint_off DECLFILENAME */
+/* verilator lint_off UNUSEDPARAM */
 module BUFG (
 	input wire I,
 	output wire O
@@ -226,6 +229,143 @@ module PS7 (
 	assign SAXIHP1WCOUNT = 8'd0;
 	assign SAXIHP1WREADY = 1'd0;
 endmodule
+
+/* The DC's clocking and HDMI output (boards/zybo/lib): the ports and
+ * parameters the tops use, names as Vivado 2026.1's unisims. */
+module MMCME2_BASE #(
+	parameter real CLKIN1_PERIOD = 0.000,
+	parameter integer DIVCLK_DIVIDE = 1,
+	parameter real CLKFBOUT_MULT_F = 5.000,
+	parameter real CLKOUT0_DIVIDE_F = 1.000,
+	parameter integer CLKOUT1_DIVIDE = 1
+) (
+	input wire CLKIN1,
+	input wire CLKFBIN,
+	input wire RST,
+	input wire PWRDWN,
+	output wire CLKFBOUT,
+	output wire CLKFBOUTB,
+	output wire CLKOUT0,
+	output wire CLKOUT0B,
+	output wire CLKOUT1,
+	output wire CLKOUT1B,
+	output wire CLKOUT2,
+	output wire CLKOUT2B,
+	output wire CLKOUT3,
+	output wire CLKOUT3B,
+	output wire CLKOUT4,
+	output wire CLKOUT5,
+	output wire CLKOUT6,
+	output wire LOCKED
+);
+	assign CLKFBOUT = CLKIN1;
+	assign CLKFBOUTB = 1'b0;
+	assign CLKOUT0 = CLKIN1;
+	assign CLKOUT0B = 1'b0;
+	assign CLKOUT1 = CLKIN1;
+	assign CLKOUT1B = 1'b0;
+	assign CLKOUT2 = 1'b0;
+	assign CLKOUT2B = 1'b0;
+	assign CLKOUT3 = 1'b0;
+	assign CLKOUT3B = 1'b0;
+	assign CLKOUT4 = 1'b0;
+	assign CLKOUT5 = 1'b0;
+	assign CLKOUT6 = 1'b0;
+	assign LOCKED = 1'b0;
+endmodule
+
+module PLLE2_BASE #(
+	parameter real CLKIN1_PERIOD = 0.000,
+	parameter integer DIVCLK_DIVIDE = 1,
+	parameter integer CLKFBOUT_MULT = 5,
+	parameter integer CLKOUT0_DIVIDE = 1,
+	parameter integer CLKOUT1_DIVIDE = 1
+) (
+	input wire CLKIN1,
+	input wire CLKFBIN,
+	input wire RST,
+	input wire PWRDWN,
+	output wire CLKFBOUT,
+	output wire CLKOUT0,
+	output wire CLKOUT1,
+	output wire CLKOUT2,
+	output wire CLKOUT3,
+	output wire CLKOUT4,
+	output wire CLKOUT5,
+	output wire LOCKED
+);
+	assign CLKFBOUT = CLKIN1;
+	assign CLKOUT0 = CLKIN1;
+	assign CLKOUT1 = CLKIN1;
+	assign CLKOUT2 = 1'b0;
+	assign CLKOUT3 = 1'b0;
+	assign CLKOUT4 = 1'b0;
+	assign CLKOUT5 = 1'b0;
+	assign LOCKED = 1'b0;
+endmodule
+
+module BUFGMUX (
+	input wire I0,
+	input wire I1,
+	input wire S,
+	output wire O
+);
+	assign O = S ? I1 : I0;
+endmodule
+
+module OSERDESE2 #(
+	parameter DATA_RATE_OQ = "DDR",
+	parameter DATA_RATE_TQ = "DDR",
+	parameter integer DATA_WIDTH = 4,
+	parameter SERDES_MODE = "MASTER",
+	parameter integer TRISTATE_WIDTH = 4
+) (
+	input wire CLK,
+	input wire CLKDIV,
+	input wire RST,
+	input wire OCE,
+	input wire D1,
+	input wire D2,
+	input wire D3,
+	input wire D4,
+	input wire D5,
+	input wire D6,
+	input wire D7,
+	input wire D8,
+	input wire SHIFTIN1,
+	input wire SHIFTIN2,
+	input wire T1,
+	input wire T2,
+	input wire T3,
+	input wire T4,
+	input wire TCE,
+	input wire TBYTEIN,
+	output wire OQ,
+	output wire SHIFTOUT1,
+	output wire SHIFTOUT2,
+	output wire OFB,
+	output wire TFB,
+	output wire TQ,
+	output wire TBYTEOUT
+);
+	assign OQ = 1'b0;
+	assign SHIFTOUT1 = 1'b0;
+	assign SHIFTOUT2 = 1'b0;
+	assign OFB = 1'b0;
+	assign TFB = 1'b0;
+	assign TQ = 1'b0;
+	assign TBYTEOUT = 1'b0;
+endmodule
+
+module OBUFDS (
+	input wire I,
+	output wire O,
+	output wire OB
+);
+	assign O = I;
+	assign OB = !I;
+endmodule
+/* verilator lint_on UNUSEDPARAM */
 /* verilator lint_on DECLFILENAME */
 /* verilator lint_on UNUSEDSIGNAL */
 

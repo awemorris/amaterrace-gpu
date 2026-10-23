@@ -8,7 +8,7 @@ ZYBO bitstream 2 "DC" (design §3.6, §5): the display controller alone as a dis
 
 Children: `atg_zybo_ps`, `am_axi_regs`, `atg_zybo_pclk`, `atg_dc`, `am_axi_master`, `atg_zybo_tmds_out`.
 
-The XDC (VGA and HDMI pins from Digilent's Zybo-Master.xdc, Values referenced) comes with p005.
+The XDC `boards/zybo/atg_zybo_dc.xdc` (LED, VGA, HDMI and HDMI_OUT_EN pins from Digilent's Zybo-Master.xdc at commit c8644a9f, Values referenced; gclk and the two MMCMs' clocks asynchronous).
 
 ## 2. Parameters
 
@@ -30,12 +30,13 @@ Clock/reset domain: clk (FCLK_CLK0) and pclk unless the row says otherwise.  Res
 | `hdmi_clk_n` | out | 1 | HDMI clock -. |
 | `hdmi_d_p` | out | 3 | HDMI data +. |
 | `hdmi_d_n` | out | 3 | HDMI data -. |
+| `hdmi_out_en` | out | 1 | HDMI_OUT_EN = 1: the ZYBO's HDMI port as a source (added in p005, Q1 to ACK). |
 
-10 ports.
+11 ports.
 
 ## 4. Behaviour
 
-Wiring.  IRQ_F2P[0] is the DC's interrupt.  The DC's AMB tag travels in the master's user bits.
+Wiring.  IRQ_F2P[0] is the DC's interrupt.  The DC's AMB tag travels in the master's user bits.  atg_dc with STANDALONE 1 and FIFO_LOG2 9 (512 pixels in distributed RAM).
 
 ## 5. State machine
 
@@ -59,4 +60,4 @@ design §5, §4.2, §3.6.
 
 ## 10. Status
 
-Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+Wiring written in WS288 p023, the XDC and HDMI_OUT_EN in p005.

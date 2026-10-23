@@ -58,4 +58,4 @@ design §5.1 (ZYBO VGA), Values referenced: Digilent Zybo-Master.xdc (pins, in t
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p005 (TB `atg_dc_vga_tb` PASS).

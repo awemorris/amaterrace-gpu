@@ -29,7 +29,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Vendor primitives (boards/).  The clock channel sends 1111100000.
+Vendor primitives (boards/): per channel a MASTER/SLAVE OSERDESE2 pair (DATA_WIDTH 10, DDR, CLK pclk5, CLKDIV pclk; the master takes bits 0–7 on D1–D8, the slave 8–9 on D3–D4 through SHIFTOUT; bit 0 first), and OBUFDS (TMDS_33 in the XDC).  The clock channel sends 1111100000.  RST is !rst_n (pclk).  Values referenced: UG471 (OSERDESE2 width expansion).
 
 ## 5. State machine
 
@@ -53,4 +53,4 @@ design §5.1, Values referenced: UG471 (OSERDESE2), DS187.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p005.
