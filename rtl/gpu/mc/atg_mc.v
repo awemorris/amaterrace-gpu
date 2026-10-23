@@ -272,6 +272,27 @@ module atg_mc #(
 		.m_rready(m_rready)
 	);
 
+	/*
+	 * WS288 p023 scaffold: the arbiter and the aperture check as the
+	 * modules of design §7.6 (spec/gpu/mc/atg_mc_arb.md, atg_mc_aper.md).
+	 * They are stubs fed with the real signals; the inline logic above
+	 * still decides.  The split replaces the inline code with them.
+	 */
+	wire s_gnt_valid;
+	wire [CW-1:0] s_gnt_idx;
+	wire s_inside;
+
+	atg_mc_arb #(.NCLIENT(NCLIENT), .CW(CW), .HIGH_MASK(HIGH_MASK)) s_arb (
+		.clk(clk), .rst_n(rst_n), .req(c_req_valid), .hold(quiesce || err_v),
+		.gnt_valid(s_gnt_valid), .gnt_idx(s_gnt_idx), .take(granted), .flush(flush)
+	);
+
+	atg_mc_aper #(.ADDR_W(ADDR_W), .LINE_SHIFT(LINE_SHIFT)) s_aper (
+		.line(sel_line), .base(aperture_base), .limit(aperture_limit), .ok(s_inside)
+	);
+
+	wire unused_scaffold = &{1'b0, s_gnt_valid, s_gnt_idx, s_inside};
+
 	wire unused_ok = &{1'b0, m_rsp_user[15:8+CW], aperture_base[LINE_SHIFT-1:0],
 		aperture_limit[LINE_SHIFT-1:0]};
 endmodule
