@@ -352,6 +352,120 @@ module atg_top_harness #(
 		end
 	endtask
 
+
+	/* The ring (WS288 p004): 1 KiB at RING, fences in the page FENCES. */
+	localparam [31:0] RING = 32'h0005F000;
+	localparam [31:0] FENCES = 32'h0005EF00;
+	localparam RING_N = 256;
+	integer wp;	/* the driver's write pointer */
+
+	task wait_reg;
+		input [31:0] off;
+		input [31:0] want;
+		input [31:0] mask;
+		reg [31:0] got;
+		integer n;
+		begin
+			n = 0;
+			host_read(off, got);
+			while ((got & mask) != (want & mask) && n < 5000) begin
+				host_read(off, got);
+				n = n + 1;
+			end
+			if ((got & mask) != (want & mask)) begin
+				errors = errors + 1;
+				$display("FAIL atg_top(%0s): reg %h stays %h, waiting for %h (mask %h)", NAME,
+					off, got, want, mask);
+			end
+		end
+	endtask
+
+	/* A word of GPU memory, in the memory and the reference. */
+	task mem_put;
+		input [31:0] addr;
+		input [31:0] value;
+		begin
+			mem.poke32(addr, value);
+			refm[(addr - REF_BASE) / 4] = value;
+		end
+	endtask
+
+	task ring_put;
+		input [31:0] value;
+		begin
+			mem_put(RING + wp * 4, value);
+			wp = (wp + 1) % RING_N;
+		end
+	endtask
+
+	/* Class N headers: {class, op, tag, flags, n}. */
+	function [31:0] hdr;
+		input vendor;
+		input [5:0] op;
+		input [7:0] tag;
+		input [7:0] flags;
+		input [7:0] n;
+		hdr = {1'b0, vendor, op, tag, flags, n};
+	endfunction
+
+	task ring_set;
+		input [8:0] idx;
+		input [31:0] value;
+		begin
+			ring_put({23'd0, idx});
+			ring_put(value);
+		end
+	endtask
+
+	task ring_fence;
+		input [7:0] tag;
+		input [31:0] value;
+		begin
+			ring_put(hdr(1'b0, 6'd5, tag, 8'd1, 8'd2));
+			ring_put(FENCES);
+			ring_put(value);
+		end
+	endtask
+
+	/* A FILL through the ring: 11 SET_REG pairs and BLIT, into the reference. */
+	task ring_fill;
+		input [31:0] dst;
+		input [31:0] stride;
+		input [15:0] x;
+		input [15:0] y;
+		input [15:0] w;
+		input [15:0] h;
+		input [31:0] color;
+		integer i, j;
+		begin
+			ring_put(hdr(1'b0, 6'd1, 8'h21, 8'd0, 8'd22));
+			ring_set(GHCI_S_BLT_OP, {30'd0, GHCI_BLT_FILL});
+			ring_set(GHCI_S_BLT_DST_BASE, dst);
+			ring_set(GHCI_S_BLT_DST_STRIDE, stride);
+			ring_set(GHCI_S_BLT_SRC_BASE, 0);
+			ring_set(GHCI_S_BLT_SRC_STRIDE, 0);
+			ring_set(GHCI_S_BLT_DST_XY, {y, x});
+			ring_set(GHCI_S_BLT_SRC_XY, 0);
+			ring_set(GHCI_S_BLT_SIZE, {h, w});
+			ring_set(GHCI_S_BLT_COLOR, color);
+			ring_set(GHCI_S_BLT_CLIP_MIN, 0);
+			ring_set(GHCI_S_BLT_CLIP_MAX, 0);
+			ring_put(hdr(1'b0, 6'd2, 8'h22, 8'd0, 8'd0));
+			for (j = 0; j < h; j = j + 1)
+				for (i = 0; i < w; i = i + 1)
+					refm[(dst + (y + j) * stride + (x + i) * 4 - REF_BASE) / 4] = color;
+		end
+	endtask
+
+	task reset_gpu;
+		begin
+			host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
+			wait_status_clear(32'hF << GHCI_STATUS_STATE);
+			host_write(GHCI_IRQ_STATUS, 32'h1FF);
+			wp = 0;
+		end
+	endtask
+
 	integer k, n;
 	reg [31:0] v;
 	reg [31:0] dst, src, ds, ss;
@@ -667,6 +781,169 @@ module atg_top_harness #(
 		expect_reg(GHCI_IRQ_STATUS, 32'd0, 32'hFFFFFFFF);
 		if (irq)
 			fail_msg("soft interrupt not cleared");
+
+		/* The ring (p004): a FILL and a FENCE with its interrupt. */
+		wp = 0;
+		host_write(GHCI_RING_BASE, RING);
+		host_write(GHCI_RING_SIZE, 32'd10);
+		expect_reg(GHCI_RING_SIZE, 32'd10, 32'hFFFFFFFF);
+		host_write(GHCI_IRQ_STATUS, 32'h1FF);
+		host_write(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_FENCE);
+		mem_put(FENCES, 32'd0);
+		host_write(GHCI_FENCE_LAST, 32'd0);
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_STATE, 32'hF << GHCI_STATUS_STATE);
+		ring_fill(32'h00033000, 256, 2, 1, 7, 4, 32'hC0FFEE01);
+		ring_fence(8'h23, 32'd1);
+		host_write(GHCI_RING_WPTR, wp);
+		wait_reg(GHCI_FENCE_LAST, 32'd1, 32'hFFFFFFFF);
+		refm[(FENCES - REF_BASE) / 4] = 32'd1;
+		compare_ref("ring fill and fence");
+		expect_reg(GHCI_RING_RPTR, wp, 32'hFFFFFFFF);
+		expect_reg(GHCI_IRQ_STATUS, (32'd1 << GHCI_IRQ_FENCE) | (32'd1 << 8), 32'h101);
+		expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_RING_EMPTY, 32'd1 << GHCI_STATUS_RING_EMPTY);
+		if (!irq)
+			fail_msg("no interrupt for the fence");
+		host_write(GHCI_IRQ_STATUS, 32'h1FF);
+
+		/* Padding to the ring's end, then RESULT, WAIT_IDLE and a fence at 0. */
+		v = RING_N - wp - 1;
+		ring_put({2'b11, 14'd0, v[15:0]});
+		wp = 0;
+		ring_put(hdr(1'b0, 6'd13, 8'h31, 8'd0, 8'd3));
+		ring_put(FENCES + 32'h10);
+		ring_put(32'hAAAA0001);
+		ring_put(32'hBBBB0002);
+		ring_put(hdr(1'b0, 6'd6, 8'h32, 8'd0, 8'd0));
+		ring_put(hdr(1'b1, 6'd1, 8'h33, 8'd0, 8'd1));	/* DBG_MARK */
+		ring_put(32'h0D0D0D0D);
+		ring_fence(8'h34, 32'd2);
+		host_write(GHCI_RING_WPTR, wp);
+		wait_reg(GHCI_FENCE_LAST, 32'd2, 32'hFFFFFFFF);
+		refm[(FENCES - REF_BASE) / 4] = 32'd2;
+		refm[(FENCES + 32'h10 - REF_BASE) / 4] = 32'hAAAA0001;
+		refm[(FENCES + 32'h14 - REF_BASE) / 4] = 32'hBBBB0002;
+		compare_ref("ring padding, RESULT, fence after the wrap");
+		expect_reg(GHCI_RING_RPTR, wp, 32'hFFFFFFFF);
+		expect_reg(GHCI_STATE_BASE + 32'h1FF * 4, 32'h0D0D0D0D, 32'hFFFFFFFF);
+
+		/* WAIT_FENCE: the next fence waits until the debug port writes the word. */
+		mem_put(FENCES + 32'h20, 32'hFFFFFFF0);
+		ring_put(hdr(1'b0, 6'd9, 8'h41, 8'd0, 8'd2));
+		ring_put(FENCES + 32'h20);
+		ring_put(32'h00000005);
+		ring_fence(8'h42, 32'd3);
+		host_write(GHCI_RING_WPTR, wp);
+		repeat (400) @(posedge clk);
+		expect_reg(GHCI_FENCE_LAST, 32'd2, 32'hFFFFFFFF);
+		host_write(GHCI_DBG_ADDR, FENCES + 32'h20);
+		wait_dbg();
+		host_write(GHCI_DBG_DATA, 32'h00000007);
+		wait_dbg();
+		refm[(FENCES + 32'h20 - REF_BASE) / 4] = 32'h7;
+		wait_reg(GHCI_FENCE_LAST, 32'd3, 32'hFFFFFFFF);
+		refm[(FENCES - REF_BASE) / 4] = 32'd3;
+		compare_ref("WAIT_FENCE");
+
+		/* HALT with an empty ring, two fences, STEP runs one at a time. */
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT));
+		wait_reg(GHCI_STATUS, 32'd3 << GHCI_STATUS_STATE, 32'hF << GHCI_STATUS_STATE);
+		ring_fence(8'h51, 32'd10);
+		ring_fence(8'h52, 32'd11);
+		host_write(GHCI_RING_WPTR, wp);
+		repeat (200) @(posedge clk);
+		expect_reg(GHCI_FENCE_LAST, 32'd3, 32'hFFFFFFFF);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT) |
+			(32'd1 << GHCI_CTRL_STEP));
+		wait_reg(GHCI_FENCE_LAST, 32'd10, 32'hFFFFFFFF);
+		repeat (200) @(posedge clk);
+		expect_reg(GHCI_FENCE_LAST, 32'd10, 32'hFFFFFFFF);
+		expect_reg(GHCI_STATUS, 32'd3 << GHCI_STATUS_STATE, 32'hF << GHCI_STATUS_STATE);
+		/* The debug port answers in HALTED (bug: it waited for HALT = 0). */
+		host_write(GHCI_DBG_ADDR, FENCES);
+		wait_dbg();
+		expect_reg(GHCI_DBG_DATA, 32'd10, 32'hFFFFFFFF);
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		wait_reg(GHCI_FENCE_LAST, 32'd11, 32'hFFFFFFFF);
+		refm[(FENCES - REF_BASE) / 4] = 32'd11;
+		expect_reg(GHCI_RING_RPTR, wp, 32'hFFFFFFFF);
+
+		/* Locked in RUNNING: KICK (kind 6). */
+		host_write(GHCI_KICK, 32'd1);
+		expect_reg(GHCI_FAULT_INFO, {16'd0, GHCI_FAULT_KICK, 12'd0}, 32'hFFFFFFFF);
+		reset_gpu();
+		expect_reg(GHCI_RING_RPTR, 32'd0, 32'hFFFFFFFF);
+		expect_reg(GHCI_RING_WPTR, 32'd0, 32'hFFFFFFFF);
+		expect_reg(GHCI_RING_BASE, RING, 32'hFFFFFFFF);
+		expect_reg(GHCI_FENCE_LAST, 32'd0, 32'hFFFFFFFF);
+		host_write(GHCI_FENCE_LAST, 32'd11);
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		state_write(9'h40, 32'h1);
+		expect_reg(GHCI_FAULT_INFO, {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'hFFFFFFFF);
+		reset_gpu();
+
+		/* A class V packet without firmware: fault kind 2 with its address and tag. */
+		host_write(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_FAULT);
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		ring_put({2'b10, 6'd0, 8'h61, 16'd4});
+		ring_put(32'd0);
+		ring_put(32'd0);
+		ring_put(32'd0);
+		ring_put(32'd0);
+		host_write(GHCI_RING_WPTR, wp);
+		wait_reg(GHCI_STATUS, 32'd4 << GHCI_STATUS_STATE, 32'hF << GHCI_STATUS_STATE);
+		expect_reg(GHCI_FAULT_INFO, {8'h61, 8'd0, GHCI_FAULT_OPCODE, 12'd0}, 32'hFFFFFFFF);
+		expect_reg(GHCI_FAULT_ADDR, RING, 32'hFFFFFFFF);
+		expect_reg(GHCI_RING_RPTR, 32'd0, 32'hFFFFFFFF);
+		if (!irq)
+			fail_msg("no interrupt for the class V fault");
+
+		/* Fault, RESET, recovery: the ring from 0 again. */
+		reset_gpu();
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		ring_fill(32'h00033800, 128, 0, 0, 3, 2, 32'h0FEEDBAC);
+		ring_fence(8'h62, 32'd12);
+		host_write(GHCI_RING_WPTR, wp);
+		wait_reg(GHCI_FENCE_LAST, 32'd12, 32'hFFFFFFFF);
+		refm[(FENCES - REF_BASE) / 4] = 32'd12;
+		compare_ref("ring after fault and RESET");
+
+		/* A packet that runs past WPTR: fault kind 3. */
+		ring_put(hdr(1'b0, 6'd0, 8'h71, 8'd0, 8'd5));
+		host_write(GHCI_RING_WPTR, wp);
+		wait_reg(GHCI_STATUS, 32'd4 << GHCI_STATUS_STATE, 32'hF << GHCI_STATUS_STATE);
+		expect_reg(GHCI_FAULT_INFO, {8'h71, 8'd0, GHCI_FAULT_RING, 12'd0}, 32'hFFFFFFFF);
+		reset_gpu();
+
+		/* A fence outside the aperture: fault kind 1 of the CP (client 0). */
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		ring_put(hdr(1'b0, 6'd5, 8'h81, 8'd0, 8'd2));
+		ring_put(32'h00001000);
+		ring_put(32'd1);
+		host_write(GHCI_RING_WPTR, wp);
+		wait_reg(GHCI_STATUS, 32'd4 << GHCI_STATUS_STATE, 32'hF << GHCI_STATUS_STATE);
+		expect_reg(GHCI_FAULT_INFO, {16'd0, GHCI_FAULT_APERTURE, 12'd0}, 32'hFFFFFFFF);
+		expect_reg(GHCI_FAULT_ADDR, 32'h00001000, 32'hFFFFFFFF);
+		reset_gpu();
+
+		/* The watchdog: a WAIT_FENCE that never passes. */
+		host_write(GHCI_WDT_CYCLES, 32'd300);
+		host_write(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_WATCHDOG);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_WDT_EN));
+		ring_put(hdr(1'b0, 6'd9, 8'h91, 8'd0, 8'd2));
+		ring_put(FENCES + 32'h20);
+		ring_put(32'h70000000);
+		host_write(GHCI_RING_WPTR, wp);
+		wait_reg(GHCI_STATUS, 32'd4 << GHCI_STATUS_STATE, 32'hF << GHCI_STATUS_STATE);
+		expect_reg(GHCI_FAULT_INFO, {16'd0, GHCI_FAULT_WATCHDOG, 12'd0}, 32'hFFFFFFFF);
+		expect_reg(GHCI_IRQ_STATUS, 32'h0A, 32'h0A);
+		if (!irq)
+			fail_msg("no interrupt for the watchdog");
+		reset_gpu();
+		host_write(GHCI_CTRL, 32'd0);
+		host_write(GHCI_WDT_CYCLES, 32'h10000000);
+		host_write(GHCI_IRQ_ENABLE, 32'd0);
+		compare_ref("after the ring tests");
 
 		errors = errors + mem.errors;
 		finished = 1'b1;
