@@ -145,12 +145,29 @@ def scan_vectors(r):
     # empty and culled ones
     tris.append(M.raw_tri([f(10.0), f(10.0), 0, f(20.0), f(20.0), 0, f(30.0), f(30.0), 0]))
     tris.append(M.raw_tri([f(-50.0), f(-50.0), 0, f(-40.0), f(-50.0), 0, f(-45.0), f(-40.0), 0]))
+    # vertices on pixel centres: shared edges through samples (top-left rule);
+    # each split quadrilateral covers each pixel once
+    for (ax, ay, bx, by, cx, cy, dx, dy) in ((2.5, 2.5, 20.5, 2.5, 20.5, 20.5, 2.5, 20.5),
+                                             (40.5, 10.5, 60.5, 30.5, 40.5, 50.5, 20.5, 30.5),
+                                             (70.5, 5.5, 100.5, 15.5, 90.5, 40.5, 75.5, 30.5)):
+        t1 = M.raw_tri([f(ax), f(ay), 0, f(bx), f(by), 0, f(dx), f(dy), 0])
+        t2 = M.raw_tri([f(bx), f(by), 0, f(cx), f(cy), 0, f(dx), f(dy), 0])
+        seen = {}
+        for t in (t1, t2):
+            for (qx, qy, mask, z) in M.scan(M.setup(st, t)):
+                for ln in range(4):
+                    if mask >> ln & 1:
+                        p = (qx + (ln & 1), qy + (ln >> 1))
+                        assert p not in seen, ('double coverage', p)
+                        seen[p] = 1
+        tris += [t1, t2]
     # a sliver: one covered quad or none
     tris.append(M.raw_tri([f(5.5), f(5.5), 0, f(5.6), f(5.5), 0, f(5.5), f(5.6), 0]))
     for i, tri in enumerate(tris):
         tri['pt'] = [i, i + 1, i + 2]
         tri['free'] = i & 7
         rs = M.setup(st, tri)
+        rs['raw'] = i & 1	# the scan frees PT entries of non-raw ones
         quads = M.scan(rs)
         out.append('T %s %d' % (hexw(M.pack_sp(rs), 768), len(quads)))
         for k, (x, y, mask, z) in enumerate(quads):
