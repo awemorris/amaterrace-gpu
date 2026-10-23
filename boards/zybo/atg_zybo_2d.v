@@ -19,7 +19,12 @@
  *                                   interrupt line
  *
  * The PS (ps7_init by zedBSD's boot) must have FCLK0 at 100 MHz, the
- * level shifters enabled and HP0 in 64-bit mode.  The HP port's AXI3
+ * level shifters enabled and HP0 in 64-bit mode.  Checked on the board
+ * (WS288 p003, booted from SD by U-Boot SPL's ps7_init, then fpgaload):
+ * FPGA0_CLK_CTRL 0x00100A00 (IO PLL / 10), LVL_SHFTR_EN 0xF, FPGA_RST_CTRL
+ * 0, and AFI0's RDCHAN_CTRL 0 and WRCHAN_CTRL 0xF00, the reset values,
+ * whose bit 0 (32BIT_EN) 0 is the 64-bit mode: ps7_init does not write
+ * the AFI.  The HP port's AXI3
  * widths are those of the PS7 primitive (Vivado 2026.1's unisim PS7.v):
  * IDs 6 bits, AxLEN 4, AxSIZE 2, WSTRB 8.  WID is 0 like AWID.
  */
