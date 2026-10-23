@@ -120,12 +120,10 @@ module atg_cpu_fw (
 	wire [31:0] mbox_s = sw_mi == 2'd0 ? mbox0 : sw_mi == 2'd1 ? mbox1 :
 		sw_mi == 2'd2 ? mbox2 : mbox3;
 
-	function [31:0] merge;
-		input [31:0] old;
-		begin
-			merge = (old & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-		end
-	endfunction
+	/* A host write merged by WSTRB: (old & ~mask) | new (no function:
+	 * Verilator 5.032's V3Gate stumbled on it in a board top). */
+	wire [31:0] hw_keep = ~hcr_wmask;
+	wire [31:0] hw_new = hcr_wdata & hcr_wmask;
 
 	always @(*) begin
 		case (hcr_ridx)
@@ -157,13 +155,13 @@ module atg_cpu_fw (
 	/* The kept registers: host writes only. */
 	always @(posedge clk) begin
 		if (hcr_we && hcr_widx == R_IBASE)
-			ibase <= merge(ibase);
+			ibase <= ((ibase & hw_keep) | hw_new);
 		if (hcr_we && hcr_widx == R_IWORDS)
-			iwords <= merge(iwords);
+			iwords <= ((iwords & hw_keep) | hw_new);
 		if (hcr_we && hcr_widx == R_DBASE)
-			dbase <= merge(dbase);
+			dbase <= ((dbase & hw_keep) | hw_new);
 		if (hcr_we && hcr_widx == R_DWORDS)
-			dwords <= merge(dwords);
+			dwords <= ((dwords & hw_keep) | hw_new);
 		if (load_go)
 			ready <= 1'b0;
 		else if (state == S_LOAD_D && ld_done && !ld_error)
@@ -202,13 +200,13 @@ module atg_cpu_fw (
 			end
 			/* Mailboxes: the firmware's write wins a same-cycle collision. */
 			if (hw_mbox && hcr_widx[1:0] == 2'd0)
-				mbox0 <= merge(mbox0);
+				mbox0 <= ((mbox0 & hw_keep) | hw_new);
 			if (hw_mbox && hcr_widx[1:0] == 2'd1)
-				mbox1 <= merge(mbox1);
+				mbox1 <= ((mbox1 & hw_keep) | hw_new);
 			if (hw_mbox && hcr_widx[1:0] == 2'd2)
-				mbox2 <= merge(mbox2);
+				mbox2 <= ((mbox2 & hw_keep) | hw_new);
 			if (hw_mbox && hcr_widx[1:0] == 2'd3)
-				mbox3 <= merge(mbox3);
+				mbox3 <= ((mbox3 & hw_keep) | hw_new);
 			if (sw_mbox && sw_mi == 2'd0)
 				mbox0 <= sb_wdata;
 			if (sw_mbox && sw_mi == 2'd1)
