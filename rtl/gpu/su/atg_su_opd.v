@@ -167,48 +167,81 @@ module atg_su_opd #(
 	wire [31:0] cov_g = q_info[ATG_WI_MASK +: 32] >> grp_base;
 	assign q_warp = b_warp;
 
-	/* The value of operand n in lane l (before modifiers).  Everything it
-	 * reads is an argument (so that always @(*) sees it). */
-	function [31:0] opv;
+	/* The value of operand n, split in two: the part that is the same in every
+	 * lane (constants, warp and workgroup values, the constant word), made once
+	 * per operand, and the lane's own part (its GPR, the rq word, its lane
+	 * number, its killed bit), chosen per lane.  Everything they read is an
+	 * argument (so that always @(*) sees it). */
+	function [31:0] opc;
 		input [6:0] n;
-		input [31:0] gpr, rq, cw;
-		input [4:0] lane;
-		input kl;
+		input [31:0] cw;
 		input [WARP_W-1:0] wn;
 		input [159:0] qi;
 		input [31:0] qe;
 		begin
-			if (n < 7'd63)
-				opv = gpr;
-			else if (n == 7'd63)
-				opv = rq;
-			else if (n < 7'd96)
-				opv = cw;
+			if (n < 7'd96)
+				opc = cw;
 			else begin
 				case (n)
-				7'd96: opv = 32'd0;
-				7'd97: opv = 32'h3F800000;
-				7'd98: opv = 32'd1;
-				7'd99: opv = 32'h3F000000;
-				7'd100: opv = 32'h40000000;
-				7'd101: opv = 32'hBF800000;
-				7'd102: opv = {27'd0, lane};
-				7'd103: opv = {{(32-WARP_W){1'b0}}, wn};
-				7'd104: opv = qe;
-				7'd105: opv = {32{kl}};
-				7'd106: opv = {16'd0, qi[ATG_WI_WGX +: 16]};
-				7'd107: opv = {16'd0, qi[ATG_WI_WGX + 16 +: 16]};
-				7'd108: opv = {16'd0, qi[ATG_WI_WGX + 32 +: 16]};
-				7'd109, 7'd112: opv = {24'd0, qi[ATG_WI_LID +: 8]} + {27'd0, lane};
-				7'd114: opv = {32{qi[ATG_WI_FRONT]}};
-				7'd115: opv = {16'd0, qi[ATG_WI_NWGX +: 16]};
-				7'd116: opv = {16'd0, qi[ATG_WI_NWGX + 16 +: 16]};
-				7'd117: opv = {16'd0, qi[ATG_WI_NWGX + 32 +: 16]};
-				7'd118: opv = 32'h3C003C00;
-				7'd119: opv = qi[ATG_WI_MASK +: 32];
-				default: opv = 32'd0;
+				7'd96: opc = 32'd0;
+				7'd97: opc = 32'h3F800000;
+				7'd98: opc = 32'd1;
+				7'd99: opc = 32'h3F000000;
+				7'd100: opc = 32'h40000000;
+				7'd101: opc = 32'hBF800000;
+				7'd103: opc = {{(32-WARP_W){1'b0}}, wn};
+				7'd104: opc = qe;
+				7'd106: opc = {16'd0, qi[ATG_WI_WGX +: 16]};
+				7'd107: opc = {16'd0, qi[ATG_WI_WGX + 16 +: 16]};
+				7'd108: opc = {16'd0, qi[ATG_WI_WGX + 32 +: 16]};
+				7'd109, 7'd112: opc = {24'd0, qi[ATG_WI_LID +: 8]};
+				7'd114: opc = {32{qi[ATG_WI_FRONT]}};
+				7'd115: opc = {16'd0, qi[ATG_WI_NWGX +: 16]};
+				7'd116: opc = {16'd0, qi[ATG_WI_NWGX + 16 +: 16]};
+				7'd117: opc = {16'd0, qi[ATG_WI_NWGX + 32 +: 16]};
+				7'd118: opc = 32'h3C003C00;
+				7'd119: opc = qi[ATG_WI_MASK +: 32];
+				default: opc = 32'd0;
 				endcase
 			end
+		end
+	endfunction
+
+	/* How the lane combines the common part: 0 = the common part, 1 = the GPR,
+	 * 2 = rq, 3 = the lane number, 4 = the killed bit, 5 = common + lane
+	 * (the local index). */
+	function [2:0] opk;
+		input [6:0] n;
+		begin
+			if (n < 7'd63)
+				opk = 3'd1;
+			else if (n == 7'd63)
+				opk = 3'd2;
+			else if (n == 7'd102)
+				opk = 3'd3;
+			else if (n == 7'd105)
+				opk = 3'd4;
+			else if (n == 7'd109 || n == 7'd112)
+				opk = 3'd5;
+			else
+				opk = 3'd0;
+		end
+	endfunction
+
+	function [31:0] opl;
+		input [2:0] k;
+		input [31:0] com, gpr, rq;
+		input [4:0] lane;
+		input kl;
+		begin
+			case (k)
+			3'd1: opl = gpr;
+			3'd2: opl = rq;
+			3'd3: opl = {27'd0, lane};
+			3'd4: opl = {32{kl}};
+			3'd5: opl = com + {27'd0, lane};
+			default: opl = com;
+			endcase
 		end
 	endfunction
 
@@ -241,15 +274,24 @@ module atg_su_opd #(
 	reg [DW-1:0] va, vb, vc;
 	reg [4:0] ln;
 	integer l;
+
+	/* The common part and the kind of each operand, once per instruction. */
+	wire [31:0] com1 = opc(b_n1, cr_data[31:0], b_warp, q_info, q_exec);
+	wire [31:0] com2 = opc(b_n2, cr_data[63:32], b_warp, q_info, q_exec);
+	wire [31:0] com3 = opc(b_n3, cr_data[95:64], b_warp, q_info, q_exec);
+	wire [2:0] k1 = opk(b_n1);
+	wire [2:0] k2 = opk(b_n2);
+	wire [2:0] k3 = opk(b_n3);
+
 	always @(*) begin
 		for (l = 0; l < NPHYS; l = l + 1) begin
 			ln = grp_base[4:0] + l[4:0];
-			va[l*32 +: 32] = fmod(opv(b_n1, r_data[l*32 +: 32], rq_data[l*32 +: 32],
-				cr_data[31:0], ln, kill_g[l], b_warp, q_info, q_exec), mods[0], mods[1], fp_unit, pk_unit);
-			vb[l*32 +: 32] = fmod(opv(b_n2, r_data[DW + l*32 +: 32], rq_data[l*32 +: 32],
-				cr_data[63:32], ln, kill_g[l], b_warp, q_info, q_exec), mods[2], mods[3], fp_unit, pk_unit);
-			vc[l*32 +: 32] = fmod(opv(b_n3, r_data[2*DW + l*32 +: 32], rq_data[l*32 +: 32],
-				cr_data[95:64], ln, kill_g[l], b_warp, q_info, q_exec), mods[4], mods[5], fp_unit, pk_unit);
+			va[l*32 +: 32] = fmod(opl(k1, com1, r_data[l*32 +: 32], rq_data[l*32 +: 32],
+				ln, kill_g[l]), mods[0], mods[1], fp_unit, pk_unit);
+			vb[l*32 +: 32] = fmod(opl(k2, com2, r_data[DW + l*32 +: 32], rq_data[l*32 +: 32],
+				ln, kill_g[l]), mods[2], mods[3], fp_unit, pk_unit);
+			vc[l*32 +: 32] = fmod(opl(k3, com3, r_data[2*DW + l*32 +: 32], rq_data[l*32 +: 32],
+				ln, kill_g[l]), mods[4], mods[5], fp_unit, pk_unit);
 		end
 	end
 
