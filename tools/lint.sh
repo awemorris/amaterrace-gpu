@@ -42,4 +42,13 @@ kcsu="-GHAS_CPU=1 -GHAS_VF=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GEXT_CLIENT=1 -G
 run "atg_top (KC705 raster/compute, 1 SU)" --top-module atg_top $kc $kcsu -GNSU=1
 run "atg_top (KC705 raster/compute, 4 SUs)" --top-module atg_top $kc $kcsu -GNSU=4
 run "atg_top (SA reserved: 1 SU + atg_sa)" --top-module atg_top $zybo -GNSU=1 -GHAS_SA=1
+# The board tops, with lint-only stand-ins for the Xilinx primitives
+# (sim/lint/xilinx_stubs.v).  PINMISSING: the PS7 has many pins left open
+# on purpose; PINCONNECTEMPTY: atg_top outputs a board does not use.
+for f in boards/*/*.v; do
+	t=$(basename "$f" .v)
+	b=$(dirname "$f")
+	run "$t (board top)" --top-module "$t" -Wno-PINMISSING -Wno-PINCONNECTEMPTY \
+		"$f" $(ls "$b"/lib/*.v 2>/dev/null) sim/lint/xilinx_stubs.v
+done
 exit $fail
