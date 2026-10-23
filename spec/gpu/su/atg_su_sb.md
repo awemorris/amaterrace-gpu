@@ -99,4 +99,4 @@ design §3.1.1 (scoreboard), §3.4.2 (classes), §3.9 (rq).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_sb_tb.v`).  Spec change made in p008 (the spec lacked the short-result interlock of design §3.1.1): parameters `NPHYS` and `SHORT_LAT`, input `x_end` (the last group of an instruction leaves atg_su_opd: `x_valid && x_last && unit_ready[unit]`, wired in atg_su).  Issued instructions are listed in order until x_end; a short writer (class a/f with rd < 63) then counts SHORT_LAT+1 cycles.  A reader of its rd is held (u_ready 0, not replayed) while the writer is before the bus or the count is above 32/NPHYS + 1; a long writer of that rd is held until the count ends.  nop and a satisfied wait are consumed without issue (feedback 0).  Counters are 6 bits; a long instruction whose counter is at the maximum replays.  Feedback 1 for branches, end and bar.

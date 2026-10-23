@@ -104,4 +104,4 @@ design §3.4.3 (inputs/outputs), §3.5 (PT), §3.8 (ROP order, PT reservation).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+p008 interim (branch p1-su): no export buffer yet; xr_valid pulses the cycle after wc_end so that ended warps free their slots.  The rest is the p009 stub (every other output 0).

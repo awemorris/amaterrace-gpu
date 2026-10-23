@@ -76,4 +76,4 @@ design §3.5 (I$ 2 KiB, 32-byte line, direct map).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_icache_tb.v` behind sim/models/amb_mem.v).  Tags and valid bits in registers (the hit is known at the request, so ic_ready = hit in IDLE); one line-wide data RAM read the cycle after the request.  After a fill the waiting request is answered from the fill buffer (state RESP, one cycle), so a line filled during inv or with an error is answered but not kept.

@@ -77,4 +77,11 @@ design §3.2-§3.4, include/atg_su_uop.vh; later docs/gsi1.md (the GSI1 standard
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_dec_tb.v` on 4976 vectors of `tools/gsi1asm.py --dec-table`).  Choices made here (recorded in include/atg_su_uop.vh and gsi1asm.py, to go into docs/gsi1.md):
+
+- The OP field values per unit are the `ATG_<UNIT>_*` localparams of include/atg_su_uop.vh; ALU OP bit 7 (`ATG_ALU_IMMB`) means operand b is the immediate (I forms).
+- An ILL uop has only the ILL bit set (all other fields 0).  U forms (lui/movi) have RS1-3, MOD, HSEL, SUB and RM 0; other forms carry all operand fields as encoded (used or not), RM = funct3.
+- rm: 0-4 and 7 are accepted (7, "dynamic", is RNE: there is no CSR); 5 and 6 are faults; fround accepts 0-3 only.
+- Undefined encodings that fault: OP funct7 0100000 with funct3 001/010/011, Zbb funct7 0000101 with funct3 0xx, R4 forms with fmt/funct2 ≠ 00 (except atom), any R-form custom instruction with funct7 ≠ its value (bar, end, exec.*, kill, qd, shfl, vote, ballot, sactl, nop, texl/b/f), a texture slot with sub[4] = 1, atom sub > 10, qd sub > 5, shfl sub > 4, transcendental sub > 6, exec.* sub > 3, vote sub > 1, unpackh sub > 1, nop sub ≠ 0.
+- custom-2 funct7: fmin2 0 / fmax2 1 (funct3 100); iadd2 0 / isub2 1 / imul2 2 (101); fcmp2 lt 0 / ge 1 / eq 2 / ne 3 (110).
+- fence is unit LSU, class a (atg_su_sb waits for cm = 0 before issuing it); a PAIR rs1 must leave rs1+1 inside the GPRs (rs1 ≤ NREGS-2, not 62) or be c0-c30 / a special other than 127.

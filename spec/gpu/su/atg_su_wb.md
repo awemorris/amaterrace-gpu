@@ -69,10 +69,11 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-- Priority (design §3.5): (1) the short result of this cycle; (2) long beats, round-robin over the
-  sources, in cycles without a short result — a beat waiting more than 4 cycles raises wb_stall so a
-  free cycle comes SHORT_LAT cycles later; (3) input writes (only to slots that are not running, so
-  they never meet a running warp's results; they take cycles with no other write).
+- Priority (design §3.5): (1) the short result of this cycle; (2) input writes (only to slots that
+  are not running; they have no back-pressure, so they wait in a 16-entry FIFO per source and raise
+  wb_stall while waiting); (3) long beats, round-robin over the sources, in cycles without (1) or
+  (2) — a beat waiting more than 4 cycles raises wb_stall so a free cycle comes SHORT_LAT cycles
+  later.  A long beat without data (l_wr 0) is taken in any cycle.
 - rd 63 → rq_push instead of the RF.  l_last → rel_* (also for l_wr 0).
 
 ## 5. State machine
@@ -102,4 +103,4 @@ design §3.5 (write port arbitration), §3.1.1.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_wb_tb.v`).  Differences from §4 (spec corrected here): the input writes have no back-pressure, so they go before long beats (short > input > long) and wait in a 16-entry FIFO per source while short results hold the port; a waiting input also raises wb_stall.  A long beat with l_wr = 0 (a store's completion) is taken in any cycle (it needs no port).  The VF/RX input path is exercised only by this TB until p009.
