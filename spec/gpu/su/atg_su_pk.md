@@ -1,6 +1,6 @@
 # atg_su_pk
 
-RTL: `rtl/gpu/su/atg_su_pk.v`.  Parent: atg_su.  Implemented in: p009.
+RTL: `rtl/gpu/su/atg_su_pk.v`.  Parent: atg_su.  Implemented in: p008 (part 2).
 
 ## 1. Purpose and place
 
@@ -81,4 +81,4 @@ design §3.4.1 (custom-2), U15.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_pk_tb.v` on the 4000 vectors of `tools/gsi1fp.py --pk-vec`, PACKED 1 and 0).  Choices made here: packh = {fp16(rs2), fp16(rs1)} (RNE, flushed, NaN 0x7E00), unpackh sub 0 the low half, 1 the high half; swaph is present with PACKED 0 too (the decoder faults it there, so the 7010 keeps only packh/unpackh, U15); hsel 01/10 compute one half and take the other from rs1, 11 swaps rs2's halves; fcmp2.ge is le with the operands swapped (unordered false); sat clamps the float halves; the fp16 fma is one fused datapath per half (include/atg_su_fp16.vh).  Open point: atg_su_opd applies the PK modifiers (bits 15 and 31) also to packh's fp32 operands; the model does the same.

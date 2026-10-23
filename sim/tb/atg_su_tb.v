@@ -8,15 +8,23 @@
 /*
  * atg_su_tb: the shader unit running GSI1 programs (p008's acceptance:
  * the same binary gives the same results on NPHYS 8, 16 and 32).  Three
- * SUs (NPHYS 8, 16, 32; NWARPS 4, NREGS 32) fetch from amb_mem behind
- * their I$ port; each program of sim/tb/su (built by tools/su-tests.sh)
- * runs as one compute workgroup (DISPATCH 1x1x1), and when the SU is idle
- * every register that tools/gsi1model.py says the program wrote is
- * compared, lane by lane.  The D$, atomic, graphics and SA ports are tied
- * off (those units are p008's next steps).
+ * SUs (NPHYS 8, 16, 32; NWARPS 4, NREGS 32) fetch code and load constants
+ * from one amb_mem behind their I$ port, and access data through a second
+ * amb_mem behind their D$ port, with a behavioural atomic unit on at_*.
+ * For each program of sim/tb/su (built by tools/su-tests.sh) the data image
+ * NAME.dat goes to 0x8000 of both memories, LOAD_CONST loads its first 256
+ * words into the constant bank, and the program runs as a compute dispatch
+ * (DISPATCH groups x 1 x 1); when the SU is idle every register that
+ * tools/gsi1model.py says the program wrote is compared, lane by lane, and
+ * the data memory with the model's NAME.mexp.  The graphics and SA ports
+ * are tied off.
  *   alu: integer ops, dependent chains, specials (128 lanes)
  *   branch: exec mask, divergence, loops, branches, bar, kill (100 lanes)
  *   rand: a random integer program with masked sections (128 lanes)
+ *   frand: a random fp32/transcendental/divide program (128 lanes)
+ *   mem: lw/sw/atom/fence, lwc and c operands, LDS with bar (128 lanes)
+ *   vadd: fp32 vector add over 2 workgroups (memory only)
+ *   reduce: fp32 tree reduction in LDS and an atomic sum (128 lanes)
  */
 
 `timescale 1ns / 1ps
@@ -35,7 +43,9 @@ module atg_su_chk #(
 	localparam G = 32 / NPHYS;
 	localparam GRP_W = G > 1 ? $clog2(G) : 1;
 	localparam NREGS = 32;
-	localparam NP = 3;	/* programs */
+	localparam NP = 7;	/* programs */
+	localparam DATA = 32'h8000;
+	localparam DWORDS = 4096;
 
 	reg rst_n = 1'b0;
 	reg st_we = 1'b0;
@@ -49,10 +59,22 @@ module atg_su_chk #(
 	wire [7:0] i_req_tag, i_rsp_tag;
 	wire busy, fault;
 	wire [31:0] fault_addr;
+	reg lc_kick = 1'b0;
+	wire d_req_valid, d_req_ready, d_req_write, d_rsp_valid, d_rsp_write, d_rsp_error;
+	wire [26:0] d_req_line;
+	wire [31:0] d_req_be;
+	wire [255:0] d_req_wdata, d_rsp_rdata;
+	wire [7:0] d_req_tag, d_rsp_tag;
+	wire at_valid;
+	reg at_ready = 1'b0, at_rsp_valid = 1'b0;
+	wire [3:0] at_op;
+	wire [29:0] at_addr;
+	wire [31:0] at_a, at_b;
+	reg [31:0] at_old = 0;
 
 	atg_su #(.NPHYS(NPHYS), .GRP_W(GRP_W)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-		.cs_kick(cs_kick), .lc_kick(1'b0), .inv(4'd0),
+		.cs_kick(cs_kick), .lc_kick(lc_kick), .inv(4'd0),
 		.vl_req(1'b0), .vl_gnt(), .vl_slot(), .vl_ptbase(), .vl_we(1'b0), .vl_reg(6'd0),
 		.vl_lane(5'd0), .vl_data(32'd0), .vl_go(1'b0), .vl_mask(32'd0),
 		.fl_req(1'b0), .fl_gnt(), .fl_slot(), .fl_we(1'b0), .fl_reg(6'd0), .fl_lane(5'd0),
@@ -65,21 +87,67 @@ module atg_su_chk #(
 		.tr_data(512'd0), .tr_last(1'b0),
 		.ex_valid(), .ex_ready(1'b1), .ex_seq(), .ex_xy(), .ex_mask(), .ex_color(),
 		.ex_depth(), .ex_last(), .ex_next(16'd0),
-		.d_req_valid(), .d_req_ready(1'b1), .d_req_write(), .d_req_line(), .d_req_be(),
-		.d_req_wdata(), .d_req_tag(), .d_rsp_valid(1'b0), .d_rsp_write(1'b0),
-		.d_rsp_tag(8'd0), .d_rsp_rdata(256'd0), .d_rsp_error(1'b0),
+		.d_req_valid(d_req_valid), .d_req_ready(d_req_ready), .d_req_write(d_req_write),
+		.d_req_line(d_req_line), .d_req_be(d_req_be), .d_req_wdata(d_req_wdata),
+		.d_req_tag(d_req_tag), .d_rsp_valid(d_rsp_valid), .d_rsp_write(d_rsp_write),
+		.d_rsp_tag(d_rsp_tag), .d_rsp_rdata(d_rsp_rdata), .d_rsp_error(d_rsp_error),
 		.i_req_valid(i_req_valid), .i_req_ready(i_req_ready), .i_req_write(i_req_write),
 		.i_req_line(i_req_line), .i_req_be(i_req_be), .i_req_wdata(i_req_wdata),
 		.i_req_tag(i_req_tag), .i_rsp_valid(i_rsp_valid), .i_rsp_write(i_rsp_write),
 		.i_rsp_tag(i_rsp_tag), .i_rsp_rdata(i_rsp_rdata), .i_rsp_error(i_rsp_error),
-		.at_valid(), .at_ready(1'b1), .at_op(), .at_addr(), .at_a(), .at_b(),
-		.at_rsp_valid(1'b0), .at_old(32'd0), .at_error(1'b0),
+		.at_valid(at_valid), .at_ready(at_ready), .at_op(at_op), .at_addr(at_addr),
+		.at_a(at_a), .at_b(at_b), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
+		.at_error(1'b0),
 		.sa_push_valid(), .sa_push_ready(1'b1), .sa_push_data(), .sa_pop_valid(1'b0),
 		.sa_pop_ready(), .sa_pop_data({(NPHYS*32){1'b0}}), .sa_ctl_valid(), .sa_ctl_data(),
 		.sa_qstat(32'd0), .sa_stat(32'd0), .sa_qtag(32'd0),
 		.busy(busy), .fault(fault), .fault_addr(fault_addr)
 	);
-	amb_mem #(.SEED(SEED)) mem (
+	amb_mem #(.MEM_WORDS(16384), .SEED(SEED + 10)) dmem (
+		.clk(clk), .rst_n(rst_n), .req_valid(d_req_valid), .req_ready(d_req_ready),
+		.req_write(d_req_write), .req_line(d_req_line), .req_be(d_req_be),
+		.req_wdata(d_req_wdata), .req_tag(d_req_tag), .rsp_valid(d_rsp_valid),
+		.rsp_write(d_rsp_write), .rsp_tag(d_rsp_tag), .rsp_rdata(d_rsp_rdata),
+		.rsp_error(d_rsp_error)
+	);
+
+	/* The atomic unit (atg_mc_atom's behaviour) on the data memory. */
+	function [31:0] atom_op;
+		input [3:0] op;
+		input [31:0] old, a, b;
+		case (op)
+		4'd0: atom_op = old & a;
+		4'd1: atom_op = old | a;
+		4'd2: atom_op = old ^ a;
+		4'd3: atom_op = a;
+		4'd4: atom_op = old + a;
+		4'd5: atom_op = old - a;
+		4'd6: atom_op = $signed(old) > $signed(a) ? old : a;
+		4'd7: atom_op = $signed(old) < $signed(a) ? old : a;
+		4'd8: atom_op = old > a ? old : a;
+		4'd9: atom_op = old < a ? old : a;
+		default: atom_op = old == b ? a : old;
+		endcase
+	endfunction
+	integer aseed, ad;
+	reg [31:0] aold;
+	initial aseed = SEED;
+	always @(posedge clk) begin
+		if (at_valid && at_ready) begin
+			aold = dmem.peek({at_addr, 2'b00});
+			dmem.poke({at_addr, 2'b00}, atom_op(at_op, aold, at_a, at_b));
+			at_ready <= 1'b0;
+			for (ad = 0; ad < 2 + ($unsigned($random(aseed)) % 4); ad = ad + 1)
+				@(posedge clk);
+			at_old <= aold;
+			at_rsp_valid <= 1'b1;
+			@(posedge clk);
+			at_rsp_valid <= 1'b0;
+		end else
+			at_ready <= ($random(aseed) & 1) != 0;
+	end
+
+	amb_mem #(.MEM_WORDS(16384), .SEED(SEED)) mem (
 		.clk(clk), .rst_n(rst_n), .req_valid(i_req_valid), .req_ready(i_req_ready),
 		.req_write(i_req_write), .req_line(i_req_line), .req_be(i_req_be),
 		.req_wdata(i_req_wdata), .req_tag(i_req_tag), .rsp_valid(i_rsp_valid),
@@ -89,6 +157,8 @@ module atg_su_chk #(
 
 	reg [31:0] code [0:4095];
 	reg [32:0] exp [0:4*NREGS*32-1];
+	reg [31:0] dat [0:DWORDS-1];
+	reg [31:0] mexp [0:DWORDS-1];
 	integer lane_err [0:NPHYS-1];
 	event check;
 	integer n_fault;
@@ -135,7 +205,7 @@ module atg_su_chk #(
 		end
 	endtask
 
-	integer p, i, t, lanes, l;
+	integer p, i, t, lanes, groups, l, merr;
 	initial begin
 		done = 1'b0;
 		errs = 0;
@@ -145,31 +215,79 @@ module atg_su_chk #(
 		for (p = 0; p < NP; p = p + 1) begin
 			for (i = 0; i < 4096; i = i + 1)
 				code[i] = 32'd0;
+			lanes = 128;
+			groups = 1;
 			case (p)
 			0: begin
 				$readmemh("sim/tb/su/alu.hex", code);
 				$readmemh("sim/tb/su/alu.exp", exp);
-				lanes = 128;
+				$readmemh("sim/tb/su/alu.dat", dat);
+				$readmemh("sim/tb/su/alu.mexp", mexp);
 			end
 			1: begin
 				$readmemh("sim/tb/su/branch.hex", code);
 				$readmemh("sim/tb/su/branch.exp", exp);
+				$readmemh("sim/tb/su/branch.dat", dat);
+				$readmemh("sim/tb/su/branch.mexp", mexp);
 				lanes = 100;
 			end
-			default: begin
+			2: begin
 				$readmemh("sim/tb/su/rand.hex", code);
 				$readmemh("sim/tb/su/rand.exp", exp);
-				lanes = 128;
+				$readmemh("sim/tb/su/rand.dat", dat);
+				$readmemh("sim/tb/su/rand.mexp", mexp);
+			end
+			3: begin
+				$readmemh("sim/tb/su/frand.hex", code);
+				$readmemh("sim/tb/su/frand.exp", exp);
+				$readmemh("sim/tb/su/frand.dat", dat);
+				$readmemh("sim/tb/su/frand.mexp", mexp);
+			end
+			4: begin
+				$readmemh("sim/tb/su/mem.hex", code);
+				$readmemh("sim/tb/su/mem.exp", exp);
+				$readmemh("sim/tb/su/mem.dat", dat);
+				$readmemh("sim/tb/su/mem.mexp", mexp);
+			end
+			5: begin
+				$readmemh("sim/tb/su/vadd.hex", code);
+				$readmemh("sim/tb/su/vadd.exp", exp);
+				$readmemh("sim/tb/su/vadd.dat", dat);
+				$readmemh("sim/tb/su/vadd.mexp", mexp);
+				groups = 2;
+			end
+			default: begin
+				$readmemh("sim/tb/su/reduce.hex", code);
+				$readmemh("sim/tb/su/reduce.exp", exp);
+				$readmemh("sim/tb/su/reduce.dat", dat);
+				$readmemh("sim/tb/su/reduce.mexp", mexp);
 			end
 			endcase
 			rst_n = 1'b0;
 			for (i = 0; i < 4096; i = i + 1)
 				mem.poke(32'h1000 + 4 * i, code[i]);
+			for (i = 0; i < DWORDS; i = i + 1) begin
+				mem.poke(DATA + 4 * i, dat[i]);
+				dmem.poke(DATA + 4 * i, dat[i]);
+			end
 			repeat (3) @(negedge clk);
 			rst_n = 1'b1;
+			/* LOAD_CONST: region 0, the image's first 256 words. */
+			state(9'h1EC, 0);
+			state(9'h1ED, DATA);
+			state(9'h1EE, 256);
+			@(negedge clk);
+			lc_kick = 1'b1;
+			@(negedge clk);
+			lc_kick = 1'b0;
+			t = 0;
+			while (busy && t < 10000) begin
+				@(negedge clk);
+				t = t + 1;
+			end
 			state(9'h194, 32'h1000);
 			state(9'h199, {8'd0, 8'd1, 8'd1, lanes[7:0]});
-			state(9'h1E9, 1);
+			state(9'h1E9, groups);
 			state(9'h1EA, 1);
 			state(9'h1EB, 1);
 			@(negedge clk);
@@ -177,7 +295,7 @@ module atg_su_chk #(
 			@(negedge clk);
 			cs_kick = 1'b0;
 			t = 0;
-			while ((busy || t < 4) && t < 200000) begin
+			while ((busy || t < 4) && t < 1000000) begin
 				@(negedge clk);
 				t = t + 1;
 			end
@@ -190,6 +308,15 @@ module atg_su_chk #(
 			#1;
 			for (l = 0; l < NPHYS; l = l + 1)
 				errs = errs + lane_err[l];
+			merr = 0;
+			for (i = 0; i < DWORDS; i = i + 1)
+				if (dmem.peek(DATA + 4 * i) !== mexp[i]) begin
+					if (merr < 3)
+						$display("FAIL atg_su NPHYS %0d program %0d: memory %h: %h want %h",
+							NPHYS, p, DATA + 4 * i, dmem.peek(DATA + 4 * i), mexp[i]);
+					merr = merr + 1;
+				end
+			errs = errs + merr;
 			$display("atg_su NPHYS %0d program %0d: %0d cycles", NPHYS, p, t);
 		end
 		errs = errs + n_fault;
@@ -224,7 +351,7 @@ module atg_su_tb;
 	end
 
 	initial begin
-		#20000000;
+		#100000000;
 		$display("FAIL atg_su timeout");
 		$finish;
 	end

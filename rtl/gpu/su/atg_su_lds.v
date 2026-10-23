@@ -10,9 +10,17 @@
  * RAM per SU (4 KiB ZYBO, 16 KiB KC705), word addressed; returns as long
  * beats.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_lds.md.
- */
+ * One lane group at a time (x_ready is 1 only in IDLE).  The word
+ * address of lane l is ((rs1 + imm) >> 2) mod LDS_BYTES/4.  The lanes go
+ * through the RAM's one port one per cycle (lane 0 first; for sts a
+ * later lane wins on the same word): lds reads the EXEC lanes (the read
+ * data is registered, one more cycle at the end), sts writes the
+ * side-effect lanes; then one beat: lds l_wr 1 with the EXEC lanes, sts
+ * l_wr 0; l_last = x_last, class m.  A group without lanes returns at once.
+ *
+ * States: IDLE →(group)→ ACCESS (NPHYS cycles) → DRAIN → BEAT
+ * →(l_ready)→ IDLE.
+*/
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -55,23 +63,103 @@ module atg_su_lds #(
 	output wire [SBE_W:0] l_sbe,
 	output wire [2:0] l_cls
 );
-	/* spec/gpu/su/atg_su_lds.md */
-	assign x_ready = 1'd0;
-	assign l_valid = 1'd0;
-	assign l_warp = {WARP_W{1'b0}};
-	assign l_grp = {GRP_W{1'b0}};
-	assign l_rd = 7'd0;
-	assign l_data = {(NPHYS*32){1'b0}};
-	assign l_lanes = {NPHYS{1'b0}};
-	assign l_wr = 1'd0;
-	assign l_last = 1'd0;
-	assign l_sbe = {((SBE_W)+1){1'b0}};
-	assign l_cls = 3'd0;
+`include "atg_su_uop.vh"
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, x_valid, x_warp, x_grp, x_last, x_sbe, x_pc, x_uop, x_a, x_b, x_c, x_mask,
-		x_info, l_ready, (NWARPS != 0), (LDS_BYTES != 0)};
+	localparam DW = NPHYS * 32;
+	localparam NW = LDS_BYTES / 4;
+	localparam AW = $clog2(NW);
+	localparam LW = NPHYS > 1 ? $clog2(NPHYS) : 1;
+	localparam [1:0] IDLE = 2'd0, ACCESS = 2'd1, DRAIN = 2'd2, BEAT = 2'd3;
+
+	reg [31:0] ram [0:NW-1];
+	reg [1:0] st;
+	reg [NPHYS*AW-1:0] radr;
+	reg [DW-1:0] rdat, res;
+	reg [NPHYS-1:0] lanes;
+	reg rsts;
+	reg [6:0] rrd;
+	reg [WARP_W-1:0] rwarp;
+	reg [GRP_W-1:0] rgrp;
+	reg rlast;
+	reg [SBE_W:0] rsbe;
+	reg [LW-1:0] li, pli;
+	reg pval;
+	reg [31:0] q;
+
+	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_LDS;
+	wire is_sts = x_uop[ATG_UOP_OP +: 8] == ATG_LDS_STS;
+	wire [NPHYS-1:0] xl = is_sts ? x_mask[2*NPHYS-1:NPHYS] : x_mask[NPHYS-1:0];
+	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
+	wire [AW-1:0] a = radr[li*AW +: AW];
+	wire lane_on = lanes[li];
+	assign x_ready = st == IDLE;
+
+	/* The word addresses of the group on x_*. */
+	reg [NPHYS*AW-1:0] xadr;
+	reg [31:0] ba;
+	integer l;
+	always @(*)
+		for (l = 0; l < NPHYS; l = l + 1) begin
+			ba = x_a[l*32 +: 32] + imm;
+			xadr[l*AW +: AW] = ba[AW+1:2];
+		end
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st <= IDLE;
+			li <= {LW{1'b0}};
+			pval <= 1'b0;
+		end else begin
+			pval <= 1'b0;
+			case (st)
+			IDLE: if (mine) begin
+				radr <= xadr;
+				rdat <= x_b;
+				lanes <= xl;
+				rsts <= is_sts;
+				res <= {DW{1'b0}};
+				rrd <= x_uop[ATG_UOP_RD +: 7];
+				rwarp <= x_warp;
+				rgrp <= x_grp;
+				rlast <= x_last;
+				rsbe <= x_sbe;
+				li <= {LW{1'b0}};
+				st <= xl == {NPHYS{1'b0}} ? BEAT : ACCESS;
+			end
+			ACCESS: begin
+				if (lane_on && rsts)
+					ram[a] <= rdat[li*32 +: 32];
+				pval <= lane_on && !rsts;
+				pli <= li;
+				li <= li + 1'b1;
+				if ({{(31-LW){1'b0}}, li} == NPHYS - 1)
+					st <= DRAIN;
+			end
+			DRAIN: st <= BEAT;
+			default: if (l_ready)
+				st <= IDLE;
+			endcase
+			if (pval)
+				res[pli*32 +: 32] <= q;
+		end
+	end
+
+	/* The RAM's registered read. */
+	always @(posedge clk)
+		q <= ram[a];
+
+	assign l_valid = st == BEAT;
+	assign l_warp = rwarp;
+	assign l_grp = rgrp;
+	assign l_rd = rrd;
+	assign l_data = res;
+	assign l_lanes = lanes;
+	assign l_wr = !rsts;
+	assign l_last = rlast;
+	assign l_sbe = rsbe;
+	assign l_cls = ATG_CLS_M;
+
+	wire unused_ok = &{1'b0, x_pc, x_c, x_info, x_uop, imm, ba, (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

@@ -86,4 +86,4 @@ design §3.5 (D$ 1 KiB, write-through), §4.1.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_dcache_tb.v`).  As §4-§7: one request at a time, a write updates a line that is present when the MC answers, m_req_tag is 0.

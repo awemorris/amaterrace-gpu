@@ -119,4 +119,4 @@ design §3.4.1 (LOAD, STORE, custom-0 atom/fence), §3.5 (coalescer), §4.1 (ato
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_lsu_tb.v`).  One lane group at a time, one D$ request outstanding; the coalescer takes the first pending lane's line and every pending lane in it (one request per distinct line); sw waits for each write's response before the next line; when two lanes of a store write one word the higher lane wins; atom invalidates the D$ when it starts and is serial per lane; fence acquire pulses dc_inv one cycle after it is issued (no beat).  Addresses ignore bits 1:0.

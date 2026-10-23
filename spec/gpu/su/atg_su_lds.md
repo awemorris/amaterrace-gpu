@@ -85,4 +85,4 @@ design §3.5 (LDS), §3.4.1 (custom-0 lds/sts).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_lds_tb.v`).  One lane group at a time, every lane of the group takes one cycle (NPHYS + 2 cycles per group); for sts the higher lane wins on the same word.
