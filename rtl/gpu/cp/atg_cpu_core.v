@@ -333,8 +333,11 @@ module atg_cpu_core (
 			if (do_fault) begin
 				faulted <= 1'b1;
 				fault <= 1'b1;
-				fault_pc <= pc_e;
 			end
+			/* Follows E until the fault, then holds (no enable on the
+			 * fault checks: timing). */
+			if (!faulted)
+				fault_pc <= pc_e;
 			if (e_done)
 				e_busy <= 1'b0;
 			else if ((d_valid && !d_ready) || md_start)
