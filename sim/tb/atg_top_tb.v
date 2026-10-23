@@ -381,8 +381,8 @@ module atg_top_harness #(
 		expect_reg(GHCI_DEVICE_ID, 32'h41544731, 32'hFFFFFFFF);
 		expect_reg(GHCI_ISA_ID, 32'd0, 32'hFFFFFFFF);
 		expect_reg(GHCI_GCLK_HZ, 32'd100000000, 32'hFFFFFFFF);
-		expect_reg(GHCI_CAPS, {8'd0, LS4, 4'd0, 4'd1, 4'b1000, 4'd0, 4'b0010}, 32'hFFFFFFFF);
-		expect_reg(GHCI_DEVICE_VERSION, 32'h00000002, 32'hFFFFFFFF);
+		expect_reg(GHCI_CAPS, {8'd0, LS4, 4'd0, 4'd1, 4'b1000, 4'd0, 4'b0011}, 32'hFFFFFFFF);
+		expect_reg(GHCI_DEVICE_VERSION, 32'h00000003, 32'hFFFFFFFF);
 		/* The capability list: one PERF entry. */
 		expect_reg(GHCI_EXTCAP, 32'h00000100, 32'hFFFFFFFF);
 		expect_reg(32'h0000_0100, {16'd0, 8'd1, GHCI_XCAP_PERF}, 32'hFFFFFFFF);
@@ -596,8 +596,14 @@ module atg_top_harness #(
 		expect_reg(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_FAULT, 32'd1 << GHCI_IRQ_FAULT);
 		if (!irq)
 			fail_msg("no interrupt for the fault");
-		state_write(GHCI_S_BLT_COLOR, 32'h77777777);
-		expect_reg(GHCI_STATE_BASE + GHCI_S_BLT_COLOR * 4, 32'h77777777, 32'd0);
+		/* A STATE write while FAULTED is refused: the word keeps its value. */
+		host_read(GHCI_STATE_BASE + GHCI_S_BLT_COLOR * 4, v);
+		state_write(GHCI_S_BLT_COLOR, ~v);
+		expect_reg(GHCI_STATE_BASE + GHCI_S_BLT_COLOR * 4, v, 32'hFFFFFFFF);
+		/* The debug port works in FAULTED. */
+		host_write(GHCI_DBG_ADDR, REF_BASE + 32'h44);
+		wait_dbg();
+		expect_reg(GHCI_DBG_DATA, refm[17], 32'hFFFFFFFF);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
 		wait_status_clear(32'hF << GHCI_STATUS_STATE);
 		expect_reg(GHCI_STATUS, (32'd1 << GHCI_STATUS_AXI_IDLE) | (32'd1 << GHCI_STATUS_MEM_READY),
@@ -609,6 +615,21 @@ module atg_top_harness #(
 			fail_msg("interrupt after RESET");
 		blit(GHCI_BLT_FILL, 32'h00031000, 128, 0, 0, 1, 1, 0, 0, 5, 3, 32'h0BADF00D, 0, 0);
 		compare_ref("fill after reset");
+
+		/* STATE survives RESET and the BLT sees it again (the replay):
+		 * after a RESET only the colour is rewritten and the same FILL
+		 * runs on the kept fields. */
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
+		wait_status_clear(32'hF << GHCI_STATUS_STATE);
+		expect_reg(GHCI_STATE_BASE + GHCI_S_BLT_DST_BASE * 4, 32'h00031000, 32'hFFFFFFFF);
+		state_write(GHCI_S_BLT_COLOR, 32'h5EED1234);
+		host_write(GHCI_KICK, 32'd1);
+		wait_status_clear(32'd1 << GHCI_STATUS_BLT_BUSY);
+		for (n = 1; n < 4; n = n + 1)
+			for (k = 1; k < 6; k = k + 1)
+				refm[(32'h00031000 + n * 128 + k * 4 - REF_BASE) / 4] = 32'h5EED1234;
+		compare_ref("fill on the state kept over RESET");
+		expect_reg(GHCI_STATUS, 32'd0, 32'd1 << GHCI_STATUS_FAULT);
 
 		/* Unsupported operations: a pixel size of 2, blend-over of a
 		 * tile, KICK.DRAW. */

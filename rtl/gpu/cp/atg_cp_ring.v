@@ -6,13 +6,29 @@
  */
 
 /*
- * atg_cp_ring: The command ring: RING_BASE/SIZE/WPTR/RPTR, line reads of
- * the ring through the CP's AMB port, the packet envelope (design §2.4.2),
- * class N packets to the sequencer, class V packets to the CPU, class 3
- * padding skipped.
+ * atg_cp_ring: the command ring: RING_BASE/SIZE/WPTR/RPTR, line reads of
+ * the ring through the CP's AMB port, the packet envelope of design
+ * §2.4.2 (version 3): class N packets (0 standard, 1 vendor µops) go to
+ * the sequencer dword by dword, class V packets (2) to the CPU or, without
+ * one (CLASS_V = 0), are a fault of kind 2, class 3 padding is skipped.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/cp/atg_cp_ring.md.
+ * Registers: RING_BASE (32-byte aligned) and RING_SIZE (log2 bytes,
+ * clamped to 10..20 when written) are written only when open and survive
+ * the core reset (rst_n); RING_WPTR (the doorbell, kept mod the ring's
+ * dword count) and RING_RPTR (read only) are cleared by the core reset.
+ *
+ * Fetch: with run (or once per step) and RPTR != WPTR, the header at RPTR
+ * is decoded; halt is looked at only between packets.  One line buffer,
+ * one read outstanding.  A doorbell marks the buffer stale for the next
+ * header (design §2.7: the line at RPTR is read again, nothing fetched
+ * before the doorbell is used for a new packet); the dwords of a packet
+ * already accepted lie below WPTR and are read as they are.  A packet
+ * whose end passes WPTR or the ring's end is a fault of kind 3 with the
+ * header's address; nothing of it is handed over.  A read error is a
+ * fault of kind 1 with the line's address.  After a fault the ring stays
+ * stopped until the core reset.  RPTR moves past a packet when it has been
+ * handed over (class N: its last dword taken; V: v_done; padding at once)
+ * and retire pulses.
  */
 
 `timescale 1ns / 1ps
@@ -21,10 +37,12 @@
 module atg_cp_ring #(
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 (ZYBO) or 64 (KC705) */
-	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
+	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
+	parameter CLASS_V = 1	/* 1: class V packets go to the CPU; 0: fault kind 2 */
 ) (
 	input wire clk,
 	input wire rst_n,
+	input wire core_rst_n,
 	/* HCR register snoop (from atg_cp_regs) */
 	input wire hcr_we,
 	input wire [9:0] hcr_widx,
@@ -71,33 +89,215 @@ module atg_cp_ring #(
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
 	input wire rsp_error
 );
-	/* spec/gpu/cp/atg_cp_ring.md */
-	assign hcr_rdata = 32'd0;
-	assign n_valid = 1'd0;
-	assign n_data = 32'd0;
-	assign n_last = 1'd0;
-	assign v_valid = 1'd0;
-	assign v_addr = 32'd0;
-	assign v_dwords = 16'd0;
-	assign v_tag = 8'd0;
-	assign empty = 1'd0;
-	assign retire = 1'd0;
-	assign busy = 1'd0;
-	assign fault = 1'd0;
-	assign fault_kind = 4'd0;
-	assign fault_addr = 32'd0;
-	assign fault_tag = 8'd0;
-	assign req_valid = 1'd0;
-	assign req_write = 1'd0;
-	assign req_line = {(ADDR_W-LINE_SHIFT){1'b0}};
+	`include "ghci_regs.vh"
+
+	localparam LA_W = ADDR_W - LINE_SHIFT;
+	localparam WS = LINE_SHIFT - 2;
+	localparam [9:0] I_BASE = GHCI_RING_BASE[11:2];
+	localparam [9:0] I_SIZE = GHCI_RING_SIZE[11:2];
+	localparam [9:0] I_WPTR = GHCI_RING_WPTR[11:2];
+	localparam [9:0] I_RPTR = GHCI_RING_RPTR[11:2];
+
+	localparam [2:0] R_IDLE = 3'd0;
+	localparam [2:0] R_HDR = 3'd1;	/* decode the header at cur */
+	localparam [2:0] R_N = 3'd2;	/* stream a class N packet */
+	localparam [2:0] R_V = 3'd3;	/* a class V packet waits for v_done */
+	localparam [2:0] R_ADV = 3'd4;	/* move RPTR past the packet */
+	localparam [2:0] R_REQ = 3'd5;	/* line read request */
+	localparam [2:0] R_RSP = 3'd6;	/* line read response */
+	localparam [2:0] R_FAULT = 3'd7;
+
+	reg [31:0] base;
+	reg [4:0] size;
+	reg [17:0] wptr;
+	reg [17:0] rptr;
+
+	/* The ring's dword count - 1 (size 10..20: 2^8..2^18 dwords). */
+	wire [17:0] mask = (18'd1 << (size - 5'd2)) - 18'd1;
+	wire [18:0] nwords = {1'b0, mask} + 19'd1;
+
+	reg [2:0] st;
+	reg ret_n;	/* the read is for R_N (else R_HDR) */
+	reg [17:0] cur;	/* the header's dword index */
+	reg [15:0] n;	/* dwords after the header */
+	reg [15:0] k;	/* R_N: dword of the packet on n_data (0 = header) */
+	reg [7:0] tag;
+	reg step_pend;
+	reg stale;
+	reg buf_ok;
+	reg [LA_W-1:0] buf_line;
+	reg [LINE_BYTES*8-1:0] buf_data;
+
+	/* The dword wanted: the header or dword k of the packet. */
+	wire [17:0] want = st == R_N || (st != R_HDR && ret_n) ? cur + {2'd0, k} : cur;
+	wire [31:0] want_addr = base + {12'd0, want, 2'b00};
+	wire [LA_W-1:0] want_line = want_addr[ADDR_W-1:LINE_SHIFT];
+	wire [WS-1:0] want_word = want_addr[LINE_SHIFT-1:2];
+	wire [31:0] want_data = buf_data[{want_word, 5'd0} +: 32];
+	wire hit = buf_ok && buf_line == want_line;
+
+	wire go = (run && !halt) || step_pend;
+	wire doorbell = hcr_we && hcr_widx == I_WPTR;
+	wire [17:0] wptr_new = ((wptr & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) &
+		mask;
+
+	/* Header decode. */
+	wire [1:0] h_class = want_data[31:30];
+	wire [15:0] h_n = h_class[1] ? want_data[15:0] : {8'd0, want_data[7:0]};
+	wire [17:0] avail = (wptr - cur) & mask;	/* dwords written from cur */
+	wire [18:0] h_end = {1'b0, cur} + {3'd0, h_n} + 19'd1;
+	wire h_bad = h_end > nwords || {3'd0, h_n} + 19'd1 > {1'b0, avail};
+	wire h_novf = h_class == 2'd2 && CLASS_V == 0;
+	wire [17:0] p_end = (cur + {2'd0, n} + 18'd1) & mask;	/* after the packet */
+
+	reg f_pulse;
+	reg [3:0] f_kind;
+	reg [31:0] f_addr;
+	reg ret_pulse;
+
+	assign fault = f_pulse;
+	assign fault_kind = f_kind;
+	assign fault_addr = f_addr;
+	assign fault_tag = tag;
+	assign retire = ret_pulse;
+	assign empty = wptr == rptr;
+	assign busy = st != R_IDLE && st != R_FAULT;
+
+	assign n_valid = st == R_N && hit;
+	assign n_data = want_data;
+	assign n_last = k == n;
+
+	assign v_valid = st == R_V;
+	assign v_addr = base + {12'd0, cur + 18'd1, 2'b00};
+	assign v_dwords = n;
+	assign v_tag = tag;
+
+	assign req_valid = st == R_REQ;
+	assign req_write = 1'b0;
+	assign req_line = want_line;
 	assign req_be = {LINE_BYTES{1'b0}};
-	assign req_wdata = {(LINE_BYTES*8){1'b0}};
+	assign req_wdata = {(LINE_BYTES * 8){1'b0}};
 	assign req_tag = 8'd0;
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, hcr_we, hcr_widx, hcr_wdata, hcr_wmask, hcr_ridx, run, halt, step, open,
-		n_ready, v_done, req_ready, rsp_valid, rsp_write, rsp_tag, rsp_rdata, rsp_error};
+	/* The registers that survive CTRL.RESET. */
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			base <= 32'd0;
+			size <= 5'd12;
+		end else if (hcr_we && open) begin
+			if (hcr_widx == I_BASE)
+				base <= ((base & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
+			if (hcr_widx == I_SIZE && hcr_wmask[0])
+				size <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
+					hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
+		end
+	end
+
+	always @(posedge clk) begin
+		if (!core_rst_n) begin
+			wptr <= 18'd0;
+			rptr <= 18'd0;
+			st <= R_IDLE;
+			ret_n <= 1'b0;
+			cur <= 18'd0;
+			n <= 16'd0;
+			k <= 16'd0;
+			tag <= 8'd0;
+			step_pend <= 1'b0;
+			stale <= 1'b0;
+			buf_ok <= 1'b0;
+			buf_line <= {LA_W{1'b0}};
+			buf_data <= {(LINE_BYTES * 8){1'b0}};
+			f_pulse <= 1'b0;
+			f_kind <= 4'd0;
+			f_addr <= 32'd0;
+			ret_pulse <= 1'b0;
+		end else begin
+			f_pulse <= 1'b0;
+			ret_pulse <= 1'b0;
+			if (doorbell) begin
+				wptr <= wptr_new;
+				stale <= 1'b1;
+			end
+			if (step)
+				step_pend <= 1'b1;
+			else if (run && !halt)
+				step_pend <= 1'b0;
+
+			case (st)
+			R_IDLE:
+				if (go && rptr != wptr) begin
+					cur <= rptr;
+					step_pend <= 1'b0;
+					st <= R_HDR;
+				end
+			R_HDR:
+				if (!hit || stale) begin
+					ret_n <= 1'b0;
+					stale <= doorbell;
+					st <= R_REQ;
+				end else begin
+					tag <= want_data[23:16];
+					n <= h_n;
+					k <= 16'd0;
+					if (h_bad || h_novf) begin
+						f_pulse <= 1'b1;
+						f_kind <= h_bad ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+						f_addr <= want_addr;
+						st <= R_FAULT;
+					end else begin
+						case (h_class)
+						2'd2: st <= R_V;
+						2'd3: st <= R_ADV;
+						default: st <= R_N;
+						endcase
+					end
+				end
+			R_N:
+				if (!hit) begin
+					ret_n <= 1'b1;
+					st <= R_REQ;
+				end else if (n_ready) begin
+					if (k == n)
+						st <= R_ADV;
+					else
+						k <= k + 16'd1;
+				end
+			R_V:
+				if (v_done)
+					st <= R_ADV;
+			R_ADV: begin
+				rptr <= p_end;
+				ret_pulse <= 1'b1;
+				st <= R_IDLE;
+			end
+			R_REQ:
+				if (req_ready)
+					st <= R_RSP;
+			R_RSP:
+				if (rsp_valid) begin
+					if (rsp_error) begin
+						f_pulse <= 1'b1;
+						f_kind <= GHCI_FAULT_APERTURE;
+						f_addr <= {want_line, {LINE_SHIFT{1'b0}}};
+						st <= R_FAULT;
+					end else begin
+						buf_ok <= 1'b1;
+						buf_line <= want_line;
+						buf_data <= rsp_rdata;
+						st <= ret_n ? R_N : R_HDR;
+					end
+				end
+			default:
+				;
+			endcase
+		end
+	end
+
+	assign hcr_rdata = hcr_ridx == I_BASE ? base : hcr_ridx == I_SIZE ? {27'd0, size} :
+		hcr_ridx == I_WPTR ? {14'd0, wptr} : hcr_ridx == I_RPTR ? {14'd0, rptr} : 32'd0;
+
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, h_end[18]};
 endmodule
 
 `default_nettype wire
