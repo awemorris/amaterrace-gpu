@@ -56,4 +56,4 @@ RISC-V unprivileged spec (RV32I).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p017 (P2, branch p2-cpu); `sim/tb/atg_cpu_alu_tb.v` passes.  Op codes 11-15 give y = 0.
