@@ -80,4 +80,4 @@ design §3.4.1 (OP, OP-IMM, LUI, custom-3 sel), §3.2 (Booleans).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_alu_tb.v`).  x_ready is always 1; operand b is the immediate when OP bit `ATG_ALU_IMMB` is set; groups of other units and uops without WRD give no result.

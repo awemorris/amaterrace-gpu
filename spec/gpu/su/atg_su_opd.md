@@ -105,4 +105,4 @@ design §3.2 (operands), §3.1 (masks, helper lanes), include/atg_su_uop.vh.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_opd_tb.v` with NPHYS 8/16/32).  The n/a modifiers apply for units FPU, XU and PK (PK on both halves).  Gap in the warp-info word: q_info has no WG_SIZE, so in v0 `lidx` = `lidn` and `lidy` = `lidz` = `prim` = 0 (right for 1-D workgroups); fixing it needs a q_info field (proposal for p009).

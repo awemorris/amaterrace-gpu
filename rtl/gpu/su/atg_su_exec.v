@@ -63,25 +63,124 @@ module atg_su_exec #(
 	input wire [WARP_W-1:0] init_warp,
 	input wire [31:0] init_mask
 );
-	/* spec/gpu/su/atg_su_exec.md */
-	assign x_ready = 1'd0;
-	assign s_valid = 1'd0;
-	assign s_warp = {WARP_W{1'b0}};
-	assign s_grp = {GRP_W{1'b0}};
-	assign s_rd = 7'd0;
-	assign s_data = {(NPHYS*32){1'b0}};
-	assign s_lanes = {NPHYS{1'b0}};
-	assign wc_valid = 1'd0;
-	assign wc_warp = {WARP_W{1'b0}};
-	assign wc_op = 2'd0;
-	assign wc_pc = 16'd0;
-	assign q_exec = 32'd0;
-	assign q_killed = 32'd0;
+`include "atg_su_uop.vh"
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, x_valid, x_warp, x_grp, x_last, x_sbe, x_pc, x_uop, x_a, x_b, x_c, x_mask,
-		x_info, q_warp, init_valid, init_warp, init_mask, (NWARPS != 0), (SHORT_LAT != 0)};
+	localparam DW = NPHYS * 32;
+	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS + DW;
+
+	reg [NWARPS*32-1:0] exec_r, kill_r;
+	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXEC;
+	wire [7:0] op = x_uop[ATG_UOP_OP +: 8];
+	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
+	wire [NPHYS-1:0] em = x_mask[NPHYS-1:0];
+	wire [31:0] lane0 = {{(32-GRP_W){1'b0}}, x_grp} * NPHYS;
+	wire [31:0] wexec = exec_r[x_warp*32 +: 32];
+
+	/* Per lane: the Boolean of rs1. */
+	reg [NPHYS-1:0] bt;
+	integer l;
+	always @(*)
+		for (l = 0; l < NPHYS; l = l + 1)
+			bt[l] = x_a[l*32 +: 32] != 32'd0;
+	wire [31:0] bt_w = {{(32-NPHYS){1'b0}}, bt} << lane0;
+	wire [31:0] gmask = {{(32-NPHYS){1'b0}}, {NPHYS{1'b1}}} << lane0;
+
+	/* Branch conditions over the groups of one instruction. */
+	reg acc_any, acc_all;
+	wire any_now = acc_any || |(bt & em);
+	wire all_now = acc_all && &(bt | ~em);
+	reg take;
+	always @(*) begin
+		case (op)
+		ATG_EXEC_BANY: take = any_now;
+		ATG_EXEC_BNONE: take = !any_now;
+		ATG_EXEC_BALL: take = all_now;
+		ATG_EXEC_J: take = 1'b1;
+		ATG_EXEC_BEXNZ: take = wexec != 32'd0;
+		default: take = wexec == 32'd0;	/* BEXZ */
+		endcase
+	end
+	wire is_br = op <= ATG_EXEC_BEXZ;
+
+	/* exec.save: each lane's EXEC bit as a Boolean, written to every lane. */
+	reg [DW-1:0] save_d;
+	always @(*)
+		for (l = 0; l < NPHYS; l = l + 1)
+			save_d[l*32 +: 32] = {32{wexec[lane0 + l]}};
+	wire s_in = mine && op == ATG_EXEC_SAVE && x_uop[ATG_UOP_WRD];
+
+	reg [EW-1:0] pipe [0:SHORT_LAT-1];
+	reg wc_v;
+	reg [WARP_W-1:0] wc_w;
+	reg [1:0] wc_o;
+	reg [15:0] wc_p;
+	integer k;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			exec_r <= {(NWARPS*32){1'b0}};
+			kill_r <= {(NWARPS*32){1'b0}};
+			acc_any <= 1'b0;
+			acc_all <= 1'b1;
+			wc_v <= 1'b0;
+			wc_w <= {WARP_W{1'b0}};
+			wc_o <= 2'd0;
+			wc_p <= 16'd0;
+			for (k = 0; k < SHORT_LAT; k = k + 1)
+				pipe[k] <= {EW{1'b0}};
+		end else begin
+			pipe[0] <= {s_in, x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], {NPHYS{1'b1}}, save_d};
+			for (k = 1; k < SHORT_LAT; k = k + 1)
+				pipe[k] <= pipe[k-1];
+			wc_v <= 1'b0;
+			if (mine) begin
+				case (op)
+				ATG_EXEC_SET: exec_r[x_warp*32 +: 32] <= (wexec & ~gmask) | bt_w;
+				ATG_EXEC_AND: exec_r[x_warp*32 +: 32] <= wexec & (~gmask | bt_w);
+				ATG_EXEC_OR: exec_r[x_warp*32 +: 32] <= wexec | bt_w;
+				ATG_EXEC_KILL: kill_r[x_warp*32 +: 32] <= kill_r[x_warp*32 +: 32] |
+					(bt_w & wexec);
+				default: ;
+				endcase
+				if (x_last) begin
+					acc_any <= 1'b0;
+					acc_all <= 1'b1;
+					if (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR) begin
+						wc_v <= 1'b1;
+						wc_w <= x_warp;
+						wc_o <= op == ATG_EXEC_END ? 2'd1 : op == ATG_EXEC_BAR ? 2'd2 :
+							2'd0;
+						wc_p <= is_br && take ? x_pc + imm[15:0] : x_pc + 16'd1;
+					end
+				end else begin
+					acc_any <= any_now;
+					acc_all <= all_now;
+				end
+			end
+			if (init_valid) begin
+				exec_r[init_warp*32 +: 32] <= init_mask;
+				kill_r[init_warp*32 +: 32] <= 32'd0;
+			end
+		end
+	end
+
+	assign wc_valid = wc_v;
+	assign wc_warp = wc_w;
+	assign wc_op = wc_o;
+	assign wc_pc = wc_p;
+	assign q_exec = exec_r[q_warp*32 +: 32];
+	assign q_killed = kill_r[q_warp*32 +: 32];
+
+	wire [EW-1:0] o = pipe[SHORT_LAT-1];
+	assign s_valid = o[EW-1];
+	assign s_warp = o[EW-2 -: WARP_W];
+	assign s_grp = o[EW-2-WARP_W -: GRP_W];
+	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];
+	assign s_lanes = o[DW +: NPHYS];
+	assign s_data = o[DW-1:0];
+	assign x_ready = 1'b1;
+
+	wire unused_ok = &{1'b0, x_sbe, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
+		imm[31:16], lane0};
 endmodule
 
 `default_nettype wire

@@ -74,4 +74,4 @@ design §3.5 (register file, U12), README (register file shape).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_rf_tb.v` with NPHYS 8/16/32 and NREGS 64/NWARPS 8).  One simple dual-port RAM per lane and copy; r_data holds while r_en is 0 (atg_su_opd relies on it under back-pressure).

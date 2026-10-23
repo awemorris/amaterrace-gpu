@@ -70,4 +70,4 @@ design §3.5 (I$), §3.3 (64-bit instructions).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_fetch_tb.v`).

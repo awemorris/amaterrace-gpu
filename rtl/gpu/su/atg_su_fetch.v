@@ -41,18 +41,50 @@ module atg_su_fetch #(
 	output wire [15:0] d_pc,
 	output wire [63:0] d_instr
 );
-	/* spec/gpu/su/atg_su_fetch.md */
-	assign f_ready = 1'd0;
-	assign ic_req = 1'd0;
-	assign ic_addr = 32'd0;
-	assign d_valid = 1'd0;
-	assign d_warp = {WARP_W{1'b0}};
-	assign d_pc = 16'd0;
-	assign d_instr = 64'd0;
+	/* Two in-flight fetches in order: {warp, pc} at request, the
+	 * instruction on ic_rvalid; the head leaves when it has its data. */
+	reg [WARP_W-1:0] q_warp [0:1];
+	reg [15:0] q_pc [0:1];
+	reg [63:0] q_ins [0:1];
+	reg [1:0] q_have;
+	reg [1:0] wp, rp, fp;	/* request, read and fill pointers (mod 4, index bit 0) */
+	wire [1:0] used = wp - rp;
+	wire room = used != 2'd2;
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, f_valid, f_warp, f_pc, f_addr, ic_ready, ic_rvalid, ic_rdata, d_ready};
+	assign ic_req = f_valid && room;
+	assign ic_addr = f_addr;
+	assign f_ready = room && ic_ready;
+	wire push = f_valid && f_ready;
+
+	wire h = rp[0];
+	assign d_valid = used != 2'd0 && q_have[h];
+	assign d_warp = q_warp[h];
+	assign d_pc = q_pc[h];
+	assign d_instr = q_ins[h];
+	wire pop = d_valid && d_ready;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			wp <= 2'd0;
+			rp <= 2'd0;
+			fp <= 2'd0;
+			q_have <= 2'b00;
+		end else begin
+			if (push) begin
+				q_warp[wp[0]] <= f_warp;
+				q_pc[wp[0]] <= f_pc;
+				q_have[wp[0]] <= 1'b0;
+				wp <= wp + 2'd1;
+			end
+			if (ic_rvalid) begin
+				q_ins[fp[0]] <= ic_rdata;
+				q_have[fp[0]] <= 1'b1;
+				fp <= fp + 2'd1;
+			end
+			if (pop)
+				rp <= rp + 2'd1;
+		end
+	end
 endmodule
 
 `default_nettype wire

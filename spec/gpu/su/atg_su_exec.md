@@ -66,8 +66,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 - Branch conditions combine the groups: any/none/all over EXEC lanes of rs1 ≠ 0; the decision is
   made after the last group; target = pc + offset (instructions).  Not taken: wc_pc = pc + 1.
-- exec.set/and/or update EXEC from the Boolean rs1 (≠ 0); exec.save rd writes EXEC (as a uniform
-  value) through the short result; kill sets KILLED lanes (sticky).
+- exec.set/and/or update EXEC from the Boolean rs1 (≠ 0); exec.save rd writes each lane's EXEC bit as a
+  Boolean (all-ones/0) to all 32 lanes through the short result; kill sets KILLED lanes (sticky).
 
 ## 5. State machine
 
@@ -75,7 +75,7 @@ None (registers per warp).
 
 ## 6. Latency and throughput
 
-One group per cycle; the branch resolves SHORT_LAT cycles after the last group.
+One group per cycle; wc_* comes the cycle after the last group of a branch/end/bar.
 
 ## 7. Corner cases and errors
 
@@ -96,4 +96,4 @@ design §3.1 (masks, branches), §3.4.1 (BRANCH, custom-3 exec/kill, custom-0 en
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_exec_tb.v`).  Corrections here: wc_* comes one cycle after the last group (not SHORT_LAT); exec.save writes each lane's own EXEC bit as a Boolean to all 32 lanes (design §6.6's `exec.save rS` … `exec.set rS` needs that; a uniform EXEC word would not restore it).  ball over an empty EXEC is taken, bany is not.

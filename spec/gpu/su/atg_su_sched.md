@@ -116,4 +116,4 @@ design §3.1, §3.5 (scheduler), §3.8 (slot reservation), §2.3 (program STATE 
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_sched_tb.v`).  A fetch that is not taken keeps its warp on f_* (valid/ready).  Compute warps of a workgroup get EXEC = the lanes below WG_SIZE, LID = 32 × warp, and a 4-bit workgroup tag for barriers; a workgroup is launched one warp per cycle while vertex/fragment grants wait.  Vertex/fragment q_info: kind, front, sequence and coverage from fl_info; LID 0.

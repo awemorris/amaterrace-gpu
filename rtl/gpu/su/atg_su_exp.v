@@ -81,14 +81,27 @@ module atg_su_exp #(
 	assign pt_rdata = 32'd0;
 	assign pt_ok = 1'd0;
 	assign pt_base = 8'd0;
-	assign xr_valid = 1'd0;
-	assign xr_warp = {WARP_W{1'b0}};
+	/* p008 interim: no export buffer yet, so an ended warp's buffer is
+	 * drained at once (xr_valid the cycle after wc_end). */
+	reg xr_v;
+	reg [WARP_W-1:0] xr_w;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			xr_v <= 1'b0;
+			xr_w <= {WARP_W{1'b0}};
+		end else begin
+			xr_v <= wc_end;
+			xr_w <= wc_warp;
+		end
+	end
+	assign xr_valid = xr_v;
+	assign xr_warp = xr_w;
 
 	/* The stub reads none of its inputs. */
 	wire unused_ok = &{1'b0,
 		clk, rst_n, x_valid, x_warp, x_grp, x_last, x_sbe, x_pc, x_uop, x_a, x_b, x_c, x_mask,
 		x_info, ex_ready, ex_next, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx, pt_take,
-		wc_end, wc_warp, (NWARPS != 0), (PT_ENTRIES != 0), (VARY_WORDS != 0)};
+		(NWARPS != 0), (PT_ENTRIES != 0), (VARY_WORDS != 0)};
 endmodule
 
 `default_nettype wire
