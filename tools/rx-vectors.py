@@ -189,13 +189,17 @@ def clip_vectors(r):
                 z = M.b2f(pos[i][2])
                 inside = [[1, 1, 1], [0, 0, 0], [1, 0, 0], [0, 1, 1]][n][i]
                 pos[i][2] = f(abs(z) + 0.01) if inside else f(-abs(z) - 0.01)
-        pt = [r.randrange(256) for _ in range(3)]
+        pt = r.sample(range(256), 3)
         free = r.randrange(8)
         tris = M.clip(pos, pt, free)
         out.append('P %s %02x %02x %02x %x %d' % (' '.join('%08x' % w for v in pos for w in v),
                                                    pt[0], pt[1], pt[2], free, len(tris)))
         for t in tris:
             out.append('C %s' % hexw(M.pack_cl(t), 700))
+    for n in range(4):
+        words = rnd_raw(r)
+        out.append('R %s' % ' '.join('%08x' % w for w in words))
+        out.append('C %s' % hexw(M.pack_cl(M.raw_tri(words)), 700))
     out.append('E')
     return out
 
