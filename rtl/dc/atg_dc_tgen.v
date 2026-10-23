@@ -98,11 +98,24 @@ module atg_dc_tgen (
 
 	assign line = v;
 
+	/* TEST_PATTERN and FORMAT are taken while stopped and at each vsync,
+	 * so a write of CTRL that clears them with ENABLE (whose am_sync is two
+	 * cycles slower) does not change the frame being shown. */
+	reg tp;
+	reg [1:0] fmt;
+
 	wire de_c = h < ha && v < va;
 	wire hs_c = h >= hss && h < hse;
 	wire vs_c = v >= vss && v < vse;
-	wire take = de_c && !test_pattern;
+	wire take = de_c && !tp;
 	assign px_ready = running && px_valid && (take || vs_c);
+
+	always @(posedge clk) begin
+		if (!running || (h == 12'd0 && v == vss)) begin
+			tp <= test_pattern;
+			fmt <= format;
+		end
+	end
 
 	always @(posedge clk) begin
 		if (!rst_n || !enable) begin
@@ -131,10 +144,10 @@ module atg_dc_tgen (
 
 	/* A memory pixel to RGB888. */
 	function [23:0] convert;
-		input [1:0] fmt;
+		input [1:0] f;
 		input [23:0] w;	/* the alpha byte is not shown */
 		begin
-			case (fmt)
+			case (f)
 			2'd1: convert = {w[7:0], w[15:8], w[23:16]};
 			2'd2: convert = {w[15:11], w[15:13], w[10:5], w[10:9], w[4:0], w[4:2]};
 			default: convert = w[23:0];
@@ -175,10 +188,10 @@ module atg_dc_tgen (
 			vs <= (running && vs_c) == pol[1];
 			if (!running || !de_c)
 				rgb <= 24'd0;
-			else if (test_pattern)
+			else if (tp)
 				rgb <= pattern;
 			else if (px_valid)
-				rgb <= convert(format, px_data[23:0]);
+				rgb <= convert(fmt, px_data[23:0]);
 			else
 				rgb <= 24'd0;
 			if (running && h == 12'd0 && v == vss)
