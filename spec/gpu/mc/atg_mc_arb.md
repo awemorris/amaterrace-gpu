@@ -61,4 +61,6 @@ design §4.1, the inline arbiter of rtl/gpu/mc/atg_mc.v, spec/gpu/mc/atg_mc.md.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+**Superseded** (WS288 p023 milestone 4, 2026-10-23): the flat arbiter is replaced by the router
+tree (`atg_mc_tree`, `atg_rt`).  This module is no longer instantiated; the file and this spec
+are to be deleted (Q1).
