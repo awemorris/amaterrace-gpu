@@ -52,6 +52,7 @@ module atg_su_exp #(
 	output wire [511:0] ex_color,
 	output wire [127:0] ex_depth,
 	output wire ex_last,
+	input wire [15:0] ex_next,
 	/* PT read port (atg_rx) */
 	input wire pt_rd,
 	input wire [7:0] pt_idx,
@@ -86,8 +87,8 @@ module atg_su_exp #(
 	/* The stub reads none of its inputs. */
 	wire unused_ok = &{1'b0,
 		clk, rst_n, x_valid, x_warp, x_grp, x_last, x_sbe, x_pc, x_uop, x_a, x_b, x_c, x_mask,
-		x_info, ex_ready, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx, pt_take, wc_end,
-		wc_warp, (NWARPS != 0), (PT_ENTRIES != 0), (VARY_WORDS != 0)};
+		x_info, ex_ready, ex_next, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx, pt_take,
+		wc_end, wc_warp, (NWARPS != 0), (PT_ENTRIES != 0), (VARY_WORDS != 0)};
 endmodule
 
 `default_nettype wire

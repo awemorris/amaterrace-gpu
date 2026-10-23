@@ -50,6 +50,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ex_color` | out | 512 | 4 lanes × COLOR0 RGBA × fp32. |
 | `ex_depth` | out | 128 | 4 lanes × depth (fp32; 0x104 written, else the rasterized z). |
 | `ex_last` | out | 1 | Last quad of the warp (the ROP retires the sequence number). |
+| `ex_next` | in | 16 | The ROP's next sequence number: only the ended warp with this sequence is drained (so the ROP never waits on a later warp, design §3.8). |
 | **PT read port (atg_rx)** | | | |
 | `pt_rd` | in | 1 | Read. |
 | `pt_idx` | in | 8 | Vertex entry. |
@@ -66,7 +67,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `wc_end` | in | 1 | atg_su_exec ended a warp (with wc_warp) — the drain check starts. |
 | `wc_warp` | in | WARP_W | Warp. |
 
-36 ports.
+37 ports.
 
 ## 4. Behaviour
 

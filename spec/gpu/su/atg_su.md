@@ -115,6 +115,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ex_color` | out | 512 | Colour. |
 | `ex_depth` | out | 128 | Depth. |
 | `ex_last` | out | 1 | Last quad of the warp. |
+| `ex_next` | in | 16 | The ROP's next sequence number. |
 | **AMB client port (design §4.1)** | | | |
 | `d_req_valid` | out | 1 | Request valid; payload held until `d_req_ready`. |
 | `d_req_ready` | in | 1 | The MC (or mux) takes the request this cycle. |
@@ -168,7 +169,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fault` | out | 1 | ISA fault (FAULT kind 8). |
 | `fault_addr` | out | 32 | PC of the fault. |
 
-105 ports; 83 counting each AMB port and HCR snoop port as one group (spec/README.md).
+106 ports; 84 counting each AMB port and HCR snoop port as one group (spec/README.md).
 
 ## 4. Behaviour
 

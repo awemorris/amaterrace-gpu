@@ -80,3 +80,8 @@ No encoded FSM. State: `rr_next` (round-robin pointer) and the refusal register 
 ## 10. Status
 
 Implemented (70aaff5, p002; overtaking note 655f1f2; unchanged at a217bf8). 279 lines, no FSM, one clock. **U38: 52 ports > 40** (29 of them the AXI master interface). Proposed split (design §7.6, not done here): `atg_mc_arb` (selection, `rr_next`, grant vector; about 80 lines, ports: valids, ready, `HIGH_MASK`, quiesce, select), `atg_mc_aper` (line range check and the refusal/fault register; about 70 lines), `atg_mc_atom` (later, SU), and `atg_mc` as wiring with the AXI ports — which still exceeds 40 unless the AXI interface counts as one group (same decision as `am_axi_master`). Differences from design.md §4.1: priority groups are a single `HIGH_MASK` level (design: three groups DC / CP fence+ROP / round-robin); no atomic port; the response carries no `write` in design's list but the RTL has `rsp_write`. Measured on the ZYBO (p003): 173 LUT including the AXI master (156), 853 FF.
+
+**WS288 p023 (P1)**: a scaffold at the end of the RTL instantiates `atg_mc_arb` and
+`atg_mc_aper` (stubs, spec/gpu/mc/) with the real signals; the inline arbiter and aperture check
+still decide.  The atomic unit `atg_mc_atom` is a separate MC client placed in `atg_top` (it
+needs its own AMB port for the read-modify-write), not a child of this module.
