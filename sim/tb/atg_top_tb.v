@@ -291,6 +291,45 @@ module atg_top_harness #(
 		end
 	endtask
 
+	/* A forward 32-bit COPY in the wrong direction (the destination after
+	 * the source in one row: a smear), modelled as the blitter does it:
+	 * segment by segment (one destination line each), each reading memory
+	 * as the earlier segments left it.  This shows that a read waits for
+	 * the earlier writes to its lines. */
+	task smear;
+		input [31:0] base, stride;
+		input [15:0] sx, dx, y, w;
+		integer x, xs, k;
+		reg [31:0] seg [0:15];
+		begin
+			state_write(GHCI_S_BLT_OP, 32'd1);
+			state_write(GHCI_S_BLT_DST_BASE, base);
+			state_write(GHCI_S_BLT_DST_STRIDE, stride);
+			state_write(GHCI_S_BLT_SRC_BASE, base);
+			state_write(GHCI_S_BLT_SRC_STRIDE, stride);
+			state_write(GHCI_S_BLT_DST_XY, {y, dx});
+			state_write(GHCI_S_BLT_SRC_XY, {y, sx});
+			state_write(GHCI_S_BLT_SIZE, {16'd1, w});
+			state_write(GHCI_S_BLT_CLIP_MAX, 0);
+			host_write(GHCI_KICK, 32'd1);
+			wait_status_clear(32'd1 << GHCI_STATUS_BLT_BUSY);
+			x = dx;
+			while (x < dx + w) begin
+				xs = x;
+				k = 0;
+				while (x < dx + w && (k == 0 ||
+				    ((base + y * stride + x * 4) >> LINE_SHIFT) ==
+				    ((base + y * stride + xs * 4) >> LINE_SHIFT))) begin
+					seg[k] = refm[(base + y * stride + (sx + x - dx) * 4 - REF_BASE) / 4];
+					k = k + 1;
+					x = x + 1;
+				end
+				for (k = 0; xs + k < x; k = k + 1)
+					refm[(base + y * stride + (xs + k) * 4 - REF_BASE) / 4] = seg[k];
+			end
+		end
+	endtask
+
 	task compare_ref;
 		input [8*40-1:0] what;
 		integer k, bad;
@@ -435,6 +474,9 @@ module atg_top_harness #(
 		blit(32'h1000, 32'h00042000, 256, 0, 0, 4, 3, 0, 0, 9, 4, 32'h13579BDF,
 			{16'd4, 16'd5}, {16'd6, 16'd11});
 		compare_ref("reverse clipped fill");
+		smear(32'h00043000, 1024, 0, 3, 0, 60);
+		smear(32'h00043000, 1024, 2, 3, 1, 61);
+		compare_ref("smear");
 
 		/* Random blits of every kind: destinations and sources in
 		 * separate halves. */
