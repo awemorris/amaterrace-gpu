@@ -10,8 +10,7 @@
  * sequence-number order from SU 0's exports and the RX's direct quads;
  * tells the SU which sequence it waits for.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/rop/atg_rop_order.md.
+ * Two counters (spec/gpu/rop/atg_rop_order.md).
  */
 
 `timescale 1ns / 1ps
@@ -52,21 +51,32 @@ module atg_rop_order (
 	output wire busy
 );
 	/* spec/gpu/rop/atg_rop_order.md */
-	assign ex_ready = 1'd0;
-	assign ex_next = 16'd0;
-	assign dx_ready = 1'd0;
-	assign q_valid = 1'd0;
-	assign q_xy = 32'd0;
-	assign q_mask = 4'd0;
-	assign q_color = 512'd0;
-	assign q_depth = 128'd0;
-	assign q_dbg = 1'd0;
-	assign busy = 1'd0;
+	reg [15:0] next;	/* the oldest unretired number */
+	reg [15:0] issued;	/* numbers issued so far */
+	wire ex_ok = ex_valid && ex_seq == next;
+	wire dx_ok = dx_valid && dx_seq == next;
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, ex_valid, ex_seq, ex_xy, ex_mask, ex_color, ex_depth, ex_last, dx_valid,
-		dx_seq, dx_xy, dx_mask, dx_depth, dx_last, ord_valid, ord_seq, q_ready};
+	assign ex_next = next;
+	assign q_valid = ex_ok || dx_ok;
+	assign ex_ready = ex_ok && q_ready;
+	assign dx_ready = !ex_ok && dx_ok && q_ready;
+	assign q_xy = ex_ok ? ex_xy : dx_xy;
+	assign q_mask = ex_ok ? ex_mask : dx_mask;
+	assign q_color = ex_ok ? ex_color : 512'd0;
+	assign q_depth = ex_ok ? ex_depth : dx_depth;
+	assign q_dbg = !ex_ok;
+	assign busy = issued != next;
+
+	always @(posedge clk)
+		if (!rst_n) begin
+			next <= 16'd0;
+			issued <= 16'd0;
+		end else begin
+			if (ord_valid)
+				issued <= ord_seq + 16'd1;
+			if ((ex_ready && ex_last) || (dx_ready && dx_last))
+				next <= next + 16'd1;
+		end
 endmodule
 
 `default_nettype wire
