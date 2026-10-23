@@ -6,17 +6,24 @@
  */
 
 /*
- * atg_cp: the command processor, stub (WS288 p002).  It holds the GHCI
- * host control registers (docs/ghci.md) on the register bus of
- * am_axi_regs, the state register file, and the controls of the other
- * blocks.  The stub has no ring: RUN is kept but nothing is fetched,
- * CAPS[0] is 0 and EXTCAP is 0.  What it does:
+ * atg_cp: the command processor, version 0 (WS288 p003): the host side
+ * of GHCI without the ring.  It holds the GHCI host control registers
+ * (docs/ghci.md) on the register bus of am_axi_regs, the state register
+ * file, and the controls of the other blocks.  There is no ring yet (it
+ * comes with the command set of design v3): RUN is kept and moves the
+ * state to RUNNING, but nothing is fetched, CAPS[0] is 0 and STEP does
+ * nothing.  What it does:
  *
  *   - the identification registers, SCRATCH, COUNTER, CAPS, GCLK_HZ;
+ *   - the extended capability list at 0x100 with one entry, PERF: PERF0
+ *     counts the blitter's busy cycles, PERF1 the cycles with memory
+ *     accesses outstanding; PERF_CTRL[0] clears them;
  *   - STATE[0..511] in a block RAM, written through the alias at 0x1000
  *     (whole words; a write with a partial WSTRB is ignored) and passed on
  *     to the blocks (st_we), read back through the alias;
- *   - KICK.BLIT: starts the blitter (atg_blt) on its STATE range;
+ *   - KICK.BLIT: starts the blitter (atg_blt) on its STATE range; KICK.DRAW
+ *     and KICK.DISPATCH, for units this GPU does not have, are a fault of
+ *     kind OPCODE;
  *   - HALT and quiesce: the MC stops granting; HALTED when it is idle;
  *   - RESET in the order of design §1.3: quiesce, wait for AXI_IDLE, one
  *     cycle of core reset (core_rst_n, also the CP's own run state), MC
@@ -44,7 +51,7 @@ module atg_cp #(
 	parameter [31:0] GCLK_HZ = 32'd100000000,
 	parameter [31:0] VENDOR_ID = 32'h414D4154,	/* "AMAT" */
 	parameter [31:0] DEVICE_ID = 32'h41544731,	/* "ATG1" */
-	parameter [31:0] DEVICE_VERSION = 32'h00000001	/* 0.1: p002 stub */
+	parameter [31:0] DEVICE_VERSION = 32'h00000002	/* 0.2: p003, CP v0 */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -177,6 +184,8 @@ module atg_cp #(
 	/* KICK. */
 	wire wr_kick = wr_hcr && wa == GHCI_KICK[11:0] && reg_wstrb[0] &&
 		reg_wdata[GHCI_KICK_BLIT];
+	wire wr_kick_absent = wr_hcr && wa == GHCI_KICK[11:0] && reg_wstrb[0] &&
+		(reg_wdata[GHCI_KICK_DRAW] || reg_wdata[GHCI_KICK_DISPATCH]);
 	wire kick_ok = open_state && !blt_busy;
 	assign blt_kick = wr_kick && kick_ok;
 
@@ -213,11 +222,12 @@ module atg_cp #(
 	/* Faults. */
 	wire mc_fault_gpu = mc_fault && mc_fault_client != 8'd0;
 	wire kick_fault = wr_kick && !kick_ok;
-	wire any_fault = mc_fault_gpu || blt_error || kick_fault || locked_fault;
+	wire any_fault = mc_fault_gpu || blt_error || kick_fault || wr_kick_absent || locked_fault;
 	wire [31:0] new_fault_info =
 		mc_fault_gpu ? {8'd0, mc_fault_client, GHCI_FAULT_APERTURE, 3'd0, mc_fault_write, mc_fault_client} :
 		blt_error ? {8'd0, BLOCK_BLT, blt_error_kind, 3'd0, 1'b0, CLIENT_BLT} :
 		kick_fault ? {16'd0, GHCI_FAULT_KICK, 12'd0} :
+		wr_kick_absent ? {16'd0, GHCI_FAULT_OPCODE, 12'd0} :
 		{16'd0, GHCI_FAULT_LOCKED, 12'd0};
 	wire [31:0] new_fault_addr = mc_fault_gpu ? mc_fault_addr : 32'd0;
 
@@ -381,17 +391,32 @@ module atg_cp #(
 		end
 	end
 
+	/* The performance counters (the PERF capability). */
+	reg [31:0] perf0;
+	reg [31:0] perf1;
+	wire perf_clear = wr_hcr && wa == GHCI_PERF_CTRL[11:0] && reg_wstrb[0] && reg_wdata[0];
+
+	always @(posedge clk) begin
+		if (!rst_n || perf_clear) begin
+			perf0 <= 32'd0;
+			perf1 <= 32'd0;
+		end else begin
+			perf0 <= perf0 + {31'd0, blt_busy};
+			perf1 <= perf1 + {31'd0, !mc_idle};
+		end
+	end
+
 	/* Reads: the HCR word or the state RAM, in the next cycle. */
 	reg [31:0] rd_q;
 	reg rd_state;
 	wire [11:0] ra = reg_raddr[11:0];
 	wire rd_hcr = reg_raddr[16:12] == 5'd0;
 
-	/* CAPS: BLT, standard state version 1, the line size. */
+	/* CAPS: BLT, 4x4 tiles, standard state version 1, the line size. */
 	/* verilator lint_off WIDTHTRUNC */
 	localparam [3:0] LS4 = LINE_SHIFT;
 	/* verilator lint_on WIDTHTRUNC */
-	wire [31:0] caps = {8'd0, LS4, 4'd0, 4'd1, 4'd0, 4'd0, 4'b0010};
+	wire [31:0] caps = {8'd0, LS4, 4'd0, 4'd1, 4'b1000, 4'd0, 4'b0010};
 	wire [31:0] status = {12'd0, cp_state, 1'b0, quiesce, axi_stuck, mem_ready,
 		ring_wptr == 32'd0, halted, faulted, mc_idle, 1'b0, 5'd0, blt_busy,
 		dbg_busy || resetting};
@@ -411,7 +436,7 @@ module atg_cp #(
 				GHCI_DEVICE_ID[11:0]: rd_q <= DEVICE_ID;
 				GHCI_ISA_ID[11:0]: rd_q <= 32'd0;
 				GHCI_DEVICE_VERSION[11:0]: rd_q <= DEVICE_VERSION;
-				GHCI_EXTCAP[11:0]: rd_q <= 32'd0;
+				GHCI_EXTCAP[11:0]: rd_q <= {15'd0, GHCI_EXTCAP_LIST};
 				GHCI_GCLK_HZ[11:0]: rd_q <= GCLK_HZ;
 				GHCI_CAPS[11:0]: rd_q <= caps;
 				GHCI_CAPS2[11:0]: rd_q <= 32'd0;
@@ -430,6 +455,15 @@ module atg_cp #(
 				GHCI_FAULT_ADDR[11:0]: rd_q <= fault_addr;
 				GHCI_FAULT_INFO[11:0]: rd_q <= fault_info;
 				GHCI_FENCE_LAST[11:0]: rd_q <= fence_last;
+				GHCI_PERF0[11:0]: rd_q <= perf0;
+				GHCI_PERF0[11:0] + 12'd4: rd_q <= perf1;
+				/* The capability list: PERF only, the last entry. */
+				GHCI_EXTCAP_LIST[11:0]: rd_q <= {16'd0, 8'd1, GHCI_XCAP_PERF};
+				GHCI_EXTCAP_LIST[11:0] + 12'd4: rd_q <= {15'd0, GHCI_PERF_SRC0};
+				GHCI_PERF_SRC0[11:0]: rd_q <= {24'd0, 8'd1};	/* the BLT's busy bit */
+				GHCI_PERF_SRC0[11:0] + 12'd4: rd_q <= {24'd0, GHCI_PERF_SRC_MEM};
+				GHCI_PERF_SRC0[11:0] + 12'd8: rd_q <= {24'd0, GHCI_PERF_SRC_NONE};
+				GHCI_PERF_SRC0[11:0] + 12'd12: rd_q <= {24'd0, GHCI_PERF_SRC_NONE};
 				GHCI_DBG_ADDR[11:0]: rd_q <= dbg_addr;
 				GHCI_DBG_DATA[11:0]: rd_q <= dbg_data;
 				GHCI_DBG_STATUS[11:0]: rd_q <= {30'd0, dbg_err, dbg_busy};

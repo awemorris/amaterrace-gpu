@@ -53,6 +53,8 @@ localparam [16:0] GHCI_PERF_CTRL = 17'h00090;
 localparam [16:0] GHCI_DBG_ADDR = 17'h000A0;
 localparam [16:0] GHCI_DBG_DATA = 17'h000A4;
 localparam [16:0] GHCI_DBG_STATUS = 17'h000A8;
+localparam [16:0] GHCI_EXTCAP_LIST = 17'h00100;	/* where EXTCAP points */
+localparam [16:0] GHCI_PERF_SRC0 = 17'h00110;	/* the PERF capability's registers */
 localparam [16:0] GHCI_KICK = 17'h00F00;
 localparam [16:0] GHCI_STATE_BASE = 17'h01000;	/* STATE[0..511] */
 localparam [16:0] GHCI_DISP_KC705 = 17'h10000;	/* DC registers on the KC705 */
@@ -125,7 +127,14 @@ localparam [8:0] GHCI_S_BLT_COLOR = 9'h008;
 localparam [8:0] GHCI_S_BLT_CLIP_MIN = 9'h009;
 localparam [8:0] GHCI_S_BLT_CLIP_MAX = 9'h00A;
 
-/* BLT_OP[1:0]. */
+/* PERF_SRCn values: what PERFn counts. */
+localparam [7:0] GHCI_PERF_SRC_MEM = 8'd8;	/* memory accesses outstanding */
+localparam [7:0] GHCI_PERF_SRC_NONE = 8'hFF;
+
+/* BLT_OP[1:0] and the option bits. */
+localparam GHCI_BLT_OP_BLEND = 4;
+localparam GHCI_BLT_OP_BPP16 = 8;	/* [9:8] = 1 */
+localparam GHCI_BLT_OP_REVERSE = 12;
 localparam [1:0] GHCI_BLT_FILL = 2'd0;
 localparam [1:0] GHCI_BLT_COPY = 2'd1;
 localparam [1:0] GHCI_BLT_TILE = 2'd2;

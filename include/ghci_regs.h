@@ -155,6 +155,15 @@
 #define GHCI_XCAP_MMU 5u
 
 /*
+ * The PERF capability's registers (from its register offset): PERF_SRCn
+ * says what PERFn counts: a STATUS busy bit number (0 CP .. 6 SU), the
+ * memory (cycles with accesses outstanding) or nothing.
+ */
+#define GHCI_PERF_SRC(n) (4u * (n))
+#define GHCI_PERF_SRC_MEM 8u
+#define GHCI_PERF_SRC_NONE 0xFFu
+
+/*
  * State register file.  Only the BLT range is defined in this draft; the
  * other ranges follow the command set of design v3 (docs/ghci.md).
  */
