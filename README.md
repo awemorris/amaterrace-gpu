@@ -3,6 +3,9 @@ Amaterrace GPU
 
 `Amaterrace GPU` is an RTL GPU implementation.
 
+It is designed for mobile graphics targeting at least 1920x1080 @ 60fps,
+and furthermore, it scales up to 1000 TOPS as an LLM accelerator.
+
 The name `Amaterrace` cometh from a goddess of sunlight, who illuminateth the higher place by her love.
 The reduced version is named `Moonphaser.`
 
