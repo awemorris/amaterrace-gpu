@@ -193,4 +193,47 @@
 #define GHCI_BLT_REVERSE (1u << 12)
 #define GHCI_XY(x, y) (((unsigned)(y) << 16) | ((unsigned)(x) & 0xFFFFu))
 
+/* The display controller's registers (DISP capability, docs/ghci.md
+ * section 12): offsets from the capability's register offset. */
+#define GHCI_DC_ID_VALUE 0x41544443u /* "ATDC" */
+#define GHCI_DC_ID 0x00u
+#define GHCI_DC_VERSION 0x04u
+#define GHCI_DC_CAPS 0x08u
+#define GHCI_DC_CTRL 0x10u
+#define GHCI_DC_STATUS 0x14u
+#define GHCI_DC_IRQ_STATUS 0x18u
+#define GHCI_DC_IRQ_ENABLE 0x1Cu
+#define GHCI_DC_FB_BASE 0x20u
+#define GHCI_DC_FB_NEXT 0x24u
+#define GHCI_DC_FB_STRIDE 0x28u
+#define GHCI_DC_FB_SIZE 0x2Cu
+#define GHCI_DC_H_ACTIVE 0x30u
+#define GHCI_DC_H_FP 0x34u
+#define GHCI_DC_H_SYNC 0x38u
+#define GHCI_DC_H_BP 0x3Cu
+#define GHCI_DC_V_ACTIVE 0x40u
+#define GHCI_DC_V_FP 0x44u
+#define GHCI_DC_V_SYNC 0x48u
+#define GHCI_DC_V_BP 0x4Cu
+#define GHCI_DC_SYNC_POL 0x50u
+#define GHCI_DC_FRAME_COUNT 0x54u
+#define GHCI_DC_PCLK_SEL 0x58u
+#define GHCI_DC_I2C_CTRL 0x60u
+#define GHCI_DC_I2C_DATA 0x64u
+#define GHCI_DC_I2C_STATUS 0x68u
+#define GHCI_DC_SCAN_SUM 0x70u /* Amaterrace: sum of the last frame's pixel words */
+#define GHCI_DC_SCAN_WORDS 0x74u /* Amaterrace: pixel words of the last frame */
+#define GHCI_DC_STANDALONE_DISP 0x200u /* DISP of a DC-only window */
+#define GHCI_DC_CTRL_ENABLE (1u << 0)
+#define GHCI_DC_CTRL_RESET (1u << 1)
+#define GHCI_DC_CTRL_TEST_PATTERN (1u << 2)
+#define GHCI_DC_CTRL_FORMAT(f) (((unsigned)(f) & 3u) << 4)
+#define GHCI_DC_CTRL_OUTPUT_HDMI (1u << 6)
+#define GHCI_DC_FMT_BGRA8 0u
+#define GHCI_DC_FMT_RGBA8 1u
+#define GHCI_DC_FMT_RGB565 2u
+#define GHCI_DC_IRQ_VSYNC (1u << 0)
+#define GHCI_DC_IRQ_UNDERFLOW (1u << 1)
+#define GHCI_DC_IRQ_FLIP_DONE (1u << 2)
+
 #endif /* GHCI_REGS_H */
