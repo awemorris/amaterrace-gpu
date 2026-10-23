@@ -9,9 +9,16 @@
  * atg_su_div: The SU's shared integer divider: div, divu, rem, remu
  * (RISC-V semantics), lane by lane, results as long beats.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_div.md.
- */
+ * Takes one lane group at a time (x_ready is 1 only in IDLE), divides
+ * its EXEC lanes one after the other with a 32-step restoring divider (34
+ * cycles per lane: load, 32 steps, sign fix), then returns the group as
+ * one long beat (l_wr 1, l_last = the group's x_last, class x).  A group
+ * without EXEC lanes returns at once.  Division by zero gives all ones
+ * (div/divu) and the dividend (rem/remu); INT_MIN / -1 gives INT_MIN and
+ * remainder 0 (RISC-V).  The reference is tools/gsi1fp.py div().
+ *
+ * States: IDLE →(group)→ DIV (lane loop) → RET →(l_ready)→ IDLE.
+*/
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -53,23 +60,130 @@ module atg_su_div #(
 	output wire [SBE_W:0] l_sbe,
 	output wire [2:0] l_cls
 );
-	/* spec/gpu/su/atg_su_div.md */
-	assign x_ready = 1'd0;
-	assign l_valid = 1'd0;
-	assign l_warp = {WARP_W{1'b0}};
-	assign l_grp = {GRP_W{1'b0}};
-	assign l_rd = 7'd0;
-	assign l_data = {(NPHYS*32){1'b0}};
-	assign l_lanes = {NPHYS{1'b0}};
-	assign l_wr = 1'd0;
-	assign l_last = 1'd0;
-	assign l_sbe = {((SBE_W)+1){1'b0}};
-	assign l_cls = 3'd0;
+`include "atg_su_uop.vh"
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, x_valid, x_warp, x_grp, x_last, x_sbe, x_pc, x_uop, x_a, x_b, x_c, x_mask,
-		x_info, l_ready, (NWARPS != 0)};
+	localparam DW = NPHYS * 32;
+	localparam LW = NPHYS > 1 ? $clog2(NPHYS) : 1;
+	localparam [1:0] IDLE = 2'd0, DIV = 2'd1, RET = 2'd2;
+
+	reg [1:0] st;
+	reg [DW-1:0] ra, rb, rq;
+	reg [NPHYS-1:0] rm;
+	reg [1:0] rop;
+	reg [6:0] rrd;
+	reg [WARP_W-1:0] rwarp;
+	reg [GRP_W-1:0] rgrp;
+	reg rlast;
+	reg [SBE_W:0] rsbe;
+	reg [LW-1:0] li;
+	reg [5:0] step;
+	/* The divider of the current lane. */
+	reg [31:0] dn, dd, q;
+	reg [32:0] r;
+	reg neg_q, neg_r;
+
+	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_DIV;
+	assign x_ready = st == IDLE;
+
+	/* The next lane in the mask at or after lane n (NPHYS when none). */
+	function [LW:0] next_lane;
+		input [NPHYS-1:0] m;
+		input [LW:0] n;
+		integer i;
+		begin
+			next_lane = NPHYS[LW:0];
+			for (i = NPHYS - 1; i >= 0; i = i - 1)
+				if (m[i] && i >= n)
+					next_lane = i[LW:0];
+		end
+	endfunction
+
+	wire [LW:0] first = next_lane(x_mask[NPHYS-1:0], {(LW+1){1'b0}});
+	wire [LW:0] after = next_lane(rm, {1'b0, li} + 1'b1);
+	wire [31:0] la = ra[li*32 +: 32];
+	wire [31:0] lb = rb[li*32 +: 32];
+	wire sgn = !rop[0];	/* div, rem */
+	wire [32:0] trial = {r[31:0], dn[31]} - {1'b0, dd};
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st <= IDLE;
+			li <= {LW{1'b0}};
+			step <= 6'd0;
+		end else begin
+			case (st)
+			IDLE: if (mine) begin
+				ra <= x_a;
+				rb <= x_b;
+				rm <= x_mask[NPHYS-1:0];
+				rop <= x_uop[ATG_UOP_OP +: 2];
+				rrd <= x_uop[ATG_UOP_RD +: 7];
+				rwarp <= x_warp;
+				rgrp <= x_grp;
+				rlast <= x_last;
+				rsbe <= x_sbe;
+				rq <= {DW{1'b0}};
+				step <= 6'd0;
+				if (first == NPHYS[LW:0])
+					st <= RET;
+				else begin
+					li <= first[LW-1:0];
+					st <= DIV;
+				end
+			end
+			DIV: begin
+				if (step == 6'd0) begin
+					/* Load the lane: magnitudes and the signs of the results. */
+					dn <= sgn && la[31] ? 32'd0 - la : la;
+					dd <= sgn && lb[31] ? 32'd0 - lb : lb;
+					neg_q <= sgn && (la[31] ^ lb[31]);
+					neg_r <= sgn && la[31];
+					r <= 33'd0;
+					q <= 32'd0;
+					step <= 6'd1;
+				end else if (step <= 6'd32) begin
+					if (!trial[32]) begin
+						r <= trial;
+						q <= {q[30:0], 1'b1};
+					end else begin
+						r <= {r[31:0], dn[31]};
+						q <= {q[30:0], 1'b0};
+					end
+					dn <= {dn[30:0], 1'b0};
+					step <= step + 6'd1;
+				end else begin
+					if (lb == 32'd0)
+						rq[li*32 +: 32] <= rop[1] ? la : 32'hFFFFFFFF;
+					else if (rop[1])
+						rq[li*32 +: 32] <= neg_r ? 32'd0 - r[31:0] : r[31:0];
+					else
+						rq[li*32 +: 32] <= neg_q ? 32'd0 - q : q;
+					step <= 6'd0;
+					if (after == NPHYS[LW:0])
+						st <= RET;
+					else
+						li <= after[LW-1:0];
+				end
+			end
+			default: if (l_ready)
+				st <= IDLE;
+			endcase
+		end
+	end
+
+	assign l_valid = st == RET;
+	assign l_warp = rwarp;
+	assign l_grp = rgrp;
+	assign l_rd = rrd;
+	assign l_data = rq;
+	assign l_lanes = rm;
+	assign l_wr = 1'b1;
+	assign l_last = rlast;
+	assign l_sbe = rsbe;
+	assign l_cls = ATG_CLS_X;
+
+	wire unused_ok = &{1'b0, x_pc, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop, r[32],
+		(NWARPS != 0)};
 endmodule
 
 `default_nettype wire
