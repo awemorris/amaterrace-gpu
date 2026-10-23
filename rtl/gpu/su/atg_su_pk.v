@@ -10,9 +10,18 @@
  * fadd2/fsub2/fmul2/ffma2/fmin2/fmax2/fcmp2, iadd2/isub2/imul2, swaph, and
  * the always-present packh/unpackh. Short pipeline.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_pk.md.
- */
+ * Takes every group of a uop whose unit is PK (x_ready is always 1) and
+ * presents the result SHORT_LAT cycles later, like atg_su_alu.  packh
+ * (two fp32 -> fp16 halves, RNE: rs1 low, rs2 high), unpackh (sub 0 low,
+ * 1 high half -> fp32) and swaph are always present; with PACKED the
+ * per-half fp16 arithmetic (include/atg_su_fp16.vh: one rounding under rm,
+ * flushed, canonical NaN 0x7E00), the 16-bit integer add/sub/mul and the
+ * Boolean half compares (0xFFFF/0; ge is the swapped le).  hsel 00 both
+ * halves, 01 the low half only (the high half from rs1), 10 the high half
+ * only (the low half from rs1), 11 rs2's halves swapped, both.  sat clamps
+ * the float halves to [0, 1].  With PACKED = 0 atg_su_dec faults the
+ * arithmetic, and this unit returns 0 for it.  Reference: tools/gsi1fp.py.
+*/
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -51,19 +60,109 @@ module atg_su_pk #(
 	output wire [NPHYS*32-1:0] s_data,
 	output wire [NPHYS-1:0] s_lanes
 );
-	/* spec/gpu/su/atg_su_pk.md */
-	assign x_ready = 1'd0;
-	assign s_valid = 1'd0;
-	assign s_warp = {WARP_W{1'b0}};
-	assign s_grp = {GRP_W{1'b0}};
-	assign s_rd = 7'd0;
-	assign s_data = {(NPHYS*32){1'b0}};
-	assign s_lanes = {NPHYS{1'b0}};
+`include "atg_su_uop.vh"
+`include "atg_su_fp.vh"
+`include "atg_su_fp16.vh"
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, x_valid, x_warp, x_grp, x_last, x_sbe, x_pc, x_uop, x_a, x_b, x_c, x_mask,
-		x_info, (NWARPS != 0), (PACKED != 0), (SHORT_LAT != 0)};
+	localparam DW = NPHYS * 32;
+	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS + DW;
+
+	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_PK && x_uop[ATG_UOP_WRD];
+	wire [3:0] op = x_uop[ATG_UOP_OP +: 4];
+	wire [2:0] rm = x_uop[ATG_UOP_RM +: 3];
+	wire [1:0] hsel = x_uop[ATG_UOP_HSEL +: 2];
+	wire sub = x_uop[ATG_UOP_SUB];
+	wire sat = x_uop[ATG_UOP_MOD + 6];
+
+	/* One half. */
+	function [15:0] half;
+		input [3:0] o;
+		input [15:0] a, b, c;
+		input [2:0] r;
+		input st;
+		reg [15:0] y;
+		begin
+			case (o)
+			ATG_PK_FADD2[3:0]: y = atg_su_hfma(a, 16'h3C00, b, r, 1'b0);
+			ATG_PK_FSUB2[3:0]: y = atg_su_hfma(a, 16'h3C00, {!b[15], b[14:0]}, r, 1'b0);
+			ATG_PK_FMUL2[3:0]: y = atg_su_hfma(a, b, 16'd0, r, 1'b1);
+			ATG_PK_FFMA2[3:0]: y = atg_su_hfma(a, b, c, r, 1'b0);
+			ATG_PK_FMIN2[3:0]: y = atg_su_hminmax(a, b, 1'b0);
+			ATG_PK_FMAX2[3:0]: y = atg_su_hminmax(a, b, 1'b1);
+			ATG_PK_IADD2[3:0]: y = a + b;
+			ATG_PK_ISUB2[3:0]: y = a - b;
+			ATG_PK_IMUL2[3:0]: y = a * b;
+			ATG_PK_FCMPLT2[3:0]: y = {16{atg_su_hcmp(a, b, 2'd1)}};
+			ATG_PK_FCMPGE2[3:0]: y = {16{atg_su_hcmp(b, a, 2'd2)}};
+			ATG_PK_FCMPEQ2[3:0]: y = {16{atg_su_hcmp(a, b, 2'd0)}};
+			ATG_PK_FCMPNE2[3:0]: y = {16{atg_su_hcmp(a, b, 2'd3)}};
+			default: y = 16'd0;
+			endcase
+			half = st && o <= ATG_PK_FMAX2[3:0] ? atg_su_hsat(y) : y;
+		end
+	endfunction
+
+	/* One lane. */
+	function [31:0] lane;
+		input [3:0] o;
+		input [31:0] a, b0, c;
+		input [2:0] r;
+		input [1:0] hs;
+		input sb, st;
+		reg [31:0] b;
+		reg [15:0] lo, hi;
+		begin
+			b = hs == 2'd3 ? {b0[15:0], b0[31:16]} : b0;
+			if (o == ATG_PK_PACKH[3:0])
+				lane = {atg_su_f2h(b0), atg_su_f2h(a)};
+			else if (o == ATG_PK_UNPACKH[3:0])
+				lane = atg_su_h2f(sb ? a[31:16] : a[15:0]);
+			else if (o == ATG_PK_SWAPH[3:0])
+				lane = {a[15:0], a[31:16]};
+			else if (PACKED != 0) begin
+				lo = half(o, a[15:0], b[15:0], c[15:0], r, st);
+				hi = half(o, a[31:16], b[31:16], c[31:16], r, st);
+				lane = {hs == 2'd1 ? a[31:16] : hi, hs == 2'd2 ? a[15:0] : lo};
+			end else
+				lane = 32'd0;
+		end
+	endfunction
+
+	reg [DW-1:0] y;
+	integer l;
+	always @(*) begin
+		y = {DW{1'b0}};
+		if (mine)	/* (only for this unit's groups: fast simulation) */
+			for (l = 0; l < NPHYS; l = l + 1)
+				y[l*32 +: 32] = lane(op, x_a[l*32 +: 32], x_b[l*32 +: 32], x_c[l*32 +: 32], rm,
+					hsel, sub, sat);
+	end
+
+	/* SHORT_LAT stages; stage 0 is registered from x_*. */
+	reg [EW-1:0] pipe [0:SHORT_LAT-1];
+	integer k;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			for (k = 0; k < SHORT_LAT; k = k + 1)
+				pipe[k] <= {EW{1'b0}};
+		end else begin
+			pipe[0] <= {mine, x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0], y};
+			for (k = 1; k < SHORT_LAT; k = k + 1)
+				pipe[k] <= pipe[k-1];
+		end
+	end
+
+	wire [EW-1:0] o = pipe[SHORT_LAT-1];
+	assign s_valid = o[EW-1];
+	assign s_warp = o[EW-2 -: WARP_W];
+	assign s_grp = o[EW-2-WARP_W -: GRP_W];
+	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];
+	assign s_lanes = o[DW +: NPHYS];
+	assign s_data = o[DW-1:0];
+	assign x_ready = 1'b1;
+
+	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
+		(NWARPS != 0)};
 endmodule
 
 `default_nettype wire

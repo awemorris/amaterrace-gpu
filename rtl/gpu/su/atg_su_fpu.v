@@ -169,8 +169,11 @@ module atg_su_fpu #(
 	reg [DW-1:0] y;
 	integer l;
 	always @(*) begin
-		for (l = 0; l < NPHYS; l = l + 1)
-			y[l*32 +: 32] = fpu(op, x_a[l*32 +: 32], x_b[l*32 +: 32], x_c[l*32 +: 32], rm, sat);
+		y = {DW{1'b0}};
+		if (mine)	/* (only for this unit's groups: fast simulation) */
+			for (l = 0; l < NPHYS; l = l + 1)
+				y[l*32 +: 32] = fpu(op, x_a[l*32 +: 32], x_b[l*32 +: 32], x_c[l*32 +: 32], rm,
+					sat);
 	end
 
 	/* SHORT_LAT stages; stage 0 is registered from x_*. */

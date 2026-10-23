@@ -83,4 +83,4 @@ design §3.4.2 (division class x).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_div_tb.v`).  Difference from §4: v0 takes one lane group at a time (x_ready 0 while its lanes divide) instead of buffering the whole instruction, so the operand stage waits for the unit after each group (the same results and beats; buffering the instruction is a later optimisation).  34 cycles per EXEC lane (load, 32 restoring steps, sign fix).
