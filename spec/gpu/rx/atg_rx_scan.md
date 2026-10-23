@@ -27,7 +27,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **From atg_rx_setup** | | | |
 | `sp_valid` | in | 1 | A set-up triangle. |
 | `sp_ready` | out | 1 | Taken. |
-| `sp_tri` | in | 768 | [287:0] 3 edges × (A, B, C) signed 16.8 fixed point; [351:288] bbox {ymax, xmax, ymin, xmin} ∩ scissor (16 bits each); [447:352] z plane (A, B, C fp32); [543:448] 1/w plane; [735:544] b0/w and b1/w planes (perspective barycentrics, 2 × 3 fp32); [759:736] PT entries; [762:760] last-use flags; [763] front facing; [764] raw; [767:765] 0. |
+| `sp_tri` | in | 768 | [287:0] 3 edges, 96 bits each = `{E[47:0], B[23:0], A[23:0]}`: A, B the edge coefficients in signed 15.8 fixed point, E the edge value at the pixel centre of the bbox origin, top-left bias included, in subpixel² units (a 32-bit C cannot hold an exact edge value; p007); [351:288] bbox {ymax, xmax, ymin, xmin} ∩ scissor (16 bits each); [447:352] z plane (A, B, C fp32); [543:448] 1/w plane; [735:544] b0/w and b1/w planes (perspective barycentrics, 2 × 3 fp32); [759:736] PT entries; [762:760] last-use flags; [763] front facing; [764] raw; [767:765] 0. |
 | `sp_last` | in | 1 | Last of the draw. |
 | **PT read (shared with atg_rx_scan in atg_rx: scan has priority)** | | | |
 | `pt_rd` | out | 1 | Read one PT word. |
@@ -100,5 +100,7 @@ One quad per cycle in the walk (edges incremental).
 design §3.4.3 (fragment inputs), §3.8, §3.1 (helper lanes).
 
 ## 10. Status
+
+2026-10-24 Q1 (from P3's p007 decisions, ACKed): the sp_tri edge layout above, the 15.8 fixed point with a ±16384 px guard band, and the speed of v1 (setup ≈ 150–900 cycles per triangle, below the design target) are what the RTL at amaterrace-gpu 8106fc3 does.
 
 Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.

@@ -76,4 +76,6 @@ design §3.8 (clip), §2.3 (RX STATE), §2.4.3 (DRAW_RAW).
 
 ## 10. Status
 
+2026-10-24 Q1 (P3's p007 decision, ACKed): the near plane is Vulkan's z ≥ 0 (not the GL form z > −w); DEPTH_CLAMP is ignored and z is always clamped to [0, 1].
+
 Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
