@@ -11,7 +11,7 @@
  * header at 0, DISP at +0x200), its memory master on S_AXI_HP1, VGA and
  * HDMI (TMDS) outputs.
  *
- * Wiring of its children (WS288 p023); see spec/boards/zybo/atg_zybo_dc.md.
+ * Wiring of its children; see spec/boards/zybo/atg_zybo_dc.md.
  */
 
 `timescale 1ns / 1ps
@@ -27,7 +27,8 @@ module atg_zybo_dc (
 	output wire hdmi_clk_p,
 	output wire hdmi_clk_n,
 	output wire [2:0] hdmi_d_p,
-	output wire [2:0] hdmi_d_n
+	output wire [2:0] hdmi_d_n,
+	output wire hdmi_out_en
 );
 	wire [31:0] s_awaddr;
 	wire [11:0] s_awid;
@@ -121,7 +122,7 @@ module atg_zybo_dc (
 		.locked(pclk_locked)
 	);
 
-	atg_dc #(.STANDALONE(1), .LINE_BYTES(32), .LINE_SHIFT(5)) dc (
+	atg_dc #(.STANDALONE(1), .LINE_BYTES(32), .LINE_SHIFT(5), .FIFO_LOG2(9)) dc (
 		.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
 		.reg_rd(reg_rd), .reg_raddr(reg_raddr), .reg_rdata(reg_rdata),
@@ -158,6 +159,9 @@ module atg_zybo_dc (
 		beat <= beat + 26'd1;
 
 	assign led = {pclk_locked, dma_idle, irq, beat[25]};
+
+	/* The ZYBO's HDMI port as a source (HDMI_OUT_EN high). */
+	assign hdmi_out_en = 1'b1;
 
 	wire unused_ok = &{1'b0, s_awaddr[31:17], s_araddr[31:17], rsp_user[15:8], px_rgb, px_de, px_hs,
 		px_vs, scl_t, sda_t};

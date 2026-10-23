@@ -119,27 +119,19 @@ module atg_dc_regs #(
 	wire [6:0] w_toff = w_off - GHCI_DC_TIMING[6:0];
 	wire [3:0] w_tidx = w_toff[5:2];
 
-	/* (A function of the strobes alone: iverilog's continuous assigns
-	 * see only a function's arguments.) */
-	function [31:0] merge;
-		input [31:0] old;
-		input [31:0] data;
-		input [31:0] mask;
-		begin
-			merge = (old & ~mask) | (data & mask);
-		end
-	endfunction
+	/* The written bits under the strobes. */
+	wire [31:0] wbits = reg_wdata & wmask;
 
 	wire [31:0] ctrl_old = {25'd0, r_output, r_format, 1'b0, r_test, 1'b0, r_enable};
-	wire [31:0] ctrl_new = merge(ctrl_old, reg_wdata, wmask);
+	wire [31:0] ctrl_new = ((ctrl_old) & ~wmask | wbits);
 	wire do_reset = w_in && w_off == GHCI_DC_CTRL[6:0] && ctrl_new[GHCI_DC_CTRL_RESET];
 	wire w_irq_status = w_in && w_off == GHCI_DC_IRQ_STATUS[6:0];
 	wire [2:0] irq_clear = w_irq_status ? reg_wdata[2:0] & wmask[2:0] : 3'd0;
 	wire flip_now = ev_flip && flip_pending;
 	wire [2:0] irq_set = {flip_now, ev_underflow, ev_vsync};
-	wire [31:0] fb_next_new = merge(r_fb_next, reg_wdata, wmask);
-	wire [31:0] irq_enable_new = merge({29'd0, irq_enable}, reg_wdata, wmask);
-	wire [31:0] pclk_sel_new = merge({31'd0, r_pclk_sel}, reg_wdata, wmask);
+	wire [31:0] fb_next_new = ((r_fb_next) & ~wmask | wbits);
+	wire [31:0] irq_enable_new = (({29'd0, irq_enable}) & ~wmask | wbits);
+	wire [31:0] pclk_sel_new = (({31'd0, r_pclk_sel}) & ~wmask | wbits);
 
 	integer k;
 
@@ -200,13 +192,13 @@ module atg_dc_regs #(
 					else
 						r_fb_base <= fb_next_new;
 				end
-				GHCI_DC_FB_STRIDE[6:0]: r_stride <= merge(r_stride, reg_wdata, wmask);
-				GHCI_DC_FB_SIZE[6:0]: r_size <= merge(r_size, reg_wdata, wmask);
+				GHCI_DC_FB_STRIDE[6:0]: r_stride <= ((r_stride) & ~wmask | wbits);
+				GHCI_DC_FB_SIZE[6:0]: r_size <= ((r_size) & ~wmask | wbits);
 				GHCI_DC_PCLK_SEL[6:0]: r_pclk_sel <= pclk_sel_new[0];
 				default: ;
 				endcase
 				if (w_timing && w_off[1:0] == 2'd0)
-					r_timing[w_tidx] <= merge(r_timing[w_tidx], reg_wdata, wmask);
+					r_timing[w_tidx] <= ((r_timing[w_tidx]) & ~wmask | wbits);
 			end
 		end
 	end
