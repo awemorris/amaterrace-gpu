@@ -151,6 +151,13 @@ EXTCAP points to a list of entries of two words each:
 
 The list lives at 0x100 and up when present.
 
+The PERF capability (version 1) has four registers at its register
+offset: PERF_SRC0..PERF_SRC3 (+0x0, +0x4, +0x8, +0xC, R) say what
+PERF0..PERF3 count: [7:0] a STATUS busy bit number (0 CP .. 6 SU: the
+cycles that unit is busy), 8 (the cycles with memory accesses of the GPU's
+own blocks outstanding, the opposite of AXI_IDLE) or 0xFF (nothing; the
+counter reads 0).
+
 4. Command processor states
 ---------------------------
 
@@ -253,7 +260,7 @@ pending).  The blitter's range (draft):
 
 | Index | Name | Contents |
 | --- | --- | --- |
-| 0x000 | BLT_OP | [1:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits); [12] reverse direction (bottom-right first, for overlapping copies) |
+| 0x000 | BLT_OP | [1:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits; 2 and 3 are refused); [12] reverse direction (bottom-right first, for overlapping copies) |
 | 0x001 | BLT_DST_BASE | GPU address of the destination image |
 | 0x002 | BLT_DST_STRIDE | Bytes per destination row |
 | 0x003 | BLT_SRC_BASE | GPU address of the source image (COPY, TILE, UNTILE) |
@@ -267,6 +274,27 @@ pending).  The blitter's range (draft):
 
 Bases and strides are multiples of the pixel size.  The destination
 rectangle is clipped to the clip rectangle; the source moves with it.
+
+- FILL writes BLT_COLOR (its low 16 bits for 16-bit pixels).  COPY copies
+  the source rectangle.  A copy whose source and destination overlap is
+  correct when it runs in the right direction: forward (top row first,
+  left to right) when the destination starts before the source, reverse
+  ([12]) when it starts after.
+- Blend over ([4], FILL and COPY of 32-bit pixels): source-over with
+  premultiplied alpha in bits 31:24, per byte
+  out = src + round(dst x (255 - src.alpha) / 255), saturated at 255.
+  The source is BLT_COLOR for FILL.
+- TILE copies a linear source into a tiled destination, UNTILE a tiled
+  source into a linear destination; the tile layout is the vendor's and
+  CAPS[11] names it (1: the 4x4 tiles below).  BLT_DST_XY/BLT_SRC_XY are
+  pixel coordinates in either layout, and the stride of a tiled image is
+  the bytes of one row of tiles.  Blend over and the reverse direction do
+  not apply to them.
+- 4x4 tiles (CAPS[11] = 1): pixel (x, y) is at
+  base + (y / 4) x stride + (x / 4) x 16 x ps + ((y % 4) x 4 + x % 4) x ps,
+  ps the pixel size in bytes; the base and the stride of a tiled image are
+  multiples of 16 x ps bytes.
+- A combination the blitter does not do is a fault of kind 2 (block 1).
 
 9. The command set — pending design v3
 --------------------------------------
@@ -307,7 +335,8 @@ Decisions of 2026-10-23, to be written out in design v3:
 - KICK starts a unit directly on the state register file's values, without
   the ring, in IDLE and HALTED only: [0] BLIT, [1] DRAW, [2] DISPATCH.  The
   host polls the unit's STATUS busy bit for the end.  A KICK in another
-  state, or while the unit is busy, is a fault of kind 6.
+  state, or while the unit is busy, is a fault of kind 6; a KICK of a unit
+  the GPU does not have is a fault of kind 2.
 
 With these two, a board can be brought up with nothing but register
 accesses: fill and copy with KICK.BLIT, then read memory back through the
@@ -371,12 +400,15 @@ accepts only the major versions it knows.
 Appendix: Amaterrace's implementation status
 --------------------------------------------
 
-WS288 p002 (bitstream 1, "2D"): the CP is a stub without the ring:
-CAPS[0] is 0, EXTCAP 0, ISA_ID 0; RING_*, WDT_CYCLES and FENCE_LAST are
-plain registers.  Implemented: identification, SCRATCH, COUNTER, CTRL
-(RUN kept, HALT, RESET in the order of section 7), STATUS, the interrupt
-registers, the aperture, FAULT_ADDR/INFO for aperture, blitter and
-KICK/locked faults, the STATE alias, KICK.BLIT, the debug port.  The
-blitter does FILL and COPY of 32-bit pixels with clipping, top-left first;
-TILE, UNTILE, 16-bit pixels, blend-over and the reverse direction are
-refused (fault kind 2) until the next Phase.
+WS288 p003 (bitstream 1, "2D", DEVICE_VERSION 0.2): CP version 0, without
+the ring: CAPS[0] is 0, ISA_ID 0; RUN moves the CP to RUNNING but nothing
+is fetched, STEP does nothing, and RING_*, WDT_CYCLES and FENCE_LAST are
+plain registers.  Implemented: identification, SCRATCH, COUNTER, CTRL (RUN,
+HALT, RESET in the order of section 7), STATUS, the interrupt registers,
+the aperture, FAULT_ADDR/INFO for aperture, memory, blitter and
+KICK/locked faults, the STATE alias, KICK.BLIT, the debug port, and the
+extended capability list with PERF (PERF0 the blitter's busy cycles,
+PERF1 the memory's; PERF2/3 unused).  The blitter does FILL, COPY, TILE
+and UNTILE with every option of section 8; CAPS[11] is 1.  Measured on the
+ZYBO (xc7z010-1, Vivado 2026.1, 100 MHz): 3.8k LUTs, of which the blitter
+2.7k.
