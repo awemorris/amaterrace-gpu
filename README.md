@@ -1,7 +1,7 @@
 Amaterrace GPU
 ==============
 
-`Amaterrace GPU` is a GPU RTL implementation.
+`Amaterrace GPU` is an RTL GPU implementation.
 
 - GHCI ... A standard HCI for Vulkan-compatible GPUs that this project proposes.
 - DC ... Display Controller Block
@@ -31,3 +31,5 @@ Shader Architecture:
 - Warp: 32-lane scalar with 16-bit packed
 - Register File: xxx
 ```
+
+Synthesis goal is 200MHz on KC705 board.
