@@ -4,7 +4,7 @@ RTL: `rtl/gpu/su/atg_su_dec.v`.  Parent: atg_su.  Implemented in: p008.
 
 ## 1. Purpose and place
 
-Decodes a 64-bit GSI1 instruction (design §3.3, §3.4) into the SU micro-op of include/atg_su_uop.vh: unit, operation, operand numbers (7 bits), immediate, modifiers, latency class, destination count, and the ISA-fault flag.
+Decodes a 64-bit GSI1 instruction (design §3.3, §3.4) into the SU micro-op of include/atg_su_uop.vh: unit, operation, operand numbers (7 bits), immediate, modifiers, latency class, destination count, and the ISA-fault flag.  Children: `atg_su_dec_tab` (RISC-V opcodes) and `atg_su_dec_tabc` (custom-0..3), the opcode table split in two (p008, U38's 400 lines).
 
 ## 2. Parameters
 
