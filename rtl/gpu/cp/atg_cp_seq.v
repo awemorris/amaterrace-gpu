@@ -114,6 +114,7 @@ module atg_cp_seq #(
 	localparam [7:0] B_BLT = 8'h02;
 	localparam [7:0] B_VF = 8'h04;
 	localparam [7:0] B_RX = 8'h08;
+	localparam [7:0] B_ROP = 8'h10;
 	localparam [7:0] B_SU = 8'h40;
 	localparam [7:0] B_ALL = 8'hFE;
 
@@ -205,7 +206,10 @@ module atg_cp_seq #(
 		if (set_val) begin
 			pay_we = 1'b1;
 			pay_idx = sidx;
-			pay_wait = sidx < 9'h020 ? B_BLT : 8'd0;
+			/* a block's STATE does not change under its work (RX: also the ROP's
+			 * DEBUG_COLOR) */
+			pay_wait = sidx < 9'h020 ? B_BLT : sidx >= 9'h050 && sidx < 9'h070 ? B_RX | B_ROP :
+				sidx >= 9'h070 && sidx < 9'h090 ? B_ROP : 8'd0;
 		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
 			pay_we = 1'b1;
 			pay_idx = 9'h1E0 + {1'b0, p};
