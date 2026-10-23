@@ -132,7 +132,7 @@ module atg_su_lds #(
 				pval <= lane_on && !rsts;
 				pli <= li;
 				li <= li + 1'b1;
-				if ({{(31-LW){1'b0}}, li} == NPHYS - 1)
+				if ({{(32-LW){1'b0}}, li} == NPHYS - 1)
 					st <= DRAIN;
 			end
 			DRAIN: st <= BEAT;
