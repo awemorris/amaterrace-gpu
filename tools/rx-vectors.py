@@ -285,6 +285,56 @@ def ds_vectors(r):
     return out
 
 
+RT_BASE = 0x2000
+
+
+def wb_vectors(r):
+    """atg_rop_wb + atg_rop_blend: per run the STATE (RT_FORMAT, BLEND,
+    BLEND_CONST, WRITE_MASK, RT_STRIDE), the initial 32x16 target at
+    RT_BASE, quads 'Q x y mask colour x 16', and the final target."""
+    out = []
+    runs = []
+    for fmt in (0, 1, 2):
+        runs.append((fmt, 0, 15))	# plain writes
+        runs.append((fmt, 1 | (6 << 1) | (7 << 5) | (1 << 12) | (7 << 16), 15))	# source-over
+        runs.append((fmt, r.getrandbits(23) | 1, 15))
+        runs.append((fmt, 0, r.choice([1, 2, 4, 8, 5, 0])))	# partial WRITE_MASK
+    for n, (fmt, bl, wm) in enumerate(runs):
+        st = M.State()
+        ps = 2 if fmt == 2 else 4
+        st.set(M.S_RT_BASE, RT_BASE)
+        st.set(M.S_RT_STRIDE, 32 * ps)
+        st.set(M.S_RT_FORMAT, fmt)
+        st.set(M.S_BLEND, bl)
+        st.set(M.S_BLEND_CONST, r.getrandbits(32))
+        st.set(M.S_WRITE_MASK, wm)
+        mem = M.Mem()
+        init = [r.getrandbits(8 * ps) for _ in range(32 * 16)]
+        for i, v in enumerate(init):
+            (mem.wr16 if ps == 2 else mem.wr32)(RT_BASE + ps * i, v)
+        out.append('R %x %06x %08x %x %x %s' % (fmt, bl, st[M.S_BLEND_CONST], wm, 32 * ps,
+                                               ' '.join('%08x' % v for v in init)))
+        for k in range(80):
+            # mostly walking along rows, sometimes jumping
+            if k % 10 == 0:
+                x, y = 2 * r.randrange(16), 2 * r.randrange(8)
+            else:
+                x = (x + 2) % 32
+            mask = r.getrandbits(4) | (1 if k % 3 == 0 else 0)
+            col = [[f(r.uniform(-0.05, 1.05)) for _ in range(4)] for _ in range(4)]
+            for ln in range(4):
+                if mask >> ln & 1:
+                    a = RT_BASE + ((y + (ln >> 1)) * 32 + x + (ln & 1)) * ps
+                    d = mem.rd16(a) if ps == 2 else mem.rd32(a)
+                    p = M.blend_pixel(st, col[ln], d)
+                    (mem.wr16 if ps == 2 else mem.wr32)(a, p)
+            out.append('Q %04x %04x %x %s' % (x, y, mask, ' '.join('%08x' % w for c in col for w in c)))
+        fin = [(mem.rd16 if ps == 2 else mem.rd32)(RT_BASE + ps * i) for i in range(32 * 16)]
+        out.append('F %s' % ' '.join('%08x' % v for v in fin))
+    out.append('E')
+    return out
+
+
 def main():
     r = random.Random(288007)
     put('rx_fp.hex', fp_vectors(r))
@@ -293,6 +343,7 @@ def main():
     put('rx_clip.txt', clip_vectors(r))
     put('rop_blend.txt', blend_vectors(r))
     put('rop_ds.txt', ds_vectors(r))
+    put('rop_wb.txt', wb_vectors(r))
 
 
 if __name__ == '__main__':
