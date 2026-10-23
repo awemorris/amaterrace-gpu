@@ -65,7 +65,16 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   buffer and writes the line).  Up to 4 reads outstanding; writes counted until their responses
   (DMA_STATUS[15:8]) so the firmware can follow the memory order rule of design §2.4.8.
 - The image load has priority only when the CPU is held in reset (atg_cpu_fw does that), so the two
-  sources never overlap.
+  sources never overlap.  An ld_start that comes while a window copy still runs waits (it is kept)
+  until that copy has finished.
+- Reads use tags 0-3, one line buffer each; a read is issued only when a buffer is free, so the
+  responses (no back-pressure) always have a place, and the buffers are stored in any order.
+  Writes use tag 0x80, all byte enables set.  The word count of an image load need not be a whole
+  number of lines (the rest of the last line is not stored).
+- DMA_GO is ignored while busy (DMA_STATUS[0]) and with 0 lines; DMA_AMB/DMA_MEM read back what
+  was written (their low LINE_SHIFT bits are ignored by the copy).  DMA_STATUS[0] busy covers a
+  write copy until its last request is accepted; its responses are counted in [15:8].
+- wait_amb = requests in flight or waiting for req_ready.
 
 ## 5. State machine
 
@@ -77,7 +86,9 @@ One word per cycle into the BRAM; the AMB round trip limits it (about 1 line per
 
 ## 7. Corner cases and errors
 
-- rsp_error: DMA_STATUS.error (window) or ld_error; the copy stops.
+- rsp_error: DMA_STATUS.error (window) or ld_error; the copy stops: no further requests, the
+  reads in flight are waited for and their data dropped.  The error flag is cleared by the next
+  DMA_GO (or load); a late write response's error sets it again.
 
 ## 8. What the TB checks
 
@@ -95,4 +106,6 @@ design §2.4.7 (DMA, CPFW), §2.4.8 (memory order rule).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p017 (P2, branch p2-cpu); `sim/tb/atg_cpu_dma_tb.v` passes in both line sizes
+(32 and 64 bytes at once, with atg_cpu_mem and a random-latency AMB model).  p017 spec changes: §4
+and §7 made exact (buffers and tags, GO while busy, pending load, error clearing).
