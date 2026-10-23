@@ -73,9 +73,9 @@ module atg_cp #(
 	input wire [ADDR_W-1:0] mc_fault_addr,
 	input wire mc_fault_write,
 
-	output wire st_we,
-	output wire [8:0] st_idx,
-	output wire [31:0] st_wdata,
+	output reg st_we,
+	output reg [8:0] st_idx,
+	output reg [31:0] st_wdata,
 
 	output wire blt_kick,
 	input wire blt_busy,
@@ -146,6 +146,27 @@ module atg_cp #(
 		HAS_VSYNC != 0, 2'b00, UNITS[6] ? 4'd5 : 4'd0, 1'b0, UNITS[6], UNITS[1], 1'b1};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
 	localparam [7:0] XCAP = HAS_CPU != 0 ? 8'h24 : 8'h04;	/* PERF, CPFW */
+
+	/*
+	 * The STATE broadcast to the blocks, one register stage after
+	 * atg_cp_state (WS288 p017: the ring → sequencer → index decode → the
+	 * blocks' shadow enables did not meet 100 MHz with the CPU in the
+	 * ZYBO).  A kick comes at least two cycles after the last STATE write
+	 * of its µops (the header after the payload, the kick a cycle after
+	 * the header), so the blocks still see their state before the kick.
+	 */
+	wire s_st_we;
+	wire [8:0] s_st_idx;
+	wire [31:0] s_st_wdata;
+
+	always @(posedge clk) begin
+		if (!rst_n)
+			st_we <= 1'b0;
+		else
+			st_we <= s_st_we;
+		st_idx <= s_st_idx;
+		st_wdata <= s_st_wdata;
+	end
 
 	/* The HCR snoop bus. */
 	wire s_hcr_we;
@@ -235,7 +256,7 @@ module atg_cp #(
 		.alias_ridx(s_alias_ridx), .alias_rdata(s_state_rdata),
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
 		.open(s_open), .blt_busy(blt_busy), .lock_fault(s_lock_fault),
-		.st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.st_we(s_st_we), .st_idx(s_st_idx), .st_wdata(s_st_wdata),
 		.cpu_ridx(cpu_st_ridx), .cpu_rdata(cpu_st_rdata),
 		.replay(s_mc_flush), .replay_busy(s_replay_busy)
 	);
