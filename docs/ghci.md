@@ -319,6 +319,21 @@ arguments; a GPU without firmware (CAPS[17] = 0) faults with kind 2.  The
 packets are processed in ring order; while the firmware works on a class 2
 packet the CP takes no other packet.
 
+A driver normally sends one class 2 packet per submission, GHCI_FRAME
+(gpu-op 0x10105, draft number; `include/ghci_frame.h`): n = 8, dword4-5
+the address of a frame of staged commands, dword6 its bytes, dword7 a
+result page, dword8 the number of commands.  A staged command is
+`[number][flags][result index][arguments]`.  The firmware writes each
+command's result record `{VkResult, aux}` at result page + 8 x index when
+it has decoded it (index 0xFFFFFFFF: none), then the frame's result
+`{VkResult, commands decoded}` at dword3 (dword2 bit 1), then raises
+IRQ_STATUS.RESULT, then lets RING_RPTR pass the packet.  A command the
+firmware cannot decode ends the frame with VK_ERROR_FEATURE_NOT_PRESENT
+(the wire has no lengths).  The results mean "decoded and handed to the
+units", not "done": the driver's FENCE after the packet completes the work.
+The GHCI gpu-ops (0x10100-0x10105, draft): SESSION_OPEN, SESSION_CLOSE,
+MEMORY, PROGRAM, NATIVE, FRAME.
+
 Standard micro-ops (class 0):
 
 | Op | Name | Payload | Meaning |
@@ -439,6 +454,15 @@ accepts only the major versions it knows.
 
 Appendix: Amaterrace's implementation status
 --------------------------------------------
+
+WS288 p017 (bitstream 1' "2D + FW"): the CP's control processor atg_cpu
+(RV32IM) with the CPFW capability (CAPS[17], [18], CPFW at 0x120 in the
+extended capability list, the images reloadable by CPFW_CTRL.LOAD) and the
+firmware fw/cp/: sessions, memory, buffers, command pools and buffers, the
+recorded fill and copy of buffers and QUEUE_SUBMIT, as blits.  The
+watchdog also counts a class 2 packet (not the cycles the CPU waits on its
+µop FIFO or on memory).  After RESET, CPFW_CTRL.RUN is 0: the driver
+starts the firmware again.
 
 WS288 p004 (DEVICE_VERSION 0.3): the CP with the ring (CAPS[0] = 1, CAPS2 =
 one ring): the packet envelope and every standard micro-op of section 9

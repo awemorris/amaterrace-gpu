@@ -6,9 +6,12 @@ RTL: `boards/zybo/atg_zybo_2dfw.v`.  Parent: - (FPGA top).  Implemented in: p017
 
 ZYBO bitstream 1' "2D + FW" (design §2.4.7): CP, CPU with the firmware image, BLT, MC.
 
-Children: `atg_zybo_ps`, `atg_top`.
+Children: the PS7 primitive (wired as in atg_zybo_2d, which is proven on the board; p017 copied
+it rather than move to `atg_zybo_ps`), `atg_top`.
 
-atg_top in the shape `HAS_CPU` (tools/lint.sh lints that shape).  The XDC (`atg_zybo_2dfw.xdc`, LEDs and the clock as in atg_zybo_2d.xdc) comes with p017; `tools/vivado-build.sh zybo atg_zybo_2dfw` needs it.
+atg_top in the shape `HAS_CPU` with the firmware images `atg1-cp-zybo.imem.hex`/`.dmem.hex`
+(fw/cp/images/, copied next to the Vivado run by tools/vivado-build.tcl).  The XDC
+(`atg_zybo_2dfw.xdc`) is atg_zybo_2d.xdc's.  Build: `tools/vivado-build.sh zybo atg_zybo_2dfw`.
 
 ## 2. Parameters
 
@@ -26,7 +29,7 @@ Clock/reset domain: clk (FCLK_CLK0) unless the row says otherwise.  Resets are s
 
 ## 4. Behaviour
 
-Wiring: atg_zybo_ps (HP0) and atg_top.  The GHCI window is the low 17 bits of GP0.
+Wiring: the PS7 (GP0, HP0 64-bit, FCLK0, IRQ_F2P[0]) and atg_top, as atg_zybo_2d.  The GHCI window is the low 17 bits of GP0.
 
 ## 5. State machine
 
@@ -50,4 +53,4 @@ design §3.6 (bitstreams), §8 (Phase), spec/boards/zybo/atg_zybo_2d.md.
 
 ## 10. Status
 
-Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+Wiring written in WS288 p023; in p017 (P2) the copy of atg_zybo_2d with the CPU and the firmware images.

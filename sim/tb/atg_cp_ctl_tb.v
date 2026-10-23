@@ -27,7 +27,7 @@ module atg_cp_ctl_tb;
 	reg [9:0] hcr_widx = 0, hcr_ridx = 0;
 	reg [31:0] hcr_wdata = 0, hcr_wmask = 0;
 	wire [31:0] hcr_rdata;
-	reg mc_idle = 1, ring_busy = 0, cmd_active = 0, replay_busy = 0;
+	reg mc_idle = 1, ring_busy = 0, cmd_active = 0, wdt_hold = 0, replay_busy = 0;
 	reg [7:0] busy_in = 0;
 	reg mc_fault = 0, mc_fault_write = 0;
 	reg [7:0] mc_fault_client = 0;
@@ -46,7 +46,7 @@ module atg_cp_ctl_tb;
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
 		.mc_idle(mc_idle), .mem_ready(1'b1), .busy_in(busy_in), .ring_empty(1'b1),
-		.ring_busy(ring_busy), .cmd_active(cmd_active), .replay_busy(replay_busy),
+		.ring_busy(ring_busy), .cmd_active(cmd_active), .wdt_hold(wdt_hold), .replay_busy(replay_busy),
 		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
 		.mc_fault_write(mc_fault_write),
 		.src_fault(src_fault), .src_kind(src_kind), .src_addr(src_addr), .src_tag(src_tag),
@@ -326,6 +326,10 @@ module atg_cp_ctl_tb;
 		cmd_active = 1;
 		repeat (30) @(negedge clk);
 		expect_state("wdt", GHCI_ST_RUNNING);
+		wdt_hold = 1;	/* p017: the count pauses, it does not restart */
+		repeat (100) @(negedge clk);
+		expect_state("wdt", GHCI_ST_RUNNING);
+		wdt_hold = 0;
 		repeat (30) @(negedge clk);
 		expect_state("wdt", GHCI_ST_FAULTED);
 		expect_info("wdt", {16'd0, GHCI_FAULT_WATCHDOG, 12'd0}, 32'd0);
