@@ -1,0 +1,14 @@
+# Build outputs stay out of the tree: Vivado runs, IP output products,
+# bitstreams, simulation binaries and waves.
+/build/
+.Xil/
+*.jou
+*.log
+*.bit
+*.dcp
+*.vvp
+*.vcd
+*.fst
+obj_dir/
+# Editor backups.
+*~
