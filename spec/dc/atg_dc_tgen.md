@@ -38,7 +38,7 @@ Clock/reset domain: pclk unless the row says otherwise.  Resets are synchronous 
 
 ## 4. Behaviour
 
-Counters run while enable; pixels are popped during DE; an empty FIFO gives black and an underflow toggle.  Events cross as toggles (one bit each through am_sync, the gclk side detects edges).  frame_start is raised a few lines before the active area so the DMA fills the FIFO.
+Counters run while enable; while enable is 0 they wait at the first pixel of the vsync line (h = 0, v = V_ACTIVE + V_FP) with the outputs idle, so each frame starts with a vsync.  Pixels are popped during DE (not in TEST_PATTERN, which reads no memory); an empty FIFO gives black and an underflow toggle.  During the vsync lines the FIFO is drained (pixels of a frame the DMA did not finish in time are dropped), so each frame starts aligned.  Events cross as toggles (one bit each through am_sync, the gclk side detects edges): vsync_toggle at the start of the sync, frame_toggle at the start of the back porch (the DMA has the back porch to fill the FIFO).  Formats: 0 BGRA8, 1 RGBA8, 2 RGB565 (channels widened by repeating their top bits).  The test pattern: eight bars of H_ACTIVE / 8 (white, yellow, cyan, green, magenta, red, blue, black) and a white one-pixel border.  SYNC_POL[0]/[1] = 1: hsync/vsync active high.  Outputs registered (one cycle after the counters).  FB_SIZE should equal the active size: a smaller framebuffer underflows, a larger one is drained.
 
 ## 5. State machine
 
@@ -56,7 +56,8 @@ None beyond the above.
 
 `sim/tb/atg_dc_tgen_tb.v` prints, in this order:
 
-- `PASS atg_dc_tgen.timing` — 640×480 timing against the VESA numbers
+- `PASS atg_dc_tgen.timing` — 640×480 timing against the VESA numbers (and 720p against CEA-861)
+- `PASS atg_dc_tgen.pixels` — pixels in order after the drain, formats 1 and 2
 - `PASS atg_dc_tgen.pattern` — test pattern
 - `PASS atg_dc_tgen.underflow` — underflow
 - `PASS atg_dc_tgen` at the end.
@@ -67,4 +68,4 @@ design §5.1 (atg_dc_tgen, PCLK_SEL), Values referenced: VESA DMT 640×480@60, C
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p005 (TB `atg_dc_tgen_tb` PASS).

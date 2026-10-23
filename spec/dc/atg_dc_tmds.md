@@ -56,4 +56,4 @@ design §5.1 (ZYBO HDMI), Values referenced: DVI 1.0 §3.2 (TMDS encoding).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p005 (TB `atg_dc_tmds_tb` PASS).

@@ -46,6 +46,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ev_underflow` | in | 1 | Underflow pulse. |
 | `dma_idle` | in | 1 | No DMA outstanding. |
 | `line` | in | 12 | Current line (approximate, synchronised). |
+| `scan_sum` | in | 32 | From atg_dc_dma: sum of the last frame's pixel words (SCAN_SUM). |
+| `scan_words` | in | 32 | From atg_dc_dma: pixel words of the last frame (SCAN_WORDS). |
 | `fb_base` | out | 32 | FB_BASE: the frame being scanned (updated at ev_flip). |
 | `irq` | out | 1 | Level interrupt. |
 | **I2C window (to atg_dc_i2c)** | | | |
@@ -54,11 +56,11 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `i2c_wdata` | out | 32 | Data. |
 | `i2c_rdata` | in | 32 | Data (combinational). |
 
-29 ports.
+31 ports (scan_sum and scan_words added in p005, Q1 to ACK).
 
 ## 4. Behaviour
 
-Register map of design §5.1 (offsets from the DISP base).  FRAME_COUNT counts ev_vsync.  IRQ_STATUS [0] VSYNC [1] UNDERFLOW [2] FLIP_DONE, W1C; irq = OR(status & enable).  Standalone header: MAGIC, VERSION, VENDOR "AMAT", DEVICE "ATDC", ISA 0, CAPS = bit 3 only, EXTCAP → one DISP entry pointing to 0x200.
+Register map of design §5.1 (offsets from the DISP base; the window is 128 bytes, 128-byte aligned).  FRAME_COUNT counts ev_vsync.  CTRL.RESET (W1S) raises dc_reset for 32 cycles (so that atg_dc can carry it to pclk and reset both sides of the pixel FIFO) and clears ENABLE, IRQ_STATUS, the sticky underflow, FRAME_COUNT and a pending flip; the configuration registers keep their values.  STATUS: [0] ENABLE, [1] underflow (sticky; cleared by RESET and when ENABLE goes 0 → 1), [2] idle = ENABLE 0 and dma_idle, [15:4] line.  FB_NEXT written while ENABLE = 1 makes a flip pending: at the next ev_flip (a vsync) FB_BASE takes it and FLIP_DONE is raised; written while ENABLE = 0 (no vsyncs) it sets FB_BASE at once.  Amaterrace's debug registers after the I2C window: 0x70 SCAN_SUM and 0x74 SCAN_WORDS (R, scan_sum and scan_words).  I2C reads give i2c_rdata only with HAS_I2C.  IRQ_STATUS [0] VSYNC [1] UNDERFLOW [2] FLIP_DONE, W1C; irq = OR(status & enable).  Standalone header: MAGIC, VERSION, VENDOR "AMAT", DEVICE "ATDC", ISA 0, CAPS = bit 3 only, EXTCAP → one DISP entry pointing to 0x200.
 
 ## 5. State machine
 
@@ -87,4 +89,4 @@ design §5.1, §2.2 (EXTCAP DISP).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p005 (TB `atg_dc_regs_tb` PASS).

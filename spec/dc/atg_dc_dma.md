@@ -31,7 +31,9 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `px_valid` | out | 1 | Pixel word to the FIFO (am_afifo w_*). |
 | `px_ready` | in | 1 | Room. |
 | `px_data` | out | 32 | One pixel (RGB565 in the low 16 bits). |
-| `idle` | out | 1 | No request outstanding (STATUS.idle; detach quiesce). |
+| `idle` | out | 1 | No request offered or outstanding (STATUS.idle; detach quiesce). |
+| `scan_sum` | out | 32 | Sum of the pixel words pushed in the last frame (taken at the next frame_start or ENABLE fall; SCAN_SUM). |
+| `scan_words` | out | 32 | Their number (SCAN_WORDS). |
 | **AMB client port (design §4.1)** | | | |
 | `req_valid` | out | 1 | Request valid; payload held until `req_ready`. |
 | `req_ready` | in | 1 | The MC (or mux) takes the request this cycle. |
@@ -46,15 +48,15 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-24 ports; 13 counting each AMB port and HCR snoop port as one group (spec/README.md).
+26 ports; 15 counting each AMB port and HCR snoop port as one group (spec/README.md).  scan_sum/scan_words added in p005 (Q1 to ACK).
 
 ## 4. Behaviour
 
-Keeps the FIFO (2 lines) full ahead of the scan: reads lines up to 4 outstanding.  ENABLE = 0 stops new requests; idle when the responses are in.
+At frame_start (with ENABLE) the base, stride, size and format are taken.  A row of w pixels (4 bytes, 2 for RGB565) is ceil(row bytes / LINE_BYTES) lines from base + y × stride (base and stride LINE_BYTES aligned, low bits ignored).  Read responses go to a line FIFO of 8 entries (am_fifo); a request is made only when the requests outstanding and the lines waiting fit in it (the responses have no back-pressure), at most one request every two cycles (am_axi_master keeps 4 reads outstanding).  The unpacker sends the line's pixels in order, one per cycle, with px_valid/px_ready into the pixel FIFO.  frame_start during a frame and ENABLE falling abort it: no new request (one already offered stays until req_ready), the line FIFO and the unpacker are cleared, and the responses still to come are dropped: req_tag[3:0] is the frame's epoch and responses of an older epoch are not kept.  px_valid may fall without px_ready at an abort (am_afifo does not mind).  ENABLE = 0 stops new requests; idle when the responses are in.
 
 ## 5. State machine
 
-IDLE →(frame_start)→ LINE (requests) → … → IDLE.
+Requests: IDLE →(frame_start)→ LINE (one request per line while there is room) → … → IDLE after the last row; the unpacker follows the same rows from the line FIFO.
 
 ## 6. Latency and throughput
 
@@ -63,6 +65,7 @@ Must sustain the pixel rate: 640×480@60 25 Mpx/s (100 MB/s), 720p 74 Mpx/s.
 ## 7. Corner cases and errors
 
 - An error response: the pixels are 0 (the MC raised the fault).
+- FB_SIZE w or h 0: no request (the test pattern needs none).
 
 ## 8. What the TB checks
 
@@ -78,4 +81,4 @@ design §5.1 (atg_dc_dma), §4.2.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p005 (TB `atg_dc_dma_tb` PASS).

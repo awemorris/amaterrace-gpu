@@ -11,15 +11,15 @@
 ## VGA_G0..G5, vga_b VGA_B1..B5.
 
 ## gclk: the PS's FCLK_CLK0 after its BUFG, 100 MHz.  The pixel clocks are
-## derived by Vivado at the two MMCMs' outputs (atg_zybo_pclk).
+## derived by Vivado at the PLL's and the MMCM's outputs (atg_zybo_pclk).
 create_clock -period 10.000 -name gclk [get_nets clk]
 
 ## gclk and the two pixel clock pairs are unrelated: the DC crosses
 ## between them only through am_afifo and am_sync, plus the quasi-static
-## configuration (atg_dc_regs §7).  The two MMCMs' clocks meet only in
-## the BUFGMUXes (one at a time).
+## configuration (atg_dc_regs §7).  The PLL's and the MMCM's clocks meet
+## only in the BUFGMUXes (one at a time).
 set_clock_groups -asynchronous -group [get_clocks gclk] \
-	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/mmcm_a/CLKOUT*}]] \
+	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/pll_a/CLKOUT*}]] \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/mmcm_b/CLKOUT*}]]
 
 ## LEDs

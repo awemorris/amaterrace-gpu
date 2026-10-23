@@ -10,8 +10,9 @@
  * board tops instantiate (tools/lint.sh uses them, nothing else does): the
  * ports the tops use, every output 0.  The PS7 port names and widths are
  * those of Vivado 2026.1's unisims PS7.v (Values referenced: interface
- * names and widths only); BUFG is I/O; MMCME2_BASE, BUFGMUX, OSERDESE2
- * and OBUFDS (the ZYBO DC) have the ports and parameters the tops use.
+ * names and widths only); BUFG is I/O; PLLE2_BASE, MMCME2_BASE, BUFGMUX,
+ * OSERDESE2 and OBUFDS (the ZYBO DC) have the ports and parameters the tops
+ * use.
  * Never used for simulation or synthesis.
  */
 
@@ -270,6 +271,36 @@ module MMCME2_BASE #(
 	assign CLKOUT4 = 1'b0;
 	assign CLKOUT5 = 1'b0;
 	assign CLKOUT6 = 1'b0;
+	assign LOCKED = 1'b0;
+endmodule
+
+module PLLE2_BASE #(
+	parameter real CLKIN1_PERIOD = 0.000,
+	parameter integer DIVCLK_DIVIDE = 1,
+	parameter integer CLKFBOUT_MULT = 5,
+	parameter integer CLKOUT0_DIVIDE = 1,
+	parameter integer CLKOUT1_DIVIDE = 1
+) (
+	input wire CLKIN1,
+	input wire CLKFBIN,
+	input wire RST,
+	input wire PWRDWN,
+	output wire CLKFBOUT,
+	output wire CLKOUT0,
+	output wire CLKOUT1,
+	output wire CLKOUT2,
+	output wire CLKOUT3,
+	output wire CLKOUT4,
+	output wire CLKOUT5,
+	output wire LOCKED
+);
+	assign CLKFBOUT = CLKIN1;
+	assign CLKOUT0 = CLKIN1;
+	assign CLKOUT1 = CLKIN1;
+	assign CLKOUT2 = 1'b0;
+	assign CLKOUT3 = 1'b0;
+	assign CLKOUT4 = 1'b0;
+	assign CLKOUT5 = 1'b0;
 	assign LOCKED = 1'b0;
 endmodule
 
