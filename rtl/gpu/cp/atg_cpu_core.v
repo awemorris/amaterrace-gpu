@@ -7,16 +7,18 @@
 
 /*
  * atg_cpu_core: The RV32IM pipeline of the CP's control processor: fetch,
- * decode/execute, writeback (3 stages), Machine mode only, one interrupt
- * line, no CSRs (the control window replaces them).
+ * decode/register read, execute, writeback (4 stages), Machine mode only,
+ * one interrupt line, no CSRs (the control window replaces them).
  *
  * F: i_en with i_addr = pc_f; the word comes back on i_rdata the next
  * cycle and stays there while i_en is 0 (BRAM output register).
- * D/E: decode of i_rdata, register read, atg_cpu_alu, branch resolve,
- * the data access (d_valid held with its payload until d_ready) and the
- * atg_cpu_muldiv start.  W: the register file write at the end of the
- * cycle the instruction completes in, so no forwarding is needed.
- * A taken branch, jump, mret or interrupt refetches (1 bubble).
+ * D: register read of i_rdata's rs1/rs2 (with W's value of this cycle)
+ * into E's operand registers.  E: decode, atg_cpu_alu, branch resolve, the
+ * data access (d_valid held with its payload until d_ready) and the
+ * atg_cpu_muldiv start; its operands take W's value when W holds the
+ * instruction just before (program order).  W: the result register and
+ * the register file write.  A taken branch, jump, mret or interrupt
+ * refetches (2 bubbles).
  *
  * run = 0 stops before the next instruction starts (an access or a
  * multiply/divide already started completes); stopped is then 1.  An
@@ -84,16 +86,29 @@ module atg_cpu_core (
 
 	/* Pipeline state. */
 	reg [31:0] pc_f;	/* address fetched this cycle */
-	reg [31:0] pc_e;	/* address of the instruction in D/E */
-	reg e_vld;	/* D/E holds an instruction (i_rdata) */
+	reg [31:0] pc_d;	/* address of the instruction in D (i_rdata) */
+	reg d_vld;
+	reg [31:0] pc_e;	/* address of the instruction in E */
+	reg [31:0] ir_e;
+	reg [31:0] rs1_e, rs2_e;	/* its operands as read in D */
+	reg e_vld;
 	reg e_busy;	/* its access or multiply/divide has started */
+	reg w_wen;	/* W: the last completed instruction writes w_rd */
+	reg [4:0] w_rd;
+	reg [31:0] w_val;
 	reg faulted;
 	reg in_irq;
 	reg [31:0] mepc;
 	reg [31:0] rf [1:31];
 
-	/* Decode. */
-	wire [31:0] ir = i_rdata;
+	/* D: register read, with the value W writes in this cycle. */
+	wire [4:0] d_ra = i_rdata[19:15];
+	wire [4:0] d_rb = i_rdata[24:20];
+	wire [31:0] d_rs1 = (d_ra == 5'd0) ? 32'd0 : (w_wen && w_rd == d_ra) ? w_val : rf[d_ra];
+	wire [31:0] d_rs2 = (d_rb == 5'd0) ? 32'd0 : (w_wen && w_rd == d_rb) ? w_val : rf[d_rb];
+
+	/* E: decode of ir_e. */
+	wire [31:0] ir = ir_e;
 	wire [6:0] opc = ir[6:0];
 	wire [4:0] rd = ir[11:7];
 	wire [2:0] f3 = ir[14:12];
@@ -128,9 +143,9 @@ module atg_cpu_core (
 	wire is_mem = is_ld || is_st;
 	wire has_rd = is_lui || is_auipc || is_jal || is_jalr || is_ld || is_imm || is_op || is_m;
 
-	/* Register read. */
-	wire [31:0] rs1 = (ra == 5'd0) ? 32'd0 : rf[ra];
-	wire [31:0] rs2 = (rb == 5'd0) ? 32'd0 : rf[rb];
+	/* E's operands: W holds the instruction just before it (program order). */
+	wire [31:0] rs1 = (ra != 5'd0 && w_wen && w_rd == ra) ? w_val : rs1_e;
+	wire [31:0] rs2 = (rb != 5'd0 && w_wen && w_rd == rb) ? w_val : rs2_e;
 
 	/* ALU: a = rs1; b = an immediate or rs2. */
 	reg [3:0] alu_op;
@@ -194,7 +209,7 @@ module atg_cpu_core (
 	wire md_busy, md_done;
 	wire [31:0] md_y;
 
-	/* Faults of the instruction in D/E. */
+	/* Faults of the instruction in E. */
 	wire [1:0] ea = alu_y[1:0];
 	wire mis_mem = is_mem && (f3[1:0] == 2'd2 ? ea != 2'd0 :
 		f3[1:0] == 2'd1 ? ea[0] : 1'b0);
@@ -224,8 +239,10 @@ module atg_cpu_core (
 	end
 
 	wire redirect = take_irq || (e_done && taken);
+	/* D moves into E when E is empty or completes (and nothing is flushed). */
+	wire d_adv = d_vld && (!e_vld || e_done) && !redirect;
 
-	assign i_en = !faulted && (!e_vld || e_done || take_irq);
+	assign i_en = !faulted && (!d_vld || d_adv || redirect);
 	assign i_addr = {pc_f[31:2], 2'b00};
 	assign stopped = faulted || (!run && !e_busy);
 
@@ -281,9 +298,10 @@ module atg_cpu_core (
 			wb = alu_y;
 	end
 
+	/* W: the register write (repeated while W holds it: harmless). */
 	always @(posedge clk) begin
-		if (e_done && has_rd && rd != 5'd0)
-			rf[rd] <= wb;
+		if (w_wen)
+			rf[w_rd] <= w_val;
 	end
 
 	atg_cpu_muldiv muldiv (
@@ -294,8 +312,16 @@ module atg_cpu_core (
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			pc_f <= 32'd0;
+			pc_d <= 32'd0;
+			d_vld <= 1'b0;
 			pc_e <= 32'd0;
+			ir_e <= 32'd0;
+			rs1_e <= 32'd0;
+			rs2_e <= 32'd0;
 			e_vld <= 1'b0;
+			w_wen <= 1'b0;
+			w_rd <= 5'd0;
+			w_val <= 32'd0;
 			e_busy <= 1'b0;
 			faulted <= 1'b0;
 			in_irq <= 1'b0;
@@ -319,13 +345,29 @@ module atg_cpu_core (
 			end else if (e_done && is_mret) begin
 				in_irq <= 1'b0;
 			end
+			if (e_done) begin
+				w_wen <= has_rd && rd != 5'd0;
+				w_rd <= rd;
+				w_val <= wb;
+			end
+			/* E. */
+			if (d_adv) begin
+				e_vld <= 1'b1;
+				pc_e <= pc_d;
+				ir_e <= i_rdata;
+				rs1_e <= d_rs1;
+				rs2_e <= d_rs2;
+			end else if (e_done || take_irq) begin
+				e_vld <= 1'b0;
+			end
+			/* F and D. */
 			if (redirect) begin
 				pc_f <= take_irq ? IRQ_VECTOR : target;
-				e_vld <= 1'b0;
+				d_vld <= 1'b0;
 			end else if (i_en) begin
-				pc_e <= pc_f;
+				pc_d <= pc_f;
 				pc_f <= pc_f + 32'd4;
-				e_vld <= 1'b1;
+				d_vld <= 1'b1;
 			end
 		end
 	end

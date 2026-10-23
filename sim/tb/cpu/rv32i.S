@@ -7,4020 +7,4012 @@ _start:
 	sll x25, x4, x16
 	li x30, 1
 	li x31, 0x0
-	bne x25, x31, fail
-	li x27, 0x18072e8c
-	li x13, 0xe4b06ce6
-	srl x14, x27, x13
+	bne x31, x25, fail
+	li x25, 0x6ec9d286
+	li x20, 0xe4b06ce6
+	sub x1, x20, x25
 	li x30, 2
-	li x31, 0x601cba
-	bne x14, x31, fail
-	li x19, 0x442e3d43
-	li x4, 0x3a902931
-	add x19, x19, x4
+	li x31, 0x75e69a60
+	bne x31, x1, fail
+	li x1, 0xe6c3f339
+	li x21, 0x0
+	and x1, x1, x21
 	li x30, 3
-	li x31, 0x7ebe6674
-	bne x19, x31, fail
-	li x22, 0x25b413f
-	li x7, 0x619699cf
-	add x14, x22, x7
+	li x31, 0x0
+	bne x31, x1, fail
+	li x16, 0x8712b8bc
+	li x18, 0x80000001
+	srl x8, x16, x18
 	li x30, 4
-	li x31, 0x63f1db0e
-	bne x14, x31, fail
-	li x8, 0x80000001
-	li x12, 0x8d88348a
-	or x12, x8, x12
+	li x31, 0x43895c5e
+	bne x31, x8, fail
+	li x21, 0x6a8ac4ba
+	li x4, 0x8e73ca47
+	sltu x6, x21, x4
 	li x30, 5
-	li x31, 0x8d88348b
-	bne x12, x31, fail
-	li x21, 0xed2f89d9
-	li x4, 0x1f
-	sra x6, x21, x4
-	li x30, 6
-	li x31, 0xffffffff
+	li x31, 0x1
 	bne x6, x31, fail
-	li x23, 0x80000000
-	li x17, 0xf9270f4e
-	sltu x14, x23, x17
-	li x30, 7
-	li x31, 0x1
-	bne x14, x31, fail
-	li x28, 0x20
-	li x17, 0x7fd63116
-	slt x13, x28, x17
-	li x30, 8
-	li x31, 0x1
-	bne x13, x31, fail
-	li x22, 0xbe6521cc
-	li x6, 0x6a107b75
-	add x12, x22, x6
-	li x30, 9
-	li x31, 0x28759d41
-	bne x12, x31, fail
-	li x6, 0x12345678
-	li x17, 0xc74803e3
-	xor x27, x6, x17
-	li x30, 10
-	li x31, 0xd57c559b
+	li x17, 0xefba91fc
+	li x14, 0xf9270f4e
+	xor x27, x14, x17
+	li x30, 6
+	li x31, 0x169d9eb2
 	bne x27, x31, fail
-	li x28, 0x78255d68
-	li x20, 0xffff8000
-	sra x19, x28, x20
-	li x30, 11
-	li x31, 0x78255d68
-	bne x19, x31, fail
-	li x7, 0xffffffff
+	li x8, 0x0
+	li x16, 0x815a47c5
+	sra x24, x16, x8
+	li x30, 7
+	li x31, 0x815a47c5
+	bne x24, x31, fail
+	li x3, 0xc69d4bd8
+	li x15, 0x5fec898f
+	or x22, x3, x15
+	li x30, 8
+	li x31, 0xdffdcbdf
+	bne x31, x22, fail
+	li x10, 0xffff8000
+	li x23, 0x0
+	srl x28, x10, x23
+	li x30, 9
+	li x31, 0xffff8000
+	bne x28, x31, fail
 	li x18, 0xc541013d
+	li x7, 0xffffffff
 	sll x28, x7, x18
-	li x30, 12
+	li x30, 10
 	li x31, 0xe0000000
 	bne x28, x31, fail
-	li x15, 0xf3d4e711
-	li x9, 0x5a702cfa
-	srl x22, x15, x9
-	li x30, 13
-	li x31, 0x3c
-	bne x22, x31, fail
-	li x17, 0xffff8000
-	li x25, 0x21167d8f
-	add x25, x17, x25
-	li x30, 14
-	li x31, 0x2115fd8f
-	bne x25, x31, fail
-	li x17, 0x5d5f576c
-	li x14, 0x3328ad08
-	add x16, x17, x14
-	li x30, 15
-	li x31, 0x90880474
+	li x24, 0xfffffffe
+	li x1, 0x9be3cecb
+	and x13, x24, x1
+	li x30, 11
+	li x31, 0x9be3ceca
+	bne x31, x13, fail
+	li x14, 0x84c81999
+	li x2, 0x349aae90
+	or x16, x14, x2
+	li x30, 12
+	li x31, 0xb4dabf99
 	bne x16, x31, fail
-	li x20, 0x1f
-	li x11, 0xc9546b43
-	srl x15, x20, x11
-	li x30, 16
-	li x31, 0x3
-	bne x15, x31, fail
+	li x18, 0x80000000
+	li x1, 0xd037cdff
+	or x20, x1, x18
+	li x30, 13
+	li x31, 0xd037cdff
+	bne x31, x20, fail
 	li x3, 0x8cfe5cd1
 	li x26, 0xdc6b13ab
 	slt x18, x3, x26
-	li x30, 17
+	li x30, 14
 	li x31, 0x1
 	bne x18, x31, fail
-	li x15, 0x12345678
-	li x1, 0x0
-	sltu x25, x15, x1
-	li x30, 18
+	li x25, 0x0
+	sub x8, x25, x25
+	li x30, 15
 	li x31, 0x0
-	bne x25, x31, fail
-	li x10, 0x7fff
-	li x3, 0x582c18c9
-	slt x3, x10, x3
-	li x30, 19
-	li x31, 0x1
-	bne x3, x31, fail
-	li x10, 0xa81aa40a
-	li x15, 0xffff8000
-	or x23, x10, x15
-	li x30, 20
-	li x31, 0xffffa40a
-	bne x23, x31, fail
+	bne x8, x31, fail
+	li x9, 0x2
+	li x22, 0x2
+	sltu x21, x22, x9
+	li x30, 16
+	li x31, 0x0
+	bne x21, x31, fail
 	li x26, 0xfffffffe
 	li x7, 0x7fffffff
 	sra x26, x26, x7
-	li x30, 21
+	li x30, 17
 	li x31, 0xffffffff
-	bne x26, x31, fail
-	li x1, 0xf72f2bb8
-	li x8, 0xd12982e4
-	or x1, x1, x8
-	li x30, 22
-	li x31, 0xf72fabfc
-	bne x1, x31, fail
-	li x27, 0x819d7ca7
-	li x8, 0x8b7199cd
-	sll x21, x27, x8
-	li x30, 23
-	li x31, 0xaf94e000
-	bne x21, x31, fail
-	li x22, 0x861e02ec
-	li x19, 0x6518093d
-	or x26, x22, x19
-	li x30, 24
-	li x31, 0xe71e0bfd
-	bne x26, x31, fail
-	li x2, 0xfffffffe
-	li x10, 0xffffffff
-	srl x3, x2, x10
-	li x30, 25
+	bne x31, x26, fail
+	li x8, 0x6e80fa48
+	li x1, 0x55455e8
+	slt x8, x8, x1
+	li x30, 18
+	li x31, 0x0
+	bne x8, x31, fail
+	li x26, 0xfa1b1bf1
+	li x21, 0x8b7199cd
+	or x23, x21, x26
+	li x30, 19
+	li x31, 0xfb7b9bfd
+	bne x31, x23, fail
+	li x14, 0xcdaaac43
+	srl x24, x14, x14
+	li x30, 20
+	li x31, 0x19b55588
+	bne x31, x24, fail
+	li x6, 0xfffffffe
+	li x24, 0x1
+	sltu x14, x24, x6
+	li x30, 21
 	li x31, 0x1
-	bne x3, x31, fail
-	li x19, 0x4c41d9c0
-	li x9, 0x6a8a43ef
-	sltu x19, x19, x9
-	li x30, 26
-	li x31, 0x1
-	bne x19, x31, fail
+	bne x31, x14, fail
 	li x15, 0x37b4000b
 	li x6, 0x91fde85c
 	add x27, x15, x6
-	li x30, 27
+	li x30, 22
 	li x31, 0xc9b1e867
-	bne x27, x31, fail
-	li x7, 0x60c290d0
-	li x19, 0x1
-	and x22, x7, x19
-	li x30, 28
-	li x31, 0x0
-	bne x22, x31, fail
-	li x10, 0x1
-	li x17, 0x63db01fc
-	and x10, x10, x17
-	li x30, 29
-	li x31, 0x0
-	bne x10, x31, fail
-	li x7, 0xe65150b5
-	li x28, 0x2
-	and x11, x7, x28
-	li x30, 30
-	li x31, 0x0
-	bne x11, x31, fail
+	bne x31, x27, fail
+	li x22, 0xffffffff
+	li x19, 0xffffffff
+	or x14, x19, x22
+	li x30, 23
+	li x31, 0xffffffff
+	bne x31, x14, fail
+	li x13, 0x20
+	li x28, 0x80000001
+	srl x28, x28, x13
+	li x30, 24
+	li x31, 0x80000001
+	bne x28, x31, fail
 	li x22, 0x56cef8ec
 	li x4, 0x443baac5
 	and x27, x22, x4
-	li x30, 31
+	li x30, 25
 	li x31, 0x440aa8c4
-	bne x27, x31, fail
-	li x18, 0x12345678
-	li x8, 0xc49872c6
-	or x3, x18, x8
-	li x30, 32
-	li x31, 0xd6bc76fe
-	bne x3, x31, fail
-	li x9, 0x2
-	li x25, 0x3685156b
-	sub x11, x9, x25
-	li x30, 33
-	li x31, 0xc97aea97
-	bne x11, x31, fail
-	li x28, 0x80000000
-	li x20, 0xffffffff
-	sltu x25, x28, x20
-	li x30, 34
-	li x31, 0x1
-	bne x25, x31, fail
+	bne x31, x27, fail
+	li x2, 0x10b8fe22
+	li x24, 0xfc4a447e
+	or x24, x24, x2
+	li x30, 26
+	li x31, 0xfcfafe7e
+	bne x31, x24, fail
+	li x12, 0x99a74924
+	sltu x4, x12, x12
+	li x30, 27
+	li x31, 0x0
+	bne x31, x4, fail
 	li x2, 0x1f
 	li x14, 0x521b18a9
 	sra x3, x2, x14
-	li x30, 35
+	li x30, 28
 	li x31, 0x0
 	bne x3, x31, fail
-	li x26, 0x57450e65
 	li x13, 0x20
-	sll x3, x26, x13
-	li x30, 36
-	li x31, 0x57450e65
-	bne x3, x31, fail
-	li x19, 0xf3c668b1
-	li x18, 0xfffffffe
-	slt x4, x19, x18
-	li x30, 37
-	li x31, 0x1
+	li x3, 0xed192da3
+	sll x19, x13, x3
+	li x30, 29
+	li x31, 0x100
+	bne x31, x19, fail
+	li x15, 0x907f9669
+	li x9, 0x1d43d1ff
+	xor x4, x15, x9
+	li x30, 30
+	li x31, 0x8d3c4796
 	bne x4, x31, fail
-	li x20, 0x0
-	li x22, 0x32b7328
-	sltu x20, x20, x22
-	li x30, 38
-	li x31, 0x1
-	bne x20, x31, fail
-	li x26, 0xca357568
-	li x19, 0xffffffff
-	sub x19, x26, x19
-	li x30, 39
+	li x2, 0x1
+	li x7, 0xca357568
+	add x8, x2, x7
+	li x30, 31
 	li x31, 0xca357569
-	bne x19, x31, fail
+	bne x8, x31, fail
 	li x14, 0xffffffff
 	li x13, 0x1
 	sra x26, x14, x13
-	li x30, 40
+	li x30, 32
 	li x31, 0xffffffff
 	bne x26, x31, fail
-	li x7, 0xb62c228e
-	li x21, 0x19a2105c
-	sltu x7, x7, x21
-	li x30, 41
+	li x11, 0x50806f01
+	li x2, 0x12345678
+	sltu x11, x11, x2
+	li x30, 33
 	li x31, 0x0
-	bne x7, x31, fail
-	li x11, 0xecf45ccb
-	li x15, 0x20
-	add x13, x11, x15
-	li x30, 42
-	li x31, 0xecf45ceb
-	bne x13, x31, fail
-	li x15, 0x80000000
-	li x4, 0xf8449560
-	sub x4, x15, x4
-	li x30, 43
-	li x31, 0x87bb6aa0
-	bne x4, x31, fail
+	bne x11, x31, fail
+	li x11, 0x1
+	li x3, 0x7fffffff
+	and x20, x3, x11
+	li x30, 34
+	li x31, 0x1
+	bne x20, x31, fail
 	li x16, 0xe4264c9f
 	and x12, x16, x16
-	li x30, 44
+	li x30, 35
 	li x31, 0xe4264c9f
 	bne x12, x31, fail
-	li x27, 0xffffffff
-	li x9, 0x1
-	or x3, x27, x9
-	li x30, 45
-	li x31, 0xffffffff
-	bne x3, x31, fail
+	li x3, 0x7fff
+	li x15, 0xfffffffe
+	slt x21, x15, x3
+	li x30, 36
+	li x31, 0x1
+	bne x21, x31, fail
+	li x10, 0x2
 	li x8, 0x20
-	li x13, 0xf0d3fa5c
-	sra x8, x8, x13
-	li x30, 46
-	li x31, 0x0
-	bne x8, x31, fail
-	li x8, 0x20
-	li x11, 0x4d84e990
-	sll x4, x8, x11
-	li x30, 47
-	li x31, 0x200000
+	sltu x10, x10, x8
+	li x30, 37
+	li x31, 0x1
+	bne x31, x10, fail
+	li x3, 0x0
+	li x9, 0x66daa365
+	sub x18, x3, x9
+	li x30, 38
+	li x31, 0x99255c9b
+	bne x18, x31, fail
+	li x28, 0x7fff
+	li x5, 0x80000001
+	add x4, x28, x5
+	li x30, 39
+	li x31, 0x80008000
 	bne x4, x31, fail
-	li x26, 0x179030da
-	li x8, 0x0
-	and x26, x26, x8
-	li x30, 48
-	li x31, 0x0
-	bne x26, x31, fail
-	li x1, 0xbaaad651
-	li x10, 0x12345678
-	or x25, x1, x10
-	li x30, 49
-	li x31, 0xbabed679
-	bne x25, x31, fail
-	li x25, 0xdbeef77a
-	li x26, 0x1f
-	sra x25, x25, x26
-	li x30, 50
-	li x31, 0xffffffff
-	bne x25, x31, fail
 	li x28, 0x2
 	li x11, 0xd2511c38
 	sll x28, x28, x11
-	li x30, 51
+	li x30, 40
 	li x31, 0x2000000
-	bne x28, x31, fail
-	li x5, 0x9a15a311
-	li x18, 0xffffffff
-	or x5, x5, x18
-	li x30, 52
-	li x31, 0xffffffff
-	bne x5, x31, fail
-	li x18, 0x9f9f80d0
-	li x27, 0xe83b3ab1
-	xor x24, x18, x27
-	li x30, 53
-	li x31, 0x77a4ba61
-	bne x24, x31, fail
-	li x23, 0x7fffffff
-	li x28, 0xc6e5973
-	slt x28, x23, x28
-	li x30, 54
+	bne x31, x28, fail
+	li x2, 0xffffffff
+	li x25, 0xffff8000
+	sltu x11, x2, x25
+	li x30, 41
 	li x31, 0x0
-	bne x28, x31, fail
-	li x9, 0x725a9a5b
-	li x18, 0x8c9cf440
-	sub x15, x9, x18
-	li x30, 55
-	li x31, 0xe5bda61b
-	bne x15, x31, fail
+	bne x31, x11, fail
+	li x10, 0x3497553c
+	li x6, 0xbf05f8fa
+	or x14, x6, x10
+	li x30, 42
+	li x31, 0xbf97fdfe
+	bne x31, x14, fail
+	li x26, 0x1
+	slt x18, x26, x26
+	li x30, 43
+	li x31, 0x0
+	bne x31, x18, fail
 	li x1, 0x80000000
 	li x26, 0x80000001
-	sra x21, x1, x26
-	li x30, 56
-	li x31, 0xc0000000
+	add x21, x1, x26
+	li x30, 44
+	li x31, 0x1
 	bne x21, x31, fail
-	li x19, 0xffff8000
-	li x5, 0x2
-	and x9, x19, x5
-	li x30, 57
-	li x31, 0x0
-	bne x9, x31, fail
-	li x8, 0x7fffffff
-	li x16, 0x1
-	sltu x16, x8, x16
-	li x30, 58
-	li x31, 0x0
-	bne x16, x31, fail
-	li x22, 0xa61a59e3
-	li x21, 0xee1b8cc4
-	xor x21, x22, x21
-	li x30, 59
-	li x31, 0x4801d527
-	bne x21, x31, fail
-	li x14, 0x7a946602
-	li x11, 0xb67d153d
-	xor x18, x14, x11
-	li x30, 60
-	li x31, 0xcce9733f
-	bne x18, x31, fail
-	li x25, 0x382f21e4
-	li x17, 0x1
-	sltu x21, x25, x17
-	li x30, 61
+	li x9, 0xfffffffe
+	li x27, 0x97f2a702
+	xor x13, x27, x9
+	li x30, 45
+	li x31, 0x680d58fc
+	bne x13, x31, fail
+	li x22, 0x12345678
+	li x15, 0x1f
+	sra x21, x15, x22
+	li x30, 46
 	li x31, 0x0
 	bne x21, x31, fail
-	li x10, 0xcadff918
-	li x23, 0x4fd24206
-	sll x28, x10, x23
-	li x30, 62
-	li x31, 0xb7fe4600
-	bne x28, x31, fail
-	li x28, 0xbc85e5de
-	li x4, 0x15c0cdd5
-	sll x20, x28, x4
-	li x30, 63
-	li x31, 0xbbc00000
-	bne x20, x31, fail
-	li x19, 0x2
-	li x24, 0xffffffff
-	and x25, x19, x24
-	li x30, 64
-	li x31, 0x2
+	li x20, 0xb67d153d
+	sra x21, x20, x20
+	li x30, 47
+	li x31, 0xfffffffd
+	bne x21, x31, fail
+	li x25, 0x28d2e08e
+	li x17, 0xa5319f47
+	sub x26, x17, x25
+	li x30, 48
+	li x31, 0x7c5ebeb9
+	bne x31, x26, fail
+	li x20, 0xffff8000
+	li x3, 0x76fbb6ed
+	or x20, x20, x3
+	li x30, 49
+	li x31, 0xffffb6ed
+	bne x31, x20, fail
+	li x24, 0xf112cfd0
+	li x19, 0xfffffffe
+	srl x25, x19, x24
+	li x30, 50
+	li x31, 0xffff
 	bne x25, x31, fail
-	li x17, 0xb7975b28
-	li x28, 0x624c4b62
-	sra x6, x17, x28
-	li x30, 65
-	li x31, 0xede5d6ca
-	bne x6, x31, fail
-	li x4, 0x1724925f
-	li x9, 0xa0e20045
-	add x24, x4, x9
-	li x30, 66
-	li x31, 0xb80692a4
-	bne x24, x31, fail
-	li x22, 0x9ded54fd
-	li x23, 0xa8e33c94
-	sll x3, x22, x23
-	li x30, 67
-	li x31, 0x4fd00000
+	li x2, 0x2
+	li x17, 0xfe8b2b79
+	xor x3, x2, x17
+	li x30, 51
+	li x31, 0xfe8b2b7b
 	bne x3, x31, fail
-	li x14, 0x61e1e80d
-	li x13, 0xe746ebeb
-	slt x6, x14, x13
-	li x30, 68
-	li x31, 0x0
-	bne x6, x31, fail
-	li x14, 0x80000001
-	li x20, 0x1e830596
-	sra x18, x14, x20
-	li x30, 69
-	li x31, 0xfffffe00
-	bne x18, x31, fail
-	li x18, 0x47158a7e
-	li x1, 0xffff8000
-	sub x7, x18, x1
-	li x30, 70
-	li x31, 0x47160a7e
-	bne x7, x31, fail
-	li x27, 0x12345678
-	li x9, 0x3e036333
-	and x9, x27, x9
-	li x30, 71
-	li x31, 0x12004230
-	bne x9, x31, fail
-	li x9, 0x45f21e94
-	li x27, 0x7fff
-	sll x22, x9, x27
-	li x30, 72
-	li x31, 0x0
-	bne x22, x31, fail
-	li x25, 0x7da5ad52
-	li x7, 0x1f2e490c
-	sll x19, x25, x7
-	li x30, 73
-	li x31, 0x5ad52000
-	bne x19, x31, fail
-	li x4, 0x1
-	li x19, 0x62ebc92
-	slt x4, x4, x19
-	li x30, 74
+	li x27, 0x239dc599
+	li x22, 0x9ded54fd
+	sub x27, x27, x22
+	li x30, 52
+	li x31, 0x85b0709c
+	bne x27, x31, fail
+	li x15, 0x2a2d551f
+	li x11, 0xe746ebeb
+	srl x5, x11, x15
+	li x30, 53
 	li x31, 0x1
-	bne x4, x31, fail
-	li x5, 0xc2d532fa
-	li x3, 0xa63e0c32
-	sltu x17, x5, x3
-	li x30, 75
-	li x31, 0x0
-	bne x17, x31, fail
-	li x11, 0xad611a3e
+	bne x5, x31, fail
+	li x10, 0x68815fda
+	li x9, 0xa9172a05
+	srl x8, x10, x9
+	li x30, 54
+	li x31, 0x3440afe
+	bne x31, x8, fail
+	li x27, 0x20
+	li x8, 0x5628748
+	or x27, x8, x27
+	li x30, 55
+	li x31, 0x5628768
+	bne x31, x27, fail
+	li x15, 0x7fff
+	li x26, 0x12345678
+	sltu x28, x15, x26
+	li x30, 56
+	li x31, 0x1
+	bne x31, x28, fail
+	li x13, 0x1f2e490c
+	li x7, 0x920f3663
+	sra x10, x13, x7
+	li x30, 57
+	li x31, 0x3e5c921
+	bne x10, x31, fail
+	li x25, 0x8b97ef45
+	li x24, 0x12345678
+	and x25, x25, x24
+	li x30, 58
+	li x31, 0x2144640
+	bne x31, x25, fail
 	li x1, 0x1f
+	li x11, 0xad611a3e
 	sltu x4, x11, x1
-	li x30, 76
+	li x30, 59
 	li x31, 0x0
 	bne x4, x31, fail
-	li x24, 0x1f
-	li x22, 0x7fff
-	sra x19, x24, x22
-	li x30, 77
-	li x31, 0x0
-	bne x19, x31, fail
-	li x21, 0x1f
-	li x20, 0xfffffffe
-	srl x24, x21, x20
-	li x30, 78
-	li x31, 0x0
-	bne x24, x31, fail
-	li x14, 0x80000001
-	li x24, 0x84546026
-	or x23, x14, x24
-	li x30, 79
-	li x31, 0x84546027
-	bne x23, x31, fail
-	li x7, 0x730b19ec
+	li x4, 0xffff8000
+	li x21, 0x7e0750ea
+	srl x13, x4, x21
+	li x30, 60
+	li x31, 0x3fffe0
+	bne x31, x13, fail
+	li x15, 0x82ce49de
+	li x7, 0xbd1296cd
+	and x20, x7, x15
+	li x30, 61
+	li x31, 0x800200cc
+	bne x31, x20, fail
 	li x12, 0x87ecbe86
+	li x7, 0x730b19ec
 	sltu x7, x7, x12
-	li x30, 80
+	li x30, 62
 	li x31, 0x1
 	bne x7, x31, fail
-	li x20, 0xf86668c1
-	li x19, 0xdc7a9283
-	srl x24, x20, x19
-	li x30, 81
-	li x31, 0x1f0ccd18
-	bne x24, x31, fail
-	li x10, 0xbeeaac97
-	li x21, 0x12345678
-	sub x1, x10, x21
-	li x30, 82
-	li x31, 0xacb6561f
-	bne x1, x31, fail
-	li x28, 0xefe6f675
-	li x6, 0xfffffffe
-	sll x28, x28, x6
-	li x30, 83
-	li x31, 0x40000000
-	bne x28, x31, fail
-	li x28, 0xfffffffe
+	li x23, 0x20
+	li x24, 0xbbdc55a2
+	srl x3, x23, x24
+	li x30, 63
+	li x31, 0x8
+	bne x31, x3, fail
+	li x21, 0x683115a8
+	li x25, 0x27f52fa9
+	sltu x13, x21, x25
+	li x30, 64
+	li x31, 0x0
+	bne x31, x13, fail
 	li x22, 0x6940776c
+	li x28, 0xfffffffe
 	and x18, x28, x22
-	li x30, 84
+	li x30, 65
 	li x31, 0x6940776c
 	bne x18, x31, fail
-	li x2, 0x7c0b03ee
-	li x9, 0x1f
-	sra x2, x2, x9
-	li x30, 85
-	li x31, 0x0
-	bne x2, x31, fail
-	li x1, 0x5aece68f
-	li x6, 0x80000001
-	and x17, x1, x6
-	li x30, 86
-	li x31, 0x1
-	bne x17, x31, fail
-	li x20, 0x66e47927
-	li x10, 0x469a8a20
-	sll x7, x20, x10
-	li x30, 87
-	li x31, 0x66e47927
-	bne x7, x31, fail
+	li x19, 0x1
+	li x24, 0xb9e8d4d
+	sll x24, x24, x19
+	li x30, 66
+	li x31, 0x173d1a9a
+	bne x24, x31, fail
+	li x13, 0xf23562b7
+	sll x23, x13, x13
+	li x30, 67
+	li x31, 0x5b800000
+	bne x31, x23, fail
 	li x27, 0x44e1b856
 	li x17, 0xffff8000
 	slt x22, x27, x17
-	li x30, 88
+	li x30, 68
 	li x31, 0x0
-	bne x22, x31, fail
-	li x24, 0xcbbeab0
-	li x23, 0x12345678
-	or x27, x24, x23
-	li x30, 89
-	li x31, 0x1ebffef8
-	bne x27, x31, fail
-	li x6, 0x3b6bd0a4
-	xor x26, x6, x6
-	li x30, 90
+	bne x31, x22, fail
+	li x9, 0xd0a410da
+	li x18, 0xffff8000
+	sll x12, x18, x9
+	li x30, 69
 	li x31, 0x0
-	bne x26, x31, fail
-	li x23, 0xffffffff
-	li x8, 0x20
-	and x28, x23, x8
-	li x30, 91
-	li x31, 0x20
-	bne x28, x31, fail
-	li x8, 0xed9140c0
-	li x26, 0xc2f7c23f
-	and x26, x8, x26
-	li x30, 92
-	li x31, 0xc0914000
-	bne x26, x31, fail
-	li x24, 0x9442f362
+	bne x31, x12, fail
+	li x23, 0x427005f6
+	li x8, 0x5463852d
+	sll x9, x23, x8
+	li x30, 70
+	li x31, 0xbec000
+	bne x31, x9, fail
+	li x25, 0x51080deb
+	li x14, 0xde518343
+	add x8, x14, x25
+	li x30, 71
+	li x31, 0x2f59912e
+	bne x31, x8, fail
 	li x5, 0xe9c3deee
+	li x24, 0x9442f362
 	sll x20, x24, x5
-	li x30, 93
+	li x30, 72
 	li x31, 0xbcd88000
 	bne x20, x31, fail
-	li x23, 0x237c9540
-	li x15, 0xe4d4ad86
-	sra x12, x23, x15
-	li x30, 94
-	li x31, 0x8df255
-	bne x12, x31, fail
-	li x10, 0xffff8000
-	li x3, 0x12345678
-	srl x3, x10, x3
-	li x30, 95
-	li x31, 0xff
-	bne x3, x31, fail
-	li x2, 0x1997e8f3
-	li x26, 0xb83da50
-	xor x2, x2, x26
-	li x30, 96
-	li x31, 0x121432a3
-	bne x2, x31, fail
-	li x24, 0x7e94f5ab
-	li x20, 0xd09dfa6c
-	slt x15, x24, x20
-	li x30, 97
+	li x13, 0x70d07eba
+	li x8, 0x7fff
+	sll x4, x13, x8
+	li x30, 73
 	li x31, 0x0
-	bne x15, x31, fail
-	li x13, 0xffff8000
-	li x8, 0xffffffff
-	sltu x16, x13, x8
-	li x30, 98
-	li x31, 0x1
-	bne x16, x31, fail
-	li x18, 0x3c593e7f
-	li x19, 0x766b5e3c
-	sll x19, x18, x19
-	li x30, 99
-	li x31, 0xf0000000
-	bne x19, x31, fail
-	li x3, 0x20
-	li x2, 0xffffffff
-	sltu x1, x3, x2
-	li x30, 100
-	li x31, 0x1
-	bne x1, x31, fail
-	li x7, 0x7fffffff
-	li x13, 0x4986f3a6
-	sra x6, x7, x13
-	li x30, 101
-	li x31, 0x1ffffff
+	bne x4, x31, fail
+	li x6, 0x80000000
+	li x2, 0x1997e8f3
+	sub x26, x6, x2
+	li x30, 74
+	li x31, 0x6668170d
+	bne x26, x31, fail
+	li x15, 0xf6d0ac1d
+	li x20, 0x874e263f
+	add x11, x20, x15
+	li x30, 75
+	li x31, 0x7e1ed25c
+	bne x31, x11, fail
+	li x25, 0x80000001
+	li x13, 0x7fffffff
+	sll x6, x13, x25
+	li x30, 76
+	li x31, 0xfffffffe
 	bne x6, x31, fail
-	li x22, 0x7cc0424
+	li x16, 0x42041769
+	li x11, 0x363f89c2
+	or x11, x11, x16
+	li x30, 77
+	li x31, 0x763f9feb
+	bne x11, x31, fail
+	li x13, 0xdb8ae021
+	add x19, x13, x13
+	li x30, 78
+	li x31, 0xb715c042
+	bne x19, x31, fail
 	li x18, 0x2
+	li x22, 0x7cc0424
 	sll x2, x22, x18
-	li x30, 102
+	li x30, 79
 	li x31, 0x1f301090
 	bne x2, x31, fail
-	li x1, 0x80000001
-	li x2, 0x4dabb96d
-	sltu x1, x1, x2
-	li x30, 103
-	li x31, 0x0
-	bne x1, x31, fail
-	li x3, 0xfffffffe
-	li x7, 0x6eb8f85f
-	sll x1, x3, x7
-	li x30, 104
-	li x31, 0x0
-	bne x1, x31, fail
-	li x22, 0xafd03fb9
-	li x15, 0x312218d0
-	sll x13, x22, x15
-	li x30, 105
-	li x31, 0x3fb90000
-	bne x13, x31, fail
-	li x2, 0xa4401dab
-	li x19, 0x3ed43ab3
-	sltu x26, x2, x19
-	li x30, 106
-	li x31, 0x0
-	bne x26, x31, fail
-	li x2, 0xb2b3d222
-	li x12, 0x85ad0c99
-	xor x18, x2, x12
-	li x30, 107
-	li x31, 0x371edebb
-	bne x18, x31, fail
-	li x3, 0x8951d454
-	li x23, 0xa9921b68
-	slt x9, x3, x23
-	li x30, 108
-	li x31, 0x1
-	bne x9, x31, fail
-	li x28, 0x1
-	li x14, 0xffffffff
-	sub x28, x28, x14
-	li x30, 109
-	li x31, 0x2
-	bne x28, x31, fail
-	li x4, 0x83497471
-	li x11, 0x5ec8e9d7
-	sub x4, x4, x11
-	li x30, 110
-	li x31, 0x24808a9a
-	bne x4, x31, fail
-	li x23, 0x20d1eb7d
-	li x15, 0xc36e5359
-	add x1, x23, x15
-	li x30, 111
-	li x31, 0xe4403ed6
-	bne x1, x31, fail
-	li x2, 0x7fff
-	li x28, 0xfffffffe
-	sltu x2, x2, x28
-	li x30, 112
+	li x27, 0x91489cd
+	li x5, 0x8660194d
+	sltu x2, x27, x5
+	li x30, 80
 	li x31, 0x1
 	bne x2, x31, fail
-	li x26, 0x2
-	li x4, 0x7fffffff
-	sltu x28, x26, x4
-	li x30, 113
+	li x27, 0xfffffffe
+	li x22, 0x12345678
+	slt x27, x22, x27
+	li x30, 81
+	li x31, 0x0
+	bne x27, x31, fail
+	li x19, 0x3ed43ab3
+	li x2, 0xa4401dab
+	sltu x26, x2, x19
+	li x30, 82
+	li x31, 0x0
+	bne x31, x26, fail
+	li x18, 0xf819b750
+	li x14, 0x80000000
+	or x7, x18, x14
+	li x30, 83
+	li x31, 0xf819b750
+	bne x31, x7, fail
+	li x3, 0xf8ecae24
+	li x25, 0xbe47cc7a
+	sub x3, x25, x3
+	li x30, 84
+	li x31, 0xc55b1e56
+	bne x3, x31, fail
+	li x27, 0x12345678
+	li x3, 0xda277078
+	slt x17, x3, x27
+	li x30, 85
 	li x31, 0x1
-	bne x28, x31, fail
-	li x11, 0x3ed1e0eb
-	li x17, 0x3495d62a
-	sub x26, x11, x17
-	li x30, 114
-	li x31, 0xa3c0ac1
-	bne x26, x31, fail
-	li x17, 0x21358ee6
-	li x18, 0x72d837af
-	and x24, x17, x18
-	li x30, 115
-	li x31, 0x201006a6
-	bne x24, x31, fail
+	bne x31, x17, fail
+	li x25, 0x20d1eb7d
+	li x13, 0x0
+	add x23, x13, x25
+	li x30, 86
+	li x31, 0x20d1eb7d
+	bne x31, x23, fail
+	li x28, 0xfffffffe
+	li x2, 0x7fff
+	sltu x2, x2, x28
+	li x30, 87
+	li x31, 0x1
+	bne x31, x2, fail
+	li x10, 0xce9244cb
+	li x4, 0x12345678
+	sltu x14, x10, x4
+	li x30, 88
+	li x31, 0x0
+	bne x14, x31, fail
+	li x4, 0x958a3855
+	li x16, 0x641e9e8d
+	xor x5, x16, x4
+	li x30, 89
+	li x31, 0xf194a6d8
+	bne x31, x5, fail
 	li x24, 0x891e53cb
 	li x6, 0xfffffffe
 	and x7, x24, x6
-	li x30, 116
+	li x30, 90
 	li x31, 0x891e53ca
 	bne x7, x31, fail
-	li x3, 0x7fffffff
-	li x2, 0x20
-	or x10, x3, x2
-	li x30, 117
-	li x31, 0x7fffffff
-	bne x10, x31, fail
-	li x11, 0xfffffffe
-	li x24, 0xfffffffe
-	or x17, x11, x24
-	li x30, 118
-	li x31, 0xfffffffe
-	bne x17, x31, fail
-	li x26, 0x80000000
-	li x11, 0x5358bf46
-	or x26, x26, x11
-	li x30, 119
-	li x31, 0xd358bf46
-	bne x26, x31, fail
-	li x13, 0xe9b2d06a
-	li x27, 0xffff8000
-	sltu x3, x13, x27
-	li x30, 120
-	li x31, 0x1
+	li x18, 0x7fff
+	li x21, 0x1
+	xor x11, x21, x18
+	li x30, 91
+	li x31, 0x7ffe
+	bne x11, x31, fail
+	li x11, 0x80000000
+	li x24, 0x86b059dc
+	or x26, x24, x11
+	li x30, 92
+	li x31, 0x86b059dc
+	bne x31, x26, fail
+	li x13, 0x5d39f1b8
+	li x27, 0xf841ad26
+	sra x3, x13, x27
+	li x30, 93
+	li x31, 0x174e7c6
 	bne x3, x31, fail
-	li x9, 0x1f
-	li x26, 0xda64b870
-	add x8, x9, x26
-	li x30, 121
-	li x31, 0xda64b88f
-	bne x8, x31, fail
-	li x10, 0x7fff
-	li x15, 0x670f2134
-	xor x20, x10, x15
-	li x30, 122
-	li x31, 0x670f5ecb
-	bne x20, x31, fail
-	li x8, 0x77148a5
-	li x19, 0x12345678
-	or x5, x8, x19
-	li x30, 123
-	li x31, 0x17755efd
-	bne x5, x31, fail
-	li x26, 0xf06f217a
-	li x4, 0xcd3aee8
-	sll x18, x26, x4
-	li x30, 124
-	li x31, 0x6f217a00
+	li x23, 0xc8b0da28
+	li x8, 0xda64b870
+	or x19, x8, x23
+	li x30, 94
+	li x31, 0xdaf4fa78
+	bne x31, x19, fail
+	li x17, 0x5727d740
+	li x18, 0x76ee29aa
+	xor x18, x18, x17
+	li x30, 95
+	li x31, 0x21c9feea
 	bne x18, x31, fail
+	li x24, 0x2f41f7cd
+	li x20, 0xf06f217a
+	sll x2, x24, x20
+	li x30, 96
+	li x31, 0x34000000
+	bne x31, x2, fail
 	li x21, 0x1
 	li x3, 0x86c0abfe
 	sub x21, x21, x3
-	li x30, 125
+	li x30, 97
 	li x31, 0x793f5403
-	bne x21, x31, fail
-	li x1, 0x2c61cbec
-	li x19, 0x6e9d7077
-	slt x12, x1, x19
-	li x30, 126
-	li x31, 0x1
-	bne x12, x31, fail
-	li x20, 0x48a3ff76
-	li x16, 0xffffffff
-	sra x28, x20, x16
-	li x30, 127
-	li x31, 0x0
-	bne x28, x31, fail
-	li x26, 0xacf424d9
-	li x16, 0xffffffff
-	slt x26, x26, x16
-	li x30, 128
-	li x31, 0x1
-	bne x26, x31, fail
-	li x13, 0x21ea0e2
-	li x17, 0xc53482ec
-	sltu x13, x13, x17
-	li x30, 129
-	li x31, 0x1
-	bne x13, x31, fail
-	li x2, 0xcbd5da31
-	li x12, 0x6cf3eeea
-	and x28, x2, x12
-	li x30, 130
-	li x31, 0x48d1ca20
-	bne x28, x31, fail
-	li x1, 0xfffffffe
-	li x18, 0xa45f419c
-	add x4, x1, x18
-	li x30, 131
-	li x31, 0xa45f419a
-	bne x4, x31, fail
-	li x18, 0xbf323ef2
-	li x21, 0x7fff
-	or x19, x18, x21
-	li x30, 132
-	li x31, 0xbf327fff
-	bne x19, x31, fail
-	li x17, 0x8ac32bbd
-	li x14, 0xed421259
-	sltu x20, x17, x14
-	li x30, 133
-	li x31, 0x1
-	bne x20, x31, fail
-	li x5, 0x21858664
-	li x18, 0x9615a32e
-	sltu x25, x5, x18
-	li x30, 134
-	li x31, 0x1
-	bne x25, x31, fail
-	li x22, 0x0
-	li x19, 0xbc735ca7
-	sll x2, x22, x19
-	li x30, 135
-	li x31, 0x0
+	bne x31, x21, fail
+	li x16, 0x80000000
+	li x28, 0x6e9d7077
+	sll x23, x28, x16
+	li x30, 98
+	li x31, 0x6e9d7077
+	bne x23, x31, fail
+	li x12, 0x80000001
+	li x22, 0xe48e1b4d
+	sra x18, x22, x12
+	li x30, 99
+	li x31, 0xf2470da6
+	bne x18, x31, fail
+	li x1, 0x68457e41
+	li x7, 0xff876918
+	sub x24, x7, x1
+	li x30, 100
+	li x31, 0x9741ead7
+	bne x31, x24, fail
+	li x19, 0xe1f86d03
+	li x14, 0x940a3aeb
+	sub x2, x19, x14
+	li x30, 101
+	li x31, 0x4dee3218
 	bne x2, x31, fail
-	li x1, 0x12345678
-	li x3, 0xab6fe7d5
-	srl x1, x1, x3
-	li x30, 136
-	li x31, 0x91
-	bne x1, x31, fail
-	li x24, 0xcbc0981c
-	li x28, 0xa2c63133
-	sltu x16, x24, x28
-	li x30, 137
+	li x27, 0xa45f419c
+	li x10, 0x1
+	sltu x17, x27, x10
+	li x30, 102
 	li x31, 0x0
-	bne x16, x31, fail
-	li x14, 0x1dd39048
-	li x5, 0x250abf6e
-	srl x1, x14, x5
-	li x30, 138
-	li x31, 0x774e
-	bne x1, x31, fail
+	bne x31, x17, fail
+	li x14, 0xfe692199
+	li x18, 0x868f8154
+	or x27, x14, x18
+	li x30, 103
+	li x31, 0xfeefa1dd
+	bne x31, x27, fail
+	li x19, 0xfffffffe
+	li x5, 0x80000001
+	and x18, x19, x5
+	li x30, 104
+	li x31, 0x80000000
+	bne x18, x31, fail
+	li x12, 0xbc735ca7
+	add x13, x12, x12
+	li x30, 105
+	li x31, 0x78e6b94e
+	bne x31, x13, fail
+	li x13, 0xecd78663
+	add x15, x13, x13
+	li x30, 106
+	li x31, 0xd9af0cc6
+	bne x31, x15, fail
+	li x12, 0x1dd39048
+	li x16, 0x6372099a
+	sra x5, x16, x12
+	li x30, 107
+	li x31, 0x637209
+	bne x5, x31, fail
 	li x14, 0x2
 	sltu x17, x14, x14
-	li x30, 139
+	li x30, 108
 	li x31, 0x0
 	bne x17, x31, fail
-	li x7, 0x6efa083b
 	li x23, 0x80000001
-	srl x27, x7, x23
-	li x30, 140
-	li x31, 0x377d041d
-	bne x27, x31, fail
-	li x5, 0x17647fa2
-	li x8, 0xffffffff
-	srl x5, x5, x8
-	li x30, 141
+	li x13, 0x7c5d00be
+	xor x13, x13, x23
+	li x30, 109
+	li x31, 0xfc5d00bf
+	bne x31, x13, fail
+	li x4, 0x80000001
+	li x25, 0x1a6f9365
+	slt x13, x25, x4
+	li x30, 110
 	li x31, 0x0
-	bne x5, x31, fail
-	li x21, 0x7fff
-	li x24, 0x662d6088
-	sltu x6, x21, x24
-	li x30, 142
+	bne x13, x31, fail
+	li x18, 0xfeebb948
+	li x14, 0xffffffff
+	srl x18, x18, x14
+	li x30, 111
 	li x31, 0x1
-	bne x6, x31, fail
-	li x7, 0xf46ed6dd
-	li x18, 0x8cb25244
-	sub x14, x7, x18
-	li x30, 143
-	li x31, 0x67bc8499
-	bne x14, x31, fail
-	li x24, 0xadd763fa
-	li x4, 0xabf100b0
-	sub x9, x24, x4
-	li x30, 144
-	li x31, 0x1e6634a
-	bne x9, x31, fail
-	li x26, 0xcb14957d
-	li x7, 0xc346fdf
-	sll x22, x26, x7
-	li x30, 145
-	li x31, 0x80000000
-	bne x22, x31, fail
-	li x16, 0x80000001
-	li x13, 0x1f
-	srl x4, x16, x13
-	li x30, 146
+	bne x31, x18, fail
+	li x9, 0xd5bc9f74
+	li x22, 0x1e5fa037
+	or x6, x9, x22
+	li x30, 112
+	li x31, 0xdfffbf77
+	bne x31, x6, fail
+	li x15, 0x1fb0975f
+	li x22, 0x165243bd
+	slt x10, x22, x15
+	li x30, 113
 	li x31, 0x1
-	bne x4, x31, fail
-	li x7, 0x7fffffff
-	sra x17, x7, x7
-	li x30, 147
+	bne x10, x31, fail
+	li x7, 0x20
+	li x23, 0x1b17a754
+	and x6, x23, x7
+	li x30, 114
 	li x31, 0x0
-	bne x17, x31, fail
-	li x18, 0x80000001
+	bne x31, x6, fail
 	li x7, 0xcf696e8f
+	li x18, 0x80000001
 	or x26, x18, x7
-	li x30, 148
+	li x30, 115
 	li x31, 0xcf696e8f
 	bne x26, x31, fail
-	li x22, 0x1a54fec6
-	xor x23, x22, x22
-	li x30, 149
-	li x31, 0x0
-	bne x23, x31, fail
-	li x4, 0x4cc3e668
-	or x17, x4, x4
-	li x30, 150
-	li x31, 0x4cc3e668
-	bne x17, x31, fail
-	li x18, 0x2154e354
-	li x21, 0x7fffffff
-	slt x20, x18, x21
-	li x30, 151
-	li x31, 0x1
-	bne x20, x31, fail
-	li x14, 0x9be629db
+	li x9, 0xed02121d
+	li x23, 0xbab24193
+	add x2, x23, x9
+	li x30, 116
+	li x31, 0xa7b453b0
+	bne x31, x2, fail
+	li x14, 0xfffffffe
+	li x5, 0xffffffff
+	sub x5, x14, x5
+	li x30, 117
+	li x31, 0xffffffff
+	bne x31, x5, fail
 	li x9, 0xf2242639
+	li x14, 0x9be629db
 	add x16, x14, x9
-	li x30, 152
+	li x30, 118
 	li x31, 0x8e0a5014
 	bne x16, x31, fail
-	li x8, 0x7fae9d40
-	li x11, 0x80000001
-	sltu x6, x8, x11
-	li x30, 153
+	li x25, 0x3ddd9859
+	li x6, 0x20
+	xor x24, x25, x6
+	li x30, 119
+	li x31, 0x3ddd9879
+	bne x31, x24, fail
+	li x26, 0xa522eeb3
+	li x25, 0x874a9033
+	add x7, x25, x26
+	li x30, 120
+	li x31, 0x2c6d7ee6
+	bne x7, x31, fail
+	li x21, 0xb2c6fbd0
+	li x18, 0x1
+	sll x27, x21, x18
+	li x30, 121
+	li x31, 0x658df7a0
+	bne x31, x27, fail
+	li x14, 0xe2608a62
+	li x10, 0x80c5b52f
+	slt x10, x10, x14
+	li x30, 122
 	li x31, 0x1
-	bne x6, x31, fail
-	li x5, 0x949eba96
-	li x2, 0x88e63e06
-	sll x17, x5, x2
-	li x30, 154
-	li x31, 0x27aea580
-	bne x17, x31, fail
-	li x11, 0xcfdc3a81
-	li x20, 0x36930452
-	sll x16, x11, x20
-	li x30, 155
-	li x31, 0xea040000
-	bne x16, x31, fail
-	li x3, 0x2
-	li x21, 0x399b6c99
-	sub x18, x3, x21
-	li x30, 156
-	li x31, 0xc6649369
-	bne x18, x31, fail
-	li x7, 0xaf4cdfb5
-	li x17, 0x20
-	add x19, x7, x17
-	li x30, 157
-	li x31, 0xaf4cdfd5
-	bne x19, x31, fail
-	li x10, 0x115a71d
-	li x27, 0xd25c8062
-	sltu x27, x10, x27
-	li x30, 158
-	li x31, 0x1
-	bne x27, x31, fail
-	li x9, 0x12345678
-	li x20, 0x57508c39
-	slt x24, x9, x20
-	li x30, 159
-	li x31, 0x1
-	bne x24, x31, fail
-	li x25, 0x80000000
-	li x5, 0xfffffffe
-	add x22, x25, x5
-	li x30, 160
-	li x31, 0x7ffffffe
-	bne x22, x31, fail
-	li x11, 0xffff8000
-	li x8, 0x4ccbe4bf
-	xor x9, x11, x8
-	li x30, 161
-	li x31, 0xb33464bf
-	bne x9, x31, fail
-	li x24, 0x2
-	li x21, 0x5f3f23f3
-	xor x21, x24, x21
-	li x30, 162
-	li x31, 0x5f3f23f1
-	bne x21, x31, fail
+	bne x10, x31, fail
+	li x21, 0xffff8000
+	and x11, x21, x21
+	li x30, 123
+	li x31, 0xffff8000
+	bne x11, x31, fail
+	li x22, 0x7fff
+	li x5, 0x2
+	sub x5, x5, x22
+	li x30, 124
+	li x31, 0xffff8003
+	bne x31, x5, fail
+	li x1, 0x0
+	li x12, 0xffffffff
+	sub x12, x12, x1
+	li x30, 125
+	li x31, 0xffffffff
+	bne x31, x12, fail
+	li x11, 0x80000000
 	li x4, 0x1f
-	li x12, 0xf57dd6ab
-	xor x26, x4, x12
-	li x30, 163
-	li x31, 0xf57dd6b4
-	bne x26, x31, fail
-	li x22, 0xded18ce5
+	slt x12, x11, x4
+	li x30, 126
+	li x31, 0x1
+	bne x31, x12, fail
 	li x19, 0x1
+	li x22, 0xded18ce5
 	sll x20, x22, x19
-	li x30, 164
+	li x30, 127
 	li x31, 0xbda319ca
 	bne x20, x31, fail
-	li x8, 0x8927b27d
-	li x21, 0x4d149354
-	sra x10, x8, x21
-	li x30, 165
-	li x31, 0xfffff892
-	bne x10, x31, fail
-	li x14, 0x1c205729
-	li x9, 0xffffffff
-	add x14, x14, x9
-	li x30, 166
-	li x31, 0x1c205728
-	bne x14, x31, fail
-	li x13, 0x1f
-	li x23, 0x2
-	or x4, x13, x23
-	li x30, 167
-	li x31, 0x1f
-	bne x4, x31, fail
+	li x2, 0x8c93547a
+	li x5, 0xffffffff
+	srl x20, x5, x2
+	li x30, 128
+	li x31, 0x3f
+	bne x20, x31, fail
+	li x17, 0x0
+	li x9, 0xfffffffe
+	srl x17, x17, x9
+	li x30, 129
+	li x31, 0x0
+	bne x31, x17, fail
 	li x28, 0x8b509f22
 	li x26, 0x1f
 	sub x24, x28, x26
-	li x30, 168
+	li x30, 130
 	li x31, 0x8b509f03
-	bne x24, x31, fail
-	li x5, 0xfffffffe
-	li x3, 0x21d89737
-	and x5, x5, x3
-	li x30, 169
-	li x31, 0x21d89736
-	bne x5, x31, fail
-	li x12, 0xcd0dfb4b
-	li x10, 0x55e103e8
-	slt x10, x12, x10
-	li x30, 170
+	bne x31, x24, fail
+	li x5, 0x27e0b98a
+	li x22, 0x20
+	sra x22, x5, x22
+	li x30, 131
+	li x31, 0x27e0b98a
+	bne x31, x22, fail
+	li x13, 0xfffffffe
+	li x27, 0x7fff
+	xor x15, x13, x27
+	li x30, 132
+	li x31, 0xffff8001
+	bne x15, x31, fail
+	li x18, 0xf3ff1b4d
+	li x1, 0xcca4b02b
+	sltu x27, x1, x18
+	li x30, 133
 	li x31, 0x1
-	bne x10, x31, fail
-	li x5, 0x67d80702
-	li x9, 0x20
-	srl x10, x5, x9
-	li x30, 171
-	li x31, 0x67d80702
-	bne x10, x31, fail
-	li x27, 0x898b2252
-	li x21, 0xeb70399f
-	and x5, x27, x21
-	li x30, 172
-	li x31, 0x89002012
-	bne x5, x31, fail
-	li x14, 0x19e48393
-	li x20, 0xc77ad8c8
-	or x22, x14, x20
-	li x30, 173
-	li x31, 0xdffedbdb
-	bne x22, x31, fail
-	li x16, 0x9b145735
-	li x25, 0x19644c16
-	xor x2, x16, x25
-	li x30, 174
-	li x31, 0x82701b23
-	bne x2, x31, fail
-	li x17, 0xd4ee8f76
-	li x25, 0x2
-	add x12, x17, x25
-	li x30, 175
-	li x31, 0xd4ee8f78
+	bne x31, x27, fail
+	li x14, 0xc77ad8c8
+	li x9, 0xade3485d
+	sub x12, x14, x9
+	li x30, 134
+	li x31, 0x1997906b
 	bne x12, x31, fail
-	li x27, 0xa7a50ee5
-	li x23, 0x80000001
-	and x8, x27, x23
-	li x30, 176
-	li x31, 0x80000001
-	bne x8, x31, fail
+	li x2, 0x26ae8b
+	li x26, 0xa565b245
+	sra x26, x26, x2
+	li x30, 135
+	li x31, 0xfff4acb6
+	bne x31, x26, fail
+	li x21, 0xc86ddbce
+	li x12, 0xe8b437fe
+	xor x26, x21, x12
+	li x30, 136
+	li x31, 0x20d9ec30
+	bne x31, x26, fail
 	li x6, 0x1f
 	li x4, 0xdf3b2f48
 	and x6, x6, x4
-	li x30, 177
+	li x30, 137
 	li x31, 0x8
 	bne x6, x31, fail
-	li x21, 0xba2ed757
-	li x25, 0x12345678
-	xor x2, x21, x25
-	li x30, 178
-	li x31, 0xa81a812f
-	bne x2, x31, fail
-	li x15, 0xfffffffe
-	li x26, 0x575b3db1
-	srl x26, x15, x26
-	li x30, 179
-	li x31, 0x7fff
-	bne x26, x31, fail
-	li x17, 0xe580ffe
-	li x6, 0x1
-	and x18, x17, x6
-	li x30, 180
-	li x31, 0x0
-	bne x18, x31, fail
-	li x19, 0xc1e9e3be
-	li x1, 0xf9a6a3ac
-	sra x16, x19, x1
-	li x30, 181
-	li x31, 0xfffc1e9e
-	bne x16, x31, fail
-	li x8, 0xf3fdfbe3
-	li x4, 0xffff8000
-	srl x11, x8, x4
-	li x30, 182
-	li x31, 0xf3fdfbe3
-	bne x11, x31, fail
-	li x16, 0xc8d68c82
-	li x12, 0xbe3455c8
-	xor x21, x16, x12
-	li x30, 183
-	li x31, 0x76e2d94a
-	bne x21, x31, fail
-	li x16, 0x661b8e26
-	li x9, 0x924925d4
-	slt x16, x16, x9
-	li x30, 184
-	li x31, 0x0
-	bne x16, x31, fail
-	li x3, 0x1
-	li x6, 0xa703caef
-	add x15, x3, x6
-	li x30, 185
-	li x31, 0xa703caf0
-	bne x15, x31, fail
-	li x17, 0x49db5c12
+	li x20, 0xc5a66d6b
+	li x2, 0x12345678
+	xor x14, x2, x20
+	li x30, 138
+	li x31, 0xd7923b13
+	bne x31, x14, fail
+	li x5, 0x20
+	li x17, 0xb3016992
+	xor x2, x17, x5
+	li x30, 139
+	li x31, 0xb30169b2
+	bne x31, x2, fail
+	li x23, 0x7cc8d334
+	li x4, 0xc1e9e3be
+	or x23, x23, x4
+	li x30, 140
+	li x31, 0xfde9f3be
+	bne x23, x31, fail
+	li x22, 0x80000000
+	li x11, 0xffffffff
+	sll x8, x11, x22
+	li x30, 141
+	li x31, 0xffffffff
+	bne x8, x31, fail
+	li x14, 0xa9c6057c
+	li x15, 0x319ac940
+	sra x13, x14, x15
+	li x30, 142
+	li x31, 0xa9c6057c
+	bne x31, x13, fail
+	li x21, 0xcc8bdd03
+	li x1, 0x7fffffff
+	sll x3, x1, x21
+	li x30, 143
+	li x31, 0xfffffff8
+	bne x3, x31, fail
 	li x27, 0x277f7617
+	li x17, 0x49db5c12
 	or x4, x17, x27
-	li x30, 186
+	li x30, 144
 	li x31, 0x6fff7e17
 	bne x4, x31, fail
-	li x26, 0xcf95442d
-	li x8, 0xbc6f6237
-	add x18, x26, x8
-	li x30, 187
-	li x31, 0x8c04a664
-	bne x18, x31, fail
-	li x6, 0x3fdd8d5e
-	li x22, 0xe8414d8d
-	add x11, x6, x22
-	li x30, 188
-	li x31, 0x281edaeb
-	bne x11, x31, fail
-	li x6, 0xef784c8f
-	li x13, 0x2933eb1c
-	sub x6, x6, x13
-	li x30, 189
-	li x31, 0xc6446173
+	li x26, 0x640af86c
+	li x8, 0x8b4bae04
+	slt x14, x26, x8
+	li x30, 145
+	li x31, 0x0
+	bne x14, x31, fail
+	li x13, 0xf5d7ee4d
+	li x6, 0x1f
+	slt x6, x6, x13
+	li x30, 146
+	li x31, 0x0
 	bne x6, x31, fail
-	li x24, 0xcb5dd810
-	li x7, 0x1f
-	slt x23, x24, x7
-	li x30, 190
-	li x31, 0x1
-	bne x23, x31, fail
-	li x25, 0x8968b582
-	li x15, 0x7fffffff
-	and x4, x25, x15
-	li x30, 191
-	li x31, 0x968b582
-	bne x4, x31, fail
-	li x2, 0x1f
-	li x17, 0x80000001
-	add x8, x2, x17
-	li x30, 192
-	li x31, 0x80000020
-	bne x8, x31, fail
-	li x14, 0x4fdfbcf9
+	li x20, 0x1f
+	li x23, 0xb9810331
+	add x21, x23, x20
+	li x30, 147
+	li x31, 0xb9810350
+	bne x21, x31, fail
+	li x4, 0x1
+	li x18, 0x12345678
+	sra x21, x18, x4
+	li x30, 148
+	li x31, 0x91a2b3c
+	bne x31, x21, fail
+	li x14, 0xfffffffe
 	li x6, 0xb9126cea
 	add x14, x14, x6
-	li x30, 193
-	li x31, 0x8f229e3
-	bne x14, x31, fail
-	li x15, 0x517d6efd
-	li x17, 0xa2f1cfc9
-	or x26, x15, x17
-	li x30, 194
-	li x31, 0xf3fdeffd
-	bne x26, x31, fail
-	li x16, 0xb2d3d8f8
-	li x27, 0xffffffff
-	sll x9, x16, x27
-	li x30, 195
-	li x31, 0x0
-	bne x9, x31, fail
-	li x24, 0xfffffffe
-	li x20, 0xc7d2d9b2
-	sll x3, x24, x20
-	li x30, 196
-	li x31, 0xfff80000
-	bne x3, x31, fail
-	li x13, 0x422afd57
-	li x9, 0x80000000
-	xor x19, x13, x9
-	li x30, 197
-	li x31, 0xc22afd57
-	bne x19, x31, fail
-	li x3, 0xf574c633
-	li x26, 0xffffffff
-	sll x19, x3, x26
-	li x30, 198
+	li x30, 149
+	li x31, 0xb9126ce8
+	bne x31, x14, fail
+	li x6, 0x6ae85efa
+	li x18, 0xfdf9117b
+	or x23, x18, x6
+	li x30, 150
+	li x31, 0xfff95ffb
+	bne x23, x31, fail
+	li x6, 0xfffffffe
+	li x28, 0x2
+	sltu x25, x28, x6
+	li x30, 151
+	li x31, 0x1
+	bne x25, x31, fail
+	li x15, 0xfffffffe
+	li x19, 0xfffffffe
+	sll x19, x19, x15
+	li x30, 152
 	li x31, 0x80000000
 	bne x19, x31, fail
-	li x5, 0xb752f9c6
-	li x18, 0x93de63d6
-	slt x15, x5, x18
+	li x18, 0x20
+	li x14, 0x32cb13fa
+	slt x23, x18, x14
+	li x30, 153
+	li x31, 0x1
+	bne x31, x23, fail
+	li x5, 0x152349b8
+	li x26, 0x13c01044
+	srl x5, x5, x26
+	li x30, 154
+	li x31, 0x152349b
+	bne x5, x31, fail
+	li x8, 0x8bdd915d
+	li x3, 0x2111a822
+	sll x28, x3, x8
+	li x30, 155
+	li x31, 0x40000000
+	bne x31, x28, fail
+	li x12, 0xffff8000
+	li x5, 0x2
+	srl x16, x5, x12
+	li x30, 156
+	li x31, 0x2
+	bne x31, x16, fail
+	li x20, 0x59b5c77
+	li x19, 0x7fff
+	slt x4, x20, x19
+	li x30, 157
+	li x31, 0x0
+	bne x4, x31, fail
+	li x5, 0x7fff
+	li x21, 0x7fff
+	add x5, x5, x21
+	li x30, 158
+	li x31, 0xfffe
+	bne x31, x5, fail
+	li x23, 0x811580bc
+	li x7, 0x1f1ef074
+	slt x27, x23, x7
+	li x30, 159
+	li x31, 0x1
+	bne x31, x27, fail
+	li x25, 0xcf019ed9
+	li x7, 0x0
+	and x19, x7, x25
+	li x30, 160
+	li x31, 0x0
+	bne x31, x19, fail
+	li x18, 0x2
+	li x17, 0xebded950
+	sltu x8, x18, x17
+	li x30, 161
+	li x31, 0x1
+	bne x31, x8, fail
+	li x18, 0x2
+	li x6, 0x80000001
+	srl x1, x6, x18
+	li x30, 162
+	li x31, 0x20000000
+	bne x1, x31, fail
+	li x22, 0x181230ae
+	li x3, 0x561478e4
+	or x3, x3, x22
+	li x30, 163
+	li x31, 0x5e1678ee
+	bne x3, x31, fail
+	li x17, 0x30a3e121
+	li x12, 0x62827e2b
+	sll x12, x17, x12
+	li x30, 164
+	li x31, 0x1f090800
+	bne x31, x12, fail
+	li x20, 0x0
+	li x6, 0xd584b246
+	sub x5, x20, x6
+	li x30, 165
+	li x31, 0x2a7b4dba
+	bne x5, x31, fail
+	li x13, 0xfd95e4f1
+	li x3, 0x90c05631
+	and x26, x13, x3
+	li x30, 166
+	li x31, 0x90804431
+	bne x26, x31, fail
+	li x28, 0xc90c7bc
+	li x18, 0x787b281c
+	sltu x18, x18, x28
+	li x30, 167
+	li x31, 0x0
+	bne x31, x18, fail
+	li x3, 0x8e456612
+	li x28, 0x471c583a
+	sll x20, x3, x28
+	li x30, 168
+	li x31, 0x48000000
+	bne x20, x31, fail
+	li x17, 0x974ba91
+	li x19, 0x935db824
+	or x19, x19, x17
+	li x30, 169
+	li x31, 0x9b7dbab5
+	bne x31, x19, fail
+	li x3, 0x7c240f10
+	li x21, 0x80000000
+	or x28, x21, x3
+	li x30, 170
+	li x31, 0xfc240f10
+	bne x31, x28, fail
+	li x5, 0x5c60bf3e
+	li x7, 0x2
+	or x7, x7, x5
+	li x30, 171
+	li x31, 0x5c60bf3e
+	bne x7, x31, fail
+	li x20, 0xda1421b3
+	li x9, 0x5c2b12ec
+	or x9, x9, x20
+	li x30, 172
+	li x31, 0xde3f33ff
+	bne x31, x9, fail
+	li x20, 0x92e2ab5a
+	li x26, 0x65a4fe7e
+	sltu x26, x26, x20
+	li x30, 173
+	li x31, 0x1
+	bne x31, x26, fail
+	li x9, 0xffff8000
+	li x21, 0x20539f51
+	sltu x9, x21, x9
+	li x30, 174
+	li x31, 0x1
+	bne x9, x31, fail
+	li x3, 0xd26faa2a
+	li x18, 0x7fff
+	or x11, x18, x3
+	li x30, 175
+	li x31, 0xd26fffff
+	bne x31, x11, fail
+	li x1, 0x5d2b5496
+	li x11, 0x98bbbbf
+	add x14, x1, x11
+	li x30, 176
+	li x31, 0x66b71055
+	bne x14, x31, fail
+	li x7, 0x6cb13cd1
+	li x6, 0xa12251bd
+	and x6, x6, x7
+	li x30, 177
+	li x31, 0x20201091
+	bne x31, x6, fail
+	li x12, 0x7555560b
+	li x15, 0x0
+	sub x11, x12, x15
+	li x30, 178
+	li x31, 0x7555560b
+	bne x11, x31, fail
+	li x18, 0x80000001
+	li x2, 0xfffffffe
+	add x2, x18, x2
+	li x30, 179
+	li x31, 0x7fffffff
+	bne x31, x2, fail
+	li x8, 0x80000001
+	li x10, 0x1f
+	sll x16, x10, x8
+	li x30, 180
+	li x31, 0x3e
+	bne x31, x16, fail
+	li x19, 0x20
+	li x10, 0x2
+	sub x14, x10, x19
+	li x30, 181
+	li x31, 0xffffffe2
+	bne x14, x31, fail
+	li x14, 0xf3c33813
+	li x28, 0x93f57068
+	sub x27, x28, x14
+	li x30, 182
+	li x31, 0xa0323855
+	bne x27, x31, fail
+	li x27, 0x1f
+	li x20, 0xf3b53254
+	srl x19, x27, x20
+	li x30, 183
+	li x31, 0x0
+	bne x31, x19, fail
+	li x20, 0xc49c1282
+	li x15, 0x93617cce
+	and x20, x15, x20
+	li x30, 184
+	li x31, 0x80001082
+	bne x31, x20, fail
+	li x10, 0x1f
+	li x9, 0xce429edd
+	sltu x1, x9, x10
+	li x30, 185
+	li x31, 0x0
+	bne x1, x31, fail
+	li x11, 0x80000001
+	li x23, 0x80000001
+	xor x11, x11, x23
+	li x30, 186
+	li x31, 0x0
+	bne x11, x31, fail
+	li x18, 0x417c6467
+	li x25, 0x7fff
+	sub x25, x25, x18
+	li x30, 187
+	li x31, 0xbe841b98
+	bne x25, x31, fail
+	li x7, 0xc9755cef
+	li x23, 0xcbbdbf0
+	sltu x3, x7, x23
+	li x30, 188
+	li x31, 0x0
+	bne x31, x3, fail
+	li x20, 0xffff8000
+	li x11, 0x7fffffff
+	sub x20, x20, x11
+	li x30, 189
+	li x31, 0x7fff8001
+	bne x31, x20, fail
+	li x13, 0xa4096132
+	li x14, 0xfffffffe
+	or x17, x13, x14
+	li x30, 190
+	li x31, 0xfffffffe
+	bne x31, x17, fail
+	li x21, 0x9e166ea5
+	li x8, 0x3b4a9816
+	slt x23, x8, x21
+	li x30, 191
+	li x31, 0x0
+	bne x23, x31, fail
+	li x22, 0xffff8000
+	li x23, 0xe10f238a
+	sltu x10, x23, x22
+	li x30, 192
+	li x31, 0x1
+	bne x10, x31, fail
+	li x16, 0x578656a9
+	li x11, 0x83618765
+	xor x16, x16, x11
+	li x30, 193
+	li x31, 0xd4e7d1cc
+	bne x31, x16, fail
+	li x21, 0xd78c860c
+	li x16, 0x1
+	sltu x4, x21, x16
+	li x30, 194
+	li x31, 0x0
+	bne x31, x4, fail
+	li x20, 0xc8cfb955
+	li x17, 0x1
+	sltu x20, x20, x17
+	li x30, 195
+	li x31, 0x0
+	bne x31, x20, fail
+	li x28, 0xffff8000
+	li x23, 0x12345678
+	sub x23, x23, x28
+	li x30, 196
+	li x31, 0x1234d678
+	bne x31, x23, fail
+	li x16, 0x9c8c7680
+	xor x9, x16, x16
+	li x30, 197
+	li x31, 0x0
+	bne x9, x31, fail
+	li x23, 0x3d145248
+	li x18, 0x7fffffff
+	slt x18, x18, x23
+	li x30, 198
+	li x31, 0x0
+	bne x18, x31, fail
+	li x7, 0x12345678
+	li x8, 0x2
+	and x6, x7, x8
 	li x30, 199
 	li x31, 0x0
-	bne x15, x31, fail
-	li x2, 0x1
-	li x1, 0x12345678
-	slt x24, x2, x1
+	bne x6, x31, fail
+	li x5, 0x2573d716
+	li x8, 0x80000001
+	xor x2, x5, x8
 	li x30, 200
-	li x31, 0x1
-	bne x24, x31, fail
-	li x22, 0x974c214f
-	slli x18, x22, 8
+	li x31, 0xa573d717
+	bne x2, x31, fail
+	li x6, 0xcb200053
+	slti x6, x6, -182
 	li x30, 201
-	li x31, 0x4c214f00
-	bne x18, x31, fail
-	li x22, 0x23b17de0
-	xori x24, x22, 1
-	li x30, 202
-	li x31, 0x23b17de1
-	bne x24, x31, fail
-	li x23, 0x2da54a07
-	andi x5, x23, -1
-	li x30, 203
-	li x31, 0x2da54a07
-	bne x5, x31, fail
-	li x7, 0x1f
-	srai x23, x7, 19
-	li x30, 204
-	li x31, 0x0
-	bne x23, x31, fail
-	li x12, 0x9f40007e
-	ori x25, x12, -2048
-	li x30, 205
-	li x31, 0xfffff87e
-	bne x25, x31, fail
-	li x26, 0x7fff
-	addi x5, x26, 1
-	li x30, 206
-	li x31, 0x8000
-	bne x5, x31, fail
-	li x7, 0x7fffffff
-	slti x17, x7, -34
-	li x30, 207
-	li x31, 0x0
-	bne x17, x31, fail
-	li x22, 0xfc570dd0
-	slti x22, x22, 2047
-	li x30, 208
 	li x31, 0x1
-	bne x22, x31, fail
-	li x25, 0xb7bbe1d6
-	ori x19, x25, 1
-	li x30, 209
-	li x31, 0xb7bbe1d7
-	bne x19, x31, fail
-	li x2, 0x3b0d1139
-	srli x2, x2, 17
-	li x30, 210
-	li x31, 0x1d86
-	bne x2, x31, fail
-	li x9, 0xdaf4081b
-	srai x25, x9, 26
-	li x30, 211
-	li x31, 0xfffffff6
-	bne x25, x31, fail
-	li x6, 0x1
-	slli x6, x6, 8
-	li x30, 212
-	li x31, 0x100
 	bne x6, x31, fail
-	li x4, 0x64d94b3e
-	addi x3, x4, 1
-	li x30, 213
-	li x31, 0x64d94b3f
-	bne x3, x31, fail
-	li x6, 0xd5718418
-	addi x20, x6, 1
-	li x30, 214
-	li x31, 0xd5718419
-	bne x20, x31, fail
-	li x8, 0x80000000
-	srai x12, x8, 12
-	li x30, 215
-	li x31, 0xfff80000
-	bne x12, x31, fail
-	li x27, 0x0
-	slti x27, x27, 0
-	li x30, 216
-	li x31, 0x0
-	bne x27, x31, fail
-	li x2, 0xf0439594
-	sltiu x19, x2, 2047
-	li x30, 217
-	li x31, 0x0
-	bne x19, x31, fail
-	li x13, 0x7fffffff
-	slli x9, x13, 19
-	li x30, 218
-	li x31, 0xfff80000
-	bne x9, x31, fail
-	li x1, 0xc90c7bc
-	srli x14, x1, 30
-	li x30, 219
-	li x31, 0x0
-	bne x14, x31, fail
-	li x28, 0x989bd675
-	andi x20, x28, 0
-	li x30, 220
-	li x31, 0x0
-	bne x20, x31, fail
-	li x19, 0xffae81dc
-	andi x19, x19, -2048
-	li x30, 221
-	li x31, 0xffae8000
-	bne x19, x31, fail
-	li x12, 0x80000000
-	srai x25, x12, 21
-	li x30, 222
-	li x31, 0xfffffc00
-	bne x25, x31, fail
-	li x15, 0x7c240f10
-	andi x11, x15, -2048
-	li x30, 223
-	li x31, 0x7c240800
-	bne x11, x31, fail
-	li x12, 0x2
-	srai x12, x12, 20
-	li x30, 224
-	li x31, 0x0
-	bne x12, x31, fail
-	li x14, 0x676b00ec
-	sltiu x27, x14, -2048
-	li x30, 225
-	li x31, 0x1
-	bne x27, x31, fail
-	li x23, 0x9bdcc7f7
-	andi x3, x23, 0
-	li x30, 226
-	li x31, 0x0
-	bne x3, x31, fail
-	li x10, 0x43f89eed
-	xori x19, x10, -2048
-	li x30, 227
-	li x31, 0xbc0766ed
-	bne x19, x31, fail
-	li x3, 0x2
-	slti x5, x3, 2047
-	li x30, 228
-	li x31, 0x1
-	bne x5, x31, fail
-	li x16, 0x1
-	ori x2, x16, 222
-	li x30, 229
-	li x31, 0xdf
-	bne x2, x31, fail
-	li x3, 0xcf9034ad
-	ori x18, x3, -2048
-	li x30, 230
-	li x31, 0xfffffcad
-	bne x18, x31, fail
-	li x27, 0x221ce34e
-	ori x12, x27, 2047
-	li x30, 231
-	li x31, 0x221ce7ff
-	bne x12, x31, fail
-	li x6, 0x80000000
-	addi x6, x6, 1372
-	li x30, 232
-	li x31, 0x8000055c
-	bne x6, x31, fail
-	li x8, 0xf919c8b5
-	srai x4, x8, 12
-	li x30, 233
-	li x31, 0xffff919c
-	bne x4, x31, fail
-	li x7, 0xfffffffe
-	srai x7, x7, 29
-	li x30, 234
-	li x31, 0xffffffff
-	bne x7, x31, fail
-	li x8, 0x20
-	srli x8, x8, 22
-	li x30, 235
-	li x31, 0x0
-	bne x8, x31, fail
-	li x1, 0xfffffffe
-	srli x8, x1, 2
-	li x30, 236
-	li x31, 0x3fffffff
-	bne x8, x31, fail
-	li x7, 0x2c5e6907
-	slti x15, x7, -2048
-	li x30, 237
-	li x31, 0x0
-	bne x15, x31, fail
-	li x21, 0x532c9735
-	srli x21, x21, 25
-	li x30, 238
-	li x31, 0x29
-	bne x21, x31, fail
-	li x14, 0x20
-	sltiu x20, x14, -2048
-	li x30, 239
-	li x31, 0x1
-	bne x20, x31, fail
-	li x21, 0xee16ca5a
-	addi x19, x21, -1190
-	li x30, 240
-	li x31, 0xee16c5b4
-	bne x19, x31, fail
-	li x11, 0x950ade47
-	slli x3, x11, 21
-	li x30, 241
-	li x31, 0xc8e00000
-	bne x3, x31, fail
-	li x19, 0xcde19cd2
-	xori x22, x19, -2048
-	li x30, 242
-	li x31, 0x321e64d2
-	bne x22, x31, fail
-	li x20, 0x999775e4
-	srai x20, x20, 28
-	li x30, 243
-	li x31, 0xfffffff9
-	bne x20, x31, fail
-	li x25, 0x86426baa
-	ori x26, x25, -2048
-	li x30, 244
-	li x31, 0xfffffbaa
-	bne x26, x31, fail
-	li x20, 0xfffffffe
-	srai x20, x20, 0
-	li x30, 245
-	li x31, 0xfffffffe
-	bne x20, x31, fail
-	li x17, 0x5b047c42
-	srli x15, x17, 14
-	li x30, 246
-	li x31, 0x16c11
-	bne x15, x31, fail
-	li x13, 0xb23ef624
-	srli x28, x13, 9
-	li x30, 247
-	li x31, 0x591f7b
-	bne x28, x31, fail
-	li x25, 0x7fff
-	slti x18, x25, -1
-	li x30, 248
-	li x31, 0x0
-	bne x18, x31, fail
-	li x19, 0x80000000
-	ori x26, x19, -1
-	li x30, 249
-	li x31, 0xffffffff
-	bne x26, x31, fail
-	li x22, 0x1
-	addi x27, x22, 0
-	li x30, 250
-	li x31, 0x1
-	bne x27, x31, fail
-	li x11, 0x4b56813c
-	sltiu x11, x11, -2048
-	li x30, 251
-	li x31, 0x1
-	bne x11, x31, fail
-	li x10, 0xc1bb6958
-	sltiu x13, x10, -1
-	li x30, 252
-	li x31, 0x1
-	bne x13, x31, fail
-	li x7, 0xcf88e833
-	srai x14, x7, 4
-	li x30, 253
-	li x31, 0xfcf88e83
-	bne x14, x31, fail
-	li x23, 0xa1374ada
-	addi x13, x23, 1
-	li x30, 254
-	li x31, 0xa1374adb
-	bne x13, x31, fail
-	li x23, 0x4c9bf327
-	sltiu x22, x23, 0
-	li x30, 255
-	li x31, 0x0
-	bne x22, x31, fail
-	li x12, 0x2
-	srli x14, x12, 1
-	li x30, 256
-	li x31, 0x1
-	bne x14, x31, fail
-	li x19, 0xf065f2e6
-	srai x21, x19, 7
-	li x30, 257
-	li x31, 0xffe0cbe5
-	bne x21, x31, fail
-	li x27, 0x6df5eaf1
-	srai x10, x27, 0
-	li x30, 258
-	li x31, 0x6df5eaf1
-	bne x10, x31, fail
-	li x14, 0xffffffff
-	srli x12, x14, 16
-	li x30, 259
-	li x31, 0xffff
-	bne x12, x31, fail
-	li x10, 0x1f
-	addi x2, x10, 1
-	li x30, 260
-	li x31, 0x20
-	bne x2, x31, fail
-	li x24, 0x12345678
-	slti x23, x24, 2047
-	li x30, 261
-	li x31, 0x0
-	bne x23, x31, fail
-	li x26, 0x0
-	slti x1, x26, -1
-	li x30, 262
-	li x31, 0x0
-	bne x1, x31, fail
-	li x10, 0xffffffff
-	srai x19, x10, 17
-	li x30, 263
-	li x31, 0xffffffff
-	bne x19, x31, fail
-	li x2, 0x2ec3cc33
-	ori x8, x2, 2047
-	li x30, 264
-	li x31, 0x2ec3cfff
-	bne x8, x31, fail
-	li x4, 0x80000000
-	srli x1, x4, 26
-	li x30, 265
-	li x31, 0x20
-	bne x1, x31, fail
-	li x7, 0xc2f0d5d7
-	srai x7, x7, 11
-	li x30, 266
-	li x31, 0xfff85e1a
-	bne x7, x31, fail
-	li x27, 0x80000000
-	slti x27, x27, 0
-	li x30, 267
-	li x31, 0x1
-	bne x27, x31, fail
-	li x19, 0xf637826b
-	addi x3, x19, 0
-	li x30, 268
-	li x31, 0xf637826b
-	bne x3, x31, fail
-	li x2, 0x1e837f23
-	xori x24, x2, 1
-	li x30, 269
-	li x31, 0x1e837f22
-	bne x24, x31, fail
-	li x23, 0xcfc26411
+	li x23, 0x7fff
 	slti x9, x23, -1
-	li x30, 270
-	li x31, 0x1
-	bne x9, x31, fail
-	li x11, 0xb953cdce
-	xori x12, x11, 1
-	li x30, 271
-	li x31, 0xb953cdcf
-	bne x12, x31, fail
+	li x30, 202
+	li x31, 0x0
+	bne x31, x9, fail
+	li x12, 0xc3d4a267
+	addi x15, x12, -1
+	li x30, 203
+	li x31, 0xc3d4a266
+	bne x31, x15, fail
 	li x14, 0x62f3db21
 	slli x8, x14, 5
-	li x30, 272
+	li x30, 204
 	li x31, 0x5e7b6420
 	bne x8, x31, fail
-	li x20, 0xe92c15e4
-	srli x20, x20, 11
-	li x30, 273
-	li x31, 0x1d2582
-	bne x20, x31, fail
-	li x10, 0x6fc484db
-	slti x11, x10, -2048
-	li x30, 274
-	li x31, 0x0
-	bne x11, x31, fail
-	li x13, 0x5d473c86
-	andi x16, x13, -1
-	li x30, 275
-	li x31, 0x5d473c86
-	bne x16, x31, fail
-	li x5, 0x2
-	andi x28, x5, -2048
-	li x30, 276
-	li x31, 0x0
-	bne x28, x31, fail
-	li x6, 0x12345678
-	sltiu x3, x6, 1
-	li x30, 277
-	li x31, 0x0
-	bne x3, x31, fail
-	li x9, 0x12345678
-	ori x28, x9, 1
-	li x30, 278
-	li x31, 0x12345679
-	bne x28, x31, fail
-	li x4, 0x8cca96b3
-	slti x4, x4, 2047
-	li x30, 279
+	li x3, 0x9adc7681
+	andi x25, x3, 1
+	li x30, 205
 	li x31, 0x1
+	bne x31, x25, fail
+	li x14, 0x80000000
+	srai x15, x14, 23
+	li x30, 206
+	li x31, 0xffffff00
+	bne x15, x31, fail
+	li x10, 0x5ecb3ca3
+	srli x6, x10, 8
+	li x30, 207
+	li x31, 0x5ecb3c
+	bne x6, x31, fail
+	li x15, 0x26455098
+	srai x21, x15, 10
+	li x30, 208
+	li x31, 0x99154
+	bne x21, x31, fail
+	li x21, 0x40fe7aae
+	slti x21, x21, -1
+	li x30, 209
+	li x31, 0x0
+	bne x31, x21, fail
+	li x4, 0x2
+	ori x4, x4, 2047
+	li x30, 210
+	li x31, 0x7ff
 	bne x4, x31, fail
-	li x2, 0x2
-	andi x24, x2, -2048
-	li x30, 280
+	li x7, 0x8f3ff18
+	sltiu x21, x7, -1665
+	li x30, 211
+	li x31, 0x1
+	bne x31, x21, fail
+	li x11, 0x5af51434
+	srai x11, x11, 23
+	li x30, 212
+	li x31, 0xb5
+	bne x31, x11, fail
+	li x8, 0xe29fe160
+	addi x27, x8, 0
+	li x30, 213
+	li x31, 0xe29fe160
+	bne x27, x31, fail
+	li x8, 0x7fff
+	slli x10, x8, 3
+	li x30, 214
+	li x31, 0x3fff8
+	bne x10, x31, fail
+	li x9, 0x3906c250
+	slti x9, x9, -2048
+	li x30, 215
 	li x31, 0x0
-	bne x24, x31, fail
-	li x21, 0x5db7a0f9
-	andi x26, x21, -2048
-	li x30, 281
-	li x31, 0x5db7a000
-	bne x26, x31, fail
-	li x9, 0x2f442e47
-	andi x20, x9, 0
-	li x30, 282
-	li x31, 0x0
-	bne x20, x31, fail
-	li x13, 0xfffffffe
-	xori x8, x13, -2048
-	li x30, 283
-	li x31, 0x7fe
-	bne x8, x31, fail
-	li x4, 0xfffffffe
-	addi x5, x4, 1
-	li x30, 284
-	li x31, 0xffffffff
-	bne x5, x31, fail
-	li x8, 0x240f60c5
-	srai x3, x8, 10
-	li x30, 285
-	li x31, 0x903d8
-	bne x3, x31, fail
+	bne x9, x31, fail
 	li x28, 0xe3bdcc05
 	srai x15, x28, 27
-	li x30, 286
+	li x30, 216
 	li x31, 0xfffffffc
 	bne x15, x31, fail
-	li x14, 0x80000000
-	srli x14, x14, 12
-	li x30, 287
-	li x31, 0x80000
-	bne x14, x31, fail
-	li x1, 0x2
-	xori x6, x1, 1
-	li x30, 288
-	li x31, 0x3
-	bne x6, x31, fail
-	li x8, 0x80000000
-	sltiu x22, x8, -2048
-	li x30, 289
+	li x26, 0x320a2278
+	srai x3, x26, 27
+	li x30, 217
+	li x31, 0x6
+	bne x3, x31, fail
+	li x16, 0xffffffff
+	sltiu x16, x16, 1
+	li x30, 218
+	li x31, 0x0
+	bne x31, x16, fail
+	li x15, 0xad8fbba2
+	slti x21, x15, 0
+	li x30, 219
 	li x31, 0x1
-	bne x22, x31, fail
-	li x11, 0x12345678
-	xori x6, x11, -2048
-	li x30, 290
-	li x31, 0xedcbae78
-	bne x6, x31, fail
-	li x28, 0x80000001
-	addi x12, x28, 0
-	li x30, 291
-	li x31, 0x80000001
-	bne x12, x31, fail
-	li x24, 0x1
-	andi x19, x24, 563
-	li x30, 292
-	li x31, 0x1
-	bne x19, x31, fail
+	bne x31, x21, fail
+	li x11, 0xd6841ac9
+	sltiu x16, x11, 1
+	li x30, 220
+	li x31, 0x0
+	bne x31, x16, fail
+	li x3, 0x59790c61
+	andi x17, x3, 2047
+	li x30, 221
+	li x31, 0x461
+	bne x31, x17, fail
 	li x11, 0xe3f0f9d1
 	ori x14, x11, 2047
-	li x30, 293
+	li x30, 222
 	li x31, 0xe3f0ffff
 	bne x14, x31, fail
-	li x6, 0x12345678
-	ori x11, x6, 0
-	li x30, 294
-	li x31, 0x12345678
-	bne x11, x31, fail
-	li x14, 0x409d41ea
-	ori x1, x14, 2047
-	li x30, 295
-	li x31, 0x409d47ff
-	bne x1, x31, fail
-	li x7, 0x7fffffff
-	ori x9, x7, -2048
-	li x30, 296
-	li x31, 0xffffffff
+	li x11, 0x2
+	andi x9, x11, 1
+	li x30, 223
+	li x31, 0x0
 	bne x9, x31, fail
-	li x22, 0x9bca1c4e
-	srli x6, x22, 16
-	li x30, 297
-	li x31, 0x9bca
-	bne x6, x31, fail
-	li x15, 0x80000000
-	andi x5, x15, 2047
-	li x30, 298
-	li x31, 0x0
+	li x6, 0x6a7c5ae2
+	ori x21, x6, -1
+	li x30, 224
+	li x31, 0xffffffff
+	bne x21, x31, fail
+	li x12, 0x37a7d901
+	slli x25, x12, 17
+	li x30, 225
+	li x31, 0xb2020000
+	bne x31, x25, fail
+	li x5, 0xace621d4
+	ori x5, x5, -1
+	li x30, 226
+	li x31, 0xffffffff
 	bne x5, x31, fail
-	li x24, 0x12345678
-	xori x24, x24, 0
-	li x30, 299
-	li x31, 0x12345678
-	bne x24, x31, fail
-	li x17, 0x7bf8528e
-	srai x17, x17, 20
-	li x30, 300
-	li x31, 0x7bf
-	bne x17, x31, fail
-	li x6, 0x7fffffff
-	srli x19, x6, 28
-	li x30, 301
-	li x31, 0x7
-	bne x19, x31, fail
-	li x8, 0x5e494e61
-	addi x23, x8, 2047
-	li x30, 302
-	li x31, 0x5e495660
-	bne x23, x31, fail
-	li x25, 0x1
-	srai x28, x25, 28
-	li x30, 303
+	li x23, 0x80000001
+	xori x23, x23, 2047
+	li x30, 227
+	li x31, 0x800007fe
+	bne x31, x23, fail
+	li x16, 0x9dcedd3
+	slti x23, x16, -2048
+	li x30, 228
 	li x31, 0x0
-	bne x28, x31, fail
-	li x11, 0x0
-	sltiu x11, x11, -2048
-	li x30, 304
-	li x31, 0x1
+	bne x31, x23, fail
+	li x13, 0x7f46d848
+	sltiu x18, x13, 0
+	li x30, 229
+	li x31, 0x0
+	bne x31, x18, fail
+	li x2, 0x20
+	srli x27, x2, 23
+	li x30, 230
+	li x31, 0x0
+	bne x31, x27, fail
+	li x28, 0x12345678
+	srli x3, x28, 19
+	li x30, 231
+	li x31, 0x246
+	bne x31, x3, fail
+	li x19, 0x80000001
+	xori x11, x19, -1
+	li x30, 232
+	li x31, 0x7ffffffe
 	bne x11, x31, fail
 	li x20, 0x93718176
 	srli x2, x20, 14
-	li x30, 305
+	li x30, 233
 	li x31, 0x24dc6
 	bne x2, x31, fail
-	li x4, 0xfcd1d8a3
-	sltiu x11, x4, 2047
-	li x30, 306
-	li x31, 0x0
+	li x11, 0xfe5c53d9
+	xori x11, x11, 0
+	li x30, 234
+	li x31, 0xfe5c53d9
 	bne x11, x31, fail
-	li x18, 0x2
+	li x18, 0xffff8000
 	sltiu x23, x18, 1
-	li x30, 307
+	li x30, 235
 	li x31, 0x0
 	bne x23, x31, fail
-	li x17, 0x4fa3e7be
-	srli x20, x17, 10
-	li x30, 308
-	li x31, 0x13e8f9
-	bne x20, x31, fail
-	li x22, 0xc9999406
-	ori x5, x22, -1
-	li x30, 309
-	li x31, 0xffffffff
-	bne x5, x31, fail
-	li x15, 0x7fffffff
-	andi x27, x15, -2048
-	li x30, 310
-	li x31, 0x7ffff800
+	li x19, 0x1f
+	srai x27, x19, 19
+	li x30, 236
+	li x31, 0x0
 	bne x27, x31, fail
-	li x4, 0xdd49263
-	andi x18, x4, -1351
-	li x30, 311
-	li x31, 0xdd49221
-	bne x18, x31, fail
-	li x17, 0x80000001
-	srli x28, x17, 28
-	li x30, 312
-	li x31, 0x8
-	bne x28, x31, fail
-	li x13, 0x9726038e
-	xori x10, x13, 2047
-	li x30, 313
-	li x31, 0x97260471
-	bne x10, x31, fail
+	li x14, 0xd03ce695
+	sltiu x13, x14, 0
+	li x30, 237
+	li x31, 0x0
+	bne x31, x13, fail
+	li x15, 0x70872ded
+	sltiu x12, x15, -2048
+	li x30, 238
+	li x31, 0x1
+	bne x12, x31, fail
+	li x13, 0x7fffffff
+	slti x6, x13, 2047
+	li x30, 239
+	li x31, 0x0
+	bne x31, x6, fail
+	li x13, 0xf26515f4
+	addi x10, x13, 2047
+	li x30, 240
+	li x31, 0xf2651df3
+	bne x31, x10, fail
 	li x18, 0x45f5fece
 	sltiu x2, x18, 0
-	li x30, 314
+	li x30, 241
 	li x31, 0x0
 	bne x2, x31, fail
-	li x28, 0x8cd262ee
-	slti x11, x28, 2047
-	li x30, 315
-	li x31, 0x1
+	li x11, 0x80000000
+	srai x11, x11, 28
+	li x30, 242
+	li x31, 0xfffffff8
 	bne x11, x31, fail
-	li x14, 0xffff8000
-	slti x15, x14, -1
-	li x30, 316
-	li x31, 0x1
-	bne x15, x31, fail
-	li x24, 0x1f
-	slti x28, x24, -2048
-	li x30, 317
+	li x11, 0x7fffffff
+	srli x11, x11, 29
+	li x30, 243
+	li x31, 0x3
+	bne x11, x31, fail
+	li x17, 0x9d12afe9
+	slli x5, x17, 30
+	li x30, 244
+	li x31, 0x40000000
+	bne x5, x31, fail
+	li x21, 0x3997ccba
+	sltiu x21, x21, 2047
+	li x30, 245
 	li x31, 0x0
-	bne x28, x31, fail
-	li x7, 0x80000000
-	sltiu x8, x7, -2048
-	li x30, 318
-	li x31, 0x1
-	bne x8, x31, fail
-	li x23, 0xa64bfcaf
-	xori x4, x23, 0
-	li x30, 319
-	li x31, 0xa64bfcaf
-	bne x4, x31, fail
-	li x9, 0x80000000
-	srli x9, x9, 20
-	li x30, 320
-	li x31, 0x800
+	bne x21, x31, fail
+	li x11, 0xfd469de5
+	addi x9, x11, -2048
+	li x30, 246
+	li x31, 0xfd4695e5
 	bne x9, x31, fail
-	li x21, 0x4d3aacf7
+	li x21, 0xffff8000
 	srli x19, x21, 19
-	li x30, 321
-	li x31, 0x9a7
-	bne x19, x31, fail
+	li x30, 247
+	li x31, 0x1fff
+	bne x31, x19, fail
 	li x5, 0x80000001
 	ori x5, x5, 2047
-	li x30, 322
+	li x30, 248
 	li x31, 0x800007ff
 	bne x5, x31, fail
-	li x18, 0x50fc29da
-	slti x21, x18, 2001
-	li x30, 323
-	li x31, 0x0
-	bne x21, x31, fail
-	li x16, 0xcc8f8c5f
-	andi x23, x16, -1
-	li x30, 324
-	li x31, 0xcc8f8c5f
-	bne x23, x31, fail
-	li x18, 0x2a846be0
-	srai x7, x18, 15
-	li x30, 325
-	li x31, 0x5508
-	bne x7, x31, fail
+	li x19, 0x80000001
+	andi x11, x19, 745
+	li x30, 249
+	li x31, 0x1
+	bne x31, x11, fail
+	li x8, 0x64e63f0d
+	andi x18, x8, 1
+	li x30, 250
+	li x31, 0x1
+	bne x31, x18, fail
 	li x14, 0x80000000
 	xori x1, x14, -1
-	li x30, 326
+	li x30, 251
 	li x31, 0x7fffffff
 	bne x1, x31, fail
-	li x26, 0xe182532d
-	andi x28, x26, 1
-	li x30, 327
+	li x11, 0xfffffffe
+	slli x13, x11, 14
+	li x30, 252
+	li x31, 0xffff8000
+	bne x13, x31, fail
+	li x26, 0x12345678
+	sltiu x25, x26, -2048
+	li x30, 253
 	li x31, 0x1
-	bne x28, x31, fail
-	li x25, 0xffff8000
-	xori x25, x25, 1102
-	li x30, 328
-	li x31, 0xffff844e
-	bne x25, x31, fail
-	li x3, 0xc7b5cb07
-	andi x27, x3, 1
-	li x30, 329
-	li x31, 0x1
-	bne x27, x31, fail
-	li x14, 0xfffffffe
-	slli x1, x14, 6
-	li x30, 330
-	li x31, 0xffffff80
-	bne x1, x31, fail
-	li x18, 0xf3b5b682
-	slti x26, x18, 0
-	li x30, 331
-	li x31, 0x1
-	bne x26, x31, fail
+	bne x31, x25, fail
+	li x7, 0x20
+	xori x23, x7, 2047
+	li x30, 254
+	li x31, 0x7df
+	bne x23, x31, fail
+	li x4, 0x17df154c
+	addi x18, x4, 1
+	li x30, 255
+	li x31, 0x17df154d
+	bne x31, x18, fail
 	li x11, 0x24ed9e01
 	sltiu x18, x11, 2047
-	li x30, 332
+	li x30, 256
 	li x31, 0x0
-	bne x18, x31, fail
+	bne x31, x18, fail
 	li x7, 0xf1348023
 	srai x7, x7, 13
-	li x30, 333
+	li x30, 257
 	li x31, 0xffff89a4
-	bne x7, x31, fail
-	li x15, 0x2
-	srai x19, x15, 7
-	li x30, 334
-	li x31, 0x0
-	bne x19, x31, fail
-	li x20, 0x80000000
-	slli x20, x20, 20
-	li x30, 335
-	li x31, 0x0
-	bne x20, x31, fail
-	li x16, 0xffff8000
-	sltiu x2, x16, -2048
-	li x30, 336
+	bne x31, x7, fail
+	li x5, 0x20
+	sltiu x28, x5, 2047
+	li x30, 258
 	li x31, 0x1
-	bne x2, x31, fail
+	bne x31, x28, fail
+	li x8, 0x54e9422
+	andi x23, x8, 1
+	li x30, 259
+	li x31, 0x0
+	bne x23, x31, fail
 	li x12, 0x80000001
 	slti x12, x12, 1
-	li x30, 337
+	li x30, 260
 	li x31, 0x1
-	bne x12, x31, fail
+	bne x31, x12, fail
 	li x17, 0x6235c503
 	andi x15, x17, 0
-	li x30, 338
+	li x30, 261
 	li x31, 0x0
-	bne x15, x31, fail
-	li x23, 0x7fff
+	bne x31, x15, fail
+	li x23, 0xcc10e995
 	xori x23, x23, -2007
-	li x30, 339
-	li x31, 0xffff87d6
-	bne x23, x31, fail
-	li x27, 0x7fff
-	srai x26, x27, 6
-	li x30, 340
-	li x31, 0x1ff
-	bne x26, x31, fail
-	li x23, 0x54f47842
-	slti x19, x23, 2047
-	li x30, 341
-	li x31, 0x0
-	bne x19, x31, fail
-	li x12, 0x24891b72
-	srli x21, x12, 27
-	li x30, 342
-	li x31, 0x4
-	bne x21, x31, fail
+	li x30, 262
+	li x31, 0x33ef11bc
+	bne x31, x23, fail
+	li x11, 0x1
+	xori x4, x11, 2047
+	li x30, 263
+	li x31, 0x7fe
+	bne x31, x4, fail
+	li x5, 0x7b9ffe49
+	srai x14, x5, 17
+	li x30, 264
+	li x31, 0x3dcf
+	bne x14, x31, fail
 	li x7, 0x5e384ff9
 	slli x7, x7, 13
-	li x30, 343
+	li x30, 265
 	li x31, 0x9ff2000
 	bne x7, x31, fail
-	li x26, 0x12345678
-	xori x20, x26, 2047
-	li x30, 344
-	li x31, 0x12345187
-	bne x20, x31, fail
-	li x14, 0x1f
-	slti x28, x14, 0
-	li x30, 345
-	li x31, 0x0
-	bne x28, x31, fail
-	li x14, 0xffffffff
-	slli x25, x14, 23
-	li x30, 346
-	li x31, 0xff800000
-	bne x25, x31, fail
-	li x2, 0x2114f60d
-	addi x2, x2, -2048
-	li x30, 347
-	li x31, 0x2114ee0d
+	li x4, 0x74ee4ab2
+	xori x4, x4, -2048
+	li x30, 266
+	li x31, 0x8b11b2b2
+	bne x31, x4, fail
+	li x14, 0x7fffffff
+	srai x5, x14, 17
+	li x30, 267
+	li x31, 0x3fff
+	bne x31, x5, fail
+	li x24, 0xc769bdd2
+	andi x2, x24, -2048
+	li x30, 268
+	li x31, 0xc769b800
 	bne x2, x31, fail
-	li x26, 0x1fe2306b
-	xori x1, x26, 1
-	li x30, 348
-	li x31, 0x1fe2306a
-	bne x1, x31, fail
-	li x3, 0x80000001
-	sltiu x25, x3, 2047
-	li x30, 349
+	li x4, 0x0
+	srai x27, x4, 22
+	li x30, 269
 	li x31, 0x0
-	bne x25, x31, fail
-	li x5, 0x1f
-	slli x18, x5, 6
-	li x30, 350
-	li x31, 0x7c0
+	bne x31, x27, fail
+	li x5, 0x2613c0f2
+	slti x5, x5, -1
+	li x30, 270
+	li x31, 0x0
+	bne x31, x5, fail
+	li x3, 0x7fff
+	srli x16, x3, 27
+	li x30, 271
+	li x31, 0x0
+	bne x31, x16, fail
+	li x20, 0xac8c7168
+	sltiu x18, x20, 1176
+	li x30, 272
+	li x31, 0x0
 	bne x18, x31, fail
-	li x8, 0x8b7eac4c
-	slli x17, x8, 26
-	li x30, 351
-	li x31, 0x30000000
-	bne x17, x31, fail
-	li x20, 0x113776e9
-	andi x28, x20, -2048
-	li x30, 352
-	li x31, 0x11377000
-	bne x28, x31, fail
-	li x23, 0x1
-	slti x21, x23, 0
-	li x30, 353
+	li x15, 0xffff8000
+	srai x15, x15, 20
+	li x30, 273
+	li x31, 0xffffffff
+	bne x31, x15, fail
+	li x4, 0x80000000
+	andi x23, x4, 1
+	li x30, 274
 	li x31, 0x0
-	bne x21, x31, fail
-	li x10, 0xe943ef1d
-	addi x16, x10, 0
-	li x30, 354
-	li x31, 0xe943ef1d
-	bne x16, x31, fail
+	bne x23, x31, fail
+	li x3, 0xf6ff553e
+	srai x10, x3, 15
+	li x30, 275
+	li x31, 0xffffedfe
+	bne x10, x31, fail
 	li x22, 0x645c7423
 	slli x22, x22, 2
-	li x30, 355
+	li x30, 276
 	li x31, 0x9171d08c
-	bne x22, x31, fail
+	bne x31, x22, fail
 	li x25, 0x44c4281d
 	srli x16, x25, 20
-	li x30, 356
+	li x30, 277
 	li x31, 0x44c
 	bne x16, x31, fail
-	li x10, 0x2
-	addi x19, x10, 2047
-	li x30, 357
-	li x31, 0x801
-	bne x19, x31, fail
-	li x23, 0xa89fa779
-	andi x14, x23, 1210
-	li x30, 358
-	li x31, 0x438
-	bne x14, x31, fail
-	li x10, 0x7a372c3d
-	srai x10, x10, 14
-	li x30, 359
-	li x31, 0x1e8dc
+	li x15, 0xffff8000
+	srai x10, x15, 28
+	li x30, 278
+	li x31, 0xffffffff
 	bne x10, x31, fail
-	li x9, 0xd244089d
-	sltiu x28, x9, -1
-	li x30, 360
-	li x31, 0x1
-	bne x28, x31, fail
-	li x17, 0x237741b5
-	srai x5, x17, 6
-	li x30, 361
-	li x31, 0x8ddd06
-	bne x5, x31, fail
+	li x22, 0x65d64407
+	srai x18, x22, 26
+	li x30, 279
+	li x31, 0x19
+	bne x18, x31, fail
+	li x27, 0x1
+	xori x4, x27, 2047
+	li x30, 280
+	li x31, 0x7fe
+	bne x4, x31, fail
+	li x4, 0x8a8cc613
+	ori x17, x4, 1
+	li x30, 281
+	li x31, 0x8a8cc613
+	bne x31, x17, fail
 	li x12, 0xbac9bc56
 	addi x5, x12, -2048
-	li x30, 362
+	li x30, 282
 	li x31, 0xbac9b456
 	bne x5, x31, fail
-	li x26, 0xc5063f72
-	addi x3, x26, -2048
-	li x30, 363
-	li x31, 0xc5063772
-	bne x3, x31, fail
-	li x13, 0xfffffffe
-	ori x13, x13, -2048
-	li x30, 364
-	li x31, 0xfffffffe
-	bne x13, x31, fail
-	li x20, 0xa330c1b6
-	andi x16, x20, 0
-	li x30, 365
+	li x10, 0x9f5cf175
+	xori x1, x10, 2047
+	li x30, 283
+	li x31, 0x9f5cf68a
+	bne x31, x1, fail
+	li x4, 0x90d12d45
+	srai x22, x4, 25
+	li x30, 284
+	li x31, 0xffffffc8
+	bne x31, x22, fail
+	li x19, 0x80000001
+	srli x28, x19, 21
+	li x30, 285
+	li x31, 0x400
+	bne x28, x31, fail
+	li x18, 0xce6cf651
+	addi x17, x18, 0
+	li x30, 286
+	li x31, 0xce6cf651
+	bne x31, x17, fail
+	li x17, 0x3a59c4c3
+	sltiu x12, x17, 0
+	li x30, 287
 	li x31, 0x0
-	bne x16, x31, fail
-	li x4, 0x0
-	addi x18, x4, 0
-	li x30, 366
-	li x31, 0x0
-	bne x18, x31, fail
-	li x3, 0x2
-	xori x17, x3, 1
-	li x30, 367
-	li x31, 0x3
-	bne x17, x31, fail
+	bne x31, x12, fail
 	li x19, 0x2
 	slli x26, x19, 18
-	li x30, 368
+	li x30, 288
 	li x31, 0x80000
-	bne x26, x31, fail
+	bne x31, x26, fail
 	li x10, 0x0
 	ori x27, x10, -2048
-	li x30, 369
+	li x30, 289
 	li x31, 0xfffff800
 	bne x27, x31, fail
-	li x7, 0x1161a46c
-	slli x25, x7, 11
-	li x30, 370
-	li x31, 0xd236000
-	bne x25, x31, fail
-	li x12, 0x6a1f1951
-	slli x17, x12, 22
-	li x30, 371
-	li x31, 0x54400000
-	bne x17, x31, fail
-	li x3, 0x3abdcf22
-	sltiu x28, x3, -1
-	li x30, 372
+	li x27, 0x7fff
+	slti x25, x27, -1770
+	li x30, 290
+	li x31, 0x0
+	bne x31, x25, fail
+	li x26, 0x82fad2a1
+	andi x8, x26, 1
+	li x30, 291
 	li x31, 0x1
-	bne x28, x31, fail
-	li x16, 0x2
-	xori x22, x16, 0
-	li x30, 373
-	li x31, 0x2
-	bne x22, x31, fail
-	li x26, 0x4333b825
-	addi x5, x26, 1
-	li x30, 374
-	li x31, 0x4333b826
-	bne x5, x31, fail
-	li x15, 0xc999fc8c
-	slli x18, x15, 24
-	li x30, 375
-	li x31, 0x8c000000
-	bne x18, x31, fail
-	li x23, 0x80000001
-	sltiu x20, x23, -1
-	li x30, 376
+	bne x31, x8, fail
+	li x8, 0x80000001
+	andi x8, x8, 1
+	li x30, 292
 	li x31, 0x1
-	bne x20, x31, fail
-	li x16, 0xffffffff
-	srai x16, x16, 15
-	li x30, 377
-	li x31, 0xffffffff
-	bne x16, x31, fail
-	li x13, 0x12345678
-	srli x18, x13, 27
-	li x30, 378
-	li x31, 0x2
-	bne x18, x31, fail
-	li x5, 0xf2027153
-	addi x2, x5, 2047
-	li x30, 379
-	li x31, 0xf2027952
-	bne x2, x31, fail
-	li x16, 0x3399dcec
-	slli x20, x16, 17
-	li x30, 380
-	li x31, 0xb9d80000
-	bne x20, x31, fail
-	li x26, 0x1b49d195
-	srai x5, x26, 20
-	li x30, 381
-	li x31, 0x1b4
-	bne x5, x31, fail
-	li x18, 0xf184048a
-	srai x22, x18, 1
-	li x30, 382
-	li x31, 0xf8c20245
-	bne x22, x31, fail
+	bne x31, x8, fail
+	li x16, 0x80000001
+	srai x10, x16, 0
+	li x30, 293
+	li x31, 0x80000001
+	bne x31, x10, fail
+	li x23, 0xe5ef78a7
+	ori x21, x23, 1
+	li x30, 294
+	li x31, 0xe5ef78a7
+	bne x21, x31, fail
+	li x5, 0xdd70a935
+	slli x8, x5, 1
+	li x30, 295
+	li x31, 0xbae1526a
+	bne x31, x8, fail
+	li x11, 0x6fa7d630
+	ori x4, x11, -2048
+	li x30, 296
+	li x31, 0xfffffe30
+	bne x4, x31, fail
+	li x18, 0x80000000
+	slti x14, x18, 2047
+	li x30, 297
+	li x31, 0x1
+	bne x14, x31, fail
+	li x5, 0x24380474
+	slli x2, x5, 27
+	li x30, 298
+	li x31, 0xa0000000
+	bne x31, x2, fail
+	li x14, 0xfffffffe
+	slti x9, x14, -2048
+	li x30, 299
+	li x31, 0x0
+	bne x31, x9, fail
+	li x22, 0x272cfe78
+	andi x1, x22, 79
+	li x30, 300
+	li x31, 0x48
+	bne x31, x1, fail
 	li x10, 0x74452a44
 	slti x5, x10, 0
-	li x30, 383
+	li x30, 301
 	li x31, 0x0
 	bne x5, x31, fail
-	li x16, 0x61643660
-	slli x19, x16, 1
-	li x30, 384
-	li x31, 0xc2c86cc0
-	bne x19, x31, fail
-	li x17, 0x7df15324
-	srai x1, x17, 14
-	li x30, 385
-	li x31, 0x1f7c5
-	bne x1, x31, fail
-	li x2, 0x1583c996
-	addi x2, x2, -2
-	li x30, 386
-	li x31, 0x1583c994
-	bne x2, x31, fail
-	li x27, 0x0
-	addi x2, x27, 0
-	li x30, 387
-	li x31, 0x0
-	bne x2, x31, fail
-	li x12, 0x1f
-	andi x28, x12, -2048
-	li x30, 388
-	li x31, 0x0
-	bne x28, x31, fail
+	li x25, 0x20
+	slli x18, x25, 8
+	li x30, 302
+	li x31, 0x2000
+	bne x18, x31, fail
+	li x20, 0x6040bc3b
+	xori x3, x20, 2047
+	li x30, 303
+	li x31, 0x6040bbc4
+	bne x3, x31, fail
+	li x12, 0x20
+	srli x12, x12, 2
+	li x30, 304
+	li x31, 0x8
+	bne x12, x31, fail
+	li x18, 0x5abc2c6c
+	addi x16, x18, 0
+	li x30, 305
+	li x31, 0x5abc2c6c
+	bne x31, x16, fail
 	li x20, 0x5aede545
 	sltiu x8, x20, -1
-	li x30, 389
+	li x30, 306
 	li x31, 0x1
-	bne x8, x31, fail
+	bne x31, x8, fail
 	li x10, 0xfffffffe
 	xori x10, x10, 596
-	li x30, 390
+	li x30, 307
 	li x31, 0xfffffdaa
 	bne x10, x31, fail
-	li x5, 0x12345678
-	srli x8, x5, 14
-	li x30, 391
-	li x31, 0x48d1
-	bne x8, x31, fail
-	li x27, 0xffffffff
-	slti x18, x27, 1
-	li x30, 392
+	li x9, 0xffffffff
+	xori x13, x9, 0
+	li x30, 308
+	li x31, 0xffffffff
+	bne x13, x31, fail
+	li x11, 0xcb95eb79
+	srai x13, x11, 4
+	li x30, 309
+	li x31, 0xfcb95eb7
+	bne x13, x31, fail
+	li x10, 0x6695a69c
+	addi x25, x10, -1126
+	li x30, 310
+	li x31, 0x6695a236
+	bne x31, x25, fail
+	li x11, 0xa6d5cc3e
+	srai x11, x11, 28
+	li x30, 311
+	li x31, 0xfffffffa
+	bne x31, x11, fail
+	li x20, 0xb6f97e4a
+	slti x6, x20, 0
+	li x30, 312
 	li x31, 0x1
+	bne x31, x6, fail
+	li x20, 0xfffffffe
+	xori x10, x20, -2048
+	li x30, 313
+	li x31, 0x7fe
+	bne x10, x31, fail
+	li x21, 0x0
+	andi x25, x21, 0
+	li x30, 314
+	li x31, 0x0
+	bne x25, x31, fail
+	li x8, 0x80000001
+	xori x22, x8, 0
+	li x30, 315
+	li x31, 0x80000001
+	bne x22, x31, fail
+	li x24, 0x22bba50e
+	xori x1, x24, 2047
+	li x30, 316
+	li x31, 0x22bba2f1
+	bne x31, x1, fail
+	li x5, 0xf30f3f6b
+	sltiu x5, x5, 1
+	li x30, 317
+	li x31, 0x0
+	bne x5, x31, fail
+	li x1, 0x42ce96b2
+	slti x18, x1, 2047
+	li x30, 318
+	li x31, 0x0
 	bne x18, x31, fail
-	li x2, 0xffff8000
-	slti x15, x2, 1
-	li x30, 393
-	li x31, 0x1
-	bne x15, x31, fail
-	li x21, 0x4f90a6cf
-	slti x10, x21, -248
-	li x30, 394
+	li x9, 0x7fffffff
+	srai x9, x9, 29
+	li x30, 319
+	li x31, 0x3
+	bne x9, x31, fail
+	li x17, 0x20
+	slli x1, x17, 13
+	li x30, 320
+	li x31, 0x40000
+	bne x31, x1, fail
+	li x24, 0x7fffffff
+	sltiu x27, x24, 2047
+	li x30, 321
+	li x31, 0x0
+	bne x31, x27, fail
+	li x14, 0x8cfadab
+	slti x18, x14, -2048
+	li x30, 322
+	li x31, 0x0
+	bne x18, x31, fail
+	li x17, 0xfffffffe
+	addi x1, x17, -1
+	li x30, 323
+	li x31, 0xfffffffd
+	bne x1, x31, fail
+	li x8, 0x88989ea3
+	srai x3, x8, 10
+	li x30, 324
+	li x31, 0xffe22627
+	bne x3, x31, fail
+	li x26, 0x3cdaacc
+	slli x4, x26, 9
+	li x30, 325
+	li x31, 0x9b559800
+	bne x4, x31, fail
+	li x19, 0x2cdb1f48
+	slli x15, x19, 13
+	li x30, 326
+	li x31, 0x63e90000
+	bne x31, x15, fail
+	li x11, 0x103e21ef
+	slli x17, x11, 8
+	li x30, 327
+	li x31, 0x3e21ef00
+	bne x31, x17, fail
+	li x9, 0xdba90e62
+	andi x13, x9, 2047
+	li x30, 328
+	li x31, 0x662
+	bne x31, x13, fail
+	li x22, 0x20
+	xori x28, x22, 1
+	li x30, 329
+	li x31, 0x21
+	bne x31, x28, fail
+	li x25, 0x20
+	slti x15, x25, 0
+	li x30, 330
+	li x31, 0x0
+	bne x31, x15, fail
+	li x22, 0x830c14d4
+	xori x2, x22, -1
+	li x30, 331
+	li x31, 0x7cf3eb2b
+	bne x31, x2, fail
+	li x10, 0x2
+	andi x23, x10, 1473
+	li x30, 332
+	li x31, 0x0
+	bne x23, x31, fail
+	li x4, 0x1f
+	slli x10, x4, 16
+	li x30, 333
+	li x31, 0x1f0000
+	bne x31, x10, fail
+	li x10, 0xa9a729b6
+	andi x10, x10, 1
+	li x30, 334
 	li x31, 0x0
 	bne x10, x31, fail
-	li x27, 0x1
-	srli x27, x27, 4
-	li x30, 395
+	li x28, 0xc6ff487b
+	slli x26, x28, 28
+	li x30, 335
+	li x31, 0xb0000000
+	bne x31, x26, fail
+	li x2, 0x9001b664
+	slti x1, x2, -1366
+	li x30, 336
+	li x31, 0x1
+	bne x1, x31, fail
+	li x15, 0x9e2d8955
+	sltiu x28, x15, 0
+	li x30, 337
 	li x31, 0x0
-	bne x27, x31, fail
-	li x1, 0x8e5e5602
-	srli x20, x1, 29
-	li x30, 396
-	li x31, 0x4
-	bne x20, x31, fail
-	li x1, 0x1c15db09
-	srli x8, x1, 12
-	li x30, 397
-	li x31, 0x1c15d
+	bne x31, x28, fail
+	li x15, 0xffff8000
+	xori x15, x15, 0
+	li x30, 338
+	li x31, 0xffff8000
+	bne x15, x31, fail
+	li x11, 0x7fffffff
+	sltiu x1, x11, 1
+	li x30, 339
+	li x31, 0x0
+	bne x31, x1, fail
+	li x27, 0x7fffffff
+	srai x9, x27, 14
+	li x30, 340
+	li x31, 0x1ffff
+	bne x31, x9, fail
+	li x14, 0x0
+	srli x13, x14, 24
+	li x30, 341
+	li x31, 0x0
+	bne x13, x31, fail
+	li x27, 0x61f1623
+	andi x24, x27, 2047
+	li x30, 342
+	li x31, 0x623
+	bne x24, x31, fail
+	li x9, 0x1f
+	slli x14, x9, 11
+	li x30, 343
+	li x31, 0xf800
+	bne x14, x31, fail
+	li x13, 0x74e90665
+	andi x10, x13, -2048
+	li x30, 344
+	li x31, 0x74e90000
+	bne x31, x10, fail
+	li x9, 0x0
+	srai x23, x9, 4
+	li x30, 345
+	li x31, 0x0
+	bne x23, x31, fail
+	li x8, 0x28cb3fba
+	ori x8, x8, 0
+	li x30, 346
+	li x31, 0x28cb3fba
 	bne x8, x31, fail
-	li x9, 0xe89f1b11
-	srai x12, x9, 19
-	li x30, 398
-	li x31, 0xfffffd13
-	bne x12, x31, fail
-	li x7, 0x0
-	addi x3, x7, 0
-	li x30, 399
+	li x2, 0x1f
+	slti x2, x2, 0
+	li x30, 347
+	li x31, 0x0
+	bne x2, x31, fail
+	li x11, 0x80000001
+	xori x28, x11, -1
+	li x30, 348
+	li x31, 0x7ffffffe
+	bne x31, x28, fail
+	li x12, 0xffff8000
+	ori x14, x12, -2048
+	li x30, 349
+	li x31, 0xfffff800
+	bne x31, x14, fail
+	li x28, 0x2fc75047
+	slli x2, x28, 9
+	li x30, 350
+	li x31, 0x8ea08e00
+	bne x2, x31, fail
+	li x19, 0x20
+	slli x19, x19, 20
+	li x30, 351
+	li x31, 0x2000000
+	bne x31, x19, fail
+	li x20, 0x7a2db032
+	slti x17, x20, -1
+	li x30, 352
+	li x31, 0x0
+	bne x31, x17, fail
+	li x13, 0xffff8000
+	xori x14, x13, -916
+	li x30, 353
+	li x31, 0x7c6c
+	bne x31, x14, fail
+	li x5, 0x63ccc35
+	addi x7, x5, 1
+	li x30, 354
+	li x31, 0x63ccc36
+	bne x7, x31, fail
+	li x11, 0xdbf8c179
+	ori x3, x11, 2047
+	li x30, 355
+	li x31, 0xdbf8c7ff
+	bne x3, x31, fail
+	li x3, 0x8e605210
+	sltiu x3, x3, 1
+	li x30, 356
 	li x31, 0x0
 	bne x3, x31, fail
-	li x1, 0x12345678
-	ori x7, x1, 1
+	li x28, 0x66fa572e
+	xori x22, x28, 174
+	li x30, 357
+	li x31, 0x66fa5780
+	bne x22, x31, fail
+	li x24, 0x769eb19c
+	slti x24, x24, 0
+	li x30, 358
+	li x31, 0x0
+	bne x31, x24, fail
+	li x25, 0x4a585cff
+	slli x22, x25, 22
+	li x30, 359
+	li x31, 0x3fc00000
+	bne x31, x22, fail
+	li x24, 0x0
+	srli x26, x24, 20
+	li x30, 360
+	li x31, 0x0
+	bne x31, x26, fail
+	li x23, 0xaeff4a20
+	addi x23, x23, 1610
+	li x30, 361
+	li x31, 0xaeff506a
+	bne x23, x31, fail
+	li x25, 0xfe93a20d
+	slti x18, x25, 0
+	li x30, 362
+	li x31, 0x1
+	bne x31, x18, fail
+	li x26, 0xffff8000
+	andi x10, x26, 1
+	li x30, 363
+	li x31, 0x0
+	bne x31, x10, fail
+	li x26, 0x781b0e13
+	sltiu x20, x26, -2048
+	li x30, 364
+	li x31, 0x1
+	bne x31, x20, fail
+	li x5, 0x97e93259
+	slli x5, x5, 26
+	li x30, 365
+	li x31, 0x64000000
+	bne x5, x31, fail
+	li x17, 0xa9c5c7ef
+	srai x17, x17, 8
+	li x30, 366
+	li x31, 0xffa9c5c7
+	bne x31, x17, fail
+	li x26, 0x80000001
+	slli x21, x26, 2
+	li x30, 367
+	li x31, 0x4
+	bne x21, x31, fail
+	li x4, 0x1
+	ori x27, x4, 0
+	li x30, 368
+	li x31, 0x1
+	bne x31, x27, fail
+	li x26, 0x26be800c
+	slti x26, x26, 1
+	li x30, 369
+	li x31, 0x0
+	bne x26, x31, fail
+	li x9, 0x943ba0ff
+	slti x9, x9, 0
+	li x30, 370
+	li x31, 0x1
+	bne x9, x31, fail
+	li x20, 0xe8fdb6b5
+	addi x27, x20, -2048
+	li x30, 371
+	li x31, 0xe8fdaeb5
+	bne x31, x27, fail
+	li x12, 0xdd934e28
+	srli x27, x12, 10
+	li x30, 372
+	li x31, 0x3764d3
+	bne x31, x27, fail
+	li x26, 0x1
+	sltiu x19, x26, 0
+	li x30, 373
+	li x31, 0x0
+	bne x19, x31, fail
+	li x10, 0xc2dcdc1
+	addi x19, x10, -2048
+	li x30, 374
+	li x31, 0xc2dc5c1
+	bne x31, x19, fail
+	li x21, 0x1e030ef5
+	ori x22, x21, -1
+	li x30, 375
+	li x31, 0xffffffff
+	bne x31, x22, fail
+	li x14, 0xffff8000
+	addi x26, x14, 0
+	li x30, 376
+	li x31, 0xffff8000
+	bne x26, x31, fail
+	li x5, 0xffffffff
+	andi x18, x5, -2048
+	li x30, 377
+	li x31, 0xfffff800
+	bne x31, x18, fail
+	li x5, 0x7b8490d3
+	xori x14, x5, 891
+	li x30, 378
+	li x31, 0x7b8493a8
+	bne x14, x31, fail
+	li x23, 0x0
+	srli x17, x23, 18
+	li x30, 379
+	li x31, 0x0
+	bne x31, x17, fail
+	li x9, 0x3df68c6e
+	xori x9, x9, -1
+	li x30, 380
+	li x31, 0xc2097391
+	bne x9, x31, fail
+	li x3, 0x7fff
+	srai x17, x3, 30
+	li x30, 381
+	li x31, 0x0
+	bne x17, x31, fail
+	li x22, 0x7fffffff
+	xori x15, x22, 0
+	li x30, 382
+	li x31, 0x7fffffff
+	bne x31, x15, fail
+	li x11, 0xfffffffe
+	xori x12, x11, 947
+	li x30, 383
+	li x31, 0xfffffc4d
+	bne x31, x12, fail
+	li x18, 0xfffffffe
+	sltiu x1, x18, -2048
+	li x30, 384
+	li x31, 0x0
+	bne x31, x1, fail
+	li x14, 0x4272db7b
+	sltiu x23, x14, 0
+	li x30, 385
+	li x31, 0x0
+	bne x31, x23, fail
+	li x19, 0x0
+	xori x11, x19, -1
+	li x30, 386
+	li x31, 0xffffffff
+	bne x11, x31, fail
+	li x20, 0xc1053c3b
+	ori x3, x20, -1
+	li x30, 387
+	li x31, 0xffffffff
+	bne x31, x3, fail
+	li x25, 0x80000001
+	slli x10, x25, 22
+	li x30, 388
+	li x31, 0x400000
+	bne x10, x31, fail
+	li x25, 0x2bc9ea0f
+	srai x18, x25, 14
+	li x30, 389
+	li x31, 0xaf27
+	bne x18, x31, fail
+	li x5, 0x1169af55
+	slli x24, x5, 25
+	li x30, 390
+	li x31, 0xaa000000
+	bne x31, x24, fail
+	li x4, 0x64ced46d
+	srli x14, x4, 31
+	li x30, 391
+	li x31, 0x0
+	bne x31, x14, fail
+	li x21, 0xa8d5bcf8
+	sltiu x10, x21, 1
+	li x30, 392
+	li x31, 0x0
+	bne x31, x10, fail
+	li x17, 0x2
+	ori x10, x17, 8
+	li x30, 393
+	li x31, 0xa
+	bne x10, x31, fail
+	li x10, 0xfffffffe
+	srai x17, x10, 2
+	li x30, 394
+	li x31, 0xffffffff
+	bne x31, x17, fail
+	li x9, 0x2
+	srli x26, x9, 18
+	li x30, 395
+	li x31, 0x0
+	bne x31, x26, fail
+	li x27, 0x12345678
+	ori x16, x27, 1572
+	li x30, 396
+	li x31, 0x1234567c
+	bne x31, x16, fail
+	li x11, 0x20
+	slli x2, x11, 13
+	li x30, 397
+	li x31, 0x40000
+	bne x2, x31, fail
+	li x5, 0xf4af9bd6
+	slli x1, x5, 20
+	li x30, 398
+	li x31, 0xbd600000
+	bne x31, x1, fail
+	li x17, 0xb65db6ee
+	srai x17, x17, 15
+	li x30, 399
+	li x31, 0xffff6cbb
+	bne x17, x31, fail
+	li x26, 0x7fff
+	srli x22, x26, 17
 	li x30, 400
-	li x31, 0x12345679
-	bne x7, x31, fail
+	li x31, 0x0
+	bne x22, x31, fail
 	addi x0, x0, 5
 	li x1, -1
 	add x0, x1, x1
 	mv x2, x0
 	li x30, 401
 	li x31, 0x0
-	bne x2, x31, fail
+	bne x31, x2, fail
 	li x30, 402
 	li x31, 0x0
 	bne x0, x31, fail
-	lui x5, 0x0
+	lui x6, 0x0
 	li x30, 403
 	li x31, 0x0
-	bne x5, x31, fail
-	.La0: auipc x5, 0x0
+	bne x6, x31, fail
+	.La0: auipc x6, 0x0
 	la x29, .La0
 	li x31, 0x0
 	add x29, x29, x31
 	li x30, 404
-	bne x5, x29, fail
-	lui x20, 0xfffff
+	bne x6, x29, fail
+	lui x16, 0xfffff
 	li x30, 405
 	li x31, 0xfffff000
-	bne x20, x31, fail
-	.La1: auipc x20, 0xfffff
+	bne x16, x31, fail
+	.La1: auipc x16, 0xfffff
 	la x29, .La1
 	li x31, 0xfffff000
 	add x29, x29, x31
 	li x30, 406
-	bne x20, x29, fail
-	lui x20, 0x80000
+	bne x16, x29, fail
+	lui x18, 0x80000
 	li x30, 407
 	li x31, 0x80000000
-	bne x20, x31, fail
-	.La2: auipc x20, 0x80000
+	bne x31, x18, fail
+	.La2: auipc x18, 0x80000
 	la x29, .La2
 	li x31, 0x80000000
 	add x29, x29, x31
 	li x30, 408
-	bne x20, x29, fail
-	lui x22, 0xafa07
+	bne x18, x29, fail
+	lui x4, 0xa8f4c
 	li x30, 409
-	li x31, 0xafa07000
-	bne x22, x31, fail
-	.La3: auipc x22, 0xafa07
+	li x31, 0xa8f4c000
+	bne x4, x31, fail
+	.La3: auipc x4, 0xa8f4c
 	la x29, .La3
-	li x31, 0xafa07000
+	li x31, 0xa8f4c000
 	add x29, x29, x31
 	li x30, 410
-	bne x22, x29, fail
-	lui x1, 0xf95d5
+	bne x4, x29, fail
+	lui x2, 0x6fa7b
 	li x30, 411
-	li x31, 0xf95d5000
-	bne x1, x31, fail
-	.La4: auipc x1, 0xf95d5
+	li x31, 0x6fa7b000
+	bne x31, x2, fail
+	.La4: auipc x2, 0x6fa7b
 	la x29, .La4
-	li x31, 0xf95d5000
+	li x31, 0x6fa7b000
 	add x29, x29, x31
 	li x30, 412
-	bne x1, x29, fail
-	lui x24, 0x70b2a
+	bne x2, x29, fail
+	lui x14, 0x55680
 	li x30, 413
-	li x31, 0x70b2a000
-	bne x24, x31, fail
-	.La5: auipc x24, 0x70b2a
+	li x31, 0x55680000
+	bne x31, x14, fail
+	.La5: auipc x14, 0x55680
 	la x29, .La5
-	li x31, 0x70b2a000
+	li x31, 0x55680000
 	add x29, x29, x31
 	li x30, 414
-	bne x24, x29, fail
-	lui x18, 0x75d1
+	bne x14, x29, fail
+	lui x20, 0x7ca71
 	li x30, 415
-	li x31, 0x75d1000
-	bne x18, x31, fail
-	.La6: auipc x18, 0x75d1
+	li x31, 0x7ca71000
+	bne x20, x31, fail
+	.La6: auipc x20, 0x7ca71
 	la x29, .La6
-	li x31, 0x75d1000
+	li x31, 0x7ca71000
 	add x29, x29, x31
 	li x30, 416
-	bne x18, x29, fail
-	lui x27, 0x3a375
+	bne x20, x29, fail
+	lui x22, 0x82e87
 	li x30, 417
-	li x31, 0x3a375000
-	bne x27, x31, fail
-	.La7: auipc x27, 0x3a375
+	li x31, 0x82e87000
+	bne x22, x31, fail
+	.La7: auipc x22, 0x82e87
 	la x29, .La7
-	li x31, 0x3a375000
+	li x31, 0x82e87000
 	add x29, x29, x31
 	li x30, 418
-	bne x27, x29, fail
-	lui x6, 0x79a7d
+	bne x22, x29, fail
+	lui x21, 0xcbd13
 	li x30, 419
-	li x31, 0x79a7d000
-	bne x6, x31, fail
-	.La8: auipc x6, 0x79a7d
+	li x31, 0xcbd13000
+	bne x21, x31, fail
+	.La8: auipc x21, 0xcbd13
 	la x29, .La8
-	li x31, 0x79a7d000
+	li x31, 0xcbd13000
 	add x29, x29, x31
 	li x30, 420
-	bne x6, x29, fail
-	lui x18, 0xd66e0
+	bne x21, x29, fail
+	lui x6, 0xa780c
 	li x30, 421
-	li x31, 0xd66e0000
-	bne x18, x31, fail
-	.La9: auipc x18, 0xd66e0
+	li x31, 0xa780c000
+	bne x31, x6, fail
+	.La9: auipc x6, 0xa780c
 	la x29, .La9
-	li x31, 0xd66e0000
+	li x31, 0xa780c000
 	add x29, x29, x31
 	li x30, 422
-	bne x18, x29, fail
-	lui x1, 0xf30f3
+	bne x6, x29, fail
+	lui x17, 0x3c465
 	li x30, 423
-	li x31, 0xf30f3000
-	bne x1, x31, fail
-	.La10: auipc x1, 0xf30f3
+	li x31, 0x3c465000
+	bne x31, x17, fail
+	.La10: auipc x17, 0x3c465
 	la x29, .La10
-	li x31, 0xf30f3000
+	li x31, 0x3c465000
 	add x29, x29, x31
 	li x30, 424
-	bne x1, x29, fail
-	lui x5, 0x39562
+	bne x17, x29, fail
+	lui x16, 0xfca86
 	li x30, 425
-	li x31, 0x39562000
-	bne x5, x31, fail
-	.La11: auipc x5, 0x39562
+	li x31, 0xfca86000
+	bne x31, x16, fail
+	.La11: auipc x16, 0xfca86
 	la x29, .La11
-	li x31, 0x39562000
+	li x31, 0xfca86000
 	add x29, x29, x31
 	li x30, 426
-	bne x5, x29, fail
-	lui x1, 0x100d8
+	bne x16, x29, fail
+	lui x21, 0xcd6d5
 	li x30, 427
-	li x31, 0x100d8000
-	bne x1, x31, fail
-	.La12: auipc x1, 0x100d8
+	li x31, 0xcd6d5000
+	bne x21, x31, fail
+	.La12: auipc x21, 0xcd6d5
 	la x29, .La12
-	li x31, 0x100d8000
+	li x31, 0xcd6d5000
 	add x29, x29, x31
 	li x30, 428
-	bne x1, x29, fail
-	lui x5, 0xdf0b6
+	bne x21, x29, fail
+	lui x7, 0x652d2
 	li x30, 429
-	li x31, 0xdf0b6000
-	bne x5, x31, fail
-	.La13: auipc x5, 0xdf0b6
+	li x31, 0x652d2000
+	bne x7, x31, fail
+	.La13: auipc x7, 0x652d2
 	la x29, .La13
-	li x31, 0xdf0b6000
+	li x31, 0x652d2000
 	add x29, x29, x31
 	li x30, 430
-	bne x5, x29, fail
-	lui x19, 0x52006
+	bne x7, x29, fail
+	lui x10, 0x660
 	li x30, 431
-	li x31, 0x52006000
-	bne x19, x31, fail
-	.La14: auipc x19, 0x52006
+	li x31, 0x660000
+	bne x10, x31, fail
+	.La14: auipc x10, 0x660
 	la x29, .La14
-	li x31, 0x52006000
+	li x31, 0x660000
 	add x29, x29, x31
 	li x30, 432
-	bne x19, x29, fail
-	lui x17, 0x15af3
+	bne x10, x29, fail
+	lui x3, 0xc7e7e
 	li x30, 433
-	li x31, 0x15af3000
-	bne x17, x31, fail
-	.La15: auipc x17, 0x15af3
+	li x31, 0xc7e7e000
+	bne x3, x31, fail
+	.La15: auipc x3, 0xc7e7e
 	la x29, .La15
-	li x31, 0x15af3000
+	li x31, 0xc7e7e000
 	add x29, x29, x31
 	li x30, 434
-	bne x17, x29, fail
-	lui x9, 0x8a068
+	bne x3, x29, fail
+	lui x25, 0x40ac8
 	li x30, 435
-	li x31, 0x8a068000
-	bne x9, x31, fail
-	.La16: auipc x9, 0x8a068
+	li x31, 0x40ac8000
+	bne x25, x31, fail
+	.La16: auipc x25, 0x40ac8
 	la x29, .La16
-	li x31, 0x8a068000
+	li x31, 0x40ac8000
 	add x29, x29, x31
 	li x30, 436
-	bne x9, x29, fail
-	lui x13, 0x31e12
+	bne x25, x29, fail
+	lui x10, 0x6f48e
 	li x30, 437
-	li x31, 0x31e12000
-	bne x13, x31, fail
-	.La17: auipc x13, 0x31e12
+	li x31, 0x6f48e000
+	bne x10, x31, fail
+	.La17: auipc x10, 0x6f48e
 	la x29, .La17
-	li x31, 0x31e12000
+	li x31, 0x6f48e000
 	add x29, x29, x31
 	li x30, 438
-	bne x13, x29, fail
-	lui x18, 0x2068
+	bne x10, x29, fail
+	lui x2, 0xc9fe3
 	li x30, 439
-	li x31, 0x2068000
-	bne x18, x31, fail
-	.La18: auipc x18, 0x2068
+	li x31, 0xc9fe3000
+	bne x2, x31, fail
+	.La18: auipc x2, 0xc9fe3
 	la x29, .La18
-	li x31, 0x2068000
+	li x31, 0xc9fe3000
 	add x29, x29, x31
 	li x30, 440
-	bne x18, x29, fail
-	lui x12, 0x479b2
+	bne x2, x29, fail
+	lui x9, 0xd10cc
 	li x30, 441
-	li x31, 0x479b2000
-	bne x12, x31, fail
-	.La19: auipc x12, 0x479b2
+	li x31, 0xd10cc000
+	bne x31, x9, fail
+	.La19: auipc x9, 0xd10cc
 	la x29, .La19
-	li x31, 0x479b2000
+	li x31, 0xd10cc000
 	add x29, x29, x31
 	li x30, 442
-	bne x12, x29, fail
-	li x15, 0x62ad590e
-	li x9, 0x8884dcee
-	li x3, 0
-	bgeu x15, x9, .Lb0
-	addi x3, x3, 1
-.Lb0:
-	addi x3, x3, 2
-	li x30, 443
-	li x31, 0x3
-	bne x3, x31, fail
-	li x17, 0x9012628b
-	li x1, 0x355146bc
-	li x2, 0
-	bge x17, x1, .Lb1
-	addi x2, x2, 1
-.Lb1:
-	addi x2, x2, 2
-	li x30, 444
-	li x31, 0x3
-	bne x2, x31, fail
-	li x27, 0x80000000
-	li x19, 0xba6948ad
-	li x16, 0
-	bgeu x27, x19, .Lb2
-	addi x16, x16, 1
-.Lb2:
-	addi x16, x16, 2
-	li x30, 445
-	li x31, 0x3
-	bne x16, x31, fail
-	li x14, 0x109faaed
-	li x18, 0x1f
+	bne x9, x29, fail
+	li x1, 0x7fffffff
+	li x24, 0x4c0e29ce
 	li x13, 0
-	bltu x14, x18, .Lb3
+	bge x1, x24, .Lb0
 	addi x13, x13, 1
-.Lb3:
+.Lb0:
 	addi x13, x13, 2
+	li x30, 443
+	li x31, 0x2
+	bne x13, x31, fail
+	li x6, 0xffff8000
+	li x25, 0xffff8000
+	li x23, 0
+	bgeu x6, x25, .Lb1
+	addi x23, x23, 1
+.Lb1:
+	addi x23, x23, 2
+	li x30, 444
+	li x31, 0x2
+	bne x31, x23, fail
+	li x22, 0x20
+	li x1, 0x7fffffff
+	li x17, 0
+	bne x22, x1, .Lb2
+	addi x17, x17, 1
+.Lb2:
+	addi x17, x17, 2
+	li x30, 445
+	li x31, 0x2
+	bne x17, x31, fail
+	li x13, 0xc5c05bb1
+	li x21, 0x7fff
+	li x14, 0
+	bltu x13, x21, .Lb3
+	addi x14, x14, 1
+.Lb3:
+	addi x14, x14, 2
 	li x30, 446
 	li x31, 0x3
-	bne x13, x31, fail
-	li x10, 0x0
-	li x23, 0x0
-	li x13, 0
-	bltu x10, x23, .Lb4
-	addi x13, x13, 1
+	bne x14, x31, fail
+	li x22, 0x80000001
+	li x9, 0x12345678
+	li x7, 0
+	bge x22, x9, .Lb4
+	addi x7, x7, 1
 .Lb4:
-	addi x13, x13, 2
+	addi x7, x7, 2
 	li x30, 447
 	li x31, 0x3
-	bne x13, x31, fail
-	li x17, 0x5db57a4
-	li x24, 0x1f
-	li x18, 0
-	bgeu x17, x24, .Lb5
-	addi x18, x18, 1
+	bne x31, x7, fail
+	li x23, 0x3f561038
+	li x5, 0xe4b1c6ee
+	li x21, 0
+	bgeu x23, x5, .Lb5
+	addi x21, x21, 1
 .Lb5:
-	addi x18, x18, 2
+	addi x21, x21, 2
 	li x30, 448
-	li x31, 0x2
-	bne x18, x31, fail
-	li x10, 0xffffffff
-	li x1, 0x7fffffff
-	li x5, 0
-	bge x10, x1, .Lb6
-	addi x5, x5, 1
+	li x31, 0x3
+	bne x21, x31, fail
+	li x18, 0x80125771
+	li x22, 0x30742d40
+	li x1, 0
+	bltu x18, x22, .Lb6
+	addi x1, x1, 1
 .Lb6:
-	addi x5, x5, 2
+	addi x1, x1, 2
 	li x30, 449
 	li x31, 0x3
-	bne x5, x31, fail
-	li x6, 0xa2cb319
-	li x27, 0xf4a97019
-	li x7, 0
-	beq x6, x27, .Lb7
-	addi x7, x7, 1
+	bne x1, x31, fail
+	li x21, 0x80000000
+	li x2, 0x80000000
+	li x20, 0
+	bgeu x21, x2, .Lb7
+	addi x20, x20, 1
 .Lb7:
-	addi x7, x7, 2
+	addi x20, x20, 2
 	li x30, 450
-	li x31, 0x3
-	bne x7, x31, fail
-	li x13, 0xa91b9557
-	li x28, 0xa9a17939
-	li x8, 0
-	bltu x13, x28, .Lb8
-	addi x8, x8, 1
+	li x31, 0x2
+	bne x20, x31, fail
+	li x28, 0x12345678
+	li x5, 0x0
+	li x24, 0
+	bgeu x28, x5, .Lb8
+	addi x24, x24, 1
 .Lb8:
-	addi x8, x8, 2
+	addi x24, x24, 2
 	li x30, 451
 	li x31, 0x2
-	bne x8, x31, fail
-	li x14, 0x1f
-	li x27, 0x5e192007
-	li x28, 0
-	beq x14, x27, .Lb9
-	addi x28, x28, 1
+	bne x24, x31, fail
+	li x7, 0x80000000
+	li x10, 0x9e0f086a
+	li x9, 0
+	blt x7, x10, .Lb9
+	addi x9, x9, 1
 .Lb9:
-	addi x28, x28, 2
+	addi x9, x9, 2
 	li x30, 452
-	li x31, 0x3
-	bne x28, x31, fail
-	li x26, 0x80000001
-	li x19, 0x62e26760
-	li x8, 0
-	bltu x26, x19, .Lb10
-	addi x8, x8, 1
+	li x31, 0x2
+	bne x31, x9, fail
+	li x2, 0x2714b36a
+	li x3, 0x7fffffff
+	li x9, 0
+	bgeu x2, x3, .Lb10
+	addi x9, x9, 1
 .Lb10:
-	addi x8, x8, 2
+	addi x9, x9, 2
 	li x30, 453
 	li x31, 0x3
-	bne x8, x31, fail
-	li x22, 0xdd84f35f
-	li x28, 0xdd84f35f
-	li x20, 0
-	blt x22, x28, .Lb11
-	addi x20, x20, 1
+	bne x9, x31, fail
+	li x11, 0xfffffffe
+	li x27, 0xfffffffe
+	li x1, 0
+	blt x11, x27, .Lb11
+	addi x1, x1, 1
 .Lb11:
-	addi x20, x20, 2
+	addi x1, x1, 2
 	li x30, 454
 	li x31, 0x3
-	bne x20, x31, fail
-	li x19, 0x1360c385
-	li x16, 0x1360c385
-	li x2, 0
-	bne x19, x16, .Lb12
-	addi x2, x2, 1
+	bne x31, x1, fail
+	li x14, 0xc8cebebf
+	li x25, 0x6e6e1002
+	li x12, 0
+	bne x14, x25, .Lb12
+	addi x12, x12, 1
 .Lb12:
-	addi x2, x2, 2
+	addi x12, x12, 2
 	li x30, 455
-	li x31, 0x3
-	bne x2, x31, fail
-	li x15, 0xa02d7882
-	li x12, 0x3bf5a5d5
-	li x17, 0
-	blt x15, x12, .Lb13
-	addi x17, x17, 1
+	li x31, 0x2
+	bne x31, x12, fail
+	li x4, 0x318e44d2
+	li x3, 0x4a0b4d92
+	li x24, 0
+	bne x4, x3, .Lb13
+	addi x24, x24, 1
 .Lb13:
-	addi x17, x17, 2
+	addi x24, x24, 2
 	li x30, 456
 	li x31, 0x2
-	bne x17, x31, fail
-	li x27, 0xad407613
-	li x19, 0xad407613
-	li x17, 0
-	beq x27, x19, .Lb14
-	addi x17, x17, 1
+	bne x24, x31, fail
+	li x2, 0x9184ee95
+	li x14, 0x7fffffff
+	li x20, 0
+	bgeu x2, x14, .Lb14
+	addi x20, x20, 1
 .Lb14:
-	addi x17, x17, 2
+	addi x20, x20, 2
 	li x30, 457
 	li x31, 0x2
-	bne x17, x31, fail
-	li x23, 0x213a3189
-	li x15, 0x4fc54863
-	li x24, 0
-	bltu x23, x15, .Lb15
-	addi x24, x24, 1
+	bne x20, x31, fail
+	li x20, 0x7a4bf8bc
+	li x4, 0x3858ab0d
+	li x23, 0
+	bge x20, x4, .Lb15
+	addi x23, x23, 1
 .Lb15:
-	addi x24, x24, 2
+	addi x23, x23, 2
 	li x30, 458
 	li x31, 0x2
-	bne x24, x31, fail
-	li x17, 0x623c6d34
-	li x9, 0x623c6d34
-	li x4, 0
-	bge x17, x9, .Lb16
-	addi x4, x4, 1
-.Lb16:
-	addi x4, x4, 2
-	li x30, 459
-	li x31, 0x2
-	bne x4, x31, fail
-	li x21, 0x20
-	li x17, 0x20
-	li x22, 0
-	bgeu x21, x17, .Lb17
-	addi x22, x22, 1
-.Lb17:
-	addi x22, x22, 2
-	li x30, 460
-	li x31, 0x2
-	bne x22, x31, fail
-	li x15, 0xffff8000
-	li x12, 0xffff8000
-	li x13, 0
-	bge x15, x12, .Lb18
-	addi x13, x13, 1
-.Lb18:
-	addi x13, x13, 2
-	li x30, 461
-	li x31, 0x2
-	bne x13, x31, fail
-	li x22, 0xf6b540af
-	li x28, 0x78d85d8c
-	li x27, 0
-	bne x22, x28, .Lb19
-	addi x27, x27, 1
-.Lb19:
-	addi x27, x27, 2
-	li x30, 462
-	li x31, 0x2
-	bne x27, x31, fail
-	li x22, 0x9001b664
-	li x2, 0x9001b664
-	li x1, 0
-	beq x22, x2, .Lb20
-	addi x1, x1, 1
-.Lb20:
-	addi x1, x1, 2
-	li x30, 463
-	li x31, 0x2
-	bne x1, x31, fail
-	li x16, 0xfffffffe
-	li x20, 0xfffffffe
-	li x23, 0
-	bgeu x16, x20, .Lb21
-	addi x23, x23, 1
-.Lb21:
-	addi x23, x23, 2
-	li x30, 464
-	li x31, 0x2
 	bne x23, x31, fail
-	li x12, 0x80000001
-	li x24, 0xffffffff
-	li x28, 0
-	bne x12, x24, .Lb22
-	addi x28, x28, 1
-.Lb22:
-	addi x28, x28, 2
-	li x30, 465
-	li x31, 0x2
-	bne x28, x31, fail
-	li x8, 0x80000001
-	li x3, 0x2
+	li x19, 0xc51344fc
+	li x6, 0x80000001
+	li x2, 0
+	bltu x19, x6, .Lb16
+	addi x2, x2, 1
+.Lb16:
+	addi x2, x2, 2
+	li x30, 459
+	li x31, 0x3
+	bne x31, x2, fail
+	li x18, 0x2
+	li x1, 0x2
+	li x12, 0
+	bne x18, x1, .Lb17
+	addi x12, x12, 1
+.Lb17:
+	addi x12, x12, 2
+	li x30, 460
+	li x31, 0x3
+	bne x12, x31, fail
+	li x23, 0xfffffffe
+	li x6, 0x1
+	li x19, 0
+	bge x23, x6, .Lb18
+	addi x19, x19, 1
+.Lb18:
+	addi x19, x19, 2
+	li x30, 461
+	li x31, 0x3
+	bne x19, x31, fail
+	li x7, 0xffffffff
+	li x26, 0x7fffffff
 	li x13, 0
-	bne x8, x3, .Lb23
+	bge x7, x26, .Lb19
 	addi x13, x13, 1
-.Lb23:
+.Lb19:
 	addi x13, x13, 2
+	li x30, 462
+	li x31, 0x3
+	bne x31, x13, fail
+	li x22, 0x1
+	li x5, 0x1
+	li x8, 0
+	blt x22, x5, .Lb20
+	addi x8, x8, 1
+.Lb20:
+	addi x8, x8, 2
+	li x30, 463
+	li x31, 0x3
+	bne x31, x8, fail
+	li x9, 0xf5a8dcb8
+	li x3, 0xf5a8dcb8
+	li x25, 0
+	bltu x9, x3, .Lb21
+	addi x25, x25, 1
+.Lb21:
+	addi x25, x25, 2
+	li x30, 464
+	li x31, 0x3
+	bne x31, x25, fail
+	li x17, 0xfd583794
+	li x9, 0xfd583794
+	li x6, 0
+	bltu x17, x9, .Lb22
+	addi x6, x6, 1
+.Lb22:
+	addi x6, x6, 2
+	li x30, 465
+	li x31, 0x3
+	bne x31, x6, fail
+	li x5, 0x8e8b68da
+	li x18, 0x38819a97
+	li x19, 0
+	blt x5, x18, .Lb23
+	addi x19, x19, 1
+.Lb23:
+	addi x19, x19, 2
 	li x30, 466
 	li x31, 0x2
-	bne x13, x31, fail
-	li x6, 0x0
-	li x2, 0x86ced96e
-	li x27, 0
-	beq x6, x2, .Lb24
-	addi x27, x27, 1
+	bne x19, x31, fail
+	li x22, 0x5e233373
+	li x18, 0x5e233373
+	li x13, 0
+	blt x22, x18, .Lb24
+	addi x13, x13, 1
 .Lb24:
-	addi x27, x27, 2
+	addi x13, x13, 2
 	li x30, 467
 	li x31, 0x3
-	bne x27, x31, fail
-	li x7, 0xfffffffe
-	li x27, 0x701927b3
-	li x2, 0
-	blt x7, x27, .Lb25
-	addi x2, x2, 1
+	bne x13, x31, fail
+	li x28, 0xd656aff
+	li x20, 0x80000000
+	li x15, 0
+	bltu x28, x20, .Lb25
+	addi x15, x15, 1
 .Lb25:
-	addi x2, x2, 2
+	addi x15, x15, 2
 	li x30, 468
 	li x31, 0x2
-	bne x2, x31, fail
-	li x15, 0x60aa37e1
-	li x11, 0x459930de
-	li x19, 0
-	bltu x15, x11, .Lb26
-	addi x19, x19, 1
-.Lb26:
-	addi x19, x19, 2
-	li x30, 469
-	li x31, 0x3
-	bne x19, x31, fail
-	li x6, 0xffff8000
-	li x27, 0x7fffffff
-	li x18, 0
-	beq x6, x27, .Lb27
-	addi x18, x18, 1
-.Lb27:
-	addi x18, x18, 2
-	li x30, 470
-	li x31, 0x3
-	bne x18, x31, fail
-	li x24, 0xba879ba9
-	li x16, 0x7fffffff
+	bne x15, x31, fail
+	li x16, 0x5f8afbde
+	li x18, 0x8bdc0e88
 	li x10, 0
-	bltu x24, x16, .Lb28
+	bne x16, x18, .Lb26
 	addi x10, x10, 1
-.Lb28:
+.Lb26:
 	addi x10, x10, 2
+	li x30, 469
+	li x31, 0x2
+	bne x31, x10, fail
+	li x22, 0x485d2ff3
+	li x3, 0x485d2ff3
+	li x21, 0
+	bge x22, x3, .Lb27
+	addi x21, x21, 1
+.Lb27:
+	addi x21, x21, 2
+	li x30, 470
+	li x31, 0x2
+	bne x21, x31, fail
+	li x13, 0xabc3b578
+	li x7, 0xfca442a
+	li x21, 0
+	blt x13, x7, .Lb28
+	addi x21, x21, 1
+.Lb28:
+	addi x21, x21, 2
 	li x30, 471
-	li x31, 0x3
-	bne x10, x31, fail
-	li x8, 0x74e90665
-	li x12, 0x494e9083
-	li x18, 0
-	bgeu x8, x12, .Lb29
-	addi x18, x18, 1
+	li x31, 0x2
+	bne x31, x21, fail
+	li x1, 0x9f10ac59
+	li x25, 0x9f10ac59
+	li x15, 0
+	bgeu x1, x25, .Lb29
+	addi x15, x15, 1
 .Lb29:
-	addi x18, x18, 2
+	addi x15, x15, 2
 	li x30, 472
 	li x31, 0x2
-	bne x18, x31, fail
-	li x28, 0xb76d0e94
-	li x22, 0x0
-	li x3, 0
-	bltu x28, x22, .Lb30
-	addi x3, x3, 1
+	bne x15, x31, fail
+	li x6, 0x2b2ae2cb
+	li x27, 0xf273a41a
+	li x1, 0
+	bge x6, x27, .Lb30
+	addi x1, x1, 1
 .Lb30:
-	addi x3, x3, 2
+	addi x1, x1, 2
 	li x30, 473
-	li x31, 0x3
-	bne x3, x31, fail
-	li x25, 0x63cb21fb
-	li x26, 0x63cb21fb
-	li x19, 0
-	bgeu x25, x26, .Lb31
-	addi x19, x19, 1
+	li x31, 0x2
+	bne x31, x1, fail
+	li x21, 0x7fffffff
+	li x20, 0x7fffffff
+	li x22, 0
+	blt x21, x20, .Lb31
+	addi x22, x22, 1
 .Lb31:
-	addi x19, x19, 2
+	addi x22, x22, 2
 	li x30, 474
-	li x31, 0x2
-	bne x19, x31, fail
-	li x4, 0x28cb3fba
-	li x13, 0x2
-	li x2, 0
-	bgeu x4, x13, .Lb32
-	addi x2, x2, 1
-.Lb32:
-	addi x2, x2, 2
-	li x30, 475
-	li x31, 0x2
-	bne x2, x31, fail
-	li x1, 0x80000001
-	li x2, 0xc90a9f13
-	li x9, 0
-	bge x1, x2, .Lb33
-	addi x9, x9, 1
-.Lb33:
-	addi x9, x9, 2
-	li x30, 476
 	li x31, 0x3
-	bne x9, x31, fail
-	li x15, 0xe3a16ea6
-	li x4, 0x20
-	li x11, 0
-	beq x15, x4, .Lb34
-	addi x11, x11, 1
+	bne x22, x31, fail
+	li x7, 0x2142bda
+	li x21, 0x12345678
+	li x27, 0
+	bge x7, x21, .Lb32
+	addi x27, x27, 1
+.Lb32:
+	addi x27, x27, 2
+	li x30, 475
+	li x31, 0x3
+	bne x27, x31, fail
+	li x5, 0xb3fecef6
+	li x9, 0xb3fecef6
+	li x17, 0
+	bge x5, x9, .Lb33
+	addi x17, x17, 1
+.Lb33:
+	addi x17, x17, 2
+	li x30, 476
+	li x31, 0x2
+	bne x17, x31, fail
+	li x12, 0x122a739c
+	li x7, 0x80000001
+	li x2, 0
+	beq x12, x7, .Lb34
+	addi x2, x2, 1
 .Lb34:
-	addi x11, x11, 2
+	addi x2, x2, 2
 	li x30, 477
 	li x31, 0x3
-	bne x11, x31, fail
-	li x27, 0xefb4edd5
-	li x24, 0xffffffff
-	li x15, 0
-	bgeu x27, x24, .Lb35
-	addi x15, x15, 1
+	bne x31, x2, fail
+	li x8, 0xf4322472
+	li x7, 0xf4322472
+	li x17, 0
+	bge x8, x7, .Lb35
+	addi x17, x17, 1
 .Lb35:
-	addi x15, x15, 2
+	addi x17, x17, 2
 	li x30, 478
-	li x31, 0x3
-	bne x15, x31, fail
-	li x14, 0x7fffffff
-	li x19, 0xbed3a577
-	li x9, 0
-	bltu x14, x19, .Lb36
-	addi x9, x9, 1
-.Lb36:
-	addi x9, x9, 2
-	li x30, 479
 	li x31, 0x2
-	bne x9, x31, fail
-	li x3, 0x0
-	li x21, 0x7fffffff
+	bne x31, x17, fail
+	li x25, 0x4c76cbe6
+	li x20, 0xcde8b346
 	li x19, 0
-	bge x3, x21, .Lb37
+	bgeu x25, x20, .Lb36
+	addi x19, x19, 1
+.Lb36:
+	addi x19, x19, 2
+	li x30, 479
+	li x31, 0x3
+	bne x31, x19, fail
+	li x4, 0xe8232f1c
+	li x25, 0xe8232f1c
+	li x19, 0
+	bge x4, x25, .Lb37
 	addi x19, x19, 1
 .Lb37:
 	addi x19, x19, 2
 	li x30, 480
-	li x31, 0x3
-	bne x19, x31, fail
-	li x25, 0xf87d8a6e
-	li x24, 0xf87d8a6e
-	li x27, 0
-	bgeu x25, x24, .Lb38
-	addi x27, x27, 1
-.Lb38:
-	addi x27, x27, 2
-	li x30, 481
 	li x31, 0x2
-	bne x27, x31, fail
-	li x20, 0xffffffff
-	li x17, 0x5bc4a132
-	li x21, 0
-	bne x20, x17, .Lb39
-	addi x21, x21, 1
-.Lb39:
-	addi x21, x21, 2
-	li x30, 482
-	li x31, 0x2
-	bne x21, x31, fail
-	li x21, 0xffffffff
-	li x13, 0x2367c634
+	bne x31, x19, fail
+	li x18, 0x16c77bcf
+	li x3, 0x74c42b03
 	li x14, 0
-	bne x21, x13, .Lb40
+	beq x18, x3, .Lb38
 	addi x14, x14, 1
-.Lb40:
+.Lb38:
 	addi x14, x14, 2
-	li x30, 483
-	li x31, 0x2
-	bne x14, x31, fail
-	li x3, 0x7fff
-	li x1, 0x7fff
-	li x12, 0
-	blt x3, x1, .Lb41
-	addi x12, x12, 1
-.Lb41:
-	addi x12, x12, 2
-	li x30, 484
+	li x30, 481
 	li x31, 0x3
-	bne x12, x31, fail
-	li x20, 0x7fffffff
-	li x28, 0x6d179905
-	li x11, 0
-	bge x20, x28, .Lb42
-	addi x11, x11, 1
+	bne x31, x14, fail
+	li x24, 0xffff8000
+	li x12, 0x12345678
+	li x15, 0
+	bltu x24, x12, .Lb39
+	addi x15, x15, 1
+.Lb39:
+	addi x15, x15, 2
+	li x30, 482
+	li x31, 0x3
+	bne x31, x15, fail
+	li x12, 0x76af905c
+	li x1, 0x7fffffff
+	li x10, 0
+	bge x12, x1, .Lb40
+	addi x10, x10, 1
+.Lb40:
+	addi x10, x10, 2
+	li x30, 483
+	li x31, 0x3
+	bne x10, x31, fail
+	li x15, 0x12345678
+	li x26, 0x12345678
+	li x27, 0
+	bgeu x15, x26, .Lb41
+	addi x27, x27, 1
+.Lb41:
+	addi x27, x27, 2
+	li x30, 484
+	li x31, 0x2
+	bne x31, x27, fail
+	li x24, 0x4c9709c6
+	li x11, 0x3820c8f0
+	li x7, 0
+	bgeu x24, x11, .Lb42
+	addi x7, x7, 1
 .Lb42:
-	addi x11, x11, 2
+	addi x7, x7, 2
 	li x30, 485
 	li x31, 0x2
-	bne x11, x31, fail
-	li x28, 0x14c4e0b7
-	li x18, 0x2
-	li x24, 0
-	blt x28, x18, .Lb43
-	addi x24, x24, 1
+	bne x31, x7, fail
+	li x15, 0xb50e7a18
+	li x11, 0xb50e7a18
+	li x23, 0
+	beq x15, x11, .Lb43
+	addi x23, x23, 1
 .Lb43:
-	addi x24, x24, 2
+	addi x23, x23, 2
 	li x30, 486
-	li x31, 0x3
-	bne x24, x31, fail
-	li x1, 0x1740ea9f
-	li x6, 0x1740ea9f
-	li x9, 0
-	blt x1, x6, .Lb44
-	addi x9, x9, 1
+	li x31, 0x2
+	bne x23, x31, fail
+	li x8, 0xe3e55cdc
+	li x28, 0x12345678
+	li x1, 0
+	bltu x8, x28, .Lb44
+	addi x1, x1, 1
 .Lb44:
-	addi x9, x9, 2
+	addi x1, x1, 2
 	li x30, 487
 	li x31, 0x3
-	bne x9, x31, fail
-	li x28, 0x66fa572e
-	li x22, 0xb2bc9302
-	li x9, 0
-	bge x28, x22, .Lb45
-	addi x9, x9, 1
+	bne x1, x31, fail
+	li x4, 0x7fff
+	li x10, 0x62c05b21
+	li x23, 0
+	blt x4, x10, .Lb45
+	addi x23, x23, 1
 .Lb45:
-	addi x9, x9, 2
+	addi x23, x23, 2
 	li x30, 488
 	li x31, 0x2
-	bne x9, x31, fail
-	li x24, 0x1
-	li x11, 0x1238bd4d
-	li x5, 0
-	bltu x24, x11, .Lb46
-	addi x5, x5, 1
+	bne x23, x31, fail
+	li x26, 0x20
+	li x5, 0x0
+	li x25, 0
+	bge x26, x5, .Lb46
+	addi x25, x25, 1
 .Lb46:
-	addi x5, x5, 2
+	addi x25, x25, 2
 	li x30, 489
 	li x31, 0x2
-	bne x5, x31, fail
-	li x12, 0xa12265c8
-	li x25, 0x4a585cff
-	li x22, 0
-	bne x12, x25, .Lb47
-	addi x22, x22, 1
-.Lb47:
-	addi x22, x22, 2
-	li x30, 490
-	li x31, 0x2
-	bne x22, x31, fail
-	li x11, 0x7069fb10
-	li x24, 0x1f
-	li x26, 0
-	beq x11, x24, .Lb48
-	addi x26, x26, 1
-.Lb48:
-	addi x26, x26, 2
-	li x30, 491
-	li x31, 0x3
-	bne x26, x31, fail
-	li x15, 0xc24dff4a
-	li x28, 0xaeff4a20
-	li x22, 0
-	blt x15, x28, .Lb49
-	addi x22, x22, 1
-.Lb49:
-	addi x22, x22, 2
-	li x30, 492
-	li x31, 0x3
-	bne x22, x31, fail
-	li x1, 0x6c6cd812
-	li x25, 0x20
+	bne x25, x31, fail
+	li x28, 0xfa4e4791
+	li x8, 0x20
 	li x18, 0
-	bne x1, x25, .Lb50
+	bge x28, x8, .Lb47
 	addi x18, x18, 1
-.Lb50:
+.Lb47:
 	addi x18, x18, 2
+	li x30, 490
+	li x31, 0x3
+	bne x31, x18, fail
+	li x11, 0x2
+	li x7, 0xbb5ed5f8
+	li x5, 0
+	bltu x11, x7, .Lb48
+	addi x5, x5, 1
+.Lb48:
+	addi x5, x5, 2
+	li x30, 491
+	li x31, 0x2
+	bne x5, x31, fail
+	li x9, 0x20901b1c
+	li x12, 0xffe22b02
+	li x1, 0
+	bne x9, x12, .Lb49
+	addi x1, x1, 1
+.Lb49:
+	addi x1, x1, 2
+	li x30, 492
+	li x31, 0x2
+	bne x31, x1, fail
+	li x23, 0x105288e6
+	li x13, 0x6ecd2eb9
+	li x10, 0
+	bne x23, x13, .Lb50
+	addi x10, x10, 1
+.Lb50:
+	addi x10, x10, 2
 	li x30, 493
 	li x31, 0x2
-	bne x18, x31, fail
-	li x5, 0xf8e23c35
-	li x26, 0xa652b4f
-	li x10, 0
-	bltu x5, x26, .Lb51
-	addi x10, x10, 1
+	bne x31, x10, fail
+	li x6, 0x5c299a0a
+	li x9, 0x80000001
+	li x1, 0
+	blt x6, x9, .Lb51
+	addi x1, x1, 1
 .Lb51:
-	addi x10, x10, 2
+	addi x1, x1, 2
 	li x30, 494
 	li x31, 0x3
-	bne x10, x31, fail
-	li x16, 0x69332f07
-	li x24, 0x20
-	li x10, 0
-	bltu x16, x24, .Lb52
-	addi x10, x10, 1
+	bne x1, x31, fail
+	li x1, 0x7fddb115
+	li x3, 0x7fddb115
+	li x20, 0
+	bne x1, x3, .Lb52
+	addi x20, x20, 1
 .Lb52:
-	addi x10, x10, 2
+	addi x20, x20, 2
 	li x30, 495
 	li x31, 0x3
-	bne x10, x31, fail
-	li x13, 0x9879c997
-	li x18, 0xc772a5b8
-	li x19, 0
-	bltu x13, x18, .Lb53
-	addi x19, x19, 1
+	bne x31, x20, fail
+	li x23, 0xa335330a
+	li x13, 0xa335330a
+	li x26, 0
+	beq x23, x13, .Lb53
+	addi x26, x26, 1
 .Lb53:
-	addi x19, x19, 2
+	addi x26, x26, 2
 	li x30, 496
 	li x31, 0x2
-	bne x19, x31, fail
-	li x13, 0x52f14880
-	li x19, 0x52f14880
-	li x18, 0
-	blt x13, x19, .Lb54
-	addi x18, x18, 1
-.Lb54:
-	addi x18, x18, 2
-	li x30, 497
-	li x31, 0x3
-	bne x18, x31, fail
-	li x19, 0x12345678
-	li x20, 0x12345678
-	li x13, 0
-	bne x19, x20, .Lb55
-	addi x13, x13, 1
-.Lb55:
-	addi x13, x13, 2
-	li x30, 498
-	li x31, 0x3
-	bne x13, x31, fail
-	li x21, 0xffff8000
-	li x24, 0xffff8000
-	li x10, 0
-	bgeu x21, x24, .Lb56
-	addi x10, x10, 1
-.Lb56:
-	addi x10, x10, 2
-	li x30, 499
-	li x31, 0x2
-	bne x10, x31, fail
-	li x1, 0xefa03cb2
-	li x4, 0xfffffffe
-	li x27, 0
-	bge x1, x4, .Lb57
-	addi x27, x27, 1
-.Lb57:
-	addi x27, x27, 2
-	li x30, 500
-	li x31, 0x3
-	bne x27, x31, fail
-	li x5, 0xd7851a24
-	li x15, 0xd7851a24
-	li x8, 0
-	bne x5, x15, .Lb58
-	addi x8, x8, 1
-.Lb58:
-	addi x8, x8, 2
-	li x30, 501
-	li x31, 0x3
-	bne x8, x31, fail
-	li x4, 0x1
-	li x24, 0x1
-	li x2, 0
-	bge x4, x24, .Lb59
-	addi x2, x2, 1
-.Lb59:
-	addi x2, x2, 2
-	li x30, 502
-	li x31, 0x2
-	bne x2, x31, fail
-	li x4, 0xb37dd47
-	li x2, 0x80000000
-	li x27, 0
-	bltu x4, x2, .Lb60
-	addi x27, x27, 1
-.Lb60:
-	addi x27, x27, 2
-	li x30, 503
-	li x31, 0x2
-	bne x27, x31, fail
-	li x19, 0x9d389161
-	li x16, 0x1f
-	li x28, 0
-	blt x19, x16, .Lb61
-	addi x28, x28, 1
-.Lb61:
-	addi x28, x28, 2
-	li x30, 504
-	li x31, 0x2
-	bne x28, x31, fail
-	li x19, 0x20
-	li x22, 0xcc18a763
-	li x6, 0
-	bge x19, x22, .Lb62
-	addi x6, x6, 1
-.Lb62:
-	addi x6, x6, 2
-	li x30, 505
-	li x31, 0x2
-	bne x6, x31, fail
-	li x1, 0x1209d947
-	li x26, 0xcbf7c16
-	li x19, 0
-	bgeu x1, x26, .Lb63
-	addi x19, x19, 1
-.Lb63:
-	addi x19, x19, 2
-	li x30, 506
-	li x31, 0x2
-	bne x19, x31, fail
-	li x22, 0x1
-	li x2, 0x1
-	li x24, 0
-	bgeu x22, x2, .Lb64
-	addi x24, x24, 1
-.Lb64:
-	addi x24, x24, 2
-	li x30, 507
-	li x31, 0x2
-	bne x24, x31, fail
-	li x9, 0x9764e45c
-	li x15, 0xc8da380c
-	li x13, 0
-	bgeu x9, x15, .Lb65
-	addi x13, x13, 1
-.Lb65:
-	addi x13, x13, 2
-	li x30, 508
-	li x31, 0x3
-	bne x13, x31, fail
-	li x21, 0xa51db138
-	li x22, 0xa51db138
-	li x25, 0
-	beq x21, x22, .Lb66
-	addi x25, x25, 1
-.Lb66:
-	addi x25, x25, 2
-	li x30, 509
-	li x31, 0x2
-	bne x25, x31, fail
-	li x15, 0xe2b05b55
-	li x4, 0xffff8000
-	li x14, 0
-	bge x15, x4, .Lb67
-	addi x14, x14, 1
-.Lb67:
-	addi x14, x14, 2
-	li x30, 510
-	li x31, 0x3
-	bne x14, x31, fail
-	li x11, 0x1
-	li x20, 0x36065e21
-	li x5, 0
-	bne x11, x20, .Lb68
-	addi x5, x5, 1
-.Lb68:
-	addi x5, x5, 2
-	li x30, 511
-	li x31, 0x2
-	bne x5, x31, fail
-	li x23, 0x20
-	li x27, 0x20
-	li x16, 0
-	bltu x23, x27, .Lb69
-	addi x16, x16, 1
-.Lb69:
-	addi x16, x16, 2
-	li x30, 512
-	li x31, 0x3
-	bne x16, x31, fail
-	li x15, 0x688d38d7
-	li x4, 0x9fb84b9e
-	li x9, 0
-	bgeu x15, x4, .Lb70
-	addi x9, x9, 1
-.Lb70:
-	addi x9, x9, 2
-	li x30, 513
-	li x31, 0x3
-	bne x9, x31, fail
-	li x8, 0xb7ad74d7
-	li x27, 0xffffffff
-	li x24, 0
-	beq x8, x27, .Lb71
-	addi x24, x24, 1
-.Lb71:
-	addi x24, x24, 2
-	li x30, 514
-	li x31, 0x3
-	bne x24, x31, fail
-	li x17, 0xfffffffe
-	li x5, 0xc5b18ddc
-	li x14, 0
-	bge x17, x5, .Lb72
-	addi x14, x14, 1
-.Lb72:
-	addi x14, x14, 2
-	li x30, 515
-	li x31, 0x2
-	bne x14, x31, fail
-	li x14, 0x7fff
-	li x13, 0x1
-	li x5, 0
-	blt x14, x13, .Lb73
-	addi x5, x5, 1
-.Lb73:
-	addi x5, x5, 2
-	li x30, 516
-	li x31, 0x3
-	bne x5, x31, fail
-	li x6, 0xd2b8980e
-	li x7, 0x3767d29f
-	li x9, 0
-	beq x6, x7, .Lb74
-	addi x9, x9, 1
-.Lb74:
-	addi x9, x9, 2
-	li x30, 517
-	li x31, 0x3
-	bne x9, x31, fail
-	li x5, 0x539736cc
-	li x1, 0x7fff
-	li x8, 0
-	bgeu x5, x1, .Lb75
-	addi x8, x8, 1
-.Lb75:
-	addi x8, x8, 2
-	li x30, 518
-	li x31, 0x2
-	bne x8, x31, fail
-	li x1, 0xe6e4e133
-	li x27, 0x578b038e
-	li x26, 0
-	bgeu x1, x27, .Lb76
-	addi x26, x26, 1
-.Lb76:
-	addi x26, x26, 2
-	li x30, 519
-	li x31, 0x2
-	bne x26, x31, fail
-	li x23, 0x4272db7b
-	li x12, 0x7fffffff
-	li x25, 0
-	bge x23, x12, .Lb77
-	addi x25, x25, 1
-.Lb77:
-	addi x25, x25, 2
-	li x30, 520
-	li x31, 0x3
-	bne x25, x31, fail
-	li x22, 0x0
-	li x26, 0x80000000
-	li x14, 0
-	bge x22, x26, .Lb78
-	addi x14, x14, 1
-.Lb78:
-	addi x14, x14, 2
-	li x30, 521
-	li x31, 0x2
-	bne x14, x31, fail
-	li x20, 0xca0fc2c2
-	li x9, 0xc1053c3b
-	li x25, 0
-	bgeu x20, x9, .Lb79
-	addi x25, x25, 1
-.Lb79:
-	addi x25, x25, 2
-	li x30, 522
-	li x31, 0x2
-	bne x25, x31, fail
-	li x20, 0xedd753dc
-	li x16, 0x3918e532
-	li x12, 0
-	bgeu x20, x16, .Lb80
-	addi x12, x12, 1
-.Lb80:
-	addi x12, x12, 2
-	li x30, 523
-	li x31, 0x2
-	bne x12, x31, fail
-	li x20, 0x1b2eaa5c
-	li x25, 0x2bc9ea0f
-	li x8, 0
-	bgeu x20, x25, .Lb81
-	addi x8, x8, 1
-.Lb81:
-	addi x8, x8, 2
-	li x30, 524
-	li x31, 0x3
-	bne x8, x31, fail
-	li x13, 0x4b3acc8f
-	li x5, 0x1169af55
-	li x24, 0
-	bltu x13, x5, .Lb82
-	addi x24, x24, 1
-.Lb82:
-	addi x24, x24, 2
-	li x30, 525
-	li x31, 0x3
-	bne x24, x31, fail
-	li x14, 0x80000001
-	li x26, 0x1
-	li x21, 0
-	bltu x14, x26, .Lb83
-	addi x21, x21, 1
-.Lb83:
-	addi x21, x21, 2
-	li x30, 526
-	li x31, 0x3
-	bne x21, x31, fail
-	li x18, 0xa8d5bcf8
-	li x25, 0xf7f00f4b
-	li x2, 0
-	bge x18, x25, .Lb84
-	addi x2, x2, 1
-.Lb84:
-	addi x2, x2, 2
-	li x30, 527
-	li x31, 0x3
-	bne x2, x31, fail
-	li x16, 0x2
-	li x5, 0x4dcaccd1
-	li x14, 0
-	bgeu x16, x5, .Lb85
-	addi x14, x14, 1
-.Lb85:
-	addi x14, x14, 2
-	li x30, 528
-	li x31, 0x3
-	bne x14, x31, fail
-	li x10, 0x35fd9618
-	li x16, 0x20
-	li x9, 0
-	bgeu x10, x16, .Lb86
-	addi x9, x9, 1
-.Lb86:
-	addi x9, x9, 2
-	li x30, 529
-	li x31, 0x2
-	bne x9, x31, fail
-	li x13, 0x7fff
-	li x22, 0x42472479
-	li x15, 0
-	bge x13, x22, .Lb87
-	addi x15, x15, 1
-.Lb87:
-	addi x15, x15, 2
-	li x30, 530
-	li x31, 0x3
-	bne x15, x31, fail
-	li x2, 0x7eb0b959
-	li x3, 0x6232478f
-	li x19, 0
-	bne x2, x3, .Lb88
-	addi x19, x19, 1
-.Lb88:
-	addi x19, x19, 2
-	li x30, 531
-	li x31, 0x2
-	bne x19, x31, fail
-	li x24, 0x51251e1b
-	li x10, 0x51251e1b
-	li x2, 0
-	bge x24, x10, .Lb89
-	addi x2, x2, 1
-.Lb89:
-	addi x2, x2, 2
-	li x30, 532
-	li x31, 0x2
-	bne x2, x31, fail
-	li x1, 0xf4af9bd6
-	li x12, 0x2114eae0
-	li x8, 0
-	blt x1, x12, .Lb90
-	addi x8, x8, 1
-.Lb90:
-	addi x8, x8, 2
-	li x30, 533
-	li x31, 0x2
-	bne x8, x31, fail
-	li x2, 0x7fffffff
-	li x11, 0x1
-	li x1, 0
-	bltu x2, x11, .Lb91
-	addi x1, x1, 1
-.Lb91:
-	addi x1, x1, 2
-	li x30, 534
-	li x31, 0x3
-	bne x1, x31, fail
-	li x26, 0x2b20ed94
-	li x22, 0x47f1678d
-	li x20, 0
-	bne x26, x22, .Lb92
-	addi x20, x20, 1
-.Lb92:
-	addi x20, x20, 2
-	li x30, 535
-	li x31, 0x2
-	bne x20, x31, fail
-	li x16, 0x6dc934a1
-	li x13, 0x0
-	li x28, 0
-	bge x16, x13, .Lb93
-	addi x28, x28, 1
-.Lb93:
-	addi x28, x28, 2
-	li x30, 536
-	li x31, 0x2
-	bne x28, x31, fail
-	li x10, 0xa8f4cbec
-	li x14, 0xa8f4cbec
-	li x2, 0
-	bltu x10, x14, .Lb94
-	addi x2, x2, 1
-.Lb94:
-	addi x2, x2, 2
-	li x30, 537
-	li x31, 0x3
-	bne x2, x31, fail
-	li x17, 0x20
-	li x22, 0x9459e274
-	li x3, 0
-	bge x17, x22, .Lb95
-	addi x3, x3, 1
-.Lb95:
-	addi x3, x3, 2
-	li x30, 538
-	li x31, 0x2
-	bne x3, x31, fail
-	li x17, 0x6795e085
-	li x27, 0xffffffff
-	li x16, 0
-	bgeu x17, x27, .Lb96
-	addi x16, x16, 1
-.Lb96:
-	addi x16, x16, 2
-	li x30, 539
-	li x31, 0x3
-	bne x16, x31, fail
-	li x1, 0x6b45df10
-	li x10, 0x7fff
-	li x2, 0
-	beq x1, x10, .Lb97
-	addi x2, x2, 1
-.Lb97:
-	addi x2, x2, 2
-	li x30, 540
-	li x31, 0x3
-	bne x2, x31, fail
-	li x14, 0x2e04f836
-	li x10, 0xb1bdddb7
-	li x4, 0
-	bgeu x14, x10, .Lb98
-	addi x4, x4, 1
-.Lb98:
-	addi x4, x4, 2
-	li x30, 541
-	li x31, 0x3
-	bne x4, x31, fail
-	li x9, 0x7a2b1194
-	li x18, 0x7a2b1194
+	bne x31, x26, fail
+	li x6, 0x38f506cb
+	li x24, 0x46dc0df5
 	li x7, 0
-	bgeu x9, x18, .Lb99
+	bltu x6, x24, .Lb54
 	addi x7, x7, 1
-.Lb99:
+.Lb54:
 	addi x7, x7, 2
-	li x30, 542
+	li x30, 497
 	li x31, 0x2
 	bne x7, x31, fail
-	li x1, 0x7fffffff
-	li x24, 0x4c0e29ce
-	li x13, 0
-	bge x1, x24, .Lb100
-	addi x13, x13, 1
+	li x26, 0x160ded07
+	li x18, 0x160ded07
+	li x8, 0
+	bgeu x26, x18, .Lb55
+	addi x8, x8, 1
+.Lb55:
+	addi x8, x8, 2
+	li x30, 498
+	li x31, 0x2
+	bne x8, x31, fail
+	li x12, 0xcaecbcdd
+	li x6, 0x20
+	li x20, 0
+	bltu x12, x6, .Lb56
+	addi x20, x20, 1
+.Lb56:
+	addi x20, x20, 2
+	li x30, 499
+	li x31, 0x3
+	bne x20, x31, fail
+	li x14, 0xecffce2f
+	li x7, 0x80000001
+	li x3, 0
+	bge x14, x7, .Lb57
+	addi x3, x3, 1
+.Lb57:
+	addi x3, x3, 2
+	li x30, 500
+	li x31, 0x2
+	bne x3, x31, fail
+	li x17, 0x7fffffff
+	li x20, 0x6e2afc25
+	li x21, 0
+	bne x17, x20, .Lb58
+	addi x21, x21, 1
+.Lb58:
+	addi x21, x21, 2
+	li x30, 501
+	li x31, 0x2
+	bne x21, x31, fail
+	li x11, 0xffff8000
+	li x1, 0x72893207
+	li x8, 0
+	blt x11, x1, .Lb59
+	addi x8, x8, 1
+.Lb59:
+	addi x8, x8, 2
+	li x30, 502
+	li x31, 0x2
+	bne x31, x8, fail
+	li x9, 0xadb3ec3d
+	li x23, 0xadb3ec3d
+	li x17, 0
+	blt x9, x23, .Lb60
+	addi x17, x17, 1
+.Lb60:
+	addi x17, x17, 2
+	li x30, 503
+	li x31, 0x3
+	bne x31, x17, fail
+	li x22, 0x4f5f8fe9
+	li x4, 0x4f5f8fe9
+	li x9, 0
+	bge x22, x4, .Lb61
+	addi x9, x9, 1
+.Lb61:
+	addi x9, x9, 2
+	li x30, 504
+	li x31, 0x2
+	bne x31, x9, fail
+	li x8, 0xb4d23986
+	li x15, 0xe8892def
+	li x14, 0
+	beq x8, x15, .Lb62
+	addi x14, x14, 1
+.Lb62:
+	addi x14, x14, 2
+	li x30, 505
+	li x31, 0x3
+	bne x14, x31, fail
+	li x3, 0x5c1fe9bf
+	li x19, 0xe718856a
+	li x14, 0
+	blt x3, x19, .Lb63
+	addi x14, x14, 1
+.Lb63:
+	addi x14, x14, 2
+	li x30, 506
+	li x31, 0x3
+	bne x14, x31, fail
+	li x28, 0x6d909d31
+	li x12, 0xe6902aa8
+	li x18, 0
+	bne x28, x12, .Lb64
+	addi x18, x18, 1
+.Lb64:
+	addi x18, x18, 2
+	li x30, 507
+	li x31, 0x2
+	bne x31, x18, fail
+	li x8, 0x30854e3d
+	li x23, 0x30854e3d
+	li x17, 0
+	beq x8, x23, .Lb65
+	addi x17, x17, 1
+.Lb65:
+	addi x17, x17, 2
+	li x30, 508
+	li x31, 0x2
+	bne x31, x17, fail
+	li x18, 0x2a4b6d52
+	li x2, 0x1f
+	li x21, 0
+	blt x18, x2, .Lb66
+	addi x21, x21, 1
+.Lb66:
+	addi x21, x21, 2
+	li x30, 509
+	li x31, 0x3
+	bne x21, x31, fail
+	li x9, 0x0
+	li x8, 0x0
+	li x12, 0
+	bltu x9, x8, .Lb67
+	addi x12, x12, 1
+.Lb67:
+	addi x12, x12, 2
+	li x30, 510
+	li x31, 0x3
+	bne x12, x31, fail
+	li x28, 0xfffffffe
+	li x2, 0x98045926
+	li x18, 0
+	bne x28, x2, .Lb68
+	addi x18, x18, 1
+.Lb68:
+	addi x18, x18, 2
+	li x30, 511
+	li x31, 0x2
+	bne x18, x31, fail
+	li x22, 0xbb2433a9
+	li x24, 0xfffffffe
+	li x28, 0
+	bne x22, x24, .Lb69
+	addi x28, x28, 1
+.Lb69:
+	addi x28, x28, 2
+	li x30, 512
+	li x31, 0x2
+	bne x28, x31, fail
+	li x22, 0xac1be665
+	li x21, 0xac1be665
+	li x1, 0
+	blt x22, x21, .Lb70
+	addi x1, x1, 1
+.Lb70:
+	addi x1, x1, 2
+	li x30, 513
+	li x31, 0x3
+	bne x31, x1, fail
+	li x7, 0x1
+	li x11, 0x1
+	li x10, 0
+	blt x7, x11, .Lb71
+	addi x10, x10, 1
+.Lb71:
+	addi x10, x10, 2
+	li x30, 514
+	li x31, 0x3
+	bne x10, x31, fail
+	li x15, 0x8eec518f
+	li x13, 0xb2119d8d
+	li x3, 0
+	blt x15, x13, .Lb72
+	addi x3, x3, 1
+.Lb72:
+	addi x3, x3, 2
+	li x30, 515
+	li x31, 0x2
+	bne x31, x3, fail
+	li x10, 0xb8d9d732
+	li x27, 0xb863a166
+	li x14, 0
+	beq x10, x27, .Lb73
+	addi x14, x14, 1
+.Lb73:
+	addi x14, x14, 2
+	li x30, 516
+	li x31, 0x3
+	bne x31, x14, fail
+	li x15, 0xaa6c6801
+	li x8, 0xba5be9fb
+	li x16, 0
+	bne x15, x8, .Lb74
+	addi x16, x16, 1
+.Lb74:
+	addi x16, x16, 2
+	li x30, 517
+	li x31, 0x2
+	bne x16, x31, fail
+	li x19, 0xe5284000
+	li x24, 0x1
+	li x23, 0
+	bgeu x19, x24, .Lb75
+	addi x23, x23, 1
+.Lb75:
+	addi x23, x23, 2
+	li x30, 518
+	li x31, 0x2
+	bne x31, x23, fail
+	li x24, 0x80000001
+	li x27, 0xf0cf21ec
+	li x6, 0
+	beq x24, x27, .Lb76
+	addi x6, x6, 1
+.Lb76:
+	addi x6, x6, 2
+	li x30, 519
+	li x31, 0x3
+	bne x31, x6, fail
+	li x17, 0x6cd3d4b5
+	li x23, 0x1
+	li x6, 0
+	bne x17, x23, .Lb77
+	addi x6, x6, 1
+.Lb77:
+	addi x6, x6, 2
+	li x30, 520
+	li x31, 0x2
+	bne x6, x31, fail
+	li x10, 0x8b2580c3
+	li x16, 0xecb20bc4
+	li x5, 0
+	bge x10, x16, .Lb78
+	addi x5, x5, 1
+.Lb78:
+	addi x5, x5, 2
+	li x30, 521
+	li x31, 0x3
+	bne x5, x31, fail
+	li x12, 0xab2c97fd
+	li x28, 0xffff8000
+	li x7, 0
+	blt x12, x28, .Lb79
+	addi x7, x7, 1
+.Lb79:
+	addi x7, x7, 2
+	li x30, 522
+	li x31, 0x2
+	bne x31, x7, fail
+	li x22, 0x80000001
+	li x20, 0x457bbd4d
+	li x14, 0
+	bgeu x22, x20, .Lb80
+	addi x14, x14, 1
+.Lb80:
+	addi x14, x14, 2
+	li x30, 523
+	li x31, 0x2
+	bne x14, x31, fail
+	li x10, 0x80000000
+	li x17, 0xe4e14f4f
+	li x27, 0
+	blt x10, x17, .Lb81
+	addi x27, x27, 1
+.Lb81:
+	addi x27, x27, 2
+	li x30, 524
+	li x31, 0x2
+	bne x31, x27, fail
+	li x23, 0xe942fd17
+	li x27, 0xfffffffe
+	li x8, 0
+	bge x23, x27, .Lb82
+	addi x8, x8, 1
+.Lb82:
+	addi x8, x8, 2
+	li x30, 525
+	li x31, 0x3
+	bne x8, x31, fail
+	li x3, 0x65e92f10
+	li x6, 0x65e92f10
+	li x15, 0
+	beq x3, x6, .Lb83
+	addi x15, x15, 1
+.Lb83:
+	addi x15, x15, 2
+	li x30, 526
+	li x31, 0x2
+	bne x31, x15, fail
+	li x20, 0xec372e53
+	li x13, 0xec372e53
+	li x9, 0
+	blt x20, x13, .Lb84
+	addi x9, x9, 1
+.Lb84:
+	addi x9, x9, 2
+	li x30, 527
+	li x31, 0x3
+	bne x9, x31, fail
+	li x14, 0x7fffffff
+	li x18, 0xb0415734
+	li x2, 0
+	bge x14, x18, .Lb85
+	addi x2, x2, 1
+.Lb85:
+	addi x2, x2, 2
+	li x30, 528
+	li x31, 0x2
+	bne x31, x2, fail
+	li x16, 0x7fff
+	li x27, 0x7fff
+	li x14, 0
+	bne x16, x27, .Lb86
+	addi x14, x14, 1
+.Lb86:
+	addi x14, x14, 2
+	li x30, 529
+	li x31, 0x3
+	bne x14, x31, fail
+	li x26, 0x80000000
+	li x15, 0x4e65eb80
+	li x2, 0
+	beq x26, x15, .Lb87
+	addi x2, x2, 1
+.Lb87:
+	addi x2, x2, 2
+	li x30, 530
+	li x31, 0x3
+	bne x2, x31, fail
+	li x17, 0x43724060
+	li x11, 0xfffffffe
+	li x18, 0
+	bltu x17, x11, .Lb88
+	addi x18, x18, 1
+.Lb88:
+	addi x18, x18, 2
+	li x30, 531
+	li x31, 0x2
+	bne x31, x18, fail
+	li x16, 0x2
+	li x6, 0x7fff
+	li x10, 0
+	bne x16, x6, .Lb89
+	addi x10, x10, 1
+.Lb89:
+	addi x10, x10, 2
+	li x30, 532
+	li x31, 0x2
+	bne x10, x31, fail
+	li x27, 0x12345678
+	li x15, 0x1f
+	li x25, 0
+	bgeu x27, x15, .Lb90
+	addi x25, x25, 1
+.Lb90:
+	addi x25, x25, 2
+	li x30, 533
+	li x31, 0x2
+	bne x25, x31, fail
+	li x19, 0xd770fd31
+	li x1, 0x20
+	li x26, 0
+	bltu x19, x1, .Lb91
+	addi x26, x26, 1
+.Lb91:
+	addi x26, x26, 2
+	li x30, 534
+	li x31, 0x3
+	bne x26, x31, fail
+	li x28, 0x5a9505f4
+	li x18, 0x78d80c5a
+	li x11, 0
+	blt x28, x18, .Lb92
+	addi x11, x11, 1
+.Lb92:
+	addi x11, x11, 2
+	li x30, 535
+	li x31, 0x2
+	bne x11, x31, fail
+	li x14, 0x80000001
+	li x15, 0x19c04969
+	li x18, 0
+	beq x14, x15, .Lb93
+	addi x18, x18, 1
+.Lb93:
+	addi x18, x18, 2
+	li x30, 536
+	li x31, 0x3
+	bne x31, x18, fail
+	li x12, 0x7fffffff
+	li x26, 0x7fffffff
+	li x25, 0
+	beq x12, x26, .Lb94
+	addi x25, x25, 1
+.Lb94:
+	addi x25, x25, 2
+	li x30, 537
+	li x31, 0x2
+	bne x31, x25, fail
+	li x20, 0x80000000
+	li x11, 0x80000000
+	li x26, 0
+	bge x20, x11, .Lb95
+	addi x26, x26, 1
+.Lb95:
+	addi x26, x26, 2
+	li x30, 538
+	li x31, 0x2
+	bne x31, x26, fail
+	li x7, 0x289e2c1e
+	li x24, 0x1
+	li x26, 0
+	bge x7, x24, .Lb96
+	addi x26, x26, 1
+.Lb96:
+	addi x26, x26, 2
+	li x30, 539
+	li x31, 0x2
+	bne x26, x31, fail
+	li x13, 0x7d9d7fd6
+	li x12, 0x71ce7379
+	li x17, 0
+	bltu x13, x12, .Lb97
+	addi x17, x17, 1
+.Lb97:
+	addi x17, x17, 2
+	li x30, 540
+	li x31, 0x3
+	bne x31, x17, fail
+	li x22, 0xcf12d0d0
+	li x27, 0xcf12d0d0
+	li x5, 0
+	bltu x22, x27, .Lb98
+	addi x5, x5, 1
+.Lb98:
+	addi x5, x5, 2
+	li x30, 541
+	li x31, 0x3
+	bne x5, x31, fail
+	li x28, 0x12345678
+	li x25, 0x12345678
+	li x5, 0
+	bgeu x28, x25, .Lb99
+	addi x5, x5, 1
+.Lb99:
+	addi x5, x5, 2
+	li x30, 542
+	li x31, 0x2
+	bne x31, x5, fail
+	li x13, 0x15b4e8f9
+	li x20, 0x63bb3d0f
+	li x21, 0
+	blt x13, x20, .Lb100
+	addi x21, x21, 1
 .Lb100:
-	addi x13, x13, 2
+	addi x21, x21, 2
 	li x30, 543
 	li x31, 0x2
-	bne x13, x31, fail
-	li x25, 0x2
-	li x23, 0x2
+	bne x31, x21, fail
+	li x16, 0x81059687
+	li x5, 0x47b64507
 	li x22, 0
-	bgeu x25, x23, .Lb101
+	bltu x16, x5, .Lb101
 	addi x22, x22, 1
 .Lb101:
 	addi x22, x22, 2
 	li x30, 544
-	li x31, 0x2
-	bne x22, x31, fail
-	li x22, 0x87e0f91b
-	li x1, 0x7fffffff
-	li x17, 0
-	bltu x22, x1, .Lb102
-	addi x17, x17, 1
-.Lb102:
-	addi x17, x17, 2
-	li x30, 545
 	li x31, 0x3
-	bne x17, x31, fail
-	li x24, 0xcc48d73b
-	li x25, 0xdaa6ad1
-	li x13, 0
-	blt x24, x25, .Lb103
-	addi x13, x13, 1
-.Lb103:
-	addi x13, x13, 2
-	li x30, 546
+	bne x31, x22, fail
+	li x5, 0xfffffffe
+	li x13, 0xffffffff
+	li x15, 0
+	blt x5, x13, .Lb102
+	addi x15, x15, 1
+.Lb102:
+	addi x15, x15, 2
+	li x30, 545
 	li x31, 0x2
-	bne x13, x31, fail
-	li x20, 0x28bffcac
-	li x15, 0x28bffcac
-	li x18, 0
-	bne x20, x15, .Lb104
-	addi x18, x18, 1
+	bne x31, x15, fail
+	li x5, 0xffff8000
+	li x10, 0xffff8000
+	li x19, 0
+	bne x5, x10, .Lb103
+	addi x19, x19, 1
+.Lb103:
+	addi x19, x19, 2
+	li x30, 546
+	li x31, 0x3
+	bne x31, x19, fail
+	li x21, 0x7d5ea575
+	li x24, 0x20
+	li x3, 0
+	bltu x21, x24, .Lb104
+	addi x3, x3, 1
 .Lb104:
-	addi x18, x18, 2
+	addi x3, x3, 2
 	li x30, 547
 	li x31, 0x3
-	bne x18, x31, fail
-	li x9, 0x12345678
-	li x27, 0x20
-	li x13, 0
-	bltu x9, x27, .Lb105
-	addi x13, x13, 1
+	bne x31, x3, fail
+	li x22, 0x12345678
+	li x3, 0x0
+	li x27, 0
+	bltu x22, x3, .Lb105
+	addi x27, x27, 1
 .Lb105:
-	addi x13, x13, 2
+	addi x27, x27, 2
 	li x30, 548
 	li x31, 0x3
-	bne x13, x31, fail
-	li x23, 0x9e958ce9
-	li x21, 0x25aa0cc4
-	li x9, 0
-	bge x23, x21, .Lb106
-	addi x9, x9, 1
+	bne x27, x31, fail
+	li x28, 0xfbd1e41
+	li x14, 0xfbd1e41
+	li x11, 0
+	bge x28, x14, .Lb106
+	addi x11, x11, 1
 .Lb106:
-	addi x9, x9, 2
+	addi x11, x11, 2
 	li x30, 549
-	li x31, 0x3
-	bne x9, x31, fail
-	li x18, 0x4688d2ce
-	li x22, 0xffffffff
-	li x1, 0
-	bgeu x18, x22, .Lb107
-	addi x1, x1, 1
+	li x31, 0x2
+	bne x31, x11, fail
+	li x3, 0x33415780
+	li x12, 0x68e6c653
+	li x4, 0
+	bne x3, x12, .Lb107
+	addi x4, x4, 1
 .Lb107:
-	addi x1, x1, 2
+	addi x4, x4, 2
 	li x30, 550
-	li x31, 0x3
-	bne x1, x31, fail
-	li x21, 0x2
-	li x2, 0x12345678
-	li x20, 0
-	beq x21, x2, .Lb108
-	addi x20, x20, 1
+	li x31, 0x2
+	bne x4, x31, fail
+	li x5, 0x1a00761b
+	li x14, 0xe532ccd
+	li x25, 0
+	bgeu x5, x14, .Lb108
+	addi x25, x25, 1
 .Lb108:
-	addi x20, x20, 2
+	addi x25, x25, 2
 	li x30, 551
-	li x31, 0x3
-	bne x20, x31, fail
-	li x9, 0xfffffffe
-	li x13, 0xfffffffe
-	li x2, 0
-	bge x9, x13, .Lb109
-	addi x2, x2, 1
+	li x31, 0x2
+	bne x31, x25, fail
+	li x17, 0x1
+	li x1, 0x7496c59e
+	li x11, 0
+	bne x17, x1, .Lb109
+	addi x11, x11, 1
 .Lb109:
-	addi x2, x2, 2
+	addi x11, x11, 2
 	li x30, 552
 	li x31, 0x2
-	bne x2, x31, fail
-	li x28, 0xb8370ebd
-	li x12, 0xf379ae93
-	li x13, 0
-	beq x28, x12, .Lb110
-	addi x13, x13, 1
+	bne x31, x11, fail
+	li x10, 0xfffffffe
+	li x6, 0xb3b391c
+	li x25, 0
+	bltu x10, x6, .Lb110
+	addi x25, x25, 1
 .Lb110:
-	addi x13, x13, 2
+	addi x25, x25, 2
 	li x30, 553
 	li x31, 0x3
-	bne x13, x31, fail
-	li x16, 0x495ddd9d
-	li x20, 0x43a65d6f
-	li x5, 0
-	bgeu x16, x20, .Lb111
-	addi x5, x5, 1
+	bne x31, x25, fail
+	li x21, 0x2
+	li x28, 0x7fff
+	li x19, 0
+	bltu x21, x28, .Lb111
+	addi x19, x19, 1
 .Lb111:
-	addi x5, x5, 2
+	addi x19, x19, 2
 	li x30, 554
 	li x31, 0x2
-	bne x5, x31, fail
-	li x9, 0x7fffffff
-	li x3, 0x7fffffff
-	li x25, 0
-	bltu x9, x3, .Lb112
-	addi x25, x25, 1
+	bne x19, x31, fail
+	li x6, 0x21832d60
+	li x25, 0xffffffff
+	li x22, 0
+	bge x6, x25, .Lb112
+	addi x22, x22, 1
 .Lb112:
-	addi x25, x25, 2
+	addi x22, x22, 2
 	li x30, 555
-	li x31, 0x3
-	bne x25, x31, fail
-	li x11, 0xfffffffe
-	li x27, 0xfffffffe
-	li x1, 0
-	blt x11, x27, .Lb113
-	addi x1, x1, 1
+	li x31, 0x2
+	bne x22, x31, fail
+	li x27, 0xec3abd21
+	li x7, 0xec3abd21
+	li x19, 0
+	bltu x27, x7, .Lb113
+	addi x19, x19, 1
 .Lb113:
-	addi x1, x1, 2
+	addi x19, x19, 2
 	li x30, 556
 	li x31, 0x3
-	bne x1, x31, fail
-	li x14, 0x7ed21dbd
-	li x25, 0xe8644ac0
-	li x12, 0
-	bne x14, x25, .Lb114
-	addi x12, x12, 1
+	bne x19, x31, fail
+	li x8, 0x1
+	li x13, 0x1
+	li x27, 0
+	bne x8, x13, .Lb114
+	addi x27, x27, 1
 .Lb114:
-	addi x12, x12, 2
+	addi x27, x27, 2
 	li x30, 557
-	li x31, 0x2
-	bne x12, x31, fail
-	li x14, 0xc299325e
-	li x28, 0xc299325e
-	li x13, 0
-	bltu x14, x28, .Lb115
-	addi x13, x13, 1
+	li x31, 0x3
+	bne x31, x27, fail
+	li x27, 0xfffffffe
+	li x18, 0xfffffffe
+	li x4, 0
+	bltu x27, x18, .Lb115
+	addi x4, x4, 1
 .Lb115:
-	addi x13, x13, 2
+	addi x4, x4, 2
 	li x30, 558
 	li x31, 0x3
-	bne x13, x31, fail
-	li x12, 0x14b5c6ba
-	li x19, 0x80000000
-	li x14, 0
-	bgeu x12, x19, .Lb116
-	addi x14, x14, 1
+	bne x4, x31, fail
+	li x1, 0x356db76d
+	li x26, 0x190850f5
+	li x13, 0
+	beq x1, x26, .Lb116
+	addi x13, x13, 1
 .Lb116:
-	addi x14, x14, 2
+	addi x13, x13, 2
 	li x30, 559
 	li x31, 0x3
-	bne x14, x31, fail
-	li x20, 0x7fffffff
-	li x7, 0x7fffffff
-	li x4, 0
-	bne x20, x7, .Lb117
-	addi x4, x4, 1
+	bne x13, x31, fail
+	li x7, 0xfffffffe
+	li x16, 0x2e1e1503
+	li x28, 0
+	bne x7, x16, .Lb117
+	addi x28, x28, 1
 .Lb117:
-	addi x4, x4, 2
+	addi x28, x28, 2
 	li x30, 560
-	li x31, 0x3
-	bne x4, x31, fail
-	li x20, 0x7a4bf8bc
-	li x4, 0x3858ab0d
-	li x23, 0
-	bge x20, x4, .Lb118
-	addi x23, x23, 1
-.Lb118:
-	addi x23, x23, 2
-	li x30, 561
 	li x31, 0x2
-	bne x23, x31, fail
-	li x21, 0x80000001
-	li x16, 0x60df50bd
-	li x19, 0
-	bgeu x21, x16, .Lb119
-	addi x19, x19, 1
+	bne x31, x28, fail
+	li x23, 0xc944555c
+	li x24, 0x7fffffff
+	li x7, 0
+	bge x23, x24, .Lb118
+	addi x7, x7, 1
+.Lb118:
+	addi x7, x7, 2
+	li x30, 561
+	li x31, 0x3
+	bne x31, x7, fail
+	li x23, 0xffffffff
+	li x2, 0x11155832
+	li x7, 0
+	blt x23, x2, .Lb119
+	addi x7, x7, 1
 .Lb119:
-	addi x19, x19, 2
+	addi x7, x7, 2
 	li x30, 562
 	li x31, 0x2
-	bne x19, x31, fail
-	li x9, 0xffffffff
-	li x18, 0x1e978f97
-	li x1, 0
-	bge x9, x18, .Lb120
-	addi x1, x1, 1
+	bne x7, x31, fail
+	li x24, 0x71175984
+	li x20, 0x9875d26e
+	li x21, 0
+	bne x24, x20, .Lb120
+	addi x21, x21, 1
 .Lb120:
-	addi x1, x1, 2
+	addi x21, x21, 2
 	li x30, 563
-	li x31, 0x3
-	bne x1, x31, fail
-	li x10, 0xffffffff
-	li x22, 0xffffffff
-	li x5, 0
-	beq x10, x22, .Lb121
-	addi x5, x5, 1
-.Lb121:
-	addi x5, x5, 2
-	li x30, 564
 	li x31, 0x2
-	bne x5, x31, fail
-	li x5, 0x2
-	li x3, 0x7fff
-	li x7, 0
-	bge x5, x3, .Lb122
-	addi x7, x7, 1
+	bne x31, x21, fail
+	li x25, 0x12345678
+	li x24, 0x84a1c652
+	li x4, 0
+	bgeu x25, x24, .Lb121
+	addi x4, x4, 1
+.Lb121:
+	addi x4, x4, 2
+	li x30, 564
+	li x31, 0x3
+	bne x31, x4, fail
+	li x1, 0x53dd8a5a
+	li x28, 0x53dd8a5a
+	li x24, 0
+	blt x1, x28, .Lb122
+	addi x24, x24, 1
 .Lb122:
-	addi x7, x7, 2
+	addi x24, x24, 2
 	li x30, 565
 	li x31, 0x3
-	bne x7, x31, fail
-	li x6, 0x3772a5b5
-	li x20, 0x7d7f31db
-	li x3, 0
-	bge x6, x20, .Lb123
-	addi x3, x3, 1
+	bne x31, x24, fail
+	li x27, 0xb7e47676
+	li x10, 0xfffffffe
+	li x22, 0
+	bge x27, x10, .Lb123
+	addi x22, x22, 1
 .Lb123:
-	addi x3, x3, 2
+	addi x22, x22, 2
 	li x30, 566
 	li x31, 0x3
-	bne x3, x31, fail
-	li x20, 0x1
-	li x23, 0xffffffff
-	li x5, 0
-	blt x20, x23, .Lb124
-	addi x5, x5, 1
+	bne x31, x22, fail
+	li x10, 0xadb56097
+	li x6, 0xfffffffe
+	li x26, 0
+	bge x10, x6, .Lb124
+	addi x26, x26, 1
 .Lb124:
-	addi x5, x5, 2
+	addi x26, x26, 2
 	li x30, 567
 	li x31, 0x3
-	bne x5, x31, fail
-	li x12, 0x1
-	li x3, 0x92f6c3d0
-	li x17, 0
-	bltu x12, x3, .Lb125
-	addi x17, x17, 1
-.Lb125:
-	addi x17, x17, 2
-	li x30, 568
-	li x31, 0x2
-	bne x17, x31, fail
-	li x19, 0x20
-	li x23, 0xead34344
-	li x18, 0
-	bgeu x19, x23, .Lb126
-	addi x18, x18, 1
-.Lb126:
-	addi x18, x18, 2
-	li x30, 569
-	li x31, 0x3
-	bne x18, x31, fail
-	li x24, 0x8dccb4bf
-	li x14, 0x6f7c1973
-	li x12, 0
-	bge x24, x14, .Lb127
-	addi x12, x12, 1
-.Lb127:
-	addi x12, x12, 2
-	li x30, 570
-	li x31, 0x3
-	bne x12, x31, fail
-	li x6, 0x8fef00c7
-	li x2, 0x20
-	li x25, 0
-	bge x6, x2, .Lb128
-	addi x25, x25, 1
-.Lb128:
-	addi x25, x25, 2
-	li x30, 571
-	li x31, 0x3
-	bne x25, x31, fail
-	li x15, 0xdcec4685
-	li x19, 0xffff8000
-	li x12, 0
-	beq x15, x19, .Lb129
-	addi x12, x12, 1
-.Lb129:
-	addi x12, x12, 2
-	li x30, 572
-	li x31, 0x3
-	bne x12, x31, fail
-	li x7, 0xffffffff
-	li x5, 0x9909b468
-	li x20, 0
-	bgeu x7, x5, .Lb130
-	addi x20, x20, 1
-.Lb130:
-	addi x20, x20, 2
-	li x30, 573
-	li x31, 0x2
-	bne x20, x31, fail
-	li x8, 0x12345678
-	li x28, 0x12345678
-	li x14, 0
-	bge x8, x28, .Lb131
-	addi x14, x14, 1
-.Lb131:
-	addi x14, x14, 2
-	li x30, 574
-	li x31, 0x2
-	bne x14, x31, fail
-	li x21, 0xfffffffe
-	li x23, 0xffffffff
-	li x2, 0
-	bltu x21, x23, .Lb132
-	addi x2, x2, 1
-.Lb132:
-	addi x2, x2, 2
-	li x30, 575
-	li x31, 0x2
-	bne x2, x31, fail
-	li x1, 0x9f10ac59
-	li x25, 0x9f10ac59
-	li x15, 0
-	bgeu x1, x25, .Lb133
-	addi x15, x15, 1
-.Lb133:
-	addi x15, x15, 2
-	li x30, 576
-	li x31, 0x2
-	bne x15, x31, fail
-	li x17, 0xa5c25259
-	li x2, 0xa5c25259
-	li x24, 0
-	bgeu x17, x2, .Lb134
-	addi x24, x24, 1
-.Lb134:
-	addi x24, x24, 2
-	li x30, 577
-	li x31, 0x2
-	bne x24, x31, fail
-	li x16, 0xeec1b37d
-	li x12, 0xed630f90
-	li x18, 0
-	blt x16, x12, .Lb135
-	addi x18, x18, 1
-.Lb135:
-	addi x18, x18, 2
-	li x30, 578
-	li x31, 0x3
-	bne x18, x31, fail
-	li x8, 0x12345678
-	li x17, 0xf6773837
-	li x1, 0
-	blt x8, x17, .Lb136
-	addi x1, x1, 1
-.Lb136:
-	addi x1, x1, 2
-	li x30, 579
-	li x31, 0x3
-	bne x1, x31, fail
-	li x27, 0xf71005ea
-	li x11, 0xa5a80ef9
-	li x2, 0
-	bltu x27, x11, .Lb137
-	addi x2, x2, 1
-.Lb137:
-	addi x2, x2, 2
-	li x30, 580
-	li x31, 0x3
-	bne x2, x31, fail
-	li x5, 0xb3fecef6
-	li x9, 0xb3fecef6
-	li x17, 0
-	bge x5, x9, .Lb138
-	addi x17, x17, 1
-.Lb138:
-	addi x17, x17, 2
-	li x30, 581
-	li x31, 0x2
-	bne x17, x31, fail
-	li x23, 0x832e9d14
-	li x13, 0x832e9d14
+	bne x31, x26, fail
+	li x25, 0x5911fad7
+	li x13, 0x20
 	li x27, 0
-	blt x23, x13, .Lb139
+	beq x25, x13, .Lb125
 	addi x27, x27, 1
-.Lb139:
+.Lb125:
 	addi x27, x27, 2
-	li x30, 582
+	li x30, 568
 	li x31, 0x3
 	bne x27, x31, fail
-	li x7, 0x0
-	li x6, 0x80000001
-	li x8, 0
-	blt x7, x6, .Lb140
-	addi x8, x8, 1
-.Lb140:
-	addi x8, x8, 2
-	li x30, 583
+	li x12, 0xf88dcb97
+	li x2, 0xf88dcb97
+	li x3, 0
+	bne x12, x2, .Lb126
+	addi x3, x3, 1
+.Lb126:
+	addi x3, x3, 2
+	li x30, 569
 	li x31, 0x3
-	bne x8, x31, fail
-	li x16, 0xaae5d06f
-	li x27, 0xedcf6523
-	li x26, 0
-	bge x16, x27, .Lb141
-	addi x26, x26, 1
-.Lb141:
-	addi x26, x26, 2
-	li x30, 584
+	bne x3, x31, fail
+	li x3, 0xbf2c05c0
+	li x2, 0xfd5abb9e
+	li x28, 0
+	bge x3, x2, .Lb127
+	addi x28, x28, 1
+.Lb127:
+	addi x28, x28, 2
+	li x30, 570
 	li x31, 0x3
-	bne x26, x31, fail
-	li x7, 0x8181673d
-	li x10, 0x8181673d
-	li x4, 0
-	bltu x7, x10, .Lb142
-	addi x4, x4, 1
-.Lb142:
-	addi x4, x4, 2
-	li x30, 585
+	bne x31, x28, fail
+	li x12, 0xffff8000
+	li x1, 0xf8b63599
+	li x28, 0
+	bltu x12, x1, .Lb128
+	addi x28, x28, 1
+.Lb128:
+	addi x28, x28, 2
+	li x30, 571
 	li x31, 0x3
-	bne x4, x31, fail
-	li x11, 0xc24e6978
-	li x3, 0xc24e6978
-	li x26, 0
-	bltu x11, x3, .Lb143
-	addi x26, x26, 1
-.Lb143:
-	addi x26, x26, 2
-	li x30, 586
+	bne x28, x31, fail
+	li x9, 0xef715a7
+	li x2, 0x7ad22466
+	li x16, 0
+	bgeu x9, x2, .Lb129
+	addi x16, x16, 1
+.Lb129:
+	addi x16, x16, 2
+	li x30, 572
 	li x31, 0x3
-	bne x26, x31, fail
-	li x27, 0x74c42b03
-	li x18, 0x23e92315
-	li x2, 0
-	bltu x27, x18, .Lb144
-	addi x2, x2, 1
-.Lb144:
-	addi x2, x2, 2
-	li x30, 587
-	li x31, 0x3
-	bne x2, x31, fail
-	li x15, 0x51d52f82
-	li x24, 0x5bd3c3b1
-	li x7, 0
-	bne x15, x24, .Lb145
-	addi x7, x7, 1
-.Lb145:
-	addi x7, x7, 2
-	li x30, 588
+	bne x16, x31, fail
+	li x8, 0x74a8cf29
+	li x6, 0x833e8edc
+	li x17, 0
+	bne x8, x6, .Lb130
+	addi x17, x17, 1
+.Lb130:
+	addi x17, x17, 2
+	li x30, 573
 	li x31, 0x2
-	bne x7, x31, fail
-	li x13, 0xcdb7c116
-	li x12, 0xcdb7c116
-	li x1, 0
-	blt x13, x12, .Lb146
-	addi x1, x1, 1
+	bne x17, x31, fail
+	li x14, 0xffffffff
+	li x19, 0x6babe391
+	li x9, 0
+	bgeu x14, x19, .Lb131
+	addi x9, x9, 1
+.Lb131:
+	addi x9, x9, 2
+	li x30, 574
+	li x31, 0x2
+	bne x31, x9, fail
+	li x15, 0xffffffff
+	li x27, 0x2
+	li x14, 0
+	bge x15, x27, .Lb132
+	addi x14, x14, 1
+.Lb132:
+	addi x14, x14, 2
+	li x30, 575
+	li x31, 0x3
+	bne x14, x31, fail
+	li x24, 0x245c7b46
+	li x16, 0xea8858a6
+	li x28, 0
+	bgeu x24, x16, .Lb133
+	addi x28, x28, 1
+.Lb133:
+	addi x28, x28, 2
+	li x30, 576
+	li x31, 0x3
+	bne x31, x28, fail
+	li x15, 0x1
+	li x4, 0x69d46a60
+	li x21, 0
+	bne x15, x4, .Lb134
+	addi x21, x21, 1
+.Lb134:
+	addi x21, x21, 2
+	li x30, 577
+	li x31, 0x2
+	bne x31, x21, fail
+	li x17, 0xfffffffe
+	li x1, 0x80000000
+	li x5, 0
+	blt x17, x1, .Lb135
+	addi x5, x5, 1
+.Lb135:
+	addi x5, x5, 2
+	li x30, 578
+	li x31, 0x3
+	bne x31, x5, fail
+	li x24, 0x1
+	li x14, 0x1
+	li x17, 0
+	bge x24, x14, .Lb136
+	addi x17, x17, 1
+.Lb136:
+	addi x17, x17, 2
+	li x30, 579
+	li x31, 0x2
+	bne x31, x17, fail
+	li x14, 0x1f
+	li x12, 0x10221ee9
+	li x21, 0
+	bge x14, x12, .Lb137
+	addi x21, x21, 1
+.Lb137:
+	addi x21, x21, 2
+	li x30, 580
+	li x31, 0x3
+	bne x31, x21, fail
+	li x3, 0x53e62088
+	li x17, 0x8e013d3d
+	li x5, 0
+	blt x3, x17, .Lb138
+	addi x5, x5, 1
+.Lb138:
+	addi x5, x5, 2
+	li x30, 581
+	li x31, 0x3
+	bne x5, x31, fail
+	li x20, 0xfa9e0896
+	li x28, 0xfa9e0896
+	li x23, 0
+	beq x20, x28, .Lb139
+	addi x23, x23, 1
+.Lb139:
+	addi x23, x23, 2
+	li x30, 582
+	li x31, 0x2
+	bne x23, x31, fail
+	li x2, 0x2
+	li x3, 0x7fff
+	li x12, 0
+	bltu x2, x3, .Lb140
+	addi x12, x12, 1
+.Lb140:
+	addi x12, x12, 2
+	li x30, 583
+	li x31, 0x2
+	bne x31, x12, fail
+	li x14, 0xaf479535
+	li x13, 0xfffffffe
+	li x16, 0
+	bne x14, x13, .Lb141
+	addi x16, x16, 1
+.Lb141:
+	addi x16, x16, 2
+	li x30, 584
+	li x31, 0x2
+	bne x16, x31, fail
+	li x23, 0x9f93e9fe
+	li x16, 0x2
+	li x9, 0
+	bgeu x23, x16, .Lb142
+	addi x9, x9, 1
+.Lb142:
+	addi x9, x9, 2
+	li x30, 585
+	li x31, 0x2
+	bne x31, x9, fail
+	li x26, 0x20
+	li x16, 0x1f
+	li x12, 0
+	bne x26, x16, .Lb143
+	addi x12, x12, 1
+.Lb143:
+	addi x12, x12, 2
+	li x30, 586
+	li x31, 0x2
+	bne x12, x31, fail
+	li x8, 0x12345678
+	li x11, 0x26b4557e
+	li x25, 0
+	blt x8, x11, .Lb144
+	addi x25, x25, 1
+.Lb144:
+	addi x25, x25, 2
+	li x30, 587
+	li x31, 0x2
+	bne x25, x31, fail
+	li x14, 0xfedfa137
+	li x10, 0xa0260e0d
+	li x9, 0
+	bltu x14, x10, .Lb145
+	addi x9, x9, 1
+.Lb145:
+	addi x9, x9, 2
+	li x30, 588
+	li x31, 0x3
+	bne x9, x31, fail
+	li x24, 0x7ad49fbd
+	li x13, 0x7c656ceb
+	li x15, 0
+	beq x24, x13, .Lb146
+	addi x15, x15, 1
 .Lb146:
-	addi x1, x1, 2
+	addi x15, x15, 2
 	li x30, 589
 	li x31, 0x3
-	bne x1, x31, fail
-	li x4, 0x80000000
-	li x15, 0x1ea0ca9
-	li x26, 0
-	bgeu x4, x15, .Lb147
-	addi x26, x26, 1
+	bne x31, x15, fail
+	li x5, 0x1f
+	li x7, 0x1f
+	li x24, 0
+	blt x5, x7, .Lb147
+	addi x24, x24, 1
 .Lb147:
-	addi x26, x26, 2
+	addi x24, x24, 2
 	li x30, 590
-	li x31, 0x2
-	bne x26, x31, fail
-	li x8, 0x2
-	li x24, 0xa6d859bc
-	li x11, 0
-	blt x8, x24, .Lb148
-	addi x11, x11, 1
+	li x31, 0x3
+	bne x24, x31, fail
+	li x26, 0xe4b76fdb
+	li x15, 0x855db82f
+	li x28, 0
+	beq x26, x15, .Lb148
+	addi x28, x28, 1
 .Lb148:
-	addi x11, x11, 2
+	addi x28, x28, 2
 	li x30, 591
 	li x31, 0x3
-	bne x11, x31, fail
-	li x1, 0x0
-	li x23, 0x0
-	li x6, 0
-	bgeu x1, x23, .Lb149
-	addi x6, x6, 1
+	bne x31, x28, fail
+	li x2, 0xd7913385
+	li x7, 0xd7913385
+	li x23, 0
+	bge x2, x7, .Lb149
+	addi x23, x23, 1
 .Lb149:
-	addi x6, x6, 2
+	addi x23, x23, 2
 	li x30, 592
 	li x31, 0x2
-	bne x6, x31, fail
-	li x15, 20
-	li x11, 0
-.Ll0:
-	addi x11, x11, 3
-	addi x15, x15, -1
-	bnez x15, .Ll0
-	li x30, 593
-	li x31, 0x3c
-	bne x11, x31, fail
-	li x9, 2
-	li x26, 0
-.Ll1:
-	addi x26, x26, 3
-	addi x9, x9, -1
-	bnez x9, .Ll1
-	li x30, 594
-	li x31, 0x6
-	bne x26, x31, fail
-	li x17, 19
-	li x9, 0
-.Ll2:
-	addi x9, x9, 3
-	addi x17, x17, -1
-	bnez x17, .Ll2
-	li x30, 595
-	li x31, 0x39
-	bne x9, x31, fail
-	li x23, 3
-	li x21, 0
-.Ll3:
-	addi x21, x21, 3
-	addi x23, x23, -1
-	bnez x23, .Ll3
-	li x30, 596
-	li x31, 0x9
-	bne x21, x31, fail
-	li x28, 8
-	li x1, 0
-.Ll4:
-	addi x1, x1, 3
-	addi x28, x28, -1
-	bnez x28, .Ll4
-	li x30, 597
-	li x31, 0x18
-	bne x1, x31, fail
-	li x25, 5
-	li x14, 0
-.Ll5:
-	addi x14, x14, 3
-	addi x25, x25, -1
-	bnez x25, .Ll5
-	li x30, 598
-	li x31, 0xf
-	bne x14, x31, fail
-	li x9, 12
-	li x26, 0
-.Ll6:
-	addi x26, x26, 3
-	addi x9, x9, -1
-	bnez x9, .Ll6
-	li x30, 599
-	li x31, 0x24
-	bne x26, x31, fail
-	li x2, 16
-	li x13, 0
-.Ll7:
-	addi x13, x13, 3
-	addi x2, x2, -1
-	bnez x2, .Ll7
-	li x30, 600
-	li x31, 0x30
-	bne x13, x31, fail
+	bne x23, x31, fail
+	li x16, 9
 	li x10, 0
+.Ll0:
+	addi x10, x10, 3
+	addi x16, x16, -1
+	bnez x16, .Ll0
+	li x30, 593
+	li x31, 0x1b
+	bne x10, x31, fail
+	li x7, 3
+	li x1, 0
+.Ll1:
+	addi x1, x1, 3
+	addi x7, x7, -1
+	bnez x7, .Ll1
+	li x30, 594
+	li x31, 0x9
+	bne x31, x1, fail
+	li x13, 11
+	li x26, 0
+.Ll2:
+	addi x26, x26, 3
+	addi x13, x13, -1
+	bnez x13, .Ll2
+	li x30, 595
+	li x31, 0x21
+	bne x26, x31, fail
+	li x27, 10
+	li x14, 0
+.Ll3:
+	addi x14, x14, 3
+	addi x27, x27, -1
+	bnez x27, .Ll3
+	li x30, 596
+	li x31, 0x1e
+	bne x14, x31, fail
+	li x11, 15
+	li x27, 0
+.Ll4:
+	addi x27, x27, 3
+	addi x11, x11, -1
+	bnez x11, .Ll4
+	li x30, 597
+	li x31, 0x2d
+	bne x31, x27, fail
+	li x4, 9
+	li x22, 0
+.Ll5:
+	addi x22, x22, 3
+	addi x4, x4, -1
+	bnez x4, .Ll5
+	li x30, 598
+	li x31, 0x1b
+	bne x22, x31, fail
+	li x7, 10
+	li x24, 0
+.Ll6:
+	addi x24, x24, 3
+	addi x7, x7, -1
+	bnez x7, .Ll6
+	li x30, 599
+	li x31, 0x1e
+	bne x31, x24, fail
+	li x27, 20
+	li x24, 0
+.Ll7:
+	addi x24, x24, 3
+	addi x27, x27, -1
+	bnez x27, .Ll7
+	li x30, 600
+	li x31, 0x3c
+	bne x24, x31, fail
+	li x11, 0
 .Lj0:
-	jal x4, .Lk0
-	li x10, 1
+	jal x9, .Lk0
+	li x11, 1
 .Lk0:
 	li x30, 601
 	li x31, 0x0
-	bne x10, x31, fail
+	bne x11, x31, fail
 	la x29, .Lj0
 	addi x29, x29, 4
 	li x30, 602
-	bne x4, x29, fail
-	li x14, 0
-	la x23, .Lk1
-	addi x23, x23, -8
+	bne x9, x29, fail
+	li x10, 0
+	la x16, .Lk1
+	addi x16, x16, 0
 .Lj1:
-	jalr x23, 8(x23)
-	li x14, 1
+	jalr x15, 1(x16)
+	li x10, 1
 .Lk1:
 	li x30, 603
 	li x31, 0x0
-	bne x14, x31, fail
+	bne x10, x31, fail
 	la x29, .Lj1
 	addi x29, x29, 4
 	li x30, 604
-	bne x23, x29, fail
-	li x14, 0
-	la x19, .Lk2
-	addi x19, x19, 0
+	bne x15, x29, fail
+	li x11, 0
+	la x27, .Lk2
 .Lj2:
-	jalr x19, 1(x19)
-	li x14, 1
+	jalr x15, 0(x27)
+	li x11, 1
 .Lk2:
 	li x30, 605
 	li x31, 0x0
-	bne x14, x31, fail
+	bne x11, x31, fail
 	la x29, .Lj2
 	addi x29, x29, 4
 	li x30, 606
-	bne x19, x29, fail
+	bne x15, x29, fail
 	li x5, 0
 .Lj3:
-	jal x26, .Lk3
+	jal x11, .Lk3
 	li x5, 1
 .Lk3:
 	li x30, 607
@@ -4029,66 +4021,65 @@ _start:
 	la x29, .Lj3
 	addi x29, x29, 4
 	li x30, 608
-	bne x26, x29, fail
-	li x16, 0
-	la x12, .Lk4
-	addi x12, x12, 4
+	bne x11, x29, fail
+	li x6, 0
+	la x21, .Lk4
+	addi x21, x21, 0
 .Lj4:
-	jalr x25, -4(x12)
-	li x16, 1
+	jalr x28, 1(x21)
+	li x6, 1
 .Lk4:
 	li x30, 609
 	li x31, 0x0
-	bne x16, x31, fail
+	bne x31, x6, fail
 	la x29, .Lj4
 	addi x29, x29, 4
 	li x30, 610
-	bne x25, x29, fail
-	li x28, 0
-	la x5, .Lk5
-	addi x5, x5, -8
+	bne x28, x29, fail
+	li x20, 0
+	la x26, .Lk5
 .Lj5:
-	jalr x20, 8(x5)
-	li x28, 1
+	jalr x7, 0(x26)
+	li x20, 1
 .Lk5:
 	li x30, 611
 	li x31, 0x0
-	bne x28, x31, fail
+	bne x31, x20, fail
 	la x29, .Lj5
 	addi x29, x29, 4
 	li x30, 612
-	bne x20, x29, fail
-	li x23, 0
+	bne x7, x29, fail
+	li x16, 0
 .Lj6:
-	jal x20, .Lk6
-	li x23, 1
+	jal x15, .Lk6
+	li x16, 1
 .Lk6:
 	li x30, 613
 	li x31, 0x0
-	bne x23, x31, fail
+	bne x16, x31, fail
 	la x29, .Lj6
 	addi x29, x29, 4
 	li x30, 614
-	bne x20, x29, fail
-	li x11, 0
-	la x24, .Lk7
-	addi x24, x24, -8
+	bne x15, x29, fail
+	li x3, 0
+	la x2, .Lk7
+	addi x2, x2, -8
 .Lj7:
-	jalr x24, 8(x24)
-	li x11, 1
+	jalr x14, 8(x2)
+	li x3, 1
 .Lk7:
 	li x30, 615
 	li x31, 0x0
-	bne x11, x31, fail
+	bne x31, x3, fail
 	la x29, .Lj7
 	addi x29, x29, 4
 	li x30, 616
-	bne x24, x29, fail
+	bne x14, x29, fail
 	li x23, 0
-	la x20, .Lk8
-	addi x20, x20, -4
+	la x5, .Lk8
+	addi x5, x5, 2046
 .Lj8:
-	jalr x20, 4(x20)
+	jalr x18, -2045(x5)
 	li x23, 1
 .Lk8:
 	li x30, 617
@@ -4097,1214 +4088,1215 @@ _start:
 	la x29, .Lj8
 	addi x29, x29, 4
 	li x30, 618
-	bne x20, x29, fail
-	li x20, 0
+	bne x18, x29, fail
+	li x16, 0
 .Lj9:
-	jal x2, .Lk9
-	li x20, 1
+	jal x9, .Lk9
+	li x16, 1
 .Lk9:
 	li x30, 619
 	li x31, 0x0
-	bne x20, x31, fail
+	bne x31, x16, fail
 	la x29, .Lj9
 	addi x29, x29, 4
 	li x30, 620
-	bne x2, x29, fail
-	li x12, 0
-	la x23, .Lk10
+	bne x9, x29, fail
+	li x11, 0
+	la x16, .Lk10
+	addi x16, x16, 2046
 .Lj10:
-	jalr x9, 0(x23)
-	li x12, 1
+	jalr x15, -2045(x16)
+	li x11, 1
 .Lk10:
 	li x30, 621
 	li x31, 0x0
-	bne x12, x31, fail
+	bne x31, x11, fail
 	la x29, .Lj10
 	addi x29, x29, 4
 	li x30, 622
-	bne x9, x29, fail
-	li x26, 0
-	la x14, .Lk11
-	addi x14, x14, 2046
+	bne x15, x29, fail
+	li x21, 0
+	la x26, .Lk11
+	addi x26, x26, -4
 .Lj11:
-	jalr x3, -2045(x14)
-	li x26, 1
+	jalr x27, 4(x26)
+	li x21, 1
 .Lk11:
 	li x30, 623
 	li x31, 0x0
-	bne x26, x31, fail
+	bne x31, x21, fail
 	la x29, .Lj11
 	addi x29, x29, 4
 	li x30, 624
-	bne x3, x29, fail
-	li x22, 0
+	bne x27, x29, fail
+	li x24, 0
 .Lj12:
-	jal x10, .Lk12
-	li x22, 1
+	jal x3, .Lk12
+	li x24, 1
 .Lk12:
 	li x30, 625
 	li x31, 0x0
-	bne x22, x31, fail
+	bne x24, x31, fail
 	la x29, .Lj12
 	addi x29, x29, 4
 	li x30, 626
-	bne x10, x29, fail
+	bne x3, x29, fail
 	li x13, 0
-	la x26, .Lk13
-	addi x26, x26, -2046
+	la x24, .Lk13
+	addi x24, x24, -4
 .Lj13:
-	jalr x5, 2047(x26)
+	jalr x27, 4(x24)
 	li x13, 1
 .Lk13:
 	li x30, 627
 	li x31, 0x0
-	bne x13, x31, fail
+	bne x31, x13, fail
 	la x29, .Lj13
 	addi x29, x29, 4
 	li x30, 628
-	bne x5, x29, fail
-	li x16, 0
-	la x1, .Lk14
-	addi x1, x1, 4
+	bne x27, x29, fail
+	li x18, 0
+	la x4, .Lk14
+	addi x4, x4, -4
 .Lj14:
-	jalr x10, -4(x1)
-	li x16, 1
+	jalr x1, 4(x4)
+	li x18, 1
 .Lk14:
 	li x30, 629
 	li x31, 0x0
-	bne x16, x31, fail
+	bne x18, x31, fail
 	la x29, .Lj14
 	addi x29, x29, 4
 	li x30, 630
-	bne x10, x29, fail
-	li x28, 0
+	bne x1, x29, fail
+	li x19, 0
 .Lj15:
-	jal x23, .Lk15
-	li x28, 1
+	jal x22, .Lk15
+	li x19, 1
 .Lk15:
 	li x30, 631
 	li x31, 0x0
-	bne x28, x31, fail
+	bne x31, x19, fail
 	la x29, .Lj15
 	addi x29, x29, 4
 	li x30, 632
-	bne x23, x29, fail
-	li x16, 0
-	la x3, .Lk16
+	bne x22, x29, fail
+	li x14, 0
+	la x12, .Lk16
+	addi x12, x12, -2046
 .Lj16:
-	jalr x2, 0(x3)
-	li x16, 1
+	jalr x12, 2047(x12)
+	li x14, 1
 .Lk16:
 	li x30, 633
 	li x31, 0x0
-	bne x16, x31, fail
+	bne x31, x14, fail
 	la x29, .Lj16
 	addi x29, x29, 4
 	li x30, 634
-	bne x2, x29, fail
-	li x1, 0
-	la x15, .Lk17
-	addi x15, x15, -8
+	bne x12, x29, fail
+	li x21, 0
+	la x25, .Lk17
+	addi x25, x25, 2046
 .Lj17:
-	jalr x15, 8(x15)
-	li x1, 1
+	jalr x28, -2045(x25)
+	li x21, 1
 .Lk17:
 	li x30, 635
 	li x31, 0x0
-	bne x1, x31, fail
+	bne x21, x31, fail
 	la x29, .Lj17
 	addi x29, x29, 4
 	li x30, 636
-	bne x15, x29, fail
-	li x26, 0
+	bne x28, x29, fail
+	li x18, 0
 .Lj18:
-	jal x13, .Lk18
-	li x26, 1
+	jal x20, .Lk18
+	li x18, 1
 .Lk18:
 	li x30, 637
 	li x31, 0x0
-	bne x26, x31, fail
+	bne x31, x18, fail
 	la x29, .Lj18
 	addi x29, x29, 4
 	li x30, 638
-	bne x13, x29, fail
+	bne x20, x29, fail
 	li x20, 0
-	la x24, .Lk19
-	addi x24, x24, -2046
+	la x4, .Lk19
+	addi x4, x4, 2046
 .Lj19:
-	jalr x24, 2047(x24)
+	jalr x15, -2045(x4)
 	li x20, 1
 .Lk19:
 	li x30, 639
 	li x31, 0x0
-	bne x20, x31, fail
+	bne x31, x20, fail
 	la x29, .Lj19
 	addi x29, x29, 4
 	li x30, 640
-	bne x24, x29, fail
-	li x20, 0
-	la x28, .Lk20
-	addi x28, x28, 0
+	bne x15, x29, fail
+	li x9, 0
+	la x5, .Lk20
 .Lj20:
-	jalr x28, 1(x28)
-	li x20, 1
+	jalr x5, 0(x5)
+	li x9, 1
 .Lk20:
 	li x30, 641
 	li x31, 0x0
-	bne x20, x31, fail
+	bne x31, x9, fail
 	la x29, .Lj20
 	addi x29, x29, 4
 	li x30, 642
-	bne x28, x29, fail
-	li x6, 0
+	bne x5, x29, fail
+	li x22, 0
 .Lj21:
-	jal x7, .Lk21
-	li x6, 1
+	jal x24, .Lk21
+	li x22, 1
 .Lk21:
 	li x30, 643
 	li x31, 0x0
-	bne x6, x31, fail
+	bne x22, x31, fail
 	la x29, .Lj21
 	addi x29, x29, 4
 	li x30, 644
-	bne x7, x29, fail
-	li x11, 0
-	la x3, .Lk22
-	addi x3, x3, -2
+	bne x24, x29, fail
+	li x2, 0
+	la x20, .Lk22
+	addi x20, x20, 4
 .Lj22:
-	jalr x3, 3(x3)
-	li x11, 1
+	jalr x11, -4(x20)
+	li x2, 1
 .Lk22:
 	li x30, 645
 	li x31, 0x0
-	bne x11, x31, fail
+	bne x2, x31, fail
 	la x29, .Lj22
 	addi x29, x29, 4
 	li x30, 646
-	bne x3, x29, fail
-	li x18, 0
-	la x26, .Lk23
-	addi x26, x26, -8
+	bne x11, x29, fail
+	li x13, 0
+	la x5, .Lk23
+	addi x5, x5, -4
 .Lj23:
-	jalr x26, 8(x26)
-	li x18, 1
+	jalr x19, 4(x5)
+	li x13, 1
 .Lk23:
 	li x30, 647
 	li x31, 0x0
-	bne x18, x31, fail
+	bne x31, x13, fail
 	la x29, .Lj23
 	addi x29, x29, 4
 	li x30, 648
-	bne x26, x29, fail
-	li x18, 0
+	bne x19, x29, fail
+	li x21, 0
 .Lj24:
-	jal x26, .Lk24
-	li x18, 1
+	jal x16, .Lk24
+	li x21, 1
 .Lk24:
 	li x30, 649
 	li x31, 0x0
-	bne x18, x31, fail
+	bne x21, x31, fail
 	la x29, .Lj24
 	addi x29, x29, 4
 	li x30, 650
-	bne x26, x29, fail
-	li x15, 0
-	la x12, .Lk25
-	addi x12, x12, -4
+	bne x16, x29, fail
+	li x5, 0
+	la x19, .Lk25
+	addi x19, x19, 0
 .Lj25:
-	jalr x18, 4(x12)
-	li x15, 1
+	jalr x11, 1(x19)
+	li x5, 1
 .Lk25:
 	li x30, 651
 	li x31, 0x0
-	bne x15, x31, fail
+	bne x5, x31, fail
 	la x29, .Lj25
 	addi x29, x29, 4
 	li x30, 652
-	bne x18, x29, fail
-	li x20, 0
-	la x16, .Lk26
-	addi x16, x16, -4
+	bne x11, x29, fail
+	li x25, 0
+	la x24, .Lk26
+	addi x24, x24, 4
 .Lj26:
-	jalr x6, 4(x16)
-	li x20, 1
+	jalr x5, -4(x24)
+	li x25, 1
 .Lk26:
 	li x30, 653
 	li x31, 0x0
-	bne x20, x31, fail
+	bne x25, x31, fail
 	la x29, .Lj26
 	addi x29, x29, 4
 	li x30, 654
-	bne x6, x29, fail
-	li x14, 0
+	bne x5, x29, fail
+	li x27, 0
 .Lj27:
-	jal x15, .Lk27
-	li x14, 1
+	jal x1, .Lk27
+	li x27, 1
 .Lk27:
 	li x30, 655
 	li x31, 0x0
-	bne x14, x31, fail
+	bne x31, x27, fail
 	la x29, .Lj27
 	addi x29, x29, 4
 	li x30, 656
-	bne x15, x29, fail
-	li x3, 0
-	la x9, .Lk28
-	addi x9, x9, -4
+	bne x1, x29, fail
+	li x18, 0
+	la x17, .Lk28
+	addi x17, x17, 2046
 .Lj28:
-	jalr x7, 4(x9)
-	li x3, 1
+	jalr x16, -2045(x17)
+	li x18, 1
 .Lk28:
 	li x30, 657
 	li x31, 0x0
-	bne x3, x31, fail
+	bne x18, x31, fail
 	la x29, .Lj28
 	addi x29, x29, 4
 	li x30, 658
-	bne x7, x29, fail
-	li x12, 0
-	la x20, .Lk29
-	addi x20, x20, -2
+	bne x16, x29, fail
+	li x23, 0
+	la x9, .Lk29
+	addi x9, x9, -2046
 .Lj29:
-	jalr x27, 3(x20)
-	li x12, 1
+	jalr x8, 2047(x9)
+	li x23, 1
 .Lk29:
 	li x30, 659
 	li x31, 0x0
-	bne x12, x31, fail
+	bne x31, x23, fail
 	la x29, .Lj29
 	addi x29, x29, 4
 	li x30, 660
-	bne x27, x29, fail
+	bne x8, x29, fail
 	li x28, 0x10120
-	li x17, 0x58febd2a
-	sb x17, -8(x28)
-	li x15, 0x1
-	sw x15, 28(x28)
-	li x14, 0xfffffffe
-	sh x14, -32(x28)
-	li x17, 0xffff8000
-	sw x17, -16(x28)
-	li x10, 0x20
-	sw x10, -28(x28)
-	li x4, 0x20
-	sb x4, -18(x28)
-	li x15, 0x3f70a061
-	sb x15, 25(x28)
-	li x12, 0x7fff
-	sh x12, -26(x28)
-	li x3, 0xe718856a
-	sw x3, 4(x28)
-	li x17, 0xffff8000
-	sw x17, 20(x28)
-	li x24, 0x97391d6e
-	sb x24, 22(x28)
-	li x7, 0xffffffff
-	sh x7, -10(x28)
-	li x17, 0xffff8000
-	sb x17, 12(x28)
-	li x26, 0x2a4b6d52
-	sw x26, 20(x28)
-	li x18, 0x1f
-	sb x18, -32(x28)
-	li x26, 0x171acdb2
-	sb x26, -13(x28)
-	li x12, 0x3ac6e673
-	sb x12, -14(x28)
-	li x12, 0x7fffffff
-	sh x12, -16(x28)
-	li x22, 0xda9b9ff0
-	sw x22, -28(x28)
-	li x10, 0x5080f940
-	sh x10, -28(x28)
-	li x16, 0x7fffffff
-	sh x16, 16(x28)
-	li x21, 0xafee57d3
-	sh x21, -18(x28)
-	li x4, 0x35649f35
-	sb x4, -19(x28)
-	li x7, 0x1
-	sw x7, -32(x28)
-	li x15, 0x4924a114
-	sh x15, -6(x28)
-	li x3, 0x6060db24
-	sh x3, -6(x28)
-	li x24, 0xfffffffe
-	sw x24, -32(x28)
+	li x27, 0x1f
+	sw x27, 8(x28)
+	li x15, 0x1f
+	sb x15, 22(x28)
+	li x24, 0x1
+	sw x24, 12(x28)
+	li x15, 0x67abd83a
+	sw x15, -24(x28)
+	li x15, 0x81aaac08
+	sh x15, 20(x28)
+	li x2, 0xd7bc0503
+	sh x2, 16(x28)
+	li x1, 0x1a65b02e
+	sh x1, 8(x28)
+	li x16, 0xb1425d5d
+	sh x16, -24(x28)
+	li x3, 0xffff8000
+	sb x3, -3(x28)
+	li x23, 0xe794cdcb
+	sb x23, 3(x28)
+	li x21, 0xfffffffe
+	sh x21, -10(x28)
+	li x8, 0xd27df1dc
+	sh x8, 26(x28)
+	li x7, 0x32cd9ea4
+	sb x7, 6(x28)
+	li x13, 0x2
+	sb x13, 7(x28)
+	li x15, 0x2e4eece2
+	sw x15, 4(x28)
+	li x26, 0xf4116059
+	sh x26, -22(x28)
+	li x27, 0x7fff
+	sh x27, 12(x28)
+	li x10, 0x2032204e
+	sw x10, -12(x28)
 	li x27, 0xfffffffe
-	sw x27, 24(x28)
-	li x22, 0xec66c303
-	sh x22, -10(x28)
-	li x15, 0xba5be9fb
-	sh x15, 16(x28)
-	li x10, 0x39ba4f0
-	sb x10, -1(x28)
-	li x12, 0xf0257cad
-	sh x12, 28(x28)
+	sh x27, -14(x28)
+	li x21, 0xffffffff
+	sb x21, -14(x28)
+	li x2, 0xa5efd5e5
+	sb x2, -25(x28)
+	li x21, 0x7fff
+	sh x21, 4(x28)
+	li x7, 0xda632a1c
+	sb x7, -23(x28)
+	li x15, 0x2bf5dc69
+	sb x15, -29(x28)
+	li x12, 0x80818b05
+	sh x12, -26(x28)
+	li x18, 0xf8895868
+	sw x18, 4(x28)
+	li x16, 0x80000001
+	sw x16, -28(x28)
+	li x10, 0xaba04b68
+	sb x10, 8(x28)
+	li x4, 0x43de56cc
+	sb x4, 2(x28)
+	li x6, 0x807bb340
+	sb x6, -32(x28)
+	li x1, 0x0
+	sb x1, 9(x28)
+	li x16, 0xfffffffe
+	sh x16, -2(x28)
+	li x7, 0x1
+	sw x7, 28(x28)
+	li x26, 0x16dbd36b
+	sb x26, 12(x28)
 	li x13, 0x80000001
-	sb x13, -17(x28)
-	li x27, 0xffff8000
-	sb x27, 21(x28)
-	li x5, 0x868edcdd
-	sb x5, 17(x28)
-	li x7, 0x7fff
-	sb x7, -12(x28)
-	li x10, 0x4f5fd33a
-	sw x10, 24(x28)
-	li x14, 0x80000001
-	sh x14, -16(x28)
-	li x7, 0x5d00b896
-	sw x7, 12(x28)
-	li x16, 0x93c1881b
-	sh x16, -6(x28)
-	li x3, 0x80000001
-	sh x3, 20(x28)
-	li x22, 0xae96994b
-	sb x22, 9(x28)
-	li x11, 0xe942fd17
-	sh x11, -4(x28)
-	li x27, 0xffff8000
-	sb x27, -13(x28)
-	li x14, 0xac838704
-	sb x14, 20(x28)
-	li x6, 0x1
-	sh x6, -4(x28)
-	li x8, 0xec372e53
-	sh x8, 16(x28)
-	li x5, 0xfffffffe
-	sh x5, 18(x28)
-	li x10, 0x12345678
-	sb x10, 23(x28)
-	li x24, 0xa9829f6a
-	sw x24, 20(x28)
-	li x6, 0x7fff
-	sw x6, -16(x28)
-	li x2, 0x1c65007c
-	sw x2, 28(x28)
-	li x26, 0xfffffffe
-	sh x26, 8(x28)
-	li x21, 0x1f
-	sh x21, -28(x28)
-	li x6, 0x461a9418
-	sb x6, 1(x28)
-	li x23, 0x16fd85e7
-	sh x23, 10(x28)
-	li x11, 0x623a66e5
-	sb x11, -16(x28)
-	li x25, 0x0
-	sh x25, 28(x28)
-	li x19, 0x9cdbad0f
-	sh x19, -30(x28)
-	li x27, 0x76c1cd2b
-	sb x27, 21(x28)
-	li x19, 0x20
-	sb x19, 17(x28)
-	li x12, 0xffffffff
-	sb x12, 17(x28)
-	li x18, 0x78d80c5a
-	sw x18, -28(x28)
-	li x16, 0x208b1f3e
-	sh x16, -8(x28)
-	lhu x14, 0(x28)
+	sh x13, -14(x28)
+	li x3, 0xddc58c11
+	sh x3, 12(x28)
+	li x24, 0x1
+	sb x24, -3(x28)
+	li x27, 0x20
+	sh x27, 14(x28)
+	li x10, 0x8e6a3e56
+	sw x10, 12(x28)
+	li x6, 0x1fe26cdf
+	sw x6, 4(x28)
+	li x25, 0x2
+	sw x25, 20(x28)
+	li x5, 0x61902df9
+	sb x5, -22(x28)
+	li x20, 0x4198edaa
+	sw x20, -4(x28)
+	li x4, 0x1e098ad3
+	sw x4, 28(x28)
+	li x13, 0xa8bfc1a8
+	sw x13, 12(x28)
+	li x9, 0xa094efb4
+	sb x9, 10(x28)
+	li x22, 0xb8e1150
+	sh x22, -8(x28)
+	li x21, 0x1
+	sh x21, 2(x28)
+	li x21, 0x786b32d9
+	sb x21, -6(x28)
+	li x5, 0x80000001
+	sh x5, -28(x28)
+	li x26, 0x369d8801
+	sh x26, 30(x28)
+	li x4, 0x48b90ddc
+	sh x4, 0(x28)
+	li x25, 0xffffffff
+	sh x25, -4(x28)
+	li x5, 0x7fff
+	sb x5, 21(x28)
+	li x13, 0x77b5349
+	sw x13, -24(x28)
+	li x17, 0x7fff
+	sb x17, 18(x28)
+	li x25, 0x17deb139
+	sh x25, -14(x28)
+	li x16, 0x3315c639
+	sw x16, -4(x28)
+	li x9, 0x51503fa6
+	sh x9, 16(x28)
+	li x27, 0x8627599c
+	sw x27, -32(x28)
+	li x24, 0x7fffffff
+	sw x24, 0(x28)
+	li x9, 0x20
+	sw x9, 16(x28)
+	li x13, 0x80000001
+	sb x13, 20(x28)
+	li x3, 0x20
+	sb x3, 30(x28)
+	lbu x13, 11(x28)
 	li x30, 661
-	li x31, 0x1800
-	bne x14, x31, fail
-	lw x14, -20(x28)
-	li x30, 662
-	li x31, 0x1d33500
-	bne x14, x31, fail
-	lhu x26, 4(x28)
-	li x30, 663
-	li x31, 0x856a
-	bne x26, x31, fail
-	lb x14, -26(x28)
-	li x30, 664
-	li x31, 0xffffffd8
-	bne x14, x31, fail
-	lbu x26, 12(x28)
-	li x30, 665
-	li x31, 0x96
-	bne x26, x31, fail
-	lbu x15, -22(x28)
-	li x30, 666
 	li x31, 0x0
-	bne x15, x31, fail
-	lh x19, -18(x28)
+	bne x31, x13, fail
+	lh x23, 12(x28)
+	li x30, 662
+	li x31, 0xffffc1a8
+	bne x31, x23, fail
+	lh x14, -2(x28)
+	li x30, 663
+	li x31, 0x3315
+	bne x14, x31, fail
+	lbu x20, 19(x28)
+	li x30, 664
+	li x31, 0x0
+	bne x31, x20, fail
+	lb x7, -1(x28)
+	li x30, 665
+	li x31, 0x33
+	bne x31, x7, fail
+	lw x6, 8(x28)
+	li x30, 666
+	li x31, 0xb40068
+	bne x31, x6, fail
+	lbu x2, 21(x28)
 	li x30, 667
-	li x31, 0x1d3
-	bne x19, x31, fail
-	lw x26, 8(x28)
-	li x30, 668
-	li x31, 0x85e7fffe
-	bne x26, x31, fail
-	lb x20, -6(x28)
-	li x30, 669
-	li x31, 0x1b
-	bne x20, x31, fail
-	lh x6, -12(x28)
-	li x30, 670
 	li x31, 0xff
-	bne x6, x31, fail
-	lh x7, -22(x28)
+	bne x31, x2, fail
+	lh x12, 14(x28)
+	li x30, 668
+	li x31, 0xffffa8bf
+	bne x31, x12, fail
+	lhu x12, -4(x28)
+	li x30, 669
+	li x31, 0xc639
+	bne x31, x12, fail
+	lhu x8, -24(x28)
+	li x30, 670
+	li x31, 0x5349
+	bne x31, x8, fail
+	lhu x12, -16(x28)
 	li x30, 671
 	li x31, 0x0
-	bne x7, x31, fail
-	lh x16, -24(x28)
+	bne x31, x12, fail
+	lh x15, -22(x28)
 	li x30, 672
-	li x31, 0x0
-	bne x16, x31, fail
-	lw x27, 24(x28)
+	li x31, 0x77b
+	bne x31, x15, fail
+	lhu x25, 16(x28)
 	li x30, 673
-	li x31, 0x4f5fd33a
-	bne x27, x31, fail
-	lw x13, 24(x28)
-	li x30, 674
-	li x31, 0x4f5fd33a
-	bne x13, x31, fail
-	lh x26, 28(x28)
-	li x30, 675
-	li x31, 0x0
-	bne x26, x31, fail
-	lbu x1, -14(x28)
-	li x30, 676
-	li x31, 0x0
-	bne x1, x31, fail
-	lbu x6, 7(x28)
-	li x30, 677
-	li x31, 0xe7
-	bne x6, x31, fail
-	lbu x25, -6(x28)
-	li x30, 678
-	li x31, 0x1b
+	li x31, 0x20
 	bne x25, x31, fail
-	lbu x15, -1(x28)
+	lhu x22, 26(x28)
+	li x30, 674
+	li x31, 0xf1dc
+	bne x22, x31, fail
+	lb x14, 14(x28)
+	li x30, 675
+	li x31, 0xffffffbf
+	bne x31, x14, fail
+	lh x26, 26(x28)
+	li x30, 676
+	li x31, 0xfffff1dc
+	bne x26, x31, fail
+	lw x5, -32(x28)
+	li x30, 677
+	li x31, 0x8627599c
+	bne x31, x5, fail
+	lbu x8, -20(x28)
+	li x30, 678
+	li x31, 0x0
+	bne x8, x31, fail
+	lbu x15, -9(x28)
 	li x30, 679
-	li x31, 0xf0
+	li x31, 0x20
 	bne x15, x31, fail
-	lbu x16, -22(x28)
+	lb x13, -9(x28)
 	li x30, 680
-	li x31, 0x0
-	bne x16, x31, fail
-	lw x13, 16(x28)
+	li x31, 0x20
+	bne x31, x13, fail
+	lh x10, 20(x28)
 	li x30, 681
-	li x31, 0xfffeff53
-	bne x13, x31, fail
-	lw x18, 20(x28)
+	li x31, 0xffffff01
+	bne x31, x10, fail
+	lhu x2, -22(x28)
 	li x30, 682
-	li x31, 0xa9822b6a
-	bne x18, x31, fail
-	lw x16, 20(x28)
-	li x30, 683
-	li x31, 0xa9822b6a
-	bne x16, x31, fail
-	lh x5, 28(x28)
-	li x30, 684
-	li x31, 0x0
-	bne x5, x31, fail
-	lbu x2, 16(x28)
-	li x30, 685
-	li x31, 0x53
+	li x31, 0x77b
 	bne x2, x31, fail
-	lh x15, -16(x28)
+	lh x26, 6(x28)
+	li x30, 683
+	li x31, 0x1fe2
+	bne x26, x31, fail
+	lw x8, -8(x28)
+	li x30, 684
+	li x31, 0xd91150
+	bne x8, x31, fail
+	lhu x22, 18(x28)
+	li x30, 685
+	li x31, 0x0
+	bne x31, x22, fail
+	lh x20, 4(x28)
 	li x30, 686
-	li x31, 0x7fe5
-	bne x15, x31, fail
-	lbu x13, -13(x28)
+	li x31, 0x6cdf
+	bne x20, x31, fail
+	lb x8, 20(x28)
 	li x30, 687
-	li x31, 0x0
-	bne x13, x31, fail
-	lhu x12, -26(x28)
+	li x31, 0x1
+	bne x31, x8, fail
+	lhu x17, -18(x28)
 	li x30, 688
-	li x31, 0x78d8
-	bne x12, x31, fail
-	lbu x10, -13(x28)
-	li x30, 689
 	li x31, 0x0
-	bne x10, x31, fail
-	lw x11, 28(x28)
+	bne x31, x17, fail
+	lw x2, -24(x28)
+	li x30, 689
+	li x31, 0x77b5349
+	bne x2, x31, fail
+	lbu x3, 24(x28)
 	li x30, 690
-	li x31, 0x1c650000
-	bne x11, x31, fail
-	lbu x22, -24(x28)
+	li x31, 0x0
+	bne x3, x31, fail
+	lb x5, 24(x28)
 	li x30, 691
 	li x31, 0x0
-	bne x22, x31, fail
-	lw x22, 16(x28)
+	bne x5, x31, fail
+	lhu x26, -24(x28)
 	li x30, 692
-	li x31, 0xfffeff53
-	bne x22, x31, fail
-	lb x1, -23(x28)
+	li x31, 0x5349
+	bne x31, x26, fail
+	lbu x5, 31(x28)
 	li x30, 693
-	li x31, 0x0
-	bne x1, x31, fail
-	lb x27, -23(x28)
+	li x31, 0x88
+	bne x31, x5, fail
+	lhu x10, 28(x28)
 	li x30, 694
-	li x31, 0x0
-	bne x27, x31, fail
-	lb x18, -16(x28)
+	li x31, 0x8ad3
+	bne x10, x31, fail
+	lh x20, -18(x28)
 	li x30, 695
-	li x31, 0xffffffe5
-	bne x18, x31, fail
-	lh x7, -26(x28)
+	li x31, 0x0
+	bne x31, x20, fail
+	lw x2, 12(x28)
 	li x30, 696
-	li x31, 0x78d8
-	bne x7, x31, fail
-	lhu x22, 10(x28)
+	li x31, 0xa8bfc1a8
+	bne x2, x31, fail
+	lw x1, -16(x28)
 	li x30, 697
-	li x31, 0x85e7
-	bne x22, x31, fail
-	lh x7, 12(x28)
+	li x31, 0xb1390000
+	bne x31, x1, fail
+	lhu x5, -28(x28)
 	li x30, 698
-	li x31, 0xffffb896
-	bne x7, x31, fail
-	lbu x3, 20(x28)
+	li x31, 0x1
+	bne x5, x31, fail
+	lhu x20, -24(x28)
 	li x30, 699
-	li x31, 0x6a
-	bne x3, x31, fail
-	lh x14, -18(x28)
+	li x31, 0x5349
+	bne x31, x20, fail
+	lh x7, 8(x28)
 	li x30, 700
-	li x31, 0x1d3
-	bne x14, x31, fail
-	lhu x17, 10(x28)
+	li x31, 0x68
+	bne x31, x7, fail
+	lhu x13, -24(x28)
 	li x30, 701
-	li x31, 0x85e7
-	bne x17, x31, fail
-	lb x22, -31(x28)
+	li x31, 0x5349
+	bne x31, x13, fail
+	lh x21, -32(x28)
 	li x30, 702
-	li x31, 0xffffffff
-	bne x22, x31, fail
-	lb x14, -14(x28)
+	li x31, 0x599c
+	bne x31, x21, fail
+	lb x24, 6(x28)
 	li x30, 703
-	li x31, 0x0
-	bne x14, x31, fail
-	lw x7, -8(x28)
+	li x31, 0xffffffe2
+	bne x31, x24, fail
+	lw x1, 16(x28)
 	li x30, 704
-	li x31, 0x881b1f3e
-	bne x7, x31, fail
-	lb x15, -12(x28)
+	li x31, 0x20
+	bne x31, x1, fail
+	lb x27, -21(x28)
 	li x30, 705
-	li x31, 0xffffffff
-	bne x15, x31, fail
-	lw x11, -32(x28)
+	li x31, 0x7
+	bne x27, x31, fail
+	lhu x18, 24(x28)
 	li x30, 706
-	li x31, 0xad0ffffe
-	bne x11, x31, fail
-	lw x22, 4(x28)
+	li x31, 0x0
+	bne x31, x18, fail
+	lw x5, -28(x28)
 	li x30, 707
-	li x31, 0xe718856a
-	bne x22, x31, fail
-	lh x15, -14(x28)
+	li x31, 0x80000001
+	bne x5, x31, fail
+	lw x5, 12(x28)
 	li x30, 708
-	li x31, 0x0
-	bne x15, x31, fail
-	lb x10, -27(x28)
+	li x31, 0xa8bfc1a8
+	bne x31, x5, fail
+	lbu x18, 2(x28)
 	li x30, 709
-	li x31, 0xc
-	bne x10, x31, fail
-	lbu x20, -29(x28)
+	li x31, 0xff
+	bne x31, x18, fail
+	lhu x5, 24(x28)
 	li x30, 710
-	li x31, 0xad
-	bne x20, x31, fail
-	lh x5, -30(x28)
+	li x31, 0x0
+	bne x5, x31, fail
+	lhu x9, 24(x28)
 	li x30, 711
-	li x31, 0xffffad0f
-	bne x5, x31, fail
-	lh x8, -20(x28)
+	li x31, 0x0
+	bne x31, x9, fail
+	lhu x23, 14(x28)
 	li x30, 712
-	li x31, 0x3500
-	bne x8, x31, fail
-	lh x16, 30(x28)
+	li x31, 0xa8bf
+	bne x31, x23, fail
+	lw x1, -24(x28)
 	li x30, 713
-	li x31, 0x1c65
-	bne x16, x31, fail
-	lbu x5, -23(x28)
+	li x31, 0x77b5349
+	bne x1, x31, fail
+	lbu x20, -1(x28)
 	li x30, 714
-	li x31, 0x0
-	bne x5, x31, fail
-	lh x21, -30(x28)
+	li x31, 0x33
+	bne x31, x20, fail
+	lhu x3, -20(x28)
 	li x30, 715
-	li x31, 0xffffad0f
-	bne x21, x31, fail
-	lbu x25, -12(x28)
-	li x30, 716
-	li x31, 0xff
-	bne x25, x31, fail
-	lbu x19, -1(x28)
-	li x30, 717
-	li x31, 0xf0
-	bne x19, x31, fail
-	lw x4, 24(x28)
-	li x30, 718
-	li x31, 0x4f5fd33a
-	bne x4, x31, fail
-	lb x19, -7(x28)
-	li x30, 719
-	li x31, 0x1f
-	bne x19, x31, fail
-	lh x9, -12(x28)
-	li x30, 720
-	li x31, 0xff
-	bne x9, x31, fail
-	lb x10, -22(x28)
-	li x30, 721
-	li x31, 0x0
-	bne x10, x31, fail
-	lbu x27, 16(x28)
-	li x30, 722
-	li x31, 0x53
-	bne x27, x31, fail
-	lh x10, -16(x28)
-	li x30, 723
-	li x31, 0x7fe5
-	bne x10, x31, fail
-	lbu x27, 6(x28)
-	li x30, 724
-	li x31, 0x18
-	bne x27, x31, fail
-	lw x10, -20(x28)
-	li x30, 725
-	li x31, 0x1d33500
-	bne x10, x31, fail
-	lw x25, -20(x28)
-	li x30, 726
-	li x31, 0x1d33500
-	bne x25, x31, fail
-	lbu x13, 24(x28)
-	li x30, 727
-	li x31, 0x3a
-	bne x13, x31, fail
-	lb x26, -29(x28)
-	li x30, 728
-	li x31, 0xffffffad
-	bne x26, x31, fail
-	lhu x21, 28(x28)
-	li x30, 729
-	li x31, 0x0
-	bne x21, x31, fail
-	lb x23, 5(x28)
-	li x30, 730
-	li x31, 0xffffff85
-	bne x23, x31, fail
-	lhu x12, 28(x28)
-	li x30, 731
-	li x31, 0x0
-	bne x12, x31, fail
-	lbu x16, -6(x28)
-	li x30, 732
-	li x31, 0x1b
-	bne x16, x31, fail
-	lw x17, -8(x28)
-	li x30, 733
-	li x31, 0x881b1f3e
-	bne x17, x31, fail
-	lw x5, -4(x28)
-	li x30, 734
-	li x31, 0xf0000001
-	bne x5, x31, fail
-	lhu x23, -8(x28)
-	li x30, 735
-	li x31, 0x1f3e
-	bne x23, x31, fail
-	lh x8, 30(x28)
-	li x30, 736
-	li x31, 0x1c65
-	bne x8, x31, fail
-	lb x27, -1(x28)
-	li x30, 737
-	li x31, 0xfffffff0
-	bne x27, x31, fail
-	lb x3, 14(x28)
-	li x30, 738
 	li x31, 0x0
 	bne x3, x31, fail
-	lb x14, -5(x28)
-	li x30, 739
-	li x31, 0xffffff88
-	bne x14, x31, fail
-	lh x15, 20(x28)
-	li x30, 740
-	li x31, 0x2b6a
-	bne x15, x31, fail
-	lhu x22, 26(x28)
-	li x30, 741
-	li x31, 0x4f5f
-	bne x22, x31, fail
-	lw x12, 24(x28)
-	li x30, 742
-	li x31, 0x4f5fd33a
+	lbu x8, 10(x28)
+	li x30, 716
+	li x31, 0xb4
+	bne x31, x8, fail
+	lbu x18, -12(x28)
+	li x30, 717
+	li x31, 0x4e
+	bne x18, x31, fail
+	lbu x10, -25(x28)
+	li x30, 718
+	li x31, 0x80
+	bne x31, x10, fail
+	lw x12, 8(x28)
+	li x30, 719
+	li x31, 0xb40068
 	bne x12, x31, fail
-	lb x22, -6(x28)
-	li x30, 743
-	li x31, 0x1b
+	lbu x20, -32(x28)
+	li x30, 720
+	li x31, 0x9c
+	bne x31, x20, fail
+	lbu x13, -10(x28)
+	li x30, 721
+	li x31, 0x32
+	bne x13, x31, fail
+	lb x12, 1(x28)
+	li x30, 722
+	li x31, 0xffffffff
+	bne x31, x12, fail
+	lbu x22, 20(x28)
+	li x30, 723
+	li x31, 0x1
 	bne x22, x31, fail
-	lh x27, -16(x28)
-	li x30, 744
-	li x31, 0x7fe5
-	bne x27, x31, fail
-	lw x26, -20(x28)
-	li x30, 745
-	li x31, 0x1d33500
-	bne x26, x31, fail
-	lhu x11, -8(x28)
-	li x30, 746
-	li x31, 0x1f3e
-	bne x11, x31, fail
-	lb x24, -32(x28)
-	li x30, 747
-	li x31, 0xfffffffe
-	bne x24, x31, fail
-	lbu x23, -7(x28)
-	li x30, 748
-	li x31, 0x1f
-	bne x23, x31, fail
-	lhu x10, -8(x28)
-	li x30, 749
-	li x31, 0x1f3e
-	bne x10, x31, fail
-	lh x8, 14(x28)
-	li x30, 750
-	li x31, 0x5d00
-	bne x8, x31, fail
-	lb x20, -1(x28)
-	li x30, 751
-	li x31, 0xfffffff0
+	lbu x22, 21(x28)
+	li x30, 724
+	li x31, 0xff
+	bne x31, x22, fail
+	lhu x2, 16(x28)
+	li x30, 725
+	li x31, 0x20
+	bne x2, x31, fail
+	lb x4, -6(x28)
+	li x30, 726
+	li x31, 0xffffffd9
+	bne x4, x31, fail
+	lbu x20, 18(x28)
+	li x30, 727
+	li x31, 0x0
 	bne x20, x31, fail
-	lh x6, 6(x28)
+	lw x6, -12(x28)
+	li x30, 728
+	li x31, 0x2032204e
+	bne x31, x6, fail
+	lbu x21, 31(x28)
+	li x30, 729
+	li x31, 0x88
+	bne x21, x31, fail
+	lhu x26, -10(x28)
+	li x30, 730
+	li x31, 0x2032
+	bne x31, x26, fail
+	lh x12, 2(x28)
+	li x30, 731
+	li x31, 0x7fff
+	bne x12, x31, fail
+	lw x24, -28(x28)
+	li x30, 732
+	li x31, 0x80000001
+	bne x31, x24, fail
+	lbu x8, 2(x28)
+	li x30, 733
+	li x31, 0xff
+	bne x31, x8, fail
+	lhu x23, 2(x28)
+	li x30, 734
+	li x31, 0x7fff
+	bne x31, x23, fail
+	lh x14, 30(x28)
+	li x30, 735
+	li x31, 0xffff8820
+	bne x31, x14, fail
+	lhu x2, 8(x28)
+	li x30, 736
+	li x31, 0x68
+	bne x2, x31, fail
+	lw x14, -16(x28)
+	li x30, 737
+	li x31, 0xb1390000
+	bne x14, x31, fail
+	lb x14, 21(x28)
+	li x30, 738
+	li x31, 0xffffffff
+	bne x31, x14, fail
+	lw x4, 24(x28)
+	li x30, 739
+	li x31, 0xf1dc0000
+	bne x31, x4, fail
+	lb x7, 18(x28)
+	li x30, 740
+	li x31, 0x0
+	bne x31, x7, fail
+	lbu x17, 23(x28)
+	li x30, 741
+	li x31, 0x0
+	bne x31, x17, fail
+	lw x25, 28(x28)
+	li x30, 742
+	li x31, 0x88208ad3
+	bne x25, x31, fail
+	lb x21, 16(x28)
+	li x30, 743
+	li x31, 0x20
+	bne x31, x21, fail
+	lh x11, 14(x28)
+	li x30, 744
+	li x31, 0xffffa8bf
+	bne x31, x11, fail
+	lhu x7, -2(x28)
+	li x30, 745
+	li x31, 0x3315
+	bne x7, x31, fail
+	lbu x9, -22(x28)
+	li x30, 746
+	li x31, 0x7b
+	bne x31, x9, fail
+	lbu x21, 31(x28)
+	li x30, 747
+	li x31, 0x88
+	bne x21, x31, fail
+	lb x12, 18(x28)
+	li x30, 748
+	li x31, 0x0
+	bne x12, x31, fail
+	lhu x7, 20(x28)
+	li x30, 749
+	li x31, 0xff01
+	bne x7, x31, fail
+	lbu x5, -13(x28)
+	li x30, 750
+	li x31, 0xb1
+	bne x31, x5, fail
+	lw x20, 4(x28)
+	li x30, 751
+	li x31, 0x1fe26cdf
+	bne x31, x20, fail
+	lhu x22, 22(x28)
 	li x30, 752
-	li x31, 0xffffe718
-	bne x6, x31, fail
-	lb x12, -31(x28)
+	li x31, 0x0
+	bne x22, x31, fail
+	lh x8, 0(x28)
 	li x30, 753
 	li x31, 0xffffffff
-	bne x12, x31, fail
-	lbu x27, 17(x28)
+	bne x8, x31, fail
+	lh x19, -28(x28)
 	li x30, 754
-	li x31, 0xff
-	bne x27, x31, fail
-	lhu x25, 26(x28)
+	li x31, 0x1
+	bne x31, x19, fail
+	lb x8, -15(x28)
 	li x30, 755
-	li x31, 0x4f5f
-	bne x25, x31, fail
-	lb x20, -4(x28)
-	li x30, 756
-	li x31, 0x1
-	bne x20, x31, fail
-	lh x3, -26(x28)
-	li x30, 757
-	li x31, 0x78d8
-	bne x3, x31, fail
-	lbu x7, -11(x28)
-	li x30, 758
-	li x31, 0x0
-	bne x7, x31, fail
-	lhu x24, -16(x28)
-	li x30, 759
-	li x31, 0x7fe5
-	bne x24, x31, fail
-	lhu x19, 18(x28)
-	li x30, 760
-	li x31, 0xfffe
-	bne x19, x31, fail
-	lh x2, -22(x28)
-	li x30, 761
-	li x31, 0x0
-	bne x2, x31, fail
-	lw x26, 24(x28)
-	li x30, 762
-	li x31, 0x4f5fd33a
-	bne x26, x31, fail
-	lw x10, 12(x28)
-	li x30, 763
-	li x31, 0x5d00b896
-	bne x10, x31, fail
-	lh x12, 10(x28)
-	li x30, 764
-	li x31, 0xffff85e7
-	bne x12, x31, fail
-	lb x13, -18(x28)
-	li x30, 765
-	li x31, 0xffffffd3
-	bne x13, x31, fail
-	lh x2, 2(x28)
-	li x30, 766
-	li x31, 0x0
-	bne x2, x31, fail
-	lw x9, 28(x28)
-	li x30, 767
-	li x31, 0x1c650000
-	bne x9, x31, fail
-	lb x11, 30(x28)
-	li x30, 768
-	li x31, 0x65
-	bne x11, x31, fail
-	lhu x19, 26(x28)
-	li x30, 769
-	li x31, 0x4f5f
-	bne x19, x31, fail
-	lw x6, -4(x28)
-	li x30, 770
-	li x31, 0xf0000001
-	bne x6, x31, fail
-	lw x13, -28(x28)
-	li x30, 771
-	li x31, 0x78d80c5a
-	bne x13, x31, fail
-	lh x11, -8(x28)
-	li x30, 772
-	li x31, 0x1f3e
-	bne x11, x31, fail
-	lbu x20, -18(x28)
-	li x30, 773
-	li x31, 0xd3
-	bne x20, x31, fail
-	lbu x14, 21(x28)
-	li x30, 774
-	li x31, 0x2b
-	bne x14, x31, fail
-	lw x20, 0(x28)
-	li x30, 775
-	li x31, 0x1800
-	bne x20, x31, fail
-	lbu x9, -21(x28)
-	li x30, 776
-	li x31, 0x0
-	bne x9, x31, fail
-	lbu x19, 3(x28)
-	li x30, 777
-	li x31, 0x0
-	bne x19, x31, fail
-	lbu x27, 26(x28)
-	li x30, 778
-	li x31, 0x5f
-	bne x27, x31, fail
-	lhu x5, -30(x28)
-	li x30, 779
-	li x31, 0xad0f
-	bne x5, x31, fail
-	lh x5, -16(x28)
-	li x30, 780
-	li x31, 0x7fe5
-	bne x5, x31, fail
-	lhu x15, -28(x28)
-	li x30, 781
-	li x31, 0xc5a
-	bne x15, x31, fail
-	lw x17, 28(x28)
-	li x30, 782
-	li x31, 0x1c650000
-	bne x17, x31, fail
-	lb x4, 17(x28)
-	li x30, 783
-	li x31, 0xffffffff
-	bne x4, x31, fail
-	lh x15, 20(x28)
-	li x30, 784
-	li x31, 0x2b6a
-	bne x15, x31, fail
-	lb x26, 22(x28)
-	li x30, 785
-	li x31, 0xffffff82
-	bne x26, x31, fail
-	lhu x9, -30(x28)
-	li x30, 786
-	li x31, 0xad0f
-	bne x9, x31, fail
-	lw x10, -28(x28)
-	li x30, 787
-	li x31, 0x78d80c5a
-	bne x10, x31, fail
-	lh x17, 8(x28)
-	li x30, 788
-	li x31, 0xfffffffe
-	bne x17, x31, fail
-	lb x18, -15(x28)
-	li x30, 789
-	li x31, 0x7f
-	bne x18, x31, fail
-	lb x11, -5(x28)
-	li x30, 790
-	li x31, 0xffffff88
-	bne x11, x31, fail
-	lb x10, -12(x28)
-	li x30, 791
-	li x31, 0xffffffff
-	bne x10, x31, fail
-	lhu x3, -14(x28)
-	li x30, 792
-	li x31, 0x0
-	bne x3, x31, fail
-	lw x17, 28(x28)
-	li x30, 793
-	li x31, 0x1c650000
-	bne x17, x31, fail
-	lb x12, 22(x28)
-	li x30, 794
-	li x31, 0xffffff82
-	bne x12, x31, fail
-	lbu x13, 26(x28)
-	li x30, 795
-	li x31, 0x5f
-	bne x13, x31, fail
-	lw x22, 8(x28)
-	li x30, 796
-	li x31, 0x85e7fffe
-	bne x22, x31, fail
-	lh x18, 30(x28)
-	li x30, 797
-	li x31, 0x1c65
-	bne x18, x31, fail
-	lb x1, -15(x28)
-	li x30, 798
-	li x31, 0x7f
-	bne x1, x31, fail
-	lb x20, -6(x28)
-	li x30, 799
-	li x31, 0x1b
-	bne x20, x31, fail
-	lw x16, 12(x28)
-	li x30, 800
-	li x31, 0x5d00b896
-	bne x16, x31, fail
-	lw x25, -16(x28)
-	li x30, 801
-	li x31, 0x7fe5
-	bne x25, x31, fail
-	lbu x14, -16(x28)
-	li x30, 802
-	li x31, 0xe5
-	bne x14, x31, fail
-	lb x12, -23(x28)
-	li x30, 803
-	li x31, 0x0
-	bne x12, x31, fail
-	lh x24, 0(x28)
-	li x30, 804
-	li x31, 0x1800
-	bne x24, x31, fail
-	lh x10, 14(x28)
-	li x30, 805
-	li x31, 0x5d00
-	bne x10, x31, fail
-	lhu x16, 18(x28)
-	li x30, 806
-	li x31, 0xfffe
-	bne x16, x31, fail
-	lhu x11, 14(x28)
-	li x30, 807
-	li x31, 0x5d00
-	bne x11, x31, fail
-	lw x5, 20(x28)
-	li x30, 808
-	li x31, 0xa9822b6a
-	bne x5, x31, fail
-	lbu x9, 29(x28)
-	li x30, 809
-	li x31, 0x0
-	bne x9, x31, fail
-	lh x19, 22(x28)
-	li x30, 810
-	li x31, 0xffffa982
-	bne x19, x31, fail
-	lhu x10, -26(x28)
-	li x30, 811
-	li x31, 0x78d8
-	bne x10, x31, fail
-	lw x12, 28(x28)
-	li x30, 812
-	li x31, 0x1c650000
-	bne x12, x31, fail
-	lhu x15, -16(x28)
-	li x30, 813
-	li x31, 0x7fe5
-	bne x15, x31, fail
-	lbu x5, 28(x28)
-	li x30, 814
-	li x31, 0x0
-	bne x5, x31, fail
-	lbu x25, 10(x28)
-	li x30, 815
-	li x31, 0xe7
-	bne x25, x31, fail
-	lb x6, 14(x28)
-	li x30, 816
-	li x31, 0x0
-	bne x6, x31, fail
-	lhu x10, 20(x28)
-	li x30, 817
-	li x31, 0x2b6a
-	bne x10, x31, fail
-	lh x20, -4(x28)
-	li x30, 818
-	li x31, 0x1
-	bne x20, x31, fail
-	lb x12, 29(x28)
-	li x30, 819
-	li x31, 0x0
-	bne x12, x31, fail
-	lb x16, 1(x28)
-	li x30, 820
-	li x31, 0x18
-	bne x16, x31, fail
-	lhu x27, 26(x28)
-	li x30, 821
-	li x31, 0x4f5f
-	bne x27, x31, fail
-	lb x9, 22(x28)
-	li x30, 822
-	li x31, 0xffffff82
-	bne x9, x31, fail
-	lhu x11, -14(x28)
-	li x30, 823
-	li x31, 0x0
-	bne x11, x31, fail
-	lbu x24, -6(x28)
-	li x30, 824
-	li x31, 0x1b
-	bne x24, x31, fail
-	lhu x4, -18(x28)
-	li x30, 825
-	li x31, 0x1d3
-	bne x4, x31, fail
-	lh x16, -14(x28)
-	li x30, 826
-	li x31, 0x0
-	bne x16, x31, fail
-	lw x17, 24(x28)
-	li x30, 827
-	li x31, 0x4f5fd33a
-	bne x17, x31, fail
-	lbu x27, 31(x28)
-	li x30, 828
-	li x31, 0x1c
-	bne x27, x31, fail
-	lbu x7, -25(x28)
-	li x30, 829
-	li x31, 0x78
-	bne x7, x31, fail
-	lhu x21, 10(x28)
-	li x30, 830
-	li x31, 0x85e7
-	bne x21, x31, fail
-	lh x10, 30(x28)
-	li x30, 831
-	li x31, 0x1c65
-	bne x10, x31, fail
-	lb x3, 23(x28)
-	li x30, 832
-	li x31, 0xffffffa9
-	bne x3, x31, fail
-	lbu x19, -29(x28)
-	li x30, 833
-	li x31, 0xad
-	bne x19, x31, fail
-	lh x26, 18(x28)
-	li x30, 834
-	li x31, 0xfffffffe
-	bne x26, x31, fail
-	lh x10, -2(x28)
-	li x30, 835
-	li x31, 0xfffff000
-	bne x10, x31, fail
-	lhu x15, 12(x28)
-	li x30, 836
-	li x31, 0xb896
-	bne x15, x31, fail
-	lh x4, 2(x28)
-	li x30, 837
-	li x31, 0x0
-	bne x4, x31, fail
-	lh x27, -28(x28)
-	li x30, 838
-	li x31, 0xc5a
-	bne x27, x31, fail
-	lh x24, -6(x28)
-	li x30, 839
-	li x31, 0xffff881b
-	bne x24, x31, fail
-	lw x20, -20(x28)
-	li x30, 840
-	li x31, 0x1d33500
-	bne x20, x31, fail
-	lh x9, -30(x28)
-	li x30, 841
-	li x31, 0xffffad0f
-	bne x9, x31, fail
-	lh x13, -18(x28)
-	li x30, 842
-	li x31, 0x1d3
-	bne x13, x31, fail
-	lhu x18, 4(x28)
-	li x30, 843
-	li x31, 0x856a
-	bne x18, x31, fail
-	lh x5, 14(x28)
-	li x30, 844
-	li x31, 0x5d00
-	bne x5, x31, fail
-	lhu x4, -26(x28)
-	li x30, 845
-	li x31, 0x78d8
-	bne x4, x31, fail
-	lhu x11, 24(x28)
-	li x30, 846
-	li x31, 0xd33a
-	bne x11, x31, fail
-	lb x21, 27(x28)
-	li x30, 847
-	li x31, 0x4f
-	bne x21, x31, fail
-	lbu x11, -15(x28)
-	li x30, 848
-	li x31, 0x7f
-	bne x11, x31, fail
-	lbu x16, -6(x28)
-	li x30, 849
-	li x31, 0x1b
-	bne x16, x31, fail
-	lbu x12, 4(x28)
-	li x30, 850
-	li x31, 0x6a
-	bne x12, x31, fail
-	lbu x20, -6(x28)
-	li x30, 851
-	li x31, 0x1b
-	bne x20, x31, fail
-	lb x26, 26(x28)
-	li x30, 852
-	li x31, 0x5f
-	bne x26, x31, fail
-	lh x15, 26(x28)
-	li x30, 853
-	li x31, 0x4f5f
-	bne x15, x31, fail
-	lhu x14, 14(x28)
-	li x30, 854
-	li x31, 0x5d00
-	bne x14, x31, fail
-	lhu x8, -24(x28)
-	li x30, 855
 	li x31, 0x0
 	bne x8, x31, fail
-	lh x11, -26(x28)
-	li x30, 856
-	li x31, 0x78d8
-	bne x11, x31, fail
-	lb x18, 17(x28)
-	li x30, 857
-	li x31, 0xffffffff
-	bne x18, x31, fail
-	lhu x5, 10(x28)
-	li x30, 858
-	li x31, 0x85e7
-	bne x5, x31, fail
-	lbu x26, -24(x28)
-	li x30, 859
+	lbu x25, 25(x28)
+	li x30, 756
 	li x31, 0x0
+	bne x25, x31, fail
+	lb x11, 21(x28)
+	li x30, 757
+	li x31, 0xffffffff
+	bne x31, x11, fail
+	lh x7, -24(x28)
+	li x30, 758
+	li x31, 0x5349
+	bne x31, x7, fail
+	lbu x20, 19(x28)
+	li x30, 759
+	li x31, 0x0
+	bne x31, x20, fail
+	lb x7, 27(x28)
+	li x30, 760
+	li x31, 0xfffffff1
+	bne x7, x31, fail
+	lhu x13, -18(x28)
+	li x30, 761
+	li x31, 0x0
+	bne x31, x13, fail
+	lw x15, -4(x28)
+	li x30, 762
+	li x31, 0x3315c639
+	bne x31, x15, fail
+	lw x6, -24(x28)
+	li x30, 763
+	li x31, 0x77b5349
+	bne x31, x6, fail
+	lh x19, -26(x28)
+	li x30, 764
+	li x31, 0xffff8000
+	bne x19, x31, fail
+	lhu x7, 16(x28)
+	li x30, 765
+	li x31, 0x20
+	bne x31, x7, fail
+	lbu x11, -25(x28)
+	li x30, 766
+	li x31, 0x80
+	bne x11, x31, fail
+	lh x18, -10(x28)
+	li x30, 767
+	li x31, 0x2032
+	bne x18, x31, fail
+	lw x2, 20(x28)
+	li x30, 768
+	li x31, 0xff01
+	bne x2, x31, fail
+	lb x14, 7(x28)
+	li x30, 769
+	li x31, 0x1f
+	bne x31, x14, fail
+	lbu x13, -29(x28)
+	li x30, 770
+	li x31, 0x86
+	bne x13, x31, fail
+	lbu x5, 4(x28)
+	li x30, 771
+	li x31, 0xdf
+	bne x5, x31, fail
+	lh x26, -4(x28)
+	li x30, 772
+	li x31, 0xffffc639
+	bne x31, x26, fail
+	lh x20, 24(x28)
+	li x30, 773
+	li x31, 0x0
+	bne x20, x31, fail
+	lbu x7, -26(x28)
+	li x30, 774
+	li x31, 0x0
+	bne x31, x7, fail
+	lh x22, 12(x28)
+	li x30, 775
+	li x31, 0xffffc1a8
+	bne x22, x31, fail
+	lb x3, 18(x28)
+	li x30, 776
+	li x31, 0x0
+	bne x3, x31, fail
+	lbu x10, 13(x28)
+	li x30, 777
+	li x31, 0xc1
+	bne x10, x31, fail
+	lhu x12, 26(x28)
+	li x30, 778
+	li x31, 0xf1dc
+	bne x12, x31, fail
+	lw x25, -8(x28)
+	li x30, 779
+	li x31, 0xd91150
+	bne x31, x25, fail
+	lbu x26, 21(x28)
+	li x30, 780
+	li x31, 0xff
+	bne x31, x26, fail
+	lbu x10, 0(x28)
+	li x30, 781
+	li x31, 0xff
+	bne x31, x10, fail
+	lhu x21, 10(x28)
+	li x30, 782
+	li x31, 0xb4
+	bne x31, x21, fail
+	lb x23, 30(x28)
+	li x30, 783
+	li x31, 0x20
+	bne x23, x31, fail
+	lbu x14, -29(x28)
+	li x30, 784
+	li x31, 0x86
+	bne x14, x31, fail
+	lh x7, 16(x28)
+	li x30, 785
+	li x31, 0x20
+	bne x31, x7, fail
+	lhu x8, -30(x28)
+	li x30, 786
+	li x31, 0x8627
+	bne x31, x8, fail
+	lh x15, 14(x28)
+	li x30, 787
+	li x31, 0xffffa8bf
+	bne x15, x31, fail
+	lb x6, 8(x28)
+	li x30, 788
+	li x31, 0x68
+	bne x6, x31, fail
+	lh x8, 28(x28)
+	li x30, 789
+	li x31, 0xffff8ad3
+	bne x31, x8, fail
+	lw x27, -28(x28)
+	li x30, 790
+	li x31, 0x80000001
+	bne x27, x31, fail
+	lhu x27, 26(x28)
+	li x30, 791
+	li x31, 0xf1dc
+	bne x27, x31, fail
+	lhu x13, -2(x28)
+	li x30, 792
+	li x31, 0x3315
+	bne x13, x31, fail
+	lbu x10, 4(x28)
+	li x30, 793
+	li x31, 0xdf
+	bne x10, x31, fail
+	lb x14, -6(x28)
+	li x30, 794
+	li x31, 0xffffffd9
+	bne x31, x14, fail
+	lh x25, 30(x28)
+	li x30, 795
+	li x31, 0xffff8820
+	bne x25, x31, fail
+	lh x21, -18(x28)
+	li x30, 796
+	li x31, 0x0
+	bne x21, x31, fail
+	lh x26, 8(x28)
+	li x30, 797
+	li x31, 0x68
 	bne x26, x31, fail
-	lh x16, 30(x28)
+	lw x2, 8(x28)
+	li x30, 798
+	li x31, 0xb40068
+	bne x2, x31, fail
+	lh x17, 26(x28)
+	li x30, 799
+	li x31, 0xfffff1dc
+	bne x31, x17, fail
+	lw x25, -4(x28)
+	li x30, 800
+	li x31, 0x3315c639
+	bne x25, x31, fail
+	lhu x3, -18(x28)
+	li x30, 801
+	li x31, 0x0
+	bne x3, x31, fail
+	lh x5, -28(x28)
+	li x30, 802
+	li x31, 0x1
+	bne x31, x5, fail
+	lw x12, 4(x28)
+	li x30, 803
+	li x31, 0x1fe26cdf
+	bne x31, x12, fail
+	lhu x25, -10(x28)
+	li x30, 804
+	li x31, 0x2032
+	bne x25, x31, fail
+	lh x20, -12(x28)
+	li x30, 805
+	li x31, 0x204e
+	bne x20, x31, fail
+	lhu x20, -12(x28)
+	li x30, 806
+	li x31, 0x204e
+	bne x20, x31, fail
+	lhu x10, -18(x28)
+	li x30, 807
+	li x31, 0x0
+	bne x31, x10, fail
+	lb x6, 26(x28)
+	li x30, 808
+	li x31, 0xffffffdc
+	bne x31, x6, fail
+	lhu x21, 30(x28)
+	li x30, 809
+	li x31, 0x8820
+	bne x21, x31, fail
+	lb x18, -29(x28)
+	li x30, 810
+	li x31, 0xffffff86
+	bne x31, x18, fail
+	lhu x8, -16(x28)
+	li x30, 811
+	li x31, 0x0
+	bne x8, x31, fail
+	lw x14, 4(x28)
+	li x30, 812
+	li x31, 0x1fe26cdf
+	bne x31, x14, fail
+	lw x9, 24(x28)
+	li x30, 813
+	li x31, 0xf1dc0000
+	bne x31, x9, fail
+	lw x17, 8(x28)
+	li x30, 814
+	li x31, 0xb40068
+	bne x17, x31, fail
+	lb x14, -9(x28)
+	li x30, 815
+	li x31, 0x20
+	bne x14, x31, fail
+	lh x24, 0(x28)
+	li x30, 816
+	li x31, 0xffffffff
+	bne x31, x24, fail
+	lbu x20, -24(x28)
+	li x30, 817
+	li x31, 0x49
+	bne x20, x31, fail
+	lh x10, -28(x28)
+	li x30, 818
+	li x31, 0x1
+	bne x10, x31, fail
+	lhu x3, -12(x28)
+	li x30, 819
+	li x31, 0x204e
+	bne x31, x3, fail
+	lw x2, -8(x28)
+	li x30, 820
+	li x31, 0xd91150
+	bne x31, x2, fail
+	lw x10, 8(x28)
+	li x30, 821
+	li x31, 0xb40068
+	bne x10, x31, fail
+	lw x19, -4(x28)
+	li x30, 822
+	li x31, 0x3315c639
+	bne x31, x19, fail
+	lbu x21, 23(x28)
+	li x30, 823
+	li x31, 0x0
+	bne x31, x21, fail
+	lh x20, -8(x28)
+	li x30, 824
+	li x31, 0x1150
+	bne x31, x20, fail
+	lhu x1, -10(x28)
+	li x30, 825
+	li x31, 0x2032
+	bne x31, x1, fail
+	lb x3, -30(x28)
+	li x30, 826
+	li x31, 0x27
+	bne x3, x31, fail
+	lh x7, 22(x28)
+	li x30, 827
+	li x31, 0x0
+	bne x31, x7, fail
+	lbu x27, -32(x28)
+	li x30, 828
+	li x31, 0x9c
+	bne x27, x31, fail
+	lbu x13, -25(x28)
+	li x30, 829
+	li x31, 0x80
+	bne x13, x31, fail
+	lh x13, -16(x28)
+	li x30, 830
+	li x31, 0x0
+	bne x31, x13, fail
+	lb x16, 8(x28)
+	li x30, 831
+	li x31, 0x68
+	bne x31, x16, fail
+	lhu x13, -2(x28)
+	li x30, 832
+	li x31, 0x3315
+	bne x31, x13, fail
+	lhu x1, 16(x28)
+	li x30, 833
+	li x31, 0x20
+	bne x1, x31, fail
+	lh x13, -4(x28)
+	li x30, 834
+	li x31, 0xffffc639
+	bne x13, x31, fail
+	lhu x2, 14(x28)
+	li x30, 835
+	li x31, 0xa8bf
+	bne x31, x2, fail
+	lhu x19, 22(x28)
+	li x30, 836
+	li x31, 0x0
+	bne x31, x19, fail
+	lbu x7, 10(x28)
+	li x30, 837
+	li x31, 0xb4
+	bne x7, x31, fail
+	lhu x25, 8(x28)
+	li x30, 838
+	li x31, 0x68
+	bne x31, x25, fail
+	lh x12, 14(x28)
+	li x30, 839
+	li x31, 0xffffa8bf
+	bne x31, x12, fail
+	lhu x23, -16(x28)
+	li x30, 840
+	li x31, 0x0
+	bne x31, x23, fail
+	lb x2, -14(x28)
+	li x30, 841
+	li x31, 0x39
+	bne x31, x2, fail
+	lh x2, 10(x28)
+	li x30, 842
+	li x31, 0xb4
+	bne x2, x31, fail
+	lbu x11, -2(x28)
+	li x30, 843
+	li x31, 0x15
+	bne x31, x11, fail
+	lbu x15, -12(x28)
+	li x30, 844
+	li x31, 0x4e
+	bne x15, x31, fail
+	lh x10, -16(x28)
+	li x30, 845
+	li x31, 0x0
+	bne x31, x10, fail
+	lbu x1, 26(x28)
+	li x30, 846
+	li x31, 0xdc
+	bne x31, x1, fail
+	lb x24, -28(x28)
+	li x30, 847
+	li x31, 0x1
+	bne x24, x31, fail
+	lh x2, -6(x28)
+	li x30, 848
+	li x31, 0xd9
+	bne x31, x2, fail
+	lw x24, 20(x28)
+	li x30, 849
+	li x31, 0xff01
+	bne x24, x31, fail
+	lhu x15, 24(x28)
+	li x30, 850
+	li x31, 0x0
+	bne x31, x15, fail
+	lw x19, -24(x28)
+	li x30, 851
+	li x31, 0x77b5349
+	bne x19, x31, fail
+	lh x25, -4(x28)
+	li x30, 852
+	li x31, 0xffffc639
+	bne x25, x31, fail
+	lb x6, -6(x28)
+	li x30, 853
+	li x31, 0xffffffd9
+	bne x31, x6, fail
+	lhu x21, 18(x28)
+	li x30, 854
+	li x31, 0x0
+	bne x21, x31, fail
+	lw x18, -4(x28)
+	li x30, 855
+	li x31, 0x3315c639
+	bne x31, x18, fail
+	lhu x22, -14(x28)
+	li x30, 856
+	li x31, 0xb139
+	bne x31, x22, fail
+	lb x15, 17(x28)
+	li x30, 857
+	li x31, 0x0
+	bne x15, x31, fail
+	lb x21, 29(x28)
+	li x30, 858
+	li x31, 0xffffff8a
+	bne x21, x31, fail
+	lb x20, -1(x28)
+	li x30, 859
+	li x31, 0x33
+	bne x31, x20, fail
+	lbu x3, 28(x28)
 	li x30, 860
-	li x31, 0x1c65
-	bne x16, x31, fail
+	li x31, 0xd3
+	bne x31, x3, fail
 	li x1, 0x10200
 	li x2, 0x10204
 	sw x2, 0(x1)
@@ -5322,7 +5314,5 @@ _start:
 1:	j 1b
 fail:
 	lui x29, 0xF0000
-	slli x30, x30, 1
-	ori x30, x30, 1
-	sw x30, 0(x29)
+	sw x30, 16(x29)
 2:	j 2b

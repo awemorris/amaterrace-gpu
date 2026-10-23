@@ -2,7 +2,7 @@
 # Generates the self-checking atg_cpu test programs rv32i.S and rv32m.S:
 # every expected value is computed here by a reference model of RV32IM.
 # A program writes 1 to TOHOST (0xF000_0000) when every check passed, or
-# 2*n+1 for the first failing check n.
+# the number n of the first failing check to FAILHOST (0xF000_0010).
 #   python3 -I gen.py OUTDIR   (run by tools/cpu-tests.sh)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import random
@@ -90,7 +90,11 @@ class Prog:
         self.n += 1
         self.emit('li x30, %d' % self.n)
         self.emit('li x31, 0x%x' % (want & M))
-        self.emit('bne %s, x31, fail' % r)
+        # Both operand orders, so that both forwarding paths are used.
+        if self.rnd.random() < 0.5:
+            self.emit('bne %s, x31, fail' % r)
+        else:
+            self.emit('bne x31, %s, fail' % r)
 
     def value(self):
         if self.rnd.random() < 0.4:
@@ -103,10 +107,10 @@ class Prog:
         self.emit('sw x31, 0(x29)')
         self.lines.append('1:\tj 1b')
         self.lines.append('fail:')
+        # FAILHOST (0xF000_0010): any store there is a failure, so a
+        # wrong value computed here cannot look like a pass.
         self.emit('lui x29, 0xF0000')
-        self.emit('slli x30, x30, 1')
-        self.emit('ori x30, x30, 1')
-        self.emit('sw x30, 0(x29)')
+        self.emit('sw x30, 16(x29)')
         self.lines.append('2:\tj 2b')
         return '\n'.join(self.lines) + '\n'
 
@@ -125,9 +129,11 @@ def rr(p, ops, count):
         elif c < 0.3:
             rb = ra
             b = a
-        p.emit('li %s, 0x%x' % (ra, a))
-        if rb != ra:
-            p.emit('li %s, 0x%x' % (rb, b))
+        loads = [(ra, a)] + ([(rb, b)] if rb != ra else [])
+        if p.rnd.random() < 0.5:
+            loads.reverse()
+        for r, v in loads:
+            p.emit('li %s, 0x%x' % (r, v))
         p.emit('%s %s, %s, %s' % (op, rd, ra, rb))
         p.check(rd, alu(op, a, b))
 
