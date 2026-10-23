@@ -12,7 +12,10 @@
  * client port (ZYBO: to its own am_axi_master on HP1; KC705: an MC client
  * of atg_top).
  *
- * Wiring of its children (WS288 p023); see spec/dc/atg_dc.md.
+ * Wiring of its children; see spec/dc/atg_dc.md.  The only clock
+ * crossings: the pixel FIFO (am_afifo), ENABLE and CTRL.RESET to pclk, the
+ * event toggles and the line to gclk (am_sync).  The timing, format and
+ * test pattern are quasi-static and go to pclk directly (atg_dc_regs §7).
  */
 
 `timescale 1ns / 1ps
@@ -74,7 +77,7 @@ module atg_dc #(
 );
 	wire enable, test_pattern, dc_reset, dma_idle;
 	wire [1:0] format;
-	wire [31:0] fb_next, fb_stride, fb_size, fb_base;
+	wire [31:0] fb_next, fb_stride, fb_size, fb_base, scan_sum, scan_words;
 	wire [287:0] timing;
 	wire i2c_we;
 	wire [1:0] i2c_idx;
@@ -102,8 +105,12 @@ module atg_dc #(
 			g_toggles_q <= g_toggles;
 	wire [2:0] g_ev = g_toggles ^ g_toggles_q;
 
-	/* gclk → pclk: ENABLE. */
+	/* gclk → pclk: ENABLE, and CTRL.RESET (a 32-cycle pulse) so that both
+	 * sides of the pixel FIFO are reset together (am_afifo's rule). */
+	wire p_dc_reset;
 	am_sync sync_en (.clk(pclk), .rst_n(prst_n), .d(enable), .q(p_enable));
+	am_sync sync_rst (.clk(pclk), .rst_n(prst_n), .d(dc_reset), .q(p_dc_reset));
+	wire p_rst_n = prst_n && !p_dc_reset;
 
 	/* The current line, approximate (status only). */
 	wire [11:0] g_line;
@@ -119,7 +126,8 @@ module atg_dc #(
 		.fb_stride(fb_stride), .fb_size(fb_size), .timing(timing), .pclk_sel(pclk_sel),
 		.dc_reset(dc_reset),
 		.ev_vsync(g_ev[1]), .ev_flip(g_ev[1]), .ev_underflow(g_ev[2]), .dma_idle(dma_idle),
-		.line(g_line), .fb_base(fb_base), .irq(irq),
+		.line(g_line), .scan_sum(scan_sum), .scan_words(scan_words), .fb_base(fb_base),
+		.irq(irq),
 		.i2c_we(i2c_we), .i2c_idx(i2c_idx), .i2c_wdata(i2c_wdata), .i2c_rdata(i2c_rdata)
 	);
 
@@ -128,6 +136,7 @@ module atg_dc #(
 		.enable(enable), .frame_start(g_ev[0]), .fb_base(fb_base), .fb_stride(fb_stride),
 		.fb_size(fb_size), .format(format),
 		.px_valid(px_w_valid), .px_ready(px_w_ready), .px_data(px_w_data), .idle(dma_idle),
+		.scan_sum(scan_sum), .scan_words(scan_words),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write), .req_line(req_line),
 		.req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata),
@@ -137,12 +146,12 @@ module atg_dc #(
 	am_afifo #(.W(32), .DEPTH_LOG2(FIFO_LOG2)) pixels (
 		.w_clk(clk), .w_rst_n(g_rst_n), .w_valid(px_w_valid), .w_ready(px_w_ready),
 		.w_data(px_w_data),
-		.r_clk(pclk), .r_rst_n(prst_n), .r_valid(px_r_valid), .r_ready(px_r_ready),
+		.r_clk(pclk), .r_rst_n(p_rst_n), .r_valid(px_r_valid), .r_ready(px_r_ready),
 		.r_data(px_r_data)
 	);
 
 	atg_dc_tgen tgen (
-		.clk(pclk), .rst_n(prst_n), .enable(p_enable), .test_pattern(test_pattern),
+		.clk(pclk), .rst_n(p_rst_n), .enable(p_enable), .test_pattern(test_pattern),
 		.format(format), .timing(timing),
 		.px_valid(px_r_valid), .px_ready(px_r_ready), .px_data(px_r_data),
 		.rgb(rgb), .de(de), .hs(hs), .vs(vs),
@@ -156,7 +165,7 @@ module atg_dc #(
 	);
 
 	atg_dc_tmds tmds_enc (
-		.clk(pclk), .rst_n(prst_n), .rgb(rgb), .de(de), .hs(hs), .vs(vs), .tmds(tmds)
+		.clk(pclk), .rst_n(p_rst_n), .rgb(rgb), .de(de), .hs(hs), .vs(vs), .tmds(tmds)
 	);
 
 	/* The parallel output (KC705 ADV7511). */
