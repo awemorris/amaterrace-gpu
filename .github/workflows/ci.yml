@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint and simulation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y verilator iverilog python3
+
+      - name: Lint (Verilator)
+        run: make lint
+
+      - name: Testbenches (Icarus Verilog)
+        run: make sim
+
+      - name: System harness and raster scene (Verilator)
+        run: make verilator
+
+      - name: Keep the raster image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raster-png
+          path: build/verilator/raster.png
+          if-no-files-found: ignore
+
+  openxc7-synth:
+    name: openXC7 synthesis (KC705)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yosys
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yosys
+
+      - name: Synthesize the KC705 top (yosys synth_xilinx)
+        run: make oxc-synth
+
+      - name: Keep the synthesis log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openxc7-synth-log
+          path: build/openxc7/*/yosys.log
+          if-no-files-found: ignore
