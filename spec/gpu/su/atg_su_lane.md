@@ -81,4 +81,4 @@ design §3.4.1 (custom-1 qd/shfl, custom-3 vote/ballot), U27.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Partly implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_lane_tb.v` prints `PASS atg_su_lane.qd`).  qd: qdx = v[lane|1] − v[lane&~1] and qdy = v[lane|2] − v[lane&~2] (the fine derivative, the same value in both lanes of a pair; the design's "lane^1 との差" read this way), fp32 through `atg_su_fadd` of include/atg_su_fp.vh (RNE, denormals flushed); qswap1/2/3 and qbcast are moves.  Not yet (p009, SUBGROUP): shfl/vote/ballot give no result and `PASS atg_su_lane.sub` is not printed.  Open point for that work: staged results come later than SHORT_LAT after their own groups, so atg_su_sb's short interlock and atg_su_wb's one-short-result-per-cycle rule need the lane unit to stop every unit's issue while it emits (unit_ready only stops its own groups).
