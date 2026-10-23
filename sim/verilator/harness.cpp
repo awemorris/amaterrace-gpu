@@ -1,0 +1,310 @@
+/*
+ * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The Verilator system harness (skeleton, WS288 p002): atg_top in the
+ * ZYBO's shape (32-byte lines, 64-bit AXI) with a DDR model on its master
+ * port and a host on its register port that uses include/ghci_regs.h, as
+ * the zedBSD driver will.  The scene: identification, the aperture, a FILL
+ * and a COPY checked against a C++ reference, a word read back through
+ * DBG_ADDR/DATA.  Later Phases add the ring and its commands (design v3),
+ * the ISA model and PNG output here.  Prints "PASS verilator" on success.
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <deque>
+#include <vector>
+
+#include "Vatg_top.h"
+#include "verilated.h"
+
+extern "C" {
+#include "ghci_regs.h"
+}
+
+namespace {
+
+constexpr uint32_t MEM_BYTES = 1u << 20;
+constexpr int BEAT_BYTES = 8;
+constexpr int MAX_CYCLES = 2000000;
+
+struct Burst {
+	uint32_t addr;
+	unsigned len;
+	unsigned beat;
+};
+
+Vatg_top *top;
+std::vector<uint8_t> mem(MEM_BYTES);
+std::deque<Burst> ar_q, aw_q;
+std::deque<int> b_q;
+uint64_t cycles;
+unsigned errors;
+
+uint32_t peek32(uint32_t a)
+{
+	return mem[a] | mem[a + 1] << 8 | mem[a + 2] << 16 | (uint32_t)mem[a + 3] << 24;
+}
+
+void poke32(uint32_t a, uint32_t v)
+{
+	for (int i = 0; i < 4; i++)
+		mem[a + i] = (uint8_t)(v >> (8 * i));
+}
+
+/*
+ * One clock: drive the memory's outputs from its state, see the
+ * handshakes as they stand before the edge, make the edge, then update
+ * the state.
+ */
+void tick()
+{
+	top->m_awready = 1;
+	top->m_arready = 1;
+	top->m_wready = !aw_q.empty();
+	top->m_bvalid = !b_q.empty();
+	top->m_bresp = 0;
+	top->m_rvalid = !ar_q.empty();
+	top->m_rresp = 0;
+	top->m_rlast = 0;
+	top->m_rdata = 0;
+	if (!ar_q.empty()) {
+		const Burst &r = ar_q.front();
+		uint64_t d = 0;
+		for (int i = 0; i < BEAT_BYTES; i++)
+			d |= (uint64_t)mem[(r.addr + r.beat * BEAT_BYTES + i) % MEM_BYTES] << (8 * i);
+		top->m_rdata = d;
+		top->m_rlast = r.beat == r.len;
+	}
+	top->clk = 0;
+	top->eval();
+
+	bool aw = top->m_awvalid && top->m_awready;
+	bool ar = top->m_arvalid && top->m_arready;
+	bool w = top->m_wvalid && top->m_wready;
+	bool b = top->m_bvalid && top->m_bready;
+	bool r = top->m_rvalid && top->m_rready;
+	Burst naw = {top->m_awaddr, top->m_awlen, 0};
+	Burst nar = {top->m_araddr, top->m_arlen, 0};
+	uint64_t wdata = top->m_wdata;
+	unsigned wstrb = top->m_wstrb;
+	bool wlast = top->m_wlast;
+
+	top->clk = 1;
+	top->eval();
+	cycles++;
+
+	if (w) {
+		Burst &cur = aw_q.front();
+		for (int i = 0; i < BEAT_BYTES; i++)
+			if (wstrb >> i & 1)
+				mem[(cur.addr + cur.beat * BEAT_BYTES + i) % MEM_BYTES] =
+				    (uint8_t)(wdata >> (8 * i));
+		if (wlast != (cur.beat == cur.len)) {
+			std::printf("FAIL verilator: WLAST on beat %u of %u\n", cur.beat, cur.len);
+			errors++;
+		}
+		if (cur.beat == cur.len) {
+			aw_q.pop_front();
+			b_q.push_back(0);
+		} else {
+			cur.beat++;
+		}
+	}
+	if (aw)
+		aw_q.push_back(naw);
+	if (b)
+		b_q.pop_front();
+	if (r) {
+		Burst &cur = ar_q.front();
+		if (cur.beat == cur.len)
+			ar_q.pop_front();
+		else
+			cur.beat++;
+	}
+	if (ar)
+		ar_q.push_back(nar);
+	if (cycles > MAX_CYCLES) {
+		std::printf("FAIL verilator: timeout\n");
+		std::exit(1);
+	}
+}
+
+void host_write(uint32_t off, uint32_t value)
+{
+	top->s_awaddr = off;
+	top->s_awid = 1;
+	top->s_awvalid = 1;
+	/* The ready signals are combinational from the slave's state: look at
+	 * them before each edge. */
+	while (true) {
+		top->clk = 0;
+		top->eval();
+		bool ready = top->s_awready;
+		tick();
+		if (ready)
+			break;
+	}
+	top->s_awvalid = 0;
+	top->s_wdata = value;
+	top->s_wstrb = 0xF;
+	top->s_wlast = 1;
+	top->s_wvalid = 1;
+	while (true) {
+		top->clk = 0;
+		top->eval();
+		bool ready = top->s_wready;
+		tick();
+		if (ready)
+			break;
+	}
+	top->s_wvalid = 0;
+	top->s_bready = 1;
+	while (true) {
+		top->clk = 0;
+		top->eval();
+		bool valid = top->s_bvalid;
+		tick();
+		if (valid)
+			break;
+	}
+	top->s_bready = 0;
+}
+
+uint32_t host_read(uint32_t off)
+{
+	top->s_araddr = off;
+	top->s_arid = 2;
+	top->s_arlen = 0;
+	top->s_arvalid = 1;
+	while (true) {
+		top->clk = 0;
+		top->eval();
+		bool ready = top->s_arready;
+		tick();
+		if (ready)
+			break;
+	}
+	top->s_arvalid = 0;
+	top->s_rready = 1;
+	uint32_t data;
+	while (true) {
+		top->clk = 0;
+		top->eval();
+		bool valid = top->s_rvalid;
+		data = top->s_rdata;
+		tick();
+		if (valid)
+			break;
+	}
+	top->s_rready = 0;
+	return data;
+}
+
+void expect(const char *what, uint32_t got, uint32_t want)
+{
+	if (got != want) {
+		std::printf("FAIL verilator: %s = %08x, expected %08x\n", what, got, want);
+		errors++;
+	}
+}
+
+void wait_clear(uint32_t bits)
+{
+	for (int i = 0; i < 100000; i++)
+		if (!(host_read(GHCI_STATUS) & bits))
+			return;
+	std::printf("FAIL verilator: STATUS %08x stays\n", bits);
+	errors++;
+}
+
+void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, unsigned dx,
+    unsigned dy, unsigned sx, unsigned sy, unsigned w, unsigned h, uint32_t color,
+    std::vector<uint8_t> &ref)
+{
+	host_write(GHCI_STATE(GHCI_S_BLT_OP), op);
+	host_write(GHCI_STATE(GHCI_S_BLT_DST_BASE), dst);
+	host_write(GHCI_STATE(GHCI_S_BLT_DST_STRIDE), ds);
+	host_write(GHCI_STATE(GHCI_S_BLT_SRC_BASE), src);
+	host_write(GHCI_STATE(GHCI_S_BLT_SRC_STRIDE), ss);
+	host_write(GHCI_STATE(GHCI_S_BLT_DST_XY), GHCI_XY(dx, dy));
+	host_write(GHCI_STATE(GHCI_S_BLT_SRC_XY), GHCI_XY(sx, sy));
+	host_write(GHCI_STATE(GHCI_S_BLT_SIZE), GHCI_XY(w, h));
+	host_write(GHCI_STATE(GHCI_S_BLT_COLOR), color);
+	host_write(GHCI_STATE(GHCI_S_BLT_CLIP_MAX), 0);
+	host_write(GHCI_KICK, GHCI_KICK_BLIT);
+	wait_clear(GHCI_STATUS_BLT_BUSY);
+	for (unsigned y = 0; y < h; y++)
+		for (unsigned x = 0; x < w; x++) {
+			uint32_t a = dst + (dy + y) * ds + (dx + x) * 4;
+			uint32_t v = color;
+			if (op == GHCI_BLT_COPY) {
+				uint32_t b = src + (sy + y) * ss + (sx + x) * 4;
+				v = ref[b] | ref[b + 1] << 8 | ref[b + 2] << 16 | (uint32_t)ref[b + 3] << 24;
+			}
+			for (int i = 0; i < 4; i++)
+				ref[a + i] = (uint8_t)(v >> (8 * i));
+		}
+}
+
+} // namespace
+
+int main(int argc, char **argv)
+{
+	Verilated::commandArgs(argc, argv);
+	top = new Vatg_top;
+
+	srand(1);
+	for (uint32_t a = 0x10000; a < 0x50000; a += 4)
+		poke32(a, (uint32_t)rand() * 2654435761u);
+	std::vector<uint8_t> ref = mem;
+
+	top->rst_n = 0;
+	top->mem_ready = 1;
+	for (int i = 0; i < 5; i++)
+		tick();
+	top->rst_n = 1;
+	tick();
+
+	expect("GHCI_MAGIC", host_read(GHCI_MAGIC), GHCI_MAGIC_VALUE);
+	expect("GHCI_VERSION", host_read(GHCI_VERSION) >> 16, GHCI_VERSION_MAJOR);
+	expect("VENDOR_ID", host_read(GHCI_VENDOR_ID), GHCI_FOURCC('A', 'M', 'A', 'T'));
+	expect("DEVICE_ID", host_read(GHCI_DEVICE_ID), GHCI_FOURCC('A', 'T', 'G', '1'));
+	uint32_t caps = host_read(GHCI_CAPS);
+	expect("CAPS.BLT", caps & GHCI_CAPS_BLT, GHCI_CAPS_BLT);
+	expect("CAPS.LINE", GHCI_CAPS_LINE_LOG2(caps), 5);
+
+	host_write(GHCI_APERTURE_BASE, 0x10000);
+	host_write(GHCI_APERTURE_LIMIT, 0x50000);
+
+	blit(GHCI_BLT_FILL, 0x20000, 1024, 0, 0, 5, 3, 0, 0, 100, 20, 0x00FF8040, ref);
+	blit(GHCI_BLT_COPY, 0x40000, 512, 0x20000, 1024, 1, 2, 3, 1, 60, 25, 0, ref);
+
+	unsigned bad = 0;
+	for (uint32_t a = 0x10000; a < 0x50000; a++)
+		if (mem[a] != ref[a])
+			bad++;
+	if (bad) {
+		std::printf("FAIL verilator: %u bytes differ from the reference\n", bad);
+		errors++;
+	}
+
+	host_write(GHCI_DBG_ADDR, 0x40000 + 3 * 512 + 2 * 4);
+	wait_clear(GHCI_STATUS_CP_BUSY);
+	expect("DBG_DATA", host_read(GHCI_DBG_DATA), peek32(0x40000 + 3 * 512 + 2 * 4));
+	expect("DBG_STATUS", host_read(GHCI_DBG_STATUS), 0);
+
+	std::printf("verilator: %llu cycles\n", (unsigned long long)cycles);
+	top->final();
+	delete top;
+	if (errors)
+		return 1;
+	std::printf("PASS verilator\n");
+	return 0;
+}
