@@ -36,9 +36,9 @@ Control window (word index, R/W):
 | 0x11 | DMA_MEM | dma | RW: DMEM byte offset (line aligned) |
 | 0x12 | DMA_GO | dma | W: [15:0] lines, [16] 1 = DMEM → memory, 0 = memory → DMEM |
 | 0x13 | DMA_STATUS | dma | R: [0] busy, [1] error, [15:8] writes not yet answered |
-| 0x20 | FW_STATUS | fw | W: CPFW_STATUS[15:8] firmware state; any write is the ALIVE heartbeat |
+| 0x20 | FW_STATUS | fw | W: [15:8] → CPFW_STATUS[15:8] firmware state, [16] PARK (the firmware has stopped for a halt request: the core stops); any write is the ALIVE heartbeat.  R: CPFW_STATUS |
 | 0x21-0x24 | MBOX0-3 | fw | RW: CPFW_MBOX0..3 (shared with the host) |
-| 0x25 | FW_VERSION | fw | W: CPFW_VERSION |
+| 0x25 | FW_VERSION | fw | RW: CPFW_VERSION |
 
 ## 2. Parameters
 
