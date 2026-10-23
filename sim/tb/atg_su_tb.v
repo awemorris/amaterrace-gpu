@@ -1,0 +1,233 @@
+/*
+ * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * atg_su_tb: the shader unit running GSI1 programs (p008's acceptance:
+ * the same binary gives the same results on NPHYS 8, 16 and 32).  Three
+ * SUs (NPHYS 8, 16, 32; NWARPS 4, NREGS 32) fetch from amb_mem behind
+ * their I$ port; each program of sim/tb/su (built by tools/su-tests.sh)
+ * runs as one compute workgroup (DISPATCH 1x1x1), and when the SU is idle
+ * every register that tools/gsi1model.py says the program wrote is
+ * compared, lane by lane.  The D$, atomic, graphics and SA ports are tied
+ * off (those units are p008's next steps).
+ *   alu: integer ops, dependent chains, specials (128 lanes)
+ *   branch: exec mask, divergence, loops, branches, bar, kill (100 lanes)
+ *   rand: a random integer program with masked sections (128 lanes)
+ */
+
+`timescale 1ns / 1ps
+`default_nettype none
+
+module atg_su_chk #(
+	parameter NPHYS = 8,
+	parameter SEED = 1
+) (
+	input wire clk,
+	input wire go,
+	output reg done,
+	output reg [31:0] errs,
+	output reg [31:0] cycles
+);
+	localparam G = 32 / NPHYS;
+	localparam GRP_W = G > 1 ? $clog2(G) : 1;
+	localparam NREGS = 32;
+	localparam NP = 3;	/* programs */
+
+	reg rst_n = 1'b0;
+	reg st_we = 1'b0;
+	reg [8:0] st_idx = 0;
+	reg [31:0] st_wdata = 0;
+	reg cs_kick = 1'b0;
+	wire i_req_valid, i_req_ready, i_req_write, i_rsp_valid, i_rsp_write, i_rsp_error;
+	wire [26:0] i_req_line;
+	wire [31:0] i_req_be;
+	wire [255:0] i_req_wdata, i_rsp_rdata;
+	wire [7:0] i_req_tag, i_rsp_tag;
+	wire busy, fault;
+	wire [31:0] fault_addr;
+
+	atg_su #(.NPHYS(NPHYS), .GRP_W(GRP_W)) dut (
+		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.cs_kick(cs_kick), .lc_kick(1'b0), .inv(4'd0),
+		.vl_req(1'b0), .vl_gnt(), .vl_slot(), .vl_ptbase(), .vl_we(1'b0), .vl_reg(6'd0),
+		.vl_lane(5'd0), .vl_data(32'd0), .vl_go(1'b0), .vl_mask(32'd0),
+		.fl_req(1'b0), .fl_gnt(), .fl_slot(), .fl_we(1'b0), .fl_reg(6'd0), .fl_lane(5'd0),
+		.fl_data(32'd0), .fl_pw_we(1'b0), .fl_pw_addr(12'd0), .fl_pw_data(32'd0),
+		.fl_go(1'b0), .fl_mask(32'd0), .fl_info(64'd0),
+		.pt_rd(1'b0), .pt_idx(8'd0), .pt_word(6'd0), .pt_rdata(), .pt_free(1'b0),
+		.pt_free_idx(8'd0),
+		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_mask(), .tx_coord(),
+		.tx_tag(), .tx_last(), .tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0),
+		.tr_data(512'd0), .tr_last(1'b0),
+		.ex_valid(), .ex_ready(1'b1), .ex_seq(), .ex_xy(), .ex_mask(), .ex_color(),
+		.ex_depth(), .ex_last(), .ex_next(16'd0),
+		.d_req_valid(), .d_req_ready(1'b1), .d_req_write(), .d_req_line(), .d_req_be(),
+		.d_req_wdata(), .d_req_tag(), .d_rsp_valid(1'b0), .d_rsp_write(1'b0),
+		.d_rsp_tag(8'd0), .d_rsp_rdata(256'd0), .d_rsp_error(1'b0),
+		.i_req_valid(i_req_valid), .i_req_ready(i_req_ready), .i_req_write(i_req_write),
+		.i_req_line(i_req_line), .i_req_be(i_req_be), .i_req_wdata(i_req_wdata),
+		.i_req_tag(i_req_tag), .i_rsp_valid(i_rsp_valid), .i_rsp_write(i_rsp_write),
+		.i_rsp_tag(i_rsp_tag), .i_rsp_rdata(i_rsp_rdata), .i_rsp_error(i_rsp_error),
+		.at_valid(), .at_ready(1'b1), .at_op(), .at_addr(), .at_a(), .at_b(),
+		.at_rsp_valid(1'b0), .at_old(32'd0), .at_error(1'b0),
+		.sa_push_valid(), .sa_push_ready(1'b1), .sa_push_data(), .sa_pop_valid(1'b0),
+		.sa_pop_ready(), .sa_pop_data({(NPHYS*32){1'b0}}), .sa_ctl_valid(), .sa_ctl_data(),
+		.sa_qstat(32'd0), .sa_stat(32'd0), .sa_qtag(32'd0),
+		.busy(busy), .fault(fault), .fault_addr(fault_addr)
+	);
+	amb_mem #(.SEED(SEED)) mem (
+		.clk(clk), .rst_n(rst_n), .req_valid(i_req_valid), .req_ready(i_req_ready),
+		.req_write(i_req_write), .req_line(i_req_line), .req_be(i_req_be),
+		.req_wdata(i_req_wdata), .req_tag(i_req_tag), .rsp_valid(i_rsp_valid),
+		.rsp_write(i_rsp_write), .rsp_tag(i_rsp_tag), .rsp_rdata(i_rsp_rdata),
+		.rsp_error(i_rsp_error)
+	);
+
+	reg [31:0] code [0:4095];
+	reg [32:0] exp [0:4*NREGS*32-1];
+	integer lane_err [0:NPHYS-1];
+	event check;
+	integer n_fault;
+	always @(posedge clk)
+		if (fault) begin
+			$display("FAIL atg_su NPHYS %0d: ISA fault at pc %0d", NPHYS, fault_addr);
+			n_fault = n_fault + 1;
+		end
+
+	/* Per physical lane: compare the RF copy 1 with the model (hierarchical). */
+	genvar gl;
+	generate
+		for (gl = 0; gl < NPHYS; gl = gl + 1) begin : cmp
+			integer s, r, g, a, e;
+			always @(check) begin
+				lane_err[gl] = 0;
+				for (s = 0; s < 4; s = s + 1)
+					for (r = 0; r < NREGS; r = r + 1)
+						for (g = 0; g < G; g = g + 1) begin
+							a = (s * NREGS + r) * G + g;
+							e = (s * NREGS + r) * 32 + g * NPHYS + gl;
+							if (exp[e][32] && dut.rf.lane[gl].m1[a] !== exp[e][31:0]) begin
+								if (lane_err[gl] < 3)
+									$display("FAIL atg_su NPHYS %0d slot %0d r%0d lane %0d: %h want %h",
+										NPHYS, s, r, g * NPHYS + gl,
+										dut.rf.lane[gl].m1[a], exp[e][31:0]);
+								lane_err[gl] = lane_err[gl] + 1;
+							end
+						end
+			end
+		end
+	endgenerate
+
+	task state;
+		input [8:0] idx;
+		input [31:0] v;
+		begin
+			@(negedge clk);
+			st_we = 1'b1;
+			st_idx = idx;
+			st_wdata = v;
+			@(negedge clk);
+			st_we = 1'b0;
+		end
+	endtask
+
+	integer p, i, t, lanes, l;
+	initial begin
+		done = 1'b0;
+		errs = 0;
+		cycles = 0;
+		n_fault = 0;
+		@(posedge go);
+		for (p = 0; p < NP; p = p + 1) begin
+			for (i = 0; i < 4096; i = i + 1)
+				code[i] = 32'd0;
+			case (p)
+			0: begin
+				$readmemh("sim/tb/su/alu.hex", code);
+				$readmemh("sim/tb/su/alu.exp", exp);
+				lanes = 128;
+			end
+			1: begin
+				$readmemh("sim/tb/su/branch.hex", code);
+				$readmemh("sim/tb/su/branch.exp", exp);
+				lanes = 100;
+			end
+			default: begin
+				$readmemh("sim/tb/su/rand.hex", code);
+				$readmemh("sim/tb/su/rand.exp", exp);
+				lanes = 128;
+			end
+			endcase
+			rst_n = 1'b0;
+			for (i = 0; i < 4096; i = i + 1)
+				mem.poke(32'h1000 + 4 * i, code[i]);
+			repeat (3) @(negedge clk);
+			rst_n = 1'b1;
+			state(9'h194, 32'h1000);
+			state(9'h199, {8'd0, 8'd1, 8'd1, lanes[7:0]});
+			state(9'h1E9, 1);
+			state(9'h1EA, 1);
+			state(9'h1EB, 1);
+			@(negedge clk);
+			cs_kick = 1'b1;
+			@(negedge clk);
+			cs_kick = 1'b0;
+			t = 0;
+			while ((busy || t < 4) && t < 200000) begin
+				@(negedge clk);
+				t = t + 1;
+			end
+			if (busy) begin
+				$display("FAIL atg_su NPHYS %0d program %0d: still busy", NPHYS, p);
+				errs = errs + 1;
+			end
+			cycles = cycles + t;
+			-> check;
+			#1;
+			for (l = 0; l < NPHYS; l = l + 1)
+				errs = errs + lane_err[l];
+			$display("atg_su NPHYS %0d program %0d: %0d cycles", NPHYS, p, t);
+		end
+		errs = errs + n_fault;
+		done = 1'b1;
+	end
+endmodule
+
+module atg_su_tb;
+	reg clk = 1'b0;
+	reg go = 1'b0;
+	wire [2:0] done;
+	wire [31:0] e0, e1, e2, c0, c1, c2;
+
+	always #5 clk = !clk;
+
+	atg_su_chk #(.NPHYS(8), .SEED(1)) n8 (.clk(clk), .go(go), .done(done[0]), .errs(e0),
+		.cycles(c0));
+	atg_su_chk #(.NPHYS(16), .SEED(2)) n16 (.clk(clk), .go(go), .done(done[1]), .errs(e1),
+		.cycles(c1));
+	atg_su_chk #(.NPHYS(32), .SEED(3)) n32 (.clk(clk), .go(go), .done(done[2]), .errs(e2),
+		.cycles(c2));
+
+	initial begin
+		#20 go = 1'b1;
+		wait (&done);
+		if (e0 == 0) $display("PASS atg_su.nphys8");
+		if (e1 == 0) $display("PASS atg_su.nphys16");
+		if (e2 == 0) $display("PASS atg_su.nphys32");
+		if (e0 + e1 + e2 == 0)
+			$display("PASS atg_su");
+		$finish;
+	end
+
+	initial begin
+		#20000000;
+		$display("FAIL atg_su timeout");
+		$finish;
+	end
+endmodule
+
+`default_nettype wire

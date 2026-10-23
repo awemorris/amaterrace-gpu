@@ -167,12 +167,16 @@ module atg_su_opd #(
 	wire [31:0] cov_g = q_info[ATG_WI_MASK +: 32] >> grp_base;
 	assign q_warp = b_warp;
 
-	/* The value of operand n in lane l (before modifiers). */
+	/* The value of operand n in lane l (before modifiers).  Everything it
+	 * reads is an argument (so that always @(*) sees it). */
 	function [31:0] opv;
 		input [6:0] n;
 		input [31:0] gpr, rq, cw;
 		input [4:0] lane;
 		input kl;
+		input [WARP_W-1:0] wn;
+		input [159:0] qi;
+		input [31:0] qe;
 		begin
 			if (n < 7'd63)
 				opv = gpr;
@@ -189,19 +193,19 @@ module atg_su_opd #(
 				7'd100: opv = 32'h40000000;
 				7'd101: opv = 32'hBF800000;
 				7'd102: opv = {27'd0, lane};
-				7'd103: opv = {{(32-WARP_W){1'b0}}, b_warp};
-				7'd104: opv = q_exec;
+				7'd103: opv = {{(32-WARP_W){1'b0}}, wn};
+				7'd104: opv = qe;
 				7'd105: opv = {32{kl}};
-				7'd106: opv = {16'd0, q_info[ATG_WI_WGX +: 16]};
-				7'd107: opv = {16'd0, q_info[ATG_WI_WGX + 16 +: 16]};
-				7'd108: opv = {16'd0, q_info[ATG_WI_WGX + 32 +: 16]};
-				7'd109, 7'd112: opv = {24'd0, q_info[ATG_WI_LID +: 8]} + {27'd0, lane};
-				7'd114: opv = {32{q_info[ATG_WI_FRONT]}};
-				7'd115: opv = {16'd0, q_info[ATG_WI_NWGX +: 16]};
-				7'd116: opv = {16'd0, q_info[ATG_WI_NWGX + 16 +: 16]};
-				7'd117: opv = {16'd0, q_info[ATG_WI_NWGX + 32 +: 16]};
+				7'd106: opv = {16'd0, qi[ATG_WI_WGX +: 16]};
+				7'd107: opv = {16'd0, qi[ATG_WI_WGX + 16 +: 16]};
+				7'd108: opv = {16'd0, qi[ATG_WI_WGX + 32 +: 16]};
+				7'd109, 7'd112: opv = {24'd0, qi[ATG_WI_LID +: 8]} + {27'd0, lane};
+				7'd114: opv = {32{qi[ATG_WI_FRONT]}};
+				7'd115: opv = {16'd0, qi[ATG_WI_NWGX +: 16]};
+				7'd116: opv = {16'd0, qi[ATG_WI_NWGX + 16 +: 16]};
+				7'd117: opv = {16'd0, qi[ATG_WI_NWGX + 32 +: 16]};
 				7'd118: opv = 32'h3C003C00;
-				7'd119: opv = q_info[ATG_WI_MASK +: 32];
+				7'd119: opv = qi[ATG_WI_MASK +: 32];
 				default: opv = 32'd0;
 				endcase
 			end
@@ -241,11 +245,11 @@ module atg_su_opd #(
 		for (l = 0; l < NPHYS; l = l + 1) begin
 			ln = grp_base[4:0] + l[4:0];
 			va[l*32 +: 32] = fmod(opv(b_n1, r_data[l*32 +: 32], rq_data[l*32 +: 32],
-				cr_data[31:0], ln, kill_g[l]), mods[0], mods[1], fp_unit, pk_unit);
+				cr_data[31:0], ln, kill_g[l], b_warp, q_info, q_exec), mods[0], mods[1], fp_unit, pk_unit);
 			vb[l*32 +: 32] = fmod(opv(b_n2, r_data[DW + l*32 +: 32], rq_data[l*32 +: 32],
-				cr_data[63:32], ln, kill_g[l]), mods[2], mods[3], fp_unit, pk_unit);
+				cr_data[63:32], ln, kill_g[l], b_warp, q_info, q_exec), mods[2], mods[3], fp_unit, pk_unit);
 			vc[l*32 +: 32] = fmod(opv(b_n3, r_data[2*DW + l*32 +: 32], rq_data[l*32 +: 32],
-				cr_data[95:64], ln, kill_g[l]), mods[4], mods[5], fp_unit, pk_unit);
+				cr_data[95:64], ln, kill_g[l], b_warp, q_info, q_exec), mods[4], mods[5], fp_unit, pk_unit);
 		end
 	end
 
