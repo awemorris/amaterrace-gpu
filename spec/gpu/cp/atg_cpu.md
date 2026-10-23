@@ -126,7 +126,20 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): covered by the parent's testbench and `tools/lint.sh`.
+`sim/tb/atg_cpu_tb.v` (added in p017; the module itself is wiring) runs `sim/tb/cpu/cpu_top.S` from
+the init images (ZYBO shape) with ring, sequencer, STATE, host and AMB models, and prints, in this
+order:
+
+- `PASS atg_cpu.packet` — a class V packet is taken by the interrupt, read by DMA, and its dwords
+  (with a STATE word) come out as µops in order, then v_done once
+- `PASS atg_cpu.dma` — the firmware's DMA write lands in memory; MBOX1 and RESULT follow
+- `PASS atg_cpu.halt` — halt_req parks the core (CPFW_STATUS.STOPPED)
+- `PASS atg_cpu.reload` — CPFW LOAD of `cpu_reload.S` from memory runs (its .data word shows in
+  MBOX3) and then faults with its PC (fault, CPFW_STATUS.FAULT)
+- `PASS atg_cpu` at the end.
+
+The children's own testbenches: `atg_cpu_core` (RV32IM programs), `atg_cpu_alu`, `atg_cpu_muldiv`,
+`atg_cpu_mem`, `atg_cpu_win`, `atg_cpu_dma`, `atg_cpu_fw`.
 
 ## 9. References
 
@@ -134,4 +147,6 @@ design §2.4.7, §2.4.8, §2.4.10.
 
 ## 10. Status
 
-Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+Wiring written in WS288 p023; the children implemented in WS288 p017 (P2, branch p2-cpu), with
+`sim/tb/atg_cpu_tb.v`.  p017 spec changes: window IRQ_EN (0x0D), FW_STATUS [16] PARK, the CPFW HCR
+layout (MBOX0-3 at 0x150, see atg_cpu_fw).

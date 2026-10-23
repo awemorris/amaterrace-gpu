@@ -113,17 +113,12 @@ module atg_cpu_fw (
 	wire load_go = hcr_we && hcr_widx == R_CTRL && hcr_wmask[GHCI_CPFW_CTRL_LOAD] &&
 		hcr_wdata[GHCI_CPFW_CTRL_LOAD] && load_ok;
 
-	function [31:0] mbox_rd;
-		input [1:0] i;
-		begin
-			case (i)
-			2'd0: mbox_rd = mbox0;
-			2'd1: mbox_rd = mbox1;
-			2'd2: mbox_rd = mbox2;
-			default: mbox_rd = mbox3;
-			endcase
-		end
-	endfunction
+	/* Mailbox reads (a mux, not a function: @* must see the registers). */
+	wire [1:0] hr_mi = hcr_ridx[1:0];
+	wire [31:0] mbox_h = hr_mi == 2'd0 ? mbox0 : hr_mi == 2'd1 ? mbox1 :
+		hr_mi == 2'd2 ? mbox2 : mbox3;
+	wire [31:0] mbox_s = sw_mi == 2'd0 ? mbox0 : sw_mi == 2'd1 ? mbox1 :
+		sw_mi == 2'd2 ? mbox2 : mbox3;
 
 	function [31:0] merge;
 		input [31:0] old;
@@ -142,7 +137,7 @@ module atg_cpu_fw (
 		R_DWORDS: hcr_rdata = dwords;
 		R_VERSION: hcr_rdata = version;
 		R_MBOX0, R_MBOX0 + 10'd1, R_MBOX0 + 10'd2, R_MBOX0 + 10'd3:
-			hcr_rdata = mbox_rd(hcr_ridx[1:0]);
+			hcr_rdata = mbox_h;
 		default: hcr_rdata = 32'd0;
 		endcase
 	end
@@ -153,7 +148,7 @@ module atg_cpu_fw (
 			if (sb_idx == W_FW_STATUS)
 				sb_rdata = status;
 			else if (sb_idx >= W_MBOX0 && sb_idx < W_MBOX0 + 6'd4)
-				sb_rdata = mbox_rd(sw_mi);
+				sb_rdata = mbox_s;
 			else if (sb_idx == W_FW_VERSION)
 				sb_rdata = version;
 		end
