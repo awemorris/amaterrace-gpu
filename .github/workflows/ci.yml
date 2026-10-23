@@ -45,13 +45,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install yosys
+      # Ubuntu's yosys is old and needs far more memory on this design than
+      # the runner has; use a pinned OSS CAD Suite (yosys) instead.
+      - name: Cache OSS CAD Suite
+        id: ocs
+        uses: actions/cache@v4
+        with:
+          path: ~/oss-cad-suite
+          key: oss-cad-suite-linux-x64-20261003
+
+      - name: Install OSS CAD Suite
+        if: steps.ocs.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y yosys
+          curl -fsSL -o /tmp/ocs.tgz \
+            https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2026-10-03/oss-cad-suite-linux-x64-20261003.tgz
+          tar -xzf /tmp/ocs.tgz -C ~
+          rm -f /tmp/ocs.tgz
 
       - name: Synthesize the GPU core (yosys synth_xilinx)
-        run: make oxc-core
+        run: |
+          export PATH=~/oss-cad-suite/bin:$PATH
+          yosys -V
+          /usr/bin/time -v make oxc-core 2>&1 | tail -40
 
       - name: Keep the synthesis log
         if: always()
