@@ -29,13 +29,17 @@ zybo) part=${PART:-xc7z010clg400-1} ;;
 kc705) part=${PART:-xc7k325tffg900-2} ;;
 *) part=${PART:?PART is needed for board $board} ;;
 esac
-settings=${VIVADO:-$HOME/opt/amd/2026.1/Vivado/settings64.sh}
-[ -f "$settings" ] || { echo "vivado-build: no Vivado at $settings" >&2; exit 1; }
-. "$settings"
+# A vivado on PATH is used as it is; otherwise VIVADO names settings64.sh.
+if ! command -v vivado >/dev/null 2>&1; then
+	settings=${VIVADO:-$HOME/opt/amd/2026.1/Vivado/settings64.sh}
+	[ -f "$settings" ] || { echo "vivado-build: no vivado on PATH and no $settings" >&2; exit 1; }
+	. "$settings"
+fi
 if [ -z "${XILINXD_LICENSE_FILE:-}" ] && [ -f "$HOME/Xilinx.lic" ]; then
 	XILINXD_LICENSE_FILE=$HOME/Xilinx.lic
 	export XILINXD_LICENSE_FILE
 fi
+: "${XILINX_VIVADO:=$(dirname -- "$(dirname -- "$(command -v vivado)")")}"
 if ! /sbin/ldconfig -p | grep -q 'libncurses\.so\.5 '; then
 	LD_LIBRARY_PATH=$XILINX_VIVADO/lib/lnx64.o/Ubuntu/24${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 	export LD_LIBRARY_PATH
