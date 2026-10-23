@@ -13,6 +13,7 @@ The reduced version is named `Moonphaser.`
 - VF ... Vertex Fetcher Block
 - RX ... Rasterizer Block
 - SU ... Shader Unit Block
+- SA ... Systolic Array Block
 - TU ... Texture Unit Block
 - ROP ... Buffer Writer Block
 - MC ... Memory Controller Block
@@ -28,6 +29,9 @@ Primitive:
 CP --> VF --> SU --> RX --> SU --> ROP --> MC
                             |
                             +--> TU
+
+LLM:
+CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP -> MC
 ```
 
 Shader Architecture:
@@ -35,6 +39,7 @@ Shader Architecture:
 - Register File: 32 lanes x NREGS x NWARPS x 32-bit in BRAM, replicated
   for 3 read ports. XC7Z010: NREGS 32, NWARPS 4 (12 BRAM36). XC7K325T: NREGS 64,
   NWARPS 4 (24 BRAM36 per SU).
+- Systolic Array: 32 x 32 x 8-SIMD, 26-TOPS/SU @800MHz
 ```
 
 Synthesis goal is 200MHz on KC705 board and 800MHz for ASIC processes.
