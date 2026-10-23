@@ -199,12 +199,17 @@ module atg_su_sched #(
 			end
 		end
 	end
-	wire [1:0] sk = info[(sel)*160 + ATG_WI_KIND +: 2];
+	/* A fetch that is not taken keeps its warp (valid/ready). */
+	reg hold_v;
+	reg [WARP_W-1:0] hold_w;
+	wire [WARP_W-1:0] fsel = hold_v ? hold_w : sel;
+	wire fsel_v = hold_v || sel_v;
+	wire [1:0] sk = info[(fsel)*160 + ATG_WI_KIND +: 2];
 	wire [31:0] base = sk == K_VERT ? vs_base : sk == K_FRAG ? fs_base : cs_base;
-	assign f_valid = sel_v;
-	assign f_warp = sel;
-	assign f_pc = pc[(sel)*16 +: 16];
-	assign f_addr = base + {13'd0, pc[(sel)*16 +: 16], 3'd0};
+	assign f_valid = fsel_v;
+	assign f_warp = fsel;
+	assign f_pc = pc[(fsel)*16 +: 16];
+	assign f_addr = base + {13'd0, pc[(fsel)*16 +: 16], 3'd0};
 	assign q_info = info[(q_warp)*160 +: 160];
 
 	/* Barrier: every warp of the workgroup is parked. */
@@ -240,6 +245,8 @@ module atg_su_sched #(
 				tag[(w)*4 +: 4] <= 4'd0;
 			end
 			rr <= {WARP_W{1'b0}};
+			hold_v <= 1'b0;
+			hold_w <= {WARP_W{1'b0}};
 			vl_wait <= 1'b0;
 			fl_wait <= 1'b0;
 			vl_s <= {WARP_W{1'b0}};
@@ -285,10 +292,12 @@ module atg_su_sched #(
 				default: ;
 				endcase
 			end
-			if (sel_v && f_ready) begin
-				st[(sel)*3 +: 3] <= S_FETCH;
-				gap[(sel)*2 +: 2] <= G[1:0] - 2'd1;
-				rr <= sel + 1'b1;
+			hold_v <= fsel_v && !f_ready;
+			hold_w <= fsel;
+			if (fsel_v && f_ready) begin
+				st[(fsel)*3 +: 3] <= S_FETCH;
+				gap[(fsel)*2 +: 2] <= G[1:0] - 2'd1;
+				rr <= fsel + 1'b1;
 			end
 			/* Vertex and fragment slots. */
 			if (vl_g) begin
