@@ -80,9 +80,12 @@ Shader Unit:
   per register) operations. A warp executes over 32/NPHYS cycles on NPHYS
   physical lanes (proposed: 8 on XC7Z010, 16 on XC7K325T), so one binary runs
   on both. The XC7Z010 build may omit the packed arithmetic (PACKH/UNPACKH stay).
-- Execution mask and long-operation waits are managed by the compiler
-  (EXEC_* instructions, WAIT with per-class counters); no hardware
-  divergence stack or per-register scoreboard.
+- Execution mask is managed by the compiler (EXEC_* instructions; no
+  hardware divergence stack). A small per-warp hardware scoreboard tracks the
+  destination registers of outstanding long operations (memory, texture,
+  transcendental, divide) and stalls only the instructions that depend on
+  them; WAIT with per-class counters stays for store completion and memory
+  ordering.
 - Per unit: BRAM register file, small instruction and data caches, shared
   memory (LDS), constant bank, post-transform buffer and primitive table for
   varying interpolation, one shared transcendental unit and one divider.
