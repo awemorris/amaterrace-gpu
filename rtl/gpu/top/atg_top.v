@@ -294,7 +294,8 @@ module atg_top #(
 		.ADDR_W(32),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
-		.GCLK_HZ(GCLK_HZ)
+		.GCLK_HZ(GCLK_HZ),
+		.HAS_CPU(HAS_CPU)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -333,6 +334,7 @@ module atg_top #(
 		.req_tag(c_req_tag[0*8 +: 8]),
 		.rsp_valid(rsp_valid[0]),
 		.rsp_write(rsp_write),
+		.rsp_tag(rsp_tag),
 		.rsp_rdata(rsp_rdata),
 		.rsp_error(rsp_error),
 		.draw_kick(draw_kick),

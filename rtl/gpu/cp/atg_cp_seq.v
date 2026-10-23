@@ -6,18 +6,45 @@
  */
 
 /*
- * atg_cp_seq: The class N µop sequencer: takes µop packets from the ring
- * or from the firmware (UOP_FIFO), writes STATE, kicks the blocks, waits
- * for idle, and hands fences, results and WAIT_FENCE to atg_cp_fence.
+ * atg_cp_seq: the class N µop sequencer (design §2.4.3): takes µop
+ * packets from the ring or from the firmware (UOP_FIFO), writes STATE,
+ * kicks the blocks, waits for idle, and hands fences, results and
+ * WAIT_FENCE to atg_cp_fence.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/cp/atg_cp_seq.md.
+ * Source: fw_* while fw_active (sampled between packets), else n_*.
+ * Header [31:30] class (0 standard, 1 vendor), [29:24] op, [23:16] tag,
+ * [15:8] flags, [7:0] n.  The payload is taken one dword per cycle:
+ * SET_REG writes STATE[index] = value per pair (index >= 512: fault 3;
+ * a write to the BLT range 0x000-0x01F waits while the BLT is busy, whose
+ * state must not change under a blit), DISPATCH/LOAD_CONST/DRAW_RAW/
+ * DBG_MARK write their payload to the vendor STATE words (DISPATCH and
+ * LOAD_CONST wait while the SUs are busy, DRAW_RAW while the RX is), the
+ * fence µops keep theirs.  Then the µop runs:
+ *   BLIT: wait for the BLT idle, kick; flags[0]: wait until it is done.
+ *   DRAW: wait for the VF idle, inv[1:0] and draw_kick.  DISPATCH: cs_kick.
+ *   FENCE: wait until every block is idle, request op 0 (flags[0] = IRQ).
+ *   WAIT_IDLE: wait until the blocks of flags (0 = all) are idle.
+ *   LOAD_CONST: SUs idle, lc_kick, SUs idle.  LOAD_PROGRAM: inv[3].
+ *   WAIT_FENCE: request op 2, wait for !f_busy.  PERF_RESET.  WAIT_VSYNC:
+ *   one vsync.  INVALIDATE: inv = flags[3:0].  RESULT: blocks idle and
+ *   !f_busy, request op 1.  DRAW_RAW: raw_kick.  NOP, SET_REG, DBG_MARK: none.
+ * A wait after a kick starts one cycle later (busy rises after the kick).
+ * Faults stop the sequencer until the core reset (rst_n): kind 2 for an
+ * unknown op, a class 2/3 header, or an op whose unit is absent (UNITS,
+ * HAS_VSYNC); kind 3 for a payload shorter than the op needs or a bad
+ * SET_REG index (fault_addr = the index).  A longer payload is skipped.
+ * halt is looked at only between packets.  cmd_active (the watchdog) is 1
+ * from a header to the end of its µop, except while waiting for the
+ * firmware's next dword.
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_cp_seq (
+module atg_cp_seq #(
+	parameter [7:0] UNITS = 8'h03,	/* Present blocks, STATUS busy-bit order */
+	parameter HAS_VSYNC = 0	/* 1: a display's vsync reaches the CP (WAIT_VSYNC) */
+) (
 	input wire clk,
 	input wire rst_n,
 	/* µop packets from the ring (atg_cp_ring) */
@@ -64,36 +91,307 @@ module atg_cp_seq (
 	output wire [31:0] fault_addr,
 	output wire [7:0] fault_tag
 );
-	/* spec/gpu/cp/atg_cp_seq.md */
-	assign n_ready = 1'd0;
-	assign fw_ready = 1'd0;
-	assign uop_we = 1'd0;
-	assign uop_idx = 9'd0;
-	assign uop_wdata = 32'd0;
-	assign blt_kick = 1'd0;
-	assign draw_kick = 1'd0;
-	assign cs_kick = 1'd0;
-	assign lc_kick = 1'd0;
-	assign raw_kick = 1'd0;
-	assign inv = 4'd0;
-	assign perf_reset = 1'd0;
-	assign f_valid = 1'd0;
-	assign f_op = 2'd0;
-	assign f_addr = 32'd0;
-	assign f_value = 32'd0;
-	assign f_aux = 32'd0;
-	assign f_irq = 1'd0;
-	assign busy = 1'd0;
-	assign cmd_active = 1'd0;
-	assign fault = 1'd0;
-	assign fault_kind = 4'd0;
-	assign fault_addr = 32'd0;
-	assign fault_tag = 8'd0;
+	`include "ghci_regs.vh"
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, n_valid, n_data, n_last, fw_valid, fw_data, fw_last, fw_active, halt,
-		busy_in, vsync, f_ready, f_busy};
+	/* Standard µops (class 0) and Amaterrace's vendor µops (class 1). */
+	localparam [5:0] OP_NOP = 6'd0;
+	localparam [5:0] OP_SET_REG = 6'd1;
+	localparam [5:0] OP_BLIT = 6'd2;
+	localparam [5:0] OP_DRAW = 6'd3;
+	localparam [5:0] OP_DISPATCH = 6'd4;
+	localparam [5:0] OP_FENCE = 6'd5;
+	localparam [5:0] OP_WAIT_IDLE = 6'd6;
+	localparam [5:0] OP_LOAD_CONST = 6'd7;
+	localparam [5:0] OP_LOAD_PROGRAM = 6'd8;
+	localparam [5:0] OP_WAIT_FENCE = 6'd9;
+	localparam [5:0] OP_PERF_RESET = 6'd10;
+	localparam [5:0] OP_WAIT_VSYNC = 6'd11;
+	localparam [5:0] OP_INVALIDATE = 6'd12;
+	localparam [5:0] OP_RESULT = 6'd13;
+	localparam [5:0] VOP_DRAW_RAW = 6'd0;
+	localparam [5:0] VOP_DBG_MARK = 6'd1;
+
+	localparam [7:0] B_BLT = 8'h02;
+	localparam [7:0] B_VF = 8'h04;
+	localparam [7:0] B_RX = 8'h08;
+	localparam [7:0] B_SU = 8'h40;
+	localparam [7:0] B_ALL = 8'hFE;
+
+	localparam [2:0] Q_IDLE = 3'd0;
+	localparam [2:0] Q_PAY = 3'd1;	/* take the payload */
+	localparam [2:0] Q_EXEC = 3'd2;	/* wait for pre, then act */
+	localparam [2:0] Q_POST = 3'd3;	/* after a kick: wait for post */
+	localparam [2:0] Q_FREQ = 3'd4;	/* fence request */
+	localparam [2:0] Q_FWAIT = 3'd5;	/* WAIT_FENCE: wait for !f_busy */
+	localparam [2:0] Q_VSYNC = 3'd6;
+	localparam [2:0] Q_DEAD = 3'd7;
+
+	reg [2:0] st;
+	reg use_fw;
+	reg vendor;
+	reg [5:0] op;
+	reg [7:0] flags;
+	reg [7:0] tag;
+	reg [7:0] n;
+	reg [7:0] p;	/* payload dwords taken */
+	reg [8:0] sidx;	/* SET_REG: the index of the pair */
+	reg [31:0] a0, a1, a2;	/* fence payload */
+	reg settle;
+
+	wire in_valid = use_fw ? fw_valid : n_valid;
+	wire [31:0] in_data = use_fw ? fw_data : n_data;
+	wire [31:0] hdr = fw_active ? fw_data : n_data;
+	wire hdr_valid = fw_active ? fw_valid : n_valid;
+
+	/* Header decode (combinational on hdr). */
+	wire h_vendor = hdr[30];
+	wire [5:0] h_op = hdr[29:24];
+	wire [7:0] h_n = hdr[7:0];
+	reg h_known;
+	reg h_absent;
+	reg [7:0] h_need;
+
+	always @(*) begin
+		h_known = 1'b1;
+		h_absent = 1'b0;
+		h_need = 8'd0;
+		if (hdr[31]) begin
+			h_known = 1'b0;
+		end else if (h_vendor) begin
+			case (h_op)
+			VOP_DRAW_RAW: begin
+				h_need = 8'd9;
+				h_absent = !UNITS[3];
+			end
+			VOP_DBG_MARK: h_need = 8'd1;
+			default: h_known = 1'b0;
+			endcase
+		end else begin
+			case (h_op)
+			OP_NOP, OP_BLIT, OP_WAIT_IDLE, OP_PERF_RESET, OP_INVALIDATE: ;
+			OP_SET_REG: h_need = {7'd0, h_n[0]} + h_n;	/* pairs: odd n is short */
+			OP_DRAW: h_absent = !UNITS[2];
+			OP_DISPATCH: begin
+				h_need = 8'd3;
+				h_absent = !UNITS[6];
+			end
+			OP_FENCE, OP_WAIT_FENCE: h_need = 8'd2;
+			OP_LOAD_CONST: begin
+				h_need = 8'd3;
+				h_absent = !UNITS[6];
+			end
+			OP_LOAD_PROGRAM: h_need = 8'd1;
+			OP_WAIT_VSYNC: h_absent = HAS_VSYNC == 0;
+			OP_RESULT: h_need = 8'd3;
+			default: h_known = 1'b0;
+			endcase
+		end
+		if (h_op == OP_BLIT && !hdr[30] && !UNITS[1])
+			h_absent = 1'b1;
+	end
+
+	/* Payload: what this dword does. */
+	wire is_set = !vendor && op == OP_SET_REG;
+	wire set_val = is_set && p[0];
+	wire set_bad = is_set && !p[0] && in_data[31:9] != 23'd0;
+	reg pay_we;
+	reg [8:0] pay_idx;
+	reg [7:0] pay_wait;	/* busy bits that hold this dword */
+
+	always @(*) begin
+		pay_we = 1'b0;
+		pay_idx = 9'd0;
+		pay_wait = 8'd0;
+		if (set_val) begin
+			pay_we = 1'b1;
+			pay_idx = sidx;
+			pay_wait = sidx < 9'h020 ? B_BLT : 8'd0;
+		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
+			pay_we = 1'b1;
+			pay_idx = 9'h1E0 + {1'b0, p};
+			pay_wait = B_RX;
+		end else if (vendor && op == VOP_DBG_MARK && p == 8'd0) begin
+			pay_we = 1'b1;
+			pay_idx = 9'h1FF;
+		end else if (!vendor && op == OP_DISPATCH && p < 8'd3) begin
+			pay_we = 1'b1;
+			pay_idx = 9'h1E9 + {1'b0, p};
+			pay_wait = B_SU;
+		end else if (!vendor && op == OP_LOAD_CONST && p < 8'd3) begin
+			pay_we = 1'b1;
+			pay_idx = 9'h1EC + {1'b0, p};
+			pay_wait = B_SU;
+		end
+	end
+
+	wire pay_hold = |(pay_wait & busy_in);
+	wire pay_take = st == Q_PAY && in_valid && !pay_hold && !set_bad;
+	wire hdr_take = st == Q_IDLE && !halt && hdr_valid;
+
+	assign n_ready = (hdr_take && !fw_active) || (pay_take && !use_fw);
+	assign fw_ready = (hdr_take && fw_active) || (pay_take && use_fw);
+	assign uop_we = pay_take && pay_we;
+	assign uop_idx = pay_idx;
+	assign uop_wdata = in_data;
+
+	/* Execution: what to wait for before acting, the act, what after. */
+	reg [7:0] pre;
+	reg pre_f;	/* also wait for !f_busy */
+	reg [7:0] post;
+
+	always @(*) begin
+		pre = 8'd0;
+		pre_f = 1'b0;
+		post = 8'd0;
+		if (vendor) begin
+			pre = op == VOP_DRAW_RAW ? B_RX : 8'd0;
+		end else begin
+			case (op)
+			OP_BLIT: begin
+				pre = B_BLT;
+				post = flags[0] ? B_BLT : 8'd0;
+			end
+			OP_DRAW: pre = B_VF;
+			OP_FENCE: pre = B_ALL;
+			OP_WAIT_IDLE: pre = flags == 8'd0 ? B_ALL : flags & B_ALL;
+			OP_LOAD_CONST: begin
+				pre = B_SU;
+				post = B_SU;
+			end
+			OP_RESULT: begin
+				pre = B_ALL;
+				pre_f = 1'b1;
+			end
+			default: ;
+			endcase
+		end
+	end
+
+	wire exec_go = st == Q_EXEC && !settle && !(|(pre & busy_in)) && !(pre_f && f_busy);
+	wire is_op_std = !vendor && exec_go;
+
+	assign blt_kick = is_op_std && op == OP_BLIT;
+	assign draw_kick = is_op_std && op == OP_DRAW;
+	assign cs_kick = is_op_std && op == OP_DISPATCH;
+	assign lc_kick = is_op_std && op == OP_LOAD_CONST;
+	assign raw_kick = vendor && exec_go && op == VOP_DRAW_RAW;
+	assign perf_reset = is_op_std && op == OP_PERF_RESET;
+	assign inv = !is_op_std ? 4'd0 : op == OP_DRAW ? 4'b0011 :
+		op == OP_LOAD_PROGRAM ? 4'b1000 : op == OP_INVALIDATE ? flags[3:0] : 4'd0;
+
+	wire fence_op = !vendor && (op == OP_FENCE || op == OP_WAIT_FENCE || op == OP_RESULT);
+	assign f_valid = st == Q_FREQ;
+	assign f_op = op == OP_FENCE ? 2'd0 : op == OP_RESULT ? 2'd1 : 2'd2;
+	assign f_addr = a0;
+	assign f_value = a1;
+	assign f_aux = a2;
+	assign f_irq = flags[0];
+
+	reg f_pulse;
+	reg [3:0] f_kind;
+	reg [31:0] f_faddr;
+
+	assign fault = f_pulse;
+	assign fault_kind = f_kind;
+	assign fault_addr = f_faddr;
+	assign fault_tag = tag;
+	assign busy = st != Q_IDLE && st != Q_DEAD;
+	assign cmd_active = busy && !(st == Q_PAY && use_fw && !fw_valid);
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st <= Q_IDLE;
+			use_fw <= 1'b0;
+			vendor <= 1'b0;
+			op <= 6'd0;
+			flags <= 8'd0;
+			tag <= 8'd0;
+			n <= 8'd0;
+			p <= 8'd0;
+			sidx <= 9'd0;
+			a0 <= 32'd0;
+			a1 <= 32'd0;
+			a2 <= 32'd0;
+			settle <= 1'b0;
+			f_pulse <= 1'b0;
+			f_kind <= 4'd0;
+			f_faddr <= 32'd0;
+		end else begin
+			f_pulse <= 1'b0;
+			settle <= 1'b0;
+			case (st)
+			Q_IDLE:
+				if (hdr_take) begin
+					use_fw <= fw_active;
+					vendor <= h_vendor;
+					op <= h_op;
+					flags <= hdr[15:8];
+					tag <= hdr[23:16];
+					n <= h_n;
+					p <= 8'd0;
+					f_faddr <= 32'd0;
+					if (!h_known || h_absent) begin
+						f_pulse <= 1'b1;
+						f_kind <= GHCI_FAULT_OPCODE;
+						st <= Q_DEAD;
+					end else if (h_n < h_need) begin
+						f_pulse <= 1'b1;
+						f_kind <= GHCI_FAULT_RING;
+						st <= Q_DEAD;
+					end else begin
+						st <= h_n == 8'd0 ? Q_EXEC : Q_PAY;
+					end
+				end
+			Q_PAY:
+				if (st == Q_PAY && in_valid && set_bad) begin
+					f_pulse <= 1'b1;
+					f_kind <= GHCI_FAULT_RING;
+					f_faddr <= in_data;
+					st <= Q_DEAD;
+				end else if (pay_take) begin
+					if (is_set && !p[0])
+						sidx <= in_data[8:0];
+					if (p == 8'd0)
+						a0 <= in_data;
+					if (p == 8'd1)
+						a1 <= in_data;
+					if (p == 8'd2)
+						a2 <= in_data;
+					p <= p + 8'd1;
+					if (p + 8'd1 == n)
+						st <= Q_EXEC;
+				end
+			Q_EXEC:
+				if (exec_go) begin
+					if (fence_op)
+						st <= Q_FREQ;
+					else if (!vendor && op == OP_WAIT_VSYNC)
+						st <= Q_VSYNC;
+					else if (post != 8'd0) begin
+						settle <= 1'b1;
+						st <= Q_POST;
+					end else
+						st <= Q_IDLE;
+				end
+			Q_POST:
+				if (!settle && !(|(post & busy_in)))
+					st <= Q_IDLE;
+			Q_FREQ:
+				if (f_ready)
+					st <= op == OP_WAIT_FENCE ? Q_FWAIT : Q_IDLE;
+			Q_FWAIT:
+				if (!f_busy)
+					st <= Q_IDLE;
+			Q_VSYNC:
+				if (vsync)
+					st <= Q_IDLE;
+			default:
+				;
+			endcase
+		end
+	end
+
+	wire unused_ok = &{1'b0, n_last, fw_last, busy_in[0]};
 endmodule
 
 `default_nettype wire

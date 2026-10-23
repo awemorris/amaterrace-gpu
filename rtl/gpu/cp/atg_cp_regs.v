@@ -6,13 +6,23 @@
  */
 
 /*
- * atg_cp_regs: The GHCI register bus decoder of the CP: identification,
- * CAPS, EXTCAP list, VEND, SCRATCH, COUNTER and PERF registers, plus the
- * HCR snoop bus and the STATE alias that the other CP modules (and
- * atg_cpu) use for their own registers.
+ * atg_cp_regs: the GHCI register bus decoder of the CP: identification,
+ * CAPS, the extended capability list, VEND, SCRATCH, COUNTER and the PERF
+ * registers, plus the HCR snoop bus and the STATE alias that the other CP
+ * modules (and atg_cpu) use for their own registers.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/cp/atg_cp_regs.md.
+ * Writes to 0x000-0xFFC go out on hcr_* in the cycle of reg_wr (every
+ * module takes the writes of its own word indices); whole-word writes to
+ * 0x1000-0x17FC go out on alias_* (a partial-strobe alias write is
+ * dropped here).  Reads: the answer is due the cycle after reg_rd; the
+ * index is registered (hcr_ridx) and every module answers its own
+ * registers combinationally from it, this module ORs them with its own,
+ * or returns the state RAM's word for the alias, or 0 elsewhere
+ * (0x1800-0x1FFFF).
+ *
+ * The extended capability list at 0x100: one two-word entry per set bit
+ * of XCAP_MASK in id order; the first two entries at 0x100 and 0x108, the
+ * rest from 0x180 (0x110-0x17F hold the PERF, CPFW and SA registers).
  */
 
 `timescale 1ns / 1ps
@@ -29,7 +39,8 @@ module atg_cp_regs #(
 	parameter CAPS2 = 32'h00000001,	/* CAPS2 value */
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
 	parameter XCAP_MASK = 8'h04,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7) */
-	parameter DISP_OFFSET = 32'h00010000	/* Where the DISP entry points (KC705 +0x10000) */
+	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
+	parameter PERF_SRC = 32'hFFFFFFFF	/* PERF_SRC0..3 (byte n = PERF_SRCn) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -63,24 +74,143 @@ module atg_cp_regs #(
 	input wire [3:0] perf_busy,
 	input wire perf_reset
 );
-	/* spec/gpu/cp/atg_cp_regs.md */
-	assign reg_rdata = 32'd0;
-	assign hcr_we = 1'd0;
-	assign hcr_widx = 10'd0;
-	assign hcr_wdata = 32'd0;
-	assign hcr_wmask = 32'd0;
-	assign hcr_ridx = 10'd0;
-	assign alias_we = 1'd0;
-	assign alias_idx = 9'd0;
-	assign alias_ridx = 9'd0;
+	`include "ghci_regs.vh"
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, reg_wr, reg_waddr, reg_wdata, reg_wstrb, reg_rd, reg_raddr, ctl_rdata,
-		irq_rdata, ring_rdata, fence_rdata, dbg_rdata, state_rdata, x_rdata, perf_busy,
-		perf_reset, (GCLK_HZ != 0), (VENDOR_ID != 0), (DEVICE_ID != 0), (DEVICE_VERSION != 0),
-		(ISA_ID != 0), (NATIVE_ISA_ID != 0), (CAPS != 0), (CAPS2 != 0), (VEND != 0),
-		(XCAP_MASK != 0), (DISP_OFFSET != 0)};
+	localparam [9:0] I_SCRATCH = GHCI_SCRATCH[11:2];
+	localparam [9:0] I_PERF_CTRL = GHCI_PERF_CTRL[11:2];
+
+	/* Writes. */
+	assign hcr_we = reg_wr && reg_waddr[16:12] == 5'd0;
+	assign hcr_widx = reg_waddr[11:2];
+	assign hcr_wdata = reg_wdata;
+	assign hcr_wmask = {{8{reg_wstrb[3]}}, {8{reg_wstrb[2]}}, {8{reg_wstrb[1]}}, {8{reg_wstrb[0]}}};
+	assign alias_we = reg_wr && reg_waddr[16:11] == 6'b000010 && reg_wstrb == 4'hF;
+	assign alias_idx = reg_waddr[10:2];
+	assign alias_ridx = reg_raddr[10:2];
+
+	reg [31:0] scratch;
+	reg [31:0] counter;
+	reg [127:0] perf;	/* PERF0..3, PERFn in bits 32n+31:32n */
+	wire perf_clear = perf_reset ||
+		(hcr_we && hcr_widx == I_PERF_CTRL && hcr_wmask[0] && hcr_wdata[0]);
+	integer i;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			scratch <= 32'd0;
+			counter <= 32'd0;
+		end else begin
+			counter <= counter + 32'd1;
+			if (hcr_we && hcr_widx == I_SCRATCH)
+				scratch <= (scratch & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
+		end
+		for (i = 0; i < 4; i = i + 1)
+			if (!rst_n || perf_clear)
+				perf[i * 32 +: 32] <= 32'd0;
+			else
+				perf[i * 32 +: 32] <= perf[i * 32 +: 32] + {31'd0, perf_busy[i]};
+	end
+
+	/* Reads: the registered index, answered the next cycle. */
+	reg [9:0] ridx_q;
+	reg rd_hcr_q;
+	reg rd_state_q;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			ridx_q <= 10'd0;
+			rd_hcr_q <= 1'b0;
+			rd_state_q <= 1'b0;
+		end else if (reg_rd) begin
+			ridx_q <= reg_raddr[11:2];
+			rd_hcr_q <= reg_raddr[16:12] == 5'd0;
+			rd_state_q <= reg_raddr[16:11] == 6'b000010;
+		end
+	end
+
+	assign hcr_ridx = ridx_q;
+
+	/* The extended capability list: entry k's byte offset. */
+	function integer xcap_off;
+		input integer k;
+		xcap_off = k < 2 ? 256 + k * 8 : 384 + (k - 2) * 8;
+	endfunction
+
+	function [31:0] xcap_ptr;
+		input integer id;
+		case (id)
+		1: xcap_ptr = DISP_OFFSET;
+		3: xcap_ptr = {15'd0, GHCI_PERF_SRC0};
+		4: xcap_ptr = 32'h000000C0;
+		6: xcap_ptr = 32'h00000120;
+		7: xcap_ptr = 32'h00000140;
+		default: xcap_ptr = 32'd0;
+		endcase
+	endfunction
+
+	/* The list word at byte offset off (0 if none). */
+	function [31:0] xcap_word;
+		input [11:0] off;
+		integer id, id2, k, k2, o;
+		reg [15:0] nxt;
+		begin
+			xcap_word = 32'd0;
+			o = {20'd0, off};
+			k = 0;
+			for (id = 1; id <= 8; id = id + 1)
+				if (XCAP_MASK[id - 1]) begin
+					/* The next entry, in dwords from this one. */
+					nxt = 16'd0;
+					k2 = k + 1;
+					for (id2 = 8; id2 > id; id2 = id2 - 1)
+						if (XCAP_MASK[id2 - 1])
+							/* verilator lint_off WIDTHTRUNC */
+							nxt = (xcap_off(k2) - xcap_off(k)) / 4;	/* < 2^16 */
+							/* verilator lint_on WIDTHTRUNC */
+					if (o == xcap_off(k))
+						xcap_word = {nxt, 8'd1, id[7:0]};
+					if (o == xcap_off(k) + 4)
+						xcap_word = xcap_ptr(id);
+					k = k + 1;
+				end
+		end
+	endfunction
+
+	reg [31:0] own;
+	wire [11:0] roff = {ridx_q, 2'b00};
+
+	always @(*) begin
+		own = xcap_word(roff);
+		case (roff)
+		GHCI_MAGIC[11:0]: own = GHCI_MAGIC_VALUE;
+		GHCI_VERSION[11:0]: own = {GHCI_VERSION_MAJOR, GHCI_VERSION_MINOR};
+		GHCI_VENDOR_ID[11:0]: own = VENDOR_ID;
+		GHCI_DEVICE_ID[11:0]: own = DEVICE_ID;
+		GHCI_ISA_ID[11:0]: own = ISA_ID;
+		GHCI_DEVICE_VERSION[11:0]: own = DEVICE_VERSION;
+		GHCI_EXTCAP[11:0]: own = XCAP_MASK != 8'd0 ? {15'd0, GHCI_EXTCAP_LIST} : 32'd0;
+		GHCI_GCLK_HZ[11:0]: own = GCLK_HZ;
+		GHCI_CAPS[11:0]: own = CAPS;
+		GHCI_CAPS2[11:0]: own = CAPS2;
+		GHCI_SCRATCH[11:0]: own = scratch;
+		GHCI_COUNTER[11:0]: own = counter;
+		12'h048: own = NATIVE_ISA_ID;
+		default: ;
+		endcase
+		if (roff[11:5] == 7'h06)	/* VEND 0x0C0-0x0DF */
+			own = VEND[roff[4:2] * 32 +: 32];
+		if (roff[11:4] == GHCI_PERF0[11:4])	/* PERF0..3 0x080-0x08C */
+			own = perf[roff[3:2] * 32 +: 32];
+		if (XCAP_MASK[2] && roff[11:4] == GHCI_PERF_SRC0[11:4])	/* PERF_SRC0..3 */
+			own = {24'd0, PERF_SRC[roff[3:2] * 8 +: 8]};
+	end
+
+	assign reg_rdata = rd_state_q ? state_rdata :
+		rd_hcr_q ? (own | ctl_rdata | irq_rdata | ring_rdata | fence_rdata | dbg_rdata | x_rdata) :
+		32'd0;
+
+	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0]};
+
 endmodule
 
 `default_nettype wire

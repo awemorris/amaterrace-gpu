@@ -9,8 +9,12 @@
  * atg_cp_irq: IRQ_STATUS (W1C), IRQ_ENABLE, IRQ_SET and the level
  * interrupt line.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/cp/atg_cp_irq.md.
+ * ev[k] sets IRQ_STATUS[k] (one-cycle pulses), except ev[2], the
+ * RING_EMPTY level, whose rising edge sets bit 2.  Writing 1 to a bit of
+ * IRQ_STATUS clears it; a set and a clear in the same cycle leave it set.
+ * IRQ_SET[5] sets SOFT.  irq = OR(IRQ_STATUS & IRQ_ENABLE), registered (it
+ * follows a change one cycle later).  IRQ_STATUS is cleared by the core
+ * reset (CTRL.RESET), IRQ_ENABLE only by rst_n.
  */
 
 `timescale 1ns / 1ps
@@ -19,6 +23,7 @@
 module atg_cp_irq (
 	input wire clk,
 	input wire rst_n,
+	input wire core_rst_n,
 	/* HCR register snoop (from atg_cp_regs) */
 	input wire hcr_we,
 	input wire [9:0] hcr_widx,
@@ -29,13 +34,45 @@ module atg_cp_irq (
 	input wire [8:0] ev,
 	output wire irq
 );
-	/* spec/gpu/cp/atg_cp_irq.md */
-	assign hcr_rdata = 32'd0;
-	assign irq = 1'd0;
+	`include "ghci_regs.vh"
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, hcr_we, hcr_widx, hcr_wdata, hcr_wmask, hcr_ridx, ev};
+	localparam [9:0] I_STATUS = GHCI_IRQ_STATUS[11:2];
+	localparam [9:0] I_ENABLE = GHCI_IRQ_ENABLE[11:2];
+	localparam [9:0] I_SET = GHCI_IRQ_SET[11:2];
+
+	reg [8:0] status;
+	reg [8:0] enable;
+	reg empty_q;
+	reg irq_q;
+
+	wire [8:0] wd = hcr_wdata[8:0] & hcr_wmask[8:0];
+	wire [8:0] clr = (hcr_we && hcr_widx == I_STATUS) ? wd : 9'd0;
+	wire [8:0] set = {ev[8:3], ev[2] && !empty_q, ev[1:0]} |
+		((hcr_we && hcr_widx == I_SET) ? (wd & (9'd1 << GHCI_IRQ_SOFT)) : 9'd0);
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			enable <= 9'd0;
+			irq_q <= 1'b0;
+		end else begin
+			if (hcr_we && hcr_widx == I_ENABLE)
+				enable <= (enable & ~hcr_wmask[8:0]) | wd;
+			irq_q <= |(status & enable);
+		end
+		if (!core_rst_n) begin
+			status <= 9'd0;
+			empty_q <= 1'b1;
+		end else begin
+			status <= (status & ~clr) | set;
+			empty_q <= ev[2];
+		end
+	end
+
+	assign irq = irq_q;
+	assign hcr_rdata = hcr_ridx == I_STATUS ? {23'd0, status} :
+		hcr_ridx == I_ENABLE ? {23'd0, enable} : 32'd0;
+
+	wire unused_ok = &{1'b0, hcr_wdata[31:9], hcr_wmask[31:9]};
 endmodule
 
 `default_nettype wire
