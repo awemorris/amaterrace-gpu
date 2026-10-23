@@ -91,6 +91,7 @@ module atg_cpu_core (
 	reg [31:0] pc_e;	/* address of the instruction in E */
 	reg [31:0] ir_e;
 	reg [31:0] rs1_e, rs2_e;	/* its operands as read in D */
+	reg fwd1_e, fwd2_e;	/* take them from W instead (decided in D: timing) */
 	reg e_vld;
 	reg e_busy;	/* its access or multiply/divide has started */
 	reg w_wen;	/* W: the last completed instruction writes w_rd */
@@ -112,8 +113,6 @@ module atg_cpu_core (
 	wire [6:0] opc = ir[6:0];
 	wire [4:0] rd = ir[11:7];
 	wire [2:0] f3 = ir[14:12];
-	wire [4:0] ra = ir[19:15];
-	wire [4:0] rb = ir[24:20];
 	wire [6:0] f7 = ir[31:25];
 
 	wire [31:0] imm_i = {{20{ir[31]}}, ir[31:20]};
@@ -144,8 +143,8 @@ module atg_cpu_core (
 	wire has_rd = is_lui || is_auipc || is_jal || is_jalr || is_ld || is_imm || is_op || is_m;
 
 	/* E's operands: W holds the instruction just before it (program order). */
-	wire [31:0] rs1 = (ra != 5'd0 && w_wen && w_rd == ra) ? w_val : rs1_e;
-	wire [31:0] rs2 = (rb != 5'd0 && w_wen && w_rd == rb) ? w_val : rs2_e;
+	wire [31:0] rs1 = fwd1_e ? w_val : rs1_e;
+	wire [31:0] rs2 = fwd2_e ? w_val : rs2_e;
 
 	/* ALU: a = rs1; b = an immediate or rs2. */
 	reg [3:0] alu_op;
@@ -373,6 +372,9 @@ module atg_cpu_core (
 			ir_e <= i_rdata;
 			rs1_e <= d_rs1;
 			rs2_e <= d_rs2;
+			/* What W will hold while this instruction is in E. */
+			fwd1_e <= d_ra != 5'd0 && (e_done ? (has_rd && rd == d_ra) : (w_wen && w_rd == d_ra));
+			fwd2_e <= d_rb != 5'd0 && (e_done ? (has_rd && rd == d_rb) : (w_wen && w_rd == d_rb));
 		end
 		if (e_done) begin
 			w_rd <= rd;
