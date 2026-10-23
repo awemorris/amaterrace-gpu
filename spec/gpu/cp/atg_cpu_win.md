@@ -20,7 +20,7 @@ Control window (word index, R/W):
 | --- | --- | --- | --- |
 | 0x00 | PKT_ADDR | win | R: GPU address of the class V packet's dword1 |
 | 0x01 | PKT_DWORDS | win | R: its n |
-| 0x02 | PKT_INFO | win | R: [7:0] JOB_TAG, [31] a packet is waiting |
+| 0x02 | PKT_INFO | win | R: [7:0] JOB_TAG, [31] a packet is waiting (v_valid, 0 from DONE until v_valid falls); a read with [31] = 1 takes the packet (IRQ[0] clears) |
 | 0x03 | DONE | win | W: any value: the packet is finished (v_done, RPTR moves) |
 | 0x04 | UOP | win | W: one µop dword to the sequencer (stalls while the FIFO is full) |
 | 0x05 | UOP_LAST | win | W: the last dword of a µop packet |
@@ -31,6 +31,7 @@ Control window (word index, R/W):
 | 0x0A | CYCLE | win | R: cycle counter (mcycle) |
 | 0x0B | RESULT | win | W: raise IRQ_STATUS.RESULT |
 | 0x0C | IRQ | win | R: [0] packet, [1] fence, [2] halt request; W: 1s clear [1] |
+| 0x0D | IRQ_EN | win | RW: [2:0] enables of the IRQ causes (reset 0); irq = \|(IRQ & IRQ_EN) (p017) |
 | 0x10 | DMA_AMB | dma | RW: GPU address (line aligned) |
 | 0x11 | DMA_MEM | dma | RW: DMEM byte offset (line aligned) |
 | 0x12 | DMA_GO | dma | W: [15:0] lines, [16] 1 = DMEM → memory, 0 = memory → DMEM |
@@ -85,7 +86,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fw_ready` | in | 1 | Taken. |
 | `fw_data` | out | 32 | Dword. |
 | `fw_last` | out | 1 | Last dword of a packet. |
-| `fw_active` | out | 1 | From PKT seen (v_valid) until DONE and the FIFO empty. |
+| `fw_active` | out | 1 | PKT_INFO[31]: from v_valid until v_done (DONE and the FIFO empty). |
 | **Other** | | | |
 | `st_ridx` | out | 9 | STATE read index (atg_cp_state cpu port). |
 | `st_rdata` | in | 32 | STATE word, next cycle. |
@@ -100,11 +101,20 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-- Decode: d_addr in DMEM → m_* (d_ready the next cycle with m_rdata); window → own registers or
-  sb_* (d_ready in the same cycle, except STATE_DATA one cycle and UOP while full: wait); anything
-  else → d_ready with 0 (the firmware is trusted; a store there is dropped).
-- UOP_FIFO: am_fifo-like storage of {last, dword}; fw_valid = not empty.
-- irq = (v_valid & !taken) | fence_pending | halt_req.
+- Decode: d_addr in DMEM → m_* (a load: d_ready the next cycle with m_rdata; a store: d_ready at
+  once); window → own registers (indices 0x00-0x0F) or sb_* (0x10-0x3F) (d_ready in the same
+  cycle, except STATE_DATA one cycle and UOP while full: wait); anything else → d_ready with 0
+  (the firmware is trusted; a store there is dropped).  Window accesses are whole words: d_be is
+  ignored.  Unused own indices read 0.
+- UOP_FIFO: am_fifo of {last, dword}; fw_valid = not empty.  The sequencer takes µops only while
+  fw_active, so µops written outside a packet wait for the next one.
+- Packet: `taken` is set by a PKT_INFO read while PKT_INFO[31] = 1.  DONE (only while
+  PKT_INFO[31] = 1, else ignored) waits for the FIFO to empty, then pulses v_done once; PKT_INFO[31]
+  is 0 from then until v_valid falls (atg_cp_ring drops v_valid for at least one cycle between two
+  packets), so the old packet is never seen twice.
+- irq = |({halt_req, fence_pending, v_valid & !taken} & IRQ_EN).  IRQ_EN (0x0D, reset 0) is the p017
+  addition: halt_req is a level the firmware cannot clear, so without a mask the handler could
+  never return; it also keeps interrupts away until boot has set up the stack.
 
 ## 5. State machine
 
@@ -117,6 +127,7 @@ Window access 1 cycle; DMEM 2 cycles per load.
 ## 7. Corner cases and errors
 
 - DONE with µops still in the FIFO: fw_active stays 1 until the FIFO drains, then v_done.
+- fence_ev in the same cycle as the W1C of IRQ[1]: the event wins (stays pending).
 
 ## 8. What the TB checks
 
@@ -134,4 +145,6 @@ design §2.4.7 (the control window), §2.4.8 (firmware use).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p017 (P2, branch p2-cpu); `sim/tb/atg_cpu_win_tb.v` passes.  p017 spec
+changes: IRQ_EN (0x0D), PKT_INFO/taken/DONE rules, DMEM stores answer at once, d_be ignored in
+the window.

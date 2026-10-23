@@ -22,7 +22,7 @@ Control window (word index, R/W):
 | --- | --- | --- | --- |
 | 0x00 | PKT_ADDR | win | R: GPU address of the class V packet's dword1 |
 | 0x01 | PKT_DWORDS | win | R: its n |
-| 0x02 | PKT_INFO | win | R: [7:0] JOB_TAG, [31] a packet is waiting |
+| 0x02 | PKT_INFO | win | R: [7:0] JOB_TAG, [31] a packet is waiting (v_valid, 0 from DONE until v_valid falls); a read with [31] = 1 takes the packet (IRQ[0] clears) |
 | 0x03 | DONE | win | W: any value: the packet is finished (v_done, RPTR moves) |
 | 0x04 | UOP | win | W: one µop dword to the sequencer (stalls while the FIFO is full) |
 | 0x05 | UOP_LAST | win | W: the last dword of a µop packet |
@@ -33,6 +33,7 @@ Control window (word index, R/W):
 | 0x0A | CYCLE | win | R: cycle counter (mcycle) |
 | 0x0B | RESULT | win | W: raise IRQ_STATUS.RESULT |
 | 0x0C | IRQ | win | R: [0] packet, [1] fence, [2] halt request; W: 1s clear [1] |
+| 0x0D | IRQ_EN | win | RW: [2:0] enables of the IRQ causes (reset 0); irq = \|(IRQ & IRQ_EN) (p017) |
 | 0x10 | DMA_AMB | dma | RW: GPU address (line aligned) |
 | 0x11 | DMA_MEM | dma | RW: DMEM byte offset (line aligned) |
 | 0x12 | DMA_GO | dma | W: [15:0] lines, [16] 1 = DMEM → memory, 0 = memory → DMEM |
