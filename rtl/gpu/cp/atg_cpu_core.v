@@ -183,17 +183,28 @@ module atg_cpu_core (
 		.y(alu_y), .eq(alu_eq), .lt(alu_lt), .ltu(alu_ltu)
 	);
 
+	/* The branch compare: a second ALU on rs1 and rs2 directly, so the
+	 * compare does not wait for the decode of alu_b (timing at 200 MHz);
+	 * only its eq/lt/ltu are used. */
+	wire [31:0] br_y;
+	wire br_eq, br_lt, br_ltu;
+
+	atg_cpu_alu alu_br (
+		.op(A_SUB), .a(rs1), .b(rs2),
+		.y(br_y), .eq(br_eq), .lt(br_lt), .ltu(br_ltu)
+	);
+
 	/* Branch condition (b = rs2 for branches). */
 	reg br_cond;
 
 	always @(*) begin
 		case (f3)
-		3'd0: br_cond = alu_eq;
-		3'd1: br_cond = !alu_eq;
-		3'd4: br_cond = alu_lt;
-		3'd5: br_cond = !alu_lt;
-		3'd6: br_cond = alu_ltu;
-		default: br_cond = !alu_ltu;
+		3'd0: br_cond = br_eq;
+		3'd1: br_cond = !br_eq;
+		3'd4: br_cond = br_lt;
+		3'd5: br_cond = !br_lt;
+		3'd6: br_cond = br_ltu;
+		default: br_cond = !br_ltu;
 		endcase
 	end
 
@@ -385,7 +396,7 @@ module atg_cpu_core (
 		end
 	end
 
-	wire unused_ok = &{1'b0, md_busy};
+	wire unused_ok = &{1'b0, md_busy, alu_eq, alu_lt, alu_ltu, br_y};
 endmodule
 
 `default_nettype wire
