@@ -98,7 +98,51 @@ module atg_cp #(
 	input wire rsp_valid,
 	input wire rsp_write,
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
-	input wire rsp_error
+	input wire rsp_error,
+
+	/*
+	 * WS288 p023: the ports of the full CP (design §7.6).  Today they are
+	 * driven by the scaffold at the end of this file (stubs, all 0) and
+	 * their inputs are not used; p004 and p017 connect them.
+	 */
+	output wire draw_kick,
+	output wire cs_kick,
+	output wire lc_kick,
+	output wire raw_kick,
+	output wire [3:0] inv,
+	input wire [7:0] busy_ext,	/* STATUS[7:0] bits of VF, RX, ROP, TU, SU, SA */
+	input wire vsync,
+	input wire [1:0] x_fault,	/* fault sources: 0 the SUs (ISA), 1 the other blocks */
+	input wire [7:0] x_fault_kind,
+	input wire [63:0] x_fault_addr,
+	input wire [15:0] x_fault_tag,
+
+	output wire hcr_we,	/* the HCR snoop bus for atg_cpu */
+	output wire [9:0] hcr_widx,
+	output wire [31:0] hcr_wdata,
+	output wire [31:0] hcr_wmask,
+	output wire [9:0] hcr_ridx,
+	input wire [31:0] x_rdata,
+	output wire v_valid,	/* class V packets to atg_cpu */
+	output wire [31:0] v_addr,
+	output wire [15:0] v_dwords,
+	output wire [7:0] v_tag,
+	input wire v_done,
+	input wire fw_valid,	/* µops from atg_cpu */
+	output wire fw_ready,
+	input wire [31:0] fw_data,
+	input wire fw_last,
+	input wire fw_active,
+	input wire [8:0] cpu_st_ridx,
+	output wire [31:0] cpu_st_rdata,
+	output wire [31:0] cp_fence_last,
+	output wire cp_fence_ev,
+	output wire cp_halt,
+	output wire cp_open,
+	input wire cpu_fault,
+	input wire [31:0] cpu_fault_addr,
+	input wire cpu_stall,
+	input wire cpu_result
 );
 	`include "ghci_regs.vh"
 
@@ -474,6 +518,240 @@ module atg_cp #(
 	end
 
 	assign reg_rdata = rd_state ? state_q : rd_q;
+
+
+	/*
+	 * WS288 p023 scaffold: the CP of design §7.6 as its children
+	 * (spec/gpu/cp/).  They are port-only stubs and run beside the inline
+	 * CP above, which still does all of the work; their outputs only feed
+	 * the new ports.  p004 moves the inline logic into them and deletes it
+	 * (and this comment).  The children's AMB port (am_amb_mux) is not yet
+	 * connected to the MC.
+	 */
+	localparam SLA_W = ADDR_W - LINE_SHIFT;
+	localparam SLB = LINE_BYTES * 8;
+
+	wire s_hcr_we;
+	wire [9:0] s_hcr_widx, s_hcr_ridx;
+	wire [31:0] s_hcr_wdata, s_hcr_wmask;
+	wire s_alias_we;
+	wire [8:0] s_alias_idx, s_alias_ridx;
+	wire [31:0] s_ctl_rdata, s_irq_rdata, s_ring_rdata, s_fence_rdata, s_dbg_rdata;
+	wire [31:0] s_state_rdata, s_reg_rdata;
+	wire s_perf_reset;
+
+	assign hcr_we = s_hcr_we;
+	assign hcr_widx = s_hcr_widx;
+	assign hcr_wdata = s_hcr_wdata;
+	assign hcr_wmask = s_hcr_wmask;
+	assign hcr_ridx = s_hcr_ridx;
+
+	atg_cp_regs #(
+		.GCLK_HZ(GCLK_HZ), .VENDOR_ID(VENDOR_ID), .DEVICE_ID(DEVICE_ID),
+		.DEVICE_VERSION(DEVICE_VERSION)
+	) s_regs (
+		.clk(clk), .rst_n(rst_n),
+		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
+		.reg_rd(reg_rd), .reg_raddr(reg_raddr), .reg_rdata(s_reg_rdata),
+		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx),
+		.alias_we(s_alias_we), .alias_idx(s_alias_idx), .alias_ridx(s_alias_ridx),
+		.ctl_rdata(s_ctl_rdata), .irq_rdata(s_irq_rdata), .ring_rdata(s_ring_rdata),
+		.fence_rdata(s_fence_rdata), .dbg_rdata(s_dbg_rdata), .state_rdata(s_state_rdata),
+		.x_rdata(x_rdata), .perf_busy({3'd0, blt_busy}), .perf_reset(s_perf_reset)
+	);
+
+	/* The state register file. */
+	wire s_uop_we;
+	wire [8:0] s_uop_idx;
+	wire [31:0] s_uop_wdata;
+	wire s_open, s_lock_fault;
+	wire s_st_we;
+	wire [8:0] s_st_idx;
+	wire [31:0] s_st_wdata;
+
+	atg_cp_state s_state (
+		.clk(clk), .rst_n(rst_n),
+		.alias_we(s_alias_we), .alias_idx(s_alias_idx), .alias_wdata(s_hcr_wdata),
+		.alias_ridx(s_alias_ridx), .alias_rdata(s_state_rdata),
+		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
+		.open(s_open), .blt_busy(blt_busy), .lock_fault(s_lock_fault),
+		.st_we(s_st_we), .st_idx(s_st_idx), .st_wdata(s_st_wdata),
+		.cpu_ridx(cpu_st_ridx), .cpu_rdata(cpu_st_rdata)
+	);
+
+	/* The CP's three memory users behind one AMB port: ring, fence, dbg. */
+	wire [2:0] s_i_req_valid, s_i_req_ready, s_i_req_write, s_i_rsp_valid;
+	wire [3*SLA_W-1:0] s_i_req_line;
+	wire [3*LINE_BYTES-1:0] s_i_req_be;
+	wire [3*SLB-1:0] s_i_req_wdata;
+	wire [23:0] s_i_req_tag;
+	wire s_i_rsp_write, s_i_rsp_error;
+	wire [7:0] s_i_rsp_tag;
+	wire [SLB-1:0] s_i_rsp_rdata;
+	wire s_o_req_valid, s_o_req_write;
+	wire [SLA_W-1:0] s_o_req_line;
+	wire [LINE_BYTES-1:0] s_o_req_be;
+	wire [SLB-1:0] s_o_req_wdata;
+	wire [7:0] s_o_req_tag;
+
+	am_amb_mux #(
+		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .N(3), .ID_W(2)
+	) s_amb (
+		.clk(clk), .rst_n(rst_n),
+		.i_req_valid(s_i_req_valid), .i_req_ready(s_i_req_ready),
+		.i_req_write(s_i_req_write), .i_req_line(s_i_req_line), .i_req_be(s_i_req_be),
+		.i_req_wdata(s_i_req_wdata), .i_req_tag(s_i_req_tag),
+		.i_rsp_valid(s_i_rsp_valid), .i_rsp_write(s_i_rsp_write), .i_rsp_tag(s_i_rsp_tag),
+		.i_rsp_rdata(s_i_rsp_rdata), .i_rsp_error(s_i_rsp_error),
+		.o_req_valid(s_o_req_valid), .o_req_ready(1'b0), .o_req_write(s_o_req_write),
+		.o_req_line(s_o_req_line), .o_req_be(s_o_req_be), .o_req_wdata(s_o_req_wdata),
+		.o_req_tag(s_o_req_tag),
+		.o_rsp_valid(1'b0), .o_rsp_write(1'b0), .o_rsp_tag(8'd0), .o_rsp_rdata({SLB{1'b0}}),
+		.o_rsp_error(1'b0)
+	);
+
+	/* The ring. */
+	wire s_run, s_halt, s_step;
+	wire s_n_valid, s_n_ready, s_n_last;
+	wire [31:0] s_n_data;
+	wire s_ring_empty, s_retire, s_ring_busy;
+	wire s_ring_fault;
+	wire [3:0] s_ring_fault_kind;
+	wire [31:0] s_ring_fault_addr;
+	wire [7:0] s_ring_fault_tag;
+
+	atg_cp_ring #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) s_ring (
+		.clk(clk), .rst_n(core_rst_n),
+		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_ring_rdata),
+		.run(s_run), .halt(s_halt), .step(s_step), .open(s_open),
+		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data), .n_last(s_n_last),
+		.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag),
+		.v_done(v_done),
+		.empty(s_ring_empty), .retire(s_retire), .busy(s_ring_busy),
+		.fault(s_ring_fault), .fault_kind(s_ring_fault_kind), .fault_addr(s_ring_fault_addr),
+		.fault_tag(s_ring_fault_tag),
+		.req_valid(s_i_req_valid[0]), .req_ready(s_i_req_ready[0]),
+		.req_write(s_i_req_write[0]), .req_line(s_i_req_line[0*SLA_W +: SLA_W]),
+		.req_be(s_i_req_be[0*LINE_BYTES +: LINE_BYTES]),
+		.req_wdata(s_i_req_wdata[0*SLB +: SLB]), .req_tag(s_i_req_tag[0*8 +: 8]),
+		.rsp_valid(s_i_rsp_valid[0]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
+	);
+
+	/* The sequencer. */
+	wire s_blt_kick;
+	wire s_f_valid, s_f_ready, s_f_irq, s_f_busy;
+	wire [1:0] s_f_op;
+	wire [31:0] s_f_addr, s_f_value, s_f_aux;
+	wire s_seq_busy, s_cmd_active;
+	wire s_seq_fault;
+	wire [3:0] s_seq_fault_kind;
+	wire [31:0] s_seq_fault_addr;
+	wire [7:0] s_seq_fault_tag;
+
+	atg_cp_seq s_seq (
+		.clk(clk), .rst_n(core_rst_n),
+		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data), .n_last(s_n_last),
+		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data), .fw_last(fw_last),
+		.fw_active(fw_active), .halt(s_halt),
+		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
+		.blt_kick(s_blt_kick), .draw_kick(draw_kick), .cs_kick(cs_kick), .lc_kick(lc_kick),
+		.raw_kick(raw_kick), .inv(inv), .perf_reset(s_perf_reset),
+		.busy_in({busy_ext[7:2], blt_busy, 1'b0}), .vsync(vsync),
+		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
+		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
+		.busy(s_seq_busy), .cmd_active(s_cmd_active),
+		.fault(s_seq_fault), .fault_kind(s_seq_fault_kind), .fault_addr(s_seq_fault_addr),
+		.fault_tag(s_seq_fault_tag)
+	);
+
+	/* Fences. */
+	wire s_fence_fault;
+	wire [3:0] s_fence_fault_kind;
+	wire [31:0] s_fence_fault_addr;
+	wire [7:0] s_fence_fault_tag;
+
+	atg_cp_fence #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) s_fence (
+		.clk(clk), .rst_n(core_rst_n),
+		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_fence_rdata),
+		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
+		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
+		.ev_fence(cp_fence_ev), .fence_last(cp_fence_last),
+		.fault(s_fence_fault), .fault_kind(s_fence_fault_kind),
+		.fault_addr(s_fence_fault_addr), .fault_tag(s_fence_fault_tag),
+		.req_valid(s_i_req_valid[1]), .req_ready(s_i_req_ready[1]),
+		.req_write(s_i_req_write[1]), .req_line(s_i_req_line[1*SLA_W +: SLA_W]),
+		.req_be(s_i_req_be[1*LINE_BYTES +: LINE_BYTES]),
+		.req_wdata(s_i_req_wdata[1*SLB +: SLB]), .req_tag(s_i_req_tag[1*8 +: 8]),
+		.rsp_valid(s_i_rsp_valid[1]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
+	);
+
+	/* Control: state machine, RESET order, watchdog, faults. */
+	wire s_quiesce, s_mc_flush, s_core_rst_n;
+	wire [3:0] s_cp_state;
+	wire [2:0] s_host_kick;
+	wire s_ev_halted, s_ev_fault, s_ev_wdt;
+
+	atg_cp_ctl s_ctl (
+		.clk(clk), .rst_n(rst_n),
+		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_ctl_rdata),
+		.mc_idle(mc_idle), .mem_ready(mem_ready),
+		.busy_in({busy_ext[7:2], blt_busy, s_seq_busy || s_ring_busy}),
+		.ring_empty(s_ring_empty), .cmd_active(s_cmd_active),
+		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
+		.mc_fault_write(mc_fault_write),
+		.src_fault({x_fault[1], blt_error, cpu_fault, x_fault[0], s_fence_fault,
+			s_lock_fault, s_seq_fault, s_ring_fault}),
+		.src_kind({x_fault_kind[7:4], blt_error_kind, GHCI_FAULT_WATCHDOG, x_fault_kind[3:0],
+			s_fence_fault_kind, GHCI_FAULT_LOCKED, s_seq_fault_kind, s_ring_fault_kind}),
+		.src_addr({x_fault_addr[63:32], 32'd0, cpu_fault_addr, x_fault_addr[31:0],
+			s_fence_fault_addr, 32'd0, s_seq_fault_addr, s_ring_fault_addr}),
+		.src_tag({x_fault_tag[15:8], 8'd0, 8'd0, x_fault_tag[7:0], s_fence_fault_tag, 8'd0,
+			s_seq_fault_tag, s_ring_fault_tag}),
+		.run(s_run), .halt(s_halt), .quiesce(s_quiesce), .mc_flush(s_mc_flush),
+		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state),
+		.host_kick(s_host_kick), .step(s_step),
+		.ev_halted(s_ev_halted), .ev_fault(s_ev_fault), .ev_wdt(s_ev_wdt)
+	);
+
+	assign cp_halt = s_halt;
+	assign cp_open = s_open;
+
+	/* Interrupts and the debug port. */
+	wire s_irq, s_dbg_done;
+
+	atg_cp_irq s_irqs (
+		.clk(clk), .rst_n(rst_n),
+		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_irq_rdata),
+		.ev({s_retire, cpu_result, s_ev_halted, 1'b0, s_dbg_done, s_ev_wdt, s_ring_empty,
+			s_ev_fault, cp_fence_ev}),
+		.irq(s_irq)
+	);
+
+	atg_cp_dbg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) s_dbg (
+		.clk(clk), .rst_n(rst_n),
+		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_dbg_rdata),
+		.ev_done(s_dbg_done),
+		.req_valid(s_i_req_valid[2]), .req_ready(s_i_req_ready[2]),
+		.req_write(s_i_req_write[2]), .req_line(s_i_req_line[2*SLA_W +: SLA_W]),
+		.req_be(s_i_req_be[2*LINE_BYTES +: LINE_BYTES]),
+		.req_wdata(s_i_req_wdata[2*SLB +: SLB]), .req_tag(s_i_req_tag[2*8 +: 8]),
+		.rsp_valid(s_i_rsp_valid[2]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
+	);
+
+	/* What the scaffold produces and nothing uses yet. */
+	wire unused_scaffold = &{1'b0, s_reg_rdata, s_st_we, s_st_idx, s_st_wdata, s_blt_kick,
+		s_o_req_valid, s_o_req_write, s_o_req_line, s_o_req_be, s_o_req_wdata, s_o_req_tag,
+		s_quiesce, s_mc_flush, s_core_rst_n, s_cp_state, s_host_kick, s_irq,
+		cpu_stall, s_i_rsp_tag, busy_ext[1:0]};
 
 	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0]};
 endmodule
