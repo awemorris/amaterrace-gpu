@@ -20,6 +20,13 @@
  * when RANDOM is 1.  Addresses at or above ERR_BASE answer SLVERR (the
  * write is not done).  errors counts the protocol violations; each is
  * also printed with "axi_mem: ERROR".  Memory starts at zero.
+ *
+ * READ_EARLY = 1 takes a read's data when its AR is accepted (bursts of up
+ * to 64 bytes), so a read may pass a write whose data is still on its way,
+ * as a memory controller that reorders may do: a master that reads what it
+ * wrote without waiting for the write's response gets the old data.  The
+ * write data then comes slowly (WREADY 20% of the cycles) to widen that
+ * window.
  */
 
 `timescale 1ns / 1ps
@@ -30,6 +37,7 @@ module axi_mem #(
 	parameter MEM_BYTES = 1 << 20,
 	parameter [31:0] ERR_BASE = 32'hF0000000,
 	parameter RANDOM = 1,
+	parameter READ_EARLY = 0,
 	parameter SEED = 1
 ) (
 	input wire clk,
@@ -75,6 +83,7 @@ module axi_mem #(
 	integer awq_h, awq_t;
 	reg [31:0] arq_addr [0:QN-1];
 	reg [7:0] arq_len [0:QN-1];
+	reg [511:0] arq_snap [0:QN-1];
 	integer arq_h, arq_t;
 	integer bq_n;		/* write responses owed */
 	reg [1:0] bq_resp [0:QN-1];
@@ -216,7 +225,7 @@ module axi_mem #(
 					end
 				end
 			end
-			wready <= awq_h != awq_t && rnd(70);
+			wready <= awq_h != awq_t && rnd(READ_EARLY ? 20 : 70);
 
 			/* B. */
 			if (bvalid && bready)
@@ -237,6 +246,12 @@ module axi_mem #(
 				check_burst(araddr, arlen, arsize, arburst);
 				arq_addr[arq_t % QN] = araddr;
 				arq_len[arq_t % QN] = arlen;
+				if (READ_EARLY) begin
+					if ((arlen + 1) * NB > 64)
+						fail("READ_EARLY burst longer than 64 bytes");
+					for (i = 0; i < 64; i = i + 1)
+						arq_snap[arq_t % QN][i*8 +: 8] = mem[(araddr + i) % MEM_BYTES];
+				end
 				arq_t = arq_t + 1;
 			end
 			arready <= (arq_t - arq_h) < QN - 1 && rnd(70);
@@ -264,7 +279,9 @@ module axi_mem #(
 					end else begin
 						rresp <= 2'b00;
 						for (i = 0; i < NB; i = i + 1)
-							rdata[i*8 +: 8] <= mem[(arq_addr[arq_h % QN] + r_beat * NB + i) % MEM_BYTES];
+							rdata[i*8 +: 8] <= READ_EARLY ?
+								arq_snap[arq_h % QN][(r_beat * NB + i) * 8 +: 8] :
+								mem[(arq_addr[arq_h % QN] + r_beat * NB + i) % MEM_BYTES];
 					end
 				end
 			end

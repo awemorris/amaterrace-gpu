@@ -99,7 +99,7 @@ module atg_top_harness #(
 		.m_rready(rready)
 	);
 
-	axi_mem #(.DATA_W(DATA_W), .MEM_BYTES(1 << 19), .SEED(SEED + 7)) mem (
+	axi_mem #(.DATA_W(DATA_W), .MEM_BYTES(1 << 19), .READ_EARLY(1), .SEED(SEED + 7)) mem (
 		.clk(clk), .rst_n(rst_n),
 		.awaddr(awaddr), .awlen(awlen), .awsize(awsize), .awburst(awburst),
 		.awvalid(awvalid), .awready(awready), .wdata(wdata), .wstrb(wstrb),
