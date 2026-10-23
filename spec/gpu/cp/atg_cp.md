@@ -49,7 +49,7 @@ or changed in p004:
 | `mc_flush` | out | 1 | One-cycle pulse with the core reset |
 | `aperture_base/limit` | out | 32 | From `atg_cp_ctl` |
 | `mc_idle`, `mc_fault*` | in | — | From the MC; refusals of client 0 are reported by ring/fence/dbg themselves |
-| `st_we/idx/wdata` | out | 1, 9, 32 | From `atg_cp_state`: every accepted write and the replay |
+| `st_we/idx/wdata` | out | 1, 9, 32 | From `atg_cp_state`: every accepted write and the replay, one register stage later (p017: timing of the ZYBO with the CPU; a kick follows its last STATE write by at least 2 cycles) |
 | `blt_kick`, `draw_kick`, `cs_kick` | out | 1 | KICK (host, `atg_cp_ctl`) OR the sequencer's µop |
 | `lc_kick`, `raw_kick`, `inv` | out | 1, 1, 4 | From the sequencer |
 | `blt_busy`, `busy_ext[7:2]`, `blt_error*`, `x_fault*` | in | — | Busy levels and fault sources (STATUS, waits, FAULT_INFO) |
@@ -75,7 +75,7 @@ None of its own (the CP states are in `atg_cp_ctl`).
 ## 6. Latency and throughput
 
 As the children: register read 1 cycle; KICK → `blt_kick` in the cycle of `reg_wr`; a STATE write →
-`st_we` in the same cycle; the ring one dword per cycle within a line plus one AMB round trip per
+`st_we` one cycle later (p017); the ring one dword per cycle within a line plus one AMB round trip per
 line; RESET: `mc_idle`, 1 pulse cycle, 513 replay cycles.
 
 ## 7. Corner cases and errors
