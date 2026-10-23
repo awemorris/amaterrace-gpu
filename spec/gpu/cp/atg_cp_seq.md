@@ -80,7 +80,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   0x1E0-0x1E8, raw_kick), DBG_MARK (STATE 0x1FF).  Unknown op → fault kind 2.
 - Source select: `fw_active` 1 → fw_*, else n_*.  The ring does not hand over a new packet while a
   class V packet is open, so the order is the ring's.
-- As implemented: SET_REG to the BLT range waits while the BLT is busy (its state must not change
+- As implemented: SET_REG to the BLT range waits while the BLT is busy (WS288 p007: the RX range 0x050-0x06F while the RX or the ROP is, the ROP range 0x070-0x08F while the ROP is; its state must not change
   under a blit); DISPATCH and LOAD_CONST payload writes wait while the SUs are busy, DRAW_RAW's while
   the RX is; BLIT waits for the BLT idle before its kick; a wait after a kick starts one cycle later.
   RESULT waits for every block idle and `f_busy` 0; FENCE for every block idle (the fence unit takes

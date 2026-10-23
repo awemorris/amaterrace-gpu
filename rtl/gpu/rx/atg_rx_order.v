@@ -9,7 +9,6 @@
  * atg_rx_order: Hands out the fragment sequence numbers in primitive order
  * (design §3.8) and tells the ROP which numbers exist.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
  * The behaviour is specified in spec/gpu/rx/atg_rx_order.md.
  */
 
@@ -25,13 +24,17 @@ module atg_rx_order (
 	output wire [15:0] ord_seq
 );
 	/* spec/gpu/rx/atg_rx_order.md */
-	assign sq_seq = 16'd0;
-	assign ord_valid = 1'd0;
-	assign ord_seq = 16'd0;
+	reg [15:0] cnt;
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, sq_req};
+	assign sq_seq = cnt;
+	assign ord_valid = sq_req;
+	assign ord_seq = cnt;
+
+	always @(posedge clk)
+		if (!rst_n)
+			cnt <= 16'd0;
+		else if (sq_req)
+			cnt <= cnt + 16'd1;
 endmodule
 
 `default_nettype wire
