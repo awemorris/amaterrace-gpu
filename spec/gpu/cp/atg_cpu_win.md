@@ -101,10 +101,13 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-- Decode: d_addr in DMEM → m_* (a load: d_ready the next cycle with m_rdata; a store: d_ready at
-  once); window → own registers (indices 0x00-0x0F) or sb_* (0x10-0x3F) (d_ready in the same
-  cycle, except STATE_DATA one cycle and UOP while full: wait); anything else → d_ready with 0
-  (the firmware is trusted; a store there is dropped).  Window accesses are whole words: d_be is
+- Every access is answered the cycle after it is taken (d_ready comes from a register, never from
+  d_addr in the same cycle: the 100 MHz timing of the core's address adder → decode → stall path).
+  Decode: d_addr in DMEM → m_* in the cycle taken, a load's data is m_rdata in the answer cycle;
+  window → own registers (indices 0x00-0x0F) or sb_* (0x10-0x3F), read data registered; a UOP
+  write waits while the FIFO is full; anything else → answered with 0 (the firmware is trusted; a
+  store there is dropped).  STATE_DATA is read in the cycle taken: st_rdata is valid there because
+  a STATE_IDX store is answered a cycle later than it is taken.  Window accesses are whole words: d_be is
   ignored.  Unused own indices read 0.
 - UOP_FIFO: am_fifo of {last, dword}; fw_valid = not empty.  The sequencer takes µops only while
   fw_active, so µops written outside a packet wait for the next one.
@@ -118,11 +121,12 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 5. State machine
 
-One small FSM for the data access: IDLE → (DMEM: WAIT1 | STATE: WAIT1 | UOP full: WAIT_FIFO) → IDLE.
+One small FSM for the data access: IDLE →(access; a UOP write only when the FIFO has room)→ ACK
+(d_ready) → IDLE.
 
 ## 6. Latency and throughput
 
-Window access 1 cycle; DMEM 2 cycles per load.
+Every load and store 2 cycles (taken, answered).
 
 ## 7. Corner cases and errors
 
@@ -146,5 +150,5 @@ design §2.4.7 (the control window), §2.4.8 (firmware use).
 ## 10. Status
 
 Implemented in WS288 p017 (P2, branch p2-cpu); `sim/tb/atg_cpu_win_tb.v` passes.  p017 spec
-changes: IRQ_EN (0x0D), PKT_INFO/taken/DONE rules, DMEM stores answer at once, d_be ignored in
-the window.
+changes: IRQ_EN (0x0D), PKT_INFO/taken/DONE rules, every access answered from a register the
+cycle after (timing), d_be ignored in the window.
