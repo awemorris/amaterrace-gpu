@@ -91,3 +91,9 @@ New ports: `xr_*` (the register bus for the window above 0x10000, read data ORed
 `j_*` (served in cycles without an AXI access; `j_busy`).  `sim/tb/atg_top_tb.v` and
 `boards/zybo/atg_zybo_2d.v` tie the new inputs to 0.  `tools/lint.sh` lints the shapes of
 ZYBO 1', 3, 4, KC705 with 1 and 4 SUs, and the SA reservation.
+
+**WS288 p023 milestone 4 (P1)**: the MC is a router tree (spec/gpu/mc/atg_mc.md).  The MC's
+response fields are per client now (`rsp_write_v`, `rsp_tag_v`, `rsp_rdata_v`, `rsp_error_v`;
+each client is wired to its slice); `HIGH_MASK` (CP, and the outside client) sets the priority
+bit; `ROOT_CLIENT` = `C_EXT` when `EXT_CLIENT` (the KC705's DC one hop from the root).  The CP
+has no `rsp_tag` port yet, so `rsp_tag_v[7:0]` is collected in `unused_ok`.

@@ -55,4 +55,4 @@ design §4.1, §2.2 (APERTURE_*).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p023 milestone 4 (used by atg_mc's root).
