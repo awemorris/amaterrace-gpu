@@ -226,8 +226,7 @@ module atg_cpu_core (
 	/* A faulting instruction may still "complete" (it writes nothing and
 	 * the core stops the next cycle), so e_done does not wait for the
 	 * fault checks (timing). */
-	wire ok = exec && !bad;
-	wire md_start = ok && is_m && !e_busy;
+	wire md_start = exec && is_m && !e_busy && !pc_out;
 	reg e_done;
 
 	always @(*) begin
@@ -255,7 +254,8 @@ module atg_cpu_core (
 	assign stopped = faulted || (!run && !e_busy);
 
 	/* Data port. */
-	assign d_valid = ok && is_mem;
+	/* Only the checks that can hit a load/store gate it (not the branch's). */
+	assign d_valid = exec && is_mem && !mis_mem && !pc_out;
 	assign d_write = is_st;
 	assign d_addr = ea_full;
 

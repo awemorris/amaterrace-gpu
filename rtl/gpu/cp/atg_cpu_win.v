@@ -11,13 +11,14 @@
  * UOP_FIFO, STATE read, FENCE_LAST, cycle counter, RESULT, interrupt), and
  * the sub-bus to atg_cpu_dma and atg_cpu_fw.
  *
- * Every access is answered (d_ready) the cycle after it is taken; a
- * UOP/UOP_LAST write waits while the FIFO is full (stall = 1).  Decode of
- * d_addr: 0x0001_xxxx DMEM (m_* in the cycle it is taken, the load data
- * is m_rdata in the answer cycle); 0xF000_00xx the window, word index
- * d_addr[7:2] (whole words; d_be is ignored): 0x00-0x0F this module's
- * registers, 0x10-0x3F the sub-bus (one-cycle sb_we/sb_re); anything
- * else answers with 0 and drops a store.
+ * Every access is taken in one cycle and answered (d_ready) the next; a
+ * UOP/UOP_LAST write waits there while the FIFO is full (stall = 1).
+ * Decode of d_addr: 0x0001_xxxx DMEM (m_* in the cycle it is taken, the
+ * load data is m_rdata in the answer cycle); 0xF000_00xx the window, word
+ * index d_addr[7:2] (whole words; d_be is ignored), acted on in the
+ * answer cycle from registered copies: 0x00-0x0F this module's registers,
+ * 0x10-0x3F the sub-bus (one-cycle sb_we/sb_re, read data in that cycle);
+ * anything else answers with 0 and drops a store.
  *
  * Class V packet: PKT_INFO[31] = v_valid until DONE (then 0 until v_valid
  * falls); reading PKT_INFO with [31] = 1 takes the packet (its interrupt
@@ -97,22 +98,24 @@ module atg_cpu_win #(
 
 	localparam [UOP_DEPTH_LOG2:0] DEPTH = 1 << UOP_DEPTH_LOG2;
 
-	/* Access FSM: IDLE takes the access (and waits there while a UOP write
-	 * finds the FIFO full), ACK answers it one cycle later from registers
-	 * (d_ready never depends on d_addr in the same cycle: timing). */
+	/* Access FSM: IDLE takes the access (DMEM is accessed there, so its
+	 * data is ready a cycle later) and registers its address and data; ACK
+	 * does the window's work from those registers and answers (d_ready),
+	 * or waits while a UOP write finds the FIFO full.  Nothing in the
+	 * answer path depends on d_addr in the same cycle (timing). */
 	localparam S_IDLE = 1'b0;
 	localparam S_ACK = 1'b1;
 
 	reg state;
-	reg a_dmem;	/* the access was a DMEM one: data from m_rdata */
-	reg [31:0] rd_q;	/* read data of a window or unmapped access */
+	reg q_dmem, q_own, q_sub, q_write;
+	reg [5:0] q_idx;
+	reg [31:0] q_wdata;
 
 	wire in_dmem = d_addr[31:16] == 16'h0001;
 	wire in_win = d_addr[31:8] == 24'hF0_0000;
 	wire [5:0] idx = d_addr[7:2];
-	wire own = in_win && !idx[5] && !idx[4];
-	wire sub = in_win && (idx[5] || idx[4]);
-	wire acc = d_valid && state == S_IDLE;
+	wire take = d_valid && state == S_IDLE;
+	wire ack = state == S_ACK;
 
 	/* Registers. */
 	reg [8:0] st_idx;
@@ -126,72 +129,80 @@ module atg_cpu_win #(
 	wire pkt = v_valid && !done_sent;
 	wire [2:0] cause = {halt_req, fence_pend, pkt && !taken};
 
+	wire own_wr = ack && q_own && q_write;
+	wire own_rd = ack && q_own && !q_write;
+
 	/* UOP_FIFO. */
-	wire uop_wr = acc && own && d_write && (idx == W_UOP || idx == W_UOP_LAST);
+	wire q_uop = q_own && q_write && (q_idx == W_UOP || q_idx == W_UOP_LAST);
 	wire f_ready;
 	wire f_valid;
 	wire [UOP_DEPTH_LOG2:0] f_count;
 
 	am_fifo #(.W(33), .DEPTH_LOG2(UOP_DEPTH_LOG2)) uop_fifo (
 		.clk(clk), .rst_n(rst_n),
-		.in_valid(uop_wr), .in_ready(f_ready), .in_data({idx == W_UOP_LAST, d_wdata}),
+		.in_valid(ack && q_uop), .in_ready(f_ready),
+		.in_data({q_idx == W_UOP_LAST, q_wdata}),
 		.out_valid(f_valid), .out_ready(fw_ready), .out_data({fw_last, fw_data}),
 		.count(f_count)
 	);
 
 	assign fw_valid = f_valid;
 	assign fw_active = pkt;
-	assign stall = uop_wr && !f_ready;
+	assign stall = ack && q_uop && !f_ready;
 	assign irq = |(cause & irq_en);
 	assign st_ridx = st_idx;
+	assign d_ready = ack && !stall;
 
-	/* DMEM. */
-	assign m_en = acc && in_dmem;
+	/* DMEM: accessed in the cycle the access is taken. */
+	assign m_en = take && in_dmem;
 	assign m_we = d_write ? d_be : 4'd0;
 	assign m_addr = {16'd0, d_addr[15:0]};
 	assign m_wdata = d_wdata;
 
-	/* Sub-bus. */
-	assign sb_we = acc && sub && d_write;
-	assign sb_re = acc && sub && !d_write;
-	assign sb_idx = idx;
-	assign sb_wdata = d_wdata;
-
-	assign d_ready = state == S_ACK;
-	always @(*)
-		d_rdata = a_dmem ? m_rdata : rd_q;
-
-	/* Read data of the access being taken. */
-	reg [31:0] rdata;
+	/* Sub-bus: in the answer cycle. */
+	assign sb_we = ack && q_sub && q_write;
+	assign sb_re = ack && q_sub && !q_write;
+	assign sb_idx = q_idx;
+	assign sb_wdata = q_wdata;
 
 	always @(*) begin
-		rdata = 32'd0;
-		if (sub)
-			rdata = dma_rdata | fw_rdata;
-		else if (own)
-			case (idx)
-			W_PKT_ADDR: rdata = v_addr;
-			W_PKT_DWORDS: rdata = {16'd0, v_dwords};
-			W_PKT_INFO: rdata = {pkt, 23'd0, v_tag};
-			W_UOP_FREE: rdata = {{(31 - UOP_DEPTH_LOG2){1'b0}}, DEPTH - f_count};
-			W_STATE_IDX: rdata = {23'd0, st_idx};
-			W_STATE_DATA: rdata = st_rdata;
-			W_FENCE_LAST: rdata = fence_last;
-			W_CYCLE: rdata = cycle;
-			W_IRQ: rdata = {29'd0, cause};
-			W_IRQ_EN: rdata = {29'd0, irq_en};
-			default: rdata = 32'd0;
+		d_rdata = 32'd0;
+		if (q_dmem)
+			d_rdata = m_rdata;
+		else if (q_sub)
+			d_rdata = dma_rdata | fw_rdata;
+		else if (q_own)
+			case (q_idx)
+			W_PKT_ADDR: d_rdata = v_addr;
+			W_PKT_DWORDS: d_rdata = {16'd0, v_dwords};
+			W_PKT_INFO: d_rdata = {pkt, 23'd0, v_tag};
+			W_UOP_FREE: d_rdata = {{(31 - UOP_DEPTH_LOG2){1'b0}}, DEPTH - f_count};
+			W_STATE_IDX: d_rdata = {23'd0, st_idx};
+			W_STATE_DATA: d_rdata = st_rdata;
+			W_FENCE_LAST: d_rdata = fence_last;
+			W_CYCLE: d_rdata = cycle;
+			W_IRQ: d_rdata = {29'd0, cause};
+			W_IRQ_EN: d_rdata = {29'd0, irq_en};
+			default: d_rdata = 32'd0;
 			endcase
+		if (q_write)
+			d_rdata = 32'd0;
 	end
 
-	wire own_wr = acc && own && d_write;
-	wire own_rd = acc && own && !d_write;
+	always @(posedge clk) begin
+		if (take) begin
+			q_idx <= idx;
+			q_wdata <= d_wdata;
+			q_write <= d_write;
+		end
+	end
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
-			a_dmem <= 1'b0;
-			rd_q <= 32'd0;
+			q_dmem <= 1'b0;
+			q_own <= 1'b0;
+			q_sub <= 1'b0;
 			st_idx <= 9'd0;
 			cycle <= 32'd0;
 			irq_en <= 3'd0;
@@ -205,29 +216,27 @@ module atg_cpu_win #(
 			cycle <= cycle + 32'd1;
 			v_done <= 1'b0;
 			ev_result <= 1'b0;
-			case (state)
-			S_IDLE:
-				if (acc && !stall) begin
-					state <= S_ACK;
-					a_dmem <= in_dmem && !d_write;
-					rd_q <= d_write ? 32'd0 : rdata;
-				end
-			default:
+			if (take) begin
+				state <= S_ACK;
+				q_dmem <= in_dmem;
+				q_own <= in_win && !idx[5] && !idx[4];
+				q_sub <= in_win && (idx[5] || idx[4]);
+			end else if (ack && !stall) begin
 				state <= S_IDLE;
-			endcase
-			if (own_wr && idx == W_STATE_IDX)
-				st_idx <= d_wdata[8:0];
-			if (own_wr && idx == W_IRQ_EN)
-				irq_en <= d_wdata[2:0];
-			if (own_wr && idx == W_RESULT)
+			end
+			if (own_wr && q_idx == W_STATE_IDX)
+				st_idx <= q_wdata[8:0];
+			if (own_wr && q_idx == W_IRQ_EN)
+				irq_en <= q_wdata[2:0];
+			if (own_wr && q_idx == W_RESULT)
 				ev_result <= 1'b1;
 			if (fence_ev)
 				fence_pend <= 1'b1;
-			else if (own_wr && idx == W_IRQ && d_wdata[1])
+			else if (own_wr && q_idx == W_IRQ && q_wdata[1])
 				fence_pend <= 1'b0;
-			if (own_rd && idx == W_PKT_INFO && pkt)
+			if (own_rd && q_idx == W_PKT_INFO && pkt)
 				taken <= 1'b1;
-			if (own_wr && idx == W_DONE && pkt)
+			if (own_wr && q_idx == W_DONE && pkt)
 				done_pend <= 1'b1;
 			if (done_pend && !f_valid) begin
 				v_done <= 1'b1;
