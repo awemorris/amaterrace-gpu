@@ -585,30 +585,42 @@ def debug_rgba(st):
     return [UNORM8[(c >> (8 * i)) & 255] for i in range(4)]
 
 
-def rop_quad(st, mem, x, y, mask, z, colors):
-    """One quad in primitive order: depth test/write, blend, write
-    (spec atg_rop_ds, atg_rop_wb).  colors: 4 lanes x RGBA fp32 bits."""
+def ds_quad(st, mem, x, y, mask, z):
+    """atg_rop_ds: the depth test and write of a quad; returns the passing lanes."""
     dep = st[S_DEPTH]
     test = dep & 1 and dep & 0x60
     f32 = bool(dep & 0x40)
     func = (dep >> 2) & 7
+    if not test:
+        return mask
+    out = 0
     for ln in range(4):
         if not mask >> ln & 1:
             continue
         px, py = x + (ln & 1), y + (ln >> 1)
-        if test:
-            da = st[S_DS_BASE] + py * st[S_DS_STRIDE] + px * 4
-            stored = mem.rd32(da)
-            if f32:
-                ok = depth_pass(func, z[ln], stored, True)
-                nv = z[ln]
-            else:
-                ok = depth_pass(func, f2u24(z[ln]), stored & 0xFFFFFF, False)
-                nv = (stored & 0xFF000000) | f2u24(z[ln])
-            if not ok:
-                continue
+        da = st[S_DS_BASE] + py * st[S_DS_STRIDE] + px * 4
+        stored = mem.rd32(da)
+        if f32:
+            ok = depth_pass(func, z[ln], stored, True)
+            nv = z[ln]
+        else:
+            ok = depth_pass(func, f2u24(z[ln]), stored & 0xFFFFFF, False)
+            nv = (stored & 0xFF000000) | f2u24(z[ln])
+        if ok:
+            out |= 1 << ln
             if dep & 2:
                 mem.wr32(da, nv)
+    return out
+
+
+def rop_quad(st, mem, x, y, mask, z, colors):
+    """One quad in primitive order: depth test/write, blend, write
+    (spec atg_rop_ds, atg_rop_wb).  colors: 4 lanes x RGBA fp32 bits."""
+    mask = ds_quad(st, mem, x, y, mask, z)
+    for ln in range(4):
+        if not mask >> ln & 1:
+            continue
+        px, py = x + (ln & 1), y + (ln >> 1)
         fmt = st[S_RT_FORMAT] & 3
         ps = 2 if fmt == 2 else 4
         ca = st[S_RT_BASE] + py * st[S_RT_STRIDE] + px * ps

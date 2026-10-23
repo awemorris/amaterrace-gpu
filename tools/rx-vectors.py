@@ -240,6 +240,51 @@ def blend_vectors(r):
     return out
 
 
+DS_BASE = 0x1000
+DS_STRIDE = 64	# 16 pixels
+
+
+def ds_vectors(r):
+    """atg_rop_ds: per run the STATE (DEPTH, DEBUG_COLOR), the initial
+    16x16 buffer at DS_BASE, then quads 'Q x y mask z0..z3 pass', then the
+    final buffer."""
+    out = []
+    runs = [(f32, func, wr) for f32 in (1, 0) for func in range(8) for wr in (1, 0)]
+    runs += [(1, 1, 1)] * 4 + [(0, 3, 1)] * 2
+    for n, (f32, func, wr) in enumerate(runs):
+        st = M.State()
+        st.set(M.S_DS_BASE, DS_BASE)
+        st.set(M.S_DS_STRIDE, DS_STRIDE)
+        test = 0 if n == len(runs) - 1 else 1
+        st.set(M.S_DEPTH, test | (wr << 1) | (func << 2) | (0x40 if f32 else 0x20))
+        st.set(M.S_DEBUG_COLOR, r.getrandbits(32))
+        mem = M.Mem()
+        init = []
+        for i in range(256):
+            v = f(r.uniform(0, 1)) if f32 else r.getrandbits(32)
+            if r.random() < 0.05:
+                v = r.choice([0, M.ONE, 0x7FC00000, 0x80000000]) if f32 else v
+            mem.wr32(DS_BASE + 4 * i, v)
+            init.append(v)
+        out.append('R %02x %08x %s' % (st[M.S_DEPTH], st[M.S_DEBUG_COLOR],
+                                       ' '.join('%08x' % v for v in init)))
+        for k in range(60):
+            x, y = 2 * r.randrange(8), 2 * r.randrange(8)
+            mask = r.getrandbits(4)
+            z = []
+            for _ in range(4):
+                if r.random() < 0.15:
+                    # equal to what is stored, or the same z twice
+                    z.append(mem.rd32(DS_BASE + 4 * (x + y * 16)) if f32 else f(0.5))
+                else:
+                    z.append(f(r.uniform(0, 1)))
+            p = M.ds_quad(st, mem, x, y, mask, z)
+            out.append('Q %04x %04x %x %s %x' % (x, y, mask, ' '.join('%08x' % v for v in z), p))
+        out.append('F %s' % ' '.join('%08x' % mem.rd32(DS_BASE + 4 * i) for i in range(256)))
+    out.append('E')
+    return out
+
+
 def main():
     r = random.Random(288007)
     put('rx_fp.hex', fp_vectors(r))
@@ -247,6 +292,7 @@ def main():
     put('rx_scan.txt', scan_vectors(r))
     put('rx_clip.txt', clip_vectors(r))
     put('rop_blend.txt', blend_vectors(r))
+    put('rop_ds.txt', ds_vectors(r))
 
 
 if __name__ == '__main__':
