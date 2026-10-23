@@ -3,7 +3,8 @@ Amaterrace GPU
 
 `Amaterrace GPU` is an RTL GPU implementation.
 
-The name `Amaterrace` cometh of a goddesse of lyght, the whiche by hire love illumineth the heigh place.
+The name `Amaterrace` cometh from a goddess of sunlight, who illuminateth the higher place by her love.
+The reduced version is named `Moonphaser.`
 
 - GHCI ... A standard HCI for Vulkan-compatible GPUs that this project proposes.
 - DC ... Display Controller Block
