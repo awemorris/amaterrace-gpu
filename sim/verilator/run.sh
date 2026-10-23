@@ -16,7 +16,7 @@ command -v verilator >/dev/null || { echo "verilator: not installed" >&2; exit 1
 timeout 600 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 	--top-module atg_top -Mdir "$out/obj" -o "$out/atg_top_sim" \
 	-CFLAGS "-I$root/include -O1" \
-	$(find rtl -name '*.v' | sort) sim/verilator/harness.cpp >"$out/build.log" 2>&1 || {
+	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build.log" 2>&1 || {
 	tail -30 "$out/build.log" >&2
 	echo "FAIL verilator (build, log $out/build.log)"
 	exit 1
@@ -27,7 +27,7 @@ timeout 300 "$out/atg_top_sim"
 timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 	--top-module atg_top -GHAS_RX=1 -GHAS_ROP=1 -Mdir "$out/obj-raster" -o "$out/atg_top_raster" \
 	-CFLAGS "-I$root/include -O1 -DRASTER" \
-	$(find rtl -name '*.v' | sort) sim/verilator/harness.cpp >"$out/build-raster.log" 2>&1 || {
+	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build-raster.log" 2>&1 || {
 	tail -30 "$out/build-raster.log" >&2
 	echo "FAIL verilator raster (build, log $out/build-raster.log)"
 	exit 1
