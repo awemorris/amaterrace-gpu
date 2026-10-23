@@ -223,12 +223,15 @@ module atg_cpu_core (
 	wire take_irq = e_vld && !e_busy && !faulted && run && irq && !in_irq;
 	wire exec = e_vld && !faulted && !take_irq && (run || e_busy);
 	wire do_fault = exec && bad;
+	/* A faulting instruction may still "complete" (it writes nothing and
+	 * the core stops the next cycle), so e_done does not wait for the
+	 * fault checks (timing). */
 	wire ok = exec && !bad;
 	wire md_start = ok && is_m && !e_busy;
 	reg e_done;
 
 	always @(*) begin
-		if (!ok)
+		if (!exec)
 			e_done = 1'b0;
 		else if (is_mem)
 			e_done = d_ready;
@@ -242,9 +245,12 @@ module atg_cpu_core (
 
 	wire redirect = take_irq || (e_done && taken);
 	/* D moves into E when E is empty or completes (and nothing is flushed). */
-	wire d_adv = d_vld && (!e_vld || e_done) && !redirect;
+	/* E takes D's instruction when it is empty or completes; a redirect
+	 * only marks it invalid (the data registers do not wait for it). */
+	wire e_free = !e_vld || e_done;
+	wire d_adv = d_vld && e_free;
 
-	assign i_en = !faulted && (!d_vld || d_adv || redirect);
+	assign i_en = !faulted && (!d_vld || e_free);
 	assign i_addr = {pc_f[31:2], 2'b00};
 	assign stopped = faulted || (!run && !e_busy);
 
@@ -314,16 +320,9 @@ module atg_cpu_core (
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			pc_f <= 32'd0;
-			pc_d <= 32'd0;
 			d_vld <= 1'b0;
-			pc_e <= 32'd0;
-			ir_e <= 32'd0;
-			rs1_e <= 32'd0;
-			rs2_e <= 32'd0;
 			e_vld <= 1'b0;
 			w_wen <= 1'b0;
-			w_rd <= 5'd0;
-			w_val <= 32'd0;
 			e_busy <= 1'b0;
 			faulted <= 1'b0;
 			in_irq <= 1'b0;
@@ -347,30 +346,37 @@ module atg_cpu_core (
 			end else if (e_done && is_mret) begin
 				in_irq <= 1'b0;
 			end
-			if (e_done) begin
-				w_wen <= has_rd && rd != 5'd0;
-				w_rd <= rd;
-				w_val <= wb;
-			end
+			if (e_done)
+				w_wen <= has_rd && rd != 5'd0 && !bad;
 			/* E. */
-			if (d_adv) begin
-				e_vld <= 1'b1;
-				pc_e <= pc_d;
-				ir_e <= i_rdata;
-				rs1_e <= d_rs1;
-				rs2_e <= d_rs2;
-			end else if (e_done || take_irq) begin
+			if (d_adv)
+				e_vld <= !redirect;
+			else if (e_done || take_irq)
 				e_vld <= 1'b0;
-			end
 			/* F and D. */
 			if (redirect) begin
 				pc_f <= take_irq ? IRQ_VECTOR : target;
 				d_vld <= 1'b0;
 			end else if (i_en) begin
-				pc_d <= pc_f;
 				pc_f <= pc_f + 32'd4;
 				d_vld <= 1'b1;
 			end
+		end
+	end
+
+	/* Data registers of the stages (no reset: their valid bits guard them). */
+	always @(posedge clk) begin
+		if (i_en)
+			pc_d <= pc_f;
+		if (d_adv) begin
+			pc_e <= pc_d;
+			ir_e <= i_rdata;
+			rs1_e <= d_rs1;
+			rs2_e <= d_rs2;
+		end
+		if (e_done) begin
+			w_rd <= rd;
+			w_val <= wb;
 		end
 	end
 
