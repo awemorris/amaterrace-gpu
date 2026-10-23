@@ -115,6 +115,8 @@ localparam GHCI_IRQ_WATCHDOG = 3;
 localparam GHCI_IRQ_DBG_DONE = 4;
 localparam GHCI_IRQ_SOFT = 5;
 localparam GHCI_IRQ_HALTED = 6;
+localparam GHCI_IRQ_RESULT = 7;
+localparam GHCI_IRQ_RETIRE = 8;
 
 /* FAULT_INFO[15:12] kinds. */
 localparam [3:0] GHCI_FAULT_APERTURE = 4'd1;

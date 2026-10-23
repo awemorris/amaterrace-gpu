@@ -10,8 +10,11 @@
  * priority (requester 0 first), the requester number in the top bits of
  * the tag, responses routed back by those bits.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/common/am_amb_mux.md.
+ * A requester's valid must stay up until its ready (docs/style.md): the
+ * choice is locked while the offered request waits, so a lower-numbered
+ * requester that becomes valid meanwhile does not change the payload.
+ * The requesters' tags must leave their top ID_W bits 0.  Behaviour:
+ * spec/common/am_amb_mux.md.
  */
 
 `timescale 1ns / 1ps
@@ -53,24 +56,63 @@ module am_amb_mux #(
 	input wire [LINE_BYTES*8-1:0] o_rsp_rdata,
 	input wire o_rsp_error
 );
-	/* spec/common/am_amb_mux.md */
-	assign i_req_ready = {N{1'b0}};
-	assign i_rsp_valid = {N{1'b0}};
-	assign i_rsp_write = 1'd0;
-	assign i_rsp_tag = 8'd0;
-	assign i_rsp_rdata = {(LINE_BYTES*8){1'b0}};
-	assign i_rsp_error = 1'd0;
-	assign o_req_valid = 1'd0;
-	assign o_req_write = 1'd0;
-	assign o_req_line = {(ADDR_W-LINE_SHIFT){1'b0}};
-	assign o_req_be = {LINE_BYTES{1'b0}};
-	assign o_req_wdata = {(LINE_BYTES*8){1'b0}};
-	assign o_req_tag = 8'd0;
+	localparam SLA_W = ADDR_W - LINE_SHIFT;
+	localparam SLB = LINE_BYTES * 8;
+	localparam TAG_LO = 8 - ID_W;
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, i_req_valid, i_req_write, i_req_line, i_req_be, i_req_wdata, i_req_tag,
-		o_req_ready, o_rsp_valid, o_rsp_write, o_rsp_tag, o_rsp_rdata, o_rsp_error, (ID_W != 0)};
+	/* The chosen requester: locked while its request waits for ready. */
+	reg lock;
+	reg [ID_W-1:0] lock_k;
+	reg [ID_W-1:0] pick;
+	reg any;
+	integer i;
+
+	always @(*) begin
+		pick = {ID_W{1'b0}};
+		any = 1'b0;
+		for (i = N - 1; i >= 0; i = i - 1)
+			if (i_req_valid[i]) begin
+				/* verilator lint_off WIDTHTRUNC */
+				pick = i;
+				/* verilator lint_on WIDTHTRUNC */
+				any = 1'b1;
+			end
+	end
+
+	wire [ID_W-1:0] k = lock ? lock_k : pick;
+	wire [7:0] tag_k = i_req_tag[k * 8 +: 8];
+
+	assign o_req_valid = lock ? 1'b1 : any;
+	assign o_req_write = i_req_write[k];
+	assign o_req_line = i_req_line[k * SLA_W +: SLA_W];
+	assign o_req_be = i_req_be[k * LINE_BYTES +: LINE_BYTES];
+	assign o_req_wdata = i_req_wdata[k * SLB +: SLB];
+	assign o_req_tag = {k, tag_k[TAG_LO-1:0]};
+
+	genvar g;
+	generate
+		for (g = 0; g < N; g = g + 1) begin : g_port
+			assign i_req_ready[g] = o_req_valid && o_req_ready && k == g;
+			assign i_rsp_valid[g] = o_rsp_valid && o_rsp_tag[7:TAG_LO] == g;
+		end
+	endgenerate
+
+	assign i_rsp_write = o_rsp_write;
+	assign i_rsp_tag = {{ID_W{1'b0}}, o_rsp_tag[TAG_LO-1:0]};
+	assign i_rsp_rdata = o_rsp_rdata;
+	assign i_rsp_error = o_rsp_error;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			lock <= 1'b0;
+			lock_k <= {ID_W{1'b0}};
+		end else begin
+			lock <= o_req_valid && !o_req_ready;
+			lock_k <= k;
+		end
+	end
+
+	wire unused_ok = &{1'b0, tag_k[7:TAG_LO]};
 endmodule
 
 `default_nettype wire

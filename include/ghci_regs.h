@@ -137,6 +137,8 @@
 #define GHCI_IRQ_DBG_DONE (1u << 4)
 #define GHCI_IRQ_SOFT (1u << 5)
 #define GHCI_IRQ_HALTED (1u << 6)
+#define GHCI_IRQ_RESULT (1u << 7)
+#define GHCI_IRQ_RETIRE (1u << 8)
 
 /* FAULT_INFO. */
 #define GHCI_FAULT_CLIENT(f) ((f) & 0xFFu)

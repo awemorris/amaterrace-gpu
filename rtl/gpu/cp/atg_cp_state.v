@@ -6,12 +6,23 @@
  */
 
 /*
- * atg_cp_state: The state register file STATE[0..511] (one BRAM): written
- * through the host alias and the SET_REG µop, broadcast to the blocks,
+ * atg_cp_state: the state register file STATE[0..511]: written through
+ * the host alias and the sequencer's µops, broadcast to the blocks (st_*),
  * read back by the host and by the CP's CPU.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/cp/atg_cp_state.md.
+ * The RAM is held twice (two BRAM18 with the same writes): copy A answers
+ * the host alias, copy B the CPU port and the replay.  A host write is
+ * taken only when open and not to the BLT range (0x000-0x01F) while the
+ * BLT is busy; otherwise it is dropped and lock_fault pulses.  A µop write
+ * is always taken and wins over a host write in the same cycle (which is
+ * then refused with lock_fault).
+ *
+ * Replay (the RESET order, design §2.6: STATE survives RESET, the blocks'
+ * copies do not): a replay pulse broadcasts STATE[0..511] on st_* again,
+ * one word per cycle, from the second cycle after the pulse; replay_busy
+ * is 1 for 513 cycles from the cycle after the pulse.  During a replay
+ * the CPU port's answer is undefined (the CPU is held in RESETTING).  The
+ * RAM itself is never reset.
  */
 
 `timescale 1ns / 1ps
@@ -40,20 +51,67 @@ module atg_cp_state (
 	output wire [31:0] st_wdata,
 	/* CPU read port (atg_cpu window) */
 	input wire [8:0] cpu_ridx,
-	output wire [31:0] cpu_rdata
+	output wire [31:0] cpu_rdata,
+	/* Replay after RESET (from atg_cp_ctl) */
+	input wire replay,
+	output wire replay_busy
 );
-	/* spec/gpu/cp/atg_cp_state.md */
-	assign alias_rdata = 32'd0;
-	assign lock_fault = 1'd0;
-	assign st_we = 1'd0;
-	assign st_idx = 9'd0;
-	assign st_wdata = 32'd0;
-	assign cpu_rdata = 32'd0;
+	reg [31:0] mem_a [0:511];
+	reg [31:0] mem_b [0:511];
+	reg [31:0] a_q;
+	reg [31:0] b_q;
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, alias_we, alias_idx, alias_wdata, alias_ridx, uop_we, uop_idx, uop_wdata,
-		open, blt_busy, cpu_ridx};
+	wire host_locked = !open || (alias_idx < 9'h020 && blt_busy);
+	wire host_take = alias_we && !host_locked && !uop_we;
+	assign lock_fault = alias_we && !host_take;
+
+	wire w = uop_we || host_take;
+	wire [8:0] widx = uop_we ? uop_idx : alias_idx;
+	wire [31:0] wdata = uop_we ? uop_wdata : alias_wdata;
+
+	/* The replay: rp_rd reads word rp_idx, the next cycle broadcasts it. */
+	reg rp_rd;
+	reg rp_out;
+	reg [8:0] rp_idx;
+	reg [8:0] rp_oidx;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			rp_rd <= 1'b0;
+			rp_out <= 1'b0;
+			rp_idx <= 9'd0;
+			rp_oidx <= 9'd0;
+		end else begin
+			rp_out <= rp_rd;
+			rp_oidx <= rp_idx;
+			if (replay) begin
+				rp_rd <= 1'b1;
+				rp_idx <= 9'd0;
+			end else if (rp_rd) begin
+				if (rp_idx == 9'h1FF)
+					rp_rd <= 1'b0;
+				rp_idx <= rp_idx + 9'd1;
+			end
+		end
+	end
+
+	assign replay_busy = rp_rd || rp_out;
+
+	always @(posedge clk) begin
+		if (w) begin
+			mem_a[widx] <= wdata;
+			mem_b[widx] <= wdata;
+		end
+		a_q <= mem_a[alias_ridx];
+		b_q <= mem_b[rp_rd ? rp_idx : cpu_ridx];
+	end
+
+	assign alias_rdata = a_q;
+	assign cpu_rdata = b_q;
+
+	assign st_we = w || rp_out;
+	assign st_idx = w ? widx : rp_oidx;
+	assign st_wdata = w ? wdata : b_q;
 endmodule
 
 `default_nettype wire

@@ -76,3 +76,24 @@ Implemented (70aaff5, p002; unchanged at a217bf8). 317 lines, no FSM, one clock.
 `HAS_CPU` (with `CPU_IMEM_INIT`/`CPU_DMEM_INIT`) so far; MC client numbering 0 CP, 1 BLT, then
 the present blocks (`C_CPU` = 2, ...), `HIGH_MASK` = CP only; the CP's new ports wired (to
 atg_cpu when present, to constants otherwise).  `tools/lint.sh` lints the HAS_CPU shape.
+
+**WS288 p023 (P1), second step**: all blocks of design §7.6 behind parameters — `NSU`,
+`HAS_VF`, `HAS_RX`, `HAS_TU`, `HAS_ROP`, `HAS_SA` (reserved, 0 in v1), `EXT_CLIENT`,
+`HAS_JTAG`, `ROP_STENCIL` and the SU shape `SU_NPHYS`, `SU_NWARPS`, `SU_WARP_W`, `SU_GRP_W`,
+`SU_NREGS`, `SU_SB_ENTRIES`, `SU_SBE_W`, `SU_PACKED`, `SU_SUBGROUP`, `SU_LDS_BYTES`,
+`SU_VARY_WORDS`; defaults keep bitstream 1.  MC clients: 0 CP, 1 BLT, then CPU, VF, TU, ROP,
+the atomic unit `atg_mc_atom` (when NSU > 0), SA, the outside client (EXT_CLIENT, high priority
+with the CP), then 2 per SU (D$, I$+constants).  The graphics links (VF↔SU, RX↔SU PT and
+fragment warps, SU↔TU, SU→ROP, SU↔SA) go to SU 0 only; the other SUs run compute.  STATUS busy
+bits from the blocks, the SUs' ISA fault as CP fault source 4 (kind 8; FAULT_ADDR 0 in v1).
+New ports: `xr_*` (the register bus for the window above 0x10000, read data ORed with the CP's),
+`x_req_*`/`x_rsp_*` (the outside MC client), `x_vsync`, and the second register-bus master
+`j_*` (served in cycles without an AXI access; `j_busy`).  `sim/tb/atg_top_tb.v` and
+`boards/zybo/atg_zybo_2d.v` tie the new inputs to 0.  `tools/lint.sh` lints the shapes of
+ZYBO 1', 3, 4, KC705 with 1 and 4 SUs, and the SA reservation.
+
+**WS288 p023 milestone 4 (P1)**: the MC is a router tree (spec/gpu/mc/atg_mc.md).  The MC's
+response fields are per client now (`rsp_write_v`, `rsp_tag_v`, `rsp_rdata_v`, `rsp_error_v`;
+each client is wired to its slice); `HIGH_MASK` (CP, and the outside client) sets the priority
+bit; `ROOT_CLIENT` = `C_EXT` when `EXT_CLIENT` (the KC705's DC one hop from the root).  The CP
+has no `rsp_tag` port yet, so `rsp_tag_v[7:0]` is collected in `unused_ok`.
