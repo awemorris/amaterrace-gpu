@@ -222,6 +222,10 @@ module atg_zybo_2d (
 		beat <= beat + 26'd1;
 
 	assign led = {2'b00, irq, beat[25]};
+
+	/* Bits the PS's ports do not take (tools/lint.sh lints this top). */
+	wire unused_ok = &{1'b0, fclk[3:1], fclk_resetn[3:1], gp_awaddr[31:17], gp_araddr[31:17],
+		hp_awlen[7:4], hp_arlen[7:4], hp_awsize[2], hp_arsize[2]};
 endmodule
 
 `default_nettype wire

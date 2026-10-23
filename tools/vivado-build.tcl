@@ -1,6 +1,7 @@
 # Vivado non-project batch build of one board top with all of rtl/:
 #   vivado -mode batch -source tools/vivado-build.tcl -tclargs ROOT TOP_DIR TOP OUT PART
-# Reads TOP_DIR/TOP.v and TOP_DIR/TOP.xdc, every rtl/**/*.v, include/ for
+# Reads TOP_DIR/TOP.v, TOP_DIR/lib/*.v (board helpers shared by the tops)
+# and TOP_DIR/TOP.xdc, every rtl/**/*.v, include/ for
 # `include.  Writes OUT/TOP.bit, TOP.dcp (routed), utilization.rpt,
 # utilization_hier.rpt, timing_summary.rpt, drc.rpt.  No project, no IP.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -20,7 +21,8 @@ proc rtl_files {dir} {
 	return [lsort $files]
 }
 
-read_verilog [concat [rtl_files [file join $root rtl]] [list [file join $topdir $top.v]]]
+read_verilog [concat [rtl_files [file join $root rtl]] [list [file join $topdir $top.v]] \
+	[lsort [glob -nocomplain -directory [file join $topdir lib] *.v]]]
 read_xdc [file join $topdir $top.xdc]
 
 synth_design -top $top -part $part -include_dirs [list [file join $root include]]
