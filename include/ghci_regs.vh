@@ -55,9 +55,25 @@ localparam [16:0] GHCI_DBG_DATA = 17'h000A4;
 localparam [16:0] GHCI_DBG_STATUS = 17'h000A8;
 localparam [16:0] GHCI_EXTCAP_LIST = 17'h00100;	/* where EXTCAP points */
 localparam [16:0] GHCI_PERF_SRC0 = 17'h00110;	/* the PERF capability's registers */
+localparam [16:0] GHCI_CPFW_CTRL = 17'h00120;	/* the CPFW capability (id 6), p017 */
+localparam [16:0] GHCI_CPFW_STATUS = 17'h00124;
+localparam [16:0] GHCI_CPFW_IBASE = 17'h00128;
+localparam [16:0] GHCI_CPFW_IWORDS = 17'h0012C;
+localparam [16:0] GHCI_CPFW_DBASE = 17'h00130;
+localparam [16:0] GHCI_CPFW_DWORDS = 17'h00134;
+localparam [16:0] GHCI_CPFW_VERSION = 17'h00138;
+localparam [16:0] GHCI_CPFW_MBOX0 = 17'h00150;	/* MBOX0-3, after SA's 0x140-0x14F */
 localparam [16:0] GHCI_KICK = 17'h00F00;
 localparam [16:0] GHCI_STATE_BASE = 17'h01000;	/* STATE[0..511] */
 localparam [16:0] GHCI_DISP_KC705 = 17'h10000;	/* DC registers on the KC705 */
+
+/* CPFW_CTRL and CPFW_STATUS bits. */
+localparam GHCI_CPFW_CTRL_LOAD = 0;
+localparam GHCI_CPFW_CTRL_RUN = 1;
+localparam GHCI_CPFW_CTRL_HALT = 2;
+localparam GHCI_CPFW_STATUS_READY = 0;
+localparam GHCI_CPFW_STATUS_FAULT = 1;
+localparam GHCI_CPFW_STATUS_ALIVE = 2;
 
 /* CTRL bits. */
 localparam GHCI_CTRL_RUN = 0;

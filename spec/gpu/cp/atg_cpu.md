@@ -22,7 +22,7 @@ Control window (word index, R/W):
 | --- | --- | --- | --- |
 | 0x00 | PKT_ADDR | win | R: GPU address of the class V packet's dword1 |
 | 0x01 | PKT_DWORDS | win | R: its n |
-| 0x02 | PKT_INFO | win | R: [7:0] JOB_TAG, [31] a packet is waiting |
+| 0x02 | PKT_INFO | win | R: [7:0] JOB_TAG, [31] a packet is waiting (v_valid, 0 from DONE until v_valid falls); a read with [31] = 1 takes the packet (IRQ[0] clears) |
 | 0x03 | DONE | win | W: any value: the packet is finished (v_done, RPTR moves) |
 | 0x04 | UOP | win | W: one µop dword to the sequencer (stalls while the FIFO is full) |
 | 0x05 | UOP_LAST | win | W: the last dword of a µop packet |
@@ -33,13 +33,14 @@ Control window (word index, R/W):
 | 0x0A | CYCLE | win | R: cycle counter (mcycle) |
 | 0x0B | RESULT | win | W: raise IRQ_STATUS.RESULT |
 | 0x0C | IRQ | win | R: [0] packet, [1] fence, [2] halt request; W: 1s clear [1] |
+| 0x0D | IRQ_EN | win | RW: [2:0] enables of the IRQ causes (reset 0); irq = \|(IRQ & IRQ_EN) (p017) |
 | 0x10 | DMA_AMB | dma | RW: GPU address (line aligned) |
 | 0x11 | DMA_MEM | dma | RW: DMEM byte offset (line aligned) |
 | 0x12 | DMA_GO | dma | W: [15:0] lines, [16] 1 = DMEM → memory, 0 = memory → DMEM |
 | 0x13 | DMA_STATUS | dma | R: [0] busy, [1] error, [15:8] writes not yet answered |
-| 0x20 | FW_STATUS | fw | W: CPFW_STATUS[15:8] firmware state; any write is the ALIVE heartbeat |
+| 0x20 | FW_STATUS | fw | W: [15:8] → CPFW_STATUS[15:8] firmware state, [16] PARK (the firmware has stopped for a halt request: the core stops); any write is the ALIVE heartbeat.  R: CPFW_STATUS |
 | 0x21-0x24 | MBOX0-3 | fw | RW: CPFW_MBOX0..3 (shared with the host) |
-| 0x25 | FW_VERSION | fw | W: CPFW_VERSION |
+| 0x25 | FW_VERSION | fw | RW: CPFW_VERSION |
 
 ## 2. Parameters
 
@@ -125,7 +126,20 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): covered by the parent's testbench and `tools/lint.sh`.
+`sim/tb/atg_cpu_tb.v` (added in p017; the module itself is wiring) runs `sim/tb/cpu/cpu_top.S` from
+the init images (ZYBO shape) with ring, sequencer, STATE, host and AMB models, and prints, in this
+order:
+
+- `PASS atg_cpu.packet` — a class V packet is taken by the interrupt, read by DMA, and its dwords
+  (with a STATE word) come out as µops in order, then v_done once
+- `PASS atg_cpu.dma` — the firmware's DMA write lands in memory; MBOX1 and RESULT follow
+- `PASS atg_cpu.halt` — halt_req parks the core (CPFW_STATUS.STOPPED)
+- `PASS atg_cpu.reload` — CPFW LOAD of `cpu_reload.S` from memory runs (its .data word shows in
+  MBOX3) and then faults with its PC (fault, CPFW_STATUS.FAULT)
+- `PASS atg_cpu` at the end.
+
+The children's own testbenches: `atg_cpu_core` (RV32IM programs), `atg_cpu_alu`, `atg_cpu_muldiv`,
+`atg_cpu_mem`, `atg_cpu_win`, `atg_cpu_dma`, `atg_cpu_fw`.
 
 ## 9. References
 
@@ -133,4 +147,6 @@ design §2.4.7, §2.4.8, §2.4.10.
 
 ## 10. Status
 
-Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+Wiring written in WS288 p023; the children implemented in WS288 p017 (P2, branch p2-cpu), with
+`sim/tb/atg_cpu_tb.v`.  p017 spec changes: window IRQ_EN (0x0D), FW_STATUS [16] PARK, the CPFW HCR
+layout (MBOX0-3 at 0x150, see atg_cpu_fw).

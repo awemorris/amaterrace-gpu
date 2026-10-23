@@ -55,9 +55,26 @@
 #define GHCI_DBG_ADDR 0x0A0u
 #define GHCI_DBG_DATA 0x0A4u
 #define GHCI_DBG_STATUS 0x0A8u
+#define GHCI_CPFW_CTRL 0x120u /* the CPFW capability (id 6), p017 */
+#define GHCI_CPFW_STATUS 0x124u
+#define GHCI_CPFW_IBASE 0x128u
+#define GHCI_CPFW_IWORDS 0x12Cu
+#define GHCI_CPFW_DBASE 0x130u
+#define GHCI_CPFW_DWORDS 0x134u
+#define GHCI_CPFW_VERSION 0x138u
+#define GHCI_CPFW_MBOX(n) (0x150u + 4u * (n)) /* n = 0..3, after SA's 0x140-0x14F */
 #define GHCI_KICK 0xF00u
 #define GHCI_STATE(i) (0x1000u + 4u * (i))
 #define GHCI_STATE_COUNT 512u
+
+/* CPFW_CTRL and CPFW_STATUS. */
+#define GHCI_CPFW_CTRL_LOAD (1u << 0)
+#define GHCI_CPFW_CTRL_RUN (1u << 1)
+#define GHCI_CPFW_CTRL_HALT (1u << 2)
+#define GHCI_CPFW_STATUS_READY (1u << 0)
+#define GHCI_CPFW_STATUS_FAULT (1u << 1)
+#define GHCI_CPFW_STATUS_ALIVE (1u << 2)
+#define GHCI_CPFW_STATUS_STATE(s) (((s) >> 8) & 0xFFu)
 
 /* CAPS. */
 #define GHCI_CAPS_CP (1u << 0)

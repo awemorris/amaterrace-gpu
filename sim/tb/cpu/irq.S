@@ -5,6 +5,7 @@
 # count of handler entries.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 	.equ TOHOST, 0
+	.equ FAILHOST, 0x10
 	.equ IRQ_REQ, 4
 	.equ IRQ_ACK, 8
 
@@ -72,9 +73,7 @@ main:
 5:	j 5b
 fail:
 	lui x29, 0xF0000
-	slli x30, x30, 1
-	ori x30, x30, 1
-	sw x30, TOHOST(x29)
+	sw x30, FAILHOST(x29)
 6:	j 6b
 
 # x10 = a checksum of mixed work; uses x10-x19, returns through x1.
