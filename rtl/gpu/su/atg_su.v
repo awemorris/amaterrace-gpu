@@ -249,6 +249,11 @@ module atg_su #(
 	wire xu_ready;
 	wire div_ready;
 	wire exp_ready;
+	wire [15:0] unit_ready = {1'b1, 1'b1, exec_ready, lane_ready, lda_ready, exp_ready,
+		tex_ready, cbank_ready, lds_ready, lsu_ready, div_ready, xu_ready, pk_ready, fpu_ready,
+		alu_ready, 1'b1};
+	/* The last group of an instruction leaves atg_su_opd (atg_su_sb's interlock). */
+	wire x_end = x_valid && x_last && unit_ready[x_uop[3:0]];
 	/* Short results. */
 	wire alu_s_valid;
 	wire [WARP_W-1:0] alu_s_warp;
@@ -399,12 +404,12 @@ module atg_su #(
 	);
 
 	atg_su_sb #(
-		.NWARPS(NWARPS), .WARP_W(WARP_W), .SB_ENTRIES(SB_ENTRIES), .SBE_W(SBE_W), .UOP_W(UOP_W)
+		.NPHYS(NPHYS), .SHORT_LAT(SHORT_LAT), .NWARPS(NWARPS), .WARP_W(WARP_W), .SB_ENTRIES(SB_ENTRIES), .SBE_W(SBE_W), .UOP_W(UOP_W)
 	) sb (
 		.clk(clk), .rst_n(rst_n),
 		.u_valid(u_valid), .u_ready(u_ready), .u_warp(u_warp), .u_pc(u_pc), .u_uop(u_uop),
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
-		.i_sbe(i_sbe),
+		.i_sbe(i_sbe), .x_end(x_end),
 		.fb_valid(fb_valid), .fb_warp(fb_warp), .fb_kind(fb_kind), .wake(wake),
 		.rel_valid(rel_valid), .rel_warp(rel_warp), .rel_sbe(rel_sbe), .rel_cls(rel_cls),
 		.wb_stall(wb_stall), .rq_empty(rq_empty), .rq_full(rq_full),
@@ -435,9 +440,7 @@ module atg_su #(
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
 		.x_info(x_info),
-		.unit_ready({1'b1, 1'b1, exec_ready, lane_ready, lda_ready, exp_ready, tex_ready,
-			cbank_ready, lds_ready, lsu_ready, div_ready, xu_ready, pk_ready, fpu_ready,
-			alu_ready, 1'b1})
+		.unit_ready(unit_ready)
 	);
 
 	atg_su_alu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT)) alu (

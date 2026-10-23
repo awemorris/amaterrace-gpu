@@ -53,22 +53,22 @@ module atg_su_rf #(
 	localparam DEPTH = NWARPS * NREGS * G;
 	localparam A_W = $clog2(DEPTH);
 
-	function [A_W-1:0] addr;
+	function [31:0] addr;
 		input [WARP_W-1:0] w;
 		input [5:0] r;
 		input [GRP_W-1:0] g;
-		reg [31:0] a;
-		begin
-			a = ({{(32-WARP_W){1'b0}}, w} * NREGS + {26'd0, r} % NREGS) * G +
-				{{(32-GRP_W){1'b0}}, g} % G;
-			addr = a[A_W-1:0];
-		end
+		addr = ({{(32-WARP_W){1'b0}}, w} * NREGS + {26'd0, r} % NREGS) * G +
+			{{(32-GRP_W){1'b0}}, g} % G;
 	endfunction
 
-	wire [A_W-1:0] wa = addr(w_warp, w_reg, w_grp);
-	wire [A_W-1:0] ra1 = addr(r_warp, r_reg1, r_grp);
-	wire [A_W-1:0] ra2 = addr(r_warp, r_reg2, r_grp);
-	wire [A_W-1:0] ra3 = addr(r_warp, r_reg3, r_grp);
+	wire [31:0] wa32 = addr(w_warp, w_reg, w_grp);
+	wire [31:0] ra1_32 = addr(r_warp, r_reg1, r_grp);
+	wire [31:0] ra2_32 = addr(r_warp, r_reg2, r_grp);
+	wire [31:0] ra3_32 = addr(r_warp, r_reg3, r_grp);
+	wire [A_W-1:0] wa = wa32[A_W-1:0];
+	wire [A_W-1:0] ra1 = ra1_32[A_W-1:0];
+	wire [A_W-1:0] ra2 = ra2_32[A_W-1:0];
+	wire [A_W-1:0] ra3 = ra3_32[A_W-1:0];
 
 	/* One bank per lane and copy: a simple dual-port RAM (one write, one read port). */
 	genvar l;
@@ -96,7 +96,7 @@ module atg_su_rf #(
 		end
 	endgenerate
 
-	wire unused_ok = &{1'b0, rst_n};
+	wire unused_ok = &{1'b0, rst_n, wa32, ra1_32, ra2_32, ra3_32};
 endmodule
 
 `default_nettype wire
