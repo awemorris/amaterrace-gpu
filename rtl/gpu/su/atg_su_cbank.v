@@ -10,9 +10,24 @@
  * from memory), read as c0-c31 operands (atg_su_opd's port) and by lwc
  * (long beats).
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_cbank.md.
- */
+ * LOAD_CONST (lc_kick, kept pending while a lwc group is in progress):
+ * reads STATE 0x1EC (region; v1 loads region 0 only, other regions are
+ * ignored), 0x1ED (byte address, word aligned) and 0x1EE (words, at most
+ * CONST_WORDS) from the STATE broadcast, then reads the lines from the MC
+ * one at a time and writes the words one per cycle into the bank (and the
+ * first 32 into the c-operand copy); busy meanwhile.  An error response
+ * ends the load (the words before it stay).  inv drops the contents: c
+ * operands and lwc read 0 until the next load.
+ * c operands: cr_en registers the three words cr_idx[4:0], [9:5], [14:10]
+ * of the copy; cr_data holds while cr_en is 0 (like the RF).
+ * lwc: one lane group at a time (x_ready 1 only in IDLE): the EXEC lanes'
+ * word index (rs1 + imm) mod CONST_WORDS is read one lane per cycle, then
+ * one beat (l_wr 1, EXEC lanes, l_last = x_last, class m).
+ *
+ * States: IDLE →(load)→ LREQ →(req_ready)→ LWAIT →(rsp)→ LWR (words of
+ * the line) → LREQ | IDLE; IDLE →(lwc)→ ACCESS → DRAIN → BEAT
+ * →(l_ready)→ IDLE.
+*/
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -82,32 +97,163 @@ module atg_su_cbank #(
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
 	input wire rsp_error
 );
-	/* spec/gpu/su/atg_su_cbank.md */
-	assign x_ready = 1'd0;
-	assign l_valid = 1'd0;
-	assign l_warp = {WARP_W{1'b0}};
-	assign l_grp = {GRP_W{1'b0}};
-	assign l_rd = 7'd0;
-	assign l_data = {(NPHYS*32){1'b0}};
-	assign l_lanes = {NPHYS{1'b0}};
-	assign l_wr = 1'd0;
-	assign l_last = 1'd0;
-	assign l_sbe = {((SBE_W)+1){1'b0}};
-	assign l_cls = 3'd0;
-	assign cr_data = 96'd0;
-	assign busy = 1'd0;
-	assign req_valid = 1'd0;
-	assign req_write = 1'd0;
-	assign req_line = {(ADDR_W-LINE_SHIFT){1'b0}};
+`include "atg_su_uop.vh"
+
+	localparam DW = NPHYS * 32;
+	localparam LB = LINE_BYTES * 8;
+	localparam CW = $clog2(CONST_WORDS);
+	localparam WPL = LINE_BYTES / 4;
+	localparam WW = WPL > 1 ? $clog2(WPL) : 1;
+	localparam LW = NPHYS > 1 ? $clog2(NPHYS) : 1;
+	localparam [2:0] IDLE = 3'd0, LREQ = 3'd1, LWAIT = 3'd2, LWR = 3'd3, ACCESS = 3'd4,
+		DRAIN = 3'd5, BEAT = 3'd6;
+
+	reg [31:0] bank [0:CONST_WORDS-1];
+	reg [31:0] cw [0:31];
+	reg [2:0] st;
+	reg valid, lc_pend;
+	reg [31:0] s_region, s_addr, s_words;
+	/* Load. */
+	reg [31:0] ladr;	/* byte address of the next word */
+	reg [CW:0] wi, nw;	/* next word, words */
+	reg [LB-1:0] lbuf;
+	/* lwc. */
+	reg [NPHYS*CW-1:0] ridx;
+	reg [DW-1:0] res;
+	reg [NPHYS-1:0] lanes;
+	reg [6:0] rrd;
+	reg [WARP_W-1:0] rwarp;
+	reg [GRP_W-1:0] rgrp;
+	reg rlast;
+	reg [SBE_W:0] rsbe;
+	reg [LW-1:0] li, pli;
+	reg pval;
+	reg [31:0] q;
+	reg [95:0] crq;
+
+	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_CBANK;
+	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
+	wire [CW-1:0] ra = st == LWR ? wi[CW-1:0] : ridx[li*CW +: CW];
+	wire [WW-1:0] lwo = ladr[2 +: WW];
+	wire [31:0] lword = lbuf[lwo*32 +: 32];
+	assign x_ready = st == IDLE && !lc_pend && !lc_kick;
+
+	reg [NPHYS*CW-1:0] xidx;
+	reg [31:0] ix;
+	integer l;
+	always @(*)
+		for (l = 0; l < NPHYS; l = l + 1) begin
+			ix = x_a[l*32 +: 32] + imm;
+			xidx[l*CW +: CW] = ix[CW-1:0];
+		end
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st <= IDLE;
+			valid <= 1'b0;
+			lc_pend <= 1'b0;
+			s_region <= 32'd0;
+			s_addr <= 32'd0;
+			s_words <= 32'd0;
+			pval <= 1'b0;
+			li <= {LW{1'b0}};
+		end else begin
+			if (st_we && st_idx == 9'h1EC)
+				s_region <= st_wdata;
+			if (st_we && st_idx == 9'h1ED)
+				s_addr <= st_wdata;
+			if (st_we && st_idx == 9'h1EE)
+				s_words <= st_wdata;
+			if (lc_kick)
+				lc_pend <= 1'b1;
+			pval <= 1'b0;
+			case (st)
+			IDLE:
+				if (lc_pend) begin
+					lc_pend <= lc_kick;
+					ladr <= {s_addr[31:2], 2'b00};
+					wi <= {(CW+1){1'b0}};
+					nw <= s_words > CONST_WORDS ? CONST_WORDS[CW:0] : s_words[CW:0];
+					if (s_region == 32'd0 && s_words != 32'd0) begin
+						valid <= 1'b1;
+						st <= LREQ;
+					end
+				end else if (mine) begin
+					ridx <= xidx;
+					lanes <= x_mask[NPHYS-1:0];
+					res <= {DW{1'b0}};
+					rrd <= x_uop[ATG_UOP_RD +: 7];
+					rwarp <= x_warp;
+					rgrp <= x_grp;
+					rlast <= x_last;
+					rsbe <= x_sbe;
+					li <= {LW{1'b0}};
+					st <= x_mask[NPHYS-1:0] == {NPHYS{1'b0}} ? BEAT : ACCESS;
+				end
+			LREQ: if (req_ready)
+				st <= LWAIT;
+			LWAIT: if (rsp_valid) begin
+				lbuf <= rsp_rdata;
+				st <= rsp_error ? IDLE : LWR;
+			end
+			LWR: begin
+				bank[wi[CW-1:0]] <= lword;
+				if (wi < 32)
+					cw[wi[4:0]] <= lword;
+				wi <= wi + 1'b1;
+				ladr <= ladr + 32'd4;
+				if (wi + 1'b1 == nw)
+					st <= IDLE;
+				else if (&lwo)
+					st <= LREQ;
+			end
+			ACCESS: begin
+				pval <= lanes[li];
+				pli <= li;
+				li <= li + 1'b1;
+				if ({{(31-LW){1'b0}}, li} == NPHYS - 1)
+					st <= DRAIN;
+			end
+			DRAIN: st <= BEAT;
+			BEAT: if (l_ready)
+				st <= IDLE;
+			default: st <= IDLE;
+			endcase
+			if (pval)
+				res[pli*32 +: 32] <= valid ? q : 32'd0;
+			if (inv)
+				valid <= 1'b0;
+			if (cr_en)
+				crq <= valid ? {cw[cr_idx[14:10]], cw[cr_idx[9:5]], cw[cr_idx[4:0]]} : 96'd0;
+		end
+	end
+
+	/* The bank's registered read. */
+	always @(posedge clk)
+		q <= bank[ra];
+
+	assign cr_data = crq;
+	assign busy = st == LREQ || st == LWAIT || st == LWR || lc_pend;
+	assign req_valid = st == LREQ;
+	assign req_write = 1'b0;
+	assign req_line = ladr[ADDR_W-1:LINE_SHIFT];
 	assign req_be = {LINE_BYTES{1'b0}};
-	assign req_wdata = {(LINE_BYTES*8){1'b0}};
+	assign req_wdata = {LB{1'b0}};
 	assign req_tag = 8'd0;
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, x_valid, x_warp, x_grp, x_last, x_sbe, x_pc, x_uop, x_a, x_b, x_c, x_mask,
-		x_info, l_ready, cr_en, cr_idx, st_we, st_idx, st_wdata, lc_kick, inv, req_ready,
-		rsp_valid, rsp_write, rsp_tag, rsp_rdata, rsp_error, (NWARPS != 0), (CONST_WORDS != 0)};
+	assign l_valid = st == BEAT;
+	assign l_warp = rwarp;
+	assign l_grp = rgrp;
+	assign l_rd = rrd;
+	assign l_data = res;
+	assign l_lanes = lanes;
+	assign l_wr = 1'b1;
+	assign l_last = rlast;
+	assign l_sbe = rsbe;
+	assign l_cls = ATG_CLS_M;
+
+	wire unused_ok = &{1'b0, x_pc, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop, imm, ix,
+		rsp_write, rsp_tag, (NWARPS != 0), ladr[1:0], s_addr[1:0]};
 endmodule
 
 `default_nettype wire
