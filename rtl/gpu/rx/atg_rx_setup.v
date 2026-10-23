@@ -58,7 +58,7 @@ module atg_rx_setup (
 			cull <= 3'd0;
 		end else if (st_we) begin
 			if (st_idx >= 9'h050 && st_idx <= 9'h055)
-				vp[st_idx - 9'h050] <= st_wdata;
+				vp[st_idx[2:0]] <= st_wdata;
 			if (st_idx == 9'h056)
 				smin <= st_wdata;
 			if (st_idx == 9'h057)
@@ -127,6 +127,7 @@ module atg_rx_setup (
 	endfunction
 
 	reg [31:0] rv;
+	wire [23:0] snap = f2fix(rv);
 	reg signed [23:0] fx [0:2];
 	reg signed [23:0] fy [0:2];
 	wire signed [23:0] fx0 = fx[0], fx1 = fx[1], fx2 = fx[2];
@@ -278,7 +279,7 @@ module atg_rx_setup (
 			/* fp registers 0-20 from cl_tri, 21-26 VIEWPORT, 27 1.0 */
 			r_we <= 1'b1;
 			r_wa <= {1'b0, cnt};
-			r_wd <= cnt < 6'd21 ? cl_tri[cnt * 32 +: 32] : cnt < 6'd27 ? vp[cnt - 6'd21] : ONE;
+			r_wd <= cnt < 6'd21 ? cl_tri[cnt * 32 +: 32] : cnt < 6'd27 ? vp[cnt[2:0] - 3'd5] : ONE;
 			cnt <= cnt + 6'd1;
 			if (cnt == 6'd27) begin
 				pc <= raw ? 7'd0 : ATG_RX_UC_PERSP;
@@ -317,7 +318,7 @@ module atg_rx_setup (
 				r_wa <= u_d;
 				r_wd <= fa_o ? fa_r : fm_o ? fm_r : fd_r;
 				if (u_d >= 7'd64 && u_d < 7'd76)
-					pl[u_d - 7'd64] <= fa_o ? fa_r : fm_o ? fm_r : fd_r;
+					pl[u_d[3:0]] <= fa_o ? fa_r : fm_o ? fm_r : fd_r;
 				pc <= pc + 7'd1;
 				st <= S_DEC;
 			end
@@ -328,9 +329,9 @@ module atg_rx_setup (
 				rv <= R[7'd31 + {cnt[5:1], 1'b0} + {1'b0, cnt[5:1]} + {6'd0, cnt[0]}];
 			if (cnt >= 6'd1 && cnt <= 6'd6) begin
 				if (!tsnap[0])
-					fx[tsnap[2:1]] <= f2fix(rv);
+					fx[tsnap[2:1]] <= snap;
 				else
-					fy[tsnap[2:1]] <= f2fix(rv);
+					fy[tsnap[2:1]] <= snap;
 			end
 			/* 7: bbox; 7-10: D */
 			if (cnt == 6'd7) begin
@@ -357,8 +358,8 @@ module atg_rx_setup (
 				empty <= dd == 48'sd0 || (cull[0] && (cull[2] ? ccw : !ccw)) ||
 					(cull[1] && !(cull[2] ? ccw : !ccw)) || bx1 <= bx0 || by1 <= by0;
 				for (k = 0; k < 3; k = k + 1) begin
-					eA[k] <= fy[vtx((k + 1) % 3, ccw)] - fy[vtx(k[1:0], ccw)];
-					eB[k] <= fx[vtx(k[1:0], ccw)] - fx[vtx((k + 1) % 3, ccw)];
+					eA[k] <= fy[vtx(k == 2 ? 2'd0 : k[1:0] + 2'd1, ccw)] - fy[vtx(k[1:0], ccw)];
+					eB[k] <= fx[vtx(k[1:0], ccw)] - fx[vtx(k == 2 ? 2'd0 : k[1:0] + 2'd1, ccw)];
 					oX[k] <= sx - {fx[vtx(k[1:0], ccw)][23], fx[vtx(k[1:0], ccw)]};
 					oY[k] <= sy - {fy[vtx(k[1:0], ccw)][23], fy[vtx(k[1:0], ccw)]};
 				end

@@ -43,7 +43,7 @@ module atg_rx_fdiv (
 	reg [9:0] e;
 	reg [23:0] d;
 	reg [25:0] rem;
-	reg [24:0] q;
+	reg [23:0] q;
 
 	assign busy = run;
 
@@ -85,7 +85,7 @@ module atg_rx_fdiv (
 				run <= 1'b1;
 				cnt <= 5'd24;
 				d <= mb;
-				q <= 25'd0;
+				q <= 24'd0;
 				if (ma < mb) begin
 					rem <= {1'b0, ma, 1'b0};
 					e <= {2'b00, ea} - {2'b00, eb} + 10'd126;
@@ -95,7 +95,7 @@ module atg_rx_fdiv (
 				end
 			end
 		end else if (run) begin
-			q <= q_n;
+			q <= q_n[23:0];
 			rem <= {rem_n[24:0], 1'b0};
 			cnt <= cnt - 5'd1;
 			if (last) begin

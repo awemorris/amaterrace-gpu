@@ -14,7 +14,7 @@
  *
  * A vertex is 7 fp32 words {x, y, z, w, w0, w1, w2} (position and its
  * weights of the original vertices).  Inside is z >= 0 (Vulkan).  The
- * intersection of an edge from an inside vertex p to an outside one q is
+ * intersection of an edge from an is_in vertex p to an outside one q is
  * p + (q - p) t, t = p.z / (p.z - q.z), on one fadd, one fmul and one
  * fdiv, one operation at a time.  See spec/gpu/rx/atg_rx_clip.md.
  */
@@ -55,7 +55,7 @@ module atg_rx_clip (
 	reg [31:0] rw [0:8];
 	always @(posedge clk)
 		if (st_we && st_idx >= 9'h1E0 && st_idx <= 9'h1E8)
-			rw[st_idx - 9'h1E0] <= st_wdata;
+			rw[st_idx[3:0]] <= st_wdata;
 
 	localparam [2:0] S_IDLE = 3'd0, S_READ = 3'd1, S_CLIP = 3'd2, S_GO = 3'd3, S_WAIT = 3'd4,
 		S_OUT = 3'd5;
@@ -69,7 +69,7 @@ module atg_rx_clip (
 	reg rd_v;	/* a word arrives this cycle */
 	reg [3:0] rd_k;	/* which */
 	reg [1:0] r;	/* rotation: A = vv[r] */
-	reg [1:0] n;	/* inside vertices */
+	reg [1:0] n;	/* is_in vertices */
 	reg ii;	/* intersection */
 	reg [2:0] c;	/* word of the intersection */
 	reg [1:0] sub;	/* 0 q - p, 1 x t, 2 p + ; with c = 7: 0 p.z - q.z, 1 p.z / d */
@@ -97,12 +97,12 @@ module atg_rx_clip (
 		end
 	endfunction
 
-	function inside;	/* z >= 0, -0 and denormals included, NaN out */
+	function is_in;	/* z >= 0, -0 and denormals included, NaN out */
 		input [31:0] z;
-		inside = !(z[30:23] == 8'hFF && z[22:0] != 23'd0) && !(z[31] && z[30:23] != 8'd0);
+		is_in = !(z[30:23] == 8'hFF && z[22:0] != 23'd0) && !(z[31] && z[30:23] != 8'd0);
 	endfunction
 
-	wire [2:0] ins = {inside(vv2[95:64]), inside(vv1[95:64]), inside(vv0[95:64])};
+	wire [2:0] ins = {is_in(vv2[95:64]), is_in(vv1[95:64]), is_in(vv0[95:64])};
 	wire [1:0] nin = {1'b0, ins[0]} + {1'b0, ins[1]} + {1'b0, ins[2]};
 	reg [1:0] rsel;
 	always @(*) begin
@@ -112,7 +112,7 @@ module atg_rx_clip (
 				rsel = k[1:0];
 	end
 
-	/* The edge of intersection ii: from p (inside) to q. */
+	/* The edge of intersection ii: from p (is_in) to q. */
 	wire [223:0] va = rot(2'd0, r, vv0, vv1, vv2);
 	wire [223:0] vb = rot(2'd1, r, vv0, vv1, vv2);
 	wire [223:0] vc = rot(2'd2, r, vv0, vv1, vv2);

@@ -297,7 +297,7 @@ module atg_rx_scan #(
 	assign fl_info = 64'd0;
 
 	wire unused_ok = &{1'b0, st_we, st_idx, st_wdata, sp_last, pt_rdata, fl_gnt, fm_o, fa_o,
-		sp_tri[767:765], sp_tri[735:448], li[16], lj[16], HAS_SU != 0};
+		lv[46:0], sp_tri[767:765], sp_tri[735:448], li[16], lj[16], HAS_SU != 0};
 endmodule
 
 `default_nettype wire
