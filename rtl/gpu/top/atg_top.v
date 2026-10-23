@@ -27,7 +27,11 @@ module atg_top #(
 	parameter S_LEN_W = 4,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter DATA_W = 64
+	parameter DATA_W = 64,
+	/* WS288 p023: which blocks are present (design §7.6; 0 = absent). */
+	parameter HAS_CPU = 0,	/* atg_cpu, the CP's firmware processor */
+	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
+	parameter CPU_DMEM_INIT = ""	/* its DMEM image */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -89,7 +93,12 @@ module atg_top #(
 	input wire m_rvalid,
 	output wire m_rready
 );
-	localparam NCLIENT = 2;
+	/*
+	 * MC clients: 0 CP, 1 BLT, then the present blocks in this order:
+	 * CPU (WS288 p023 adds the others in the same way).
+	 */
+	localparam C_CPU = 2;
+	localparam NCLIENT = C_CPU + HAS_CPU;
 	localparam LA_W = 32 - LINE_SHIFT;
 	localparam LINE_BITS = LINE_BYTES * 8;
 
@@ -172,6 +181,22 @@ module atg_top #(
 	wire [LINE_BITS-1:0] rsp_rdata;
 	wire rsp_error;
 
+	/* The CP's links to the blocks of design §7.6 (p023). */
+	wire draw_kick, cs_kick, lc_kick, raw_kick;
+	wire [3:0] inv;
+	wire hcr_we;
+	wire [9:0] hcr_widx, hcr_ridx;
+	wire [31:0] hcr_wdata, hcr_wmask;
+	wire v_valid, v_done;
+	wire [31:0] v_addr;
+	wire [15:0] v_dwords;
+	wire [7:0] v_tag;
+	wire fw_valid, fw_ready, fw_last, fw_active;
+	wire [31:0] fw_data;
+	wire [8:0] cpu_st_ridx;
+	wire [31:0] cpu_st_rdata, cp_fence_last, cpu_hcr_rdata, cpu_fault_addr;
+	wire cp_fence_ev, cp_halt, cp_open, cpu_fault, cpu_stall, cpu_result;
+
 	atg_cp #(
 		.ADDR_W(32),
 		.LINE_BYTES(LINE_BYTES),
@@ -216,7 +241,44 @@ module atg_top #(
 		.rsp_valid(rsp_valid[0]),
 		.rsp_write(rsp_write),
 		.rsp_rdata(rsp_rdata),
-		.rsp_error(rsp_error)
+		.rsp_error(rsp_error),
+		.draw_kick(draw_kick),
+		.cs_kick(cs_kick),
+		.lc_kick(lc_kick),
+		.raw_kick(raw_kick),
+		.inv(inv),
+		.busy_ext(8'd0),
+		.vsync(1'b0),
+		.x_fault(2'd0),
+		.x_fault_kind(8'd0),
+		.x_fault_addr(64'd0),
+		.x_fault_tag(16'd0),
+		.hcr_we(hcr_we),
+		.hcr_widx(hcr_widx),
+		.hcr_wdata(hcr_wdata),
+		.hcr_wmask(hcr_wmask),
+		.hcr_ridx(hcr_ridx),
+		.x_rdata(cpu_hcr_rdata),
+		.v_valid(v_valid),
+		.v_addr(v_addr),
+		.v_dwords(v_dwords),
+		.v_tag(v_tag),
+		.v_done(v_done),
+		.fw_valid(fw_valid),
+		.fw_ready(fw_ready),
+		.fw_data(fw_data),
+		.fw_last(fw_last),
+		.fw_active(fw_active),
+		.cpu_st_ridx(cpu_st_ridx),
+		.cpu_st_rdata(cpu_st_rdata),
+		.cp_fence_last(cp_fence_last),
+		.cp_fence_ev(cp_fence_ev),
+		.cp_halt(cp_halt),
+		.cp_open(cp_open),
+		.cpu_fault(cpu_fault),
+		.cpu_fault_addr(cpu_fault_addr),
+		.cpu_stall(cpu_stall),
+		.cpu_result(cpu_result)
 	);
 
 	atg_blt #(
@@ -250,7 +312,7 @@ module atg_top #(
 
 	atg_mc #(
 		.NCLIENT(NCLIENT),
-		.HIGH_MASK(2'b01),
+		.HIGH_MASK({{(NCLIENT-1){1'b0}}, 1'b1}),
 		.ADDR_W(32),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
@@ -311,7 +373,51 @@ module atg_top #(
 		.m_rready(m_rready)
 	);
 
-	wire unused_ok = &{1'b0, blt_done};
+	/* The CP's firmware processor. */
+	generate
+	if (HAS_CPU != 0) begin : g_cpu
+		atg_cpu #(
+			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.IMEM_INIT(CPU_IMEM_INIT), .DMEM_INIT(CPU_DMEM_INIT)
+		) cpu (
+			.clk(clk), .rst_n(core_rst_n),
+			.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata),
+			.hcr_wmask(hcr_wmask), .hcr_ridx(hcr_ridx), .hcr_rdata(cpu_hcr_rdata),
+			.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag),
+			.v_done(v_done),
+			.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data), .fw_last(fw_last),
+			.fw_active(fw_active),
+			.st_ridx(cpu_st_ridx), .st_rdata(cpu_st_rdata), .fence_last(cp_fence_last),
+			.fence_ev(cp_fence_ev), .halt_req(cp_halt), .open(cp_open),
+			.ev_result(cpu_result), .stall(cpu_stall), .fault(cpu_fault),
+			.fault_addr(cpu_fault_addr),
+			.req_valid(c_req_valid[C_CPU]), .req_ready(c_req_ready[C_CPU]),
+			.req_write(c_req_write[C_CPU]), .req_line(c_req_line[C_CPU*LA_W +: LA_W]),
+			.req_be(c_req_be[C_CPU*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(c_req_wdata[C_CPU*LINE_BITS +: LINE_BITS]),
+			.req_tag(c_req_tag[C_CPU*8 +: 8]),
+			.rsp_valid(rsp_valid[C_CPU]), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
+			.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
+		);
+	end else begin : g_no_cpu
+		assign cpu_hcr_rdata = 32'd0;
+		assign v_done = 1'b0;
+		assign fw_valid = 1'b0;
+		assign fw_data = 32'd0;
+		assign fw_last = 1'b0;
+		assign fw_active = 1'b0;
+		assign cpu_st_ridx = 9'd0;
+		assign cpu_result = 1'b0;
+		assign cpu_stall = 1'b0;
+		assign cpu_fault = 1'b0;
+		assign cpu_fault_addr = 32'd0;
+		wire unused_cpu = &{1'b0, hcr_we, hcr_widx, hcr_wdata, hcr_wmask, hcr_ridx, v_valid,
+			v_addr, v_dwords, v_tag, fw_ready, cpu_st_rdata, cp_fence_last, cp_fence_ev,
+			cp_halt, cp_open};
+	end
+	endgenerate
+
+	wire unused_ok = &{1'b0, blt_done, draw_kick, cs_kick, lc_kick, raw_kick, inv};
 endmodule
 
 `default_nettype wire

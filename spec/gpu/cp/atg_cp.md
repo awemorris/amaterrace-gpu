@@ -137,3 +137,16 @@ Differences between the RTL and design.md / docs/ghci.md (to fix in an implement
 5. RING_EMPTY is `RING_WPTR == 0` (no RPTR yet).
 6. FAULT_INFO[23:16] for an aperture fault is the client number, not the block number of ghci.md §2 (equal for the BLT, client 1 = block 1). FAULT_INFO[31:24] (job tag) is always 0. A memory error from the BLT reports no address and no direction.
 7. No watchdog (WDT_EN is stored), no ring, no STEP, no fence; IRQ bits [8:7] (RESULT, RETIRE, design v3) are absent; ISA_ID is 0.
+
+**WS288 p023 (P1) additions to the RTL**: (a) new ports for the blocks of design §7.6 —
+`draw_kick`, `cs_kick`, `lc_kick`, `raw_kick`, `inv[3:0]`, `busy_ext[7:0]`, `vsync`,
+`x_fault[1:0]`/`x_fault_kind`/`x_fault_addr`/`x_fault_tag` (fault sources 4 = SUs, 7 = other
+blocks), the HCR snoop bus `hcr_*` and `x_rdata` (atg_cpu's CPFW registers), the class V packet
+`v_*`, the firmware µop stream `fw_*`, `cpu_st_ridx/cpu_st_rdata`, `cp_fence_last`,
+`cp_fence_ev`, `cp_halt`, `cp_open`, `cpu_fault`, `cpu_fault_addr`, `cpu_stall`, `cpu_result`
+(see spec/gpu/cp/atg_cpu.md and the children's specs); (b) a scaffold at the end of the file
+that instantiates the proposed children (`atg_cp_regs`, `atg_cp_state`, `atg_cp_ring`,
+`atg_cp_seq`, `atg_cp_fence`, `atg_cp_ctl`, `atg_cp_irq`, `atg_cp_dbg`, `am_amb_mux` for
+ring/fence/dbg) wired to the real inputs; they are stubs, their outputs drive only the new
+ports, and the inline logic still does all the work.  p004 moves the inline logic into the
+children, connects `am_amb_mux` to MC client 0 and removes the inline code.
