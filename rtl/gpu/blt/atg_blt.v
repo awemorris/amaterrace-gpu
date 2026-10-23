@@ -130,10 +130,16 @@ module atg_blt #(
 	wire [16:0] cy0 = {1'b0, s_clip_min[31:16]};
 	wire [16:0] cx1 = {1'b0, s_clip_max[15:0]};
 	wire [16:0] cy1 = {1'b0, s_clip_max[31:16]};
-	wire [16:0] x0 = clip_en && cx0 > dx ? cx0 : dx;
-	wire [16:0] y0 = clip_en && cy0 > dy ? cy0 : dy;
-	wire [16:0] x1 = clip_en && cx1 < dx_end ? cx1 : dx_end;
-	wire [16:0] y1 = clip_en && cy1 < dy_end ? cy1 : dy_end;
+	wire [16:0] clip_x0 = clip_en && cx0 > dx ? cx0 : dx;
+	wire [16:0] clip_y0 = clip_en && cy0 > dy ? cy0 : dy;
+	wire [16:0] clip_x1 = clip_en && cx1 < dx_end ? cx1 : dx_end;
+	wire [16:0] clip_y1 = clip_en && cy1 < dy_end ? cy1 : dy_end;
+
+	/* The same, registered at the kick (S_CLIP uses them). */
+	reg [16:0] x0;
+	reg [16:0] y0;
+	reg [16:0] x1;
+	reg [16:0] y1;
 	wire empty = x1 <= x0 || y1 <= y0;
 	wire [16:0] sx0 = {1'b0, s_src_xy[15:0]} + (x0 - dx);
 	wire [16:0] sy0 = {1'b0, s_src_xy[31:16]} + (y0 - dy);
@@ -143,6 +149,7 @@ module atg_blt #(
 	wire op_ok = (op_fill || op_copy) && !s_op[4] && s_op[9:8] == 2'd0 && !s_op[12];
 
 	localparam [2:0] S_IDLE = 3'd0;
+	localparam [2:0] S_CLIP = 3'd7;	/* the clipped rectangle's start */
 	localparam [2:0] S_MUL = 3'd1;	/* row addresses: y * stride */
 	localparam [2:0] S_SEG = 3'd2;	/* FILL: write the segment */
 	localparam [2:0] S_CRD = 3'd3;	/* COPY: read the source lines */
@@ -260,6 +267,10 @@ module atg_blt #(
 			cs <= {AW{1'b0}};
 			rem <= 17'd0;
 			width <= 17'd0;
+			x0 <= 17'd0;
+			y0 <= 17'd0;
+			x1 <= 17'd0;
+			y1 <= 17'd0;
 			rows <= 17'd0;
 			mul_dy <= 17'd0;
 			mul_sy <= 17'd0;
@@ -301,19 +312,28 @@ module atg_blt #(
 					if (!op_ok) begin
 						error <= 1'b1;
 						error_kind <= GHCI_FAULT_OPCODE;
-					end else if (empty) begin
-						done <= 1'b1;
 					end else begin
-						state <= S_MUL;
-						width <= x1 - x0;
-						rows <= y1 - y0 - 1'b1;
-						mul_dy <= y0;
-						mul_sy <= sy0;
-						mul_ds <= dst_stride_w;
-						mul_ss <= src_stride_w;
-						dst_row <= dst_base_w + {{(AW - 17){1'b0}}, x0};
-						src_row <= src_base_s + {{(AW - 17){1'b0}}, sx0};
+						state <= S_CLIP;
+						x0 <= clip_x0;
+						y0 <= clip_y0;
+						x1 <= clip_x1;
+						y1 <= clip_y1;
 					end
+				end
+			S_CLIP:
+				if (empty) begin
+					state <= S_IDLE;
+					done <= 1'b1;
+				end else begin
+					state <= S_MUL;
+					width <= x1 - x0;
+					rows <= y1 - y0 - 1'b1;
+					mul_dy <= y0;
+					mul_sy <= sy0;
+					mul_ds <= dst_stride_w;
+					mul_ss <= src_stride_w;
+					dst_row <= dst_base_w + {{(AW - 17){1'b0}}, x0};
+					src_row <= src_base_s + {{(AW - 17){1'b0}}, sx0};
 				end
 			S_MUL:
 				if (mul_dy == 17'd0 && mul_sy == 17'd0) begin
