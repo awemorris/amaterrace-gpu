@@ -38,11 +38,14 @@
  * tile).  For each segment the blitter computes its addresses (four
  * cycles), then: FILL queues the write and goes on with the next segment
  * (writes stream, up to the MC's outstanding limit); COPY, TILE and UNTILE
- * wait for every earlier write (so that an overlapping copy reads what it
- * must), read the one or two source lines that cover the segment, shift
- * them by whole units and write; blend-over reads the destination line as
- * well and combines one 32-bit pixel per cycle (a three-stage pipeline)
- * before the write.  The write's byte enables cover the segment only.
+ * read the one or two source lines that cover the segment, shift them by
+ * whole units and write; blend-over reads the destination line as well
+ * and combines one 32-bit pixel per cycle (a three-stage pipeline) before
+ * the write.  The write's byte enables cover the segment only.  The MC
+ * does not order a read after an earlier write, so the blitter keeps the
+ * lines of its writes until their responses (WQ of them, in a small
+ * table) and a read of one of those lines waits for it: an overlapping
+ * copy reads what it must, and other reads overlap the writes.
  *
  * busy is 1 from kick to done or error (one-cycle pulses).  An error
  * response stops new requests; the error pulse comes when every request
@@ -263,9 +266,28 @@ module atg_blt #(
 	reg rd_first;		/* the first source read is still to go */
 	reg rd_second;		/* a second one is needed and still to go */
 
-	/* Outstanding requests. */
+	/* Outstanding requests, and the lines of the outstanding writes (in
+	 * the order of their responses: a ring of WQ entries). */
+	localparam WQ = 8;
 	reg [3:0] wr_out;
 	reg [1:0] rd_out;
+	reg [WQ*LA_W-1:0] wq_line;
+	reg [WQ-1:0] wq_valid;
+	reg [2:0] wq_head;	/* the oldest */
+	reg [2:0] wq_tail;	/* the next free */
+	reg [WQ-1:0] hit_n0;
+	reg [WQ-1:0] hit_n1;
+	reg [WQ-1:0] hit_d;
+	integer e;
+
+	always @(*) begin
+		for (e = 0; e < WQ; e = e + 1) begin
+			hit_n0[e] = wq_valid[e] && wq_line[e*LA_W +: LA_W] == src_n0;
+			hit_n1[e] = wq_valid[e] && wq_line[e*LA_W +: LA_W] == src_n1;
+			hit_d[e] = wq_valid[e] && wq_line[e*LA_W +: LA_W] == seg_line;
+		end
+	end
+	wire wq_full = &wq_valid;
 
 	/* The line buffers: two source lines, the destination line (blend). */
 	reg [LINE_BITS-1:0] buf0;
@@ -435,6 +457,10 @@ module atg_blt #(
 			rd_second <= 1'b0;
 			wr_out <= 4'd0;
 			rd_out <= 2'd0;
+			wq_line <= {(WQ * LA_W){1'b0}};
+			wq_valid <= {WQ{1'b0}};
+			wq_head <= 3'd0;
+			wq_tail <= 3'd0;
 			buf0 <= {LINE_BITS{1'b0}};
 			buf1 <= {LINE_BITS{1'b0}};
 			bufd <= {LINE_BITS{1'b0}};
@@ -459,6 +485,14 @@ module atg_blt #(
 
 			/* Outstanding requests and the read lines. */
 			wr_out <= wr_out + {3'd0, q_fire && q_write} - {3'd0, rsp_wr};
+			if (q_fire && q_write) begin
+				wq_line[wq_tail*LA_W +: LA_W] <= q_line;
+				wq_tail <= wq_tail + 1'b1;
+			end
+			if (rsp_wr)
+				wq_head <= wq_head + 1'b1;
+			wq_valid <= (wq_valid | ((q_fire && q_write) ? (8'd1 << wq_tail) : 8'd0)) &
+				~(rsp_wr ? (8'd1 << wq_head) : 8'd0);
 			rd_out <= rd_out + {1'b0, q_fire && !q_write} - {1'b0, rsp_rd};
 			if (rsp_rd) begin
 				case (rsp_tag[1:0])
@@ -566,7 +600,7 @@ module atg_blt #(
 			S_CRD:
 				if (fail) begin
 					state <= S_DRAIN;
-				end else if (!q_valid && wr_out == 4'd0) begin
+				end else if (!q_valid && hit_n0 == 0 && hit_n1 == 0) begin
 					if (rd_first) begin
 						q_valid <= 1'b1;
 						q_write <= 1'b0;
@@ -594,7 +628,7 @@ module atg_blt #(
 			S_DRD:
 				if (fail) begin
 					state <= S_DRAIN;
-				end else if (!q_valid && wr_out == 4'd0) begin
+				end else if (!q_valid && hit_d == 0) begin
 					q_valid <= 1'b1;
 					q_write <= 1'b0;
 					q_line <= seg_line;
@@ -635,7 +669,7 @@ module atg_blt #(
 			S_WR:
 				if (fail) begin
 					state <= S_DRAIN;
-				end else if (!q_valid) begin
+				end else if (!q_valid && !wq_full) begin
 					q_valid <= 1'b1;
 					q_write <= 1'b1;
 					q_line <= seg_line;
