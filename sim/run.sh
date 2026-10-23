@@ -4,7 +4,8 @@
 # any mismatch; the run passes when PASS is printed and FAIL is not.
 #   sim/run.sh [NAME...]     (no NAME: every testbench)
 # Output (the vvp binary, the log) goes to build/sim/ (not in git).
-# SEED=n is passed to the testbench as +seed=n.  Timeout per run: 300 s.
+# SEED=n is passed to the testbench as +seed=n.  Timeout per run: 300 s
+# (SIM_TIMEOUT=s to change it).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 root=$(cd "$(dirname -- "$0")/.." && pwd)
@@ -33,7 +34,7 @@ for name in "$@"; do
 		fail=1
 		continue
 	fi
-	timeout 300 vvp -n "$out/$name.vvp" +seed="${SEED:-1}" >"$out/$name.log" 2>&1
+	timeout "${SIM_TIMEOUT:-300}" vvp -n "$out/$name.vvp" +seed="${SEED:-1}" >"$out/$name.log" 2>&1
 	if grep -q "^PASS $name\$" "$out/$name.log" && ! grep -q 'FAIL\|ERROR' "$out/$name.log"; then
 		echo "PASS $name"
 	else
