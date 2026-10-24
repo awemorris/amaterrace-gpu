@@ -14,7 +14,8 @@
  * fw/cp/images/.  Checks, in order:
  *
  *   - jtag: GHCI MAGIC through the bridge, SCRATCH written and read back,
- *     the DC's DC_ID and DC_CAPS (ADV7511) at +0x10000, STATUS.MEM_READY
+ *     the DC's DC_ID and DC_CAPS (ADV7511) at +0x10000, CAPS and CAPS2 of
+ *     the KC705 shape (packed, graphics, subgroup, TU), STATUS.MEM_READY
  *     after the memory model's calibration;
  *   - fill: the aperture, a BLT FILL of 20 x 3 pixels from STATE writes
  *     and KICK, STATUS.BLT_BUSY polled, then DBG_ADDR/DBG_DATA read back
@@ -294,6 +295,11 @@ module atg_kc705_raster_tb;
 		expect_reg(DC + GHCI_DC_ID, GHCI_DC_ID_VALUE, 32'hFFFFFFFF);
 		expect_reg(DC + GHCI_DC_CAPS, 32'h4, 32'h7);
 		expect_reg(GHCI_CAPS, 32'h8, 32'h8);	/* CAPS[3]: the DC is in this window */
+		/* The KC705 shape: CAPS[28] packed, [27] graphics, [24] subgroup,
+		 * [23:20] 64-byte lines, [8] the TU, [2] the SU; CAPS2[27:24] 16
+		 * texture slots / 4. */
+		expect_reg(GHCI_CAPS, 32'h19600104, 32'h19F00104);
+		expect_reg(GHCI_CAPS2, 32'h04000000, 32'h0F000000);
 		check_extcap;
 		n = 0;
 		jr(GHCI_STATUS, v);
