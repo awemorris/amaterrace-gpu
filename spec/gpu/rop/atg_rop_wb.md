@@ -30,7 +30,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `d_valid` | in | 1 | A quad after depth/stencil. |
 | `d_ready` | out | 1 | Taken. |
 | `d_xy` | in | 32 | Position. |
-| `d_mask` | in | 4 | Lanes that passed. |
+| `d_smask` | in | 16 | Samples that passed (bit 4 l + s). |
 | `d_color` | in | 512 | Colour (DEBUG_COLOR expanded for q_dbg). |
 | **atg_rop_blend** | | | |
 | `b_valid` | out | 1 | Blend. |
@@ -90,3 +90,5 @@ design §2.3 (RT_*), §3.8 (ROP is never blocked by the SU).
 2026-10-24 Q1 (P3's p007 decisions, ACKed; ghci.md to follow): stencil ops are not implemented in v1 (the ROP gets no facing bit; a port change belongs to p009). STATE bits: SCISSOR_MIN/MAX `{y, x}` (MAX 0 = none), RT_SIZE `{h, w}`, CULL [1:0] 1 front/2 back/3 both and [2] front = CCW, DEBUG_COLOR and BLEND_CONST RGBA8 (R in [7:0]), BLEND [0] enable, [4:1] src colour, [8:5] dst colour, [11:9] colour op, [15:12] src alpha, [19:16] dst alpha, [22:20] alpha op (VkBlendFactor/VkBlendOp numbers), WRITE_MASK [3:0] RGBA (0 writes nothing), DEPTH func = VkCompareOp and no test without a depth format bit; DS_BASE/RT_BASE/stride aligned to 8 bytes (4 for RGB565). The CP sequencer holds a SET_REG into the RX range (0x050–0x06F) while RX or ROP is busy and into the ROP range (0x070–0x08F) while the ROP is busy.
 
 Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+
+Multisampling (the MSAA work): MS_CTRL[3:0] = 2: the pixel of sample s of x at (4 x + s) ps of the row (a quad's row is one line still), and the quad goes through `atg_rop_blend` once per sample (b_mask: the lanes whose sample passed); one sample: one pass as before.  `d_mask` became `d_smask`.  The 4-sample cases are in `sim/tb/atg_rop_ms_tb.v`.

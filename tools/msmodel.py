@@ -152,11 +152,12 @@ def a2c(alpha, ms4):
     return A2C_MASK[sum(1 for t in A2C_TH if alpha >= t)]
 
 
-def ms_quad(ctrl, smask, z, colors, zexp, zout, ds):
+def ms_quad(ctrl, smask, z, colors, zexp, zout, ds, dbg=False):
     """atg_rop_ms: per-sample depth, alpha to coverage, alpha to one.
     ctrl = MS_CTRL; smask 16 bits; z[4] the lanes' r3; zexp 4 bits; zout[4]
     the exported depths; ds[4]; colors[4][4] (changed for alpha to one).
-    Returns (smask, sz[4][4], colors)."""
+    Returns (smask, sz[4][4], colors).  dbg: the direct path (DEBUG_COLOR):
+    no alpha to coverage, no alpha to one."""
     ms4 = ctrl & 15 == 2
     sz = [[0] * S for _ in range(4)]
     colors = [list(c) for c in colors]
@@ -168,22 +169,22 @@ def ms_quad(ctrl, smask, z, colors, zexp, zout, ds):
                 sz[ln][s] = M.fclamp01(M.fadd(z[ln], ds[s]))
             else:
                 sz[ln][s] = z[ln]
-        if ctrl >> 8 & 1:
+        if ctrl >> 8 & 1 and not dbg:
             smask &= ~((15 & ~a2c(colors[ln][3], ms4)) << (4 * ln))
-        if ctrl >> 9 & 1:
+        if ctrl >> 9 & 1 and not dbg:
             colors[ln][3] = M.ONE
     return smask, sz, colors
 
 
 def rop_quad_ms(st, mem, x, y, smask, z, colors, zexp=0, zout=(0, 0, 0, 0),
-                ds=(0, 0, 0, 0)):
+                ds=(0, 0, 0, 0), dbg=False):
     """One quad in primitive order through atg_rop_ms, atg_rop_ds and
     atg_rop_wb with the sample-interleaved layout (S samples per pixel
     when MS_CTRL says 4, else 1): sample s of pixel (px, py) at
     base + py stride + (px S + s) ps.  Returns the samples written."""
     ctrl = st[S_MS_CTRL]
     ns = S if ms_log2(st) else 1
-    smask, sz, colors = ms_quad(ctrl, smask, z, colors, zexp, zout, ds)
+    smask, sz, colors = ms_quad(ctrl, smask, z, colors, zexp, zout, ds, dbg)
     dep = st[M.S_DEPTH]
     test = dep & 1 and dep & 0x60
     f32 = bool(dep & 0x40)

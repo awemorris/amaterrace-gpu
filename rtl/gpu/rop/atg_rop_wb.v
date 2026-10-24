@@ -16,7 +16,13 @@
  * on, or a WRITE_MASK without every channel of RT_FORMAT).  After 16 idle
  * cycles the dirty lines are written and both entries emptied (the next
  * draw must not blend with lines another block may have changed); busy
- * stays up until then.  One quad at a time.  See spec/gpu/rop/atg_rop_wb.md.
+ * stays up until then.  One quad at a time.
+ *
+ * Multisampling (MS_CTRL[3:0] = 2, docs/ghci.md section 12.11): sample s of
+ * pixel x is at (4 x + s) ps of the row, so a quad's row is still one line
+ * (2 pixels × 4 samples); the quad goes through atg_rop_blend once per
+ * sample s (the lanes whose sample s survived), each pass on the lanes'
+ * sample-s pixels.  See spec/gpu/rop/atg_rop_wb.md.
  */
 
 `timescale 1ns / 1ps
@@ -37,7 +43,7 @@ module atg_rop_wb #(
 	input wire d_valid,
 	output wire d_ready,
 	input wire [31:0] d_xy,
-	input wire [3:0] d_mask,
+	input wire [15:0] d_smask,	/* bit 4 l + s: sample s of lane l */
 	input wire [511:0] d_color,
 	/* atg_rop_blend */
 	output reg b_valid,
@@ -69,8 +75,10 @@ module atg_rop_wb #(
 	reg [1:0] fmt;
 	reg blend_on;
 	reg [3:0] wm;
+	reg ms4;
 	always @(posedge clk)
 		if (!rst_n) begin
+			ms4 <= 1'b0;
 			rt_base <= 32'd0;
 			rt_stride <= 32'd0;
 			fmt <= 2'd0;
@@ -87,6 +95,8 @@ module atg_rop_wb #(
 				blend_on <= st_wdata[0];
 			if (st_idx == GHCI_S_WRITE_MASK)
 				wm <= st_wdata[3:0];
+			if (st_idx == GHCI_S_MS_CTRL)
+				ms4 <= st_wdata[3:0] == 4'd2;
 		end
 	wire px16 = fmt == 2'd2;
 	wire need_read = blend_on || (px16 ? wm[2:0] != 3'b111 : wm != 4'hF);
@@ -105,7 +115,9 @@ module atg_rop_wb #(
 	reg wait_rsp;
 	reg [4:0] idle;
 	reg [31:0] xy;
-	reg [3:0] mask;
+	reg [15:0] mask;
+	reg [1:0] sb;	/* the sample of this blend pass */
+	wire [3:0] smk = {mask[{2'd3, sb}], mask[{2'd2, sb}], mask[{2'd1, sb}], mask[{2'd0, sb}]};
 	reg [511:0] color;
 	reg [31:0] addr;
 	reg [LINE_SHIFT-1:0] off [0:1];	/* the quad's first pixel in each row's line */
@@ -118,7 +130,9 @@ module atg_rop_wb #(
 	reg [LINE_SHIFT-1:0] pl;
 	always @(*)
 		for (l = 0; l < 4; l = l + 1) begin
-			pl = (l >= 2 ? off1 : off0) + ((l & 1) != 0 ? (px16 ? 2 : 4) : 0);
+			pl = (l >= 2 ? off1 : off0) +
+				((l & 1) != 0 ? (ms4 ? (px16 ? 8 : 16) : (px16 ? 2 : 4)) : 0) +
+				(px16 ? {{(LINE_SHIFT-3){1'b0}}, sb, 1'b0} : {{(LINE_SHIFT-4){1'b0}}, sb, 2'b00});
 			po[LINE_SHIFT * l +: LINE_SHIFT] = pl;
 			dst[32 * l +: 32] = l >= 2 ? edat1[8 * pl +: 32] : edat0[8 * pl +: 32];
 			if (px16)
@@ -126,7 +140,7 @@ module atg_rop_wb #(
 		end
 	assign b_src = color;
 	assign b_dst = dst;
-	assign b_mask = mask;
+	assign b_mask = smk;
 
 	assign d_ready = st == S_IDLE;
 	assign busy = st != S_IDLE || ev[0] || ev[1];
@@ -168,7 +182,8 @@ module atg_rop_wb #(
 		S_IDLE:
 			if (d_valid) begin
 				xy <= d_xy;
-				mask <= d_mask;
+				mask <= d_smask;
+				sb <= 2'd0;
 				color <= d_color;
 				r <= 1'b0;
 				idle <= 5'd0;
@@ -180,9 +195,10 @@ module atg_rop_wb #(
 				st <= S_FLUSH;
 			end
 		S_ROW:
-			if (mask[{r, 1'b0}] || mask[{r, 1'b1}]) begin
+			if (mask[8 * r +: 8] != 8'd0) begin
 				addr <= rt_base + ({16'd0, xy[31:16]} + {31'd0, r}) * rt_stride +
-					(px16 ? {15'd0, xy[15:0], 1'b0} : {14'd0, xy[15:0], 2'b00});
+					(ms4 ? (px16 ? {13'd0, xy[15:0], 3'b000} : {12'd0, xy[15:0], 4'b0000}) :
+					(px16 ? {15'd0, xy[15:0], 1'b0} : {14'd0, xy[15:0], 2'b00}));
 				st <= S_LOOK;
 			end else if (r)
 				st <= S_BLEND;
@@ -226,7 +242,7 @@ module atg_rop_wb #(
 		S_BWAIT:
 			if (b_rvalid) begin
 				for (l = 0; l < 4; l = l + 1)
-					if (mask[l]) begin
+					if (smk[l]) begin
 						if (px16) begin
 							edat[l >> 1][8 * po[LINE_SHIFT * l +: LINE_SHIFT] +: 16] <= b_pix[32 * l +: 16];
 							edirty[l >> 1][po[LINE_SHIFT * l +: LINE_SHIFT] +: 2] <= 2'b11;
@@ -235,7 +251,12 @@ module atg_rop_wb #(
 							edirty[l >> 1][po[LINE_SHIFT * l +: LINE_SHIFT] +: 4] <= 4'hF;
 						end
 					end
-				st <= S_IDLE;
+				if (!ms4 || sb == 2'd3)
+					st <= S_IDLE;
+				else begin
+					sb <= sb + 2'd1;
+					st <= S_BLEND;
+				end
 			end
 		S_FLUSH:
 			/* entry r: write its dirty bytes, then empty it */

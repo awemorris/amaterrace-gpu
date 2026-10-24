@@ -42,12 +42,12 @@ module atg_rop_order_tb;
 	atg_rop_order dut (.clk(clk), .rst_n(rst_n),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
-		.ex_next(ex_next),
+		.ex_next(ex_next), .ex_ms(148'd0),
 		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 		.ord_valid(ord_valid), .ord_seq(ord_seq),
 		.q_valid(q_valid), .q_ready(q_ready), .q_xy(q_xy), .q_mask(q_mask),
-		.q_color(q_color), .q_depth(q_depth), .q_dbg(q_dbg), .busy(busy));
+		.q_color(q_color), .q_depth(q_depth), .q_dbg(q_dbg), .q_ms(), .busy(busy));
 
 	integer seed, errors = 0;
 	integer i, k, nq, mixed;
