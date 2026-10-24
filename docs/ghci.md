@@ -116,8 +116,9 @@ earlier work has completed.
 - [`include/ghci_packets.h`](../include/ghci_packets.h) and
   [`include/ghci_frame.h`](../include/ghci_frame.h) hold the packet formats
   of section 7.
-- `tools/gsi1asm.py`, `tools/gsi1model.py` and `tools/gsi1fp.py` are the
-  reference assembler, execution model and arithmetic of the shader ISA.
+- `tools/gsi1asm.py`, `tools/gsi1dis.py`, `tools/gsi1model.py` and
+  `tools/gsi1fp.py` are the reference assembler, disassembler, execution
+  model and arithmetic of the shader ISA.
 
 2. Conventions
 --------------
@@ -427,7 +428,7 @@ GHCI_FRAME (gpu-op 0x10105, draft;
 | 1 | SET_REG | (index, value) x n/2 | STATE[index] = value; index >= 512 or odd n: fault 3 |
 | 2 | BLIT | 0 | Starts the blitter on the state; flags[0]: wait for its end |
 | 3 | DRAW | 0 | Starts the vertex fetcher; invalidates the data and texture caches |
-| 4 | DISPATCH | 3: gx, gy, gz | A compute dispatch |
+| 4 | DISPATCH | 3: gx, gy, gz | A compute dispatch; invalidates no cache (send INVALIDATE first when the program reads rewritten memory) |
 | 5 | FENCE | 2: addr, value | A complete fence (section 9); flags[0]: raise IRQ_STATUS.FENCE |
 | 6 | WAIT_IDLE | 0 | Waits until the units in flags (a STATUS busy-bit mask; 0 = all) are idle |
 | 7 | LOAD_CONST | 3: region, addr, words | Loads a constant region (waits for the shader units) |
@@ -458,8 +459,9 @@ have is a fault of kind 2.
   unit, is ignored and raises a fault of kind 7. A write with partial byte
   enables is ignored.
 
-The standard ranges other than the blitter's follow the command set and
-are not yet part of this draft.
+The blitter range (section 8.2) and the program range (section 8.3) are
+defined; the other standard ranges follow the command set and are not yet
+part of this draft.
 
 ### 8.2 The blitter range
 
@@ -499,6 +501,26 @@ are not yet part of this draft.
   image are multiples of 16 x ps bytes.
 - A combination that the blitter does not do is a fault of kind 2
   (block 1).
+
+### 8.3 The program range (draft)
+
+| Index | Name | Contents |
+| --- | --- | --- |
+| 0x190 | VS_BASE | GPU address of the vertex program's first instruction |
+| 0x191 | VS_WORDS | Its code words |
+| 0x192 | FS_BASE | The same for the fragment program |
+| 0x193 | FS_WORDS | |
+| 0x194 | CS_BASE | The same for the compute program |
+| 0x195 | CS_WORDS | |
+| 0x196 | CONST_BASE | GPU address of constant region 0 |
+| 0x197 | CONST_WORDS | Its words |
+| 0x198 | LDS_BYTES | Shared memory per workgroup |
+| 0x199 | WG_SIZE | [7:0] x, [15:8] y, [23:16] z |
+| 0x19A | VS_OUT_WORDS | Varying words after the position |
+
+- A warp starts at instruction 0 of its *_BASE; branch offsets and
+  FAULT_ADDR count from there. The base is the address of the code, after
+  the program header (section 12.10), with the entry point already added.
 
 9. Fences and interrupts
 ------------------------
@@ -738,7 +760,8 @@ VK_ERROR_OUT_OF_DEVICE_MEMORY.
   (CAPS[28]), subgroup operations (CAPS[24]), the systolic-array queue
   (CAPS[25], reserved).
 - Reference implementation: `tools/gsi1asm.py` (the assembler and the
-  decode table), `tools/gsi1model.py` (the execution model) and
+  decode table), `tools/gsi1dis.py` (the disassembler),
+  `tools/gsi1model.py` (the execution model) and
   `tools/gsi1fp.py` (the arithmetic, bit for bit).
 
 ### 12.2 Execution model
@@ -874,7 +897,8 @@ word1 (bits 63:32):
 ### 12.6 ISA faults
 
 The warp stops, and the GPU reports a fault of kind 8 (FAULT_ADDR = the
-PC), for:
+PC; FAULT_INFO's job tag may be 0 when the GPU does not track it for
+shader work), for:
 
 - an undefined opcode, funct3, funct7 or sub; word0[1:0] other than 11;
 - a rounding mode 5 or 6; `fround.s` with rm above 3; an R4 fmt other than
