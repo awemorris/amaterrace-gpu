@@ -1,6 +1,6 @@
 # atg_rop_fblend
 
-RTL: `rtl/gpu/rop/atg_rop_fblend.v` (new).  Parent: atg_rop_wb (beside atg_rop_blend; atg_rop_wpix chooses the path).  Children: atg_rx_fmul, atg_rx_fadd, atg_fmt_srgbenc.
+RTL: `rtl/gpu/rop/atg_rop_fblend.v` (new).  Parent: atg_rop_wpix (in atg_rop_wb, beside atg_rop_blend; atg_rop_wpix chooses the path).  Children: atg_rx_fmul, atg_rx_fadd, atg_fmt_srgbenc.
 
 ## 1. Purpose and place
 
@@ -72,4 +72,4 @@ docs/ghci.md §8.5 (ROP range, per-sample operations), `spec/gpu/rop/atg_rop_ble
 
 ## 10. Status
 
-Implemented 2026-10-25: every PASS of §8 (`sim/vec/rop_fblend.txt` from `tools/rop-vectors.py`, the model `fblend_lane` in `tools/rxmodel.py`).  Not yet wired (atg_rop_wpix, a later step).  One encoder instead of the four of the first text (§6).
+Implemented 2026-10-25: every PASS of §8 (`sim/vec/rop_fblend.txt` from `tools/rop-vectors.py`, the model `fblend_lane` in `tools/rxmodel.py`).  Wired in atg_rop_wpix (2026-10-25; checked through `sim/tb/atg_rop_mrt_tb.v`).  One encoder instead of the four of the first text (§6).

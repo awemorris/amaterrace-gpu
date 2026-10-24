@@ -1629,7 +1629,10 @@ fill and copy with KICK.BLIT, then read memory back through the debug port.
   of colour attachment k (k = 0-3; 0x100-0x103 is attachment 0 as
   before), 0x104 DEPTH, 0x105 SAMPLE_MASK (section 12.11), 0x108-0x10B
   reserved (a second colour of attachment 0 for dual-source blending). An
-  attachment no lane exported is not written.
+  attachment no lane of the warp exported is not written; in an
+  attachment some lane exported, a covered lane that exported another
+  target but not this attachment writes undefined values (Vulkan leaves
+  an output a shader does not write undefined).
 - **Inputs of a point's fragment warp**: r0 and r1 hold PointCoord (s, t)
   = (1/2 + x_p - x_f, 1/2 + y_p - y_f) at the pixel centre (x_p, y_p) for
   the vertex at (x_f, y_f) (points of size 1); r2 has no meaning. A

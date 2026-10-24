@@ -161,7 +161,7 @@ module atg_rop #(
 	end
 	atg_rop_occ occ (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-`ifdef MUT_OCC_ALL
+`ifdef MUT_OCC_BEAT
 		.inc_valid(d_valid && d_ready), .inc_n(d_pop),
 `else
 		.inc_valid(d_valid && d_ready && d_beat[0]), .inc_n(d_pop),

@@ -118,7 +118,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ex_color` | out | 512 | Colour. |
 | `ex_depth` | out | 128 | Depth. |
 | `ex_last` | out | 1 | Last quad of the warp. |
-| `ex_ms` | out | 149 | With the quad: {front, d_s, zexp, smask} (atg_su_exp). |
+| `ex_aux` | out | 154 | With the beat: {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} (atg_su_exp). |
 | `ex_next` | in | 16 | The ROP's next sequence number. |
 | **AMB client port (design §4.1)** | | | |
 | `d_req_valid` | out | 1 | Request valid; payload held until `d_req_ready`. |
@@ -199,7 +199,7 @@ Wiring module; the SU as a whole is checked by two testbenches (and the parent's
 - `sim/tb/atg_su_gfx_tb.v` — graphics warps with PACKED and SUBGROUP on NPHYS 8, 16 (the KC705's shape: 8 scoreboard entries, FRAG_RESERVE 2) and 32, the testbench as VF, RX and ROP:
   - `PASS atg_su_gfx.gfx` — `sim/tb/su/gfx.s` as one vertex warp and three fragment warps (EXEC whole quads, coverage in the mask operand, so helper lanes, and killed lanes): qd, shfl, vote and ballot see the helper and killed lanes; sw, atom, sts and exp skip them (design §3.1 M10); the packed arithmetic; against `tools/gsi1model.py --warps`: the registers, the data memory, the quads at the ROP in sequence order (positions, masks, colours, exported or rasterized depth) and the vertex warp's PT entries (and the words it must not write).
   - `PASS atg_su_gfx.loop` — the closed loop of design §3.8 (vertex warps with random vl_mask, also 0; per block after pt_done 1-3 fragment warps ending out of order; the PT entries freed except the last three of a block until the next block's fragment warps, as atg_vf_asm holds its last primitive; the ROP at random): no deadlock, every vertex grant leaves more than FRAG_RESERVE slots free and gets a PT block with no entry in use, the quads in sequence order.  With PT_ENTRIES 32 (one block) the same loop deadlocks, which the testbench reports.
-  - `PASS atg_su_gfx.ms` — the fragment warps' r6 (some lanes 0) and two SAMPLE_MASK exports: the quads' masks and ex_ms on the mask's lanes against `gfx.msexp` (`tools/gsi1model.py --ms-out`)
+  - `PASS atg_su_gfx.ms` — the fragment warps' r6 (some lanes 0) and two SAMPLE_MASK exports: the beats' masks and ex_aux on the mask's lanes against `gfx.msexp`, the beat bits against `gfx.xexp` (`tools/gsi1model.py --ms-out`)
   - `PASS atg_su_gfx` at the end.
 
 ## 9. References

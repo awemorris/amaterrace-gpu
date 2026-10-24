@@ -36,12 +36,14 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `q_sdepth` | in | 512 | The samples' depths: sample s of lane l at 32 (4 l + s). |
 | `q_dbg` | in | 1 | From the direct path: use DEBUG_COLOR. |
 | `q_front` | in | 1 | (CAPS[30]) The quad's facing (the direct path reads as front). |
+| `q_beat` | in | 4 | (CAPS[30]) {rt, nocol, first} of the beat (atg_rop_ms's o_beat). |
 | **To atg_rop_wb** | | | |
 | `d_valid` | out | 1 | A quad after depth/stencil. |
 | `d_ready` | in | 1 | Taken. |
 | `d_xy` | out | 32 | Position. |
 | `d_smask` | out | 16 | Samples that passed. |
 | `d_color` | out | 512 | Colour (DEBUG_COLOR expanded for q_dbg). |
+| `d_beat` | out | 4 | The beat's {rt, nocol, first}. |
 | `busy` | out | 1 | Work outstanding. |
 | **AMB client port (design §4.1)** | | | |
 | `req_valid` | out | 1 | Request valid; payload held until `req_ready`. |
@@ -57,7 +59,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-31 ports; 20 counting each AMB port and HCR snoop port as one group (spec/README.md).
+33 ports; 22 counting each AMB port and HCR snoop port as one group (spec/README.md).
 
 ## 4. Behaviour
 
@@ -103,3 +105,5 @@ Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters ar
 Multisampling (the MSAA work): MS_CTRL[3:0] = 2 makes the row's address base + y stride + 16 x and the test runs per sample (8 entries per row: sample s of pixel x at word 4 x + s); one sample: as before (2 entries).  `q_mask`/`q_depth`/`d_mask` became `q_smask`/`q_sdepth`/`d_smask` (the same port count).  The 4-sample cases are in `sim/tb/atg_rop_ms_tb.v`; this TB drives the one-sample masks as bit 4 l and checks that no other bit of d_smask is set.
 
 2026-10-25 (CAPS[30]): atg_rop_dtest per entry, q_front, D16, the stencil and the bounds (§4); every PASS of §8 (`-DMUT_STENCIL_FACE` fails `.stencil` and `.bounds`).  The earlier vectors are unchanged.
+
+2026-10-25 (CAPS[30], colour attachments): `q_beat`, `d_beat`.  The first beat of a quad is tested and written as before; a later beat goes to OUT with the first's surviving samples (no memory access) and is dropped when none survived.  A beat without colour goes on to atg_rop_wb (which drops it), so atg_rop counts the samples of every quad's first beat once (occlusion).  Checked by `sim/tb/atg_rop_beat_tb.v` (`-DMUT_DS_BEAT`, testing every beat, fails `.colour`).

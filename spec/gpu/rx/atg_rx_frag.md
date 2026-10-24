@@ -97,6 +97,7 @@ About 200 cycles per quad plus 3 × VARYING_COUNT + 2 cycles per warp; one quad 
 - `PASS atg_rx_frag.copy` — per warp the 3 × VARYING_COUNT table writes from the PT and the map, after the grant, with pt_busy
 - `PASS atg_rx_frag.warps` — the warps of sim/vec/rx_frag.txt (tools/rx-vectors.py, unchanged by the multisampling work): r0-r5 of every lane bit for bit and r6 the lane's coverage bit, fl_go with EXEC, coverage, sequence number and facing
 - `PASS atg_rx_frag.ms` — sim/vec/rx_frag_ms.txt (tools/rx-msaa-vectors.py, tools/msmodel.py): 4 samples with and without CENTROID and 1 sample with it: r0-r9, the d_s words after the map; `-DMUT_R3_CLAMP` and `-DMUT_DZ_SIGN` (in atg_rx_bary) fail it
+- `PASS atg_rx_frag.r3` — (CAPS[30]) sim/vec/rx_frag_dc.txt (tools/rx-vectors.py): the warps of 20 more triangles with depths in [-0.5, 1.5] and DEPTH_CLAMP[1]: r3 not clamped; `-DMUT_RX_DCLIP` fails it
 - `PASS atg_rx_frag` at the end.
 
 ## 9. References
@@ -105,6 +106,6 @@ design §3.4.3 (the fragment warp's inputs), §3.8 (clip, barycentrics, ROP orde
 
 ## 10. Status
 
-Implemented in WS288 p009 part B2 (P1, branch p1-su-gfx), split off atg_rx_scan (its p009 warp path).  320 lines, one FSM.  2026-10-25 (CAPS[30]): with DEPTH_CLAMP[1] (0x059) r3 is not clamped with one sample either (the RX clips the depth geometrically); DEPTH_CLAMP[1] = 0 as before.  Not yet in this TB (the scene of the integration step checks it).
+Implemented in WS288 p009 part B2 (P1, branch p1-su-gfx), split off atg_rx_scan (its p009 warp path).  320 lines, one FSM.  2026-10-25 (CAPS[30]): with DEPTH_CLAMP[1] (0x059) r3 is not clamped with one sample either (the RX clips the depth geometrically); DEPTH_CLAMP[1] = 0 as before.  Checked by `PASS atg_rx_frag.r3` (§8).
 
 Multisampling (the MSAA work): the lane arithmetic moved to `atg_rx_bary` (for the line limit), r6, the centroid's pass and r7-r9, d_s, MS_CTRL; `fq_cov` became `fq_scov` and `fq_ccov` (33 ports).  342 lines.
