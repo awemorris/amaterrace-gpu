@@ -6,7 +6,7 @@ Amaterrace GPU
 `Amaterrace GPU` is an RTL GPU implementation.
 
 It is designed for mobile graphics targeting at least 1920x1080 @ 60fps,
-and furthermore, it scales up to 1000 TOPS as an LLM accelerator.
+and furthermore, it scales up to 100 TOPS as an LLM accelerator.
 
 - **Host interface:** [GHCI](docs/ghci.md), a standard host controller interface for Vulkan-class GPUs that this project proposes.
 - **Shader ISA:** GSI1, the GHCI standard ISA (RISC-V based, 64-bit encoding; [docs/ghci.md section 12](docs/ghci.md#12-the-standard-shader-isa-gsi1)).
