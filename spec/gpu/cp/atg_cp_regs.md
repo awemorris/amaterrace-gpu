@@ -45,10 +45,10 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `hcr_wdata` | out | 32 | reg_wdata. |
 | `hcr_wmask` | out | 32 | WSTRB expanded to bits. |
 | `hcr_ridx` | out | 10 | Registered reg_raddr[11:2] (valid the cycle after reg_rd). |
-| **STATE alias (0x1000-0x17FC, to atg_cp_state)** | | | |
+| **STATE alias (0x1000-0x1BFC, to atg_cp_state)** | | | |
 | `alias_we` | out | 1 | Whole-word write to the alias (WSTRB = 4'hF; partial writes are dropped here). |
-| `alias_idx` | out | 9 | reg_waddr[10:2]; the data is hcr_wdata. |
-| `alias_ridx` | out | 9 | reg_raddr[10:2], combinational (the state RAM registers it). |
+| `alias_idx` | out | 10 | reg_waddr[11:2] (0x1000-0x1BFC); the data is hcr_wdata. |
+| `alias_ridx` | out | 10 | reg_raddr[11:2], combinational (the state RAM registers it). |
 | **Read data of the other modules (0 outside their registers)** | | | |
 | `ctl_rdata` | in | 32 | atg_cp_ctl. |
 | `irq_rdata` | in | 32 | atg_cp_irq. |
@@ -117,3 +117,5 @@ Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a0
 above.
 
 2026-10-25 (CAPS[30]): XCAP_MASK has 10 bits; FMT (id 10) points at 0x160 (atg_cp_fmt's window, ORed in by atg_cp through x_rdata).
+
+2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.  The alias covers 0x1000-0x1BFC; 0x1C00-0x1FFC read 0 and ignore writes.

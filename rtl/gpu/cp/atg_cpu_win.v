@@ -71,7 +71,7 @@ module atg_cpu_win #(
 	output wire fw_last,
 	output wire fw_active,
 	/* Other */
-	output wire [8:0] st_ridx,
+	output wire [9:0] st_ridx,
 	input wire [31:0] st_rdata,
 	input wire [31:0] fence_last,
 	input wire fence_ev,
@@ -118,7 +118,7 @@ module atg_cpu_win #(
 	wire ack = state == S_ACK;
 
 	/* Registers. */
-	reg [8:0] st_idx;
+	reg [9:0] st_idx;
 	reg [31:0] cycle;
 	reg [2:0] irq_en;
 	reg fence_pend;
@@ -177,7 +177,7 @@ module atg_cpu_win #(
 			W_PKT_DWORDS: d_rdata = {16'd0, v_dwords};
 			W_PKT_INFO: d_rdata = {pkt, 23'd0, v_tag};
 			W_UOP_FREE: d_rdata = {{(31 - UOP_DEPTH_LOG2){1'b0}}, DEPTH - f_count};
-			W_STATE_IDX: d_rdata = {23'd0, st_idx};
+			W_STATE_IDX: d_rdata = {22'd0, st_idx};
 			W_STATE_DATA: d_rdata = st_rdata;
 			W_FENCE_LAST: d_rdata = fence_last;
 			W_CYCLE: d_rdata = cycle;
@@ -203,7 +203,7 @@ module atg_cpu_win #(
 			q_dmem <= 1'b0;
 			q_own <= 1'b0;
 			q_sub <= 1'b0;
-			st_idx <= 9'd0;
+			st_idx <= 10'd0;
 			cycle <= 32'd0;
 			irq_en <= 3'd0;
 			fence_pend <= 1'b0;
@@ -225,7 +225,7 @@ module atg_cpu_win #(
 				state <= S_IDLE;
 			end
 			if (own_wr && q_idx == W_STATE_IDX)
-				st_idx <= q_wdata[8:0];
+				st_idx <= q_wdata[9:0];
 			if (own_wr && q_idx == W_IRQ_EN)
 				irq_en <= q_wdata[2:0];
 			if (own_wr && q_idx == W_RESULT)

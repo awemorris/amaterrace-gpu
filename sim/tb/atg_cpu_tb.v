@@ -44,7 +44,7 @@ module atg_cpu_tb;
 	wire fw_valid, fw_last, fw_active;
 	reg fw_ready = 1'b0;
 	wire [31:0] fw_data;
-	wire [8:0] st_ridx;
+	wire [9:0] st_ridx;
 	reg [31:0] st_rdata = 0;
 	reg fence_ev = 1'b0, halt_req = 1'b0, open = 1'b1;
 	wire ev_result, stall, fault;
@@ -121,7 +121,7 @@ module atg_cpu_tb;
 
 	/* Ring, sequencer and STATE models; event counters. */
 	always @(posedge clk) begin
-		st_rdata <= {23'h0ABCD, st_ridx};
+		st_rdata <= {23'h0ABCD, st_ridx[8:0]};
 		if (v_done) begin
 			v_dones = v_dones + 1;
 			v_valid <= 1'b0;

@@ -1,6 +1,6 @@
 # atg_blt_rsv_px
 
-RTL: `rtl/gpu/blt/atg_blt_rsv_px.v`.  Parent: `atg_blt_rsv`.  Children: two `am_fifo` (row descriptors, source lines), `atg_blt_avg`.
+RTL: `rtl/gpu/blt/atg_blt_rsv_px.v`.  Parent: `atg_blt_rsv`.  Children: two `am_fifo` (row descriptors, source lines), `atg_blt_avg`, `atg_blt_favg`.
 
 ## 1. Purpose and place
 
@@ -23,7 +23,7 @@ All in domain `clk`.
 | --- | --- | --- | --- |
 | `clk`, `rst_n` | in | 1, 1 | Clock, synchronous active-low reset |
 | `stop` | in | 1 | Level: empty everything now (the FIFOs too), no write |
-| `m16`, `fmt`, `tiled` | in | 1, 2, 1 | The mode (16-bit pixels, the average, a tiled destination); stable during a resolve |
+| `psl`, `fmt`, `tiled` | in | 3, 3, 1 | The mode (log2 of the pixel's bytes, the average, a tiled destination); stable during a resolve |
 | `rd_valid` / `rd_ready`, `rd_data` | in / out, in | 1, 1, `RD_W` | A row descriptor {off0, nlines, w, x, drow} (`atg_blt_rsv.md` §3); FIFO of 2 |
 | `ln_push`, `ln_data` | in | 1, `LINE_BYTES*8` | A source line (no ready: the sender keeps the credit) |
 | `ln_count` | out | `DEPTH_LOG2`+1 | Lines in the FIFO |
@@ -36,8 +36,8 @@ All in domain `clk`.
 
 - A row starts when no row is active: x, the pixels left, drow, the lines to load (nlines), the byte pointer (off0); the window (two lines w0, w1) empty.
 - A line is loaded from the FIFO into the window's first empty slot while the row still has lines to load, so exactly nlines per row.
-- A group per cycle: n pixels at x with n ≤ min(4, LINE_BYTES / (4·ps)), ≤ the pixels left, inside one destination line (linear: ≤ the line's rest / ps) or inside one tile row (tiled: ≤ 4 − x%4); its 4·n·ps source bytes at the pointer (w1 needed when they pass the end of w0).  The destination address: drow + x·ps (linear) or drow + (x/4)·16·ps + (x%4)·ps (tiled).  The pointer advances by 4·n·ps; past the end of w0 the window shifts.  At the row's last group the window is emptied.
-- Stage A: the group's average (`atg_blt_avg`), its line, offset and bytes.  Stage B: the assembly line; a group of the same line merges (only its bytes: the average's other pixels are masked), of another line hands the assembly line over as a write (when the write register is free) and starts anew.  With nothing more queued (no row, no descriptor, stage A empty) the assembly line is handed over.
+- A group per cycle: n pixels at x with n ≤ min(4, max(1, LINE_BYTES / (4·ps))) (a 16-byte pixel's 64-byte aligned samples fill both 32-byte lines of the window), ≤ the pixels left, inside one destination line (linear: ≤ the line's rest / ps) or inside one tile row (tiled: ≤ 4 − x%4); its 4·n·ps source bytes at the pointer (w1 needed when they pass the end of w0).  The destination address: drow + x·ps (linear) or drow + (x/4)·16·ps + (x%4)·ps (tiled).  The pointer advances by 4·n·ps; past the end of w0 the window shifts.  At the row's last group the window is emptied.
+- Stage A: the group's average (`atg_blt_avg`, or for 3-5 `atg_blt_favg` while no further group goes: `a_pend`), its line, offset and bytes.  Stage B: the assembly line; a group of the same line merges (only its bytes: the average's other pixels are masked), of another line hands the assembly line over as a write (when the write register is free) and starts anew.  With nothing more queued (no row, no descriptor, stage A empty) the assembly line is handed over.
 
 ## 5. State machine
 
@@ -61,4 +61,4 @@ design §15.8.  Related: `atg_blt_rsv.md`, `atg_blt_avg.md`, `spec/common/am_fif
 
 ## 10. Status
 
-Implemented (the MSAA work).
+Implemented (the MSAA work).  2026-10-25: pixels of 1 to 16 bytes (`psl`), the slow averages through `atg_blt_favg`, a group that uses both lines of the window empties it.

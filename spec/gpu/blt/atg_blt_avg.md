@@ -4,7 +4,7 @@ RTL: `rtl/gpu/blt/atg_blt_avg.v`.  Parent: `atg_blt_rsv_px`.  Children: none.
 
 ## 1. Purpose and place
 
-The averages of the blitter's RESOLVE (docs/ghci.md §8.2), combinational: four pixels of four samples in, four pixels out.
+The integer averages of the blitter's RESOLVE (docs/ghci.md §8.2, §8.5), combinational: up to four pixels of four samples in, the pixels out (`atg_blt_favg` does sRGB and the floats).
 
 ## 2. Parameters
 
@@ -14,18 +14,18 @@ None.
 
 | Name | Dir | Width | Meaning |
 | --- | --- | --- | --- |
-| `fmt` | in | 2 | 0 UNORM8, 1 UNORM565 (16-bit pixels), 2 SAMPLE0 (others read as SAMPLE0) |
-| `is16` | in | 1 | 16-bit pixels |
-| `in_s` | in | 512 | Sample s of pixel p at slot 4p + s: bits 32·slot (32-bit), 16·slot (16-bit, the low 256 bits) |
-| `out_p` | out | 128 | Pixel p at bits 32p (16p for 16-bit pixels, the low 64 bits; the rest 0) |
+| `fmt` | in | 3 | 0 UNORM8 (1-, 2-, 4-byte pixels), 1 UNORM565, 6 UNORM2_10_10_10, 7 UNORM1555, 2 SAMPLE0 (and 3-5) |
+| `psl` | in | 3 | log2 of the pixel's bytes |
+| `in_s` | in | 512 | Sample s of pixel p at slot 4p + s of 2^psl bytes |
+| `out_p` | out | 128 | Pixel p at bits 8·2^psl·p (the pixels that fit; the rest 0) |
 
 4 ports.
 
 ## 4. Behaviour
 
 - UNORM8: every byte of a pixel: the sum Σ of the four samples' bytes, q = Σ >> 2, rounded up when Σ mod 4 = 3, or = 2 with q odd (nearest, ties to even).
-- UNORM565: the fields [4:0], [10:5], [15:11] the same way.
-- SAMPLE0: sample 0.
+- UNORM565: the fields [4:0], [10:5], [15:11] the same way; UNORM2_10_10_10 [9:0], [19:10], [29:20], [31:30]; UNORM1555 [4:0], [9:5], [14:10], [15].
+- SAMPLE0: sample 0, every pixel size.
 
 ## 5. State machine
 
@@ -49,4 +49,4 @@ docs/ghci.md §8.2.
 
 ## 10. Status
 
-Implemented (the MSAA work).  SRGB8_A8 and SFLOAT16/32 come here when the render output writes those formats.
+Implemented (the MSAA work).  2026-10-25: `psl` instead of `is16`, the averages 6 and 7, 8-bit UNORM8 and SAMPLE0 of every size; SRGB8_A8 and SFLOAT16/32 are in `atg_blt_favg`.  The new cases are checked by `sim/tb/atg_blt_tb.v`.

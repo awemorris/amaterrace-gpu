@@ -81,7 +81,7 @@ module atg_cp #(
 	input wire mc_fault_write,
 
 	output reg st_we,
-	output reg [8:0] st_idx,
+	output reg [9:0] st_idx,
 	output reg [31:0] st_wdata,
 
 	output wire blt_kick,
@@ -131,7 +131,7 @@ module atg_cp #(
 	input wire [31:0] fw_data,
 	input wire fw_last,
 	input wire fw_active,
-	input wire [8:0] cpu_st_ridx,
+	input wire [9:0] cpu_st_ridx,
 	output wire [31:0] cpu_st_rdata,
 	output wire [31:0] cp_fence_last,
 	output wire cp_fence_ev,
@@ -178,7 +178,7 @@ module atg_cp #(
 	 * the header), so the blocks still see their state before the kick.
 	 */
 	wire s_st_we;
-	wire [8:0] s_st_idx;
+	wire [9:0] s_st_idx;
 	wire [31:0] s_st_wdata;
 
 	always @(posedge clk) begin
@@ -195,7 +195,7 @@ module atg_cp #(
 	wire [9:0] s_hcr_widx, s_hcr_ridx;
 	wire [31:0] s_hcr_wdata, s_hcr_wmask;
 	wire s_alias_we;
-	wire [8:0] s_alias_idx, s_alias_ridx;
+	wire [9:0] s_alias_idx, s_alias_ridx;
 	wire [31:0] s_ctl_rdata, s_irq_rdata, s_ring_rdata, s_fence_rdata, s_dbg_rdata;
 	wire [31:0] s_state_rdata;
 	wire s_perf_reset;
@@ -284,7 +284,7 @@ module atg_cp #(
 
 	/* The state register file. */
 	wire s_uop_we;
-	wire [8:0] s_uop_idx;
+	wire [9:0] s_uop_idx;
 	wire [31:0] s_uop_wdata;
 
 	atg_cp_state u_state (

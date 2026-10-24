@@ -35,7 +35,7 @@ module atg_tu #(
 	input wire rst_n,
 	/* STATE broadcast (from atg_cp_state) */
 	input wire st_we,
-	input wire [8:0] st_idx,
+	input wire [9:0] st_idx,
 	input wire [31:0] st_wdata,
 	input wire inv,
 	output wire busy,
@@ -44,6 +44,7 @@ module atg_tu #(
 	output wire tx_ready,
 	input wire [7:0] tx_op,
 	input wire [3:0] tx_slot,
+	input wire tx_vs,
 	input wire [3:0] tx_mask,
 	input wire [639:0] tx_coord,
 	input wire [11:0] tx_off,
@@ -72,10 +73,11 @@ module atg_tu #(
 	wire ta_valid, ta_ready, ta_last;
 	wire [511:0] ta_addr;
 	wire [15:0] ta_bord, tc_bord;
+	wire [31:0] tc_lo;
 	wire [127:0] ta_wts;
 	wire [15:0] ta_tag;
 	wire [3:0] ta_mask;
-	wire [47:0] ta_ctl;
+	wire [49:0] ta_ctl;
 	wire [127:0] ta_value;
 	wire tc_valid, tc_ready, tc_last;
 	wire desc_busy;
@@ -83,14 +85,14 @@ module atg_tu #(
 	wire [127:0] tc_wts;
 	wire [15:0] tc_tag;
 	wire [3:0] tc_mask;
-	wire [47:0] tc_ctl;
+	wire [49:0] tc_ctl;
 	wire [127:0] tc_value;
 
 	atg_tu_addr addr (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.desc_busy(desc_busy),
 		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
-		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
+		.tx_vs(tx_vs), .tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
 		.tx_last(tx_last),
 		.ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr), .ta_bord(ta_bord),
 		.ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl), .ta_value(ta_value),
@@ -103,7 +105,7 @@ module atg_tu #(
 		.ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl), .ta_value(ta_value),
 		.ta_last(ta_last),
 		.tc_valid(tc_valid), .tc_ready(tc_ready), .tc_texels(tc_texels), .tc_bord(tc_bord),
-		.tc_wts(tc_wts),
+		.tc_lo(tc_lo), .tc_wts(tc_wts),
 		.tc_tag(tc_tag), .tc_mask(tc_mask), .tc_ctl(tc_ctl), .tc_value(tc_value), .tc_last(tc_last),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write), .req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag), .rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
 	);
@@ -127,7 +129,8 @@ module atg_tu #(
 	atg_tu_ffilt ffilt (
 		.clk(clk), .rst_n(rst_n),
 		.tc_valid(tc_valid && f32 && u_ready), .tc_ready(f_ready), .tc_texels(tc_texels),
-		.tc_bord(tc_bord), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask), .tc_ctl(tc_ctl),
+		.tc_bord(tc_bord), .tc_lo(tc_lo), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask),
+		.tc_ctl(tc_ctl),
 		.tc_last(tc_last),
 		.tr_valid(f_tr_valid), .tr_ready(tr_ready), .tr_tag(f_tr_tag), .tr_data(f_tr_data),
 		.tr_last(f_tr_last)

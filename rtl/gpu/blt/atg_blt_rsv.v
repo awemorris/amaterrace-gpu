@@ -9,20 +9,22 @@
  * atg_blt_rsv: the blitter's RESOLVE (BLT_OP[2:0] = 4, docs/ghci.md
  * section 8.2): converts a 4x multisampled source rectangle to one sample
  * per pixel, streaming, through the blitter's AMB port.  It keeps its own
- * copy of the BLT range of STATE (0x000-0x00B, as the CP writes it) and
- * runs one resolve per kick (atg_blt routes the kick here when BLT_OP[2]
- * is 1).
+ * copy of the BLT range of STATE (atg_blt_cfg) and runs one resolve per
+ * kick (atg_blt routes the kick here when BLT_OP[2] is 1).
  *
  * The source: sample s of pixel (x, y) at SRC_BASE + y SRC_STRIDE + (4 x +
- * s) ps (the multisampled layout of section 12.11; the base and the stride
- * lose their bits below 4 ps).  The destination: linear, or 4x4 tiles with
- * BLT_RESOLVE[8] (the bits below ps lost).  The averages are those of
- * atg_blt_avg (BLT_RESOLVE[7:4] 0 UNORM8, 1 UNORM565 with 16-bit pixels,
- * 2 SAMPLE0).  The destination rectangle is clipped to [CLIP_MIN,
- * CLIP_MAX) when CLIP_MAX is not 0; the source moves with it.  Anything
- * else (another op, blend, reverse, a sample count other than 4, another
- * average, UNORM565 with 32-bit pixels) is refused at the kick: error of
- * kind OPCODE the next cycle, busy stays 0, no access.
+ * s) ps (the multisampled layout of section 12.11, ps of 1 to 16 bytes;
+ * the base and the stride lose their bits below 4 ps).  The destination:
+ * linear, or 4x4 tiles with BLT_RESOLVE[8] (16- and 32-bit pixels; the
+ * bits below ps lost).  The averages (BLT_RESOLVE[7:4], section 8.5):
+ * 0 UNORM8 (8, 16, 32 bits), 1 UNORM565 (16), 2 SAMPLE0 (all), 3 SRGB8_A8
+ * (32), 4 SFLOAT16 (16, 32, 64), 5 SFLOAT32 (32, 64, 128), 6
+ * UNORM2_10_10_10 (32), 7 UNORM1555 (16); atg_blt_avg and atg_blt_favg.
+ * The destination rectangle is clipped to [CLIP_MIN, CLIP_MAX) when
+ * CLIP_MAX is not 0; the source moves with it.  Anything else (another op,
+ * blend, reverse, KEEP, a sample count other than 4, another average or
+ * pixel size) is refused at the kick: error of kind OPCODE the next cycle,
+ * busy stays 0, no access.
  *
  * The walk: per row, a descriptor to atg_blt_rsv_px (the row's first
  * source byte, its number of source lines, its pixels, the destination
@@ -85,85 +87,50 @@ module atg_blt_rsv #(
 	localparam RD_W = ADDR_W + 51 + LINE_SHIFT;
 	localparam DEPTH = 1 << DEPTH_LOG2;
 
-	/* The BLT state, as written. */
-	reg [31:0] s_op;
-	reg [31:0] s_dst_base;
-	reg [31:0] s_dst_stride;
-	reg [31:0] s_src_base;
-	reg [31:0] s_src_stride;
-	reg [31:0] s_dst_xy;
-	reg [31:0] s_src_xy;
-	reg [31:0] s_size;
-	reg [31:0] s_clip_min;
-	reg [31:0] s_clip_max;
-	reg [31:0] s_resolve;
+	/* The BLT state (atg_blt_cfg). */
+	wire [1:0] o_op;
+	wire o_op2, o_blend, o_rev;
+	wire [2:0] o_psl;
+	wire [3:0] o_keep;
+	wire [8:0] s_resolve;
+	wire [16:0] clip_x0, clip_y0, clip_x1, clip_y1, dx, dy;
+	wire [31:0] s_src_xy, dbase, sbase_p, dstride, sstride_p;
+	wire [LBITS-1:0] c_fill;
+	wire c_ok;
 
-	always @(posedge clk) begin
-		if (!rst_n) begin
-			s_op <= 32'd0;
-			s_dst_base <= 32'd0;
-			s_dst_stride <= 32'd0;
-			s_src_base <= 32'd0;
-			s_src_stride <= 32'd0;
-			s_dst_xy <= 32'd0;
-			s_src_xy <= 32'd0;
-			s_size <= 32'd0;
-			s_clip_min <= 32'd0;
-			s_clip_max <= 32'd0;
-			s_resolve <= 32'd0;
-		end else if (st_we) begin
-			case (st_idx)
-			GHCI_S_BLT_OP: s_op <= st_wdata;
-			GHCI_S_BLT_DST_BASE: s_dst_base <= st_wdata;
-			GHCI_S_BLT_DST_STRIDE: s_dst_stride <= st_wdata;
-			GHCI_S_BLT_SRC_BASE: s_src_base <= st_wdata;
-			GHCI_S_BLT_SRC_STRIDE: s_src_stride <= st_wdata;
-			GHCI_S_BLT_DST_XY: s_dst_xy <= st_wdata;
-			GHCI_S_BLT_SRC_XY: s_src_xy <= st_wdata;
-			GHCI_S_BLT_SIZE: s_size <= st_wdata;
-			GHCI_S_BLT_CLIP_MIN: s_clip_min <= st_wdata;
-			GHCI_S_BLT_CLIP_MAX: s_clip_max <= st_wdata;
-			GHCI_S_BLT_RESOLVE: s_resolve <= st_wdata;
-			default: ;
-			endcase
-		end
-	end
+	atg_blt_cfg #(.LINE_BYTES(LINE_BYTES)) cfg (
+		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.op(o_op), .op2(o_op2), .resolve(s_resolve), .blend(o_blend), .rev(o_rev),
+		.psl(o_psl), .keep(o_keep), .op_ok(c_ok), .x0(clip_x0), .y0(clip_y0), .x1(clip_x1),
+		.y1(clip_y1), .dx(dx), .dy(dy), .src_xy(s_src_xy), .dbase(dbase), .sbase(sbase_p),
+		.dstride(dstride), .sstride(sstride_p), .fill_line(c_fill)
+	);
 
-	/* The combinations taken. */
-	wire o_16 = s_op[9:8] == 2'd1;
-	wire [3:0] o_fmt = s_resolve[7:4];
-	wire op_ok = s_op[2:0] == GHCI_BLT_RESOLVE && !s_op[GHCI_BLT_OP_BLEND] &&
-		!s_op[GHCI_BLT_OP_REVERSE] && !s_op[9] && s_resolve[3:0] == 4'd2 &&
-		(o_fmt == GHCI_RSV_UNORM8 || o_fmt == GHCI_RSV_SAMPLE0 ||
-		 (o_fmt == GHCI_RSV_UNORM565 && o_16));
-
-	/* The clipped rectangle (as atg_blt_2d). */
-	wire clip_en = s_clip_max != 32'd0;
-	wire [16:0] dx = {1'b0, s_dst_xy[15:0]};
-	wire [16:0] dy = {1'b0, s_dst_xy[31:16]};
-	wire [16:0] dx_end = dx + {1'b0, s_size[15:0]};
-	wire [16:0] dy_end = dy + {1'b0, s_size[31:16]};
-	wire [16:0] cx0 = {1'b0, s_clip_min[15:0]};
-	wire [16:0] cy0 = {1'b0, s_clip_min[31:16]};
-	wire [16:0] cx1 = {1'b0, s_clip_max[15:0]};
-	wire [16:0] cy1 = {1'b0, s_clip_max[31:16]};
-	wire [16:0] clip_x0 = clip_en && cx0 > dx ? cx0 : dx;
-	wire [16:0] clip_y0 = clip_en && cy0 > dy ? cy0 : dy;
-	wire [16:0] clip_x1 = clip_en && cx1 < dx_end ? cx1 : dx_end;
-	wire [16:0] clip_y1 = clip_en && cy1 < dy_end ? cy1 : dy_end;
+	/* The combinations taken: the average's pixel sizes (psl). */
+	wire [3:0] o_fmt = {1'b0, s_resolve[7:4] > 4'd7 ? 3'd0 : s_resolve[6:4]};
+	reg [4:0] sizes;
+	always @(*)
+		case (s_resolve[7:4])
+		GHCI_RSV_UNORM8: sizes = 5'b00111;
+		GHCI_RSV_UNORM565, GHCI_RSV_UNORM1555: sizes = 5'b00010;
+		GHCI_RSV_SAMPLE0: sizes = 5'b11111;
+		GHCI_RSV_SRGB8_A8, GHCI_RSV_UNORM2_10_10_10: sizes = 5'b00100;
+		GHCI_RSV_SFLOAT16: sizes = 5'b01110;
+		GHCI_RSV_SFLOAT32: sizes = 5'b11100;
+		default: sizes = 5'b00000;
+		endcase
+	wire op_ok = {o_op2, o_op} == GHCI_BLT_RESOLVE && !o_blend && !o_rev && o_keep == 4'd0 &&
+		s_resolve[3:0] == 4'd2 && sizes[o_psl] && !(s_resolve[8] && o_psl != 3'd1 &&
+		o_psl != 3'd2);
 
 	/* The mode, taken at the kick. */
-	reg m16;
-	reg [1:0] m_fmt;
+	reg [2:0] psl, m_fmt;
 	reg m_tiled;
 
-	/* Bases and strides, their low bits ignored. */
-	wire [ADDR_W-1:0] dmask = m16 ? ~32'd1 : ~32'd3;
-	wire [ADDR_W-1:0] smask = m16 ? ~32'd7 : ~32'd15;
-	wire [ADDR_W-1:0] dbase = s_dst_base & dmask;
-	wire [ADDR_W-1:0] dstride = s_dst_stride & dmask;
-	wire [ADDR_W-1:0] sbase = s_src_base & smask;
-	wire [ADDR_W-1:0] sstride = s_src_stride & smask;
+	/* The source's base and stride lose their bits below 4 ps. */
+	wire [ADDR_W-1:0] smask = ~((32'd4 << psl) - 32'd1);
+	wire [ADDR_W-1:0] sbase = sbase_p & smask;
+	wire [ADDR_W-1:0] sstride = sstride_p & smask;
 
 	localparam [2:0] S_IDLE = 3'd0;
 	localparam [2:0] S_CLIP = 3'd1;		/* size, source origin, multiplier */
@@ -175,27 +142,19 @@ module atg_blt_rsv #(
 	reg [2:0] state;
 	reg fail;
 
-	reg [16:0] x0;
-	reg [16:0] y0;
-	reg [16:0] x1;
-	reg [16:0] y1;
+	reg [16:0] x0, y0, x1, y1;
 	wire empty = x1 <= x0 || y1 <= y0;
-	reg [16:0] width;
-	reg [16:0] rows;	/* rows left after this one */
+	reg [16:0] width, rows;	/* rows: left after this one */
 	reg [16:0] sx0;
 	reg [1:0] ydl;		/* destination y modulo 4 (tiles) */
-	reg [ADDR_W-1:0] dst_row;
-	reg [ADDR_W-1:0] src_row;
-	reg [16:0] mul_dy;
-	reg [16:0] mul_sy;
-	reg [ADDR_W-1:0] mul_ds;
-	reg [ADDR_W-1:0] mul_ss;
+	/* The rows' addresses: base + y stride, then the next row's step. */
+	wire [ADDR_W-1:0] dst_row, src_row;
+	wire d_idle, s_idle;
+	wire row_go = state == S_CLIP && !empty;
 
 	/* S_RCALC: the row's source byte range and lines. */
-	wire [ADDR_W-1:0] sx_b = m16 ? {{(ADDR_W - 20){1'b0}}, sx0, 3'b000} :
-		{{(ADDR_W - 21){1'b0}}, sx0, 4'b0000};
-	wire [ADDR_W-1:0] w_b = m16 ? {{(ADDR_W - 20){1'b0}}, width, 3'b000} :
-		{{(ADDR_W - 21){1'b0}}, width, 4'b0000};
+	wire [ADDR_W-1:0] sx_b = {{(ADDR_W - 17){1'b0}}, sx0} << (psl + 3'd2);
+	wire [ADDR_W-1:0] w_b = {{(ADDR_W - 17){1'b0}}, width} << (psl + 3'd2);
 	wire [ADDR_W-1:0] r_first = src_row + sx_b;
 	wire [ADDR_W-1:0] r_last = r_first + w_b - 1'b1;
 	wire [LA_W-1:0] r_nl = r_last[ADDR_W-1:LS] - r_first[ADDR_W-1:LS] + 1'b1;
@@ -204,12 +163,25 @@ module atg_blt_rsv #(
 	reg [RD_W-1:0] desc;
 	reg [LA_W-1:0] rd_line;
 	reg [16:0] rd_left;
+	wire row_add = state == S_RISSUE && !fail && !desc_pend && rd_left == 17'd0 &&
+		rows != 17'd0;
 
 	/* The tiled destination's next row. */
-	wire [ADDR_W-1:0] tile_step = m16 ? 32'd8 : 32'd16;
-	wire [ADDR_W-1:0] tile_back = m16 ? 32'd24 : 32'd48;
+	wire [ADDR_W-1:0] tile_step = 32'd4 << psl;
+	wire [ADDR_W-1:0] tile_back = 32'd12 << psl;
 	wire [ADDR_W-1:0] dst_step = m_tiled ? (ydl == 2'd3 ? dstride - tile_back : tile_step) :
 		dstride;
+	wire [16:0] sy0 = {1'b0, s_src_xy[31:16]} + (y0 - dy);
+
+	atg_blt_acc dacc (
+		.clk(clk), .rst_n(rst_n), .go(row_go), .y(m_tiled ? {2'b00, y0[16:2]} : y0),
+		.s(dstride), .b(dbase + (m_tiled ? {28'd0, y0[1:0], 2'b00} << psl : 32'd0)),
+		.add(row_add), .d(dst_step), .r(dst_row), .idle(d_idle)
+	);
+	atg_blt_acc sacc (
+		.clk(clk), .rst_n(rst_n), .go(row_go), .y(sy0), .s(sstride), .b(sbase),
+		.add(row_add), .d(sstride), .r(src_row), .idle(s_idle)
+	);
 
 	/* The pixel path. */
 	wire px_rd_ready;
@@ -233,7 +205,7 @@ module atg_blt_rsv #(
 		.clk(clk),
 		.rst_n(rst_n),
 		.stop(fail),
-		.m16(m16),
+		.psl(psl),
 		.fmt(m_fmt),
 		.tiled(m_tiled),
 		.rd_valid(desc_pend),
@@ -251,8 +223,7 @@ module atg_blt_rsv #(
 	);
 
 	/* The request register. */
-	reg q_valid;
-	reg q_write;
+	reg q_valid, q_write;
 	reg [LA_W-1:0] q_line;
 	reg [LINE_BYTES-1:0] q_be;
 	reg [LBITS-1:0] q_wdata;
@@ -287,8 +258,8 @@ module atg_blt_rsv #(
 			done <= 1'b0;
 			error <= 1'b0;
 			error_kind <= 4'd0;
-			m16 <= 1'b0;
-			m_fmt <= 2'd0;
+			psl <= 3'd2;
+			m_fmt <= 3'd0;
 			m_tiled <= 1'b0;
 			x0 <= 17'd0;
 			y0 <= 17'd0;
@@ -298,12 +269,6 @@ module atg_blt_rsv #(
 			rows <= 17'd0;
 			sx0 <= 17'd0;
 			ydl <= 2'd0;
-			dst_row <= {ADDR_W{1'b0}};
-			src_row <= {ADDR_W{1'b0}};
-			mul_dy <= 17'd0;
-			mul_sy <= 17'd0;
-			mul_ds <= {ADDR_W{1'b0}};
-			mul_ss <= {ADDR_W{1'b0}};
 			desc_pend <= 1'b0;
 			desc <= {RD_W{1'b0}};
 			rd_line <= {LA_W{1'b0}};
@@ -348,8 +313,8 @@ module atg_blt_rsv #(
 			S_IDLE:
 				if (kick) begin
 					fail <= 1'b0;
-					m16 <= o_16;
-					m_fmt <= o_fmt[1:0];
+					psl <= o_psl;
+					m_fmt <= o_fmt[2:0];
 					m_tiled <= s_resolve[8];
 					if (!op_ok) begin
 						error <= 1'b1;
@@ -372,29 +337,12 @@ module atg_blt_rsv #(
 					rows <= y1 - y0 - 1'b1;
 					sx0 <= {1'b0, s_src_xy[15:0]} + (x0 - dx);
 					ydl <= y0[1:0];
-					mul_dy <= m_tiled ? {2'b00, y0[16:2]} : y0;
-					mul_sy <= {1'b0, s_src_xy[31:16]} + (y0 - dy);
-					mul_ds <= dstride;
-					mul_ss <= sstride;
-					dst_row <= dbase + (m_tiled ? (m16 ? {27'd0, y0[1:0], 3'b000} :
-						{26'd0, y0[1:0], 4'b0000}) : 32'd0);
-					src_row <= sbase;
 				end
 			S_MUL:
-				if (fail) begin
+				if (fail)
 					state <= S_DRAIN;
-				end else if (mul_dy == 17'd0 && mul_sy == 17'd0) begin
+				else if (d_idle && s_idle)
 					state <= S_RCALC;
-				end else begin
-					if (mul_dy[0])
-						dst_row <= dst_row + mul_ds;
-					if (mul_sy[0])
-						src_row <= src_row + mul_ss;
-					mul_dy <= mul_dy >> 1;
-					mul_sy <= mul_sy >> 1;
-					mul_ds <= mul_ds << 1;
-					mul_ss <= mul_ss << 1;
-				end
 			S_RCALC:
 				if (fail) begin
 					state <= S_DRAIN;
@@ -415,8 +363,6 @@ module atg_blt_rsv #(
 						state <= S_RCALC;
 						rows <= rows - 1'b1;
 						ydl <= ydl + 1'b1;
-						dst_row <= dst_row + dst_step;
-						src_row <= src_row + sstride;
 					end
 				end
 			S_DRAIN:
@@ -447,8 +393,7 @@ module atg_blt_rsv #(
 	end
 `endif
 
-	wire unused_ok = &{1'b0, s_op[31:13], s_op[11:10], s_op[7:5], s_op[3],
-		s_resolve[31:9], o_fmt[3:2], rsp_tag, r_nl[LA_W-1:17], r_last[LS-1:0]};
+	wire unused_ok = &{1'b0, o_fmt[3], c_fill, c_ok, rsp_tag, r_nl[LA_W-1:17], r_last[LS-1:0]};
 endmodule
 
 `default_nettype wire

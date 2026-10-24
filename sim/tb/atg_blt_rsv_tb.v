@@ -469,7 +469,7 @@ module atg_blt_rsv_tbc #(
 			n = nreq;
 			st(GHCI_S_BLT_OP, k == 0 ? 32'h5 : k == 1 ? 32'h14 : k == 2 ? 32'h1004 :
 				k == 3 ? 32'h204 : 32'h4);
-			st(GHCI_S_BLT_RESOLVE, k == 4 ? 32'h1 : k == 5 ? 32'h32 : k == 6 ? 32'h12 : 32'h2);
+			st(GHCI_S_BLT_RESOLVE, k == 4 ? 32'h1 : k == 5 ? 32'h82 : k == 6 ? 32'h12 : 32'h2);
 			run;
 			if (ok !== 1'b0 || ekind != GHCI_FAULT_OPCODE || nreq != n)
 				fail_msg("refused combination");

@@ -78,6 +78,7 @@ module atg_su_tex #(
 	input wire tx_ready,
 	output reg [7:0] tx_op,
 	output reg [3:0] tx_slot,
+	output reg tx_vs,	/* a vertex warp's request (the vertex stage's slots) */
 	output wire [3:0] tx_mask,
 	output wire [639:0] tx_coord,
 	output reg [11:0] tx_off,
@@ -158,6 +159,7 @@ module atg_su_tex #(
 				last <= x_last;
 				tx_op <= {1'b0, x_uop[ATG_UOP_OP +: 7]};
 				tx_slot <= x_uop[ATG_UOP_SUB +: 4];
+				tx_vs <= x_info[17:16] == 2'd0;
 				tx_off <= x_uop[ATG_UOP_IMM +: 12];
 				q <= {QW{1'b0}};
 				lastq <= ql;
@@ -194,7 +196,7 @@ module atg_su_tex #(
 		.l_cls(l_cls)
 	);
 
-	wire unused_ok = &{1'b0, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop, tr_tag, tr_last, wpad[5:3], qn[31:3],
+	wire unused_ok = &{1'b0, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info[31:18], x_info[15:0], x_uop, tr_tag, tr_last, wpad[5:3], qn[31:3],
 		(NWARPS != 0)};
 endmodule
 

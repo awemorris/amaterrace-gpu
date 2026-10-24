@@ -7,7 +7,9 @@
 
 /*
  * atg_tu_desc: the TU's descriptors (STATE 0x090-0x18F, 16 slots of 16
- * words, docs/ghci.md section 8.4) and the byte offsets of their mip
+ * words, docs/ghci.md section 8.4, the slots 0-15 of fragment and compute
+ * programs; with CAPS[30] also 0x200-0x2FF, the vertex stage's 16 slots,
+ * here slots 16-31, section 8.5) and the byte offsets of their mip
  * levels.
  *
  * Keeps words 0-6 of each slot (BASE, SIZE, IMAGE, LAYER_STRIDE, SAMPLER,
@@ -37,11 +39,11 @@ module atg_tu_desc (
 	input wire rst_n,
 	/* STATE broadcast (from atg_cp_state) */
 	input wire st_we,
-	input wire [8:0] st_idx,
+	input wire [9:0] st_idx,
 	input wire [31:0] st_wdata,
 	output wire busy,
 	/* Read port (combinational) */
-	input wire [3:0] rd_slot,
+	input wire [4:0] rd_slot,	/* [4]: the vertex stage's */
 	input wire [3:0] rd_level,
 	output wire [31:0] rd_base,
 	output wire [31:0] rd_size,
@@ -63,6 +65,7 @@ module atg_tu_desc (
 	function [31:0] plane;
 		input [31:0] sz;
 		input tiled;
+		input blk;	/* compressed 4 x 4 blocks of 2^psl bytes */
 		input [2:0] psl;
 		input [3:0] l;
 		reg [15:0] w0, h0, w, h;
@@ -81,6 +84,8 @@ module atg_tu_desc (
 				({16'd0, 2'b00, h[15:2]} + {31'd0, h[1:0] != 2'd0});
 			if (tiled)
 				p = psl == 3'd1 ? {t[28:0], 5'd0} + 34'd63 : {t[27:0], 6'd0};
+			else if (blk)
+				p = ({2'b00, t} << psl) + 34'd63;
 			else
 				p = (({18'd0, w} * {18'd0, h}) << psl) + 34'd63;
 			plane = {p[31:6], 6'd0};
@@ -89,88 +94,93 @@ module atg_tu_desc (
 
 	/* The slot's texel size and whether it is tiled (only 4-byte texels and
 	 * the earlier RGB565). */
-	function [3:0] layout;
+	function [4:0] layout;
 		input [31:0] img;
 		input [20:0] tf;
 		/* verilator lint_off UNUSEDSIGNAL */
-		reg [11:0] c;	/* the size and legacy bits */
+		reg [12:0] c;	/* the size, legacy and block bits */
 		/* verilator lint_on UNUSEDSIGNAL */
 		begin
 			c = tu_fcls(tf, img[GHCI_IMG_FMT +: 4]);
-			layout = {img[GHCI_IMG_TILED] && (c[3] || c[2:0] == 3'd2), c[2:0]};
+			layout = {c[12], img[GHCI_IMG_TILED] && (c[3] || c[2:0] == 3'd2), c[2:0]};
 		end
 	endfunction
 
-	reg [31:0] d_base [0:15];
-	reg [31:0] d_size [0:15];
-	reg [31:0] d_img [0:15];
-	reg [31:0] d_stride [0:15];
-	reg [31:0] d_samp [0:15];
-	reg [31:0] d_lod [0:15];
-	reg [20:0] d_fmt [0:15];
-	reg [25:0] d_off [0:255];	/* {slot, level}: levels 1-12 */
-	wire [8:0] s_off = st_idx - GHCI_S_TU;
-	wire in_tu = st_we && st_idx >= GHCI_S_TU && st_idx < GHCI_S_TU + 9'd256;
+	reg [31:0] d_base [0:31];
+	reg [31:0] d_size [0:31];
+	reg [31:0] d_img [0:31];
+	reg [31:0] d_stride [0:31];
+	reg [31:0] d_samp [0:31];
+	reg [31:0] d_lod [0:31];
+	reg [20:0] d_fmt [0:31];
+	reg [25:0] d_off [0:511];	/* {slot, level}: levels 1-12 */
+	wire [8:0] s_fs = st_idx[8:0] - GHCI_S_TU;
+	wire in_fs = !st_idx[9] && st_idx[8:0] >= GHCI_S_TU && st_idx[8:0] < GHCI_S_TU + 9'd256;
+	wire in_vs = st_idx[9:8] == GHCI_S_TU_VS[9:8];
+	wire in_tu = st_we && (in_fs || in_vs);
+	/* The slot (vertex: 16-31) and the word. */
+	wire [8:0] s_off = in_vs ? {1'b1, st_idx[7:0]} : {1'b0, s_fs[7:0]};
 	always @(posedge clk)
 		if (in_tu) begin
 			if (s_off[3:0] == GHCI_TEX_BASE)
-				d_base[s_off[7:4]] <= st_wdata;
+				d_base[s_off[8:4]] <= st_wdata;
 			if (s_off[3:0] == GHCI_TEX_SIZE)
-				d_size[s_off[7:4]] <= st_wdata;
+				d_size[s_off[8:4]] <= st_wdata;
 			if (s_off[3:0] == GHCI_TEX_IMAGE)
-				d_img[s_off[7:4]] <= st_wdata;
+				d_img[s_off[8:4]] <= st_wdata;
 			if (s_off[3:0] == GHCI_TEX_LAYER_STRIDE)
-				d_stride[s_off[7:4]] <= st_wdata;
+				d_stride[s_off[8:4]] <= st_wdata;
 			if (s_off[3:0] == GHCI_TEX_SAMPLER)
-				d_samp[s_off[7:4]] <= st_wdata;
+				d_samp[s_off[8:4]] <= st_wdata;
 			if (s_off[3:0] == GHCI_TEX_LOD)
-				d_lod[s_off[7:4]] <= st_wdata;
+				d_lod[s_off[8:4]] <= st_wdata;
 		end
 	/* TEX_FORMAT is 0 (the earlier formats) until written. */
 	integer r;
 	always @(posedge clk)
 		if (!rst_n) begin
-			for (r = 0; r < 16; r = r + 1)
+			for (r = 0; r < 32; r = r + 1)
 				d_fmt[r] <= 21'd0;
 		end else if (in_tu && s_off[3:0] == GHCI_TEX_FORMAT)
-			d_fmt[s_off[7:4]] <= st_wdata[20:0];
+			d_fmt[s_off[8:4]] <= st_wdata[20:0];
 	wire mark = in_tu && (s_off[3:0] == GHCI_TEX_SIZE || s_off[3:0] == GHCI_TEX_IMAGE ||
 		s_off[3:0] == GHCI_TEX_FORMAT);
 
 	reg st;
-	reg [15:0] dirty;
-	reg [3:0] cs, cl;
+	reg [31:0] dirty;
+	reg [4:0] cs;
+	reg [3:0] cl;
 	reg [31:0] acc;
 
 	/* The lowest marked slot. */
-	reg [3:0] lo;
+	reg [4:0] lo;
 	integer i;
 	always @(*) begin
-		lo = 4'd0;
-		for (i = 15; i >= 0; i = i - 1)
+		lo = 5'd0;
+		for (i = 31; i >= 0; i = i - 1)
 			if (dirty[i])
-				lo = i[3:0];
+				lo = i[4:0];
 	end
 	/* Level cl of slot cs: P x D. */
 	wire [31:0] cimg = d_img[cs];
 	wire [15:0] cnt = cimg[GHCI_IMG_COUNT +: 16] == 16'd0 ? 16'd1 : cimg[GHCI_IMG_COUNT +: 16];
 	wire [15:0] dsh = cnt >> cl;
 	wire [15:0] dl = cimg[GHCI_IMG_TYPE +: 3] != 3'd2 || dsh == 16'd0 ? 16'd1 : dsh;
-	wire [3:0] clay = layout(cimg, d_fmt[cs]);
-	wire [31:0] cp = plane(d_size[cs], clay[3], clay[2:0], cl);
+	wire [4:0] clay = layout(cimg, d_fmt[cs]);
+	wire [31:0] cp = plane(d_size[cs], clay[3], clay[4], clay[2:0], cl);
 	wire [47:0] pd = cp * {16'd0, dl};
 	wire [31:0] nacc = acc + pd[31:0];
-	wire [15:0] clr = st == IDLE && dirty != 16'd0 ? 16'd1 << lo : 16'd0;
-	wire [15:0] set = mark ? 16'd1 << s_off[7:4] : 16'd0;
+	wire [31:0] clr = st == IDLE && dirty != 32'd0 ? 32'd1 << lo : 32'd0;
+	wire [31:0] set = mark ? 32'd1 << s_off[8:4] : 32'd0;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= IDLE;
-			dirty <= 16'd0;
+			dirty <= 32'd0;
 		end else begin
 			dirty <= (dirty & ~clr) | set;
 			case (st)
-			IDLE: if (dirty != 16'd0) begin
+			IDLE: if (dirty != 32'd0) begin
 				cs <= lo;
 				cl <= 4'd0;
 				acc <= 32'd0;
@@ -187,7 +197,7 @@ module atg_tu_desc (
 		end
 	end
 
-	assign busy = st == RUN || dirty != 16'd0;
+	assign busy = st == RUN || dirty != 32'd0;
 	assign rd_base = d_base[rd_slot];
 	assign rd_size = d_size[rd_slot];
 	assign rd_image = d_img[rd_slot];
@@ -196,10 +206,10 @@ module atg_tu_desc (
 	assign rd_lod = d_lod[rd_slot];
 	assign rd_loff = rd_level == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level}], 6'd0};
 	assign rd_fmt = d_fmt[rd_slot];
-	wire [3:0] rlay = layout(d_img[rd_slot], d_fmt[rd_slot]);
-	assign rd_plane = plane(d_size[rd_slot], rlay[3], rlay[2:0], rd_level);
+	wire [4:0] rlay = layout(d_img[rd_slot], d_fmt[rd_slot]);
+	assign rd_plane = plane(d_size[rd_slot], rlay[3], rlay[4], rlay[2:0], rd_level);
 
-	wire unused_ok = &{1'b0, s_off[8], pd[47:32], nacc[5:0], acc[5:0]};
+	wire unused_ok = &{1'b0, s_fs[8], pd[47:32], nacc[5:0], acc[5:0]};
 endmodule
 
 `default_nettype wire

@@ -14,7 +14,7 @@
  * Source: fw_* while fw_active (sampled between packets), else n_*.
  * Header [31:30] class (0 standard, 1 vendor), [29:24] op, [23:16] tag,
  * [15:8] flags, [7:0] n.  The payload is taken one dword per cycle:
- * SET_REG writes STATE[index] = value per pair (index >= 512: fault 3;
+ * SET_REG writes STATE[index] = value per pair (index >= 0x300: fault 3;
  * a write to a block's range waits while it is busy, whose state must not
  * change under its work: atg_cp_seq_wait has the rules),
  * DISPATCH/LOAD_CONST/DRAW_RAW/DBG_MARK write their payload to the vendor
@@ -64,7 +64,7 @@ module atg_cp_seq #(
 	input wire halt,
 	/* STATE writes (to atg_cp_state) */
 	output wire uop_we,
-	output wire [8:0] uop_idx,
+	output wire [9:0] uop_idx,
 	output wire [31:0] uop_wdata,
 	/* Kicks (one-cycle pulses) */
 	output wire blt_kick,
@@ -135,7 +135,7 @@ module atg_cp_seq #(
 	reg [7:0] tag;
 	reg [7:0] n;
 	reg [7:0] p;	/* payload dwords taken */
-	reg [8:0] sidx;	/* SET_REG: the index of the pair */
+	reg [9:0] sidx;	/* SET_REG: the index of the pair */
 	reg [31:0] a0, a1, a2;	/* fence payload */
 	reg settle;
 
@@ -198,9 +198,9 @@ module atg_cp_seq #(
 	/* Payload: what this dword does; the waits (atg_cp_seq_wait). */
 	wire is_set = !vendor && op == OP_SET_REG;
 	wire set_val = is_set && p[0];
-	wire set_bad = is_set && !p[0] && in_data[31:9] != 23'd0;
+	wire set_bad = is_set && !p[0] && (in_data[31:10] != 22'd0 || in_data[9:8] == 2'b11);
 	wire pay_we;
-	wire [8:0] pay_idx;
+	wire [9:0] pay_idx;
 	wire [7:0] pay_wait;	/* busy bits that hold this dword */
 	wire [7:0] pre;
 	wire pre_f;		/* also wait for !f_busy */
@@ -276,7 +276,7 @@ module atg_cp_seq #(
 			tag <= 8'd0;
 			n <= 8'd0;
 			p <= 8'd0;
-			sidx <= 9'd0;
+			sidx <= 10'd0;
 			a0 <= 32'd0;
 			a1 <= 32'd0;
 			a2 <= 32'd0;
@@ -318,7 +318,7 @@ module atg_cp_seq #(
 					st <= Q_DEAD;
 				end else if (pay_take) begin
 					if (is_set && !p[0])
-						sidx <= in_data[8:0];
+						sidx <= in_data[9:0];
 					if (p == 8'd0)
 						a0 <= in_data;
 					if (p == 8'd1)

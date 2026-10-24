@@ -18,14 +18,14 @@
 `default_nettype none
 
 module atg_blt_avg_tb;
-	reg [1:0] fmt = 2'd0;
+	reg [2:0] fmt = 3'd0;
 	reg is16 = 1'b0;
 	reg [511:0] in_s = 512'd0;
 	wire [127:0] out_p;
 	integer e0 = 0, e1 = 0, e2 = 0;
 	integer sum, p, k, s, f, v, w, seed;
 
-	atg_blt_avg dut (.fmt(fmt), .is16(is16), .in_s(in_s), .out_p(out_p));
+	atg_blt_avg dut (.fmt(fmt), .psl(is16 ? 3'd1 : 3'd2), .in_s(in_s), .out_p(out_p));
 
 	function integer rne4;
 		input integer x;
