@@ -210,6 +210,7 @@ CAPS (0x020):
 | [26] | The texture unit does mipmap mode linear, clamp to border, the depth formats and depth compare (section 8.4) |
 | [27] | Graphics: the vertex fetcher, the rasterizer and the render output are present |
 | [28] | Packed fp16/int16 arithmetic (section 12.5) |
+| [29] | 4x multisampling (draft, section 12.11): the rasterizer's sample coverage, the render output per sample, and `texf` of multisampled images. The bit number is provisional |
 
 CAPS2 (0x024):
 
@@ -1157,6 +1158,67 @@ a program that fails gets VK_ERROR_INITIALIZATION_FAILED.
 A program in a native ISA (the PROGRAM gpu-op's ISA field is ISA_ID, not
 "GSI1") has the vendor's format; GHCI fixes only its first two words: the
 vendor's ISA FourCC and a version.
+
+### 12.11 Multisampling (draft)
+
+**Draft** (2026-10-25, the design of WS288 p027; not implemented yet). With
+CAPS[29], the GPU rasterizes with 1 or 4 samples per pixel and runs the
+fragment program once per pixel (no sample shading).
+
+**State words** (in the rasterizer's range; the rasterizer and the render
+output read them, and a SET_REG into the range waits while either is busy):
+
+| Index | Name | Contents |
+| --- | --- | --- |
+| 0x05E | MS_CTRL | [3:0] log2 of the samples per pixel: 0 = 1, 2 = 4 (other values read as 0); [4] CENTROID: write the centroid barycentrics r7-r9; [8] alpha to coverage; [9] alpha to one |
+| 0x05F | SAMPLE_KILL | [3:0] samples removed by the sample mask test (the complement of the pipeline's sample mask; 0 keeps all, the reset value) |
+
+**Sample locations.** The standard locations: with 1 sample (0.5, 0.5);
+with 4, sample 0 (0.375, 0.125), 1 (0.875, 0.375), 2 (0.125, 0.625), 3
+(0.625, 0.875) inside the pixel. A sample on an edge follows the same
+tie rule as a pixel centre. (Values referenced: Vulkan specification,
+Multisampling, standard sample locations.)
+
+**Fragment program inputs and outputs** (GSI1; the rasterizer writes the
+registers before the warp starts):
+
+| Register | Contents |
+| --- | --- |
+| r0, r1, r2 | Barycentrics b0, b1, b2 at the pixel centre, perspective-correct, relative to the original vertices |
+| r3 | Depth at the pixel centre (with 1 sample clamped to [0, 1]; with 4 samples not clamped) |
+| r4, r5 | x + 0.5, y + 0.5 (FragCoord) |
+| r6 | The sample mask in: bit s = sample s covered, after the sample mask test (bit 0 with 1 sample); 0 in helper lanes |
+| r7, r8, r9 | With MS_CTRL[4]: b0, b1, b2 at the centroid: the pixel centre when it is inside the primitive, otherwise the covered sample of the lowest index |
+
+Export targets of a fragment warp: 0x100 + c COLOR0 component c, 0x104
+DEPTH (the same depth for every sample), **0x105 SAMPLE_MASK** (ANDed
+into the lane's sample mask; bits at and above the sample count are
+ignored).
+
+**Per-sample operations** (in this order, after the fragment program):
+coverage = r6 AND the exported SAMPLE_MASK AND, with MS_CTRL[8], an alpha
+to coverage mask; then alpha to one (MS_CTRL[9]); then the depth (and
+stencil) test and the colour write per covered sample. A sample's depth
+is the plane of the primitive at the sample, or the exported depth.
+Alpha to coverage is implementation-defined; Amaterrace takes n = the
+number of the thresholds 0.125, 0.375, 0.625, 0.875 that alpha (of
+COLOR0) reaches and covers the samples {}, {0}, {0, 3}, {0, 1, 3}, {0, 1,
+2, 3} (with 1 sample: alpha >= 0.5).
+
+**Multisampled images.** A multisampled image is 2D (or a 2D array) with
+one level, in linear rows (not tiled). Sample s of pixel (x, y) is at
+`base + layer x layer stride + y x P + (x x S + s) x ps`, where S is the
+sample count, ps the pixel size and P = roundup(width, 2) x S x ps; the
+base is aligned to 64 bytes. The render target and depth strides of a
+multisampled draw are P. Texture slots name the sample count in the image
+word (log2, section 8.4). `texf rd, rs1, rs2` of a multisampled slot reads
+sample rs2 (modulo S) of texel (rs1, rs1+1); `texsz.s rd` (immediate 2)
+writes S. SPIR-V's ImageFetch with Sample maps to `texf`, QuerySamples to
+`texsz.s`.
+
+**Resolve** is not a unit operation: a driver (or the command processor's
+firmware) draws with a fragment program that reads the samples with
+`texf` and averages them.
 
 13. The display controller capability (DISP)
 --------------------------------------------
