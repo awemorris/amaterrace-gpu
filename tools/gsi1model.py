@@ -25,8 +25,8 @@
 # the start.  wgx/nwgx are 0 and lidn is the lane (atg_su_sched's warp
 # word).  The warps run one after the other in slot order.  Side effects
 # (sw, atom, sts, exp) take the lanes in EXEC, in the mask and not KILLED
-# (design §3.1, M10).  exp of a fragment warp: targets 0x100 + 16 k + c
-# (colour attachment k, component c), 0x104 (DEPTH) and 0x105 (SAMPLE_MASK,
+# (design §3.1, M10); sw.x takes every EXEC lane.  exp of a fragment
+# warp: targets 0x100 + 16 k + c (colour attachment k, component c), 0x104 (DEPTH) and 0x105 (SAMPLE_MASK,
 # docs/ghci.md section 12.11: the last value written, bits 3:0); a lane is
 # exported once one of them ran for it.  The lane's sample mask is r6 as written before the start (the
 # rasterizer's sample mask; 15 when the init file leaves r6 unset) ANDed
@@ -261,8 +261,11 @@ class Machine:
                 if op == 0:         # lw
                     write(exec_m, lambda a, b, c: self.rd32(a + imm))
                 elif op == 1:       # sw: lanes in order, the higher lane wins
+                    # sw.x (sub 1, scratch memory): every EXEC lane, helper
+                    # and killed lanes too.
+                    lanes_m = exec_m if f["SUB"] & 1 else side
                     for ln in range(32):
-                        if side >> ln & 1:
+                        if lanes_m >> ln & 1:
                             a, b, c = operands(ln)
                             self.wr32(a + imm, b)
                 elif op == 2:       # atom: lanes in order

@@ -87,6 +87,7 @@
 #define GSI1_KIND_TEXEL_BUFFER 11u	/* bank word of {base, elements}: a storage texel buffer */
 #define GSI1_KIND_UNIFORM_MEMORY 12u	/* bank word of {address, bytes}: a uniform buffer read with lw */
 #define GSI1_KIND_SYSTEM 13u		/* binding: GSI1_SYSTEM_*; the register it arrives in */
+#define GSI1_KIND_SCRATCH 14u		/* binding: the bank word of the scratch memory's address; bytes per warp */
 
 /*
  * The kind-specific word of a varying (kind 2, and kind 3 of a vertex
@@ -292,6 +293,10 @@
 #define GSI1_F3_LW 2u
 #define GSI1_F3_LWC 6u
 #define GSI1_F3_SW 2u
+
+/* STORE: the sub field (word1 [21:17]); sw.x is made by every EXEC lane (the warp's scratch memory). */
+#define GSI1_SW_PLAIN 0u
+#define GSI1_SW_X 1u
 
 /* BRANCH: funct3 (warp branches; the offset counts instructions). */
 #define GSI1_F3_BANY 0u

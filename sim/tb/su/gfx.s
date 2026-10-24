@@ -4,7 +4,8 @@
 # quads; vertex: attributes).  Fragment EXEC is whole quads, the mask
 # operand the coverage, so the uncovered lanes of a quad are helper lanes
 # (design §3.1, M10): they take part in qd, shfl, vote and ballot, but have
-# no side effects (sw, atom, sts, exp); neither have killed lanes.  Also the
+# no side effects (sw, atom, sts, exp); neither have killed lanes.  sw.x
+# (scratch memory) stores from them too.  Also the
 # packed arithmetic (PACKED) and the export targets of both warp kinds.
 # Needs SUBGROUP and PACKED.
 	slli r6, warp, 7
@@ -56,6 +57,10 @@
 	ballot r28, r26
 	vote.any r7, r26
 	sw r27, 1024(r6)             # covered lanes not killed
+	# Scratch memory: sw.x stores from every EXEC lane, helper and killed
+	# lanes too, and each lane reads its own word back.
+	sw.x r27, 2048(r6)
+	lw r5, 2048(r6)
 	# Packed fp16 (PACKED).
 	packh r29, r0, r1
 	ffma2 r30, r29, r29, oneh2

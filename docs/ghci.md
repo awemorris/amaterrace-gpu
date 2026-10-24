@@ -1150,7 +1150,8 @@ VK_ERROR_OUT_OF_DEVICE_MEMORY.
 - Lanes outside EXEC neither write registers nor have side effects
   (except `exec.save`, `vote` and `ballot`, which write every lane). Killed
   lanes and fragment helper lanes have no side effects (`sw`, `atom`,
-  `sts`, `exp`).
+  `sts`, `exp`), except `sw.x`, the store to the warp's scratch memory
+  (section 12.8), which every lane in EXEC makes.
 - Branches are per warp; the hardware does not reconverge. The compiler
   manages divergence with EXEC.
 - Instructions issue in order per warp. Results of long instructions
@@ -1179,7 +1180,7 @@ Operand numbers have 7 bits:
 | 100 | `two` (2.0) |
 | 101 | `mone` (-1.0) |
 | 102 | `lane` (0-31) |
-| 103 | `warp` (the warp's number) |
+| 103 | `warp` (the warp's number: different for every warp the GPU runs at once, 0 to the GPU's resident warps - 1; with several shader units, unit u's numbers follow unit u - 1's) |
 | 104 | `exec` (the EXEC mask) |
 | 105 | `killed` (the lane's KILLED bit, as a Boolean) |
 | 106-108 | `wgx` `wgy` `wgz` (workgroup ID) |
@@ -1237,7 +1238,7 @@ word1 (bits 63:32):
 | 0010011 OP-IMM | `addi slti sltiu xori ori andi slli srli srai` |
 | 0110111 LUI | `lui`, `movi` |
 | 0000011 LOAD | funct3 010 `lw rd, imm(rs1)` (global); 110 `lwc rd, imm(rs1)` (constant bank, word index rs1 + imm) |
-| 0100011 STORE | funct3 010 `sw rs2, imm(rs1)` |
+| 0100011 STORE | funct3 010 `sw rs2, imm(rs1)` (sub 0); `sw.x rs2, imm(rs1)` (sub 1: the store of every lane in EXEC, helper and killed lanes included, for the warp's scratch memory, section 12.8) |
 | 1100011 BRANCH | funct3 000 `bany rs1, off`, 001 `bnone`, 010 `ball`, 011 `j off`, 100 `bexnz off`, 101 `bexz off` |
 | 1010011 OP-FP (single) | `fadd.s fsub.s fmul.s` (funct7 0000000/0000100/0001000), `fsgnj.s` (0010000, funct3 000), `fmin.s fmax.s` (0010100, funct3 000/001), `fsqrt.s` (0101100, rs2 0), `fcvt.w.s fcvt.wu.s` (1100000, rs2 0/1), `fcvt.s.w fcvt.s.wu` (1101000, rs2 0/1), `feq.s flt.s fle.s fne.s` (1010000, funct3 010/001/000/011), `fround.s` (0100000, rs2 00100) |
 | 1000011 1000111 1001011 1001111 | `fmadd.s fmsub.s fnmsub.s fnmadd.s` (R4) |
@@ -1284,7 +1285,7 @@ shader work), for:
 Undefined encodings, in detail: OP funct7 0100000 with funct3 001, 010 or
 011; funct7 0000101 with funct3 0xx; an R-form custom instruction whose
 funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); `texsz` with imm[11:0] other than 0, 1, 2 or (with CAPS[29]) 3; a texture slot with sub[4] set; a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
-`atom` sub above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
+`sw` sub above 1; `atom` sub above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
 sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 1; `nop` sub other than 0.
 
@@ -1337,6 +1338,12 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
     with respect to every other `atom` on the GPU; an ordinary store to
     the same word, from another warp or agent, is not excluded in
     version 1.
+- **Scratch memory:** a program whose values do not fit its registers
+  keeps some of them in memory of its own warp (section 12.10, kind 14):
+  it stores them with `sw.x`, which every lane in EXEC makes (a helper
+  lane's or a killed lane's value can still reach a derivative, an
+  implicit level of detail, an address or a loop's condition), and reads
+  them back with `lw`.
 - **Shared memory (LDS):** `lds`/`sts` with byte addresses, word aligned,
   wrapping at the LDS size; `bar` synchronizes the warps of a workgroup.
 - **Constant bank:** `lwc rd, imm(rs1)` reads word (rs1 + imm) modulo the
@@ -1480,6 +1487,7 @@ binding (or location), and a kind-specific word:
 | 11 | Texel buffer (draft) | set, binding | Bank word b of {base, elements}: a storage texel buffer (a uniform texel buffer is kind 5) |
 | 12 | Uniform buffer in memory | set, binding | Bank word b of {address, bytes}, as kind 6: a block the bank cannot hold, read with `lw` |
 | 13 | System input | 0, which: 0 the vertex index (index + vertexOffset, or firstVertex + n), 1 the instance index (firstInstance + i) | The register it arrives in; the command processor delivers it like an attribute |
+| 14 | Scratch memory | 0, bank word b | Bytes per warp (a multiple of 128): bank word b holds the address of the program's scratch memory |
 
 - **Varying words.** Location L, component c is varying word w + c: a
   vertex program exports it to 0x010 + w + c, a fragment program reads
@@ -1502,6 +1510,16 @@ binding (or location), and a kind-specific word:
   applied. A program clamps its buffer offsets to the bytes when the
   device has robustBufferAccess (the compiler's choice), so the bytes
   must be the bound range's.
+- **Scratch memory.** For a program with a kind-14 entry the command
+  processor allocates bytes per warp × the GPU's resident warps bytes of
+  GPU memory, aligned to the memory line, one allocation for each such
+  program (the vertex and the fragment program of a pipeline each have
+  their own), and writes its address to bank word b before every draw or
+  dispatch that runs the program. Warp w's part is the bytes per warp from
+  address + w × bytes per warp, w being the `warp` operand; a warp reads
+  and writes only its own part, with `lw` and `sw.x`. The memory needs no
+  contents at the start, and a warp's part keeps nothing after the warp
+  ends. (The compiler's layout of a part: word s of lane l at 128 s + 4 l.)
 - **Images through memory.** Kinds 9-11 are reached with `lw` and `sw`
   at addresses the program computes (`atom` for R32 formats is a later
   version); their images are in linear rows. A texel outside a storage

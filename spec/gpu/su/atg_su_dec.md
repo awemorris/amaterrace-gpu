@@ -46,7 +46,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   (sext(imm_hi) << 12); B offsets in instructions; U/movi).
 - Unit and class per the §3.4.1/§3.4.2 tables (e.g. OP funct7 0000001 div* → DIV/x, mul* → FPU/f).
   NDST 4 for texl/texb/texf, 1 for texsz and other writers, 0 for stores/branches.  PAIR for the
-  texture instructions.  SIDE for sw/atom/exp/tex*/sts.
+  texture instructions.  SIDE for sw/atom/exp/tex*/sts.  STORE: sub 0 `sw`, 1 `sw.x` (the uop's
+  sub, which atg_su_lsu reads), any other sub undefined.
 - ISA fault (ILL = 1, unit NONE): word0[1:0] ≠ 11, undefined opcode/funct/sub, a register ≥ NREGS
   (except 63 when HAS_SA, 64-127 as sources only), packed ops without PACKED, subgroup ops without
   SUBGROUP, rq/sactl without HAS_SA, class m/t/x with rd = 63.

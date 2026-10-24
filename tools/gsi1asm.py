@@ -79,7 +79,10 @@ ins("lui", "U", OPC["LUI"], None, None, U_ALU, 18, C_A, "di")
 ins("movi", "U", OPC["LUI"], None, None, U_ALU, 18, C_A, "di", movi=True)
 ins("lw", "I", OPC["LOAD"], 2, None, U_LSU, 0, C_M, "dm")
 ins("lwc", "I", OPC["LOAD"], 6, None, U_CBANK, 0, C_M, "dm")
-ins("sw", "S", OPC["STORE"], 2, None, U_LSU, 1, C_M, "2m", side=True)
+ins("sw", "S", OPC["STORE"], 2, None, U_LSU, 1, C_M, "2m", side=True, subv=0)
+# sw.x: the store of every EXEC lane, helper and killed lanes too (a warp's
+# scratch memory, docs/ghci.md section 12.8); the uop's sub[0].
+ins("sw.x", "S", OPC["STORE"], 2, None, U_LSU, 1, C_M, "2m", side=True, subv=1)
 for n, f3, ops in [("bany", 0, "1l"), ("bnone", 1, "1l"), ("ball", 2, "1l"), ("j", 3, "l"),
                    ("bexnz", 4, "l"), ("bexz", 5, "l")]:
     ins(n, "B", OPC["BRANCH"], f3, None, U_EXEC, f3, C_A, ops)

@@ -164,7 +164,8 @@ module atg_su_dec_tab (
 			cls = ATG_CLS_M;
 			unit = ATG_UNIT_LSU;
 			op = ATG_LSU_SW;
-			def = f3 == 3'd2;
+			/* sub 0 sw, 1 sw.x (the EXEC lanes: scratch memory); others undefined */
+			def = f3 == 3'd2 && sub <= 5'd1;
 		end
 		7'b1100011: begin	/* BRANCH */
 			fmt = FM_B;

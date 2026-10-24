@@ -33,7 +33,8 @@ module atg_su_opd #(
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit) */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
-	parameter UOP_W = 104	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
+	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
+	parameter WARP_BASE = 0	/* The warp operand of slot 0: SU_INDEX x NWARPS, so warp numbers the GPU's resident warps */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -209,7 +210,7 @@ module atg_su_opd #(
 				7'd99: opc = 32'h3F000000;
 				7'd100: opc = 32'h40000000;
 				7'd101: opc = 32'hBF800000;
-				7'd103: opc = {{(32-WARP_W){1'b0}}, wn};
+				7'd103: opc = WARP_BASE + {{(32-WARP_W){1'b0}}, wn};
 				7'd104: opc = qe;
 				7'd106: opc = {16'd0, qi[ATG_WI_WGX +: 16]};
 				7'd107: opc = {16'd0, qi[ATG_WI_WGX + 16 +: 16]};

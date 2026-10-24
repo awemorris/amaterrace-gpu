@@ -15,6 +15,7 @@ Operand collection: for each lane group of an issued instruction, reads the GPRs
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
 | `SBE_W` | `2` | log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits). |
 | `UOP_W` | `104` | Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh). |
+| `WARP_BASE` | `0` | The `warp` operand of slot 0 (atg_su: SU_INDEX × NWARPS), so that `warp` numbers the GPU's resident warps (docs/ghci.md section 12.3). |
 
 ## 3. Ports
 
@@ -70,7 +71,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 - Per group: cycle 1 address the RF (and cbank, rq), cycle 2 select per operand: GPR 0-62, rq 63,
   c0-c31 64-95 (uniform), special 96-127 (zero, one, onei, half, two, mone, lane = group×NPHYS+i,
-  warp, exec, killed (Boolean of the lane's bit), wg*/lid*/lidn/prim/front/nwg* from q_info, oneh2,
+  warp = WARP_BASE + slot, exec, killed (Boolean of the lane's bit), wg*/lid*/lidn/prim/front/nwg* from q_info, oneh2,
   mask, qstat/sastat/qtag (0 without SA)); then n/a modifiers (float sign/abs) for float units; drive
   x_*.
 - Lane masks: EXEC bits of the group from q_exec; side-effect = EXEC & coverage (q_info mask) &

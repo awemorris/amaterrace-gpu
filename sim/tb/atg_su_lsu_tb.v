@@ -11,8 +11,9 @@
  * atomic unit on at_* that applies the operation to the same memory.
  *   coalesce: random lane addresses in a few lines: one request per
  *             distinct line, every lane gets its word;
- *   store:    byte enables of the side-effect lanes reach memory, the
- *             beat (l_wr 0) comes after the last write response;
+ *   store:    byte enables of the side-effect lanes reach memory (of the
+ *             EXEC lanes for sw.x, sub 1, at random), the beat (l_wr 0)
+ *             comes after the last write response;
  *   atom:     every op of the 11 against a model, old values returned;
  *   empty:    an empty lane mask gives a beat without any request.
  */
@@ -125,6 +126,8 @@ module atg_su_lsu_tb;
 	end
 
 	reg [31:0] shadow [0:1023];
+	reg swx = 1'b0;			/* the next sw is sw.x */
+	reg [NPHYS-1:0] smask;		/* the lanes the sw writes */
 	integer i, l, n, err_c, err_s, err_a, err_e, lines, k;
 	reg [DW-1:0] want;
 	reg [26:0] seen [0:NPHYS-1];
@@ -143,6 +146,8 @@ module atg_su_lsu_tb;
 			x_uop[ATG_UOP_RD +: 7] = i % 60;
 			x_uop[ATG_UOP_WRD] = op != ATG_LSU_SW;
 			x_uop[ATG_UOP_SUB +: 5] = $unsigned($random(seed)) % 11;
+			if (op == ATG_LSU_SW)
+				x_uop[ATG_UOP_SUB +: 5] = {4'd0, swx};
 			x_warp = $random(seed);
 			x_grp = $random(seed);
 			x_last = $random(seed);
@@ -239,19 +244,21 @@ module atg_su_lsu_tb;
 		for (i = 0; i < 300; i = i + 1) begin
 			imm = 0;
 			x_mask = $random(seed);
+			swx = $random(seed);
+			smask = swx ? x_mask[NPHYS-1:0] : x_mask[2*NPHYS-1:NPHYS];
 			for (l = 0; l < NPHYS; l = l + 1) begin
 				x_a[l*32 +: 32] = 32'h200 + ($unsigned($random(seed)) % 64) * 4;
 				x_b[l*32 +: 32] = $random(seed);
 			end
 			for (l = 0; l < NPHYS; l = l + 1)
-				if (x_mask[NPHYS + l])
+				if (smask[l])
 					shadow[x_a[l*32 +: 32] / 4] = x_b[l*32 +: 32];
 			reqs = 0;
 			wrsp = 0;
 			send(ATG_LSU_SW, imm);
 			beat(e);
 			err_s = err_s + e;
-			if (l_wr !== 1'b0 || l_lanes !== x_mask[2*NPHYS-1:NPHYS] || wrsp != reqs) begin
+			if (l_wr !== 1'b0 || l_lanes !== smask || wrsp != reqs) begin
 				$display("FAIL atg_su_lsu: sw %0d: beat before the write responses", i);
 				err_s = err_s + 1;
 			end

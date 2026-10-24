@@ -85,7 +85,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 - lw: per group, the addresses (rs1 + imm per lane) are grouped by line; one D$ request per distinct
   line; returned words are scattered to the lanes; one beat per group, l_last after the last.
-- sw: per line, one write with byte enables of the active (side-effect) lanes; completion beat
+- sw: per line, one write with byte enables of the active (side-effect) lanes (sw.x, the uop's
+  sub[0]: the EXEC lanes, helper and killed lanes included: a warp's scratch memory); completion beat
   (l_wr 0) after all write responses (cm falls, design §3.1.1).
 - atom: one at_* per side-effect lane, serial; the D$ line is invalidated; the old value is the
   result when rd is written.

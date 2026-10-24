@@ -431,7 +431,8 @@ module atg_su #(
 	);
 
 	atg_su_opd #(
-		.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)
+		.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
+		.WARP_BASE(SU_INDEX * NWARPS)
 	) opd (
 		.clk(clk), .rst_n(rst_n),
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
