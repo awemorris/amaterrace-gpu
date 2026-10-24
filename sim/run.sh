@@ -12,19 +12,20 @@
 # SEED=n is passed to the testbench as +seed=n.  Timeout per run: 300 s
 # (SIM_TIMEOUT=s to change it).
 #
-# Every testbench (make sim) takes about 17 minutes, one after the other
-# (2026-10-24, a 64-thread Linux host: atg_su 206 s, atg_top_shade 189,
-# atg_top_cs 138, atg_top_tex 136, atg_top_raster 85, atg_dc_tgen 56,
-# atg_top_fw 44, atg_top 30, atg_kc705_raster 25, the other 71 about 105
-# together); atg_su needs SIM_TIMEOUT above 300 on a slower or busy host.
+# Every testbench (make sim) takes about 21 minutes, one after the other
+# (2026-10-25, a 64-thread Linux host: atg_top_tex 382 s, atg_su 201,
+# atg_top_shade 183, atg_top_cs 138, atg_top_raster 79, atg_dc_tgen 56,
+# atg_top_fw 40, atg_top 30, atg_kc705_raster 25, the others about 120
+# together); atg_top_tex needs SIM_TIMEOUT above 300 (600), atg_su on a
+# slower or busy host too.
 #
-# The short run (-q, make sim-quick) touches every block in about 6 minutes
-# (345 s on the same host): every testbench except the $LONG ones, and
+# The short run (-q, make sim-quick) touches every block in about 9 minutes
+# (528 s on the same host): every testbench except the $LONG ones, and
 # those of them that $QUICK lists, shortened:
 #   atg_su +quick              NPHYS 8 and 32 and the no-SUBGROUP SU, no frand
 #                              (58 s)
 #   atg_top_tex +shape=kc705   one shape: VF, SU, RX, TU and ROP through the
-#                              ring (71 s)
+#                              ring (173 s)
 #   atg_top_cs +shape=zybo     one shape: compute through the ring (50 s)
 #   atg_top_fw +shape=kc705    one shape: the CP firmware (19 s)
 #   atg_dc_tgen +quick         the timing on a 64x16 mode instead of 640x480

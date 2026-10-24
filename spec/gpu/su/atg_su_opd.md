@@ -76,7 +76,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 - Lane masks: EXEC bits of the group from q_exec; side-effect = EXEC & coverage (q_info mask) &
   ~KILLED.
 - PAIR (texl/texb/texf): x_c = rs1+1.
-- PAIR with USE3 (a texture .c form: rs1, rs1+1, rs2 and Dref = rs3 = rs1+2, four sources for three read ports): each lane group goes out twice, back to back in the order (g, pass 0), (g, pass 1); the second pass reads rs3 as operand 1 (x_a; x_b, x_c as in the first), sets TEX op bit 7 on x_uop (ATG_TEX_PASS2) and carries x_last on the last group; rq pops only on the first pass.  Such an instruction takes 2 × 32/NPHYS bus cycles.
+- PAIR with USE3 (a texture .c or .3 form: rs1, rs1+1, rs2 and rs3 = rs1+2, with .3.c also rs1+3; four or five sources for three read ports): each lane group goes out twice, back to back in the order (g, pass 0), (g, pass 1); the second pass reads rs3 as operand 1 (x_a) and rs3+1 as operand 3 (x_c; x_b as in the first), sets TEX op bit 7 on x_uop (ATG_TEX_PASS2) and carries x_last on the last group; rq pops only on the first pass.  Such an instruction takes 2 × 32/NPHYS bus cycles.
 
 ## 5. State machine
 
@@ -109,3 +109,5 @@ design §3.2 (operands), §3.1 (masks, helper lanes), include/atg_su_uop.vh.
 Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_opd_tb.v` with NPHYS 8/16/32).  The n/a modifiers apply for units FPU, XU and PK (PK on both halves).  Gap in the warp-info word: q_info has no WG_SIZE, so in v0 `lidx` = `lidn` and `lidy` = `lidz` = `prim` = 0 (right for 1-D workgroups); fixing it needs a q_info field (proposal for p009).
 
 2026-10-25 (p009 part E, P3): the second operand pass for PAIR + USE3 uops (§4), for the texture .c forms of docs/ghci.md §12.9.  Ports unchanged.  `sim/tb/atg_su_opd_tb.v` issues such uops at random and checks both passes.
+
+2026-10-25 (p009 part F, P3): the second pass of a PAIR + USE3 uop reads rs3+1 as operand 3 (x_c), for the texture .3 forms with Dref (rs1+3).  Ports unchanged.  `sim/tb/atg_su_opd_tb.v` checks operand 3 of both passes.

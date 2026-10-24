@@ -99,7 +99,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `tx_op` | out | 8 | Op and its modifiers (atg_su_tex). |
 | `tx_slot` | out | 4 | Slot. |
 | `tx_mask` | out | 4 | Lanes. |
-| `tx_coord` | out | 512 | Coordinates, 4 words a lane (atg_su_tex). |
+| `tx_coord` | out | 640 | Coordinates, 5 words a lane (atg_su_tex). |
+| `tx_off` | out | 12 | Texel offsets (atg_su_tex). |
 | `tx_tag` | out | 16 | Tag. |
 | `tx_last` | out | 1 | Last. |
 | `tr_valid` | in | 1 | Return quad. |
@@ -170,7 +171,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fault` | out | 1 | ISA fault (FAULT kind 8). |
 | `fault_addr` | out | 32 | PC of the fault. |
 
-107 ports; 85 counting each AMB port and HCR snoop port as one group (spec/README.md).
+108 ports; 86 counting each AMB port and HCR snoop port as one group (spec/README.md).
 
 ## 4. Behaviour
 

@@ -91,7 +91,8 @@ module atg_su #(
 	output wire [7:0] tx_op,
 	output wire [3:0] tx_slot,
 	output wire [3:0] tx_mask,
-	output wire [511:0] tx_coord,
+	output wire [639:0] tx_coord,
+	output wire [11:0] tx_off,
 	output wire [15:0] tx_tag,
 	output wire tx_last,
 	input wire tr_valid,
@@ -549,7 +550,8 @@ module atg_su #(
 		.l_grp(tex_l_grp), .l_rd(tex_l_rd), .l_data(tex_l_data), .l_lanes(tex_l_lanes),
 		.l_wr(tex_l_wr), .l_last(tex_l_last), .l_sbe(tex_l_sbe), .l_cls(tex_l_cls),
 		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
-		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_tag(tx_tag), .tx_last(tx_last),
+		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
+		.tx_last(tx_last),
 		.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
 		.tr_last(tr_last)
 	);

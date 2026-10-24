@@ -103,6 +103,10 @@ module atg_su_sb #(
 	wire src2 = u_uop[ATG_UOP_USE2] && rs2 < 7'd63;
 	wire src3 = u_uop[ATG_UOP_USE3] && rs3 < 7'd63;
 	wire src4 = pair && rs1p < 7'd63;
+	/* A texture .3 form with Dref also reads rs1+3 (rs3 + 1). */
+	wire [6:0] rs3p = rs3 + 7'd1;
+	wire src5 = unit == ATG_UNIT_TEX && u_uop[ATG_UOP_SUB + 4] && op[ATG_TEX_CFORM] &&
+		rs3p < 7'd63;
 	wire dst = wrd && rd < 7'd63;
 
 	/* Scoreboard entries, warp-major: {base, wide, cls}. */
@@ -155,6 +159,7 @@ module atg_su_sb #(
 				    (src2 && in_range(rs2, e_base[(ix)*6 +: 6], e_wide[ix])) ||
 				    (src3 && in_range(rs3, e_base[(ix)*6 +: 6], e_wide[ix])) ||
 				    (src4 && in_range(rs1p, e_base[(ix)*6 +: 6], e_wide[ix])) ||
+				    (src5 && in_range(rs3p, e_base[(ix)*6 +: 6], e_wide[ix])) ||
 				    (dst && (in_range(rd, e_base[(ix)*6 +: 6], e_wide[ix]) ||
 				    (wide && in_range({1'b0, e_base[(ix)*6 +: 6]}, rd[5:0], 1'b1)))))
 					hz_long = 1'b1;
@@ -189,6 +194,7 @@ module atg_su_sb #(
 			if (f_valid[m] && f_short[m] && f_warp[(m)*WARP_W +: WARP_W] == u_warp &&
 			    ((src1 && hit(rs1, f_rd[(m)*7 +: 7])) || (src2 && hit(rs2, f_rd[(m)*7 +: 7])) ||
 			    (src3 && hit(rs3, f_rd[(m)*7 +: 7])) || (src4 && hit(rs1p, f_rd[(m)*7 +: 7])) ||
+			    (src5 && hit(rs3p, f_rd[(m)*7 +: 7])) ||
 			    (dst && is_long && (f_rd[(m)*7 +: 7] >= {1'b0, rd[5:0]}) &&
 			    (f_rd[(m)*7 +: 7] < {1'b0, rd[5:0]} + (wide ? 7'd4 : 7'd1)))))
 				hz_short = 1'b1;
@@ -196,7 +202,8 @@ module atg_su_sb #(
 			if (c_valid[m] && c_warp[(m)*WARP_W +: WARP_W] == u_warp &&
 			    (({28'd0, c_cnt[(m)*CD_W +: CD_W]} > G + 1 && ((src1 && hit(rs1, {1'b0, c_rd[(m)*6 +: 6]})) ||
 			    (src2 && hit(rs2, {1'b0, c_rd[(m)*6 +: 6]})) || (src3 && hit(rs3, {1'b0, c_rd[(m)*6 +: 6]})) ||
-			    (src4 && hit(rs1p, {1'b0, c_rd[(m)*6 +: 6]})))) ||
+			    (src4 && hit(rs1p, {1'b0, c_rd[(m)*6 +: 6]})) ||
+			    (src5 && hit(rs3p, {1'b0, c_rd[(m)*6 +: 6]})))) ||
 			    (dst && is_long && in_range({1'b0, c_rd[(m)*6 +: 6]}, rd[5:0], wide))))
 				hz_short = 1'b1;
 	end

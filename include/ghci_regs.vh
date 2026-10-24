@@ -199,26 +199,33 @@ localparam [8:0] GHCI_S_BLEND_CONST = 9'h07B;
 localparam [8:0] GHCI_S_WRITE_MASK = 9'h07C;
 
 /* TU (0x090-0x18F, docs/ghci.md section 8.4): slot s's words at
- * GHCI_S_TU + 16 s + GHCI_TEX_*, and the TEX_SAMPLER fields. */
-localparam [3:0] GHCI_TEX_BASE = 4'd0;
-localparam [3:0] GHCI_TEX_SIZE = 4'd1;
-localparam [3:0] GHCI_TEX_LEVELS = 4'd2;
-localparam [3:0] GHCI_TEX_SAMPLER = 4'd3;
-localparam [3:0] GHCI_TEX_MIP_OFFSET = 4'd4;	/* MIP_OFFSET[1..12] at +4..+15 */
-localparam GHCI_TEX_MIN_LOD = 4;	/* TEX_LEVELS [15:4]: minLod, 4.8 fixed */
-localparam GHCI_TEX_MAX_LOD = 16;	/* TEX_LEVELS [27:16]: 15.996 - maxLod, 4.8 fixed */
+ * GHCI_S_TU + 16 s + GHCI_TEX_*: the image words (BASE, SIZE, IMAGE,
+ * LAYER_STRIDE), the sampler words (SAMPLER, LOD), +6..+15 reserved. */
+localparam [3:0] GHCI_TEX_BASE = 4'd0;	/* level 0 of layer 0, a multiple of 64 */
+localparam [3:0] GHCI_TEX_SIZE = 4'd1;	/* [15:0] width, [31:16] height */
+localparam [3:0] GHCI_TEX_IMAGE = 4'd2;
+localparam [3:0] GHCI_TEX_LAYER_STRIDE = 4'd3;	/* bytes between layers, a multiple of 64 */
+localparam [3:0] GHCI_TEX_SAMPLER = 4'd4;
+localparam [3:0] GHCI_TEX_LOD = 4'd5;
+localparam GHCI_IMG_LEVELS = 0;	/* TEX_IMAGE [3:0]: the level count (0 reads as 1, > 13 as 13) */
+localparam GHCI_IMG_FMT = 4;	/* [7:4]: 0 RGBA8, 1 BGRA8, 2 D24, 3 D32_SFLOAT */
+localparam GHCI_IMG_TILED = 8;	/* 4x4 tiles (CAPS[11]) */
+localparam GHCI_IMG_TYPE = 9;	/* [11:9]: 0 2D, 1 2D array, 2 3D, 3 cube */
+localparam GHCI_IMG_SAMPLES = 12;	/* [15:12]: log2(samples), reserved (0) */
+localparam GHCI_IMG_COUNT = 16;	/* [31:16]: depth (3D) or layer count (2D array) */
 localparam GHCI_SAMP_WRAP_U = 0;	/* [1:0]: 0 repeat, 1 mirrored, 2 edge, 3 border */
 localparam GHCI_SAMP_WRAP_V = 2;	/* [3:2] */
-localparam GHCI_SAMP_MAG_LINEAR = 4;
-localparam GHCI_SAMP_MIN_LINEAR = 5;
-localparam GHCI_SAMP_MIP_LINEAR = 6;
-localparam GHCI_SAMP_COMPARE = 7;
-localparam GHCI_SAMP_COMPARE_OP = 8;	/* [10:8] VkCompareOp */
-localparam GHCI_SAMP_FMT_LO = 12;	/* format {[14], [12]}: RGBA8, BGRA8, D24, D32F */
-localparam GHCI_SAMP_TILED = 13;
-localparam GHCI_SAMP_FMT_HI = 14;	/* the depth formats */
-localparam GHCI_SAMP_BORDER = 16;	/* [18:16] VkBorderColor */
+localparam GHCI_SAMP_WRAP_W = 4;	/* [5:4] */
+localparam GHCI_SAMP_MAG_LINEAR = 6;
+localparam GHCI_SAMP_MIN_LINEAR = 7;
+localparam GHCI_SAMP_MIP_LINEAR = 8;
+localparam GHCI_SAMP_COMPARE = 9;
+localparam GHCI_SAMP_COMPARE_OP = 10;	/* [12:10] VkCompareOp */
+localparam GHCI_SAMP_BORDER = 13;	/* [15:13] VkBorderColor */
+localparam GHCI_SAMP_UNNORM = 16;	/* unnormalizedCoordinates */
 localparam GHCI_SAMP_LOD_BIAS = 19;	/* [31:19] mipLodBias, signed 5.8 fixed */
+localparam GHCI_TEX_MIN_LOD = 0;	/* TEX_LOD [11:0]: minLod, 4.8 fixed */
+localparam GHCI_TEX_MAX_LOD = 12;	/* TEX_LOD [23:12]: 15.996 - maxLod, 4.8 fixed */
 
 /* The program range (0x190-0x1AF, docs/ghci.md section 8.3). */
 localparam [8:0] GHCI_S_VS_BASE = 9'h190;

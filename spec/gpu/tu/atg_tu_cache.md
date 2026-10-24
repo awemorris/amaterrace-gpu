@@ -28,17 +28,17 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ta_valid` | in | 1 | A quad's texel addresses. |
 | `ta_ready` | out | 1 | Taken. |
 | `ta_addr` | in | 512 | 4 lanes × 4 texels × 32-bit byte address (nearest: texel 0 only). |
-| `ta_wts` | in | 96 | 4 lanes × {fl, fv, fu} 8-bit weights (passed through). |
+| `ta_wts` | in | 128 | 4 lanes × {fw, fl, fv, fu} 8-bit weights (passed through). |
 | `ta_tag` | in | 16 | Tag. |
 | `ta_mask` | in | 4 | Lanes. |
-| `ta_ctl` | in | 24 | As atg_tu_addr's: [0] bilinear, [1] format low bit, [2] no fetch (texsz, texqlod), [3] texf, [4] / [5] the levels of a mip linear pair, [7:6] border colour class, [8] depth format, [9] compare, [12:10] compare op, [13] gather, [15:14] its component, [16] texqlod. |
+| `ta_ctl` | in | 24 | As atg_tu_addr's: [0] bilinear, [1] format low bit, [2] no fetch (texsz, texqlod), [3] texf, [4] a later pass follows, [5] not the first pass, [7:6] border colour class, [8] depth format, [9] compare, [12:10] compare op, [13] gather, [15:14] its component, [16] texqlod, [18:17] the pass. |
 | `ta_value` | in | 128 | texsz {h, w} or the compare reference per lane (passed through). |
 | `ta_last` | in | 1 | Last. |
 | **To atg_tu_filter** | | | |
 | `tc_valid` | out | 1 | Texels of a quad. |
 | `tc_ready` | in | 1 | Taken. |
 | `tc_texels` | out | 512 | 4 lanes × 4 texels × 32 bits (raw). |
-| `tc_wts` | out | 96 | As ta_wts. |
+| `tc_wts` | out | 128 | As ta_wts. |
 | `tc_tag` | out | 16 | Tag. |
 | `tc_mask` | out | 4 | Lanes. |
 | `tc_ctl` | out | 24 | As ta_ctl. |
@@ -98,3 +98,5 @@ design §3.7 (T$ 4 KiB), §2.4.3 (INVALIDATE).
 ## 10. Status
 
 Implemented in WS288 p009 part C (P1, branch p1-tu).  Differences from §4/§6 (v1, performance only, p015): one outstanding miss instead of two, one texel per cycle instead of four.  The error behaviour (texel 0, no fault) is this implementation's reading.  Part E (P3): the border texels (address bit 0) and the wider ta_wts / ta_ctl.
+
+Part F (P3): ta_wts / tc_wts 128 bits (fw, the depth weight); the pass bits of ta_ctl pass through.  Otherwise unchanged.

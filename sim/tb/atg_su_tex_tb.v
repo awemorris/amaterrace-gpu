@@ -14,12 +14,14 @@
  * held until taken).  The model TU takes quads with a random tx_ready and
  * answers them in order after random delays with data made from each
  * lane's coordinates and the quad's tag; l_ready is random.  The TEX op
- * carries random modifier bits; a .c form (op bit 2) sends each group
- * twice as atg_su_opd does, the second pass (op bit 7) with Dref on x_a,
- * x_last only there, sometimes after idle cycles.
+ * carries random modifier bits, the uop random texel offsets (imm) and
+ * at random the .3 flag (sub[4]); a .c (op bit 2) or .3 form sends each
+ * group twice as atg_su_opd does, the second pass (op bit 7) with rs1+2 on
+ * x_a and rs1+3 on x_c, x_last only there, sometimes after idle cycles.
  *   send  every quad with an EXEC lane, in order: op (bits 6:0), slot, mask
- *         (EXEC), coordinates {Dref or 0, rs2, rs1+1, rs1} per lane, tag
- *         {warp, quad, rd}, tx_last on the last quad of the instruction
+ *         (EXEC), offsets, coordinates {third or 0, Dref or 0, rs2, rs1+1,
+ *         rs1} per lane, tag {warp, quad, rd}, tx_last on the last quad of
+ *         the instruction
  *   ret   per group, in order: rd..rd+3 (texsz rd) with the EXEC lanes'
  *         returned words, class t, l_last on the instruction's last beat
  */
@@ -68,7 +70,8 @@ module atg_su_tex_run #(
 	wire [NPHYS-1:0] l_lanes;
 	wire [2:0] l_sbe, l_cls;
 	wire [3:0] tx_slot, tx_mask;
-	wire [511:0] tx_coord;
+	wire [639:0] tx_coord;
+	wire [11:0] tx_off;
 	wire [15:0] tx_tag;
 
 	atg_su_tex #(.NPHYS(NPHYS), .NWARPS(4), .WARP_W(2), .GRP_W(GRP_W), .SBE_W(2)) dut (
@@ -79,8 +82,8 @@ module atg_su_tex_run #(
 		.l_data(l_data), .l_lanes(l_lanes), .l_wr(l_wr), .l_last(l_last), .l_sbe(l_sbe),
 		.l_cls(l_cls),
 		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
-		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_tag(tx_tag), .tx_last(tx_last),
-		.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
+		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
+		.tx_last(tx_last), .tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
 		.tr_last(tr_last)
 	);
 
@@ -88,21 +91,23 @@ module atg_su_tex_run #(
 
 	/* The model TU's answer for a quad. */
 	function [511:0] answer;
-		input [511:0] crd;
+		input [639:0] crd;
 		input [15:0] tag;
 		integer l, c;
 		begin
 			for (l = 0; l < 4; l = l + 1)
 				for (c = 0; c < 4; c = c + 1)
-					answer[l*128 + c*32 +: 32] = crd[l*128 + c * 32 +: 32] ^
-						(c * 32'h11111111) ^ {16'd0, tag};
+					answer[l*128 + c*32 +: 32] = crd[l*160 + c * 32 +: 32] ^
+						(c * 32'h11111111) ^ {16'd0, tag} ^
+						(c == 0 ? crd[l*160 + 128 +: 32] : 32'd0);
 		end
 	endfunction
 
 	/* Expected quads (send) and groups (ret), in order. */
 	reg [7:0] q_op [0:4095];
 	reg [3:0] q_slot [0:4095], q_mask [0:4095];
-	reg [511:0] q_crd [0:4095];
+	reg [639:0] q_crd [0:4095];
+	reg [11:0] q_off [0:4095];
 	reg [15:0] q_tag [0:4095];
 	reg q_last [0:4095];
 	integer qw = 0, qr = 0;
@@ -116,7 +121,7 @@ module atg_su_tex_run #(
 	integer gw = 0, gr = 0;
 
 	/* The model TU: takes quads (checked against the expected), answers in order. */
-	reg [511:0] p_crd [0:4095];
+	reg [639:0] p_crd [0:4095];
 	reg [15:0] p_tag [0:4095];
 	reg p_last [0:4095];
 	integer pw = 0, pr = 0;
@@ -125,6 +130,7 @@ module atg_su_tex_run #(
 		if (tx_valid && tx_ready) begin
 			if (qr >= qw || tx_op !== q_op[qr] || tx_slot !== q_slot[qr] ||
 			    tx_mask !== q_mask[qr] || tx_coord !== q_crd[qr] || tx_tag !== q_tag[qr] ||
+			    tx_off !== q_off[qr] ||
 			    tx_last !== q_last[qr]) begin
 				if (e_send < 8)
 					$display("FAIL atg_su_tex(%0d): quad %0d: op %0d slot %0d mask %h tag %h last %b, want %0d %0d %h %h %b",
@@ -189,8 +195,10 @@ module atg_su_tex_run #(
 	reg [1:0] warp;
 	reg [2:0] sbe;
 	reg [NPHYS-1:0] ex;
-	reg [511:0] crd;
-	reg [DW-1:0] dref;
+	reg [639:0] crd;
+	reg [DW-1:0] dref, third, p2a, p2c;
+	reg three, wide;
+	reg [11:0] offs;
 	reg [15:0] tag;
 	reg [2:0] qn;
 	reg [DW*4-1:0] gd;
@@ -215,6 +223,9 @@ module atg_su_tex_run #(
 			if (($random(seed) & 1) == 0)
 				op[ATG_TEX_CFORM] = 1'b0;
 			slot = $random(seed);
+			three = $random(seed);
+			wide = three || op[ATG_TEX_CFORM];
+			offs = $random(seed);
 			rd = $random(seed) & 7'h3F;
 			warp = $random(seed);
 			sbe = $random(seed);
@@ -233,17 +244,24 @@ module atg_su_tex_run #(
 					x_b[l*32 +: 32] <= $random(seed);
 					x_c[l*32 +: 32] <= $random(seed);
 				end
-				for (l = 0; l < NPHYS; l = l + 1)
-					dref[l*32 +: 32] = op[ATG_TEX_CFORM] ? $random(seed) : 32'd0;
+				/* the second pass: rs1+2 on x_a, rs1+3 on x_c */
+				for (l = 0; l < NPHYS; l = l + 1) begin
+					p2a[l*32 +: 32] = $random(seed);
+					p2c[l*32 +: 32] = $random(seed);
+					third[l*32 +: 32] = three ? p2a[l*32 +: 32] : 32'd0;
+					dref[l*32 +: 32] = !op[ATG_TEX_CFORM] ? 32'd0 :
+						three ? p2c[l*32 +: 32] : p2a[l*32 +: 32];
+				end
 				x_valid <= 1'b1;
 				x_warp <= warp;
 				x_grp <= g;
-				x_last <= g == NG - 1 && !op[ATG_TEX_CFORM];
+				x_last <= g == NG - 1 && !wide;
 				x_sbe <= sbe;
 				x_uop <= 0;
 				x_uop[ATG_UOP_UNIT +: 4] <= ATG_UNIT_TEX;
 				x_uop[ATG_UOP_OP +: 8] <= op;
-				x_uop[ATG_UOP_SUB +: 5] <= slot;
+				x_uop[ATG_UOP_SUB +: 5] <= {three, slot};
+				x_uop[ATG_UOP_IMM +: 32] <= {20'd0, offs};
 				x_uop[ATG_UOP_RD +: 7] <= rd;
 				x_mask <= {{NPHYS{1'b1}}, ex};
 				@(negedge clk);
@@ -256,7 +274,8 @@ module atg_su_tex_run #(
 				for (q = 0; q < NQ; q = q + 1)
 					if (ex[q*4 +: 4] != 4'h0) begin
 						for (l = 0; l < 4; l = l + 1)
-							crd[l*128 +: 128] = {dref[(q*4+l)*32 +: 32], x_b[(q*4+l)*32 +: 32],
+							crd[l*160 +: 160] = {third[(q*4+l)*32 +: 32],
+								dref[(q*4+l)*32 +: 32], x_b[(q*4+l)*32 +: 32],
 								x_c[(q*4+l)*32 +: 32], x_a[(q*4+l)*32 +: 32]};
 						qn = g * NQ + q;
 						tag = {3'd0, 1'b0, warp, qn, rd};
@@ -264,6 +283,7 @@ module atg_su_tex_run #(
 						q_slot[qw] = slot;
 						q_mask[qw] = ex[q*4 +: 4];
 						q_crd[qw] = crd;
+						q_off[qw] = offs;
 						q_tag[qw] = tag;
 						q_last[qw] = g == NG - 1 && q == lastq;
 						qw = qw + 1;
@@ -284,15 +304,15 @@ module atg_su_tex_run #(
 				while (!x_ready)
 					@(negedge clk);
 				@(posedge clk);
-				if (op[ATG_TEX_CFORM]) begin
-					/* the second operand pass: Dref on x_a */
+				if (wide) begin
+					/* the second operand pass: rs1+2 on x_a, rs1+3 on x_c */
 					x_valid <= 1'b0;
 					while (($random(seed) & 3) == 0)
 						@(posedge clk);
 					x_valid <= 1'b1;
-					x_a <= dref;
+					x_a <= p2a;
 					x_b <= {NPHYS{32'hBADC0FFE}};
-					x_c <= {NPHYS{32'hBADC0FFE}};
+					x_c <= p2c;
 					x_last <= g == NG - 1;
 					x_uop[ATG_UOP_OP + ATG_TEX_PASS2] <= 1'b1;
 					@(negedge clk);

@@ -148,6 +148,9 @@ def rnd_insn(r, n, e):
             args.append("%d" % r.randrange(16 if e["unit"] == A.U_TEX else 32))
     if cmpxchg:
         args.append(rnd_reg(r))
+    if e["unit"] == A.U_TEX and e["fmt"] == "R" and r.random() < 0.5:
+        args.append("off(%s)" % ", ".join("%d" % r.randrange(-8, 8)
+                                          for _ in range(r.choice([2, 3]))))
     if e["f3"] == "rm" and r.random() < 0.7:
         args.append(r.choice(sorted(A.RM)))
     elif e["f3"] == "rm4" and r.random() < 0.7:

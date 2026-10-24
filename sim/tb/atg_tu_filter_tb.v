@@ -12,8 +12,9 @@
  * tr_tag and tr_last of every quad are checked in order.  Groups:
  * "nearest" (every byte value in every channel, both formats, texsz,
  * texf, lane masks), "bilinear" (random texels and weights, the end
- * weights 0, 1, 128, 255), "trilinear" (pairs of passes: the first, an H
- * line, must return nothing, the second the blend), "depth" (D24 and D32F
+ * weights 0, 1, 128, 255), "trilinear" (the passes of mip linear and 3D
+ * linear filtering, 2 to 4: those with more to follow, H lines, must
+ * return nothing, the last the weighted sum), "depth" (D24 and D32F
  * without compare), "compare" (every compare op, both depth formats,
  * references at and next to the texels, NaN, nearest, bilinear and
  * trilinear), "gather" (components of the four texels: colour, depth,
@@ -30,7 +31,7 @@ module atg_tu_filter_tb;
 
 	reg tc_valid = 1'b0;
 	reg [511:0] tc_texels = 0;
-	reg [95:0] tc_wts = 0;
+	reg [127:0] tc_wts = 0;
 	reg [15:0] tc_tag = 0;
 	reg [3:0] tc_mask = 0;
 	reg [23:0] tc_ctl = 0;
@@ -49,7 +50,7 @@ module atg_tu_filter_tb;
 	integer fd, code, seed, errs, gerrs, nq, tmo, w;
 	reg [8*10-1:0] kind, gname;
 	reg [511:0] tex, x_data;
-	reg [95:0] wts;
+	reg [127:0] wts;
 	reg [3:0] mask;
 	reg [23:0] ctl;
 	reg [127:0] val;
@@ -93,11 +94,11 @@ module atg_tu_filter_tb;
 					@(posedge clk);
 				tc_valid <= 1'b0;
 				tc_texels <= {16{$random(seed)}};
-				tc_wts <= {3{$random(seed)}};
+				tc_wts <= {4{$random(seed)}};
 				repeat (8) begin
 					@(posedge clk);
 					if (tr_valid) begin
-						$display("FAIL atg_tu_filter: quad %0d: a first level returned", nq);
+						$display("FAIL atg_tu_filter: quad %0d: a pass with more to follow returned", nq);
 						gerrs = gerrs + 1;
 					end
 				end
@@ -119,7 +120,7 @@ module atg_tu_filter_tb;
 					@(posedge clk);
 				tc_valid <= 1'b0;
 				tc_texels <= {16{$random(seed)}};
-				tc_wts <= {3{$random(seed)}};
+				tc_wts <= {4{$random(seed)}};
 				tc_value <= {4{$random(seed)}};
 				tmo = 0;
 				while (!tr_valid && tmo < 100) begin

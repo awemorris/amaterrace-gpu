@@ -6,46 +6,49 @@
  */
 
 /*
- * atg_tu_addr: TU addressing: per quad, the slot's descriptor (STATE
- * 16s+0..15), level of detail (texl explicit, texb from the quad
- * derivatives + bias, texf level), mip selection, wrap modes, bilinear
- * footprint, texel byte addresses (linear or 4×4 tiled), and texsz.
+ * atg_tu_addr: TU addressing: per quad, the slot's descriptor, level of
+ * detail (texl explicit, texb from the quad derivatives + bias, texf
+ * level), mip selection, the layer (2D array), the slice (3D), the face
+ * (cube), wrap on integer texel coordinates after the texel offsets,
+ * clamp to border, cube edges, bilinear footprint, texel byte addresses
+ * (linear or 4×4 tiled), the reference of a compare sampler, and texsz.
  *
- * Takes one quad (tx_*) in IDLE, works lane by lane (two cycles per lane,
- * one more for texb's quad LOD) and holds the result on ta_* until taken.
- * With mip linear filtering (SAMPLER[6]) the quad goes out twice: pass 0
- * at level ⌊λ⌋ with ta_ctl[4] when a lane of tx_mask needs a second level,
- * then pass 1 at ⌊λ⌋ + 1 with ta_ctl[5]; each lane's weight of the second
- * level is in ta_wts (0 for a lane that needs one level only).
- * Numbers (tools/tumodel.py is the reference, bit for bit):
- *   LOD λ: signed, 8 fraction bits, saturated to 16 bits.  texl: floor(lod
- *   × 256); texb: the quad's λ (lanes 0, 1 = x + 1, 2 = y + 1: the largest
- *   |Δu| times the width and |Δv| times the height, log2 as msb + 8 bits
- *   below it, from u and v as floor(x × 2^16)) plus floor(bias × 256).
- *   A compare sampler (SAMPLER[7] on a depth format, texl and texb): rs2
- *   is the reference (passed on ta_value), λ = 0 for texl and the quad's
- *   λ without bias for texb.
- *   λ > 0: minification (SAMPLER[5] linear); mip nearest: level (λ + 127)
- *   >> 8 clamped to LEVELS − 1; mip linear: levels λ >> 8 and one more
- *   with the weight λ & 255 (one level, LEVELS − 1, at the end).  λ ≤ 0:
- *   magnification (SAMPLER[4]), level 0.  A depth format without compare
- *   is nearest only (no filter, mip nearest).
- *   Wrap (2 bits: 0 repeat, 1 mirrored repeat, 2 clamp to edge, 3 clamp to
- *   border) on the normalised coordinate: f with 24 fraction bits in [0, 1]
- *   (border: [−1, 2]), then c = f × size >> 16 (8 fraction bits, floor).
- *   Nearest: texel c >> 8; bilinear: c − 128, the integer part and its
- *   neighbour, the low 8 bits the weight.  Indices outside the level go
- *   back into it (repeat: −1 → size − 1, size → 0; the others clamp); with
- *   clamp to border such a texel is a border texel: bit 0 of its address
- *   is set (the address's bits 1:0 are otherwise 0).
- *   texf: integer x, y, level (rs2), all clamped into range, nearest.
- *   texsz: word 0 = level (unsigned, clamped to 15), value {h, w} of it.
- *   Address: level base = BASE (+ MIP_OFFSET[level] above level 0), level
- *   size max(1, size >> level), 4 bytes a texel; linear rows of width × 4
- *   bytes, or SAMPLER[13] the 4×4 tiles of atg_blt (a row of tiles is
- *   ceil(width / 4) × 64 bytes).
+ * Children: atg_tu_desc (the descriptors and their level offsets),
+ * atg_tu_cube (cube faces), atg_tu_lod (texb's quad LOD), atg_tu_foot (a
+ * lane's footprint and addresses).
+ * Takes one quad (tx_*) in IDLE while atg_tu_desc is not busy.  A cube
+ * quad that samples first has each lane's face and face coordinates
+ * computed by atg_tu_cube, one lane at a time; texb (and texqlod) on a
+ * cube also lanes 1 and 2 projected on lane 0's face for the LOD.  Then
+ * lane by lane (two cycles a lane: A the LOD, level, sizes, texel
+ * coordinates, layer and level base; B the footprint) into ta_*, held
+ * until taken.  Passes: 0; 1, the second slice of 3D linear filtering,
+ * when a lane of tx_mask has a weight fw; 2, the second level of mip
+ * linear filtering, when one has a weight fl; 3, both, when a lane's fw at
+ * the second level is not 0.  ta_ctl[4] says a later pass follows, [5]
+ * that this is not the first, [18:17] which pass it is.
+ * Numbers (tools/tumodel.py is the reference, bit for bit; the functions
+ * are in include/atg_tu_fn.vh):
+ *   λ: signed, 8 fraction bits, saturated to 16 bits; texl floor(lod ×
+ *   256), texb the quad's (atg_tu_lod) plus floor(bias × 256), then the
+ *   sampler's mipLodBias, then clamped to [minLod, maxLod]; 0 with
+ *   unnormalized coordinates.  λ > 0 minifies (SAMPLER min filter), mip
+ *   nearest level (λ + 127) >> 8, mip linear levels λ >> 8 and one more
+ *   with the weight λ & 255; otherwise level 0 and the mag filter.  A depth
+ *   format without compare is nearest only.
+ *   Texel coordinates with 8 fraction bits: (the normalized coordinate's
+ *   tu_coord) × size >> 16, a cube's face coordinate × size >> 16, or an
+ *   unnormalized coordinate's floor(x × 256).
+ *   Layer: a 2D array's RNE(rs1+2) clamped (texf: the integer, also of a
+ *   cube); level base = BASE + layer × LAYER_STRIDE + the level's offset.
+ *   texsz: word 0 = level (unsigned, clamped to 15): {h, w}; texsz.l the
+ *   level count; texsz.d the layer count (array), the level's depth (3D),
+ *   else 1.
  * Lanes outside tx_mask are computed too (the cache does not fetch them).
  * See spec/gpu/tu/atg_tu_addr.md.
+ *
+ * States: IDLE →(tx)→ [CUBE ⇄ CWAIT (cube lanes)] → [LOD (texb)] → LA →
+ * LB → LA … (lanes 0-3) → OUT →(ta_ready)→ IDLE, or LA (the next pass).
  */
 
 `timescale 1ns / 1ps
@@ -58,20 +61,22 @@ module atg_tu_addr (
 	input wire st_we,
 	input wire [8:0] st_idx,
 	input wire [31:0] st_wdata,
+	output wire desc_busy,
 	/* Requests from the SU (atg_su tx_* /tr_*) */
 	input wire tx_valid,
 	output wire tx_ready,
 	input wire [7:0] tx_op,
 	input wire [3:0] tx_slot,
 	input wire [3:0] tx_mask,
-	input wire [511:0] tx_coord,
+	input wire [639:0] tx_coord,
+	input wire [11:0] tx_off,
 	input wire [15:0] tx_tag,
 	input wire tx_last,
 	/* To atg_tu_cache */
 	output wire ta_valid,
 	input wire ta_ready,
 	output reg [511:0] ta_addr,
-	output reg [95:0] ta_wts,
+	output reg [127:0] ta_wts,
 	output reg [15:0] ta_tag,
 	output reg [3:0] ta_mask,
 	output wire [23:0] ta_ctl,
@@ -79,289 +84,219 @@ module atg_tu_addr (
 	output reg ta_last
 );
 	`include "ghci_regs.vh"
+	`include "atg_tu_fn.vh"
 	localparam [1:0] OP_TEXL = 2'd0, OP_TEXB = 2'd1, OP_TEXF = 2'd2, OP_TEXSZ = 2'd3;
-	localparam [2:0] IDLE = 3'd0, LOD = 3'd1, LA = 3'd2, LB = 3'd3, OUT = 3'd4;
-	localparam signed [16:0] LAM_MIN = -17'sd32768;
-
-	/* floor(f × 2^sh), saturated to 32 bits; zero, denormal, NaN → 0. */
-	function [31:0] fx32;
-		input [31:0] f;
-		input [4:0] sh;
-		integer k;
-		reg [31:0] q;
-		reg st;
-		begin
-			k = {24'd0, f[30:23]} - 150 + {27'd0, sh};
-			q = 32'd0;
-			st = 1'b0;
-			if (k >= 0 && k < 8)
-				q = {8'd0, 1'b1, f[22:0]} << k;
-			else if (k < 0 && k > -24) begin
-				q = {8'd0, 1'b1, f[22:0]} >> (-k);
-				st = |({1'b1, f[22:0]} & ((24'd1 << (-k)) - 24'd1));
-			end else if (k < 0)
-				st = 1'b1;
-			if (f[30:23] == 8'd0 || (f[30:23] == 8'hFF && f[22:0] != 23'd0))
-				fx32 = 32'd0;
-			else if (f[30:23] == 8'hFF || k >= 8)
-				fx32 = f[31] ? 32'h80000000 : 32'h7FFFFFFF;
-			else
-				fx32 = f[31] ? -(q + {31'd0, st}) : q;
-		end
-	endfunction
-
-	function signed [16:0] sat16;
-		input signed [32:0] v;
-		sat16 = v > 33'sd32767 ? 17'sd32767 : v < -33'sd32768 ? -17'sd32768 : v[16:0];
-	endfunction
-
-	/* The wrapped coordinate (tools/tumodel.py fwrap): [0, 2^24], or for
-	 * clamp to border floor(u × 2^24) clamped to [−2^24, 2^25]. */
-	function signed [26:0] fwrap;
-		input [31:0] f;
-		input [1:0] mode;
-		integer k;
-		reg [24:0] q, t;
-		reg st;
-		begin
-			k = {24'd0, f[30:23]} - 126;
-			q = 25'd0;
-			st = 1'b0;
-			if (k >= 0 && k < 25)
-				q = {1'b0, 1'b1, f[22:0]} << k;
-			else if (k < 0 && k > -24) begin
-				q = {1'b0, 1'b1, f[22:0]} >> (-k);
-				st = |({1'b1, f[22:0]} & ((24'd1 << (-k)) - 24'd1));
-			end else if (k < 0)
-				st = 1'b1;
-			t = f[31] ? -(q + {24'd0, st}) : q;
-			if (f[30:23] == 8'hFF)
-				t = 25'd0;
-			if (f[30:23] == 8'd0 || (f[30:23] == 8'hFF && f[22:0] != 23'd0))
-				fwrap = 27'sd0;
-			else if (mode == 2'd3 && f[30:23] >= 8'd128)
-				fwrap = f[31] ? -27'sd16777216 : 27'sd33554432;
-			else if (mode == 2'd3)
-				fwrap = !f[31] ? $signed({2'b00, q}) :
-					{1'b0, q} + {25'd0, st} >= 26'h1000000 ? -27'sd16777216 :
-					-$signed({1'b0, {1'b0, q} + {25'd0, st}});
-			else if (mode[1])
-				fwrap = f[31] ? 27'sd0 : f[30:23] >= 8'd127 ? 27'sd16777216 :
-					$signed({3'b000, {1'b1, f[22:0]} >> (8'd126 - f[30:23])});
-			else if (mode[0] && t[24])
-				fwrap = $signed({2'b00, 25'h1000000 - {1'b0, t[23:0]}});
-			else if (mode[0])
-				fwrap = $signed({2'b00, t});
-			else
-				fwrap = $signed({3'b000, t[23:0]});
-		end
-	endfunction
-
-	/* log2 with 8 fraction bits (x != 0). */
-	function [13:0] l2;
-		input [32:0] x;
-		integer i;
-		reg [5:0] p;
-		reg [7:0] m;
-		begin
-			p = 6'd0;
-			for (i = 0; i < 33; i = i + 1)
-				if (x[i])
-					p = i[5:0];
-			for (i = 0; i < 8; i = i + 1)
-				m[7 - i] = {26'd0, p} > i ? x[{26'd0, p} - 1 - i] : 1'b0;
-			l2 = {p, m};
-		end
-	endfunction
-
-	/* A texel index back into the level: {border texel, index}. */
-	function [16:0] wrapi;
-		input signed [18:0] i;
-		input [15:0] n;
-		input [1:0] mode;
-		reg lt, ge;
-		begin
-			lt = i < 0;
-			ge = i >= $signed({3'b000, n});
-			if (mode == 2'd0)
-				wrapi = {1'b0, lt ? n - 16'd1 : ge ? 16'd0 : i[15:0]};
-			else
-				wrapi = {mode == 2'd3 && (lt || ge), lt ? 16'd0 : ge ? n - 16'd1 : i[15:0]};
-		end
-	endfunction
-
-	/* STATE 0x090-0x18F: the header words of each slot, and all words for
-	 * MIP_OFFSET (read at {slot, 3 + level}). */
-	reg [31:0] d_base [0:15];
-	reg [31:0] d_size [0:15];
-	reg [27:0] d_lev [0:15];
-	reg [31:0] d_samp [0:15];
-	reg [31:0] d_word [0:255];
-	wire [8:0] s_off = st_idx - GHCI_S_TU;
-	always @(posedge clk)
-		if (st_we && st_idx >= GHCI_S_TU && st_idx < GHCI_S_TU + 9'd256) begin
-			d_word[s_off[7:0]] <= st_wdata;
-			if (s_off[3:0] == GHCI_TEX_BASE)
-				d_base[s_off[7:4]] <= st_wdata;
-			if (s_off[3:0] == GHCI_TEX_SIZE)
-				d_size[s_off[7:4]] <= st_wdata;
-			if (s_off[3:0] == GHCI_TEX_LEVELS)
-				d_lev[s_off[7:4]] <= st_wdata[27:0];
-			if (s_off[3:0] == GHCI_TEX_SAMPLER)
-				d_samp[s_off[7:4]] <= st_wdata;
-		end
+	localparam [2:0] IDLE = 3'd0, CUBE = 3'd1, CWAIT = 3'd2, LOD = 3'd3, LA = 3'd4, LB = 3'd5,
+		OUT = 3'd6;
 
 	reg [2:0] st;
-	reg [1:0] k;
+	reg [1:0] k, pas;
 	reg [7:0] opr;
 	reg [3:0] slot;
-	reg [511:0] crd;
+	reg [639:0] crd;
+	reg [11:0] offs;
 	reg signed [16:0] lam_q;
-	reg linq;
-	reg pass;	/* 1: the second level of mip linear filtering */
-	reg trineed;	/* a lane of the mask needs the second level */
+	reg linq, depf, mipf;
+	reg cb_lod, cb_lane;	/* a cube quad: the LOD projections, the lanes' own */
+	reg [2:0] job;	/* the cube projection being computed (below) */
+	reg [2:0] cf [0:3];	/* cube: each lane's face, s, t */
+	reg signed [26:0] cs [0:3];
+	reg signed [26:0] ct [0:3];
+	reg signed [26:0] ls1, lt1, ls2, lt2;	/* lanes 1, 2 on lane 0's face (LOD) */
 	/* Lane stage A → B. */
 	reg r_lin;
 	reg [7:0] r_fl;
-	reg [15:0] r_wl, r_hl;
-	reg signed [26:0] r_cu, r_cv;
-	reg [31:0] r_lbase;
+	reg [15:0] r_wl, r_hl, r_dl;
+	reg signed [30:0] r_cu, r_cv, r_cw;
+	reg [31:0] r_lbase, r_plane, r_val;
 
-	wire [31:0] base = d_base[slot];
-	wire [15:0] w0 = d_size[slot][15:0] == 16'd0 ? 16'd1 : d_size[slot][15:0];
-	wire [15:0] h0 = d_size[slot][31:16] == 16'd0 ? 16'd1 : d_size[slot][31:16];
-	wire [27:0] dlev = d_lev[slot];
-	wire [3:0] nlev = dlev[3:0] == 4'd0 ? 4'd1 : dlev[3:0] > 4'd13 ? 4'd13 : dlev[3:0];
+	/* The descriptor of the quad's slot (of tx_slot in IDLE). */
+	wire [3:0] lvl;
+	wire [31:0] base, dsize, image, stride, samp, dlod, loff, plane;
+	atg_tu_desc desc (
+		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.busy(desc_busy), .rd_slot(st == IDLE ? tx_slot : slot), .rd_level(lvl),
+		.rd_base(base), .rd_size(dsize), .rd_image(image), .rd_stride(stride),
+		.rd_samp(samp), .rd_lod(dlod), .rd_loff(loff), .rd_plane(plane)
+	);
+	wire [15:0] w0 = dsize[15:0] == 16'd0 ? 16'd1 : dsize[15:0];
+	wire [15:0] h0 = dsize[31:16] == 16'd0 ? 16'd1 : dsize[31:16];
+	wire [3:0] nlev = image[3:0] == 4'd0 ? 4'd1 : image[3:0] > 4'd13 ? 4'd13 : image[3:0];
 	wire [3:0] maxl = nlev - 4'd1;
-	wire signed [16:0] minlod = $signed({5'd0, dlev[GHCI_TEX_MIN_LOD +: 12]});
-	wire signed [16:0] maxlod = $signed({5'd0, 12'hFFF - dlev[GHCI_TEX_MAX_LOD +: 12]});
-	wire [31:0] samp = d_samp[slot];
+	/* Format (4-15 read as RGBA8), view type (4-7 and unnormalized: 2D). */
+	wire [1:0] fmt = image[GHCI_IMG_FMT + 2 +: 2] != 2'd0 ? 2'd0 : image[GHCI_IMG_FMT +: 2];
+	wire depth = fmt[1];
+	wire tiled = image[GHCI_IMG_TILED];
+	wire unn = samp[GHCI_SAMP_UNNORM];
+	wire [2:0] traw = image[GHCI_IMG_TYPE +: 3];
+	wire is3dr = traw == 3'd2;	/* as written: the levels' depths */
+	wire arr = !unn && traw == 3'd1, is3d = !unn && is3dr, cube = !unn && traw == 3'd3;
+	wire [15:0] cnt = image[GHCI_IMG_COUNT +: 16] == 16'd0 ? 16'd1 : image[GHCI_IMG_COUNT +: 16];
+	wire signed [16:0] minlod = $signed({5'd0, dlod[GHCI_TEX_MIN_LOD +: 12]});
+	wire signed [16:0] maxlod = $signed({5'd0, 12'hFFF - dlod[GHCI_TEX_MAX_LOD +: 12]});
 	wire signed [16:0] sbias = $signed({{4{samp[31]}}, samp[GHCI_SAMP_LOD_BIAS +: 13]});
-	wire [1:0] mu = samp[GHCI_SAMP_WRAP_U +: 2], mv = samp[GHCI_SAMP_WRAP_V +: 2];
+	/* Unnormalized coordinates read repeat and mirrored repeat as clamp to edge. */
+	wire [1:0] mu0 = samp[GHCI_SAMP_WRAP_U +: 2], mv0 = samp[GHCI_SAMP_WRAP_V +: 2];
+	wire [1:0] mw0 = samp[GHCI_SAMP_WRAP_W +: 2];
+	wire [1:0] mu = unn && !mu0[1] ? 2'd2 : mu0, mv = unn && !mv0[1] ? 2'd2 : mv0;
+	wire [1:0] mw = unn && !mw0[1] ? 2'd2 : mw0;
 	/* The operation and its modifiers (tx_op). */
 	wire [1:0] op = opr[1:0];
 	wire gather = op == OP_TEXL && opr[3];
 	wire qlod = op == OP_TEXB && opr[6];
 	wire nlevq = op == OP_TEXSZ && opr[6];
+	wire dszq = op == OP_TEXSZ && opr[3];
 	wire nofetch = op == OP_TEXSZ || qlod;
-	/* Depth format; compare (texl, texb); filtering allowed; mip linear. */
-	wire depth = samp[GHCI_SAMP_FMT_HI];
+	/* Compare (texl, texb); filtering allowed; mip linear. */
 	wire cmp = depth && samp[GHCI_SAMP_COMPARE] && !op[1] && !qlod;
 	wire filt = !depth || cmp;
-	wire miplin = filt && !gather && samp[GHCI_SAMP_MIP_LINEAR];
+	wire miplin = filt && !gather && !unn && samp[GHCI_SAMP_MIP_LINEAR];
 	wire [2:0] cmp_op = samp[GHCI_SAMP_COMPARE_OP +: 3];
-	wire fmt = samp[GHCI_SAMP_FMT_LO];
 	/* VkBorderColor >> 1: 0 transparent black, 1 opaque black, 2 opaque white. */
 	wire [2:0] bcol = samp[GHCI_SAMP_BORDER +: 3];
 	wire [1:0] bcls = bcol[2:1] == 2'd3 ? 2'd0 : bcol[2:1];
 
-	/* The quad LOD (texb), from lanes 0-2. */
-	wire [31:0] uq0 = fx32(crd[0 +: 32], 5'd16), uq1 = fx32(crd[128 +: 32], 5'd16);
-	wire [31:0] uq2 = fx32(crd[256 +: 32], 5'd16);
-	wire [31:0] vq0 = fx32(crd[32 +: 32], 5'd16), vq1 = fx32(crd[160 +: 32], 5'd16);
-	wire [31:0] vq2 = fx32(crd[288 +: 32], 5'd16);
-	wire signed [32:0] dux = $signed({uq1[31], uq1}) - $signed({uq0[31], uq0});
-	wire signed [32:0] duy = $signed({uq2[31], uq2}) - $signed({uq0[31], uq0});
-	wire signed [32:0] dvx = $signed({vq1[31], vq1}) - $signed({vq0[31], vq0});
-	wire signed [32:0] dvy = $signed({vq2[31], vq2}) - $signed({vq0[31], vq0});
-	wire [32:0] adux = dux[32] ? -dux : dux, aduy = duy[32] ? -duy : duy;
-	wire [32:0] advx = dvx[32] ? -dvx : dvx, advy = dvy[32] ? -dvy : dvy;
-	wire [32:0] mxu = adux > aduy ? adux : aduy, mxv = advx > advy ? advx : advy;
-	wire signed [16:0] lu = mxu == 33'd0 ? LAM_MIN :
-		$signed({3'd0, l2(mxu)}) + $signed({3'd0, l2({17'd0, w0})}) - 17'sd4096;
-	wire signed [16:0] lv = mxv == 33'd0 ? LAM_MIN :
-		$signed({3'd0, l2(mxv)}) + $signed({3'd0, l2({17'd0, h0})}) - 17'sd4096;
+	/* A new quad (IDLE): the cube projections it needs.  Jobs: 0 lane 0;
+	 * with the LOD 1 and 2, lanes 1 and 2 on lane 0's face; for the lanes'
+	 * own 3-5, lanes 1-3; 6 done. */
+	wire n_lod = cube && tx_op[1:0] == OP_TEXB;
+	wire n_lane = cube && !tx_op[1] && !tx_op[6];
+	wire [1:0] jlane = job[2] || job == 3'd3 ? job[1:0] - 2'd2 : job[1:0];
+	wire jfix = job == 3'd1 || job == 3'd2;
+	wire [2:0] jnext = job == 3'd0 && !cb_lod ? 3'd3 : job == 3'd2 && !cb_lane ? 3'd6 :
+		job + 3'd1;
+	wire c_bsy;
+	wire [2:0] c_face;
+	wire signed [26:0] c_s, c_t;
+	atg_tu_cube cubeu (
+		.clk(clk), .rst_n(rst_n), .go(st == CUBE),
+		.x(crd[jlane*160 +: 32]), .y(crd[jlane*160 + 32 +: 32]),
+		.z(crd[jlane*160 + 128 +: 32]), .fix(jfix), .fface(cf[0]),
+		.bsy(c_bsy), .face(c_face), .s(c_s), .t(c_t)
+	);
+	wire signed [16:0] lam_quad;
+	atg_tu_lod lodu (
+		.u({crd[320 +: 32], crd[160 +: 32], crd[0 +: 32]}),
+		.v({crd[352 +: 32], crd[192 +: 32], crd[32 +: 32]}),
+		.w({crd[448 +: 32], crd[288 +: 32], crd[128 +: 32]}),
+		.cs({ls2, ls1, cs[0]}), .ct({lt2, lt1, ct[0]}), .is3d(is3d), .cube(cube),
+		.w0(w0), .h0(h0), .d0(cnt), .lam(lam_quad)
+	);
 
-	/* Stage A of lane k: LOD, level, filter, level size, wrapped coordinates. */
-	wire [31:0] cw0 = crd[k*128 +: 32], cw1 = crd[k*128 + 32 +: 32];
-	wire [31:0] cw2 = crd[k*128 + 64 +: 32], cw3 = crd[k*128 + 96 +: 32];
-	wire [31:0] lfx = fx32(cw2, 5'd8);
-	wire signed [16:0] lam1 = sat16({lfx[31], lfx});
+	/* Stage A of lane k. */
+	wire [31:0] cw0 = crd[k*160 +: 32], cw1 = crd[k*160 + 32 +: 32];
+	wire [31:0] cw2 = crd[k*160 + 64 +: 32], cw3 = crd[k*160 + 96 +: 32];
+	wire [31:0] cw4 = crd[k*160 + 128 +: 32];
+	wire [31:0] lfx = tu_fx32(cw2, 5'd8);
+	wire signed [16:0] lam1 = tu_sat16({lfx[31], lfx});
 	/* λ': the LOD (texl rs2; texb the quad's plus the bias rs2, none for the
-	 * query) plus the sampler's bias; λ = max(min(λ', maxLod), minLod). */
+	 * query) plus mipLodBias; λ = max(min(λ', maxLod), minLod). */
 	wire signed [16:0] lraw = op != OP_TEXB ? lam1 : qlod ? lam_q :
-		sat16({{16{lam_q[16]}}, lam_q} + {{16{lam1[16]}}, lam1});
-	wire signed [16:0] lamp = sat16({{16{lraw[16]}}, lraw} + {{16{sbias[16]}}, sbias});
+		tu_sat16({{16{lam_q[16]}}, lam_q} + {{16{lam1[16]}}, lam1});
+	wire signed [16:0] lamp = unn ? 17'sd0 :
+		tu_sat16({{16{lraw[16]}}, lraw} + {{16{sbias[16]}}, sbias});
 	wire signed [16:0] lamc = lamp > maxlod ? maxlod : lamp;
-	wire signed [16:0] lam = lamc < minlod ? minlod : lamc;
+	wire signed [16:0] lam = unn ? 17'sd0 : lamc < minlod ? minlod : lamc;
 	wire mag = !(lam > 17'sd0);
-	/* The query: the level accessed, clamp(λ, 0, LEVELS − 1), 8 fraction bits. */
+	/* The query: the level accessed, clamp(λ, 0, LEVELS − 1). */
 	wire signed [16:0] lmaxf = $signed({5'd0, maxl, 8'd0});
 	wire [15:0] dq = lam < 0 ? 16'd0 : lam > lmaxf ? lmaxf[15:0] : lam[15:0];
 	wire [16:0] lrnd = lam + 17'd127;
 	wire [3:0] lmin = lrnd[15:8] > {4'd0, maxl} ? maxl : lrnd[11:8];
-	/* Mip linear: λ > 0 here, so λ >> 8 is 0 .. 127. */
 	wire lend = lam[15:8] >= {4'd0, maxl};
-	wire [3:0] llin = lend ? maxl : lam[11:8] + {3'd0, pass};
+	wire [3:0] llin = lend ? maxl : lam[11:8] + {3'd0, pas[1]};
 	wire [7:0] fl = !mag && miplin && !lend ? lam[7:0] : 8'd0;
 	wire [3:0] lfetch = cw2[31] ? 4'd0 : cw2[30:0] > {27'd0, maxl} ? maxl : cw2[3:0];
 	wire [3:0] lsize = cw0[31:4] != 28'd0 ? 4'd15 : cw0[3:0];
-	wire [3:0] lvl = op == OP_TEXSZ ? lsize : op == OP_TEXF ? lfetch : gather || mag ? 4'd0 :
+	assign lvl = op == OP_TEXSZ ? lsize : op == OP_TEXF ? lfetch : gather || mag ? 4'd0 :
 		miplin ? llin : lmin;
-	/* Gather: the bilinear footprint at level 0 whatever the filters. */
 	wire lin = op[1] || qlod ? 1'b0 : gather ? 1'b1 :
 		filt && (mag ? samp[GHCI_SAMP_MAG_LINEAR] : samp[GHCI_SAMP_MIN_LINEAR]);
-	wire [15:0] wl_s = w0 >> lvl, hl_s = h0 >> lvl;
-	wire [15:0] wl = wl_s == 16'd0 ? 16'd1 : wl_s, hl = hl_s == 16'd0 ? 16'd1 : hl_s;
-	wire signed [26:0] fwu = fwrap(cw0, mu), fwv = fwrap(cw1, mv);
-	wire signed [43:0] pu = fwu * $signed({1'b0, wl});
-	wire signed [43:0] pv = fwv * $signed({1'b0, hl});
+	wire [15:0] wl_s = w0 >> lvl, hl_s = h0 >> lvl, dl_s = cnt >> lvl;
+	wire [15:0] wl = wl_s == 16'd0 ? 16'd1 : wl_s;
+	wire [15:0] hl1 = hl_s == 16'd0 ? 16'd1 : hl_s;
+	wire [15:0] hl = cube ? wl : hl1;	/* a cube's faces are squares of the width */
+	wire [15:0] dl = !is3dr || dl_s == 16'd0 ? 16'd1 : dl_s;
+	/* The texel coordinates with 8 fraction bits. */
+	wire signed [46:0] pu = tu_coord(cw0, mu) * $signed({1'b0, wl});
+	wire signed [46:0] pv = tu_coord(cw1, mv) * $signed({1'b0, hl});
+	wire signed [46:0] pw = tu_coord(cw4, mw) * $signed({1'b0, dl});
+	wire signed [43:0] qu = cs[k] * $signed({1'b0, wl}), qv = ct[k] * $signed({1'b0, wl});
+	wire signed [29:0] un0 = tu_unnorm(cw0), un1 = tu_unnorm(cw1);
+	wire signed [30:0] cu = cube ? {{3{qu[43]}}, qu[43:16]} : unn ? {un0[29], un0} : pu[46:16];
+	wire signed [30:0] cv = cube ? {{3{qv[43]}}, qv[43:16]} : unn ? {un1[29], un1} : pv[46:16];
+	/* The lane's layer: a 2D array's; texf's integer layer of an array or a
+	 * cube (a cube's face is chosen per texel in atg_tu_foot). */
+	wire [31:0] sfl = cw4[31] ? 32'd0 : cw4;
+	wire [15:0] lay = op == OP_TEXF ? (arr ? (sfl >= {16'd0, cnt} ? cnt - 16'd1 : sfl[15:0]) :
+		cube ? (sfl > 32'd5 ? 16'd5 : sfl[15:0]) : 16'd0) : arr ? tu_layer(cw4, cnt) : 16'd0;
+	wire [47:0] lstr = {16'd0, stride} * {32'd0, lay};
+	/* texsz.d: an array's layer count, a 3D level's depth, otherwise 1. */
+	wire [15:0] dsz = arr ? cnt : is3d ? dl : 16'd1;
 
-	/* Stage B of lane k: the footprint and the addresses. */
-	wire signed [26:0] cu2 = r_cu - 27'sd128;
-	wire signed [26:0] cv2 = r_cv - 27'sd128;
-	wire signed [18:0] bi0 = cu2[26:8], bj0 = cv2[26:8];
-	/* Nearest: c >> 8 (0 .. size for the modes other than border). */
-	wire [16:0] ni = wrapi(r_cu[26:8], r_wl, mu), nj = wrapi(r_cv[26:8], r_hl, mv);
-	wire [16:0] wi0 = wrapi(bi0, r_wl, mu), wj0 = wrapi(bj0, r_hl, mv);
-	wire [16:0] wi1 = wrapi(bi0 + 19'sd1, r_wl, mu), wj1 = wrapi(bj0 + 19'sd1, r_hl, mv);
-	wire signed [31:0] fxi = $signed(cw0), fxj = $signed(cw1);
-	wire [15:0] ti = fxi < 0 ? 16'd0 : fxi >= $signed({16'd0, r_wl}) ? r_wl - 16'd1 : cw0[15:0];
-	wire [15:0] tj = fxj < 0 ? 16'd0 : fxj >= $signed({16'd0, r_hl}) ? r_hl - 16'd1 : cw1[15:0];
-	wire [16:0] xi0 = op == OP_TEXF ? {1'b0, ti} : r_lin ? wi0 : ni;
-	wire [16:0] xj0 = op == OP_TEXF ? {1'b0, tj} : r_lin ? wj0 : nj;
-	wire [16:0] xi1 = r_lin ? wi1 : xi0, xj1 = r_lin ? wj1 : xj0;
-	wire [15:0] i0 = xi0[15:0], j0 = xj0[15:0], i1 = xi1[15:0], j1 = xj1[15:0];
-	/* Border texels 0-3. */
-	wire [3:0] bt = {xi1[16] | xj1[16], xi0[16] | xj1[16], xi1[16] | xj0[16], xi0[16] | xj0[16]};
-	wire [31:0] a00 = r_lbase + row0 + col0, a10 = r_lbase + row0 + col1;
-	wire [31:0] a01 = r_lbase + row1 + col0, a11 = r_lbase + row1 + col1;
-	wire tiled = samp[GHCI_SAMP_TILED];
-	wire [15:0] tw = {2'b00, r_wl[15:2]} + {15'd0, r_wl[1:0] != 2'd0};	/* tiles per row */
-	wire [31:0] m0 = tiled ? {18'd0, j0[15:2]} * {16'd0, tw} : {16'd0, j0} * {16'd0, r_wl};
-	wire [31:0] m1 = tiled ? {18'd0, j1[15:2]} * {16'd0, tw} : {16'd0, j1} * {16'd0, r_wl};
-	wire [31:0] row0 = tiled ? {m0[25:0], 6'd0} + {26'd0, j0[1:0], 4'd0} : {m0[29:0], 2'd0};
-	wire [31:0] row1 = tiled ? {m1[25:0], 6'd0} + {26'd0, j1[1:0], 4'd0} : {m1[29:0], 2'd0};
-	wire [31:0] col0 = tiled ? {12'd0, i0[15:2], 6'd0} + {28'd0, i0[1:0], 2'd0} :
-		{14'd0, i0, 2'd0};
-	wire [31:0] col1 = tiled ? {12'd0, i1[15:2], 6'd0} + {28'd0, i1[1:0], 2'd0} :
-		{14'd0, i1, 2'd0};
+	/* The next pass: 1 if a lane needs a second slice, 2 a second level, 3
+	 * (after 2) a second slice there; 4 none. */
+	wire [2:0] nxt = pas == 2'd0 ? (depf ? 3'd1 : mipf ? 3'd2 : 3'd4) :
+		pas == 2'd1 ? (mipf ? 3'd2 : 3'd4) : pas == 2'd2 ? (depf ? 3'd3 : 3'd4) : 3'd4;
 
-	assign tx_ready = st == IDLE;
+	/* Stage B of lane k. */
+	wire [127:0] f_addr;
+	wire [15:0] f_fuv;
+	wire [7:0] f_fw;
+	atg_tu_foot foot (
+		.op(op), .gather(gather), .cube(cube), .is3d(is3d), .tiled(tiled), .lin(r_lin),
+		.p0(pas[0]), .mu(mu), .mv(mv), .mw(mw), .off(cube ? 12'd0 : offs),
+		.x(cw0), .y(cw1), .z(cw4), .cu(r_cu), .cv(r_cv), .cw(r_cw),
+		.wl(r_wl), .hl(r_hl), .dl(r_dl), .face(cf[k]), .lbase(r_lbase), .plane(r_plane),
+		.stride(stride), .addr(f_addr), .fuv(f_fuv), .fw(f_fw)
+	);
+
+	assign tx_ready = st == IDLE && !desc_busy;
 	assign ta_valid = st == OUT;
-	assign ta_ctl = {7'd0, qlod, gather ? opr[5:4] : 2'd0, gather, cmp_op, cmp, depth, bcls, pass,
-		!pass && trineed, op == OP_TEXF, nofetch, fmt, linq};
+	assign ta_ctl = {5'd0, pas, qlod, gather ? opr[5:4] : 2'd0, gather, cmp_op, cmp, depth, bcls,
+		pas != 2'd0, nxt != 3'd4, op == OP_TEXF, nofetch, fmt[0], linq};
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= IDLE;
 		end else begin
 			case (st)
-			IDLE: if (tx_valid) begin
+			IDLE: if (tx_valid && !desc_busy) begin
 				opr <= tx_op;
 				slot <= tx_slot;
 				crd <= tx_coord;
+				offs <= tx_off;
 				ta_mask <= tx_mask;
 				ta_tag <= tx_tag;
 				ta_last <= tx_last;
 				k <= 2'd0;
+				pas <= 2'd0;
 				linq <= 1'b0;
-				pass <= 1'b0;
-				trineed <= 1'b0;
-				st <= tx_op[1:0] == OP_TEXB ? LOD : LA;
+				depf <= 1'b0;
+				mipf <= 1'b0;
+				cb_lod <= n_lod;
+				cb_lane <= n_lane;
+				job <= 3'd0;
+				st <= n_lod || n_lane ? CUBE : tx_op[1:0] == OP_TEXB ? LOD : LA;
+			end
+			CUBE: st <= CWAIT;
+			CWAIT: if (!c_bsy) begin
+				if (job == 3'd1) begin
+					ls1 <= c_s;
+					lt1 <= c_t;
+				end else if (job == 3'd2) begin
+					ls2 <= c_s;
+					lt2 <= c_t;
+				end else begin
+					cf[jlane] <= c_face;
+					cs[jlane] <= c_s;
+					ct[jlane] <= c_t;
+				end
+				job <= jnext;
+				st <= jnext != 3'd6 ? CUBE : op == OP_TEXB ? LOD : LA;
 			end
 			LOD: begin
-				lam_q <= lu > lv ? lu : lv;
+				lam_q <= lam_quad;
 				st <= LA;
 			end
 			LA: begin
@@ -369,31 +304,36 @@ module atg_tu_addr (
 				r_fl <= op[1] || qlod ? 8'd0 : fl;
 				r_wl <= wl;
 				r_hl <= hl;
-				r_cu <= pu[42:16];
-				r_cv <= pv[42:16];
-				r_lbase <= base + (lvl == 4'd0 ? 32'd0 :
-					d_word[{slot, lvl + GHCI_TEX_MIP_OFFSET - 4'd1}]);
+				r_dl <= dl;
+				r_cu <= cu;
+				r_cv <= cv;
+				r_cw <= pw[46:16];
+				r_lbase <= base + lstr[31:0] + loff;
+				r_plane <= plane;
+				r_val <= nlevq ? {28'd0, nlev} : dszq ? {16'd0, dsz} :
+					op == OP_TEXSZ ? {hl1, wl} : qlod ? {lamp[15:0], dq} :
+					cmp ? cw3 : 32'd0;
 				st <= LB;
 			end
 			LB: begin
-				ta_addr[k*128 +: 128] <= nofetch ? 128'd0 : {
-					a11[31:2], 1'b0, bt[3], a01[31:2], 1'b0, bt[2],
-					a10[31:2], 1'b0, bt[1], a00[31:2], 1'b0, bt[0]};
-				ta_wts[k*24 +: 24] <= {r_fl, r_lin ? {cv2[7:0], cu2[7:0]} : 16'd0};
-				ta_value[k*32 +: 32] <= nlevq ? {28'd0, nlev} : op == OP_TEXSZ ? {r_hl, r_wl} :
-					qlod ? {lamp[15:0], dq} : cmp ? cw3 : 32'd0;
+				ta_addr[k*128 +: 128] <= nofetch ? 128'd0 : f_addr;
+				ta_wts[k*32 +: 32] <= {f_fw, r_fl, r_lin ? f_fuv : 16'd0};
+				ta_value[k*32 +: 32] <= r_val;
 				if (r_lin && ta_mask[k])
 					linq <= 1'b1;
-				if (r_fl != 8'd0 && ta_mask[k] && !pass)
-					trineed <= 1'b1;
+				if (f_fw != 8'd0 && ta_mask[k])
+					depf <= 1'b1;
+				if (r_fl != 8'd0 && ta_mask[k])
+					mipf <= 1'b1;
 				k <= k + 2'd1;
 				st <= k == 2'd3 ? OUT : LA;
 			end
 			OUT: if (ta_ready) begin
-				/* The second level of mip linear filtering: the lanes again. */
-				if (!pass && trineed) begin
-					pass <= 1'b1;
-					linq <= 1'b0;
+				linq <= 1'b0;
+				depf <= 1'b0;
+				mipf <= 1'b0;
+				if (nxt != 3'd4) begin
+					pas <= nxt[1:0];
 					st <= LA;
 				end else
 					st <= IDLE;
@@ -403,9 +343,9 @@ module atg_tu_addr (
 		end
 	end
 
-	wire unused_ok = &{1'b0, lrnd[16], lrnd[7:0], m0[31:30], m1[31:30], s_off[8], samp[15],
-		samp[11], bcol[0], pu[43], pu[15:0], pv[43], pv[15:0], a00[1:0], a10[1:0],
-		a01[1:0], a11[1:0], opr[7], opr[2], lamp[16], lmaxf[16], OP_TEXL};
+	wire unused_ok = &{1'b0, lrnd[16], lrnd[7:0], lamp[16], lmaxf[16], pu[15:0], pv[15:0],
+		pw[15:0], qu[15:0], qv[15:0], lstr[47:32], samp[18:17], bcol[0], opr[7], opr[2],
+		image[15:12], dlod[31:24], OP_TEXL};
 endmodule
 
 `default_nettype wire

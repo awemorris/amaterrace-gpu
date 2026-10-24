@@ -21,8 +21,16 @@
  * texl and without bias for texb, no filter without compare), "lodclamp"
  * (the sampler's minLod, maxLod and mipLodBias), "gather" (every
  * component, DrefGather, border: the level-0 footprint), "query" (texqlod's
- * values, texsz.l's level count).  The coordinates are 4 words a lane
- * (Dref the fourth).
+ * values, texsz.l's level count), "layout" (the level offsets computed
+ * by atg_tu_desc: every level of linear, tiled and 3D images, STATE writes
+ * just before the quad), "array" (2D arrays: the layer, its stride, texf
+ * and texsz.d), "volume" (3D: the slice, the passes of 3D and mip linear
+ * filtering, w's wrap), "cube" (the face, the face coordinates, the edges
+ * and corners of the footprint, texb's LOD on lane 0's face, gather,
+ * texqlod), "offset" (texel offsets on texl, texb, texf and gather, with
+ * every wrap mode on small levels), "unnorm" (unnormalized coordinates).
+ * The coordinates are 5 words a lane (Dref the fourth, the third
+ * coordinate the fifth).
  */
 
 `timescale 1ns / 1ps
@@ -39,21 +47,23 @@ module atg_tu_addr_tb;
 	reg tx_valid = 1'b0;
 	reg [7:0] tx_op = 0;
 	reg [3:0] tx_slot = 0, tx_mask = 0;
-	reg [511:0] tx_coord = 0;
+	reg [639:0] tx_coord = 0;
+	reg [11:0] tx_off = 0;
 	reg [15:0] tx_tag = 0;
 	reg tx_last = 1'b0;
 	reg ta_ready = 1'b0;
-	wire tx_ready, ta_valid, ta_last;
+	wire tx_ready, ta_valid, ta_last, desc_busy;
 	wire [511:0] ta_addr;
-	wire [95:0] ta_wts;
+	wire [127:0] ta_wts;
 	wire [15:0] ta_tag;
 	wire [3:0] ta_mask;
 	wire [23:0] ta_ctl;
 	wire [127:0] ta_value;
 
 	atg_tu_addr dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
-		.st_wdata(st_wdata), .tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op),
-		.tx_slot(tx_slot), .tx_mask(tx_mask), .tx_coord(tx_coord), .tx_tag(tx_tag),
+		.st_wdata(st_wdata), .desc_busy(desc_busy), .tx_valid(tx_valid), .tx_ready(tx_ready),
+		.tx_op(tx_op), .tx_slot(tx_slot), .tx_mask(tx_mask), .tx_coord(tx_coord),
+		.tx_off(tx_off), .tx_tag(tx_tag),
 		.tx_last(tx_last), .ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr),
 		.ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl),
 		.ta_value(ta_value), .ta_last(ta_last));
@@ -66,9 +76,10 @@ module atg_tu_addr_tb;
 	reg [3:0] slot, mask;
 	reg [15:0] tag;
 	reg last;
-	reg [511:0] crd;
+	reg [639:0] crd;
+	reg [11:0] off;
 	reg [511:0] x_addr;
-	reg [95:0] x_wts;
+	reg [127:0] x_wts;
 	reg [23:0] x_ctl;
 	reg [127:0] x_value;
 
@@ -77,7 +88,7 @@ module atg_tu_addr_tb;
 		begin
 			#1;	/* after the edge that took the previous output */
 			tmo = 0;
-			while (!ta_valid && tmo < 1000) begin
+			while (!ta_valid && tmo < 2000) begin
 				@(posedge clk);
 				tmo = tmo + 1;
 			end
@@ -99,12 +110,12 @@ module atg_tu_addr_tb;
 							gerrs = gerrs + 1;
 						end
 				for (l = 0; l < 4; l = l + 1)
-					if (mask[l] && (ta_wts[l*24 +: 24] !== x_wts[l*24 +: 24] ||
+					if (mask[l] && (ta_wts[l*32 +: 32] !== x_wts[l*32 +: 32] ||
 					    ta_value[l*32 +: 32] !== x_value[l*32 +: 32])) begin
 						if (gerrs < 10)
 							$display("FAIL atg_tu_addr: quad %0d lane %0d: wts %h value %h, model %h %h",
-								nq, l, ta_wts[l*24 +: 24], ta_value[l*32 +: 32],
-								x_wts[l*24 +: 24], x_value[l*32 +: 32]);
+								nq, l, ta_wts[l*32 +: 32], ta_value[l*32 +: 32],
+								x_wts[l*32 +: 32], x_value[l*32 +: 32]);
 						gerrs = gerrs + 1;
 					end
 				if (ta_ctl !== x_ctl || ta_tag !== tag || ta_mask !== mask || ta_last !== last) begin
@@ -147,7 +158,8 @@ module atg_tu_addr_tb;
 				@(posedge clk);
 				st_we <= 1'b0;
 			end else if (kind == "Q") begin
-				code = $fscanf(fd, "%h %h %h %h %h %h %h\n", op, slot, mask, tag, last, crd, np);
+				code = $fscanf(fd, "%h %h %h %h %h %h %h %h\n", op, slot, mask, tag, last, off, crd,
+					np);
 				while (($random(seed) & 3) == 0)
 					@(posedge clk);
 				tx_valid <= 1'b1;
@@ -155,6 +167,7 @@ module atg_tu_addr_tb;
 				tx_slot <= slot;
 				tx_mask <= mask;
 				tx_coord <= crd;
+				tx_off <= off;
 				tx_tag <= tag;
 				tx_last <= last;
 				@(posedge clk);
@@ -162,7 +175,8 @@ module atg_tu_addr_tb;
 					@(posedge clk);
 				tx_valid <= 1'b0;
 				/* Scramble the inputs once taken (they must have been latched). */
-				tx_coord <= {16{$random(seed)}};
+				tx_coord <= {20{$random(seed)}};
+				tx_off <= $random(seed);
 				tx_slot <= $random(seed);
 				for (ip = 0; ip < np; ip = ip + 1) begin
 					code = $fscanf(fd, "%s %h %h %h %h\n", kind, x_addr, x_wts, x_ctl, x_value);
@@ -186,7 +200,7 @@ module atg_tu_addr_tb;
 	end
 
 	initial begin
-		#50000000;
+		#200000000;
 		$display("FAIL atg_tu_addr: timeout");
 		$finish;
 	end

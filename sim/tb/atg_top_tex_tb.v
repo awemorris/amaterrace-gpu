@@ -8,21 +8,22 @@
 /*
  * atg_top_tex_tb: the graphics pipeline with the texture unit (HAS_VF,
  * NSU 1, HAS_RX, HAS_TU, HAS_ROP): the ring runs
- * sim/vec/tex_scene.txt (tools/rx-tex-scene.py: seven DRAWs of textured
- * triangles, the first sampling with texb from a linear RGBA8 texture
- * with mip levels, the second, after SET_REG changes the slot and the
- * fragment program, with texl from a 4x4 tiled BGRA8 copy, the third
- * trilinear with clamp to border, the fourth a D24 compare sampler with
- * bilinear and mip linear filtering (texb, z the reference), the fifth a
- * D32F compare sampler with clamp to border (texl), the sixth a gather
- * (texg), the seventh a LOD query (texqlod), a final FENCE):
- * VF → vertex warps → PT → RX → fragment warps (lda, fmul, fmadd, texb or
- * texl, exp) ↔ TU (addressing, cache on its MC port, filter) → ROP.  The
- * colour and depth buffers must equal the reference models' word for
- * word.  In the ZYBO's shape (the ZYBO's bitstreams have no TU: the shape
- * is only the line and beat sizes) and the KC705's (64-byte lines, 512-bit
- * AXI, NPHYS 16, 32 varying words).
- */
+ * sim/vec/tex_scene.txt (tools/rx-tex-scene.py: twelve DRAWs of textured
+ * triangles: texb from a linear RGBA8 texture with mip levels; after
+ * SET_REG changes the slot and the fragment program, texl from a 4x4
+ * tiled BGRA8 copy; trilinear with clamp to border; a D24 compare sampler
+ * with bilinear and mip linear filtering (texb.c, z the reference); a D32F
+ * compare sampler with clamp to border (texl.c); a gather (texg); a LOD
+ * query (texqlod); a 2D array (texl.3, the layer 4 z, texel offsets); a
+ * 3D texture (texb.3, w = z, linear in three axes and mip linear); a cube
+ * map (texb.3, the direction across the faces' edges and corners);
+ * offsets with mirrored repeat (texl); unnormalized coordinates; a final
+ * FENCE): VF → vertex warps → PT → RX → fragment warps (lda, fmul, fmadd,
+ * texture instructions, exp) ↔ TU (addressing, cache on its MC port,
+ * filter) → ROP.  The colour and depth buffers must equal the reference
+ * models' word for word.  In the ZYBO's shape (the ZYBO's bitstreams have
+ * no TU: the shape is only the line and beat sizes) and the KC705's
+ * (64-byte lines, 512-bit AXI, NPHYS 16, 32 varying words). */
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -61,7 +62,7 @@ module atg_top_tex_tb;
 	end
 
 	initial begin
-		#400000000;
+		#800000000;
 		$display("FAIL atg_top_tex: timeout");
 		$finish;
 	end
