@@ -139,7 +139,7 @@ module atg_su_gfx_chk #(
 		.fl_pw_data(32'd0), .fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
 		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx), .pt_done(pt_done),
-		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_mask(), .tx_coord(),
+		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_mask(), .tx_coord(), .tx_off(),
 		.tx_tag(), .tx_last(), .tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0),
 		.tr_data(512'd0), .tr_last(1'b0),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),

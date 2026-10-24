@@ -9,7 +9,8 @@
  * atg_su_sb_tb: the scoreboard issue stage (NPHYS 8, NWARPS 4, 4 entries).
  * A model of atg_su_opd takes every issue and pulses x_end G cycles
  * later.  raw: a read of a pending lw rd replays until its release (wake);
- * waw: a write into a pending texl rd..rd+3 replays; full: four pending
+ * waw: a write into a pending texl rd..rd+3 replays, so does a texl.3.c
+ * whose rs1+3 is in it; full: four pending
  * loads fill a warp's entries, a fifth replays, another warp issues;
  * wait: wait/fence/end against the counters; fault: ILL pulses fault with
  * the pc and feedback 1; short: a reader of a short writer's rd is held
@@ -230,6 +231,19 @@ module atg_su_sb_tb;
 		chk(0, "waw r12");
 		send(2, 12, alu(13, 10, 2));
 		chk(2, "waw read r10");
+		/* texl.3.c r20, r5: reads r5-r8 (rs1+3 = rs3 + 1 = r8): replays;
+		 * texl.c r20, r5 reads r5-r7 only: issues. */
+		u_uop = mk(ATG_UNIT_TEX, ATG_TEX_TEXL | 8'd4, ATG_CLS_T, 20, 5, 1, 1, 1, 1, 4);
+		u_uop[ATG_UOP_PAIR] = 1'b1;
+		u_uop[ATG_UOP_USE3] = 1'b1;
+		u_uop[ATG_UOP_RS3 +: 7] = 7'd7;
+		u_uop[ATG_UOP_SUB + 4] = 1'b1;
+		send(2, 12, u_uop);
+		chk(2, "waw texl.3.c reads rs1+3");
+		u_uop[ATG_UOP_SUB + 4] = 1'b0;
+		send(2, 12, u_uop);
+		chk(0, "waw texl.c");
+		do_rel(2, sbe, ATG_CLS_T);
 		/* A texture over r6..r9 overlaps too. */
 		u_uop = mk(ATG_UNIT_TEX, ATG_TEX_TEXL, ATG_CLS_T, 6, 0, 1, 1, 1, 1, 4);
 		send(2, 13, u_uop);

@@ -18,9 +18,10 @@
  * unit_ready 0 holds x_* (the RF output holds while r_en is 0).  The masks
  * come from q_exec/q_killed/q_info of the warp in stage B.  lidx is lidn
  * and lidy/lidz/prim are 0 in v0 (q_info carries no WG_SIZE; 1-D groups).
- * A uop that reads a pair and rs3 (a texture .c form: rs1, rs1+1, rs2 and
- * Dref = rs3) needs four operands: each of its groups goes out twice, the
- * second pass with rs3 as operand 1 (x_a) and TEX op bit 7 set on x_uop;
+ * A uop that reads a pair and rs3 (a texture .c or .3 form: rs1, rs1+1, rs2
+ * and rs3 = rs1+2, the .3 form with Dref also rs1+3) needs four or five
+ * operands: each of its groups goes out twice, the second pass with rs3 as
+ * operand 1 (x_a), rs3+1 as operand 3 (x_c) and TEX op bit 7 set on x_uop;
  * x_last is on the second pass of the last group.
  */
 
@@ -107,9 +108,9 @@ module atg_su_opd #(
 	wire take = i_valid && i_ready;
 
 	/* Operand numbers; operand 3 is rs1+1 for the PAIR instructions;
-	 * operand 1 is rs3 on a second pass. */
-	wire [6:0] a_r1 = a_uop[ATG_UOP_RS1 +: 7];
-	wire [6:0] a_n1 = a_pass ? a_uop[ATG_UOP_RS3 +: 7] : a_r1;
+	 * operands 1 and 3 are rs3 and rs3+1 on a second pass. */
+	wire [6:0] a_r1 = a_pass ? a_uop[ATG_UOP_RS3 +: 7] : a_uop[ATG_UOP_RS1 +: 7];
+	wire [6:0] a_n1 = a_r1;
 	wire [6:0] a_n2 = a_uop[ATG_UOP_RS2 +: 7];
 	wire [6:0] a_n3 = a_uop[ATG_UOP_PAIR] ? a_r1 + 7'd1 : a_uop[ATG_UOP_RS3 +: 7];
 	assign r_en = a_adv;
@@ -173,8 +174,8 @@ module atg_su_opd #(
 	end
 
 	/* Stage B: operand selection. */
-	wire [6:0] b_r1 = b_uop[ATG_UOP_RS1 +: 7];
-	wire [6:0] b_n1 = b_pass ? b_uop[ATG_UOP_RS3 +: 7] : b_r1;
+	wire [6:0] b_r1 = b_pass ? b_uop[ATG_UOP_RS3 +: 7] : b_uop[ATG_UOP_RS1 +: 7];
+	wire [6:0] b_n1 = b_r1;
 	wire [6:0] b_n2 = b_uop[ATG_UOP_RS2 +: 7];
 	wire [6:0] b_n3 = b_uop[ATG_UOP_PAIR] ? b_r1 + 7'd1 : b_uop[ATG_UOP_RS3 +: 7];
 	wire [6:0] mods = b_uop[ATG_UOP_MOD +: 7];

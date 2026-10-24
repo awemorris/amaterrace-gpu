@@ -17,7 +17,7 @@
 
 module atg_su_dec_tb;
 `include "atg_su_uop.vh"
-	localparam NV = 4976;
+	localparam NV = 5480;
 
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;

@@ -99,11 +99,18 @@ module atg_su_dec #(
 		end
 	endfunction
 
-	/* A texture .c form reads Dref from rs1+2 as its rs3. */
-	wire tcmp = tex && op[ATG_TEX_CFORM];
+	/* A texture .c or .3 form reads rs1+2 (Dref or the third coordinate) as
+	 * its rs3; .3 with .c also rs1+3 (Dref). */
+	wire tthree = tex && f7[5];
+	wire tcmp = tex && (op[ATG_TEX_CFORM] || tthree);
 	wire [6:0] rs3 = tcmp ? rs1 + 7'd2 : rs3f;
-	wire cmp_bad = tcmp && (rs1 < 7'd64 ? ({25'd0, rs1} + 32'd2 >= NREGS || rs1 >= 7'd61) :
-		(rs1 == 7'd94 || rs1 == 7'd95 || rs1 == 7'd126 || rs1 == 7'd127));
+	wire t4 = tthree && op[ATG_TEX_CFORM];
+	wire [6:0] lim = t4 ? 7'd60 : 7'd61;
+	wire cmp_bad = tcmp && (rs1 < 7'd64 ? ({25'd0, rs1} + (t4 ? 32'd3 : 32'd2) >= NREGS ||
+		rs1 >= lim) : (rs1 == 7'd94 || rs1 == 7'd95 || rs1 == 7'd126 || rs1 == 7'd127 ||
+		(t4 && (rs1 == 7'd93 || rs1 == 7'd125))));
+	/* A texture R form's texel offsets: word1 [25:22], [29:26], [13:10]. */
+	wire [31:0] imm_t = {20'd0, w1[13:10], w1[29:26], w1[25:22]};
 	wire [2:0] ndst = !wrd ? 3'd0 : tex ? 3'd4 : 3'd1;
 	wire [7:0] rd_end = {1'b0, rd} + {5'd0, ndst};
 	wire pair_bad = pair && (rs1 < 7'd64 ? ({25'd0, rs1} + 32'd1 >= NREGS || rs1 >= 7'd62)
@@ -124,7 +131,7 @@ module atg_su_dec #(
 		FM_S: imm = imm_s;
 		FM_B: imm = imm_b;
 		FM_U: imm = imm_u;
-		default: imm = 32'd0;
+		default: imm = tex ? imm_t : 32'd0;
 		endcase
 	end
 
@@ -154,7 +161,7 @@ module atg_su_dec #(
 				uop[ATG_UOP_RS3 +: 7] = rs3;
 				uop[ATG_UOP_MOD +: 7] = w1[14:8];
 				uop[ATG_UOP_HSEL +: 2] = w1[16:15];
-				uop[ATG_UOP_SUB +: 5] = sub;
+				uop[ATG_UOP_SUB +: 5] = {sub[4] | tthree, sub[3:0]};
 				uop[ATG_UOP_RM +: 3] = f3;
 			end
 		end

@@ -109,18 +109,26 @@ ins("end", "R", OPC["C0"], 7, 0, U_EXEC, 13, C_A, "")
 # texb and become bits of the TEX op: [0] compare (.c: Dref in rs1+2, the uop's
 # rs3, read in a second operand pass) -> op[2]; texl [1] gather (texg: the
 # footprint's four texels, component funct7[3:2], no rs2) -> op[3], op[5:4];
-# texb [4] the LOD query (texqlod, no rs2) -> op[6].  texsz's immediate 1
-# (texsz.l) returns the level count -> op[6].
+# texb [4] the LOD query (texqlod, no rs2) -> op[6]; [5] the .3 forms (a third
+# coordinate in rs1+2, Dref then in rs1+3; the uop's sub[4]).  texsz's
+# immediate 1 (texsz.l) returns the level count -> op[6], 2 (texsz.d) the
+# layer count or depth -> op[3].  The R forms take a last operand
+# off(du, dv[, dw]): the texel offsets, word1 [25:22], [29:26], [13:10]
+# (signed 4 bits), the uop's imm[11:0] (du | dv << 4 | dw << 8).
 for n, f3, f7, op, ops in [("texl", 0, 0, 0, "d12t"), ("texb", 1, 0, 1, "d12t"),
                            ("texf", 2, 0, 2, "d12t"), ("texl.c", 0, 1, 4, "d12t"),
                            ("texb.c", 1, 1, 5, "d12t"), ("texg.r", 0, 2, 8, "d1t"),
                            ("texg.g", 0, 6, 0x18, "d1t"), ("texg.b", 0, 10, 0x28, "d1t"),
                            ("texg.a", 0, 14, 0x38, "d1t"), ("texg.c", 0, 3, 0x0C, "d1t"),
                            ("texqlod", 1, 0x10, 0x41, "d1t")]:
-    ins(n, "R", OPC["C1"], f3, f7, U_TEX, op, C_T, ops, side=True, pair=True, ndst=4,
-        cmp=bool(f7 & 1))
+    for three in (0, 1):
+        base, _, rest = n.partition(".")
+        nm = base + (".3" if three else "") + ("." + rest if rest else "")
+        ins(nm, "R", OPC["C1"], f3, f7 | three << 5, U_TEX, op, C_T, ops, side=True, pair=True,
+            ndst=4, cmp=bool(f7 & 1), three=bool(three))
 ins("texsz", "I", OPC["C1"], 3, None, U_TEX, 3, C_T, "d1t", side=True, immv=0)
 ins("texsz.l", "I", OPC["C1"], 3, None, U_TEX, 0x43, C_T, "dt", side=True, immv=1)
+ins("texsz.d", "I", OPC["C1"], 3, None, U_TEX, 0x0B, C_T, "d1t", side=True, immv=2)
 ins("exp", "S", OPC["C1"], 4, None, U_EXP, 0, C_A, "2x", side=True)
 ins("lda", "I", OPC["C1"], 5, None, U_LDA, 0, C_A, "di")
 for n, s in [("qdx", 0), ("qdy", 1), ("qswap1", 2), ("qswap2", 3), ("qswap3", 4), ("qbcast", 5)]:
@@ -227,7 +235,14 @@ def imm_of(e, d):
         return sext(v, 12) + (d["hi"] << 12)
     if e["fmt"] == "U":
         return (bits(w0, 12, 20) << 12) | bits(d["w1"], 2, 12)
+    if e["unit"] == U_TEX:
+        return tex_off(d["w1"])
     return 0
+
+
+def tex_off(w1):
+    """The texel offsets of a texture R form: du | dv << 4 | dw << 8."""
+    return bits(w1, 22, 4) | bits(w1, 26, 4) << 4 | bits(w1, 10, 4) << 8
 
 
 def uses(e, d):
@@ -247,14 +262,16 @@ def decode(w, cfg):
         n, e = m
         u1, u2, u3, wrd = uses(e, d)
         pair = bool(e.get("pair"))
-        if e.get("cmp"):
-            # Dref in rs1+2: the uop's rs3, range-checked like the pair.
+        if e.get("cmp") or e.get("three"):
+            # The third coordinate or Dref in rs1+2: the uop's rs3, range-checked
+            # like the pair; .3 with Dref also rs1+3.
             d = dict(d, rs3=(d["rs1"] + 2) & 127)
             u3 = True
+            k = 3 if e.get("cmp") and e.get("three") else 2
             if d["rs1"] < 64:
-                if d["rs1"] + 2 >= min(cfg["NREGS"], 63):
+                if d["rs1"] + k >= min(cfg["NREGS"], 63):
                     ill = True
-            elif d["rs1"] in (94, 95, 126, 127):
+            elif d["rs1"] in (96 - k, 95, 94, 127, 126, 128 - k):
                 ill = True
         if e.get("sub") == "atom" and d["sub"] > 10:
             ill = True
@@ -293,7 +310,8 @@ def decode(w, cfg):
     if ill:
         return 1 << F["ILL"][0]
     v = dict(UNIT=e["unit"], OP=e["op"], RD=d["rd"], RS1=d["rs1"], RS2=d["rs2"], RS3=d["rs3"],
-             IMM=imm_of(e, d) & 0xFFFFFFFF, MOD=d["mod"], HSEL=d["hsel"], SUB=d["sub"],
+             IMM=imm_of(e, d) & 0xFFFFFFFF, MOD=d["mod"], HSEL=d["hsel"],
+             SUB=d["sub"] | (16 if e.get("three") else 0),
              RM=d["f3"] if e["fmt"] != "U" else 0, CLS=e["cls"], NDST=ndst, USE1=int(u1),
              USE2=int(u2), USE3=int(u3), WRD=int(wrd), PAIR=int(pair), ILL=0, RQS=int(rqs),
              RQD=int(rqd), SIDE=int(bool(e.get("side"))))
@@ -369,6 +387,16 @@ def assemble_one(mn, args, pc, labels):
     mods = 0
     imm = 0
     sub = e.get("subv", 0)
+    toff = 0
+    if e["unit"] == U_TEX and e["fmt"] == "R" and args and args[-1].strip().startswith("off("):
+        t = args.pop().strip()
+        if not t.endswith(")"):
+            raise ValueError("bad offsets %r" % t)
+        ds = [num(x) for x in t[4:-1].split(",")]
+        if not 2 <= len(ds) <= 3 or any(not -8 <= x <= 7 for x in ds):
+            raise ValueError("offsets %r: two or three in -8..7" % t)
+        ds += [0] * (3 - len(ds))
+        toff = (ds[0] & 15) << 22 | (ds[1] & 15) << 26 | (ds[2] & 15) << 10
     ai = 0
     ops = e["ops"]
     for o in ops:
@@ -432,7 +460,7 @@ def assemble_one(mn, args, pc, labels):
             w1 = rd >> 5
         return w0 | w1 << 32
     w1 = (rd >> 5) | (rs1 >> 5) << 2 | (rs2 >> 5) << 4 | (rs3 >> 5) << 6 | mods << 8 | \
-        int(sat) << 14 | hsel << 15 | (sub & 31) << 17
+        int(sat) << 14 | hsel << 15 | (sub & 31) << 17 | toff
     if fmt == "R":
         r2 = e["rs2"] if "rs2" in e else rs2
         f7 = e["f7"] or 0
