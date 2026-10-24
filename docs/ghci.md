@@ -727,7 +727,7 @@ VK_ERROR_OUT_OF_DEVICE_MEMORY.
 - A native ISA is optional and vendor-specific; ISA_ID names the GPU's
   native ISA, and CAPS[19] says that it differs from GSI1. A driver may
   submit a program in the native ISA directly, bypassing any translation;
-  each program states the ISA it is in (section 12.9).
+  each program states the ISA it is in (section 12.10).
 - GSI1 is an ISA of its own. The low 32 bits of each instruction follow
   the field layout of the RISC-V 32-bit instruction formats, and the
   instructions it shares with RISC-V keep their major opcodes,
@@ -932,7 +932,26 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   bank size; c0-c31 are its first 32 words as operands. LOAD_CONST
   (section 7.3) loads the bank.
 
-### 12.9 Program binary
+### 12.9 Texture instructions
+
+- `texl`, `texb` and `texf` write R, G, B, A of the texel to rd..rd+3
+  (fp32). The coordinates are rs1 (u or x) and rs1+1 (v or y); the texture
+  slot is sub[3:0].
+- `texl rd, rs1, rs2`: normalized coordinates; rs2 is the level of detail,
+  in mip levels.
+- `texb rd, rs1, rs2`: normalized coordinates; the level of detail comes
+  from the quad's coarse derivatives (lane 0 against lane 1 for x + 1 and
+  lane 2 for y + 1), plus the bias in rs2. Helper lanes take part, so a
+  fragment program keeps them in EXEC up to the texture instruction.
+- `texf rd, rs1, rs2`: integer texel coordinates and the level in rs2.
+  The result of coordinates or a level outside the image is
+  implementation-defined.
+- `texsz rd, rs1`: writes {height[31:16], width[15:0]} of level rs1 to rd
+  only.
+- Version 1 formats are UNORM RGBA8 and BGRA8; the results are in [0, 1].
+  `texf` returns the same normalized values.
+
+### 12.10 Program binary
 
 The driver hands a program to the GPU with the PROGRAM gpu-op
 (section 7.2): `[pipeline][stage][ISA][address][bytes][flags]`. A GSI1
