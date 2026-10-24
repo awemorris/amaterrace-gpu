@@ -6,8 +6,8 @@
 # the packed unit, the transcendental unit and the divider (bit-exact through
 # tools/gsi1fp.py), lw/sw/atom/fence, lds/sts, lwc and the c operands, exec.*,
 # kill, the branches, end, bar, wait and nop, and the lane unit (qd; shfl,
-# vote and ballot with --subgroup).  Texture and lda stop the model with an
-# error; exp only in --warps mode.  Programs must be free of races between
+# vote and ballot with --subgroup).  Texture stops the model with an error,
+# and lda without --prims; exp and lda only in --warps mode.  Programs must be free of races between
 # warps (the model is sequentially consistent per warp).
 #
 #   gsi1model.py PROG.s --lanes N [--groups G] [--nregs 32] [--packed]
@@ -53,6 +53,10 @@
 # the lane's own rs1; EXEC lanes are written.  ballot: the mask of the EXEC
 # lanes whose rs1 is not 0; vote.any/all: whether that mask is not 0 / equals
 # EXEC, as a Boolean; both write every lane (as exec.save).
+# --prims P.hex: the primitive table lda reads in --warps mode, one 32-bit
+# word per line: slot 0..3, vertex 0..2, word 0..63 (word 4 + w is varying
+# word w, as atg_rx_frag copies it); lda of vertex 3 or of a word past 63
+# reads 0.  Without --prims, lda stops the model with an error.
 # --fault-out: an ISA fault is not an error; the file gets one line per
 # faulting warp, "slot pc" in hex, and the warp stops.
 #
@@ -156,6 +160,7 @@ class Machine:
         self.vary = vary
         self.xexp = {}          # slot -> (colour[lane][4], depth[lane], exported mask)
         self.pt = [[None] * (4 + vary) for _ in range(32)]
+        self.prims = None       # --prims: [slot][vertex][word], words of the primitive table
 
     def rd32(self, addr):
         return self.mem.get((addr & M32) >> 2, 0)
@@ -319,6 +324,10 @@ class Machine:
                     raise SystemExit("gsi1model: exec op %d" % op)
             elif unit == A.U_LANE:
                 self.lane(f, exec_m, r, src)
+            elif unit == A.U_LDA and g is not None and self.prims is not None:
+                vtx, wd = imm & 3, (imm >> 2) & 63
+                v = self.prims[k][vtx][wd] if vtx < 3 else 0
+                write(exec_m, lambda a, b, c: v)
             elif unit == A.U_EXP and g is not None:
                 t = imm & 0xFFF
                 for ln in range(32):
@@ -465,6 +474,7 @@ def main():
     ap.add_argument("--exp-out")
     ap.add_argument("--ms-out")
     ap.add_argument("--pt-out")
+    ap.add_argument("--prims")
     a = ap.parse_args()
     with open(a.src) as f:
         words = A.encode(f.read())
@@ -481,6 +491,10 @@ def main():
                                               front=t[5 * k + 4]) for k in range(4)]
     m = Machine(words, a.lanes, a.nregs, mem, a.groups, a.packed, a.subgroup, faults, gw,
                 a.vary)
+    if a.prims:
+        t = load_hex(a.prims)
+        m.prims = [[[t[(k * 3 + v) * 64 + w] if (k * 3 + v) * 64 + w < len(t) else 0
+                     for w in range(64)] for v in range(3)] for k in range(4)]
     if a.init:
         t = load_hex(a.init)
         for k in range(4):

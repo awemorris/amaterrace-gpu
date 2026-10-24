@@ -1439,49 +1439,89 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 
 The driver hands a program to the GPU with the PROGRAM gpu-op
 (section 7.2): `[pipeline][stage][ISA][address][bytes][flags]`. A GSI1
-program is a 16-word header, the interface table and the code:
+program is a 16-word header, the interface table and the code
+(`include/gsi1_isa.h` names every word, kind and field below):
 
 | Word | Contents |
 | --- | --- |
 | 0 | Magic "GSI1" (`0x47534931`) |
 | 1 | Version (1) |
 | 2 | Stage: 0 vertex, 1 fragment, 2 compute |
-| 3 | Flags: [0] uses packed arithmetic, [1] subgroup operations, [2] LDS, [3] atomics, [4] the systolic-array queue |
+| 3 | Flags (below) |
 | 4 | Code words (2 per instruction) |
-| 5 | Code offset (words from the header's start) |
-| 6 | Registers used (the highest r + 1) |
+| 5 | Code offset (words from the header's start; even) |
+| 6 | Registers used (the highest r + 1; a fragment program counts r0-r6, and r7-r9 with [5]) |
 | 7 | LDS bytes |
 | 8 | Workgroup size: x \| y << 8 \| z << 16 |
-| 9 | Constant words used |
-| 10 | Interface table offset (words) |
+| 9 | Constant words used (the bank's words the program reads, from word 0) |
+| 10 | Interface table offset (words; 16) |
 | 11 | Interface entries |
 | 12 | Entry point (instruction index) |
 | 13 | Minimum ISA version (1) |
 | 14 | Push-constant bytes |
 | 15 | 0 |
 
-The code is 8-byte aligned. Each interface entry is 4 words: kind, set,
-binding or location, and a kind-specific word:
+Flags: [0] packed arithmetic, [1] subgroup operations, [2] LDS or `bar`,
+[3] atomics, [4] the systolic-array queue (reserved): what the program
+needs of the GPU (CAPS). A fragment program's [5]-[10] say what it asks
+of the pipeline's state: [5] CENTROID (it reads r7-r9: set MS_CTRL[4]),
+[6] it exports DEPTH (0x104), [7] it exports a SAMPLE_MASK of its own,
+[8] it may discard (`kill`), [9] it was built for points (r0, r1 are
+PointCoord and it reads every input from vertex 0), [10] it reads r6
+(the sample mask in). Other bits are 0.
 
-| Kind | Meaning | Kind-specific word |
-| --- | --- | --- |
-| 1 | Vertex attribute | First register \| components << 8 |
-| 2 | Varying input | First register and components (layout not yet fixed) |
-| 3 | Output | First register and components (layout not yet fixed) |
-| 4 | Uniform block | Constant-bank word offset and size (layout not yet fixed) |
-| 5 | Sampled image | Texture slot |
-| 6 | Storage buffer | Constant-bank word that holds the buffer's address and size (written by the firmware) |
-| 7 | Push constant | Constant-bank word offset |
-| 8 | Shared memory size | Bytes |
-| 9 | Input attachment (draft) | Constant-bank word of {base (layer and level applied), row bytes, samples \| pixel bytes << 8}; the format is the render pass's |
-| 10 | Storage image (draft) | Constant-bank word of {base, row bytes, width \| height << 16, layers}; the format is the program's |
-| 11 | Texel buffer (draft) | Constant-bank word of {base, elements}: a storage texel buffer (a uniform texel buffer is a sampled image, kind 5) |
+The code is 8-byte aligned. Each interface entry is 4 words: kind, set,
+binding (or location), and a kind-specific word:
+
+| Kind | Meaning | Set, binding | Kind-specific word |
+| --- | --- | --- | --- |
+| 1 | Vertex attribute | 0, location | [5:0] first register, [15:8] components (1-4): the vertex fetcher writes the components there (ATTR_DST) |
+| 2 | Varying input (fragment) | 0, location | [5:0] first varying word w, [15:8] components, [16] flat, [17] noperspective, [18] centroid |
+| 3 | Output | 0, location (vertex) or colour attachment (fragment) | Vertex: as kind 2 (the program exports component c to 0x010 + w + c). Fragment: [11:0] the attachment's first export target, [19:16] the components written (bit c) |
+| 4 | Uniform block | set, binding | [7:0] first bank word, [16:8] words (1-256), [28:17] the buffer's first word they are copied from: bank word b + i holds the buffer's word first + i |
+| 5 | Sampled image | set, binding | [3:0] texture slot; [8] a uniform texel buffer (the slot is a 2D image 256 texels wide: element i is texel (i mod 256, i / 256)), and then [23:16] the bank word that holds its element count |
+| 6 | Storage buffer | set, binding | Bank word b: b holds the buffer's address, b + 1 its bytes |
+| 7 | Push constants | 0, 0 | The bank word of the first push word (word 14 says the bytes) |
+| 8 | Shared memory | 0, 0 | Bytes |
+| 9 | Input attachment (draft) | set, binding | Bank word b of {base (layer and level applied), row bytes, samples \| pixel bytes << 8}; the format is the render pass's |
+| 10 | Storage image (draft) | set, binding | Bank word b of {base, row bytes, width \| height << 16, layers (a 3D image's depth, a cube's 6 faces), layer bytes}; the format is the program's |
+| 11 | Texel buffer (draft) | set, binding | Bank word b of {base, elements}: a storage texel buffer (a uniform texel buffer is kind 5) |
+| 12 | Uniform buffer in memory | set, binding | Bank word b of {address, bytes}, as kind 6: a block the bank cannot hold, read with `lw` |
+| 13 | System input | 0, which: 0 the vertex index (index + vertexOffset, or firstVertex + n), 1 the instance index (firstInstance + i) | The register it arrives in; the command processor delivers it like an attribute |
+
+- **Varying words.** Location L, component c is varying word w + c: a
+  vertex program exports it to 0x010 + w + c, a fragment program reads
+  it with `lda` from primitive-table word 4 + w + c (words up to 59). A
+  pipeline gives both stages the same w of each location (by default
+  4 L) and sets VARYING_COUNT to cover the largest. An entry of kind 2 or
+  3 with binding 0xFFFFFFFF is the varying word the vertex program also
+  exports the position's w to and the fragment program reads it from
+  (for noperspective inputs and FragCoord.w: the screen-linear
+  barycentrics are b_i w_i / (b_0 w_0 + b_1 w_1 + b_2 w_2) and 1/w at
+  the pixel is the reciprocal of that sum); the pipeline asks for it when
+  the fragment program needs it.
+- **The constant bank.** The command processor writes the words the
+  entries name before a draw or dispatch, from the bound descriptor sets
+  and push constants: an address with the descriptor's offset applied, a
+  range's bytes, an image view's base with its first level and layer
+  applied. A program clamps its buffer offsets to the bytes when the
+  device has robustBufferAccess (the compiler's choice), so the bytes
+  must be the bound range's.
+- **Images through memory.** Kinds 9-11 are reached with `lw` and `sw`
+  at addresses the program computes (`atom` for R32 formats is a later
+  version); their images are in linear rows. A texel outside a storage
+  image reads zero and is not written.
+- **The end of a fragment program.** Every fragment program ends, with
+  the EXEC of its start, by exporting SAMPLE_MASK (0x105): its own value
+  ([7]) or all ones (section 12.11). An input never written by the
+  vertex program reads what the primitive table holds.
 
 The interface table is the only contract between the program and the
 descriptors: the command processor binds resources through it. Before it
 accepts a program, the GPU checks the magic, the version, the registers
 against its limit, the flags against CAPS, the code size and the
-interface table (slots against CAPS2, constant words against the bank);
+interface table (slots against CAPS2, bank words against the bank, the
+registers of kinds 1 and 13 against word 6);
 a program that fails gets VK_ERROR_INITIALIZATION_FAILED.
 
 A program in a native ISA (the PROGRAM gpu-op's ISA field is ISA_ID, not
