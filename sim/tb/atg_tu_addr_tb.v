@@ -54,10 +54,11 @@ module atg_tu_addr_tb;
 	reg ta_ready = 1'b0;
 	wire tx_ready, ta_valid, ta_last, desc_busy;
 	wire [511:0] ta_addr;
+	wire [15:0] ta_bord;
 	wire [127:0] ta_wts;
 	wire [15:0] ta_tag;
 	wire [3:0] ta_mask;
-	wire [23:0] ta_ctl;
+	wire [47:0] ta_ctl;
 	wire [127:0] ta_value;
 
 	atg_tu_addr dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
@@ -65,7 +66,7 @@ module atg_tu_addr_tb;
 		.tx_op(tx_op), .tx_slot(tx_slot), .tx_mask(tx_mask), .tx_coord(tx_coord),
 		.tx_off(tx_off), .tx_tag(tx_tag),
 		.tx_last(tx_last), .ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr),
-		.ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl),
+		.ta_bord(ta_bord), .ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl),
 		.ta_value(ta_value), .ta_last(ta_last));
 
 	integer fd, code, seed, errs, gerrs, nq, tmo, np, ip;
@@ -79,8 +80,9 @@ module atg_tu_addr_tb;
 	reg [639:0] crd;
 	reg [11:0] off;
 	reg [511:0] x_addr;
+	reg [15:0] x_bord;
 	reg [127:0] x_wts;
-	reg [23:0] x_ctl;
+	reg [47:0] x_ctl;
 	reg [127:0] x_value;
 
 	task check_out;
@@ -98,15 +100,18 @@ module atg_tu_addr_tb;
 				$display("FAIL atg_tu_addr: quad %0d: no ta_valid", nq);
 				gerrs = gerrs + 1;
 			end else begin
-				/* Texels 1-3 matter only for bilinear quads. */
+				/* Slots 1-3 matter only for bilinear quads and the slots of
+				 * 8- and 16-byte texels (ctl[26:25]). */
 				for (l = 0; l < 4; l = l + 1)
 					for (t = 0; t < 4; t = t + 1)
-						if (ta_addr[(l*4+t)*32 +: 32] !== x_addr[(l*4+t)*32 +: 32] &&
-						    (t == 0 || x_ctl[0]) && mask[l] && !x_ctl[2]) begin
+						if ((ta_addr[(l*4+t)*32 +: 32] !== x_addr[(l*4+t)*32 +: 32] ||
+						     ta_bord[l*4+t] !== x_bord[l*4+t]) &&
+						    (t == 0 || x_ctl[0] || (t == 1 && x_ctl[26:25] != 2'd0) ||
+						     x_ctl[26:25] == 2'd2) && mask[l] && !x_ctl[2]) begin
 							if (gerrs < 10)
-								$display("FAIL atg_tu_addr: quad %0d lane %0d texel %0d: %h, model %h",
-									nq, l, t, ta_addr[(l*4+t)*32 +: 32],
-									x_addr[(l*4+t)*32 +: 32]);
+								$display("FAIL atg_tu_addr: quad %0d lane %0d slot %0d: %h %b, model %h %b",
+									nq, l, t, ta_addr[(l*4+t)*32 +: 32], ta_bord[l*4+t],
+									x_addr[(l*4+t)*32 +: 32], x_bord[l*4+t]);
 							gerrs = gerrs + 1;
 						end
 				for (l = 0; l < 4; l = l + 1)
@@ -179,7 +184,8 @@ module atg_tu_addr_tb;
 				tx_off <= $random(seed);
 				tx_slot <= $random(seed);
 				for (ip = 0; ip < np; ip = ip + 1) begin
-					code = $fscanf(fd, "%s %h %h %h %h\n", kind, x_addr, x_wts, x_ctl, x_value);
+					code = $fscanf(fd, "%s %h %h %h %h %h\n", kind, x_addr, x_bord, x_wts, x_ctl,
+						x_value);
 					check_out;
 				end
 				nq = nq + 1;

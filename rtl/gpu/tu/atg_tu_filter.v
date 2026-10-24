@@ -43,6 +43,15 @@
  * 31, G / 63, B / 31, 1) rounded to nearest even; the other operations
  * take the texel as RGBA8 ((c << 3) | (c >> 2), (c << 2) | (c >> 4), alpha
  * 255) and filter it like RGBA8.
+ * The VkFormat of TEX_FORMAT (tc_ctl[34:27]; 0 for the earlier codes):
+ * R8_UNORM (9) and R8G8_UNORM (16) texels are taken as RGBA8 with the
+ * missing bytes 0 and alpha 255 (border texels too: Vulkan replaces the
+ * format's components only); D16_UNORM (124) compares the texel's bits
+ * 15:0 with Dref converted to 16-bit UNORM (atg_fmt_f2unorm).  The
+ * component swizzle (tc_ctl[47:36], VkComponentSwizzle of R, G, B, A:
+ * IDENTITY, ZERO, ONE, R, G, B, A) is applied last, after a compare, and
+ * gather takes the component that the swizzle puts in its place (ZERO and
+ * ONE: 0.0 and 1.0); the queries are not swizzled.
  * See spec/gpu/tu/atg_tu_filter.md.
  *
  * States: IDLE →(tc)→ RUN (lanes 0-3) → OUT →(tr_ready)→ IDLE; a pass
@@ -61,7 +70,7 @@ module atg_tu_filter (
 	input wire [127:0] tc_wts,
 	input wire [15:0] tc_tag,
 	input wire [3:0] tc_mask,
-	input wire [23:0] tc_ctl,
+	input wire [47:0] tc_ctl,
 	input wire [127:0] tc_value,
 	input wire tc_last,
 	/* Return to the SU */
@@ -72,6 +81,8 @@ module atg_tu_filter (
 	output reg tr_last
 );
 	`include "atg_depth.vh"
+	`include "atg_fmt_info.vh"
+	`include "atg_fmt_pack.vh"
 	localparam [1:0] IDLE = 2'd0, RUN = 2'd1, OUT = 2'd2;
 
 	/* p × 2^(n + eb − 127) as fp32 with n the msb position (p > 0, the
@@ -138,6 +149,28 @@ module atg_tu_filter (
 		x565 = {8'hFF, t[4:0], t[4:2], t[10:5], t[10:9], t[15:11], t[15:13]};
 	endfunction
 
+	/* R8 and R8G8 as RGBA8 (the missing bytes 0, alpha 255). */
+	function [31:0] xrg;
+		input [31:0] t;
+		input [7:0] f;
+		xrg = f == 8'd9 ? {8'hFF, 16'd0, t[7:0]} : f == 8'd16 ? {8'hFF, 8'd0, t[15:0]} : t;
+	endfunction
+
+	/* The component swizzle of four fp32 components. */
+	function [127:0] swz4;
+		input [127:0] v;
+		input [11:0] z;
+		integer c;
+		reg [2:0] sc;
+		begin
+			for (c = 0; c < 4; c = c + 1) begin
+				sc = z[3*c +: 3];
+				swz4[c*32 +: 32] = sc == 3'd1 ? 32'd0 : sc == 3'd2 ? 32'h3F800000 :
+					sc >= 3'd3 && sc <= 3'd6 ? v[{sc[1:0] + 2'd1, 5'd0} +: 32] : v[c*32 +: 32];
+			end
+		end
+	endfunction
+
 	/* An 8-bit value a / 255. */
 	function [31:0] conv8;
 		input [7:0] a;
@@ -169,14 +202,16 @@ module atg_tu_filter (
 	reg [511:0] tx;
 	reg [127:0] wts;
 	reg [3:0] mask;
-	reg [23:0] ctl;
+	reg [47:0] ctl;
 	reg [127:0] val;
 	reg [639:0] acc;	/* the passes' sums: lane-major, 4 × 40 bits a lane */
 
 	/* Lane k: its texels (RGB565 as RGBA8), weights, reference and kept sums. */
 	wire [127:0] lraw = tx[k*128 +: 128];
-	wire [127:0] lt = !ctl[19] ? lraw : {x565(lraw[111:96]), x565(lraw[79:64]), x565(lraw[47:32]),
-		x565(lraw[15:0])};
+	wire [7:0] vkf = ctl[34:27];
+	wire [127:0] lt = ctl[19] ? {x565(lraw[111:96]), x565(lraw[79:64]), x565(lraw[47:32]),
+		x565(lraw[15:0])} : {xrg(lraw[127:96], vkf), xrg(lraw[95:64], vkf), xrg(lraw[63:32], vkf),
+		xrg(lraw[31:0], vkf)};
 	wire [7:0] fu = wts[k*32 +: 8], fv = wts[k*32 + 8 +: 8];
 	wire [7:0] fl = wts[k*32 + 16 +: 8], fw = wts[k*32 + 24 +: 8];
 	wire [31:0] dref = val[k*32 +: 32];
@@ -186,6 +221,8 @@ module atg_tu_filter (
 	wire [8:0] wb = ctl[18] ? {1'b0, fl} : 9'd256 - {1'b0, fl};
 	wire [17:0] wp = {9'd0, wa} * {9'd0, wb};
 	wire [23:0] dref24 = atg_depth_u24(dref);
+	wire [15:0] dref16 = atg_fmt_f2unorm(dref, 6'd16);
+	wire d16 = vkf == 8'd124;
 	wire [32:0] dkey = atg_depth_key(dref);
 	wire dnan = dref[30:23] == 8'hFF && dref[22:0] != 23'd0;
 	reg [127:0] res;
@@ -199,8 +236,11 @@ module atg_tu_filter (
 	reg [31:0] gt;
 	reg [7:0] gb;
 	integer c, t, g;
-	/* Gather: the byte of the component (BGRA8 swaps R and B). */
-	wire [1:0] gsel = ctl[1] && !ctl[14] ? ctl[15:14] ^ 2'd2 : ctl[15:14];
+	/* Gather: the component the swizzle puts in place ctl[15:14] (gsw 1, 2:
+	 * the constants), and its byte (BGRA8 swaps R and B). */
+	wire [2:0] gsw = ctl[36 + 3 * ctl[15:14] +: 3];
+	wire [1:0] gsrc = gsw >= 3'd3 && gsw <= 3'd6 ? gsw[1:0] + 2'd1 : ctl[15:14];
+	wire [1:0] gsel = ctl[1] && !gsrc[0] ? gsrc ^ 2'd2 : gsrc;
 	always @(*) begin
 		gt = 32'd0;
 		gb = 8'd0;
@@ -209,6 +249,7 @@ module atg_tu_filter (
 			tex = lt[t*32 +: 32];
 			ok[t] = ctl[1] ? atg_depth_pass(ctl[12:10], dkey, atg_depth_key(tex),
 				dnan || (tex[30:23] == 8'hFF && tex[22:0] != 23'd0)) :
+				d16 ? atg_depth_pass(ctl[12:10], {17'd0, dref16}, {17'd0, tex[15:0]}, 1'b0) :
 				atg_depth_pass(ctl[12:10], {9'd0, dref24}, {9'd0, tex[23:0]}, 1'b0);
 		end
 		res = 128'd0;
@@ -252,13 +293,16 @@ module atg_tu_filter (
 				gb = gt[gsel*8 +: 8];
 				if (ctl[9])
 					res[g*32 +: 32] = ok[t] ? 32'h3F800000 : 32'd0;
+				else if (gsw == 3'd1 || gsw == 3'd2)
+					res[g*32 +: 32] = gsw == 3'd2 ? 32'h3F800000 : 32'd0;
 				else if (ctl[8])
-					res[g*32 +: 32] = ctl[15:14] == 2'd0 ? (ctl[1] ? gt : conv24(gt[23:0])) :
-						ctl[15:14] == 2'd3 ? 32'h3F800000 : 32'd0;
+					res[g*32 +: 32] = gsrc == 2'd0 ? (ctl[1] ? gt : conv24(gt[23:0])) :
+						gsrc == 2'd3 ? 32'h3F800000 : 32'd0;
 				else
 					res[g*32 +: 32] = conv8(gb);
 			end
-		end
+		end else
+			res = swz4(res, ctl[47:36]);
 		if (ctl[2])
 			res = ctl[16] ? {64'd0, fix8(val[k*32 + 16 +: 16]), fix8(val[k*32 +: 16])} :
 				{96'd0, val[k*32 +: 32]};
@@ -300,7 +344,7 @@ module atg_tu_filter (
 		end
 	end
 
-	wire unused_ok = &{1'b0, ctl[23:20], ctl[7:6], r[25:24], wp[17], lraw};
+	wire unused_ok = &{1'b0, ctl[35], ctl[26:20], ctl[7:6], r[25:24], wp[17], lraw};
 endmodule
 
 `default_nettype wire

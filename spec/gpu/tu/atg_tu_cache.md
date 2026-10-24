@@ -31,7 +31,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ta_wts` | in | 128 | 4 lanes × {fw, fl, fv, fu} 8-bit weights (passed through). |
 | `ta_tag` | in | 16 | Tag. |
 | `ta_mask` | in | 4 | Lanes. |
-| `ta_ctl` | in | 24 | As atg_tu_addr's: [0] bilinear, [1] format low bit, [2] no fetch (texsz, texqlod), [3] texf, [4] a later pass follows, [5] not the first pass, [7:6] border colour class, [8] depth format, [9] compare, [12:10] compare op, [13] gather, [15:14] its component, [16] texqlod, [18:17] the pass. |
+| `ta_bord` | in | 16 | atg_tu_addr's border bits of the 16 slots. |
+| `ta_ctl` | in | 48 | As atg_tu_addr's (atg_tu_addr.md §3); used here: [0] bilinear, [1] format bit, [2] no fetch (texsz, texqlod), [7:6] border colour class, [8] depth format, [19] the earlier RGB565, [24:23] texel size, [26:25] slots without bilinear. |
 | `ta_value` | in | 128 | texsz {h, w} or the compare reference per lane (passed through). |
 | `ta_last` | in | 1 | Last. |
 | **To atg_tu_filter** | | | |
@@ -41,7 +42,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `tc_wts` | out | 128 | As ta_wts. |
 | `tc_tag` | out | 16 | Tag. |
 | `tc_mask` | out | 4 | Lanes. |
-| `tc_ctl` | out | 24 | As ta_ctl. |
+| `tc_bord` | out | 16 | ta_bord. |
+| `tc_ctl` | out | 48 | As ta_ctl. |
 | `tc_value` | out | 128 | As ta_value. |
 | `tc_last` | out | 1 | Last. |
 | **AMB client port (design §4.1)** | | | |
@@ -58,13 +60,13 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-33 ports; 22 counting each AMB port and HCR snoop port as one group (spec/README.md).
+35 ports; 24 counting each AMB port and HCR snoop port as one group (spec/README.md).
 
 ## 4. Behaviour
 
 Blocking in v1: a quad waits until all its lines are present (misses served in order, up to 2 outstanding).  texsz passes through without lookups.  Order is kept.
 
-As implemented: direct mapped, TC_BYTES / LINE_BYTES lines (128 of 32 bytes, 64 of 64), read only (no write port: the GPU does not write textures through the T$).  The texels of a quad are looked up one per cycle, lane 0 texel 0 to lane 3 texel 3, only for the lanes of ta_mask and, without ta_ctl[0], only texel 0; texels not looked up are 0 on tc_texels.  A miss requests its line (**one outstanding**), writes it into the cache when it comes and looks the texel up again.  A **border texel** (bit 0 of its address, from atg_tu_addr's clamp to border) is not looked up and makes no request: it is the border colour's raw texel by format ({ta_ctl[8], ta_ctl[1]}) and class (ta_ctl[7:6]): RGBA8/BGRA8 0, 0xFF000000, 0xFFFFFFFF; D24 0, 0, 0x00FFFFFF; D32F 0, 0, 0x3F800000 (class 3: 0).  The filter then treats it as any texel (tools/tumodel.py `border_raw`).  An error response (rsp_error) gives that texel 0 and leaves the line invalid (the next use requests it again); there is no fault from the TU.  inv (INVALIDATE[1], DRAW) clears every line at once; a line whose request was outstanding when inv came is not kept (its texel misses again and is fetched anew).  The other fields go through unchanged.
+As implemented: direct mapped, TC_BYTES / LINE_BYTES lines (128 of 32 bytes, 64 of 64), read only (no write port: the GPU does not write textures through the T$).  The slots of a quad are looked up one per cycle, lane 0 slot 0 to lane 3 slot 3, only for the lanes of ta_mask and, without ta_ctl[0], only slot 0 (slots 0-1 with ta_ctl[26:25] = 1, 0-3 with 2: the words of 8- and 16-byte texels); slots not looked up are 0 on tc_texels.  A slot is the word at its address; with ta_ctl[24:23] = 1 (2-byte texels) or ta_ctl[19] (RGB565) the half word that address bit 1 selects, with 2 (1-byte texels) the byte that address bits 1:0 select, right-justified.  A miss requests its line (**one outstanding**), writes it into the cache when it comes and looks the texel up again.  A **border texel** (its ta_bord bit, from atg_tu_addr's clamp to border) is not looked up and makes no request: it is the border colour's raw texel by format ({ta_ctl[8], ta_ctl[1]}) and class (ta_ctl[7:6]): RGBA8/BGRA8 0, 0xFF000000, 0xFFFFFFFF; D24 and D16 0, 0, 0x00FFFFFF; D32F 0, 0, 0x3F800000 (class 3: 0); the fp32 path's filter puts in its own values.  The filter then treats it as any texel (tools/tumodel.py `border_raw`).  An error response (rsp_error) gives that texel 0 and leaves the line invalid (the next use requests it again); there is no fault from the TU.  inv (INVALIDATE[1], DRAW) clears every line at once; a line whose request was outstanding when inv came is not kept (its texel misses again and is fetched anew).  The other fields go through unchanged.
 
 ## 5. State machine
 
@@ -76,7 +78,7 @@ Target: hits one quad per 4 cycles (4 texels per cycle).  v1: one texel per cycl
 
 ## 7. Corner cases and errors
 
-- A texel address's bit 1 is ignored (texels are words); bit 0 marks a border texel.
+- A slot address's bits 1:0 select the half word or byte of 2- and 1-byte texels and are ignored otherwise.
 - A whole quad masked (ta_mask 0) looks nothing up and answers zeros.
 
 ## 8. What the TB checks
@@ -88,6 +90,7 @@ Target: hits one quad per 4 cycles (4 texels per cycle).  v1: one texel per cycl
 - `PASS atg_tu_cache.inv` — invalidate
 - `PASS atg_tu_cache.border` — border texels
 - `PASS atg_tu_cache.h16` — RGB565 (ctl[19]): the half word of address bit 1, its border texels (0, 0, 0xFFFF)
+- `PASS atg_tu_cache.parts` — the slots of 8- and 16-byte texels without bilinear, the half words and bytes of 2- and 1-byte texels (ctl[24:23]), border texels among them
 - `PASS atg_tu_cache` at the end.
 
 Both line sizes (32 and 64 bytes), a memory model with random request acceptance and latency and an error region: hit = a quad repeated three times makes no request; miss = 400 random quads over 64 KiB (conflicting lines), every ta_ctl, error texels, an error line requested again; inv = changed memory is not seen before inv and is after, inv while a miss is outstanding (with memory changed meanwhile: the new data is returned, the line refetched and then kept); border = 200 quads with random border texels among fetched ones (every format and class), 20 quads of border texels only that make no request.
@@ -103,3 +106,5 @@ Implemented in WS288 p009 part C (P1, branch p1-tu).  Differences from §4/§6 (
 Part F (P3): ta_wts / tc_wts 128 bits (fw, the depth weight); the pass bits of ta_ctl pass through.  Otherwise unchanged.
 
 RGB565 (the MSAA work): with ta_ctl[19] a texel is the half word that address bit 1 selects (bits 15:0 of the texel word), the border texels 0, 0, 0xFFFF.
+
+TEX_FORMAT (2026-10-25): ta_bord / tc_bord (the border bit left the address), ta_ctl 48 bits, the slots of 8- and 16-byte texels and the 1- and 2-byte texels.

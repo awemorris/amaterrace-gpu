@@ -23,12 +23,16 @@
  * corner texel from the face itself (include/atg_tu_fn.vh tu_cube_texel).
  * texf: x + du, y + dv (and z + dw of a 3D level) clamped into the level.
  * Address = lbase + k × plane (+ face × stride for a cube) + the texel in
- * the plane (linear rows of wl × 4 bytes, or 4×4 tiles of 64 bytes, a row
- * of tiles ceil(wl / 4) × 64 bytes; b2, format 4: × 2 bytes and 32-byte
- * tiles); bit 0 is then set for a border texel (bit 1 selects the half
- * word of a 2-byte texel).  ms (a multisampled image, texf only): texel
- * 4 i + smp of rows of roundup(wl, 2) × 4 texels.  Texels 0-3 = (i0, j0), (i1, j0), (i0, j1), (i1, j1)
- * (nearest and texf: four times the same).
+ * the plane (linear rows of wl texels of 2^psl bytes, or 4×4 tiles of 64
+ * bytes, a row of tiles ceil(wl / 4) × 64 bytes; psl 1 tiled, the earlier
+ * RGB565: 32-byte tiles); bord says which are border texels.  ms (a
+ * multisampled image, texf only): texel 4 i + smp of rows of roundup(wl,
+ * 2) × 4 texels.  Texels 0-3 = (i0, j0), (i1, j0), (i0, j1), (i1, j1)
+ * (nearest and texf: four times the same).  The four slots of the lane
+ * are these texels for 1- to 4-byte texels and for gather (gather: the
+ * word gwi of each texel); for 8-byte texels the two words of (i0, j) and
+ * of (i1, j), j = j0 or (row) j1; for 16-byte texels the four words of
+ * texel 0.
  * See spec/gpu/tu/atg_tu_foot.md.
  */
 
@@ -44,7 +48,9 @@ module atg_tu_foot (
 	input wire lin,	/* bilinear */
 	input wire ms,	/* multisampled (4 samples, linear) */
 	input wire [1:0] smp,	/* texf: the sample */
-	input wire b2,	/* 2-byte texels */
+	input wire [2:0] psl,	/* log2 of the texel's bytes */
+	input wire row,	/* 8-byte texels: the pass's second row */
+	input wire [1:0] gwi,	/* gather: the word of the texel */
 	input wire p0,	/* the pass's second slice */
 	input wire [1:0] mu,
 	input wire [1:0] mv,
@@ -64,6 +70,7 @@ module atg_tu_foot (
 	input wire [31:0] plane,
 	input wire [31:0] stride,
 	output wire [127:0] addr,
+	output wire [3:0] bord,	/* border texels */
 	output wire [15:0] fuv,	/* {fv, fu} */
 	output wire [7:0] fw
 );
@@ -82,7 +89,7 @@ module atg_tu_foot (
 		input [15:0] j;
 		input [15:0] w;
 		input tl;
-		input h;	/* 2-byte texels */
+		input [2:0] pl;	/* log2 of the texel's bytes */
 		reg [15:0] tw;
 		/* verilator lint_off UNUSEDSIGNAL */
 		reg [31:0] m;	/* 32-bit wrap: the top bits are shifted out */
@@ -90,16 +97,14 @@ module atg_tu_foot (
 		begin
 			tw = {2'b00, w[15:2]} + {15'd0, w[1:0] != 2'd0};	/* tiles a row */
 			m = tl ? {18'd0, j[15:2]} * {16'd0, tw} : {16'd0, j} * {16'd0, w};
-			if (tl && h)
+			if (tl && pl == 3'd1)
 				toff = {m[26:0], 5'd0} + {27'd0, j[1:0], 3'd0} + {13'd0, i[15:2], 5'd0} +
 					{29'd0, i[1:0], 1'd0};
 			else if (tl)
 				toff = {m[25:0], 6'd0} + {26'd0, j[1:0], 4'd0} + {12'd0, i[15:2], 6'd0} +
 					{28'd0, i[1:0], 2'd0};
-			else if (h)
-				toff = {m[30:0], 1'b0} + {15'd0, i, 1'd0};
 			else
-				toff = {m[29:0], 2'b00} + {14'd0, i, 2'd0};
+				toff = (m + {16'd0, i}) << pl;
 		end
 	endfunction
 
@@ -141,19 +146,24 @@ module atg_tu_foot (
 	wire [34:0] c01 = tu_cube_texel(face, i0, j1, wl);
 	wire [34:0] c11 = tu_cube_texel(face, i1, j1, wl);
 
-	/* Texel t: its face, i, j and border bit. */
+	/* Slot t: its texel ft of the footprint and the word in the texel. */
 	reg [127:0] a;
+	reg [3:0] bd;
 	reg [34:0] ct;
 	reg [15:0] ti, tj;
 	reg [2:0] tf;
+	reg [1:0] ft, part;
 	reg tb;
-	/* verilator lint_off UNUSEDSIGNAL */
-	reg [31:0] at;	/* bits 1:0 are replaced */
-	/* verilator lint_on UNUSEDSIGNAL */
 	integer t;
 	always @(*) begin
 		for (t = 0; t < 4; t = t + 1) begin
-			ct = !lin || t == 0 ? c00 : t == 1 ? c10 : t == 2 ? c01 : c11;
+`ifdef MUT_TU_ROW
+			ft = gather || psl <= 3'd2 ? t[1:0] : psl == 3'd3 ? {1'b0, t[1]} : 2'd0;
+`else
+			ft = gather || psl <= 3'd2 ? t[1:0] : psl == 3'd3 ? {row, t[1]} : 2'd0;
+`endif
+			part = gather ? gwi : psl == 3'd3 ? {1'b0, t[0]} : psl == 3'd4 ? t[1:0] : 2'd0;
+			ct = !lin || ft == 2'd0 ? c00 : ft == 2'd1 ? c10 : ft == 2'd2 ? c01 : c11;
 			if (texf) begin
 				tf = 3'd0;
 				ti = msf ? fim : fi;
@@ -166,16 +176,17 @@ module atg_tu_foot (
 				tb = 1'b0;
 			end else begin
 				tf = 3'd0;
-				ti = t[0] ? wi1[15:0] : wi0[15:0];
-				tj = t[1] ? wj1[15:0] : wj0[15:0];
-				tb = (t[0] ? wi1[16] : wi0[16]) | (t[1] ? wj1[16] : wj0[16]) | bk;
+				ti = ft[0] ? wi1[15:0] : wi0[15:0];
+				tj = ft[1] ? wj1[15:0] : wj0[15:0];
+				tb = (ft[0] ? wi1[16] : wi0[16]) | (ft[1] ? wj1[16] : wj0[16]) | bk;
 			end
-			at = lbase + kp[31:0] + (cube && !texf ? stride * {29'd0, tf} : 32'd0) +
-				toff(ti, tj, msf ? wms : wl, tiled, b2);
-			a[t*32 +: 32] = {at[31:1], tb};
+			a[t*32 +: 32] = lbase + kp[31:0] + (cube && !texf ? stride * {29'd0, tf} : 32'd0) +
+				toff(ti, tj, msf ? wms : wl, tiled, psl) + {28'd0, part, 2'b00};
+			bd[t] = tb;
 		end
 	end
 	assign addr = a;
+	assign bord = bd;
 
 	wire unused_ok = &{1'b0, kp[47:32], wl[15:14], fi[15:14]};
 endmodule
