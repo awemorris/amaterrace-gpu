@@ -258,8 +258,10 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
 }
 
 
-#if defined(RASTER) || defined(SHADE)
-#ifdef SHADE
+#if defined(RASTER) || defined(SHADE) || defined(TEX)
+#if defined(TEX)
+#define SCENE_NAME "tex"
+#elif defined(SHADE)
 #define SCENE_NAME "shade"
 #else
 #define SCENE_NAME "raster"
@@ -343,9 +345,10 @@ void write_png(const char *path, uint32_t base, unsigned w, unsigned h, unsigned
 }
 
 /* The scene of sim/vec/raster_scene.txt (tools/rx-raster-scene.py; SHADE:
- * sim/vec/shade_scene.txt, tools/rx-shade-scene.py) through the ring; the
- * colour and depth buffers against the model; the colour buffer to
- * build/verilator/raster.png (shade.png). */
+ * sim/vec/shade_scene.txt, tools/rx-shade-scene.py; TEX: sim/vec/tex_scene.txt,
+ * tools/rx-tex-scene.py) through the ring; the colour and depth buffers
+ * against the model; the colour buffer to build/verilator/raster.png
+ * (shade.png, tex.png). */
 int scene_main()
 {
 	FILE *f = std::fopen("sim/vec/" SCENE_NAME "_scene.txt", "r");
@@ -406,7 +409,7 @@ int main(int argc, char **argv)
 		tick();
 	top->rst_n = 1;
 	tick();
-#if defined(RASTER) || defined(SHADE)
+#if defined(RASTER) || defined(SHADE) || defined(TEX)
 	{
 		int rc = scene_main();
 		top->final();

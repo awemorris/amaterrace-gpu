@@ -6,10 +6,11 @@
  */
 
 /*
- * atg_top_scene.vh: the scene harness of atg_top_raster_tb and
- * atg_top_shade_tb: the GPU (HAS_RX, HAS_ROP, and HAS_VF/NSU when given)
- * driven only through its host port runs the ring of a scene file (the
- * I/R/E lines of tools/rx-raster-scene.py and tools/rx-shade-scene.py)
+ * atg_top_scene.vh: the scene harness of atg_top_raster_tb,
+ * atg_top_shade_tb and atg_top_tex_tb: the GPU (HAS_RX, HAS_ROP, and
+ * HAS_VF/NSU/HAS_TU when given) driven only through its host port runs the
+ * ring of a scene file (the I/R/E lines of tools/rx-raster-scene.py,
+ * tools/rx-shade-scene.py and tools/rx-tex-scene.py)
  * and the memory words of the E lines must equal the model's.
  */
 
@@ -24,6 +25,7 @@ module atg_top_scene_harness #(
 	/* the blocks (atg_top's parameters) */
 	parameter HAS_VF = 0,
 	parameter NSU = 0,
+	parameter HAS_TU = 0,
 	parameter SU_NPHYS = 8,
 	parameter SU_GRP_W = 2,
 	parameter SU_VARY_WORDS = 16
@@ -74,7 +76,7 @@ module atg_top_scene_harness #(
 	wire [DATA_W/8-1:0] wstrb;
 
 	atg_top #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .DATA_W(DATA_W),
-		.HAS_RX(1), .HAS_ROP(1), .HAS_VF(HAS_VF), .NSU(NSU), .SU_NPHYS(SU_NPHYS),
+		.HAS_RX(1), .HAS_ROP(1), .HAS_VF(HAS_VF), .NSU(NSU), .HAS_TU(HAS_TU), .SU_NPHYS(SU_NPHYS),
 		.SU_GRP_W(SU_GRP_W), .SU_VARY_WORDS(SU_VARY_WORDS)) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.s_awaddr(h_awaddr), .s_awid(h_awid), .s_awvalid(h_awvalid), .s_awready(h_awready),
