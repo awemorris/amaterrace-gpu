@@ -1,6 +1,6 @@
 # atg_rx_scan
 
-RTL: `rtl/gpu/rx/atg_rx_scan.v`.  Parent: atg_rx.  Implemented in: p007 (direct), p009 (warps).
+RTL: `rtl/gpu/rx/atg_rx_scan.v`.  Child: `atg_rx_cov` (the sample offsets).  Parent: atg_rx.  Implemented in: p007 (direct), p009 (warps).
 
 ## 1. Purpose and place
 
@@ -23,7 +23,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **STATE broadcast (from atg_cp_state)** | | | |
 | `st_we` | in | 1 | One-cycle write of STATE[st_idx]. |
 | `st_idx` | in | 9 | STATE index (design §2.3). |
-| `st_wdata` | in | 32 | STATE value; the block keeps the words of its range. |
+| `st_wdata` | in | 32 | STATE value; the block keeps MS_CTRL[3:0] (0x05E: 2 = 4 samples) and SAMPLE_KILL[3:0] (0x05F). |
 | **From atg_rx_setup** | | | |
 | `sp_valid` | in | 1 | A set-up triangle. |
 | `sp_ready` | out | 1 | Taken. |
@@ -36,7 +36,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fq_valid` | out | 1 | A covered quad, or (fq_end) the triangle's end marker. |
 | `fq_ready` | in | 1 | Taken. |
 | `fq_xy` | out | 32 | {y, x} of the quad. |
-| `fq_cov` | out | 4 | Covered lanes (0 with fq_end). |
+| `fq_scov` | out | 16 | Bit 4 l + s: sample s of lane l covered, after the sample mask test (one sample: bit 4 l, the centre); 0 with fq_end. |
+| `fq_ccov` | out | 4 | The lanes whose centre is inside the triangle (for the centroid); 0 with fq_end. |
 | `fq_end` | out | 1 | The end marker: no more quads of this triangle. |
 | `f_busy` | in | 1 | atg_rx_frag still has the triangle's quads (the frees wait). |
 | **Direct fragments to the ROP (no SU: DEBUG_COLOR)** | | | |
@@ -52,13 +53,14 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `sq_seq` | in | 16 | The number, in the same cycle. |
 | `busy` | out | 1 | Work outstanding. |
 
-27 ports.
+28 ports.
 
 ## 4. Behaviour
 
 - Warp path (HAS_SU and a non-raw triangle): every covered quad goes out on fq_* in the walk's
   order (one per handshake; the walk waits), then the end marker; no sequence number here
   (atg_rx_frag takes one per warp).  atg_rx_frag builds the warps (spec atg_rx_frag.md).
+- Multisampling (MS_CTRL[3:0] = 2, warp path only; docs/ghci.md §12.11): after the centre's test in WALK, four SAMP cycles, one per sample: the edge test at the sample (the quad's edges plus the sample's offset from `atg_rx_cov`, through the same lane adders), less SAMPLE_KILL[s]; a quad with a sample goes out with fq_scov (all four samples) and fq_ccov.  Skip: when for one edge every lane in the bbox is below −(the offsets' bound, a power of two), SAMP is skipped (no sample can be covered).  One sample: fq_scov bit 4 l = the centre's coverage less SAMPLE_KILL[0], no SAMP cycles.
 - Direct path (DRAW_RAW, or HAS_SU 0): per quad, dx_* with the interpolated z; one sequence number
   per triangle.
 - After the triangle, pt_free for each flagged vertex; in the warp path only once f_busy is low (the
@@ -66,11 +68,11 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 5. State machine
 
-IDLE →(triangle)→ SEQ → WALK → (direct: Z → EMIT → WALK …, LAST) or (warp path: FQ → WALK …, FQ with the end marker) → FREE (warp path: after !f_busy) → IDLE.
+IDLE →(triangle)→ SEQ → WALK → (direct: Z → EMIT → WALK …, LAST) or (warp path: [4 samples: SAMP × 4 →] FQ → WALK …, FQ with the end marker) → FREE (warp path: after !f_busy) → IDLE.
 
 ## 6. Latency and throughput
 
-One quad per cycle in the walk (edges incremental).
+One quad per cycle in the walk (edges incremental); with 4 samples 5 cycles per quad that is not skipped.
 
 ## 7. Corner cases and errors
 
@@ -83,6 +85,8 @@ One quad per cycle in the walk (edges incremental).
 - `PASS atg_rx_scan.coverage` — coverage of random triangles against a C rasterizer (top-left rule)
 - `PASS atg_rx_scan.direct` — HAS_SU 0: dx quads (and nothing on fq_*)
 - `PASS atg_rx_scan.free` — pt_free once per flagged vertex
+- `PASS atg_rx_scan.ms1x` — a second instance with HAS_SU 1: the same triangles as non-raw ones with MS_CTRL 0 on the warp path (fq_scov, fq_ccov as the one-sample coverage; an end marker per triangle with a bbox)
+- `PASS atg_rx_scan.ms` — `sim/vec/rx_scan_ms.txt` (`tools/rx-msaa-vectors.py`, `tools/msmodel.py`): 4 samples and 1, SAMPLE_KILL 0, 2, 5, 8, 15, shared edges through sample locations, a sliver across empty quads; `-DMUT_SAMPLE_SWAP` (samples 1 and 2 swapped) and `-DMUT_COV_SKIP` (a skip bound too small) fail it
 - `PASS atg_rx_scan` at the end.
 
 ## 9. References
@@ -96,3 +100,5 @@ design §3.4.3 (fragment inputs), §3.8, §3.1 (helper lanes).
 Implemented: the direct path in p007, the warp path (fq_*) in p009 part B2.
 
 WS288 p009 part B2 (P1, branch p1-su-gfx): the fragment-warp work moved to the new module `atg_rx_frag` (one module of ≤ 400 lines and one state machine could not hold both, spec/README.md); this module keeps the walk and sends the covered quads on the new ports `fq_*` (with `f_busy` back).  Removed ports: `pt_rd`, `pt_idx`, `pt_word`, `pt_rdata`, `pt_busy` and the `fl_*` (now atg_rx_frag's).  DRAW_RAW stays on the direct path also with an SU (it has no varyings; DEBUG_COLOR).  The warp path is tested by `atg_rx_frag_tb` and `atg_top_shade_tb` (the `warps` line of this TB is dropped).
+
+Multisampling (the MSAA work): MS_CTRL and SAMPLE_KILL, the SAMP cycles with the child `atg_rx_cov`, the skip; `fq_cov` became `fq_scov` and `fq_ccov` (28 ports).  384 lines.
