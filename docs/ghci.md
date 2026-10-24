@@ -472,7 +472,7 @@ follow the command set and are not yet part of this draft.
 | 0x000 | BLT_OP | [2:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE, 4 RESOLVE (CAPS[29], draft), 5-7 refused; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits; 2 and 3 are refused); [12] reverse direction (bottom-right first, for overlapping copies) |
 | 0x001 | BLT_DST_BASE | GPU address of the destination image |
 | 0x002 | BLT_DST_STRIDE | Bytes per destination row |
-| 0x003 | BLT_SRC_BASE | GPU address of the source image (COPY, TILE, UNTILE) |
+| 0x003 | BLT_SRC_BASE | GPU address of the source image (COPY, TILE, UNTILE, RESOLVE) |
 | 0x004 | BLT_SRC_STRIDE | Bytes per source row |
 | 0x005 | BLT_DST_XY | [15:0] x, [31:16] y of the destination rectangle, in pixels |
 | 0x006 | BLT_SRC_XY | The same for the source |
@@ -480,7 +480,7 @@ follow the command set and are not yet part of this draft.
 | 0x008 | BLT_COLOR | FILL colour (the pixel's bits) |
 | 0x009 | BLT_CLIP_MIN | [15:0] x, [31:16] y, inclusive |
 | 0x00A | BLT_CLIP_MAX | [15:0] x, [31:16] y, exclusive; 0 = no clipping |
-| 0x00B | BLT_RESOLVE | RESOLVE only (draft): [3:0] log2 of the source's samples per pixel; [7:4] the average (below); [8] the destination is in 4x4 tiles |
+| 0x00B | BLT_RESOLVE | RESOLVE only (draft): [3:0] log2 of the source's samples per pixel; [7:4] the average (below); [8] the destination is in 4x4 tiles (CAPS[11]); [31:9] 0 |
 
 - Bases and strides are multiples of the pixel size. The destination
   rectangle is clipped to the clip rectangle; the source moves with it.
@@ -510,21 +510,25 @@ follow the command set and are not yet part of this draft.
   BLT_SRC_STRIDE + (x' x S + s) x ps`; BLT_SRC_XY and BLT_SIZE count
   pixels, not samples.  The destination is linear, or in 4x4 tiles with
   BLT_RESOLVE[8].  The pixel size ps ([9:8]) is that of one sample and of
-  a destination pixel.  The average (BLT_RESOLVE[7:4]):
+  a destination pixel.  The source base is a multiple of 64 bytes and its
+  stride a multiple of 2 x S x ps bytes; a tiled destination's base and
+  stride are multiples of 16 x ps bytes (lower bits are ignored).  The
+  average (BLT_RESOLVE[7:4]; the pixel sizes it takes in brackets):
 
   | Value | Average |
   | --- | --- |
-  | 0 UNORM8 | Every byte is an 8-bit unsigned normalized channel (RGBA8, BGRA8): the mean of the S codes, rounded to the nearest code, ties to even |
-  | 1 UNORM565 | The 16-bit fields [15:11], [10:5], [4:0], each as UNORM8 |
-  | 2 SAMPLE0 | Sample 0 (integer formats) |
-  | 3 SRGB8_A8 | Bytes 0-2 sRGB: decoded, averaged and encoded (nearest, ties to even); byte 3 as UNORM8 |
-  | 4 SFLOAT16 | Every 16 bits a binary16: ((s0 + s1) + (s2 + s3)) x 0.25 in binary32 (round to nearest even), then to binary16 |
-  | 5 SFLOAT32 | Every 32 bits a binary32, the same sum |
+  | 0 UNORM8 | [16, 32 bits] Every byte is an 8-bit unsigned normalized channel (RGBA8, BGRA8): the mean of the S codes, rounded to the nearest code, ties to even |
+  | 1 UNORM565 | [16 bits] The fields [15:11], [10:5], [4:0], each an unsigned normalized channel of its width: the mean of the S codes, rounded to the nearest code, ties to even |
+  | 2 SAMPLE0 | [16, 32 bits] Sample 0 (integer formats) |
+  | 3 SRGB8_A8 | [32 bits] Bytes 0-2 sRGB: decoded to linear, averaged and encoded (the precision of the linear values is implementation-defined); byte 3 as UNORM8 |
+  | 4 SFLOAT16 | [16, 32 bits] Every 16 bits a binary16: the mean of the samples in binary32 (with 4 samples ((s0 + s1) + (s2 + s3)) x 0.25), then to binary16; rounding, NaNs and denormals implementation-defined |
+  | 5 SFLOAT32 | [32 bits] Every 32 bits a binary32, the same mean |
   | 6-15 | Refused |
 
   A blitter does the averages of the formats its render output writes
-  (Amaterrace: 0-2; 3-5 are refused).  Sample counts other than 4, blend
-  over, the reverse direction, UNORM565 with 32-bit pixels and a RESOLVE
+  (Amaterrace: 0-2; 3-5 are refused) and the sample counts of the device
+  (Amaterrace: 4).  Other averages and sample counts, a pixel size the
+  average does not take, blend over, the reverse direction and a RESOLVE
   without CAPS[29] are refused.  Source and destination must not overlap
   in memory (the result is undefined otherwise).  Depth and stencil are
   not resolved (Vulkan 1.0 resolves colour only).
@@ -1329,7 +1333,9 @@ so that a multisampled RGB565 colour attachment can be fetched. SPIR-V's ImageFe
 
 **Resolve** (a render pass's resolve attachments and vkCmdResolveImage)
 is the blitter's RESOLVE (section 8.2), one per region and layer, after
-the render output's writes have reached memory (WAIT_IDLE).  It uses only
+the draws that wrote the source have finished and their writes have
+reached memory (WAIT_IDLE of every unit: the render output alone can be
+idle between two quads of a draw).  It uses only
 the blitter's range of STATE.
 
 13. The display controller capability (DISP)
