@@ -45,7 +45,10 @@ module atg_cp #(
 	parameter [31:0] DEVICE_VERSION = 32'h00000003,	/* 0.3: p004, CP with the ring */
 	parameter [7:0] UNITS = 8'h03,	/* present blocks, STATUS busy-bit order (CP, BLT) */
 	parameter HAS_CPU = 0,	/* atg_cpu takes class V packets */
-	parameter HAS_VSYNC = 0	/* vsync is connected (CAPS[10], WAIT_VSYNC) */
+	parameter HAS_VSYNC = 0,	/* vsync is connected (CAPS[10], WAIT_VSYNC) */
+	parameter HAS_DISP = 0,	/* a display controller's registers are in this window at +0x10000 (CAPS[3], DISP) */
+	parameter HAS_DBG = 0,	/* a debug bridge outside the host bus (JTAG; the DBG capability) */
+	parameter PACKED = 0	/* the SU has the packed arithmetic (CAPS[28]) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -142,12 +145,16 @@ module atg_cp #(
 	/* verilator lint_off WIDTHTRUNC */
 	localparam [3:0] LS4 = LINE_SHIFT;
 	/* verilator lint_on WIDTHTRUNC */
-	localparam [31:0] CAPS = {8'd0, LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,
-		HAS_VSYNC != 0, 1'b0, UNITS[5], UNITS[6] ? 4'd5 : 4'd0, 1'b0, UNITS[6], UNITS[1], 1'b1};
+	/* CAPS[27]: graphics (VF, RX and ROP); CAPS[28]: packed; CAPS[24] subgroup stays 0 (not implemented). */
+	localparam [31:0] CAPS = {3'd0, UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4], 3'd0,
+		LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,
+		HAS_VSYNC != 0, 1'b0, UNITS[5], UNITS[6] ? 4'd5 : 4'd0, HAS_DISP != 0, UNITS[6], UNITS[1], 1'b1};
 	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4. */
 	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 24'h000001};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
-	localparam [7:0] XCAP = HAS_CPU != 0 ? 8'h24 : 8'h04;	/* PERF, CPFW */
+	/* PERF always; CPFW with the CPU; DISP and DBG when present (bit id - 1). */
+	localparam [7:0] XCAP = 8'h04 | (HAS_CPU != 0 ? 8'h20 : 8'h00) | (HAS_DISP != 0 ? 8'h01 : 8'h00) |
+		(HAS_DBG != 0 ? 8'h02 : 8'h00);
 
 	/*
 	 * The STATE broadcast to the blocks, one register stage after

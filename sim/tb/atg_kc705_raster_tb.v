@@ -253,6 +253,34 @@ module atg_kc705_raster_tb;
 	reg [23:0] p0;
 	reg [15:0] want;
 
+	/* Walks the extended capability list: DISP must point at the DC (+0x10000), DBG be listed. */
+	task check_extcap;
+		reg [31:0] off, w0, w1;
+		integer k;
+		reg disp, dbg;
+		begin
+			disp = 1'b0;
+			dbg = 1'b0;
+			jr(GHCI_EXTCAP, off);
+			for (k = 0; k < 8 && off != 32'd0; k = k + 1) begin
+				jr(off, w0);
+				jr(off + 32'd4, w1);
+				if (w0[7:0] == GHCI_XCAP_DISP) begin
+					disp = 1'b1;
+					if (w1 != DC)
+						fail("the DISP capability does not point at the DC");
+				end
+				if (w0[7:0] == GHCI_XCAP_DBG)
+					dbg = 1'b1;
+				off = w0[31:16] == 16'd0 ? 32'd0 : off + {14'd0, w0[31:16], 2'd0};
+			end
+			if (!disp)
+				fail("no DISP capability");
+			if (!dbg)
+				fail("no DBG capability");
+		end
+	endtask
+
 	initial begin
 		repeat (20) @(posedge sys_clk);
 		cpu_reset = 1'b0;
@@ -265,6 +293,8 @@ module atg_kc705_raster_tb;
 		expect_reg(GHCI_SCRATCH, 32'h4B373035, 32'hFFFFFFFF);
 		expect_reg(DC + GHCI_DC_ID, GHCI_DC_ID_VALUE, 32'hFFFFFFFF);
 		expect_reg(DC + GHCI_DC_CAPS, 32'h4, 32'h7);
+		expect_reg(GHCI_CAPS, 32'h8, 32'h8);	/* CAPS[3]: the DC is in this window */
+		check_extcap;
 		n = 0;
 		jr(GHCI_STATUS, v);
 		while (!v[GHCI_STATUS_MEM_READY] && n < 100) begin

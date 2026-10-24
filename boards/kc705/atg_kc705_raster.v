@@ -173,6 +173,7 @@ module atg_kc705_raster #(
 		.HAS_ROP(1),
 		.EXT_CLIENT(1),
 		.HAS_JTAG(1),
+		.HAS_DISP(1),
 		.ROP_STENCIL(1),
 		.SU_NPHYS(16),
 		.SU_NWARPS(4),

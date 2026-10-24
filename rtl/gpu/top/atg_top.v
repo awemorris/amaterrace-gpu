@@ -40,6 +40,7 @@ module atg_top #(
 	parameter HAS_SA = 0,	/* systolic array: reserved, 0 in v1 (design §3.9) */
 	parameter EXT_CLIENT = 0,	/* one more MC client outside (the KC705's DC), high priority */
 	parameter HAS_JTAG = 0,	/* a second register-bus master (am_jtag_regs, KC705) */
+	parameter HAS_DISP = 0,	/* a display controller's registers are next to the GPU at +0x10000 (KC705) */
 	parameter ROP_STENCIL = 0,
 	/* The SUs' shape (design §3.7). */
 	parameter SU_NPHYS = 8,
@@ -297,7 +298,10 @@ module atg_top #(
 		.GCLK_HZ(GCLK_HZ),
 		.UNITS({HAS_SA != 0, NSU != 0, HAS_TU != 0, HAS_ROP != 0, HAS_RX != 0, HAS_VF != 0,
 			2'b11}),
-		.HAS_CPU(HAS_CPU)
+		.HAS_CPU(HAS_CPU),
+		.HAS_DISP(HAS_DISP),
+		.HAS_DBG(HAS_JTAG),
+		.PACKED(NSU != 0 && SU_PACKED != 0)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),

@@ -29,10 +29,13 @@ The CPU (`atg_cpu`) is outside, in `atg_top`, connected through the `hcr_*`, `v_
 | `UNITS` | 8'h03 | Present blocks in STATUS busy-bit order (CP, BLT, VF, RX, ROP, TU, SU, SA); set by `atg_top` from its `HAS_*`/`NSU` | — |
 | `HAS_CPU` | 0 | `atg_cpu` takes class V packets (else they fault, kind 2); CAPS[17], [18]; CPFW in the EXTCAP list | 0, 1 |
 | `HAS_VSYNC` | 0 | A display's vsync reaches the CP: CAPS[10], WAIT_VSYNC | 0, 1 |
+| `HAS_DISP` | 0 | A display controller's registers are in this window at +0x10000: CAPS[3] and the DISP capability (WS288 p012, KC705) | 0, 1 |
+| `HAS_DBG` | 0 | A debug bridge outside the host bus (JTAG): the DBG capability | 0, 1 |
+| `PACKED` | 0 | The SU has the packed arithmetic: CAPS[28] | 0, 1 |
 
-Derived: CAPS = {8'd0, LS, 0, HAS_CPU, HAS_CPU, 0, state version 1, 4x4 tiles 1, HAS_VSYNC, 0, TU (bilinear, WS288 p009),
-SU ? 5 : 0, 0, UNITS[6], UNITS[1], 1} (ZYBO 2D: 0x00501803); CAPS2 = 1 (one ring) | (TU ? 4 : 0) << 24 (16 texture slots, WS288 p009); ISA_ID =
-NATIVE_ISA_ID = "GSI1" with an SU, else 0; EXTCAP list: PERF (+ CPFW with the CPU); PERF0 = BLT busy,
+Derived: CAPS = {3'd0, PACKED && SU, VF && RX && ROP (graphics, CAPS[27]), 3'd0 (CAPS[24] subgroup is not implemented), LS, 0, HAS_CPU, HAS_CPU, 0, state version 1, 4x4 tiles 1, HAS_VSYNC, 0, TU (bilinear, WS288 p009),
+SU ? 5 : 0, HAS_DISP, UNITS[6], UNITS[1], 1} (ZYBO 2D: 0x00501803); CAPS2 = 1 (one ring) | (TU ? 4 : 0) << 24 (16 texture slots, WS288 p009); ISA_ID =
+NATIVE_ISA_ID = "GSI1" with an SU, else 0; EXTCAP list: PERF (+ CPFW with the CPU, + DISP pointing at +0x10000 with HAS_DISP, + DBG with HAS_DBG); PERF0 = BLT busy,
 PERF1 = memory busy (PERF_SRC 1, 8, 0xFF, 0xFF).
 
 ## 3. Ports
