@@ -208,7 +208,11 @@ module atg_rx_frag (
 `ifdef MUT_R3_CLAMP
 	wire zclamp = 1'b1;
 `else
+`ifdef MUT_RX_DCLIP
+	wire zclamp = !ms4;
+`else
 	wire zclamp = !ms4 && !dclip;
+`endif
 `endif
 	wire [31:0] zcl = !zclamp ? zr : zr[31] || (zr[30:23] == 8'hFF && zr[22:0] != 23'd0) ? 32'd0 :
 		zr > ONE ? ONE : zr;

@@ -25,6 +25,8 @@
  *           clamped with 4 samples) and r7-r9, and with 4 samples the
  *           triangle's d_s as table words 0xFF8-0xFFB after the map of
  *           every warp.
+ *   r3    — sim/vec/rx_frag_dc.txt: the warps of 20 more triangles with
+ *           depths in [-0.5, 1.5] and DEPTH_CLAMP[1]: r3 not clamped.
  */
 
 `timescale 1ns / 1ps
@@ -188,6 +190,64 @@ module atg_rx_frag_tb;
 	reg [15:0] qx, qy;
 	reg [3:0] qc;
 	integer t;
+	/* The triangles of one file (fd), their warps checked as they come. */
+	task frag_file;
+		begin
+			rc = $fscanf(fd, "%s", kind);
+			while (fd != 0 && kind == "T") begin
+				rc = $fscanf(fd, " %h %d %d\n", t_tri, vc, nw);
+				st_we = 1'b1;
+				st_idx = 9'h05B;
+				st_wdata = vc;
+				t_load = 1'b1;
+				tick;
+				st_we = 1'b0;
+				t_load = 1'b0;
+				for (i = 0; i < nw; i = i + 1) begin
+					rc = $fscanf(fd, "W %d\n", nq);
+					/* the warp's expectations, then its quads (the warp starts after its last) */
+					t = 0;
+					x_cov = 0;
+					x_nq = nq;
+					for (q = 0; q < nq; q = q + 1) begin
+						rc = $fscanf(fd, "Q %h %h %h\n", qx, qy, qc);
+						x_cov[4 * q +: 4] = qc;
+						for (j = 0; j < 4; j = j + 1) begin
+							rc = $fscanf(fd, "L %h %h %h %h %h %h\n", lw[0], lw[1], lw[2], lw[3],
+								lw[4], lw[5]);
+							for (t = 0; t < 6; t = t + 1)
+								x_reg[(4 * q + j) * 7 + t] = lw[t];
+							x_reg[(4 * q + j) * 7 + 6] = qc[j];
+						end
+						send_quad({qy, qx}, {3'd0, qc[3], 3'd0, qc[2], 3'd0, qc[1], 3'd0, qc[0]}, qc,
+							1'b0);
+					end
+					if (nq < 8)
+						send_quad(32'd0, 16'd0, 4'd0, 1'b1);
+					gdelay = $unsigned($random(seed)) % 6;
+					t = 0;
+					while (granted || (busy && t < 20000) || fl_req) begin
+						tick;
+						t = t + 1;
+					end
+				end
+				if (nw == 0 || x_nq == 8)
+					send_quad(32'd0, 16'd0, 4'd0, 1'b1);	/* the end marker of the triangle */
+				t = 0;
+				while (busy && t < 20000) begin
+					tick;
+					t = t + 1;
+				end
+				if (busy) begin
+					e_warp = e_warp + 1;
+					$display("FAIL atg_rx_frag.warps: tri %0d stays busy", ntri);
+				end
+				ntri = ntri + 1;
+				rc = $fscanf(fd, "%s", kind);
+			end
+		end
+	endtask
+
 	initial begin
 		granted = 1'b0;
 		gdelay = 0;
@@ -199,64 +259,36 @@ module atg_rx_frag_tb;
 			e_warp = e_warp + 1;
 			$display("FAIL atg_rx_frag: no sim/vec/rx_frag.txt");
 		end
-		rc = $fscanf(fd, "%s", kind);
-		while (fd != 0 && kind == "T") begin
-			rc = $fscanf(fd, " %h %d %d\n", t_tri, vc, nw);
-			st_we = 1'b1;
-			st_idx = 9'h05B;
-			st_wdata = vc;
-			t_load = 1'b1;
-			tick;
-			st_we = 1'b0;
-			t_load = 1'b0;
-			for (i = 0; i < nw; i = i + 1) begin
-				rc = $fscanf(fd, "W %d\n", nq);
-				/* the warp's expectations, then its quads (the warp starts after its last) */
-				t = 0;
-				x_cov = 0;
-				x_nq = nq;
-				for (q = 0; q < nq; q = q + 1) begin
-					rc = $fscanf(fd, "Q %h %h %h\n", qx, qy, qc);
-					x_cov[4 * q +: 4] = qc;
-					for (j = 0; j < 4; j = j + 1) begin
-						rc = $fscanf(fd, "L %h %h %h %h %h %h\n", lw[0], lw[1], lw[2], lw[3],
-							lw[4], lw[5]);
-						for (t = 0; t < 6; t = t + 1)
-							x_reg[(4 * q + j) * 7 + t] = lw[t];
-						x_reg[(4 * q + j) * 7 + 6] = qc[j];
-					end
-					send_quad({qy, qx}, {3'd0, qc[3], 3'd0, qc[2], 3'd0, qc[1], 3'd0, qc[0]}, qc,
-						1'b0);
-				end
-				if (nq < 8)
-					send_quad(32'd0, 16'd0, 4'd0, 1'b1);
-				gdelay = $unsigned($random(seed)) % 6;
-				t = 0;
-				while (granted || (busy && t < 20000) || fl_req) begin
-					tick;
-					t = t + 1;
-				end
-			end
-			if (nw == 0 || x_nq == 8)
-				send_quad(32'd0, 16'd0, 4'd0, 1'b1);	/* the end marker of the triangle */
-			t = 0;
-			while (busy && t < 20000) begin
-				tick;
-				t = t + 1;
-			end
-			if (busy) begin
-				e_warp = e_warp + 1;
-				$display("FAIL atg_rx_frag.warps: tri %0d stays busy", ntri);
-			end
-			ntri = ntri + 1;
-			rc = $fscanf(fd, "%s", kind);
-		end
+		frag_file;
 		$display("atg_rx_frag: %0d triangles, %0d warps", ntri, nwarp);
 		if (e_copy == 0)
 			$display("PASS atg_rx_frag.copy");
 		if (e_warp == 0 && ntri == 20)
 			$display("PASS atg_rx_frag.warps");
 		$fclose(fd);
+
+		/* r3: DEPTH_CLAMP[1] (CAPS[30]) leaves the depth unclamped. */
+		e0 = e_copy + e_warp;
+		st_we = 1'b1;
+		st_idx = 9'h059;
+		st_wdata = 32'd2;
+		tick;
+		st_we = 1'b0;
+		ntri = 0;
+		fd = $fopen("sim/vec/rx_frag_dc.txt", "r");
+		if (fd == 0) begin
+			e_warp = e_warp + 1;
+			$display("FAIL atg_rx_frag: no sim/vec/rx_frag_dc.txt");
+		end
+		frag_file;
+		$fclose(fd);
+		if (e_copy + e_warp == e0 && ntri == 20)
+			$display("PASS atg_rx_frag.r3");
+		st_we = 1'b1;
+		st_idx = 9'h059;
+		st_wdata = 32'd0;
+		tick;
+		st_we = 1'b0;
 
 		/* ms: the multisampling vectors. */
 		e0 = e_copy + e_warp;

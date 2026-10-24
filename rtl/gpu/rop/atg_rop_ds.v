@@ -191,7 +191,11 @@ module atg_rop_ds #(
 				d_xy <= q_xy;
 				d_color <= q_dbg ? {4{dbgf[3], dbgf[2], dbgf[1], dbgf[0]}} : q_color;
 				d_beat <= q_beat;
+`ifdef MUT_DS_BEAT
+				if (1'b0)
+`else
 				if (!q_beat[0])
+`endif
 					st <= S_OUT;	/* a later beat: the first one's samples */
 				else begin
 					mask <= q_smask;

@@ -778,16 +778,17 @@ def warps(r):
     return [quads[k:k + 8] for k in range(0, len(quads), 8)]
 
 
-def frag_lane(r, x, y):
+def frag_lane(r, x, y, clamp=True):
     """r0-r5 of the lane at pixel (x, y): b0, b1, b2, z, x + 0.5, y + 0.5
-    (spec atg_rx_frag §4, its operation order)."""
+    (spec atg_rx_frag §4, its operation order); clamp: z to [0, 1] (not
+    with DEPTH_CLAMP[1])."""
     bx0, by0 = r['bbox'][0], r['bbox'][1]
     fi, fj = int2f(x - bx0), int2f(y - by0)
 
     def ev(p):
         a, b, c = r[p]
         return fadd(fadd(fmul(a, fi), fmul(b, fj)), c)
-    z = fclamp01(ev('z'))
+    z = fclamp01(ev('z')) if clamp else ev('z')
     rw = fdiv(ONE, ev('w'))
     b0 = fmul(ev('b0'), rw)
     b1 = fmul(ev('b1'), rw)
