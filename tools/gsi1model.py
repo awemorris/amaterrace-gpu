@@ -25,21 +25,23 @@
 # the start.  wgx/nwgx are 0 and lidn is the lane (atg_su_sched's warp
 # word).  The warps run one after the other in slot order.  Side effects
 # (sw, atom, sts, exp) take the lanes in EXEC, in the mask and not KILLED
-# (design §3.1, M10).  exp of a fragment warp: targets 0x100-0x103 (COLOR0),
-# 0x104 (DEPTH) and 0x105 (SAMPLE_MASK, docs/ghci.md section 12.11: the
-# last value written, bits 3:0); a lane is exported once one of them ran
-# for it.  The lane's sample mask is r6 as written before the start (the
+# (design §3.1, M10).  exp of a fragment warp: targets 0x100 + 16 k + c
+# (colour attachment k, component c), 0x104 (DEPTH) and 0x105 (SAMPLE_MASK,
+# docs/ghci.md section 12.11: the last value written, bits 3:0); a lane is
+# exported once one of them ran for it.  The lane's sample mask is r6 as written before the start (the
 # rasterizer's sample mask; 15 when the init file leaves r6 unset) ANDed
 # with the last SAMPLE_MASK value.
-# --exp-out: the quads the ROP gets (atg_su_exp), fragment warps in
-# sequence order, the quads with coverage (packed from lane 0) in order:
-# the number of quads, then per quad 22 words: {seq[15:0], 7'd0, last,
-# 4'd0, mask[3:0]} with mask = covered and exported lanes whose sample
-# mask is not 0, {y, x} =
-# floor of r4 and r5 of the quad's lane 0, and per lane 0..3 COLOR0 RGBA
-# and the depth (exported, else r3 as written before the start; 0 for a
-# lane not in mask).  exp of a vertex warp: targets 0x000-0x003 (PT words
-# 0-3) and 0x010+v, v < --vary (PT word 4+v).  --ms-out: the same quads,
+# --exp-out: the beats the ROP gets (atg_su_exp), fragment warps in
+# sequence order, the quads with coverage (packed from lane 0) in order,
+# per quad one beat per colour attachment the warp exported (ascending), or
+# one beat without colour: the number of beats, then per beat 22 words:
+# {seq[15:0], 1'd0, rt[1:0], qlast, qfirst, nocol, 1'd0, last, 4'd0,
+# mask[3:0]} with mask = covered and exported lanes whose sample mask is
+# not 0 and last = the warp's last beat, {y, x} = floor of r4 and r5 of the
+# quad's lane 0, and per lane 0..3 attachment rt's RGBA and the depth
+# (exported, else r3 as written before the start; 0 for a lane not in
+# mask).  exp of a vertex warp: targets 0x000-0x003 (PT words
+# 0-3) and 0x010+v, v < --vary (PT word 4+v).  --ms-out: the same beats,
 # one word each: {12'd0, zexp[3:0], smask[15:0]} (zexp: the lane exported
 # DEPTH; smask bit 4 l + s: the sample mask of lane l, 0 for a lane not in
 # mask).  --pt-out: for the one
@@ -171,7 +173,8 @@ class Machine:
             exec_init = exec_m
         else:
             exec_m, exec_init = g["exec"], g["mask"]
-            col = [[0] * 4 for _ in range(32)]
+            col = [[0] * 16 for _ in range(32)]
+            rtw = [0]
             dep = [None] * 32
             xp = 0
             smv = [None] * 32
@@ -311,7 +314,7 @@ class Machine:
                     killed |= bt & exec_m
                 elif op == 13:
                     if g is not None and g["kind"] == 1:
-                        self.xexp[k] = (col, dep, xp, smv)
+                        self.xexp[k] = (col, dep, xp, smv, rtw[0])
                     return
                 elif op == 14:
                     yield pc
@@ -325,13 +328,15 @@ class Machine:
                     if not side >> ln & 1:
                         continue
                     a, b, c = operands(ln)
-                    if g["kind"] == 1 and 0x100 <= t <= 0x105:
+                    if g["kind"] == 1 and (t in (0x104, 0x105) or
+                                           (t >> 6 == 4 and not t & 12)):
                         if t == 0x104:
                             dep[ln] = b
                         elif t == 0x105:
                             smv[ln] = b & 15
                         else:
-                            col[ln][t - 0x100] = b
+                            col[ln][4 * (t >> 4 & 3) + (t & 3)] = b
+                            rtw[0] |= 1 << (t >> 4 & 3)
                         xp |= 1 << ln
                     elif g["kind"] == 0 and t < 4:
                         self.pt[ln][t] = b
@@ -410,7 +415,8 @@ def write_exports(path, m, gw, init, ms_path=None):
     msw = []
     frags = sorted((g["seq"], k) for k, g in enumerate(gw) if g is not None and g["kind"] == 1)
     for seq, k in frags:
-        col, dep, xp, smv = m.xexp[k]
+        col, dep, xp, smv, rtw = m.xexp[k]
+        rts = [i for i in range(4) if rtw >> i & 1]
         cov = gw[k]["mask"]
 
         def smask(ln):
@@ -425,18 +431,22 @@ def write_exports(path, m, gw, init, ms_path=None):
             mask &= sum(1 << i for i in range(4) if smask(4 * q + i))
             sm = sum(smask(4 * q + i) << (4 * i) for i in range(4) if mask >> i & 1)
             ze = sum(1 << i for i in range(4) if mask >> i & 1 and dep[4 * q + i] is not None)
-            msw.append(ze << 16 | sm)
-            last = 1 if q == nq - 1 else 0
-            out.append(seq << 16 | last << 8 | mask)
             x, y = floor_f32(init[k][4][4 * q]), floor_f32(init[k][5][4 * q])
-            out.append(y << 16 | x)
-            for i in range(4):
-                ln = 4 * q + i
-                if mask >> i & 1:
-                    d = dep[ln] if dep[ln] is not None else init[k][3][ln]
-                    out += col[ln] + [d]
-                else:
-                    out += [0] * 5
+            beats = rts if rts else [None]
+            for bi, rt in enumerate(beats):
+                qlast = 1 if bi == len(beats) - 1 else 0
+                last = 1 if q == nq - 1 and qlast else 0
+                msw.append(ze << 16 | sm)
+                out.append(seq << 16 | (rt or 0) << 13 | qlast << 12 | (1 if bi == 0 else 0) << 11 |
+                           (1 if rt is None else 0) << 10 | last << 8 | mask)
+                out.append(y << 16 | x)
+                for i in range(4):
+                    ln = 4 * q + i
+                    if mask >> i & 1:
+                        d = dep[ln] if dep[ln] is not None else init[k][3][ln]
+                        out += col[ln][4 * (rt or 0):4 * (rt or 0) + 4] + [d]
+                    else:
+                        out += [0] * 5
     with open(path, "w") as f:
         f.write("%08x\n" % (len(out) // 22))
         for v in out:

@@ -11,7 +11,10 @@
  * colour behind am_amb_mux).
  *
  * Wiring of its children (atg_rop_order → atg_rop_ms → atg_rop_ds →
- * atg_rop_wb with atg_rop_blend); see spec/gpu/rop/atg_rop.md.
+ * atg_rop_wb with atg_rop_blend, atg_rop_occ); the SU's quads come as one
+ * beat per colour attachment (CAPS[30]), and the occlusion counter takes
+ * the samples of each quad's first beat after atg_rop_ds; see
+ * spec/gpu/rop/atg_rop.md.
  */
 
 `timescale 1ns / 1ps
@@ -40,7 +43,7 @@ module atg_rop #(
 	input wire [127:0] ex_depth,
 	input wire ex_last,
 	output wire [15:0] ex_next,
-	input wire [148:0] ex_ms,	/* {front, d_s, zexp, smask} (atg_su_exp) */
+	input wire [153:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} (atg_su_exp) */
 	/* Direct fragments to the ROP (no SU: DEBUG_COLOR) */
 	input wire dx_valid,
 	output wire dx_ready,
@@ -74,7 +77,8 @@ module atg_rop #(
 	wire [3:0] q_mask;
 	wire [511:0] q_color;
 	wire [127:0] q_depth;
-	wire [148:0] q_ms;
+	wire [153:0] q_aux;
+	wire [3:0] m_beat, d_beat;
 	wire m_valid, m_ready, m_dbg, m_front, ms_busy;
 	wire [31:0] m_xy;
 	wire [15:0] m_smask;
@@ -87,6 +91,7 @@ module atg_rop #(
 	wire [511:0] b_src;
 	wire [127:0] b_dst, b_pix;
 	wire [3:0] b_mask;
+	wire [1:0] b_rt;
 	wire order_busy, ds_busy, wb_busy;
 	wire ds_req_valid, ds_req_ready, ds_req_write, ds_rsp_valid, ds_rsp_write, ds_rsp_error;
 	wire [ADDR_W-LINE_SHIFT-1:0] ds_req_line;
@@ -120,33 +125,33 @@ module atg_rop #(
 		.clk(clk), .rst_n(rst_n),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
-		.ex_next(ex_next), .ex_ms(ex_ms),
+		.ex_next(ex_next), .ex_aux(ex_aux),
 		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 		.ord_valid(ord_valid), .ord_seq(ord_seq),
 		.q_valid(q_valid), .q_ready(q_ready), .q_xy(q_xy), .q_mask(q_mask), .q_color(q_color),
-		.q_depth(q_depth), .q_dbg(q_dbg), .q_ms(q_ms), .busy(order_busy)
+		.q_depth(q_depth), .q_dbg(q_dbg), .q_aux(q_aux), .busy(order_busy)
 	);
 
 	atg_rop_ms ms (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.i_valid(q_valid), .i_ready(q_ready), .i_xy(q_xy), .i_mask(q_mask), .i_color(q_color),
-		.i_depth(q_depth), .i_dbg(q_dbg), .i_ms(q_ms),
+		.i_depth(q_depth), .i_dbg(q_dbg), .i_aux(q_aux),
 		.o_valid(m_valid), .o_ready(m_ready), .o_xy(m_xy), .o_smask(m_smask),
-		.o_color(m_color), .o_sdepth(m_sdepth), .o_dbg(m_dbg), .o_front(m_front),
+		.o_color(m_color), .o_sdepth(m_sdepth), .o_dbg(m_dbg), .o_front(m_front), .o_beat(m_beat),
 		.busy(ms_busy)
 	);
 
 	atg_rop_ds #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .STENCIL(STENCIL)) ds (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.q_valid(m_valid), .q_ready(m_ready), .q_xy(m_xy), .q_smask(m_smask), .q_color(m_color),
-		.q_sdepth(m_sdepth), .q_dbg(m_dbg), .q_front(m_front),
+		.q_sdepth(m_sdepth), .q_dbg(m_dbg), .q_front(m_front), .q_beat(m_beat),
 		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_smask(d_smask), .d_color(d_color),
-		.busy(ds_busy),
+		.d_beat(d_beat), .busy(ds_busy),
 		.req_valid(ds_req_valid), .req_ready(ds_req_ready), .req_write(ds_req_write), .req_line(ds_req_line), .req_be(ds_req_be), .req_wdata(ds_req_wdata), .req_tag(ds_req_tag), .rsp_valid(ds_rsp_valid), .rsp_write(ds_rsp_write), .rsp_tag(ds_rsp_tag), .rsp_rdata(ds_rsp_rdata), .rsp_error(ds_rsp_error)
 	);
 
-	/* The occlusion counter: the samples that pass atg_rop_ds. */
+	/* The occlusion counter: the samples that pass atg_rop_ds, once per quad. */
 	reg [4:0] d_pop;
 	integer pk;
 	always @(*) begin
@@ -156,19 +161,20 @@ module atg_rop #(
 	end
 	atg_rop_occ occ (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-		.inc_valid(d_valid && d_ready), .inc_n(d_pop), .clear(occ_clear), .count(occ_count)
+		.inc_valid(d_valid && d_ready && d_beat[0]), .inc_n(d_pop), .clear(occ_clear), .count(occ_count)
 	);
 
 	atg_rop_blend blend (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-		.b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask), .b_rt(2'd0),
+		.b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),
 		.b_rvalid(b_rvalid), .b_pix(b_pix)
 	);
 
 	atg_rop_wb #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) wb (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_smask(d_smask), .d_color(d_color),
-		.b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask),
+		.d_rt(d_beat[3:2]), .d_nocol(d_beat[1]),
+		.b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),
 		.b_rvalid(b_rvalid), .b_pix(b_pix), .busy(wb_busy),
 		.req_valid(wb_req_valid), .req_ready(wb_req_ready), .req_write(wb_req_write), .req_line(wb_req_line), .req_be(wb_req_be), .req_wdata(wb_req_wdata), .req_tag(wb_req_tag), .rsp_valid(wb_rsp_valid), .rsp_write(wb_rsp_write), .rsp_tag(wb_rsp_tag), .rsp_rdata(wb_rsp_rdata), .rsp_error(wb_rsp_error)
 	);

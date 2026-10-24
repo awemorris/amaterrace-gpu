@@ -13,7 +13,7 @@
  * sizes at once.  Per run: the STATE (MS_CTRL, DEPTH, RT_FORMAT, BLEND,
  * WRITE_MASK, DEBUG_COLOR; the RT and DS of a 16x8 image in the
  * sample-interleaved layout), the RT and DS images, 60 quads in sequence
- * order (the SU's, with ex_ms: the sample mask, the lanes that exported
+ * order (the SU's, with ex_aux: the sample mask, the lanes that exported
  * DEPTH, d_s; and some of the direct path's), then both images compared
  * word for word with the model's once the ROP is idle.  Prints:
  *   PASS atg_rop_ms.depth     4 samples: D32F and D24S8, BGRA8, RGBA8,
@@ -55,7 +55,7 @@ module atg_rop_ms_tbc #(
 	reg [3:0] ex_mask = 0, dx_mask = 0;
 	reg [511:0] ex_color = 0;
 	reg [127:0] ex_depth = 0, dx_depth = 0;
-	reg [148:0] ex_ms = 0;
+	reg [153:0] ex_aux = 0;
 	wire busy, ex_ready, dx_ready;
 	wire [15:0] ex_next;
 	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
@@ -68,7 +68,7 @@ module atg_rop_ms_tbc #(
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.busy(busy), .ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
-		.ex_next(ex_next), .ex_ms(ex_ms),
+		.ex_next(ex_next), .ex_aux(ex_aux),
 		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 		.ord_valid(1'b0), .ord_seq(16'd0), .occ_count(), .occ_clear(1'b0),
@@ -169,7 +169,7 @@ module atg_rop_ms_tbc #(
 						ex_mask <= m;
 						ex_color <= cv;
 						ex_depth <= zv;
-						ex_ms <= msv;
+						ex_aux <= {2'd0, 3'b110, msv};
 						@(posedge clk);
 						while (!ex_ready)
 							@(posedge clk);

@@ -25,7 +25,7 @@
  *     has started, so the slots are 0-3), and the vertex warp's PT entries
  *     read through pt_* (gfx.pexp; the words it must not write still X).
  *     ms: the fragment warps' r6 (the RX's sample mask, some lanes 0) and
- *     two SAMPLE_MASK exports (0x105): the quads' masks and their ex_ms
+ *     two SAMPLE_MASK exports (0x105): the quads' masks and their ex_aux
  *     sample masks and DEPTH lanes on the mask's lanes (gfx.msexp).
  *   loop: the closed loop of design §3.8 with the testbench's VF and RX:
  *     NV vertex warps (gfxv.s: r0 to the PT) with random vl_mask (also 0);
@@ -101,7 +101,7 @@ module atg_su_gfx_chk #(
 	wire [3:0] ex_mask;
 	wire [511:0] ex_color;
 	wire [127:0] ex_depth;
-	wire [148:0] ex_ms;
+	wire [153:0] ex_aux;
 	reg [31:0] msexp [0:32];
 	wire i_req_valid, i_req_ready, i_req_write, i_rsp_valid, i_rsp_write, i_rsp_error;
 	wire [26:0] i_req_line;
@@ -150,7 +150,7 @@ module atg_su_gfx_chk #(
 		.tr_data(512'd0), .tr_last(1'b0),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
-		.ex_next(ex_next), .ex_ms(ex_ms),
+		.ex_next(ex_next), .ex_aux(ex_aux),
 		.d_req_valid(d_req_valid), .d_req_ready(d_req_ready), .d_req_write(d_req_write),
 		.d_req_line(d_req_line), .d_req_be(d_req_be), .d_req_wdata(d_req_wdata),
 		.d_req_tag(d_req_tag), .d_rsp_valid(d_rsp_valid), .d_rsp_write(d_rsp_write),
@@ -285,6 +285,7 @@ module atg_su_gfx_chk #(
 			if (!loop_mode) begin
 				if (nq_got >= xexp[0] || ex_seq !== xexp[1 + 22 * nq_got][31:16] ||
 				    ex_last !== xexp[1 + 22 * nq_got][8] || ex_mask !== xexp[1 + 22 * nq_got][3:0] ||
+				    ex_aux[153:149] !== xexp[1 + 22 * nq_got][14:10] ||
 				    ex_xy !== xexp[2 + 22 * nq_got]) begin
 					if (q_err < 4)
 						$display("FAIL atg_su_gfx NPHYS %0d: quad %0d seq %0d last %b mask %b xy %h, want %h %h",
@@ -292,12 +293,12 @@ module atg_su_gfx_chk #(
 							xexp[1 + 22 * nq_got], xexp[2 + 22 * nq_got]);
 					q_err = q_err + 1;
 				end else begin
-					if ((ex_ms[15:0] & {{4{ex_mask[3]}}, {4{ex_mask[2]}}, {4{ex_mask[1]}},
+					if ((ex_aux[15:0] & {{4{ex_mask[3]}}, {4{ex_mask[2]}}, {4{ex_mask[1]}},
 					     {4{ex_mask[0]}}}) !== msexp[nq_got][15:0] ||
-					    (ex_ms[19:16] & ex_mask) !== msexp[nq_got][19:16]) begin
+					    (ex_aux[19:16] & ex_mask) !== msexp[nq_got][19:16]) begin
 						if (e_ms < 4)
-							$display("FAIL atg_su_gfx.ms NPHYS %0d: quad %0d ex_ms %h mask %b, want %h",
-								NPHYS, nq_got, ex_ms[19:0], ex_mask, msexp[nq_got]);
+							$display("FAIL atg_su_gfx.ms NPHYS %0d: quad %0d ex_aux %h mask %b, want %h",
+								NPHYS, nq_got, ex_aux[19:0], ex_mask, msexp[nq_got]);
 						e_ms = e_ms + 1;
 					end
 					for (li = 0; li < 4; li = li + 1)

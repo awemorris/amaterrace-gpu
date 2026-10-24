@@ -24,6 +24,11 @@
  * 4 x + s of the row), so a quad's row is one line still; the test runs
  * per sample of the row's lanes (8 entries; 2 with one sample), each with
  * its own depth (q_sdepth), and the surviving samples go on (d_smask).
+ * Beats (CAPS[30]): a quad comes as one beat per colour attachment
+ * (q_beat = {rt, nocol, first}); the first beat is tested and written,
+ * the later ones go on with its surviving samples without a memory access
+ * (dropped with it).  A beat without colour goes on too (atg_rop counts
+ * the first beats' samples for occlusion queries; atg_rop_wb drops it).
  * See spec/gpu/rop/atg_rop_ds.md.
  */
 
@@ -51,12 +56,14 @@ module atg_rop_ds #(
 	input wire [511:0] q_sdepth,	/* sample s of lane l at 32 (4 l + s) */
 	input wire q_dbg,
 	input wire q_front,	/* front facing (CAPS[30]; the direct path: 1) */
+	input wire [3:0] q_beat,	/* {rt, nocol, first} */
 	/* To atg_rop_wb */
 	output reg d_valid,
 	input wire d_ready,
 	output reg [31:0] d_xy,
 	output reg [15:0] d_smask,
 	output reg [511:0] d_color,
+	output reg [3:0] d_beat,
 	output wire busy,
 	/* AMB client port (design §4.1) */
 	output reg req_valid,
@@ -177,17 +184,23 @@ module atg_rop_ds #(
 			d_valid <= 1'b0;
 			req_valid <= 1'b0;
 			wait_rsp <= 1'b0;
+			pm <= 16'd0;
 		end else case (st)
 		S_IDLE:
 			if (q_valid) begin
 				d_xy <= q_xy;
 				d_color <= q_dbg ? {4{dbgf[3], dbgf[2], dbgf[1], dbgf[0]}} : q_color;
-				mask <= q_smask;
-				pm <= q_smask;
-				z <= q_sdepth;
-				front <= q_front || q_dbg;
-				r <= 1'b0;
-				st <= q_smask == 16'd0 ? S_IDLE : test ? S_ROW : S_OUT;
+				d_beat <= q_beat;
+				if (!q_beat[0])
+					st <= S_OUT;	/* a later beat: the first one's samples */
+				else begin
+					mask <= q_smask;
+					pm <= q_smask;
+					z <= q_sdepth;
+					front <= q_front || q_dbg;
+					r <= 1'b0;
+					st <= q_smask == 16'd0 ? S_IDLE : test ? S_ROW : S_OUT;
+				end
 			end
 		S_ROW:
 			/* the row's address; skip a row without lanes */

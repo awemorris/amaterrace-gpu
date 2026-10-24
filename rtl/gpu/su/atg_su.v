@@ -111,7 +111,7 @@ module atg_su #(
 	output wire [127:0] ex_depth,
 	output wire ex_last,
 	input wire [15:0] ex_next,
-	output wire [148:0] ex_ms,	/* {front, d_s, zexp, smask} (atg_su_exp) */
+	output wire [153:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} (atg_su_exp) */
 	/* AMB client port (design §4.1) */
 	output wire d_req_valid,
 	input wire d_req_ready,
@@ -594,7 +594,7 @@ module atg_su #(
 		.ex_next(ex_next),
 		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane), .fl_data(fl_data),
 		.fl_go(fl_go), .fl_info(fl_info),
-		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_ms(ex_ms),
+		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_aux(ex_aux),
 		.xr_valid(xr_valid), .xr_warp(xr_warp),
 		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp)
 	);

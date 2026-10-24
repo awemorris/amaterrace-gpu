@@ -51,7 +51,8 @@ OPC = dict(OP=0x33, OPIMM=0x13, LUI=0x37, LOAD=0x03, STORE=0x23, BRANCH=0x63, OP
 # The instruction table: mnemonic -> (format, opcode, funct3, funct7 (or rs2 / None),
 # unit, op, class, operands).  Formats: R, R4, I, S, B, U.  The operand string lists
 # the assembly operands: d rd, 1/2/3 sources, i immediate, m imm(rs1), a (rs1),
-# l label, t sub (texture slot), x export target (S immediate).
+# l label, t sub (texture slot), x export target (S immediate; a number or
+# color0.r-color3.a, 0x100 + 16 k + c).
 T = {}
 
 
@@ -362,6 +363,17 @@ def num(t):
     return int(t.strip(), 0)
 
 
+# Export targets by name (docs/ghci.md section 12.12): colourK.c is
+# 0x100 + 16 K + c, K = 0-3, c = r, g, b, a.
+EXP_NAMES = {"color%d.%s" % (k, ch): 0x100 + 16 * k + c
+             for k in range(4) for c, ch in enumerate("rgba")}
+
+
+def exp_target(t):
+    t = t.strip()
+    return EXP_NAMES[t] if t in EXP_NAMES else num(t)
+
+
 def split_imm(v, bits_lo=12):
     lo = sext(v, bits_lo)
     hi = (v - lo) >> bits_lo
@@ -422,7 +434,9 @@ def assemble_one(mn, args, pc, labels):
                 rs3 = n
         elif o == "a":
             rs1 = reg_num(a.strip("()"))
-        elif o in "iwx":
+        elif o == "x":
+            imm = exp_target(a)
+        elif o in "iw":
             imm = num(a)
         elif o == "m":
             mm = re.fullmatch(r"(.*)\((.*)\)", a)
