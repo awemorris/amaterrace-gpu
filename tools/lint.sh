@@ -28,6 +28,9 @@ for f in $srcs; do
 	m=$(basename "$f" .v)
 	run "$m" --top-module "$m"
 done
+# The format functions of include/atg_fmt_*.vh, through a lint-only top
+# (sim/lint/atg_fmt_lint.v) until the blocks that use them exist.
+run "atg_fmt functions (lint top)" --top-module atg_fmt_lint sim/lint/atg_fmt_lint.v
 run "atg_top (defaults: 32-byte lines, 64-bit AXI)" --top-module atg_top
 kc="-GLINE_BYTES=64 -GLINE_SHIFT=6 -GDATA_W=512 -GS_ID_W=4 -GS_LEN_W=8"
 run "atg_top (KC705: 64-byte lines, 512-bit AXI)" --top-module atg_top $kc
