@@ -111,7 +111,7 @@ One SET_REG pair per 2 cycles (one dword per cycle); kick 1 cycle after the head
 `sim/tb/atg_cp_seq_tb.v` prints, in this order:
 
 - `PASS atg_cp_seq.setreg` — SET_REG pairs reach uop_we in order; index 512 faults
-- `PASS atg_cp_seq.kicks` — BLIT/DRAW/DISPATCH/DRAW_RAW write their payload to STATE then pulse their kick
+- `PASS atg_cp_seq.kicks` — BLIT/DRAW/DISPATCH/DRAW_RAW write their payload to STATE then pulse their kick; SET_REG into the BLT and the VF ranges waits for that block
 - `PASS atg_cp_seq.wait` — WAIT_IDLE with a mask waits only for those busy bits
 - `PASS atg_cp_seq.fence` — FENCE waits for idle then requests; RESULT waits for f_busy 0
 - `PASS atg_cp_seq.source` — fw_active switches the source; µops of the two sources never interleave
@@ -127,3 +127,5 @@ design §2.4.3 (µops), §2.5 (FENCE), §3.8 (DRAW order), §2.3 (STATE).
 Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  397 lines, one FSM (IDLE, PAY, EXEC, POST, FREQ, FWAIT, VSYNC, DEAD).  Spec
 change in p004: the parameters `UNITS`, `HAS_VSYNC`.  Not checked against real VF/SU/RX blocks (they
 are later Phases); the TB uses busy models.
+
+WS288 p009 part B1 (P1): SET_REG into the VF's ranges (STATE 0x020-0x04F and ATTR_DST 0x1C0-0x1CF) waits while the VF is busy (busy_in[2]), like the BLT, RX and ROP ranges (the VF reads its STATE during the draw).  406 lines (the earlier count of 397 was before later changes; the line limit is over by 6, unchanged by this step).

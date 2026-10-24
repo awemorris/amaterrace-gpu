@@ -52,14 +52,14 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **Primitive table writes (from atg_rx through the atg_su ports fl_pw_*)** | | | |
 | `pw_we` | in | 1 | Write one word. |
 | `pw_warp` | in | WARP_W | Warp slot (fl_slot). |
-| `pw_addr` | in | 12 | {primitive[2:0], vertex[1:0], word[5:0]}. |
+| `pw_addr` | in | 12 | [10:8] primitive, [7:6] vertex, [5:0] word ([11] 0); 0xFFF: the warp's primitive map. |
 | `pw_data` | in | 32 | Data. |
 
 25 ports.
 
 ## 4. Behaviour
 
-lda rd, imm: each lane reads word imm[7:2] of vertex imm[1:0] of its own primitive (the lane's primitive index comes from the warp's primitive map, written by RX at word address 0xFFF... in v1 each warp holds one primitive per quad group; the map is the low bits of fl_info).  NPHYS/4 replicas for throughput (design §3.5).
+lda rd, imm: each lane reads word imm[7:2] (the PT word: 0-3 position, 4.. varyings) of vertex imm[1:0] of its quad's primitive; 0 for a word at or beyond VARY_WORDS or vertex 3.  The quad's primitive comes from the warp's primitive map, written by RX at pw_addr 0xFFF: bits 3q+2..3q are quad q's primitive (RX writes the map for every warp; v1's RX puts one triangle in a warp, map 0).  The result goes to atg_su_wb SHORT_LAT cycles after x_valid with s_lanes = the EXEC lanes.  NPHYS/4 copies of the table, one read per quad of the group, read asynchronously (design §3.5).
 
 ## 5. State machine
 
@@ -77,7 +77,7 @@ None beyond the above.
 
 `sim/tb/atg_su_lda_tb.v` prints, in this order:
 
-- `PASS atg_su_lda.rw` — RX-style writes then lda reads for several primitives per warp
+- `PASS atg_su_lda.rw` — RX-style writes then lda reads for several primitives per warp (through the map), in the NPHYS 8 and 16 shapes
 - `PASS atg_su_lda` at the end.
 
 ## 9. References
@@ -86,4 +86,4 @@ design §3.4.1 (custom-1 lda), §3.5 (primitive table), §3.8 (clip).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p009 part B1 (P1, branch p1-su-gfx).  Readings of the earlier text: the pw_addr fields as above (12 bits hold 3 + 2 + 6, so [11] marks the map at 0xFFF), the map's layout (3 bits per quad, the earlier "low bits of fl_info" dropped: fl_info has no room), words past VARY_WORDS and vertex 3 read 0.  Ports and parameters unchanged.  Storage NWARPS × PRIMS × 3 × VARY_WORDS words × NPHYS/4 copies (ZYBO 4×8×3×20×2 = 3840 words: distributed RAM; sized for v1, not optimised).

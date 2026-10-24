@@ -258,7 +258,12 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
 }
 
 
-#ifdef RASTER
+#if defined(RASTER) || defined(SHADE)
+#ifdef SHADE
+#define SCENE_NAME "shade"
+#else
+#define SCENE_NAME "raster"
+#endif
 uint32_t crc_table[256];
 
 uint32_t crc32(const uint8_t *p, size_t n, uint32_t c = 0xFFFFFFFFu)
@@ -337,14 +342,15 @@ void write_png(const char *path, uint32_t base, unsigned w, unsigned h, unsigned
 	std::fclose(f);
 }
 
-/* The scene of sim/vec/raster_scene.txt (tools/rx-raster-scene.py) through
- * the ring; the colour and depth buffers against the model; the colour
- * buffer to build/verilator/raster.png. */
-int raster_main()
+/* The scene of sim/vec/raster_scene.txt (tools/rx-raster-scene.py; SHADE:
+ * sim/vec/shade_scene.txt, tools/rx-shade-scene.py) through the ring; the
+ * colour and depth buffers against the model; the colour buffer to
+ * build/verilator/raster.png (shade.png). */
+int scene_main()
 {
-	FILE *f = std::fopen("sim/vec/raster_scene.txt", "r");
+	FILE *f = std::fopen("sim/vec/" SCENE_NAME "_scene.txt", "r");
 	if (!f) {
-		std::printf("FAIL verilator raster: no sim/vec/raster_scene.txt\n");
+		std::printf("FAIL verilator " SCENE_NAME ": no sim/vec/" SCENE_NAME "_scene.txt\n");
 		return 1;
 	}
 	const uint32_t ring = 0x5F000;
@@ -375,10 +381,10 @@ int raster_main()
 	for (auto &e : exp)
 		if (peek32(e.first) != e.second)
 			bad++;
-	expect("raster words differing from the model", bad, 0);
-	write_png("build/verilator/raster.png", 0x20000, 64, 48, 256);
-	std::printf("verilator raster: %u ring words, %zu words checked, %llu cycles, "
-	    "build/verilator/raster.png\n", wp, exp.size(), (unsigned long long)cycles);
+	expect(SCENE_NAME " words differing from the model", bad, 0);
+	write_png("build/verilator/" SCENE_NAME ".png", 0x20000, 64, 48, 256);
+	std::printf("verilator " SCENE_NAME ": %u ring words, %zu words checked, %llu cycles, "
+	    "build/verilator/" SCENE_NAME ".png\n", wp, exp.size(), (unsigned long long)cycles);
 	return errors ? 1 : 0;
 }
 #endif
@@ -400,13 +406,13 @@ int main(int argc, char **argv)
 		tick();
 	top->rst_n = 1;
 	tick();
-#ifdef RASTER
+#if defined(RASTER) || defined(SHADE)
 	{
-		int rc = raster_main();
+		int rc = scene_main();
 		top->final();
 		delete top;
 		if (rc == 0)
-			std::printf("PASS verilator raster\n");
+			std::printf("PASS verilator " SCENE_NAME "\n");
 		return rc;
 	}
 #endif

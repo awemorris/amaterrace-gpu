@@ -33,3 +33,14 @@ timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 	exit 1
 }
 timeout 600 "$out/atg_top_raster"
+
+# The shaded scene (WS288 p009): HAS_VF, NSU 1, HAS_RX, HAS_ROP, the colour buffer to a PNG.
+timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
+	--top-module atg_top -GHAS_VF=1 -GNSU=1 -GHAS_RX=1 -GHAS_ROP=1 -Mdir "$out/obj-shade" \
+	-o "$out/atg_top_shade" -CFLAGS "-I$root/include -O1 -DSHADE" \
+	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build-shade.log" 2>&1 || {
+	tail -30 "$out/build-shade.log" >&2
+	echo "FAIL verilator shade (build, log $out/build-shade.log)"
+	exit 1
+}
+timeout 600 "$out/atg_top_shade"

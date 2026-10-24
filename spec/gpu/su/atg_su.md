@@ -6,7 +6,7 @@ RTL: `rtl/gpu/su/atg_su.v`.  Parent: atg_top (generate over NSU).  Implemented i
 
 One shader unit (design §3): the warp scheduler, the front end (fetch, I$, decode), the scoreboard issue stage, the register file and operand collection, the execution units on one execution bus, the write-back arbiter, and its memory ports (D$ client, I$+constant client, atomics), the VF/RX inputs, the PT, the TU and ROP ports and the reserved SA port.
 
-Children: `atg_su_sched`, `atg_su_fetch`, `atg_su_icache`, `atg_su_dec`, `atg_su_sb`, `atg_su_rf`, `atg_su_opd`, `atg_su_alu`, `atg_su_fpu`, `atg_su_pk`, `atg_su_lane`, `atg_su_lda`, `atg_su_exec`, `atg_su_lsu`, `atg_su_lds`, `atg_su_cbank`, `atg_su_tex`, `atg_su_xu`, `atg_su_div`, `atg_su_dcache`, `atg_su_exp`, `atg_su_rq`, `atg_su_wb`, `am_amb_mux`.
+Children: `atg_su_sched`, `atg_su_fetch`, `atg_su_icache`, `atg_su_dec`, `atg_su_sb`, `atg_su_rf`, `atg_su_opd`, `atg_su_alu`, `atg_su_fpu`, `atg_su_pk`, `atg_su_lane`, `atg_su_lda`, `atg_su_exec`, `atg_su_lsu`, `atg_su_lds`, `atg_su_cbank`, `atg_su_tex`, `atg_su_xu`, `atg_su_div`, `atg_su_dcache`, `atg_su_exp`, `atg_su_pt`, `atg_su_rq`, `atg_su_wb`, `am_amb_mux`.
 
 Wiring module (exempt from the port and line limits, spec/README.md).  Internal buses:
 front end `f_*` (sched → fetch), `ic_*` (fetch ↔ icache), `d_*` (fetch → dec), `u_*` (dec → sb),
@@ -92,6 +92,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `pt_rdata` | out | 32 | Data. |
 | `pt_free` | in | 1 | Free an entry. |
 | `pt_free_idx` | in | 8 | Entry. |
+| `pt_done` | out | 8 | Bit b: block b's vertex warp has ended (atg_su_pt; atg_top holds the VF's primitives of a block until then). |
 | **TU** | | | |
 | `tx_valid` | out | 1 | Request quad. |
 | `tx_ready` | in | 1 | Taken. |
@@ -169,7 +170,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fault` | out | 1 | ISA fault (FAULT kind 8). |
 | `fault_addr` | out | 32 | PC of the fault. |
 
-106 ports; 84 counting each AMB port and HCR snoop port as one group (spec/README.md).
+107 ports; 85 counting each AMB port and HCR snoop port as one group (spec/README.md).
 
 ## 4. Behaviour
 
@@ -198,3 +199,5 @@ design §3 (all), §3.6 (size), §3.7 (parameters per board), include/atg_su_uop
 ## 10. Status
 
 Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+
+WS288 p009 part B1 (P1): the new child `atg_su_pt` (the PT and its allocator, split off atg_su_exp; pt_take = vl_gnt with pt_warp = vl_slot, vl_go/vl_mask to it), the new output `pt_done`; atg_su_exp snoops fl_we/fl_slot/fl_reg/fl_lane/fl_data/fl_go/fl_info.

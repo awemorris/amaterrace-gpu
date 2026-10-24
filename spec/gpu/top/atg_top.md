@@ -62,6 +62,8 @@ Those of the children: register read 3 cycles minimum per AXI read; memory throu
 
 `sim/tb/atg_top_tb.v` → `PASS atg_top`: the GPU driven only through its host port (as `fpgareg` does on the ZYBO) against `axi_mem`, in the ZYBO shape (32-byte lines, 64-bit AXI) and the KC705 shape (64-byte lines, 512-bit AXI) at once; the full list of checks is in `spec/gpu/cp/atg_cp.md` §8 and `spec/gpu/blt/atg_blt.md` §8. `sim/verilator/run.sh` → `PASS verilator` (ZYBO shape, a C++ host using `include/ghci_regs.h`: identification, aperture, FILL and COPY against a C++ reference, DBG read-back). `tools/lint.sh` lints it as top in both shapes. Not checked: anything on the KC705 beyond lint and simulation (no KC705 top yet).
 
+`sim/tb/atg_top_shade_tb.v` → `PASS atg_top_shade` (WS288 p009): HAS_VF, NSU 1, HAS_RX, HAS_ROP in the ZYBO and KC705 shapes; the scene of `sim/vec/shade_scene.txt` (`tools/rx-shade-scene.py`: one DRAW of 24 triangles with per-vertex colours through the VF, GSI1 vertex and fragment programs, depth LESS, one near-plane clip; three vertex warps over both PT blocks) against the models (the scene harness `sim/tb/atg_top_scene.vh`, shared with `atg_top_raster_tb`).  `sim/verilator/run.sh` → `PASS verilator shade` with `build/verilator/shade.png`.
+
 ## 9. References
 
 - design.md §1.1 (blocks), §1.3 (clocks, reset domains), §3.6 (bitstream 1 size), §4.1 (MC clients), §7.6 (the top with block parameters).
@@ -96,3 +98,12 @@ response fields are per client now (`rsp_write_v`, `rsp_tag_v`, `rsp_rdata_v`, `
 each client is wired to its slice); `HIGH_MASK` (CP, and the outside client) sets the priority
 bit; `ROOT_CLIENT` = `C_EXT` when `EXT_CLIENT` (the KC705's DC one hop from the root).  The CP
 has no `rsp_tag` port yet, so `rsp_tag_v[7:0]` is collected in `unused_ok`.
+
+**WS288 p009 part B1 (P1)**: a primitive from the VF reaches the RX only while SU 0's `pt_done`
+bit of its PT block (prim_vtx[7:5]) is set, i.e. after the vertex warp that wrote the block has
+ended (design §3.8: the RX must not read the PT before the vertex shader's exports).  prim_ready
+to the VF is gated the same way.
+
+**WS288 p009 part B2 (P1)**: no change of the wiring (HAS_VF, the SU 0 links and the RX↔SU links
+existed from p023).  `sim/tb/atg_top_shade_tb.v` and the Verilator SHADE mode check the pipeline
+VF → SU (vertex) → PT → RX → SU (fragment) → ROP (§8).

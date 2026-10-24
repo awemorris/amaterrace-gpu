@@ -68,17 +68,22 @@ module atg_rx #(
 	wire [699:0] cl_tri;
 	wire sp_valid, sp_ready, sp_last;
 	wire [767:0] sp_tri;
-	wire c_pt_rd, s_pt_rd, s_pt_busy;
-	wire [7:0] c_pt_idx, s_pt_idx;
-	wire [5:0] c_pt_word, s_pt_word;
-	wire sq_req;
+	wire c_pt_rd, f_pt_rd, f_pt_busy;
+	wire [7:0] c_pt_idx, f_pt_idx;
+	wire [5:0] c_pt_word, f_pt_word;
+	wire s_sq_req, f_sq_req, sq_req;
 	wire [15:0] sq_seq;
-	wire clip_busy, setup_busy, scan_busy;
+	wire clip_busy, setup_busy, scan_busy, frag_busy;
+	wire fq_valid, fq_ready, fq_end;
+	wire [31:0] fq_xy;
+	wire [3:0] fq_cov;
 
-	/* One PT read port: the scan has priority, the clip waits while pt_busy. */
-	assign pt_rd = c_pt_rd || s_pt_rd;
-	assign pt_idx = s_pt_rd ? s_pt_idx : c_pt_idx;
-	assign pt_word = s_pt_rd ? s_pt_word : c_pt_word;
+	/* One PT read port: atg_rx_frag's copy has priority, the clip waits while pt_busy. */
+	assign pt_rd = c_pt_rd || f_pt_rd;
+	assign pt_idx = f_pt_rd ? f_pt_idx : c_pt_idx;
+	assign pt_word = f_pt_rd ? f_pt_word : c_pt_word;
+	/* Sequence numbers: the scan's (direct quads) and the warps' never overlap. */
+	assign sq_req = s_sq_req || f_sq_req;
 
 	atg_rx_clip clip (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
@@ -86,7 +91,7 @@ module atg_rx #(
 		.prim_valid(prim_valid), .prim_ready(prim_ready), .prim_vtx(prim_vtx),
 		.prim_free(prim_free), .prim_last(prim_last),
 		.pt_rd(c_pt_rd), .pt_idx(c_pt_idx), .pt_word(c_pt_word), .pt_rdata(pt_rdata),
-		.pt_busy(s_pt_busy),
+		.pt_busy(f_pt_busy),
 		.cl_valid(cl_valid), .cl_ready(cl_ready), .cl_tri(cl_tri), .cl_last(cl_last),
 		.busy(clip_busy)
 	);
@@ -101,14 +106,25 @@ module atg_rx #(
 	atg_rx_scan #(.HAS_SU(HAS_SU)) scan (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
-		.pt_rd(s_pt_rd), .pt_idx(s_pt_idx), .pt_word(s_pt_word), .pt_rdata(pt_rdata),
-		.pt_busy(s_pt_busy), .pt_free(pt_free), .pt_free_idx(pt_free_idx),
+		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
+		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_cov(fq_cov),
+		.fq_end(fq_end), .f_busy(frag_busy),
+		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
+		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
+		.sq_req(s_sq_req), .sq_seq(sq_seq), .busy(scan_busy)
+	);
+
+	atg_rx_frag frag (
+		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.t_load(sp_valid && sp_ready), .t_tri(sp_tri),
+		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_cov(fq_cov),
+		.fq_end(fq_end), .busy(frag_busy),
+		.pt_rd(f_pt_rd), .pt_idx(f_pt_idx), .pt_word(f_pt_word), .pt_rdata(pt_rdata),
+		.pt_busy(f_pt_busy),
 		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_we(fl_we), .fl_reg(fl_reg), .fl_lane(fl_lane),
 		.fl_data(fl_data), .fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data),
 		.fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
-		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
-		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
-		.sq_req(sq_req), .sq_seq(sq_seq), .busy(scan_busy)
+		.sq_req(f_sq_req), .sq_seq(sq_seq)
 	);
 
 	atg_rx_order order (
@@ -116,7 +132,7 @@ module atg_rx #(
 		.ord_valid(ord_valid), .ord_seq(ord_seq)
 	);
 
-	assign busy = clip_busy || setup_busy || scan_busy;
+	assign busy = clip_busy || setup_busy || scan_busy || frag_busy;
 endmodule
 
 `default_nettype wire

@@ -29,12 +29,12 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `prim_vtx` | in | 24 | Three PT entries, v0 in [7:0] (provoking vertex first per PROVOKING). |
 | `prim_free` | in | 3 | Vertex i is used for the last time (RX frees its PT entry after this primitive). |
 | `prim_last` | in | 1 | Last primitive of the draw (a draw with no primitive sends none, atg_vf_asm §7). |
-| **PT read (shared with atg_rx_scan in atg_rx: scan has priority)** | | | |
+| **PT read (shared with atg_rx_frag in atg_rx: frag has priority)** | | | |
 | `pt_rd` | out | 1 | Read one PT word. |
 | `pt_idx` | out | 8 | Entry. |
 | `pt_word` | out | 6 | Word. |
 | `pt_rdata` | in | 32 | Data, next cycle. |
-| `pt_busy` | in | 1 | atg_rx_scan is using the PT port: do not read. |
+| `pt_busy` | in | 1 | atg_rx_frag is using the PT port: do not read. |
 | **Triangles to atg_rx_setup** | | | |
 | `cl_valid` | out | 1 | A triangle (after clipping). |
 | `cl_ready` | in | 1 | Taken. |

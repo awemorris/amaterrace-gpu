@@ -84,6 +84,7 @@ module atg_su #(
 	output wire [31:0] pt_rdata,
 	input wire pt_free,
 	input wire [7:0] pt_free_idx,
+	output wire [7:0] pt_done,
 	/* TU */
 	output wire tx_valid,
 	input wire tx_ready,
@@ -579,7 +580,7 @@ module atg_su #(
 		.m_req_valid(d_req_valid), .m_req_ready(d_req_ready), .m_req_write(d_req_write), .m_req_line(d_req_line), .m_req_be(d_req_be), .m_req_wdata(d_req_wdata), .m_req_tag(d_req_tag), .m_rsp_valid(d_rsp_valid), .m_rsp_write(d_rsp_write), .m_rsp_tag(d_rsp_tag), .m_rsp_rdata(d_rsp_rdata), .m_rsp_error(d_rsp_error)
 	);
 
-	atg_su_exp #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .PT_ENTRIES(PT_ENTRIES), .VARY_WORDS(VARY_WORDS)) exp (
+	atg_su_exp #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) exp (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
@@ -587,10 +588,20 @@ module atg_su #(
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
 		.ex_next(ex_next),
+		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane), .fl_data(fl_data),
+		.fl_go(fl_go), .fl_info(fl_info),
+		.xr_valid(xr_valid), .xr_warp(xr_warp),
+		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp)
+	);
+
+	atg_su_pt #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .UOP_W(UOP_W), .PT_ENTRIES(PT_ENTRIES), .VARY_WORDS(VARY_WORDS)) pt (
+		.clk(clk), .rst_n(rst_n),
+		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_uop(x_uop), .x_b(x_b),
+		.x_mask(x_mask), .x_info(x_info),
 		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
-		.pt_ok(pt_ok), .pt_take(vl_gnt), .pt_base(vl_ptbase),
-		.xr_valid(xr_valid), .xr_warp(xr_warp),
+		.pt_ok(pt_ok), .pt_take(vl_gnt), .pt_warp(vl_slot), .pt_base(vl_ptbase),
+		.vl_go(vl_go), .vl_mask(vl_mask), .pt_done(pt_done),
 		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp)
 	);
 

@@ -141,6 +141,10 @@ module atg_cp_seq_tb;
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq: BLT state written while the BLT is busy");
 			end
+			if (((uop_idx >= 9'h020 && uop_idx < 9'h050) || uop_idx[8:4] == 5'h1C) && busy_in[2]) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.kicks: VF state %h written while the VF is busy", uop_idx);
+			end
 		end
 		if (blt_kick) begin
 			log({8'h02, 56'd0});
@@ -338,6 +342,9 @@ module atg_cp_seq_tb;
 		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd2);
 		packet(1'b0, 1'b0, 6'd2, 8'd1, 8'd0);
 		packet(1'b0, 1'b0, 6'd3, 8'd0, 8'd0);
+		pl[0] = 32'h021; pl[1] = 32'h77;	/* VF state while the draw runs */
+		pl[2] = 32'h1C2; pl[3] = 32'h88;
+		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd4);
 		pl[0] = 32'd4; pl[1] = 32'd5; pl[2] = 32'd6;
 		packet(1'b0, 1'b0, 6'd4, 8'd0, 8'd3);
 		for (i = 0; i < 9; i = i + 1)
@@ -356,6 +363,8 @@ module atg_cp_seq_tb;
 		expect_ev({8'h02, 56'd0});
 		expect_ev({8'h03, 56'd0});	/* the same cycle as inv */
 		expect_ev({8'h07, 52'd0, 4'b0011});
+		expect_ev({8'h01, 15'd0, 9'h021, 32'h77});
+		expect_ev({8'h01, 15'd0, 9'h1C2, 32'h88});
 		expect_ev({8'h01, 15'd0, 9'h1E9, 32'd4});
 		expect_ev({8'h01, 15'd0, 9'h1EA, 32'd5});
 		expect_ev({8'h01, 15'd0, 9'h1EB, 32'd6});

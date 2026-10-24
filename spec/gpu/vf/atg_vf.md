@@ -88,4 +88,4 @@ design §2.3, §3.8.
 
 ## 10. Status
 
-Wiring written in WS288 p023; the children (atg_vf_index, atg_vf_asm, atg_vf_fetch, atg_vf_conv) implemented in WS288 p009 part A (branch p1-vf), the wiring unchanged.  For Q1: atg_cp_seq does not hold a SET_REG into the VF ranges (0x020-0x04F, 0x1C0-0x1CF) while the VF is busy (it does for the BLT, RX and ROP ranges); the VF assumes its STATE does not change under a draw.
+Wiring written in WS288 p023; the children (atg_vf_index, atg_vf_asm, atg_vf_fetch, atg_vf_conv) implemented in WS288 p009 part A (branch p1-vf), the wiring unchanged.  For Q1: atg_cp_seq does not hold a SET_REG into the VF ranges (0x020-0x04F, 0x1C0-0x1CF) while the VF is busy (it does for the BLT, RX and ROP ranges); the VF assumes its STATE does not change under a draw.  Done in p009 part B1 (atg_cp_seq holds them while the VF is busy).
