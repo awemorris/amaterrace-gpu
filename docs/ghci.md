@@ -587,7 +587,8 @@ command processor's firmware writes them from the descriptor sets:
 | +3 | TEX_LAYER_STRIDE | Bytes from one layer (array layer, cube face) to the next; a multiple of 64 |
 | +4 | TEX_SAMPLER | The sampler (below) |
 | +5 | TEX_LOD | [11:0] minLod, [23:12] 15.996 - maxLod (unsigned, 8 fraction bits; inverted so that a word of 0 does not clamp); [31:24] 0 |
-| +6..+15 | reserved | 0 |
+| +6 | TEX_FORMAT | (CAPS[30]) The VkFormat, the stencil aspect and the component swizzle (section 8.5); 0 keeps TEX_IMAGE's format |
+| +7..+15 | reserved | 0 |
 
 TEX_IMAGE:
 
@@ -857,8 +858,12 @@ integer (s, 0, 0, 1)), [20:9] the component swizzle of R, G, B and A, 3
 bits each (VkComponentSwizzle 0-6, applied last). Texels are 1, 2, 4, 8
 or 16 bytes; only 4-byte texels may be tiled (TEX_IMAGE[8] reads as
 linear otherwise). Integer formats are sampled nearest and return integer
-bits; the border colours give integer 0 and 1 for them.  The depth
-formats are filtered linearly with and without compare.  The ETC2 and
+bits; the border colours give integer 0 and 1 for them (a border texel
+replaces the components the format has; the others read (0, 0, 0, 1)).
+The depth formats are filtered linearly with and without compare (the
+earlier codes of TEX_IMAGE[7:4] keep section 8.4's nearest without
+compare); a format without the FILTER_LINEAR feature is sampled nearest
+whatever the sampler says.  The ETC2 and
 EAC formats (VkFormat 147-156, when the FMT capability reports them) are
 4 x 4 blocks of 8 or 16 bytes, rows of ceil(width / 4) blocks, each
 level's plane of ceil(w / 4) x ceil(h / 4) blocks a multiple of 64 bytes,

@@ -18,7 +18,9 @@
  * without compare), "compare" (every compare op, both depth formats,
  * references at and next to the texels, NaN, nearest, bilinear and
  * trilinear), "gather" (components of the four texels: colour, depth,
- * compare), "query" (texqlod's two values, texsz.l).
+ * compare), "query" (texqlod's two values, texsz.l), "rgb565" (the
+ * earlier format 4), "vkformat" (TEX_FORMAT's formats of this path: R8
+ * and R8G8, D16 compare, the swizzle, gather through the swizzle).
  */
 
 `timescale 1ns / 1ps
@@ -34,7 +36,7 @@ module atg_tu_filter_tb;
 	reg [127:0] tc_wts = 0;
 	reg [15:0] tc_tag = 0;
 	reg [3:0] tc_mask = 0;
-	reg [23:0] tc_ctl = 0;
+	reg [47:0] tc_ctl = 0;
 	reg [127:0] tc_value = 0;
 	reg tc_last = 1'b0;
 	reg tr_ready = 1'b0;
@@ -52,7 +54,7 @@ module atg_tu_filter_tb;
 	reg [511:0] tex, x_data;
 	reg [127:0] wts;
 	reg [3:0] mask;
-	reg [23:0] ctl;
+	reg [47:0] ctl;
 	reg [127:0] val;
 	reg [15:0] tag;
 	reg last;

@@ -301,6 +301,12 @@
 #define GHCI_TEX_LAYER_STRIDE 3u /* bytes between layers, a multiple of 64 */
 #define GHCI_TEX_SAMPLER 4u
 #define GHCI_TEX_LOD 5u
+#define GHCI_TEX_FORMAT 6u /* CAPS[30], docs/ghci.md section 8.5 */
+#define GHCI_TFMT_VKFORMAT(f) ((unsigned)(f) & 0xFFu) /* 0: TEX_IMAGE's format */
+#define GHCI_TFMT_STENCIL (1u << 8) /* the stencil aspect of D24_UNORM_S8_UINT */
+#define GHCI_TFMT_SWIZZLE(r, g, b, a) /* VkComponentSwizzle */ \
+	((((unsigned)(r) & 7u) << 9) | (((unsigned)(g) & 7u) << 12) | \
+	 (((unsigned)(b) & 7u) << 15) | (((unsigned)(a) & 7u) << 18))
 #define GHCI_IMG_LEVELS(n) ((unsigned)(n) & 0xFu)
 #define GHCI_IMG_FMT(f) (((unsigned)(f) & 0xFu) << 4)
 #define GHCI_IMG_FMT_RGBA8 0u

@@ -17,11 +17,13 @@
  *         line is not kept: it is requested again)
  *   inv   cached lines keep their old data after memory changes, inv drops
  *         them; inv while a miss is outstanding
- *   border border texels (address bit 0) are the border colour's raw texel
+ *   border border texels (ta_bord) are the border colour's raw texel
  *         for every format and colour class, mixed with fetched texels; a
- *         quad of border texels only makes no request
+ *         quad of border texels only makes no request; tc_bord is ta_bord
  *   h16   RGB565 (ctl[19]): the half word that address bit 1 selects, its
  *         border texels (0, 0, 0xFFFF)
+ *   parts the slots of 8- and 16-byte texels without bilinear (ctl[26:25]),
+ *         the half words and bytes of 2- and 1-byte texels (ctl[24:23])
  */
 
 `timescale 1ns / 1ps
@@ -39,26 +41,29 @@ module atg_tu_cache_run #(
 	output reg [31:0] e_miss,
 	output reg [31:0] e_inv,
 	output reg [31:0] e_border,
-	output reg [31:0] e_h16
+	output reg [31:0] e_h16,
+	output reg [31:0] e_parts
 );
 	localparam LB = LINE_BYTES * 8;
 
 	reg inv = 1'b0;
 	reg ta_valid = 1'b0;
 	reg [511:0] ta_addr = 0;
+	reg [15:0] ta_bord = 0;
 	reg [127:0] ta_wts = 0;
 	reg [15:0] ta_tag = 0;
 	reg [3:0] ta_mask = 0;
-	reg [23:0] ta_ctl = 0;
+	reg [47:0] ta_ctl = 0;
 	reg [127:0] ta_value = 0;
 	reg ta_last = 1'b0;
 	reg tc_ready = 1'b0;
 	wire ta_ready, tc_valid, tc_last;
 	wire [511:0] tc_texels;
+	wire [15:0] tc_bord;
 	wire [127:0] tc_wts;
 	wire [15:0] tc_tag;
 	wire [3:0] tc_mask;
-	wire [23:0] tc_ctl;
+	wire [47:0] tc_ctl;
 	wire [127:0] tc_value;
 	wire req_valid, req_write;
 	reg req_ready = 1'b0;
@@ -72,10 +77,10 @@ module atg_tu_cache_run #(
 
 	atg_tu_cache #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) dut (
 		.clk(clk), .rst_n(rst_n), .inv(inv),
-		.ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr), .ta_wts(ta_wts),
-		.ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl), .ta_value(ta_value),
+		.ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr), .ta_bord(ta_bord),
+		.ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl), .ta_value(ta_value),
 		.ta_last(ta_last), .tc_valid(tc_valid), .tc_ready(tc_ready), .tc_texels(tc_texels),
-		.tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask), .tc_ctl(tc_ctl),
+		.tc_bord(tc_bord), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask), .tc_ctl(tc_ctl),
 		.tc_value(tc_value), .tc_last(tc_last),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
@@ -120,7 +125,7 @@ module atg_tu_cache_run #(
 
 	/* The border texel by format ({ctl[8], ctl[1]}) and class (ctl[7:6]). */
 	function [31:0] braw;
-		input [23:0] ctl;
+		input [47:0] ctl;
 		if (ctl[19])
 			braw = ctl[7:6] == 2'd2 ? 32'h0000FFFF : 32'd0;
 		else case ({ctl[8], ctl[1], ctl[7:6]})
@@ -135,19 +140,21 @@ module atg_tu_cache_run #(
 	/* The texel at address a: the word, or RGB565's half word. */
 	function [31:0] texel;
 		input [31:0] a;
-		input [23:0] ctl;
+		input [47:0] ctl;
 		input [31:0] g;
 		reg [31:0] wd;
 		begin
 			wd = memword(a & ~32'd3, g);
-			texel = !ctl[19] ? wd : {16'd0, a[1] ? wd[31:16] : wd[15:0]};
+			texel = ctl[24:23] == 2'd2 ? {24'd0, wd[a[1:0]*8 +: 8]} :
+				ctl[19] || ctl[24:23] == 2'd1 ? {16'd0, a[1] ? wd[31:16] : wd[15:0]} : wd;
 		end
 	endfunction
 
 	task quad;
 		input [511:0] addr;
+		input [15:0] bord;
 		input [3:0] mask;
-		input [23:0] ctl;
+		input [47:0] ctl;
 		output integer errs;
 		reg [511:0] want;
 		reg [127:0] wts;
@@ -164,15 +171,18 @@ module atg_tu_cache_run #(
 			want = 512'd0;
 			for (l = 0; l < 4; l = l + 1)
 				for (t = 0; t < 4; t = t + 1)
-					if (mask[l] && !ctl[2] && (t == 0 || ctl[0]) && addr[(l*4+t)*32])
+					if (mask[l] && !ctl[2] && (t == 0 || ctl[0] || (t == 1 && ctl[26:25] != 2'd0) ||
+					    ctl[26:25] == 2'd2) && bord[l*4+t])
 						want[(l*4+t)*32 +: 32] = braw(ctl);
-					else if (mask[l] && !ctl[2] && (t == 0 || ctl[0]) &&
+					else if (mask[l] && !ctl[2] && (t == 0 || ctl[0] ||
+					    (t == 1 && ctl[26:25] != 2'd0) || ctl[26:25] == 2'd2) &&
 					    addr[(l*4+t)*32 + 20 +: 12] != 12'h00E)
 						want[(l*4+t)*32 +: 32] = texel(addr[(l*4+t)*32 +: 32], ctl, gen_seen);
 			while (($random(seed) & 3) == 0)
 				@(posedge clk);
 			ta_valid <= 1'b1;
 			ta_addr <= addr;
+			ta_bord <= bord;
 			ta_wts <= wts;
 			ta_tag <= tag;
 			ta_mask <= mask;
@@ -191,7 +201,7 @@ module atg_tu_cache_run #(
 			end
 			while (($random(seed) & 3) == 0)
 				@(posedge clk);
-			if (!tc_valid || tc_texels !== want || tc_wts !== wts || tc_tag !== tag ||
+			if (!tc_valid || tc_texels !== want || tc_bord !== bord || tc_wts !== wts || tc_tag !== tag ||
 			    tc_mask !== mask || tc_ctl !== ctl || tc_value !== val || tc_last !== last) begin
 				errs = 1;
 				$display("FAIL atg_tu_cache(%0d): valid %b texels %h, want %h", LINE_BYTES,
@@ -217,7 +227,8 @@ module atg_tu_cache_run #(
 
 	integer i, k, e, n0;
 	reg [511:0] a;
-	reg [23:0] ctl;
+	reg [15:0] b;
+	reg [47:0] ctl;
 	initial begin
 		done = 1'b0;
 		e_hit = 0;
@@ -225,18 +236,19 @@ module atg_tu_cache_run #(
 		e_inv = 0;
 		e_border = 0;
 		e_h16 = 0;
+		e_parts = 0;
 		gen_seen = 0;
 		@(posedge rst_n);
 		repeat (2) @(posedge clk);
 		/* hit */
 		for (k = 0; k < 20; k = k + 1) begin
 			a = raddr(32'h4000, $random(seed));
-			ctl = k[0] ? 24'h000001 : 24'h000002;
-			quad(a, 4'hF, ctl, e);
+			ctl = k[0] ? 48'h000001 : 48'h000002;
+			quad(a, 16'd0, 4'hF, ctl, e);
 			e_hit = e_hit + e;
 			n0 = nreq;
 			for (i = 0; i < 3; i = i + 1) begin
-				quad(a, $random(seed), ctl, e);
+				quad(a, 16'd0, $random(seed), ctl, e);
 				e_hit = e_hit + e;
 			end
 			if (nreq != n0) begin
@@ -252,16 +264,16 @@ module atg_tu_cache_run #(
 				for (i = 0; i < 16; i = i + 1)
 					if ($random(seed) & 1)
 						a[i*32 +: 32] = 32'h00E00000 | (a[i*32 +: 32] & 32'hFFFF);
-			ctl = $random(seed) & 24'h000007;
-			quad(a, $random(seed), ctl, e);
+			ctl = $random(seed) & 48'h000007;
+			quad(a, 16'd0, $random(seed), ctl, e);
 			e_miss = e_miss + e;
 		end
 		/* An error line is not kept. */
 		a = {16{32'h00E00040}};
-		quad(a, 4'h1, 24'h000000, e);
+		quad(a, 16'd0, 4'h1, 48'h000000, e);
 		e_miss = e_miss + e;
 		n0 = nreq;
-		quad(a, 4'h1, 24'h000000, e);
+		quad(a, 16'd0, 4'h1, 48'h000000, e);
 		e_miss = e_miss + e;
 		if (nreq != n0 + 1) begin
 			e_miss = e_miss + 1;
@@ -270,16 +282,16 @@ module atg_tu_cache_run #(
 		/* inv */
 		for (k = 0; k < 10; k = k + 1) begin
 			a = raddr(32'h1000, $random(seed));
-			quad(a, 4'hF, 24'h000001, e);
+			quad(a, 16'd0, 4'hF, 48'h000001, e);
 			e_inv = e_inv + e;
 			gen = gen + 1;
-			quad(a, 4'hF, 24'h000001, e);	/* still the cached (old) data */
+			quad(a, 16'd0, 4'hF, 48'h000001, e);	/* still the cached (old) data */
 			e_inv = e_inv + e;
 			gen_seen = gen;
 			inv <= 1'b1;
 			@(posedge clk);
 			inv <= 1'b0;
-			quad(a, 4'hF, 24'h000001, e);
+			quad(a, 16'd0, 4'hF, 48'h000001, e);
 			e_inv = e_inv + e;
 		end
 		/* inv while a miss is outstanding (and memory changed): the line
@@ -291,7 +303,7 @@ module atg_tu_cache_run #(
 			a = {16{32'h00000800 + k * 32'h40}};
 			gen_seen = gen + 1;
 			fork
-				quad(a, 4'h1, 24'h000000, e);
+				quad(a, 16'd0, 4'h1, 48'h000000, e);
 				begin
 					while (!(req_valid && req_ready))
 						@(posedge clk);
@@ -303,7 +315,7 @@ module atg_tu_cache_run #(
 			join
 			e_inv = e_inv + e;
 			n0 = nreq;
-			quad(a, 4'h1, 24'h000000, e);
+			quad(a, 16'd0, 4'h1, 48'h000000, e);
 			e_inv = e_inv + e;
 			if (nreq != n0) begin
 				e_inv = e_inv + 1;
@@ -314,18 +326,16 @@ module atg_tu_cache_run #(
 		 * and class; then quads of border texels only. */
 		for (k = 0; k < 200; k = k + 1) begin
 			a = raddr(32'h4000, $random(seed));
-			for (i = 0; i < 16; i = i + 1)
-				if ($random(seed) & 1)
-					a[i*32] = 1'b1;
-			ctl = ($random(seed) & 24'h0001C3) | 24'h000001;
-			quad(a, $random(seed), ctl, e);
+			b = $random(seed);
+			ctl = ($random(seed) & 48'h0001C3) | 48'h000001;
+			quad(a, b, $random(seed), ctl, e);
 			e_border = e_border + e;
 		end
 		for (k = 0; k < 20; k = k + 1) begin
-			a = raddr(32'h10000, $random(seed)) | {16{32'h00000001}};
-			ctl = ($random(seed) & 24'h0001C3);
+			a = raddr(32'h10000, $random(seed));
+			ctl = ($random(seed) & 48'h0001C3);
 			n0 = nreq;
-			quad(a, 4'hF, ctl, e);
+			quad(a, 16'hFFFF, 4'hF, ctl, e);
 			e_border = e_border + e;
 			if (nreq != n0) begin
 				e_border = e_border + 1;
@@ -335,14 +345,36 @@ module atg_tu_cache_run #(
 		/* h16: RGB565, half words and border texels. */
 		for (k = 0; k < 200; k = k + 1) begin
 			a = raddr(32'h4000, $random(seed));
+			b = 16'd0;
 			for (i = 0; i < 16; i = i + 1) begin
 				a[i*32 + 1] = $random(seed);
 				if (($random(seed) & 3) == 0)
-					a[i*32] = 1'b1;
+					b[i] = 1'b1;
 			end
-			ctl = ($random(seed) & 24'h0000C1) | 24'h080000;
-			quad(a, $random(seed), ctl, e);
+			ctl = ($random(seed) & 48'h0000C1) | 48'h080000;
+			quad(a, b, $random(seed), ctl, e);
 			e_h16 = e_h16 + e;
+		end
+		/* parts: 8- and 16-byte texels' slots, 2- and 1-byte texels. */
+		for (k = 0; k < 300; k = k + 1) begin
+			a = raddr(32'h4000, $random(seed));
+			b = 16'd0;
+			for (i = 0; i < 16; i = i + 1) begin
+				a[i*32 +: 2] = $random(seed);
+				if (($random(seed) & 7) == 0)
+					b[i] = 1'b1;
+			end
+			ctl = ($random(seed) & 48'h0000C1);
+			case (k % 4)
+			0: ctl = ctl | 48'h2000000 | 48'h800000;	/* 2 slots, a word */
+			1: ctl = ctl | 48'h4000000;	/* 4 slots */
+			2: ctl = ctl | 48'h800000;	/* 2-byte texels */
+			default: ctl = ctl | 48'h1000000;	/* 1-byte texels */
+			endcase
+			if (k % 4 < 2)
+				ctl = ctl & ~48'h800000;
+			quad(a, b, $random(seed), ctl, e);
+			e_parts = e_parts + e;
 		end
 		done = 1'b1;
 	end
@@ -354,13 +386,13 @@ module atg_tu_cache_tb;
 	always #5 clk = !clk;
 
 	wire d32, d64;
-	wire [31:0] h32, m32, i32, b32, h64, m64, i64, b64, s32, s64;
+	wire [31:0] h32, m32, i32, b32, h64, m64, i64, b64, s32, s64, p32, p64;
 	atg_tu_cache_run #(.LINE_BYTES(32), .LINE_SHIFT(5), .SEED(11)) r32 (
 		.clk(clk), .rst_n(rst_n), .done(d32), .e_hit(h32), .e_miss(m32), .e_inv(i32),
-		.e_border(b32), .e_h16(s32));
+		.e_border(b32), .e_h16(s32), .e_parts(p32));
 	atg_tu_cache_run #(.LINE_BYTES(64), .LINE_SHIFT(6), .SEED(12)) r64 (
 		.clk(clk), .rst_n(rst_n), .done(d64), .e_hit(h64), .e_miss(m64), .e_inv(i64),
-		.e_border(b64), .e_h16(s64));
+		.e_border(b64), .e_h16(s64), .e_parts(p64));
 
 	initial begin
 		repeat (3) @(posedge clk);
@@ -376,7 +408,9 @@ module atg_tu_cache_tb;
 			$display("PASS atg_tu_cache.border");
 		if (s32 == 0 && s64 == 0)
 			$display("PASS atg_tu_cache.h16");
-		if (h32 + h64 + m32 + m64 + i32 + i64 + b32 + b64 + s32 + s64 == 0)
+		if (p32 == 0 && p64 == 0)
+			$display("PASS atg_tu_cache.parts");
+		if (h32 + h64 + m32 + m64 + i32 + i64 + b32 + b64 + s32 + s64 + p32 + p64 == 0)
 			$display("PASS atg_tu_cache");
 		else
 			$display("FAIL atg_tu_cache: %0d %0d %0d %0d / %0d %0d %0d %0d", h32, m32, i32, b32,

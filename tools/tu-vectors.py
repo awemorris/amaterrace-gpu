@@ -11,13 +11,22 @@
 #                                    lane 0 in the low bits, 5 words a lane),
 #                                    then its n outputs (1 to 4 passes of
 #                                    mip and 3D linear filtering):
-#   A addr wts ctl value             one ta_* output (addr 512, wts 128,
-#                                    ctl 24, value 128)
+#   A addr bord wts ctl value        one ta_* output (addr 512, bord 16,
+#                                    wts 128, ctl 48, value 128)
 #   P name                           end of the group (PASS atg_tu_addr.name)
 # tu_filter.txt lines (hex):
 #   H texels wts mask ctl value      a pass with more to follow
 #                                    (no output: its sums are kept)
 #   F texels wts mask ctl value tag last data   one quad and its output
+#   P name                           as above.
+# tu_quad.txt lines (hex), the whole TU (sim/tb/atg_tu_tb.v; memory word
+# at a is (a >> 2) x 0x9E3779B1 mod 2^32):
+#   S idx value                      STATE write
+#   Q op slot mask off coord data    one quad and its 16 returned words
+#   P name                           as above.
+# tu_ffilt.txt lines (hex), the fp32 path (atg_tu_ffilt):
+#   H texels bord wts mask ctl       a pass with more to follow
+#   F texels bord wts mask ctl tag last data   one quad and its output
 #   P name                           as above.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import math
@@ -30,6 +39,7 @@ from fractions import Fraction
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rxmodel as RX  # noqa: E402
 import tumodel as T  # noqa: E402
+import fmtmodel as FM  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 VEC = os.path.join(ROOT, 'sim', 'vec')
@@ -100,6 +110,7 @@ def rdesc(r, tiled=None, samp_mask=SAMP_BASIC, samp_set=0, clamps=False, fmt=Non
     d = [r.getrandbits(32) & ~63, h << 16 | w, img_word(lev, fmt, tiled, typ, cnt),
          r.choice([r.getrandbits(32) & ~63, r.getrandbits(20) & ~63, 0x10000]), samp, lod]
     d += [r.getrandbits(32) if r.random() < 0.3 else 0 for _ in range(10)]	# reserved
+    d[T.D_FORMAT] = 0	# TEX_FORMAT 0: the earlier formats
     return d
 
 
@@ -116,10 +127,11 @@ def quad(out, r, op, slot, d, coords, mask, stats, off=0):
     last = r.getrandbits(1)
     out.append('Q %02x %x %x %04x %x %03x %0160x %x' % (op, slot, mask, tag, last, off, crd,
                                                        len(passes)))
-    for a, wts, ctl, val in passes:
-        out.append('A %0128x %032x %06x %032x' %
-                   (pack([x for ln in range(4) for x in a[ln]]), pack(wts), ctl, pack(val)))
-        stats['border'] += sum(1 for ln in range(4) for x in a[ln] if x & 1 and mask >> ln & 1)
+    for a, bo, wts, ctl, val in passes:
+        out.append('A %0128x %04x %032x %012x %032x' %
+                   (pack([x for ln in range(4) for x in a[ln]]),
+                    pack([x for ln in range(4) for x in bo[ln]], 1), pack(wts), ctl, pack(val)))
+        stats['border'] += sum(1 for ln in range(4) for x in bo[ln] if x and mask >> ln & 1)
     stats['passes'] += len(passes)
     stats['np%d' % len(passes)] = stats.get('np%d' % len(passes), 0) + 1
 
@@ -567,7 +579,7 @@ def ms_filter_vectors(r):
     def one(texels, wts, mask, ctl, value):
         data = flt.quad(texels, wts, ctl, mask, value)
         tx = pack([t for row in texels for t in row])
-        out.append('F %0128x %032x %x %06x %032x %04x %x %0128x' %
+        out.append('F %0128x %032x %x %012x %032x %04x %x %0128x' %
                    (tx, pack(wts), mask, ctl, pack(value), r.getrandbits(16),
                     r.getrandbits(1), pack(data)))
 
@@ -599,10 +611,10 @@ def filter_vectors(r):
         data = flt.quad(texels, wts, ctl, mask, value)
         tx = pack([t for row in texels for t in row])
         if data is None:
-            out.append('H %0128x %032x %x %06x %032x' % (tx, pack(wts), mask, ctl,
-                                                         pack(value)))
+            out.append('H %0128x %032x %x %012x %032x' % (tx, pack(wts), mask, ctl,
+                                                          pack(value)))
             return
-        out.append('F %0128x %032x %x %06x %032x %04x %x %0128x' %
+        out.append('F %0128x %032x %x %012x %032x %04x %x %0128x' %
                    (tx, pack(wts), mask, ctl, pack(value), r.getrandbits(16),
                     r.getrandbits(1), pack(data)))
 
@@ -715,6 +727,328 @@ def filter_vectors(r):
     return out
 
 
+# The formats of TEX_FORMAT (a third random stream: the sections above
+# stay as they were).
+SAMPLED = sorted(v for v, f in FM.FORMATS.items()
+                 if 'S' in f.feat.partition('|')[0] and not f.block)
+NONE = [91, 104, 106, 147, 156, 200, 0xFF, 1]
+
+
+def rswz(r):
+    """A random component swizzle (mostly identity)."""
+    if r.random() < 0.5:
+        return 0
+    return sum(r.choice([0, 0, 1, 2, 3, 4, 5, 6, 7]) << (3 * c) for c in range(4))
+
+
+def rtfmt(r, vk=None):
+    if vk is None:
+        vk = r.choice(SAMPLED + SAMPLED + NONE)
+    st = 1 if vk == 129 and r.random() < 0.5 else r.getrandbits(1) if r.random() < 0.05 else 0
+    return vk | st << T.TF_STENCIL | rswz(r) << T.TF_SWZ
+
+
+def fmt_addr_vectors(r):
+    """TEX_FORMAT: texel sizes of 1-16 bytes (linear; tiled only 4 bytes),
+    the path and the fp32 path's fields of ta_ctl, the slots of 8- and
+    16-byte texels, the row passes of 8-byte bilinear quads (with 3D and
+    mip linear), gather's word, depth formats filtered without compare,
+    integer formats nearest, the stencil aspect, D16 compare."""
+    out = []
+    stats = {'border': 0, 'passes': 0}
+    descs = {}
+
+    def new_descs(only=None, typ=None):
+        for sl in range(16):
+            t = typ if typ is not None else r.choice([0, 0, 0, 1, 2, 3])
+            d = rdesc(r, typ=t, square=t == 3, samp_mask=0x1FFFF,
+                      cnt=r.choice([0, 1, 2, 3, 5, 9]) if t in (1, 2) else 0)
+            d[T.D_IMAGE] = (d[T.D_IMAGE] & ~(15 << T.IMG_FMT)) | r.randrange(16) << T.IMG_FMT
+            if r.random() < 0.7:
+                d[T.D_IMAGE] = (d[T.D_IMAGE] & ~15) | r.choice([1, 2, 5, 13])
+            d[T.D_FORMAT] = rtfmt(r, r.choice(only) if only else None)
+            descs[sl] = d
+            set_desc(out, sl, d)
+
+    def coords(op, third=None):
+        if op & 3 == 2:
+            return [(r.choice([r.randrange(-4, 80), r.getrandbits(32)]) & T.M32,
+                     r.choice([r.randrange(-4, 80), r.getrandbits(32)]) & T.M32,
+                     r.choice([r.randrange(-1, 14), 0]) & T.M32, r.getrandbits(32),
+                     r.choice([r.randrange(-1, 9), 0]) & T.M32) for _ in range(4)]
+        if op & 3 == 1:
+            return lod_coords(r, third=third)
+        return [(rcoord(r), rcoord(r), r.choice([0, f32(r.uniform(-2, 8)), rcoord(r)]),
+                 r.choice([f32(r.uniform(0, 1)), rcoord(r)]),
+                 r.choice([f32(r.uniform(-1, 3)), rcoord(r)])) for _ in range(4)]
+
+    ops = [0, 0, 0, 1, 1, 2, 2, 3, 0x43, 0x0B, 0x08, 0x18, 0x28, 0x38, 0x04, 0x05, 0x41]
+    for n in range(1200):
+        if n % 60 == 0:
+            new_descs()
+        sl = r.randrange(16)
+        op = r.choice(ops)
+        quad(out, r, op, sl, descs[sl], coords(op, 'w'), r.choice([15, 15, r.randrange(16)]),
+             stats, off=r.choice([0, 0, r.getrandbits(12)]))
+    out.append('P formats')
+    # 8- and 16-byte texels: slots, the row passes, 3D and mip linear.
+    for n in range(600):
+        if n % 40 == 0:
+            new_descs([97, 97, 95, 96, 101, 102, 103, 107, 108, 109], r.choice([None, 2, 0]))
+        sl = r.randrange(16)
+        op = r.choice([0, 0, 1, 1, 2, 0x08, 0x18, 0x28, 0x38])
+        quad(out, r, op, sl, descs[sl], coords(op, 'w'), r.choice([15, 15, r.randrange(16)]),
+             stats, off=r.choice([0, r.getrandbits(12)]))
+    out.append('P wide')
+    # Depth formats without and with compare, D16, the stencil aspect.
+    for n in range(500):
+        if n % 40 == 0:
+            new_descs([124, 125, 126, 129, 129])
+        sl = r.randrange(16)
+        op = r.choice([0, 1, 4, 5, 0x0C, 0x08, 2, 0x38])
+        quad(out, r, op, sl, descs[sl], coords(op), r.choice([15, r.randrange(16)]), stats)
+    out.append('P depthfmt')
+    # Small 1- and 2-byte images and clamp to border, tiled bit set.
+    for n in range(500):
+        if n % 40 == 0:
+            for sl in range(16):
+                d = rdesc(r, typ=0, samp_mask=0x1FFFF, tiled=1)
+                d[T.D_SIZE] = r.randrange(1, 9) | r.randrange(1, 9) << 16
+                d[T.D_SAMPLER] |= 0x3F
+                d[T.D_FORMAT] = rtfmt(r, r.choice([3, 4, 8, 9, 10, 13, 16, 17, 20, 21, 70, 74,
+                                                   76, 124, 37, 44]))
+                descs[sl] = d
+                set_desc(out, sl, d)
+        sl = r.randrange(16)
+        op = r.choice([0, 0, 1, 2, 0x08, 0x28])
+        quad(out, r, op, sl, descs[sl], coords(op), r.choice([15, r.randrange(16)]), stats,
+             off=r.choice([0, r.getrandbits(12)]))
+    out.append('P small')
+    print('tu-vectors: format addr passes %s' %
+          {k: v for k, v in stats.items() if k[:2] == 'np'})
+    return out
+
+
+def rtexel(r, vk, sten):
+    """A random raw texel word of a format (special values often)."""
+    f = FM.info(vk)
+    w = r.getrandbits(32)
+    if f is not None and f.ty == FM.SFLOAT and r.random() < 0.3:
+        if f.chans[0][1] == 16:
+            w = pack([r.choice([0x7C00, 0xFC00, 0x7E01, 0x0001, 0x8000, 0x3C00, 0x03FF,
+                                r.getrandbits(16)]) for _ in range(2)], 16)
+        else:
+            w = r.choice([0x7F800000, 0x7FC00001, 0x00000001, 0x80000000, f32(1.0),
+                          f32(r.uniform(-1e3, 1e3)), 0x00800000])
+    return w
+
+
+def ffilt_vectors(r):
+    """atg_tu_ffilt: every sampled format of the fp32 path (and none) with
+    random texels; nearest, bilinear, the passes of mip and 3D linear
+    filtering, the row passes of 8-byte texels, border texels of every
+    colour class, gather with its word, the swizzle, the stencil aspect."""
+    out = []
+    ff = T.FFilter()
+
+    def one(tex, bord, wts, mask, ctl):
+        data = ff.quad(tex, bord, wts, ctl, mask)
+        tx = pack([t for row in tex for t in row])
+        bo = pack([b for row in bord for b in row], 1)
+        if data is None:
+            out.append('H %0128x %04x %032x %x %012x' % (tx, bo, pack(wts), mask, ctl))
+            return
+        out.append('F %0128x %04x %032x %x %012x %04x %x %0128x' %
+                   (tx, bo, pack(wts), mask, ctl, r.getrandbits(16), r.getrandbits(1),
+                    pack(data)))
+
+    def rwts():
+        return [r.choice([0, 255, 128, 1, r.getrandbits(8)]) |
+                r.choice([0, 255, 128, 1, r.getrandbits(8)]) << 8 |
+                r.choice([0, 255, 128, 1, r.getrandbits(8)]) << 16 |
+                r.choice([0, 255, 128, 1, r.getrandbits(8)]) << 24 for _ in range(4)]
+
+    fmts = [v for v in SAMPLED if v not in T.U8_FORMATS] + [0]
+    for kind in ('nearest', 'bilinear', 'passes', 'gather', 'border'):
+        for n in range(len(fmts) * (6 if kind != 'passes' else 4)):
+            vk = fmts[n % len(fmts)]
+            f = FM.info(vk)
+            nb = f.nbytes if f else 4
+            sten = int(vk == 129 and r.random() < 0.5)
+            z = rswz(r)
+            mask = r.choice([15, 15, r.randrange(16)])
+            base = (1 << T.CTL_F32 | vk << T.CTL_VKF | sten << T.CTL_STEN | z << T.CTL_SWZ |
+                    r.randrange(3) << T.CTL_BORDER |
+                    {8: 1, 16: 2}.get(nb, 0) << T.CTL_NSL)
+            lin = kind in ('bilinear', 'passes') and f is not None and 'F' in f.feat and nb <= 8
+            if kind == 'gather':
+                base |= 1 | 1 << T.CTL_GATHER | r.randrange(4) << T.CTL_COMP
+                lin = False
+            if lin:
+                base |= 1
+            if kind == 'passes':
+                seq = r.choice([[0, 2], [0, 1], [0, 1, 2], [0, 2, 3], [0, 1, 2, 3], [0]])
+            else:
+                seq = [0]
+            split = lin and nb == 8
+            if split:
+                base |= 1 << T.CTL_SPLIT
+                seq = [p | rw << 2 for p in seq for rw in (0, 1)]
+            w = rwts()
+            for k, pas in enumerate(seq):
+                tex = [[rtexel(r, vk, sten) for _ in range(4)] for _ in range(4)]
+                pb = 0.5 if kind == 'border' else 0.08
+                bord = [[int(r.random() < pb) for _ in range(4)] for _ in range(4)]
+                ctl = (base | (k + 1 < len(seq)) << T.CTL_MORE | (k > 0) << T.CTL_ACC |
+                       (pas & 1) << T.CTL_P0 | (pas >> 1 & 1) << T.CTL_P1 |
+                       (pas >> 2) << T.CTL_ROW)
+                one(tex, bord, w, mask, ctl)
+        out.append('P ' + kind)
+    return out
+
+
+def u8_fmt_vectors(r):
+    """atg_tu_filter with TEX_FORMAT: R8 and R8G8 (texels and border
+    texels), D16 compare, the swizzle after filtering and compare, gather
+    through the swizzle."""
+    out = []
+    flt = T.Filter()
+
+    def one(texels, wts, mask, ctl, value):
+        data = flt.quad(texels, wts, ctl, mask, value)
+        tx = pack([t for row in texels for t in row])
+        if data is None:
+            out.append('H %0128x %032x %x %012x %032x' % (tx, pack(wts), mask, ctl,
+                                                          pack(value)))
+            return
+        out.append('F %0128x %032x %x %012x %032x %04x %x %0128x' %
+                   (tx, pack(wts), mask, ctl, pack(value), r.getrandbits(16),
+                    r.getrandbits(1), pack(data)))
+
+    for n in range(600):
+        vk = r.choice([9, 16, 37, 44, 51, 124, 125, 126, 129])
+        mask = r.choice([15, 15, r.randrange(16)])
+        z = rswz(r)
+        dep = vk >= 124
+        ctl = (vk << T.CTL_VKF | z << T.CTL_SWZ | int(vk in (44, 126)) << T.CTL_FMT |
+               r.getrandbits(1) | r.randrange(3) << T.CTL_BORDER)
+        dref = [r.choice([f32(r.uniform(0, 1)), f32(r.uniform(-1, 2)), 0x7FC00000, 0,
+                          f32(1.0), f32(0.5)]) for _ in range(4)]
+        if dep:
+            ctl |= 1 << T.CTL_DEPTH | 1 << T.CTL_CMP | r.randrange(8) << T.CTL_CMP_OP
+        if r.random() < 0.25:
+            ctl |= 1 | 1 << T.CTL_GATHER | r.randrange(4) << T.CTL_COMP
+        tex = []
+        for ln in range(4):
+            row = []
+            for _ in range(4):
+                if vk == 124:
+                    u = FM.f32_unorm(dref[ln], 16)
+                    row.append(r.choice([u, max(u - 1, 0), min(u + 1, 0xFFFF),
+                                         r.getrandbits(16), 0xFFFF]))
+                elif vk == 9:
+                    row.append(r.choice([r.getrandbits(8), 0xFFFFFFFF, 0xFF]))
+                elif vk == 16:
+                    row.append(r.choice([r.getrandbits(16), 0xFFFFFFFF, 0xFFFF]))
+                else:
+                    row.append(r.getrandbits(32))
+            tex.append(row)
+        wts = [r.getrandbits(16) for _ in range(4)]
+        one(tex, wts, mask, ctl, dref if dep else [r.getrandbits(32) for _ in range(4)])
+    out.append('P vkformat')
+    return out
+
+
+class HashMem:
+    """The memory of atg_tu_tb: word a is (a >> 2) x 0x9E3779B1."""
+
+    def rd32(self, a):
+        return ((a >> 2) * 0x9E3779B1) & T.M32
+
+    def rd16(self, a):
+        return self.rd32(a & ~3) >> (8 * (a & 2)) & 0xFFFF
+
+    def rd8(self, a):
+        return self.rd32(a & ~3) >> (8 * (a & 3)) & 0xFF
+
+
+def quad_vectors(r):
+    """Whole quads through atg_tu (addressing, cache, both filter paths,
+    their order): random descriptors of the earlier codes and of
+    TEX_FORMAT's formats, every op."""
+    out = []
+    mem = HashMem()
+    descs = {}
+    for n in range(1500):
+        if n % 50 == 0:
+            for sl in range(16):
+                t = r.choice([0, 0, 1, 2, 3])
+                d = rdesc(r, typ=t, square=t == 3, samp_mask=0x1FFFF,
+                          cnt=r.choice([0, 1, 2, 5]) if t in (1, 2) else 0)
+                d[T.D_BASE] &= 0x00FFFFC0
+                d[T.D_STRIDE] &= 0xFFFC0
+                d[T.D_SIZE] = r.randrange(1, 40) | r.randrange(1, 40) << 16
+                if t == 3:	# a cube's faces are squares (docs/ghci.md section 8.4)
+                    d[T.D_SIZE] = (d[T.D_SIZE] & 0xFFFF) * 0x10001
+                if r.random() < 0.6:
+                    d[T.D_FORMAT] = rtfmt(r, r.choice(SAMPLED + [91]))
+                descs[sl] = d
+                set_desc(out, sl, d)
+        sl = r.randrange(16)
+        d = descs[sl]
+        op = r.choice([0, 0, 0, 1, 1, 2, 3, 0x08, 0x28, 0x0C, 0x41])
+        if op & 3 == 2:
+            coords = [(r.randrange(-2, 42) & T.M32, r.randrange(-2, 42) & T.M32,
+                       r.randrange(0, 3), 0, r.randrange(0, 4)) for _ in range(4)]
+        elif op & 3 == 1:
+            coords = lod_coords(r, -8, 0, third='w')
+        else:
+            coords = [(f32(r.uniform(-1, 2)), f32(r.uniform(-1, 2)), f32(r.uniform(-1, 4)),
+                       f32(r.uniform(0, 1)), f32(r.uniform(0, 3))) for _ in range(4)]
+        mask = r.choice([15, 15, r.randrange(16)])
+        off = r.choice([0, 0, r.getrandbits(12)])
+        coords = [tuple(c) + (0,) * (5 - len(c)) for c in coords]
+        words = T.sample(mem, op, d, coords, mask, off)
+        out.append('Q %02x %x %x %03x %0160x %0128x' %
+                   (op, sl, mask, off, pack([w for c in coords for w in c]), pack(words)))
+    out.append('P quads')
+    return out
+
+
+def ffilt_checks(r):
+    """The fp32 path against plain floating point: bilinear weights sum to
+    1, the result is within 2^-20 of the exact blend of the converted
+    texels (finite values), sRGB is decoded before filtering."""
+    def fl(b):
+        return struct.unpack('<f', struct.pack('<I', b))[0]
+    ff = T.FFilter()
+    for _ in range(3000):
+        vk = r.choice([4, 8, 3, 38, 43, 50, 64, 76, 83, 97, 122, 123, 124, 126])
+        f = FM.info(vk)
+        tex = [[r.getrandbits(32) for _ in range(4)] for _ in range(4)]
+        if f.ty == FM.SFLOAT:
+            tex = [[f32(r.uniform(-4, 4)) if f.chans[0][1] == 32 else
+                    pack([struct.unpack('<H', struct.pack('<e', r.uniform(-4, 4)))[0]
+                          for _ in range(2)], 16) for _ in range(4)] for _ in range(4)]
+        wts = [r.getrandbits(16) for _ in range(4)]
+        nb = f.nbytes
+        if nb == 8:
+            continue
+        ctl = 1 | 1 << T.CTL_F32 | vk << T.CTL_VKF
+        data = ff.quad(tex, [[0] * 4] * 4, wts, ctl, 15)
+        for ln in range(4):
+            fu, fv = wts[ln] & 0xFF, wts[ln] >> 8
+            w = [(256 - fu) * (256 - fv), fu * (256 - fv), (256 - fu) * fv, fu * fv]
+            vals = [FM.unpack(t, vk)[0] for t in tex[ln]]
+            for c in range(len(f.chans)):
+                xs = [fl(vals[t][c]) for t in range(4)]
+                if not all(math.isfinite(x) and abs(x) < 1e30 for x in xs):
+                    continue
+                want = sum(w[t] * xs[t] for t in range(4)) / 65536.0
+                got = fl(data[ln * 4 + c])
+                assert abs(got - want) <= 2.0 ** -20 * max(1.0, abs(want)), (vk, ln, c, got, want)
+
+
 def model_checks(r):
     """The model against plain floating point: the cube face coordinates,
     the seamless footprint (its texels' centres next to the direction), the
@@ -776,6 +1110,7 @@ def model_checks(r):
 def main():
     r = random.Random(288009)
     model_checks(r)
+    ffilt_checks(random.Random(288031))
     # The filter's exactness for nearest texels: c << 16 is c / 255 rounded.
     for c in range(256):
         assert T.conv(c << 16) == f32(c / 255.0), c
@@ -794,8 +1129,13 @@ def main():
         assert T.rnd_f32(c * s6, 78) == RX.round_f32(Fraction(c, 63)), c
     os.makedirs(VEC, exist_ok=True)
     r2 = random.Random(288027)
-    for name, lines in (('tu_addr.txt', addr_vectors(r) + ms_addr_vectors(r2)),
-                        ('tu_filter.txt', filter_vectors(r) + ms_filter_vectors(r2))):
+    r3 = random.Random(288030)
+    for name, lines in (('tu_addr.txt', addr_vectors(r) + ms_addr_vectors(r2) +
+                         fmt_addr_vectors(r3)),
+                        ('tu_filter.txt', filter_vectors(r) + ms_filter_vectors(r2) +
+                         u8_fmt_vectors(r3)),
+                        ('tu_ffilt.txt', ffilt_vectors(r3)),
+                        ('tu_quad.txt', quad_vectors(r3))):
         with open(os.path.join(VEC, name), 'w') as fp:
             fp.write('\n'.join(lines) + '\n')
         print('tu-vectors: %d lines -> sim/vec/%s' % (len(lines), name))

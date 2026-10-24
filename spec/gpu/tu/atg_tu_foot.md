@@ -22,6 +22,11 @@ Combinational.
 | `is3d` | in | 1 | 3D image. |
 | `tiled` | in | 1 | 4×4 tiled layout. |
 | `lin` | in | 1 | Bilinear (and linear in depth for 3D). |
+| `ms` | in | 1 | A multisampled image (texf: texel 4 i + smp of rows of roundup(wl, 2) × 4 texels). |
+| `smp` | in | 2 | texf's sample. |
+| `psl` | in | 3 | log2 of the texel's bytes (0-4). |
+| `row` | in | 1 | 8-byte texels: the pass's second row (j1). |
+| `gwi` | in | 2 | Gather: the word of the texel that holds the component (8- and 16-byte texels). |
 | `p0` | in | 1 | The pass's second slice. |
 | `mu` | in | 2 | Address mode u. |
 | `mv` | in | 2 | v. |
@@ -40,11 +45,12 @@ Combinational.
 | `lbase` | in | 32 | The level base (BASE + layer × stride + level offset). |
 | `plane` | in | 32 | The level's plane in bytes. |
 | `stride` | in | 32 | The layer stride (a cube's faces). |
-| `addr` | out | 128 | Texels 0-3: byte address, bit 0 a border texel. |
+| `addr` | out | 128 | Slots 0-3: byte address (atg_tu_addr.md §4, "Slots"). |
+| `bord` | out | 4 | Slots 0-3: a border texel. |
 | `fuv` | out | 16 | {fv, fu}. |
 | `fw` | out | 8 | The depth weight (3D linear), else 0. |
 
-27 ports.
+33 ports.
 
 ## 4. Behaviour
 
@@ -75,3 +81,5 @@ docs/ghci.md §8.4.
 Split off atg_tu_addr in WS288 p009 part F (P3) with the integer wrap, the offsets, the slice and the cube edges.
 
 Multisampling and RGB565 (the MSAA work): new inputs `ms` (a multisampled image: texf's texel 4 i + smp of rows of roundup(wl, 2) × 4 texels), `smp` (the sample), `b2` (2-byte texels: rows of wl × 2 bytes, 32-byte tiles); address bit 1 is kept (the half word of a 2-byte texel), bit 0 the border.
+
+TEX_FORMAT (2026-10-25): `b2` became `psl` (texels of 1-16 bytes: rows of wl × 2^psl bytes; tiled with psl 1, the earlier RGB565, 32-byte tiles), the slots of 8- and 16-byte texels (`row`) and gather's word (`gwi`); the border bit moved from address bit 0 to `bord` (a 1-byte texel's address uses bit 0).  `-DMUT_TU_ROW` reads the second row as the first.
