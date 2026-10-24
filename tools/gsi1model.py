@@ -6,13 +6,36 @@
 # the packed unit, the transcendental unit and the divider (bit-exact through
 # tools/gsi1fp.py), lw/sw/atom/fence, lds/sts, lwc and the c operands, exec.*,
 # kill, the branches, end, bar, wait and nop, and the lane unit (qd; shfl,
-# vote and ballot with --subgroup).  Texture, export and lda stop the model
-# with an error.  Programs must be free of races between warps (the model is
-# sequentially consistent per warp).
+# vote and ballot with --subgroup).  Texture and lda stop the model with an
+# error; exp only in --warps mode.  Programs must be free of races between
+# warps (the model is sequentially consistent per warp).
 #
 #   gsi1model.py PROG.s --lanes N [--groups G] [--nregs 32] [--packed]
 #                [--subgroup] [--data DATA.hex] -o PROG.exp [--mem-out PROG.mexp]
 #                [--fault-out PROG.fault]
+#   gsi1model.py PROG.s --warps W.hex --init I.hex [--nregs 32] [--vary 16] [...]
+#                -o PROG.exp [--mem-out PROG.mexp] [--exp-out PROG.xexp]
+#                [--pt-out PROG.pexp]
+#
+# --warps: graphics warps instead of a dispatch (sim/tb/atg_su_gfx_tb.v).
+# W.hex has 5 words per slot 0..3: kind (0 vertex, 1 fragment, 2 none),
+# the initial EXEC, the mask (operand 119: the coverage of a fragment warp,
+# the valid vertices of a vertex warp), the sequence number and the front
+# bit; I.hex (the -o format) holds the registers the VF or RX writes before
+# the start.  wgx/nwgx are 0 and lidn is the lane (atg_su_sched's warp
+# word).  The warps run one after the other in slot order.  Side effects
+# (sw, atom, sts, exp) take the lanes in EXEC, in the mask and not KILLED
+# (design §3.1, M10).  exp of a fragment warp: targets 0x100-0x103 (COLOR0)
+# and 0x104 (DEPTH); a lane is exported once one of them ran for it.
+# --exp-out: the quads the ROP gets (atg_su_exp), fragment warps in
+# sequence order, the quads with coverage (packed from lane 0) in order:
+# the number of quads, then per quad 22 words: {seq[15:0], 7'd0, last,
+# 4'd0, mask[3:0]} with mask = covered and exported lanes, {y, x} =
+# floor of r4 and r5 of the quad's lane 0, and per lane 0..3 COLOR0 RGBA
+# and the depth (exported, else r3 as written before the start; 0 for a
+# lane not in mask).  exp of a vertex warp: targets 0x000-0x003 (PT words
+# 0-3) and 0x010+v, v < --vary (PT word 4+v).  --pt-out: for the one
+# vertex warp, entry (lane) 0..31, word 0..3+VARY, the -o line format.
 #
 # The lane unit: qdx/qdy = v[lane|1] - v[lane&~1], v[lane|2] - v[lane&~2]
 # (fp32, RNE), qswap1/2/3 = v[lane^1/2/3], qbcast = v[lane&~3] (partner
@@ -38,6 +61,7 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import argparse
 import os
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -112,7 +136,7 @@ def fmod(v, neg, ab, unit):
 
 class Machine:
     def __init__(self, words, lanes, nregs, mem, groups, packed, subgroup=False,
-                 faults=None):
+                 faults=None, gw=None, vary=16):
         self.words, self.lanes, self.nregs, self.groups = words, lanes, nregs, groups
         self.cfg = dict(NREGS=nregs, PACKED=int(packed), SUBGROUP=int(subgroup), HAS_SA=0)
         self.faults = faults
@@ -120,6 +144,10 @@ class Machine:
         self.cbank = [mem.get(DATA_BASE // 4 + i, 0) for i in range(CONST_WORDS)]
         self.lds = [0] * LDS_WORDS
         self.regs = [[[None] * 32 for _ in range(nregs)] for _ in range(4)]
+        self.gw = gw            # graphics warps (--warps), else None
+        self.vary = vary
+        self.xexp = {}          # slot -> (colour[lane][4], depth[lane], exported mask)
+        self.pt = [[None] * (4 + vary) for _ in range(32)]
 
     def rd32(self, addr):
         return self.mem.get((addr & M32) >> 2, 0)
@@ -129,8 +157,15 @@ class Machine:
 
     def warp(self, k, wg, max_steps=200000):
         """Runs warp k of workgroup wg; yields at each bar."""
-        exec_m = M32 if self.lanes - 32 * k >= 32 else (1 << (self.lanes - 32 * k)) - 1
-        exec_init = exec_m
+        g = self.gw[k] if self.gw is not None else None
+        if g is None:
+            exec_m = M32 if self.lanes - 32 * k >= 32 else (1 << (self.lanes - 32 * k)) - 1
+            exec_init = exec_m
+        else:
+            exec_m, exec_init = g["exec"], g["mask"]
+            col = [[0] * 4 for _ in range(32)]
+            dep = [None] * 32
+            xp = 0
         killed = 0
         pc = 0
         r = self.regs[k] if self.groups == 1 else [[None] * 32 for _ in range(self.nregs)]
@@ -147,6 +182,9 @@ class Machine:
                   109: 32 * k + lane, 110: 0, 111: 0, 112: 32 * k + lane, 113: 0, 114: 0,
                   115: self.groups, 116: 1, 117: 1, 118: 0x3C003C00,
                   119: exec_init}
+            if g is not None:
+                sp.update({106: 0, 109: lane, 112: lane, 114: M32 if g["front"] else 0,
+                           115: 0, 116: 0, 117: 0})
             return sp.get(n, 0)
 
         while True:
@@ -263,6 +301,8 @@ class Machine:
                 elif op == 12:
                     killed |= bt & exec_m
                 elif op == 13:
+                    if g is not None and g["kind"] == 1:
+                        self.xexp[k] = (col, dep, xp)
                     return
                 elif op == 14:
                     yield pc
@@ -270,6 +310,22 @@ class Machine:
                     raise SystemExit("gsi1model: exec op %d" % op)
             elif unit == A.U_LANE:
                 self.lane(f, exec_m, r, src)
+            elif unit == A.U_EXP and g is not None:
+                t = imm & 0xFFF
+                for ln in range(32):
+                    if not side >> ln & 1:
+                        continue
+                    a, b, c = operands(ln)
+                    if g["kind"] == 1 and 0x100 <= t <= 0x104:
+                        if t == 0x104:
+                            dep[ln] = b
+                        else:
+                            col[ln][t - 0x100] = b
+                        xp |= 1 << ln
+                    elif g["kind"] == 0 and t < 4:
+                        self.pt[ln][t] = b
+                    elif g["kind"] == 0 and 0x10 <= t < 0x10 + self.vary:
+                        self.pt[ln][4 + t - 0x10] = b
             elif unit in (A.U_NONE, A.U_CTL):
                 pass
             else:
@@ -306,6 +362,12 @@ class Machine:
                 r[rd][ln] = v & M32
 
     def run(self):
+        if self.gw is not None:
+            for k in range(4):
+                if self.gw[k] is not None:
+                    for _ in self.warp(k, 0):
+                        raise SystemExit("gsi1model: bar in a graphics warp")
+            return self.regs
         nw = (self.lanes + 31) // 32
         for wg in range(self.groups):
             live = [self.warp(k, wg) for k in range(nw)]
@@ -326,6 +388,40 @@ def load_hex(path):
         return [int(ln, 16) for ln in f if ln.strip()]
 
 
+def floor_f32(v):
+    """floor of a non-negative fp32 value, as an integer (r4/r5 of the RX)."""
+    return int(struct.unpack("<f", struct.pack("<I", v & M32))[0])
+
+
+def write_exports(path, m, gw, init):
+    """--exp-out (the comment at the top)."""
+    out = []
+    frags = sorted((g["seq"], k) for k, g in enumerate(gw) if g is not None and g["kind"] == 1)
+    for seq, k in frags:
+        col, dep, xp = m.xexp[k]
+        cov = gw[k]["mask"]
+        nq = 0
+        while nq < 8 and cov >> (4 * nq) & 15:
+            nq += 1
+        for q in range(nq):
+            mask = cov >> (4 * q) & xp >> (4 * q) & 15
+            last = 1 if q == nq - 1 else 0
+            out.append(seq << 16 | last << 8 | mask)
+            x, y = floor_f32(init[k][4][4 * q]), floor_f32(init[k][5][4 * q])
+            out.append(y << 16 | x)
+            for i in range(4):
+                ln = 4 * q + i
+                if mask >> i & 1:
+                    d = dep[ln] if dep[ln] is not None else init[k][3][ln]
+                    out += col[ln] + [d]
+                else:
+                    out += [0] * 5
+    with open(path, "w") as f:
+        f.write("%08x\n" % (len(out) // 22))
+        for v in out:
+            f.write("%08x\n" % (v & M32))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src")
@@ -338,6 +434,11 @@ def main():
     ap.add_argument("--data")
     ap.add_argument("-o", dest="out", required=True)
     ap.add_argument("--mem-out")
+    ap.add_argument("--warps")
+    ap.add_argument("--init")
+    ap.add_argument("--vary", type=int, default=16)
+    ap.add_argument("--exp-out")
+    ap.add_argument("--pt-out")
     a = ap.parse_args()
     with open(a.src) as f:
         words = A.encode(f.read())
@@ -346,8 +447,32 @@ def main():
         for i, v in enumerate(load_hex(a.data)):
             mem[DATA_BASE // 4 + i] = v
     faults = [] if a.fault_out else None
-    m = Machine(words, a.lanes, a.nregs, mem, a.groups, a.packed, a.subgroup, faults)
+    gw = None
+    if a.warps:
+        t = load_hex(a.warps)
+        gw = [None if t[5 * k] == 2 else dict(kind=t[5 * k], exec=t[5 * k + 1],
+                                              mask=t[5 * k + 2], seq=t[5 * k + 3],
+                                              front=t[5 * k + 4]) for k in range(4)]
+    m = Machine(words, a.lanes, a.nregs, mem, a.groups, a.packed, a.subgroup, faults, gw,
+                a.vary)
+    if a.init:
+        t = load_hex(a.init)
+        for k in range(4):
+            for n in range(a.nregs):
+                for ln in range(32):
+                    v = t[(k * a.nregs + n) * 32 + ln]
+                    if v >> 32:
+                        m.regs[k][n][ln] = v & M32
+    init = [[list(rr) for rr in rk] for rk in m.regs]
     regs = m.run()
+    if a.exp_out:
+        write_exports(a.exp_out, m, gw, init)
+    if a.pt_out:
+        with open(a.pt_out, "w") as f:
+            for ln in range(32):
+                for wd in range(4 + a.vary):
+                    v = m.pt[ln][wd]
+                    f.write("000000000\n" if v is None else "1%08x\n" % v)
     if a.fault_out:
         with open(a.fault_out, "w") as f:
             for k, pc in faults:

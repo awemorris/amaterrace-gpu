@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Writes the data image of an SU test program (gen_data.py NAME OUT): 4096
 # words at 0x8000 for $readmemh, the first 256 also the constant bank.
-#   mem, sub: random integers;
+#   mem, sub, gfx: random integers;
 #   vadd, reduce: random integers in the first 256 words, fp32 values in
 #           [-100, 100) from word 256 (0x8400) on;
 #   others: zeros.
@@ -14,7 +14,7 @@ import sys
 def main(name, out):
     rnd = random.Random(sum(map(ord, name)))
     w = [0] * 4096
-    if name in ("mem", "sub", "vadd", "reduce"):
+    if name in ("mem", "sub", "gfx", "vadd", "reduce"):
         for i in range(4096):
             w[i] = rnd.getrandbits(32)
     if name in ("vadd", "reduce"):
