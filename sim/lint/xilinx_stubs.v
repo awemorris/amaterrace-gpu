@@ -12,7 +12,8 @@
  * those of Vivado 2026.1's unisims PS7.v (Values referenced: interface
  * names and widths only); BUFG is I/O; PLLE2_BASE, MMCME2_BASE, BUFGMUX,
  * OSERDESE2 and OBUFDS (the ZYBO DC) have the ports and parameters the tops
- * use.
+ * use; IBUFDS, BSCANE2, ODDR and the KC705's two IP cores (WS288 p012)
+ * likewise.
  * Never used for simulation or synthesis.
  */
 
@@ -364,6 +365,277 @@ module OBUFDS (
 );
 	assign O = I;
 	assign OB = !I;
+endmodule
+/* The KC705 (boards/kc705/lib): IBUFDS, BSCANE2 and ODDR as in Vivado
+ * 2026.1's unisims (the ports the tops use), and the two IP cores that the
+ * part-B TCL generates for atg_kc705_mig (port names from PG089 and PG164,
+ * unverified until the cores exist). */
+module IBUFDS (
+	input wire I,
+	input wire IB,
+	output wire O
+);
+	assign O = I;
+endmodule
+
+module BSCANE2 #(
+	parameter integer JTAG_CHAIN = 1
+) (
+	output wire CAPTURE,
+	output wire DRCK,
+	output wire RESET,
+	output wire RUNTEST,
+	output wire SEL,
+	output wire SHIFT,
+	output wire TCK,
+	output wire TDI,
+	output wire TMS,
+	output wire UPDATE,
+	input wire TDO
+);
+	assign CAPTURE = 1'b0;
+	assign DRCK = 1'b0;
+	assign RESET = 1'b0;
+	assign RUNTEST = 1'b0;
+	assign SEL = 1'b0;
+	assign SHIFT = 1'b0;
+	assign TCK = 1'b0;
+	assign TDI = 1'b0;
+	assign TMS = 1'b0;
+	assign UPDATE = 1'b0;
+endmodule
+
+module ODDR #(
+	parameter DDR_CLK_EDGE = "OPPOSITE_EDGE",
+	parameter INIT = 1'b0,
+	parameter SRTYPE = "SYNC"
+) (
+	output wire Q,
+	input wire C,
+	input wire CE,
+	input wire D1,
+	input wire D2,
+	input wire R,
+	input wire S
+);
+	assign Q = C ? D1 : D2;
+endmodule
+
+module atg_kc705_axi_cc (
+	input wire s_axi_aclk,
+	input wire s_axi_aresetn,
+	input wire [31:0] s_axi_awaddr,
+	input wire [7:0] s_axi_awlen,
+	input wire [2:0] s_axi_awsize,
+	input wire [1:0] s_axi_awburst,
+	input wire [0:0] s_axi_awlock,
+	input wire [3:0] s_axi_awcache,
+	input wire [2:0] s_axi_awprot,
+	input wire [3:0] s_axi_awregion,
+	input wire [3:0] s_axi_awqos,
+	input wire s_axi_awvalid,
+	output wire s_axi_awready,
+	input wire [511:0] s_axi_wdata,
+	input wire [63:0] s_axi_wstrb,
+	input wire s_axi_wlast,
+	input wire s_axi_wvalid,
+	output wire s_axi_wready,
+	output wire [1:0] s_axi_bresp,
+	output wire s_axi_bvalid,
+	input wire s_axi_bready,
+	input wire [31:0] s_axi_araddr,
+	input wire [7:0] s_axi_arlen,
+	input wire [2:0] s_axi_arsize,
+	input wire [1:0] s_axi_arburst,
+	input wire [0:0] s_axi_arlock,
+	input wire [3:0] s_axi_arcache,
+	input wire [2:0] s_axi_arprot,
+	input wire [3:0] s_axi_arregion,
+	input wire [3:0] s_axi_arqos,
+	input wire s_axi_arvalid,
+	output wire s_axi_arready,
+	output wire [511:0] s_axi_rdata,
+	output wire [1:0] s_axi_rresp,
+	output wire s_axi_rlast,
+	output wire s_axi_rvalid,
+	input wire s_axi_rready,
+	input wire m_axi_aclk,
+	input wire m_axi_aresetn,
+	output wire [31:0] m_axi_awaddr,
+	output wire [7:0] m_axi_awlen,
+	output wire [2:0] m_axi_awsize,
+	output wire [1:0] m_axi_awburst,
+	output wire [0:0] m_axi_awlock,
+	output wire [3:0] m_axi_awcache,
+	output wire [2:0] m_axi_awprot,
+	output wire [3:0] m_axi_awregion,
+	output wire [3:0] m_axi_awqos,
+	output wire m_axi_awvalid,
+	input wire m_axi_awready,
+	output wire [511:0] m_axi_wdata,
+	output wire [63:0] m_axi_wstrb,
+	output wire m_axi_wlast,
+	output wire m_axi_wvalid,
+	input wire m_axi_wready,
+	input wire [1:0] m_axi_bresp,
+	input wire m_axi_bvalid,
+	output wire m_axi_bready,
+	output wire [31:0] m_axi_araddr,
+	output wire [7:0] m_axi_arlen,
+	output wire [2:0] m_axi_arsize,
+	output wire [1:0] m_axi_arburst,
+	output wire [0:0] m_axi_arlock,
+	output wire [3:0] m_axi_arcache,
+	output wire [2:0] m_axi_arprot,
+	output wire [3:0] m_axi_arregion,
+	output wire [3:0] m_axi_arqos,
+	output wire m_axi_arvalid,
+	input wire m_axi_arready,
+	input wire [511:0] m_axi_rdata,
+	input wire [1:0] m_axi_rresp,
+	input wire m_axi_rlast,
+	input wire m_axi_rvalid,
+	output wire m_axi_rready
+);
+	assign s_axi_awready = 1'b0;
+	assign s_axi_wready = 1'b0;
+	assign s_axi_bresp = 2'd0;
+	assign s_axi_bvalid = 1'b0;
+	assign s_axi_arready = 1'b0;
+	assign s_axi_rdata = 512'd0;
+	assign s_axi_rresp = 2'd0;
+	assign s_axi_rlast = 1'b0;
+	assign s_axi_rvalid = 1'b0;
+	assign m_axi_awaddr = 32'd0;
+	assign m_axi_awlen = 8'd0;
+	assign m_axi_awsize = 3'd0;
+	assign m_axi_awburst = 2'd0;
+	assign m_axi_awlock = 1'b0;
+	assign m_axi_awcache = 4'd0;
+	assign m_axi_awprot = 3'd0;
+	assign m_axi_awregion = 4'd0;
+	assign m_axi_awqos = 4'd0;
+	assign m_axi_awvalid = 1'b0;
+	assign m_axi_wdata = 512'd0;
+	assign m_axi_wstrb = 64'd0;
+	assign m_axi_wlast = 1'b0;
+	assign m_axi_wvalid = 1'b0;
+	assign m_axi_bready = 1'b0;
+	assign m_axi_araddr = 32'd0;
+	assign m_axi_arlen = 8'd0;
+	assign m_axi_arsize = 3'd0;
+	assign m_axi_arburst = 2'd0;
+	assign m_axi_arlock = 1'b0;
+	assign m_axi_arcache = 4'd0;
+	assign m_axi_arprot = 3'd0;
+	assign m_axi_arregion = 4'd0;
+	assign m_axi_arqos = 4'd0;
+	assign m_axi_arvalid = 1'b0;
+	assign m_axi_rready = 1'b0;
+endmodule
+
+module atg_kc705_ddr3 (
+	inout wire [63:0] ddr3_dq,
+	inout wire [7:0] ddr3_dqs_n,
+	inout wire [7:0] ddr3_dqs_p,
+	output wire [13:0] ddr3_addr,
+	output wire [2:0] ddr3_ba,
+	output wire ddr3_ras_n,
+	output wire ddr3_cas_n,
+	output wire ddr3_we_n,
+	output wire ddr3_reset_n,
+	output wire [0:0] ddr3_ck_p,
+	output wire [0:0] ddr3_ck_n,
+	output wire [0:0] ddr3_cke,
+	output wire [0:0] ddr3_cs_n,
+	output wire [7:0] ddr3_dm,
+	output wire [0:0] ddr3_odt,
+	input wire sys_clk_i,
+	input wire sys_rst,
+	output wire ui_clk,
+	output wire ui_clk_sync_rst,
+	output wire mmcm_locked,
+	input wire aresetn,
+	input wire app_sr_req,
+	input wire app_ref_req,
+	input wire app_zq_req,
+	output wire app_sr_active,
+	output wire app_ref_ack,
+	output wire app_zq_ack,
+	output wire init_calib_complete,
+	output wire [11:0] device_temp,
+	input wire [3:0] s_axi_awid,
+	input wire [29:0] s_axi_awaddr,
+	input wire [7:0] s_axi_awlen,
+	input wire [2:0] s_axi_awsize,
+	input wire [1:0] s_axi_awburst,
+	input wire [0:0] s_axi_awlock,
+	input wire [3:0] s_axi_awcache,
+	input wire [2:0] s_axi_awprot,
+	input wire [3:0] s_axi_awqos,
+	input wire s_axi_awvalid,
+	output wire s_axi_awready,
+	input wire [511:0] s_axi_wdata,
+	input wire [63:0] s_axi_wstrb,
+	input wire s_axi_wlast,
+	input wire s_axi_wvalid,
+	output wire s_axi_wready,
+	input wire s_axi_bready,
+	output wire [3:0] s_axi_bid,
+	output wire [1:0] s_axi_bresp,
+	output wire s_axi_bvalid,
+	input wire [3:0] s_axi_arid,
+	input wire [29:0] s_axi_araddr,
+	input wire [7:0] s_axi_arlen,
+	input wire [2:0] s_axi_arsize,
+	input wire [1:0] s_axi_arburst,
+	input wire [0:0] s_axi_arlock,
+	input wire [3:0] s_axi_arcache,
+	input wire [2:0] s_axi_arprot,
+	input wire [3:0] s_axi_arqos,
+	input wire s_axi_arvalid,
+	output wire s_axi_arready,
+	input wire s_axi_rready,
+	output wire [3:0] s_axi_rid,
+	output wire [511:0] s_axi_rdata,
+	output wire [1:0] s_axi_rresp,
+	output wire s_axi_rlast,
+	output wire s_axi_rvalid
+);
+	assign ddr3_dq = {64{1'bz}};
+	assign ddr3_dqs_n = {8{1'bz}};
+	assign ddr3_dqs_p = {8{1'bz}};
+	assign ddr3_addr = 14'd0;
+	assign ddr3_ba = 3'd0;
+	assign ddr3_ras_n = 1'b1;
+	assign ddr3_cas_n = 1'b1;
+	assign ddr3_we_n = 1'b1;
+	assign ddr3_reset_n = 1'b0;
+	assign ddr3_ck_p = 1'b0;
+	assign ddr3_ck_n = 1'b1;
+	assign ddr3_cke = 1'b0;
+	assign ddr3_cs_n = 1'b1;
+	assign ddr3_dm = 8'd0;
+	assign ddr3_odt = 1'b0;
+	assign ui_clk = sys_clk_i;
+	assign ui_clk_sync_rst = 1'b0;
+	assign mmcm_locked = 1'b0;
+	assign app_sr_active = 1'b0;
+	assign app_ref_ack = 1'b0;
+	assign app_zq_ack = 1'b0;
+	assign init_calib_complete = 1'b0;
+	assign device_temp = 12'd0;
+	assign s_axi_awready = 1'b0;
+	assign s_axi_wready = 1'b0;
+	assign s_axi_bid = 4'd0;
+	assign s_axi_bresp = 2'd0;
+	assign s_axi_bvalid = 1'b0;
+	assign s_axi_arready = 1'b0;
+	assign s_axi_rid = 4'd0;
+	assign s_axi_rdata = 512'd0;
+	assign s_axi_rresp = 2'd0;
+	assign s_axi_rlast = 1'b0;
+	assign s_axi_rvalid = 1'b0;
 endmodule
 /* verilator lint_on UNUSEDPARAM */
 /* verilator lint_on DECLFILENAME */

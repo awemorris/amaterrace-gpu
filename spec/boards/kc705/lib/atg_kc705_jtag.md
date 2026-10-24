@@ -31,7 +31,9 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Stub until p012: BSCANE2 + am_jtag_regs (rtl/common).
+BSCANE2 (JTAG_CHAIN 2 = USER2, IR 0x03) → BUFG on TCK → am_jtag_regs; j_* is its register-bus
+master side (j_busy = bus_busy).  In simulation BSCANE2 is `sim/models/xilinx/BSCANE2.v`
+(its `scan` task walks the TAP).
 
 ## 5. State machine
 
@@ -47,7 +49,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): covered by the parent's testbench and `tools/lint.sh`.
+No unit testbench (wiring only): covered by `sim/tb/atg_kc705_raster_tb.v` (through the BSCANE2 model) and `tools/lint.sh`; am_jtag_regs has its own.
 
 ## 9. References
 
@@ -55,4 +57,4 @@ design §4.4, spec/common/am_jtag_regs.md.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p012 part A (in `atg_kc705_raster_tb`, lint).  Not tried on the board.

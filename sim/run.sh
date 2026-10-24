@@ -4,6 +4,8 @@
 # any mismatch; the run passes when PASS is printed and FAIL is not.
 #   sim/run.sh [NAME...]     (no NAME: every testbench)
 # Output (the vvp binary, the log) goes to build/sim/ (not in git).
+# A testbench that needs files outside rtl/ (a board top) names them in a
+# comment line " * sim-sources: FILE..." (paths from the repository root).
 # SEED=n is passed to the testbench as +seed=n.  Timeout per run: 300 s
 # (SIM_TIMEOUT=s to change it).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -21,8 +23,9 @@ fail=0
 for name in "$@"; do
 	tb=sim/tb/${name}_tb.v
 	[ -f "$tb" ] || { echo "sim: no $tb" >&2; fail=1; continue; }
+	extra=$(sed -n 's/^ \* sim-sources: //p' "$tb")
 	if ! iverilog -g2005 -Wall -Wno-timescale -Iinclude -Isim/tb -s "${name}_tb" \
-		-o "$out/$name.vvp" "$tb" $rtl 2>"$out/$name.build"; then
+		-o "$out/$name.vvp" "$tb" $rtl $extra 2>"$out/$name.build"; then
 		cat "$out/$name.build" >&2
 		echo "FAIL $name (build)"
 		fail=1
