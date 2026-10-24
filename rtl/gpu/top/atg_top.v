@@ -301,7 +301,8 @@ module atg_top #(
 		.HAS_CPU(HAS_CPU),
 		.HAS_DISP(HAS_DISP),
 		.HAS_DBG(HAS_JTAG),
-		.PACKED(NSU != 0 && SU_PACKED != 0)
+		.PACKED(NSU != 0 && SU_PACKED != 0),
+		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
