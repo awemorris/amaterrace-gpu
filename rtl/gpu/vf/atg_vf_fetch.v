@@ -71,22 +71,20 @@ module atg_vf_fetch #(
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
 	input wire rsp_error
 );
+	`include "ghci_regs.vh"
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam LB = LINE_BYTES * 8;
 
 	/* STATE (design §2.3): FIRST_INSTANCE 0x027, ATTR[k]_BASE 0x030 + 2k,
 	 * ATTR[k]_DESC 0x031 + 2k, ATTR_DST[k] 0x1C0 + k. */
-	localparam [8:0] S_FIRST_INSTANCE = 9'h027;
-	localparam [8:0] S_ATTR = 9'h030;
-	localparam [8:0] S_ATTR_DST = 9'h1C0;
 
 	reg [31:0] s_finst;
 	reg [31:0] a_base [0:15];
 	reg [20:0] a_desc [0:15];	/* DESC[20:0]: stride, format, per-instance */
 	reg [7:0] a_div [0:15];	/* DESC[31:24] */
 	reg [15:0] en;
-	wire [8:0] s_off = st_idx - S_ATTR;
-	wire s_attr = st_idx >= S_ATTR && st_idx < S_ATTR + 9'd32;
+	wire [8:0] s_off = st_idx - GHCI_S_ATTR;
+	wire s_attr = st_idx >= GHCI_S_ATTR && st_idx < GHCI_S_ATTR + 9'd32;
 	integer i;
 	always @(posedge clk)
 		if (!rst_n) begin
@@ -98,7 +96,7 @@ module atg_vf_fetch #(
 				a_div[i] <= 8'd0;
 			end
 		end else if (st_we) begin
-			if (st_idx == S_FIRST_INSTANCE)
+			if (st_idx == GHCI_S_FIRST_INSTANCE)
 				s_finst <= st_wdata;
 			if (s_attr && !s_off[0])
 				a_base[s_off[4:1]] <= st_wdata;
@@ -106,7 +104,7 @@ module atg_vf_fetch #(
 				a_desc[s_off[4:1]] <= st_wdata[20:0];
 				a_div[s_off[4:1]] <= st_wdata[31:24];
 			end
-			if (st_idx[8:4] == S_ATTR_DST[8:4])
+			if (st_idx[8:4] == GHCI_S_ATTR_DST[8:4])
 				en[st_idx[3:0]] <= st_wdata[7:0] != 8'd0;
 		end
 

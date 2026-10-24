@@ -35,6 +35,7 @@ module atg_rop_blend #(
 	output reg b_rvalid,
 	output reg [127:0] b_pix
 );
+	`include "ghci_regs.vh"
 	/* STATE: RT_FORMAT 0x072, BLEND 0x07A, BLEND_CONST 0x07B, WRITE_MASK 0x07C. */
 	reg [1:0] fmt;
 	reg [22:0] bl;
@@ -47,13 +48,13 @@ module atg_rop_blend #(
 			kc <= 32'd0;
 			wm <= 4'd0;
 		end else if (st_we) begin
-			if (st_idx == 9'h072)
+			if (st_idx == GHCI_S_RT_FORMAT)
 				fmt <= st_wdata[1:0];
-			if (st_idx == 9'h07A)
+			if (st_idx == GHCI_S_BLEND)
 				bl <= st_wdata[22:0];
-			if (st_idx == 9'h07B)
+			if (st_idx == GHCI_S_BLEND_CONST)
 				kc <= st_wdata;
-			if (st_idx == 9'h07C)
+			if (st_idx == GHCI_S_WRITE_MASK)
 				wm <= st_wdata[3:0];
 		end
 

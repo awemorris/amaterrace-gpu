@@ -98,6 +98,7 @@ module atg_su_cbank #(
 	input wire rsp_error
 );
 `include "atg_su_uop.vh"
+`include "ghci_regs.vh"
 
 	localparam DW = NPHYS * 32;
 	localparam LB = LINE_BYTES * 8;
@@ -158,11 +159,11 @@ module atg_su_cbank #(
 			pval <= 1'b0;
 			li <= {LW{1'b0}};
 		end else begin
-			if (st_we && st_idx == 9'h1EC)
+			if (st_we && st_idx == GHCI_S_LC_REGION)
 				s_region <= st_wdata;
-			if (st_we && st_idx == 9'h1ED)
+			if (st_we && st_idx == GHCI_S_LC_ADDR)
 				s_addr <= st_wdata;
-			if (st_we && st_idx == 9'h1EE)
+			if (st_we && st_idx == GHCI_S_LC_WORDS)
 				s_words <= st_wdata;
 			if (lc_kick)
 				lc_pend <= 1'b1;

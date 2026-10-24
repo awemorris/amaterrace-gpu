@@ -145,6 +145,82 @@ localparam [8:0] GHCI_S_BLT_COLOR = 9'h008;
 localparam [8:0] GHCI_S_BLT_CLIP_MIN = 9'h009;
 localparam [8:0] GHCI_S_BLT_CLIP_MAX = 9'h00A;
 
+/*
+ * The other STATE ranges.  docs/ghci.md section 8.3 defines the program
+ * range; the VF, RX, ROP and TU ranges and the vendor words are
+ * Amaterrace's layout until the draft defines them (design section 2.3).
+ */
+localparam [8:0] GHCI_S_BLT = 9'h000;
+localparam [8:0] GHCI_S_VF = 9'h020;
+localparam [8:0] GHCI_S_RX = 9'h050;
+localparam [8:0] GHCI_S_ROP = 9'h070;
+localparam [8:0] GHCI_S_TU = 9'h090;	/* 16 slots of 16 words */
+localparam [8:0] GHCI_S_PROG = 9'h190;
+localparam [8:0] GHCI_S_SA = 9'h1B0;	/* reserved */
+localparam [8:0] GHCI_S_ATTR_DST = 9'h1C0;	/* VF: ATTR_DST[0..15] */
+localparam [8:0] GHCI_S_VENDOR = 9'h1E0;
+
+/* VF (0x020-0x04F). */
+localparam [8:0] GHCI_S_TOPOLOGY = 9'h020;
+localparam [8:0] GHCI_S_INDEX_BASE = 9'h021;
+localparam [8:0] GHCI_S_INDEX_FORMAT = 9'h022;
+localparam [8:0] GHCI_S_FIRST = 9'h023;
+localparam [8:0] GHCI_S_COUNT = 9'h024;
+localparam [8:0] GHCI_S_PRIM_RESTART = 9'h025;
+localparam [8:0] GHCI_S_INSTANCE_COUNT = 9'h026;
+localparam [8:0] GHCI_S_FIRST_INSTANCE = 9'h027;
+localparam [8:0] GHCI_S_VERTEX_OFFSET = 9'h028;
+localparam [8:0] GHCI_S_ATTR = 9'h030;	/* ATTR[k]_BASE at +2k, ATTR[k]_DESC at +2k+1 */
+
+/* RX (0x050-0x06F). */
+localparam [8:0] GHCI_S_VIEWPORT = 9'h050;	/* 6 words: x/y scale, x/y offset, z scale, z offset */
+localparam [8:0] GHCI_S_SCISSOR_MIN = 9'h056;
+localparam [8:0] GHCI_S_SCISSOR_MAX = 9'h057;
+localparam [8:0] GHCI_S_CULL = 9'h058;
+localparam [8:0] GHCI_S_DEPTH_CLAMP = 9'h059;
+localparam [8:0] GHCI_S_RAST_MODE = 9'h05A;
+localparam [8:0] GHCI_S_VARYING_COUNT = 9'h05B;
+localparam [8:0] GHCI_S_DEBUG_COLOR = 9'h05C;
+localparam [8:0] GHCI_S_PROVOKING = 9'h05D;
+
+/* ROP (0x070-0x08F). */
+localparam [8:0] GHCI_S_RT_BASE = 9'h070;
+localparam [8:0] GHCI_S_RT_STRIDE = 9'h071;
+localparam [8:0] GHCI_S_RT_FORMAT = 9'h072;
+localparam [8:0] GHCI_S_RT_SIZE = 9'h073;
+localparam [8:0] GHCI_S_DS_BASE = 9'h074;
+localparam [8:0] GHCI_S_DS_STRIDE = 9'h075;
+localparam [8:0] GHCI_S_DEPTH = 9'h076;
+localparam [8:0] GHCI_S_STENCIL_FRONT = 9'h077;
+localparam [8:0] GHCI_S_STENCIL_OPS = 9'h078;
+localparam [8:0] GHCI_S_STENCIL_BACK = 9'h079;
+localparam [8:0] GHCI_S_BLEND = 9'h07A;
+localparam [8:0] GHCI_S_BLEND_CONST = 9'h07B;
+localparam [8:0] GHCI_S_WRITE_MASK = 9'h07C;
+
+/* The program range (0x190-0x1AF, docs/ghci.md section 8.3). */
+localparam [8:0] GHCI_S_VS_BASE = 9'h190;
+localparam [8:0] GHCI_S_VS_WORDS = 9'h191;
+localparam [8:0] GHCI_S_FS_BASE = 9'h192;
+localparam [8:0] GHCI_S_FS_WORDS = 9'h193;
+localparam [8:0] GHCI_S_CS_BASE = 9'h194;
+localparam [8:0] GHCI_S_CS_WORDS = 9'h195;
+localparam [8:0] GHCI_S_CONST_BASE = 9'h196;
+localparam [8:0] GHCI_S_CONST_WORDS = 9'h197;
+localparam [8:0] GHCI_S_LDS_BYTES = 9'h198;
+localparam [8:0] GHCI_S_WG_SIZE = 9'h199;
+localparam [8:0] GHCI_S_VS_OUT_WORDS = 9'h19A;
+
+/* Amaterrace's vendor words (0x1E0-0x1FF), written by the µop sequencer. */
+localparam [8:0] GHCI_S_RAW = 9'h1E0;	/* DRAW_RAW's 9 words, 0x1E0-0x1E8 */
+localparam [8:0] GHCI_S_GRID_X = 9'h1E9;	/* DISPATCH's grid */
+localparam [8:0] GHCI_S_GRID_Y = 9'h1EA;
+localparam [8:0] GHCI_S_GRID_Z = 9'h1EB;
+localparam [8:0] GHCI_S_LC_REGION = 9'h1EC;	/* LOAD_CONST */
+localparam [8:0] GHCI_S_LC_ADDR = 9'h1ED;
+localparam [8:0] GHCI_S_LC_WORDS = 9'h1EE;
+localparam [8:0] GHCI_S_DBG_MARK = 9'h1FF;
+
 /* PERF_SRCn values: what PERFn counts. */
 localparam [7:0] GHCI_PERF_SRC_MEM = 8'd8;	/* memory accesses outstanding */
 localparam [7:0] GHCI_PERF_SRC_NONE = 8'hFF;

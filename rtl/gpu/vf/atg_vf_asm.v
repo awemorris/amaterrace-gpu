@@ -70,11 +70,8 @@ module atg_vf_asm (
 	output wire prim_last,
 	output wire busy
 );
+	`include "ghci_regs.vh"
 	/* STATE: TOPOLOGY 0x020, INDEX_FORMAT 0x022, VERTEX_OFFSET 0x028, PROVOKING 0x05D. */
-	localparam [8:0] S_TOPOLOGY = 9'h020;
-	localparam [8:0] S_INDEX_FORMAT = 9'h022;
-	localparam [8:0] S_VERTEX_OFFSET = 9'h028;
-	localparam [8:0] S_PROVOKING = 9'h05D;
 	reg [2:0] s_topo;
 	reg s_ind, s_last;
 	reg [31:0] s_voff;
@@ -85,13 +82,13 @@ module atg_vf_asm (
 			s_voff <= 32'd0;
 			s_last <= 1'b0;
 		end else if (st_we) begin
-			if (st_idx == S_TOPOLOGY)
+			if (st_idx == GHCI_S_TOPOLOGY)
 				s_topo <= st_wdata[2:0];
-			if (st_idx == S_INDEX_FORMAT)
+			if (st_idx == GHCI_S_INDEX_FORMAT)
 				s_ind <= st_wdata[1:0] != 2'd0;
-			if (st_idx == S_VERTEX_OFFSET)
+			if (st_idx == GHCI_S_VERTEX_OFFSET)
 				s_voff <= st_wdata;
-			if (st_idx == S_PROVOKING)
+			if (st_idx == GHCI_S_PROVOKING)
 				s_last <= st_wdata[0];
 		end
 

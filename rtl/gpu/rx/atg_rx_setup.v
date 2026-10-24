@@ -42,6 +42,7 @@ module atg_rx_setup (
 	output wire busy
 );
 	`include "atg_rx_setup_uc.vh"
+	`include "ghci_regs.vh"
 
 	localparam [31:0] ONE = 32'h3F800000;
 
@@ -57,15 +58,15 @@ module atg_rx_setup (
 			rts <= 32'd0;
 			cull <= 3'd0;
 		end else if (st_we) begin
-			if (st_idx >= 9'h050 && st_idx <= 9'h055)
+			if (st_idx >= GHCI_S_VIEWPORT && st_idx <= GHCI_S_VIEWPORT + 9'd5)
 				vp[st_idx[2:0]] <= st_wdata;
-			if (st_idx == 9'h056)
+			if (st_idx == GHCI_S_SCISSOR_MIN)
 				smin <= st_wdata;
-			if (st_idx == 9'h057)
+			if (st_idx == GHCI_S_SCISSOR_MAX)
 				smax <= st_wdata;
-			if (st_idx == 9'h058)
+			if (st_idx == GHCI_S_CULL)
 				cull <= st_wdata[2:0];
-			if (st_idx == 9'h073)
+			if (st_idx == GHCI_S_RT_SIZE)
 				rts <= st_wdata;
 		end
 

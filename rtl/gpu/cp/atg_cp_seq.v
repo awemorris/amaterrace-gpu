@@ -209,23 +209,24 @@ module atg_cp_seq #(
 			/* a block's STATE does not change under its work (RX: also the ROP's
 			 * DEBUG_COLOR; VF: 0x020-0x04F and ATTR_DST 0x1C0-0x1CF; TU: also the
 			 * fragments still in the RX and the SUs) */
-			pay_wait = sidx < 9'h020 ? B_BLT : sidx < 9'h050 ? B_VF : sidx < 9'h070 ? B_RX | B_ROP :
-				sidx < 9'h090 ? B_ROP : sidx < 9'h190 ? B_TU | B_SU | B_RX :
-				sidx[8:4] == 5'h1C ? B_VF : 8'd0;
+			pay_wait = sidx < GHCI_S_VF ? B_BLT : sidx < GHCI_S_RX ? B_VF :
+				sidx < GHCI_S_ROP ? B_RX | B_ROP : sidx < GHCI_S_TU ? B_ROP :
+				sidx < GHCI_S_PROG ? B_TU | B_SU | B_RX :
+				sidx[8:4] == GHCI_S_ATTR_DST[8:4] ? B_VF : 8'd0;
 		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
 			pay_we = 1'b1;
-			pay_idx = 9'h1E0 + {1'b0, p};
+			pay_idx = GHCI_S_RAW + {1'b0, p};
 			pay_wait = B_RX;
 		end else if (vendor && op == VOP_DBG_MARK && p == 8'd0) begin
 			pay_we = 1'b1;
-			pay_idx = 9'h1FF;
+			pay_idx = GHCI_S_DBG_MARK;
 		end else if (!vendor && op == OP_DISPATCH && p < 8'd3) begin
 			pay_we = 1'b1;
-			pay_idx = 9'h1E9 + {1'b0, p};
+			pay_idx = GHCI_S_GRID_X + {1'b0, p};
 			pay_wait = B_SU;
 		end else if (!vendor && op == OP_LOAD_CONST && p < 8'd3) begin
 			pay_we = 1'b1;
-			pay_idx = 9'h1EC + {1'b0, p};
+			pay_idx = GHCI_S_LC_REGION + {1'b0, p};
 			pay_wait = B_SU;
 		end
 	end

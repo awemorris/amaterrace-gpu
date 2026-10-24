@@ -224,6 +224,82 @@
 #define GHCI_S_BLT_COLOR (GHCI_S_BLT + 8u)
 #define GHCI_S_BLT_CLIP_MIN (GHCI_S_BLT + 9u)
 #define GHCI_S_BLT_CLIP_MAX (GHCI_S_BLT + 10u)
+
+/*
+ * The other ranges.  docs/ghci.md section 8.3 defines the program range;
+ * the VF, RX, ROP and TU ranges and the vendor words are Amaterrace's
+ * layout until the draft defines them (design section 2.3).
+ */
+#define GHCI_S_VF 0x020u
+#define GHCI_S_RX 0x050u
+#define GHCI_S_ROP 0x070u
+#define GHCI_S_TU 0x090u /* 16 slots of 16 words */
+#define GHCI_S_PROG 0x190u
+#define GHCI_S_SA 0x1B0u /* reserved */
+#define GHCI_S_ATTR_DST 0x1C0u /* VF: ATTR_DST[0..15] */
+
+/* VF. */
+#define GHCI_S_TOPOLOGY (GHCI_S_VF + 0u)
+#define GHCI_S_INDEX_BASE (GHCI_S_VF + 1u)
+#define GHCI_S_INDEX_FORMAT (GHCI_S_VF + 2u)
+#define GHCI_S_FIRST (GHCI_S_VF + 3u)
+#define GHCI_S_COUNT (GHCI_S_VF + 4u)
+#define GHCI_S_PRIM_RESTART (GHCI_S_VF + 5u)
+#define GHCI_S_INSTANCE_COUNT (GHCI_S_VF + 6u)
+#define GHCI_S_FIRST_INSTANCE (GHCI_S_VF + 7u)
+#define GHCI_S_VERTEX_OFFSET (GHCI_S_VF + 8u)
+#define GHCI_S_ATTR (GHCI_S_VF + 16u) /* ATTR[k]_BASE at +2k, ATTR[k]_DESC at +2k+1 */
+
+/* RX. */
+#define GHCI_S_VIEWPORT (GHCI_S_RX + 0u) /* 6 words: x/y scale, x/y offset, z scale, z offset */
+#define GHCI_S_SCISSOR_MIN (GHCI_S_RX + 6u)
+#define GHCI_S_SCISSOR_MAX (GHCI_S_RX + 7u)
+#define GHCI_S_CULL (GHCI_S_RX + 8u)
+#define GHCI_S_DEPTH_CLAMP (GHCI_S_RX + 9u)
+#define GHCI_S_RAST_MODE (GHCI_S_RX + 10u)
+#define GHCI_S_VARYING_COUNT (GHCI_S_RX + 11u)
+#define GHCI_S_DEBUG_COLOR (GHCI_S_RX + 12u)
+#define GHCI_S_PROVOKING (GHCI_S_RX + 13u)
+
+/* ROP. */
+#define GHCI_S_RT_BASE (GHCI_S_ROP + 0u)
+#define GHCI_S_RT_STRIDE (GHCI_S_ROP + 1u)
+#define GHCI_S_RT_FORMAT (GHCI_S_ROP + 2u)
+#define GHCI_S_RT_SIZE (GHCI_S_ROP + 3u)
+#define GHCI_S_DS_BASE (GHCI_S_ROP + 4u)
+#define GHCI_S_DS_STRIDE (GHCI_S_ROP + 5u)
+#define GHCI_S_DEPTH (GHCI_S_ROP + 6u)
+#define GHCI_S_STENCIL_FRONT (GHCI_S_ROP + 7u)
+#define GHCI_S_STENCIL_OPS (GHCI_S_ROP + 8u)
+#define GHCI_S_STENCIL_BACK (GHCI_S_ROP + 9u)
+#define GHCI_S_BLEND (GHCI_S_ROP + 10u)
+#define GHCI_S_BLEND_CONST (GHCI_S_ROP + 11u)
+#define GHCI_S_WRITE_MASK (GHCI_S_ROP + 12u)
+
+/* The program range. */
+#define GHCI_S_VS_BASE (GHCI_S_PROG + 0u)
+#define GHCI_S_VS_WORDS (GHCI_S_PROG + 1u)
+#define GHCI_S_FS_BASE (GHCI_S_PROG + 2u)
+#define GHCI_S_FS_WORDS (GHCI_S_PROG + 3u)
+#define GHCI_S_CS_BASE (GHCI_S_PROG + 4u)
+#define GHCI_S_CS_WORDS (GHCI_S_PROG + 5u)
+#define GHCI_S_CONST_BASE (GHCI_S_PROG + 6u)
+#define GHCI_S_CONST_WORDS (GHCI_S_PROG + 7u)
+#define GHCI_S_LDS_BYTES (GHCI_S_PROG + 8u)
+#define GHCI_S_WG_SIZE (GHCI_S_PROG + 9u)
+#define GHCI_S_VS_OUT_WORDS (GHCI_S_PROG + 10u)
+
+/* Amaterrace's vendor words, written by the uop sequencer. */
+#define GHCI_S_RAW (GHCI_S_VENDOR + 0u) /* DRAW_RAW's 9 words */
+#define GHCI_S_GRID_X (GHCI_S_VENDOR + 9u) /* DISPATCH's grid */
+#define GHCI_S_GRID_Y (GHCI_S_VENDOR + 10u)
+#define GHCI_S_GRID_Z (GHCI_S_VENDOR + 11u)
+#define GHCI_S_LC_REGION (GHCI_S_VENDOR + 12u) /* LOAD_CONST */
+#define GHCI_S_LC_ADDR (GHCI_S_VENDOR + 13u)
+#define GHCI_S_LC_WORDS (GHCI_S_VENDOR + 14u)
+#define GHCI_S_DBG_MARK (GHCI_S_VENDOR + 31u)
+
+/* BLT_OP. */
 #define GHCI_BLT_FILL 0u
 #define GHCI_BLT_COPY 1u
 #define GHCI_BLT_TILE 2u

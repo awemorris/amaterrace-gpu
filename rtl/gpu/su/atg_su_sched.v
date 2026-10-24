@@ -97,13 +97,13 @@ module atg_su_sched #(
 			grid_z <= 16'd1;
 		end else if (st_we) begin
 			case (st_idx)
-			9'h190: vs_base <= st_wdata;
-			9'h192: fs_base <= st_wdata;
-			9'h194: cs_base <= st_wdata;
-			9'h199: {wg_z, wg_y, wg_x} <= st_wdata[23:0];
-			9'h1E9: grid_x <= st_wdata[15:0];
-			9'h1EA: grid_y <= st_wdata[15:0];
-			9'h1EB: grid_z <= st_wdata[15:0];
+			GHCI_S_VS_BASE: vs_base <= st_wdata;
+			GHCI_S_FS_BASE: fs_base <= st_wdata;
+			GHCI_S_CS_BASE: cs_base <= st_wdata;
+			GHCI_S_WG_SIZE: {wg_z, wg_y, wg_x} <= st_wdata[23:0];
+			GHCI_S_GRID_X: grid_x <= st_wdata[15:0];
+			GHCI_S_GRID_Y: grid_y <= st_wdata[15:0];
+			GHCI_S_GRID_Z: grid_z <= st_wdata[15:0];
 			default: ;
 			endcase
 		end

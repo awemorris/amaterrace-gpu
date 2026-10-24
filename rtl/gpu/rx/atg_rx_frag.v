@@ -70,6 +70,7 @@ module atg_rx_frag (
 	output wire sq_req,
 	input wire [15:0] sq_seq
 );
+	`include "ghci_regs.vh"
 	localparam [2:0] S_COL = 3'd0, S_ALLOC = 3'd1, S_COPY = 3'd2, S_PL = 3'd3, S_DIV = 3'd4,
 		S_BC = 3'd5, S_WR = 3'd6, S_GO = 3'd7;
 	localparam [31:0] ONE = 32'h3F800000;
@@ -96,7 +97,7 @@ module atg_rx_frag (
 	always @(posedge clk)
 		if (!rst_n)
 			vc <= 6'd0;
-		else if (st_we && st_idx == 9'h05B)
+		else if (st_we && st_idx == GHCI_S_VARYING_COUNT)
 			vc <= st_wdata[5:0] > 6'd32 ? 6'd32 : st_wdata[5:0];
 
 	/* The triangle: 12 plane words (z, 1/w, b0/w, b1/w × A, B, C), bbox origin, PT entries. */

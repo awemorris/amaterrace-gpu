@@ -61,6 +61,7 @@ module atg_rop_wb #(
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
 	input wire rsp_error
 );
+	`include "ghci_regs.vh"
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 
 	/* STATE: RT_BASE 0x070, RT_STRIDE 0x071, RT_FORMAT 0x072, BLEND 0x07A, WRITE_MASK 0x07C. */
@@ -76,15 +77,15 @@ module atg_rop_wb #(
 			blend_on <= 1'b0;
 			wm <= 4'd0;
 		end else if (st_we) begin
-			if (st_idx == 9'h070)
+			if (st_idx == GHCI_S_RT_BASE)
 				rt_base <= st_wdata;
-			if (st_idx == 9'h071)
+			if (st_idx == GHCI_S_RT_STRIDE)
 				rt_stride <= st_wdata;
-			if (st_idx == 9'h072)
+			if (st_idx == GHCI_S_RT_FORMAT)
 				fmt <= st_wdata[1:0];
-			if (st_idx == 9'h07A)
+			if (st_idx == GHCI_S_BLEND)
 				blend_on <= st_wdata[0];
-			if (st_idx == 9'h07C)
+			if (st_idx == GHCI_S_WRITE_MASK)
 				wm <= st_wdata[3:0];
 		end
 	wire px16 = fmt == 2'd2;

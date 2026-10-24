@@ -56,12 +56,13 @@ module atg_cp_state (
 	input wire replay,
 	output wire replay_busy
 );
+	`include "ghci_regs.vh"
 	reg [31:0] mem_a [0:511];
 	reg [31:0] mem_b [0:511];
 	reg [31:0] a_q;
 	reg [31:0] b_q;
 
-	wire host_locked = !open || (alias_idx < 9'h020 && blt_busy);
+	wire host_locked = !open || (alias_idx < GHCI_S_VF && blt_busy);
 	wire host_take = alias_we && !host_locked && !uop_we;
 	assign lock_fault = alias_we && !host_take;
 
