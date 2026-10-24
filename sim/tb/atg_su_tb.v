@@ -10,7 +10,8 @@
  * the same binary gives the same results on NPHYS 8, 16 and 32).  Three
  * SUs (NPHYS 8, 16, 32; NWARPS 4, NREGS 32) fetch code and load constants
  * from one amb_mem behind their I$ port, and access data through a second
- * amb_mem behind their D$ port, with a behavioural atomic unit on at_*.
+ * amb_mem behind their D$ port; at_* goes to atg_mc_atom, whose AMB port
+ * shares that second amb_mem with the D$ through am_amb_mux.
  * For each program of sim/tb/su (built by tools/su-tests.sh) the data image
  * NAME.dat goes to 0x8000 of both memories, LOAD_CONST loads its first 256
  * words into the constant bank, and the program runs as a compute dispatch
@@ -24,7 +25,7 @@
  *   frand: a random fp32/transcendental/divide program (128 lanes)
  *   mem: lw/sw/atom/fence, lwc and c operands, LDS with bar (128 lanes)
  *   vadd: fp32 vector add over 2 workgroups (memory only)
- *   reduce: fp32 tree reduction in LDS and an atomic sum (128 lanes)
+ *   reduce: fp32 tree reduction in LDS and an integer atomic sum (128 lanes)
  */
 
 `timescale 1ns / 1ps
@@ -65,12 +66,23 @@ module atg_su_chk #(
 	wire [31:0] d_req_be;
 	wire [255:0] d_req_wdata, d_rsp_rdata;
 	wire [7:0] d_req_tag, d_rsp_tag;
-	wire at_valid;
-	reg at_ready = 1'b0, at_rsp_valid = 1'b0;
+	wire at_valid, at_ready, at_rsp_valid, at_error;
 	wire [3:0] at_op;
 	wire [29:0] at_addr;
-	wire [31:0] at_a, at_b;
-	reg [31:0] at_old = 0;
+	wire [31:0] at_a, at_b, at_old;
+	/* The D$ (requester 0) and the atomic unit (1) into dmem. */
+	wire a_req_valid, a_req_ready, a_req_write, a_rsp_valid, m_rsp_write;
+	wire [26:0] a_req_line;
+	wire [31:0] a_req_be;
+	wire [255:0] a_req_wdata, m_rsp_rdata;
+	wire [7:0] a_req_tag, m_rsp_tag;
+	wire [1:0] x_rsp_valid;
+	wire m_req_valid, m_req_ready, m_req_write, m_rsp_valid, m_rsp_error;
+	wire [26:0] m_req_line;
+	wire [31:0] m_req_be;
+	wire [255:0] m_req_wdata, x_rsp_rdata;
+	wire [7:0] m_req_tag, x_rsp_tag;
+	wire x_rsp_write, x_rsp_error;
 
 	atg_su #(.NPHYS(NPHYS), .GRP_W(GRP_W)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
@@ -97,55 +109,48 @@ module atg_su_chk #(
 		.i_rsp_tag(i_rsp_tag), .i_rsp_rdata(i_rsp_rdata), .i_rsp_error(i_rsp_error),
 		.at_valid(at_valid), .at_ready(at_ready), .at_op(at_op), .at_addr(at_addr),
 		.at_a(at_a), .at_b(at_b), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
-		.at_error(1'b0),
+		.at_error(at_error),
 		.sa_push_valid(), .sa_push_ready(1'b1), .sa_push_data(), .sa_pop_valid(1'b0),
 		.sa_pop_ready(), .sa_pop_data({(NPHYS*32){1'b0}}), .sa_ctl_valid(), .sa_ctl_data(),
 		.sa_qstat(32'd0), .sa_stat(32'd0), .sa_qtag(32'd0),
 		.busy(busy), .fault(fault), .fault_addr(fault_addr)
 	);
-	amb_mem #(.MEM_WORDS(16384), .SEED(SEED + 10)) dmem (
-		.clk(clk), .rst_n(rst_n), .req_valid(d_req_valid), .req_ready(d_req_ready),
-		.req_write(d_req_write), .req_line(d_req_line), .req_be(d_req_be),
-		.req_wdata(d_req_wdata), .req_tag(d_req_tag), .rsp_valid(d_rsp_valid),
-		.rsp_write(d_rsp_write), .rsp_tag(d_rsp_tag), .rsp_rdata(d_rsp_rdata),
-		.rsp_error(d_rsp_error)
+	atg_mc_atom #(.NATOM(1), .AW(1)) atom (
+		.clk(clk), .rst_n(rst_n),
+		.at_valid(at_valid), .at_ready(at_ready), .at_op(at_op), .at_addr(at_addr),
+		.at_a(at_a), .at_b(at_b), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
+		.at_error(at_error), .busy(),
+		.req_valid(a_req_valid), .req_ready(a_req_ready), .req_write(a_req_write),
+		.req_line(a_req_line), .req_be(a_req_be), .req_wdata(a_req_wdata),
+		.req_tag(a_req_tag), .rsp_valid(a_rsp_valid), .rsp_write(x_rsp_write),
+		.rsp_tag(x_rsp_tag), .rsp_rdata(x_rsp_rdata), .rsp_error(x_rsp_error)
 	);
-
-	/* The atomic unit (atg_mc_atom's behaviour) on the data memory. */
-	function [31:0] atom_op;
-		input [3:0] op;
-		input [31:0] old, a, b;
-		case (op)
-		4'd0: atom_op = old & a;
-		4'd1: atom_op = old | a;
-		4'd2: atom_op = old ^ a;
-		4'd3: atom_op = a;
-		4'd4: atom_op = old + a;
-		4'd5: atom_op = old - a;
-		4'd6: atom_op = $signed(old) > $signed(a) ? old : a;
-		4'd7: atom_op = $signed(old) < $signed(a) ? old : a;
-		4'd8: atom_op = old > a ? old : a;
-		4'd9: atom_op = old < a ? old : a;
-		default: atom_op = old == b ? a : old;
-		endcase
-	endfunction
-	integer aseed, ad;
-	reg [31:0] aold;
-	initial aseed = SEED;
-	always @(posedge clk) begin
-		if (at_valid && at_ready) begin
-			aold = dmem.peek({at_addr, 2'b00});
-			dmem.poke({at_addr, 2'b00}, atom_op(at_op, aold, at_a, at_b));
-			at_ready <= 1'b0;
-			for (ad = 0; ad < 2 + ($unsigned($random(aseed)) % 4); ad = ad + 1)
-				@(posedge clk);
-			at_old <= aold;
-			at_rsp_valid <= 1'b1;
-			@(posedge clk);
-			at_rsp_valid <= 1'b0;
-		end else
-			at_ready <= ($random(aseed) & 1) != 0;
-	end
+	am_amb_mux #(.N(2), .ID_W(1)) dmux (
+		.clk(clk), .rst_n(rst_n),
+		.i_req_valid({a_req_valid, d_req_valid}), .i_req_ready({a_req_ready, d_req_ready}),
+		.i_req_write({a_req_write, d_req_write}), .i_req_line({a_req_line, d_req_line}),
+		.i_req_be({a_req_be, d_req_be}), .i_req_wdata({a_req_wdata, d_req_wdata}),
+		.i_req_tag({a_req_tag, d_req_tag}), .i_rsp_valid(x_rsp_valid),
+		.i_rsp_write(x_rsp_write), .i_rsp_tag(x_rsp_tag), .i_rsp_rdata(x_rsp_rdata),
+		.i_rsp_error(x_rsp_error),
+		.o_req_valid(m_req_valid), .o_req_ready(m_req_ready), .o_req_write(m_req_write),
+		.o_req_line(m_req_line), .o_req_be(m_req_be), .o_req_wdata(m_req_wdata),
+		.o_req_tag(m_req_tag), .o_rsp_valid(m_rsp_valid), .o_rsp_write(m_rsp_write),
+		.o_rsp_tag(m_rsp_tag), .o_rsp_rdata(m_rsp_rdata), .o_rsp_error(m_rsp_error)
+	);
+	assign d_rsp_valid = x_rsp_valid[0];
+	assign a_rsp_valid = x_rsp_valid[1];
+	assign d_rsp_write = x_rsp_write;
+	assign d_rsp_tag = x_rsp_tag;
+	assign d_rsp_rdata = x_rsp_rdata;
+	assign d_rsp_error = x_rsp_error;
+	amb_mem #(.MEM_WORDS(16384), .SEED(SEED + 10)) dmem (
+		.clk(clk), .rst_n(rst_n), .req_valid(m_req_valid), .req_ready(m_req_ready),
+		.req_write(m_req_write), .req_line(m_req_line), .req_be(m_req_be),
+		.req_wdata(m_req_wdata), .req_tag(m_req_tag), .rsp_valid(m_rsp_valid),
+		.rsp_write(m_rsp_write), .rsp_tag(m_rsp_tag), .rsp_rdata(m_rsp_rdata),
+		.rsp_error(m_rsp_error)
+	);
 
 	amb_mem #(.MEM_WORDS(16384), .SEED(SEED)) mem (
 		.clk(clk), .rst_n(rst_n), .req_valid(i_req_valid), .req_ready(i_req_ready),

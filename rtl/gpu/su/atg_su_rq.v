@@ -7,12 +7,12 @@
 
 /*
  * atg_su_rq: The reserved rq port (operand 63) and sactl to a systolic
- * array (design §3.9): v1 has no SA, so this module only reports rq empty
- * and full and answers nothing; with HAS_SA it would hold the push/pop
- * FIFO ends.
+ * array (design §3.9); with HAS_SA it would hold the push/pop FIFO ends.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_rq.md.
+ * Reserved (v1 has no SA; deferred with atg_sa): a port-only placeholder
+ * from WS288 p023, every output is 0 (rq neither empty nor full, nothing
+ * pushed, popped or sent to the SA).  The intended behaviour:
+ * spec/gpu/su/atg_su_rq.md.
  */
 
 `timescale 1ns / 1ps

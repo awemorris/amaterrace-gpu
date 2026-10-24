@@ -10,8 +10,8 @@
  * pipeline (one result per cycle), the long units' beats, and the VF/RX
  * input writes; pushes rq results; releases scoreboard entries.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_wb.md.
+ * Implemented in WS288 p008.  The behaviour, and where it differs from
+ * the design: spec/gpu/su/atg_su_wb.md (§10 Status).
  */
 
 `timescale 1ns / 1ps

@@ -10,8 +10,8 @@
  * instructions), lines of LINE_BYTES from the AMB, invalidated by
  * LOAD_PROGRAM / INVALIDATE[3].
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_icache.md.
+ * Implemented in WS288 p008.  The behaviour, and where it differs from
+ * the design: spec/gpu/su/atg_su_icache.md (§10 Status).
  */
 
 `timescale 1ns / 1ps

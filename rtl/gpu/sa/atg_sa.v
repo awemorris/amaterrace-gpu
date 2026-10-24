@@ -10,8 +10,8 @@
  * until the SU implements GSI1): only the top ports exist so atg_top and
  * atg_su keep the place for it; every output is 0 and CAPS[25] stays 0.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/sa/atg_sa.md.
+ * Deferred: a port-only placeholder from WS288 p023 (no logic).  The
+ * intended behaviour: spec/gpu/sa/atg_sa.md.
  */
 
 `timescale 1ns / 1ps
