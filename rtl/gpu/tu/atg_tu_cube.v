@@ -1,0 +1,173 @@
+/*
+ * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * atg_tu_cube: the face and the face coordinates of a cube map direction
+ * (docs/ghci.md section 8.4; tools/tumodel.py cube_proj is the reference,
+ * bit for bit).
+ *
+ * go (one cycle, while !bsy) takes the direction (x, y, z, fp32) and either
+ * selects the face (Vulkan: the largest magnitude, z before y before x on
+ * ties; zeros, denormals and NaN read as +0, infinities as the largest
+ * finite value) or, with fix, uses fface.  The face coordinates are
+ * computed by two serial divisions (s and t together, one bit a cycle, 26
+ * cycles): with m the major axis's significand and e its exponent, sc' =
+ * floor(sc 2^(150 - e)) clamped to [-3 m, 3 m], s = floor(2^23 (sc' + 3 m)
+ * / m) - 2^24 (24 fraction bits: [0, 2^24] on the selected face, wider on
+ * a forced one); a zero major axis gives s = t = 2^23 (the centre).  The
+ * result (face, s, t) is held from the cycle bsy falls until the next go.
+ * See spec/gpu/tu/atg_tu_cube.md.
+ *
+ * States: IDLE →(go)→ DIV (26 cycles) → IDLE.
+ */
+
+`timescale 1ns / 1ps
+`default_nettype none
+
+module atg_tu_cube (
+	input wire clk,
+	input wire rst_n,
+	input wire go,
+	input wire [31:0] x,
+	input wire [31:0] y,
+	input wire [31:0] z,
+	input wire fix,
+	input wire [2:0] fface,
+	output wire bsy,
+	output reg [2:0] face,
+	output wire signed [26:0] s,
+	output wire signed [26:0] t
+);
+	localparam IDLE = 1'b0, DIV = 1'b1;
+
+	/* A component: zeros, denormals, NaN +0; infinities the largest finite. */
+	function [31:0] comp;
+		input [31:0] f;
+		begin
+			if (f[30:23] == 8'd0 || (f[30:23] == 8'hFF && f[22:0] != 23'd0))
+				comp = 32'd0;
+			else if (f[30:23] == 8'hFF)
+				comp = {f[31], 31'h7F7FFFFF};
+			else
+				comp = f;
+		end
+	endfunction
+
+	/* floor(v 2^(150 - em)) with the sign flipped by neg, clamped to
+	 * [-3 mm, 3 mm]; plus 3 mm: [0, 6 mm]. */
+	function [26:0] scaled;
+		input [31:0] v;
+		input neg;
+		input [7:0] em;
+		input [23:0] mm;
+		reg [8:0] sh;
+		reg [26:0] q, m3;
+		reg sticky, ng;
+		integer k;
+		begin
+			sh = {1'b0, v[30:23]} - {1'b0, em};
+			m3 = {3'd0, mm} + {2'd0, mm, 1'b0};
+			ng = v[31] ^ neg;
+			q = 27'd0;
+			sticky = 1'b0;
+			if (v[30:23] == 8'd0) begin
+				q = 27'd0;
+			end else if (!sh[8] && sh > 9'd2) begin
+				q = m3;
+			end else if (!sh[8]) begin
+				q = {3'd0, 1'b1, v[22:0]} << sh[1:0];
+			end else begin
+				k = 512 - {23'd0, sh};	/* the right shift, 1 .. */
+				if (k < 24) begin
+					q = {3'd0, 1'b1, v[22:0]} >> k;
+					sticky = |({1'b1, v[22:0]} & ((24'd1 << k) - 24'd1));
+				end else
+					sticky = 1'b1;
+			end
+			if (q > m3)
+				q = m3;
+			if (v[30:23] == 8'd0)
+				scaled = m3;
+			else if (ng)
+				scaled = q + {26'd0, sticky} >= m3 ? 27'd0 : m3 - q - {26'd0, sticky};
+			else
+				scaled = m3 + q;
+		end
+	endfunction
+
+	wire [31:0] cx = comp(x), cy = comp(y), cz = comp(z);
+	wire az_wins = cz[30:0] >= cx[30:0] && cz[30:0] >= cy[30:0];
+	wire ay_wins = cy[30:0] >= cx[30:0];
+	wire [2:0] sel = az_wins ? {2'd2, cz[31]} : ay_wins ? {2'd1, cy[31]} : {2'd0, cx[31]};
+	wire [2:0] f = fix ? fface : sel;
+	/* Vulkan's table: major axis, s_c and t_c (with their signs). */
+	reg [31:0] vm, vs, vt;
+	reg ns, nt;
+	always @(*) begin
+		case (f)
+		3'd0: begin vm = cx; vs = cz; ns = 1'b1; vt = cy; nt = 1'b1; end
+		3'd1: begin vm = cx; vs = cz; ns = 1'b0; vt = cy; nt = 1'b1; end
+		3'd2: begin vm = cy; vs = cx; ns = 1'b0; vt = cz; nt = 1'b0; end
+		3'd3: begin vm = cy; vs = cx; ns = 1'b0; vt = cz; nt = 1'b1; end
+		3'd4: begin vm = cz; vs = cx; ns = 1'b0; vt = cy; nt = 1'b1; end
+		default: begin vm = cz; vs = cx; ns = 1'b1; vt = cy; nt = 1'b1; end
+		endcase
+	end
+	wire [23:0] mm_in = {1'b1, vm[22:0]};
+	wire [26:0] sn_in = scaled(vs, ns, vm[30:23], mm_in);
+	wire [26:0] tn_in = scaled(vt, nt, vm[30:23], mm_in);
+
+	reg st;
+	reg [4:0] n;
+	reg zero;	/* a zero major axis */
+	reg [23:0] mm;
+	reg [26:0] ns_num, nt_num;	/* sc' + 3 m, tc' + 3 m */
+	reg [24:0] rs, rt;
+	reg [25:0] qs, qt;
+	/* The numerator's next bit: num[2:0] then 23 zeros (num << 23). */
+	wire bs = n >= 5'd23 ? ns_num[n - 5'd23] : 1'b0;
+	wire bt = n >= 5'd23 ? nt_num[n - 5'd23] : 1'b0;
+	wire [25:0] ts = {rs, bs}, tt = {rt, bt};
+	wire gs = ts >= {2'b00, mm}, gt = tt >= {2'b00, mm};
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st <= IDLE;
+		end else begin
+			case (st)
+			IDLE: if (go) begin
+				face <= f;
+				zero <= vm[30:23] == 8'd0;
+				mm <= mm_in;
+				ns_num <= sn_in;
+				nt_num <= tn_in;
+				rs <= {1'b0, sn_in[26:3]};
+				rt <= {1'b0, tn_in[26:3]};
+				n <= 5'd25;
+				st <= DIV;
+			end
+			default: begin
+				rs <= gs ? ts[24:0] - {1'b0, mm} : ts[24:0];
+				rt <= gt ? tt[24:0] - {1'b0, mm} : tt[24:0];
+				qs <= {qs[24:0], gs};
+				qt <= {qt[24:0], gt};
+				n <= n - 5'd1;
+				if (n == 5'd0)
+					st <= IDLE;
+			end
+			endcase
+		end
+	end
+
+	assign bsy = st == DIV;
+	assign s = zero ? 27'sd8388608 : $signed({1'b0, qs}) - 27'sd16777216;
+	assign t = zero ? 27'sd8388608 : $signed({1'b0, qt}) - 27'sd16777216;
+
+	wire unused_ok = &{1'b0, vm[31]};	/* |ma|: the sign of the major axis is the face's */
+endmodule
+
+`default_nettype wire

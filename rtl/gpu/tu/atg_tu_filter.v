@@ -8,8 +8,8 @@
 /*
  * atg_tu_filter: TU filtering: converts texels (RGBA8/BGRA8 UNORM, D24,
  * D32F) to fp32 RGBA, compares depth texels with the reference of a
- * compare sampler, and blends nearest, bilinear or (over two passes)
- * trilinear per lane.
+ * compare sampler, and blends nearest, bilinear, and over the passes of
+ * 3D linear and mip linear filtering, per lane.
  *
  * Takes one quad (tc_*) in IDLE, does one lane per cycle (its four
  * channels) and holds tr_* until taken; order is kept.  Per channel, with
@@ -22,12 +22,12 @@
  * word (D24: Dref to unorm24 and an integer compare; D32F, tc_ctl[1]: an
  * fp32 compare, NaN passing only NOT_EQUAL and ALWAYS; include/
  * atg_depth.vh, as the ROP's depth test).
- * Mip linear: a quad with tc_ctl[4] is the first level; its sums R0 are
- * kept and nothing is returned.  The next quad (tc_ctl[5]) is the second
- * level: R' = R0 (256 − fl) + R1 fl with fl the lane's tc_wts[23:16];
- * otherwise R' = R × 256.  The word is R' / (255 × 2^24) as R' ×
- * 0x0101010101 / 2^64 rounded to fp32 to nearest even (R' = a × 2^24
- * gives exactly the correctly rounded a / 255).
+ * Passes: each adds R × W to the lane's sums A (the first, tc_ctl[5] = 0,
+ * starts them), W = (fw or 256 − fw) × (fl or 256 − fl) by the pass's
+ * slice and level bits tc_ctl[17], [18] (fl, fw the lane's tc_wts[23:16],
+ * [31:24]); a pass with tc_ctl[4] (more follow) returns nothing.  The last
+ * returns A / (255 × 2^32) as A × 0x0101010101 / 2^72 rounded to fp32 to
+ * nearest even (A = a × 2^32 gives exactly the correctly rounded a / 255).
  * A depth format without compare (tc_ctl[8]) returns texel 0 as (D, 0, 0,
  * 1): D32F the word itself, D24 c / (2^24 − 1) as c × (2^48 + 2^24 + 1) /
  * 2^72 rounded to nearest even (the correctly rounded quotient).
@@ -41,9 +41,8 @@
  * (λ'), both signed, as fp32.  texf texels convert like the others.
  * See spec/gpu/tu/atg_tu_filter.md.
  *
- * States: IDLE →(tc)→ RUN (lanes 0-3) → OUT →(tr_ready)→ IDLE; a first
- * level (tc_ctl[4]) goes from RUN back to IDLE.
- */
+ * States: IDLE →(tc)→ RUN (lanes 0-3) → OUT →(tr_ready)→ IDLE; a pass
+ * with more to follow (tc_ctl[4]) goes from RUN back to IDLE. */
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -55,7 +54,7 @@ module atg_tu_filter (
 	input wire tc_valid,
 	output wire tc_ready,
 	input wire [511:0] tc_texels,
-	input wire [95:0] tc_wts,
+	input wire [127:0] tc_wts,
 	input wire [15:0] tc_tag,
 	input wire [3:0] tc_mask,
 	input wire [23:0] tc_ctl,
@@ -71,36 +70,43 @@ module atg_tu_filter (
 	`include "atg_depth.vh"
 	localparam [1:0] IDLE = 2'd0, RUN = 2'd1, OUT = 2'd2;
 
-	/* p × 2^(eb − 127) as fp32 (p > 0, the result normal), RNE; 0 for 0. */
-	function [31:0] rnd73;
-		input [72:0] p;
+	/* p × 2^(n + eb − 127) as fp32 with n the msb position (p > 0, the
+	 * result normal), RNE; 0 for 0. */
+	function [31:0] rnd81;
+		input [80:0] p;
 		input [7:0] eb;
 		integer i;
-		reg [72:0] y;
+		reg [80:0] y;
 		reg [6:0] n;
 		reg [24:0] m;
 		reg [7:0] e;
 		begin
 			n = 7'd0;
-			for (i = 0; i < 73; i = i + 1)
+			for (i = 0; i < 81; i = i + 1)
 				if (p[i])
 					n = i[6:0];
-			y = p << (7'd72 - n);
-			m = {1'b0, y[72:49]} + {24'd0, y[48] && (y[47:0] != 48'd0 || y[49])};
+			y = p << (7'd80 - n);
+			m = {1'b0, y[80:57]} + {24'd0, y[56] && (y[55:0] != 56'd0 || y[57])};
 			e = eb + {1'b0, n} + {7'd0, m[24]};
-			rnd73 = p == 73'd0 ? 32'd0 : {1'b0, e, m[24] ? m[23:1] : m[22:0]};
+			rnd81 = p == 81'd0 ? 32'd0 : {1'b0, e, m[24] ? m[23:1] : m[22:0]};
 		end
 	endfunction
 
-	/* R' / (255 × 2^24): R' × 0x0101010101 × 2^-64. */
-	function [31:0] conv;
-		input [31:0] r;
-		reg [72:0] p;
+	/* A / (255 × 2^32): A × 0x0101010101 × 2^-72 (A < 2^40). */
+	function [31:0] conv40;
+		input [39:0] a;
+		reg [80:0] p;
 		begin
-			p = {41'd0, r} + ({41'd0, r} << 8) + ({41'd0, r} << 16) + ({41'd0, r} << 24) +
-				({41'd0, r} << 32);
-			conv = rnd73(p, 8'd63);
+			p = {41'd0, a} + ({41'd0, a} << 8) + ({41'd0, a} << 16) + ({41'd0, a} << 24) +
+				({41'd0, a} << 32);
+			conv40 = rnd81(p, 8'd55);
 		end
+	endfunction
+
+	/* An 8-bit value a / 255. */
+	function [31:0] conv8;
+		input [7:0] a;
+		conv8 = conv40({a, 32'd0});
 	endfunction
 
 	/* A signed 16-bit value with 8 fraction bits as fp32 (exact). */
@@ -109,45 +115,51 @@ module atg_tu_filter (
 		reg [15:0] a;
 		begin
 			a = v[15] ? -v : v;
-			fix8 = {v[15], 31'd0} | rnd73({57'd0, a}, 8'd119);
+			fix8 = {v[15], 31'd0} | rnd81({65'd0, a}, 8'd119);
 		end
 	endfunction
 
 	/* unorm24 to fp32: c × (2^48 + 2^24 + 1) × 2^-72. */
 	function [31:0] conv24;
 		input [23:0] c;
-		reg [72:0] p;
+		reg [80:0] p;
 		begin
-			p = {49'd0, c} + ({49'd0, c} << 24) + ({49'd0, c} << 48);
-			conv24 = rnd73(p, 8'd55);
+			p = {57'd0, c} + ({57'd0, c} << 24) + ({57'd0, c} << 48);
+			conv24 = rnd81(p, 8'd55);
 		end
 	endfunction
 
 	reg [1:0] st;
 	reg [1:0] k;
 	reg [511:0] tx;
-	reg [95:0] wts;
+	reg [127:0] wts;
 	reg [3:0] mask;
 	reg [23:0] ctl;
 	reg [127:0] val;
-	reg [383:0] hold;	/* the first level's sums: lane-major, 4 × 24 bits a lane */
+	reg [639:0] acc;	/* the passes' sums: lane-major, 4 × 40 bits a lane */
 
 	/* Lane k: its texels, weights, reference and kept sums. */
 	wire [127:0] lt = tx[k*128 +: 128];
-	wire [7:0] fu = wts[k*24 +: 8], fv = wts[k*24 + 8 +: 8], fl = wts[k*24 + 16 +: 8];
+	wire [7:0] fu = wts[k*32 +: 8], fv = wts[k*32 + 8 +: 8];
+	wire [7:0] fl = wts[k*32 + 16 +: 8], fw = wts[k*32 + 24 +: 8];
 	wire [31:0] dref = val[k*32 +: 32];
-	wire [95:0] hl = hold[k*96 +: 96];
+	wire [159:0] al = acc[k*160 +: 160];
+	/* The pass's weight: (fw or 256 − fw) × (fl or 256 − fl). */
+	wire [8:0] wa = ctl[17] ? {1'b0, fw} : 9'd256 - {1'b0, fw};
+	wire [8:0] wb = ctl[18] ? {1'b0, fl} : 9'd256 - {1'b0, fl};
+	wire [17:0] wp = {9'd0, wa} * {9'd0, wb};
 	wire [23:0] dref24 = atg_depth_u24(dref);
 	wire [32:0] dkey = atg_depth_key(dref);
 	wire dnan = dref[30:23] == 8'hFF && dref[22:0] != 23'd0;
 	reg [127:0] res;
-	reg [95:0] sums;
+	reg [159:0] sums;
 	reg [31:0] tex, tx0;
 	reg [3:0] ok;
 	reg [7:0] ca, cb, cc, cd;
 	reg [16:0] top, bot;
 	reg [25:0] r;
-	reg [31:0] rr, gt;
+	reg [39:0] rr;
+	reg [31:0] gt;
 	reg [7:0] gb;
 	integer c, t, g;
 	/* Gather: the byte of the component (BGRA8 swaps R and B). */
@@ -163,7 +175,7 @@ module atg_tu_filter (
 				atg_depth_pass(ctl[12:10], {9'd0, dref24}, {9'd0, tex[23:0]}, 1'b0);
 		end
 		res = 128'd0;
-		sums = 96'd0;
+		sums = 160'd0;
 		for (c = 0; c < 4; c = c + 1) begin
 			if (ctl[9]) begin
 				/* (pass, 0, 0, 1) as bytes */
@@ -186,10 +198,9 @@ module atg_tu_filter (
 			bot = {9'd0, cc} * (17'd256 - {9'd0, fu}) + {9'd0, cd} * {9'd0, fu};
 			r = ctl[0] ? {9'd0, top} * (26'd256 - {18'd0, fv}) + {9'd0, bot} * {18'd0, fv} :
 				{2'd0, ca, 16'd0};
-			sums[c*24 +: 24] = r[23:0];
-			rr = ctl[5] ? {8'd0, hl[c*24 +: 24]} * (32'd256 - {24'd0, fl}) +
-				{8'd0, r[23:0]} * {24'd0, fl} : {r[23:0], 8'd0};
-			res[c*32 +: 32] = conv(rr);
+			rr = (ctl[5] ? al[c*40 +: 40] : 40'd0) + {16'd0, r[23:0]} * {22'd0, wp};
+			sums[c*40 +: 40] = rr;
+			res[c*32 +: 32] = conv40(rr);
 		end
 		tx0 = lt[31:0];
 		if (ctl[8] && !ctl[9])
@@ -206,7 +217,7 @@ module atg_tu_filter (
 					res[g*32 +: 32] = ctl[15:14] == 2'd0 ? (ctl[1] ? gt : conv24(gt[23:0])) :
 						ctl[15:14] == 2'd3 ? 32'h3F800000 : 32'd0;
 				else
-					res[g*32 +: 32] = conv({gb, 24'd0});
+					res[g*32 +: 32] = conv8(gb);
 			end
 		end
 		if (ctl[2])
@@ -236,9 +247,8 @@ module atg_tu_filter (
 				st <= RUN;
 			end
 			RUN: begin
-				if (ctl[4])
-					hold[k*96 +: 96] <= sums;
-				else
+				acc[k*160 +: 160] <= sums;
+				if (!ctl[4])
 					tr_data[k*128 +: 128] <= res;
 				k <= k + 2'd1;
 				if (k == 2'd3)
@@ -251,7 +261,7 @@ module atg_tu_filter (
 		end
 	end
 
-	wire unused_ok = &{1'b0, ctl[23:17], ctl[7:6], ctl[3], r[25:24]};
+	wire unused_ok = &{1'b0, ctl[23:19], ctl[7:6], ctl[3], r[25:24], wp[17]};
 endmodule
 
 `default_nettype wire
