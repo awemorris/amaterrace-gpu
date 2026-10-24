@@ -486,7 +486,7 @@ follow the command set and are not yet part of this draft.
 
 | Index | Name | Contents |
 | --- | --- | --- |
-| 0x000 | BLT_OP | [2:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE, 4 RESOLVE (CAPS[29], draft), 5-7 refused; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits; 2 and 3 are refused); [12] reverse direction (bottom-right first, for overlapping copies) |
+| 0x000 | BLT_OP | [2:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE, 4 RESOLVE (CAPS[29], draft), 5-7 refused; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits; 2 and 3: 64 and 8 bits with CAPS[30], section 8.5, refused otherwise); [12] reverse direction (bottom-right first, for overlapping copies); [13] and [19:16]: section 8.5 (CAPS[30]) |
 | 0x001 | BLT_DST_BASE | GPU address of the destination image |
 | 0x002 | BLT_DST_STRIDE | Bytes per destination row |
 | 0x003 | BLT_SRC_BASE | GPU address of the source image (COPY, TILE, UNTILE, RESOLVE) |
@@ -498,6 +498,7 @@ follow the command set and are not yet part of this draft.
 | 0x009 | BLT_CLIP_MIN | [15:0] x, [31:16] y, inclusive |
 | 0x00A | BLT_CLIP_MAX | [15:0] x, [31:16] y, exclusive; 0 = no clipping |
 | 0x00B | BLT_RESOLVE | RESOLVE only (draft): [3:0] log2 of the source's samples per pixel; [7:4] the average (below); [8] the destination is in 4x4 tiles (CAPS[11]); [31:9] 0 |
+| 0x00C-0x00E | BLT_COLOR1-BLT_COLOR3 | (CAPS[30]) Bits 63:32, 95:64, 127:96 of a 64- or 128-bit FILL colour (section 8.5) |
 
 - Bases and strides are multiples of the pixel size. The destination
   rectangle is clipped to the clip rectangle; the source moves with it.
@@ -540,10 +541,10 @@ follow the command set and are not yet part of this draft.
   | 3 SRGB8_A8 | [32 bits] Bytes 0-2 sRGB: decoded to linear, averaged and encoded (the precision of the linear values is implementation-defined); byte 3 as UNORM8 |
   | 4 SFLOAT16 | [16, 32 bits] Every 16 bits a binary16: the mean of the samples in binary32 (with 4 samples ((s0 + s1) + (s2 + s3)) x 0.25), then to binary16; rounding, NaNs and denormals implementation-defined |
   | 5 SFLOAT32 | [32 bits] Every 32 bits a binary32, the same mean |
-  | 6-15 | Refused |
+  | 6-15 | Refused (6 and 7 with CAPS[30]: section 8.5) |
 
   A blitter does the averages of the formats its render output writes
-  (Amaterrace: 0-2; 3-5 are refused) and the sample counts of the device
+  (Amaterrace: 0-7, the pixel sizes of section 8.5) and the sample counts of the device
   (Amaterrace: 4).  Other averages and sample counts, a pixel size the
   average does not take, blend over, the reverse direction and a RESOLVE
   without CAPS[29] are refused.  Source and destination must not overlap
@@ -881,7 +882,8 @@ bytes.
 
 **Blitter** (with CAPS[30], section 8.2): the pixel size is BLT_OP
 [9:8] 0 = 32, 1 = 16, 2 = 64, 3 = 8 bits, or 128 bits with BLT_OP [13] = 1
-and [9:8] = 0 (TILE and UNTILE take 32 bits only); a FILL of 64 or 128
+and [9:8] = 0 ([13] with another [9:8] is refused; TILE and UNTILE take 16
+and 32 bits only, blend over 32 bits only); a FILL of 64 or 128
 bits takes BLT_COLOR as its low word and BLT_COLOR1-BLT_COLOR3
 (0x00C-0x00E) above it. BLT_OP [19:16] KEEP, for FILL and COPY of 32-bit
 pixels without blending: the bytes of each pixel that are not written
@@ -892,7 +894,13 @@ normalized field, [9:0], [19:10], [29:20], [31:30]) and 7 UNORM1555 (16
 bits: [15] one bit, [14:10], [9:5], [4:0] five bits), each the mean of
 the codes rounded to nearest even; UNORM8 also takes 8-bit pixels,
 SFLOAT16 16 to 64 bits, SFLOAT32 32 to 128 bits and SAMPLE0 8 to 128
-bits; averages 8-15 are refused, and Amaterrace does all of 0-7.
+bits; averages 8-15 are refused, and Amaterrace does all of 0-7.  A
+tiled RESOLVE destination takes 16- and 32-bit pixels; KEEP is not taken
+by RESOLVE, TILE, UNTILE or blend over.  The floating-point averages are
+((s0 + s1) + (s2 + s3)) x 0.25 in binary32 (Amaterrace: each step rounded
+to nearest even with denormals flushed; SFLOAT16 then to binary16 to
+nearest even; SRGB8_A8's linear values from the sRGB decode table, the
+nearest code after).
 
 9. Fences and interrupts
 ------------------------

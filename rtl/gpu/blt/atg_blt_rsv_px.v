@@ -231,7 +231,12 @@ module atg_blt_rsv_px #(
 		nptr = ptr;
 		pend = gend;
 		if (fire) begin
-			if (gend >= {{(7 - LS){1'b0}}, LB_V}) begin
+			if (gend >= {{(6 - LS){1'b0}}, LB_V, 1'b0}) begin
+				/* both lines used (16-byte pixels, 32-byte lines) */
+				nv0 = 1'b0;
+				nv1 = 1'b0;
+				pend = gend - {{(6 - LS){1'b0}}, LB_V, 1'b0};
+			end else if (gend >= {{(7 - LS){1'b0}}, LB_V}) begin
 				nw0 = w1;
 				nv0 = v1;
 				nv1 = 1'b0;

@@ -64,8 +64,8 @@ module atg_blt_favg (
 	reg [31:0] r01, r23, sm;
 
 	/* Channels of a pixel: sRGB 3, fp16 ps / 2, fp32 ps / 4. */
-	wire [3:0] ps = 4'd1 << m_psl;
-	wire [2:0] cpp = m_fmt == 3'd3 ? 3'd3 : m_fmt == 3'd4 ? ps[3:1] : {1'b0, ps[3:2]};
+	wire [4:0] ps = 5'd1 << m_psl;
+	wire [2:0] cpp = m_fmt == 3'd3 ? 3'd3 : m_fmt == 3'd4 ? ps[3:1] : ps[4:2];
 
 	/* Sample s of channel j of pixel p, as fp32. */
 	reg [31:0] x [0:3];
@@ -81,7 +81,11 @@ module atg_blt_favg (
 		end
 	wire [31:0] fa = step == 2'd0 ? x[0] : step == 2'd1 ? x[2] : step == 2'd2 ? r01 : sm;
 	wire [31:0] fb = step == 2'd3 ? QUARTER : ONE;
+`ifdef MUT_FAVG_PAIR
+	wire [31:0] fc = step == 2'd0 ? x[2] : step == 2'd1 ? x[1] : step == 2'd2 ? r23 : 32'h80000000;
+`else
 	wire [31:0] fc = step == 2'd0 ? x[1] : step == 2'd1 ? x[3] : step == 2'd2 ? r23 : 32'h80000000;
+`endif
 	wire [31:0] fr = atg_su_ffma(fa, fb, fc, 3'd0, 1'b0);
 	wire [15:0] fh = atg_fmt_f2h(fr);
 	wire lastj = j == cpp - 3'd1;

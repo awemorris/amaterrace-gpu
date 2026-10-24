@@ -79,9 +79,13 @@ module atg_blt_seg #(
 
 	always @(*)
 		for (u = 0; u < LINE_BYTES; u = u + 1)
+`ifdef MUT_BLT_KEEP
+			be[u] = u[US:0] >= {1'b0, p0} && u[US:0] < p_end;	/* KEEP ignored */
+`else
 			be[u] = u[US:0] >= {1'b0, p0} && u[US:0] < p_end && !keep[u % 4];
+`endif
 
-	wire unused_ok = &{1'b0, src_last[US-1:0]};
+	wire unused_ok = &{1'b0, src_last[US-1:0], keep};
 endmodule
 
 `default_nettype wire

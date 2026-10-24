@@ -4,7 +4,7 @@ RTL: `rtl/gpu/blt/atg_blt_2d.v` (it was `atg_blt` until the blitter got its RESO
 
 ## 1. Purpose and place
 
-The blitter (WS288 p003): FILL, COPY, TILE and UNTILE of rectangles of 16- or 32-bit pixels, with blend-over, the reverse direction and clipping, through one AMB port. It takes its parameters from the BLT range of STATE (0x000–0x00A) as the CP writes them (`st_we`) and runs one blit per kick. Parent: `atg_blt` (instance `b2d`; `atg_blt` is `atg_top`'s instance `blt`, MC client 1, reset by the CP's `core_rst_n`). It gets the kicks with BLT_OP[2] = 0 and only the responses of its own requests. Children: none (see §10 for the proposed split).
+The blitter: FILL, COPY, TILE and UNTILE of rectangles of 8-, 16-, 32-, 64- or 128-bit pixels (TILE and UNTILE: 16 and 32 bits), with blend-over (32 bits), KEEP (32-bit FILL and COPY), the reverse direction and clipping, through one AMB port. It takes its parameters from the BLT range of STATE (0x000–0x00A, 0x00C–0x00E) as the CP writes them (`st_we`, kept by `atg_blt_cfg`) and runs one blit per kick. Parent: `atg_blt` (instance `b2d`; `atg_blt` is `atg_top`'s instance `blt`, MC client 1, reset by the CP's `core_rst_n`). It gets the kicks with BLT_OP[2] = 0 and only the responses of its own requests. Children: `atg_blt_cfg` (the state, the operation's checks, the clip, the FILL line), `atg_blt_seg` (the segment geometry and byte enables), `atg_blt_port` (the request register, the outstanding counts, the line buffers), `atg_blt_blend` (blend-over), two `atg_blt_acc` (the row addresses).
 
 ## 2. Parameters
 
@@ -14,7 +14,7 @@ The blitter (WS288 p003): FILL, COPY, TILE and UNTILE of rectangles of 16- or 32
 | `LINE_BYTES` | 32 | AMB line size | 32 (ZYBO), 64 (KC705) |
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`) | 5, 6 |
 
-Derived: `WPL` = 32-bit words per line, `LU` = 16-bit units per line, `UA` = `ADDR_W` − 1 (unit address width).
+The walk is in bytes (`US` = `LINE_SHIFT`).
 
 ## 3. Ports
 
@@ -37,14 +37,15 @@ All in domain `clk`. 22 ports.
 
 ## 4. Behaviour
 
-STATE fields (docs/ghci.md §8): OP ([1:0] 0 FILL, 1 COPY, 2 TILE, 3 UNTILE; [4] blend; [9:8] bpp 0 = 32, 1 = 16; [12] reverse), DST_BASE, DST_STRIDE, SRC_BASE, SRC_STRIDE (bytes; low bits below the pixel size ignored), DST_XY, SRC_XY, SIZE (`[15:0]` x/width, `[31:16]` y/height), COLOR, CLIP_MIN (inclusive), CLIP_MAX (exclusive; 0 = no clip). Other OP bits are ignored.
+STATE fields (docs/ghci.md §8.2, §8.5): OP ([1:0] 0 FILL, 1 COPY, 2 TILE, 3 UNTILE; [4] blend; [9:8] pixel size 0 = 32, 1 = 16, 2 = 64, 3 = 8 bits, [13] with [9:8] = 0 128 bits; [12] reverse; [19:16] KEEP), DST_BASE, DST_STRIDE, SRC_BASE, SRC_STRIDE (bytes; low bits below the pixel size ignored), DST_XY, SRC_XY, SIZE (`[15:0]` x/width, `[31:16]` y/height), COLOR and COLOR1-3 (the FILL pixel's words), CLIP_MIN (inclusive), CLIP_MAX (exclusive; 0 = no clip). Other OP bits are ignored.
 
-- Accepted combinations: bpp 0 or 1; blend only with 32-bit FILL or COPY; reverse only with FILL or COPY. Anything else → `error` kind 2 at the kick, no memory access.
+- Accepted combinations (`atg_blt_cfg`): every pixel size but [13] with [9:8] ≠ 0; blend only with 32-bit FILL or COPY; reverse only with FILL or COPY; TILE and UNTILE with 16- and 32-bit pixels; KEEP only with 32-bit FILL and COPY without blend. Anything else → `error` kind 2 at the kick, no memory access.
+- KEEP: byte b of every 32-bit pixel with KEEP[b] = 1 is not written (the write's byte enables; no read).
 - Clip: the destination rectangle is intersected with [CLIP_MIN, CLIP_MAX) when CLIP_MAX ≠ 0 (computed combinationally, registered at the kick, S_CLIP); the source origin moves with it. An empty result finishes with `done` and no access.
-- Walk: rows top to bottom (reverse: bottom to top), pixels left to right (reverse: right to left), in 16-bit units. Each row is cut into segments that stay inside one destination line, inside one 4-pixel row of a tile for a tiled destination, and inside one tile row of a tiled source. The row address is base + y × stride by a shift-and-add multiplier (S_MUL, once per blit); the next rows add the stride (tiled: the next row inside the tile, or stride − 12 pixels after the fourth).
+- Walk: rows top to bottom (reverse: bottom to top), pixels left to right (reverse: right to left), in bytes. Each row is cut into segments that stay inside one destination line, inside one 4-pixel row of a tile for a tiled destination, and inside one tile row of a tiled source. The row address is base + y × stride by a shift-and-add multiplier (S_MUL, once per blit); the next rows add the stride (tiled: the next row inside the tile, or stride − 12 pixels after the fourth).
 - 4x4 tiles (CAPS[11]): pixel (x, y) at base + (y/4)·stride + (x/4)·16·ps + ((y%4)·4 + x%4)·ps.
 - FILL: the segment's write (COLOR replicated, enables of the segment) is queued and the walk continues: writes stream up to the MC's limit.
-- COPY, TILE, UNTILE: before reading, **wait until every earlier write of this blit is answered** (`wr_out` = 0), then read the one or two source lines covering the segment, wait for them, shift the 2-line window by whole units to align with the destination line, write.
+- COPY, TILE, UNTILE: before reading, **wait until every earlier write of this blit is answered** (`wr_out` = 0), then read the one or two source lines covering the segment, wait for them, shift the 2-line window by whole bytes to align with the destination line, write.
 - Blend-over (32-bit FILL/COPY): also read the destination line (after the writes are answered), then a 3-stage pipeline over the line's words: out = src + round(dst × (255 − src.a) / 255) per byte, saturated at 255, written back into the destination buffer, then the write (enables of the segment only).
 - Under the MC's quiesce the pending request waits and the blit continues where it stopped.
 - After an error response (`fail`) no new request is made; the blit drains every outstanding request and then pulses `error` kind 5.
@@ -103,6 +104,10 @@ No `sim/tb/atg_blt_tb.v`. Checked through `sim/tb/atg_top_tb.v` (`PASS atg_top`,
 - Related specs: `spec/gpu/cp/atg_cp.md` (STATE, KICK, faults), `spec/gpu/mc/atg_mc.md` (AMB port, no read-after-write order).
 
 ## 10. Status
+
+2026-10-25: **split** below 400 lines (U38): `atg_blt_cfg`, `atg_blt_seg`, `atg_blt_port`, `atg_blt_blend`, `atg_blt_acc` (one FSM stays here); the walk in bytes for 8- to 128-bit pixels, KEEP, BLT_COLOR1-3.  The behaviour of the earlier pixel sizes is unchanged except one more cycle per blended segment (the blend's done) and that BLT_OP[9:8] = 2, 3 and [13], [19:16] now mean pixel sizes and KEEP (CAPS[30]; the top TB's refused example moved to [13] with 16-bit pixels).  The table below is the earlier proposal.
+
+Earlier status:
 
 Implemented (p002 70aaff5 and 053c1ba, rewritten in p003 a2af156, simple wait restored a6e6d16; unchanged at a217bf8). Measured on the ZYBO (p003): 2,727 LUT, 2,196 FF, DSP 0 (the four 8 × 8 products are LUTs).
 

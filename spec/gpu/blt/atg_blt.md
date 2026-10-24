@@ -1,6 +1,6 @@
 # atg_blt
 
-RTL: `rtl/gpu/blt/atg_blt.v`.  Parent: `atg_top` (instance `blt`, MC client 1, reset by the CP's `core_rst_n`).  Children: `atg_blt_2d` (FILL, COPY, TILE, UNTILE), `atg_blt_rsv` (RESOLVE, with `MS4`).
+RTL: `rtl/gpu/blt/atg_blt.v`.  Parent: `atg_top` (instance `blt`, MC client 1, reset by the CP's `core_rst_n`).  Children: `atg_blt_2d` (FILL, COPY, TILE, UNTILE; with `atg_blt_cfg`, `atg_blt_seg`, `atg_blt_port`, `atg_blt_blend`, `atg_blt_acc`), `atg_blt_rsv` (RESOLVE, with `MS4`; with `atg_blt_cfg`, `atg_blt_acc`, `atg_blt_rsv_px`, `atg_blt_avg`, `atg_blt_favg`).
 
 ## 1. Purpose and place
 
@@ -52,7 +52,7 @@ Those of the engines; no register stage on the port.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_top_tb.v` (`PASS atg_top`): the 2D operations through this module, unchanged (`atg_blt_2d.md` §8).  `sim/tb/atg_blt_rsv_tb.v` (`atg_blt_rsv.md` §8): `.2d` (FILL, RESOLVE, COPY, RESOLVE in turn), `.nms4` (without `MS4`).
+`sim/tb/atg_blt_tb.v` (vectors `sim/vec/blt.txt` from `tools/blt-vectors.py`, a reference model written from docs/ghci.md §8.2 and §8.5; `atg_blt` with `MS4`, LINE_BYTES 32 and 64 at once; memory with random accept and in-order responses after random delays; every byte the model writes and every byte the blitter wrote is checked) prints `PASS atg_blt.ps`, `.keep`, `.tile`, `.refuse`, `.resolve` (each for both line sizes) and `PASS atg_blt`: FILL and COPY of 8- to 128-bit pixels with offsets, strides, the clip, the reverse direction and the wide FILL colour; KEEP; TILE, UNTILE and blend-over; the refused combinations (kind 2, nothing written); RESOLVE with every average and every pixel size it takes, tiled destinations.  `MUT_BLT_KEEP` fails `keep`, `MUT_FAVG_PAIR` fails `resolve`.  `sim/tb/atg_top_tb.v` (`PASS atg_top`): the 2D operations through this module, unchanged (`atg_blt_2d.md` §8).  `sim/tb/atg_blt_rsv_tb.v` (`atg_blt_rsv.md` §8): `.2d` (FILL, RESOLVE, COPY, RESOLVE in turn), `.nms4` (without `MS4`).
 
 ## 9. References
 
@@ -60,4 +60,4 @@ docs/ghci.md §8.2; design §15.8.  Related: `atg_blt_2d.md`, `atg_blt_rsv.md`.
 
 ## 10. Status
 
-Implemented as the wrapper of the two engines (the MSAA work).
+Implemented as the wrapper of the two engines (the MSAA work).  2026-10-25: the engines take the pixel sizes, KEEP, BLT_COLOR1-3 and the averages 0-7 of docs/ghci.md §8.5; this module is unchanged.
