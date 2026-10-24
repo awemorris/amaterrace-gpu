@@ -263,6 +263,8 @@
 #define GHCI_S_VARYING_COUNT (GHCI_S_RX + 11u)
 #define GHCI_S_DEBUG_COLOR (GHCI_S_RX + 12u)
 #define GHCI_S_PROVOKING (GHCI_S_RX + 13u)
+#define GHCI_S_MS_CTRL (GHCI_S_RX + 14u) /* draft, CAPS[29] */
+#define GHCI_S_SAMPLE_KILL (GHCI_S_RX + 15u) /* draft, CAPS[29] */
 
 /* ROP. */
 #define GHCI_S_RT_BASE (GHCI_S_ROP + 0u)

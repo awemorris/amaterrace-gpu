@@ -12,8 +12,15 @@
  * the reference rasterizer (sim/vec/rx_scan.txt from tools/rx-vectors.py:
  * top-left rule, exact edges, fp32 depth); one sequence number per
  * triangle with quads; pt_free once per flagged vertex of the non-raw
- * ones.  dx_ready is random.  HAS_SU 0: no quad goes to atg_rx_frag (fq_*); the
- * warp path is checked by atg_rx_frag_tb and atg_top_shade_tb.
+ * ones.  dx_ready is random.  HAS_SU 0: no quad goes to atg_rx_frag (fq_*).
+ * Then a second instance with HAS_SU 1 (the warp path, fq_ready random):
+ *   ms1x — the same triangles as non-raw ones with MS_CTRL 0: the quads
+ *          with coverage, fq_scov bit 4 l = the lane's coverage, fq_ccov
+ *          = the coverage (one sample: as before)
+ *   ms   — sim/vec/rx_scan_ms.txt (tools/rx-msaa-vectors.py from
+ *          tools/msmodel.py): 4 samples and 1, SAMPLE_KILL, shared edges
+ *          through sample locations, a sliver across empty quads (the
+ *          skip): fq_scov and fq_ccov of every quad with a sample.
  */
 
 `timescale 1ns / 1ps
@@ -33,7 +40,8 @@ module atg_rx_scan_tb;
 	wire sp_ready, pt_free, fq_valid, fq_end;
 	wire [7:0] pt_free_idx;
 	wire [31:0] fq_xy;
-	wire [3:0] fq_cov;
+	wire [15:0] fq_scov;
+	wire [3:0] fq_ccov;
 	wire dx_valid, dx_last, sq_req, busy;
 	wire [15:0] dx_seq;
 	wire [31:0] dx_xy;
@@ -43,11 +51,100 @@ module atg_rx_scan_tb;
 	atg_rx_scan #(.HAS_SU(0)) dut (.clk(clk), .rst_n(rst_n), .st_we(1'b0), .st_idx(9'd0),
 		.st_wdata(32'd0), .sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri),
 		.sp_last(1'b0), .pt_free(pt_free), .pt_free_idx(pt_free_idx),
-		.fq_valid(fq_valid), .fq_ready(1'b1), .fq_xy(fq_xy), .fq_cov(fq_cov), .fq_end(fq_end),
+		.fq_valid(fq_valid), .fq_ready(1'b1), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov), .fq_end(fq_end),
 		.f_busy(1'b0),
 		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 		.sq_req(sq_req), .sq_seq(sq_cnt), .busy(busy));
+
+	/* The warp path (HAS_SU 1). */
+	reg w_st_we = 1'b0;
+	reg [8:0] w_st_idx = 9'd0;
+	reg [31:0] w_st_wdata = 32'd0;
+	reg w_sp_valid = 1'b0;
+	reg [767:0] w_sp_tri = 0;
+	reg w_fq_ready = 1'b0;
+	wire w_sp_ready, w_pt_free, w_fq_valid, w_fq_end, w_dx_valid, w_dx_last, w_sq_req, w_busy;
+	wire [7:0] w_pt_free_idx;
+	wire [31:0] w_fq_xy, w_dx_xy;
+	wire [15:0] w_fq_scov, w_dx_seq;
+	wire [3:0] w_fq_ccov, w_dx_mask;
+	wire [127:0] w_dx_depth;
+
+	atg_rx_scan #(.HAS_SU(1)) dw (.clk(clk), .rst_n(rst_n), .st_we(w_st_we), .st_idx(w_st_idx),
+		.st_wdata(w_st_wdata), .sp_valid(w_sp_valid), .sp_ready(w_sp_ready), .sp_tri(w_sp_tri),
+		.sp_last(1'b0), .pt_free(w_pt_free), .pt_free_idx(w_pt_free_idx),
+		.fq_valid(w_fq_valid), .fq_ready(w_fq_ready), .fq_xy(w_fq_xy), .fq_scov(w_fq_scov),
+		.fq_ccov(w_fq_ccov), .fq_end(w_fq_end), .f_busy(1'b0),
+		.dx_valid(w_dx_valid), .dx_ready(1'b1), .dx_seq(w_dx_seq), .dx_xy(w_dx_xy),
+		.dx_mask(w_dx_mask), .dx_depth(w_dx_depth), .dx_last(w_dx_last),
+		.sq_req(w_sq_req), .sq_seq(16'd0), .busy(w_busy));
+
+	/* The warp path's expected quads: x, y, scov, ccov. */
+	reg [15:0] wq_x [0:MAXQ-1];
+	reg [15:0] wq_y [0:MAXQ-1];
+	reg [15:0] wq_s [0:MAXQ-1];
+	reg [3:0] wq_c [0:MAXQ-1];
+	integer w_got, w_err, w_n, w_ends;
+	always @(posedge clk) begin
+		w_fq_ready <= ($random(seed) & 3) != 0;
+		if (w_fq_valid && w_fq_ready) begin
+			if (w_fq_end) begin
+				w_ends = w_ends + 1;
+			end else begin
+				if (w_got >= w_n || w_fq_xy !== {wq_y[w_got], wq_x[w_got]} ||
+				    w_fq_scov !== wq_s[w_got] || w_fq_ccov !== wq_c[w_got]) begin
+					w_err = w_err + 1;
+					if (w_err < 8)
+						$display("FAIL atg_rx_scan.ms: quad %0d: %h scov %h ccov %h, want %h %h %h",
+							w_got, w_fq_xy, w_fq_scov, w_fq_ccov, {wq_y[w_got], wq_x[w_got]},
+							wq_s[w_got], wq_c[w_got]);
+				end
+				w_got = w_got + 1;
+			end
+		end
+		if (w_dx_valid) begin
+			w_err = w_err + 1;
+			$display("FAIL atg_rx_scan.ms: a direct quad on the warp path");
+		end
+	end
+
+	task w_st;
+		input [8:0] idx;
+		input [31:0] v;
+		begin
+			@(posedge clk);
+			w_st_we <= 1'b1;
+			w_st_idx <= idx;
+			w_st_wdata <= v;
+			@(posedge clk);
+			w_st_we <= 1'b0;
+		end
+	endtask
+
+	/* One triangle on the warp path; wait for its end marker. */
+	task w_tri;
+		input [767:0] s;
+		integer n0;
+		begin
+			n0 = w_ends;
+			while (w_busy)
+				@(posedge clk);
+			w_sp_valid <= 1'b1;
+			w_sp_tri <= s;
+			@(posedge clk);
+			while (!w_sp_ready)
+				@(posedge clk);
+			w_sp_valid <= 1'b0;
+			@(posedge clk);
+			#1;
+			n0 = 0;
+			while ((w_busy || w_fq_valid) && n0 < 200000) begin
+				@(posedge clk);
+				n0 = n0 + 1;
+			end
+		end
+	endtask
 
 	reg [767:0] t_sp [0:MAXT-1];
 	integer t_nq [0:MAXT-1];
@@ -64,7 +161,9 @@ module atg_rx_scan_tb;
 	reg [3:0] m;
 	reg [31:0] z0, z1, z2, z3;
 	integer e_cov = 0, e_dir = 0, e_free = 0, got = 0, nfree = 0, want_free = 0, nseq = 0;
-	integer cur_t;
+	integer cur_t, e_ms = 0, ntm, k;
+	reg [15:0] s16;
+	reg [31:0] ms_ctrl, ms_kill;
 	reg [15:0] t_seq [0:MAXT-1];
 
 	/* sequence numbers as atg_rx_order gives them */
@@ -193,7 +292,78 @@ module atg_rx_scan_tb;
 			$display("PASS atg_rx_scan.direct");
 		if (e_free == 0)
 			$display("PASS atg_rx_scan.free");
-		if (e_cov + e_dir + e_free == 0)
+
+		/* ms1x: the same triangles on the warp path, one sample. */
+		w_got = 0;
+		w_err = 0;
+		w_ends = 0;
+		w_n = 0;
+		for (i = 0; i < nq; i = i + 1)
+			if (q_m[i] != 4'd0) begin
+				wq_x[w_n] = q_x[i];
+				wq_y[w_n] = q_y[i];
+				wq_s[w_n] = {3'd0, q_m[i][3], 3'd0, q_m[i][2], 3'd0, q_m[i][1], 3'd0, q_m[i][0]};
+				wq_c[w_n] = q_m[i];
+				w_n = w_n + 1;
+			end
+		for (i = 0; i < nt; i = i + 1) begin
+			sp = t_sp[i];
+			sp[764] = 1'b0;
+			w_tri(sp);
+		end
+		k = 0;	/* an empty bbox sends no end marker */
+		for (i = 0; i < nt; i = i + 1)
+			if (t_nq[i] > 0)
+				k = k + 1;
+		if (w_got != w_n || w_ends != k) begin
+			w_err = w_err + 1;
+			$display("FAIL atg_rx_scan.ms1x: %0d of %0d quads, %0d ends", w_got, w_n, w_ends);
+		end
+		if (w_err == 0)
+			$display("PASS atg_rx_scan.ms1x");
+		e_ms = w_err;
+
+		/* ms: the multisampling vectors. */
+		fd = $fopen("sim/vec/rx_scan_ms.txt", "r");
+		if (fd == 0) begin
+			e_ms = e_ms + 1;
+			$display("FAIL atg_rx_scan.ms: no sim/vec/rx_scan_ms.txt");
+		end
+		w_err = 0;
+		ntm = 0;
+		code = fd != 0;
+		while (code > 0) begin
+			code = $fscanf(fd, "%c", tag);
+			if (tag == "T") begin
+				code = $fscanf(fd, " %h %h %h %d\n", sp, ms_ctrl, ms_kill, j);
+				w_got = 0;
+				w_ends = 0;
+				w_n = j;
+				for (k = 0; k < j; k = k + 1) begin
+					code = $fscanf(fd, "Q %h %h %h %h\n", x, y, s16, m);
+					wq_x[k] = x;
+					wq_y[k] = y;
+					wq_s[k] = s16;
+					wq_c[k] = m;
+				end
+				w_st(9'h05E, ms_ctrl);
+				w_st(9'h05F, ms_kill);
+				w_tri(sp);
+				if (w_got != w_n || w_ends != 1) begin
+					w_err = w_err + 1;
+					$display("FAIL atg_rx_scan.ms: tri %0d: %0d of %0d quads, %0d ends", ntm, w_got,
+						w_n, w_ends);
+				end
+				ntm = ntm + 1;
+			end else
+				code = 0;
+		end
+		$display("atg_rx_scan: %0d multisampling triangles", ntm);
+		if (w_err == 0 && ntm > 20)
+			$display("PASS atg_rx_scan.ms");
+		else
+			e_ms = e_ms + 1;
+		if (e_cov + e_dir + e_free + e_ms == 0)
 			$display("PASS atg_rx_scan");
 		$finish;
 	end

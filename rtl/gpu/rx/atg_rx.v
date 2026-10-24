@@ -76,7 +76,8 @@ module atg_rx #(
 	wire clip_busy, setup_busy, scan_busy, frag_busy;
 	wire fq_valid, fq_ready, fq_end;
 	wire [31:0] fq_xy;
-	wire [3:0] fq_cov;
+	wire [15:0] fq_scov;
+	wire [3:0] fq_ccov;
 
 	/* One PT read port: atg_rx_frag's copy has priority, the clip waits while pt_busy. */
 	assign pt_rd = c_pt_rd || f_pt_rd;
@@ -107,7 +108,7 @@ module atg_rx #(
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
-		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_cov(fq_cov),
+		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov),
 		.fq_end(fq_end), .f_busy(frag_busy),
 		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
@@ -117,7 +118,7 @@ module atg_rx #(
 	atg_rx_frag frag (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.t_load(sp_valid && sp_ready), .t_tri(sp_tri),
-		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_cov(fq_cov),
+		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov),
 		.fq_end(fq_end), .busy(frag_busy),
 		.pt_rd(f_pt_rd), .pt_idx(f_pt_idx), .pt_word(f_pt_word), .pt_rdata(pt_rdata),
 		.pt_busy(f_pt_busy),

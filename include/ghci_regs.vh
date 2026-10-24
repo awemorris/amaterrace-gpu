@@ -183,6 +183,8 @@ localparam [8:0] GHCI_S_RAST_MODE = 9'h05A;
 localparam [8:0] GHCI_S_VARYING_COUNT = 9'h05B;
 localparam [8:0] GHCI_S_DEBUG_COLOR = 9'h05C;
 localparam [8:0] GHCI_S_PROVOKING = 9'h05D;
+localparam [8:0] GHCI_S_MS_CTRL = 9'h05E;	/* draft, CAPS[29] */
+localparam [8:0] GHCI_S_SAMPLE_KILL = 9'h05F;	/* draft, CAPS[29] */
 
 /* ROP (0x070-0x08F). */
 localparam [8:0] GHCI_S_RT_BASE = 9'h070;
