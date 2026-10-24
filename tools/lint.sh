@@ -45,10 +45,14 @@ run "atg_top (SA reserved: 1 SU + atg_sa)" --top-module atg_top $zybo -GNSU=1 -G
 # The board tops, with lint-only stand-ins for the Xilinx primitives
 # (sim/lint/xilinx_stubs.v).  PINMISSING: the PS7 has many pins left open
 # on purpose; PINCONNECTEMPTY: atg_top outputs a board does not use.
+# -fno-dedup: Verilator 5.032's V3Gate dedup aborts with an internal error
+# ("Consumer doesn't match lhs of assign") on atg_kc705_raster once the
+# SU <-> TU link is live (WS288 p009 part C); dedup is an optimisation, the
+# lint checks are the same.
 for f in boards/*/*.v; do
 	t=$(basename "$f" .v)
 	b=$(dirname "$f")
-	run "$t (board top)" --top-module "$t" -Wno-PINMISSING -Wno-PINCONNECTEMPTY \
+	run "$t (board top)" --top-module "$t" -Wno-PINMISSING -Wno-PINCONNECTEMPTY -fno-dedup \
 		"$f" $(ls "$b"/lib/*.v 2>/dev/null) sim/lint/xilinx_stubs.v
 done
 exit $fail
