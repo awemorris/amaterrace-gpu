@@ -15,11 +15,11 @@
  * Header [31:30] class (0 standard, 1 vendor), [29:24] op, [23:16] tag,
  * [15:8] flags, [7:0] n.  The payload is taken one dword per cycle:
  * SET_REG writes STATE[index] = value per pair (index >= 512: fault 3;
- * a write to the BLT range 0x000-0x01F waits while the BLT is busy, whose
- * state must not change under a blit), DISPATCH/LOAD_CONST/DRAW_RAW/
- * DBG_MARK write their payload to the vendor STATE words (DISPATCH and
- * LOAD_CONST wait while the SUs are busy, DRAW_RAW while the RX is), the
- * fence µops keep theirs.  Then the µop runs:
+ * a write to a block's range waits while it is busy, whose state must not
+ * change under its work: BLT, VF, RX/ROP, ROP, TU with the RX and SUs),
+ * DISPATCH/LOAD_CONST/DRAW_RAW/DBG_MARK write their payload to the vendor
+ * STATE words (DISPATCH and LOAD_CONST wait while the SUs are busy,
+ * DRAW_RAW while the RX is), the fence µops keep theirs.  The µop runs:
  *   BLIT: wait for the BLT idle, kick; flags[0]: wait until it is done.
  *   DRAW: wait for the VF idle, inv[1:0] and draw_kick.  DISPATCH: cs_kick.
  *   FENCE: wait until every block is idle, request op 0 (flags[0] = IRQ).
@@ -114,7 +114,7 @@ module atg_cp_seq #(
 	localparam [7:0] B_BLT = 8'h02;
 	localparam [7:0] B_VF = 8'h04;
 	localparam [7:0] B_RX = 8'h08;
-	localparam [7:0] B_ROP = 8'h10;
+	localparam [7:0] B_ROP = 8'h10, B_TU = 8'h20;
 	localparam [7:0] B_SU = 8'h40;
 	localparam [7:0] B_ALL = 8'hFE;
 
@@ -207,9 +207,11 @@ module atg_cp_seq #(
 			pay_we = 1'b1;
 			pay_idx = sidx;
 			/* a block's STATE does not change under its work (RX: also the ROP's
-			 * DEBUG_COLOR; VF: 0x020-0x04F and ATTR_DST 0x1C0-0x1CF) */
+			 * DEBUG_COLOR; VF: 0x020-0x04F and ATTR_DST 0x1C0-0x1CF; TU: also the
+			 * fragments still in the RX and the SUs) */
 			pay_wait = sidx < 9'h020 ? B_BLT : sidx < 9'h050 ? B_VF : sidx < 9'h070 ? B_RX | B_ROP :
-				sidx < 9'h090 ? B_ROP : sidx[8:4] == 5'h1C ? B_VF : 8'd0;
+				sidx < 9'h090 ? B_ROP : sidx < 9'h190 ? B_TU | B_SU | B_RX :
+				sidx[8:4] == 5'h1C ? B_VF : 8'd0;
 		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
 			pay_we = 1'b1;
 			pay_idx = 9'h1E0 + {1'b0, p};

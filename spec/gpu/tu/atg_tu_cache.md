@@ -64,17 +64,20 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 Blocking in v1: a quad waits until all its lines are present (misses served in order, up to 2 outstanding).  texsz passes through without lookups.  Order is kept.
 
+As implemented: direct mapped, TC_BYTES / LINE_BYTES lines (128 of 32 bytes, 64 of 64), read only (no write port: the GPU does not write textures through the T$).  The texels of a quad are looked up one per cycle, lane 0 texel 0 to lane 3 texel 3, only for the lanes of ta_mask and, without ta_ctl[0], only texel 0; texels not looked up are 0 on tc_texels.  A miss requests its line (**one outstanding**), writes it into the cache when it comes and looks the texel up again.  An error response (rsp_error) gives that texel 0 and leaves the line invalid (the next use requests it again); there is no fault from the TU.  inv (INVALIDATE[1], DRAW) clears every line at once; a line whose request was outstanding when inv came is not kept (its texel misses again and is fetched anew).  The other fields go through unchanged.
+
 ## 5. State machine
 
-IDLE → LOOKUP → (MISS_REQ → MISS_WAIT → FILL)* → OUT → IDLE.
+IDLE →(ta_valid)→ LOOKUP (one texel a cycle) →(miss)→ MREQ →(req_ready)→ MWAIT →(rsp_valid)→ LOOKUP; LOOKUP →(last texel)→ DRAIN (the last hit's data) → OUT →(tc_ready)→ IDLE; IDLE →(texsz)→ OUT.
 
 ## 6. Latency and throughput
 
-Hits: one quad per 4 cycles (4 texels per cycle).
+Target: hits one quad per 4 cycles (4 texels per cycle).  v1: one texel per cycle: a nearest quad of hits in 4 cycles + 3 (DRAIN, OUT, IDLE), a bilinear one in 16 + 3; a miss adds the MC's latency (one at a time).  Banking and more outstanding misses are p015's.
 
 ## 7. Corner cases and errors
 
-None beyond the above.
+- A texel address's bits 1:0 are ignored (texels are words).
+- A whole quad masked (ta_mask 0) looks nothing up and answers zeros.
 
 ## 8. What the TB checks
 
@@ -85,10 +88,12 @@ None beyond the above.
 - `PASS atg_tu_cache.inv` — invalidate
 - `PASS atg_tu_cache` at the end.
 
+Both line sizes (32 and 64 bytes), a memory model with random request acceptance and latency and an error region: hit = a quad repeated three times makes no request; miss = 400 random quads over 64 KiB (conflicting lines), every ta_ctl, error texels, an error line requested again; inv = changed memory is not seen before inv and is after, inv while a miss is outstanding (with memory changed meanwhile: the new data is returned, the line refetched and then kept).
+
 ## 9. References
 
 design §3.7 (T$ 4 KiB), §2.4.3 (INVALIDATE).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p009 part C (P1, branch p1-tu).  Differences from §4/§6 (v1, performance only, p015): one outstanding miss instead of two, one texel per cycle instead of four.  The error behaviour (texel 0, no fault) is this implementation's reading.

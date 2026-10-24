@@ -6,6 +6,8 @@ RTL: `rtl/gpu/su/atg_su_tex.v`.  Parent: atg_su.  Implemented in: p009.
 
 The SU side of texturing: forms TU requests from texl/texb/texf/texsz (per quad, with the derivative lanes), and returns the TU's texels as long beats (rd..rd+3).
 
+Child: `atg_su_tex_ret` (the return half, §5).
+
 ## 2. Parameters
 
 | Name | Default | Meaning |
@@ -72,17 +74,26 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 Groups are cut into quads (lanes 4k..4k+3).  The return order is the request order (the TU keeps it); the returned quads are gathered into lane groups and written as 4 register beats (rd..rd+3), l_last after the last.  texsz returns one register.
 
+As implemented:
+
+- A lane group of a texture instruction (x_uop unit TEX) is taken in IDLE while the return half has room for its record (x_ready; atg_su_opd holds the group otherwise).  The record — warp, group, rd, scoreboard entry, x_last, texsz, which quads are sent, the EXEC lanes — goes into atg_su_tex_ret's FIFO (4 records) in the same cycle.
+- The group's quads with at least one EXEC lane go to the TU, one per cycle, in increasing order; quads without EXEC lanes are not sent.  tx_op = uop OP[1:0], tx_slot = uop sub[3:0], tx_mask = the quad's EXEC lanes (helper lanes are in EXEC, design §3.1), tx_coord lane l = {x_b, x_c, x_a} of that lane (word 0 rs1 = u / x / texsz's level, word 1 rs1+1 = v / y, word 2 rs2 = lod / bias / texf's level), tx_tag = {3'b0, warp (3 bits), quad number in the warp (grp × NPHYS/4 + quad), rd}, tx_last = the last sent quad of the instruction's last group.
+- atg_su_tex_ret takes the TU's quads (in request order) for the oldest record, one per sent quad, then writes the group: rd, rd+1, rd+2, rd+3 = R, G, B, A of each lane (texsz: rd only, word 0), each beat with the group's EXEC lanes, l_wr 1, l_cls t, l_last on the last beat of the instruction's last group.  tr_tag and tr_last are not looked at (the order is enough).
+
 ## 5. State machine
 
 IDLE → SEND (quads) → (back to IDLE; returns are handled by a separate return path with its own small FSM — two FSMs: the module is split into send and return halves in the RTL if it grows past 400 lines).
 
+As implemented, split by the one-state-machine rule (spec/README.md): atg_su_tex is the send half, IDLE →(a group with a quad to send)→ SEND (quad q of NPHYS/4) →(the last such quad taken)→ IDLE; atg_su_tex_ret is the return half (its spec).
+
 ## 6. Latency and throughput
 
-One quad per cycle to the TU.
+One quad per cycle to the TU (an empty quad also takes a cycle of SEND).  A group is taken only in IDLE, so the groups of an instruction go one per NPHYS/4 cycles or more.
 
 ## 7. Corner cases and errors
 
-- EXEC all 0: no request, immediate completion.
+- EXEC all 0: no request, immediate completion.  As implemented: a group without EXEC lanes sends nothing; its record still writes its beats (with no lanes) in order, so l_last comes even when the last group is empty.
+- tx_last is on the last quad actually sent; when the instruction's last group sends nothing, no quad carries it (atg_su_tex_ret does not need it).
 
 ## 8. What the TB checks
 
@@ -92,10 +103,12 @@ One quad per cycle to the TU.
 - `PASS atg_su_tex.ret` — returns become rd..rd+3 beats
 - `PASS atg_su_tex` at the end.
 
+For NPHYS 8, 16 and 32, 300 random texture instructions (every op, slot, rd, scoreboard entry, EXEC full, partial, empty per quad and whole empty groups) mixed with other units' instructions, a model TU with random tx_ready and delays, random l_ready.
+
 ## 9. References
 
 design §3.4.1 (custom-1 tex*), §3.1 (helper lanes for derivatives).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p009 part C (P1, branch p1-tu), with the new child `atg_su_tex_ret` (§5).  Ports unchanged.  Readings: texsz's level travels in word 0 (rs1), the tag's layout is {0, warp, quad, rd} (16 bits; the TU passes it through).

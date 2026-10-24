@@ -143,7 +143,9 @@ module atg_cp #(
 	localparam [3:0] LS4 = LINE_SHIFT;
 	/* verilator lint_on WIDTHTRUNC */
 	localparam [31:0] CAPS = {8'd0, LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,
-		HAS_VSYNC != 0, 2'b00, UNITS[6] ? 4'd5 : 4'd0, 1'b0, UNITS[6], UNITS[1], 1'b1};
+		HAS_VSYNC != 0, 1'b0, UNITS[5], UNITS[6] ? 4'd5 : 4'd0, 1'b0, UNITS[6], UNITS[1], 1'b1};
+	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4. */
+	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 24'h000001};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
 	localparam [7:0] XCAP = HAS_CPU != 0 ? 8'h24 : 8'h04;	/* PERF, CPFW */
 
@@ -187,7 +189,7 @@ module atg_cp #(
 	atg_cp_regs #(
 		.GCLK_HZ(GCLK_HZ), .VENDOR_ID(VENDOR_ID), .DEVICE_ID(DEVICE_ID),
 		.DEVICE_VERSION(DEVICE_VERSION), .ISA_ID(ISA), .NATIVE_ISA_ID(ISA), .CAPS(CAPS),
-		.CAPS2(32'h00000001), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801)
+		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),

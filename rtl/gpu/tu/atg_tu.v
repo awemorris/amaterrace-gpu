@@ -9,7 +9,13 @@
  * atg_tu: The texture unit (design §2.3, §3.7): addressing, cache, filter;
  * one MC client.
  *
- * Wiring of its children (WS288 p023); see spec/gpu/tu/atg_tu.md.
+ * Wiring of its children (WS288 p023; implemented in p009): atg_tu_addr
+ * (descriptor, LOD, wrap, addresses), atg_tu_cache (the T$ on the MC
+ * port), atg_tu_filter (texel conversion, bilinear).  Quads go through in
+ * request order.  busy approximates STATUS.TU_BUSY: a quad on one of the
+ * links (a quad inside a child between them is not seen; atg_cp_seq's
+ * SET_REG of the TU range also waits for the RX and the SUs, which hold
+ * every fragment still to be textured).  See spec/gpu/tu/atg_tu.md.
  */
 
 `timescale 1ns / 1ps
@@ -97,7 +103,7 @@ module atg_tu #(
 		.tr_last(tr_last)
 	);
 
-	assign busy = ta_valid || tc_valid || tx_valid;
+	assign busy = tx_valid || ta_valid || tc_valid || tr_valid;
 endmodule
 
 `default_nettype wire

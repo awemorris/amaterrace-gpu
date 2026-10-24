@@ -145,6 +145,11 @@ module atg_cp_seq_tb;
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq.kicks: VF state %h written while the VF is busy", uop_idx);
 			end
+			if (uop_idx >= 9'h090 && uop_idx < 9'h190 && (busy_in[6] || busy_in[5] || busy_in[3])) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.kicks: TU state %h written while the SU, TU or RX is busy",
+					uop_idx);
+			end
 		end
 		if (blt_kick) begin
 			log({8'h02, 56'd0});
@@ -347,6 +352,8 @@ module atg_cp_seq_tb;
 		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd4);
 		pl[0] = 32'd4; pl[1] = 32'd5; pl[2] = 32'd6;
 		packet(1'b0, 1'b0, 6'd4, 8'd0, 8'd3);
+		pl[0] = 32'h095; pl[1] = 32'h99;	/* TU state while the SUs run */
+		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd2);
 		for (i = 0; i < 9; i = i + 1)
 			pl[i] = 32'h900 + i;
 		packet(1'b0, 1'b1, 6'd0, 8'd0, 8'd9);
@@ -369,6 +376,7 @@ module atg_cp_seq_tb;
 		expect_ev({8'h01, 15'd0, 9'h1EA, 32'd5});
 		expect_ev({8'h01, 15'd0, 9'h1EB, 32'd6});
 		expect_ev({8'h04, 56'd0});
+		expect_ev({8'h01, 15'd0, 9'h095, 32'h99});
 		for (i = 0; i < 9; i = i + 1) begin
 			sidx = 9'h1E0 + i;
 			expect_ev({8'h01, 15'd0, sidx, 32'h900 + i});
