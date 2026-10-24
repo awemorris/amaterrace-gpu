@@ -65,17 +65,17 @@ module atg_tu #(
 );
 	wire ta_valid, ta_ready, ta_last;
 	wire [511:0] ta_addr;
-	wire [63:0] ta_wts;
+	wire [95:0] ta_wts;
 	wire [15:0] ta_tag;
 	wire [3:0] ta_mask;
-	wire [7:0] ta_ctl;
+	wire [15:0] ta_ctl;
 	wire [127:0] ta_value;
 	wire tc_valid, tc_ready, tc_last;
 	wire [511:0] tc_texels;
-	wire [63:0] tc_wts;
+	wire [95:0] tc_wts;
 	wire [15:0] tc_tag;
 	wire [3:0] tc_mask;
-	wire [7:0] tc_ctl;
+	wire [15:0] tc_ctl;
 	wire [127:0] tc_value;
 
 	atg_tu_addr addr (
