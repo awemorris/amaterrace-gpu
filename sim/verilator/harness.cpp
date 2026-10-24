@@ -371,6 +371,10 @@ int scene_main()
 			exp.push_back({a, v});
 	}
 	std::fclose(f);
+#ifdef TEX
+	expect("CAPS[8] (bilinear)", (host_read(GHCI_CAPS) >> 8) & 1, 1);
+	expect("CAPS2[27:24] (texture slots / 4)", (host_read(GHCI_CAPS2) >> 24) & 15, 4);
+#endif
 	host_write(GHCI_APERTURE_BASE, 0x20000);
 	host_write(GHCI_APERTURE_LIMIT, 0x60000);
 	host_write(GHCI_RING_BASE, ring);
