@@ -6,11 +6,13 @@
 # default IMEM/DMEM sizes).  The images are committed, so sim/run.sh
 # does not need a compiler; run this after changing a program.
 #   tools/cpu-tests.sh        (CLANG_BIN=dir with clang, ld.lld, llvm-objcopy)
+# CLANG_BIN defaults to ../zedBSD-claude1/build/llvm/bin next to this
+# repository's root; from a checkout elsewhere (a git worktree), pass it.
 # Uses the shared LLVM read-only; intermediate files go to build/cpu-tests/.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 root=$(cd "$(dirname -- "$0")/.." && pwd)
-bin=${CLANG_BIN:-/home/awe/zedBSD-claude1/build/llvm/bin}
+bin=${CLANG_BIN:-$root/../zedBSD-claude1/build/llvm/bin}
 src=$root/sim/tb/cpu
 out=$root/build/cpu-tests
 mkdir -p "$out"

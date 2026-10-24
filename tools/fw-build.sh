@@ -8,13 +8,15 @@
 # changing the firmware.  Also writes atg1-cp-BOARD.bin (the IMEM image
 # for CPFW_IBASE) next to the ELF.
 #   tools/fw-build.sh          (CLANG_BIN=dir with clang, ld.lld, llvm-objcopy)
+# CLANG_BIN defaults to ../zedBSD-claude1/build/llvm/bin next to this
+# repository's root; from a checkout elsewhere (a git worktree), pass it.
 # Uses the shared LLVM read-only (no compiler-rt: fw/cp/lib.c has the
 # helpers); intermediate files go to build/fw-cp/.  Prints each image's
 # used bytes.  Each tool call has a 60 s timeout.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 root=$(cd "$(dirname -- "$0")/.." && pwd)
-bin=${CLANG_BIN:-/home/awe/zedBSD-claude1/build/llvm/bin}
+bin=${CLANG_BIN:-$root/../zedBSD-claude1/build/llvm/bin}
 src=$root/fw/cp
 img=$src/images
 out=$root/build/fw-cp

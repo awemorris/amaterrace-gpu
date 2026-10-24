@@ -21,6 +21,11 @@ bitstream 1', `boards/zybo/atg_zybo_2dfw.v`) read them without a compiler.
 There is no compiler-rt for riscv32 in the shared LLVM, so `lib.c` carries
 memcpy, memset, memcmp and the 64-bit division.
 
+The LLVM is found at `CLANG_BIN`, by default `../zedBSD-claude1/build/llvm/bin`
+beside the repository's root (`tools/cpu-tests.sh` likewise).  From a
+checkout elsewhere, such as a git worktree, pass it:
+`CLANG_BIN=/path/to/llvm/bin tools/fw-build.sh`.
+
 Layout
 ------
 
