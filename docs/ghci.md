@@ -210,7 +210,7 @@ CAPS (0x020):
 | [26] | The texture unit does mipmap mode linear, clamp to border, the depth formats and depth compare (section 8.4) |
 | [27] | Graphics: the vertex fetcher, the rasterizer and the render output are present |
 | [28] | Packed fp16/int16 arithmetic (section 12.5) |
-| [30] | Vulkan 1.0 core rendering (draft, section 8.5): stencil, D16, depth bias, depth bounds, depth clamp and depth clipping, viewport and guard-band clipping, points and lines, four colour attachments in the formats of the FMT capability, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT. The bit number is provisional ([29] is multisampling, section 12.11) |
+| [30] | Vulkan 1.0 core rendering (draft, section 8.5): the stencil ops with front and back state ([9] says a stencil attachment exists), D16, depth bias, depth bounds, depth clamp and depth clipping, w, viewport and guard-band clipping, points and lines, four colour attachments in the formats of the FMT capability, the ETC2 and EAC formats, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT, and the waits of SET_REG for earlier draws. The bit number is provisional ([29] is multisampling, section 12.11) |
 
 CAPS2 (0x024):
 
@@ -283,10 +283,12 @@ EXTCAP points to a list of entries of two words each:
 | 10 | FMT | The formats the GPU supports (draft, below) |
 
 **FMT (version 1, draft).** Registers at the capability's register
-offset: +0x0 FMT_INDEX (RW, a VkFormat value), +0x4 FMT_OPTIMAL (R: the
-VkFormatFeatureFlagBits, bits 0-12 of Vulkan 1.0, that the GPU supports
-for that format with optimal tiling; 0 for a format it does not
-support), +0x8 FMT_LINEAR (the same for linear tiling), +0xC FMT_BUFFER
+offset (a window of 32 bytes): +0x0 FMT_INDEX (RW, a VkFormat value),
++0x4 FMT_OPTIMAL (R: the VkFormatFeatureFlagBits, bits 0-12 of Vulkan
+1.0, that the GPU's fixed-function units support for that format with
+optimal tiling; 0 for a format they do not support; the features a
+driver provides through shader programs, such as storage images, are
+not reported), +0x8 FMT_LINEAR (the same for linear tiling), +0xC FMT_BUFFER
 (the buffer features), +0x10 FMT_LIMITS (R: [3:0] colour attachments,
 [11:4] 0). A driver reports its format properties from these. Writing
 FMT_INDEX is taken in every CP state; reads have no side effects.
@@ -450,7 +452,7 @@ GHCI_FRAME (gpu-op 0x10105, draft;
 | 11 | WAIT_VSYNC | 0 | Waits for one display vsync (CAPS[10] only) |
 | 12 | INVALIDATE | 0 | flags: [0] data cache, [1] texture cache, [2] constants, [3] instruction cache |
 | 13 | RESULT | 3: addr, status, aux | Writes {status, aux} to addr (8-byte aligned) after the earlier work |
-| 14 | QUERY | 1: addr | (Draft, CAPS[30].) After every earlier command has finished and its writes are answered (as RESULT), writes the occlusion counter (section 8.5) to addr as two words, low first (8-byte aligned); flags[0]: clear the counter without writing, flags[1]: clear it after the write. The counter has at least 32 bits (Amaterrace: 40) |
+| 14 | QUERY | 1: addr | (Draft, CAPS[30].) After every earlier command has finished and its writes are answered (as RESULT), writes the occlusion counter (section 8.5) to addr as two words, low first (8-byte aligned); flags[0]: only clear the counter (no write, and no wait), flags[1]: clear it after the write. The counter has at least 32 bits (Amaterrace: 40) |
 | 15-63 | reserved | | Fault 2 |
 
 ### 7.4 Class 1: vendor micro-ops
@@ -605,10 +607,15 @@ TEX_SAMPLER:
 RX and ROP ranges and the additions of CAPS[30] (Vulkan 1.0 core
 rendering; section 12.11, multisampling, is a separate draft that is
 pending). The words that existed before CAPS[30] keep their meaning; a
-word of 0 in a new field keeps the earlier behaviour. The STATE of a unit
-does not change while the unit works on earlier commands (section 7.3,
-SET_REG): a write to the RX range waits while the RX or the ROP is busy,
-a write to the ROP range while the ROP is busy.
+word of 0 in a new field keeps the earlier behaviour.
+
+**State and earlier draws.** A unit's state does not change under the
+work of earlier commands. With CAPS[30], a SET_REG into the RX range or
+the ROP range waits until the vertex fetcher, the shader units, the
+rasterizer and the render output are idle (so that every earlier draw has
+left the units that read the range), and a SET_REG into 0x1C0-0x1DF waits
+until the vertex fetcher is idle. Without CAPS[30] the RX range waits for
+the RX and the ROP only, and the ROP range for the ROP.
 
 **Formats.** A format field holds a VkFormat value (8 bits; Vulkan 1.0's
 core formats are 0-184). A GPU reads a value it does not support as "no
@@ -616,15 +623,14 @@ format"; the FMT capability (section 4) lists what it supports. Values
 referenced: Vulkan specification, VkFormat, Required Format Support.
 
 Conversions follow Vulkan's rules: UNORM c / (2^b - 1) and SNORM
-max(c / (2^(b-1) - 1), -1), rounded to the nearest fp32; 16-bit floats and
-the packed unsigned floats convert exactly; missing components read
-(0, 0, 0, 1) (integer 1 for integer formats); integer formats give their
-integer bits. Writes to UNORM clamp to [0, 1] and round to nearest even;
-writes to 16-bit floats round to nearest even; writes to integer formats
-keep the low bits. sRGB formats convert R, G and B with the sRGB transfer
-function: reads before filtering, blending in linear values, writes to
-the nearest 8-bit code (the implementation's precision is the vendor's;
-Amaterrace: correctly rounded both ways).
+max(c / (2^(b-1) - 1), -1); 16-bit floats and the packed unsigned floats
+convert exactly; missing components read (0, 0, 0, 1) (integer 1 for
+integer formats); integer formats give their integer bits. Writes to
+UNORM clamp to [0, 1] (NaN to 0); writes to integer formats keep the low
+bits. sRGB formats convert R, G and B with the sRGB transfer function:
+reads before filtering, blending in linear values. The rounding is the
+vendor's (Amaterrace: reads to the nearest fp32, writes to UNORM and
+16-bit floats to nearest even, sRGB writes to the nearest 8-bit code).
 
 **VF range** (0x020-0x04F and 0x1C0-0x1DF):
 
@@ -642,7 +648,7 @@ Amaterrace: correctly rounded both ways).
 | 0x030 + 2k | ATTR[k]_BASE | GPU address of attribute k of the first element (the binding's address plus the attribute's offset), k < 16 |
 | 0x031 + 2k | ATTR[k]_DESC | [15:0] stride; [19:16] the earlier format code (used when ATTR_DST[k][31:24] is 0); [20] per instance; [31:24] divisor |
 | 0x1C0 + k | ATTR_DST[k] | [5:0] first register, [7:6] components - 1; [31:24] the VkFormat (CAPS[30]; 0: ATTR_DESC[19:16]); 0 disables the attribute |
-| 0x1D0 + k | ATTR_LIMIT[k] | (CAPS[30]) The bytes from ATTR[k]_BASE that the attribute may read; 0 = no limit. An attribute whose bytes pass the limit reads (0, 0, 0, 1) without a memory access (robust buffer access) |
+| 0x1D0 + k | ATTR_LIMIT[k] | (CAPS[30]) [31] the limit applies, [30:0] the bytes from ATTR[k]_BASE that the attribute may read; [31] = 0: no limit. An attribute whose bytes pass the limit reads (0, 0, 0, 1) without a memory access (robust buffer access) |
 
 **RX range** (0x050-0x06F):
 
@@ -652,8 +658,8 @@ Amaterrace: correctly rounded both ways).
 | 0x056 | SCISSOR_MIN | {y, x}, inclusive |
 | 0x057 | SCISSOR_MAX | {y, x}, exclusive; 0 = no scissor |
 | 0x058 | CULL | [1:0] 1 front, 2 back, 3 both; [2] front = counter-clockwise |
-| 0x059 | DEPTH_CLAMP | [0] (CAPS[30]) depth clamp: no depth clipping, the depth clamped to the viewport's depth range |
-| 0x05A | RAST_MODE | (CAPS[30]) [0] depth bias; [2:1] polygon mode, 0 fill (others read as fill); [5:4] the depth format the bias is for: 0 none (no bias), 1 D16, 2 D24, 3 D32_SFLOAT |
+| 0x059 | DEPTH_CLAMP | (CAPS[30]) [0] depth clamp: no depth clipping, the depth clamped to the viewport's depth range; [1] DEPTH_CLIP: Vulkan's depth clipping and an unclamped r3 (0: the earlier behaviour, no depth clipping and r3 clamped to [0, 1]) |
+| 0x05A | RAST_MODE | (CAPS[30]) [0] depth bias; [2:1] polygon mode, 0 fill (others read as fill); [3] fragments only inside the viewport's rectangle; [5:4] the depth format the bias is for: 0 none (no bias), 1 D16, 2 D24, 3 D32_SFLOAT |
 | 0x05B | VARYING_COUNT | Varying words per vertex for the fragment warps |
 | 0x05C | DEBUG_COLOR | RGBA8 (R in [7:0]) of the direct path without shaders |
 | 0x05D | PROVOKING | [0] 0 first, 1 last vertex |
@@ -667,22 +673,25 @@ for the fill mode with line and point widths of 1:
 
 - **Primitives** come with their kind (point, line, triangle) from the
   vertex fetcher. Lines and points are front facing and are not culled.
-- **Clipping**: triangles and lines are clipped against the near plane
-  (z >= 0, or w >= a small epsilon with DEPTH_CLAMP), and, where a vertex
-  leaves the guard band, against the guard band in x and y; points
-  outside the near plane are discarded. The far plane, and the depth range
-  in general, is applied per sample by the render output (below). A
-  clipped line stays one line.
-- **Viewport**: fragments are produced only inside the viewport's
-  rectangle, rounded to whole pixels, as well as inside the scissor and
-  the render target.
+- **Clipping**: triangles and lines are clipped against w >= a small
+  epsilon (always), the near plane z >= 0 (without DEPTH_CLAMP[0]) and,
+  where a vertex leaves the guard band, the guard band in x and y; points
+  outside the first two planes are discarded. A clipped line stays one
+  line. With DEPTH_CLAMP[1] and without DEPTH_CLAMP[0], a sample whose
+  depth less the bias lies outside [min(n, f), max(n, f)] (n = z offset,
+  f = z offset + z scale) is removed from the coverage before the
+  fragment program runs: the far plane, and the depth range in general,
+  is applied per sample. Lines shorter than a subpixel are discarded.
+- **Viewport** (RAST_MODE[3]): fragments are produced only inside the
+  viewport's rectangle, rounded to whole pixels, as well as inside the
+  scissor and the render target. DRAW_RAW does not use it.
 - **Lines** (strictLines = false) cover a parallelogram: the major axis
   is the one with the larger distance between the endpoints (x when
   equal); two edges run through the endpoints along the minor axis, one
   pixel long, and two connect their ends. Attributes vary along the major
   axis only (as two triangles whose vertices at each end carry the same
-  attributes); b0 and b1 are the weights of the first and the second
-  vertex, b2 is 0 up to rounding.
+  attributes); b0 and b1 are the weights of the primitive's vertices 0
+  and 1, b2 is 0 up to rounding.
 - **Points** cover a 1 x 1 square centred at the vertex. A point's
   fragment program gets PointCoord (s, t) in r0 and r1 instead of
   barycentrics; its inputs are those of the vertex.
@@ -698,7 +707,7 @@ for the fill mode with line and point widths of 1:
 
 | Index | Name | Contents |
 | --- | --- | --- |
-| 0x070 | RT_BASE | GPU address of colour attachment 0 (8-byte aligned; 4 for 16-bit pixels; 64 for multisampled images) |
+| 0x070 | RT_BASE | GPU address of colour attachment 0 (8-byte aligned; 4 for 16-bit pixels; with CAPS[30] the bases of every attachment and of the depth/stencil attachment are multiples of 64 and their strides multiples of min(2 x S x ps, 64), S the samples and ps the pixel bytes) |
 | 0x071 | RT_STRIDE | Bytes per row |
 | 0x072 | RT_FORMAT | [1:0] the earlier code of attachment 0: 0 BGRA8, 1 RGBA8, 2 RGB565 (used when RT_FORMATS[7:0] is 0) |
 | 0x073 | RT_SIZE | {height, width} of the render area's targets |
@@ -709,26 +718,24 @@ for the fill mode with line and point widths of 1:
 | 0x078 | STENCIL_OPS | (CAPS[30]) [2:0] front fail op, [5:3] front pass op, [8:6] front depth-fail op, [18:16], [21:19], [24:22] the same for back faces (VkStencilOp) |
 | 0x079 | STENCIL_BACK | As STENCIL_FRONT, for back-facing triangles |
 | 0x07A | BLEND | Attachment 0: [0] enable, [4:1] source colour factor, [8:5] destination colour factor, [11:9] colour op, [15:12] source alpha factor, [19:16] destination alpha factor, [22:20] alpha op (VkBlendFactor 0-14, VkBlendOp 0-4) |
-| 0x07B | — | Without CAPS[30]: the blend constant as RGBA8. With CAPS[30]: not used (BLEND_CONST_R-A) |
+| 0x07B | BLEND_CONST | The blend constant as RGBA8 (R in [7:0]), used when ROP_CTRL[1] is 0 |
 | 0x07C | WRITE_MASK | [3:0] RGBA of attachment 0; with CAPS[30] [7:4], [11:8], [15:12] of attachments 1-3. An attachment with mask 0 is neither read nor written |
 | 0x07D | RT_FORMATS | (CAPS[30]) [7:0] the VkFormat of attachment 0 (0: RT_FORMAT), [15:8], [23:16], [31:24] attachments 1-3 (0: no attachment) |
 | 0x07E, 0x07F | RT1_BASE, RT1_STRIDE | Attachment 1 |
 | 0x080, 0x081 | RT2_BASE, RT2_STRIDE | Attachment 2 |
 | 0x082, 0x083 | RT3_BASE, RT3_STRIDE | Attachment 3 |
 | 0x084-0x086 | BLEND1-BLEND3 | As BLEND, for attachments 1-3 (independent blending) |
-| 0x087-0x08A | BLEND_CONST_R, _G, _B, _A | fp32 blend constants |
+| 0x087-0x08A | BLEND_CONST_R, _G, _B, _A | fp32 blend constants, used when ROP_CTRL[1] is 1 |
 | 0x08B, 0x08C | DEPTH_BOUNDS_MIN, _MAX | fp32 |
-| 0x08D | OCC_CTRL | [0] count the samples that pass (the occlusion counter, micro-op QUERY) |
+| 0x08D | ROP_CTRL | (CAPS[30]) [0] count the samples that pass (the occlusion counter, micro-op QUERY); [1] the fp32 blend constants |
 
 Per-sample operations with CAPS[30], in this order after the fragment
-program (with section 12.11's coverage):
+program and section 12.11's coverage (sample mask, alpha to coverage
+with attachment 0's alpha, alpha to one for every attachment):
 
-1. **Depth clipping and range**: z is the sample's depth from the
-   rasterizer (biased). Without DEPTH_CLAMP a sample whose z, less the
-   bias, lies outside [min(n, f), max(n, f)] is discarded (n = z offset,
-   f = z offset + z scale). The depth then is the exported depth (0x104)
-   if any, else z; with DEPTH_CLAMP it is clamped to [min(n, f), max(n,
-   f)]. A UNORM attachment saturates the value to [0, 1].
+1. **Depth**: the exported depth (0x104) if any, else the sample's depth
+   from the rasterizer (biased); with DEPTH_CLAMP[0] clamped to [min(n,
+   f), max(n, f)]. A UNORM attachment saturates the value to [0, 1].
 2. **Depth bounds** (DEPTH[9]): the stored depth outside [MIN, MAX]
    discards the sample; nothing is written for it.
 3. **Stencil** (DEPTH[8]): the masked reference against the masked
@@ -738,11 +745,11 @@ program (with section 12.11's coverage):
    their facing; lines, points and the direct path the front state.
 4. **Depth** (DEPTH[0]): the compare op; on success with DEPTH[1] the
    depth is written.
-5. **Occlusion**: with OCC_CTRL[0], each sample still covered adds 1.
+5. **Occlusion**: with ROP_CTRL[0], each sample still covered adds 1.
 6. **Colour**, for each attachment the program exported: blending (not
-   for integer formats and the formats without blending), the write
-   mask, the write. The alpha to coverage of section 12.11 uses
-   attachment 0's alpha; alpha to one applies to every attachment.
+   for integer formats and the formats without blending; a format
+   without alpha reads a destination alpha of 1), the write mask, the
+   write.
 
 Colour attachments may have the formats that the FMT capability names
 with the colour-attachment feature; their pixels are 1, 2, 4, 8 or 16
@@ -758,15 +765,26 @@ or 16 bytes; only 4-byte texels may be tiled (TEX_IMAGE[8] reads as
 linear otherwise). Integer formats are sampled nearest and return integer
 bits; the border colours give integer 0 and 1 for them. sRGB texels are
 converted before filtering, and the border colour of an sRGB format is
-linear. Gather selects the component after the swizzle.
+linear. Gather selects the component after the swizzle. The ETC2 and
+EAC formats (VkFormat 147-156) are read in their 4 x 4 blocks of 8 or 16
+bytes, rows of ceil(width / 4) blocks, each level's plane rounded up to
+64 bytes (Values referenced: Khronos Data Format Specification, ETC2
+Compressed Texture Image Formats).
 
-**Blitter** (with CAPS[30], section 8.2): BLT_OP [9:8] = 2 selects 8-bit
-pixels; BLT_OP [11:10] = words - 1 (0, 1 or 3) of a FILL pattern for
-32-bit pixels, from BLT_COLOR and BLT_COLOR1-BLT_COLOR3 (0x00B-0x00D),
-repeating every that many words from the row's first pixel; BLT_OP
-[19:16] KEEP, for FILL and COPY of 32-bit pixels without blending: the
-bytes of each pixel that are not written (0x8 writes the depth of a
-D24_UNORM_S8_UINT pixel only, 0x7 its stencil only).
+**Blitter** (with CAPS[30], section 8.2): the pixel size is BLT_OP
+[9:8] 0 = 32, 1 = 16, 2 = 64, 3 = 8 bits, or 128 bits with BLT_OP [13] = 1
+and [9:8] = 0 (TILE and UNTILE take 32 bits only); a FILL of 64 or 128
+bits takes BLT_COLOR as its low word and BLT_COLOR1-BLT_COLOR3
+(0x00C-0x00E) above it. BLT_OP [19:16] KEEP, for FILL and COPY of 32-bit
+pixels without blending: the bytes of each pixel that are not written
+(0x8 writes the depth of a D24_UNORM_S8_UINT pixel only, 0x7 its stencil
+only). RESOLVE (section 12.11's draft) takes, besides its averages 0-5,
+6 UNORM2_10_10_10 (32 bits: three 10-bit and one 2-bit unsigned
+normalized field, [9:0], [19:10], [29:20], [31:30]) and 7 UNORM1555 (16
+bits: [15] one bit, [14:10], [9:5], [4:0] five bits), each the mean of
+the codes rounded to nearest even; UNORM8 also takes 8-bit pixels,
+SFLOAT16 16 to 64 bits, SFLOAT32 32 to 128 bits and SAMPLE0 8 to 128
+bits.
 
 9. Fences and interrupts
 ------------------------
