@@ -48,7 +48,8 @@ module atg_cp #(
 	parameter HAS_VSYNC = 0,	/* vsync is connected (CAPS[10], WAIT_VSYNC) */
 	parameter HAS_DISP = 0,	/* a display controller's registers are in this window at +0x10000 (CAPS[3], DISP) */
 	parameter HAS_DBG = 0,	/* a debug bridge outside the host bus (JTAG; the DBG capability) */
-	parameter PACKED = 0	/* the SU has the packed arithmetic (CAPS[28]) */
+	parameter PACKED = 0,	/* the SU has the packed arithmetic (CAPS[28]) */
+	parameter SUBGROUP = 0	/* the SU has shfl/vote/ballot (CAPS[24]) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -145,8 +146,9 @@ module atg_cp #(
 	/* verilator lint_off WIDTHTRUNC */
 	localparam [3:0] LS4 = LINE_SHIFT;
 	/* verilator lint_on WIDTHTRUNC */
-	/* CAPS[27]: graphics (VF, RX and ROP); CAPS[28]: packed; CAPS[24] subgroup stays 0 (not implemented). */
-	localparam [31:0] CAPS = {3'd0, UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4], 3'd0,
+	/* CAPS[27]: graphics (VF, RX and ROP); CAPS[28]: packed; CAPS[24]: subgroup. */
+	localparam [31:0] CAPS = {3'd0, UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4], 2'd0,
+		UNITS[6] && SUBGROUP != 0,
 		LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,
 		HAS_VSYNC != 0, 1'b0, UNITS[5], UNITS[6] ? 4'd5 : 4'd0, HAS_DISP != 0, UNITS[6], UNITS[1], 1'b1};
 	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4. */

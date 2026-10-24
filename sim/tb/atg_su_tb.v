@@ -8,7 +8,7 @@
 /*
  * atg_su_tb: the shader unit running GSI1 programs (p008's acceptance:
  * the same binary gives the same results on NPHYS 8, 16 and 32).  Three
- * SUs (NPHYS 8, 16, 32; NWARPS 4, NREGS 32) fetch code and load constants
+ * SUs (NPHYS 8, 16, 32; NWARPS 4, NREGS 32; SUBGROUP 1) fetch code and load constants
  * from one amb_mem behind their I$ port, and access data through a second
  * amb_mem behind their D$ port; at_* goes to atg_mc_atom, whose AMB port
  * shares that second amb_mem with the D$ through am_amb_mux.
@@ -26,6 +26,10 @@
  *   mem: lw/sw/atom/fence, lwc and c operands, LDS with bar (128 lanes)
  *   vadd: fp32 vector add over 2 workgroups (memory only)
  *   reduce: fp32 tree reduction in LDS and an integer atomic sum (128 lanes)
+ *   sub: qd, shfl/vote/ballot with EXEC full, partial and empty (100 lanes)
+ * A fourth SU (NPHYS 8, SUBGROUP 0) runs sub only and must report an ISA
+ * fault (the CP's kind 8) at the model's pc for every warp (sub.fault), with
+ * the registers written before it (sub.fexp).
  */
 
 `timescale 1ns / 1ps
@@ -33,7 +37,10 @@
 
 module atg_su_chk #(
 	parameter NPHYS = 8,
-	parameter SEED = 1
+	parameter SEED = 1,
+	parameter SUBGROUP = 1,
+	parameter P_FIRST = 0,	/* the first program to run */
+	parameter FAULTS = 0	/* expect the ISA faults of sub.fault (SUBGROUP 0) */
 ) (
 	input wire clk,
 	input wire go,
@@ -44,7 +51,7 @@ module atg_su_chk #(
 	localparam G = 32 / NPHYS;
 	localparam GRP_W = G > 1 ? $clog2(G) : 1;
 	localparam NREGS = 32;
-	localparam NP = 7;	/* programs */
+	localparam NP = 8;	/* programs */
 	localparam DATA = 32'h8000;
 	localparam DWORDS = 4096;
 
@@ -84,7 +91,7 @@ module atg_su_chk #(
 	wire [7:0] m_req_tag, x_rsp_tag;
 	wire x_rsp_write, x_rsp_error;
 
-	atg_su #(.NPHYS(NPHYS), .GRP_W(GRP_W)) dut (
+	atg_su #(.NPHYS(NPHYS), .GRP_W(GRP_W), .SUBGROUP(SUBGROUP)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.cs_kick(cs_kick), .lc_kick(lc_kick), .inv(4'd0),
 		.vl_req(1'b0), .vl_gnt(), .vl_slot(), .vl_ptbase(), .vl_we(1'b0), .vl_reg(6'd0),
@@ -166,10 +173,19 @@ module atg_su_chk #(
 	reg [31:0] mexp [0:DWORDS-1];
 	integer lane_err [0:NPHYS-1];
 	event check;
-	integer n_fault;
+	integer n_fault, f_bad, nf_exp, q;
+	reg [31:0] fexp [0:7];
+	reg f_hit;
 	always @(posedge clk)
 		if (fault) begin
-			$display("FAIL atg_su NPHYS %0d: ISA fault at pc %0d", NPHYS, fault_addr);
+			f_hit = 1'b0;
+			for (q = 0; q < nf_exp; q = q + 1)
+				if (fexp[2 * q + 1] == fault_addr)
+					f_hit = 1'b1;
+			if (!FAULTS || !f_hit) begin
+				$display("FAIL atg_su NPHYS %0d: ISA fault at pc %0d", NPHYS, fault_addr);
+				f_bad = f_bad + 1;
+			end
 			n_fault = n_fault + 1;
 		end
 
@@ -216,8 +232,10 @@ module atg_su_chk #(
 		errs = 0;
 		cycles = 0;
 		n_fault = 0;
+		f_bad = 0;
+		nf_exp = 0;
 		@(posedge go);
-		for (p = 0; p < NP; p = p + 1) begin
+		for (p = P_FIRST; p < NP; p = p + 1) begin
 			for (i = 0; i < 4096; i = i + 1)
 				code[i] = 32'd0;
 			lanes = 128;
@@ -261,13 +279,26 @@ module atg_su_chk #(
 				$readmemh("sim/tb/su/vadd.mexp", mexp);
 				groups = 2;
 			end
-			default: begin
+			6: begin
 				$readmemh("sim/tb/su/reduce.hex", code);
 				$readmemh("sim/tb/su/reduce.exp", exp);
 				$readmemh("sim/tb/su/reduce.dat", dat);
 				$readmemh("sim/tb/su/reduce.mexp", mexp);
 			end
+			default: begin
+				$readmemh("sim/tb/su/sub.hex", code);
+				if (FAULTS) begin
+					$readmemh("sim/tb/su/sub.fexp", exp);
+					$readmemh("sim/tb/su/sub.fault", fexp);
+					nf_exp = 4;
+				end else
+					$readmemh("sim/tb/su/sub.exp", exp);
+				$readmemh("sim/tb/su/sub.dat", dat);
+				$readmemh("sim/tb/su/sub.mexp", mexp);
+				lanes = 100;
+			end
 			endcase
+			n_fault = 0;
 			rst_n = 1'b0;
 			for (i = 0; i < 4096; i = i + 1)
 				mem.poke(32'h1000 + 4 * i, code[i]);
@@ -300,11 +331,19 @@ module atg_su_chk #(
 			@(negedge clk);
 			cs_kick = 1'b0;
 			t = 0;
-			while ((busy || t < 4) && t < 1000000) begin
+			while ((busy || t < 4) && t < 1000000 && !(FAULTS && n_fault >= nf_exp)) begin
 				@(negedge clk);
 				t = t + 1;
 			end
-			if (busy) begin
+			if (FAULTS) begin
+				/* The faulted warps stay in the SU (the CP recovers it). */
+				repeat (200) @(negedge clk);
+				if (n_fault != nf_exp) begin
+					$display("FAIL atg_su NPHYS %0d program %0d: %0d ISA faults, want %0d",
+						NPHYS, p, n_fault, nf_exp);
+					errs = errs + 1;
+				end
+			end else if (busy) begin
 				$display("FAIL atg_su NPHYS %0d program %0d: still busy", NPHYS, p);
 				errs = errs + 1;
 			end
@@ -324,7 +363,7 @@ module atg_su_chk #(
 			errs = errs + merr;
 			$display("atg_su NPHYS %0d program %0d: %0d cycles", NPHYS, p, t);
 		end
-		errs = errs + n_fault;
+		errs = errs + f_bad;
 		done = 1'b1;
 	end
 endmodule
@@ -332,8 +371,8 @@ endmodule
 module atg_su_tb;
 	reg clk = 1'b0;
 	reg go = 1'b0;
-	wire [2:0] done;
-	wire [31:0] e0, e1, e2, c0, c1, c2;
+	wire [3:0] done;
+	wire [31:0] e0, e1, e2, e3, c0, c1, c2, c3;
 
 	always #5 clk = !clk;
 
@@ -343,6 +382,8 @@ module atg_su_tb;
 		.cycles(c1));
 	atg_su_chk #(.NPHYS(32), .SEED(3)) n32 (.clk(clk), .go(go), .done(done[2]), .errs(e2),
 		.cycles(c2));
+	atg_su_chk #(.NPHYS(8), .SEED(4), .SUBGROUP(0), .P_FIRST(7), .FAULTS(1)) n8f (.clk(clk),
+		.go(go), .done(done[3]), .errs(e3), .cycles(c3));
 
 	initial begin
 		#20 go = 1'b1;
@@ -350,7 +391,8 @@ module atg_su_tb;
 		if (e0 == 0) $display("PASS atg_su.nphys8");
 		if (e1 == 0) $display("PASS atg_su.nphys16");
 		if (e2 == 0) $display("PASS atg_su.nphys32");
-		if (e0 + e1 + e2 == 0)
+		if (e3 == 0) $display("PASS atg_su.nosubgroup");
+		if (e0 + e1 + e2 + e3 == 0)
 			$display("PASS atg_su");
 		$finish;
 	end

@@ -5,12 +5,25 @@
 # every warp that has not ended waits at it).  Units: the integer ALU, the FPU,
 # the packed unit, the transcendental unit and the divider (bit-exact through
 # tools/gsi1fp.py), lw/sw/atom/fence, lds/sts, lwc and the c operands, exec.*,
-# kill, the branches, end, bar, wait and nop.  Texture, export, lda and the
-# lane unit stop the model with an error.  Programs must be free of races
-# between warps (the model is sequentially consistent per warp).
+# kill, the branches, end, bar, wait and nop, and the lane unit (qd; shfl,
+# vote and ballot with --subgroup).  Texture, export and lda stop the model
+# with an error.  Programs must be free of races between warps (the model is
+# sequentially consistent per warp).
 #
 #   gsi1model.py PROG.s --lanes N [--groups G] [--nregs 32] [--packed]
-#                [--data DATA.hex] -o PROG.exp [--mem-out PROG.mexp]
+#                [--subgroup] [--data DATA.hex] -o PROG.exp [--mem-out PROG.mexp]
+#                [--fault-out PROG.fault]
+#
+# The lane unit: qdx/qdy = v[lane|1] - v[lane&~1], v[lane|2] - v[lane&~2]
+# (fp32, RNE), qswap1/2/3 = v[lane^1/2/3], qbcast = v[lane&~3] (partner
+# lanes regardless of EXEC).  shfl: the source lane s of lane l is rs2 (idx),
+# l ^ rs2 (xor, bfly), l - rs2 (up), l + rs2 (down), as integers without
+# wraparound; the result is rs1 of lane s when s is 0..31 and in EXEC, else
+# the lane's own rs1; EXEC lanes are written.  ballot: the mask of the EXEC
+# lanes whose rs1 is not 0; vote.any/all: whether that mask is not 0 / equals
+# EXEC, as a Boolean; both write every lane (design M13, as exec.save).
+# --fault-out: an ISA fault is not an error; the file gets one line per
+# faulting warp, "slot pc" in hex, and the warp stops.
 #
 # Memory: DATA.hex (one 32-bit word per line) is the data image at DATA_BASE
 # (0x8000, 4096 words); everything else reads 0.  The constant bank holds the
@@ -98,9 +111,11 @@ def fmod(v, neg, ab, unit):
 
 
 class Machine:
-    def __init__(self, words, lanes, nregs, mem, groups, packed):
+    def __init__(self, words, lanes, nregs, mem, groups, packed, subgroup=False,
+                 faults=None):
         self.words, self.lanes, self.nregs, self.groups = words, lanes, nregs, groups
-        self.cfg = dict(NREGS=nregs, PACKED=int(packed), SUBGROUP=0, HAS_SA=0)
+        self.cfg = dict(NREGS=nregs, PACKED=int(packed), SUBGROUP=int(subgroup), HAS_SA=0)
+        self.faults = faults
         self.mem = mem
         self.cbank = [mem.get(DATA_BASE // 4 + i, 0) for i in range(CONST_WORDS)]
         self.lds = [0] * LDS_WORDS
@@ -141,7 +156,10 @@ class Machine:
             u = A.decode(self.words[pc], self.cfg)
             f = {n: (u >> lo) & ((1 << nb) - 1) for n, (lo, nb) in A.F.items()}
             if f["ILL"]:
-                raise SystemExit("gsi1model: ISA fault at pc %d" % pc)
+                if self.faults is None:
+                    raise SystemExit("gsi1model: ISA fault at pc %d" % pc)
+                self.faults.append((k, pc))
+                return
             unit, op = f["UNIT"], f["OP"]
             imm = f["IMM"]
             n1, n2, n3, rd = f["RS1"], f["RS2"], f["RS3"], f["RD"]
@@ -250,11 +268,42 @@ class Machine:
                     yield pc
                 else:
                     raise SystemExit("gsi1model: exec op %d" % op)
+            elif unit == A.U_LANE:
+                self.lane(f, exec_m, r, src)
             elif unit in (A.U_NONE, A.U_CTL):
                 pass
             else:
                 raise SystemExit("gsi1model: unit %d not in the model (pc %d)" % (unit, pc))
             pc = npc
+
+    def lane(self, f, exec_m, r, src):
+        """qd, shfl, vote and ballot (the comment at the top)."""
+        op, sub, rd = f["OP"], f["SUB"], f["RD"]
+        res = {}
+        if op == 0:
+            for ln in range(32):
+                if exec_m >> ln & 1:
+                    p, q = [(ln | 1, ln & ~1), (ln | 2, ln & ~2), (ln ^ 1, None),
+                            (ln ^ 2, None), (ln ^ 3, None), (ln & ~3, None)][sub]
+                    a = src(f["RS1"], 1, 0, p)
+                    res[ln] = a if q is None else FP.fpu(1, a, src(f["RS1"], 1, 0, q), 0, 0)
+        elif op == 1:
+            for ln in range(32):
+                if exec_m >> ln & 1:
+                    b = src(f["RS2"], 1, 1, ln)
+                    s = [b, ln ^ b, ln - b, ln + b, ln ^ b][sub]
+                    ok = 0 <= s < 32 and exec_m >> s & 1
+                    res[ln] = src(f["RS1"], 1, 0, s if ok else ln)
+        else:
+            bal = 0
+            for ln in range(32):
+                if exec_m >> ln & 1 and src(f["RS1"], 1, 0, ln):
+                    bal |= 1 << ln
+            v = bal if op == 3 else M32 if (bal == exec_m if sub else bal != 0) else 0
+            res = {ln: v for ln in range(32)}
+        if f["WRD"]:
+            for ln, v in res.items():
+                r[rd][ln] = v & M32
 
     def run(self):
         nw = (self.lanes + 31) // 32
@@ -284,6 +333,8 @@ def main():
     ap.add_argument("--groups", type=int, default=1)
     ap.add_argument("--nregs", type=int, default=32)
     ap.add_argument("--packed", action="store_true")
+    ap.add_argument("--subgroup", action="store_true")
+    ap.add_argument("--fault-out")
     ap.add_argument("--data")
     ap.add_argument("-o", dest="out", required=True)
     ap.add_argument("--mem-out")
@@ -294,8 +345,13 @@ def main():
     if a.data:
         for i, v in enumerate(load_hex(a.data)):
             mem[DATA_BASE // 4 + i] = v
-    m = Machine(words, a.lanes, a.nregs, mem, a.groups, a.packed)
+    faults = [] if a.fault_out else None
+    m = Machine(words, a.lanes, a.nregs, mem, a.groups, a.packed, a.subgroup, faults)
     regs = m.run()
+    if a.fault_out:
+        with open(a.fault_out, "w") as f:
+            for k, pc in faults:
+                f.write("%x %x\n" % (k, pc))
     with open(a.out, "w") as f:
         for k in range(4):
             for n in range(a.nregs):
