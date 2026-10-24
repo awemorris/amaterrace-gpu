@@ -1,116 +1,179 @@
 Amaterrace GPU
 ==============
 
+[![CI](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml/badge.svg)](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml)
+
 `Amaterrace GPU` is an RTL GPU implementation.
 
 It is designed for mobile graphics targeting at least 1920x1080 @ 60fps,
 and furthermore, it scales up to 1000 TOPS as an LLM accelerator.
 
 The name `Amaterrace` cometh from a goddess of sunlight, who illuminateth the higher place by her love.
-The reduced version is named `Moonphaser.`
+The reduced version is named `Moonphaser`.
 
-- GHCI ... A standard HCI for Vulkan-compatible GPUs that this project proposes.
-- DC ... Display Controller Block
-- CP ... Command Processor Block
-- BLT ... Blitter Block
-- VF ... Vertex Fetcher Block
-- RX ... Rasterizer Block
-- SU ... Shader Unit Block
-- SA ... Systolic Array Block
-- TU ... Texture Unit Block
-- ROP ... Buffer Writer Block
-- MC ... Memory Controller Block
+- **Host interface:** [GHCI](docs/ghci.md), a standard host controller interface for Vulkan-class GPUs that this project proposes.
+- **Shader ISA:** [GSI1](docs/gsi1.md), the GHCI standard ISA (RISC-V based, 64-bit encoding).
+- **Target:** Xilinx KC705 (XC7K325T) at 200 MHz; 800 MHz is the goal on ASIC processes.
+- **License:** Zlib (the same as zedBSD), including the GHCI specification.
 
-Overall Architecture:
+Contents
+--------
+
+1. [Architecture](#architecture)
+2. [Blocks](#blocks)
+3. [Shader unit](#shader-unit)
+4. [GHCI](#ghci)
+5. [Status](#status)
+6. [Building and testing](#building-and-testing)
+7. [Repository layout](#repository-layout)
+
+Architecture
+------------
+
+The host CPU reaches the GPU through the command processor:
+
 ```
 CPU -- (AXI4) -- Command Processor
+```
 
+The data paths:
+
+```
 Fill/Copy:
-CP --> BLT --> MC
+  CP --> BLT --> MC
 
 Primitive:
-CP --> VF --> SU --> RX --> SU --> ROP --> MC
-                            |
-                            +--> TU
+  CP --> VF --> SU --> RX --> SU --> ROP --> MC
+                              |
+                              +--> TU
 
 LLM:
-CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP -> MC
+  CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP -> MC
 ```
 
-Shader Architecture:
-- Warp: 32-lane scalar with 16-bit packed
-- Register File: 32 lanes x NREGS x NWARPS x 32-bit in BRAM, replicated
-  for 3 read ports. XC7Z010: NREGS 32, NWARPS 4 (12 BRAM36). XC7K325T: NREGS 64,
-  NWARPS 4 (24 BRAM36 per SU).
-- Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz
-```
+The blocks reach memory through a tree of small routers (`atg_rt`). The
+memory controller is at the root, and the display controller sits next to it
+with priority.
 
-Synthesis goal is 200MHz on KC705 board and 800MHz for ASIC processes.
+Blocks
+------
 
-Blocks:
-- CP: GHCI host registers, command ring, state register file, fences, interrupts,
-  and a debug memory port (DBG_ADDR/DBG_DATA) for bring-up without a driver.
-- BLT: 2D fill, copy (with optional alpha-over), and linear<->tiled copy for textures.
-- VF: index/vertex fetch, attribute format conversion, instancing, primitive assembly.
-- SU: shader unit; runs vertex, fragment and compute warps (see below).
-- RX: near-plane clipping, viewport transform, edge-function rasterizer, quad traversal.
-- TU: sampler with a small texture cache (nearest / bilinear, 2D, mipmaps).
-- ROP: depth/stencil test, blending, buffer write-back in primitive order.
-- MC: internal memory bus (AMB, 32- or 64-byte lines) arbiter with an address
-  aperture, quiesce, and one AXI master (AXI3 64-bit on Zynq HP ports, AXI4
-  512-bit to MIG DDR3).
-- DC: display controller; a separate IP (own top) with its own memory port.
+| Block | Name | Role |
+| --- | --- | --- |
+| CP | Command Processor | GHCI host registers, the command ring, the state register file, fences, interrupts, and a debug memory port (`DBG_ADDR`/`DBG_DATA`) for bring-up without a driver. A small RV32IM core runs its firmware. |
+| BLT | Blitter | 2D fill, copy (with optional alpha-over), and linear↔tiled copy for textures. |
+| VF | Vertex Fetcher | Index and vertex fetch, attribute format conversion, instancing, and primitive assembly. |
+| SU | Shader Unit | Runs vertex, fragment and compute warps (see [Shader unit](#shader-unit)). |
+| RX | Rasterizer | Near-plane clipping, the viewport transform, an edge-function rasterizer, and quad traversal. |
+| TU | Texture Unit | A sampler with a small texture cache (nearest and bilinear, 2D, mipmaps). |
+| ROP | Buffer Writer | Depth and stencil test, blending, and buffer write-back in primitive order. |
+| SA | Systolic Array | A 32 × 32 matrix engine for LLM work, 0.8 TOPS per SU at 200 MHz. |
+| MC | Memory Controller | The internal memory bus (AMB, 32- or 64-byte lines): the arbiter, an address aperture, quiesce, and one AXI master (AXI4 512-bit to the MIG DDR3 on the KC705). |
+| DC | Display Controller | A separate IP with its own top and memory port; VGA and TMDS (DVI/HDMI) outputs. |
 
-GHCI (GPU Host Controller Interface):
-- A public, versioned host interface for Vulkan-class GPUs, in the spirit of
-  AHCI/xHCI. It standardizes the host control registers (identification,
-  capabilities, extended-capability list, control/status/IRQ, command ring,
-  address aperture, fault, watchdog, performance counters, debug memory port),
-  the command processor's states and ring rules, complete fences, the
-  interrupt/fault/quiesce/reset semantics, the state register file, the display
-  controller as an extended capability, and a standard shader ISA.
-- Commands: the ring carries zedBSD's GPU command protocol (Kei GPU command
-  protocol, whose numbers follow the Venus wire format).
-- Shader ISA: a standard ISA based on RISC-V (not bound to the RISC-V
-  specification), taking in what is common across GPUs. A GPU runs it natively
-  or has its command processor translate it to a native ISA; a driver may also
-  submit programs in the GPU's native ISA directly. Native ISAs are vendor-
-  specific and optional, as are texture tiling and vendor state and registers.
-- Amaterrace GPU implements GHCI 1.0 with vendor "AMAT", device "ATG1"; its
-  native ISA is the standard one.
-- The specification is docs/ghci.md (draft; the command set and ISA sections
-  are pending); the C headers in include/ are the ones an OS driver copies.
+Shader unit
+-----------
 
-Shader Unit:
-- Warp: 32 lanes, scalar 32-bit per lane, with 16-bit packed (2 x fp16/int16
-  per register) operations. A warp executes over 32/NPHYS cycles on NPHYS
-  physical lanes (proposed: 8 on XC7Z010, 16 on XC7K325T), so one binary runs
-  on both. The XC7Z010 build may omit the packed arithmetic (PACKH/UNPACKH stay).
-- Execution mask is managed by the compiler (EXEC_* instructions; no
-  hardware divergence stack). A small per-warp hardware scoreboard tracks the
-  destination registers of outstanding long operations (memory, texture,
-  transcendental, divide) and stalls only the instructions that depend on
-  them; WAIT with per-class counters stays for store completion and memory
-  ordering.
-- Per unit: BRAM register file, small instruction and data caches, shared
-  memory (LDS), constant bank, post-transform buffer and primitive table for
-  varying interpolation, one shared transcendental unit and one divider.
-- ISA: the GHCI standard ISA (RISC-V based; being designed).
+- **Warp:** 32 lanes, scalar 32-bit per lane, with 16-bit packed operations
+  (2 × fp16/int16 per register). A warp runs over 32/NPHYS cycles on NPHYS
+  physical lanes, so one binary runs on every configuration. fp32 is
+  available on every lane.
+- **Divergence:** the compiler manages the execution mask (`EXEC_*`
+  instructions); there is no hardware divergence stack.
+- **Scoreboard:** a small per-warp hardware scoreboard tracks the destination
+  registers of outstanding long operations (memory, texture, transcendental,
+  divide) and stalls only the instructions that depend on them. `WAIT`, with
+  per-class counters, remains for store completion and memory ordering.
+- **Register file:** 32 lanes × NREGS × NWARPS × 32-bit in BRAM, replicated
+  for 3 read ports. On the XC7K325T: NREGS 64, NWARPS 4 (24 BRAM36 per SU).
+- **Per unit:** small instruction and data caches, shared memory (LDS), a
+  constant bank, a post-transform buffer and a primitive table for varying
+  interpolation, one shared transcendental unit, and one divider.
+- **ISA:** GSI1, the GHCI standard ISA ([docs/gsi1.md](docs/gsi1.md)).
 
-Targets:
-- Digilent ZYBO (XC7Z010): workflow bring-up with per-block bitstreams
-  (CP+BLT, DC, CP+RX+ROP, CP+SU compute); the whole pipeline does not fit the
-  7010 and is verified in simulation and on the KC705.
-- Xilinx KC705 (XC7K325T): main target. MIG DDR3, several SUs; host link to be decided (USB JTAG or PCIe).
+GHCI
+----
 
-Repository layout (planned):
-- rtl/common, rtl/gpu/{cp,blt,vf,rx,su,tu,rop,mc}, rtl/dc
-- include/ (RTL constants and the shared C headers)
-- boards/zybo, boards/kc705 (constraints, Vivado TCL, IP regeneration scripts;
-  Vivado projects, IP output products and bitstreams are not committed)
-- sim/ (iverilog unit testbenches, Verilator system harness, ISA model)
-- tools/ (assembler/disassembler for tests), docs/
+GHCI (GPU Host Controller Interface) is a public, versioned host interface for
+Vulkan-class GPUs, in the spirit of AHCI and xHCI.
 
-Tools: Vivado 2026.1 (batch, BASIC license), Icarus Verilog, Verilator, openFPGALoader / OpenOCD for JTAG. openXC7 remains usable for the ZYBO.
+- **What it standardizes:**
+  - the host control registers: identification, capabilities, the
+    extended-capability list, control/status/IRQ, the command ring, the
+    address aperture, faults, the watchdog, performance counters, and the
+    debug memory port;
+  - the command processor's states and ring rules, complete fences, and the
+    interrupt, fault, quiesce and reset semantics;
+  - the state register file;
+  - the display controller, as an extended capability;
+  - a standard shader ISA.
+- **Commands:** the ring carries zedBSD's GPU command protocol (the Kei GPU
+  command protocol, whose numbers follow the Venus wire format).
+- **Shader ISA:** a standard ISA based on RISC-V (but not bound to the RISC-V
+  specification) that takes in what is common across GPUs. A GPU runs it
+  natively, or its command processor translates it to a native ISA. A driver
+  may also submit programs in the GPU's native ISA directly.
+- **Vendor-specific and optional:** native ISAs, texture tiling, and vendor
+  state and registers.
+- **Amaterrace GPU:** implements GHCI 1.0 with vendor `AMAT` and device `ATG1`;
+  its native ISA is the standard one.
+- **Specification:** [docs/ghci.md](docs/ghci.md) (draft). The C headers in
+  [include/](include/) are the ones an OS driver copies.
 
-License: Zlib (same as zedBSD), including the GHCI specification.
+Status
+------
+
+The RTL is being completed block by block. Correctness comes first, in
+simulation; timing closure at 200 MHz comes later.
+
+| Block | State |
+| --- | --- |
+| CP (with its RV32IM control core and firmware), BLT, MC | Implemented; runs on hardware (ZYBO) |
+| DC | Implemented; test pattern shown on a VGA display (ZYBO) |
+| RX, ROP | Implemented; triangles with depth and blending match the reference model in simulation |
+| SU | Integer, fp32, memory, LDS and control paths implemented, in simulation |
+| VF | Implemented, in simulation |
+| SU graphics paths (export, primitive table), TU | In progress |
+| SA | Deferred until the SU implements the whole ISA |
+
+The Digilent ZYBO (XC7Z010) was used to bring up the workflow and individual
+blocks; the whole pipeline targets the KC705. The KC705 is driven over USB
+JTAG for now; PCIe comes later.
+
+Building and testing
+--------------------
+
+`make` alone lists the targets. The defaults are `BOARD=kc705`,
+`TOP=atg_kc705_raster` and `PART=xc7k325tffg900-2`.
+
+| Command | What it does |
+| --- | --- |
+| `make lint` | Verilator lint of every module and top |
+| `make sim` | The Icarus Verilog unit testbenches |
+| `make verilator` | The Verilator system harness, including a raster scene written to `build/verilator/raster.png` |
+| `make check` | `lint`, `sim` and `verilator` |
+| `make oxc-core` | openXC7 (yosys) synthesis of the GPU core in the KC705 shape |
+| `make oxc` | openXC7 synthesis, place and route, and bitstream |
+| `make vivado` | Vivado batch build |
+| `make prog-oxc`, `make prog-vivado` | Load the bitstream with openFPGALoader |
+
+Tools: Vivado 2026.1 (batch, BASIC license), openXC7, Icarus Verilog,
+Verilator, and openFPGALoader or OpenOCD for JTAG.
+
+GitHub Actions runs `make lint`, `make sim` and `make verilator`, plus the
+openXC7 synthesis of the GPU core in the KC705 shape, on every push and pull
+request to `main`.
+
+Repository layout
+-----------------
+
+| Path | Contents |
+| --- | --- |
+| [rtl/](rtl/) | `common/`, `gpu/{cp,blt,vf,rx,su,tu,rop,sa,mc,top}/`, `dc/` |
+| [spec/](spec/) | One specification per module: ports, behaviour, and what its testbench checks |
+| [include/](include/) | RTL constants and the shared C headers |
+| [fw/cp/](fw/cp/) | Firmware of the command processor's control core |
+| [boards/](boards/) | Board tops and constraints for the KC705 and the ZYBO (Vivado projects, IP output products and bitstreams are not committed) |
+| [sim/](sim/) | Icarus Verilog unit testbenches, the Verilator system harness, and test vectors |
+| [tools/](tools/) | The assembler, the ISA and raster reference models, vector generators, and the lint and build scripts |
+| [docs/](docs/) | The GHCI and GSI1 specifications and the coding style |
