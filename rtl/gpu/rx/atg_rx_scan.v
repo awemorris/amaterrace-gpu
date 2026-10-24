@@ -7,16 +7,17 @@
 
 /*
  * atg_rx_scan: RX quad traversal: walks the bounding box in 2×2 quads,
- * evaluates the edges for coverage, packs up to 8 quads of one triangle
- * into a 32-lane fragment warp (or sends quads directly to the ROP without
- * an SU), copies the vertices' varyings into the SU's primitive table,
- * frees PT entries.
+ * evaluates the edges for coverage, and sends the covered quads of a
+ * non-raw triangle to atg_rx_frag (HAS_SU: it packs them into fragment
+ * warps) or the quads straight to the ROP (DRAW_RAW, or no SU); frees PT
+ * entries after the triangle.
  *
  * WS288 p007: the direct path (quads to the ROP with their depth, one
- * sequence number per triangle).  The fragment-warp path is p009; until
- * then HAS_SU 1 also sends direct quads and fl_* stay 0.  Edges step one
- * quad per cycle; a covered quad's depth takes 20 cycles (one fmul and one
- * fadd, the four lanes interleaved).  See spec/gpu/rx/atg_rx_scan.md.
+ * sequence number per triangle; edges step one quad per cycle; a covered
+ * quad's depth takes 20 cycles: one fmul and one fadd, the four lanes
+ * interleaved).  WS288 p009: the warp path (fq_*: one covered quad per
+ * handshake, then an end marker; the frees wait for atg_rx_frag's idle,
+ * so its copy of the varyings is done).  See spec/gpu/rx/atg_rx_scan.md.
  */
 
 `timescale 1ns / 1ps
@@ -36,27 +37,15 @@ module atg_rx_scan #(
 	output wire sp_ready,
 	input wire [767:0] sp_tri,
 	input wire sp_last,
-	/* PT read (shared with atg_rx_scan in atg_rx: scan has priority) */
-	output wire pt_rd,
-	output wire [7:0] pt_idx,
-	output wire [5:0] pt_word,
-	input wire [31:0] pt_rdata,
-	output wire pt_busy,
 	output reg pt_free,
 	output reg [7:0] pt_free_idx,
-	/* Fragment warps to the SU (atg_su fl_*) */
-	output wire fl_req,
-	input wire fl_gnt,
-	output wire fl_we,
-	output wire [5:0] fl_reg,
-	output wire [4:0] fl_lane,
-	output wire [31:0] fl_data,
-	output wire fl_pw_we,
-	output wire [11:0] fl_pw_addr,
-	output wire [31:0] fl_pw_data,
-	output wire fl_go,
-	output wire [31:0] fl_mask,
-	output wire [63:0] fl_info,
+	/* Covered quads of a non-raw triangle to atg_rx_frag (HAS_SU) */
+	output wire fq_valid,
+	input wire fq_ready,
+	output wire [31:0] fq_xy,
+	output wire [3:0] fq_cov,
+	output wire fq_end,
+	input wire f_busy,
 	/* Direct fragments to the ROP (no SU: DEBUG_COLOR) */
 	output reg dx_valid,
 	input wire dx_ready,
@@ -71,8 +60,10 @@ module atg_rx_scan #(
 	output wire busy
 );
 	localparam [2:0] S_IDLE = 3'd0, S_SEQ = 3'd1, S_WALK = 3'd2, S_Z = 3'd3, S_EMIT = 3'd4,
-		S_LAST = 3'd5, S_FREE = 3'd6;
+		S_LAST = 3'd5, S_FREE = 3'd6, S_FQ = 3'd7;
 	reg [2:0] st;
+	reg wm;	/* warp mode: a non-raw triangle with an SU */
+	reg fend;	/* S_FQ: the end marker (no quad) */
 
 	/* The triangle. */
 	reg signed [47:0] a8 [0:2];	/* A << 8: one pixel in x */
@@ -163,7 +154,11 @@ module atg_rx_scan #(
 	reg [15:0] seq;
 
 	assign sp_ready = st == S_IDLE;
-	assign sq_req = st == S_SEQ;
+	assign sq_req = st == S_SEQ && !wm;
+	assign fq_valid = st == S_FQ;
+	assign fq_xy = {qy, qx};
+	assign fq_cov = fend ? 4'd0 : cov;
+	assign fq_end = fend;
 	assign busy = st != S_IDLE;
 
 	always @(posedge clk) begin
@@ -192,6 +187,8 @@ module atg_rx_scan #(
 				ent <= sp_tri[759:736];
 				fl <= sp_tri[762:760];
 				raw <= sp_tri[764];
+				wm <= HAS_SU != 0 && !sp_tri[764];
+				fend <= 1'b0;
 				pend <= 1'b0;
 				fi <= 2'd0;
 				st <= sp_tri[335:320] > sp_tri[303:288] && sp_tri[351:336] > sp_tri[319:304] ?
@@ -204,15 +201,27 @@ module atg_rx_scan #(
 			st <= S_WALK;
 		end
 		S_WALK:
-			if (cov != 4'd0) begin
+			if (cov != 4'd0 && wm) begin
+				st <= S_FQ;
+			end else if (cov != 4'd0) begin
 				zmask <= cov;
 				zc <= 5'd0;
 				zv <= 128'd0;
 				st <= S_Z;
 			end else if (walk_end) begin
-				st <= S_LAST;
+				fend <= wm;
+				st <= wm ? S_FQ : S_LAST;
 			end else
 				st <= S_WALK;
+		S_FQ:	/* a quad (or the end marker) to atg_rx_frag */
+			if (fq_ready) begin
+				if (fend)
+					st <= S_FREE;
+				else if (walk_end) begin
+					fend <= 1'b1;
+				end else
+					st <= S_WALK;
+			end
 		S_Z: begin
 			zc <= zc + 5'd1;
 			if (zc >= 5'd4 && zc < 5'd8)
@@ -251,7 +260,8 @@ module atg_rx_scan #(
 				dx_depth <= pend ? p_z : 128'd0;
 				dx_last <= 1'b1;
 			end
-		default: begin	/* S_FREE: the flagged PT entries (none for DRAW_RAW) */
+		default: if (!f_busy) begin	/* S_FREE: the flagged PT entries (none for DRAW_RAW),
+				 * after atg_rx_frag has copied the triangle's varyings */
 			fi <= fi + 2'd1;
 			if (fi < 2'd3 && fl[fi] && !raw) begin
 				pt_free <= 1'b1;
@@ -262,8 +272,8 @@ module atg_rx_scan #(
 		end
 		endcase
 		/* the walk: next quad (also after a covered quad's depth) */
-		if (rst_n && ((st == S_WALK && cov == 4'd0) || (st == S_EMIT && !(pend && !(dx_valid && dx_ready))))
-		    && !walk_end) begin
+		if (rst_n && ((st == S_WALK && cov == 4'd0) || (st == S_EMIT && !(pend && !(dx_valid && dx_ready))) ||
+		    (st == S_FQ && fq_ready && !fend)) && !walk_end) begin
 			if (row_end) begin
 				qx <= {bx0[15:1], 1'b0};
 				qy <= qy + 16'd2;
@@ -279,24 +289,7 @@ module atg_rx_scan #(
 		end
 	end
 
-	/* p009: the warp path. */
-	assign pt_rd = 1'b0;
-	assign pt_idx = 8'd0;
-	assign pt_word = 6'd0;
-	assign pt_busy = 1'b0;
-	assign fl_req = 1'b0;
-	assign fl_we = 1'b0;
-	assign fl_reg = 6'd0;
-	assign fl_lane = 5'd0;
-	assign fl_data = 32'd0;
-	assign fl_pw_we = 1'b0;
-	assign fl_pw_addr = 12'd0;
-	assign fl_pw_data = 32'd0;
-	assign fl_go = 1'b0;
-	assign fl_mask = 32'd0;
-	assign fl_info = 64'd0;
-
-	wire unused_ok = &{1'b0, st_we, st_idx, st_wdata, sp_last, pt_rdata, fl_gnt, fm_o, fa_o,
+	wire unused_ok = &{1'b0, st_we, st_idx, st_wdata, sp_last, fm_o, fa_o,
 		lv[46:0], sp_tri[767:765], sp_tri[735:448], li[16], lj[16], HAS_SU != 0};
 endmodule
 

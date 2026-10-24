@@ -335,6 +335,37 @@ def wb_vectors(r):
     return out
 
 
+def frag_vectors(r):
+    """atg_rx_frag: per triangle "T sp_tri VARYING_COUNT warps", per warp
+    "W quads", per quad "Q x y coverage" and 4 lines "L" of r0-r5 (lanes
+    0-3)."""
+    out = []
+    st = st_default()
+    for k, v in enumerate((16.0, 12.0, 16.0, 12.0, 1.0, 0.0)):
+        st.set(M.S_VIEWPORT + k, f(v))
+    st.set(M.S_RT_SIZE, (24 << 16) | 32)
+    for n in range(20):
+        pos = rnd_clip_tri(r, near_mix=False)
+        if n % 3 == 0:
+            wt = [row[:] for row in M.IDW]
+        else:
+            wt = [[f(r.uniform(0, 1)) for _ in range(3)] for _ in range(3)]
+        tri = {'pos': pos, 'wt': wt, 'pt': [r.randrange(64) for _ in range(3)],
+               'free': r.randrange(8), 'raw': 0}
+        rs = M.setup(st, tri)
+        ws = M.warps(rs)
+        out.append('T %s %d %d' % (hexw(M.pack_sp(rs), 768), [0, 1, 4, 32][n % 4], len(ws)))
+        for w in ws:
+            out.append('W %d' % len(w))
+            for (x, y, m) in w:
+                out.append('Q %04x %04x %x' % (x, y, m))
+                for ln in range(4):
+                    out.append('L ' + ' '.join('%08x' % v for v in
+                                               M.frag_lane(rs, x + (ln & 1), y + (ln >> 1))))
+    out.append('E')
+    return out
+
+
 def main():
     r = random.Random(288007)
     put('rx_fp.hex', fp_vectors(r))
@@ -344,6 +375,7 @@ def main():
     put('rop_blend.txt', blend_vectors(r))
     put('rop_ds.txt', ds_vectors(r))
     put('rop_wb.txt', wb_vectors(r))
+    put('rx_frag.txt', frag_vectors(random.Random(288009)))
 
 
 if __name__ == '__main__':

@@ -421,6 +421,39 @@ def scan(r):
         out.append((bx0 & ~1, by0 & ~1, 0, [0, 0, 0, 0]))
     return out
 
+# ---------------------------------------------------------------- fragment warps
+
+
+def centre(v):
+    """fp32 bits of v + 0.5 (the pixel centre, 0 <= v < 32768)."""
+    return int2f(2 * v + 1) - (1 << 23)
+
+
+def warps(r):
+    """The fragment warps of a set-up triangle (spec atg_rx_frag §4): the
+    covered quads in the walk's order, up to 8 per warp: lists of
+    (qx, qy, coverage)."""
+    quads = [(x, y, m) for (x, y, m, z) in scan(r) if m]
+    return [quads[k:k + 8] for k in range(0, len(quads), 8)]
+
+
+def frag_lane(r, x, y):
+    """r0-r5 of the lane at pixel (x, y): b0, b1, b2, z, x + 0.5, y + 0.5
+    (spec atg_rx_frag §4, its operation order)."""
+    bx0, by0 = r['bbox'][0], r['bbox'][1]
+    fi, fj = int2f(x - bx0), int2f(y - by0)
+
+    def ev(p):
+        a, b, c = r[p]
+        return fadd(fadd(fmul(a, fi), fmul(b, fj)), c)
+    z = fclamp01(ev('z'))
+    rw = fdiv(ONE, ev('w'))
+    b0 = fmul(ev('b0'), rw)
+    b1 = fmul(ev('b1'), rw)
+    b2 = fsub(fsub(ONE, b0), b1)
+    return [b0, b1, b2, z, centre(x), centre(y)]
+
+
 # ---------------------------------------------------------------- ROP
 
 

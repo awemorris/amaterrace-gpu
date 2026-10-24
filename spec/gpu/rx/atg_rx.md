@@ -6,7 +6,7 @@ RTL: `rtl/gpu/rx/atg_rx.v`.  Parent: atg_top (HAS_RX).  Implemented in: p007, p0
 
 The rasterizer (design §3.8): clip, setup, quad scan into fragment warps (or direct quads), sequence numbers for the ROP order.
 
-Children: `atg_rx_clip`, `atg_rx_setup`, `atg_rx_scan`, `atg_rx_order`.
+Children: `atg_rx_clip`, `atg_rx_setup`, `atg_rx_scan`, `atg_rx_frag`, `atg_rx_order`.
 
 ## 2. Parameters
 
@@ -70,7 +70,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Wiring, plus the three-line PT read mux (scan first; the clip obeys pt_busy).
+Wiring, plus the three-line PT read mux (atg_rx_frag first; the clip obeys pt_busy) and the OR of the two sequence-number requests (atg_rx_scan's direct quads, atg_rx_frag's warps; never in the same cycle).
 
 ## 5. State machine
 
@@ -95,3 +95,5 @@ design §3.8, §2.3.
 ## 10. Status
 
 Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+
+WS288 p009 part B2 (P1): the new child `atg_rx_frag` (fragment warps), its PT reads in the mux, `busy` includes it.  Ports unchanged.

@@ -64,7 +64,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `init_valid` | out | 1 | A warp starts: initial EXEC to atg_su_exec. |
 | `init_warp` | out | WARP_W | Warp. |
 | `init_mask` | out | 32 | Initial EXEC. |
-| `pt_ok` | in | 1 | atg_su_exp has 32 free PT entries (vertex grants wait otherwise). |
+| `pt_ok` | in | 1 | atg_su_pt has a free 32-entry PT block (vertex grants wait otherwise). |
 | `xr_valid` | in | 1 | atg_su_exp: the export buffer of xr_warp is drained (an ended warp's slot is free). |
 | `xr_warp` | in | WARP_W | Warp. |
 | `busy` | out | 1 | A warp is resident or a grid is not fully launched. |
@@ -78,7 +78,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 - Selection: each cycle, round-robin over READY slots; a selected slot is not selectable again for
   32/NPHYS cycles after its previous issue (the group sequencing of design §3.1) and until its
   feedback.
-- Grants: a vertex grant needs a FREE slot beyond FRAG_RESERVE and pt_ok (pulse pt_take inside exp is
+- Grants: a vertex grant needs a FREE slot beyond FRAG_RESERVE and pt_ok (pulse pt_take inside atg_su_pt is
   derived from vl_gnt by the parent); a fragment grant needs any FREE slot.  Compute: after cs_kick,
   one workgroup of WG_SIZE lanes is launched as ceil(size/32) warps when that many slots are free,
   workgroup ids in x, y, z order, only ids with id % NSU == SU_INDEX; LID per warp.

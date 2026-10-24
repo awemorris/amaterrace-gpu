@@ -12,7 +12,8 @@
  * the reference rasterizer (sim/vec/rx_scan.txt from tools/rx-vectors.py:
  * top-left rule, exact edges, fp32 depth); one sequence number per
  * triangle with quads; pt_free once per flagged vertex of the non-raw
- * ones.  dx_ready is random.  The warp path is p009 (warps: no fl_*).
+ * ones.  dx_ready is random.  HAS_SU 0: no quad goes to atg_rx_frag (fq_*); the
+ * warp path is checked by atg_rx_frag_tb and atg_top_shade_tb.
  */
 
 `timescale 1ns / 1ps
@@ -29,13 +30,10 @@ module atg_rx_scan_tb;
 	reg [767:0] sp_tri = 0;
 	reg dx_ready = 1'b0;
 	reg [15:0] sq_cnt = 16'd100;
-	wire sp_ready, pt_rd, pt_busy, pt_free, fl_req, fl_we, fl_pw_we, fl_go;
-	wire [7:0] pt_idx, pt_free_idx;
-	wire [5:0] pt_word, fl_reg;
-	wire [4:0] fl_lane;
-	wire [31:0] fl_data, fl_pw_data, fl_mask;
-	wire [11:0] fl_pw_addr;
-	wire [63:0] fl_info;
+	wire sp_ready, pt_free, fq_valid, fq_end;
+	wire [7:0] pt_free_idx;
+	wire [31:0] fq_xy;
+	wire [3:0] fq_cov;
 	wire dx_valid, dx_last, sq_req, busy;
 	wire [15:0] dx_seq;
 	wire [31:0] dx_xy;
@@ -44,11 +42,9 @@ module atg_rx_scan_tb;
 
 	atg_rx_scan #(.HAS_SU(0)) dut (.clk(clk), .rst_n(rst_n), .st_we(1'b0), .st_idx(9'd0),
 		.st_wdata(32'd0), .sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri),
-		.sp_last(1'b0), .pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(32'd0),
-		.pt_busy(pt_busy), .pt_free(pt_free), .pt_free_idx(pt_free_idx),
-		.fl_req(fl_req), .fl_gnt(1'b0), .fl_we(fl_we), .fl_reg(fl_reg), .fl_lane(fl_lane),
-		.fl_data(fl_data), .fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr),
-		.fl_pw_data(fl_pw_data), .fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
+		.sp_last(1'b0), .pt_free(pt_free), .pt_free_idx(pt_free_idx),
+		.fq_valid(fq_valid), .fq_ready(1'b1), .fq_xy(fq_xy), .fq_cov(fq_cov), .fq_end(fq_end),
+		.f_busy(1'b0),
 		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 		.sq_req(sq_req), .sq_seq(sq_cnt), .busy(busy));
@@ -186,7 +182,7 @@ module atg_rx_scan_tb;
 			e_free = e_free + 1;
 			$display("FAIL atg_rx_scan: %0d frees, expected %0d", nfree, want_free);
 		end
-		if (fl_req || fl_go || pt_rd) begin
+		if (fq_valid) begin
 			e_dir = e_dir + 1;
 			$display("FAIL atg_rx_scan: warp path active");
 		end
