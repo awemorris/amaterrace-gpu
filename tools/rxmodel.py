@@ -289,6 +289,201 @@ def setup(st, tri):
     return r
 
 
+S_DEPTH_BIAS_CONST = 0x060
+S_DEPTH_BIAS_SLOPE = 0x061
+S_DEPTH_BIAS_CLAMP = 0x062
+HALF = 0x3F000000
+
+
+def fabs(b):
+    return b & 0x7FFFFFFF
+
+
+def fmax_mag(a, b):
+    """atg_rx_setup's MAX of two magnitudes."""
+    return b if b & 0x7FFFFFFF > a & 0x7FFFFFFF else a
+
+
+def fulp(a):
+    """2^(e(a) - 23), 0 below the normal range."""
+    e = (a >> 23) & 0xFF
+    return (e - 23) << 23 if e > 23 else 0
+
+
+def fbclamp(a, c):
+    """The depth bias clamp: c > 0 min(a, c), c < 0 max(a, c), c = 0 a."""
+    if c & 0x7FFFFFFF == 0:
+        return a
+    if not c >> 31:
+        return a if fle(a, c) else c
+    return a if fle(c, a) else c
+
+
+def bias_offset(st, z, az, bz):
+    """o = max(|A_z|, |B_z|) SLOPE + r CONST, clamped (the micro-program's
+    order); z the three window depths."""
+    fmt = (st[S_RAST_MODE] >> 4) & 3
+    m = fmax_mag(fabs(az), fabs(bz))
+    t0 = fmul(m, st[S_DEPTH_BIAS_SLOPE])
+    if fmt == 3:
+        r = fulp(fmax_mag(fmax_mag(fabs(z[0]), fabs(z[1])), fabs(z[2])))
+    else:
+        r = 0x37800000 if fmt == 1 else 0x33800000 if fmt == 2 else 0
+    o = fadd(t0, fmul(r, st[S_DEPTH_BIAS_CONST]))
+    return fbclamp(o, st[S_DEPTH_BIAS_CLAMP])
+
+
+def _bbox(st, qx, qy, rect):
+    bx0 = min(qx) >> 8
+    by0 = min(qy) >> 8
+    bx1 = (max(qx) >> 8) + 1
+    by1 = (max(qy) >> 8) + 1
+    smin, smax, rts = st[S_SCISSOR_MIN], st[S_SCISSOR_MAX], st[S_RT_SIZE]
+    if smax != 0:
+        bx0 = max(bx0, smin & 0xFFFF)
+        by0 = max(by0, smin >> 16)
+        bx1 = min(bx1, smax & 0xFFFF)
+        by1 = min(by1, smax >> 16)
+    if rect is not None:
+        bx0, bx1 = max(bx0, rect[0] >> 8), min(bx1, rect[1] >> 8)
+        by0, by1 = max(by0, rect[2] >> 8), min(by1, rect[3] >> 8)
+    bx0, by0 = max(bx0, 0), max(by0, 0)
+    bx1, by1 = min(bx1, rts & 0xFFFF), min(by1, rts >> 16)
+    return bx0, by0, bx1, by1
+
+
+def _edges(fx, fy, sx, sy):
+    D = (fx[1] - fx[0]) * (fy[2] - fy[0]) - (fx[2] - fx[0]) * (fy[1] - fy[0])
+    ccw = D < 0
+    order = [0, 1, 2] if ccw else [0, 2, 1]
+    edges = []
+    for k in range(3):
+        a, b = order[k], order[(k + 1) % 3]
+        A = fy[b] - fy[a]
+        B = fx[a] - fx[b]
+        tl = A > 0 or (A == 0 and B > 0)
+        E = A * (sx - fx[a]) + B * (sy - fy[a]) - (0 if tl else 1)
+        edges.append((A, B, E))
+    return D, ccw, edges
+
+
+def setup2(st, tri, line_major_eq_y=False):
+    """atg_rx_setup with CAPS[30] (spec atg_rx_setup §4): tri as setup()'s
+    with 'kind' (0 point, 1 line, 2 triangle).  Returns the list of sp_tri
+    dicts (two for a line or a point that is not empty), each with 'kind'
+    and 'last' (the last output of the primitive)."""
+    raw = tri['raw']
+    kind = 2 if raw or tri.get('kind', 2) == 3 else tri.get('kind', 2)
+    rm = st[S_RAST_MODE]
+    vp = [st[S_VIEWPORT + k] for k in range(6)]
+    X, Y, Z, RW, B0, B1 = [], [], [], [], [], []
+    for i in range(3):
+        x, y, z, w = tri['pos'][i]
+        if raw:
+            X.append(x)
+            Y.append(y)
+            Z.append(z)
+        else:
+            rw = fdiv(ONE, w)
+            RW.append(rw)
+            X.append(fadd(fmul(fmul(x, rw), vp[0]), vp[2]))
+            Y.append(fadd(fmul(fmul(y, rw), vp[1]), vp[3]))
+            Z.append(fadd(fmul(fmul(z, rw), vp[4]), vp[5]))
+            B0.append(fmul(tri['wt'][i][0], rw))
+            B1.append(fmul(tri['wt'][i][1], rw))
+    rect = None
+    if rm >> 3 & 1 and not raw:
+        ax, ay = fabs(vp[0]), fabs(vp[1])
+        rect = [f2fix(fsub(vp[2], ax)), f2fix(fadd(vp[2], ax)),
+                f2fix(fsub(vp[3], ay)), f2fix(fadd(vp[3], ay))]
+    px = [f2fix(v) for v in X]
+    py = [f2fix(v) for v in Y]
+    if kind == 1:
+        Z[2], RW[2], B0[2], B1[2] = Z[0], RW[0], B0[0], B1[0]
+    base = {'pt': tri['pt'], 'free': tri['free'], 'raw': raw, 'kind': kind,
+            'edges': [(0, 0, 0)] * 3, 'bbox': (0, 0, 0, 0),
+            'z': (0, 0, 0), 'w': (0, 0, 0), 'b0': (0, 0, 0), 'b1': (0, 0, 0)}
+    # the walked triangles, the corners and the plane triangle
+    if kind == 2:
+        walks = [(px, py)]
+        qx, qy = px + [px[0]], py + [py[0]]
+        pd = None
+        p0 = (px[0], py[0])
+    elif kind == 1:
+        ax, ay, bx, by = px[0], py[0], px[1], py[1]
+        dx, dy = bx - ax, by - ay
+        xmaj = abs(dx) > abs(dy) if line_major_eq_y else abs(dx) >= abs(dy)
+        ox, oy = (0, 128) if xmaj else (128, 0)
+        am, ap, bm, bp = (ax - ox, ay - oy), (ax + ox, ay + oy), (bx - ox, by - oy), (bx + ox, by + oy)
+        walks = [([am[0], bm[0], bp[0]], [am[1], bm[1], bp[1]]),
+                 ([am[0], bp[0], ap[0]], [am[1], bp[1], ap[1]])]
+        qx, qy = [am[0], ap[0], bm[0], bp[0]], [am[1], ap[1], bm[1], bp[1]]
+        pd = (dx, dy, 0 if xmaj else 256, 256 if xmaj else 0, 256 * dx if xmaj else -256 * dy)
+        p0 = (ax, ay)
+    else:
+        x0, y0 = px[0], py[0]
+        c = [(x0 - 128, y0 - 128), (x0 + 128, y0 - 128), (x0 + 128, y0 + 128), (x0 - 128, y0 + 128)]
+        walks = [([c[0][0], c[1][0], c[2][0]], [c[0][1], c[1][1], c[2][1]]),
+                 ([c[0][0], c[2][0], c[3][0]], [c[0][1], c[2][1], c[3][1]])]
+        qx, qy = [v[0] for v in c], [v[1] for v in c]
+        pd = (256, 0, 0, 256, 65536)
+        p0 = (x0, y0)
+    bx0, by0, bx1, by1 = _bbox(st, qx, qy, rect)
+    sx, sy = bx0 * 256 + 128, by0 * 256 + 128
+    cull = st[S_CULL]
+    outs = []
+    for n, (fx, fy) in enumerate(walks):
+        D, ccw, edges = _edges(fx, fy, sx, sy)
+        if kind == 2:
+            front = ccw if cull & 4 else not ccw
+            culled = (cull & 1 and front) or (cull & 2 and not front)
+        else:
+            front, culled = True, False
+        r = dict(base)
+        r['front'] = int(front)
+        if D == 0 or culled or bx1 <= bx0 or by1 <= by0:
+            r['last'] = True
+            outs.append(r)
+            return outs
+        r['edges'] = edges
+        r['bbox'] = (bx0, by0, bx1, by1)
+        r['last'] = n == len(walks) - 1
+        if not r['last']:
+            r['free'] = 0
+        outs.append(r)
+    # the planes (the same for both sub-triangles)
+    if pd is None:
+        dx1, dy1 = px[1] - px[0], py[1] - py[0]
+        dx2, dy2 = px[2] - px[0], py[2] - py[0]
+        pd = (dx1, dy1, dx2, dy2, dx1 * dy2 - dx2 * dy1)
+    fdx1, fdy1, fdx2, fdy2 = (int2f(v, 8) for v in pd[:4])
+    oxp, oyp = int2f(sx - p0[0], 8), int2f(sy - p0[1], 8)
+    if kind == 0:
+        pz = (0, 0, Z[0])
+        pw = (0, 0, ONE)
+        p0p = (ONE, 0, fadd(HALF, oxp))
+        p1p = (0, ONE, fadd(HALF, oyp))
+    else:
+        rd = fdiv(ONE, int2f(pd[4], 16))
+        P = (fdx1, fdy1, fdx2, fdy2, rd, oxp, oyp)
+        pz = plane(Z, *P)
+        if kind == 2 and not raw and rm & 1 and (rm >> 4) & 3:
+            pz = (pz[0], pz[1], fadd(pz[2], bias_offset(st, Z, pz[0], pz[1])))
+        pw = p0p = p1p = (0, 0, 0)
+        if not raw:
+            pw = plane(RW, *P)
+            p0p = plane(B0, *P)
+            p1p = plane(B1, *P)
+    for r in outs:
+        r['z'], r['w'], r['b0'], r['b1'] = pz, pw, p0p, p1p
+    return outs
+
+
+def pack_sp2(r):
+    """sp_tri with CAPS[30]: the kind in [766:765]."""
+    return pack_sp(r) | r.get('kind', 2) << 765
+
+
 def pack_sp(r):
     """sp_tri as an integer (768 bits)."""
     v = 0

@@ -6,17 +6,19 @@
  */
 
 /*
- * atg_rx_setup: RX triangle setup: perspective divide and viewport
- * (VIEWPORT 0-5), cull (CULL), edge functions in 15.8 fixed point,
- * bounding box ∩ scissor ∩ RT_SIZE, depth and perspective-barycentric
- * planes.
+ * atg_rx_setup: RX setup: perspective divide and viewport (VIEWPORT 0-5),
+ * the integer steps through atg_rx_edge (snap, edges, bounding box ∩
+ * scissor ∩ RT_SIZE ∩ the viewport's rectangle, facing and culling), the
+ * plane equations of depth, 1/w and the perspective barycentrics, depth
+ * bias, and the two sub-triangles of a line or a point.
  *
  * A micro-programmed fp32 datapath (include/atg_rx_setup_uc.vh: one fadd,
- * one fmul, one fdiv, 128 fp registers in distributed RAM) does the
- * floating-point steps; an integer step sequence between them (micro-op
- * INT) snaps the vertices, computes the edges, the bbox and the facing
- * and converts the integer deltas back to fp32.  One triangle at a time.
- * See spec/gpu/rx/atg_rx_setup.md.
+ * one fmul, one fdiv, 128 fp registers in distributed RAM; 120-127 read
+ * DEPTH_BIAS_CONST, _SLOPE, _CLAMP, 0.5, 0 and the bias's r of D16 or D24)
+ * does the floating-point steps; its INT micro-op runs atg_rx_edge, OUT
+ * sends the first sub-triangle of a line or a point and continues.  One
+ * primitive at a time; the last-use flags and sp_last go with the last
+ * output only.  See spec/gpu/rx/atg_rx_setup.md.
  */
 
 `timescale 1ns / 1ps
@@ -29,16 +31,16 @@ module atg_rx_setup (
 	input wire st_we,
 	input wire [8:0] st_idx,
 	input wire [31:0] st_wdata,
-	/* Triangles from atg_rx_clip */
+	/* From atg_rx_clip */
 	input wire cl_valid,
 	output wire cl_ready,
-	input wire [701:0] cl_tri,	/* [701:700] the kind (used from the line and point step) */
+	input wire [701:0] cl_tri,
 	input wire cl_last,
 	/* To atg_rx_scan */
 	output reg sp_valid,
 	input wire sp_ready,
 	output wire [767:0] sp_tri,
-	output reg sp_last,
+	output wire sp_last,
 	output wire busy
 );
 	`include "atg_rx_setup_uc.vh"
@@ -46,10 +48,12 @@ module atg_rx_setup (
 
 	localparam [31:0] ONE = 32'h3F800000;
 
-	/* STATE: VIEWPORT 0x050-0x055, SCISSOR 0x056-0x057, CULL 0x058, RT_SIZE 0x073. */
+	/* STATE: VIEWPORT 0x050-0x055, SCISSOR 0x056-0x057, CULL 0x058,
+	 * RAST_MODE 0x05A, DEPTH_BIAS_* 0x060-0x062, RT_SIZE 0x073. */
 	reg [31:0] vp [0:5];
-	reg [31:0] smin, smax, rts;
+	reg [31:0] smin, smax, rts, b_const, b_slope, b_clamp;
 	reg [2:0] cull;
+	reg [5:0] rm;	/* RAST_MODE[5:0] */
 
 	always @(posedge clk)
 		if (!rst_n) begin
@@ -57,6 +61,10 @@ module atg_rx_setup (
 			smax <= 32'd0;
 			rts <= 32'd0;
 			cull <= 3'd0;
+			rm <= 6'd0;
+			b_const <= 32'd0;
+			b_slope <= 32'd0;
+			b_clamp <= 32'd0;
 		end else if (st_we) begin
 			if (st_idx >= GHCI_S_VIEWPORT && st_idx <= GHCI_S_VIEWPORT + 9'd5)
 				vp[st_idx[2:0]] <= st_wdata;
@@ -66,6 +74,14 @@ module atg_rx_setup (
 				smax <= st_wdata;
 			if (st_idx == GHCI_S_CULL)
 				cull <= st_wdata[2:0];
+			if (st_idx == GHCI_S_RAST_MODE)
+				rm <= st_wdata[5:0];
+			if (st_idx == GHCI_S_DEPTH_BIAS_CONST)
+				b_const <= st_wdata;
+			if (st_idx == GHCI_S_DEPTH_BIAS_SLOPE)
+				b_slope <= st_wdata;
+			if (st_idx == GHCI_S_DEPTH_BIAS_CLAMP)
+				b_clamp <= st_wdata;
 			if (st_idx == GHCI_S_RT_SIZE)
 				rts <= st_wdata;
 		end
@@ -73,17 +89,22 @@ module atg_rx_setup (
 	localparam [2:0] S_IDLE = 3'd0, S_LOAD = 3'd1, S_DEC = 3'd2, S_RD = 3'd3, S_GO = 3'd4,
 		S_WAIT = 3'd5, S_INT = 3'd6, S_OUT = 3'd7;
 	reg [2:0] st;
-	reg [5:0] cnt;	/* S_LOAD word, S_INT step */
-	reg [6:0] pc;
-	reg [24:0] uc;
-	wire [3:0] u_op = uc[24:21];
+	reg [5:0] cnt;	/* S_LOAD word */
+	reg [7:0] pc;
+	reg [25:0] uc;
+	wire [3:0] u_op = uc[25:22];
+	wire [7:0] u_t = uc[21:14];	/* JMP and BRA target */
 	wire [6:0] u_d = uc[20:14];
 	wire [6:0] u_a = uc[13:7];
 	wire [6:0] u_b = uc[6:0];
 	reg raw;
+	reg [1:0] kind;
 	reg [26:0] keep;	/* PT entries [23:0], last-use flags [26:24] */
+	reg lastq;	/* the primitive is the draw's last */
+	reg sub;	/* the second sub-triangle (lines and points) */
+	reg more;	/* an output with more to follow (OUT) */
 
-	/* The fp registers (spec §4 lists the numbers). */
+	/* The fp registers (spec §4 lists the numbers); 120-127 read only. */
 	reg [31:0] R [0:127];
 	reg [31:0] pl [0:11];	/* the planes z, 1/w, b0/w, b1/w (registers 64-75) */
 	reg [31:0] opa, opb;
@@ -92,9 +113,48 @@ module atg_rx_setup (
 	reg [31:0] r_wd;
 	integer k;
 
-	always @(posedge clk)
+	/* the bias's r for D16 (2^-16) and D24 (2^-24) */
+`ifdef MUT_BIAS_R
+	localparam [31:0] R24 = 32'h34000000;	/* the TB's mutation check: 2^-23 */
+`else
+	localparam [31:0] R24 = 32'h33800000;
+`endif
+	wire [31:0] rfmt = rm[5:4] == 2'd1 ? 32'h37800000 : rm[5:4] == 2'd2 ? R24 : 32'd0;
+	function [31:0] rsrc;
+		input [6:0] a;
+		input [31:0] ra;
+		case (a)
+		7'd120: rsrc = b_const;
+		7'd121: rsrc = b_slope;
+		7'd122: rsrc = b_clamp;
+		7'd123: rsrc = 32'h3F000000;	/* 0.5 */
+		7'd124: rsrc = 32'd0;
+		7'd125: rsrc = rfmt;
+		7'd126, 7'd127: rsrc = 32'd0;
+		default: rsrc = ra;
+		endcase
+	endfunction
+
+	/* atg_rx_edge (the integer steps), sharing the register file. */
+	reg e_start;
+	wire [6:0] e_ra, e_wa;
+	reg [31:0] e_rd;
+	wire e_we, e_done, e_front, e_empty;
+	wire [31:0] e_wd;
+	wire [287:0] e_edges;
+	wire [63:0] e_bbox;
+	atg_rx_edge edge_u (.clk(clk), .rst_n(rst_n), .start(e_start),
+		.mode({raw, sub, kind}), .smin(smin), .smax(smax), .rts(rts), .cull(cull),
+		.vprect(rm[3]), .r_ra(e_ra), .r_rd(e_rd), .r_we(e_we), .r_wa(e_wa), .r_wd(e_wd),
+		.done(e_done), .edges(e_edges), .bbox(e_bbox), .front(e_front), .empty(e_empty));
+
+	always @(posedge clk) begin
+		e_rd <= R[e_ra];
 		if (r_we)
 			R[r_wa] <= r_wd;
+		else if (e_we)
+			R[e_wa] <= e_wd;
+	end
 
 	/* The fp units. */
 	reg fa_v, fm_v, fd_v;
@@ -107,152 +167,46 @@ module atg_rx_setup (
 	atg_rx_fdiv fdiv (.clk(clk), .rst_n(rst_n), .i_start(fd_v), .i_a(opa), .i_b(opb),
 		.busy(fd_busy), .o_done(fd_o), .o_r(fd_r));
 
-	/* ---- The integer steps ---- */
-	/* fp32 to 15.8 fixed point, RNE, saturated to +-(2^22 - 1), NaN 0. */
-	function [23:0] f2fix;
-		input [31:0] f;
-		reg [47:0] v;
-		reg [23:0] q;
-		reg [7:0] s;
+	/* a <= b for fp32, -0 = +0; 0 when either is NaN. */
+	function fle;
+		input [31:0] a, b;
+		reg [32:0] ka, kb;
 		begin
-			s = 8'd142 - f[30:23];
-			v = {1'b1, f[22:0], 24'd0} >> s;
-			q = v[47:24] + {23'd0, v[23] && (v[22:0] != 23'd0 || v[24])};
-			if (f[30:23] < 8'd94 || (f[30:23] == 8'hFF && f[22:0] != 23'd0))
-				f2fix = 24'd0;
-			else if (f[30:23] >= 8'd142 || q > 24'h3FFFFF)
-				f2fix = f[31] ? 24'hC00001 : 24'h3FFFFF;
-			else
-				f2fix = f[31] ? -q : q;
+			ka = a[31] ? 33'd0 - {2'd0, a[30:0]} : {2'd0, a[30:0]};
+			kb = b[31] ? 33'd0 - {2'd0, b[30:0]} : {2'd0, b[30:0]};
+			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
+				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) && $signed(ka) <= $signed(kb);
 		end
 	endfunction
 
-	reg [31:0] rv;
-	wire [23:0] snap = f2fix(rv);
-	reg signed [23:0] fx [0:2];
-	reg signed [23:0] fy [0:2];
-	wire signed [23:0] fx0 = fx[0], fx1 = fx[1], fx2 = fx[2];
-	wire signed [23:0] fy0 = fy[0], fy1 = fy[1], fy2 = fy[2];
-	wire signed [23:0] dx1 = fx1 - fx0;
-	wire signed [23:0] dy1 = fy1 - fy0;
-	wire signed [23:0] dx2 = fx2 - fx0;
-	wire signed [23:0] dy2 = fy2 - fy0;
-
-	/* The multiplier: operands registered, product one cycle later. */
-	reg signed [24:0] ma, mb;
-	reg signed [49:0] mp;
-	always @(posedge clk)
-		mp <= ma * mb;
-
-	/* bbox: vertices' pixels, max exclusive, ∩ scissor (when SCISSOR_MAX != 0) ∩ RT. */
-	reg signed [17:0] lo_x, lo_y, hi_x, hi_y, t_x, t_y;
-	reg signed [17:0] bx0, by0, bx1, by1;
-	always @(*) begin
-		lo_x = {{2{fx0[23]}}, fx0[23:8]};
-		hi_x = lo_x;
-		lo_y = {{2{fy0[23]}}, fy0[23:8]};
-		hi_y = lo_y;
-		for (k = 1; k < 3; k = k + 1) begin
-			t_x = k == 1 ? {{2{fx1[23]}}, fx1[23:8]} : {{2{fx2[23]}}, fx2[23:8]};
-			t_y = k == 1 ? {{2{fy1[23]}}, fy1[23:8]} : {{2{fy2[23]}}, fy2[23:8]};
-			if (t_x < lo_x)
-				lo_x = t_x;
-			if (t_x > hi_x)
-				hi_x = t_x;
-			if (t_y < lo_y)
-				lo_y = t_y;
-			if (t_y > hi_y)
-				hi_y = t_y;
-		end
-		hi_x = hi_x + 18'sd1;
-		hi_y = hi_y + 18'sd1;
-		if (smax != 32'd0) begin
-			if (lo_x < $signed({2'b00, smin[15:0]}))
-				lo_x = {2'b00, smin[15:0]};
-			if (lo_y < $signed({2'b00, smin[31:16]}))
-				lo_y = {2'b00, smin[31:16]};
-			if (hi_x > $signed({2'b00, smax[15:0]}))
-				hi_x = {2'b00, smax[15:0]};
-			if (hi_y > $signed({2'b00, smax[31:16]}))
-				hi_y = {2'b00, smax[31:16]};
-		end
-		if (lo_x < 18'sd0)
-			lo_x = 18'sd0;
-		if (lo_y < 18'sd0)
-			lo_y = 18'sd0;
-		if (hi_x > $signed({2'b00, rts[15:0]}))
-			hi_x = {2'b00, rts[15:0]};
-		if (hi_y > $signed({2'b00, rts[31:16]}))
-			hi_y = {2'b00, rts[31:16]};
-	end
-
-	/* The sample at the bbox origin, in subpixels. */
-	wire signed [24:0] sx = {bx0[16:0], 8'd128};
-	wire signed [24:0] sy = {by0[16:0], 8'd128};
-
-	reg signed [47:0] dd;	/* D = dx1 dy2 - dx2 dy1 (subpixel^2); area2 = -D */
-	reg ccw, front, empty;
-	reg signed [23:0] eA [0:2];
-	reg signed [23:0] eB [0:2];
-	reg signed [24:0] oX [0:2];
-	reg signed [24:0] oY [0:2];
-	reg [2:0] tl;
-	reg [47:0] eE [0:2];
-	reg [49:0] acc;
-
-	/* Vertex of the ordered (area2 > 0) triangle's corner i: (0,1,2) or (0,2,1). */
-	function [1:0] vtx;
-		input [1:0] i;
-		input c;
-		vtx = c ? i : (i == 2'd0 ? 2'd0 : 2'd3 - i);
-	endfunction
-
-	/* int2f: a 48-bit signed integer times 2^-sh to fp32, two stages. */
-	reg [47:0] ca;
-	reg cs;
-	reg [5:0] clz;
-	reg [4:0] csh;
-	reg [47:0] ci;	/* the input of stage A */
-	reg [4:0] ci_sh;
-	reg [47:0] cabs;
-	reg [5:0] cl;
-	always @(*) begin
-		cabs = ci[47] ? -ci : ci;
-		cl = 6'd48;
-		for (k = 0; k < 48; k = k + 1)
-			if (cabs[k])
-				cl = 6'd47 - k[5:0];
-	end
-	reg [47:0] cn;
-	reg [24:0] cm;
-	reg [8:0] ce;
-	always @(*) begin
-		cn = ca << clz;
-		cm = {1'b0, cn[47:24]} + {24'd0, cn[23] && (cn[22:0] != 23'd0 || cn[24])};
-		ce = 9'd174 - {3'd0, clz} - {4'd0, csh} + {8'd0, cm[24]};
-	end
-	wire [31:0] c_out = ca == 48'd0 ? 32'd0 : {cs, ce[7:0], cm[24] ? cm[23:1] : cm[22:0]};
-
-	/* Steps 20-26 convert DX1 DY1 DX2 DY2 DF OX OY (fp registers 40-46). */
-	wire [5:0] ck = cnt - 6'd20;
-	always @(*) begin
-		case (ck)
-		6'd0: begin ci = {{24{dx1[23]}}, dx1}; ci_sh = 5'd8; end
-		6'd1: begin ci = {{24{dy1[23]}}, dy1}; ci_sh = 5'd8; end
-		6'd2: begin ci = {{24{dx2[23]}}, dx2}; ci_sh = 5'd8; end
-		6'd3: begin ci = {{24{dy2[23]}}, dy2}; ci_sh = 5'd8; end
-		6'd4: begin ci = dd; ci_sh = 5'd16; end
-		6'd5: begin ci = {{23{sx[24]}}, sx} - {{24{fx0[23]}}, fx0}; ci_sh = 5'd8; end
-		default: begin ci = {{23{sy[24]}}, sy} - {{24{fy0[23]}}, fy0}; ci_sh = 5'd8; end
+	/* The one-cycle micro-ops: MOV, ABS, MAX (of magnitudes), ULP, BCL. */
+	reg [31:0] q1;
+	always @(*)
+		case (u_op)
+		4'd9: q1 = {1'b0, opa[30:0]};
+		4'd10: q1 = opb[30:0] > opa[30:0] ? opb : opa;
+		/* 2^(e(a) - 23); 0 when below the normal range */
+		4'd11: q1 = opa[30:23] > 8'd23 ? {1'b0, opa[30:23] - 8'd23, 23'd0} : 32'd0;
+		/* the bias clamp: b > 0 min(a, b), b < 0 max(a, b), b = 0 a */
+		4'd12: q1 = opb[30:0] == 31'd0 ? opa : !opb[31] ? (fle(opa, opb) ? opa : opb) :
+			(fle(opb, opa) ? opa : opb);
+		default: q1 = opa;
 		endcase
-	end
 
-	wire [1:0] ej = cnt[2:1] - 2'd2;	/* edge of steps 12-17 (cnt 12 = 0b001100) */
-	wire [1:0] ek = cnt[2:1] - 2'd3;	/* edge of steps 14-19 */
-	wire [2:0] tsnap = cnt[2:0] - 3'd1;	/* steps 1-6: the snapped coordinate */
+	/* BRA's conditions. */
+	reg cond;
+	always @(*)
+		case (u_a[2:0])
+		3'd0: cond = kind == 2'd0;
+		3'd1: cond = kind == 2'd1;
+		3'd2: cond = !rm[0] || rm[5:4] == 2'd0 || kind != 2'd2;
+		3'd3: cond = rm[5:4] != 2'd3;
+		default: cond = !rm[3];
+		endcase
 
 	assign cl_ready = st == S_LOAD && cnt == 6'd27;
 	assign busy = st != S_IDLE;
+	assign sp_last = lastq && !more;
 
 	always @(posedge clk) begin
 		uc <= atg_rx_uc(pc);
@@ -260,21 +214,24 @@ module atg_rx_setup (
 		fa_v <= 1'b0;
 		fm_v <= 1'b0;
 		fd_v <= 1'b0;
+		e_start <= 1'b0;
 		if (!rst_n) begin
 			st <= S_IDLE;
 			sp_valid <= 1'b0;
+			more <= 1'b0;
 		end else case (st)
 		S_IDLE:
 			if (cl_valid) begin
 				st <= S_LOAD;
 				cnt <= 6'd0;
 				raw <= cl_tri[699];
+				kind <= cl_tri[699] || cl_tri[701:700] == 2'd3 ? 2'd2 : cl_tri[701:700];
 				keep <= cl_tri[698:672];
-				sp_last <= cl_last;
+				lastq <= cl_last;
+				sub <= 1'b0;
+				more <= 1'b0;
 				for (k = 0; k < 12; k = k + 1)
 					pl[k] <= 32'd0;
-				for (k = 0; k < 3; k = k + 1)
-					eE[k] <= 48'd0;
 			end
 		S_LOAD: begin
 			/* fp registers 0-20 from cl_tri, 21-26 VIEWPORT, 27 1.0 */
@@ -283,29 +240,33 @@ module atg_rx_setup (
 			r_wd <= cnt < 6'd21 ? cl_tri[cnt * 32 +: 32] : cnt < 6'd27 ? vp[cnt[2:0] - 3'd5] : ONE;
 			cnt <= cnt + 6'd1;
 			if (cnt == 6'd27) begin
-				pc <= raw ? 7'd0 : ATG_RX_UC_PERSP;
+				pc <= raw ? 8'd0 : ATG_RX_UC_PERSP;
 				st <= S_DEC;
 			end
 		end
 		S_DEC:
 			st <= S_RD;	/* uc follows pc */
 		S_RD: begin
-			opa <= R[u_a];
-			opb <= R[u_b];
+			opa <= rsrc(u_a, R[u_a]);
+			opb <= rsrc(u_b, R[u_b]);
 			case (u_op)
 			4'd0: st <= S_OUT;
-			4'd8: if (raw) st <= S_OUT; else begin pc <= pc + 7'd1; st <= S_DEC; end
-			4'd7: begin pc <= u_d; st <= S_DEC; end
-			4'd6: begin cnt <= 6'd0; st <= S_INT; end
+			4'd8: if (raw) st <= S_OUT; else begin pc <= pc + 8'd1; st <= S_DEC; end
+			4'd7: begin pc <= u_t; st <= S_DEC; end
+			4'd13: begin pc <= cond ? u_t : pc + 8'd1; st <= S_DEC; end
+			4'd14: begin more <= 1'b1; st <= S_OUT; end
+			4'd6: begin e_start <= 1'b1; st <= S_INT; end
 			default: st <= S_GO;
 			endcase
 		end
 		S_GO:
-			if (u_op == 4'd5) begin
+			if (u_op == 4'd5 || u_op >= 4'd9) begin
 				r_we <= 1'b1;
 				r_wa <= u_d;
-				r_wd <= opa;
-				pc <= pc + 7'd1;
+				r_wd <= q1;
+				if (u_d >= 7'd64 && u_d < 7'd76)
+					pl[u_d[3:0]] <= q1;
+				pc <= pc + 8'd1;
 				st <= S_DEC;
 			end else begin
 				fa_v <= u_op == 4'd1 || u_op == 4'd2;
@@ -320,99 +281,30 @@ module atg_rx_setup (
 				r_wd <= fa_o ? fa_r : fm_o ? fm_r : fd_r;
 				if (u_d >= 7'd64 && u_d < 7'd76)
 					pl[u_d[3:0]] <= fa_o ? fa_r : fm_o ? fm_r : fd_r;
-				pc <= pc + 7'd1;
+				pc <= pc + 8'd1;
 				st <= S_DEC;
 			end
-		S_INT: begin
-			cnt <= cnt + 6'd1;
-			/* 0-5 read X0 Y0 X1 Y1 X2 Y2 (registers 31 32 34 35 37 38), 1-6 snap them */
-			if (cnt < 6'd6)
-				rv <= R[7'd31 + {cnt[5:1], 1'b0} + {1'b0, cnt[5:1]} + {6'd0, cnt[0]}];
-			if (cnt >= 6'd1 && cnt <= 6'd6) begin
-				if (!tsnap[0])
-					fx[tsnap[2:1]] <= snap;
-				else
-					fy[tsnap[2:1]] <= snap;
-			end
-			/* 7: bbox; 7-10: D */
-			if (cnt == 6'd7) begin
-				bx0 <= lo_x;
-				by0 <= lo_y;
-				bx1 <= hi_x;
-				by1 <= hi_y;
-				ma <= {dx1[23], dx1};
-				mb <= {dy2[23], dy2};
-			end
-			if (cnt == 6'd8) begin
-				ma <= {dx2[23], dx2};
-				mb <= {dy1[23], dy1};
-			end
-			if (cnt == 6'd9)
-				dd <= mp[47:0];
-			if (cnt == 6'd10) begin
-				dd <= dd - mp[47:0];
-				ccw <= $signed(dd - mp[47:0]) < 0;
-			end
-			/* 11: facing, cull, empty; the edges of the ordered triangle */
-			if (cnt == 6'd11) begin
-				front <= cull[2] ? ccw : !ccw;
-				empty <= dd == 48'sd0 || (cull[0] && (cull[2] ? ccw : !ccw)) ||
-					(cull[1] && !(cull[2] ? ccw : !ccw)) || bx1 <= bx0 || by1 <= by0;
-				for (k = 0; k < 3; k = k + 1) begin
-					eA[k] <= fy[vtx(k == 2 ? 2'd0 : k[1:0] + 2'd1, ccw)] - fy[vtx(k[1:0], ccw)];
-					eB[k] <= fx[vtx(k[1:0], ccw)] - fx[vtx(k == 2 ? 2'd0 : k[1:0] + 2'd1, ccw)];
-					oX[k] <= sx - {fx[vtx(k[1:0], ccw)][23], fx[vtx(k[1:0], ccw)]};
-					oY[k] <= sy - {fy[vtx(k[1:0], ccw)][23], fy[vtx(k[1:0], ccw)]};
-				end
-			end
-			if (cnt == 6'd12) begin
-				for (k = 0; k < 3; k = k + 1)
-					tl[k] <= eA[k] > 24'sd0 || (eA[k] == 24'sd0 && eB[k] > 24'sd0);
-				if (empty) begin
-					for (k = 0; k < 3; k = k + 1) begin
-						eA[k] <= 24'sd0;
-						eB[k] <= 24'sd0;
-					end
-					bx0 <= 18'sd0;
-					by0 <= 18'sd0;
-					bx1 <= 18'sd0;
-					by1 <= 18'sd0;
+		S_INT:
+			/* an empty result ends the primitive: one output with the flags */
+			if (e_done) begin
+				if (e_empty)
 					st <= S_OUT;
+				else begin
+					pc <= pc + 8'd1;
+					st <= S_DEC;
 				end
 			end
-			/* 12-17: E_k = A_k oX_k + B_k oY_k - !tl_k (products read at 14-19) */
-			if (cnt >= 6'd12 && cnt <= 6'd17) begin
-				ma <= cnt[0] ? {eB[ej][23], eB[ej]} : {eA[ej][23], eA[ej]};
-				mb <= cnt[0] ? oY[ej] : oX[ej];
-			end
-			if (cnt >= 6'd14 && cnt <= 6'd19) begin
-				if (!cnt[0])
-					acc <= mp;
-				else
-					eE[ek] <= acc[47:0] + mp[47:0] - {47'd0, !tl[ek]};
-			end
-			/* 20-26: int2f stage A; 21-27: stage B into fp registers 40-46 */
-			if (cnt >= 6'd20 && cnt <= 6'd26) begin
-				ca <= cabs;
-				cs <= ci[47];
-				clz <= cl;
-				csh <= ci_sh;
-			end
-			if (cnt >= 6'd21 && cnt <= 6'd27) begin
-				r_we <= 1'b1;
-				r_wa <= 7'd40 + {1'b0, cnt} - 7'd21;
-				r_wd <= c_out;
-			end
-			if (cnt == 6'd27) begin
-				pc <= pc + 7'd1;
-				st <= S_DEC;
-			end
-		end
 		default: begin	/* S_OUT */
 			sp_valid <= 1'b1;
 			if (sp_valid && sp_ready) begin
 				sp_valid <= 1'b0;
-				st <= S_IDLE;
+				if (more) begin
+					more <= 1'b0;
+					sub <= 1'b1;
+					pc <= pc + 8'd1;
+					st <= S_DEC;
+				end else
+					st <= S_IDLE;
 			end
 		end
 		endcase
@@ -420,18 +312,14 @@ module atg_rx_setup (
 
 	genvar g;
 	generate
-	for (g = 0; g < 3; g = g + 1) begin : g_edge
-		assign sp_tri[96 * g +: 96] = {eE[g], eB[g], eA[g]};
-	end
 	for (g = 0; g < 12; g = g + 1) begin : g_plane
 		assign sp_tri[352 + 32 * g +: 32] = pl[g];
 	end
 	endgenerate
-	assign sp_tri[351:288] = {by1[15:0], bx1[15:0], by0[15:0], bx0[15:0]};
-	assign sp_tri[767:736] = {3'd0, raw, front, keep};
+	assign sp_tri[351:0] = {e_bbox, e_edges};
+	assign sp_tri[767:736] = {1'b0, kind, raw, e_front, more ? 3'd0 : keep[26:24], keep[23:0]};
 
-	wire unused_ok = &{1'b0, fd_busy, cl_tri[701:700], acc[49:48], ce[8], bx0[17:16], by0[17:16],
-		bx1[17:16], by1[17:16], ck, ej, ek};
+	wire unused_ok = &{1'b0, fd_busy, uc[21], rm[2:1]};
 endmodule
 
 `default_nettype wire

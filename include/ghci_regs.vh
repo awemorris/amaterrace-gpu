@@ -186,6 +186,9 @@ localparam [8:0] GHCI_S_DEBUG_COLOR = 9'h05C;
 localparam [8:0] GHCI_S_PROVOKING = 9'h05D;
 localparam [8:0] GHCI_S_MS_CTRL = 9'h05E;	/* draft, CAPS[29] */
 localparam [8:0] GHCI_S_SAMPLE_KILL = 9'h05F;	/* draft, CAPS[29] */
+localparam [8:0] GHCI_S_DEPTH_BIAS_CONST = 9'h060;	/* draft, CAPS[30] */
+localparam [8:0] GHCI_S_DEPTH_BIAS_SLOPE = 9'h061;	/* draft, CAPS[30] */
+localparam [8:0] GHCI_S_DEPTH_BIAS_CLAMP = 9'h062;	/* draft, CAPS[30] */
 
 /* ROP (0x070-0x08F). */
 localparam [8:0] GHCI_S_RT_BASE = 9'h070;
