@@ -8,12 +8,11 @@
 /*
  * atg_top: the GPU IP.  An AXI slave for the GHCI registers (s_*, the low
  * 17 address bits of the window), one AXI master to memory (m_*) and a
- * level interrupt.  WS288 p002 has the CP stub, the blitter skeleton and
- * the MC (bitstream 1, "2D"); the other blocks are added here as they
- * come.  MC clients: 0 CP (debug port; later ring and fence), 1 BLT.
+ * level interrupt.  The CP, the blitter and the MC are always present; the
+ * other blocks come with the HAS_* and NSU parameters (design §7.6).
  *
- * One clock (gclk = mclk; the KC705's MIG clock comes with am_afifo in
- * p012) and one synchronous active-low reset, already synchronised to clk.
+ * One clock (gclk = mclk; the KC705's MIG clock is crossed outside, in its
+ * board top) and one synchronous active-low reset, already synchronised to clk.
  * S_ID_W/S_LEN_W fit the host port (12/4 for the Zynq GP0, AXI3); the
  * master is AXI4-shaped (see am_axi_master for an AXI3 port).
  */
@@ -28,7 +27,7 @@ module atg_top #(
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter DATA_W = 64,
-	/* WS288 p023: which blocks are present (design §7.6; 0 = absent). */
+	/* Which blocks are present (design §7.6; 0 = absent). */
 	parameter HAS_CPU = 0,	/* atg_cpu, the CP's firmware processor */
 	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
 	parameter CPU_DMEM_INIT = "",	/* its DMEM image */
@@ -116,7 +115,7 @@ module atg_top #(
 	output wire m_rready,
 
 	/*
-	 * WS288 p023: what lives next to the GPU (the KC705's DC): the register
+	 * What lives next to the GPU (the KC705's DC): the register
 	 * bus for the window above 0x10000 (the other module returns 0 outside
 	 * its registers; the read data is ORed), one MC client (EXT_CLIENT) and
 	 * the display's vsync pulse.
@@ -152,8 +151,8 @@ module atg_top #(
 	output wire j_busy
 );
 	/*
-	 * MC clients: 0 CP, 1 BLT, then the present blocks in this order:
-	 * CPU (WS288 p023 adds the others in the same way).
+	 * MC clients: 0 CP, 1 BLT, then the present blocks in this order: CPU,
+	 * VF, TU, ROP, the atomic unit (with any SU), SA, EXT, and two per SU.
 	 */
 	localparam HAS_ATOM = NSU > 0 ? 1 : 0;
 	localparam C_CPU = 2;
@@ -275,7 +274,7 @@ module atg_top #(
 	wire [NCLIENT*LINE_BITS-1:0] rsp_rdata_v;
 	wire [NCLIENT-1:0] rsp_error_v;
 
-	/* The CP's links to the blocks of design §7.6 (p023). */
+	/* The CP's links to the blocks of design §7.6. */
 	wire draw_kick, cs_kick, lc_kick, raw_kick;
 	wire [3:0] inv;
 	wire hcr_we;
@@ -522,9 +521,9 @@ module atg_top #(
 	endgenerate
 
 	/*
-	 * WS288 p023: the blocks of design §7.6 behind their parameters.  The
-	 * graphics links (VF, RX, TU, ROP, SA) go to SU 0 only; the other SUs
-	 * run compute (work distribution over SUs is p015).
+	 * The blocks of design §7.6 behind their parameters.  The graphics
+	 * links (VF, RX, TU, ROP, SA) go to SU 0 only; the other SUs run
+	 * compute (the work is not yet distributed over the SUs).
 	 */
 	localparam DW = SU_NPHYS * 32;
 

@@ -25,14 +25,15 @@ BOARD_SRC := boards/$(BOARD)/$(TOP).v $(sort $(wildcard boards/$(BOARD)/lib/*.v)
 XDC := boards/$(BOARD)/$(TOP).xdc
 FW_IMAGES := $(wildcard fw/cp/images/*.hex)
 
-.PHONY: help lint sim verilator check oxc-synth oxc-core oxc vivado prog-oxc prog-vivado clean
+.PHONY: help lint sim sim-quick verilator check oxc-synth oxc-core oxc vivado prog-oxc prog-vivado clean
 .DEFAULT_GOAL := help
 
 help:
 	@echo 'Amaterrace GPU (BOARD=$(BOARD) TOP=$(TOP) PART=$(PART))'
 	@echo ''
 	@echo '  make lint         Verilator lint of every module and top (tools/lint.sh)'
-	@echo '  make sim          the iverilog testbenches (sim/run.sh)'
+	@echo '  make sim          the iverilog testbenches (sim/run.sh, about 17 minutes)'
+	@echo '  make sim-quick    the short run of the testbenches (sim/run.sh -q, a few minutes)'
 	@echo '  make verilator    the Verilator system harness (sim/verilator/run.sh)'
 	@echo '  make check        lint, sim and verilator'
 	@echo '  make oxc-synth    openXC7: yosys synthesis only -> $(OXC)/$(TOP).json'
@@ -53,6 +54,9 @@ lint:
 sim:
 	sim/run.sh
 
+sim-quick:
+	sim/run.sh -q
+
 verilator:
 	sim/verilator/run.sh
 
@@ -71,7 +75,7 @@ oxc-synth: $(OXC)/$(TOP).json
 	@grep -A40 'Number of cells' $(OXC)/yosys.log | grep -E 'LUT|FD|CARRY|RAMB|DSP' || true
 
 # The GPU core alone (atg_top) in the KC705's shape: the board top's MIG,
-# clock and JTAG are still port-only stubs (p012), so synthesizing the board
+# clock and JTAG are still port-only stubs, so synthesizing the board
 # top removes all logic; this keeps it and reports the core's cells.
 CORE_PARAMS ?= -set LINE_BYTES 64 -set LINE_SHIFT 6 -set DATA_W 512 -set HAS_CPU 1 \
 	-set HAS_RX 1 -set HAS_ROP 1 -set NSU 1

@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_top_cs_tb: compute through the ring, end to end (WS288 p008): the GPU
+ * atg_top_cs_tb: compute through the ring, end to end: the GPU
  * driven only through its host port runs sim/vec/cs_scene.txt
  * (tools/cs-scene.py): per GSI1 program of sim/tb/su (vadd over 2
  * workgroups, reduce with LDS, bar and atom.add, mem with lw/sw/atom/fence,
@@ -317,22 +317,23 @@ module atg_top_cs_tb;
 	wire [31:0] err_zybo, err_kc705;
 
 	always #5 clk = !clk;
+	`include "tb_shape.vh"
 
 	atg_top_cs_harness #(.NAME("zybo"), .SEED(11)) zybo (
-		.clk(clk), .rst_n(rst_n), .finished(done_zybo), .errors(err_zybo)
+		.clk(clk_zybo), .rst_n(rst_n), .finished(done_zybo), .errors(err_zybo)
 	);
 	atg_top_cs_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.SEED(12), .HAS_CPU(1), .CPU_IMEM_INIT("fw/cp/images/atg1-cp-kc705.imem.hex"),
 		.CPU_DMEM_INIT("fw/cp/images/atg1-cp-kc705.dmem.hex"), .SU_NPHYS(16), .SU_GRP_W(1),
 		.SU_NREGS(64), .SU_SB_ENTRIES(8), .SU_SBE_W(3), .SU_PACKED(1),
 		.SU_LDS_BYTES(16384)) kc705 (
-		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
+		.clk(clk_kc705), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
 	);
 
 	initial begin
 		repeat (4) @(posedge clk);
 		rst_n <= 1'b1;
-		wait (done_zybo && done_kc705);
+		wait ((done_zybo || !run_zybo) && (done_kc705 || !run_kc705));
 		if (err_zybo == 0 && err_kc705 == 0)
 			$display("PASS atg_top_cs");
 		else

@@ -11,7 +11,7 @@
  * M_AXI_GP0 (the GHCI window) and one HP port (HP0 or HP1) as AXI ports,
  * IRQ_F2P[0].
  *
- * Wiring of its children (WS288 p023); see spec/boards/zybo/lib/atg_zybo_ps.md.
+ * Wiring of its children; see spec/boards/zybo/lib/atg_zybo_ps.md.
  */
 
 `timescale 1ns / 1ps

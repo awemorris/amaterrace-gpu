@@ -11,7 +11,7 @@
  * (bany/bnone/ball/j/bexnz/bexz), end and bar; tells the scheduler where
  * the warp continues.
  *
- * Implemented in WS288 p008.  The behaviour, and where it differs from
+ * The behaviour, and where it differs from
  * the design: spec/gpu/su/atg_su_exec.md (§10 Status).
  */
 

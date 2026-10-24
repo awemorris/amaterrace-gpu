@@ -10,7 +10,7 @@
  * instructions), lines of LINE_BYTES from the AMB, invalidated by
  * LOAD_PROGRAM / INVALIDATE[3].
  *
- * Implemented in WS288 p008.  The behaviour, and where it differs from
+ * The behaviour, and where it differs from
  * the design: spec/gpu/su/atg_su_icache.md (§10 Status).
  */
 

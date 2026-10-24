@@ -169,7 +169,7 @@ module atg_su_lane #(
 				z[l*32 +: 32] = s_ok[el] && s_ex[es] ? s_d[es*32 +: 32] : s_d[el*32 +: 32];
 		end
 	end
-	/* shfl writes the EXEC lanes; vote and ballot every lane (design M13). */
+	/* shfl writes the EXEC lanes; vote and ballot every lane. */
 	wire [31:0] ex_g = s_ex >> ({{(32-GRP_W){1'b0}}, e_cnt} * NPHYS);
 	wire [NPHYS-1:0] z_lanes = op == ATG_LANE_SHFL ? ex_g[NPHYS-1:0] : {NPHYS{1'b1}};
 

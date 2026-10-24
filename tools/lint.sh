@@ -47,7 +47,7 @@ run "atg_top (SA reserved: 1 SU + atg_sa)" --top-module atg_top $zybo -GNSU=1 -G
 # on purpose; PINCONNECTEMPTY: atg_top outputs a board does not use.
 # -fno-dedup: Verilator 5.032's V3Gate dedup aborts with an internal error
 # ("Consumer doesn't match lhs of assign") on atg_kc705_raster once the
-# SU <-> TU link is live (WS288 p009 part C); dedup is an optimisation, the
+# SU <-> TU link is live; dedup is an optimisation, the
 # lint checks are the same.
 for f in boards/*/*.v; do
 	t=$(basename "$f" .v)

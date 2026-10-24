@@ -12,10 +12,10 @@
  * warps) or the quads straight to the ROP (DRAW_RAW, or no SU); frees PT
  * entries after the triangle.
  *
- * WS288 p007: the direct path (quads to the ROP with their depth, one
+ * The direct path (quads to the ROP with their depth, one
  * sequence number per triangle; edges step one quad per cycle; a covered
  * quad's depth takes 20 cycles: one fmul and one fadd, the four lanes
- * interleaved).  WS288 p009: the warp path (fq_*: one covered quad per
+ * interleaved).  The warp path (fq_*: one covered quad per
  * handshake, then an end marker; the frees wait for atg_rx_frag's idle,
  * so its copy of the varyings is done).  See spec/gpu/rx/atg_rx_scan.md.
  */

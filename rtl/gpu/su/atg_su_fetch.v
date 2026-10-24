@@ -10,7 +10,7 @@
  * scheduler, reads the 64-bit instruction from the I$ and hands it to the
  * decoder.
  *
- * Implemented in WS288 p008.  The behaviour, and where it differs from
+ * The behaviour, and where it differs from
  * the design: spec/gpu/su/atg_su_fetch.md (§10 Status).
  */
 

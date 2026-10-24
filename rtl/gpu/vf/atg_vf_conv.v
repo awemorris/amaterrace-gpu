@@ -50,6 +50,7 @@ module atg_vf_conv (
 	output reg conv_done
 );
 	`include "atg_rop_unorm8.vh"
+	`include "ghci_regs.vh"
 
 	/* fp16 -> fp32, exact (denormals normalised); NaN -> 0x7FC00000. */
 	function [31:0] h2f;
@@ -76,12 +77,10 @@ module atg_vf_conv (
 	endfunction
 
 	/* STATE: ATTR[k]_DESC 0x031 + 2k (format [19:16]), ATTR_DST[k] 0x1C0 + k. */
-	localparam [8:0] S_ATTR = 9'h030;
-	localparam [8:0] S_ATTR_DST = 9'h1C0;
 	reg [3:0] s_fmt [0:15];
 	reg [7:0] s_dst [0:15];
-	wire [8:0] s_off = st_idx - S_ATTR;
-	wire s_desc = st_idx >= S_ATTR && st_idx < S_ATTR + 9'd32 && s_off[0];
+	wire [8:0] s_off = st_idx - GHCI_S_ATTR;
+	wire s_desc = st_idx >= GHCI_S_ATTR && st_idx < GHCI_S_ATTR + 9'd32 && s_off[0];
 	integer i;
 	always @(posedge clk)
 		if (!rst_n) begin
@@ -92,7 +91,7 @@ module atg_vf_conv (
 		end else if (st_we) begin
 			if (s_desc)
 				s_fmt[s_off[4:1]] <= st_wdata[19:16];
-			if (st_idx[8:4] == S_ATTR_DST[8:4])
+			if (st_idx[8:4] == GHCI_S_ATTR_DST[8:4])
 				s_dst[st_idx[3:0]] <= st_wdata[7:0];
 		end
 

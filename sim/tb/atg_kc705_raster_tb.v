@@ -7,7 +7,7 @@
 
 /*
  * atg_kc705_raster_tb: the KC705 board top, driven only through its JTAG
- * bridge as plan/tools/kc705/jtag-reg.sh would (the BSCANE2 model's scan
+ * bridge as a host's JTAG tool would (the BSCANE2 model's scan
  * task, TCK 25 MHz), with the board's clock and memory wrappers replaced
  * by their simulation models (sim/models/kc705/: 200 MHz SYSCLK -> gclk
  * 100 MHz, the DDR3 as an axi_mem) and the CP firmware images of

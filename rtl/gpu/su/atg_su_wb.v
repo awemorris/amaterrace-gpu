@@ -10,7 +10,7 @@
  * pipeline (one result per cycle), the long units' beats, and the VF/RX
  * input writes; pushes rq results; releases scoreboard entries.
  *
- * Implemented in WS288 p008.  The behaviour, and where it differs from
+ * The behaviour, and where it differs from
  * the design: spec/gpu/su/atg_su_wb.md (§10 Status).
  */
 

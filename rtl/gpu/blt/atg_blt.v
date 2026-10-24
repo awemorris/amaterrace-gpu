@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_blt: the blitter (WS288 p003).  It takes its parameters from the BLT
+ * atg_blt: the blitter.  It takes its parameters from the BLT
  * range of the state register file (STATE[0x000..0x00A], docs/ghci.md),
  * seen as the CP writes them (st_we), and runs one blit per kick through
  * its AMB port (atg_mc):

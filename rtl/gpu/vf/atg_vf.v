@@ -10,7 +10,7 @@
  * primitive assembly, attribute fetch and conversion into the SU's
  * registers; one MC client (index and attribute reads behind am_amb_mux).
  *
- * Wiring of its children (WS288 p023); see spec/gpu/vf/atg_vf.md.
+ * Wiring of its children; see spec/gpu/vf/atg_vf.md.
  */
 
 `timescale 1ns / 1ps

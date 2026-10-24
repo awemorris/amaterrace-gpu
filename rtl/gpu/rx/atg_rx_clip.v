@@ -49,12 +49,13 @@ module atg_rx_clip (
 	output reg cl_last,
 	output wire busy
 );
+	`include "ghci_regs.vh"
 	localparam [31:0] ONE = 32'h3F800000;
 
 	/* DRAW_RAW's words, STATE 0x1E0-0x1E8 (x, y, z of each vertex). */
 	reg [31:0] rw [0:8];
 	always @(posedge clk)
-		if (st_we && st_idx >= 9'h1E0 && st_idx <= 9'h1E8)
+		if (st_we && st_idx >= GHCI_S_RAW && st_idx <= GHCI_S_RAW + 9'd8)
 			rw[st_idx[3:0]] <= st_wdata;
 
 	localparam [2:0] S_IDLE = 3'd0, S_READ = 3'd1, S_CLIP = 3'd2, S_GO = 3'd3, S_WAIT = 3'd4,

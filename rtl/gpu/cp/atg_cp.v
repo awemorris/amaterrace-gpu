@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_cp: the command processor (WS288 p004), wiring only: its children
+ * atg_cp: the command processor, wiring only: its children
  * hold the GHCI host control registers and the work (spec/gpu/cp/).
  *
  *   atg_cp_regs   the register bus: identification, CAPS, the extended
@@ -42,7 +42,7 @@ module atg_cp #(
 	parameter [31:0] GCLK_HZ = 32'd100000000,
 	parameter [31:0] VENDOR_ID = 32'h414D4154,	/* "AMAT" */
 	parameter [31:0] DEVICE_ID = 32'h41544731,	/* "ATG1" */
-	parameter [31:0] DEVICE_VERSION = 32'h00000003,	/* 0.3: p004, CP with the ring */
+	parameter [31:0] DEVICE_VERSION = 32'h00000003,	/* 0.3: CP with the ring */
 	parameter [7:0] UNITS = 8'h03,	/* present blocks, STATUS busy-bit order (CP, BLT) */
 	parameter HAS_CPU = 0,	/* atg_cpu takes class V packets */
 	parameter HAS_VSYNC = 0,	/* vsync is connected (CAPS[10], WAIT_VSYNC) */
@@ -160,7 +160,7 @@ module atg_cp #(
 
 	/*
 	 * The STATE broadcast to the blocks, one register stage after
-	 * atg_cp_state (WS288 p017: the ring → sequencer → index decode → the
+	 * atg_cp_state (the path ring → sequencer → index decode → the
 	 * blocks' shadow enables did not meet 100 MHz with the CPU in the
 	 * ZYBO).  A kick comes at least two cycles after the last STATE write
 	 * of its µops (the header after the payload, the kick a cycle after

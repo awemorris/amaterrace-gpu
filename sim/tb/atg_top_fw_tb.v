@@ -7,7 +7,7 @@
 
 /*
  * atg_top_fw_tb: the GPU of bitstream 1' (CP, CPU with the CP firmware of
- * fw/cp/images/, BLT, MC; WS288 p017) driven only through its host port,
+ * fw/cp/images/, BLT, MC) driven only through its host port,
  * against axi_mem, in the ZYBO's shape and the KC705's.  Checks:
  *
  *   - CAPS[17] VKCP and [18] FWLOAD, the extended capability list (PERF,
@@ -682,22 +682,23 @@ module atg_top_fw_tb;
 	wire [31:0] err_zybo, err_kc705;
 
 	always #5 clk = !clk;
+	`include "tb_shape.vh"
 
 	atg_top_fw_harness #(.LINE_BYTES(32), .LINE_SHIFT(5), .DATA_W(64), .NAME("zybo"),
 		.IMEM("fw/cp/images/atg1-cp-zybo.imem.hex"), .DMEM("fw/cp/images/atg1-cp-zybo.dmem.hex"),
 		.SEED(5)) zybo (
-		.clk(clk), .rst_n(rst_n), .finished(done_zybo), .errors(err_zybo)
+		.clk(clk_zybo), .rst_n(rst_n), .finished(done_zybo), .errors(err_zybo)
 	);
 	atg_top_fw_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.IMEM("fw/cp/images/atg1-cp-kc705.imem.hex"), .DMEM("fw/cp/images/atg1-cp-kc705.dmem.hex"),
 		.SEED(6)) kc705 (
-		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
+		.clk(clk_kc705), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
 	);
 
 	initial begin
 		repeat (4) @(posedge clk);
 		rst_n <= 1'b1;
-		wait (done_zybo && done_kc705);
+		wait ((done_zybo || !run_zybo) && (done_kc705 || !run_kc705));
 		if (err_zybo == 0 && err_kc705 == 0)
 			$display("PASS atg_top_fw");
 		else

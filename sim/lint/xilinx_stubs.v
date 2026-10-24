@@ -12,8 +12,7 @@
  * those of Vivado 2026.1's unisims PS7.v (Values referenced: interface
  * names and widths only); BUFG is I/O; PLLE2_BASE, MMCME2_BASE, BUFGMUX,
  * OSERDESE2 and OBUFDS (the ZYBO DC) have the ports and parameters the tops
- * use; IBUFDS, BSCANE2, ODDR and the KC705's two IP cores (WS288 p012)
- * likewise.
+ * use; IBUFDS, BSCANE2, ODDR and the KC705's two IP cores likewise.
  * Never used for simulation or synthesis.
  */
 
@@ -367,8 +366,8 @@ module OBUFDS (
 	assign OB = !I;
 endmodule
 /* The KC705 (boards/kc705/lib): IBUFDS, BSCANE2 and ODDR as in Vivado
- * 2026.1's unisims (the ports the tops use), and the two IP cores that the
- * part-B TCL generates for atg_kc705_mig (port names from PG089 and PG164,
+ * 2026.1's unisims (the ports the tops use), and the two IP cores that
+ * TCL is to generate for atg_kc705_mig (port names from PG089 and PG164,
  * unverified until the cores exist). */
 module IBUFDS (
 	input wire I,

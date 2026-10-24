@@ -67,9 +67,9 @@ module atg_tu_addr (
 	output reg [127:0] ta_value,
 	output reg ta_last
 );
+	`include "ghci_regs.vh"
 	localparam [1:0] OP_TEXB = 2'd1, OP_TEXF = 2'd2, OP_TEXSZ = 2'd3;
 	localparam [2:0] IDLE = 3'd0, LOD = 3'd1, LA = 3'd2, LB = 3'd3, OUT = 3'd4;
-	localparam [8:0] S_TU = 9'h090;
 	localparam signed [16:0] LAM_MIN = -17'sd32768;
 
 	/* floor(f × 2^sh), saturated to 32 bits; zero, denormal, NaN → 0. */
@@ -172,9 +172,9 @@ module atg_tu_addr (
 	reg [3:0] d_lev [0:15];
 	reg [13:0] d_samp [0:15];
 	reg [31:0] d_word [0:255];
-	wire [8:0] s_off = st_idx - S_TU;
+	wire [8:0] s_off = st_idx - GHCI_S_TU;
 	always @(posedge clk)
-		if (st_we && st_idx >= S_TU && st_idx < S_TU + 9'd256) begin
+		if (st_we && st_idx >= GHCI_S_TU && st_idx < GHCI_S_TU + 9'd256) begin
 			d_word[s_off[7:0]] <= st_wdata;
 			if (s_off[3:0] == 4'd0)
 				d_base[s_off[7:4]] <= st_wdata;

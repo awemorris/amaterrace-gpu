@@ -12,7 +12,8 @@
  * (vsync at the start of the sync, frame start at the back porch); the
  * pixels popped in order and converted in each format; the drain in the
  * vsync lines; the test pattern's bars and border; underflow (black and a
- * toggle per missing pixel).
+ * toggle per missing pixel).  +quick (the short run, sim/run.sh -q): the
+ * timing is measured on a 64x16 mode instead of 640x480 and 720p.
  */
 
 `timescale 1ns / 1ps
@@ -169,28 +170,39 @@ module atg_dc_tgen_tb;
 		repeat (3) @(posedge clk);
 		rst_n = 1;
 
-		/* timing: 640x480, then 720p. */
+		/* timing: 640x480, then 720p (+quick: 64x16). */
 		e0 = errors;
-		set_timing(640, 16, 96, 48, 480, 10, 2, 33, 0);
-		hpol = 0;
-		vpol = 0;
-		repeat (3) @(posedge clk);
-		enable = 1;
-		check_mode("640x480", 640, 16, 96, 48, 480, 10, 2, 33);
-		check_hsync_place("640x480", 16);
-		if (line !== 12'd0 && line > 12'd524) fail("line range", line, 0);
-		enable = 0;
-		@(posedge clk);
-		set_timing(1280, 110, 40, 220, 720, 5, 5, 20, 3);
-		hpol = 1;
-		vpol = 1;
-		frame_per = 0;
-		vt_prev = 0;
-		repeat (3) @(posedge clk);
-		enable = 1;
-		check_mode("720p", 1280, 110, 40, 220, 720, 5, 5, 20);
-		check_hsync_place("720p", 110);
-		enable = 0;
+		if ($test$plusargs("quick")) begin
+			set_timing(64, 4, 8, 4, 16, 2, 2, 3, 0);
+			hpol = 0;
+			vpol = 0;
+			repeat (3) @(posedge clk);
+			enable = 1;
+			check_mode("64x16", 64, 4, 8, 4, 16, 2, 2, 3);
+			check_hsync_place("64x16", 4);
+			enable = 0;
+		end else begin
+			set_timing(640, 16, 96, 48, 480, 10, 2, 33, 0);
+			hpol = 0;
+			vpol = 0;
+			repeat (3) @(posedge clk);
+			enable = 1;
+			check_mode("640x480", 640, 16, 96, 48, 480, 10, 2, 33);
+			check_hsync_place("640x480", 16);
+			if (line !== 12'd0 && line > 12'd524) fail("line range", line, 0);
+			enable = 0;
+			@(posedge clk);
+			set_timing(1280, 110, 40, 220, 720, 5, 5, 20, 3);
+			hpol = 1;
+			vpol = 1;
+			frame_per = 0;
+			vt_prev = 0;
+			repeat (3) @(posedge clk);
+			enable = 1;
+			check_mode("720p", 1280, 110, 40, 220, 720, 5, 5, 20);
+			check_hsync_place("720p", 110);
+			enable = 0;
+		end
 		if (errors == e0)
 			$display("PASS atg_dc_tgen.timing");
 

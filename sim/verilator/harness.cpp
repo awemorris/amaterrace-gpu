@@ -6,16 +6,16 @@
  */
 
 /*
- * The Verilator system harness (skeleton, WS288 p002): atg_top in the
- * ZYBO's shape (32-byte lines, 64-bit AXI) with a DDR model on its master
- * port and a host on its register port that uses include/ghci_regs.h, as
- * the zedBSD driver will.  The scene: identification, the aperture, a FILL
- * and a COPY checked against a C++ reference, a word read back through
- * DBG_ADDR/DATA, then (WS288 p004) a FILL and a FENCE through the ring
- * (include/ghci_packets.h) with the fence's interrupt.  COMPUTE (WS288
- * p008): the compute scene of sim/vec/cs_scene.txt instead.  Later Phases add
- * class V packets, the ISA model and PNG output here.  Prints
- * "PASS verilator" on success.
+ * The Verilator system harness: atg_top in the ZYBO's shape (32-byte
+ * lines, 64-bit AXI) with a DDR model on its master port and a host on its
+ * register port that uses include/ghci_regs.h, as the zedBSD driver will.
+ * The scene: identification, the aperture, a FILL and a COPY checked
+ * against a C++ reference, a word read back through DBG_ADDR/DATA, then a
+ * FILL and a FENCE through the ring (include/ghci_packets.h) with the
+ * fence's interrupt.  COMPUTE: the compute scene of sim/vec/cs_scene.txt
+ * instead; RASTER, SHADE, TEX: the raster, shaded and textured scenes, the
+ * colour buffer to a PNG (sim/verilator/run.sh).  Prints "PASS verilator"
+ * on success.
  */
 
 #include <algorithm>

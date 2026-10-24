@@ -77,8 +77,8 @@ localparam ATG_WI_SEQ = 112;	/* [127:112] fragment warp sequence number (ROP ord
 localparam ATG_WI_MASK = 128;	/* [159:128] coverage / sample mask (operand 119) */
 
 /*
- * Operation codes (ATG_UOP_OP, 8 bits) per unit.  WS288 p008 chose these
- * values; tools/gsi1asm.py has the same table.
+ * Operation codes (ATG_UOP_OP, 8 bits) per unit; tools/gsi1asm.py has the
+ * same table.
  */
 localparam ATG_ALU_IMMB = 7;	/* OP bit: operand b is the immediate (I forms) */
 localparam [4:0] ATG_ALU_ADD = 5'd0;

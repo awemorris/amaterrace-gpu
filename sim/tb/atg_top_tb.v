@@ -97,7 +97,7 @@ module atg_top_harness #(
 		.m_arcache(arcache), .m_arprot(arprot), .m_arvalid(arvalid), .m_arready(arready),
 		.m_rdata(rdata), .m_rresp(rresp), .m_rlast(rlast), .m_rvalid(rvalid),
 		.m_rready(rready),
-		/* WS288 p023: nothing outside the GPU here. */
+		/* Nothing outside the GPU here. */
 		.xr_wr(), .xr_waddr(), .xr_wdata(), .xr_wstrb(), .xr_rd(), .xr_raddr(),
 		.xr_rdata(32'd0),
 		.x_req_valid(1'b0), .x_req_ready(), .x_req_write(1'b0), .x_req_line({(32-LINE_SHIFT){1'b0}}),
@@ -362,7 +362,7 @@ module atg_top_harness #(
 	endtask
 
 
-	/* The ring (WS288 p004): 1 KiB at RING, fences in the page FENCES. */
+	/* The ring: 1 KiB at RING, fences in the page FENCES. */
 	localparam [31:0] RING = 32'h0005F000;
 	localparam [31:0] FENCES = 32'h0005EF00;
 	localparam RING_N = 256;
@@ -791,7 +791,7 @@ module atg_top_harness #(
 		if (irq)
 			fail_msg("soft interrupt not cleared");
 
-		/* The ring (p004): a FILL and a FENCE with its interrupt. */
+		/* The ring: a FILL and a FENCE with its interrupt. */
 		wp = 0;
 		host_write(GHCI_RING_BASE, RING);
 		host_write(GHCI_RING_SIZE, 32'd10);

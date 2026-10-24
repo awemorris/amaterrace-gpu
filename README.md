@@ -146,7 +146,8 @@ Building and testing
 | Command | What it does |
 | --- | --- |
 | `make lint` | Verilator lint of every module and top |
-| `make sim` | The Icarus Verilog unit testbenches |
+| `make sim` | The Icarus Verilog unit testbenches, every one at full length (about 17 minutes) |
+| `make sim-quick` | A short run of the testbenches that touches every block (about 6 minutes): the long ones shortened or left out, as `sim/run.sh` lists |
 | `make verilator` | The Verilator system harness, including a raster scene written to `build/verilator/raster.png` |
 | `make check` | `lint`, `sim` and `verilator` |
 | `make oxc-core` | openXC7 (yosys) synthesis of the GPU core in the KC705 shape |
@@ -155,7 +156,10 @@ Building and testing
 | `make prog-oxc`, `make prog-vivado` | Load the bitstream with openFPGALoader |
 
 Tools: Vivado 2026.1 (batch, BASIC license), openXC7, Icarus Verilog,
-Verilator, and openFPGALoader or OpenOCD for JTAG.
+Verilator, and openFPGALoader or OpenOCD for JTAG.  `tools/fw-build.sh` and
+`tools/cpu-tests.sh` take clang from `CLANG_BIN`, by default
+`../zedBSD-claude1/build/llvm/bin` beside the repository; from a checkout
+elsewhere (a git worktree) pass `CLANG_BIN`.
 
 GitHub Actions runs `make lint`, `make sim` and `make verilator`, plus the
 openXC7 synthesis of the GPU core in the KC705 shape, on every push and pull

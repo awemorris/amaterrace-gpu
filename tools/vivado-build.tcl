@@ -26,7 +26,7 @@ read_verilog [concat [rtl_files [file join $root rtl]] [list [file join $topdir 
 read_xdc [file join $topdir $top.xdc]
 
 # The CP firmware's BRAM images ($readmemh in atg_cpu_mem): the run reads
-# them from its directory (WS288 p017).
+# them from its directory.
 foreach image [glob -nocomplain -directory [file join $root fw cp images] *.hex] {
 	file copy -force $image $out
 }

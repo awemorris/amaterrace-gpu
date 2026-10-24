@@ -10,7 +10,7 @@
  * quad (DS_BASE/STRIDE, D32F or D24S8), tests (DEPTH func, STENCIL_*
  * front/back), updates and writes it back, and passes the surviving lanes.
  *
- * WS288 p007: depth only (the stencil ops are not done yet: a D24S8
+ * Depth only so far (the stencil ops are not done yet: a D24S8
  * write keeps the stencil byte).  One quad at a time: per row with
  * covered lanes, read the line, test its two lanes, write the passing
  * ones (DEPTH[1]) and wait for the write's response, so the next quad
@@ -64,6 +64,7 @@ module atg_rop_ds #(
 	input wire rsp_error
 );
 	`include "atg_rop_unorm8.vh"
+	`include "ghci_regs.vh"
 
 	localparam WPL = LINE_BYTES / 4;	/* words per line */
 	localparam WB = LINE_SHIFT - 2;	/* word index bits */
@@ -78,13 +79,13 @@ module atg_rop_ds #(
 			ds_stride <= 32'd0;
 			depth <= 7'd0;
 		end else if (st_we) begin
-			if (st_idx == 9'h05C)
+			if (st_idx == GHCI_S_DEBUG_COLOR)
 				dbg_color <= st_wdata;
-			if (st_idx == 9'h074)
+			if (st_idx == GHCI_S_DS_BASE)
 				ds_base <= st_wdata;
-			if (st_idx == 9'h075)
+			if (st_idx == GHCI_S_DS_STRIDE)
 				ds_stride <= st_wdata;
-			if (st_idx == 9'h076)
+			if (st_idx == GHCI_S_DEPTH)
 				depth <= st_wdata[6:0];
 		end
 	wire test = depth[0] && depth[6:5] != 2'b00;

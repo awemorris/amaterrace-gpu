@@ -109,7 +109,7 @@ function [31:0] atg_su_fadd;
 endfunction
 
 /*
- * The FPU's helpers (WS288 p008 part 2; reference: tools/gsi1fp.py).
+ * The FPU's helpers (reference: tools/gsi1fp.py).
  * rm: 0 RNE, 1 RTZ, 2 RDN, 3 RUP, 4 RMM, 5-7 RNE (7 is "dynamic": there is
  * no CSR; 5 and 6 never reach here, atg_su_dec faults them).
  */

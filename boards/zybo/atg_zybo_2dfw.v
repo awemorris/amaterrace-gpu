@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_zybo_2dfw: ZYBO bitstream 1', "2D + FW" (WS288 design §2.4.7, p017):
+ * atg_zybo_2dfw: ZYBO bitstream 1', "2D + FW" (design §2.4.7):
  * bitstream 1 (atg_zybo_2d, whose PS wiring this copies) with the CP's
  * control processor atg_cpu and the CP firmware in its BRAM (the images
  * fw/cp/images/atg1-cp-zybo.*.hex, which tools/vivado-build.tcl puts next
@@ -23,7 +23,7 @@
  *
  * The PS (ps7_init by zedBSD's boot) must have FCLK0 at 100 MHz, the
  * level shifters enabled and HP0 in 64-bit mode.  Checked on the board
- * (WS288 p003, booted from SD by U-Boot SPL's ps7_init, then fpgaload):
+ * (booted from SD by U-Boot SPL's ps7_init, then fpgaload):
  * FPGA0_CLK_CTRL 0x00100A00 (IO PLL / 10), LVL_SHFTR_EN 0xF, FPGA_RST_CTRL
  * 0, and AFI0's RDCHAN_CTRL 0 and WRCHAN_CTRL 0xF00, the reset values,
  * whose bit 0 (32BIT_EN) 0 is the 64-bit mode: ps7_init does not write
@@ -211,7 +211,7 @@ module atg_zybo_2dfw (
 		.m_rlast(hp_rlast),
 		.m_rvalid(hp_rvalid),
 		.m_rready(hp_rready),
-		/* WS288 p023: nothing outside the GPU here. */
+		/* Nothing outside the GPU here. */
 		.xr_wr(), .xr_waddr(), .xr_wdata(), .xr_wstrb(), .xr_rd(), .xr_raddr(),
 		.xr_rdata(32'd0),
 		.x_req_valid(1'b0), .x_req_ready(), .x_req_write(1'b0), .x_req_line(27'd0),

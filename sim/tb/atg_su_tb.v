@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_su_tb: the shader unit running GSI1 programs (p008's acceptance:
+ * atg_su_tb: the shader unit running GSI1 programs (the check that
  * the same binary gives the same results on NPHYS 8, 16 and 32).  Three
  * SUs (NPHYS 8, 16, 32; NWARPS 4, NREGS 32; SUBGROUP 1) fetch code and load constants
  * from one amb_mem behind their I$ port, and access data through a second
@@ -30,6 +30,8 @@
  * A fourth SU (NPHYS 8, SUBGROUP 0) runs sub only and must report an ISA
  * fault (the CP's kind 8) at the model's pc for every warp (sub.fault), with
  * the registers written before it (sub.fexp).
+ * +quick (the short run, sim/run.sh -q): NPHYS 8 and 32 only, without
+ * frand.
  */
 
 `timescale 1ns / 1ps
@@ -227,7 +229,9 @@ module atg_su_chk #(
 	endtask
 
 	integer p, i, t, lanes, groups, l, merr;
+	reg quick;
 	initial begin
+		quick = $test$plusargs("quick");
 		done = 1'b0;
 		errs = 0;
 		cycles = 0;
@@ -236,6 +240,8 @@ module atg_su_chk #(
 		nf_exp = 0;
 		@(posedge go);
 		for (p = P_FIRST; p < NP; p = p + 1) begin
+			if (quick && p == 3)
+				p = 4;	/* no frand */
 			for (i = 0; i < 4096; i = i + 1)
 				code[i] = 32'd0;
 			lanes = 128;
@@ -375,10 +381,15 @@ module atg_su_tb;
 	wire [31:0] e0, e1, e2, e3, c0, c1, c2, c3;
 
 	always #5 clk = !clk;
+	/* +quick: NPHYS 16 gets no clock and is not waited for. */
+	reg quick;
+	initial
+		quick = $test$plusargs("quick");
+	wire clk16 = clk & !quick;
 
 	atg_su_chk #(.NPHYS(8), .SEED(1)) n8 (.clk(clk), .go(go), .done(done[0]), .errs(e0),
 		.cycles(c0));
-	atg_su_chk #(.NPHYS(16), .SEED(2)) n16 (.clk(clk), .go(go), .done(done[1]), .errs(e1),
+	atg_su_chk #(.NPHYS(16), .SEED(2)) n16 (.clk(clk16), .go(go), .done(done[1]), .errs(e1),
 		.cycles(c1));
 	atg_su_chk #(.NPHYS(32), .SEED(3)) n32 (.clk(clk), .go(go), .done(done[2]), .errs(e2),
 		.cycles(c2));
@@ -387,9 +398,9 @@ module atg_su_tb;
 
 	initial begin
 		#20 go = 1'b1;
-		wait (&done);
+		wait (done[0] && (done[1] || quick) && done[2] && done[3]);
 		if (e0 == 0) $display("PASS atg_su.nphys8");
-		if (e1 == 0) $display("PASS atg_su.nphys16");
+		if (e1 == 0 && !quick) $display("PASS atg_su.nphys16");
 		if (e2 == 0) $display("PASS atg_su.nphys32");
 		if (e3 == 0) $display("PASS atg_su.nosubgroup");
 		if (e0 + e1 + e2 + e3 == 0)

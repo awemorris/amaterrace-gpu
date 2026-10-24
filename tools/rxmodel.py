@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# rxmodel.py: the reference model of the RX and the ROP (WS288 p007) for
+# rxmodel.py: the reference model of the RX and the ROP for
 # the testbenches and the board test.  It is written from the formulas of
 # spec/gpu/rx/*.md and spec/gpu/rop/*.md, not from the RTL: fp32 is IEEE
 # single with round to nearest even on an unbounded exponent, then
@@ -7,7 +7,7 @@
 # canonical 0x7FC00000 (the SU's rules, design §3.1); the edges are exact
 # integers in 15.8 fixed point; the ROP blends in 8-bit unorm.
 #
-# Library use (tools/rx-vectors.py, plan/tools/zybo/ghci-raster-board.py):
+# Library use (tools/rx-vectors.py, a board test):
 #   import rxmodel as M
 #   st = M.State(); st.set(index, value) ...
 #   M.draw_raw(st, mem, [x0, y0, z0, x1, y1, z1, x2, y2, z2])   (fp32 bits)

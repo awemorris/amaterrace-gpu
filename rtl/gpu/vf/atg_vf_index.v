@@ -62,17 +62,11 @@ module atg_vf_index #(
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
 	input wire rsp_error
 );
+	`include "ghci_regs.vh"
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam LB = LINE_BYTES * 8;
 
 	/* STATE indices of the VF range (design §2.3). */
-	localparam [8:0] S_INDEX_BASE = 9'h021;
-	localparam [8:0] S_INDEX_FORMAT = 9'h022;
-	localparam [8:0] S_FIRST = 9'h023;
-	localparam [8:0] S_COUNT = 9'h024;
-	localparam [8:0] S_PRIM_RESTART = 9'h025;
-	localparam [8:0] S_INSTANCE_COUNT = 9'h026;
-	localparam [8:0] S_FIRST_INSTANCE = 9'h027;
 
 	reg [31:0] s_ibase, s_first, s_count, s_icount, s_finst;
 	reg [1:0] s_ifmt;
@@ -87,19 +81,19 @@ module atg_vf_index #(
 			s_icount <= 32'd0;
 			s_finst <= 32'd0;
 		end else if (st_we) begin
-			if (st_idx == S_INDEX_BASE)
+			if (st_idx == GHCI_S_INDEX_BASE)
 				s_ibase <= st_wdata;
-			if (st_idx == S_INDEX_FORMAT)
+			if (st_idx == GHCI_S_INDEX_FORMAT)
 				s_ifmt <= st_wdata[1:0];
-			if (st_idx == S_FIRST)
+			if (st_idx == GHCI_S_FIRST)
 				s_first <= st_wdata;
-			if (st_idx == S_COUNT)
+			if (st_idx == GHCI_S_COUNT)
 				s_count <= st_wdata;
-			if (st_idx == S_PRIM_RESTART)
+			if (st_idx == GHCI_S_PRIM_RESTART)
 				s_restart <= st_wdata[0];
-			if (st_idx == S_INSTANCE_COUNT)
+			if (st_idx == GHCI_S_INSTANCE_COUNT)
 				s_icount <= st_wdata;
-			if (st_idx == S_FIRST_INSTANCE)
+			if (st_idx == GHCI_S_FIRST_INSTANCE)
 				s_finst <= st_wdata;
 		end
 

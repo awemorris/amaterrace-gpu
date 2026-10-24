@@ -93,7 +93,7 @@ module atg_top_scene_harness #(
 		.m_arcache(arcache), .m_arprot(arprot), .m_arvalid(arvalid), .m_arready(arready),
 		.m_rdata(rdata), .m_rresp(rresp), .m_rlast(rlast), .m_rvalid(rvalid),
 		.m_rready(rready),
-		/* WS288 p023: nothing outside the GPU here. */
+		/* Nothing outside the GPU here. */
 		.xr_wr(), .xr_waddr(), .xr_wdata(), .xr_wstrb(), .xr_rd(), .xr_raddr(),
 		.xr_rdata(32'd0),
 		.x_req_valid(1'b0), .x_req_ready(), .x_req_write(1'b0), .x_req_line({(32-LINE_SHIFT){1'b0}}),
@@ -200,8 +200,8 @@ module atg_top_scene_harness #(
 
 
 	/* Assert: DRAW_RAW kicks the clip only after all nine payload words have
-	 * reached it (the CP registers the STATE broadcast; WS288 p007 found the
-	 * kick a cycle early, the third vertex's z still unwritten). */
+	 * reached it (the CP registers the STATE broadcast; without that the
+	 * kick came a cycle early, the third vertex's z still unwritten). */
 	integer k9;
 	always @(posedge clk)
 		if (dut.g_rx.rx.clip.raw_kick)
