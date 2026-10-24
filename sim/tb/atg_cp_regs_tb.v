@@ -10,15 +10,18 @@
  * recognisable values: the identification and capability words, the
  * extended capability list walked from EXTCAP for three XCAP_MASK values,
  * the snoop and alias outputs of a write, the OR of the modules' read
- * data, COUNTER and the PERF counters.
+ * data, COUNTER and the PERF counters; with atg_cp_fmt beside it (a fourth
+ * bench, FMT in the list), the FMT capability's words for every VkFormat
+ * value against sim/vec/fmt_info.txt.
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
 module regs_bench #(
-	parameter [7:0] XCAP = 8'h04,
-	parameter [31:0] TAG = 32'd0
+	parameter [9:0] XCAP = 10'h004,
+	parameter [31:0] TAG = 32'd0,
+	parameter FMT = 0	/* atg_cp_fmt beside it */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -42,6 +45,16 @@ module regs_bench #(
 	input wire [3:0] perf_busy,
 	input wire perf_reset
 );
+	wire [31:0] fmt_rdata;
+	generate
+	if (FMT != 0) begin : g_fmt
+		atg_cp_fmt fmt (.clk(clk), .rst_n(rst_n), .hcr_we(hcr_we), .hcr_widx(hcr_widx),
+			.hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask), .hcr_ridx(hcr_ridx),
+			.hcr_rdata(fmt_rdata));
+	end else begin : g_no_fmt
+		assign fmt_rdata = 32'd0;
+	end
+	endgenerate
 	atg_cp_regs #(
 		.GCLK_HZ(32'd12345678), .VENDOR_ID(32'h56454E44), .DEVICE_ID(32'h44455631),
 		.DEVICE_VERSION(32'h00070009), .ISA_ID(32'h49534131), .NATIVE_ISA_ID(32'h4E415431),
@@ -56,7 +69,7 @@ module regs_bench #(
 		.hcr_ridx(hcr_ridx), .alias_we(alias_we), .alias_idx(alias_idx),
 		.alias_ridx(alias_ridx),
 		.ctl_rdata(ctl_rdata), .irq_rdata(32'd0), .ring_rdata(32'd0), .fence_rdata(32'd0),
-		.dbg_rdata(32'd0), .state_rdata(state_rdata), .x_rdata(32'd0),
+		.dbg_rdata(32'd0), .state_rdata(state_rdata), .x_rdata(fmt_rdata),
 		.perf_busy(perf_busy), .perf_reset(perf_reset)
 	);
 endmodule
@@ -74,7 +87,7 @@ module atg_cp_regs_tb;
 	reg [3:0] reg_wstrb = 0;
 	reg [3:0] perf_busy = 0;
 	reg [31:0] ctl_rdata = 0, state_rdata = 0;
-	wire [31:0] rd0, rd1, rd2, hcr_wdata, hcr_wmask;
+	wire [31:0] rd0, rd1, rd2, rd3, hcr_wdata, hcr_wmask;
 	wire hcr_we, alias_we;
 	wire [9:0] hcr_widx, hcr_ridx;
 	wire [8:0] alias_idx, alias_ridx;
@@ -102,10 +115,21 @@ module atg_cp_regs_tb;
 		.alias_we(), .alias_idx(), .alias_ridx(), .ctl_rdata(32'd0), .state_rdata(32'd0),
 		.perf_busy(4'd0), .perf_reset(1'b0)
 	);
+	regs_bench #(.XCAP(10'h204), .FMT(1)) b3 (
+		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
+		.reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
+		.reg_rdata(rd3), .hcr_we(), .hcr_widx(), .hcr_wdata(), .hcr_wmask(), .hcr_ridx(),
+		.alias_we(), .alias_idx(), .alias_ridx(), .ctl_rdata(32'd0), .state_rdata(32'd0),
+		.perf_busy(4'd0), .perf_reset(1'b0)
+	);
 
 	integer errors = 0;
 	integer e0;
-	reg [31:0] v0, v1, v2, c0;
+	reg [31:0] v0, v1, v2, v3, c0;
+	integer fd, code, fi;
+	reg [67:0] finfo;
+	reg [15:0] xo, xb, xo0, xb0;
+	reg [7:0] fv;
 
 	task rd;
 		input [16:0] a;
@@ -120,6 +144,7 @@ module atg_cp_regs_tb;
 			v0 = rd0;
 			v1 = rd1;
 			v2 = rd2;
+			v3 = rd3;
 		end
 	endtask
 
@@ -145,13 +170,13 @@ module atg_cp_regs_tb;
 		integer n;
 		begin
 			rd(GHCI_EXTCAP);
-			off = k == 0 ? v0 : k == 1 ? v1 : v2;
+			off = k == 0 ? v0 : k == 1 ? v1 : k == 2 ? v2 : v3;
 			n = 0;
 			while (off != 0 && n < 8) begin
 				rd(off[16:0]);
-				w0 = k == 0 ? v0 : k == 1 ? v1 : v2;
+				w0 = k == 0 ? v0 : k == 1 ? v1 : k == 2 ? v2 : v3;
 				rd(off[16:0] + 17'd4);
-				w1 = k == 0 ? v0 : k == 1 ? v1 : v2;
+				w1 = k == 0 ? v0 : k == 1 ? v1 : k == 2 ? v2 : v3;
 				if (w0[7:0] !== ids[n * 8 +: 8] || w0[15:8] !== 8'd1 ||
 				    w1 !== ptrs[n * 32 +: 32]) begin
 					errors = errors + 1;
@@ -290,6 +315,64 @@ module atg_cp_regs_tb;
 		expect0("ormux", GHCI_PERF0, 32'd0);
 		if (errors == e0)
 			$display("PASS atg_cp_regs.ormux");
+		e0 = errors;
+		/* fmt: the list entry, FMT_INDEX, the features of every value, LIMITS */
+		walk(3, 64'h0A03, {32'h160, 32'h110});
+		fd = $fopen("sim/vec/fmt_info.txt", "r");
+		if (fd == 0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: no sim/vec/fmt_info.txt");
+		end
+		for (fi = 0; fi < 256; fi = fi + 1) begin
+			code = $fscanf(fd, "%h %h %h %h %h %h\n", fv, finfo, xo, xb, xo0, xb0);
+			wr(17'h00160, {24'hFFFFFF, fv}, 4'b1111);
+			@(negedge clk);
+			reg_wr = 0;
+			rd(17'h00160);
+			if (v3 !== {24'd0, fv}) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_regs.fmt: FMT_INDEX %h, wrote %h", v3, fv);
+			end
+			rd(17'h00164);
+			if (v3 !== {16'd0, xo0} || v0 !== 32'd0) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_regs.fmt: format %0d OPTIMAL %h, want %h", fv, v3, xo0);
+			end
+			rd(17'h00168);
+			if (v3 !== {16'd0, xo0}) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_regs.fmt: format %0d LINEAR %h, want %h", fv, v3, xo0);
+			end
+			rd(17'h0016C);
+			if (v3 !== {16'd0, xb0}) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_regs.fmt: format %0d BUFFER %h, want %h", fv, v3, xb0);
+			end
+		end
+		$fclose(fd);
+		/* a partial write changes the written byte only */
+		wr(17'h00160, 32'h00000025, 4'b0001);
+		wr(17'h00160, 32'h00000011, 4'b0010);
+		@(negedge clk);
+		reg_wr = 0;
+		expect0("fmt", 17'h00160, 32'h0);	/* bench 0 has no FMT */
+		rd(17'h00160);
+		if (v3 !== 32'h25) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: FMT_INDEX %h after a partial write", v3);
+		end
+		rd(17'h00170);
+		if (v3 !== 32'd4) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: FMT_LIMITS %h", v3);
+		end
+		rd(17'h00174);
+		if (v3 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: +0x14 reads %h", v3);
+		end
+		if (errors == e0)
+			$display("PASS atg_cp_regs.fmt");
 		if (errors == 0)
 			$display("PASS atg_cp_regs");
 		else

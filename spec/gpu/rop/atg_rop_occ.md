@@ -60,4 +60,4 @@ docs/ghci.md §7.3 (QUERY), §8.5 (ROP_CTRL), design §16.8.  Values referenced:
 
 ## 10. Status
 
-Implemented 2026-10-25: every PASS of §8.  Not yet wired into atg_rop (a later step, with atg_rop_ds's inc_valid and the CP's QUERY).
+Implemented 2026-10-25: every PASS of §8.  Wired in atg_rop (inc_valid = atg_rop_ds's d_valid and d_ready, inc_n its d_smask's popcount) and to atg_cp_seq's QUERY through atg_top; a nocol beat's count comes with the attachment beats (S8 of the plan).

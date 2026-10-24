@@ -60,3 +60,5 @@ design §2.4.3 (µops), §3.8 (DRAW order), §15.6 (state between draws).
 ## 10. Status
 
 Implemented (moved out of `atg_cp_seq`; the RX and ROP ranges' wait widened at the same time).
+
+2026-10-25 (CAPS[30]): QUERY (op 14) has RESULT's pre-wait (every block, and f_busy 0) unless flags[0] (clear only: no wait).

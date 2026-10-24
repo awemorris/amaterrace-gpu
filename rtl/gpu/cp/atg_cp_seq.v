@@ -27,7 +27,10 @@
  *   LOAD_CONST: SUs idle, lc_kick, SUs idle.  LOAD_PROGRAM: inv[3].
  *   WAIT_FENCE: request op 2, wait for !f_busy.  PERF_RESET.  WAIT_VSYNC:
  *   one vsync.  INVALIDATE: inv = flags[3:0].  RESULT: blocks idle and
- *   !f_busy, request op 1.  DRAW_RAW: raw_kick.  NOP, SET_REG, DBG_MARK: none.
+ *   !f_busy, request op 1.  QUERY (CAPS[30]): as RESULT with the occlusion
+ *   counter (occ_count, low word, then the high bits) at addr; flags[0]:
+ *   no wait and no write, only occ_clear; flags[1]: occ_clear with the
+ *   write's request.  DRAW_RAW: raw_kick.  NOP, SET_REG, DBG_MARK: none.
  * A wait after a kick starts one cycle later (busy rises after the kick).
  * Faults stop the sequencer until the core reset (rst_n): kind 2 for an
  * unknown op, a class 2/3 header, or an op whose unit is absent (UNITS,
@@ -82,6 +85,9 @@ module atg_cp_seq #(
 	output wire [31:0] f_aux,
 	output wire f_irq,
 	input wire f_busy,
+	/* The occlusion counter (atg_rop_occ, QUERY) */
+	input wire [39:0] occ_count,
+	output wire occ_clear,
 	/* Status */
 	output wire busy,
 	output wire cmd_active,
@@ -108,6 +114,7 @@ module atg_cp_seq #(
 	localparam [5:0] OP_WAIT_VSYNC = 6'd11;
 	localparam [5:0] OP_INVALIDATE = 6'd12;
 	localparam [5:0] OP_RESULT = 6'd13;
+	localparam [5:0] OP_QUERY = 6'd14;
 	localparam [5:0] VOP_DRAW_RAW = 6'd0;
 	localparam [5:0] VOP_DBG_MARK = 6'd1;
 
@@ -177,6 +184,10 @@ module atg_cp_seq #(
 			OP_LOAD_PROGRAM: h_need = 8'd1;
 			OP_WAIT_VSYNC: h_absent = HAS_VSYNC == 0;
 			OP_RESULT: h_need = 8'd3;
+			OP_QUERY: begin
+				h_need = 8'd1;
+				h_absent = !UNITS[4];
+			end
 			default: h_known = 1'b0;
 			endcase
 		end
@@ -232,9 +243,13 @@ module atg_cp_seq #(
 	assign inv = !is_op_std ? 4'd0 : op == OP_DRAW ? 4'b0011 :
 		op == OP_LOAD_PROGRAM ? 4'b1000 : op == OP_INVALIDATE ? flags[3:0] : 4'd0;
 
-	wire fence_op = !vendor && (op == OP_FENCE || op == OP_WAIT_FENCE || op == OP_RESULT);
+	wire is_query = !vendor && op == OP_QUERY;
+	wire fence_op = !vendor && (op == OP_FENCE || op == OP_WAIT_FENCE || op == OP_RESULT ||
+		(op == OP_QUERY && !flags[0]));
+	assign occ_clear = (is_op_std && op == OP_QUERY && flags[0]) ||
+		(st == Q_FREQ && f_ready && is_query && flags[1]);
 	assign f_valid = st == Q_FREQ;
-	assign f_op = op == OP_FENCE ? 2'd0 : op == OP_RESULT ? 2'd1 : 2'd2;
+	assign f_op = op == OP_FENCE ? 2'd0 : op == OP_RESULT || op == OP_QUERY ? 2'd1 : 2'd2;
 	assign f_addr = a0;
 	assign f_value = a1;
 	assign f_aux = a2;
@@ -321,6 +336,10 @@ module atg_cp_seq #(
 				end
 			Q_EXEC:
 				if (exec_go) begin
+					if (is_query) begin
+						a1 <= occ_count[31:0];
+						a2 <= {24'd0, occ_count[39:32]};
+					end
 					if (fence_op)
 						st <= Q_FREQ;
 					else if (!vendor && op == OP_WAIT_VSYNC)

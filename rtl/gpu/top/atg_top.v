@@ -292,6 +292,8 @@ module atg_top #(
 	wire [8:0] cpu_st_ridx;
 	wire [31:0] cpu_st_rdata, cp_fence_last, cpu_hcr_rdata, cpu_fault_addr;
 	wire cp_fence_ev, cp_halt, cp_open, cpu_fault, cpu_stall, cpu_result;
+	wire [39:0] occ_count;	/* atg_rop's occlusion counter, for QUERY */
+	wire occ_clear;
 
 	atg_cp #(
 		.ADDR_W(32),
@@ -383,7 +385,8 @@ module atg_top #(
 		.cpu_fault(cpu_fault),
 		.cpu_fault_addr(cpu_fault_addr),
 		.cpu_stall(cpu_stall),
-		.cpu_result(cpu_result)
+		.cpu_result(cpu_result),
+		.occ_count(occ_count), .occ_clear(occ_clear)
 	);
 
 	atg_blt #(
@@ -719,6 +722,7 @@ module atg_top #(
 			.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 			.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 			.ord_valid(ord_valid), .ord_seq(ord_seq),
+			.occ_count(occ_count), .occ_clear(occ_clear),
 			.req_valid(c_req_valid[C_ROP]), .req_ready(c_req_ready[C_ROP]),
 			.req_write(c_req_write[C_ROP]), .req_line(c_req_line[C_ROP*LA_W +: LA_W]),
 			.req_be(c_req_be[C_ROP*LINE_BYTES +: LINE_BYTES]),
@@ -729,11 +733,12 @@ module atg_top #(
 		);
 	end else begin : g_no_rop
 		assign rop_busy = 1'b0;
+		assign occ_count = 40'd0;
 		assign ex_ready = 1'b0;
 		assign ex_next = 16'd0;
 		assign dx_ready = 1'b0;
 		wire unused_rop = &{1'b0, ex_valid, ex_seq, ex_xy, ex_mask, ex_color, ex_depth, ex_last, ex_ms,
-			dx_valid, dx_seq, dx_xy, dx_mask, dx_depth, dx_last, ord_valid, ord_seq};
+			dx_valid, dx_seq, dx_xy, dx_mask, dx_depth, dx_last, ord_valid, ord_seq, occ_clear};
 	end
 
 	if (HAS_SA != 0) begin : g_sa

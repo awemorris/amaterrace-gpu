@@ -52,6 +52,9 @@ module atg_rop #(
 	/* Issued sequence numbers (atg_rx ord_*) */
 	input wire ord_valid,
 	input wire [15:0] ord_seq,
+	/* The occlusion counter (atg_rop_occ; atg_cp_seq's QUERY) */
+	output wire [39:0] occ_count,
+	input wire occ_clear,
 	/* AMB client port (design §4.1) */
 	output wire req_valid,
 	input wire req_ready,
@@ -141,6 +144,19 @@ module atg_rop #(
 		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_smask(d_smask), .d_color(d_color),
 		.busy(ds_busy),
 		.req_valid(ds_req_valid), .req_ready(ds_req_ready), .req_write(ds_req_write), .req_line(ds_req_line), .req_be(ds_req_be), .req_wdata(ds_req_wdata), .req_tag(ds_req_tag), .rsp_valid(ds_rsp_valid), .rsp_write(ds_rsp_write), .rsp_tag(ds_rsp_tag), .rsp_rdata(ds_rsp_rdata), .rsp_error(ds_rsp_error)
+	);
+
+	/* The occlusion counter: the samples that pass atg_rop_ds. */
+	reg [4:0] d_pop;
+	integer pk;
+	always @(*) begin
+		d_pop = 5'd0;
+		for (pk = 0; pk < 16; pk = pk + 1)
+			d_pop = d_pop + {4'd0, d_smask[pk]};
+	end
+	atg_rop_occ occ (
+		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.inc_valid(d_valid && d_ready), .inc_n(d_pop), .clear(occ_clear), .count(occ_count)
 	);
 
 	atg_rop_blend blend (

@@ -19,7 +19,7 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `CAPS` | `32'h00500002` | CAPS value (design §2.2), set by atg_top from its parameters. |
 | `CAPS2` | `32'h00000001` | CAPS2 value. |
 | `VEND` | `256'd0` | The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0. |
-| `XCAP_MASK` | `8'h04` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7). |
+| `XCAP_MASK` | `10'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, FMT 10 at 0x160, atg_cp_fmt). |
 | `DISP_OFFSET` | `32'h00010000` | Where the DISP entry points (KC705 +0x10000). |
 | `PERF_SRC` | `32'hFFFFFFFF` | PERF_SRC0..3 (byte n = PERF_SRCn; 0xFF unused). Amaterrace 2D: 0xFFFF0801 (BLT busy, memory). |
 
@@ -102,6 +102,7 @@ Register read latency 1 cycle (the am_axi_regs contract).
 
 - `PASS atg_cp_regs.id` — identification, CAPS, CAPS2, VEND read their parameter values
 - `PASS atg_cp_regs.extcap` — the EXTCAP list walks to the end for several XCAP_MASK values
+- `PASS atg_cp_regs.fmt` — (CAPS[30]) a bench with atg_cp_fmt beside it: the FMT entry (id 10, 0x160), FMT_INDEX written and read back (partial writes too), FMT_OPTIMAL, FMT_LINEAR and FMT_BUFFER for all 256 values against `sim/vec/fmt_info.txt`, FMT_LIMITS 4
 - `PASS atg_cp_regs.snoop` — a write gives one hcr_we with index, data and mask; a partial alias write gives no alias_we
 - `PASS atg_cp_regs.ormux` — reads OR the module inputs; COUNTER increments; PERF counts busy and clears
 - `PASS atg_cp_regs` at the end.
@@ -114,3 +115,5 @@ design §2.2, §2.4.10 (offsets of the v3 additions), include/ghci_regs.vh, the 
 
 Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  216 lines.  Spec change in p004: the `PERF_SRC` parameter, the list layout
 above.
+
+2026-10-25 (CAPS[30]): XCAP_MASK has 10 bits; FMT (id 10) points at 0x160 (atg_cp_fmt's window, ORed in by atg_cp through x_rdata).

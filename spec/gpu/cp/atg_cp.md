@@ -118,3 +118,5 @@ Resolved p023 differences: 1 (BLT state after RESET: replay), 2 (debug port in H
 Remaining: 3 (HALTED does not wait for the blocks' work: they freeze, the p003 choice), 4 (RESET from
 RUNNING skips HALTING), 6 (FAULT_INFO[23:16] of an MC refusal is the client number; the job tag of a
 BLT error and of the watchdog is 0).
+
+2026-10-25 (CAPS[30]): parameters HAS_FMT (default 0: the FMT capability, atg_cp_fmt, XCAP bit 9) and HAS_ETC (default 0: FMT reports the ETC2/EAC formats); ports occ_count (in, 40) and occ_clear (out) between atg_cp_seq's QUERY and atg_rop's occlusion counter (atg_top wires them).

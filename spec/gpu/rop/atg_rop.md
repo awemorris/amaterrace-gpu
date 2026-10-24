@@ -52,6 +52,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **Issued sequence numbers (atg_rx ord_*)** | | | |
 | `ord_valid` | in | 1 | Issued. |
 | `ord_seq` | in | 16 | Number. |
+| `occ_count` | out | 40 | (CAPS[30]) The occlusion counter (atg_rop_occ: the samples that leave atg_rop_ds while ROP_CTRL[0]), to atg_cp_seq's QUERY. |
+| `occ_clear` | in | 1 | (CAPS[30]) Clear it (atg_cp_seq). |
 | **AMB client port (design §4.1)** | | | |
 | `req_valid` | out | 1 | Request valid; payload held until `req_ready`. |
 | `req_ready` | in | 1 | The MC (or mux) takes the request this cycle. |
@@ -99,3 +101,5 @@ design §2.3, §3.8.
 Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
 
 Multisampling (the MSAA work, docs/ghci.md §12.11): `atg_rop_ms` between the order and the depth test (the per-sample coverage, depth, alpha to coverage, alpha to one); `atg_rop_ds` and `atg_rop_wb` take the 16-bit sample mask and the sample-interleaved layout; new port `ex_ms`.  `sim/tb/atg_rop_ms_tb.v` checks the whole ROP (`atg_rop_ms.md` §8).
+
+2026-10-25 (CAPS[30]): atg_rop_occ counts the popcount of atg_rop_ds's d_smask at each d_valid and d_ready (a quad with no sample left is not sent, so it adds 0); ports occ_count and occ_clear (39).  atg_rop_ds takes the facing from atg_rop_ms (o_front).

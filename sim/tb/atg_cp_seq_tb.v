@@ -53,6 +53,8 @@ module atg_cp_seq_tb;
 	wire [31:0] f_addr, f_value, f_aux, fault_addr;
 	wire [3:0] fault_kind;
 	wire [7:0] fault_tag;
+	reg [39:0] occ_count = 40'h0;
+	wire occ_clear;
 
 	atg_cp_seq #(.UNITS(8'hFF), .HAS_VSYNC(1)) dut (
 		.clk(clk), .rst_n(rst_n),
@@ -65,6 +67,7 @@ module atg_cp_seq_tb;
 		.vsync(vsync),
 		.f_valid(f_valid), .f_ready(f_ready), .f_op(f_op), .f_addr(f_addr), .f_value(f_value),
 		.f_aux(f_aux), .f_irq(f_irq), .f_busy(f_busy),
+		.occ_count(occ_count), .occ_clear(occ_clear),
 		.busy(busy), .cmd_active(cmd_active),
 		.fault(fault), .fault_kind(fault_kind), .fault_addr(fault_addr), .fault_tag(fault_tag)
 	);
@@ -82,7 +85,7 @@ module atg_cp_seq_tb;
 		.blt_kick(), .draw_kick(), .cs_kick(), .lc_kick(), .raw_kick(), .inv(),
 		.perf_reset(), .busy_in(8'd0), .vsync(1'b0),
 		.f_valid(), .f_ready(1'b0), .f_op(), .f_addr(), .f_value(), .f_aux(), .f_irq(),
-		.f_busy(1'b0), .busy(), .cmd_active(),
+		.f_busy(1'b0), .occ_count(40'd0), .occ_clear(), .busy(), .cmd_active(),
 		.fault(s_fault), .fault_kind(s_fault_kind), .fault_addr(), .fault_tag()
 	);
 
@@ -212,6 +215,8 @@ module atg_cp_seq_tb;
 				$display("FAIL atg_cp_seq.fence: RESULT before the earlier writes");
 			end
 		end
+		if (occ_clear)
+			log({8'h0A, 24'd0, occ_count[31:0]});
 	end
 
 	/* Expected events. */
@@ -579,9 +584,40 @@ module atg_cp_seq_tb;
 			$display("PASS atg_cp_seq.source");
 		e0 = errors;
 
-		/* badop: op 14, vendor op 5, class 2; a short payload (kind 3);
+		/* query: QUERY flags[0] clears without waiting (while the BLT is
+		 * busy); flags 0 waits for every block and the fence unit and writes
+		 * {lo, hi} by the RESULT request; flags[1] clears after taking it. */
+		occ_count = 40'hA5_1234_5678;
+		packet(1'b0, 1'b0, 6'd2, 8'd0, 8'd0);
+		pl[0] = 32'h200;
+		packet(1'b0, 1'b0, 6'd14, 8'd1, 8'd1);
+		pl[0] = 32'h208;
+		packet(1'b0, 1'b0, 6'd14, 8'd0, 8'd1);
+		pl[0] = 32'h210;
+		packet(1'b0, 1'b0, 6'd14, 8'd2, 8'd1);
+		expect_ev({8'h02, 56'd0});
+		expect_ev({8'h0A, 24'd0, 32'h12345678});
+		expect_ev({8'h09, 6'd0, 2'd1, 1'b0, 15'd0, 32'h208 ^ 32'h12345678 ^ 32'h000000A5});
+		expect_ev({8'h09, 6'd0, 2'd1, 1'b0, 15'd0, 32'h210 ^ 32'h12345678 ^ 32'h000000A5});
+		expect_ev({8'h0A, 24'd0, 32'h12345678});
+		/* the clear-only QUERY must not wait for the BLT */
+		while (!occ_clear) begin
+			@(posedge clk);
+			#1;
+		end
+		if (!busy_in[1]) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_seq.query: the clear waited for the BLT");
+		end
+		settle("query");
+		compare("query");
+		if (errors == e0)
+			$display("PASS atg_cp_seq.query");
+		e0 = errors;
+
+		/* badop: op 15, vendor op 5, class 2; a short payload (kind 3);
 		 * DRAW without a VF (kind 2). */
-		packet(1'b0, 1'b0, 6'd14, 8'd0, 8'd0);
+		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd0);
 		expect_fault("badop", GHCI_FAULT_OPCODE, 32'd0);
 		packet(1'b0, 1'b1, 6'd5, 8'd0, 8'd0);
 		expect_fault("badop", GHCI_FAULT_OPCODE, 32'd0);
