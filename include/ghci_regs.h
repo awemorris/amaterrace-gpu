@@ -240,6 +240,7 @@
 #define GHCI_S_PROG 0x190u
 #define GHCI_S_SA 0x1B0u /* reserved */
 #define GHCI_S_ATTR_DST 0x1C0u /* VF: ATTR_DST[0..15] */
+#define GHCI_S_ATTR_LIMIT 0x1D0u /* VF: ATTR_LIMIT[0..15], draft, CAPS[30] */
 
 /* VF. */
 #define GHCI_S_TOPOLOGY (GHCI_S_VF + 0u)

@@ -545,7 +545,7 @@ module atg_top #(
 	wire prim_valid, prim_ready, prim_last, rx_prim_ready;
 	wire [7:0] pt_done;
 	wire prim_ok = pt_done[prim_vtx[7:5]];
-	wire [23:0] prim_vtx;
+	wire [25:0] prim_vtx;
 	wire [2:0] prim_free;
 	/* RX ↔ SU 0. */
 	wire pt_rd, pt_free;
@@ -622,7 +622,7 @@ module atg_top #(
 		assign vl_lane = 5'd0;
 		assign vl_data = 32'd0;
 		assign prim_valid = 1'b0;
-		assign prim_vtx = 24'd0;
+		assign prim_vtx = 26'd0;
 		assign prim_free = 3'd0;
 		assign prim_last = 1'b0;
 		wire unused_vf = &{1'b0, draw_kick, vl_gnt, vl_ptbase, prim_ready};

@@ -26,7 +26,7 @@ module atg_rx_clip_tb;
 	reg st_we = 1'b0, raw_kick = 1'b0, prim_valid = 1'b0, prim_last = 1'b0;
 	reg [8:0] st_idx = 0;
 	reg [31:0] st_wdata = 0;
-	reg [23:0] prim_vtx = 0;
+	reg [25:0] prim_vtx = 0;
 	reg [2:0] prim_free = 0;
 	reg pt_busy = 1'b0, cl_ready = 1'b0;
 	reg [31:0] pt_rdata = 0;
@@ -128,7 +128,7 @@ module atg_rx_clip_tb;
 					exp_n = exp_n + 1;
 				end
 				prim_valid <= 1'b1;
-				prim_vtx <= {e2, e1, e0};
+				prim_vtx <= {2'd2, e2, e1, e0};
 				prim_free <= fr;
 				prim_last <= cnt[0];
 				@(posedge clk);

@@ -65,7 +65,7 @@ module atg_vf_asm (
 	/* Primitives to the RX */
 	output wire prim_valid,
 	input wire prim_ready,
-	output wire [23:0] prim_vtx,
+	output wire [25:0] prim_vtx,	/* [25:24] kind: 0 point, 1 line, 2 triangle */
 	output wire [2:0] prim_free,
 	output wire prim_last,
 	output wire busy
@@ -220,7 +220,10 @@ module atg_vf_asm (
 	assign vl_req = st == ST_ALLOC;
 	assign busy = st != ST_IDLE;
 	assign prim_valid = h_v && st == ST_PRIMS && (f_n != 6'd0 || fin);
-	assign prim_vtx = h_vtx;
+	/* The kind from TOPOLOGY (its SET_REG waits while the VF is busy). */
+	wire [1:0] p_kind = s_topo == T_LINES || s_topo == T_LSTRIP ? 2'd1 :
+		s_topo == T_TRIS || s_topo == T_STRIP || s_topo == T_FAN ? 2'd2 : 2'd0;
+	assign prim_vtx = {p_kind, h_vtx};
 	assign prim_free = h_free;
 	assign prim_last = fin && f_n == 6'd0;
 	wire h_take = prim_valid && prim_ready;

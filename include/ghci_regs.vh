@@ -159,6 +159,7 @@ localparam [8:0] GHCI_S_TU = 9'h090;	/* 16 slots of 16 words */
 localparam [8:0] GHCI_S_PROG = 9'h190;
 localparam [8:0] GHCI_S_SA = 9'h1B0;	/* reserved */
 localparam [8:0] GHCI_S_ATTR_DST = 9'h1C0;	/* VF: ATTR_DST[0..15] */
+localparam [8:0] GHCI_S_ATTR_LIMIT = 9'h1D0;	/* VF: ATTR_LIMIT[0..15], draft, CAPS[30] */
 localparam [8:0] GHCI_S_VENDOR = 9'h1E0;
 
 /* VF (0x020-0x04F). */

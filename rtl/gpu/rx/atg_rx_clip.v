@@ -33,7 +33,7 @@ module atg_rx_clip (
 	/* Primitives to the RX */
 	input wire prim_valid,
 	output wire prim_ready,
-	input wire [23:0] prim_vtx,
+	input wire [25:0] prim_vtx,	/* [25:24] kind (used from the line and point step) */
 	input wire [2:0] prim_free,
 	input wire prim_last,
 	/* PT read (shared with atg_rx_scan in atg_rx: scan has priority) */
@@ -207,7 +207,7 @@ module atg_rx_clip (
 				for (k = 0; k < 3; k = k + 1)
 					vv[k] <= {(k == 2) ? ONE : 32'd0, (k == 1) ? ONE : 32'd0,
 						(k == 0) ? ONE : 32'd0, 128'd0};
-				ent <= prim_vtx;
+				ent <= prim_vtx[23:0];
 				fl <= prim_free;
 				last <= prim_last;
 				raw <= 1'b0;
@@ -281,7 +281,7 @@ module atg_rx_clip (
 		endcase
 	end
 
-	wire unused_ok = &{1'b0, fd_busy};
+	wire unused_ok = &{1'b0, fd_busy, prim_vtx[25:24]};
 endmodule
 
 `default_nettype wire

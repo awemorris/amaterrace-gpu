@@ -29,7 +29,7 @@ module atg_rx #(
 	/* Primitives to the RX */
 	input wire prim_valid,
 	output wire prim_ready,
-	input wire [23:0] prim_vtx,
+	input wire [25:0] prim_vtx,
 	input wire [2:0] prim_free,
 	input wire prim_last,
 	/* PT of SU 0 (atg_su pt_*) */
