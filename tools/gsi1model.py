@@ -15,7 +15,7 @@
 #                [--fault-out PROG.fault]
 #   gsi1model.py PROG.s --warps W.hex --init I.hex [--nregs 32] [--vary 16] [...]
 #                -o PROG.exp [--mem-out PROG.mexp] [--exp-out PROG.xexp]
-#                [--pt-out PROG.pexp]
+#                [--pt-out PROG.pexp] [--ms-out PROG.msexp]
 #
 # --warps: graphics warps instead of a dispatch (sim/tb/atg_su_gfx_tb.v).
 # W.hex has 5 words per slot 0..3: kind (0 vertex, 1 fragment, 2 none),
@@ -25,16 +25,24 @@
 # the start.  wgx/nwgx are 0 and lidn is the lane (atg_su_sched's warp
 # word).  The warps run one after the other in slot order.  Side effects
 # (sw, atom, sts, exp) take the lanes in EXEC, in the mask and not KILLED
-# (design §3.1, M10).  exp of a fragment warp: targets 0x100-0x103 (COLOR0)
-# and 0x104 (DEPTH); a lane is exported once one of them ran for it.
+# (design §3.1, M10).  exp of a fragment warp: targets 0x100-0x103 (COLOR0),
+# 0x104 (DEPTH) and 0x105 (SAMPLE_MASK, docs/ghci.md section 12.11: the
+# last value written, bits 3:0); a lane is exported once one of them ran
+# for it.  The lane's sample mask is r6 as written before the start (the
+# rasterizer's sample mask; 15 when the init file leaves r6 unset) ANDed
+# with the last SAMPLE_MASK value.
 # --exp-out: the quads the ROP gets (atg_su_exp), fragment warps in
 # sequence order, the quads with coverage (packed from lane 0) in order:
 # the number of quads, then per quad 22 words: {seq[15:0], 7'd0, last,
-# 4'd0, mask[3:0]} with mask = covered and exported lanes, {y, x} =
+# 4'd0, mask[3:0]} with mask = covered and exported lanes whose sample
+# mask is not 0, {y, x} =
 # floor of r4 and r5 of the quad's lane 0, and per lane 0..3 COLOR0 RGBA
 # and the depth (exported, else r3 as written before the start; 0 for a
 # lane not in mask).  exp of a vertex warp: targets 0x000-0x003 (PT words
-# 0-3) and 0x010+v, v < --vary (PT word 4+v).  --pt-out: for the one
+# 0-3) and 0x010+v, v < --vary (PT word 4+v).  --ms-out: the same quads,
+# one word each: {12'd0, zexp[3:0], smask[15:0]} (zexp: the lane exported
+# DEPTH; smask bit 4 l + s: the sample mask of lane l, 0 for a lane not in
+# mask).  --pt-out: for the one
 # vertex warp, entry (lane) 0..31, word 0..3+VARY, the -o line format.
 #
 # The lane unit: qdx/qdy = v[lane|1] - v[lane&~1], v[lane|2] - v[lane&~2]
@@ -166,6 +174,7 @@ class Machine:
             col = [[0] * 4 for _ in range(32)]
             dep = [None] * 32
             xp = 0
+            smv = [None] * 32
         killed = 0
         pc = 0
         r = self.regs[k] if self.groups == 1 else [[None] * 32 for _ in range(self.nregs)]
@@ -302,7 +311,7 @@ class Machine:
                     killed |= bt & exec_m
                 elif op == 13:
                     if g is not None and g["kind"] == 1:
-                        self.xexp[k] = (col, dep, xp)
+                        self.xexp[k] = (col, dep, xp, smv)
                     return
                 elif op == 14:
                     yield pc
@@ -316,9 +325,11 @@ class Machine:
                     if not side >> ln & 1:
                         continue
                     a, b, c = operands(ln)
-                    if g["kind"] == 1 and 0x100 <= t <= 0x104:
+                    if g["kind"] == 1 and 0x100 <= t <= 0x105:
                         if t == 0x104:
                             dep[ln] = b
+                        elif t == 0x105:
+                            smv[ln] = b & 15
                         else:
                             col[ln][t - 0x100] = b
                         xp |= 1 << ln
@@ -393,18 +404,28 @@ def floor_f32(v):
     return int(struct.unpack("<f", struct.pack("<I", v & M32))[0])
 
 
-def write_exports(path, m, gw, init):
-    """--exp-out (the comment at the top)."""
+def write_exports(path, m, gw, init, ms_path=None):
+    """--exp-out and --ms-out (the comment at the top)."""
     out = []
+    msw = []
     frags = sorted((g["seq"], k) for k, g in enumerate(gw) if g is not None and g["kind"] == 1)
     for seq, k in frags:
-        col, dep, xp = m.xexp[k]
+        col, dep, xp, smv = m.xexp[k]
         cov = gw[k]["mask"]
+
+        def smask(ln):
+            r6 = init[k][6][ln] if len(init[k]) > 6 else None
+            v = 15 if r6 is None else r6 & 15
+            return v & (15 if smv[ln] is None else smv[ln])
         nq = 0
         while nq < 8 and cov >> (4 * nq) & 15:
             nq += 1
         for q in range(nq):
             mask = cov >> (4 * q) & xp >> (4 * q) & 15
+            mask &= sum(1 << i for i in range(4) if smask(4 * q + i))
+            sm = sum(smask(4 * q + i) << (4 * i) for i in range(4) if mask >> i & 1)
+            ze = sum(1 << i for i in range(4) if mask >> i & 1 and dep[4 * q + i] is not None)
+            msw.append(ze << 16 | sm)
             last = 1 if q == nq - 1 else 0
             out.append(seq << 16 | last << 8 | mask)
             x, y = floor_f32(init[k][4][4 * q]), floor_f32(init[k][5][4 * q])
@@ -420,6 +441,10 @@ def write_exports(path, m, gw, init):
         f.write("%08x\n" % (len(out) // 22))
         for v in out:
             f.write("%08x\n" % (v & M32))
+    if ms_path:
+        with open(ms_path, "w") as f:
+            for v in msw:
+                f.write("%08x\n" % v)
 
 
 def main():
@@ -438,6 +463,7 @@ def main():
     ap.add_argument("--init")
     ap.add_argument("--vary", type=int, default=16)
     ap.add_argument("--exp-out")
+    ap.add_argument("--ms-out")
     ap.add_argument("--pt-out")
     a = ap.parse_args()
     with open(a.src) as f:
@@ -466,7 +492,7 @@ def main():
     init = [[list(rr) for rr in rk] for rk in m.regs]
     regs = m.run()
     if a.exp_out:
-        write_exports(a.exp_out, m, gw, init)
+        write_exports(a.exp_out, m, gw, init, a.ms_out)
     if a.pt_out:
         with open(a.pt_out, "w") as f:
             for ln in range(32):

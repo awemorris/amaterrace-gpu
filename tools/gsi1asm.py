@@ -112,7 +112,8 @@ ins("end", "R", OPC["C0"], 7, 0, U_EXEC, 13, C_A, "")
 # texb [4] the LOD query (texqlod, no rs2) -> op[6]; [5] the .3 forms (a third
 # coordinate in rs1+2, Dref then in rs1+3; the uop's sub[4]).  texsz's
 # immediate 1 (texsz.l) returns the level count -> op[6], 2 (texsz.d) the
-# layer count or depth -> op[3].  The R forms take a last operand
+# layer count or depth -> op[3], 3 (texsz.s, CAPS[29]) the sample count ->
+# op[6] and op[3] together.  The R forms take a last operand
 # off(du, dv[, dw]): the texel offsets, word1 [25:22], [29:26], [13:10]
 # (signed 4 bits), the uop's imm[11:0] (du | dv << 4 | dw << 8).
 for n, f3, f7, op, ops in [("texl", 0, 0, 0, "d12t"), ("texb", 1, 0, 1, "d12t"),
@@ -129,6 +130,7 @@ for n, f3, f7, op, ops in [("texl", 0, 0, 0, "d12t"), ("texb", 1, 0, 1, "d12t"),
 ins("texsz", "I", OPC["C1"], 3, None, U_TEX, 3, C_T, "d1t", side=True, immv=0)
 ins("texsz.l", "I", OPC["C1"], 3, None, U_TEX, 0x43, C_T, "dt", side=True, immv=1)
 ins("texsz.d", "I", OPC["C1"], 3, None, U_TEX, 0x0B, C_T, "d1t", side=True, immv=2)
+ins("texsz.s", "I", OPC["C1"], 3, None, U_TEX, 0x4B, C_T, "dt", side=True, immv=3, ms4=True)
 ins("exp", "S", OPC["C1"], 4, None, U_EXP, 0, C_A, "2x", side=True)
 ins("lda", "I", OPC["C1"], 5, None, U_LDA, 0, C_A, "di")
 for n, s in [("qdx", 0), ("qdy", 1), ("qswap1", 2), ("qswap2", 3), ("qswap3", 4), ("qbcast", 5)]:
@@ -280,6 +282,8 @@ def decode(w, cfg):
         if e.get("packed") and not cfg["PACKED"]:
             ill = True
         if e.get("subgroup") and not cfg["SUBGROUP"]:
+            ill = True
+        if e.get("ms4") and not cfg["MS4"]:
             ill = True
         if e["unit"] == U_RQ and not cfg["HAS_SA"]:
             ill = True
@@ -544,8 +548,8 @@ def header(words, stage=2, nregs=32):
 # ---------------------------------------------------------------------------
 # The decode table for sim/tb/atg_su_dec_tb.v.
 
-CFGS = [dict(NREGS=32, PACKED=0, SUBGROUP=0, HAS_SA=0),
-        dict(NREGS=64, PACKED=1, SUBGROUP=1, HAS_SA=1)]
+CFGS = [dict(NREGS=32, PACKED=0, SUBGROUP=0, HAS_SA=0, MS4=0),
+        dict(NREGS=64, PACKED=1, SUBGROUP=1, HAS_SA=1, MS4=1)]
 
 
 def dec_table(path, seed=1):
