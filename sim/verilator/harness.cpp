@@ -12,7 +12,8 @@
  * the zedBSD driver will.  The scene: identification, the aperture, a FILL
  * and a COPY checked against a C++ reference, a word read back through
  * DBG_ADDR/DATA, then (WS288 p004) a FILL and a FENCE through the ring
- * (include/ghci_packets.h) with the fence's interrupt.  Later Phases add
+ * (include/ghci_packets.h) with the fence's interrupt.  COMPUTE (WS288
+ * p008): the compute scene of sim/vec/cs_scene.txt instead.  Later Phases add
  * class V packets, the ISA model and PNG output here.  Prints
  * "PASS verilator" on success.
  */
@@ -395,6 +396,76 @@ int scene_main()
 	return errors ? 1 : 0;
 }
 #endif
+
+#ifdef COMPUTE
+/*
+ * The compute scene of sim/vec/cs_scene.txt (tools/cs-scene.py, the same as
+ * sim/tb/atg_top_cs_tb.v): per segment the program binary and the data
+ * image, the ring's SET_REG, INVALIDATE, LOAD_PROGRAM, LOAD_CONST, DISPATCH
+ * and FENCE; after the fence the memory against tools/gsi1model.py.  The
+ * last segment ends in an ISA fault (FAULTED, FAULT_ADDR = the PC).
+ */
+int compute_main()
+{
+	FILE *f = std::fopen("sim/vec/cs_scene.txt", "r");
+	if (!f) {
+		std::printf("FAIL verilator compute: no sim/vec/cs_scene.txt\n");
+		return 1;
+	}
+	const uint32_t ring = 0x5F000;
+	uint32_t wp = 0, a, v, nr, fence = 0;
+	unsigned bad = 0, checked = 0, segs = 0;
+	char k[4], name[32] = "";
+	if (std::fscanf(f, "%3s %u", k, &nr) != 2)
+		return 1;
+	host_write(GHCI_APERTURE_BASE, 0x1000);
+	host_write(GHCI_APERTURE_LIMIT, 0x60000);
+	host_write(GHCI_RING_BASE, ring);
+	host_write(GHCI_RING_SIZE, 10);
+	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
+	while (std::fscanf(f, "%3s", k) == 1) {
+		if (k[0] == 'S' && std::fscanf(f, "%31s", name) == 1) {
+			segs++;
+		} else if (k[0] == 'I' && std::fscanf(f, "%x %x", &a, &v) == 2) {
+			poke32(a, v);
+		} else if (k[0] == 'R' && std::fscanf(f, "%x", &v) == 1) {
+			poke32(ring + 4 * wp++, v);
+		} else if (k[0] == 'F' && std::fscanf(f, "%x", &v) == 1) {
+			host_write(GHCI_RING_WPTR, wp);
+			for (int i = 0; i < 200000 && host_read(GHCI_FENCE_LAST) != v; i++)
+				;
+			expect("FENCE_LAST", host_read(GHCI_FENCE_LAST), v);
+			expect("STATE (RUNNING)", GHCI_STATUS_STATE(host_read(GHCI_STATUS)), 1);
+			expect("RING_RPTR", host_read(GHCI_RING_RPTR), wp);
+			expect("IRQ FENCE", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FENCE, GHCI_IRQ_FENCE);
+			host_write(GHCI_IRQ_STATUS, GHCI_IRQ_FENCE);
+			fence = v;
+		} else if (k[0] == 'X' && std::fscanf(f, "%x %x", &a, &v) == 2) {
+			host_write(GHCI_RING_WPTR, wp);
+			for (int i = 0; i < 200000 && GHCI_STATUS_STATE(host_read(GHCI_STATUS)) != 4; i++)
+				;
+			expect("STATE (FAULTED)", GHCI_STATUS_STATE(host_read(GHCI_STATUS)), 4);
+			expect("FAULT_ADDR (the PC)", host_read(GHCI_FAULT_ADDR), a);
+			expect("FAULT_INFO", host_read(GHCI_FAULT_INFO), v);
+			expect("IRQ FAULT", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FAULT, GHCI_IRQ_FAULT);
+			expect("FENCE_LAST after the fault", host_read(GHCI_FENCE_LAST), fence);
+		} else if (k[0] == 'E' && std::fscanf(f, "%x %x", &a, &v) == 2) {
+			checked++;
+			if (peek32(a) != v) {
+				if (bad < 6)
+					std::printf("FAIL verilator compute %s: mem %08x = %08x, model %08x\n",
+					    name, a, peek32(a), v);
+				bad++;
+			}
+		}
+	}
+	std::fclose(f);
+	expect("compute words differing from the model", bad, 0);
+	std::printf("verilator compute: %u segments, %u ring words, %u words checked, %llu cycles\n",
+	    segs, wp, checked, (unsigned long long)cycles);
+	return errors ? 1 : 0;
+}
+#endif
 } // namespace
 
 int main(int argc, char **argv)
@@ -413,6 +484,16 @@ int main(int argc, char **argv)
 		tick();
 	top->rst_n = 1;
 	tick();
+#ifdef COMPUTE
+	{
+		int rc = compute_main();
+		top->final();
+		delete top;
+		if (rc == 0)
+			std::printf("PASS verilator compute\n");
+		return rc;
+	}
+#endif
 #if defined(RASTER) || defined(SHADE) || defined(TEX)
 	{
 		int rc = scene_main();

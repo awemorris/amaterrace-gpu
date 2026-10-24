@@ -14,7 +14,11 @@
 # two mone lane warp exec killed wgx wgy wgz lidx lidy lidz lidn prim front
 # nwgx nwgy nwgz oneh2 mask qstat sastat qtag), or o<n> for operand number n.
 # Float sources take "-x", "|x|", "-|x|"; ".sat" on a float mnemonic saturates.
-# Rounding: an optional last operand rne/rtz/rdn/rup/rmm (default rne).
+# Rounding: an optional last operand rne/rtz/rdn/rup/rmm/dyn (default rne; dyn
+# is rm 7, which GSI1 runs as RNE).  Half select (word1[16:15], packed): a last
+# mnemonic suffix .hlo (01, low half only), .hhi (10) or .hswap (11, rs2's
+# halves swapped), after .sat.  ".inst 0x<64 bits>" puts a raw instruction
+# (tools/gsi1dis.py writes it for words that have no other text).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import argparse
 import random
@@ -24,7 +28,9 @@ import sys
 SPECIAL = ["zero", "one", "onei", "half", "two", "mone", "lane", "warp", "exec", "killed",
            "wgx", "wgy", "wgz", "lidx", "lidy", "lidz", "lidn", "prim", "front",
            "nwgx", "nwgy", "nwgz", "oneh2", "mask", "qstat", "sastat", "qtag"]
-RM = {"rne": 0, "rtz": 1, "rdn": 2, "rup": 3, "rmm": 4}
+RM = {"rne": 0, "rtz": 1, "rdn": 2, "rup": 3, "rmm": 4, "dyn": 7}
+HSEL = {"hlo": 1, "hhi": 2, "hswap": 3}
+MAGIC = 0x47534931      # "GSI1", word 0 of a program binary
 
 # Units, classes (include/atg_su_uop.vh).
 U_NONE, U_ALU, U_FPU, U_PK, U_XU, U_DIV, U_LSU, U_LDS, U_CBANK, U_TEX, U_EXP, U_LDA, \
@@ -319,6 +325,10 @@ def split_imm(v, bits_lo=12):
 
 
 def assemble_one(mn, args, pc, labels):
+    hsel = 0
+    if mn.rpartition(".")[2] in HSEL:
+        mn, _, hs = mn.rpartition(".")
+        hsel = HSEL[hs]
     sat = False
     if mn.endswith(".sat"):
         sat, mn = True, mn[:-4]
@@ -369,6 +379,8 @@ def assemble_one(mn, args, pc, labels):
     if mn == "atom":
         sub = ATOMS.index(atom)
         if atom == "cmpxchg":
+            if ai >= len(args):
+                raise ValueError("atom.cmpxchg: no compare value")
             rs3 = reg_num(args[ai].strip())
             ai += 1
     if mn == "wait":
@@ -385,6 +397,8 @@ def assemble_one(mn, args, pc, labels):
     w1 = 0
     fmt = e["fmt"]
     if fmt == "U":
+        if hsel or sat:
+            raise ValueError("%s: no half select or .sat in the U form" % mn)
         if e.get("movi"):
             v = imm & 0xFFFFFFFF
             w0 = (v >> 12) << 12 | (rd & 31) << 7 | e["opc"]
@@ -394,7 +408,7 @@ def assemble_one(mn, args, pc, labels):
             w1 = rd >> 5
         return w0 | w1 << 32
     w1 = (rd >> 5) | (rs1 >> 5) << 2 | (rs2 >> 5) << 4 | (rs3 >> 5) << 6 | mods << 8 | \
-        int(sat) << 14 | (sub & 31) << 17
+        int(sat) << 14 | hsel << 15 | (sub & 31) << 17
     if fmt == "R":
         r2 = e["rs2"] if "rs2" in e else rs2
         f7 = e["f7"] or 0
@@ -459,6 +473,9 @@ def encode(text):
     for pc, ln in enumerate(prog):
         mn, _, rest = ln.partition(" ")
         try:
+            if mn.strip() == ".inst":
+                words.append(num(rest) & ((1 << 64) - 1))
+                continue
             words.append(assemble_one(mn.strip(), split_args(rest), pc, labels))
         except (ValueError, KeyError, AttributeError) as ex:
             raise SystemExit("gsi1asm: line %d %r: %s" % (pc, ln, ex))
@@ -466,7 +483,7 @@ def encode(text):
 
 
 def header(words, stage=2, nregs=32):
-    h = [0x47534931, 1, stage, 0, 2 * len(words), 16, nregs, 0, 1, 0, 16, 0, 0, 1, 0, 0]
+    h = [MAGIC, 1, stage, 0, 2 * len(words), 16, nregs, 0, 1, 0, 16, 0, 0, 1, 0, 0]
     return h
 
 
