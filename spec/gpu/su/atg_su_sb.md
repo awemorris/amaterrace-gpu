@@ -59,7 +59,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 ## 4. Behaviour
 
 - Entry: {valid, dst base, width (1 or 4), class}.  Hazard: any used source (rs1, rs2, rs3, rs1+1
-  for PAIR) or the destination range overlaps a valid entry's range → replay.
+  for PAIR, rs3 + 1 for a texture .3 form with Dref) or the destination range overlaps a valid entry's range → replay.
 - Counters per warp: cm (stores/atomics outstanding), ct, cx.  `wait` (CTL) replays until the
   counters are ≤ its limits; `fence` (CTL) replays until cm = 0 (global) and then issues to the LSU
   for its D$ invalidate (acquire); `end` waits for all counters 0 (design §3.1.1).
@@ -87,7 +87,7 @@ One check per cycle; the overlap check is about 400 LUT at 8 entries × 5 operan
 `sim/tb/atg_su_sb_tb.v` prints, in this order:
 
 - `PASS atg_su_sb.raw` — a read of a pending destination replays until the release
-- `PASS atg_su_sb.waw` — a write over a pending texture rd..rd+3 replays
+- `PASS atg_su_sb.waw` — a write over a pending texture rd..rd+3 replays; a texture .3 form with Dref whose rs1+3 (rs3 + 1) is in it replays, the same form without .3 issues
 - `PASS atg_su_sb.full` — entries full: long instruction replays; other warps issue
 - `PASS atg_su_sb.wait` — wait/fence/end with counters
 - `PASS atg_su_sb.fault` — ILL gives fault with the pc
@@ -100,3 +100,5 @@ design §3.1.1 (scoreboard), §3.4.2 (classes), §3.9 (rq).
 ## 10. Status
 
 Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_sb_tb.v`).  Spec change made in p008 (the spec lacked the short-result interlock of design §3.1.1): parameters `NPHYS` and `SHORT_LAT`, input `x_end` (the last group of an instruction leaves atg_su_opd: `x_valid && x_last && unit_ready[unit]`, wired in atg_su).  Issued instructions are listed in order until x_end; a short writer (class a/f with rd < 63) then counts SHORT_LAT+1 cycles.  A reader of its rd is held (u_ready 0, not replayed) while the writer is before the bus or the count is above 32/NPHYS + 1; a long writer of that rd is held until the count ends.  nop and a satisfied wait are consumed without issue (feedback 0).  Counters are 6 bits; a long instruction whose counter is at the maximum replays.  Feedback 1 for branches, end and bar.
+
+2026-10-25 (p009 part F, P3): a fifth source for the texture .3 forms with Dref (`texl.3.c`, `texb.3.c`, `texg.3.c`): rs3 + 1 = rs1+3, checked like the others (`src5`: TEX unit, the uop's sub[4] and TEX op bit 2).

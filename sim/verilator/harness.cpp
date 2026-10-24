@@ -374,14 +374,14 @@ int scene_main()
 	std::fclose(f);
 #ifdef TEX
 	expect("CAPS[8] (bilinear)", (host_read(GHCI_CAPS) >> 8) & 1, 1);
-	expect("CAPS[26] (mip linear, border, depth, compare)",
+	expect("CAPS[26] (the texture unit of GHCI section 8.4)",
 	       (host_read(GHCI_CAPS) & GHCI_CAPS_TU_FULL) != 0, 1);
 	expect("CAPS2[27:24] (texture slots / 4)", (host_read(GHCI_CAPS2) >> 24) & 15, 4);
 #endif
 	host_write(GHCI_APERTURE_BASE, 0x20000);
 	host_write(GHCI_APERTURE_LIMIT, 0x60000);
 	host_write(GHCI_RING_BASE, ring);
-	host_write(GHCI_RING_SIZE, 10);
+	host_write(GHCI_RING_SIZE, 11);	/* 512 words */
 	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
 	host_write(GHCI_RING_WPTR, wp);
 	for (int i = 0; i < 200000 && host_read(GHCI_FENCE_LAST) != 1; i++)

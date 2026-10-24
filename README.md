@@ -62,7 +62,7 @@ Blocks
 | VF | Vertex Fetcher | Index and vertex fetch, attribute format conversion, instancing, and primitive assembly. |
 | SU | Shader Unit | Runs vertex, fragment and compute warps (see [Shader unit](#shader-unit)). |
 | RX | Rasterizer | Near-plane clipping, the viewport transform, an edge-function rasterizer, and quad traversal. |
-| TU | Texture Unit | A sampler with a small texture cache: 2D images with mipmaps; nearest, bilinear and trilinear filtering; repeat, mirrored repeat, clamp to edge and clamp to border (Vulkan's border colours); the sampler's LOD bias and min/max LOD clamp; RGBA8/BGRA8 and the depth formats D24 and D32F with depth compare (percentage-closer filtering); gather (with compare); size, level count and LOD queries. |
+| TU | Texture Unit | A sampler with a small texture cache: 2D, 2D array, 3D and cube images with mipmaps (cube edges seamless); nearest, bilinear and trilinear filtering (3D: in all three axes); repeat, mirrored repeat, clamp to edge and clamp to border (Vulkan's border colours); texel offsets and unnormalized coordinates; the sampler's LOD bias and min/max LOD clamp; RGBA8/BGRA8 and the depth formats D24 and D32F with depth compare (percentage-closer filtering); gather (with compare); size, layer count, level count and LOD queries. |
 | ROP | Buffer Writer | Depth and stencil test, blending, and buffer write-back in primitive order. |
 | SA | Systolic Array | A 32 × 32 matrix engine for LLM work, 0.8 TOPS per SU at 200 MHz. |
 | MC | Memory Controller | The internal memory bus (AMB, 32- or 64-byte lines): the arbiter, an address aperture, quiesce, and one AXI master (AXI4 512-bit to the MIG DDR3 on the KC705). |
