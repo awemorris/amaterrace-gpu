@@ -35,6 +35,7 @@ module atg_su #(
 	parameter PACKED = 0,	/* Packed fp16 arithmetic */
 	parameter SUBGROUP = 0,	/* shfl/vote/ballot */
 	parameter HAS_SA = 0,	/* SA attached (v1 0) */
+	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): texsz.s */
 	parameter LDS_BYTES = 4096,	/* Shared memory bytes */
 	parameter PT_ENTRIES = 64,	/* PT vertices */
 	parameter VARY_WORDS = 16,	/* Varying words per vertex */
@@ -399,7 +400,7 @@ module atg_su #(
 
 	atg_su_dec #(
 		.WARP_W(WARP_W), .UOP_W(UOP_W), .NREGS(NREGS), .PACKED(PACKED), .SUBGROUP(SUBGROUP),
-		.HAS_SA(HAS_SA)
+		.HAS_SA(HAS_SA), .MS4(MS4)
 	) dec (
 		.clk(clk), .rst_n(rst_n),
 		.d_valid(d_valid), .d_ready(d_ready), .d_warp(d_warp), .d_pc(d_pc), .d_instr(d_instr),

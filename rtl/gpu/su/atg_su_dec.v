@@ -28,7 +28,8 @@ module atg_su_dec #(
 	parameter NREGS = 32,	/* GPRs per thread: 32 or 64 (r0..r62 at most; 63 is rq) */
 	parameter PACKED = 0,	/* 16-bit packed arithmetic present (else those opcodes are ISA faults; packh/unpackh always present) */
 	parameter SUBGROUP = 0,	/* shfl/vote/ballot present (CAPS[24]) */
-	parameter HAS_SA = 0	/* rq/sactl/qstat/sastat/qtag usable (always 0 in v1) */
+	parameter HAS_SA = 0,	/* rq/sactl/qstat/sastat/qtag usable (always 0 in v1) */
+	parameter MS4 = 0	/* texsz.s present (CAPS[29]) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -118,7 +119,9 @@ module atg_su_dec #(
 	wire dst_bad = wrd && (rd >= 7'd64 ||
 		(rd == 7'd63 ? (HAS_SA == 0 || cls != ATG_CLS_A || tex) :
 		({24'd0, rd_end} > NREGS || rd_end > 8'd63)));
-	wire ill = w0[1:0] != 2'b11 || !def || (need_pk && PACKED == 0) ||
+	/* texsz.s (texsz with op[6] and op[3]) needs MS4. */
+	wire need_ms = unit == ATG_UNIT_TEX && op[1:0] == 2'd3 && op[6] && op[3];
+	wire ill = w0[1:0] != 2'b11 || !def || (need_pk && PACKED == 0) || (need_ms && MS4 == 0) ||
 		(need_sg && SUBGROUP == 0) || (need_sa && HAS_SA == 0) ||
 		(use1 && src_bad(rs1)) || (use2 && src_bad(rs2)) || (use3 && src_bad(rs3)) ||
 		pair_bad || cmp_bad || dst_bad;
