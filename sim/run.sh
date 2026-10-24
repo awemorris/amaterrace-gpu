@@ -2,12 +2,35 @@
 # Runs the iverilog unit testbenches: sim/tb/NAME_tb.v with all of rtl/ and
 # sim/models/.  A testbench prints "PASS NAME" at its end and "FAIL ..." on
 # any mismatch; the run passes when PASS is printed and FAIL is not.
-#   sim/run.sh [NAME...]     (no NAME: every testbench)
+#   sim/run.sh [NAME[:+PLUSARG...]...]   (no NAME: every testbench)
+#   sim/run.sh -q                        (the short run, below)
+# NAME:+quick:+shape=kc705 passes +quick and +shape=kc705 to the testbench
+# (its log is NAME.quick.log).  Each result line ends with the run's seconds.
 # Output (the vvp binary, the log) goes to build/sim/ (not in git).
 # A testbench that needs files outside rtl/ (a board top) names them in a
 # comment line " * sim-sources: FILE..." (paths from the repository root).
 # SEED=n is passed to the testbench as +seed=n.  Timeout per run: 300 s
 # (SIM_TIMEOUT=s to change it).
+#
+# Every testbench (make sim) takes about 17 minutes, one after the other
+# (2026-10-24, a 64-thread Linux host: atg_su 206 s, atg_top_shade 189,
+# atg_top_cs 138, atg_top_tex 136, atg_top_raster 85, atg_dc_tgen 56,
+# atg_top_fw 44, atg_top 30, atg_kc705_raster 25, the other 71 about 105
+# together); atg_su needs SIM_TIMEOUT above 300 on a slower or busy host.
+#
+# The short run (-q, make sim-quick) touches every block in about 6 minutes
+# (345 s on the same host): every testbench except the $LONG ones, and
+# those of them that $QUICK lists, shortened:
+#   atg_su +quick              NPHYS 8 and 32 and the no-SUBGROUP SU, no frand
+#                              (58 s)
+#   atg_top_tex +shape=kc705   one shape: VF, SU, RX, TU and ROP through the
+#                              ring (71 s)
+#   atg_top_cs +shape=zybo     one shape: compute through the ring (50 s)
+#   atg_top_fw +shape=kc705    one shape: the CP firmware (19 s)
+#   atg_dc_tgen +quick         the timing on a 64x16 mode instead of 640x480
+#                              and 720p (1 s)
+# atg_top_raster and atg_top_shade are left out: atg_top_tex runs the warp
+# path through the same blocks and the RX/ROP unit testbenches the rest.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 root=$(cd "$(dirname -- "$0")/.." && pwd)
@@ -15,14 +38,30 @@ cd "$root" || exit 1
 out=$root/build/sim
 mkdir -p "$out"
 command -v iverilog >/dev/null || { echo "sim: no iverilog" >&2; exit 1; }
-if [ $# -eq 0 ]; then
-	set -- $(ls sim/tb/*_tb.v | sed 's|.*/||; s|_tb\.v$||')
+all=$(ls sim/tb/*_tb.v | sed 's|.*/||; s|_tb\.v$||')
+LONG="atg_su atg_top_shade atg_top_cs atg_top_tex atg_top_raster atg_dc_tgen atg_top_fw"
+QUICK="atg_su:+quick atg_top_tex:+shape=kc705 atg_top_cs:+shape=zybo atg_top_fw:+shape=kc705
+	atg_dc_tgen:+quick"
+if [ "${1:-}" = -q ]; then
+	set -- $(for n in $all; do
+		case " $LONG " in *" $n "*) ;; *) echo "$n" ;; esac
+	done) $QUICK
+elif [ $# -eq 0 ]; then
+	set -- $all
 fi
 rtl=$(find rtl sim/models -name '*.v' | sort)
 fail=0
-for name in "$@"; do
+for ent in "$@"; do
+	name=${ent%%:*}
+	args=
+	log=$out/$name.log
+	if [ "$name" != "$ent" ]; then
+		args=$(echo "${ent#*:}" | tr ':' ' ')
+		log=$out/$name.quick.log
+	fi
 	tb=sim/tb/${name}_tb.v
 	[ -f "$tb" ] || { echo "sim: no $tb" >&2; fail=1; continue; }
+	t0=$(date +%s)
 	extra=$(sed -n 's/^ \* sim-sources: //p' "$tb")
 	if ! iverilog -g2005 -Wall -Wno-timescale -Iinclude -Isim/tb -s "${name}_tb" \
 		-o "$out/$name.vvp" "$tb" $rtl $extra 2>"$out/$name.build"; then
@@ -37,12 +76,15 @@ for name in "$@"; do
 		fail=1
 		continue
 	fi
-	timeout "${SIM_TIMEOUT:-300}" vvp -n "$out/$name.vvp" +seed="${SEED:-1}" >"$out/$name.log" 2>&1
-	if grep -q "^PASS $name\$" "$out/$name.log" && ! grep -q 'FAIL\|ERROR' "$out/$name.log"; then
-		echo "PASS $name"
+	# $args is split on purpose: one word per plusarg.
+	timeout "${SIM_TIMEOUT:-300}" vvp -n "$out/$name.vvp" +seed="${SEED:-1}" $args \
+		>"$log" 2>&1
+	t=$(($(date +%s) - t0))
+	if grep -q "^PASS $name\$" "$log" && ! grep -q 'FAIL\|ERROR' "$log"; then
+		echo "PASS $name${args:+ $args} (${t} s)"
 	else
-		grep 'FAIL\|ERROR' "$out/$name.log" | head -20
-		echo "FAIL $name (log $out/$name.log)"
+		grep 'FAIL\|ERROR' "$log" | head -20
+		echo "FAIL $name${args:+ $args} (${t} s, log $log)"
 		fail=1
 	fi
 done
