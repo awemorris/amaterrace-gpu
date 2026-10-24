@@ -874,6 +874,55 @@ def depth_pass(func, frag, stored, f32):
     return {1: a < b, 2: a == b, 3: a <= b, 4: a > b, 5: a != b, 6: a >= b}[func]
 
 
+def stencil_op(op, s, ref):
+    return [s, 0, ref, min(s + 1, 255), max(s - 1, 0), ~s & 255, (s + 1) & 255,
+            (s - 1) & 255][op]
+
+
+def dtest(depth, sf, sb, sops, bmin, bmax, cov, front, zf, stored):
+    """atg_rop_dtest (spec atg_rop_dtest §4): one (lane, sample) entry.
+    Returns (pass, wword, wbe)."""
+    import fmtmodel as F
+    fb = (depth >> 5) & 7
+    d24, d32, d16 = fb == 1, fb == 2, fb == 4
+    if not (d24 or d32 or d16):
+        return cov, 0, 0
+    if d32:
+        za = stored
+    elif d24:
+        za = F.unorm_f32(stored & 0xFFFFFF, 24)
+    else:
+        za = F.unorm_f32(stored & 0xFFFF, 16)
+    b_ok = not depth >> 9 & 1 or (fle(bmin, za) and fle(za, bmax))
+    func = (depth >> 2) & 7
+    zu24, zu16 = f2u24(zf), F.f32_unorm(zf, 16)
+    if d32:
+        d_cmp = depth_pass(func, zf, stored, True)
+    elif d24:
+        d_cmp = depth_pass(func, zu24, stored & 0xFFFFFF, False)
+    else:
+        d_cmp = depth_pass(func, zu16, stored & 0xFFFF, False)
+    d_ok = not depth & 1 or d_cmp
+    ss = sf if front else sb
+    so = sops & 0x1FF if front else (sops >> 16) & 0x1FF
+    s_on = depth >> 8 & 1 and d24
+    s_a = (stored >> 24) & 255
+    ref, cm, wm, cop = ss & 255, (ss >> 8) & 255, (ss >> 16) & 255, (ss >> 24) & 7
+    s_cmp = depth_pass(cop, ref & cm, s_a & cm, False)
+    op = (so & 7) if not s_cmp else ((so >> 3) & 7) if d_ok else ((so >> 6) & 7)
+    s_wr = (s_a & ~wm & 255) | (stencil_op(op, s_a, ref) & wm)
+    s_ok = not s_on or s_cmp
+    live = cov and b_ok
+    ps = live and s_ok and d_ok
+    d_wr = ps and depth >> 1 & 1
+    s_ch = live and s_on and s_wr != s_a
+    if d32:
+        return ps, zf, 15 if d_wr else 0
+    if d24:
+        return ps, s_wr << 24 | zu24, (8 if s_ch else 0) | (7 if d_wr else 0)
+    return ps, zu16, 3 if d_wr else 0
+
+
 def unpack_px(fmt, p):
     if fmt == 0:
         return [(p >> 16) & 255, (p >> 8) & 255, p & 255, p >> 24]

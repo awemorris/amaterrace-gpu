@@ -54,7 +54,7 @@ module atg_su_exp_tb;
 	reg fl_pw_we = 1'b0;
 	reg [11:0] fl_pw_addr = 0;
 	reg [31:0] fl_pw_data = 0;
-	wire [147:0] ex_ms;
+	wire [148:0] ex_ms;
 	wire x_ready, ex_valid, ex_last, xr_valid;
 	wire [15:0] ex_seq;
 	wire [31:0] ex_xy;

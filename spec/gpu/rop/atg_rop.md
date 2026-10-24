@@ -39,7 +39,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ex_color` | in | 512 | Colour. |
 | `ex_depth` | in | 128 | Depth. |
 | `ex_last` | in | 1 | Last quad of the warp. |
-| `ex_ms` | in | 148 | Multisampling: {d_s, zexp, smask} of the quad (atg_su_exp). |
+| `ex_ms` | in | 149 | {front, d_s, zexp, smask} of the quad (atg_su_exp; front with CAPS[30], to atg_rop_ds through atg_rop_ms). |
 | `ex_next` | out | 16 | The next sequence number to retire. |
 | **Direct fragments to the ROP (no SU: DEBUG_COLOR)** | | | |
 | `dx_valid` | in | 1 | A quad. |

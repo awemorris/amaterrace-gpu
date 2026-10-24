@@ -580,7 +580,7 @@ module atg_top #(
 	wire [31:0] ex_xy;
 	wire [3:0] ex_mask;
 	wire [511:0] ex_color;
-	wire [147:0] ex_ms;
+	wire [148:0] ex_ms;
 	wire [127:0] ex_depth;
 	/* SU 0 ↔ SA. */
 	wire sa_push_valid, sa_push_ready, sa_pop_valid, sa_pop_ready, sa_ctl_valid;
@@ -810,7 +810,7 @@ module atg_top #(
 		wire [15:0] s_tx_tag, s_ex_seq;
 		wire [511:0] s_ex_color;
 		wire [127:0] s_ex_depth;
-		wire [147:0] s_ex_ms;
+		wire [148:0] s_ex_ms;
 		wire [DW-1:0] s_sa_push_data;
 		wire g0 = k == 0;
 
@@ -965,7 +965,7 @@ module atg_top #(
 		assign ex_color = 512'd0;
 		assign ex_depth = 128'd0;
 		assign ex_last = 1'b0;
-		assign ex_ms = 148'd0;
+		assign ex_ms = 149'd0;
 		assign sa_push_valid = 1'b0;
 		assign sa_push_data = {DW{1'b0}};
 		assign sa_pop_ready = 1'b0;

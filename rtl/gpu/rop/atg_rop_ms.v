@@ -26,6 +26,12 @@
  * Alpha to one sets COLOR0's alpha to 1.0 after alpha to coverage.  Neither
  * applies to the direct path (i_dbg: DEBUG_COLOR later).  A quad whose
  * smask is 0 is dropped.  States: IDLE → (four samples: Z →) OUT → IDLE.
+ * CAPS[30]: with DEPTH_CLAMP[1] (0x059, Vulkan's depth clipping in the
+ * RX) z + d_s is not clamped to [0, 1]; with DEPTH_CLAMP[0] every
+ * sample's depth (exported or not) is clamped to [min(n, f), max(n, f)],
+ * n = VIEWPORT z offset (0x055), f = n + z scale (0x054; one fadd when
+ * either is written, while the ROP is idle), a NaN to the minimum.  i_ms
+ * [148] is the facing, passed on as o_front.
  */
 
 `timescale 1ns / 1ps
@@ -46,7 +52,7 @@ module atg_rop_ms (
 	input wire [511:0] i_color,
 	input wire [127:0] i_depth,
 	input wire i_dbg,
-	input wire [147:0] i_ms,
+	input wire [148:0] i_ms,	/* {front, d_s, zexp, smask} */
 	/* To atg_rop_ds */
 	output reg o_valid,
 	input wire o_ready,
@@ -55,22 +61,66 @@ module atg_rop_ms (
 	output reg [511:0] o_color,
 	output reg [511:0] o_sdepth,
 	output reg o_dbg,
+	output reg o_front,
 	output wire busy
 );
 	`include "ghci_regs.vh"
 	localparam [31:0] ONE = 32'h3F800000;
 
 	reg ms4, a2c, a2one;
+	reg [1:0] dc;	/* DEPTH_CLAMP */
+	reg [31:0] vzs, vzo, vzf;	/* VIEWPORT z scale, z offset; f = z offset + z scale */
+	reg [3:0] zt;	/* the fadd's issues of f, by age */
+	wire vz_we = st_we && (st_idx == GHCI_S_VIEWPORT + 9'd4 || st_idx == GHCI_S_VIEWPORT + 9'd5);
 	always @(posedge clk)
 		if (!rst_n) begin
 			ms4 <= 1'b0;
 			a2c <= 1'b0;
 			a2one <= 1'b0;
-		end else if (st_we && st_idx == GHCI_S_MS_CTRL) begin
-			ms4 <= st_wdata[3:0] == 4'd2;
-			a2c <= st_wdata[8];
-			a2one <= st_wdata[9];
+			dc <= 2'd0;
+			vzs <= 32'd0;
+			vzo <= 32'd0;
+			zt <= 4'd0;
+		end else begin
+			zt <= {zt[2:0], zf_go};
+			if (st_we && st_idx == GHCI_S_MS_CTRL) begin
+				ms4 <= st_wdata[3:0] == 4'd2;
+				a2c <= st_wdata[8];
+				a2one <= st_wdata[9];
+			end
+			if (st_we && st_idx == GHCI_S_DEPTH_CLAMP)
+				dc <= st_wdata[1:0];
+			if (st_we && st_idx == GHCI_S_VIEWPORT + 9'd4)
+				vzs <= st_wdata;
+			if (st_we && st_idx == GHCI_S_VIEWPORT + 9'd5)
+				vzo <= st_wdata;
+			if (zt[3])
+				vzf <= fa_r;
 		end
+	/* f is added the cycle after a write of either word */
+	reg zf_go;
+	always @(posedge clk)
+		zf_go <= rst_n && vz_we;
+
+	/* a <= b (fp32 order, -0 = +0); 0 with a NaN */
+	function fle;
+		input [31:0] a, b;
+		reg [32:0] ka, kb;
+		begin
+			ka = a[31] ? 33'd0 - {2'd0, a[30:0]} : {2'd0, a[30:0]};
+			kb = b[31] ? 33'd0 - {2'd0, b[30:0]} : {2'd0, b[30:0]};
+			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
+				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) && $signed(ka) <= $signed(kb);
+		end
+	endfunction
+	wire [31:0] zmin = fle(vzo, vzf) ? vzo : vzf;
+	wire [31:0] zmax = fle(vzo, vzf) ? vzf : vzo;
+	/* depth clamp: NaN to zmin */
+	function [31:0] zclamp;
+		input [31:0] x, lo, hi;
+		zclamp = (x[30:23] == 8'hFF && x[22:0] != 23'd0) || fle(x, lo) ? lo :
+			fle(hi, x) ? hi : x;
+	endfunction
 
 	/* Alpha to coverage of one lane (fp32 alpha). */
 	function [3:0] a2c_mask;
@@ -120,11 +170,22 @@ module atg_rop_ms (
 	wire [3:0] co = c[3:0] - 4'd4;	/* the result arriving */
 	wire fa_o;
 	wire [31:0] fa_r;
-	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid(st == S_Z && c < 5'd16),
-		.i_a(z[32 * ci[3:2] +: 32]), .i_b(ds[32 * ci[1:0] +: 32]), .i_sub(1'b0),
-		.o_valid(fa_o), .o_r(fa_r));
-	wire [31:0] zcl = fa_r[31] || (fa_r[30:23] == 8'hFF && fa_r[22:0] != 23'd0) ? 32'd0 :
-		fa_r > ONE ? ONE : fa_r;
+	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid((st == S_Z && c < 5'd16) || zf_go),
+		.i_a(zf_go ? vzo : z[32 * ci[3:2] +: 32]), .i_b(zf_go ? vzs : ds[32 * ci[1:0] +: 32]),
+		.i_sub(1'b0), .o_valid(fa_o), .o_r(fa_r));
+	/* earlier: clamp01; DEPTH_CLAMP[1]: as added */
+	wire [31:0] zcl = !dc[1] ? (fa_r[31] || (fa_r[30:23] == 8'hFF && fa_r[22:0] != 23'd0) ? 32'd0 :
+		fa_r > ONE ? ONE : fa_r) : fa_r;
+	wire [31:0] zs4 = zexp[co[3:2]] ? z[32 * co[3:2] +: 32] : zcl;
+	wire [31:0] zs4c = dc[0] ? zclamp(zs4, zmin, zmax) : zs4;
+	wire [127:0] d1c;
+	genvar g;
+	generate
+	for (g = 0; g < 4; g = g + 1) begin : g_d1
+		assign d1c[32 * g +: 32] = dc[0] ? zclamp(i_depth[32 * g +: 32], zmin, zmax) :
+			i_depth[32 * g +: 32];
+	end
+	endgenerate
 
 	assign i_ready = st == S_IDLE;
 	assign busy = st != S_IDLE;
@@ -140,6 +201,7 @@ module atg_rop_ms (
 				o_xy <= i_xy;
 				o_smask <= sm;
 				o_dbg <= i_dbg;
+				o_front <= i_ms[148];
 				o_color <= i_color;
 				if (a2one && !i_dbg)
 					for (l = 0; l < 4; l = l + 1)
@@ -153,7 +215,7 @@ module atg_rop_ms (
 					st <= S_Z;
 				else begin
 					for (l = 0; l < 4; l = l + 1)
-						o_sdepth[128 * l +: 32] <= i_depth[32 * l +: 32];
+						o_sdepth[128 * l +: 32] <= d1c[32 * l +: 32];
 					o_valid <= 1'b1;
 					st <= S_OUT;
 				end
@@ -161,7 +223,7 @@ module atg_rop_ms (
 		S_Z: begin
 			c <= c + 5'd1;
 			if (c >= 5'd4)
-				o_sdepth[32 * co +: 32] <= zexp[co[3:2]] ? z[32 * co[3:2] +: 32] : zcl;
+				o_sdepth[32 * co +: 32] <= zs4c;
 			if (c == 5'd19) begin
 				o_valid <= 1'b1;
 				st <= S_OUT;

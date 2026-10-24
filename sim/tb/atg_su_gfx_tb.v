@@ -101,7 +101,7 @@ module atg_su_gfx_chk #(
 	wire [3:0] ex_mask;
 	wire [511:0] ex_color;
 	wire [127:0] ex_depth;
-	wire [147:0] ex_ms;
+	wire [148:0] ex_ms;
 	reg [31:0] msexp [0:32];
 	wire i_req_valid, i_req_ready, i_req_write, i_rsp_valid, i_rsp_write, i_rsp_error;
 	wire [26:0] i_req_line;

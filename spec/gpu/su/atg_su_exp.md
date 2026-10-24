@@ -60,7 +60,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fl_pw_we` | in | 1 | The RX's primitive table write (snooped). |
 | `fl_pw_addr` | in | 12 | Its address: 0xFF8-0xFFB are the samples' depth slopes d_0..d_3 of the warp. |
 | `fl_pw_data` | in | 32 | Its data. |
-| `ex_ms` | out | 148 | With the quad: {d_s[127:0] (sample s at 32 s; 0 when the warp has none), zexp[3:0] (the lanes that exported DEPTH, of ex_mask's), smask[15:0] (lane l's sample mask at 4 l)}. |
+| `ex_ms` | out | 149 | With the quad: {front (CAPS[30]: the warp's facing, fl_info[48] at fl_go), d_s[127:0] (sample s at 32 s; 0 when the warp has none), zexp[3:0] (the lanes that exported DEPTH, of ex_mask's), smask[15:0] (lane l's sample mask at 4 l)}. |
 | **Slot release (atg_su_sched)** | | | |
 | `xr_valid` | out | 1 | A warp's exports are drained (one-cycle pulse). |
 | `xr_warp` | out | WARP_W | Warp. |
