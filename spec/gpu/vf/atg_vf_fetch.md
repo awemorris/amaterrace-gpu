@@ -39,6 +39,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `af_attr` | out | 4 | Attribute k. |
 | `af_lane` | out | 5 | Lane. |
 | `af_raw` | out | 128 | Raw bytes (up to 16), byte 0 in [7:0]. |
+| `af_oob` | out | 1 | (CAPS[30]) The attribute is outside its ATTR_LIMIT; af_raw is unspecified. |
 | `af_last` | out | 1 | Last attribute of the last lane of the warp. |
 | `busy` | out | 1 | Work outstanding. |
 | **AMB client port (design §4.1)** | | | |
@@ -60,7 +61,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 ## 4. Behaviour
 
 - Attribute k is **enabled when its whole ATTR_DST[k] word is not 0** (ATTR_DST[7:6] holds count − 1, so "0 components" cannot be encoded; a word of 0 means "not used", and a 1-component attribute cannot go to r0).  For each vertex from vb, the enabled attributes in ascending k, one at a time.
-- element = index for a per-vertex attribute; for a per-instance one (DESC[20]) Vulkan's rule: FIRST_INSTANCE + (inst − FIRST_INSTANCE) / divisor, and FIRST_INSTANCE for divisor 0 (DESC[31:24]; divisor 1 needs no division; others use a sequential divider, 32 cycles, with a one-entry memo).  addr = ATTR_BASE + stride × element (mod 2^32).  The size comes from the format (4, 8, 12 or 16 bytes; the reserved formats read 4); any byte alignment.
+- element = index for a per-vertex attribute; for a per-instance one (DESC[20]) Vulkan's rule: FIRST_INSTANCE + (inst − FIRST_INSTANCE) / divisor, and FIRST_INSTANCE for divisor 0 (DESC[31:24]; divisor 1 needs no division; others use a sequential divider, 32 cycles, with a one-entry memo).  addr = ATTR_BASE + stride × element (mod 2^32).  The size comes from the format (4, 8, 12 or 16 bytes; the reserved formats read 4); with CAPS[30] and ATTR_DST[k][31:24] ≠ 0 it is the VkFormat's bytes (`atg_fmt_info`: 1, 2, 4, 8, 12 or 16; a value without an entry reads 4); any byte alignment.
+- **ATTR_LIMIT[k]** (0x1D0 + k, CAPS[30]): with [31] = 1, an attribute whose bytes pass the limit (offset + size > [30:0], where offset = stride × element, computed in 33 bits so it cannot wrap) is not read: its af comes with `af_oob` = 1 and atg_vf_conv writes (0, 0, 0, 1).  [31] = 0: no limit (as before).  The robust buffer access of Vulkan's (0, 0, 0, 1) form.
 - Two line entries (fully associative) hold the last lines read; an attribute that crosses a line uses both (two reads at most, one request at a time, the tag names the entry).  The entries are dropped after the warp's last attribute (the vertex buffers do not change under a draw).  An error response reads as 0 (the MC raises the fault).
 - af_raw byte 0 is the byte at addr; bytes beyond the format's size are unspecified.  Order out: lane-major (all attributes of lane 0, then lane 1) so conv can write as data comes; af_last on the last attribute of the vertex with vb_last.  A warp whose vertices have no enabled attribute still sends one af (attr 0, which is then disabled, af_last) so that atg_vf_conv pulses conv_done.
 
@@ -84,6 +86,9 @@ About 6 cycles per attribute when its lines are in the entries; a miss adds a me
 
 - `PASS atg_vf_fetch.addr` — strides, offsets, per-instance with divisors (0, 1, 2, 3, 7, 255, FIRST_INSTANCE above 0), every format, disabled attributes and a warp without any
 - `PASS atg_vf_fetch.cross` — attributes that cross a line (any byte alignment)
+- `PASS atg_vf_fetch.limit` — ATTR_LIMIT: attributes just inside and just outside, per vertex and per instance (CAPS[30])
+- `PASS atg_vf_fetch.limit0` — [31] = 1 with 0 bytes: nothing is read
+- `PASS atg_vf_fetch.size12` — R32G32B32 (12 bytes) by VkFormat
 - `PASS atg_vf_fetch` at the end.
 
 ## 9. References
@@ -92,4 +97,4 @@ design §2.3 (ATTR_*), §3.4.3.
 
 ## 10. Status
 
-Implemented in WS288 p009 part A (branch p1-vf).  Readings of the text above (Q1 to confirm): the enable rule is "ATTR_DST[k] ≠ 0" (§4); the per-instance element follows Vulkan (relative to FIRST_INSTANCE), where the earlier text said inst / divisor; the dummy af for a warp without attributes.  Difference from §6's target: two reads in flight, not four.  Ports and parameters unchanged.
+Implemented in WS288 p009 part A (branch p1-vf).  Readings of the text above (Q1 to confirm): the enable rule is "ATTR_DST[k] ≠ 0" (§4); the per-instance element follows Vulkan (relative to FIRST_INSTANCE), where the earlier text said inst / divisor; the dummy af for a warp without attributes.  Difference from §6's target: two reads in flight, not four.  Ports and parameters unchanged.  2026-10-25 (CAPS[30], spec first, the RTL follows): the size from the VkFormat and ATTR_LIMIT (§4); one new port `af_oob` (out, 1: the attribute is outside its limit, af_raw unspecified), 31 ports, 20 counting each AMB and HCR port as one group.  MUT_ATTR_LIMIT_GE (the limit compare as ≥) must make the TB fail.

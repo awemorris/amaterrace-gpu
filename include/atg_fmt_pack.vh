@@ -8,7 +8,7 @@
 /*
  * atg_fmt_pack.vh: four 32-bit components to a pixel of a colour
  * attachment format, included inside a module after atg_fmt_info.vh.
- * tools/fmtmodel.py (pack) is the reference; spec/common/atg_fmt.md.
+ * tools/fmtmodel.py (pack) is the reference; spec/gpu/fmt/atg_fmt.md.
  *   atg_fmt_pack(c, fmt, wm)  {keep[127:0], raw[127:0]}: c = {c3, c2, c1,
  *       c0}, wm the write mask of R, G, B, A.  raw is the pixel as a
  *       little-endian integer, keep has a 1 for every bit not written (the

@@ -9,7 +9,7 @@
  * atg_fmt_info.vh: the format table of the VF, the TU and the ROP, by
  * VkFormat value (docs/ghci.md section 8.5), included inside a module
  * before atg_fmt_unpack.vh and atg_fmt_pack.vh.  tools/fmtmodel.py
- * (info_word, features) is the reference; spec/common/atg_fmt.md.
+ * (info_word, features) is the reference; spec/gpu/fmt/atg_fmt.md.
  *   atg_fmt_info(fmt)  [0] valid, [5:1] bytes of a texel (or of a
  *       compressed block), [8:6] components, [11:9] type (ATG_FMT_*),
  *       [12] depth, [13] stencil in [31:24] (D24_UNORM_S8_UINT), [14]

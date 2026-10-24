@@ -43,7 +43,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **Primitives to the RX** | | | |
 | `prim_valid` | out | 1 | A primitive (point, line or triangle). |
 | `prim_ready` | in | 1 | Taken. |
-| `prim_vtx` | out | 24 | Three PT entries, v0 in [7:0] (provoking vertex first per PROVOKING). |
+| `prim_vtx` | out | 26 | Three PT entries, v0 in [7:0] (provoking vertex first per PROVOKING); [25:24] the kind: 0 point, 1 line, 2 triangle (CAPS[30]; the RX no longer reads TOPOLOGY). |
 | `prim_free` | out | 3 | Vertex i is used for the last time (RX frees its PT entry after this primitive). |
 | `prim_last` | out | 1 | Last primitive of the draw (a draw with no primitive sends none, atg_vf_asm §7). |
 | **AMB client port (design §4.1)** | | | |

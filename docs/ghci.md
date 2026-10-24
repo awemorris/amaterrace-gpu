@@ -219,7 +219,7 @@ CAPS2 (0x024):
 | [7:0] | Number of rings (queues) |
 | [15:8] | Shared memory per workgroup, in KiB |
 | [23:16] | Constant words / 16 |
-| [27:24] | Texture slots / 4 |
+| [27:24] | Texture slots / 4 (with CAPS[30]: per shader stage, section 8.5) |
 | [31:28] | Vertex attributes / 4 |
 
 ### 3.3 STATUS
@@ -439,7 +439,7 @@ GHCI_FRAME (gpu-op 0x10105, draft;
 | Op | Name | Payload | Meaning |
 | --- | --- | --- | --- |
 | 0 | NOP | n (skipped) | |
-| 1 | SET_REG | (index, value) x n/2 | STATE[index] = value; index >= 512 or odd n: fault 3 |
+| 1 | SET_REG | (index, value) x n/2 | STATE[index] = value; index >= 512 (with CAPS[30]: >= 0x300) or odd n: fault 3 |
 | 2 | BLIT | 0 | Starts the blitter on the state; flags[0]: wait for its end |
 | 3 | DRAW | 0 | Starts the vertex fetcher; invalidates the data and texture caches |
 | 4 | DISPATCH | 3: gx, gy, gz | A compute dispatch; invalidates no cache (send INVALIDATE first when the program reads rewritten memory) |
@@ -467,7 +467,9 @@ have is a fault of kind 2.
 ### 8.1 Mechanism
 
 - STATE[0..511] holds the fixed-function state that the commands use:
-  indices 0x000-0x1DF are standard, 0x1E0-0x1FF vendor-defined.
+  indices 0x000-0x1DF are standard, 0x1E0-0x1FF vendor-defined.  With
+  CAPS[30] (draft) STATE also has 0x200-0x2FF, the vertex stage's
+  texture slots (section 8.5), and the alias reaches 0x1BFC.
 - Commands write it in the ring (SET_REG). The host reaches it through the
   alias at 0x1000 + 4 x index, in IDLE and HALTED only.
 - A host write in another state, or to a range that belongs to a busy
@@ -720,7 +722,7 @@ vendor's (Amaterrace: reads to the nearest fp32, writes to UNORM and
 | 0x058 | CULL | [1:0] 1 front, 2 back, 3 both; [2] front = counter-clockwise |
 | 0x059 | DEPTH_CLAMP | (CAPS[30]) [0] depth clamp: no depth clipping, the depth clamped to the viewport's depth range; [1] DEPTH_CLIP: Vulkan's depth clipping (the near and far planes) and an unclamped r3 (0: the earlier behaviour, the near plane only and r3 clamped to [0, 1]) |
 | 0x05A | RAST_MODE | (CAPS[30]) [0] depth bias; [2:1] polygon mode, 0 fill (others read as fill); [3] fragments only inside the viewport's rectangle; [5:4] the depth format the bias is for: 0 none (no bias), 1 D16, 2 D24, 3 D32_SFLOAT; [6] rasterizer discard: no primitive is rasterized |
-| 0x05B | VARYING_COUNT | Varying words per vertex for the fragment warps |
+| 0x05B | VARYING_COUNT | Varying words per vertex for the fragment warps (with CAPS[30] up to 64: Vulkan's 64 output and input components) |
 | 0x05C | DEBUG_COLOR | RGBA8 (R in [7:0]) of the direct path without shaders |
 | 0x05D | PROVOKING | [0] 0 first, 1 last vertex |
 | 0x05E, 0x05F | MS_CTRL, SAMPLE_KILL | Multisampling (section 12.11) |
@@ -822,7 +824,18 @@ integer (s, 0, 0, 1)), [20:9] the component swizzle of R, G, B and A, 3
 bits each (VkComponentSwizzle 0-6, applied last). Texels are 1, 2, 4, 8
 or 16 bytes; only 4-byte texels may be tiled (TEX_IMAGE[8] reads as
 linear otherwise). Integer formats are sampled nearest and return integer
-bits; the border colours give integer 0 and 1 for them. sRGB texels are
+bits; the border colours give integer 0 and 1 for them.  The depth
+formats are filtered linearly with and without compare.  The ETC2 and
+EAC formats (VkFormat 147-156, when the FMT capability reports them) are
+4 x 4 blocks of 8 or 16 bytes, rows of ceil(width / 4) blocks, each
+level's plane of ceil(w / 4) x ceil(h / 4) blocks a multiple of 64 bytes,
+never tiled; their texels are decoded before filtering (sRGB ones then
+converted to linear).
+
+**Texture slots per stage** (with CAPS[30]): the texture instructions of
+a vertex program use the slots at STATE 0x200 + 16 x slot (the layout of
+section 8.4's slots at 0x090 + 16 x slot); fragment and compute programs
+use the slots at 0x090.  CAPS2[27:24] counts the slots of one stage. sRGB texels are
 converted before filtering, and the border colour of an sRGB format is
 linear. Gather selects the component after the swizzle. With texels of
 other than 4 bytes, TEX_BASE and each level's plane are multiples of 64

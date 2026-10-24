@@ -8,7 +8,7 @@
 /*
  * atg_fmt_unpack.vh: a texel of any format to four 32-bit components,
  * included inside a module after atg_srgb.vh and atg_fmt_info.vh.
- * tools/fmtmodel.py (unpack) is the reference; spec/common/atg_fmt.md.
+ * tools/fmtmodel.py (unpack) is the reference; spec/gpu/fmt/atg_fmt.md.
  *   atg_fmt_unpack(raw, fmt, stencil)  {is_int, c3, c2, c1, c0}: raw is
  *       the texel's bytes as a little-endian integer.  UNORM c / (2^b - 1)
  *       and SNORM max(c / (2^(b-1) - 1), -1) to the nearest fp32 (even),
