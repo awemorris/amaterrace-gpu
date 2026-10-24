@@ -752,7 +752,8 @@ VK_ERROR_OUT_OF_DEVICE_MEMORY.
 - Warp state: **PC** (an instruction index), **EXEC** (a 32-bit lane mask
   that the program manages with `exec.*`), and **KILLED** (sticky per lane,
   for fragment discard).
-- Lanes outside EXEC neither write registers nor have side effects. Killed
+- Lanes outside EXEC neither write registers nor have side effects
+  (except `exec.save`, `vote` and `ballot`, which write every lane). Killed
   lanes and fragment helper lanes have no side effects (`sw`, `atom`,
   `sts`, `exp`).
 - Branches are per warp; the hardware does not reconverge. The compiler
@@ -856,6 +857,15 @@ word1 (bits 63:32):
 - **`fence imm`:** imm[0] waits until the warp's stores and atomics are
   complete, imm[1] the same for shared memory, imm[2] (acquire)
   invalidates the data cache.
+- **Subgroup operations** (CAPS[24]):
+  - `shfl rd, rs1, rs2`: lane l reads rs1 of a source lane s: `idx` s =
+    rs2, `xor` and `bfly` s = l XOR rs2, `up` s = l - rs2, `down` s =
+    l + rs2 (rs2 unsigned, no wrap-around). When s is outside 0-31 or
+    outside EXEC, the lane gets its own rs1. Lanes in EXEC are written.
+  - `ballot rd, rs1`: the mask of the lanes in EXEC whose rs1 is not 0.
+  - `vote.any rd, rs1`: true when that mask is not 0; `vote.all`: true when
+    the mask equals EXEC (true for an empty EXEC).
+  - `vote` and `ballot` write the same value to every lane.
 - **Optional instructions:** the packed arithmetic (everything of custom-2
   except `packh` and `unpackh`) needs CAPS[28]; `shfl`, `vote` and
   `ballot` need CAPS[24]; `rq`, `qstat`, `sastat`, `qtag` and `sactl` need
