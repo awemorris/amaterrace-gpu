@@ -88,7 +88,14 @@
 #define GHCI_CAPS_TILE4X4 (1u << 11)
 #define GHCI_CAPS_STATE_VERSION(c) (((c) >> 12) & 0xFu)
 #define GHCI_CAPS_MMU (1u << 16)
+#define GHCI_CAPS_FIRMWARE (1u << 17)
+#define GHCI_CAPS_FW_RELOAD (1u << 18)
+#define GHCI_CAPS_NATIVE_ISA (1u << 19) /* ISA_ID differs from GSI1 */
 #define GHCI_CAPS_LINE_LOG2(c) (((c) >> 20) & 0xFu)
+#define GHCI_CAPS_SUBGROUP (1u << 24)
+#define GHCI_CAPS_SA (1u << 25)
+#define GHCI_CAPS_GRAPHICS (1u << 27)
+#define GHCI_CAPS_PACKED (1u << 28)
 
 /* CAPS2. */
 #define GHCI_CAPS2_QUEUES(c) ((c) & 0xFFu)
@@ -153,6 +160,7 @@
 #define GHCI_FAULT_AXI 5u
 #define GHCI_FAULT_KICK 6u
 #define GHCI_FAULT_LOCKED 7u
+#define GHCI_FAULT_ISA 8u
 
 /* DBG_STATUS. */
 #define GHCI_DBG_BUSY (1u << 0)

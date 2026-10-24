@@ -25,7 +25,7 @@ Contents
 9. [Fences and interrupts](#9-fences-and-interrupts)
 10. [Faults, watchdog, quiesce and reset](#10-faults-watchdog-quiesce-and-reset)
 11. [Memory model](#11-memory-model)
-12. [The shader ISA](#12-the-shader-isa)
+12. [The standard shader ISA (GSI1)](#12-the-standard-shader-isa-gsi1)
 13. [The display controller capability (DISP)](#13-the-display-controller-capability-disp)
 14. [Bring-up: the debug port and KICK](#14-bring-up-the-debug-port-and-kick)
 15. [Bindings](#15-bindings)
@@ -105,7 +105,7 @@ earlier work has completed.
 | Session protection (optional, the PROT capability) | Draft |
 | The command set | Draft: the packet envelope and the native micro-operations; the class 2 operations follow the Kei GPU command protocol |
 | The state register file | Draft: the mechanism and the blitter range. The other ranges follow the command set |
-| The shader ISA | Draft: GSI1 ([gsi1.md](gsi1.md)) |
+| The standard shader ISA (GSI1) | Draft (section 12) |
 
 ### 1.5 Related files
 
@@ -116,7 +116,8 @@ earlier work has completed.
 - [`include/ghci_packets.h`](../include/ghci_packets.h) and
   [`include/ghci_frame.h`](../include/ghci_frame.h) hold the packet formats
   of section 7.
-- [gsi1.md](gsi1.md) is the standard shader ISA.
+- `tools/gsi1asm.py`, `tools/gsi1model.py` and `tools/gsi1fp.py` are the
+  reference assembler, execution model and arithmetic of the shader ISA.
 
 2. Conventions
 --------------
@@ -149,7 +150,7 @@ earlier work has completed.
 | 0x004 | GHCI_VERSION | R | [31:16] major (1), [15:0] minor (0) |
 | 0x008 | VENDOR_ID | R | FourCC of the vendor |
 | 0x00C | DEVICE_ID | R | FourCC of the device |
-| 0x010 | ISA_ID | R | FourCC of the native shader ISA; 0 = no shader unit (section 12) |
+| 0x010 | ISA_ID | R | FourCC of the native shader ISA ("GSI1" when the GPU runs GSI1 natively); 0 = no shader unit (section 12) |
 | 0x014 | DEVICE_VERSION | R | The vendor's implementation version: [31:16] major, [15:0] minor |
 | 0x018 | EXTCAP | R | Byte offset of the first extended capability; 0 = none (section 4) |
 | 0x01C | GCLK_HZ | R | Core clock in Hz; the driver converts cycle counts with it |
@@ -199,7 +200,14 @@ CAPS (0x020):
 | [11] | Texture layout: 0 linear only, 1 also 4x4 tiles |
 | [15:12] | Version of the standard state layout (1) |
 | [16] | GPU MMU (MMU capability) |
+| [17] | The command processor has firmware: class 2 packets are decoded (section 7.2) |
+| [18] | The firmware can be reloaded (CPFW capability) |
+| [19] | The native ISA (ISA_ID) differs from GSI1 |
 | [23:20] | log2 of the memory line size in bytes (5 = 32, 6 = 64) |
+| [24] | Subgroup operations: `shfl`, `vote`, `ballot` (section 12.5) |
+| [25] | A systolic array (SA capability; reserved) |
+| [27] | Graphics: the vertex fetcher, the rasterizer and the render output are present |
+| [28] | Packed fp16/int16 arithmetic (section 12.5) |
 
 CAPS2 (0x024):
 
@@ -245,6 +253,7 @@ CAPS2 (0x024):
 | 5 | Memory error (AXI SLVERR or DECERR) |
 | 6 | KICK in a state that does not take it, or while the unit is busy |
 | 7 | A write to a register that is locked in the current state |
+| 8 | ISA fault: a shader instruction that GSI1 does not define or the GPU does not support (FAULT_ADDR = the PC; section 12.6) |
 
 Only the first fault since the last reset is recorded.
 
@@ -524,7 +533,7 @@ are not yet part of this draft.
 10. Faults, watchdog, quiesce and reset
 ---------------------------------------
 
-- **Faults.** A fault (section 3.4, kinds 1-7) sets STATUS.FAULT,
+- **Faults.** A fault (section 3.4, kinds 1-8) sets STATUS.FAULT,
   IRQ_STATUS.FAULT and FAULT_ADDR/INFO; the CP goes to FAULTED and
   quiesces. Blocks that are working stop at their next memory access.
 - **Recovery.** In version 1, recovery is for the whole device: the driver
@@ -706,19 +715,272 @@ When a protected session would exceed these limits, the gpu-op that needs
 the room (SESSION_OPEN, MEMORY or BUFFER_GRANT) fails with
 VK_ERROR_OUT_OF_DEVICE_MEMORY.
 
-12. The shader ISA
-------------------
+12. The standard shader ISA (GSI1)
+----------------------------------
 
-- GHCI defines one standard shader ISA, **GSI1** ([gsi1.md](gsi1.md),
-  FourCC "GSI1"). It is an ISA of its own whose encoding follows the
-  RISC-V formats where that fits, and takes in the operations common to
-  GPUs; it does not claim RISC-V compatibility.
-- Every GHCI GPU with a shader unit runs GSI1: natively in hardware, or by
-  the command processor translating it to the GPU's native ISA, invisibly
-  to the driver.
-- Native ISAs are optional and vendor-specific; ISA_ID names the GPU's.
-  A driver may also submit a program in the native ISA directly, bypassing
-  any translation; each program states the ISA it is in.
+### 12.1 Overview
+
+- GHCI defines one standard shader ISA, **GSI1** (FourCC "GSI1",
+  `0x47534931`, version 1). Every GHCI GPU with a shader unit accepts GSI1
+  programs: it runs them natively, or its command processor translates
+  them to the GPU's native ISA, invisibly to the driver.
+- A native ISA is optional and vendor-specific; ISA_ID names the GPU's
+  native ISA, and CAPS[19] says that it differs from GSI1. A driver may
+  submit a program in the native ISA directly, bypassing any translation;
+  each program states the ISA it is in (section 12.9).
+- GSI1 is an ISA of its own. The low 32 bits of each instruction follow
+  the field layout of the RISC-V 32-bit instruction formats, and the
+  instructions it shares with RISC-V keep their major opcodes,
+  funct3/funct7 values and mnemonics (The RISC-V Instruction Set Manual,
+  Volume I: Unprivileged ISA, version 20240411: RV32I, "M", "F", "Zfa",
+  "Zbb"). It does not claim RISC-V compatibility.
+- Optional parts, each reported in CAPS: packed fp16/int16 arithmetic
+  (CAPS[28]), subgroup operations (CAPS[24]), the systolic-array queue
+  (CAPS[25], reserved).
+- Reference implementation: `tools/gsi1asm.py` (the assembler and the
+  decode table), `tools/gsi1model.py` (the execution model) and
+  `tools/gsi1fp.py` (the arithmetic, bit for bit).
+
+### 12.2 Execution model
+
+- A **warp** is 32 lanes; the subgroup width is 32 on every
+  implementation. An implementation may execute a warp in groups of
+  physical lanes; results do not depend on that.
+- Each lane has general registers r0-r62 of 32 bits. A program declares
+  how many it uses, at most the implementation's limit (32 or 64). r0 is an
+  ordinary register.
+- Warp state: **PC** (an instruction index), **EXEC** (a 32-bit lane mask
+  that the program manages with `exec.*`), and **KILLED** (sticky per lane,
+  for fragment discard).
+- Lanes outside EXEC neither write registers nor have side effects. Killed
+  lanes and fragment helper lanes have no side effects (`sw`, `atom`,
+  `sts`, `exp`).
+- Branches are per warp; the hardware does not reconverge. The compiler
+  manages divergence with EXEC.
+- Instructions issue in order per warp. Results of long instructions
+  (memory, texture, transcendental, divide) may return out of order; the
+  hardware keeps register dependences, so a program never waits for a
+  value explicitly. `wait cm, ct, cx` waits until at most cm stores and
+  atomics, ct texture instructions and cx transcendental and divide
+  instructions of the warp are outstanding; `end` waits for all.
+- Booleans are all ones (true) and 0 (false). Every compare writes a
+  Boolean; instructions that read a Boolean take any non-zero value as
+  true.
+
+### 12.3 Operands
+
+Operand numbers have 7 bits:
+
+| Number | Operand |
+| --- | --- |
+| 0-62 | r0-r62 |
+| 63 | `rq`, the systolic array's queue (reserved; an ISA fault without a systolic array) |
+| 64-95 | c0-c31, the first 32 words of the constant bank (sources only) |
+| 96 | `zero` |
+| 97 | `one` (1.0) |
+| 98 | `onei` (1) |
+| 99 | `half` (0.5) |
+| 100 | `two` (2.0) |
+| 101 | `mone` (-1.0) |
+| 102 | `lane` (0-31) |
+| 103 | `warp` (the warp's number) |
+| 104 | `exec` (the EXEC mask) |
+| 105 | `killed` (the lane's KILLED bit, as a Boolean) |
+| 106-108 | `wgx` `wgy` `wgz` (workgroup ID) |
+| 109-111 | `lidx` `lidy` `lidz` (local ID) |
+| 112 | `lidn` (local index) |
+| 113 | `prim` (primitive) |
+| 114 | `front` (front facing, a Boolean) |
+| 115-117 | `nwgx` `nwgy` `nwgz` (workgroup counts) |
+| 118 | `oneh2` (packed 1.0h, 1.0h: `0x3C003C00`) |
+| 119 | `mask` (coverage; for compute and vertex warps, the initial EXEC) |
+| 120-122 | `qstat` `sastat` `qtag` (systolic array, reserved) |
+| 123-127 | reserved (read 0) |
+
+### 12.4 Instruction format
+
+Every instruction is 64 bits, little endian, at an 8-byte aligned address.
+The PC and branch offsets count instructions.
+
+```
+word0 (bits 31:0), the RISC-V 32-bit layouts:
+  R   [6:0] opcode [11:7] rd [14:12] funct3 [19:15] rs1 [24:20] rs2 [31:25] funct7
+  R4  [6:0] opcode [11:7] rd [14:12] rm/funct3 [19:15] rs1 [24:20] rs2
+      [26:25] fmt (00) [31:27] rs3
+  I   [6:0] opcode [11:7] rd [14:12] funct3 [19:15] rs1 [31:20] imm[11:0]
+  S   [6:0] opcode [11:7] imm[4:0] [14:12] funct3 [19:15] rs1 [24:20] rs2
+      [31:25] imm[11:5]
+  B   [6:0] opcode [7] imm[11] [11:8] imm[4:1] [14:12] funct3 [19:15] rs1
+      [24:20] rs2 [30:25] imm[10:5] [31] imm[12]      (imm[12:1]: instructions)
+  U   [6:0] opcode [11:7] rd [31:12] imm[31:12]
+
+word1 (bits 63:32):
+  [1:0] rd[6:5]  [3:2] rs1[6:5]  [5:4] rs2[6:5]  [7:6] rs3[6:5]
+  [8] n1 [9] a1 [10] n2 [11] a2 [12] n3 [13] a3   (float sources: negate, absolute)
+  [14] sat      (float results clamped to [0, 1])
+  [16:15] hsel  (packed: 00 both halves, 01 low only, 10 high only, 11 rs2 swapped)
+  [21:17] sub   (sub-operation)
+  [31:22] imm_hi (I/S/B: the offset is sext(imm12) + (sext(imm_hi) << 12))
+  U form only: [1:0] rd[6:5] [13:2] imm[11:0] (movi) [31:14] 0
+```
+
+- word0[1:0] is 11; other values fault. With word1 = 0, an instruction
+  uses r0-r31 only and reads like the RISC-V instruction.
+- Source modifiers: the absolute value is applied first, then the
+  negation. They apply to the float instructions (the FPU, transcendental
+  and packed ones; on packed operands, to both halves).
+- `movi rd, imm32` is `lui` with imm[11:0] in word1.
+- `nop` is custom-3 funct3 111, sub 0.
+
+### 12.5 Opcode map
+
+| Opcode | Instructions |
+| --- | --- |
+| 0110011 OP | `add sub sll slt sltu xor srl sra or and`; funct7 0000001: `mul mulh mulhsu mulhu div divu rem remu`; funct7 0000101: `min max minu maxu` (funct3 100, 110, 101, 111); funct7 0100000: `andn orn xnor` (funct3 111, 110, 100) besides `sub sra` |
+| 0010011 OP-IMM | `addi slti sltiu xori ori andi slli srli srai` |
+| 0110111 LUI | `lui`, `movi` |
+| 0000011 LOAD | funct3 010 `lw rd, imm(rs1)` (global); 110 `lwc rd, imm(rs1)` (constant bank, word index rs1 + imm) |
+| 0100011 STORE | funct3 010 `sw rs2, imm(rs1)` |
+| 1100011 BRANCH | funct3 000 `bany rs1, off`, 001 `bnone`, 010 `ball`, 011 `j off`, 100 `bexnz off`, 101 `bexz off` |
+| 1010011 OP-FP (single) | `fadd.s fsub.s fmul.s` (funct7 0000000/0000100/0001000), `fsgnj.s` (0010000, funct3 000), `fmin.s fmax.s` (0010100, funct3 000/001), `fsqrt.s` (0101100, rs2 0), `fcvt.w.s fcvt.wu.s` (1100000, rs2 0/1), `fcvt.s.w fcvt.s.wu` (1101000, rs2 0/1), `feq.s flt.s fle.s fne.s` (1010000, funct3 010/001/000/011), `fround.s` (0100000, rs2 00100) |
+| 1000011 1000111 1001011 1001111 | `fmadd.s fmsub.s fnmsub.s fnmadd.s` (R4) |
+| 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
+| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; slot = sub[3:0]), 011 `texsz` (I), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 bfly) |
+| 1011011 custom-2 (packed) | funct3 000 `fadd2`, 001 `fsub2`, 010 `fmul2`, 011 `ffma2` (R4), 100 `fmin2`/`fmax2` (funct7 0/1), 101 `iadd2`/`isub2`/`imul2` (funct7 0/1/2), 110 `fcmp2.lt/ge/eq/ne` (funct7 0-3), 111: funct7 0000000 `packh rd, rs1, rs2`, 0000001 `unpackh rd, rs1` (sub 0 low, 1 high), 0000010 `swaph rd, rs1` |
+| 1111011 custom-3 | funct3 000 `sel rd, rs1, rs2, rs3` (R4, bitwise: (rs1 & rs2) \| (~rs1 & rs3)), 001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd` (sub 0-3), 010 `kill rs1`, 011 transcendental (sub 0 `rcp`, 1 `rsq`, 2 `exp2`, 3 `log2`, 4 `sin`, 5 `cos`, 6 `fract`), 100 `vote.any/all rd, rs1` (sub 0/1), 101 `ballot rd, rs1`, 110 `sactl rs1` (reserved), 111 `nop` |
+| 0000111 0100111 0001111 1110011 1010111 1110111 | Vendor extensions (not GSI1) |
+
+- **Atomic operations** (`atom` sub): 0 and, 1 or, 2 xor, 3 xchg, 4 add,
+  5 sub, 6 smax, 7 smin, 8 umax, 9 umin, 10 cmpxchg (rs3 is the compare
+  value).
+- **`fence imm`:** imm[0] waits until the warp's stores and atomics are
+  complete, imm[1] the same for shared memory, imm[2] (acquire)
+  invalidates the data cache.
+- **Optional instructions:** the packed arithmetic (everything of custom-2
+  except `packh` and `unpackh`) needs CAPS[28]; `shfl`, `vote` and
+  `ballot` need CAPS[24]; `rq`, `qstat`, `sastat`, `qtag` and `sactl` need
+  CAPS[25].
+
+### 12.6 ISA faults
+
+The warp stops, and the GPU reports a fault of kind 8 (FAULT_ADDR = the
+PC), for:
+
+- an undefined opcode, funct3, funct7 or sub; word0[1:0] other than 11;
+- a rounding mode 5 or 6; `fround.s` with rm above 3; an R4 fmt other than
+  00 (except `atom`);
+- a register above the program's or the implementation's limit (including
+  rd+3 of the texture instructions and rs1+1 of `texl`, `texb`, `texf`,
+  which may not be r62, c31 or operand 127); a destination of 64 or above;
+- an optional instruction (section 12.5) without its CAPS bit.
+
+Undefined encodings, in detail: OP funct7 0100000 with funct3 001, 010 or
+011; funct7 0000101 with funct3 0xx; an R-form custom instruction whose
+funct7 differs from its defined value; a texture slot with sub[4] set;
+`atom` sub above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
+sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
+1; `nop` sub other than 0.
+
+### 12.7 Arithmetic
+
+- **Integers:** 32-bit two's complement. Division by zero gives all ones
+  (`div`, `divu`) and the dividend (`rem`, `remu`); INT_MIN / -1 gives
+  INT_MIN and remainder 0 (as RISC-V).
+- **fp32:** IEEE binary32 with one rounding under the instruction's rm
+  (0 RNE, 1 RTZ, 2 RDN, 3 RUP, 4 RMM; 7, "dynamic", is RNE, as there is no
+  CSR).
+  - Denormals are flushed to zeros of their sign on input and on output (a
+    result whose exponent after rounding is below the normal range is a
+    zero of its sign).
+  - A NaN result is `0x7FC00000`.
+  - Overflow gives infinity, or the largest finite number when rm rounds
+    towards zero.
+- The fmadd family is fused (one rounding). `fmul` has no addend: the sign
+  of a zero product survives every rounding mode.
+- `fmin`/`fmax` return the other operand when one is NaN (`0x7FC00000`
+  when both), and order -0 below +0. `feq`, `flt`, `fle` are false, and
+  `fne` is true, when an operand is NaN. `fsgnj.s` copies bits (no flush).
+- `fcvt.w.s`/`fcvt.wu.s` round under rm and saturate; NaN converts like
+  +infinity; negative values give 0 for `fcvt.wu.s`. `fround.s` rounds to
+  an integral value under rm (0-3) and keeps the sign of zero.
+  `fract x` = RNE(x - floor(x)) (it can give 1.0 for tiny negative x).
+- `sat` clamps a float result to [0, 1]; NaN, negatives and -0 give +0.
+- **Transcendentals** (draft accuracy): `rcp` and `fsqrt.s` are correctly
+  rounded; `rsq` and `exp2` within 1 ulp; `log2` within 2^-21 absolute in
+  [0.5, 2] and 2 ulp elsewhere; `sin` and `cos` within 2^-20 absolute on
+  [-pi, pi]. Special values follow IEEE: `rcp(±0)` = ±inf, `rsq(-0)` =
+  -inf, `log2(0)` = -inf; negative inputs of `rsq`, `fsqrt.s` and `log2`
+  give NaN.
+- **fp16 halves** (packed): the same rules in binary16 (NaN `0x7E00`).
+  `packh` converts two fp32 values (rs1 to the low half, rs2 to the high
+  half) with RNE; `unpackh` converts one half exactly.
+
+### 12.8 Memory
+
+- **Global memory:** 32-bit GPU addresses in the aperture (section 11),
+  word accesses (`lw`, `sw`; bits 1:0 of the address are ignored), and
+  atomics on words.
+  - The data cache is not coherent with other agents: use `fence 4`
+    (acquire) before reading data that another agent wrote, and `fence 1`
+    and `wait` before a result is read by another agent. `end` completes
+    the warp's stores.
+  - Within a warp, memory accesses take effect in program order. When
+    several lanes of one `sw` write the same word, the highest lane wins.
+- **Shared memory (LDS):** `lds`/`sts` with byte addresses, word aligned,
+  wrapping at the LDS size; `bar` synchronizes the warps of a workgroup.
+- **Constant bank:** `lwc rd, imm(rs1)` reads word (rs1 + imm) modulo the
+  bank size; c0-c31 are its first 32 words as operands. LOAD_CONST
+  (section 7.3) loads the bank.
+
+### 12.9 Program binary
+
+The driver hands a program to the GPU with the PROGRAM gpu-op
+(section 7.2): `[pipeline][stage][ISA][address][bytes][flags]`. A GSI1
+program is a 16-word header, the interface table and the code:
+
+| Word | Contents |
+| --- | --- |
+| 0 | Magic "GSI1" (`0x47534931`) |
+| 1 | Version (1) |
+| 2 | Stage: 0 vertex, 1 fragment, 2 compute |
+| 3 | Flags: [0] uses packed arithmetic, [1] subgroup operations, [2] LDS, [3] atomics, [4] the systolic-array queue |
+| 4 | Code words (2 per instruction) |
+| 5 | Code offset (words from the header's start) |
+| 6 | Registers used (the highest r + 1) |
+| 7 | LDS bytes |
+| 8 | Workgroup size: x \| y << 8 \| z << 16 |
+| 9 | Constant words used |
+| 10 | Interface table offset (words) |
+| 11 | Interface entries |
+| 12 | Entry point (instruction index) |
+| 13 | Minimum ISA version (1) |
+| 14 | Push-constant bytes |
+| 15 | 0 |
+
+The code is 8-byte aligned. Each interface entry is 4 words: kind, set,
+binding or location, and a kind-specific word:
+
+| Kind | Meaning | Kind-specific word |
+| --- | --- | --- |
+| 1 | Vertex attribute | First register \| components << 8 |
+| 2 | Varying input | First register and components (layout not yet fixed) |
+| 3 | Output | First register and components (layout not yet fixed) |
+| 4 | Uniform block | Constant-bank word offset and size (layout not yet fixed) |
+| 5 | Sampled image | Texture slot |
+| 6 | Storage buffer | Constant-bank word that holds the buffer's address and size (written by the firmware) |
+| 7 | Push constant | Constant-bank word offset |
+| 8 | Shared memory size | Bytes |
+
+The interface table is the only contract between the program and the
+descriptors: the command processor binds resources through it. Before it
+accepts a program, the GPU checks the magic, the version, the registers
+against its limit, the flags against CAPS, the code size and the
+interface table (slots against CAPS2, constant words against the bank);
+a program that fails gets VK_ERROR_INITIALIZATION_FAILED.
+
+A program in a native ISA (the PROGRAM gpu-op's ISA field is ISA_ID, not
+"GSI1") has the vendor's format; GHCI fixes only its first two words: the
+vendor's ISA FourCC and a version.
 
 13. The display controller capability (DISP)
 --------------------------------------------
