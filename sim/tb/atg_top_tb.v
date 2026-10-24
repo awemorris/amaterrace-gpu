@@ -20,7 +20,7 @@
  *   - an aperture fault: FAULTED, FAULT_INFO (kind 1, client 1, write),
  *     IRQ, locked STATE writes, then RESET: IDLE, the aperture kept, and a
  *     FILL works again;
- *   - unsupported operations (a pixel size of 2, KICK.DRAW): fault kind 2;
+ *   - unsupported operations (a refused pixel size, KICK.DRAW): fault kind 2;
  *   - HALT/HALTED, IRQ_SET/W1C and the interrupt line.
  */
 
@@ -753,9 +753,9 @@ module atg_top_harness #(
 		compare_ref("fill on the state kept over RESET");
 		expect_reg(GHCI_STATUS, 32'd0, 32'd1 << GHCI_STATUS_FAULT);
 
-		/* Unsupported operations: a pixel size of 2, blend-over of a
-		 * tile, KICK.DRAW. */
-		state_write(GHCI_S_BLT_OP, 32'h200);
+		/* Unsupported operations: a pixel size refused (BLT_OP[13] with
+		 * 16-bit pixels), blend-over of a tile, KICK.DRAW. */
+		state_write(GHCI_S_BLT_OP, 32'h2100);
 		host_write(GHCI_KICK, 32'd1);
 		expect_reg(GHCI_FAULT_INFO, {8'd0, 8'd1, GHCI_FAULT_OPCODE, 3'd0, 1'b0, 8'd1},
 			32'hFFFFFFFF);

@@ -19,16 +19,19 @@
  * stride; tiled: base + (y / 4) stride + (y % 4) 4 ps).  The source lines
  * (ln_push, ln_data) arrive in the order the descriptors name them; there
  * is no ready: atg_blt_rsv reads a line only when the FIFO (2^DEPTH_LOG2
- * lines, ln_count) has room for it.
+ * lines, ln_count) has room for it.  Pixels are 2^psl bytes (1 to 16).
  *
  * Per row, the window holds up to two source lines (w0, w1) and the byte
  * pointer of the next sample group.  Each cycle one group goes through: n
- * consecutive destination pixels, n <= 4, n <= LINE_BYTES / (4 ps) (the
- * group's 4 n ps source bytes fit the two lines), n <= the row's rest,
+ * consecutive destination pixels, n <= 4, n <= max(1, LINE_BYTES / (4 ps))
+ * (the group's 4 n ps source bytes fit the two lines; a 16-byte pixel's
+ * 64-byte aligned samples fill two 32-byte lines), n <= the row's rest,
  * inside one destination line (linear) or inside one tile row (tiled: 4 -
  * x % 4).  A line is loaded into the window only while the row still has
  * lines to load, so exactly nlines are taken per row; at the row's end the
- * window is emptied.  The group's average is registered (stage A) and
+ * window is emptied.  The group's average (atg_blt_avg the same cycle, or
+ * atg_blt_favg for sRGB and the floats, while no other group goes) is
+ * registered (stage A) and
  * merged into the assembly line (stage B), which becomes a write
  * (wr_*, valid/ready, held until taken) when a group of another line
  * comes, or when nothing more is queued.  Byte enables cover the written
@@ -52,8 +55,8 @@ module atg_blt_rsv_px #(
 	input wire rst_n,
 	input wire stop,
 
-	input wire m16,
-	input wire [1:0] fmt,
+	input wire [2:0] psl,	/* log2 of the pixel's bytes */
+	input wire [2:0] fmt,
 	input wire tiled,
 
 	input wire rd_valid,
@@ -138,15 +141,13 @@ module atg_blt_rsv_px #(
 	reg [LS-1:0] ptr;
 
 	/* The group: n pixels at x. */
-	wire [2:0] nmax = (m16 || LB >= 64) ? 3'd4 : 3'd2;
-	wire [ADDR_W-1:0] x_lin = m16 ? {{(ADDR_W - 18){1'b0}}, x, 1'b0} :
-		{{(ADDR_W - 19){1'b0}}, x, 2'b00};
-	wire [ADDR_W-1:0] x_til = m16 ?
-		{{(ADDR_W - 20){1'b0}}, x[16:2], 2'b00, x[1:0], 1'b0} :
-		{{(ADDR_W - 21){1'b0}}, x[16:2], 2'b00, x[1:0], 2'b00};
+	wire [LS:0] nfit = LB_V >> (psl + 3'd2);
+	wire [2:0] nmax = nfit == {(LS + 1){1'b0}} ? 3'd1 : nfit >= 4 ? 3'd4 : nfit[2:0];
+	wire [ADDR_W-1:0] x_lin = {{(ADDR_W - 17){1'b0}}, x} << psl;
+	wire [ADDR_W-1:0] x_til = {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} << psl;
 	wire [ADDR_W-1:0] daddr = drow + (tiled ? x_til : x_lin);
 	wire [LS:0] room_b = LB_V - {1'b0, daddr[LS-1:0]};
-	wire [LS:0] room_l = m16 ? {1'b0, room_b[LS:1]} : {2'b00, room_b[LS:2]};
+	wire [LS:0] room_l = room_b >> psl;
 	wire [2:0] room_t = 3'd4 - {1'b0, x[1:0]};
 	reg [2:0] n;
 
@@ -166,7 +167,7 @@ module atg_blt_rsv_px #(
 	end
 
 	/* The group's source bytes: 4 n ps, at ptr of the window. */
-	wire [6:0] gb = m16 ? {1'b0, n, 3'b000} : {n, 4'b0000};
+	wire [6:0] gb = {4'd0, n} << (psl + 3'd2);
 	wire [7:0] gend = {{(7 - LS){1'b0}}, ptr} + {1'b0, gb};
 	wire need2 = gend > {{(7 - LS){1'b0}}, LB_V};
 
@@ -179,11 +180,14 @@ module atg_blt_rsv_px #(
 		end
 	endgenerate
 
-	wire [127:0] avg;
+	wire [127:0] avg, favg;
+	wire slow = fmt == 3'd3 || fmt == 3'd4 || fmt == 3'd5;	/* sRGB, the floats */
+	reg a_pend;	/* a slow group is being averaged */
+	wire f_valid, f_ready;
 
 	atg_blt_avg av (
 		.fmt(fmt),
-		.is16(m16),
+		.psl(psl),
 		.in_s(win[511:0]),
 		.out_p(avg)
 	);
@@ -205,7 +209,12 @@ module atg_blt_rsv_px #(
 	wire a_same = b_v && b_line == a_line;
 	wire a_take = a_v && (!b_v || a_same || wr_free);
 	wire a_free = !a_v || a_take;
-	wire fire = active && v0 && (!need2 || v1) && a_free;
+	wire fire = active && v0 && (!need2 || v1) && a_free && !a_pend;
+
+	atg_blt_favg fv (
+		.clk(clk), .rst_n(frst_n), .i_valid(fire && slow), .i_ready(f_ready), .fmt(fmt), .psl(psl),
+		.npx(n), .in_s(win[511:0]), .o_valid(f_valid), .o_ready(1'b1), .out_p(favg)
+	);
 	wire row_end = fire && rem == {14'd0, n};
 
 	/* The window after this cycle's group (before a load). */
@@ -256,7 +265,7 @@ module atg_blt_rsv_px #(
 			a_sh[8 * i +: 8] = a_be[i] ? a_shf[8 * i +: 8] : 8'd0;
 	end
 
-	wire idle_now = !active && !rq_valid && !a_v;
+	wire idle_now = !active && !rq_valid && !a_v && !a_pend;
 	assign idle = idle_now && !b_v && !wr_valid;
 
 	always @(posedge clk) begin
@@ -272,6 +281,7 @@ module atg_blt_rsv_px #(
 			v1 <= 1'b0;
 			ptr <= {LS{1'b0}};
 			a_v <= 1'b0;
+			a_pend <= 1'b0;
 			a_line <= {LA_W{1'b0}};
 			a_off <= {LS{1'b0}};
 			a_nb <= 5'd0;
@@ -350,11 +360,16 @@ module atg_blt_rsv_px #(
 
 			/* Stage A. */
 			if (fire) begin
-				a_v <= 1'b1;
+				a_v <= !slow;
+				a_pend <= slow;
 				a_line <= daddr[ADDR_W-1:LS];
 				a_off <= daddr[LS-1:0];
-				a_nb <= m16 ? {1'b0, n, 1'b0} : {n, 2'b00};
+				a_nb <= {2'd0, n} << psl;
 				a_px <= avg;
+			end else if (a_pend && f_valid) begin
+				a_v <= 1'b1;
+				a_pend <= 1'b0;
+				a_px <= favg;
 			end else if (a_take) begin
 				a_v <= 1'b0;
 			end
@@ -368,7 +383,7 @@ module atg_blt_rsv_px #(
 				n, ptr, v0, v1, avg[63:0], win[127:0]);
 `endif
 
-	wire unused_ok = &{1'b0, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB], room_b[1:0], pend};
+	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB], room_b[1:0], pend};
 endmodule
 
 `default_nettype wire
