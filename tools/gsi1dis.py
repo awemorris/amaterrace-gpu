@@ -189,10 +189,12 @@ def read_hex(text):
             continue
         for tok in ln.split():
             v = int(tok, 16)
-            if len(tok) > 8:
-                w32 += [v & 0xFFFFFFFF, v >> 32 & 0xFFFFFFFF]
-            else:
+            if len(tok) == 16:
+                w32 += [v & 0xFFFFFFFF, v >> 32]
+            elif len(tok) <= 8:
                 w32.append(v)
+            else:
+                raise SystemExit("gsi1dis: %r is neither 8 nor 16 hex digits" % tok)
     return w32
 
 
@@ -206,8 +208,8 @@ def load(path, fmt=None):
     with open(path, "rb") as f:
         data = f.read()
     if fmt is None:
-        fmt = "bin" if data[:4] == A.MAGIC.to_bytes(4, "little") or \
-            not re.fullmatch(rb"[0-9A-Fa-fxX@/#\s]*", data) else "hex"
+        text = all(b in b"\t\n\r" or 32 <= b < 127 for b in data)
+        fmt = "bin" if data[:4] == A.MAGIC.to_bytes(4, "little") or not text else "hex"
     return read_bin(data) if fmt == "bin" else read_hex(data.decode())
 
 
