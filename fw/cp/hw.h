@@ -52,6 +52,18 @@
 /* The DMEM's place in the core's address space. */
 #define HW_DMEM_BASE 0x00010000u
 
+#ifdef FW_HOST
+
+/*
+ * A host build (the firmware's tests in fw/cp/tests/): the window and the
+ * line DMA are the test's functions, and the DMA takes DMEM by pointer.
+ */
+uint32_t hw_read(uint32_t index);
+void hw_write(uint32_t index, uint32_t value);
+int hw_host_dma(uint32_t address, void *dmem, uint32_t lines, int write);
+
+#else
+
 /*
  * Reads one window register.
  */
@@ -82,5 +94,7 @@ hw_write(
 	word = (volatile uint32_t *)(HW_WINDOW + index * 4u);
 	*word = value;
 }
+
+#endif
 
 #endif

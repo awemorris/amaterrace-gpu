@@ -37,6 +37,8 @@ module atg_top_cs_harness #(
 	parameter SEED = 1,
 	parameter HAS_CPU = 0,
 	parameter CPU_IMEM_INIT = "",
+	parameter CPU_IMEM_WORDS = 8192,
+	parameter CPU_DMEM_WORDS = 4096,
 	parameter CPU_DMEM_INIT = "",
 	parameter SU_NPHYS = 8,
 	parameter SU_GRP_W = 2,
@@ -93,6 +95,7 @@ module atg_top_cs_harness #(
 
 	atg_top #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .DATA_W(DATA_W),
 		.HAS_CPU(HAS_CPU), .CPU_IMEM_INIT(CPU_IMEM_INIT), .CPU_DMEM_INIT(CPU_DMEM_INIT),
+		.CPU_IMEM_WORDS(CPU_IMEM_WORDS), .CPU_DMEM_WORDS(CPU_DMEM_WORDS),
 		.NSU(1), .SU_NPHYS(SU_NPHYS), .SU_GRP_W(SU_GRP_W), .SU_NREGS(SU_NREGS),
 		.SU_SB_ENTRIES(SU_SB_ENTRIES), .SU_SBE_W(SU_SBE_W), .SU_PACKED(SU_PACKED),
 		.SU_LDS_BYTES(SU_LDS_BYTES)) dut (
@@ -317,7 +320,8 @@ module atg_top_cs_tb;
 	always #5 clk = !clk;
 
 	atg_top_cs_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
-		.SEED(12), .HAS_CPU(1), .CPU_IMEM_INIT("fw/cp/images/atg1-cp-kc705.imem.hex"),
+		.SEED(12), .HAS_CPU(1), .CPU_IMEM_WORDS(16384), .CPU_DMEM_WORDS(8192),
+		.CPU_IMEM_INIT("fw/cp/images/atg1-cp-kc705.imem.hex"),
 		.CPU_DMEM_INIT("fw/cp/images/atg1-cp-kc705.dmem.hex"), .SU_NPHYS(16), .SU_GRP_W(1),
 		.SU_NREGS(64), .SU_SB_ENTRIES(8), .SU_SBE_W(3), .SU_PACKED(1),
 		.SU_LDS_BYTES(16384)) kc705 (

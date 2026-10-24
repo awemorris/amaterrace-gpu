@@ -7,24 +7,22 @@
 
 /*
  * The µops: the class N packets the firmware gives the sequencer through
- * the window's UOP_FIFO, and the recordings of the command buffers, which
- * are chains of heap chunks holding the µop packets that a QUEUE_SUBMIT
- * replays.  The buffer copies and fills become blits.
+ * the window's UOP_FIFO, built into a command buffer's recording (which a
+ * QUEUE_SUBMIT replays) or sent at once.
+ *
+ * The builder keeps one packet open: consecutive STATE writes share one
+ * SET_REG packet, and any other µop closes it first, so the order of the
+ * writes and the µops is the order of the calls.  A recording may also
+ * hold markers: class 3 packets whose first payload word names work the
+ * replay does itself (record.c), never given to the FIFO.
  */
 
 #include "fw.h"
 #include "hw.h"
 #include "ghci_packets.h"
-#include "ghci_regs.h"
 
-/* Pixels per row of a linear fill or copy: a 4 KiB row of 32-bit pixels. */
-#define UOP_ROW_PIXELS 1024u
-
-/* The largest blit height. */
-#define UOP_MAX_ROWS 0xFFFFu
-
-/* Words of one blit: SET_REG of the 11 BLT words, then BLIT. */
-#define UOP_BLIT_WORDS 24u
+/* The (index, value) pairs of one SET_REG packet. */
+#define UOP_SET_PAIRS 60u
 
 /*
  * Words of the µop packet being written to the FIFO that are still to
@@ -32,9 +30,25 @@
  */
 static uint32_t uop_left;
 
+/*
+ * The packet being built: its words, how many there are, and how many
+ * SET_REG pairs it holds (0: it is not a SET_REG packet).
+ */
+static uint32_t emit_words[1u + 2u * UOP_SET_PAIRS];
+static uint32_t emit_count;
+static uint32_t emit_pairs;
+
+/*
+ * Where the packets go (a recording, or the FIFO when NULL), the JOB_TAG
+ * the µops carry, and the first failure (a full heap) since
+ * fw_emit_begin.
+ */
+static struct fw_object *emit_cmdbuf;
+static uint32_t emit_tag;
+static int emit_failed;
+
 static void uop_emit(uint32_t word);
-static int uop_blit(struct fw_object *cmdbuf, uint32_t op, uint32_t src, uint32_t dst, uint32_t stride, uint32_t width, uint32_t rows, uint32_t color);
-static void uop_set(uint32_t *words, uint32_t *count, uint32_t index, uint32_t value);
+static void emit_close(void);
 
 /*
  * Gives whole µop packets to the sequencer.
@@ -52,190 +66,174 @@ fw_uop_send(
 }
 
 /*
- * Appends whole µop packets to a command buffer's recording.
+ * Forgets a packet left half written to the FIFO (at start-up).
+ */
+void
+fw_uop_reset(void)
+{
+	/* The next word is a header. */
+	uop_left = 0;
+}
+
+/*
+ * Starts building µops into a command buffer's recording, or for the FIFO
+ * (NULL), with the JOB_TAG of a session.
+ */
+void
+fw_emit_begin(
+	struct fw_object *cmdbuf,
+	uint32_t tag)
+{
+	/* A new target, nothing built yet, no failure. */
+	emit_cmdbuf = cmdbuf;
+	emit_tag = tag;
+	emit_count = 0;
+	emit_pairs = 0;
+	emit_failed = 0;
+}
+
+/*
+ * Ends building: the open packet goes out.
  *
- * Returns 0, or -1 when the heap is used up.
+ * Returns 0, or -1 when a packet did not fit the heap since
+ * fw_emit_begin.
  */
 int
-fw_uop_record(
-	struct fw_object *cmdbuf,
+fw_emit_end(void)
+{
+	/* The open packet. */
+	emit_close();
+
+	/* A failure on the way. */
+	if (emit_failed)
+		return -1;
+
+	/* Succeeded: every packet is recorded or sent. */
+	return 0;
+}
+
+/*
+ * Writes one STATE word (SET_REG).
+ */
+void
+fw_emit_set(
+	uint32_t index,
+	uint32_t value)
+{
+	/* A packet of another µop, or a full one, is closed first. */
+	if (emit_count != 0 && (emit_pairs == 0 || emit_pairs == UOP_SET_PAIRS))
+		emit_close();
+
+	/* Opens a SET_REG packet. */
+	if (emit_count == 0) {
+		emit_words[0] = 0;
+		emit_count = 1;
+	}
+
+	/* The pair; the header is written when the packet closes. */
+	emit_words[emit_count++] = index;
+	emit_words[emit_count++] = value;
+	emit_pairs++;
+}
+
+/*
+ * Adds a class N µop with its payload (at most FW_EMIT_PAYLOAD words).
+ */
+void
+fw_emit_op(
+	uint32_t op,
+	uint32_t flags,
+	const uint32_t *payload,
+	uint32_t count)
+{
+	uint32_t index;
+
+	/* The open packet goes first; a payload too long is a firmware fault. */
+	emit_close();
+	if (count > FW_EMIT_PAYLOAD) {
+		emit_failed = 1;
+		return;
+	}
+
+	/* The header and the payload. */
+	emit_words[0] = GHCI_PKT_N(GHCI_PKT_CLASS_STD, op, emit_tag, flags, count);
+	for (index = 0; index < count; index++)
+		emit_words[1u + index] = payload[index];
+	emit_count = 1u + count;
+	emit_close();
+}
+
+/*
+ * Adds a marker for the replay: a class 3 packet whose first payload word
+ * is the code, then fewer than FW_EMIT_PAYLOAD words for it.
+ */
+void
+fw_emit_marker(
+	uint32_t code,
+	const uint32_t *payload,
+	uint32_t count)
+{
+	uint32_t index;
+
+	/* Markers are for recordings only: the FIFO takes class N alone. */
+	emit_close();
+	if (emit_cmdbuf == NULL || count >= FW_EMIT_PAYLOAD) {
+		emit_failed = 1;
+		return;
+	}
+
+	/* The padding header, the code and the payload. */
+	emit_words[0] = GHCI_PKT_PAD(count + 1u);
+	emit_words[1] = code;
+	for (index = 0; index < count; index++)
+		emit_words[2u + index] = payload[index];
+	emit_count = 2u + count;
+	emit_close();
+}
+
+/*
+ * Puts data into the recording for the units to read when it runs.
+ *
+ * Returns the data's GPU address, or 0 (and the failure) when there is no
+ * recording or no room.
+ */
+uint32_t
+fw_emit_data(
 	const uint32_t *words,
 	uint32_t count)
 {
-	uint32_t *chunk;
-	uint32_t index;
-
-	/* Appends word by word, linking a new chunk when the last is full. */
-	for (index = 0; index < count; index++) {
-		if (cmdbuf->last == NULL || cmdbuf->used == FW_CHUNK_WORDS - 1u) {
-			chunk = fw_chunk_alloc();
-			if (chunk == NULL)
-				return -1;
-
-			/* The chunk ends the chain. */
-			if (cmdbuf->last == NULL) {
-				cmdbuf->first = chunk;
-			} else {
-				cmdbuf->last[0] = (uint32_t)(uintptr_t)chunk;
-			}
-
-			cmdbuf->last = chunk;
-			cmdbuf->used = 0;
-		}
-
-		/* Word 0 of a chunk is its link. */
-		cmdbuf->last[1u + cmdbuf->used] = words[index];
-		cmdbuf->used++;
-	}
-
-	/* Succeeded: the packets are in the recording. */
-	return 0;
-}
-
-/*
- * Gives a command buffer's recorded µops to the sequencer.
- */
-void
-fw_uop_replay(
-	struct fw_object *cmdbuf)
-{
-	uint32_t *chunk;
-	uint32_t words;
-	uint32_t index;
-
-	/* Walks the chain; only the last chunk is partly used. */
-	for (chunk = cmdbuf->first;
-	     chunk != NULL;
-	     chunk = (uint32_t *)(uintptr_t)chunk[0]) {
-		words = FW_CHUNK_WORDS - 1u;
-		if (chunk == cmdbuf->last)
-			words = cmdbuf->used;
-		for (index = 0; index < words; index++)
-			uop_emit(chunk[1u + index]);
-	}
-}
-
-/*
- * Empties a command buffer's recording.
- */
-void
-fw_uop_clear(
-	struct fw_object *cmdbuf)
-{
-	uint32_t *chunk;
-	uint32_t *next;
-
-	/* Returns every chunk of the chain. */
-	chunk = cmdbuf->first;
-	while (chunk != NULL) {
-		next = (uint32_t *)(uintptr_t)chunk[0];
-		fw_chunk_free(chunk);
-		chunk = next;
-	}
-
-	/* The recording is empty. */
-	cmdbuf->first = NULL;
-	cmdbuf->last = NULL;
-	cmdbuf->used = 0;
-}
-
-/*
- * Records the blits that fill words of linear memory with a value.
- *
- * Returns 0, or -1 when the heap is used up.
- */
-int
-fw_uop_fill(
-	struct fw_object *cmdbuf,
-	uint32_t address,
-	uint32_t words,
-	uint32_t data)
-{
-	uint32_t rows;
+	uint32_t address;
 	int error;
 
-	/* Whole rows of UOP_ROW_PIXELS, then the rest as one short row. */
-	while (words > 0) {
-		rows = words / UOP_ROW_PIXELS;
-		if (rows > UOP_MAX_ROWS)
-			rows = UOP_MAX_ROWS;
-		if (rows > 0) {
-			error = uop_blit(cmdbuf, GHCI_BLT_FILL, 0, address, UOP_ROW_PIXELS * 4u, UOP_ROW_PIXELS, rows, data);
-			if (error != 0)
-				return -1;
-			address += rows * UOP_ROW_PIXELS * 4u;
-			words -= rows * UOP_ROW_PIXELS;
-			continue;
-		}
-
-		/* The short row. */
-		error = uop_blit(cmdbuf, GHCI_BLT_FILL, 0, address, words * 4u, words, 1, data);
-		if (error != 0)
-			return -1;
-		words = 0;
+	/* The data goes after the packets before it. */
+	emit_close();
+	if (emit_cmdbuf == NULL) {
+		emit_failed = 1;
+		return 0;
 	}
 
-	/* Succeeded: the fill is recorded. */
-	return 0;
+	/* Into the recording. */
+	error = fw_record_data(emit_cmdbuf, words, count, &address);
+	if (error != 0) {
+		emit_failed = 1;
+		return 0;
+	}
+
+	/* Succeeded: the data's address. */
+	return address;
 }
 
 /*
- * Records the blits that copy bytes of linear memory (no overlap).
- *
- * Returns 0, -1 when the heap is used up, or -2 when the bytes are not in
- * 16-bit units (the blitter's smallest pixel).
+ * Reports whether building has failed since fw_emit_begin.
  */
 int
-fw_uop_copy(
-	struct fw_object *cmdbuf,
-	uint32_t src,
-	uint32_t dst,
-	uint32_t bytes)
+fw_emit_error(void)
 {
-	uint32_t op;
-	uint32_t unit;
-	uint32_t pixels;
-	uint32_t rows;
-	uint32_t row_bytes;
-	int error;
+	/* The sticky failure. */
+	if (emit_failed)
+		return 1;
 
-	/* 32-bit pixels when everything is word aligned, else 16-bit ones. */
-	if (((src | dst | bytes) & 3u) == 0) {
-		op = GHCI_BLT_COPY;
-		unit = 4;
-	} else if (((src | dst | bytes) & 1u) == 0) {
-		op = GHCI_BLT_COPY | GHCI_BLT_BPP16;
-		unit = 2;
-	} else {
-		/* An odd byte needs a copy the blitter cannot do. */
-		return -2;
-	}
-
-	/* Whole rows, then the rest as one short row. */
-	pixels = bytes / unit;
-	row_bytes = UOP_ROW_PIXELS * unit;
-	while (pixels > 0) {
-		rows = pixels / UOP_ROW_PIXELS;
-		if (rows > UOP_MAX_ROWS)
-			rows = UOP_MAX_ROWS;
-		if (rows > 0) {
-			error = uop_blit(cmdbuf, op, src, dst, row_bytes, UOP_ROW_PIXELS, rows, 0);
-			if (error != 0)
-				return -1;
-			src += rows * row_bytes;
-			dst += rows * row_bytes;
-			pixels -= rows * UOP_ROW_PIXELS;
-			continue;
-		}
-
-		/* The short row. */
-		error = uop_blit(cmdbuf, op, src, dst, pixels * unit, pixels, 1, 0);
-		if (error != 0)
-			return -1;
-		pixels = 0;
-	}
-
-	/* Succeeded: the copy is recorded. */
+	/* Nothing failed. */
 	return 0;
 }
 
@@ -259,70 +257,30 @@ uop_emit(
 	}
 }
 
-/* Records (or, without a command buffer, sends) one blit: its BLT state and BLIT. */
-static int
-uop_blit(
-	struct fw_object *cmdbuf,
-	uint32_t op,
-	uint32_t src,
-	uint32_t dst,
-	uint32_t stride,
-	uint32_t width,
-	uint32_t rows,
-	uint32_t color)
+/* Closes the packet being built and puts it into the recording or the FIFO. */
+static void
+emit_close(void)
 {
-	uint32_t words[UOP_BLIT_WORDS];
-	uint32_t count;
-	uint32_t tag;
 	int error;
 
-	/* The µops carry the session's tag (FAULT_INFO names it on a fault). */
-	tag = 0;
-	if (cmdbuf != NULL)
-		tag = cmdbuf->tag;
+	/* Nothing open. */
+	if (emit_count == 0)
+		return;
 
-	/* SET_REG of every BLT word, so no earlier blit's state is left over. */
-	count = 0;
-	words[count++] = GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_SET_REG, tag, 0, 22);
-	uop_set(words, &count, GHCI_S_BLT_OP, op);
-	uop_set(words, &count, GHCI_S_BLT_DST_BASE, dst);
-	uop_set(words, &count, GHCI_S_BLT_DST_STRIDE, stride);
-	uop_set(words, &count, GHCI_S_BLT_SRC_BASE, src);
-	uop_set(words, &count, GHCI_S_BLT_SRC_STRIDE, stride);
-	uop_set(words, &count, GHCI_S_BLT_DST_XY, 0);
-	uop_set(words, &count, GHCI_S_BLT_SRC_XY, 0);
-	uop_set(words, &count, GHCI_S_BLT_SIZE, rows << 16 | width);
-	uop_set(words, &count, GHCI_S_BLT_COLOR, color);
-	uop_set(words, &count, GHCI_S_BLT_CLIP_MIN, 0);
-	uop_set(words, &count, GHCI_S_BLT_CLIP_MAX, 0);
+	/* A SET_REG packet's header counts its pairs. */
+	if (emit_pairs != 0)
+		emit_words[0] = GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_SET_REG, emit_tag, 0, 2u * emit_pairs);
 
-	/* BLIT, waiting for its end: the next command may read what it wrote. */
-	words[count++] = GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_BLIT, tag, GHCI_BLIT_WAIT, 0);
-
-	/* Without a command buffer the blit goes out now. */
-	if (cmdbuf == NULL) {
-		fw_uop_send(words, count);
-		return 0;
+	/* Into the recording, or to the FIFO now. */
+	if (emit_cmdbuf != NULL) {
+		error = fw_record_words(emit_cmdbuf, emit_words, emit_count);
+		if (error != 0)
+			emit_failed = 1;
+	} else {
+		fw_uop_send(emit_words, emit_count);
 	}
 
-	/* Appends it to the recording. */
-	error = fw_uop_record(cmdbuf, words, count);
-	if (error != 0)
-		return -1;
-
-	/* Succeeded: the blit is recorded. */
-	return 0;
-}
-
-/* Appends one (index, value) pair of a SET_REG. */
-static void
-uop_set(
-	uint32_t *words,
-	uint32_t *count,
-	uint32_t index,
-	uint32_t value)
-{
-	/* The STATE index, then its value. */
-	words[(*count)++] = index;
-	words[(*count)++] = value;
+	/* The next call opens a new packet. */
+	emit_count = 0;
+	emit_pairs = 0;
 }

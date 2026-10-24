@@ -44,10 +44,11 @@ main(void)
 	uint32_t irq;
 	uint32_t polls;
 
-	/* The heap and the object table start empty. */
+	/* No heap, no object, no half-written µop packet. */
 	main_state(FW_STATE_BOOT);
 	fw_heap_init();
 	fw_object_init();
+	fw_uop_reset();
 
 	/* Tells the host which firmware runs and that .data is fresh. */
 	hw_write(HW_FW_VERSION, FW_VERSION);

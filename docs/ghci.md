@@ -405,12 +405,22 @@ firmware:
 - A GPU without firmware (CAPS[17] = 0) faults with kind 2.
 - While the firmware works on a class 2 packet, the CP takes no other
   packet.
-- The GHCI gpu-ops (0x10100-0x10107, draft numbers): SESSION_OPEN,
-  SESSION_CLOSE, MEMORY, PROGRAM, NATIVE, FRAME, and BUFFER_GRANT and
-  BUFFER_REVOKE (section 11.6).
-- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT and BUFFER_REVOKE are taken
-  only as packets in the ring, never as staged commands inside a frame:
-  inside a frame they end the frame with VK_ERROR_FEATURE_NOT_PRESENT.
+- The GHCI gpu-ops (0x10100-0x10108, draft numbers): SESSION_OPEN,
+  SESSION_CLOSE, MEMORY, PROGRAM, NATIVE, FRAME, BUFFER_GRANT and
+  BUFFER_REVOKE (section 11.6), and HEAP.
+- **HEAP** (0x10108) `[u64 GPU address][u64 bytes]`: the range of GPU
+  memory the driver lends the firmware for its objects and the
+  recordings of the command buffers (line aligned, inside the aperture,
+  given to no other user). The driver sends it after every start of the
+  firmware (RUN, a RESET) and before the first SESSION_OPEN; it is
+  refused (VK_ERROR_INITIALIZATION_FAILED) while a session is open. A
+  firmware that keeps its objects elsewhere may ignore it. A session's
+  objects need the heap: without it they fail with
+  VK_ERROR_OUT_OF_DEVICE_MEMORY.
+- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT, BUFFER_REVOKE and HEAP are
+  taken only as packets in the ring, never as staged commands inside a
+  frame: inside a frame they end the frame with
+  VK_ERROR_FEATURE_NOT_PRESENT.
 
 **GHCI_FRAME.** A driver normally sends one class 2 packet per submission,
 GHCI_FRAME (gpu-op 0x10105, draft;
