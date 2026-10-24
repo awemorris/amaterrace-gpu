@@ -323,7 +323,7 @@
 /* custom-0: funct3. */
 #define GSI1_F3_LDS 0u
 #define GSI1_F3_STS 1u
-#define GSI1_F3_ATOM 2u			/* R4, sub = GSI1_ATOM_* */
+#define GSI1_F3_ATOM 2u			/* R4, sub = GSI1_ATOM_* [| GSI1_ATOM_SHARED] */
 #define GSI1_F3_FENCE 4u		/* I, imm GSI1_FENCE_* */
 #define GSI1_F3_BAR 5u
 #define GSI1_F3_WAIT 6u			/* I, imm cm | ct << 4 | cx << 8 */
@@ -342,6 +342,7 @@
 #define GSI1_ATOM_UMAX 8u
 #define GSI1_ATOM_UMIN 9u
 #define GSI1_ATOM_CMPXCHG 10u		/* rs3 is the compare value */
+#define GSI1_ATOM_SHARED (1u << 4)	/* atoms: shared memory (rs1 a byte address) */
 
 /*
  * custom-1: funct3, the funct7 modifiers of the texture R forms (section

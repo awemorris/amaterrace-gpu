@@ -19,6 +19,7 @@
 # mnemonic suffix .hlo (01, low half only), .hhi (10) or .hswap (11, rs2's
 # halves swapped), after .sat.  ".inst 0x<64 bits>" puts a raw instruction
 # (tools/gsi1dis.py writes it for words that have no other text).
+# Atomics: atom.<op> on global memory, atoms.<op> on shared memory (sub[4]).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import argparse
 import random
@@ -252,7 +253,7 @@ def uses(e, d):
     ops = e["ops"]
     u1 = "1" in ops or "m" in ops or "a" in ops
     u2 = "2" in ops
-    u3 = "3" in ops or (e.get("sub") == "atom" and d["sub"] == 10)
+    u3 = "3" in ops or (e.get("sub") == "atom" and d["sub"] & 15 == 10)
     return u1, u2, u3, "d" in ops
 
 
@@ -275,8 +276,12 @@ def decode(w, cfg):
                     ill = True
             elif d["rs1"] in (96 - k, 95, 94, 127, 126, 128 - k):
                 ill = True
-        if e.get("sub") == "atom" and d["sub"] > 10:
-            ill = True
+        if e.get("sub") == "atom":
+            if d["sub"] & 15 > 10:
+                ill = True
+            if d["sub"] & 16:
+                # The shared-memory form (atoms): the LDS unit.
+                e = dict(e, unit=U_LDS)
         if e["unit"] == U_TEX and d["sub"] > 15:
             ill = True
         if e.get("packed") and not cfg["PACKED"]:
@@ -379,8 +384,9 @@ def assemble_one(mn, args, pc, labels):
     if mn.endswith(".sat"):
         sat, mn = True, mn[:-4]
     atom = None
-    if mn.startswith("atom."):
-        atom, mn = mn[5:], "atom"
+    shared = mn.startswith("atoms.")
+    if mn.startswith("atom.") or shared:
+        atom, mn = mn.partition(".")[2], "atom"
     if mn not in T:
         raise ValueError("unknown mnemonic %r" % mn)
     e = T[mn]
@@ -433,7 +439,9 @@ def assemble_one(mn, args, pc, labels):
         elif o == "t":
             sub = num(a)
     if mn == "atom":
-        sub = ATOMS.index(atom)
+        if atom not in ATOMS:
+            raise ValueError("unknown atomic operation %r" % atom)
+        sub = ATOMS.index(atom) | (16 if shared else 0)
         if atom == "cmpxchg":
             if ai >= len(args):
                 raise ValueError("atom.cmpxchg: no compare value")
@@ -576,7 +584,8 @@ def dec_table(path, seed=1):
             if "subv" in e and rnd.random() < 0.8:
                 w1 = (w1 & ~(31 << 17)) | e["subv"] << 17
             if e.get("sub") == "atom" and rnd.random() < 0.8:
-                w1 = (w1 & ~(31 << 17)) | rnd.randrange(11) << 17
+                # sub[4] (global or shared memory) stays random.
+                w1 = (w1 & ~(15 << 17)) | rnd.randrange(11) << 17
             if e["unit"] == U_TEX and rnd.random() < 0.8:
                 w1 &= ~(16 << 17)
             if e["unit"] == U_TEX and rnd.random() < 0.5:

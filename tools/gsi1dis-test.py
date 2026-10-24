@@ -8,7 +8,8 @@
 #   binary    the same programs as GHCI_PROGRAM binaries (header + code):
 #             dis reads the header, asm --bin rebuilds the same bytes
 #   table     every entry of gsi1asm's table T with random operands, source
-#             modifiers, .sat, half selects, rounding modes, atomics and
+#             modifiers, .sat, half selects, rounding modes, atomics (global
+#             and shared) and
 #             branch offsets (some to labels): asm -> dis -> asm, no .inst
 #   raw       the decode vectors (sim/tb/su/dec_table.hex, random 64-bit
 #             words): dis -> asm gives the same words (.inst allowed)
@@ -120,8 +121,8 @@ def rnd_insn(r, n, e):
         return "lui %s, %d" % (rnd_reg(r), r.getrandbits(20))
     mn = n
     if n == "atom":
-        mn = "atom." + r.choice(A.ATOMS)
-    cmpxchg = mn == "atom.cmpxchg"
+        mn = r.choice(["atom.", "atoms."]) + r.choice(A.ATOMS)
+    cmpxchg = mn.endswith(".cmpxchg")
     if fp and r.random() < 0.3:
         mn += ".sat"
     if r.random() < 0.3:

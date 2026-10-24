@@ -4,7 +4,7 @@
 # (32 lanes each) one after the other until a bar or end (a bar releases when
 # every warp that has not ended waits at it).  Units: the integer ALU, the FPU,
 # the packed unit, the transcendental unit and the divider (bit-exact through
-# tools/gsi1fp.py), lw/sw/atom/fence, lds/sts, lwc and the c operands, exec.*,
+# tools/gsi1fp.py), lw/sw/atom/fence, lds/sts/atoms, lwc and the c operands, exec.*,
 # kill, the branches, end, bar, wait and nop, and the lane unit (qd; shfl,
 # vote and ballot with --subgroup).  Texture stops the model with an error,
 # and lda without --prims; exp and lda only in --warps mode.  Programs must be free of races between
@@ -24,7 +24,7 @@
 # bit; I.hex (the -o format) holds the registers the VF or RX writes before
 # the start.  wgx/nwgx are 0 and lidn is the lane (atg_su_sched's warp
 # word).  The warps run one after the other in slot order.  Side effects
-# (sw, atom, sts, exp) take the lanes in EXEC, in the mask and not KILLED
+# (sw, atom, atoms, sts, exp) take the lanes in EXEC, in the mask and not KILLED
 # (design §3.1, M10).  exp of a fragment warp: targets 0x100-0x103 (COLOR0),
 # 0x104 (DEPTH) and 0x105 (SAMPLE_MASK, docs/ghci.md section 12.11: the
 # last value written, bits 3:0); a lane is exported once one of them ran
@@ -276,6 +276,17 @@ class Machine:
                 if op == 0:
                     write(exec_m, lambda a, b, c: self.lds[((a + imm) & M32) >> 2 &
                                                            (LDS_WORDS - 1)])
+                elif op == 2:       # atoms: lanes in order, no immediate
+                    olds = {}
+                    for ln in range(32):
+                        if side >> ln & 1:
+                            a, b, c = operands(ln)
+                            w = (a & M32) >> 2 & (LDS_WORDS - 1)
+                            olds[ln] = self.lds[w]
+                            self.lds[w] = atom(f["SUB"] & 15, olds[ln], b, c) & M32
+                    if f["WRD"]:
+                        for ln, v in olds.items():
+                            r[rd][ln] = v
                 else:
                     for ln in range(32):
                         if side >> ln & 1:

@@ -48,8 +48,8 @@ localparam [3:0] ATG_UNIT_FPU = 4'd2;	/* fp32, mul, fract */
 localparam [3:0] ATG_UNIT_PK = 4'd3;	/* 16-bit packed */
 localparam [3:0] ATG_UNIT_XU = 4'd4;	/* rcp rsq exp2 log2 sin cos fsqrt */
 localparam [3:0] ATG_UNIT_DIV = 4'd5;	/* div divu rem remu */
-localparam [3:0] ATG_UNIT_LSU = 4'd6;	/* lw sw atom fence (after atg_su_sb waits for cm = 0) */
-localparam [3:0] ATG_UNIT_LDS = 4'd7;	/* lds sts */
+localparam [3:0] ATG_UNIT_LSU = 4'd6;	/* lw sw atom (global) fence (after atg_su_sb waits for cm = 0) */
+localparam [3:0] ATG_UNIT_LDS = 4'd7;	/* lds sts atom (shared, sub[4]) */
 localparam [3:0] ATG_UNIT_CBANK = 4'd8;	/* lwc */
 localparam [3:0] ATG_UNIT_TEX = 4'd9;	/* texl texb texf texsz */
 localparam [3:0] ATG_UNIT_EXP = 4'd10;	/* exp */
@@ -162,6 +162,7 @@ localparam [7:0] ATG_LSU_ATOM = 8'd2;
 localparam [7:0] ATG_LSU_FENCE = 8'd3;	/* imm[2:0]; class a, atg_su_sb waits for cm = 0 */
 localparam [7:0] ATG_LDS_LDS = 8'd0;
 localparam [7:0] ATG_LDS_STS = 8'd1;
+localparam [7:0] ATG_LDS_ATOM = 8'd2;	/* atom with sub[4] (shared memory); sub[3:0] the operation */
 localparam [7:0] ATG_CBANK_LWC = 8'd0;
 localparam [7:0] ATG_TEX_TEXL = 8'd0;
 localparam [7:0] ATG_TEX_TEXB = 8'd1;
