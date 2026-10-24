@@ -41,6 +41,7 @@ module atg_top #(
 	parameter HAS_JTAG = 0,	/* a second register-bus master (am_jtag_regs, KC705) */
 	parameter HAS_DISP = 0,	/* a display controller's registers are next to the GPU at +0x10000 (KC705) */
 	parameter ROP_STENCIL = 0,
+	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): the blitter's RESOLVE, texsz.s */
 	/* The SUs' shape (design §3.7). */
 	parameter SU_NPHYS = 8,
 	parameter SU_NWARPS = 4,
@@ -386,7 +387,8 @@ module atg_top #(
 	atg_blt #(
 		.ADDR_W(32),
 		.LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT)
+		.LINE_SHIFT(LINE_SHIFT),
+		.MS4(MS4)
 	) blt (
 		.clk(clk),
 		.rst_n(core_rst_n),
@@ -576,6 +578,7 @@ module atg_top #(
 	wire [31:0] ex_xy;
 	wire [3:0] ex_mask;
 	wire [511:0] ex_color;
+	wire [147:0] ex_ms;
 	wire [127:0] ex_depth;
 	/* SU 0 ↔ SA. */
 	wire sa_push_valid, sa_push_ready, sa_pop_valid, sa_pop_ready, sa_ctl_valid;
@@ -710,7 +713,7 @@ module atg_top #(
 			.busy(rop_busy),
 			.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 			.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
-			.ex_next(ex_next),
+			.ex_next(ex_next), .ex_ms(ex_ms),
 			.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 			.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 			.ord_valid(ord_valid), .ord_seq(ord_seq),
@@ -727,7 +730,7 @@ module atg_top #(
 		assign ex_ready = 1'b0;
 		assign ex_next = 16'd0;
 		assign dx_ready = 1'b0;
-		wire unused_rop = &{1'b0, ex_valid, ex_seq, ex_xy, ex_mask, ex_color, ex_depth, ex_last,
+		wire unused_rop = &{1'b0, ex_valid, ex_seq, ex_xy, ex_mask, ex_color, ex_depth, ex_last, ex_ms,
 			dx_valid, dx_seq, dx_xy, dx_mask, dx_depth, dx_last, ord_valid, ord_seq};
 	end
 
@@ -805,6 +808,7 @@ module atg_top #(
 		wire [15:0] s_tx_tag, s_ex_seq;
 		wire [511:0] s_ex_color;
 		wire [127:0] s_ex_depth;
+		wire [147:0] s_ex_ms;
 		wire [DW-1:0] s_sa_push_data;
 		wire g0 = k == 0;
 
@@ -812,7 +816,7 @@ module atg_top #(
 			.NPHYS(SU_NPHYS), .NWARPS(SU_NWARPS), .WARP_W(SU_WARP_W), .GRP_W(SU_GRP_W),
 			.NREGS(SU_NREGS), .SB_ENTRIES(SU_SB_ENTRIES), .SBE_W(SU_SBE_W), .NSU(NSU),
 			.SU_INDEX(k), .FRAG_RESERVE(SU_FRAG_RESERVE), .PACKED(SU_PACKED),
-			.SUBGROUP(SU_SUBGROUP), .HAS_SA(0),
+			.SUBGROUP(SU_SUBGROUP), .HAS_SA(0), .MS4(MS4),
 			.LDS_BYTES(SU_LDS_BYTES), .VARY_WORDS(SU_VARY_WORDS),
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)
 		) su (
@@ -835,7 +839,7 @@ module atg_top #(
 			.tr_last(tr_last),
 			.ex_valid(s_ex_valid), .ex_ready(g0 && ex_ready), .ex_seq(s_ex_seq), .ex_xy(s_ex_xy),
 			.ex_mask(s_ex_mask), .ex_color(s_ex_color), .ex_depth(s_ex_depth),
-			.ex_last(s_ex_last), .ex_next(ex_next),
+			.ex_last(s_ex_last), .ex_next(ex_next), .ex_ms(s_ex_ms),
 			.d_req_valid(c_req_valid[CD]), .d_req_ready(c_req_ready[CD]),
 			.d_req_write(c_req_write[CD]), .d_req_line(c_req_line[CD*LA_W +: LA_W]),
 			.d_req_be(c_req_be[CD*LINE_BYTES +: LINE_BYTES]),
@@ -884,6 +888,7 @@ module atg_top #(
 			assign ex_color = s_ex_color;
 			assign ex_depth = s_ex_depth;
 			assign ex_last = s_ex_last;
+			assign ex_ms = s_ex_ms;
 			assign sa_push_valid = s_sa_push_valid;
 			assign sa_push_data = s_sa_push_data;
 			assign sa_pop_ready = s_sa_pop_ready;
@@ -892,7 +897,7 @@ module atg_top #(
 		end else begin : g_sun
 			wire unused_sun = &{1'b0, s_vl_gnt, s_vl_ptbase, s_pt_done, s_fl_gnt, s_pt_rdata, s_tx_valid,
 				s_tx_op, s_tx_slot, s_tx_mask, s_tx_coord, s_tx_off, s_tx_tag, s_tx_last, s_tr_ready,
-				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last,
+				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last, s_ex_ms,
 				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data};
 		end
 		wire unused_slots = &{1'b0, s_vl_slot, s_fl_slot};
@@ -958,6 +963,7 @@ module atg_top #(
 		assign ex_color = 512'd0;
 		assign ex_depth = 128'd0;
 		assign ex_last = 1'b0;
+		assign ex_ms = 148'd0;
 		assign sa_push_valid = 1'b0;
 		assign sa_push_data = {DW{1'b0}};
 		assign sa_pop_ready = 1'b0;

@@ -12,7 +12,8 @@
  * compared with the expected list; monitors check the wait rules at the
  * moment of each event (a kick only when its block is idle, a FENCE only
  * when every block is idle, RESULT only when the fence unit is idle, no
- * write to the BLT range while the BLT is busy).
+ * write to the BLT range while the BLT is busy, none to the RX and ROP
+ * ranges while the VF, the SUs, the RX or the ROP are busy).
  */
 
 `timescale 1ns / 1ps
@@ -141,9 +142,24 @@ module atg_cp_seq_tb;
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq: BLT state written while the BLT is busy");
 			end
-			if (((uop_idx >= 9'h020 && uop_idx < 9'h050) || uop_idx[8:4] == 5'h1C) && busy_in[2]) begin
+			if (((uop_idx >= 9'h020 && uop_idx < 9'h050) || uop_idx[8:5] == 4'hE) && busy_in[2]) begin
 				errors = errors + 1;
-				$display("FAIL atg_cp_seq.kicks: VF state %h written while the VF is busy", uop_idx);
+				$display("FAIL atg_cp_seq: VF state %h written while the VF is busy", uop_idx);
+			end
+			if (uop_idx >= 9'h050 && uop_idx < 9'h090 &&
+			    (busy_in[2] || busy_in[3] || busy_in[4] || busy_in[6])) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.drawstate: RX/ROP state %h written with busy %b",
+					uop_idx, busy_in);
+			end
+			if (uop_idx >= 9'h190 && uop_idx < 9'h1B0 && (busy_in[2] || busy_in[3] || busy_in[6])) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.progwait: program state %h written with busy %b",
+					uop_idx, busy_in);
+			end
+			if (uop_idx >= 9'h090 && uop_idx < 9'h190 && busy_in[2]) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.tuwait: TU state %h written while the VF is busy", uop_idx);
 			end
 			if (uop_idx >= 9'h090 && uop_idx < 9'h190 && (busy_in[6] || busy_in[5] || busy_in[3])) begin
 				errors = errors + 1;
@@ -169,6 +185,11 @@ module atg_cp_seq_tb;
 			log({8'h04, 56'd0});
 		if (lc_kick) begin
 			log({8'h05, 56'd0});
+			if (busy_in[2] || busy_in[3]) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.ldconst: LOAD_CONST while the VF or the RX is busy (%b)",
+					busy_in);
+			end
 			if (busy_in[6]) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq.kicks: LOAD_CONST while the SUs are busy");
@@ -395,6 +416,65 @@ module atg_cp_seq_tb;
 		if (errors == e0)
 			$display("PASS atg_cp_seq.kicks");
 		e0 = errors;
+
+		/* drawstate: the next draw's RX and ROP state (MS_CTRL, BLEND)
+		 * right after a DRAW, while the draw is still in the VF, and ROP
+		 * state (RT_FORMAT) during a DISPATCH (the SUs busy): the writes
+		 * wait (the monitor above checks the busy bits at each write). */
+		packet(1'b0, 1'b0, 6'd3, 8'd0, 8'd0);
+		pl[0] = 32'h05E; pl[1] = 32'h2;
+		pl[2] = 32'h07A; pl[3] = 32'h1234;
+		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd4);
+		pl[0] = 32'd1; pl[1] = 32'd1; pl[2] = 32'd1;
+		packet(1'b0, 1'b0, 6'd4, 8'd0, 8'd3);
+		pl[0] = 32'h072; pl[1] = 32'h1;
+		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd2);
+		expect_ev({8'h03, 56'd0});
+		expect_ev({8'h07, 52'd0, 4'b0011});
+		expect_ev({8'h01, 15'd0, 9'h05E, 32'h2});
+		expect_ev({8'h01, 15'd0, 9'h07A, 32'h1234});
+		expect_ev({8'h01, 15'd0, 9'h1E9, 32'd1});
+		expect_ev({8'h01, 15'd0, 9'h1EA, 32'd1});
+		expect_ev({8'h01, 15'd0, 9'h1EB, 32'd1});
+		expect_ev({8'h04, 56'd0});
+		expect_ev({8'h01, 15'd0, 9'h072, 32'h1});
+		settle("drawstate");
+		compare("drawstate");
+		if (errors == e0)
+			$display("PASS atg_cp_seq.drawstate");
+		e0 = errors;
+
+		/* tuwait, progwait, ldconst, attrlimit_wait: right after a DRAW
+		 * (the VF busy), TU state (0x095), program state (FS_BASE 0x192),
+		 * a LOAD_CONST and ATTR_LIMIT (0x1D2) wait until the VF is idle
+		 * (the monitor checks each write and kick). */
+		begin : more
+			reg [8:0] wi [0:3];
+			wi[0] = 9'h095; wi[1] = 9'h192; wi[2] = 9'h000; wi[3] = 9'h1D2;
+			for (i = 0; i < 4; i = i + 1) begin
+				packet(1'b0, 1'b0, 6'd3, 8'd0, 8'd0);
+				expect_ev({8'h03, 56'd0});
+				expect_ev({8'h07, 52'd0, 4'b0011});
+				if (i == 2) begin
+					pl[0] = 32'd1; pl[1] = 32'h4000; pl[2] = 32'd16;
+					packet(1'b0, 1'b0, 6'd7, 8'd0, 8'd3);
+					expect_ev({8'h01, 15'd0, 9'h1EC, 32'd1});
+					expect_ev({8'h01, 15'd0, 9'h1ED, 32'h4000});
+					expect_ev({8'h01, 15'd0, 9'h1EE, 32'd16});
+					expect_ev({8'h05, 56'd0});
+				end else begin
+					pl[0] = {23'd0, wi[i]}; pl[1] = 32'h600D + i;
+					packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd2);
+					expect_ev({8'h01, 15'd0, wi[i], 32'h600D + i});
+				end
+				settle("more");
+				compare("more");
+				if (errors == e0)
+					$display("PASS atg_cp_seq.%0s", i == 0 ? "tuwait" : i == 1 ? "progwait" :
+						i == 2 ? "ldconst" : "attrlimit_wait");
+				e0 = errors;
+			end
+		end
 
 		/* wait: WAIT_IDLE(BLT) with a long SU job: DBG_MARK comes after the
 		 * BLT is idle but while the SUs still run. */

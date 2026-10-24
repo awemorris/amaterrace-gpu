@@ -9,7 +9,8 @@
  * atg_su_dec_tb: the decode vectors of tools/gsi1asm.py --dec-table
  * (sim/tb/su/dec_table.hex: instruction, uop with NREGS 32 / PACKED 0 /
  * SUBGROUP 0 / HAS_SA 0, uop with NREGS 64 / PACKED 1 / SUBGROUP 1 /
- * HAS_SA 1) through two decoders, plus the valid/ready register.
+ * HAS_SA 1 / MS4 1) through two decoders, plus the valid/ready register;
+ * texszs: texsz.s (immediate 3) faults without MS4 and is TEXSZ 0x4B with it.
  */
 
 `timescale 1ns / 1ps
@@ -31,7 +32,7 @@ module atg_su_dec_tb;
 	wire [15:0] u_pc_a, u_pc_b;
 	wire [ATG_UOP_W-1:0] u_uop_a, u_uop_b;
 	reg [271:0] vec [0:NV-1];
-	integer errors = 0;
+	integer errors = 0, e0 = 0;
 	integer i, n_op, n_fault, n_legal;
 	integer seed = 1;
 
@@ -42,7 +43,7 @@ module atg_su_dec_tb;
 		.d_pc(d_pc), .d_instr(d_instr), .u_valid(u_valid_a), .u_ready(u_ready),
 		.u_warp(u_warp_a), .u_pc(u_pc_a), .u_uop(u_uop_a)
 	);
-	atg_su_dec #(.NREGS(64), .PACKED(1), .SUBGROUP(1), .HAS_SA(1)) dut_b (
+	atg_su_dec #(.NREGS(64), .PACKED(1), .SUBGROUP(1), .HAS_SA(1), .MS4(1)) dut_b (
 		.clk(clk), .rst_n(rst_n), .d_valid(d_valid), .d_ready(d_ready_b), .d_warp(d_warp),
 		.d_pc(d_pc), .d_instr(d_instr), .u_valid(u_valid_b), .u_ready(u_ready),
 		.u_warp(u_warp_b), .u_pc(u_pc_b), .u_uop(u_uop_b)
@@ -146,6 +147,20 @@ module atg_su_dec_tb;
 		end
 		if (errors == 0)
 			$display("PASS atg_su_dec.fault");
+		/* texsz.s r5, 3: an ISA fault without MS4, op 0x4B (no rs1) with it. */
+		e0 = errors;
+		@(negedge clk);
+		d_valid = 1'b1;
+		d_instr = {32'h00060000, 32'h003032ab};
+		@(negedge clk);
+		d_valid = 1'b0;
+		if (!u_uop_a[ATG_UOP_ILL] || u_uop_b[ATG_UOP_ILL] || u_uop_b[ATG_UOP_OP +: 8] !== 8'h4B ||
+		    u_uop_b[ATG_UOP_UNIT +: 4] !== ATG_UNIT_TEX || u_uop_b[ATG_UOP_USE1]) begin
+			$display("FAIL atg_su_dec.texszs a=%h b=%h", u_uop_a, u_uop_b);
+			errors = errors + 1;
+		end
+		if (errors == e0)
+			$display("PASS atg_su_dec.texszs");
 		$display("atg_su_dec: %0d table vectors (%0d legal, %0d faults)", n_op, n_legal,
 			n_fault);
 		if (errors == 0)

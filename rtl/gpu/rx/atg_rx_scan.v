@@ -18,6 +18,21 @@
  * interleaved).  The warp path (fq_*: one covered quad per
  * handshake, then an end marker; the frees wait for atg_rx_frag's idle,
  * so its copy of the varyings is done).  See spec/gpu/rx/atg_rx_scan.md.
+ *
+ * Multisampling (MS_CTRL[3:0] = 2, docs/ghci.md section 12.11; the warp
+ * path only): after the centre's evaluation (S_WALK) a quad takes four
+ * more cycles (S_SAMP), one per sample, each the same edge test at the
+ * sample's offset from the pixel centre: the edges at the quad plus the
+ * offset (A dx + B dy, two values per edge since the standard locations
+ * pair up as opposites, made at the triangle's load), through the lanes'
+ * adders.  fq_scov bit 4 l + s: sample s of lane l covered, less the
+ * samples of SAMPLE_KILL; fq_ccov: the lanes' centres inside.  A quad goes
+ * to atg_rx_frag when one of its samples is covered.  A quad whose lanes
+ * are all, for one edge, further outside than the largest offset (to the
+ * next power of two) skips the samples.  With one sample fq_scov bit 4 l is
+ * the centre's coverage less SAMPLE_KILL[0], and the walk is as before.
+ * Values referenced: Vulkan specification, Multisampling, standard sample
+ * locations (VK_SAMPLE_COUNT_4_BIT).
  */
 
 `timescale 1ns / 1ps
@@ -43,7 +58,8 @@ module atg_rx_scan #(
 	output wire fq_valid,
 	input wire fq_ready,
 	output wire [31:0] fq_xy,
-	output wire [3:0] fq_cov,
+	output wire [15:0] fq_scov,
+	output wire [3:0] fq_ccov,
 	output wire fq_end,
 	input wire f_busy,
 	/* Direct fragments to the ROP (no SU: DEBUG_COLOR) */
@@ -59,9 +75,10 @@ module atg_rx_scan #(
 	input wire [15:0] sq_seq,
 	output wire busy
 );
-	localparam [2:0] S_IDLE = 3'd0, S_SEQ = 3'd1, S_WALK = 3'd2, S_Z = 3'd3, S_EMIT = 3'd4,
-		S_LAST = 3'd5, S_FREE = 3'd6, S_FQ = 3'd7;
-	reg [2:0] st;
+	`include "ghci_regs.vh"
+	localparam [3:0] S_IDLE = 4'd0, S_SEQ = 4'd1, S_WALK = 4'd2, S_Z = 4'd3, S_EMIT = 4'd4,
+		S_LAST = 4'd5, S_FREE = 4'd6, S_FQ = 4'd7, S_SAMP = 4'd8;
+	reg [3:0] st;
 	reg wm;	/* warp mode: a non-raw triangle with an SU */
 	reg fend;	/* S_FQ: the end marker (no quad) */
 
@@ -80,30 +97,81 @@ module atg_rx_scan #(
 
 	wire signed [47:0] a8_0 = a8[0], a8_1 = a8[1], a8_2 = a8[2];
 	wire signed [47:0] b8_0 = b8[0], b8_1 = b8[1], b8_2 = b8[2];
-	wire signed [47:0] ec_0 = ec[0], ec_1 = ec[1], ec_2 = ec[2];
+	/* Multisampling: MS_CTRL[3:0] = 2 and SAMPLE_KILL[3:0]. */
+	reg ms4;
+	reg [3:0] kill;
+	always @(posedge clk)
+		if (!rst_n) begin
+			ms4 <= 1'b0;
+			kill <= 4'd0;
+		end else if (st_we && st_idx == GHCI_S_MS_CTRL)
+			ms4 <= st_wdata[3:0] == 4'd2;
+		else if (st_we && st_idx == GHCI_S_SAMPLE_KILL)
+			kill <= st_wdata[3:0];
 
-	/* Coverage of the current quad: lane l at (qx + l[0], qy + l[1]). */
+	/* The sample offsets (atg_rx_cov) and the samples' coverage so far. */
+	reg [1:0] sc;			/* S_SAMP: the sample */
+	reg [15:0] scov;
+	reg [3:0] ccov;
+	wire samp = st == S_SAMP;
+	wire [143:0] eb;
+	wire [143:0] lowmv;
+
+	atg_rx_cov cv (
+		.clk(clk),
+		.i_load(st == S_IDLE && sp_valid),
+		.i_ab({sp_tri[192 +: 48], sp_tri[96 +: 48], sp_tri[0 +: 48]}),
+		.i_ec({ec[2], ec[1], ec[0]}),
+		.i_start(st == S_WALK),
+		.i_step(samp),
+		.i_sc(sc),
+		.i_samp(samp),
+		.o_eb(eb),
+		.o_lowm(lowmv)
+	);
+	wire signed [47:0] eb_0 = eb[47:0], eb_1 = eb[95:48], eb_2 = eb[143:96];
+
+	/* Coverage of the current quad (at the centres, or in S_SAMP at the
+	 * sample): lane l at (qx + l[0], qy + l[1]); far[e]: every lane of the
+	 * bbox is further outside edge e than the offsets reach. */
 	reg [3:0] cov;
+	reg [2:0] far;
 	reg signed [47:0] lv;
+	reg inb;
+	integer e;
 	always @(*) begin
+		far = 3'b111;
 		for (k = 0; k < 4; k = k + 1) begin
 			cov[k] = 1'b1;
-			lv = ec_0 + (k[0] ? a8_0 : 48'sd0) + (k[1] ? b8_0 : 48'sd0);
-			if (lv[47])
-				cov[k] = 1'b0;
-			lv = ec_1 + (k[0] ? a8_1 : 48'sd0) + (k[1] ? b8_1 : 48'sd0);
-			if (lv[47])
-				cov[k] = 1'b0;
-			lv = ec_2 + (k[0] ? a8_2 : 48'sd0) + (k[1] ? b8_2 : 48'sd0);
-			if (lv[47])
-				cov[k] = 1'b0;
-			if ({16'd0, qx} + {31'd0, k[0]} < {16'd0, bx0} ||
+			inb = !({16'd0, qx} + {31'd0, k[0]} < {16'd0, bx0} ||
 			    {16'd0, qx} + {31'd0, k[0]} >= {16'd0, bx1} ||
 			    {16'd0, qy} + {31'd0, k[1]} < {16'd0, by0} ||
-			    {16'd0, qy} + {31'd0, k[1]} >= {16'd0, by1})
+			    {16'd0, qy} + {31'd0, k[1]} >= {16'd0, by1});
+			for (e = 0; e < 3; e = e + 1) begin
+				lv = (e == 0 ? eb_0 : e == 1 ? eb_1 : eb_2) +
+					(k[0] ? (e == 0 ? a8_0 : e == 1 ? a8_1 : a8_2) : 48'sd0) +
+					(k[1] ? (e == 0 ? b8_0 : e == 1 ? b8_1 : b8_2) : 48'sd0);
+				if (lv[47])
+					cov[k] = 1'b0;
+				if (inb && !(lv[47] && (lv | lowmv[48 * e +: 48]) != {48{1'b1}}))
+					far[e] = 1'b0;
+			end
+			if (!inb)
 				cov[k] = 1'b0;
 		end
 	end
+	wire skip = far != 3'b000;
+	wire [3:0] cov1 = cov & ~{4{kill[0]}};	/* one sample: less the sample mask test */
+	reg [15:0] scov_n;	/* S_SAMP: with this cycle's sample */
+	always @(*) begin
+		scov_n = scov;
+		for (k = 0; k < 4; k = k + 1)
+			scov_n[4 * k + {30'd0, sc}] = cov[k] && !kill[sc];
+	end
+	wire wms = wm && ms4;
+	wire w_empty = wm ? (ms4 ? skip : cov1 == 4'd0) : cov == 4'd0;	/* S_WALK: nothing here */
+	wire s_last = samp && sc == 2'd3;
+	wire s_empty = s_last && scov_n == 16'd0;
 	wire row_end = {1'b0, qx} + 17'd2 >= {1'b0, bx1};
 	wire walk_end = row_end && {1'b0, qy} + 17'd2 >= {1'b0, by1};
 
@@ -157,7 +225,9 @@ module atg_rx_scan #(
 	assign sq_req = st == S_SEQ && !wm;
 	assign fq_valid = st == S_FQ;
 	assign fq_xy = {qy, qx};
-	assign fq_cov = fend ? 4'd0 : cov;
+	assign fq_scov = fend ? 16'd0 : ms4 ? scov :
+		{3'd0, cov1[3], 3'd0, cov1[2], 3'd0, cov1[1], 3'd0, cov1[0]};
+	assign fq_ccov = fend ? 4'd0 : ms4 ? ccov : cov;
 	assign fq_end = fend;
 	assign busy = st != S_IDLE;
 
@@ -201,9 +271,14 @@ module atg_rx_scan #(
 			st <= S_WALK;
 		end
 		S_WALK:
-			if (cov != 4'd0 && wm) begin
+			if (wms && !skip) begin
+				ccov <= cov;
+				scov <= 16'd0;
+				sc <= 2'd0;
+				st <= S_SAMP;
+			end else if (!w_empty && wm) begin
 				st <= S_FQ;
-			end else if (cov != 4'd0) begin
+			end else if (!w_empty) begin
 				zmask <= cov;
 				zc <= 5'd0;
 				zv <= 128'd0;
@@ -213,6 +288,19 @@ module atg_rx_scan #(
 				st <= wm ? S_FQ : S_LAST;
 			end else
 				st <= S_WALK;
+		S_SAMP: begin
+			scov <= scov_n;
+			sc <= sc + 2'd1;
+			if (s_last) begin
+				if (scov_n != 16'd0)
+					st <= S_FQ;
+				else if (walk_end) begin
+					fend <= 1'b1;
+					st <= S_FQ;
+				end else
+					st <= S_WALK;
+			end
+		end
 		S_FQ:	/* a quad (or the end marker) to atg_rx_frag */
 			if (fq_ready) begin
 				if (fend)
@@ -272,7 +360,7 @@ module atg_rx_scan #(
 		end
 		endcase
 		/* the walk: next quad (also after a covered quad's depth) */
-		if (rst_n && ((st == S_WALK && cov == 4'd0) || (st == S_EMIT && !(pend && !(dx_valid && dx_ready))) ||
+		if (rst_n && ((st == S_WALK && w_empty) || s_empty || (st == S_EMIT && !(pend && !(dx_valid && dx_ready))) ||
 		    (st == S_FQ && fq_ready && !fend)) && !walk_end) begin
 			if (row_end) begin
 				qx <= {bx0[15:1], 1'b0};
@@ -289,7 +377,7 @@ module atg_rx_scan #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, st_we, st_idx, st_wdata, sp_last, fm_o, fa_o,
+	wire unused_ok = &{1'b0, st_wdata[31:4], sp_last, fm_o, fa_o,
 		lv[46:0], sp_tri[767:765], sp_tri[735:448], li[16], lj[16], HAS_SU != 0};
 endmodule
 

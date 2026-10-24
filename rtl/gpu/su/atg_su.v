@@ -35,6 +35,7 @@ module atg_su #(
 	parameter PACKED = 0,	/* Packed fp16 arithmetic */
 	parameter SUBGROUP = 0,	/* shfl/vote/ballot */
 	parameter HAS_SA = 0,	/* SA attached (v1 0) */
+	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): texsz.s */
 	parameter LDS_BYTES = 4096,	/* Shared memory bytes */
 	parameter PT_ENTRIES = 64,	/* PT vertices */
 	parameter VARY_WORDS = 16,	/* Varying words per vertex */
@@ -110,6 +111,7 @@ module atg_su #(
 	output wire [127:0] ex_depth,
 	output wire ex_last,
 	input wire [15:0] ex_next,
+	output wire [147:0] ex_ms,	/* {d_s, zexp, smask}: multisampling (atg_su_exp) */
 	/* AMB client port (design §4.1) */
 	output wire d_req_valid,
 	input wire d_req_ready,
@@ -398,7 +400,7 @@ module atg_su #(
 
 	atg_su_dec #(
 		.WARP_W(WARP_W), .UOP_W(UOP_W), .NREGS(NREGS), .PACKED(PACKED), .SUBGROUP(SUBGROUP),
-		.HAS_SA(HAS_SA)
+		.HAS_SA(HAS_SA), .MS4(MS4)
 	) dec (
 		.clk(clk), .rst_n(rst_n),
 		.d_valid(d_valid), .d_ready(d_ready), .d_warp(d_warp), .d_pc(d_pc), .d_instr(d_instr),
@@ -592,6 +594,7 @@ module atg_su #(
 		.ex_next(ex_next),
 		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane), .fl_data(fl_data),
 		.fl_go(fl_go), .fl_info(fl_info),
+		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_ms(ex_ms),
 		.xr_valid(xr_valid), .xr_warp(xr_warp),
 		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp)
 	);

@@ -1,6 +1,6 @@
 # atg_cp_seq
 
-RTL: `rtl/gpu/cp/atg_cp_seq.v`.  Parent: atg_cp.  Implemented in: p004 (done).
+RTL: `rtl/gpu/cp/atg_cp_seq.v`.  Parent: atg_cp.  Child: `atg_cp_seq_wait` (the waits).  Implemented in: p004 (done).
 
 ## 1. Purpose and place
 
@@ -80,7 +80,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   0x1E0-0x1E8, raw_kick), DBG_MARK (STATE 0x1FF).  Unknown op → fault kind 2.
 - Source select: `fw_active` 1 → fw_*, else n_*.  The ring does not hand over a new packet while a
   class V packet is open, so the order is the ring's.
-- As implemented: SET_REG to the BLT range waits while the BLT is busy (WS288 p007: the RX range 0x050-0x06F while the RX or the ROP is, the ROP range 0x070-0x08F while the ROP is; WS288 p009 part C: the TU range 0x090-0x18F while the TU, the RX or the SUs are, which hold fragments still to be textured; its state must not change
+- As implemented (the rules are in `atg_cp_seq_wait`): SET_REG to the BLT range waits while the BLT is busy (the RX range 0x050-0x06F and the ROP range 0x070-0x08F while the VF, the SUs, the RX or the ROP are: the ROP's busy covers only the sequence numbers the RX has issued, so a draw still in the VF, in a vertex warp or in the RX's setup would otherwise be drawn with the next draw's RX or ROP state — MS_CTRL and SAMPLE_KILL included; WS288 p009 part C: the TU range 0x090-0x18F while the TU, the RX or the SUs are, which hold fragments still to be textured; its state must not change
   under a blit); DISPATCH and LOAD_CONST payload writes wait while the SUs are busy, DRAW_RAW's while
   the RX is; BLIT waits for the BLT idle before its kick; a wait after a kick starts one cycle later.
   RESULT waits for every block idle and `f_busy` 0; FENCE for every block idle (the fence unit takes
@@ -112,6 +112,8 @@ One SET_REG pair per 2 cycles (one dword per cycle); kick 1 cycle after the head
 
 - `PASS atg_cp_seq.setreg` — SET_REG pairs reach uop_we in order; index 512 faults
 - `PASS atg_cp_seq.kicks` — BLIT/DRAW/DISPATCH/DRAW_RAW write their payload to STATE then pulse their kick; SET_REG into the BLT and the VF ranges waits for that block, into the TU range for the SUs
+- `PASS atg_cp_seq.drawstate` — SET_REG of RX state (0x05E) and ROP state (0x07A) right after a DRAW waits until the VF is idle, of ROP state (0x072) during a DISPATCH until the SUs are; the monitor fails any write to 0x050-0x08F while busy_in[2], [3], [4] or [6] is set (the earlier rule, RX/ROP only, fails it: `-DMUT_SEQ_DRAWSTATE`)
+- `PASS atg_cp_seq.tuwait`, `.progwait`, `.ldconst`, `.attrlimit_wait` — right after a DRAW (the VF busy): TU state 0x095, FS_BASE 0x192, a LOAD_CONST's kick and ATTR_LIMIT 0x1D2 wait until the VF is idle (monitors: the TU range not while the VF is busy, the program range not while the VF, the RX or the SUs are, LOAD_CONST not while the VF or the RX is, 0x1C0-0x1DF not while the VF is); the earlier rules (`-DMUT_SEQ_DRAWSTATE`) fail all four
 - `PASS atg_cp_seq.wait` — WAIT_IDLE with a mask waits only for those busy bits
 - `PASS atg_cp_seq.fence` — FENCE waits for idle then requests; RESULT waits for f_busy 0
 - `PASS atg_cp_seq.source` — fw_active switches the source; µops of the two sources never interleave
@@ -133,3 +135,5 @@ WS288 p009 part B1 (P1): SET_REG into the VF's ranges (STATE 0x020-0x04F and ATT
 WS288 p009 part C (P1, branch p1-tu): SET_REG into the TU's range (STATE 0x090-0x18F, the 16 texture slots) waits while the TU, the RX or the SUs are busy (busy_in[5], [3], [6]): a fragment that has not been textured yet may sit in the RX or in an SU's warp, and the TU reads the slot's words per quad.  408 lines (+2; the split for the line limit stays with p016).  The TB's kicks case writes 0x095 during a DISPATCH and checks that it waits.
 
 WS288 p008 (P2, branch p2-dispatch): the compute µops are checked against the real SU in `sim/tb/atg_top_cs_tb.v` (atg_top with NSU 1): SET_REG of the program range, INVALIDATE (flags 1, D$), LOAD_PROGRAM (inv[3]), LOAD_CONST (0x1EC-0x1EE, lc_kick, waits for the SU), DISPATCH (0x1E9-0x1EB, cs_kick) and FENCE (waits for the SU and the atomic unit) — no change of this module.  Readings (no change of the RTL): DISPATCH does not invalidate a cache (ghci §7.3 says so only for DRAW), so a driver that rewrote the data sends INVALIDATE first; LOAD_PROGRAM's stage word is not looked at (the whole I$ is invalidated); the SU starts a compute warp at instruction 0 of CS_BASE (0x194), so CS_BASE is the address of the code (header word 5 applied; the header's entry point is the firmware's or driver's to add).
+
+The waits for work upstream (the MSAA work, branch p2-p027): SET_REG into 0x050-0x08F waits for the VF, the SUs, the RX and the ROP (it waited for the RX and ROP, or the ROP alone, before), into the TU range also for the VF, into the program range (0x190-0x1AF, no wait before) for the VF, the SUs and the RX, into 0x1D0-0x1DF (ATTR_LIMIT) for the VF like ATTR_DST; LOAD_CONST's kick also for the VF and the RX; so a draw upstream keeps its state.  The waits moved to the child `atg_cp_seq_wait` (130 lines), which brings this module to 355 lines (under the limit).  Not checked here: whether the busy bits of the blocks leave a cycle without any of them set while work passes from one block to the next (the VF to a vertex warp, a vertex warp to the RX); a back-to-back test of the whole pipeline checks that.

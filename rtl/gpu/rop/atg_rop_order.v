@@ -29,6 +29,7 @@ module atg_rop_order (
 	input wire [127:0] ex_depth,
 	input wire ex_last,
 	output wire [15:0] ex_next,
+	input wire [147:0] ex_ms,
 	/* Direct fragments to the ROP (no SU: DEBUG_COLOR) */
 	input wire dx_valid,
 	output wire dx_ready,
@@ -48,6 +49,7 @@ module atg_rop_order (
 	output wire [511:0] q_color,
 	output wire [127:0] q_depth,
 	output wire q_dbg,
+	output wire [147:0] q_ms,
 	output wire busy
 );
 	/* spec/gpu/rop/atg_rop_order.md */
@@ -65,6 +67,10 @@ module atg_rop_order (
 	assign q_color = ex_ok ? ex_color : 512'd0;
 	assign q_depth = ex_ok ? ex_depth : dx_depth;
 	assign q_dbg = !ex_ok;
+	/* multisampling: the SU's {d_s, zexp, smask}; the direct path: every
+	 * sample of a covered lane, with the lane's depth (zexp) */
+	assign q_ms = ex_ok ? ex_ms : {128'd0, 4'hF, {4{dx_mask[3]}}, {4{dx_mask[2]}}, {4{dx_mask[1]}},
+		{4{dx_mask[0]}}};
 	assign busy = issued != next;
 
 	always @(posedge clk)

@@ -15,7 +15,8 @@
  * marks the slot; one at a time, lowest slot first, the offsets of levels
  * 1-12 are computed again, a level a cycle: off[l + 1] = off[l] + P_l x
  * D_l with P_l the level's plane in bytes rounded up to 64 (linear: w_l x
- * h_l x 4; tiled: ceil(w_l / 4) x ceil(h_l / 4) x 64) and D_l = max(1,
+ * h_l x 4; tiled: ceil(w_l / 4) x ceil(h_l / 4) x 64; the 2-byte format 4,
+ * RGB565: x 2 and x 32) and D_l = max(1,
  * depth >> l) for the view type 3D, 1 otherwise (32-bit wrap; offsets are
  * multiples of 64 and kept as bits 31:6).  busy is high while a slot is
  * marked or being computed; atg_tu_addr takes no quad then, and the CP
@@ -57,6 +58,7 @@ module atg_tu_desc (
 	function [31:0] plane;
 		input [31:0] sz;
 		input tiled;
+		input b2;	/* 2-byte texels (format 4) */
 		input [3:0] l;
 		reg [15:0] w0, h0, w, h;
 		/* verilator lint_off UNUSEDSIGNAL */
@@ -73,9 +75,9 @@ module atg_tu_desc (
 			t = ({16'd0, 2'b00, w[15:2]} + {31'd0, w[1:0] != 2'd0}) *
 				({16'd0, 2'b00, h[15:2]} + {31'd0, h[1:0] != 2'd0});
 			if (tiled)
-				p = {t[27:0], 6'd0};
+				p = b2 ? {t[28:0], 5'd0} + 34'd63 : {t[27:0], 6'd0};
 			else
-				p = {16'd0, w} * {18'd0, h} * 34'd4 + 34'd63;
+				p = {16'd0, w} * {18'd0, h} * (b2 ? 34'd2 : 34'd4) + 34'd63;
 			plane = {p[31:6], 6'd0};
 		end
 	endfunction
@@ -125,7 +127,7 @@ module atg_tu_desc (
 	wire [15:0] cnt = cimg[GHCI_IMG_COUNT +: 16] == 16'd0 ? 16'd1 : cimg[GHCI_IMG_COUNT +: 16];
 	wire [15:0] dsh = cnt >> cl;
 	wire [15:0] dl = cimg[GHCI_IMG_TYPE +: 3] != 3'd2 || dsh == 16'd0 ? 16'd1 : dsh;
-	wire [31:0] cp = plane(d_size[cs], cimg[GHCI_IMG_TILED], cl);
+	wire [31:0] cp = plane(d_size[cs], cimg[GHCI_IMG_TILED], cimg[GHCI_IMG_FMT +: 4] == 4'd4, cl);
 	wire [47:0] pd = cp * {16'd0, dl};
 	wire [31:0] nacc = acc + pd[31:0];
 	wire [15:0] clr = st == IDLE && dirty != 16'd0 ? 16'd1 << lo : 16'd0;
@@ -163,7 +165,8 @@ module atg_tu_desc (
 	assign rd_samp = d_samp[rd_slot];
 	assign rd_lod = d_lod[rd_slot];
 	assign rd_loff = rd_level == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level}], 6'd0};
-	assign rd_plane = plane(d_size[rd_slot], d_img[rd_slot][GHCI_IMG_TILED], rd_level);
+	assign rd_plane = plane(d_size[rd_slot], d_img[rd_slot][GHCI_IMG_TILED],
+		d_img[rd_slot][GHCI_IMG_FMT +: 4] == 4'd4, rd_level);
 
 	wire unused_ok = &{1'b0, s_off[8], pd[47:32], nacc[5:0], acc[5:0]};
 endmodule

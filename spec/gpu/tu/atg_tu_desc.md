@@ -67,3 +67,5 @@ docs/ghci.md §8.4 (the memory of an image), design §2.3.
 ## 10. Status
 
 New in WS288 p009 part F (P3, branch p3-p009f): the TU computes the level offsets that were the descriptor's MIP_OFFSET words (part C); the freed words hold the view type, the depth or layer count and the layer stride.  Reading: the hardware computes (not the CP's firmware), so that a driver writes the same words whatever writes the descriptor; the cost is a 32 × 16 multiplier and 16 × 12 offsets of 26 bits.
+
+RGB565 (the MSAA work): the plane of format 4 is w × h × 2 bytes (linear) or the tiles × 32 bytes, rounded up to 64.

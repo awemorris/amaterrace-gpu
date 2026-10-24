@@ -29,12 +29,13 @@ module atg_rop_ds_tb;
 	reg [31:0] st_wdata = 0;
 	reg q_valid = 1'b0, q_dbg = 1'b0, d_ready = 1'b0;
 	reg [31:0] q_xy = 0;
-	reg [3:0] q_mask = 0;
+	reg [3:0] q_mask = 0;	/* one sample: lane l is q_smask bit 4 l */
 	reg [511:0] q_color = 0;
 	reg [127:0] q_depth = 0;
 	wire q_ready, d_valid, busy;
 	wire [31:0] d_xy;
-	wire [3:0] d_mask;
+	wire [15:0] d_smask;
+	wire [3:0] d_mask = {d_smask[12], d_smask[8], d_smask[4], d_smask[0]};
 	wire [511:0] d_color;
 	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
 	wire [26:0] req_line;
@@ -45,8 +46,11 @@ module atg_rop_ds_tb;
 
 	atg_rop_ds dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .q_valid(q_valid), .q_ready(q_ready), .q_xy(q_xy),
-		.q_mask(q_mask), .q_color(q_color), .q_depth(q_depth), .q_dbg(q_dbg),
-		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_mask(d_mask),
+		.q_smask({3'd0, q_mask[3], 3'd0, q_mask[2], 3'd0, q_mask[1], 3'd0, q_mask[0]}),
+		.q_color(q_color),
+		.q_sdepth({96'd0, q_depth[127:96], 96'd0, q_depth[95:64], 96'd0, q_depth[63:32], 96'd0,
+			q_depth[31:0]}), .q_dbg(q_dbg),
+		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_smask(d_smask),
 		.d_color(d_color), .busy(busy),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
@@ -76,6 +80,7 @@ module atg_rop_ds_tb;
 		d_ready <= ($random(seed) & 3) != 0;
 		if (d_valid && d_ready) begin
 			if (o_got >= o_n || d_xy !== o_xy[o_got] || d_mask !== o_m[o_got] ||
+			    (d_smask & 16'hEEEE) !== 16'd0 ||
 			    d_color !== o_c[o_got]) begin
 				e_out = e_out + 1;
 				if (e_out < 8)

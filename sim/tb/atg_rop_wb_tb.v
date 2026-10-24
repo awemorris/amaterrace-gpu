@@ -42,7 +42,8 @@ module atg_rop_wb_tb;
 
 	atg_rop_wb dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy),
-		.d_mask(d_mask), .d_color(d_color), .b_valid(b_valid), .b_src(b_src), .b_dst(b_dst),
+		.d_smask({3'd0, d_mask[3], 3'd0, d_mask[2], 3'd0, d_mask[1], 3'd0, d_mask[0]}),
+		.d_color(d_color), .b_valid(b_valid), .b_src(b_src), .b_dst(b_dst),
 		.b_mask(b_mask), .b_rvalid(b_rvalid), .b_pix(b_pix), .busy(busy),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),

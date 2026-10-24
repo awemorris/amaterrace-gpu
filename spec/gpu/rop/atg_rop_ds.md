@@ -31,15 +31,15 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `q_valid` | in | 1 | A quad in primitive order. |
 | `q_ready` | out | 1 | Taken. |
 | `q_xy` | in | 32 | Position. |
-| `q_mask` | in | 4 | Lanes. |
+| `q_smask` | in | 16 | Samples: bit 4 l + s (one sample: bit 4 l). |
 | `q_color` | in | 512 | Colour (fp32 RGBA × 4). |
-| `q_depth` | in | 128 | Depth. |
+| `q_sdepth` | in | 512 | The samples' depths: sample s of lane l at 32 (4 l + s). |
 | `q_dbg` | in | 1 | From the direct path: use DEBUG_COLOR. |
 | **To atg_rop_wb** | | | |
 | `d_valid` | out | 1 | A quad after depth/stencil. |
 | `d_ready` | in | 1 | Taken. |
 | `d_xy` | out | 32 | Position. |
-| `d_mask` | out | 4 | Lanes that passed. |
+| `d_smask` | out | 16 | Samples that passed. |
 | `d_color` | out | 512 | Colour (DEBUG_COLOR expanded for q_dbg). |
 | `busy` | out | 1 | Work outstanding. |
 | **AMB client port (design §4.1)** | | | |
@@ -94,3 +94,5 @@ design §2.3 (ROP STATE 0x070-0x07C).
 Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
 
 2026-10-24 (p009 part E, P3): the depth conversion and compare functions moved to `include/atg_depth.vh`, shared with the TU's compare samplers (atg_tu_filter); the behaviour is unchanged.
+
+Multisampling (the MSAA work): MS_CTRL[3:0] = 2 makes the row's address base + y stride + 16 x and the test runs per sample (8 entries per row: sample s of pixel x at word 4 x + s); one sample: as before (2 entries).  `q_mask`/`q_depth`/`d_mask` became `q_smask`/`q_sdepth`/`d_smask` (the same port count).  The 4-sample cases are in `sim/tb/atg_rop_ms_tb.v`; this TB drives the one-sample masks as bit 4 l and checks that no other bit of d_smask is set.

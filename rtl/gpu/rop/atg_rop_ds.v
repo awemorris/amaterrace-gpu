@@ -16,6 +16,12 @@
  * ones (DEPTH[1]) and wait for the write's response, so the next quad
  * reads what this one wrote.  Quads with no lane are dropped.  The direct
  * path's quads (q_dbg) get DEBUG_COLOR as fp32 c/255.
+ *
+ * Multisampling (MS_CTRL[3:0] = 2, docs/ghci.md section 12.11): the
+ * samples of a pixel are consecutive words (sample s of pixel x at word
+ * 4 x + s of the row), so a quad's row is one line still; the test runs
+ * per sample of the row's lanes (8 entries; 2 with one sample), each with
+ * its own depth (q_sdepth), and the surviving samples go on (d_smask).
  * See spec/gpu/rop/atg_rop_ds.md.
  */
 
@@ -38,15 +44,15 @@ module atg_rop_ds #(
 	input wire q_valid,
 	output wire q_ready,
 	input wire [31:0] q_xy,
-	input wire [3:0] q_mask,
+	input wire [15:0] q_smask,	/* bit 4 l + s: sample s of lane l */
 	input wire [511:0] q_color,
-	input wire [127:0] q_depth,
+	input wire [511:0] q_sdepth,	/* sample s of lane l at 32 (4 l + s) */
 	input wire q_dbg,
 	/* To atg_rop_wb */
 	output reg d_valid,
 	input wire d_ready,
 	output reg [31:0] d_xy,
-	output reg [3:0] d_mask,
+	output reg [15:0] d_smask,
 	output reg [511:0] d_color,
 	output wire busy,
 	/* AMB client port (design §4.1) */
@@ -73,8 +79,10 @@ module atg_rop_ds #(
 	/* STATE: DEBUG_COLOR 0x05C, DS_BASE 0x074, DS_STRIDE 0x075, DEPTH 0x076. */
 	reg [31:0] dbg_color, ds_base, ds_stride;
 	reg [6:0] depth;
+	reg ms4;
 	always @(posedge clk)
 		if (!rst_n) begin
+			ms4 <= 1'b0;
 			dbg_color <= 32'd0;
 			ds_base <= 32'd0;
 			ds_stride <= 32'd0;
@@ -88,6 +96,8 @@ module atg_rop_ds #(
 				ds_stride <= st_wdata;
 			if (st_idx == GHCI_S_DEPTH)
 				depth <= st_wdata[6:0];
+			if (st_idx == GHCI_S_MS_CTRL)
+				ms4 <= st_wdata[3:0] == 4'd2;
 		end
 	wire test = depth[0] && depth[6:5] != 2'b00;
 	wire f32 = depth[6];
@@ -99,17 +109,18 @@ module atg_rop_ds #(
 		S_OUT = 3'd5;
 	reg [2:0] st;
 	reg r;	/* row */
-	reg ln;	/* lane of the row */
+	reg [2:0] e;	/* entry of the row: {lane of the row, sample} */
 	reg wait_rsp;
-	reg [3:0] mask, pm;
-	reg [127:0] z;
+	reg [15:0] mask, pm;
+	reg [511:0] z;
 	reg [31:0] addr;
 	reg [LINE_BYTES*8-1:0] line;
 	reg wr_any;
 
-	wire [1:0] lane = {r, ln};
-	wire [31:0] zl = z[32 * lane +: 32];
-	wire [WB-1:0] wi = addr[LINE_SHIFT-1:2] + {{(WB-1){1'b0}}, ln};
+	wire [1:0] lane = {r, e[2]};
+	wire [3:0] sb = {lane, e[1:0]};	/* the sample's bit */
+	wire [31:0] zl = z[32 * sb +: 32];
+	wire [WB-1:0] wi = addr[LINE_SHIFT-1:2] + (ms4 ? {{(WB-3){1'b0}}, e} : {{(WB-1){1'b0}}, e[2]});
 	wire [31:0] stored = line[32 * wi +: 32];
 	wire nan = (zl[30:23] == 8'hFF && zl[22:0] != 23'd0) ||
 		(stored[30:23] == 8'hFF && stored[22:0] != 23'd0);
@@ -137,17 +148,17 @@ module atg_rop_ds #(
 			if (q_valid) begin
 				d_xy <= q_xy;
 				d_color <= q_dbg ? {4{dbgf[3], dbgf[2], dbgf[1], dbgf[0]}} : q_color;
-				mask <= q_mask;
-				pm <= q_mask;
-				z <= q_depth;
+				mask <= q_smask;
+				pm <= q_smask;
+				z <= q_sdepth;
 				r <= 1'b0;
-				st <= q_mask == 4'd0 ? S_IDLE : test ? S_ROW : S_OUT;
+				st <= q_smask == 16'd0 ? S_IDLE : test ? S_ROW : S_OUT;
 			end
 		S_ROW:
 			/* the row's address; skip a row without lanes */
-			if (mask[{r, 1'b0}] || mask[{r, 1'b1}]) begin
+			if (mask[8 * r +: 8] != 8'd0) begin
 				addr <= ds_base + ({16'd0, d_xy[31:16]} + {31'd0, r}) * ds_stride +
-					{14'd0, d_xy[15:0], 2'b00};
+					(ms4 ? {12'd0, d_xy[15:0], 4'b0000} : {14'd0, d_xy[15:0], 2'b00});
 				st <= S_RD;
 			end else if (r)
 				st <= S_OUT;
@@ -168,22 +179,22 @@ module atg_rop_ds #(
 				line <= rsp_rdata;
 				req_be <= {LINE_BYTES{1'b0}};
 				wr_any <= 1'b0;
-				ln <= 1'b0;
+				e <= 3'd0;
 				st <= S_TEST;
 			end
 		S_TEST: begin
-			/* lane {r, ln}: the test, the new value into the write line */
-			if (mask[lane]) begin
+			/* sample e[1:0] of lane {r, e[2]}: the test, the new value into the write line */
+			if (mask[sb]) begin
 				if (!pass)
-					pm[lane] <= 1'b0;
+					pm[sb] <= 1'b0;
 				else if (depth[1]) begin
 					wr_any <= 1'b1;
 					req_wdata[32 * wi +: 32] <= f32 ? zl : {stored[31:24], zu};
 					req_be[4 * wi +: 4] <= f32 ? 4'hF : 4'h7;
 				end
 			end
-			ln <= 1'b1;
-			if (ln)
+			e <= e + (ms4 ? 3'd1 : 3'd4);
+			if (e == (ms4 ? 3'd7 : 3'd4))
 				st <= S_WR;
 		end
 		S_WR:
@@ -206,9 +217,9 @@ module atg_rop_ds #(
 			end
 		default: begin	/* S_OUT */
 			if (!d_valid) begin
-				d_valid <= pm != 4'd0;
-				d_mask <= pm;
-				if (pm == 4'd0)
+				d_valid <= pm != 16'd0;
+				d_smask <= pm;
+				if (pm == 16'd0)
 					st <= S_IDLE;
 			end else if (d_ready) begin
 				d_valid <= 1'b0;

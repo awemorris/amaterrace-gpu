@@ -144,7 +144,9 @@ module atg_su_dec_tabc (
 			end
 			3'd3: begin
 				/* texsz: imm 0; texsz.l (the level count, no rs1): imm 1;
-				 * texsz.d (the layer count or the depth): imm 2 */
+				 * texsz.d (the layer count or the depth): imm 2; texsz.s
+				 * (the sample count, no rs1; atg_su_dec faults it without
+				 * MS4): imm 3 */
 				fmt = FM_I;
 				unit = ATG_UNIT_TEX;
 				op = ATG_TEX_TEXSZ | {1'b0, rs2f[0], 2'd0, rs2f[1], 3'd0};
@@ -152,7 +154,7 @@ module atg_su_dec_tabc (
 				use1 = !rs2f[0];
 				wrd = 1'b1;
 				side = 1'b1;
-				def = !sub[4] && f7 == 7'd0 && rs2f[4:2] == 3'd0 && rs2f[1:0] != 2'd3;
+				def = !sub[4] && f7 == 7'd0 && rs2f[4:2] == 3'd0;
 			end
 			3'd4: begin
 				fmt = FM_S;

@@ -16,6 +16,7 @@ Decodes a 64-bit GSI1 instruction (design §3.3, §3.4) into the SU micro-op of 
 | `PACKED` | `0` | 16-bit packed arithmetic present (else those opcodes are ISA faults; packh/unpackh always present). |
 | `SUBGROUP` | `0` | shfl/vote/ballot present (CAPS[24]). |
 | `HAS_SA` | `0` | rq/sactl/qstat/sastat/qtag usable (always 0 in v1). |
+| `MS4` | `0` | texsz.s (immediate 3) present (CAPS[29]); else an ISA fault. |
 
 ## 3. Ports
 
@@ -69,6 +70,7 @@ One instruction per cycle, 1 cycle latency.
 - `PASS atg_su_dec.table` — every opcode of design §3.4.1 against a table produced by the ISA model (sim/models or tools/gsi1asm.py)
 - `PASS atg_su_dec.operands` — 7-bit operand numbers and immediates with random word1
 - `PASS atg_su_dec.fault` — illegal encodings, NREGS, PACKED/SUBGROUP/HAS_SA = 0 give ILL
+- `PASS atg_su_dec.texszs` — texsz.s faults without MS4 and decodes to TEX op 0x4B (no rs1) with it (the table's second decoder has MS4 1; `sim/tb/su/dec_table.hex` made again by `tools/gsi1asm.py --dec-table`)
 - `PASS atg_su_dec` at the end.
 
 ## 9. References

@@ -72,6 +72,10 @@
 	exec.and r12
 	exp r30, 0x104
 	exec.set r10
+	# SAMPLE_MASK (0x105): the last value counts, ANDed with the RX's r6.
+	exp r8, 0x105
+	srli r4, r8, 8
+	exp r4, 0x105
 	# Vertex exports (a fragment warp ignores them, and a vertex warp the
 	# fragment targets): position, varyings 0 and 15, then targets that are
 	# not stored (point size, varying 16 beyond VARY_WORDS).

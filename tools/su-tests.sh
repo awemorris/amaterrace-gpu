@@ -41,7 +41,8 @@ timeout 60 python3 -I "$src/gen_data.py" gfx "$src/gfx.dat"
 timeout 60 python3 -I "$root/tools/gsi1asm.py" "$src/gfx.s" -o "$src/gfx.hex"
 timeout 300 python3 -I "$root/tools/gsi1model.py" "$src/gfx.s" --warps "$src/gfx.warps" \
 	--init "$src/gfx.init" --packed --subgroup --data "$src/gfx.dat" -o "$src/gfx.exp" \
-	--mem-out "$src/gfx.mexp" --exp-out "$src/gfx.xexp" --pt-out "$src/gfx.pexp"
+	--mem-out "$src/gfx.mexp" --exp-out "$src/gfx.xexp" --pt-out "$src/gfx.pexp" \
+	--ms-out "$src/gfx.msexp"
 for n in gfxv gfxf; do
 	timeout 60 python3 -I "$root/tools/gsi1asm.py" "$src/$n.s" -o "$src/$n.hex"
 done

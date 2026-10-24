@@ -144,6 +144,7 @@ localparam [8:0] GHCI_S_BLT_SIZE = 9'h007;
 localparam [8:0] GHCI_S_BLT_COLOR = 9'h008;
 localparam [8:0] GHCI_S_BLT_CLIP_MIN = 9'h009;
 localparam [8:0] GHCI_S_BLT_CLIP_MAX = 9'h00A;
+localparam [8:0] GHCI_S_BLT_RESOLVE = 9'h00B;	/* draft, CAPS[29] */
 
 /*
  * The other STATE ranges.  docs/ghci.md section 8.3 defines the program
@@ -182,6 +183,8 @@ localparam [8:0] GHCI_S_RAST_MODE = 9'h05A;
 localparam [8:0] GHCI_S_VARYING_COUNT = 9'h05B;
 localparam [8:0] GHCI_S_DEBUG_COLOR = 9'h05C;
 localparam [8:0] GHCI_S_PROVOKING = 9'h05D;
+localparam [8:0] GHCI_S_MS_CTRL = 9'h05E;	/* draft, CAPS[29] */
+localparam [8:0] GHCI_S_SAMPLE_KILL = 9'h05F;	/* draft, CAPS[29] */
 
 /* ROP (0x070-0x08F). */
 localparam [8:0] GHCI_S_RT_BASE = 9'h070;
@@ -262,6 +265,11 @@ localparam [1:0] GHCI_BLT_FILL = 2'd0;
 localparam [1:0] GHCI_BLT_COPY = 2'd1;
 localparam [1:0] GHCI_BLT_TILE = 2'd2;
 localparam [1:0] GHCI_BLT_UNTILE = 2'd3;
+localparam [2:0] GHCI_BLT_RESOLVE = 3'd4;	/* BLT_OP[2:0], draft, CAPS[29] */
+/* BLT_RESOLVE[7:4]: the average. */
+localparam [3:0] GHCI_RSV_UNORM8 = 4'd0;
+localparam [3:0] GHCI_RSV_UNORM565 = 4'd1;
+localparam [3:0] GHCI_RSV_SAMPLE0 = 4'd2;
 
 /* Extended capability IDs. */
 localparam [7:0] GHCI_XCAP_DISP = 8'd1;

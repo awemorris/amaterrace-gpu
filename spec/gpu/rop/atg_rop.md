@@ -6,7 +6,7 @@ RTL: `rtl/gpu/rop/atg_rop.v`.  Parent: atg_top (HAS_ROP).  Implemented in: p007.
 
 The ROP / buffer writer (design §2.3, §3.8): primitive-order retirement, depth/stencil, blend, write-back; one MC client (depth and colour behind am_amb_mux).
 
-Children: `atg_rop_order`, `atg_rop_ds`, `atg_rop_blend`, `atg_rop_wb`, `am_amb_mux`.
+Children: `atg_rop_order`, `atg_rop_ms`, `atg_rop_ds`, `atg_rop_blend`, `atg_rop_wb`, `am_amb_mux`.
 
 ## 2. Parameters
 
@@ -39,6 +39,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ex_color` | in | 512 | Colour. |
 | `ex_depth` | in | 128 | Depth. |
 | `ex_last` | in | 1 | Last quad of the warp. |
+| `ex_ms` | in | 148 | Multisampling: {d_s, zexp, smask} of the quad (atg_su_exp). |
 | `ex_next` | out | 16 | The next sequence number to retire. |
 | **Direct fragments to the ROP (no SU: DEBUG_COLOR)** | | | |
 | `dx_valid` | in | 1 | A quad. |
@@ -65,7 +66,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-36 ports; 25 counting each AMB port and HCR snoop port as one group (spec/README.md).
+37 ports; 26 counting each AMB port and HCR snoop port as one group (spec/README.md).
 
 ## 4. Behaviour
 
@@ -96,3 +97,5 @@ design §2.3, §3.8.
 2026-10-24 Q1 (P3's p007 decisions, ACKed; ghci.md to follow): stencil ops are not implemented in v1 (the ROP gets no facing bit; a port change belongs to p009). STATE bits: SCISSOR_MIN/MAX `{y, x}` (MAX 0 = none), RT_SIZE `{h, w}`, CULL [1:0] 1 front/2 back/3 both and [2] front = CCW, DEBUG_COLOR and BLEND_CONST RGBA8 (R in [7:0]), BLEND [0] enable, [4:1] src colour, [8:5] dst colour, [11:9] colour op, [15:12] src alpha, [19:16] dst alpha, [22:20] alpha op (VkBlendFactor/VkBlendOp numbers), WRITE_MASK [3:0] RGBA (0 writes nothing), DEPTH func = VkCompareOp and no test without a depth format bit; DS_BASE/RT_BASE/stride aligned to 8 bytes (4 for RGB565). The CP sequencer holds a SET_REG into the RX range (0x050–0x06F) while RX or ROP is busy and into the ROP range (0x070–0x08F) while the ROP is busy.
 
 Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+
+Multisampling (the MSAA work, docs/ghci.md §12.11): `atg_rop_ms` between the order and the depth test (the per-sample coverage, depth, alpha to coverage, alpha to one); `atg_rop_ds` and `atg_rop_wb` take the 16-bit sample mask and the sample-interleaved layout; new port `ex_ms`.  `sim/tb/atg_rop_ms_tb.v` checks the whole ROP (`atg_rop_ms.md` §8).

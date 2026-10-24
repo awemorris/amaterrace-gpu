@@ -211,6 +211,7 @@ CAPS (0x020):
 | [27] | Graphics: the vertex fetcher, the rasterizer and the render output are present |
 | [28] | Packed fp16/int16 arithmetic (section 12.5) |
 | [30] | Vulkan 1.0 core rendering (draft, section 8.5): the stencil ops with front and back state ([9] says a stencil attachment exists), D16, depth bias, depth bounds, depth clamp and depth clipping, w, viewport and guard-band clipping, points and lines, four colour attachments, the formats that the FMT capability names, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT and rasterizer discard. The bit number is provisional ([29] is multisampling, section 12.11) |
+| [29] | 4x multisampling (draft, section 12.11): the rasterizer's sample coverage, the render output per sample, `texf` of multisampled images and the blitter's RESOLVE (section 8.2) |
 
 CAPS2 (0x024):
 
@@ -485,10 +486,10 @@ follow the command set and are not yet part of this draft.
 
 | Index | Name | Contents |
 | --- | --- | --- |
-| 0x000 | BLT_OP | [1:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits; 2 and 3 are refused); [12] reverse direction (bottom-right first, for overlapping copies) |
+| 0x000 | BLT_OP | [2:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE, 4 RESOLVE (CAPS[29], draft), 5-7 refused; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits; 2 and 3 are refused); [12] reverse direction (bottom-right first, for overlapping copies) |
 | 0x001 | BLT_DST_BASE | GPU address of the destination image |
 | 0x002 | BLT_DST_STRIDE | Bytes per destination row |
-| 0x003 | BLT_SRC_BASE | GPU address of the source image (COPY, TILE, UNTILE) |
+| 0x003 | BLT_SRC_BASE | GPU address of the source image (COPY, TILE, UNTILE, RESOLVE) |
 | 0x004 | BLT_SRC_STRIDE | Bytes per source row |
 | 0x005 | BLT_DST_XY | [15:0] x, [31:16] y of the destination rectangle, in pixels |
 | 0x006 | BLT_SRC_XY | The same for the source |
@@ -496,6 +497,7 @@ follow the command set and are not yet part of this draft.
 | 0x008 | BLT_COLOR | FILL colour (the pixel's bits) |
 | 0x009 | BLT_CLIP_MIN | [15:0] x, [31:16] y, inclusive |
 | 0x00A | BLT_CLIP_MAX | [15:0] x, [31:16] y, exclusive; 0 = no clipping |
+| 0x00B | BLT_RESOLVE | RESOLVE only (draft): [3:0] log2 of the source's samples per pixel; [7:4] the average (below); [8] the destination is in 4x4 tiles (CAPS[11]); [31:9] 0 |
 
 - Bases and strides are multiples of the pixel size. The destination
   rectangle is clipped to the clip rectangle; the source moves with it.
@@ -517,6 +519,36 @@ follow the command set and are not yet part of this draft.
   `base + (y / 4) x stride + (x / 4) x 16 x ps + ((y % 4) x 4 + x % 4) x ps`,
   where ps is the pixel size in bytes. The base and the stride of a tiled
   image are multiples of 16 x ps bytes.
+- **RESOLVE** (draft, CAPS[29]) converts a multisampled source to one
+  sample per pixel: destination pixel (x, y) gets the average of the S
+  samples of source pixel (x', y') (the source rectangle's pixel at the
+  same place).  The source is a multisampled image in the layout of
+  section 12.11: sample s of pixel (x', y') at `BLT_SRC_BASE + y' x
+  BLT_SRC_STRIDE + (x' x S + s) x ps`; BLT_SRC_XY and BLT_SIZE count
+  pixels, not samples.  The destination is linear, or in 4x4 tiles with
+  BLT_RESOLVE[8].  The pixel size ps ([9:8]) is that of one sample and of
+  a destination pixel.  The source base is a multiple of 64 bytes and its
+  stride a multiple of 2 x S x ps bytes; a tiled destination's base and
+  stride are multiples of 16 x ps bytes (lower bits are ignored).  The
+  average (BLT_RESOLVE[7:4]; the pixel sizes it takes in brackets):
+
+  | Value | Average |
+  | --- | --- |
+  | 0 UNORM8 | [16, 32 bits] Every byte is an 8-bit unsigned normalized channel (RGBA8, BGRA8): the mean of the S codes, rounded to the nearest code, ties to even |
+  | 1 UNORM565 | [16 bits] The fields [15:11], [10:5], [4:0], each an unsigned normalized channel of its width: the mean of the S codes, rounded to the nearest code, ties to even |
+  | 2 SAMPLE0 | [16, 32 bits] Sample 0 (integer formats) |
+  | 3 SRGB8_A8 | [32 bits] Bytes 0-2 sRGB: decoded to linear, averaged and encoded (the precision of the linear values is implementation-defined); byte 3 as UNORM8 |
+  | 4 SFLOAT16 | [16, 32 bits] Every 16 bits a binary16: the mean of the samples in binary32 (with 4 samples ((s0 + s1) + (s2 + s3)) x 0.25), then to binary16; rounding, NaNs and denormals implementation-defined |
+  | 5 SFLOAT32 | [32 bits] Every 32 bits a binary32, the same mean |
+  | 6-15 | Refused |
+
+  A blitter does the averages of the formats its render output writes
+  (Amaterrace: 0-2; 3-5 are refused) and the sample counts of the device
+  (Amaterrace: 4).  Other averages and sample counts, a pixel size the
+  average does not take, blend over, the reverse direction and a RESOLVE
+  without CAPS[29] are refused.  Source and destination must not overlap
+  in memory (the result is undefined otherwise).  Depth and stencil are
+  not resolved (Vulkan 1.0 resolves colour only).
 - A combination that the blitter does not do is a fault of kind 2
   (block 1).
 
@@ -562,10 +594,10 @@ TEX_IMAGE:
 | Bits | Meaning |
 | --- | --- |
 | [3:0] | The number of mip levels (0 reads as 1, above 13 as 13) |
-| [7:4] | Format: 0 RGBA8 UNORM, 1 BGRA8 UNORM, 2 D24 (X8_D24_UNORM_PACK32, the depth aspect of D24_UNORM_S8_UINT), 3 D32_SFLOAT; 4 reserved for multisampling (RGB565); 5-15 reserved (read as 0) |
+| [7:4] | Format: 0 RGBA8 UNORM, 1 BGRA8 UNORM, 2 D24 (X8_D24_UNORM_PACK32, the depth aspect of D24_UNORM_S8_UINT), 3 D32_SFLOAT, 4 R5G6B5 UNORM (draft, CAPS[29]: 2-byte texels; `texf` exact, section 12.11; the other instructions implementation-defined, Amaterrace filters it as RGBA8 of the bits replicated); 5-15 reserved (read as 0) |
 | [8] | Layout: 0 linear rows, 1 4x4 tiles (CAPS[11]) |
 | [11:9] | View type: 0 2D (1D: height 1), 1 2D array (1D array: height 1), 2 3D, 3 cube; 4-7 reserved (read as 2D; a cube array would be 4) |
-| [15:12] | log2 of the samples per texel (0 one, 2 four); reserved for multisampling, 0 |
+| [15:12] | log2 of the samples per texel (0 one, 2 four; draft, CAPS[29], section 12.11: linear, one level, `texf` only); other values read as one |
 | [31:16] | The depth of level 0 (3D) or the number of layers (2D array); 0 reads as 1; not looked at for the other types |
 
 TEX_SAMPLER:
@@ -587,7 +619,8 @@ The memory of an image (Vulkan leaves the layout of an optimally tiled
 image to the implementation; GHCI fixes it, and a driver's
 vkGetImageSubresourceLayout reports the same numbers):
 
-- Texels are 4 bytes.  Level l is w_l x h_l (x d_l for 3D) texels, w_l =
+- Texels are 4 bytes (format 4: 2 bytes, the 4x4 tiles 32 bytes; a
+  multisampled image: section 12.11).  Level l is w_l x h_l (x d_l for 3D) texels, w_l =
   max(1, width >> l), h_l = max(1, height >> l), d_l = max(1, depth >>
   l).  Its plane P_l (one slice) is w_l x h_l x 4 bytes in rows of w_l x
   4 bytes (linear) or the 4x4 tiles of section 8.2, a row of tiles
@@ -1204,7 +1237,7 @@ word1 (bits 63:32):
 | 1010011 OP-FP (single) | `fadd.s fsub.s fmul.s` (funct7 0000000/0000100/0001000), `fsgnj.s` (0010000, funct3 000), `fmin.s fmax.s` (0010100, funct3 000/001), `fsqrt.s` (0101100, rs2 0), `fcvt.w.s fcvt.wu.s` (1100000, rs2 0/1), `fcvt.s.w fcvt.s.wu` (1101000, rs2 0/1), `feq.s flt.s fle.s fne.s` (1010000, funct3 010/001/000/011), `fround.s` (0100000, rs2 00100) |
 | 1000011 1000111 1001011 1001111 | `fmadd.s fmsub.s fnmsub.s fnmadd.s` (R4) |
 | 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
-| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; slot = sub[3:0]; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22], [29:26], [13:10] texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
+| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; slot = sub[3:0]; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22], [29:26], [13:10] texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`, 3: `texsz.s`), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
 | 1011011 custom-2 (packed) | funct3 000 `fadd2`, 001 `fsub2`, 010 `fmul2`, 011 `ffma2` (R4), 100 `fmin2`/`fmax2` (funct7 0/1), 101 `iadd2`/`isub2`/`imul2` (funct7 0/1/2), 110 `fcmp2.lt/ge/eq/ne` (funct7 0-3), 111: funct7 0000000 `packh rd, rs1, rs2`, 0000001 `unpackh rd, rs1` (sub 0 low, 1 high), 0000010 `swaph rd, rs1` |
 | 1111011 custom-3 | funct3 000 `sel rd, rs1, rs2, rs3` (R4, bitwise: (rs1 & rs2) \| (~rs1 & rs3)), 001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd` (sub 0-3), 010 `kill rs1`, 011 transcendental (sub 0 `rcp`, 1 `rsq`, 2 `exp2`, 3 `log2`, 4 `sin`, 5 `cos`, 6 `fract`), 100 `vote.any/all rd, rs1` (sub 0/1), 101 `ballot rd, rs1`, 110 `sactl rs1` (reserved), 111 `nop` |
 | 0000111 0100111 0001111 1110011 1010111 1110111 | Vendor extensions (not GSI1) |
@@ -1245,7 +1278,7 @@ shader work), for:
 
 Undefined encodings, in detail: OP funct7 0100000 with funct3 001, 010 or
 011; funct7 0000101 with funct3 0xx; an R-form custom instruction whose
-funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); `texsz` with imm[11:0] other than 0 or 1; a texture slot with sub[4] set; a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
+funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); `texsz` with imm[11:0] other than 0, 1, 2 or (with CAPS[29]) 3; a texture slot with sub[4] set; a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
 `atom` sub above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
 sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 1; `nop` sub other than 0.
@@ -1328,9 +1361,10 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   only. `texsz.l rd` (immediate 1, no rs1): writes the level count
   (TEX_IMAGE[3:0] as read) to rd. `texsz.d rd, rs1` (immediate 2): writes
   the depth of level rs1 of a 3D image, the layer count of a 2D array, 1
-  otherwise (draft, CAPS[26]; QuerySizeLod's third component).  Immediate
-  3 (`texsz.s`, the sample count) is reserved for multisampling; other
-  immediates are ISA faults.
+  otherwise (draft, CAPS[26]; QuerySizeLod's third component).
+  `texsz.s rd` (immediate 3, no rs1; draft, CAPS[29]): writes the sample
+  count (4 for TEX_IMAGE[15:12] = 2, else 1; section 12.11); without
+  CAPS[29] an ISA fault.  Other immediates are ISA faults.
 - **Texel offsets** (ConstOffset, draft, CAPS[26]): word1 [25:22], [29:26]
   and [13:10] of `texl`, `texb`, `texf` and `texg` (the R forms, whose
   imm_hi and float source modifiers are otherwise unused) are the signed
@@ -1464,6 +1498,83 @@ vendor's ISA FourCC and a version.
   program reaches with `lw`, `sw` and `atom` (the compiler computes the
   addresses): the command processor's firmware writes the constant-bank
   words of the kind-specific word.
+### 12.11 Multisampling (draft)
+
+**Draft** (2026-10-25; not implemented yet). With CAPS[29], the GPU
+rasterizes with 1 or 4 samples per pixel and runs the fragment program
+once per pixel (no sample shading). This section extends section 12.9
+(where multisampled images are still listed as not in version 1) and
+section 12.6 (`texsz` immediate 3 below).
+
+**State words** (in the rasterizer's range; the rasterizer and the render
+output read them, and a SET_REG into the range waits while either is busy):
+
+| Index | Name | Contents |
+| --- | --- | --- |
+| 0x05E | MS_CTRL | [3:0] log2 of the samples per pixel: 0 = 1, 2 = 4 (other values read as 0); [4] CENTROID: write the centroid barycentrics r7-r9; [8] alpha to coverage; [9] alpha to one |
+| 0x05F | SAMPLE_KILL | [3:0] samples removed by the sample mask test (the complement of the pipeline's sample mask; 0 keeps all, the reset value) |
+
+**Sample locations.** The standard locations: with 1 sample (0.5, 0.5);
+with 4, sample 0 (0.375, 0.125), 1 (0.875, 0.375), 2 (0.125, 0.625), 3
+(0.625, 0.875) inside the pixel. A sample on an edge follows the same
+tie rule as a pixel centre. (Values referenced: Vulkan specification,
+Multisampling, standard sample locations.)
+
+**Fragment program inputs and outputs** (GSI1; the rasterizer writes the
+registers before the warp starts):
+
+| Register | Contents |
+| --- | --- |
+| r0, r1, r2 | Barycentrics b0, b1, b2 at the pixel centre, perspective-correct, relative to the original vertices |
+| r3 | Depth at the pixel centre (with 1 sample clamped to [0, 1]; with 4 samples not clamped) |
+| r4, r5 | x + 0.5, y + 0.5 (FragCoord) |
+| r6 | The sample mask in: bit s = sample s covered, after the sample mask test (bit 0 with 1 sample); 0 in helper lanes. Undefined without CAPS[29] (a compiler then takes the mask as 1; Amaterrace always writes it) |
+| r7, r8, r9 | With MS_CTRL[4]: b0, b1, b2 at the centroid: the pixel centre when it is inside the primitive, otherwise the covered sample of the lowest index |
+
+Export targets of a fragment warp: 0x100 + c COLOR0 component c, 0x104
+DEPTH (the same depth for every sample), **0x105 SAMPLE_MASK** (the last
+value written is ANDed with the lane's coverage; bits at and above the
+sample count are ignored). A lane reaches the render output when it
+exported any of these; a fragment program without colour outputs exports
+all ones to 0x105 (not r3 to DEPTH, which would give every sample the
+centre's depth). A compiler ends every fragment program, with the EXEC of
+its entry, with `movi rT, -1` and `exp rT, 0x105` (there is no integer
+all-ones operand; `mone` is -1.0); a pipeline without a fragment stage
+gets a program of these two instructions.
+
+**Per-sample operations** (in this order, after the fragment program):
+coverage = the sample mask the rasterizer wrote to r6 (not a later value
+of r6) AND the exported SAMPLE_MASK AND, with MS_CTRL[8], an alpha
+to coverage mask; then alpha to one (MS_CTRL[9]); then the depth (and
+stencil) test and the colour write per covered sample. A sample's depth
+is the plane of the primitive at the sample, or the exported depth.
+Alpha to coverage is implementation-defined; Amaterrace takes n = the
+number of the thresholds 0.125, 0.375, 0.625, 0.875 that alpha (of
+COLOR0) reaches and covers the samples {}, {0}, {0, 3}, {0, 1, 3}, {0, 1,
+2, 3} (with 1 sample: alpha >= 0.5).
+
+**Multisampled images.** A multisampled image is 2D (or a 2D array) with
+one level, in linear rows (not tiled). Sample s of pixel (x, y) is at
+`base + layer x layer stride + y x P + (x x S + s) x ps`, where S is the
+sample count, ps the pixel size and P = roundup(width, 2) x S x ps; the
+base is aligned to 64 bytes. The render target and depth strides of a
+multisampled draw are P. Texture slots name the sample count in the image
+word (TEX_IMAGE[15:12] = log2 S, section 8.4). `texf rd,
+rs1, rs2` of a multisampled slot reads sample rs2 (modulo S) of texel
+(rs1, rs1+1), with the layer in rs1+2 for an array (the `.3` form);
+`texsz.s rd` (immediate 3, no rs1) writes S. Without CAPS[29], `texsz.s`
+is an ISA fault (an optional instruction without its CAPS bit).
+`texf` also reads RGB565 (UNORM, a 16-bit texel; R and B divided by 31,
+G by 63, rounded to nearest even; (R, G, B, 1)) as TEX_IMAGE format 4,
+so that a multisampled RGB565 colour attachment can be fetched. SPIR-V's ImageFetch with Sample maps to `texf`, QuerySamples to
+`texsz.s`.
+
+**Resolve** (a render pass's resolve attachments and vkCmdResolveImage)
+is the blitter's RESOLVE (section 8.2), one per region and layer, after
+the draws that wrote the source have finished and their writes have
+reached memory (WAIT_IDLE of every unit: the render output alone can be
+idle between two quads of a draw).  It uses only
+the blitter's range of STATE.
 
 13. The display controller capability (DISP)
 --------------------------------------------

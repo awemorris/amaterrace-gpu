@@ -13,7 +13,7 @@
  * of one SU; code and data memories as in atg_su_tb.  Two parts:
  *
  *   gfx: sim/tb/su/gfx.s runs as one vertex warp (slot 0) and three
- *     fragment warps (slots 1-3, sequence numbers 1, 0, 2) whose r0-r5 the
+ *     fragment warps (slots 1-3, sequence numbers 1, 0, 2) whose r0-r6 the
  *     testbench writes first (sim/tb/su/gfx.init, the warps in gfx.warps,
  *     both from gen_gfx.py).  Fragment EXEC is whole quads and the mask
  *     operand the coverage, so the program's qd, shfl, vote and ballot see
@@ -24,6 +24,9 @@
  *     colours and depths (gfx.xexp; the ROP is held off until every warp
  *     has started, so the slots are 0-3), and the vertex warp's PT entries
  *     read through pt_* (gfx.pexp; the words it must not write still X).
+ *     ms: the fragment warps' r6 (the RX's sample mask, some lanes 0) and
+ *     two SAMPLE_MASK exports (0x105): the quads' masks and their ex_ms
+ *     sample masks and DEPTH lanes on the mask's lanes (gfx.msexp).
  *   loop: the closed loop of design §3.8 with the testbench's VF and RX:
  *     NV vertex warps (gfxv.s: r0 to the PT) with random vl_mask (also 0);
  *     for each, after its pt_done, 1-3 fragment warps (gfxf.s: a loop of
@@ -53,7 +56,8 @@ module atg_su_gfx_chk #(
 	input wire go,
 	output reg done,
 	output reg [31:0] e_gfx,
-	output reg [31:0] e_loop
+	output reg [31:0] e_loop,
+	output reg [31:0] e_ms
 );
 	`include "ghci_regs.vh"
 
@@ -97,6 +101,8 @@ module atg_su_gfx_chk #(
 	wire [3:0] ex_mask;
 	wire [511:0] ex_color;
 	wire [127:0] ex_depth;
+	wire [147:0] ex_ms;
+	reg [31:0] msexp [0:32];
 	wire i_req_valid, i_req_ready, i_req_write, i_rsp_valid, i_rsp_write, i_rsp_error;
 	wire [26:0] i_req_line;
 	wire [31:0] i_req_be;
@@ -144,7 +150,7 @@ module atg_su_gfx_chk #(
 		.tr_data(512'd0), .tr_last(1'b0),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
-		.ex_next(ex_next),
+		.ex_next(ex_next), .ex_ms(ex_ms),
 		.d_req_valid(d_req_valid), .d_req_ready(d_req_ready), .d_req_write(d_req_write),
 		.d_req_line(d_req_line), .d_req_be(d_req_be), .d_req_wdata(d_req_wdata),
 		.d_req_tag(d_req_tag), .d_rsp_valid(d_rsp_valid), .d_rsp_write(d_rsp_write),
@@ -285,7 +291,15 @@ module atg_su_gfx_chk #(
 							NPHYS, nq_got, ex_seq, ex_last, ex_mask, ex_xy,
 							xexp[1 + 22 * nq_got], xexp[2 + 22 * nq_got]);
 					q_err = q_err + 1;
-				end else
+				end else begin
+					if ((ex_ms[15:0] & {{4{ex_mask[3]}}, {4{ex_mask[2]}}, {4{ex_mask[1]}},
+					     {4{ex_mask[0]}}}) !== msexp[nq_got][15:0] ||
+					    (ex_ms[19:16] & ex_mask) !== msexp[nq_got][19:16]) begin
+						if (e_ms < 4)
+							$display("FAIL atg_su_gfx.ms NPHYS %0d: quad %0d ex_ms %h mask %b, want %h",
+								NPHYS, nq_got, ex_ms[19:0], ex_mask, msexp[nq_got]);
+						e_ms = e_ms + 1;
+					end
 					for (li = 0; li < 4; li = li + 1)
 						if (ex_mask[li] && ({ex_depth[32 * li +: 32], ex_color[128 * li +: 128]} !==
 						    {xexp[3 + 22 * nq_got + 5 * li + 4], xexp[3 + 22 * nq_got + 5 * li + 3],
@@ -297,6 +311,7 @@ module atg_su_gfx_chk #(
 									ex_depth[32 * li +: 32]);
 							q_err = q_err + 1;
 						end
+				end
 			end else begin
 				if (ex_seq !== ex_next || ex_mask !== l_cov[ex_next[7:0]][4 * l_qn +: 4] ||
 				    ex_last !== (l_qn + 1 == l_nq[ex_next[7:0]])) begin
@@ -530,6 +545,7 @@ module atg_su_gfx_chk #(
 		done = 1'b0;
 		e_gfx = 0;
 		e_loop = 0;
+		e_ms = 0;
 		nq_got = 0;
 		q_err = 0;
 		occ = 0;
@@ -547,6 +563,7 @@ module atg_su_gfx_chk #(
 		$readmemh("sim/tb/su/gfx.warps", wv);
 		$readmemh("sim/tb/su/gfx.xexp", xexp);
 		$readmemh("sim/tb/su/gfx.pexp", pexp);
+		$readmemh("sim/tb/su/gfx.msexp", msexp);
 		load(CODE);
 		for (i = 0; i < DWORDS; i = i + 1)
 			dmem.poke(DATA + 4 * i, dat[i]);
@@ -568,7 +585,7 @@ module atg_su_gfx_chk #(
 				$display("FAIL atg_su_gfx NPHYS %0d: fragment slot %0d want %0d", NPHYS, g_slot, s);
 				e_gfx = e_gfx + 1;
 			end
-			for (k = 0; k < 6; k = k + 1)
+			for (k = 0; k < 7; k = k + 1)	/* r0-r5, and a fragment warp's r6 */
 				for (l = 0; l < 32; l = l + 1)
 					if (init[(s * NREGS + k) * 32 + l][32]) begin
 						if (s == 0)
@@ -723,23 +740,24 @@ module atg_su_gfx_tb;
 	reg clk = 1'b0;
 	reg go = 1'b0;
 	wire [2:0] done;
-	wire [31:0] g0, g1, g2, l0, l1, l2;
+	wire [31:0] g0, g1, g2, l0, l1, l2, m0, m1, m2;
 
 	always #5 clk = !clk;
 
 	atg_su_gfx_chk #(.NPHYS(8), .SEED(1)) n8 (.clk(clk), .go(go), .done(done[0]),
-		.e_gfx(g0), .e_loop(l0));
+		.e_gfx(g0), .e_loop(l0), .e_ms(m0));
 	atg_su_gfx_chk #(.NPHYS(16), .SEED(2), .FRAG_RESERVE(2), .SB_ENTRIES(8), .SBE_W(3)) n16 (
-		.clk(clk), .go(go), .done(done[1]), .e_gfx(g1), .e_loop(l1));
+		.clk(clk), .go(go), .done(done[1]), .e_gfx(g1), .e_loop(l1), .e_ms(m1));
 	atg_su_gfx_chk #(.NPHYS(32), .SEED(3)) n32 (.clk(clk), .go(go), .done(done[2]),
-		.e_gfx(g2), .e_loop(l2));
+		.e_gfx(g2), .e_loop(l2), .e_ms(m2));
 
 	initial begin
 		#20 go = 1'b1;
 		wait (&done);
 		if (g0 + g1 + g2 == 0) $display("PASS atg_su_gfx.gfx");
 		if (l0 + l1 + l2 == 0) $display("PASS atg_su_gfx.loop");
-		if (g0 + g1 + g2 + l0 + l1 + l2 == 0)
+		if (m0 + m1 + m2 == 0) $display("PASS atg_su_gfx.ms");
+		if (g0 + g1 + g2 + l0 + l1 + l2 + m0 + m1 + m2 == 0)
 			$display("PASS atg_su_gfx");
 		$finish;
 	end

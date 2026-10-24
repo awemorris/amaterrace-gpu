@@ -35,8 +35,8 @@ D_BASE, D_SIZE, D_IMAGE, D_STRIDE, D_SAMPLER, D_LOD = 0, 1, 2, 3, 4, 5
 # TEX_IMAGE: [3:0] level count, [7:4] format (0 RGBA8, 1 BGRA8, 2 D24,
 # 3 D32_SFLOAT), [8] 4x4 tiled, [11:9] view type, [15:12] log2(samples)
 # (reserved, 0), [31:16] depth (3D) or layer count (2D array).
-IMG_FMT, IMG_TILED, IMG_TYPE, IMG_COUNT = 4, 8, 9, 16
-FMT_RGBA8, FMT_BGRA8, FMT_D24, FMT_D32F = 0, 1, 2, 3
+IMG_FMT, IMG_TILED, IMG_TYPE, IMG_SAMPLES, IMG_COUNT = 4, 8, 9, 12, 16
+FMT_RGBA8, FMT_BGRA8, FMT_D24, FMT_D32F, FMT_RGB565 = 0, 1, 2, 3, 4
 TYPE_2D, TYPE_ARRAY, TYPE_3D, TYPE_CUBE = 0, 1, 2, 3
 # TEX_SAMPLER: wrap u [1:0], v [3:2], w [5:4] (0 repeat, 1 mirrored repeat,
 # 2 clamp to edge, 3 clamp to border), mag linear [6], min linear [7], mip
@@ -58,7 +58,7 @@ WRAP_REPEAT, WRAP_MIRROR, WRAP_EDGE, WRAP_BORDER = 0, 1, 2, 3
 # linear), [18] the pass's second level (mip linear).
 CTL_BIL, CTL_FMT, CTL_SZ, CTL_TEXF, CTL_MORE, CTL_ACC = 0, 1, 2, 3, 4, 5
 CTL_BORDER, CTL_DEPTH, CTL_CMP, CTL_CMP_OP = 6, 8, 9, 10
-CTL_GATHER, CTL_COMP, CTL_QLOD, CTL_P0, CTL_P1 = 13, 14, 16, 17, 18
+CTL_GATHER, CTL_COMP, CTL_QLOD, CTL_P0, CTL_P1, CTL_565 = 13, 14, 16, 17, 18, 19
 
 # Cube faces (Vulkan's table): (major axis, sign), s_c, t_c as (axis, sign).
 CUBE_FACES = [((0, 1), (2, -1), (1, -1)), ((0, -1), (2, 1), (1, -1)),
@@ -218,6 +218,20 @@ def fmt(d):
     return f if f < 4 else FMT_RGBA8
 
 
+def is565(d):
+    """Format 4, RGB565: 2-byte texels (texf exact; the others as RGBA8)."""
+    return img(d, IMG_FMT, 4) == FMT_RGB565
+
+
+def bpp(d):
+    return 2 if is565(d) else 4
+
+
+def samples(d):
+    """TEX_IMAGE[15:12] = 2: 4 samples (a linear image); else 1."""
+    return 4 if img(d, IMG_SAMPLES, 4) == 2 and not img(d, IMG_TILED, 1) else 1
+
+
 def vtype(d):
     """The view type as sampled (unnormalized coordinates: 2D)."""
     t = img(d, IMG_TYPE, 3)
@@ -247,8 +261,8 @@ def plane(d, lv):
     3D level, a level of the other types)."""
     w, h = size(d, lv)
     if img(d, IMG_TILED, 1):
-        return ((w + 3) >> 2) * ((h + 3) >> 2) * 64 & M32
-    return (w * h * 4 + 63) & ~63 & M32
+        return (((w + 3) >> 2) * ((h + 3) >> 2) * 16 * bpp(d) + 63) & ~63 & M32
+    return (w * h * bpp(d) + 63) & ~63 & M32
 
 
 def level_offset(d, lv):
@@ -260,14 +274,20 @@ def level_offset(d, lv):
     return off
 
 
-def texel_addr(d, lv, i, j, layer=0, k=0):
+def texel_addr(d, lv, i, j, layer=0, k=0, s=None):
+    """s: the sample of a multisampled texf (texel 4 i + s of rows of
+    roundup(w, 2) x 4 texels)."""
     w, _ = size(d, lv)
+    bp = bpp(d)
     b = (d[D_BASE] + layer * d[D_STRIDE] + level_offset(d, lv) + k * plane(d, lv)) & M32
     if img(d, IMG_TILED, 1):
-        a = b + (j >> 2) * ((w + 3) >> 2) * 64 + (i >> 2) * 64 + ((j & 3) * 4 + (i & 3)) * 4
+        a = (b + (j >> 2) * ((w + 3) >> 2) * 16 * bp + (i >> 2) * 16 * bp +
+             ((j & 3) * 4 + (i & 3)) * bp)
+    elif s is not None:
+        a = b + (j * (((w + 1) >> 1) * 8) + i * 4 + s) * bp
     else:
-        a = b + (j * w + i) * 4
-    return a & M32 & ~3	# bits 1:0 are 0 (bit 0 marks a border texel)
+        a = b + (j * w + i) * bp
+    return a & M32 & ~(bp - 1)	# bit 0 is 0 (it marks a border texel); bit 1 a half word
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +503,8 @@ def lane_addr(op, d, c, lam_q, pas, off, cube=None):
     t = vtype(d)
     if base == OP_TEXSZ:
         lv = min(c[0] & M32, 15)
+        if query and op >> OPB_DEPTHQ & 1:
+            return [0] * 4, 0, 0, 0, 0, 0, samples(d)
         if query:
             return [0] * 4, 0, 0, 0, 0, 0, levels(d)
         if op >> OPB_DEPTHQ & 1:
@@ -493,6 +515,12 @@ def lane_addr(op, d, c, lam_q, pas, off, cube=None):
     du, dv, dw = s4(off), s4(off >> 4), s4(off >> 8)
     if t == TYPE_CUBE:
         du = dv = dw = 0
+    if base == OP_TEXF and samples(d) > 1:
+        w, h = size(d, 0)
+        i = sat(s32(c[0]) + du, 0, w - 1)
+        j = sat(s32(c[1]) + dv, 0, h - 1)
+        return ([texel_addr(d, 0, i, j, lane_layer(op, d, c), 0, c[2] & 3)] * 4, 0, 0, 0, 0, 0,
+                0)
     if base == OP_TEXF:
         lev = s32(c[2])
         lv = 0 if lev < 0 else min(lev, levels(d) - 1)
@@ -604,7 +632,7 @@ def quad_addr(op, d, coords, mask, off=0):
                cmp << CTL_CMP | (samp >> SAMP_CMP_OP & 7) << CTL_CMP_OP |
                gather << CTL_GATHER | (comp if gather else 0) << CTL_COMP |
                (query and base == OP_TEXB) << CTL_QLOD | (pas & 1) << CTL_P0 |
-               (pas >> 1) << CTL_P1)
+               (pas >> 1) << CTL_P1 | is565(d) << CTL_565)
         passes.append(([o[0] for o in out],
                        [o[1] | o[2] << 8 | o[3] << 16 | o[4] << 24 for o in out], ctl,
                        [o[6] for o in out]))
@@ -663,10 +691,30 @@ def border_raw(ctl):
     """The raw texel of a border texel (atg_tu_cache)."""
     fc = (ctl >> CTL_DEPTH & 1) << 1 | (ctl >> CTL_FMT & 1)
     k = ctl >> CTL_BORDER & 3
+    if ctl >> CTL_565 & 1:
+        return 0xFFFF if k == 2 else 0
     return 0 if k == 3 else BORDER_RAW[0 if fc < 2 else fc][k]
 
 
-def channels(t, fm):
+def x565(t):
+    """RGB565 as RGBA8 (the filtered operations)."""
+    r, g, b = t >> 11 & 31, t >> 5 & 63, t & 31
+    return 0xFF000000 | (b << 3 | b >> 2) << 16 | (g << 2 | g >> 4) << 8 | (r << 3 | r >> 2)
+
+
+def conv565(t):
+    """texf of RGB565: (R / 31, G / 63, B / 31, 1), rounded to nearest even
+    (c x sum(2^5i, i < 16) / 2^80 and c x sum(2^6i, i < 13) / 2^78, as the
+    filter: never a tie)."""
+    s5 = sum(1 << (5 * i) for i in range(16))
+    s6 = sum(1 << (6 * i) for i in range(13))
+    return [rnd_f32((t >> 11 & 31) * s5, 80), rnd_f32((t >> 5 & 63) * s6, 78),
+            rnd_f32((t & 31) * s5, 80), ONE]
+
+
+def channels(t, fm, h565=0):
+    if h565:
+        t = x565(t)
     b = [(t >> (8 * k)) & 0xFF for k in range(4)]
     return [b[2], b[1], b[0], b[3]] if fm else b
 
@@ -685,7 +733,7 @@ def lane_texels(texels, ctl, dref):
                 ok = RX.depth_pass(fn, RX.f2u24(dref), t & 0xFFFFFF, False)
             out.append([255 if ok else 0, 0, 0, 255])
         return out
-    return [channels(t, ctl >> CTL_FMT & 1) for t in texels]
+    return [channels(t, ctl >> CTL_FMT & 1, ctl >> CTL_565 & 1) for t in texels]
 
 
 def lane_sums(texels, wts, ctl, dref):
@@ -728,7 +776,7 @@ def gather_lane(texels, ctl, dref):
         if comp == 0:
             return [t if ctl >> CTL_FMT & 1 else conv24(t & 0xFFFFFF) for t in order]
         return [ONE if comp == 3 else 0] * 4
-    return [conv(channels(t, ctl >> CTL_FMT & 1)[comp] << 16) for t in order]
+    return [conv(channels(t, ctl >> CTL_FMT & 1, ctl >> CTL_565 & 1)[comp] << 16) for t in order]
 
 
 class Filter:
@@ -753,6 +801,9 @@ class Filter:
                 continue
             if ctl >> CTL_GATHER & 1:
                 words += gather_lane(texels[ln], ctl, value[ln]) if on else [0] * 4
+                continue
+            if ctl >> CTL_565 & 1 and ctl >> CTL_TEXF & 1:
+                words += conv565(texels[ln][0]) if on else [0] * 4
                 continue
             if ctl >> CTL_DEPTH & 1 and not ctl >> CTL_CMP & 1:
                 # a depth format without compare: texel 0 as (D, 0, 0, 1)
@@ -782,6 +833,8 @@ def fetch(mem, addrs, ctl, mask):
                 row.append(0)
             elif addrs[ln][t] & 1:
                 row.append(border_raw(ctl))
+            elif ctl >> CTL_565 & 1:
+                row.append(mem.rd16(addrs[ln][t] & ~1))
             else:
                 row.append(mem.rd32(addrs[ln][t] & ~3))
         out.append(row)
