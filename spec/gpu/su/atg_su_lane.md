@@ -59,7 +59,7 @@ shfl/vote/ballot (SUBGROUP = 1; without it atg_su_dec makes them ISA faults) nee
 
 Staged per warp lane: rs1, the EXEC bit, and for shfl the source lane s and whether it exists.  The rules (tools/gsi1model.py implements the same):
 
-- shfl, lane l: s = rs2 (sub 0 idx), l XOR rs2 (1 xor, 4 bfly), l − rs2 (2 up), l + rs2 (3 down), as integers without wraparound (rs2 is 32-bit unsigned).  The result is rs1 of lane s when s is 0..31 and lane s is in EXEC, else lane l's own rs1.  The EXEC lanes are written.
+- shfl, lane l: s = rs2 (sub 0 idx), l XOR rs2 (1 xor), l − rs2 (2 up), l + rs2 (3 down), as integers without wraparound, or (l + rs2) mod 32 (4 rot, always in range) (rs2 is 32-bit unsigned).  The result is rs1 of lane s when s is 0..31 and lane s is in EXEC, else lane l's own rs1.  The EXEC lanes are written.
 - ballot: B = the EXEC lanes whose rs1 ≠ 0, as a 32-bit mask; vote.any = (B ≠ 0), vote.all = (B = EXEC) (true when EXEC is empty), as Booleans.  Both write every lane of the warp, whatever EXEC is (design M13, like exec.save).
 - Lanes outside EXEC are never read for a result (their rs1 and rs2 may be X in the RF).
 
@@ -98,7 +98,7 @@ Implemented in WS288 p008 (qd: branch p1-su; shfl/vote/ballot: branch p1-subgrou
 Readings where the specification is silent (docs/ghci.md §12 and the design define no semantics beyond the opcode map):
 
 - The shfl source lane and the out-of-range rule (above): a source outside 0..31, or outside EXEC, gives the lane's own rs1 (as CUDA's shfl for out of range; Vulkan leaves both undefined).  Out of range is decided on the whole 32-bit rs2, without wraparound or masking.
-- `bfly` is the same as `xor` (PTX shfl.bfly is lane XOR c); the ISA has no other meaning for it.
+- sub 4 is `rot` (2026-10-24 user decision, was `bfly` = `xor`): the source is (l + rs2) mod 32, as Vulkan subgroupShuffleRotate.
 - vote/ballot write every lane regardless of EXEC (design M13), although ghci §12.2 says that lanes outside EXEC do not write registers (exec.save already does the same).
 - The staging is registers (32 × (32 + 1 + 1 + 5) bits) and a 32:1 multiplexer per physical lane, not the distributed RAM of design §3.6 / §10.14 (+0.5k LUT/SU); the area is not measured (p025).
 - The bus is held G cycles on the last group (design: "2 pass = 2 × 32/NPHYS cycle"), not a second pass of the groups through atg_su_opd; the earlier open point (results later than SHORT_LAT) is solved this way without changes to atg_su_sb or atg_su_wb.

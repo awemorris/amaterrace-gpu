@@ -139,12 +139,14 @@ module atg_su_lane_sgchk #(
 					0: ok = b[l] < 32;
 					2: ok = b[l] <= l;
 					3: ok = b[l] < 32 - l;
+					4: ok = 1;
 					default: ok = b[l] < 32;
 					endcase
 					case (sub)
 					0: src = b[l] % 32;
 					2: src = l - b[l] % 32;
 					3: src = l + b[l] % 32;
+					4: src = (l + b[l] % 32) % 32;
 					default: src = l ^ (b[l] % 32);
 					endcase
 					r[l] = ok && src >= 0 && src < 32 && ex[src % 32] ? a[src % 32] : a[l];

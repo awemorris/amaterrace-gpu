@@ -17,8 +17,8 @@
 # The lane unit: qdx/qdy = v[lane|1] - v[lane&~1], v[lane|2] - v[lane&~2]
 # (fp32, RNE), qswap1/2/3 = v[lane^1/2/3], qbcast = v[lane&~3] (partner
 # lanes regardless of EXEC).  shfl: the source lane s of lane l is rs2 (idx),
-# l ^ rs2 (xor, bfly), l - rs2 (up), l + rs2 (down), as integers without
-# wraparound; the result is rs1 of lane s when s is 0..31 and in EXEC, else
+# l ^ rs2 (xor), l - rs2 (up), l + rs2 (down), as integers without
+# wraparound, or (l + rs2) mod 32 (rot); the result is rs1 of lane s when s is 0..31 and in EXEC, else
 # the lane's own rs1; EXEC lanes are written.  ballot: the mask of the EXEC
 # lanes whose rs1 is not 0; vote.any/all: whether that mask is not 0 / equals
 # EXEC, as a Boolean; both write every lane (design M13, as exec.save).
@@ -291,7 +291,7 @@ class Machine:
             for ln in range(32):
                 if exec_m >> ln & 1:
                     b = src(f["RS2"], 1, 1, ln)
-                    s = [b, ln ^ b, ln - b, ln + b, ln ^ b][sub]
+                    s = [b, ln ^ b, ln - b, ln + b, (ln + b) % 32][sub]
                     ok = 0 <= s < 32 and exec_m >> s & 1
                     res[ln] = src(f["RS1"], 1, 0, s if ok else ln)
         else:

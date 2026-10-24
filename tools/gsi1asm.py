@@ -113,7 +113,7 @@ ins("lda", "I", OPC["C1"], 5, None, U_LDA, 0, C_A, "di")
 for n, s in [("qdx", 0), ("qdy", 1), ("qswap1", 2), ("qswap2", 3), ("qswap3", 4), ("qbcast", 5)]:
     ins(n, "R", OPC["C1"], 6, 0, U_LANE, 0, C_A, "d1", subv=s)
 for n, s in [("shfl.idx", 0), ("shfl.xor", 1), ("shfl.up", 2), ("shfl.down", 3),
-             ("shfl.bfly", 4)]:
+             ("shfl.rot", 4)]:
     ins(n, "R", OPC["C1"], 7, 0, U_LANE, 1, C_A, "d12", subv=s, subgroup=True)
 for n, f3, f7, op in [("fadd2", 0, 0, 0), ("fsub2", 1, 0, 1), ("fmul2", 2, 0, 2),
                       ("fmin2", 4, 0, 4), ("fmax2", 4, 1, 5), ("iadd2", 5, 0, 6),

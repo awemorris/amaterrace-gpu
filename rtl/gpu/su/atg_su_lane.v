@@ -138,7 +138,11 @@ module atg_su_lane #(
 				c_src[l*5 +: 5] = sum[4:0];
 				c_ok[l] = c_ok[l] && !sum[5];
 			end
-			default: c_src[l*5 +: 5] = ln ^ bv[4:0];	/* 1 xor, 4 bfly */
+			3'd4: begin	/* rot: (l + rs2) mod 32, always a lane */
+				c_src[l*5 +: 5] = sum[4:0];
+				c_ok[l] = 1'b1;
+			end
+			default: c_src[l*5 +: 5] = ln ^ bv[4:0];	/* 1 xor */
 			endcase
 		end
 	end

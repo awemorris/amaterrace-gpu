@@ -16,7 +16,7 @@
 	shfl.xor r7, r1, r4
 	shfl.up r8, r1, r5
 	shfl.down r9, r1, r5
-	shfl.bfly r10, r1, r4
+	shfl.rot r10, r1, r4
 	shfl.up r11, r1, r20         # huge deltas: own value
 	shfl.idx r12, r6, onei       # chain: reads the shfl result at once
 	shfl.down r13, r12, o98
@@ -36,7 +36,7 @@
 	shfl.xor r7, r1, r4
 	shfl.up r8, r1, r5
 	shfl.down r9, r1, r5
-	shfl.bfly r10, r1, lane
+	shfl.rot r10, r1, lane
 	ballot r25, r4
 	vote.all r26, r4
 	vote.any r27, r23
