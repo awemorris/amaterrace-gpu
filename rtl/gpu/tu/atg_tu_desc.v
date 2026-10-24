@@ -63,6 +63,7 @@ module atg_tu_desc (
 	function [31:0] plane;
 		input [31:0] sz;
 		input tiled;
+		input blk;	/* compressed 4 x 4 blocks of 2^psl bytes */
 		input [2:0] psl;
 		input [3:0] l;
 		reg [15:0] w0, h0, w, h;
@@ -81,6 +82,8 @@ module atg_tu_desc (
 				({16'd0, 2'b00, h[15:2]} + {31'd0, h[1:0] != 2'd0});
 			if (tiled)
 				p = psl == 3'd1 ? {t[28:0], 5'd0} + 34'd63 : {t[27:0], 6'd0};
+			else if (blk)
+				p = ({2'b00, t} << psl) + 34'd63;
 			else
 				p = (({18'd0, w} * {18'd0, h}) << psl) + 34'd63;
 			plane = {p[31:6], 6'd0};
@@ -89,15 +92,15 @@ module atg_tu_desc (
 
 	/* The slot's texel size and whether it is tiled (only 4-byte texels and
 	 * the earlier RGB565). */
-	function [3:0] layout;
+	function [4:0] layout;
 		input [31:0] img;
 		input [20:0] tf;
 		/* verilator lint_off UNUSEDSIGNAL */
-		reg [11:0] c;	/* the size and legacy bits */
+		reg [12:0] c;	/* the size, legacy and block bits */
 		/* verilator lint_on UNUSEDSIGNAL */
 		begin
 			c = tu_fcls(tf, img[GHCI_IMG_FMT +: 4]);
-			layout = {img[GHCI_IMG_TILED] && (c[3] || c[2:0] == 3'd2), c[2:0]};
+			layout = {c[12], img[GHCI_IMG_TILED] && (c[3] || c[2:0] == 3'd2), c[2:0]};
 		end
 	endfunction
 
@@ -156,8 +159,8 @@ module atg_tu_desc (
 	wire [15:0] cnt = cimg[GHCI_IMG_COUNT +: 16] == 16'd0 ? 16'd1 : cimg[GHCI_IMG_COUNT +: 16];
 	wire [15:0] dsh = cnt >> cl;
 	wire [15:0] dl = cimg[GHCI_IMG_TYPE +: 3] != 3'd2 || dsh == 16'd0 ? 16'd1 : dsh;
-	wire [3:0] clay = layout(cimg, d_fmt[cs]);
-	wire [31:0] cp = plane(d_size[cs], clay[3], clay[2:0], cl);
+	wire [4:0] clay = layout(cimg, d_fmt[cs]);
+	wire [31:0] cp = plane(d_size[cs], clay[3], clay[4], clay[2:0], cl);
 	wire [47:0] pd = cp * {16'd0, dl};
 	wire [31:0] nacc = acc + pd[31:0];
 	wire [15:0] clr = st == IDLE && dirty != 16'd0 ? 16'd1 << lo : 16'd0;
@@ -196,8 +199,8 @@ module atg_tu_desc (
 	assign rd_lod = d_lod[rd_slot];
 	assign rd_loff = rd_level == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level}], 6'd0};
 	assign rd_fmt = d_fmt[rd_slot];
-	wire [3:0] rlay = layout(d_img[rd_slot], d_fmt[rd_slot]);
-	assign rd_plane = plane(d_size[rd_slot], rlay[3], rlay[2:0], rd_level);
+	wire [4:0] rlay = layout(d_img[rd_slot], d_fmt[rd_slot]);
+	assign rd_plane = plane(d_size[rd_slot], rlay[3], rlay[4], rlay[2:0], rd_level);
 
 	wire unused_ok = &{1'b0, s_off[8], pd[47:32], nacc[5:0], acc[5:0]};
 endmodule

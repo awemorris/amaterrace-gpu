@@ -56,7 +56,11 @@
  *   the fp32 path (ta_ctl[20] = 1, atg_tu_ffilt) for the others; linear
  *   filtering only for formats with the FILTER_LINEAR feature (and
  *   compares).  A bilinear quad of 8-byte texels on the fp32 path takes
- *   two passes per slice and level, rows j0 and j1 (ta_ctl[21], [22]).
+ *   two passes per slice and level, rows j0 and j1 (ta_ctl[21], [22]);
+ *   the ETC2 and EAC blocks (TEX_FORMAT 147-156): a block per texel (slot
+ *   0 holds the column, slot 1 the row in the block in address bits 1:0),
+ *   bilinear and gather of 8-byte blocks in two row passes, of 16-byte
+ *   blocks in four passes (ta_ctl[49], the column [48]).
  *   ta_bord marks the border texels (clamp to border).
  * Lanes outside tx_mask are computed too (the cache does not fetch them).
  * See spec/gpu/tu/atg_tu_addr.md.
@@ -94,7 +98,7 @@ module atg_tu_addr (
 	output reg [127:0] ta_wts,
 	output reg [15:0] ta_tag,
 	output reg [3:0] ta_mask,
-	output wire [47:0] ta_ctl,
+	output wire [49:0] ta_ctl,
 	output reg [127:0] ta_value,
 	output reg ta_last
 );
@@ -108,7 +112,7 @@ module atg_tu_addr (
 
 	reg [2:0] st;
 	reg [1:0] k;
-	reg [2:0] pas;	/* {row, level, slice} */
+	reg [3:0] pas;	/* {column, row, level, slice} */
 	reg [7:0] opr;
 	reg [3:0] slot;
 	reg [639:0] crd;
@@ -144,8 +148,8 @@ module atg_tu_addr (
 	wire [3:0] maxl = nlev - 4'd1;
 	/* Format (the earlier codes 4-15 read as RGBA8; include/atg_tu_fmt.vh),
 	 * view type (4-7 and unnormalized: 2D). */
-	wire [11:0] fc = tu_fcls(tfmt, image[GHCI_IMG_FMT +: 4]);
-	wire legacy = fc[3], depth = fc[7];
+	wire [12:0] fc = tu_fcls(tfmt, image[GHCI_IMG_FMT +: 4]);
+	wire legacy = fc[3], depth = fc[7], blk = fc[12];
 	wire [2:0] psl = fc[2:0];
 	wire f565 = legacy && image[GHCI_IMG_FMT +: 4] == 4'd4;	/* RGB565: 2-byte texels */
 	wire tiled0 = image[GHCI_IMG_TILED];
@@ -264,10 +268,12 @@ module atg_tu_addr (
 	/* The next pass: 1 if a lane needs a second slice, 2 a second level, 3
 	 * (after 2) a second slice there; none ([3]).  Row passes of 8-byte
 	 * texels: each slice and level has row 0, then row 1 ([2]). */
-	wire split = f32 && psl == 3'd3 && linq && !gather;
+	wire split = f32 && psl == 3'd3 && linq && (blk || !gather);
+	wire quad = f32 && psl == 3'd4 && blk && linq;	/* 16-byte blocks: 4 passes */
 	wire [2:0] nxb = pas[1:0] == 2'd0 ? (depf ? 3'd1 : mipf ? 3'd2 : 3'd4) :
 		pas[1:0] == 2'd1 ? (mipf ? 3'd2 : 3'd4) : pas[1:0] == 2'd2 ? (depf ? 3'd3 : 3'd4) : 3'd4;
-	wire [3:0] nxt = split && !pas[2] ? {2'b01, pas[1:0]} : {nxb[2], 1'b0, nxb[1:0]};
+	wire [4:0] nxt = quad && !pas[3] ? {2'b01, pas[2:0]} : quad && !pas[2] ? {3'b001, pas[1:0]} :
+		split && !pas[2] ? {3'b001, pas[1:0]} : {nxb[2], 2'b00, nxb[1:0]};
 
 	/* Stage B of lane k. */
 	wire [127:0] f_addr;
@@ -276,7 +282,7 @@ module atg_tu_addr (
 	wire [7:0] f_fw;
 	atg_tu_foot foot (
 		.op(op), .gather(gather), .cube(cube), .is3d(is3d), .tiled(tiled), .lin(r_lin),
-		.ms(ms), .smp(cw2[1:0]), .psl(psl), .row(pas[2]), .gwi(gwi),
+		.ms(ms), .smp(cw2[1:0]), .psl(psl), .blk(blk), .row(pas[2]), .col(pas[3]), .gwi(gwi),
 		.p0(pas[0]), .mu(mu), .mv(mv), .mw(mw), .off(cube ? 12'd0 : offs),
 		.x(cw0), .y(cw1), .z(cw4), .cu(r_cu), .cv(r_cv), .cw(r_cw),
 		.wl(r_wl), .hl(r_hl), .dl(r_dl), .face(cf[k]), .lbase(r_lbase), .plane(r_plane),
@@ -290,8 +296,9 @@ module atg_tu_addr (
 	wire [1:0] tsz = legacy ? 2'd0 : psl == 3'd0 ? 2'd2 : psl == 3'd1 ? 2'd1 : 2'd0;
 	wire [1:0] nsl = psl == 3'd3 ? 2'd1 : psl == 3'd4 ? 2'd2 : 2'd0;
 	wire [7:0] vkf = legacy || fc[4] ? 8'd0 : tfmt[7:0];
-	assign ta_ctl = {tfmt[20:9], fc[8], vkf, nsl, tsz, pas[2], split, f32, f565, pas[1:0], qlod,
-		gather ? opr[5:4] : 2'd0, gather, cmp_op, cmp, depth, bcls, pas != 3'd0, !nxt[3],
+	assign ta_ctl = {quad, pas[3], tfmt[20:9], fc[8], vkf, nsl, tsz, pas[2], split, f32, f565,
+		pas[1:0], qlod, gather ? opr[5:4] : 2'd0, gather, cmp_op, cmp, depth, bcls, pas != 4'd0,
+		!nxt[4],
 		op == OP_TEXF, nofetch, fc[9], linq};
 
 	always @(posedge clk) begin
@@ -308,7 +315,7 @@ module atg_tu_addr (
 				ta_tag <= tx_tag;
 				ta_last <= tx_last;
 				k <= 2'd0;
-				pas <= 3'd0;
+				pas <= 4'd0;
 				linq <= 1'b0;
 				depf <= 1'b0;
 				mipf <= 1'b0;
@@ -371,8 +378,8 @@ module atg_tu_addr (
 				linq <= 1'b0;
 				depf <= 1'b0;
 				mipf <= 1'b0;
-				if (!nxt[3]) begin
-					pas <= nxt[2:0];
+				if (!nxt[4]) begin
+					pas <= nxt[3:0];
 					st <= LA;
 				end else
 					st <= IDLE;

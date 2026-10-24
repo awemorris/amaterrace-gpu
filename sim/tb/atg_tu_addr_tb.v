@@ -58,7 +58,7 @@ module atg_tu_addr_tb;
 	wire [127:0] ta_wts;
 	wire [15:0] ta_tag;
 	wire [3:0] ta_mask;
-	wire [47:0] ta_ctl;
+	wire [49:0] ta_ctl;
 	wire [127:0] ta_value;
 
 	atg_tu_addr dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
@@ -82,7 +82,7 @@ module atg_tu_addr_tb;
 	reg [511:0] x_addr;
 	reg [15:0] x_bord;
 	reg [127:0] x_wts;
-	reg [47:0] x_ctl;
+	reg [49:0] x_ctl;
 	reg [127:0] x_value;
 
 	task check_out;

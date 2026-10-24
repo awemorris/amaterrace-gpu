@@ -53,17 +53,18 @@ module atg_tu_cache_run #(
 	reg [127:0] ta_wts = 0;
 	reg [15:0] ta_tag = 0;
 	reg [3:0] ta_mask = 0;
-	reg [47:0] ta_ctl = 0;
+	reg [49:0] ta_ctl = 0;
 	reg [127:0] ta_value = 0;
 	reg ta_last = 1'b0;
 	reg tc_ready = 1'b0;
 	wire ta_ready, tc_valid, tc_last;
 	wire [511:0] tc_texels;
 	wire [15:0] tc_bord;
+	wire [31:0] tc_lo;
 	wire [127:0] tc_wts;
 	wire [15:0] tc_tag;
 	wire [3:0] tc_mask;
-	wire [47:0] tc_ctl;
+	wire [49:0] tc_ctl;
 	wire [127:0] tc_value;
 	wire req_valid, req_write;
 	reg req_ready = 1'b0;
@@ -80,7 +81,7 @@ module atg_tu_cache_run #(
 		.ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr), .ta_bord(ta_bord),
 		.ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl), .ta_value(ta_value),
 		.ta_last(ta_last), .tc_valid(tc_valid), .tc_ready(tc_ready), .tc_texels(tc_texels),
-		.tc_bord(tc_bord), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask), .tc_ctl(tc_ctl),
+		.tc_bord(tc_bord), .tc_lo(tc_lo), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask), .tc_ctl(tc_ctl),
 		.tc_value(tc_value), .tc_last(tc_last),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
@@ -201,6 +202,9 @@ module atg_tu_cache_run #(
 			end
 			while (($random(seed) & 3) == 0)
 				@(posedge clk);
+			for (l = 0; l < 16; l = l + 1)
+				if (tc_lo[2*l +: 2] !== addr[32*l +: 2])
+					errs = 1;
 			if (!tc_valid || tc_texels !== want || tc_bord !== bord || tc_wts !== wts || tc_tag !== tag ||
 			    tc_mask !== mask || tc_ctl !== ctl || tc_value !== val || tc_last !== last) begin
 				errs = 1;

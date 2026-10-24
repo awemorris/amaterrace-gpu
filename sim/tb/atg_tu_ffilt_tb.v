@@ -30,10 +30,11 @@ module atg_tu_ffilt_tb;
 	reg tc_valid = 1'b0;
 	reg [511:0] tc_texels = 0;
 	reg [15:0] tc_bord = 0;
+	reg [31:0] tc_lo = 0;
 	reg [127:0] tc_wts = 0;
 	reg [15:0] tc_tag = 0;
 	reg [3:0] tc_mask = 0;
-	reg [47:0] tc_ctl = 0;
+	reg [49:0] tc_ctl = 0;
 	reg tc_last = 1'b0;
 	reg tr_ready = 1'b0;
 	wire tc_ready, tr_valid, tr_last;
@@ -41,7 +42,7 @@ module atg_tu_ffilt_tb;
 	wire [511:0] tr_data;
 
 	atg_tu_ffilt dut (.clk(clk), .rst_n(rst_n), .tc_valid(tc_valid), .tc_ready(tc_ready),
-		.tc_texels(tc_texels), .tc_bord(tc_bord), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask),
+		.tc_texels(tc_texels), .tc_bord(tc_bord), .tc_lo(tc_lo), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask),
 		.tc_ctl(tc_ctl), .tc_last(tc_last), .tr_valid(tr_valid),
 		.tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data), .tr_last(tr_last));
 
@@ -50,8 +51,9 @@ module atg_tu_ffilt_tb;
 	reg [511:0] tex, x_data;
 	reg [127:0] wts;
 	reg [3:0] mask;
-	reg [47:0] ctl;
+	reg [49:0] ctl;
 	reg [15:0] bord;
+	reg [31:0] lo;
 	reg [15:0] tag;
 	reg last;
 
@@ -76,7 +78,7 @@ module atg_tu_ffilt_tb;
 				/* end of file */
 			end else if (kind == "H") begin
 				/* A first level: taken, nothing returned. */
-				code = $fscanf(fd, "%h %h %h %h %h\n", tex, bord, wts, mask, ctl);
+				code = $fscanf(fd, "%h %h %h %h %h %h\n", tex, bord, lo, wts, mask, ctl);
 				while (($random(seed) & 3) == 0)
 					@(posedge clk);
 				tc_valid <= 1'b1;
@@ -85,6 +87,7 @@ module atg_tu_ffilt_tb;
 				tc_mask <= mask;
 				tc_ctl <= ctl;
 				tc_bord <= bord;
+				tc_lo <= lo;
 				tc_tag <= $random(seed);
 				tc_last <= $random(seed);
 				@(posedge clk);
@@ -101,8 +104,8 @@ module atg_tu_ffilt_tb;
 					end
 				end
 			end else if (kind == "F") begin
-				code = $fscanf(fd, "%h %h %h %h %h %h %h %h\n", tex, bord, wts, mask, ctl, tag,
-					last, x_data);
+				code = $fscanf(fd, "%h %h %h %h %h %h %h %h %h\n", tex, bord, lo, wts, mask, ctl,
+					tag, last, x_data);
 				while (($random(seed) & 3) == 0)
 					@(posedge clk);
 				tc_valid <= 1'b1;
@@ -111,6 +114,7 @@ module atg_tu_ffilt_tb;
 				tc_mask <= mask;
 				tc_ctl <= ctl;
 				tc_bord <= bord;
+				tc_lo <= lo;
 				tc_tag <= tag;
 				tc_last <= last;
 				@(posedge clk);
@@ -120,6 +124,7 @@ module atg_tu_ffilt_tb;
 				tc_texels <= {16{$random(seed)}};
 				tc_wts <= {4{$random(seed)}};
 				tc_bord <= $random(seed);
+				tc_lo <= $random(seed);
 				tmo = 0;
 				while (!tr_valid && tmo < 1000) begin
 					@(posedge clk);

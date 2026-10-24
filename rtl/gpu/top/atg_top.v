@@ -307,7 +307,8 @@ module atg_top #(
 		.HAS_DBG(HAS_JTAG),
 		.PACKED(NSU != 0 && SU_PACKED != 0),
 		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0),
-		.MS4(MS4)
+		.MS4(MS4),
+		.HAS_ETC(HAS_TU != 0)	/* the TU decodes ETC2 and EAC */
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),

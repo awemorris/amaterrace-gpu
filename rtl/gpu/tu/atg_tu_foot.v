@@ -32,7 +32,11 @@
  * are these texels for 1- to 4-byte texels and for gather (gather: the
  * word gwi of each texel); for 8-byte texels the two words of (i0, j) and
  * of (i1, j), j = j0 or (row) j1; for 16-byte texels the four words of
- * texel 0.
+ * texel 0.  Compressed blocks (blk): the block of a texel at (j / 4) x
+ * ceil(wl / 4) + i / 4 blocks of 2^psl bytes (8 or 16), its words as the
+ * 8- and 16-byte texels' (16-byte blocks: the footprint's texel {row,
+ * col}), and the texel's column and row in the block in address bits 1:0
+ * of its first and second word.
  * See spec/gpu/tu/atg_tu_foot.md.
  */
 
@@ -49,7 +53,9 @@ module atg_tu_foot (
 	input wire ms,	/* multisampled (4 samples, linear) */
 	input wire [1:0] smp,	/* texf: the sample */
 	input wire [2:0] psl,	/* log2 of the texel's bytes */
+	input wire blk,	/* compressed 4 x 4 blocks */
 	input wire row,	/* 8-byte texels: the pass's second row */
+	input wire col,	/* 16-byte blocks: the pass's second column */
 	input wire [1:0] gwi,	/* gather: the word of the texel */
 	input wire p0,	/* the pass's second slice */
 	input wire [1:0] mu,
@@ -90,6 +96,7 @@ module atg_tu_foot (
 		input [15:0] w;
 		input tl;
 		input [2:0] pl;	/* log2 of the texel's bytes */
+		input bk;	/* blocks of 2^pl bytes */
 		reg [15:0] tw;
 		/* verilator lint_off UNUSEDSIGNAL */
 		reg [31:0] m;	/* 32-bit wrap: the top bits are shifted out */
@@ -97,7 +104,9 @@ module atg_tu_foot (
 		begin
 			tw = {2'b00, w[15:2]} + {15'd0, w[1:0] != 2'd0};	/* tiles a row */
 			m = tl ? {18'd0, j[15:2]} * {16'd0, tw} : {16'd0, j} * {16'd0, w};
-			if (tl && pl == 3'd1)
+			if (bk)
+				toff = ({18'd0, j[15:2]} * {16'd0, tw} + {18'd0, i[15:2]}) << pl;
+			else if (tl && pl == 3'd1)
 				toff = {m[26:0], 5'd0} + {27'd0, j[1:0], 3'd0} + {13'd0, i[15:2], 5'd0} +
 					{29'd0, i[1:0], 1'd0};
 			else if (tl)
@@ -158,11 +167,14 @@ module atg_tu_foot (
 	always @(*) begin
 		for (t = 0; t < 4; t = t + 1) begin
 `ifdef MUT_TU_ROW
-			ft = gather || psl <= 3'd2 ? t[1:0] : psl == 3'd3 ? {1'b0, t[1]} : 2'd0;
+			ft = (gather && !blk) || psl <= 3'd2 ? t[1:0] : psl == 3'd3 ? {1'b0, t[1]} :
+				{1'b0, col};
 `else
-			ft = gather || psl <= 3'd2 ? t[1:0] : psl == 3'd3 ? {row, t[1]} : 2'd0;
+			ft = (gather && !blk) || psl <= 3'd2 ? t[1:0] : psl == 3'd3 ? {row, t[1]} :
+				{row, col};
 `endif
-			part = gather ? gwi : psl == 3'd3 ? {1'b0, t[0]} : psl == 3'd4 ? t[1:0] : 2'd0;
+			part = gather && !blk ? gwi : psl == 3'd3 ? {1'b0, t[0]} : psl == 3'd4 ? t[1:0] :
+				2'd0;
 			ct = !lin || ft == 2'd0 ? c00 : ft == 2'd1 ? c10 : ft == 2'd2 ? c01 : c11;
 			if (texf) begin
 				tf = 3'd0;
@@ -181,7 +193,9 @@ module atg_tu_foot (
 				tb = (ft[0] ? wi1[16] : wi0[16]) | (ft[1] ? wj1[16] : wj0[16]) | bk;
 			end
 			a[t*32 +: 32] = lbase + kp[31:0] + (cube && !texf ? stride * {29'd0, tf} : 32'd0) +
-				toff(ti, tj, msf ? wms : wl, tiled, psl) + {28'd0, part, 2'b00};
+				toff(ti, tj, msf ? wms : wl, tiled, psl, blk) + {28'd0, part, 2'b00} +
+				(blk && part == 2'd0 ? {30'd0, ti[1:0]} : blk && part == 2'd1 ? {30'd0, tj[1:0]} :
+				32'd0);
 			bd[t] = tb;
 		end
 	end

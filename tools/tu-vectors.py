@@ -25,8 +25,9 @@
 #   Q op slot mask off coord data    one quad and its 16 returned words
 #   P name                           as above.
 # tu_ffilt.txt lines (hex), the fp32 path (atg_tu_ffilt):
-#   H texels bord wts mask ctl       a pass with more to follow
-#   F texels bord wts mask ctl tag last data   one quad and its output
+#   H texels bord lo wts mask ctl    a pass with more to follow (lo: the
+#                                    slots' address bits 1:0, 32 bits)
+#   F texels bord lo wts mask ctl tag last data   one quad and its output
 #   P name                           as above.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import math
@@ -128,7 +129,7 @@ def quad(out, r, op, slot, d, coords, mask, stats, off=0):
     out.append('Q %02x %x %x %04x %x %03x %0160x %x' % (op, slot, mask, tag, last, off, crd,
                                                        len(passes)))
     for a, bo, wts, ctl, val in passes:
-        out.append('A %0128x %04x %032x %012x %032x' %
+        out.append('A %0128x %04x %032x %013x %032x' %
                    (pack([x for ln in range(4) for x in a[ln]]),
                     pack([x for ln in range(4) for x in bo[ln]], 1), pack(wts), ctl, pack(val)))
         stats['border'] += sum(1 for ln in range(4) for x in bo[ln] if x and mask >> ln & 1)
@@ -579,7 +580,7 @@ def ms_filter_vectors(r):
     def one(texels, wts, mask, ctl, value):
         data = flt.quad(texels, wts, ctl, mask, value)
         tx = pack([t for row in texels for t in row])
-        out.append('F %0128x %032x %x %012x %032x %04x %x %0128x' %
+        out.append('F %0128x %032x %x %013x %032x %04x %x %0128x' %
                    (tx, pack(wts), mask, ctl, pack(value), r.getrandbits(16),
                     r.getrandbits(1), pack(data)))
 
@@ -611,10 +612,10 @@ def filter_vectors(r):
         data = flt.quad(texels, wts, ctl, mask, value)
         tx = pack([t for row in texels for t in row])
         if data is None:
-            out.append('H %0128x %032x %x %012x %032x' % (tx, pack(wts), mask, ctl,
+            out.append('H %0128x %032x %x %013x %032x' % (tx, pack(wts), mask, ctl,
                                                           pack(value)))
             return
-        out.append('F %0128x %032x %x %012x %032x %04x %x %0128x' %
+        out.append('F %0128x %032x %x %013x %032x %04x %x %0128x' %
                    (tx, pack(wts), mask, ctl, pack(value), r.getrandbits(16),
                     r.getrandbits(1), pack(data)))
 
@@ -729,9 +730,9 @@ def filter_vectors(r):
 
 # The formats of TEX_FORMAT (a third random stream: the sections above
 # stay as they were).
-SAMPLED = sorted(v for v, f in FM.FORMATS.items()
-                 if 'S' in f.feat.partition('|')[0] and not f.block)
-NONE = [91, 104, 106, 147, 156, 200, 0xFF, 1]
+SAMPLED = sorted(v for v, f in FM.FORMATS.items() if 'S' in f.feat.partition('|')[0])
+BLOCKS = [v for v in SAMPLED if FM.info(v).block]
+NONE = [91, 104, 106, 131, 157, 200, 0xFF, 1]
 
 
 def rswz(r):
@@ -824,6 +825,17 @@ def fmt_addr_vectors(r):
         quad(out, r, op, sl, descs[sl], coords(op), r.choice([15, r.randrange(16)]), stats,
              off=r.choice([0, r.getrandbits(12)]))
     out.append('P small')
+    # The ETC2 and EAC blocks: a block per texel, the texel's position in
+    # the block, the row passes of 8-byte blocks, the four passes of
+    # 16-byte blocks (with mip and 3D linear), gather, arrays and cubes.
+    for n in range(500):
+        if n % 40 == 0:
+            new_descs(BLOCKS, r.choice([None, 0, 1, 3]))
+        sl = r.randrange(16)
+        op = r.choice([0, 0, 1, 1, 2, 0x08, 0x18, 0x28, 0x38, 3])
+        quad(out, r, op, sl, descs[sl], coords(op, 'w'), r.choice([15, 15, r.randrange(16)]),
+             stats, off=r.choice([0, r.getrandbits(12)]))
+    out.append('P blocks')
     print('tu-vectors: format addr passes %s' %
           {k: v for k, v in stats.items() if k[:2] == 'np'})
     return out
@@ -851,15 +863,16 @@ def ffilt_vectors(r):
     out = []
     ff = T.FFilter()
 
-    def one(tex, bord, wts, mask, ctl):
-        data = ff.quad(tex, bord, wts, ctl, mask)
+    def one(tex, bord, wts, mask, ctl, lo):
+        data = ff.quad(tex, bord, wts, ctl, mask, lo)
         tx = pack([t for row in tex for t in row])
         bo = pack([b for row in bord for b in row], 1)
+        lw = pack([x for row in lo for x in row], 2)
         if data is None:
-            out.append('H %0128x %04x %032x %x %012x' % (tx, bo, pack(wts), mask, ctl))
+            out.append('H %0128x %04x %08x %032x %x %013x' % (tx, bo, lw, pack(wts), mask, ctl))
             return
-        out.append('F %0128x %04x %032x %x %012x %04x %x %0128x' %
-                   (tx, bo, pack(wts), mask, ctl, r.getrandbits(16), r.getrandbits(1),
+        out.append('F %0128x %04x %08x %032x %x %013x %04x %x %0128x' %
+                   (tx, bo, lw, pack(wts), mask, ctl, r.getrandbits(16), r.getrandbits(1),
                     pack(data)))
 
     def rwts():
@@ -880,8 +893,11 @@ def ffilt_vectors(r):
             base = (1 << T.CTL_F32 | vk << T.CTL_VKF | sten << T.CTL_STEN | z << T.CTL_SWZ |
                     r.randrange(3) << T.CTL_BORDER |
                     {8: 1, 16: 2}.get(nb, 0) << T.CTL_NSL)
-            lin = kind in ('bilinear', 'passes') and f is not None and 'F' in f.feat and nb <= 8
-            if kind == 'gather':
+            blk = f is not None and f.block
+            lin = kind in ('bilinear', 'passes') and f is not None and 'F' in f.feat and \
+                (nb <= 8 or blk)
+            gat = kind == 'gather'
+            if gat:
                 base |= 1 | 1 << T.CTL_GATHER | r.randrange(4) << T.CTL_COMP
                 lin = False
             if lin:
@@ -890,10 +906,14 @@ def ffilt_vectors(r):
                 seq = r.choice([[0, 2], [0, 1], [0, 1, 2], [0, 2, 3], [0, 1, 2, 3], [0]])
             else:
                 seq = [0]
-            split = lin and nb == 8
+            split = (lin or (gat and blk)) and nb == 8
+            quad = (lin or gat) and blk and nb == 16
             if split:
                 base |= 1 << T.CTL_SPLIT
                 seq = [p | rw << 2 for p in seq for rw in (0, 1)]
+            if quad:
+                base |= 1 << T.CTL_QUAD
+                seq = [p | rw << 2 | cl << 3 for p in seq for rw in (0, 1) for cl in (0, 1)]
             w = rwts()
             for k, pas in enumerate(seq):
                 tex = [[rtexel(r, vk, sten) for _ in range(4)] for _ in range(4)]
@@ -901,8 +921,11 @@ def ffilt_vectors(r):
                 bord = [[int(r.random() < pb) for _ in range(4)] for _ in range(4)]
                 ctl = (base | (k + 1 < len(seq)) << T.CTL_MORE | (k > 0) << T.CTL_ACC |
                        (pas & 1) << T.CTL_P0 | (pas >> 1 & 1) << T.CTL_P1 |
-                       (pas >> 2) << T.CTL_ROW)
-                one(tex, bord, w, mask, ctl)
+                       (pas >> 2 & 1) << T.CTL_ROW | (pas >> 3) << T.CTL_COL)
+                if blk:
+                    tex = [[r.getrandbits(32) for _ in range(4)] for _ in range(4)]
+                lo = [[r.getrandbits(2) for _ in range(4)] for _ in range(4)]
+                one(tex, bord, w, mask, ctl, lo)
         out.append('P ' + kind)
     return out
 
@@ -918,10 +941,10 @@ def u8_fmt_vectors(r):
         data = flt.quad(texels, wts, ctl, mask, value)
         tx = pack([t for row in texels for t in row])
         if data is None:
-            out.append('H %0128x %032x %x %012x %032x' % (tx, pack(wts), mask, ctl,
+            out.append('H %0128x %032x %x %013x %032x' % (tx, pack(wts), mask, ctl,
                                                           pack(value)))
             return
-        out.append('F %0128x %032x %x %012x %032x %04x %x %0128x' %
+        out.append('F %0128x %032x %x %013x %032x %04x %x %0128x' %
                    (tx, pack(wts), mask, ctl, pack(value), r.getrandbits(16),
                     r.getrandbits(1), pack(data)))
 

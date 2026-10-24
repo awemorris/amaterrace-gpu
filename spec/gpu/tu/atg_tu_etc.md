@@ -1,6 +1,6 @@
 # atg_tu_etc
 
-RTL: `rtl/gpu/tu/atg_tu_etc.v` (new).  Parent: atg_tu (between atg_tu_cache and the fp32 filter path atg_tu_ffilt).
+RTL: `rtl/gpu/tu/atg_tu_etc.v`.  Parent: atg_tu_ffilt (the fp32 filter path decodes a block texel before converting it).
 
 ## 1. Purpose and place
 
@@ -12,23 +12,17 @@ None.
 
 ## 3. Ports
 
-Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
+Combinational.
 
 | Name | Dir | Width | Meaning, handshake and timing |
 | --- | --- | --- | --- |
-| `clk` | in | 1 | Clock (gclk). |
-| `rst_n` | in | 1 | Synchronous reset, active low. |
-| `i_valid` | in | 1 | A texel to decode; no back-pressure (one per cycle). |
 | `i_fmt` | in | 4 | The format, VkFormat - 147: 0 ETC2_R8G8B8_UNORM, 1 its SRGB, 2 ETC2_R8G8B8A1_UNORM, 3 its SRGB, 4 ETC2_R8G8B8A8_UNORM, 5 its SRGB, 6 EAC_R11_UNORM, 7 EAC_R11_SNORM, 8 EAC_R11G11_UNORM, 9 EAC_R11G11_SNORM. |
 | `i_block` | in | 128 | The block's bytes as stored (8 or 16 bytes; byte 0 in [7:0]). |
 | `i_s`, `i_t` | in | 2 | The texel's column and row in the block. |
-| `i_tag` | in | 8 | Passed through (the caller's lane and texel). |
-| `o_valid` | out | 1 | Two cycles after i_valid. |
 | `o_kind` | out | 2 | 0 RGBA8 UNORM, 1 RGBA8 sRGB (R, G, B to be decoded as sRGB), 2 unsigned 11-bit (R11, R11G11 UNORM), 3 signed 11-bit (SNORM). |
 | `o_texel` | out | 32 | kind 0, 1: R in [7:0], G [15:8], B [23:16], A [31:24]; kind 2, 3: R in [10:0], G in [26:16] (two's complement for 3; G 0 for one channel). |
-| `o_tag` | out | 8 | i_tag. |
 
-12 ports.
+6 ports.
 
 ## 4. Behaviour
 
@@ -36,16 +30,16 @@ The decoding rules are those of the Khronos Data Format Specification's ETC2 and
 
 ## 5. State machine
 
-None: a combinational decode between two register stages.
+None.
 
 ## 6. Latency and throughput
 
-One texel per cycle, two cycles of latency.  Size ≈1.5k LUT (estimated).  A bilinear sample of a 16-byte block format takes 4 passes and of an 8-byte one 2 (the four texels may lie in four blocks; atg_tu_addr and atg_tu_cache fetch a block per texel).
+Combinational (atg_tu_ffilt's step a cycle; registers for the clock rate are a later performance step).  Size ≈1.5k LUT (estimated, not synthesised).  A bilinear sample or gather of a 16-byte block format takes 4 passes and of an 8-byte one 2 (the four texels may lie in four blocks; atg_tu_addr and atg_tu_cache fetch a block per texel).
 
 ## 7. Corner cases and errors
 
 - i_fmt 10-15: the output is (0, 0, 0, 0) with kind 0.
-- The bit layouts and constant tables are checked against the Khronos text at the start of the implementation (some details of this spec are from memory; design §16.11a).
+- The bit layouts, the mode selection, the modifier, distance and EAC tables and the punch-through rules were taken from the Khronos Data Format Specification's ETC2 text (the asciidoc source, 2026-10-25); `tools/etcmodel.py --selftest` checks the specification's worked examples (the planar block's 16 texels, T and H paint colours, the EAC alpha, R11 with multiplier 0, signed R11).
 
 ## 8. What the TB checks
 
@@ -63,4 +57,4 @@ design §16.11a; `spec/gpu/tu/atg_tu.md`.  Values referenced: Khronos Data Forma
 
 ## 10. Status
 
-Spec only (2026-10-25); no RTL yet.
+Implemented (2026-10-25), combinational instead of the two register stages first planned (it sits in atg_tu_ffilt's one-step-a-cycle loop).

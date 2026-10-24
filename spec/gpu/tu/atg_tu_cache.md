@@ -43,6 +43,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `tc_tag` | out | 16 | Tag. |
 | `tc_mask` | out | 4 | Lanes. |
 | `tc_bord` | out | 16 | ta_bord. |
+| `tc_lo` | out | 32 | The 16 slots' address bits 1:0 (a block's texel position for atg_tu_ffilt). |
 | `tc_ctl` | out | 48 | As ta_ctl. |
 | `tc_value` | out | 128 | As ta_value. |
 | `tc_last` | out | 1 | Last. |
@@ -60,7 +61,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-35 ports; 24 counting each AMB port and HCR snoop port as one group (spec/README.md).
+36 ports; 25 counting each AMB port and HCR snoop port as one group (spec/README.md).
 
 ## 4. Behaviour
 

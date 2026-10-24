@@ -6,7 +6,7 @@ RTL: `rtl/gpu/tu/atg_tu.v`.  Parent: atg_top (HAS_TU).  Implemented in: p009.
 
 The texture unit (design §2.3, §3.7): addressing, cache, filter; one MC client.
 
-Children: `atg_tu_addr` (with its children `atg_tu_desc`, `atg_tu_cube`, `atg_tu_lod`, `atg_tu_foot`), `atg_tu_cache`, `atg_tu_filter` (the 8-bit path), `atg_tu_ffilt` (the fp32 path of TEX_FORMAT's formats).
+Children: `atg_tu_addr` (with its children `atg_tu_desc`, `atg_tu_cube`, `atg_tu_lod`, `atg_tu_foot`), `atg_tu_cache`, `atg_tu_filter` (the 8-bit path), `atg_tu_ffilt` (the fp32 path of TEX_FORMAT's formats, with `atg_tu_etc`, the ETC2 and EAC decoder).
 
 ## 2. Parameters
 
