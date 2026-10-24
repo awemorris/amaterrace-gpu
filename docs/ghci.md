@@ -210,8 +210,8 @@ CAPS (0x020):
 | [26] | The texture unit of section 8.4: the view types (2D arrays, 3D, cube maps), texel offsets, unnormalized coordinates, mipmap mode linear, clamp to border, the depth formats and depth compare, gather and the queries (Vulkan 1.0 core texture sampling, multisampled images aside) |
 | [27] | Graphics: the vertex fetcher, the rasterizer and the render output are present |
 | [28] | Packed fp16/int16 arithmetic (section 12.5) |
-| [30] | Vulkan 1.0 core rendering (draft, section 8.5): the stencil ops with front and back state ([9] says a stencil attachment exists), D16, depth bias, depth bounds, depth clamp and depth clipping, w, viewport and guard-band clipping, points and lines, four colour attachments, the formats that the FMT capability names, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT and rasterizer discard. The bit number is provisional ([29] is multisampling, section 12.11) |
 | [29] | 4x multisampling (draft, section 12.11): the rasterizer's sample coverage, the render output per sample, `texf` of multisampled images and the blitter's RESOLVE (section 8.2) |
+| [30] | Vulkan 1.0 core rendering (draft, section 8.5): the stencil ops with front and back state ([9] says a stencil attachment exists), D16, depth bias, depth bounds, depth clamp and depth clipping, w, viewport and guard-band clipping, points and lines, four colour attachments, the formats that the FMT capability names, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT and rasterizer discard. The bit number is provisional ([29] is multisampling, section 12.11) |
 
 CAPS2 (0x024):
 
@@ -1475,29 +1475,6 @@ A program in a native ISA (the PROGRAM gpu-op's ISA field is ISA_ID, not
 "GSI1") has the vendor's format; GHCI fixes only its first two words: the
 vendor's ISA FourCC and a version.
 
-### 12.12 Colour outputs and primitive inputs (draft)
-
-**Draft** (2026-10-25; not implemented yet), with CAPS[30].
-
-- **Export targets of a fragment warp**: 0x100 + 16k + c is component c
-  of colour attachment k (k = 0-3; 0x100-0x103 is attachment 0 as
-  before), 0x104 DEPTH, 0x105 SAMPLE_MASK (section 12.11), 0x108-0x10B
-  reserved (a second colour of attachment 0 for dual-source blending). An
-  attachment no lane exported is not written.
-- **Inputs of a point's fragment warp**: r0 and r1 hold PointCoord (s, t)
-  = (1/2 + x_p - x_f, 1/2 + y_p - y_f) at the pixel centre (x_p, y_p) for
-  the vertex at (x_f, y_f) (points of size 1); r2 has no meaning. A
-  compiler that builds the program of a pipeline drawing points reads the
-  inputs of vertex 0 with `lda` and does not interpolate them.
-- **Inputs of a line's fragment warp**: as a triangle's, with b2 = 0 up
-  to rounding.
-- **Integer texels** (section 8.5): `texl`, `texb`, `texf` and `texg` of
-  an integer format write integer bits (sign or zero extended) to
-  rd..rd+3.
-- **Interface kinds** 9-11 (section 12.10) name resources that the
-  program reaches with `lw`, `sw` and `atom` (the compiler computes the
-  addresses): the command processor's firmware writes the constant-bank
-  words of the kind-specific word.
 ### 12.11 Multisampling (draft)
 
 **Draft** (2026-10-25; not implemented yet). With CAPS[29], the GPU
@@ -1642,6 +1619,29 @@ fill and copy with KICK.BLIT, then read memory back through the debug port.
 15. Bindings
 ------------
 
+### 12.12 Colour outputs and primitive inputs (draft)
+
+**Draft** (2026-10-25; not implemented yet), with CAPS[30].
+
+- **Export targets of a fragment warp**: 0x100 + 16k + c is component c
+  of colour attachment k (k = 0-3; 0x100-0x103 is attachment 0 as
+  before), 0x104 DEPTH, 0x105 SAMPLE_MASK (section 12.11), 0x108-0x10B
+  reserved (a second colour of attachment 0 for dual-source blending). An
+  attachment no lane exported is not written.
+- **Inputs of a point's fragment warp**: r0 and r1 hold PointCoord (s, t)
+  = (1/2 + x_p - x_f, 1/2 + y_p - y_f) at the pixel centre (x_p, y_p) for
+  the vertex at (x_f, y_f) (points of size 1); r2 has no meaning. A
+  compiler that builds the program of a pipeline drawing points reads the
+  inputs of vertex 0 with `lda` and does not interpolate them.
+- **Inputs of a line's fragment warp**: as a triangle's, with b2 = 0 up
+  to rounding.
+- **Integer texels** (section 8.5): `texl`, `texb`, `texf` and `texg` of
+  an integer format write integer bits (sign or zero extended) to
+  rd..rd+3.
+- **Interface kinds** 9-11 (section 12.10) name resources that the
+  program reaches with `lw`, `sw` and `atom` (the compiler computes the
+  addresses): the command processor's firmware writes the constant-bank
+  words of the kind-specific word.
 ### 15.1 Platform binding
 
 The base form of GHCI. The platform's firmware describes the device:
