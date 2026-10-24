@@ -1021,7 +1021,7 @@ Registers, at offsets from the capability's register offset:
 | --- | --- | --- | --- |
 | 0x00 | DC_ID | R | FourCC of the controller |
 | 0x04 | DC_VERSION | R | [31:16] major, [15:0] minor |
-| 0x08 | DC_CAPS | R | [0] VGA, [1] TMDS, [2] external HDMI transmitter (I2C), [7:4] formats, [8] cursor, [11:9] number of modes |
+| 0x08 | DC_CAPS | R | [0] VGA, [1] TMDS, [2] external HDMI transmitter (I2C; its parallel input format is the board's), [7:4] formats, [8] cursor, [11:9] number of modes |
 | 0x10 | CTRL | RW | [0] ENABLE, [1] RESET (W1S), [2] TEST_PATTERN, [5:4] FORMAT (0 BGRA8, 1 RGBA8, 2 RGB565), [6] OUTPUT (0 VGA, 1 HDMI) |
 | 0x14 | STATUS | R | [0] running, [1] underflow (sticky), [2] idle (ENABLE = 0 and no memory access outstanding), [15:4] current line |
 | 0x18 | IRQ_STATUS | R/W1C | [0] VSYNC, [1] UNDERFLOW, [2] FLIP_DONE |
@@ -1034,7 +1034,9 @@ Registers, at offsets from the capability's register offset:
 | 0x50 | SYNC_POL | RW | [0] hsync, [1] vsync; 1 = active high |
 | 0x54 | FRAME_COUNT | R | Vsync count, cleared by the controller's reset |
 | 0x58 | PCLK_SEL | RW | Pixel clock choice among the controller's modes |
-| 0x60..0x6C | I2C_CTRL, I2C_DATA, I2C_STATUS | RW | A small I2C master for an external transmitter (DC_CAPS[2]) |
+| 0x60 | I2C_CTRL | RW | A small I2C master for an external transmitter (DC_CAPS[2]): [0] START, [1] STOP, [2] WRITE, [3] READ, [4] ACK (the ACK to send after a READ) |
+| 0x64 | I2C_DATA | RW | [7:0] the byte to write, or the byte read |
+| 0x68 | I2C_STATUS | R | [0] busy, [1] NACK (the last WRITE was not acknowledged) |
 | 0x70..0x7C | vendor | R | Implementation-defined |
 
 - The controller has its own reset (its CTRL.RESET) and is not reset by
