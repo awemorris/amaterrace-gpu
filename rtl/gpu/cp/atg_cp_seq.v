@@ -207,9 +207,9 @@ module atg_cp_seq #(
 			pay_we = 1'b1;
 			pay_idx = sidx;
 			/* a block's STATE does not change under its work (RX: also the ROP's
-			 * DEBUG_COLOR) */
-			pay_wait = sidx < 9'h020 ? B_BLT : sidx >= 9'h050 && sidx < 9'h070 ? B_RX | B_ROP :
-				sidx >= 9'h070 && sidx < 9'h090 ? B_ROP : 8'd0;
+			 * DEBUG_COLOR; VF: 0x020-0x04F and ATTR_DST 0x1C0-0x1CF) */
+			pay_wait = sidx < 9'h020 ? B_BLT : sidx < 9'h050 ? B_VF : sidx < 9'h070 ? B_RX | B_ROP :
+				sidx < 9'h090 ? B_ROP : sidx[8:4] == 5'h1C ? B_VF : 8'd0;
 		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
 			pay_we = 1'b1;
 			pay_idx = 9'h1E0 + {1'b0, p};

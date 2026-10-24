@@ -97,3 +97,8 @@ response fields are per client now (`rsp_write_v`, `rsp_tag_v`, `rsp_rdata_v`, `
 each client is wired to its slice); `HIGH_MASK` (CP, and the outside client) sets the priority
 bit; `ROOT_CLIENT` = `C_EXT` when `EXT_CLIENT` (the KC705's DC one hop from the root).  The CP
 has no `rsp_tag` port yet, so `rsp_tag_v[7:0]` is collected in `unused_ok`.
+
+**WS288 p009 part B1 (P1)**: a primitive from the VF reaches the RX only while SU 0's `pt_done`
+bit of its PT block (prim_vtx[7:5]) is set, i.e. after the vertex warp that wrote the block has
+ended (design §3.8: the RX must not read the PT before the vertex shader's exports).  prim_ready
+to the VF is gated the same way.

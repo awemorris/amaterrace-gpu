@@ -533,8 +533,11 @@ module atg_top #(
 	wire [5:0] vl_reg;
 	wire [4:0] vl_lane;
 	wire [31:0] vl_data, vl_mask;
-	/* VF → RX. */
-	wire prim_valid, prim_ready, prim_last;
+	/* VF → RX (a primitive waits until SU 0's vertex warp of its PT block has
+	 * ended: pt_done, atg_su_pt). */
+	wire prim_valid, prim_ready, prim_last, rx_prim_ready;
+	wire [7:0] pt_done;
+	wire prim_ok = pt_done[prim_vtx[7:5]];
 	wire [23:0] prim_vtx;
 	wire [2:0] prim_free;
 	/* RX ↔ SU 0. */
@@ -619,8 +622,8 @@ module atg_top #(
 		atg_rx #(.HAS_SU(NSU > 0 ? 1 : 0)) rx (
 			.clk(clk), .rst_n(core_rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 			.raw_kick(raw_kick), .busy(rx_busy),
-			.prim_valid(prim_valid), .prim_ready(prim_ready), .prim_vtx(prim_vtx),
-			.prim_free(prim_free), .prim_last(prim_last),
+			.prim_valid(prim_valid && prim_ok), .prim_ready(rx_prim_ready),
+			.prim_vtx(prim_vtx), .prim_free(prim_free), .prim_last(prim_last),
 			.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
 			.pt_free(pt_free), .pt_free_idx(pt_free_idx),
 			.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_we(fl_we), .fl_reg(fl_reg), .fl_lane(fl_lane),
@@ -630,9 +633,11 @@ module atg_top #(
 			.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 			.ord_valid(ord_valid), .ord_seq(ord_seq)
 		);
+		assign prim_ready = rx_prim_ready && prim_ok;
 	end else begin : g_no_rx
 		assign rx_busy = 1'b0;
 		assign prim_ready = 1'b0;
+		assign rx_prim_ready = 1'b0;
 		assign pt_rd = 1'b0;
 		assign pt_idx = 8'd0;
 		assign pt_word = 6'd0;
@@ -658,7 +663,7 @@ module atg_top #(
 		assign ord_valid = 1'b0;
 		assign ord_seq = 16'd0;
 		wire unused_rx = &{1'b0, raw_kick, prim_valid, prim_vtx, prim_free, prim_last,
-			pt_rdata, fl_gnt, dx_ready};
+			pt_rdata, fl_gnt, dx_ready, prim_ok, rx_prim_ready};
 	end
 
 	if (HAS_TU != 0) begin : g_tu
@@ -783,7 +788,7 @@ module atg_top #(
 		wire s_vl_gnt, s_fl_gnt, s_tx_valid, s_tx_last, s_tr_ready, s_ex_valid, s_ex_last;
 		wire s_sa_push_valid, s_sa_pop_ready, s_sa_ctl_valid;
 		wire [SU_WARP_W-1:0] s_vl_slot, s_fl_slot;
-		wire [7:0] s_vl_ptbase;
+		wire [7:0] s_vl_ptbase, s_pt_done;
 		wire [31:0] s_pt_rdata, s_ex_xy, s_sa_ctl_data;
 		wire [1:0] s_tx_op;
 		wire [3:0] s_tx_slot, s_tx_mask, s_ex_mask;
@@ -812,7 +817,7 @@ module atg_top #(
 			.fl_pw_we(g0 && fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data),
 			.fl_go(g0 && fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
 			.pt_rd(g0 && pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(s_pt_rdata),
-			.pt_free(g0 && pt_free), .pt_free_idx(pt_free_idx),
+			.pt_free(g0 && pt_free), .pt_free_idx(pt_free_idx), .pt_done(s_pt_done),
 			.tx_valid(s_tx_valid), .tx_ready(g0 && tx_ready), .tx_op(s_tx_op),
 			.tx_slot(s_tx_slot), .tx_mask(s_tx_mask), .tx_coord(s_tx_coord), .tx_tag(s_tx_tag),
 			.tx_last(s_tx_last),
@@ -852,6 +857,7 @@ module atg_top #(
 			assign vl_ptbase = s_vl_ptbase;
 			assign fl_gnt = s_fl_gnt;
 			assign pt_rdata = s_pt_rdata;
+			assign pt_done = s_pt_done;
 			assign tx_valid = s_tx_valid;
 			assign tx_op = s_tx_op;
 			assign tx_slot = s_tx_slot;
@@ -873,7 +879,7 @@ module atg_top #(
 			assign sa_ctl_valid = s_sa_ctl_valid;
 			assign sa_ctl_data = s_sa_ctl_data;
 		end else begin : g_sun
-			wire unused_sun = &{1'b0, s_vl_gnt, s_vl_ptbase, s_fl_gnt, s_pt_rdata, s_tx_valid,
+			wire unused_sun = &{1'b0, s_vl_gnt, s_vl_ptbase, s_pt_done, s_fl_gnt, s_pt_rdata, s_tx_valid,
 				s_tx_op, s_tx_slot, s_tx_mask, s_tx_coord, s_tx_tag, s_tx_last, s_tr_ready,
 				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last,
 				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data};
@@ -912,6 +918,7 @@ module atg_top #(
 		assign vl_ptbase = 8'd0;
 		assign fl_gnt = 1'b0;
 		assign pt_rdata = 32'd0;
+		assign pt_done = 8'd0;
 		assign tx_valid = 1'b0;
 		assign tx_op = 2'd0;
 		assign tx_slot = 4'd0;
