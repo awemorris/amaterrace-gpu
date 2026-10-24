@@ -1161,9 +1161,11 @@ vendor's ISA FourCC and a version.
 
 ### 12.11 Multisampling (draft)
 
-**Draft** (2026-10-25, the design of WS288 p027; not implemented yet). With
-CAPS[29], the GPU rasterizes with 1 or 4 samples per pixel and runs the
-fragment program once per pixel (no sample shading).
+**Draft** (2026-10-25; not implemented yet). With CAPS[29], the GPU
+rasterizes with 1 or 4 samples per pixel and runs the fragment program
+once per pixel (no sample shading). This section extends section 12.9
+(where multisampled images are still listed as not in version 1) and
+section 12.6 (`texsz` immediate 3 below).
 
 **State words** (in the rasterizer's range; the rasterizer and the render
 output read them, and a SET_REG into the range waits while either is busy):
@@ -1196,10 +1198,14 @@ value written is ANDed with the lane's coverage; bits at and above the
 sample count are ignored). A lane reaches the render output when it
 exported any of these; a fragment program without colour outputs exports
 all ones to 0x105 (not r3 to DEPTH, which would give every sample the
-centre's depth).
+centre's depth). A compiler ends every fragment program, with the EXEC of
+its entry, with `movi rT, -1` and `exp rT, 0x105` (there is no integer
+all-ones operand; `mone` is -1.0); a pipeline without a fragment stage
+gets a program of these two instructions.
 
 **Per-sample operations** (in this order, after the fragment program):
-coverage = r6 AND the exported SAMPLE_MASK AND, with MS_CTRL[8], an alpha
+coverage = the sample mask the rasterizer wrote to r6 (not a later value
+of r6) AND the exported SAMPLE_MASK AND, with MS_CTRL[8], an alpha
 to coverage mask; then alpha to one (MS_CTRL[9]); then the depth (and
 stencil) test and the colour write per covered sample. A sample's depth
 is the plane of the primitive at the sample, or the exported depth.
@@ -1214,12 +1220,16 @@ one level, in linear rows (not tiled). Sample s of pixel (x, y) is at
 sample count, ps the pixel size and P = roundup(width, 2) x S x ps; the
 base is aligned to 64 bytes. The render target and depth strides of a
 multisampled draw are P. Texture slots name the sample count in the image
-word (TEX_IMAGE[15:12] = log2 S, in the texture layout of WS288 p009 part F,
-pending its merge; section 8.4 still shows the earlier layout). `texf rd,
+word (TEX_IMAGE[15:12] = log2 S, in the revised texture layout that is
+pending; section 8.4 still shows the earlier layout). `texf rd,
 rs1, rs2` of a multisampled slot reads sample rs2 (modulo S) of texel
 (rs1, rs1+1), with the layer in rs1+2 for an array (the `.3` form);
-`texsz.s rd` (immediate 2) writes S. Without CAPS[29], `texsz.s` is an
-ISA fault (an optional instruction without its CAPS bit). SPIR-V's ImageFetch with Sample maps to `texf`, QuerySamples to
+`texsz.s rd` (immediate 3, no rs1) writes S. Without CAPS[29], `texsz.s`
+is an ISA fault (an optional instruction without its CAPS bit).
+`texf` also reads RGB565 (UNORM, a 16-bit texel; R and B divided by 31,
+G by 63, rounded to nearest even; (R, G, B, 1)) in the revised layout's
+format 4, so that a multisampled RGB565 colour attachment can be resolved
+and fetched. SPIR-V's ImageFetch with Sample maps to `texf`, QuerySamples to
 `texsz.s`.
 
 **Resolve** is not a unit operation: a driver (or the command processor's
