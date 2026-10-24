@@ -57,6 +57,7 @@ module atg_cp_seq_wait (
 	localparam [5:0] OP_WAIT_IDLE = 6'd6;
 	localparam [5:0] OP_LOAD_CONST = 6'd7;
 	localparam [5:0] OP_RESULT = 6'd13;
+	localparam [5:0] OP_QUERY = 6'd14;
 	localparam [5:0] VOP_DRAW_RAW = 6'd0;
 	localparam [5:0] VOP_DBG_MARK = 6'd1;
 
@@ -135,6 +136,11 @@ module atg_cp_seq_wait (
 			OP_RESULT: begin
 				pre = B_ALL;
 				pre_f = 1'b1;
+			end
+			/* QUERY: as RESULT; flags[0] (clear only) does not wait */
+			OP_QUERY: begin
+				pre = flags[0] ? 8'd0 : B_ALL;
+				pre_f = !flags[0];
 			end
 			default: ;
 			endcase

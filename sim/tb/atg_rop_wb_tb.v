@@ -51,6 +51,7 @@ module atg_rop_wb_tb;
 		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error));
 	atg_rop_blend blend (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask),
+		.b_rt(2'd0),
 		.b_rvalid(b_rvalid), .b_pix(b_pix));
 	amb_mem #(.MEM_WORDS(8192), .SEED(9)) mem (.clk(clk), .rst_n(rst_n),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),

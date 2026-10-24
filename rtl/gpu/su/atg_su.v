@@ -111,7 +111,7 @@ module atg_su #(
 	output wire [127:0] ex_depth,
 	output wire ex_last,
 	input wire [15:0] ex_next,
-	output wire [147:0] ex_ms,	/* {d_s, zexp, smask}: multisampling (atg_su_exp) */
+	output wire [148:0] ex_ms,	/* {front, d_s, zexp, smask} (atg_su_exp) */
 	/* AMB client port (design §4.1) */
 	output wire d_req_valid,
 	input wire d_req_ready,

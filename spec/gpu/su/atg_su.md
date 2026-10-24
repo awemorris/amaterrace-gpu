@@ -118,7 +118,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ex_color` | out | 512 | Colour. |
 | `ex_depth` | out | 128 | Depth. |
 | `ex_last` | out | 1 | Last quad of the warp. |
-| `ex_ms` | out | 148 | Multisampling with the quad: {d_s, zexp, smask} (atg_su_exp). |
+| `ex_ms` | out | 149 | With the quad: {front, d_s, zexp, smask} (atg_su_exp). |
 | `ex_next` | in | 16 | The ROP's next sequence number. |
 | **AMB client port (design §4.1)** | | | |
 | `d_req_valid` | out | 1 | Request valid; payload held until `d_req_ready`. |

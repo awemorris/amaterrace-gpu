@@ -289,6 +289,201 @@ def setup(st, tri):
     return r
 
 
+S_DEPTH_BIAS_CONST = 0x060
+S_DEPTH_BIAS_SLOPE = 0x061
+S_DEPTH_BIAS_CLAMP = 0x062
+HALF = 0x3F000000
+
+
+def fabs(b):
+    return b & 0x7FFFFFFF
+
+
+def fmax_mag(a, b):
+    """atg_rx_setup's MAX of two magnitudes."""
+    return b if b & 0x7FFFFFFF > a & 0x7FFFFFFF else a
+
+
+def fulp(a):
+    """2^(e(a) - 23), 0 below the normal range."""
+    e = (a >> 23) & 0xFF
+    return (e - 23) << 23 if e > 23 else 0
+
+
+def fbclamp(a, c):
+    """The depth bias clamp: c > 0 min(a, c), c < 0 max(a, c), c = 0 a."""
+    if c & 0x7FFFFFFF == 0:
+        return a
+    if not c >> 31:
+        return a if fle(a, c) else c
+    return a if fle(c, a) else c
+
+
+def bias_offset(st, z, az, bz):
+    """o = max(|A_z|, |B_z|) SLOPE + r CONST, clamped (the micro-program's
+    order); z the three window depths."""
+    fmt = (st[S_RAST_MODE] >> 4) & 3
+    m = fmax_mag(fabs(az), fabs(bz))
+    t0 = fmul(m, st[S_DEPTH_BIAS_SLOPE])
+    if fmt == 3:
+        r = fulp(fmax_mag(fmax_mag(fabs(z[0]), fabs(z[1])), fabs(z[2])))
+    else:
+        r = 0x37800000 if fmt == 1 else 0x33800000 if fmt == 2 else 0
+    o = fadd(t0, fmul(r, st[S_DEPTH_BIAS_CONST]))
+    return fbclamp(o, st[S_DEPTH_BIAS_CLAMP])
+
+
+def _bbox(st, qx, qy, rect):
+    bx0 = min(qx) >> 8
+    by0 = min(qy) >> 8
+    bx1 = (max(qx) >> 8) + 1
+    by1 = (max(qy) >> 8) + 1
+    smin, smax, rts = st[S_SCISSOR_MIN], st[S_SCISSOR_MAX], st[S_RT_SIZE]
+    if smax != 0:
+        bx0 = max(bx0, smin & 0xFFFF)
+        by0 = max(by0, smin >> 16)
+        bx1 = min(bx1, smax & 0xFFFF)
+        by1 = min(by1, smax >> 16)
+    if rect is not None:
+        bx0, bx1 = max(bx0, rect[0] >> 8), min(bx1, rect[1] >> 8)
+        by0, by1 = max(by0, rect[2] >> 8), min(by1, rect[3] >> 8)
+    bx0, by0 = max(bx0, 0), max(by0, 0)
+    bx1, by1 = min(bx1, rts & 0xFFFF), min(by1, rts >> 16)
+    return bx0, by0, bx1, by1
+
+
+def _edges(fx, fy, sx, sy):
+    D = (fx[1] - fx[0]) * (fy[2] - fy[0]) - (fx[2] - fx[0]) * (fy[1] - fy[0])
+    ccw = D < 0
+    order = [0, 1, 2] if ccw else [0, 2, 1]
+    edges = []
+    for k in range(3):
+        a, b = order[k], order[(k + 1) % 3]
+        A = fy[b] - fy[a]
+        B = fx[a] - fx[b]
+        tl = A > 0 or (A == 0 and B > 0)
+        E = A * (sx - fx[a]) + B * (sy - fy[a]) - (0 if tl else 1)
+        edges.append((A, B, E))
+    return D, ccw, edges
+
+
+def setup2(st, tri, line_major_eq_y=False):
+    """atg_rx_setup with CAPS[30] (spec atg_rx_setup §4): tri as setup()'s
+    with 'kind' (0 point, 1 line, 2 triangle).  Returns the list of sp_tri
+    dicts (two for a line or a point that is not empty), each with 'kind'
+    and 'last' (the last output of the primitive)."""
+    raw = tri['raw']
+    kind = 2 if raw or tri.get('kind', 2) == 3 else tri.get('kind', 2)
+    rm = st[S_RAST_MODE]
+    vp = [st[S_VIEWPORT + k] for k in range(6)]
+    X, Y, Z, RW, B0, B1 = [], [], [], [], [], []
+    for i in range(3):
+        x, y, z, w = tri['pos'][i]
+        if raw:
+            X.append(x)
+            Y.append(y)
+            Z.append(z)
+        else:
+            rw = fdiv(ONE, w)
+            RW.append(rw)
+            X.append(fadd(fmul(fmul(x, rw), vp[0]), vp[2]))
+            Y.append(fadd(fmul(fmul(y, rw), vp[1]), vp[3]))
+            Z.append(fadd(fmul(fmul(z, rw), vp[4]), vp[5]))
+            B0.append(fmul(tri['wt'][i][0], rw))
+            B1.append(fmul(tri['wt'][i][1], rw))
+    rect = None
+    if rm >> 3 & 1 and not raw:
+        ax, ay = fabs(vp[0]), fabs(vp[1])
+        rect = [f2fix(fsub(vp[2], ax)), f2fix(fadd(vp[2], ax)),
+                f2fix(fsub(vp[3], ay)), f2fix(fadd(vp[3], ay))]
+    px = [f2fix(v) for v in X]
+    py = [f2fix(v) for v in Y]
+    if kind == 1:
+        Z[2], RW[2], B0[2], B1[2] = Z[0], RW[0], B0[0], B1[0]
+    base = {'pt': tri['pt'], 'free': tri['free'], 'raw': raw, 'kind': kind,
+            'edges': [(0, 0, 0)] * 3, 'bbox': (0, 0, 0, 0),
+            'z': (0, 0, 0), 'w': (0, 0, 0), 'b0': (0, 0, 0), 'b1': (0, 0, 0)}
+    # the walked triangles, the corners and the plane triangle
+    if kind == 2:
+        walks = [(px, py)]
+        qx, qy = px + [px[0]], py + [py[0]]
+        pd = None
+        p0 = (px[0], py[0])
+    elif kind == 1:
+        ax, ay, bx, by = px[0], py[0], px[1], py[1]
+        dx, dy = bx - ax, by - ay
+        xmaj = abs(dx) > abs(dy) if line_major_eq_y else abs(dx) >= abs(dy)
+        ox, oy = (0, 128) if xmaj else (128, 0)
+        am, ap, bm, bp = (ax - ox, ay - oy), (ax + ox, ay + oy), (bx - ox, by - oy), (bx + ox, by + oy)
+        walks = [([am[0], bm[0], bp[0]], [am[1], bm[1], bp[1]]),
+                 ([am[0], bp[0], ap[0]], [am[1], bp[1], ap[1]])]
+        qx, qy = [am[0], ap[0], bm[0], bp[0]], [am[1], ap[1], bm[1], bp[1]]
+        pd = (dx, dy, 0 if xmaj else 256, 256 if xmaj else 0, 256 * dx if xmaj else -256 * dy)
+        p0 = (ax, ay)
+    else:
+        x0, y0 = px[0], py[0]
+        c = [(x0 - 128, y0 - 128), (x0 + 128, y0 - 128), (x0 + 128, y0 + 128), (x0 - 128, y0 + 128)]
+        walks = [([c[0][0], c[1][0], c[2][0]], [c[0][1], c[1][1], c[2][1]]),
+                 ([c[0][0], c[2][0], c[3][0]], [c[0][1], c[2][1], c[3][1]])]
+        qx, qy = [v[0] for v in c], [v[1] for v in c]
+        pd = (256, 0, 0, 256, 65536)
+        p0 = (x0, y0)
+    bx0, by0, bx1, by1 = _bbox(st, qx, qy, rect)
+    sx, sy = bx0 * 256 + 128, by0 * 256 + 128
+    cull = st[S_CULL]
+    outs = []
+    for n, (fx, fy) in enumerate(walks):
+        D, ccw, edges = _edges(fx, fy, sx, sy)
+        if kind == 2:
+            front = ccw if cull & 4 else not ccw
+            culled = (cull & 1 and front) or (cull & 2 and not front)
+        else:
+            front, culled = True, False
+        r = dict(base)
+        r['front'] = int(front)
+        if D == 0 or culled or bx1 <= bx0 or by1 <= by0:
+            r['last'] = True
+            outs.append(r)
+            return outs
+        r['edges'] = edges
+        r['bbox'] = (bx0, by0, bx1, by1)
+        r['last'] = n == len(walks) - 1
+        if not r['last']:
+            r['free'] = 0
+        outs.append(r)
+    # the planes (the same for both sub-triangles)
+    if pd is None:
+        dx1, dy1 = px[1] - px[0], py[1] - py[0]
+        dx2, dy2 = px[2] - px[0], py[2] - py[0]
+        pd = (dx1, dy1, dx2, dy2, dx1 * dy2 - dx2 * dy1)
+    fdx1, fdy1, fdx2, fdy2 = (int2f(v, 8) for v in pd[:4])
+    oxp, oyp = int2f(sx - p0[0], 8), int2f(sy - p0[1], 8)
+    if kind == 0:
+        pz = (0, 0, Z[0])
+        pw = (0, 0, ONE)
+        p0p = (ONE, 0, fadd(HALF, oxp))
+        p1p = (0, ONE, fadd(HALF, oyp))
+    else:
+        rd = fdiv(ONE, int2f(pd[4], 16))
+        P = (fdx1, fdy1, fdx2, fdy2, rd, oxp, oyp)
+        pz = plane(Z, *P)
+        if kind == 2 and not raw and rm & 1 and (rm >> 4) & 3:
+            pz = (pz[0], pz[1], fadd(pz[2], bias_offset(st, Z, pz[0], pz[1])))
+        pw = p0p = p1p = (0, 0, 0)
+        if not raw:
+            pw = plane(RW, *P)
+            p0p = plane(B0, *P)
+            p1p = plane(B1, *P)
+    for r in outs:
+        r['z'], r['w'], r['b0'], r['b1'] = pz, pw, p0p, p1p
+    return outs
+
+
+def pack_sp2(r):
+    """sp_tri with CAPS[30]: the kind in [766:765]."""
+    return pack_sp(r) | r.get('kind', 2) << 765
+
+
 def pack_sp(r):
     """sp_tri as an integer (768 bits)."""
     v = 0
@@ -386,6 +581,152 @@ def clip(pos, pt, free):
             ica = isect(a, c)
             return [tri(a, b, ibc, 0), tri(a, ibc, ica, free)]
     raise AssertionError('clip')
+
+# ------------------------------------------------- clip with CAPS[30]
+
+S_DEPTH_CLAMP = 0x059
+S_RAST_MODE = 0x05A
+CLIP_EPS = 0x37800000	# 2^-16
+GUARD = 0x467FFC00	# 16383.0
+EMPTY7 = [0, 0, 0, ONE, 0, 0, 0]
+
+
+def _fkey_cmp(b):
+    """An ordering key of a non-NaN fp32 (-0 equals +0, denormals by value)."""
+    return -(b & 0x7FFFFFFF) if b >> 31 else b & 0x7FFFFFFF
+
+
+def fle(a, b):
+    """a <= b exactly (no flushing); False when either is NaN."""
+    return not _isnan(a) and not _isnan(b) and _fkey_cmp(a) <= _fkey_cmp(b)
+
+
+def _cin(b):
+    """Inside a clip plane: dist >= 0, -0 and denormals included, NaN out."""
+    return not _isnan(_ftz(b)) and not (_ftz(b) >> 31 and _ftz(b) & 0x7FFFFFFF)
+
+
+def _x4(w):
+    """4 w for a normal positive w (infinity on overflow)."""
+    e = (w >> 23) & 0xFF
+    return 0x7F800000 if e >= 253 else w + (2 << 23)
+
+
+def _vp_ok(scale, off):
+    """|off| <= 6144 and |scale| <= 2048: a vertex with |x| <= 4 w then lies
+    inside the guard band (6144 + 4 x 2048 = 14336 <= 16383)."""
+    return (fle(off & 0x7FFFFFFF, 0x45C00000) and fle(scale & 0x7FFFFFFF, 0x45000000))
+
+
+def clip_planes(dc):
+    """The depth planes that apply: (near, far)."""
+    clip = dc >> 1 & 1
+    return (not clip or not dc & 1), (clip and not dc & 1)
+
+
+def clip_dist(plane, v, vp):
+    """The plane's distance of a vertex (7 words), in the RTL's order."""
+    xs, ys, xo, yo = vp
+    x, y, z, w = v[:4]
+    if plane == 0:
+        return fsub(w, CLIP_EPS)
+    if plane == 1:
+        return z
+    if plane == 2:
+        return fsub(w, z)
+    c, sc, of = (x, xs, xo) if plane in (3, 4) else (y, ys, yo)
+    sm = fadd(fmul(of, w), fmul(sc, c))
+    g = fmul(GUARD, w)
+    return fsub(g, sm) if plane in (3, 5) else fadd(g, sm)
+
+
+def clip_cut(poly, plane, vp, line):
+    """One Sutherland-Hodgman cut (spec atg_rx_cpoly §4): unchanged when all
+    are inside, [] when none is; intersections from the inside vertex; a
+    triangle's result starts at the first inside vertex after an outside
+    one (so one cut gives atg_rx_clip's earlier near-plane order)."""
+    n = len(poly)
+    d = [clip_dist(plane, v, vp) for v in poly]
+    ins = [_cin(x) for x in d]
+    if all(ins):
+        return poly
+    if not any(ins):
+        return []
+    j = 0
+    if not line:
+        j = next(i for i in range(n) if ins[i] and not ins[(i - 1) % n])
+    out = []
+    for k in range(n):
+        pi = (j + k) % n
+        qi = (pi + 1) % n
+        if ins[pi]:
+            out.append(poly[pi])
+        if (not line or k == 0) and ins[pi] != ins[qi]:
+            a, b = (pi, qi) if ins[pi] else (qi, pi)
+            t = fdiv(d[a], fsub(d[a], d[b]))
+            out.append(_lerp(poly[a], poly[b], t))
+        if line and k == 1:
+            break
+    return out
+
+
+def clip2(st, kind, pos, pt, free):
+    """atg_rx_clip with CAPS[30] (spec atg_rx_clip §4): kind 0 point, 1
+    line, 2 (or 3) triangle; st the STATE (VIEWPORT, DEPTH_CLAMP,
+    RAST_MODE).  Returns cl_tri dicts with 'kind'."""
+    vp = (st[S_VIEWPORT], st[S_VIEWPORT + 1], st[S_VIEWPORT + 2], st[S_VIEWPORT + 3])
+    dc, rm = st[S_DEPTH_CLAMP], st[S_RAST_MODE]
+    kind = 2 if kind == 3 else kind
+    near, far = clip_planes(dc)
+
+    def out(a, b, c, fl, k):
+        return {'pos': [a[:4], b[:4], c[:4]], 'wt': [a[4:], b[4:], c[4:]],
+                'pt': list(pt), 'free': fl, 'raw': 0, 'kind': k}
+    empty = [out(EMPTY7, EMPTY7, EMPTY7, free, 2)]
+    if rm >> 6 & 1:
+        return empty
+    v = [pos[i] + IDW[i] for i in range(3)]
+    nv = 1 if kind == 0 else 2 if kind == 1 else 3
+
+    def depth_in(x):
+        return ((not near or _cin(x[2])) and (not far or fle(x[2], x[3])))
+
+    def w_in(x):
+        return fle(CLIP_EPS, x[3])
+    if kind == 0:
+        if w_in(v[0]) and depth_in(v[0]):
+            return [out(v[0], v[0], v[0], free, 0)]
+        return empty
+    okx, oky = _vp_ok(vp[0], vp[2]), _vp_ok(vp[1], vp[3])
+
+    def xy_in(x):
+        if not w_in(x):
+            return False
+        w4 = _x4(x[3])
+        return (okx and fle(x[0] & 0x7FFFFFFF, w4) and oky and fle(x[1] & 0x7FFFFFFF, w4))
+    if all(w_in(x) and depth_in(x) and xy_in(x) for x in v[:nv]):
+        poly = v[:nv]
+    else:
+        guard = not all(xy_in(x) for x in v[:nv])
+        planes = [0] + ([1] if near else []) + ([2] if far else []) + \
+            ([3, 4, 5, 6] if guard else [])
+        poly = v[:nv]
+        for pl in planes:
+            poly = clip_cut(poly, pl, vp, kind == 1)
+            if not poly:
+                return empty
+    if kind == 1:
+        return [out(poly[0], poly[1], poly[1], free, 1)]
+    tris = []
+    for i in range(1, len(poly) - 1):
+        tris.append(out(poly[0], poly[i], poly[i + 1], free if i == len(poly) - 2 else 0, 2))
+    return tris
+
+
+def pack_cl2(tri):
+    """cl_tri with CAPS[30]: 702 bits, the kind in [701:700]."""
+    return pack_cl(tri) | tri.get('kind', 2) << 700
+
 
 # ---------------------------------------------------------------- scan
 
@@ -531,6 +872,55 @@ def depth_pass(func, frag, stored, f32):
     else:
         a, b = frag, stored
     return {1: a < b, 2: a == b, 3: a <= b, 4: a > b, 5: a != b, 6: a >= b}[func]
+
+
+def stencil_op(op, s, ref):
+    return [s, 0, ref, min(s + 1, 255), max(s - 1, 0), ~s & 255, (s + 1) & 255,
+            (s - 1) & 255][op]
+
+
+def dtest(depth, sf, sb, sops, bmin, bmax, cov, front, zf, stored):
+    """atg_rop_dtest (spec atg_rop_dtest §4): one (lane, sample) entry.
+    Returns (pass, wword, wbe)."""
+    import fmtmodel as F
+    fb = (depth >> 5) & 7
+    d24, d32, d16 = fb == 1, fb == 2, fb == 4
+    if not (d24 or d32 or d16):
+        return cov, 0, 0
+    if d32:
+        za = stored
+    elif d24:
+        za = F.unorm_f32(stored & 0xFFFFFF, 24)
+    else:
+        za = F.unorm_f32(stored & 0xFFFF, 16)
+    b_ok = not depth >> 9 & 1 or (fle(bmin, za) and fle(za, bmax))
+    func = (depth >> 2) & 7
+    zu24, zu16 = f2u24(zf), F.f32_unorm(zf, 16)
+    if d32:
+        d_cmp = depth_pass(func, zf, stored, True)
+    elif d24:
+        d_cmp = depth_pass(func, zu24, stored & 0xFFFFFF, False)
+    else:
+        d_cmp = depth_pass(func, zu16, stored & 0xFFFF, False)
+    d_ok = not depth & 1 or d_cmp
+    ss = sf if front else sb
+    so = sops & 0x1FF if front else (sops >> 16) & 0x1FF
+    s_on = depth >> 8 & 1 and d24
+    s_a = (stored >> 24) & 255
+    ref, cm, wm, cop = ss & 255, (ss >> 8) & 255, (ss >> 16) & 255, (ss >> 24) & 7
+    s_cmp = depth_pass(cop, ref & cm, s_a & cm, False)
+    op = (so & 7) if not s_cmp else ((so >> 3) & 7) if d_ok else ((so >> 6) & 7)
+    s_wr = (s_a & ~wm & 255) | (stencil_op(op, s_a, ref) & wm)
+    s_ok = not s_on or s_cmp
+    live = cov and b_ok
+    ps = live and s_ok and d_ok
+    d_wr = ps and depth >> 1 & 1
+    s_ch = live and s_on and s_wr != s_a
+    if d32:
+        return ps, zf, 15 if d_wr else 0
+    if d24:
+        return ps, s_wr << 24 | zu24, (8 if s_ch else 0) | (7 if d_wr else 0)
+    return ps, zu16, 3 if d_wr else 0
 
 
 def unpack_px(fmt, p):
@@ -680,6 +1070,118 @@ def blend_pixel(st, color, dpx):
         keep = (0 if wm & 1 else 0xF800) | (0 if wm & 2 else 0x07E0) | (0 if wm & 4 else 0x001F)
         return (p & ~keep) | (dpx & keep)
     return pack_px(fmt, o)
+
+
+def unpack_px8(vk, p):
+    """A pixel of atg_rop_blend's CAPS[30] formats to RGBA8 (missing colours
+    0, missing alpha 255; A1R5G5B5's alpha 0 or 255)."""
+    def e5(v):
+        return (v << 3) | (v >> 2)
+    if vk == 44:
+        return unpack_px(0, p)
+    if vk in (37, 51):
+        return unpack_px(1, p)
+    if vk == 4:
+        return unpack_px(2, p)
+    if vk == 9:
+        return [p & 255, 0, 0, 255]
+    if vk == 16:
+        return [p & 255, (p >> 8) & 255, 0, 255]
+    if vk == 8:
+        return [e5((p >> 10) & 31), e5((p >> 5) & 31), e5(p & 31), 255 if p >> 15 & 1 else 0]
+    return None
+
+
+def blend_pixel8(vk, bl, kc, wm, color, dpx):
+    """One pixel through atg_rop_blend with CAPS[30]: the attachment's
+    VkFormat, BLEND word, constant bytes and write mask; dpx the stored
+    32-bit lane.  A format outside the list returns dpx."""
+    d = unpack_px8(vk, dpx)
+    if d is None:
+        return dpx
+    s = [f2u8(color[c]) for c in range(4)]
+    o = blend(bl, kc, s, d)
+    o = [o[c] if wm >> c & 1 else d[c] for c in range(4)]
+
+    def q5(v):
+        return (v * 31 + 127) // 255
+    if vk == 44:
+        return pack_px(0, o)
+    if vk in (37, 51):
+        return pack_px(1, o)
+    if vk == 4:
+        p = pack_px(2, o)
+        keep = (0 if wm & 1 else 0xF800) | (0 if wm & 2 else 0x07E0) | (0 if wm & 4 else 0x001F)
+        return (dpx & 0xFFFF0000) | (p & ~keep & 0xFFFF) | (dpx & keep)
+    if vk == 9:
+        return (dpx & 0xFFFFFF00) | o[0]
+    if vk == 16:
+        return (dpx & 0xFFFF0000) | o[0] | o[1] << 8
+    p = (o[3] >> 7) << 15 | q5(o[0]) << 10 | q5(o[1]) << 5 | q5(o[2])
+    keep = (0 if wm & 8 else 0x8000) | (0 if wm & 1 else 0x7C00) | (0 if wm & 2 else 0x03E0) | \
+        (0 if wm & 4 else 0x001F)
+    return (dpx & 0xFFFF0000) | (p & ~keep & 0xFFFF) | (dpx & keep)
+
+
+FBLEND_FMTS = (43, 50, 57, 64, 76, 83, 97)
+
+
+def fmin32(a, b):
+    """MIN of the fp32 blend: NaN gives QNAN; equal values give a."""
+    if _isnan(a) or _isnan(b):
+        return QNAN
+    return a if fle(a, b) else b
+
+
+def fmax32(a, b):
+    if _isnan(a) or _isnan(b):
+        return QNAN
+    return a if fle(b, a) else b
+
+
+def fblend_lane(fmt, bl, kc, wm, src, draw):
+    """atg_rop_fblend for one pixel (spec atg_rop_fblend §4): fmt a VkFormat
+    of FBLEND_FMTS, bl the BLEND word, kc four fp32 constants, wm the write
+    mask, src four fp32, draw the stored pixel (an integer).  Returns
+    (raw, keep), 64 bits each."""
+    import fmtmodel as F
+    allk = (1 << 64) - 1
+    if fmt not in FBLEND_FMTS:
+        return 0, allk
+    fixed = fmt in (43, 50, 57, 64)
+    cl = fclamp01 if fixed else (lambda x: x)
+    s = [cl(x) for x in src]
+    k = [cl(x) for x in kc]
+    d, _ = F.unpack(draw, fmt)
+    if bl & 1:
+        res = []
+        for c in range(4):
+            fs, fd, op = ((bl >> 12) & 15, (bl >> 16) & 15, (bl >> 20) & 7) if c == 3 else \
+                ((bl >> 1) & 15, (bl >> 5) & 15, (bl >> 9) & 7)
+
+            def fac(f):
+                vals = {0: 0, 1: ONE, 2: s[c], 4: d[c], 6: s[3], 8: d[3], 10: k[c], 12: k[3]}
+                if f in vals:
+                    return vals[f]
+                if f in (3, 5, 7, 9, 11, 13):
+                    return fsub(ONE, vals[f - 1])
+                if f == 14:
+                    return ONE if c == 3 else fmin32(s[3], fsub(ONE, d[3]))
+                return 0
+            if op == 3:
+                res.append(fmin32(s[c], d[c]))
+            elif op == 4:
+                res.append(fmax32(s[c], d[c]))
+            else:
+                p = fmul(s[c], fac(fs))
+                q = fmul(d[c], fac(fd))
+                res.append(fsub(p, q) if op == 1 else fsub(q, p) if op == 2 else fadd(p, q))
+    else:
+        res = s[:]
+    if fmt in (43, 50, 57):
+        res = [F.srgb_encode(res[c]) for c in range(3)] + [res[3]]
+    raw, keep = F.pack(res, fmt, wm)
+    return raw, keep & allk
 
 
 def draw_tri(st, mem, tri):

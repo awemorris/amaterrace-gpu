@@ -61,4 +61,4 @@ docs/ghci.md §4 (FMT), `spec/gpu/fmt/atg_fmt.md`, `spec/gpu/cp/atg_cp_regs.md`.
 
 ## 10. Status
 
-Spec only (2026-10-25); no RTL yet.  atg_cp_regs needs FMT (id 10) in its list: XCAP_MASK grows to 10 bits and xcap_ptr(10) is 0x160 (with this module).
+Implemented 2026-10-25: `PASS atg_cp_regs.fmt`.  atg_cp_regs lists FMT (id 10, XCAP_MASK 10 bits, 0x160); atg_cp instantiates this module when HAS_FMT (atg_top sets it with CAPS[30] in the integration step) and ORs its data into atg_cp_regs's x_rdata.

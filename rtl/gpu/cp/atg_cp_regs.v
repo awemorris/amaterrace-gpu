@@ -38,7 +38,7 @@ module atg_cp_regs #(
 	parameter CAPS = 32'h00500002,	/* CAPS value (design §2.2), set by atg_top from its parameters */
 	parameter CAPS2 = 32'h00000001,	/* CAPS2 value */
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
-	parameter XCAP_MASK = 8'h04,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7) */
+	parameter [9:0] XCAP_MASK = 10'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, FMT 10) */
 	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
 	parameter PERF_SRC = 32'hFFFFFFFF	/* PERF_SRC0..3 (byte n = PERF_SRCn) */
 ) (
@@ -144,6 +144,7 @@ module atg_cp_regs #(
 		4: xcap_ptr = 32'h000000C0;
 		6: xcap_ptr = 32'h00000120;
 		7: xcap_ptr = 32'h00000140;
+		10: xcap_ptr = 32'h00000160;
 		default: xcap_ptr = 32'd0;
 		endcase
 	endfunction
@@ -157,12 +158,12 @@ module atg_cp_regs #(
 			xcap_word = 32'd0;
 			o = {20'd0, off};
 			k = 0;
-			for (id = 1; id <= 8; id = id + 1)
+			for (id = 1; id <= 10; id = id + 1)
 				if (XCAP_MASK[id - 1]) begin
 					/* The next entry, in dwords from this one. */
 					nxt = 16'd0;
 					k2 = k + 1;
-					for (id2 = 8; id2 > id; id2 = id2 - 1)
+					for (id2 = 10; id2 > id; id2 = id2 - 1)
 						if (XCAP_MASK[id2 - 1])
 							/* verilator lint_off WIDTHTRUNC */
 							nxt = (xcap_off(k2) - xcap_off(k)) / 4;	/* < 2^16 */
@@ -188,7 +189,7 @@ module atg_cp_regs #(
 		GHCI_DEVICE_ID[11:0]: own = DEVICE_ID;
 		GHCI_ISA_ID[11:0]: own = ISA_ID;
 		GHCI_DEVICE_VERSION[11:0]: own = DEVICE_VERSION;
-		GHCI_EXTCAP[11:0]: own = XCAP_MASK != 8'd0 ? {15'd0, GHCI_EXTCAP_LIST} : 32'd0;
+		GHCI_EXTCAP[11:0]: own = XCAP_MASK != 10'd0 ? {15'd0, GHCI_EXTCAP_LIST} : 32'd0;
 		GHCI_GCLK_HZ[11:0]: own = GCLK_HZ;
 		GHCI_CAPS[11:0]: own = CAPS;
 		GHCI_CAPS2[11:0]: own = CAPS2;

@@ -10,11 +10,13 @@
  * quad (DS_BASE/STRIDE, D32F or D24S8), tests (DEPTH func, STENCIL_*
  * front/back), updates and writes it back, and passes the surviving lanes.
  *
- * Depth only so far (the stencil ops are not done yet: a D24S8
- * write keeps the stencil byte).  One quad at a time: per row with
- * covered lanes, read the line, test its two lanes, write the passing
- * ones (DEPTH[1]) and wait for the write's response, so the next quad
- * reads what this one wrote.  Quads with no lane are dropped.  The direct
+ * Each (lane, sample) entry is tested by atg_rop_dtest (CAPS[30]: depth
+ * bounds, the stencil test and ops with the quad's facing, the depth test
+ * of D16, D24S8 and D32F; the written bytes from its byte enables).  One
+ * quad at a time: per row with covered lanes, read the line, test its
+ * entries, write the changed bytes and wait for the write's response, so
+ * the next quad reads what this one wrote.  D16 pixels are 2 bytes (sample
+ * s of pixel x at byte 2 (S x + s) of the row), the others 4.  Quads with no lane are dropped.  The direct
  * path's quads (q_dbg) get DEBUG_COLOR as fp32 c/255.
  *
  * Multisampling (MS_CTRL[3:0] = 2, docs/ghci.md section 12.11): the
@@ -48,6 +50,7 @@ module atg_rop_ds #(
 	input wire [511:0] q_color,
 	input wire [511:0] q_sdepth,	/* sample s of lane l at 32 (4 l + s) */
 	input wire q_dbg,
+	input wire q_front,	/* front facing (CAPS[30]; the direct path: 1) */
 	/* To atg_rop_wb */
 	output reg d_valid,
 	input wire d_ready,
@@ -70,15 +73,19 @@ module atg_rop_ds #(
 	input wire rsp_error
 );
 	`include "atg_rop_unorm8.vh"
-	`include "atg_depth.vh"
 	`include "ghci_regs.vh"
 
 	localparam WPL = LINE_BYTES / 4;	/* words per line */
 	localparam WB = LINE_SHIFT - 2;	/* word index bits */
+	integer k;
 
-	/* STATE: DEBUG_COLOR 0x05C, DS_BASE 0x074, DS_STRIDE 0x075, DEPTH 0x076. */
-	reg [31:0] dbg_color, ds_base, ds_stride;
-	reg [6:0] depth;
+	/* STATE: DEBUG_COLOR 0x05C, DS_BASE 0x074, DS_STRIDE 0x075, DEPTH 0x076,
+	 * STENCIL_FRONT, _OPS, _BACK 0x077-0x079, DEPTH_BOUNDS_MIN, _MAX 0x08B,
+	 * 0x08C. */
+	reg [31:0] dbg_color, ds_base, ds_stride, bmin, bmax;
+	reg [9:0] depth;
+	reg [26:0] sfront, sback;
+	reg [24:0] sops;
 	reg ms4;
 	always @(posedge clk)
 		if (!rst_n) begin
@@ -86,8 +93,23 @@ module atg_rop_ds #(
 			dbg_color <= 32'd0;
 			ds_base <= 32'd0;
 			ds_stride <= 32'd0;
-			depth <= 7'd0;
+			depth <= 10'd0;
+			sfront <= 27'd0;
+			sback <= 27'd0;
+			sops <= 25'd0;
+			bmin <= 32'd0;
+			bmax <= 32'd0;
 		end else if (st_we) begin
+			if (st_idx == GHCI_S_STENCIL_FRONT)
+				sfront <= st_wdata[26:0];
+			if (st_idx == GHCI_S_STENCIL_BACK)
+				sback <= st_wdata[26:0];
+			if (st_idx == GHCI_S_STENCIL_OPS)
+				sops <= st_wdata[24:0];
+			if (st_idx == GHCI_S_DEPTH_BOUNDS_MIN)
+				bmin <= st_wdata;
+			if (st_idx == GHCI_S_DEPTH_BOUNDS_MAX)
+				bmax <= st_wdata;
 			if (st_idx == GHCI_S_DEBUG_COLOR)
 				dbg_color <= st_wdata;
 			if (st_idx == GHCI_S_DS_BASE)
@@ -95,15 +117,14 @@ module atg_rop_ds #(
 			if (st_idx == GHCI_S_DS_STRIDE)
 				ds_stride <= st_wdata;
 			if (st_idx == GHCI_S_DEPTH)
-				depth <= st_wdata[6:0];
+				depth <= st_wdata[9:0];
 			if (st_idx == GHCI_S_MS_CTRL)
 				ms4 <= st_wdata[3:0] == 4'd2;
 		end
-	wire test = depth[0] && depth[6:5] != 2'b00;
-	wire f32 = depth[6];
-	wire [2:0] func = depth[4:2];
-
-	/* f2u24, fkey and the compare: include/atg_depth.vh (shared with the TU). */
+	/* a test reads the line: exactly one format, and a test enabled */
+	wire d16 = depth[7:5] == 3'b100;
+	wire one_fmt = depth[7:5] == 3'b001 || depth[7:5] == 3'b010 || d16;
+	wire test = one_fmt && (depth[0] || (depth[8] && depth[7:5] == 3'b001) || depth[9]);
 
 	localparam [2:0] S_IDLE = 3'd0, S_ROW = 3'd1, S_RD = 3'd2, S_TEST = 3'd3, S_WR = 3'd4,
 		S_OUT = 3'd5;
@@ -116,17 +137,30 @@ module atg_rop_ds #(
 	reg [31:0] addr;
 	reg [LINE_BYTES*8-1:0] line;
 	reg wr_any;
+	reg front;
 
 	wire [1:0] lane = {r, e[2]};
 	wire [3:0] sb = {lane, e[1:0]};	/* the sample's bit */
 	wire [31:0] zl = z[32 * sb +: 32];
-	wire [WB-1:0] wi = addr[LINE_SHIFT-1:2] + (ms4 ? {{(WB-3){1'b0}}, e} : {{(WB-1){1'b0}}, e[2]});
-	wire [31:0] stored = line[32 * wi +: 32];
-	wire nan = (zl[30:23] == 8'hFF && zl[22:0] != 23'd0) ||
-		(stored[30:23] == 8'hFF && stored[22:0] != 23'd0);
-	wire [23:0] zu = atg_depth_u24(zl);
-	wire pass = f32 ? atg_depth_pass(func, atg_depth_key(zl), atg_depth_key(stored), nan) :
-		atg_depth_pass(func, {9'd0, zu}, {9'd0, stored[23:0]}, 1'b0);
+	/* the entry's byte in the line: (S x + s) ps from the row's address */
+	wire [2:0] ent = ms4 ? e : {2'b00, e[2]};
+	wire [LINE_SHIFT-1:0] bo = addr[LINE_SHIFT-1:0] +
+		(d16 ? {{(LINE_SHIFT-4){1'b0}}, ent, 1'b0} : {{(LINE_SHIFT-5){1'b0}}, ent, 2'b00});
+	wire [LINE_BYTES*8+31:0] lpad = {32'd0, line};
+	wire [31:0] stored = d16 ? {16'd0, lpad[8 * bo +: 16]} : lpad[8 * bo +: 32];
+	wire [LINE_SHIFT-1:0] bk [0:3];	/* the entry's bytes */
+	genvar g;
+	generate
+	for (g = 0; g < 4; g = g + 1) begin : g_bk
+		assign bk[g] = bo + g[LINE_SHIFT-1:0];
+	end
+	endgenerate
+	wire pass;
+	wire [31:0] wword;
+	wire [3:0] wbe;
+	atg_rop_dtest dtest (.depth(depth), .sfront(sfront), .sback(sback), .sops(sops),
+		.bmin(bmin), .bmax(bmax), .cov(1'b1), .front(front), .zf(zl), .stored(stored),
+		.pass(pass), .wword(wword), .wbe(wbe));
 	wire [31:0] dbgf [0:3];
 	assign dbgf[0] = atg_rop_unorm8(dbg_color[7:0]);
 	assign dbgf[1] = atg_rop_unorm8(dbg_color[15:8]);
@@ -151,6 +185,7 @@ module atg_rop_ds #(
 				mask <= q_smask;
 				pm <= q_smask;
 				z <= q_sdepth;
+				front <= q_front || q_dbg;
 				r <= 1'b0;
 				st <= q_smask == 16'd0 ? S_IDLE : test ? S_ROW : S_OUT;
 			end
@@ -158,7 +193,7 @@ module atg_rop_ds #(
 			/* the row's address; skip a row without lanes */
 			if (mask[8 * r +: 8] != 8'd0) begin
 				addr <= ds_base + ({16'd0, d_xy[31:16]} + {31'd0, r}) * ds_stride +
-					(ms4 ? {12'd0, d_xy[15:0], 4'b0000} : {14'd0, d_xy[15:0], 2'b00});
+					(({14'd0, d_xy[15:0], 2'b00} << (ms4 ? 2 : 0)) >> (d16 ? 1 : 0));
 				st <= S_RD;
 			end else if (r)
 				st <= S_OUT;
@@ -187,11 +222,12 @@ module atg_rop_ds #(
 			if (mask[sb]) begin
 				if (!pass)
 					pm[sb] <= 1'b0;
-				else if (depth[1]) begin
-					wr_any <= 1'b1;
-					req_wdata[32 * wi +: 32] <= f32 ? zl : {stored[31:24], zu};
-					req_be[4 * wi +: 4] <= f32 ? 4'hF : 4'h7;
-				end
+				for (k = 0; k < 4; k = k + 1)
+					if (wbe[k]) begin
+						wr_any <= 1'b1;
+						req_wdata[8 * bk[k] +: 8] <= wword[8 * k +: 8];
+						req_be[bk[k]] <= 1'b1;
+					end
 			end
 			e <= e + (ms4 ? 3'd1 : 3'd4);
 			if (e == (ms4 ? 3'd7 : 3'd4))
@@ -229,8 +265,7 @@ module atg_rop_ds #(
 		endcase
 	end
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, STENCIL != 0, addr[1:0],
-		WPL != 0};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, STENCIL != 0, WPL != 0, WB != 0};
 endmodule
 
 `default_nettype wire

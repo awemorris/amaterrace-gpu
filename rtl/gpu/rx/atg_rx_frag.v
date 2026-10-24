@@ -16,7 +16,7 @@
  * Per lane (atg_rx_bary does the arithmetic, about 200 cycles a quad):
  * r0-r2 = b0, b1, b2 and r3 = z at the pixel centre (z clamped to [0, 1]
  * with one sample, not clamped with four: the render output adds each
- * sample's depth slope and clamps), r4, r5 = x + 0.5, y + 0.5, r6 = the
+ * sample's depth slope and clamps; not clamped with DEPTH_CLAMP[1]), r4, r5 = x + 0.5, y + 0.5, r6 = the
  * lane's samples (fq_scov, after the sample mask test; 0 in a helper
  * lane), and with MS_CTRL[4] (CENTROID) r7-r9 = b0, b1, b2 at the
  * centroid: the centre when it is inside the triangle (fq_ccov) or the
@@ -101,6 +101,12 @@ module atg_rx_frag (
 	reg [5:0] vc;	/* VARYING_COUNT */
 	reg ms4;	/* MS_CTRL[3:0] = 2 */
 	reg cent;	/* MS_CTRL[4] */
+	reg dclip;	/* DEPTH_CLAMP[1] (CAPS[30]): r3 not clamped */
+	always @(posedge clk)
+		if (!rst_n)
+			dclip <= 1'b0;
+		else if (st_we && st_idx == GHCI_S_DEPTH_CLAMP)
+			dclip <= st_wdata[1];
 	always @(posedge clk)
 		if (!rst_n) begin
 			vc <= 6'd0;
@@ -202,7 +208,7 @@ module atg_rx_frag (
 `ifdef MUT_R3_CLAMP
 	wire zclamp = 1'b1;
 `else
-	wire zclamp = !ms4;
+	wire zclamp = !ms4 && !dclip;
 `endif
 	wire [31:0] zcl = !zclamp ? zr : zr[31] || (zr[30:23] == 8'hFF && zr[22:0] != 23'd0) ? 32'd0 :
 		zr > ONE ? ONE : zr;

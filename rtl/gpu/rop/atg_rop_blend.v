@@ -13,7 +13,16 @@
  * Three stages, 4 pixels per cycle: (1) the source to unorm8 (RNE), the
  * destination unpacked to RGBA8; (2) the factor products; (3) the
  * operation, round(x / 255), WRITE_MASK and packing.  The blend runs on
- * 8-bit unorm channels.  See spec/gpu/rop/atg_rop_blend.md.
+ * 8-bit unorm channels.  With CAPS[30] b_rt chooses the attachment's
+ * BLEND word (0x07A, BLEND1-3), write mask (WRITE_MASK[4 rt +: 4]) and
+ * format (RT_FORMATS byte rt, or attachment 0's RT_FORMAT code when that
+ * byte is 0): VkFormat 44 B8G8R8A8, 37 and 51 R8G8B8A8, 4 R5G6B5, 9 R8,
+ * 16 R8G8, 8 A1R5G5B5 (the pixel in the low bytes of its 32-bit lane;
+ * formats without alpha read a destination alpha of 255, missing colours 0
+ * and are not written); any other format writes nothing.  The constant is
+ * BLEND_CONST's bytes, or with ROP_CTRL[1] the fp32 BLEND_CONST_R-A
+ * clamped and rounded to 8 bits when written.  See
+ * spec/gpu/rop/atg_rop_blend.md.
  */
 
 `timescale 1ns / 1ps
@@ -32,31 +41,74 @@ module atg_rop_blend #(
 	input wire [511:0] b_src,
 	input wire [127:0] b_dst,
 	input wire [3:0] b_mask,
+	input wire [1:0] b_rt,
 	output reg b_rvalid,
 	output reg [127:0] b_pix
 );
 	`include "ghci_regs.vh"
-	/* STATE: RT_FORMAT 0x072, BLEND 0x07A, BLEND_CONST 0x07B, WRITE_MASK 0x07C. */
-	reg [1:0] fmt;
-	reg [22:0] bl;
-	reg [31:0] kc;
-	reg [3:0] wm;
+	/* Internal format codes (F_* in the 3-bit lane format). */
+	localparam [2:0] F_BGRA8 = 3'd0, F_RGBA8 = 3'd1, F_565 = 3'd2, F_R8 = 3'd3, F_RG8 = 3'd4,
+		F_1555 = 3'd5, F_NONE = 3'd7;
+	function [2:0] fcode;
+		input [7:0] vk;
+		case (vk)
+		8'd44: fcode = F_BGRA8;
+		8'd37, 8'd51: fcode = F_RGBA8;
+		8'd4: fcode = F_565;
+		8'd9: fcode = F_R8;
+		8'd16: fcode = F_RG8;
+		8'd8: fcode = F_1555;
+		default: fcode = F_NONE;
+		endcase
+	endfunction
+
+	/* STATE: RT_FORMAT 0x072, BLEND 0x07A, BLEND_CONST 0x07B, WRITE_MASK 0x07C,
+	 * RT_FORMATS 0x07D, BLEND1-3 0x084-0x086, BLEND_CONST_R-A 0x087-0x08A,
+	 * ROP_CTRL 0x08D. */
+	reg [1:0] fmt0;	/* RT_FORMAT */
+	reg [31:0] fmts;	/* RT_FORMATS */
+	reg [22:0] bls [0:3];
+	reg [31:0] kc8, kcf;	/* BLEND_CONST; the fp32 constants as bytes */
+	reg kc_sel;	/* ROP_CTRL[1] */
+	reg [15:0] wms;
+	wire [1:0] s_k = st_idx[1:0] - 2'd3;	/* BLEND1-3 and BLEND_CONST_R-A: k */
+	wire [7:0] kcf_n = f2u8(st_wdata);
+	integer i;
 	always @(posedge clk)
 		if (!rst_n) begin
-			fmt <= 2'd0;
-			bl <= 23'd0;
-			kc <= 32'd0;
-			wm <= 4'd0;
+			fmt0 <= 2'd0;
+			fmts <= 32'd0;
+			for (i = 0; i < 4; i = i + 1)
+				bls[i] <= 23'd0;
+			kc8 <= 32'd0;
+			kcf <= 32'd0;
+			kc_sel <= 1'b0;
+			wms <= 16'd0;
 		end else if (st_we) begin
 			if (st_idx == GHCI_S_RT_FORMAT)
-				fmt <= st_wdata[1:0];
+				fmt0 <= st_wdata[1:0];
+			if (st_idx == GHCI_S_RT_FORMATS)
+				fmts <= st_wdata;
 			if (st_idx == GHCI_S_BLEND)
-				bl <= st_wdata[22:0];
+				bls[0] <= st_wdata[22:0];
+			if (st_idx >= GHCI_S_BLEND1 && st_idx < GHCI_S_BLEND1 + 9'd3)
+				bls[s_k] <= st_wdata[22:0];
 			if (st_idx == GHCI_S_BLEND_CONST)
-				kc <= st_wdata;
+				kc8 <= st_wdata;
+			if (st_idx >= GHCI_S_BLEND_CONST_R && st_idx < GHCI_S_BLEND_CONST_R + 9'd4)
+				kcf[8 * s_k +: 8] <= kcf_n;
+			if (st_idx == GHCI_S_ROP_CTRL)
+				kc_sel <= st_wdata[1];
 			if (st_idx == GHCI_S_WRITE_MASK)
-				wm <= st_wdata[3:0];
+				wms <= st_wdata[15:0];
 		end
+	wire [31:0] kc = kc_sel ? kcf : kc8;
+	/* the beat's attachment */
+	wire [7:0] fvk = fmts[8 * b_rt +: 8];
+	wire [2:0] fmt_n = b_rt == 2'd0 && fvk == 8'd0 ? (fmt0 == 2'd0 ? F_BGRA8 :
+		fmt0 == 2'd1 ? F_RGBA8 : F_565) : fcode(fvk);
+	wire [22:0] bl_n = bls[b_rt];
+	wire [3:0] wm_n = wms[4 * b_rt +: 4];
 
 	/* fp32 to unorm8: NaN, <= 0 to 0, >= 1 to 255, else RNE(f x 255). */
 	function [7:0] f2u8;
@@ -152,20 +204,31 @@ module atg_rop_blend #(
 			for (c = 0; c < 4; c = c + 1)
 				s1_n[32 * l + 8 * c +: 8] = f2u8(b_src[128 * l + 32 * c +: 32]);
 			dp = b_dst[32 * l +: 32];
-			case (fmt)
-			2'd0: d1_n[32 * l +: 32] = {dp[31:24], dp[7:0], dp[15:8], dp[23:16]};
-			2'd1: d1_n[32 * l +: 32] = dp;
+			case (fmt_n)
+			F_BGRA8: d1_n[32 * l +: 32] = {dp[31:24], dp[7:0], dp[15:8], dp[23:16]};
+			F_RGBA8: d1_n[32 * l +: 32] = dp;
+			F_R8: d1_n[32 * l +: 32] = {8'd255, 16'd0, dp[7:0]};
+			F_RG8: d1_n[32 * l +: 32] = {8'd255, 8'd0, dp[15:0]};
+			F_1555: d1_n[32 * l +: 32] = {{8{dp[15]}}, dp[4:0], dp[4:2], dp[9:5], dp[9:7],
+				dp[14:10], dp[14:12]};
 			default: d1_n[32 * l +: 32] = {8'd255, dp[4:0], dp[4:2], dp[10:5], dp[10:9],
 				dp[15:11], dp[15:13]};
 			endcase
 		end
 	end
 	reg v1;
-	reg [3:0] m1;
+	reg [3:0] m1, wm1, wm2;
+	reg [2:0] fmt1, fmt2;
+	reg [22:0] bl1, bl2;
+	reg [31:0] kc1;
 	reg [127:0] s1, d1, o1;
 	always @(posedge clk) begin
 		v1 <= rst_n && b_valid;
 		m1 <= b_mask;
+		fmt1 <= fmt_n;
+		bl1 <= bl_n;
+		wm1 <= wm_n;
+		kc1 <= kc;
 		o1 <= b_dst;
 		s1 <= s1_n;
 		d1 <= d1_n;
@@ -179,11 +242,11 @@ module atg_rop_blend #(
 			for (c = 0; c < 4; c = c + 1) begin
 				sc = s1[32 * l + 8 * c +: 8];
 				dc = d1[32 * l + 8 * c +: 8];
-				kcc = kc[8 * c +: 8];
-				p_n[16 * (4 * l + c) +: 16] = sc * factor(c == 3 ? bl[15:12] : bl[4:1], sc, dc,
-					kcc, s1[32 * l + 24 +: 8], d1[32 * l + 24 +: 8], kc[31:24], c == 3);
-				q_n[16 * (4 * l + c) +: 16] = dc * factor(c == 3 ? bl[19:16] : bl[8:5], sc, dc,
-					kcc, s1[32 * l + 24 +: 8], d1[32 * l + 24 +: 8], kc[31:24], c == 3);
+				kcc = kc1[8 * c +: 8];
+				p_n[16 * (4 * l + c) +: 16] = sc * factor(c == 3 ? bl1[15:12] : bl1[4:1], sc, dc,
+					kcc, s1[32 * l + 24 +: 8], d1[32 * l + 24 +: 8], kc1[31:24], c == 3);
+				q_n[16 * (4 * l + c) +: 16] = dc * factor(c == 3 ? bl1[19:16] : bl1[8:5], sc, dc,
+					kcc, s1[32 * l + 24 +: 8], d1[32 * l + 24 +: 8], kc1[31:24], c == 3);
 			end
 	reg v2;
 	reg [3:0] m2;
@@ -192,6 +255,9 @@ module atg_rop_blend #(
 	always @(posedge clk) begin
 		v2 <= rst_n && v1;
 		m2 <= m1;
+		fmt2 <= fmt1;
+		bl2 <= bl1;
+		wm2 <= wm1;
 		s2 <= s1;
 		d2 <= d1;
 		o2 <= o1;
@@ -205,12 +271,12 @@ module atg_rop_blend #(
 	reg [2:0] op;
 	reg [8:0] v;
 	reg [7:0] sv, dv;
-	reg [15:0] pp, qq, keep, px16;
+	reg [15:0] pp, qq, keep, px16, px15, keep15;
 	reg [31:0] px;
 	always @(*)
 		for (l = 0; l < 4; l = l + 1) begin
 			for (c = 0; c < 4; c = c + 1) begin
-				op = c == 3 ? bl[22:20] : bl[11:9];
+				op = c == 3 ? bl2[22:20] : bl2[11:9];
 				sv = s2[32 * l + 8 * c +: 8];
 				dv = d2[32 * l + 8 * c +: 8];
 				pp = p2[16 * (4 * l + c) +: 16];
@@ -222,18 +288,25 @@ module atg_rop_blend #(
 				3'd4: v = {1'b0, sv > dv ? sv : dv};
 				default: v = div255({2'd0, pp} + {2'd0, qq});
 				endcase
-				if (!bl[0])
+				if (!bl2[0])
 					v = {1'b0, sv};
 				if (v[8])
 					v = 9'd255;
-				r8[8 * c +: 8] = wm[c] ? v[7:0] : dv;
+				r8[8 * c +: 8] = wm2[c] ? v[7:0] : dv;
 			end
 			px16 = {div5(r8[7:0]), div6(r8[15:8]), div5(r8[23:16])};
-			keep = {wm[0] ? 5'd0 : 5'h1F, wm[1] ? 6'd0 : 6'h3F, wm[2] ? 5'd0 : 5'h1F};
-			case (fmt)
-			2'd0: px = {r8[31:24], r8[7:0], r8[15:8], r8[23:16]};
-			2'd1: px = r8;
-			default: px = {o2[32 * l + 16 +: 16], (px16 & ~keep) | (o2[32 * l +: 16] & keep)};
+			keep = {wm2[0] ? 5'd0 : 5'h1F, wm2[1] ? 6'd0 : 6'h3F, wm2[2] ? 5'd0 : 5'h1F};
+			px15 = {r8[31], div5(r8[7:0]), div5(r8[15:8]), div5(r8[23:16])};
+			keep15 = {!wm2[3], wm2[0] ? 5'd0 : 5'h1F, wm2[1] ? 5'd0 : 5'h1F,
+				wm2[2] ? 5'd0 : 5'h1F};
+			case (fmt2)
+			F_BGRA8: px = {r8[31:24], r8[7:0], r8[15:8], r8[23:16]};
+			F_RGBA8: px = r8;
+			F_R8: px = {o2[32 * l + 8 +: 24], r8[7:0]};
+			F_RG8: px = {o2[32 * l + 16 +: 16], r8[15:0]};
+			F_1555: px = {o2[32 * l + 16 +: 16], (px15 & ~keep15) | (o2[32 * l +: 16] & keep15)};
+			F_565: px = {o2[32 * l + 16 +: 16], (px16 & ~keep) | (o2[32 * l +: 16] & keep)};
+			default: px = o2[32 * l +: 32];
 			endcase
 			pix_n[32 * l +: 32] = m2[l] ? px : o2[32 * l +: 32];
 		end
@@ -242,7 +315,7 @@ module atg_rop_blend #(
 		b_pix <= pix_n;
 	end
 
-	wire unused_ok = LAT != 0;
+	wire unused_ok = &{LAT != 0, bl2[19:12], bl2[8:1]};
 endmodule
 
 `default_nettype wire

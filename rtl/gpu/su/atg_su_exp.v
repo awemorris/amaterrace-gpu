@@ -88,7 +88,7 @@ module atg_su_exp #(
 	input wire [11:0] fl_pw_addr,
 	input wire [31:0] fl_pw_data,
 	/* Multisampling to the ROP: {d_s[127:0], zexp[3:0], smask[15:0]} */
-	output wire [147:0] ex_ms,
+	output wire [148:0] ex_ms,	/* {front, d_s, zexp, smask} */
 	/* Slot release (atg_su_sched) */
 	output wire xr_valid,
 	output wire [WARP_W-1:0] xr_warp,
@@ -120,6 +120,7 @@ module atg_su_exp #(
 	/* ---- Per warp. */
 	reg [NWARPS-1:0] frag, ended;
 	reg [NWARPS*16-1:0] seq;
+	reg [NWARPS-1:0] fr;	/* the warp's facing (fl_info[48]) */
 	reg [NWARPS*32-1:0] cov, xp, dw;	/* coverage, exported lanes, depth written */
 	reg [NWARPS*32-1:0] smw, r6w;	/* SAMPLE_MASK exported, r6 written by the RX */
 	reg [NWARPS*128-1:0] dsv;	/* the warp's d_s */
@@ -239,7 +240,7 @@ module atg_su_exp #(
 	assign ex_seq = seq[dwarp*16 +: 16];
 	assign ex_xy = {qy[dqs +: 16], qx[dqs +: 16]};
 	assign ex_mask = dxp[dl0 +: 4] & smok;
-	assign ex_ms = {dsv[dwarp*128 +: 128], zexp & dxp[dl0 +: 4], smask};
+	assign ex_ms = {fr[dwarp], dsv[dwarp*128 +: 128], zexp & dxp[dl0 +: 4], smask};
 	assign ex_color = col;
 	assign ex_depth = dep;
 	assign ex_last = dlast;
@@ -275,6 +276,7 @@ module atg_su_exp #(
 				frag[fl_slot] <= 1'b1;
 				ended[fl_slot] <= 1'b0;
 				seq[fl_slot*16 +: 16] <= fl_info[47:32];
+				fr[fl_slot] <= fl_info[48];
 				cov[fl_slot*32 +: 32] <= fl_info[31:0];
 				xp[fl_slot*32 +: 32] <= 32'd0;
 				dw[fl_slot*32 +: 32] <= 32'd0;

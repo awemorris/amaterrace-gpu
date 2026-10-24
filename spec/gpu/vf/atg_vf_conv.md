@@ -63,7 +63,7 @@ One register word per cycle.
 
 - `PASS atg_vf_conv.formats` — every format against the reference of `tools/vf-vectors.py` (`sim/vec/vf_conv.txt`: all 256 UNORM8 values, fp16 zeros, denormals, infinities and NaNs), fewer words than components, disabled attributes
 - `PASS atg_vf_conv.fill` — missing components get 0,0,0,1 (also the reserved formats)
-- `PASS atg_vf_conv.vkformats` — every vertex-buffer VkFormat against tools/fmtmodel.py (CAPS[30])
+- `PASS atg_vf_conv.vkformats` — every VkFormat value 0-255 against tools/fmtmodel.py (`sim/vec/vf_conv_vk.txt`, also from `tools/vf-vectors.py`: many texels of each vertex-buffer format, extreme field codes and float specials; values without the feature read (0, 0, 0, 1.0)) (CAPS[30])
 - `PASS atg_vf_conv.oob` — af_oob writes (0, 0, 0, 1)
 - `PASS atg_vf_conv` at the end.
 
@@ -75,4 +75,4 @@ design §2.3, §3.4.3 (ATTR_DST).
 
 ## 10. Status
 
-Implemented in WS288 p009 part A (branch p1-vf).  Readings: the reference is the Python model `tools/vf-vectors.py` (the text said "a C reference"); fp16 converts exactly with denormals (the SU's `atg_su_h2f` flushes them; an attribute is data, not an fp16 operand); the reserved formats fill (0, 0, 0, 1.0).  Ports and parameters unchanged.  2026-10-25 (CAPS[30], spec first, the RTL follows): the VkFormat path through `atg_fmt_unpack` and the input `af_oob` (§3, §4).
+Implemented in WS288 p009 part A (branch p1-vf).  Readings: the reference is the Python model `tools/vf-vectors.py` (the text said "a C reference"); fp16 converts exactly with denormals (the SU's `atg_su_h2f` flushes them; an attribute is data, not an fp16 operand); the reserved formats fill (0, 0, 0, 1.0).  Ports and parameters unchanged.  2026-10-25 (CAPS[30], spec first, the RTL follows): the VkFormat path through `atg_fmt_unpack` and the input `af_oob` (§3, §4); implemented the same day, every PASS of §8.  The attribute is enabled when ATTR_DST[31:24] or [7:0] is not 0 (as atg_vf_fetch).

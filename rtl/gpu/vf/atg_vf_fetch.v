@@ -17,10 +17,13 @@
  * (inst - FIRST_INSTANCE) / divisor (per-instance; divisor 0: FIRST_INSTANCE,
  * Vulkan's rule; a sequential divider with a one-entry memo for divisors
  * above 1), address = ATTR_BASE + stride * element, the size from the
- * format (4..16 bytes, any byte alignment).  The bytes come from two line
- * entries (fully associative, kept until the warp's last attribute: the
- * vertex buffers do not change under a draw); an attribute that crosses a
- * line uses both.  Misses are read one request at a time (tag = entry,
+ * format (4..16 bytes, any byte alignment; with ATTR_DST[k][31:24] the
+ * VkFormat's 1..16 bytes, atg_fmt_info).  ATTR_LIMIT[k] (0x1D0 + k): with
+ * [31], an attribute whose bytes pass [30:0] (stride * element + size,
+ * computed without overflow) is not read and goes out with af_oob.  The
+ * bytes come from two line entries (fully associative, kept until the
+ * warp's last attribute: the vertex buffers do not change under a draw);
+ * an attribute that crosses a line uses both.  Misses are read one request at a time (tag = entry,
  * at most two in flight); an error response reads as 0.  af goes out
  * lane-major, af_last on the last attribute of the vertex with vb_last.  A
  * warp whose vertices have no enabled attribute still sends one af (attr 0,
@@ -55,6 +58,7 @@ module atg_vf_fetch #(
 	output wire [3:0] af_attr,
 	output wire [4:0] af_lane,
 	output wire [127:0] af_raw,
+	output wire af_oob,
 	output wire af_last,
 	output wire busy,
 	/* AMB client port (design §4.1) */
@@ -72,17 +76,20 @@ module atg_vf_fetch #(
 	input wire rsp_error
 );
 	`include "ghci_regs.vh"
+	`include "atg_fmt_info.vh"
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam LB = LINE_BYTES * 8;
 
 	/* STATE (design §2.3): FIRST_INSTANCE 0x027, ATTR[k]_BASE 0x030 + 2k,
-	 * ATTR[k]_DESC 0x031 + 2k, ATTR_DST[k] 0x1C0 + k. */
+	 * ATTR[k]_DESC 0x031 + 2k, ATTR_DST[k] 0x1C0 + k, ATTR_LIMIT[k] 0x1D0 + k. */
 
 	reg [31:0] s_finst;
 	reg [31:0] a_base [0:15];
 	reg [20:0] a_desc [0:15];	/* DESC[20:0]: stride, format, per-instance */
 	reg [7:0] a_div [0:15];	/* DESC[31:24] */
 	reg [15:0] en;
+	reg [7:0] a_vk [0:15];	/* ATTR_DST[31:24]: the VkFormat, 0 = DESC[19:16] */
+	reg [31:0] a_lim [0:15];
 	wire [8:0] s_off = st_idx - GHCI_S_ATTR;
 	wire s_attr = st_idx >= GHCI_S_ATTR && st_idx < GHCI_S_ATTR + 9'd32;
 	integer i;
@@ -94,6 +101,8 @@ module atg_vf_fetch #(
 				a_base[i] <= 32'd0;
 				a_desc[i] <= 21'd0;
 				a_div[i] <= 8'd0;
+				a_vk[i] <= 8'd0;
+				a_lim[i] <= 32'd0;
 			end
 		end else if (st_we) begin
 			if (st_idx == GHCI_S_FIRST_INSTANCE)
@@ -104,8 +113,12 @@ module atg_vf_fetch #(
 				a_desc[s_off[4:1]] <= st_wdata[20:0];
 				a_div[s_off[4:1]] <= st_wdata[31:24];
 			end
-			if (st_idx[8:4] == GHCI_S_ATTR_DST[8:4])
-				en[st_idx[3:0]] <= st_wdata[7:0] != 8'd0;
+			if (st_idx[8:4] == GHCI_S_ATTR_DST[8:4]) begin
+				en[st_idx[3:0]] <= st_wdata != 32'd0;
+				a_vk[st_idx[3:0]] <= st_wdata[31:24];
+			end
+			if (st_idx[8:4] == GHCI_S_ATTR_LIMIT[8:4])
+				a_lim[st_idx[3:0]] <= st_wdata;
 		end
 
 	localparam [3:0] ST_IDLE = 4'd0, ST_ELEM = 4'd1, ST_DIV = 4'd2, ST_MUL = 4'd3,
@@ -134,15 +147,22 @@ module atg_vf_fetch #(
 	wire per_inst = a_desc[k][20];
 	wire [7:0] div = a_div[k];
 
-	/* Bytes of a format (design §2.3 ATTR_DESC[19:16]; reserved: 4). */
+	/* Bytes of a format (design §2.3 ATTR_DESC[19:16]; reserved: 4), or of
+	 * the VkFormat (a value without an entry, or a compressed block: 4). */
+	wire [7:0] vk = a_vk[k];
+	wire [67:0] vk_inf = atg_fmt_info(vk);
 	reg [4:0] size;
 	always @(*)
-		case (fmt)
-		4'd1, 4'd7, 4'd9: size = 5'd8;
-		4'd2: size = 5'd12;
-		4'd3: size = 5'd16;
-		default: size = 5'd4;
-		endcase
+		if (vk != 8'd0)
+			size = vk_inf[0] && !vk_inf[14] ? vk_inf[5:1] : 5'd4;
+		else
+			case (fmt)
+			4'd1, 4'd7, 4'd9: size = 5'd8;
+			4'd2: size = 5'd12;
+			4'd3: size = 5'd16;
+			default: size = 5'd4;
+			endcase
+	wire [31:0] lim = a_lim[k];
 
 	/* Per-instance element: divider with a one-entry memo. */
 	wire [31:0] num = v_inst - s_finst;
@@ -158,6 +178,15 @@ module atg_vf_fetch #(
 
 	reg [31:0] elem;
 	reg [31:0] addr;
+	reg [47:0] boff;	/* stride * element, the attribute's offset in its buffer */
+	reg oob;
+	/* The attribute's end, offset + size, in 49 bits: it cannot wrap. */
+	wire [48:0] bend = {1'b0, boff} + {44'd0, size};
+`ifdef MUT_ATTR_LIMIT_GE
+	wire past = bend >= {18'd0, lim[30:0]};
+`else
+	wire past = bend > {18'd0, lim[30:0]};
+`endif
 
 	/* Two line entries. */
 	reg [LA_W-1:0] e_tag0, e_tag1;
@@ -191,7 +220,8 @@ module atg_vf_fetch #(
 	assign af_valid = st == ST_EMIT || st == ST_NONE;
 	assign af_attr = st == ST_NONE ? 4'd0 : k;
 	assign af_lane = v_lane;
-	assign af_raw = st == ST_NONE ? 128'd0 : pair_sh[127:0];
+	assign af_raw = st == ST_NONE || oob ? 128'd0 : pair_sh[127:0];
+	assign af_oob = st == ST_EMIT && oob;
 	assign af_last = v_last && (st == ST_NONE || rem_next == 16'd0);
 	assign busy = st != ST_IDLE;
 
@@ -202,6 +232,7 @@ module atg_vf_fetch #(
 			rr <= 1'b0;
 			m_v <= 1'b0;
 			rq_pend <= 1'b0;
+			oob <= 1'b0;
 		end else begin
 			if (rd_rsp) begin
 				if (rsp_tag[0])
@@ -259,6 +290,7 @@ module atg_vf_fetch #(
 				end
 			end
 			ST_MUL: begin
+				boff <= elem * {32'd0, stride};
 				addr <= a_base[k] + elem * {16'd0, stride};
 				st <= ST_PLAN;
 			end
@@ -278,9 +310,15 @@ module atg_vf_fetch #(
 					sel2 <= !h1_1;
 				else
 					sel2 <= 1'b1;
-				if (!h1_0 && !h1_1 && !xline)
-					rr <= !rr;
-				st <= ST_REQ;
+				/* Outside ATTR_LIMIT: no read, no entry changes. */
+				oob <= lim[31] && past;
+				if (lim[31] && past)
+					st <= ST_EMIT;
+				else begin
+					if (!h1_0 && !h1_1 && !xline)
+						rr <= !rr;
+					st <= ST_REQ;
+				end
 			end
 			ST_REQ:
 				/* The misses, one request at a time. */
@@ -326,7 +364,8 @@ module atg_vf_fetch #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, rsp_tag[7:1], s_off[8:5], pair_sh[2*LB-1:128]};
+	wire unused_ok = &{1'b0, rsp_tag[7:1], s_off[8:5], pair_sh[2*LB-1:128], vk_inf[67:15],
+		vk_inf[13:6]};
 endmodule
 
 `default_nettype wire

@@ -105,6 +105,6 @@ design §3.4.3 (the fragment warp's inputs), §3.8 (clip, barycentrics, ROP orde
 
 ## 10. Status
 
-Implemented in WS288 p009 part B2 (P1, branch p1-su-gfx), split off atg_rx_scan (its p009 warp path).  320 lines, one FSM.
+Implemented in WS288 p009 part B2 (P1, branch p1-su-gfx), split off atg_rx_scan (its p009 warp path).  320 lines, one FSM.  2026-10-25 (CAPS[30]): with DEPTH_CLAMP[1] (0x059) r3 is not clamped with one sample either (the RX clips the depth geometrically); DEPTH_CLAMP[1] = 0 as before.  Not yet in this TB (the scene of the integration step checks it).
 
 Multisampling (the MSAA work): the lane arithmetic moved to `atg_rx_bary` (for the line limit), r6, the centroid's pass and r7-r9, d_s, MS_CTRL; `fq_cov` became `fq_scov` and `fq_ccov` (33 ports).  342 lines.

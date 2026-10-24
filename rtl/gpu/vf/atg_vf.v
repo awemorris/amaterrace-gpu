@@ -42,7 +42,7 @@ module atg_vf #(
 	/* Primitives to the RX */
 	output wire prim_valid,
 	input wire prim_ready,
-	output wire [23:0] prim_vtx,
+	output wire [25:0] prim_vtx,
 	output wire [2:0] prim_free,
 	output wire prim_last,
 	/* AMB client port (design §4.1) */
@@ -64,7 +64,7 @@ module atg_vf #(
 	wire vb_valid, vb_ready, vb_last;
 	wire [31:0] vb_index, vb_inst;
 	wire [4:0] vb_lane;
-	wire af_valid, af_ready, af_last;
+	wire af_valid, af_ready, af_last, af_oob;
 	wire [3:0] af_attr;
 	wire [4:0] af_lane;
 	wire [127:0] af_raw;
@@ -122,14 +122,14 @@ module atg_vf #(
 		.vb_valid(vb_valid), .vb_ready(vb_ready), .vb_index(vb_index), .vb_inst(vb_inst),
 		.vb_lane(vb_lane), .vb_last(vb_last),
 		.af_valid(af_valid), .af_ready(af_ready), .af_attr(af_attr), .af_lane(af_lane),
-		.af_raw(af_raw), .af_last(af_last), .busy(fetch_busy),
+		.af_raw(af_raw), .af_oob(af_oob), .af_last(af_last), .busy(fetch_busy),
 		.req_valid(fx_req_valid), .req_ready(fx_req_ready), .req_write(fx_req_write), .req_line(fx_req_line), .req_be(fx_req_be), .req_wdata(fx_req_wdata), .req_tag(fx_req_tag), .rsp_valid(fx_rsp_valid), .rsp_write(fx_rsp_write), .rsp_tag(fx_rsp_tag), .rsp_rdata(fx_rsp_rdata), .rsp_error(fx_rsp_error)
 	);
 
 	atg_vf_conv conv (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.af_valid(af_valid), .af_ready(af_ready), .af_attr(af_attr), .af_lane(af_lane),
-		.af_raw(af_raw), .af_last(af_last),
+		.af_raw(af_raw), .af_oob(af_oob), .af_last(af_last),
 		.vl_we(vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane), .vl_data(vl_data),
 		.conv_done(conv_done)
 	);

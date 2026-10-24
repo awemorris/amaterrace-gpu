@@ -20,18 +20,19 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `st_we`, `st_idx`, `st_wdata` | in | 1, 9, 32 | STATE; this module keeps MS_CTRL (0x05E: [3:0] = 2 four samples, [8] alpha to coverage, [9] alpha to one) |
 | `i_valid` / `i_ready` | in / out | 1, 1 | A quad from atg_rop_order |
 | `i_xy`, `i_mask`, `i_color`, `i_depth`, `i_dbg` | in | 32, 4, 512, 128, 1 | Its position, lanes, colours, depths (exported or the RX's r3), the direct path |
-| `i_ms` | in | 148 | {d_s[127:0], zexp[3:0], smask[15:0]} |
+| `i_ms` | in | 149 | {front, d_s[127:0], zexp[3:0], smask[15:0]} |
 | `o_valid` / `o_ready` | out / in | 1, 1 | The quad to atg_rop_ds |
-| `o_xy`, `o_smask`, `o_color`, `o_sdepth`, `o_dbg` | out | 32, 16, 512, 512, 1 | Its position, samples (bit 4 l + s), colours, the samples' depths (at 32 (4 l + s)), the direct path |
+| `o_xy`, `o_smask`, `o_color`, `o_sdepth`, `o_dbg`, `o_front` | out | 32, 16, 512, 512, 1, 1 | Its position, samples (bit 4 l + s), colours, the samples' depths (at 32 (4 l + s)), the direct path, the facing (i_ms[148]) |
 | `busy` | out | 1 | A quad held |
 
-21 ports.
+22 ports (21 before CAPS[30]).
 
 ## 4. Behaviour
 
 - Four samples: smask = i_ms's & i_mask's lanes & (alpha to coverage, not for the direct path: n = the number of 0.125, 0.375, 0.625, 0.875 that COLOR0's alpha reaches (fp32 compares of the bits; NaN and negatives 0): n 0 none, 1 {0}, 2 {0, 3}, 3 {0, 1, 3}, 4 all — Amaterrace's table, Vulkan leaves it to the implementation).  The depth of sample s of lane l: the lane's depth when it exported DEPTH (zexp), else clamp01(z + d_s) (fadd RNE with denormals flushed; NaN and negatives 0, above 1 one).
 - One sample: bit 4 l = i_mask[l] & i_ms[4 l] (& alpha ≥ 0.5 with alpha to coverage); the depth as given (no add); the other bits 0.
 - Alpha to one (not for the direct path): COLOR0's alpha = 1.0.  A quad with no sample left is dropped.
+- **CAPS[30]**: the module keeps DEPTH_CLAMP (0x059) and VIEWPORT's z scale and offset (0x054, 0x055).  With DEPTH_CLAMP[1] (the RX clips the depth) z + d_s is not clamped to [0, 1].  With DEPTH_CLAMP[0] every sample's depth, exported or not, one sample or four, is clamped to [min(n, f), max(n, f)] (n the z offset, f = n + z scale by the fadd the cycle after either is written, which happens while the ROP is idle; fp32 order; a NaN depth gives the minimum).  DEPTH_CLAMP 0 is the earlier behaviour bit for bit.
 
 ## 5. State machine
 
@@ -61,4 +62,4 @@ design §15.6; spec atg_rop.md, atg_rop_order.md, atg_rop_ds.md, atg_rop_wb.md, 
 
 ## 10. Status
 
-Implemented (the MSAA work).
+Implemented (the MSAA work).  2026-10-25 (CAPS[30]): the depth clamp and DEPTH_CLAMP[1] (§4), o_front; checked by `sim/tb/atg_rop_msz_tb.v` (`PASS atg_rop_msz.clamp`, `.legacy`, `atg_rop_msz`: the module alone against `ms_depth` of `tools/rop-vectors.py`, `sim/vec/rop_msz.txt`), the earlier TB unchanged.
