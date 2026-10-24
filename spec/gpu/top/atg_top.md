@@ -65,7 +65,6 @@ Those of the children: register read 3 cycles minimum per AXI read; memory throu
 ## 9. References
 
 - design.md §1.1 (blocks), §1.3 (clocks, reset domains), §3.6 (bitstream 1 size), §4.1 (MC clients), §7.6 (the top with block parameters).
-- `docs/ghci.md` Appendix (implementation status).
 - Related specs: `spec/common/am_axi_regs.md`, `spec/gpu/cp/atg_cp.md`, `spec/gpu/blt/atg_blt.md`, `spec/gpu/mc/atg_mc.md`, `spec/boards/zybo/atg_zybo_2d.md`.
 
 ## 10. Status

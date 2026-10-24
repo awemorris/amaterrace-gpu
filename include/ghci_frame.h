@@ -6,7 +6,7 @@
  */
 
 /*
- * ghci_frame.h: the class V packets of GHCI 1.0 (docs/ghci.md section 9,
+ * ghci_frame.h: the class V packets of GHCI 1.0 (docs/ghci.md section 7,
  * draft): the GHCI gpu-ops, the GHCI_FRAME packet that points at a frame
  * of commands in a staging buffer, and the result records the firmware
  * writes.  The Vulkan gpu-op numbers are those of zedBSD's GPU command

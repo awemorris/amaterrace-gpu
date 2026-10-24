@@ -7,7 +7,7 @@
 
 /*
  * ghci_packets.h: the GHCI command ring's packet envelope (version 3) and
- * the class N micro-operations (docs/ghci.md section 9).  Class V packets
+ * the class N micro-operations (docs/ghci.md section 7).  Class V packets
  * carry zedBSD's GPU command protocol (gpu-op) for the CP's firmware.
  */
 

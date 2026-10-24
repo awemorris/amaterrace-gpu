@@ -58,7 +58,7 @@ or changed in p004:
 
 ## 4. Behaviour
 
-- Register map, CP states, ring, fences, faults, RESET: docs/ghci.md §2-§9 and the children's specs.
+- Register map, CP states, ring, fences, faults, RESET: docs/ghci.md §3-§10 and the children's specs.
 - Resets: `rst_n` (board) for regs, ctl, state, the ring's BASE/SIZE, IRQ_ENABLE, the mux;
   `core_rst_n` (from ctl) for the ring's pointers, seq, fence, dbg, IRQ_STATUS and the blocks.
 - The sequencer's `halt` is driven only in FAULTED and RESETTING (the ring stops at packet boundaries

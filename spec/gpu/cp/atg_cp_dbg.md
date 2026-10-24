@@ -30,7 +30,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `hcr_ridx` | in | 10 | Word index being read; the read data is due in the same cycle (combinational from this registered index). |
 | `hcr_rdata` | out | 32 | Read data of this module's registers at `hcr_ridx`, 0 for other indices (the parent ORs them). |
 | `ev_done` | out | 1 | One-cycle pulse: an access finished (IRQ DBG_DONE). |
-| `dbg_busy` | out | 1 | Level: DBG_STATUS.busy (ORed into STATUS[0], ghci.md §2). |
+| `dbg_busy` | out | 1 | Level: DBG_STATUS.busy (ORed into STATUS[0], ghci.md §3). |
 | **AMB client port (design §4.1)** | | | |
 | `req_valid` | out | 1 | Request valid; payload held until `req_ready`. |
 | `req_ready` | in | 1 | The MC (or mux) takes the request this cycle. |

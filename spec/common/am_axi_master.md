@@ -77,7 +77,7 @@ No encoded FSM; two independent paths:
 ## 9. References
 
 - design.md §4.1 (AMB, `am_axi_master`, outstanding 4 + 4, AXI3 parameter), §1.3 (quiesce, AXI_STUCK), §3.6 (measured LUTs).
-- `docs/ghci.md` §7 (quiesce), §13 (memory model: lines).
+- `docs/ghci.md` §10 (quiesce), §11 (memory model: lines).
 - Related specs: `spec/gpu/mc/atg_mc.md`, `spec/common/am_fifo.md`, `spec/boards/zybo/atg_zybo_2d.md` (AXI3 hookup).
 
 ## 10. Status

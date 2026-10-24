@@ -84,7 +84,7 @@ Write channel: a flag `aw_full` (address held) and `b_valid` (response owed), no
 ## 9. References
 
 - design.md §2.2 (the 128 KiB decode, 0 for unmapped offsets), §7.1, §7.3.
-- `docs/ghci.md` §1 (conventions: 32-bit accesses), `docs/style.md`.
+- `docs/ghci.md` §2 (conventions: 32-bit accesses), `docs/style.md`.
 - Related specs: `spec/gpu/cp/atg_cp.md` (the register-bus target), `spec/gpu/top/atg_top.md`.
 
 ## 10. Status

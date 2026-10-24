@@ -247,7 +247,7 @@ module atg_dc_regs #(
 		endcase
 	end
 
-	/* The standalone GHCI header (docs/ghci.md section 12) and the DISP
+	/* The standalone GHCI header (docs/ghci.md section 13) and the DISP
 	 * entry of the extended capability list. */
 	always @(*) begin
 		case (reg_raddr)

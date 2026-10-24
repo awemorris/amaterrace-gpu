@@ -176,7 +176,7 @@
 #define GHCI_XCAP_SA 7u
 #define GHCI_XCAP_MEM 8u
 
-/* The MEM capability's registers (from its register offset, section 13.3). */
+/* The MEM capability's registers (from its register offset, section 11.3). */
 #define GHCI_MEM_LOCAL_BASE 0x0u
 #define GHCI_MEM_LOCAL_SIZE 0x4u /* 0 = no local memory (unified) */
 #define GHCI_MEM_WINDOW_SIZE 0x8u /* 0 = no local window */
@@ -192,7 +192,7 @@
 
 /*
  * State register file.  Only the BLT range is defined in this draft; the
- * other ranges follow the command set of design v3 (docs/ghci.md).
+ * other ranges follow the command set (docs/ghci.md section 8).
  */
 #define GHCI_S_BLT 0x000u
 #define GHCI_S_VENDOR 0x1E0u
@@ -219,7 +219,7 @@
 #define GHCI_XY(x, y) (((unsigned)(y) << 16) | ((unsigned)(x) & 0xFFFFu))
 
 /* The display controller's registers (DISP capability, docs/ghci.md
- * section 12): offsets from the capability's register offset. */
+ * section 13): offsets from the capability's register offset. */
 #define GHCI_DC_ID_VALUE 0x41544443u /* "ATDC" */
 #define GHCI_DC_ID 0x00u
 #define GHCI_DC_VERSION 0x04u

@@ -99,7 +99,7 @@ No `sim/tb/atg_blt_tb.v`. Checked through `sim/tb/atg_top_tb.v` (`PASS atg_top`,
 ## 9. References
 
 - design.md §2.3 (BLT STATE range), §3.6 (BLT LUTs: 1.0k estimated, 2.73k measured), §7.6 (split if > 400 lines: `atg_blt_rd`/`atg_blt_wr`/`atg_blt_ctl`).
-- `docs/ghci.md` §8 (BLT STATE, operations, tiles, overlap direction, fault kind 2), §11 (KICK).
+- `docs/ghci.md` §8 (BLT STATE, operations, tiles, overlap direction, fault kind 2), §14 (KICK).
 - Related specs: `spec/gpu/cp/atg_cp.md` (STATE, KICK, faults), `spec/gpu/mc/atg_mc.md` (AMB port, no read-after-write order).
 
 ## 10. Status
@@ -120,5 +120,5 @@ Known limitations and residuals:
 
 1. **COPY waits for every earlier write** before each read (correct for overlaps, slow: 64 MB/s). A table of 8 written lines (wait only for writes to the lines read) was tried in p003: 19% faster for +0.75k LUT, not kept.
 2. **Read prefetch residual**: reads are issued one segment at a time; issuing reads several segments ahead (a request FIFO and a separate data path) is the residual from p003 (Q1's decision when).
-3. **Shadow STATE is cleared by CTRL.RESET** while the STATE BRAM keeps its values (ghci.md §4 says STATE survives): after RESET the host must rewrite the BLT range before the next KICK. Difference from the spec of GHCI; fix in an implementation Phase (e.g. reset the shadow with the board reset only, or have the CP replay).
+3. **Shadow STATE is cleared by CTRL.RESET** while the STATE BRAM keeps its values (ghci.md §5 says STATE survives): after RESET the host must rewrite the BLT range before the next KICK. Difference from the spec of GHCI; fix in an implementation Phase (e.g. reset the shadow with the board reset only, or have the CP replay).
 4. A memory error reports kind 5 with no address or direction.
