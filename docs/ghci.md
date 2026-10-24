@@ -94,6 +94,7 @@ earlier work has completed.
 | Unified / discrete | Without / with local memory |
 | Local window | An optional host mapping of part of local memory |
 | Fence | A value the GPU writes to memory after all earlier work has completed |
+| Session | A GPU context that the driver opens for a client; named by the job tag of the client's packets |
 
 ### 1.4 Status of this draft
 
@@ -101,6 +102,7 @@ earlier work has completed.
 | --- | --- |
 | Host control registers, extended capabilities, CP states, the ring, fences, interrupts, faults, quiesce and reset, the debug port, the display capability | Draft |
 | Memory model (unified and discrete, the MEM capability), platform and PCIe bindings | Draft |
+| Session protection (optional, the PROT capability) | Draft |
 | The command set | Draft: the packet envelope and the native micro-operations; the class 2 operations follow the Kei GPU command protocol |
 | The state register file | Draft: the mechanism and the blitter range. The other ranges follow the command set |
 | The shader ISA | Draft: GSI1 ([gsi1.md](gsi1.md)) |
@@ -236,7 +238,7 @@ CAPS2 (0x024):
 
 | Kind | Cause |
 | --- | --- |
-| 1 | Access outside the aperture |
+| 1 | Access outside the aperture, or not permitted to the session (section 11.6) |
 | 2 | Unknown or unsupported command or operation |
 | 3 | Ring error (a packet runs past RING_WPTR, a bad state index) |
 | 4 | Watchdog: one command ran longer than WDT_CYCLES |
@@ -265,6 +267,7 @@ EXTCAP points to a list of entries of two words each:
 | 6 | CPFW | The command processor's firmware images (vendor-defined in version 1.0) |
 | 7 | SA | A systolic array (reserved) |
 | 8 | MEM | The memory configuration: local memory and the local window (section 11.3) |
+| 9 | PROT | Session protection (section 11.6) |
 
 **PERF (version 1).** Four registers at the capability's register offset,
 PERF_SRC0..PERF_SRC3 (+0x0, +0x4, +0x8, +0xC; R), say what PERF0..PERF3
@@ -356,6 +359,10 @@ starts with dword0:
 - A packet never wraps around the ring's end (pad to the end with class 3);
   a packet whose end passes RING_WPTR is a fault of kind 3.
 - Packets are processed in ring order.
+- The job tag of a class 2 packet names the **session** the packet belongs
+  to (a GPU context the driver opened with SESSION_OPEN). Only the driver
+  writes the ring, so the session of the work is always the driver's
+  choice, never the content of a client's buffer.
 
 ### 7.2 Class 2: gpu-ops for the CP's firmware
 
@@ -373,8 +380,12 @@ firmware:
 - A GPU without firmware (CAPS[17] = 0) faults with kind 2.
 - While the firmware works on a class 2 packet, the CP takes no other
   packet.
-- The GHCI gpu-ops (0x10100-0x10105, draft numbers): SESSION_OPEN,
-  SESSION_CLOSE, MEMORY, PROGRAM, NATIVE, FRAME.
+- The GHCI gpu-ops (0x10100-0x10107, draft numbers): SESSION_OPEN,
+  SESSION_CLOSE, MEMORY, PROGRAM, NATIVE, FRAME, and BUFFER_GRANT and
+  BUFFER_REVOKE (section 11.6).
+- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT and BUFFER_REVOKE are taken
+  only as packets in the ring, never as staged commands inside a frame:
+  inside a frame they end the frame with VK_ERROR_FEATURE_NOT_PRESENT.
 
 **GHCI_FRAME.** A driver normally sends one class 2 packet per submission,
 GHCI_FRAME (gpu-op 0x10105, draft;
@@ -568,8 +579,9 @@ it.
   local range and below 2^32.
 - The GPU moves memory in lines of 2^CAPS[23:20] bytes; the aperture is
   aligned to the line.
-- A later version adds a GPU MMU behind the MMU capability. Version 1 has
-  no isolation between the driver's clients inside the aperture.
+- Without session protection (section 11.6), there is no isolation
+  between the driver's clients inside the aperture. A later version may add
+  an address-translating GPU MMU behind the MMU capability.
 
 ### 11.3 Unified and discrete
 
@@ -626,6 +638,73 @@ need to know it.
   acknowledged. The fence write, and an interrupt message that follows it,
   are not reordered ahead of those writes (on PCIe: no Relaxed Ordering on
   the fence write and the interrupt message).
+
+### 11.6 Session protection (optional)
+
+A GPU with the PROT capability can keep the sessions of different clients
+apart: work of a protected session may access only the memory of that
+session and the memory granted to it. The mechanism is inside the GPU (an
+access check, run by the command processor and the units); the driver does
+not see page tables and keeps one flat GPU address space. A GPU without the
+PROT capability conforms to this specification; the operating system then
+knows that clients are not isolated from each other and chooses its policy
+(for example, refusing untrusted clients).
+
+**Sessions.**
+
+- SESSION_OPEN flags[0] PROTECTED opens a protected session. On a GPU
+  without the PROT capability, the flag makes SESSION_OPEN fail with
+  VK_ERROR_FEATURE_NOT_PRESENT; other unknown flags do the same.
+- Session 0 is the driver's own and is never protected.
+- Work whose job tag names an unprotected session, or session 0, is not
+  checked.
+
+**Ownership.** Memory that a protected session registers with MEMORY
+belongs to that session from the start. There is no window between
+creation and protection.
+
+**Sharing.** The driver shares a buffer between sessions (for example, a
+client's buffer that a compositor imports) with:
+
+| gpu-op | Arguments | Meaning |
+| --- | --- | --- |
+| BUFFER_GRANT (0x10106) | [u32 session][u32 access: [0] read, [1] write][u64 GPU address][u64 bytes] | The session may also access the range |
+| BUFFER_REVOKE (0x10107) | [u32 session][u64 GPU address][u64 bytes] | Removes a grant of exactly that range |
+
+- The range is aligned to the protection granule (PROT_CAPS[15:8]); the
+  driver allocates shareable buffers on that granule.
+- A grant or revoke applies to work after it in the ring. Work before a
+  revoke keeps its access until it completes; the driver reuses the memory
+  only after a later fence.
+- On a GPU without the PROT capability, both gpu-ops fail with
+  VK_ERROR_FEATURE_NOT_PRESENT.
+- Sessions are the driver's numbers, not operating-system process IDs. The
+  driver maps processes to sessions, and turns its sharing decisions (an
+  imported buffer, a closed file) into grants and revokes.
+
+**What is checked.** Every memory access of the work of a protected
+session: the units started by its commands (the blitter, vertex fetch,
+shader loads, stores and atomics, texture reads, render output), the fence
+and result writes of its packets, and the native micro-ops it submits
+(class 0 and 1 addresses, such as the blitter's bases). A display
+controller's scanout belongs to the driver and is not checked.
+
+**Violations.** An access that is not permitted is not made and is a
+fault of kind 1; FAULT_INFO[31:24] (the job tag) names the session. In
+version 1, recovery is still for the whole device (section 10): protection
+keeps a client from reading or writing another's memory, but not from
+stopping the other clients' work.
+
+**The PROT capability (version 1)**, registers at the capability's register
+offset:
+
+| Offset | Name | Access | Contents |
+| --- | --- | --- | --- |
+| +0x0 | PROT_CAPS | R | [7:0] the number of protected sessions that can be open at once; [15:8] log2 of the protection granule in bytes (12 = 4 KiB); [31:16] the number of ranges (owned and granted, over all sessions) the GPU can hold |
+
+When a protected session would exceed these limits, the gpu-op that needs
+the room (SESSION_OPEN, MEMORY or BUFFER_GRANT) fails with
+VK_ERROR_OUT_OF_DEVICE_MEMORY.
 
 12. The shader ISA
 ------------------

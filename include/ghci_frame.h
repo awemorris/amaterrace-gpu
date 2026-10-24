@@ -29,6 +29,8 @@
  *   PROGRAM       [u64 pipeline][u32 stage][u32 ISA][u64 address][u32 bytes][u32 flags]
  *   NATIVE        [u32 count][count x class N packet] (the driver unpacks it)
  *   FRAME         [u64 staging address][u32 bytes][u32 result page][u32 records]
+ *   BUFFER_GRANT  [u32 session][u32 access][u64 GPU address][u64 bytes]
+ *   BUFFER_REVOKE [u32 session][u64 GPU address][u64 bytes]
  */
 #define GHCI_GPU_OP_SESSION_OPEN 0x10100u
 #define GHCI_GPU_OP_SESSION_CLOSE 0x10101u
@@ -36,6 +38,13 @@
 #define GHCI_GPU_OP_PROGRAM 0x10103u
 #define GHCI_GPU_OP_NATIVE 0x10104u
 #define GHCI_GPU_OP_FRAME 0x10105u
+#define GHCI_GPU_OP_BUFFER_GRANT 0x10106u
+#define GHCI_GPU_OP_BUFFER_REVOKE 0x10107u
+
+/* SESSION_OPEN flags and BUFFER_GRANT access (docs/ghci.md section 11.6). */
+#define GHCI_SESSION_PROTECTED 0x1u
+#define GHCI_GRANT_READ 0x1u
+#define GHCI_GRANT_WRITE 0x2u
 
 /*
  * The GHCI_FRAME packet: dword0 GHCI_PKT_V(tag, 8), dword1 GHCI_GPU_OP_FRAME,
