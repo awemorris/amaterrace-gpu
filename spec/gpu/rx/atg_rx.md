@@ -33,7 +33,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `prim_ready` | out | 1 | Taken. |
 | `prim_vtx` | in | 24 | Three PT entries, v0 in [7:0] (provoking vertex first per PROVOKING). |
 | `prim_free` | in | 3 | Vertex i is used for the last time (RX frees its PT entry after this primitive). |
-| `prim_last` | in | 1 | Last primitive of the draw (a draw with no primitive sends one with prim_vtx unused and the topology... see atg_vf_asm). |
+| `prim_last` | in | 1 | Last primitive of the draw (a draw with no primitive sends none, atg_vf_asm §7). |
 | **PT of SU 0 (atg_su pt_*)** | | | |
 | `pt_rd` | out | 1 | Read. |
 | `pt_idx` | out | 8 | Entry. |
