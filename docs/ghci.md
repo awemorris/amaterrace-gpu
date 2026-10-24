@@ -210,7 +210,7 @@ CAPS (0x020):
 | [26] | The texture unit of section 8.4: the view types (2D arrays, 3D, cube maps), texel offsets, unnormalized coordinates, mipmap mode linear, clamp to border, the depth formats and depth compare, gather and the queries (Vulkan 1.0 core texture sampling, multisampled images aside) |
 | [27] | Graphics: the vertex fetcher, the rasterizer and the render output are present |
 | [28] | Packed fp16/int16 arithmetic (section 12.5) |
-| [29] | 4x multisampling (draft, section 12.11): the rasterizer's sample coverage, the render output per sample, and `texf` of multisampled images. The bit number is provisional |
+| [29] | 4x multisampling (draft, section 12.11): the rasterizer's sample coverage, the render output per sample, `texf` of multisampled images and the blitter's RESOLVE (section 8.2) |
 
 CAPS2 (0x024):
 
@@ -469,7 +469,7 @@ follow the command set and are not yet part of this draft.
 
 | Index | Name | Contents |
 | --- | --- | --- |
-| 0x000 | BLT_OP | [1:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits; 2 and 3 are refused); [12] reverse direction (bottom-right first, for overlapping copies) |
+| 0x000 | BLT_OP | [2:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE, 4 RESOLVE (CAPS[29], draft), 5-7 refused; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits; 2 and 3 are refused); [12] reverse direction (bottom-right first, for overlapping copies) |
 | 0x001 | BLT_DST_BASE | GPU address of the destination image |
 | 0x002 | BLT_DST_STRIDE | Bytes per destination row |
 | 0x003 | BLT_SRC_BASE | GPU address of the source image (COPY, TILE, UNTILE) |
@@ -480,6 +480,7 @@ follow the command set and are not yet part of this draft.
 | 0x008 | BLT_COLOR | FILL colour (the pixel's bits) |
 | 0x009 | BLT_CLIP_MIN | [15:0] x, [31:16] y, inclusive |
 | 0x00A | BLT_CLIP_MAX | [15:0] x, [31:16] y, exclusive; 0 = no clipping |
+| 0x00B | BLT_RESOLVE | RESOLVE only (draft): [3:0] log2 of the source's samples per pixel; [7:4] the average (below); [8] the destination is in 4x4 tiles |
 
 - Bases and strides are multiples of the pixel size. The destination
   rectangle is clipped to the clip rectangle; the source moves with it.
@@ -501,6 +502,32 @@ follow the command set and are not yet part of this draft.
   `base + (y / 4) x stride + (x / 4) x 16 x ps + ((y % 4) x 4 + x % 4) x ps`,
   where ps is the pixel size in bytes. The base and the stride of a tiled
   image are multiples of 16 x ps bytes.
+- **RESOLVE** (draft, CAPS[29]) converts a multisampled source to one
+  sample per pixel: destination pixel (x, y) gets the average of the S
+  samples of source pixel (x', y') (the source rectangle's pixel at the
+  same place).  The source is a multisampled image in the layout of
+  section 12.11: sample s of pixel (x', y') at `BLT_SRC_BASE + y' x
+  BLT_SRC_STRIDE + (x' x S + s) x ps`; BLT_SRC_XY and BLT_SIZE count
+  pixels, not samples.  The destination is linear, or in 4x4 tiles with
+  BLT_RESOLVE[8].  The pixel size ps ([9:8]) is that of one sample and of
+  a destination pixel.  The average (BLT_RESOLVE[7:4]):
+
+  | Value | Average |
+  | --- | --- |
+  | 0 UNORM8 | Every byte is an 8-bit unsigned normalized channel (RGBA8, BGRA8): the mean of the S codes, rounded to the nearest code, ties to even |
+  | 1 UNORM565 | The 16-bit fields [15:11], [10:5], [4:0], each as UNORM8 |
+  | 2 SAMPLE0 | Sample 0 (integer formats) |
+  | 3 SRGB8_A8 | Bytes 0-2 sRGB: decoded, averaged and encoded (nearest, ties to even); byte 3 as UNORM8 |
+  | 4 SFLOAT16 | Every 16 bits a binary16: ((s0 + s1) + (s2 + s3)) x 0.25 in binary32 (round to nearest even), then to binary16 |
+  | 5 SFLOAT32 | Every 32 bits a binary32, the same sum |
+  | 6-15 | Refused |
+
+  A blitter does the averages of the formats its render output writes
+  (Amaterrace: 0-2; 3-5 are refused).  Sample counts other than 4, blend
+  over, the reverse direction, UNORM565 with 32-bit pixels and a RESOLVE
+  without CAPS[29] are refused.  Source and destination must not overlap
+  in memory (the result is undefined otherwise).  Depth and stencil are
+  not resolved (Vulkan 1.0 resolves colour only).
 - A combination that the blitter does not do is a fault of kind 2
   (block 1).
 
@@ -1290,21 +1317,20 @@ one level, in linear rows (not tiled). Sample s of pixel (x, y) is at
 sample count, ps the pixel size and P = roundup(width, 2) x S x ps; the
 base is aligned to 64 bytes. The render target and depth strides of a
 multisampled draw are P. Texture slots name the sample count in the image
-word (TEX_IMAGE[15:12] = log2 S, in the revised texture layout that is
-pending; section 8.4 still shows the earlier layout). `texf rd,
+word (TEX_IMAGE[15:12] = log2 S, section 8.4). `texf rd,
 rs1, rs2` of a multisampled slot reads sample rs2 (modulo S) of texel
 (rs1, rs1+1), with the layer in rs1+2 for an array (the `.3` form);
 `texsz.s rd` (immediate 3, no rs1) writes S. Without CAPS[29], `texsz.s`
 is an ISA fault (an optional instruction without its CAPS bit).
 `texf` also reads RGB565 (UNORM, a 16-bit texel; R and B divided by 31,
-G by 63, rounded to nearest even; (R, G, B, 1)) in the revised layout's
-format 4, so that a multisampled RGB565 colour attachment can be resolved
-and fetched. SPIR-V's ImageFetch with Sample maps to `texf`, QuerySamples to
+G by 63, rounded to nearest even; (R, G, B, 1)) as TEX_IMAGE format 4,
+so that a multisampled RGB565 colour attachment can be fetched. SPIR-V's ImageFetch with Sample maps to `texf`, QuerySamples to
 `texsz.s`.
 
-**Resolve** is not a unit operation: a driver (or the command processor's
-firmware) draws with a fragment program that reads the samples with
-`texf` and averages them.
+**Resolve** (a render pass's resolve attachments and vkCmdResolveImage)
+is the blitter's RESOLVE (section 8.2), one per region and layer, after
+the render output's writes have reached memory (WAIT_IDLE).  It uses only
+the blitter's range of STATE.
 
 13. The display controller capability (DISP)
 --------------------------------------------
