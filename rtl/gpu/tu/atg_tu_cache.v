@@ -11,17 +11,22 @@
  * banking), invalidated by INVALIDATE[1] / DRAW.
  *
  * Direct mapped, TC_BYTES / LINE_BYTES lines, read only.  Blocking (v1):
- * one quad at a time; its texels are looked up one per cycle in the order
- * lane 0 texel 0 .. lane 3 texel 3, only the lanes of ta_mask and, without
- * ta_ctl[0] (bilinear), only texel 0 (texels not looked up are 0).  A miss
- * requests its line (one outstanding), writes it when it comes and looks
- * the texel up again.  A border texel (bit 0 of its address) is not looked
- * up: it is the border colour's raw texel for the format (ta_ctl[8], [1])
- * and colour class (ta_ctl[7:6]: 0 transparent black, 1 opaque black,
- * 2 opaque white): RGBA8/BGRA8 0, 0xFF000000, 0xFFFFFFFF; D24 0, 0,
- * 0x00FFFFFF; D32F 0, 0, 1.0; RGB565 (ta_ctl[19]) 0, 0, 0xFFFF.  A
- * texel of RGB565 is the half word that address bit 1 selects (bits 15:0,
- * the rest 0).  An error response gives the texel 0 and
+ * one quad at a time; its slots are looked up one per cycle in the order
+ * lane 0 slot 0 .. lane 3 slot 3, only the lanes of ta_mask and, without
+ * ta_ctl[0] (bilinear), only slot 0, or slots 0-1 (ta_ctl[26:25] = 1,
+ * 8-byte texels) or 0-3 (2, 16-byte texels) (slots not looked up are 0).
+ * A miss requests its line (one outstanding), writes it when it comes and
+ * looks the slot up again.  A border texel (ta_bord) is not looked up: it
+ * is the border colour's raw texel for the format (ta_ctl[8], [1]) and
+ * colour class (ta_ctl[7:6]: 0 transparent black, 1 opaque black, 2
+ * opaque white): RGBA8/BGRA8 0, 0xFF000000, 0xFFFFFFFF; D24 and D16 0, 0,
+ * 0x00FFFFFF; D32F 0, 0, 1.0; RGB565 (ta_ctl[19]) 0, 0, 0xFFFF (the fp32
+ * path's filter puts in its own values and ignores these).  A slot is the
+ * 32-bit word at its address, or with ta_ctl[24:23] = 1 (2-byte texels)
+ * or ta_ctl[19] (RGB565) the half word that address bit 1 selects, with
+ * ta_ctl[24:23] = 2 (1-byte texels) the byte that address bits 1:0 select
+ * (right-justified, the rest 0); tc_bord passes the border bits on.  An
+ * error response gives the texel 0 and
  * leaves the line invalid.  texsz and the LOD query (ta_ctl[2]) look
  * nothing up.  The quad is then held on tc_* until taken; order is kept.
  * inv clears every line at once;
@@ -49,20 +54,22 @@ module atg_tu_cache #(
 	input wire ta_valid,
 	output wire ta_ready,
 	input wire [511:0] ta_addr,
+	input wire [15:0] ta_bord,
 	input wire [127:0] ta_wts,
 	input wire [15:0] ta_tag,
 	input wire [3:0] ta_mask,
-	input wire [23:0] ta_ctl,
+	input wire [47:0] ta_ctl,
 	input wire [127:0] ta_value,
 	input wire ta_last,
 	/* To atg_tu_filter */
 	output wire tc_valid,
 	input wire tc_ready,
 	output reg [511:0] tc_texels,
+	output reg [15:0] tc_bord,
 	output reg [127:0] tc_wts,
 	output reg [15:0] tc_tag,
 	output reg [3:0] tc_mask,
-	output reg [23:0] tc_ctl,
+	output reg [47:0] tc_ctl,
 	output reg [127:0] tc_value,
 	output reg tc_last,
 	/* AMB client port (design §4.1) */
@@ -98,7 +105,7 @@ module atg_tu_cache #(
 	reg pb;	/* ... or texel pt is a border texel */
 	reg [3:0] pt;
 	reg [WW-1:0] pw;
-	reg ph;	/* ... and its half word (RGB565) */
+	reg [1:0] pby;	/* ... and its byte in the word (address bits 1:0) */
 	reg [LB-1:0] q;
 
 	reg [511:0] ta_addr_q;
@@ -108,16 +115,20 @@ module atg_tu_cache #(
 	wire [IW-1:0] idx = a[LINE_SHIFT +: IW];
 	wire [TW-1:0] atag = a[ADDR_W-1 -: TW];
 	wire hit = vld[idx] && tags[idx] == atag;
-	wire border = a[0];
+	wire border = tc_bord[t];
 	/* The border texel by format (colour, D24, D32F) and colour class. */
 	wire h565 = tc_ctl[19];
 	wire [31:0] bwhite = h565 ? 32'h0000FFFF : !tc_ctl[8] ? 32'hFFFFFFFF : tc_ctl[1] ? 32'h3F800000 :
 		32'h00FFFFFF;
 	wire [31:0] braw = tc_ctl[7:6] == 2'd2 ? bwhite :
 		tc_ctl[7:6] == 2'd1 && !tc_ctl[8] && !h565 ? 32'hFF000000 : 32'd0;
-	/* Is texel t looked up, and the next t after it (16: the quad is done). */
-	wire use_t = tc_mask[t[3:2]] && (t[1:0] == 2'd0 || bil);
-	wire [4:0] nxt = !tc_mask[t[3:2]] || !bil ? {1'b0, t[3:2], 2'b00} + 5'd4 : {1'b0, t} + 5'd1;
+	/* Is slot t looked up, and the next t after it (16: the quad is done);
+	 * the last slot of a lane without bilinear: 0, 1 or 3. */
+	wire [1:0] lsl = tc_ctl[26:25] == 2'd1 ? 2'd1 : tc_ctl[26:25] == 2'd2 ? 2'd3 : 2'd0;
+	wire use_t = tc_mask[t[3:2]] && (t[1:0] <= lsl || bil);
+	wire [4:0] nxt = !tc_mask[t[3:2]] || (!bil && t[1:0] == lsl) ? {1'b0, t[3:2], 2'b00} + 5'd4 :
+		{1'b0, t} + 5'd1;
+	wire [1:0] tsz = tc_ctl[24:23];
 
 	assign ta_ready = st == IDLE;
 	assign tc_valid = st == OUT;
@@ -146,11 +157,12 @@ module atg_tu_cache #(
 		end else begin
 			pv <= 1'b0;
 			if (pv)
-				tc_texels[pt*32 +: 32] <= pb ? braw : !h565 ? q[pw*32 +: 32] :
-					{16'd0, ph ? q[pw*32 + 16 +: 16] : q[pw*32 +: 16]};
+				tc_texels[pt*32 +: 32] <= pb ? braw : tsz == 2'd2 ? {24'd0, q[pw*32 + pby*8 +: 8]} :
+					h565 || tsz == 2'd1 ? {16'd0, q[pw*32 + pby[1]*16 +: 16]} : q[pw*32 +: 32];
 			case (st)
 			IDLE: if (ta_valid) begin
 				ta_addr_q <= ta_addr;
+				tc_bord <= ta_bord;
 				tc_wts <= ta_wts;
 				tc_tag <= ta_tag;
 				tc_mask <= ta_mask;
@@ -172,7 +184,7 @@ module atg_tu_cache #(
 						pb <= border;
 						pt <= t;
 						pw <= a[2 +: WW];
-						ph <= a[1];
+						pby <= a[1:0];
 					end
 					t <= nxt[3:0];
 					if (nxt[4])

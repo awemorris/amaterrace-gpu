@@ -6,7 +6,9 @@
 # layer, wrap on integer texel coordinates after the texel offsets, clamp to
 # border, cube edges, bilinear footprint, linear or 4x4 tiled addresses,
 # texsz), the border texels of atg_tu_cache, the texel conversion, depth
-# compare and filter of atg_tu_filter.  Used by tools/tu-vectors.py (unit
+# compare and filter of atg_tu_filter, and the formats of TEX_FORMAT
+# (docs/ghci.md section 8.5: texel sizes, the fp32 path of atg_tu_ffilt,
+# the swizzle).  Used by tools/tu-vectors.py (unit
 # vectors) and tools/rx-tex-scene.py (the textured scene).  A module only;
 # it has no command line.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -15,6 +17,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rxmodel as RX  # noqa: E402
+import fmtmodel as FM  # noqa: E402
+import gsi1fp as FP  # noqa: E402
 
 M32 = 0xFFFFFFFF
 LAM_MIN = -32768
@@ -31,7 +35,11 @@ OPB_DEPTHQ = 3
 # tx_off: [3:0] du, [7:4] dv, [11:8] dw (signed texel offsets).
 
 # Descriptor words (docs/ghci.md section 8.4: STATE 0x090 + 16 s + word).
-D_BASE, D_SIZE, D_IMAGE, D_STRIDE, D_SAMPLER, D_LOD = 0, 1, 2, 3, 4, 5
+D_BASE, D_SIZE, D_IMAGE, D_STRIDE, D_SAMPLER, D_LOD, D_FORMAT = 0, 1, 2, 3, 4, 5, 6
+# TEX_FORMAT (CAPS[30]): [7:0] VkFormat (0: TEX_IMAGE's code), [8] the
+# stencil aspect, [20:9] the swizzle of R, G, B, A (VkComponentSwizzle).
+TF_STENCIL, TF_SWZ = 8, 9
+U8_FORMATS = (9, 16, 37, 44, 51)	# the 8-bit path's colour formats
 # TEX_IMAGE: [3:0] level count, [7:4] format (0 RGBA8, 1 BGRA8, 2 D24,
 # 3 D32_SFLOAT), [8] 4x4 tiled, [11:9] view type, [15:12] log2(samples)
 # (reserved, 0), [31:16] depth (3D) or layer count (2D array).
@@ -59,6 +67,12 @@ WRAP_REPEAT, WRAP_MIRROR, WRAP_EDGE, WRAP_BORDER = 0, 1, 2, 3
 CTL_BIL, CTL_FMT, CTL_SZ, CTL_TEXF, CTL_MORE, CTL_ACC = 0, 1, 2, 3, 4, 5
 CTL_BORDER, CTL_DEPTH, CTL_CMP, CTL_CMP_OP = 6, 8, 9, 10
 CTL_GATHER, CTL_COMP, CTL_QLOD, CTL_P0, CTL_P1, CTL_565 = 13, 14, 16, 17, 18, 19
+# [20] the fp32 path, [21] row passes of 8-byte texels, [22] the pass's
+# second row, [24:23] texel size (0 a word, 1 two bytes, 2 one byte),
+# [26:25] slots without bilinear (0 one, 1 two, 2 four), [34:27] VkFormat
+# (0 the earlier codes or none), [35] stencil aspect, [47:36] swizzle.
+CTL_F32, CTL_SPLIT, CTL_ROW, CTL_TSZ, CTL_NSL = 20, 21, 22, 23, 25
+CTL_VKF, CTL_STEN, CTL_SWZ = 27, 35, 36
 
 # Cube faces (Vulkan's table): (major axis, sign), s_c, t_c as (axis, sign).
 CUBE_FACES = [((0, 1), (2, -1), (1, -1)), ((0, -1), (2, 1), (1, -1)),
@@ -218,13 +232,87 @@ def fmt(d):
     return f if f < 4 else FMT_RGBA8
 
 
+def tfmt(d):
+    return d[D_FORMAT] if len(d) > D_FORMAT else 0
+
+
 def is565(d):
-    """Format 4, RGB565: 2-byte texels (texf exact; the others as RGBA8)."""
-    return img(d, IMG_FMT, 4) == FMT_RGB565
+    """The earlier format 4, RGB565: 2-byte texels (texf exact; the others as
+    RGBA8)."""
+    return tfmt(d) & 0xFF == 0 and img(d, IMG_FMT, 4) == FMT_RGB565
+
+
+class FClass:
+    """The class of a slot's format (include/atg_tu_fmt.vh tu_fcls)."""
+
+    def __init__(self, d):
+        tf = tfmt(d)
+        v = tf & 0xFF
+        self.vk, self.swz = v, tf >> TF_SWZ & 0xFFF
+        self.legacy = v == 0
+        f = FM.info(v)
+        ok = f is not None and 'S' in f.feat.partition('|')[0] and not f.block
+        self.none = not self.legacy and not ok
+        self.u8 = self.lin = self.depth = self.sten = self.fbit = self.d16 = self.int = False
+        self.psl = 2
+        if self.legacy:
+            self.psl = 1 if is565(d) else 2
+            self.depth = bool(fmt(d) >> 1)
+            self.fbit = bool(fmt(d) & 1)
+        elif ok:
+            self.psl = {1: 0, 2: 1, 4: 2, 8: 3, 16: 4}.get(f.nbytes, 2)
+            self.sten = bool(tf >> TF_STENCIL & 1) and f.stencil
+            self.depth = f.depth and not self.sten
+            self.lin = 'F' in f.feat.partition('|')[0] and not self.sten
+            self.u8 = v in U8_FORMATS
+            self.fbit = v in (44, 126)
+            self.d16 = v == 124
+            self.int = self.sten or f.ty in (FM.UINT, FM.SINT)
+        self.ctl_vk = 0 if self.legacy or self.none else v
+
+
+def fclass(d):
+    return FClass(d)
 
 
 def bpp(d):
-    return 2 if is565(d) else 4
+    return 1 << fclass(d).psl
+
+
+def tiled(d):
+    """4x4 tiles: only 4-byte texels and the earlier RGB565."""
+    c = fclass(d)
+    return img(d, IMG_TILED, 1) and (c.legacy or c.psl == 2)
+
+
+def swz_src(z, c):
+    """VkComponentSwizzle of place c: ('c', index) or ('k', 0 or 1)."""
+    s = z >> (3 * c) & 7
+    if s == 1:
+        return 'k', 0
+    if s == 2:
+        return 'k', 1
+    if 3 <= s <= 6:
+        return 'c', s - 3
+    return 'c', c
+
+
+def swizzle(v, z, one):
+    out = []
+    for c in range(4):
+        k, x = swz_src(z, c)
+        out.append(v[x] if k == 'c' else (one if x else 0))
+    return out
+
+
+def gather_word(c, comp):
+    """atg_tu_fmt.vh tu_gwi: the word of the texel that holds component comp
+    after the swizzle (0 for a constant or missing one)."""
+    k, x = swz_src(c.swz, comp)
+    f = FM.info(c.vk)
+    if k == 'k' or f is None or x >= len(f.chans):
+        return 0
+    return f.chans[x][0] >> 5
 
 
 def samples(d):
@@ -260,7 +348,7 @@ def plane(d, lv):
     """The bytes of a 2D plane of level lv, rounded up to 64 (a slice of a
     3D level, a level of the other types)."""
     w, h = size(d, lv)
-    if img(d, IMG_TILED, 1):
+    if tiled(d):
         return (((w + 3) >> 2) * ((h + 3) >> 2) * 16 * bpp(d) + 63) & ~63 & M32
     return (w * h * bpp(d) + 63) & ~63 & M32
 
@@ -280,14 +368,14 @@ def texel_addr(d, lv, i, j, layer=0, k=0, s=None):
     w, _ = size(d, lv)
     bp = bpp(d)
     b = (d[D_BASE] + layer * d[D_STRIDE] + level_offset(d, lv) + k * plane(d, lv)) & M32
-    if img(d, IMG_TILED, 1):
+    if tiled(d):
         a = (b + (j >> 2) * ((w + 3) >> 2) * 16 * bp + (i >> 2) * 16 * bp +
              ((j & 3) * 4 + (i & 3)) * bp)
     elif s is not None:
         a = b + (j * (((w + 1) >> 1) * 8) + i * 4 + s) * bp
     else:
         a = b + (j * w + i) * bp
-    return a & M32 & ~(bp - 1)	# bit 0 is 0 (it marks a border texel); bit 1 a half word
+    return a & M32 & ~(bp - 1)
 
 
 # ---------------------------------------------------------------------------
@@ -384,9 +472,10 @@ def samp_mode(d, op):
     """(depth format, compare, filtering allowed, mip linear) of a quad."""
     samp = d[D_SAMPLER]
     base, gather, _, query = opbase(op)
-    depth = fmt(d) >> 1
+    fc = fclass(d)
+    depth = int(fc.depth)
     cmp = int(depth and samp >> SAMP_CMP & 1 and base in (OP_TEXL, OP_TEXB) and not query)
-    filt = int(not depth or cmp)
+    filt = int(not depth or cmp) if fc.legacy else int(fc.lin or cmp)
     unn = samp >> SAMP_UNNORM & 1
     return depth, cmp, filt, int(filt and not gather and not unn and samp >> SAMP_MIP_LIN & 1)
 
@@ -494,24 +583,43 @@ def lane_layer(op, d, c):
 
 def lane_addr(op, d, c, lam_q, pas, off, cube=None):
     """One lane in pass pas (bit 0: the second slice of 3D linear filtering,
-    bit 1: the second level of mip linear filtering): (addresses of texels
-    0-3, fu, fv, fl, fw, linear, value).  c is the lane's five coordinate
-    words (u, v, rs2, Dref, the third coordinate); lam_q the quad LOD
-    (texb); off the 12-bit texel offsets; cube the lane's (face, s, t).
-    Bit 0 of an address marks a border texel."""
-    base, gather, _, query = opbase(op)
+    bit 1: the second level of mip linear filtering, bit 2: the second row
+    of 8-byte texels): (addresses of slots 0-3, their border bits, fu, fv,
+    fl, fw, linear, value).  c is the lane's five coordinate words (u, v,
+    rs2, Dref, the third coordinate); lam_q the quad LOD (texb); off the
+    12-bit texel offsets; cube the lane's (face, s, t)."""
+    base, gather, comp, query = opbase(op)
     t = vtype(d)
+    z4 = [0] * 4
     if base == OP_TEXSZ:
         lv = min(c[0] & M32, 15)
         if query and op >> OPB_DEPTHQ & 1:
-            return [0] * 4, 0, 0, 0, 0, 0, samples(d)
+            return z4, z4, 0, 0, 0, 0, 0, samples(d)
         if query:
-            return [0] * 4, 0, 0, 0, 0, 0, levels(d)
+            return z4, z4, 0, 0, 0, 0, 0, levels(d)
         if op >> OPB_DEPTHQ & 1:
             r = count(d) if t == TYPE_ARRAY else depth_l(d, lv) if t == TYPE_3D else 1
-            return [0] * 4, 0, 0, 0, 0, 0, r
+            return z4, z4, 0, 0, 0, 0, 0, r
         w, h = size(d, lv)
-        return [0] * 4, 0, 0, 0, 0, 0, (h & 0xFFFF) << 16 | (w & 0xFFFF)
+        return z4, z4, 0, 0, 0, 0, 0, (h & 0xFFFF) << 16 | (w & 0xFFFF)
+    fc = fclass(d)
+    _, cmp, _, _ = samp_mode(d, op)
+    f32p = not fc.legacy and not (fc.u8 or cmp)
+    gwi = gather_word(fc, comp) if f32p and gather else 0
+
+    def slots(fp):
+        """The footprint's texels (i0, j0), (i1, j0), (i0, j1), (i1, j1) as
+        (address, border) to the lane's slots."""
+        if gather or fc.psl <= 2:
+            sl = [(a + 4 * gwi, b) for a, b in fp]
+        elif fc.psl == 3:
+            r = pas >> 2 & 1
+            sl = [(fp[2 * r + (k >> 1)][0] + 4 * (k & 1), fp[2 * r + (k >> 1)][1])
+                  for k in range(4)]
+        else:
+            sl = [(fp[0][0] + 4 * k, fp[0][1]) for k in range(4)]
+        return [x[0] & M32 for x in sl], [x[1] for x in sl]
+
     du, dv, dw = s4(off), s4(off >> 4), s4(off >> 8)
     if t == TYPE_CUBE:
         du = dv = dw = 0
@@ -519,8 +627,8 @@ def lane_addr(op, d, c, lam_q, pas, off, cube=None):
         w, h = size(d, 0)
         i = sat(s32(c[0]) + du, 0, w - 1)
         j = sat(s32(c[1]) + dv, 0, h - 1)
-        return ([texel_addr(d, 0, i, j, lane_layer(op, d, c), 0, c[2] & 3)] * 4, 0, 0, 0, 0, 0,
-                0)
+        a, bo = slots([(texel_addr(d, 0, i, j, lane_layer(op, d, c), 0, c[2] & 3), 0)] * 4)
+        return a, bo, 0, 0, 0, 0, 0, 0
     if base == OP_TEXF:
         lev = s32(c[2])
         lv = 0 if lev < 0 else min(lev, levels(d) - 1)
@@ -528,15 +636,15 @@ def lane_addr(op, d, c, lam_q, pas, off, cube=None):
         i = sat(s32(c[0]) + du, 0, w - 1)
         j = sat(s32(c[1]) + dv, 0, h - 1)
         k = sat(s32(c[4]) + dw, 0, depth_l(d, lv) - 1) if t == TYPE_3D else 0
-        return [texel_addr(d, lv, i, j, lane_layer(op, d, c), k)] * 4, 0, 0, 0, 0, 0, 0
+        a, bo = slots([(texel_addr(d, lv, i, j, lane_layer(op, d, c), k), 0)] * 4)
+        return a, bo, 0, 0, 0, 0, 0, 0
     if query:
         lp, lam = lane_lambda(op, d, c, lam_q)
         dq = sat(lam, 0, (levels(d) - 1) << 8)
-        return [0] * 4, 0, 0, 0, 0, 0, (lp & 0xFFFF) << 16 | dq
-    _, cmp, _, _ = samp_mode(d, op)
+        return z4, z4, 0, 0, 0, 0, 0, (lp & 0xFFFF) << 16 | dq
     val = c[3] & M32 if cmp else 0
     lin, lv0, lv1, fl = lane_lod(op, d, c, lam_q)
-    lv = lv1 if pas >> 1 else lv0
+    lv = lv1 if pas >> 1 & 1 else lv0
     w, h = size(d, lv)
     mu, mv, mw = wraps(d)
     unn = d[D_SAMPLER] >> SAMP_UNNORM & 1
@@ -563,28 +671,32 @@ def lane_addr(op, d, c, lam_q, pas, off, cube=None):
     def tex(i, j, bi, bj):
         if t == TYPE_CUBE:
             g, ii, jj = cube_texel(face, i, j, w)
-            return texel_addr(d, lv, ii, jj, g, 0)
-        return texel_addr(d, lv, i, j, layer, k) | (bi | bj | bk)
+            return texel_addr(d, lv, ii, jj, g, 0), 0
+        return texel_addr(d, lv, i, j, layer, k), bi | bj | bk
 
     if not lin:
         i, j = (cu >> 8) + du, (cv >> 8) + dv
         if t == TYPE_CUBE:
-            return [tex(sat(i, 0, w - 1), sat(j, 0, w - 1), 0, 0)] * 4, 0, 0, fl, 0, 0, val
+            a, bo = slots([tex(sat(i, 0, w - 1), sat(j, 0, w - 1), 0, 0)] * 4)
+            return a, bo, 0, 0, fl, 0, 0, val
         i, bi = wrap_idx(i, w, mu)
         j, bj = wrap_idx(j, h, mv)
-        return [tex(i, j, bi, bj)] * 4, 0, 0, fl, 0, 0, val
+        a, bo = slots([tex(i, j, bi, bj)] * 4)
+        return a, bo, 0, 0, fl, 0, 0, val
     cu, cv = cu - 128, cv - 128
     i0, j0 = (cu >> 8) + du, (cv >> 8) + dv
     fu, fv = cu & 0xFF, cv & 0xFF
     if t == TYPE_CUBE:
-        return ([tex(i0, j0, 0, 0), tex(i0 + 1, j0, 0, 0), tex(i0, j0 + 1, 0, 0),
-                 tex(i0 + 1, j0 + 1, 0, 0)], fu, fv, fl, 0, 1, val)
+        a, bo = slots([tex(i0, j0, 0, 0), tex(i0 + 1, j0, 0, 0), tex(i0, j0 + 1, 0, 0),
+                       tex(i0 + 1, j0 + 1, 0, 0)])
+        return a, bo, fu, fv, fl, 0, 1, val
     i1, bi1 = wrap_idx(i0 + 1, w, mu)
     j1, bj1 = wrap_idx(j0 + 1, h, mv)
     i0, bi0 = wrap_idx(i0, w, mu)
     j0, bj0 = wrap_idx(j0, h, mv)
-    return ([tex(i0, j0, bi0, bj0), tex(i1, j0, bi1, bj0), tex(i0, j1, bi0, bj1),
-             tex(i1, j1, bi1, bj1)], fu, fv, fl, fw, 1, val)
+    a, bo = slots([tex(i0, j0, bi0, bj0), tex(i1, j0, bi1, bj0), tex(i0, j1, bi0, bj1),
+                   tex(i1, j1, bi1, bj1)])
+    return a, bo, fu, fv, fl, fw, 1, val
 
 
 def border_class(d):
@@ -605,10 +717,12 @@ def quad_cube(op, d, coords):
 def quad_addr(op, d, coords, mask, off=0):
     """atg_tu_addr on one quad: op the 8-bit tx_op, coords[l] = (w0, w1, w2,
     w3, w4) of lane l, off the 12-bit tx_off.  Returns the passes, each
-    (addr[l][t], wts[l], ctl, value[l]) with wts lane l = fu | fv << 8 |
-    fl << 16 | fw << 24: pass 0; pass 1 (the second slice) when a lane of
-    the mask has fw != 0; pass 2 (the second level) when one has fl != 0;
-    pass 3 (both) when a lane's fw at the second level is not 0."""
+    (addr[l][t], bord[l][t], wts[l], ctl, value[l]) with wts lane l = fu |
+    fv << 8 | fl << 16 | fw << 24: pass 0; pass 1 (the second slice) when a
+    lane of the mask has fw != 0; pass 2 (the second level) when one has fl
+    != 0; pass 3 (both) when a lane's fw at the second level is not 0; on
+    the fp32 path with 8-byte texels and a bilinear lane, each of them as
+    row 0 and then row 1 (pass bit 2)."""
     base, gather, comp, query = opbase(op)
     coords = [tuple(c) + (0,) * (5 - len(c)) for c in coords]
     lam_q = lod_quad(d, coords) if base == OP_TEXB else 0
@@ -617,25 +731,35 @@ def quad_addr(op, d, coords, mask, off=0):
     nofetch = base == OP_TEXSZ or query
     cube = quad_cube(op, d, coords)
     on = [ln for ln in range(4) if mask >> ln & 1]
+    fc = fclass(d)
+    f32p = int(not fc.legacy and not nofetch and not (fc.u8 or cmp))
+    tsz = 0 if fc.legacy else {0: 2, 1: 1}.get(fc.psl, 0)
+    nsl = {3: 1, 4: 2}.get(fc.psl, 0)
     passes = []
     pas = 0
     while True:
         out = [lane_addr(op, d, coords[ln], lam_q, pas, off, cube[ln]) for ln in range(4)]
-        dep = any(out[ln][4] for ln in on)
-        mip = any(out[ln][3] for ln in on)
-        lin = any(out[ln][5] for ln in on)
-        nxt = {0: 1 if dep else 2 if mip else None, 1: 2 if mip else None,
-               2: 3 if dep else None, 3: None}[pas]
-        ctl = (lin << CTL_BIL | (fmt(d) & 1) << CTL_FMT | nofetch << CTL_SZ |
+        dep = any(out[ln][5] for ln in on)
+        mip = any(out[ln][4] for ln in on)
+        lin = any(out[ln][6] for ln in on)
+        split = int(f32p and fc.psl == 3 and lin and not gather)
+        if split and not pas >> 2:
+            nxt = pas | 4
+        else:
+            nxt = {0: 1 if dep else 2 if mip else None, 1: 2 if mip else None,
+                   2: 3 if dep else None, 3: None}[pas & 3]
+        ctl = (lin << CTL_BIL | int(fc.fbit) << CTL_FMT | nofetch << CTL_SZ |
                (base == OP_TEXF) << CTL_TEXF | (nxt is not None) << CTL_MORE |
                (pas != 0) << CTL_ACC | border_class(d) << CTL_BORDER | depth << CTL_DEPTH |
                cmp << CTL_CMP | (samp >> SAMP_CMP_OP & 7) << CTL_CMP_OP |
                gather << CTL_GATHER | (comp if gather else 0) << CTL_COMP |
                (query and base == OP_TEXB) << CTL_QLOD | (pas & 1) << CTL_P0 |
-               (pas >> 1) << CTL_P1 | is565(d) << CTL_565)
-        passes.append(([o[0] for o in out],
-                       [o[1] | o[2] << 8 | o[3] << 16 | o[4] << 24 for o in out], ctl,
-                       [o[6] for o in out]))
+               (pas >> 1 & 1) << CTL_P1 | is565(d) << CTL_565 | f32p << CTL_F32 |
+               split << CTL_SPLIT | (pas >> 2) << CTL_ROW | tsz << CTL_TSZ | nsl << CTL_NSL |
+               fc.ctl_vk << CTL_VKF | int(fc.sten) << CTL_STEN | fc.swz << CTL_SWZ)
+        passes.append(([o[0] for o in out], [o[1] for o in out],
+                       [o[2] | o[3] << 8 | o[4] << 16 | o[5] << 24 for o in out], ctl,
+                       [o[7] for o in out]))
         if nxt is None:
             return passes
         pas = nxt
@@ -712,9 +836,17 @@ def conv565(t):
             rnd_f32((t & 31) * s5, 80), ONE]
 
 
-def channels(t, fm, h565=0):
-    if h565:
-        t = x565(t)
+def xrg(t, vk):
+    """R8 and R8G8 as RGBA8: the missing bytes 0, alpha 255."""
+    if vk == 9:
+        return 0xFF000000 | t & 0xFF
+    if vk == 16:
+        return 0xFF000000 | t & 0xFFFF
+    return t
+
+
+def channels(t, fm, h565=0, vk=0):
+    t = x565(t) if h565 else xrg(t, vk)
     b = [(t >> (8 * k)) & 0xFF for k in range(4)]
     return [b[2], b[1], b[0], b[3]] if fm else b
 
@@ -729,11 +861,14 @@ def lane_texels(texels, ctl, dref):
         for t in texels:
             if f32:
                 ok = RX.depth_pass(fn, dref, t, True)
+            elif ctl >> CTL_VKF & 0xFF == 124:
+                ok = RX.depth_pass(fn, FM.f32_unorm(dref, 16), t & 0xFFFF, False)
             else:
                 ok = RX.depth_pass(fn, RX.f2u24(dref), t & 0xFFFFFF, False)
             out.append([255 if ok else 0, 0, 0, 255])
         return out
-    return [channels(t, ctl >> CTL_FMT & 1, ctl >> CTL_565 & 1) for t in texels]
+    return [channels(t, ctl >> CTL_FMT & 1, ctl >> CTL_565 & 1, ctl >> CTL_VKF & 0xFF)
+            for t in texels]
 
 
 def lane_sums(texels, wts, ctl, dref):
@@ -767,16 +902,20 @@ def fix8(v):
 
 
 def gather_lane(texels, ctl, dref):
-    """Gather: component C of texels (i0, j1), (i1, j1), (i1, j0), (i0, j0)."""
-    comp = ctl >> CTL_COMP & 3
+    """Gather: component C (through the swizzle) of texels (i0, j1), (i1,
+    j1), (i1, j0), (i0, j0)."""
     order = [texels[2], texels[3], texels[1], texels[0]]
     if ctl >> CTL_CMP & 1:
         return [ONE if c[0] else 0 for c in lane_texels(order, ctl, dref)]
+    kind, comp = swz_src(ctl >> CTL_SWZ, ctl >> CTL_COMP & 3)
+    if kind == 'k':
+        return [ONE if comp else 0] * 4
     if ctl >> CTL_DEPTH & 1:
         if comp == 0:
             return [t if ctl >> CTL_FMT & 1 else conv24(t & 0xFFFFFF) for t in order]
         return [ONE if comp == 3 else 0] * 4
-    return [conv(channels(t, ctl >> CTL_FMT & 1, ctl >> CTL_565 & 1)[comp] << 16) for t in order]
+    return [conv(channels(t, ctl >> CTL_FMT & 1, ctl >> CTL_565 & 1, ctl >> CTL_VKF & 0xFF)[comp]
+                 << 16) for t in order]
 
 
 class Filter:
@@ -802,38 +941,44 @@ class Filter:
             if ctl >> CTL_GATHER & 1:
                 words += gather_lane(texels[ln], ctl, value[ln]) if on else [0] * 4
                 continue
+            z = ctl >> CTL_SWZ & 0xFFF
             if ctl >> CTL_565 & 1 and ctl >> CTL_TEXF & 1:
-                words += conv565(texels[ln][0]) if on else [0] * 4
+                words += swizzle(conv565(texels[ln][0]), z, ONE) if on else [0] * 4
                 continue
             if ctl >> CTL_DEPTH & 1 and not ctl >> CTL_CMP & 1:
                 # a depth format without compare: texel 0 as (D, 0, 0, 1)
                 t = texels[ln][0]
                 dv = t if ctl >> CTL_FMT & 1 else conv24(t & 0xFFFFFF)
-                words += [dv, 0, 0, ONE] if on else [0] * 4
+                words += swizzle([dv, 0, 0, ONE], z, ONE) if on else [0] * 4
                 continue
             r = lane_sums(texels[ln], wts[ln], ctl, value[ln])
             w = pass_weight(wts[ln], ctl)
             acc = self.acc[ln] if ctl >> CTL_ACC & 1 else [0] * 4
             self.acc[ln] = [acc[k] + r[k] * w for k in range(4)]
             if not ctl >> CTL_MORE & 1:
-                words += [conv40(x) for x in self.acc[ln]] if on else [0] * 4
+                words += swizzle([conv40(x) for x in self.acc[ln]], z, ONE) if on else [0] * 4
         return None if ctl >> CTL_MORE & 1 else words
 
 
-def fetch(mem, addrs, ctl, mask):
-    """atg_tu_cache: the raw texels (only texel 0 without bilinear; masked
-    lanes and texsz read nothing, 0; a border texel, address bit 0, is the
-    border colour's raw texel)."""
+def fetch(mem, addrs, bords, ctl, mask):
+    """atg_tu_cache: the raw slots (only slot 0 without bilinear, slots 0-1
+    or 0-3 for 8- and 16-byte texels; masked lanes and texsz read nothing,
+    0; a border texel is the border colour's raw texel); a 1- or 2-byte
+    texel is right-justified."""
+    nsl = {1: 2, 2: 4}.get(ctl >> CTL_NSL & 3, 1)
+    tsz = ctl >> CTL_TSZ & 3
     out = []
     for ln in range(4):
         row = []
         for t in range(4):
-            use = mask >> ln & 1 and not ctl >> CTL_SZ & 1 and (t == 0 or ctl & 1)
+            use = mask >> ln & 1 and not ctl >> CTL_SZ & 1 and (t < nsl or ctl & 1)
             if not use:
                 row.append(0)
-            elif addrs[ln][t] & 1:
+            elif bords[ln][t]:
                 row.append(border_raw(ctl))
-            elif ctl >> CTL_565 & 1:
+            elif tsz == 2:
+                row.append(mem.rd8(addrs[ln][t]))
+            elif ctl >> CTL_565 & 1 or tsz == 1:
                 row.append(mem.rd16(addrs[ln][t] & ~1))
             else:
                 row.append(mem.rd32(addrs[ln][t] & ~3))
@@ -841,10 +986,109 @@ def fetch(mem, addrs, ctl, mask):
     return out
 
 
+def w2f(n):
+    """A weight n x 2^-32 (n <= 2^32) as fp32, nearest even."""
+    return rnd_f32(n, 32)
+
+
+class FFilter:
+    """atg_tu_ffilt, the fp32 path: one pass a call; a pass with ctl[4]
+    (more to follow) returns None and keeps its sums."""
+
+    def __init__(self):
+        self.acc = [[0x80000000] * 4 for _ in range(4)]
+
+    def quad(self, texels, bords, wts, ctl, mask):
+        vk = ctl >> CTL_VKF & 0xFF
+        sten = ctl >> CTL_STEN & 1
+        z = ctl >> CTL_SWZ & 0xFFF
+        f = FM.info(vk)
+        ok = f is not None and not f.block
+        ncomp = 1 if sten else len(f.chans) if ok else 0
+        isint = bool(sten) or (ok and f.ty in (FM.UINT, FM.SINT))
+        one = 1 if isint else ONE
+        nb = f.nbytes if ok else 4
+        bil, more, first = ctl & 1, ctl >> CTL_MORE & 1, not ctl >> CTL_ACC & 1
+        gath = ctl >> CTL_GATHER & 1
+        split, row = ctl >> CTL_SPLIT & 1, ctl >> CTL_ROW & 1
+        bcls = ctl >> CTL_BORDER & 3
+        if first:
+            self.acc = [[0x80000000] * 4 for _ in range(4)]
+        comp = ctl >> CTL_COMP & 3
+        gk, gsrc = swz_src(z, comp)
+        gwi = gather_word(type('C', (), {'swz': z, 'vk': vk})(), comp)
+        wa = (ctl >> CTL_P0 & 1)
+        wb = (ctl >> CTL_P1 & 1)
+
+        def value(ln, t):
+            sl = texels[ln]
+            if gath:
+                raw, b = sl[t] << (32 * gwi), bords[ln][t]
+            elif nb == 8:
+                raw = sl[2 * t] | sl[2 * t + 1] << 32 if t < 2 else 0
+                b = bords[ln][2 * t] if t < 2 else 0
+            elif nb == 16:
+                raw, b = sl[0] | sl[1] << 32 | sl[2] << 64 | sl[3] << 96, bords[ln][0]
+            else:
+                raw, b = sl[t], bords[ln][t]
+            if b:
+                return [(one if bcls == 2 or (bcls == 1 and c == 3) else 0) if c < ncomp else
+                        (one if c == 3 else 0) for c in range(4)]
+            v, _ = FM.unpack(raw, vk, bool(sten))
+            return v
+
+        for ln in range(4):
+            if not mask >> ln & 1:
+                continue
+            w = wts[ln]
+            fu, fv, fl, fw = w & 0xFF, w >> 8 & 0xFF, w >> 16 & 0xFF, w >> 24 & 0xFF
+            if gath:
+                for g, t in enumerate((2, 3, 1, 0)):
+                    v = value(ln, t)
+                    self.acc[ln][g] = (one if gsrc else 0) if gk == 'k' else v[gsrc]
+                continue
+            if not more and first and (not bil or (fu == 0 and fv == 0)):
+                self.acc[ln] = list(value(ln, 0))
+                continue
+            W = (fw if wa else 256 - fw) * (fl if wb else 256 - fl)
+            for t in range(4):
+                if split:
+                    wu = (256 - fu, fu, 0, 0)[t]
+                    wv = (fv if row else 256 - fv) if t < 2 else 0
+                elif not bil:
+                    wu = wv = 256 if t == 0 else 0
+                else:
+                    wu = fu if t & 1 else 256 - fu
+                    wv = fv if t & 2 else 256 - fv
+                n = wu * wv * W
+                if n == 0 or ncomp == 0:
+                    continue
+                wf = w2f(n)
+                v = value(ln, t)
+                for c in range(ncomp):
+                    self.acc[ln][c] = FP.fma(FP.F32, wf, v[c], self.acc[ln][c], 0)
+        if more:
+            return None
+        words = []
+        for ln in range(4):
+            if not mask >> ln & 1:
+                words += [0] * 4
+            elif gath:
+                words += self.acc[ln]
+            else:
+                v = [self.acc[ln][c] if c < ncomp else (one if c == 3 else 0) for c in range(4)]
+                words += swizzle(v, z, one)
+        return words
+
+
 def sample(mem, op, d, coords, mask, off=0):
     """A whole quad through the TU: 16 words (lane-major RGBA)."""
-    flt = Filter()
+    flt, ff = Filter(), FFilter()
     words = None
-    for a, wts, ctl, val in quad_addr(op, d, coords, mask, off):
-        words = flt.quad(fetch(mem, a, ctl, mask), wts, ctl, mask, val)
+    for a, bo, wts, ctl, val in quad_addr(op, d, coords, mask, off):
+        tx = fetch(mem, a, bo, ctl, mask)
+        if ctl >> CTL_F32 & 1:
+            words = ff.quad(tx, bo, wts, ctl, mask)
+        else:
+            words = flt.quad(tx, wts, ctl, mask, val)
     return words

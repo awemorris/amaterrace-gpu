@@ -30,15 +30,16 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `rd_stride` | out | 32 | TEX_LAYER_STRIDE. |
 | `rd_samp` | out | 32 | TEX_SAMPLER. |
 | `rd_lod` | out | 32 | TEX_LOD. |
+| `rd_fmt` | out | 21 | TEX_FORMAT[20:0] (0 after reset). |
 | `rd_loff` | out | 32 | O_level: the offset of level rd_level from the layer's base (0 for level 0). |
 | `rd_plane` | out | 32 | P_level: the bytes of one plane of level rd_level. |
 
-16 ports.
+17 ports.
 
 ## 4. Behaviour
 
-- Keeps words 0-5 of each slot; words 6-15 are reserved and not kept.
-- A write of TEX_SIZE or TEX_IMAGE marks the slot.  One slot at a time, the lowest marked first, its offsets of levels 1-12 are computed again, one level a cycle: O_0 = 0, O_{l+1} = O_l + P_l × D_l (32-bit wrap), P_l = the plane of level l rounded up to a multiple of 64 (linear w_l × h_l × 4, tiled ceil(w_l / 4) × ceil(h_l / 4) × 64, w_l = max(1, w >> l), h_l likewise), D_l = max(1, count >> l) for the view type 3D as written (TEX_IMAGE[11:9] = 2), 1 otherwise.  The offsets are kept as bits 31:6.
+- Keeps words 0-5 of each slot and TEX_FORMAT's bits 20:0 (word 6, CAPS[30], docs/ghci.md §8.5; reset to 0, the earlier formats); words 7-15 are reserved and not kept.
+- A write of TEX_SIZE, TEX_IMAGE or TEX_FORMAT marks the slot.  One slot at a time, the lowest marked first, its offsets of levels 1-12 are computed again, one level a cycle: O_0 = 0, O_{l+1} = O_l + P_l × D_l (32-bit wrap), P_l = the plane of level l rounded up to a multiple of 64 (linear w_l × h_l × ps, ps the texel's bytes of the format (`include/atg_tu_fmt.vh`: 1-16 for TEX_FORMAT's formats; 4, or 2 for the earlier RGB565 code), tiled (only 4-byte texels and the earlier RGB565) ceil(w_l / 4) × ceil(h_l / 4) × 16 ps, w_l = max(1, w >> l), h_l likewise), D_l = max(1, count >> l) for the view type 3D as written (TEX_IMAGE[11:9] = 2), 1 otherwise.  The offsets are kept as bits 31:6.
 - A write to a slot while it is computed marks it again (it is computed once more).
 - The read port is combinational; atg_tu_addr reads its quad's slot (tx_slot in IDLE).
 - The reference is `tools/tumodel.py` (`plane`, `level_offset`).
@@ -69,3 +70,5 @@ docs/ghci.md §8.4 (the memory of an image), design §2.3.
 New in WS288 p009 part F (P3, branch p3-p009f): the TU computes the level offsets that were the descriptor's MIP_OFFSET words (part C); the freed words hold the view type, the depth or layer count and the layer stride.  Reading: the hardware computes (not the CP's firmware), so that a driver writes the same words whatever writes the descriptor; the cost is a 32 × 16 multiplier and 16 × 12 offsets of 26 bits.
 
 RGB565 (the MSAA work): the plane of format 4 is w × h × 2 bytes (linear) or the tiles × 32 bytes, rounded up to 64.
+
+TEX_FORMAT (2026-10-25): word 6 kept (21 bits, reset to 0: the TB scenes and firmware that never write it keep the earlier formats), rd_fmt, the plane by the format's texel size; TEX_IMAGE[8] reads as linear for texels other than 4 bytes.

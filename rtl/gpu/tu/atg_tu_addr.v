@@ -48,8 +48,16 @@
  *   Multisampled images (TEX_IMAGE[15:12] = 2, linear, docs/ghci.md
  *   section 12.11): texf's rs2 is the sample (mod 4) instead of the level
  *   (level 0); sample s of texel (x, y) is texel 4 x + s of rows of
- *   roundup(w, 2) x 4 texels.  Format 4 (RGB565): 2-byte texels
- *   (ta_ctl[19]; address bit 1 selects the half word).
+ *   roundup(w, 2) x 4 texels.  The earlier format 4 (RGB565): 2-byte
+ *   texels (ta_ctl[19]; address bit 1 selects the half word).
+ *   TEX_FORMAT (docs/ghci.md section 8.5; include/atg_tu_fmt.vh): texels
+ *   of 1-16 bytes (tiled only with 4 bytes), the 8-bit path (ta_ctl[20] =
+ *   0) for the RGBA8, BGRA8, R8, R8G8 UNORM formats and for a compare,
+ *   the fp32 path (ta_ctl[20] = 1, atg_tu_ffilt) for the others; linear
+ *   filtering only for formats with the FILTER_LINEAR feature (and
+ *   compares).  A bilinear quad of 8-byte texels on the fp32 path takes
+ *   two passes per slice and level, rows j0 and j1 (ta_ctl[21], [22]).
+ *   ta_bord marks the border texels (clamp to border).
  * Lanes outside tx_mask are computed too (the cache does not fetch them).
  * See spec/gpu/tu/atg_tu_addr.md.
  *
@@ -82,21 +90,25 @@ module atg_tu_addr (
 	output wire ta_valid,
 	input wire ta_ready,
 	output reg [511:0] ta_addr,
+	output reg [15:0] ta_bord,
 	output reg [127:0] ta_wts,
 	output reg [15:0] ta_tag,
 	output reg [3:0] ta_mask,
-	output wire [23:0] ta_ctl,
+	output wire [47:0] ta_ctl,
 	output reg [127:0] ta_value,
 	output reg ta_last
 );
 	`include "ghci_regs.vh"
 	`include "atg_tu_fn.vh"
+	`include "atg_fmt_info.vh"
+	`include "atg_tu_fmt.vh"
 	localparam [1:0] OP_TEXL = 2'd0, OP_TEXB = 2'd1, OP_TEXF = 2'd2, OP_TEXSZ = 2'd3;
 	localparam [2:0] IDLE = 3'd0, CUBE = 3'd1, CWAIT = 3'd2, LOD = 3'd3, LA = 3'd4, LB = 3'd5,
 		OUT = 3'd6;
 
 	reg [2:0] st;
-	reg [1:0] k, pas;
+	reg [1:0] k;
+	reg [2:0] pas;	/* {row, level, slice} */
 	reg [7:0] opr;
 	reg [3:0] slot;
 	reg [639:0] crd;
@@ -119,23 +131,26 @@ module atg_tu_addr (
 	/* The descriptor of the quad's slot (of tx_slot in IDLE). */
 	wire [3:0] lvl;
 	wire [31:0] base, dsize, image, stride, samp, dlod, loff, plane;
+	wire [20:0] tfmt;
 	atg_tu_desc desc (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.busy(desc_busy), .rd_slot(st == IDLE ? tx_slot : slot), .rd_level(lvl),
 		.rd_base(base), .rd_size(dsize), .rd_image(image), .rd_stride(stride),
-		.rd_samp(samp), .rd_lod(dlod), .rd_loff(loff), .rd_plane(plane)
+		.rd_samp(samp), .rd_lod(dlod), .rd_fmt(tfmt), .rd_loff(loff), .rd_plane(plane)
 	);
 	wire [15:0] w0 = dsize[15:0] == 16'd0 ? 16'd1 : dsize[15:0];
 	wire [15:0] h0 = dsize[31:16] == 16'd0 ? 16'd1 : dsize[31:16];
 	wire [3:0] nlev = image[3:0] == 4'd0 ? 4'd1 : image[3:0] > 4'd13 ? 4'd13 : image[3:0];
 	wire [3:0] maxl = nlev - 4'd1;
-	/* Format (4-15 read as RGBA8), view type (4-7 and unnormalized: 2D). */
-	wire [1:0] fmt = image[GHCI_IMG_FMT + 2 +: 2] != 2'd0 ? 2'd0 : image[GHCI_IMG_FMT +: 2];
-	wire f565 = image[GHCI_IMG_FMT +: 4] == 4'd4;	/* RGB565: 2-byte texels */
+	/* Format (the earlier codes 4-15 read as RGBA8; include/atg_tu_fmt.vh),
+	 * view type (4-7 and unnormalized: 2D). */
+	wire [11:0] fc = tu_fcls(tfmt, image[GHCI_IMG_FMT +: 4]);
+	wire legacy = fc[3], depth = fc[7];
+	wire [2:0] psl = fc[2:0];
+	wire f565 = legacy && image[GHCI_IMG_FMT +: 4] == 4'd4;	/* RGB565: 2-byte texels */
 	wire tiled0 = image[GHCI_IMG_TILED];
 	wire ms = image[GHCI_IMG_SAMPLES +: 4] == 4'd2 && !tiled0;	/* 4 samples */
-	wire depth = fmt[1];
-	wire tiled = image[GHCI_IMG_TILED];
+	wire tiled = tiled0 && (legacy || psl == 3'd2);
 	wire unn = samp[GHCI_SAMP_UNNORM];
 	wire [2:0] traw = image[GHCI_IMG_TYPE +: 3];
 	wire is3dr = traw == 3'd2;	/* as written: the levels' depths */
@@ -159,7 +174,9 @@ module atg_tu_addr (
 	wire nofetch = op == OP_TEXSZ || qlod;
 	/* Compare (texl, texb); filtering allowed; mip linear. */
 	wire cmp = depth && samp[GHCI_SAMP_COMPARE] && !op[1] && !qlod;
-	wire filt = !depth || cmp;
+	wire filt = legacy ? !depth || cmp : fc[6] || cmp;
+	wire f32 = !legacy && !nofetch && !(fc[5] || cmp);	/* the fp32 path */
+	wire [1:0] gwi = f32 && gather ? tu_gwi(tfmt, opr[5:4]) : 2'd0;
 	wire miplin = filt && !gather && !unn && samp[GHCI_SAMP_MIP_LINEAR];
 	wire [2:0] cmp_op = samp[GHCI_SAMP_COMPARE_OP +: 3];
 	/* VkBorderColor >> 1: 0 transparent black, 1 opaque black, 2 opaque white. */
@@ -245,27 +262,37 @@ module atg_tu_addr (
 	wire [15:0] dsz = arr ? cnt : is3d ? dl : 16'd1;
 
 	/* The next pass: 1 if a lane needs a second slice, 2 a second level, 3
-	 * (after 2) a second slice there; 4 none. */
-	wire [2:0] nxt = pas == 2'd0 ? (depf ? 3'd1 : mipf ? 3'd2 : 3'd4) :
-		pas == 2'd1 ? (mipf ? 3'd2 : 3'd4) : pas == 2'd2 ? (depf ? 3'd3 : 3'd4) : 3'd4;
+	 * (after 2) a second slice there; none ([3]).  Row passes of 8-byte
+	 * texels: each slice and level has row 0, then row 1 ([2]). */
+	wire split = f32 && psl == 3'd3 && linq && !gather;
+	wire [2:0] nxb = pas[1:0] == 2'd0 ? (depf ? 3'd1 : mipf ? 3'd2 : 3'd4) :
+		pas[1:0] == 2'd1 ? (mipf ? 3'd2 : 3'd4) : pas[1:0] == 2'd2 ? (depf ? 3'd3 : 3'd4) : 3'd4;
+	wire [3:0] nxt = split && !pas[2] ? {2'b01, pas[1:0]} : {nxb[2], 1'b0, nxb[1:0]};
 
 	/* Stage B of lane k. */
 	wire [127:0] f_addr;
+	wire [3:0] f_bord;
 	wire [15:0] f_fuv;
 	wire [7:0] f_fw;
 	atg_tu_foot foot (
 		.op(op), .gather(gather), .cube(cube), .is3d(is3d), .tiled(tiled), .lin(r_lin),
-		.ms(ms), .smp(cw2[1:0]), .b2(f565),
+		.ms(ms), .smp(cw2[1:0]), .psl(psl), .row(pas[2]), .gwi(gwi),
 		.p0(pas[0]), .mu(mu), .mv(mv), .mw(mw), .off(cube ? 12'd0 : offs),
 		.x(cw0), .y(cw1), .z(cw4), .cu(r_cu), .cv(r_cv), .cw(r_cw),
 		.wl(r_wl), .hl(r_hl), .dl(r_dl), .face(cf[k]), .lbase(r_lbase), .plane(r_plane),
-		.stride(stride), .addr(f_addr), .fuv(f_fuv), .fw(f_fw)
+		.stride(stride), .addr(f_addr), .bord(f_bord), .fuv(f_fuv), .fw(f_fw)
 	);
 
 	assign tx_ready = st == IDLE && !desc_busy;
 	assign ta_valid = st == OUT;
-	assign ta_ctl = {4'd0, f565, pas, qlod, gather ? opr[5:4] : 2'd0, gather, cmp_op, cmp, depth, bcls,
-		pas != 2'd0, nxt != 3'd4, op == OP_TEXF, nofetch, fmt[0], linq};
+	/* ta_ctl (spec/gpu/tu/atg_tu_addr.md): the fields of the fp32 path and
+	 * of the texel sizes above bit 19. */
+	wire [1:0] tsz = legacy ? 2'd0 : psl == 3'd0 ? 2'd2 : psl == 3'd1 ? 2'd1 : 2'd0;
+	wire [1:0] nsl = psl == 3'd3 ? 2'd1 : psl == 3'd4 ? 2'd2 : 2'd0;
+	wire [7:0] vkf = legacy || fc[4] ? 8'd0 : tfmt[7:0];
+	assign ta_ctl = {tfmt[20:9], fc[8], vkf, nsl, tsz, pas[2], split, f32, f565, pas[1:0], qlod,
+		gather ? opr[5:4] : 2'd0, gather, cmp_op, cmp, depth, bcls, pas != 3'd0, !nxt[3],
+		op == OP_TEXF, nofetch, fc[9], linq};
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -281,7 +308,7 @@ module atg_tu_addr (
 				ta_tag <= tx_tag;
 				ta_last <= tx_last;
 				k <= 2'd0;
-				pas <= 2'd0;
+				pas <= 3'd0;
 				linq <= 1'b0;
 				depf <= 1'b0;
 				mipf <= 1'b0;
@@ -328,6 +355,7 @@ module atg_tu_addr (
 			end
 			LB: begin
 				ta_addr[k*128 +: 128] <= nofetch ? 128'd0 : f_addr;
+				ta_bord[k*4 +: 4] <= nofetch ? 4'd0 : f_bord;
 				ta_wts[k*32 +: 32] <= {f_fw, r_fl, r_lin ? f_fuv : 16'd0};
 				ta_value[k*32 +: 32] <= r_val;
 				if (r_lin && ta_mask[k])
@@ -343,8 +371,8 @@ module atg_tu_addr (
 				linq <= 1'b0;
 				depf <= 1'b0;
 				mipf <= 1'b0;
-				if (nxt != 3'd4) begin
-					pas <= nxt[1:0];
+				if (!nxt[3]) begin
+					pas <= nxt[2:0];
 					st <= LA;
 				end else
 					st <= IDLE;
@@ -354,7 +382,7 @@ module atg_tu_addr (
 		end
 	end
 
-	wire unused_ok = &{1'b0, lrnd[16], lrnd[7:0], lamp[16], lmaxf[16], pu[15:0], pv[15:0],
+	wire unused_ok = &{1'b0, fc[11:10], lrnd[16], lrnd[7:0], lamp[16], lmaxf[16], pu[15:0], pv[15:0],
 		pw[15:0], qu[15:0], qv[15:0], lstr[47:32], samp[18:17], bcol[0], opr[7], opr[2],
 		dlod[31:24], OP_TEXL};
 endmodule
