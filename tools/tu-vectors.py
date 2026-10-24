@@ -512,6 +512,79 @@ def addr_vectors(r):
     return out
 
 
+def ms_addr_vectors(r):
+    """The multisampled images and RGB565 (a separate random stream: the
+    sections above stay as they were): texf of 4-sample images (2D and 2D
+    array, the sample mod 4, RGBA8 and RGB565, odd widths), texsz.s and
+    texsz of them, RGB565 texf (linear and tiled, levels) and texl."""
+    out = []
+    stats = {'border': 0, 'passes': 0}
+    descs = {}
+    for n in range(300):
+        if n % 25 == 0:
+            for s in range(16):
+                ms = s < 10
+                f = r.choice([0, 1, 4]) if ms else 4
+                w = r.choice([1, 2, 3, 5, 7, 16, 63, 64, 100, r.randrange(1, 16382)])
+                h = r.choice([1, 2, 3, 8, 47, r.randrange(1, 4000)])
+                typ = r.choice([0, 0, 1]) if ms else r.choice([0, 1])
+                lev = 1 if ms else r.randrange(1, 14)
+                tiled = 0 if ms else r.getrandbits(1)
+                cnt = r.choice([0, 1, 2, 5]) if typ == 1 else 0
+                im = (lev | f << T.IMG_FMT | tiled << T.IMG_TILED | typ << T.IMG_TYPE |
+                      (2 if ms else 0) << T.IMG_SAMPLES | cnt << T.IMG_COUNT)
+                d = [r.getrandbits(32) & ~63, h << 16 | w, im,
+                     r.choice([r.getrandbits(20) & ~63, 0x10000]),
+                     r.getrandbits(19) & 0xCF, T.LOD_NONE] + [0] * 10
+                descs[s] = d
+                set_desc(out, s, d)
+        slot = r.randrange(16)
+        d = descs[slot]
+        op = r.choice([2, 2, 2, 0x22, 0x4B, 3, 0x43] if slot < 10 else [2, 2, 0x22, 0, 1, 3])
+        coords = []
+        for _ in range(4):
+            if op & 3 == 2:
+                coords.append((r.choice([r.randrange(-2, 70), r.getrandbits(32)]) & T.M32,
+                               r.choice([r.randrange(-2, 50), r.getrandbits(32)]) & T.M32,
+                               r.choice([0, 1, 2, 3, 4, 7, r.getrandbits(32)]) & T.M32,
+                               r.getrandbits(32),
+                               r.choice([0, 1, 2, 5, r.getrandbits(32)]) & T.M32))
+            else:
+                coords.append((r.choice([0, 1, 3, r.getrandbits(32)]) & T.M32, rcoord(r),
+                               r.choice([0, f32(r.uniform(-1, 6))])))
+        quad(out, r, op, slot, d, coords, r.choice([15, 15, r.randrange(16)]), stats,
+             off=r.choice([0, 0, r.getrandbits(12)]))
+    out.append('P ms')
+    return out
+
+
+def ms_filter_vectors(r):
+    """RGB565: texf exact (every 16-bit value's channels across the quads),
+    texl and texb as RGBA8 (nearest and bilinear), gather."""
+    out = []
+    flt = T.Filter()
+
+    def one(texels, wts, mask, ctl, value):
+        data = flt.quad(texels, wts, ctl, mask, value)
+        tx = pack([t for row in texels for t in row])
+        out.append('F %0128x %032x %x %06x %032x %04x %x %0128x' %
+                   (tx, pack(wts), mask, ctl, pack(value), r.getrandbits(16),
+                    r.getrandbits(1), pack(data)))
+
+    c565 = 1 << T.CTL_565
+    for n in range(256):
+        tex = [[(n * 256 + 64 * ln + t * 16 + r.getrandbits(4)) & 0xFFFF for t in range(4)]
+               for ln in range(4)]
+        one(tex, [0] * 4, 15, c565 | 1 << T.CTL_TEXF, [0] * 4)
+    for n in range(200):
+        tex = [[r.getrandbits(16) for _ in range(4)] for _ in range(4)]
+        ctl = c565 | r.choice([0, 1, 1 << T.CTL_GATHER | r.randrange(4) << T.CTL_COMP])
+        one(tex, [r.getrandbits(16) for _ in range(4)], r.choice([15, r.randrange(16)]), ctl,
+            [0] * 4)
+    out.append('P rgb565')
+    return out
+
+
 def depth_word(r):
     return r.choice([0, 0xFFFFFF, 0x800000, 0xFF000000 | r.getrandbits(24), r.getrandbits(32),
                      f32(r.uniform(0, 1)), f32(1.0), 0x7FC00000, 0x80000000,
@@ -712,8 +785,17 @@ def main():
     for c in list(range(300)) + [r.randrange(1 << 24) for _ in range(3000)] + \
             list(range((1 << 24) - 300, 1 << 24)):
         assert T.conv24(c) == RX.round_f32(Fraction(c, (1 << 24) - 1)), c
+    # RGB565's texf is the correctly rounded c / 31, c / 63.
+    for c in range(64):
+        s5 = sum(1 << (5 * i) for i in range(16))
+        s6 = sum(1 << (6 * i) for i in range(13))
+        if c < 32:
+            assert T.rnd_f32(c * s5, 80) == RX.round_f32(Fraction(c, 31)), c
+        assert T.rnd_f32(c * s6, 78) == RX.round_f32(Fraction(c, 63)), c
     os.makedirs(VEC, exist_ok=True)
-    for name, lines in (('tu_addr.txt', addr_vectors(r)), ('tu_filter.txt', filter_vectors(r))):
+    r2 = random.Random(288027)
+    for name, lines in (('tu_addr.txt', addr_vectors(r) + ms_addr_vectors(r2)),
+                        ('tu_filter.txt', filter_vectors(r) + ms_filter_vectors(r2))):
         with open(os.path.join(VEC, name), 'w') as fp:
             fp.write('\n'.join(lines) + '\n')
         print('tu-vectors: %d lines -> sim/vec/%s' % (len(lines), name))

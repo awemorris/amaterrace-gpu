@@ -87,6 +87,7 @@ Target: hits one quad per 4 cycles (4 texels per cycle).  v1: one texel per cycl
 - `PASS atg_tu_cache.miss` — misses fill and answer in order
 - `PASS atg_tu_cache.inv` — invalidate
 - `PASS atg_tu_cache.border` — border texels
+- `PASS atg_tu_cache.h16` — RGB565 (ctl[19]): the half word of address bit 1, its border texels (0, 0, 0xFFFF)
 - `PASS atg_tu_cache` at the end.
 
 Both line sizes (32 and 64 bytes), a memory model with random request acceptance and latency and an error region: hit = a quad repeated three times makes no request; miss = 400 random quads over 64 KiB (conflicting lines), every ta_ctl, error texels, an error line requested again; inv = changed memory is not seen before inv and is after, inv while a miss is outstanding (with memory changed meanwhile: the new data is returned, the line refetched and then kept); border = 200 quads with random border texels among fetched ones (every format and class), 20 quads of border texels only that make no request.
@@ -100,3 +101,5 @@ design §3.7 (T$ 4 KiB), §2.4.3 (INVALIDATE).
 Implemented in WS288 p009 part C (P1, branch p1-tu).  Differences from §4/§6 (v1, performance only, p015): one outstanding miss instead of two, one texel per cycle instead of four.  The error behaviour (texel 0, no fault) is this implementation's reading.  Part E (P3): the border texels (address bit 0) and the wider ta_wts / ta_ctl.
 
 Part F (P3): ta_wts / tc_wts 128 bits (fw, the depth weight); the pass bits of ta_ctl pass through.  Otherwise unchanged.
+
+RGB565 (the MSAA work): with ta_ctl[19] a texel is the half word that address bit 1 selects (bits 15:0 of the texel word), the border texels 0, 0, 0xFFFF.

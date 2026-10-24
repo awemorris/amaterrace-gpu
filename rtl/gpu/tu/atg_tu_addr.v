@@ -43,7 +43,13 @@
  *   cube); level base = BASE + layer × LAYER_STRIDE + the level's offset.
  *   texsz: word 0 = level (unsigned, clamped to 15): {h, w}; texsz.l the
  *   level count; texsz.d the layer count (array), the level's depth (3D),
- *   else 1.
+ *   else 1; texsz.s (op[6] and op[3]) the sample count (4 when
+ *   TEX_IMAGE[15:12] = 2, else 1).
+ *   Multisampled images (TEX_IMAGE[15:12] = 2, linear, docs/ghci.md
+ *   section 12.11): texf's rs2 is the sample (mod 4) instead of the level
+ *   (level 0); sample s of texel (x, y) is texel 4 x + s of rows of
+ *   roundup(w, 2) x 4 texels.  Format 4 (RGB565): 2-byte texels
+ *   (ta_ctl[19]; address bit 1 selects the half word).
  * Lanes outside tx_mask are computed too (the cache does not fetch them).
  * See spec/gpu/tu/atg_tu_addr.md.
  *
@@ -125,6 +131,9 @@ module atg_tu_addr (
 	wire [3:0] maxl = nlev - 4'd1;
 	/* Format (4-15 read as RGBA8), view type (4-7 and unnormalized: 2D). */
 	wire [1:0] fmt = image[GHCI_IMG_FMT + 2 +: 2] != 2'd0 ? 2'd0 : image[GHCI_IMG_FMT +: 2];
+	wire f565 = image[GHCI_IMG_FMT +: 4] == 4'd4;	/* RGB565: 2-byte texels */
+	wire tiled0 = image[GHCI_IMG_TILED];
+	wire ms = image[GHCI_IMG_SAMPLES +: 4] == 4'd2 && !tiled0;	/* 4 samples */
 	wire depth = fmt[1];
 	wire tiled = image[GHCI_IMG_TILED];
 	wire unn = samp[GHCI_SAMP_UNNORM];
@@ -144,8 +153,9 @@ module atg_tu_addr (
 	wire [1:0] op = opr[1:0];
 	wire gather = op == OP_TEXL && opr[3];
 	wire qlod = op == OP_TEXB && opr[6];
-	wire nlevq = op == OP_TEXSZ && opr[6];
-	wire dszq = op == OP_TEXSZ && opr[3];
+	wire nlevq = op == OP_TEXSZ && opr[6] && !opr[3];
+	wire dszq = op == OP_TEXSZ && opr[3] && !opr[6];
+	wire smpq = op == OP_TEXSZ && opr[6] && opr[3];	/* texsz.s */
 	wire nofetch = op == OP_TEXSZ || qlod;
 	/* Compare (texl, texb); filtering allowed; mip linear. */
 	wire cmp = depth && samp[GHCI_SAMP_COMPARE] && !op[1] && !qlod;
@@ -208,7 +218,7 @@ module atg_tu_addr (
 	wire [7:0] fl = !mag && miplin && !lend ? lam[7:0] : 8'd0;
 	wire [3:0] lfetch = cw2[31] ? 4'd0 : cw2[30:0] > {27'd0, maxl} ? maxl : cw2[3:0];
 	wire [3:0] lsize = cw0[31:4] != 28'd0 ? 4'd15 : cw0[3:0];
-	assign lvl = op == OP_TEXSZ ? lsize : op == OP_TEXF ? lfetch : gather || mag ? 4'd0 :
+	assign lvl = op == OP_TEXSZ ? lsize : op == OP_TEXF ? (ms ? 4'd0 : lfetch) : gather || mag ? 4'd0 :
 		miplin ? llin : lmin;
 	wire lin = op[1] || qlod ? 1'b0 : gather ? 1'b1 :
 		filt && (mag ? samp[GHCI_SAMP_MAG_LINEAR] : samp[GHCI_SAMP_MIN_LINEAR]);
@@ -245,6 +255,7 @@ module atg_tu_addr (
 	wire [7:0] f_fw;
 	atg_tu_foot foot (
 		.op(op), .gather(gather), .cube(cube), .is3d(is3d), .tiled(tiled), .lin(r_lin),
+		.ms(ms), .smp(cw2[1:0]), .b2(f565),
 		.p0(pas[0]), .mu(mu), .mv(mv), .mw(mw), .off(cube ? 12'd0 : offs),
 		.x(cw0), .y(cw1), .z(cw4), .cu(r_cu), .cv(r_cv), .cw(r_cw),
 		.wl(r_wl), .hl(r_hl), .dl(r_dl), .face(cf[k]), .lbase(r_lbase), .plane(r_plane),
@@ -253,7 +264,7 @@ module atg_tu_addr (
 
 	assign tx_ready = st == IDLE && !desc_busy;
 	assign ta_valid = st == OUT;
-	assign ta_ctl = {5'd0, pas, qlod, gather ? opr[5:4] : 2'd0, gather, cmp_op, cmp, depth, bcls,
+	assign ta_ctl = {4'd0, f565, pas, qlod, gather ? opr[5:4] : 2'd0, gather, cmp_op, cmp, depth, bcls,
 		pas != 2'd0, nxt != 3'd4, op == OP_TEXF, nofetch, fmt[0], linq};
 
 	always @(posedge clk) begin
@@ -310,7 +321,7 @@ module atg_tu_addr (
 				r_cw <= pw[46:16];
 				r_lbase <= base + lstr[31:0] + loff;
 				r_plane <= plane;
-				r_val <= nlevq ? {28'd0, nlev} : dszq ? {16'd0, dsz} :
+				r_val <= smpq ? (ms ? 32'd4 : 32'd1) : nlevq ? {28'd0, nlev} : dszq ? {16'd0, dsz} :
 					op == OP_TEXSZ ? {hl1, wl} : qlod ? {lamp[15:0], dq} :
 					cmp ? cw3 : 32'd0;
 				st <= LB;
@@ -345,7 +356,7 @@ module atg_tu_addr (
 
 	wire unused_ok = &{1'b0, lrnd[16], lrnd[7:0], lamp[16], lmaxf[16], pu[15:0], pv[15:0],
 		pw[15:0], qu[15:0], qv[15:0], lstr[47:32], samp[18:17], bcol[0], opr[7], opr[2],
-		image[15:12], dlod[31:24], OP_TEXL};
+		dlod[31:24], OP_TEXL};
 endmodule
 
 `default_nettype wire

@@ -39,6 +39,10 @@
  * lane's tc_value word, the others 0; the LOD query (tc_ctl[2], [16])
  * gives tc_value [15:0] / 256 (the level accessed) and [31:16] / 256
  * (λ'), both signed, as fp32.  texf texels convert like the others.
+ * RGB565 (tc_ctl[19], the texel's bits 15:0): texf converts exactly, (R /
+ * 31, G / 63, B / 31, 1) rounded to nearest even; the other operations
+ * take the texel as RGBA8 ((c << 3) | (c >> 2), (c << 2) | (c >> 4), alpha
+ * 255) and filter it like RGBA8.
  * See spec/gpu/tu/atg_tu_filter.md.
  *
  * States: IDLE →(tc)→ RUN (lanes 0-3) → OUT →(tr_ready)→ IDLE; a pass
@@ -103,6 +107,37 @@ module atg_tu_filter (
 		end
 	endfunction
 
+	/* c / 31 (5 bits): c × sum(2^5i, i < 16) × 2^-80; c / 63 (6 bits):
+	 * c × sum(2^6i, i < 13) × 2^-78 (never a tie: rounding is exact). */
+	function [31:0] conv5;
+		input [4:0] c;
+		reg [80:0] p;
+		integer i;
+		begin
+			p = 81'd0;
+			for (i = 0; i < 16; i = i + 1)
+				p = p + ({76'd0, c} << (5 * i));
+			conv5 = rnd81(p, 8'd47);
+		end
+	endfunction
+	function [31:0] conv6;
+		input [5:0] c;
+		reg [80:0] p;
+		integer i;
+		begin
+			p = 81'd0;
+			for (i = 0; i < 13; i = i + 1)
+				p = p + ({75'd0, c} << (6 * i));
+			conv6 = rnd81(p, 8'd49);
+		end
+	endfunction
+
+	/* RGB565 as RGBA8 (for the filtered operations). */
+	function [31:0] x565;
+		input [15:0] t;
+		x565 = {8'hFF, t[4:0], t[4:2], t[10:5], t[10:9], t[15:11], t[15:13]};
+	endfunction
+
 	/* An 8-bit value a / 255. */
 	function [31:0] conv8;
 		input [7:0] a;
@@ -138,8 +173,10 @@ module atg_tu_filter (
 	reg [127:0] val;
 	reg [639:0] acc;	/* the passes' sums: lane-major, 4 × 40 bits a lane */
 
-	/* Lane k: its texels, weights, reference and kept sums. */
-	wire [127:0] lt = tx[k*128 +: 128];
+	/* Lane k: its texels (RGB565 as RGBA8), weights, reference and kept sums. */
+	wire [127:0] lraw = tx[k*128 +: 128];
+	wire [127:0] lt = !ctl[19] ? lraw : {x565(lraw[111:96]), x565(lraw[79:64]), x565(lraw[47:32]),
+		x565(lraw[15:0])};
 	wire [7:0] fu = wts[k*32 +: 8], fv = wts[k*32 + 8 +: 8];
 	wire [7:0] fl = wts[k*32 + 16 +: 8], fw = wts[k*32 + 24 +: 8];
 	wire [31:0] dref = val[k*32 +: 32];
@@ -203,6 +240,8 @@ module atg_tu_filter (
 			res[c*32 +: 32] = conv40(rr);
 		end
 		tx0 = lt[31:0];
+		if (ctl[19] && ctl[3])	/* texf of RGB565: exact */
+			res = {32'h3F800000, conv5(lraw[4:0]), conv6(lraw[10:5]), conv5(lraw[15:11])};
 		if (ctl[8] && !ctl[9])
 			res = {32'h3F800000, 64'd0, ctl[1] ? tx0 : conv24(tx0[23:0])};
 		if (ctl[13]) begin
@@ -261,7 +300,7 @@ module atg_tu_filter (
 		end
 	end
 
-	wire unused_ok = &{1'b0, ctl[23:19], ctl[7:6], ctl[3], r[25:24], wp[17]};
+	wire unused_ok = &{1'b0, ctl[23:20], ctl[7:6], r[25:24], wp[17], lraw};
 endmodule
 
 `default_nettype wire

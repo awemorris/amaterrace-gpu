@@ -577,10 +577,10 @@ TEX_IMAGE:
 | Bits | Meaning |
 | --- | --- |
 | [3:0] | The number of mip levels (0 reads as 1, above 13 as 13) |
-| [7:4] | Format: 0 RGBA8 UNORM, 1 BGRA8 UNORM, 2 D24 (X8_D24_UNORM_PACK32, the depth aspect of D24_UNORM_S8_UINT), 3 D32_SFLOAT; 4 reserved for multisampling (RGB565); 5-15 reserved (read as 0) |
+| [7:4] | Format: 0 RGBA8 UNORM, 1 BGRA8 UNORM, 2 D24 (X8_D24_UNORM_PACK32, the depth aspect of D24_UNORM_S8_UINT), 3 D32_SFLOAT, 4 R5G6B5 UNORM (draft, CAPS[29]: 2-byte texels; `texf` exact, section 12.11; the other instructions implementation-defined, Amaterrace filters it as RGBA8 of the bits replicated); 5-15 reserved (read as 0) |
 | [8] | Layout: 0 linear rows, 1 4x4 tiles (CAPS[11]) |
 | [11:9] | View type: 0 2D (1D: height 1), 1 2D array (1D array: height 1), 2 3D, 3 cube; 4-7 reserved (read as 2D; a cube array would be 4) |
-| [15:12] | log2 of the samples per texel (0 one, 2 four); reserved for multisampling, 0 |
+| [15:12] | log2 of the samples per texel (0 one, 2 four; draft, CAPS[29], section 12.11: linear, one level, `texf` only); other values read as one |
 | [31:16] | The depth of level 0 (3D) or the number of layers (2D array); 0 reads as 1; not looked at for the other types |
 
 TEX_SAMPLER:
@@ -602,7 +602,8 @@ The memory of an image (Vulkan leaves the layout of an optimally tiled
 image to the implementation; GHCI fixes it, and a driver's
 vkGetImageSubresourceLayout reports the same numbers):
 
-- Texels are 4 bytes.  Level l is w_l x h_l (x d_l for 3D) texels, w_l =
+- Texels are 4 bytes (format 4: 2 bytes, the 4x4 tiles 32 bytes; a
+  multisampled image: section 12.11).  Level l is w_l x h_l (x d_l for 3D) texels, w_l =
   max(1, width >> l), h_l = max(1, height >> l), d_l = max(1, depth >>
   l).  Its plane P_l (one slice) is w_l x h_l x 4 bytes in rows of w_l x
   4 bytes (linear) or the 4x4 tiles of section 8.2, a row of tiles
@@ -1026,7 +1027,7 @@ word1 (bits 63:32):
 | 1010011 OP-FP (single) | `fadd.s fsub.s fmul.s` (funct7 0000000/0000100/0001000), `fsgnj.s` (0010000, funct3 000), `fmin.s fmax.s` (0010100, funct3 000/001), `fsqrt.s` (0101100, rs2 0), `fcvt.w.s fcvt.wu.s` (1100000, rs2 0/1), `fcvt.s.w fcvt.s.wu` (1101000, rs2 0/1), `feq.s flt.s fle.s fne.s` (1010000, funct3 010/001/000/011), `fround.s` (0100000, rs2 00100) |
 | 1000011 1000111 1001011 1001111 | `fmadd.s fmsub.s fnmsub.s fnmadd.s` (R4) |
 | 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
-| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; slot = sub[3:0]; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22], [29:26], [13:10] texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
+| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; slot = sub[3:0]; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22], [29:26], [13:10] texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`, 3: `texsz.s`), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
 | 1011011 custom-2 (packed) | funct3 000 `fadd2`, 001 `fsub2`, 010 `fmul2`, 011 `ffma2` (R4), 100 `fmin2`/`fmax2` (funct7 0/1), 101 `iadd2`/`isub2`/`imul2` (funct7 0/1/2), 110 `fcmp2.lt/ge/eq/ne` (funct7 0-3), 111: funct7 0000000 `packh rd, rs1, rs2`, 0000001 `unpackh rd, rs1` (sub 0 low, 1 high), 0000010 `swaph rd, rs1` |
 | 1111011 custom-3 | funct3 000 `sel rd, rs1, rs2, rs3` (R4, bitwise: (rs1 & rs2) \| (~rs1 & rs3)), 001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd` (sub 0-3), 010 `kill rs1`, 011 transcendental (sub 0 `rcp`, 1 `rsq`, 2 `exp2`, 3 `log2`, 4 `sin`, 5 `cos`, 6 `fract`), 100 `vote.any/all rd, rs1` (sub 0/1), 101 `ballot rd, rs1`, 110 `sactl rs1` (reserved), 111 `nop` |
 | 0000111 0100111 0001111 1110011 1010111 1110111 | Vendor extensions (not GSI1) |
@@ -1067,7 +1068,7 @@ shader work), for:
 
 Undefined encodings, in detail: OP funct7 0100000 with funct3 001, 010 or
 011; funct7 0000101 with funct3 0xx; an R-form custom instruction whose
-funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); `texsz` with imm[11:0] other than 0 or 1; a texture slot with sub[4] set; a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
+funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); `texsz` with imm[11:0] other than 0, 1, 2 or (with CAPS[29]) 3; a texture slot with sub[4] set; a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
 `atom` sub above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
 sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 1; `nop` sub other than 0.
@@ -1150,9 +1151,10 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   only. `texsz.l rd` (immediate 1, no rs1): writes the level count
   (TEX_IMAGE[3:0] as read) to rd. `texsz.d rd, rs1` (immediate 2): writes
   the depth of level rs1 of a 3D image, the layer count of a 2D array, 1
-  otherwise (draft, CAPS[26]; QuerySizeLod's third component).  Immediate
-  3 (`texsz.s`, the sample count) is reserved for multisampling; other
-  immediates are ISA faults.
+  otherwise (draft, CAPS[26]; QuerySizeLod's third component).
+  `texsz.s rd` (immediate 3, no rs1; draft, CAPS[29]): writes the sample
+  count (4 for TEX_IMAGE[15:12] = 2, else 1; section 12.11); without
+  CAPS[29] an ISA fault.  Other immediates are ISA faults.
 - **Texel offsets** (ConstOffset, draft, CAPS[26]): word1 [25:22], [29:26]
   and [13:10] of `texl`, `texb`, `texf` and `texg` (the R forms, whose
   imm_hi and float source modifiers are otherwise unused) are the signed

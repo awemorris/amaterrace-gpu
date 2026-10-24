@@ -24,8 +24,10 @@
  * texf: x + du, y + dv (and z + dw of a 3D level) clamped into the level.
  * Address = lbase + k × plane (+ face × stride for a cube) + the texel in
  * the plane (linear rows of wl × 4 bytes, or 4×4 tiles of 64 bytes, a row
- * of tiles ceil(wl / 4) × 64 bytes); bits 1:0 are 0, then bit 0 is set for
- * a border texel.  Texels 0-3 = (i0, j0), (i1, j0), (i0, j1), (i1, j1)
+ * of tiles ceil(wl / 4) × 64 bytes; b2, format 4: × 2 bytes and 32-byte
+ * tiles); bit 0 is then set for a border texel (bit 1 selects the half
+ * word of a 2-byte texel).  ms (a multisampled image, texf only): texel
+ * 4 i + smp of rows of roundup(wl, 2) × 4 texels.  Texels 0-3 = (i0, j0), (i1, j0), (i0, j1), (i1, j1)
  * (nearest and texf: four times the same).
  * See spec/gpu/tu/atg_tu_foot.md.
  */
@@ -40,6 +42,9 @@ module atg_tu_foot (
 	input wire is3d,
 	input wire tiled,
 	input wire lin,	/* bilinear */
+	input wire ms,	/* multisampled (4 samples, linear) */
+	input wire [1:0] smp,	/* texf: the sample */
+	input wire b2,	/* 2-byte texels */
 	input wire p0,	/* the pass's second slice */
 	input wire [1:0] mu,
 	input wire [1:0] mv,
@@ -77,6 +82,7 @@ module atg_tu_foot (
 		input [15:0] j;
 		input [15:0] w;
 		input tl;
+		input h;	/* 2-byte texels */
 		reg [15:0] tw;
 		/* verilator lint_off UNUSEDSIGNAL */
 		reg [31:0] m;	/* 32-bit wrap: the top bits are shifted out */
@@ -84,9 +90,14 @@ module atg_tu_foot (
 		begin
 			tw = {2'b00, w[15:2]} + {15'd0, w[1:0] != 2'd0};	/* tiles a row */
 			m = tl ? {18'd0, j[15:2]} * {16'd0, tw} : {16'd0, j} * {16'd0, w};
-			if (tl)
+			if (tl && h)
+				toff = {m[26:0], 5'd0} + {27'd0, j[1:0], 3'd0} + {13'd0, i[15:2], 5'd0} +
+					{29'd0, i[1:0], 1'd0};
+			else if (tl)
 				toff = {m[25:0], 6'd0} + {26'd0, j[1:0], 4'd0} + {12'd0, i[15:2], 6'd0} +
 					{28'd0, i[1:0], 2'd0};
+			else if (h)
+				toff = {m[30:0], 1'b0} + {15'd0, i, 1'd0};
 			else
 				toff = {m[29:0], 2'b00} + {14'd0, i, 2'd0};
 		end
@@ -115,6 +126,14 @@ module atg_tu_foot (
 	wire [16:0] wj0 = tu_wrap(j0, hl, mv), wj1 = tu_wrap(j1, hl, mv);
 	wire [15:0] fi = iclamp($signed({x[31], x}) + {{9{du[23]}}, du}, wl);
 	wire [15:0] fj = iclamp($signed({y[31], y}) + {{9{dv[23]}}, dv}, hl);
+	/* A multisampled texf: texel 4 i + s of rows of roundup(wl, 2) × 4. */
+	wire msf = ms && texf;
+`ifdef MUT_TU_MSROW
+	wire [15:0] wms = {wl[13:0], 2'b00};	/* rows of w x 4: odd widths go wrong */
+`else
+	wire [15:0] wms = {wl[13:1] + {12'd0, wl[0]}, 3'b000};
+`endif
+	wire [15:0] fim = {fi[13:0], smp};
 	/* Cube: clamped (nearest) or across the faces (bilinear). */
 	wire [34:0] c00 = lin ? tu_cube_texel(face, i0, j0, wl) :
 		{face, tu_clamp(i0, wl), tu_clamp(j0, wl)};
@@ -137,7 +156,7 @@ module atg_tu_foot (
 			ct = !lin || t == 0 ? c00 : t == 1 ? c10 : t == 2 ? c01 : c11;
 			if (texf) begin
 				tf = 3'd0;
-				ti = fi;
+				ti = msf ? fim : fi;
 				tj = fj;
 				tb = 1'b0;
 			end else if (cube) begin
@@ -152,13 +171,13 @@ module atg_tu_foot (
 				tb = (t[0] ? wi1[16] : wi0[16]) | (t[1] ? wj1[16] : wj0[16]) | bk;
 			end
 			at = lbase + kp[31:0] + (cube && !texf ? stride * {29'd0, tf} : 32'd0) +
-				toff(ti, tj, wl, tiled);
-			a[t*32 +: 32] = {at[31:2], 1'b0, tb};
+				toff(ti, tj, msf ? wms : wl, tiled, b2);
+			a[t*32 +: 32] = {at[31:1], tb};
 		end
 	end
 	assign addr = a;
 
-	wire unused_ok = &{1'b0, kp[47:32]};
+	wire unused_ok = &{1'b0, kp[47:32], wl[15:14], fi[15:14]};
 endmodule
 
 `default_nettype wire

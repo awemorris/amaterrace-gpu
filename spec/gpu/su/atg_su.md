@@ -37,6 +37,7 @@ those instructions, so the module is not part of the tree (Q1, 2026-10-23).
 | `PACKED` | `0` | Packed fp16 arithmetic. |
 | `SUBGROUP` | `0` | shfl/vote/ballot. |
 | `HAS_SA` | `0` | SA attached (v1 0). |
+| `MS4` | `0` | 4x multisampling (CAPS[29]): texsz.s in the decoder. |
 | `LDS_BYTES` | `4096` | Shared memory bytes. |
 | `PT_ENTRIES` | `64` | PT vertices. |
 | `VARY_WORDS` | `16` | Varying words per vertex. |

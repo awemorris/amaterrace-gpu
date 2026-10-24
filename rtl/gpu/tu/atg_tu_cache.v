@@ -19,7 +19,9 @@
  * up: it is the border colour's raw texel for the format (ta_ctl[8], [1])
  * and colour class (ta_ctl[7:6]: 0 transparent black, 1 opaque black,
  * 2 opaque white): RGBA8/BGRA8 0, 0xFF000000, 0xFFFFFFFF; D24 0, 0,
- * 0x00FFFFFF; D32F 0, 0, 1.0.  An error response gives the texel 0 and
+ * 0x00FFFFFF; D32F 0, 0, 1.0; RGB565 (ta_ctl[19]) 0, 0, 0xFFFF.  A
+ * texel of RGB565 is the half word that address bit 1 selects (bits 15:0,
+ * the rest 0).  An error response gives the texel 0 and
  * leaves the line invalid.  texsz and the LOD query (ta_ctl[2]) look
  * nothing up.  The quad is then held on tc_* until taken; order is kept.
  * inv clears every line at once;
@@ -96,6 +98,7 @@ module atg_tu_cache #(
 	reg pb;	/* ... or texel pt is a border texel */
 	reg [3:0] pt;
 	reg [WW-1:0] pw;
+	reg ph;	/* ... and its half word (RGB565) */
 	reg [LB-1:0] q;
 
 	reg [511:0] ta_addr_q;
@@ -107,9 +110,11 @@ module atg_tu_cache #(
 	wire hit = vld[idx] && tags[idx] == atag;
 	wire border = a[0];
 	/* The border texel by format (colour, D24, D32F) and colour class. */
-	wire [31:0] bwhite = !tc_ctl[8] ? 32'hFFFFFFFF : tc_ctl[1] ? 32'h3F800000 : 32'h00FFFFFF;
+	wire h565 = tc_ctl[19];
+	wire [31:0] bwhite = h565 ? 32'h0000FFFF : !tc_ctl[8] ? 32'hFFFFFFFF : tc_ctl[1] ? 32'h3F800000 :
+		32'h00FFFFFF;
 	wire [31:0] braw = tc_ctl[7:6] == 2'd2 ? bwhite :
-		tc_ctl[7:6] == 2'd1 && !tc_ctl[8] ? 32'hFF000000 : 32'd0;
+		tc_ctl[7:6] == 2'd1 && !tc_ctl[8] && !h565 ? 32'hFF000000 : 32'd0;
 	/* Is texel t looked up, and the next t after it (16: the quad is done). */
 	wire use_t = tc_mask[t[3:2]] && (t[1:0] == 2'd0 || bil);
 	wire [4:0] nxt = !tc_mask[t[3:2]] || !bil ? {1'b0, t[3:2], 2'b00} + 5'd4 : {1'b0, t} + 5'd1;
@@ -141,7 +146,8 @@ module atg_tu_cache #(
 		end else begin
 			pv <= 1'b0;
 			if (pv)
-				tc_texels[pt*32 +: 32] <= pb ? braw : q[pw*32 +: 32];
+				tc_texels[pt*32 +: 32] <= pb ? braw : !h565 ? q[pw*32 +: 32] :
+					{16'd0, ph ? q[pw*32 + 16 +: 16] : q[pw*32 +: 16]};
 			case (st)
 			IDLE: if (ta_valid) begin
 				ta_addr_q <= ta_addr;
@@ -166,6 +172,7 @@ module atg_tu_cache #(
 						pb <= border;
 						pt <= t;
 						pw <= a[2 +: WW];
+						ph <= a[1];
 					end
 					t <= nxt[3:0];
 					if (nxt[4])
@@ -195,7 +202,7 @@ module atg_tu_cache #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, a[1], ta_addr_q};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, ta_addr_q};
 endmodule
 
 `default_nettype wire

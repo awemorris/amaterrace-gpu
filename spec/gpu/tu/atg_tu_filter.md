@@ -74,6 +74,7 @@ None beyond the above.
 - `PASS atg_tu_filter.compare` — every compare op on both depth formats, references at and next to the texels, NaN, nearest, bilinear and trilinear
 - `PASS atg_tu_filter.gather` — the four texels' component: colour, depth, compare
 - `PASS atg_tu_filter.query` — texqlod's two values, texsz.l's word
+- `PASS atg_tu_filter.rgb565` — RGB565 (ctl[19]): texf exactly (R / 31, G / 63, B / 31, 1) for the 16-bit values, texl/texb/gather as RGBA8 of the replicated bits
 - `PASS atg_tu_filter` at the end.
 
 The reference is `tools/tumodel.py` (vectors `sim/vec/tu_filter.txt` from `tools/tu-vectors.py`): nearest = every byte value in every channel, both formats, texsz, texf, lane masks; bilinear = random texels and weights with the end values 0, 1, 128, 255.  Random gaps and tr_ready.
@@ -87,3 +88,5 @@ design §3.7 (TU_BILINEAR).
 Implemented in WS288 p009 part C (P1, branch p1-tu); the compare, the depth formats and the mip linear blend in part E (P3).  Readings: a depth format without compare is nearest only (Vulkan leaves linear filtering of depth formats optional; compare results are filtered); the compare result is (r, 0, 0, 1).  "raw integers for texf" (§1) is not done: v1's texture formats are UNORM only (SAMPLER[12]: RGBA8/BGRA8), and Vulkan's texelFetch on a UNORM image returns the normalised value, so texf converts like texl (tc_ctl[3] is passed but unused here).  An integer format (and returning raw integers for it) needs a format code in SAMPLER first.  One lane per cycle (§6).
 
 Part F (P3): the passes accumulate (sums of 40 bits a channel, the pass weight fw × fl), up to four (3D linear and mip linear); tc_wts 128 bits.
+
+RGB565 (the MSAA work): ctl[19]: texf converts exactly (c × sum(2^5i) × 2^-80, c × sum(2^6i) × 2^-78, both rounded to nearest even: never a tie, so the correctly rounded c / 31 and c / 63; `tools/tu-vectors.py` checks every c against fractions); the other operations take the texel as RGBA8 ((c << 3) | (c >> 2), (c << 2) | (c >> 4), alpha 255).

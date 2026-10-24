@@ -73,3 +73,5 @@ docs/ghci.md §8.4.
 ## 10. Status
 
 Split off atg_tu_addr in WS288 p009 part F (P3) with the integer wrap, the offsets, the slice and the cube edges.
+
+Multisampling and RGB565 (the MSAA work): new inputs `ms` (a multisampled image: texf's texel 4 i + smp of rows of roundup(wl, 2) × 4 texels), `smp` (the sample), `b2` (2-byte texels: rows of wl × 2 bytes, 32-byte tiles); address bit 1 is kept (the half word of a 2-byte texel), bit 0 the border.
