@@ -28,7 +28,8 @@ module atg_dc #(
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 (ZYBO) or 64 (KC705) */
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter FIFO_LOG2 = 9	/* Pixel FIFO depth (2 lines of 640 need ≥ 1280 → 11 for 720p; 9 is the stub default) */
+	parameter FIFO_LOG2 = 9,	/* Pixel FIFO depth (2 lines of 640 need ≥ 1280 → 11 for 720p; 9 is the stub default) */
+	parameter PX_FMT = 0	/* The parallel output: 0 RGB888 (px_rgb = {r, g, b}), 1 YCbCr 4:2:2 16-bit (px_rgb = {8'd0, C, Y}, the KC705's ADV7511, atg_dc_ycc) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -169,10 +170,22 @@ module atg_dc #(
 	);
 
 	/* The parallel output (KC705 ADV7511). */
-	assign px_rgb = rgb;
-	assign px_de = de;
-	assign px_hs = hs;
-	assign px_vs = vs;
+	generate
+	if (PX_FMT == 1) begin : g_ycc
+		wire [15:0] ycc;
+
+		atg_dc_ycc ycc_enc (
+			.clk(pclk), .rst_n(p_rst_n), .rgb(rgb), .de(de), .hs(hs), .vs(vs),
+			.ycc(ycc), .ycc_de(px_de), .ycc_hs(px_hs), .ycc_vs(px_vs)
+		);
+		assign px_rgb = {8'd0, ycc};
+	end else begin : g_rgb
+		assign px_rgb = rgb;
+		assign px_de = de;
+		assign px_hs = hs;
+		assign px_vs = vs;
+	end
+	endgenerate
 
 	generate
 	if (HAS_I2C != 0) begin : g_i2c

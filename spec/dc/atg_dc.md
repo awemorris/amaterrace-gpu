@@ -6,7 +6,7 @@ RTL: `rtl/dc/atg_dc.v`.  Parent: the board tops (atg_zybo_dc; atg_kc705_raster n
 
 The display controller IP (design §5): registers and DMA in gclk, a pixel FIFO (am_afifo) to the pixel clock, timing generator, VGA and TMDS encoders and a parallel output, optional I2C; its own AMB client port (ZYBO: to its own am_axi_master on HP1; KC705: an MC client of atg_top).
 
-Children: `atg_dc_regs`, `atg_dc_dma`, `atg_dc_tgen`, `atg_dc_vga`, `atg_dc_tmds`, `atg_dc_i2c`, `am_afifo`, `am_sync`.
+Children: `atg_dc_regs`, `atg_dc_dma`, `atg_dc_tgen`, `atg_dc_vga`, `atg_dc_tmds`, `atg_dc_ycc` (PX_FMT = 1), `atg_dc_i2c`, `am_afifo`, `am_sync`.
 
 ## 2. Parameters
 
@@ -19,6 +19,7 @@ Children: `atg_dc_regs`, `atg_dc_dma`, `atg_dc_tgen`, `atg_dc_vga`, `atg_dc_tmds
 | `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 | `FIFO_LOG2` | `9` | Pixel FIFO depth (2 lines of 640 need ≥ 1280 → 11 for 720p; 9 is the stub default). |
+| `PX_FMT` | `0` | The parallel output `px_*`: 0 RGB888 (`px_rgb` = {r, g, b}, same cycle as VGA/TMDS); 1 YCbCr 4:2:2 16-bit through atg_dc_ycc (`px_rgb` = {8'd0, C, Y}, `px_de/hs/vs` two pclk later): the KC705's ADV7511 (p012). |
 
 ## 3. Ports
 
@@ -61,7 +62,7 @@ Clock/reset domain: clk (gclk) and pclk as marked unless the row says otherwise.
 | `vga_hs` | out | 1 | (pclk) VGA HSYNC. |
 | `vga_vs` | out | 1 | (pclk) VGA VSYNC. |
 | `tmds` | out | 30 | (pclk) TMDS symbols for the board's serialisers. |
-| `px_rgb` | out | 24 | (pclk) Parallel pixel (ADV7511). |
+| `px_rgb` | out | 24 | (pclk) Parallel pixel (ADV7511): RGB888, or {8'd0, C, Y} with PX_FMT = 1. |
 | `px_de` | out | 1 | (pclk) DE. |
 | `px_hs` | out | 1 | (pclk) HSYNC. |
 | `px_vs` | out | 1 | (pclk) VSYNC. |
@@ -100,3 +101,6 @@ design §5, §1.3 (pclk, pclk5).
 ## 10. Status
 
 Wiring written in WS288 p023, completed in p005 (children implemented except atg_dc_i2c, p012).
+WS288 p012 part A: atg_dc_i2c implemented; parameter `PX_FMT` and the child atg_dc_ycc added for
+the KC705's 16-bit ADV7511 input (Q1 to ACK).  VGA and TMDS stay in the RTL; the KC705 top leaves
+them unconnected (the tools remove them; user 2026-10-24: VGA is no longer synthesised).
