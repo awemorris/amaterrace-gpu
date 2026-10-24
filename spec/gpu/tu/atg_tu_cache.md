@@ -31,7 +31,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ta_wts` | in | 96 | 4 lanes × {fl, fv, fu} 8-bit weights (passed through). |
 | `ta_tag` | in | 16 | Tag. |
 | `ta_mask` | in | 4 | Lanes. |
-| `ta_ctl` | in | 16 | As atg_tu_addr's: [0] bilinear, [1] format low bit, [2] texsz (no fetch), [3] texf, [4] / [5] the levels of a mip linear pair, [7:6] border colour class, [8] depth format, [9] compare, [12:10] compare op. |
+| `ta_ctl` | in | 24 | As atg_tu_addr's: [0] bilinear, [1] format low bit, [2] no fetch (texsz, texqlod), [3] texf, [4] / [5] the levels of a mip linear pair, [7:6] border colour class, [8] depth format, [9] compare, [12:10] compare op, [13] gather, [15:14] its component, [16] texqlod. |
 | `ta_value` | in | 128 | texsz {h, w} or the compare reference per lane (passed through). |
 | `ta_last` | in | 1 | Last. |
 | **To atg_tu_filter** | | | |
@@ -41,7 +41,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `tc_wts` | out | 96 | As ta_wts. |
 | `tc_tag` | out | 16 | Tag. |
 | `tc_mask` | out | 4 | Lanes. |
-| `tc_ctl` | out | 16 | As ta_ctl. |
+| `tc_ctl` | out | 24 | As ta_ctl. |
 | `tc_value` | out | 128 | As ta_value. |
 | `tc_last` | out | 1 | Last. |
 | **AMB client port (design §4.1)** | | | |

@@ -37,10 +37,10 @@ module atg_tu #(
 	/* Requests from the SU (atg_su tx_* /tr_*) */
 	input wire tx_valid,
 	output wire tx_ready,
-	input wire [1:0] tx_op,
+	input wire [7:0] tx_op,
 	input wire [3:0] tx_slot,
 	input wire [3:0] tx_mask,
-	input wire [383:0] tx_coord,
+	input wire [511:0] tx_coord,
 	input wire [15:0] tx_tag,
 	input wire tx_last,
 	/* Return */
@@ -68,14 +68,14 @@ module atg_tu #(
 	wire [95:0] ta_wts;
 	wire [15:0] ta_tag;
 	wire [3:0] ta_mask;
-	wire [15:0] ta_ctl;
+	wire [23:0] ta_ctl;
 	wire [127:0] ta_value;
 	wire tc_valid, tc_ready, tc_last;
 	wire [511:0] tc_texels;
 	wire [95:0] tc_wts;
 	wire [15:0] tc_tag;
 	wire [3:0] tc_mask;
-	wire [15:0] tc_ctl;
+	wire [23:0] tc_ctl;
 	wire [127:0] tc_value;
 
 	atg_tu_addr addr (

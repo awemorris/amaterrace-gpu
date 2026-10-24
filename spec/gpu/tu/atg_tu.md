@@ -33,10 +33,10 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **Requests from the SU (atg_su tx_*/tr_*)** | | | |
 | `tx_valid` | in | 1 | Quad. |
 | `tx_ready` | out | 1 | Taken. |
-| `tx_op` | in | 2 | 0 texl, 1 texb, 2 texf, 3 texsz. |
+| `tx_op` | in | 8 | [1:0] 0 texl, 1 texb, 2 texf, 3 texsz; modifiers (the uop's TEX op bits): [2] .c form, [3] gather (texl), [5:4] its component, [6] query (texb: texqlod; texsz: texsz.l), [7] 0. |
 | `tx_slot` | in | 4 | Slot. |
 | `tx_mask` | in | 4 | Lanes. |
-| `tx_coord` | in | 384 | Coordinates. |
+| `tx_coord` | in | 512 | 4 lanes × {u (or x), v (or y), lod/bias/level, Dref (.c forms, else 0)} × 32 bits, lane 0 first. |
 | `tx_tag` | in | 16 | Tag. |
 | `tx_last` | in | 1 | Last. |
 | **Return** | | | |

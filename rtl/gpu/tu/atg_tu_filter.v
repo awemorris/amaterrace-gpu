@@ -31,9 +31,15 @@
  * A depth format without compare (tc_ctl[8]) returns texel 0 as (D, 0, 0,
  * 1): D32F the word itself, D24 c / (2^24 − 1) as c × (2^48 + 2^24 + 1) /
  * 2^72 rounded to nearest even (the correctly rounded quotient).
+ * Gather (tc_ctl[13]): the lane's words are component tc_ctl[15:14] of
+ * texels 2, 3, 1, 0 ((i0, j1), (i1, j1), (i1, j0), (i0, j0)), converted
+ * alone: UNORM a / 255, a depth component 0 D (others 0, 3 1.0), a
+ * compare 1.0 or 0.0.
  * Lanes outside tc_mask give 0; texsz (tc_ctl[2]) gives word 0 = the
- * lane's tc_value word, the others 0.  texf texels convert like the
- * others.  See spec/gpu/tu/atg_tu_filter.md.
+ * lane's tc_value word, the others 0; the LOD query (tc_ctl[2], [16])
+ * gives tc_value [15:0] / 256 (the level accessed) and [31:16] / 256
+ * (λ'), both signed, as fp32.  texf texels convert like the others.
+ * See spec/gpu/tu/atg_tu_filter.md.
  *
  * States: IDLE →(tc)→ RUN (lanes 0-3) → OUT →(tr_ready)→ IDLE; a first
  * level (tc_ctl[4]) goes from RUN back to IDLE.
@@ -52,7 +58,7 @@ module atg_tu_filter (
 	input wire [95:0] tc_wts,
 	input wire [15:0] tc_tag,
 	input wire [3:0] tc_mask,
-	input wire [15:0] tc_ctl,
+	input wire [23:0] tc_ctl,
 	input wire [127:0] tc_value,
 	input wire tc_last,
 	/* Return to the SU */
@@ -97,6 +103,16 @@ module atg_tu_filter (
 		end
 	endfunction
 
+	/* A signed 16-bit value with 8 fraction bits as fp32 (exact). */
+	function [31:0] fix8;
+		input [15:0] v;
+		reg [15:0] a;
+		begin
+			a = v[15] ? -v : v;
+			fix8 = {v[15], 31'd0} | rnd73({57'd0, a}, 8'd119);
+		end
+	endfunction
+
 	/* unorm24 to fp32: c × (2^48 + 2^24 + 1) × 2^-72. */
 	function [31:0] conv24;
 		input [23:0] c;
@@ -112,7 +128,7 @@ module atg_tu_filter (
 	reg [511:0] tx;
 	reg [95:0] wts;
 	reg [3:0] mask;
-	reg [15:0] ctl;
+	reg [23:0] ctl;
 	reg [127:0] val;
 	reg [383:0] hold;	/* the first level's sums: lane-major, 4 × 24 bits a lane */
 
@@ -131,9 +147,14 @@ module atg_tu_filter (
 	reg [7:0] ca, cb, cc, cd;
 	reg [16:0] top, bot;
 	reg [25:0] r;
-	reg [31:0] rr;
-	integer c, t;
+	reg [31:0] rr, gt;
+	reg [7:0] gb;
+	integer c, t, g;
+	/* Gather: the byte of the component (BGRA8 swaps R and B). */
+	wire [1:0] gsel = ctl[1] && !ctl[14] ? ctl[15:14] ^ 2'd2 : ctl[15:14];
 	always @(*) begin
+		gt = 32'd0;
+		gb = 8'd0;
 		/* Depth compare of the four texels. */
 		for (t = 0; t < 4; t = t + 1) begin
 			tex = lt[t*32 +: 32];
@@ -173,8 +194,24 @@ module atg_tu_filter (
 		tx0 = lt[31:0];
 		if (ctl[8] && !ctl[9])
 			res = {32'h3F800000, 64'd0, ctl[1] ? tx0 : conv24(tx0[23:0])};
+		if (ctl[13]) begin
+			/* gather: word g is texel 2, 3, 1, 0 */
+			for (g = 0; g < 4; g = g + 1) begin
+				t = g == 0 ? 2 : g == 1 ? 3 : g == 2 ? 1 : 0;
+				gt = lt[t*32 +: 32];
+				gb = gt[gsel*8 +: 8];
+				if (ctl[9])
+					res[g*32 +: 32] = ok[t] ? 32'h3F800000 : 32'd0;
+				else if (ctl[8])
+					res[g*32 +: 32] = ctl[15:14] == 2'd0 ? (ctl[1] ? gt : conv24(gt[23:0])) :
+						ctl[15:14] == 2'd3 ? 32'h3F800000 : 32'd0;
+				else
+					res[g*32 +: 32] = conv({gb, 24'd0});
+			end
+		end
 		if (ctl[2])
-			res = {96'd0, val[k*32 +: 32]};
+			res = ctl[16] ? {64'd0, fix8(val[k*32 + 16 +: 16]), fix8(val[k*32 +: 16])} :
+				{96'd0, val[k*32 +: 32]};
 		if (!mask[k])
 			res = 128'd0;
 	end
@@ -214,7 +251,7 @@ module atg_tu_filter (
 		end
 	end
 
-	wire unused_ok = &{1'b0, ctl[15:13], ctl[7:6], ctl[3], r[25:24]};
+	wire unused_ok = &{1'b0, ctl[23:17], ctl[7:6], ctl[3], r[25:24]};
 endmodule
 
 `default_nettype wire

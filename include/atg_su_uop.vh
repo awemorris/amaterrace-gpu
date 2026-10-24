@@ -167,6 +167,15 @@ localparam [7:0] ATG_TEX_TEXL = 8'd0;
 localparam [7:0] ATG_TEX_TEXB = 8'd1;
 localparam [7:0] ATG_TEX_TEXF = 8'd2;
 localparam [7:0] ATG_TEX_TEXSZ = 8'd3;
+/* The TEX op's modifier bits (docs/ghci.md section 12.9): [2] .c (Dref in
+ * rs1+2, the uop's rs3), [3] gather (texl), [5:4] its component, [6] query
+ * (texb: the LOD, texsz: the level count), [7] set by atg_su_opd on the
+ * second operand pass of a .c instruction (rs3 on x_a). */
+localparam ATG_TEX_CFORM = 2;
+localparam ATG_TEX_GATHER = 3;
+localparam ATG_TEX_COMP = 4;
+localparam ATG_TEX_QUERY = 6;
+localparam ATG_TEX_PASS2 = 7;
 localparam [7:0] ATG_EXP_EXP = 8'd0;
 localparam [7:0] ATG_LDA_LDA = 8'd0;
 localparam [7:0] ATG_LANE_QD = 8'd0;	/* sub 0-5 */

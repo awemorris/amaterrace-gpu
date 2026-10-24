@@ -298,6 +298,10 @@
 #define GHCI_SAMP_FMT_D24 2u
 #define GHCI_SAMP_FMT_D32F 3u
 #define GHCI_SAMP_BORDER(b) (((unsigned)(b) & 7u) << 16) /* VkBorderColor */
+#define GHCI_SAMP_LOD_BIAS(x) (((unsigned)(x) & 0x1FFFu) << 19) /* mipLodBias x 256, signed */
+#define GHCI_TEX_LEVELS_VAL(n, minl, maxl) /* minLod, maxLod x 256, <= 0xFFF */ \
+	(((unsigned)(n) & 0xFu) | (((unsigned)(minl) & 0xFFFu) << 4) | \
+	 ((0xFFFu - ((unsigned)(maxl) & 0xFFFu)) << 16))
 
 /* The program range. */
 #define GHCI_S_VS_BASE (GHCI_S_PROG + 0u)

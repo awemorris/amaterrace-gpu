@@ -20,8 +20,9 @@
  * and colour class (ta_ctl[7:6]: 0 transparent black, 1 opaque black,
  * 2 opaque white): RGBA8/BGRA8 0, 0xFF000000, 0xFFFFFFFF; D24 0, 0,
  * 0x00FFFFFF; D32F 0, 0, 1.0.  An error response gives the texel 0 and
- * leaves the line invalid.  texsz (ta_ctl[2]) looks nothing up.  The quad is then
- * held on tc_* until taken; order is kept.  inv clears every line at once;
+ * leaves the line invalid.  texsz and the LOD query (ta_ctl[2]) look
+ * nothing up.  The quad is then held on tc_* until taken; order is kept.
+ * inv clears every line at once;
  * a line whose request was outstanding during inv is not kept (the texel
  * misses again and is requested anew).  See spec/gpu/tu/atg_tu_cache.md.
  *
@@ -49,7 +50,7 @@ module atg_tu_cache #(
 	input wire [95:0] ta_wts,
 	input wire [15:0] ta_tag,
 	input wire [3:0] ta_mask,
-	input wire [15:0] ta_ctl,
+	input wire [23:0] ta_ctl,
 	input wire [127:0] ta_value,
 	input wire ta_last,
 	/* To atg_tu_filter */
@@ -59,7 +60,7 @@ module atg_tu_cache #(
 	output reg [95:0] tc_wts,
 	output reg [15:0] tc_tag,
 	output reg [3:0] tc_mask,
-	output reg [15:0] tc_ctl,
+	output reg [23:0] tc_ctl,
 	output reg [127:0] tc_value,
 	output reg tc_last,
 	/* AMB client port (design §4.1) */

@@ -18,7 +18,11 @@
  * lane needs a second level), "border" (clamp to border: the border
  * texels' address bit 0, the border colour class), "compare" (depth
  * formats with and without compare: the reference on ta_value, λ 0 for
- * texl and without bias for texb, no filter without compare).
+ * texl and without bias for texb, no filter without compare), "lodclamp"
+ * (the sampler's minLod, maxLod and mipLodBias), "gather" (every
+ * component, DrefGather, border: the level-0 footprint), "query" (texqlod's
+ * values, texsz.l's level count).  The coordinates are 4 words a lane
+ * (Dref the fourth).
  */
 
 `timescale 1ns / 1ps
@@ -33,9 +37,9 @@ module atg_tu_addr_tb;
 	reg [8:0] st_idx = 0;
 	reg [31:0] st_wdata = 0;
 	reg tx_valid = 1'b0;
-	reg [1:0] tx_op = 0;
+	reg [7:0] tx_op = 0;
 	reg [3:0] tx_slot = 0, tx_mask = 0;
-	reg [383:0] tx_coord = 0;
+	reg [511:0] tx_coord = 0;
 	reg [15:0] tx_tag = 0;
 	reg tx_last = 1'b0;
 	reg ta_ready = 1'b0;
@@ -44,7 +48,7 @@ module atg_tu_addr_tb;
 	wire [95:0] ta_wts;
 	wire [15:0] ta_tag;
 	wire [3:0] ta_mask;
-	wire [15:0] ta_ctl;
+	wire [23:0] ta_ctl;
 	wire [127:0] ta_value;
 
 	atg_tu_addr dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
@@ -58,14 +62,14 @@ module atg_tu_addr_tb;
 	reg [8*12-1:0] kind, gname;
 	reg [8:0] sidx;
 	reg [31:0] sval;
-	reg [1:0] op;
+	reg [7:0] op;
 	reg [3:0] slot, mask;
 	reg [15:0] tag;
 	reg last;
-	reg [383:0] crd;
+	reg [511:0] crd;
 	reg [511:0] x_addr;
 	reg [95:0] x_wts;
-	reg [15:0] x_ctl;
+	reg [23:0] x_ctl;
 	reg [127:0] x_value;
 
 	task check_out;
@@ -158,7 +162,7 @@ module atg_tu_addr_tb;
 					@(posedge clk);
 				tx_valid <= 1'b0;
 				/* Scramble the inputs once taken (they must have been latched). */
-				tx_coord <= {12{$random(seed)}};
+				tx_coord <= {16{$random(seed)}};
 				tx_slot <= $random(seed);
 				for (ip = 0; ip < np; ip = ip + 1) begin
 					code = $fscanf(fd, "%s %h %h %h %h\n", kind, x_addr, x_wts, x_ctl, x_value);

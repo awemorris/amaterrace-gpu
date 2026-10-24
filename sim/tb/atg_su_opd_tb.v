@@ -8,8 +8,10 @@
 /*
  * atg_su_opd_tb: operand collection for NPHYS 8, 16 and 32.  Random
  * instructions (random units, operand numbers 0-127 except 63, PAIR,
- * modifiers) with a model RF and constant bank behind the read ports and
- * random unit_ready; every group must leave once, in order, with the
+ * modifiers, PAIR with rs3: two operand passes) with a model RF and
+ * constant bank behind the read ports and random unit_ready; every group
+ * must leave once (a PAIR + USE3 group twice, the second pass with rs3 as
+ * operand 1 and TEX op bit 7 set, x_last there), in order, with the
  * operands, masks and x_info of a behavioural reference.  The checker
  * counts errors per class (gpr, special, mods, mask).
  */
@@ -157,7 +159,7 @@ module atg_su_opd_chk #(
 	/* The issued instructions, checked in order. */
 	reg [ATG_UOP_W-1:0] q_uop [0:NI-1];
 	reg [1:0] q_w [0:NI-1];
-	integer head, grp, n_iss;
+	integer head, grp, n_iss, pass;
 	integer k;
 	reg [6:0] n1, n2, n3;
 	reg [31:0] want, gotv;
@@ -168,16 +170,23 @@ module atg_su_opd_chk #(
 		reg [1:0] w;
 		reg [31:0] eg, kg, cg;
 		reg [4:0] lane;
+		reg wide;
 		integer e;
 		begin
 			u = q_uop[head];
 			w = q_w[head];
-			if (x_uop !== u || x_warp !== w || x_grp !== grp || x_last !== (grp == G - 1) ||
-			    x_pc !== head)
+			wide = u[ATG_UOP_PAIR] && u[ATG_UOP_USE3];
+			if (x_uop !== (pass ? u | ({{(ATG_UOP_W-1){1'b0}}, 1'b1} << (ATG_UOP_OP + 7)) : u) ||
+			    x_warp !== w || x_grp !== grp || x_last !== (grp == G - 1 && (!wide || pass)) ||
+			    x_pc !== head) begin
+				if (e_gpr < 5)
+					$display("FAIL opd NPHYS %0d head %0d grp %0d pass %0d: uop/last", NPHYS,
+						head, grp, pass);
 				e_gpr = e_gpr + 1;
-			n1 = u[ATG_UOP_RS1 +: 7];
+			end
+			n1 = pass ? u[ATG_UOP_RS3 +: 7] : u[ATG_UOP_RS1 +: 7];
 			n2 = u[ATG_UOP_RS2 +: 7];
-			n3 = u[ATG_UOP_PAIR] ? n1 + 1 : u[ATG_UOP_RS3 +: 7];
+			n3 = u[ATG_UOP_PAIR] ? u[ATG_UOP_RS1 +: 7] + 1 : u[ATG_UOP_RS3 +: 7];
 			for (l = 0; l < NPHYS; l = l + 1) begin
 				lane = grp * NPHYS + l;
 				for (src = 0; src < 3; src = src + 1) begin
@@ -206,11 +215,16 @@ module atg_su_opd_chk #(
 			if (x_mask !== {eg[NPHYS-1:0] & cg[NPHYS-1:0] & ~kg[NPHYS-1:0], eg[NPHYS-1:0]} ||
 			    x_info !== {13'd0, info[w][106], info[w][105:104], info[w][127:112]})
 				e_mask = e_mask + 1;
-			if (grp == G - 1) begin
-				grp = 0;
-				head = head + 1;
-			end else
-				grp = grp + 1;
+			if (wide && !pass)
+				pass = 1;
+			else begin
+				pass = 0;
+				if (grp == G - 1) begin
+					grp = 0;
+					head = head + 1;
+				end else
+					grp = grp + 1;
+			end
 		end
 	endtask
 
@@ -231,6 +245,7 @@ module atg_su_opd_chk #(
 		e_mask = 0;
 		head = 0;
 		grp = 0;
+		pass = 0;
 		for (k = 0; k < 4; k = k + 1) begin
 			info[k] = {$random(seed), $random(seed), $random(seed), $random(seed),
 				$random(seed)};
@@ -260,6 +275,8 @@ module atg_su_opd_chk #(
 			if (i_uop[ATG_UOP_PAIR] && (i_uop[ATG_UOP_RS1 +: 7] == 62 ||
 			    i_uop[ATG_UOP_RS1 +: 7] == 95 || i_uop[ATG_UOP_RS1 +: 7] == 127))
 				i_uop[ATG_UOP_RS1 +: 7] = 7'd5;
+			/* a four-operand uop (a texture .c form): PAIR and rs3 */
+			i_uop[ATG_UOP_USE3] = i_uop[ATG_UOP_PAIR] && ($random(seed) & 1);
 			q_uop[n_iss] = i_uop;
 			q_w[n_iss] = i_warp;
 			#1;

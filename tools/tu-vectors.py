@@ -7,11 +7,12 @@
 #   python3 -I tools/tu-vectors.py
 # tu_addr.txt lines (hex):
 #   S idx value                      STATE write (TU range)
-#   Q op slot mask tag last coord n  one quad (coord 384 bits, lane 0 in the
-#                                    low bits), then its n outputs (1, or 2
-#                                    for mip linear filtering):
+#   Q op slot mask tag last coord n  one quad (op 8 bits, coord 512 bits:
+#                                    lane 0 in the low bits, 4 words a lane),
+#                                    then its n outputs (1, or 2 for mip
+#                                    linear filtering):
 #   A addr wts ctl value             one ta_* output (addr 512, wts 96,
-#                                    ctl 16, value 128)
+#                                    ctl 24, value 128)
 #   P name                           end of the group (PASS atg_tu_addr.name)
 # tu_filter.txt lines (hex):
 #   H texels wts mask ctl value      a first pass of mip linear filtering
@@ -65,15 +66,22 @@ def rcoord(r):
 SAMP_BASIC = 0x303F
 
 
-def rdesc(r, tiled=None, samp_mask=SAMP_BASIC, samp_set=0):
-    """A random slot descriptor (16 words)."""
+def rdesc(r, tiled=None, samp_mask=SAMP_BASIC, samp_set=0, clamps=False):
+    """A random slot descriptor (16 words); without clamps minLod 0, maxLod
+    15.996 (the field 0) and no sampler bias."""
     w = r.choice([1, 2, 3, 4, 5, 7, 8, 16, 33, 64, 100, 256, 1000, 4096, 0, r.randrange(1, 70000)])
     h = r.choice([1, 2, 3, 4, 6, 8, 16, 31, 64, 128, 1024, 0, r.randrange(1, 70000)])
     w, h = min(w, 65535), min(h, 65535)
     samp = (r.getrandbits(19) & samp_mask) | samp_set
     if tiled is not None:
         samp = (samp & ~(1 << 13)) | (tiled << 13)
-    d = [r.getrandbits(32) & ~3, h << 16 | w, r.randrange(16), samp]
+    lev = r.randrange(16) | T.LOD_NONE
+    if clamps:
+        mn = r.choice([0, 0, 0x80, 0x100, 0x2C0, r.getrandbits(12)])
+        mx = 0xFFF - r.choice([0xFFF, 0xFFF, 0, 0x100, 0x380, mn, r.getrandbits(12)])
+        lev = r.choice([5, 9, 13, r.randrange(16)]) | mn << 4 | mx << 16
+        samp |= r.choice([0, 0x100, 0x1F00, 0x40, 0x1000, r.getrandbits(13)]) << T.SAMP_LOD_BIAS
+    d = [r.getrandbits(32) & ~3, h << 16 | w, lev, samp]
     d += [r.getrandbits(20) & ~3 for _ in range(12)]
     return d
 
@@ -84,13 +92,14 @@ def set_desc(out, slot, d):
 
 
 def quad(out, r, op, slot, d, coords, mask, stats):
+    coords = [tuple(c) + (r.getrandbits(32),) * (4 - len(c)) for c in coords]
     passes = T.quad_addr(op, d, coords, mask)
     crd = pack([w for c in coords for w in c])
     tag = r.getrandbits(16)
     last = r.getrandbits(1)
-    out.append('Q %x %x %x %04x %x %096x %x' % (op, slot, mask, tag, last, crd, len(passes)))
+    out.append('Q %02x %x %x %04x %x %0128x %x' % (op, slot, mask, tag, last, crd, len(passes)))
     for a, wts, ctl, val in passes:
-        out.append('A %0128x %024x %04x %032x' %
+        out.append('A %0128x %024x %06x %032x' %
                    (pack([x for ln in range(4) for x in a[ln]]), pack(wts, 24), ctl, pack(val)))
         stats['border'] += sum(1 for ln in range(4) for x in a[ln] if x & 1 and mask >> ln & 1)
     stats['passes'] += len(passes)
@@ -150,7 +159,7 @@ def addr_vectors(r):
         if n % 40 == 0:
             for s in range(16):
                 d = rdesc(r, tiled=0)
-                d[T.D_LEVELS] = r.choice([0, 1, 5, 9, 13, 14, 15, r.randrange(16)])
+                d[T.D_LEVELS] = r.choice([0, 1, 5, 9, 13, 14, 15, r.randrange(16)]) | T.LOD_NONE
                 descs[s] = d
                 set_desc(out, s, d)
         slot = r.randrange(16)
@@ -178,7 +187,7 @@ def addr_vectors(r):
         if n % 40 == 0:
             for s in range(16):
                 d = rdesc(r, samp_mask=SAMP_BASIC | 0x70000, samp_set=1 << T.SAMP_MIP_LIN)
-                d[T.D_LEVELS] = r.choice([0, 1, 2, 5, 9, 13, 15, r.randrange(16)])
+                d[T.D_LEVELS] = r.choice([0, 1, 2, 5, 9, 13, 15, r.randrange(16)]) | T.LOD_NONE
                 descs[s] = d
                 set_desc(out, s, d)
         slot = r.randrange(16)
@@ -225,8 +234,9 @@ def addr_vectors(r):
         slot = r.randrange(16)
         op = r.choice([0, 0, 1, 1, 2, 3])
         if op in (0, 1):
-            coords = lod_coords(r, -10, 2, third=lambda ln: r.choice(
-                [f32(r.uniform(0, 1)), rcoord(r), f32(r.uniform(-0.5, 1.5))]))
+            coords = [c + (r.choice([f32(r.uniform(0, 1)), rcoord(r),
+                                     f32(r.uniform(-0.5, 1.5))]),)
+                      for c in lod_coords(r, -10, 2)]
         elif op == 2:
             coords = [(r.randrange(-4, 70) & T.M32, r.randrange(-4, 70) & T.M32,
                        r.randrange(-1, 14) & T.M32) for _ in range(4)]
@@ -235,6 +245,48 @@ def addr_vectors(r):
                       for _ in range(4)]
         quad(out, r, op, slot, descs[slot], coords, r.choice([15, r.randrange(16)]), stats)
     out.append('P compare')
+    # lodclamp: the sampler's minLod, maxLod and mipLodBias on texl and texb,
+    # mip nearest and linear.
+    for n in range(300):
+        if n % 30 == 0:
+            new_descs(samp_mask=SAMP_BASIC | 0x40, clamps=True)
+        slot = r.randrange(16)
+        if r.getrandbits(1):
+            coords = [(rcoord(r), rcoord(r), r.choice([f32(r.uniform(-4, 14)), rcoord(r), 0]))
+                      for _ in range(4)]
+            quad(out, r, 0, slot, descs[slot], coords, r.choice([15, r.randrange(16)]), stats)
+        else:
+            quad(out, r, 1, slot, descs[slot], lod_coords(r, -10, 2),
+                 r.choice([15, r.randrange(16)]), stats)
+    out.append('P lodclamp')
+    # gather: every component, colour and depth formats, compare (DrefGather),
+    # border; the footprint at level 0.
+    for n in range(300):
+        if n % 30 == 0:
+            new_descs(tiled=r.getrandbits(1), samp_mask=0x777FF, clamps=r.getrandbits(1))
+        slot = r.randrange(16)
+        op = T.OP_TEXL | 1 << T.OPB_GATHER | r.randrange(4) << T.OPB_COMP
+        if r.random() < 0.2:
+            op |= 1 << T.OPB_CFORM
+        coords = [(r.choice([rcoord(r), f32(r.uniform(-1.2, 2.2))]),
+                   r.choice([rcoord(r), f32(r.uniform(-1.2, 2.2))]), r.getrandbits(32),
+                   r.choice([f32(r.uniform(0, 1)), rcoord(r)])) for _ in range(4)]
+        quad(out, r, op, slot, descs[slot], coords, r.choice([15, r.randrange(16)]), stats)
+    out.append('P gather')
+    # query: texqlod (the level accessed and lambda') and texsz.l (the level
+    # count) with the sampler's clamps and bias.
+    for n in range(200):
+        if n % 25 == 0:
+            new_descs(samp_mask=0x777FF, clamps=True)
+        slot = r.randrange(16)
+        if r.random() < 0.7:
+            quad(out, r, T.OP_TEXB | 1 << T.OPB_QUERY, slot, descs[slot], lod_coords(r, -12, 3),
+                 r.choice([15, r.randrange(16)]), stats)
+        else:
+            quad(out, r, T.OP_TEXSZ | 1 << T.OPB_QUERY, slot, descs[slot],
+                 [(r.getrandbits(32), r.getrandbits(32), r.getrandbits(32)) for _ in range(4)],
+                 r.choice([15, r.randrange(16)]), stats)
+    out.append('P query')
     return out
 
 
@@ -252,10 +304,10 @@ def filter_vectors(r):
         data = flt.quad(texels, wts, ctl, mask, value)
         tx = pack([t for row in texels for t in row])
         if data is None:
-            out.append('H %0128x %024x %x %04x %032x' % (tx, pack(wts, 24), mask, ctl,
+            out.append('H %0128x %024x %x %06x %032x' % (tx, pack(wts, 24), mask, ctl,
                                                          pack(value)))
             return
-        out.append('F %0128x %024x %x %04x %032x %04x %x %0128x' %
+        out.append('F %0128x %024x %x %06x %032x %04x %x %0128x' %
                    (tx, pack(wts, 24), mask, ctl, pack(value), r.getrandbits(16),
                     r.getrandbits(1), pack(data)))
 
@@ -336,6 +388,29 @@ def filter_vectors(r):
                    fn << T.CTL_CMP_OP | ((1 << (4 + pas)) if tri else 0))
             one(tex, w, mask, ctl, dref)
     out.append('P compare')
+    # gather: components of the four texels; colour, depth and compare.
+    for n in range(300):
+        kind = r.choice(['rgba', 'rgba', 'depth', 'cmp'])
+        ctl = 1 | 1 << T.CTL_GATHER | r.randrange(4) << T.CTL_COMP | r.choice([0, 2])
+        dref = [r.choice([f32(r.uniform(0, 1)), 0x7FC00000, 0, f32(1.0)]) for _ in range(4)]
+        if kind == 'depth':
+            ctl |= 1 << T.CTL_DEPTH
+        if kind == 'cmp':
+            ctl |= 1 << T.CTL_DEPTH | 1 << T.CTL_CMP | r.randrange(8) << T.CTL_CMP_OP
+        tex = [[depth_word(r) if kind != 'rgba' else r.getrandbits(32) for _ in range(4)]
+               for _ in range(4)]
+        one(tex, rwts(), r.choice([15, 15, r.randrange(16)]), ctl,
+            dref if kind == 'cmp' else [r.getrandbits(32) for _ in range(4)])
+    out.append('P gather')
+    # query: texqlod's two values (no fetch) and texsz.l's word.
+    for n in range(200):
+        tex = [[r.getrandbits(32) for _ in range(4)] for _ in range(4)]
+        q = r.getrandbits(1)
+        ctl = 1 << T.CTL_SZ | q << T.CTL_QLOD
+        val = [r.choice([0, 0x7FFF, 0x8000 << 16, 0xFFFF0000 | r.getrandbits(16),
+                         r.getrandbits(32)]) for _ in range(4)]
+        one(tex, rwts(), r.choice([15, r.randrange(16)]), ctl, val)
+    out.append('P query')
     return out
 
 

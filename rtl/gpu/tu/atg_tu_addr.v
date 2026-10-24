@@ -61,10 +61,10 @@ module atg_tu_addr (
 	/* Requests from the SU (atg_su tx_* /tr_*) */
 	input wire tx_valid,
 	output wire tx_ready,
-	input wire [1:0] tx_op,
+	input wire [7:0] tx_op,
 	input wire [3:0] tx_slot,
 	input wire [3:0] tx_mask,
-	input wire [383:0] tx_coord,
+	input wire [511:0] tx_coord,
 	input wire [15:0] tx_tag,
 	input wire tx_last,
 	/* To atg_tu_cache */
@@ -74,7 +74,7 @@ module atg_tu_addr (
 	output reg [95:0] ta_wts,
 	output reg [15:0] ta_tag,
 	output reg [3:0] ta_mask,
-	output wire [15:0] ta_ctl,
+	output wire [23:0] ta_ctl,
 	output reg [127:0] ta_value,
 	output reg ta_last
 );
@@ -194,8 +194,8 @@ module atg_tu_addr (
 	 * MIP_OFFSET (read at {slot, 3 + level}). */
 	reg [31:0] d_base [0:15];
 	reg [31:0] d_size [0:15];
-	reg [3:0] d_lev [0:15];
-	reg [18:0] d_samp [0:15];
+	reg [27:0] d_lev [0:15];
+	reg [31:0] d_samp [0:15];
 	reg [31:0] d_word [0:255];
 	wire [8:0] s_off = st_idx - GHCI_S_TU;
 	always @(posedge clk)
@@ -206,15 +206,16 @@ module atg_tu_addr (
 			if (s_off[3:0] == GHCI_TEX_SIZE)
 				d_size[s_off[7:4]] <= st_wdata;
 			if (s_off[3:0] == GHCI_TEX_LEVELS)
-				d_lev[s_off[7:4]] <= st_wdata[3:0];
+				d_lev[s_off[7:4]] <= st_wdata[27:0];
 			if (s_off[3:0] == GHCI_TEX_SAMPLER)
-				d_samp[s_off[7:4]] <= st_wdata[18:0];
+				d_samp[s_off[7:4]] <= st_wdata;
 		end
 
 	reg [2:0] st;
-	reg [1:0] k, op;
+	reg [1:0] k;
+	reg [7:0] opr;
 	reg [3:0] slot;
-	reg [383:0] crd;
+	reg [511:0] crd;
 	reg signed [16:0] lam_q;
 	reg linq;
 	reg pass;	/* 1: the second level of mip linear filtering */
@@ -229,15 +230,25 @@ module atg_tu_addr (
 	wire [31:0] base = d_base[slot];
 	wire [15:0] w0 = d_size[slot][15:0] == 16'd0 ? 16'd1 : d_size[slot][15:0];
 	wire [15:0] h0 = d_size[slot][31:16] == 16'd0 ? 16'd1 : d_size[slot][31:16];
-	wire [3:0] nlev = d_lev[slot] == 4'd0 ? 4'd1 : d_lev[slot] > 4'd13 ? 4'd13 : d_lev[slot];
+	wire [27:0] dlev = d_lev[slot];
+	wire [3:0] nlev = dlev[3:0] == 4'd0 ? 4'd1 : dlev[3:0] > 4'd13 ? 4'd13 : dlev[3:0];
 	wire [3:0] maxl = nlev - 4'd1;
-	wire [18:0] samp = d_samp[slot];
+	wire signed [16:0] minlod = $signed({5'd0, dlev[GHCI_TEX_MIN_LOD +: 12]});
+	wire signed [16:0] maxlod = $signed({5'd0, 12'hFFF - dlev[GHCI_TEX_MAX_LOD +: 12]});
+	wire [31:0] samp = d_samp[slot];
+	wire signed [16:0] sbias = $signed({{4{samp[31]}}, samp[GHCI_SAMP_LOD_BIAS +: 13]});
 	wire [1:0] mu = samp[GHCI_SAMP_WRAP_U +: 2], mv = samp[GHCI_SAMP_WRAP_V +: 2];
+	/* The operation and its modifiers (tx_op). */
+	wire [1:0] op = opr[1:0];
+	wire gather = op == OP_TEXL && opr[3];
+	wire qlod = op == OP_TEXB && opr[6];
+	wire nlevq = op == OP_TEXSZ && opr[6];
+	wire nofetch = op == OP_TEXSZ || qlod;
 	/* Depth format; compare (texl, texb); filtering allowed; mip linear. */
 	wire depth = samp[GHCI_SAMP_FMT_HI];
-	wire cmp = depth && samp[GHCI_SAMP_COMPARE] && !op[1];
+	wire cmp = depth && samp[GHCI_SAMP_COMPARE] && !op[1] && !qlod;
 	wire filt = !depth || cmp;
-	wire miplin = filt && samp[GHCI_SAMP_MIP_LINEAR];
+	wire miplin = filt && !gather && samp[GHCI_SAMP_MIP_LINEAR];
 	wire [2:0] cmp_op = samp[GHCI_SAMP_COMPARE_OP +: 3];
 	wire fmt = samp[GHCI_SAMP_FMT_LO];
 	/* VkBorderColor >> 1: 0 transparent black, 1 opaque black, 2 opaque white. */
@@ -245,10 +256,10 @@ module atg_tu_addr (
 	wire [1:0] bcls = bcol[2:1] == 2'd3 ? 2'd0 : bcol[2:1];
 
 	/* The quad LOD (texb), from lanes 0-2. */
-	wire [31:0] uq0 = fx32(crd[0 +: 32], 5'd16), uq1 = fx32(crd[96 +: 32], 5'd16);
-	wire [31:0] uq2 = fx32(crd[192 +: 32], 5'd16);
-	wire [31:0] vq0 = fx32(crd[32 +: 32], 5'd16), vq1 = fx32(crd[128 +: 32], 5'd16);
-	wire [31:0] vq2 = fx32(crd[224 +: 32], 5'd16);
+	wire [31:0] uq0 = fx32(crd[0 +: 32], 5'd16), uq1 = fx32(crd[128 +: 32], 5'd16);
+	wire [31:0] uq2 = fx32(crd[256 +: 32], 5'd16);
+	wire [31:0] vq0 = fx32(crd[32 +: 32], 5'd16), vq1 = fx32(crd[160 +: 32], 5'd16);
+	wire [31:0] vq2 = fx32(crd[288 +: 32], 5'd16);
 	wire signed [32:0] dux = $signed({uq1[31], uq1}) - $signed({uq0[31], uq0});
 	wire signed [32:0] duy = $signed({uq2[31], uq2}) - $signed({uq0[31], uq0});
 	wire signed [32:0] dvx = $signed({vq1[31], vq1}) - $signed({vq0[31], vq0});
@@ -262,12 +273,21 @@ module atg_tu_addr (
 		$signed({3'd0, l2(mxv)}) + $signed({3'd0, l2({17'd0, h0})}) - 17'sd4096;
 
 	/* Stage A of lane k: LOD, level, filter, level size, wrapped coordinates. */
-	wire [31:0] cw0 = crd[k*96 +: 32], cw1 = crd[k*96 + 32 +: 32], cw2 = crd[k*96 + 64 +: 32];
+	wire [31:0] cw0 = crd[k*128 +: 32], cw1 = crd[k*128 + 32 +: 32];
+	wire [31:0] cw2 = crd[k*128 + 64 +: 32], cw3 = crd[k*128 + 96 +: 32];
 	wire [31:0] lfx = fx32(cw2, 5'd8);
 	wire signed [16:0] lam1 = sat16({lfx[31], lfx});
-	wire signed [16:0] lam = cmp ? (op == OP_TEXB ? lam_q : 17'sd0) : op == OP_TEXB ?
-		sat16({{16{lam_q[16]}}, lam_q} + {{16{lam1[16]}}, lam1}) : lam1;
+	/* λ': the LOD (texl rs2; texb the quad's plus the bias rs2, none for the
+	 * query) plus the sampler's bias; λ = max(min(λ', maxLod), minLod). */
+	wire signed [16:0] lraw = op != OP_TEXB ? lam1 : qlod ? lam_q :
+		sat16({{16{lam_q[16]}}, lam_q} + {{16{lam1[16]}}, lam1});
+	wire signed [16:0] lamp = sat16({{16{lraw[16]}}, lraw} + {{16{sbias[16]}}, sbias});
+	wire signed [16:0] lamc = lamp > maxlod ? maxlod : lamp;
+	wire signed [16:0] lam = lamc < minlod ? minlod : lamc;
 	wire mag = !(lam > 17'sd0);
+	/* The query: the level accessed, clamp(λ, 0, LEVELS − 1), 8 fraction bits. */
+	wire signed [16:0] lmaxf = $signed({5'd0, maxl, 8'd0});
+	wire [15:0] dq = lam < 0 ? 16'd0 : lam > lmaxf ? lmaxf[15:0] : lam[15:0];
 	wire [16:0] lrnd = lam + 17'd127;
 	wire [3:0] lmin = lrnd[15:8] > {4'd0, maxl} ? maxl : lrnd[11:8];
 	/* Mip linear: λ > 0 here, so λ >> 8 is 0 .. 127. */
@@ -276,10 +296,11 @@ module atg_tu_addr (
 	wire [7:0] fl = !mag && miplin && !lend ? lam[7:0] : 8'd0;
 	wire [3:0] lfetch = cw2[31] ? 4'd0 : cw2[30:0] > {27'd0, maxl} ? maxl : cw2[3:0];
 	wire [3:0] lsize = cw0[31:4] != 28'd0 ? 4'd15 : cw0[3:0];
-	wire [3:0] lvl = op == OP_TEXSZ ? lsize : op == OP_TEXF ? lfetch : mag ? 4'd0 :
+	wire [3:0] lvl = op == OP_TEXSZ ? lsize : op == OP_TEXF ? lfetch : gather || mag ? 4'd0 :
 		miplin ? llin : lmin;
-	wire lin = op[1] ? 1'b0 : filt && (mag ? samp[GHCI_SAMP_MAG_LINEAR] :
-		samp[GHCI_SAMP_MIN_LINEAR]);
+	/* Gather: the bilinear footprint at level 0 whatever the filters. */
+	wire lin = op[1] || qlod ? 1'b0 : gather ? 1'b1 :
+		filt && (mag ? samp[GHCI_SAMP_MAG_LINEAR] : samp[GHCI_SAMP_MIN_LINEAR]);
 	wire [15:0] wl_s = w0 >> lvl, hl_s = h0 >> lvl;
 	wire [15:0] wl = wl_s == 16'd0 ? 16'd1 : wl_s, hl = hl_s == 16'd0 ? 16'd1 : hl_s;
 	wire signed [26:0] fwu = fwrap(cw0, mu), fwv = fwrap(cw1, mv);
@@ -318,8 +339,8 @@ module atg_tu_addr (
 
 	assign tx_ready = st == IDLE;
 	assign ta_valid = st == OUT;
-	assign ta_ctl = {3'd0, cmp_op, cmp, depth, bcls, pass, !pass && trineed, op == OP_TEXF,
-		op == OP_TEXSZ, fmt, linq};
+	assign ta_ctl = {7'd0, qlod, gather ? opr[5:4] : 2'd0, gather, cmp_op, cmp, depth, bcls, pass,
+		!pass && trineed, op == OP_TEXF, nofetch, fmt, linq};
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -327,7 +348,7 @@ module atg_tu_addr (
 		end else begin
 			case (st)
 			IDLE: if (tx_valid) begin
-				op <= tx_op;
+				opr <= tx_op;
 				slot <= tx_slot;
 				crd <= tx_coord;
 				ta_mask <= tx_mask;
@@ -337,7 +358,7 @@ module atg_tu_addr (
 				linq <= 1'b0;
 				pass <= 1'b0;
 				trineed <= 1'b0;
-				st <= tx_op == OP_TEXB ? LOD : LA;
+				st <= tx_op[1:0] == OP_TEXB ? LOD : LA;
 			end
 			LOD: begin
 				lam_q <= lu > lv ? lu : lv;
@@ -345,7 +366,7 @@ module atg_tu_addr (
 			end
 			LA: begin
 				r_lin <= lin;
-				r_fl <= op[1] ? 8'd0 : fl;
+				r_fl <= op[1] || qlod ? 8'd0 : fl;
 				r_wl <= wl;
 				r_hl <= hl;
 				r_cu <= pu[42:16];
@@ -355,11 +376,12 @@ module atg_tu_addr (
 				st <= LB;
 			end
 			LB: begin
-				ta_addr[k*128 +: 128] <= op == OP_TEXSZ ? 128'd0 : {
+				ta_addr[k*128 +: 128] <= nofetch ? 128'd0 : {
 					a11[31:2], 1'b0, bt[3], a01[31:2], 1'b0, bt[2],
 					a10[31:2], 1'b0, bt[1], a00[31:2], 1'b0, bt[0]};
 				ta_wts[k*24 +: 24] <= {r_fl, r_lin ? {cv2[7:0], cu2[7:0]} : 16'd0};
-				ta_value[k*32 +: 32] <= op == OP_TEXSZ ? {r_hl, r_wl} : cmp ? cw2 : 32'd0;
+				ta_value[k*32 +: 32] <= nlevq ? {28'd0, nlev} : op == OP_TEXSZ ? {r_hl, r_wl} :
+					qlod ? {lamp[15:0], dq} : cmp ? cw3 : 32'd0;
 				if (r_lin && ta_mask[k])
 					linq <= 1'b1;
 				if (r_fl != 8'd0 && ta_mask[k] && !pass)
@@ -383,7 +405,7 @@ module atg_tu_addr (
 
 	wire unused_ok = &{1'b0, lrnd[16], lrnd[7:0], m0[31:30], m1[31:30], s_off[8], samp[15],
 		samp[11], bcol[0], pu[43], pu[15:0], pv[43], pv[15:0], a00[1:0], a10[1:0],
-		a01[1:0], a11[1:0], OP_TEXL};
+		a01[1:0], a11[1:0], opr[7], opr[2], lamp[16], lmaxf[16], OP_TEXL};
 endmodule
 
 `default_nettype wire

@@ -564,9 +564,9 @@ module atg_top #(
 	wire [127:0] dx_depth;
 	/* SU 0 ↔ TU. */
 	wire tx_valid, tx_ready, tx_last, tr_valid, tr_ready, tr_last;
-	wire [1:0] tx_op;
+	wire [7:0] tx_op;
 	wire [3:0] tx_slot, tx_mask;
-	wire [383:0] tx_coord;
+	wire [511:0] tx_coord;
 	wire [15:0] tx_tag, tr_tag;
 	wire [511:0] tr_data;
 	/* SU 0 → ROP. */
@@ -796,9 +796,9 @@ module atg_top #(
 		wire [SU_WARP_W-1:0] s_vl_slot, s_fl_slot;
 		wire [7:0] s_vl_ptbase, s_pt_done;
 		wire [31:0] s_pt_rdata, s_ex_xy, s_sa_ctl_data;
-		wire [1:0] s_tx_op;
+		wire [7:0] s_tx_op;
 		wire [3:0] s_tx_slot, s_tx_mask, s_ex_mask;
-		wire [383:0] s_tx_coord;
+		wire [511:0] s_tx_coord;
 		wire [15:0] s_tx_tag, s_ex_seq;
 		wire [511:0] s_ex_color;
 		wire [127:0] s_ex_depth;
@@ -937,10 +937,10 @@ module atg_top #(
 		assign pt_rdata = 32'd0;
 		assign pt_done = 8'd0;
 		assign tx_valid = 1'b0;
-		assign tx_op = 2'd0;
+		assign tx_op = 8'd0;
 		assign tx_slot = 4'd0;
 		assign tx_mask = 4'd0;
-		assign tx_coord = 384'd0;
+		assign tx_coord = 512'd0;
 		assign tx_tag = 16'd0;
 		assign tx_last = 1'b0;
 		assign tr_ready = 1'b0;

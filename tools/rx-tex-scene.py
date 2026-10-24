@@ -14,12 +14,16 @@ bilinear magnification, nearest minification.  Then SET_REG changes slot
 u, repeat in v, nearest magnification, bilinear minification, and the
 fragment program to one that samples with texl at lod = 4 z; draw 2.
 Draw 3: the linear copy again with texb, clamp to border (opaque white)
-in u and v, bilinear and mip linear (trilinear) filtering.  Draw 4: a
-16x16 D24 depth texture with 3 levels and a compare sampler
-(LESS_OR_EQUAL, bilinear and mip linear: percentage closer filtering),
-texb with the fragment's z as the reference (rs2).  Draw 5: a 16x16
-D32_SFLOAT texture, compare GREATER, nearest, clamp to border (opaque
-black), texl (lod 0) with z as the reference.  Depth LESS with write.  The colour and depth buffers are what the
+in u and v, bilinear and mip linear (trilinear) filtering, minLod 0.5,
+maxLod 2.5 and mipLodBias 0.25.  Draw 4: a 16x16 D24 depth texture with
+3 levels and a compare sampler (LESS_OR_EQUAL, bilinear and mip linear:
+percentage closer filtering, mipLodBias -0.25), texb.c with bias 0.5 and
+the fragment's z as Dref (rs1+2).  Draw 5: a 16x16 D32_SFLOAT texture,
+compare GREATER, nearest, clamp to border (opaque black), texl.c at lod
+4 z with z as Dref.  Draw 6: texg.g (gather of G) from the linear copy,
+clamp to border (opaque white) in u, repeat in v.  Draw 7: texqlod (the
+level accessed and lambda' as the colour's R and G) with mipLodBias 0.5.
+Depth LESS with write.  The colour and depth buffers are what the
 reference models say (tools/rxmodel.py for the VF, clip, setup, the
 fragment warps and the ROP; tools/gsi1fp.py for the shader arithmetic;
 tools/tumodel.py for the TU).
@@ -59,6 +63,8 @@ FS1 = 0x00044400
 FS2 = 0x00044800
 FS3 = 0x00044C00
 FS4 = 0x00044E00
+FS5 = 0x00048800
+FS6 = 0x00048C00
 TEX1 = 0x00045000	# linear RGBA8, 5 levels
 TEX2 = 0x00046000	# 4x4 tiled BGRA8, 5 levels
 TEXD24 = 0x00047000	# D24 (stencil byte random), 3 levels
@@ -102,8 +108,14 @@ EXP = ['exp r16, 0x100', 'exp r17, 0x101', 'exp r18, 0x102', 'exp r19, 0x103', '
 FS1_SRC = '\n'.join(interp_src() + ['texb r16, r12, zero, %d' % SLOT] + EXP) + '\n'
 FS2_SRC = '\n'.join(interp_src() + ['movi r20, 0x40800000', 'fmul.s r14, r3, r20',
                                     'texl r16, r12, r14, %d' % SLOT] + EXP) + '\n'
-FS3_SRC = '\n'.join(interp_src() + ['texb r16, r12, r3, %d' % SLOT] + EXP) + '\n'
-FS4_SRC = '\n'.join(interp_src() + ['texl r16, r12, r3, %d' % SLOT] + EXP) + '\n'
+# Dref (rs1+2 = r14) is a copy of z.
+FS3_SRC = '\n'.join(interp_src() + ['fsgnj.s r14, r3, r3', 'movi r20, 0x3F000000',
+                                    'texb.c r16, r12, r20, %d' % SLOT] + EXP) + '\n'
+FS4_SRC = '\n'.join(interp_src() + ['fsgnj.s r14, r3, r3', 'movi r20, 0x40800000',
+                                    'fmul.s r21, r3, r20', 'texl.c r16, r12, r21, %d' % SLOT] +
+                     EXP) + '\n'
+FS5_SRC = '\n'.join(interp_src() + ['texg.g r16, r12, %d' % SLOT] + EXP) + '\n'
+FS6_SRC = '\n'.join(interp_src() + ['texqlod r16, r12, %d' % SLOT] + EXP) + '\n'
 
 
 def f(x):
@@ -212,7 +224,9 @@ def main():
     draw3 = triangles(r, 3, 0.8, (-0.4, 0.2), (1.4, 3.0, 6.0))
     draw4 = triangles(r, 3, 0.7, (0.0, 0.3), (0.6, 3.0, 6.0))
     draw5 = triangles(r, 2, 0.7, (-0.1, 0.2), (0.8, 1.1))
-    tris = draw1 + draw2 + draw3 + draw4 + draw5
+    draw6 = triangles(r, 2, 0.7, (-0.3, 0.2), (0.3, 1.3))
+    draw7 = triangles(r, 2, 0.7, (-0.5, 0.5), (0.3, 3.0, 12.0))
+    tris = draw1 + draw2 + draw3 + draw4 + draw5 + draw6 + draw7
     for i, (vs, uvs) in enumerate(tris):
         for k in range(3):
             v = 3 * i + k
@@ -221,7 +235,7 @@ def main():
             init.append((UV + 8 * v, f(uvs[k][0])))
             init.append((UV + 8 * v + 4, f(uvs[k][1])))
     for base, src in ((VS, VS_SRC), (FS1, FS1_SRC), (FS2, FS2_SRC), (FS3, FS3_SRC),
-                      (FS4, FS4_SRC)):
+                      (FS4, FS4_SRC), (FS5, FS5_SRC), (FS6, FS6_SRC)):
         for k, w in enumerate(A.encode(src)):
             init.append((base + 8 * k, w & 0xFFFFFFFF))
             init.append((base + 8 * k + 4, w >> 32))
@@ -239,18 +253,25 @@ def main():
     samp2 = 2 | 0 << 2 | 1 << T.SAMP_MIN_LIN | 1 << T.SAMP_FMT | 1 << T.SAMP_TILED
     # clamp to border (FLOAT_OPAQUE_WHITE 4), bilinear, trilinear
     samp3 = (3 | 3 << 2 | 1 << T.SAMP_MAG_LIN | 1 << T.SAMP_MIN_LIN | 1 << T.SAMP_MIP_LIN |
-             4 << T.SAMP_BORDER)
+             4 << T.SAMP_BORDER | 0x40 << T.SAMP_LOD_BIAS)
     # D24, compare LESS_OR_EQUAL (3), clamp to edge, bilinear, mip linear
     samp4 = (2 | 2 << 2 | 1 << T.SAMP_MAG_LIN | 1 << T.SAMP_MIN_LIN | 1 << T.SAMP_MIP_LIN |
-             1 << T.SAMP_CMP | 3 << T.SAMP_CMP_OP | 1 << T.SAMP_DEPTH)
+             1 << T.SAMP_CMP | 3 << T.SAMP_CMP_OP | 1 << T.SAMP_DEPTH |
+             (0x2000 - 0x40) << T.SAMP_LOD_BIAS)
     # D32F, compare GREATER (4), clamp to border (INT_OPAQUE_BLACK 3), nearest
     samp5 = (3 | 3 << 2 | 1 << T.SAMP_CMP | 4 << T.SAMP_CMP_OP | 1 << T.SAMP_DEPTH |
              1 << T.SAMP_FMT | 3 << T.SAMP_BORDER)
-    desc1 = [TEX1, TW << 16 | TW, NLEV, samp1] + off1 + [0] * 8
-    desc2 = [TEX2, TW << 16 | TW, NLEV, samp2] + off2 + [0] * 8
-    desc3 = [TEX1, TW << 16 | TW, NLEV, samp3] + off1 + [0] * 8
-    desc4 = [TEXD24, TW << 16 | TW, 3, samp4] + offd + [0] * 10
-    desc5 = [TEXD32, TW << 16 | TW, 1, samp5] + [0] * 12
+    # gather: clamp to border (FLOAT_OPAQUE_WHITE) in u, repeat in v
+    samp6 = 3 | 4 << T.SAMP_BORDER
+    samp7 = 1 << T.SAMP_MIN_LIN | 1 << T.SAMP_MIP_LIN | 0x80 << T.SAMP_LOD_BIAS
+    lv = NLEV | T.LOD_NONE
+    desc1 = [TEX1, TW << 16 | TW, lv, samp1] + off1 + [0] * 8
+    desc2 = [TEX2, TW << 16 | TW, lv, samp2] + off2 + [0] * 8
+    desc3 = [TEX1, TW << 16 | TW, NLEV | 0x80 << 4 | (0xFFF - 0x280) << 16, samp3] + off1 + [0] * 8
+    desc4 = [TEXD24, TW << 16 | TW, 3 | T.LOD_NONE, samp4] + offd + [0] * 10
+    desc5 = [TEXD32, TW << 16 | TW, 1 | T.LOD_NONE, samp5] + [0] * 12
+    desc6 = [TEX1, TW << 16 | TW, lv, samp6] + off1 + [0] * 8
+    desc7 = [TEX1, TW << 16 | TW, lv, samp7] + off1 + [0] * 8
 
     vp = (W / 2, H / 2, W / 2, H / 2, 1.0, 0.0)
     pairs = [(M.S_VIEWPORT + k, f(v)) for k, v in enumerate(vp)]
@@ -276,7 +297,8 @@ def main():
     first = 3 * (len(draw1) + len(draw2))
     cur = list(desc2)
     for k, (dr, desc, fs) in enumerate(((draw3, desc3, FS1), (draw4, desc4, FS3),
-                                        (draw5, desc5, FS4))):
+                                        (draw5, desc5, FS4), (draw6, desc6, FS5),
+                                        (draw7, desc7, FS6))):
         set_regs([(S_TU + i, desc[i]) for i in range(16) if desc[i] != cur[i]] +
                  [(S_FS_BASE, fs), (S_FIRST, first), (S_COUNT, 3 * len(dr))])
         cur = list(desc)
@@ -285,9 +307,14 @@ def main():
 
     # The model: each triangle in order through clip, setup, the warps, the TU and the ROP.
     nwarps = nquads = 0
-    kinds = ([(desc1, T.OP_TEXB, 'bias')] * len(draw1) + [(desc2, T.OP_TEXL, 'lod')] * len(draw2) +
-             [(desc3, T.OP_TEXB, 'bias')] * len(draw3) + [(desc4, T.OP_TEXB, 'z')] * len(draw4) +
-             [(desc5, T.OP_TEXL, 'z')] * len(draw5))
+    cform = 1 << T.OPB_CFORM
+    kinds = ([(desc1, T.OP_TEXB, 'bias')] * len(draw1) +
+             [(desc2, T.OP_TEXL, 'lod')] * len(draw2) +
+             [(desc3, T.OP_TEXB, 'bias')] * len(draw3) +
+             [(desc4, T.OP_TEXB | cform, 'bias.5')] * len(draw4) +
+             [(desc5, T.OP_TEXL | cform, 'lod')] * len(draw5) +
+             [(desc6, T.OP_TEXL | 1 << T.OPB_GATHER | 1 << T.OPB_COMP, 'none')] * len(draw6) +
+             [(desc7, T.OP_TEXB | 1 << T.OPB_QUERY, 'none')] * len(draw7))
     for t, (vs, uvs) in enumerate(tris):
         d, op, kind = kinds[t]
         pos = [[f(c) for c in v] for v in vs]
@@ -305,9 +332,10 @@ def main():
                         zs.append(z)
                         u = interp(us, b0, b1, b2)
                         v = interp(vv, b0, b1, b2)
-                        third = (0 if kind == 'bias' else z if kind == 'z' else
-                                 FP.fpu(FP.FMUL, z, f(4.0), 0, 0))
-                        coords.append((u, v, third))
+                        third = (0 if kind in ('bias', 'none') else f(0.5) if kind == 'bias.5'
+                                 else FP.fpu(FP.FMUL, z, f(4.0), 0, 0))
+                        dref = z if op >> T.OPB_CFORM & 1 else 0
+                        coords.append((u, v, third, dref))
                     words = T.sample(mem, op, d, coords, 0xF)
                     colors = [words[4 * ln:4 * ln + 4] for ln in range(4)]
                     M.rop_quad(st, mem, x, y, m, zs, colors)

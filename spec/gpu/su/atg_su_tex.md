@@ -56,10 +56,10 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **To the TU (atg_tu)** | | | |
 | `tx_valid` | out | 1 | One quad's request. |
 | `tx_ready` | in | 1 | Taken. |
-| `tx_op` | out | 2 | 0 texl, 1 texb, 2 texf, 3 texsz. |
+| `tx_op` | out | 8 | [1:0] 0 texl, 1 texb, 2 texf, 3 texsz; modifiers (the uop's TEX op bits): [2] .c form, [3] gather (texl), [5:4] its component, [6] query (texb: texqlod; texsz: texsz.l), [7] 0. |
 | `tx_slot` | out | 4 | Texture slot (sub[3:0]). |
 | `tx_mask` | out | 4 | Active lanes of the quad. |
-| `tx_coord` | out | 384 | 4 lanes × {u (or x), v (or y), lod/bias/level} × 32 bits, lane 0 first. |
+| `tx_coord` | out | 512 | 4 lanes × {u (or x), v (or y), lod/bias/level, Dref (.c forms, else 0)} × 32 bits, lane 0 first. |
 | `tx_tag` | out | 16 | {warp, quad number 0-7, rd} for the return. |
 | `tx_last` | out | 1 | Last quad of the instruction. |
 | `tr_valid` | in | 1 | A returned quad. |
@@ -77,7 +77,7 @@ Groups are cut into quads (lanes 4k..4k+3).  The return order is the request ord
 As implemented:
 
 - A lane group of a texture instruction (x_uop unit TEX) is taken in IDLE while the return half has room for its record (x_ready; atg_su_opd holds the group otherwise).  The record — warp, group, rd, scoreboard entry, x_last, texsz, which quads are sent, the EXEC lanes — goes into atg_su_tex_ret's FIFO (4 records) in the same cycle.
-- The group's quads with at least one EXEC lane go to the TU, one per cycle, in increasing order; quads without EXEC lanes are not sent.  tx_op = uop OP[1:0], tx_slot = uop sub[3:0], tx_mask = the quad's EXEC lanes (helper lanes are in EXEC, design §3.1), tx_coord lane l = {x_b, x_c, x_a} of that lane (word 0 rs1 = u / x / texsz's level, word 1 rs1+1 = v / y, word 2 rs2 = lod / bias / texf's level), tx_tag = {3'b0, warp (3 bits), quad number in the warp (grp × NPHYS/4 + quad), rd}, tx_last = the last sent quad of the instruction's last group.
+- The group's quads with at least one EXEC lane go to the TU, one per cycle, in increasing order; quads without EXEC lanes are not sent.  tx_op = {0, uop OP[6:0]}, tx_slot = uop sub[3:0], tx_mask = the quad's EXEC lanes (helper lanes are in EXEC, design §3.1), tx_coord lane l = {Dref, x_b, x_c, x_a} of that lane (word 0 rs1 = u / x / texsz's level, word 1 rs1+1 = v / y, word 2 rs2 = lod / bias / texf's level, word 3 the .c form's Dref, else 0), tx_tag = {3'b0, warp (3 bits), quad number in the warp (grp × NPHYS/4 + quad), rd}, tx_last = the last sent quad of the instruction's last group.
 - atg_su_tex_ret takes the TU's quads (in request order) for the oldest record, one per sent quad, then writes the group: rd, rd+1, rd+2, rd+3 = R, G, B, A of each lane (texsz: rd only, word 0), each beat with the group's EXEC lanes, l_wr 1, l_cls t, l_last on the last beat of the instruction's last group.  tr_tag and tr_last are not looked at (the order is enough).
 
 ## 5. State machine
@@ -99,7 +99,7 @@ One quad per cycle to the TU (an empty quad also takes a cycle of SEND).  A grou
 
 `sim/tb/atg_su_tex_tb.v` prints, in this order:
 
-- `PASS atg_su_tex.send` — quads and coordinates for NPHYS 8/16
+- `PASS atg_su_tex.send` — quads, op modifiers and coordinates (with the .c forms' two passes) for NPHYS 8/16
 - `PASS atg_su_tex.ret` — returns become rd..rd+3 beats
 - `PASS atg_su_tex` at the end.
 
@@ -111,4 +111,4 @@ design §3.4.1 (custom-1 tex*), §3.1 (helper lanes for derivatives).
 
 ## 10. Status
 
-Implemented in WS288 p009 part C (P1, branch p1-tu), with the new child `atg_su_tex_ret` (§5).  Ports unchanged.  Part E (P3): unchanged; a compare sampler's reference is rs2 (word 2 of tx_coord, docs/ghci.md §12.9), so no fourth operand is needed.  Readings: texsz's level travels in word 0 (rs1), the tag's layout is {0, warp, quad, rd} (16 bits; the TU passes it through).
+Implemented in WS288 p009 part C (P1, branch p1-tu), with the new child `atg_su_tex_ret` (§5).  Ports unchanged.  Part E (P3): tx_op 8 bits (the modifiers), tx_coord 4 words a lane.  A .c form (uop OP[2]) reads four sources: atg_su_opd sends each of its lane groups twice, the second pass with uop OP[7] set and Dref (rs3 = rs1+2) on x_a; the first pass is kept (state DREF) and the record goes to atg_su_tex_ret with the second, which carries x_last.  States: IDLE →(a .c group's first pass)→ DREF →(its second pass)→ SEND or IDLE.  Readings: texsz's level travels in word 0 (rs1), the tag's layout is {0, warp, quad, rd} (16 bits; the TU passes it through).

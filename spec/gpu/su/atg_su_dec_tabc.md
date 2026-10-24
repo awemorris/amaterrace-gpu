@@ -29,7 +29,7 @@ Combinational (no clock).
 | `cls` | out | 3 | ATG_CLS_* latency class. |
 | `use1`, `use2`, `use3` | out | 1 each | rs1/rs2/rs3 are read. |
 | `wrd` | out | 1 | rd is written. |
-| `pair` | out | 1 | rs1+1 is read (texl/texb/texf). |
+| `pair` | out | 1 | rs1+1 is read (texl/texb/texf and their modified forms). |
 | `side` | out | 1 | Has side effects. |
 | `need_pk`, `need_sg`, `need_sa` | out | 1 each | Needs PACKED / SUBGROUP / HAS_SA. |
 | `tex` | out | 1 | Four destinations (texl/texb/texf). |
@@ -63,3 +63,5 @@ design §3.4.1, §3.4.2; include/atg_su_uop.vh; tools/gsi1asm.py (the same table
 ## 10. Status
 
 Implemented in WS288 p008 (branch p1-su).
+
+2026-10-25 (p009 part E, P3): the texture rows take the funct7 modifiers of docs/ghci.md §12.9 (texl: .c, gather and its component; texb: .c, texqlod; texf: 0) into TEX op bits [6:2] (include/atg_su_uop.vh ATG_TEX_*); use2 is 0 for texg and texqlod, use3 is the .c bit; texsz takes imm[11:0] 0 or 1 (texsz.l, op bit 6, no rs1).

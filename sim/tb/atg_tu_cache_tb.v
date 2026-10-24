@@ -46,7 +46,7 @@ module atg_tu_cache_run #(
 	reg [95:0] ta_wts = 0;
 	reg [15:0] ta_tag = 0;
 	reg [3:0] ta_mask = 0;
-	reg [15:0] ta_ctl = 0;
+	reg [23:0] ta_ctl = 0;
 	reg [127:0] ta_value = 0;
 	reg ta_last = 1'b0;
 	reg tc_ready = 1'b0;
@@ -55,7 +55,7 @@ module atg_tu_cache_run #(
 	wire [95:0] tc_wts;
 	wire [15:0] tc_tag;
 	wire [3:0] tc_mask;
-	wire [15:0] tc_ctl;
+	wire [23:0] tc_ctl;
 	wire [127:0] tc_value;
 	wire req_valid, req_write;
 	reg req_ready = 1'b0;
@@ -117,7 +117,7 @@ module atg_tu_cache_run #(
 
 	/* The border texel by format ({ctl[8], ctl[1]}) and class (ctl[7:6]). */
 	function [31:0] braw;
-		input [15:0] ctl;
+		input [23:0] ctl;
 		case ({ctl[8], ctl[1], ctl[7:6]})
 		4'b0001, 4'b0101: braw = 32'hFF000000;
 		4'b0010, 4'b0110: braw = 32'hFFFFFFFF;
@@ -130,7 +130,7 @@ module atg_tu_cache_run #(
 	task quad;
 		input [511:0] addr;
 		input [3:0] mask;
-		input [15:0] ctl;
+		input [23:0] ctl;
 		output integer errs;
 		reg [511:0] want;
 		reg [95:0] wts;
@@ -200,7 +200,7 @@ module atg_tu_cache_run #(
 
 	integer i, k, e, n0;
 	reg [511:0] a;
-	reg [15:0] ctl;
+	reg [23:0] ctl;
 	initial begin
 		done = 1'b0;
 		e_hit = 0;
@@ -213,7 +213,7 @@ module atg_tu_cache_run #(
 		/* hit */
 		for (k = 0; k < 20; k = k + 1) begin
 			a = raddr(32'h4000, $random(seed));
-			ctl = k[0] ? 16'h0001 : 16'h0002;
+			ctl = k[0] ? 24'h000001 : 24'h000002;
 			quad(a, 4'hF, ctl, e);
 			e_hit = e_hit + e;
 			n0 = nreq;
@@ -234,16 +234,16 @@ module atg_tu_cache_run #(
 				for (i = 0; i < 16; i = i + 1)
 					if ($random(seed) & 1)
 						a[i*32 +: 32] = 32'h00E00000 | (a[i*32 +: 32] & 32'hFFFF);
-			ctl = $random(seed) & 16'h0007;
+			ctl = $random(seed) & 24'h000007;
 			quad(a, $random(seed), ctl, e);
 			e_miss = e_miss + e;
 		end
 		/* An error line is not kept. */
 		a = {16{32'h00E00040}};
-		quad(a, 4'h1, 16'h0000, e);
+		quad(a, 4'h1, 24'h000000, e);
 		e_miss = e_miss + e;
 		n0 = nreq;
-		quad(a, 4'h1, 16'h0000, e);
+		quad(a, 4'h1, 24'h000000, e);
 		e_miss = e_miss + e;
 		if (nreq != n0 + 1) begin
 			e_miss = e_miss + 1;
@@ -252,16 +252,16 @@ module atg_tu_cache_run #(
 		/* inv */
 		for (k = 0; k < 10; k = k + 1) begin
 			a = raddr(32'h1000, $random(seed));
-			quad(a, 4'hF, 16'h0001, e);
+			quad(a, 4'hF, 24'h000001, e);
 			e_inv = e_inv + e;
 			gen = gen + 1;
-			quad(a, 4'hF, 16'h0001, e);	/* still the cached (old) data */
+			quad(a, 4'hF, 24'h000001, e);	/* still the cached (old) data */
 			e_inv = e_inv + e;
 			gen_seen = gen;
 			inv <= 1'b1;
 			@(posedge clk);
 			inv <= 1'b0;
-			quad(a, 4'hF, 16'h0001, e);
+			quad(a, 4'hF, 24'h000001, e);
 			e_inv = e_inv + e;
 		end
 		/* inv while a miss is outstanding (and memory changed): the line
@@ -273,7 +273,7 @@ module atg_tu_cache_run #(
 			a = {16{32'h00000800 + k * 32'h40}};
 			gen_seen = gen + 1;
 			fork
-				quad(a, 4'h1, 16'h0000, e);
+				quad(a, 4'h1, 24'h000000, e);
 				begin
 					while (!(req_valid && req_ready))
 						@(posedge clk);
@@ -285,7 +285,7 @@ module atg_tu_cache_run #(
 			join
 			e_inv = e_inv + e;
 			n0 = nreq;
-			quad(a, 4'h1, 16'h0000, e);
+			quad(a, 4'h1, 24'h000000, e);
 			e_inv = e_inv + e;
 			if (nreq != n0) begin
 				e_inv = e_inv + 1;
@@ -299,13 +299,13 @@ module atg_tu_cache_run #(
 			for (i = 0; i < 16; i = i + 1)
 				if ($random(seed) & 1)
 					a[i*32] = 1'b1;
-			ctl = ($random(seed) & 16'h01C3) | 16'h0001;
+			ctl = ($random(seed) & 24'h0001C3) | 24'h000001;
 			quad(a, $random(seed), ctl, e);
 			e_border = e_border + e;
 		end
 		for (k = 0; k < 20; k = k + 1) begin
 			a = raddr(32'h10000, $random(seed)) | {16{32'h00000001}};
-			ctl = ($random(seed) & 16'h01C3);
+			ctl = ($random(seed) & 24'h0001C3);
 			n0 = nreq;
 			quad(a, 4'hF, ctl, e);
 			e_border = e_border + e;

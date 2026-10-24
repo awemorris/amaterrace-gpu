@@ -18,6 +18,10 @@
  * unit_ready 0 holds x_* (the RF output holds while r_en is 0).  The masks
  * come from q_exec/q_killed/q_info of the warp in stage B.  lidx is lidn
  * and lidy/lidz/prim are 0 in v0 (q_info carries no WG_SIZE; 1-D groups).
+ * A uop that reads a pair and rs3 (a texture .c form: rs1, rs1+1, rs2 and
+ * Dref = rs3) needs four operands: each of its groups goes out twice, the
+ * second pass with rs3 as operand 1 (x_a) and TEX op bit 7 set on x_uop;
+ * x_last is on the second pass of the last group.
  */
 
 `timescale 1ns / 1ps
@@ -84,6 +88,7 @@ module atg_su_opd #(
 	reg [UOP_W-1:0] a_uop;
 	reg [SBE_W:0] a_sbe;
 	reg [GRP_W-1:0] a_grp;
+	reg a_pass;	/* the second operand pass of a four-operand uop */
 	/* Stage B: the group on x_*. */
 	reg b_valid, b_last;
 	reg [WARP_W-1:0] b_warp;
@@ -91,25 +96,29 @@ module atg_su_opd #(
 	reg [UOP_W-1:0] b_uop;
 	reg [SBE_W:0] b_sbe;
 	reg [GRP_W-1:0] b_grp;
+	reg b_pass;
 
 	wire [3:0] b_unit = b_uop[ATG_UOP_UNIT +: 4];
 	wire b_adv = !b_valid || unit_ready[b_unit];
 	wire a_adv = a_act && b_adv;
-	wire a_last = {{(32-GRP_W){1'b0}}, a_grp} == G - 1;
+	wire a_wide = a_uop[ATG_UOP_PAIR] && a_uop[ATG_UOP_USE3];
+	wire a_last = {{(32-GRP_W){1'b0}}, a_grp} == G - 1 && (!a_wide || a_pass);
 	assign i_ready = !a_act || (a_adv && a_last);
 	wire take = i_valid && i_ready;
 
-	/* Operand numbers; operand 3 is rs1+1 for the PAIR instructions. */
-	wire [6:0] a_n1 = a_uop[ATG_UOP_RS1 +: 7];
+	/* Operand numbers; operand 3 is rs1+1 for the PAIR instructions;
+	 * operand 1 is rs3 on a second pass. */
+	wire [6:0] a_r1 = a_uop[ATG_UOP_RS1 +: 7];
+	wire [6:0] a_n1 = a_pass ? a_uop[ATG_UOP_RS3 +: 7] : a_r1;
 	wire [6:0] a_n2 = a_uop[ATG_UOP_RS2 +: 7];
-	wire [6:0] a_n3 = a_uop[ATG_UOP_PAIR] ? a_n1 + 7'd1 : a_uop[ATG_UOP_RS3 +: 7];
+	wire [6:0] a_n3 = a_uop[ATG_UOP_PAIR] ? a_r1 + 7'd1 : a_uop[ATG_UOP_RS3 +: 7];
 	assign r_en = a_adv;
 	assign r_warp = a_warp;
 	assign r_grp = a_grp;
 	assign r_regs = {a_n3[5:0], a_n2[5:0], a_n1[5:0]};
 	assign cr_en = a_adv;
 	assign cr_idx = {a_n3[4:0], a_n2[4:0], a_n1[4:0]};
-	assign rq_pop = a_adv && a_uop[ATG_UOP_RQS];
+	assign rq_pop = a_adv && a_uop[ATG_UOP_RQS] && !a_pass;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -120,6 +129,8 @@ module atg_su_opd #(
 			a_uop <= {UOP_W{1'b0}};
 			a_sbe <= {(SBE_W+1){1'b0}};
 			a_grp <= {GRP_W{1'b0}};
+			a_pass <= 1'b0;
+			b_pass <= 1'b0;
 			b_last <= 1'b0;
 			b_warp <= {WARP_W{1'b0}};
 			b_pc <= 16'd0;
@@ -135,6 +146,7 @@ module atg_su_opd #(
 					b_uop <= a_uop;
 					b_sbe <= a_sbe;
 					b_grp <= a_grp;
+					b_pass <= a_pass;
 					b_last <= a_last;
 				end
 			end
@@ -145,19 +157,26 @@ module atg_su_opd #(
 				a_uop <= i_uop;
 				a_sbe <= i_sbe;
 				a_grp <= {GRP_W{1'b0}};
+				a_pass <= 1'b0;
 			end else if (a_adv) begin
-				if (a_last)
-					a_act <= 1'b0;
-				else
-					a_grp <= a_grp + 1'b1;
+				if (a_wide && !a_pass) begin
+					a_pass <= 1'b1;
+				end else begin
+					a_pass <= 1'b0;
+					if (a_last)
+						a_act <= 1'b0;
+					else
+						a_grp <= a_grp + 1'b1;
+				end
 			end
 		end
 	end
 
 	/* Stage B: operand selection. */
-	wire [6:0] b_n1 = b_uop[ATG_UOP_RS1 +: 7];
+	wire [6:0] b_r1 = b_uop[ATG_UOP_RS1 +: 7];
+	wire [6:0] b_n1 = b_pass ? b_uop[ATG_UOP_RS3 +: 7] : b_r1;
 	wire [6:0] b_n2 = b_uop[ATG_UOP_RS2 +: 7];
-	wire [6:0] b_n3 = b_uop[ATG_UOP_PAIR] ? b_n1 + 7'd1 : b_uop[ATG_UOP_RS3 +: 7];
+	wire [6:0] b_n3 = b_uop[ATG_UOP_PAIR] ? b_r1 + 7'd1 : b_uop[ATG_UOP_RS3 +: 7];
 	wire [6:0] mods = b_uop[ATG_UOP_MOD +: 7];
 	wire fp_unit = b_unit == ATG_UNIT_FPU || b_unit == ATG_UNIT_XU;
 	wire pk_unit = b_unit == ATG_UNIT_PK;
@@ -301,7 +320,7 @@ module atg_su_opd #(
 	assign x_last = b_last;
 	assign x_sbe = b_sbe;
 	assign x_pc = b_pc;
-	assign x_uop = b_uop;
+	assign x_uop = b_uop | ({{(UOP_W-1){1'b0}}, b_pass} << (ATG_UOP_OP + ATG_TEX_PASS2));
 	assign x_a = va;
 	assign x_b = vb;
 	assign x_c = vc;
@@ -310,7 +329,7 @@ module atg_su_opd #(
 	assign x_info = {13'd0, q_info[ATG_WI_FRONT], q_info[ATG_WI_KIND +: 2],
 		q_info[ATG_WI_SEQ +: 16]};
 
-	wire unused_ok = &{1'b0, a_n2[6], a_n3[6], mods[6], exec_g, kill_g, cov_g, grp_base, q_info};
+	wire unused_ok = &{1'b0, a_n1[6], a_n2[6], a_n3[6], mods[6], exec_g, kill_g, cov_g, grp_base, q_info};
 endmodule
 
 `default_nettype wire

@@ -532,7 +532,7 @@ words each; slot s starts at 0x090 + 16 s:
 | --- | --- | --- |
 | +0 | TEX_BASE | GPU address of level 0; a multiple of 4 |
 | +1 | TEX_SIZE | [15:0] width, [31:16] height of level 0 (0 reads as 1) |
-| +2 | TEX_LEVELS | [3:0] the number of mip levels (0 reads as 1, above 13 as 13) |
+| +2 | TEX_LEVELS | [3:0] the number of mip levels (0 reads as 1, above 13 as 13); [15:4] minLod, [27:16] 15.996 - maxLod (unsigned, 8 fraction bits; inverted so that a word written with the count only, 0 above, does not clamp) |
 | +3 | TEX_SAMPLER | The sampler and the format (below) |
 | +4..+15 | TEX_MIP_OFFSET[1..12] | The byte offset of level 1..12 from TEX_BASE; multiples of 4 |
 
@@ -550,13 +550,16 @@ TEX_SAMPLER:
 | [13] | Layout: 0 linear rows, 1 4x4 tiles (CAPS[11]) |
 | [14] | Format, high bit: {[14], [12]} 0 RGBA8 UNORM, 1 BGRA8 UNORM, 2 D24 (X8_D24_UNORM_PACK32, the depth aspect of D24_UNORM_S8_UINT), 3 D32_SFLOAT |
 | [18:16] | Border colour (VkBorderColor numbers 0-5; 6 and 7 read as 0) |
+| [31:19] | mipLodBias (signed, 8 fraction bits: -16 to 15.996) |
 | others | 0 |
 
 - Texels are 4 bytes; a linear level is rows of width x 4 bytes; a tiled
   level is the 4x4 tiles of section 8.2, a row of tiles ceil(width / 4) x
   64 bytes. Level l is max(1, width >> l) x max(1, height >> l).
-- The level of detail and the filters follow Vulkan: the level of detail
-  lambda > 0 minifies, otherwise magnifies (level 0). Mipmap mode nearest
+- The level of detail and the filters follow Vulkan: lambda' is the
+  instruction's level of detail (`texl`: rs2; `texb`: the derivatives'
+  plus the bias rs2) plus mipLodBias; lambda = max(min(lambda', maxLod),
+  minLod). lambda > 0 minifies, otherwise magnifies (level 0). Mipmap mode nearest
   takes level ceil(lambda + 0.5) - 1, mipmap mode linear blends levels
   floor(lambda) and floor(lambda) + 1 by the fraction of lambda (the last
   level alone at the end), both with the minification filter. The
@@ -572,10 +575,16 @@ TEX_SAMPLER:
   otherwise, and the results are filtered (percentage closer filtering);
   D24 compares Dref clamped to [0, 1] and converted to 24-bit UNORM,
   D32_SFLOAT compares fp32 values (a NaN passes NOT_EQUAL and ALWAYS
-  only). Compare on a colour format is ignored.
+  only). Compare on a colour format is ignored. Dref comes from the
+  instruction (`texl.c`, `texb.c`, section 12.9).
+- Gather (`texg`, section 12.9) takes the bilinear footprint of level 0
+  whatever the filters and the level of detail, with the address modes
+  and the border.
 - CAPS[26] = 1 says the texture unit does mipmap mode linear, clamp to
-  border, the depth formats and compare; without it a driver uses only
-  bits [5:0], [12] and [13].
+  border, the depth formats, compare, minLod / maxLod / mipLodBias,
+  gather and the queries of section 12.9; without it a driver uses only
+  TEX_SAMPLER bits [5:0] (address modes 0-2), [12] and [13], TEX_LEVELS
+  [3:0] (the other bits 0), and `texl`, `texb`, `texf` and `texsz`.
 
 9. Fences and interrupts
 ------------------------
@@ -924,7 +933,7 @@ word1 (bits 63:32):
 | 1010011 OP-FP (single) | `fadd.s fsub.s fmul.s` (funct7 0000000/0000100/0001000), `fsgnj.s` (0010000, funct3 000), `fmin.s fmax.s` (0010100, funct3 000/001), `fsqrt.s` (0101100, rs2 0), `fcvt.w.s fcvt.wu.s` (1100000, rs2 0/1), `fcvt.s.w fcvt.s.wu` (1101000, rs2 0/1), `feq.s flt.s fle.s fne.s` (1010000, funct3 010/001/000/011), `fround.s` (0100000, rs2 00100) |
 | 1000011 1000111 1001011 1001111 | `fmadd.s fmsub.s fnmsub.s fnmadd.s` (R4) |
 | 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
-| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; slot = sub[3:0]), 011 `texsz` (I), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
+| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; slot = sub[3:0]; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref in rs1+2), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`), 011 `texsz` (I; immediate 1: `texsz.l`), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
 | 1011011 custom-2 (packed) | funct3 000 `fadd2`, 001 `fsub2`, 010 `fmul2`, 011 `ffma2` (R4), 100 `fmin2`/`fmax2` (funct7 0/1), 101 `iadd2`/`isub2`/`imul2` (funct7 0/1/2), 110 `fcmp2.lt/ge/eq/ne` (funct7 0-3), 111: funct7 0000000 `packh rd, rs1, rs2`, 0000001 `unpackh rd, rs1` (sub 0 low, 1 high), 0000010 `swaph rd, rs1` |
 | 1111011 custom-3 | funct3 000 `sel rd, rs1, rs2, rs3` (R4, bitwise: (rs1 & rs2) \| (~rs1 & rs3)), 001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd` (sub 0-3), 010 `kill rs1`, 011 transcendental (sub 0 `rcp`, 1 `rsq`, 2 `exp2`, 3 `log2`, 4 `sin`, 5 `cos`, 6 `fract`), 100 `vote.any/all rd, rs1` (sub 0/1), 101 `ballot rd, rs1`, 110 `sactl rs1` (reserved), 111 `nop` |
 | 0000111 0100111 0001111 1110011 1010111 1110111 | Vendor extensions (not GSI1) |
@@ -965,7 +974,7 @@ shader work), for:
 
 Undefined encodings, in detail: OP funct7 0100000 with funct3 001, 010 or
 011; funct7 0000101 with funct3 0xx; an R-form custom instruction whose
-funct7 differs from its defined value; a texture slot with sub[4] set;
+funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); `texsz` with imm[11:0] other than 0 or 1; a texture slot with sub[4] set; a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
 `atom` sub above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
 sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 1; `nop` sub other than 0.
@@ -1040,17 +1049,64 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   The result of coordinates or a level outside the image is
   implementation-defined.
 - `texsz rd, rs1`: writes {height[31:16], width[15:0]} of level rs1 to rd
-  only.
+  only. `texsz.l rd` (immediate 1, no rs1): writes the level count
+  (TEX_LEVELS[3:0] as read) to rd (draft, CAPS[26]).
 - The formats are those of TEX_SAMPLER (section 8.4): UNORM RGBA8 and
   BGRA8 return values in [0, 1]; the depth formats return (D, 0, 0, 1).
   `texf` returns the same values and ignores the sampler's filters and
   compare.
-- **Compare samplers** (TEX_SAMPLER[7] on a depth format, CAPS[26]): rs2
-  of `texl` and `texb` is the reference Dref instead of the level of
-  detail or the bias. `texb` then takes the level of detail from the
-  derivatives without a bias, and `texl` samples at level of detail 0.
-  rd is the filtered result (0.0 to 1.0), rd+1 and rd+2 are 0, rd+3 is
-  1.0.
+- **Depth compare** (draft, CAPS[26]): `texl.c rd, rs1, rs2` and
+  `texb.c rd, rs1, rs2` (funct7 0000001) are `texl` and `texb` with the
+  reference Dref in rs1+2 (the coordinate registers are rs1, rs1+1,
+  rs1+2; rs2 keeps its meaning, the level of detail or the bias). On a
+  depth format whose TEX_SAMPLER[7] is set, each texel's result is 1.0
+  when `Dref op D` holds (op = TEX_SAMPLER[10:8]) and 0.0 otherwise, and
+  the results are filtered; rd is the result (0.0 to 1.0), rd+1 and rd+2
+  are 0, rd+3 is 1.0. A `.c` form on a sampler without compare returns the
+  sample without compare, a plain form on a compare sampler compares with
+  Dref = 0 (Vulkan leaves both undefined). rs1+2 must be a register like
+  rs1+1 (an operand past r62, or past the constant words or the
+  specials, is an ISA fault). Implementation note: the four sources take
+  two operand reads per lane group.
+- **Gather** (draft, CAPS[26]): `texg.r`, `texg.g`, `texg.b`, `texg.a rd,
+  rs1` (`texl` with funct7 [1] set and the component in funct7 [3:2]; no
+  rs2) write component C of the four texels of the bilinear footprint of
+  level 0 to rd..rd+3 in Vulkan's order: (i0, j1), (i1, j1), (i1, j0),
+  (i0, j0). `texg.c rd, rs1` (funct7 0000011, Dref in rs1+2) writes the
+  four compare results (1.0 or 0.0) of a compare sampler (DrefGather). A
+  depth format without compare gives D for component 0, 1.0 for 3 and 0
+  for 1 and 2.
+- **Level of detail query** (draft, CAPS[26]): `texqlod rd, rs1` (`texb`
+  with funct7 0010000; no rs2, no bias) writes to rd the level that would
+  be accessed, clamp(lambda, 0, LEVELS - 1), and to rd+1 lambda' (before
+  minLod / maxLod), both as fp32 multiples of 1/256; rd+2 and rd+3 are 0.
+  Vulkan-Docs issue 2383 discusses the order and the base level; this
+  draft follows GLSL's textureQueryLod (the level first, relative to the
+  base level).
+- The SPIR-V image instructions map as follows (draft): ImplicitLod
+  `texb` (bias rs2, `zero` without); ExplicitLod with Lod `texl`;
+  Dref*ImplicitLod `texb.c`; Dref*ExplicitLod `texl.c`; Gather `texg.*`;
+  DrefGather `texg.c`; Fetch `texf`; QuerySizeLod / QuerySize `texsz`;
+  QueryLevels `texsz.l`; QueryLod `texqlod`; the Proj forms divide first;
+  1D images are 2D images of height 1. Grad (ExplicitLod with gradients)
+  is compiled to `texsz`, the level of detail of section 8.4 from the
+  gradients, and `texl`.
+- **Not in version 1** (a compiler rejects them):
+  - ConstOffset (Vulkan 1.0 core: minTexelOffset <= -8, maxTexelOffset >=
+    7): planned as word1 imm_hi [25:22] / [29:26] (u, v offsets) of `texl`,
+    `texb`, `texf` and `texg`, added to the integer texel coordinates
+    before the address modes; repeat and mirrored repeat then need a
+    modulo by the level size. Offset and ConstOffsets need the optional
+    shaderImageGatherExtended.
+  - Cube, 3D and array images (core image types): cube needs the face
+    selection and seamless filtering across faces, 3D a third coordinate
+    and 8-texel trilinear in depth, arrays a layer coordinate (rs1+2, Dref
+    then in rs1+3) and a layer stride in the descriptor (the 16 words are
+    full: the descriptor grows).
+  - The sampler's unnormalizedCoordinates (core) and multisampled images
+    (QuerySamples, sampledImageColorSampleCounts 4).
+  - MinLod (optional, shaderResourceMinLod), anisotropic filtering
+    (optional, samplerAnisotropy), sparse residency (optional).
 
 ### 12.10 Program binary
 
