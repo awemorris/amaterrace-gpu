@@ -35,7 +35,7 @@ The CPU (`atg_cpu`) is outside, in `atg_top`, connected through the `hcr_*`, `v_
 | `SUBGROUP` | 0 | The SU has shfl/vote/ballot: CAPS[24] (`atg_top` passes NSU ≠ 0 && SU_SUBGROUP, WS288 p008) | 0, 1 |
 
 Derived: CAPS = {3'd0, PACKED && SU, VF && RX && ROP (graphics, CAPS[27]), 2'd0, SUBGROUP && SU (CAPS[24]), LS, 0, HAS_CPU, HAS_CPU, 0, state version 1, 4x4 tiles 1, HAS_VSYNC, 0, TU (bilinear, WS288 p009),
-SU ? 5 : 0, HAS_DISP, UNITS[6], UNITS[1], 1} (ZYBO 2D: 0x00501803); CAPS2 = 1 (one ring) | (TU ? 4 : 0) << 24 (16 texture slots, WS288 p009); ISA_ID =
+SU ? 5 : 0, HAS_DISP, UNITS[6], UNITS[1], 1} (CP, BLT and MC alone: 0x00501803); CAPS2 = 1 (one ring) | (TU ? 4 : 0) << 24 (16 texture slots, WS288 p009); ISA_ID =
 NATIVE_ISA_ID = "GSI1" with an SU, else 0; EXTCAP list: PERF (+ CPFW with the CPU, + DISP pointing at +0x10000 with HAS_DISP, + DBG with HAS_DBG); PERF0 = BLT busy,
 PERF1 = memory busy (PERF_SRC 1, 8, 0xFF, 0xFF).
 
@@ -53,7 +53,7 @@ or changed in p004:
 | `mc_flush` | out | 1 | One-cycle pulse with the core reset |
 | `aperture_base/limit` | out | 32 | From `atg_cp_ctl` |
 | `mc_idle`, `mc_fault*` | in | — | From the MC; refusals of client 0 are reported by ring/fence/dbg themselves |
-| `st_we/idx/wdata` | out | 1, 9, 32 | From `atg_cp_state`: every accepted write and the replay, one register stage later (p017: timing of the ZYBO with the CPU; a kick follows its last STATE write by at least 2 cycles) |
+| `st_we/idx/wdata` | out | 1, 9, 32 | From `atg_cp_state`: every accepted write and the replay, one register stage later (p017: timing of a Zynq-7010 (XC7Z010) with the CPU; a kick follows its last STATE write by at least 2 cycles) |
 | `blt_kick`, `draw_kick`, `cs_kick` | out | 1 | KICK (host, `atg_cp_ctl`) OR the sequencer's µop |
 | `lc_kick`, `raw_kick`, `inv` | out | 1, 1, 4 | From the sequencer |
 | `blt_busy`, `busy_ext[7:2]`, `blt_error*`, `x_fault*` | in | — | Busy levels and fault sources (STATUS, waits, FAULT_INFO) |
@@ -90,15 +90,15 @@ line; RESET: `mc_idle`, 1 pulse cycle, 513 replay cycles.
 
 ## 8. What the TB checks
 
-No `atg_cp_tb.v` (a wiring module).  Through `sim/tb/atg_top_tb.v` (ZYBO and KC705 shapes), besides
+No `atg_cp_tb.v` (a wiring module).  Through `sim/tb/atg_top_tb.v` (KC705 shape), besides
 the CP v0 checks: CAPS[0], DEVICE_VERSION 0.3; a STATE write in FAULTED refused (read back with a full
 mask); the debug port in FAULTED and HALTED; a FILL on the STATE kept over RESET (the replay); the
 ring: SET_REG+BLIT FILL and FENCE with IRQ and RETIRE, padding and wrap, RESULT, DBG_MARK, WAIT_FENCE
 released by a debug write, HALT with STEP one packet at a time, KICK (6) and STATE (7) in RUNNING,
 class V without firmware (2, address, tag), fault → RESET → the ring from 0 again, a packet past WPTR
 (3), a fence outside the aperture (1, client 0), the watchdog (4).  The Verilator harness: a ring FILL
-and FENCE with its interrupt.  With `HAS_CPU` and the firmware (p017): `sim/tb/atg_top_fw_tb.v` (ZYBO
-and KC705 shapes) checks CAPS[17]/[18], the EXTCAP list (PERF, CPFW → 0x120), CPFW start, a class V
+and FENCE with its interrupt.  With `HAS_CPU` and the firmware (p017): `sim/tb/atg_top_fw_tb.v` (KC705
+shape) checks CAPS[17]/[18], the EXTCAP list (PERF, CPFW → 0x120), CPFW start, a class V
 GHCI_FRAME whose fill and copy give the same memory as the class N packet, its result records and
 RESULT/RETIRE, a frame stopped by an unknown command, the watchdog on a class V packet nothing takes
 → RESET → the firmware restarts with `.data` restored, CPFW LOAD (a zero image faults at PC 0, then the

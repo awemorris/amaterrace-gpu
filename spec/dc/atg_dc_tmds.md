@@ -52,7 +52,7 @@ None beyond the above.
 
 ## 9. References
 
-design §5.1 (ZYBO HDMI), Values referenced: DVI 1.0 §3.2 (TMDS encoding).
+design §5.1 (HDMI), Values referenced: DVI 1.0 §3.2 (TMDS encoding).
 
 ## 10. Status
 

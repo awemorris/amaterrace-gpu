@@ -66,7 +66,7 @@ Blocks
 | ROP | Buffer Writer | Depth and stencil test, blending, and buffer write-back in primitive order. |
 | SA | Systolic Array | A 32 × 32 matrix engine for LLM work, 0.8 TOPS per SU at 200 MHz. |
 | MC | Memory Controller | The internal memory bus (AMB, 32- or 64-byte lines): the arbiter, an address aperture, quiesce, and one AXI master (AXI4 512-bit to the MIG DDR3 on the KC705). |
-| DC | Display Controller | A separate IP with its own top and memory port; VGA and TMDS (DVI/HDMI) outputs. |
+| DC | Display Controller | A separate IP with its own top and memory port; TMDS (DVI/HDMI) and parallel outputs. |
 
 Shader unit
 -----------
@@ -125,17 +125,16 @@ simulation; timing closure at 200 MHz comes later.
 
 | Block | State |
 | --- | --- |
-| CP (with its RV32IM control core and firmware), BLT, MC | Implemented; runs on hardware (ZYBO) |
-| DC | Implemented; test pattern shown on a VGA display (ZYBO) |
+| CP (with its RV32IM control core and firmware), BLT, MC | Implemented |
+| DC | Implemented |
 | RX, ROP | Implemented; triangles with depth and blending match the reference model in simulation |
 | SU | Integer, fp32, memory, LDS and control paths implemented, in simulation |
 | VF | Implemented, in simulation |
 | SU graphics paths (export, primitive table), TU | In progress |
 | SA | Deferred until the SU implements the whole ISA |
 
-The Digilent ZYBO (XC7Z010) was used to bring up the workflow and individual
-blocks; the whole pipeline targets the KC705. The KC705 is driven over USB
-JTAG for now; PCIe comes later.
+The whole pipeline targets the KC705. The KC705 is driven over USB JTAG for
+now; PCIe comes later.
 
 Building and testing
 --------------------
@@ -174,7 +173,7 @@ Repository layout
 | [spec/](spec/) | One specification per module: ports, behaviour, and what its testbench checks |
 | [include/](include/) | RTL constants and the shared C headers |
 | [fw/cp/](fw/cp/) | Firmware of the command processor's control core |
-| [boards/](boards/) | Board tops and constraints for the KC705 and the ZYBO (Vivado projects, IP output products and bitstreams are not committed) |
+| [boards/](boards/) | Board tops and constraints for the KC705 (Vivado projects, IP output products and bitstreams are not committed) |
 | [sim/](sim/) | Icarus Verilog unit testbenches, the Verilator system harness, and test vectors |
 | [tools/](tools/) | The assembler, the ISA and raster reference models, vector generators, and the lint and build scripts |
 | [docs/](docs/) | The GHCI specification (with the GSI1 shader ISA) and the coding style |

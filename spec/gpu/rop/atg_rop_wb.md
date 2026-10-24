@@ -11,7 +11,7 @@ ROP write-back: a small write-combining buffer of render-target lines; reads the
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 
 ## 3. Ports

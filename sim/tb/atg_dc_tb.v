@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_dc_tb: the whole DC (STANDALONE, the ZYBO's shape) with amb_mem and a
+ * atg_dc_tb: the whole DC (STANDALONE, 32-byte lines) with amb_mem and a
  * pixel clock of its own (gclk 100 MHz, pclk 25 MHz): the driver's steps
  * through the register bus (timing, FB_*, IRQ_ENABLE, ENABLE), then the
  * active pixels of frames compared with the framebuffer, the vsync
@@ -37,10 +37,8 @@ module atg_dc_tb;
 	wire [31:0] req_be;
 	wire [255:0] req_wdata, rsp_rdata;
 	wire [7:0] req_tag, rsp_tag;
-	wire [4:0] vga_r, vga_b;
-	wire [5:0] vga_g;
-	wire vga_hs, vga_vs, px_de, px_hs, px_vs, scl_t, sda_t;
 	wire [29:0] tmds;
+	wire px_de, px_hs, px_vs, scl_t, sda_t;
 	wire [23:0] px_rgb;
 
 	atg_dc #(.STANDALONE(1)) dut (
@@ -52,7 +50,6 @@ module atg_dc_tb;
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
 		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error),
-		.vga_r(vga_r), .vga_g(vga_g), .vga_b(vga_b), .vga_hs(vga_hs), .vga_vs(vga_vs),
 		.tmds(tmds), .px_rgb(px_rgb), .px_de(px_de), .px_hs(px_hs), .px_vs(px_vs),
 		.scl_t(scl_t), .scl_i(1'b1), .sda_t(sda_t), .sda_i(1'b1)
 	);
@@ -258,8 +255,7 @@ module atg_dc_tb;
 		$finish;
 	end
 
-	wire unused_tb = &{1'b0, vga_r, vga_g, vga_b, vga_hs, vga_vs, tmds, px_hs, scl_t, sda_t,
-		pclk_sel};
+	wire unused_tb = &{1'b0, tmds, px_hs, scl_t, sda_t, pclk_sel};
 endmodule
 
 `default_nettype wire

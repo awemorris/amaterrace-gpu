@@ -16,8 +16,8 @@
  * 16-bit YCbCr 4:2:2 input with separate syncs (the DC's PX_FMT 1): the
  * DC's registered outputs drive the pins (IOB registers in the XDC), and
  * the pixel clock is forwarded through an ODDR with D1 0 / D2 1, so the
- * ADV7511's rising edge is in the middle of each pixel.  The DC's VGA and
- * TMDS outputs are left open (removed by the tools).  IIC_MUX_RESET_B is
+ * ADV7511's rising edge is in the middle of each pixel.  The DC's TMDS
+ * output is left open (removed by the tools).  IIC_MUX_RESET_B is
  * held high (the PCA9548 out of reset); the ADV7511 behind it is set up by
  * the host over the DC's I2C registers.  In simulation atg_kc705_clk and
  * atg_kc705_mig are replaced by sim/models/kc705/ and the primitives by
@@ -125,9 +125,7 @@ module atg_kc705_raster #(
 	wire [511:0] x_req_wdata, x_rsp_rdata;
 	wire [7:0] x_req_tag, x_rsp_tag;
 	wire [29:0] tmds;
-	wire [4:0] vga_r, vga_b;
-	wire [5:0] vga_g;
-	wire vga_hs, vga_vs, scl_t, sda_t, dc_irq;
+	wire scl_t, sda_t, dc_irq;
 	wire [23:0] px;
 
 	/* The host AXI slave is idle. */
@@ -223,7 +221,6 @@ module atg_kc705_raster #(
 		.req_line(x_req_line), .req_be(x_req_be), .req_wdata(x_req_wdata), .req_tag(x_req_tag),
 		.rsp_valid(x_rsp_valid), .rsp_write(x_rsp_write), .rsp_tag(x_rsp_tag),
 		.rsp_rdata(x_rsp_rdata), .rsp_error(x_rsp_error),
-		.vga_r(vga_r), .vga_g(vga_g), .vga_b(vga_b), .vga_hs(vga_hs), .vga_vs(vga_vs),
 		.tmds(tmds), .px_rgb(px), .px_de(hdmi_de), .px_hs(hdmi_hs), .px_vs(hdmi_vs),
 		.scl_t(scl_t), .scl_i(iic_scl), .sda_t(sda_t), .sda_i(iic_sda)
 	);
@@ -250,8 +247,7 @@ module atg_kc705_raster #(
 	assign led = {4'd0, mem_ready, dc_irq, irq, beat[26]};
 
 	wire unused_ok = &{1'b0, s_awready, s_wready, s_bid, s_bresp, s_bvalid, s_arready, s_rdata,
-		s_rid, s_rresp, s_rlast, s_rvalid, tmds, vga_r, vga_g, vga_b, vga_hs, vga_vs,
-		s_awaddr[31:17], s_araddr[31:17]};
+		s_rid, s_rresp, s_rlast, s_rvalid, tmds, s_awaddr[31:17], s_araddr[31:17]};
 endmodule
 
 `default_nettype wire

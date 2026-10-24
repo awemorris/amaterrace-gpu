@@ -11,7 +11,7 @@ The blitter (WS288 p003): FILL, COPY, TILE and UNTILE of rectangles of 16- or 32
 | Name | Default | Meaning | Values |
 | --- | --- | --- | --- |
 | `ADDR_W` | 32 | GPU address width | 32 |
-| `LINE_BYTES` | 32 | AMB line size | 32 (ZYBO), 64 (KC705) |
+| `LINE_BYTES` | 32 | AMB line size | 32 or 64 (KC705) |
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`) | 5, 6 |
 
 Derived: `WPL` = 32-bit words per line, `LU` = 16-bit units per line, `UA` = `ADDR_W` − 1 (unit address width).
@@ -68,7 +68,7 @@ One FSM (`state`, 15 states):
 ## 6. Latency and throughput
 
 - Per segment: 4 cycles of address computation (S_SA–S_SD) + 1 (S_WR) for FILL. Per blit: S_CLIP, S_START and up to 17 S_MUL cycles.
-- Measured on the ZYBO (p003, 1024 × 256 = 1 MiB, PERF0 = busy cycles, 100 MHz):
+- Measured on a Zynq-7010 (XC7Z010) (p003, 1024 × 256 = 1 MiB, PERF0 = busy cycles, 100 MHz):
 
 | Operation | cycles | MB/s | cycles per 32-byte line |
 | --- | --- | --- | --- |
@@ -80,7 +80,7 @@ One FSM (`state`, 15 states):
 | TILE 32 bpp (4-pixel segments) | 3,165,985 | 33 | 96.6 |
 
 - COPY is bound by the serial wait → read → write per segment (HP0 read latency plus the write response round trip).
-- Timing: 100 MHz on the ZYBO with WNS +0.190 ns; the worst path starts at `q_valid` into the MC.
+- Timing: 100 MHz on a Zynq-7010 (XC7Z010) with WNS +0.190 ns; the worst path starts at `q_valid` into the MC.
 
 ## 7. Corner cases and errors
 
@@ -94,7 +94,7 @@ One FSM (`state`, 15 states):
 
 ## 8. What the TB checks
 
-No `sim/tb/atg_blt_tb.v`. Checked through `sim/tb/atg_top_tb.v` (`PASS atg_top`, ZYBO and KC705 shapes, against a reference model in which every source pixel is read before any is written; `sim/models/axi_mem.v` with `READ_EARLY`, so a read may overtake a write): FILL, COPY at several alignments, clipped FILL; 16-bit FILL at an odd pixel and COPY; blend FILL and COPY (with saturation); TILE then UNTILE back; 16-bit TILE; overlapping COPY reverse, forward, 16-bit reverse by one pixel; reverse clipped FILL; the wrong-direction "smear" (fails if reads do not wait for earlier writes: checked by mutation in p003); 120 random blits of every kind and option (`+seed`, p003 also 2, 3, 42); HALT in the middle of a COPY and resume; aperture fault → RESET → FILL; OPCODE faults (pixel size 2, tile blend). The Verilator harness checks a FILL and a COPY. On the ZYBO (p003) `ghci-blt-board.py` checks every operation 5 times. Not checked: AXI error responses (kind 5), the shadow STATE after RESET, coordinates near 65535, address wrap.
+No `sim/tb/atg_blt_tb.v`. Checked through `sim/tb/atg_top_tb.v` (`PASS atg_top`, KC705 shape, against a reference model in which every source pixel is read before any is written; `sim/models/axi_mem.v` with `READ_EARLY`, so a read may overtake a write): FILL, COPY at several alignments, clipped FILL; 16-bit FILL at an odd pixel and COPY; blend FILL and COPY (with saturation); TILE then UNTILE back; 16-bit TILE; overlapping COPY reverse, forward, 16-bit reverse by one pixel; reverse clipped FILL; the wrong-direction "smear" (fails if reads do not wait for earlier writes: checked by mutation in p003); 120 random blits of every kind and option (`+seed`, p003 also 2, 3, 42); HALT in the middle of a COPY and resume; aperture fault → RESET → FILL; OPCODE faults (pixel size 2, tile blend). The Verilator harness checks a FILL and a COPY. On a Zynq-7010 (XC7Z010) board (p003) `ghci-blt-board.py` checked every operation 5 times. Not checked: AXI error responses (kind 5), the shadow STATE after RESET, coordinates near 65535, address wrap.
 
 ## 9. References
 
@@ -104,7 +104,7 @@ No `sim/tb/atg_blt_tb.v`. Checked through `sim/tb/atg_top_tb.v` (`PASS atg_top`,
 
 ## 10. Status
 
-Implemented (p002 70aaff5 and 053c1ba, rewritten in p003 a2af156, simple wait restored a6e6d16; unchanged at a217bf8). Measured on the ZYBO (p003): 2,727 LUT, 2,196 FF, DSP 0 (the four 8 × 8 products are LUTs).
+Implemented (p002 70aaff5 and 053c1ba, rewritten in p003 a2af156, simple wait restored a6e6d16; unchanged at a217bf8). Measured on a Zynq-7010 (XC7Z010) (p003): 2,727 LUT, 2,196 FF, DSP 0 (the four 8 × 8 products are LUTs).
 
 **U38: 696 lines > 400.** 22 ports and one clock are fine; there is one encoded FSM, but the blend pipeline, the multiplier and the AMB port bookkeeping live beside it. Not refactored here. Proposed split (design §7.6 names `atg_blt_ctl`/`atg_blt_rd`/`atg_blt_wr`; a fourth for the port keeps each part small):
 

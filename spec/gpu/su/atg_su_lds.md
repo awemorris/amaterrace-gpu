@@ -4,7 +4,7 @@ RTL: `rtl/gpu/su/atg_su_lds.v`.  Parent: atg_su.  Implemented in: p008.
 
 ## 1. Purpose and place
 
-Shared memory (LDS): lds/sts per lane, LDS_BYTES of block RAM per SU (4 KiB ZYBO, 16 KiB KC705), word addressed; returns as long beats.
+Shared memory (LDS): lds/sts per lane, LDS_BYTES of block RAM per SU (4 KiB by default, 16 KiB KC705), word addressed; returns as long beats.
 
 ## 2. Parameters
 

@@ -2,8 +2,8 @@
 # Builds the CP firmware (fw/cp/) into the BRAM init images of atg_cpu:
 # fw/cp/images/atg1-cp-BOARD.imem.hex (.text, IMEM from 0, 8192 words)
 # and .dmem.hex (.rodata and the original of .data, DMEM from 0x0001_0000,
-# 4096 words), one 32-bit word per line ($readmemh), for BOARD zybo
-# (32-byte AMB lines) and kc705 (64).  The images are committed, so the
+# 4096 words), one 32-bit word per line ($readmemh), for BOARD kc705
+# (64-byte AMB lines).  The images are committed, so the
 # simulation and the Vivado build do not need a compiler; run this after
 # changing the firmware.  Also writes atg1-cp-BOARD.bin (the IMEM image
 # for CPFW_IBASE) next to the ELF.
@@ -35,9 +35,8 @@ hex() {
 	[ "$words" -lt "$2" ] && yes 00000000 | head -n $(( $2 - words )) >>"$3"
 	echo "$words"
 }
-for board in zybo kc705; do
-	line=32
-	[ $board = kc705 ] && line=64
+for board in kc705; do
+	line=64
 	o=$out/$board
 	mkdir -p "$o"
 	objs=

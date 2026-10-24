@@ -47,7 +47,7 @@ A push into an empty FIFO is visible on `out_valid`/`out_data` one cycle later (
 
 ## 8. What the TB checks
 
-There is no `sim/tb/am_fifo_tb.v`. It is exercised through `am_axi_master_tb` (`PASS am_axi_master`: user bits of 2000 random requests come back in order, in the ZYBO and KC705 shapes) and every TB that contains `am_axi_master` (`atg_mc_tb`, `atg_top_tb`). Not checked on its own: full/empty with simultaneous push and pop, depths other than 4.
+There is no `sim/tb/am_fifo_tb.v`. It is exercised through `am_axi_master_tb` (`PASS am_axi_master`: user bits of 2000 random requests come back in order, in the 32-byte and KC705 shapes) and every TB that contains `am_axi_master` (`atg_mc_tb`, `atg_top_tb`). Not checked on its own: full/empty with simultaneous push and pop, depths other than 4.
 
 ## 9. References
 

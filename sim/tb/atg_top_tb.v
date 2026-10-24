@@ -6,10 +6,9 @@
  */
 
 /*
- * atg_top_tb: the GPU of bitstream 1 (CP v0, BLT, MC) driven
- * only through its host port, as fpgareg would on the ZYBO, against
- * axi_mem; in the ZYBO's shape (32-byte lines, 64-bit AXI3-sized bursts)
- * and the KC705's (64-byte lines, 512-bit).  Checks:
+ * atg_top_tb: the GPU with CP v0, BLT and MC, driven
+ * only through its host port, as a host driver would, against
+ * axi_mem; in the KC705's shape (64-byte lines, 512-bit AXI).  Checks:
  *
  *   - the identification registers, SCRATCH, CAPS, the STATE alias, the
  *     extended capability list and the PERF counters;
@@ -32,7 +31,7 @@ module atg_top_harness #(
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,
 	parameter DATA_W = 64,
-	parameter NAME = "zybo",
+	parameter NAME = "dut",
 	parameter SEED = 1
 ) (
 	input wire clk,
@@ -977,14 +976,11 @@ endmodule
 module atg_top_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
-	wire done_zybo, done_kc705;
-	wire [31:0] err_zybo, err_kc705;
+	wire done_kc705;
+	wire [31:0] err_kc705;
 
 	always #5 clk = !clk;
 
-	atg_top_harness #(.LINE_BYTES(32), .LINE_SHIFT(5), .DATA_W(64), .NAME("zybo"), .SEED(5)) zybo (
-		.clk(clk), .rst_n(rst_n), .finished(done_zybo), .errors(err_zybo)
-	);
 	atg_top_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"), .SEED(6)) kc705 (
 		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
 	);
@@ -992,11 +988,11 @@ module atg_top_tb;
 	initial begin
 		repeat (4) @(posedge clk);
 		rst_n <= 1'b1;
-		wait (done_zybo && done_kc705);
-		if (err_zybo == 0 && err_kc705 == 0)
+		wait (done_kc705);
+		if (err_kc705 == 0)
 			$display("PASS atg_top");
 		else
-			$display("FAIL atg_top: %0d + %0d errors", err_zybo, err_kc705);
+			$display("FAIL atg_top: %0d errors", err_kc705);
 		$finish;
 	end
 

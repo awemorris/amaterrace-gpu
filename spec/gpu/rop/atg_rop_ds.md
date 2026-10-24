@@ -11,7 +11,7 @@ ROP depth and stencil: reads the depth/stencil line of the quad (DS_BASE/STRIDE,
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 | `STENCIL` | `0` | Stencil present (ROP_STENCIL). |
 

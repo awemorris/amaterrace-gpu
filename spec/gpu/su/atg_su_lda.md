@@ -86,4 +86,4 @@ design §3.4.1 (custom-1 lda), §3.5 (primitive table), §3.8 (clip).
 
 ## 10. Status
 
-Implemented in WS288 p009 part B1 (P1, branch p1-su-gfx).  Readings of the earlier text: the pw_addr fields as above (12 bits hold 3 + 2 + 6, so [11] marks the map at 0xFFF), the map's layout (3 bits per quad, the earlier "low bits of fl_info" dropped: fl_info has no room), words past VARY_WORDS and vertex 3 read 0.  Ports and parameters unchanged.  Storage NWARPS × PRIMS × 3 × VARY_WORDS words × NPHYS/4 copies (ZYBO 4×8×3×20×2 = 3840 words: distributed RAM; sized for v1, not optimised).
+Implemented in WS288 p009 part B1 (P1, branch p1-su-gfx).  Readings of the earlier text: the pw_addr fields as above (12 bits hold 3 + 2 + 6, so [11] marks the map at 0xFFF), the map's layout (3 bits per quad, the earlier "low bits of fl_info" dropped: fl_info has no room), words past VARY_WORDS and vertex 3 read 0.  Ports and parameters unchanged.  Storage NWARPS × PRIMS × 3 × VARY_WORDS words × NPHYS/4 copies (NPHYS 8: 4×8×3×20×2 = 3840 words: distributed RAM; sized for v1, not optimised).

@@ -14,10 +14,9 @@ Build
 `tools/fw-build.sh` compiles with the shared LLVM (clang `--target=
 riscv32-unknown-elf -march=rv32im -mabi=ilp32 -ffreestanding -fno-builtin
 -nostdlib -O2`, used read-only) and writes the BRAM init images
-`images/atg1-cp-zybo.{imem,dmem}.hex` (32-byte AMB lines) and
-`images/atg1-cp-kc705.*` (64-byte lines).  The images are committed: the
-simulation (`sim/tb/atg_top_fw_tb.v`) and the Vivado build (the ZYBO
-bitstream 1', `boards/zybo/atg_zybo_2dfw.v`) read them without a compiler.
+`images/atg1-cp-kc705.{imem,dmem}.hex` (64-byte AMB lines).  The images
+are committed: the simulation (`sim/tb/atg_top_fw_tb.v`) and the Vivado
+build read them without a compiler.
 There is no compiler-rt for riscv32 in the shared LLVM, so `lib.c` carries
 memcpy, memset, memcmp and the 64-bit division.
 
@@ -84,7 +83,7 @@ Limits and later work
   CTRL.HALT is 1.
 - The codec is written by hand for these commands; design §2.4.8 generates
   it from one table with the driver (`ghci_vkwire.inc`).
-- Measured in `atg_top_fw_tb` (ZYBO shape, 100 MHz model): the 13-record
+- Measured in `atg_top_fw_tb` (32-byte lines, 100 MHz model): the 13-record
   frame of the test, 32.5k cycles to the fence after the doorbell (the
   class N fill and copy of the same bytes: 12.5k), so about 1.5k cycles per
   command of firmware work.

@@ -46,7 +46,7 @@
  * (The MC does not order a read after an earlier write; waiting for every
  * write gives each read the memory the earlier segments left.  Waiting
  * only for writes to the lines read, with a table of eight lines, made a
- * copy on the ZYBO 19% faster for 0.75k more LUTs, and was not kept: a
+ * copy on a Zynq-7010 19% faster for 0.75k more LUTs, and was not kept: a
  * copy is bound by the read latency, one segment at a time.)
  *
  * busy is 1 from kick to done or error (one-cycle pulses).  An error

@@ -7,10 +7,9 @@
 
 /*
  * atg_dc: The display controller IP (design §5): registers and DMA in
- * gclk, a pixel FIFO (am_afifo) to the pixel clock, timing generator, VGA
- * and TMDS encoders and a parallel output, optional I2C; its own AMB
- * client port (ZYBO: to its own am_axi_master on HP1; KC705: an MC client
- * of atg_top).
+ * gclk, a pixel FIFO (am_afifo) to the pixel clock, timing generator, a
+ * TMDS encoder and a parallel output, optional I2C; its own AMB client port (an MC client
+ * of atg_top; STANDALONE: to its own am_axi_master).
  *
  * Wiring of its children; see spec/dc/atg_dc.md.  The only clock
  * crossings: the pixel FIFO (am_afifo), ENABLE and CTRL.RESET to pclk, the
@@ -22,11 +21,11 @@
 `default_nettype none
 
 module atg_dc #(
-	parameter STANDALONE = 0,	/* 1: a DC-only GHCI device (ZYBO bitstream 2): GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000) */
+	parameter STANDALONE = 0,	/* 1: a DC-only GHCI device: GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000) */
 	parameter BASE = 17'h10000,	/* Window of the DISP registers when STANDALONE = 0 */
 	parameter HAS_I2C = 0,	/* ADV7511 I2C master present (KC705, DC_CAPS[2]) */
 	parameter ADDR_W = 32,	/* GPU address width */
-	parameter LINE_BYTES = 32,	/* AMB line size: 32 (ZYBO) or 64 (KC705) */
+	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter FIFO_LOG2 = 9,	/* Pixel FIFO depth (2 lines of 640 need ≥ 1280 → 11 for 720p; 9 is the stub default) */
 	parameter PX_FMT = 0	/* The parallel output: 0 RGB888 (px_rgb = {r, g, b}), 1 YCbCr 4:2:2 16-bit (px_rgb = {8'd0, C, Y}, the KC705's ADV7511, atg_dc_ycc) */
@@ -60,11 +59,6 @@ module atg_dc #(
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
 	input wire rsp_error,
 	/* Video outputs (pclk) */
-	output wire [4:0] vga_r,
-	output wire [5:0] vga_g,
-	output wire [4:0] vga_b,
-	output wire vga_hs,
-	output wire vga_vs,
 	output wire [29:0] tmds,
 	output wire [23:0] px_rgb,
 	output wire px_de,
@@ -158,11 +152,6 @@ module atg_dc #(
 		.rgb(rgb), .de(de), .hs(hs), .vs(vs),
 		.frame_toggle(frame_toggle), .vsync_toggle(vsync_toggle),
 		.underflow_toggle(underflow_toggle), .line(p_line)
-	);
-
-	atg_dc_vga vga (
-		.clk(pclk), .rgb(rgb), .de(de), .hs(hs), .vs(vs),
-		.vga_r(vga_r), .vga_g(vga_g), .vga_b(vga_b), .vga_hs(vga_hs), .vga_vs(vga_vs)
 	);
 
 	atg_dc_tmds tmds_enc (

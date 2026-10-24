@@ -7,7 +7,7 @@
 
 /*
  * am_axi_regs: an AXI slave (AXI3 or AXI4, 32-bit data) that turns host
- * accesses into a simple register bus, the way plio does on the ZYBO.
+ * accesses into a simple register bus.
  *
  * The register bus:
  *   reg_wr     one cycle per written beat; reg_waddr is the byte offset

@@ -6,7 +6,7 @@
  */
 
 /*
- * The Verilator system harness: atg_top in the ZYBO's shape (32-byte
+ * The Verilator system harness: atg_top in its default shape (32-byte
  * lines, 64-bit AXI) with a DDR model on its master port and a host on its
  * register port that uses include/ghci_regs.h, as the zedBSD driver will.
  * The scene: identification, the aperture, a FILL and a COPY checked

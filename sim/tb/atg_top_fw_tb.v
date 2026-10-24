@@ -6,9 +6,9 @@
  */
 
 /*
- * atg_top_fw_tb: the GPU of bitstream 1' (CP, CPU with the CP firmware of
- * fw/cp/images/, BLT, MC) driven only through its host port,
- * against axi_mem, in the ZYBO's shape and the KC705's.  Checks:
+ * atg_top_fw_tb: the GPU with CP, CPU with the CP firmware of
+ * fw/cp/images/, BLT and MC, driven only through its host port,
+ * against axi_mem, in the KC705's shape.  Checks:
  *
  *   - CAPS[17] VKCP and [18] FWLOAD, the extended capability list (PERF,
  *     then CPFW at 0x120), CPFW_STATUS READY and STOPPED before RUN;
@@ -37,9 +37,9 @@ module atg_top_fw_harness #(
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,
 	parameter DATA_W = 64,
-	parameter NAME = "zybo",
-	parameter IMEM = "fw/cp/images/atg1-cp-zybo.imem.hex",
-	parameter DMEM = "fw/cp/images/atg1-cp-zybo.dmem.hex",
+	parameter NAME = "dut",
+	parameter IMEM = "fw/cp/images/atg1-cp-kc705.imem.hex",
+	parameter DMEM = "fw/cp/images/atg1-cp-kc705.dmem.hex",
 	parameter SEED = 1
 ) (
 	input wire clk,
@@ -678,31 +678,25 @@ endmodule
 module atg_top_fw_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
-	wire done_zybo, done_kc705;
-	wire [31:0] err_zybo, err_kc705;
+	wire done_kc705;
+	wire [31:0] err_kc705;
 
 	always #5 clk = !clk;
-	`include "tb_shape.vh"
 
-	atg_top_fw_harness #(.LINE_BYTES(32), .LINE_SHIFT(5), .DATA_W(64), .NAME("zybo"),
-		.IMEM("fw/cp/images/atg1-cp-zybo.imem.hex"), .DMEM("fw/cp/images/atg1-cp-zybo.dmem.hex"),
-		.SEED(5)) zybo (
-		.clk(clk_zybo), .rst_n(rst_n), .finished(done_zybo), .errors(err_zybo)
-	);
 	atg_top_fw_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.IMEM("fw/cp/images/atg1-cp-kc705.imem.hex"), .DMEM("fw/cp/images/atg1-cp-kc705.dmem.hex"),
 		.SEED(6)) kc705 (
-		.clk(clk_kc705), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
+		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
 	);
 
 	initial begin
 		repeat (4) @(posedge clk);
 		rst_n <= 1'b1;
-		wait ((done_zybo || !run_zybo) && (done_kc705 || !run_kc705));
-		if (err_zybo == 0 && err_kc705 == 0)
+		wait (done_kc705);
+		if (err_kc705 == 0)
 			$display("PASS atg_top_fw");
 		else
-			$display("FAIL atg_top_fw: %0d + %0d errors", err_zybo, err_kc705);
+			$display("FAIL atg_top_fw: %0d errors", err_kc705);
 		$finish;
 	end
 

@@ -40,7 +40,7 @@ module atg_dc_regs_tb;
 	wire [1:0] i2c_idx;
 	wire [31:0] i2c_wdata;
 
-	/* The ZYBO's standalone device (checked in detail). */
+	/* The standalone device (checked in detail). */
 	atg_dc_regs #(.STANDALONE(1)) dut (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
@@ -158,7 +158,7 @@ module atg_dc_regs_tb;
 		e0 = errors;
 		expect_reg("DC_ID", D + GHCI_DC_ID, GHCI_DC_ID_VALUE);
 		expect_reg("DC_VERSION", D + GHCI_DC_VERSION, 32'h00000001);
-		expect_reg("DC_CAPS", D + GHCI_DC_CAPS, 32'h00000473);
+		expect_reg("DC_CAPS", D + GHCI_DC_CAPS, 32'h00000472);
 		wr(D + GHCI_DC_CTRL, 32'h0000_0065);	/* ENABLE, TEST_PATTERN, FORMAT 2, OUTPUT */
 		expect_reg("CTRL", D + GHCI_DC_CTRL, 32'h0000_0065);
 		check("enable/test/format", {29'd0, enable, test_pattern, format}, {29'd0, 1'b1, 1'b1, 2'd2});

@@ -13,7 +13,7 @@ Children: `atg_vf_index`, `atg_vf_asm`, `atg_vf_fetch`, `atg_vf_conv`, `am_amb_m
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 
 ## 3. Ports
@@ -43,7 +43,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **Primitives to the RX** | | | |
 | `prim_valid` | out | 1 | A primitive (point, line or triangle). |
 | `prim_ready` | in | 1 | Taken. |
-| `prim_vtx` | out | 24 | Three PT entries, v0 in [7:0] (provoking vertex first per PROVOKING). |
+| `prim_vtx` | out | 26 | Three PT entries, v0 in [7:0] (provoking vertex first per PROVOKING); [25:24] the kind: 0 point, 1 line, 2 triangle (CAPS[30]; the RX no longer reads TOPOLOGY). |
 | `prim_free` | out | 3 | Vertex i is used for the last time (RX frees its PT entry after this primitive). |
 | `prim_last` | out | 1 | Last primitive of the draw (a draw with no primitive sends none, atg_vf_asm §7). |
 | **AMB client port (design §4.1)** | | | |

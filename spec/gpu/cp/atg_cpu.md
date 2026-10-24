@@ -47,7 +47,7 @@ Control window (word index, R/W):
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 | `IMEM_WORDS` | `8192` | IMEM size in 32-bit words (32 KiB). |
 | `DMEM_WORDS` | `4096` | DMEM size in words (16 KiB). |
@@ -127,7 +127,7 @@ None beyond the above.
 ## 8. What the TB checks
 
 `sim/tb/atg_cpu_tb.v` (added in p017; the module itself is wiring) runs `sim/tb/cpu/cpu_top.S` from
-the init images (ZYBO shape) with ring, sequencer, STATE, host and AMB models, and prints, in this
+the init images (32-byte lines) with ring, sequencer, STATE, host and AMB models, and prints, in this
 order:
 
 - `PASS atg_cpu.packet` — a class V packet is taken by the interrupt, read by DMA, and its dwords

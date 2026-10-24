@@ -11,7 +11,7 @@ The command ring: RING_BASE/SIZE/WPTR/RPTR, line reads of the ring through the C
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 | `CLASS_V` | `1` | 1: class V packets go to the CPU (`v_*`); 0 (no firmware, `HAS_CPU` = 0): a class V header is a fault of kind 2 (design §8 p004). |
 
@@ -99,7 +99,7 @@ only in IDLE; fault → FAULTED (stay until core reset).
 
 ## 6. Latency and throughput
 
-One dword per cycle on n_* within a line, plus one AMB round trip per line (about 20-40 cycles on the ZYBO).
+One dword per cycle on n_* within a line, plus one AMB round trip per line (about 20-40 cycles on a Zynq-7010 (XC7Z010)).
 
 ## 7. Corner cases and errors
 

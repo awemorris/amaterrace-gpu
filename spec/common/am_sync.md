@@ -52,4 +52,4 @@ There is no `sim/tb/am_sync_tb.v`. The module is only linted (`tools/lint.sh`, `
 
 ## 10. Status
 
-Implemented (amaterrace-gpu 70aaff5, WS288 p002; unchanged at a217bf8). 43 lines, 4 ports, no state machine, one clock domain: within U38. No difference between RTL and this spec. Note: `boards/zybo/atg_zybo_2d.v` synchronises `FCLK_RESET0_N` with its own two flops instead of `am_sync`, because it has no reset to give `am_sync` (see `spec/boards/zybo/atg_zybo_2d.md`).
+Implemented (amaterrace-gpu 70aaff5, WS288 p002; unchanged at a217bf8). 43 lines, 4 ports, no state machine, one clock domain: within U38. No difference between RTL and this spec.

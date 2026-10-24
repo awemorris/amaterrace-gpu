@@ -29,8 +29,8 @@ a client of its own in `atg_top`.
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`) | 5, 6 |
 | `DATA_W` | 64 | AXI data width | 64, 512 |
 | `OUTSTANDING_LOG2` | 2 | Passed to `am_axi_master` | 2 |
-| `VRAM_AW` | 32 | Address bits carried in the tree (the VRAM window is 2^VRAM_AW bytes) | `LINE_SHIFT` < `VRAM_AW` ≤ 32; ZYBO's 64 MiB: 26 |
-| `VRAM_BASE` | 0 | The window's base, aligned to its size; the root adds it | ZYBO: 0x1C000000 |
+| `VRAM_AW` | 32 | Address bits carried in the tree (the VRAM window is 2^VRAM_AW bytes) | `LINE_SHIFT` < `VRAM_AW` ≤ 32; 64 MiB: 26 |
+| `VRAM_BASE` | 0 | The window's base, aligned to its size; the root adds it | e.g. 0x1C000000 |
 
 Derived (localparams): `HAS_ROOT`, `TREE_L` = clog2(`NCLIENT` − `HAS_ROOT`), `RW` (route bits) =
 max(1, `TREE_L` + `HAS_ROOT`), the header layout of `spec/common/am_amb_to_rt.md`.
@@ -96,7 +96,7 @@ none).  `flush`/`rst_n` → empty, none.  The routers and leaves have their own 
   write's data flit follows one cycle later).  Previously 0 (combinational arbiter).
 - Response: `TREE_L` (+1) cycles from the AXI master to the client.
 - Throughput: one read per cycle at the root; a write needs two flits, so writes alone reach one
-  per two cycles (the ZYBO HP port takes a 32-byte line in 4 beats anyway; on the KC705's 512-bit
+  per two cycles (a 64-bit AXI3 HP port takes a 32-byte line in 4 beats anyway; on the KC705's 512-bit
   MIG port this halves the peak write rate — a later option is a wider request flit).
 - Refusal: `fault` 1 cycle after the grant, the error response 1 cycle after the grant at the
   earliest, then `TREE_L` (+1) hops.
@@ -116,7 +116,7 @@ none).  `flush`/`rst_n` → empty, none.  The routers and leaves have their own 
   completes) while the blocks are held.  The KC705's outside client (DC) is held like the others.
 - `rsp_rdata` of a refusal is the AXI master's last read data (meaningless).
 - The header must fit a line (`20 + RW + VRAM_AW − LINE_SHIFT + LINE_BYTES` ≤ `LINE_BYTES*8`:
-  83 of 256 bits on the ZYBO with 16 clients, 116 of 512 on the KC705 with 32 and a root client).
+  83 of 256 bits with 32-byte lines and 16 clients, 116 of 512 on the KC705 with 32 and a root client).
 
 ## 8. What the TB checks
 

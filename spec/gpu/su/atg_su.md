@@ -27,7 +27,7 @@ those instructions, so the module is not part of the tree (Q1, 2026-10-23).
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
 | `NREGS` | `32` | GPRs per thread: 32 or 64 (r0..r62 at most; 63 is rq). |
-| `SB_ENTRIES` | `4` | Scoreboard entries per warp (ZYBO 4, KC705 8). |
+| `SB_ENTRIES` | `4` | Scoreboard entries per warp (KC705 8). |
 | `SBE_W` | `2` | log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits). |
 | `UOP_W` | `104` | Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh). |
 | `SHORT_LAT` | `6` | Cycles from x_valid to the short result (one fixed pipeline for classes a and f, design §3.1.1). |
@@ -41,7 +41,7 @@ those instructions, so the module is not part of the tree (Q1, 2026-10-23).
 | `PT_ENTRIES` | `64` | PT vertices. |
 | `VARY_WORDS` | `16` | Varying words per vertex. |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 
 ## 3. Ports

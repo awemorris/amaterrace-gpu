@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_cpu_tb: the whole atg_cpu (ZYBO shape, 32-byte lines) running
+ * atg_cpu_tb: the whole atg_cpu (32-byte lines) running
  * sim/tb/cpu/cpu_top.S from its init images, with models of the ring
  * (v_valid until v_done), the sequencer (random fw_ready while
  * fw_active), STATE (data the cycle after the index), the host (HCR

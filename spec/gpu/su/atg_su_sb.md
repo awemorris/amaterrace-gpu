@@ -12,7 +12,7 @@ The issue stage with the per-warp scoreboard (design §3.1.1): checks the operan
 | --- | --- | --- |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
-| `SB_ENTRIES` | `4` | Scoreboard entries per warp (ZYBO 4, KC705 8). |
+| `SB_ENTRIES` | `4` | Scoreboard entries per warp (KC705 8). |
 | `SBE_W` | `2` | log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits). |
 | `UOP_W` | `104` | Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh). |
 

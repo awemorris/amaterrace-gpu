@@ -22,7 +22,7 @@
 
 module am_amb_mux #(
 	parameter ADDR_W = 32,	/* GPU address width */
-	parameter LINE_BYTES = 32,	/* AMB line size: 32 (ZYBO) or 64 (KC705) */
+	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter N = 2,	/* Number of requesters, 2..4 */
 	parameter ID_W = 1	/* log2(N) rounded up: the tag bits [7:8-ID_W] carry the requester */

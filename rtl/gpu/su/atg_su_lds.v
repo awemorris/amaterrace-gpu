@@ -7,7 +7,7 @@
 
 /*
  * atg_su_lds: Shared memory (LDS): lds/sts per lane, LDS_BYTES of block
- * RAM per SU (4 KiB ZYBO, 16 KiB KC705), word addressed; returns as long
+ * RAM per SU (4 KiB by default, 16 KiB KC705), word addressed; returns as long
  * beats.
  *
  * One lane group at a time (x_ready is 1 only in IDLE).  The word
