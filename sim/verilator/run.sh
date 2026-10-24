@@ -57,6 +57,18 @@ timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 }
 timeout 600 "$out/atg_top_tex"
 
+# The multisampling scene: HAS_VF, NSU 1, HAS_RX, HAS_TU, HAS_ROP, MS4, the
+# resolved image to a PNG.
+timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
+	--top-module atg_top -GHAS_VF=1 -GNSU=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GMS4=1 \
+	-Mdir "$out/obj-msaa" -o "$out/atg_top_msaa" -CFLAGS "-I$root/include -O1 -DMSAA" \
+	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build-msaa.log" 2>&1 || {
+	tail -30 "$out/build-msaa.log" >&2
+	echo "FAIL verilator msaa (build, log $out/build-msaa.log)"
+	exit 1
+}
+timeout 600 "$out/atg_top_msaa"
+
 # The compute scene: NSU 1, GSI1 programs dispatched through
 # the ring, the memory against tools/gsi1model.py, an ISA fault.
 timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \

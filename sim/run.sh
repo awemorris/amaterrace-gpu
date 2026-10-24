@@ -33,7 +33,9 @@
 #   atg_dc_tgen +quick         the timing on a 64x16 mode instead of 640x480
 #                              and 720p (1 s)
 # atg_top_raster and atg_top_shade are left out: atg_top_tex runs the warp
-# path through the same blocks and the RX/ROP unit testbenches the rest.
+# path through the same blocks and the RX/ROP unit testbenches the rest;
+# atg_top_msaa too (about 5 minutes on that host, busy): the RX, ROP, TU
+# and BLT unit testbenches run their multisampling cases.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 root=$(cd "$(dirname -- "$0")/.." && pwd)
@@ -42,7 +44,7 @@ out=$root/build/sim
 mkdir -p "$out"
 command -v iverilog >/dev/null || { echo "sim: no iverilog" >&2; exit 1; }
 all=$(ls sim/tb/*_tb.v | sed 's|.*/||; s|_tb\.v$||')
-LONG="atg_su atg_top_shade atg_top_cs atg_top_tex atg_top_raster atg_dc_tgen atg_top_fw"
+LONG="atg_su atg_top_shade atg_top_cs atg_top_tex atg_top_msaa atg_top_raster atg_dc_tgen atg_top_fw"
 QUICK="atg_su:+quick atg_top_tex atg_top_cs atg_top_fw atg_dc_tgen:+quick"
 if [ "${1:-}" = -q ]; then
 	set -- $(for n in $all; do

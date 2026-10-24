@@ -58,12 +58,12 @@ Blocks
 | Block | Name | Role |
 | --- | --- | --- |
 | CP | Command Processor | GHCI host registers, the command ring, the state register file, fences, interrupts, and a debug memory port (`DBG_ADDR`/`DBG_DATA`) for bring-up without a driver. A small RV32IM core runs its firmware. |
-| BLT | Blitter | 2D fill, copy (with optional alpha-over), and linear↔tiled copy for textures. |
+| BLT | Blitter | 2D fill, copy (with optional alpha-over), linear↔tiled copy for textures, and the resolve of multisampled images. |
 | VF | Vertex Fetcher | Index and vertex fetch, attribute format conversion, instancing, and primitive assembly. |
 | SU | Shader Unit | Runs vertex, fragment and compute warps (see [Shader unit](#shader-unit)). |
-| RX | Rasterizer | Near-plane clipping, the viewport transform, an edge-function rasterizer, and quad traversal. |
-| TU | Texture Unit | A sampler with a small texture cache: 2D, 2D array, 3D and cube images with mipmaps (cube edges seamless); nearest, bilinear and trilinear filtering (3D: in all three axes); repeat, mirrored repeat, clamp to edge and clamp to border (Vulkan's border colours); texel offsets and unnormalized coordinates; the sampler's LOD bias and min/max LOD clamp; RGBA8/BGRA8 and the depth formats D24 and D32F with depth compare (percentage-closer filtering); gather (with compare); size, layer count, level count and LOD queries. |
-| ROP | Buffer Writer | Depth and stencil test, blending, and buffer write-back in primitive order. |
+| RX | Rasterizer | Near-plane clipping, the viewport transform, an edge-function rasterizer with 1 or 4 samples per pixel, and quad traversal. |
+| TU | Texture Unit | A sampler with a small texture cache: 2D, 2D array, 3D and cube images with mipmaps (cube edges seamless); nearest, bilinear and trilinear filtering (3D: in all three axes); repeat, mirrored repeat, clamp to edge and clamp to border (Vulkan's border colours); texel offsets and unnormalized coordinates; the sampler's LOD bias and min/max LOD clamp; RGBA8/BGRA8 and the depth formats D24 and D32F with depth compare (percentage-closer filtering); gather (with compare); size, layer count, level count and LOD queries; 4x multisampled images and RGB565 read with `texf`. |
+| ROP | Buffer Writer | Depth and stencil test, blending, and buffer write-back in primitive order; per sample with 4x multisampling (alpha to coverage, alpha to one). |
 | SA | Systolic Array | A 32 × 32 matrix engine for LLM work, 0.8 TOPS per SU at 200 MHz. |
 | MC | Memory Controller | The internal memory bus (AMB, 32- or 64-byte lines): the arbiter, an address aperture, quiesce, and one AXI master (AXI4 512-bit to the MIG DDR3 on the KC705). |
 | DC | Display Controller | A separate IP with its own top and memory port; TMDS (DVI/HDMI) and parallel outputs. |
@@ -131,6 +131,7 @@ simulation; timing closure at 200 MHz comes later.
 | SU | Integer, fp32, memory, LDS and control paths implemented, in simulation |
 | VF | Implemented, in simulation |
 | SU graphics paths (export, primitive table), TU | In progress |
+| 4x multisampling (RX, SU, ROP, TU, BLT resolve) | Implemented; the scene matches the reference model in simulation |
 | SA | Deferred until the SU implements the whole ISA |
 
 The whole pipeline targets the KC705. The KC705 is driven over USB JTAG for
