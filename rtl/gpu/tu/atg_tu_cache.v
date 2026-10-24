@@ -10,8 +10,20 @@
  * from the AMB, 16 texels per quad looked up (several per cycle by
  * banking), invalidated by INVALIDATE[1] / DRAW.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/tu/atg_tu_cache.md.
+ * Direct mapped, TC_BYTES / LINE_BYTES lines, read only.  Blocking (v1):
+ * one quad at a time; its texels are looked up one per cycle in the order
+ * lane 0 texel 0 .. lane 3 texel 3, only the lanes of ta_mask and, without
+ * ta_ctl[0] (bilinear), only texel 0 (texels not looked up are 0).  A miss
+ * requests its line (one outstanding), writes it when it comes and looks
+ * the texel up again.  An error response gives the texel 0 and leaves the
+ * line invalid.  texsz (ta_ctl[2]) looks nothing up.  The quad is then
+ * held on tc_* until taken; order is kept.  inv clears every line at once;
+ * a line whose request was outstanding during inv is not kept (the texel
+ * misses again and is requested anew).  See spec/gpu/tu/atg_tu_cache.md.
+ *
+ * States: IDLE →(ta)→ LOOKUP (one texel a cycle) →(miss)→ MREQ
+ * →(req_ready)→ MWAIT →(rsp)→ LOOKUP; LOOKUP →(last)→ DRAIN → OUT
+ * →(tc_ready)→ IDLE; IDLE →(texsz)→ OUT.
  */
 
 `timescale 1ns / 1ps
@@ -39,13 +51,13 @@ module atg_tu_cache #(
 	/* To atg_tu_filter */
 	output wire tc_valid,
 	input wire tc_ready,
-	output wire [511:0] tc_texels,
-	output wire [63:0] tc_wts,
-	output wire [15:0] tc_tag,
-	output wire [3:0] tc_mask,
-	output wire [7:0] tc_ctl,
-	output wire [127:0] tc_value,
-	output wire tc_last,
+	output reg [511:0] tc_texels,
+	output reg [63:0] tc_wts,
+	output reg [15:0] tc_tag,
+	output reg [3:0] tc_mask,
+	output reg [7:0] tc_ctl,
+	output reg [127:0] tc_value,
+	output reg tc_last,
 	/* AMB client port (design §4.1) */
 	output wire req_valid,
 	input wire req_ready,
@@ -60,28 +72,118 @@ module atg_tu_cache #(
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
 	input wire rsp_error
 );
-	/* spec/gpu/tu/atg_tu_cache.md */
-	assign ta_ready = 1'd0;
-	assign tc_valid = 1'd0;
-	assign tc_texels = 512'd0;
-	assign tc_wts = 64'd0;
-	assign tc_tag = 16'd0;
-	assign tc_mask = 4'd0;
-	assign tc_ctl = 8'd0;
-	assign tc_value = 128'd0;
-	assign tc_last = 1'd0;
-	assign req_valid = 1'd0;
-	assign req_write = 1'd0;
-	assign req_line = {(ADDR_W-LINE_SHIFT){1'b0}};
+	localparam LB = LINE_BYTES * 8;
+	localparam NL = TC_BYTES / LINE_BYTES;
+	localparam IW = $clog2(NL);
+	localparam TW = ADDR_W - LINE_SHIFT - IW;
+	localparam WW = LINE_SHIFT - 2;	/* word in the line */
+	localparam [2:0] IDLE = 3'd0, LOOKUP = 3'd1, MREQ = 3'd2, MWAIT = 3'd3, DRAIN = 3'd4,
+		OUT = 3'd5;
+
+	reg [LB-1:0] data [0:NL-1];
+	reg [TW-1:0] tags [0:NL-1];
+	reg [NL-1:0] vld;
+	reg [2:0] st;
+	reg [3:0] t;	/* {lane, texel} being looked up */
+	reg drop;	/* inv while the miss was outstanding */
+	reg [ADDR_W-LINE_SHIFT-1:0] mline;
+	reg pv;	/* a hit's data arrives (q) this cycle for texel pt, word pw */
+	reg [3:0] pt;
+	reg [WW-1:0] pw;
+	reg [LB-1:0] q;
+
+	reg [511:0] ta_addr_q;
+
+	wire bil = tc_ctl[0];
+	wire [ADDR_W-1:0] a = ta_addr_q[t*32 +: ADDR_W];
+	wire [IW-1:0] idx = a[LINE_SHIFT +: IW];
+	wire [TW-1:0] atag = a[ADDR_W-1 -: TW];
+	wire hit = vld[idx] && tags[idx] == atag;
+	/* Is texel t looked up, and the next t after it (16: the quad is done). */
+	wire use_t = tc_mask[t[3:2]] && (t[1:0] == 2'd0 || bil);
+	wire [4:0] nxt = !tc_mask[t[3:2]] || !bil ? {1'b0, t[3:2], 2'b00} + 5'd4 : {1'b0, t} + 5'd1;
+
+	assign ta_ready = st == IDLE;
+	assign tc_valid = st == OUT;
+	assign req_valid = st == MREQ;
+	assign req_write = 1'b0;
+	assign req_line = mline;
 	assign req_be = {LINE_BYTES{1'b0}};
-	assign req_wdata = {(LINE_BYTES*8){1'b0}};
+	assign req_wdata = {LB{1'b0}};
 	assign req_tag = 8'd0;
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, inv, ta_valid, ta_addr, ta_wts, ta_tag, ta_mask, ta_ctl, ta_value, ta_last,
-		tc_ready, req_ready, rsp_valid, rsp_write, rsp_tag, rsp_rdata, rsp_error,
-		(TC_BYTES != 0)};
+	always @(posedge clk)
+		q <= data[idx];
+
+	always @(posedge clk)
+		if (st == MWAIT && rsp_valid && !rsp_error) begin
+			data[mline[IW-1:0]] <= rsp_rdata;
+			tags[mline[IW-1:0]] <= mline[ADDR_W-LINE_SHIFT-1 -: TW];
+		end
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st <= IDLE;
+			vld <= {NL{1'b0}};
+			pv <= 1'b0;
+			drop <= 1'b0;
+		end else begin
+			pv <= 1'b0;
+			if (pv)
+				tc_texels[pt*32 +: 32] <= q[pw*32 +: 32];
+			case (st)
+			IDLE: if (ta_valid) begin
+				ta_addr_q <= ta_addr;
+				tc_wts <= ta_wts;
+				tc_tag <= ta_tag;
+				tc_mask <= ta_mask;
+				tc_ctl <= ta_ctl;
+				tc_value <= ta_value;
+				tc_last <= ta_last;
+				tc_texels <= 512'd0;
+				t <= 4'd0;
+				st <= ta_ctl[2] ? OUT : LOOKUP;
+			end
+			LOOKUP:
+				if (use_t && !hit) begin
+					mline <= a[ADDR_W-1:LINE_SHIFT];
+					drop <= 1'b0;
+					st <= MREQ;
+				end else begin
+					if (use_t) begin
+						pv <= 1'b1;
+						pt <= t;
+						pw <= a[2 +: WW];
+					end
+					t <= nxt[3:0];
+					if (nxt[4])
+						st <= DRAIN;
+				end
+			MREQ: if (req_ready)
+				st <= MWAIT;
+			MWAIT: if (rsp_valid) begin
+				if (rsp_error) begin
+					/* the texel stays 0 */
+					t <= nxt[3:0];
+					st <= nxt[4] ? DRAIN : LOOKUP;
+				end else begin
+					vld[mline[IW-1:0]] <= !drop && !inv;
+					st <= LOOKUP;
+				end
+			end
+			DRAIN: st <= OUT;
+			OUT: if (tc_ready)
+				st <= IDLE;
+			default: st <= IDLE;
+			endcase
+			if (inv) begin
+				vld <= {NL{1'b0}};
+				drop <= 1'b1;
+			end
+		end
+	end
+
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, a[1:0], ta_addr_q};
 endmodule
 
 `default_nettype wire
