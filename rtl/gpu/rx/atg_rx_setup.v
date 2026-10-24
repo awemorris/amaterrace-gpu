@@ -32,7 +32,7 @@ module atg_rx_setup (
 	/* Triangles from atg_rx_clip */
 	input wire cl_valid,
 	output wire cl_ready,
-	input wire [699:0] cl_tri,
+	input wire [701:0] cl_tri,	/* [701:700] the kind (used from the line and point step) */
 	input wire cl_last,
 	/* To atg_rx_scan */
 	output reg sp_valid,
@@ -430,7 +430,7 @@ module atg_rx_setup (
 	assign sp_tri[351:288] = {by1[15:0], bx1[15:0], by0[15:0], bx0[15:0]};
 	assign sp_tri[767:736] = {3'd0, raw, front, keep};
 
-	wire unused_ok = &{1'b0, fd_busy, acc[49:48], ce[8], bx0[17:16], by0[17:16],
+	wire unused_ok = &{1'b0, fd_busy, cl_tri[701:700], acc[49:48], ce[8], bx0[17:16], by0[17:16],
 		bx1[17:16], by1[17:16], ck, ej, ek};
 endmodule
 

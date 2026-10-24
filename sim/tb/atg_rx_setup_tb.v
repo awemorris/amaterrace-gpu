@@ -26,7 +26,7 @@ module atg_rx_setup_tb;
 	reg [8:0] st_idx = 0;
 	reg [31:0] st_wdata = 0;
 	reg cl_valid = 1'b0, cl_last = 1'b0, sp_ready = 1'b0;
-	reg [699:0] cl_tri = 0;
+	reg [701:0] cl_tri = 0;
 	wire cl_ready, sp_valid, sp_last, busy;
 	wire [767:0] sp_tri;
 
@@ -78,7 +78,7 @@ module atg_rx_setup_tb;
 			for (i = 0; i < 10; i = i + 1)
 				st_put(idx[i], w[i]);
 			cl_valid <= 1'b1;
-			cl_tri <= tv;
+			cl_tri <= {2'd2, tv};
 			cl_last <= n[0];
 			cycles = 0;
 			@(posedge clk);
@@ -87,7 +87,7 @@ module atg_rx_setup_tb;
 				cycles = cycles + 1;
 			end
 			cl_valid <= 1'b0;
-			cl_tri <= ~tv;	/* not used after it is taken */
+			cl_tri <= {2'd2, ~tv};	/* not used after it is taken */
 			while (!(sp_valid && sp_ready)) begin
 				sp_ready <= ($random(seed) & 3) == 0;
 				@(posedge clk);

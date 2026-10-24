@@ -65,7 +65,7 @@ module atg_rx #(
 	output wire [15:0] ord_seq
 );
 	wire cl_valid, cl_ready, cl_last;
-	wire [699:0] cl_tri;
+	wire [701:0] cl_tri;
 	wire sp_valid, sp_ready, sp_last;
 	wire [767:0] sp_tri;
 	wire c_pt_rd, f_pt_rd, f_pt_busy;

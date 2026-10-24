@@ -387,6 +387,152 @@ def clip(pos, pt, free):
             return [tri(a, b, ibc, 0), tri(a, ibc, ica, free)]
     raise AssertionError('clip')
 
+# ------------------------------------------------- clip with CAPS[30]
+
+S_DEPTH_CLAMP = 0x059
+S_RAST_MODE = 0x05A
+CLIP_EPS = 0x37800000	# 2^-16
+GUARD = 0x467FFC00	# 16383.0
+EMPTY7 = [0, 0, 0, ONE, 0, 0, 0]
+
+
+def _fkey_cmp(b):
+    """An ordering key of a non-NaN fp32 (-0 equals +0, denormals by value)."""
+    return -(b & 0x7FFFFFFF) if b >> 31 else b & 0x7FFFFFFF
+
+
+def fle(a, b):
+    """a <= b exactly (no flushing); False when either is NaN."""
+    return not _isnan(a) and not _isnan(b) and _fkey_cmp(a) <= _fkey_cmp(b)
+
+
+def _cin(b):
+    """Inside a clip plane: dist >= 0, -0 and denormals included, NaN out."""
+    return not _isnan(_ftz(b)) and not (_ftz(b) >> 31 and _ftz(b) & 0x7FFFFFFF)
+
+
+def _x4(w):
+    """4 w for a normal positive w (infinity on overflow)."""
+    e = (w >> 23) & 0xFF
+    return 0x7F800000 if e >= 253 else w + (2 << 23)
+
+
+def _vp_ok(scale, off):
+    """|off| <= 6144 and |scale| <= 2048: a vertex with |x| <= 4 w then lies
+    inside the guard band (6144 + 4 x 2048 = 14336 <= 16383)."""
+    return (fle(off & 0x7FFFFFFF, 0x45C00000) and fle(scale & 0x7FFFFFFF, 0x45000000))
+
+
+def clip_planes(dc):
+    """The depth planes that apply: (near, far)."""
+    clip = dc >> 1 & 1
+    return (not clip or not dc & 1), (clip and not dc & 1)
+
+
+def clip_dist(plane, v, vp):
+    """The plane's distance of a vertex (7 words), in the RTL's order."""
+    xs, ys, xo, yo = vp
+    x, y, z, w = v[:4]
+    if plane == 0:
+        return fsub(w, CLIP_EPS)
+    if plane == 1:
+        return z
+    if plane == 2:
+        return fsub(w, z)
+    c, sc, of = (x, xs, xo) if plane in (3, 4) else (y, ys, yo)
+    sm = fadd(fmul(of, w), fmul(sc, c))
+    g = fmul(GUARD, w)
+    return fsub(g, sm) if plane in (3, 5) else fadd(g, sm)
+
+
+def clip_cut(poly, plane, vp, line):
+    """One Sutherland-Hodgman cut (spec atg_rx_cpoly §4): unchanged when all
+    are inside, [] when none is; intersections from the inside vertex; a
+    triangle's result starts at the first inside vertex after an outside
+    one (so one cut gives atg_rx_clip's earlier near-plane order)."""
+    n = len(poly)
+    d = [clip_dist(plane, v, vp) for v in poly]
+    ins = [_cin(x) for x in d]
+    if all(ins):
+        return poly
+    if not any(ins):
+        return []
+    j = 0
+    if not line:
+        j = next(i for i in range(n) if ins[i] and not ins[(i - 1) % n])
+    out = []
+    for k in range(n):
+        pi = (j + k) % n
+        qi = (pi + 1) % n
+        if ins[pi]:
+            out.append(poly[pi])
+        if (not line or k == 0) and ins[pi] != ins[qi]:
+            a, b = (pi, qi) if ins[pi] else (qi, pi)
+            t = fdiv(d[a], fsub(d[a], d[b]))
+            out.append(_lerp(poly[a], poly[b], t))
+        if line and k == 1:
+            break
+    return out
+
+
+def clip2(st, kind, pos, pt, free):
+    """atg_rx_clip with CAPS[30] (spec atg_rx_clip §4): kind 0 point, 1
+    line, 2 (or 3) triangle; st the STATE (VIEWPORT, DEPTH_CLAMP,
+    RAST_MODE).  Returns cl_tri dicts with 'kind'."""
+    vp = (st[S_VIEWPORT], st[S_VIEWPORT + 1], st[S_VIEWPORT + 2], st[S_VIEWPORT + 3])
+    dc, rm = st[S_DEPTH_CLAMP], st[S_RAST_MODE]
+    kind = 2 if kind == 3 else kind
+    near, far = clip_planes(dc)
+
+    def out(a, b, c, fl, k):
+        return {'pos': [a[:4], b[:4], c[:4]], 'wt': [a[4:], b[4:], c[4:]],
+                'pt': list(pt), 'free': fl, 'raw': 0, 'kind': k}
+    empty = [out(EMPTY7, EMPTY7, EMPTY7, free, 2)]
+    if rm >> 6 & 1:
+        return empty
+    v = [pos[i] + IDW[i] for i in range(3)]
+    nv = 1 if kind == 0 else 2 if kind == 1 else 3
+
+    def depth_in(x):
+        return ((not near or _cin(x[2])) and (not far or fle(x[2], x[3])))
+
+    def w_in(x):
+        return fle(CLIP_EPS, x[3])
+    if kind == 0:
+        if w_in(v[0]) and depth_in(v[0]):
+            return [out(v[0], v[0], v[0], free, 0)]
+        return empty
+    okx, oky = _vp_ok(vp[0], vp[2]), _vp_ok(vp[1], vp[3])
+
+    def xy_in(x):
+        if not w_in(x):
+            return False
+        w4 = _x4(x[3])
+        return (okx and fle(x[0] & 0x7FFFFFFF, w4) and oky and fle(x[1] & 0x7FFFFFFF, w4))
+    if all(w_in(x) and depth_in(x) and xy_in(x) for x in v[:nv]):
+        poly = v[:nv]
+    else:
+        guard = not all(xy_in(x) for x in v[:nv])
+        planes = [0] + ([1] if near else []) + ([2] if far else []) + \
+            ([3, 4, 5, 6] if guard else [])
+        poly = v[:nv]
+        for pl in planes:
+            poly = clip_cut(poly, pl, vp, kind == 1)
+            if not poly:
+                return empty
+    if kind == 1:
+        return [out(poly[0], poly[1], poly[1], free, 1)]
+    tris = []
+    for i in range(1, len(poly) - 1):
+        tris.append(out(poly[0], poly[i], poly[i + 1], free if i == len(poly) - 2 else 0, 2))
+    return tris
+
+
+def pack_cl2(tri):
+    """cl_tri with CAPS[30]: 702 bits, the kind in [701:700]."""
+    return pack_cl(tri) | tri.get('kind', 2) << 700
+
+
 # ---------------------------------------------------------------- scan
 
 
