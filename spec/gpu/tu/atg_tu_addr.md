@@ -22,7 +22,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rst_n` | in | 1 | Synchronous reset, active low. |
 | **STATE broadcast (from atg_cp_state)** | | | |
 | `st_we` | in | 1 | One-cycle write of STATE[st_idx]. |
-| `st_idx` | in | 9 | STATE index (design §2.3). |
+| `st_idx` | in | 10 | STATE index (design §2.3). |
 | `st_wdata` | in | 32 | STATE value; the block keeps the words of its range. |
 | `desc_busy` | out | 1 | atg_tu_desc computes level offsets (part of STATUS.TU_BUSY). |
 | **Requests from the SU (atg_su tx_*/tr_*)** | | | |
@@ -30,6 +30,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `tx_ready` | out | 1 | Taken (IDLE and desc_busy low). |
 | `tx_op` | in | 8 | [1:0] 0 texl, 1 texb, 2 texf, 3 texsz; modifiers (the uop's TEX op bits): [2] .c form, [3] gather (texl) or the depth query (texsz.d), [5:4] gather's component, [6] query (texb: texqlod; texsz: texsz.l), [7] 0. |
 | `tx_slot` | in | 4 | Slot. |
+| `tx_vs` | in | 1 | The vertex stage's slots (atg_tu_desc's slots 16-31). |
 | `tx_mask` | in | 4 | Lanes. |
 | `tx_coord` | in | 640 | 4 lanes × {u (or x), v (or y), lod/bias/level, Dref (.c forms, else 0), the third coordinate (.3 forms: layer, w, cube z; else 0)} × 32 bits, lane 0 first. |
 | `tx_off` | in | 12 | The texel offsets {dw, dv, du}, signed 4 bits each. |
@@ -47,7 +48,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ta_value` | out | 128 | Per lane: texsz {h, w}; texsz.l the level count; texsz.d the layer count or depth; texqlod {λ'[15:0], the level accessed [15:0]} (8 fraction bits); compare the reference Dref (word 3). |
 | `ta_last` | out | 1 | Last. |
 
-25 ports.
+26 ports.
 
 ## 4. Behaviour
 
@@ -109,6 +110,7 @@ Target one quad per cycle.  v1: 2 cycles per lane, 9 cycles per quad (10 for tex
 - `PASS atg_tu_addr.wide` — 8- and 16-byte texels: the slots, the row passes with 3D and mip linear filtering; `-DMUT_TU_ROW` (the second row read as the first) fails it and `formats`
 - `PASS atg_tu_addr.depthfmt` — D16, X8_D24, D32F, D24S8 with and without compare (linear filtering without compare), the stencil aspect
 - `PASS atg_tu_addr.small` — 1- and 2-byte texels on small images with clamp to border, the tiled bit read as linear
+- `PASS atg_tu_addr.stage` — the vertex stage's 16 slots (STATE 0x200-0x2FF, tx_vs) beside the fragment stage's
 - `PASS atg_tu_addr.blocks` — the ETC2 and EAC formats: block addresses and texel positions, the row and four-pass sequences with mip and 3D linear, gather, arrays and cubes
 - `PASS atg_tu_addr` at the end.
 

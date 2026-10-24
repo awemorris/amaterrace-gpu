@@ -77,7 +77,7 @@ module atg_tu_addr (
 	input wire rst_n,
 	/* STATE broadcast (from atg_cp_state) */
 	input wire st_we,
-	input wire [8:0] st_idx,
+	input wire [9:0] st_idx,
 	input wire [31:0] st_wdata,
 	output wire desc_busy,
 	/* Requests from the SU (atg_su tx_* /tr_*) */
@@ -85,6 +85,7 @@ module atg_tu_addr (
 	output wire tx_ready,
 	input wire [7:0] tx_op,
 	input wire [3:0] tx_slot,
+	input wire tx_vs,	/* a vertex warp's: the vertex stage's slots */
 	input wire [3:0] tx_mask,
 	input wire [639:0] tx_coord,
 	input wire [11:0] tx_off,
@@ -114,7 +115,7 @@ module atg_tu_addr (
 	reg [1:0] k;
 	reg [3:0] pas;	/* {column, row, level, slice} */
 	reg [7:0] opr;
-	reg [3:0] slot;
+	reg [4:0] slot;
 	reg [639:0] crd;
 	reg [11:0] offs;
 	reg signed [16:0] lam_q;
@@ -138,7 +139,7 @@ module atg_tu_addr (
 	wire [20:0] tfmt;
 	atg_tu_desc desc (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-		.busy(desc_busy), .rd_slot(st == IDLE ? tx_slot : slot), .rd_level(lvl),
+		.busy(desc_busy), .rd_slot(st == IDLE ? {tx_vs, tx_slot} : slot), .rd_level(lvl),
 		.rd_base(base), .rd_size(dsize), .rd_image(image), .rd_stride(stride),
 		.rd_samp(samp), .rd_lod(dlod), .rd_fmt(tfmt), .rd_loff(loff), .rd_plane(plane)
 	);
@@ -308,7 +309,7 @@ module atg_tu_addr (
 			case (st)
 			IDLE: if (tx_valid && !desc_busy) begin
 				opr <= tx_op;
-				slot <= tx_slot;
+				slot <= {tx_vs, tx_slot};
 				crd <= tx_coord;
 				offs <= tx_off;
 				ta_mask <= tx_mask;

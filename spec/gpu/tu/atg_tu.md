@@ -26,7 +26,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rst_n` | in | 1 | Synchronous reset, active low. |
 | **STATE broadcast (from atg_cp_state)** | | | |
 | `st_we` | in | 1 | One-cycle write of STATE[st_idx]. |
-| `st_idx` | in | 9 | STATE index (design §2.3). |
+| `st_idx` | in | 10 | STATE index (design §2.3; 0x200-0x2FF the vertex stage's slots). |
 | `st_wdata` | in | 32 | STATE value; the block keeps the words of its range. |
 | `inv` | in | 1 | INVALIDATE[1] (T$). |
 | `busy` | out | 1 | STATUS.TU_BUSY (approximation: a stage holds a quad, or atg_tu_desc computes level offsets). |
@@ -35,6 +35,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `tx_ready` | out | 1 | Taken. |
 | `tx_op` | in | 8 | [1:0] 0 texl, 1 texb, 2 texf, 3 texsz; modifiers (the uop's TEX op bits): [2] .c form, [3] gather (texl) or the depth query (texsz.d), [5:4] gather's component, [6] query (texb: texqlod; texsz: texsz.l), [7] 0. |
 | `tx_slot` | in | 4 | Slot. |
+| `tx_vs` | in | 1 | The request is a vertex warp's: the vertex stage's slots (STATE 0x200 + 16 slot). |
 | `tx_mask` | in | 4 | Lanes. |
 | `tx_coord` | in | 640 | 4 lanes × {u (or x), v (or y), lod/bias/level, Dref (.c forms, else 0), the third coordinate (.3 forms, else 0)} × 32 bits, lane 0 first. |
 | `tx_off` | in | 12 | The texel offsets {dw, dv, du}, signed 4 bits each. |

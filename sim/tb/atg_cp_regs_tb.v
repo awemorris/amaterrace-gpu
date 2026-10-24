@@ -38,8 +38,8 @@ module regs_bench #(
 	output wire [31:0] hcr_wmask,
 	output wire [9:0] hcr_ridx,
 	output wire alias_we,
-	output wire [8:0] alias_idx,
-	output wire [8:0] alias_ridx,
+	output wire [9:0] alias_idx,
+	output wire [9:0] alias_ridx,
 	input wire [31:0] ctl_rdata,
 	input wire [31:0] state_rdata,
 	input wire [3:0] perf_busy,
@@ -90,7 +90,7 @@ module atg_cp_regs_tb;
 	wire [31:0] rd0, rd1, rd2, rd3, hcr_wdata, hcr_wmask;
 	wire hcr_we, alias_we;
 	wire [9:0] hcr_widx, hcr_ridx;
-	wire [8:0] alias_idx, alias_ridx;
+	wire [9:0] alias_idx, alias_ridx;
 
 	/* PERF only; PERF, VEND, CPFW; every capability (more than two entries). */
 	regs_bench #(.XCAP(8'h04)) b0 (
@@ -226,7 +226,7 @@ module atg_cp_regs_tb;
 		for (i = 0; i < 8; i = i + 1)
 			expect0("id", 17'h0C0 + i * 4, 32'h11 * i);
 		expect0("id", 17'h0E0, 32'd0);
-		expect0("id", 17'h01800, 32'd0);
+		expect0("id", 17'h01C00, 32'd0);
 		expect0("id", 17'h10000, 32'd0);
 		if (errors == 0)
 			$display("PASS atg_cp_regs.id");
@@ -258,9 +258,19 @@ module atg_cp_regs_tb;
 			$display("FAIL atg_cp_regs.snoop: partial alias write");
 		end
 		wr(17'h017FC, 32'h1, 4'b1111);
-		if (hcr_we || !alias_we || alias_idx !== 9'h1FF) begin
+		if (hcr_we || !alias_we || alias_idx !== 10'h1FF) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.snoop: alias write");
+		end
+		wr(17'h01BFC, 32'h1, 4'b1111);
+		if (hcr_we || !alias_we || alias_idx !== 10'h2FF) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.snoop: alias write of the vertex stage's slots");
+		end
+		wr(17'h01C00, 32'h1, 4'b1111);
+		if (hcr_we || alias_we) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.snoop: a write above STATE");
 		end
 		wr(17'h10000, 32'h1, 4'b1111);
 		if (hcr_we || alias_we) begin

@@ -40,9 +40,9 @@ module atg_cp_seq_wait (
 	input wire [7:0] flags,
 	input wire [7:0] p,
 	input wire set_val,
-	input wire [8:0] sidx,
+	input wire [9:0] sidx,
 	output reg pay_we,
-	output reg [8:0] pay_idx,
+	output reg [9:0] pay_idx,
 	output reg [7:0] pay_wait,
 	output reg [7:0] pre,
 	output reg pre_f,
@@ -85,31 +85,34 @@ module atg_cp_seq_wait (
 	localparam VF_1D = 1;	/* also ATTR_LIMIT, 0x1D0-0x1DF */
 `endif
 
+	wire [8:0] s9 = sidx[8:0];
+
 	always @(*) begin
 		pay_we = 1'b0;
-		pay_idx = 9'd0;
+		pay_idx = 10'd0;
 		pay_wait = 8'd0;
 		if (set_val) begin
 			pay_we = 1'b1;
 			pay_idx = sidx;
-			pay_wait = sidx < GHCI_S_VF ? B_BLT : sidx < GHCI_S_RX ? B_VF :
-				sidx < GHCI_S_ROP ? B_RXROP : sidx < GHCI_S_TU ? B_ROPW :
-				sidx < GHCI_S_PROG ? B_TUW : sidx < GHCI_S_SA ? B_PROGW :
-				(sidx[8:5] == GHCI_S_ATTR_DST[8:5] && (VF_1D != 0 || !sidx[4])) ? B_VF : 8'd0;
+			/* 0x200-0x2FF: the vertex stage's texture slots, as the TU range. */
+			pay_wait = sidx[9] ? B_TUW : s9 < GHCI_S_VF ? B_BLT : s9 < GHCI_S_RX ? B_VF :
+				s9 < GHCI_S_ROP ? B_RXROP : s9 < GHCI_S_TU ? B_ROPW :
+				s9 < GHCI_S_PROG ? B_TUW : s9 < GHCI_S_SA ? B_PROGW :
+				(s9[8:5] == GHCI_S_ATTR_DST[8:5] && (VF_1D != 0 || !s9[4])) ? B_VF : 8'd0;
 		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
 			pay_we = 1'b1;
-			pay_idx = GHCI_S_RAW + {1'b0, p};
+			pay_idx = {1'b0, GHCI_S_RAW + {1'b0, p}};
 			pay_wait = B_RX;
 		end else if (vendor && op == VOP_DBG_MARK && p == 8'd0) begin
 			pay_we = 1'b1;
-			pay_idx = GHCI_S_DBG_MARK;
+			pay_idx = {1'b0, GHCI_S_DBG_MARK};
 		end else if (!vendor && op == OP_DISPATCH && p < 8'd3) begin
 			pay_we = 1'b1;
-			pay_idx = GHCI_S_GRID_X + {1'b0, p};
+			pay_idx = {1'b0, GHCI_S_GRID_X + {1'b0, p}};
 			pay_wait = B_SU;
 		end else if (!vendor && op == OP_LOAD_CONST && p < 8'd3) begin
 			pay_we = 1'b1;
-			pay_idx = GHCI_S_LC_REGION + {1'b0, p};
+			pay_idx = {1'b0, GHCI_S_LC_REGION + {1'b0, p}};
 			pay_wait = B_SU;
 		end
 	end

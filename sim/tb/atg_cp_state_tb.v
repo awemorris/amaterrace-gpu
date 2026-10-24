@@ -9,7 +9,7 @@
  * atg_cp_state_tb: host and µop writes reach the RAM and st_*, the locks
  * (not open, the BLT range while the BLT is busy) refuse host writes with
  * lock_fault, a µop write wins over a host write, the CPU port reads, and
- * a replay broadcasts all 512 words in order.
+ * a replay broadcasts all 768 words in order (0x200-0x2FF included).
  */
 
 `timescale 1ns / 1ps
@@ -21,11 +21,11 @@ module atg_cp_state_tb;
 	always #5 clk = !clk;
 
 	reg alias_we = 0, uop_we = 0, open = 1, blt_busy = 0, replay = 0;
-	reg [8:0] alias_idx = 0, alias_ridx = 0, uop_idx = 0, cpu_ridx = 0;
+	reg [9:0] alias_idx = 0, alias_ridx = 0, uop_idx = 0, cpu_ridx = 0;
 	reg [31:0] alias_wdata = 0, uop_wdata = 0;
 	wire [31:0] alias_rdata, cpu_rdata, st_wdata;
 	wire lock_fault, st_we, replay_busy;
-	wire [8:0] st_idx;
+	wire [9:0] st_idx;
 
 	atg_cp_state dut (
 		.clk(clk), .rst_n(rst_n),
@@ -40,11 +40,11 @@ module atg_cp_state_tb;
 
 	integer errors = 0;
 	integer i;
-	reg [31:0] model [0:511];
+	reg [31:0] model [0:767];
 
 	/* Every st_we is checked against the expected (index, value). */
 	reg exp_we;
-	reg [8:0] exp_idx;
+	reg [9:0] exp_idx;
 	reg [31:0] exp_val;
 	reg exp_fault;
 
@@ -62,7 +62,7 @@ module atg_cp_state_tb;
 	endtask
 
 	task host;
-		input [8:0] idx;
+		input [9:0] idx;
 		input [31:0] v;
 		input ok;
 		begin
@@ -83,7 +83,7 @@ module atg_cp_state_tb;
 	endtask
 
 	task uop;
-		input [8:0] idx;
+		input [9:0] idx;
 		input [31:0] v;
 		begin
 			@(negedge clk);
@@ -103,7 +103,7 @@ module atg_cp_state_tb;
 
 	task readback;
 		input [8*40-1:0] what;
-		input [8:0] idx;
+		input [9:0] idx;
 		begin
 			@(negedge clk);
 			alias_ridx = idx;
@@ -123,15 +123,18 @@ module atg_cp_state_tb;
 		repeat (3) @(posedge clk);
 		rst_n = 1;
 		/* write */
-		for (i = 0; i < 512; i = i + 1)
+		for (i = 0; i < 768; i = i + 1)
 			uop(i, 32'h1000 * i + 7);
 		host(9'h123, 32'hCAFE0123, 1'b1);
 		host(9'h01F, 32'h0000B17F, 1'b1);
 		uop(9'h1E9, 32'h00000044);
+		host(10'h2A5, 32'h00002A5A, 1'b1);	/* the vertex stage's texture slots */
 		readback("write", 9'h123);
 		readback("write", 9'h01F);
 		readback("write", 9'h1E9);
 		readback("write", 9'h000);
+		readback("write", 10'h2A5);
+		readback("write", 10'h2FF);
 		if (errors == 0)
 			$display("PASS atg_cp_state.write");
 		e0 = errors;
@@ -168,7 +171,7 @@ module atg_cp_state_tb;
 			$display("PASS atg_cp_state.lock");
 		e1 = errors;
 		/* cpu */
-		for (i = 0; i < 512; i = i + 37)
+		for (i = 0; i < 768; i = i + 37)
 			readback("cpu", i);
 		if (errors == e1)
 			$display("PASS atg_cp_state.cpu");
@@ -180,9 +183,9 @@ module atg_cp_state_tb;
 		replay = 0;
 		next = 0;
 		i = 0;
-		while (replay_busy && i < 600) begin
+		while (replay_busy && i < 900) begin
 			if (st_we) begin
-				if (st_idx !== next[8:0] || st_wdata !== model[next[8:0]]) begin
+				if (st_idx !== next[9:0] || st_wdata !== model[next[9:0]]) begin
 					errors = errors + 1;
 					$display("FAIL atg_cp_state.replay: %h %h", st_idx, st_wdata);
 				end
@@ -191,7 +194,7 @@ module atg_cp_state_tb;
 			@(negedge clk);
 			i = i + 1;
 		end
-		if (next != 512 || i != 513) begin
+		if (next != 768 || i != 769) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_state.replay: %0d words in %0d cycles", next, i);
 		end

@@ -116,8 +116,11 @@ def rdesc(r, tiled=None, samp_mask=SAMP_BASIC, samp_set=0, clamps=False, fmt=Non
 
 
 def set_desc(out, slot, d):
+    """Slot 0-15: STATE 0x090 + 16 slot; 16-31: the vertex stage's slots at
+    0x200 + 16 (slot - 16)."""
     for k, v in enumerate(d):
-        out.append('S %03x %08x' % (S_TU + 16 * slot + k, v))
+        b = S_TU + 16 * slot if slot < 16 else 0x200 + 16 * (slot - 16)
+        out.append('S %03x %08x' % (b + k, v))
 
 
 def quad(out, r, op, slot, d, coords, mask, stats, off=0):
@@ -126,7 +129,7 @@ def quad(out, r, op, slot, d, coords, mask, stats, off=0):
     crd = pack([w for c in coords for w in c])
     tag = r.getrandbits(16)
     last = r.getrandbits(1)
-    out.append('Q %02x %x %x %04x %x %03x %0160x %x' % (op, slot, mask, tag, last, off, crd,
+    out.append('Q %02x %02x %x %04x %x %03x %0160x %x' % (op, slot, mask, tag, last, off, crd,
                                                        len(passes)))
     for a, bo, wts, ctl, val in passes:
         out.append('A %0128x %04x %032x %013x %032x' %
@@ -836,6 +839,23 @@ def fmt_addr_vectors(r):
         quad(out, r, op, sl, descs[sl], coords(op, 'w'), r.choice([15, 15, r.randrange(16)]),
              stats, off=r.choice([0, r.getrandbits(12)]))
     out.append('P blocks')
+    # The stages: the vertex stage's slots (STATE 0x200-0x2FF, tx_vs) and
+    # the fragment stage's, different descriptors in the same slot numbers.
+    for n in range(300):
+        if n % 50 == 0:
+            for sl in range(32):
+                t = r.choice([0, 0, 1, 2])
+                d = rdesc(r, typ=t, samp_mask=0x1FFFF,
+                          cnt=r.choice([0, 1, 2, 3]) if t in (1, 2) else 0)
+                if r.random() < 0.5:
+                    d[T.D_FORMAT] = rtfmt(r)
+                descs[sl] = d
+                set_desc(out, sl, d)
+        sl = r.randrange(32)
+        op = r.choice([0, 0, 1, 2, 3, 0x08])
+        quad(out, r, op, sl, descs[sl], coords(op, 'w'), r.choice([15, 15, r.randrange(16)]),
+             stats, off=r.choice([0, r.getrandbits(12)]))
+    out.append('P stage')
     print('tu-vectors: format addr passes %s' %
           {k: v for k, v in stats.items() if k[:2] == 'np'})
     return out
@@ -1004,7 +1024,7 @@ def quad_vectors(r):
     descs = {}
     for n in range(1500):
         if n % 50 == 0:
-            for sl in range(16):
+            for sl in range(32):
                 t = r.choice([0, 0, 1, 2, 3])
                 d = rdesc(r, typ=t, square=t == 3, samp_mask=0x1FFFF,
                           cnt=r.choice([0, 1, 2, 5]) if t in (1, 2) else 0)
@@ -1017,7 +1037,7 @@ def quad_vectors(r):
                     d[T.D_FORMAT] = rtfmt(r, r.choice(SAMPLED + [91]))
                 descs[sl] = d
                 set_desc(out, sl, d)
-        sl = r.randrange(16)
+        sl = r.randrange(32)
         d = descs[sl]
         op = r.choice([0, 0, 0, 1, 1, 2, 3, 0x08, 0x28, 0x0C, 0x41])
         if op & 3 == 2:
@@ -1032,7 +1052,7 @@ def quad_vectors(r):
         off = r.choice([0, 0, r.getrandbits(12)])
         coords = [tuple(c) + (0,) * (5 - len(c)) for c in coords]
         words = T.sample(mem, op, d, coords, mask, off)
-        out.append('Q %02x %x %x %03x %0160x %0128x' %
+        out.append('Q %02x %02x %x %03x %0160x %0128x' %
                    (op, sl, mask, off, pack([w for c in coords for w in c]), pack(words)))
     out.append('P quads')
     return out

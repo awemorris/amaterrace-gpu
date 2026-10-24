@@ -13,7 +13,7 @@
  *
  * Writes to 0x000-0xFFC go out on hcr_* in the cycle of reg_wr (every
  * module takes the writes of its own word indices); whole-word writes to
- * 0x1000-0x17FC go out on alias_* (a partial-strobe alias write is
+ * 0x1000-0x1BFC go out on alias_* (a partial-strobe alias write is
  * dropped here).  Reads: the answer is due the cycle after reg_rd; the
  * index is registered (hcr_ridx) and every module answers its own
  * registers combinationally from it, this module ORs them with its own,
@@ -58,10 +58,10 @@ module atg_cp_regs #(
 	output wire [31:0] hcr_wdata,
 	output wire [31:0] hcr_wmask,
 	output wire [9:0] hcr_ridx,
-	/* STATE alias (0x1000-0x17FC, to atg_cp_state) */
+	/* STATE alias (0x1000-0x1BFC, to atg_cp_state) */
 	output wire alias_we,
-	output wire [8:0] alias_idx,
-	output wire [8:0] alias_ridx,
+	output wire [9:0] alias_idx,
+	output wire [9:0] alias_ridx,
 	/* Read data of the other modules (0 outside their registers) */
 	input wire [31:0] ctl_rdata,
 	input wire [31:0] irq_rdata,
@@ -84,9 +84,11 @@ module atg_cp_regs #(
 	assign hcr_widx = reg_waddr[11:2];
 	assign hcr_wdata = reg_wdata;
 	assign hcr_wmask = {{8{reg_wstrb[3]}}, {8{reg_wstrb[2]}}, {8{reg_wstrb[1]}}, {8{reg_wstrb[0]}}};
-	assign alias_we = reg_wr && reg_waddr[16:11] == 6'b000010 && reg_wstrb == 4'hF;
-	assign alias_idx = reg_waddr[10:2];
-	assign alias_ridx = reg_raddr[10:2];
+	/* 0x1000-0x1BFC: STATE[0..0x2FF]. */
+	assign alias_we = reg_wr && reg_waddr[16:12] == 5'b00001 && reg_waddr[11:10] != 2'b11 &&
+		reg_wstrb == 4'hF;
+	assign alias_idx = reg_waddr[11:2];
+	assign alias_ridx = reg_raddr[11:2];
 
 	reg [31:0] scratch;
 	reg [31:0] counter;
@@ -124,7 +126,7 @@ module atg_cp_regs #(
 		end else if (reg_rd) begin
 			ridx_q <= reg_raddr[11:2];
 			rd_hcr_q <= reg_raddr[16:12] == 5'd0;
-			rd_state_q <= reg_raddr[16:11] == 6'b000010;
+			rd_state_q <= reg_raddr[16:12] == 5'b00001 && reg_raddr[11:10] != 2'b11;
 		end
 	end
 

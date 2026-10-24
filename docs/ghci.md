@@ -181,6 +181,7 @@ earlier work has completed.
 | 0x0A8 | DBG_STATUS | R | [0] busy, [1] error (the last access was refused) |
 | 0x0F00 | KICK | W | [0] BLIT, [1] DRAW, [2] DISPATCH, on the state register file's values (section 14) |
 | 0x1000..0x17FC | STATE[0..511] | RW | The state register file (section 8) |
+| 0x1800..0x1BFC | STATE[0x200..0x2FF] | RW | (CAPS[30]) The vertex stage's texture slots (sections 8.1, 8.5) |
 
 The extended capability list starts at 0x100 when present.
 

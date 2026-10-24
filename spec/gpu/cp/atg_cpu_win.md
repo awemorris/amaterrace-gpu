@@ -88,7 +88,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fw_last` | out | 1 | Last dword of a packet. |
 | `fw_active` | out | 1 | PKT_INFO[31]: from v_valid until v_done (DONE and the FIFO empty). |
 | **Other** | | | |
-| `st_ridx` | out | 9 | STATE read index (atg_cp_state cpu port). |
+| `st_ridx` | out | 10 | STATE read index (atg_cp_state cpu port). |
 | `st_rdata` | in | 32 | STATE word, next cycle. |
 | `fence_last` | in | 32 | FENCE_LAST. |
 | `fence_ev` | in | 1 | Fence completion pulse (interrupt cause 1). |
@@ -152,3 +152,5 @@ design §2.4.7 (the control window), §2.4.8 (firmware use).
 Implemented in WS288 p017 (P2, branch p2-cpu); `sim/tb/atg_cpu_win_tb.v` passes.  p017 spec
 changes: IRQ_EN (0x0D), PKT_INFO/taken/DONE rules, every access answered from a register the
 cycle after (timing), d_be ignored in the window.
+
+2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.  STATE_IDX keeps 10 bits.

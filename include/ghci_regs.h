@@ -298,6 +298,8 @@
 /* TU (docs/ghci.md section 8.4): slot s's words, TEX_IMAGE, TEX_SAMPLER
  * and TEX_LOD. */
 #define GHCI_S_TEX(s, w) (GHCI_S_TU + 16u * (s) + (w))
+#define GHCI_S_TU_VS 0x200u /* CAPS[30]: the vertex stage's 16 slots */
+#define GHCI_S_TEX_VS(s, w) (GHCI_S_TU_VS + 16u * (s) + (w))
 #define GHCI_TEX_BASE 0u /* level 0 of layer 0, a multiple of 64 */
 #define GHCI_TEX_SIZE 1u /* [15:0] width, [31:16] height */
 #define GHCI_TEX_IMAGE 2u

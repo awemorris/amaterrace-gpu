@@ -82,7 +82,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fw_last` | out | 1 | Last. |
 | `fw_active` | out | 1 | Packet open. |
 | **CP state** | | | |
-| `st_ridx` | out | 9 | STATE read index. |
+| `st_ridx` | out | 10 | STATE read index. |
 | `st_rdata` | in | 32 | STATE data. |
 | `fence_last` | in | 32 | FENCE_LAST. |
 | `fence_ev` | in | 1 | Fence event. |
@@ -151,3 +151,5 @@ Wiring written in WS288 p023; the children implemented in WS288 p017 (P2, branch
 `sim/tb/atg_cpu_tb.v`.  p017 spec changes: window IRQ_EN (0x0D), FW_STATUS [16] PARK, the CPFW HCR
 layout (MBOX0-3 at 0x150, see atg_cpu_fw).  With the firmware (fw/cp/, p017 part 2):
 `sim/tb/atg_top_fw_tb.v` runs atg_top with HAS_CPU and the firmware images (spec/gpu/cp/atg_cp.md §8).
+
+2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.

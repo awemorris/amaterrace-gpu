@@ -19,10 +19,10 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `clk` | in | 1 | Clock (gclk). |
 | `rst_n` | in | 1 | Synchronous reset, active low. |
 | `st_we` | in | 1 | One-cycle write of STATE[st_idx]. |
-| `st_idx` | in | 9 | STATE index. |
+| `st_idx` | in | 10 | STATE index. |
 | `st_wdata` | in | 32 | STATE value. |
 | `busy` | out | 1 | A slot is marked or its offsets are being computed. |
-| `rd_slot` | in | 4 | Read port: the slot (combinational). |
+| `rd_slot` | in | 5 | Read port: the slot (combinational); 16-31 the vertex stage's. |
 | `rd_level` | in | 4 | Read port: the level. |
 | `rd_base` | out | 32 | TEX_BASE of rd_slot. |
 | `rd_size` | out | 32 | TEX_SIZE. |
@@ -72,3 +72,5 @@ New in WS288 p009 part F (P3, branch p3-p009f): the TU computes the level offset
 RGB565 (the MSAA work): the plane of format 4 is w × h × 2 bytes (linear) or the tiles × 32 bytes, rounded up to 64.
 
 TEX_FORMAT (2026-10-25): word 6 kept (21 bits, reset to 0: the TB scenes and firmware that never write it keep the earlier formats), rd_fmt, the plane by the format's texel size; TEX_IMAGE[8] reads as linear for texels other than 4 bytes.
+
+2026-10-25 (CAPS[30]): 32 slots: 0-15 at STATE 0x090-0x18F (fragment and compute programs), 16-31 at 0x200-0x2FF (vertex programs, docs/ghci.md §8.5); a marked slot of either is computed as before (32 × 12 offsets).
