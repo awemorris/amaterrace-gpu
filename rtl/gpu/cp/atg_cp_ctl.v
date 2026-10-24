@@ -21,8 +21,8 @@
  *   any but RESETTING →(a fault)→ FAULTED (first fault recorded, ev_fault)
  *   any →(CTRL.RESET)→ RS_WAIT →(mc_idle)→ RS_PULSE (core_rst_n 0, mc_flush,
  *            RUN/HALT/FAULT cleared) → RS_REPLAY →(!replay_busy)→ IDLE
- * HALT quiesces at once (the blocks freeze at their next memory access,
- * the p003 choice): HALTED waits only for memory idle and the ring's
+ * HALT quiesces at once (the blocks freeze at their next memory
+ * access): HALTED waits only for memory idle and the ring's
  * packet boundary.  quiesce is 1 in HALTING, HALTED, FAULTED and the RESET
  * order.  The watchdog counts cycles with cmd_active while WDT_EN, except
  * those with wdt_hold (the count pauses); at WDT_CYCLES it is a fault of
@@ -66,7 +66,7 @@ module atg_cp_ctl #(
 	input wire ring_empty,
 	input wire ring_busy,
 	input wire cmd_active,
-	input wire wdt_hold,	/* p017: the count pauses (the CPU waits on its FIFO or memory) */
+	input wire wdt_hold,	/* the count pauses (the CPU waits on its FIFO or memory) */
 	input wire replay_busy,
 	input wire mc_fault,
 	input wire [7:0] mc_fault_client,

@@ -9,7 +9,7 @@
  * atg_tu: The texture unit (design §2.3, §3.7): addressing, cache, filter;
  * one MC client.
  *
- * Wiring of its children (WS288 p023; implemented in p009): atg_tu_addr
+ * Wiring of its children: atg_tu_addr
  * (descriptor, LOD, wrap, addresses), atg_tu_cache (the T$ on the MC
  * port), atg_tu_filter (texel conversion, bilinear).  Quads go through in
  * request order.  busy approximates STATUS.TU_BUSY: a quad on one of the

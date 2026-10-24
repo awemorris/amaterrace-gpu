@@ -10,7 +10,7 @@
  * retirement, depth/stencil, blend, write-back; one MC client (depth and
  * colour behind am_amb_mux).
  *
- * Wiring of its children (WS288 p023); see spec/gpu/rop/atg_rop.md.
+ * Wiring of its children; see spec/gpu/rop/atg_rop.md.
  */
 
 `timescale 1ns / 1ps

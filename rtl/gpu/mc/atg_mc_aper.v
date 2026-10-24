@@ -9,8 +9,7 @@
  * atg_mc_aper: The aperture check of an AMB request: the line is inside
  * [APERTURE_BASE, APERTURE_LIMIT) (line granularity).
  *
- * The behaviour is specified in spec/gpu/mc/atg_mc_aper.md (implemented
- * in WS288 p023 with the router tree).
+ * The behaviour is specified in spec/gpu/mc/atg_mc_aper.md.
  */
 
 `timescale 1ns / 1ps

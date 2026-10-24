@@ -21,7 +21,7 @@
 # wraparound, or (l + rs2) mod 32 (rot); the result is rs1 of lane s when s is 0..31 and in EXEC, else
 # the lane's own rs1; EXEC lanes are written.  ballot: the mask of the EXEC
 # lanes whose rs1 is not 0; vote.any/all: whether that mask is not 0 / equals
-# EXEC, as a Boolean; both write every lane (design M13, as exec.save).
+# EXEC, as a Boolean; both write every lane (as exec.save).
 # --fault-out: an ISA fault is not an error; the file gets one line per
 # faulting warp, "slot pc" in hex, and the warp stops.
 #

@@ -3,24 +3,24 @@
 ##
 ## SPDX-License-Identifier: Zlib
 ##
-## atg_kc705_raster on the Xilinx KC705 (XC7K325T-2FFG900C).  Written in
-## WS288 p012 part A and not yet built or tried on the board (part B).
+## atg_kc705_raster on the Xilinx KC705 (XC7K325T-2FFG900C).  Not yet
+## built or tried on the board.
 ##
 ## Values referenced:
 ##  - SYSCLK, CPU_RESET, the LEDs and the I2C pins: AMD XilinxBoardStore
 ##    board file kc705 revision 1.7, part0_pins.xml (Apache-2.0), as shipped
 ##    with Vivado 2026.1 under data/xhub/boards/XilinxBoardStore/boards/
 ##    Xilinx/kc705/1.7/ (the same file as zedBSD's KC705 bringup.xdc).
-##  - HDMI (the board file has none; UG810 not read, design U7): two
+##  - HDMI (the board file has none; UG810 not read): two
 ##    sources that agree on every pin used here: Analog Devices hdl,
 ##    projects/adv7511/kc705/system_constr.xdc at hdl_2016_r1 (commit
 ##    71e609b701ab, blob 34fb56ed; 16 data lines, clock K18, DE H17, HSYNC
 ##    J18, VSYNC H20, LVCMOS25), and a copy of the KC705 master XDC in
 ##    github.com/groundbird/rhea_firmware src/vhdl/kc705_default.xdc
 ##    (commit fcd7a74a; it also lists HDMI_R_D16/D17 on K19/K20, unused).
-##    Unverified against the schematic until part B.
+##    Unverified against the schematic until the board build.
 ##  - The DDR3 pins and their constraints come with the MIG core that the
-##    part-B TCL generates (atg_kc705_ddr3), not from this file.
+##    IP TCL generates (atg_kc705_ddr3), not from this file.
 
 ## SYSCLK_P/N, the 200 MHz oscillator on bank 33 (1.5 V).  gclk, the pixel
 ## clocks and the MIG's clocks are derived by Vivado at the clock managers'
@@ -95,4 +95,4 @@ set_property IOB TRUE [get_ports {hdmi_d[*] hdmi_de hdmi_hs hdmi_vs}]
 set_false_path -to [get_ports {hdmi_d[*] hdmi_de hdmi_hs hdmi_vs hdmi_clk}]
 
 ## CFGBVS / CONFIG_VOLTAGE: left out until bank 0's voltage is checked
-## (zedBSD WS288 bringup residual).
+## (still open from the board's bring-up).

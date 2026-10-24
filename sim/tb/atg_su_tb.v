@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_su_tb: the shader unit running GSI1 programs (p008's acceptance:
+ * atg_su_tb: the shader unit running GSI1 programs (the check that
  * the same binary gives the same results on NPHYS 8, 16 and 32).  Three
  * SUs (NPHYS 8, 16, 32; NWARPS 4, NREGS 32; SUBGROUP 1) fetch code and load constants
  * from one amb_mem behind their I$ port, and access data through a second

@@ -24,7 +24,7 @@
  * Values referenced: DS182 / UG472 (7 Series -2: MMCM VCO 600-1440 MHz,
  * PFD 10-500 MHz; PLL VCO 800-1866 MHz, PFD 19-500 MHz; CLKFBOUT_MULT_F
  * and CLKOUT0_DIVIDE_F in steps of 0.125), not re-checked against the
- * data sheet in p012 (part B builds it).  The KC705 needs no 5 x pixel
+ * data sheet (not built yet).  The KC705 needs no 5 x pixel
  * clock: its HDMI is the ADV7511's parallel input.  sel comes from gclk:
  * BUFGMUX switches without a glitch while both inputs run, and the DC
  * changes PCLK_SEL with ENABLE = 0.

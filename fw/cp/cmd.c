@@ -12,7 +12,7 @@
  * and a u64 count before the elements, a structure as sType, the pNext
  * presence and the fields), and what it does to the session's objects.
  *
- * WS288 p017 decodes the first class V path: the GHCI session and memory
+ * It decodes the first class V path: the GHCI session and memory
  * commands, buffers and their binding, command pools and buffers, the
  * recorded fill and copy of buffers, and QUEUE_SUBMIT, which replays the
  * recordings as blits.  Every argument of a command is read before it

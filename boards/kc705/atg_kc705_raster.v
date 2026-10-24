@@ -11,7 +11,7 @@
  * ROP, BLT, MC on MIG DDR3, the DC next to the GPU (+0x10000, MC client
  * EXT, ADV7511 parallel output), the JTAG register bridge.
  *
- * Wiring of its children (WS288 p023, p012); see
+ * Wiring of its children; see
  * spec/boards/kc705/atg_kc705_raster.md.  The HDMI output is the ADV7511's
  * 16-bit YCbCr 4:2:2 input with separate syncs (the DC's PX_FMT 1): the
  * DC's registered outputs drive the pins (IOB registers in the XDC), and
@@ -28,7 +28,7 @@
 `default_nettype none
 
 module atg_kc705_raster #(
-	parameter NSU = 1,	/* Shader units (p014: 1, p015: 4 → 6) */
+	parameter NSU = 1,	/* Shader units (1 for now; 4 to 6 later) */
 	parameter CPU_IMEM_INIT = "atg1-cp-kc705.imem.hex",	/* CP firmware (Vivado finds it among the sources) */
 	parameter CPU_DMEM_INIT = "atg1-cp-kc705.dmem.hex"
 ) (
@@ -61,7 +61,7 @@ module atg_kc705_raster #(
 	output wire iic_mux_reset_n
 );
 	wire clk, rst_n, ref_clk, ref_rst_n, pclk, prst_n, pclk_sel, mem_ready, irq;
-	/* No host AXI on the KC705 in v1 (JTAG only; PCIe is p013). */
+	/* No host AXI on the KC705 in v1 (JTAG only; PCIe later). */
 	wire [31:0] s_awaddr;
 	wire [3:0] s_awid;
 	wire s_awvalid;

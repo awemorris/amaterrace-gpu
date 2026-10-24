@@ -7,7 +7,7 @@
 
 /*
  * atg_top_fw_tb: the GPU of bitstream 1' (CP, CPU with the CP firmware of
- * fw/cp/images/, BLT, MC; WS288 p017) driven only through its host port,
+ * fw/cp/images/, BLT, MC) driven only through its host port,
  * against axi_mem, in the ZYBO's shape and the KC705's.  Checks:
  *
  *   - CAPS[17] VKCP and [18] FWLOAD, the extended capability list (PERF,

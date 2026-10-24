@@ -10,7 +10,7 @@
  * handed out from a free list.  The recordings of the command buffers are
  * chains of chunks.  Design §2.4.7 puts the heap in GPU memory
  * (CP_HEAP_BASE/LIMIT); the window does not show those registers yet, so
- * this first heap is DMEM's (WS288 p017).
+ * this first heap is DMEM's.
  */
 
 #include "fw.h"

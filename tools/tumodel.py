@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# tumodel.py: the reference model of the texture unit (spec/gpu/tu/*.md,
-# WS288 p009), bit for bit: the addressing of atg_tu_addr (descriptor, LOD,
+# tumodel.py: the reference model of the texture unit (spec/gpu/tu/*.md),
+# bit for bit: the addressing of atg_tu_addr (descriptor, LOD,
 # mip level, wrap, bilinear footprint, linear or 4x4 tiled addresses,
 # texsz), the texel conversion and filter of atg_tu_filter.  Used by
 # tools/tu-vectors.py (unit vectors) and tools/rx-tex-scene.py (the

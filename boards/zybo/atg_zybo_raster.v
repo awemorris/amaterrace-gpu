@@ -9,7 +9,7 @@
  * atg_zybo_raster: ZYBO bitstream 3 "raster" (design §3.6): CP, RX, ROP,
  * BLT, MC; DRAW_RAW and DEBUG_COLOR (no VF, no SU).
  *
- * Wiring of its children (WS288 p023); see spec/boards/zybo/atg_zybo_raster.md.
+ * Wiring of its children; see spec/boards/zybo/atg_zybo_raster.md.
  */
 
 `timescale 1ns / 1ps

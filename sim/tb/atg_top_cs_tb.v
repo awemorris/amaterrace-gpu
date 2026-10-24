@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_top_cs_tb: compute through the ring, end to end (WS288 p008): the GPU
+ * atg_top_cs_tb: compute through the ring, end to end: the GPU
  * driven only through its host port runs sim/vec/cs_scene.txt
  * (tools/cs-scene.py): per GSI1 program of sim/tb/su (vadd over 2
  * workgroups, reduce with LDS, bar and atom.add, mem with lw/sw/atom/fence,

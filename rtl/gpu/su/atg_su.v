@@ -13,7 +13,7 @@
  * atomics), the VF/RX inputs, the PT, the TU and ROP ports and the
  * reserved SA port.
  *
- * Wiring of its children (WS288 p023); see spec/gpu/su/atg_su.md.
+ * Wiring of its children; see spec/gpu/su/atg_su.md.
  */
 
 `timescale 1ns / 1ps

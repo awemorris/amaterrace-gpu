@@ -5,8 +5,8 @@ The firmware of the command processor's control processor (`atg_cpu`,
 RV32IM, spec/gpu/cp/atg_cpu.md): it takes the class V packets of the ring,
 decodes the gpu-ops of zedBSD's GPU command protocol, keeps the Vulkan
 objects of each session and gives the sequencer class N µops through the
-window's UOP_FIFO.  Design: zedBSD plan/ws288/design.md §2.4.4-§2.4.9,
-§6.9.  Wire form of the packets and results: `include/ghci_frame.h`.
+window's UOP_FIFO (design §2.4.4-§2.4.9 and §6.9).  Wire form of the
+packets and results: `include/ghci_frame.h`.
 
 Build
 -----
@@ -39,8 +39,8 @@ Layout
 | `heap.c` | Chunks for the recordings (in DMEM for now) |
 | `lib.c` | The run-time helpers |
 
-Behaviour (WS288 p017)
-----------------------
+Behaviour
+---------
 
 - The firmware polls (PKT_INFO, IRQ); it does not use WFI and interrupts:
   an interrupt between unmasking IRQ_EN and a WFI would return to a WFI
@@ -78,7 +78,7 @@ Limits and later work
 - STEP of a class V packet in HALTED does not run: the core is parked while
   CTRL.HALT is 1.
 - The codec is written by hand for these commands; design §2.4.8 generates
-  it from one table with the driver (`ghci_vkwire.inc`, p019).
+  it from one table with the driver (`ghci_vkwire.inc`).
 - Measured in `atg_top_fw_tb` (ZYBO shape, 100 MHz model): the 13-record
   frame of the test, 32.5k cycles to the fence after the doorbell (the
   class N fill and copy of the same bytes: 12.5k), so about 1.5k cycles per

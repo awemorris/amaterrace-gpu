@@ -70,7 +70,7 @@ module atg_dc_regs #(
 	`include "ghci_regs.vh"
 
 	localparam [16:0] DISP = STANDALONE != 0 ? GHCI_DC_STANDALONE_DISP : BASE;
-	localparam [31:0] DC_VERSION_VALUE = 32'h00000001;	/* 0.1 (WS288 p005) */
+	localparam [31:0] DC_VERSION_VALUE = 32'h00000001;	/* 0.1 */
 	/* DC_CAPS: [1:0] VGA and TMDS without the transmitter, [2] the
 	 * transmitter with it; [7:4] formats 0..2; [11:9] two modes. */
 	localparam [31:0] DC_CAPS_VALUE = {20'd0, 3'd2, 1'b0, 4'b0111, 1'b0,

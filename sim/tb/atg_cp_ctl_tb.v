@@ -326,7 +326,7 @@ module atg_cp_ctl_tb;
 		cmd_active = 1;
 		repeat (30) @(negedge clk);
 		expect_state("wdt", GHCI_ST_RUNNING);
-		wdt_hold = 1;	/* p017: the count pauses, it does not restart */
+		wdt_hold = 1;	/* the count pauses, it does not restart */
 		repeat (100) @(negedge clk);
 		expect_state("wdt", GHCI_ST_RUNNING);
 		wdt_hold = 0;

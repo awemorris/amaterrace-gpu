@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_rx_frag: the RX's fragment warps (WS288 p009): packs up to 8
+ * atg_rx_frag: the RX's fragment warps: packs up to 8
  * covered quads of one triangle (from atg_rx_scan, fq_*) into a 32-lane
  * warp of SU 0, copies the triangle's 3 × VARYING_COUNT varying words
  * from the PT into the warp's primitive table (and its primitive map, 0:

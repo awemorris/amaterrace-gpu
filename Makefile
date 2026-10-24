@@ -71,7 +71,7 @@ oxc-synth: $(OXC)/$(TOP).json
 	@grep -A40 'Number of cells' $(OXC)/yosys.log | grep -E 'LUT|FD|CARRY|RAMB|DSP' || true
 
 # The GPU core alone (atg_top) in the KC705's shape: the board top's MIG,
-# clock and JTAG are still port-only stubs (p012), so synthesizing the board
+# clock and JTAG are still port-only stubs, so synthesizing the board
 # top removes all logic; this keeps it and reports the core's cells.
 CORE_PARAMS ?= -set LINE_BYTES 64 -set LINE_SHIFT 6 -set DATA_W 512 -set HAS_CPU 1 \
 	-set HAS_RX 1 -set HAS_ROP 1 -set NSU 1

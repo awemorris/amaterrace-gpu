@@ -9,7 +9,7 @@
  * atg_rx: The rasterizer (design §3.8): clip, setup, quad scan into
  * fragment warps (or direct quads), sequence numbers for the ROP order.
  *
- * Wiring of its children (WS288 p023); see spec/gpu/rx/atg_rx.md.
+ * Wiring of its children; see spec/gpu/rx/atg_rx.md.
  */
 
 `timescale 1ns / 1ps

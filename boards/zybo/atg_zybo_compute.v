@@ -9,7 +9,7 @@
  * atg_zybo_compute: ZYBO bitstream 4 "compute" (design §3.6): CP, one SU
  * (NPHYS 8, NREGS 32, NWARPS 4), BLT, MC; class N DISPATCH only (no CPU).
  *
- * Wiring of its children (WS288 p023); see spec/boards/zybo/atg_zybo_compute.md.
+ * Wiring of its children; see spec/boards/zybo/atg_zybo_compute.md.
  */
 
 `timescale 1ns / 1ps

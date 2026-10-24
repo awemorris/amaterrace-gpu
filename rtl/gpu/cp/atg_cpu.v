@@ -10,7 +10,7 @@
  * IMEM/DMEM, control window, line DMA and the CPFW capability; the
  * firmware decodes class V packets into µops.
  *
- * Wiring of its children (WS288 p023); see spec/gpu/cp/atg_cpu.md.
+ * Wiring of its children; see spec/gpu/cp/atg_cpu.md.
  */
 
 `timescale 1ns / 1ps

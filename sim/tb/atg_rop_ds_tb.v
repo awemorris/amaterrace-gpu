@@ -13,7 +13,7 @@
  * run in order (later quads read what earlier ones wrote), and a run with
  * the test off.  Checks the passing lanes on d_*, the colour (DEBUG_COLOR
  * or the SU's), and the buffer at the end (the stencil byte of D24S8
- * kept).  The stencil ops are not implemented yet (STENCIL 1 is p015's).
+ * kept).  The stencil ops are not implemented yet.
  */
 
 `timescale 1ns / 1ps
@@ -180,7 +180,7 @@ module atg_rop_ds_tb;
 		$display("atg_rop_ds: %0d runs", nrun);
 		if (e_funcs == 0 && e_out == 0)
 			$display("PASS atg_rop_ds.funcs");
-		/* STENCIL 1 is not implemented (p015): nothing to check here yet. */
+		/* STENCIL 1 is not implemented: nothing to check here yet. */
 		if (e_raw == 0 && e_out == 0)
 			$display("PASS atg_rop_ds.raw");
 		if (e_funcs + e_raw + e_out == 0)

@@ -23,8 +23,8 @@
  * the low bits.
  *
  * The clients reach the root through a tree of 2-way routers (atg_mc_tree:
- * am_amb_to_rt leaves, atg_rt routers, design §4.1; WS288 p023 after the
- * user's request of 2026-10-23), one register stage per hop each way.  A
+ * am_amb_to_rt leaves, atg_rt routers, design §4.1), one register stage
+ * per hop each way.  A
  * request is a header flit and, for a write, a data flit; a response is one
  * flit.  The clients of HIGH_MASK send with the priority bit, which wins at
  * every router; the others take turns at each router.  ROOT_CLIENT (the

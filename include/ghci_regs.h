@@ -55,7 +55,7 @@
 #define GHCI_DBG_ADDR 0x0A0u
 #define GHCI_DBG_DATA 0x0A4u
 #define GHCI_DBG_STATUS 0x0A8u
-#define GHCI_CPFW_CTRL 0x120u /* the CPFW capability (id 6), p017 */
+#define GHCI_CPFW_CTRL 0x120u /* the CPFW capability (id 6) */
 #define GHCI_CPFW_STATUS 0x124u
 #define GHCI_CPFW_IBASE 0x128u
 #define GHCI_CPFW_IWORDS 0x12Cu

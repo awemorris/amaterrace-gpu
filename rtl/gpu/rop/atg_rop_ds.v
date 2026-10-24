@@ -10,7 +10,7 @@
  * quad (DS_BASE/STRIDE, D32F or D24S8), tests (DEPTH func, STENCIL_*
  * front/back), updates and writes it back, and passes the surviving lanes.
  *
- * WS288 p007: depth only (the stencil ops are not done yet: a D24S8
+ * Depth only so far (the stencil ops are not done yet: a D24S8
  * write keeps the stencil byte).  One quad at a time: per row with
  * covered lanes, read the line, test its two lanes, write the passing
  * ones (DEPTH[1]) and wait for the write's response, so the next quad

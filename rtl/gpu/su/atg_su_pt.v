@@ -15,7 +15,7 @@
  * one word into each bank), WPV = 4 + VARY_WORDS words per entry, read
  * data registered (pt_rdata the cycle after pt_rd).
  *
- * Allocator (WS288 p009, Q1): each block counts its entries in use.
+ * Allocator: each block counts its entries in use.
  * pt_take (with the warp's slot pt_warp) takes the lowest block whose
  * count is 0 and sets 32; vl_go returns the entries of the lanes outside
  * vl_mask (also for vl_mask 0); pt_free returns one entry.  pt_done[b]:

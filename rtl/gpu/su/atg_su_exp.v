@@ -10,7 +10,7 @@
  * DEPTH (0x104) by fragment warps into the warp's buffer, drained to the
  * ROP quad by quad after the warp's end, in sequence-number order; the
  * slot release (xr_*) of every ended warp.  The PT and its allocator are
- * atg_su_pt (split off in WS288 p009).
+ * atg_su_pt.
  *
  * The warp's quads come from the RX's register writes (fl_*): r3 (z) of
  * every lane is the depth unless the shader exports 0x104, r4/r5 (the
