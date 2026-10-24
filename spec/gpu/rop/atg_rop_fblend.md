@@ -1,6 +1,6 @@
 # atg_rop_fblend
 
-RTL: `rtl/gpu/rop/atg_rop_fblend.v` (new).  Parent: atg_rop_wb (beside atg_rop_blend; atg_rop_wpix chooses the path).  Children: atg_rx_fmul, atg_rx_fadd, atg_fmt_srgbenc × 4.
+RTL: `rtl/gpu/rop/atg_rop_fblend.v` (new).  Parent: atg_rop_wb (beside atg_rop_blend; atg_rop_wpix chooses the path).  Children: atg_rx_fmul, atg_rx_fadd, atg_fmt_srgbenc.
 
 ## 1. Purpose and place
 
@@ -46,11 +46,11 @@ Without i_blend[0] the result is the source.  Then the result is packed: sRGB R,
 
 ## 5. State machine
 
-IDLE →(i_valid)→ LOAD (unpack, clamp) → FACT (the factors: one fadd per "one minus") → MUL (s·Fs, d·Fd) → ADD (the op) → ENC (sRGB only) → OUT →(o_ready)→ IDLE.  The fmul and the fadd take one channel's operation per cycle; the steps of different channels overlap.
+IDLE →(i_valid)→ per lane and channel: CH (the source, MIN or MAX in one step) → FS, FD (a "one minus" factor on the fadd) → P, Q (s·Fs, d·Fd on the fmul) → R (the op) → … → ENC (sRGB only: R, G, B of each lane through the one encoder) → PACK (one lane per cycle) → OUT →(o_ready)→ IDLE.  One operation at a time (no overlap in v1); the lane's destination is unpacked by one atg_fmt_unpack.
 
 ## 6. Latency and throughput
 
-Estimated: at most 3 fadd and 2 fmul per channel, 16 channels per beat: about 50 cycles per beat with blending, about 20 without, plus 30 for the sRGB encoding (three channels × 10 cycles, one encoder per lane).  The 8-bit path stays at its speed; this path is for the formats that need it.  Size ≈2k LUT and ≈4 DSP (estimated).
+v1 does one operation at a time: about 5 cycles per fadd or fmul, up to 5 per channel, so up to about 400 cycles per beat with blending and 20 without, plus about 40 per lane for the sRGB encoding (one encoder, three channels); the testbench saw at most 638 cycles per beat.  Overlapping the channels on the pipelined units (the earlier estimate of about 50 cycles) is left to the timing Phase.  The 8-bit path stays at its speed.  Size ≈2k LUT and ≈4 DSP (estimated).
 
 ## 7. Corner cases and errors
 
@@ -72,4 +72,4 @@ docs/ghci.md §8.5 (ROP range, per-sample operations), `spec/gpu/rop/atg_rop_ble
 
 ## 10. Status
 
-Spec only (2026-10-25); no RTL yet.
+Implemented 2026-10-25: every PASS of §8 (`sim/vec/rop_fblend.txt` from `tools/rop-vectors.py`, the model `fblend_lane` in `tools/rxmodel.py`).  Not yet wired (atg_rop_wpix, a later step).  One encoder instead of the four of the first text (§6).

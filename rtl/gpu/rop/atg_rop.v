@@ -144,7 +144,7 @@ module atg_rop #(
 
 	atg_rop_blend blend (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-		.b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask),
+		.b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask), .b_rt(2'd0),
 		.b_rvalid(b_rvalid), .b_pix(b_pix)
 	);
 

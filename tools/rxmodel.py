@@ -1023,6 +1023,118 @@ def blend_pixel(st, color, dpx):
     return pack_px(fmt, o)
 
 
+def unpack_px8(vk, p):
+    """A pixel of atg_rop_blend's CAPS[30] formats to RGBA8 (missing colours
+    0, missing alpha 255; A1R5G5B5's alpha 0 or 255)."""
+    def e5(v):
+        return (v << 3) | (v >> 2)
+    if vk == 44:
+        return unpack_px(0, p)
+    if vk in (37, 51):
+        return unpack_px(1, p)
+    if vk == 4:
+        return unpack_px(2, p)
+    if vk == 9:
+        return [p & 255, 0, 0, 255]
+    if vk == 16:
+        return [p & 255, (p >> 8) & 255, 0, 255]
+    if vk == 8:
+        return [e5((p >> 10) & 31), e5((p >> 5) & 31), e5(p & 31), 255 if p >> 15 & 1 else 0]
+    return None
+
+
+def blend_pixel8(vk, bl, kc, wm, color, dpx):
+    """One pixel through atg_rop_blend with CAPS[30]: the attachment's
+    VkFormat, BLEND word, constant bytes and write mask; dpx the stored
+    32-bit lane.  A format outside the list returns dpx."""
+    d = unpack_px8(vk, dpx)
+    if d is None:
+        return dpx
+    s = [f2u8(color[c]) for c in range(4)]
+    o = blend(bl, kc, s, d)
+    o = [o[c] if wm >> c & 1 else d[c] for c in range(4)]
+
+    def q5(v):
+        return (v * 31 + 127) // 255
+    if vk == 44:
+        return pack_px(0, o)
+    if vk in (37, 51):
+        return pack_px(1, o)
+    if vk == 4:
+        p = pack_px(2, o)
+        keep = (0 if wm & 1 else 0xF800) | (0 if wm & 2 else 0x07E0) | (0 if wm & 4 else 0x001F)
+        return (dpx & 0xFFFF0000) | (p & ~keep & 0xFFFF) | (dpx & keep)
+    if vk == 9:
+        return (dpx & 0xFFFFFF00) | o[0]
+    if vk == 16:
+        return (dpx & 0xFFFF0000) | o[0] | o[1] << 8
+    p = (o[3] >> 7) << 15 | q5(o[0]) << 10 | q5(o[1]) << 5 | q5(o[2])
+    keep = (0 if wm & 8 else 0x8000) | (0 if wm & 1 else 0x7C00) | (0 if wm & 2 else 0x03E0) | \
+        (0 if wm & 4 else 0x001F)
+    return (dpx & 0xFFFF0000) | (p & ~keep & 0xFFFF) | (dpx & keep)
+
+
+FBLEND_FMTS = (43, 50, 57, 64, 76, 83, 97)
+
+
+def fmin32(a, b):
+    """MIN of the fp32 blend: NaN gives QNAN; equal values give a."""
+    if _isnan(a) or _isnan(b):
+        return QNAN
+    return a if fle(a, b) else b
+
+
+def fmax32(a, b):
+    if _isnan(a) or _isnan(b):
+        return QNAN
+    return a if fle(b, a) else b
+
+
+def fblend_lane(fmt, bl, kc, wm, src, draw):
+    """atg_rop_fblend for one pixel (spec atg_rop_fblend §4): fmt a VkFormat
+    of FBLEND_FMTS, bl the BLEND word, kc four fp32 constants, wm the write
+    mask, src four fp32, draw the stored pixel (an integer).  Returns
+    (raw, keep), 64 bits each."""
+    import fmtmodel as F
+    allk = (1 << 64) - 1
+    if fmt not in FBLEND_FMTS:
+        return 0, allk
+    fixed = fmt in (43, 50, 57, 64)
+    cl = fclamp01 if fixed else (lambda x: x)
+    s = [cl(x) for x in src]
+    k = [cl(x) for x in kc]
+    d, _ = F.unpack(draw, fmt)
+    if bl & 1:
+        res = []
+        for c in range(4):
+            fs, fd, op = ((bl >> 12) & 15, (bl >> 16) & 15, (bl >> 20) & 7) if c == 3 else \
+                ((bl >> 1) & 15, (bl >> 5) & 15, (bl >> 9) & 7)
+
+            def fac(f):
+                vals = {0: 0, 1: ONE, 2: s[c], 4: d[c], 6: s[3], 8: d[3], 10: k[c], 12: k[3]}
+                if f in vals:
+                    return vals[f]
+                if f in (3, 5, 7, 9, 11, 13):
+                    return fsub(ONE, vals[f - 1])
+                if f == 14:
+                    return ONE if c == 3 else fmin32(s[3], fsub(ONE, d[3]))
+                return 0
+            if op == 3:
+                res.append(fmin32(s[c], d[c]))
+            elif op == 4:
+                res.append(fmax32(s[c], d[c]))
+            else:
+                p = fmul(s[c], fac(fs))
+                q = fmul(d[c], fac(fd))
+                res.append(fsub(p, q) if op == 1 else fsub(q, p) if op == 2 else fadd(p, q))
+    else:
+        res = s[:]
+    if fmt in (43, 50, 57):
+        res = [F.srgb_encode(res[c]) for c in range(3)] + [res[3]]
+    raw, keep = F.pack(res, fmt, wm)
+    return raw, keep & allk
+
+
 def draw_tri(st, mem, tri):
     """One cl_tri through setup, scan and the ROP with DEBUG_COLOR."""
     r = setup(st, tri)

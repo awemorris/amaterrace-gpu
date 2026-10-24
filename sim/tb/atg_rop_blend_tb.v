@@ -12,6 +12,11 @@
  * above one and exact c/255 values) against the reference model
  * (sim/vec/rop_blend.txt from tools/rx-vectors.py), b_pix LAT cycles
  * after b_valid.  Then the same STATE for a burst of one quad per cycle.
+ * Then sim/vec/rop_blend2.txt (tools/rop-vectors.py, CAPS[30]): the
+ * attachment b_rt with its RT_FORMATS byte (R8, R8G8, A1R5G5B5 and the
+ * earlier formats by VkFormat, a format the path does not have), BLEND1-3
+ * and WRITE_MASK per attachment ("r8rg8"), and the fp32 constants with
+ * ROP_CTRL[1] ("const").
  */
 
 `timescale 1ns / 1ps
@@ -30,12 +35,13 @@ module atg_rop_blend_tb;
 	reg [511:0] b_src = 0;
 	reg [127:0] b_dst = 0;
 	reg [3:0] b_mask = 0;
+	reg [1:0] b_rt = 0;
 	wire b_rvalid;
 	wire [127:0] b_pix;
 
 	atg_rop_blend #(.LAT(3)) dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask),
-		.b_rvalid(b_rvalid), .b_pix(b_pix));
+		.b_rt(b_rt), .b_rvalid(b_rvalid), .b_pix(b_pix));
 
 	reg [3:0] v_fmt [0:N-1];
 	reg [23:0] v_bl [0:N-1];
@@ -45,7 +51,13 @@ module atg_rop_blend_tb;
 	reg [127:0] v_dst [0:N-1];
 	reg [3:0] v_m [0:N-1];
 	reg [127:0] v_res [0:N-1];
-	integer fd, code, n, i, j, e_fmt = 0, e_fac = 0, burst_n, bq;
+	integer fd, code, n, i, j, e_fmt = 0, e_fac = 0, burst_n, bq, sect, rt, nq2;
+	integer e_s [0:1];
+	reg [7:0] tag;
+	reg [8:0] sidx;
+	reg [31:0] sval;
+	reg [3:0] mk;
+	reg [127:0] res2;
 	reg [31:0] w [0:27];
 	reg [31:0] wt;
 
@@ -150,11 +162,70 @@ module atg_rop_blend_tb;
 			e_fac = e_fac + 1;
 			$display("FAIL atg_rop_blend: burst %0d of %0d", qh, qt);
 		end
+		/* CAPS[30] */
+		e_s[0] = 0;
+		e_s[1] = 0;
+		nq2 = 0;
+		fd = $fopen("sim/vec/rop_blend2.txt", "r");
+		if (fd == 0) begin
+			$display("FAIL atg_rop_blend: no sim/vec/rop_blend2.txt");
+			$finish;
+		end
+		code = 1;
+		while (code > 0) begin
+			code = $fscanf(fd, "%c", tag);
+			if (tag == "S") begin
+				code = $fscanf(fd, " %h %h\n", sidx, sval);
+				st_put(sidx, sval);
+			end else if (tag == "Q") begin
+				code = $fscanf(fd, " %d %d", sect, rt);
+				for (j = 0; j < 20; j = j + 1) begin
+					code = $fscanf(fd, " %h", wt);
+					w[j] = wt;
+				end
+				code = $fscanf(fd, " %h", mk);
+				for (j = 20; j < 24; j = j + 1) begin
+					code = $fscanf(fd, " %h", wt);
+					w[j] = wt;
+				end
+				code = $fscanf(fd, "%c", tag);
+				b_valid <= 1'b1;
+				b_rt <= rt;
+				for (j = 0; j < 16; j = j + 1)
+					b_src[32 * j +: 32] <= w[j];
+				for (j = 0; j < 4; j = j + 1) begin
+					b_dst[32 * j +: 32] <= w[16 + j];
+					res2[32 * j +: 32] = w[20 + j];
+				end
+				b_mask <= mk;
+				@(posedge clk);
+				b_valid <= 1'b0;
+				b_rt <= ~rt;	/* taken with b_valid only */
+				@(posedge clk);
+				@(posedge clk);
+				#1;
+				if (!b_rvalid || b_pix !== res2) begin
+					e_s[sect] = e_s[sect] + 1;
+					if (e_s[0] + e_s[1] < 8)
+						$display("FAIL atg_rop_blend: CAPS[30] quad %0d (section %0d rt %0d) %h, expected %h",
+							nq2, sect, rt, b_pix, res2);
+				end
+				nq2 = nq2 + 1;
+				@(posedge clk);
+			end else
+				code = 0;
+		end
+		$fclose(fd);
+		$display("atg_rop_blend: %0d CAPS[30] quads", nq2);
 		if (e_fmt == 0)
 			$display("PASS atg_rop_blend.formats");
 		if (e_fac == 0)
 			$display("PASS atg_rop_blend.factors");
-		if (e_fmt + e_fac == 0)
+		if (e_s[0] == 0 && nq2 > 0)
+			$display("PASS atg_rop_blend.r8rg8");
+		if (e_s[1] == 0 && nq2 > 0)
+			$display("PASS atg_rop_blend.const");
+		if (e_fmt + e_fac + e_s[0] + e_s[1] == 0 && nq2 > 0)
 			$display("PASS atg_rop_blend");
 		$finish;
 	end

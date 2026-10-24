@@ -60,4 +60,4 @@ docs/ghci.md §7.3 (QUERY), §8.5 (ROP_CTRL), design §16.8.  Values referenced:
 
 ## 10. Status
 
-Spec only (2026-10-25); no RTL yet.
+Implemented 2026-10-25: every PASS of §8.  Not yet wired into atg_rop (a later step, with atg_rop_ds's inc_valid and the CP's QUERY).

@@ -204,6 +204,13 @@ localparam [8:0] GHCI_S_STENCIL_BACK = 9'h079;
 localparam [8:0] GHCI_S_BLEND = 9'h07A;
 localparam [8:0] GHCI_S_BLEND_CONST = 9'h07B;
 localparam [8:0] GHCI_S_WRITE_MASK = 9'h07C;
+localparam [8:0] GHCI_S_RT_FORMATS = 9'h07D;	/* draft, CAPS[30]: the VkFormats of attachments 0-3 */
+localparam [8:0] GHCI_S_RT1_BASE = 9'h07E;	/* RTk_BASE at 0x07E + 2(k - 1), RTk_STRIDE at + 1 */
+localparam [8:0] GHCI_S_BLEND1 = 9'h084;	/* BLEND1-BLEND3 */
+localparam [8:0] GHCI_S_BLEND_CONST_R = 9'h087;	/* BLEND_CONST_R, _G, _B, _A (fp32) */
+localparam [8:0] GHCI_S_DEPTH_BOUNDS_MIN = 9'h08B;
+localparam [8:0] GHCI_S_DEPTH_BOUNDS_MAX = 9'h08C;
+localparam [8:0] GHCI_S_ROP_CTRL = 9'h08D;	/* [0] occlusion count, [1] fp32 blend constants */
 
 /* TU (0x090-0x18F, docs/ghci.md section 8.4): slot s's words at
  * GHCI_S_TU + 16 s + GHCI_TEX_*: the image words (BASE, SIZE, IMAGE,
