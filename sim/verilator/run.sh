@@ -56,3 +56,15 @@ timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 	exit 1
 }
 timeout 600 "$out/atg_top_tex"
+
+# The compute scene (WS288 p008): NSU 1 (bitstream 4's GPU), GSI1 programs dispatched through
+# the ring, the memory against tools/gsi1model.py, an ISA fault.
+timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
+	--top-module atg_top -GNSU=1 -Mdir "$out/obj-compute" -o "$out/atg_top_compute" \
+	-CFLAGS "-I$root/include -O1 -DCOMPUTE" \
+	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build-compute.log" 2>&1 || {
+	tail -30 "$out/build-compute.log" >&2
+	echo "FAIL verilator compute (build, log $out/build-compute.log)"
+	exit 1
+}
+timeout 600 "$out/atg_top_compute"
