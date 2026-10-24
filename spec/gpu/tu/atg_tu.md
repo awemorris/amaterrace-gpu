@@ -65,6 +65,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 Wiring only; busy is the OR of the stage valids (the cache's misses are inside ta_valid).
 
+As implemented: busy = tx_valid | ta_valid | tc_valid | tr_valid (a quad on one of the links; a quad being worked on inside a child is not seen).  STATUS.TU_BUSY is therefore approximate; the STATE of the TU is protected by atg_cp_seq, whose SET_REG of 0x090-0x18F also waits for the RX and the SUs (they hold every fragment that is still to be textured).
+
 ## 5. State machine
 
 None (wiring).
@@ -79,7 +81,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): covered by the parent's testbench and `tools/lint.sh`.
+No unit testbench (wiring only): covered by the parent's testbench and `tools/lint.sh`.  `sim/tb/atg_top_tex_tb.v` (`PASS atg_top_tex`) and the Verilator TEX mode run the whole TU in a textured scene.
 
 ## 9. References
 
@@ -87,4 +89,4 @@ design §2.3, §3.7.
 
 ## 10. Status
 
-Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+Wiring written in WS288 p023; the children implemented in WS288 p009 part C (P1, branch p1-tu): `atg_tu_addr`, `atg_tu_cache`, `atg_tu_filter`.  busy now includes tr_valid.

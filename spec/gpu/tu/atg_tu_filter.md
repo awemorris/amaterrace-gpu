@@ -41,13 +41,21 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 Bilinear: lerp(lerp(t00, t10, fu), lerp(t01, t11, fu), fv) per channel with 8-bit fractions; output x/255 as fp32.
 
+Exactly (the reference is `tools/tumodel.py`, `filt_quad`): per lane and channel, with a, b, c, d the channel's bytes of texels 0-3 (RGBA8: bytes 0-3 are R, G, B, A; BGRA8, tc_ctl[1]: bytes 0 and 2 swapped) and fu, fv the lane's weights (tc_wts lane l = {fv, fu}):
+
+- bilinear (tc_ctl[0]): R = (a (256 − fu) + b fu) (256 − fv) + (c (256 − fu) + d fu) fv;
+- otherwise R = a × 65536 (texels 1-3 are not looked at);
+- the word is R / (255 × 65536) as fp32: P = R × 0x0101010101, rounded to 24 significant bits to nearest even, times 2^-56 (0 for R = 0).  For R = a × 65536 this is exactly the correctly rounded a / 255 (as atg_vf_conv's and the ROP's UNORM8; checked for all 256 values by `tools/tu-vectors.py`), and 255 gives 1.0.
+
+Lanes outside tc_mask give four zeros.  texsz (tc_ctl[2]): word 0 = the lane's tc_value word, words 1-3 = 0.  texf converts like the others (v1's formats are UNORM; §10).  tr_data lane l = bits [128 l +: 128], R first.
+
 ## 5. State machine
 
-A pipeline.
+IDLE →(tc_valid)→ RUN (lanes 0-3, one per cycle) → OUT →(tr_ready)→ IDLE.
 
 ## 6. Latency and throughput
 
-One quad per cycle.
+Target one quad per cycle.  v1: one lane (its four channels) per cycle, a quad in 4 cycles + 2 (p015).
 
 ## 7. Corner cases and errors
 
@@ -61,10 +69,12 @@ None beyond the above.
 - `PASS atg_tu_filter.bilinear` — bilinear against a C reference
 - `PASS atg_tu_filter` at the end.
 
+The reference is `tools/tumodel.py` (vectors `sim/vec/tu_filter.txt` from `tools/tu-vectors.py`): nearest = every byte value in every channel, both formats, texsz, texf, lane masks; bilinear = random texels and weights with the end values 0, 1, 128, 255.  Random gaps and tr_ready.
+
 ## 9. References
 
 design §3.7 (TU_BILINEAR).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p009 part C (P1, branch p1-tu).  Readings: "raw integers for texf" (§1) is not done: v1's texture formats are UNORM only (SAMPLER[12]: RGBA8/BGRA8), and Vulkan's texelFetch on a UNORM image returns the normalised value, so texf converts like texl (tc_ctl[3] is passed but unused here).  An integer format (and returning raw integers for it) needs a format code in SAMPLER first.  One lane per cycle (§6).

@@ -80,7 +80,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   0x1E0-0x1E8, raw_kick), DBG_MARK (STATE 0x1FF).  Unknown op → fault kind 2.
 - Source select: `fw_active` 1 → fw_*, else n_*.  The ring does not hand over a new packet while a
   class V packet is open, so the order is the ring's.
-- As implemented: SET_REG to the BLT range waits while the BLT is busy (WS288 p007: the RX range 0x050-0x06F while the RX or the ROP is, the ROP range 0x070-0x08F while the ROP is; its state must not change
+- As implemented: SET_REG to the BLT range waits while the BLT is busy (WS288 p007: the RX range 0x050-0x06F while the RX or the ROP is, the ROP range 0x070-0x08F while the ROP is; WS288 p009 part C: the TU range 0x090-0x18F while the TU, the RX or the SUs are, which hold fragments still to be textured; its state must not change
   under a blit); DISPATCH and LOAD_CONST payload writes wait while the SUs are busy, DRAW_RAW's while
   the RX is; BLIT waits for the BLT idle before its kick; a wait after a kick starts one cycle later.
   RESULT waits for every block idle and `f_busy` 0; FENCE for every block idle (the fence unit takes
@@ -111,7 +111,7 @@ One SET_REG pair per 2 cycles (one dword per cycle); kick 1 cycle after the head
 `sim/tb/atg_cp_seq_tb.v` prints, in this order:
 
 - `PASS atg_cp_seq.setreg` — SET_REG pairs reach uop_we in order; index 512 faults
-- `PASS atg_cp_seq.kicks` — BLIT/DRAW/DISPATCH/DRAW_RAW write their payload to STATE then pulse their kick; SET_REG into the BLT and the VF ranges waits for that block
+- `PASS atg_cp_seq.kicks` — BLIT/DRAW/DISPATCH/DRAW_RAW write their payload to STATE then pulse their kick; SET_REG into the BLT and the VF ranges waits for that block, into the TU range for the SUs
 - `PASS atg_cp_seq.wait` — WAIT_IDLE with a mask waits only for those busy bits
 - `PASS atg_cp_seq.fence` — FENCE waits for idle then requests; RESULT waits for f_busy 0
 - `PASS atg_cp_seq.source` — fw_active switches the source; µops of the two sources never interleave
@@ -129,3 +129,5 @@ change in p004: the parameters `UNITS`, `HAS_VSYNC`.  Not checked against real V
 are later Phases); the TB uses busy models.
 
 WS288 p009 part B1 (P1): SET_REG into the VF's ranges (STATE 0x020-0x04F and ATTR_DST 0x1C0-0x1CF) waits while the VF is busy (busy_in[2]), like the BLT, RX and ROP ranges (the VF reads its STATE during the draw).  406 lines (the earlier count of 397 was before later changes; the line limit is over by 6, unchanged by this step).
+
+WS288 p009 part C (P1, branch p1-tu): SET_REG into the TU's range (STATE 0x090-0x18F, the 16 texture slots) waits while the TU, the RX or the SUs are busy (busy_in[5], [3], [6]): a fragment that has not been textured yet may sit in the RX or in an SU's warp, and the TU reads the slot's words per quad.  408 lines (+2; the split for the line limit stays with p016).  The TB's kicks case writes 0x095 during a DISPATCH and checks that it waits.

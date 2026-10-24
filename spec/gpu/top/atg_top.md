@@ -64,6 +64,8 @@ Those of the children: register read 3 cycles minimum per AXI read; memory throu
 
 `sim/tb/atg_top_shade_tb.v` → `PASS atg_top_shade` (WS288 p009): HAS_VF, NSU 1, HAS_RX, HAS_ROP in the ZYBO and KC705 shapes; the scene of `sim/vec/shade_scene.txt` (`tools/rx-shade-scene.py`: one DRAW of 24 triangles with per-vertex colours through the VF, GSI1 vertex and fragment programs, depth LESS, one near-plane clip; three vertex warps over both PT blocks) against the models (the scene harness `sim/tb/atg_top_scene.vh`, shared with `atg_top_raster_tb`).  `sim/verilator/run.sh` → `PASS verilator shade` with `build/verilator/shade.png`.
 
+`sim/tb/atg_top_tex_tb.v` → `PASS atg_top_tex` (WS288 p009 part C): HAS_VF, NSU 1, HAS_RX, HAS_TU, HAS_ROP in the ZYBO and KC705 shapes (the ZYBO's bitstreams have no TU; the shape is the line and beat sizes); the scene of `sim/vec/tex_scene.txt` (`tools/rx-tex-scene.py`: two DRAWs of 11 textured triangles, texb with derivative LOD from a linear RGBA8 texture with 5 mip levels and repeat/mirror wrap and bilinear magnification, then a SET_REG of the slot and the fragment program and texl at lod 4z from a 4x4 tiled BGRA8 copy with clamp/repeat wrap and bilinear minification) against the models (tools/tumodel.py for the TU).  `sim/verilator/run.sh` → `PASS verilator tex` with `build/verilator/tex.png`.
+
 ## 9. References
 
 - design.md §1.1 (blocks), §1.3 (clocks, reset domains), §3.6 (bitstream 1 size), §4.1 (MC clients), §7.6 (the top with block parameters).
@@ -107,3 +109,5 @@ to the VF is gated the same way.
 **WS288 p009 part B2 (P1)**: no change of the wiring (HAS_VF, the SU 0 links and the RX↔SU links
 existed from p023).  `sim/tb/atg_top_shade_tb.v` and the Verilator SHADE mode check the pipeline
 VF → SU (vertex) → PT → RX → SU (fragment) → ROP (§8).
+
+**WS288 p009 part C (P1)**: no change of the wiring (HAS_TU, the SU 0 ↔ TU links and the TU's MC client existed from p023); the TU's children are implemented.  `sim/tb/atg_top_tex_tb.v` and the Verilator TEX mode check the pipeline with texturing (§8).
