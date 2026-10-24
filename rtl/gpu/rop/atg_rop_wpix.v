@@ -188,7 +188,11 @@ module atg_rop_wpix #(
 	assign o_np = !multi && ms4 ? 2'd3 : 2'd0;
 	wire [31:0] xoff = {16'd0, i_xy[15:0]} << (psl + (ms4 ? 3'd2 : 3'd0));
 	assign o_addr = base[i_rt] + ({16'd0, i_xy[31:16]} + {31'd0, i_r}) * stride[i_rt] + xoff +
+`ifdef MUT_WPIX_LINE
+		32'd0;
+`else
 		(multi ? {{(30-LINE_SHIFT){1'b0}}, i_j, {LINE_SHIFT{1'b0}}} : 32'd0);
+`endif
 
 	/* The slots. */
 	wire [2:0] el = ls4[2:0] - psl;	/* log2 E (several lines) */
@@ -239,7 +243,11 @@ module atg_rop_wpix #(
 		wire [63:0] fr = (f_raw[64 * k +: 64] & ~f_keep[64 * k +: 64]) |
 			(dst[128 * k +: 64] & f_keep[64 * k +: 64]);
 		assign o_res[128 * k +: 128] = p_u8 ? {96'd0, b_pix[32 * k +: 32]} :
+`ifdef MUT_WPIX_KEEP
+			p_f32 ? {64'd0, fr} : pk[127:0];
+`else
 			p_f32 ? {64'd0, fr} : (pk[127:0] & ~pk[255:128]) | (dst[128 * k +: 128] & pk[255:128]);
+`endif
 	end
 	endgenerate
 
