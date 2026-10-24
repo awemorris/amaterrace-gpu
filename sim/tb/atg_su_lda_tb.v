@@ -176,6 +176,10 @@ module atg_su_lda_tb;
 			for (w = 0; w < 4; w = w + 1) begin
 				pmap[w] = n == 0 ? 24'd0 : $random(seed);
 				pw(w, 12'hFFF, {8'hAB, pmap[w]});
+				/* the RX's d_s words (multisampling): neither table nor map */
+				if (n == 1)
+					for (d = 0; d < 4; d = d + 1)
+						pw(w, 12'hFF8 + d[11:0], $random(seed));
 			end
 			for (i = 0; i < 400; i = i + 1) begin
 				issue($random(seed) & 1, ($random(seed) & 7) == 0 ? 1 : 11);
@@ -186,6 +190,8 @@ module atg_su_lda_tb;
 		end
 		if (errors == 0)
 			$display("PASS atg_su_lda.rw");
+		if (errors == 0)
+			$display("PASS atg_su_lda.ms");
 		if (errors == 0)
 			$display("PASS atg_su_lda");
 		else

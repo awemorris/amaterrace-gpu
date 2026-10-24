@@ -50,6 +50,11 @@ def main(wpath, ipath):
                     regs[k][n][ln] = f32(rnd.random())
                 regs[k][4][ln] = f32(qx + (i & 1) + 0.5)
                 regs[k][5][ln] = f32(qy + (i >> 1) + 0.5)
+        # r6, the RX's sample mask (its own random stream: the other values
+        # stay as they were); 0 in some lanes (not exported).
+        r6r = random.Random(2880 + k)
+        for ln in range(4 * nq):
+            regs[k][6][ln] = r6r.choice([0, 1, 3, 5, 6, 8, 9, 10, 12, 15, 15, 15])
         ex = (1 << (4 * nq)) - 1 if nq < 8 else 0xFFFFFFFF
         warps.append((1, ex, cov, seq, rnd.getrandbits(1)))
     with open(wpath, "w") as f:

@@ -57,13 +57,17 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fl_data` | in | 32 | Data. |
 | `fl_go` | in | 1 | The warp starts (slot fl_slot). |
 | `fl_info` | in | 64 | [31:0] coverage, [47:32] sequence number, [48] front. |
+| `fl_pw_we` | in | 1 | The RX's primitive table write (snooped). |
+| `fl_pw_addr` | in | 12 | Its address: 0xFF8-0xFFB are the samples' depth slopes d_0..d_3 of the warp. |
+| `fl_pw_data` | in | 32 | Its data. |
+| `ex_ms` | out | 148 | With the quad: {d_s[127:0] (sample s at 32 s; 0 when the warp has none), zexp[3:0] (the lanes that exported DEPTH, of ex_mask's), smask[15:0] (lane l's sample mask at 4 l)}. |
 | **Slot release (atg_su_sched)** | | | |
 | `xr_valid` | out | 1 | A warp's exports are drained (one-cycle pulse). |
 | `xr_warp` | out | WARP_W | Warp. |
 | `wc_end` | in | 1 | atg_su_exec ended a warp (with wc_warp). |
 | `wc_warp` | in | WARP_W | Warp. |
 
-35 ports.
+39 ports (the limit is 40: anything more splits this module first).
 
 ## 4. Behaviour
 
@@ -102,6 +106,7 @@ One group per cycle in; one quad per cycle to the ROP.  Storage: NPHYS lane bank
 
 - `PASS atg_su_exp.frag` — fragment exports drain to the ROP after end, in sequence-number order, with the quads' positions, masks, colours and depths (exported or rasterized)
 - `PASS atg_su_exp.release` — vertex warps release the cycle after their end, fragment warps once after their drain
+- `PASS atg_su_exp.ms` — the RX's r6 in half the warps (others 1111), d_s words in half (others 0; the map and a varying word are not d_s), SAMPLE_MASK exported twice in half (the last value counts): ex_ms and ex_mask without the lanes whose mask is 0; `-DMUT_SMASK_AND` fails it
 - `PASS atg_su_exp` at the end.
 
 ## 9. References
@@ -111,3 +116,5 @@ design §3.4.3 (inputs/outputs), §3.5, §3.8 (ROP order); spec atg_su_pt.md (th
 ## 10. Status
 
 Implemented in WS288 p009 part B1 (P1, branch p1-su-gfx).  Spec changes in p009 (proposed to Q1 with the commit): the PT and its allocator moved to the new module `atg_su_pt` (ports `pt_*`, `pt_ok`, `pt_take`, `pt_base` and the parameters `PT_ENTRIES`, `VARY_WORDS` left this module); new snoop ports `fl_we`, `fl_slot`, `fl_reg`, `fl_lane`, `fl_data`, `fl_go`, `fl_info` (the quads' positions, the rasterized z, the coverage and the sequence number come from the RX's writes: fl_info has no room for 8 positions).  Readings: r4/r5 are the pixel centre (x + 0.5, y + 0.5, Vulkan FragCoord); ex_mask = covered and exported lanes; point size (0x004) and SECOND_COLOR (0x108+c) are not stored in v1.
+
+Multisampling (the MSAA work, docs/ghci.md §12.11): exp 0x105 (SAMPLE_MASK, lane banks of 4 bits, the last value written and a per-lane flag cleared at fl_go), the RX's r6 snooped like r3 (lane banks of 4 bits and a per-lane flag cleared at the slot's release: a lane the RX did not write takes 1111), the d_s words snooped from fl_pw_* (per slot, cleared at the release); the quad's sample mask = r6 & SAMPLE_MASK; ex_mask leaves out the lanes whose mask is 0; ex_ms.  New ports fl_pw_*, ex_ms (39).  323 lines.

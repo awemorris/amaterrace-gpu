@@ -27,6 +27,15 @@
  * (one quad per ex_ready) →(last quad)→ RET (xr_valid) → IDLE.  Vertex
  * and compute warps release at once (xr_valid the cycle after wc_end; a
  * drain's release waits a cycle when both fall together).
+ *
+ * Multisampling (docs/ghci.md section 12.11): the RX's r6 (the lane's
+ * samples after the sample mask test) is snooped like r3 (a lane the RX
+ * did not write takes 1111); exp 0x105 (SAMPLE_MASK) keeps the last value
+ * written per lane; the quad's sample mask is r6 AND that value (1111 when
+ * none), lane l at ex_ms bits 4 l + s.  A lane whose mask is 0 does not go
+ * out (ex_mask).  ex_ms also carries the lanes that exported DEPTH and the
+ * warp's d_s (the RX's table words 0xFF8-0xFFB, one per sample; 0 for a
+ * warp without them: the slot's copy is cleared at its release).
  * See spec/gpu/su/atg_su_exp.md.
  */
 
@@ -75,6 +84,11 @@ module atg_su_exp #(
 	input wire [31:0] fl_data,
 	input wire fl_go,
 	input wire [63:0] fl_info,
+	input wire fl_pw_we,
+	input wire [11:0] fl_pw_addr,
+	input wire [31:0] fl_pw_data,
+	/* Multisampling to the ROP: {d_s[127:0], zexp[3:0], smask[15:0]} */
+	output wire [147:0] ex_ms,
 	/* Slot release (atg_su_sched) */
 	output wire xr_valid,
 	output wire [WARP_W-1:0] xr_warp,
@@ -107,12 +121,14 @@ module atg_su_exp #(
 	reg [NWARPS-1:0] frag, ended;
 	reg [NWARPS*16-1:0] seq;
 	reg [NWARPS*32-1:0] cov, xp, dw;	/* coverage, exported lanes, depth written */
+	reg [NWARPS*32-1:0] smw, r6w;	/* SAMPLE_MASK exported, r6 written by the RX */
+	reg [NWARPS*128-1:0] dsv;	/* the warp's d_s */
 	reg [NWARPS*8*16-1:0] qx, qy;
 
 	/* ---- Exports of fragment warps. */
 	wire [31:0] tgt = x_uop[ATG_UOP_IMM +: 32];
 	wire ex_op = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && x_info[17:16] == 2'd1 &&
-		tgt >= 32'h100 && tgt <= 32'h104;
+		tgt >= 32'h100 && tgt <= 32'h105;
 	wire [2:0] comp = tgt[2:0];
 	wire [31:0] xrow = {{(32-WARP_W){1'b0}}, x_warp} * G + {{(32-GRP_W){1'b0}}, x_grp};
 	wire [NPHYS-1:0] side = x_mask[2*NPHYS-1:NPHYS];
@@ -138,9 +154,12 @@ module atg_su_exp #(
 	wire [31:0] dqs = ({{(32-WARP_W){1'b0}}, dwarp} * 8 + {29'd0, dq}) * 16;
 	wire [31:0] dxp = xp[dwarp*32 +: 32] & dcov;
 	wire [31:0] ddw = dw[dwarp*32 +: 32];
+	wire [31:0] dsm = smw[dwarp*32 +: 32];
+	wire [31:0] dr6 = r6w[dwarp*32 +: 32];
 
-	/* NPHYS lane banks × {R, G, B, A, depth, z}. */
+	/* NPHYS lane banks × {R, G, B, A, depth, z} and {SAMPLE_MASK, r6}. */
 	wire [NPHYS*192-1:0] rdat;
+	wire [NPHYS*8-1:0] rsm;
 	genvar b;
 	generate
 	for (b = 0; b < NPHYS; b = b + 1) begin : g_bank
@@ -150,6 +169,8 @@ module atg_su_exp #(
 		reg [31:0] m3 [0:ROWS-1];
 		reg [31:0] m4 [0:ROWS-1];
 		reg [31:0] mz [0:ROWS-1];
+		reg [3:0] m5 [0:ROWS-1];
+		reg [3:0] mr6 [0:ROWS-1];
 		wire [31:0] d = x_b[32 * b +: 32];
 		wire we = ex_op && side[b];
 		always @(posedge clk) begin
@@ -158,9 +179,13 @@ module atg_su_exp #(
 			if (we && comp == 3'd2) m2[xrow[RW-1:0]] <= d;
 			if (we && comp == 3'd3) m3[xrow[RW-1:0]] <= d;
 			if (we && comp == 3'd4) m4[xrow[RW-1:0]] <= d;
+			if (we && comp == 3'd5) m5[xrow[RW-1:0]] <= d[3:0];
 			if (fl_we && fl_reg == 6'd3 && zbank == b)
 				mz[zrow[RW-1:0]] <= fl_data;
+			if (fl_we && fl_reg == 6'd6 && zbank == b)
+				mr6[zrow[RW-1:0]] <= fl_data[3:0];
 		end
+		assign rsm[8 * b +: 8] = {m5[drow[RW-1:0]], mr6[drow[RW-1:0]]};
 		assign rdat[192 * b +: 192] = {mz[drow[RW-1:0]], m4[drow[RW-1:0]],
 			m3[drow[RW-1:0]], m2[drow[RW-1:0]], m1[drow[RW-1:0]], m0[drow[RW-1:0]]};
 	end
@@ -170,13 +195,28 @@ module atg_su_exp #(
 	reg [511:0] col;
 	reg [127:0] dep;
 	reg [191:0] lw;
+	reg [7:0] ls;
+	reg [15:0] smask;
+	reg [3:0] zexp;
+	reg [3:0] smok;
 	integer i;
 	always @(*) begin
 		lw = 192'd0;
+		ls = 8'd0;
 		for (i = 0; i < 4; i = i + 1) begin
 			lw = rdat[192 * (({27'd0, dl0} + i) % NPHYS) +: 192];
+			ls = rsm[8 * (({27'd0, dl0} + i) % NPHYS) +: 8];
 			col[128 * i +: 128] = lw[127:0];
 			dep[32 * i +: 32] = ddw[dl0 + i[4:0]] ? lw[159:128] : lw[191:160];
+			zexp[i] = ddw[dl0 + i[4:0]];
+`ifdef MUT_SMASK_AND
+			smask[4 * i +: 4] = (dr6[dl0 + i[4:0]] ? ls[3:0] : 4'hF) &
+				(dsm[dl0 + i[4:0]] ? ls[7:4] & ls[3:0] : 4'hF);
+`else
+			smask[4 * i +: 4] = (dr6[dl0 + i[4:0]] ? ls[3:0] : 4'hF) &
+				(dsm[dl0 + i[4:0]] ? ls[7:4] : 4'hF);
+`endif
+			smok[i] = smask[4 * i +: 4] != 4'd0;
 		end
 	end
 
@@ -198,7 +238,8 @@ module atg_su_exp #(
 	assign ex_valid = st == S_DRAIN;
 	assign ex_seq = seq[dwarp*16 +: 16];
 	assign ex_xy = {qy[dqs +: 16], qx[dqs +: 16]};
-	assign ex_mask = dxp[dl0 +: 4];
+	assign ex_mask = dxp[dl0 +: 4] & smok;
+	assign ex_ms = {dsv[dwarp*128 +: 128], zexp & dxp[dl0 +: 4], smask};
 	assign ex_color = col;
 	assign ex_depth = dep;
 	assign ex_last = dlast;
@@ -209,6 +250,8 @@ module atg_su_exp #(
 		if (!rst_n) begin
 			frag <= {NWARPS{1'b0}};
 			ended <= {NWARPS{1'b0}};
+			r6w <= {(NWARPS*32){1'b0}};
+			dsv <= {(NWARPS*128){1'b0}};
 			st <= S_IDLE;
 			vx_v <= 1'b0;
 			vx_w <= {WARP_W{1'b0}};
@@ -217,6 +260,15 @@ module atg_su_exp #(
 		end else begin
 			vx_v <= wc_end && !frag[wc_warp];
 			vx_w <= wc_warp;
+			/* The RX's r6 and d_s of the warp being built; cleared at a release. */
+			if (fl_we && fl_reg == 6'd6)
+				r6w[fl_slot*32 + {27'd0, fl_lane}] <= 1'b1;
+			if (fl_pw_we && fl_pw_addr[11:2] == 10'h3FE)
+				dsv[fl_slot*128 + {fl_pw_addr[1:0], 5'd0} +: 32] <= fl_pw_data;
+			if (xr_valid) begin
+				r6w[xr_warp*32 +: 32] <= 32'd0;
+				dsv[xr_warp*128 +: 128] <= 128'd0;
+			end
 			if (wc_end && frag[wc_warp])
 				ended[wc_warp] <= 1'b1;
 			if (fl_go) begin
@@ -226,6 +278,7 @@ module atg_su_exp #(
 				cov[fl_slot*32 +: 32] <= fl_info[31:0];
 				xp[fl_slot*32 +: 32] <= 32'd0;
 				dw[fl_slot*32 +: 32] <= 32'd0;
+				smw[fl_slot*32 +: 32] <= 32'd0;
 			end
 			if (fl_we && fl_lane[1:0] == 2'd0 && fl_reg == 6'd4)
 				qx[fq +: 16] <= fx;
@@ -235,6 +288,8 @@ module atg_su_exp #(
 				xp[x_warp*32 +: 32] <= xp[x_warp*32 +: 32] | side_w;
 				if (comp == 3'd4)
 					dw[x_warp*32 +: 32] <= dw[x_warp*32 +: 32] | side_w;
+				if (comp == 3'd5)
+					smw[x_warp*32 +: 32] <= smw[x_warp*32 +: 32] | side_w;
 			end
 			case (st)
 			S_IDLE:

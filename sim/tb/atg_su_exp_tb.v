@@ -18,6 +18,14 @@
  *             on the last quad.
  *   release — xr_valid: a vertex (or compute) warp the cycle after its
  *             end, a fragment warp once after its last quad is taken.
+ *   ms      — multisampling: the RX writes r6 of half the warps (other
+ *             lanes take 1111) and the d_s table words 0xFF8-0xFFB of half
+ *             of them (others 0: cleared at the release; the map and a
+ *             varying word are not d_s), half the warps export SAMPLE_MASK
+ *             (0x105) twice (the last value counts); ex_ms = {the warp's
+ *             d_s, the lanes that exported DEPTH, r6 & SAMPLE_MASK per
+ *             lane} and a lane whose mask is 0 is not in ex_mask.
+ *             -DMUT_SMASK_AND (the two exports ANDed) fails it.
  */
 
 `timescale 1ns / 1ps
@@ -43,6 +51,10 @@ module atg_su_exp_tb;
 	reg [4:0] fl_lane = 0;
 	reg [31:0] fl_data = 0;
 	reg [63:0] fl_info = 0;
+	reg fl_pw_we = 1'b0;
+	reg [11:0] fl_pw_addr = 0;
+	reg [31:0] fl_pw_data = 0;
+	wire [147:0] ex_ms;
 	wire x_ready, ex_valid, ex_last, xr_valid;
 	wire [15:0] ex_seq;
 	wire [31:0] ex_xy;
@@ -60,6 +72,7 @@ module atg_su_exp_tb;
 		.ex_next(ex_next),
 		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane),
 		.fl_data(fl_data), .fl_go(fl_go), .fl_info(fl_info),
+		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_ms(ex_ms),
 		.xr_valid(xr_valid), .xr_warp(xr_warp), .wc_end(wc_end), .wc_warp(wc_warp));
 
 	integer seed = 1, errors = 0, e_rel = 0, i, j, k, l, c, r, t;
@@ -73,6 +86,12 @@ module atg_su_exp_tb;
 	reg [31:0] zv [0:127];	/* slot*32 + lane */
 	reg [31:0] dv [0:127];
 	reg [31:0] cv [0:511];	/* (slot*32 + lane)*4 + comp */
+	reg [3:0] r6v [0:127];	/* the RX's r6 */
+	reg [3:0] smv [0:127];	/* the last SAMPLE_MASK */
+	reg [31:0] smf [0:3];	/* SAMPLE_MASK exported */
+	reg [3:0] r6f;		/* the RX wrote r6 of the slot's lanes */
+	reg [31:0] dsr [0:15];	/* slot*4 + sample */
+	integer e_ms = 0;
 	reg [3:0] kind;	/* 1: fragment slot */
 	reg [3:0] wait_rel;	/* a fragment slot whose drain is due */
 	reg [3:0] drained;
@@ -117,6 +136,20 @@ module atg_su_exp_tb;
 		end
 	endtask
 
+	task pww;
+		input [1:0] s;
+		input [11:0] a;
+		input [31:0] d;
+		begin
+			fl_pw_we = 1'b1;
+			fl_slot = s;
+			fl_pw_addr = a;
+			fl_pw_data = d;
+			tick;
+			fl_pw_we = 1'b0;
+		end
+	endtask
+
 	/* a fragment warp in slot s: nq quads, the RX's writes, fl_go */
 	task frag_warp;
 		input [1:0] s;
@@ -139,6 +172,23 @@ module atg_su_exp_tb;
 					flw(s, 6'd0, ln, $random(seed));	/* b0: not the exp's */
 				end
 			end
+			/* multisampling: r6 and d_s of half the warps */
+			r6f[s] = $random(seed) & 1;
+			if (r6f[s])
+				for (ln = 0; ln < 32; ln = ln + 1) begin
+					r6v[s * 32 + ln] = ln < 4 * nq ? $random(seed) : 4'd0;
+					flw(s, 6'd6, ln, {$random(seed) & 32'hFFFFFFF0} | r6v[s * 32 + ln]);
+				end
+			for (q = 0; q < 4; q = q + 1)
+				dsr[s * 4 + q] = 32'd0;
+			if ($random(seed) & 1)
+				for (q = 0; q < 4; q = q + 1) begin
+					dsr[s * 4 + q] = $random(seed);
+					pww(s, 12'hFF8 + q, dsr[s * 4 + q]);
+				end
+			pww(s, 12'hFFF, $random(seed));
+			pww(s, 12'h004, $random(seed));
+			smf[s] = 0;
 			sq[s] = seq;
 			slot_of_seq[seq] = s;
 			xpl[s] = 0;
@@ -173,9 +223,12 @@ module atg_su_exp_tb;
 			x_mask = {sm, {NPHYS{1'b1}}};
 			for (ln = 0; ln < NPHYS; ln = ln + 1) begin
 				x_b[32 * ln +: 32] = $random(seed);
-				if (sm[ln] && kd == 2'd1 && tg >= 32'h100 && tg <= 32'h104) begin
+				if (sm[ln] && kd == 2'd1 && tg >= 32'h100 && tg <= 32'h105) begin
 					xpl[s][g * NPHYS + ln] = 1'b1;
-					if (tg == 32'h104) begin
+					if (tg == 32'h105) begin
+						smf[s][g * NPHYS + ln] = 1'b1;
+						smv[s * 32 + g * NPHYS + ln] = x_b[32 * ln +: 4];
+					end else if (tg == 32'h104) begin
 						dwl[s][g * NPHYS + ln] = 1'b1;
 						dv[s * 32 + g * NPHYS + ln] = x_b[32 * ln +: 32];
 					end else
@@ -203,6 +256,8 @@ module atg_su_exp_tb;
 
 	/* The ROP model: takes quads in order, checks them. */
 	reg [31:0] want;
+	reg [15:0] lsm;
+	reg [3:0] okm;
 	integer ms, ml, mc;
 	always @(posedge clk)
 		ex_ready <= $random(seed) & 1;
@@ -213,8 +268,22 @@ module atg_su_exp_tb;
 				$display("FAIL atg_su_exp.frag: sequence %0d out while next is %0d", ex_seq, ex_next);
 			end
 			ms = slot_of_seq[ex_seq];
+			okm = 4'd0;
+			for (ml = 0; ml < 4; ml = ml + 1) begin
+				lsm[4 * ml +: 4] = (r6f[ms] ? r6v[ms * 32 + 4 * dq + ml] : 4'hF) &
+					(smf[ms][4 * dq + ml] ? smv[ms * 32 + 4 * dq + ml] : 4'hF);
+				okm[ml] = lsm[4 * ml +: 4] != 4'd0;
+			end
+			if (ex_ms[15:0] !== lsm ||
+			    ex_ms[19:16] !== (dwl[ms][4 * dq +: 4] & xpl[ms][4 * dq +: 4] & cov[ms][4 * dq +: 4]) ||
+			    ex_ms[147:20] !== {dsr[ms * 4 + 3], dsr[ms * 4 + 2], dsr[ms * 4 + 1], dsr[ms * 4]}) begin
+				e_ms = e_ms + 1;
+				if (e_ms < 6)
+					$display("FAIL atg_su_exp.ms: seq %0d quad %0d ex_ms %h smask want %h", ex_seq, dq,
+						ex_ms, lsm);
+			end
 			if (ex_xy !== {qys[ms * 8 + dq], qxs[ms * 8 + dq]} ||
-			    ex_mask !== (cov[ms][4 * dq +: 4] & xpl[ms][4 * dq +: 4]) ||
+			    ex_mask !== (cov[ms][4 * dq +: 4] & xpl[ms][4 * dq +: 4] & okm) ||
 			    ex_last !== (dq == 7 || cov[ms][4 * dq + 4 +: 4] == 4'd0)) begin
 				errors = errors + 1;
 				$display("FAIL atg_su_exp.frag: seq %0d quad %0d xy %h mask %b last %b", ex_seq,
@@ -298,6 +367,10 @@ module atg_su_exp_tb;
 				if ($random(seed) & 1)
 					for (j = 0; j < G; j = j + 1)
 						exp_grp(i, j, 32'h104, 2'd1);
+				if ($random(seed) & 1)
+					for (c = 0; c < 2; c = c + 1)
+						for (j = 0; j < G; j = j + 1)
+							exp_grp(i, j, 32'h105, 2'd1);
 				exp_grp(i, 0, 32'h000, 2'd1);	/* a vertex target from a fragment warp */
 				exp_grp(i, 1, 32'h101, 2'd0);	/* a vertex warp's exp: not the buffer's */
 			end
@@ -327,7 +400,9 @@ module atg_su_exp_tb;
 			$display("PASS atg_su_exp.frag");
 		if (e_rel == 0)
 			$display("PASS atg_su_exp.release");
-		if (errors + e_rel == 0)
+		if (e_ms == 0)
+			$display("PASS atg_su_exp.ms");
+		if (errors + e_rel + e_ms == 0)
 			$display("PASS atg_su_exp");
 		else
 			$display("FAIL atg_su_exp: %0d errors", errors + e_rel);

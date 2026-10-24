@@ -78,6 +78,7 @@ None beyond the above.
 `sim/tb/atg_su_lda_tb.v` prints, in this order:
 
 - `PASS atg_su_lda.rw` — RX-style writes then lda reads for several primitives per warp (through the map), in the NPHYS 8 and 16 shapes
+- `PASS atg_su_lda.ms` — the RX's d_s words (0xFF8-0xFFB, multisampling) touch neither the table nor the map
 - `PASS atg_su_lda` at the end.
 
 ## 9. References
