@@ -27,7 +27,7 @@
 #define PROGRAM_BANK_WORDS 256u		/* the constant bank */
 #define PROGRAM_SLOTS 16u		/* texture slots per stage */
 #define PROGRAM_LDS_BYTES 16384u	/* shared memory per workgroup (KC705) */
-#define PROGRAM_KINDS 13u		/* the highest interface kind */
+#define PROGRAM_KINDS 14u		/* the highest interface kind */
 
 /*
  * The header and the interface table of the program being checked (too
@@ -229,6 +229,13 @@ program_check_entry(
 		break;
 	case GSI1_KIND_PUSH_CONSTANT:
 		words = (header[GSI1_H_PUSH_BYTES] + 3u) / 4u;
+		break;
+	case GSI1_KIND_SCRATCH:
+		/* The bank word of the address; the bytes per warp in 128-byte units. */
+		if (specific == 0 || (specific & 127u) != 0 || specific > 0x100000u)
+			return -1;
+		bank = entry[GSI1_IF_BINDING];
+		words = 1;
 		break;
 	default:
 		return 0;

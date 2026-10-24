@@ -49,6 +49,13 @@ static uint32_t heap_base;
 static uint32_t heap_lines;
 
 /*
+ * The warps the GPU runs at once over its shader units (NSU x NWARPS),
+ * which the driver reads from the GPU's registers and gives with
+ * GHCI_HEAP: a program's scratch memory has a part for each.
+ */
+static uint32_t heap_warps = FW_RESIDENT_WARPS;
+
+/*
  * The free extents, sorted by their first line and never touching each
  * other (a freed block merges with its neighbours), and how many are in
  * use.  An extent of 0 lines is never kept.
@@ -79,7 +86,8 @@ fw_heap_init(void)
 }
 
 /*
- * Takes the range the driver lends as the heap, all of it free.
+ * Takes the range the driver lends as the heap, all of it free (but the
+ * firmware's own part), and the warps the GPU runs at once.
  *
  * Returns 0, or -1 when the range is not whole lines or a session is open
  * (its objects would point into the old heap).
@@ -87,9 +95,11 @@ fw_heap_init(void)
 int
 fw_heap_set(
 	uint32_t base,
-	uint32_t bytes)
+	uint32_t bytes,
+	uint32_t warps)
 {
 	int open;
+	int error;
 
 	/* The heap can change only while no object lives in it. */
 	open = fw_session_any();
@@ -102,15 +112,33 @@ fw_heap_set(
 	if (bytes == 0 || base + bytes < base)
 		return -1;
 
-	/* One free extent of everything. */
+	/* The firmware's own part first, then one free extent of the rest. */
+	if (bytes <= FW_BUILTIN_BYTES)
+		return -1;
+	error = fw_builtin_init(base);
+	if (error != 0)
+		return -1;
 	heap_base = base;
 	heap_lines = bytes / FW_LINE_BYTES;
-	heap_free_list[0].first = 0;
-	heap_free_list[0].lines = heap_lines;
+	heap_warps = FW_RESIDENT_WARPS;
+	if (warps != 0)
+		heap_warps = warps;
+	heap_free_list[0].first = FW_BUILTIN_BYTES / FW_LINE_BYTES;
+	heap_free_list[0].lines = heap_lines - heap_free_list[0].first;
 	heap_free_count = 1;
 
 	/* Succeeded: the heap is ready. */
 	return 0;
+}
+
+/*
+ * Gives the warps the GPU runs at once (for scratch memory).
+ */
+uint32_t
+fw_heap_warps(void)
+{
+	/* As GHCI_HEAP said. */
+	return heap_warps;
 }
 
 /*

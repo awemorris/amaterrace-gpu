@@ -21,8 +21,8 @@ src=$root/fw/cp
 img=$src/images
 out=$root/build/fw-cp
 mkdir -p "$out" "$img"
-flags="--target=riscv32-unknown-elf -march=rv32im -mabi=ilp32 -mno-relax -msmall-data-limit=0
-	-Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-common -std=c99
+flags="--target=riscv32-unknown-elf -march=rv32im -mabi=ilp32 -msmall-data-limit=0
+	-Oz -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-common -std=c99
 	-Wall -Wextra -Werror -I$root/include -I$src"
 # hex FILE.bin WORDS OUT: little-endian words, padded with zero words.
 hex() {

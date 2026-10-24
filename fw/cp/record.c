@@ -275,6 +275,89 @@ fw_record_replay(
 }
 
 /*
+ * Appends a secondary command buffer's recording to a primary's: every
+ * packet but the data, which the copied packets still find in the
+ * secondary's chunks (Vulkan makes the primary invalid when the secondary
+ * is reset or freed).
+ *
+ * Returns 0, or -1 when a chunk could not be read or the heap is full.
+ */
+int
+fw_record_append(
+	struct fw_object *cmdbuf,
+	struct fw_object *secondary)
+{
+	uint32_t packet[FW_EMIT_PAYLOAD + 4u + 2u * 64u];
+	uint32_t chunk;
+	uint32_t next;
+	uint32_t used;
+	uint32_t position;
+	uint32_t base;
+	uint32_t word;
+	uint32_t left;
+	uint32_t taken;
+	int skipping;
+	int error;
+
+	/* The secondary's chunks in memory are complete once the cache is written back. */
+	error = fw_record_flush();
+	if (error != 0)
+		return -1;
+
+	/* Each chunk, a few lines at a time, each packet whole. */
+	left = 0;
+	taken = 0;
+	skipping = 0;
+	for (chunk = secondary->a; chunk != 0; chunk = next) {
+		error = fw_mem_read(chunk, replay_words, sizeof(replay_words));
+		if (error != 0)
+			return -1;
+		next = replay_words[0];
+		used = replay_words[1];
+		base = 0;
+		for (position = FW_CHUNK_HEAD; position < FW_CHUNK_HEAD + used; position++) {
+			if (position - base == REPLAY_WORDS) {
+				base = position;
+				error = fw_mem_read(chunk + base * 4u, replay_words, sizeof(replay_words));
+				if (error != 0)
+					return -1;
+			}
+			word = replay_words[position - base];
+
+			/* A header: its length, and whether it is data (skipped). */
+			if (left == 0) {
+				left = word & 0xFFu;
+				if (GHCI_PKT_GET_CLASS(word) == GHCI_PKT_CLASS_PAD)
+					left = word & 0xFFFFu;
+				taken = 0;
+				skipping = 0;
+				packet[taken++] = word;
+			} else {
+				left--;
+				if (taken == 1u && GHCI_PKT_GET_CLASS(packet[0]) == GHCI_PKT_CLASS_PAD && word == FW_MARK_DATA)
+					skipping = 1;
+				if (!skipping) {
+					if (taken == sizeof(packet) / sizeof(packet[0]))
+						return -1;
+					packet[taken++] = word;
+				}
+			}
+
+			/* A whole packet goes into the primary's recording. */
+			if (left == 0 && !skipping) {
+				error = fw_record_words(cmdbuf, packet, taken);
+				if (error != 0)
+					return -1;
+			}
+		}
+
+	}
+
+	/* Succeeded: the secondary's work follows in the primary. */
+	return 0;
+}
+
+/*
  * Gives the recording state of a command buffer that is recording, in
  * DMEM; the state of another command buffer is put back into its block
  * first.

@@ -52,6 +52,10 @@ static void stage_submit(uint32_t index, uint64_t cmdbuf);
 static void test_sessions(void);
 static void test_buffers(void);
 static void test_images(void);
+static void test_draw(void);
+static void stage_image(uint32_t index, uint64_t id, uint32_t format, uint32_t width, uint32_t height, uint32_t usage);
+static void stage_view(uint32_t index, uint64_t id, uint64_t image, uint32_t format);
+static void put_program(uint32_t address, uint32_t stage, const uint32_t *entries, uint32_t count, uint32_t push);
 
 int
 main(void)
@@ -60,6 +64,7 @@ main(void)
 	test_sessions();
 	test_buffers();
 	test_images();
+	test_draw();
 
 	if (host_failures != 0) {
 		printf("FAIL fwtest: %d failures\n", host_failures);
@@ -87,7 +92,7 @@ test_case(
 static void
 open_session(void)
 {
-	uint32_t args[4];
+	uint32_t args[5];
 
 	host_reset();
 	fw_heap_init();
@@ -97,7 +102,8 @@ open_session(void)
 	args[1] = 0;
 	args[2] = HOST_HEAP_BYTES;
 	args[3] = 0;
-	host_ring(0, GHCI_GPU_OP_HEAP, args, 4);
+	args[4] = 4;
+	host_ring(0, GHCI_GPU_OP_HEAP, args, 5);
 	host_check(host_ring_result() == 0, "GHCI_HEAP");
 	args[0] = TAG;
 	args[1] = 0;
@@ -238,7 +244,7 @@ stage_submit(
 static void
 test_sessions(void)
 {
-	uint32_t args[4];
+	uint32_t args[5];
 	uint32_t status;
 	int before;
 
@@ -262,7 +268,8 @@ test_sessions(void)
 	args[1] = 0;
 	args[2] = HOST_HEAP_BYTES;
 	args[3] = 0;
-	host_ring(0, GHCI_GPU_OP_HEAP, args, 4);
+	args[4] = 4;
+	host_ring(0, GHCI_GPU_OP_HEAP, args, 5);
 	host_check(host_ring_result() == FW_VK_ERROR_INITIALIZATION_FAILED, "GHCI_HEAP with a session open");
 
 	/* SESSION_OPEN, SESSION_CLOSE, GRANT inside a frame end it. */
@@ -306,7 +313,8 @@ test_sessions(void)
 	args[1] = 0;
 	args[2] = HOST_HEAP_BYTES;
 	args[3] = 0;
-	host_ring(0, GHCI_GPU_OP_HEAP, args, 4);
+	args[4] = 4;
+	host_ring(0, GHCI_GPU_OP_HEAP, args, 5);
 	host_check(host_ring_result() == 0, "GHCI_HEAP after the close");
 	(void)test_case("sessions", before);
 }
@@ -529,4 +537,583 @@ test_images(void)
 		host_check(sampler->b == GHCI_TEX_LOD_VAL(128, 1088), "TEX_LOD");
 	}
 	(void)test_case("images", before);
+}
+
+/* CREATE_IMAGE of a 2D image with one level and layer, and BIND_IMAGE_MEMORY at its offset. */
+static void
+stage_image(
+	uint32_t index,
+	uint64_t id,
+	uint32_t format,
+	uint32_t width,
+	uint32_t height,
+	uint32_t usage)
+{
+	host_record(GHCI_VK_CREATE_IMAGE, index);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(ST_IMAGE);
+	host_u64(0);
+	host_u32(0);
+	host_u32(1);
+	host_u32(format);
+	host_u32(width);
+	host_u32(height);
+	host_u32(1);
+	host_u32(1);
+	host_u32(1);
+	host_u32(1);
+	host_u32(0);
+	host_u32(usage);
+	host_u32(0);
+	host_u32(0);
+	host_u64(0);
+	host_u32(0);
+	host_u64(0);
+	host_u64(1);
+	host_u64(id);
+}
+
+/* CREATE_IMAGE_VIEW of a whole 2D image, identity swizzle. */
+static void
+stage_view(
+	uint32_t index,
+	uint64_t id,
+	uint64_t image,
+	uint32_t format)
+{
+	host_record(GHCI_VK_CREATE_IMAGE_VIEW, index);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(ST_IMAGE_VIEW);
+	host_u64(0);
+	host_u32(0);
+	host_u64(image);
+	host_u32(1);
+	host_u32(format);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(FW_ASPECT_COLOR);
+	host_u32(0);
+	host_u32(1);
+	host_u32(0);
+	host_u32(1);
+	host_u64(0);
+	host_u64(1);
+	host_u64(id);
+}
+
+/* A GSI1 binary at an address: the header, the interface entries, one `end`. */
+static void
+put_program(
+	uint32_t address,
+	uint32_t stage,
+	const uint32_t *entries,
+	uint32_t count,
+	uint32_t push)
+{
+	uint32_t header[16];
+	uint32_t index;
+
+	memset(header, 0, sizeof(header));
+	header[0] = 0x47534931u;
+	header[1] = 1;
+	header[2] = stage;
+	header[4] = 2;
+	header[5] = 16u + 4u * count;
+	header[6] = 8;
+	header[9] = 8;
+	header[10] = 16;
+	header[11] = count;
+	header[13] = 1;
+	header[14] = push;
+	for (index = 0; index < 16u; index++)
+		host_poke(address + index * 4u, header[index]);
+	for (index = 0; index < 4u * count; index++)
+		host_poke(address + 64u + index * 4u, entries[index]);
+	host_poke(address + 64u + 16u * count, 0x0000700Bu);
+	host_poke(address + 68u + 16u * count, 0);
+}
+
+/*
+ * A draw: a render pass that clears a 64x32 RGBA8 target, a pipeline of
+ * a vertex program (one attribute, a uniform block, push constants) and
+ * a fragment program (a sampled image), a descriptor set, a vertex
+ * buffer: the STATE the draw leaves, the constant bank, the clear.
+ */
+static void
+test_draw(void)
+{
+	static const uint32_t vs_entries[] = {
+		1, 0, 0, 0x0400u,			/* attribute: location 0, r0, 4 components */
+		4, 0, 0, 4u | 4u << 8,			/* uniform block: set 0, binding 0, bank 4, 4 words */
+		7, 0, 0, 0,				/* push constants at bank 0 */
+		3, 0, 0, 0x0400u,			/* output: location 0, word 0, 4 components */
+	};
+	static const uint32_t fs_entries[] = {
+		2, 0, 0, 0x0400u,			/* input: location 0 */
+		5, 0, 1, 0,				/* sampled image: set 0, binding 1, slot 0 */
+		3, 0, 0, 0x100u | 0xFu << 16,		/* output: attachment 0 */
+	};
+	uint32_t index;
+	uint32_t uop;
+	uint32_t bank;
+	uint32_t base;
+	uint32_t ok;
+	struct fw_object *view;
+	uint32_t view_words[16];
+	int before;
+
+	before = host_failures;
+	open_session();
+
+	/* The programs, in the memory object (the driver puts them there). */
+	put_program(MEMORY_BASE + 0x700000u, 0, vs_entries, 4, 16);
+	put_program(MEMORY_BASE + 0x701000u, 1, fs_entries, 3, 0);
+	for (index = 0; index < 4u; index++)
+		host_poke(MEMORY_BASE + 0x8000u + index * 4u, 0x51000000u | index);
+
+	/* Frame 1: memory, the target and a texture, buffers, the sampler. */
+	host_frame_begin();
+	stage_memory(0);
+	stage_image(1, 0x700, FW_VK_FORMAT_R8G8B8A8_UNORM, 64, 32, 0x14);
+	host_record(GHCI_VK_BIND_IMAGE_MEMORY, 2);
+	host_u64(DEVICE);
+	host_u64(0x700);
+	host_u64(MEMORY);
+	host_u64(0x100000);
+	stage_view(3, 0x701, 0x700, FW_VK_FORMAT_R8G8B8A8_UNORM);
+	stage_image(4, 0x710, FW_VK_FORMAT_B8G8R8A8_UNORM, 16, 16, 0x4);
+	host_record(GHCI_VK_BIND_IMAGE_MEMORY, 5);
+	host_u64(DEVICE);
+	host_u64(0x710);
+	host_u64(MEMORY);
+	host_u64(0x200000);
+	stage_view(6, 0x711, 0x710, FW_VK_FORMAT_B8G8R8A8_UNORM);
+	stage_buffer(7, 0x720, 0x1000, 0x80);
+	stage_bind_buffer(8, 0x720, 0x4000);
+	stage_buffer(9, 0x721, 0x100, 0x10);
+	stage_bind_buffer(10, 0x721, 0x8000);
+	host_record(GHCI_VK_CREATE_SAMPLER, 11);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(ST_SAMPLER);
+	host_u64(0);
+	for (index = 0; index < 16u; index++)
+		host_u32(0);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x730);
+	host_check(host_frame_run(TAG, 12) == 0, "frame 1");
+	for (index = 0; index < 12u; index++) {
+		if (host_result(index) != 0) {
+			printf("  frame 1 record %u: %d\n", index, host_result(index));
+			host_check(0, "a record failed");
+		}
+	}
+
+	/* Frame 2: the set layout, pool, set and its update; the pipeline layout; render pass; framebuffer. */
+	host_frame_begin();
+	host_record(GHCI_VK_CREATE_DESCRIPTOR_SET_LAYOUT, 0);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(32);
+	host_u64(0);
+	host_u32(0);
+	host_u32(2);
+	host_u64(2);
+	host_u32(0);
+	host_u32(6);
+	host_u32(1);
+	host_u32(1);
+	host_u64(0);
+	host_u32(1);
+	host_u32(1);
+	host_u32(1);
+	host_u32(0x10);
+	host_u64(0);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x740);
+	host_record(GHCI_VK_CREATE_DESCRIPTOR_POOL, 1);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(33);
+	host_u64(0);
+	host_u32(0);
+	host_u32(4);
+	host_u32(1);
+	host_u64(1);
+	host_u32(6);
+	host_u32(16);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x741);
+	host_record(GHCI_VK_ALLOCATE_DESCRIPTOR_SETS, 2);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(34);
+	host_u64(0);
+	host_u64(0x741);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x740);
+	host_u64(1);
+	host_u64(0x742);
+	host_record(GHCI_VK_UPDATE_DESCRIPTOR_SETS, 3);
+	host_u64(DEVICE);
+	host_u32(2);
+	host_u64(2);
+	host_u32(35);
+	host_u64(0);
+	host_u64(0x742);
+	host_u32(0);
+	host_u32(0);
+	host_u32(1);
+	host_u32(6);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x721);
+	host_u64(0);
+	host_u64(~0ull);
+	host_u64(0);
+	host_u32(35);
+	host_u64(0);
+	host_u64(0x742);
+	host_u32(1);
+	host_u32(0);
+	host_u32(1);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x730);
+	host_u64(0x711);
+	host_u32(5);
+	host_u64(0);
+	host_u64(0);
+	host_u32(0);
+	host_u64(0);
+	host_record(GHCI_VK_CREATE_PIPELINE_LAYOUT, 4);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(30);
+	host_u64(0);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x740);
+	host_u32(1);
+	host_u64(1);
+	host_u32(1);
+	host_u32(0);
+	host_u32(16);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x750);
+	host_record(GHCI_VK_CREATE_RENDER_PASS, 5);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(38);
+	host_u64(0);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0);
+	host_u32(FW_VK_FORMAT_R8G8B8A8_UNORM);
+	host_u32(1);
+	host_u32(1);
+	host_u32(0);
+	host_u32(2);
+	host_u32(1);
+	host_u32(0);
+	host_u32(2);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0);
+	host_u64(0);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0);
+	host_u32(2);
+	host_u64(0);
+	host_u64(0);
+	host_u32(0);
+	host_u64(0);
+	host_u32(0);
+	host_u64(0);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x760);
+	host_record(GHCI_VK_CREATE_FRAMEBUFFER, 6);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(37);
+	host_u64(0);
+	host_u32(0);
+	host_u64(0x760);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x701);
+	host_u32(64);
+	host_u32(32);
+	host_u32(1);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x761);
+
+	/* The two programs, then the pipeline. */
+	host_record(GHCI_GPU_OP_PROGRAM, 7);
+	host_u64(0x770);
+	host_u32(0);
+	host_u32(0x47534931u);
+	host_u64(MEMORY_BASE + 0x700000u);
+	host_u32(0x1000);
+	host_u32(0);
+	host_record(GHCI_GPU_OP_PROGRAM, 8);
+	host_u64(0x770);
+	host_u32(1);
+	host_u32(0x47534931u);
+	host_u64(MEMORY_BASE + 0x701000u);
+	host_u32(0x1000);
+	host_u32(0);
+	host_record(GHCI_VK_CREATE_GRAPHICS_PIPELINES, 9);
+	host_u64(DEVICE);
+	host_u64(0);
+	host_u32(1);
+	host_u64(1);
+	host_u32(28);
+	host_u64(0);
+	host_u32(0);
+	host_u32(2);
+	host_u64(2);
+	for (index = 0; index < 2u; index++) {
+		host_u32(18);
+		host_u64(0);
+		host_u32(0);
+		host_u32(index == 0 ? 1u : 0x10u);
+		host_u64(0x100 + index);
+		host_u64(5);
+		host_u32(0x6E69616Du);
+		host_u32(0);
+		host_u64(0);
+	}
+	host_u64(1);
+	host_u32(19);
+	host_u64(0);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0);
+	host_u32(16);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0);
+	host_u32(0);
+	host_u32(109);
+	host_u32(0);
+	host_u64(1);
+	host_u32(20);
+	host_u64(0);
+	host_u32(0);
+	host_u32(3);
+	host_u32(0);
+	host_u64(0);
+	host_u64(1);
+	host_u32(22);
+	host_u64(0);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0x42800000u);
+	host_u32(0x42000000u);
+	host_u32(0);
+	host_u32(0x3F800000u);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0);
+	host_u32(0);
+	host_u32(64);
+	host_u32(32);
+	host_u64(1);
+	host_u32(23);
+	host_u64(0);
+	for (index = 0; index < 11u; index++)
+		host_u32(index == 10u ? 0x3F800000u : (index == 4u ? 2u : 0u));
+	host_u64(1);
+	host_u32(24);
+	host_u64(0);
+	host_u32(0);
+	host_u32(1);
+	host_u32(0);
+	host_u32(0);
+	host_u64(0);
+	host_u32(0);
+	host_u32(0);
+	host_u64(0);
+	host_u64(1);
+	host_u32(26);
+	host_u64(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(3);
+	host_u32(1);
+	host_u64(1);
+	for (index = 0; index < 8u; index++)
+		host_u32(index == 7u ? 0xFu : 0u);
+	host_u64(4);
+	for (index = 0; index < 4u; index++)
+		host_u32(0);
+	host_u64(0);
+	host_u64(0x750);
+	host_u64(0x760);
+	host_u32(0);
+	host_u64(0);
+	host_u32(0xFFFFFFFFu);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x770);
+	host_check(host_frame_run(TAG, 10) == 0, "frame 2");
+	for (index = 0; index < 10u; index++) {
+		if (host_result(index) != 0) {
+			printf("  frame 2 record %u: %d\n", index, host_result(index));
+			host_check(0, "a record failed");
+		}
+	}
+
+	/* Frame 3: the recording and its submit. */
+	host_frame_begin();
+	stage_pool_and_buffer(0, 0x780, 0x781);
+	stage_begin(2, 0x781);
+	host_cmd(GHCI_VK_CMD_BEGIN_RENDER_PASS);
+	host_u64(0x781);
+	host_u64(1);
+	host_u32(43);
+	host_u64(0);
+	host_u64(0x760);
+	host_u64(0x761);
+	host_u32(0);
+	host_u32(0);
+	host_u32(64);
+	host_u32(32);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0);
+	host_u32(2);
+	host_u64(4);
+	host_u32(0x3F800000u);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0x3F800000u);
+	host_u32(0);
+	host_cmd(GHCI_VK_CMD_BIND_PIPELINE);
+	host_u64(0x781);
+	host_u32(0);
+	host_u64(0x770);
+	host_cmd(GHCI_VK_CMD_BIND_DESCRIPTOR_SETS);
+	host_u64(0x781);
+	host_u32(0);
+	host_u64(0x750);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x742);
+	host_u32(0);
+	host_u64(0);
+	host_cmd(GHCI_VK_CMD_BIND_VERTEX_BUFFERS);
+	host_u64(0x781);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x720);
+	host_u64(1);
+	host_u64(0x40);
+	host_cmd(GHCI_VK_CMD_PUSH_CONSTANTS);
+	host_u64(0x781);
+	host_u64(0x750);
+	host_u32(1);
+	host_u32(0);
+	host_u32(16);
+	host_u64(16);
+	for (index = 0; index < 4u; index++)
+		host_u32(0xC0000000u | index);
+	host_cmd(GHCI_VK_CMD_DRAW);
+	host_u64(0x781);
+	host_u32(3);
+	host_u32(1);
+	host_u32(0);
+	host_u32(0);
+	host_cmd(GHCI_VK_CMD_END_RENDER_PASS);
+	host_u64(0x781);
+	stage_end(10, 0x781);
+	stage_submit(11, 0x781);
+	host_check(host_frame_run(TAG, 12) == 0, "frame 3");
+	for (index = 0; index < 12u; index++) {
+		if (host_result(index) != 0 && host_result(index) != -1) {
+			printf("  frame 3 record %u: %d\n", index, host_result(index));
+			host_check(0, "a record failed");
+		}
+	}
+
+	/* The clear: every texel of the target R = 1, A = 1. */
+	ok = 1;
+	for (index = 0; index < 64u * 32u; index++) {
+		if (host_peek(MEMORY_BASE + 0x100000u + index * 4u) != 0xFF0000FFu)
+			ok = 0;
+	}
+	host_check(ok, "the render pass's clear");
+
+	/* The render target, the pipeline's words, the attribute, the texture slot, the viewport. */
+	view = fw_object_find(TAG, 0x711, FW_OBJ_IMAGE_VIEW);
+	memset(view_words, 0, sizeof(view_words));
+	if (view != NULL)
+		memcpy(view_words, &host_mem[view->block], 64);
+	host_check(host_state[GHCI_S_RT_BASE] == MEMORY_BASE + 0x100000u, "RT_BASE");
+	host_check(host_state[GHCI_S_RT_STRIDE] == 256u, "RT_STRIDE");
+	host_check(host_state[GHCI_S_RT_SIZE] == (32u << 16 | 64u), "RT_SIZE");
+	host_check(host_state[GHCI_S_RT_FORMATS] == FW_VK_FORMAT_R8G8B8A8_UNORM, "RT_FORMATS");
+	host_check(host_state[GHCI_S_WRITE_MASK] == 0xFu, "WRITE_MASK");
+	host_check(host_state[GHCI_S_TOPOLOGY] == 3u, "TOPOLOGY");
+	host_check(host_state[GHCI_S_CULL] == (2u | 4u), "CULL");
+	host_check(host_state[GHCI_S_VS_BASE] == MEMORY_BASE + 0x700000u + 64u + 64u, "VS_BASE");
+	host_check(host_state[GHCI_S_FS_BASE] == MEMORY_BASE + 0x701000u + 64u + 48u, "FS_BASE");
+	host_check(host_state[GHCI_S_ATTR_DST] == (0u | 3u << 6 | 109u << 24), "ATTR_DST[0]");
+	host_check(host_state[GHCI_S_ATTR] == MEMORY_BASE + 0x4000u + 0x40u, "ATTR_BASE[0]");
+	host_check(host_state[GHCI_S_ATTR + 1u] == 16u, "ATTR_DESC[0]");
+	host_check(host_state[GHCI_S_ATTR_LIMIT] == (0x80000000u | (0x1000u - 0x40u)), "ATTR_LIMIT[0]");
+	host_check(host_state[GHCI_S_TEX(0, GHCI_TEX_BASE)] == view_words[0], "TEX_BASE");
+	host_check(host_state[GHCI_S_TEX(0, GHCI_TEX_SIZE)] == (16u << 16 | 16u), "TEX_SIZE");
+	host_check(host_state[GHCI_S_TEX(0, GHCI_TEX_FORMAT)] == FW_VK_FORMAT_B8G8R8A8_UNORM, "TEX_FORMAT");
+	host_check(host_state[GHCI_S_VIEWPORT + 0u] == 0x42000000u, "VIEWPORT x scale");
+	host_check(host_state[GHCI_S_VIEWPORT + 1u] == 0x41800000u, "VIEWPORT y scale");
+	host_check(host_state[GHCI_S_VIEWPORT + 2u] == 0x42000000u, "VIEWPORT x offset");
+	host_check(host_state[GHCI_S_VIEWPORT + 3u] == 0x41800000u, "VIEWPORT y offset");
+	host_check(host_state[GHCI_S_VIEWPORT + 4u] == 0x3F800000u, "VIEWPORT z scale");
+	host_check(host_state[GHCI_S_SCISSOR_MAX] == (32u << 16 | 64u), "SCISSOR_MAX");
+	host_check(host_state[GHCI_S_COUNT] == 3u && host_state[GHCI_S_INSTANCE_COUNT] == 1u, "COUNT");
+	host_check(host_uops_of(GHCI_OP_DRAW) == 1u, "one DRAW");
+
+	/* The bank: push constants at 0-3, the uniform block's words at 4-7 (copied by a blit). */
+	uop = host_uop_find(GHCI_OP_LOAD_CONST, 0);
+	host_check(uop < host_uop_count, "LOAD_CONST");
+	if (uop < host_uop_count) {
+		bank = host_uops[uop + 2u];
+		host_check(host_uops[uop + 3u] == 8u, "LOAD_CONST words");
+		ok = 1;
+		for (index = 0; index < 4u; index++) {
+			if (host_peek(bank + index * 4u) != (0xC0000000u | index))
+				ok = 0;
+			if (host_peek(bank + 16u + index * 4u) != (0x51000000u | index))
+				ok = 0;
+		}
+		host_check(ok, "the bank's words");
+	}
+	base = 0;
+	(void)base;
+	(void)test_case("draw", before);
 }

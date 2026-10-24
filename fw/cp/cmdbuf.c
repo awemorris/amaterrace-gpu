@@ -301,6 +301,37 @@ fw_cmd_recording(
 }
 
 /*
+ * Finds the command buffer a recorded command goes into and its recording
+ * state.
+ *
+ * Returns NULL (with the command's status, or the command buffer's
+ * failure) when there is none.
+ */
+struct fw_rstate *
+fw_cmd_record_state(
+	struct fw_command *command,
+	uint64_t id,
+	struct fw_object **cmdbuf)
+{
+	struct fw_rstate *state;
+
+	/* The recording command buffer. */
+	*cmdbuf = fw_cmd_recording(command, id);
+	if (*cmdbuf == NULL)
+		return NULL;
+
+	/* Its state in DMEM. */
+	state = fw_rstate(*cmdbuf);
+	if (state == NULL) {
+		fw_cmd_record_error(*cmdbuf, FW_VK_ERROR_DEVICE_LOST);
+		return NULL;
+	}
+
+	/* Succeeded: the state the command changes or reads. */
+	return state;
+}
+
+/*
  * Keeps the first failure of a recorded command, which ends the recording
  * as invalid.
  */

@@ -18,6 +18,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "gsi1_isa.h"
+
+/* The interface kind of scratch memory (docs/ghci.md section 12.10, draft). */
+#ifndef GSI1_KIND_SCRATCH
+#define GSI1_KIND_SCRATCH 14u
+#endif
+
 /* The AMB line, set per board by tools/fw-build.sh (64 KC705). */
 #ifndef FW_LINE_BYTES
 #define FW_LINE_BYTES 64u
@@ -266,6 +273,154 @@ struct fw_view {
 	uint32_t image_base;	/* GPU address of the image (level 0, layer 0) */
 };
 
+/*
+ * A descriptor set layout's table (its block, and the head of each set's
+ * block): per binding its number, type, count, its first descriptor in
+ * the set, its first dynamic offset and its first immutable sampler.
+ */
+#define FW_LAYOUT_BINDINGS 16u
+#define FW_NO_IMMUTABLE 0xFFFFFFFFu
+struct fw_layout_binding {
+	uint32_t binding;
+	uint32_t type;
+	uint32_t count;
+	uint32_t first;
+	uint32_t dynamic_first;
+	uint32_t immutable;
+};
+struct fw_set_layout {
+	uint32_t count;
+	uint32_t descriptors;
+	uint32_t dynamic;
+	uint32_t immutable;
+	struct fw_layout_binding bindings[FW_LAYOUT_BINDINGS];
+};
+
+/*
+ * One descriptor of a set (32 bytes): its type, the image view (image
+ * types) or the address and bytes (buffers, texel buffers with their
+ * format in `object`), the sampler's words.
+ */
+struct fw_descriptor {
+	uint32_t type;
+	uint32_t flags;		/* FW_DESC_* */
+	uint64_t object;	/* the image view; a texel buffer's VkFormat */
+	uint32_t sampler;	/* TEX_SAMPLER */
+	uint32_t lod;		/* TEX_LOD */
+	uint32_t address;
+	uint32_t bytes;
+};
+#define FW_DESC_IMMUTABLE 0x1u
+
+/* The sets one ALLOCATE_DESCRIPTOR_SETS may make. */
+#define FW_MAX_ALLOCATE 64u
+
+/* A render pass's attachments and subpasses (v1 limits). */
+#define FW_RP_ATTACHMENTS 12u
+#define FW_RP_SUBPASSES 4u
+#define FW_RP_COLORS 4u		/* maxColorAttachments */
+#define FW_RP_INPUTS 4u
+#define FW_RP_UNUSED 0xFFFFFFFFu	/* VK_ATTACHMENT_UNUSED */
+
+/* One attachment of a render pass. */
+struct fw_rp_attachment {
+	uint32_t format;
+	uint32_t samples;
+	uint32_t load;
+	uint32_t store;
+	uint32_t stencil_load;
+	uint32_t stencil_store;
+};
+
+/* One subpass: its attachment indices (FW_RP_UNUSED for none). */
+struct fw_subpass {
+	uint32_t colors;
+	uint32_t inputs;
+	uint32_t color[FW_RP_COLORS];
+	uint32_t resolve[FW_RP_COLORS];
+	uint32_t input[FW_RP_INPUTS];
+	uint32_t depth;
+};
+
+/* A render pass (its object's block). */
+struct fw_render_pass {
+	uint32_t attachments;
+	uint32_t subpasses;
+	struct fw_rp_attachment attachment[FW_RP_ATTACHMENTS];
+	struct fw_subpass subpass[FW_RP_SUBPASSES];
+};
+
+/* A framebuffer (its object's block): its size and its attachments' views. */
+struct fw_framebuffer {
+	uint32_t width;
+	uint32_t height;
+	uint32_t layers;
+	uint32_t attachments;
+	uint32_t reserved[12];
+	struct fw_view view[FW_RP_ATTACHMENTS];
+};
+
+/* A pipeline's vertex input, its attributes and its resources (v1 limits). */
+#define FW_PIPE_BINDINGS 16u
+#define FW_PIPE_ATTRIBUTES 16u
+#define FW_PIPE_RESOURCES 40u
+#define FW_PIPE_PAIRS 64u
+#define FW_PIPE_SYSTEM_BINDING 0xFFFFu	/* an attribute read from the identity buffer */
+
+/* One vertex attribute slot of a pipeline, ready for the VF's words. */
+struct fw_pipe_attr {
+	uint32_t binding;	/* the vertex buffer (FW_PIPE_SYSTEM_BINDING: the identity buffer) */
+	uint32_t offset;	/* added to the binding's address */
+	uint32_t desc;		/* ATTR_DESC */
+	uint32_t dst;		/* ATTR_DST */
+	uint32_t bytes;		/* the attribute's bytes (for ATTR_LIMIT) */
+};
+
+/*
+ * One resource of a pipeline's programs (an interface entry of kinds 4-12
+ * and 14): the kind, the set and binding, the kind-specific word and the
+ * stage (the texture slots are per stage).
+ */
+struct fw_pipe_resource {
+	uint32_t kind;
+	uint32_t set;
+	uint32_t binding;
+	uint32_t specific;
+	uint32_t stage;
+};
+
+/*
+ * A pipeline (its object's block): the state the draws need beyond the
+ * STATE words it writes (`pair`), its vertex attributes and its
+ * resources.
+ */
+struct fw_pipeline {
+	uint32_t flags;			/* FW_PIPE_* */
+	uint32_t dynamic;		/* FW_DYN_* */
+	uint32_t viewport[6];
+	uint32_t scissor[4];
+	uint32_t stencil_compare[2];
+	uint32_t stencil_write[2];
+	uint32_t stencil_reference[2];
+	uint32_t stencil_op[2];		/* compareOp, front and back */
+	uint32_t depth_bias[3];
+	uint32_t blend_constants[4];
+	uint32_t depth_bounds[2];
+	uint32_t bank_words;		/* the constant bank's words the programs use */
+	uint32_t push_bank[2];		/* the bank word of the push constants (vertex/compute, fragment; ~0 none) */
+	uint32_t push_bytes[2];
+	uint32_t attributes;
+	struct fw_pipe_attr attr[FW_PIPE_ATTRIBUTES];
+	uint32_t resources;
+	struct fw_pipe_resource resource[FW_PIPE_RESOURCES];
+	uint32_t pairs;
+	uint32_t pair[FW_PIPE_PAIRS][2];
+	uint32_t scratch_bytes;		/* the programs' scratch memory, after this in the block */
+};
+#define FW_PIPE_COMPUTE 0x1u
+#define FW_RESIDENT_WARPS 4u		/* the warps that run at once when GHCI_HEAP does not say */
+#define FW_PIPE_NO_PUSH 0xFFFFFFFFu
+
 /* VkImageUsageFlags the firmware looks at. */
 #define FW_USAGE_COLOR_ATTACHMENT 0x10u
 #define FW_USAGE_DEPTH_STENCIL_ATTACHMENT 0x20u
@@ -325,12 +480,13 @@ struct fw_rstate {
 	uint32_t contents;		/* the subpass contents (secondary command buffers) */
 	uint64_t query_pool;		/* the active occlusion query (0: none) */
 	uint32_t query;
-	uint32_t error;			/* the first recording failure (VkResult) */
+	uint64_t emitted[2];		/* the pipelines whose STATE words the recording last wrote */
+	uint32_t occlusion;		/* 1 while an occlusion query is active (ROP_CTRL[0]) */
 };
 
 /* The replay's markers: work in a recording that the firmware does itself. */
-#define FW_MARK_INDIRECT 1u	/* [buffer address][count][stride][flags]: indirect draw or dispatch */
-#define FW_MARK_QUERY_COPY 2u	/* the copy of query results */
+#define FW_MARK_INDIRECT 1u	/* [kind][address][count][stride][bytes]: indirect draw or dispatch */
+#define FW_MARK_QUERY_COPY 2u	/* [slots][queries][destination][stride][flags]: query results */
 #define FW_MARK_WAIT_EVENT 3u	/* reserved */
 #define FW_MARK_DATA 4u		/* data the units read (fw_record_data); the replay skips it */
 
@@ -351,12 +507,15 @@ uint32_t fw_reader_u32(struct fw_reader *reader);
 uint64_t fw_reader_u64(struct fw_reader *reader);
 uint32_t fw_reader_address(struct fw_reader *reader);
 void fw_reader_skip(struct fw_reader *reader, uint32_t bytes);
+void fw_reader_words(struct fw_reader *reader, uint32_t *dst, uint32_t count);
+uint32_t fw_reader_count(struct fw_reader *reader, uint32_t limit);
 int fw_store(uint32_t address, const void *src, uint32_t bytes);
 int fw_store_flush(void);
 
 /* heap.c: the heap in GPU memory and the sessions. */
 void fw_heap_init(void);
-int fw_heap_set(uint32_t base, uint32_t bytes);
+int fw_heap_set(uint32_t base, uint32_t bytes, uint32_t warps);
+uint32_t fw_heap_warps(void);
 int fw_heap_ready(void);
 uint32_t fw_heap_alloc(uint32_t tag, uint32_t bytes);
 void fw_heap_free(uint32_t tag, uint32_t address, uint32_t bytes);
@@ -364,6 +523,19 @@ int fw_session_open(uint32_t tag, uint64_t limit);
 int fw_session_is_open(uint32_t tag);
 void fw_session_close(uint32_t tag);
 int fw_session_any(void);
+
+/* builtin.c: the firmware's own part of the heap. */
+#define FW_IDENTITY_WORDS 65536u		/* the identity buffer: vertex and instance indices */
+#define FW_BUILTIN_PROGRAM_BYTES 1024u
+enum fw_builtin_program {
+	FW_PROGRAM_MASK = 0,		/* a fragment stage that keeps every sample */
+	FW_BUILTIN_PROGRAMS
+};
+#define FW_BUILTIN_BYTES (FW_IDENTITY_WORDS * 4u + FW_BUILTIN_PROGRAMS * FW_BUILTIN_PROGRAM_BYTES + FW_LINE_BYTES)
+int fw_builtin_init(uint32_t base);
+uint32_t fw_builtin_identity(void);
+uint32_t fw_builtin_program(uint32_t program, uint32_t *words);
+uint32_t fw_builtin_wait_word(void);
 
 /* object.c: the object table. */
 void fw_object_init(void);
@@ -398,6 +570,7 @@ struct fw_blt {
 /* transfer.c: blits. */
 uint32_t fw_blt_pixel(uint32_t bytes);
 void fw_blt_emit(const struct fw_blt *blt);
+void fw_blt_fill_rect(uint32_t base, uint32_t stride, uint32_t texel_bytes, uint32_t samples, const uint32_t *rect, const uint32_t *raw, uint32_t keep);
 
 /* uop.c: µops to the FIFO or into a recording. */
 #define FW_EMIT_PAYLOAD 32u	/* the longest payload of fw_emit_op and fw_emit_marker */
@@ -418,12 +591,17 @@ int fw_record_data(struct fw_object *cmdbuf, const uint32_t *words, uint32_t cou
 void fw_record_clear(struct fw_object *cmdbuf);
 int fw_record_flush(void);
 int fw_record_replay(struct fw_object *cmdbuf, uint32_t depth);
+int fw_record_append(struct fw_object *cmdbuf, struct fw_object *secondary);
 struct fw_rstate *fw_rstate(struct fw_object *cmdbuf);
 int fw_rstate_begin(struct fw_object *cmdbuf);
 void fw_rstate_end(struct fw_object *cmdbuf);
 
-/* submit.c: the replay's markers. */
+/* submit.c: the replay's markers, and waiting for the units. */
 int fw_marker_run(uint32_t code, const uint32_t *payload, uint32_t count);
+int fw_wait_units(void);
+
+/* query.c: the copy of query results (a marker). */
+int fw_query_copy(const uint32_t *payload, uint32_t count);
 
 /* format.c: the formats. */
 const struct fw_format *fw_format_find(uint32_t format);
@@ -472,12 +650,90 @@ void fw_cmd_free_command_buffers(struct fw_command *command);
 void fw_cmd_begin_command_buffer(struct fw_command *command);
 void fw_cmd_end_command_buffer(struct fw_command *command);
 void fw_cmd_reset_command_buffer(struct fw_command *command);
+void fw_cmd_create_set_layout(struct fw_command *command);
+void fw_cmd_destroy_set_layout(struct fw_command *command);
+void fw_cmd_create_descriptor_pool(struct fw_command *command);
+void fw_cmd_destroy_descriptor_pool(struct fw_command *command);
+void fw_cmd_reset_descriptor_pool(struct fw_command *command);
+void fw_cmd_allocate_descriptor_sets(struct fw_command *command);
+void fw_cmd_free_descriptor_sets(struct fw_command *command);
+void fw_cmd_update_descriptor_sets(struct fw_command *command);
+void fw_cmd_create_pipeline_layout(struct fw_command *command);
+void fw_cmd_destroy_pipeline_layout(struct fw_command *command);
+void fw_cmd_create_render_pass(struct fw_command *command);
+void fw_cmd_destroy_render_pass(struct fw_command *command);
+void fw_cmd_create_framebuffer(struct fw_command *command);
+void fw_cmd_destroy_framebuffer(struct fw_command *command);
+void fw_cmd_create_graphics_pipelines(struct fw_command *command);
+void fw_cmd_create_compute_pipelines(struct fw_command *command);
+void fw_cmd_destroy_pipeline(struct fw_command *command);
 void fw_cmd_copy_buffer(struct fw_command *command);
+void fw_cmd_bind_pipeline(struct fw_command *command);
+void fw_cmd_bind_descriptor_sets(struct fw_command *command);
+void fw_cmd_bind_vertex_buffers(struct fw_command *command);
+void fw_cmd_bind_index_buffer(struct fw_command *command);
+void fw_cmd_push_constants(struct fw_command *command);
+void fw_cmd_set_viewport(struct fw_command *command);
+void fw_cmd_set_scissor(struct fw_command *command);
+void fw_cmd_set_line_width(struct fw_command *command);
+void fw_cmd_set_depth_bias(struct fw_command *command);
+void fw_cmd_set_blend_constants(struct fw_command *command);
+void fw_cmd_set_depth_bounds(struct fw_command *command);
+void fw_cmd_set_stencil_compare(struct fw_command *command);
+void fw_cmd_set_stencil_write(struct fw_command *command);
+void fw_cmd_set_stencil_reference(struct fw_command *command);
+void fw_cmd_draw(struct fw_command *command);
+void fw_cmd_draw_indexed(struct fw_command *command);
+void fw_cmd_draw_indirect(struct fw_command *command);
+void fw_cmd_draw_indexed_indirect(struct fw_command *command);
+void fw_cmd_dispatch(struct fw_command *command);
+void fw_cmd_dispatch_indirect(struct fw_command *command);
+void fw_cmd_begin_render_pass(struct fw_command *command);
+void fw_cmd_next_subpass(struct fw_command *command);
+void fw_cmd_end_render_pass(struct fw_command *command);
+void fw_cmd_clear_attachments(struct fw_command *command);
+void fw_cmd_create_event(struct fw_command *command);
+void fw_cmd_destroy_event(struct fw_command *command);
+void fw_cmd_set_event(struct fw_command *command);
+void fw_cmd_reset_event(struct fw_command *command);
+void fw_cmd_wait_events(struct fw_command *command);
+void fw_cmd_pipeline_barrier(struct fw_command *command);
+void fw_cmd_execute_commands(struct fw_command *command);
+void fw_cmd_create_query_pool(struct fw_command *command);
+void fw_cmd_destroy_query_pool(struct fw_command *command);
+void fw_cmd_begin_query(struct fw_command *command);
+void fw_cmd_end_query(struct fw_command *command);
+void fw_cmd_reset_query_pool(struct fw_command *command);
+void fw_cmd_copy_query_pool_results(struct fw_command *command);
+void fw_cmd_write_timestamp(struct fw_command *command);
+void fw_cmd_copy_buffer_to_image(struct fw_command *command);
+void fw_cmd_copy_image_to_buffer(struct fw_command *command);
+void fw_cmd_copy_image(struct fw_command *command);
+void fw_cmd_resolve_image(struct fw_command *command);
+void fw_cmd_clear_color_image(struct fw_command *command);
+void fw_cmd_clear_depth_stencil_image(struct fw_command *command);
+void fw_cmd_blit_image(struct fw_command *command);
 void fw_cmd_update_buffer(struct fw_command *command);
 void fw_cmd_fill_buffer(struct fw_command *command);
+
+/* pass.c: render passes and framebuffers. */
+int fw_render_pass_get(uint32_t tag, uint64_t id, struct fw_render_pass *pass);
+int fw_framebuffer_view(uint32_t tag, uint64_t id, uint32_t attachment, struct fw_view *view, uint32_t *size);
+
+/* passrec.c: the RESOLVE average of a format. */
+uint32_t fw_resolve_average(uint32_t format);
+
+/* pipeline.c: a pipeline's block. */
+int fw_pipeline_get(uint32_t tag, uint64_t id, struct fw_pipeline *pipeline);
+
+/* descriptor.c: a set's descriptors. */
+int fw_descriptor_get(struct fw_object *set, uint32_t index, struct fw_descriptor *descriptor);
+#define FW_NO_DYNAMIC 0xFFFFFFFFu
+int fw_descriptor_lookup(struct fw_object *set, uint32_t binding, uint32_t element, uint32_t *index, uint32_t *dynamic);
 
 /* cmdbuf.c: the command buffer a recorded command goes into. */
 struct fw_object *fw_cmd_recording(struct fw_command *command, uint64_t id);
 void fw_cmd_record_error(struct fw_object *cmdbuf, int32_t status);
+struct fw_rstate *fw_cmd_record_state(struct fw_command *command, uint64_t id, struct fw_object **cmdbuf);
 
 #endif

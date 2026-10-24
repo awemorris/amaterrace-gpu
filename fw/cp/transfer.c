@@ -85,6 +85,41 @@ fw_blt_emit(
 	fw_emit_op(GHCI_OP_BLIT, GHCI_BLIT_WAIT, NULL, 0);
 }
 
+/*
+ * Builds the fill of a rectangle of one layer of an image: the texel's
+ * bits (raw, up to 16 bytes), the bytes of each texel the blitter keeps
+ * (KEEP, 32-bit texels), the samples (a multisampled image's rows hold
+ * every sample of a texel side by side).
+ */
+void
+fw_blt_fill_rect(
+	uint32_t base,
+	uint32_t stride,
+	uint32_t texel_bytes,
+	uint32_t samples,
+	const uint32_t *rect,
+	const uint32_t *raw,
+	uint32_t keep)
+{
+	struct fw_blt blt;
+	uint32_t index;
+
+	/* Nothing to fill. */
+	if (rect[2] == 0 || rect[3] == 0)
+		return;
+
+	/* FILL of the texel size with its bits; a sample is a texel of the row. */
+	memset(&blt, 0, sizeof(blt));
+	blt.op = GHCI_BLT_FILL | fw_blt_pixel(texel_bytes) | (keep & 0xFu) << 16;
+	blt.dst = base;
+	blt.dst_stride = stride;
+	blt.dst_xy = rect[1] << 16 | ((rect[0] * samples) & 0xFFFFu);
+	blt.size = rect[3] << 16 | ((rect[2] * samples) & 0xFFFFu);
+	for (index = 0; index < 4u; index++)
+		blt.color[index] = raw[index];
+	fw_blt_emit(&blt);
+}
+
 /* CMD_FILL_BUFFER: [cb][buffer][u64 offset][u64 size][u32 data]. */
 void
 fw_cmd_fill_buffer(

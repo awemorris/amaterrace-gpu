@@ -69,6 +69,23 @@ static const struct cmd_entry cmd_table[] = {
 	{ GHCI_VK_DESTROY_IMAGE_VIEW, fw_cmd_destroy_image_view },
 	{ GHCI_VK_CREATE_SAMPLER, fw_cmd_create_sampler },
 	{ GHCI_VK_DESTROY_SAMPLER, fw_cmd_destroy_sampler },
+	{ GHCI_VK_CREATE_PIPELINE_LAYOUT, fw_cmd_create_pipeline_layout },
+	{ GHCI_VK_DESTROY_PIPELINE_LAYOUT, fw_cmd_destroy_pipeline_layout },
+	{ GHCI_VK_CREATE_DESCRIPTOR_SET_LAYOUT, fw_cmd_create_set_layout },
+	{ GHCI_VK_DESTROY_DESCRIPTOR_SET_LAYOUT, fw_cmd_destroy_set_layout },
+	{ GHCI_VK_CREATE_DESCRIPTOR_POOL, fw_cmd_create_descriptor_pool },
+	{ GHCI_VK_DESTROY_DESCRIPTOR_POOL, fw_cmd_destroy_descriptor_pool },
+	{ GHCI_VK_RESET_DESCRIPTOR_POOL, fw_cmd_reset_descriptor_pool },
+	{ GHCI_VK_ALLOCATE_DESCRIPTOR_SETS, fw_cmd_allocate_descriptor_sets },
+	{ GHCI_VK_FREE_DESCRIPTOR_SETS, fw_cmd_free_descriptor_sets },
+	{ GHCI_VK_UPDATE_DESCRIPTOR_SETS, fw_cmd_update_descriptor_sets },
+	{ GHCI_VK_CREATE_GRAPHICS_PIPELINES, fw_cmd_create_graphics_pipelines },
+	{ GHCI_VK_CREATE_COMPUTE_PIPELINES, fw_cmd_create_compute_pipelines },
+	{ GHCI_VK_DESTROY_PIPELINE, fw_cmd_destroy_pipeline },
+	{ GHCI_VK_CREATE_RENDER_PASS, fw_cmd_create_render_pass },
+	{ GHCI_VK_DESTROY_RENDER_PASS, fw_cmd_destroy_render_pass },
+	{ GHCI_VK_CREATE_FRAMEBUFFER, fw_cmd_create_framebuffer },
+	{ GHCI_VK_DESTROY_FRAMEBUFFER, fw_cmd_destroy_framebuffer },
 	{ GHCI_VK_CREATE_COMMAND_POOL, fw_cmd_create_command_pool },
 	{ GHCI_VK_DESTROY_COMMAND_POOL, fw_cmd_destroy_command_pool },
 	{ GHCI_VK_RESET_COMMAND_POOL, fw_cmd_reset_command_pool },
@@ -78,6 +95,51 @@ static const struct cmd_entry cmd_table[] = {
 	{ GHCI_VK_END_COMMAND_BUFFER, fw_cmd_end_command_buffer },
 	{ GHCI_VK_RESET_COMMAND_BUFFER, fw_cmd_reset_command_buffer },
 	{ GHCI_VK_CMD_COPY_BUFFER, fw_cmd_copy_buffer },
+	{ GHCI_VK_CMD_BIND_PIPELINE, fw_cmd_bind_pipeline },
+	{ GHCI_VK_CMD_BIND_DESCRIPTOR_SETS, fw_cmd_bind_descriptor_sets },
+	{ GHCI_VK_CMD_BIND_VERTEX_BUFFERS, fw_cmd_bind_vertex_buffers },
+	{ GHCI_VK_CMD_BIND_INDEX_BUFFER, fw_cmd_bind_index_buffer },
+	{ GHCI_VK_CMD_PUSH_CONSTANTS, fw_cmd_push_constants },
+	{ GHCI_VK_CMD_SET_VIEWPORT, fw_cmd_set_viewport },
+	{ GHCI_VK_CMD_SET_SCISSOR, fw_cmd_set_scissor },
+	{ GHCI_VK_CMD_SET_LINE_WIDTH, fw_cmd_set_line_width },
+	{ GHCI_VK_CMD_SET_DEPTH_BIAS, fw_cmd_set_depth_bias },
+	{ GHCI_VK_CMD_SET_BLEND_CONSTANTS, fw_cmd_set_blend_constants },
+	{ GHCI_VK_CMD_SET_DEPTH_BOUNDS, fw_cmd_set_depth_bounds },
+	{ GHCI_VK_CMD_SET_STENCIL_COMPARE_MASK, fw_cmd_set_stencil_compare },
+	{ GHCI_VK_CMD_SET_STENCIL_WRITE_MASK, fw_cmd_set_stencil_write },
+	{ GHCI_VK_CMD_SET_STENCIL_REFERENCE, fw_cmd_set_stencil_reference },
+	{ GHCI_VK_CMD_DRAW, fw_cmd_draw },
+	{ GHCI_VK_CMD_DRAW_INDEXED, fw_cmd_draw_indexed },
+	{ GHCI_VK_CMD_DRAW_INDIRECT, fw_cmd_draw_indirect },
+	{ GHCI_VK_CMD_DRAW_INDEXED_INDIRECT, fw_cmd_draw_indexed_indirect },
+	{ GHCI_VK_CMD_DISPATCH, fw_cmd_dispatch },
+	{ GHCI_VK_CMD_DISPATCH_INDIRECT, fw_cmd_dispatch_indirect },
+	{ GHCI_VK_CMD_BEGIN_RENDER_PASS, fw_cmd_begin_render_pass },
+	{ GHCI_VK_CMD_NEXT_SUBPASS, fw_cmd_next_subpass },
+	{ GHCI_VK_CMD_END_RENDER_PASS, fw_cmd_end_render_pass },
+	{ GHCI_VK_CMD_CLEAR_ATTACHMENTS, fw_cmd_clear_attachments },
+	{ GHCI_VK_CREATE_EVENT, fw_cmd_create_event },
+	{ GHCI_VK_DESTROY_EVENT, fw_cmd_destroy_event },
+	{ GHCI_VK_CMD_SET_EVENT, fw_cmd_set_event },
+	{ GHCI_VK_CMD_RESET_EVENT, fw_cmd_reset_event },
+	{ GHCI_VK_CMD_WAIT_EVENTS, fw_cmd_wait_events },
+	{ GHCI_VK_CMD_PIPELINE_BARRIER, fw_cmd_pipeline_barrier },
+	{ GHCI_VK_CMD_EXECUTE_COMMANDS, fw_cmd_execute_commands },
+	{ GHCI_VK_CREATE_QUERY_POOL, fw_cmd_create_query_pool },
+	{ GHCI_VK_DESTROY_QUERY_POOL, fw_cmd_destroy_query_pool },
+	{ GHCI_VK_CMD_BEGIN_QUERY, fw_cmd_begin_query },
+	{ GHCI_VK_CMD_END_QUERY, fw_cmd_end_query },
+	{ GHCI_VK_CMD_RESET_QUERY_POOL, fw_cmd_reset_query_pool },
+	{ GHCI_VK_CMD_COPY_QUERY_POOL_RESULTS, fw_cmd_copy_query_pool_results },
+	{ GHCI_VK_CMD_WRITE_TIMESTAMP, fw_cmd_write_timestamp },
+	{ GHCI_VK_CMD_COPY_BUFFER_TO_IMAGE, fw_cmd_copy_buffer_to_image },
+	{ GHCI_VK_CMD_COPY_IMAGE_TO_BUFFER, fw_cmd_copy_image_to_buffer },
+	{ GHCI_VK_CMD_COPY_IMAGE, fw_cmd_copy_image },
+	{ GHCI_VK_CMD_RESOLVE_IMAGE, fw_cmd_resolve_image },
+	{ GHCI_VK_CMD_CLEAR_COLOR_IMAGE, fw_cmd_clear_color_image },
+	{ GHCI_VK_CMD_CLEAR_DEPTH_STENCIL_IMAGE, fw_cmd_clear_depth_stencil_image },
+	{ GHCI_VK_CMD_BLIT_IMAGE, fw_cmd_blit_image },
 	{ GHCI_VK_CMD_UPDATE_BUFFER, fw_cmd_update_buffer },
 	{ GHCI_VK_CMD_FILL_BUFFER, fw_cmd_fill_buffer },
 };
@@ -403,18 +465,20 @@ cmd_session_close(
 		fw_session_close(tag);
 }
 
-/* GHCI_HEAP: [u64 GPU address][u64 bytes]; a packet in the ring only, no session open. */
+/* GHCI_HEAP: [u64 GPU address][u64 bytes][u32 warps]; a packet in the ring only, no session open. */
 static void
 cmd_heap(
 	struct fw_command *command)
 {
 	uint32_t base;
 	uint32_t bytes;
+	uint32_t warps;
 	int error;
 
 	/* The arguments. */
 	base = fw_reader_address(command->reader);
 	bytes = fw_reader_address(command->reader);
+	warps = fw_reader_u32(command->reader);
 	if (command->reader->error)
 		return;
 
@@ -426,7 +490,7 @@ cmd_heap(
 	}
 
 	/* The heap, while no object lives in the old one. */
-	error = fw_heap_set(base, bytes);
+	error = fw_heap_set(base, bytes, warps);
 	if (error != 0)
 		command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
 }

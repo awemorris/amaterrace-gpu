@@ -296,7 +296,7 @@ module atg_top_fw_harness #(
 	/* GHCI_HEAP as a ring packet: the heap, its result at RING_RESULT. */
 	task ring_heap;
 		begin
-			ring_put({2'b10, 6'd0, TAG, 16'd7});
+			ring_put({2'b10, 6'd0, TAG, 16'd8});
 			ring_put(32'h00010108);
 			ring_put(32'd2);	/* RESULT */
 			ring_put(RING_RESULT);
@@ -304,6 +304,7 @@ module atg_top_fw_harness #(
 			ring_put(32'd0);
 			ring_put(HEAP_BYTES);
 			ring_put(32'd0);
+			ring_put(32'd4);	/* warps: one SU of 4 */
 		end
 	endtask
 

@@ -65,9 +65,11 @@
 #define GHCI_FRAME_NO_RESULT 0xFFFFFFFFu
 
 /*
- * GHCI_HEAP [u64 GPU address][u64 bytes] (draft): the range the driver lends
- * the firmware for its objects and recordings, line aligned; taken only as
- * a packet in the ring while no session is open.
+ * GHCI_HEAP [u64 GPU address][u64 bytes][u32 warps] (draft): the range the
+ * driver lends the firmware for its objects and recordings, line aligned,
+ * and the warps the GPU runs at once (NSU x NWARPS, for the programs'
+ * scratch memory; 0: the firmware's own number); taken only as a packet
+ * in the ring while no session is open.
  */
 #define GHCI_GPU_OP_HEAP 0x10108u
 

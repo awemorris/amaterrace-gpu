@@ -341,6 +341,45 @@ fw_reader_address(
 }
 
 /*
+ * Reads consecutive little-endian u32 at the cursor into an array.
+ */
+void
+fw_reader_words(
+	struct fw_reader *reader,
+	uint32_t *dst,
+	uint32_t count)
+{
+	uint32_t index;
+
+	/* One word after the other (0 with the sticky error). */
+	for (index = 0; index < count; index++)
+		dst[index] = fw_reader_u32(reader);
+}
+
+/*
+ * Reads an array's u64 element count, which must not pass `limit`.
+ *
+ * Returns the count (0 with the error set when it passes the limit).
+ */
+uint32_t
+fw_reader_count(
+	struct fw_reader *reader,
+	uint32_t limit)
+{
+	uint64_t count;
+
+	/* The count as the wire gives it. */
+	count = fw_reader_u64(reader);
+	if (count > limit) {
+		reader->error = 1;
+		return 0;
+	}
+
+	/* Succeeded: the count. */
+	return (uint32_t)count;
+}
+
+/*
  * Moves the cursor past bytes (a string's characters, an opaque payload).
  */
 void
