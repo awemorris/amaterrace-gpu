@@ -111,4 +111,4 @@ design §3.4.1 (custom-1 tex*), §3.1 (helper lanes for derivatives).
 
 ## 10. Status
 
-Implemented in WS288 p009 part C (P1, branch p1-tu), with the new child `atg_su_tex_ret` (§5).  Ports unchanged.  Readings: texsz's level travels in word 0 (rs1), the tag's layout is {0, warp, quad, rd} (16 bits; the TU passes it through).
+Implemented in WS288 p009 part C (P1, branch p1-tu), with the new child `atg_su_tex_ret` (§5).  Ports unchanged.  Part E (P3): unchanged; a compare sampler's reference is rs2 (word 2 of tx_coord, docs/ghci.md §12.9), so no fourth operand is needed.  Readings: texsz's level travels in word 0 (rs1), the tag's layout is {0, warp, quad, rd} (16 bits; the TU passes it through).

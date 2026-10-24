@@ -201,13 +201,13 @@ module atg_tu_addr (
 	always @(posedge clk)
 		if (st_we && st_idx >= GHCI_S_TU && st_idx < GHCI_S_TU + 9'd256) begin
 			d_word[s_off[7:0]] <= st_wdata;
-			if (s_off[3:0] == 4'd0)
+			if (s_off[3:0] == GHCI_TEX_BASE)
 				d_base[s_off[7:4]] <= st_wdata;
-			if (s_off[3:0] == 4'd1)
+			if (s_off[3:0] == GHCI_TEX_SIZE)
 				d_size[s_off[7:4]] <= st_wdata;
-			if (s_off[3:0] == 4'd2)
+			if (s_off[3:0] == GHCI_TEX_LEVELS)
 				d_lev[s_off[7:4]] <= st_wdata[3:0];
-			if (s_off[3:0] == 4'd3)
+			if (s_off[3:0] == GHCI_TEX_SAMPLER)
 				d_samp[s_off[7:4]] <= st_wdata[18:0];
 		end
 
@@ -232,14 +232,17 @@ module atg_tu_addr (
 	wire [3:0] nlev = d_lev[slot] == 4'd0 ? 4'd1 : d_lev[slot] > 4'd13 ? 4'd13 : d_lev[slot];
 	wire [3:0] maxl = nlev - 4'd1;
 	wire [18:0] samp = d_samp[slot];
-	wire [1:0] mu = samp[1:0], mv = samp[3:2];
+	wire [1:0] mu = samp[GHCI_SAMP_WRAP_U +: 2], mv = samp[GHCI_SAMP_WRAP_V +: 2];
 	/* Depth format; compare (texl, texb); filtering allowed; mip linear. */
-	wire depth = samp[14];
-	wire cmp = depth && samp[7] && !op[1];
+	wire depth = samp[GHCI_SAMP_FMT_HI];
+	wire cmp = depth && samp[GHCI_SAMP_COMPARE] && !op[1];
 	wire filt = !depth || cmp;
-	wire miplin = filt && samp[6];
+	wire miplin = filt && samp[GHCI_SAMP_MIP_LINEAR];
+	wire [2:0] cmp_op = samp[GHCI_SAMP_COMPARE_OP +: 3];
+	wire fmt = samp[GHCI_SAMP_FMT_LO];
 	/* VkBorderColor >> 1: 0 transparent black, 1 opaque black, 2 opaque white. */
-	wire [1:0] bcls = samp[18:17] == 2'd3 ? 2'd0 : samp[18:17];
+	wire [2:0] bcol = samp[GHCI_SAMP_BORDER +: 3];
+	wire [1:0] bcls = bcol[2:1] == 2'd3 ? 2'd0 : bcol[2:1];
 
 	/* The quad LOD (texb), from lanes 0-2. */
 	wire [31:0] uq0 = fx32(crd[0 +: 32], 5'd16), uq1 = fx32(crd[96 +: 32], 5'd16);
@@ -275,7 +278,8 @@ module atg_tu_addr (
 	wire [3:0] lsize = cw0[31:4] != 28'd0 ? 4'd15 : cw0[3:0];
 	wire [3:0] lvl = op == OP_TEXSZ ? lsize : op == OP_TEXF ? lfetch : mag ? 4'd0 :
 		miplin ? llin : lmin;
-	wire lin = op[1] ? 1'b0 : filt && (mag ? samp[4] : samp[5]);
+	wire lin = op[1] ? 1'b0 : filt && (mag ? samp[GHCI_SAMP_MAG_LINEAR] :
+		samp[GHCI_SAMP_MIN_LINEAR]);
 	wire [15:0] wl_s = w0 >> lvl, hl_s = h0 >> lvl;
 	wire [15:0] wl = wl_s == 16'd0 ? 16'd1 : wl_s, hl = hl_s == 16'd0 ? 16'd1 : hl_s;
 	wire signed [26:0] fwu = fwrap(cw0, mu), fwv = fwrap(cw1, mv);
@@ -301,7 +305,7 @@ module atg_tu_addr (
 	wire [3:0] bt = {xi1[16] | xj1[16], xi0[16] | xj1[16], xi1[16] | xj0[16], xi0[16] | xj0[16]};
 	wire [31:0] a00 = r_lbase + row0 + col0, a10 = r_lbase + row0 + col1;
 	wire [31:0] a01 = r_lbase + row1 + col0, a11 = r_lbase + row1 + col1;
-	wire tiled = samp[13];
+	wire tiled = samp[GHCI_SAMP_TILED];
 	wire [15:0] tw = {2'b00, r_wl[15:2]} + {15'd0, r_wl[1:0] != 2'd0};	/* tiles per row */
 	wire [31:0] m0 = tiled ? {18'd0, j0[15:2]} * {16'd0, tw} : {16'd0, j0} * {16'd0, r_wl};
 	wire [31:0] m1 = tiled ? {18'd0, j1[15:2]} * {16'd0, tw} : {16'd0, j1} * {16'd0, r_wl};
@@ -314,8 +318,8 @@ module atg_tu_addr (
 
 	assign tx_ready = st == IDLE;
 	assign ta_valid = st == OUT;
-	assign ta_ctl = {3'd0, samp[10:8], cmp, depth, bcls, pass, !pass && trineed, op == OP_TEXF,
-		op == OP_TEXSZ, samp[12], linq};
+	assign ta_ctl = {3'd0, cmp_op, cmp, depth, bcls, pass, !pass && trineed, op == OP_TEXF,
+		op == OP_TEXSZ, fmt, linq};
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -346,7 +350,8 @@ module atg_tu_addr (
 				r_hl <= hl;
 				r_cu <= pu[42:16];
 				r_cv <= pv[42:16];
-				r_lbase <= base + (lvl == 4'd0 ? 32'd0 : d_word[{slot, lvl + 4'd3}]);
+				r_lbase <= base + (lvl == 4'd0 ? 32'd0 :
+					d_word[{slot, lvl + GHCI_TEX_MIP_OFFSET - 4'd1}]);
 				st <= LB;
 			end
 			LB: begin
@@ -376,8 +381,8 @@ module atg_tu_addr (
 		end
 	end
 
-	wire unused_ok = &{1'b0, lrnd[16], lrnd[7:0], m0[31:30], m1[31:30], s_off[8], samp[16:15],
-		samp[11], pu[43], pu[15:0], pv[43], pv[15:0], a00[1:0], a10[1:0],
+	wire unused_ok = &{1'b0, lrnd[16], lrnd[7:0], m0[31:30], m1[31:30], s_off[8], samp[15],
+		samp[11], bcol[0], pu[43], pu[15:0], pv[43], pv[15:0], a00[1:0], a10[1:0],
 		a01[1:0], a11[1:0], OP_TEXL};
 endmodule
 

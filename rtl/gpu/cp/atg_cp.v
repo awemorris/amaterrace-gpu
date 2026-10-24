@@ -146,8 +146,10 @@ module atg_cp #(
 	/* verilator lint_off WIDTHTRUNC */
 	localparam [3:0] LS4 = LINE_SHIFT;
 	/* verilator lint_on WIDTHTRUNC */
-	/* CAPS[27]: graphics (VF, RX and ROP); CAPS[28]: packed; CAPS[24]: subgroup. */
-	localparam [31:0] CAPS = {3'd0, UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4], 2'd0,
+	/* CAPS[27]: graphics (VF, RX and ROP); CAPS[28]: packed; CAPS[26]: the TU's mip linear,
+	 * border, depth formats and compare; CAPS[24]: subgroup. */
+	localparam [31:0] CAPS = {3'd0, UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4],
+		UNITS[5], 1'b0,
 		UNITS[6] && SUBGROUP != 0,
 		LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,
 		HAS_VSYNC != 0, 1'b0, UNITS[5], UNITS[6] ? 4'd5 : 4'd0, HAS_DISP != 0, UNITS[6], UNITS[1], 1'b1};

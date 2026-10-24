@@ -8,10 +8,13 @@
 /*
  * atg_top_tex_tb: the graphics pipeline with the texture unit (HAS_VF,
  * NSU 1, HAS_RX, HAS_TU, HAS_ROP; WS288 p009 part C): the ring runs
- * sim/vec/tex_scene.txt (tools/rx-tex-scene.py: two DRAWs of textured
+ * sim/vec/tex_scene.txt (tools/rx-tex-scene.py: five DRAWs of textured
  * triangles, the first sampling with texb from a linear RGBA8 texture
  * with mip levels, the second, after SET_REG changes the slot and the
- * fragment program, with texl from a 4x4 tiled BGRA8 copy, a final FENCE):
+ * fragment program, with texl from a 4x4 tiled BGRA8 copy, the third
+ * trilinear with clamp to border, the fourth a D24 compare sampler with
+ * bilinear and mip linear filtering (texb, z the reference), the fifth a
+ * D32F compare sampler with clamp to border (texl), a final FENCE):
  * VF → vertex warps → PT → RX → fragment warps (lda, fmul, fmadd, texb or
  * texl, exp) ↔ TU (addressing, cache on its MC port, filter) → ROP.  The
  * colour and depth buffers must equal the reference models' word for

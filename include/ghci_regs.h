@@ -94,6 +94,7 @@
 #define GHCI_CAPS_LINE_LOG2(c) (((c) >> 20) & 0xFu)
 #define GHCI_CAPS_SUBGROUP (1u << 24)
 #define GHCI_CAPS_SA (1u << 25)
+#define GHCI_CAPS_TU_FULL (1u << 26) /* mip linear, border, depth, compare */
 #define GHCI_CAPS_GRAPHICS (1u << 27)
 #define GHCI_CAPS_PACKED (1u << 28)
 
@@ -275,6 +276,28 @@
 #define GHCI_S_BLEND (GHCI_S_ROP + 10u)
 #define GHCI_S_BLEND_CONST (GHCI_S_ROP + 11u)
 #define GHCI_S_WRITE_MASK (GHCI_S_ROP + 12u)
+
+/* TU (docs/ghci.md section 8.4): slot s's words and TEX_SAMPLER. */
+#define GHCI_S_TEX(s, w) (GHCI_S_TU + 16u * (s) + (w))
+#define GHCI_TEX_BASE 0u
+#define GHCI_TEX_SIZE 1u
+#define GHCI_TEX_LEVELS 2u
+#define GHCI_TEX_SAMPLER 3u
+#define GHCI_TEX_MIP_OFFSET(l) (3u + (l)) /* l = 1..12 */
+#define GHCI_SAMP_WRAP_U(m) ((unsigned)(m) & 3u) /* 0 repeat, 1 mirrored, 2 edge, 3 border */
+#define GHCI_SAMP_WRAP_V(m) (((unsigned)(m) & 3u) << 2)
+#define GHCI_SAMP_MAG_LINEAR (1u << 4)
+#define GHCI_SAMP_MIN_LINEAR (1u << 5)
+#define GHCI_SAMP_MIP_LINEAR (1u << 6)
+#define GHCI_SAMP_COMPARE (1u << 7)
+#define GHCI_SAMP_COMPARE_OP(op) (((unsigned)(op) & 7u) << 8) /* VkCompareOp */
+#define GHCI_SAMP_TILED (1u << 13)
+#define GHCI_SAMP_FMT(f) ((((unsigned)(f) & 1u) << 12) | (((unsigned)(f) & 2u) << 13))
+#define GHCI_SAMP_FMT_RGBA8 0u
+#define GHCI_SAMP_FMT_BGRA8 1u
+#define GHCI_SAMP_FMT_D24 2u
+#define GHCI_SAMP_FMT_D32F 3u
+#define GHCI_SAMP_BORDER(b) (((unsigned)(b) & 7u) << 16) /* VkBorderColor */
 
 /* The program range. */
 #define GHCI_S_VS_BASE (GHCI_S_PROG + 0u)

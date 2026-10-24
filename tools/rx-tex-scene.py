@@ -13,7 +13,13 @@ bilinear magnification, nearest minification.  Then SET_REG changes slot
 3 (which waits until draw 1 is done) to a 4x4 tiled BGRA8 copy, clamp in
 u, repeat in v, nearest magnification, bilinear minification, and the
 fragment program to one that samples with texl at lod = 4 z; draw 2.
-Depth LESS with write.  The colour and depth buffers are what the
+Draw 3: the linear copy again with texb, clamp to border (opaque white)
+in u and v, bilinear and mip linear (trilinear) filtering.  Draw 4: a
+16x16 D24 depth texture with 3 levels and a compare sampler
+(LESS_OR_EQUAL, bilinear and mip linear: percentage closer filtering),
+texb with the fragment's z as the reference (rs2).  Draw 5: a 16x16
+D32_SFLOAT texture, compare GREATER, nearest, clamp to border (opaque
+black), texl (lod 0) with z as the reference.  Depth LESS with write.  The colour and depth buffers are what the
 reference models say (tools/rxmodel.py for the VF, clip, setup, the
 fragment warps and the ROP; tools/gsi1fp.py for the shader arithmetic;
 tools/tumodel.py for the TU).
@@ -51,8 +57,12 @@ UV = 0x00041000	# attribute 1: RG32F, stride 8
 VS = 0x00044000
 FS1 = 0x00044400
 FS2 = 0x00044800
+FS3 = 0x00044C00
+FS4 = 0x00044E00
 TEX1 = 0x00045000	# linear RGBA8, 5 levels
 TEX2 = 0x00046000	# 4x4 tiled BGRA8, 5 levels
+TEXD24 = 0x00047000	# D24 (stencil byte random), 3 levels
+TEXD32 = 0x00048000	# D32_SFLOAT, 1 level
 FENCES = 0x0005EF00
 SLOT = 3
 TW = 16
@@ -92,6 +102,8 @@ EXP = ['exp r16, 0x100', 'exp r17, 0x101', 'exp r18, 0x102', 'exp r19, 0x103', '
 FS1_SRC = '\n'.join(interp_src() + ['texb r16, r12, zero, %d' % SLOT] + EXP) + '\n'
 FS2_SRC = '\n'.join(interp_src() + ['movi r20, 0x40800000', 'fmul.s r14, r3, r20',
                                     'texl r16, r12, r14, %d' % SLOT] + EXP) + '\n'
+FS3_SRC = '\n'.join(interp_src() + ['texb r16, r12, r3, %d' % SLOT] + EXP) + '\n'
+FS4_SRC = '\n'.join(interp_src() + ['texl r16, r12, r3, %d' % SLOT] + EXP) + '\n'
 
 
 def f(x):
@@ -139,7 +151,31 @@ def textures(init):
     return off1, off2
 
 
-def triangles(r, n, big):
+def depth_textures(init, r):
+    """The depth textures: D24 with 3 levels (returns MIP_OFFSET[1..2]) and
+    D32F with one level; slopes and steps in [0.05, 0.95]."""
+    offs = []
+    a = 0
+    for lv in range(3):
+        w = TW >> lv
+        if lv:
+            offs.append(a)
+        for j in range(w):
+            for i in range(w):
+                x = 0.05 + 0.9 * ((i + 2 * j) % (2 * w)) / (2 * w - 1)
+                if lv == 1:
+                    x = 1.0 - x
+                c = int(round(x * ((1 << 24) - 1)))
+                init.append((TEXD24 + a + (j * w + i) * 4, r.getrandbits(8) << 24 | c))
+        a += w * w * 4
+    for j in range(TW):
+        for i in range(TW):
+            x = 0.1 + 0.8 * (((i // 4) + (j // 4)) & 1) * 0.5 + 0.02 * i
+            init.append((TEXD32 + (j * TW + i) * 4, f(x)))
+    return offs
+
+
+def triangles(r, n, big, u0r=(-1.0, 1.0), spans=(0.3, 1.0, 2.5, 6.0, 12.0)):
     tris = []
     for t in range(n):
         vs = []
@@ -150,8 +186,8 @@ def triangles(r, n, big):
             vs.append(((cx + r.uniform(-s, s)) * w, (cy + r.uniform(-s, s)) * w,
                        r.uniform(0.05, 0.95) * w, w))
         # texture coordinates: from a small range (magnified) to a large one (minified)
-        span = r.choice([0.3, 1.0, 2.5, 6.0, 12.0])
-        u0, v0 = r.uniform(-1.0, 1.0), r.uniform(-1.0, 1.0)
+        span = r.choice(spans)
+        u0, v0 = r.uniform(*u0r), r.uniform(*u0r)
         uvs = [(u0 + r.uniform(0, span), v0 + r.uniform(0, span)) for _ in range(3)]
         tris.append((vs, uvs))
     return tris
@@ -170,9 +206,13 @@ def main():
             init.append((RT + y * RT_STRIDE + x * 4, 0xFF202020))
             init.append((DS + y * DS_STRIDE + x * 4, f(1.0)))
     off1, off2 = textures(init)
+    offd = depth_textures(init, r)
     draw1 = triangles(r, 6, 0.9)
     draw2 = triangles(r, 5, 0.8)
-    tris = draw1 + draw2
+    draw3 = triangles(r, 3, 0.8, (-0.4, 0.2), (1.4, 3.0, 6.0))
+    draw4 = triangles(r, 3, 0.7, (0.0, 0.3), (0.6, 3.0, 6.0))
+    draw5 = triangles(r, 2, 0.7, (-0.1, 0.2), (0.8, 1.1))
+    tris = draw1 + draw2 + draw3 + draw4 + draw5
     for i, (vs, uvs) in enumerate(tris):
         for k in range(3):
             v = 3 * i + k
@@ -180,7 +220,8 @@ def main():
                 init.append((POS + 16 * v + 4 * c, f(vs[k][c])))
             init.append((UV + 8 * v, f(uvs[k][0])))
             init.append((UV + 8 * v + 4, f(uvs[k][1])))
-    for base, src in ((VS, VS_SRC), (FS1, FS1_SRC), (FS2, FS2_SRC)):
+    for base, src in ((VS, VS_SRC), (FS1, FS1_SRC), (FS2, FS2_SRC), (FS3, FS3_SRC),
+                      (FS4, FS4_SRC)):
         for k, w in enumerate(A.encode(src)):
             init.append((base + 8 * k, w & 0xFFFFFFFF))
             init.append((base + 8 * k + 4, w >> 32))
@@ -196,8 +237,20 @@ def main():
 
     samp1 = 0 | 1 << 2 | 1 << T.SAMP_MAG_LIN
     samp2 = 2 | 0 << 2 | 1 << T.SAMP_MIN_LIN | 1 << T.SAMP_FMT | 1 << T.SAMP_TILED
+    # clamp to border (FLOAT_OPAQUE_WHITE 4), bilinear, trilinear
+    samp3 = (3 | 3 << 2 | 1 << T.SAMP_MAG_LIN | 1 << T.SAMP_MIN_LIN | 1 << T.SAMP_MIP_LIN |
+             4 << T.SAMP_BORDER)
+    # D24, compare LESS_OR_EQUAL (3), clamp to edge, bilinear, mip linear
+    samp4 = (2 | 2 << 2 | 1 << T.SAMP_MAG_LIN | 1 << T.SAMP_MIN_LIN | 1 << T.SAMP_MIP_LIN |
+             1 << T.SAMP_CMP | 3 << T.SAMP_CMP_OP | 1 << T.SAMP_DEPTH)
+    # D32F, compare GREATER (4), clamp to border (INT_OPAQUE_BLACK 3), nearest
+    samp5 = (3 | 3 << 2 | 1 << T.SAMP_CMP | 4 << T.SAMP_CMP_OP | 1 << T.SAMP_DEPTH |
+             1 << T.SAMP_FMT | 3 << T.SAMP_BORDER)
     desc1 = [TEX1, TW << 16 | TW, NLEV, samp1] + off1 + [0] * 8
     desc2 = [TEX2, TW << 16 | TW, NLEV, samp2] + off2 + [0] * 8
+    desc3 = [TEX1, TW << 16 | TW, NLEV, samp3] + off1 + [0] * 8
+    desc4 = [TEXD24, TW << 16 | TW, 3, samp4] + offd + [0] * 10
+    desc5 = [TEXD32, TW << 16 | TW, 1, samp5] + [0] * 12
 
     vp = (W / 2, H / 2, W / 2, H / 2, 1.0, 0.0)
     pairs = [(M.S_VIEWPORT + k, f(v)) for k, v in enumerate(vp)]
@@ -219,11 +272,24 @@ def main():
     set_regs([(S_TU + k, desc2[k]) for k in range(16)] +
              [(S_FS_BASE, FS2), (S_FIRST, 3 * len(draw1)), (S_COUNT, 3 * len(draw2))])
     ring.append(hdr(0, 3, 0x51, 0, 0))	# DRAW
+    # Draws 3-5: only the slot's words that change (the ring holds 256 words).
+    first = 3 * (len(draw1) + len(draw2))
+    cur = list(desc2)
+    for k, (dr, desc, fs) in enumerate(((draw3, desc3, FS1), (draw4, desc4, FS3),
+                                        (draw5, desc5, FS4))):
+        set_regs([(S_TU + i, desc[i]) for i in range(16) if desc[i] != cur[i]] +
+                 [(S_FS_BASE, fs), (S_FIRST, first), (S_COUNT, 3 * len(dr))])
+        cur = list(desc)
+        ring.append(hdr(0, 3, 0x52 + k, 0, 0))	# DRAW
+        first += 3 * len(dr)
 
     # The model: each triangle in order through clip, setup, the warps, the TU and the ROP.
     nwarps = nquads = 0
+    kinds = ([(desc1, T.OP_TEXB, 'bias')] * len(draw1) + [(desc2, T.OP_TEXL, 'lod')] * len(draw2) +
+             [(desc3, T.OP_TEXB, 'bias')] * len(draw3) + [(desc4, T.OP_TEXB, 'z')] * len(draw4) +
+             [(desc5, T.OP_TEXL, 'z')] * len(draw5))
     for t, (vs, uvs) in enumerate(tris):
-        d, op = (desc1, T.OP_TEXB) if t < len(draw1) else (desc2, T.OP_TEXL)
+        d, op, kind = kinds[t]
         pos = [[f(c) for c in v] for v in vs]
         us = [f(uv[0]) for uv in uvs]
         vv = [f(uv[1]) for uv in uvs]
@@ -239,7 +305,8 @@ def main():
                         zs.append(z)
                         u = interp(us, b0, b1, b2)
                         v = interp(vv, b0, b1, b2)
-                        third = 0 if op == T.OP_TEXB else FP.fpu(FP.FMUL, z, f(4.0), 0, 0)
+                        third = (0 if kind == 'bias' else z if kind == 'z' else
+                                 FP.fpu(FP.FMUL, z, f(4.0), 0, 0))
                         coords.append((u, v, third))
                     words = T.sample(mem, op, d, coords, 0xF)
                     colors = [words[4 * ln:4 * ln + 4] for ln in range(4)]

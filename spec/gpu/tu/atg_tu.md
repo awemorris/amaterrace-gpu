@@ -73,7 +73,7 @@ None (wiring).
 
 ## 6. Latency and throughput
 
-None beyond the above.
+Mip linear filtering sends a quad twice through the cache and the filter (atg_tu_addr §4); the filter returns one quad for the pair.
 
 ## 7. Corner cases and errors
 
@@ -89,4 +89,4 @@ design §2.3, §3.7.
 
 ## 10. Status
 
-Wiring written in WS288 p023; the children implemented in WS288 p009 part C (P1, branch p1-tu): `atg_tu_addr`, `atg_tu_cache`, `atg_tu_filter`.  busy now includes tr_valid.
+Wiring written in WS288 p023; the children implemented in WS288 p009 part C (P1, branch p1-tu): `atg_tu_addr`, `atg_tu_cache`, `atg_tu_filter`.  busy now includes tr_valid.  Part E (P3): the internal ta_* / tc_* links widened (wts 96, ctl 16) for mip linear filtering, clamp to border, the depth formats and compare; the ports are unchanged.  CAPS[26] = 1 with the TU (atg_cp).

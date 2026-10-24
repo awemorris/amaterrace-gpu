@@ -198,6 +198,25 @@ localparam [8:0] GHCI_S_BLEND = 9'h07A;
 localparam [8:0] GHCI_S_BLEND_CONST = 9'h07B;
 localparam [8:0] GHCI_S_WRITE_MASK = 9'h07C;
 
+/* TU (0x090-0x18F, docs/ghci.md section 8.4): slot s's words at
+ * GHCI_S_TU + 16 s + GHCI_TEX_*, and the TEX_SAMPLER fields. */
+localparam [3:0] GHCI_TEX_BASE = 4'd0;
+localparam [3:0] GHCI_TEX_SIZE = 4'd1;
+localparam [3:0] GHCI_TEX_LEVELS = 4'd2;
+localparam [3:0] GHCI_TEX_SAMPLER = 4'd3;
+localparam [3:0] GHCI_TEX_MIP_OFFSET = 4'd4;	/* MIP_OFFSET[1..12] at +4..+15 */
+localparam GHCI_SAMP_WRAP_U = 0;	/* [1:0]: 0 repeat, 1 mirrored, 2 edge, 3 border */
+localparam GHCI_SAMP_WRAP_V = 2;	/* [3:2] */
+localparam GHCI_SAMP_MAG_LINEAR = 4;
+localparam GHCI_SAMP_MIN_LINEAR = 5;
+localparam GHCI_SAMP_MIP_LINEAR = 6;
+localparam GHCI_SAMP_COMPARE = 7;
+localparam GHCI_SAMP_COMPARE_OP = 8;	/* [10:8] VkCompareOp */
+localparam GHCI_SAMP_FMT_LO = 12;	/* format {[14], [12]}: RGBA8, BGRA8, D24, D32F */
+localparam GHCI_SAMP_TILED = 13;
+localparam GHCI_SAMP_FMT_HI = 14;	/* the depth formats */
+localparam GHCI_SAMP_BORDER = 16;	/* [18:16] VkBorderColor */
+
 /* The program range (0x190-0x1AF, docs/ghci.md section 8.3). */
 localparam [8:0] GHCI_S_VS_BASE = 9'h190;
 localparam [8:0] GHCI_S_VS_WORDS = 9'h191;
