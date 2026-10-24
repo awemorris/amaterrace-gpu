@@ -41,7 +41,8 @@ module atg_top #(
 	parameter HAS_JTAG = 0,	/* a second register-bus master (am_jtag_regs, KC705) */
 	parameter HAS_DISP = 0,	/* a display controller's registers are next to the GPU at +0x10000 (KC705) */
 	parameter ROP_STENCIL = 0,
-	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): the blitter's RESOLVE, texsz.s */
+	parameter MS4 = 0,	/* 4x multisampling (CAPS[29] with VF, RX, ROP, TU and an SU): the
+				 * blitter's RESOLVE, texsz.s */
 	/* The SUs' shape (design §3.7). */
 	parameter SU_NPHYS = 8,
 	parameter SU_NWARPS = 4,
@@ -291,6 +292,8 @@ module atg_top #(
 	wire [8:0] cpu_st_ridx;
 	wire [31:0] cpu_st_rdata, cp_fence_last, cpu_hcr_rdata, cpu_fault_addr;
 	wire cp_fence_ev, cp_halt, cp_open, cpu_fault, cpu_stall, cpu_result;
+	wire [39:0] occ_count;	/* atg_rop's occlusion counter, for QUERY */
+	wire occ_clear;
 
 	atg_cp #(
 		.ADDR_W(32),
@@ -303,7 +306,8 @@ module atg_top #(
 		.HAS_DISP(HAS_DISP),
 		.HAS_DBG(HAS_JTAG),
 		.PACKED(NSU != 0 && SU_PACKED != 0),
-		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0)
+		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0),
+		.MS4(MS4)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -381,7 +385,8 @@ module atg_top #(
 		.cpu_fault(cpu_fault),
 		.cpu_fault_addr(cpu_fault_addr),
 		.cpu_stall(cpu_stall),
-		.cpu_result(cpu_result)
+		.cpu_result(cpu_result),
+		.occ_count(occ_count), .occ_clear(occ_clear)
 	);
 
 	atg_blt #(
@@ -545,7 +550,7 @@ module atg_top #(
 	wire prim_valid, prim_ready, prim_last, rx_prim_ready;
 	wire [7:0] pt_done;
 	wire prim_ok = pt_done[prim_vtx[7:5]];
-	wire [23:0] prim_vtx;
+	wire [25:0] prim_vtx;
 	wire [2:0] prim_free;
 	/* RX ↔ SU 0. */
 	wire pt_rd, pt_free;
@@ -578,7 +583,7 @@ module atg_top #(
 	wire [31:0] ex_xy;
 	wire [3:0] ex_mask;
 	wire [511:0] ex_color;
-	wire [147:0] ex_ms;
+	wire [148:0] ex_ms;
 	wire [127:0] ex_depth;
 	/* SU 0 ↔ SA. */
 	wire sa_push_valid, sa_push_ready, sa_pop_valid, sa_pop_ready, sa_ctl_valid;
@@ -622,7 +627,7 @@ module atg_top #(
 		assign vl_lane = 5'd0;
 		assign vl_data = 32'd0;
 		assign prim_valid = 1'b0;
-		assign prim_vtx = 24'd0;
+		assign prim_vtx = 26'd0;
 		assign prim_free = 3'd0;
 		assign prim_last = 1'b0;
 		wire unused_vf = &{1'b0, draw_kick, vl_gnt, vl_ptbase, prim_ready};
@@ -717,6 +722,7 @@ module atg_top #(
 			.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 			.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 			.ord_valid(ord_valid), .ord_seq(ord_seq),
+			.occ_count(occ_count), .occ_clear(occ_clear),
 			.req_valid(c_req_valid[C_ROP]), .req_ready(c_req_ready[C_ROP]),
 			.req_write(c_req_write[C_ROP]), .req_line(c_req_line[C_ROP*LA_W +: LA_W]),
 			.req_be(c_req_be[C_ROP*LINE_BYTES +: LINE_BYTES]),
@@ -727,11 +733,12 @@ module atg_top #(
 		);
 	end else begin : g_no_rop
 		assign rop_busy = 1'b0;
+		assign occ_count = 40'd0;
 		assign ex_ready = 1'b0;
 		assign ex_next = 16'd0;
 		assign dx_ready = 1'b0;
 		wire unused_rop = &{1'b0, ex_valid, ex_seq, ex_xy, ex_mask, ex_color, ex_depth, ex_last, ex_ms,
-			dx_valid, dx_seq, dx_xy, dx_mask, dx_depth, dx_last, ord_valid, ord_seq};
+			dx_valid, dx_seq, dx_xy, dx_mask, dx_depth, dx_last, ord_valid, ord_seq, occ_clear};
 	end
 
 	if (HAS_SA != 0) begin : g_sa
@@ -808,7 +815,7 @@ module atg_top #(
 		wire [15:0] s_tx_tag, s_ex_seq;
 		wire [511:0] s_ex_color;
 		wire [127:0] s_ex_depth;
-		wire [147:0] s_ex_ms;
+		wire [148:0] s_ex_ms;
 		wire [DW-1:0] s_sa_push_data;
 		wire g0 = k == 0;
 
@@ -963,7 +970,7 @@ module atg_top #(
 		assign ex_color = 512'd0;
 		assign ex_depth = 128'd0;
 		assign ex_last = 1'b0;
-		assign ex_ms = 148'd0;
+		assign ex_ms = 149'd0;
 		assign sa_push_valid = 1'b0;
 		assign sa_push_data = {DW{1'b0}};
 		assign sa_pop_ready = 1'b0;

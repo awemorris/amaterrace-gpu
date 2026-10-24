@@ -243,6 +243,7 @@
 #define GHCI_S_PROG 0x190u
 #define GHCI_S_SA 0x1B0u /* reserved */
 #define GHCI_S_ATTR_DST 0x1C0u /* VF: ATTR_DST[0..15] */
+#define GHCI_S_ATTR_LIMIT 0x1D0u /* VF: ATTR_LIMIT[0..15], draft, CAPS[30] */
 
 /* VF. */
 #define GHCI_S_TOPOLOGY (GHCI_S_VF + 0u)
@@ -268,6 +269,9 @@
 #define GHCI_S_PROVOKING (GHCI_S_RX + 13u)
 #define GHCI_S_MS_CTRL (GHCI_S_RX + 14u) /* draft, CAPS[29] */
 #define GHCI_S_SAMPLE_KILL (GHCI_S_RX + 15u) /* draft, CAPS[29] */
+#define GHCI_S_DEPTH_BIAS_CONST (GHCI_S_RX + 16u) /* draft, CAPS[30] */
+#define GHCI_S_DEPTH_BIAS_SLOPE (GHCI_S_RX + 17u) /* draft, CAPS[30] */
+#define GHCI_S_DEPTH_BIAS_CLAMP (GHCI_S_RX + 18u) /* draft, CAPS[30] */
 
 /* ROP. */
 #define GHCI_S_RT_BASE (GHCI_S_ROP + 0u)
@@ -283,6 +287,13 @@
 #define GHCI_S_BLEND (GHCI_S_ROP + 10u)
 #define GHCI_S_BLEND_CONST (GHCI_S_ROP + 11u)
 #define GHCI_S_WRITE_MASK (GHCI_S_ROP + 12u)
+#define GHCI_S_RT_FORMATS (GHCI_S_ROP + 13u) /* draft, CAPS[30]: the VkFormats of attachments 0-3 */
+#define GHCI_S_RT1_BASE (GHCI_S_ROP + 14u) /* RTk_BASE at +2(k - 1), RTk_STRIDE at +1 */
+#define GHCI_S_BLEND1 (GHCI_S_ROP + 20u) /* BLEND1-BLEND3 */
+#define GHCI_S_BLEND_CONST_R (GHCI_S_ROP + 23u) /* BLEND_CONST_R, _G, _B, _A (fp32) */
+#define GHCI_S_DEPTH_BOUNDS_MIN (GHCI_S_ROP + 27u)
+#define GHCI_S_DEPTH_BOUNDS_MAX (GHCI_S_ROP + 28u)
+#define GHCI_S_ROP_CTRL (GHCI_S_ROP + 29u) /* [0] occlusion count, [1] fp32 blend constants */
 
 /* TU (docs/ghci.md section 8.4): slot s's words, TEX_IMAGE, TEX_SAMPLER
  * and TEX_LOD. */

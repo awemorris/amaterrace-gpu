@@ -19,7 +19,9 @@
  * returns one entry; an entry named after its return, returned twice, or
  * still taken when the draw ends is an error ("free").  Also checked: the
  * lanes of a warp are 0..n-1 in order with vb_last on the last, vb_index =
- * vertex + VERTEX_OFFSET for indexed draws, vb_inst.
+ * vertex + VERTEX_OFFSET for indexed draws, vb_inst, and the kind in
+ * prim_vtx[25:24] of every primitive ("kind": 0 point lists and the
+ * reserved topologies, 1 the line topologies, 2 the triangle ones).
  */
 
 `timescale 1ns / 1ps
@@ -41,7 +43,7 @@ module atg_vf_asm_tb;
 	wire iv_ready, vb_valid, vb_last, vl_req, vl_go, prim_valid, prim_last, busy;
 	wire [31:0] vb_index, vb_inst, vl_mask;
 	wire [4:0] vb_lane;
-	wire [23:0] prim_vtx;
+	wire [25:0] prim_vtx;
 	wire [2:0] prim_free;
 
 	atg_vf_asm dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
@@ -55,7 +57,7 @@ module atg_vf_asm_tb;
 
 	localparam MAXI = 2048, MAXP = 8192;
 	integer tot = 0;
-	integer seed, i, e_prim, e_free, e_vb, s_errs, ni, ip, np, gp, tmo, dl;
+	integer seed, i, e_prim, e_free, e_vb, e_kind, n_kind, s_errs, ni, ip, np, gp, tmo, dl;
 	reg [2:0] topo;
 	reg prov, ind;
 	reg [31:0] voff;
@@ -269,6 +271,13 @@ module atg_vf_asm_tb;
 					if (en <= 8'd63)
 						taken[en] = 1'b0;
 				end
+			if (prim_vtx[25:24] !== (topo == 3'd1 || topo == 3'd2 ? 2'd1 :
+				topo == 3'd3 || topo == 3'd4 || topo == 3'd5 ? 2'd2 : 2'd0)) begin
+				$display("FAIL atg_vf_asm: prim %0d of topology %0d has kind %0d", gp, topo,
+					prim_vtx[25:24]);
+				e_kind = e_kind + 1;
+			end
+			n_kind[topo] = 1'b1;
 			gp = gp + 1;
 			tot = tot + 1;
 		end
@@ -338,6 +347,8 @@ module atg_vf_asm_tb;
 		e_prim = 0;
 		e_free = 0;
 		e_vb = 0;
+		e_kind = 0;
+		n_kind = 0;
 		s_errs = 0;
 		ni = 0;
 		ip = 0;
@@ -399,7 +410,17 @@ module atg_vf_asm_tb;
 		if (e_free == 0 && e_prim + e_vb == s_errs)
 			$display("PASS atg_vf_asm.free");
 
-		if (e_prim + e_vb + e_free == 0)
+		/* the kind: every topology 0-7 seen above, or drawn here */
+		for (i = 0; i < 8; i = i + 1)
+			if (!n_kind[i])
+				draw(i, 12, 1, 0);
+		if (e_kind == 0 && n_kind[7:0] == 8'hFF)
+			$display("PASS atg_vf_asm.kind");
+		else
+			$display("FAIL atg_vf_asm: kind (%0d errors, topologies seen %b)", e_kind,
+				n_kind[7:0]);
+
+		if (e_prim + e_vb + e_free + e_kind == 0 && n_kind[7:0] == 8'hFF)
 			$display("PASS atg_vf_asm");
 		$finish;
 	end

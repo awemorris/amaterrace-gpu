@@ -1428,8 +1428,8 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   (ExplicitLod with gradients) is compiled to `texsz`, the level of detail
   of section 8.4 from the gradients, and `texl`.
 - **Not in version 1** (a compiler rejects them):
-  - Multisampled images (QuerySamples, sampledImageColorSampleCounts 4;
-    TEX_IMAGE[15:12] is kept for them).
+  - Multisampled images without CAPS[29] (QuerySamples,
+    sampledImageColorSampleCounts 4); with CAPS[29] section 12.11.
   - Offset and ConstOffsets (optional, shaderImageGatherExtended), cube
     arrays (optional, imageCubeArray), MinLod (optional,
     shaderResourceMinLod), anisotropic filtering (optional,
@@ -1490,14 +1490,16 @@ vendor's ISA FourCC and a version.
 
 ### 12.11 Multisampling (draft)
 
-**Draft** (2026-10-25; not implemented yet). With CAPS[29], the GPU
-rasterizes with 1 or 4 samples per pixel and runs the fragment program
-once per pixel (no sample shading). This section extends section 12.9
-(where multisampled images are still listed as not in version 1) and
-section 12.6 (`texsz` immediate 3 below).
+**Draft** (2026-10-25; Amaterrace implements it, in simulation). With
+CAPS[29], the GPU rasterizes with 1 or 4 samples per pixel and runs the
+fragment program once per pixel (no sample shading). This section
+extends section 12.9 (multisampled images) and section 12.6 (`texsz`
+immediate 3 below).
 
 **State words** (in the rasterizer's range; the rasterizer and the render
-output read them, and a SET_REG into the range waits while either is busy):
+output read them, and a SET_REG into the range waits until the earlier
+draws have left the vertex fetcher, the shader units, the rasterizer and
+the render output, so a change never reaches a draw already issued):
 
 | Index | Name | Contents |
 | --- | --- | --- |

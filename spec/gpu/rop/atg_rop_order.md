@@ -27,7 +27,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ex_color` | in | 512 | Colour. |
 | `ex_depth` | in | 128 | Depth. |
 | `ex_last` | in | 1 | Last quad of the warp. |
-| `ex_ms` | in | 148 | The quad's {d_s, zexp, smask} (multisampling). |
+| `ex_ms` | in | 149 | The quad's {front, d_s, zexp, smask} (front with CAPS[30]). |
 | `ex_next` | out | 16 | The next sequence number to retire. |
 | **Direct fragments to the ROP (no SU: DEBUG_COLOR)** | | | |
 | `dx_valid` | in | 1 | A quad. |
@@ -47,7 +47,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `q_mask` | out | 4 | Lanes. |
 | `q_color` | out | 512 | Colour (fp32 RGBA × 4). |
 | `q_depth` | out | 128 | Depth. |
-| `q_ms` | out | 148 | ex_ms, or for the direct path {0, 1111, every sample of the covered lanes}: the lane's depth for all its samples. |
+| `q_ms` | out | 149 | ex_ms, or for the direct path {1 (front), 0, 1111, every sample of the covered lanes}: the lane's depth for all its samples. |
 | `q_dbg` | out | 1 | From the direct path: use DEBUG_COLOR. |
 | `busy` | out | 1 | Issued numbers not yet retired. |
 

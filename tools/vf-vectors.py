@@ -10,10 +10,19 @@
 #   kind k fmt dst lane raw nwords word...
 # kind F (formats) or L (fill), raw 32 hex digits (byte 0 last), the words
 # in order (register ATTR_DST[5:0] + c).
+# It also writes sim/vec/vf_conv_vk.txt, the CAPS[30] cases: ATTR_DST[31:24]
+# a VkFormat (the conversion of tools/fmtmodel.py) and af_oob.  Lines
+#   kind k fmt vk dst lane raw oob nwords word...
+# kind V (vkformats: every VkFormat value 0-255, those with the vertex-buffer
+# feature with many texels) or O (oob: af_oob with any format, also vk 0).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import os
 import random
 import struct
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fmtmodel as F  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 VEC = os.path.join(ROOT, 'sim', 'vec')
@@ -71,6 +80,81 @@ def rand_raw(r, fmt, ub):
     return raw
 
 
+def vk_words(fmt, vk, dst, raw, oob):
+    # ATTR_DST = {vk, 16 bits of 0, dst}: enabled when not 0
+    if vk == 0 and dst == 0:
+        return []
+    if vk == 0:
+        if oob:
+            return [(1 if fmt in INT else 0x3F800000) if c == 3 else 0
+                    for c in range((dst >> 6) + 1)]
+        return words(fmt, dst, raw)
+    _, buf = F.features(vk, False)
+    ok = bool(buf & F.F_VERTEX)
+    is_int = ok and F.info(vk).ty in (F.UINT, F.SINT)
+    if oob or not ok:
+        comps = [0, 0, 0, 1 if is_int else 0x3F800000]
+    else:
+        comps, _ = F.unpack(raw, vk)
+    return comps[:(dst >> 6) + 1]
+
+
+def vk_raw(r, vk):
+    raw = r.getrandbits(128)
+    f = F.info(vk)
+    if f is not None and f.ty == F.SFLOAT and r.random() < 0.5:
+        w = f.chans[0][1]
+        raw = 0
+        for c in range(128 // w):
+            if w == 16:
+                v = r.choice(HALVES) if r.random() < 0.6 else r.getrandbits(16)
+            else:
+                v = r.choice([0, 0x80000000, 0x7F800000, 0xFF800000, 0x7FC00001, 1,
+                              0x3F800000]) if r.random() < 0.6 else r.getrandbits(32)
+            raw |= v << (w * c)
+    elif f is not None and not f.block and r.random() < 0.3:
+        # the extreme codes of every field: 0, all ones, the sign bit alone
+        for p, w in f.chans:
+            raw &= ~(((1 << w) - 1) << p)
+            raw |= r.choice([0, (1 << w) - 1, 1 << (w - 1), 1]) << p
+    return raw
+
+
+def vk_main():
+    r = random.Random(288030)
+    cases = []
+    for vk in range(256):
+        _, buf = F.features(vk, False)
+        for _ in range(24 if buf & F.F_VERTEX else 2):
+            dst = r.randrange(4) << 6 | r.randrange(64)
+            cases.append(('V', r.randrange(16), vk, dst, vk_raw(r, vk), 0))
+    for _ in range(80):
+        vk = r.choice([0, 0, 37, 41, 98, 100, 109, 106, 76, 13, 129, 147, 255])
+        fmt = r.randrange(16)
+        dst = r.randrange(4) << 6 | r.randrange(1, 64)
+        cases.append(('O', fmt, vk, dst, r.getrandbits(128), 1))
+    r.shuffle(cases)
+    cases = [c for c in cases if c[0] == 'V'] + [c for c in cases if c[0] == 'O']
+    lines = []
+    i = 0
+    while i < len(cases):
+        kind = cases[i][0]
+        n = 1 + r.randrange(16)
+        batch = [c for c in cases[i:i + n] if c[0] == kind]
+        i += len(batch)
+        ks = r.sample(range(16), len(batch))
+        lines.append('B %d' % len(batch))
+        for (kd, fmt, vk, dst, raw, oob), k in zip(batch, ks):
+            ws = vk_words(fmt, vk, dst, raw, oob)
+            lines.append('%s %x %x %02x %02x %02x %032x %d %d%s' % (
+                kd, k, fmt, vk, dst, r.randrange(32), raw, oob, len(ws),
+                ''.join(' %08x' % w for w in ws)))
+    with open(os.path.join(VEC, 'vf_conv_vk.txt'), 'w') as fp:
+        for ln in lines:
+            fp.write(ln + '\n')
+    print('vf-vectors: vf_conv_vk.txt (%d lines)' % len(lines))
+
+
 def main():
     r = random.Random(288009)
     ub = list(range(256))
@@ -118,6 +202,7 @@ def main():
         for ln in lines:
             fp.write(ln + '\n')
     print('vf-vectors: vf_conv.txt (%d lines)' % len(lines))
+    vk_main()
 
 
 if __name__ == '__main__':

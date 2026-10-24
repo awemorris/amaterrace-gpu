@@ -75,4 +75,4 @@ docs/ghci.md §8.5 (ROP range, the per-sample operations), `spec/gpu/rop/atg_rop
 
 ## 10. Status
 
-Spec only (2026-10-25); no RTL yet.
+Implemented 2026-10-25: every PASS of §8 (`sim/vec/rop_dtest.txt` from `tools/rop-vectors.py`, the model `dtest` in `tools/rxmodel.py`); `-DMUT_STENCIL_FACE` and `-DMUT_STENCIL_WRAP` fail `.stencil` (and the sections with a stencil).  wword's bytes outside wbe are unspecified (the TB compares the enabled ones).

@@ -162,6 +162,7 @@ localparam [8:0] GHCI_S_TU = 9'h090;	/* 16 slots of 16 words */
 localparam [8:0] GHCI_S_PROG = 9'h190;
 localparam [8:0] GHCI_S_SA = 9'h1B0;	/* reserved */
 localparam [8:0] GHCI_S_ATTR_DST = 9'h1C0;	/* VF: ATTR_DST[0..15] */
+localparam [8:0] GHCI_S_ATTR_LIMIT = 9'h1D0;	/* VF: ATTR_LIMIT[0..15], draft, CAPS[30] */
 localparam [8:0] GHCI_S_VENDOR = 9'h1E0;
 
 /* VF (0x020-0x04F). */
@@ -188,6 +189,9 @@ localparam [8:0] GHCI_S_DEBUG_COLOR = 9'h05C;
 localparam [8:0] GHCI_S_PROVOKING = 9'h05D;
 localparam [8:0] GHCI_S_MS_CTRL = 9'h05E;	/* draft, CAPS[29] */
 localparam [8:0] GHCI_S_SAMPLE_KILL = 9'h05F;	/* draft, CAPS[29] */
+localparam [8:0] GHCI_S_DEPTH_BIAS_CONST = 9'h060;	/* draft, CAPS[30] */
+localparam [8:0] GHCI_S_DEPTH_BIAS_SLOPE = 9'h061;	/* draft, CAPS[30] */
+localparam [8:0] GHCI_S_DEPTH_BIAS_CLAMP = 9'h062;	/* draft, CAPS[30] */
 
 /* ROP (0x070-0x08F). */
 localparam [8:0] GHCI_S_RT_BASE = 9'h070;
@@ -203,6 +207,13 @@ localparam [8:0] GHCI_S_STENCIL_BACK = 9'h079;
 localparam [8:0] GHCI_S_BLEND = 9'h07A;
 localparam [8:0] GHCI_S_BLEND_CONST = 9'h07B;
 localparam [8:0] GHCI_S_WRITE_MASK = 9'h07C;
+localparam [8:0] GHCI_S_RT_FORMATS = 9'h07D;	/* draft, CAPS[30]: the VkFormats of attachments 0-3 */
+localparam [8:0] GHCI_S_RT1_BASE = 9'h07E;	/* RTk_BASE at 0x07E + 2(k - 1), RTk_STRIDE at + 1 */
+localparam [8:0] GHCI_S_BLEND1 = 9'h084;	/* BLEND1-BLEND3 */
+localparam [8:0] GHCI_S_BLEND_CONST_R = 9'h087;	/* BLEND_CONST_R, _G, _B, _A (fp32) */
+localparam [8:0] GHCI_S_DEPTH_BOUNDS_MIN = 9'h08B;
+localparam [8:0] GHCI_S_DEPTH_BOUNDS_MAX = 9'h08C;
+localparam [8:0] GHCI_S_ROP_CTRL = 9'h08D;	/* [0] occlusion count, [1] fp32 blend constants */
 
 /* TU (0x090-0x18F, docs/ghci.md section 8.4): slot s's words at
  * GHCI_S_TU + 16 s + GHCI_TEX_*: the image words (BASE, SIZE, IMAGE,

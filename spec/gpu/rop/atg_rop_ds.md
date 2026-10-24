@@ -35,6 +35,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `q_color` | in | 512 | Colour (fp32 RGBA × 4). |
 | `q_sdepth` | in | 512 | The samples' depths: sample s of lane l at 32 (4 l + s). |
 | `q_dbg` | in | 1 | From the direct path: use DEBUG_COLOR. |
+| `q_front` | in | 1 | (CAPS[30]) The quad's facing (the direct path reads as front). |
 | **To atg_rop_wb** | | | |
 | `d_valid` | out | 1 | A quad after depth/stencil. |
 | `d_ready` | in | 1 | Taken. |
@@ -56,11 +57,13 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-30 ports; 19 counting each AMB port and HCR snoop port as one group (spec/README.md).
+31 ports; 20 counting each AMB port and HCR snoop port as one group (spec/README.md).
 
 ## 4. Behaviour
 
 Depth test off: pass all.  A quad's 2×2 pixels lie in two rows: two reads (or one line per row), compare, write if DEPTH[1] and any lane passed.  Read-after-write order: the next quad touching the same line waits for the write response (small address match).
+
+**CAPS[30]**: the module keeps DEPTH[9:0], STENCIL_FRONT, STENCIL_OPS, STENCIL_BACK and DEPTH_BOUNDS_MIN/MAX; each covered (lane, sample) entry goes through `atg_rop_dtest` (bounds, stencil with the quad's facing, depth; spec atg_rop_dtest.md), and its byte enables say which bytes of the line are written.  The line is read when exactly one format bit is set and the depth test, the stencil test (D24S8) or the bounds test is on.  D16 pixels are 2 bytes: sample s of pixel x at byte 2 (S x + s) of the row.
 
 ## 5. State machine
 
@@ -79,8 +82,10 @@ None beyond the above.
 `sim/tb/atg_rop_ds_tb.v` prints, in this order:
 
 - `PASS atg_rop_ds.funcs` — all 8 depth functions
-- `PASS atg_rop_ds.stencil` — stencil ops (STENCIL 1)
+- `PASS atg_rop_ds.stencil` — (CAPS[30], `sim/vec/rop_ds2.txt` from `tools/rop-vectors.py`) D24S8 runs with the stencil test and ops, random faces per quad, the buffer at the end
 - `PASS atg_rop_ds.raw` — overlapping quads in order
+- `PASS atg_rop_ds.d16` — D16 runs (2-byte pixels)
+- `PASS atg_rop_ds.bounds` — the depth bounds of the three formats
 - `PASS atg_rop_ds` at the end.
 
 ## 9. References
@@ -96,3 +101,5 @@ Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters ar
 2026-10-24 (p009 part E, P3): the depth conversion and compare functions moved to `include/atg_depth.vh`, shared with the TU's compare samplers (atg_tu_filter); the behaviour is unchanged.
 
 Multisampling (the MSAA work): MS_CTRL[3:0] = 2 makes the row's address base + y stride + 16 x and the test runs per sample (8 entries per row: sample s of pixel x at word 4 x + s); one sample: as before (2 entries).  `q_mask`/`q_depth`/`d_mask` became `q_smask`/`q_sdepth`/`d_smask` (the same port count).  The 4-sample cases are in `sim/tb/atg_rop_ms_tb.v`; this TB drives the one-sample masks as bit 4 l and checks that no other bit of d_smask is set.
+
+2026-10-25 (CAPS[30]): atg_rop_dtest per entry, q_front, D16, the stencil and the bounds (§4); every PASS of §8 (`-DMUT_STENCIL_FACE` fails `.stencil` and `.bounds`).  The earlier vectors are unchanged.

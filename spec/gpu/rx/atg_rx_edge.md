@@ -45,16 +45,16 @@ Inputs read from the fp registers (atg_rx_setup's numbering, `spec/gpu/rx/atg_rx
 - **Point** (vertex 0 = p): the square p ± (128, 128); sub-triangle 0 (p⁻⁻, p⁺⁻, p⁺⁺), sub-triangle 1 (p⁻⁻, p⁺⁺, p⁻⁺).
 - **Edges**: D = dx1·dy2 - dx2·dy1 of the triangle walked; its winding orders the corners counter-clockwise for the scan converter; A, B per edge, E at the bbox origin's pixel centre with the top-left bias, as before (the same subpixel² units).
 - **Facing and culling** (triangles only): front from the winding and CULL[2]; CULL[0] culls front, CULL[1] back faces.  Lines and points are front and never culled.
-- **Bounding box**: the vertices' pixels ∩ scissor (when SCISSOR_MAX ≠ 0) ∩ [0, RT_SIZE) and, with vprect and not raw, ∩ the viewport's rectangle [x_off - |x_scale|, x_off + |x_scale|) × [y_off - |y_scale|, y_off + |y_scale|) (integers: the firmware rounds the viewport; viewportSubPixelBits is 0).
+- **Bounding box**: the pixels of the whole primitive (a triangle's vertices; all four corners of a line or a point, for both sub-triangles, so that the planes at the box's origin are the same for both) ∩ scissor (when SCISSOR_MAX ≠ 0) ∩ [0, RT_SIZE) and, with vprect and not raw, ∩ the viewport's rectangle [x_off - |x_scale|, x_off + |x_scale|) × [y_off - |y_scale|, y_off + |y_scale|) (integers: the firmware rounds the viewport; viewportSubPixelBits is 0).
 - **Deltas to the fp registers**: DX1, DY1, DX2, DY2 (in pixels), DF (= D in pixels²) and OX, OY (the bbox origin's pixel centre minus vertex 0, in pixels) into registers 40-46, of the triangle that defines the planes: the triangle itself, the line's (a, b, c), the point's (p, p + (1, 0), p + (0, 1)).
 
 ## 5. State machine
 
-IDLE →(start)→ READ (6 coordinates, 4 more with vprect) → SNAP → CORNERS → D (two products) → EDGES → E (three products) → CONV (seven int-to-fp32 conversions, written to registers 40-46) → IDLE (done).
+IDLE →(start)→ READ (the 6 coordinates and the 4 of the rectangle, always) → SNAP → CORNERS → D (two products) → EDGES → E (three products) → CONV (seven int-to-fp32 conversions, written to registers 40-46) → IDLE (done).
 
 ## 6. Latency and throughput
 
-About 30 cycles per call (as the integer steps of atg_rx_setup were), plus 4 with vprect; a line or a point calls it twice.  One 25 × 25-bit multiplier.
+33 cycles per call (the integer steps of atg_rx_setup took 28; the rectangle's 4 reads and the corners add 5); a line or a point calls it twice.  One 25 × 25-bit multiplier.
 
 ## 7. Corner cases and errors
 
@@ -71,4 +71,4 @@ About 30 cycles per call (as the integer steps of atg_rx_setup were), plus 4 wit
 
 ## 10. Status
 
-Spec only (2026-10-25); the integer steps exist inside atg_rx_setup (p007) and move here with the line and point forms.
+Implemented 2026-10-25 (the integer steps moved here from atg_rx_setup, the same arithmetic; checked through atg_rx_setup's testbench, every PASS there).

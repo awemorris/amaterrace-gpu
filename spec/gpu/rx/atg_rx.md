@@ -6,7 +6,7 @@ RTL: `rtl/gpu/rx/atg_rx.v`.  Parent: atg_top (HAS_RX).  Implemented in: p007, p0
 
 The rasterizer (design §3.8): clip, setup, quad scan into fragment warps (or direct quads), sequence numbers for the ROP order.
 
-Children: `atg_rx_clip`, `atg_rx_setup`, `atg_rx_scan`, `atg_rx_frag`, `atg_rx_order`.
+Children: `atg_rx_clip` (with `atg_rx_cpoly`), `atg_rx_setup`, `atg_rx_scan`, `atg_rx_frag`, `atg_rx_order`.
 
 ## 2. Parameters
 

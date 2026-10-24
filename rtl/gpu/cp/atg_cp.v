@@ -49,7 +49,10 @@ module atg_cp #(
 	parameter HAS_DISP = 0,	/* a display controller's registers are in this window at +0x10000 (CAPS[3], DISP) */
 	parameter HAS_DBG = 0,	/* a debug bridge outside the host bus (JTAG; the DBG capability) */
 	parameter PACKED = 0,	/* the SU has the packed arithmetic (CAPS[28]) */
-	parameter SUBGROUP = 0	/* the SU has shfl/vote/ballot (CAPS[24]) */
+	parameter SUBGROUP = 0,	/* the SU has shfl/vote/ballot (CAPS[24]) */
+	parameter MS4 = 0,	/* 4x multisampling in the RX, ROP, TU, SU and BLT (CAPS[29]) */
+	parameter HAS_FMT = 0,	/* the FMT capability (with CAPS[30]) */
+	parameter HAS_ETC = 0	/* the TU's ETC2/EAC decoder (FMT reports those formats) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -137,7 +140,9 @@ module atg_cp #(
 	input wire cpu_fault,
 	input wire [31:0] cpu_fault_addr,
 	input wire cpu_stall,
-	input wire cpu_result
+	input wire cpu_result,
+	input wire [39:0] occ_count,	/* the occlusion counter (atg_rop, QUERY) */
+	output wire occ_clear
 );
 	`include "ghci_regs.vh"
 
@@ -147,8 +152,11 @@ module atg_cp #(
 	localparam [3:0] LS4 = LINE_SHIFT;
 	/* verilator lint_on WIDTHTRUNC */
 	/* CAPS[27]: graphics (VF, RX and ROP); CAPS[28]: packed; CAPS[26]: the TU's mip linear,
-	 * border, depth formats and compare; CAPS[24]: subgroup. */
-	localparam [31:0] CAPS = {3'd0, UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4],
+	 * border, depth formats and compare; CAPS[24]: subgroup; CAPS[29]: 4x multisampling
+	 * (with graphics, the TU and an SU). */
+	localparam [31:0] CAPS = {2'd0,
+		MS4 != 0 && UNITS[2] && UNITS[3] && UNITS[4] && UNITS[5] && UNITS[6],
+		UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4],
 		UNITS[5], 1'b0,
 		UNITS[6] && SUBGROUP != 0,
 		LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,
@@ -157,8 +165,9 @@ module atg_cp #(
 	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 24'h000001};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
 	/* PERF always; CPFW with the CPU; DISP and DBG when present (bit id - 1). */
-	localparam [7:0] XCAP = 8'h04 | (HAS_CPU != 0 ? 8'h20 : 8'h00) | (HAS_DISP != 0 ? 8'h01 : 8'h00) |
-		(HAS_DBG != 0 ? 8'h02 : 8'h00);
+	localparam [9:0] XCAP = 10'h004 | (HAS_CPU != 0 ? 10'h020 : 10'h000) |
+		(HAS_DISP != 0 ? 10'h001 : 10'h000) | (HAS_DBG != 0 ? 10'h002 : 10'h000) |
+		(HAS_FMT != 0 ? 10'h200 : 10'h000);
 
 	/*
 	 * The STATE broadcast to the blocks, one register stage after
@@ -197,6 +206,7 @@ module atg_cp #(
 	assign hcr_wmask = s_hcr_wmask;
 	assign hcr_ridx = s_hcr_ridx;
 
+	wire [31:0] s_fmt_rdata;
 	atg_cp_regs #(
 		.GCLK_HZ(GCLK_HZ), .VENDOR_ID(VENDOR_ID), .DEVICE_ID(DEVICE_ID),
 		.DEVICE_VERSION(DEVICE_VERSION), .ISA_ID(ISA), .NATIVE_ISA_ID(ISA), .CAPS(CAPS),
@@ -210,8 +220,22 @@ module atg_cp #(
 		.alias_we(s_alias_we), .alias_idx(s_alias_idx), .alias_ridx(s_alias_ridx),
 		.ctl_rdata(s_ctl_rdata), .irq_rdata(s_irq_rdata), .ring_rdata(s_ring_rdata),
 		.fence_rdata(s_fence_rdata), .dbg_rdata(s_dbg_rdata), .state_rdata(s_state_rdata),
-		.x_rdata(x_rdata), .perf_busy({2'd0, !mc_idle, blt_busy}), .perf_reset(s_perf_reset)
+		.x_rdata(x_rdata | s_fmt_rdata), .perf_busy({2'd0, !mc_idle, blt_busy}),
+		.perf_reset(s_perf_reset)
 	);
+
+	/* The FMT capability (id 10) at 0x160. */
+	generate
+	if (HAS_FMT != 0) begin : g_fmt
+		atg_cp_fmt #(.BASE(10'h058), .HAS_ETC(HAS_ETC), .NRT(4'd4)) u_fmt (
+			.clk(clk), .rst_n(rst_n),
+			.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+			.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_fmt_rdata)
+		);
+	end else begin : g_no_fmt
+		assign s_fmt_rdata = 32'd0;
+	end
+	endgenerate
 
 	/* Control: state machine, RESET order, watchdog, faults. */
 	wire s_run, s_halt, s_step, s_open, s_quiesce, s_mc_flush, s_core_rst_n;
@@ -347,6 +371,7 @@ module atg_cp #(
 		.busy_in({busy_ext[7:2], blt_busy, 1'b0}), .vsync(vsync),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
+		.occ_count(occ_count), .occ_clear(occ_clear),
 		.busy(s_seq_busy), .cmd_active(s_cmd_active),
 		.fault(s_seq_fault), .fault_kind(s_seq_fault_kind), .fault_addr(s_seq_fault_addr),
 		.fault_tag(s_seq_fault_tag)

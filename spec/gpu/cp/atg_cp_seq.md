@@ -56,6 +56,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `f_aux` | out | 32 | RESULT aux. |
 | `f_irq` | out | 1 | FENCE flags[0]. |
 | `f_busy` | in | 1 | The fence unit has work outstanding (WAIT_FENCE polling, writes unanswered). |
+| `occ_count` | in | 40 | (CAPS[30]) The occlusion counter (atg_rop_occ), for QUERY. |
+| `occ_clear` | out | 1 | (CAPS[30]) One cycle: clear the counter (QUERY flags[0], or flags[1] with the write's request). |
 | **Status** | | | |
 | `busy` | out | 1 | A µop is executing (STATUS[0] with the ring's busy). |
 | `cmd_active` | out | 1 | A command is running: the watchdog counts (atg_cp_ctl). |
@@ -116,6 +118,7 @@ One SET_REG pair per 2 cycles (one dword per cycle); kick 1 cycle after the head
 - `PASS atg_cp_seq.tuwait`, `.progwait`, `.ldconst`, `.attrlimit_wait` — right after a DRAW (the VF busy): TU state 0x095, FS_BASE 0x192, a LOAD_CONST's kick and ATTR_LIMIT 0x1D2 wait until the VF is idle (monitors: the TU range not while the VF is busy, the program range not while the VF, the RX or the SUs are, LOAD_CONST not while the VF or the RX is, 0x1C0-0x1DF not while the VF is); the earlier rules (`-DMUT_SEQ_DRAWSTATE`) fail all four
 - `PASS atg_cp_seq.wait` — WAIT_IDLE with a mask waits only for those busy bits
 - `PASS atg_cp_seq.fence` — FENCE waits for idle then requests; RESULT waits for f_busy 0
+- `PASS atg_cp_seq.query` — (CAPS[30]) QUERY flags[0] clears at once while the BLT is busy; flags 0 waits for every block and the fence unit, then requests op 1 with addr, the counter's low word and its high bits; flags[1] clears with the request
 - `PASS atg_cp_seq.source` — fw_active switches the source; µops of the two sources never interleave
 - `PASS atg_cp_seq.badop` — op 14 and vendor op 5 fault kind 2
 - `PASS atg_cp_seq` at the end.
@@ -137,3 +140,5 @@ WS288 p009 part C (P1, branch p1-tu): SET_REG into the TU's range (STATE 0x090-0
 WS288 p008 (P2, branch p2-dispatch): the compute µops are checked against the real SU in `sim/tb/atg_top_cs_tb.v` (atg_top with NSU 1): SET_REG of the program range, INVALIDATE (flags 1, D$), LOAD_PROGRAM (inv[3]), LOAD_CONST (0x1EC-0x1EE, lc_kick, waits for the SU), DISPATCH (0x1E9-0x1EB, cs_kick) and FENCE (waits for the SU and the atomic unit) — no change of this module.  Readings (no change of the RTL): DISPATCH does not invalidate a cache (ghci §7.3 says so only for DRAW), so a driver that rewrote the data sends INVALIDATE first; LOAD_PROGRAM's stage word is not looked at (the whole I$ is invalidated); the SU starts a compute warp at instruction 0 of CS_BASE (0x194), so CS_BASE is the address of the code (header word 5 applied; the header's entry point is the firmware's or driver's to add).
 
 The waits for work upstream (the MSAA work, branch p2-p027): SET_REG into 0x050-0x08F waits for the VF, the SUs, the RX and the ROP (it waited for the RX and ROP, or the ROP alone, before), into the TU range also for the VF, into the program range (0x190-0x1AF, no wait before) for the VF, the SUs and the RX, into 0x1D0-0x1DF (ATTR_LIMIT) for the VF like ATTR_DST; LOAD_CONST's kick also for the VF and the RX; so a draw upstream keeps its state.  The waits moved to the child `atg_cp_seq_wait` (130 lines), which brings this module to 355 lines (under the limit).  Not checked here: whether the busy bits of the blocks leave a cycle without any of them set while work passes from one block to the next (the VF to a vertex warp, a vertex warp to the RX); a back-to-back test of the whole pipeline checks that.
+
+2026-10-25 (CAPS[30]): µop 14 QUERY (payload 1: addr; needs the ROP, UNITS[4]): after the waits of RESULT (every block idle, f_busy 0) the counter is taken (a1 = occ_count[31:0], a2 = occ_count[39:32]) and the fence unit's RESULT request (f_op 1) writes it; flags[0] only clears, without waiting or writing; flags[1] clears with the request.  Ports occ_count and occ_clear (the badop TB case moved from op 14 to op 15).  `PASS atg_cp_seq.query`.

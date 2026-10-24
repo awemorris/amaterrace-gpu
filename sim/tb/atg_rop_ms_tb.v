@@ -55,7 +55,7 @@ module atg_rop_ms_tbc #(
 	reg [3:0] ex_mask = 0, dx_mask = 0;
 	reg [511:0] ex_color = 0;
 	reg [127:0] ex_depth = 0, dx_depth = 0;
-	reg [147:0] ex_ms = 0;
+	reg [148:0] ex_ms = 0;
 	wire busy, ex_ready, dx_ready;
 	wire [15:0] ex_next;
 	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
@@ -71,7 +71,7 @@ module atg_rop_ms_tbc #(
 		.ex_next(ex_next), .ex_ms(ex_ms),
 		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
-		.ord_valid(1'b0), .ord_seq(16'd0),
+		.ord_valid(1'b0), .ord_seq(16'd0), .occ_count(), .occ_clear(1'b0),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
@@ -89,7 +89,7 @@ module atg_rop_ms_tbc #(
 	reg [7:0] tag;
 	reg [31:0] ctrl, dep, fmt, bl, wm, dbgc, v, w, x, y, dbg;
 	reg [3:0] m;
-	reg [147:0] msv;
+	reg [148:0] msv;
 	reg [511:0] cv;
 	reg [127:0] zv;
 	reg [15:0] seq;
