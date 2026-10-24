@@ -66,7 +66,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-36 ports; 25 counting each AMB port and HCR snoop port as one group (spec/README.md).
+37 ports; 26 counting each AMB port and HCR snoop port as one group (spec/README.md).
 
 ## 4. Behaviour
 
