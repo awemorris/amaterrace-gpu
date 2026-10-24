@@ -187,7 +187,7 @@ module atg_top_scene_harness #(
 				end
 			end
 			host_write(GHCI_RING_BASE, RING);
-			host_write(GHCI_RING_SIZE, 32'd10);
+			host_write(GHCI_RING_SIZE, 32'd11);	/* 512 words */
 			host_write(GHCI_FENCE_LAST, 32'd0);
 			host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 			host_write(GHCI_RING_WPTR, wp);

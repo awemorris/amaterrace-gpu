@@ -10,12 +10,14 @@
  * one MC client.
  *
  * Wiring of its children: atg_tu_addr
- * (descriptor, LOD, wrap, addresses), atg_tu_cache (the T$ on the MC
- * port), atg_tu_filter (texel conversion, bilinear).  Quads go through in
- * request order.  busy approximates STATUS.TU_BUSY: a quad on one of the
- * links (a quad inside a child between them is not seen; atg_cp_seq's
- * SET_REG of the TU range also waits for the RX and the SUs, which hold
- * every fragment still to be textured).  See spec/gpu/tu/atg_tu.md.
+ * (descriptors and their level offsets, cube faces, LOD, wrap, addresses),
+ * atg_tu_cache (the T$ on the MC port), atg_tu_filter (texel conversion,
+ * compare, the filters over the passes).  Quads go through in request
+ * order.  busy approximates STATUS.TU_BUSY: a quad on one of the links or
+ * the level offsets being computed (a quad inside a child between them is
+ * not seen; atg_cp_seq's SET_REG of the TU range also waits for the RX and
+ * the SUs, which hold every fragment still to be textured).
+ * See spec/gpu/tu/atg_tu.md.
  */
 
 `timescale 1ns / 1ps
@@ -40,7 +42,8 @@ module atg_tu #(
 	input wire [7:0] tx_op,
 	input wire [3:0] tx_slot,
 	input wire [3:0] tx_mask,
-	input wire [511:0] tx_coord,
+	input wire [639:0] tx_coord,
+	input wire [11:0] tx_off,
 	input wire [15:0] tx_tag,
 	input wire tx_last,
 	/* Return */
@@ -65,14 +68,15 @@ module atg_tu #(
 );
 	wire ta_valid, ta_ready, ta_last;
 	wire [511:0] ta_addr;
-	wire [95:0] ta_wts;
+	wire [127:0] ta_wts;
 	wire [15:0] ta_tag;
 	wire [3:0] ta_mask;
 	wire [23:0] ta_ctl;
 	wire [127:0] ta_value;
 	wire tc_valid, tc_ready, tc_last;
+	wire desc_busy;
 	wire [511:0] tc_texels;
-	wire [95:0] tc_wts;
+	wire [127:0] tc_wts;
 	wire [15:0] tc_tag;
 	wire [3:0] tc_mask;
 	wire [23:0] tc_ctl;
@@ -80,8 +84,10 @@ module atg_tu #(
 
 	atg_tu_addr addr (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.desc_busy(desc_busy),
 		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
-		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_tag(tx_tag), .tx_last(tx_last),
+		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
+		.tx_last(tx_last),
 		.ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr), .ta_wts(ta_wts),
 		.ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl), .ta_value(ta_value), .ta_last(ta_last)
 	);
@@ -103,7 +109,7 @@ module atg_tu #(
 		.tr_last(tr_last)
 	);
 
-	assign busy = tx_valid || ta_valid || tc_valid || tr_valid;
+	assign busy = tx_valid || ta_valid || tc_valid || tr_valid || desc_busy;
 endmodule
 
 `default_nettype wire

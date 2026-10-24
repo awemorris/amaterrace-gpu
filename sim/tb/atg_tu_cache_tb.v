@@ -43,7 +43,7 @@ module atg_tu_cache_run #(
 	reg inv = 1'b0;
 	reg ta_valid = 1'b0;
 	reg [511:0] ta_addr = 0;
-	reg [95:0] ta_wts = 0;
+	reg [127:0] ta_wts = 0;
 	reg [15:0] ta_tag = 0;
 	reg [3:0] ta_mask = 0;
 	reg [23:0] ta_ctl = 0;
@@ -52,7 +52,7 @@ module atg_tu_cache_run #(
 	reg tc_ready = 1'b0;
 	wire ta_ready, tc_valid, tc_last;
 	wire [511:0] tc_texels;
-	wire [95:0] tc_wts;
+	wire [127:0] tc_wts;
 	wire [15:0] tc_tag;
 	wire [3:0] tc_mask;
 	wire [23:0] tc_ctl;
@@ -133,14 +133,14 @@ module atg_tu_cache_run #(
 		input [23:0] ctl;
 		output integer errs;
 		reg [511:0] want;
-		reg [95:0] wts;
+		reg [127:0] wts;
 		reg [15:0] tag;
 		reg [127:0] val;
 		reg last;
 		integer l, t, n;
 		begin
 			errs = 0;
-			wts = {$random(seed), $random(seed), $random(seed)};
+			wts = {$random(seed), $random(seed), $random(seed), $random(seed)};
 			tag = $random(seed);
 			val = {4{$random(seed)}};
 			last = $random(seed);

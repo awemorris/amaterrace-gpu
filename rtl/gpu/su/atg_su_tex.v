@@ -15,19 +15,22 @@
  * record (warp, group, rd, scoreboard entry, last, texsz, which quads were
  * sent, the EXEC lanes) goes to atg_su_tex_ret at once, then its quads
  * (lanes 4q..4q+3 of the group) go to the TU one per cycle, those with no
- * EXEC lane skipped.  A quad's coordinates are lane by lane {Dref, rs2,
- * rs1+1, rs1} (u, v, lod/bias/level, the reference of a .c form, else 0;
- * texsz: rs1 = the level in word 0), its tx_op the uop's TEX op bits 6:0
- * (the operation and its modifiers), its mask the EXEC lanes (helper lanes
- * included), its tag {0, warp, quad number in the warp, rd}, tx_last on
- * the last sent quad of the instruction's last group.  A .c form's group
- * comes twice (atg_su_opd): the first pass is kept and the second (TEX op
- * bit 7) brings Dref on x_a; the record is pushed then.  The return half
+ * EXEC lane skipped.  A quad's coordinates are lane by lane {third, Dref,
+ * rs2, rs1+1, rs1} (u, v, lod/bias/level, the reference of a .c form, the
+ * third coordinate of a .3 form (rs1+2), else 0; texsz: rs1 = the level in
+ * word 0), its tx_op the uop's TEX op bits 6:0 (the operation and its
+ * modifiers), tx_off the uop's imm[11:0] (the texel offsets), its mask the
+ * EXEC lanes (helper lanes included), its tag {0, warp, quad number in the
+ * warp, rd}, tx_last on the last sent quad of the instruction's last
+ * group.  A .c or .3 form's group comes twice (atg_su_opd): the first pass
+ * is kept and the second (TEX op bit 7) brings rs1+2 on x_a and rs1+3 on
+ * x_c: .3 the third coordinate and Dref (.3.c), .c alone Dref (x_a); the
+ * record is pushed then.  The return half
  * (atg_su_tex_ret) gathers the returned quads, in request order, into
  * lane groups and writes rd..rd+3 (texsz: rd).
  *
  * States: IDLE →(group with a quad)→ SEND (quad q, NPHYS/4 of them)
- * →(last quad taken)→ IDLE; IDLE →(the first pass of a .c group)→ DREF
+ * →(last quad taken)→ IDLE; IDLE →(the first pass of a .c or .3 group)→ DREF
  * →(its second pass)→ SEND or IDLE.
  */
 
@@ -76,7 +79,8 @@ module atg_su_tex #(
 	output reg [7:0] tx_op,
 	output reg [3:0] tx_slot,
 	output wire [3:0] tx_mask,
-	output wire [511:0] tx_coord,
+	output wire [639:0] tx_coord,
+	output reg [11:0] tx_off,
 	output wire [15:0] tx_tag,
 	output wire tx_last,
 	input wire tr_valid,
@@ -93,7 +97,7 @@ module atg_su_tex #(
 
 	reg [1:0] st;
 	reg [QW-1:0] q, lastq;
-	reg [NPHYS*128-1:0] crd;
+	reg [NPHYS*160-1:0] crd;
 	reg [NPHYS-1:0] lanes;
 	reg [WARP_W-1:0] warp;
 	reg [GRP_W-1:0] grp;
@@ -102,13 +106,15 @@ module atg_su_tex #(
 
 	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_TEX;
 	wire cform = x_uop[ATG_UOP_OP + ATG_TEX_CFORM];
+	wire three = x_uop[ATG_UOP_SUB + 4];	/* a .3 form (atg_su_dec) */
+	wire wide = cform || three;	/* two operand passes */
 	wire [NPHYS-1:0] exec = x_mask[NPHYS-1:0];
 	wire rq_ready;
 
 	/* Which quads of the group have EXEC lanes, and the last of them. */
 	reg [NQ-1:0] qm;
 	reg [QW-1:0] ql;
-	reg [NPHYS*128-1:0] xcrd, dcrd;
+	reg [NPHYS*160-1:0] xcrd, dcrd;
 	integer i;
 	always @(*) begin
 		ql = {QW{1'b0}};
@@ -118,19 +124,20 @@ module atg_su_tex #(
 				ql = i[QW-1:0];
 		end
 		for (i = 0; i < NPHYS; i = i + 1) begin
-			xcrd[i*128 +: 128] = {32'd0, x_b[i*32 +: 32], x_c[i*32 +: 32], x_a[i*32 +: 32]};
-			dcrd[i*128 +: 128] = {x_a[i*32 +: 32], crd[i*128 +: 96]};
+			xcrd[i*160 +: 160] = {64'd0, x_b[i*32 +: 32], x_c[i*32 +: 32], x_a[i*32 +: 32]};
+			dcrd[i*160 +: 160] = {three ? x_a[i*32 +: 32] : 32'd0,
+				three ? (cform ? x_c[i*32 +: 32] : 32'd0) : x_a[i*32 +: 32], crd[i*160 +: 96]};
 		end
 	end
 	wire take = mine && x_ready;
 	/* The record goes to the return half with the group's last pass. */
-	wire push = take && (st == DREF || !cform);
+	wire push = take && (st == DREF || !wide);
 
 	assign x_ready = (st == IDLE || st == DREF) && rq_ready;
 	wire [3:0] qmask = lanes[q*4 +: 4];
 	assign tx_valid = st == SEND && qmask != 4'd0;
 	assign tx_mask = qmask;
-	assign tx_coord = crd[q*512 +: 512];
+	assign tx_coord = crd[q*640 +: 640];
 	wire [31:0] qn = {{(32 - GRP_W){1'b0}}, grp} * NQ + {{(32 - QW){1'b0}}, q};
 	wire [2:0] qnum = qn[2:0];
 	wire [5:0] wpad = {{(6 - WARP_W){1'b0}}, warp};
@@ -151,9 +158,10 @@ module atg_su_tex #(
 				last <= x_last;
 				tx_op <= {1'b0, x_uop[ATG_UOP_OP +: 7]};
 				tx_slot <= x_uop[ATG_UOP_SUB +: 4];
+				tx_off <= x_uop[ATG_UOP_IMM +: 12];
 				q <= {QW{1'b0}};
 				lastq <= ql;
-				if (cform)
+				if (wide)
 					st <= DREF;
 				else if (qm != {NQ{1'b0}})
 					st <= SEND;

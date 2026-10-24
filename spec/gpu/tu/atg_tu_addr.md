@@ -4,7 +4,9 @@ RTL: `rtl/gpu/tu/atg_tu_addr.v`.  Parent: atg_tu.  Implemented in: p009.
 
 ## 1. Purpose and place
 
-TU addressing: per quad, the slot's descriptor (STATE 16s+0..15), level of detail (texl explicit, texb from the quad derivatives + bias, texf level), mip selection (nearest, or the two levels of mip linear filtering in two passes), wrap modes and clamp to border, bilinear footprint, texel byte addresses (linear or 4×4 tiled), the reference of a compare sampler, and texsz.
+TU addressing: per quad, the slot's descriptor, level of detail (texl explicit, texb from the quad derivatives + bias, texf level), mip selection and the passes of mip linear and 3D linear filtering, the layer (2D array), the slice (3D), the face (cube), wrap on integer texel coordinates after the texel offsets, clamp to border, cube edges, bilinear footprint, texel byte addresses (linear or 4×4 tiled), the reference of a compare sampler, and texsz.
+
+Children: `atg_tu_desc` (the descriptors and their level offsets), `atg_tu_cube` (cube faces and face coordinates), `atg_tu_lod` (texb's quad LOD, combinational), `atg_tu_foot` (a lane's footprint and addresses, combinational).
 
 ## 2. Parameters
 
@@ -22,94 +24,96 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `st_we` | in | 1 | One-cycle write of STATE[st_idx]. |
 | `st_idx` | in | 9 | STATE index (design §2.3). |
 | `st_wdata` | in | 32 | STATE value; the block keeps the words of its range. |
+| `desc_busy` | out | 1 | atg_tu_desc computes level offsets (part of STATUS.TU_BUSY). |
 | **Requests from the SU (atg_su tx_*/tr_*)** | | | |
 | `tx_valid` | in | 1 | Quad. |
-| `tx_ready` | out | 1 | Taken. |
-| `tx_op` | in | 8 | [1:0] 0 texl, 1 texb, 2 texf, 3 texsz; modifiers (the uop's TEX op bits): [2] .c form, [3] gather (texl), [5:4] its component, [6] query (texb: texqlod; texsz: texsz.l), [7] 0. |
+| `tx_ready` | out | 1 | Taken (IDLE and desc_busy low). |
+| `tx_op` | in | 8 | [1:0] 0 texl, 1 texb, 2 texf, 3 texsz; modifiers (the uop's TEX op bits): [2] .c form, [3] gather (texl) or the depth query (texsz.d), [5:4] gather's component, [6] query (texb: texqlod; texsz: texsz.l), [7] 0. |
 | `tx_slot` | in | 4 | Slot. |
 | `tx_mask` | in | 4 | Lanes. |
-| `tx_coord` | in | 512 | 4 lanes × {u (or x), v (or y), lod/bias/level, Dref (.c forms, else 0)} × 32 bits, lane 0 first. |
+| `tx_coord` | in | 640 | 4 lanes × {u (or x), v (or y), lod/bias/level, Dref (.c forms, else 0), the third coordinate (.3 forms: layer, w, cube z; else 0)} × 32 bits, lane 0 first. |
+| `tx_off` | in | 12 | The texel offsets {dw, dv, du}, signed 4 bits each. |
 | `tx_tag` | in | 16 | Tag. |
 | `tx_last` | in | 1 | Last. |
 | **To atg_tu_cache** | | | |
-| `ta_valid` | out | 1 | A quad's texel addresses. |
+| `ta_valid` | out | 1 | A quad's texel addresses (one pass). |
 | `ta_ready` | in | 1 | Taken. |
-| `ta_addr` | out | 512 | 4 lanes × 4 texels × 32-bit byte address (nearest: texel 0 only). |
-| `ta_wts` | out | 96 | 4 lanes × {fl, fv, fu} 8-bit weights: bilinear fractions and the weight of the second mip level. |
+| `ta_addr` | out | 512 | 4 lanes × 4 texels × 32-bit byte address (nearest: four times texel 0; bit 0 marks a border texel). |
+| `ta_wts` | out | 128 | 4 lanes × {fw, fl, fv, fu} 8-bit weights: the bilinear fractions, the weight of the second level (mip linear) and of the second slice (3D linear). |
 | `ta_tag` | out | 16 | Tag. |
 | `ta_mask` | out | 4 | Lanes. |
-| `ta_ctl` | out | 24 | [0] bilinear, [1] format low bit (0 RGBA8 / D24, 1 BGRA8 / D32F), [2] no fetch (texsz, texqlod), [3] integer (texf), [4] the first level of a mip linear pair (another pass follows), [5] the second level, [7:6] border colour class (0 transparent black, 1 opaque black, 2 opaque white), [8] depth format, [9] compare, [12:10] compare op, [13] gather, [15:14] its component, [16] texqlod, [23:17] 0. |
-| `ta_value` | out | 128 | Per lane: texsz {h, w}; texsz.l the level count; texqlod {λ'[15:0], the level accessed [15:0]} (8 fraction bits); compare the reference Dref (word 3). |
+| `ta_ctl` | out | 24 | [0] bilinear, [1] format low bit (0 RGBA8 / D24, 1 BGRA8 / D32F), [2] no fetch (texsz, texqlod), [3] integer (texf), [4] a later pass follows, [5] not the first pass, [7:6] border colour class (0 transparent black, 1 opaque black, 2 opaque white), [8] depth format, [9] compare, [12:10] compare op, [13] gather, [15:14] its component, [16] texqlod, [17] the pass's second slice, [18] the pass's second level, [23:19] 0. |
+| `ta_value` | out | 128 | Per lane: texsz {h, w}; texsz.l the level count; texsz.d the layer count or depth; texqlod {λ'[15:0], the level accessed [15:0]} (8 fraction bits); compare the reference Dref (word 3). |
 | `ta_last` | out | 1 | Last. |
 
-22 ports.
+24 ports.
 
 ## 4. Behaviour
 
-Formats RGBA8/BGRA8, D24, D32F (SAMPLER {[14], [12]}).  Wrap: repeat, mirrored repeat, clamp to edge, clamp to border (2 bits each).  LOD from the quad's du/dv (max of the axes, log2 on the exponent).  Tiled layout of design §2.3 / atg_blt (4×4).
+The numbers, bit for bit (the reference is `tools/tumodel.py`, `quad_addr`; the shared functions are in `include/atg_tu_fn.vh`):
 
-The numbers, bit for bit (the reference is `tools/tumodel.py`, `quad_addr`):
-
-- **Descriptor** (STATE 0x090 + 16s, docs/ghci.md §8.4): BASE, SIZE (w = [15:0], h = [31:16]; 0 reads as 1), LEVELS ([3:0] the count: 0 reads as 1, above 13 as 13; [15:4] minLod, [27:16] 15.996 − maxLod (inverted: 0 does not clamp), unsigned 4.8), SAMPLER (wrap u [1:0], wrap v [3:2], mag linear [4], min linear [5], mip linear [6], compare [7], compare op [10:8], format {[14], [12]} 0 RGBA8 / 1 BGRA8 / 2 D24 / 3 D32F, **[13] 4×4 tiled**, border colour [18:16] VkBorderColor, mipLodBias [31:19] signed 5.8), MIP_OFFSET[1..12] (words 4-15).  The block keeps all 256 words.
-- **tx_op**: [1:0] the operation; gather = texl with [3] (component [5:4]); texqlod = texb with [6]; texsz.l = texsz with [6]; [2] (the .c form) is not looked at (Dref is word 3).
-- **Quad mode**: depth = SAMPLER[14]; compare = depth, SAMPLER[7], texl/texb and not texqlod; filtering is allowed unless a depth format without compare (then mag, min and mip linear read as 0); mip linear = allowed, not gather, and SAMPLER[6].
-- **LOD λ**: signed, 8 fraction bits, saturated to [−32768, 32767].  `fx(x, k)` = floor(x × 2^k) saturated to 32 bits (zero, denormals and NaN 0; infinities saturate).  texl: λ = sat(fx(lod, 8)).  texb: the quad's λq from lanes 0, 1 (x + 1) and 2 (y + 1): U = fx(u, 16), V = fx(v, 16) per lane, mu = max(|U1 − U0|, |U2 − U0|), mv likewise; λu = L2(mu) + L2(w) − 4096 (L2(x) = 256 × msb position + the 8 bits below the msb), λv with h; λq = max(λu, λv), −32768 for a zero; each lane λ = sat(λq + sat(fx(bias, 8))).
-- **λ' and λ**: texl sat(fx(rs2, 8)); texb sat(λq + sat(fx(rs2, 8))); texqlod λq; then λ' = sat(that + mipLodBias), λ = max(min(λ', maxLod), minLod) (all signed, 8 fraction bits, saturated to 16 bits).  Below, λ.
-- **Compare**: the reference is word 3 (rs1+2 of a .c form), on ta_value.
-- **Gather**: level 0, the bilinear footprint whatever the filters (ta_ctl[0] set), no second pass; λ not used.
-- **texqlod**: no fetch (addresses 0, ta_ctl[2]); ta_value = {λ'[15:0], dq} with dq = clamp(λ, 0, (LEVELS − 1) × 256).  **texsz.l**: no fetch, ta_value = the level count.
-- **Level and filter**: λ > 0: minification, filter SAMPLER[5]; mip nearest: level (λ + 127) >> 8 clamped to LEVELS − 1 (Vulkan's nearest mip, ceil(λ + 0.5) − 1); mip linear: d = λ >> 8; d ≥ LEVELS − 1: level LEVELS − 1 alone (fl = 0), else level d in pass 0 and d + 1 in pass 1 with fl = λ & 255.  λ ≤ 0: magnification, SAMPLER[4], level 0, fl = 0.  Level size max(1, w >> level) × max(1, h >> level); level base BASE + MIP_OFFSET[level] (BASE at level 0).
-- **Passes**: pass 0 always; if some lane of tx_mask has fl ≠ 0 (texl, texb), ta_ctl[4] is set and, after it is taken, pass 1 goes out with the same lanes recomputed at their second level (lanes with fl = 0 at their only level) and ta_ctl[5].  ta_wts lane l = {fl, fv, fu} in both passes.
-- **Wrap** on the normalised coordinate, to f with 24 fraction bits: repeat floor(u × 2^24) mod 2^24; mirrored repeat t = floor(u × 2^24) mod 2^25, f = t or 2^25 − t when t ≥ 2^24; clamp to edge 0 for u < 0, 2^24 for u ≥ 1, else floor(u × 2^24); clamp to border floor(u × 2^24) clamped to [−2^24, 2^25] (u in [−1, 2]: any u beyond is as far outside the level).  Zero, denormals, NaN and infinities (repeat, mirror) give 0; infinities of clamp to border the ends.  Then c = f × size >> 16 (texel units, 8 fraction bits, floor).
-- **Back into the level**: repeat −1 → size − 1, size → 0; mirrored repeat and clamp to edge clamp to [0, size − 1]; clamp to border clamps too and marks the texel a **border texel** (any index outside [0, size − 1]).
-- **Nearest**: texel (cu >> 8, cv >> 8) back into the level (for the modes other than border only size can be out: it clamps), all four addresses the same, weights 0.
-- **Bilinear**: c − 128; i0 = its integer part, the weight its low 8 bits, i1 = i0 + 1; each back into the level.  Texels 0-3 = (i0, j0), (i1, j0), (i0, j1), (i1, j1).
-- **texf**: x, y, level (rs1, rs1+1, rs2) as signed integers; the level clamped to [0, LEVELS − 1], x and y to the level; nearest, weights 0.
-- **texsz**: the level is word 0 of the lane (rs1, unsigned, clamped to 15); ta_value lane l = {max(1, h >> level), max(1, w >> level)} (16 bits each); no address (0).
-- **Address** (4 bytes a texel, 32-bit wrap): linear base + (j × w_level + i) × 4; tiled base + (j / 4) × ceil(w_level / 4) × 64 + (i / 4) × 64 + ((j % 4) × 4 + i % 4) × 4 (atg_blt's layout); bits 1:0 are 0, then bit 0 is set for a border texel.
-- **ta_ctl**: [0] = some lane of tx_mask is bilinear (the cache then fetches texels 1-3; a nearest lane's four addresses are the same texel), [1] SAMPLER[12], [2] texsz, [3] texf, [4] pass 0 with a pass 1 to follow, [5] pass 1, [7:6] SAMPLER[18:17] (3, codes 6 and 7, reads as 0), [8] SAMPLER[14], [9] compare, [12:10] SAMPLER[10:8], [15:13] 0.
-- **ta_value**: texsz {h, w}; compare the lane's rs2; otherwise 0.
+- **Descriptor** (STATE 0x090 + 16s, docs/ghci.md §8.4; atg_tu_desc): BASE, SIZE (w = [15:0], h = [31:16]; 0 reads as 1), IMAGE ([3:0] levels: 0 reads as 1, above 13 as 13; [7:4] format 0 RGBA8, 1 BGRA8, 2 D24, 3 D32F, 4-15 as 0; [8] tiled; [11:9] view type 0 2D, 1 2D array, 2 3D, 3 cube, 4-7 as 2D; [15:12] reserved (samples); [31:16] count, 0 as 1), LAYER_STRIDE, SAMPLER (wrap u [1:0], v [3:2], w [5:4]; mag [6], min [7], mip [8] linear; compare [9], op [12:10]; border colour [15:13]; unnormalized [16]; mipLodBias [31:19] signed 5.8), LOD (minLod [11:0], 15.996 − maxLod [23:12], unsigned 4.8).  The level offsets O_l come from atg_tu_desc.
+- **Unnormalized coordinates** (SAMPLER[16]): the view type reads as 2D, λ' = λ = 0, mip linear off, repeat and mirrored repeat read as clamp to edge, the texel coordinates are floor(x × 256) of u and v clamped to [−2^28, 2^28].
+- **Quad mode**: depth = format ≥ 2; compare = depth, SAMPLER[9], texl/texb and not texqlod; filtering is allowed unless a depth format without compare (then mag, min and mip linear read as 0); mip linear = allowed, not gather, not unnormalized, SAMPLER[8].
+- **Cube** (view type 3, a texl or texb that samples, gather included): before the lanes, atg_tu_cube computes each lane's face and face coordinates (s, t, 24 fraction bits) from (word 0, word 1, word 4); texb and texqlod also project lanes 1 and 2 on lane 0's face (for the LOD).  They are kept for every pass.
+- **LOD λ**: signed, 8 fraction bits, saturated to [−32768, 32767].  `fx(x, k)` = floor(x × 2^k) saturated to 32 bits (zero, denormals and NaN 0; infinities saturate).  texl: sat(fx(lod, 8)).  texb: the quad's λq (atg_tu_lod: u, v, and w of a 3D image, or a cube's face coordinates on lane 0's face); each lane λ = sat(λq + sat(fx(bias, 8))).  texqlod: λq.  Then λ' = sat(that + mipLodBias), λ = max(min(λ', maxLod), minLod).
+- **Level and filter**: λ > 0: minification, filter SAMPLER[7]; mip nearest: level (λ + 127) >> 8 clamped to LEVELS − 1; mip linear: d = λ >> 8; d ≥ LEVELS − 1: level LEVELS − 1 alone (fl = 0), else level d in the first passes and d + 1 in the second with fl = λ & 255.  λ ≤ 0: magnification, SAMPLER[6], level 0, fl = 0.  Gather: level 0, bilinear.  Level size w_l = max(1, w >> l), h_l likewise (a cube: h_l = w_l), d_l = max(1, count >> l) for 3D (else 1).
+- **Texel coordinates** (8 fraction bits, floor): the normalized coordinate's `tu_coord` (repeat floor(u × 2^24) mod 2^24, mirrored repeat mod 2^25, clamp to edge and border floor(u × 2^24) clamped to [−16, 17] × 2^24; zero, denormals, NaN 0; infinities 0 or the ends) × the level size >> 16; a cube's s, t × w_l >> 16; unnormalized as above.  w of a 3D image with wrap w and d_l.
+- **Layer**: a 2D array: clamp(RNE(word 4), 0, count − 1) (NaN, zeros, negative 0); texf: word 4 as an integer clamped (an array: count − 1, a cube: 5); otherwise 0.  Level base = BASE + layer × LAYER_STRIDE + O_level.
+- **Footprint** (atg_tu_foot): nearest i = (cu >> 8) + du; bilinear cu − 128, i0 = its integer part + du, i1 = i0 + 1, fu its low 8 bits; j, v alike.  3D: the slice nearest (cw >> 8) + dw, or (linear, not gather) ((cw − 128) >> 8) + dw plus 1 in the second-slice passes, fw = the low 8 bits.  Each index into the level by its mode: repeat i mod n, mirrored repeat (n − 1) − mirror((i mod 2n) − n), clamp to edge clamp, clamp to border clamp and a **border texel** (bit 0 of the address) when outside.  A cube: nearest clamps; bilinear takes a texel past one edge from the adjacent face (the table of tools/tumodel.py CUBE_ADJ) and replaces a corner texel by the face's own corner texel; offsets are ignored.  texf: x + du, y + dv (z + dw for 3D) clamped into the level.  Texels 0-3 = (i0, j0), (i1, j0), (i0, j1), (i1, j1).
+- **Address** (4 bytes a texel, 32-bit wrap): level base + k × P_level (+ face × LAYER_STRIDE for a cube) + the texel in the plane: linear j × w_l × 4 + i × 4; tiled (j / 4) × ceil(w_l / 4) × 64 + (i / 4) × 64 + ((j % 4) × 4 + i % 4) × 4; bits 1:0 are 0, then bit 0 is set for a border texel.
+- **Passes**: pass 0; pass 1 (the second slice at the first level) when a lane of tx_mask has fw ≠ 0; pass 2 (the second level) when one has fl ≠ 0; pass 3 (both) after pass 2 when one has fw ≠ 0 there.  ta_ctl[4] on a pass with a later one, [5] on all but the first, [17] on passes 1 and 3, [18] on 2 and 3.  ta_wts lane l = {fw of this pass's level, fl, fv, fu}.
+- **texsz**: the level is word 0 of the lane (unsigned, clamped to 15); ta_value {max(1, h >> level), max(1, w >> level)}; texsz.l the level count; texsz.d a 2D array's count, a 3D level's depth, else 1; no address (0).  **texqlod**: no fetch; ta_value {λ'[15:0], clamp(λ, 0, (LEVELS − 1) × 256)}.
+- **ta_ctl[0]** = some lane of tx_mask is bilinear (the cache then fetches texels 1-3); **ta_value** of a compare quad: word 3 (Dref).
 
 ## 5. State machine
 
-IDLE →(tx_valid)→ [LOD (texb: the quad's λ)] → LA (lane k: λ, level, size, wrapped coordinates × size) → LB (lane k: footprint, addresses, weights) → LA … (lanes 0-3) → OUT →(ta_ready)→ IDLE, or (pass 0 of a mip linear pair) → LA … (pass 1) → OUT → IDLE.  One state machine.
+IDLE →(tx_valid, desc not busy)→ [CUBE ⇄ CWAIT (one atg_tu_cube run per job: lane 0, with the LOD lanes 1 and 2 on lane 0's face, then lanes 1-3)] → [LOD (texb)] → LA (lane k: λ, level, sizes, texel coordinates, layer, level base) → LB (lane k: footprint, addresses, weights) → LA … (lanes 0-3) → OUT →(ta_ready)→ IDLE, or LA (the next pass).  One state machine; the children atg_tu_desc and atg_tu_cube have their own.
 
 ## 6. Latency and throughput
 
-Target one quad per cycle.  v1: 2 cycles per lane, 9 cycles per quad (10 for texb) plus the handshake, twice for a mip linear pair; one quad at a time (p015, the performance Phase, pipelines it).
+Target one quad per cycle.  v1: 2 cycles per lane, 9 cycles per quad (10 for texb) plus the handshake, for each pass (up to 4); a cube quad adds about 28 cycles per atg_tu_cube run (4 runs, 6 for texb); one quad at a time (p015, the performance Phase, pipelines it).
 
 ## 7. Corner cases and errors
 
-- Masked lanes produce addresses of texel 0 of level 0 (fetched but discarded; keeps the cache simple) — or are skipped; the implementation chooses and records it.  **Chosen**: masked lanes are computed like the others (from whatever their coordinates hold) and the cache does not fetch them.
+- Masked lanes are computed like the others (from whatever their coordinates hold) and the cache does not fetch them.
 - texb's derivatives use lanes 0-2 whatever the mask (helper lanes are in EXEC, design §3.1).
-- A STATE write of the TU range while a quad is inside would change it under the quad: atg_cp_seq holds such a SET_REG while the TU, the RX or the SUs are busy.
+- A STATE write of the TU range while a quad is inside would change it under the quad: atg_cp_seq holds such a SET_REG while the TU, the RX or the SUs are busy; a quad waits while atg_tu_desc computes (tx_ready low).
+- The integer wrap of repeat and mirrored repeat needs the index within 9 texels of [0, n) (or [0, 2n)): it is, since the normalized coordinate is first taken modulo the period and the offsets are −8..7.
 
 ## 8. What the TB checks
 
 `sim/tb/atg_tu_addr_tb.v` prints, in this order:
 
 - `PASS atg_tu_addr.wrap` — wrap modes on random coordinates (texl, texf and texsz on random linear and tiled descriptors, special values: ±0, denormals, ±1, infinities, NaN, huge)
-- `PASS atg_tu_addr.lod` — texb LOD from derivatives against the reference (`tools/tumodel.py`; derivatives 2^-14..2^3, biases, level counts 0-15)
+- `PASS atg_tu_addr.lod` — texb LOD from derivatives (derivatives 2^-14..2^3, biases, level counts 0-15)
 - `PASS atg_tu_addr.tile` — tiled addresses
 - `PASS atg_tu_addr.trilinear` — mip linear: both levels, the weight, one pass when no lane needs two
 - `PASS atg_tu_addr.border` — clamp to border: border texels (address bit 0), border colour classes
 - `PASS atg_tu_addr.compare` — depth formats with and without compare, every op: the reference (word 3), no filter without compare
 - `PASS atg_tu_addr.lodclamp` — minLod, maxLod, mipLodBias on texl and texb, mip nearest and linear
 - `PASS atg_tu_addr.gather` — every component, DrefGather, depth, border: the level-0 footprint
-- `PASS atg_tu_addr.query` — texqlod's level and λ', texsz.l's level count
+- `PASS atg_tu_addr.query` — texqlod's level and λ', texsz.l's level count, texsz.d
+- `PASS atg_tu_addr.layout` — the level offsets of atg_tu_desc: texf at every level of 2D (linear, tiled), array and 3D images, the slot written just before the quad
+- `PASS atg_tu_addr.array` — the layer (RNE ties, clamps, NaN), the layer stride; texl, texb, gather, compare, texf, texsz.d
+- `PASS atg_tu_addr.volume` — 3D: the slice, the four passes of 3D and mip linear filtering, w's address mode, texb's w derivative, texf, gather, offsets
+- `PASS atg_tu_addr.cube` — the face (ties, zeros, infinities, NaN), the face coordinates, edges and corners, texb's LOD on lane 0's face, gather, compare, texqlod, texf as 6 layers
+- `PASS atg_tu_addr.offset` — texel offsets on texl, texb, texf and gather with every address mode, levels of 1-17 texels
+- `PASS atg_tu_addr.unnorm` — unnormalized coordinates: every op and view type, every address mode
 - `PASS atg_tu_addr` at the end.
 
-Vectors: `sim/vec/tu_addr.txt` from `tools/tu-vectors.py` (3100 quads, 3412 outputs), random gaps and ta_ready.
+Vectors: `sim/vec/tu_addr.txt` from `tools/tu-vectors.py` (about 5300 quads, 6200 outputs, 1 to 4 passes), random gaps and ta_ready.  `tools/tu-vectors.py` also checks the model against plain floating point first (the cube's face coordinates, the footprint's texels next to the direction across faces, the integer wrap with offsets against Vulkan's formulas on u × size, the layer against round-half-even).
 
 ## 9. References
 
-design §2.3 (TU STATE), §3.7 (limits), atg_blt's tile layout.
+design §2.3 (TU STATE), §3.7 (limits), atg_blt's tile layout, docs/ghci.md §8.4 and §12.9.
 
 ## 10. Status
 
-Implemented in WS288 p009 part C (P1, branch p1-tu); mip linear, clamp to border, depth formats and compare in part E (P3, branch p3-p009e).  Readings of this spec and of design §2.3 (to confirm with Q1):
+Implemented in WS288 p009 part C (P1, branch p1-tu); mip linear, clamp to border, depth formats and compare in part E (P3, branch p3-p009e); the descriptor of docs/ghci.md §8.4 (image and sampler words, the level offsets computed by atg_tu_desc), 2D arrays, 3D images, cube maps, texel offsets and unnormalized coordinates in part F (P3, branch p3-p009f).  Readings (to confirm with Q1):
 
-1. **SAMPLER[13] = 4×4 tiled** (design §2.3's SAMPLER has no layout bit; CAPS[11] says tiles may be used).  Proposal for design §2.3 / the standard state.
-2. (Part C) wrap value 3 read as clamp to edge, mip linear and compare were not done.  Since part E (P3): all three are done as above, with minLod / maxLod / mipLodBias, gather and the queries.  Readings: mip linear in two passes through the cache and the filter (1 lane has 8 texels: the alternatives, 8 addresses per lane on wider ports or a second cache port, cost more wiring for the same throughput in v1); a lane with fl = 0 in pass 1 is fetched again at its level (cache hits) rather than masked; clamp to border clamps u to [−1, 2] first; the border colour is chosen in the cache (address bit 0, so no extra port); Dref is word 3 (the .c forms' rs1+2; the SU reads it in a second operand pass); a depth format without compare is nearest only (linear filtering of depth values is not offered); compare on a colour format is ignored; mipLodBias is added to explicit and implicit λ and the sum is not clamped to maxSamplerLodBias (the field's range, ±16, is the limit); minLod wins when minLod > maxLod; the gather level is 0 (the base level); texqlod returns (level, λ') as GLSL does (Vulkan-Docs issue 2383).
-3. texsz takes the level from word 0 (its rs1; the I form has no rs2).  texf's out-of-range coordinates and level are clamped (Vulkan leaves them undefined; robust access would give 0).
-4. LOD per quad from coarse derivatives (lanes 0-2), bias per lane; log2 piecewise linear (8 fraction bits).
+1. Part C/E readings kept: mip linear in passes through the cache and the filter; a lane with weight 0 in a later pass is fetched again (cache hits) rather than masked; the border colour is chosen in the cache (address bit 0); Dref is word 3; a depth format without compare is nearest only; compare on a colour format is ignored; mipLodBias is not clamped to maxSamplerLodBias; minLod wins when minLod > maxLod; the gather level is 0; texqlod returns (level, λ') as GLSL does (Vulkan-Docs issue 2383); texsz takes the level from word 0; texf's out-of-range coordinates, level and layer are clamped.
+2. Part F: **the wrap moved to integer texel coordinates** (Vulkan's formulas, after the offsets); the normalized coordinate is only taken modulo the period (repeat 1, mirrored repeat 2) or clamped to [−16, 17] before × size.  Repeat, clamp to edge and border give the part-E texels; **mirrored repeat differs from part E in the last bits** (part E reflected the normalized coordinate before × size: at exact texel boundaries the index, and the bilinear weights everywhere past the mirror, now follow the unwrapped coordinate, as Vulkan's integer formula does).
+3. Part F: **cube corner texels**: a texel past two edges is the face's own corner texel (Vulkan: the corner texel "should be replaced by the average of the three values of the adjacent texels in each incident face. However, implementations may replace the cube map corner texel by other methods", keeping three equal texels' value); faces are squares of the width; texb's derivatives project lanes 1 and 2 on lane 0's face (atg_tu_cube clamps the ratio to [−3, 3]); offsets and the address modes are ignored on cubes; texf on a cube reads it as 6 layers.
+4. Part F: 3D linear filtering in two passes per level (8 texels a lane do not fit the 4-texel port; the filter accumulates the passes with the weights fw × fl); gather on a 3D image takes the nearest slice of level 0 (Vulkan does not allow it).
+5. Reserved for multisampled images (the MSAA Phase, p027): TEX_IMAGE[15:12] = log2(samples) (0 one sample, 2 four, others reserved), not looked at now; texf's address stage is to take x' = x × S + s (s from rs2, whose level meaning a multisampled image, with one level, does not need) and rows of roundup(w, 2) × S texels — only samples = 0 is taken now.  Also reserved for it: format 4 (RGB565; read as RGBA8 now) and texsz's immediate 3 (`texsz.s`, the sample count; an ISA fault in atg_su_dec now).  Part F uses no new CAPS bit (CAPS[26] says the whole of docs/ghci.md §8.4; CAPS[29] is kept for MS4).

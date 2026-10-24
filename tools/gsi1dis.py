@@ -79,6 +79,9 @@ def guess(w, pc, labels):
     n, e = m
     mods = d["mod"] & 0x3F
     sat = d["mod"] >> 6 & 1
+    tex_r = e["unit"] == A.U_TEX and e["fmt"] == "R"
+    if tex_r:
+        mods &= 3	# word1 [13:10] is the w offset of a texture R form
     if e["fmt"] == "U":
         v = A.bits(d["w0"], 12, 20) << 12 | A.bits(d["w1"], 2, 12)
         return "movi %s, %s" % (reg_name(d["rd"]), num_text(A.sext(v, 32)))
@@ -117,6 +120,9 @@ def guess(w, pc, labels):
             args.append("%d" % d["sub"])
     if cmpxchg:
         args.append(reg_name(d["rs3"]))
+    if tex_r and A.tex_off(d["w1"]):
+        o = A.tex_off(d["w1"])
+        args.append("off(%s)" % ", ".join("%d" % A.sext(o >> k, 4) for k in (0, 4, 8)))
     if e["f3"] in ("rm", "rm4") and d["f3"] != 0:
         args.append(RM_NAME.get(d["f3"], "rm%d" % d["f3"]))
     return mn + (" " + ", ".join(args) if args else "")

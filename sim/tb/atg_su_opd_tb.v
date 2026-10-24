@@ -10,8 +10,8 @@
  * instructions (random units, operand numbers 0-127 except 63, PAIR,
  * modifiers, PAIR with rs3: two operand passes) with a model RF and
  * constant bank behind the read ports and random unit_ready; every group
- * must leave once (a PAIR + USE3 group twice, the second pass with rs3 as
- * operand 1 and TEX op bit 7 set, x_last there), in order, with the
+ * must leave once (a PAIR + USE3 group twice, the second pass with rs3 and
+ * rs3+1 as operands 1 and 3 and TEX op bit 7 set, x_last there), in order, with the
  * operands, masks and x_info of a behavioural reference.  The checker
  * counts errors per class (gpr, special, mods, mask).
  */
@@ -186,7 +186,7 @@ module atg_su_opd_chk #(
 			end
 			n1 = pass ? u[ATG_UOP_RS3 +: 7] : u[ATG_UOP_RS1 +: 7];
 			n2 = u[ATG_UOP_RS2 +: 7];
-			n3 = u[ATG_UOP_PAIR] ? u[ATG_UOP_RS1 +: 7] + 1 : u[ATG_UOP_RS3 +: 7];
+			n3 = u[ATG_UOP_PAIR] ? n1 + 7'd1 : u[ATG_UOP_RS3 +: 7];
 			for (l = 0; l < NPHYS; l = l + 1) begin
 				lane = grp * NPHYS + l;
 				for (src = 0; src < 3; src = src + 1) begin
