@@ -172,6 +172,14 @@
 #define GHCI_XCAP_PERF 3u
 #define GHCI_XCAP_VEND 4u
 #define GHCI_XCAP_MMU 5u
+#define GHCI_XCAP_CPFW 6u
+#define GHCI_XCAP_SA 7u
+#define GHCI_XCAP_MEM 8u
+
+/* The MEM capability's registers (from its register offset, section 13.3). */
+#define GHCI_MEM_LOCAL_BASE 0x0u
+#define GHCI_MEM_LOCAL_SIZE 0x4u /* 0 = no local memory (unified) */
+#define GHCI_MEM_WINDOW_SIZE 0x8u /* 0 = no local window */
 
 /*
  * The PERF capability's registers (from its register offset): PERF_SRCn

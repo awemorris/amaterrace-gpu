@@ -164,6 +164,13 @@ localparam [7:0] GHCI_XCAP_DBG = 8'd2;
 localparam [7:0] GHCI_XCAP_PERF = 8'd3;
 localparam [7:0] GHCI_XCAP_VEND = 8'd4;
 localparam [7:0] GHCI_XCAP_MMU = 8'd5;
+localparam [7:0] GHCI_XCAP_CPFW = 8'd6;
+localparam [7:0] GHCI_XCAP_SA = 8'd7;
+localparam [7:0] GHCI_XCAP_MEM = 8'd8;
+/* The MEM capability's registers (from its register offset, section 13.3). */
+localparam [16:0] GHCI_MEM_LOCAL_BASE = 17'h00000;
+localparam [16:0] GHCI_MEM_LOCAL_SIZE = 17'h00004;	/* 0 = no local memory (unified) */
+localparam [16:0] GHCI_MEM_WINDOW_SIZE = 17'h00008;	/* 0 = no local window */
 
 /* The display controller's registers (DISP capability, docs/ghci.md
  * section 12): offsets from the capability's register offset. */

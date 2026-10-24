@@ -1,7 +1,7 @@
 GHCI — GPU Host Controller Interface
 ====================================
 
-Version 1.0, **draft** (2026-10-23).  License: Zlib, like the rest of this
+Version 1.0, **draft** (2026-10-24).  License: Zlib, like the rest of this
 repository.
 
 GHCI is a public, versioned host interface for Vulkan-class GPUs, in the
@@ -9,6 +9,14 @@ spirit of AHCI and xHCI: one register layout, one command-ring model and one
 set of rules for fences, interrupts, faults and reset, so that one OS driver
 can run every conforming GPU.  Amaterrace GPU implements it with vendor
 `AMAT`, device `ATG1`.
+
+The interface is defined for a **platform device**: a register window at a
+physical address and one interrupt line, found through the device tree or
+ACPI (section 15).  The **PCIe binding** (section 16) maps the same window,
+interrupt and memory accesses onto a PCIe function; it adds nothing else.
+A GPU may have **local memory** of its own (discrete) or use only the
+host's memory (unified); section 13 keeps the two the same apart from where
+the driver allocates buffers.
 
 Status of this draft:
 
@@ -18,6 +26,7 @@ Status of this draft:
 | The state register file | The mechanism (section 8) and the blitter range are draft; the other ranges follow the command set |
 | The command set | Draft: the packet envelope and the native micro-ops (section 9, design v3); the class V gpu-ops follow zedBSD's GPU command protocol |
 | The shader ISA | **Pending design v3**: a GHCI standard ISA, RISC-V based (section 10) |
+| Memory configurations (unified and discrete), the MEM capability, the platform and PCIe bindings | Draft (sections 13, 15, 16) |
 
 `include/ghci_regs.h` (C) and `include/ghci_regs.vh` (RTL) hold the values
 of this document.  An OS driver copies the C header.
@@ -148,6 +157,9 @@ EXTCAP points to a list of entries of two words each:
 | 3 | PERF | What PERF0..3 count |
 | 4 | VEND | Vendor registers (for Amaterrace: the shader unit's sizes) |
 | 5 | MMU | A GPU MMU (reserved for a later version) |
+| 6 | CPFW | The command processor's firmware images (vendor-defined in 1.0; see the appendix) |
+| 7 | SA | A systolic array (reserved) |
+| 8 | MEM | The memory configuration: local memory and the local window (section 13) |
 
 The list lives at 0x100 and up when present.
 
@@ -189,10 +201,14 @@ again from its beginning.
   the end and continues at index 0.  The driver writes a whole packet
   before it moves RING_WPTR past it; a packet whose length runs past
   RING_WPTR is a ring error (fault kind 3), not a wait.
+- The ring is in host memory by default; it may be in local memory where
+  the local window reaches it (section 13).
 - Doorbell ordering: the ring's contents must be visible to the GPU before
-  the RING_WPTR write.  On a non-coherent platform the driver writes the
-  ring through an uncached mapping and puts a store barrier before the
-  register write; behind a posted-write bus it reads back the last word it
+  the RING_WPTR write.  For a ring in host memory the driver makes its
+  writes visible with the operating system's DMA synchronization (nothing
+  on a coherent platform, a cache clean on another, section 13.4) and puts
+  a store barrier before the register write.  For a ring in local memory,
+  written through the local window, the driver reads back the last word it
   wrote before the doorbell.
 - On each doorbell the CP re-reads the line at RING_RPTR (it drops lines it
   fetched ahead).  It fetches ahead only up to RING_WPTR.
@@ -219,6 +235,10 @@ again from its beginning.
   section 9).
 - After a reset the driver writes the last completed fence value to its
   fence memory and to FENCE_LAST before RUN.
+- Fence memory is in host memory by default (the driver polls it), or in
+  local memory.  Ordering: the fence write, and an interrupt message where
+  the binding has one (section 16), reach the host only after every
+  earlier write of the GPU is visible there (section 13.5).
 - The interrupt is a level: OR(IRQ_STATUS & IRQ_ENABLE).  The handler
   masks, reads IRQ_STATUS, clears what it handles by writing those bits
   back (W1C) and unmasks.  IRQ_SET.SOFT raises the SOFT bit for tests.
@@ -437,17 +457,91 @@ A frame starts with a vsync after ENABLE.
 13. Memory model
 ----------------
 
+### 13.1 How the host reaches the GPU
+
+The host makes register accesses only: the register window, the doorbell
+(RING_WPTR) and, where the GPU has one, the **local window** onto its local
+memory.  Every other memory access — the ring, command buffers, fences,
+programs and all resources — is made by the GPU itself, by DMA, on the
+host's memory or its own.  Moving data between host memory and local
+memory (uploads, readbacks) is a copy command, completed by a fence.
+
+The local window is for the framebuffer (the boot console, a simple
+display path) and, optionally, for a ring or fence memory in local memory.
+The debug port (section 11) is for bring-up only; a driver does not depend
+on it.
+
+### 13.2 Addresses and the aperture
+
 - GPU addresses are 32 bits.  Every access of every block is checked
   against [APERTURE_BASE, APERTURE_LIMIT); an access outside is not made
   and is a fault of kind 1.  The aperture is reset to an empty range, so a
   GPU touches no memory until the driver sets it.  A later version adds a
   GPU MMU behind the MMU capability; version 1 has no isolation between the
   driver's clients inside the aperture.
+- Local memory, when present, is the range [LOCAL_BASE, LOCAL_BASE +
+  LOCAL_SIZE) of GPU addresses (MEM capability).  Every other GPU address
+  is a host address: the GPU's access goes to the host bus at that address
+  (a physical address, or an I/O virtual address behind the platform's
+  IOMMU).  The driver gives the GPU host buffers only at bus addresses
+  outside the local range and below 2^32.
 - The GPU moves memory in lines of 2^CAPS[23:20] bytes; the aperture is
   aligned to the line.
-- The GPU's memory accesses are not coherent with the CPU's caches unless
-  the platform says otherwise: the driver maps GPU-visible memory uncached
-  (or cleans and invalidates around each submission).
+
+### 13.3 Unified and discrete
+
+| | Unified | Discrete |
+| --- | --- | --- |
+| MEM capability | Absent, or LOCAL_SIZE = 0 | LOCAL_SIZE > 0 |
+| Where the driver allocates | Everything in host memory | Device-local resources in local memory; host-visible resources (staging, uniforms the host rewrites, readback) in host memory |
+| Ring, command buffers, fences | Host memory | Host memory by default; local memory allowed |
+| Upload and readback | Not needed: the host writes the buffer | A copy command between host and local memory, then a fence |
+| Framebuffer | Host memory | Local memory, through the local window |
+
+Everything else — the registers, the ring, the commands, fences,
+interrupts and the ISA — is the same in both.  A Vulkan driver offers one
+heap on a unified GPU and two on a discrete one (device-local, and host
+memory that is host-visible and host-coherent).
+
+The MEM capability (version 1), registers at its register offset:
+
+| Offset | Name | Access | Contents |
+| --- | --- | --- | --- |
+| +0x0 | LOCAL_BASE | R | GPU address of the first byte of local memory |
+| +0x4 | LOCAL_SIZE | R | Bytes of local memory; 0 = none (unified) |
+| +0x8 | WINDOW_SIZE | R | Bytes of local memory, from LOCAL_BASE, that the local window shows; 0 = no window.  Where the window is on the host is the binding's (sections 15, 16) |
+
+A GPU without the MEM capability is unified.
+
+### 13.4 Coherence with the host's caches
+
+Whether the GPU's accesses to host memory are coherent with the CPU's
+caches is a property of the platform, not of the GPU, and the GPU does not
+need to know it.
+
+- The platform says it: the device tree's `dma-coherent`, ACPI's `_CCA`;
+  on PCIe, accesses are snooped unless the device asks otherwise.
+- The driver uses the operating system's DMA synchronization around the
+  GPU's accesses to host memory (a no-op on a coherent platform; cache
+  clean before the GPU reads, invalidate before the host reads what the
+  GPU wrote), or maps those buffers uncached.
+- The GPU does not opt out of coherence: on PCIe it does not set No Snoop
+  in version 1; on an AXI platform the cache attributes of its requests
+  are fixed by the integration (wiring or a vendor register), so that they
+  take the platform's coherent path where it has one.
+
+### 13.5 Ordering and the GPU's own caches
+
+- The GPU's own read caches do not see later host writes by themselves:
+  DRAW invalidates the data and texture caches, LOAD_PROGRAM the
+  instruction cache, and INVALIDATE any of them (section 9).  The driver
+  issues INVALIDATE before work that reads host memory it has rewritten
+  where no such command already does it.
+- A fence is complete (section 6): before the fence write, every earlier
+  write of the GPU, through its own caches, has reached memory and been
+  acknowledged.  The fence write, and an interrupt message that follows it,
+  are not reordered ahead of those writes (on PCIe: no Relaxed Ordering on
+  the fence write and the interrupt message).
 
 14. Versions
 ------------
@@ -457,8 +551,67 @@ version only adds registers at unused offsets, capabilities and commands.
 A driver checks GHCI_MAGIC and the major version before anything else, and
 accepts only the major versions it knows.
 
+15. Platform binding
+--------------------
+
+The base form of GHCI.  The device is described by the platform's
+firmware:
+
+- one register window (`reg`), 128 KiB or the first 64 KiB of it
+  (section 1);
+- optionally, a second region: the local window (section 13.1), WINDOW_SIZE
+  bytes;
+- one interrupt line, level, active high (the level of section 6);
+- whether the GPU's memory accesses are cache coherent (`dma-coherent` in
+  the device tree, `_CCA` in ACPI);
+- the bus addresses the GPU may reach (DMA ranges, an IOMMU).
+
+Device tree (draft): `compatible = "ghci,ghci-1"`, optionally preceded by a
+vendor-specific string.  A driver identifies the device by GHCI_MAGIC and
+GHCI_VERSION, not by the strings.
+
+A display controller of its own (section 12) is a device of its own with
+its own window and interrupt.
+
+16. PCIe binding
+----------------
+
+A PCIe function that implements GHCI maps the platform form as follows.
+Nothing else changes.
+
+- **Identification:** base class 03h (display controller), subclass 02h
+  (3D controller), or 80h when it has a display controller and no VGA
+  compatibility.  The vendor and device IDs are the implementer's.  A
+  driver identifies GHCI by GHCI_MAGIC and GHCI_VERSION at offset 0 of
+  BAR0 (draft: no programming interface value is assigned).
+- **BAR0:** 32-bit, non-prefetchable memory, 128 KiB: the register window
+  of section 2.
+- **BAR2 (optional):** 64-bit, prefetchable memory: the local window,
+  WINDOW_SIZE bytes (rounded up to a power of two).  It may be mapped
+  write-combining; the driver reads back the last word it wrote before a
+  doorbell (section 5).
+- **Interrupts:** MSI or MSI-X with one vector, or INTx as a fallback.  The
+  device sends a message when OR(IRQ_STATUS & IRQ_ENABLE) goes from 0 to
+  1, and again after a write to IRQ_STATUS or IRQ_ENABLE that leaves it 1.
+  INTx carries the level itself.
+- **DMA:** the GPU makes no memory access until Bus Master Enable is set in
+  the command register and the aperture is set.  GPU host addresses
+  (section 13.2) are PCIe bus addresses.  No Snoop is not set in version 1;
+  the fence write and the interrupt message do not use Relaxed Ordering
+  (section 13.5).
+- **Reset:** CTRL.RESET is GHCI's reset (section 7).  A function level
+  reset, where supported, resets the whole function, the display
+  controller included.
+- **Power:** version 1 uses D0 only.
+
 Appendix: Amaterrace's implementation status
 --------------------------------------------
+
+Memory and bindings (2026-10-24): the ZYBO builds are platform devices with
+unified memory (the Zynq's DDR through the non-coherent S_AXI_HP ports).
+The KC705 is discrete: its DDR3 is local memory.  It is driven over USB
+JTAG through the DBG capability (bring-up only); the PCIe binding and the
+MEM capability are not implemented yet.
 
 WS288 p017 (bitstream 1' "2D + FW"): the CP's control processor atg_cpu
 (RV32IM) with the CPFW capability (CAPS[17], [18], CPFW at 0x120 in the
