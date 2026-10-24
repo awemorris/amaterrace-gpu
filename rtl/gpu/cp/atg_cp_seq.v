@@ -16,7 +16,7 @@
  * [15:8] flags, [7:0] n.  The payload is taken one dword per cycle:
  * SET_REG writes STATE[index] = value per pair (index >= 512: fault 3;
  * a write to a block's range waits while it is busy, whose state must not
- * change under its work: BLT, VF, RX/ROP, ROP, TU with the RX and SUs),
+ * change under its work: atg_cp_seq_wait has the rules),
  * DISPATCH/LOAD_CONST/DRAW_RAW/DBG_MARK write their payload to the vendor
  * STATE words (DISPATCH and LOAD_CONST wait while the SUs are busy,
  * DRAW_RAW while the RX is), the fence µops keep theirs.  The µop runs:
@@ -111,13 +111,6 @@ module atg_cp_seq #(
 	localparam [5:0] VOP_DRAW_RAW = 6'd0;
 	localparam [5:0] VOP_DBG_MARK = 6'd1;
 
-	localparam [7:0] B_BLT = 8'h02;
-	localparam [7:0] B_VF = 8'h04;
-	localparam [7:0] B_RX = 8'h08;
-	localparam [7:0] B_ROP = 8'h10, B_TU = 8'h20;
-	localparam [7:0] B_SU = 8'h40;
-	localparam [7:0] B_ALL = 8'hFE;
-
 	localparam [2:0] Q_IDLE = 3'd0;
 	localparam [2:0] Q_PAY = 3'd1;	/* take the payload */
 	localparam [2:0] Q_EXEC = 3'd2;	/* wait for pre, then act */
@@ -191,45 +184,31 @@ module atg_cp_seq #(
 			h_absent = 1'b1;
 	end
 
-	/* Payload: what this dword does. */
+	/* Payload: what this dword does; the waits (atg_cp_seq_wait). */
 	wire is_set = !vendor && op == OP_SET_REG;
 	wire set_val = is_set && p[0];
 	wire set_bad = is_set && !p[0] && in_data[31:9] != 23'd0;
-	reg pay_we;
-	reg [8:0] pay_idx;
-	reg [7:0] pay_wait;	/* busy bits that hold this dword */
+	wire pay_we;
+	wire [8:0] pay_idx;
+	wire [7:0] pay_wait;	/* busy bits that hold this dword */
+	wire [7:0] pre;
+	wire pre_f;		/* also wait for !f_busy */
+	wire [7:0] post;
 
-	always @(*) begin
-		pay_we = 1'b0;
-		pay_idx = 9'd0;
-		pay_wait = 8'd0;
-		if (set_val) begin
-			pay_we = 1'b1;
-			pay_idx = sidx;
-			/* a block's STATE does not change under its work (RX: also the ROP's
-			 * DEBUG_COLOR; VF: 0x020-0x04F and ATTR_DST 0x1C0-0x1CF; TU: also the
-			 * fragments still in the RX and the SUs) */
-			pay_wait = sidx < GHCI_S_VF ? B_BLT : sidx < GHCI_S_RX ? B_VF :
-				sidx < GHCI_S_ROP ? B_RX | B_ROP : sidx < GHCI_S_TU ? B_ROP :
-				sidx < GHCI_S_PROG ? B_TU | B_SU | B_RX :
-				sidx[8:4] == GHCI_S_ATTR_DST[8:4] ? B_VF : 8'd0;
-		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
-			pay_we = 1'b1;
-			pay_idx = GHCI_S_RAW + {1'b0, p};
-			pay_wait = B_RX;
-		end else if (vendor && op == VOP_DBG_MARK && p == 8'd0) begin
-			pay_we = 1'b1;
-			pay_idx = GHCI_S_DBG_MARK;
-		end else if (!vendor && op == OP_DISPATCH && p < 8'd3) begin
-			pay_we = 1'b1;
-			pay_idx = GHCI_S_GRID_X + {1'b0, p};
-			pay_wait = B_SU;
-		end else if (!vendor && op == OP_LOAD_CONST && p < 8'd3) begin
-			pay_we = 1'b1;
-			pay_idx = GHCI_S_LC_REGION + {1'b0, p};
-			pay_wait = B_SU;
-		end
-	end
+	atg_cp_seq_wait wt (
+		.vendor(vendor),
+		.op(op),
+		.flags(flags),
+		.p(p),
+		.set_val(set_val),
+		.sidx(sidx),
+		.pay_we(pay_we),
+		.pay_idx(pay_idx),
+		.pay_wait(pay_wait),
+		.pre(pre),
+		.pre_f(pre_f),
+		.post(post)
+	);
 
 	wire pay_hold = |(pay_wait & busy_in);
 	wire pay_take = st == Q_PAY && in_valid && !pay_hold && !set_bad;
@@ -240,39 +219,6 @@ module atg_cp_seq #(
 	assign uop_we = pay_take && pay_we;
 	assign uop_idx = pay_idx;
 	assign uop_wdata = in_data;
-
-	/* Execution: what to wait for before acting, the act, what after. */
-	reg [7:0] pre;
-	reg pre_f;	/* also wait for !f_busy */
-	reg [7:0] post;
-
-	always @(*) begin
-		pre = 8'd0;
-		pre_f = 1'b0;
-		post = 8'd0;
-		if (vendor) begin
-			pre = op == VOP_DRAW_RAW ? B_RX : 8'd0;
-		end else begin
-			case (op)
-			OP_BLIT: begin
-				pre = B_BLT;
-				post = flags[0] ? B_BLT : 8'd0;
-			end
-			OP_DRAW: pre = B_VF;
-			OP_FENCE: pre = B_ALL;
-			OP_WAIT_IDLE: pre = flags == 8'd0 ? B_ALL : flags & B_ALL;
-			OP_LOAD_CONST: begin
-				pre = B_SU;
-				post = B_SU;
-			end
-			OP_RESULT: begin
-				pre = B_ALL;
-				pre_f = 1'b1;
-			end
-			default: ;
-			endcase
-		end
-	end
 
 	wire exec_go = st == Q_EXEC && !settle && !(|(pre & busy_in)) && !(pre_f && f_busy);
 	wire is_op_std = !vendor && exec_go;
