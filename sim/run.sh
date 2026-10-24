@@ -9,14 +9,14 @@
 # Output (the vvp binary, the log) goes to build/sim/ (not in git).
 # A testbench that needs files outside rtl/ (a board top) names them in a
 # comment line " * sim-sources: FILE..." (paths from the repository root).
-# SEED=n is passed to the testbench as +seed=n.  Timeout per run: 300 s
+# SEED=n is passed to the testbench as +seed=n.  Timeout per run: 900 s
 # (SIM_TIMEOUT=s to change it).
 #
 # Every testbench (make sim) takes about 21 minutes, one after the other
 # (2026-10-25, a 64-thread Linux host: atg_top_tex 382 s, atg_su 201,
 # atg_top_shade 183, atg_top_cs 138, atg_top_raster 79, atg_dc_tgen 56,
 # atg_top_fw 40, atg_top 30, atg_kc705_raster 25, the others about 120
-# together); atg_top_tex needs SIM_TIMEOUT above 300 (600), atg_su on a
+# together); the default timeout leaves room for atg_top_tex (about 380 s) and atg_su on a
 # slower or busy host too.
 #
 # The short run (-q, make sim-quick) touches every block in about 9 minutes
@@ -78,7 +78,7 @@ for ent in "$@"; do
 		continue
 	fi
 	# $args is split on purpose: one word per plusarg.
-	timeout "${SIM_TIMEOUT:-300}" vvp -n "$out/$name.vvp" +seed="${SEED:-1}" $args \
+	timeout "${SIM_TIMEOUT:-900}" vvp -n "$out/$name.vvp" +seed="${SEED:-1}" $args \
 		>"$log" 2>&1
 	t=$(($(date +%s) - t0))
 	if grep -q "^PASS $name\$" "$log" && ! grep -q 'FAIL\|ERROR' "$log"; then

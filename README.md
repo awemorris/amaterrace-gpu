@@ -146,8 +146,8 @@ Building and testing
 | Command | What it does |
 | --- | --- |
 | `make lint` | Verilator lint of every module and top |
-| `make sim` | The Icarus Verilog unit testbenches, every one at full length (about 17 minutes) |
-| `make sim-quick` | A short run of the testbenches that touches every block (about 6 minutes): the long ones shortened or left out, as `sim/run.sh` lists |
+| `make sim` | The Icarus Verilog unit testbenches, every one at full length (about 21 minutes) |
+| `make sim-quick` | A short run of the testbenches that touches every block (about 9 minutes): the long ones shortened or left out, as `sim/run.sh` lists |
 | `make verilator` | The Verilator system harness, including a raster scene written to `build/verilator/raster.png` |
 | `make check` | `lint`, `sim` and `verilator` |
 | `make oxc-core` | openXC7 (yosys) synthesis of the GPU core in the KC705 shape |
