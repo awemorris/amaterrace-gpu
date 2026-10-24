@@ -40,11 +40,11 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Formats of design §2.3 ATTR_DESC[19:16]; fp16 → fp32, UNORM8 → float (x/255), UINT → integer.  Components beyond the format's count and up to ATTR_DST's count are filled with (0, 0, 0, 1).  One word per cycle.
+An af is taken whole, with ATTR[k]_DESC[19:16] (format) and ATTR_DST[k] as they are then; its ATTR_DST count of words go out one per cycle on vl_* (registered), register ATTR_DST[5:0] + c (mod 64), and the next af is taken in the cycle of the current one's last word.  Formats of design §2.3 ATTR_DESC[19:16]: fp32 and uint32 words as they are; fp16 → fp32 exactly (denormals become normal fp32, NaN → 0x7FC00000); UNORM8 → float (x/255, round to nearest even, include/atg_rop_unorm8.vh); UINT8 → integer.  Components beyond the format's count and up to ATTR_DST's count are filled with (0, 0, 0, 1) (1.0 for the float formats, 1 for RGBA8_UINT, R32_UINT and RG32_UINT); the reserved formats 10-15 have no data components (all filled).  ATTR_DST's count below the format's writes the first components only.  An attribute whose ATTR_DST word is 0 is disabled (atg_vf_fetch §4) and writes nothing.
 
 ## 5. State machine
 
-IDLE → WRITE (components) → IDLE.
+IDLE → WRITE (components) → IDLE; the next af enters WRITE in the cycle of the last word.
 
 ## 6. Latency and throughput
 
@@ -52,15 +52,17 @@ One register word per cycle.
 
 ## 7. Corner cases and errors
 
-None beyond the above.
+- conv_done pulses the cycle after the last word of the af with af_last, or two cycles after taking it when it writes nothing (a disabled attribute, atg_vf_fetch's dummy af).
 
 ## 8. What the TB checks
 
 `sim/tb/atg_vf_conv_tb.v` prints, in this order:
 
-- `PASS atg_vf_conv.formats` — every format against a C reference
-- `PASS atg_vf_conv.fill` — missing components get 0,0,0,1
+- `PASS atg_vf_conv.formats` — every format against the reference of `tools/vf-vectors.py` (`sim/vec/vf_conv.txt`: all 256 UNORM8 values, fp16 zeros, denormals, infinities and NaNs), fewer words than components, disabled attributes
+- `PASS atg_vf_conv.fill` — missing components get 0,0,0,1 (also the reserved formats)
 - `PASS atg_vf_conv` at the end.
+
+The attributes of a batch go back to back; every word and the single conv_done after the batch's last word are checked.
 
 ## 9. References
 
@@ -68,4 +70,4 @@ design §2.3, §3.4.3 (ATTR_DST).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p009 part A (branch p1-vf).  Readings: the reference is the Python model `tools/vf-vectors.py` (the text said "a C reference"); fp16 converts exactly with denormals (the SU's `atg_su_h2f` flushes them; an attribute is data, not an fp16 operand); the reserved formats fill (0, 0, 0, 1.0).  Ports and parameters unchanged.

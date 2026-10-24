@@ -53,19 +53,25 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Indexed: line reads of the index buffer from INDEX_BASE + FIRST × size; each index (u16/u32) out in order; with PRIM_RESTART, 0xFFFF/0xFFFFFFFF gives iv_restart.  Instances: the whole index walk repeated, iv_inst = FIRST_INSTANCE + i (design §2.3 VF range).
+Kick takes the STATE words of the VF range (0x021-0x027) as they are (the CP does not change them under a draw; a kick while busy is ignored).
+
+- Non-indexed (INDEX_FORMAT 0): iv_index = FIRST + n for n = 0..COUNT-1, no memory access.
+- Indexed (1 u16, 2 u32; the reserved 3 reads as u32): line reads of the index buffer from INDEX_BASE + FIRST × size, in order, one line request ahead (two line buffers; the tag names the buffer); each index (u16 zero-extended) out in order.  INDEX_BASE is aligned to the index size (Vulkan's offset rule), so an index never crosses a line.  With PRIM_RESTART[0], 0xFFFF (u16) or 0xFFFFFFFF (u32) gives iv_restart (iv_index then carries the raw value).
+- Instances: the whole index walk repeated (the lines are read again), iv_inst = FIRST_INSTANCE + i (design §2.3 VF range).  iv_last is on the last item of the last instance (a restart marker when the buffer ends with one).
+- Tags: bit 0 only (am_amb_mux uses bit 7).
 
 ## 5. State machine
 
-IDLE →(kick)→ READ (line) → EMIT (indices of the line) → … → NEXT_INSTANCE → … → IDLE.
+IDLE →(kick, COUNT ≠ 0, INSTANCE_COUNT ≠ 0)→ WALK (requests and emission run side by side) →(last item taken)→ IDLE; WALK →(rsp_error)→ DRAIN →(requests in flight answered)→ IDLE.
 
 ## 6. Latency and throughput
 
-One index per cycle from a line; one line request ahead.
+One index per cycle from a line; one line request ahead (two buffers; a new request at most every other cycle).
 
 ## 7. Corner cases and errors
 
-- COUNT 0 or INSTANCE_COUNT 0: iv_last without vertices? No: nothing is sent and atg_vf_asm ends the draw (it sees busy fall).  rsp_error: stop (the MC faulted).
+- COUNT 0 or INSTANCE_COUNT 0: nothing is sent and busy does not rise; atg_vf_asm has nothing to do.
+- rsp_error: the walk stops without iv_last (the MC faulted; the CP's fault handling resets the VF); busy stays up until the requests in flight are answered, so that no stale response reaches the next draw.
 
 ## 8. What the TB checks
 
@@ -83,4 +89,4 @@ design §2.3 (VF STATE 0x020-0x02F), §3.8.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p009 part A (branch p1-vf).  Notes that fill gaps of the text above: INDEX_FORMAT 3 reads as u32; INDEX_BASE is assumed aligned to the index size; iv_last can be on a restart marker; the walk ends at rsp_error without iv_last (DRAIN).  Ports and parameters unchanged.

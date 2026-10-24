@@ -59,26 +59,31 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-addr = ATTR_BASE + stride × (per_instance ? inst / divisor : index).  An attribute that crosses a line needs two reads; the bytes are merged.  The attributes with ATTR_DST components 0 are skipped.  Order out: lane-major (all attributes of lane 0, then lane 1) so conv can write as data comes.
+- Attribute k is **enabled when its whole ATTR_DST[k] word is not 0** (ATTR_DST[7:6] holds count − 1, so "0 components" cannot be encoded; a word of 0 means "not used", and a 1-component attribute cannot go to r0).  For each vertex from vb, the enabled attributes in ascending k, one at a time.
+- element = index for a per-vertex attribute; for a per-instance one (DESC[20]) Vulkan's rule: FIRST_INSTANCE + (inst − FIRST_INSTANCE) / divisor, and FIRST_INSTANCE for divisor 0 (DESC[31:24]; divisor 1 needs no division; others use a sequential divider, 32 cycles, with a one-entry memo).  addr = ATTR_BASE + stride × element (mod 2^32).  The size comes from the format (4, 8, 12 or 16 bytes; the reserved formats read 4); any byte alignment.
+- Two line entries (fully associative) hold the last lines read; an attribute that crosses a line uses both (two reads at most, one request at a time, the tag names the entry).  The entries are dropped after the warp's last attribute (the vertex buffers do not change under a draw).  An error response reads as 0 (the MC raises the fault).
+- af_raw byte 0 is the byte at addr; bytes beyond the format's size are unspecified.  Order out: lane-major (all attributes of lane 0, then lane 1) so conv can write as data comes; af_last on the last attribute of the vertex with vb_last.  A warp whose vertices have no enabled attribute still sends one af (attr 0, which is then disabled, af_last) so that atg_vf_conv pulses conv_done.
 
 ## 5. State machine
 
-IDLE → (per vertex, per attribute) REQ → WAIT → EMIT → IDLE.
+IDLE →(vb)→ ELEM (element; DIV for a divisor above 1 not in the memo) → MUL (address) → PLAN (hit/miss, entries) → REQ (the misses) → DATA (responses) → EMIT →(next enabled attribute: ELEM | none: IDLE).  A vertex without enabled attribute: IDLE, or NONE (the dummy af) when it is the warp's last.
 
 ## 6. Latency and throughput
 
-Up to 4 reads outstanding; one attribute per line round trip at worst.
+About 6 cycles per attribute when its lines are in the entries; a miss adds a memory round trip (two for a crossing attribute).  At most two reads in flight (the 4 of the target are left for a later Phase, with a line reuse across warps).
 
 ## 7. Corner cases and errors
 
-- Divisor 0 means every instance uses instance 0's data (Vulkan's divisor 0 rule).
+- Divisor 0 means every instance uses instance FIRST_INSTANCE's data (Vulkan's divisor 0 rule).
+- No enabled attribute: see §4 (the dummy af).
+- rsp_error: the bytes read as 0; the warp still ends.
 
 ## 8. What the TB checks
 
 `sim/tb/atg_vf_fetch_tb.v` prints, in this order:
 
-- `PASS atg_vf_fetch.addr` — strides, offsets, per-instance with divisors
-- `PASS atg_vf_fetch.cross` — attributes that cross a line
+- `PASS atg_vf_fetch.addr` — strides, offsets, per-instance with divisors (0, 1, 2, 3, 7, 255, FIRST_INSTANCE above 0), every format, disabled attributes and a warp without any
+- `PASS atg_vf_fetch.cross` — attributes that cross a line (any byte alignment)
 - `PASS atg_vf_fetch` at the end.
 
 ## 9. References
@@ -87,4 +92,4 @@ design §2.3 (ATTR_*), §3.4.3.
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p009 part A (branch p1-vf).  Readings of the text above (Q1 to confirm): the enable rule is "ATTR_DST[k] ≠ 0" (§4); the per-instance element follows Vulkan (relative to FIRST_INSTANCE), where the earlier text said inst / divisor; the dummy af for a warp without attributes.  Difference from §6's target: two reads in flight, not four.  Ports and parameters unchanged.

@@ -45,7 +45,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `prim_ready` | in | 1 | Taken. |
 | `prim_vtx` | out | 24 | Three PT entries, v0 in [7:0] (provoking vertex first per PROVOKING). |
 | `prim_free` | out | 3 | Vertex i is used for the last time (RX frees its PT entry after this primitive). |
-| `prim_last` | out | 1 | Last primitive of the draw (a draw with no primitive sends one with prim_vtx unused and the topology... see atg_vf_asm). |
+| `prim_last` | out | 1 | Last primitive of the draw (a draw with no primitive sends none, atg_vf_asm §7). |
 | **AMB client port (design §4.1)** | | | |
 | `req_valid` | out | 1 | Request valid; payload held until `req_ready`. |
 | `req_ready` | in | 1 | The MC (or mux) takes the request this cycle. |
@@ -88,4 +88,4 @@ design §2.3, §3.8.
 
 ## 10. Status
 
-Wiring written in WS288 p023 (children are stubs unless their spec says otherwise).
+Wiring written in WS288 p023; the children (atg_vf_index, atg_vf_asm, atg_vf_fetch, atg_vf_conv) implemented in WS288 p009 part A (branch p1-vf), the wiring unchanged.  For Q1: atg_cp_seq does not hold a SET_REG into the VF ranges (0x020-0x04F, 0x1C0-0x1CF) while the VF is busy (it does for the BLT, RX and ROP ranges); the VF assumes its STATE does not change under a draw.

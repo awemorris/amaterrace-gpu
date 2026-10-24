@@ -48,41 +48,46 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `prim_ready` | in | 1 | Taken. |
 | `prim_vtx` | out | 24 | Three PT entries, v0 in [7:0] (provoking vertex first per PROVOKING). |
 | `prim_free` | out | 3 | Vertex i is used for the last time (RX frees its PT entry after this primitive). |
-| `prim_last` | out | 1 | Last primitive of the draw (a draw with no primitive sends one with prim_vtx unused and the topology... see atg_vf_asm). |
+| `prim_last` | out | 1 | Last primitive of the draw (a draw with no primitive sends none, atg_vf_asm §7). |
 | `busy` | out | 1 | Work outstanding. |
 
 29 ports.
 
 ## 4. Behaviour
 
-- For a strip or fan, the vertices that later primitives still need (the last two of a strip, the
-  fan's first) are re-sent into the next warp (duplicated lanes) so a primitive never refers to two
-  warps' PT blocks.  v1 has no reuse cache: every vertex of a list is shaded (design §3.8).
-- vl_req when a warp's first vertex is ready; on vl_gnt send the warp's vertices on vb_*; on
-  conv_done pulse vl_go with vl_mask; then the warp's primitives go out with PT entries
-  vl_ptbase + lane.  prim_free marks each PT entry's last use.  prim_last after the draw's last.
+- One warp at a time: vl_req when the next vertex (not a restart marker) waits on iv; on vl_gnt the warp's vertices go out on vb_*, lanes 0, 1, … in order (every iv vertex gets its own lane: v1 has no reuse cache, design §3.8).  vb_index = iv_index + VERTEX_OFFSET for an indexed draw (INDEX_FORMAT ≠ 0); a non-indexed draw adds nothing (Vulkan: vertexOffset belongs to indexed draws).  The newest vertex is held back one item so that vb_last is known when it goes out.
+- A warp closes when its 32 lanes are used, before a list primitive (line or triangle list) that no longer fits in the lanes left, or at the draw's last item.  For a strip or fan, the vertices that later primitives still need (the last two of a strip, the fan's first and last; the started vertices of a list primitive or a line strip's last) are re-sent into the next warp's lanes 0 and 1 (duplicated lanes) so a primitive never refers to two warps' PT blocks.
+- Primitive restart (iv_restart) and a change of iv_inst (the next instance) end the strip, fan or incomplete list primitive.  TOPOLOGY 6 and 7 (reserved) assemble as points.
+- On conv_done, vl_go pulses with vl_mask = the lanes that some primitive of the warp uses (unused lanes: an incomplete primitive, a strip piece of one or two vertices, a carried vertex not used again); then the warp's primitives go out, one per cycle, with PT entries vl_ptbase + lane.
+- prim_vtx: v0 is the provoking vertex (PROVOKING, RX STATE 0x05D: [0] 0 first, 1 last), the winding of Vulkan's vertex order kept by rotation.  Triangle list (A, B, V) / last (V, A, B); strip triangle i (Vulkan's orders): first (i, i+1+i%2, i+2−i%2), last (i+2, i+i%2, i+1−i%2); fan (i+1, i+2, 0) / last (i+2, 0, i+1); line (a, b, b) / last (b, a, a); point (p, p, p).  The RX tells points, lines and triangles apart by TOPOLOGY.
+- prim_free bit s marks the last use of slot s's PT entry within its warp, set on one slot only when an entry appears twice (points, lines): every entry of a lane in vl_mask gets exactly one last use; the entries of the lanes outside vl_mask are never named on prim_*.
+- prim_last after the draw's last primitive: the last primitive out is held back (prim_valid low) until the next one exists or the draw ends.
 
 ## 5. State machine
 
-IDLE → ALLOC (vl_req) → SEND (vb) → WAIT_CONV → GO → PRIMS (emit) → (next warp | IDLE).
+IDLE →(iv)→ NEXT (restart markers and instance changes between warps) →(vertex)→ ALLOC (vl_req) →(vl_gnt)→ SEND (vb: carried vertices, then iv) → CLOSE (vb_last) → WAIT (conv_done) → GO (vl_go) → PRIMS (emit) →(list empty)→ NEXT, or IDLE after the draw's last primitive (NEXT →(restart with iv_last)→ PRIMS when the draw ends between warps).
 
 ## 6. Latency and throughput
 
-One vertex per cycle into a warp; one primitive per cycle out.
+One vertex per cycle into a warp; one primitive per cycle out.  The next warp's SEND does not overlap the current warp's PRIMS (v1).
 
 ## 7. Corner cases and errors
 
-- Degenerate counts (a triangle list of 4 vertices) drop the incomplete primitive.  A draw with no primitive: prim_valid with prim_last only... v1: no prim at all, busy falls (the CP waits for VF idle).
+- Degenerate counts (a triangle list of 4 vertices) drop the incomplete primitive.  A draw with no primitive sends none (no prim_last either) and busy falls (the CP waits for VF idle).
+- A warp none of whose lanes a primitive uses (e.g. only restart-separated pairs of a strip) still gets vl_go, with vl_mask 0.
+- **Needs from the SU (part B, Q1):** the PT allocator returns, at vl_go, the entries of the warp's lanes outside vl_mask (no primitive names them), and it allocates per 32-entry block, not as one counter: because the last primitive is held for prim_last, up to three entries of an older warp can still be taken when the next-but-one warp is granted.
 
 ## 8. What the TB checks
 
 `sim/tb/atg_vf_asm_tb.v` prints, in this order:
 
-- `PASS atg_vf_asm.list` — triangle lists over several warps
-- `PASS atg_vf_asm.strip` — strips and fans across warp boundaries
-- `PASS atg_vf_asm.restart` — restart in a strip
-- `PASS atg_vf_asm.free` — every PT entry gets exactly one last use
+- `PASS atg_vf_asm.list` — triangle, line and point lists over several warps
+- `PASS atg_vf_asm.strip` — strips, fans and line strips across warp boundaries
+- `PASS atg_vf_asm.restart` — restart in strips, fans and lists; instances
+- `PASS atg_vf_asm.free` — every PT entry gets exactly one last use (a 64-entry PT model in two blocks, the lanes outside vl_mask returned at vl_go; mixed topologies)
 - `PASS atg_vf_asm` at the end.
+
+The primitives are checked in order against a reference assembly without warps (Vulkan's vertex orders, both PROVOKING modes); also the vb lanes, vb_last, VERTEX_OFFSET and vb_inst.
 
 ## 9. References
 
@@ -90,4 +95,4 @@ design §3.8 (PT reservation, deadlock), §2.3 (TOPOLOGY, PROVOKING in RX).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p009 part A (branch p1-vf).  Readings of the earlier text (Q1 to confirm): "a draw with no primitive" sends none (§7); vl_mask has only the lanes some primitive uses, and the SU returns the other entries (§7, a need for part B); points and lines as (p, p, p) and (a, b, b) with the free bit on one slot; VERTEX_OFFSET only for indexed draws; a change of instance ends strips and fans; the last primitive is held back for prim_last.  Ports and parameters unchanged.
