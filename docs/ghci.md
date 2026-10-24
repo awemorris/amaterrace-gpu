@@ -926,6 +926,10 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
     the warp's stores.
   - Within a warp, memory accesses take effect in program order. When
     several lanes of one `sw` write the same word, the highest lane wins.
+  - The lanes of one `atom` act in lane order. An `atom` is indivisible
+    with respect to every other `atom` on the GPU; an ordinary store to
+    the same word, from another warp or agent, is not excluded in
+    version 1.
 - **Shared memory (LDS):** `lds`/`sts` with byte addresses, word aligned,
   wrapping at the LDS size; `bar` synchronizes the warps of a workgroup.
 - **Constant bank:** `lwc rd, imm(rs1)` reads word (rs1 + imm) modulo the
