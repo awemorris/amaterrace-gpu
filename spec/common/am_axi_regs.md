@@ -4,7 +4,7 @@ RTL: `rtl/common/am_axi_regs.v`. Written from the RTL at amaterrace-gpu main a21
 
 ## 1. Purpose and place
 
-An AXI slave (AXI3 or AXI4, 32-bit data) that turns host accesses into a simple register bus, the way zedBSD's `plio` does on the ZYBO. Parent: `atg_top` (instance `regs`, between the host port `s_*` and `atg_cp`). Later also the DC-only bitstream and the KC705 PCIe/JTAG paths. Children: none.
+An AXI slave (AXI3 or AXI4, 32-bit data) that turns host accesses into a simple register bus. Parent: `atg_top` (instance `regs`, between the host port `s_*` and `atg_cp`). Later also the DC-only bitstream and the KC705 PCIe/JTAG paths. Children: none.
 
 ## 2. Parameters
 
@@ -73,7 +73,7 @@ Write channel: a flag `aw_full` (address held) and `b_valid` (response owed), no
 
 - Burst writes: every beat writes the first address (the last beat's data wins for a plain register). Burst reads repeat the read (registers must have no read side effects; the CP's have none).
 - AxSIZE, AxBURST, AWLEN, AxLOCK/CACHE/PROT and AXI3 WID are ignored.
-- Addresses above `ADDR_BITS` are cut off by the parent (`atg_top` takes the low 17 bits; on the ZYBO the 64 KiB GP0 window never sets bit 16).
+- Addresses above `ADDR_BITS` are cut off by the parent (`atg_top` takes the low 17 bits).
 - No SLVERR/DECERR is ever returned.
 - Reset during a transfer drops it (AXI protocol violation toward the host); `rst_n` is the board reset only.
 
@@ -89,4 +89,4 @@ Write channel: a flag `aw_full` (address held) and `b_valid` (response owed), no
 
 ## 10. Status
 
-Implemented (70aaff5, p002; unchanged at a217bf8). 173 lines, 33 ports, one state machine (read), one clock: within U38. No difference between RTL and this spec. Measured on the ZYBO (p003, Vivado 2026.1): 289 LUT, 111 FF.
+Implemented (70aaff5, p002; unchanged at a217bf8). 173 lines, 33 ports, one state machine (read), one clock: within U38. No difference between RTL and this spec. Measured on a Zynq-7010 (XC7Z010) (p003, Vivado 2026.1): 289 LUT, 111 FF.

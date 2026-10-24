@@ -36,7 +36,7 @@ module atg_su_sb #(
 	parameter NPHYS = 8,	/* Physical lanes: 8, 16 or 32 */
 	parameter NWARPS = 4,	/* Resident warps (slots): 2, 4 or 8 */
 	parameter WARP_W = 2,	/* log2(NWARPS) */
-	parameter SB_ENTRIES = 4,	/* Scoreboard entries per warp (ZYBO 4, KC705 8) */
+	parameter SB_ENTRIES = 4,	/* Scoreboard entries per warp (KC705 8) */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
 	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
 	parameter SHORT_LAT = 6	/* Cycles from x_valid to the short result */

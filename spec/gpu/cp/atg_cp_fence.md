@@ -11,7 +11,7 @@ Writes fences and results to memory, polls WAIT_FENCE words, keeps FENCE_LAST an
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 | `POLL` | `64` | WAIT_FENCE: cycles between two reads (1..255). |
 

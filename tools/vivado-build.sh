@@ -1,9 +1,9 @@
 #!/bin/bash
 # Builds a board top with Vivado in non-project batch mode
 # (tools/vivado-build.tcl).  Output stays under build/vivado/ (not in git).
-#   tools/vivado-build.sh BOARD TOP     e.g. tools/vivado-build.sh zybo atg_zybo_2d
+#   tools/vivado-build.sh BOARD TOP     e.g. tools/vivado-build.sh kc705 atg_kc705_raster
 # BOARD is a directory of boards/ with TOP.v and TOP.xdc; the part is the
-# board's (zybo: xc7z010clg400-1, kc705: xc7k325tffg900-2; PART overrides).
+# board's (kc705: xc7k325tffg900-2; PART overrides).
 # VIVADO is the installation's settings64.sh (default
 # $HOME/opt/amd/2026.1/Vivado/settings64.sh).  Vivado 2026.1 needs a
 # license file even for the free parts: XILINXD_LICENSE_FILE, by default
@@ -25,7 +25,6 @@ topdir=$root/boards/$board
 	exit 2
 }
 case $board in
-zybo) part=${PART:-xc7z010clg400-1} ;;
 kc705) part=${PART:-xc7k325tffg900-2} ;;
 *) part=${PART:?PART is needed for board $board} ;;
 esac

@@ -10,7 +10,7 @@ RX quad traversal: walks the bounding box in 2×2 quads, evaluates the edges for
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `HAS_SU` | `1` | 1: non-raw triangles' quads to atg_rx_frag (fragment warps); 0: every quad straight to the ROP with DEBUG_COLOR (bitstream 3). DRAW_RAW is direct either way. |
+| `HAS_SU` | `1` | 1: non-raw triangles' quads to atg_rx_frag (fragment warps); 0: every quad straight to the ROP with DEBUG_COLOR (a GPU without SUs). DRAW_RAW is direct either way. |
 
 ## 3. Ports
 

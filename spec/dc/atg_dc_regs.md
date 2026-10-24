@@ -10,7 +10,7 @@ The DC's registers (design §5.1): DC_ID/VERSION/CAPS, CTRL, STATUS, IRQ, FB_*, 
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `STANDALONE` | `0` | 1: a DC-only GHCI device (ZYBO bitstream 2): GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000). |
+| `STANDALONE` | `0` | 1: a DC-only GHCI device: GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000). |
 | `BASE` | `17'h10000` | Window of the DISP registers when STANDALONE = 0. |
 | `HAS_I2C` | `0` | ADV7511 I2C master present (KC705, DC_CAPS[2]). |
 

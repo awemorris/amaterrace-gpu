@@ -17,9 +17,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The AMB line, set per board by tools/fw-build.sh (32 ZYBO, 64 KC705). */
+/* The AMB line, set per board by tools/fw-build.sh (64 KC705). */
 #ifndef FW_LINE_BYTES
-#define FW_LINE_BYTES 32u
+#define FW_LINE_BYTES 64u
 #endif
 
 /* The firmware's version in CPFW_VERSION: [31:16] major, [15:0] minor. */

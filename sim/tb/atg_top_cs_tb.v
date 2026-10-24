@@ -20,11 +20,9 @@
  * stores, then reaches an undefined instruction: the CP must be FAULTED with
  * FAULT_ADDR = the PC, FAULT_INFO kind 8 block 6 and IRQ_STATUS.FAULT, the
  * stores must be in memory and the FENCE after the DISPATCH unwritten.
- *   zybo:  bitstream 4's GPU (atg_zybo_compute: NSU 1, NPHYS 8, no CPU),
- *          32-byte lines, 64-bit AXI
- *   kc705: 64-byte lines, 512-bit AXI, the CPU with the CP firmware (not
- *          started: the ring carries class 0 micro-ops only), NPHYS 16,
- *          NREGS 64, 8 scoreboard entries, PACKED, 16 KiB LDS
+ * In the KC705's shape: 64-byte lines, 512-bit AXI, the CPU with the CP
+ * firmware (not started: the ring carries class 0 micro-ops only), NPHYS
+ * 16, NREGS 64, 8 scoreboard entries, PACKED, 16 KiB LDS.
  */
 
 `timescale 1ns / 1ps
@@ -34,7 +32,7 @@ module atg_top_cs_harness #(
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,
 	parameter DATA_W = 64,
-	parameter NAME = "zybo",
+	parameter NAME = "dut",
 	parameter SCENE = "sim/vec/cs_scene.txt",
 	parameter SEED = 1,
 	parameter HAS_CPU = 0,
@@ -313,31 +311,27 @@ endmodule
 module atg_top_cs_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
-	wire done_zybo, done_kc705;
-	wire [31:0] err_zybo, err_kc705;
+	wire done_kc705;
+	wire [31:0] err_kc705;
 
 	always #5 clk = !clk;
-	`include "tb_shape.vh"
 
-	atg_top_cs_harness #(.NAME("zybo"), .SEED(11)) zybo (
-		.clk(clk_zybo), .rst_n(rst_n), .finished(done_zybo), .errors(err_zybo)
-	);
 	atg_top_cs_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.SEED(12), .HAS_CPU(1), .CPU_IMEM_INIT("fw/cp/images/atg1-cp-kc705.imem.hex"),
 		.CPU_DMEM_INIT("fw/cp/images/atg1-cp-kc705.dmem.hex"), .SU_NPHYS(16), .SU_GRP_W(1),
 		.SU_NREGS(64), .SU_SB_ENTRIES(8), .SU_SBE_W(3), .SU_PACKED(1),
 		.SU_LDS_BYTES(16384)) kc705 (
-		.clk(clk_kc705), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
+		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
 	);
 
 	initial begin
 		repeat (4) @(posedge clk);
 		rst_n <= 1'b1;
-		wait ((done_zybo || !run_zybo) && (done_kc705 || !run_kc705));
-		if (err_zybo == 0 && err_kc705 == 0)
+		wait (done_kc705);
+		if (err_kc705 == 0)
 			$display("PASS atg_top_cs");
 		else
-			$display("FAIL atg_top_cs: %0d + %0d errors", err_zybo, err_kc705);
+			$display("FAIL atg_top_cs: %0d errors", err_kc705);
 		$finish;
 	end
 

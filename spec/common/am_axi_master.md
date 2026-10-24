@@ -11,9 +11,9 @@ Turns memory-line requests into AXI bursts. One request is one aligned line of `
 | Name | Default | Meaning | Values |
 | --- | --- | --- | --- |
 | `ADDR_W` | 32 | Address width | 32 |
-| `LINE_BYTES` | 32 | Bytes per line | 32 (ZYBO), 64 (KC705) |
+| `LINE_BYTES` | 32 | Bytes per line | 32 or 64 (KC705) |
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`), passed explicitly | 5, 6 |
-| `DATA_W` | 64 | AXI data width | 64 (ZYBO HP), 512 (KC705 MIG); `LINE_BYTES*8` must be a multiple. AxSIZE is derived (8..512 bits) |
+| `DATA_W` | 64 | AXI data width | 64 (an AXI3 HP port), 512 (KC705 MIG); `LINE_BYTES*8` must be a multiple. AxSIZE is derived (8..512 bits) |
 | `UW` | 16 | User bits carried from request to response | `atg_mc` uses 16: `{client[7:0], tag[7:0]}` |
 | `OUTSTANDING_LOG2` | 2 | log2 of the reads, and separately of the writes, in flight | 2 (4 + 4); ≥ 1 (`am_fifo`) |
 
@@ -58,9 +58,9 @@ No encoded FSM; two independent paths:
 
 ## 6. Latency and throughput
 
-- Write: AW and the first beat one cycle after the accept; beats at one per cycle; a new write accepted the cycle after the last beat, so at best one line every `BEATS + 1` cycles (5 cycles for the ZYBO line: 80% of W). Response 1 cycle after the B handshake (later if a read finishes in that cycle).
+- Write: AW and the first beat one cycle after the accept; beats at one per cycle; a new write accepted the cycle after the last beat, so at best one line every `BEATS + 1` cycles (5 cycles for a 32-byte line on 64 bits: 80% of W). Response 1 cycle after the B handshake (later if a read finishes in that cycle).
 - Read: AR one cycle after the accept, a new read accepted the cycle after the AR handshake, so at best one AR every 2 cycles; up to 4 in flight. Response 1 cycle after the last R beat.
-- Measured on the ZYBO (p003): FILL 5.0 cycles per 32-byte line (640 MB/s at 100 MHz); the copy rate (about 50 cycles/line) is bound by the BLT's serial read-then-write, not by this module.
+- Measured on a Zynq-7010 (XC7Z010) (p003): FILL 5.0 cycles per 32-byte line (640 MB/s at 100 MHz); the copy rate (about 50 cycles/line) is bound by the BLT's serial read-then-write, not by this module.
 
 ## 7. Corner cases and errors
 
@@ -72,14 +72,14 @@ No encoded FSM; two independent paths:
 
 ## 8. What the TB checks
 
-`sim/tb/am_axi_master_tb.v` → `PASS am_axi_master`: two shapes (ZYBO 32 B/64 bit/4 beats, KC705 64 B/512 bit/1 beat), 2000 random requests each on 64 lines against `axi_mem` (random ready and latency, protocol checker) and a reference copy; reads and writes each in order with their user bits; data with byte masks; 1/50 of the requests in the SLVERR region answer error; random `halt`: `req_ready` stays 0 under it, `idle` comes within 400 cycles with no response owed, traffic resumes; idle at the end; zero protocol violations. Seeds: `+seed` (p003 also 3 and 42). Not checked: the read/write reorder (the TB avoids a read after a pending write to the same line), `OUTSTANDING_LOG2` other than 2, AXI3 truncation (done by the board top).
+`sim/tb/am_axi_master_tb.v` → `PASS am_axi_master`: two shapes (32 B/64 bit/4 beats, KC705 64 B/512 bit/1 beat), 2000 random requests each on 64 lines against `axi_mem` (random ready and latency, protocol checker) and a reference copy; reads and writes each in order with their user bits; data with byte masks; 1/50 of the requests in the SLVERR region answer error; random `halt`: `req_ready` stays 0 under it, `idle` comes within 400 cycles with no response owed, traffic resumes; idle at the end; zero protocol violations. Seeds: `+seed` (p003 also 3 and 42). Not checked: the read/write reorder (the TB avoids a read after a pending write to the same line), `OUTSTANDING_LOG2` other than 2, AXI3 truncation (done by the board top).
 
 ## 9. References
 
 - design.md §4.1 (AMB, `am_axi_master`, outstanding 4 + 4, AXI3 parameter), §1.3 (quiesce, AXI_STUCK), §3.6 (measured LUTs).
 - `docs/ghci.md` §10 (quiesce), §11 (memory model: lines).
-- Related specs: `spec/gpu/mc/atg_mc.md`, `spec/common/am_fifo.md`, `spec/boards/zybo/atg_zybo_2d.md` (AXI3 hookup).
+- Related specs: `spec/gpu/mc/atg_mc.md`, `spec/common/am_fifo.md`.
 
 ## 10. Status
 
-Implemented (70aaff5, p002; `idle` fixed to include `!rsp_valid` in p002; unchanged at a217bf8). 293 lines, no FSM, one clock. **U38: 45 ports > 40** (the AXI master interface alone is 29 signals). Not refactored: splitting does not reduce an AXI adapter's ports. Proposed: a U38 rule that one standard AXI interface counts as one port group (decision for Q1/user), else this module stays as a recorded exception. Differences from design.md §4.1: there is no `AXI3` parameter (the board top truncates AxLEN/AxSIZE and ties WID; design text says a parameter); WID is not a port. Measured on the ZYBO (p003): 156 LUT (inside the MC's 173), most of the MC's 853 FF are this module's line buffers. Residual: read prefetch for the BLT is a BLT matter, not this module's.
+Implemented (70aaff5, p002; `idle` fixed to include `!rsp_valid` in p002; unchanged at a217bf8). 293 lines, no FSM, one clock. **U38: 45 ports > 40** (the AXI master interface alone is 29 signals). Not refactored: splitting does not reduce an AXI adapter's ports. Proposed: a U38 rule that one standard AXI interface counts as one port group (decision for Q1/user), else this module stays as a recorded exception. Differences from design.md §4.1: there is no `AXI3` parameter (the board top truncates AxLEN/AxSIZE and ties WID; design text says a parameter); WID is not a port. Measured on a Zynq-7010 (XC7Z010) (p003): 156 LUT (inside the MC's 173), most of the MC's 853 FF are this module's line buffers. Residual: read prefetch for the BLT is a BLT matter, not this module's.

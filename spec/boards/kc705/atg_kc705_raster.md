@@ -59,7 +59,7 @@ Clock/reset domain: clk (gclk 100 MHz) and pclk unless the row says otherwise.  
 Wiring.  One gclk (100 MHz); the MIG's crossing to ui_clk is inside atg_kc705_mig.
 
 - The DC is `atg_dc` with `PX_FMT` 1 (16-bit YCbCr 4:2:2 for the ADV7511), `FIFO_LOG2` 11 (720p),
-  HAS_I2C; its VGA and TMDS outputs are left open (not synthesised: user 2026-10-24).
+  HAS_I2C; its TMDS output is left open (not synthesised: user 2026-10-24; the DC has no VGA output since 2026-10-25).
 - `hdmi_clk` comes from an ODDR (D1 0, D2 1) on pclk; the data, DE and syncs are the DC's
   registered outputs (IOB registers in the XDC).
 - The ADV7511 (behind the mux) is configured by the host through the DC's I2C registers

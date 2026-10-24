@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds and runs the Verilator system harness (harness.cpp around atg_top
-# in the ZYBO's shape).  Output under build/verilator/ (not in git).
+# in its default shape: 32-byte lines, 64-bit AXI).  Output under
+# build/verilator/ (not in git).
 #   sim/verilator/run.sh
 # Prints "PASS verilator" on success.  Timeout: 600 s for the build, 300 s
 # for the run.
@@ -56,7 +57,7 @@ timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 }
 timeout 600 "$out/atg_top_tex"
 
-# The compute scene: NSU 1 (bitstream 4's GPU), GSI1 programs dispatched through
+# The compute scene: NSU 1, GSI1 programs dispatched through
 # the ring, the memory against tools/gsi1model.py, an ISA fault.
 timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 	--top-module atg_top -GNSU=1 -Mdir "$out/obj-compute" -o "$out/atg_top_compute" \

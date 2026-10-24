@@ -33,7 +33,7 @@ module atg_su_pt #(
 	parameter GRP_W = 2,	/* log2(32/NPHYS) (1 for NPHYS 32) */
 	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W) */
 	parameter PT_ENTRIES = 64,	/* PT vertices: a multiple of 32, at most 256 */
-	parameter VARY_WORDS = 16	/* Varying words per vertex (ZYBO 16, KC705 32) */
+	parameter VARY_WORDS = 16	/* Varying words per vertex (KC705 32) */
 ) (
 	input wire clk,
 	input wire rst_n,

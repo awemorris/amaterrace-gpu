@@ -163,8 +163,8 @@ module atg_cp #(
 	/*
 	 * The STATE broadcast to the blocks, one register stage after
 	 * atg_cp_state (the path ring → sequencer → index decode → the
-	 * blocks' shadow enables did not meet 100 MHz with the CPU in the
-	 * ZYBO).  A kick comes at least two cycles after the last STATE write
+	 * blocks' shadow enables did not meet 100 MHz with the CPU in a
+	 * Zynq-7010).  A kick comes at least two cycles after the last STATE write
 	 * of its µops (the header after the payload, the kick a cycle after
 	 * the header), so the blocks still see their state before the kick.
 	 */

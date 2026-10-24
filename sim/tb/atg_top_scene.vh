@@ -18,7 +18,7 @@ module atg_top_scene_harness #(
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,
 	parameter DATA_W = 64,
-	parameter NAME = "zybo",
+	parameter NAME = "dut",
 	parameter TB = "atg_top_raster",
 	parameter SCENE = "sim/vec/raster_scene.txt",
 	parameter SEED = 1,

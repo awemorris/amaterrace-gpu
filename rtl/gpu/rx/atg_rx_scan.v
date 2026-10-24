@@ -24,7 +24,7 @@
 `default_nettype none
 
 module atg_rx_scan #(
-	parameter HAS_SU = 1	/* 1: fragment warps to the SU; 0: quads straight to the ROP with DEBUG_COLOR (bitstream 3) */
+	parameter HAS_SU = 1	/* 1: fragment warps to the SU; 0: quads straight to the ROP with DEBUG_COLOR (a GPU without SUs) */
 ) (
 	input wire clk,
 	input wire rst_n,

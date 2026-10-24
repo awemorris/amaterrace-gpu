@@ -56,7 +56,7 @@ IDLE → START → BIT×8 → ACK → (STOP) → IDLE.
 
 ## 7. Corner cases and errors
 
-- Unconnected I2C (ZYBO): HAS_I2C 0 in atg_dc ties this off.
+- Unconnected I2C: HAS_I2C 0 in atg_dc ties this off.
 - No arbitration (single master) and no timeout: a slave that stretches SCL forever keeps the
   master busy until the DC reset (CTRL.RESET resets atg_dc_i2c through g_rst_n).
 

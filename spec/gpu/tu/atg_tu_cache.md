@@ -4,14 +4,14 @@ RTL: `rtl/gpu/tu/atg_tu_cache.v`.  Parent: atg_tu.  Implemented in: p009.
 
 ## 1. Purpose and place
 
-The texture cache: 4 KiB (KC705; ZYBO has no TU), lines from the AMB, 16 texels per quad looked up (several per cycle by banking), invalidated by INVALIDATE[1] / DRAW.
+The texture cache: 4 KiB (KC705), lines from the AMB, 16 texels per quad looked up (several per cycle by banking), invalidated by INVALIDATE[1] / DRAW.
 
 ## 2. Parameters
 
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 | `TC_BYTES` | `4096` | Size in bytes. |
 

@@ -15,8 +15,8 @@ The post-transform buffer (PT): vertex warps' exports of the position and the va
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS) (1 for NPHYS 32). |
 | `UOP_W` | `104` | Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh). |
-| `PT_ENTRIES` | `64` | PT vertices: a multiple of 32, at most 256 (two warps of 32 on ZYBO). |
-| `VARY_WORDS` | `16` | Varying words per vertex (ZYBO 16, KC705 32). |
+| `PT_ENTRIES` | `64` | PT vertices: a multiple of 32, at most 256 (two warps of 32 with the default 64). |
+| `VARY_WORDS` | `16` | Varying words per vertex (KC705 32). |
 
 ## 3. Ports
 

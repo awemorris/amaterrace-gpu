@@ -27,7 +27,7 @@
 `default_nettype none
 
 module atg_dc_regs #(
-	parameter STANDALONE = 0,	/* 1: a DC-only GHCI device (ZYBO bitstream 2): GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000) */
+	parameter STANDALONE = 0,	/* 1: a DC-only GHCI device: GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000) */
 	parameter BASE = 17'h10000,	/* Window of the DISP registers when STANDALONE = 0 */
 	parameter HAS_I2C = 0	/* ADV7511 I2C master present (KC705, DC_CAPS[2]) */
 ) (
@@ -71,10 +71,11 @@ module atg_dc_regs #(
 
 	localparam [16:0] DISP = STANDALONE != 0 ? GHCI_DC_STANDALONE_DISP : BASE;
 	localparam [31:0] DC_VERSION_VALUE = 32'h00000001;	/* 0.1 */
-	/* DC_CAPS: [1:0] VGA and TMDS without the transmitter, [2] the
-	 * transmitter with it; [7:4] formats 0..2; [11:9] two modes. */
+	/* DC_CAPS: [1] TMDS without the transmitter, [2] the transmitter
+	 * with it ([0] VGA: no VGA output); [7:4] formats 0..2; [11:9] two
+	 * modes. */
 	localparam [31:0] DC_CAPS_VALUE = {20'd0, 3'd2, 1'b0, 4'b0111, 1'b0,
-		HAS_I2C != 0 ? 3'b100 : 3'b011};
+		HAS_I2C != 0 ? 3'b100 : 3'b010};
 	localparam [31:0] DEVICE_VERSION_VALUE = 32'h00000001;
 	localparam [31:0] GCLK_HZ_VALUE = 32'd100000000;
 	localparam [16:0] LIST = GHCI_EXTCAP_LIST;

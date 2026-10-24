@@ -4,7 +4,7 @@
 # any mismatch; the run passes when PASS is printed and FAIL is not.
 #   sim/run.sh [NAME[:+PLUSARG...]...]   (no NAME: every testbench)
 #   sim/run.sh -q                        (the short run, below)
-# NAME:+quick:+shape=kc705 passes +quick and +shape=kc705 to the testbench
+# NAME:+quick passes +quick to the testbench, NAME:+A:+B both plusargs
 # (its log is NAME.quick.log).  Each result line ends with the run's seconds.
 # Output (the vvp binary, the log) goes to build/sim/ (not in git).
 # A testbench that needs files outside rtl/ (a board top) names them in a
@@ -17,17 +17,19 @@
 # atg_top_shade 183, atg_top_cs 138, atg_top_raster 79, atg_dc_tgen 56,
 # atg_top_fw 40, atg_top 30, atg_kc705_raster 25, the others about 120
 # together); the default timeout leaves room for atg_top_tex (about 380 s) and atg_su on a
-# slower or busy host too.
+# slower or busy host too.  Those times are of the atg_top_* testbenches
+# with two harnesses each; they now run the KC705's shape only, so their
+# times are lower (not yet measured).
 #
-# The short run (-q, make sim-quick) touches every block in about 9 minutes
-# (528 s on the same host): every testbench except the $LONG ones, and
+# The short run (-q, make sim-quick) touches every block (528 s on the same
+# host with the former shapes): every testbench except the $LONG ones, and
 # those of them that $QUICK lists, shortened:
 #   atg_su +quick              NPHYS 8 and 32 and the no-SUBGROUP SU, no frand
 #                              (58 s)
-#   atg_top_tex +shape=kc705   one shape: VF, SU, RX, TU and ROP through the
-#                              ring (173 s)
-#   atg_top_cs +shape=zybo     one shape: compute through the ring (50 s)
-#   atg_top_fw +shape=kc705    one shape: the CP firmware (19 s)
+#   atg_top_tex                VF, SU, RX, TU and ROP through the ring (the
+#                              KC705's shape alone took 173 s)
+#   atg_top_cs                 compute through the ring
+#   atg_top_fw                 the CP firmware (the KC705's shape alone: 19 s)
 #   atg_dc_tgen +quick         the timing on a 64x16 mode instead of 640x480
 #                              and 720p (1 s)
 # atg_top_raster and atg_top_shade are left out: atg_top_tex runs the warp
@@ -41,8 +43,7 @@ mkdir -p "$out"
 command -v iverilog >/dev/null || { echo "sim: no iverilog" >&2; exit 1; }
 all=$(ls sim/tb/*_tb.v | sed 's|.*/||; s|_tb\.v$||')
 LONG="atg_su atg_top_shade atg_top_cs atg_top_tex atg_top_raster atg_dc_tgen atg_top_fw"
-QUICK="atg_su:+quick atg_top_tex:+shape=kc705 atg_top_cs:+shape=zybo atg_top_fw:+shape=kc705
-	atg_dc_tgen:+quick"
+QUICK="atg_su:+quick atg_top_tex atg_top_cs atg_top_fw atg_dc_tgen:+quick"
 if [ "${1:-}" = -q ]; then
 	set -- $(for n in $all; do
 		case " $LONG " in *" $n "*) ;; *) echo "$n" ;; esac

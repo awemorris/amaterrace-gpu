@@ -11,7 +11,7 @@ The CPU's line DMA between GPU memory (AMB) and IMEM/DMEM: the firmware's heap �
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 
 ## 3. Ports
@@ -82,7 +82,7 @@ IDLE →(go)→ READ_REQ/READ_WAIT → STORE_WORDS → … → IDLE; or GATHER �
 
 ## 6. Latency and throughput
 
-One word per cycle into the BRAM; the AMB round trip limits it (about 1 line per 20 cycles on the ZYBO with 4 outstanding).
+One word per cycle into the BRAM; the AMB round trip limits it (about 1 line per 20 cycles on a Zynq-7010 (XC7Z010) with 4 outstanding).
 
 ## 7. Corner cases and errors
 

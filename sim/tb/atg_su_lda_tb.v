@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_su_lda_tb: atg_su_lda in the ZYBO shape (NPHYS 8, 20 words per
+ * atg_su_lda_tb: atg_su_lda in a small shape (NPHYS 8, 20 words per
  * vertex) and the KC705 shape (NPHYS 16, 36 words), both written by the
  * same RX-style primitive table writes (random words of 8 primitives × 3
  * vertices of each of 4 warps, then a primitive map per warp that puts
@@ -34,7 +34,7 @@ module atg_su_lda_tb;
 	reg [1:0] x_grp = 0;
 	reg [103:0] x_uop = 0;
 	reg [31:0] x_mask = 0;
-	reg [1:0] dsel = 0;	/* which shape gets the group: 1 ZYBO, 2 KC705 */
+	reg [1:0] dsel = 0;	/* which shape gets the group: 1 NPHYS 8, 2 KC705 */
 
 	wire s8_valid, s16_valid;
 	wire [1:0] s8_warp, s16_warp;
@@ -106,7 +106,7 @@ module atg_su_lda_tb;
 
 	/* one lda group at the current cycle */
 	task issue;
-		input integer shape;	/* 0 ZYBO, 1 KC705 */
+		input integer shape;	/* 0 NPHYS 8, 1 KC705 */
 		input integer unit;
 		integer np, g, imm, rd, ln;
 		reg [511:0] dv;
@@ -150,7 +150,7 @@ module atg_su_lda_tb;
 		end else if (s8_valid && (s8_warp !== m[26:25] || s8_grp !== m[24:23] ||
 		    s8_rd !== m[22:16] || s8_lanes !== m[7:0] || s8_data !== q_data[cyc % 1024][255:0])) begin
 			errors = errors + 1;
-			$display("FAIL atg_su_lda.rw: ZYBO result at cycle %0d", cyc);
+			$display("FAIL atg_su_lda.rw: NPHYS 8 result at cycle %0d", cyc);
 		end else if (s16_valid && (s16_warp !== m[26:25] || s16_grp !== m[23] ||
 		    s16_rd !== m[22:16] || s16_lanes !== m[15:0] || s16_data !== q_data[cyc % 1024])) begin
 			errors = errors + 1;

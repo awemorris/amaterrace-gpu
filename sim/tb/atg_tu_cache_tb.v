@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_tu_cache_tb: atg_tu_cache with 32-byte (ZYBO) and 64-byte (KC705)
+ * atg_tu_cache_tb: atg_tu_cache with 32-byte and 64-byte (KC705)
  * lines against a memory model on its AMB port (random request accept,
  * random response latency, one error region: 0x00E00000-0x00EFFFFF).
  * Each quad's texels must be the memory's words at its addresses (only

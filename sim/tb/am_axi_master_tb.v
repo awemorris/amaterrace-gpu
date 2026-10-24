@@ -7,8 +7,8 @@
 
 /*
  * am_axi_master_tb: am_axi_master against axi_mem (random ready and
- * latency, protocol checks) in two shapes, the ZYBO's (32-byte lines,
- * 64-bit AXI, 4 beats) and the KC705's (64-byte lines, 512-bit AXI,
+ * latency, protocol checks) in two shapes, 32-byte lines on
+ * 64-bit AXI (4 beats) and the KC705's (64-byte lines, 512-bit AXI,
  * 1 beat).  Random line reads and byte-masked writes are compared with a
  * reference copy of memory; reads and writes must each come back in order
  * with their user bits; addresses in the error region answer error.
@@ -261,13 +261,13 @@ endmodule
 module am_axi_master_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
-	wire done_zybo, done_kc705;
-	wire [31:0] err_zybo, err_kc705;
+	wire done_l32, done_kc705;
+	wire [31:0] err_l32, err_kc705;
 
 	always #5 clk = !clk;
 
-	am_axi_master_harness #(.LINE_BYTES(32), .LINE_SHIFT(5), .DATA_W(64), .SEED(11)) zybo (
-		.clk(clk), .rst_n(rst_n), .finished(done_zybo), .errors(err_zybo)
+	am_axi_master_harness #(.LINE_BYTES(32), .LINE_SHIFT(5), .DATA_W(64), .SEED(11)) l32 (
+		.clk(clk), .rst_n(rst_n), .finished(done_l32), .errors(err_l32)
 	);
 	am_axi_master_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .SEED(23)) kc705 (
 		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
@@ -276,11 +276,11 @@ module am_axi_master_tb;
 	initial begin
 		repeat (4) @(posedge clk);
 		rst_n <= 1'b1;
-		wait (done_zybo && done_kc705);
-		if (err_zybo == 0 && err_kc705 == 0)
+		wait (done_l32 && done_kc705);
+		if (err_l32 == 0 && err_kc705 == 0)
 			$display("PASS am_axi_master");
 		else
-			$display("FAIL am_axi_master: %0d + %0d errors", err_zybo, err_kc705);
+			$display("FAIL am_axi_master: %0d + %0d errors", err_l32, err_kc705);
 		$finish;
 	end
 

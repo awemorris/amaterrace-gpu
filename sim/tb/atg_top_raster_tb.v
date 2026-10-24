@@ -12,7 +12,7 @@
  * raster state, overlapping triangles by DRAW_RAW with DEBUG_COLOR, depth
  * LESS with write, the last ones blended over, a final FENCE), and the
  * colour and depth buffers must equal the reference model's
- * (tools/rxmodel.py) word for word.  In the ZYBO's shape and the KC705's.
+ * (tools/rxmodel.py) word for word.  In the KC705's shape.
  */
 
 `timescale 1ns / 1ps
@@ -23,27 +23,23 @@
 module atg_top_raster_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
-	wire done_zybo, done_kc705;
-	wire [31:0] err_zybo, err_kc705;
+	wire done_kc705;
+	wire [31:0] err_kc705;
 
 	always #5 clk = !clk;
-	`include "tb_shape.vh"
 
-	atg_top_scene_harness #(.LINE_BYTES(32), .LINE_SHIFT(5), .DATA_W(64), .NAME("zybo"), .SEED(5)) zybo (
-		.clk(clk_zybo), .rst_n(rst_n), .finished(done_zybo), .errors(err_zybo)
-	);
 	atg_top_scene_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"), .SEED(6)) kc705 (
-		.clk(clk_kc705), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
+		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
 	);
 
 	initial begin
 		repeat (4) @(posedge clk);
 		rst_n <= 1'b1;
-		wait ((done_zybo || !run_zybo) && (done_kc705 || !run_kc705));
-		if (err_zybo == 0 && err_kc705 == 0)
+		wait (done_kc705);
+		if (err_kc705 == 0)
 			$display("PASS atg_top_raster");
 		else
-			$display("FAIL atg_top_raster: %0d + %0d errors", err_zybo, err_kc705);
+			$display("FAIL atg_top_raster: %0d errors", err_kc705);
 		$finish;
 	end
 

@@ -1,25 +1,25 @@
 # atg_dc
 
-RTL: `rtl/dc/atg_dc.v`.  Parent: the board tops (atg_zybo_dc; atg_kc705_raster next to atg_top).  Implemented in: p005, p012.
+RTL: `rtl/dc/atg_dc.v`.  Parent: the board top (atg_kc705_raster, next to atg_top).  Implemented in: p005, p012.
 
 ## 1. Purpose and place
 
-The display controller IP (design §5): registers and DMA in gclk, a pixel FIFO (am_afifo) to the pixel clock, timing generator, VGA and TMDS encoders and a parallel output, optional I2C; its own AMB client port (ZYBO: to its own am_axi_master on HP1; KC705: an MC client of atg_top).
+The display controller IP (design §5): registers and DMA in gclk, a pixel FIFO (am_afifo) to the pixel clock, timing generator, a TMDS encoder and a parallel output, optional I2C; its own AMB client port (an MC client of atg_top; STANDALONE: to its own am_axi_master).
 
-Children: `atg_dc_regs`, `atg_dc_dma`, `atg_dc_tgen`, `atg_dc_vga`, `atg_dc_tmds`, `atg_dc_ycc` (PX_FMT = 1), `atg_dc_i2c`, `am_afifo`, `am_sync`.
+Children: `atg_dc_regs`, `atg_dc_dma`, `atg_dc_tgen`, `atg_dc_tmds`, `atg_dc_ycc` (PX_FMT = 1), `atg_dc_i2c`, `am_afifo`, `am_sync`.
 
 ## 2. Parameters
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `STANDALONE` | `0` | 1: a DC-only GHCI device (ZYBO bitstream 2): GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000). |
+| `STANDALONE` | `0` | 1: a DC-only GHCI device: GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000). |
 | `BASE` | `17'h10000` | Window of the DISP registers when STANDALONE = 0. |
 | `HAS_I2C` | `0` | ADV7511 I2C master present (KC705, DC_CAPS[2]). |
 | `ADDR_W` | `32` | GPU address width. |
-| `LINE_BYTES` | `32` | AMB line size: 32 (ZYBO) or 64 (KC705). |
+| `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 | `FIFO_LOG2` | `9` | Pixel FIFO depth (2 lines of 640 need ≥ 1280 → 11 for 720p; 9 is the stub default). |
-| `PX_FMT` | `0` | The parallel output `px_*`: 0 RGB888 (`px_rgb` = {r, g, b}, same cycle as VGA/TMDS); 1 YCbCr 4:2:2 16-bit through atg_dc_ycc (`px_rgb` = {8'd0, C, Y}, `px_de/hs/vs` two pclk later): the KC705's ADV7511 (p012). |
+| `PX_FMT` | `0` | The parallel output `px_*`: 0 RGB888 (`px_rgb` = {r, g, b}, same cycle as TMDS); 1 YCbCr 4:2:2 16-bit through atg_dc_ycc (`px_rgb` = {8'd0, C, Y}, `px_de/hs/vs` two pclk later): the KC705's ADV7511 (p012). |
 
 ## 3. Ports
 
@@ -56,11 +56,6 @@ Clock/reset domain: clk (gclk) and pclk as marked unless the row says otherwise.
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 | **Video outputs (pclk)** | | | |
-| `vga_r` | out | 5 | (pclk) VGA red. |
-| `vga_g` | out | 6 | (pclk) VGA green. |
-| `vga_b` | out | 5 | (pclk) VGA blue. |
-| `vga_hs` | out | 1 | (pclk) VGA HSYNC. |
-| `vga_vs` | out | 1 | (pclk) VGA VSYNC. |
 | `tmds` | out | 30 | (pclk) TMDS symbols for the board's serialisers. |
 | `px_rgb` | out | 24 | (pclk) Parallel pixel (ADV7511): RGB888, or {8'd0, C, Y} with PX_FMT = 1. |
 | `px_de` | out | 1 | (pclk) DE. |
@@ -102,5 +97,6 @@ design §5, §1.3 (pclk, pclk5).
 
 Wiring written in WS288 p023, completed in p005 (children implemented except atg_dc_i2c, p012).
 WS288 p012 part A: atg_dc_i2c implemented; parameter `PX_FMT` and the child atg_dc_ycc added for
-the KC705's 16-bit ADV7511 input (Q1 to ACK).  VGA and TMDS stay in the RTL; the KC705 top leaves
-them unconnected (the tools remove them; user 2026-10-24: VGA is no longer synthesised).
+the KC705's 16-bit ADV7511 input (Q1 to ACK).  TMDS stays in the RTL; the KC705 top leaves it
+unconnected (the tools remove it).  The VGA output (atg_dc_vga) was taken out with the ZYBO
+target (2026-10-25; the source is kept under `docs/old/`): DC_CAPS[0] is 0.
