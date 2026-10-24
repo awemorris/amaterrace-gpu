@@ -119,26 +119,36 @@ module atg_su_dec_tabc (
 		7'b0101011: begin	/* custom-1: texture, I/O, lanes */
 			case (f3)
 			3'd0, 3'd1, 3'd2: begin
+				/* texl funct7: [0] .c, [1] gather (texg, no rs2), [3:2] its
+				 * component; texb: [0] .c or [4] the LOD query (texqlod, no
+				 * rs2); texf: 0.  The modifiers become TEX op bits [6:2]. */
 				unit = ATG_UNIT_TEX;
-				op = {6'd0, f3[1:0]};
+				op = {1'b0, f3 == 3'd1 && f7[4], f7[3:2], f7[1], f7[0], f3[1:0]};
 				cls = ATG_CLS_T;
 				use1 = 1'b1;
-				use2 = 1'b1;
+				use2 = !(f3 == 3'd0 && f7[1]) && !(f3 == 3'd1 && f7[4]);
+				use3 = f7[0];
 				wrd = 1'b1;
 				pair = 1'b1;
 				side = 1'b1;
 				tex = 1'b1;
-				def = f7 == 7'd0 && !sub[4];
+				case (f3)
+				3'd0: def = f7[6:4] == 3'd0 && (f7[3:2] == 2'd0 || (f7[1] && !f7[0]));
+				3'd1: def = f7 == 7'd0 || f7 == 7'd1 || f7 == 7'h10;
+				default: def = f7 == 7'd0;
+				endcase
+				def = def && !sub[4];
 			end
 			3'd3: begin
+				/* texsz: imm 0; texsz.l (the level count, no rs1): imm 1 */
 				fmt = FM_I;
 				unit = ATG_UNIT_TEX;
-				op = ATG_TEX_TEXSZ;
+				op = ATG_TEX_TEXSZ | {1'b0, rs2f[0], 6'd0};
 				cls = ATG_CLS_T;
-				use1 = 1'b1;
+				use1 = !rs2f[0];
 				wrd = 1'b1;
 				side = 1'b1;
-				def = !sub[4];
+				def = !sub[4] && f7 == 7'd0 && rs2f[4:1] == 4'd0;
 			end
 			3'd4: begin
 				fmt = FM_S;

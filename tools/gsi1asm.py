@@ -105,9 +105,22 @@ ins("fence", "I", OPC["C0"], 4, None, U_LSU, 3, C_A, "i")
 ins("bar", "R", OPC["C0"], 5, 0, U_EXEC, 14, C_A, "")
 ins("wait", "I", OPC["C0"], 6, None, U_CTL, 0, C_A, "w")
 ins("end", "R", OPC["C0"], 7, 0, U_EXEC, 13, C_A, "")
-for n, f3, op in [("texl", 0, 0), ("texb", 1, 1), ("texf", 2, 2)]:
-    ins(n, "R", OPC["C1"], f3, 0, U_TEX, op, C_T, "d12t", side=True, pair=True, ndst=4)
-ins("texsz", "I", OPC["C1"], 3, None, U_TEX, 3, C_T, "d1t", side=True)
+# Texture (docs/ghci.md section 12.9).  The modifiers are in funct7 of texl and
+# texb and become bits of the TEX op: [0] compare (.c: Dref in rs1+2, the uop's
+# rs3, read in a second operand pass) -> op[2]; texl [1] gather (texg: the
+# footprint's four texels, component funct7[3:2], no rs2) -> op[3], op[5:4];
+# texb [4] the LOD query (texqlod, no rs2) -> op[6].  texsz's immediate 1
+# (texsz.l) returns the level count -> op[6].
+for n, f3, f7, op, ops in [("texl", 0, 0, 0, "d12t"), ("texb", 1, 0, 1, "d12t"),
+                           ("texf", 2, 0, 2, "d12t"), ("texl.c", 0, 1, 4, "d12t"),
+                           ("texb.c", 1, 1, 5, "d12t"), ("texg.r", 0, 2, 8, "d1t"),
+                           ("texg.g", 0, 6, 0x18, "d1t"), ("texg.b", 0, 10, 0x28, "d1t"),
+                           ("texg.a", 0, 14, 0x38, "d1t"), ("texg.c", 0, 3, 0x0C, "d1t"),
+                           ("texqlod", 1, 0x10, 0x41, "d1t")]:
+    ins(n, "R", OPC["C1"], f3, f7, U_TEX, op, C_T, ops, side=True, pair=True, ndst=4,
+        cmp=bool(f7 & 1))
+ins("texsz", "I", OPC["C1"], 3, None, U_TEX, 3, C_T, "d1t", side=True, immv=0)
+ins("texsz.l", "I", OPC["C1"], 3, None, U_TEX, 0x43, C_T, "dt", side=True, immv=1)
 ins("exp", "S", OPC["C1"], 4, None, U_EXP, 0, C_A, "2x", side=True)
 ins("lda", "I", OPC["C1"], 5, None, U_LDA, 0, C_A, "di")
 for n, s in [("qdx", 0), ("qdy", 1), ("qswap1", 2), ("qswap2", 3), ("qswap3", 4), ("qbcast", 5)]:
@@ -193,6 +206,8 @@ def match(w):
             continue
         if "rs2" in e and d["rs2f"] != e["rs2"]:
             continue
+        if "immv" in e and bits(d["w0"], 20, 12) != e["immv"]:
+            continue
         if "subv" in e and d["sub"] != e["subv"]:
             continue
         if e.get("movi"):
@@ -232,6 +247,15 @@ def decode(w, cfg):
         n, e = m
         u1, u2, u3, wrd = uses(e, d)
         pair = bool(e.get("pair"))
+        if e.get("cmp"):
+            # Dref in rs1+2: the uop's rs3, range-checked like the pair.
+            d = dict(d, rs3=(d["rs1"] + 2) & 127)
+            u3 = True
+            if d["rs1"] < 64:
+                if d["rs1"] + 2 >= min(cfg["NREGS"], 63):
+                    ill = True
+            elif d["rs1"] in (94, 95, 126, 127):
+                ill = True
         if e.get("sub") == "atom" and d["sub"] > 10:
             ill = True
         if e["unit"] == U_TEX and d["sub"] > 15:
@@ -417,7 +441,9 @@ def assemble_one(mn, args, pc, labels):
         w0 = (rs3 & 31) << 27 | (rs2 & 31) << 20 | (rs1 & 31) << 15 | f3 << 12 | \
             (rd & 31) << 7 | e["opc"]
     elif fmt == "I":
-        if e.get("shift"):
+        if "immv" in e:
+            lo, hi = e["immv"], 0
+        elif e.get("shift"):
             lo, hi = (imm & 31) | e["f7"] << 5, 0
         else:
             lo, hi = split_imm(imm)

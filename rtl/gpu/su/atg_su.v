@@ -88,10 +88,10 @@ module atg_su #(
 	/* TU */
 	output wire tx_valid,
 	input wire tx_ready,
-	output wire [1:0] tx_op,
+	output wire [7:0] tx_op,
 	output wire [3:0] tx_slot,
 	output wire [3:0] tx_mask,
-	output wire [383:0] tx_coord,
+	output wire [511:0] tx_coord,
 	output wire [15:0] tx_tag,
 	output wire tx_last,
 	input wire tr_valid,

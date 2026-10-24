@@ -64,6 +64,7 @@ module atg_rop_ds #(
 	input wire rsp_error
 );
 	`include "atg_rop_unorm8.vh"
+	`include "atg_depth.vh"
 	`include "ghci_regs.vh"
 
 	localparam WPL = LINE_BYTES / 4;	/* words per line */
@@ -92,51 +93,7 @@ module atg_rop_ds #(
 	wire f32 = depth[6];
 	wire [2:0] func = depth[4:2];
 
-	/* fp32 in [0, 1] to unorm24: RNE(z x (2^24 - 1)); NaN, <= 0 to 0, >= 1 to all ones. */
-	function [23:0] f2u24;
-		input [31:0] f;
-		reg [47:0] p;
-		reg [71:0] z;
-		reg [4:0] t;
-		begin
-			p = {1'b1, f[22:0], 24'd0} - {24'd0, 1'b1, f[22:0]};
-			t = 5'd30 - f[27:23];	/* 126 - e for e in 102..126 */
-			z = {p, 24'd0} >> t;
-			if (f[30:23] == 8'd0 || f[31] || (f[30:23] == 8'hFF && f[22:0] != 23'd0) ||
-			    f[30:23] < 8'd102)
-				f2u24 = 24'd0;
-			else if (f[30:23] >= 8'd127)
-				f2u24 = 24'hFFFFFF;
-			else
-				f2u24 = z[71:48] + {23'd0, z[47] && (z[46:0] != 47'd0 || z[48])};
-		end
-	endfunction
-
-	/* fp32 order key (-0 = +0) and the compare; NaN passes only NOT_EQUAL/ALWAYS. */
-	function [32:0] fkey;
-		input [31:0] f;
-		fkey = f[30:23] == 8'd0 ? 33'd0 : f[31] ? -{2'b00, f[30:0]} : {2'b00, f[30:0]};
-	endfunction
-	function cmp;
-		input [2:0] fn;
-		input [32:0] a, b;	/* signed keys or unorm24 */
-		input nan;
-		reg lt, eq;
-		begin
-			lt = $signed(a) < $signed(b);
-			eq = a == b;
-			case (fn)
-			3'd0: cmp = 1'b0;
-			3'd1: cmp = !nan && lt;
-			3'd2: cmp = !nan && eq;
-			3'd3: cmp = !nan && (lt || eq);
-			3'd4: cmp = !nan && !lt && !eq;
-			3'd5: cmp = nan || !eq;
-			3'd6: cmp = !nan && !lt;
-			default: cmp = 1'b1;
-			endcase
-		end
-	endfunction
+	/* f2u24, fkey and the compare: include/atg_depth.vh (shared with the TU). */
 
 	localparam [2:0] S_IDLE = 3'd0, S_ROW = 3'd1, S_RD = 3'd2, S_TEST = 3'd3, S_WR = 3'd4,
 		S_OUT = 3'd5;
@@ -156,9 +113,9 @@ module atg_rop_ds #(
 	wire [31:0] stored = line[32 * wi +: 32];
 	wire nan = (zl[30:23] == 8'hFF && zl[22:0] != 23'd0) ||
 		(stored[30:23] == 8'hFF && stored[22:0] != 23'd0);
-	wire [23:0] zu = f2u24(zl);
-	wire pass = f32 ? cmp(func, fkey(zl), fkey(stored), nan) :
-		cmp(func, {9'd0, zu}, {9'd0, stored[23:0]}, 1'b0);
+	wire [23:0] zu = atg_depth_u24(zl);
+	wire pass = f32 ? atg_depth_pass(func, atg_depth_key(zl), atg_depth_key(stored), nan) :
+		atg_depth_pass(func, {9'd0, zu}, {9'd0, stored[23:0]}, 1'b0);
 	wire [31:0] dbgf [0:3];
 	assign dbgf[0] = atg_rop_unorm8(dbg_color[7:0]);
 	assign dbgf[1] = atg_rop_unorm8(dbg_color[15:8]);

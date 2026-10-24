@@ -11,8 +11,13 @@
  * Quads go in with random gaps and tr_ready is random (seeded); tr_data,
  * tr_tag and tr_last of every quad are checked in order.  Groups:
  * "nearest" (every byte value in every channel, both formats, texsz,
- * texf, lane masks) and "bilinear" (random texels and weights, the end
- * weights 0, 1, 128, 255).
+ * texf, lane masks), "bilinear" (random texels and weights, the end
+ * weights 0, 1, 128, 255), "trilinear" (pairs of passes: the first, an H
+ * line, must return nothing, the second the blend), "depth" (D24 and D32F
+ * without compare), "compare" (every compare op, both depth formats,
+ * references at and next to the texels, NaN, nearest, bilinear and
+ * trilinear), "gather" (components of the four texels: colour, depth,
+ * compare), "query" (texqlod's two values, texsz.l).
  */
 
 `timescale 1ns / 1ps
@@ -25,10 +30,10 @@ module atg_tu_filter_tb;
 
 	reg tc_valid = 1'b0;
 	reg [511:0] tc_texels = 0;
-	reg [63:0] tc_wts = 0;
+	reg [95:0] tc_wts = 0;
 	reg [15:0] tc_tag = 0;
 	reg [3:0] tc_mask = 0;
-	reg [7:0] tc_ctl = 0;
+	reg [23:0] tc_ctl = 0;
 	reg [127:0] tc_value = 0;
 	reg tc_last = 1'b0;
 	reg tr_ready = 1'b0;
@@ -44,9 +49,9 @@ module atg_tu_filter_tb;
 	integer fd, code, seed, errs, gerrs, nq, tmo, w;
 	reg [8*10-1:0] kind, gname;
 	reg [511:0] tex, x_data;
-	reg [63:0] wts;
+	reg [95:0] wts;
 	reg [3:0] mask;
-	reg [7:0] ctl;
+	reg [23:0] ctl;
 	reg [127:0] val;
 	reg [15:0] tag;
 	reg last;
@@ -70,6 +75,32 @@ module atg_tu_filter_tb;
 			code = $fscanf(fd, "%s", kind);
 			if (code != 1) begin
 				/* end of file */
+			end else if (kind == "H") begin
+				/* A first level: taken, nothing returned. */
+				code = $fscanf(fd, "%h %h %h %h %h\n", tex, wts, mask, ctl, val);
+				while (($random(seed) & 3) == 0)
+					@(posedge clk);
+				tc_valid <= 1'b1;
+				tc_texels <= tex;
+				tc_wts <= wts;
+				tc_mask <= mask;
+				tc_ctl <= ctl;
+				tc_value <= val;
+				tc_tag <= $random(seed);
+				tc_last <= $random(seed);
+				@(posedge clk);
+				while (!tc_ready)
+					@(posedge clk);
+				tc_valid <= 1'b0;
+				tc_texels <= {16{$random(seed)}};
+				tc_wts <= {3{$random(seed)}};
+				repeat (8) begin
+					@(posedge clk);
+					if (tr_valid) begin
+						$display("FAIL atg_tu_filter: quad %0d: a first level returned", nq);
+						gerrs = gerrs + 1;
+					end
+				end
 			end else if (kind == "F") begin
 				code = $fscanf(fd, "%h %h %h %h %h %h %h %h\n", tex, wts, mask, ctl, val, tag,
 					last, x_data);
@@ -88,7 +119,8 @@ module atg_tu_filter_tb;
 					@(posedge clk);
 				tc_valid <= 1'b0;
 				tc_texels <= {16{$random(seed)}};
-				tc_wts <= {2{$random(seed)}};
+				tc_wts <= {3{$random(seed)}};
+				tc_value <= {4{$random(seed)}};
 				tmo = 0;
 				while (!tr_valid && tmo < 100) begin
 					@(posedge clk);

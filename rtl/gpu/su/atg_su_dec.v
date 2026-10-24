@@ -58,7 +58,7 @@ module atg_su_dec #(
 	wire [6:0] rd = {w1[1:0], w0[11:7]};
 	wire [6:0] rs1 = {w1[3:2], w0[19:15]};
 	wire [6:0] rs2 = {w1[5:4], w0[24:20]};
-	wire [6:0] rs3 = {w1[7:6], w0[31:27]};
+	wire [6:0] rs3f = {w1[7:6], w0[31:27]};
 	wire [31:0] hi = {{12{w1[31]}}, w1[31:22], 10'd0} << 2;
 	wire [31:0] imm_i = {{20{w0[31]}}, w0[31:20]} + hi;
 	wire [31:0] imm_s = {{20{w0[31]}}, w0[31:25], w0[11:7]} + hi;
@@ -99,6 +99,11 @@ module atg_su_dec #(
 		end
 	endfunction
 
+	/* A texture .c form reads Dref from rs1+2 as its rs3. */
+	wire tcmp = tex && op[ATG_TEX_CFORM];
+	wire [6:0] rs3 = tcmp ? rs1 + 7'd2 : rs3f;
+	wire cmp_bad = tcmp && (rs1 < 7'd64 ? ({25'd0, rs1} + 32'd2 >= NREGS || rs1 >= 7'd61) :
+		(rs1 == 7'd94 || rs1 == 7'd95 || rs1 == 7'd126 || rs1 == 7'd127));
 	wire [2:0] ndst = !wrd ? 3'd0 : tex ? 3'd4 : 3'd1;
 	wire [7:0] rd_end = {1'b0, rd} + {5'd0, ndst};
 	wire pair_bad = pair && (rs1 < 7'd64 ? ({25'd0, rs1} + 32'd1 >= NREGS || rs1 >= 7'd62)
@@ -109,7 +114,7 @@ module atg_su_dec #(
 	wire ill = w0[1:0] != 2'b11 || !def || (need_pk && PACKED == 0) ||
 		(need_sg && SUBGROUP == 0) || (need_sa && HAS_SA == 0) ||
 		(use1 && src_bad(rs1)) || (use2 && src_bad(rs2)) || (use3 && src_bad(rs3)) ||
-		pair_bad || dst_bad;
+		pair_bad || cmp_bad || dst_bad;
 	wire rqs = (use1 && rs1 == 7'd63) || (use2 && rs2 == 7'd63) || (use3 && rs3 == 7'd63);
 
 	reg [31:0] imm;

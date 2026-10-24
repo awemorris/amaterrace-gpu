@@ -96,10 +96,10 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **TU** | | | |
 | `tx_valid` | out | 1 | Request quad. |
 | `tx_ready` | in | 1 | Taken. |
-| `tx_op` | out | 2 | Op. |
+| `tx_op` | out | 8 | Op and its modifiers (atg_su_tex). |
 | `tx_slot` | out | 4 | Slot. |
 | `tx_mask` | out | 4 | Lanes. |
-| `tx_coord` | out | 384 | Coordinates. |
+| `tx_coord` | out | 512 | Coordinates, 4 words a lane (atg_su_tex). |
 | `tx_tag` | out | 16 | Tag. |
 | `tx_last` | out | 1 | Last. |
 | `tr_valid` | in | 1 | Return quad. |
