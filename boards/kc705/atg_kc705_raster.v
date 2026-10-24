@@ -184,6 +184,7 @@ module atg_kc705_raster #(
 		.SU_SBE_W(3),
 		.SU_PACKED(1),
 		.SU_SUBGROUP(1),
+		.SU_FRAG_RESERVE(2),
 		.SU_LDS_BYTES(16384),
 		.SU_VARY_WORDS(32)
 	) gpu (

@@ -6,7 +6,8 @@
 # memory (NAME.mexp).  sub.s uses the subgroup instructions: its model runs
 # with --subgroup, and once more without for the ISA faults that an SU
 # without SUBGROUP must report (sub.fault: "slot pc" per warp; sub.fexp: the
-# registers written before them).  rand.s and frand.s are generated first (gen_rand.py,
+# registers written before them).  gfx.s runs as graphics warps (below).
+# rand.s and frand.s are generated first (gen_rand.py,
 # gen_frand.py).  The images are committed, so sim/run.sh needs no Python;
 # run this after changing a program.  Lanes and workgroups per program: the
 # table below (the same as in sim/tb/atg_su_tb.v).
@@ -33,3 +34,14 @@ for p in alu:128:1 branch:100:1 rand:128:1 frand:128:1 mem:128:1 vadd:128:2 redu
 done
 timeout 60 python3 -I "$root/tools/gsi1model.py" "$src/sub.s" --lanes 100 --data "$src/sub.dat" \
 	-o "$src/sub.fexp" --fault-out "$src/sub.fault"
+# The graphics warps of sim/tb/atg_su_gfx_tb.v: gfx.s with the warps and
+# registers of gen_gfx.py (PACKED and SUBGROUP), and the loop's programs.
+timeout 60 python3 -I "$src/gen_gfx.py" "$src/gfx.warps" "$src/gfx.init"
+timeout 60 python3 -I "$src/gen_data.py" gfx "$src/gfx.dat"
+timeout 60 python3 -I "$root/tools/gsi1asm.py" "$src/gfx.s" -o "$src/gfx.hex"
+timeout 300 python3 -I "$root/tools/gsi1model.py" "$src/gfx.s" --warps "$src/gfx.warps" \
+	--init "$src/gfx.init" --packed --subgroup --data "$src/gfx.dat" -o "$src/gfx.exp" \
+	--mem-out "$src/gfx.mexp" --exp-out "$src/gfx.xexp" --pt-out "$src/gfx.pexp"
+for n in gfxv gfxf; do
+	timeout 60 python3 -I "$root/tools/gsi1asm.py" "$src/$n.s" -o "$src/$n.hex"
+done

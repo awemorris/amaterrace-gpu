@@ -85,7 +85,7 @@ atg_cpu when present, to constants otherwise).  `tools/lint.sh` lints the HAS_CP
 **WS288 p023 (P1), second step**: all blocks of design §7.6 behind parameters — `NSU`,
 `HAS_VF`, `HAS_RX`, `HAS_TU`, `HAS_ROP`, `HAS_SA` (reserved, 0 in v1), `EXT_CLIENT`,
 `HAS_JTAG` (also lists the DBG capability), `HAS_DISP` (WS288 p012: the DC's registers at +0x10000, CAPS[3] and the DISP capability), `ROP_STENCIL` and the SU shape `SU_NPHYS`, `SU_NWARPS`, `SU_WARP_W`, `SU_GRP_W`,
-`SU_NREGS`, `SU_SB_ENTRIES`, `SU_SBE_W`, `SU_PACKED`, `SU_SUBGROUP`, `SU_LDS_BYTES`,
+`SU_NREGS`, `SU_SB_ENTRIES`, `SU_SBE_W`, `SU_PACKED`, `SU_SUBGROUP`, `SU_FRAG_RESERVE`, `SU_LDS_BYTES`,
 `SU_VARY_WORDS`; defaults keep bitstream 1.  MC clients: 0 CP, 1 BLT, then CPU, VF, TU, ROP,
 the atomic unit `atg_mc_atom` (when NSU > 0), SA, the outside client (EXT_CLIENT, high priority
 with the CP), then 2 per SU (D$, I$+constants).  The graphics links (VF↔SU, RX↔SU PT and

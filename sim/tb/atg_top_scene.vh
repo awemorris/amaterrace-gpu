@@ -28,7 +28,17 @@ module atg_top_scene_harness #(
 	parameter HAS_TU = 0,
 	parameter SU_NPHYS = 8,
 	parameter SU_GRP_W = 2,
-	parameter SU_VARY_WORDS = 16
+	parameter SU_VARY_WORDS = 16,
+	/* the rest of the SU shape and the ROP (atg_top's defaults; the KC705
+	 * board top's values in atg_top_shade_tb's kc705 instance) */
+	parameter SU_NREGS = 32,
+	parameter SU_SB_ENTRIES = 4,
+	parameter SU_SBE_W = 2,
+	parameter SU_PACKED = 0,
+	parameter SU_SUBGROUP = 0,
+	parameter SU_FRAG_RESERVE = 1,
+	parameter SU_LDS_BYTES = 4096,
+	parameter ROP_STENCIL = 0
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -77,7 +87,10 @@ module atg_top_scene_harness #(
 
 	atg_top #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .DATA_W(DATA_W),
 		.HAS_RX(1), .HAS_ROP(1), .HAS_VF(HAS_VF), .NSU(NSU), .HAS_TU(HAS_TU), .SU_NPHYS(SU_NPHYS),
-		.SU_GRP_W(SU_GRP_W), .SU_VARY_WORDS(SU_VARY_WORDS)) dut (
+		.SU_GRP_W(SU_GRP_W), .SU_VARY_WORDS(SU_VARY_WORDS), .SU_NREGS(SU_NREGS),
+		.SU_SB_ENTRIES(SU_SB_ENTRIES), .SU_SBE_W(SU_SBE_W), .SU_PACKED(SU_PACKED),
+		.SU_SUBGROUP(SU_SUBGROUP), .SU_FRAG_RESERVE(SU_FRAG_RESERVE),
+		.SU_LDS_BYTES(SU_LDS_BYTES), .ROP_STENCIL(ROP_STENCIL)) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.s_awaddr(h_awaddr), .s_awid(h_awid), .s_awvalid(h_awvalid), .s_awready(h_awready),
 		.s_wdata(h_wdata), .s_wstrb(h_wstrb), .s_wlast(h_wlast), .s_wvalid(h_wvalid),
