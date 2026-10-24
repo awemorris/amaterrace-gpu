@@ -545,10 +545,10 @@ TEX_IMAGE:
 | Bits | Meaning |
 | --- | --- |
 | [3:0] | The number of mip levels (0 reads as 1, above 13 as 13) |
-| [7:4] | Format: 0 RGBA8 UNORM, 1 BGRA8 UNORM, 2 D24 (X8_D24_UNORM_PACK32, the depth aspect of D24_UNORM_S8_UINT), 3 D32_SFLOAT; 4-15 reserved (read as 0) |
+| [7:4] | Format: 0 RGBA8 UNORM, 1 BGRA8 UNORM, 2 D24 (X8_D24_UNORM_PACK32, the depth aspect of D24_UNORM_S8_UINT), 3 D32_SFLOAT; 4 reserved for multisampling (RGB565); 5-15 reserved (read as 0) |
 | [8] | Layout: 0 linear rows, 1 4x4 tiles (CAPS[11]) |
 | [11:9] | View type: 0 2D (1D: height 1), 1 2D array (1D array: height 1), 2 3D, 3 cube; 4-7 reserved (read as 2D; a cube array would be 4) |
-| [15:12] | log2 of the samples per texel; reserved for multisampled images, 0 |
+| [15:12] | log2 of the samples per texel (0 one, 2 four); reserved for multisampling, 0 |
 | [31:16] | The depth of level 0 (3D) or the number of layers (2D array); 0 reads as 1; not looked at for the other types |
 
 TEX_SAMPLER:
@@ -1118,7 +1118,9 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   only. `texsz.l rd` (immediate 1, no rs1): writes the level count
   (TEX_IMAGE[3:0] as read) to rd. `texsz.d rd, rs1` (immediate 2): writes
   the depth of level rs1 of a 3D image, the layer count of a 2D array, 1
-  otherwise (draft, CAPS[26]; QuerySizeLod's third component).
+  otherwise (draft, CAPS[26]; QuerySizeLod's third component).  Immediate
+  3 (`texsz.s`, the sample count) is reserved for multisampling; other
+  immediates are ISA faults.
 - **Texel offsets** (ConstOffset, draft, CAPS[26]): word1 [25:22], [29:26]
   and [13:10] of `texl`, `texb`, `texf` and `texg` (the R forms, whose
   imm_hi and float source modifiers are otherwise unused) are the signed

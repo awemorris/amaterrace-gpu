@@ -575,6 +575,12 @@ def dec_table(path, seed=1):
                 w1 = (w1 & ~(31 << 17)) | rnd.randrange(11) << 17
             if e["unit"] == U_TEX and rnd.random() < 0.8:
                 w1 &= ~(16 << 17)
+            if e["unit"] == U_TEX and rnd.random() < 0.5:
+                # rs1 at the ends of the GPRs, constants and specials (rs1+1..rs1+3)
+                rs1 = rnd.choice([28, 29, 30, 31, 59, 60, 61, 62, 92, 93, 94, 95, 124, 125, 126,
+                                  127, rnd.randrange(128)])
+                w0 = (w0 & ~(31 << 15)) | (rs1 & 31) << 15
+                w1 = (w1 & ~(3 << 2)) | (rs1 >> 5) << 2
             vec.append(w0 | w1 << 32)
     for _ in range(2000):
         vec.append(rnd.getrandbits(64))
