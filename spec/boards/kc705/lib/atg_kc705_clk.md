@@ -31,7 +31,12 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Stub until p012 (IBUFDS, MMCME2_ADV, BUFG, BUFGMUX).
+IBUFDS + BUFG: ref_clk (200 MHz, the MIG's system clock, taken without the MIG's own buffer).
+Three clock managers from ref_clk: gclk MMCM (DIVCLK 1, MULT 5, O0 10: 100 MHz, BUFG); 640×480
+PLL (DIVCLK 5, MULT 34, O0 54: 25.185 MHz); 720p MMCM (DIVCLK 10, MULT 59.375, O0 16: 74.21875
+MHz); BUFGMUX by pclk_sel.  No 5 × pixel clock (no TMDS on the KC705).  Each reset = CPU_RESET
+released and the domain's clock manager locked, through am_sync (unreset) in the domain.  The
+simulation model `sim/models/kc705/atg_kc705_clk.v` (same ports) makes the same frequencies.
 
 ## 5. State machine
 
@@ -51,8 +56,10 @@ No unit testbench (wiring only): covered by the parent's testbench and `tools/li
 
 ## 9. References
 
-design §1.3 (KC705 column).
+design §1.3 (KC705 column), §5.1 (PCLK_SEL).  Values referenced: UG472, DS182 (the VCO and PFD ranges of the -2 grade, not re-checked in p012).
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p012 part A (lint; simulated only as its model).  MMCME2_BASE and
+PLLE2_BASE instead of the stub text's MMCME2_ADV (no DRP yet: other modes come later with it).
+Unverified until part B: the settings against DS182, the BUFGMUX of a PLL and an MMCM output.

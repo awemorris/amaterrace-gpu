@@ -8,10 +8,13 @@
 /*
  * atg_kc705_jtag: The KC705's JTAG register bridge: BSCANE2 (USER2) and
  * am_jtag_regs, giving the second register-bus master of atg_top (design
- * §4.4).
+ * §4.4).  See spec/boards/kc705/lib/atg_kc705_jtag.md.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/boards/kc705/lib/atg_kc705_jtag.md.
+ * BSCANE2 with JTAG_CHAIN 2 is the USER2 instruction (IR 0x03 on the 7
+ * Series; Values referenced: UG470).  Its TCK goes through a BUFG (as in
+ * zedBSD's KC705 bringup, which runs the same primitive on USER1); the XDC
+ * declares that net as the 30 MHz tck clock.  In simulation the BSCANE2
+ * is sim/models/xilinx/BSCANE2.v, whose tasks walk the TAP.
  */
 
 `timescale 1ns / 1ps
@@ -29,17 +32,22 @@ module atg_kc705_jtag (
 	input wire [31:0] j_rdata,
 	input wire j_busy
 );
-	/* spec/boards/kc705/lib/atg_kc705_jtag.md */
-	assign j_wr = 1'd0;
-	assign j_waddr = 17'd0;
-	assign j_wdata = 32'd0;
-	assign j_wstrb = 4'd0;
-	assign j_rd = 1'd0;
-	assign j_raddr = 17'd0;
+	wire tck_raw, tck, tdi, tdo, sel, capture, shift, update;
 
-	/* The stub reads none of its inputs. */
-	wire unused_ok = &{1'b0,
-		clk, rst_n, j_rdata, j_busy};
+	BSCANE2 #(.JTAG_CHAIN(2)) bscan (
+		.CAPTURE(capture), .DRCK(), .RESET(), .RUNTEST(), .SEL(sel), .SHIFT(shift),
+		.TCK(tck_raw), .TDI(tdi), .TMS(), .UPDATE(update), .TDO(tdo)
+	);
+
+	BUFG tck_bufg (.I(tck_raw), .O(tck));
+
+	am_jtag_regs bridge (
+		.clk(clk), .rst_n(rst_n),
+		.tck(tck), .tdi(tdi), .tdo(tdo), .sel(sel), .capture(capture), .shift(shift),
+		.update(update),
+		.reg_wr(j_wr), .reg_waddr(j_waddr), .reg_wdata(j_wdata), .reg_wstrb(j_wstrb),
+		.reg_rd(j_rd), .reg_raddr(j_raddr), .reg_rdata(j_rdata), .bus_busy(j_busy)
+	);
 endmodule
 
 `default_nettype wire

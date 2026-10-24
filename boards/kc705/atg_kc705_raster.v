@@ -11,14 +11,26 @@
  * ROP, BLT, MC on MIG DDR3, the DC next to the GPU (+0x10000, MC client
  * EXT, ADV7511 parallel output), the JTAG register bridge.
  *
- * Wiring of its children (WS288 p023); see spec/boards/kc705/atg_kc705_raster.md.
+ * Wiring of its children (WS288 p023, p012); see
+ * spec/boards/kc705/atg_kc705_raster.md.  The HDMI output is the ADV7511's
+ * 16-bit YCbCr 4:2:2 input with separate syncs (the DC's PX_FMT 1): the
+ * DC's registered outputs drive the pins (IOB registers in the XDC), and
+ * the pixel clock is forwarded through an ODDR with D1 0 / D2 1, so the
+ * ADV7511's rising edge is in the middle of each pixel.  The DC's VGA and
+ * TMDS outputs are left open (removed by the tools).  IIC_MUX_RESET_B is
+ * held high (the PCA9548 out of reset); the ADV7511 behind it is set up by
+ * the host over the DC's I2C registers.  In simulation atg_kc705_clk and
+ * atg_kc705_mig are replaced by sim/models/kc705/ and the primitives by
+ * sim/models/xilinx/ (sim/tb/atg_kc705_raster_tb.v).
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
 module atg_kc705_raster #(
-	parameter NSU = 1	/* Shader units (p014: 1, p015: 4 → 6) */
+	parameter NSU = 1,	/* Shader units (p014: 1, p015: 4 → 6) */
+	parameter CPU_IMEM_INIT = "atg1-cp-kc705.imem.hex",	/* CP firmware (Vivado finds it among the sources) */
+	parameter CPU_DMEM_INIT = "atg1-cp-kc705.dmem.hex"
 ) (
 	input wire sys_clk_p,
 	input wire sys_clk_n,
@@ -39,13 +51,14 @@ module atg_kc705_raster #(
 	output wire [7:0] ddr3_dm,
 	output wire ddr3_odt,
 	output wire [7:0] led,
-	output wire [23:0] hdmi_d,
+	output wire [15:0] hdmi_d,
 	output wire hdmi_de,
 	output wire hdmi_hs,
 	output wire hdmi_vs,
 	output wire hdmi_clk,
 	inout wire iic_scl,
-	inout wire iic_sda
+	inout wire iic_sda,
+	output wire iic_mux_reset_n
 );
 	wire clk, rst_n, ref_clk, ref_rst_n, pclk, prst_n, pclk_sel, mem_ready, irq;
 	/* No host AXI on the KC705 in v1 (JTAG only; PCIe is p013). */
@@ -115,6 +128,7 @@ module atg_kc705_raster #(
 	wire [4:0] vga_r, vga_b;
 	wire [5:0] vga_g;
 	wire vga_hs, vga_vs, scl_t, sda_t, dc_irq;
+	wire [23:0] px;
 
 	/* The host AXI slave is idle. */
 	assign s_awaddr = 32'd0;
@@ -150,8 +164,8 @@ module atg_kc705_raster #(
 		.LINE_SHIFT(6),
 		.DATA_W(512),
 		.HAS_CPU(1),
-		.CPU_IMEM_INIT("atg1-cp-kc705.imem.hex"),
-		.CPU_DMEM_INIT("atg1-cp-kc705.dmem.hex"),
+		.CPU_IMEM_INIT(CPU_IMEM_INIT),
+		.CPU_DMEM_INIT(CPU_DMEM_INIT),
 		.NSU(NSU),
 		.HAS_VF(1),
 		.HAS_RX(1),
@@ -195,7 +209,10 @@ module atg_kc705_raster #(
 	);
 
 	/* The display controller next to the GPU: registers at +0x10000, MC client EXT. */
-	atg_dc #(.STANDALONE(0), .BASE(17'h10000), .HAS_I2C(1), .LINE_BYTES(64), .LINE_SHIFT(6)) dc (
+	atg_dc #(
+		.STANDALONE(0), .BASE(17'h10000), .HAS_I2C(1), .LINE_BYTES(64), .LINE_SHIFT(6),
+		.FIFO_LOG2(11), .PX_FMT(1)
+	) dc (
 		.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
 		.reg_wr(xr_wr), .reg_waddr(xr_waddr), .reg_wdata(xr_wdata), .reg_wstrb(xr_wstrb),
 		.reg_rd(xr_rd), .reg_raddr(xr_raddr), .reg_rdata(xr_rdata),
@@ -205,19 +222,28 @@ module atg_kc705_raster #(
 		.rsp_valid(x_rsp_valid), .rsp_write(x_rsp_write), .rsp_tag(x_rsp_tag),
 		.rsp_rdata(x_rsp_rdata), .rsp_error(x_rsp_error),
 		.vga_r(vga_r), .vga_g(vga_g), .vga_b(vga_b), .vga_hs(vga_hs), .vga_vs(vga_vs),
-		.tmds(tmds), .px_rgb(hdmi_d), .px_de(hdmi_de), .px_hs(hdmi_hs), .px_vs(hdmi_vs),
+		.tmds(tmds), .px_rgb(px), .px_de(hdmi_de), .px_hs(hdmi_hs), .px_vs(hdmi_vs),
 		.scl_t(scl_t), .scl_i(iic_scl), .sda_t(sda_t), .sda_i(iic_sda)
 	);
 
 	/* Open-drain I2C (the tools infer IOBUFs). */
 	assign iic_scl = scl_t ? 1'bz : 1'b0;
 	assign iic_sda = sda_t ? 1'bz : 1'b0;
-	assign hdmi_clk = pclk;
+	assign iic_mux_reset_n = 1'b1;
+	assign hdmi_d = px[15:0];
+
+	/* The pixel clock to the ADV7511, inverted: its rising edge at the
+	 * middle of the pixel. */
+	ODDR #(.DDR_CLK_EDGE("OPPOSITE_EDGE"), .INIT(1'b0), .SRTYPE("SYNC")) hdmi_clk_out (
+		.Q(hdmi_clk), .C(pclk), .CE(1'b1), .D1(1'b0), .D2(1'b1), .R(1'b0), .S(1'b0)
+	);
 
 	reg [26:0] beat = 27'd0;
 
 	always @(posedge clk)
 		beat <= beat + 27'd1;
+
+	wire unused_px = &{1'b0, px[23:16]};
 
 	assign led = {4'd0, mem_ready, dc_irq, irq, beat[26]};
 

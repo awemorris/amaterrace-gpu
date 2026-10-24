@@ -47,7 +47,13 @@ Clock/reset domain: clk (gclk); the JTAG pins are in tck unless the row says oth
   (the 72-bit word is stable while the request is pending: the host never scans faster than the
   handshake, the status command tells it).  gclk performs the access when `bus_busy` is 0, captures
   the read data, and toggles an acknowledge bit back through `am_sync`.
-- CAPTURE loads {read data, addr, status} into the shift register.
+- CAPTURE loads {read data, addr, status} into the shift register: `[7:0]` status (bit 0 done:
+  no access pending; bit 1 dropped: a write or read scanned while one was pending was ignored,
+  cleared by the next accepted command), `[39:8]` the address of the last accepted command,
+  `[71:40]` the data of the last read.
+- The tck side has no reset (the ports give none): its registers start at 0 from the
+  configuration (initial values).  The toggles cross through `am_sync` without reset; a gclk
+  reset acknowledges a pending request (drops it).
 
 ## 5. State machine
 
@@ -62,15 +68,18 @@ One register access per scan pair; the host tool (plan/tools/kc705/jtag-reg.sh) 
 
 - This module crosses two domains by design (tck and gclk), the only exception to "one clock domain"
   in rtl/common, allowed because the crossing is the module's purpose and uses `am_sync` only.
-- A scan during a pending access is ignored (status bit 0 stays 0).  Reset of gclk drops the request.
+- A scan during a pending access is ignored (status bit 0 stays 0, bit 1 is set).  Reset of gclk drops the request.
+- reg_wr/reg_rd are combinational: asserted in a cycle with `bus_busy` = 0 only (atg_top serves
+  the JTAG master in cycles without an AXI access, `j_go`).
 
 ## 8. What the TB checks
 
-`sim/tb/am_jtag_regs_tb.v` prints, in this order:
+`sim/tb/am_jtag_regs_tb.v` (the TAP is `sim/models/xilinx/BSCANE2.v`'s `scan` task) prints, in this order:
 
 - `PASS am_jtag_regs.write` — a TAP model scans a write; reg_wr appears once with addr/data
 - `PASS am_jtag_regs.read` — a read scan, then a status scan returns the register value
-- `PASS am_jtag_regs.busy` — with bus_busy held, the access waits and then happens once
+- `PASS am_jtag_regs.busy` — with bus_busy held, the access waits and then happens once; a scan
+  meanwhile is dropped (status bit 1) and has no effect
 - `PASS am_jtag_regs` at the end.
 
 ## 9. References
@@ -79,4 +88,6 @@ design §4.4, Xilinx UG470 (BSCANE2; Values referenced: USER2 = IR 0x03 on 7-ser
 
 ## 10. Status
 
-Empty: port-only stub from WS288 p023 (every output 0).  Ports and parameters are fixed; a change is proposed to Q1 as a spec change first.
+Implemented in WS288 p012 part A (TB `am_jtag_regs_tb` PASS).  Differences from the stub's text
+(p012, for Q1): status bit 1 "dropped" added (§4, §7); the tck-side registers use initial values
+instead of a reset (no reset port on the tck side).
