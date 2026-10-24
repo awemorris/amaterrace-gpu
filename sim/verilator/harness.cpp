@@ -14,8 +14,9 @@
  * FILL and a FENCE through the ring (include/ghci_packets.h) with the
  * fence's interrupt.  COMPUTE: the compute scene of sim/vec/cs_scene.txt
  * instead; RASTER, SHADE, TEX: the raster, shaded and textured scenes, the
- * colour buffer to a PNG (sim/verilator/run.sh).  Prints "PASS verilator"
- * on success.
+ * colour buffer to a PNG (sim/verilator/run.sh); MSAA: the multisampling
+ * scene (a case whose words differ named), the resolved image to a PNG.
+ * Prints "PASS verilator" on success.
  */
 
 #include <algorithm>
@@ -23,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <string>
 #include <vector>
 
 #include "Vatg_top.h"
@@ -37,7 +39,11 @@ namespace {
 
 constexpr uint32_t MEM_BYTES = 1u << 20;
 constexpr int BEAT_BYTES = 8;
-constexpr int MAX_CYCLES = 2000000;
+#ifdef MSAA
+constexpr long MAX_CYCLES = 40000000;
+#else
+constexpr long MAX_CYCLES = 2000000;
+#endif
 
 struct Burst {
 	uint32_t addr;
@@ -259,13 +265,31 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
 }
 
 
-#if defined(RASTER) || defined(SHADE) || defined(TEX)
-#if defined(TEX)
+#if defined(RASTER) || defined(SHADE) || defined(TEX) || defined(MSAA)
+/* The ring of the scene (RING_SIZE: log2 of its bytes), the FENCE_LAST
+ * reads to wait, and the image written to the PNG. */
+#if defined(MSAA)
+#define SCENE_NAME "msaa"
+#define SCENE_RING 0x5C000u
+#define SCENE_RING_LOG2 13
+#define SCENE_WAIT 4000000
+#define PNG_W 32u
+#define PNG_H 24u
+#define PNG_STRIDE 128u
+#elif defined(TEX)
 #define SCENE_NAME "tex"
 #elif defined(SHADE)
 #define SCENE_NAME "shade"
 #else
 #define SCENE_NAME "raster"
+#endif
+#ifndef SCENE_RING
+#define SCENE_RING 0x5F000u
+#define SCENE_RING_LOG2 11
+#define SCENE_WAIT 200000
+#define PNG_W 64u
+#define PNG_H 48u
+#define PNG_STRIDE 256u
 #endif
 uint32_t crc_table[256];
 
@@ -347,9 +371,11 @@ void write_png(const char *path, uint32_t base, unsigned w, unsigned h, unsigned
 
 /* The scene of sim/vec/raster_scene.txt (tools/rx-raster-scene.py; SHADE:
  * sim/vec/shade_scene.txt, tools/rx-shade-scene.py; TEX: sim/vec/tex_scene.txt,
- * tools/rx-tex-scene.py) through the ring; the colour and depth buffers
- * against the model; the colour buffer to build/verilator/raster.png
- * (shade.png, tex.png). */
+ * tools/rx-tex-scene.py; MSAA: sim/vec/msaa_scene.txt, tools/rx-msaa-scene.py)
+ * through the ring; the colour and depth buffers against the model (a C
+ * line starts a case, reported by name when its words differ); the colour
+ * buffer at 0x20000 to build/verilator/raster.png (shade.png, tex.png;
+ * msaa.png: the resolved image of the RESOLVE case). */
 int scene_main()
 {
 	FILE *f = std::fopen("sim/vec/" SCENE_NAME "_scene.txt", "r");
@@ -357,10 +383,11 @@ int scene_main()
 		std::printf("FAIL verilator " SCENE_NAME ": no sim/vec/" SCENE_NAME "_scene.txt\n");
 		return 1;
 	}
-	const uint32_t ring = 0x5F000;
+	const uint32_t ring = SCENE_RING;
 	uint32_t wp = 0, a, v, nr;
-	char k[4];
+	char k[4], name[64] = "";
 	std::vector<std::pair<uint32_t, uint32_t>> exp;
+	std::vector<std::pair<size_t, std::string>> cases;	/* (first E line, name) */
 	if (std::fscanf(f, "%3s %u", k, &nr) != 2)
 		return 1;
 	while (std::fscanf(f, "%3s", k) == 1) {
@@ -370,6 +397,8 @@ int scene_main()
 			poke32(ring + 4 * wp++, v);
 		else if (k[0] == 'E' && std::fscanf(f, "%x %x", &a, &v) == 2)
 			exp.push_back({a, v});
+		else if (k[0] == 'C' && std::fscanf(f, "%63s", name) == 1)
+			cases.push_back({exp.size(), name});
 	}
 	std::fclose(f);
 #ifdef TEX
@@ -378,21 +407,34 @@ int scene_main()
 	       (host_read(GHCI_CAPS) & GHCI_CAPS_TU_FULL) != 0, 1);
 	expect("CAPS2[27:24] (texture slots / 4)", (host_read(GHCI_CAPS2) >> 24) & 15, 4);
 #endif
+#ifdef MSAA
+	expect("CAPS[29] (4x multisampling)", (host_read(GHCI_CAPS) & GHCI_CAPS_MS4) != 0, 1);
+#endif
 	host_write(GHCI_APERTURE_BASE, 0x20000);
 	host_write(GHCI_APERTURE_LIMIT, 0x60000);
 	host_write(GHCI_RING_BASE, ring);
-	host_write(GHCI_RING_SIZE, 11);	/* 512 words */
+	host_write(GHCI_RING_SIZE, SCENE_RING_LOG2);	/* 11: 512 words */
 	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
 	host_write(GHCI_RING_WPTR, wp);
-	for (int i = 0; i < 200000 && host_read(GHCI_FENCE_LAST) != 1; i++)
+	for (int i = 0; i < SCENE_WAIT && host_read(GHCI_FENCE_LAST) != 1; i++)
 		;
 	expect("FENCE_LAST", host_read(GHCI_FENCE_LAST), 1);
 	unsigned bad = 0;
 	for (auto &e : exp)
 		if (peek32(e.first) != e.second)
 			bad++;
+	for (size_t c = 0; c < cases.size(); c++) {
+		size_t end = c + 1 < cases.size() ? cases[c + 1].first : exp.size();
+		unsigned cbad = 0;
+		for (size_t i = cases[c].first; i < end; i++)
+			if (peek32(exp[i].first) != exp[i].second)
+				cbad++;
+		if (cbad)
+			std::printf("FAIL verilator " SCENE_NAME " %s: %u words differ\n",
+			    cases[c].second.c_str(), cbad);
+	}
 	expect(SCENE_NAME " words differing from the model", bad, 0);
-	write_png("build/verilator/" SCENE_NAME ".png", 0x20000, 64, 48, 256);
+	write_png("build/verilator/" SCENE_NAME ".png", 0x20000, PNG_W, PNG_H, PNG_STRIDE);
 	std::printf("verilator " SCENE_NAME ": %u ring words, %zu words checked, %llu cycles, "
 	    "build/verilator/" SCENE_NAME ".png\n", wp, exp.size(), (unsigned long long)cycles);
 	return errors ? 1 : 0;
@@ -496,7 +538,7 @@ int main(int argc, char **argv)
 		return rc;
 	}
 #endif
-#if defined(RASTER) || defined(SHADE) || defined(TEX)
+#if defined(RASTER) || defined(SHADE) || defined(TEX) || defined(MSAA)
 	{
 		int rc = scene_main();
 		top->final();
