@@ -33,9 +33,9 @@ All combinational.  Busy bits in STATUS order: [1] BLT, [2] VF, [3] RX, [4] ROP,
 
 ## 4. Behaviour
 
-- SET_REG: the BLT range waits for the BLT; the VF's (0x020-0x04F, ATTR_DST 0x1C0-0x1CF) for the VF; the RX range (0x050-0x06F) and the ROP range (0x070-0x08F) for the VF, the SUs, the RX and the ROP (work that will read that state may still be upstream of the ROP's sequence numbers); the TU range (0x090-0x18F) for the TU, the SUs and the RX; the others do not wait.
+- SET_REG: the BLT range waits for the BLT; the VF's (0x020-0x04F, 0x1C0-0x1DF: ATTR_DST and ATTR_LIMIT) for the VF; the RX range (0x050-0x06F) and the ROP range (0x070-0x08F) for the VF, the SUs, the RX and the ROP (work that will read that state may still be upstream of the ROP's sequence numbers); the TU range (0x090-0x18F) for the VF, the SUs, the RX and the TU; the program range (0x190-0x1AF: the SU takes VS_BASE, FS_BASE and the rest when a warp starts) for the VF, the SUs and the RX; the others (0x1B0-0x1BF, the vendor words through SET_REG) do not wait.
 - DRAW_RAW's 9 words go to 0x1E0-0x1E8 and wait for the RX; DBG_MARK's word to 0x1FF; DISPATCH's 3 to 0x1E9-0x1EB and LOAD_CONST's 3 to 0x1EC-0x1EE wait for the SUs.
-- pre/post: BLIT pre BLT, post BLT when flags[0]; DRAW pre VF; FENCE pre all; WAIT_IDLE pre flags (0: all); LOAD_CONST pre and post SU; RESULT pre all and the fence unit; DRAW_RAW pre RX.
+- pre/post: BLIT pre BLT, post BLT when flags[0]; DRAW pre VF; FENCE pre all; WAIT_IDLE pre flags (0: all); LOAD_CONST pre VF, SU and RX (the constants of a draw upstream are read by its warps), post SU; RESULT pre all and the fence unit; DRAW_RAW pre RX.
 
 ## 5. State machine
 
@@ -47,11 +47,11 @@ Combinational.
 
 ## 7. Corner cases and errors
 
-- `-DMUT_SEQ_DRAWSTATE` restores the earlier RX/ROP-only wait (for the TB's mutation check).
+- `-DMUT_SEQ_DRAWSTATE` restores the earlier rules (RX/ROP only for those ranges, the TU without the VF, no wait for the program range, LOAD_CONST after the SUs only, 0x1C0-0x1CF only) for the TB's mutation check.
 
 ## 8. What the TB checks
 
-Through `sim/tb/atg_cp_seq_tb.v` (`spec/gpu/cp/atg_cp_seq.md` §8), `PASS atg_cp_seq.drawstate` in particular.
+Through `sim/tb/atg_cp_seq_tb.v` (`spec/gpu/cp/atg_cp_seq.md` §8): `.drawstate`, `.tuwait`, `.progwait`, `.ldconst`, `.attrlimit_wait` in particular.
 
 ## 9. References
 

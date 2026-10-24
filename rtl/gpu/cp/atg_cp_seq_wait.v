@@ -15,14 +15,20 @@
  * A block's STATE does not change under its work, nor while work that
  * will read it is still upstream:
  *   BLT range                 the BLT
- *   VF (0x020-0x04F, ATTR_DST 0x1C0-0x1CF)  the VF
+ *   VF (0x020-0x04F, 0x1C0-0x1DF: ATTR_DST and ATTR_LIMIT)  the VF
  *   RX and ROP ranges         the VF, the SUs, the RX and the ROP: the
  *                             ROP's busy covers only the sequence numbers
  *                             the RX has issued, so a draw still in the VF,
  *                             in a vertex warp or in the RX's setup would
  *                             otherwise see the next draw's state
- *   TU range                  the TU, the SUs and the RX
- * DISPATCH and LOAD_CONST payloads wait for the SUs, DRAW_RAW's for the RX.
+ *   TU range                  the VF, the SUs, the RX and the TU (texels
+ *                             are read by warps a draw upstream starts later)
+ *   program range (0x190-0x1AF)  the VF, the SUs and the RX (the SU takes
+ *                             VS_BASE, FS_BASE and the rest at a warp's start)
+ * LOAD_CONST waits for the VF, the SUs and the RX before its kick (the
+ * constants of a draw upstream are read by its warps), and for the SUs
+ * after it; DISPATCH and LOAD_CONST payloads wait for the SUs, DRAW_RAW's
+ * for the RX.
  */
 
 `timescale 1ns / 1ps
@@ -62,11 +68,20 @@ module atg_cp_seq_wait (
 	localparam [7:0] B_SU = 8'h40;
 	localparam [7:0] B_ALL = 8'hFE;
 `ifdef MUT_SEQ_DRAWSTATE
+	/* the earlier rules, for the TB's mutation check */
 	localparam [7:0] B_RXROP = B_RX | B_ROP;
 	localparam [7:0] B_ROPW = B_ROP;
+	localparam [7:0] B_TUW = B_TU | B_SU | B_RX;
+	localparam [7:0] B_PROGW = 8'd0;
+	localparam [7:0] B_LCPRE = B_SU;
+	localparam VF_1D = 0;	/* 0x1C0-0x1CF only */
 `else
 	localparam [7:0] B_RXROP = B_VF | B_SU | B_RX | B_ROP;
 	localparam [7:0] B_ROPW = B_RXROP;
+	localparam [7:0] B_TUW = B_VF | B_SU | B_RX | B_TU;
+	localparam [7:0] B_PROGW = B_VF | B_SU | B_RX;
+	localparam [7:0] B_LCPRE = B_VF | B_SU | B_RX;
+	localparam VF_1D = 1;	/* also ATTR_LIMIT, 0x1D0-0x1DF */
 `endif
 
 	always @(*) begin
@@ -78,8 +93,8 @@ module atg_cp_seq_wait (
 			pay_idx = sidx;
 			pay_wait = sidx < GHCI_S_VF ? B_BLT : sidx < GHCI_S_RX ? B_VF :
 				sidx < GHCI_S_ROP ? B_RXROP : sidx < GHCI_S_TU ? B_ROPW :
-				sidx < GHCI_S_PROG ? B_TU | B_SU | B_RX :
-				sidx[8:4] == GHCI_S_ATTR_DST[8:4] ? B_VF : 8'd0;
+				sidx < GHCI_S_PROG ? B_TUW : sidx < GHCI_S_SA ? B_PROGW :
+				(sidx[8:5] == GHCI_S_ATTR_DST[8:5] && (VF_1D != 0 || !sidx[4])) ? B_VF : 8'd0;
 		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
 			pay_we = 1'b1;
 			pay_idx = GHCI_S_RAW + {1'b0, p};
@@ -114,7 +129,7 @@ module atg_cp_seq_wait (
 			OP_FENCE: pre = B_ALL;
 			OP_WAIT_IDLE: pre = flags == 8'd0 ? B_ALL : flags & B_ALL;
 			OP_LOAD_CONST: begin
-				pre = B_SU;
+				pre = B_LCPRE;
 				post = B_SU;
 			end
 			OP_RESULT: begin
