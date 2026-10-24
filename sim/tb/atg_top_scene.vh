@@ -7,11 +7,14 @@
 
 /*
  * atg_top_scene.vh: the scene harness of atg_top_raster_tb,
- * atg_top_shade_tb and atg_top_tex_tb: the GPU (HAS_RX, HAS_ROP, and
- * HAS_VF/NSU/HAS_TU when given) driven only through its host port runs the
- * ring of a scene file (the I/R/E lines of tools/rx-raster-scene.py,
- * tools/rx-shade-scene.py and tools/rx-tex-scene.py)
- * and the memory words of the E lines must equal the model's.
+ * atg_top_shade_tb, atg_top_tex_tb and atg_top_msaa_tb: the GPU (HAS_RX,
+ * HAS_ROP, and HAS_VF/NSU/HAS_TU/MS4 when given) driven only through its
+ * host port runs the ring of a scene file (the I/R/E lines of
+ * tools/rx-raster-scene.py, tools/rx-shade-scene.py, tools/rx-tex-scene.py
+ * and tools/rx-msaa-scene.py) and the memory words of the E lines must
+ * equal the model's.  A line "C NAME" among the E lines starts a case:
+ * the harness prints "PASS TB(NAME).CASE" (or FAIL) for the E lines up to
+ * the next C line.  CAPS[29] must be MS4 && HAS_VF && HAS_TU && NSU.
  */
 
 module atg_top_scene_harness #(
@@ -38,7 +41,13 @@ module atg_top_scene_harness #(
 	parameter SU_SUBGROUP = 0,
 	parameter SU_FRAG_RESERVE = 1,
 	parameter SU_LDS_BYTES = 4096,
-	parameter ROP_STENCIL = 0
+	parameter ROP_STENCIL = 0,
+	parameter MS4 = 0,
+	/* where the ring is, log2 of its bytes (RING_SIZE), and how many
+	 * FENCE_LAST reads to wait for the scene's end */
+	parameter [31:0] RING = 32'h0005F000,
+	parameter RING_LOG2 = 11,
+	parameter WAIT_READS = 200000
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -90,7 +99,7 @@ module atg_top_scene_harness #(
 		.SU_GRP_W(SU_GRP_W), .SU_VARY_WORDS(SU_VARY_WORDS), .SU_NREGS(SU_NREGS),
 		.SU_SB_ENTRIES(SU_SB_ENTRIES), .SU_SBE_W(SU_SBE_W), .SU_PACKED(SU_PACKED),
 		.SU_SUBGROUP(SU_SUBGROUP), .SU_FRAG_RESERVE(SU_FRAG_RESERVE),
-		.SU_LDS_BYTES(SU_LDS_BYTES), .ROP_STENCIL(ROP_STENCIL)) dut (
+		.SU_LDS_BYTES(SU_LDS_BYTES), .ROP_STENCIL(ROP_STENCIL), .MS4(MS4)) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.s_awaddr(h_awaddr), .s_awid(h_awid), .s_awvalid(h_awvalid), .s_awready(h_awready),
 		.s_wdata(h_wdata), .s_wstrb(h_wstrb), .s_wlast(h_wlast), .s_wvalid(h_wvalid),
@@ -129,8 +138,6 @@ module atg_top_scene_harness #(
 
 	`include "axi_host.vh"
 
-	localparam [31:0] RING = 32'h0005F000;
-
 	task wait_reg;
 		input [31:0] off;
 		input [31:0] want;
@@ -140,7 +147,7 @@ module atg_top_scene_harness #(
 		begin
 			n = 0;
 			host_read(off, got);
-			while ((got & mask) != (want & mask) && n < 200000) begin
+			while ((got & mask) != (want & mask) && n < WAIT_READS) begin
 				host_read(off, got);
 				n = n + 1;
 			end
@@ -152,8 +159,9 @@ module atg_top_scene_harness #(
 		end
 	endtask
 
-	integer fd, rc, nr, wp, bad, bad_rt, bad_ds;
+	integer fd, rc, nr, wp, bad, bad_rt, bad_ds, cbad, ncase;
 	reg [8*2-1:0] kind;
+	reg [8*32-1:0] cname;
 	reg [31:0] a, v, got;
 
 	initial begin
@@ -162,10 +170,17 @@ module atg_top_scene_harness #(
 		bad = 0;
 		bad_rt = 0;
 		bad_ds = 0;
+		cbad = 0;
+		ncase = 0;
 		wp = 0;
 		@(posedge rst_n);
 		repeat (8) @(posedge clk);
 
+		host_read(GHCI_CAPS, got);
+		if (got[29] !== (MS4 != 0 && HAS_VF != 0 && HAS_TU != 0 && NSU != 0)) begin
+			errors = errors + 1;
+			$display("FAIL %0s(%0s): CAPS %h, bit 29 (MS4) not as the shape", TB, NAME, got);
+		end
 		host_write(GHCI_APERTURE_BASE, 32'h00020000);
 		host_write(GHCI_APERTURE_LIMIT, 32'h00060000);
 		fd = $fopen(SCENE, "r");
@@ -174,8 +189,8 @@ module atg_top_scene_harness #(
 			$display("FAIL %0s(%0s): no %0s", TB, NAME, SCENE);
 		end else begin
 			rc = $fscanf(fd, "%s %d\n", kind, nr);
-			/* Initial memory and the ring's words. */
-			while (!$feof(fd) && kind != "E") begin
+			/* Initial memory and the ring's words, up to the first E or C line. */
+			while (!$feof(fd) && kind != "E" && kind != "C") begin
 				rc = $fscanf(fd, "%s", kind);
 				if (kind == "I") begin
 					rc = $fscanf(fd, " %h %h\n", a, v);
@@ -187,25 +202,36 @@ module atg_top_scene_harness #(
 				end
 			end
 			host_write(GHCI_RING_BASE, RING);
-			host_write(GHCI_RING_SIZE, 32'd11);	/* 512 words */
+			host_write(GHCI_RING_SIZE, RING_LOG2);	/* 11: 512 words */
 			host_write(GHCI_FENCE_LAST, 32'd0);
 			host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 			host_write(GHCI_RING_WPTR, wp);
 			wait_reg(GHCI_FENCE_LAST, 32'd1, 32'hFFFFFFFF);
 			expect_status;
-			/* The first E line was read as kind already. */
-			rc = $fscanf(fd, " %h %h\n", a, v);
-			check(a, v);
-			while (!$feof(fd)) begin
-				rc = $fscanf(fd, "%s %h %h\n", kind, a, v);
-				if (rc == 3)
-					check(a, v);
+			/* The first E or C line's kind was read already. */
+			rc = 1;
+			while (rc == 1) begin
+				if (kind == "E") begin
+					rc = $fscanf(fd, " %h %h\n", a, v);
+					if (rc == 2)
+						check(a, v);
+				end else if (kind == "C") begin
+					end_case;
+					rc = $fscanf(fd, " %s\n", cname);
+					ncase = ncase + 1;
+				end
+				rc = $feof(fd) ? 0 : $fscanf(fd, "%s", kind);
 			end
+			end_case;
 			$fclose(fd);
 		end
 		if (bad != 0) begin
 			errors = errors + 1;
-			$display("FAIL %0s(%0s): %0d words differ from the model (colour %0d, depth %0d)", TB, NAME, bad, bad_rt, bad_ds);
+			if (ncase != 0)
+				$display("FAIL %0s(%0s): %0d words differ from the model", TB, NAME, bad);
+			else
+				$display("FAIL %0s(%0s): %0d words differ from the model (colour %0d, depth %0d)",
+					TB, NAME, bad, bad_rt, bad_ds);
 		end else
 			$display("PASS %0s(%0s).scene: %0d ring words", TB, NAME, wp);
 		finished = 1'b1;
@@ -224,15 +250,30 @@ module atg_top_scene_harness #(
 					$display("FAIL %0s(%0s): DRAW_RAW kicked with word %0d unwritten", TB, NAME, k9);
 				end
 
+	/* The end of a case (C line): its words against the model. */
+	task end_case;
+		begin
+			if (ncase != 0) begin
+				if (cbad != 0)
+					$display("FAIL %0s(%0s).%0s: %0d words differ from the model", TB, NAME,
+						cname, cbad);
+				else
+					$display("PASS %0s(%0s).%0s", TB, NAME, cname);
+			end
+			cbad = 0;
+		end
+	endtask
+
 	task check;
 		input [31:0] addr;
 		input [31:0] want;
 		begin
 			got = mem.peek32(addr);
 			if (got !== want) begin
-				if (bad < 8)
+				if (cbad < 4 || bad < 8)
 					$display("FAIL %0s(%0s): mem %h = %h, model %h", TB, NAME, addr, got, want);
 				bad = bad + 1;
+				cbad = cbad + 1;
 				if (addr < 32'h00030000)
 					bad_rt = bad_rt + 1;
 				else

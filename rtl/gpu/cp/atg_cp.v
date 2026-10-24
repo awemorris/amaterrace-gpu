@@ -49,7 +49,8 @@ module atg_cp #(
 	parameter HAS_DISP = 0,	/* a display controller's registers are in this window at +0x10000 (CAPS[3], DISP) */
 	parameter HAS_DBG = 0,	/* a debug bridge outside the host bus (JTAG; the DBG capability) */
 	parameter PACKED = 0,	/* the SU has the packed arithmetic (CAPS[28]) */
-	parameter SUBGROUP = 0	/* the SU has shfl/vote/ballot (CAPS[24]) */
+	parameter SUBGROUP = 0,	/* the SU has shfl/vote/ballot (CAPS[24]) */
+	parameter MS4 = 0	/* 4x multisampling in the RX, ROP, TU, SU and BLT (CAPS[29]) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -147,8 +148,11 @@ module atg_cp #(
 	localparam [3:0] LS4 = LINE_SHIFT;
 	/* verilator lint_on WIDTHTRUNC */
 	/* CAPS[27]: graphics (VF, RX and ROP); CAPS[28]: packed; CAPS[26]: the TU's mip linear,
-	 * border, depth formats and compare; CAPS[24]: subgroup. */
-	localparam [31:0] CAPS = {3'd0, UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4],
+	 * border, depth formats and compare; CAPS[24]: subgroup; CAPS[29]: 4x multisampling
+	 * (with graphics, the TU and an SU). */
+	localparam [31:0] CAPS = {2'd0,
+		MS4 != 0 && UNITS[2] && UNITS[3] && UNITS[4] && UNITS[5] && UNITS[6],
+		UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4],
 		UNITS[5], 1'b0,
 		UNITS[6] && SUBGROUP != 0,
 		LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,

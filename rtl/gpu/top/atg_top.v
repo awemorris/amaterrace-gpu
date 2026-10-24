@@ -41,7 +41,8 @@ module atg_top #(
 	parameter HAS_JTAG = 0,	/* a second register-bus master (am_jtag_regs, KC705) */
 	parameter HAS_DISP = 0,	/* a display controller's registers are next to the GPU at +0x10000 (KC705) */
 	parameter ROP_STENCIL = 0,
-	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): the blitter's RESOLVE, texsz.s */
+	parameter MS4 = 0,	/* 4x multisampling (CAPS[29] with VF, RX, ROP, TU and an SU): the
+				 * blitter's RESOLVE, texsz.s */
 	/* The SUs' shape (design §3.7). */
 	parameter SU_NPHYS = 8,
 	parameter SU_NWARPS = 4,
@@ -303,7 +304,8 @@ module atg_top #(
 		.HAS_DISP(HAS_DISP),
 		.HAS_DBG(HAS_JTAG),
 		.PACKED(NSU != 0 && SU_PACKED != 0),
-		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0)
+		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0),
+		.MS4(MS4)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
