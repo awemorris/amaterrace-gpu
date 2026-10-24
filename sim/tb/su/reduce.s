@@ -1,7 +1,7 @@
 # SU test: reduction of 256 fp32 values a[0..255] (0x8400) by one workgroup
 # of 128 lanes: each lane adds a[lidn] and a[lidn + 128], then a tree in LDS
-# with a barrier per level; lane 0 stores the sum at 0x9000 (no atomics:
-# the board program, the ZYBO's atg_mc_atom is a stub).
+# with a barrier per level; lane 0 stores the sum at 0x9000.  Every lane
+# also adds lidn to the word at 0x9004 with atom.add (8128 in all).
 	slli r1, lidn, 2
 	movi r2, 0x8400
 	add r2, r2, r1
@@ -27,6 +27,9 @@ loop:
 	movi r10, 0
 	slt r11, r10, r5            # s > 0 (the same in every lane)
 	bany r11, loop
+	movi r15, 0x9004
+	atom.add r16, (r15), lidn   # all 128 lanes (4 warps) on one word
+	movi r16, 0                 # (the old value depends on the order)
 	bar
 	sltiu r12, lidn, 1
 	exec.and r12                # lane 0 of warp 0

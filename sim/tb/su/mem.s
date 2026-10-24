@@ -46,7 +46,7 @@
 	atom.umin r0, (r20), r31
 	movi r9, 0x9A00
 	atom.add r10, (r9), onei    # shared: 128 adds
-	movi r10, 0                 # (the old value depends on the order)
+	atom.cmpxchg r10, (r20), r9, r9     # not equal: no store (r10 = r11)
 	fence 5                     # global + acquire
 	lw r11, 0(r20)              # after the atomics (the D$ was invalidated)
 	sts lidn, 0(r1)             # LDS[lidn] = lidn

@@ -11,8 +11,8 @@
  * (bany/bnone/ball/j/bexnz/bexz), end and bar; tells the scheduler where
  * the warp continues.
  *
- * WS288 p023 stub: ports and parameters only, every output is 0.
- * The behaviour is specified in spec/gpu/su/atg_su_exec.md.
+ * Implemented in WS288 p008.  The behaviour, and where it differs from
+ * the design: spec/gpu/su/atg_su_exec.md (§10 Status).
  */
 
 `timescale 1ns / 1ps
