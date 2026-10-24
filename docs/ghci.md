@@ -210,7 +210,7 @@ CAPS (0x020):
 | [26] | The texture unit does mipmap mode linear, clamp to border, the depth formats and depth compare (section 8.4) |
 | [27] | Graphics: the vertex fetcher, the rasterizer and the render output are present |
 | [28] | Packed fp16/int16 arithmetic (section 12.5) |
-| [30] | Vulkan 1.0 core rendering (draft, section 8.5): the stencil ops with front and back state ([9] says a stencil attachment exists), D16, depth bias, depth bounds, depth clamp and depth clipping, w, viewport and guard-band clipping, points and lines, four colour attachments in the formats of the FMT capability, the ETC2 and EAC formats, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT, and the waits of SET_REG for earlier draws. The bit number is provisional ([29] is multisampling, section 12.11) |
+| [30] | Vulkan 1.0 core rendering (draft, section 8.5): the stencil ops with front and back state ([9] says a stencil attachment exists), D16, depth bias, depth bounds, depth clamp and depth clipping, w, viewport and guard-band clipping, points and lines, four colour attachments, the formats that the FMT capability names, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT and rasterizer discard. The bit number is provisional ([29] is multisampling, section 12.11) |
 
 CAPS2 (0x024):
 
@@ -609,13 +609,13 @@ rendering; section 12.11, multisampling, is a separate draft that is
 pending). The words that existed before CAPS[30] keep their meaning; a
 word of 0 in a new field keeps the earlier behaviour.
 
-**State and earlier draws.** A unit's state does not change under the
-work of earlier commands. With CAPS[30], a SET_REG into the RX range or
-the ROP range waits until the vertex fetcher, the shader units, the
-rasterizer and the render output are idle (so that every earlier draw has
-left the units that read the range), and a SET_REG into 0x1C0-0x1DF waits
-until the vertex fetcher is idle. Without CAPS[30] the RX range waits for
-the RX and the ROP only, and the ROP range for the ROP.
+**State and earlier draws** (pending). The ranges of this section are
+read by units that an earlier draw may still be using: a SET_REG into
+the RX or the ROP range, and into 0x1C0-0x1DF, is to wait until every
+earlier draw has left the units that read the range. The rule, and the
+same rule for the texture and program ranges and LOAD_CONST, is being
+revised separately; a host write to the STATE alias follows the same
+rule (section 8.1).
 
 **Formats.** A format field holds a VkFormat value (8 bits; Vulkan 1.0's
 core formats are 0-184). A GPU reads a value it does not support as "no
@@ -648,7 +648,7 @@ vendor's (Amaterrace: reads to the nearest fp32, writes to UNORM and
 | 0x030 + 2k | ATTR[k]_BASE | GPU address of attribute k of the first element (the binding's address plus the attribute's offset), k < 16 |
 | 0x031 + 2k | ATTR[k]_DESC | [15:0] stride; [19:16] the earlier format code (used when ATTR_DST[k][31:24] is 0); [20] per instance; [31:24] divisor |
 | 0x1C0 + k | ATTR_DST[k] | [5:0] first register, [7:6] components - 1; [31:24] the VkFormat (CAPS[30]; 0: ATTR_DESC[19:16]); 0 disables the attribute |
-| 0x1D0 + k | ATTR_LIMIT[k] | (CAPS[30]) [31] the limit applies, [30:0] the bytes from ATTR[k]_BASE that the attribute may read; [31] = 0: no limit. An attribute whose bytes pass the limit reads (0, 0, 0, 1) without a memory access (robust buffer access) |
+| 0x1D0 + k | ATTR_LIMIT[k] | (CAPS[30]) [31] the limit applies, [30:0] the bytes from ATTR[k]_BASE that the attribute may read; [31] = 0: no limit. An attribute whose bytes pass the limit (offset + size > limit, without overflow) reads (0, 0, 0, 1) without a memory access (robust buffer access) |
 
 **RX range** (0x050-0x06F):
 
@@ -658,8 +658,8 @@ vendor's (Amaterrace: reads to the nearest fp32, writes to UNORM and
 | 0x056 | SCISSOR_MIN | {y, x}, inclusive |
 | 0x057 | SCISSOR_MAX | {y, x}, exclusive; 0 = no scissor |
 | 0x058 | CULL | [1:0] 1 front, 2 back, 3 both; [2] front = counter-clockwise |
-| 0x059 | DEPTH_CLAMP | (CAPS[30]) [0] depth clamp: no depth clipping, the depth clamped to the viewport's depth range; [1] DEPTH_CLIP: Vulkan's depth clipping and an unclamped r3 (0: the earlier behaviour, no depth clipping and r3 clamped to [0, 1]) |
-| 0x05A | RAST_MODE | (CAPS[30]) [0] depth bias; [2:1] polygon mode, 0 fill (others read as fill); [3] fragments only inside the viewport's rectangle; [5:4] the depth format the bias is for: 0 none (no bias), 1 D16, 2 D24, 3 D32_SFLOAT |
+| 0x059 | DEPTH_CLAMP | (CAPS[30]) [0] depth clamp: no depth clipping, the depth clamped to the viewport's depth range; [1] DEPTH_CLIP: Vulkan's depth clipping (the near and far planes) and an unclamped r3 (0: the earlier behaviour, the near plane only and r3 clamped to [0, 1]) |
+| 0x05A | RAST_MODE | (CAPS[30]) [0] depth bias; [2:1] polygon mode, 0 fill (others read as fill); [3] fragments only inside the viewport's rectangle; [5:4] the depth format the bias is for: 0 none (no bias), 1 D16, 2 D24, 3 D32_SFLOAT; [6] rasterizer discard: no primitive is rasterized |
 | 0x05B | VARYING_COUNT | Varying words per vertex for the fragment warps |
 | 0x05C | DEBUG_COLOR | RGBA8 (R in [7:0]) of the direct path without shaders |
 | 0x05D | PROVOKING | [0] 0 first, 1 last vertex |
@@ -674,14 +674,13 @@ for the fill mode with line and point widths of 1:
 - **Primitives** come with their kind (point, line, triangle) from the
   vertex fetcher. Lines and points are front facing and are not culled.
 - **Clipping**: triangles and lines are clipped against w >= a small
-  epsilon (always), the near plane z >= 0 (without DEPTH_CLAMP[0]) and,
-  where a vertex leaves the guard band, the guard band in x and y; points
-  outside the first two planes are discarded. A clipped line stays one
-  line. With DEPTH_CLAMP[1] and without DEPTH_CLAMP[0], a sample whose
-  depth less the bias lies outside [min(n, f), max(n, f)] (n = z offset,
-  f = z offset + z scale) is removed from the coverage before the
-  fragment program runs: the far plane, and the depth range in general,
-  is applied per sample. Lines shorter than a subpixel are discarded.
+  epsilon (always; Amaterrace: 2^-16), with DEPTH_CLAMP[1] and without
+  DEPTH_CLAMP[0] against the near plane z >= 0 and the far plane z <= w
+  (without DEPTH_CLAMP[1]: the near plane only), and, where a vertex
+  leaves the guard band, against the guard band in x and y (planes x_off
+  x w + x_scale x x <= G x w and >= -G x w, the same in y, G the guard band's half size in pixels; Amaterrace: 16383); points
+  outside the w, near or far plane are discarded. A clipped line stays
+  one line. Lines shorter than a subpixel are discarded.
 - **Viewport** (RAST_MODE[3]): fragments are produced only inside the
   viewport's rectangle, rounded to whole pixels, as well as inside the
   scissor and the render target. DRAW_RAW does not use it.
@@ -707,7 +706,7 @@ for the fill mode with line and point widths of 1:
 
 | Index | Name | Contents |
 | --- | --- | --- |
-| 0x070 | RT_BASE | GPU address of colour attachment 0 (8-byte aligned; 4 for 16-bit pixels; with CAPS[30] the bases of every attachment and of the depth/stencil attachment are multiples of 64 and their strides multiples of min(2 x S x ps, 64), S the samples and ps the pixel bytes) |
+| 0x070 | RT_BASE | GPU address of colour attachment 0 (8-byte aligned; 4 for 16-bit pixels; with CAPS[30] the bases of every attachment and of the depth/stencil attachment are multiples of 64 and their strides multiples of 2 x S x ps, S the samples and ps the pixel bytes) |
 | 0x071 | RT_STRIDE | Bytes per row |
 | 0x072 | RT_FORMAT | [1:0] the earlier code of attachment 0: 0 BGRA8, 1 RGBA8, 2 RGB565 (used when RT_FORMATS[7:0] is 0) |
 | 0x073 | RT_SIZE | {height, width} of the render area's targets |
@@ -765,11 +764,9 @@ or 16 bytes; only 4-byte texels may be tiled (TEX_IMAGE[8] reads as
 linear otherwise). Integer formats are sampled nearest and return integer
 bits; the border colours give integer 0 and 1 for them. sRGB texels are
 converted before filtering, and the border colour of an sRGB format is
-linear. Gather selects the component after the swizzle. The ETC2 and
-EAC formats (VkFormat 147-156) are read in their 4 x 4 blocks of 8 or 16
-bytes, rows of ceil(width / 4) blocks, each level's plane rounded up to
-64 bytes (Values referenced: Khronos Data Format Specification, ETC2
-Compressed Texture Image Formats).
+linear. Gather selects the component after the swizzle. With texels of
+other than 4 bytes, TEX_BASE and each level's plane are multiples of 64
+bytes.
 
 **Blitter** (with CAPS[30], section 8.2): the pixel size is BLT_OP
 [9:8] 0 = 32, 1 = 16, 2 = 64, 3 = 8 bits, or 128 bits with BLT_OP [13] = 1
@@ -778,13 +775,13 @@ bits takes BLT_COLOR as its low word and BLT_COLOR1-BLT_COLOR3
 (0x00C-0x00E) above it. BLT_OP [19:16] KEEP, for FILL and COPY of 32-bit
 pixels without blending: the bytes of each pixel that are not written
 (0x8 writes the depth of a D24_UNORM_S8_UINT pixel only, 0x7 its stencil
-only). RESOLVE (section 12.11's draft) takes, besides its averages 0-5,
+only). RESOLVE (section 8.2, draft) takes, besides its averages 0-5,
 6 UNORM2_10_10_10 (32 bits: three 10-bit and one 2-bit unsigned
 normalized field, [9:0], [19:10], [29:20], [31:30]) and 7 UNORM1555 (16
 bits: [15] one bit, [14:10], [9:5], [4:0] five bits), each the mean of
 the codes rounded to nearest even; UNORM8 also takes 8-bit pixels,
 SFLOAT16 16 to 64 bits, SFLOAT32 32 to 128 bits and SAMPLE0 8 to 128
-bits.
+bits; averages 8-15 are refused, and Amaterrace does all of 0-7.
 
 9. Fences and interrupts
 ------------------------
