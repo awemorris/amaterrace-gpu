@@ -1187,13 +1187,16 @@ registers before the warp starts):
 | r0, r1, r2 | Barycentrics b0, b1, b2 at the pixel centre, perspective-correct, relative to the original vertices |
 | r3 | Depth at the pixel centre (with 1 sample clamped to [0, 1]; with 4 samples not clamped) |
 | r4, r5 | x + 0.5, y + 0.5 (FragCoord) |
-| r6 | The sample mask in: bit s = sample s covered, after the sample mask test (bit 0 with 1 sample); 0 in helper lanes |
+| r6 | The sample mask in: bit s = sample s covered, after the sample mask test (bit 0 with 1 sample); 0 in helper lanes. Undefined without CAPS[29] (a compiler then takes the mask as 1; Amaterrace always writes it) |
 | r7, r8, r9 | With MS_CTRL[4]: b0, b1, b2 at the centroid: the pixel centre when it is inside the primitive, otherwise the covered sample of the lowest index |
 
 Export targets of a fragment warp: 0x100 + c COLOR0 component c, 0x104
-DEPTH (the same depth for every sample), **0x105 SAMPLE_MASK** (ANDed
-into the lane's sample mask; bits at and above the sample count are
-ignored).
+DEPTH (the same depth for every sample), **0x105 SAMPLE_MASK** (the last
+value written is ANDed with the lane's coverage; bits at and above the
+sample count are ignored). A lane reaches the render output when it
+exported any of these; a fragment program without colour outputs exports
+all ones to 0x105 (not r3 to DEPTH, which would give every sample the
+centre's depth).
 
 **Per-sample operations** (in this order, after the fragment program):
 coverage = r6 AND the exported SAMPLE_MASK AND, with MS_CTRL[8], an alpha
@@ -1211,9 +1214,12 @@ one level, in linear rows (not tiled). Sample s of pixel (x, y) is at
 sample count, ps the pixel size and P = roundup(width, 2) x S x ps; the
 base is aligned to 64 bytes. The render target and depth strides of a
 multisampled draw are P. Texture slots name the sample count in the image
-word (log2, section 8.4). `texf rd, rs1, rs2` of a multisampled slot reads
-sample rs2 (modulo S) of texel (rs1, rs1+1); `texsz.s rd` (immediate 2)
-writes S. SPIR-V's ImageFetch with Sample maps to `texf`, QuerySamples to
+word (TEX_IMAGE[15:12] = log2 S, in the texture layout of WS288 p009 part F,
+pending its merge; section 8.4 still shows the earlier layout). `texf rd,
+rs1, rs2` of a multisampled slot reads sample rs2 (modulo S) of texel
+(rs1, rs1+1), with the layer in rs1+2 for an array (the `.3` form);
+`texsz.s rd` (immediate 2) writes S. Without CAPS[29], `texsz.s` is an
+ISA fault (an optional instruction without its CAPS bit). SPIR-V's ImageFetch with Sample maps to `texf`, QuerySamples to
 `texsz.s`.
 
 **Resolve** is not a unit operation: a driver (or the command processor's
