@@ -97,6 +97,7 @@
 #define GHCI_CAPS_TU_FULL (1u << 26) /* the texture unit of section 8.4: Vulkan 1.0 core */
 #define GHCI_CAPS_GRAPHICS (1u << 27)
 #define GHCI_CAPS_PACKED (1u << 28)
+#define GHCI_CAPS_MS4 (1u << 29) /* 4x multisampling (draft, section 12.11) */
 
 /* CAPS2. */
 #define GHCI_CAPS2_QUEUES(c) ((c) & 0xFFu)
@@ -225,6 +226,7 @@
 #define GHCI_S_BLT_COLOR (GHCI_S_BLT + 8u)
 #define GHCI_S_BLT_CLIP_MIN (GHCI_S_BLT + 9u)
 #define GHCI_S_BLT_CLIP_MAX (GHCI_S_BLT + 10u)
+#define GHCI_S_BLT_RESOLVE (GHCI_S_BLT + 11u) /* RESOLVE (draft, CAPS[29]) */
 
 /*
  * The other ranges.  docs/ghci.md section 8.3 defines the program range;
@@ -342,6 +344,12 @@
 #define GHCI_BLT_COPY 1u
 #define GHCI_BLT_TILE 2u
 #define GHCI_BLT_UNTILE 3u
+#define GHCI_BLT_RESOLVE 4u /* draft, CAPS[29] */
+#define GHCI_BLT_RSV_SAMPLES4 2u /* BLT_RESOLVE[3:0]: log2 of 4 */
+#define GHCI_BLT_RSV_UNORM8 (0u << 4) /* BLT_RESOLVE[7:4]: the average */
+#define GHCI_BLT_RSV_UNORM565 (1u << 4)
+#define GHCI_BLT_RSV_SAMPLE0 (2u << 4)
+#define GHCI_BLT_RSV_TILED (1u << 8)
 #define GHCI_BLT_BLEND_OVER (1u << 4)
 #define GHCI_BLT_BPP16 (1u << 8)
 #define GHCI_BLT_REVERSE (1u << 12)
