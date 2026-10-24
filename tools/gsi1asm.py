@@ -459,6 +459,8 @@ def assemble_one(mn, args, pc, labels):
         ai = 3
     if ai != len(args):
         raise ValueError("%s: too many operands" % mn)
+    if mn == "lda" and not 0 <= imm < 512:
+        raise ValueError("lda: immediate %d: 4 x PT word (0-127) + vertex" % imm)
     if mods and not e.get("fp"):
         raise ValueError("%s: modifiers on an integer instruction" % mn)
     if sat and not e.get("fp"):

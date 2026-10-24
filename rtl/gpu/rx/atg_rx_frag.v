@@ -55,7 +55,7 @@ module atg_rx_frag (
 	/* PT of SU 0 (read port shared with atg_rx_clip, which waits while pt_busy) */
 	output wire pt_rd,
 	output wire [7:0] pt_idx,
-	output wire [5:0] pt_word,
+	output wire [6:0] pt_word,
 	input wire [31:0] pt_rdata,
 	output wire pt_busy,
 	/* Fragment warps to the SU (atg_su fl_*) */
@@ -98,7 +98,7 @@ module atg_rx_frag (
 		end
 	endfunction
 
-	reg [5:0] vc;	/* VARYING_COUNT */
+	reg [6:0] vc;	/* VARYING_COUNT, 0-64 */
 	reg ms4;	/* MS_CTRL[3:0] = 2 */
 	reg cent;	/* MS_CTRL[4] */
 	reg dclip;	/* DEPTH_CLAMP[1] (CAPS[30]): r3 not clamped */
@@ -109,11 +109,11 @@ module atg_rx_frag (
 			dclip <= st_wdata[1];
 	always @(posedge clk)
 		if (!rst_n) begin
-			vc <= 6'd0;
+			vc <= 7'd0;
 			ms4 <= 1'b0;
 			cent <= 1'b0;
 		end else if (st_we && st_idx == GHCI_S_VARYING_COUNT)
-			vc <= st_wdata[5:0] > 6'd32 ? 6'd32 : st_wdata[5:0];
+			vc <= st_wdata > 32'd64 ? 7'd64 : st_wdata[6:0];
 		else if (st_we && st_idx == GHCI_S_MS_CTRL) begin
 			ms4 <= st_wdata[3:0] == 4'd2;
 			cent <= st_wdata[4];
@@ -179,21 +179,21 @@ module atg_rx_frag (
 
 	/* The copy: reads (cv, cw) → writes the next cycle; then the map, then d_s. */
 	reg [1:0] cv;
-	reg [5:0] cw;
+	reg [6:0] cw;
 	reg rd_done, rv_q, map_done;
 	reg [2:0] dsn;	/* d_s words written */
 	reg [1:0] rv_v;
-	reg [5:0] rv_w;
+	reg [6:0] rv_w;
 	wire rd_now = st == S_COPY && !rd_done;
 	assign pt_rd = rd_now;
 	assign pt_idx = ent[8 * cv +: 8];
-	assign pt_word = 6'd4 + cw;
+	assign pt_word = 7'd4 + cw;
 	assign pt_busy = st == S_COPY;
 	wire map_we = st == S_COPY && rd_done && !rv_q && !map_done;
 	wire ds_we = st == S_COPY && map_done && ms4 && dsn != 3'd4;
 	assign fl_pw_we = rv_q || map_we || ds_we;
 	assign fl_pw_addr = map_we ? 12'hFFF : ds_we ? {10'h3FE, dsn[1:0]} :
-		{1'b0, 3'd0, rv_v, 6'd4 + rv_w};
+		{1'b0, 3'd0, rv_v, rv_w[5:0]};
 	assign fl_pw_data = map_we ? 32'd0 : ds_we ? dsv[32 * dsn[1:0] +: 32] : pt_rdata;
 	wire copy_end = map_done && (!ms4 || dsn == 3'd4);
 
@@ -271,8 +271,8 @@ module atg_rx_frag (
 			S_ALLOC:
 				if (fl_gnt) begin
 					cv <= 2'd0;
-					cw <= 6'd0;
-					rd_done <= vc == 6'd0;
+					cw <= 7'd0;
+					rd_done <= vc == 7'd0;
 					map_done <= 1'b0;
 					dsn <= 3'd0;
 					qi <= 3'd0;
@@ -290,13 +290,13 @@ module atg_rx_frag (
 				end
 			S_COPY: begin
 				if (rd_now) begin
-					if (cw + 6'd1 == vc) begin
-						cw <= 6'd0;
+					if (cw + 7'd1 == vc) begin
+						cw <= 7'd0;
 						cv <= cv + 2'd1;
 						if (cv == 2'd2)
 							rd_done <= 1'b1;
 					end else
-						cw <= cw + 6'd1;
+						cw <= cw + 7'd1;
 				end
 				if (map_we)
 					map_done <= 1'b1;
@@ -345,7 +345,7 @@ module atg_rx_frag (
 		end
 	end
 
-	wire unused_ok = &{1'b0, st_wdata[31:6], t_tri[767:764], t_tri[762:760], t_tri[351:320],
+	wire unused_ok = &{1'b0, rv_w[6], t_tri[767:764], t_tri[762:760], t_tri[351:320],
 		t_tri[287:0], b_busy, xl[15], yl[15]};
 endmodule
 

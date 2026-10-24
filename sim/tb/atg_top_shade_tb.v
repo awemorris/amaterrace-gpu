@@ -35,7 +35,7 @@ module atg_top_shade_tb;
 
 	atg_top_scene_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.TB("atg_top_shade"), .SCENE("sim/vec/shade_scene.txt"), .SEED(6), .HAS_VF(1),
-		.NSU(1), .HAS_TU(1), .SU_NPHYS(16), .SU_GRP_W(1), .SU_VARY_WORDS(32), .SU_NREGS(64),
+		.NSU(1), .HAS_TU(1), .SU_NPHYS(16), .SU_GRP_W(1), .SU_VARY_WORDS(64), .SU_NREGS(64),
 		.SU_SB_ENTRIES(8), .SU_SBE_W(3), .SU_PACKED(1), .SU_SUBGROUP(1), .SU_FRAG_RESERVE(2),
 		.SU_LDS_BYTES(16384), .ROP_STENCIL(1)) kc705 (
 		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)

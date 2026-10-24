@@ -33,7 +33,7 @@ module atg_su_pt #(
 	parameter GRP_W = 2,	/* log2(32/NPHYS) (1 for NPHYS 32) */
 	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W) */
 	parameter PT_ENTRIES = 64,	/* PT vertices: a multiple of 32, at most 256 */
-	parameter VARY_WORDS = 16	/* Varying words per vertex (KC705 32) */
+	parameter VARY_WORDS = 16	/* Varying words per vertex, at most 64 (KC705 64) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -48,7 +48,7 @@ module atg_su_pt #(
 	/* PT read port (atg_rx) */
 	input wire pt_rd,
 	input wire [7:0] pt_idx,
-	input wire [5:0] pt_word,
+	input wire [6:0] pt_word,
 	output wire [31:0] pt_rdata,
 	input wire pt_free,
 	input wire [7:0] pt_free_idx,
@@ -91,7 +91,7 @@ module atg_su_pt #(
 	wire [31:0] waddr = wrow * WPV + wword;
 
 	wire [31:0] rrow = {24'd0, pt_idx} / NPHYS;
-	wire [31:0] raddr = rrow * WPV + {26'd0, pt_word};
+	wire [31:0] raddr = rrow * WPV + {25'd0, pt_word};
 	wire [31:0] rbank = {24'd0, pt_idx} % NPHYS;
 	reg [31:0] rb_q;
 	reg [NPHYS*32-1:0] rd_q;

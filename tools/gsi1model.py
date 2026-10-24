@@ -56,9 +56,11 @@
 # lanes whose rs1 is not 0; vote.any/all: whether that mask is not 0 / equals
 # EXEC, as a Boolean; both write every lane (as exec.save).
 # --prims P.hex: the primitive table lda reads in --warps mode, one 32-bit
-# word per line: slot 0..3, vertex 0..2, word 0..63 (word 4 + w is varying
-# word w, as atg_rx_frag copies it); lda of vertex 3 or of a word past 63
-# reads 0.  Without --prims, lda stops the model with an error.
+# word per line: slot 0..3, vertex 0..2, PT word 0..127 (word 4 + w is
+# varying word w, as atg_rx_frag copies it); lda (PT word imm[8:2], vertex
+# imm[1:0]) of vertex 3, of PT words 0-3 (the position, not in the table)
+# or past 4 + --vary reads 0.  Without --prims, lda stops the model with an
+# error.
 # --fault-out: an ISA fault is not an error; the file gets one line per
 # faulting warp, "slot pc" in hex, and the warp stops.
 #
@@ -328,8 +330,8 @@ class Machine:
             elif unit == A.U_LANE:
                 self.lane(f, exec_m, r, src)
             elif unit == A.U_LDA and g is not None and self.prims is not None:
-                vtx, wd = imm & 3, (imm >> 2) & 63
-                v = self.prims[k][vtx][wd] if vtx < 3 else 0
+                vtx, wd = imm & 3, (imm >> 2) & 127
+                v = self.prims[k][vtx][wd] if vtx < 3 and 4 <= wd < 4 + self.vary else 0
                 write(exec_m, lambda a, b, c: v)
             elif unit == A.U_EXP and g is not None:
                 t = imm & 0xFFF
@@ -503,8 +505,8 @@ def main():
                 a.vary)
     if a.prims:
         t = load_hex(a.prims)
-        m.prims = [[[t[(k * 3 + v) * 64 + w] if (k * 3 + v) * 64 + w < len(t) else 0
-                     for w in range(64)] for v in range(3)] for k in range(4)]
+        m.prims = [[[t[(k * 3 + v) * 128 + w] if (k * 3 + v) * 128 + w < len(t) else 0
+                     for w in range(128)] for v in range(3)] for k in range(4)]
     if a.init:
         t = load_hex(a.init)
         for k in range(4):

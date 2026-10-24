@@ -8,11 +8,12 @@
 /*
  * atg_rx_frag_tb: atg_rx_frag with the set-up triangles and their covered
  * quads of sim/vec/rx_frag.txt (tools/rx-vectors.py: clip-space triangles
- * through the model's setup, VARYING_COUNT 0, 1, 4 and 32), a PT model
- * (word w of entry e reads {e, w, 0xC0DE}, one cycle after pt_rd), an SU
+ * through the model's setup, VARYING_COUNT 0, 1, 4 and 32; the testbench
+ * gives triangles 5, 13, ... 64 words and 7, 15, ... 200, read as 64), a PT
+ * model (word w of entry e reads {e, w, 0xC0DE}, one cycle after pt_rd), an SU
  * model (fl_gnt some cycles after fl_req) and a sequence counter.
  *   copy  — per warp: 3 × VARYING_COUNT primitive table writes (vertex v,
- *           word 4 + w, from PT entry v of the triangle) then the map
+ *           varying word w, from PT word 4 + w of entry v of the triangle) then the map
  *           (0xFFF, 0), after the grant; pt_busy while the PT is read
  *   warps — the warps of the model (up to 8 quads each): r0-r5 of every
  *           lane of their quads (b0, b1, b2, z, x + 0.5, y + 0.5) equal
@@ -51,7 +52,8 @@ module atg_rx_frag_tb;
 	reg [15:0] seq = 16'd40;
 	wire fq_ready, busy, pt_rd, pt_busy, fl_req, fl_we, fl_pw_we, fl_go, sq_req;
 	wire [7:0] pt_idx;
-	wire [5:0] pt_word, fl_reg;
+	wire [6:0] pt_word;
+	wire [5:0] fl_reg;
 	wire [4:0] fl_lane;
 	wire [31:0] fl_data, fl_pw_data, fl_mask;
 	wire [11:0] fl_pw_addr;
@@ -85,7 +87,7 @@ module atg_rx_frag_tb;
 	/* PT and SU models, monitors. */
 	always @(posedge clk) begin
 		if (pt_rd)
-			pt_rdata <= {pt_idx, 2'b00, pt_word, 16'hC0DE};
+			pt_rdata <= {pt_idx, 1'b0, pt_word, 16'hC0DE};
 		if (pt_rd && !pt_busy) begin
 			e_copy = e_copy + 1;
 			$display("FAIL atg_rx_frag.copy: pt_rd without pt_busy");
@@ -118,8 +120,8 @@ module atg_rx_frag_tb;
 			if (n_pw < 3 * vc) begin
 				pv = n_pw / vc;
 				pw_ = n_pw % vc;
-				want_a = {1'b0, 3'd0, pv[1:0], 6'd4 + pw_[5:0]};
-				want_d = {t_tri[736 + 8 * pv +: 8], 2'b00, 6'd4 + pw_[5:0], 16'hC0DE};
+				want_a = {1'b0, 3'd0, pv[1:0], pw_[5:0]};
+				want_d = {t_tri[736 + 8 * pv +: 8], 1'b0, 7'd4 + pw_[6:0], 16'hC0DE};
 			end else if (n_pw == 3 * vc) begin
 				want_a = 12'hFFF;
 				want_d = 32'd0;
@@ -198,7 +200,9 @@ module atg_rx_frag_tb;
 				rc = $fscanf(fd, " %h %d %d\n", t_tri, vc, nw);
 				st_we = 1'b1;
 				st_idx = 9'h05B;
-				st_wdata = vc;
+				st_wdata = ntri % 8 == 5 ? 64 : ntri % 8 == 7 ? 200 : vc;
+				if (ntri % 8 == 5 || ntri % 8 == 7)
+					vc = 64;
 				t_load = 1'b1;
 				tick;
 				st_we = 1'b0;

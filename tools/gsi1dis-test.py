@@ -137,7 +137,8 @@ def rnd_insn(r, n, e):
         elif o == "m":
             args.append("%d(%s)" % (rnd_imm(r), rnd_reg(r)))
         elif o == "i":
-            args.append("%d" % (r.randrange(32) if e.get("shift") else rnd_imm(r)))
+            args.append("%d" % (r.randrange(32) if e.get("shift") else
+                                r.randrange(512) if n == "lda" else rnd_imm(r)))
         elif o == "x":
             args.append("%d" % rnd_imm(r))
         elif o == "w":

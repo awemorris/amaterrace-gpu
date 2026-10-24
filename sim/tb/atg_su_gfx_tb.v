@@ -90,7 +90,7 @@ module atg_su_gfx_chk #(
 	wire [1:0] fl_slot;
 	reg pt_rd = 1'b0, pt_free = 1'b0;
 	reg [7:0] pt_idx = 0, pt_free_idx = 0;
-	reg [5:0] pt_word = 0;
+	reg [6:0] pt_word = 0;
 	wire [31:0] pt_rdata;
 	wire [7:0] pt_done;
 	reg ex_ready = 1'b0;
@@ -629,7 +629,7 @@ module atg_su_gfx_chk #(
 				@(negedge clk);
 				pt_rd = 1'b1;
 				pt_idx = l[7:0];
-				pt_word = w[5:0];
+				pt_word = w[6:0];
 				@(negedge clk);
 				pt_rd = 1'b0;
 				/* A word the model did not write must still be unwritten (X: the

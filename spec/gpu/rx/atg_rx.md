@@ -37,7 +37,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **PT of SU 0 (atg_su pt_*)** | | | |
 | `pt_rd` | out | 1 | Read. |
 | `pt_idx` | out | 8 | Entry. |
-| `pt_word` | out | 6 | Word. |
+| `pt_word` | out | 7 | Word (0-3 position, 4 + w varying word w). |
 | `pt_rdata` | in | 32 | Data. |
 | `pt_free` | out | 1 | Free. |
 | `pt_free_idx` | out | 8 | Entry. |
@@ -49,7 +49,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fl_lane` | out | 5 | Lane. |
 | `fl_data` | out | 32 | Data. |
 | `fl_pw_we` | out | 1 | Primitive table word (the 3 vertices' varyings). |
-| `fl_pw_addr` | out | 12 | {primitive, vertex, word}. |
+| `fl_pw_addr` | out | 12 | {primitive, vertex, varying word} (atg_rx_frag §3). |
 | `fl_pw_data` | out | 32 | Data. |
 | `fl_go` | out | 1 | Start the warp. |
 | `fl_mask` | out | 32 | EXEC (whole quads). |

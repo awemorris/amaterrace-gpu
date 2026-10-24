@@ -10,15 +10,18 @@
  * fragment warp's primitives, written by RX before the warp starts and
  * read by lda (short results).
  *
- * Writes (pw_*): word pw_addr[5:0] of vertex pw_addr[7:6] of primitive
- * pw_addr[10:8] of warp pw_warp; pw_addr 0xFFF instead writes the warp's
- * primitive map (bits 3q+2..3q: the primitive of quad q; RX writes it for
- * every warp, 0 in v1 where a warp holds one triangle).  lda rd, imm:
- * every lane reads word imm[7:2] of vertex imm[1:0] of its quad's
- * primitive (0 beyond VARY_WORDS or for vertex 3); the result is on s_*
- * SHORT_LAT cycles after x_valid, for the EXEC lanes.  The table has one
- * copy per quad of a lane group (NPHYS/4 read ports, design §3.5), read
- * asynchronously.  See spec/gpu/su/atg_su_lda.md.
+ * Writes (pw_*): varying word pw_addr[5:0] of vertex pw_addr[7:6] of
+ * primitive pw_addr[10:8] of warp pw_warp; pw_addr 0xFFF instead writes
+ * the warp's primitive map (bits 3q+2..3q: the primitive of quad q; RX
+ * writes it for every warp, 0 in v1 where a warp holds one triangle).
+ * lda rd, imm: every lane reads PT word imm[8:2] (4 + w: varying word w)
+ * of vertex imm[1:0] of its quad's primitive (0 for PT words 0-3, beyond
+ * 4 + VARY_WORDS or for vertex 3); the result is on s_* SHORT_LAT cycles
+ * after the group was taken, for the EXEC lanes.  The table has
+ * NC = min(NPHYS/4, 2) copies in block RAM (design §3.5), read
+ * synchronously: copy c reads quad p * NC + c in read cycle p, so a lane
+ * group takes NR = NPHYS/4/NC cycles and x_ready is 0 in its later ones.
+ * See spec/gpu/su/atg_su_lda.md.
  */
 
 `timescale 1ns / 1ps
@@ -32,8 +35,8 @@ module atg_su_lda #(
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
 	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
 	parameter PRIMS = 8,	/* Primitives per warp slot */
-	parameter VARY_WORDS = 36,	/* Words per vertex (4 + 32 varyings) */
-	parameter SHORT_LAT = 6	/* Cycles from x_valid to the short result (one fixed pipeline for classes a and f, design §3.1.1) */
+	parameter VARY_WORDS = 32,	/* Varying words per vertex, at most 64 (KC705 64) */
+	parameter SHORT_LAT = 6	/* Cycles from the group's take to the short result (one fixed pipeline for classes a and f, design §3.1.1); at least 1 + NR */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -67,10 +70,14 @@ module atg_su_lda #(
 `include "atg_su_uop.vh"
 
 	localparam DW = NPHYS * 32;
-	localparam NQ = NPHYS / 4;	/* quads per lane group = table copies */
+	localparam NQ = NPHYS < 8 ? 1 : NPHYS / 4;	/* quads per lane group */
+	localparam NC = NQ < 2 ? NQ : 2;	/* table copies (read ports) */
+	localparam NR = NQ / NC;	/* read cycles per group */
+	localparam PW = NR > 1 ? $clog2(NR) : 1;
+	localparam LD = SHORT_LAT - NR;	/* data stages after the last read */
 	localparam DEPTH = NWARPS * PRIMS * 3 * VARY_WORDS;
 	localparam AW = $clog2(DEPTH);
-	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS + DW;
+	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS;
 
 	/* The primitive maps. */
 	reg [NWARPS*24-1:0] pmap;
@@ -89,43 +96,121 @@ module atg_su_lda #(
 	wire [31:0] waddr = ((({{(32-WARP_W){1'b0}}, pw_warp} * PRIMS + wprim) * 3 + wvtx) *
 		VARY_WORDS) + wword;
 
-	/* lda: the word and vertex of the immediate. */
+	/* The read cycle of the group being read: 0 takes a group from x_*. */
+	reg [PW-1:0] ph;
+	assign x_ready = ph == {PW{1'b0}};
 	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_LDA && x_uop[ATG_UOP_WRD];
-	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
-	wire [31:0] rvtx = {30'd0, imm[1:0]};
-	wire [31:0] rword = {26'd0, imm[7:2]};
-	wire rok = rvtx < 3 && rword < VARY_WORDS;
-	wire [23:0] wmap = pmap[x_warp*24 +: 24];
-	wire [31:0] qbase = {{(32-GRP_W){1'b0}}, x_grp} * NQ;	/* the group's first quad */
+	wire take = mine && x_ready;
 
-	reg [DW-1:0] y;
+	/* The group's warp, quads' primitives and immediate: from x_* in read cycle 0, then latched. */
+	reg [WARP_W-1:0] l_warp;
+	reg [GRP_W-1:0] l_grp;
+	reg [23:0] l_map;
+	reg [8:0] l_imm;
+	wire [WARP_W-1:0] c_warp = x_ready ? x_warp : l_warp;
+	wire [GRP_W-1:0] c_grp = x_ready ? x_grp : l_grp;
+	wire [23:0] c_map = x_ready ? pmap[x_warp*24 +: 24] : l_map;
+	wire [8:0] c_imm = x_ready ? x_uop[ATG_UOP_IMM +: 9] : l_imm;
+	always @(posedge clk)
+		if (!rst_n) begin
+			ph <= {PW{1'b0}};
+			l_warp <= {WARP_W{1'b0}};
+			l_grp <= {GRP_W{1'b0}};
+			l_map <= 24'd0;
+			l_imm <= 9'd0;
+		end else begin
+			if (take) begin
+				l_warp <= x_warp;
+				l_grp <= x_grp;
+				l_map <= pmap[x_warp*24 +: 24];
+				l_imm <= x_uop[ATG_UOP_IMM +: 9];
+			end
+			if (NR > 1 && (take || !x_ready))
+				ph <= ph + {{(PW-1){1'b0}}, 1'b1};
+		end
+
+	wire [31:0] rvtx = {30'd0, c_imm[1:0]};
+	wire [31:0] rword = {25'd0, c_imm[8:2]};
+	wire rok = rvtx < 3 && rword >= 4 && rword < 4 + VARY_WORDS;
+	wire [31:0] rvary = rword - 32'd4;
+	wire [31:0] qbase = {{(32-GRP_W){1'b0}}, c_grp} * NQ +
+		{{(32-PW){1'b0}}, ph} * NC;	/* the quad copy 0 reads */
+
+	/* The copies: one synchronous read each per cycle. */
+	reg [NC*32-1:0] rq;
+	reg [NC-1:0] rq_ok;
 	genvar q;
 	generate
-	for (q = 0; q < NQ; q = q + 1) begin : g_copy
+	for (q = 0; q < NC; q = q + 1) begin : g_copy
 		reg [31:0] m [0:DEPTH-1];
 		wire [31:0] qi = qbase + q;
-		wire [2:0] prim = wmap[3 * qi[2:0] +: 3];
-		wire [31:0] raddr = ((({{(32-WARP_W){1'b0}}, x_warp} * PRIMS + {29'd0, prim}) * 3 +
-			rvtx) * VARY_WORDS) + rword;
-		wire [31:0] r = m[raddr[AW-1:0]];
-		always @(posedge clk)
+`ifdef MUT_LDA_PHASE
+		wire [31:0] qm = {{(32-GRP_W){1'b0}}, c_grp} * NQ + q;
+		wire [2:0] prim = c_map[3 * qm[2:0] +: 3];
+`else
+		wire [2:0] prim = c_map[3 * qi[2:0] +: 3];
+`endif
+		wire [31:0] raddr = ((({{(32-WARP_W){1'b0}}, c_warp} * PRIMS + {29'd0, prim}) * 3 +
+			rvtx) * VARY_WORDS) + rvary;
+		always @(posedge clk) begin
 			if (tab_we)
 				m[waddr[AW-1:0]] <= pw_data;
-		always @(*)
-			y[128 * q +: 128] = rok && {29'd0, prim} < PRIMS ? {4{r}} : 128'd0;
+			rq[32 * q +: 32] <= m[raddr[AW-1:0]];
+			rq_ok[q] <= rok && {29'd0, prim} < PRIMS;
+		end
 		wire unused_q = &{1'b0, qi, raddr};
 	end
 	endgenerate
 
-	/* SHORT_LAT stages; stage 0 is registered from x_*. */
-	reg [EW-1:0] pipe [0:SHORT_LAT-1];
+	/* The reads of a group gathered: read cycle p's data is in rq the cycle after. */
+	reg [PW-1:0] rph;
+	always @(posedge clk)
+		if (!rst_n)
+			rph <= {PW{1'b0}};
+		else
+			rph <= ph;
+	wire [DW-1:0] y;	/* the group's data in the cycle of its last read's */
+	genvar c;
+	generate
+	for (c = 0; c < NC; c = c + 1) begin : g_last
+		assign y[128 * ((NR - 1) * NC + c) +: 128] = rq_ok[c] ? {4{rq[32 * c +: 32]}} : 128'd0;
+	end
+	if (NR > 1) begin : g_buf
+		/* the earlier read cycles' data, held until the last */
+		reg [128*NC*(NR-1)-1:0] ybuf;
+		genvar p;
+		for (p = 0; p < NR - 1; p = p + 1) begin : g_ph
+			localparam [PW-1:0] PV = p;
+			for (c = 0; c < NC; c = c + 1) begin : g_c
+				always @(posedge clk)
+					if (rph == PV)
+						ybuf[128 * (p * NC + c) +: 128] <= rq_ok[c] ?
+							{4{rq[32 * c +: 32]}} : 128'd0;
+			end
+		end
+		assign y[128*NC*(NR-1)-1:0] = ybuf;
+	end else begin : g_nobuf
+		wire unused_rph = &{1'b0, rph};
+	end
+	endgenerate
+
+	/* The data, NR cycles after the take, through LD stages. */
+	reg [DW-1:0] dp [0:LD-1];
 	integer k;
+	always @(posedge clk) begin
+		dp[0] <= y;
+		for (k = 1; k < LD; k = k + 1)
+			dp[k] <= dp[k-1];
+	end
+
+	/* SHORT_LAT stages of the group's control; stage 0 is registered from x_*. */
+	reg [EW-1:0] pipe [0:SHORT_LAT-1];
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			for (k = 0; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= {EW{1'b0}};
 		end else begin
-			pipe[0] <= {mine, x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0], y};
+			pipe[0] <= {take, x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0]};
 			for (k = 1; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= pipe[k-1];
 		end
@@ -136,12 +221,11 @@ module atg_su_lda #(
 	assign s_warp = o[EW-2 -: WARP_W];
 	assign s_grp = o[EW-2-WARP_W -: GRP_W];
 	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];
-	assign s_lanes = o[DW +: NPHYS];
-	assign s_data = o[DW-1:0];
-	assign x_ready = 1'b1;
+	assign s_lanes = o[NPHYS-1:0];
+	assign s_data = dp[LD-1];
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_a, x_b, x_c, x_mask[2*NPHYS-1:NPHYS],
-		x_info, x_uop, imm, waddr, wmap, qbase};
+		x_info, x_uop, waddr, qbase, rvary};
 endmodule
 
 `default_nettype wire

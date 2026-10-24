@@ -16,7 +16,7 @@ The post-transform buffer (PT): vertex warps' exports of the position and the va
 | `GRP_W` | `2` | log2(32/NPHYS) (1 for NPHYS 32). |
 | `UOP_W` | `104` | Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh). |
 | `PT_ENTRIES` | `64` | PT vertices: a multiple of 32, at most 256 (two warps of 32 with the default 64). |
-| `VARY_WORDS` | `16` | Varying words per vertex (KC705 32). |
+| `VARY_WORDS` | `16` | Varying words per vertex, at most 64 (KC705 64). |
 
 ## 3. Ports
 
@@ -37,7 +37,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | **PT read port (atg_rx)** | | | |
 | `pt_rd` | in | 1 | Read. |
 | `pt_idx` | in | 8 | Vertex entry. |
-| `pt_word` | in | 6 | Word: 0-3 position, 4.. varyings. |
+| `pt_word` | in | 7 | Word: 0-3 position, 4 + w varying word w. |
 | `pt_rdata` | out | 32 | Data, the cycle after pt_rd (held until the next read). |
 | `pt_free` | in | 1 | Return a vertex entry (one-cycle pulse). |
 | `pt_free_idx` | in | 8 | Its index. |
@@ -100,3 +100,5 @@ design §3.4.3, §3.5 (PT), §3.8 (PT reservation, deadlock); spec atg_vf_asm.md
 ## 10. Status
 
 Implemented in WS288 p009 part B1 (P1, branch p1-su-gfx), split off atg_su_exp (its PT part).  New ports against the earlier atg_su_exp: `pt_warp`, `vl_go`, `vl_mask`, `pt_done` (Q1's allocator decision of 2026-10-24 and the PT-ready rule); atg_su has the new output `pt_done`.
+
+Varying 64 components (Vulkan 1.0's limit): pt_word is 7 bits (PT words up to 67 with VARY_WORDS 64; was 6), VARY_WORDS at most 64 (exp targets 0x010-0x04F).  KC705 (NPHYS 16, PT_ENTRIES 64): 16 banks of 4 × 68 words, one BRAM18 each as before (estimate).

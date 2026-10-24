@@ -38,7 +38,7 @@ module atg_su #(
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): texsz.s */
 	parameter LDS_BYTES = 4096,	/* Shared memory bytes */
 	parameter PT_ENTRIES = 64,	/* PT vertices */
-	parameter VARY_WORDS = 16,	/* Varying words per vertex */
+	parameter VARY_WORDS = 16,	/* Varying words per vertex, at most 64 (KC705 64) */
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
@@ -81,7 +81,7 @@ module atg_su #(
 	/* PT read for the RX */
 	input wire pt_rd,
 	input wire [7:0] pt_idx,
-	input wire [5:0] pt_word,
+	input wire [6:0] pt_word,
 	output wire [31:0] pt_rdata,
 	input wire pt_free,
 	input wire [7:0] pt_free_idx,
@@ -483,7 +483,7 @@ module atg_su #(
 		.s_data(lane_s_data), .s_lanes(lane_s_lanes)
 	);
 
-	atg_su_lda #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .VARY_WORDS(VARY_WORDS + 4)) lda (
+	atg_su_lda #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .VARY_WORDS(VARY_WORDS)) lda (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),

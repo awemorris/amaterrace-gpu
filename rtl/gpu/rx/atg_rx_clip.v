@@ -52,7 +52,7 @@ module atg_rx_clip (
 	/* PT read (shared with atg_rx_scan in atg_rx: scan has priority) */
 	output wire pt_rd,
 	output wire [7:0] pt_idx,
-	output wire [5:0] pt_word,
+	output wire [6:0] pt_word,
 	input wire [31:0] pt_rdata,
 	input wire pt_busy,
 	/* To atg_rx_setup */
@@ -211,7 +211,7 @@ module atg_rx_clip (
 	/* PT reads: vertex rd_n / 4, word rd_n % 4, data the next cycle. */
 	assign pt_rd = st == S_READ && rd_n < rd_lim && !pt_busy;
 	assign pt_idx = rd_n[3:2] == 2'd0 ? ent[7:0] : rd_n[3:2] == 2'd1 ? ent[15:8] : ent[23:16];
-	assign pt_word = {4'd0, rd_n[1:0]};
+	assign pt_word = {5'd0, rd_n[1:0]};
 	assign prim_ready = st == S_IDLE && !raw_kick;
 	assign busy = st != S_IDLE;
 

@@ -40,7 +40,7 @@ those instructions, so the module is not part of the tree (Q1, 2026-10-23).
 | `MS4` | `0` | 4x multisampling (CAPS[29]): texsz.s in the decoder. |
 | `LDS_BYTES` | `4096` | Shared memory bytes. |
 | `PT_ENTRIES` | `64` | PT vertices. |
-| `VARY_WORDS` | `16` | Varying words per vertex. |
+| `VARY_WORDS` | `16` | Varying words per vertex, at most 64 (KC705 64; atg_su_pt and atg_su_lda). |
 | `ADDR_W` | `32` | GPU address width. |
 | `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
@@ -81,7 +81,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fl_lane` | in | 5 | Lane. |
 | `fl_data` | in | 32 | Data. |
 | `fl_pw_we` | in | 1 | Primitive table write. |
-| `fl_pw_addr` | in | 12 | {primitive, vertex, word}. |
+| `fl_pw_addr` | in | 12 | {primitive, vertex, varying word} (atg_su_lda §3). |
 | `fl_pw_data` | in | 32 | Data. |
 | `fl_go` | in | 1 | Start. |
 | `fl_mask` | in | 32 | Initial EXEC (quads). |
@@ -89,7 +89,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **PT read for the RX** | | | |
 | `pt_rd` | in | 1 | Read. |
 | `pt_idx` | in | 8 | Entry. |
-| `pt_word` | in | 6 | Word. |
+| `pt_word` | in | 7 | Word (0-3 position, 4 + w varying word w). |
 | `pt_rdata` | out | 32 | Data. |
 | `pt_free` | in | 1 | Free an entry. |
 | `pt_free_idx` | in | 8 | Entry. |

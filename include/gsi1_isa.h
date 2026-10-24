@@ -187,9 +187,14 @@
 #define GSI1_EXP_SAMPLE_MASK 0x105u
 #define GSI1_COLOR_ATTACHMENTS 4u
 
-/* lda's immediate: the primitive table word (position 0-3, varying w at 4 + w) and the vertex. */
-#define GSI1_LDA(word, vertex) ((((word) & 0x3Fu) << 2) | ((vertex) & 3u))
+/*
+ * lda's immediate (section 12.10): the PT word in [8:2] (varying w at
+ * 4 + w; words 0-3 read 0) and the vertex in [1:0].  A GPU with CAPS[30]
+ * has the varying words 0-63 (Vulkan's 64 output and input components).
+ */
+#define GSI1_LDA(word, vertex) ((((word) & 0x7Fu) << 2) | ((vertex) & 3u))
 #define GSI1_PT_VARYING(w) (4u + (w))
+#define GSI1_VARYING_WORDS 64u
 
 /*
  * Instruction fields (section 12.4).  word0 is a RISC-V 32-bit layout;

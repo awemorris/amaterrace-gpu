@@ -555,7 +555,7 @@ module atg_top #(
 	/* RX ↔ SU 0. */
 	wire pt_rd, pt_free;
 	wire [7:0] pt_idx, pt_free_idx;
-	wire [5:0] pt_word;
+	wire [6:0] pt_word;
 	wire [31:0] pt_rdata;
 	wire fl_req, fl_gnt, fl_we, fl_pw_we, fl_go;
 	wire [5:0] fl_reg;
@@ -655,7 +655,7 @@ module atg_top #(
 		assign rx_prim_ready = 1'b0;
 		assign pt_rd = 1'b0;
 		assign pt_idx = 8'd0;
-		assign pt_word = 6'd0;
+		assign pt_word = 7'd0;
 		assign pt_free = 1'b0;
 		assign pt_free_idx = 8'd0;
 		assign fl_req = 1'b0;

@@ -184,7 +184,7 @@ module atg_kc705_raster #(
 		.SU_SUBGROUP(1),
 		.SU_FRAG_RESERVE(2),
 		.SU_LDS_BYTES(16384),
-		.SU_VARY_WORDS(32)
+		.SU_VARY_WORDS(64)
 	) gpu (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(mem_ready),
 		.s_awaddr(s_awaddr[16:0]), .s_awid(s_awid), .s_awvalid(s_awvalid), .s_awready(s_awready), .s_wdata(s_wdata), .s_wstrb(s_wstrb), .s_wlast(s_wlast), .s_wvalid(s_wvalid), .s_wready(s_wready), .s_bid(s_bid), .s_bresp(s_bresp), .s_bvalid(s_bvalid),

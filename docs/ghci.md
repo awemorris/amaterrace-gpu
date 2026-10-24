@@ -756,7 +756,7 @@ vendor's (Amaterrace: reads to the nearest fp32, writes to UNORM and
 | 0x058 | CULL | [1:0] 1 front, 2 back, 3 both; [2] front = counter-clockwise |
 | 0x059 | DEPTH_CLAMP | (CAPS[30]) [0] depth clamp: no depth clipping, the depth clamped to the viewport's depth range; [1] DEPTH_CLIP: Vulkan's depth clipping (the near and far planes) and an unclamped r3 (0: the earlier behaviour, the near plane only and r3 clamped to [0, 1]) |
 | 0x05A | RAST_MODE | (CAPS[30]) [0] depth bias; [2:1] polygon mode, 0 fill (others read as fill); [3] fragments only inside the viewport's rectangle; [5:4] the depth format the bias is for: 0 none (no bias), 1 D16, 2 D24, 3 D32_SFLOAT; [6] rasterizer discard: no primitive is rasterized |
-| 0x05B | VARYING_COUNT | Varying words per vertex for the fragment warps (with CAPS[30] up to 64: Vulkan's 64 output and input components) |
+| 0x05B | VARYING_COUNT | Varying words per vertex for the fragment warps: up to 64 with CAPS[30] (Vulkan's 64 output and input components), up to 16 without; a larger value reads as the limit |
 | 0x05C | DEBUG_COLOR | RGBA8 (R in [7:0]) of the direct path without shaders |
 | 0x05D | PROVOKING | [0] 0 first, 1 last vertex |
 | 0x05E, 0x05F | MS_CTRL, SAMPLE_KILL | Multisampling (section 12.11) |
@@ -1483,7 +1483,10 @@ binding (or location), and a kind-specific word:
 
 - **Varying words.** Location L, component c is varying word w + c: a
   vertex program exports it to 0x010 + w + c, a fragment program reads
-  it with `lda` from primitive-table word 4 + w + c (words up to 59). A
+  it with `lda` from primitive-table word 4 + w + c (w + c up to 63 with
+  CAPS[30], 15 without: VARYING_COUNT's limit; `lda`'s immediate is 4
+  times the primitive-table word plus the vertex 0-2, the word in [8:2];
+  words 0-3 and words past VARYING_COUNT's limit read 0). A
   pipeline gives both stages the same w of each location (by default
   4 L) and sets VARYING_COUNT to cover the largest. An entry of kind 2 or
   3 with binding 0xFFFFFFFF is the varying word the vertex program also
