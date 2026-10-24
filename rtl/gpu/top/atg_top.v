@@ -587,6 +587,7 @@ module atg_top #(
 	wire [31:0] at_old;
 	wire at_error;
 	wire [(NSU > 0 ? NSU : 1)-1:0] su_busy_v, su_fault_v;
+	wire [(NSU > 0 ? NSU : 1)*32-1:0] su_fault_addr_v;	/* each SU's fault PC */
 
 	generate
 	if (HAS_VF != 0) begin : g_vf
@@ -801,7 +802,6 @@ module atg_top #(
 		wire [511:0] s_ex_color;
 		wire [127:0] s_ex_depth;
 		wire [DW-1:0] s_sa_push_data;
-		wire [31:0] s_fault_addr;
 		wire g0 = k == 0;
 
 		atg_su #(
@@ -853,7 +853,7 @@ module atg_top #(
 			.sa_ctl_valid(s_sa_ctl_valid), .sa_ctl_data(s_sa_ctl_data),
 			.sa_qstat(sa_qstat), .sa_stat(sa_stat), .sa_qtag(sa_qtag),
 			.busy(su_busy_v[k]), .fault(su_fault_v[k]),
-			.fault_addr(s_fault_addr)
+			.fault_addr(su_fault_addr_v[k*32 +: 32])
 		);
 
 		if (k == 0) begin : g_su0
@@ -888,15 +888,27 @@ module atg_top #(
 				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last,
 				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data};
 		end
-		wire unused_slots = &{1'b0, s_vl_slot, s_fl_slot, s_fault_addr};
+		wire unused_slots = &{1'b0, s_vl_slot, s_fl_slot};
 	end
 
 	if (NSU > 0) begin : g_atom
-		/* The SUs' fault: the OR, and the address of SU 0 (v1). */
+		/*
+		 * The SUs' ISA fault: the OR, and FAULT_ADDR = the PC of the
+		 * lowest-numbered SU that faults in that cycle (ghci §12.6).
+		 */
 		wire atom_busy;
+		reg [31:0] fault_pc;
+		integer j;
+
+		always @(*) begin
+			fault_pc = 32'd0;
+			for (j = NSU - 1; j >= 0; j = j - 1)
+				if (su_fault_v[j])
+					fault_pc = su_fault_addr_v[j*32 +: 32];
+		end
 		assign su_busy = |su_busy_v || atom_busy;
 		assign su_fault = |su_fault_v;
-		assign su_fault_addr = 32'd0;
+		assign su_fault_addr = fault_pc;
 
 		atg_mc_atom #(
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NATOM(NSU),
@@ -954,12 +966,14 @@ module atg_top #(
 		assign at_error = 1'b0;
 		assign su_busy_v = 1'b0;
 		assign su_fault_v = 1'b0;
+		assign su_fault_addr_v = 32'd0;
 		wire unused_su = &{1'b0, cs_kick, lc_kick, inv, vl_req, vl_we, vl_reg, vl_lane, vl_data,
 			vl_go, vl_mask, fl_req, fl_we, fl_reg, fl_lane, fl_data, fl_pw_we, fl_pw_addr,
 			fl_pw_data, fl_go, fl_mask, fl_info, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx,
 			tx_ready, tr_valid, tr_tag, tr_data, tr_last, ex_ready, ex_next, sa_push_ready,
 			sa_pop_valid, sa_pop_data, sa_qstat, sa_stat, sa_qtag, at_ready, at_rsp_valid,
-			at_old, at_error, su_busy_v, su_fault_v, at_valid, at_op, at_addr, at_a, at_b};
+			at_old, at_error, su_busy_v, su_fault_v, su_fault_addr_v, at_valid, at_op, at_addr,
+			at_a, at_b};
 	end
 	endgenerate
 
