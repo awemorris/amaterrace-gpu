@@ -4,7 +4,7 @@ RTL: `boards/kc705/lib/atg_kc705_clk.v`.  Parent: atg_kc705_raster.  Implemented
 
 ## 1. Purpose and place
 
-The KC705's clocks: SYSCLK 200 MHz (differential) → MMCME2 → gclk 100 MHz, the MIG reference, and the pixel clocks (BUFGMUX by PCLK_SEL); resets synchronised per domain.
+The KC705's clocks: SYSCLK 200 MHz (differential) → MMCME2 → gclk 20 MHz (bring-up, ws288 p024), the MIG reference, and the pixel clocks (BUFGMUX by PCLK_SEL); resets synchronised per domain.
 
 ## 2. Parameters
 
@@ -20,7 +20,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `sys_clk_n` | in | 1 | SYSCLK -. |
 | `cpu_reset` | in | 1 | CPU_RESET button (active high). |
 | `pclk_sel` | in | 1 | PCLK_SEL[0] (gclk). |
-| `gclk` | out | 1 | 100 MHz. |
+| `gclk` | out | 1 | 20 MHz (bring-up; the simulation model gives 100 MHz). |
 | `grst_n` | out | 1 | gclk reset. |
 | `ref_clk` | out | 1 | 200 MHz for the MIG. |
 | `ref_rst_n` | out | 1 | Its reset. |
@@ -32,7 +32,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 ## 4. Behaviour
 
 IBUFDS + BUFG: ref_clk (200 MHz, the MIG's system clock, taken without the MIG's own buffer).
-Three clock managers from ref_clk: gclk MMCM (DIVCLK 1, MULT 5, O0 10: 100 MHz, BUFG); 640×480
+Three clock managers from ref_clk: gclk MMCM (DIVCLK 1, MULT 5, O0 50: 20 MHz, BUFG; 2026-10-25 p024: from 100 MHz, the core's Fmax estimate is 23-25 MHz until p025); 640×480
 PLL (DIVCLK 5, MULT 34, O0 54: 25.185 MHz); 720p MMCM (DIVCLK 10, MULT 59.375, O0 16: 74.21875
 MHz); BUFGMUX by pclk_sel.  No 5 × pixel clock (no TMDS on the KC705).  Each reset = CPU_RESET
 released and the domain's clock manager locked, through am_sync (unreset) in the domain.  The

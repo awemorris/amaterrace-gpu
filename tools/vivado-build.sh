@@ -12,7 +12,11 @@
 # has one, so it goes first on LD_LIBRARY_PATH when the host lacks it.
 # Standard input is /dev/null (Vivado waits on it after an error).
 # Prints the utilisation's main rows, WNS/WHS and the bitstream's hash.
-# VIVADO_TIMEOUT (default 1800 s) bounds the run.
+# VIVADO_TIMEOUT (default 1800 s) bounds the run.  VIVADO_IP names a
+# directory of generated IP cores (boards/BOARD/ip.tcl's OUT) that the
+# build reads (kc705: the MIG, the PCIe bridge and the AXI cores).
+# VIVADO_LOCK (default /tmp/zedbsd-vivado.lock): the run holds it, one
+# Vivado at a time on the host.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 [ $# -eq 2 ] || { echo "usage: vivado-build.sh BOARD TOP" >&2; exit 2; }
@@ -48,9 +52,10 @@ mkdir -p "$out"
 start=$(date +%s)
 rc=0
 # Vivado writes its .Xil scratch into the current directory.
-(cd "$out" && timeout "${VIVADO_TIMEOUT:-1800}" vivado -mode batch -nojournal \
+(cd "$out" && flock "${VIVADO_LOCK:-/tmp/zedbsd-vivado.lock}" \
+	timeout "${VIVADO_TIMEOUT:-1800}" vivado -mode batch -nojournal \
 	-log vivado.log -source "$root/tools/vivado-build.tcl" \
-	-tclargs "$root" "$topdir" "$top" "$out" "$part" </dev/null >/dev/null) || rc=$?
+	-tclargs "$root" "$topdir" "$top" "$out" "$part" "${VIVADO_IP:-}" </dev/null >/dev/null) || rc=$?
 if [ $rc -ne 0 ]; then
 	grep -E '^(ERROR|CRITICAL WARNING)' "$out/vivado.log" | head -20 >&2
 	echo "vivado-build: failed rc $rc (log $out/vivado.log)" >&2

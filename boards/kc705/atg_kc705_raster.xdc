@@ -34,12 +34,20 @@ create_clock -name tck -period 33.333 [get_nets -hier -filter {NAME =~ *jtag/tck
 
 ## The domains meet only through am_sync and am_afifo (and the JTAG
 ## bridge's handshake-protected words, am_jtag_regs; the DC's quasi-static
-## configuration, atg_dc_regs §7; the MIG side through the AXI clock
-## converter).
+## configuration, atg_dc_regs §7; the MIG side and BAR2 through the AXI
+## clock converters; BAR0 through am_axi_cdc; MSI through am_sync).  gclk
+## is 20 MHz for the board's bring-up (atg_kc705_clk, ws288 p024).  The
+## groups: gclk; the two pixel clocks (behind one BUFGMUX); the MIG's
+## ui_clk (200 MHz, from its own MMCM on ref_clk); the PCIe bridge's
+## axi_aclk_out (user_clk, 125 MHz from pcie_refclk); TCK.  Vivado would
+## otherwise time gclk against ui_clk (both from SYSCLK) and the PCIe clock
+## against everything.
 set_clock_groups -asynchronous \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/mmcm_g/CLKOUT0}]] \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/pll_a/CLKOUT0}]] \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/mmcm_b/CLKOUT0}]] \
+	-group [get_clocks -of_objects [get_pins mig/ddr3/ui_clk]] \
+	-group [get_clocks -of_objects [get_pins pcie/bridge/axi_aclk_out]] \
 	-group [get_clocks tck]
 
 ## CPU_RESET, active high.

@@ -268,7 +268,7 @@ module atg_kc705_raster #(
 	);
 
 	atg_top #(
-		.GCLK_HZ(32'd100000000),
+		.GCLK_HZ(32'd20000000),	/* atg_kc705_clk's gclk (bring-up, ws288 p024) */
 		.S_ID_W(4),
 		.S_LEN_W(8),
 		.LINE_BYTES(64),
