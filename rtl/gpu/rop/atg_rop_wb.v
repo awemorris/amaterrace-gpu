@@ -195,34 +195,45 @@ module atg_rop_wb #(
 
 	/* The entries with the pass's new bytes merged (taken in S_BWAIT): slot
 	 * l's p_ps bytes from byte p_soff of entry p_ent, a later slot over an
-	 * earlier one, bytes past the line dropped.  Each slot's bytes are
-	 * shifted to their place in a line, so that every byte of an entry
-	 * chooses among the four slots only. */
+	 * earlier one.  The offsets are multiples of p_ps (the base, stride and
+	 * alignment of docs/ghci.md section 8.5; the low bits of one that is not
+	 * are ignored), so a slot's pixel is the whole of its p_ps-byte unit of
+	 * the line: the pixel repeated over 16 bytes gives every byte of the line
+	 * its byte (byte b: b mod 16), and each byte of an entry chooses among
+	 * the four slots only. */
 	reg [LINE_BYTES*8-1:0] m_dat0, m_dat1;
 	reg [LINE_BYTES-1:0] m_dirty0, m_dirty1;
-	reg [LINE_BYTES*8+127:0] m_sh;	/* slot l's bytes at their place */
-	reg [LINE_BYTES+15:0] m_be;	/* and their byte enables */
+	reg [127:0] m_rep;	/* slot l's pixel repeated */
+	reg [LINE_SHIFT-1:0] m_bo;
+	/* the low bits of an offset within its unit: p_ps - 1 */
+	wire [3:0] m_lm = {p_ps[4], p_ps[4] | p_ps[3], p_ps[4] | p_ps[3] | p_ps[2],
+		p_ps[4] | p_ps[3] | p_ps[2] | p_ps[1]};
+	wire [LINE_SHIFT-1:0] m_lmw = {{(LINE_SHIFT-4){1'b0}}, m_lm};
 	always @(*) begin
 		m_dat0 = edat0;
 		m_dat1 = edat1;
 		m_dirty0 = edirty0;
 		m_dirty1 = edirty1;
+		m_rep = 128'd0;
+		m_bo = {LINE_SHIFT{1'b0}};
 		for (l = 0; l < 4; l = l + 1) begin
-			m_sh = {{(LINE_BYTES*8){1'b0}}, p_res[128 * l +: 128]} <<
-				{p_soff[LINE_SHIFT * l +: LINE_SHIFT], 3'b000};
-			m_be = {{LINE_BYTES{1'b0}}, p_ps[4] ? 16'hFFFF : (16'd1 << p_ps[3:0]) - 16'd1} <<
-				p_soff[LINE_SHIFT * l +: LINE_SHIFT];
+			m_rep = p_ps[4] ? p_res[128 * l +: 128] : p_ps[3] ? {2{p_res[128 * l +: 64]}} :
+				p_ps[2] ? {4{p_res[128 * l +: 32]}} : p_ps[1] ? {8{p_res[128 * l +: 16]}} :
+				{16{p_res[128 * l +: 8]}};
 			if (p_mask[l])
-				for (b = 0; b < LINE_BYTES; b = b + 1)
-					if (m_be[b]) begin
+				for (b = 0; b < LINE_BYTES; b = b + 1) begin
+					m_bo = b[LINE_SHIFT-1:0];
+					if (((m_bo ^ p_soff[LINE_SHIFT * l +: LINE_SHIFT]) & ~m_lmw) ==
+					    {LINE_SHIFT{1'b0}}) begin
 						if (p_ent[l]) begin
-							m_dat1[8 * b +: 8] = m_sh[8 * b +: 8];
+							m_dat1[8 * b +: 8] = m_rep[8 * (b % 16) +: 8];
 							m_dirty1[b] = 1'b1;
 						end else begin
-							m_dat0[8 * b +: 8] = m_sh[8 * b +: 8];
+							m_dat0[8 * b +: 8] = m_rep[8 * (b % 16) +: 8];
 							m_dirty0[b] = 1'b1;
 						end
 					end
+				end
 		end
 	end
 
@@ -352,8 +363,7 @@ module atg_rop_wb #(
 			$display("FAIL atg_rop_wb: attachment %0d row at %h crosses a line", rt, p_addr);
 `endif
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, m_sh[LINE_BYTES*8 +: 128],
-		m_be[LINE_BYTES +: 16]};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error};
 endmodule
 
 `default_nettype wire

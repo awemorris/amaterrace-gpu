@@ -128,39 +128,34 @@ module atg_su_fpu #(
 		end
 	endfunction
 
-	/* The operands of a lane's one 33 x 33 signed multiply (am_mul): the
-	 * significands of the fused datapath's x * y (atg_su_fsig, zero
-	 * extended), or for mul, mulh, mulhsu and mulhu the operands extended
-	 * by sign or zero. */
-	function [65:0] mulops;
+	/* The significands of the fused datapath's x * y (atg_su_fsig): y is b
+	 * for fmul and the fmadd family, else 1.0. */
+	function [47:0] fsigs;
 		input [4:0] o;
-		input [31:0] a, b;
-		reg [47:0] sg;
-		begin
-			case (o)
-			ATG_FPU_FMUL[4:0], ATG_FPU_FMADD[4:0], ATG_FPU_FMSUB[4:0], ATG_FPU_FNMSUB[4:0],
-			ATG_FPU_FNMADD[4:0]: sg = atg_su_fsig(a[30:0], b[30:0]);
-			default: sg = atg_su_fsig(a[30:0], 31'h3F800000);
-			endcase
-			if (o <= ATG_FPU_FNMADD[4:0] || o == ATG_FPU_FRACT[4:0])
-				mulops = {9'd0, sg[23:0], 9'd0, sg[47:24]};
-			else
-				mulops = {(o == ATG_FPU_MUL[4:0] || o == ATG_FPU_MULH[4:0]) && b[31], b,
-					o != ATG_FPU_MULHU[4:0] && a[31], a};
-		end
+		input [30:0] a, b;	/* (the signs are not needed) */
+		case (o)
+		ATG_FPU_FMUL[4:0], ATG_FPU_FMADD[4:0], ATG_FPU_FMSUB[4:0], ATG_FPU_FNMSUB[4:0],
+		ATG_FPU_FNMADD[4:0]: fsigs = atg_su_fsig(a, b);
+		default: fsigs = atg_su_fsig(a, 31'h3F800000);
+		endcase
 	endfunction
 
 	/* One lane.  The operations share one rounding to an integer (fround,
-	 * fract, fcvt.w*), one integer-to-float (fround, fract, fcvt.s.w*)
-	 * and one 33 x 33 signed multiply pr (mulops: the fused datapath's
-	 * significands, or mul, mulh, mulhsu and mulhu); the results are those
-	 * of atg_su_ffma, atg_su_fround, atg_su_f2i, atg_su_i2f and the 64-bit
-	 * products. */
+	 * fract, fcvt.w*), one integer-to-float (fround, fract, fcvt.s.w*);
+	 * pf is the 24 x 24 product of the fused datapath's significands
+	 * (fsigs), pr the 33 x 33 signed product of mul, mulh, mulhsu and mulhu
+	 * (the operands extended by sign or zero), each an am_mul.  (One
+	 * multiplier for both, 33 x 33 with the significands zero extended,
+	 * saves 2 DSP48E1 a lane but costs about 120 LUTs a lane more, measured
+	 * with Vivado; the KC705 is short of LUTs, not DSPs.)  The results are
+	 * those of atg_su_ffma, atg_su_fround, atg_su_f2i, atg_su_i2f and the
+	 * 64-bit products. */
 	function [31:0] fpu;
 		input [4:0] o;
 		input [31:0] a, b, c;
 		input [2:0] r;
 		input st;
+		input [47:0] pf;
 		input [63:0] pr;	/* the product's low 64 bits */
 		reg [31:0] x, y, z, fl, res, xf, iv, in_n;
 		reg [24:0] n;
@@ -235,7 +230,7 @@ module atg_su_fpu #(
 			flt = 1'b1;
 			res = 32'd0;
 			if (fma)
-				res = atg_su_ffma_p(x, y, z, rr, noc, pr[47:0]);
+				res = atg_su_ffma_p(x, y, z, rr, noc, pf);
 			else begin
 				case (o)
 				ATG_FPU_FSGNJ[4:0]: res = {b[31], a[30:0]};
@@ -335,12 +330,18 @@ module atg_su_fpu #(
 		reg lst;
 		reg [100:0] pi;
 		reg [15:0] bsw;	/* the low half of rs2, its halves swapped for hsel 11 */
-		wire [65:0] mo = mulops(lo, la, lb);
-		wire [65:0] pr;
-		am_mul #(.AW(33), .BW(33), .SIGNED(1)) mul (
-			.clk(clk), .en(1'b1), .a(mo[32:0]), .b(mo[65:33]), .p(pr)
+		wire [47:0] sg = fsigs(lo, la[30:0], lb[30:0]);
+		wire [47:0] pf;
+		am_mul #(.AW(24), .BW(24)) mulf (
+			.clk(clk), .en(1'b1), .a(sg[47:24]), .b(sg[23:0]), .p(pf)
 		);
-		wire [31:0] res = fpu(lo, la, lb, lc, lr, lst, pr[63:0]);
+		wire [32:0] ia = {lo != ATG_FPU_MULHU[4:0] && la[31], la};
+		wire [32:0] ib = {(lo == ATG_FPU_MUL[4:0] || lo == ATG_FPU_MULH[4:0]) && lb[31], lb};
+		wire [65:0] pr;
+		am_mul #(.AW(33), .BW(33), .SIGNED(1)) muli (
+			.clk(clk), .en(1'b1), .a(ia), .b(ib), .p(pr)
+		);
+		wire [31:0] res = fpu(lo, la, lb, lc, lr, lst, pf, pr[63:0]);
 		wire unused_pr = &{1'b0, pr[65:64]};
 		always @(*) begin
 			bsw = hsel == 2'd3 ? x_b[gl*32 + 16 +: 16] : x_b[gl*32 +: 16];
