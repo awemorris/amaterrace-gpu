@@ -47,8 +47,9 @@
  * nothing and keeps the sums.
  * See spec/gpu/tu/atg_tu_ffilt.md.
  *
- * States: IDLE →(tc)→ RUN (lanes 0-3) → FIN → OUT →(tr_ready)→ IDLE; a
- * pass with more to follow goes from RUN back to IDLE.
+ * States: IDLE →(tc)→ RUN (lanes 0-3) → FIN (lanes 0-3) → OUT
+ * →(tr_ready)→ IDLE; a pass with more to follow goes from RUN back to
+ * IDLE.
  */
 
 `timescale 1ns / 1ps
@@ -152,8 +153,11 @@ module atg_tu_ffilt (
 	wire [127:0] raw = wg ? {96'd0, sl[t*32 +: 32]} << {gwi, 5'd0} :
 		b8 ? (t[0] ? {64'd0, sl[127:64]} : {64'd0, sl[63:0]}) : b16 ? sl : {96'd0, sl[t*32 +: 32]};
 	wire tb = wg || !(b8 || b16) ? bd[{k, t}] : b8 && t[0] ? bd[{k, 2'd2}] : bd[{k, 2'd0}];
-	wire [128:0] up = atg_fmt_unpack(raw, vkf, sten);
-	/* A block's texel (atg_tu_etc) to fp32. */
+	/* A block's texel (atg_tu_etc) to fp32, through the same atg_fmt_unpack:
+	 * RGBA8 as R8G8B8A8_UNORM or _SRGB; EAC R11 and RG11 as two 11-bit
+	 * UNORM components (the second 0 for R11), the signed ones as the
+	 * magnitudes' 10-bit UNORM with the sign set (-0.0 for -1024 as
+	 * before); the components the block does not have (0, 0, 1.0). */
 	wire [2:0] loff = b16 ? 3'd0 : {t[0], 2'b00};	/* the texel's first slot's bits 1:0 */
 	wire [7:0] llo = lo[k*8 +: 8];
 	wire [1:0] e_kind;
@@ -164,21 +168,22 @@ module atg_tu_ffilt (
 	);
 	wire [10:0] er = e_tx[10:0], eg = e_tx[26:16];
 	wire [10:0] ear = er[10] ? 11'd0 - er : er, eag = eg[10] ? 11'd0 - eg : eg;
-	wire [31:0] esr = atg_fmt_unorm({14'd0, ear[9:0]}, 6'd10), esg = atg_fmt_unorm({14'd0, eag[9:0]}, 6'd10);
-	wire [127:0] ev = e_kind[1] ? {32'h3F800000, 32'd0,
-		e_kind[0] ? {eg[10], esg[30:0]} : atg_fmt_unorm({13'd0, eg}, 6'd11),
-		e_kind[0] ? {er[10], esr[30:0]} : atg_fmt_unorm({13'd0, er}, 6'd11)} :
-		{atg_fmt_unorm({16'd0, e_tx[31:24]}, 6'd8),
-		e_kind[0] ? atg_srgb_dec(e_tx[23:16]) : atg_fmt_unorm({16'd0, e_tx[23:16]}, 6'd8),
-		e_kind[0] ? atg_srgb_dec(e_tx[15:8]) : atg_fmt_unorm({16'd0, e_tx[15:8]}, 6'd8),
-		e_kind[0] ? atg_srgb_dec(e_tx[7:0]) : atg_fmt_unorm({16'd0, e_tx[7:0]}, 6'd8)};
-	reg [127:0] bval;
-	integer q;
-	always @(*)
-		for (q = 0; q < 4; q = q + 1)
-			bval[q*32 +: 32] = q < ncomp ? (bcls == 2'd2 || (bcls == 2'd1 && q == 3) ? one : 32'd0) :
-				q == 3 ? one : 32'd0;
-	wire [127:0] val = tb ? bval : blk ? ev : up[127:0];
+	wire esgn = e_kind == 2'd3;	/* signed EAC */
+	wire [5:0] ew = esgn ? 6'd10 : 6'd11;
+	wire [67:0] e_inf = e_kind[1] ? atg_fmt_i(5'd4, 3'd2, ATG_FMT_UNORM, 3'b000,
+		atg_fmt_c(7'd0, ew), atg_fmt_c(7'd16, ew), atg_fmt_c(7'd0, 6'd0), atg_fmt_c(7'd0, 6'd0)) :
+		atg_fmt_info(e_kind[0] ? 8'd43 : 8'd37);
+	wire [127:0] e_raw = esgn ? {96'd0, 5'd0, eag, 5'd0, ear} : {96'd0, e_tx};
+	/* The texel's component cs (one a cycle: c, or gather's gsrc), or the
+	 * border colour's. */
+	wire [1:0] cs = gath ? gsrc : c;
+	wire [31:0] up = atg_fmt_comp(blk ? e_raw : raw, blk ? e_inf : inf, cs, sten && !blk);
+	wire [31:0] ev = {cs == 2'd0 ? esgn && er[10] : cs == 2'd1 ? esgn && eg[10] : up[31],
+		up[30:0]};
+	wire [31:0] bval = {1'b0, cs} < ncomp ?
+		(bcls == 2'd2 || (bcls == 2'd1 && cs == 2'd3) ? one : 32'd0) :
+		cs == 2'd3 ? one : 32'd0;
+	wire [31:0] val = tb ? bval : blk ? ev : up;
 	/* Its weight. */
 	wire [7:0] fu = wts[k*32 +: 8], fv = wts[k*32 + 8 +: 8];
 	wire [7:0] fl = wts[k*32 + 16 +: 8], fw = wts[k*32 + 24 +: 8];
@@ -199,24 +204,22 @@ module atg_tu_ffilt (
 	wire [31:0] wf = w2f(n[32:0]);
 	/* The lane is a single texel of weight 1. */
 	wire byp = !more && !ctl[5] && !gath && (!bil || (fu == 8'd0 && fv == 8'd0));
-	wire [31:0] sum = atg_su_ffma(wf, val[c*32 +: 32], acc[{k, c}*32 +: 32], 3'd0, 1'b0);
+	wire [31:0] sum = atg_su_ffma(wf, val, acc[{k, c}*32 +: 32], 3'd0, 1'b0);
 	/* The next lane; the next texel; is c the last component. */
 	wire lastc = {1'b0, c} == ncomp - 3'd1;
 	wire skip = n[32:0] == 33'd0 || ncomp == 3'd0;
 
-	/* The result of lane l. */
-	reg [511:0] fin_q;
+	/* The result of lane k (FIN takes the lanes one a cycle). */
+	reg [127:0] fin_q;
 	reg [127:0] fin;
 	reg [2:0] g3;
-	integer l, m;
+	integer m;
 	always @(*) begin
-		for (l = 0; l < 4; l = l + 1) begin
-			for (m = 0; m < 4; m = m + 1) begin
-				g3 = m[2:0];
-				fin[m*32 +: 32] = g3 < ncomp ? acc[(l*4 + m)*32 +: 32] : m == 3 ? one : 32'd0;
-			end
-			fin_q[l*128 +: 128] = !mask[l] ? 128'd0 : gath ? acc[l*128 +: 128] : swz4(fin, swz, one);
+		for (m = 0; m < 4; m = m + 1) begin
+			g3 = m[2:0];
+			fin[m*32 +: 32] = g3 < ncomp ? acc[(k*4 + m)*32 +: 32] : m == 3 ? one : 32'd0;
 		end
+		fin_q = !mask[k] ? 128'd0 : gath ? acc[k*128 +: 128] : swz4(fin, swz, one);
 	end
 
 	assign tc_ready = st == IDLE;
@@ -224,7 +227,7 @@ module atg_tu_ffilt (
 
 	/* Gather word g of the lane: texel 2, 3, 1, 0 (texel t's place). */
 	wire [1:0] gpos = ft == 2'd2 ? 2'd0 : ft == 2'd3 ? 2'd1 : ft == 2'd1 ? 2'd2 : 2'd3;
-	wire [31:0] gval = gsw == 3'd1 ? 32'd0 : gsw == 3'd2 ? one : val[gsrc*32 +: 32];
+	wire [31:0] gval = gsw == 3'd1 ? 32'd0 : gsw == 3'd2 ? one : val;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -248,29 +251,33 @@ module atg_tu_ffilt (
 				st <= RUN;
 			end
 			RUN: begin
-				if (!mask[k] || byp || (!gath && t == 2'd3 && (skip || lastc)) ||
-				    (gath && t == 2'd3)) begin
+				if (!mask[k] || (byp && (lastc || ncomp == 3'd0)) ||
+				    (!byp && !gath && t == 2'd3 && (skip || lastc)) || (gath && t == 2'd3)) begin
 					/* the lane is done */
-					if (mask[k] && byp)
-						acc[k*128 +: 128] <= val;
 					k <= k + 2'd1;
 					t <= 2'd0;
 					c <= 2'd0;
 					if (k == 2'd3)
 						st <= more ? IDLE : FIN;
-				end else if (gath || skip || lastc) begin
+				end else if (byp)
+					c <= c + 2'd1;
+				else if (gath || skip || lastc) begin
 					t <= t + 2'd1;
 					c <= 2'd0;
 				end else
 					c <= c + 2'd1;
 				if (mask[k] && gath && pres)
 					acc[{k, gpos}*32 +: 32] <= gval;
-				else if (mask[k] && !gath && !byp && !skip)
+				else if (mask[k] && byp)
+					acc[{k, c}*32 +: 32] <= val;	/* the texel as it is */
+				else if (mask[k] && !gath && !skip)
 					acc[{k, c}*32 +: 32] <= sum;
 			end
 			FIN: begin
-				tr_data <= fin_q;
-				st <= OUT;
+				tr_data[k*128 +: 128] <= fin_q;
+				k <= k + 2'd1;
+				if (k == 2'd3)
+					st <= OUT;
 			end
 			default: if (tr_ready)
 				st <= IDLE;
@@ -278,8 +285,8 @@ module atg_tu_ffilt (
 		end
 	end
 
-	wire unused_ok = &{1'b0, n[35:33], up[128], inf[67:15], inf[13:12], ctl[33:23], ctl[16],
-		ctl[20:19], ctl[12:8], ctl[3:1], vkf[7:4], esr[31], esg[31], ear[10], eag[10]};
+	wire unused_ok = &{1'b0, n[35:33], inf[67:15], inf[13:12], ctl[33:23], ctl[16],
+		ctl[20:19], ctl[12:8], ctl[3:1], vkf[7:4], ear[10], eag[10]};
 endmodule
 
 `default_nettype wire

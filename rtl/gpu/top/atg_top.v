@@ -59,6 +59,7 @@ module atg_top #(
 	parameter SU_SB_ENTRIES = 4,
 	parameter SU_SBE_W = 2,	/* log2(SU_SB_ENTRIES) */
 	parameter SU_PACKED = 0,
+	parameter SU_PK_SHARED = 0,	/* with SU_PACKED: the fp16 arithmetic on the FPU's fp32 datapath, a half a cycle (atg_su_fpu) */
 	parameter SU_SUBGROUP = 0,
 	parameter SU_FRAG_RESERVE = 1,	/* slots kept for fragment warps (design §3.8; KC705 2) */
 	parameter SU_LDS_BYTES = 4096,
@@ -852,7 +853,7 @@ module atg_top #(
 			.NPHYS(SU_NPHYS), .NWARPS(SU_NWARPS), .WARP_W(SU_WARP_W), .GRP_W(SU_GRP_W),
 			.NREGS(SU_NREGS), .SB_ENTRIES(SU_SB_ENTRIES), .SBE_W(SU_SBE_W), .NSU(NSU),
 			.SU_INDEX(k), .FRAG_RESERVE(SU_FRAG_RESERVE), .PACKED(SU_PACKED),
-			.SUBGROUP(SU_SUBGROUP), .HAS_SA(0), .MS4(MS4),
+			.PK_SHARED(SU_PK_SHARED), .SUBGROUP(SU_SUBGROUP), .HAS_SA(0), .MS4(MS4),
 			.LDS_BYTES(SU_LDS_BYTES), .VARY_WORDS(SU_VARY_WORDS),
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)
 		) su (

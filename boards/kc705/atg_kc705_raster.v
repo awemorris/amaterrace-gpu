@@ -7,7 +7,7 @@
 
 /*
  * atg_kc705_raster: The KC705 raster/compute configuration (design §3.6,
- * §3.7; no SA): CP with CPU, NSU SUs (NPHYS 16, NREGS 64), VF, RX, TU,
+ * §3.7; no SA): CP with CPU, NSU SUs (NPHYS 8, NREGS 64), VF, RX, TU,
  * ROP, BLT, MC on MIG DDR3, the DC next to the GPU (+0x10000, MC client
  * EXT, ADV7511 parallel output), the JTAG register bridge.
  *
@@ -178,10 +178,10 @@ module atg_kc705_raster #(
 		.HAS_JTAG(1),
 		.HAS_DISP(1),
 		.ROP_STENCIL(1),
-		.SU_NPHYS(16),
+		.SU_NPHYS(8),
 		.SU_NWARPS(4),
 		.SU_WARP_W(2),
-		.SU_GRP_W(1),
+		.SU_GRP_W(2),
 		.SU_NREGS(64),
 		.SU_SB_ENTRIES(8),
 		.SU_SBE_W(3),

@@ -10,7 +10,8 @@
  * fadd2/fsub2/fmul2/ffma2/fmin2/fmax2/fcmp2, iadd2/isub2/imul2, swaph, and
  * the always-present packh/unpackh. Short pipeline.
  *
- * Takes every group of a uop whose unit is PK (x_ready is always 1) and
+ * Takes every group of a uop whose unit is PK (x_ready is 1 but in the
+ * busy cycle of PK_SHARED) and
  * presents the result SHORT_LAT cycles later, like atg_su_alu.  packh
  * (two fp32 -> fp16 halves, RNE: rs1 low, rs2 high), unpackh (sub 0 low,
  * 1 high half -> fp32) and swaph are always present; with PACKED the
@@ -21,6 +22,10 @@
  * only (the low half from rs1), 11 rs2's halves swapped, both.  sat clamps
  * the float halves to [0, 1].  With PACKED = 0 atg_su_dec faults the
  * arithmetic, and this unit returns 0 for it.  Reference: tools/gsi1fp.py.
+ * PK_SHARED (with PACKED): the fp16 operations (fadd2 to fmax2 and the
+ * compares) are atg_su_fpu's, a half a cycle on its fp32 datapath; this
+ * unit does not take them, and its x_ready is 0 in the cycle after one is
+ * taken (atg_su_fpu's busy cycle; the same rule as atg_su_fpu's).
 */
 
 `timescale 1ns / 1ps
@@ -34,7 +39,8 @@ module atg_su_pk #(
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
 	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
 	parameter PACKED = 0,	/* Packed arithmetic present (0: only packh/unpackh/swaph) */
-	parameter SHORT_LAT = 6	/* Cycles from x_valid to the short result (one fixed pipeline for classes a and f, design §3.1.1) */
+	parameter SHORT_LAT = 6,	/* Cycles from x_valid to the short result (one fixed pipeline for classes a and f, design §3.1.1) */
+	parameter PK_SHARED = 0	/* With PACKED: the fp16 operations on atg_su_fpu (above) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -67,8 +73,20 @@ module atg_su_pk #(
 	localparam DW = NPHYS * 32;
 	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS + DW;
 
-	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_PK && x_uop[ATG_UOP_WRD];
+	localparam SH = PK_SHARED != 0 && PACKED != 0;
+
 	wire [3:0] op = x_uop[ATG_UOP_OP +: 4];
+	/* PK_SHARED: an fp16 operation goes to atg_su_fpu; busy is the cycle
+	 * after it is taken (as atg_su_fpu's). */
+	wire pk_fp = op <= ATG_PK_FMAX2[3:0] || (op >= ATG_PK_FCMPLT2[3:0] && op <= ATG_PK_FCMPNE2[3:0]);
+	reg busy;
+	wire grp = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_PK && x_uop[ATG_UOP_WRD] && !busy;
+	wire mine = grp && !(SH && pk_fp);
+	always @(posedge clk)
+		if (!rst_n)
+			busy <= 1'b0;
+		else
+			busy <= SH && grp && pk_fp;
 	wire [2:0] rm = x_uop[ATG_UOP_RM +: 3];
 	wire [1:0] hsel = x_uop[ATG_UOP_HSEL +: 2];
 	wire sub = x_uop[ATG_UOP_SUB];
@@ -114,16 +132,17 @@ module atg_su_pk #(
 			ATG_PK_FCMPEQ2[3:0]: cop = 2'd0;
 			default: cop = 2'd3;
 			endcase
+			/* (PK_SHARED: the fp16 operations are atg_su_fpu's) */
 			case (o)
 			ATG_PK_FADD2[3:0], ATG_PK_FSUB2[3:0], ATG_PK_FMUL2[3:0], ATG_PK_FFMA2[3:0]:
-				y = atg_su_hfma(a, fy, fz, r, fnoc);
-			ATG_PK_FMIN2[3:0]: y = atg_su_hminmax(a, b, 1'b0);
-			ATG_PK_FMAX2[3:0]: y = atg_su_hminmax(a, b, 1'b1);
+				y = SH ? 16'd0 : atg_su_hfma(a, fy, fz, r, fnoc);
+			ATG_PK_FMIN2[3:0]: y = SH ? 16'd0 : atg_su_hminmax(a, b, 1'b0);
+			ATG_PK_FMAX2[3:0]: y = SH ? 16'd0 : atg_su_hminmax(a, b, 1'b1);
 			ATG_PK_IADD2[3:0]: y = a + b;
 			ATG_PK_ISUB2[3:0]: y = a - b;
 			ATG_PK_IMUL2[3:0]: y = a * b;
 			ATG_PK_FCMPLT2[3:0], ATG_PK_FCMPGE2[3:0], ATG_PK_FCMPEQ2[3:0], ATG_PK_FCMPNE2[3:0]:
-				y = {16{atg_su_hcmp(ca, cb, cop)}};
+				y = SH ? 16'd0 : {16{atg_su_hcmp(ca, cb, cop)}};
 			default: y = 16'd0;
 			endcase
 			half = st && o <= ATG_PK_FMAX2[3:0] ? atg_su_hsat(y) : y;
@@ -187,7 +206,7 @@ module atg_su_pk #(
 	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];
 	assign s_lanes = o[DW +: NPHYS];
 	assign s_data = o[DW-1:0];
-	assign x_ready = 1'b1;
+	assign x_ready = !busy;
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
 		(NWARPS != 0)};

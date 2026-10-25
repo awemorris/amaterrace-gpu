@@ -15,7 +15,10 @@
  * 16 bits.  The axes: u and v as floor(x × 2^16) against the width and
  * the height; a 3D image also w against the depth; a cube the face
  * coordinates s and t of the three lanes on lane 0's face (cs, ct: 24
- * fraction bits, >> 8) against the width.  See spec/gpu/tu/atg_tu_lod.md.
+ * fraction bits, >> 8) against the width.  One axis at a time: lam is λA
+ * of axis ax (0 u, 1 v, 2 w; w is -32768 but for a 3D image), and
+ * atg_tu_addr takes the largest over three cycles.  See
+ * spec/gpu/tu/atg_tu_lod.md.
  */
 
 `timescale 1ns / 1ps
@@ -32,6 +35,7 @@ module atg_tu_lod (
 	input wire [15:0] w0,	/* level 0: width, height, depth (3D) */
 	input wire [15:0] h0,
 	input wire [15:0] d0,
+	input wire [1:0] ax,	/* the axis: 0 u, 1 v, 2 w */
 	output wire signed [16:0] lam
 );
 	`include "atg_tu_fn.vh"
@@ -54,22 +58,18 @@ module atg_tu_lod (
 		end
 	endfunction
 
-	/* The fixed-point lane values: floor(x × 2^16), or the cube's >> 8. */
-	reg [95:0] fu, fv, fw;
+	/* The axis' fixed-point lane values: floor(x × 2^16), or the cube's
+	 * >> 8, and its size. */
+	reg [95:0] fa;
 	integer i;
 	always @(*)
-		for (i = 0; i < 3; i = i + 1) begin
-			fu[i*32 +: 32] = cube ? {{13{cs[i*27 + 26]}}, cs[i*27 + 8 +: 19]} :
-				tu_fx32(u[i*32 +: 32], 5'd16);
-			fv[i*32 +: 32] = cube ? {{13{ct[i*27 + 26]}}, ct[i*27 + 8 +: 19]} :
-				tu_fx32(v[i*32 +: 32], 5'd16);
-			fw[i*32 +: 32] = tu_fx32(w[i*32 +: 32], 5'd16);
-		end
-	wire signed [16:0] lu = axis(fu, w0);
-	wire signed [16:0] lv = axis(fv, cube ? w0 : h0);
-	wire signed [16:0] lw = is3d ? axis(fw, d0) : LAM_MIN;
-	wire signed [16:0] luv = lu > lv ? lu : lv;
-	assign lam = luv > lw ? luv : lw;
+		for (i = 0; i < 3; i = i + 1)
+			fa[i*32 +: 32] = cube && !ax[1] ?
+				(ax[0] ? {{13{ct[i*27 + 26]}}, ct[i*27 + 8 +: 19]} :
+				{{13{cs[i*27 + 26]}}, cs[i*27 + 8 +: 19]}) :
+				tu_fx32(ax[1] ? w[i*32 +: 32] : ax[0] ? v[i*32 +: 32] : u[i*32 +: 32], 5'd16);
+	wire [15:0] n = ax[1] ? d0 : ax[0] && !cube ? h0 : w0;
+	assign lam = ax[1] && !is3d ? LAM_MIN : axis(fa, n);
 
 	wire unused_ok = &{1'b0, cs[7:0], cs[34:27], cs[61:54], ct[7:0], ct[34:27], ct[61:54]};
 endmodule

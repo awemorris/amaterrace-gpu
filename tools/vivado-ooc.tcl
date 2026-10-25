@@ -4,8 +4,10 @@
 # Reads every rtl/**/*.v and include/ for `include, sets the NAME=VALUE
 # parameters on TOP, constrains the port clk to PERIOD ns, and writes
 # OUT/utilization.rpt, utilization_hier.rpt (8 levels), timing_summary.rpt
-# (the synthesis estimate) and TOP.dcp (synthesized).  The environment's
-# VIVADO_THREADS sets general.maxThreads, OOC_FLATTEN -flatten_hierarchy.
+# (the synthesis estimate), timing_paths.rpt (its 5 worst paths) and
+# TOP.dcp (synthesized).  The environment's VIVADO_THREADS sets
+# general.maxThreads, OOC_FLATTEN -flatten_hierarchy; OOC_IMPL=1 also
+# places and routes (below).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 if {[llength $argv] < 5} {
@@ -55,7 +57,24 @@ synth_design {*}$args
 report_utilization -file [file join $out utilization.rpt]
 report_utilization -hierarchical -hierarchical_depth 8 -file [file join $out utilization_hier.rpt]
 report_timing_summary -max_paths 10 -file [file join $out timing_summary.rpt]
+report_timing -max_paths 5 -nworst 1 -sort_by slack -file [file join $out timing_paths.rpt]
 write_checkpoint -force [file join $out $top.dcp]
 
 set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
 puts "vivado-ooc: $top on $part, $period ns, estimated WNS $wns ns"
+
+# OOC_IMPL=1: also opt_design, place_design and route_design (no I/O
+# placement), and the routed timing: route_utilization.rpt,
+# route_timing_summary.rpt, route_timing_paths.rpt (the 5 worst paths).
+if {[info exists ::env(OOC_IMPL)] && $::env(OOC_IMPL) eq "1"} {
+	opt_design
+	place_design
+	phys_opt_design
+	route_design
+	report_utilization -file [file join $out route_utilization.rpt]
+	report_timing_summary -max_paths 10 -file [file join $out route_timing_summary.rpt]
+	report_timing -max_paths 5 -nworst 1 -sort_by slack -file [file join $out route_timing_paths.rpt]
+	write_checkpoint -force [file join $out $top.routed.dcp]
+	set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
+	puts "vivado-ooc: $top on $part, $period ns, routed WNS $wns ns"
+}

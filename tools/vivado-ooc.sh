@@ -4,13 +4,15 @@
 # (tools/vivado-ooc.tcl).  No board top, MIG or I/O, no place and route.
 #   tools/vivado-ooc.sh [NAME=VALUE ...]
 # The shape is the KC705 board top's atg_top parameters (NSU 1) with
-# MS4=1; each NAME=VALUE replaces or adds a parameter (NSU=4, SU_NPHYS=8).
+# MS4=1; each NAME=VALUE replaces or adds a parameter (NSU=4, SU_NPHYS=16 SU_GRP_W=1).
 # TOP (default atg_top) synthesizes another module instead, with only the
 # NAME=VALUE parameters given.  The firmware images are not loaded (the
 # IMEM and DMEM are writable RAMs, so their size does not depend on them).
 # Output: build/vivado/ooc-NAME/ (OOC_NAME, default kc705):
 # utilization.rpt, utilization_hier.rpt, timing_summary.rpt (the
-# synthesis estimate at PERIOD ns, default 5), TOP.dcp, vivado.log.
+# synthesis estimate at PERIOD ns, default 5), timing_paths.rpt (its 5
+# worst paths), TOP.dcp, vivado.log; with OOC_IMPL=1 also placed and
+# routed (route_*.rpt, TOP.routed.dcp; hours for the whole core).
 # Prints the utilisation's main rows and the run's time.
 # VIVADO, XILINXD_LICENSE_FILE and the libncurses.so.5 fallback as in
 # tools/vivado-build.sh.  VIVADO_TIMEOUT (default 7200 s) bounds the run;
@@ -29,7 +31,7 @@ if [ "$top" = atg_top ]; then
 	shape="S_ID_W=4 S_LEN_W=8 LINE_BYTES=64 LINE_SHIFT=6 DATA_W=512
 		HAS_CPU=1 CPU_IMEM_WORDS=16384 CPU_DMEM_WORDS=8192 NSU=1
 		HAS_VF=1 HAS_RX=1 HAS_TU=1 HAS_ROP=1 EXT_CLIENT=1 HAS_JTAG=1 HAS_DISP=1
-		ROP_STENCIL=1 MS4=1 SU_NPHYS=16 SU_NWARPS=4 SU_WARP_W=2 SU_GRP_W=1
+		ROP_STENCIL=1 MS4=1 SU_NPHYS=8 SU_NWARPS=4 SU_WARP_W=2 SU_GRP_W=2
 		SU_NREGS=64 SU_SB_ENTRIES=8 SU_SBE_W=3 SU_PACKED=1 SU_SUBGROUP=1
 		SU_FRAG_RESERVE=2 SU_LDS_BYTES=16384 SU_VARY_WORDS=64"
 else
@@ -83,5 +85,5 @@ if [ $rc -ne 0 ]; then
 fi
 grep -E '^\| (Slice LUTs\*? |  LUT as (Logic|Memory) |Slice Registers |Block RAM Tile |DSPs )' \
 	"$out/utilization.rpt" | head -8
-grep -E '^vivado-ooc:' "$out/vivado.log" | tail -1
+grep -E '^vivado-ooc:' "$out/vivado.log" | tail -2
 echo "vivado-ooc: $(grep -c '^WARNING' "$out/vivado.log") warnings, $(grep -c '^CRITICAL WARNING' "$out/vivado.log") critical, $(( $(date +%s) - start )) s, $out"

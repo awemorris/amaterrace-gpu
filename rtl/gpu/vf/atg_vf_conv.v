@@ -133,7 +133,8 @@ module atg_vf_conv (
 	wire [25:0] vk_feat = atg_fmt_feat(c_vk, 1'b0);
 	wire vk_ok = vk_feat[19];	/* VERTEX_BUFFER */
 	wire vk_int = vk_ok && (vk_inf[11:9] == ATG_FMT_UINT || vk_inf[11:9] == ATG_FMT_SINT);
-	wire [128:0] vk_c = atg_fmt_unpack(c_raw, c_vk, 1'b0);
+	/* component c_i (one a cycle) */
+	wire [31:0] vk_c = atg_fmt_comp(c_raw, vk_inf, c_i, 1'b0);
 	wire isint = c_vk != 8'd0 ? vk_int : isint_l;
 	wire [31:0] w32 = c_raw[32 * c_i +: 32];
 	wire [7:0] w8 = c_raw[8 * c_i +: 8];
@@ -143,7 +144,7 @@ module atg_vf_conv (
 		if (c_oob || (c_vk != 8'd0 && !vk_ok))
 			word = c_i != 2'd3 ? 32'd0 : isint ? 32'd1 : 32'h3F800000;
 		else if (c_vk != 8'd0)
-			word = vk_c[32 * c_i +: 32];
+			word = vk_c;
 		else if ({1'b0, c_i} >= ncomp)
 			word = c_i != 2'd3 ? 32'd0 : isint ? 32'd1 : 32'h3F800000;
 		else
@@ -193,7 +194,7 @@ module atg_vf_conv (
 	end
 
 	wire unused_ok = &{1'b0, st_wdata[23:20], st_wdata[15:8], s_off[8:5], vk_inf[67:12],
-		vk_inf[8:0], vk_feat[25:20], vk_feat[18:0], vk_c[128]};
+		vk_inf[8:0], vk_feat[25:20], vk_feat[18:0]};
 endmodule
 
 `default_nettype wire

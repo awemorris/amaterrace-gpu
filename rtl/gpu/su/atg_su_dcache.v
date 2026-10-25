@@ -88,8 +88,16 @@ module atg_su_dcache #(
 	wire q_hit = valid[q_idx] && tags[q_idx] == q_line[LA_W-1:IW];
 	wire take = st == IDLE && u_req_valid;
 
+	/* The data are read synchronously (block RAM): d_q is the request's
+	 * line, read when it is taken; nothing else writes the line until the
+	 * request's own fill or merge. */
+	reg [LB-1:0] d_q;
+	reg r_hit;	/* the response is d_q (a read hit) */
+	always @(posedge clk)
+		if (take)
+			d_q <= data[u_idx];
 	/* The line with the written bytes merged. */
-	wire [LB-1:0] q_old = data[q_idx];
+	wire [LB-1:0] q_old = d_q;
 	reg [LB-1:0] merged;
 	integer b;
 	always @(*) begin
@@ -106,6 +114,7 @@ module atg_su_dcache #(
 			q_drop <= 1'b0;
 			r_write <= 1'b0;
 			r_error <= 1'b0;
+			r_hit <= 1'b0;
 		end else begin
 			case (st)
 			IDLE: if (take) begin
@@ -117,10 +126,10 @@ module atg_su_dcache #(
 				q_drop <= 1'b0;
 				r_write <= u_req_write;
 				r_error <= 1'b0;
-				if (!u_req_write && u_hit) begin
-					r_rdata <= data[u_idx];
+				r_hit <= !u_req_write && u_hit;
+				if (!u_req_write && u_hit)
 					st <= RESP;
-				end else
+				else
 					st <= MREQ;
 			end
 			MREQ: if (m_req_ready)
@@ -151,7 +160,7 @@ module atg_su_dcache #(
 	assign u_rsp_valid = st == RESP;
 	assign u_rsp_write = r_write;
 	assign u_rsp_tag = q_tag;
-	assign u_rsp_rdata = r_rdata;
+	assign u_rsp_rdata = r_hit ? d_q : r_rdata;
 	assign u_rsp_error = r_error;
 	assign m_req_valid = st == MREQ;
 	assign m_req_write = q_write;

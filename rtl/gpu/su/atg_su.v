@@ -33,6 +33,7 @@ module atg_su #(
 	parameter SU_INDEX = 0,	/* This SU's number */
 	parameter FRAG_RESERVE = 1,	/* Slots kept for fragment warps */
 	parameter PACKED = 0,	/* Packed fp16 arithmetic */
+	parameter PK_SHARED = 0,	/* With PACKED: the fp16 arithmetic on the FPU's fp32 datapath, a half a cycle (atg_su_fpu) */
 	parameter SUBGROUP = 0,	/* shfl/vote/ballot */
 	parameter HAS_SA = 0,	/* SA attached (v1 0) */
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): texsz.s */
@@ -458,7 +459,8 @@ module atg_su #(
 		.s_data(alu_s_data), .s_lanes(alu_s_lanes)
 	);
 
-	atg_su_fpu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT)) fpu (
+	atg_su_fpu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT),
+		.PACKED(PACKED), .PK_SHARED(PK_SHARED)) fpu (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
@@ -467,7 +469,8 @@ module atg_su #(
 		.s_data(fpu_s_data), .s_lanes(fpu_s_lanes)
 	);
 
-	atg_su_pk #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .PACKED(PACKED)) pk (
+	atg_su_pk #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .PACKED(PACKED),
+		.PK_SHARED(PK_SHARED)) pk (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),

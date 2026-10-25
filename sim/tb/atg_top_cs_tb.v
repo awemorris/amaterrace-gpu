@@ -322,7 +322,7 @@ module atg_top_cs_tb;
 	atg_top_cs_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.SEED(12), .HAS_CPU(1), .CPU_IMEM_WORDS(16384), .CPU_DMEM_WORDS(8192),
 		.CPU_IMEM_INIT("fw/cp/images/atg1-cp-kc705.imem.hex"),
-		.CPU_DMEM_INIT("fw/cp/images/atg1-cp-kc705.dmem.hex"), .SU_NPHYS(16), .SU_GRP_W(1),
+		.CPU_DMEM_INIT("fw/cp/images/atg1-cp-kc705.dmem.hex"), .SU_NPHYS(8), .SU_GRP_W(2),
 		.SU_NREGS(64), .SU_SB_ENTRIES(8), .SU_SBE_W(3), .SU_PACKED(1),
 		.SU_LDS_BYTES(16384)) kc705 (
 		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)

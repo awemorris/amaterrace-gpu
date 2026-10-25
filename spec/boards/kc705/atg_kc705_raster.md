@@ -4,7 +4,7 @@ RTL: `boards/kc705/atg_kc705_raster.v`.  Parent: - (FPGA top).  Implemented in: 
 
 ## 1. Purpose and place
 
-The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU, NSU SUs (NPHYS 16, NREGS 64, 8 scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32 varying words), VF, RX, TU, ROP, BLT, MC on MIG DDR3, the DC next to the GPU (+0x10000, MC client EXT, ADV7511 parallel output), the JTAG register bridge.
+The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU, NSU SUs (NPHYS 8, NREGS 64, 8 scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32 varying words), VF, RX, TU, ROP, BLT, MC on MIG DDR3, the DC next to the GPU (+0x10000, MC client EXT, ADV7511 parallel output), the JTAG register bridge.
 
 Children: `atg_kc705_clk`, `atg_kc705_jtag`, `atg_top`, `atg_kc705_mig`, `atg_dc`.
 

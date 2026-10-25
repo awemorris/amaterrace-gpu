@@ -19,7 +19,8 @@
  * Takes one quad (tx_*) in IDLE while atg_tu_desc is not busy.  A cube
  * quad that samples first has each lane's face and face coordinates
  * computed by atg_tu_cube, one lane at a time; texb (and texqlod) on a
- * cube also lanes 1 and 2 projected on lane 0's face for the LOD.  Then
+ * cube also lanes 1 and 2 projected on lane 0's face for the LOD; texb
+ * then takes the quad's LOD in three cycles (LOD, an axis a cycle).  Then
  * lane by lane (two cycles a lane: A the LOD, level, sizes, texel
  * coordinates, layer and level base; B the footprint) into ta_*, held
  * until taken.  Passes: 0; 1, the second slice of 3D linear filtering,
@@ -122,6 +123,7 @@ module atg_tu_addr (
 	reg linq, depf, mipf;
 	reg cb_lod, cb_lane;	/* a cube quad: the LOD projections, the lanes' own */
 	reg [2:0] job;	/* the cube projection being computed (below) */
+	reg [1:0] lax;	/* LOD: the axis (atg_tu_lod) */
 	reg [2:0] cf [0:3];	/* cube: each lane's face, s, t */
 	reg signed [26:0] cs [0:3];
 	reg signed [26:0] ct [0:3];
@@ -213,7 +215,7 @@ module atg_tu_addr (
 		.v({crd[352 +: 32], crd[192 +: 32], crd[32 +: 32]}),
 		.w({crd[448 +: 32], crd[288 +: 32], crd[128 +: 32]}),
 		.cs({ls2, ls1, cs[0]}), .ct({lt2, lt1, ct[0]}), .is3d(is3d), .cube(cube),
-		.w0(w0), .h0(h0), .d0(cnt), .lam(lam_quad)
+		.w0(w0), .h0(h0), .d0(cnt), .ax(lax), .lam(lam_quad)
 	);
 
 	/* Stage A of lane k. */
@@ -324,6 +326,7 @@ module atg_tu_addr (
 				cb_lod <= n_lod;
 				cb_lane <= n_lane;
 				job <= 3'd0;
+				lax <= 2'd0;
 				st <= n_lod || n_lane ? CUBE : tx_op[1:0] == OP_TEXB ? LOD : LA;
 			end
 			CUBE: st <= CWAIT;
@@ -343,8 +346,12 @@ module atg_tu_addr (
 				st <= jnext != 3'd6 ? CUBE : op == OP_TEXB ? LOD : LA;
 			end
 			LOD: begin
-				lam_q <= lam_quad;
-				st <= LA;
+				/* the largest of the axes' λ, one a cycle */
+				if (lax == 2'd0 || lam_quad > lam_q)
+					lam_q <= lam_quad;
+				lax <= lax + 2'd1;
+				if (lax == 2'd2)
+					st <= LA;
 			end
 			LA: begin
 				r_lin <= lin;
