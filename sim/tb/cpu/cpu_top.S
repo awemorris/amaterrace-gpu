@@ -47,7 +47,7 @@ main:
 1:	wfi
 	beqz x27, 1b
 	sw x0, IRQ_EN(x31)
-	# The packet's line to DMEM 0x10100 (dword1 is line aligned here).
+	# The packet's line to DMEM 0x20100 (dword1 is line aligned here).
 	lw x2, PKT_ADDR(x31)
 	lw x3, PKT_DWORDS(x31)
 	sw x2, DMA_AMB(x31)
@@ -61,7 +61,7 @@ main:
 	andi x6, x5, 2
 	bnez x6, fail
 	# dwords 0..n-2 as UOP, a STATE word, the last dword as UOP_LAST.
-	li x6, 0x10100
+	li x6, 0x20100
 3:	addi x3, x3, -1
 	lw x7, 0(x6)
 	addi x6, x6, 4
@@ -74,8 +74,8 @@ main:
 	sw x9, UOP(x31)
 	sw x7, UOP_LAST(x31)
 	sw x0, DONE(x31)
-	# A line at DMEM 0x10200 to the host's address in MBOX0.
-	li x6, 0x10200
+	# A line at DMEM 0x20200 to the host's address in MBOX0.
+	li x6, 0x20200
 	li x10, 8
 	li x11, 0x5A000000
 5:	sw x11, 0(x6)

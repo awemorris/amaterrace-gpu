@@ -12,8 +12,8 @@ Address map of the core (byte addresses):
 
 | Range | What |
 | --- | --- |
-| 0x0000_0000-0x0000_FFFF | IMEM (fetch only; IMEM_WORDS words) |
-| 0x0001_0000-0x0001_FFFF | DMEM (load/store; DMEM_WORDS words: .data, .rodata, .bss, stack) |
+| 0x0000_0000-0x0001_FFFF | IMEM (fetch only; IMEM_WORDS words, 128 KiB at most) |
+| 0x0002_0000-0x0002_FFFF | DMEM (load/store; DMEM_WORDS words: .data, .rodata, .bss, stack) |
 | 0xF000_0000-0xF000_00FF | control window (atg_cpu_win; word index = sub-bus index) |
 
 Control window (word index, R/W):
@@ -49,7 +49,7 @@ Control window (word index, R/W):
 | `ADDR_W` | `32` | GPU address width. |
 | `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
-| `IMEM_WORDS` | `8192` | IMEM size in 32-bit words (32 KiB; atg_top's CPU_IMEM_WORDS, KC705 16384 = 64 KiB). |
+| `IMEM_WORDS` | `8192` | IMEM size in 32-bit words (32 KiB; atg_top's CPU_IMEM_WORDS, KC705 32768 = 128 KiB). |
 | `DMEM_WORDS` | `4096` | DMEM size in words (16 KiB; atg_top's CPU_DMEM_WORDS, KC705 8192 = 32 KiB). |
 | `IMEM_INIT` | `""` | IMEM image file. |
 | `DMEM_INIT` | `""` | DMEM image file. |
@@ -153,3 +153,5 @@ layout (MBOX0-3 at 0x150, see atg_cpu_fw).  With the firmware (fw/cp/, p017 part
 `sim/tb/atg_top_fw_tb.v` runs atg_top with HAS_CPU and the firmware images (spec/gpu/cp/atg_cp.md §8).
 
 2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.
+
+2026-10-25 (ws288-p034, user decision "IMEM を 128 KiB"): IMEM 0x0000_0000-0x0001_FFFF (the core faults a fetch above it), DMEM moved to 0x0002_0000-0x0002_FFFF; the KC705 has IMEM 32768 words (128 KiB).  The firmware had reached 65520 of 64 KiB with session protection.

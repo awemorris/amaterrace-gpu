@@ -4368,7 +4368,7 @@ _start:
 	addi x29, x29, 4
 	li x30, 660
 	bne x8, x29, fail
-	li x28, 0x10120
+	li x28, 0x20120
 	li x27, 0x1f
 	sw x27, 8(x28)
 	li x15, 0x1f
@@ -5297,8 +5297,8 @@ _start:
 	li x30, 860
 	li x31, 0xd3
 	bne x31, x3, fail
-	li x1, 0x10200
-	li x2, 0x10204
+	li x1, 0x20200
+	li x2, 0x20204
 	sw x2, 0(x1)
 	li x3, 0x5a5a1234
 	sw x3, 0(x2)

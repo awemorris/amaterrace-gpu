@@ -13,7 +13,7 @@
  *
  * Every access is taken in one cycle and answered (d_ready) the next; a
  * UOP/UOP_LAST write waits there while the FIFO is full (stall = 1).
- * Decode of d_addr: 0x0001_xxxx DMEM (m_* in the cycle it is taken, the
+ * Decode of d_addr: 0x0002_xxxx DMEM (m_* in the cycle it is taken, the
  * load data is m_rdata in the answer cycle); 0xF000_00xx the window, word
  * index d_addr[7:2] (whole words; d_be is ignored), acted on in the
  * answer cycle from registered copies: 0x00-0x0F this module's registers,
@@ -124,7 +124,7 @@ module atg_cpu_win #(
 	reg [5:0] q_idx;
 	reg [31:0] q_wdata;
 
-	wire in_dmem = d_addr[31:16] == 16'h0001;
+	wire in_dmem = d_addr[31:16] == 16'h0002;
 	wire in_win = d_addr[31:8] == 24'hF0_0000;
 	wire [5:0] idx = d_addr[7:2];
 	wire take = d_valid && state == S_IDLE;

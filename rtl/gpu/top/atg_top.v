@@ -36,7 +36,7 @@ module atg_top #(
 	parameter HAS_CPU = 0,	/* atg_cpu, the CP's firmware processor */
 	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
 	parameter CPU_DMEM_INIT = "",	/* its DMEM image */
-	parameter CPU_IMEM_WORDS = 8192,	/* its IMEM in 32-bit words (KC705: 16384, 64 KiB) */
+	parameter CPU_IMEM_WORDS = 8192,	/* its IMEM in 32-bit words (KC705: 32768, 128 KiB) */
 	parameter CPU_DMEM_WORDS = 4096,	/* its DMEM in words (KC705: 8192, 32 KiB) */
 	parameter NSU = 0,	/* shader units */
 	parameter HAS_VF = 0,	/* vertex fetcher */

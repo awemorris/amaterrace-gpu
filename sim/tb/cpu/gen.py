@@ -232,10 +232,10 @@ def gen_rv32i(p):
         p.n += 1
         p.emit('li x30, %d' % p.n)
         p.emit('bne %s, x29, fail' % rd)
-    # Loads and stores against a model of 64 bytes at 0x10100.
+    # Loads and stores against a model of 64 bytes at 0x20100.
     mem = [0] * 64
     rb = 'x28'
-    p.emit('li %s, 0x10120' % rb)
+    p.emit('li %s, 0x20120' % rb)
     for _ in range(64):
         k = p.rnd.choice([1, 2, 4])
         off = p.rnd.randrange(0, 64, k)
@@ -258,8 +258,8 @@ def gen_rv32i(p):
         p.emit('%s %s, %d(%s)' % (op, rd, off - 32, rb))
         p.check(rd, v)
     # A load used as the base of the next load, and FENCE.
-    p.emit('li x1, 0x10200')
-    p.emit('li x2, 0x10204')
+    p.emit('li x1, 0x20200')
+    p.emit('li x2, 0x20204')
     p.emit('sw x2, 0(x1)')
     p.emit('li x3, 0x5a5a1234')
     p.emit('sw x3, 0(x2)')

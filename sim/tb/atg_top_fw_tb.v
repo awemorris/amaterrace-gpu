@@ -41,7 +41,7 @@ module atg_top_fw_harness #(
 	parameter NAME = "dut",
 	parameter IMEM = "fw/cp/images/atg1-cp-kc705.imem.hex",
 	parameter DMEM = "fw/cp/images/atg1-cp-kc705.dmem.hex",
-	parameter IMEM_WORDS = 16384,	/* the KC705's CPU memories (the images' sizes) */
+	parameter IMEM_WORDS = 32768,	/* the KC705's CPU memories (the images' sizes) */
 	parameter DMEM_WORDS = 8192,
 	parameter SEED = 1
 ) (
@@ -133,8 +133,8 @@ module atg_top_fw_harness #(
 	localparam [31:0] AREA_N = 32'h00020000;	/* class N: fill at +0, copy at +0x4000 */
 	localparam [31:0] AREA_V = 32'h00030000;	/* class V: the memory object */
 	localparam [31:0] AREA_BYTES = 32'h00008000;
-	localparam [31:0] IMG_I = 32'h00040000;	/* CPFW images: IMEM 64 KiB, DMEM 32 KiB */
-	localparam [31:0] IMG_D = 32'h00060000;
+	localparam [31:0] IMG_I = 32'h00080000;	/* CPFW images: IMEM 128 KiB, DMEM 32 KiB (in the heap: */
+	localparam [31:0] IMG_D = 32'h000A0000;	/* lent again after the load) */
 	localparam [31:0] HEAP = 32'h00080000;	/* the firmware's heap (GHCI_HEAP) */
 	localparam [31:0] HEAP_BYTES = 32'h00080000;
 	localparam [31:0] RING_RESULT = 32'h00058C00;	/* the results of the ring-only gpu-ops */
@@ -155,7 +155,7 @@ module atg_top_fw_harness #(
 	integer wp;	/* the driver's ring write pointer */
 	integer sp;	/* the staging's write pointer (words) */
 	integer fence_value;
-	reg [31:0] img [0:16383];
+	reg [31:0] img [0:IMEM_WORDS-1];
 
 	task fail_msg;
 		input [8*80-1:0] what;
@@ -685,7 +685,7 @@ module atg_top_fw_harness #(
 		host_write(GHCI_CPFW_IWORDS, IMEM_WORDS);
 		host_write(GHCI_CPFW_DWORDS, DMEM_WORDS);
 		host_write(GHCI_CPFW_CTRL, (32'd1 << GHCI_CPFW_CTRL_LOAD) | (32'd1 << GHCI_CPFW_CTRL_RUN));
-		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF0B, 20000);
+		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF0B, 80000);	/* the load of the whole IMEM, then the boot */
 		expect_reg(GHCI_CPFW_MBOX0 + 12, DATA_CHECK + 1, 32'hFFFFFFFF);
 
 		/* The reloaded firmware runs a frame (a fill of the second buffer's start). */

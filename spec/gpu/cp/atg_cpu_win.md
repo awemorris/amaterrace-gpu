@@ -10,8 +10,8 @@ Address map of the core (byte addresses):
 
 | Range | What |
 | --- | --- |
-| 0x0000_0000-0x0000_FFFF | IMEM (fetch only; IMEM_WORDS words) |
-| 0x0001_0000-0x0001_FFFF | DMEM (load/store; DMEM_WORDS words: .data, .rodata, .bss, stack) |
+| 0x0000_0000-0x0001_FFFF | IMEM (fetch only; IMEM_WORDS words, 128 KiB at most) |
+| 0x0002_0000-0x0002_FFFF | DMEM (load/store; DMEM_WORDS words: .data, .rodata, .bss, stack) |
 | 0xF000_0000-0xF000_00FF | control window (atg_cpu_win; word index = sub-bus index) |
 
 Control window (word index, R/W):

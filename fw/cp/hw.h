@@ -71,7 +71,7 @@
 #define HW_FW_PARK 0x10000u
 
 /* The DMEM's place in the core's address space. */
-#define HW_DMEM_BASE 0x00010000u
+#define HW_DMEM_BASE 0x00020000u
 
 #ifdef FW_HOST
 

@@ -167,12 +167,12 @@ module atg_cpu_win_tb;
 
 		/* decode */
 		e0 = errors;
-		access(1, 32'h0001_0100, 32'h1234_5678);
+		access(1, 32'h0002_0100, 32'h1234_5678);
 		expect("dmem store lat", lat, 2);
-		access(0, 32'h0001_0100, 0);
+		access(0, 32'h0002_0100, 0);
 		expect("dmem load", rd, 32'h1234_5678);
 		expect("dmem load lat", lat, 2);
-		access(0, 32'h0001_FFFC, 0);
+		access(0, 32'h0002_FFFC, 0);
 		expect("dmem top", rd, 32'hDEAD_3FFF);
 		expect("m_accesses", m_accesses, 3);
 		access(1, WIN + 4 * 6'h10, 32'hAB);	/* DMA_AMB */

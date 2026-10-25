@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Zlib
  *
  * The CP firmware's layout (spec/gpu/cp/atg_cpu.md, address map): .text
- * in IMEM from 0 (64 KiB, the KC705's), the rest in DMEM from 0x0001_0000
+ * in IMEM from 0 (128 KiB, the KC705's), the rest in DMEM from 0x0002_0000
  * (32 KiB).
  * The DMEM image holds .rodata and the original of .data (__data_load);
  * boot.S copies that to .data's place on every start, because the BRAM
@@ -15,8 +15,8 @@ ENTRY(_start)
 
 MEMORY
 {
-	imem (rx) : ORIGIN = 0x00000000, LENGTH = 64K
-	dmem (rw) : ORIGIN = 0x00010000, LENGTH = 32K
+	imem (rx) : ORIGIN = 0x00000000, LENGTH = 128K
+	dmem (rw) : ORIGIN = 0x00020000, LENGTH = 32K
 }
 
 SECTIONS
