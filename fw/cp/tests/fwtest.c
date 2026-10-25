@@ -10,7 +10,8 @@
  * stages commands as the driver does, runs the frame through the
  * firmware built for the host, and checks the result records, the µops,
  * the STATE they leave and the memory the blits wrote.  Prints "PASS
- * fwtest.<case>" per case and "PASS fwtest" at the end.
+ * fwtest.<case>" per case and "PASS fwtest" at the end; with -t FILE it
+ * also writes the scene of the cases to FILE (fwhost.c).
  */
 
 #include "fwhost.h"
@@ -59,10 +60,25 @@ static void stage_compute_pipeline(uint32_t index, uint64_t id);
 static void stage_image(uint32_t index, uint64_t id, uint32_t format, uint32_t width, uint32_t height, uint32_t usage);
 static void stage_view(uint32_t index, uint64_t id, uint64_t image, uint32_t format);
 static void put_program(uint32_t address, uint32_t stage, const uint32_t *entries, uint32_t count, uint32_t push);
+static void stage_image_barrier(uint64_t cmdbuf, uint64_t image, uint32_t old_layout, uint32_t new_layout);
+static void stage_copy_region(uint32_t width, uint32_t height);
 
 int
-main(void)
+main(
+	int argc,
+	char **argv)
 {
+	int failed;
+
+	/* fwtest -t FILE: the scene of the cases to FILE as well. */
+	if (argc == 3 && strcmp(argv[1], "-t") == 0) {
+		failed = host_trace_open(argv[2]);
+		if (failed != 0) {
+			printf("FAIL fwtest: cannot write %s\n", argv[2]);
+			return 1;
+		}
+	}
+
 	/* Each case on a fresh bench and firmware. */
 	test_sessions();
 	test_buffers();
@@ -70,6 +86,11 @@ main(void)
 	test_draw();
 	test_compute();
 	test_transfer();
+	failed = host_trace_close();
+	if (failed != 0) {
+		printf("FAIL fwtest: the trace's writes\n");
+		return 1;
+	}
 
 	if (host_failures != 0) {
 		printf("FAIL fwtest: %d failures\n", host_failures);
@@ -85,6 +106,7 @@ test_case(
 	const char *name,
 	int failures_before)
 {
+	host_trace_case(name);
 	if (host_failures == failures_before) {
 		printf("PASS fwtest.%s\n", name);
 		return 1;
@@ -643,10 +665,13 @@ put_program(
 }
 
 /*
- * A draw: a render pass that clears a 64x32 RGBA8 target, a pipeline of
- * a vertex program (one attribute, a uniform block, push constants) and
- * a fragment program (a sampled image), a descriptor set, a vertex
- * buffer: the STATE the draw leaves, the constant bank, the clear.
+ * A draw in the command sequence of a frame of userland's vkdemo: the
+ * texture's upload between two barriers, a render pass that clears a
+ * 64x32 RGBA8 target, a pipeline of a vertex program (one attribute, a
+ * uniform block, push constants) and a fragment program (a sampled
+ * image), a descriptor set, a vertex buffer, then a barrier and the
+ * target's readback: the STATE the draw leaves, the constant bank, the
+ * clear, the upload and the readback.
  */
 static void
 test_draw(void)
@@ -711,8 +736,12 @@ test_draw(void)
 	host_u64(0);
 	host_u64(1);
 	host_u64(0x730);
-	host_check(host_frame_run(TAG, 12) == 0, "frame 1");
-	for (index = 0; index < 12u; index++) {
+	stage_buffer(12, 0x722, 0x400, 0x1);
+	stage_bind_buffer(13, 0x722, 0x10000);
+	stage_buffer(14, 0x723, 0x2000, 0x2);
+	stage_bind_buffer(15, 0x723, 0x12000);
+	host_check(host_frame_run(TAG, 16) == 0, "frame 1");
+	for (index = 0; index < 16u; index++) {
 		if (host_result(index) != 0) {
 			printf("  frame 1 record %u: %d\n", index, host_result(index));
 			host_check(0, "a record failed");
@@ -991,10 +1020,20 @@ test_draw(void)
 		}
 	}
 
-	/* Frame 3: the recording and its submit. */
+	/* Frame 3: the recording and its submit; first the texture's upload. */
+	for (index = 0; index < 16u * 16u; index++)
+		host_poke(MEMORY_BASE + 0x10000u + index * 4u, 0x77000000u + index);
 	host_frame_begin();
 	stage_pool_and_buffer(0, 0x780, 0x781);
 	stage_begin(2, 0x781);
+	stage_image_barrier(0x781, 0x710, 0, 7);
+	host_cmd(GHCI_VK_CMD_COPY_BUFFER_TO_IMAGE);
+	host_u64(0x781);
+	host_u64(0x722);
+	host_u64(0x710);
+	host_u32(7);
+	stage_copy_region(16, 16);
+	stage_image_barrier(0x781, 0x710, 7, 5);
 	host_cmd(GHCI_VK_CMD_BEGIN_RENDER_PASS);
 	host_u64(0x781);
 	host_u64(1);
@@ -1055,10 +1094,19 @@ test_draw(void)
 	host_u32(0);
 	host_cmd(GHCI_VK_CMD_END_RENDER_PASS);
 	host_u64(0x781);
-	stage_end(10, 0x781);
-	stage_submit(11, 0x781);
-	host_check(host_frame_run(TAG, 12) == 0, "frame 3");
-	for (index = 0; index < 12u; index++) {
+
+	/* The readback of the target. */
+	stage_image_barrier(0x781, 0x700, 2, 6);
+	host_cmd(GHCI_VK_CMD_COPY_IMAGE_TO_BUFFER);
+	host_u64(0x781);
+	host_u64(0x700);
+	host_u32(6);
+	host_u64(0x723);
+	stage_copy_region(64, 32);
+	stage_end(15, 0x781);
+	stage_submit(16, 0x781);
+	host_check(host_frame_run(TAG, 17) == 0, "frame 3");
+	for (index = 0; index < 17u; index++) {
 		if (host_result(index) != 0 && host_result(index) != -1) {
 			printf("  frame 3 record %u: %d\n", index, host_result(index));
 			host_check(0, "a record failed");
@@ -1072,6 +1120,20 @@ test_draw(void)
 			ok = 0;
 	}
 	host_check(ok, "the render pass's clear");
+
+	/* The upload into the texture and the readback of the target. */
+	ok = 1;
+	for (index = 0; index < 16u * 16u; index++) {
+		if (host_peek(MEMORY_BASE + 0x200000u + index * 4u) != 0x77000000u + index)
+			ok = 0;
+	}
+	host_check(ok, "the texture's upload");
+	ok = 1;
+	for (index = 0; index < 64u * 32u; index++) {
+		if (host_peek(MEMORY_BASE + 0x12000u + index * 4u) != 0xFF0000FFu)
+			ok = 0;
+	}
+	host_check(ok, "the target's readback");
 
 	/* The render target, the pipeline's words, the attribute, the texture slot, the viewport. */
 	view = fw_object_find(TAG, 0x711, FW_OBJ_IMAGE_VIEW);
@@ -1121,6 +1183,64 @@ test_draw(void)
 	base = 0;
 	(void)base;
 	(void)test_case("draw", before);
+}
+
+/* CMD_PIPELINE_BARRIER of all commands with one image barrier of the whole colour image. */
+static void
+stage_image_barrier(
+	uint64_t cmdbuf,
+	uint64_t image,
+	uint32_t old_layout,
+	uint32_t new_layout)
+{
+	host_cmd(GHCI_VK_CMD_PIPELINE_BARRIER);
+	host_u64(cmdbuf);
+	host_u32(0x10000u);
+	host_u32(0x10000u);
+	host_u32(0);
+	host_u32(0);
+	host_u64(0);
+	host_u32(0);
+	host_u64(0);
+	host_u32(1);
+	host_u64(1);
+	host_u32(45);
+	host_u64(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(old_layout);
+	host_u32(new_layout);
+	host_u32(0xFFFFFFFFu);
+	host_u32(0xFFFFFFFFu);
+	host_u64(image);
+	host_u32(FW_ASPECT_COLOR);
+	host_u32(0);
+	host_u32(1);
+	host_u32(0);
+	host_u32(1);
+}
+
+/* One VkBufferImageCopy of a whole 2D colour image, the buffer packed from offset 0. */
+static void
+stage_copy_region(
+	uint32_t width,
+	uint32_t height)
+{
+	host_u32(1);
+	host_u64(1);
+	host_u64(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(FW_ASPECT_COLOR);
+	host_u32(0);
+	host_u32(0);
+	host_u32(1);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(width);
+	host_u32(height);
+	host_u32(1);
 }
 
 /* CREATE_COMPUTE_PIPELINES of one pipeline (its program came with GHCI_PROGRAM). */

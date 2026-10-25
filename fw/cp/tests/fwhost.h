@@ -12,7 +12,8 @@
  * the FIFO are kept, applied to a STATE array, and the blits run on the
  * memory, so a test checks the µops, the STATE and the memory.  A test
  * writes a frame of staged commands (as a driver does), runs it, and
- * reads the result records.
+ * reads the result records.  A trace writes the cases as a scene for the
+ * Verilator firmware harness.
  */
 
 #ifndef FW_CP_TESTS_FWHOST_H
@@ -59,6 +60,10 @@ void host_ring(uint32_t tag, uint32_t number, const uint32_t *args, uint32_t cou
 int32_t host_result(uint32_t index);
 uint32_t host_result_aux(uint32_t index);
 int32_t host_ring_result(void);
+
+int host_trace_open(const char *path);
+void host_trace_case(const char *name);
+int host_trace_close(void);
 
 void host_check(int condition, const char *what);
 uint32_t host_uop_find(uint32_t op, uint32_t from);

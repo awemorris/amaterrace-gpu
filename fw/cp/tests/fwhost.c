@@ -10,7 +10,16 @@
  * control window, the line DMA and a model of the sequencer for the µops
  * the tests look at (SET_REG into STATE, BLIT of linear FILL, COPY and
  * the KEEP mask on the memory, the others only kept), and the writing of
- * frames as the driver stages them.
+ * frames as the driver stages them.  With a trace file (host_trace_open)
+ * each packet the firmware runs becomes a step of a scene for the
+ * Verilator firmware harness (sim/verilator/fw_harness.cpp):
+ *   C              a case starts (the GPU and its memory from reset)
+ *   W addr n w...  n memory words the host wrote since the last step
+ *   V tag n w...   the class V packet of n dwords (the ring's payload)
+ *   U n w...       the µop words the firmware gave in the step
+ *   E addr w       a result word the step left
+ *   S idx w        at the case's end: a STATE word a SET_REG wrote
+ *   N name         the case ends
  */
 
 #include "fwhost.h"
@@ -43,8 +52,19 @@ static uint32_t host_uop_start;
 /* The staging's write pointer, in words. */
 static uint32_t host_sp;
 
+/* The trace (NULL: none), the memory as the last step left it, the µops already traced. */
+static FILE *host_trace;
+static uint8_t *host_shadow;
+static uint32_t host_traced_uops;
+
+/* The STATE words a SET_REG wrote in the case. */
+static uint8_t host_state_set[HOST_STATE_WORDS];
+
 static void host_run_uop(const uint32_t *packet, uint32_t count);
 static void host_blit(void);
+static void host_step(uint32_t tag);
+static void host_trace_memory(void);
+static void host_trace_results(void);
 
 /* Empties the memory, the µops and the STATE. */
 void
@@ -56,6 +76,61 @@ host_reset(void)
 	host_uop_start = 0;
 	host_results = 0;
 	host_dones = 0;
+	memset(host_state_set, 0, sizeof(host_state_set));
+	host_traced_uops = 0;
+	if (host_trace == NULL)
+		return;
+	memset(host_shadow, 0, HOST_MEM_BYTES);
+	fprintf(host_trace, "C\n");
+}
+
+/* Writes the scene of the following cases to a file; gives 0, or -1 when it cannot. */
+int
+host_trace_open(
+	const char *path)
+{
+	host_shadow = calloc(HOST_MEM_BYTES, 1);
+	if (host_shadow == NULL)
+		return -1;
+	host_trace = fopen(path, "w");
+	if (host_trace == NULL)
+		return -1;
+	return 0;
+}
+
+/* Ends the trace's case: the STATE words the case set, then its name. */
+void
+host_trace_case(
+	const char *name)
+{
+	uint32_t index;
+
+	if (host_trace == NULL)
+		return;
+	for (index = 0; index < HOST_STATE_WORDS; index++) {
+		if (host_state_set[index] != 0)
+			fprintf(host_trace, "S %x %x\n", index, host_state[index]);
+	}
+	fprintf(host_trace, "N %s\n", name);
+}
+
+/* Closes the trace; gives 0, or -1 when a write failed. */
+int
+host_trace_close(void)
+{
+	int failed;
+
+	if (host_trace == NULL)
+		return 0;
+	failed = ferror(host_trace);
+	if (fclose(host_trace) != 0)
+		failed = 1;
+	host_trace = NULL;
+	free(host_shadow);
+	host_shadow = NULL;
+	if (failed)
+		return -1;
+	return 0;
 }
 
 /* Reads a word of the memory. */
@@ -222,7 +297,7 @@ host_frame_run(
 		host_poke(HOST_PACKET + index * 4u, packet[index]);
 	host_pkt_addr = HOST_PACKET;
 	host_pkt_dwords = 8;
-	fw_packet_run(tag);
+	host_step(tag);
 	return host_peek(HOST_FRAME_RESULT);
 }
 
@@ -243,7 +318,95 @@ host_ring(
 		host_poke(HOST_PACKET + 12u + index * 4u, args[index]);
 	host_pkt_addr = HOST_PACKET;
 	host_pkt_dwords = 3u + count;
+	host_step(tag);
+}
+
+/* Runs the packet the window shows; with a trace, as a step of the scene. */
+static void
+host_step(
+	uint32_t tag)
+{
+	uint32_t index;
+
+	if (host_trace == NULL) {
+		fw_packet_run(tag);
+		return;
+	}
+
+	/* What the host wrote, then the packet. */
+	host_trace_memory();
+	fprintf(host_trace, "V %x %x", tag, host_pkt_dwords);
+	for (index = 0; index < host_pkt_dwords; index++)
+		fprintf(host_trace, " %x", host_peek(host_pkt_addr + index * 4u));
+	fprintf(host_trace, "\n");
+
 	fw_packet_run(tag);
+
+	/* The µops of the step, the results, and the memory as the step left it. */
+	fprintf(host_trace, "U %x", host_uop_count - host_traced_uops);
+	for (index = host_traced_uops; index < host_uop_count; index++)
+		fprintf(host_trace, " %x", host_uops[index]);
+	fprintf(host_trace, "\n");
+	host_traced_uops = host_uop_count;
+	host_trace_results();
+	memcpy(host_shadow, host_mem, HOST_MEM_BYTES);
+}
+
+/* The trace's W lines: the runs of words that differ from the shadow. */
+static void
+host_trace_memory(void)
+{
+	uint32_t address;
+	uint32_t end;
+	uint32_t run;
+	int changed;
+
+	address = 0;
+	while (address < HOST_MEM_BYTES) {
+		/* The next word that differs. */
+		changed = memcmp(&host_mem[address], &host_shadow[address], 4);
+		if (changed == 0) {
+			address += 4u;
+			continue;
+		}
+
+		/* Its run, to 64 words. */
+		end = address + 4u;
+		while (end < HOST_MEM_BYTES && end - address < 256u) {
+			changed = memcmp(&host_mem[end], &host_shadow[end], 4);
+			if (changed == 0)
+				break;
+			end += 4u;
+		}
+		fprintf(host_trace, "W %x %x", address, (end - address) / 4u);
+		for (run = address; run < end; run += 4u)
+			fprintf(host_trace, " %x", host_peek(run));
+		fprintf(host_trace, "\n");
+		address = end;
+	}
+}
+
+/* The trace's E lines: the packet's result record and a frame's records. */
+static void
+host_trace_results(void)
+{
+	uint32_t number;
+	uint32_t result;
+	uint32_t records;
+	uint32_t base;
+	uint32_t index;
+
+	number = host_peek(host_pkt_addr);
+	if ((host_peek(host_pkt_addr + 4u) & GHCI_V_RESULT) == 0)
+		return;
+	result = host_peek(host_pkt_addr + 8u);
+	fprintf(host_trace, "E %x %x\nE %x %x\n", result, host_peek(result), result + 4u, host_peek(result + 4u));
+	if (number != GHCI_GPU_OP_FRAME)
+		return;
+	base = host_peek(host_pkt_addr + 24u);
+	records = host_peek(host_pkt_addr + 28u);
+	for (index = 0; index < records * 2u; index++)
+		fprintf(host_trace, "E %x %x\n", base + index * 4u, host_peek(base + index * 4u));
 }
 
 /* A staged command's result status. */
@@ -342,6 +505,7 @@ host_run_uop(
 				continue;
 			}
 			host_state[packet[index]] = packet[index + 1u];
+			host_state_set[packet[index]] = 1;
 		}
 		return;
 	}
