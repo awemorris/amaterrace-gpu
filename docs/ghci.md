@@ -165,7 +165,7 @@ earlier work has completed.
 | 0x03C | IRQ_ENABLE | RW | [8:0]: the same bits |
 | 0x040 | IRQ_SET | W1S | [5] sets IRQ_STATUS.SOFT |
 | 0x044 | WDT_CYCLES | RW | Watchdog limit for one command, in core cycles (reset value 2^28) |
-| 0x04C | RESIDENT_WARPS | R | [15:0] the warps the GPU runs at once over all its shader units (the size of the `warp` operand's range, section 12.3; scratch memory, section 12.10); 0 without a shader unit. [31:16] 0 |
+| 0x04C | RESIDENT_WARPS | R | [15:0] the warps the GPU runs at once over all its shader units (the size of the `warp` operand's range, section 12.3; scratch memory, section 12.10); 0 without a shader unit. [23:16] the general registers of a lane (32 or 64, section 12.2: a program may use r0 to this number less one; the driver's compiler allocates within it); 0 without a shader unit. [31:24] 0 |
 | 0x050 | RING_BASE | RW | GPU address of the ring, 32-byte aligned (the low bits read 0) |
 | 0x054 | RING_SIZE | RW | log2 of the ring's size in bytes, 10..20 (values outside are clamped) |
 | 0x058 | RING_WPTR | RW | Write pointer, a dword index in the ring; writing it rings the doorbell |
@@ -1175,8 +1175,8 @@ VK_ERROR_OUT_OF_DEVICE_MEMORY.
   implementation. An implementation may execute a warp in groups of
   physical lanes; results do not depend on that.
 - Each lane has general registers r0-r62 of 32 bits. A program declares
-  how many it uses, at most the implementation's limit (32 or 64). r0 is an
-  ordinary register.
+  how many it uses, at most the implementation's limit (32 or 64,
+  RESIDENT_WARPS[23:16]). r0 is an ordinary register.
 - Warp state: **PC** (an instruction index), **EXEC** (a 32-bit lane mask
   that the program manages with `exec.*`), and **KILLED** (sticky per lane,
   for fragment discard).

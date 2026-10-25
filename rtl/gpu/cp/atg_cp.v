@@ -53,7 +53,11 @@ module atg_cp #(
 	parameter MS4 = 0,	/* 4x multisampling in the RX, ROP, TU, SU and BLT (CAPS[29]) */
 	parameter HAS_FMT = 0,	/* the FMT capability (with CAPS[30]) */
 	parameter HAS_ETC = 0,	/* the TU's ETC2/EAC decoder (FMT reports those formats) */
-	parameter [15:0] RESIDENT_WARPS = 16'd0	/* RESIDENT_WARPS: NSU x NWARPS (0: no shader unit) */
+	parameter [15:0] RESIDENT_WARPS = 16'd0,	/* RESIDENT_WARPS: NSU x NWARPS (0: no shader unit) */
+	parameter [7:0] NREGS = 8'd0,	/* RESIDENT_WARPS[23:16]: general registers per lane (0: no SU) */
+	parameter [31:0] LOCAL_BASE = 32'd0,	/* the MEM capability (listed when LOCAL_BYTES is not 0) */
+	parameter [31:0] LOCAL_BYTES = 32'd0,
+	parameter [31:0] WINDOW_BYTES = 32'd0
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -165,10 +169,10 @@ module atg_cp #(
 	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4. */
 	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 24'h000001};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
-	/* PERF always; CPFW with the CPU; DISP and DBG when present (bit id - 1). */
+	/* PERF always; CPFW with the CPU; DISP, DBG, MEM and FMT when present (bit id - 1). */
 	localparam [9:0] XCAP = 10'h004 | (HAS_CPU != 0 ? 10'h020 : 10'h000) |
 		(HAS_DISP != 0 ? 10'h001 : 10'h000) | (HAS_DBG != 0 ? 10'h002 : 10'h000) |
-		(HAS_FMT != 0 ? 10'h200 : 10'h000);
+		(LOCAL_BYTES != 32'd0 ? 10'h080 : 10'h000) | (HAS_FMT != 0 ? 10'h200 : 10'h000);
 
 	/*
 	 * The STATE broadcast to the blocks, one register stage after
@@ -211,7 +215,9 @@ module atg_cp #(
 	atg_cp_regs #(
 		.GCLK_HZ(GCLK_HZ), .VENDOR_ID(VENDOR_ID), .DEVICE_ID(DEVICE_ID),
 		.DEVICE_VERSION(DEVICE_VERSION), .ISA_ID(ISA), .NATIVE_ISA_ID(ISA), .CAPS(CAPS),
-		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS)
+		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS),
+		.NREGS(NREGS), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
+		.WINDOW_BYTES(WINDOW_BYTES)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),

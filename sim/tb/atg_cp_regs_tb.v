@@ -61,7 +61,8 @@ module regs_bench #(
 		.CAPS(32'hCA950000 | TAG), .CAPS2(32'h0C0C0002),
 		.VEND({32'h77, 32'h66, 32'h55, 32'h44, 32'h33, 32'h22, 32'h11, 32'h00}),
 		.XCAP_MASK(XCAP), .DISP_OFFSET(32'h00010000), .PERF_SRC(32'hFFFF0801),
-		.RESIDENT_WARPS(16'd24)
+		.RESIDENT_WARPS(16'd24), .NREGS(8'd64), .LOCAL_BASE(32'h80000000),
+		.LOCAL_BYTES(32'h40000000), .WINDOW_BYTES(32'h04000000)
 	) dut (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
@@ -93,7 +94,7 @@ module atg_cp_regs_tb;
 	wire [9:0] hcr_widx, hcr_ridx;
 	wire [9:0] alias_idx, alias_ridx;
 
-	/* PERF only; PERF, VEND, CPFW; every capability (more than two entries). */
+	/* PERF only; PERF, VEND, CPFW; every capability (more than two entries, MEM among them). */
 	regs_bench #(.XCAP(8'h04)) b0 (
 		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
 		.reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
@@ -109,7 +110,7 @@ module atg_cp_regs_tb;
 		.alias_we(), .alias_idx(), .alias_ridx(), .ctl_rdata(32'd0), .state_rdata(32'd0),
 		.perf_busy(4'd0), .perf_reset(1'b0)
 	);
-	regs_bench #(.XCAP(8'h6F)) b2 (
+	regs_bench #(.XCAP(10'h0EF)) b2 (
 		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
 		.reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
 		.reg_rdata(rd2), .hcr_we(), .hcr_widx(), .hcr_wdata(), .hcr_wmask(), .hcr_ridx(),
@@ -224,7 +225,7 @@ module atg_cp_regs_tb;
 		expect0("id", GHCI_CAPS, 32'hCA950000);
 		expect0("id", GHCI_CAPS2, 32'h0C0C0002);
 		expect0("id", 17'h048, 32'h4E415431);
-		expect0("id", GHCI_RESIDENT_WARPS, 32'd24);
+		expect0("id", GHCI_RESIDENT_WARPS, 32'h00400018);
 		for (i = 0; i < 8; i = i + 1)
 			expect0("id", 17'h0C0 + i * 4, 32'h11 * i);
 		expect0("id", 17'h0E0, 32'd0);
@@ -236,7 +237,24 @@ module atg_cp_regs_tb;
 		/* extcap */
 		walk(0, 64'h03, 256'h110);
 		walk(1, 64'h060403, {32'h120, 32'h0C0, 32'h110});
-		walk(2, 64'h07_06_04_03_02_01, {32'h140, 32'h120, 32'h0C0, 32'h110, 32'h0, 32'h10000});
+		walk(2, 64'h08_07_06_04_03_02_01, {32'h1C0, 32'h140, 32'h120, 32'h0C0, 32'h110, 32'h0,
+			32'h10000});
+		/* MEM's words where it is listed; 0 where it is not. */
+		rd(17'h001C0);
+		if (v2 !== 32'h80000000 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: LOCAL_BASE %h, without MEM %h", v2, v0);
+		end
+		rd(17'h001C4);
+		if (v2 !== 32'h40000000 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: LOCAL_SIZE %h, without MEM %h", v2, v0);
+		end
+		rd(17'h001C8);
+		if (v2 !== 32'h04000000 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: WINDOW_SIZE %h, without MEM %h", v2, v0);
+		end
 		rd(GHCI_PERF_SRC0);
 		if (v0 !== 32'd1 || v2 !== 32'd1) begin
 			errors = errors + 1;

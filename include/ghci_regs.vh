@@ -38,7 +38,7 @@ localparam [16:0] GHCI_STATUS = 17'h00034;
 localparam [16:0] GHCI_IRQ_STATUS = 17'h00038;
 localparam [16:0] GHCI_IRQ_ENABLE = 17'h0003C;
 localparam [16:0] GHCI_IRQ_SET = 17'h00040;
-localparam [16:0] GHCI_RESIDENT_WARPS = 17'h0004C;	/* R: [15:0] warps the GPU runs at once */
+localparam [16:0] GHCI_RESIDENT_WARPS = 17'h0004C;	/* R: [15:0] warps the GPU runs at once, [23:16] registers per lane */
 localparam [16:0] GHCI_WDT_CYCLES = 17'h00044;
 localparam [16:0] GHCI_RING_BASE = 17'h00050;
 localparam [16:0] GHCI_RING_SIZE = 17'h00054;
@@ -75,6 +75,8 @@ localparam GHCI_CPFW_CTRL_HALT = 2;
 localparam GHCI_CPFW_STATUS_READY = 0;
 localparam GHCI_CPFW_STATUS_FAULT = 1;
 localparam GHCI_CPFW_STATUS_ALIVE = 2;
+localparam GHCI_CPFW_STATUS_STOPPED = 3;	/* the core is stopped or held in reset */
+localparam GHCI_CPFW_STATUS_LOADING = 4;
 
 /* CTRL bits. */
 localparam GHCI_CTRL_RUN = 0;

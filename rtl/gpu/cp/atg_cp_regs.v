@@ -22,7 +22,9 @@
  *
  * The extended capability list at 0x100: one two-word entry per set bit
  * of XCAP_MASK in id order; the first two entries at 0x100 and 0x108, the
- * rest from 0x180 (0x110-0x17F hold the PERF, CPFW and SA registers).
+ * rest from 0x180 (0x110-0x17F hold the PERF, CPFW, SA and FMT registers).
+ * The MEM capability's three words (LOCAL_BASE, LOCAL_SIZE, WINDOW_SIZE)
+ * are at 0x1C0, after the room of a full list.
  */
 
 `timescale 1ns / 1ps
@@ -35,11 +37,15 @@ module atg_cp_regs #(
 	parameter DEVICE_VERSION = 32'h00000002,	/* Implementation version */
 	parameter ISA_ID = 32'h47534931,	/* "GSI1"; 0 when there is no SU */
 	parameter NATIVE_ISA_ID = 32'h47534931,	/* NATIVE_ISA_ID (0x048) */
-	parameter [15:0] RESIDENT_WARPS = 16'd0,	/* RESIDENT_WARPS (0x04C): warps run at once over the SUs */
+	parameter [15:0] RESIDENT_WARPS = 16'd0,	/* RESIDENT_WARPS (0x04C) [15:0]: warps run at once over the SUs */
+	parameter [7:0] NREGS = 8'd0,	/* RESIDENT_WARPS [23:16]: general registers per lane (0: no SU) */
+	parameter [31:0] LOCAL_BASE = 32'd0,	/* MEM: GPU address of local memory */
+	parameter [31:0] LOCAL_BYTES = 32'd0,	/* MEM: bytes of local memory */
+	parameter [31:0] WINDOW_BYTES = 32'd0,	/* MEM: bytes the local window shows */
 	parameter CAPS = 32'h00500002,	/* CAPS value (design §2.2), set by atg_top from its parameters */
 	parameter CAPS2 = 32'h00000001,	/* CAPS2 value */
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
-	parameter [9:0] XCAP_MASK = 10'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, FMT 10) */
+	parameter [9:0] XCAP_MASK = 10'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, FMT 10) */
 	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
 	parameter PERF_SRC = 32'hFFFFFFFF	/* PERF_SRC0..3 (byte n = PERF_SRCn) */
 ) (
@@ -147,6 +153,7 @@ module atg_cp_regs #(
 		4: xcap_ptr = 32'h000000C0;
 		6: xcap_ptr = 32'h00000120;
 		7: xcap_ptr = 32'h00000140;
+		8: xcap_ptr = 32'h000001C0;
 		10: xcap_ptr = 32'h00000160;
 		default: xcap_ptr = 32'd0;
 		endcase
@@ -199,7 +206,10 @@ module atg_cp_regs #(
 		GHCI_SCRATCH[11:0]: own = scratch;
 		GHCI_COUNTER[11:0]: own = counter;
 		12'h048: own = NATIVE_ISA_ID;
-		GHCI_RESIDENT_WARPS[11:0]: own = {16'd0, RESIDENT_WARPS};
+		GHCI_RESIDENT_WARPS[11:0]: own = {8'd0, NREGS, RESIDENT_WARPS};
+		12'h1C0: if (XCAP_MASK[7]) own = LOCAL_BASE;
+		12'h1C4: if (XCAP_MASK[7]) own = LOCAL_BYTES;
+		12'h1C8: if (XCAP_MASK[7]) own = WINDOW_BYTES;
 		default: ;
 		endcase
 		if (roff[11:5] == 7'h06)	/* VEND 0x0C0-0x0DF */

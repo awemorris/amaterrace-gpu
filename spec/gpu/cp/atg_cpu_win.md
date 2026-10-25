@@ -20,7 +20,7 @@ Control window (word index, R/W):
 | --- | --- | --- | --- |
 | 0x00 | PKT_ADDR | win | R: GPU address of the class V packet's dword1 |
 | 0x01 | PKT_DWORDS | win | R: its n |
-| 0x02 | PKT_INFO | win | R: [7:0] JOB_TAG, [31] a packet is waiting (v_valid, 0 from DONE until v_valid falls); a read with [31] = 1 takes the packet (IRQ[0] clears) |
+| 0x02 | PKT_INFO | win | R: [7:0] JOB_TAG, [31] a packet is waiting (v_valid, 0 from the DONE write until v_valid falls); a read with [31] = 1 takes the packet (IRQ[0] clears) |
 | 0x03 | DONE | win | W: any value: the packet is finished (v_done, RPTR moves) |
 | 0x04 | UOP | win | W: one µop dword to the sequencer (stalls while the FIFO is full) |
 | 0x05 | UOP_LAST | win | W: the last dword of a µop packet |
@@ -86,7 +86,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fw_ready` | in | 1 | Taken. |
 | `fw_data` | out | 32 | Dword. |
 | `fw_last` | out | 1 | Last dword of a packet. |
-| `fw_active` | out | 1 | PKT_INFO[31]: from v_valid until v_done (DONE and the FIFO empty). |
+| `fw_active` | out | 1 | From v_valid until v_done (DONE and the FIFO empty); PKT_INFO[31] falls earlier, at the DONE write. |
 | **Other** | | | |
 | `st_ridx` | out | 10 | STATE read index (atg_cp_state cpu port). |
 | `st_rdata` | in | 32 | STATE word, next cycle. |
@@ -112,8 +112,9 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 - UOP_FIFO: am_fifo of {last, dword}; fw_valid = not empty.  The sequencer takes µops only while
   fw_active, so µops written outside a packet wait for the next one.
 - Packet: `taken` is set by a PKT_INFO read while PKT_INFO[31] = 1.  DONE (only while
-  PKT_INFO[31] = 1, else ignored) waits for the FIFO to empty, then pulses v_done once; PKT_INFO[31]
-  is 0 from then until v_valid falls (atg_cp_ring drops v_valid for at least one cycle between two
+  the packet is open, else ignored) waits for the FIFO to empty, then pulses v_done once; PKT_INFO[31]
+  is 0 from the DONE write (also while DONE waits for the FIFO: the firmware's next poll must not
+  take the same packet again) until v_valid falls (atg_cp_ring drops v_valid for at least one cycle between two
   packets), so the old packet is never seen twice.
 - irq = |({halt_req, fence_pending, v_valid & !taken} & IRQ_EN).  IRQ_EN (0x0D, reset 0) is the p017
   addition: halt_req is a level the firmware cannot clear, so without a mask the handler could
@@ -139,7 +140,7 @@ Every load and store 2 cycles (taken, answered).
 
 - `PASS atg_cpu_win.decode` — DMEM, window and sub-bus accesses go to the right place
 - `PASS atg_cpu_win.uop` — UOP/UOP_LAST fill the FIFO, a full FIFO stalls with stall = 1
-- `PASS atg_cpu_win.packet` — PKT_* reflect v_*, DONE pulses v_done after the FIFO drains
+- `PASS atg_cpu_win.packet` — PKT_* reflect v_*, DONE pulses v_done after the FIFO drains, PKT_INFO[31] is 0 while it waits (fw_active 1)
 - `PASS atg_cpu_win.irq` — the three interrupt causes
 - `PASS atg_cpu_win` at the end.
 
@@ -154,3 +155,5 @@ changes: IRQ_EN (0x0D), PKT_INFO/taken/DONE rules, every access answered from a 
 cycle after (timing), d_be ignored in the window.
 
 2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.  STATE_IDX keeps 10 bits.
+
+2026-10-25: PKT_INFO[31] is 0 from the DONE write, while DONE waits for the FIFO too (the firmware's main loop took the same packet again while the replay's µops drained: found by the Verilator end-to-end run of the driver); fw_active is unchanged.

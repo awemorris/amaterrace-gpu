@@ -161,6 +161,9 @@ module atg_kc705_raster #(
 		.LINE_BYTES(64),
 		.LINE_SHIFT(6),
 		.DATA_W(512),
+		.LOCAL_BASE(32'h80000000),	/* the MIG's 1 GiB (it takes address bits 29:0) */
+		.LOCAL_BYTES(32'h40000000),
+		.WINDOW_BYTES(32'h04000000),	/* the 64 MiB local window of the PCIe BAR2 */
 		.HAS_CPU(1),
 		.CPU_IMEM_INIT(CPU_IMEM_INIT),
 		.CPU_DMEM_INIT(CPU_DMEM_INIT),

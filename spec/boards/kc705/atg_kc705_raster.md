@@ -85,7 +85,7 @@ None beyond the above.
 
 `sim/tb/atg_kc705_raster_tb.v` (p012) prints, in this order:
 
-- `PASS atg_kc705_raster.jtag` — MAGIC and SCRATCH through the JTAG bridge, the DC's ID and CAPS at +0x10000, the GPU's CAPS/CAPS2 of this shape (CAPS[28] packed, [27] graphics, [24] subgroup, 64-byte lines, the TU and its 16 slots), MEM_READY
+- `PASS atg_kc705_raster.jtag` — MAGIC and SCRATCH through the JTAG bridge, the DC's ID and CAPS at +0x10000, the GPU's CAPS/CAPS2 of this shape (CAPS[28] packed, [27] graphics, [24] subgroup, 64-byte lines, the TU and its 16 slots), the MEM capability (1 GiB of DDR3 at 0x8000_0000, a 64 MiB window), 64 registers per lane in RESIDENT_WARPS[23:16], MEM_READY
 - `PASS atg_kc705_raster.fill` — a BLT FILL kicked from JTAG, DBG_ADDR/DBG_DATA read-back, the memory model holds exactly the area
 - `PASS atg_kc705_raster.i2c` — one byte to the I2C mux (slave model on the pins) through the DC's I2C registers
 - `PASS atg_kc705_raster.pattern` — TEST_PATTERN in a 32 × 4 mode: the HDMI pins (sampled on hdmi_clk) give the first frame as YCbCr 4:2:2
@@ -103,3 +103,5 @@ board).  Port changes (Q1 to ACK): `hdmi_d` 24 → 16 bits (the KC705 wires 16 l
 HDMI_R_D0..D15), `iic_mux_reset_n` added; parameters `CPU_IMEM_INIT`/`CPU_DMEM_INIT` added.
 Unverified until part B: the HDMI pins (two outside sources, see the XDC), the IP cores' port
 names, the clock managers' settings, the ADV7511's register settings.
+
+2026-10-25: atg_top's MEM capability for this board: LOCAL_BASE 0x8000_0000 (the MIG takes address bits 29:0, so the 1 GiB is at any 1 GiB-aligned base; 0x8000_0000 leaves the GPU addresses below 2 GiB to the host's bus addresses of a later PCIe binding), LOCAL_BYTES 1 GiB, WINDOW_BYTES 64 MiB (the PCIe BAR2 of design §6.2).  The TB walks to it.

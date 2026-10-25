@@ -122,3 +122,5 @@ BLT error and of the watchdog is 0).
 2026-10-25 (CAPS[30]): parameters HAS_FMT (default 0: the FMT capability, atg_cp_fmt, XCAP bit 9) and HAS_ETC (default 0: FMT reports the ETC2/EAC formats); ports occ_count (in, 40) and occ_clear (out) between atg_cp_seq's QUERY and atg_rop's occlusion counter (atg_top wires them).
 
 RESIDENT_WARPS (parameter, default 0): the RESIDENT_WARPS register (0x04C), NSU x NWARPS from atg_top, passed to atg_cp_regs.
+
+2026-10-25: parameters NREGS (default 0: RESIDENT_WARPS[23:16], SU_NREGS from atg_top) and LOCAL_BASE, LOCAL_BYTES, WINDOW_BYTES (default 0: the MEM capability, XCAP bit 7 when LOCAL_BYTES is not 0), passed to atg_cp_regs.
