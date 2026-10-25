@@ -72,7 +72,7 @@ proc report_blocks {file} {
 	}
 	set f [open $file w]
 	foreach c $::env(OOC_BLOCKS) {
-		set regs [get_cells -quiet -of_objects [all_registers] -filter "NAME =~ $c/*"]
+		set regs [filter [all_registers] "NAME =~ $c/*"]
 		set p {}
 		if {[llength $regs] > 0} {
 			set p [get_timing_paths -quiet -max_paths 1 -nworst 1 -setup -to $regs]

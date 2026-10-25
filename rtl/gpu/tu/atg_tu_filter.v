@@ -54,17 +54,19 @@
  *
  * Pipeline: a pass is taken in IDLE or in the cycle of its predecessor's
  * lane 3 and issues its lanes 0-3 one a cycle (RUN), each with its four
- * channels, into a pipeline of 18 stages without stalls: P1 the lane's
- * texels, weights and reference; P2-P4 Dref as unorm24 or unorm16, the
- * order keys, the bilinear weights (am_mul); P5 the compare and the
- * channels' bytes; P7 their products with the weights; P8-P9 their sum R;
- * P11 R × W; P12 the sums A (read and written here, so the passes of a
- * lane follow one another); P13-P15 A × 0x0101010101 (or the other
- * conversions' integers); P15-P17 the rounding to fp32; P18 the lane's
- * words, written to the quad's place at the end of P18.  A quad is returned through a FIFO of 4 quads; a pass is taken
- * only while the quads taken and not yet returned are fewer than 4.
- * idle: nothing taken and not returned (atg_tu hands a pass of the other
- * path only then).
+ * channels, into 18 stages without stalls (the cycle after the issue):
+ * P1 the lane's texels, weights and Dref; P2-P4 Dref as unorm24 or
+ * unorm16 and its key, the texels' keys, the bilinear weights and W
+ * (am_mul); P5 the compares and the channels' bytes; P7 the bytes times
+ * the weights; P8-P9 their sum R; P11 R × W, the sums A read and written
+ * in that cycle (a lane's next pass comes 4 or more cycles later);
+ * P13-P14 A × 0x0101010101; P14 the conversion's integer; P15-P17 its
+ * rounding to fp32 (leading zeros, shift, round); P18 the lane's words,
+ * written to the quad's place.  The quads go out through a FIFO of 4; a
+ * pass is taken only while the last passes taken whose quads are not yet
+ * returned are fewer than 4.  idle: no quad taken and not returned and no
+ * pass with more to follow pending (atg_tu hands a pass of the other path
+ * only then).
  * See spec/gpu/tu/atg_tu_filter.md.
  *
  * States: IDLE →(tc)→ RUN (lanes 0-3; the next pass is taken with lane 3)
@@ -434,7 +436,8 @@ module atg_tu_filter (
 					by[(c*4 + t)*8 +: 8] = c == 0 ? {8{ok[t]}} : c == 3 ? 8'hFF : 8'd0;
 				else
 					/* byte of channel c: RGBA8 c, BGRA8 swaps R and B */
-					by[(c*4 + t)*8 +: 8] = tw4[(ctl4[1] && c != 1 && c != 3 ? 2 - c : c)*8 +: 8];
+					by[(c*4 + t)*8 +: 8] =
+						tw4[(ctl4[1] && c != 1 && c != 3 ? 2 - c : c)*8 +: 8];
 			end
 	end
 
@@ -545,19 +548,24 @@ module atg_tu_filter (
 	 * the msb position (80 − lz, P16), eb 55, the LOD query 119, RGB565's
 	 * G 49, R and B 47 (the codes 0-3); p << lz (P17); the rounding and
 	 * the exponent eb + n (+ 1 on a carry) (P18). ---- */
-	/* gather's component and byte (P14) */
-	reg [2:0] gsw14;
-	reg [1:0] gsrc14, gsel14;
+	/* gather's component and byte, from P13's fields into P14 (the
+	 * selections are registered: they drive every bit of the four
+	 * channels' integers) */
+	wire [49:0] ctl13 = dl[13][70:21];
+	reg [2:0] gsw13;
+	reg [1:0] gsrc13;
+	reg [1:0] gsel14;
 	always @(*) begin
-		case (ctl14[15:14])
-		2'd0: gsw14 = ctl14[38:36];
-		2'd1: gsw14 = ctl14[41:39];
-		2'd2: gsw14 = ctl14[44:42];
-		default: gsw14 = ctl14[47:45];
+		case (ctl13[15:14])
+		2'd0: gsw13 = ctl13[38:36];
+		2'd1: gsw13 = ctl13[41:39];
+		2'd2: gsw13 = ctl13[44:42];
+		default: gsw13 = ctl13[47:45];
 		endcase
-		gsrc14 = gsw14 >= 3'd3 && gsw14 <= 3'd6 ? zsrc(gsw14[1:0]) : ctl14[15:14];
-		gsel14 = ctl14[1] && !gsrc14[0] ? gsrc14 ^ 2'd2 : gsrc14;
+		gsrc13 = gsw13 >= 3'd3 && gsw13 <= 3'd6 ? zsrc(gsw13[1:0]) : ctl13[15:14];
 	end
+	always @(posedge clk)
+		gsel14 <= ctl13[1] && !gsrc13[0] ? gsrc13 ^ 2'd2 : gsrc13;
 	wire [11:0] p_nc;
 	wire [7:0] e_nc;
 	wire [3:0] m_nc;
@@ -590,27 +598,30 @@ module atg_tu_filter (
 		wire [7:0] gbt = gtw[gsel14*8 +: 8];
 		wire [15:0] fx = fa14[(gc % 2)*16 +: 16];
 		wire [4:0] c5 = gc == 0 ? r565_14[15:11] : r565_14[4:0];
+		/* the source (from P13's fields): 0 the sum, 1 the LOD query, 2
+		 * gather of depth, 3 gather of a colour, 4 a depth texel, 5 RGB565's
+		 * G, 6 its R or B */
+		reg [2:0] sel;
+		always @(posedge clk)
+			sel <= ctl13[2] ? 3'd1 : ctl13[13] ? (ctl13[8] ? 3'd2 : 3'd3) :
+				ctl13[8] && !ctl13[9] && gc == 0 ? 3'd4 :
+				ctl13[19] && ctl13[3] && gc == 1 ? 3'd5 :
+				ctl13[19] && ctl13[3] && gc != 3 ? 3'd6 : 3'd0;
 		reg [80:0] np;
 		reg [1:0] ncode;
 		always @(*) begin
-			ncode = 2'd0;
-			if (ctl14[2]) begin
-				np = {65'd0, fx};
-				ncode = 2'd1;
-			end else if (ctl14[13])
-				np = ctl14[8] ? {9'd0, gtw[23:0], gtw[23:0], gtw[23:0]} : {9'd0, {5{gbt}}, 32'd0};
-			else if (ctl14[8] && !ctl14[9] && gc == 0)
-				np = {9'd0, lt14[23:0], lt14[23:0], lt14[23:0]};
-			else if (ctl14[19] && ctl14[3] && gc == 1) begin
-				/* c / 63: c × sum(2^6i, i < 13) */
-				np = {3'd0, {13{r565_14[10:5]}}};
-				ncode = 2'd2;
-			end else if (ctl14[19] && ctl14[3] && gc != 3) begin
-				/* c / 31: c × sum(2^5i, i < 16) */
-				np = {1'd0, {16{c5}}};
-				ncode = 2'd3;
-			end else
-				np = p;
+			ncode = sel == 3'd1 ? 2'd1 : sel == 3'd5 ? 2'd2 : sel == 3'd6 ? 2'd3 : 2'd0;
+			case (sel)
+			3'd1: np = {65'd0, fx};
+			3'd2: np = {9'd0, gtw[23:0], gtw[23:0], gtw[23:0]};
+			3'd3: np = {9'd0, {5{gbt}}, 32'd0};
+			3'd4: np = {9'd0, lt14[23:0], lt14[23:0], lt14[23:0]};
+			/* c / 63: c × sum(2^6i, i < 13) */
+			3'd5: np = {3'd0, {13{r565_14[10:5]}}};
+			/* c / 31: c × sum(2^5i, i < 16) */
+			3'd6: np = {1'd0, {16{c5}}};
+			default: np = p;
+			endcase
 		end
 
 		reg [80:0] np15, np16;
@@ -730,7 +741,8 @@ module atg_tu_filter (
 	assign tr_tag = fo[527:512];
 	assign tr_last = fo[528];
 
-	wire unused_ok = &{1'b0, ctl3, ctl4, ctl11, ctl14, ctl18, nq_nc, k_nc, p24_nc, p16_nc, t24_nc, sam1_nc, dneg_nc, kneg_nc,
+	wire unused_ok = &{1'b0, ctl3, ctl4, ctl11, ctl13, ctl14, ctl18, nq_nc, k_nc, p24_nc, p16_nc,
+		t24_nc, sam1_nc, dneg_nc, kneg_nc,
 		w_nc, s_nc, rr_nc, p_nc, e_nc, m_nc, q24_nc, q16_nc, f_in_ready, f_count, wp3[17],
 		wp9[17], s16[47:17], z24[46:0], last1, vd[17:12], vd[10:2]};
 endmodule

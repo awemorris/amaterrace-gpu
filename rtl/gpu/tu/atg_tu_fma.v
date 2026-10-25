@@ -12,18 +12,20 @@
  * fma), the accumulation of atg_tu_ffilt.
  *
  * One operation a cycle, no stall.  a and b come with i_vld and a tag in
- * cycle 0; the addend is read late: in cycle CL (= 4) the unit gives the
- * operation's tag on c_tag (c_vld) and samples c_val in that cycle (an
- * accumulator chosen by the tag, combinationally); the result is r_val
- * with r_vld and r_tag in cycle RL (= 10), combinational from the last
- * register; o_busy while an operation is in the unit.  An addend written by r_val is read by an operation whose
- * cycle CL is at least RL - CL + 1 (= 7) cycles after the writer's: the
- * caller orders or stalls its operations for that (atg_tu_ffilt).
+ * cycle 0; the addend is read late: in cycle CL (= 3) the unit gives the
+ * operation's tag on c_tag (c_vld) and samples c_val at the end of that
+ * cycle (an accumulator chosen by the tag, combinationally); the result is
+ * r_val with r_vld and r_tag in cycle RL (= 10), combinational from the
+ * last register; o_busy while an operation is in the unit.  An addend
+ * written by r_val is read by an operation whose cycle CL is at least RL -
+ * CL + 1 (= 8) cycles after the writer's: the caller orders or stalls its
+ * operations for that (atg_tu_ffilt).
  *
  * Stages (registers R1-R10; the stage computes from the register before
  * it): M0 (flush and classify a and b, the exponent sums) R1; the 24 x 24
- * product (am_mul, 3 registers) R2-R4; A1 (the addend: flush, classify,
- * the alignment k, the special results) R5; A2 (the addend aligned in the
+ * product (am_mul, 3 registers) R2-R4 (the addend read in cycle 3, R4);
+ * A1 (the addend: flush, classify, the alignment k, the special results)
+ * R5; A2 (the addend aligned in the
  * 77-bit window of atg_su_ffma_p) R6; B (add or subtract) R7; C1 (leading
  * zeros) R8; C2 (normalised, the exponent) R9; D1 (round up) R10; D2
  * (carry, overflow, underflow, the special results) out.
@@ -42,7 +44,7 @@ module atg_tu_fma #(
 	input wire [TW-1:0] i_tag,
 	input wire [31:0] i_a,
 	input wire [31:0] i_b,
-	/* The addend, read in cycle 4 */
+	/* The addend, read in cycle 3 */
 	output wire c_vld,
 	output wire [TW-1:0] c_tag,
 	input wire [31:0] c_val,
@@ -52,7 +54,8 @@ module atg_tu_fma #(
 	output wire [31:0] r_val,
 	output wire o_busy	/* an operation in the unit */
 );
-	wire u_eab_nc, u_q150_nc, u_q175_nc, u_eb99_nc, u_k_nc, u_u_nc, u_ec2_nc, u_cp_nc, u_er_nc, u_rnd_nc, u_er1_nc;	/* the carries not used */
+	wire u_eab_nc, u_q150_nc, u_q175_nc, u_eb99_nc, u_k_nc, u_u_nc, u_ec2_nc, u_cp_nc,
+		u_er_nc, u_rnd_nc, u_er1_nc;	/* the carries not used */
 	integer i;
 
 	/* ---- M0: a and b ---- */
@@ -110,16 +113,20 @@ module atg_tu_fma #(
 		{q150_4, q175_4, eb99_4} <= {q150_3, q175_3, eb99_3};
 	end
 
-	assign c_vld = v4;
-	assign c_tag = t4;
+	/* The addend is read in cycle 3 and registered. */
+	assign c_vld = v3;
+	assign c_tag = t3;
+	reg [31:0] c4;
+	always @(posedge clk)
+		c4 <= c_val;
 
 	/* ---- A1: the addend ---- */
-	wire [7:0] ec = c_val[30:23];
+	wire [7:0] ec = c4[30:23];
 	wire zc = ec == 8'd0;
-	wire nan_c = ec == 8'hFF && c_val[22:0] != 23'd0;
-	wire inf_c = ec == 8'hFF && c_val[22:0] == 23'd0;
-	wire sc = c_val[31];
-	wire [31:0] cf = zc ? {sc, 31'd0} : c_val;	/* c flushed */
+	wire nan_c = ec == 8'hFF && c4[22:0] != 23'd0;
+	wire inf_c = ec == 8'hFF && c4[22:0] == 23'd0;
+	wire sc = c4[31];
+	wire [31:0] cf = zc ? {sc, 31'd0} : c4;	/* c flushed */
 	wire [11:0] k_a1, u_a1, ec2;
 
 	am_add #(.W(12)) u_k (.a({4'd0, ec}), .b(q150_4), .ci(1'b0), .s(k_a1), .co(u_k_nc));
@@ -159,7 +166,7 @@ module atg_tu_fma #(
 		u5 <= u_a1;
 		eb99_5 <= eb99_4;
 		ec2_5 <= ec2;
-		mc5 <= zc ? 24'd0 : {1'b1, c_val[22:0]};
+		mc5 <= zc ? 24'd0 : {1'b1, c4[22:0]};
 		zc5 <= zc;
 		sc5 <= sc;
 		sp5 <= sp4;
@@ -315,10 +322,12 @@ module atg_tu_fma #(
 		if (!rst_n)
 			{v1, v2, v3, v4, v5, v6, v7, v8, v9, v10} <= 10'd0;
 		else
-			{v1, v2, v3, v4, v5, v6, v7, v8, v9, v10} <= {i_vld, v1, v2, v3, v4, v5, v6, v7, v8, v9};
+			{v1, v2, v3, v4, v5, v6, v7, v8, v9, v10} <=
+				{i_vld, v1, v2, v3, v4, v5, v6, v7, v8, v9};
 	end
 
-	wire unused_ok = &{1'b0, u_eab_nc, u_q150_nc, u_q175_nc, u_eb99_nc, u_k_nc, u_u_nc, u_ec2_nc, u_cp_nc, u_er_nc, u_rnd_nc, u_er1_nc, u5[11:7]};
+	wire unused_ok = &{1'b0, u_eab_nc, u_q150_nc, u_q175_nc, u_eb99_nc, u_k_nc, u_u_nc,
+		u_ec2_nc, u_cp_nc, u_er_nc, u_rnd_nc, u_er1_nc, u5[11:7]};
 endmodule
 
 `default_nettype wire

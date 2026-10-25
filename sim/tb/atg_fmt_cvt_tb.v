@@ -32,7 +32,7 @@ module atg_fmt_cvt_tb;
 
 	atg_fmt_cvt dut (.clk(clk), .i_raw(raw), .i_inf(inf), .i_k(k), .i_sten(sten), .o_val(val));
 
-	localparam LAT = 5;
+	localparam LAT = 6;
 	integer seed, errs, j, n;
 	reg [31:0] xq [0:LAT];
 	reg vq [0:LAT];
@@ -73,7 +73,7 @@ module atg_fmt_cvt_tb;
 			k <= r0[9:8];
 			sten <= r0[12:10] == 3'd0;
 			@(posedge clk);
-			/* the expected value of the inputs just taken (o_val 4 edges later) */
+			/* the expected value of the inputs just taken (o_val 5 edges later) */
 			for (n = LAT; n > 0; n = n - 1) begin
 				xq[n] = xq[n - 1];
 				vq[n] = vq[n - 1];

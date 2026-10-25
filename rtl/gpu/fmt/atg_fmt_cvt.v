@@ -15,12 +15,12 @@
  * the components a format does not have.
  *
  * One conversion a cycle, no stall: the inputs in cycle 0, o_val in cycle
- * 5 (a register).  Stages: U1 (the component's field and mask, the
+ * 6 (a register).  Stages: U1 (the component's field and mask, the
  * constant results) R1; U2 (SNORM's magnitude, the inputs of the
  * normalisations, the integer and sRGB results) R2; U3 (UNORM's repeated
- * bits and their leading zeros; the 10-bit leading zeros of the floats)
- * R3; U4 (UNORM normalised; the 16-bit, packed and E5 floats) R4; U5
- * (UNORM's rounding, SNORM's sign, the selection) R5.
+ * bits; the 10-bit leading zeros of the floats) R3; U3b (UNORM's leading
+ * zeros) R3b; U4 (UNORM normalised; the 16-bit, packed and E5 floats) R4;
+ * U5 (UNORM's rounding, SNORM's sign, the selection) R5.
  * See spec/gpu/fmt/atg_fmt_cvt.md.
  */
 
@@ -37,7 +37,8 @@ module atg_fmt_cvt (
 );
 	`include "atg_fmt_info.vh"
 	`include "atg_srgb.vh"
-	wire u_neg_nc, u_wm1_nc, u_e5b_nc, u_hexp_nc, u_hden_nc, u_e5x_nc, u_q_nc, u_e127_nc, u_e126_nc;	/* the carries not used */
+	wire u_neg_nc, u_wm1_nc, u_e5b_nc, u_hexp_nc, u_hden_nc, u_e5x_nc, u_q_nc, u_e127_nc,
+		u_e126_nc;	/* the carries not used */
 	integer i;
 
 	/* The result's kinds (the selection of U5). */
@@ -171,11 +172,10 @@ module atg_fmt_cvt (
 		e5b2 <= e5b;
 	end
 
-	/* ---- U3: c / (2^w - 1) is 0.ccc... (atg_fmt_unorm) ---- */
+	/* ---- U3: c / (2^w - 1) is 0.ccc... (atg_fmt_unorm), the repeated bits;
+	 * the 10-bit leading zeros of the floats' mantissa ---- */
 	reg [79:0] r_u3;
-	reg [4:0] lz_u3;
-	reg found_u3;
-	always @(*) begin
+	always @(*)
 		case (uw2)
 		6'd1: r_u3 = {80{uc2[0]}};
 		6'd2: r_u3 = {40{uc2[1:0]}};
@@ -190,15 +190,6 @@ module atg_fmt_cvt (
 		6'd16: r_u3 = {5{uc2[15:0]}};
 		default: r_u3 = {uc2, uc2, uc2, uc2[23:16]};
 		endcase
-		lz_u3 = 5'd0;
-		found_u3 = 1'b0;
-		for (i = 0; i < 24; i = i + 1)
-			if (!found_u3 && r_u3[79 - i]) begin
-				lz_u3 = i[4:0];
-				found_u3 = 1'b1;
-			end
-	end
-	/* the 10-bit leading zeros of the floats' mantissa */
 	reg [3:0] hlz_u3;
 	reg hfound;
 	always @(*) begin
@@ -213,9 +204,8 @@ module atg_fmt_cvt (
 
 	reg [2:0] kind3;
 	reg [31:0] dir3;
-	reg [71:0] r3;
-	reg [4:0] lz3;
-	reg found3, neg3, snmin3, hs3;
+	reg [79:0] rr3;
+	reg neg3, snmin3, hs3;
 	reg [4:0] he3;
 	reg [9:0] x3;
 	reg [3:0] hlz3;
@@ -223,9 +213,7 @@ module atg_fmt_cvt (
 	always @(posedge clk) begin
 		kind3 <= kind2;
 		dir3 <= dir2;
-		r3 <= r_u3[79:8];
-		lz3 <= lz_u3;
-		found3 <= found_u3;
+		rr3 <= r_u3;
 		neg3 <= neg2;
 		snmin3 <= snmin2;
 		hs3 <= hs2;
@@ -233,6 +221,43 @@ module atg_fmt_cvt (
 		x3 <= x2;
 		hlz3 <= hlz_u3;
 		e5b3 <= e5b2;
+	end
+
+	/* ---- U3b: UNORM's leading zeros (of the top 24 bits) ---- */
+	reg [4:0] lz_u3;
+	reg found_u3;
+	always @(*) begin
+		lz_u3 = 5'd0;
+		found_u3 = 1'b0;
+		for (i = 0; i < 24; i = i + 1)
+			if (!found_u3 && rr3[79 - i]) begin
+				lz_u3 = i[4:0];
+				found_u3 = 1'b1;
+			end
+	end
+
+	reg [2:0] kind3b;
+	reg [31:0] dir3b;
+	reg [71:0] r3;
+	reg [4:0] lz3;
+	reg found3, neg3b, snmin3b, hs3b;
+	reg [4:0] he3b;
+	reg [9:0] x3b;
+	reg [3:0] hlz3b;
+	reg [7:0] e5b3b;
+	always @(posedge clk) begin
+		kind3b <= kind3;
+		dir3b <= dir3;
+		r3 <= rr3[79:8];
+		lz3 <= lz_u3;
+		found3 <= found_u3;
+		neg3b <= neg3;
+		snmin3b <= snmin3;
+		hs3b <= hs3;
+		he3b <= he3;
+		x3b <= x3;
+		hlz3b <= hlz3;
+		e5b3b <= e5b3;
 	end
 
 	/* ---- U4 ---- */
@@ -243,23 +268,23 @@ module atg_fmt_cvt (
 	wire [9:0] fsh;
 	wire [7:0] hexp, hden, e5x;
 
-	am_shift #(.W(10), .SW(4)) u_hf (.a(x3), .amt(hlz3), .left(1'b1), .arith(1'b0), .y(fsh));
-	am_add #(.W(8)) u_hexp (.a({3'd0, he3}), .b(8'd112), .ci(1'b0), .s(hexp), .co(u_hexp_nc));
-	am_sub #(.W(8)) u_hden (.a(8'd112), .b({4'd0, hlz3}), .bi(1'b0), .d(hden), .bo(u_hden_nc));
-	am_sub #(.W(8)) u_e5x (.a(e5b3), .b({4'd0, hlz3}), .bi(1'b0), .d(e5x), .bo(u_e5x_nc));
+	am_shift #(.W(10), .SW(4)) u_hf (.a(x3b), .amt(hlz3b), .left(1'b1), .arith(1'b0), .y(fsh));
+	am_add #(.W(8)) u_hexp (.a({3'd0, he3b}), .b(8'd112), .ci(1'b0), .s(hexp), .co(u_hexp_nc));
+	am_sub #(.W(8)) u_hden (.a(8'd112), .b({4'd0, hlz3b}), .bi(1'b0), .d(hden), .bo(u_hden_nc));
+	am_sub #(.W(8)) u_e5x (.a(e5b3b), .b({4'd0, hlz3b}), .bi(1'b0), .d(e5x), .bo(u_e5x_nc));
 
 	/* f: the bits below the leading one (x << (lz + 1)) */
 	wire [9:0] f = {fsh[8:0], 1'b0};
 	reg [31:0] hval;
 	always @(*) begin
-		if (kind3 == K_E5)
-			hval = x3[8:0] == 9'd0 ? 32'd0 : {1'b0, e5x, f[9:1], 14'd0};
-		else if (he3 == 5'd31)
-			hval = x3 != 10'd0 ? 32'h7FC00000 : {hs3, 31'h7F800000};
-		else if (he3 == 5'd0)
-			hval = x3 == 10'd0 ? {hs3, 31'd0} : {hs3, hden, f, 13'd0};
+		if (kind3b == K_E5)
+			hval = x3b[8:0] == 9'd0 ? 32'd0 : {1'b0, e5x, f[9:1], 14'd0};
+		else if (he3b == 5'd31)
+			hval = x3b != 10'd0 ? 32'h7FC00000 : {hs3b, 31'h7F800000};
+		else if (he3b == 5'd0)
+			hval = x3b == 10'd0 ? {hs3b, 31'd0} : {hs3b, hden, f, 13'd0};
 		else
-			hval = {hs3, hexp, x3, 13'd0};
+			hval = {hs3b, hexp, x3b, 13'd0};
 	end
 
 	reg [2:0] kind4;
@@ -269,14 +294,14 @@ module atg_fmt_cvt (
 	reg [4:0] lz4;
 	reg found4, neg4, snmin4;
 	always @(posedge clk) begin
-		kind4 <= kind3;
-		dir4 <= kind3 == K_HF || kind3 == K_E5 ? hval : dir3;
+		kind4 <= kind3b;
+		dir4 <= kind3b == K_HF || kind3b == K_E5 ? hval : dir3b;
 		um4 <= um[70:47];
 		st4 <= |um[46:0];
 		lz4 <= lz3;
 		found4 <= found3;
-		neg4 <= neg3;
-		snmin4 <= snmin3;
+		neg4 <= neg3b;
+		snmin4 <= snmin3b;
 	end
 
 	/* ---- U5: UNORM's rounding (never a tie), SNORM ---- */
@@ -292,7 +317,9 @@ module atg_fmt_cvt (
 	always @(posedge clk)
 		o_val <= kind4 == K_UN ? u :
 			kind4 == K_SN ? (snmin4 ? 32'hBF800000 : {neg4 | u[31], u[30:0]}) : dir4;
-	wire unused_ok = &{1'b0, i_inf[15], i_inf[12], i_inf[5:1], um[71], fsh[9], u_neg_nc, u_wm1_nc, u_e5b_nc, u_hexp_nc, u_hden_nc, u_e5x_nc, u_q_nc, u_e127_nc, u_e126_nc};
+	wire unused_ok = &{1'b0, i_inf[15], i_inf[12], i_inf[5:1], um[71], fsh[9], u_neg_nc,
+		u_wm1_nc, u_e5b_nc, u_hexp_nc, u_hden_nc, u_e5x_nc, u_q_nc, u_e127_nc,
+		u_e126_nc};
 endmodule
 
 `default_nettype wire

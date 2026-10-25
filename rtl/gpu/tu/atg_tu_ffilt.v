@@ -51,13 +51,14 @@
  * Pipeline: a pass's steps (one component of a lane's texel) are issued
  * one a cycle in the order texel, lane, component (LOAD makes the pass's
  * work, a mask of {texel, lane}), through P1 (the texel's bits, the
- * lane's weights), P2 (atg_tu_etc's block decode; the weight's factors),
- * P3 (the converter's inputs; wu wv and wa wb), P3-P8 (atg_fmt_cvt; the
- * weight n and its fp32), to P8: a bypassed or gathered value is written
- * to its accumulator there, a term goes into atg_tu_fma, which reads the
- * accumulator 4 cycles later and writes it 10 cycles later.  The steps of
+ * lane's weights), P2-P3 (atg_tu_etc's block decode, 2 cycles; the
+ * weight's factors, wu wv and wa wb), P4 (the converter's inputs),
+ * P4-P10 (atg_fmt_cvt; the weight n and its fp32), to P10: a bypassed or
+ * gathered value is written to its accumulator there, a term goes into
+ * atg_tu_fma, which reads the accumulator 3 cycles later and writes it 10
+ * cycles later.  The steps of
  * one accumulator keep the reference's order (texels, then passes); a
- * term is issued only 7 cycles or more after the previous term of its
+ * term is issued only 8 cycles or more after the previous term of its
  * accumulator (the issue waits otherwise: a pass with few lanes and
  * components).  The next pass of the quad is taken while the last one's
  * steps are in the pipeline; after the last pass the unit waits until it
@@ -100,7 +101,8 @@ module atg_tu_ffilt (
 		OUT = 3'd5;
 	/* A step's kind */
 	localparam [1:0] OP_FMA = 2'd0, OP_BYP = 2'd1, OP_GATH = 2'd2;
-	wire u_ifmt_nc, u_inc_nc, u_ru_nc, u_rv_nc, u_rl_nc, u_rw_nc, u_ner_nc, u_neg_nc, u_e0_nc, u_e1_nc, u_wq_nc;	/* the carries not used */
+	wire u_ifmt_nc, u_inc_nc, u_ru_nc, u_rv_nc, u_rl_nc, u_rw_nc, u_ner_nc, u_neg_nc,
+		u_e0_nc, u_e1_nc, u_wq_nc;	/* the carries not used */
 	integer i, m;
 
 	/* The component that swizzle code 3-6 (R, G, B, A) takes, by its bits
@@ -242,12 +244,12 @@ module atg_tu_ffilt (
 	wire [1:0] gpos = ift == 2'd2 ? 2'd0 : ift == 2'd3 ? 2'd1 : ift == 2'd1 ? 2'd2 : 2'd3;
 	wire [3:0] aid = iop == OP_GATH ? {ik, gpos} : {ik, c};
 	wire lastc = iop == OP_GATH || c == ncm1;
-	/* The terms of the last 6 cycles: one on the same accumulator waits. */
-	reg [29:0] hist;	/* 6 x {term, aid}, the latest in [4:0] */
+	/* The terms of the last 7 cycles: one on the same accumulator waits. */
+	reg [34:0] hist;	/* 7 x {term, aid}, the latest in [4:0] */
 	reg haz;
 	always @(*) begin
 		haz = 1'b0;
-		for (i = 0; i < 6; i = i + 1)
+		for (i = 0; i < 7; i = i + 1)
 			if (hist[i*5 + 4] && hist[i*5 +: 4] == aid)
 				haz = 1'b1;
 	end
@@ -257,7 +259,8 @@ module atg_tu_ffilt (
 	reg [1:0] kf;	/* FIN's lane */
 
 	/* c + 1 (RUN) and FIN's next lane share an adder. */
-	am_add #(.W(2)) u_inc (.a(st == FIN ? kf : c), .b(2'd0), .ci(1'b1), .s(c_inc), .co(u_inc_nc));
+	am_add #(.W(2)) u_inc (.a(st == FIN ? kf : c), .b(2'd0), .ci(1'b1), .s(c_inc),
+		.co(u_inc_nc));
 
 	/* The texel's bits and border bit; its position in a block. */
 	wire [127:0] sl = tx[ik*128 +: 128];
@@ -312,7 +315,7 @@ module atg_tu_ffilt (
 	wire [31:0] e_tx;
 
 	atg_tu_etc etc (
-		.i_fmt(ifmt), .i_block(raw1), .i_s(es1), .i_t(et1), .o_kind(e_kind), .o_texel(e_tx)
+		.clk(clk), .i_fmt(ifmt), .i_block(raw1), .i_s(es1), .i_t(et1), .o_kind(e_kind), .o_texel(e_tx)
 	);
 
 	wire [8:0] ru, rv, rw, rl;
@@ -327,13 +330,9 @@ module atg_tu_ffilt (
 	reg [3:0] aid2;
 	reg tb2;
 	reg [127:0] raw2;
-	reg [1:0] ek2;
-	reg [31:0] etx2;
 	reg [8:0] wu2, wv2, wa2, wb2;
 	always @(posedge clk) begin
 		{op2, cs2, aid2, tb2, raw2} <= {op1, cs1, aid1, tb1, raw1};
-		ek2 <= e_kind;
-		etx2 <= e_tx;
 		/* (the texel of an issued term is present) */
 		wu2 <= !bil1 ? 9'd256 : ft1[0] ? {1'b0, wl1[7:0]} : ru;
 		wv2 <= !bil1 ? 9'd256 : ft1[1] ? {1'b0, wl1[15:8]} : rv;
@@ -341,25 +340,36 @@ module atg_tu_ffilt (
 		wb2 <= p18_1 ? {1'b0, wl1[23:16]} : rl;
 	end
 
-	/* ---- P2 → P3: the converter's inputs.  A block's texel: RGBA8 as
+	/* ---- P3: the decoded block (atg_tu_etc: 2 cycles) ---- */
+	reg v3;
+	reg [1:0] op3, cs3;
+	reg [3:0] aid3;
+	reg tb3;
+	reg [127:0] raw3;
+	always @(posedge clk)
+		{op3, cs3, aid3, tb3, raw3} <= {op2, cs2, aid2, tb2, raw2};
+	wire [1:0] ek3 = e_kind;
+	wire [31:0] etx3 = e_tx;
+
+	/* ---- P3 → P4: the converter's inputs.  A block's texel: RGBA8 as
 	 * R8G8B8A8_UNORM or _SRGB; EAC R11 and RG11 as two 11-bit UNORM
 	 * components (the second 0 for R11), the signed ones as the
 	 * magnitudes' 10-bit UNORM with the sign set (-0.0 for -1024); the
 	 * components the block does not have (0, 0, 1.0). ---- */
-	wire [10:0] er = etx2[10:0], eg = etx2[26:16];
+	wire [10:0] er = etx3[10:0], eg = etx3[26:16];
 	wire [10:0] ner, neg_g;
 
 	am_sub #(.W(11)) u_ner (.a(11'd0), .b(er), .bi(1'b0), .d(ner), .bo(u_ner_nc));
 	am_sub #(.W(11)) u_neg (.a(11'd0), .b(eg), .bi(1'b0), .d(neg_g), .bo(u_neg_nc));
 
 	wire [10:0] ear = er[10] ? ner : er, eag = eg[10] ? neg_g : eg;
-	wire esgn = ek2 == 2'd3;	/* signed EAC */
-	wire [67:0] e_inf = ek2[1] ? (esgn ? atg_fmt_i(5'd4, 3'd2, ATG_FMT_UNORM, 3'b000,
+	wire esgn = ek3 == 2'd3;	/* signed EAC */
+	wire [67:0] e_inf = ek3[1] ? (esgn ? atg_fmt_i(5'd4, 3'd2, ATG_FMT_UNORM, 3'b000,
 		atg_fmt_c(7'd0, 6'd10), atg_fmt_c(7'd16, 6'd10), atg_fmt_c(7'd0, 6'd0),
 		atg_fmt_c(7'd0, 6'd0)) : atg_fmt_i(5'd4, 3'd2, ATG_FMT_UNORM, 3'b000,
 		atg_fmt_c(7'd0, 6'd11), atg_fmt_c(7'd16, 6'd11), atg_fmt_c(7'd0, 6'd0),
-		atg_fmt_c(7'd0, 6'd0))) : ek2[0] ? atg_fmt_info(8'd43) : atg_fmt_info(8'd37);
-	wire [127:0] e_raw = esgn ? {96'd0, 5'd0, eag, 5'd0, ear} : {96'd0, etx2};
+		atg_fmt_c(7'd0, 6'd0))) : ek3[0] ? atg_fmt_info(8'd43) : atg_fmt_info(8'd37);
+	wire [127:0] e_raw = esgn ? {96'd0, 5'd0, eag, 5'd0, ear} : {96'd0, etx3};
 
 	wire [17:0] wuv3, wab3;
 
@@ -370,30 +380,30 @@ module atg_tu_ffilt (
 		.clk(clk), .en(1'b1), .a(wa2), .b(wb2), .p(wab3)
 	);
 
-	reg [127:0] craw3;
-	reg [67:0] cinf3;
-	reg [1:0] ck3;
-	reg csten3;
-	reg v3;
-	reg [1:0] op3, cs3;
-	reg [3:0] aid3;
-	reg tb3, es3, ers3, egs3;
+	reg [127:0] craw4;
+	reg [67:0] cinf4;
+	reg [1:0] ck4;
+	reg csten4;
+	reg v4;
+	reg [1:0] op4, cs4;
+	reg [3:0] aid4;
+	reg tb4, es4, ers4, egs4;
 	always @(posedge clk) begin
-		craw3 <= blk ? e_raw : raw2;
-		cinf3 <= blk ? e_inf : inf_q;
-		ck3 <= cs2;
-		csten3 <= stq && !blk;
-		{op3, cs3, aid3, tb3} <= {op2, cs2, aid2, tb2};
-		es3 <= esgn;
-		ers3 <= er[10];
-		egs3 <= eg[10];
+		craw4 <= blk ? e_raw : raw3;
+		cinf4 <= blk ? e_inf : inf_q;
+		ck4 <= cs3;
+		csten4 <= stq && !blk;
+		{op4, cs4, aid4, tb4} <= {op3, cs3, aid3, tb3};
+		es4 <= esgn;
+		ers4 <= er[10];
+		egs4 <= eg[10];
 	end
 
-	/* ---- P3-P8: the component (atg_fmt_cvt, 5 cycles) ---- */
-	wire [31:0] up8;
+	/* ---- P4-P10: the component (atg_fmt_cvt, 6 cycles) ---- */
+	wire [31:0] up10;
 
-	atg_fmt_cvt cvt (.clk(clk), .i_raw(craw3), .i_inf(cinf3), .i_k(ck3), .i_sten(csten3),
-		.o_val(up8));
+	atg_fmt_cvt cvt (.clk(clk), .i_raw(craw4), .i_inf(cinf4), .i_k(ck4), .i_sten(csten4),
+		.o_val(up10));
 
 	/* The weight: n = wu wv wa wb (P4), as fp32 n x 2^-32 rounded to
 	 * nearest even (n > 0 for a term): P5 its leading zeros, P6 shifted,
@@ -442,59 +452,63 @@ module atg_tu_ffilt (
 	am_add #(.W(25)) u_wq (.a({1'b0, y6[24:1]}), .b(25'd0), .ci(y6[0] && (yst6 || y6[1])),
 		.s(q6), .co(u_wq_nc));
 
-	reg [31:0] wf7, wf8;
+	reg [31:0] wf7, wf8, wf9, wf10;
 	always @(posedge clk) begin
 		wf7 <= {1'b0, q6[24] ? e1_6 : e0_6, q6[24] ? q6[23:1] : q6[22:0]};
 		wf8 <= wf7;
+		wf9 <= wf8;
+		wf10 <= wf9;
 	end
 
-	/* The step's fields from P3 to P8: {op, cs, aid, tb, es, ers, egs}. */
-	reg [11:0] meta4, meta5, meta6, meta7, meta8;
-	reg [8:4] vm;
+	/* The step's fields from P4 to P10: {op, cs, aid, tb, es, ers, egs}. */
+	reg [11:0] meta5, meta6, meta7, meta8, meta9, meta10;
+	reg [10:5] vm;
 	always @(posedge clk) begin
-		meta4 <= {op3, cs3, aid3, tb3, es3, ers3, egs3};
-		meta5 <= meta4;
+		meta5 <= {op4, cs4, aid4, tb4, es4, ers4, egs4};
 		meta6 <= meta5;
 		meta7 <= meta6;
 		meta8 <= meta7;
+		meta9 <= meta8;
+		meta10 <= meta9;
 	end
-	wire [1:0] op8 = meta8[11:10], cs8 = meta8[9:8];
-	wire [3:0] aid8 = meta8[7:4];
-	wire tb8 = meta8[3], es8 = meta8[2], ers8 = meta8[1], egs8 = meta8[0];
+	wire [1:0] op10 = meta10[11:10], cs10 = meta10[9:8];
+	wire [3:0] aid10 = meta10[7:4];
+	wire tb10 = meta10[3], es10 = meta10[2], ers10 = meta10[1], egs10 = meta10[0];
 
-	/* ---- P8: the value; a bypass or gather writes it, a term goes on ---- */
-	wire [31:0] ev = {cs8 == 2'd0 ? es8 && ers8 : cs8 == 2'd1 ? es8 && egs8 : up8[31],
-		up8[30:0]};
-	wire [31:0] bval = {1'b0, cs8} < ncomp ?
-		(bcls == 2'd2 || (bcls == 2'd1 && cs8 == 2'd3) ? one : 32'd0) :
-		cs8 == 2'd3 ? one : 32'd0;
-	wire [31:0] val = tb8 ? bval : blk ? ev : up8;
+	/* ---- P10: the value; a bypass or gather writes it, a term goes on ---- */
+	wire [31:0] ev = {cs10 == 2'd0 ? es10 && ers10 : cs10 == 2'd1 ? es10 && egs10 : up10[31],
+		up10[30:0]};
+	wire [31:0] bval = {1'b0, cs10} < ncomp ?
+		(bcls == 2'd2 || (bcls == 2'd1 && cs10 == 2'd3) ? one : 32'd0) :
+		cs10 == 2'd3 ? one : 32'd0;
+	wire [31:0] val = tb10 ? bval : blk ? ev : up10;
 	wire [31:0] gval = gsw == 3'd1 ? 32'd0 : gsw == 3'd2 ? one : val;
-	wire wr8 = vm[8] && op8 != OP_FMA;
+	wire wr10 = vm[10] && op10 != OP_FMA;
 
 	wire f_cvld, f_rvld, f_busy;
 	wire [3:0] f_ctag, f_rtag;
 	wire [31:0] f_r;
 
 	atg_tu_fma #(.TW(4)) fma (
-		.clk(clk), .rst_n(rst_n), .i_vld(vm[8] && op8 == OP_FMA), .i_tag(aid8),
-		.i_a(wf8), .i_b(val), .c_vld(f_cvld), .c_tag(f_ctag), .c_val(acc[f_ctag*32 +: 32]),
+		.clk(clk), .rst_n(rst_n), .i_vld(vm[10] && op10 == OP_FMA), .i_tag(aid10),
+		.i_a(wf10), .i_b(val), .c_vld(f_cvld), .c_tag(f_ctag), .c_val(acc[f_ctag*32 +: 32]),
 		.r_vld(f_rvld), .r_tag(f_rtag), .r_val(f_r), .o_busy(f_busy)
 	);
 
 	/* The valid bits; busy: a step in the pipeline. */
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			{v1, v2, v3} <= 3'd0;
-			vm <= 5'd0;
+			{v1, v2, v3, v4} <= 4'd0;
+			vm <= 6'd0;
 		end else begin
 			v1 <= issue;
 			v2 <= v1;
 			v3 <= v2;
-			vm <= {vm[7:4], v3};
+			v4 <= v3;
+			vm <= {vm[9:5], v4};
 		end
 	end
-	wire busy = v1 || v2 || v3 || |vm || f_busy;
+	wire busy = v1 || v2 || v3 || v4 || |vm || f_busy;
 
 	/* The result of lane kf (FIN takes the lanes one a cycle). */
 	reg [127:0] fin_q;
@@ -518,9 +532,9 @@ module atg_tu_ffilt (
 		if (!rst_n) begin
 			st <= IDLE;
 			mid <= 1'b0;
-			hist <= 30'd0;
+			hist <= 35'd0;
 		end else begin
-			hist <= {hist[24:0], issue && iop == OP_FMA, aid};
+			hist <= {hist[29:0], issue && iop == OP_FMA, aid};
 			case (st)
 			IDLE: if (tc_valid) begin
 				tx <= tc_texels;
@@ -560,9 +574,9 @@ module atg_tu_ffilt (
 			default: if (tr_ready)
 				st <= IDLE;
 			endcase
-			/* the accumulators: a bypass or gather (P8), a term (atg_tu_fma) */
-			if (wr8)
-				acc[aid8*32 +: 32] <= op8 == OP_GATH ? gval : val;
+			/* the accumulators: a bypass or gather (P10), a term (atg_tu_fma) */
+			if (wr10)
+				acc[aid10*32 +: 32] <= op10 == OP_GATH ? gval : val;
 			if (f_rvld)
 				acc[f_rtag*32 +: 32] <= f_r;
 		end
@@ -594,7 +608,9 @@ module atg_tu_ffilt (
 			ifmt <= ifmt_l;
 		end
 
-	wire unused_ok = &{1'b0, u_ifmt_nc, u_inc_nc, u_ru_nc, u_rv_nc, u_rl_nc, u_rw_nc, u_ner_nc, u_neg_nc, u_e0_nc, u_e1_nc, u_wq_nc, n4[35:33], gpos_l[4:0], ctl[33:23], ctl[16], ctl[20:19],
+	wire unused_ok = &{1'b0, u_ifmt_nc, u_inc_nc, u_ru_nc, u_rv_nc, u_rl_nc, u_rw_nc,
+		u_ner_nc, u_neg_nc, u_e0_nc, u_e1_nc, u_wq_nc, n4[35:33], gpos_l[4:0],
+		ctl[33:23], ctl[16], ctl[20:19],
 		ctl[12:8], ctl[3:1], vkf[7:4], ear[10], eag[10], f_cvld};
 endmodule
 
