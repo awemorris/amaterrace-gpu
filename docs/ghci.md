@@ -1016,8 +1016,8 @@ by the GPU itself, by DMA. Moving data between host memory and local memory
 The local window is for the framebuffer only (the boot console, a simple
 display path). Before a doorbell whose commands use what the host wrote
 through the window (a write-combining mapping may hold it back), the driver
-reads back the last word it wrote. The debug port (section 14) is for bring-up only; a driver does not depend on
-it.
+reads back the last word it wrote. The debug port (section 14) is for
+bring-up only; a driver does not depend on it.
 
 ### 11.2 Addresses and the aperture
 
