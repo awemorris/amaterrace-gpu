@@ -102,8 +102,13 @@ set_property -dict { PACKAGE_PIN K18 IOSTANDARD LVCMOS25 } [get_ports hdmi_clk]
 set_property IOB TRUE [get_ports {hdmi_d[*] hdmi_de hdmi_hs hdmi_vs}]
 set_false_path -to [get_ports {hdmi_d[*] hdmi_de hdmi_hs hdmi_vs hdmi_clk}]
 
-## CFGBVS / CONFIG_VOLTAGE: left out until bank 0's voltage is checked
-## (still open from the board's bring-up).
+## CFGBVS / CONFIG_VOLTAGE (ws288 p024, 2026-10-26): bank 0 at 2.5 V with
+## CFGBVS strapped to VCCO_0, the usual 7-series 2.5 V setting (UG912's
+## CFGBVS and CONFIG_VOLTAGE).  The KC705's strap is not checked against
+## UG810 or the schematic (Unverified).  Both only feed the DRC (CFGBVS-1)
+## and the configuration-mode checks; the pin itself is wired on the board.
+set_property CFGBVS VCCO [current_design]
+set_property CONFIG_VOLTAGE 2.5 [current_design]
 
 ## DCI (ws288 p024): the DDR3's DQ/DQS in banks 32 and 34 use DCI
 ## (SSTL15_T_DCI, the MIG's pins), and the MIG project has dci_cascade 1:
