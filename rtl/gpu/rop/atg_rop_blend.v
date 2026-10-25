@@ -72,7 +72,9 @@ module atg_rop_blend #(
 	reg kc_sel;	/* ROP_CTRL[1] */
 	reg [15:0] wms;
 	/* BLEND1-3 and BLEND_CONST_R-A: k = (st_idx - 3) mod 4 = st_idx[1:0] + 1 */
-	wire [1:0] s_k = {st_idx[1] ^ st_idx[0], !st_idx[0]};
+	wire [1:0] s_k;
+	wire s_k_co_unused;
+	am_add #(.W(2)) u_s_k (.a(st_idx[1:0]), .b(2'd0), .ci(1'b1), .s(s_k), .co(s_k_co_unused));
 	wire [7:0] kcf_n;
 	atg_rop_f2u8 u_kcf (.f(st_wdata), .u(kcf_n));
 	integer i;
