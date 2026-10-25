@@ -322,12 +322,14 @@ module atg_cp_prot #(
 	wire lim_co, span_bo, tg_co;
 
 	am_add #(.W(ADDR_W + 1)) lim_add (
-		.a({1'b0, aperture_limit}), .b(4095), .ci(1'b0), .s(lim_up), .co(lim_co)
+		.a({1'b0, aperture_limit}), .b({{(ADDR_W - 11){1'b0}}, 12'hFFF}), .ci(1'b0),
+		.s(lim_up), .co(lim_co)
 	);
 	wire [GW:0] g1 = lim_up[ADDR_W:12];
 	am_sub #(.W(GW + 1)) span_sub (.a(g1), .b({1'b0, g0}), .bi(1'b0), .d(g_span), .bo(span_bo));
 	am_add #(.W(ADDR_W + 1)) tg_add (
-		.a({{(ADDR_W-GW){1'b0}}, g_span}), .b(4095), .ci(1'b0), .s(tgran), .co(tg_co)
+		.a({{(ADDR_W-GW){1'b0}}, g_span}), .b({{(ADDR_W - 11){1'b0}}, 12'hFFF}), .ci(1'b0),
+		.s(tgran), .co(tg_co)
 	);
 	wire [ADDR_W-1:0] tbytes = {tgran[ADDR_W-1:12], 12'd0};
 
