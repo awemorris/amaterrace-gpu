@@ -10,12 +10,26 @@
  * 11.6) in the KC705's shape with the CPU, its firmware and HAS_PROT,
  * driven only through the host port.  Groups (each prints
  * PASS atg_top_prot.GROUP):
- *   regs   the PROT capability in the extended list, PROT_CAPS (31 sessions,
- *          4 KiB granules, 64 grants), PROT_TABLE (4 KiB aligned) and
- *          PROT_TABLE_BYTES for the aperture, PROT_TABLE 0 after an
- *          aperture write and after CTRL.RESET
- * The sessions, the firmware's gpu-ops and the units' checks are added with
- * the firmware's session protection.
+ *   regs    the PROT capability in the extended list, PROT_CAPS (31 sessions,
+ *           4 KiB granules, 64 grants), PROT_TABLE (4 KiB aligned) and
+ *           PROT_TABLE_BYTES for the aperture, PROT_TABLE 0 after an
+ *           aperture write and after CTRL.RESET
+ *   own     the driver's order (aperture not at 0, the table zeroed,
+ *           PROT_TABLE, GHCI_HEAP), sessions A and B opened PROTECTED and C
+ *           not; B fills its memory b and A fills and copies inside its
+ *           memory a through recorded command buffers (the BLT checked for
+ *           their slots), the driver's FENCE with the session's tag; the
+ *           table's bytes say the owners, the built-in part is public
+ *   refuse  A imports b without a grant and copies b to a: FAULT kind 1 with
+ *           [9] and A's tag, a is not written
+ *   grant   after CTRL.RESET and the driver's order again: GRANT(A, read, b)
+ *           before A's frame, the copy b to a succeeds; C (unprotected)
+ *           copies b to its memory unchecked; a second grant of b, one
+ *           REVOKE, the copy still succeeds
+ *   revoke  the second REVOKE: the copy faults again (kind 1, [9], A's tag)
+ * Not here (unit testbenches and later work): the scrubs of the SU's RAM
+ * between sessions through programs, the firmware's slabs on the GPU
+ * (fw/cp/tests: fwtest.prot), the Verilator mode.
  */
 
 `timescale 1ns / 1ps
@@ -26,6 +40,29 @@ module atg_top_prot_tb;
 
 	localparam IMEM = "fw/cp/images/atg1-cp-kc705.imem.hex";
 	localparam DMEM = "fw/cp/images/atg1-cp-kc705.dmem.hex";
+
+	/* Memory: the sessions' areas, the driver's (ring, staging, results, table) and the heap. */
+	localparam [31:0] APERTURE = 32'h00001000;
+	localparam [31:0] AREA_A = 32'h00020000;
+	localparam [31:0] AREA_B = 32'h00030000;
+	localparam [31:0] AREA_C = 32'h00040000;
+	localparam [31:0] AREA_BYTES = 32'h00008000;
+	localparam [31:0] STAGING = 32'h00050000;
+	localparam [31:0] RESULTS = 32'h00058000;
+	localparam [31:0] FRAME_RESULT = 32'h00058800;
+	localparam [31:0] RING_RESULT = 32'h00058C00;
+	localparam [31:0] FENCES = 32'h0005EF00;
+	localparam [31:0] RING = 32'h0005F000;
+	localparam RING_N = 256;
+	localparam [31:0] HEAP = 32'h00080000;
+	localparam [31:0] HEAP_BYTES = 32'h00060000;
+	localparam [31:0] TABLE = 32'h000F0000;
+	localparam [7:0] TAG_A = 8'd5;
+	localparam [7:0] TAG_B = 8'd6;
+	localparam [7:0] TAG_C = 8'd7;
+	localparam [31:0] DATA_A = 32'hA0A0A0A1;
+	localparam [31:0] DATA_B = 32'hB0B0B0B1;
+	localparam [31:0] NO_RESULT = 32'hFFFFFFFF;
 
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
@@ -110,7 +147,10 @@ module atg_top_prot_tb;
 
 	integer errors = 0, before = 0;
 	reg [31:0] v, w, prot, off;
-	integer n;
+	integer n, k;
+	integer wp;		/* the driver's ring write pointer */
+	integer sp;		/* the staging's write pointer (words) */
+	integer fence_value;
 
 	task check;
 		input ok;
@@ -134,8 +174,13 @@ module atg_top_prot_tb;
 		end
 	endtask
 
+	`include "atg_top_prot_tb.vh"
+
 	initial begin
 		seed = 3;
+		wp = 0;
+		sp = 0;
+		fence_value = 0;
 		repeat (4) @(posedge clk);
 		rst_n = 1'b1;
 		repeat (4) @(posedge clk);
@@ -178,6 +223,108 @@ module atg_top_prot_tb;
 		check(v == 32'd0, "PROT_TABLE after RESET");
 		group("regs");
 
+		/* own: the driver's order, the sessions, each session's work in its memory. */
+		bring_up;
+		ring_open(TAG_A, 32'd1, 0);
+		ring_open(TAG_B, 32'd1, 1);
+		ring_open(TAG_C, 32'd0, 2);
+		frame_begin;
+		memory(0, 64'h100, AREA_B, 32'd0);
+		buffer(1, 64'h200, 64'h100, 64'h0);
+		pool(3, 64'h300);
+		fill(4, 64'h400, 64'h200, DATA_B);
+		frame_run(TAG_B, 9);
+		check(mem.peek32(RING_RESULT) == 0 && mem.peek32(RING_RESULT + 8) == 0 &&
+		      mem.peek32(RING_RESULT + 16) == 0 && mem.peek32(RING_RESULT + 56) == 0, "HEAP, the opens");
+		check(results_ok(9), "B's frame");
+		v = mem.peek32(AREA_B + 32'h1FFC);
+		check(mem.peek32(AREA_B) == DATA_B && v == DATA_B, "B's fill");
+		frame_begin;
+		memory(0, 64'h100, AREA_A, 32'd0);
+		buffer(1, 64'h200, 64'h100, 64'h0);
+		buffer(3, 64'h201, 64'h100, 64'h4000);
+		pool(5, 64'h300);
+		fill(6, 64'h400, 64'h200, DATA_A);
+		frame_run(TAG_A, 11);
+		frame_begin;
+		copy(0, 64'h401, 64'h200, 64'h201);
+		frame_run(TAG_A, 5);
+		check(results_ok(5), "A's frames");
+		v = mem.peek32(AREA_A + 32'h4FFC);
+		check(mem.peek32(AREA_A + 32'h4000) == DATA_A && v == DATA_A, "A's copy inside a");
+		v = table_byte(AREA_A);
+		check(v[5:0] != 6'd0 && v[7:6] == 2'd0 && table_byte(AREA_A + AREA_BYTES - 1) == v, "a's bytes");
+		w = table_byte(AREA_B);
+		check(w[5:0] != 6'd0 && w != v && table_byte(AREA_C) == 0, "b's bytes, c's none");
+		check(table_byte(HEAP) == 32'h80, "the built-in part is public");
+		group("own");
+
+		/* refuse: A imports b with no grant and copies b to a. */
+		frame_begin;
+		memory(0, 64'h101, AREA_B, 32'd2);
+		buffer(1, 64'h202, 64'h101, 64'h0);
+		copy(3, 64'h402, 64'h202, 64'h200);
+		ring_frame(TAG_A, 8);
+		ring_fence(TAG_A);
+		host_write(GHCI_RING_WPTR, wp);
+		wait_state(GHCI_ST_FAULTED);
+		host_read(GHCI_FAULT_INFO, v);
+		check(v[15:12] == GHCI_FAULT_APERTURE && v[9] && v[31:24] == TAG_A, "FAULT_INFO of the copy");
+		check(mem.peek32(AREA_A) == DATA_A, "a is not written");
+		group("refuse");
+
+		/* grant: RESET, the driver's order again, then GRANT(A, read, b) before A's frame. */
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
+		wait_state(4'd0);
+		bring_up;
+		ring_open(TAG_A, 32'd1, 0);
+		ring_open(TAG_B, 32'd1, 1);
+		ring_open(TAG_C, 32'd0, 2);
+		frame_begin;
+		memory(0, 64'h100, AREA_B, 32'd0);
+		frame_run(TAG_B, 1);
+		ring_grant(TAG_A, AREA_B, 3);
+		frame_begin;
+		memory(0, 64'h100, AREA_A, 32'd0);
+		buffer(1, 64'h200, 64'h100, 64'h0);
+		memory(3, 64'h101, AREA_B, 32'd2);
+		buffer(4, 64'h202, 64'h101, 64'h0);
+		pool(6, 64'h300);
+		copy(7, 64'h402, 64'h202, 64'h200);
+		frame_run(TAG_A, 12);
+		check(mem.peek32(RING_RESULT + 24) == 0 && results_ok(12), "GRANT and A's frame");
+		check(mem.peek32(AREA_A) == DATA_B, "the granted copy b to a");
+		frame_begin;
+		memory(0, 64'h100, AREA_C, 32'd0);
+		buffer(1, 64'h200, 64'h100, 64'h0);
+		memory(3, 64'h101, AREA_B, 32'd2);
+		buffer(4, 64'h202, 64'h101, 64'h0);
+		pool(6, 64'h300);
+		copy(7, 64'h402, 64'h202, 64'h200);
+		frame_run(TAG_C, 12);
+		check(results_ok(12) && mem.peek32(AREA_C) == DATA_B, "C copies b unchecked");
+		ring_grant(TAG_A, AREA_B, 4);
+		ring_revoke(TAG_A, AREA_B, 5);
+		frame_begin;
+		copy(0, 64'h403, 64'h202, 64'h200);
+		frame_run(TAG_A, 5);
+		check(mem.peek32(RING_RESULT + 32) == 0 && mem.peek32(RING_RESULT + 40) == 0 && results_ok(5),
+		      "a second grant, one revoke");
+		group("grant");
+
+		/* revoke: the last grant goes; the copy faults. */
+		ring_revoke(TAG_A, AREA_B, 6);
+		frame_begin;
+		copy(0, 64'h404, 64'h202, 64'h200);
+		ring_frame(TAG_A, 5);
+		ring_fence(TAG_A);
+		host_write(GHCI_RING_WPTR, wp);
+		wait_state(GHCI_ST_FAULTED);
+		host_read(GHCI_FAULT_INFO, v);
+		check(mem.peek32(RING_RESULT + 48) == 0 && v[15:12] == GHCI_FAULT_APERTURE && v[9] &&
+		      v[31:24] == TAG_A, "FAULT_INFO after the revoke");
+		group("revoke");
+
 		if (errors == 0)
 			$display("PASS atg_top_prot");
 		else
@@ -186,7 +333,7 @@ module atg_top_prot_tb;
 	end
 
 	initial begin
-		#5000000;
+		#400000000;
 		$display("FAIL atg_top_prot: timeout");
 		$finish;
 	end
