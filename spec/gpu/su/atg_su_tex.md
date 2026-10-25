@@ -58,6 +58,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `tx_ready` | in | 1 | Taken. |
 | `tx_op` | out | 8 | [1:0] 0 texl, 1 texb, 2 texf, 3 texsz; modifiers (the uop's TEX op bits): [2] .c form, [3] gather (texl), [5:4] its component, [6] query (texb: texqlod; texsz: texsz.l), [7] 0. |
 | `tx_slot` | out | 4 | Texture slot (sub[3:0]). |
+| `tx_vs` | out | 1 | The warp is a vertex warp (x_info[17:16] = 0): the TU uses the vertex stage's slots. |
 | `tx_mask` | out | 4 | Active lanes of the quad. |
 | `tx_coord` | out | 640 | 4 lanes × {u (or x), v (or y), lod/bias/level, Dref (.c forms, else 0), the third coordinate (.3 forms, else 0)} × 32 bits, lane 0 first. |
 | `tx_off` | out | 12 | The texel offsets: the uop's imm[11:0] ({dw, dv, du}, signed 4 bits each). |
@@ -115,3 +116,5 @@ design §3.4.1 (custom-1 tex*), §3.1 (helper lanes for derivatives).
 Implemented in WS288 p009 part C (P1, branch p1-tu), with the new child `atg_su_tex_ret` (§5).  Ports unchanged.  Part E (P3): tx_op 8 bits (the modifiers), tx_coord 4 words a lane.  A .c form (uop OP[2]) reads four sources: atg_su_opd sends each of its lane groups twice, the second pass with uop OP[7] set and Dref (rs3 = rs1+2) on x_a; the first pass is kept (state DREF) and the record goes to atg_su_tex_ret with the second, which carries x_last.  States: IDLE →(a .c group's first pass)→ DREF →(its second pass)→ SEND or IDLE.  Readings: texsz's level travels in word 0 (rs1), the tag's layout is {0, warp, quad, rd} (16 bits; the TU passes it through).
 
 2026-10-25 (p009 part F, P3): the .3 forms (the uop's sub[4], set by atg_su_dec): a third coordinate in rs1+2 and, with .c, Dref in rs1+3.  A .c or .3 group comes twice; the second pass brings rs1+2 on x_a and rs1+3 on x_c (atg_su_opd): .3 puts x_a in word 4 and, with .c, x_c in word 3; .c alone x_a in word 3.  tx_coord 5 words a lane, the new port tx_off (the texel offsets from the uop's imm).  `sim/tb/atg_su_tex_tb.v` sends .3 forms, .c forms and both at random with random offsets.
+
+2026-10-25: tx_vs (the texture slots per stage of docs/ghci.md §8.5).

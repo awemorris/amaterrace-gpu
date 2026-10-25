@@ -35,7 +35,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `halt` | in | 1 | Do not start a new µop (HALTING/FAULTED/RESETTING). |
 | **STATE writes (to atg_cp_state)** | | | |
 | `uop_we` | out | 1 | Write. |
-| `uop_idx` | out | 9 | Index. |
+| `uop_idx` | out | 10 | Index. |
 | `uop_wdata` | out | 32 | Value. |
 | **Kicks (one-cycle pulses)** | | | |
 | `blt_kick` | out | 1 | BLIT. |
@@ -72,7 +72,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 ## 4. Behaviour
 
 - Header (design §2.4.2): class 0 standard µops op 0-13, class 1 vendor (0 DRAW_RAW, 1 DBG_MARK).
-  Semantics per design §2.4.3: SET_REG (index ≥ 512 → fault kind 3), BLIT (flags[0]: wait for BLT
+  Semantics per design §2.4.3: SET_REG (index ≥ 0x300 → fault kind 3; 0x200-0x2FF waits as the TU range), BLIT (flags[0]: wait for BLT
   idle), DRAW (pulse inv[1:0], draw_kick, wait until VF/SU/RX/ROP idle before the next DRAW only if
   flags say so — v1 waits for VF idle), DISPATCH (write gx/gy/gz to STATE 0x1E9-0x1EB then cs_kick),
   FENCE (wait until every block in busy_in is idle, then f_op 0), WAIT_IDLE (flags = block mask,
@@ -112,7 +112,7 @@ One SET_REG pair per 2 cycles (one dword per cycle); kick 1 cycle after the head
 
 `sim/tb/atg_cp_seq_tb.v` prints, in this order:
 
-- `PASS atg_cp_seq.setreg` — SET_REG pairs reach uop_we in order; index 512 faults
+- `PASS atg_cp_seq.setreg` — SET_REG pairs reach uop_we in order (0x2FF included); index 0x300 faults
 - `PASS atg_cp_seq.kicks` — BLIT/DRAW/DISPATCH/DRAW_RAW write their payload to STATE then pulse their kick; SET_REG into the BLT and the VF ranges waits for that block, into the TU range for the SUs
 - `PASS atg_cp_seq.drawstate` — SET_REG of RX state (0x05E) and ROP state (0x07A) right after a DRAW waits until the VF is idle, of ROP state (0x072) during a DISPATCH until the SUs are; the monitor fails any write to 0x050-0x08F while busy_in[2], [3], [4] or [6] is set (the earlier rule, RX/ROP only, fails it: `-DMUT_SEQ_DRAWSTATE`)
 - `PASS atg_cp_seq.tuwait`, `.progwait`, `.ldconst`, `.attrlimit_wait` — right after a DRAW (the VF busy): TU state 0x095, FS_BASE 0x192, a LOAD_CONST's kick and ATTR_LIMIT 0x1D2 wait until the VF is idle (monitors: the TU range not while the VF is busy, the program range not while the VF, the RX or the SUs are, LOAD_CONST not while the VF or the RX is, 0x1C0-0x1DF not while the VF is); the earlier rules (`-DMUT_SEQ_DRAWSTATE`) fail all four
@@ -142,3 +142,5 @@ WS288 p008 (P2, branch p2-dispatch): the compute µops are checked against the r
 The waits for work upstream (the MSAA work, branch p2-p027): SET_REG into 0x050-0x08F waits for the VF, the SUs, the RX and the ROP (it waited for the RX and ROP, or the ROP alone, before), into the TU range also for the VF, into the program range (0x190-0x1AF, no wait before) for the VF, the SUs and the RX, into 0x1D0-0x1DF (ATTR_LIMIT) for the VF like ATTR_DST; LOAD_CONST's kick also for the VF and the RX; so a draw upstream keeps its state.  The waits moved to the child `atg_cp_seq_wait` (130 lines), which brings this module to 355 lines (under the limit).  Not checked here: whether the busy bits of the blocks leave a cycle without any of them set while work passes from one block to the next (the VF to a vertex warp, a vertex warp to the RX); a back-to-back test of the whole pipeline checks that.
 
 2026-10-25 (CAPS[30]): µop 14 QUERY (payload 1: addr; needs the ROP, UNITS[4]): after the waits of RESULT (every block idle, f_busy 0) the counter is taken (a1 = occ_count[31:0], a2 = occ_count[39:32]) and the fence unit's RESULT request (f_op 1) writes it; flags[0] only clears, without waiting or writing; flags[1] clears with the request.  Ports occ_count and occ_clear (the badop TB case moved from op 14 to op 15).  `PASS atg_cp_seq.query`.
+
+2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.

@@ -42,7 +42,7 @@ module atg_cp_seq_tb;
 	wire n_ready, fw_ready;
 
 	wire uop_we, blt_kick, draw_kick, cs_kick, lc_kick, raw_kick, perf_reset;
-	wire [8:0] uop_idx;
+	wire [9:0] uop_idx;
 	wire [31:0] uop_wdata;
 	wire [3:0] inv;
 	reg [7:0] busy_in = 0;
@@ -140,7 +140,7 @@ module atg_cp_seq_tb;
 
 	always @(posedge clk) begin
 		if (uop_we) begin
-			log({8'h01, 15'd0, uop_idx, uop_wdata});
+			log({8'h01, 14'd0, uop_idx, uop_wdata});
 			if (uop_idx < 9'h020 && busy_in[1]) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq: BLT state written while the BLT is busy");
@@ -164,7 +164,8 @@ module atg_cp_seq_tb;
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq.tuwait: TU state %h written while the VF is busy", uop_idx);
 			end
-			if (uop_idx >= 9'h090 && uop_idx < 9'h190 && (busy_in[6] || busy_in[5] || busy_in[3])) begin
+			if (((uop_idx >= 9'h090 && uop_idx < 9'h190) || uop_idx[9]) &&
+			    (busy_in[6] || busy_in[5] || busy_in[3])) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq.kicks: TU state %h written while the SU, TU or RX is busy",
 					uop_idx);
@@ -349,19 +350,22 @@ module atg_cp_seq_tb;
 		repeat (3) @(posedge clk);
 		rst_n = 1;
 
-		/* setreg: three pairs in order, then index 512. */
+		/* setreg: four pairs in order (0x2FF: the vertex stage's texture
+		 * slots), then index 0x300. */
 		pl[0] = 32'h010; pl[1] = 32'h11111111;
 		pl[2] = 32'h1FE; pl[3] = 32'h22222222;
 		pl[4] = 32'h000; pl[5] = 32'h33333333;
-		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd6);
-		expect_ev({8'h01, 15'd0, 9'h010, 32'h11111111});
-		expect_ev({8'h01, 15'd0, 9'h1FE, 32'h22222222});
-		expect_ev({8'h01, 15'd0, 9'h000, 32'h33333333});
+		pl[6] = 32'h2FF; pl[7] = 32'h44444444;
+		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd8);
+		expect_ev({8'h01, 14'd0, 10'h010, 32'h11111111});
+		expect_ev({8'h01, 14'd0, 10'h1FE, 32'h22222222});
+		expect_ev({8'h01, 14'd0, 10'h000, 32'h33333333});
+		expect_ev({8'h01, 14'd0, 10'h2FF, 32'h44444444});
 		settle("setreg");
 		compare("setreg");
-		pl[0] = 32'h200; pl[1] = 32'h0;
+		pl[0] = 32'h300; pl[1] = 32'h0;
 		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd2);
-		expect_fault("setreg", GHCI_FAULT_RING, 32'h200);
+		expect_fault("setreg", GHCI_FAULT_RING, 32'h300);
 		if (errors == 0)
 			$display("PASS atg_cp_seq.setreg");
 		e0 = errors;
@@ -392,30 +396,30 @@ module atg_cp_seq_tb;
 		pl[0] = 32'hD00D; pl[1] = 32'hEEEE;	/* a longer payload is skipped */
 		packet(1'b0, 1'b1, 6'd1, 8'd0, 8'd2);
 		expect_ev({8'h02, 56'd0});
-		expect_ev({8'h01, 15'd0, 9'h005, 32'h55});
+		expect_ev({8'h01, 14'd0, 10'h005, 32'h55});
 		expect_ev({8'h02, 56'd0});
 		expect_ev({8'h03, 56'd0});	/* the same cycle as inv */
 		expect_ev({8'h07, 52'd0, 4'b0011});
-		expect_ev({8'h01, 15'd0, 9'h021, 32'h77});
-		expect_ev({8'h01, 15'd0, 9'h1C2, 32'h88});
-		expect_ev({8'h01, 15'd0, 9'h1E9, 32'd4});
-		expect_ev({8'h01, 15'd0, 9'h1EA, 32'd5});
-		expect_ev({8'h01, 15'd0, 9'h1EB, 32'd6});
+		expect_ev({8'h01, 14'd0, 10'h021, 32'h77});
+		expect_ev({8'h01, 14'd0, 10'h1C2, 32'h88});
+		expect_ev({8'h01, 14'd0, 10'h1E9, 32'd4});
+		expect_ev({8'h01, 14'd0, 10'h1EA, 32'd5});
+		expect_ev({8'h01, 14'd0, 10'h1EB, 32'd6});
 		expect_ev({8'h04, 56'd0});
-		expect_ev({8'h01, 15'd0, 9'h095, 32'h99});
+		expect_ev({8'h01, 14'd0, 10'h095, 32'h99});
 		for (i = 0; i < 9; i = i + 1) begin
 			sidx = 9'h1E0 + i;
-			expect_ev({8'h01, 15'd0, sidx, 32'h900 + i});
+			expect_ev({8'h01, 14'd0, {1'b0, sidx}, 32'h900 + i});
 		end
 		expect_ev({8'h06, 56'd0});
-		expect_ev({8'h01, 15'd0, 9'h1EC, 32'd1});
-		expect_ev({8'h01, 15'd0, 9'h1ED, 32'h4000});
-		expect_ev({8'h01, 15'd0, 9'h1EE, 32'd16});
+		expect_ev({8'h01, 14'd0, 10'h1EC, 32'd1});
+		expect_ev({8'h01, 14'd0, 10'h1ED, 32'h4000});
+		expect_ev({8'h01, 14'd0, 10'h1EE, 32'd16});
 		expect_ev({8'h05, 56'd0});
 		expect_ev({8'h07, 52'd0, 4'b1000});
 		expect_ev({8'h07, 52'd0, 4'b0101});
 		expect_ev({8'h08, 56'd0});
-		expect_ev({8'h01, 15'd0, 9'h1FF, 32'hD00D});
+		expect_ev({8'h01, 14'd0, 10'h1FF, 32'hD00D});
 		settle("kicks");
 		compare("kicks");
 		if (errors == e0)
@@ -436,13 +440,13 @@ module atg_cp_seq_tb;
 		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd2);
 		expect_ev({8'h03, 56'd0});
 		expect_ev({8'h07, 52'd0, 4'b0011});
-		expect_ev({8'h01, 15'd0, 9'h05E, 32'h2});
-		expect_ev({8'h01, 15'd0, 9'h07A, 32'h1234});
-		expect_ev({8'h01, 15'd0, 9'h1E9, 32'd1});
-		expect_ev({8'h01, 15'd0, 9'h1EA, 32'd1});
-		expect_ev({8'h01, 15'd0, 9'h1EB, 32'd1});
+		expect_ev({8'h01, 14'd0, 10'h05E, 32'h2});
+		expect_ev({8'h01, 14'd0, 10'h07A, 32'h1234});
+		expect_ev({8'h01, 14'd0, 10'h1E9, 32'd1});
+		expect_ev({8'h01, 14'd0, 10'h1EA, 32'd1});
+		expect_ev({8'h01, 14'd0, 10'h1EB, 32'd1});
 		expect_ev({8'h04, 56'd0});
-		expect_ev({8'h01, 15'd0, 9'h072, 32'h1});
+		expect_ev({8'h01, 14'd0, 10'h072, 32'h1});
 		settle("drawstate");
 		compare("drawstate");
 		if (errors == e0)
@@ -463,14 +467,14 @@ module atg_cp_seq_tb;
 				if (i == 2) begin
 					pl[0] = 32'd1; pl[1] = 32'h4000; pl[2] = 32'd16;
 					packet(1'b0, 1'b0, 6'd7, 8'd0, 8'd3);
-					expect_ev({8'h01, 15'd0, 9'h1EC, 32'd1});
-					expect_ev({8'h01, 15'd0, 9'h1ED, 32'h4000});
-					expect_ev({8'h01, 15'd0, 9'h1EE, 32'd16});
+					expect_ev({8'h01, 14'd0, 10'h1EC, 32'd1});
+					expect_ev({8'h01, 14'd0, 10'h1ED, 32'h4000});
+					expect_ev({8'h01, 14'd0, 10'h1EE, 32'd16});
 					expect_ev({8'h05, 56'd0});
 				end else begin
 					pl[0] = {23'd0, wi[i]}; pl[1] = 32'h600D + i;
 					packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd2);
-					expect_ev({8'h01, 15'd0, wi[i], 32'h600D + i});
+					expect_ev({8'h01, 14'd0, {1'b0, wi[i]}, 32'h600D + i});
 				end
 				settle("more");
 				compare("more");
@@ -563,9 +567,9 @@ module atg_cp_seq_tb;
 		while (fq_head != fq_tail || busy) @(negedge clk);
 		@(negedge clk);
 		fw_active = 0;
-		expect_ev({8'h01, 15'd0, 9'h040, 32'hF1});
-		expect_ev({8'h01, 15'd0, 9'h041, 32'hF2});
-		expect_ev({8'h01, 15'd0, 9'h042, 32'hA1});
+		expect_ev({8'h01, 14'd0, 10'h040, 32'hF1});
+		expect_ev({8'h01, 14'd0, 10'h041, 32'hF2});
+		expect_ev({8'h01, 14'd0, 10'h042, 32'hA1});
 		settle("source");
 		compare("source");
 		/* halt: no header is taken. */

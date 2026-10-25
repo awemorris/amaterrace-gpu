@@ -99,6 +99,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `tx_ready` | in | 1 | Taken. |
 | `tx_op` | out | 8 | Op and its modifiers (atg_su_tex). |
 | `tx_slot` | out | 4 | Slot. |
+| `tx_vs` | out | 1 | A vertex warp's request. |
 | `tx_mask` | out | 4 | Lanes. |
 | `tx_coord` | out | 640 | Coordinates, 5 words a lane (atg_su_tex). |
 | `tx_off` | out | 12 | Texel offsets (atg_su_tex). |
@@ -215,3 +216,5 @@ WS288 p009 part B1 (P1): the new child `atg_su_pt` (the PT and its allocator, sp
 WS288 p009 part C (P1, branch p1-tu): `atg_su_tex` implemented; its return half is the new module `atg_su_tex_ret` (a child of atg_su_tex, not of atg_su: the module rule of one state machine).  No port of atg_su changes.
 
 Graphics checks (`atg_su_gfx_tb`, no RTL change in the SU): the helper-lane rule of design §3.1 (M10) holds as implemented: atg_rx_frag's fl_mask is the EXEC of whole quads and fl_info[31:0] the coverage (the mask operand); atg_su_opd's side-effect lanes are EXEC & coverage & ~KILLED and are used by sw, atom (atg_su_lsu), sts (atg_su_lds), exp (atg_su_exp, atg_su_pt); qd, shfl, vote, ballot and tex use EXEC.  Readings: (1) shfl, vote and ballot count helper and killed lanes as active (they are in EXEC; GHCI §12.5 defines them over EXEC), so `vote.all` over a coverage Boolean is false in a partly covered warp; a compiler that wants the covered lanes only combines with `mask` (or ballots it).  (2) KILLED is not limited to fragment warps: a kill in a vertex warp also stops its PT exports (the same side-effect mask).  (3) FRAG_RESERVE is not what keeps the loop of §3.8 deadlock-free in this SU (vertex warps never wait on the RX once granted, and fragment grants win over vertex grants); it keeps fragment slots free while the VF floods (the loop of atg_su_gfx_tb also ends with FRAG_RESERVE 0).  The block allocator of atg_su_pt with at least two blocks is what the held primitive needs.
+
+2026-10-25: tx_vs (atg_su_tex).

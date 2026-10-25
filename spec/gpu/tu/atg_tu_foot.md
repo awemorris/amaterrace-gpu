@@ -25,7 +25,9 @@ Combinational.
 | `ms` | in | 1 | A multisampled image (texf: texel 4 i + smp of rows of roundup(wl, 2) × 4 texels). |
 | `smp` | in | 2 | texf's sample. |
 | `psl` | in | 3 | log2 of the texel's bytes (0-4). |
+| `blk` | in | 1 | Compressed 4 × 4 blocks of 2^psl bytes. |
 | `row` | in | 1 | 8-byte texels: the pass's second row (j1). |
+| `col` | in | 1 | 16-byte blocks: the pass's second column (i1). |
 | `gwi` | in | 2 | Gather: the word of the texel that holds the component (8- and 16-byte texels). |
 | `p0` | in | 1 | The pass's second slice. |
 | `mu` | in | 2 | Address mode u. |
@@ -50,7 +52,7 @@ Combinational.
 | `fuv` | out | 16 | {fv, fu}. |
 | `fw` | out | 8 | The depth weight (3D linear), else 0. |
 
-33 ports.
+35 ports.
 
 ## 4. Behaviour
 

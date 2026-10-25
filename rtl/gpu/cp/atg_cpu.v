@@ -47,7 +47,7 @@ module atg_cpu #(
 	output wire fw_last,
 	output wire fw_active,
 	/* CP state */
-	output wire [8:0] st_ridx,
+	output wire [9:0] st_ridx,
 	input wire [31:0] st_rdata,
 	input wire [31:0] fence_last,
 	input wire fence_ev,

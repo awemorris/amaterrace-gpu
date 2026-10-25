@@ -25,7 +25,8 @@
  * 32-bit word at its address, or with ta_ctl[24:23] = 1 (2-byte texels)
  * or ta_ctl[19] (RGB565) the half word that address bit 1 selects, with
  * ta_ctl[24:23] = 2 (1-byte texels) the byte that address bits 1:0 select
- * (right-justified, the rest 0); tc_bord passes the border bits on.  An
+ * (right-justified, the rest 0); tc_bord passes the border bits on, tc_lo
+ * the slots' address bits 1:0 (a compressed block's texel position).  An
  * error response gives the texel 0 and
  * leaves the line invalid.  texsz and the LOD query (ta_ctl[2]) look
  * nothing up.  The quad is then held on tc_* until taken; order is kept.
@@ -58,7 +59,7 @@ module atg_tu_cache #(
 	input wire [127:0] ta_wts,
 	input wire [15:0] ta_tag,
 	input wire [3:0] ta_mask,
-	input wire [47:0] ta_ctl,
+	input wire [49:0] ta_ctl,
 	input wire [127:0] ta_value,
 	input wire ta_last,
 	/* To atg_tu_filter */
@@ -66,10 +67,11 @@ module atg_tu_cache #(
 	input wire tc_ready,
 	output reg [511:0] tc_texels,
 	output reg [15:0] tc_bord,
+	output reg [31:0] tc_lo,
 	output reg [127:0] tc_wts,
 	output reg [15:0] tc_tag,
 	output reg [3:0] tc_mask,
-	output reg [47:0] tc_ctl,
+	output reg [49:0] tc_ctl,
 	output reg [127:0] tc_value,
 	output reg tc_last,
 	/* AMB client port (design §4.1) */
@@ -148,6 +150,7 @@ module atg_tu_cache #(
 			tags[mline[IW-1:0]] <= mline[ADDR_W-LINE_SHIFT-1 -: TW];
 		end
 
+	integer j;
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= IDLE;
@@ -163,6 +166,8 @@ module atg_tu_cache #(
 			IDLE: if (ta_valid) begin
 				ta_addr_q <= ta_addr;
 				tc_bord <= ta_bord;
+				for (j = 0; j < 16; j = j + 1)
+					tc_lo[2*j +: 2] <= ta_addr[32*j +: 2];
 				tc_wts <= ta_wts;
 				tc_tag <= ta_tag;
 				tc_mask <= ta_mask;

@@ -44,7 +44,7 @@ module atg_cpu_win_tb;
 	wire fw_valid, fw_last, fw_active;
 	reg fw_ready = 1'b0;
 	wire [31:0] fw_data;
-	wire [8:0] st_ridx;
+	wire [9:0] st_ridx;
 	reg [31:0] st_rdata = 0;
 	reg [31:0] fence_last = 32'h0FE0_0001;
 	reg fence_ev = 1'b0;
@@ -93,7 +93,7 @@ module atg_cpu_win_tb;
 			if (m_we[3]) dmem[m_addr[15:2]][31:24] <= m_wdata[31:24];
 			m_accesses = m_accesses + 1;
 		end
-		st_rdata <= {23'h5A5A5A, st_ridx};
+		st_rdata <= {23'h5A5A5A, st_ridx[8:0]};
 		if (sb_we) begin
 			sb_writes = sb_writes + 1;
 			last_sb_idx = sb_idx;

@@ -18,7 +18,12 @@
  * texels slots {1, 0} and {3, 2} (the texels i0 and i1 of the pass's row,
  * tc_ctl[22]), 16-byte texels slots {3, 2, 1, 0}; gather: slot t is the
  * word of texel t that holds the component (include/atg_tu_fmt.vh
- * tu_gwi).  Each texel is converted by atg_fmt_unpack (tc_ctl[34:27] the
+ * tu_gwi).  ETC2 and EAC blocks (8 or 16 bytes) come as the 8- and 16-byte
+ * texels, a block per texel, the texel's column and row in the block in
+ * tc_lo (address bits 1:0 of the block's first and second slot), and are
+ * decoded by atg_tu_etc; 16-byte blocks come one texel a pass (tc_ctl[49],
+ * the pass's footprint texel {row, column [48]}), gather of 8-byte blocks
+ * in the row passes.  Each texel is converted by atg_fmt_unpack (tc_ctl[34:27] the
  * VkFormat, [35] the stencil aspect), or is a border texel (tc_bord):
  * the border colour (tc_ctl[7:6]: 0 transparent black, 1 opaque black, 2
  * opaque white; integer 0 and 1 for the integer formats) in the format's
@@ -57,10 +62,11 @@ module atg_tu_ffilt (
 	output wire tc_ready,
 	input wire [511:0] tc_texels,
 	input wire [15:0] tc_bord,
+	input wire [31:0] tc_lo,
 	input wire [127:0] tc_wts,
 	input wire [15:0] tc_tag,
 	input wire [3:0] tc_mask,
-	input wire [47:0] tc_ctl,
+	input wire [49:0] tc_ctl,
 	input wire tc_last,
 	/* Return to the SU */
 	output wire tr_valid,
@@ -116,19 +122,22 @@ module atg_tu_ffilt (
 	reg [1:0] k, t, c;
 	reg [511:0] tx;
 	reg [15:0] bd;
+	reg [31:0] lo;
 	reg [127:0] wts;
 	reg [3:0] mask;
-	reg [47:0] ctl;
+	reg [49:0] ctl;
 	reg [511:0] acc;	/* lane-major, 4 components a lane */
 
 	/* The quad. */
 	wire bil = ctl[0], more = ctl[4], gath = ctl[13], split = ctl[21], row = ctl[22];
+	wire quad = ctl[49], col = ctl[48];
 	wire [1:0] comp = ctl[15:14], bcls = ctl[7:6];
 	wire [7:0] vkf = ctl[34:27];
 	wire sten = ctl[35];
 	wire [11:0] swz = ctl[47:36];
 	wire [67:0] inf = atg_fmt_info(vkf);
-	wire [2:0] ncomp = sten ? 3'd1 : inf[0] && !inf[14] ? inf[8:6] : 3'd0;
+	wire blk = inf[14];
+	wire [2:0] ncomp = sten ? 3'd1 : inf[0] ? inf[8:6] : 3'd0;
 	wire isint = sten || inf[11:9] == ATG_FMT_UINT || inf[11:9] == ATG_FMT_SINT;
 	wire [31:0] one = isint ? 32'd1 : 32'h3F800000;
 	wire b8 = inf[5:1] == 5'd8, b16 = inf[5:1] == 5'd16;
@@ -139,29 +148,50 @@ module atg_tu_ffilt (
 
 	/* Lane k, texel t: its raw bits, border bit and converted value. */
 	wire [127:0] sl = tx[k*128 +: 128];
-	wire [127:0] raw = gath ? {96'd0, sl[t*32 +: 32]} << {gwi, 5'd0} :
+	wire wg = gath && !blk;	/* gather of a word of the texel */
+	wire [127:0] raw = wg ? {96'd0, sl[t*32 +: 32]} << {gwi, 5'd0} :
 		b8 ? (t[0] ? {64'd0, sl[127:64]} : {64'd0, sl[63:0]}) : b16 ? sl : {96'd0, sl[t*32 +: 32]};
-	wire tb = gath || !(b8 || b16) ? bd[{k, t}] : b8 && t[0] ? bd[{k, 2'd2}] : bd[{k, 2'd0}];
+	wire tb = wg || !(b8 || b16) ? bd[{k, t}] : b8 && t[0] ? bd[{k, 2'd2}] : bd[{k, 2'd0}];
 	wire [128:0] up = atg_fmt_unpack(raw, vkf, sten);
+	/* A block's texel (atg_tu_etc) to fp32. */
+	wire [2:0] loff = b16 ? 3'd0 : {t[0], 2'b00};	/* the texel's first slot's bits 1:0 */
+	wire [7:0] llo = lo[k*8 +: 8];
+	wire [1:0] e_kind;
+	wire [31:0] e_tx;
+	atg_tu_etc etc (
+		.i_fmt(vkf[3:0] - 4'd3), .i_block(raw), .i_s(llo[loff +: 2]),
+		.i_t(llo[loff + 3'd2 +: 2]), .o_kind(e_kind), .o_texel(e_tx)
+	);
+	wire [10:0] er = e_tx[10:0], eg = e_tx[26:16];
+	wire [10:0] ear = er[10] ? 11'd0 - er : er, eag = eg[10] ? 11'd0 - eg : eg;
+	wire [31:0] esr = atg_fmt_unorm({14'd0, ear[9:0]}, 6'd10), esg = atg_fmt_unorm({14'd0, eag[9:0]}, 6'd10);
+	wire [127:0] ev = e_kind[1] ? {32'h3F800000, 32'd0,
+		e_kind[0] ? {eg[10], esg[30:0]} : atg_fmt_unorm({13'd0, eg}, 6'd11),
+		e_kind[0] ? {er[10], esr[30:0]} : atg_fmt_unorm({13'd0, er}, 6'd11)} :
+		{atg_fmt_unorm({16'd0, e_tx[31:24]}, 6'd8),
+		e_kind[0] ? atg_srgb_dec(e_tx[23:16]) : atg_fmt_unorm({16'd0, e_tx[23:16]}, 6'd8),
+		e_kind[0] ? atg_srgb_dec(e_tx[15:8]) : atg_fmt_unorm({16'd0, e_tx[15:8]}, 6'd8),
+		e_kind[0] ? atg_srgb_dec(e_tx[7:0]) : atg_fmt_unorm({16'd0, e_tx[7:0]}, 6'd8)};
 	reg [127:0] bval;
 	integer q;
 	always @(*)
 		for (q = 0; q < 4; q = q + 1)
 			bval[q*32 +: 32] = q < ncomp ? (bcls == 2'd2 || (bcls == 2'd1 && q == 3) ? one : 32'd0) :
 				q == 3 ? one : 32'd0;
-	wire [127:0] val = tb ? bval : up[127:0];
+	wire [127:0] val = tb ? bval : blk ? ev : up[127:0];
 	/* Its weight. */
 	wire [7:0] fu = wts[k*32 +: 8], fv = wts[k*32 + 8 +: 8];
 	wire [7:0] fl = wts[k*32 + 16 +: 8], fw = wts[k*32 + 24 +: 8];
 	wire [8:0] ru = 9'd256 - {1'b0, fu}, rv = 9'd256 - {1'b0, fv};
-	wire [8:0] wu = split ? (t == 2'd0 ? ru : t == 2'd1 ? {1'b0, fu} : 9'd0) :
-		!bil ? (t == 2'd0 ? 9'd256 : 9'd0) : t[0] ? {1'b0, fu} : ru;
+	/* Texel t of the pass: present, and its texel of the footprint. */
+	wire pres = quad ? t == 2'd0 : split ? !t[1] : bil || gath || t == 2'd0;
 `ifdef MUT_FFILT_ROW
-	wire [8:0] wv = split ? (t[1] ? 9'd0 : rv) :	/* the second row weighted as the first */
+	wire [1:0] ft = quad ? {1'b0, col} : split ? {1'b0, t[0]} : t;	/* row read as the first */
 `else
-	wire [8:0] wv = split ? (t[1] ? 9'd0 : row ? {1'b0, fv} : rv) :
+	wire [1:0] ft = quad ? {row, col} : split ? {row, t[0]} : t;
 `endif
-		!bil ? (t == 2'd0 ? 9'd256 : 9'd0) : t[1] ? {1'b0, fv} : rv;
+	wire [8:0] wu = !pres ? 9'd0 : !bil ? 9'd256 : ft[0] ? {1'b0, fu} : ru;
+	wire [8:0] wv = !pres ? 9'd0 : !bil ? 9'd256 : ft[1] ? {1'b0, fv} : rv;
 	wire [8:0] wa = ctl[17] ? {1'b0, fw} : 9'd256 - {1'b0, fw};
 	wire [8:0] wb = ctl[18] ? {1'b0, fl} : 9'd256 - {1'b0, fl};
 	wire [17:0] wuv = {9'd0, wu} * {9'd0, wv}, wab = {9'd0, wa} * {9'd0, wb};
@@ -193,7 +223,7 @@ module atg_tu_ffilt (
 	assign tr_valid = st == OUT;
 
 	/* Gather word g of the lane: texel 2, 3, 1, 0 (texel t's place). */
-	wire [1:0] gpos = t == 2'd2 ? 2'd0 : t == 2'd3 ? 2'd1 : t == 2'd1 ? 2'd2 : 2'd3;
+	wire [1:0] gpos = ft == 2'd2 ? 2'd0 : ft == 2'd3 ? 2'd1 : ft == 2'd1 ? 2'd2 : 2'd3;
 	wire [31:0] gval = gsw == 3'd1 ? 32'd0 : gsw == 3'd2 ? one : val[gsrc*32 +: 32];
 
 	always @(posedge clk) begin
@@ -204,6 +234,7 @@ module atg_tu_ffilt (
 			IDLE: if (tc_valid) begin
 				tx <= tc_texels;
 				bd <= tc_bord;
+				lo <= tc_lo;
 				wts <= tc_wts;
 				mask <= tc_mask;
 				ctl <= tc_ctl;
@@ -232,9 +263,9 @@ module atg_tu_ffilt (
 					c <= 2'd0;
 				end else
 					c <= c + 2'd1;
-				if (mask[k] && gath)
+				if (mask[k] && gath && pres)
 					acc[{k, gpos}*32 +: 32] <= gval;
-				else if (mask[k] && !byp && !skip)
+				else if (mask[k] && !gath && !byp && !skip)
 					acc[{k, c}*32 +: 32] <= sum;
 			end
 			FIN: begin
@@ -248,7 +279,7 @@ module atg_tu_ffilt (
 	end
 
 	wire unused_ok = &{1'b0, n[35:33], up[128], inf[67:15], inf[13:12], ctl[33:23], ctl[16],
-		ctl[20:19], ctl[12:8], ctl[3:1]};
+		ctl[20:19], ctl[12:8], ctl[3:1], vkf[7:4], esr[31], esg[31], ear[10], eag[10]};
 endmodule
 
 `default_nettype wire

@@ -23,10 +23,10 @@ Widths inside: a row's source bytes 4·w·ps up to 21 bits, its source lines up 
 
 ## 4. Behaviour
 
-- STATE copy: BLT_OP, DST/SRC_BASE and _STRIDE, DST/SRC_XY, SIZE, CLIP_MIN/MAX, BLT_RESOLVE (0x00B).  Bases and strides lose their bits below ps (destination) and 4·ps (source).
-- Taken at the kick: BLT_OP[2:0] = 4, no blend ([4]), no reverse ([12]), [9:8] 0 (32-bit) or 1 (16-bit), BLT_RESOLVE[3:0] = 2 (4 samples), BLT_RESOLVE[7:4] 0 UNORM8 or 2 SAMPLE0, or 1 UNORM565 with 16-bit pixels.  Anything else: `error` kind OPCODE the next cycle, busy 0, no access.  BLT_RESOLVE[8]: the destination is in 4x4 tiles.
+- STATE copy: `atg_blt_cfg` (BLT_OP, DST/SRC_BASE and _STRIDE, DST/SRC_XY, SIZE, CLIP_MIN/MAX, BLT_RESOLVE).  Bases and strides lose their bits below ps (destination) and 4·ps (source); ps = 1 to 16 bytes (BLT_OP[9:8], [13], docs/ghci.md §8.5).
+- Taken at the kick: BLT_OP[2:0] = 4, no blend ([4]), no reverse ([12]), no KEEP ([19:16]), a valid pixel size, BLT_RESOLVE[3:0] = 2 (4 samples), BLT_RESOLVE[7:4] with a pixel size it takes: 0 UNORM8 8, 16, 32 bits; 1 UNORM565 16; 2 SAMPLE0 all; 3 SRGB8_A8 32; 4 SFLOAT16 16, 32, 64; 5 SFLOAT32 32, 64, 128; 6 UNORM2_10_10_10 32; 7 UNORM1555 16; a tiled destination (BLT_RESOLVE[8]) only with 16- and 32-bit pixels.  Anything else: `error` kind OPCODE the next cycle, busy 0, no access.
 - Clip as `atg_blt_2d`: the destination rectangle ∩ [CLIP_MIN, CLIP_MAX) when CLIP_MAX ≠ 0, the source moves with it; empty → `done`, no access.
-- Rows: src_row = SRC_BASE + sy·SRC_STRIDE, dst_row = DST_BASE + dy·DST_STRIDE (tiled: + (dy/4)·DST_STRIDE + (dy%4)·4·ps), by a shift-and-add multiplier once; the next row adds SRC_STRIDE and DST_STRIDE (tiled: 4·ps, or DST_STRIDE − 12·ps after dy%4 = 3).  Per row: first = src_row + sx·4·ps, its line and offset, nlines = the lines of [first, first + w·4·ps); the descriptor goes to the pixel path, then the row's lines are read in order.
+- Rows: src_row = SRC_BASE + sy·SRC_STRIDE, dst_row = DST_BASE + dy·DST_STRIDE (tiled: + (dy/4)·DST_STRIDE + (dy%4)·4·ps), by two `atg_blt_acc` once; the next row adds SRC_STRIDE and DST_STRIDE (tiled: 4·ps, or DST_STRIDE − 12·ps after dy%4 = 3).  Per row: first = src_row + sx·4·ps, its line and offset, nlines = the lines of [first, first + w·4·ps); the descriptor goes to the pixel path, then the row's lines are read in order.
 - The request register takes a request in a cycle when it is empty or fires, a write of the pixel path first, else the next read when `held` (reads in flight + lines in the pixel path's FIFO + a read in the register) < 2^`DEPTH_LOG2`: the responses have no ready and come in order (`atg_mc.md` §4).  Tags: {7'd0, write}.
 - An error response: `fail`; no new request, the pixel path stopped (`stop`, which empties it and its FIFOs), responses no longer pushed; when nothing is outstanding, `error` kind AXI.
 - Source and destination must not overlap (no read waits for a write).
@@ -72,4 +72,4 @@ docs/ghci.md §8.2, §12.11; design §15.7 (the multisampled layout), §15.8 (th
 
 ## 10. Status
 
-Implemented (the MSAA work).  The averages SRGB8_A8 and SFLOAT16/32 (BLT_RESOLVE[7:4] 3-5) are refused until the render output writes such formats; they go into `atg_blt_avg`.
+Implemented (the MSAA work).  2026-10-25: pixels of 1 to 16 bytes, the averages 3-7 (`atg_blt_favg` for 3-5, `atg_blt_avg` for 6 and 7), the state in `atg_blt_cfg` and the row addresses in `atg_blt_acc` (below 400 lines); `sim/tb/atg_blt_tb.v` (`atg_blt.md` §8) checks the new combinations, `atg_blt_rsv_tb`'s refused example of SRGB8_A8 moved to the average 8.

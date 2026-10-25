@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rxmodel as RX  # noqa: E402
 import fmtmodel as FM  # noqa: E402
 import gsi1fp as FP  # noqa: E402
+import etcmodel as ETC  # noqa: E402
 
 M32 = 0xFFFFFFFF
 LAM_MIN = -32768
@@ -73,6 +74,8 @@ CTL_GATHER, CTL_COMP, CTL_QLOD, CTL_P0, CTL_P1, CTL_565 = 13, 14, 16, 17, 18, 19
 # (0 the earlier codes or none), [35] stencil aspect, [47:36] swizzle.
 CTL_F32, CTL_SPLIT, CTL_ROW, CTL_TSZ, CTL_NSL = 20, 21, 22, 23, 25
 CTL_VKF, CTL_STEN, CTL_SWZ = 27, 35, 36
+# [48] the pass's second column, [49] four passes (16-byte blocks).
+CTL_COL, CTL_QUAD = 48, 49
 
 # Cube faces (Vulkan's table): (major axis, sign), s_c, t_c as (axis, sign).
 CUBE_FACES = [((0, 1), (2, -1), (1, -1)), ((0, -1), (2, 1), (1, -1)),
@@ -251,8 +254,9 @@ class FClass:
         self.vk, self.swz = v, tf >> TF_SWZ & 0xFFF
         self.legacy = v == 0
         f = FM.info(v)
-        ok = f is not None and 'S' in f.feat.partition('|')[0] and not f.block
+        ok = f is not None and 'S' in f.feat.partition('|')[0]
         self.none = not self.legacy and not ok
+        self.blk = bool(ok and f.block)
         self.u8 = self.lin = self.depth = self.sten = self.fbit = self.d16 = self.int = False
         self.psl = 2
         if self.legacy:
@@ -348,6 +352,8 @@ def plane(d, lv):
     """The bytes of a 2D plane of level lv, rounded up to 64 (a slice of a
     3D level, a level of the other types)."""
     w, h = size(d, lv)
+    if fclass(d).blk:
+        return (((w + 3) >> 2) * ((h + 3) >> 2) * bpp(d) + 63) & ~63 & M32
     if tiled(d):
         return (((w + 3) >> 2) * ((h + 3) >> 2) * 16 * bpp(d) + 63) & ~63 & M32
     return (w * h * bpp(d) + 63) & ~63 & M32
@@ -368,6 +374,8 @@ def texel_addr(d, lv, i, j, layer=0, k=0, s=None):
     w, _ = size(d, lv)
     bp = bpp(d)
     b = (d[D_BASE] + layer * d[D_STRIDE] + level_offset(d, lv) + k * plane(d, lv)) & M32
+    if fclass(d).blk:
+        return (b + ((j >> 2) * ((w + 3) >> 2) + (i >> 2)) * bp) & M32
     if tiled(d):
         a = (b + (j >> 2) * ((w + 3) >> 2) * 16 * bp + (i >> 2) * 16 * bp +
              ((j & 3) * 4 + (i & 3)) * bp)
@@ -609,16 +617,23 @@ def lane_addr(op, d, c, lam_q, pas, off, cube=None):
 
     def slots(fp):
         """The footprint's texels (i0, j0), (i1, j0), (i0, j1), (i1, j1) as
-        (address, border) to the lane's slots."""
-        if gather or fc.psl <= 2:
-            sl = [(a + 4 * gwi, b) for a, b in fp]
+        (address, border, i, j) to the lane's slots; a block's texel
+        position in address bits 1:0 of its first two words."""
+        r, cl = pas >> 2 & 1, pas >> 3 & 1
+        if (gather and not fc.blk) or fc.psl <= 2:
+            sl = [(x[0] + 4 * gwi, x[1], x[2], x[3], 0) for x in fp]
         elif fc.psl == 3:
-            r = pas >> 2 & 1
-            sl = [(fp[2 * r + (k >> 1)][0] + 4 * (k & 1), fp[2 * r + (k >> 1)][1])
-                  for k in range(4)]
+            sl = [fp[2 * r + (k >> 1)][:4] + (k & 1,) for k in range(4)]
         else:
-            sl = [(fp[0][0] + 4 * k, fp[0][1]) for k in range(4)]
-        return [x[0] & M32 for x in sl], [x[1] for x in sl]
+            ft = 2 * r + cl
+            sl = [fp[ft][:4] + (k,) for k in range(4)]
+        out = []
+        for a, b, i, j, part in sl:
+            a += 4 * part if (fc.psl >= 3 and not (gather and not fc.blk)) else 0
+            if fc.blk:
+                a += (i & 3) if part == 0 else (j & 3) if part == 1 else 0
+            out.append(a)
+        return [x & M32 for x in out], [x[1] for x in sl]
 
     du, dv, dw = s4(off), s4(off >> 4), s4(off >> 8)
     if t == TYPE_CUBE:
@@ -627,7 +642,8 @@ def lane_addr(op, d, c, lam_q, pas, off, cube=None):
         w, h = size(d, 0)
         i = sat(s32(c[0]) + du, 0, w - 1)
         j = sat(s32(c[1]) + dv, 0, h - 1)
-        a, bo = slots([(texel_addr(d, 0, i, j, lane_layer(op, d, c), 0, c[2] & 3), 0)] * 4)
+        a, bo = slots([(texel_addr(d, 0, i, j, lane_layer(op, d, c), 0, c[2] & 3), 0, i, j)] *
+                      4)
         return a, bo, 0, 0, 0, 0, 0, 0
     if base == OP_TEXF:
         lev = s32(c[2])
@@ -636,7 +652,7 @@ def lane_addr(op, d, c, lam_q, pas, off, cube=None):
         i = sat(s32(c[0]) + du, 0, w - 1)
         j = sat(s32(c[1]) + dv, 0, h - 1)
         k = sat(s32(c[4]) + dw, 0, depth_l(d, lv) - 1) if t == TYPE_3D else 0
-        a, bo = slots([(texel_addr(d, lv, i, j, lane_layer(op, d, c), k), 0)] * 4)
+        a, bo = slots([(texel_addr(d, lv, i, j, lane_layer(op, d, c), k), 0, i, j)] * 4)
         return a, bo, 0, 0, 0, 0, 0, 0
     if query:
         lp, lam = lane_lambda(op, d, c, lam_q)
@@ -671,8 +687,8 @@ def lane_addr(op, d, c, lam_q, pas, off, cube=None):
     def tex(i, j, bi, bj):
         if t == TYPE_CUBE:
             g, ii, jj = cube_texel(face, i, j, w)
-            return texel_addr(d, lv, ii, jj, g, 0), 0
-        return texel_addr(d, lv, i, j, layer, k), bi | bj | bk
+            return texel_addr(d, lv, ii, jj, g, 0), 0, ii, jj
+        return texel_addr(d, lv, i, j, layer, k), bi | bj | bk, i, j
 
     if not lin:
         i, j = (cu >> 8) + du, (cv >> 8) + dv
@@ -742,8 +758,13 @@ def quad_addr(op, d, coords, mask, off=0):
         dep = any(out[ln][5] for ln in on)
         mip = any(out[ln][4] for ln in on)
         lin = any(out[ln][6] for ln in on)
-        split = int(f32p and fc.psl == 3 and lin and not gather)
-        if split and not pas >> 2:
+        split = int(f32p and fc.psl == 3 and lin and (fc.blk or not gather))
+        quad = int(f32p and fc.psl == 4 and fc.blk and lin)
+        if quad and not pas >> 3:
+            nxt = pas | 8
+        elif quad and not pas >> 2 & 1:
+            nxt = (pas & 3) | 4
+        elif split and not pas >> 2:
             nxt = pas | 4
         else:
             nxt = {0: 1 if dep else 2 if mip else None, 1: 2 if mip else None,
@@ -755,8 +776,9 @@ def quad_addr(op, d, coords, mask, off=0):
                gather << CTL_GATHER | (comp if gather else 0) << CTL_COMP |
                (query and base == OP_TEXB) << CTL_QLOD | (pas & 1) << CTL_P0 |
                (pas >> 1 & 1) << CTL_P1 | is565(d) << CTL_565 | f32p << CTL_F32 |
-               split << CTL_SPLIT | (pas >> 2) << CTL_ROW | tsz << CTL_TSZ | nsl << CTL_NSL |
-               fc.ctl_vk << CTL_VKF | int(fc.sten) << CTL_STEN | fc.swz << CTL_SWZ)
+               split << CTL_SPLIT | (pas >> 2 & 1) << CTL_ROW | tsz << CTL_TSZ |
+               nsl << CTL_NSL | fc.ctl_vk << CTL_VKF | int(fc.sten) << CTL_STEN |
+               fc.swz << CTL_SWZ | (pas >> 3) << CTL_COL | quad << CTL_QUAD)
         passes.append(([o[0] for o in out], [o[1] for o in out],
                        [o[2] | o[3] << 8 | o[4] << 16 | o[5] << 24 for o in out], ctl,
                        [o[7] for o in out]))
@@ -991,6 +1013,25 @@ def w2f(n):
     return rnd_f32(n, 32)
 
 
+def etc_value(vk, raw, s, t):
+    """A block's texel (atg_tu_etc) as four fp32 components."""
+    kind, tx = ETC.decode(vk - 147, raw, s, t)
+    if kind >= 2:
+        out = []
+        for v in (tx & 0x7FF, tx >> 16 & 0x7FF):
+            if kind == 3:
+                sv = v - 2048 if v >> 10 else v
+                m = FM.unorm_f32(abs(sv), 10)
+                out.append(m | (0x80000000 if sv < 0 else 0))
+            else:
+                out.append(FM.unorm_f32(v, 11))
+        return out + [0, ONE]
+    dec = FM._srgb_tables()[0]
+    c = [tx >> (8 * k) & 0xFF for k in range(4)]
+    return [dec[c[k]] if kind == 1 else FM.unorm_f32(c[k], 8) for k in range(3)] + \
+        [FM.unorm_f32(c[3], 8)]
+
+
 class FFilter:
     """atg_tu_ffilt, the fp32 path: one pass a call; a pass with ctl[4]
     (more to follow) returns None and keeps its sums."""
@@ -998,12 +1039,16 @@ class FFilter:
     def __init__(self):
         self.acc = [[0x80000000] * 4 for _ in range(4)]
 
-    def quad(self, texels, bords, wts, ctl, mask):
+    def quad(self, texels, bords, wts, ctl, mask, lo=None):
+        """lo[l][s]: address bits 1:0 of slot s of lane l (blocks)."""
+        if lo is None:
+            lo = [[0] * 4 for _ in range(4)]
         vk = ctl >> CTL_VKF & 0xFF
         sten = ctl >> CTL_STEN & 1
         z = ctl >> CTL_SWZ & 0xFFF
         f = FM.info(vk)
-        ok = f is not None and not f.block
+        ok = f is not None
+        blk = ok and f.block
         ncomp = 1 if sten else len(f.chans) if ok else 0
         isint = bool(sten) or (ok and f.ty in (FM.UINT, FM.SINT))
         one = 1 if isint else ONE
@@ -1011,7 +1056,9 @@ class FFilter:
         bil, more, first = ctl & 1, ctl >> CTL_MORE & 1, not ctl >> CTL_ACC & 1
         gath = ctl >> CTL_GATHER & 1
         split, row = ctl >> CTL_SPLIT & 1, ctl >> CTL_ROW & 1
+        quad, col = ctl >> CTL_QUAD & 1, ctl >> CTL_COL & 1
         bcls = ctl >> CTL_BORDER & 3
+        wg = gath and not blk
         if first:
             self.acc = [[0x80000000] * 4 for _ in range(4)]
         comp = ctl >> CTL_COMP & 3
@@ -1022,11 +1069,11 @@ class FFilter:
 
         def value(ln, t):
             sl = texels[ln]
-            if gath:
+            if wg:
                 raw, b = sl[t] << (32 * gwi), bords[ln][t]
             elif nb == 8:
-                raw = sl[2 * t] | sl[2 * t + 1] << 32 if t < 2 else 0
-                b = bords[ln][2 * t] if t < 2 else 0
+                raw = sl[2 * (t & 1)] | sl[2 * (t & 1) + 1] << 32
+                b = bords[ln][2 * (t & 1)]
             elif nb == 16:
                 raw, b = sl[0] | sl[1] << 32 | sl[2] << 64 | sl[3] << 96, bords[ln][0]
             else:
@@ -1034,8 +1081,17 @@ class FFilter:
             if b:
                 return [(one if bcls == 2 or (bcls == 1 and c == 3) else 0) if c < ncomp else
                         (one if c == 3 else 0) for c in range(4)]
+            if blk:
+                o = 0 if nb == 16 else 2 * (t & 1)
+                return etc_value(vk, raw, lo[ln][o], lo[ln][o + 1])
             v, _ = FM.unpack(raw, vk, bool(sten))
             return v
+
+        def pres(t):
+            return t == 0 if quad else t < 2 if split else (bil or gath or t == 0)
+
+        def ftx(t):
+            return (row << 1 | col) if quad else (row << 1 | (t & 1)) if split else t
 
         for ln in range(4):
             if not mask >> ln & 1:
@@ -1043,7 +1099,11 @@ class FFilter:
             w = wts[ln]
             fu, fv, fl, fw = w & 0xFF, w >> 8 & 0xFF, w >> 16 & 0xFF, w >> 24 & 0xFF
             if gath:
-                for g, t in enumerate((2, 3, 1, 0)):
+                for t in range(4):
+                    if not pres(t):
+                        continue
+                    ft = ftx(t)
+                    g = {2: 0, 3: 1, 1: 2, 0: 3}[ft]
                     v = value(ln, t)
                     self.acc[ln][g] = (one if gsrc else 0) if gk == 'k' else v[gsrc]
                 continue
@@ -1052,14 +1112,14 @@ class FFilter:
                 continue
             W = (fw if wa else 256 - fw) * (fl if wb else 256 - fl)
             for t in range(4):
-                if split:
-                    wu = (256 - fu, fu, 0, 0)[t]
-                    wv = (fv if row else 256 - fv) if t < 2 else 0
-                elif not bil:
-                    wu = wv = 256 if t == 0 else 0
+                if not pres(t):
+                    continue
+                ft = ftx(t)
+                if not bil:
+                    wu = wv = 256
                 else:
-                    wu = fu if t & 1 else 256 - fu
-                    wv = fv if t & 2 else 256 - fv
+                    wu = fu if ft & 1 else 256 - fu
+                    wv = fv if ft & 2 else 256 - fv
                 n = wu * wv * W
                 if n == 0 or ncomp == 0:
                     continue
@@ -1088,7 +1148,7 @@ def sample(mem, op, d, coords, mask, off=0):
     for a, bo, wts, ctl, val in quad_addr(op, d, coords, mask, off):
         tx = fetch(mem, a, bo, ctl, mask)
         if ctl >> CTL_F32 & 1:
-            words = ff.quad(tx, bo, wts, ctl, mask)
+            words = ff.quad(tx, bo, wts, ctl, mask, [[x & 3 for x in ln] for ln in a])
         else:
             words = flt.quad(tx, wts, ctl, mask, val)
     return words

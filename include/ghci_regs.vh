@@ -145,6 +145,9 @@ localparam [8:0] GHCI_S_BLT_COLOR = 9'h008;
 localparam [8:0] GHCI_S_BLT_CLIP_MIN = 9'h009;
 localparam [8:0] GHCI_S_BLT_CLIP_MAX = 9'h00A;
 localparam [8:0] GHCI_S_BLT_RESOLVE = 9'h00B;	/* draft, CAPS[29] */
+localparam [8:0] GHCI_S_BLT_COLOR1 = 9'h00C;	/* CAPS[30]: bits 63:32 of a 64- or 128-bit FILL */
+localparam [8:0] GHCI_S_BLT_COLOR2 = 9'h00D;	/* bits 95:64 */
+localparam [8:0] GHCI_S_BLT_COLOR3 = 9'h00E;	/* bits 127:96 */
 
 /*
  * The other STATE ranges.  docs/ghci.md section 8.3 defines the program
@@ -156,6 +159,8 @@ localparam [8:0] GHCI_S_VF = 9'h020;
 localparam [8:0] GHCI_S_RX = 9'h050;
 localparam [8:0] GHCI_S_ROP = 9'h070;
 localparam [8:0] GHCI_S_TU = 9'h090;	/* 16 slots of 16 words */
+localparam [9:0] GHCI_S_TU_VS = 10'h200;	/* CAPS[30]: the vertex stage's 16 slots */
+localparam [9:0] GHCI_S_END = 10'h300;	/* CAPS[30]: STATE has 0x000-0x2FF */
 localparam [8:0] GHCI_S_PROG = 9'h190;
 localparam [8:0] GHCI_S_SA = 9'h1B0;	/* reserved */
 localparam [8:0] GHCI_S_ATTR_DST = 9'h1C0;	/* VF: ATTR_DST[0..15] */
@@ -276,6 +281,8 @@ localparam [7:0] GHCI_PERF_SRC_NONE = 8'hFF;
 localparam GHCI_BLT_OP_BLEND = 4;
 localparam GHCI_BLT_OP_BPP16 = 8;	/* [9:8] = 1 */
 localparam GHCI_BLT_OP_REVERSE = 12;
+localparam GHCI_BLT_OP_PS128 = 13;	/* CAPS[30]: with [9:8] = 0, 128-bit pixels */
+localparam GHCI_BLT_OP_KEEP = 16;	/* CAPS[30]: [19:16] the bytes of a 32-bit pixel not written */
 localparam [1:0] GHCI_BLT_FILL = 2'd0;
 localparam [1:0] GHCI_BLT_COPY = 2'd1;
 localparam [1:0] GHCI_BLT_TILE = 2'd2;
@@ -285,6 +292,11 @@ localparam [2:0] GHCI_BLT_RESOLVE = 3'd4;	/* BLT_OP[2:0], draft, CAPS[29] */
 localparam [3:0] GHCI_RSV_UNORM8 = 4'd0;
 localparam [3:0] GHCI_RSV_UNORM565 = 4'd1;
 localparam [3:0] GHCI_RSV_SAMPLE0 = 4'd2;
+localparam [3:0] GHCI_RSV_SRGB8_A8 = 4'd3;
+localparam [3:0] GHCI_RSV_SFLOAT16 = 4'd4;
+localparam [3:0] GHCI_RSV_SFLOAT32 = 4'd5;
+localparam [3:0] GHCI_RSV_UNORM2_10_10_10 = 4'd6;	/* CAPS[30] */
+localparam [3:0] GHCI_RSV_UNORM1555 = 4'd7;	/* CAPS[30] */
 
 /* Extended capability IDs. */
 localparam [7:0] GHCI_XCAP_DISP = 8'd1;

@@ -23,10 +23,11 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `tc_ready` | out | 1 | Taken (IDLE). |
 | `tc_texels` | in | 512 | 4 lanes × 4 slots × 32 bits (1- and 2-byte texels right-justified). |
 | `tc_bord` | in | 16 | The slots that are border texels. |
+| `tc_lo` | in | 32 | The slots' address bits 1:0 (a block's texel position). |
 | `tc_wts` | in | 128 | 4 lanes × {fw, fl, fv, fu}. |
 | `tc_tag` | in | 16 | Tag. |
 | `tc_mask` | in | 4 | Lanes. |
-| `tc_ctl` | in | 48 | As ta_ctl (atg_tu_addr.md §3); used: [0] bilinear, [4] more passes follow, [5] not the first pass, [7:6] border colour class, [13] gather, [15:14] its component, [17] second slice, [18] second level, [21] row passes, [22] second row, [34:27] VkFormat, [35] stencil aspect, [47:36] swizzle. |
+| `tc_ctl` | in | 50 | As ta_ctl (atg_tu_addr.md §3); used: [0] bilinear, [4] more passes follow, [5] not the first pass, [7:6] border colour class, [13] gather, [15:14] its component, [17] second slice, [18] second level, [21] row passes, [22] second row, [34:27] VkFormat, [35] stencil aspect, [47:36] swizzle, [48] second column, [49] four passes. |
 | `tc_last` | in | 1 | Last. |
 | **Return to the SU** | | | |
 | `tr_valid` | out | 1 | The quad's result (after its last pass). |
@@ -35,13 +36,14 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `tr_data` | out | 512 | 4 lanes × 4 × 32 bits (fp32, or the integer bits of an integer format), R first. |
 | `tr_last` | out | 1 | Last. |
 
-16 ports.
+17 ports.
 
 ## 4. Behaviour
 
 The reference is `tools/tumodel.py` `FFilter`, bit for bit.
 
 - **Texels** of lane k from its slots: 1- to 4-byte texels: slots 0-3 are texels 0-3 ((i0, j0), (i1, j0), (i0, j1), (i1, j1)); 8-byte texels: texel 0 = {slot 1, slot 0}, texel 1 = {slot 3, slot 2} ((i0, j) and (i1, j) of the pass's row); 16-byte texels: texel 0 = {slots 3-0}; gather: slot t holds the word of texel t that has the component (`tu_gwi`), placed back at its word.
+- **Blocks** (ETC2 and EAC, 8 or 16 bytes): an 8-byte block per texel as the 8-byte texels (texels 0 and 1 of a row pass), a 16-byte block per pass (tc_ctl[49]: the pass's texel {row, column tc_ctl[48]}); the texel's column and row in the block are bits 1:0 of the block's first and second slot address (`tc_lo`); `atg_tu_etc` decodes it: RGBA8 to UNORM (sRGB: R, G, B through `atg_srgb_dec`), R11 c / 2047, signed R11 max(c / 1023, −1).  Gather of blocks comes in the same passes (the footprint texel decides the word's place).
 - **Conversion**: `atg_fmt_unpack(raw, VkFormat, stencil)`: UNORM and SNORM to the nearest fp32, the floats exactly (NaN 0x7FC00000), integers zero or sign extended, sRGB R, G, B to linear (before filtering) and A as UNORM, the stencil aspect (s, 0, 0, 1) as integers; a format without an entry (a value without the sampled feature, ctl format 0) (0, 0, 0, 1.0).  A **border texel** is the border colour in the format's components (class 0 transparent black (0, 0, 0, 0), 1 opaque black (0, 0, 0, 1), 2 opaque white (1, 1, 1, 1); 1.0, or the integer 1 for the integer formats and the stencil aspect; an sRGB format's border is linear) and (0, 0, 0, 1) in the others (Vulkan: the border colour replaces the components of the image format).
 - **Weights**: texel t's integer weight is wu × wv × wa × wb: bilinear wu = 256 − fu (t = 0, 2) or fu (1, 3), wv = 256 − fv (0, 1) or fv (2, 3); row passes (tc_ctl[21]): texel 0 256 − fu, texel 1 fu, wv = 256 − fv in the first row and fv in the second, texels 2 and 3 none; without bilinear 65536 for texel 0; wa = fw or 256 − fw by tc_ctl[17], wb = fl or 256 − fl by tc_ctl[18].  As fp32 the weight is n × 2^-32 rounded to nearest even (n ≤ 2^32); a weight of 0 is skipped (an infinite texel with weight 0 does not make a NaN).
 - **Accumulation**: per lane and component c below the format's component count, A = fma(w, x_c, A) with one rounding to nearest even and denormals flushed (`atg_su_ffma`, the SU's rules, `tools/gsi1fp.py` fma), from A = −0.0 at the quad's first pass; texels in the order 0-3, passes in order (mip linear and 3D linear: up to 4, with row passes up to 8).  The components the format does not have are (0, 0, 0, 1).
@@ -83,4 +85,4 @@ docs/ghci.md §8.4, §8.5 (texture slots, conversions); `spec/gpu/fmt/atg_fmt.md
 
 ## 10. Status
 
-Implemented (2026-10-25).  Readings: one fused multiply-add per term (design §16.11 named an fmul and an fadd; the fused form rounds once per term and needs one unit); the weight is rounded once as n × 2^-32 (the 8-bit weights of atg_tu_addr, the same as the 8-bit path); the bypass of a single texel of weight 1.  The ETC2 and EAC decoder (`atg_tu_etc`) is to join this path's input.
+Implemented (2026-10-25).  Readings: one fused multiply-add per term (design §16.11 named an fmul and an fadd; the fused form rounds once per term and needs one unit); the weight is rounded once as n × 2^-32 (the 8-bit weights of atg_tu_addr, the same as the 8-bit path); the bypass of a single texel of weight 1.  The ETC2 and EAC decoder (`atg_tu_etc`) is in this path (2026-10-25); the vectors have every block format with random blocks and texel positions.

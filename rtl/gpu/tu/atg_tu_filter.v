@@ -70,7 +70,7 @@ module atg_tu_filter (
 	input wire [127:0] tc_wts,
 	input wire [15:0] tc_tag,
 	input wire [3:0] tc_mask,
-	input wire [47:0] tc_ctl,
+	input wire [49:0] tc_ctl,
 	input wire [127:0] tc_value,
 	input wire tc_last,
 	/* Return to the SU */
@@ -202,7 +202,7 @@ module atg_tu_filter (
 	reg [511:0] tx;
 	reg [127:0] wts;
 	reg [3:0] mask;
-	reg [47:0] ctl;
+	reg [49:0] ctl;
 	reg [127:0] val;
 	reg [639:0] acc;	/* the passes' sums: lane-major, 4 × 40 bits a lane */
 
@@ -344,7 +344,7 @@ module atg_tu_filter (
 		end
 	end
 
-	wire unused_ok = &{1'b0, ctl[35], ctl[26:20], ctl[7:6], r[25:24], wp[17], lraw};
+	wire unused_ok = &{1'b0, ctl[49:48], ctl[35], ctl[26:20], ctl[7:6], r[25:24], wp[17], lraw};
 endmodule
 
 `default_nettype wire

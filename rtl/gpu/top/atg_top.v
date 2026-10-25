@@ -255,7 +255,10 @@ module atg_top #(
 	wire [31:0] mc_fault_addr;
 	wire mc_fault_write;
 	wire st_we;
-	wire [8:0] st_idx;
+	wire [9:0] st_idx;
+	/* The blocks but the TU see STATE[0..511] (0x200-0x2FF is the TU's). */
+	wire ust_we = st_we && !st_idx[9];
+	wire [8:0] ust_idx = st_idx[8:0];
 	wire [31:0] st_wdata;
 	wire blt_kick;
 	wire blt_busy;
@@ -289,7 +292,7 @@ module atg_top #(
 	wire [7:0] v_tag;
 	wire fw_valid, fw_ready, fw_last, fw_active;
 	wire [31:0] fw_data;
-	wire [8:0] cpu_st_ridx;
+	wire [9:0] cpu_st_ridx;
 	wire [31:0] cpu_st_rdata, cp_fence_last, cpu_hcr_rdata, cpu_fault_addr;
 	wire cp_fence_ev, cp_halt, cp_open, cpu_fault, cpu_stall, cpu_result;
 	wire [39:0] occ_count;	/* atg_rop's occlusion counter, for QUERY */
@@ -307,7 +310,8 @@ module atg_top #(
 		.HAS_DBG(HAS_JTAG),
 		.PACKED(NSU != 0 && SU_PACKED != 0),
 		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0),
-		.MS4(MS4)
+		.MS4(MS4),
+		.HAS_ETC(HAS_TU != 0)	/* the TU decodes ETC2 and EAC */
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -397,8 +401,8 @@ module atg_top #(
 	) blt (
 		.clk(clk),
 		.rst_n(core_rst_n),
-		.st_we(st_we),
-		.st_idx(st_idx),
+		.st_we(ust_we),
+		.st_idx(ust_idx),
 		.st_wdata(st_wdata),
 		.kick(blt_kick),
 		.busy(blt_busy),
@@ -517,7 +521,7 @@ module atg_top #(
 		assign fw_data = 32'd0;
 		assign fw_last = 1'b0;
 		assign fw_active = 1'b0;
-		assign cpu_st_ridx = 9'd0;
+		assign cpu_st_ridx = 10'd0;
 		assign cpu_result = 1'b0;
 		assign cpu_stall = 1'b0;
 		assign cpu_fault = 1'b0;
@@ -573,6 +577,7 @@ module atg_top #(
 	wire tx_valid, tx_ready, tx_last, tr_valid, tr_ready, tr_last;
 	wire [7:0] tx_op;
 	wire [3:0] tx_slot, tx_mask;
+	wire tx_vs;
 	wire [639:0] tx_coord;
 	wire [11:0] tx_off;
 	wire [15:0] tx_tag, tr_tag;
@@ -602,7 +607,7 @@ module atg_top #(
 	generate
 	if (HAS_VF != 0) begin : g_vf
 		atg_vf #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) vf (
-			.clk(clk), .rst_n(core_rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.draw_kick(draw_kick), .busy(vf_busy),
 			.vl_req(vl_req), .vl_gnt(vl_gnt), .vl_ptbase(vl_ptbase), .vl_go(vl_go),
 			.vl_mask(vl_mask), .vl_we(vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane),
@@ -635,7 +640,7 @@ module atg_top #(
 
 	if (HAS_RX != 0) begin : g_rx
 		atg_rx #(.HAS_SU(NSU > 0 ? 1 : 0)) rx (
-			.clk(clk), .rst_n(core_rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.raw_kick(raw_kick), .busy(rx_busy),
 			.prim_valid(prim_valid && prim_ok), .prim_ready(rx_prim_ready),
 			.prim_vtx(prim_vtx), .prim_free(prim_free), .prim_last(prim_last),
@@ -685,7 +690,7 @@ module atg_top #(
 		atg_tu #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) tu (
 			.clk(clk), .rst_n(core_rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 			.inv(inv[1]), .busy(tu_busy),
-			.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
+			.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot), .tx_vs(tx_vs),
 			.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
 			.tx_last(tx_last),
 			.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
@@ -705,7 +710,7 @@ module atg_top #(
 		assign tr_tag = 16'd0;
 		assign tr_data = 512'd0;
 		assign tr_last = 1'b0;
-		wire unused_tu = &{1'b0, tx_valid, tx_op, tx_slot, tx_mask, tx_coord, tx_off, tx_tag, tx_last,
+		wire unused_tu = &{1'b0, tx_valid, tx_op, tx_slot, tx_vs, tx_mask, tx_coord, tx_off, tx_tag, tx_last,
 			tr_ready};
 	end
 
@@ -714,7 +719,7 @@ module atg_top #(
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.STENCIL(ROP_STENCIL)
 		) rop (
-			.clk(clk), .rst_n(core_rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.busy(rop_busy),
 			.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 			.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
@@ -743,7 +748,7 @@ module atg_top #(
 
 	if (HAS_SA != 0) begin : g_sa
 		atg_sa #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NPHYS(SU_NPHYS)) sa (
-			.clk(clk), .rst_n(core_rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 			.hcr_ridx(hcr_ridx), .hcr_rdata(sa_hcr_rdata),
 			.push_valid(sa_push_valid), .push_ready(sa_push_ready), .push_data(sa_push_data),
@@ -810,6 +815,7 @@ module atg_top #(
 		wire [31:0] s_pt_rdata, s_ex_xy, s_sa_ctl_data;
 		wire [7:0] s_tx_op;
 		wire [3:0] s_tx_slot, s_tx_mask, s_ex_mask;
+		wire s_tx_vs;
 		wire [639:0] s_tx_coord;
 		wire [11:0] s_tx_off;
 		wire [15:0] s_tx_tag, s_ex_seq;
@@ -827,7 +833,7 @@ module atg_top #(
 			.LDS_BYTES(SU_LDS_BYTES), .VARY_WORDS(SU_VARY_WORDS),
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)
 		) su (
-			.clk(clk), .rst_n(core_rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.cs_kick(cs_kick), .lc_kick(lc_kick), .inv(inv),
 			.vl_req(g0 && vl_req), .vl_gnt(s_vl_gnt), .vl_slot(s_vl_slot),
 			.vl_ptbase(s_vl_ptbase), .vl_we(g0 && vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane),
@@ -839,7 +845,7 @@ module atg_top #(
 			.pt_rd(g0 && pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(s_pt_rdata),
 			.pt_free(g0 && pt_free), .pt_free_idx(pt_free_idx), .pt_done(s_pt_done),
 			.tx_valid(s_tx_valid), .tx_ready(g0 && tx_ready), .tx_op(s_tx_op),
-			.tx_slot(s_tx_slot), .tx_mask(s_tx_mask), .tx_coord(s_tx_coord), .tx_off(s_tx_off),
+			.tx_slot(s_tx_slot), .tx_vs(s_tx_vs), .tx_mask(s_tx_mask), .tx_coord(s_tx_coord), .tx_off(s_tx_off),
 			.tx_tag(s_tx_tag),
 			.tx_last(s_tx_last),
 			.tr_valid(g0 && tr_valid), .tr_ready(s_tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
@@ -882,6 +888,7 @@ module atg_top #(
 			assign tx_valid = s_tx_valid;
 			assign tx_op = s_tx_op;
 			assign tx_slot = s_tx_slot;
+			assign tx_vs = s_tx_vs;
 			assign tx_mask = s_tx_mask;
 			assign tx_coord = s_tx_coord;
 			assign tx_off = s_tx_off;
@@ -903,7 +910,7 @@ module atg_top #(
 			assign sa_ctl_data = s_sa_ctl_data;
 		end else begin : g_sun
 			wire unused_sun = &{1'b0, s_vl_gnt, s_vl_ptbase, s_pt_done, s_fl_gnt, s_pt_rdata, s_tx_valid,
-				s_tx_op, s_tx_slot, s_tx_mask, s_tx_coord, s_tx_off, s_tx_tag, s_tx_last, s_tr_ready,
+				s_tx_op, s_tx_slot, s_tx_vs, s_tx_mask, s_tx_coord, s_tx_off, s_tx_tag, s_tx_last, s_tr_ready,
 				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last, s_ex_aux,
 				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data};
 		end
@@ -957,6 +964,7 @@ module atg_top #(
 		assign tx_valid = 1'b0;
 		assign tx_op = 8'd0;
 		assign tx_slot = 4'd0;
+		assign tx_vs = 1'b0;
 		assign tx_mask = 4'd0;
 		assign tx_coord = 640'd0;
 		assign tx_off = 12'd0;

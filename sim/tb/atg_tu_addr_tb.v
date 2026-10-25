@@ -42,11 +42,12 @@ module atg_tu_addr_tb;
 	always #5 clk = !clk;
 
 	reg st_we = 1'b0;
-	reg [8:0] st_idx = 0;
+	reg [9:0] st_idx = 0;
 	reg [31:0] st_wdata = 0;
 	reg tx_valid = 1'b0;
 	reg [7:0] tx_op = 0;
 	reg [3:0] tx_slot = 0, tx_mask = 0;
+	reg tx_vs = 1'b0;
 	reg [639:0] tx_coord = 0;
 	reg [11:0] tx_off = 0;
 	reg [15:0] tx_tag = 0;
@@ -58,12 +59,12 @@ module atg_tu_addr_tb;
 	wire [127:0] ta_wts;
 	wire [15:0] ta_tag;
 	wire [3:0] ta_mask;
-	wire [47:0] ta_ctl;
+	wire [49:0] ta_ctl;
 	wire [127:0] ta_value;
 
 	atg_tu_addr dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .desc_busy(desc_busy), .tx_valid(tx_valid), .tx_ready(tx_ready),
-		.tx_op(tx_op), .tx_slot(tx_slot), .tx_mask(tx_mask), .tx_coord(tx_coord),
+		.tx_op(tx_op), .tx_slot(tx_slot), .tx_vs(tx_vs), .tx_mask(tx_mask), .tx_coord(tx_coord),
 		.tx_off(tx_off), .tx_tag(tx_tag),
 		.tx_last(tx_last), .ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr),
 		.ta_bord(ta_bord), .ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl),
@@ -71,10 +72,11 @@ module atg_tu_addr_tb;
 
 	integer fd, code, seed, errs, gerrs, nq, tmo, np, ip;
 	reg [8*12-1:0] kind, gname;
-	reg [8:0] sidx;
+	reg [9:0] sidx;
 	reg [31:0] sval;
 	reg [7:0] op;
-	reg [3:0] slot, mask;
+	reg [4:0] slot;
+	reg [3:0] mask;
 	reg [15:0] tag;
 	reg last;
 	reg [639:0] crd;
@@ -82,7 +84,7 @@ module atg_tu_addr_tb;
 	reg [511:0] x_addr;
 	reg [15:0] x_bord;
 	reg [127:0] x_wts;
-	reg [47:0] x_ctl;
+	reg [49:0] x_ctl;
 	reg [127:0] x_value;
 
 	task check_out;
@@ -169,7 +171,8 @@ module atg_tu_addr_tb;
 					@(posedge clk);
 				tx_valid <= 1'b1;
 				tx_op <= op;
-				tx_slot <= slot;
+				tx_slot <= slot[3:0];
+				tx_vs <= slot[4];
 				tx_mask <= mask;
 				tx_coord <= crd;
 				tx_off <= off;

@@ -121,3 +121,5 @@ VF → SU (vertex) → PT → RX → SU (fragment) → ROP (§8).
 **Multisampling**: `MS4` (default 0) goes to the CP (CAPS[29] with the VF, RX, ROP, TU and an SU), the SU (`texsz.s`) and the BLT (RESOLVE); the RX and the ROP read MS_CTRL and SAMPLE_KILL in every shape, and the SU's `ex_aux` (the beat of a colour attachment, per-sample coverage, the exported-depth bits and the depth slopes) goes to the ROP.
 
 Varying 64 components (Vulkan 1.0's limit): `SU_VARY_WORDS` at most 64, the KC705 shape 64 (was 32; boards/kc705, tools/lint.sh and the KC705-shaped testbenches); `pt_word` 7 bits between RX and SU 0.
+
+2026-10-25: the STATE broadcast has 10-bit indices; the TU takes them all (0x200-0x2FF are its vertex-stage slots), the other blocks see st_we only for indices below 512 and their 9 bits; the SU's tx_vs reaches the TU; the CP's HAS_ETC is HAS_TU.
