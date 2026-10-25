@@ -9,7 +9,7 @@
  * atg_fmt_depth_key: an fp32 order key, a 33-bit signed value that orders
  * as the fp32 does (−0 = +0, denormals are 0; the former atg_depth_key of
  * include/atg_depth.vh).  Shared by the ROP's depth test and the TU's
- * compare samplers.  Combinational.
+ * compare samplers (atg_tu_fpre).  Combinational.
  */
 
 `timescale 1ns / 1ps

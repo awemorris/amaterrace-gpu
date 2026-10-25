@@ -1,6 +1,6 @@
 # atg_fmt_depth_u24
 
-RTL: `rtl/gpu/fmt/atg_fmt_depth_u24.v`.  Parents: atg_rop_dtest (D24 depth), atg_tu_filter (the D24 compare reference).
+RTL: `rtl/gpu/fmt/atg_fmt_depth_u24.v`.  Parent: atg_rop_dtest (D24 depth).  atg_tu_fpre pipelines the same steps over its stages for the D24 compare reference.
 
 ## 1. Purpose and place
 
@@ -36,7 +36,7 @@ None beyond 4.
 
 ## 9. References
 
-`spec/gpu/rop/atg_rop_dtest.md`, `spec/gpu/tu/atg_tu_filter.md`, docs/ghci.md (D24_UNORM_S8_UINT).
+`spec/gpu/rop/atg_rop_dtest.md`, `spec/gpu/tu/atg_tu_fpre.md`, docs/ghci.md (D24_UNORM_S8_UINT).
 
 ## 10. Status
 

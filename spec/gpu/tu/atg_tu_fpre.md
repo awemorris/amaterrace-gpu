@@ -33,7 +33,7 @@ None.
 
 ## 4. Behaviour
 
-Dref as unorm24 (RNE of Dref × (2^24 − 1); NaN, ≤ 0, denormals 0, ≥ 1 all ones; as atg_depth_u24), unorm16 (as atg_fmt_f2unorm), or the fp32 order key; the texels' keys; VkCompareOp as atg_depth_pass (D32F: NaN passes NOT_EQUAL and ALWAYS only); weights (256 − fu or fu)(256 − fv or fv), without bilinear 65536 for texel 0; W = (fw or 256 − fw)(fl or 256 − fl).
+Dref as unorm24 (RNE of Dref × (2^24 − 1); NaN, ≤ 0, denormals 0, ≥ 1 all ones; as atg_fmt_depth_u24), unorm16 (as atg_fmt_f2unorm), or the fp32 order key; the texels' keys; VkCompareOp as atg_depth_pass (D32F: NaN passes NOT_EQUAL and ALWAYS only); weights (256 − fu or fu)(256 − fv or fv), without bilinear 65536 for texel 0; W = (fw or 256 − fw)(fl or 256 − fl).
 
 ## 5. State machine
 
@@ -58,3 +58,5 @@ The parent's spec.
 ## 10. Status
 
 Implemented (2026-10-25, p038).
+
+2026-10-25 (p037, P1): the order keys of Dref and the texels are atg_fmt_depth_key instances (the same keys as the former am_sub copies; old and new compared on 200,000 random cycles).

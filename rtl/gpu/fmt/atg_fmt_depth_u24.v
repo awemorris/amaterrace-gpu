@@ -8,8 +8,8 @@
 /*
  * atg_fmt_depth_u24: fp32 in [0, 1] to unorm24, RNE(f × (2^24 − 1)); NaN,
  * ≤ 0 and denormals give 0, ≥ 1 all ones (the former atg_depth_u24 of
- * include/atg_depth.vh; tools/rxmodel.py f2u24 is the reference).  Shared
- * by the ROP's depth test and the TU's compare samplers.  Combinational.
+ * include/atg_depth.vh; tools/rxmodel.py f2u24 is the reference), for the
+ * ROP's depth test (atg_tu_fpre pipelines the same steps).  Combinational.
  */
 
 `timescale 1ns / 1ps

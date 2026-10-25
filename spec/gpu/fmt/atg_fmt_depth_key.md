@@ -1,6 +1,6 @@
 # atg_fmt_depth_key
 
-RTL: `rtl/gpu/fmt/atg_fmt_depth_key.v`.  Parents: atg_rop_dtest (D32_SFLOAT depth), atg_tu_filter (the D32F compare).
+RTL: `rtl/gpu/fmt/atg_fmt_depth_key.v`.  Parents: atg_rop_dtest (D32_SFLOAT depth: the new and the stored value), atg_tu_fpre (the D32F compare: Dref and the four texels).
 
 ## 1. Purpose and place
 
@@ -36,7 +36,7 @@ None beyond 4.
 
 ## 9. References
 
-`spec/gpu/rop/atg_rop_dtest.md`, `spec/gpu/tu/atg_tu_filter.md`.
+`spec/gpu/rop/atg_rop_dtest.md`, `spec/gpu/tu/atg_tu_fpre.md`.
 
 ## 10. Status
 
