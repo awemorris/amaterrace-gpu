@@ -23,10 +23,13 @@
  * The extended capability list at 0x100: one two-word entry per set bit
  * of XCAP_MASK in id order; the first two entries at 0x100 and 0x108, the
  * rest from 0x180 (0x110-0x17F hold the PERF, CPFW, SA and FMT registers).
- * The MEM capability's four words (LOCAL_BASE, LOCAL_SIZE, WINDOW_SIZE,
- * HOST_LIMIT)
- * are at 0x1C0, after the room of a full list; the PROT capability's
- * (atg_cp_prot's, through x_rdata) at 0x1D0.
+ * The PROT capability's registers (atg_cp_prot's, through x_rdata) are at
+ * 0x1D0, after the room of a full list; the MEM capability's five words
+ * (LOCAL_BASE, LOCAL_SIZE, WINDOW_SIZE, HOST_LIMIT, WINDOW_CTRL) at 0x1E0.
+ * WINDOW_CTRL.ENABLE (win_en, docs/ghci.md section 11.1) is 1 after rst_n
+ * (the board's reset, not CTRL.RESET) and takes host writes only when the
+ * GPU has a local window (WINDOW_BYTES != 0); without one it reads 0 and
+ * win_en stays 0.
  */
 
 `timescale 1ns / 1ps
@@ -82,12 +85,22 @@ module atg_cp_regs #(
 	input wire [31:0] x_rdata,
 	/* PERF */
 	input wire [3:0] perf_busy,
-	input wire perf_reset
+	input wire perf_reset,
+	/* MEM: WINDOW_CTRL.ENABLE, the local window is open (to the board's window path) */
+	output wire win_en
 );
 	`include "ghci_regs.vh"
 
 	localparam [9:0] I_SCRATCH = GHCI_SCRATCH[11:2];
 	localparam [9:0] I_PERF_CTRL = GHCI_PERF_CTRL[11:2];
+	localparam [11:0] MEM_OFF = 12'h1E0;	/* the MEM capability's registers */
+	localparam [11:0] A_LOCAL_BASE = MEM_OFF + GHCI_MEM_LOCAL_BASE[11:0];
+	localparam [11:0] A_LOCAL_SIZE = MEM_OFF + GHCI_MEM_LOCAL_SIZE[11:0];
+	localparam [11:0] A_WINDOW_SIZE = MEM_OFF + GHCI_MEM_WINDOW_SIZE[11:0];
+	localparam [11:0] A_HOST_LIMIT = MEM_OFF + GHCI_MEM_HOST_LIMIT[11:0];
+	localparam [11:0] A_WINDOW_CTRL = MEM_OFF + GHCI_MEM_WINDOW_CTRL[11:0];
+	localparam [9:0] I_WINDOW_CTRL = A_WINDOW_CTRL[11:2];
+	localparam [0:0] HAS_WINDOW = XCAP_MASK[7] && WINDOW_BYTES != 32'd0;
 
 	/* Writes. */
 	assign hcr_we = reg_wr && reg_waddr[16:12] == 5'd0;
@@ -101,6 +114,7 @@ module atg_cp_regs #(
 	assign alias_ridx = reg_raddr[11:2];
 
 	reg [31:0] scratch;
+	reg win_q;
 	reg [31:0] counter;
 	reg [127:0] perf;	/* PERF0..3, PERFn in bits 32n+31:32n */
 	wire perf_clear = perf_reset ||
@@ -111,10 +125,13 @@ module atg_cp_regs #(
 		if (!rst_n) begin
 			scratch <= 32'd0;
 			counter <= 32'd0;
+			win_q <= HAS_WINDOW;
 		end else begin
 			counter <= counter + 32'd1;
 			if (hcr_we && hcr_widx == I_SCRATCH)
 				scratch <= (scratch & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
+			if (HAS_WINDOW && hcr_we && hcr_widx == I_WINDOW_CTRL && hcr_wmask[0])
+				win_q <= hcr_wdata[0];
 		end
 		for (i = 0; i < 4; i = i + 1)
 			if (!rst_n || perf_clear)
@@ -141,6 +158,7 @@ module atg_cp_regs #(
 	end
 
 	assign hcr_ridx = ridx_q;
+	assign win_en = win_q;
 
 	/* The extended capability list: entry k's byte offset. */
 	function integer xcap_off;
@@ -156,7 +174,7 @@ module atg_cp_regs #(
 		4: xcap_ptr = 32'h000000C0;
 		6: xcap_ptr = 32'h00000120;
 		7: xcap_ptr = 32'h00000140;
-		8: xcap_ptr = 32'h000001C0;
+		8: xcap_ptr = {20'd0, MEM_OFF};
 		9: xcap_ptr = 32'h000001D0;	/* PROT: atg_cp_prot answers its registers */
 		10: xcap_ptr = 32'h00000160;
 		default: xcap_ptr = 32'd0;
@@ -211,10 +229,11 @@ module atg_cp_regs #(
 		GHCI_COUNTER[11:0]: own = counter;
 		12'h048: own = NATIVE_ISA_ID;
 		GHCI_RESIDENT_WARPS[11:0]: own = {8'd0, NREGS, RESIDENT_WARPS};
-		12'h1C0: if (XCAP_MASK[7]) own = LOCAL_BASE;
-		12'h1C4: if (XCAP_MASK[7]) own = LOCAL_BYTES;
-		12'h1C8: if (XCAP_MASK[7]) own = WINDOW_BYTES;
-		12'h1CC: if (XCAP_MASK[7]) own = HOST_LIMIT;
+		A_LOCAL_BASE: if (XCAP_MASK[7]) own = LOCAL_BASE;
+		A_LOCAL_SIZE: if (XCAP_MASK[7]) own = LOCAL_BYTES;
+		A_WINDOW_SIZE: if (XCAP_MASK[7]) own = WINDOW_BYTES;
+		A_HOST_LIMIT: if (XCAP_MASK[7]) own = HOST_LIMIT;
+		A_WINDOW_CTRL: if (XCAP_MASK[7]) own = {31'd0, win_q};
 		default: ;
 		endcase
 		if (roff[11:5] == 7'h06)	/* VEND 0x0C0-0x0DF */

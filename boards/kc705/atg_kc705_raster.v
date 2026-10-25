@@ -13,7 +13,10 @@
  * endpoint (ws288 p013, docs/ghci.md section 15.2): BAR0 the register
  * window (atg_kc705_pcie's m0_* through am_axi_cdc into atg_top's s_*,
  * beside the JTAG bridge), BAR2 the 64 MiB local window (m2_* to the
- * MIG's second port, not through the MC), MSI vectors 0 (the GPU) and 1
+ * MIG's second port, not through the MC, through am_axi_gate: while the
+ * MEM capability's WINDOW_CTRL.ENABLE (atg_top's win_en, synchronised to
+ * user_clk) is 0 the gate answers BAR2 itself, writes dropped and reads
+ * 0, ws288 p040, docs/ghci.md section 11.1), MSI vectors 0 (the GPU) and 1
  * (the DC) by atg_pcie_msi.  The GPU's memory port (atg_top m_*) goes
  * through am_axi_split (ws288 p039, docs/ghci.md section 11.2): local
  * memory [LOCAL_BASE, + LOCAL_BYTES) (the MC's AXI ID 0) to the MIG's GPU
@@ -184,6 +187,17 @@ module atg_kc705_raster #(
 	wire [511:0] d_wdata, d_rdata, h_wdata, h_rdata;
 	wire [63:0] d_wstrb, h_wstrb;
 	wire [1:0] msi_req, msi_ack;
+	/* BAR2 after the gate, to the MIG's second port. */
+	wire [25:0] g2_awaddr, g2_araddr;
+	wire [3:0] g2_awid, g2_bid, g2_arid, g2_rid;
+	wire [7:0] g2_awlen, g2_arlen;
+	wire [2:0] g2_awsize, g2_arsize;
+	wire [1:0] g2_awburst, g2_arburst, g2_bresp, g2_rresp;
+	wire g2_awvalid, g2_awready, g2_wlast, g2_wvalid, g2_wready, g2_bvalid, g2_bready;
+	wire g2_arvalid, g2_arready, g2_rlast, g2_rvalid, g2_rready;
+	wire [127:0] g2_wdata, g2_rdata;
+	wire [15:0] g2_wstrb;
+	wire win_en, win_en_u;
 
 	atg_kc705_pcie pcie (
 		.pcie_refclk_p(pcie_refclk_p), .pcie_refclk_n(pcie_refclk_n),
@@ -300,7 +314,7 @@ module atg_kc705_raster #(
 		.PROT_PLB(16),
 		.PROT_PLB_W(4)
 	) gpu (
-		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(mem_ready),
+		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(mem_ready), .win_en(win_en),
 		.s_awaddr(s_awaddr), .s_awid(s_awid), .s_awvalid(s_awvalid), .s_awready(s_awready), .s_wdata(s_wdata), .s_wstrb(s_wstrb), .s_wlast(s_wlast), .s_wvalid(s_wvalid), .s_wready(s_wready), .s_bid(s_bid), .s_bresp(s_bresp), .s_bvalid(s_bvalid),
 		.s_bready(s_bready), .s_araddr(s_araddr), .s_arid(s_arid), .s_arlen(s_arlen), .s_arvalid(s_arvalid), .s_arready(s_arready), .s_rdata(s_rdata), .s_rid(s_rid), .s_rresp(s_rresp), .s_rlast(s_rlast), .s_rvalid(s_rvalid), .s_rready(s_rready),
 		.m_awid(m_awid), .m_bid(m_bid), .m_arid(m_arid), .m_rid(m_rid),
@@ -354,19 +368,44 @@ module atg_kc705_raster #(
 	assign h_bid = h_bid4[0];
 	assign h_rid = h_rid4[0];
 
+	/* The local window's gate (MEM WINDOW_CTRL.ENABLE) in user_clk. */
+	am_sync #(.W(1), .RESET_VALUE(1'b1)) win_sync (
+		.clk(user_clk), .rst_n(user_rst_n), .d(win_en), .q(win_en_u)
+	);
+
+	am_axi_gate #(.A_W(26), .D_W(128), .ID_W(4), .CNT_W(4)) win_gate (
+		.clk(user_clk), .rst_n(user_rst_n), .en(win_en_u),
+		.s_awid(p2_awid), .s_awaddr(p2_awaddr), .s_awlen(p2_awlen), .s_awsize(p2_awsize),
+		.s_awburst(p2_awburst), .s_awvalid(p2_awvalid), .s_awready(p2_awready),
+		.s_wdata(p2_wdata), .s_wstrb(p2_wstrb), .s_wlast(p2_wlast), .s_wvalid(p2_wvalid),
+		.s_wready(p2_wready), .s_bid(p2_bid), .s_bresp(p2_bresp), .s_bvalid(p2_bvalid),
+		.s_bready(p2_bready), .s_arid(p2_arid), .s_araddr(p2_araddr), .s_arlen(p2_arlen),
+		.s_arsize(p2_arsize), .s_arburst(p2_arburst), .s_arvalid(p2_arvalid),
+		.s_arready(p2_arready), .s_rid(p2_rid), .s_rdata(p2_rdata), .s_rresp(p2_rresp),
+		.s_rlast(p2_rlast), .s_rvalid(p2_rvalid), .s_rready(p2_rready),
+		.m_awid(g2_awid), .m_awaddr(g2_awaddr), .m_awlen(g2_awlen), .m_awsize(g2_awsize),
+		.m_awburst(g2_awburst), .m_awvalid(g2_awvalid), .m_awready(g2_awready),
+		.m_wdata(g2_wdata), .m_wstrb(g2_wstrb), .m_wlast(g2_wlast), .m_wvalid(g2_wvalid),
+		.m_wready(g2_wready), .m_bid(g2_bid), .m_bresp(g2_bresp), .m_bvalid(g2_bvalid),
+		.m_bready(g2_bready), .m_arid(g2_arid), .m_araddr(g2_araddr), .m_arlen(g2_arlen),
+		.m_arsize(g2_arsize), .m_arburst(g2_arburst), .m_arvalid(g2_arvalid),
+		.m_arready(g2_arready), .m_rid(g2_rid), .m_rdata(g2_rdata), .m_rresp(g2_rresp),
+		.m_rlast(g2_rlast), .m_rvalid(g2_rvalid), .m_rready(g2_rready)
+	);
+
 	atg_kc705_mig mig (
 		.clk(clk), .rst_n(rst_n), .sys_clk(ref_clk), .sys_rst_n(ref_rst_n), .mem_ready(mem_ready),
 		.s_awaddr(d_awaddr), .s_awlen(d_awlen), .s_awsize(d_awsize), .s_awburst(d_awburst), .s_awcache(d_awcache), .s_awprot(d_awprot), .s_awvalid(d_awvalid), .s_awready(d_awready), .s_wdata(d_wdata), .s_wstrb(d_wstrb), .s_wlast(d_wlast), .s_wvalid(d_wvalid), .s_wready(d_wready), .s_bresp(d_bresp), .s_bvalid(d_bvalid),
 		.s_bready(d_bready), .s_araddr(d_araddr), .s_arlen(d_arlen), .s_arsize(d_arsize), .s_arburst(d_arburst), .s_arcache(d_arcache), .s_arprot(d_arprot), .s_arvalid(d_arvalid), .s_arready(d_arready), .s_rdata(d_rdata), .s_rresp(d_rresp), .s_rlast(d_rlast), .s_rvalid(d_rvalid), .s_rready(d_rready),
 		.s2_clk(user_clk), .s2_rst_n(user_rst_n),
-		.s2_awaddr(p2_awaddr), .s2_awid(p2_awid), .s2_awlen(p2_awlen), .s2_awsize(p2_awsize),
-		.s2_awburst(p2_awburst), .s2_awvalid(p2_awvalid), .s2_awready(p2_awready),
-		.s2_wdata(p2_wdata), .s2_wstrb(p2_wstrb), .s2_wlast(p2_wlast), .s2_wvalid(p2_wvalid),
-		.s2_wready(p2_wready), .s2_bid(p2_bid), .s2_bresp(p2_bresp), .s2_bvalid(p2_bvalid),
-		.s2_bready(p2_bready), .s2_araddr(p2_araddr), .s2_arid(p2_arid), .s2_arlen(p2_arlen),
-		.s2_arsize(p2_arsize), .s2_arburst(p2_arburst), .s2_arvalid(p2_arvalid),
-		.s2_arready(p2_arready), .s2_rdata(p2_rdata), .s2_rid(p2_rid), .s2_rresp(p2_rresp),
-		.s2_rlast(p2_rlast), .s2_rvalid(p2_rvalid), .s2_rready(p2_rready),
+		.s2_awaddr(g2_awaddr), .s2_awid(g2_awid), .s2_awlen(g2_awlen), .s2_awsize(g2_awsize),
+		.s2_awburst(g2_awburst), .s2_awvalid(g2_awvalid), .s2_awready(g2_awready),
+		.s2_wdata(g2_wdata), .s2_wstrb(g2_wstrb), .s2_wlast(g2_wlast), .s2_wvalid(g2_wvalid),
+		.s2_wready(g2_wready), .s2_bid(g2_bid), .s2_bresp(g2_bresp), .s2_bvalid(g2_bvalid),
+		.s2_bready(g2_bready), .s2_araddr(g2_araddr), .s2_arid(g2_arid), .s2_arlen(g2_arlen),
+		.s2_arsize(g2_arsize), .s2_arburst(g2_arburst), .s2_arvalid(g2_arvalid),
+		.s2_arready(g2_arready), .s2_rdata(g2_rdata), .s2_rid(g2_rid), .s2_rresp(g2_rresp),
+		.s2_rlast(g2_rlast), .s2_rvalid(g2_rvalid), .s2_rready(g2_rready),
 		.ddr3_dq(ddr3_dq), .ddr3_dqs_p(ddr3_dqs_p), .ddr3_dqs_n(ddr3_dqs_n), .ddr3_addr(ddr3_addr), .ddr3_ba(ddr3_ba), .ddr3_ras_n(ddr3_ras_n), .ddr3_cas_n(ddr3_cas_n), .ddr3_we_n(ddr3_we_n), .ddr3_reset_n(ddr3_reset_n), .ddr3_ck_p(ddr3_ck_p), .ddr3_ck_n(ddr3_ck_n), .ddr3_cke(ddr3_cke), .ddr3_cs_n(ddr3_cs_n), .ddr3_dm(ddr3_dm), .ddr3_odt(ddr3_odt)
 	);
 

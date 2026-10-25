@@ -25,7 +25,7 @@ Fixed inside: `NCLIENT` = 2, MC `HIGH_MASK` = 2'b01 (CP first), `OUTSTANDING_LOG
 
 ## 3. Ports
 
-All in domain `clk`. 57 ports.
+All in domain `clk`. 58 ports.
 
 | Name | Dir | Width | Meaning, handshake, timing |
 | --- | --- | --- | --- |
@@ -33,6 +33,7 @@ All in domain `clk`. 57 ports.
 | `rst_n` | in | 1 | Synchronous active low, already synchronised to `clk` |
 | `irq` | out | 1 | Level interrupt (from the CP) |
 | `mem_ready` | in | 1 | STATUS.MEM_READY (tie 1 when memory is ready from reset) |
+| `win_en` | out | 1 | MEM WINDOW_CTRL.ENABLE (GHCI §11.1, atg_cp_regs): the board's local window path answers host accesses itself while 0; 1 after `rst_n` with a window, 0 without (ws288 p040) |
 | `s_awaddr`, `s_awid`, `s_awvalid`/`s_awready`, `s_wdata`, `s_wstrb`, `s_wlast`, `s_wvalid`/`s_wready`, `s_bid`, `s_bresp`, `s_bvalid`/`s_bready`, `s_araddr`, `s_arid`, `s_arlen`, `s_arvalid`/`s_arready`, `s_rdata`, `s_rid`, `s_rresp`, `s_rlast`, `s_rvalid`/`s_rready` | — | 17-bit addresses, `S_ID_W` IDs, `S_LEN_W` ARLEN, 32-bit data | Host AXI slave; rules of `spec/common/am_axi_regs.md` |
 | `m_*` (33 signals) | — | 32-bit addresses, `DATA_W` data, 1-bit IDs | Memory AXI master, AXI4-shaped; rules of `spec/common/am_axi_master.md`.  `m_awid`/`m_arid`: 0 local memory, 1 host (always 0 without local memory); `m_bid`/`m_rid` come back with the responses (tie 0 on a one-ID port).  An AXI3 port truncates AxLEN/AxSIZE and ties WID to 0 |
 

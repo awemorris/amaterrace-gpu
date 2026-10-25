@@ -20,6 +20,11 @@
  *     those bytes, a 64-byte burst written and read back; the GPU reads
  *     the same word at LOCAL_BASE + offset (DBG_ADDR/DBG_DATA through
  *     BAR0, aperture over the window);
+ *   - window (ws288 p040): the MEM capability's WINDOW_CTRL (0x1F0: MEM
+ *     at 0x1E0) reads 1 after reset; written 0, a BAR2 write is answered
+ *     OKAY and leaves the DDR3 model as it was (a beat and a burst), a
+ *     BAR2 read returns 0 with OKAY (a beat and a burst); written 1 again,
+ *     BAR2 reads the DDR3's bytes again;
  *   - host (ws288 p039): the GPU reads a word that the host put in its
  *     memory at bus address 0x1_2000 and writes one at 0x1_2040
  *     (DBG_ADDR/DBG_DATA, aperture [0x1_0000, 0x8010_0000)): through
@@ -153,6 +158,7 @@ module atg_kc705_pcie_tb;
 	endtask
 
 	localparam [16:0] DC = 17'h1_0000;
+	localparam [16:0] MEM_WINDOW_CTRL = 17'h001E0 + GHCI_MEM_WINDOW_CTRL;	/* MEM at 0x1E0 (EXTCAP) */
 	reg [127:0] q, q2;
 	reg [511:0] b4, b4r;
 	integer n, i;
@@ -220,6 +226,35 @@ module atg_kc705_pcie_tb;
 		expect_reg(GHCI_DBG_DATA, 32'hC0DE0002, 32'hFFFFFFFF);
 		if (errors == 0)
 			$display("PASS atg_kc705_pcie.bar2");
+		/* window: WINDOW_CTRL.ENABLE closes BAR2 (writes dropped, reads 0, OKAY) */
+		expect_reg(MEM_WINDOW_CTRL, 32'd1, 32'hFFFFFFFF);
+		wr(MEM_WINDOW_CTRL, 32'd0);
+		expect_reg(MEM_WINDOW_CTRL, 32'd0, 32'hFFFFFFFF);
+		wait_uclk(10);	/* the gate's synchroniser */
+		dut.pcie.bar2_write(26'h100, {4{32'h5A5A5A5A}}, 16'hFFFF);
+		if (dut.pcie.bar2_resp != 2'b00)
+			fail("a BAR2 write to the closed window not OKAY");
+		dut.pcie.bar2_read(26'h100, q2);
+		if (q2 !== 128'd0 || dut.pcie.bar2_resp != 2'b00)
+			fail("a BAR2 read of the closed window not 0 and OKAY");
+		for (i = 0; i < 16; i = i + 1)
+			b4[i*32 +: 32] = 32'hDEAD0000 + i;
+		dut.pcie.bar2_write4(26'h2000, b4);
+		dut.pcie.bar2_read4(26'h2000, b4r);
+		if (b4r !== 512'd0 || dut.pcie.bar2_resp != 2'b00)
+			fail("a BAR2 burst read of the closed window not 0 and OKAY");
+		if (dut.mig.mem.peek32(32'h100) !== 32'h03020100 ||
+		    dut.mig.mem.peek32(32'h104) !== 32'hA5A5A5A5 ||
+		    dut.mig.mem.peek32(32'h2008) !== 32'hC0DE0002)
+			fail("a BAR2 write to the closed window reached the DDR3");
+		wr(MEM_WINDOW_CTRL, 32'd1);
+		wait_uclk(10);
+		dut.pcie.bar2_read(26'h100, q2);
+		if (q2 !== {32'h0f0e0d0c, 32'h0b0a0908, 32'hA5A5A5A5, 32'h03020100} ||
+		    dut.pcie.bar2_resp != 2'b00)
+			fail("BAR2 after the window opened again");
+		if (errors == 0)
+			$display("PASS atg_kc705_pcie.window");
 		/* host: the GPU's accesses below HOST_LIMIT reach the host's memory */
 		dut.pcie.host_write(32'h0001_2000, 32'hFEED_0001);
 		wr(GHCI_APERTURE_BASE, 32'h0001_0000);
