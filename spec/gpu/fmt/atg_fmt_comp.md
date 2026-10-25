@@ -40,4 +40,4 @@ None beyond 4.
 
 ## 10. Status
 
-Implemented (amaterrace-gpu, 2026-10-25): the PASS of §8; equal to the former function on 2M random inputs (scratch harness).
+Implemented (amaterrace-gpu, 2026-10-25): the PASS of §8; equal to the former function on 1M random inputs (scratch harness).
