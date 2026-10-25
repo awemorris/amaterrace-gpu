@@ -147,3 +147,7 @@ set_property PACKAGE_PIN P1 [get_ports {pcie_txn[3]}]
 ## The bridge's user clock (axi_aclk_out) and gclk are asynchronous: the
 ## crossings are am_axi_cdc/am_sync (BAR0, MSI) and the AXI clock converter
 ## (BAR2).
+
+## The MIG's reset hold (atg_kc705_mig CTRL[0], ws288 p024) crosses from
+## gclk into ref_clk through am_sync: a static control bit.
+set_false_path -to [get_pins -hier -filter {NAME =~ mig/sync_hold/s1_reg*/D}]
