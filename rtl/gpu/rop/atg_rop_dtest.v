@@ -19,7 +19,8 @@
  * D24S8, the face's state): (ref & cmask) op (s_a & cmask); the fail,
  * pass or depth-fail op (VkStencilOp) into the written mask's bits; byte 3
  * enabled when it changes.  Depth (DEPTH[0]): the compare op against z_a
- * (D16 RNE(clamp01(z) x 65535), D24 atg_depth_u24, D32F the fp32 order);
+ * (D16 RNE(clamp01(z) x 65535), D24 atg_fmt_depth_u24, D32F the fp32 order key of
+ * atg_fmt_depth_key);
  * written with DEPTH[1] when the stencil and the depth passed.  See
  * spec/gpu/rop/atg_rop_dtest.md.
  */
@@ -73,9 +74,13 @@ module atg_rop_dtest (
 	/* 3. depth (needed by the stencil's op) */
 	wire nan = (zf[30:23] == 8'hFF && zf[22:0] != 23'd0) ||
 		(stored[30:23] == 8'hFF && stored[22:0] != 23'd0);
-	wire [23:0] zu24 = atg_depth_u24(zf);
+	wire [23:0] zu24;
+	wire [32:0] zkey, skey;
+	atg_fmt_depth_u24 u_zu24 (.f(zf), .u(zu24));
+	atg_fmt_depth_key u_zkey (.f(zf), .k(zkey));
+	atg_fmt_depth_key u_skey (.f(stored), .k(skey));
 	wire [15:0] zu16 = atg_fmt_f2unorm(zf, 6'd16);
-	wire d_cmp = d32 ? atg_depth_pass(depth[4:2], atg_depth_key(zf), atg_depth_key(stored), nan) :
+	wire d_cmp = d32 ? atg_depth_pass(depth[4:2], zkey, skey, nan) :
 		d24 ? atg_depth_pass(depth[4:2], {9'd0, zu24}, {9'd0, stored[23:0]}, 1'b0) :
 		atg_depth_pass(depth[4:2], {17'd0, zu16}, {17'd0, stored[15:0]}, 1'b0);
 	wire d_ok = !depth[0] || d_cmp;
