@@ -1807,7 +1807,11 @@ Registers, at offsets from the capability's register offset:
   without the ring, in IDLE and HALTED only: [0] BLIT, [1] DRAW,
   [2] DISPATCH. The host polls the unit's STATUS busy bit for the end. A
   KICK in another state, or while the unit is busy, is a fault of kind 6;
-  a KICK of a unit the GPU does not have is a fault of kind 2.
+  a KICK of a unit the GPU does not have is a fault of kind 2. With the
+  PROT capability (section 11.6) a KICK runs as session 0: it is a fault
+  of kind 6 while the units still run for a protected session (after a
+  protected session's work, until a packet of session 0 has started a
+  unit).
 
 With these two, a board can be brought up with register accesses alone:
 fill and copy with KICK.BLIT, then read memory back through the debug port.

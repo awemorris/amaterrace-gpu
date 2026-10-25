@@ -36,8 +36,13 @@
  *     PROT_INV_N (writing it invalidates the MC's PLB), the CAM's
  *     GIDX/GBASE/GLIMIT/GCTL (writing GCTL writes the entry), PROT_INFO,
  *     PROT_TBASE, PROT_G0, PROT_G1 (0x32 UOP_SELF is atg_cpu_win's).
+ *   - The host's KICK starts a unit on the driver's state outside the
+ *     sequencer: it is taken only while the units are session 0's
+ *     (kick_ok: no switch, prot_unit 0); a kick of the shader units
+ *     (su_kick, also the sequencer's) adds prot_unit to resid.
  *   - Faults: fault_tag = SLOT_TAG of the MC's refused request's slot,
- *     unit_tag = SLOT_TAG of prot_unit.
+ *     unit_tag = SLOT_TAG of prot_unit; wdt_tag = unit_tag during a switch
+ *     (the watchdog then counts the drained session's work), else 0.
  *
  * rst_n is the CP's core reset (CTRL.RESET).
  */
@@ -102,7 +107,12 @@ module atg_cp_prot #(
 	/* Faults. */
 	input wire [5:0] fault_slot,
 	output wire [7:0] fault_tag,
-	output wire [7:0] unit_tag
+	output wire [7:0] unit_tag,
+	output wire [7:0] wdt_tag,
+
+	/* The host's KICK. */
+	output wire kick_ok,
+	input wire su_kick
 );
 	`include "ghci_regs.vh"
 
@@ -200,6 +210,8 @@ module atg_cp_prot #(
 
 	wire need = u_req[0] && (cur_slot != prot_unit || !known);
 	assign u_ok = st == S_IDLE && !need;
+	assign kick_ok = st == S_IDLE && prot_unit == 6'd0;
+	assign wdt_tag = st != S_IDLE ? unit_tag : 8'd0;
 `ifdef MUT_CPPROT_NOINV
 	assign sw_inv = 1'b0;
 `else
@@ -242,7 +254,7 @@ module atg_cp_prot #(
 				if (need) begin
 					tgt <= cur_slot;
 					st <= S_DRAIN;
-				end else if (u_req[1]) begin
+				end else if (u_req[1] || su_kick) begin
 					/* The shader units get prot_unit's data. */
 					if (r_kind == R_NONE) begin
 						r_kind <= R_SLOT;

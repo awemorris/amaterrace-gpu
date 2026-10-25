@@ -41,6 +41,9 @@ MC (8), faults (3).
 | `prot_unit` | out | 6 | The slot the units run for (their requests' chk and slot) |
 | `tbase`, `inv_valid`, `inv_g`, `inv_n` / `inv_pending`, `gw_valid`, `gw_idx`, `gw_data` | out / in | | To `atg_mc_prot` |
 | `fault_slot` / `fault_tag`, `unit_tag` | in / out | 6 / 8, 8 | SLOT_TAG of the MC's refused request's slot; of prot_unit |
+| `wdt_tag` | out | 8 | unit_tag while a switch runs (the watchdog then counts the drained session's work: FAULT_INFO[31:24] of a watchdog fault), else 0 |
+| `kick_ok` | out | 1 | The host's KICK may run: no switch and prot_unit 0 (else atg_cp_ctl refuses it, kind 6) |
+| `su_kick` | in | 1 | A kick of the shader units (DRAW, DISPATCH, the sequencer's or the host's): adds prot_unit to resid |
 
 ## 4. Behaviour
 
@@ -82,12 +85,17 @@ A switch: the drain (the earlier work), one cycle of INV, and the scrub (the SUs
 
 - After a reset the first unit µop (even of slot 0) switches (prot_unit unknown); the first
   protected one scrubs (resid mixed).
-- A host KICK does not go through the switch (it is taken in IDLE and HALTED only; the units run
-  for prot_unit, which is 0 after a reset).  Not done: the watchdog's tag during DRAIN.
+- A host KICK does not go through the switch (it is taken in IDLE and HALTED only): it is taken
+  only while the units are session 0's (kick_ok: prot_unit 0, no switch; 0 after a reset), so its
+  work runs unchecked and never for a protected session; else it is a fault of kind 6.  After a
+  protected session's work the driver runs a µop of session 0 (any packet of tag 0 that starts a
+  unit) before a KICK.  A kicked DRAW or DISPATCH adds owner 0 to resid (su_kick).
+- The watchdog during a switch's DRAIN counts the drained session's work: its fault's tag is
+  wdt_tag (SLOT_TAG of the old prot_unit).
 
 ## 8. What the TB checks
 
-`sim/tb/atg_cp_prot_tb.v`: groups regs, slots, uslot, switch, close, mc; mutations
+`sim/tb/atg_cp_prot_tb.v`: groups regs, slots, uslot, switch, close, mc, kick; mutations
 `MUT_CPPROT_CLOSEKEEP`, `MUT_CPPROT_NODRAIN`, `MUT_CPPROT_NOSCRUB`, `MUT_CPPROT_NOINV`,
 `MUT_CPPROT_RESID0`, `MUT_CPPROT_FCHK` fail it.  The packet's slot and the FIFO's side:
 `atg_cpu_win_tb` (side); DMA_GO[17]/[18]: `atg_cpu_dma_tb` (`MUT_CPPROT_DMACHK`); the

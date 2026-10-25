@@ -348,6 +348,8 @@ module atg_top #(
 	/* The sequencer's µop and the CPU's window, for atg_cp_prot. */
 	wire [6:0] fw_side, u_side;
 	wire u_fw, u_ok, f_chk;
+	wire prot_kick_ok;	/* KICK: the units are session 0's */
+	wire [7:0] prot_wdt_tag;	/* a watchdog fault's job tag */
 	wire [1:0] u_req;
 	wire [7:0] u_tag;
 	wire [5:0] f_slot, v_slot;
@@ -459,6 +461,8 @@ module atg_top #(
 		.u_req(u_req),
 		.u_tag(u_tag),
 		.u_ok(u_ok),
+		.kick_prot_ok(prot_kick_ok),
+		.wdt_tag(prot_wdt_tag),
 		.f_chk(f_chk),
 		.f_slot(f_slot),
 		.cpu_st_ridx(cpu_st_ridx),
@@ -701,7 +705,8 @@ module atg_top #(
 			.tbase(prot_tbase), .inv_valid(prot_inv_valid), .inv_g(prot_inv_g),
 			.inv_n(prot_inv_n), .inv_pending(mc_inv_pending), .gw_valid(prot_gw_valid),
 			.gw_idx(prot_gw_idx), .gw_data(prot_gw_data),
-			.fault_slot(mc_fault_slot), .fault_tag(prot_fault_tag), .unit_tag(prot_unit_tag)
+			.fault_slot(mc_fault_slot), .fault_tag(prot_fault_tag), .unit_tag(prot_unit_tag),
+			.wdt_tag(prot_wdt_tag), .kick_ok(prot_kick_ok), .su_kick(draw_kick || cs_kick)
 		);
 		/* The MC's refusal: the slot's session; a unit's other faults: prot_unit's. */
 		reg [7:0] f_tag;
@@ -735,6 +740,8 @@ module atg_top #(
 		assign prot_gw_data = 50'd0;
 		assign prot_fault_tag = 8'd0;
 		assign prot_unit_tag = 8'd0;
+		assign prot_wdt_tag = 8'd0;
+		assign prot_kick_ok = 1'b1;
 		assign mc_fault_tag = 8'd0;
 		wire unused_np = &{1'b0, sb_we, sb_re, sb_idx, sb_wdata, u_tag, u_fw, u_side, u_req,
 			mc_fault_prot, mc_fault_mem, mc_fault_slot, mc_inv_pending, mc_chk_idle, drain_ok,

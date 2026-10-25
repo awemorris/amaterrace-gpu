@@ -24,6 +24,9 @@
  *           next session in that slot gets a scrub
  *   mc      PROT_INV_G/N and the CAM's registers make one pulse each with
  *           the values for the MC
+ *   kick    kick_ok only while the units are session 0's, wdt_tag = the
+ *           drained session's tag during a switch, su_kick makes the shader
+ *           units' data mixed (the next protected switch scrubs)
  * Mutations (each must FAIL): MUT_CPPROT_CLOSEKEEP, MUT_CPPROT_NODRAIN,
  * MUT_CPPROT_NOSCRUB, MUT_CPPROT_NOINV, MUT_CPPROT_RESID0, MUT_CPPROT_FCHK.
  */
@@ -65,7 +68,9 @@ module atg_cp_prot_tb;
 	wire [5:0] gw_idx;
 	wire [49:0] gw_data;
 	reg [5:0] fault_slot = 6'd0;
-	wire [7:0] fault_tag, unit_tag;
+	wire [7:0] fault_tag, unit_tag, wdt_tag;
+	wire kick_ok;
+	reg su_kick = 1'b0;
 
 	atg_cp_prot #(.SLOTS(8'd31), .GRANTS(16'd64), .GIDX_W(6)) dut (
 		.clk(clk), .rst_n(rst_n),
@@ -80,7 +85,8 @@ module atg_cp_prot_tb;
 		.prot_unit(prot_unit),
 		.tbase(tbase), .inv_valid(inv_valid), .inv_g(inv_g), .inv_n(inv_n),
 		.inv_pending(1'b0), .gw_valid(gw_valid), .gw_idx(gw_idx), .gw_data(gw_data),
-		.fault_slot(fault_slot), .fault_tag(fault_tag), .unit_tag(unit_tag)
+		.fault_slot(fault_slot), .fault_tag(fault_tag), .unit_tag(unit_tag),
+		.wdt_tag(wdt_tag), .kick_ok(kick_ok), .su_kick(su_kick)
 	);
 
 	integer errors = 0, before;
@@ -341,6 +347,27 @@ module atg_cp_prot_tb;
 		check(n_gw == 1 && last_gw_idx == 6'd17 &&
 			last_gw == {21'h140, 20'h100, 1'b0, 1'b1, 6'd3, 1'b1}, "CAM write");
 		group("mc");
+
+		/*
+		 * kick: the host's KICK only while the units are session 0's; the
+		 * watchdog's tag during a switch is the drained session's; a kick
+		 * of the shader units adds prot_unit (0) to their data's owners.
+		 */
+		check(prot_unit == 6'd2 && !kick_ok && wdt_tag == 8'd0, "no KICK for slot 2's units");
+		drain_ok = 1'b0;
+		uop(1'b0, 8'd77, 7'd0, 1'b0, 10);
+		check(waited >= 10 && wdt_tag == 8'd11 && !kick_ok, "the drained session's watchdog tag");
+		drain_ok = 1'b1;
+		repeat (4) @(negedge clk);
+		check(prot_unit == 6'd0 && kick_ok && wdt_tag == 8'd0, "KICK for session 0's units");
+		s0 = n_scrub;
+		@(negedge clk);
+		su_kick = 1'b1;
+		@(negedge clk);
+		su_kick = 1'b0;
+		uop(1'b0, 8'd11, 7'd0, 1'b1, 50);
+		check(prot_unit == 6'd2 && n_scrub == s0 + 1, "a kicked draw's data is scrubbed");
+		group("kick");
 
 		if (errors == 0)
 			$display("PASS atg_cp_prot");

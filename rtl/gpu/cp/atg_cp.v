@@ -155,6 +155,8 @@ module atg_cp #(
 	output wire [1:0] u_req,
 	output wire [7:0] u_tag,
 	input wire u_ok,
+	input wire kick_prot_ok,	/* KICK: the units are session 0's */
+	input wire [7:0] wdt_tag,	/* the job tag of a watchdog fault (the drained session's) */
 	input wire f_chk,
 	input wire [5:0] f_slot,
 	input wire [9:0] cpu_st_ridx,
@@ -294,6 +296,7 @@ module atg_cp #(
 		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
 		.mc_fault_write(mc_fault_write), .mc_fault_prot(mc_fault_prot),
 		.mc_fault_mem(mc_fault_mem), .mc_fault_tag(mc_fault_tag),
+		.kick_prot_ok(kick_prot_ok), .wdt_tag(wdt_tag),
 		.src_fault({x_fault[1], blt_error, cpu_fault, x_fault[0], s_fence_fault,
 			s_lock_fault, s_seq_fault, s_ring_fault}),
 		.src_kind({x_fault_kind[7:4], blt_error_kind, GHCI_FAULT_WATCHDOG, x_fault_kind[3:0],
