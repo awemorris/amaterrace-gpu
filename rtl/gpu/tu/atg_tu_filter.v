@@ -11,51 +11,25 @@
  * compare sampler, and blends nearest, bilinear, and over the passes of
  * 3D linear and mip linear filtering, per lane.
  *
- * Takes one quad (tc_*) in IDLE, does one lane per cycle (its four
- * channels) and holds tr_* until taken; order is kept.  Per channel, with
- * a, b, c, d the 8-bit values of texels 0-3 and fu, fv the lane's weights:
- * bilinear (tc_ctl[0]) R = (a (256 − fu) + b fu) (256 − fv) + (c (256 −
- * fu) + d fu) fv, otherwise R = a × 65536.  The 8-bit values are the
- * texel's bytes (BGRA8, tc_ctl[1]: bytes 0 and 2 swapped) or, for a
- * compare (tc_ctl[9]), (255 when Dref passes VkCompareOp tc_ctl[12:10]
- * against the texel's depth, else 0; 0; 0; 255), Dref the lane's tc_value
- * word (D24: Dref to unorm24 and an integer compare; D32F, tc_ctl[1]: an
- * fp32 compare, NaN passing only NOT_EQUAL and ALWAYS; include/
- * atg_depth.vh, as the ROP's depth test).
- * Passes: each adds R × W to the lane's sums A (the first, tc_ctl[5] = 0,
- * starts them), W = (fw or 256 − fw) × (fl or 256 − fl) by the pass's
- * slice and level bits tc_ctl[17], [18] (fl, fw the lane's tc_wts[23:16],
- * [31:24]); a pass with tc_ctl[4] (more follow) returns nothing.  The last
- * returns A / (255 × 2^32) as A × 0x0101010101 / 2^72 rounded to fp32 to
- * nearest even (A = a × 2^32 gives exactly the correctly rounded a / 255).
- * A depth format without compare (tc_ctl[8]) returns texel 0 as (D, 0, 0,
- * 1): D32F the word itself, D24 c / (2^24 − 1) as c × (2^48 + 2^24 + 1) /
- * 2^72 rounded to nearest even (the correctly rounded quotient).
- * Gather (tc_ctl[13]): the lane's words are component tc_ctl[15:14] of
- * texels 2, 3, 1, 0 ((i0, j1), (i1, j1), (i1, j0), (i0, j0)), converted
- * alone: UNORM a / 255, a depth component 0 D (others 0, 3 1.0), a
- * compare 1.0 or 0.0.
- * Lanes outside tc_mask give 0; texsz (tc_ctl[2]) gives word 0 = the
- * lane's tc_value word, the others 0; the LOD query (tc_ctl[2], [16])
- * gives tc_value [15:0] / 256 (the level accessed) and [31:16] / 256
- * (λ'), both signed, as fp32.  texf texels convert like the others.
- * RGB565 (tc_ctl[19], the texel's bits 15:0): texf converts exactly, (R /
- * 31, G / 63, B / 31, 1) rounded to nearest even; the other operations
- * take the texel as RGBA8 ((c << 3) | (c >> 2), (c << 2) | (c >> 4), alpha
- * 255) and filter it like RGBA8.
- * The VkFormat of TEX_FORMAT (tc_ctl[34:27]; 0 for the earlier codes):
- * R8_UNORM (9) and R8G8_UNORM (16) texels are taken as RGBA8 with the
- * missing bytes 0 and alpha 255 (border texels too: Vulkan replaces the
- * format's components only); D16_UNORM (124) compares the texel's bits
- * 15:0 with Dref converted to 16-bit UNORM (atg_fmt_f2unorm).  The
- * component swizzle (tc_ctl[47:36], VkComponentSwizzle of R, G, B, A:
- * IDENTITY, ZERO, ONE, R, G, B, A) is applied last, after a compare, and
- * gather takes the component that the swizzle puts in its place (ZERO and
- * ONE: 0.0 and 1.0); the queries are not swizzled.
+ * tools/tumodel.py is the reference; the rules (the bytes and compares,
+ * bilinear R, the passes' sums A and A / (255 × 2^32) as fp32, depth
+ * without compare, gather, texsz and texqlod, RGB565, R8 and R8G8, D16
+ * compare, the swizzle) are in spec/gpu/tu/atg_tu_filter.md section 4.
+ *
+ * Pipeline (spec section 6): a pass is taken in IDLE or with its
+ * predecessor's lane 3 and issues its lanes 0-3 one a cycle into 18
+ * stages without stalls: P1 the lane (here), P1-P5 Dref, the compares and
+ * the weights (atg_tu_fpre), P5 the channels' bytes, P5-P11 the sums
+ * (atg_tu_fsum, the sums A read in P10 and written in P11), P12-P18 the
+ * conversion to fp32 (atg_tu_frnd), P18 the lane's words (atg_tu_fword).
+ * The quads go out through a FIFO of 4; a pass is taken only while the
+ * last passes taken whose quads are not yet returned are fewer than 4.
+ * idle: no quad taken and not returned and no pass with more to follow
+ * pending (atg_tu hands a pass of the other path only then).
  * See spec/gpu/tu/atg_tu_filter.md.
  *
- * States: IDLE →(tc)→ RUN (lanes 0-3) → OUT →(tr_ready)→ IDLE; a pass
- * with more to follow (tc_ctl[4]) goes from RUN back to IDLE. */
+ * States: IDLE →(tc)→ RUN (lanes 0-3; the next pass is taken with lane 3)
+ * → IDLE. */
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -73,286 +47,326 @@ module atg_tu_filter (
 	input wire [49:0] tc_ctl,
 	input wire [127:0] tc_value,
 	input wire tc_last,
+	output wire idle,
 	/* Return to the SU */
 	output wire tr_valid,
 	input wire tr_ready,
-	output reg [15:0] tr_tag,
-	output reg [511:0] tr_data,
-	output reg tr_last
+	output wire [15:0] tr_tag,
+	output wire [511:0] tr_data,
+	output wire tr_last
 );
-	`include "atg_depth.vh"
-	`include "atg_fmt_info.vh"
-	`include "atg_fmt_pack.vh"
-	localparam [1:0] IDLE = 2'd0, RUN = 2'd1, OUT = 2'd2;
-
-	/* p × 2^(n + eb − 127) as fp32 with n the msb position (p > 0, the
-	 * result normal), RNE; 0 for 0. */
-	function [31:0] rnd81;
-		input [80:0] p;
-		input [7:0] eb;
-		integer i;
-		reg [80:0] y;
-		reg [6:0] n;
-		reg [24:0] m;
-		reg [7:0] e;
-		begin
-			n = 7'd0;
-			for (i = 0; i < 81; i = i + 1)
-				if (p[i])
-					n = i[6:0];
-			y = p << (7'd80 - n);
-			m = {1'b0, y[80:57]} + {24'd0, y[56] && (y[55:0] != 56'd0 || y[57])};
-			e = eb + {1'b0, n} + {7'd0, m[24]};
-			rnd81 = p == 81'd0 ? 32'd0 : {1'b0, e, m[24] ? m[23:1] : m[22:0]};
-		end
-	endfunction
-
-	/* The conversions are rnd81(p, eb) of the products below; each lane's
-	 * four components share four rnd81 (the cases that use them exclude
-	 * one another).
-	 * A / (255 × 2^32): A × 0x0101010101 × 2^-72 (A < 2^40), eb 55; an
-	 * 8-bit a / 255 is A = a × 2^32. */
-	function [80:0] p40;
-		input [39:0] a;
-		p40 = {41'd0, a} + ({41'd0, a} << 8) + ({41'd0, a} << 16) + ({41'd0, a} << 24) +
-			({41'd0, a} << 32);
-	endfunction
-
-	/* c / 31 (5 bits): c × sum(2^5i, i < 16) × 2^-80, eb 47; c / 63 (6
-	 * bits): c × sum(2^6i, i < 13) × 2^-78, eb 49 (never a tie: rounding
-	 * is exact). */
-	function [80:0] p5;
-		input [4:0] c;
-		integer i;
-		begin
-			p5 = 81'd0;
-			for (i = 0; i < 16; i = i + 1)
-				p5 = p5 | ({76'd0, c} << (5 * i));
-		end
-	endfunction
-	function [80:0] p6;
-		input [5:0] c;
-		integer i;
-		begin
-			p6 = 81'd0;
-			for (i = 0; i < 13; i = i + 1)
-				p6 = p6 | ({75'd0, c} << (6 * i));
-		end
-	endfunction
+	localparam IDLE = 1'b0, RUN = 1'b1;
+	integer i, c, t;
 
 	/* RGB565 as RGBA8 (for the filtered operations). */
 	function [31:0] x565;
-		input [15:0] t;
-		x565 = {8'hFF, t[4:0], t[4:2], t[10:5], t[10:9], t[15:11], t[15:13]};
+		input [15:0] w;
+		x565 = {8'hFF, w[4:0], w[4:2], w[10:5], w[10:9], w[15:11], w[15:13]};
 	endfunction
 
 	/* R8 and R8G8 as RGBA8 (the missing bytes 0, alpha 255). */
 	function [31:0] xrg;
-		input [31:0] t;
+		input [31:0] w;
 		input [7:0] f;
-		xrg = f == 8'd9 ? {8'hFF, 16'd0, t[7:0]} : f == 8'd16 ? {8'hFF, 8'd0, t[15:0]} : t;
+		xrg = f == 8'd9 ? {8'hFF, 16'd0, w[7:0]} : f == 8'd16 ? {8'hFF, 8'd0, w[15:0]} : w;
 	endfunction
 
-	/* The component swizzle of four fp32 components. */
-	function [127:0] swz4;
-		input [127:0] v;
-		input [11:0] z;
-		integer c;
-		reg [2:0] sc;
-		begin
-			for (c = 0; c < 4; c = c + 1) begin
-				sc = z[3*c +: 3];
-				swz4[c*32 +: 32] = sc == 3'd1 ? 32'd0 : sc == 3'd2 ? 32'h3F800000 :
-					sc >= 3'd3 && sc <= 3'd6 ? v[{sc[1:0] + 2'd1, 5'd0} +: 32] : v[c*32 +: 32];
-			end
-		end
+	/* The component that swizzle code 3-6 (R, G, B, A) takes, by its bits
+	 * 1:0. */
+	function [1:0] zsrc;
+		input [1:0] s;
+		case (s)
+		2'd3: zsrc = 2'd0;
+		2'd0: zsrc = 2'd1;
+		2'd1: zsrc = 2'd2;
+		default: zsrc = 2'd3;
+		endcase
 	endfunction
 
-	/* unorm24 to fp32: c × (2^48 + 2^24 + 1) × 2^-72, eb 55.  A signed
-	 * 16-bit value v with 8 fraction bits as fp32 (exact): the sign of v
-	 * and rnd81(|v|, 119). */
-	function [80:0] p24;
-		input [23:0] c;
-		p24 = {57'd0, c} | ({57'd0, c} << 24) | ({57'd0, c} << 48);
+	/* The texel of word g of a gather: 2, 3, 1, 0. */
+	function [1:0] gtx;
+		input [1:0] g;
+		gtx = g == 2'd0 ? 2'd2 : g == 2'd1 ? 2'd3 : g == 2'd2 ? 2'd1 : 2'd0;
 	endfunction
 
-	reg [1:0] st;
+	reg st;
 	reg [1:0] k;
 	reg [511:0] tx;
 	reg [127:0] wts;
 	reg [3:0] mask;
 	reg [49:0] ctl;
 	reg [127:0] val;
+	reg [15:0] tag;
+	reg last;
+	reg mid;	/* a pass with more to follow taken, its last not yet */
+	reg [2:0] nq;	/* last passes taken, quads not yet returned */
 	reg [639:0] acc;	/* the passes' sums: lane-major, 4 × 40 bits a lane */
 
-	/* Lane k: its texels (RGB565 as RGBA8), weights, reference and kept sums. */
-	wire [127:0] lraw = tx[k*128 +: 128];
-	wire [7:0] vkf = ctl[34:27];
-	wire [127:0] lt = ctl[19] ? {x565(lraw[111:96]), x565(lraw[79:64]), x565(lraw[47:32]),
-		x565(lraw[15:0])} : {xrg(lraw[127:96], vkf), xrg(lraw[95:64], vkf), xrg(lraw[63:32], vkf),
-		xrg(lraw[31:0], vkf)};
-	wire [7:0] fu = wts[k*32 +: 8], fv = wts[k*32 + 8 +: 8];
-	wire [7:0] fl = wts[k*32 + 16 +: 8], fw = wts[k*32 + 24 +: 8];
-	wire [31:0] dref = val[k*32 +: 32];
-	wire [159:0] al = acc[k*160 +: 160];
-	/* The pass's weight: (fw or 256 − fw) × (fl or 256 − fl). */
-	wire [8:0] wa = ctl[17] ? {1'b0, fw} : 9'd256 - {1'b0, fw};
-	wire [8:0] wb = ctl[18] ? {1'b0, fl} : 9'd256 - {1'b0, fl};
-	wire [17:0] wp = {9'd0, wa} * {9'd0, wb};
-	wire [23:0] dref24 = atg_depth_u24(dref);
-	wire [15:0] dref16 = atg_fmt_f2unorm(dref, 6'd16);
-	wire d16 = vkf == 8'd124;
-	wire [32:0] dkey = atg_depth_key(dref);
-	wire dnan = dref[30:23] == 8'hFF && dref[22:0] != 23'd0;
-	reg [127:0] res, rn;
-	reg [159:0] sums;
-	reg [31:0] tex, tx0;
-	reg [3:0] ok;
-	reg [7:0] ca, cb, cc, cd;
-	reg [16:0] top, bot;
-	reg [25:0] r;
-	reg [39:0] rr;
-	reg [31:0] gt;
-	reg [7:0] gb;
-	reg [15:0] fx, fa;
-	reg [80:0] np;
-	reg [7:0] ne;
-	reg [32:0] ka, kb;
-	reg kn;
-	integer c, t, g;
-	/* Gather: the component the swizzle puts in place ctl[15:14] (gsw 1, 2:
-	 * the constants), and its byte (BGRA8 swaps R and B). */
-	wire [2:0] gsw = ctl[36 + 3 * ctl[15:14] +: 3];
-	wire [1:0] gsrc = gsw >= 3'd3 && gsw <= 3'd6 ? gsw[1:0] + 2'd1 : ctl[15:14];
-	wire [1:0] gsel = ctl[1] && !gsrc[0] ? gsrc ^ 2'd2 : gsrc;
-	always @(*) begin
-		/* Depth compare of the four texels: D32F the fp32 keys, D16 and D24
-		 * the integers. */
-		ka = ctl[1] ? dkey : d16 ? {17'd0, dref16} : {9'd0, dref24};
-		for (t = 0; t < 4; t = t + 1) begin
-			tex = lt[t*32 +: 32];
-			kb = ctl[1] ? atg_depth_key(tex) : d16 ? {17'd0, tex[15:0]} : {9'd0, tex[23:0]};
-			kn = ctl[1] && (dnan || (tex[30:23] == 8'hFF && tex[22:0] != 23'd0));
-			ok[t] = atg_depth_pass(ctl[12:10], ka, kb, kn);
-		end
-		res = 128'd0;
-		rn = 128'd0;
-		sums = 160'd0;
-		tx0 = lt[31:0];
-		for (c = 0; c < 4; c = c + 1) begin
-			if (ctl[9]) begin
-				/* (pass, 0, 0, 1) as bytes */
-				ca = c == 0 ? {8{ok[0]}} : c == 3 ? 8'hFF : 8'd0;
-				cb = c == 0 ? {8{ok[1]}} : c == 3 ? 8'hFF : 8'd0;
-				cc = c == 0 ? {8{ok[2]}} : c == 3 ? 8'hFF : 8'd0;
-				cd = c == 0 ? {8{ok[3]}} : c == 3 ? 8'hFF : 8'd0;
-			end else begin
-				/* byte of channel c: RGBA8 c, BGRA8 swaps R and B */
-				tex = lt[0 +: 32];
-				ca = tex[(ctl[1] && c != 1 && c != 3 ? 2 - c : c)*8 +: 8];
-				tex = lt[32 +: 32];
-				cb = tex[(ctl[1] && c != 1 && c != 3 ? 2 - c : c)*8 +: 8];
-				tex = lt[64 +: 32];
-				cc = tex[(ctl[1] && c != 1 && c != 3 ? 2 - c : c)*8 +: 8];
-				tex = lt[96 +: 32];
-				cd = tex[(ctl[1] && c != 1 && c != 3 ? 2 - c : c)*8 +: 8];
-			end
-			top = {9'd0, ca} * (17'd256 - {9'd0, fu}) + {9'd0, cb} * {9'd0, fu};
-			bot = {9'd0, cc} * (17'd256 - {9'd0, fu}) + {9'd0, cd} * {9'd0, fu};
-			r = ctl[0] ? {9'd0, top} * (26'd256 - {18'd0, fv}) + {9'd0, bot} * {18'd0, fv} :
-				{2'd0, ca, 16'd0};
-			rr = (ctl[5] ? al[c*40 +: 40] : 40'd0) + {16'd0, r[23:0]} * {22'd0, wp};
-			sums[c*40 +: 40] = rr;
-			/* Component c's conversion (word c of a gather): the LOD query's
-			 * fixed point; gather's D24 or byte; a depth texel's D24; RGB565's
-			 * texf; the sum. */
-			t = c == 0 ? 2 : c == 1 ? 3 : c == 2 ? 1 : 0;
-			gt = lt[t*32 +: 32];
-			gb = gt[gsel*8 +: 8];
-			fx = val[k*32 + 16*(c & 1) +: 16];
-			fa = fx[15] ? -fx : fx;
-			ne = 8'd55;
-			if (ctl[2]) begin
-				np = {65'd0, fa};
-				ne = 8'd119;
-			end else if (ctl[13])
-				np = ctl[8] ? p24(gt[23:0]) : p40({gb, 32'd0});
-			else if (ctl[8] && !ctl[9] && c == 0)
-				np = p24(tx0[23:0]);
-			else if (ctl[19] && ctl[3] && c == 1) begin
-				np = p6(lraw[10:5]);
-				ne = 8'd49;
-			end else if (ctl[19] && ctl[3] && c != 3) begin
-				np = p5(c == 0 ? lraw[15:11] : lraw[4:0]);
-				ne = 8'd47;
-			end else
-				np = p40(rr);
-			rn[c*32 +: 32] = rnd81(np, ne);
-		end
-		res = rn;
-		if (ctl[19] && ctl[3])	/* texf of RGB565: exact */
-			res[127:96] = 32'h3F800000;
-		if (ctl[8] && !ctl[9])
-			res = {32'h3F800000, 64'd0, ctl[1] ? tx0 : rn[31:0]};
-		if (ctl[13]) begin
-			/* gather: word g is texel 2, 3, 1, 0 */
-			for (g = 0; g < 4; g = g + 1) begin
-				t = g == 0 ? 2 : g == 1 ? 3 : g == 2 ? 1 : 0;
-				gt = lt[t*32 +: 32];
-				if (ctl[9])
-					res[g*32 +: 32] = ok[t] ? 32'h3F800000 : 32'd0;
-				else if (gsw == 3'd1 || gsw == 3'd2)
-					res[g*32 +: 32] = gsw == 3'd2 ? 32'h3F800000 : 32'd0;
-				else if (ctl[8])
-					res[g*32 +: 32] = gsrc == 2'd0 ? (ctl[1] ? gt : rn[g*32 +: 32]) :
-						gsrc == 2'd3 ? 32'h3F800000 : 32'd0;
-				else
-					res[g*32 +: 32] = rn[g*32 +: 32];
-			end
-		end else
-			res = swz4(res, ctl[47:36]);
-		if (ctl[2])
-			res = ctl[16] ? {64'd0, val[k*32 + 31], rn[62:32], val[k*32 + 15], rn[30:0]} :
-				{96'd0, val[k*32 +: 32]};
-		if (!mask[k])
-			res = 128'd0;
-	end
+	wire fifo_pop = tr_valid && tr_ready;
+	wire take = tc_valid && tc_ready;
+	wire [2:0] nq_n;
+	wire [1:0] k_inc;
+	wire nq_nc, k_nc;
 
-	assign tc_ready = st == IDLE;
-	assign tr_valid = st == OUT;
+	/* tc_ready is a register (replicated: it enables the pass's fields,
+	 * about 900 registers): from the next st, k and nq. */
+	(* max_fanout = 64 *) reg rdy;
+	wire st_n = take ? RUN : st == RUN && k == 2'd3 ? IDLE : st;
+	wire [1:0] k_n = take ? 2'd0 : st == RUN ? k_inc : k;
+
+	assign tc_ready = rdy;
+	assign idle = st == IDLE && !mid && nq == 3'd0;
+
+	/* nq + (a last pass taken) - (a quad returned) */
+	am_add #(.W(3)) u_nq (.a(nq), .b({3{fifo_pop}}), .ci(take && !tc_ctl[4]), .s(nq_n),
+		.co(nq_nc));
+	am_add #(.W(2)) u_k (.a(k), .b(2'd0), .ci(1'b1), .s(k_inc), .co(k_nc));
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= IDLE;
+			mid <= 1'b0;
+			nq <= 3'd0;
+			rdy <= 1'b1;
 		end else begin
-			case (st)
-			IDLE: if (tc_valid) begin
-				tx <= tc_texels;
-				wts <= tc_wts;
-				mask <= tc_mask;
-				ctl <= tc_ctl;
-				val <= tc_value;
-				tr_tag <= tc_tag;
-				tr_last <= tc_last;
-				k <= 2'd0;
+			nq <= nq_n;
+			rdy <= nq_n != 3'd4 && (st_n == IDLE || k_n == 2'd3);
+			if (take) begin
 				st <= RUN;
-			end
-			RUN: begin
-				acc[k*160 +: 160] <= sums;
-				if (!ctl[4])
-					tr_data[k*128 +: 128] <= res;
-				k <= k + 2'd1;
-				if (k == 2'd3)
-					st <= ctl[4] ? IDLE : OUT;
-			end
-			OUT: if (tr_ready)
+				mid <= tc_ctl[4];
+			end else if (st == RUN && k == 2'd3)
 				st <= IDLE;
-			default: st <= IDLE;
-			endcase
 		end
 	end
+	/* The pass's fields are taken in every cycle of tc_ready (the enables
+	 * do not wait for tc_valid; a cycle without one goes to IDLE). */
+	always @(posedge clk) begin
+		if (tc_ready) begin
+			tx <= tc_texels;
+			wts <= tc_wts;
+			mask <= tc_mask;
+			ctl <= tc_ctl;
+			val <= tc_value;
+			tag <= tc_tag;
+			last <= tc_last;
+		end
+		if (take)
+			k <= 2'd0;
+		else if (st == RUN)
+			k <= k_inc;
+	end
+	wire issue = st == RUN;
 
-	wire unused_ok = &{1'b0, ctl[49:48], ctl[35], ctl[26:20], ctl[7:6], r[25:24], wp[17], lraw};
+	/* ---- P1: lane k (RGB565, R8 and R8G8 as RGBA8) ---- */
+	wire [127:0] lraw = tx[k*128 +: 128];
+	wire [7:0] vkf = ctl[34:27];
+	wire [127:0] lt0 = ctl[19] ? {x565(lraw[111:96]), x565(lraw[79:64]), x565(lraw[47:32]),
+		x565(lraw[15:0])} : {xrg(lraw[127:96], vkf), xrg(lraw[95:64], vkf), xrg(lraw[63:32], vkf),
+		xrg(lraw[31:0], vkf)};
+
+	reg v1;
+	reg [127:0] lt1;
+	reg [15:0] r565_1;
+	reg [31:0] wl1, vw1;
+	reg [49:0] ctl1;
+	reg mk1, fin1, last1;
+	reg [1:0] k1;
+	reg [15:0] tag1;
+	always @(posedge clk) begin
+		lt1 <= lt0;
+		r565_1 <= lraw[15:0];
+		wl1 <= wts[k*32 +: 32];
+		vw1 <= val[k*32 +: 32];
+		ctl1 <= ctl;
+		mk1 <= mask[k];
+		fin1 <= !ctl[4];
+		last1 <= last;
+		k1 <= k;
+		tag1 <= tag;
+	end
+
+	/* ---- The fields that go along: P1 → P18 ---- */
+	/* {lt, r565, vw, ctl, mk, fin, last, k, tag}: 128 + 16 + 32 + 50 + 3 + 2 + 16 */
+	localparam DW = 247;
+	wire [DW-1:0] d1 = {lt1, r565_1, vw1, ctl1, mk1, fin1, last1, k1, tag1};
+	reg [DW-1:0] dl [2:18];
+	reg [18:2] vd;
+	always @(posedge clk) begin
+		dl[2] <= d1;
+		for (i = 3; i <= 18; i = i + 1)
+			dl[i] <= dl[i - 1];
+	end
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			v1 <= 1'b0;
+			vd <= 17'd0;
+		end else begin
+			v1 <= issue;
+			vd <= {vd[17:2], v1};
+		end
+	end
+	wire [49:0] ctl3 = dl[3][70:21], ctl4 = dl[4][70:21], ctl11 = dl[11][70:21];
+	wire [49:0] ctl14 = dl[14][70:21], ctl18 = dl[18][70:21];
+	wire [127:0] lt4 = dl[4][246:119], lt14 = dl[14][246:119], lt18 = dl[18][246:119];
+	wire [15:0] r565_14 = dl[14][118:103];
+	wire [31:0] vw18 = dl[18][102:71];
+	wire [1:0] k10 = dl[10][17:16], k11 = dl[11][17:16];
+	wire v11 = vd[11];
+	wire mk18 = dl[18][20], fin18 = dl[18][19], last18 = dl[18][18];
+	wire [1:0] k18 = dl[18][17:16];
+	wire [15:0] tag18 = dl[18][15:0];
+
+	/* ---- P1 → P5: Dref, the compares, the weights (atg_tu_fpre) ---- */
+	wire [3:0] ok;	/* P4 */
+	wire [67:0] w5;
+	wire [16:0] wp5;
+	wire [31:0] fa5;
+
+	atg_tu_fpre pre (
+		.clk(clk), .i_vw(vw1), .i_lt(lt1), .i_wl(wl1), .i_bil(ctl1[0]), .i_p17(ctl1[17]),
+		.i_p18(ctl1[18]), .i_d32(ctl1[1]), .i_d16(ctl1[34:27] == 8'd124), .i_op(ctl1[12:10]),
+		.o_ok(ok), .o_w(w5), .o_wp(wp5), .o_fa(fa5)
+	);
+
+	/* ---- P4 → P5: the compares; the channels' bytes ---- */
+	reg [127:0] by;	/* channel c, texel t: by[(c*4 + t)*8 +: 8] */
+	reg [31:0] tw4;
+	always @(*) begin
+		for (c = 0; c < 4; c = c + 1)
+			for (t = 0; t < 4; t = t + 1) begin
+				tw4 = lt4[t*32 +: 32];
+				if (ctl4[9])
+					/* (pass, 0, 0, 1) as bytes */
+					by[(c*4 + t)*8 +: 8] = c == 0 ? {8{ok[t]}} : c == 3 ? 8'hFF : 8'd0;
+				else
+					/* byte of channel c: RGBA8 c, BGRA8 swaps R and B */
+					by[(c*4 + t)*8 +: 8] =
+						tw4[(ctl4[1] && c != 1 && c != 3 ? 2 - c : c)*8 +: 8];
+			end
+	end
+
+	reg [127:0] by5;
+	reg [3:0] ok5;
+	always @(posedge clk) begin
+		by5 <= by;
+		ok5 <= ok;
+	end
+
+	/* ---- P5 → P11: the sums (atg_tu_fsum a channel), written in P11 ---- */
+	wire [39:0] rr [0:3];
+	/* lane k's sums, read in P10 (the lane's previous pass wrote them 4 or
+	 * more cycles before) */
+	reg [159:0] al;
+	always @(posedge clk)
+		al <= k10 == 2'd0 ? acc[159:0] : k10 == 2'd1 ? acc[319:160] :
+			k10 == 2'd2 ? acc[479:320] : acc[639:480];
+	reg [39:0] rr12 [0:3];
+	genvar gc;
+	generate
+	for (gc = 0; gc < 4; gc = gc + 1) begin : g_acc
+		atg_tu_fsum sum (
+			.clk(clk), .i_by(by5[gc*32 +: 32]), .i_w(w5), .i_wp(wp5), .i_al(al[gc*40 +: 40]),
+			.i_acc(ctl11[5]), .o_rr(rr[gc])
+		);
+		always @(posedge clk)
+			rr12[gc] <= rr[gc];
+	end
+	endgenerate
+	always @(posedge clk)
+		if (v11)
+			case (k11)
+			2'd0: acc[159:0] <= {rr[3], rr[2], rr[1], rr[0]};
+			2'd1: acc[319:160] <= {rr[3], rr[2], rr[1], rr[0]};
+			2'd2: acc[479:320] <= {rr[3], rr[2], rr[1], rr[0]};
+			default: acc[639:480] <= {rr[3], rr[2], rr[1], rr[0]};
+			endcase
+
+	reg [31:0] fa6 [6:14];
+	reg [3:0] ok6 [6:18];
+	always @(posedge clk) begin
+		fa6[6] <= fa5;
+		ok6[6] <= ok5;
+		for (i = 7; i <= 14; i = i + 1)
+			fa6[i] <= fa6[i - 1];
+		for (i = 7; i <= 18; i = i + 1)
+			ok6[i] <= ok6[i - 1];
+	end
+	wire [31:0] fa14 = fa6[14];
+	wire [3:0] ok18 = ok6[18];
+
+
+	/* ---- P12 → P18, per channel: A × 0x0101010101 = (A × 257) × 65537
+	 * + A × 2^32 (P13-P14), or the other conversions' integers (P14 → P15);
+	 * then rnd81: p × 2^(n + eb − 127) as fp32 rounded to nearest even, n
+	 * the msb position (80 − lz, P16), eb 55, the LOD query 119, RGB565's
+	 * G 49, R and B 47 (the codes 0-3); p << lz (P17); the rounding and
+	 * the exponent eb + n (+ 1 on a carry) (P18). ---- */
+	/* gather's component and byte, from P13's fields into P14 (the
+	 * selections are registered: they drive every bit of the four
+	 * channels' integers) */
+	wire [49:0] ctl13 = dl[13][70:21];
+	reg [2:0] gsw13;
+	reg [1:0] gsrc13;
+	reg [1:0] gsel14;
+	always @(*) begin
+		case (ctl13[15:14])
+		2'd0: gsw13 = ctl13[38:36];
+		2'd1: gsw13 = ctl13[41:39];
+		2'd2: gsw13 = ctl13[44:42];
+		default: gsw13 = ctl13[47:45];
+		endcase
+		gsrc13 = gsw13 >= 3'd3 && gsw13 <= 3'd6 ? zsrc(gsw13[1:0]) : ctl13[15:14];
+	end
+	always @(posedge clk)
+		gsel14 <= ctl13[1] && !gsrc13[0] ? gsrc13 ^ 2'd2 : gsrc13;
+	reg [127:0] rn18;
+	generate
+	for (gc = 0; gc < 4; gc = gc + 1) begin : g_cv
+		wire [31:0] gtw = lt14[gtx(gc)*32 +: 32];
+		wire [31:0] rn;
+
+		atg_tu_frnd rnd (
+			.clk(clk), .i_rr(rr12[gc]),
+			.i_sel(ctl13[2] ? 3'd1 : ctl13[13] ? (ctl13[8] ? 3'd2 : 3'd3) :
+				ctl13[8] && !ctl13[9] && gc == 0 ? 3'd4 :
+				ctl13[19] && ctl13[3] && gc == 1 ? 3'd5 :
+				ctl13[19] && ctl13[3] && gc != 3 ? 3'd6 : 3'd0),
+			.i_fx(fa14[(gc % 2)*16 +: 16]), .i_g24(gtw[23:0]), .i_gb(gtw[gsel14*8 +: 8]),
+			.i_d24(lt14[23:0]), .i_c6(r565_14[10:5]),
+			.i_c5(gc == 0 ? r565_14[15:11] : r565_14[4:0]), .o_rn(rn)
+		);
+		always @(*)
+			rn18[gc*32 +: 32] = rn;
+	end
+	endgenerate
+
+	/* ---- P18 → out: the lane's words (atg_tu_fword) ---- */
+	wire [127:0] res;
+
+	atg_tu_fword word (.i_rn(rn18), .i_lt(lt18), .i_vw(vw18), .i_ok(ok18), .i_ctl(ctl18),
+		.i_mk(mk18), .o_res(res));
+
+	/* ---- The quad's words; the FIFO of returned quads ---- */
+	reg [383:0] asmb;	/* lanes 0-2 */
+	always @(posedge clk)
+		if (vd[18] && fin18 && k18 != 2'd3)
+			asmb[k18*128 +: 128] <= res;
+
+	wire [528:0] fo;
+	wire f_in_ready;
+	wire [2:0] f_count;
+
+	am_fifo #(.W(529), .DEPTH_LOG2(2)) outq (
+		.clk(clk), .rst_n(rst_n), .in_valid(vd[18] && fin18 && k18 == 2'd3),
+		.in_ready(f_in_ready), .in_data({last18, tag18, res, asmb}), .out_valid(tr_valid),
+		.out_ready(tr_ready), .out_data(fo), .count(f_count)
+	);
+	assign tr_data = fo[511:0];
+	assign tr_tag = fo[527:512];
+	assign tr_last = fo[528];
+
+	wire unused_ok = &{1'b0, ctl3, ctl4, ctl11, ctl13, ctl14, ctl18, nq_nc, k_nc,
+		f_in_ready, f_count, last1, vd[17:12], vd[10:2]};
 endmodule
 
 `default_nettype wire

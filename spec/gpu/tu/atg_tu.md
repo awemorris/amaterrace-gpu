@@ -65,7 +65,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Wiring only; busy is the OR of the stage valids (the cache's misses are inside ta_valid).  The cache's output goes to atg_tu_filter, or with tc_ctl[20] to atg_tu_ffilt, and is taken only while both filters are idle (tc_ready is the AND of theirs): one quad at a time is in the filters, so the returns (tr_* is the one filter's that holds a result) stay in request order; switching paths costs no more than the filters' own one-quad-at-a-time.
+Wiring only; busy is the OR of the stage valids (the cache's misses are inside ta_valid).  The cache's output goes to atg_tu_filter, or with tc_ctl[20] to atg_tu_ffilt, and is taken by the filter of its path only while the other filter is idle (holds no quad): atg_tu_filter keeps up to 4 quads of its path in its pipeline and FIFO, atg_tu_ffilt one, and the returns (tr_* is the one filter's that holds a result) stay in request order; a switch of path waits until the other path's quads are returned.
 
 As implemented: busy = tx_valid | ta_valid | tc_valid | tr_valid | desc_busy (a quad on one of the links, or atg_tu_desc computing level offsets; a quad being worked on inside a child is not seen).  STATUS.TU_BUSY is therefore approximate; the STATE of the TU is protected by atg_cp_seq, whose SET_REG of 0x090-0x18F also waits for the RX and the SUs (they hold every fragment that is still to be textured).
 

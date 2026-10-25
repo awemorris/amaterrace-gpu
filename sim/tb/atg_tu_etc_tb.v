@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_tu_etc_tb: atg_tu_etc (combinational) against tools/etcmodel.py
+ * atg_tu_etc_tb: atg_tu_etc (4 cycles) against tools/etcmodel.py
  * (sim/vec/tu_etc.txt), every texel of each block.  Groups: "modes" (RGB
  * blocks of every colour mode with and without the flip bit, RGB8A1 with
  * and without the opaque bit, EAC blocks of every table with multipliers 0,
@@ -19,13 +19,15 @@
 `default_nettype none
 
 module atg_tu_etc_tb;
+	reg clk = 1'b0;
+	always #5 clk = !clk;
 	reg [3:0] fmt = 4'd0;
 	reg [127:0] block = 128'd0;
 	reg [1:0] s = 2'd0, t = 2'd0;
 	wire [1:0] kind;
 	wire [31:0] texel;
 
-	atg_tu_etc dut (.i_fmt(fmt), .i_block(block), .i_s(s), .i_t(t), .o_kind(kind),
+	atg_tu_etc dut (.clk(clk), .i_fmt(fmt), .i_block(block), .i_s(s), .i_t(t), .o_kind(kind),
 		.o_texel(texel));
 
 	integer fd, code, errs, gerrs, n;
@@ -55,6 +57,8 @@ module atg_tu_etc_tb;
 				block = x_block;
 				s = x_s;
 				t = x_t;
+				repeat (4)
+					@(posedge clk);
 				#1;
 				if (kind !== x_kind || texel !== x_texel) begin
 					if (gerrs < 10)
