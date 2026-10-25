@@ -40,7 +40,7 @@ timeout 120 "$out/fwtest" -t "$out/fw_scene.txt" >"$out/fwtest.log" || {
 # The GPU with the firmware.
 timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 	--top-module atg_top -GHAS_CPU=1 -GLINE_BYTES=64 -GLINE_SHIFT=6 \
-	-GCPU_IMEM_WORDS=32768 -GCPU_DMEM_WORDS=8192 \
+	-GCPU_IMEM_WORDS=32768 -GCPU_DMEM_WORDS=16384 \
 	'-GCPU_IMEM_INIT="fw/cp/images/atg1-cp-kc705.imem.hex"' \
 	'-GCPU_DMEM_INIT="fw/cp/images/atg1-cp-kc705.dmem.hex"' \
 	-GNSU=1 -GHAS_VF=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GROP_STENCIL=1 \

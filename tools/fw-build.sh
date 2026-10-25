@@ -2,7 +2,7 @@
 # Builds the CP firmware (fw/cp/) into the BRAM init images of atg_cpu:
 # fw/cp/images/atg1-cp-BOARD.imem.hex (.text, IMEM from 0, 32768 words)
 # and .dmem.hex (.rodata and the original of .data, DMEM from 0x0002_0000,
-# 8192 words), one 32-bit word per line ($readmemh), for BOARD kc705
+# 16384 words), one 32-bit word per line ($readmemh), for BOARD kc705
 # (64-byte AMB lines).  The images are committed, so the
 # simulation and the Vivado build do not need a compiler; run this after
 # changing the firmware.  Also writes atg1-cp-BOARD.bin (the IMEM image
@@ -53,6 +53,6 @@ for board in kc705; do
 		"$o/atg1-cp.elf" "$o/atg1-cp.dmem.bin"
 	cp "$o/atg1-cp.bin" "$o/imem.bin"
 	iw=$(hex "$o/imem.bin" 32768 "$img/atg1-cp-$board.imem.hex")
-	dw=$(hex "$o/atg1-cp.dmem.bin" 8192 "$img/atg1-cp-$board.dmem.hex")
+	dw=$(hex "$o/atg1-cp.dmem.bin" 16384 "$img/atg1-cp-$board.dmem.hex")
 	echo "fw-build: $board IMEM $((iw * 4)) bytes, DMEM image $((dw * 4)) bytes"
 done
