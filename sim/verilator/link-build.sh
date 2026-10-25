@@ -3,7 +3,8 @@
 # board top's parameters: the CPU with the committed firmware image,
 # 64-byte lines, 512-bit AXI, one SU of the board's shape, VF, RX, TU, ROP
 # with stencil, the MEM capability: 1 GiB of local memory at 0x8000_0000,
-# a 64 MiB window, the display controller without its I2C master) as a
+# a 64 MiB window, HOST_LIMIT 0x8000_0000: the host's memory below it,
+# the display controller without its I2C master) as a
 # static library for a host program.  The display controller names one
 # small test mode (DC_TEST_MODE: 320 x 240 at 25 MHz) instead of the
 # board's 640 x 480 and 720p, so that a frame is about 85,000 pixel clocks;
@@ -29,6 +30,7 @@ command -v verilator >/dev/null || { echo "verilator: not installed" >&2; exit 1
 base=0x80000000
 bytes=0x40000000
 window=0x04000000
+host=0x80000000
 timeout 1200 verilator --cc --build -j 8 -Wall -Iinclude \
 	--top-module atg_top -GLINE_BYTES=64 -GLINE_SHIFT=6 -GDATA_W=512 -GS_ID_W=4 -GS_LEN_W=8 \
 	-GHAS_CPU=1 -GCPU_IMEM_WORDS=32768 -GCPU_DMEM_WORDS=16384 \
@@ -39,6 +41,7 @@ timeout 1200 verilator --cc --build -j 8 -Wall -Iinclude \
 	-GSU_SBE_W=3 -GSU_PACKED=1 -GSU_SUBGROUP=1 -GSU_FRAG_RESERVE=2 -GSU_LDS_BYTES=16384 \
 	-GSU_VARY_WORDS=64 -GHAS_DISP=1 -GDC_HAS_I2C=0 -GDC_TEST_MODE=1 \
 	"-GLOCAL_BASE=32'h80000000" "-GLOCAL_BYTES=32'h40000000" "-GWINDOW_BYTES=32'h04000000" \
+	"-GHOST_LIMIT=32'h80000000" \
 	-Mdir "$out/obj" -CFLAGS "-O2" \
 	"$root/sim/verilator/link.vlt" $(find rtl -name '*.v' | sort) >"$out/build.log" 2>&1 || {
 	tail -30 "$out/build.log" >&2
@@ -48,7 +51,7 @@ timeout 1200 verilator --cc --build -j 8 -Wall -Iinclude \
 # The interface, compiled against the model's headers.
 vinc=$(verilator --getenv VERILATOR_ROOT)/include
 timeout 300 ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Werror -isystem "$out/obj" -isystem "$vinc" -isystem "$vinc/vltstd" \
-	-DLINK_LOCAL_BASE=${base}u -DLINK_LOCAL_BYTES=${bytes}u -DLINK_WINDOW_BYTES=${window}u \
+	-DLINK_LOCAL_BASE=${base}u -DLINK_LOCAL_BYTES=${bytes}u -DLINK_WINDOW_BYTES=${window}u -DLINK_HOST_LIMIT=${host}u \
 	-DLINK_GCLK_HZ=100000000u -c -o "$out/link.o" "$root/sim/verilator/link.cpp"
 echo "$out/link.o $out/obj/Vatg_top__ALL.a $out/obj/libverilated.a -lpthread -latomic" >"$out/link.flags"
 echo "PASS link-build"

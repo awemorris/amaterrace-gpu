@@ -330,6 +330,7 @@ localparam [16:0] GHCI_MEM_LOCAL_BASE = 17'h00000;
 localparam [16:0] GHCI_MEM_LOCAL_SIZE = 17'h00004;	/* 0 = no local memory (unified) */
 localparam [16:0] GHCI_MEM_WINDOW_SIZE = 17'h00008;	/* 0 = no local window */
 localparam [16:0] GHCI_MEM_HOST_LIMIT = 17'h0000C;	/* host addresses below it, outside local memory; 0 = all */
+localparam [16:0] GHCI_MEM_WINDOW_CTRL = 17'h00010;	/* [0] ENABLE: the local window is open (reset 1) */
 /* The PROT capability's registers (from its register offset, section 11.6). */
 localparam [16:0] GHCI_PROT_CAPS = 17'h00000;
 localparam [16:0] GHCI_PROT_TABLE = 17'h00004;	/* RW: the table's address, 4 KiB aligned */

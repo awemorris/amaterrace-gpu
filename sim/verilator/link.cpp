@@ -7,11 +7,18 @@
 
 /*
  * The link (link.h): atg_top in the KC705's shape on a C interface.  The
- * memory model answers atg_top's AXI master with no wait states: its
- * address range is the MEM capability's local memory (LINK_LOCAL_BASE,
- * LINK_LOCAL_BYTES, given by link-build.sh with the same values as the
- * -G parameters), kept in an anonymous mapping that the host reads and
- * writes as the board's window.  A register access is one transaction on
+ * memory model answers atg_top's AXI master with no wait states, in
+ * order, each response with its request's AXI ID: the MEM capability's
+ * local memory (LINK_LOCAL_BASE, LINK_LOCAL_BYTES, given by link-build.sh
+ * with the same values as the -G parameters; the MC's ID 0), and the
+ * host's memory below LINK_HOST_LIMIT (the MEM capability's HOST_LIMIT,
+ * bus addresses as the KC705's PCIe bridge forwards them; the MC's ID 1),
+ * each kept in an anonymous mapping (the host's is reserved lazily).  An
+ * access outside both, or whose ID is not its destination's, is stray: it
+ * reads 0 and its write is dropped.  The host reads and writes the local
+ * memory directly as the board's window (atg_link_local) and its own
+ * memory as the kernel's RAM (atg_link_host); atg_link_window_open says
+ * whether the GPU's WINDOW_CTRL keeps the window open.  A register access is one transaction on
  * the register port (as fw_harness.cpp makes it), plus LINK_READ_CYCLES
  * idle cycles for a read when the environment says so (a PCIe read's
  * round trip).  LINK_TRACE_DMA in the environment prints every DMA_GO of
@@ -49,6 +56,9 @@
 #ifndef LINK_WINDOW_BYTES
 #define LINK_WINDOW_BYTES 0x04000000u
 #endif
+#ifndef LINK_HOST_LIMIT
+#define LINK_HOST_LIMIT 0x80000000u
+#endif
 #ifndef LINK_GCLK_HZ
 #define LINK_GCLK_HZ 100000000u
 #endif
@@ -63,10 +73,12 @@ struct Burst {
 	uint32_t addr;
 	unsigned len;
 	unsigned beat;
+	unsigned id;
 };
 
 Vatg_top *top;
 uint8_t *local;
+uint8_t *host;
 std::deque<Burst> ar_q, aw_q;
 std::deque<int> b_q;
 struct atg_link_stats counts;
@@ -84,20 +96,38 @@ unsigned busy_bits()
 	    (top->rootp->atg_top__DOT__tu_busy ? 0x20u : 0u) | (top->rootp->atg_top__DOT__su_busy ? 0x40u : 0u);
 }
 
-/* The local memory's byte at a GPU address, or nullptr outside it. */
-uint8_t *byte_at(uint32_t a)
+/*
+ * A beat's bytes at a GPU address with its AXI ID: in the local memory
+ * (ID 0) or in the host's (ID 1, below LINK_HOST_LIMIT); nullptr (and a
+ * stray access) elsewhere or with the other ID.  Counts the beat.
+ */
+uint8_t *beat_at(uint32_t a, unsigned id)
 {
-	if (a - LINK_LOCAL_BASE >= LINK_LOCAL_BYTES)
-		return nullptr;
-	return &local[a - LINK_LOCAL_BASE];
+	if (a - LINK_LOCAL_BASE <= LINK_LOCAL_BYTES - BEAT_BYTES) {
+		if (id != 0u) {
+			counts.stray_accesses++;
+			return nullptr;
+		}
+		counts.local_beats++;
+		return &local[a - LINK_LOCAL_BASE];
+	}
+	if (a <= LINK_HOST_LIMIT - BEAT_BYTES && (a < LINK_LOCAL_BASE || a >= LINK_LOCAL_BASE + LINK_LOCAL_BYTES)) {
+		if (id != 1u) {
+			counts.stray_accesses++;
+			return nullptr;
+		}
+		counts.host_beats++;
+		return &host[a];
+	}
+	counts.stray_accesses++;
+	return nullptr;
 }
 
 /* Reads a beat's 16 words. */
-void read_beat(uint32_t a, uint32_t *w)
+void read_beat(uint32_t a, unsigned id, uint32_t *w)
 {
-	uint8_t *p = byte_at(a);
-	if (p == nullptr || a - LINK_LOCAL_BASE > LINK_LOCAL_BYTES - BEAT_BYTES) {
-		counts.stray_accesses++;
+	uint8_t *p = beat_at(a, id);
+	if (p == nullptr) {
 		for (int i = 0; i < BEAT_WORDS; i++)
 			w[i] = 0;
 		return;
@@ -107,13 +137,11 @@ void read_beat(uint32_t a, uint32_t *w)
 }
 
 /* Writes the bytes of a beat that its strobe selects. */
-void write_beat(uint32_t a, const VlWide<BEAT_WORDS> &d, uint64_t strobe)
+void write_beat(uint32_t a, unsigned id, const VlWide<BEAT_WORDS> &d, uint64_t strobe)
 {
-	uint8_t *p = byte_at(a);
-	if (p == nullptr || a - LINK_LOCAL_BASE > LINK_LOCAL_BYTES - BEAT_BYTES) {
-		counts.stray_accesses++;
+	uint8_t *p = beat_at(a, id);
+	if (p == nullptr)
 		return;
-	}
 	for (uint32_t i = 0; i < BEAT_BYTES; i++)
 		if (strobe >> i & 1u)
 			p[i] = (uint8_t)(d[i / 4] >> (8 * (i % 4)));
@@ -130,6 +158,7 @@ void tick()
 	top->m_arready = 1;
 	top->m_wready = !aw_q.empty();
 	top->m_bvalid = !b_q.empty();
+	top->m_bid = b_q.empty() ? 0 : b_q.front();
 	top->m_bresp = 0;
 	top->m_rvalid = !ar_q.empty();
 	top->m_rresp = 0;
@@ -137,7 +166,8 @@ void tick()
 	uint32_t w[BEAT_WORDS] = {0};
 	if (!ar_q.empty()) {
 		const Burst &r = ar_q.front();
-		read_beat(r.addr + r.beat * BEAT_BYTES, w);
+		read_beat(r.addr + r.beat * BEAT_BYTES, r.id, w);
+		top->m_rid = r.id;
 		top->m_rlast = r.beat == r.len;
 	}
 	for (int i = 0; i < BEAT_WORDS; i++)
@@ -153,8 +183,8 @@ void tick()
 	bool wr = top->m_wvalid && top->m_wready;
 	bool b = top->m_bvalid && top->m_bready;
 	bool r = top->m_rvalid && top->m_rready;
-	Burst naw = {top->m_awaddr, top->m_awlen, 0};
-	Burst nar = {top->m_araddr, top->m_arlen, 0};
+	Burst naw = {top->m_awaddr, top->m_awlen, 0, top->m_awid};
+	Burst nar = {top->m_araddr, top->m_arlen, 0, top->m_arid};
 	VlWide<BEAT_WORDS> wdata = top->m_wdata;
 	uint64_t wstrb = top->m_wstrb;
 	if (top->rootp->atg_top__DOT__fw_valid && top->rootp->atg_top__DOT__fw_ready) {
@@ -188,10 +218,10 @@ void tick()
 
 	if (wr) {
 		Burst &cur = aw_q.front();
-		write_beat(cur.addr + cur.beat * BEAT_BYTES, wdata, wstrb);
+		write_beat(cur.addr + cur.beat * BEAT_BYTES, cur.id, wdata, wstrb);
 		if (cur.beat == cur.len) {
+			b_q.push_back((int)cur.id);
 			aw_q.pop_front();
-			b_q.push_back(0);
 		} else {
 			cur.beat++;
 		}
@@ -233,6 +263,14 @@ extern "C" int atg_link_start(void)
 	if (p == MAP_FAILED)
 		return -1;
 	local = static_cast<uint8_t *>(p);
+	void *h = mmap(nullptr, LINK_HOST_LIMIT, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS |
+	    MAP_NORESERVE, -1, 0);
+	if (h == MAP_FAILED) {
+		munmap(local, LINK_LOCAL_BYTES);
+		local = nullptr;
+		return -1;
+	}
+	host = static_cast<uint8_t *>(h);
 	const char *extra = std::getenv("LINK_READ_CYCLES");
 	if (extra != nullptr)
 		read_cycles = std::strtoull(extra, nullptr, 0);
@@ -259,6 +297,8 @@ extern "C" void atg_link_stop(void)
 	top = nullptr;
 	munmap(local, LINK_LOCAL_BYTES);
 	local = nullptr;
+	munmap(host, LINK_HOST_LIMIT);
+	host = nullptr;
 }
 
 extern "C" uint32_t atg_link_read(uint32_t offset)
@@ -307,6 +347,19 @@ extern "C" uint8_t *atg_link_local(uint32_t *base, uint32_t *bytes, uint32_t *wi
 	*bytes = LINK_LOCAL_BYTES;
 	*window = LINK_WINDOW_BYTES;
 	return local;
+}
+
+extern "C" uint8_t *atg_link_host(uint32_t *limit)
+{
+	*limit = LINK_HOST_LIMIT;
+	return host;
+}
+
+extern "C" int atg_link_window_open(void)
+{
+	top->clk = 0;
+	top->eval();
+	return top->win_en != 0;
 }
 
 extern "C" int atg_link_irq(void)

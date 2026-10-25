@@ -212,6 +212,8 @@
 #define GHCI_MEM_LOCAL_SIZE 0x4u /* 0 = no local memory (unified) */
 #define GHCI_MEM_WINDOW_SIZE 0x8u /* 0 = no local window */
 #define GHCI_MEM_HOST_LIMIT 0xCu /* host addresses below it, outside local memory; 0 = all */
+#define GHCI_MEM_WINDOW_CTRL 0x10u /* RW: [0] ENABLE, the local window is open (reset 1) */
+#define GHCI_MEM_WINDOW_ENABLE (1u << 0)
 
 /* The PROT capability's registers (from its register offset, section 11.6). */
 #define GHCI_PROT_CAPS 0x0u
