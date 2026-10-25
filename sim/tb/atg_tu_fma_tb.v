@@ -6,8 +6,9 @@
  */
 
 /*
- * atg_tu_fma_tb: atg_tu_fma against atg_su_ffma(a, b, c, 0, 0) of
- * include/atg_su_fp.vh, one operation a cycle with random bubbles
+ * atg_tu_fma_tb: atg_tu_fma against ref_su_ffma(a, b, c, 0, 0) of
+ * sim/tb/atg_su_fp_ref.vh (the former function of include/atg_su_fp.vh,
+ * now the module atg_su_ffma), one operation a cycle with random bubbles
  * (seeded).  Operands: random words, exponents near one another (the
  * alignment's cases, cancellation c = -a b with a few bits changed),
  * zeros, denormals, infinities and NaNs of both signs, and the weights
@@ -19,7 +20,7 @@
 `default_nettype none
 
 module atg_tu_fma_tb;
-	`include "atg_su_fp.vh"
+	`include "atg_su_fp_ref.vh"
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
 	always #5 clk = !clk;
@@ -83,7 +84,7 @@ module atg_tu_fma_tb;
 				end
 				1, 2: begin
 					/* c near -a b: cancellation */
-					x = atg_su_ffma(a, b, 32'd0, 3'd0, 1'b1);
+					x = ref_su_ffma(a, b, 32'd0, 3'd0, 1'b1);
 					c = {!x[31], x[30:0]} ^ ($random(seed) & 32'h0000000F);
 				end
 				3: begin
@@ -98,7 +99,7 @@ module atg_tu_fma_tb;
 				i_b <= b;
 				i_tag <= n[15:0];
 				cmem[n[15:0]] = c;
-				xmem[n[15:0]] = atg_su_ffma(a, b, c, 3'd0, 1'b0);
+				xmem[n[15:0]] = ref_su_ffma(a, b, c, 3'd0, 1'b0);
 				n = n + 1;
 			end
 		end

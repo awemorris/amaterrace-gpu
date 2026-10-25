@@ -1,6 +1,6 @@
 # atg_rx_bary
 
-RTL: `rtl/gpu/rx/atg_rx_bary.v`.  Parent: atg_rx_frag.  Children: `atg_rx_fmul`, `atg_rx_fadd`, `atg_rx_fdiv`.
+RTL: `rtl/gpu/rx/atg_rx_bary.v`.  Parent: atg_rx_frag.  Children: `atg_rx_fmul`, `atg_rx_fadd`, `atg_rx_fdiv`, `atg_rx_i2f` (i, j in eighths to fp32).
 
 ## 1. Purpose and place
 

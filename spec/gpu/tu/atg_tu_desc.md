@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_desc.v`.  Parent: atg_tu_addr.  Implemented in: p009 (pa
 
 ## 1. Purpose and place
 
-The TU's descriptors (STATE 0x090-0x18F: 16 slots of 16 words, docs/ghci.md §8.4) and the byte offsets of their mip levels, which the hardware computes from the image's size, level count, layout and view type.  No children.
+The TU's descriptors (STATE 0x090-0x18F: 16 slots of 16 words, docs/ghci.md §8.4) and the byte offsets of their mip levels, which the hardware computes from the image's size, level count, layout and view type.  Child: `atg_tu_plane` (a level's plane bytes; two instances: the level-offset sum and rd_plane).
 
 ## 2. Parameters
 

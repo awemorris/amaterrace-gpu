@@ -82,10 +82,12 @@ module atg_rop_fblend (
 		input [31:0] a, b;
 		reg [32:0] ka, kb;
 		begin
-			ka = a[31] ? 33'd0 - {2'd0, a[30:0]} : {2'd0, a[30:0]};
-			kb = b[31] ? 33'd0 - {2'd0, b[30:0]} : {2'd0, b[30:0]};
+			/* the signed keys ka <= kb, from the signs and the magnitudes */
+			ka = {2'd0, a[30:0]};
+			kb = {2'd0, b[30:0]};
 			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
-				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) && $signed(ka) <= $signed(kb);
+				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) &&
+				(a[31] ? (b[31] ? ka >= kb : 1'b1) : (b[31] ? ka == 0 && kb == 0 : ka <= kb));
 		end
 	endfunction
 	function isnan;
@@ -101,43 +103,58 @@ module atg_rop_fblend (
 		fmax = isnan(a[30:0]) || isnan(b[30:0]) ? 32'h7FC00000 : fle(b, a) ? a : b;
 	endfunction
 
-	/* atg_fmt_unpack and atg_fmt_pack for the formats of this path, each
-	 * with its format as a constant (it reduces to that format's fields
+	/* atg_fmt_unpack and atg_fmt_pack (instances below) for the formats of
+	 * this path, each with its format as a constant (it reduces to that format's fields
 	 * and conversions); the value for other formats is not used (their
 	 * lanes are skipped and give o_raw 0, o_keep all ones). */
-	function [128:0] unpackf;
-		input [127:0] r;
-		input [7:0] f;
-		case (f)
-		8'd43: unpackf = atg_fmt_unpack(r, 8'd43, 1'b0);
-		8'd50: unpackf = atg_fmt_unpack(r, 8'd50, 1'b0);
-		8'd57: unpackf = atg_fmt_unpack(r, 8'd57, 1'b0);
-		8'd64: unpackf = atg_fmt_unpack(r, 8'd64, 1'b0);
-		8'd76: unpackf = atg_fmt_unpack(r, 8'd76, 1'b0);
-		8'd83: unpackf = atg_fmt_unpack(r, 8'd83, 1'b0);
-		8'd97: unpackf = atg_fmt_unpack(r, 8'd97, 1'b0);
-		default: unpackf = 129'd0;
-		endcase
-	endfunction
-	function [255:0] packf;
-		input [127:0] pf_c;
-		input [7:0] f;
-		input [3:0] pf_m;
-		case (f)
-		8'd43: packf = atg_fmt_pack(pf_c, 8'd43, pf_m);
-		8'd50: packf = atg_fmt_pack(pf_c, 8'd50, pf_m);
-		8'd57: packf = atg_fmt_pack(pf_c, 8'd57, pf_m);
-		8'd64: packf = atg_fmt_pack(pf_c, 8'd64, pf_m);
-		8'd76: packf = atg_fmt_pack(pf_c, 8'd76, pf_m);
-		8'd83: packf = atg_fmt_pack(pf_c, 8'd83, pf_m);
-		8'd97: packf = atg_fmt_pack(pf_c, 8'd97, pf_m);
-		default: packf = {{128{1'b1}}, 128'd0};
-		endcase
-	endfunction
 
 	/* The lane's values: source, destination, constant (clamped for fixed). */
 	wire [127:0] s_raw = src[128 * l +: 128];
-	wire [128:0] d_un = unpackf({64'd0, dst[64 * l +: 64]}, fmt);
+	/* The formats of this path; the format's info word. */
+	localparam [55:0] PFF = {8'd97, 8'd83, 8'd76, 8'd64, 8'd57, 8'd50, 8'd43};
+	wire [67:0] pinf = atg_fmt_info(fmt);
+	genvar gf;
+	/* The destination unpacked (atg_fmt_comp, one a component): the format's
+	 * component k moved to bit 0 (a constant shift a format), then converted
+	 * with the format's info word (its places 0). */
+	wire [127:0] d_raw = {64'd0, dst[64 * l +: 64]};
+	wire [67:0] uinf = pinf & ~{6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 16'd0};
+	wire [127:0] d_cv;
+	generate
+	for (gf = 0; gf < 4; gf = gf + 1) begin : g_un
+		reg [127:0] kraw;
+		integer uf;
+		always @(*) begin
+			kraw = 128'd0;
+			for (uf = 0; uf < 7; uf = uf + 1)
+				if (fmt == PFF[8 * uf +: 8])
+					kraw = d_raw >> atg_fmt_pos(PFF[8 * uf +: 8], gf);
+		end
+		localparam [1:0] K = gf;
+		atg_fmt_comp u_comp (.raw(kraw), .inf(uinf), .k(K), .sten(1'b0), .v(d_cv[32 * gf +: 32]));
+	end
+	endgenerate
+	reg d_known;
+	integer kf;
+	always @(*) begin
+		d_known = 1'b0;
+		for (kf = 0; kf < 7; kf = kf + 1)
+			if (fmt == PFF[8 * kf +: 8])
+				d_known = 1'b1;
+	end
+	wire [128:0] d_un = d_known ? {1'b0, d_cv} : 129'd0;
+	/* the place of component k of format f (constants) */
+	function [6:0] atg_fmt_pos;
+		input [7:0] f;
+		input integer k;
+		/* verilator lint_off UNUSEDSIGNAL */
+		reg [67:0] fi;	/* (the places only) */
+		/* verilator lint_on UNUSEDSIGNAL */
+		begin
+			fi = atg_fmt_info(f);
+			atg_fmt_pos = k == 0 ? fi[16 +: 7] : k == 1 ? fi[29 +: 7] : k == 2 ? fi[42 +: 7] : fi[55 +: 7];
+		end
+	endfunction
 	wire [31:0] s_c = fixed ? c01(s_raw[32 * c +: 32]) : s_raw[32 * c +: 32];
 	wire [31:0] s_a = fixed ? c01(s_raw[127:96]) : s_raw[127:96];
 	wire [31:0] d_c = d_un[32 * c +: 32];
@@ -193,19 +210,49 @@ module atg_rop_fblend (
 		.i_x(rr_l[32 * c +: 32]), .o_valid(e_ov), .o_ready(1'b1), .o_code(e_code));
 
 	/* The pack of lane l. */
-	wire [255:0] pk = packf(rr_l, fmt, wm);
+	/* one converter a component for the format of the moment: UNORM of the
+	 * component's width (8 for an sRGB alpha), fp16 */
+	wire [63:0] p_un, p_hf;
+	generate
+	for (gf = 0; gf < 4; gf = gf + 1) begin : g_cv
+		atg_fmt_f2unorm u_un (.f(rr_l[32 * gf +: 32]), .w(pinf[11:9] == ATG_FMT_SRGB ? 6'd8 :
+			pinf[23 + 13 * gf +: 6]), .u(p_un[16 * gf +: 16]));
+		atg_fmt_f2h u_hf (.f(rr_l[32 * gf +: 32]), .h(p_hf[16 * gf +: 16]));
+	end
+	endgenerate
+	wire [7*256-1:0] pks;
+	generate
+	for (gf = 0; gf < 7; gf = gf + 1) begin : g_pk
+		atg_fmt_pack #(.FMT(PFF[8 * gf +: 8])) u_pk (.c(rr_l), .un(p_un), .hf(p_hf), .wm(wm),
+			.o(pks[256 * gf +: 256]));
+	end
+	endgenerate
+	reg [255:0] pk;
+	integer pf;
+	always @(*) begin
+		pk = {{128{1'b1}}, 128'd0};
+		for (pf = 0; pf < 7; pf = pf + 1)
+			if (fmt == PFF[8 * pf +: 8])
+				pk = pks[256 * pf +: 256];
+	end
 
 	assign i_ready = st == S_IDLE;
 	assign o_valid = st == S_OUT;
 	wire last_ch = c == 2'd3;
 
+	/* the next channel and lane numbers */
+	wire [1:0] c1, l1;
+	wire c1_co_unused, l1_co_unused;
+	am_add #(.W(2)) u_c1 (.a(c), .b(2'd0), .ci(1'b1), .s(c1), .co(c1_co_unused));
+	am_add #(.W(2)) u_l1 (.a(l), .b(2'd0), .ci(1'b1), .s(l1), .co(l1_co_unused));
+
 	/* next channel, lane, or the end of the arithmetic */
 	task next;
 		begin
-			c <= c + 2'd1;
+			c <= c1;
 			st <= S_CH;
 			if (last_ch) begin
-				l <= l + 2'd1;
+				l <= l1;
 				if (l == 2'd3) begin
 					l <= 2'd0;
 					c <= 2'd0;
@@ -239,7 +286,7 @@ module atg_rop_fblend (
 			if (!lanes[l] || !known) begin
 				/* skip the lane */
 				c <= 2'd0;
-				l <= l + 2'd1;
+				l <= l1;
 				if (l == 2'd3)
 					st <= is_srgb ? S_ENC : S_PACK;
 			end else if (!bl[0]) begin
@@ -327,7 +374,7 @@ module atg_rop_fblend (
 			/* R, G, B of each lane through the encoder */
 			if (!lanes[l] || c == 2'd3) begin
 				c <= 2'd0;
-				l <= l + 2'd1;
+				l <= l1;
 				if (l == 2'd3) begin
 					l <= 2'd0;
 					st <= S_PACK;
@@ -339,13 +386,13 @@ module atg_rop_fblend (
 		S_EW:
 			if (e_ov) begin
 				rr[l][32 * c +: 32] <= {24'd0, e_code};
-				c <= c + 2'd1;
+				c <= c1;
 				st <= S_ENC;
 			end
 		S_PACK: begin
 			o_raw[64 * l +: 64] <= known && lanes[l] ? pk[63:0] : 64'd0;
 			o_keep[64 * l +: 64] <= known && lanes[l] ? pk[191:128] : {64{1'b1}};
-			l <= l + 2'd1;
+			l <= l1;
 			if (l == 2'd3)
 				st <= S_OUT;
 		end

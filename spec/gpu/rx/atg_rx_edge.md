@@ -1,6 +1,6 @@
 # atg_rx_edge
 
-RTL: `rtl/gpu/rx/atg_rx_edge.v` (new; the integer steps move here from atg_rx_setup).  Parent: atg_rx_setup.
+RTL: `rtl/gpu/rx/atg_rx_edge.v` (new; the integer steps move here from atg_rx_setup).  Parent: atg_rx_setup.  Child: `atg_rx_f2fix` (the snap to 15.8).
 
 ## 1. Purpose and place
 

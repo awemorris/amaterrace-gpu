@@ -53,7 +53,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-qd works inside a lane group (quads never cross groups since NPHYS ≥ 8), one group per cycle: qdx = v[lane|1] − v[lane&~1], qdy = v[lane|2] − v[lane&~2] (fp32, `atg_su_fadd`, RNE, denormals flushed), qswap1/2/3 = v[lane^1/2/3], qbcast = v[lane&~3]; the partners are read whether or not they are in EXEC; the EXEC lanes are written.
+qd works inside a lane group (quads never cross groups since NPHYS ≥ 8), one group per cycle: qdx = v[lane|1] − v[lane&~1], qdy = v[lane|2] − v[lane&~2] (fp32, two `atg_su_fadd` per quad, RNE, denormals flushed), qswap1/2/3 = v[lane^1/2/3], qbcast = v[lane&~3]; the partners are read whether or not they are in EXEC; the EXEC lanes are written.
 
 shfl/vote/ballot (SUBGROUP = 1; without it atg_su_dec makes them ISA faults) need all 32 lanes.  The groups before the last are staged as they pass (x_ready 1); the last group is staged in its first cycle on the bus and then held there (x_ready 0) for G = 32/NPHYS more cycles, in which the results of groups 0..G-1 enter the result pipeline, one per cycle; x_ready is 1 in the last of them (x_end).  Group g's result therefore leaves SHORT_LAT cycles after cycle x_end − (G−1) + g, exactly as for an instruction whose groups pass one per cycle, so atg_su_sb's short interlock and atg_su_wb's one short result per cycle hold unchanged (the bus carries nothing else in those cycles).
 

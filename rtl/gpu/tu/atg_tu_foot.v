@@ -20,7 +20,7 @@
  * edge; clamp to border: outside is a border texel, bit 0 of the
  * address).  A cube's indices are not wrapped: nearest clamps them,
  * bilinear takes a texel beyond one edge from the adjacent face and a
- * corner texel from the face itself (include/atg_tu_fn.vh tu_cube_texel).
+ * corner texel from the face itself (atg_tu_cube_texel).
  * texf: x + du, y + dv (and z + dw of a 3D level) clamped into the level.
  * Address = lbase + k × plane (+ face × stride for a cube) + the texel in
  * the plane (linear rows of wl texels of 2^psl bytes, wl rounded up to a
@@ -83,43 +83,6 @@ module atg_tu_foot (
 	output wire [15:0] fuv,	/* {fv, fu} */
 	output wire [7:0] fw
 );
-	`include "atg_tu_fn.vh"
-
-	/* An integer clamped into [0, n − 1]. */
-	function [15:0] iclamp;
-		input signed [32:0] v;
-		input [15:0] n;
-		iclamp = v < 0 ? 16'd0 : v >= $signed({17'd0, n}) ? n - 16'd1 : v[15:0];
-	endfunction
-
-	/* The byte offset of texel (i, j) in a plane of width w (linear: w
-	 * texels a row, up to 2^16). */
-	function [31:0] toff;
-		input [15:0] i;
-		input [15:0] j;
-		input [16:0] w;
-		input tl;
-		input [2:0] pl;	/* log2 of the texel's bytes */
-		input bk;	/* blocks of 2^pl bytes */
-		reg [15:0] tw;
-		/* verilator lint_off UNUSEDSIGNAL */
-		reg [31:0] m;	/* 32-bit wrap: the top bits are shifted out */
-		/* verilator lint_on UNUSEDSIGNAL */
-		begin
-			tw = {2'b00, w[15:2]} + {15'd0, w[1:0] != 2'd0};	/* tiles a row */
-			m = tl ? {18'd0, j[15:2]} * {16'd0, tw} : {16'd0, j} * {15'd0, w};
-			if (bk)
-				toff = ({18'd0, j[15:2]} * {16'd0, tw} + {18'd0, i[15:2]}) << pl;
-			else if (tl && pl == 3'd1)
-				toff = {m[26:0], 5'd0} + {27'd0, j[1:0], 3'd0} + {13'd0, i[15:2], 5'd0} +
-					{29'd0, i[1:0], 1'd0};
-			else if (tl)
-				toff = {m[25:0], 6'd0} + {26'd0, j[1:0], 4'd0} + {12'd0, i[15:2], 6'd0} +
-					{28'd0, i[1:0], 2'd0};
-			else
-				toff = (m + {16'd0, i}) << pl;
-		end
-	endfunction
 
 	wire signed [23:0] du = {{20{off[3]}}, off[3:0]};
 	wire signed [23:0] dv = {{20{off[7]}}, off[7:4]};
@@ -127,65 +90,104 @@ module atg_tu_foot (
 	wire texf = op == 2'd2;
 	/* The slice. */
 	wire dlin = is3d && lin && !gather;
-	wire signed [30:0] cwm = dlin ? cw - 31'sd128 : cw;
-	wire signed [23:0] ki = $signed(cwm[30:8]) + dw + $signed({23'd0, dlin && p0});
-	wire [16:0] kw = tu_wrap(ki, dl, mw);
-	wire [15:0] kf = iclamp($signed({z[31], z}) + {{9{dw[23]}}, dw}, dl);
+	wire [13:0] carry_unused;	/* the adders' carries */
+	wire signed [30:0] cwm;
+	wire signed [23:0] ki;
+	wire signed [32:0] zd, xd, yd;
+	wire [15:0] kf;
+	am_sub #(.W(31)) u_cwm (.a(cw), .b(dlin ? 31'd128 : 31'd0), .bi(1'b0), .d(cwm),
+		.bo(carry_unused[0]));
+	am_add #(.W(24)) u_ki (.a({cwm[30], cwm[30:8]}), .b(dw), .ci(dlin && p0), .s(ki),
+		.co(carry_unused[1]));
+	wire [16:0] kw;
+	atg_tu_wrap u_kw (.i(ki), .n(dl), .mode(mw), .w(kw));
+	am_add #(.W(33)) u_zd (.a({z[31], z}), .b({{9{dw[23]}}, dw}), .ci(1'b0), .s(zd),
+		.co(carry_unused[2]));
+	atg_tu_iclamp u_kf (.v(zd), .n(dl), .c(kf));
 	wire [15:0] k = !is3d ? 16'd0 : texf ? kf : kw[15:0];
 	wire bk = is3d && !texf && kw[16];
 	assign fw = dlin ? cwm[7:0] : 8'd0;
-	wire [47:0] kp = {16'd0, plane} * {32'd0, k};
+	wire [47:0] kp;
+	am_mul #(.AW(32), .BW(16)) u_kp (.clk(1'b0), .en(1'b1), .a(plane), .b(k), .p(kp));
 	/* The footprint. */
-	wire signed [30:0] cu2 = lin ? cu - 31'sd128 : cu, cv2 = lin ? cv - 31'sd128 : cv;
-	wire signed [23:0] i0 = $signed(cu2[30:8]) + du, j0 = $signed(cv2[30:8]) + dv;
-	wire signed [23:0] i1 = lin ? i0 + 24'sd1 : i0, j1 = lin ? j0 + 24'sd1 : j0;
+	wire signed [30:0] cu2, cv2;
+	wire signed [23:0] i0, j0, i1, j1;
+	am_sub #(.W(31)) u_cu2 (.a(cu), .b(lin ? 31'd128 : 31'd0), .bi(1'b0), .d(cu2),
+		.bo(carry_unused[3]));
+	am_sub #(.W(31)) u_cv2 (.a(cv), .b(lin ? 31'd128 : 31'd0), .bi(1'b0), .d(cv2),
+		.bo(carry_unused[4]));
+	am_add #(.W(24)) u_i0 (.a({cu2[30], cu2[30:8]}), .b(du), .ci(1'b0), .s(i0),
+		.co(carry_unused[5]));
+	am_add #(.W(24)) u_j0 (.a({cv2[30], cv2[30:8]}), .b(dv), .ci(1'b0), .s(j0),
+		.co(carry_unused[6]));
+	am_add #(.W(24)) u_i1 (.a(i0), .b(24'd0), .ci(lin), .s(i1), .co(carry_unused[7]));
+	am_add #(.W(24)) u_j1 (.a(j0), .b(24'd0), .ci(lin), .s(j1), .co(carry_unused[8]));
 	assign fuv = {cv2[7:0], cu2[7:0]};
-	wire [16:0] wi0 = tu_wrap(i0, wl, mu), wi1 = tu_wrap(i1, wl, mu);
-	wire [16:0] wj0 = tu_wrap(j0, hl, mv), wj1 = tu_wrap(j1, hl, mv);
-	wire [15:0] fi = iclamp($signed({x[31], x}) + {{9{du[23]}}, du}, wl);
-	wire [15:0] fj = iclamp($signed({y[31], y}) + {{9{dv[23]}}, dv}, hl);
+	wire [16:0] wi0, wi1, wj0, wj1;
+	atg_tu_wrap u_wi0 (.i(i0), .n(wl), .mode(mu), .w(wi0));
+	atg_tu_wrap u_wi1 (.i(i1), .n(wl), .mode(mu), .w(wi1));
+	atg_tu_wrap u_wj0 (.i(j0), .n(hl), .mode(mv), .w(wj0));
+	atg_tu_wrap u_wj1 (.i(j1), .n(hl), .mode(mv), .w(wj1));
+	wire [15:0] fi, fj;
+	am_add #(.W(33)) u_xd (.a({x[31], x}), .b({{9{du[23]}}, du}), .ci(1'b0), .s(xd),
+		.co(carry_unused[9]));
+	am_add #(.W(33)) u_yd (.a({y[31], y}), .b({{9{dv[23]}}, dv}), .ci(1'b0), .s(yd),
+		.co(carry_unused[10]));
+	atg_tu_iclamp u_fi (.v(xd), .n(wl), .c(fi));
+	atg_tu_iclamp u_fj (.v(yd), .n(hl), .c(fj));
 	/* A multisampled texf: texel 4 i + s of rows of roundup(wl, 2) × 4. */
 	wire msf = ms && texf;
 `ifdef MUT_TU_MSROW
 	wire [15:0] wms = {wl[13:0], 2'b00};	/* rows of w x 4: odd widths go wrong */
 `else
-	wire [15:0] wms = {wl[13:1] + {12'd0, wl[0]}, 3'b000};
+	wire [12:0] wl2;	/* roundup(wl, 2) / 2 */
+	am_add #(.W(13)) u_wl2 (.a(wl[13:1]), .b(13'd0), .ci(wl[0]), .s(wl2), .co(carry_unused[11]));
+	wire [15:0] wms = {wl2, 3'b000};
 `endif
 	wire [15:0] fim = {fi[13:0], smp};
 	/* The row of a linear level: wl rounded up to a multiple of 2^ra. */
-	wire [16:0] rm = (17'd1 << ra) - 17'd1;
+	wire [16:0] rm = ra == 2'd0 ? 17'd0 : ra == 2'd1 ? 17'd1 : ra == 2'd2 ? 17'd3 : 17'd7;	/* 2^ra - 1 */
+	wire [16:0] wrm;
+	am_add #(.W(17)) u_wrm (.a({1'b0, wl}), .b(rm), .ci(1'b0), .s(wrm), .co(carry_unused[12]));
 `ifdef MUT_TU_PITCH
 	wire [16:0] wr = {1'b0, wl} | (rm & 17'd0);	/* packed rows whatever TEX_ROW says */
+	wire unused_wrm = &{1'b0, wrm};
 `else
-	wire [16:0] wr = ({1'b0, wl} + rm) & ~rm;
+	wire [16:0] wr = wrm & ~rm;
 `endif
 	/* Cube: clamped (nearest) or across the faces (bilinear). */
-	wire [34:0] c00 = lin ? tu_cube_texel(face, i0, j0, wl) :
-		{face, tu_clamp(i0, wl), tu_clamp(j0, wl)};
-	wire [34:0] c10 = tu_cube_texel(face, i1, j0, wl);
-	wire [34:0] c01 = tu_cube_texel(face, i0, j1, wl);
-	wire [34:0] c11 = tu_cube_texel(face, i1, j1, wl);
+	wire [34:0] c00l, c10, c01, c11;
+	wire [15:0] ci0, cj0;
+	atg_tu_cube_texel u_c00 (.tface(face), .i(i0), .j(j0), .n(wl), .t(c00l));
+	atg_tu_cube_texel u_c10 (.tface(face), .i(i1), .j(j0), .n(wl), .t(c10));
+	atg_tu_cube_texel u_c01 (.tface(face), .i(i0), .j(j1), .n(wl), .t(c01));
+	atg_tu_cube_texel u_c11 (.tface(face), .i(i1), .j(j1), .n(wl), .t(c11));
+	atg_tu_iclamp u_ci0 (.v({{9{i0[23]}}, i0}), .n(wl), .c(ci0));
+	atg_tu_iclamp u_cj0 (.v({{9{j0[23]}}, j0}), .n(wl), .c(cj0));
+	wire [34:0] c00 = lin ? c00l : {face, ci0, cj0};
 
-	/* Slot t: its texel ft of the footprint and the word in the texel. */
-	reg [127:0] a;
-	reg [3:0] bd;
-	reg [34:0] ct;
-	reg [15:0] ti, tj;
-	reg [2:0] tf;
-	reg [1:0] ft, part;
-	reg tb;
-	integer t;
-	always @(*) begin
-		for (t = 0; t < 4; t = t + 1) begin
+	/* Slot t: its texel ft of the footprint and the word in the texel; its address
+	 * lbase + k plane (+ face stride) + the texel's offset + the word's byte. */
+	wire [31:0] lbk;
+	am_add #(.W(32)) u_lbk (.a(lbase), .b(kp[31:0]), .ci(1'b0), .s(lbk), .co(carry_unused[13]));
+	wire [127:0] a;
+	wire [3:0] bd;
+	genvar gt;
+	generate
+	for (gt = 0; gt < 4; gt = gt + 1) begin : g_slot
+		localparam [1:0] T = gt;
+		reg [34:0] ct;
+		reg [15:0] ti, tj;
+		reg [2:0] tf;
+		reg [1:0] ft, part;
+		reg tb;
+		always @(*) begin
 `ifdef MUT_TU_ROW
-			ft = (gather && !blk) || psl <= 3'd2 ? t[1:0] : psl == 3'd3 ? {1'b0, t[1]} :
-				{1'b0, col};
+			ft = (gather && !blk) || psl <= 3'd2 ? T : psl == 3'd3 ? {1'b0, T[1]} : {1'b0, col};
 `else
-			ft = (gather && !blk) || psl <= 3'd2 ? t[1:0] : psl == 3'd3 ? {row, t[1]} :
-				{row, col};
+			ft = (gather && !blk) || psl <= 3'd2 ? T : psl == 3'd3 ? {row, T[1]} : {row, col};
 `endif
-			part = gather && !blk ? gwi : psl == 3'd3 ? {1'b0, t[0]} : psl == 3'd4 ? t[1:0] :
-				2'd0;
+			part = gather && !blk ? gwi : psl == 3'd3 ? {1'b0, T[0]} : psl == 3'd4 ? T : 2'd0;
 			ct = !lin || ft == 2'd0 ? c00 : ft == 2'd1 ? c10 : ft == 2'd2 ? c01 : c11;
 			if (texf) begin
 				tf = 3'd0;
@@ -203,13 +205,23 @@ module atg_tu_foot (
 				tj = ft[1] ? wj1[15:0] : wj0[15:0];
 				tb = (ft[0] ? wi1[16] : wi0[16]) | (ft[1] ? wj1[16] : wj0[16]) | bk;
 			end
-			a[t*32 +: 32] = lbase + kp[31:0] + (cube && !texf ? stride * {29'd0, tf} : 32'd0) +
-				toff(ti, tj, msf ? {1'b0, wms} : wr, tiled, psl, blk) + {28'd0, part, 2'b00} +
-				(blk && part == 2'd0 ? {30'd0, ti[1:0]} : blk && part == 2'd1 ? {30'd0, tj[1:0]} :
-				32'd0);
-			bd[t] = tb;
 		end
+		wire [34:0] fs;
+		wire [31:0] to, a1, a2;
+		wire [2:0] cu_t;
+		am_mul #(.AW(32), .BW(3)) u_fs (.clk(1'b0), .en(1'b1), .a(stride), .b(tf), .p(fs));
+		atg_tu_toff u_to (.i(ti), .j(tj), .w(msf ? {1'b0, wms} : wr), .tl(tiled), .pl(psl), .bk(blk),
+			.off(to));
+		am_add #(.W(32)) u_a1 (.a(lbk), .b(cube && !texf ? fs[31:0] : 32'd0), .ci(1'b0), .s(a1),
+			.co(cu_t[0]));
+		am_add #(.W(32)) u_a2 (.a(a1), .b(to), .ci(1'b0), .s(a2), .co(cu_t[1]));
+		/* the word's byte, and a block's column (word 0) or row (word 1) in bits 1:0 */
+		am_add #(.W(32)) u_a (.a(a2), .b({28'd0, part, blk && part == 2'd0 ? ti[1:0] :
+			blk && part == 2'd1 ? tj[1:0] : 2'd0}), .ci(1'b0), .s(a[gt*32 +: 32]), .co(cu_t[2]));
+		assign bd[gt] = tb;
+		wire unused_t = &{1'b0, fs[34:32], cu_t};
 	end
+	endgenerate
 	assign addr = a;
 	assign bord = bd;
 

@@ -95,8 +95,6 @@ module atg_rx_scan #(
 	reg [1:0] fi;	/* S_FREE: vertex */
 	integer k;
 
-	wire signed [47:0] a8_0 = a8[0], a8_1 = a8[1], a8_2 = a8[2];
-	wire signed [47:0] b8_0 = b8[0], b8_1 = b8[1], b8_2 = b8[2];
 	/* Multisampling: MS_CTRL[3:0] = 2 and SAMPLE_KILL[3:0]. */
 	reg ms4;
 	reg [3:0] kill;
@@ -129,28 +127,47 @@ module atg_rx_scan #(
 		.o_eb(eb),
 		.o_lowm(lowmv)
 	);
-	wire signed [47:0] eb_0 = eb[47:0], eb_1 = eb[95:48], eb_2 = eb[143:96];
 
 	/* Coverage of the current quad (at the centres, or in S_SAMP at the
 	 * sample): lane l at (qx + l[0], qy + l[1]); far[e]: every lane of the
 	 * bbox is further outside edge e than the offsets reach. */
+	/* qx + 1, qy + 1, qx + 2, qy + 2; edge e at the lanes: eb, + A, + B, + A + B */
+	wire [16:0] qx1, qy1, qx2, qy2;
+	wire [12*48-1:0] lve;	/* lane k of edge e at 48 (4 e + k) */
+	wire [12:0] sc_carry_unused;
+	am_add #(.W(17)) u_qx1 (.a({1'b0, qx}), .b(17'd0), .ci(1'b1), .s(qx1), .co(sc_carry_unused[0]));
+	am_add #(.W(17)) u_qy1 (.a({1'b0, qy}), .b(17'd0), .ci(1'b1), .s(qy1), .co(sc_carry_unused[1]));
+	am_add #(.W(17)) u_qx2 (.a({1'b0, qx}), .b(17'd2), .ci(1'b0), .s(qx2), .co(sc_carry_unused[2]));
+	am_add #(.W(17)) u_qy2 (.a({1'b0, qy}), .b(17'd2), .ci(1'b0), .s(qy2), .co(sc_carry_unused[3]));
+	genvar ge;
+	generate
+	for (ge = 0; ge < 3; ge = ge + 1) begin : g_lv
+		wire [47:0] ebe = eb[48 * ge +: 48];
+		assign lve[48 * (4 * ge) +: 48] = ebe;
+		am_add #(.W(48)) u_la (.a(ebe), .b(a8[ge]), .ci(1'b0), .s(lve[48 * (4 * ge + 1) +: 48]),
+			.co(sc_carry_unused[4 + 3 * ge]));
+		am_add #(.W(48)) u_lb (.a(ebe), .b(b8[ge]), .ci(1'b0), .s(lve[48 * (4 * ge + 2) +: 48]),
+			.co(sc_carry_unused[5 + 3 * ge]));
+		am_add #(.W(48)) u_lab (.a(lve[48 * (4 * ge + 1) +: 48]), .b(b8[ge]), .ci(1'b0),
+			.s(lve[48 * (4 * ge + 3) +: 48]),
+			.co(sc_carry_unused[6 + 3 * ge]));
+	end
+	endgenerate
 	reg [3:0] cov;
 	reg [2:0] far;
-	reg signed [47:0] lv;
+	reg [47:0] lv;
 	reg inb;
 	integer e;
 	always @(*) begin
 		far = 3'b111;
 		for (k = 0; k < 4; k = k + 1) begin
 			cov[k] = 1'b1;
-			inb = !({16'd0, qx} + {31'd0, k[0]} < {16'd0, bx0} ||
-			    {16'd0, qx} + {31'd0, k[0]} >= {16'd0, bx1} ||
-			    {16'd0, qy} + {31'd0, k[1]} < {16'd0, by0} ||
-			    {16'd0, qy} + {31'd0, k[1]} >= {16'd0, by1});
+			inb = !((k[0] ? qx1 : {1'b0, qx}) < {1'b0, bx0} ||
+			    (k[0] ? qx1 : {1'b0, qx}) >= {1'b0, bx1} ||
+			    (k[1] ? qy1 : {1'b0, qy}) < {1'b0, by0} ||
+			    (k[1] ? qy1 : {1'b0, qy}) >= {1'b0, by1});
 			for (e = 0; e < 3; e = e + 1) begin
-				lv = (e == 0 ? eb_0 : e == 1 ? eb_1 : eb_2) +
-					(k[0] ? (e == 0 ? a8_0 : e == 1 ? a8_1 : a8_2) : 48'sd0) +
-					(k[1] ? (e == 0 ? b8_0 : e == 1 ? b8_1 : b8_2) : 48'sd0);
+				lv = lve[48 * (4 * e + k) +: 48];
 				if (lv[47])
 					cov[k] = 1'b0;
 				if (inb && !(lv[47] && (lv | lowmv[48 * e +: 48]) != {48{1'b1}}))
@@ -165,43 +182,35 @@ module atg_rx_scan #(
 	reg [15:0] scov_n;	/* S_SAMP: with this cycle's sample */
 	always @(*) begin
 		scov_n = scov;
-		for (k = 0; k < 4; k = k + 1)
-			scov_n[4 * k + {30'd0, sc}] = cov[k] && !kill[sc];
+		for (k = 0; k < 16; k = k + 1)
+			if (sc == k[1:0])
+				scov_n[k] = cov[k / 4] && !kill[sc];
 	end
 	wire wms = wm && ms4;
 	wire w_empty = wm ? (ms4 ? skip : cov1 == 4'd0) : cov == 4'd0;	/* S_WALK: nothing here */
 	wire s_last = samp && sc == 2'd3;
 	wire s_empty = s_last && scov_n == 16'd0;
-	wire row_end = {1'b0, qx} + 17'd2 >= {1'b0, bx1};
-	wire walk_end = row_end && {1'b0, qy} + 17'd2 >= {1'b0, by1};
+	wire row_end = qx2 >= {1'b0, bx1};
+	wire walk_end = row_end && qy2 >= {1'b0, by1};
 
 	/* Depth: z = (Az i + Bz j) + Cz, i = x - bx0, j = y - by0, clamped to [0, 1]. */
-	function [31:0] i2f;	/* a small signed integer to fp32 (exact) */
-		input [16:0] v;
-		reg [16:0] m;
-		reg [4:0] lz;
-		integer b;
-		begin
-			m = v[16] ? -v : v;
-			lz = 5'd0;
-			for (b = 0; b < 17; b = b + 1)
-				if (m[b])
-					lz = 5'd16 - b[4:0];
-			m = m << lz;
-			i2f = m == 17'd0 ? 32'd0 : {v[16], 8'd127 + 8'd16 - {3'd0, lz}, m[15:0], 7'd0};
-		end
-	endfunction
-
 	reg [4:0] zc;
 	reg [3:0] zmask;
 	reg [31:0] t1 [0:3];
 	reg [127:0] zv;
 	wire [1:0] zl = zc[1:0];
-	wire [16:0] li = {1'b0, qx} + {16'd0, zl[0]} - {1'b0, bx0};
-	wire [16:0] lj = {1'b0, qy} + {16'd0, zl[1]} - {1'b0, by0};
+	/* i = qx + zl[0] - bx0 (the first four), j = qy + zl[1] - by0 (the next four) */
+	wire zi = zc < 5'd4;
+	wire [16:0] lq, lij;
+	wire [31:0] fm_b;
+	wire [1:0] lij_carry_unused;
+	am_add #(.W(17)) u_lq (.a({1'b0, zi ? qx : qy}), .b(17'd0), .ci(zi ? zl[0] : zl[1]), .s(lq),
+		.co(lij_carry_unused[0]));
+	am_sub #(.W(17)) u_lij (.a(lq), .b({1'b0, zi ? bx0 : by0}), .bi(1'b0), .d(lij),
+		.bo(lij_carry_unused[1]));
+	atg_rx_i2f #(.W(17), .F(0)) u_fm_b (.v(lij), .f(fm_b));
 	wire fm_v = st == S_Z && zc < 5'd8;
-	wire [31:0] fm_a = zc < 5'd4 ? az : bz;
-	wire [31:0] fm_b = zc < 5'd4 ? i2f(li) : i2f(lj);
+	wire [31:0] fm_a = zi ? az : bz;
 	wire fa_v = st == S_Z && zc >= 5'd8 && zc < 5'd16;
 	wire fm_o, fa_o;
 	wire [31:0] fm_r, fa_r;
@@ -213,6 +222,34 @@ module atg_rx_scan #(
 		.i_sub(1'b0), .o_valid(fa_o), .o_r(fa_r));
 	wire [31:0] zcl = fa_r[31] || (fa_r[30:23] == 8'hFF && fa_r[22:0] != 23'd0) ? 32'd0 :
 		fa_r > 32'h3F800000 ? 32'h3F800000 : fa_r;
+
+	/* The edges back to the quad origin (S_IDLE), one quad right (ec + 2 A) and
+	 * one row down (er + 2 B); the counters + 1 */
+	wire [47:0] er0 [0:2];
+	wire [47:0] ec_n [0:2];
+	wire [47:0] er_n [0:2];
+	wire [11:0] ed_carry_unused;
+	generate
+	for (ge = 0; ge < 3; ge = ge + 1) begin : g_er
+		wire [47:0] ta8 = {{16{sp_tri[96 * ge + 23]}}, sp_tri[96 * ge +: 24], 8'd0};
+		wire [47:0] tb8 = {{16{sp_tri[96 * ge + 47]}}, sp_tri[96 * ge + 24 +: 24], 8'd0};
+		wire [47:0] er_a;
+		am_sub #(.W(48)) u_er_a (.a(sp_tri[96 * ge + 48 +: 48]), .b(sp_tri[288] ? ta8 : 48'd0),
+			.bi(1'b0), .d(er_a), .bo(ed_carry_unused[4 * ge]));
+		am_sub #(.W(48)) u_er0 (.a(er_a), .b(sp_tri[304] ? tb8 : 48'd0), .bi(1'b0), .d(er0[ge]),
+			.bo(ed_carry_unused[4 * ge + 1]));
+		am_add #(.W(48)) u_ec_n (.a(ec[ge]), .b(a8[ge] <<< 1), .ci(1'b0), .s(ec_n[ge]),
+			.co(ed_carry_unused[4 * ge + 2]));
+		am_add #(.W(48)) u_er_n (.a(er[ge]), .b(b8[ge] <<< 1), .ci(1'b0), .s(er_n[ge]),
+			.co(ed_carry_unused[4 * ge + 3]));
+	end
+	endgenerate
+	wire [1:0] sc1, fi1;
+	wire [4:0] zc1;
+	wire [2:0] ct_carry_unused;
+	am_add #(.W(2)) u_sc1 (.a(sc), .b(2'd0), .ci(1'b1), .s(sc1), .co(ct_carry_unused[0]));
+	am_add #(.W(2)) u_fi1 (.a(fi), .b(2'd0), .ci(1'b1), .s(fi1), .co(ct_carry_unused[1]));
+	am_add #(.W(5)) u_zc1 (.a(zc), .b(5'd0), .ci(1'b1), .s(zc1), .co(ct_carry_unused[2]));
 
 	/* The quad that waits for its successor (to know which is the last). */
 	reg pend;
@@ -243,9 +280,7 @@ module atg_rx_scan #(
 					a8[k] <= {{16{sp_tri[96 * k + 23]}}, sp_tri[96 * k +: 24], 8'd0};
 					b8[k] <= {{16{sp_tri[96 * k + 47]}}, sp_tri[96 * k + 24 +: 24], 8'd0};
 					/* back to the quad origin (even x, y) */
-					er[k] <= $signed(sp_tri[96 * k + 48 +: 48]) -
-						(sp_tri[288] ? $signed({{16{sp_tri[96 * k + 23]}}, sp_tri[96 * k +: 24], 8'd0}) : 48'sd0) -
-						(sp_tri[304] ? $signed({{16{sp_tri[96 * k + 47]}}, sp_tri[96 * k + 24 +: 24], 8'd0}) : 48'sd0);
+					er[k] <= er0[k];
 				end
 				bx0 <= sp_tri[303:288];
 				by0 <= sp_tri[319:304];
@@ -290,7 +325,7 @@ module atg_rx_scan #(
 				st <= S_WALK;
 		S_SAMP: begin
 			scov <= scov_n;
-			sc <= sc + 2'd1;
+			sc <= sc1;
 			if (s_last) begin
 				if (scov_n != 16'd0)
 					st <= S_FQ;
@@ -311,7 +346,7 @@ module atg_rx_scan #(
 					st <= S_WALK;
 			end
 		S_Z: begin
-			zc <= zc + 5'd1;
+			zc <= zc1;
 			if (zc >= 5'd4 && zc < 5'd8)
 				t1[zl] <= fm_r;
 			if (zc >= 5'd16 && zmask[zl])
@@ -350,7 +385,7 @@ module atg_rx_scan #(
 			end
 		default: if (!f_busy) begin	/* S_FREE: the flagged PT entries (none for DRAW_RAW),
 				 * after atg_rx_frag has copied the triangle's varyings */
-			fi <= fi + 2'd1;
+			fi <= fi1;
 			if (fi < 2'd3 && fl[fi] && !raw) begin
 				pt_free <= 1'b1;
 				pt_free_idx <= ent[8 * fi +: 8];
@@ -364,21 +399,22 @@ module atg_rx_scan #(
 		    (st == S_FQ && fq_ready && !fend)) && !walk_end) begin
 			if (row_end) begin
 				qx <= {bx0[15:1], 1'b0};
-				qy <= qy + 16'd2;
+				qy <= qy2[15:0];
 				for (k = 0; k < 3; k = k + 1) begin
-					er[k] <= er[k] + (b8[k] <<< 1);
-					ec[k] <= er[k] + (b8[k] <<< 1);
+					er[k] <= er_n[k];
+					ec[k] <= er_n[k];
 				end
 			end else begin
-				qx <= qx + 16'd2;
+				qx <= qx2[15:0];
 				for (k = 0; k < 3; k = k + 1)
-					ec[k] <= ec[k] + (a8[k] <<< 1);
+					ec[k] <= ec_n[k];
 			end
 		end
 	end
 
 	wire unused_ok = &{1'b0, st_wdata[31:4], sp_last, fm_o, fa_o,
-		lv[46:0], sp_tri[767:765], sp_tri[735:448], li[16], lj[16], HAS_SU != 0};
+		lv[46:0], sp_tri[767:765], sp_tri[735:448], lij[16], qx1[16], qy1[16], qx2[16], qy2[16],
+		HAS_SU != 0};
 endmodule
 
 `default_nettype wire

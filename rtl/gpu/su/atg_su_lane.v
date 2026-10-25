@@ -62,7 +62,6 @@ module atg_su_lane #(
 	output wire [NPHYS-1:0] s_lanes
 );
 `include "atg_su_uop.vh"
-`include "atg_su_fp.vh"
 
 	localparam DW = NPHYS * 32;
 	localparam G = 32 / NPHYS;
@@ -81,27 +80,24 @@ module atg_su_lane #(
 	 * The differences x[l|1] - x[l&~1] (sub 0) and x[l|2] - x[l&~2] (sub 1)
 	 * take two values per quad, so a quad has two adders: A for lanes 0
 	 * and 1 (sub 0) or 0 and 2 (sub 1), B for the other two. */
-	reg [DW-1:0] y;
-	reg [31:0] qa, qb;
-	integer l, q;
-	always @(*) begin
-		for (q = 0; q < NPHYS / 4; q = q + 1) begin
-			qa = atg_su_fadd(sub[0] ? x_a[(4*q + 2)*32 +: 32] : x_a[(4*q + 1)*32 +: 32],
-				x_a[(4*q)*32 +: 32] ^ 32'h80000000);
-			qb = atg_su_fadd(x_a[(4*q + 3)*32 +: 32],
-				(sub[0] ? x_a[(4*q + 1)*32 +: 32] : x_a[(4*q + 2)*32 +: 32]) ^ 32'h80000000);
-			for (l = 4*q; l < 4*q + 4; l = l + 1) begin
-				case (sub[2:0])
-				3'd0: y[l*32 +: 32] = l[1] ? qb : qa;
-				3'd1: y[l*32 +: 32] = l[0] ? qb : qa;
-				3'd2: y[l*32 +: 32] = x_a[(l ^ 1)*32 +: 32];
-				3'd3: y[l*32 +: 32] = x_a[(l ^ 2)*32 +: 32];
-				3'd4: y[l*32 +: 32] = x_a[(l ^ 3)*32 +: 32];
-				default: y[l*32 +: 32] = x_a[(l & ~3)*32 +: 32];
-				endcase
+	wire [DW-1:0] y;
+	genvar gq, gm;
+	generate
+		for (gq = 0; gq < NPHYS / 4; gq = gq + 1) begin : g_qd
+			wire [31:0] qa, qb;
+			atg_su_fadd u_qa (.a(sub[0] ? x_a[(4*gq + 2)*32 +: 32] : x_a[(4*gq + 1)*32 +: 32]),
+				.b(x_a[(4*gq)*32 +: 32] ^ 32'h80000000), .r(qa));
+			atg_su_fadd u_qb (.a(x_a[(4*gq + 3)*32 +: 32]),
+				.b((sub[0] ? x_a[(4*gq + 1)*32 +: 32] : x_a[(4*gq + 2)*32 +: 32]) ^ 32'h80000000), .r(qb));
+			for (gm = 4*gq; gm < 4*gq + 4; gm = gm + 1) begin : g_l
+				assign y[gm*32 +: 32] = sub[2:0] == 3'd0 ? ((gm & 2) != 0 ? qb : qa) :
+					sub[2:0] == 3'd1 ? ((gm & 1) != 0 ? qb : qa) :
+					sub[2:0] == 3'd2 ? x_a[(gm ^ 1)*32 +: 32] :
+					sub[2:0] == 3'd3 ? x_a[(gm ^ 2)*32 +: 32] :
+					sub[2:0] == 3'd4 ? x_a[(gm ^ 3)*32 +: 32] : x_a[(gm & ~3)*32 +: 32];
 			end
 		end
-	end
+	endgenerate
 
 	/* The state machine of the subgroup instructions: IDLE (groups are
 	 * staged as they pass; the last one moves to EMIT) and EMIT (group
@@ -173,7 +169,7 @@ module atg_su_lane #(
 	reg [31:0] bal;
 	reg [DW-1:0] z;
 	reg [4:0] el, es;
-	integer sl;
+	integer sl, l;
 	always @(*) begin
 		for (l = 0; l < 32; l = l + 1)
 			bal[l] = s_ex[l] && s_d[l*32 +: 32] != 32'd0;

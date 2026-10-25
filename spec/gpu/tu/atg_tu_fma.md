@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_fma.v`.  Parent: atg_tu_ffilt (the accumulation of the f
 
 ## 1. Purpose and place
 
-The TU's pipelined fp32 fused multiply-add r = fma(a, b, c), one rounding to nearest even, denormals flushed: bit for bit `atg_su_ffma(a, b, c, 0, 0)` of `include/atg_su_fp.vh` (`tools/gsi1fp.py` fma).  The addend is read late (cycle 3), so that the caller can keep an accumulator in its registers and give the operation the value it has then.
+The TU's pipelined fp32 fused multiply-add r = fma(a, b, c), one rounding to nearest even, denormals flushed: bit for bit the module `atg_su_ffma` with rm 0 (formerly the function of `include/atg_su_fp.vh`; the TB checks against that function, `sim/tb/atg_su_fp_ref.vh`) (`tools/gsi1fp.py` fma).  The addend is read late (cycle 3), so that the caller can keep an accumulator in its registers and give the operation the value it has then.
 
 ## 2. Parameters
 
@@ -44,7 +44,7 @@ None beyond §4.
 
 ## 9. References
 
-`include/atg_su_fp.vh`; docs/style.md (Arithmetic).
+`rtl/gpu/su/atg_su_ffma_p.v`, `sim/tb/atg_su_fp_ref.vh`; docs/style.md (Arithmetic).
 
 ## 10. Status
 

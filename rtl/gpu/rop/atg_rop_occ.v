@@ -34,6 +34,12 @@ module atg_rop_occ (
 	`include "ghci_regs.vh"
 
 	reg on;	/* ROP_CTRL[0] */
+	/* the count (from 0 after a clear) + this beat's samples */
+	wire [39:0] count_next;
+	wire cn_co_unused;
+	am_add #(.W(40)) u_count (.a(clear ? 40'd0 : count), .b({35'd0, inc_valid && on ? inc_n : 5'd0}),
+		.ci(1'b0), .s(count_next), .co(cn_co_unused));
+
 	always @(posedge clk)
 		if (!rst_n) begin
 			on <= 1'b0;
@@ -41,7 +47,7 @@ module atg_rop_occ (
 		end else begin
 			if (st_we && st_idx == GHCI_S_ROP_CTRL)
 				on <= st_wdata[0];
-			count <= (clear ? 40'd0 : count) + {35'd0, inc_valid && on ? inc_n : 5'd0};
+			count <= count_next;
 		end
 
 	wire unused_ok = &{1'b0, st_wdata[31:1]};

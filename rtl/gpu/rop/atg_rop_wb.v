@@ -98,6 +98,12 @@ module atg_rop_wb #(
 	reg [1:0] g;	/* pass (one line per row: the sample) */
 	reg wait_rsp;
 	reg [4:0] idle;
+	wire [1:0] j1, g1;	/* j + 1, g + 1, idle + 1 */
+	wire [4:0] idle1;
+	wire j1_co_unused, g1_co_unused, i1_co_unused;
+	am_add #(.W(2)) u_j1 (.a(j), .b(2'd0), .ci(1'b1), .s(j1), .co(j1_co_unused));
+	am_add #(.W(2)) u_g1 (.a(g), .b(2'd0), .ci(1'b1), .s(g1), .co(g1_co_unused));
+	am_add #(.W(5)) u_idle1 (.a(idle), .b(5'd0), .ci(1'b1), .s(idle1), .co(i1_co_unused));
 	reg [31:0] xy;
 	reg [15:0] mask;
 	reg [511:0] color;
@@ -153,7 +159,7 @@ module atg_rop_wb #(
 	task next_row;
 		begin
 			if (p_multi && j != p_nl)
-				j <= j + 2'd1;
+				j <= j1;
 			else if (!r) begin
 				r <= 1'b1;
 				j <= 2'd0;
@@ -182,7 +188,7 @@ module atg_rop_wb #(
 	task pass_done;
 		begin
 			if (!p_multi && g != p_np) begin
-				g <= g + 2'd1;
+				g <= g1;
 				st <= S_BLEND;
 			end else if (!p_multi)
 				st <= S_IDLE;
@@ -272,7 +278,7 @@ module atg_rop_wb #(
 				if (!d_nocol)
 					st <= S_ROW;
 			end else if (idle != 5'd16)
-				idle <= idle + 5'd1;
+				idle <= idle1;
 			else if (ev[0] || ev[1]) begin
 				r <= 1'b0;
 				st <= S_FLUSH;

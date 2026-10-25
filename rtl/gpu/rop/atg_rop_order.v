@@ -75,15 +75,20 @@ module atg_rop_order (
 		{4{dx_mask[2]}}, {4{dx_mask[1]}}, {4{dx_mask[0]}}};
 	assign busy = issued != next;
 
+	wire [15:0] seq1, next1;	/* ord_seq + 1, next + 1 */
+	wire s1_co_unused, n1_co_unused;
+	am_add #(.W(16)) u_seq1 (.a(ord_seq), .b(16'd0), .ci(1'b1), .s(seq1), .co(s1_co_unused));
+	am_add #(.W(16)) u_next1 (.a(next), .b(16'd0), .ci(1'b1), .s(next1), .co(n1_co_unused));
+
 	always @(posedge clk)
 		if (!rst_n) begin
 			next <= 16'd0;
 			issued <= 16'd0;
 		end else begin
 			if (ord_valid)
-				issued <= ord_seq + 16'd1;
+				issued <= seq1;
 			if ((ex_ready && ex_last) || (dx_ready && dx_last))
-				next <= next + 16'd1;
+				next <= next1;
 		end
 endmodule
 

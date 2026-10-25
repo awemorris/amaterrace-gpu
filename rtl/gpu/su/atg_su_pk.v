@@ -15,7 +15,7 @@
  * presents the result SHORT_LAT cycles later, like atg_su_alu.  packh
  * (two fp32 -> fp16 halves, RNE: rs1 low, rs2 high), unpackh (sub 0 low,
  * 1 high half -> fp32) and swaph are always present; with PACKED the
- * per-half fp16 arithmetic (include/atg_su_fp16.vh: one rounding under rm,
+ * per-half fp16 arithmetic (atg_su_pk_half: one rounding under rm,
  * flushed, canonical NaN 0x7E00), the 16-bit integer add/sub/mul and the
  * Boolean half compares (0xFFFF/0; ge is the swapped le).  hsel 00 both
  * halves, 01 the low half only (the high half from rs1), 10 the high half
@@ -67,8 +67,6 @@ module atg_su_pk #(
 	output wire [NPHYS-1:0] s_lanes
 );
 `include "atg_su_uop.vh"
-`include "atg_su_fp.vh"
-`include "atg_su_fp16.vh"
 
 	localparam DW = NPHYS * 32;
 	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS + DW;
@@ -92,98 +90,38 @@ module atg_su_pk #(
 	wire sub = x_uop[ATG_UOP_SUB];
 	wire sat = x_uop[ATG_UOP_MOD + 6];
 
-	/* One half.  The float add/sub/mul/fma share one fused datapath and
-	 * the compares one compare (ge is the swapped le), with the operands
-	 * of each operation selected in front of it. */
-	function [15:0] half;
-		input [3:0] o;
-		input [15:0] a, b, c;
-		input [2:0] r;
-		input st;
-		reg [15:0] y, fy, fz, ca, cb;
-		reg fnoc;
-		reg [1:0] cop;
-		begin
-			fy = 16'h3C00;
-			fz = b;
-			fnoc = 1'b0;
-			case (o)
-			ATG_PK_FSUB2[3:0]: fz = {!b[15], b[14:0]};
-			ATG_PK_FMUL2[3:0]: begin
-				fy = b;
-				fz = 16'd0;
-				fnoc = 1'b1;
-			end
-			ATG_PK_FFMA2[3:0]: begin
-				fy = b;
-				fz = c;
-			end
-			default: ;
-			endcase
-			ca = a;
-			cb = b;
-			case (o)
-			ATG_PK_FCMPLT2[3:0]: cop = 2'd1;
-			ATG_PK_FCMPGE2[3:0]: begin
-				ca = b;
-				cb = a;
-				cop = 2'd2;
-			end
-			ATG_PK_FCMPEQ2[3:0]: cop = 2'd0;
-			default: cop = 2'd3;
-			endcase
-			/* (PK_SHARED: the fp16 operations are atg_su_fpu's) */
-			case (o)
-			ATG_PK_FADD2[3:0], ATG_PK_FSUB2[3:0], ATG_PK_FMUL2[3:0], ATG_PK_FFMA2[3:0]:
-				y = SH ? 16'd0 : atg_su_hfma(a, fy, fz, r, fnoc);
-			ATG_PK_FMIN2[3:0]: y = SH ? 16'd0 : atg_su_hminmax(a, b, 1'b0);
-			ATG_PK_FMAX2[3:0]: y = SH ? 16'd0 : atg_su_hminmax(a, b, 1'b1);
-			ATG_PK_IADD2[3:0]: y = a + b;
-			ATG_PK_ISUB2[3:0]: y = a - b;
-			ATG_PK_IMUL2[3:0]: y = a * b;
-			ATG_PK_FCMPLT2[3:0], ATG_PK_FCMPGE2[3:0], ATG_PK_FCMPEQ2[3:0], ATG_PK_FCMPNE2[3:0]:
-				y = SH ? 16'd0 : {16{atg_su_hcmp(ca, cb, cop)}};
-			default: y = 16'd0;
-			endcase
-			half = st && o <= ATG_PK_FMAX2[3:0] ? atg_su_hsat(y) : y;
-		end
-	endfunction
-
-	/* One lane. */
-	function [31:0] lane;
-		input [3:0] o;
-		input [31:0] a, b0, c;
-		input [2:0] r;
-		input [1:0] hs;
-		input sb, st;
-		reg [31:0] b;
-		reg [15:0] lo, hi;
-		begin
-			b = hs == 2'd3 ? {b0[15:0], b0[31:16]} : b0;
-			if (o == ATG_PK_PACKH[3:0])
-				lane = {atg_su_f2h(b0), atg_su_f2h(a)};
-			else if (o == ATG_PK_UNPACKH[3:0])
-				lane = atg_su_h2f(sb ? a[31:16] : a[15:0]);
-			else if (o == ATG_PK_SWAPH[3:0])
-				lane = {a[15:0], a[31:16]};
-			else if (PACKED != 0) begin
-				lo = half(o, a[15:0], b[15:0], c[15:0], r, st);
-				hi = half(o, a[31:16], b[31:16], c[31:16], r, st);
-				lane = {hs == 2'd1 ? a[31:16] : hi, hs == 2'd2 ? a[15:0] : lo};
-			end else
-				lane = 32'd0;
-		end
-	endfunction
-
-	reg [DW-1:0] y;
-	integer l;
-	always @(*) begin
-		y = {DW{1'b0}};
-		if (mine)	/* (only for this unit's groups: fast simulation) */
-			for (l = 0; l < NPHYS; l = l + 1)
-				y[l*32 +: 32] = lane(op, x_a[l*32 +: 32], x_b[l*32 +: 32], x_c[l*32 +: 32], rm,
-					hsel, sub, sat);
+	/*
+	 * One lane: two atg_su_pk_half (each with its fused fp16 datapath,
+	 * compares and 16-bit integer arithmetic, and packh's fp32 -> fp16 of
+	 * one source: rs1 low, rs2 high) and unpackh's fp16 -> fp32
+	 * (atg_su_h2f).  y is 0 but for this unit's groups.
+	 */
+	wire [DW-1:0] y;
+	genvar l;
+	generate
+	for (l = 0; l < NPHYS; l = l + 1) begin : g_lane
+		wire [31:0] la = x_a[l*32 +: 32];
+		wire [31:0] lb0 = x_b[l*32 +: 32];
+		wire [31:0] lc = x_c[l*32 +: 32];
+		wire [31:0] lb = hsel == 2'd3 ? {lb0[15:0], lb0[31:16]} : lb0;
+		wire [15:0] lo, hi;
+		wire [31:0] un;
+		atg_su_pk_half #(.ARITH(PACKED), .FP(!SH)) u_lo (
+			.o(op), .ha(la[15:0]), .hb(lb[15:0]), .hc(lc[15:0]), .r(rm), .sat(sat), .xw(la),
+			.y(lo)
+		);
+		atg_su_pk_half #(.ARITH(PACKED), .FP(!SH)) u_hi (
+			.o(op), .ha(la[31:16]), .hb(lb[31:16]), .hc(lc[31:16]), .r(rm), .sat(sat), .xw(lb0),
+			.y(hi)
+		);
+		atg_su_h2f u_un (.h(sub ? la[31:16] : la[15:0]), .f(un));
+		wire [31:0] v = op == ATG_PK_PACKH[3:0] ? {hi, lo} : op == ATG_PK_UNPACKH[3:0] ? un :
+			op == ATG_PK_SWAPH[3:0] ? {la[15:0], la[31:16]} :
+			PACKED != 0 ? {hsel == 2'd1 ? la[31:16] : hi, hsel == 2'd2 ? la[15:0] : lo} :
+			32'd0;
+		assign y[l*32 +: 32] = mine ? v : 32'd0;
 	end
+	endgenerate
 
 	/* SHORT_LAT stages; stage 0 is registered from x_*. */
 	reg [EW-1:0] pipe [0:SHORT_LAT-1];

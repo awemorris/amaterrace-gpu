@@ -81,23 +81,6 @@ module atg_rx_frag (
 	localparam [31:0] ONE = 32'h3F800000;
 	reg [2:0] st;
 
-	/* a small signed integer to fp32 (exact), as atg_rx_scan */
-	function [31:0] i2f;
-		input [16:0] v;
-		reg [16:0] m;
-		reg [4:0] lz;
-		integer b;
-		begin
-			m = v[16] ? -v : v;
-			lz = 5'd0;
-			for (b = 0; b < 17; b = b + 1)
-				if (m[b])
-					lz = 5'd16 - b[4:0];
-			m = m << lz;
-			i2f = m == 17'd0 ? 32'd0 : {v[16], 8'd127 + 8'd16 - {3'd0, lz}, m[15:0], 7'd0};
-		end
-	endfunction
-
 	reg [6:0] vc;	/* VARYING_COUNT, 0-64 */
 	reg ms4;	/* MS_CTRL[3:0] = 2 */
 	reg cent;	/* MS_CTRL[4] */
@@ -187,7 +170,8 @@ module atg_rx_frag (
 	wire rd_now = st == S_COPY && !rd_done;
 	assign pt_rd = rd_now;
 	assign pt_idx = ent[8 * cv +: 8];
-	assign pt_word = 7'd4 + cw;
+	wire [7:0] fc_carry_unused;
+	am_add #(.W(7)) u_pt_word (.a(cw), .b(7'd4), .ci(1'b0), .s(pt_word), .co(fc_carry_unused[0]));
 	assign pt_busy = st == S_COPY;
 	wire map_we = st == S_COPY && rd_done && !rv_q && !map_done;
 	wire ds_we = st == S_COPY && map_done && ms4 && dsn != 3'd4;
@@ -201,9 +185,28 @@ module atg_rx_frag (
 	reg [1:0] wl;
 	reg [3:0] wr;
 	wire [3:0] nreg = cent ? 4'd10 : 4'd7;
-	wire [15:0] xl = qx + {15'd0, wl[0]}, yl = qy + {15'd0, wl[1]};
-	wire [31:0] xc = i2f({1'b0, xl[14:0], 1'b1}) - 32'h00800000;	/* x + 0.5 */
-	wire [31:0] yc = i2f({1'b0, yl[14:0], 1'b1}) - 32'h00800000;
+	/* the counters + 1 */
+	wire [3:0] n1, wr1, qi1;
+	wire [6:0] cw1;
+	wire [1:0] cv1, wl1;
+	wire [2:0] dsn1;
+	am_add #(.W(4)) u_n1 (.a(n), .b(4'd0), .ci(1'b1), .s(n1), .co(fc_carry_unused[1]));
+	am_add #(.W(4)) u_wr1 (.a(wr), .b(4'd0), .ci(1'b1), .s(wr1), .co(fc_carry_unused[2]));
+	am_add #(.W(4)) u_qi1 (.a({1'b0, qi}), .b(4'd0), .ci(1'b1), .s(qi1), .co(fc_carry_unused[3]));
+	am_add #(.W(7)) u_cw1 (.a(cw), .b(7'd0), .ci(1'b1), .s(cw1), .co(fc_carry_unused[4]));
+	am_add #(.W(2)) u_cv1 (.a(cv), .b(2'd0), .ci(1'b1), .s(cv1), .co(fc_carry_unused[5]));
+	am_add #(.W(2)) u_wl1 (.a(wl), .b(2'd0), .ci(1'b1), .s(wl1), .co(fc_carry_unused[6]));
+	am_add #(.W(3)) u_dsn1 (.a(dsn), .b(3'd0), .ci(1'b1), .s(dsn1), .co(fc_carry_unused[7]));
+	/* the lane's x + 0.5, y + 0.5: (2 x + 1) as fp32, the exponent - 1 */
+	wire [15:0] xl, yl;
+	wire [31:0] x2, y2, xc, yc;
+	wire [3:0] xy_carry_unused;
+	am_add #(.W(16)) u_xl (.a(qx), .b(16'd0), .ci(wl[0]), .s(xl), .co(xy_carry_unused[0]));
+	am_add #(.W(16)) u_yl (.a(qy), .b(16'd0), .ci(wl[1]), .s(yl), .co(xy_carry_unused[1]));
+	atg_rx_i2f #(.W(17), .F(0)) u_x2 (.v({1'b0, xl[14:0], 1'b1}), .f(x2));
+	atg_rx_i2f #(.W(17), .F(0)) u_y2 (.v({1'b0, yl[14:0], 1'b1}), .f(y2));
+	am_sub #(.W(32)) u_xc (.a(x2), .b(32'h00800000), .bi(1'b0), .d(xc), .bo(xy_carry_unused[2]));
+	am_sub #(.W(32)) u_yc (.a(y2), .b(32'h00800000), .bi(1'b0), .d(yc), .bo(xy_carry_unused[3]));
 	wire [31:0] zr = oz[32 * wl +: 32];
 `ifdef MUT_R3_CLAMP
 	wire zclamp = 1'b1;
@@ -263,7 +266,7 @@ module atg_rx_frag (
 						qby[16 * n[2:0] +: 16] <= fq_xy[31:16];
 						qbs[16 * n[2:0] +: 16] <= fq_scov;
 						qcc[4 * n[2:0] +: 4] <= fq_ccov;
-						n <= n + 4'd1;
+						n <= n1;
 						if (n == 4'd7)
 							st <= S_ALLOC;
 					end
@@ -290,18 +293,18 @@ module atg_rx_frag (
 				end
 			S_COPY: begin
 				if (rd_now) begin
-					if (cw + 7'd1 == vc) begin
+					if (cw1 == vc) begin
 						cw <= 7'd0;
-						cv <= cv + 2'd1;
+						cv <= cv1;
 						if (cv == 2'd2)
 							rd_done <= 1'b1;
 					end else
-						cw <= cw + 7'd1;
+						cw <= cw1;
 				end
 				if (map_we)
 					map_done <= 1'b1;
 				if (ds_we)
-					dsn <= dsn + 3'd1;
+					dsn <= dsn1;
 				if (copy_end) begin
 					bgo <= 1'b1;
 					st <= cent && ms4 && needc ? S_BARYC : S_BARY;
@@ -322,19 +325,19 @@ module atg_rx_frag (
 					st <= S_WR;
 				end
 			S_WR:
-				if (wr + 4'd1 == nreg) begin
+				if (wr1 == nreg) begin
 					wr <= 4'd0;
-					wl <= wl + 2'd1;
+					wl <= wl1;
 					if (wl == 2'd3) begin
-						if ({1'b0, qi} + 4'd1 == n)
+						if (qi1 == n)
 							st <= S_GO;
 						else begin
-							qi <= qi + 3'd1;
+							qi <= qi1[2:0];
 							st <= S_COPY;	/* copy_end holds: on to the next quad */
 						end
 					end
 				end else
-					wr <= wr + 4'd1;
+					wr <= wr1;
 			default: begin	/* S_GO */
 				n <= 4'd0;
 				qbs <= 128'd0;
