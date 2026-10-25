@@ -71,7 +71,7 @@ task bring_up;
 		mem.poke32(FENCES, fence_value);
 		host_write(GHCI_FENCE_LAST, fence_value);
 		host_write(GHCI_CPFW_CTRL, 32'd1 << GHCI_CPFW_CTRL_RUN);
-		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 20000);
+		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 80000);	/* the boot clears 64 KiB of DMEM at most */
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 		for (i = 0; i < 1024; i = i + 1)
 			mem.poke32(TABLE + i * 4, 32'd0);

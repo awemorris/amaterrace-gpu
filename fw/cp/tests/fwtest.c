@@ -2019,16 +2019,23 @@ test_protection(void)
 	(void)host_frame_run(TAG, 1);
 	host_check(host_prot_byte(MEMORY_BASE) == 0 && host_prot_byte(MEMORY_BASE + 0x1000u) == 0, "FREE_MEMORY");
 
-	/* GRANT: two of a range are two entries; one session takes a quarter of the CAM at most. */
+	/* GRANT: two of a range are two entries; the 64 entries are one pool, one session may take them all. */
 	ring_grant(TAG, GHCI_GRANT_READ, MEMORY_BASE + 0x20000u, 0x1000);
 	host_check(host_ring_result() == 0, "BUFFER_GRANT");
 	ring_grant(TAG, GHCI_GRANT_READ, MEMORY_BASE + 0x20000u, 0x1000);
 	host_check(host_prot_cam(slot, MEMORY_BASE + 0x20000u, 0x1000) == 2u, "two entries");
 	host_check(host_prot_allowed(slot, MEMORY_BASE + 0x20000u, 0) && !host_prot_allowed(slot, MEMORY_BASE + 0x20000u, 1),
 		   "a read grant");
-	for (index = 2; index < 17u; index++)
+	for (index = 2; index < 64u; index++) {
 		ring_grant(TAG, GHCI_GRANT_READ, MEMORY_BASE + 0x20000u, 0x1000);
-	host_check(host_ring_result() == FW_VK_ERROR_OUT_OF_DEVICE_MEMORY, "the session's share of the CAM");
+		if (host_ring_result() != 0)
+			break;
+	}
+	host_check(index == 64u && host_prot_cam(slot, 0, 0) == 64u, "one session takes every entry");
+	ring_grant(TAG, GHCI_GRANT_READ, MEMORY_BASE + 0x20000u, 0x1000);
+	host_check(host_ring_result() == FW_VK_ERROR_OUT_OF_DEVICE_MEMORY, "no entry left");
+	ring_grant(TAG + 1u, GHCI_GRANT_READ, MEMORY_BASE + 0x20000u, 0x1000);
+	host_check(host_ring_result() == FW_VK_ERROR_OUT_OF_DEVICE_MEMORY, "none for another session either");
 	ring_grant(TAG, GHCI_GRANT_READ, MEMORY_BASE + 0x20800u, 0x1000);
 	host_check(host_ring_result() == FW_VK_ERROR_INITIALIZATION_FAILED, "a grant not granule aligned");
 
@@ -2036,7 +2043,10 @@ test_protection(void)
 	selfs = host_prot_selfs;
 	ring_revoke(TAG, MEMORY_BASE + 0x20000u, 0x1000);
 	host_check(host_ring_result() == 0 && host_prot_selfs > selfs, "BUFFER_REVOKE drains");
-	host_check(host_prot_cam(slot, MEMORY_BASE + 0x20000u, 0x1000) == 15u, "one entry revoked");
+	host_check(host_prot_cam(slot, MEMORY_BASE + 0x20000u, 0x1000) == 63u, "one entry revoked");
+	ring_grant(TAG + 1u, GHCI_GRANT_READ, MEMORY_BASE, 0x1000);
+	host_check(host_ring_result() == 0 && host_prot_cam(other, MEMORY_BASE, 0x1000) == 1u,
+		   "the freed entry to another session");
 	ring_revoke(TAG, MEMORY_BASE + 0x30000u, 0x1000);
 	host_check(host_ring_result() == 0, "REVOKE of no grant");
 
