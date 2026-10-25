@@ -143,7 +143,10 @@ module atg_dc_regs #(
 	/* Writes. */
 	wire [31:0] wbits = d_wdata & d_wmask;
 	wire w_timing = d_we && d_idx >= I_TIMING && d_idx <= I_SYNC_POL;
-	wire [3:0] w_tidx = d_idx[3:0] - I_TIMING[3:0];
+	wire [3:0] w_tidx;
+	wire [3:0] idx_bo_unused;
+
+	am_sub #(.W(4)) s_wtidx (.a(d_idx[3:0]), .b(I_TIMING[3:0]), .bi(1'b0), .d(w_tidx), .bo(idx_bo_unused[0]));
 	wire w_quasi = w_timing || (d_we && (d_idx == I_FB_STRIDE || d_idx == I_FB_SIZE ||
 		d_idx == I_PCLK_SEL));
 	wire [31:0] ctrl_old = {25'd0, r_output, r_format, 1'b0, r_test, 1'b0, r_enable};
@@ -158,6 +161,13 @@ module atg_dc_regs #(
 	wire en_eff = r_enable && !en_fall;	/* ENABLE after this cycle */
 	wire w_next = d_we && d_idx == I_FB_NEXT;
 	wire [31:0] next_new = (r_fb_next & ~d_wmask) | wbits;
+
+	/* The reset's countdown and the vsync count. */
+	wire [5:0] reset_dec;
+	wire [31:0] frame_inc;
+
+	am_sub #(.W(6)) s_reset (.a(reset_left), .b(6'd0), .bi(1'b1), .d(reset_dec), .bo(idx_bo_unused[1]));
+	am_add #(.W(32)) a_frame (.a(r_frame_count), .b(32'd0), .ci(1'b1), .s(frame_inc), .co(idx_bo_unused[2]));
 	wire w_status = d_we && d_idx == I_STATUS;
 	wire [3:0] st_clear = w_status ? {wbits[GHCI_DC_ST_BAD_WRITE], wbits[GHCI_DC_ST_RECORD_ERROR],
 		wbits[GHCI_DC_ST_READ_ERROR], wbits[GHCI_DC_ST_UNDERFLOW]} : 4'd0;
@@ -207,7 +217,7 @@ module atg_dc_regs #(
 			end
 		end else begin
 			if (reset_left != 6'd0)
-				reset_left <= reset_left - 6'd1;
+				reset_left <= reset_dec;
 			/* The sticky status and DISP_ERROR. */
 			st_underflow <= (st_underflow && !st_clear[0]) || ev_underflow;
 			st_rd_err <= (st_rd_err && !st_clear[1]) || rd_err;
@@ -220,7 +230,7 @@ module atg_dc_regs #(
 				err_frame <= 1'b0;
 			end
 			if (ev_vsync)
-				r_frame_count <= r_frame_count + 32'd1;
+				r_frame_count <= frame_inc;
 			/* Plane 0. */
 			if (en_fall && pend) begin
 				pend <= 1'b0;
@@ -286,7 +296,9 @@ module atg_dc_regs #(
 
 	/* Reads. */
 	wire r_timing_hit = d_ridx >= I_TIMING && d_ridx <= I_SYNC_POL;
-	wire [3:0] r_tidx = d_ridx[3:0] - I_TIMING[3:0];
+	wire [3:0] r_tidx;
+
+	am_sub #(.W(4)) s_rtidx (.a(d_ridx[3:0]), .b(I_TIMING[3:0]), .bi(1'b0), .d(r_tidx), .bo(idx_bo_unused[3]));
 	wire r_i2c = d_ridx[5:2] == I_I2C[5:2] && d_ridx[1:0] != 2'd3;
 
 	always @(*) begin

@@ -69,3 +69,5 @@ design §5.1 (atg_dc_tgen, PCLK_SEL), Values referenced: VESA DMT 640×480@60, C
 ## 10. Status
 
 Implemented in WS288 p005 (TB `atg_dc_tgen_tb` PASS).
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

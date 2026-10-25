@@ -87,3 +87,5 @@ design §5.1 (atg_dc_dma), §4.2.
 ## 10. Status
 
 Implemented in WS288 p005 (TB `atg_dc_dma_tb` PASS).  p035 D3: `clear`, `done`, `err`.
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

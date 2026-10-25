@@ -85,3 +85,5 @@ docs/ghci.md §13.2; design §18.5.
 ## 10. Status
 
 Implemented in WS288 p005; DISP2 in p035 D3 (the internal bus, plane 0's flips of the CP, the new STATUS, BAD_WRITE, DISP_ERROR; the standalone GHCI header, IRQ_STATUS/IRQ_ENABLE and `STANDALONE`/`BASE` are gone).  About 320 lines.
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

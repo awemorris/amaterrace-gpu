@@ -120,6 +120,22 @@ module atg_dc_cursor #(
 	assign cursor_base = cur_base;
 	assign idle = !req_valid && inflight == 3'd0;
 
+	/* The loader's sums: the reads in flight or waiting, the next counts and the next line's address. */
+	wire [2:0] infl_up, infl_next, used;
+	wire [NL_W:0] rq_inc, wr_inc;
+	wire [WS-1:0] up_inc;
+	wire [AW-1:0] rq_line;
+	wire [6:0] ld_co_unused;
+
+	am_add #(.W(3)) a_infl (.a(inflight), .b(3'd0), .ci(take), .s(infl_up), .co(ld_co_unused[0]));
+	am_sub #(.W(3)) s_infl (.a(infl_up), .b(3'd0), .bi(rsp_read), .d(infl_next), .bo(ld_co_unused[1]));
+	am_add #(.W(3)) a_used (.a(inflight), .b(lcount), .ci(1'b0), .s(used), .co(ld_co_unused[2]));
+	am_add #(.W(NL_W + 1)) a_rq (.a(rq_n), .b({(NL_W + 1){1'b0}}), .ci(1'b1), .s(rq_inc), .co(ld_co_unused[3]));
+	am_add #(.W(NL_W + 1)) a_wr (.a(wr_n), .b({(NL_W + 1){1'b0}}), .ci(1'b1), .s(wr_inc), .co(ld_co_unused[4]));
+	am_add #(.W(WS)) a_up (.a(up_w), .b({WS{1'b0}}), .ci(1'b1), .s(up_inc), .co(ld_co_unused[5]));
+	am_add #(.W(AW)) a_line (.a(pend_base[ADDR_W-1:LINE_SHIFT]), .b({{(AW - NL_W - 1){1'b0}}, rq_n}), .ci(1'b0),
+		.s(rq_line), .co(ld_co_unused[6]));
+
 	am_fifo #(.W(LW), .DEPTH_LOG2(2)) lines (
 		.clk(clk), .rst_n(rst_n && st == S_LOAD && !stop),
 		.in_valid(keep), .in_ready(l_in_ready), .in_data(rsp_error ? {LW{1'b0}} : rsp_rdata),
@@ -152,7 +168,7 @@ module atg_dc_cursor #(
 			req_valid <= 1'b0;
 			req_line <= {AW{1'b0}};
 		end else begin
-			inflight <= inflight + {2'd0, take} - {2'd0, rsp_read};
+			inflight <= infl_next;
 			if (take)
 				req_valid <= 1'b0;
 			if (keep && rsp_error) begin
@@ -191,17 +207,16 @@ module atg_dc_cursor #(
 					taken <= 1'b1;
 					taken_cancel <= 1'b1;
 				end else begin
-					if (!req_valid && rq_n != NLINES && inflight + lcount < 3'd4) begin
+					if (!req_valid && rq_n != NLINES && used < 3'd4) begin
 						req_valid <= 1'b1;
-						req_line <= pend_base[ADDR_W-1:LINE_SHIFT] +
-							{{(AW - NL_W - 1){1'b0}}, rq_n};
-						rq_n <= rq_n + 1'b1;
+						req_line <= rq_line;
+						rq_n <= rq_inc;
 					end
 					if (mem_we) begin
-						up_w <= up_w + 1'b1;
+						up_w <= up_inc;
 						if (up_w == WLAST) begin
-							wr_n <= wr_n + 1'b1;
-							if (wr_n + 1'b1 == NLINES)
+							wr_n <= wr_inc;
+							if (wr_inc == NLINES)
 								st <= S_READY;
 						end
 					end
@@ -234,8 +249,16 @@ module atg_dc_cursor #(
 	reg [15:0] pos_x, pos_y;
 	reg vis;
 	wire accept = i_valid && i_ready;
-	wire [16:0] dx = {1'b0, x} - {pos_x[15], pos_x};
-	wire [16:0] dy = {1'b0, y} - {pos_y[15], pos_y};
+	wire [16:0] dx, dy;
+	wire [15:0] x_inc, y_inc, x_last;
+	wire [4:0] bl_co_unused;
+
+	/* The pixel's place in the cursor, and the next column and row of the screen. */
+	am_sub #(.W(17)) s_dx (.a({1'b0, x}), .b({pos_x[15], pos_x}), .bi(1'b0), .d(dx), .bo(bl_co_unused[0]));
+	am_sub #(.W(17)) s_dy (.a({1'b0, y}), .b({pos_y[15], pos_y}), .bi(1'b0), .d(dy), .bo(bl_co_unused[1]));
+	am_add #(.W(16)) a_x (.a(x), .b(16'd0), .ci(1'b1), .s(x_inc), .co(bl_co_unused[2]));
+	am_add #(.W(16)) a_y (.a(y), .b(16'd0), .ci(1'b1), .s(y_inc), .co(bl_co_unused[3]));
+	am_sub #(.W(16)) s_w (.a(fb_width), .b(16'd1), .bi(1'b0), .d(x_last), .bo(bl_co_unused[4]));
 	wire in_cur = dx[16:6] == 11'd0 && dy[16:6] == 11'd0;
 
 	assign i_ready = !sv || o_ready;
@@ -269,71 +292,89 @@ module atg_dc_cursor #(
 				sv <= 1'b1;
 				s_px <= i_data;
 				s_in <= in_cur && vis && img_ok && st == S_IDLE;
-				if (x == fb_width - 16'd1) begin
+				if (x == x_last) begin
 					x <= 16'd0;
-					y <= y + 16'd1;
+					y <= y_inc;
 				end else begin
-					x <= x + 16'd1;
+					x <= x_inc;
 				end
 			end
 		end
 	end
 
-	/* c + round(p x (255 - a) / 255), saturated; round(t / 255) of t + 128
-	 * is (t + 128 + ((t + 128) >> 8)) >> 8 for every t up to 255 x 255. */
-	function [7:0] mix;
-		input [7:0] c, p, a;
-		reg [15:0] t;
-		reg [7:0] q8;
-		reg [8:0] s;
-		begin
-			t = {8'd0, p} * {8'd0, ~a} + 16'd128;
-			/* verilator lint_off WIDTHTRUNC */
-			q8 = (t + {8'd0, t[15:8]}) >> 8;	/* < 256 */
-			/* verilator lint_on WIDTHTRUNC */
-			s = {1'b0, c} + {1'b0, q8};
-			mix = s[8] ? 8'hFF : s[7:0];
-		end
-	endfunction
-
-	/* round(v x m / 255) for m = 31 or 63. */
-	function [5:0] narrow;
-		input [7:0] v;
-		input [5:0] m;
-		reg [15:0] t;
-		begin
-			t = {8'd0, v} * {10'd0, m} + 16'd128;
-			/* verilator lint_off WIDTHTRUNC */
-			narrow = (t + {8'd0, t[15:8]}) >> 8;	/* < 64 */
-			/* verilator lint_on WIDTHTRUNC */
-		end
-	endfunction
-
 	wire [7:0] cb = q[7:0], cg = q[15:8], cr = q[23:16], ca = q[31:24];
 	wire [7:0] r8 = {s_px[15:11], s_px[15:13]};
 	wire [7:0] g8 = {s_px[10:5], s_px[10:9]};
 	wire [7:0] b8 = {s_px[4:0], s_px[4:2]};
-	wire [5:0] r5 = narrow(mix(cr, r8, ca), 6'd31);
-	wire [5:0] g6 = narrow(mix(cg, g8, ca), 6'd63);
-	wire [5:0] b5 = narrow(mix(cb, b8, ca), 6'd31);
+
+	/*
+	 * Three blenders, one per channel of the output (a pixel has one
+	 * format): c + round(p x (255 - a) / 255), saturated, where round(t /
+	 * 255) of t + 128 is (t + 128 + ((t + 128) >> 8)) >> 8 for every t up
+	 * to 255 x 255.  Channel 0 is the byte 23:16 (BGRA8: R; RGBA8: B, the
+	 * cursor's R and B swapped; RGB565: R), 1 the byte 15:8 (G), 2 the
+	 * byte 7:0.
+	 */
+	wire [23:0] mix_c = format == 2'd1 ? {cb, cg, cr} : {cr, cg, cb};
+	wire [23:0] mix_p = format == 2'd2 ? {r8, g8, b8} : s_px[23:0];
+	wire [23:0] mixed;
+
+	/*
+	 * RGB565 narrows the blended channels again: round(v x m / 255) for m =
+	 * 31 (red, blue) or 63 (green), v x m being v x 32 - v or v x 64 - v.
+	 */
+	wire [5:0] narrowed [0:2];
+
+	genvar k;
+	generate
+	for (k = 0; k < 3; k = k + 1) begin : g_mix
+		wire [7:0] c = mix_c[8*(2-k) +: 8];
+		wire [7:0] p = mix_p[8*(2-k) +: 8];
+		wire [15:0] pa, t, u;
+		wire [8:0] sum;
+		wire t_co_unused, u_co_unused;
+
+		am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(0)) m_pa (.clk(clk), .en(1'b1), .a(p), .b(~ca), .p(pa));
+		am_add #(.W(16)) a_t (.a(pa), .b(16'd128), .ci(1'b0), .s(t), .co(t_co_unused));
+		am_add #(.W(16)) a_u (.a(t), .b({8'd0, t[15:8]}), .ci(1'b0), .s(u), .co(u_co_unused));	/* u[15:8] < 256 */
+		am_add #(.W(8)) a_s (.a(c), .b(u[15:8]), .ci(1'b0), .s(sum[7:0]), .co(sum[8]));
+		assign mixed[8*(2-k) +: 8] = sum[8] ? 8'hFF : sum[7:0];
+
+		wire [7:0] v = sum[8] ? 8'hFF : sum[7:0];
+		wire [15:0] vm, nt, nu;
+		wire vm_bo_unused, nt_co_unused, nu_co_unused;
+
+		if (k == 1) begin : g_63
+			am_sub #(.W(16)) s_vm (.a({2'd0, v, 6'd0}), .b({8'd0, v}), .bi(1'b0), .d(vm), .bo(vm_bo_unused));
+		end else begin : g_31
+			am_sub #(.W(16)) s_vm (.a({3'd0, v, 5'd0}), .b({8'd0, v}), .bi(1'b0), .d(vm), .bo(vm_bo_unused));
+		end
+		am_add #(.W(16)) a_nt (.a(vm), .b(16'd128), .ci(1'b0), .s(nt), .co(nt_co_unused));
+		am_add #(.W(16)) a_nu (.a(nt), .b({8'd0, nt[15:8]}), .ci(1'b0), .s(nu), .co(nu_co_unused));	/* nu[15:8] < 64 */
+		assign narrowed[k] = nu[13:8];
+
+		wire unused_ok = &{1'b0, t_co_unused, u_co_unused, vm_bo_unused, nt_co_unused, nu_co_unused,
+			u[7:0], nu[7:0], nu[15:14]};
+	end
+	endgenerate
+
+	wire [5:0] r5 = narrowed[0];
+	wire [5:0] g6 = narrowed[1];
+	wire [5:0] b5 = narrowed[2];
 	reg [31:0] blended;
 
 	always @(*) begin
 		case (format)
-		2'd1:	/* RGBA8: R in byte 0 */
-			blended = {s_px[31:24], mix(cb, s_px[23:16], ca), mix(cg, s_px[15:8], ca),
-				mix(cr, s_px[7:0], ca)};
 		2'd2:
 			blended = {s_px[31:16], r5[4:0], g6, b5[4:0]};
-		default:	/* BGRA8 */
-			blended = {s_px[31:24], mix(cr, s_px[23:16], ca), mix(cg, s_px[15:8], ca),
-				mix(cb, s_px[7:0], ca)};
+		default:	/* BGRA8, RGBA8 */
+			blended = {s_px[31:24], mixed};
 		endcase
 	end
 
 	assign o_data = s_in ? blended : s_px;
 
-	wire unused_ok = &{1'b0, rsp_tag, l_in_ready, r5[5], b5[5], flip_base[5:0]};
+	wire unused_ok = &{1'b0, rsp_tag, l_in_ready, r5[5], b5[5], flip_base[5:0], ld_co_unused, bl_co_unused};
 endmodule
 
 `default_nettype wire

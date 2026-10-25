@@ -322,16 +322,22 @@ module atg_dc_cursor_tb;
 		frame("RGBA8", 100, 80);
 		format = 2'd2;
 		frame("RGB565", 100, 80);
-		format = 2'd0;
+		/*
+		 * The DUT's own blenders, with its cursor pixel and primary pixel
+		 * registers set from here (no pixel is accepted meanwhile, so the
+		 * DUT does not write them).
+		 */
+		dut.q = 32'd0;
 		for (i = 0; i < 65536; i = i + 1) begin
-			v = {dut.narrow(dut.mix(8'd0, {i[15:11], i[15:13]}, 8'd0), 6'd31),
-				dut.narrow(dut.mix(8'd0, {i[10:5], i[10:9]}, 8'd0), 6'd63),
-				dut.narrow(dut.mix(8'd0, {i[4:0], i[4:2]}, 8'd0), 6'd31)};
+			dut.s_px = {16'd0, i[15:0]};
+			#1;
+			v = {14'd0, dut.r5, dut.g6, dut.b5};
 			if ({v[16:12], v[11:6], v[4:0]} !== i[15:0]) begin
 				fail("565 identity", v, i);
 				i = 65536;
 			end
 		end
+		format = 2'd0;
 		if (errors == e0)
 			$display("PASS atg_dc_cursor.fmt");
 
