@@ -145,14 +145,25 @@ module atg_su_cbank #(
 	wire [31:0] lword = lbuf[lwo*32 +: 32];
 	assign x_ready = st == IDLE && !lc_pend && !lc_kick;
 
-	reg [NPHYS*CW-1:0] xidx;
-	reg [31:0] ix;
-	integer l;
-	always @(*)
-		for (l = 0; l < NPHYS; l = l + 1) begin
-			ix = x_a[l*32 +: 32] + imm;
-			xidx[l*CW +: CW] = ix[CW-1:0];
+	/* Each lane's word index rs1 + imm (its low CW bits). */
+	wire [NPHYS*CW-1:0] xidx;
+	genvar l;
+	generate
+		for (l = 0; l < NPHYS; l = l + 1) begin : g_ix
+			wire co_unused;
+			am_add #(.W(CW)) u_ix (.a(x_a[l*32 +: CW]), .b(imm[CW-1:0]), .ci(1'b0),
+				.s(xidx[l*CW +: CW]), .co(co_unused));
 		end
+	endgenerate
+
+	/* The next word of a load, its address, and the next lane. */
+	wire [CW:0] wi_next;
+	wire [31:0] ladr_next;
+	wire [LW-1:0] li_next;
+	wire wi_co_unused, la_co_unused, li_co_unused;
+	am_add #(.W(CW + 1)) u_wi (.a(wi), .b({(CW + 1){1'b0}}), .ci(1'b1), .s(wi_next), .co(wi_co_unused));
+	am_add #(.W(32)) u_ladr (.a(ladr), .b(32'd4), .ci(1'b0), .s(ladr_next), .co(la_co_unused));
+	am_add #(.W(LW)) u_li (.a(li), .b({LW{1'b0}}), .ci(1'b1), .s(li_next), .co(li_co_unused));
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -204,9 +215,9 @@ module atg_su_cbank #(
 				st <= rsp_error ? IDLE : LWR;
 			end
 			LWR: begin
-				wi <= wi + 1'b1;
-				ladr <= ladr + 32'd4;
-				if (wi + 1'b1 == nw)
+				wi <= wi_next;
+				ladr <= ladr_next;
+				if (wi_next == nw)
 					st <= IDLE;
 				else if (&lwo)
 					st <= LREQ;
@@ -214,7 +225,7 @@ module atg_su_cbank #(
 			ACCESS: begin
 				pval <= lanes[li];
 				pli <= li;
-				li <= li + 1'b1;
+				li <= li_next;
 				if ({{(32-LW){1'b0}}, li} == NPHYS - 1)
 					st <= DRAIN;
 			end
@@ -275,7 +286,7 @@ module atg_su_cbank #(
 	assign l_sbe = rsbe;
 	assign l_cls = ATG_CLS_M;
 
-	wire unused_ok = &{1'b0, x_pc, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop, imm, ix,
+	wire unused_ok = &{1'b0, x_pc, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop, imm, x_a,
 		rsp_write, rsp_tag, (NWARPS != 0), ladr[1:0], s_addr[1:0]};
 endmodule
 

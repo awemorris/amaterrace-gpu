@@ -61,9 +61,6 @@ module atg_su_dec #(
 	wire [6:0] rs2 = {w1[5:4], w0[24:20]};
 	wire [6:0] rs3f = {w1[7:6], w0[31:27]};
 	wire [31:0] hi = {{12{w1[31]}}, w1[31:22], 10'd0} << 2;
-	wire [31:0] imm_i = {{20{w0[31]}}, w0[31:20]} + hi;
-	wire [31:0] imm_s = {{20{w0[31]}}, w0[31:25], w0[11:7]} + hi;
-	wire [31:0] imm_b = {{21{w0[31]}}, w0[7], w0[30:25], w0[11:8]} + hi;
 	wire [31:0] imm_u = {w0[31:12], w1[13:2]};
 
 	/* The table lookup: the RISC-V opcodes and custom-0..3. */
@@ -104,17 +101,22 @@ module atg_su_dec #(
 	 * its rs3; .3 with .c also rs1+3 (Dref). */
 	wire tthree = tex && f7[5];
 	wire tcmp = tex && (op[ATG_TEX_CFORM] || tthree);
-	wire [6:0] rs3 = tcmp ? rs1 + 7'd2 : rs3f;
+	wire [6:0] rs1_2;
+	wire r2_co_unused;
+	am_add #(.W(7)) u_rs1_2 (.a(rs1), .b(7'd2), .ci(1'b0), .s(rs1_2), .co(r2_co_unused));
+	wire [6:0] rs3 = tcmp ? rs1_2 : rs3f;
 	wire t4 = tthree && op[ATG_TEX_CFORM];
 	wire [6:0] lim = t4 ? 7'd60 : 7'd61;
-	wire cmp_bad = tcmp && (rs1 < 7'd64 ? ({25'd0, rs1} + (t4 ? 32'd3 : 32'd2) >= NREGS ||
+	wire cmp_bad = tcmp && (rs1 < 7'd64 ? ({25'd0, rs1} >= (t4 ? NREGS - 3 : NREGS - 2) ||
 		rs1 >= lim) : (rs1 == 7'd94 || rs1 == 7'd95 || rs1 == 7'd126 || rs1 == 7'd127 ||
 		(t4 && (rs1 == 7'd93 || rs1 == 7'd125))));
 	/* A texture R form's texel offsets: word1 [25:22], [29:26], [13:10]. */
 	wire [31:0] imm_t = {20'd0, w1[13:10], w1[29:26], w1[25:22]};
 	wire [2:0] ndst = !wrd ? 3'd0 : tex ? 3'd4 : 3'd1;
-	wire [7:0] rd_end = {1'b0, rd} + {5'd0, ndst};
-	wire pair_bad = pair && (rs1 < 7'd64 ? ({25'd0, rs1} + 32'd1 >= NREGS || rs1 >= 7'd62)
+	wire [7:0] rd_end;
+	wire re_co_unused;
+	am_add #(.W(8)) u_rd_end (.a({1'b0, rd}), .b({5'd0, ndst}), .ci(1'b0), .s(rd_end), .co(re_co_unused));
+	wire pair_bad = pair && (rs1 < 7'd64 ? ({25'd0, rs1} >= NREGS - 1 || rs1 >= 7'd62)
 		: (rs1 == 7'd95 || rs1 == 7'd127));
 	wire dst_bad = wrd && (rd >= 7'd64 ||
 		(rd == 7'd63 ? (HAS_SA == 0 || cls != ATG_CLS_A || tex) :
@@ -127,12 +129,19 @@ module atg_su_dec #(
 		pair_bad || cmp_bad || dst_bad;
 	wire rqs = (use1 && rs1 == 7'd63) || (use2 && rs2 == 7'd63) || (use3 && rs3 == 7'd63);
 
+	/* The I, S and B immediates (one a decode): the low part and hi share one adder. */
+	wire [31:0] lo_i = {{20{w0[31]}}, w0[31:20]};
+	wire [31:0] lo_s = {{20{w0[31]}}, w0[31:25], w0[11:7]};
+	wire [31:0] lo_b = {{21{w0[31]}}, w0[7], w0[30:25], w0[11:8]};
+	wire [31:0] imm_isb;
+	wire im_co_unused;
+	am_add #(.W(32)) u_imm (.a(fmt == FM_S ? lo_s : fmt == FM_B ? lo_b : lo_i), .b(hi), .ci(1'b0),
+		.s(imm_isb), .co(im_co_unused));
+
 	reg [31:0] imm;
 	always @(*) begin
 		case (fmt)
-		FM_I: imm = imm_i;
-		FM_S: imm = imm_s;
-		FM_B: imm = imm_b;
+		FM_I, FM_S, FM_B: imm = imm_isb;
 		FM_U: imm = imm_u;
 		default: imm = tex ? imm_t : 32'd0;
 		endcase

@@ -82,8 +82,16 @@ module atg_su_exec #(
 	always @(*)
 		for (l = 0; l < NPHYS; l = l + 1)
 			bt[l] = x_a[l*32 +: 32] != 32'd0;
-	wire [31:0] bt_w = {{(32-NPHYS){1'b0}}, bt} << lane0;
-	wire [31:0] gmask = {{(32-NPHYS){1'b0}}, {NPHYS{1'b1}}} << lane0;
+	/* The group's bits in the warp's 32: the Booleans, the group's mask, and EXEC's bits of the group. */
+	wire [31:0] bt_w;
+	wire [31:0] gmask;
+	wire [31:0] wexec_g;
+	am_shift #(.W(32), .SW(6)) u_bt_w (.a({{(32-NPHYS){1'b0}}, bt}), .amt(lane0[5:0]), .left(1'b1),
+		.arith(1'b0), .y(bt_w));
+	am_shift #(.W(32), .SW(6)) u_gmask (.a({{(32-NPHYS){1'b0}}, {NPHYS{1'b1}}}), .amt(lane0[5:0]),
+		.left(1'b1), .arith(1'b0), .y(gmask));
+	am_shift #(.W(32), .SW(5)) u_wexec_g (.a(wexec), .amt(lane0[4:0]), .left(1'b0), .arith(1'b0),
+		.y(wexec_g));
 
 	/* Branch conditions over the groups of one instruction. */
 	reg acc_any, acc_all;
@@ -106,8 +114,14 @@ module atg_su_exec #(
 	reg [DW-1:0] save_d;
 	always @(*)
 		for (l = 0; l < NPHYS; l = l + 1)
-			save_d[l*32 +: 32] = {32{wexec[lane0 + l]}};
+			save_d[l*32 +: 32] = {32{wexec_g[l]}};
 	wire s_in = mine && op == ATG_EXEC_SAVE && x_uop[ATG_UOP_WRD];
+
+	/* The next PC: the branch target or PC + 1. */
+	wire [15:0] pc_next;
+	wire pc_co_unused;
+	am_add #(.W(16)) u_pc (.a(x_pc), .b(is_br && take ? imm[15:0] : 16'd1), .ci(1'b0), .s(pc_next),
+		.co(pc_co_unused));
 
 	reg [EW-1:0] pipe [0:SHORT_LAT-1];
 	reg wc_v;
@@ -149,7 +163,7 @@ module atg_su_exec #(
 						wc_w <= x_warp;
 						wc_o <= op == ATG_EXEC_END ? 2'd1 : op == ATG_EXEC_BAR ? 2'd2 :
 							2'd0;
-						wc_p <= is_br && take ? x_pc + imm[15:0] : x_pc + 16'd1;
+						wc_p <= pc_next;
 					end
 				end else begin
 					acc_any <= any_now;
