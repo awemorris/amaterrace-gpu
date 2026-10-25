@@ -454,8 +454,20 @@ GHCI_FRAME (gpu-op 0x10105, draft;
   RING_RPTR pass the packet.
 - A command that the firmware cannot decode ends the frame with
   VK_ERROR_FEATURE_NOT_PRESENT (the wire format has no lengths).
-- The results mean "decoded and handed to the units", not "done": the
-  driver's FENCE after the packet completes the work.
+- The results mean "decoded and checked", not "done": the driver's FENCE
+  after the packet completes the work.
+- **A submit does not wait for its work.** The firmware may write a
+  QUEUE_SUBMIT's result, the later records' results and the frame's
+  result, and raise IRQ_STATUS.RESULT, before it hands the submitted
+  command buffers' work to the units; it hands that work over before it
+  decodes a later command that is not a submit, and before it lets
+  RING_RPTR pass the packet, so every later command and the driver's
+  FENCE after the packet still follow the work. The driver therefore
+  must not take RING_RPTR or the RESULT interrupt as "the packet's work
+  is handed over"; only the fence says the work is done. An error the
+  firmware finds while it hands the work over (after the submit's
+  result) loses the session: its later submits answer
+  VK_ERROR_DEVICE_LOST and run nothing.
 
 ### 7.3 Class 0: standard micro-ops
 

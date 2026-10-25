@@ -39,6 +39,7 @@ uint32_t host_uops[HOST_UOP_WORDS];
 uint32_t host_uop_count;
 uint32_t host_state[HOST_STATE_WORDS];
 uint32_t host_results;
+uint32_t host_result_uops;
 uint32_t host_dones;
 int host_failures;
 
@@ -75,6 +76,7 @@ host_reset(void)
 	host_uop_count = 0;
 	host_uop_start = 0;
 	host_results = 0;
+	host_result_uops = 0;
 	host_dones = 0;
 	memset(host_state_set, 0, sizeof(host_state_set));
 	host_traced_uops = 0;
@@ -193,6 +195,7 @@ hw_write(
 		return;
 	case HW_RESULT:
 		host_results++;
+		host_result_uops = host_uop_count;
 		return;
 	case HW_DONE:
 		host_dones++;

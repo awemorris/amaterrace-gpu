@@ -64,25 +64,45 @@ module atg_su_alu #(
 	wire immb = x_uop[ATG_UOP_OP + ATG_ALU_IMMB];
 	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
 
+	/* The bits of x in reverse order. */
+	function [31:0] rev;
+		input [31:0] x;
+		integer k;
+		for (k = 0; k < 32; k = k + 1)
+			rev[k] = x[31 - k];
+	endfunction
+
+	/* One lane.  sub, the compares, min and max share one subtraction
+	 * (a - b as 33 bits: bit 32 is a < b unsigned; with equal signs bit 31
+	 * is a < b signed); the shifts share one arithmetic right shift (sll
+	 * shifts the reversed a). */
 	function [31:0] alu;
 		input [4:0] o;
 		input [31:0] a, b, c, i;
+		reg [32:0] d;
+		reg [31:0] sv, sh;
+		reg sh_unused;
+		reg ltu, lts;
 		begin
+			d = {1'b0, a} - {1'b0, b};
+			ltu = d[32];
+			lts = a[31] != b[31] ? a[31] : d[31];
+			sv = o == ATG_ALU_SLL ? rev(a) : a;
+			{sh_unused, sh} = $signed({o == ATG_ALU_SRA && a[31], sv}) >>> b[4:0];
 			case (o)
 			ATG_ALU_ADD: alu = a + b;
-			ATG_ALU_SUB: alu = a - b;
-			ATG_ALU_SLL: alu = a << b[4:0];
-			ATG_ALU_SLT: alu = {32{$signed(a) < $signed(b)}};
-			ATG_ALU_SLTU: alu = {32{a < b}};
+			ATG_ALU_SUB: alu = d[31:0];
+			ATG_ALU_SLL: alu = rev(sh);
+			ATG_ALU_SLT: alu = {32{lts}};
+			ATG_ALU_SLTU: alu = {32{ltu}};
 			ATG_ALU_XOR: alu = a ^ b;
-			ATG_ALU_SRL: alu = a >> b[4:0];
-			ATG_ALU_SRA: alu = $unsigned($signed(a) >>> b[4:0]);
+			ATG_ALU_SRL, ATG_ALU_SRA: alu = sh;
 			ATG_ALU_OR: alu = a | b;
 			ATG_ALU_AND: alu = a & b;
-			ATG_ALU_MIN: alu = $signed(a) < $signed(b) ? a : b;
-			ATG_ALU_MAX: alu = $signed(a) < $signed(b) ? b : a;
-			ATG_ALU_MINU: alu = a < b ? a : b;
-			ATG_ALU_MAXU: alu = a < b ? b : a;
+			ATG_ALU_MIN: alu = lts ? a : b;
+			ATG_ALU_MAX: alu = lts ? b : a;
+			ATG_ALU_MINU: alu = ltu ? a : b;
+			ATG_ALU_MAXU: alu = ltu ? b : a;
 			ATG_ALU_ANDN: alu = a & ~b;
 			ATG_ALU_ORN: alu = a | ~b;
 			ATG_ALU_XNOR: alu = ~(a ^ b);

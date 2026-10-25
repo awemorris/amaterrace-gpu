@@ -56,70 +56,104 @@ module atg_blt_avg (
 		endcase
 	endfunction
 
-	integer p, k, s, f, ps;
-	reg [11:0] sum;
-	reg [9:0] q;
-	reg [31:0] wd, px, wf;
-	reg [43:0] fl;
-	reg [4:0] fpos;
-	reg [5:0] fw;
-	reg [31:0] msk;
-
-	always @(*) begin
-		out_p = 128'd0;
-		ps = 1 << psl;
-		fl = fields(fmt);
-		sum = 12'd0;
-		q = 10'd0;
-		px = 32'd0;
-		wd = 32'd0;
-		wf = 32'd0;
-		fpos = 5'd0;
-		fw = 6'd0;
-		msk = 32'd0;
-		for (p = 0; p < 4; p = p + 1) begin
-			if (fmt == 3'd0) begin
-				/* UNORM8: every byte of the pixel. */
-				for (k = 0; k < 4; k = k + 1)
-					if (k < ps && ps <= 4) begin
+	/* The averages for format fm and pixel size 2^pl.  The output below
+	 * calls it with fm and pl as constants (every case of fmt and psl that
+	 * gives a different result), so that each call reduces to fixed fields
+	 * and byte places. */
+	function [127:0] avg;
+		input [2:0] fm;
+		input [2:0] pl;
+		input [511:0] x;
+		integer p, k, s, f, ps;
+		reg [127:0] o;
+		reg [11:0] sum;
+		reg [9:0] q;
+		reg [31:0] wd, px;
+		reg [9:0] wf;
+		reg [21:0] wf_unused;
+		reg [43:0] fl;
+		reg [4:0] fpos;
+		reg [5:0] fw;
+		reg [31:0] msk;
+		begin
+			o = 128'd0;
+			ps = 1 << pl;
+			fl = fields(fm);
+			sum = 12'd0;
+			q = 10'd0;
+			px = 32'd0;
+			wd = 32'd0;
+			wf = 10'd0;
+			fpos = 5'd0;
+			fw = 6'd0;
+			msk = 32'd0;
+			for (p = 0; p < 4; p = p + 1) begin
+				if (fm == 3'd0) begin
+					/* UNORM8: every byte of the pixel. */
+					for (k = 0; k < 4; k = k + 1)
+						if (k < ps && ps <= 4) begin
+							sum = 12'd0;
+							for (s = 0; s < 4; s = s + 1)
+								sum = sum + {4'd0, x[8 * (ps * (4 * p + s) + k) +: 8]};
+							q = rne4(sum);
+							o[8 * (ps * p + k) +: 8] = q[7:0];
+						end
+				end else if (fm == 3'd1 || fm == 3'd6 || fm == 3'd7) begin
+					/* The fields of a 16- or 32-bit pixel. */
+					px = 32'd0;
+					for (f = 0; f < 4; f = f + 1) begin
+						fpos = fl[11 * f + 6 +: 5];
+						fw = fl[11 * f +: 6];
+						msk = (32'd1 << fw) - 32'd1;
 						sum = 12'd0;
-						for (s = 0; s < 4; s = s + 1)
-							sum = sum + {4'd0, in_s[8 * (ps * (4 * p + s) + k) +: 8]};
+						for (s = 0; s < 4; s = s + 1) begin
+							wd = fm == 3'd6 ? x[32 * (4 * p + s) +: 32] :
+								{16'd0, x[16 * (4 * p + s) +: 16]};
+							{wf_unused, wf} = (wd >> fpos) & msk;
+							sum = sum + {2'd0, wf};
+						end
 						q = rne4(sum);
-						out_p[8 * (ps * p + k) +: 8] = q[7:0];
+						if (fw != 6'd0)
+							px = px | (({22'd0, q} & msk) << fpos);
 					end
-			end else if (fmt == 3'd1 || fmt == 3'd6 || fmt == 3'd7) begin
-				/* The fields of a 16- or 32-bit pixel. */
-				px = 32'd0;
-				for (f = 0; f < 4; f = f + 1) begin
-					fpos = fl[11 * f + 6 +: 5];
-					fw = fl[11 * f +: 6];
-					msk = (32'd1 << fw) - 32'd1;
-					sum = 12'd0;
-					for (s = 0; s < 4; s = s + 1) begin
-						wd = fmt == 3'd6 ? in_s[32 * (4 * p + s) +: 32] :
-							{16'd0, in_s[16 * (4 * p + s) +: 16]};
-						wf = (wd >> fpos) & msk;
-						sum = sum + {2'd0, wf[9:0]};
-					end
-					q = rne4(sum);
-					if (fw != 6'd0)
-						px = px | (({22'd0, q} & msk) << fpos);
+					if (fm == 3'd6)
+						o[32 * p +: 32] = px;
+					else
+						o[16 * p +: 16] = px[15:0];
+				end else begin
+					/* SAMPLE0: the bytes of sample 0. */
+					for (k = 0; k < 16; k = k + 1)
+						if (k < ps && ps * p + k < 16)
+							o[8 * (ps * p + k) +: 8] = x[8 * (ps * 4 * p + k) +: 8];
 				end
-				if (fmt == 3'd6)
-					out_p[32 * p +: 32] = px;
-				else
-					out_p[16 * p +: 16] = px[15:0];
-			end else begin
-				/* SAMPLE0: the bytes of sample 0. */
-				for (k = 0; k < 16; k = k + 1)
-					if (k < ps && ps * p + k < 16)
-						out_p[8 * (ps * p + k) +: 8] = in_s[8 * (ps * 4 * p + k) +: 8];
 			end
+			avg = o;
 		end
-	end
+	endfunction
 
-	wire unused_ok = &{1'b0, q[9:8], sum, wf[31:10]};
+	always @(*)
+		case (fmt)
+		3'd0:
+			case (psl)
+			3'd0: out_p = avg(3'd0, 3'd0, in_s);
+			3'd1: out_p = avg(3'd0, 3'd1, in_s);
+			3'd2: out_p = avg(3'd0, 3'd2, in_s);
+			default: out_p = avg(3'd0, 3'd3, in_s);	/* above 4 bytes: nothing */
+			endcase
+		3'd1: out_p = avg(3'd1, 3'd0, in_s);	/* the fields: any size */
+		3'd6: out_p = avg(3'd6, 3'd0, in_s);
+		3'd7: out_p = avg(3'd7, 3'd0, in_s);
+		default:	/* SAMPLE0 */
+			case (psl)
+			3'd0: out_p = avg(3'd2, 3'd0, in_s);
+			3'd1: out_p = avg(3'd2, 3'd1, in_s);
+			3'd2: out_p = avg(3'd2, 3'd2, in_s);
+			3'd3: out_p = avg(3'd2, 3'd3, in_s);
+			3'd4: out_p = avg(3'd2, 3'd4, in_s);
+			default: out_p = avg(3'd2, 3'd5, in_s);	/* 32 bytes and more: as 16 */
+			endcase
+		endcase
+
 endmodule
 
 `default_nettype wire

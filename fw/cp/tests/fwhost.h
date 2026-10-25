@@ -43,6 +43,7 @@ extern uint32_t host_uops[HOST_UOP_WORDS];
 extern uint32_t host_uop_count;
 extern uint32_t host_state[HOST_STATE_WORDS];
 extern uint32_t host_results;
+extern uint32_t host_result_uops;	/* the µop words given before the last RESULT */
 extern uint32_t host_dones;
 extern int host_failures;
 

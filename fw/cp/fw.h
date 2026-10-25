@@ -542,6 +542,8 @@ uint32_t fw_heap_alloc(uint32_t tag, uint32_t bytes);
 void fw_heap_free(uint32_t tag, uint32_t address, uint32_t bytes);
 int fw_session_open(uint32_t tag, uint64_t limit);
 int fw_session_is_open(uint32_t tag);
+void fw_session_lose(uint32_t tag);
+int fw_session_lost(uint32_t tag);
 void fw_session_close(uint32_t tag);
 int fw_session_any(void);
 
@@ -627,7 +629,8 @@ struct fw_rstate *fw_rstate(struct fw_object *cmdbuf);
 int fw_rstate_begin(struct fw_object *cmdbuf);
 void fw_rstate_end(struct fw_object *cmdbuf);
 
-/* submit.c: the replay's markers, and waiting for the units. */
+/* submit.c: the replays of the submits, their markers, and waiting for the units. */
+void fw_submit_run(void);
 int fw_marker_run(uint32_t code, const uint32_t *payload, uint32_t count);
 int fw_wait_units(void);
 
