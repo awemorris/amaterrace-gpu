@@ -90,7 +90,11 @@ module atg_vf_fetch #(
 	reg [15:0] en;
 	reg [7:0] a_vk [0:15];	/* ATTR_DST[31:24]: the VkFormat, 0 = DESC[19:16] */
 	reg [31:0] a_lim [0:15];
-	wire [8:0] s_off = st_idx - GHCI_S_ATTR;
+	wire [8:0] s_off;
+	wire s_off_bo_unused, num_bo_unused, bend_co_unused, l2_co_unused, osum_co_unused, el_co_unused, ad_co_unused;	/* not used */
+
+	/* The STATE index's place in the attribute range. */
+	am_sub #(.W(9)) soff (.a(st_idx), .b(GHCI_S_ATTR), .bi(1'b0), .d(s_off), .bo(s_off_bo_unused));
 	wire s_attr = st_idx >= GHCI_S_ATTR && st_idx < GHCI_S_ATTR + 9'd32;
 	integer i;
 	always @(posedge clk)
@@ -164,24 +168,29 @@ module atg_vf_fetch #(
 			endcase
 	wire [31:0] lim = a_lim[k];
 
-	/* Per-instance element: divider with a one-entry memo. */
-	wire [31:0] num = v_inst - s_finst;
+	/* Per-instance element: the instance less FIRST_INSTANCE, divided, with a one-entry memo. */
+	wire [31:0] num;
 	reg m_v;
 	reg [31:0] m_num, m_q;
 	reg [7:0] m_div;
-	reg [31:0] d_n;
-	reg [30:0] d_q;
-	reg [7:0] d_r;
-	reg [4:0] d_cnt;
-	wire [8:0] d_rs = {d_r, d_n[31]};
-	wire d_ge = d_rs >= {1'b0, div};
+	reg d_start;
+	wire d_busy_unused, d_done;
+	wire [31:0] d_q, d_r_unused;
+
+	am_sub #(.W(32)) nsub (.a(v_inst), .b(s_finst), .bi(1'b0), .d(num), .bo(num_bo_unused));
+	am_div #(.W(32), .CW(6)) dv (
+		.clk(clk), .rst_n(rst_n), .start(d_start), .a(num), .b({24'd0, div}), .busy(d_busy_unused),
+		.done(d_done), .q(d_q), .r(d_r_unused)
+	);
 
 	reg [31:0] elem;
 	reg [31:0] addr;
 	reg [47:0] boff;	/* stride * element, the attribute's offset in its buffer */
 	reg oob;
 	/* The attribute's end, offset + size, in 49 bits: it cannot wrap. */
-	wire [48:0] bend = {1'b0, boff} + {44'd0, size};
+	wire [48:0] bend;
+
+	am_add #(.W(49)) bnd (.a({1'b0, boff}), .b({44'd0, size}), .ci(1'b0), .s(bend), .co(bend_co_unused));
 `ifdef MUT_ATTR_LIMIT_GE
 	wire past = bend >= {18'd0, lim[30:0]};
 `else
@@ -195,10 +204,15 @@ module atg_vf_fetch #(
 	reg rr;	/* the next victim */
 	reg sel1, sel2, miss1, miss2;
 	wire [LA_W-1:0] l1 = addr[ADDR_W-1:LINE_SHIFT];
-	wire [LA_W-1:0] l2 = l1 + {{(LA_W-1){1'b0}}, 1'b1};
+	wire [LA_W-1:0] l2;	/* the next line */
+
+	am_add #(.W(LA_W)) nl (.a(l1), .b({LA_W{1'b0}}), .ci(1'b1), .s(l2), .co(l2_co_unused));
 	wire [LINE_SHIFT-1:0] off = addr[LINE_SHIFT-1:0];
 	/* off + size <= 2 * LINE_BYTES - 1: the line is crossed when the sum is above LINE_BYTES. */
-	wire [LINE_SHIFT:0] osum = {1'b0, off} + {{(LINE_SHIFT-4){1'b0}}, size};
+	wire [LINE_SHIFT:0] osum;
+
+	am_add #(.W(LINE_SHIFT + 1)) os (.a({1'b0, off}), .b({{(LINE_SHIFT-4){1'b0}}, size}),
+		.ci(1'b0), .s(osum), .co(osum_co_unused));
 	wire xline = osum[LINE_SHIFT] && osum[LINE_SHIFT-1:0] != {LINE_SHIFT{1'b0}};
 	wire h1_0 = e_v[0] && e_tag0 == l1, h1_1 = e_v[1] && e_tag1 == l1;
 	wire h2_0 = e_v[0] && e_tag0 == l2, h2_1 = e_v[1] && e_tag1 == l2;
@@ -214,7 +228,26 @@ module atg_vf_fetch #(
 	wire rd_rsp = rsp_valid && !rsp_write;
 
 	wire [2*LB-1:0] pair = {sel2 ? e_dat1 : e_dat0, sel1 ? e_dat1 : e_dat0};
-	wire [2*LB-1:0] pair_sh = pair >> {off, 3'b000};
+	wire [2*LB-1:0] pair_sh;
+
+	/* The attribute's bytes from the pair of lines. */
+	am_shift #(.W(2 * LB), .SW(LINE_SHIFT + 3)) ps (.a(pair), .amt({off, 3'b000}), .left(1'b0),
+		.arith(1'b0), .y(pair_sh));
+
+	/*
+	 * FIRST_INSTANCE plus the element: the memo's quotient (ELEM) or the
+	 * division's (DIV), one adder; the element times the stride, one
+	 * multiplier, for the offset and the address.
+	 */
+	wire [31:0] el_s;
+	wire [47:0] el_x;
+	wire [31:0] ad_s;
+
+	am_add #(.W(32)) el (.a(s_finst), .b(st == ST_DIV ? d_q : m_q), .ci(1'b0), .s(el_s),
+		.co(el_co_unused));
+	am_mul #(.AW(32), .BW(16), .SIGNED(0), .LAT(0)) ml (.clk(clk), .en(1'b1), .a(elem),
+		.b(stride), .p(el_x));
+	am_add #(.W(32)) ad (.a(a_base[k]), .b(el_x[31:0]), .ci(1'b0), .s(ad_s), .co(ad_co_unused));
 
 	assign vb_ready = st == ST_IDLE;
 	assign af_valid = st == ST_EMIT || st == ST_NONE;
@@ -233,7 +266,9 @@ module atg_vf_fetch #(
 			m_v <= 1'b0;
 			rq_pend <= 1'b0;
 			oob <= 1'b0;
+			d_start <= 1'b0;
 		end else begin
+			d_start <= 1'b0;
 			if (rd_rsp) begin
 				if (rsp_tag[0])
 					e_dat1 <= rsp_error ? {LB{1'b0}} : rsp_rdata;
@@ -265,33 +300,25 @@ module atg_vf_fetch #(
 					elem <= v_inst;
 					st <= ST_MUL;
 				end else if (m_v && m_num == num && m_div == div) begin
-					elem <= s_finst + m_q;
+					elem <= el_s;
 					st <= ST_MUL;
 				end else begin
-					d_n <= num;
-					d_q <= 31'd0;
-					d_r <= 8'd0;
-					d_cnt <= 5'd0;
+					d_start <= 1'b1;
 					st <= ST_DIV;
 				end
-			ST_DIV: begin
-				/* One quotient bit per cycle, from bit 31. */
-				d_r <= d_ge ? d_rs[7:0] - div : d_rs[7:0];
-				d_q <= {d_q[29:0], d_ge};
-				d_n <= {d_n[30:0], 1'b0};
-				d_cnt <= d_cnt + 5'd1;
-				if (d_cnt == 5'd31) begin
+			ST_DIV:
+				/* am_div: one quotient bit per cycle; done with the quotient. */
+				if (d_done) begin
 					m_v <= 1'b1;
 					m_num <= num;
 					m_div <= div;
-					m_q <= {d_q[30:0], d_ge};
-					elem <= s_finst + {d_q[30:0], d_ge};
+					m_q <= d_q;
+					elem <= el_s;
 					st <= ST_MUL;
 				end
-			end
 			ST_MUL: begin
-				boff <= elem * {32'd0, stride};
-				addr <= a_base[k] + elem * {16'd0, stride};
+				boff <= el_x;
+				addr <= ad_s;
 				st <= ST_PLAN;
 			end
 			ST_PLAN: begin
