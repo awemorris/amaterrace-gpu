@@ -16,9 +16,10 @@
  *
  * The host's accesses take simulated time: a register access is a
  * transaction on atg_top's register port, and the clock runs only in
- * the link's calls.  A GPU access outside the local memory (there is no
- * host memory behind this board) reads 0, is dropped when it writes, and
- * is counted.
+ * the link's calls.  The GPU reaches the local memory (AXI ID 0) and the
+ * host's memory below HOST_LIMIT (ID 1, as the KC705's PCIe bridge gives
+ * it); an access outside both, or with the other ID, reads 0, is dropped
+ * when it writes, and is counted.
  *
  * Built by sim/verilator/link-build.sh into a static library; the
  * program links it with a C++ linker.
@@ -40,7 +41,9 @@ struct atg_link_stats {
 	uint64_t uop_words;		/* µop words the CPU gave the sequencer */
 	uint64_t register_reads;	/* host reads of the register window */
 	uint64_t register_writes;	/* host writes of the register window */
-	uint64_t stray_accesses;	/* GPU accesses outside the local memory */
+	uint64_t stray_accesses;	/* GPU beats outside the memories, or with the wrong AXI ID */
+	uint64_t local_beats;		/* GPU beats to the local memory */
+	uint64_t host_beats;		/* GPU beats to the host's memory */
 };
 
 /* Makes the GPU and resets it; 0, or -1 when the local memory cannot be had. */
@@ -58,6 +61,15 @@ void atg_link_write(uint32_t offset, uint32_t value);
  * size and how many of its first bytes the window shows.
  */
 uint8_t *atg_link_local(uint32_t *base, uint32_t *bytes, uint32_t *window);
+
+/*
+ * The host's memory the GPU reaches: its bytes from bus address 0, and
+ * the end of it (HOST_LIMIT).
+ */
+uint8_t *atg_link_host(uint32_t *limit);
+
+/* Whether the GPU's local window is open (MEM WINDOW_CTRL.ENABLE). */
+int atg_link_window_open(void);
 
 /* The interrupt line's level. */
 int atg_link_irq(void);
