@@ -47,8 +47,9 @@
  * nothing and keeps the sums.
  * See spec/gpu/tu/atg_tu_ffilt.md.
  *
- * States: IDLE →(tc)→ RUN (lanes 0-3) → FIN → OUT →(tr_ready)→ IDLE; a
- * pass with more to follow goes from RUN back to IDLE.
+ * States: IDLE →(tc)→ RUN (lanes 0-3) → FIN (lanes 0-3) → OUT
+ * →(tr_ready)→ IDLE; a pass with more to follow goes from RUN back to
+ * IDLE.
  */
 
 `timescale 1ns / 1ps
@@ -207,19 +208,17 @@ module atg_tu_ffilt (
 	wire lastc = {1'b0, c} == ncomp - 3'd1;
 	wire skip = n[32:0] == 33'd0 || ncomp == 3'd0;
 
-	/* The result of lane l. */
-	reg [511:0] fin_q;
+	/* The result of lane k (FIN takes the lanes one a cycle). */
+	reg [127:0] fin_q;
 	reg [127:0] fin;
 	reg [2:0] g3;
-	integer l, m;
+	integer m;
 	always @(*) begin
-		for (l = 0; l < 4; l = l + 1) begin
-			for (m = 0; m < 4; m = m + 1) begin
-				g3 = m[2:0];
-				fin[m*32 +: 32] = g3 < ncomp ? acc[(l*4 + m)*32 +: 32] : m == 3 ? one : 32'd0;
-			end
-			fin_q[l*128 +: 128] = !mask[l] ? 128'd0 : gath ? acc[l*128 +: 128] : swz4(fin, swz, one);
+		for (m = 0; m < 4; m = m + 1) begin
+			g3 = m[2:0];
+			fin[m*32 +: 32] = g3 < ncomp ? acc[(k*4 + m)*32 +: 32] : m == 3 ? one : 32'd0;
 		end
+		fin_q = !mask[k] ? 128'd0 : gath ? acc[k*128 +: 128] : swz4(fin, swz, one);
 	end
 
 	assign tc_ready = st == IDLE;
@@ -272,8 +271,10 @@ module atg_tu_ffilt (
 					acc[{k, c}*32 +: 32] <= sum;
 			end
 			FIN: begin
-				tr_data <= fin_q;
-				st <= OUT;
+				tr_data[k*128 +: 128] <= fin_q;
+				k <= k + 2'd1;
+				if (k == 2'd3)
+					st <= OUT;
 			end
 			default: if (tr_ready)
 				st <= IDLE;
