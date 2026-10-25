@@ -234,26 +234,21 @@ module atg_mc_prot #(
 	wire [TAGW-1:0] s_tag = s_idx[GW-1:LINE_SHIFT];
 	wire [LINE_SHIFT-1:0] s_byte = s_idx[LINE_SHIFT-1:0];
 
-	/* The PLB. */
-	reg [PLB-1:0] pl_v;
-	reg [PLB*TAGW-1:0] pl_tag;
-	reg [LB-1:0] pl_data [0:PLB-1];
-	reg [PLB_W-1:0] pl_rr;
-	reg pl_hit;
-	reg [PLB_W-1:0] pl_idx;
-	integer k;
+	/* The PLB (the walk's line: p_tag, below). */
+	wire pl_hit, p_inv;
+	wire [LB-1:0] s_pline;
+	wire [TAGW-1:0] p_tag;
+	wire fill;
 
-	always @(*) begin
-		pl_hit = 1'b0;
-		pl_idx = {PLB_W{1'b0}};
-		for (k = 0; k < PLB; k = k + 1)
-			if (pl_v[k] && pl_tag[k*TAGW +: TAGW] == s_tag) begin
-				pl_hit = 1'b1;
-				pl_idx = k[PLB_W-1:0];
-			end
-	end
+	atg_mc_plb #(
+		.PLB(PLB), .PLB_W(PLB_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .GW(GW),
+		.TAGW(TAGW)
+	) plb (
+		.clk(clk), .rst_n(rst_n), .flush(flush), .en(P), .g0(g0), .tag(s_tag), .hit(pl_hit),
+		.data(s_pline), .fill(fill), .fill_tag(p_tag), .fill_data(w_rdata),
+		.inv_valid(inv_valid), .inv_g(inv_g), .inv_n(inv_n), .w_tag(p_tag), .w_inv(p_inv)
+	);
 
-	wire [LB-1:0] s_pline = pl_data[pl_idx];
 	wire [7:0] s_b = s_pline[{s_byte, 3'b000} +: 8];
 `ifdef MUT_PROT_RO
 	wire s_own = s_slot != 6'd0 && s_b[5:0] == s_slot;
@@ -273,7 +268,6 @@ module atg_mc_prot #(
 	wire s_refuse = !s_rng || pl_hit && !s_own && !s_pub && !s_cam;
 	wire s_miss = !s_ok && !s_refuse;
 
-	wire fill;
 `ifdef MUT_PROT_RECHECK
 	wire chg = 1'b0;
 `else
@@ -293,7 +287,7 @@ module atg_mc_prot #(
 	/* --------------------------------------------- the selection */
 
 	wire [GW-1:0] p_idx = p_line[LA_W-1:GS] - g0;
-	wire [TAGW-1:0] p_tag = p_idx[GW-1:LINE_SHIFT];
+	assign p_tag = p_idx[GW-1:LINE_SHIFT];
 	wire [LA_W-1:0] w_line = tbase[ADDR_W-1:LINE_SHIFT] + {{(LA_W-TAGW){1'b0}}, p_tag};
 
 	/* The AXI request: D, the walk, J or P, A. */
@@ -334,57 +328,9 @@ module atg_mc_prot #(
 
 	/* ------------------------------------------- invalidation */
 
-	/* Whether the PLB line of tag overlaps [inv_g, inv_g + inv_n). */
-	function overlap;
-		input [TAGW-1:0] tag;
-		reg [33:0] gs, ge, is, ie;
-		begin
-			gs = {{(34-GW){1'b0}}, g0} + {{(34-GW){1'b0}}, tag, {LINE_SHIFT{1'b0}}};
-			ge = gs + {{(33-LINE_SHIFT){1'b0}}, 1'b1, {LINE_SHIFT{1'b0}}};
-			is = {{(34-GW){1'b0}}, inv_g};
-			ie = is + {2'b00, inv_n};
-			overlap = inv_n == 32'd0 || gs < ie && is < ge;
-		end
-	endfunction
-
-	/* The invalidation's overlaps: each PLB line, and the walk's line. */
-	reg [PLB-1:0] pl_inv;
-	reg p_inv;
-
-	always @(*) begin
-		for (k = 0; k < PLB; k = k + 1)
-			pl_inv[k] = inv_valid && overlap(pl_tag[k*TAGW +: TAGW]);
-		p_inv = inv_valid && overlap(p_tag);
-	end
-
 	wire w_stale = p_stale || p_inv;
-`ifdef MUT_PROT_STALE
-	wire [PLB-1:0] pl_kill = {PLB{1'b0}};
-`else
-	wire [PLB-1:0] pl_kill = pl_inv;
-`endif
 	assign fill = P && w_valid && !w_error && !w_stale;
 	assign inv_pending = inv_pend;
-
-	always @(posedge clk) begin
-		if (!rst_n || flush || !P) begin
-			pl_v <= {PLB{1'b0}};
-			pl_rr <= {PLB_W{1'b0}};
-		end else begin
-			pl_v <= pl_v & ~pl_kill;
-			if (fill) begin
-				pl_v <= (pl_v & ~pl_kill) | {{(PLB-1){1'b0}}, 1'b1} << pl_rr;
-				pl_rr <= pl_rr + 1'b1;
-			end
-		end
-	end
-
-	always @(posedge clk) begin
-		if (fill) begin
-			pl_tag[pl_rr*TAGW +: TAGW] <= p_tag;
-			pl_data[pl_rr] <= w_rdata;
-		end
-	end
 
 	/* ------------------------------------------- J and P registers */
 

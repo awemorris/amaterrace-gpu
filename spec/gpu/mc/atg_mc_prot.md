@@ -1,7 +1,7 @@
 # atg_mc_prot
 
-RTL: `rtl/gpu/mc/atg_mc_prot.v`.  Parent: `atg_mc` (instance `grant`).  Child: `atg_mc_grant`
-(the grant CAM), `atg_mc_aper` (two).  Written for session protection (docs/ghci.md §11.6,
+RTL: `rtl/gpu/mc/atg_mc_prot.v`.  Parent: `atg_mc` (instance `grant`).  Children: `atg_mc_grant`
+(the grant CAM), `atg_mc_plb` (the PLB), `atg_mc_aper` (two).  Written for session protection (docs/ghci.md §11.6,
 2026-10-25).  The RTL is authoritative.
 
 ## 1. Purpose and place

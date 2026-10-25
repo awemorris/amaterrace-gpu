@@ -13,8 +13,8 @@ of 2-way routers (user, 2026-10-23: 「2分岐くらいのルーター（RT）�
 あって優先される必要がありますね。」).  The root assembles each request, checks it against the
 aperture and the VRAM window, gives it to the AXI master or refuses it, and sends the responses
 back down the tree.  Parent: `atg_top` (instance `mc`).  Children: `atg_mc_tree` (the leaves and
-routers), `atg_mc_prot` (the grant: the aperture check and, with `HAS_PROT`, session protection),
-`am_axi_master`.  The atomic unit `atg_mc_atom` is
+routers), `atg_mc_asm` (the root's assembly buffers), `atg_mc_prot` (the grant: the aperture check and,
+with `HAS_PROT`, session protection), `atg_mc_cnt` (the request counters), `am_axi_master`.  The atomic unit `atg_mc_atom` is
 a client of its own in `atg_top`.
 
 ## 2. Parameters
@@ -161,6 +161,8 @@ The router's priority, turn-taking, packet locking and response demux are checke
 ## 10. Status
 
 Implemented: p002 (70aaff5), the router tree in WS288 p023 milestone 4 (P1).  The flat arbiter
-(and `atg_mc_arb`) is gone.  About 290 lines; ports over 40 only by the AXI group.  Synthesis of
+(and `atg_mc_arb`) is gone.  Session protection (2026-10-25): the grant moved to `atg_mc_prot`,
+the assembly buffer to `atg_mc_asm`, the counters to `atg_mc_cnt`; about 395 lines; ports over 40
+only by the AXI group and the protection group.  Synthesis of
 the tree is not measured yet (a Vivado run is pending: each hop costs about `LINE_BYTES*8` + 30
 flip-flops per direction).

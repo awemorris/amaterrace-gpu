@@ -206,60 +206,22 @@ module atg_mc #(
 	);
 
 	/*
-	 * The requests being assembled at the root, the tree's (a_*) and the
-	 * DC's own (d_*, HAS_DC): the header flit, then a write's data flit.
-	 * x_hdr: a write's header is in, its data is not; x_full: the request
-	 * is complete and offered to the grant.
+	 * The requests being assembled at the root: the tree's (A) and the DC's
+	 * own (D, HAS_DC; without it D stays empty).
 	 */
-	reg a_hdr, a_full, d_hdr, d_full;
-	reg [LINE_BITS-1:0] a_head, a_data, d_head, d_data;
-	wire a_take, d_take;
+	wire a_full, d_full, a_take, d_take;
+	wire [LINE_BITS-1:0] a_head, a_data, d_head, d_data;
 
-	/* A flit is taken when the buffer has room for it. */
-	assign t_req_ready = !a_full || a_take;
-	wire t_take = t_req_valid && t_req_ready;
-	assign s_req_ready = HAS_DC != 0 && (!d_full || d_take);
-	wire s_take = s_req_valid && s_req_ready;
-
-	always @(posedge clk) begin
-		if (!rst_n || flush) begin
-			a_hdr <= 1'b0;
-			a_full <= 1'b0;
-			a_head <= {LINE_BITS{1'b0}};
-			a_data <= {LINE_BITS{1'b0}};
-			d_hdr <= 1'b0;
-			d_full <= 1'b0;
-			d_head <= {LINE_BITS{1'b0}};
-			d_data <= {LINE_BITS{1'b0}};
-		end else begin
-			if (a_take)
-				a_full <= 1'b0;
-			if (t_take) begin
-				if (!a_hdr) begin
-					a_head <= t_req_data;
-					a_hdr <= !t_req_last;
-					a_full <= t_req_last;
-				end else begin
-					a_data <= t_req_data;
-					a_hdr <= 1'b0;
-					a_full <= 1'b1;
-				end
-			end
-			if (d_take)
-				d_full <= 1'b0;
-			if (s_take) begin
-				if (!d_hdr) begin
-					d_head <= s_req_data;
-					d_hdr <= !s_req_last;
-					d_full <= s_req_last;
-				end else begin
-					d_data <= s_req_data;
-					d_hdr <= 1'b0;
-					d_full <= 1'b1;
-				end
-			end
-		end
-	end
+	atg_mc_asm #(.LINE_BYTES(LINE_BYTES)) asm_a (
+		.clk(clk), .rst_n(rst_n), .flush(flush), .t_valid(t_req_valid), .t_ready(t_req_ready),
+		.t_data(t_req_data), .t_last(t_req_last), .full(a_full), .head(a_head), .data(a_data),
+		.take(a_take)
+	);
+	atg_mc_asm #(.LINE_BYTES(LINE_BYTES)) asm_d (
+		.clk(clk), .rst_n(rst_n), .flush(flush), .t_valid(HAS_DC != 0 && s_req_valid),
+		.t_ready(s_req_ready), .t_data(s_req_data), .t_last(s_req_last), .full(d_full),
+		.head(d_head), .data(d_data), .take(d_take)
+	);
 
 	/* The error response of a refused request. */
 	reg err_v;
@@ -328,46 +290,16 @@ module atg_mc #(
 	assign s_rsp_valid = (m_out || err_out) && rsp_dc;
 	assign s_rsp_data = rsp_flit;
 
-	/*
-	 * pend counts the requests taken from the clients and not yet granted
-	 * or refused; chk_n those of them with chk; unit_n the requests of
-	 * UNIT_MASK's clients that have no response yet.
-	 */
-	reg [7:0] pend, chk_n;
-	reg [9:0] unit_n;
-	integer pk;
-	reg [7:0] taken, taken_chk;
-	reg [9:0] u_in, u_out;
+	/* The requests in the tree and the root (pend), with chk, of the units. */
+	wire pend_zero;
 
-	always @(*) begin
-		taken = 8'd0;
-		taken_chk = 8'd0;
-		u_in = 10'd0;
-		u_out = 10'd0;
-		for (pk = 0; pk < NCLIENT; pk = pk + 1) begin
-			taken = taken + {7'd0, c_req_valid[pk] && c_req_ready[pk]};
-			taken_chk = taken_chk + {7'd0, c_req_valid[pk] && c_req_ready[pk] &&
-				c_req_chk[pk] && HAS_PROT != 0};
-			u_in = u_in + {9'd0, c_req_valid[pk] && c_req_ready[pk] && UNIT_MASK[pk]};
-			u_out = u_out + {9'd0, rsp_valid[pk] && UNIT_MASK[pk]};
-		end
-	end
+	atg_mc_cnt #(.NCLIENT(NCLIENT), .UNIT_MASK(UNIT_MASK)) cnt (
+		.clk(clk), .rst_n(rst_n), .flush(flush), .take(c_req_valid & c_req_ready),
+		.take_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}), .rsp(rsp_valid), .done(done),
+		.done_chk(done_chk), .pend_zero(pend_zero), .chk_idle(chk_idle), .unit_idle(unit_idle)
+	);
 
-	always @(posedge clk) begin
-		if (!rst_n || flush) begin
-			pend <= 8'd0;
-			chk_n <= 8'd0;
-			unit_n <= 10'd0;
-		end else begin
-			pend <= pend + taken - {7'd0, done};
-			chk_n <= chk_n + taken_chk - {7'd0, done_chk};
-			unit_n <= unit_n + u_in - u_out;
-		end
-	end
-
-	assign axi_idle = m_idle && !err_v && t_rsp_idle && pend == 8'd0;
-	assign chk_idle = chk_n == 8'd0;
-	assign unit_idle = unit_n == 10'd0;
+	assign axi_idle = m_idle && !err_v && t_rsp_idle && pend_zero;
 
 	always @(posedge clk) begin
 		if (!rst_n || flush) begin
