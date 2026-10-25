@@ -77,21 +77,29 @@ module atg_su_lane #(
 	wire sg = SUBGROUP != 0 && x_valid && unit == ATG_UNIT_LANE &&
 		(op == ATG_LANE_SHFL || op == ATG_LANE_VOTE || op == ATG_LANE_BALLOT);
 
-	/* qd: quads inside the group: lane l's partners l^1, l^2, l^3 and l&~3. */
+	/* qd: quads inside the group: lane l's partners l^1, l^2, l^3 and l&~3.
+	 * The differences x[l|1] - x[l&~1] (sub 0) and x[l|2] - x[l&~2] (sub 1)
+	 * take two values per quad, so a quad has two adders: A for lanes 0
+	 * and 1 (sub 0) or 0 and 2 (sub 1), B for the other two. */
 	reg [DW-1:0] y;
-	integer l;
+	reg [31:0] qa, qb;
+	integer l, q;
 	always @(*) begin
-		for (l = 0; l < NPHYS; l = l + 1) begin
-			case (sub[2:0])
-			3'd0: y[l*32 +: 32] = atg_su_fadd(x_a[(l | 1)*32 +: 32],
-				x_a[(l & ~1)*32 +: 32] ^ 32'h80000000);
-			3'd1: y[l*32 +: 32] = atg_su_fadd(x_a[(l | 2)*32 +: 32],
-				x_a[(l & ~2)*32 +: 32] ^ 32'h80000000);
-			3'd2: y[l*32 +: 32] = x_a[(l ^ 1)*32 +: 32];
-			3'd3: y[l*32 +: 32] = x_a[(l ^ 2)*32 +: 32];
-			3'd4: y[l*32 +: 32] = x_a[(l ^ 3)*32 +: 32];
-			default: y[l*32 +: 32] = x_a[(l & ~3)*32 +: 32];
-			endcase
+		for (q = 0; q < NPHYS / 4; q = q + 1) begin
+			qa = atg_su_fadd(sub[0] ? x_a[(4*q + 2)*32 +: 32] : x_a[(4*q + 1)*32 +: 32],
+				x_a[(4*q)*32 +: 32] ^ 32'h80000000);
+			qb = atg_su_fadd(x_a[(4*q + 3)*32 +: 32],
+				(sub[0] ? x_a[(4*q + 1)*32 +: 32] : x_a[(4*q + 2)*32 +: 32]) ^ 32'h80000000);
+			for (l = 4*q; l < 4*q + 4; l = l + 1) begin
+				case (sub[2:0])
+				3'd0: y[l*32 +: 32] = l[1] ? qb : qa;
+				3'd1: y[l*32 +: 32] = l[0] ? qb : qa;
+				3'd2: y[l*32 +: 32] = x_a[(l ^ 1)*32 +: 32];
+				3'd3: y[l*32 +: 32] = x_a[(l ^ 2)*32 +: 32];
+				3'd4: y[l*32 +: 32] = x_a[(l ^ 3)*32 +: 32];
+				default: y[l*32 +: 32] = x_a[(l & ~3)*32 +: 32];
+				endcase
+			end
 		end
 	end
 
