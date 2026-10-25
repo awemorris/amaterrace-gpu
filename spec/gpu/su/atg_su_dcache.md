@@ -87,3 +87,5 @@ design §3.5 (D$ 1 KiB, write-through), §4.1.
 ## 10. Status
 
 Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_dcache_tb.v`).  As §4-§7: one request at a time, a write updates a line that is present when the MC answers, m_req_tag is 0.
+
+2026-10-25 (area): the data are read synchronously, so that they map to block RAM (they were distributed RAM, about 1k LUTs on the KC705's 64-byte lines): the request's line is read in the cycle it is taken and is both a read hit's response and the line a write hit merges into.  The ports and the cycles are unchanged.
