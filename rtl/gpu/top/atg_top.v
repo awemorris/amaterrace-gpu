@@ -656,7 +656,7 @@ module atg_top #(
 	 */
 	localparam [NCLIENT-1:0] UNIT_LEAF = MC_UNITS &
 		~(HAS_CPU != 0 ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_CPU : {NCLIENT{1'b0}});
-	wire prot_scrub;
+	wire prot_scrub, su_scrub_any;
 	wire [7:0] prot_fault_tag, prot_unit_tag;
 	wire units_busy = blt_busy || vf_busy || rx_busy || rop_busy || tu_busy || su_busy || sa_busy;
 	wire drain_ok = !units_busy && !(|(c_req_valid & UNIT_LEAF)) && mc_chk_idle && mc_unit_idle;
@@ -697,7 +697,7 @@ module atg_top #(
 			.u_tag(u_tag), .u_fw(u_fw), .u_side(u_side), .u_req(u_req), .u_ok(u_ok),
 			.f_chk(f_chk), .f_slot(f_slot),
 			.drain_ok(drain_ok), .sw_inv(prot_sw_inv), .scrub(prot_scrub),
-			.scrub_busy(1'b0), .prot_unit(prot_unit),
+			.scrub_busy(su_scrub_any), .prot_unit(prot_unit),
 			.tbase(prot_tbase), .inv_valid(prot_inv_valid), .inv_g(prot_inv_g),
 			.inv_n(prot_inv_n), .inv_pending(mc_inv_pending), .gw_valid(prot_gw_valid),
 			.gw_idx(prot_gw_idx), .gw_data(prot_gw_data),
@@ -715,7 +715,7 @@ module atg_top #(
 				f_tag = prot_fault_tag;
 		end
 		assign mc_fault_tag = f_tag;
-		wire unused_p = &{1'b0, sb_re, prot_scrub};
+		wire unused_p = &{1'b0, sb_re};
 	end else begin : g_no_prot
 		assign prot_hcr_rdata = 32'd0;
 		assign prot_sb_rdata = 32'd0;
@@ -738,7 +738,8 @@ module atg_top #(
 		assign mc_fault_tag = 8'd0;
 		wire unused_np = &{1'b0, sb_we, sb_re, sb_idx, sb_wdata, u_tag, u_fw, u_side, u_req,
 			mc_fault_prot, mc_fault_mem, mc_fault_slot, mc_inv_pending, mc_chk_idle, drain_ok,
-			cp_req_chk, cp_req_slot, cpu_req_chk, cpu_req_tbl, cpu_req_slot, prot_scrub, v_slot,
+			cp_req_chk, cp_req_slot, cpu_req_chk, cpu_req_tbl, cpu_req_slot, su_scrub_any, v_slot,
+			prot_scrub,
 			prot_sb_rdata, prot_fault_tag, prot_unit_tag};
 	end
 	endgenerate
@@ -812,7 +813,8 @@ module atg_top #(
 	wire [(NSU > 0 ? NSU : 1)*32-1:0] at_a, at_b;
 	wire [31:0] at_old;
 	wire at_error;
-	wire [(NSU > 0 ? NSU : 1)-1:0] su_busy_v, su_fault_v;
+	wire [(NSU > 0 ? NSU : 1)-1:0] su_busy_v, su_fault_v, su_scrub_v;
+	assign su_scrub_any = NSU > 0 && |su_scrub_v;
 	wire [(NSU > 0 ? NSU : 1)*32-1:0] su_fault_addr_v;	/* each SU's fault PC */
 
 	generate
@@ -1087,6 +1089,7 @@ module atg_top #(
 			.sa_ctl_valid(s_sa_ctl_valid), .sa_ctl_data(s_sa_ctl_data),
 			.sa_qstat(sa_qstat), .sa_stat(sa_stat), .sa_qtag(sa_qtag),
 			.busy(su_busy_v[k]), .fault(su_fault_v[k]),
+			.scrub(prot_scrub), .scrub_busy(su_scrub_v[k]),
 			.fault_addr(su_fault_addr_v[k*32 +: 32])
 		);
 
@@ -1206,6 +1209,7 @@ module atg_top #(
 		assign at_error = 1'b0;
 		assign su_busy_v = 1'b0;
 		assign su_fault_v = 1'b0;
+		assign su_scrub_v = 1'b0;
 		assign su_fault_addr_v = 32'd0;
 		wire unused_su = &{1'b0, cs_kick, lc_kick, inv, vl_req, vl_we, vl_reg, vl_lane, vl_data,
 			vl_go, vl_mask, fl_req, fl_we, fl_reg, fl_lane, fl_data, fl_pw_we, fl_pw_addr,

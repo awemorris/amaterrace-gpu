@@ -16,7 +16,9 @@
  * one lane group; r_data1/2/3 are valid the cycle after r_en and hold
  * until the next r_en.  A read of a register written in the same cycle
  * returns the old value (no bypass).  Address = {warp, reg, grp}.  The
- * contents are not reset.
+ * contents are not reset.  scrub (session protection) writes 0 to every
+ * address of every copy, one address per cycle through the write port,
+ * while scrub_busy (the unit is idle then; it has priority over w_en).
  */
 
 `timescale 1ns / 1ps
@@ -47,7 +49,10 @@ module atg_su_rf #(
 	input wire [5:0] r_reg3,
 	output wire [NPHYS*32-1:0] r_data1,
 	output wire [NPHYS*32-1:0] r_data2,
-	output wire [NPHYS*32-1:0] r_data3
+	output wire [NPHYS*32-1:0] r_data3,
+	/* Session protection: clear the contents */
+	input wire scrub,
+	output wire scrub_busy
 );
 	localparam G = 32 / NPHYS;	/* lane groups per warp */
 	localparam DEPTH = NWARPS * NREGS * G;
@@ -70,6 +75,17 @@ module atg_su_rf #(
 	wire [A_W-1:0] ra2 = ra2_32[A_W-1:0];
 	wire [A_W-1:0] ra3 = ra3_32[A_W-1:0];
 
+	wire sc_on;
+	wire [A_W-1:0] sc_a;
+
+	atg_su_scrub #(.DEPTH(DEPTH), .AW(A_W)) sc (
+		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
+	);
+
+	assign scrub_busy = sc_on;
+	/* The write port: the scrub's zeros or the write-back's data. */
+	wire [A_W-1:0] wam = sc_on ? sc_a : wa;
+
 	/* One bank per lane and copy: a simple dual-port RAM (one write, one read port). */
 	genvar l;
 	generate
@@ -79,10 +95,10 @@ module atg_su_rf #(
 			reg [31:0] m3 [0:DEPTH-1];
 			reg [31:0] q1, q2, q3;
 			always @(posedge clk) begin
-				if (w_en && w_lanes[l]) begin
-					m1[wa] <= w_data[l*32 +: 32];
-					m2[wa] <= w_data[l*32 +: 32];
-					m3[wa] <= w_data[l*32 +: 32];
+				if (sc_on || w_en && w_lanes[l]) begin
+					m1[wam] <= sc_on ? 32'd0 : w_data[l*32 +: 32];
+					m2[wam] <= sc_on ? 32'd0 : w_data[l*32 +: 32];
+					m3[wam] <= sc_on ? 32'd0 : w_data[l*32 +: 32];
 				end
 				if (r_en) begin
 					q1 <= m1[ra1];
@@ -96,7 +112,7 @@ module atg_su_rf #(
 		end
 	endgenerate
 
-	wire unused_ok = &{1'b0, rst_n, wa32, ra1_32, ra2_32, ra3_32};
+	wire unused_ok = &{1'b0, wa32, ra1_32, ra2_32, ra3_32};
 endmodule
 
 `default_nettype wire

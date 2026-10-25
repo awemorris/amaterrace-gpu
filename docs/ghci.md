@@ -1123,8 +1123,7 @@ keeps the ownership of the memory there; its format is the vendor's.
   writing APERTURE_BASE and APERTURE_LIMIT. Writing either aperture
   register sets PROT_TABLE to 0, and so does a reset (CTRL.RESET).
 - PROT_TABLE can be written only while no protected session is open
-  (in any CP state; otherwise the write is ignored and is a fault of
-  kind 7).
+  (in any CP state; otherwise the write is ignored).
 - The order at start and after every reset is: APERTURE_*, RUN, the
   zeros in the table and a fence after them, PROT_TABLE, HEAP, then the
   first SESSION_OPEN with PROTECTED. A reset loses every session

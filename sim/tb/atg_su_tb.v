@@ -95,6 +95,7 @@ module atg_su_chk #(
 
 	atg_su #(.NPHYS(NPHYS), .GRP_W(GRP_W), .SUBGROUP(SUBGROUP)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.scrub(1'b0), .scrub_busy(),
 		.cs_kick(cs_kick), .lc_kick(lc_kick), .inv(4'd0),
 		.vl_req(1'b0), .vl_gnt(), .vl_slot(), .vl_ptbase(), .vl_we(1'b0), .vl_reg(6'd0),
 		.vl_lane(5'd0), .vl_data(32'd0), .vl_go(1'b0), .vl_mask(32'd0),

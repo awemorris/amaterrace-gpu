@@ -62,7 +62,10 @@ module atg_su_pt #(
 	output wire [7:0] pt_done,
 	/* Warp ends (atg_su_exec) */
 	input wire wc_end,
-	input wire [WARP_W-1:0] wc_warp
+	input wire [WARP_W-1:0] wc_warp,
+	/* Session protection: clear the table (the unit idle), one word per cycle */
+	input wire scrub,
+	output wire scrub_busy
 );
 `include "atg_su_uop.vh"
 
@@ -96,13 +99,24 @@ module atg_su_pt #(
 	reg [31:0] rb_q;
 	reg [NPHYS*32-1:0] rd_q;
 
+	/* The banks' write port: the vertex warps' exp, or the scrub's zeros. */
+	wire sc_on;
+	wire [AW-1:0] sc_a;
+
+	atg_su_scrub #(.DEPTH(DEPTH), .AW(AW)) sc (
+		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
+	);
+
+	assign scrub_busy = sc_on;
+	wire [AW-1:0] m_wa = sc_on ? sc_a : waddr[AW-1:0];
+
 	genvar b;
 	generate
 	for (b = 0; b < NPHYS; b = b + 1) begin : g_bank
 		reg [31:0] m [0:DEPTH-1];
 		always @(posedge clk) begin
-			if (wr && x_mask[NPHYS + b])
-				m[waddr[AW-1:0]] <= x_b[32 * b +: 32];
+			if (sc_on || wr && x_mask[NPHYS + b])
+				m[m_wa] <= sc_on ? 32'd0 : x_b[32 * b +: 32];
 			if (pt_rd)
 				rd_q[32 * b +: 32] <= m[raddr[AW-1:0]];
 		end

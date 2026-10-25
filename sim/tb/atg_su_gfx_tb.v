@@ -136,6 +136,7 @@ module atg_su_gfx_chk #(
 		.FRAG_RESERVE(FRAG_RESERVE), .PACKED(1), .SUBGROUP(1), .PT_ENTRIES(PT_ENTRIES),
 		.VARY_WORDS(VARY)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.scrub(1'b0), .scrub_busy(),
 		.cs_kick(1'b0), .lc_kick(1'b0), .inv(4'd0),
 		.vl_req(vl_req), .vl_gnt(vl_gnt), .vl_slot(vl_slot), .vl_ptbase(vl_ptbase),
 		.vl_we(vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane), .vl_data(vl_data), .vl_go(vl_go),
