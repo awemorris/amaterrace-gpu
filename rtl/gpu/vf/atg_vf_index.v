@@ -100,8 +100,9 @@ module atg_vf_index #(
 	/* INDEX_FORMAT: 0 none, 1 u16, 2 (and the reserved 3) u32. */
 	wire k_ind = s_ifmt != 2'd0;
 	wire k_u32 = s_ifmt[1];
-	wire [31:0] k_a0 = s_ibase + (k_u32 ? s_first << 2 : s_first << 1);
-	wire [31:0] k_alast = k_a0 + (k_u32 ? (s_count - 32'd1) << 2 : (s_count - 32'd1) << 1);
+	wire [31:0] k_a0;
+	wire [31:0] k_alast;
+	wire [31:0] k_cm1;	/* COUNT - 1 */
 
 	localparam [1:0] ST_IDLE = 2'd0, ST_WALK = 2'd1, ST_DRAIN = 2'd2;
 	reg [1:0] st;
@@ -129,7 +130,11 @@ module atg_vf_index #(
 
 	wire [LB-1:0] head = e_slot ? buf1 : buf0;
 	wire [LINE_SHIFT-1:0] e_off = e_a[LINE_SHIFT-1:0];
-	wire [LB-1:0] head_sh = head >> {e_off, 3'b000};
+	wire [LB-1:0] head_sh;
+
+	/* The head line from the next index's byte. */
+	am_shift #(.W(LB), .SW(LINE_SHIFT + 3)) hs (.a(head), .amt({e_off, 3'b000}), .left(1'b0),
+		.arith(1'b0), .y(head_sh));
 	wire [31:0] e_raw = u32 ? head_sh[31:0] : {16'd0, head_sh[15:0]};
 	wire e_have = !ind || bv[e_slot];
 
@@ -142,7 +147,26 @@ module atg_vf_index #(
 
 	wire take = iv_valid && iv_ready;
 	wire inst_end = e_n == 32'd1;
-	wire [31:0] e_anext = e_a + (u32 ? 32'd4 : 32'd2);
+	wire [31:0] e_anext;
+
+	/*
+	 * The address adder, shared: at the kick (IDLE) INDEX_BASE + FIRST x the
+	 * index size, while walking (WALK) the next index's address.
+	 */
+	wire [31:0] ad_a = st == ST_IDLE ? s_ibase : e_a;
+	wire [31:0] ad_b = st == ST_IDLE ? (k_u32 ? s_first << 2 : s_first << 1) :
+		(u32 ? 32'd4 : 32'd2);
+	wire [31:0] ad_s;
+	wire ad_co_unused, cm1_bo_unused, al_co_unused;	/* the carries are not used */
+
+	am_add #(.W(32)) ad (.a(ad_a), .b(ad_b), .ci(1'b0), .s(ad_s), .co(ad_co_unused));
+	assign k_a0 = ad_s;
+	assign e_anext = ad_s;
+
+	/* The last index's address: k_a0 + (COUNT - 1) x the index size. */
+	am_sub #(.W(32)) cm1 (.a(s_count), .b(32'd1), .bi(1'b0), .d(k_cm1), .bo(cm1_bo_unused));
+	am_add #(.W(32)) al (.a(k_a0), .b(k_u32 ? k_cm1 << 2 : k_cm1 << 1), .ci(1'b0), .s(k_alast),
+		.co(al_co_unused));
 	/* The head line is used up: the next index is in another line, or the
 	 * instance ends (its last line). */
 	wire pop = take && ind &&
@@ -250,7 +274,8 @@ module atg_vf_index #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, rsp_tag[7:1], k_alast[LINE_SHIFT-1:0], head_sh[LB-1:32]};
+	wire unused_ok = &{1'b0, rsp_tag[7:1], k_alast[LINE_SHIFT-1:0], head_sh[LB-1:32],
+		ad_co_unused, cm1_bo_unused, al_co_unused};
 endmodule
 
 `default_nettype wire
