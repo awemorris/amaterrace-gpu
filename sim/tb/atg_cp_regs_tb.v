@@ -43,7 +43,8 @@ module regs_bench #(
 	input wire [31:0] ctl_rdata,
 	input wire [31:0] state_rdata,
 	input wire [3:0] perf_busy,
-	input wire perf_reset
+	input wire perf_reset,
+	output wire win_en
 );
 	wire [31:0] fmt_rdata;
 	generate
@@ -62,7 +63,7 @@ module regs_bench #(
 		.VEND({32'h77, 32'h66, 32'h55, 32'h44, 32'h33, 32'h22, 32'h11, 32'h00}),
 		.XCAP_MASK(XCAP), .DISP_OFFSET(32'h00010000), .PERF_SRC(32'hFFFF0801),
 		.RESIDENT_WARPS(16'd24), .NREGS(8'd64), .LOCAL_BASE(32'h80000000),
-		.LOCAL_BYTES(32'h40000000), .WINDOW_BYTES(32'h04000000)
+		.LOCAL_BYTES(32'h40000000), .WINDOW_BYTES(32'h04000000), .HOST_LIMIT(32'h80000000)
 	) dut (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
@@ -72,7 +73,7 @@ module regs_bench #(
 		.alias_ridx(alias_ridx),
 		.ctl_rdata(ctl_rdata), .irq_rdata(32'd0), .ring_rdata(32'd0), .fence_rdata(32'd0),
 		.dbg_rdata(32'd0), .state_rdata(state_rdata), .x_rdata(fmt_rdata),
-		.perf_busy(perf_busy), .perf_reset(perf_reset)
+		.perf_busy(perf_busy), .perf_reset(perf_reset), .win_en(win_en)
 	);
 endmodule
 
@@ -93,6 +94,7 @@ module atg_cp_regs_tb;
 	wire hcr_we, alias_we;
 	wire [9:0] hcr_widx, hcr_ridx;
 	wire [9:0] alias_idx, alias_ridx;
+	wire win0, win2;
 
 	/* PERF only; PERF, VEND, CPFW; every capability (more than two entries, MEM among them). */
 	regs_bench #(.XCAP(8'h04)) b0 (
@@ -101,7 +103,8 @@ module atg_cp_regs_tb;
 		.reg_rdata(rd0), .hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata),
 		.hcr_wmask(hcr_wmask), .hcr_ridx(hcr_ridx), .alias_we(alias_we),
 		.alias_idx(alias_idx), .alias_ridx(alias_ridx), .ctl_rdata(ctl_rdata),
-		.state_rdata(state_rdata), .perf_busy(perf_busy), .perf_reset(perf_reset)
+		.state_rdata(state_rdata), .perf_busy(perf_busy), .perf_reset(perf_reset),
+		.win_en(win0)
 	);
 	regs_bench #(.XCAP(8'h2C)) b1 (
 		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
@@ -115,7 +118,7 @@ module atg_cp_regs_tb;
 		.reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
 		.reg_rdata(rd2), .hcr_we(), .hcr_widx(), .hcr_wdata(), .hcr_wmask(), .hcr_ridx(),
 		.alias_we(), .alias_idx(), .alias_ridx(), .ctl_rdata(32'd0), .state_rdata(32'd0),
-		.perf_busy(4'd0), .perf_reset(1'b0)
+		.perf_busy(4'd0), .perf_reset(1'b0), .win_en(win2)
 	);
 	regs_bench #(.XCAP(11'h604), .FMT(1)) b3 (
 		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
@@ -237,23 +240,33 @@ module atg_cp_regs_tb;
 		/* extcap */
 		walk(0, 64'h03, 256'h110);
 		walk(1, 64'h060403, {32'h120, 32'h0C0, 32'h110});
-		walk(2, 64'h08_07_06_04_03_02_01, {32'h1C0, 32'h140, 32'h120, 32'h0C0, 32'h110, 32'h0,
+		walk(2, 64'h08_07_06_04_03_02_01, {32'h1E0, 32'h140, 32'h120, 32'h0C0, 32'h110, 32'h0,
 			32'h10000});
 		/* MEM's words where it is listed; 0 where it is not. */
-		rd(17'h001C0);
+		rd(17'h001E0);
 		if (v2 !== 32'h80000000 || v0 !== 32'd0) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.extcap: LOCAL_BASE %h, without MEM %h", v2, v0);
 		end
-		rd(17'h001C4);
+		rd(17'h001E4);
 		if (v2 !== 32'h40000000 || v0 !== 32'd0) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.extcap: LOCAL_SIZE %h, without MEM %h", v2, v0);
 		end
-		rd(17'h001C8);
+		rd(17'h001E8);
 		if (v2 !== 32'h04000000 || v0 !== 32'd0) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.extcap: WINDOW_SIZE %h, without MEM %h", v2, v0);
+		end
+		rd(17'h001EC);
+		if (v2 !== 32'h80000000 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: HOST_LIMIT %h, without MEM %h", v2, v0);
+		end
+		rd(17'h001C0);
+		if (v2 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: %h at MEM's old offset 0x1C0", v2);
 		end
 		rd(GHCI_PERF_SRC0);
 		if (v0 !== 32'd1 || v2 !== 32'd1) begin
@@ -304,6 +317,53 @@ module atg_cp_regs_tb;
 		expect0("snoop", GHCI_SCRATCH, 32'h1234CC78);
 		if (errors == e0)
 			$display("PASS atg_cp_regs.snoop");
+		e0 = errors;
+		/* window: WINDOW_CTRL.ENABLE (MEM +0x10), 1 after the reset; 0 without MEM. */
+		rd(17'h001F0);
+		if (v2 !== 32'd1 || !win2 || v0 !== 32'd0 || win0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: after reset %h/%b, without MEM %h/%b", v2, win2, v0, win0);
+		end
+		wr(17'h001F0, 32'h0, 4'b1111);
+		@(negedge clk);
+		reg_wr = 0;
+		rd(17'h001F0);
+		if (v2 !== 32'd0 || win2 || v0 !== 32'd0 || win0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: closed %h/%b, without MEM %h/%b", v2, win2, v0, win0);
+		end
+		wr(17'h001F0, 32'h1, 4'b1110);	/* bit 0's byte not written */
+		@(negedge clk);
+		reg_wr = 0;
+		rd(17'h001F0);
+		if (v2 !== 32'd0 || win2) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: a write without byte 0 opened it");
+		end
+		wr(17'h001F0, 32'hFFFFFFFF, 4'b1111);
+		@(negedge clk);
+		reg_wr = 0;
+		rd(17'h001F0);
+		if (v2 !== 32'd1 || !win2 || v0 !== 32'd0 || win0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: reopened %h/%b, without MEM %h/%b", v2, win2, v0, win0);
+		end
+		wr(17'h001F0, 32'h0, 4'b1111);
+		@(negedge clk);
+		reg_wr = 0;
+		rst_n = 0;
+		@(negedge clk);
+		rst_n = 1;
+		rd(17'h001F0);
+		if (v2 !== 32'd1 || !win2) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: not open again after the reset");
+		end
+		wr(GHCI_SCRATCH, 32'h1234CC78, 4'b1111);	/* the reset cleared it; ormux reads it */
+		@(negedge clk);
+		reg_wr = 0;
+		if (errors == e0)
+			$display("PASS atg_cp_regs.window");
 		e0 = errors;
 		/* ormux: a module's data at its registered index, the alias. */
 		ctl_rdata = 32'h00F00000;

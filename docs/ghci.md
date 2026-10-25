@@ -1026,10 +1026,19 @@ by the GPU itself, by DMA. Moving data between host memory and local memory
 (uploads, readbacks) is a copy command, completed by a fence.
 
 The local window is for the framebuffer only (the boot console, a simple
-display path). Before a doorbell whose commands use what the host wrote
-through the window (a write-combining mapping may hold it back), the driver
-reads back the last word it wrote. The debug port (section 14) is for
-bring-up only; a driver does not depend on it.
+display path). It is a view of local memory, not memory of its own: what
+the host writes through it is in local memory, and once the driver scans
+out a framebuffer of its own (section 13), the window's range is ordinary
+local memory that the driver allocates like the rest. The window is open
+after reset, so that the platform's firmware (a UEFI GOP, for example) and
+a boot console can use it; a driver that does not use it closes it
+(WINDOW_CTRL.ENABLE = 0 in the MEM capability, section 11.3). While it is
+closed, host writes through the window are dropped and host reads return
+0; the bus transactions still complete normally. Before a doorbell whose
+commands use what the host wrote through the window (a write-combining
+mapping may hold it back), the driver reads back the last word it wrote.
+The debug port (section 14) is for bring-up only; a driver does not depend
+on it.
 
 ### 11.2 Addresses and the aperture
 
@@ -1067,7 +1076,7 @@ bring-up only; a driver does not depend on it.
 | Where the driver allocates | Everything in host memory | Device-local resources in local memory; host-visible resources (staging, uniforms the host rewrites, readback) in host memory |
 | Ring, command buffers, fences | Host memory | Host memory |
 | Upload and readback | Not needed: the host writes the buffer | A copy command between host and local memory, then a fence |
-| Framebuffer | Host memory | Local memory, through the local window |
+| Framebuffer | Host memory | Local memory (a boot framebuffer is written through the local window, section 13) |
 
 Everything else — the registers, the ring, the commands, fences,
 interrupts and the ISA — is the same in both. A Vulkan driver offers one
@@ -1083,6 +1092,7 @@ offset:
 | +0x4 | LOCAL_SIZE | R | Bytes of local memory; 0 = none (unified) |
 | +0x8 | WINDOW_SIZE | R | Bytes of local memory, from LOCAL_BASE, that the local window shows; 0 = no window. Where the window is on the host is defined by the binding (section 15) |
 | +0xC | HOST_LIMIT | R | GPU addresses below HOST_LIMIT, outside local memory, reach the host (section 11.2); 0 = every address outside local memory up to 2^32. 4 KiB aligned |
+| +0x10 | WINDOW_CTRL | RW | [0] ENABLE: the local window is open (section 11.1). 1 after a power-on reset and a function-level reset; CTRL.RESET does not change it. Reads 0 without a window |
 
 A GPU without the MEM capability is unified.
 
@@ -1980,6 +1990,20 @@ HOTPLUG when CONNECTED changes. FLIP as above.
   be used (a panic console), the host writes CTRL.HALT, waits for HALTED,
   and writes the registers (in FAULTED it can write them at once).
 
+### 13.3 Handing over a boot framebuffer
+
+This holds for DISP and DISP2. The platform's firmware may leave the
+controller running on a framebuffer in local memory that it, and a boot
+console after it, write through the local window. A driver that finds
+CTRL.ENABLE set when it attaches reads that framebuffer from FB_BASE,
+FB_STRIDE, FB_SIZE and CTRL.FORMAT, and keeps that range of local memory
+out of its allocations and the window open while the boot console may
+still write it. Once its first flip to a framebuffer of its own has been
+taken (FB_BASE reads the new framebuffer), the old range is free, and the
+driver closes the window if it does not use it (section 11.1). A
+controller found with ENABLE clear has no boot framebuffer: the driver
+closes the window when it attaches.
+
 14. Bring-up: the debug port and KICK
 -------------------------------------
 
@@ -2068,6 +2092,8 @@ A typical start, following the rules above:
    11.3), and set APERTURE_BASE/LIMIT, RING_BASE and RING_SIZE in
    IDLE.
 5. Write FENCE_LAST and the fence memory with the starting fence value.
+   With a local window, close it unless a boot framebuffer is still in
+   use (WINDOW_CTRL, sections 11.1 and 13).
 6. Clear IRQ_STATUS, set IRQ_ENABLE (at least FENCE and FAULT), then set
    CTRL.RUN.
 7. Submit: write packets, make them visible (section 6.3), write

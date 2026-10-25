@@ -89,6 +89,7 @@ module atg_cp #(
 	input wire mem_ready,
 
 	output wire core_rst_n,
+	output wire win_en,	/* MEM WINDOW_CTRL.ENABLE: the local window is open (rst_n only) */
 
 	output wire mc_quiesce,
 	output wire mc_flush,
@@ -281,7 +282,7 @@ module atg_cp #(
 		.ctl_rdata(s_ctl_rdata), .irq_rdata(s_irq_rdata), .ring_rdata(s_ring_rdata),
 		.fence_rdata(s_fence_rdata), .dbg_rdata(s_dbg_rdata), .state_rdata(s_state_rdata),
 		.x_rdata(x_rdata | s_fmt_rdata | s_disp_rdata), .perf_busy({2'd0, !mc_idle, blt_busy}),
-		.perf_reset(s_perf_reset)
+		.perf_reset(s_perf_reset), .win_en(win_en)
 	);
 
 	/* The FMT capability (id 10) at 0x160. */

@@ -86,6 +86,9 @@ module atg_top #(
 	input wire rst_n,
 	output wire irq,
 	input wire mem_ready,
+	/* MEM WINDOW_CTRL.ENABLE (GHCI §11.1): the board's local window path answers host
+	 * accesses itself while it is 0 (1 after rst_n; 0 without a window) */
+	output wire win_en,
 
 	input wire [16:0] s_awaddr,
 	input wire [S_ID_W-1:0] s_awid,
@@ -434,6 +437,7 @@ module atg_top #(
 		.irq(irq),
 		.mem_ready(mem_ready),
 		.core_rst_n(core_rst_n),
+		.win_en(win_en),
 		.mc_quiesce(mc_quiesce),
 		.mc_flush(mc_flush),
 		.aperture_base(aperture_base),

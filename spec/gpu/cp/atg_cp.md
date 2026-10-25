@@ -55,6 +55,7 @@ or changed in p004:
 | `reg_*` | in/out | — | Register bus from `am_axi_regs`; `reg_rdata` the cycle after `reg_rd` |
 | `irq` | out | 1 | Level interrupt, registered: OR(IRQ_STATUS & IRQ_ENABLE) |
 | `core_rst_n` | out | 1 | Core reset: low for one cycle in the RESET order (the blocks outside) |
+| `win_en` | out | 1 | MEM WINDOW_CTRL.ENABLE from atg_cp_regs (reset by `rst_n` only, not by CTRL.RESET; ws288 p040) |
 | `mc_quiesce` | out | 1 | `atg_cp_ctl`'s quiesce, lifted while MC client 0 (this module) has a request valid |
 | `mc_flush` | out | 1 | One-cycle pulse with the core reset |
 | `aperture_base/limit` | out | 32 | From `atg_cp_ctl` |
