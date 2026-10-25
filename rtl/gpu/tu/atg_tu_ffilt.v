@@ -152,8 +152,11 @@ module atg_tu_ffilt (
 	wire [127:0] raw = wg ? {96'd0, sl[t*32 +: 32]} << {gwi, 5'd0} :
 		b8 ? (t[0] ? {64'd0, sl[127:64]} : {64'd0, sl[63:0]}) : b16 ? sl : {96'd0, sl[t*32 +: 32]};
 	wire tb = wg || !(b8 || b16) ? bd[{k, t}] : b8 && t[0] ? bd[{k, 2'd2}] : bd[{k, 2'd0}];
-	wire [128:0] up = atg_fmt_unpack(raw, vkf, sten);
-	/* A block's texel (atg_tu_etc) to fp32. */
+	/* A block's texel (atg_tu_etc) to fp32, through the same atg_fmt_unpack:
+	 * RGBA8 as R8G8B8A8_UNORM or _SRGB; EAC R11 and RG11 as two 11-bit
+	 * UNORM components (the second 0 for R11), the signed ones as the
+	 * magnitudes' 10-bit UNORM with the sign set (-0.0 for -1024 as
+	 * before); the components the block does not have (0, 0, 1.0). */
 	wire [2:0] loff = b16 ? 3'd0 : {t[0], 2'b00};	/* the texel's first slot's bits 1:0 */
 	wire [7:0] llo = lo[k*8 +: 8];
 	wire [1:0] e_kind;
@@ -164,14 +167,14 @@ module atg_tu_ffilt (
 	);
 	wire [10:0] er = e_tx[10:0], eg = e_tx[26:16];
 	wire [10:0] ear = er[10] ? 11'd0 - er : er, eag = eg[10] ? 11'd0 - eg : eg;
-	wire [31:0] esr = atg_fmt_unorm({14'd0, ear[9:0]}, 6'd10), esg = atg_fmt_unorm({14'd0, eag[9:0]}, 6'd10);
-	wire [127:0] ev = e_kind[1] ? {32'h3F800000, 32'd0,
-		e_kind[0] ? {eg[10], esg[30:0]} : atg_fmt_unorm({13'd0, eg}, 6'd11),
-		e_kind[0] ? {er[10], esr[30:0]} : atg_fmt_unorm({13'd0, er}, 6'd11)} :
-		{atg_fmt_unorm({16'd0, e_tx[31:24]}, 6'd8),
-		e_kind[0] ? atg_srgb_dec(e_tx[23:16]) : atg_fmt_unorm({16'd0, e_tx[23:16]}, 6'd8),
-		e_kind[0] ? atg_srgb_dec(e_tx[15:8]) : atg_fmt_unorm({16'd0, e_tx[15:8]}, 6'd8),
-		e_kind[0] ? atg_srgb_dec(e_tx[7:0]) : atg_fmt_unorm({16'd0, e_tx[7:0]}, 6'd8)};
+	wire esgn = e_kind == 2'd3;	/* signed EAC */
+	wire [5:0] ew = esgn ? 6'd10 : 6'd11;
+	wire [67:0] e_inf = e_kind[1] ? atg_fmt_i(5'd4, 3'd2, ATG_FMT_UNORM, 3'b000,
+		atg_fmt_c(7'd0, ew), atg_fmt_c(7'd16, ew), atg_fmt_c(7'd0, 6'd0), atg_fmt_c(7'd0, 6'd0)) :
+		atg_fmt_info(e_kind[0] ? 8'd43 : 8'd37);
+	wire [127:0] e_raw = esgn ? {96'd0, 5'd0, eag, 5'd0, ear} : {96'd0, e_tx};
+	wire [128:0] up = atg_fmt_unpack_i(blk ? e_raw : raw, blk ? e_inf : inf, sten && !blk);
+	wire [127:0] ev = {up[127:64], esgn && eg[10], up[62:32], esgn && er[10], up[30:0]};
 	reg [127:0] bval;
 	integer q;
 	always @(*)
@@ -279,7 +282,7 @@ module atg_tu_ffilt (
 	end
 
 	wire unused_ok = &{1'b0, n[35:33], up[128], inf[67:15], inf[13:12], ctl[33:23], ctl[16],
-		ctl[20:19], ctl[12:8], ctl[3:1], vkf[7:4], esr[31], esg[31], ear[10], eag[10]};
+		ctl[20:19], ctl[12:8], ctl[3:1], vkf[7:4], ear[10], eag[10]};
 endmodule
 
 `default_nettype wire

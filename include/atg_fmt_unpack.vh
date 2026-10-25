@@ -9,7 +9,8 @@
  * atg_fmt_unpack.vh: a texel of any format to four 32-bit components,
  * included inside a module after atg_srgb.vh and atg_fmt_info.vh.
  * tools/fmtmodel.py (unpack) is the reference; spec/gpu/fmt/atg_fmt.md.
- *   atg_fmt_unpack(raw, fmt, stencil)  {is_int, c3, c2, c1, c0}: raw is
+ *   atg_fmt_unpack(raw, fmt, stencil)  {is_int, c3, c2, c1, c0} (and
+ *       atg_fmt_unpack_i with the atg_fmt_info word instead of fmt): raw is
  *       the texel's bytes as a little-endian integer.  UNORM c / (2^b - 1)
  *       and SNORM max(c / (2^(b-1) - 1), -1) to the nearest fp32 (even),
  *       16-bit floats and the packed unsigned floats exactly (infinities
@@ -163,7 +164,15 @@ function [128:0] atg_fmt_unpack;
 	input [127:0] fu_raw;
 	input [7:0] fu_fmt;
 	input fu_stencil;
-	reg [67:0] fu_inf;
+	atg_fmt_unpack = atg_fmt_unpack_i(fu_raw, atg_fmt_info(fu_fmt), fu_stencil);
+endfunction
+
+/* atg_fmt_unpack with the format's atg_fmt_info word given (a texel
+ * decoded from a block, atg_tu_ffilt). */
+function [128:0] atg_fmt_unpack_i;
+	input [127:0] fu_raw;
+	input [67:0] fu_inf;
+	input fu_stencil;
 	reg [127:0] fu_o;
 	reg [31:0] fu_fld, fu_msk, fu_v, fu_u;
 	reg [15:0] fu_mag;
@@ -178,7 +187,6 @@ function [128:0] atg_fmt_unpack;
 	reg fu_int;
 	integer fu_k;
 	begin
-		fu_inf = atg_fmt_info(fu_fmt);
 		fu_int = fu_inf[11:9] == ATG_FMT_UINT || fu_inf[11:9] == ATG_FMT_SINT;
 		fu_o = {fu_int ? 32'd1 : 32'h3F800000, 96'd0};
 		if (!fu_inf[0] || fu_inf[14]) begin
@@ -240,6 +248,6 @@ function [128:0] atg_fmt_unpack;
 					endcase
 					fu_o[32 * fu_k +: 32] = fu_v;
 				end
-		atg_fmt_unpack = {fu_int, fu_o};
+		atg_fmt_unpack_i = {fu_int, fu_o};
 	end
 endfunction
