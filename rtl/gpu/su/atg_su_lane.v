@@ -127,8 +127,8 @@ module atg_su_lane #(
 	 * Lane ln = x_grp NPHYS + l (disjoint bits); ln + rs2 or ln - rs2 (up,
 	 * down) in one adder a lane.
 	 */
-	reg [NPHYS-1:0] c_ok;
-	reg [NPHYS*5-1:0] c_src;
+	wire [NPHYS-1:0] c_ok;
+	wire [NPHYS*5-1:0] c_src;
 	genvar gl;
 	generate
 		for (gl = 0; gl < NPHYS; gl = gl + 1) begin : g_src
@@ -140,25 +140,30 @@ module atg_su_lane #(
 			wire co_unused;
 			am_addsub #(.W(6)) u_sum (.a({1'b0, ln}), .b({1'b0, bv[4:0]}), .sub(sub[2:0] == 3'd2),
 				.s(sum), .co(co_unused));
+			/* (local regs: one block's writes do not wake the other lanes' blocks) */
+			reg ok;
+			reg [4:0] src;
 			always @(*) begin
-				c_ok[gl] = bv[31:5] == 27'd0;
+				ok = bv[31:5] == 27'd0;
 				case (sub[2:0])
-				3'd0: c_src[gl*5 +: 5] = bv[4:0];
+				3'd0: src = bv[4:0];
 				3'd2: begin
-					c_src[gl*5 +: 5] = sum[4:0];	/* ln - rs2 */
-					c_ok[gl] = c_ok[gl] && bv[4:0] <= ln;
+					src = sum[4:0];	/* ln - rs2 */
+					ok = ok && bv[4:0] <= ln;
 				end
 				3'd3: begin
-					c_src[gl*5 +: 5] = sum[4:0];
-					c_ok[gl] = c_ok[gl] && !sum[5];
+					src = sum[4:0];
+					ok = ok && !sum[5];
 				end
 				3'd4: begin	/* rot: (l + rs2) mod 32, always a lane */
-					c_src[gl*5 +: 5] = sum[4:0];
-					c_ok[gl] = 1'b1;
+					src = sum[4:0];
+					ok = 1'b1;
 				end
-				default: c_src[gl*5 +: 5] = ln ^ bv[4:0];	/* 1 xor */
+				default: src = ln ^ bv[4:0];	/* 1 xor */
 				endcase
 			end
+			assign c_ok[gl] = ok;
+			assign c_src[gl*5 +: 5] = src;
 		end
 	endgenerate
 
