@@ -107,9 +107,16 @@ module atg_rop_wpix #(
 	reg [31:0] fmts, kc8;
 	reg [15:0] wms;
 	reg kc_sel, ms4;
-	wire [8:0] s_rt = st_idx - GHCI_S_RT1_BASE;	/* 2 (k - 1) + stride */
-	wire [8:0] s_bl = st_idx - GHCI_S_BLEND1;
-	wire [8:0] s_kc = st_idx - GHCI_S_BLEND_CONST_R;
+	/* The index within RT1-3_BASE/_STRIDE (2 (k - 1) + stride), BLEND1-3 or
+	 * BLEND_CONST_R-A: the three ranges follow each other, one subtracter. */
+	wire [8:0] s_off;
+	wire s_off_bo_unused;
+	am_sub #(.W(9)) u_s_off (.a(st_idx), .b(st_idx >= GHCI_S_BLEND_CONST_R ? GHCI_S_BLEND_CONST_R :
+		st_idx >= GHCI_S_BLEND1 ? GHCI_S_BLEND1 : GHCI_S_RT1_BASE), .bi(1'b0), .d(s_off),
+		.bo(s_off_bo_unused));
+	wire [8:0] s_rt = s_off;
+	wire [8:0] s_bl = s_off;
+	wire [8:0] s_kc = s_off;
 	integer i;
 	always @(posedge clk)
 		if (!rst_n) begin
@@ -130,12 +137,14 @@ module atg_rop_wpix #(
 				base[0] <= st_wdata;
 			if (st_idx == GHCI_S_RT_STRIDE)
 				stride[0] <= st_wdata;
-			if (st_idx >= GHCI_S_RT1_BASE && st_idx < GHCI_S_RT1_BASE + 9'd6) begin
-				if (s_rt[0])
-					stride[s_rt[2:1] + 2'd1] <= st_wdata;
-				else
-					base[s_rt[2:1] + 2'd1] <= st_wdata;
-			end
+			if (st_idx >= GHCI_S_RT1_BASE && st_idx < GHCI_S_RT1_BASE + 9'd6)
+				for (i = 0; i < 4; i = i + 1)	/* attachment s_rt[2:1] + 1 */
+					if (s_rt[2:1] == i[1:0]) begin
+						if (s_rt[0])
+							stride[(i + 1) % 4] <= st_wdata;
+						else
+							base[(i + 1) % 4] <= st_wdata;
+					end
 			if (st_idx == GHCI_S_RT_FORMAT)
 				fmt0 <= st_wdata[1:0];
 			if (st_idx == GHCI_S_RT_FORMATS)
@@ -143,7 +152,9 @@ module atg_rop_wpix #(
 			if (st_idx == GHCI_S_BLEND)
 				bls[0] <= st_wdata[22:0];
 			if (st_idx >= GHCI_S_BLEND1 && st_idx < GHCI_S_BLEND1 + 9'd3)
-				bls[s_bl[1:0] + 2'd1] <= st_wdata[22:0];
+				for (i = 0; i < 4; i = i + 1)	/* BLEND s_bl + 1 */
+					if (s_bl[1:0] == i[1:0])
+						bls[(i + 1) % 4] <= st_wdata[22:0];
 			if (st_idx == GHCI_S_BLEND_CONST)
 				kc8 <= st_wdata;
 			if (st_idx >= GHCI_S_BLEND_CONST_R && st_idx < GHCI_S_BLEND_CONST_R + 9'd4)
@@ -178,24 +189,41 @@ module atg_rop_wpix #(
 	assign o_ps = ps;
 
 	/* The row's bytes: 2 S ps = 2^segl; several lines when above a line. */
-	wire [3:0] segl = {1'b0, psl} + (ms4 ? 4'd3 : 4'd1);
+	wire [3:0] segl;
 	localparam [31:0] LS32 = LINE_SHIFT;
 	wire [3:0] ls4 = LS32[3:0];
 	wire multi = segl > ls4;
-	wire [3:0] nll = segl - ls4;	/* log2 of the lines (several) */
+	wire [3:0] nll;	/* log2 of the lines (several) */
+	wire [2:0] xsh, el;	/* log2 S ps; log2 E (several lines) */
+	wire [16:0] yr;
+	wire [48:0] yrs;
+	wire [31:0] xoff, a1, a2;
+	wire segl_co_unused, nll_bo_unused, xsh_co_unused, el_bo_unused, yr_co_unused,
+		a1_co_unused, a2_co_unused, a3_co_unused;
+	am_add #(.W(4)) u_segl (.a({1'b0, psl}), .b(ms4 ? 4'd3 : 4'd1), .ci(1'b0), .s(segl),
+		.co(segl_co_unused));
+	am_sub #(.W(4)) u_nll (.a(segl), .b(ls4), .bi(1'b0), .d(nll), .bo(nll_bo_unused));
+	am_add #(.W(3)) u_xsh (.a(psl), .b(ms4 ? 3'd2 : 3'd0), .ci(1'b0), .s(xsh), .co(xsh_co_unused));
+	am_sub #(.W(3)) u_el (.a(ls4[2:0]), .b(psl), .bi(1'b0), .d(el), .bo(el_bo_unused));
+	/* base + (y + r) stride + x S ps + (several lines) the line j */
+	am_shift #(.W(32), .SW(3)) u_xoff (.a({16'd0, i_xy[15:0]}), .amt(xsh), .left(1'b1), .arith(1'b0),
+		.y(xoff));
+	am_add #(.W(17)) u_yr (.a({1'b0, i_xy[31:16]}), .b(17'd0), .ci(i_r), .s(yr), .co(yr_co_unused));
+	am_mul #(.AW(17), .BW(32)) u_yrs (.clk(clk), .en(1'b1), .a(yr), .b(stride[i_rt]), .p(yrs));
+	am_add #(.W(32)) u_a1 (.a(base[i_rt]), .b(yrs[31:0]), .ci(1'b0), .s(a1), .co(a1_co_unused));
+	am_add #(.W(32)) u_a2 (.a(a1), .b(xoff), .ci(1'b0), .s(a2), .co(a2_co_unused));
 	assign o_multi = multi;
 	assign o_nl = multi ? (nll == 4'd1 ? 2'd1 : 2'd3) : 2'd0;
 	assign o_np = !multi && ms4 ? 2'd3 : 2'd0;
-	wire [31:0] xoff = {16'd0, i_xy[15:0]} << (psl + (ms4 ? 3'd2 : 3'd0));
-	assign o_addr = base[i_rt] + ({16'd0, i_xy[31:16]} + {31'd0, i_r}) * stride[i_rt] + xoff +
+	am_add #(.W(32)) u_a3 (.a(a2),
 `ifdef MUT_WPIX_LINE
-		32'd0;
+		.b(32'd0),
 `else
-		(multi ? {{(30-LINE_SHIFT){1'b0}}, i_j, {LINE_SHIFT{1'b0}}} : 32'd0);
+		.b(multi ? {{(30-LINE_SHIFT){1'b0}}, i_j, {LINE_SHIFT{1'b0}}} : 32'd0),
 `endif
+		.ci(1'b0), .s(o_addr), .co(a3_co_unused));
 
 	/* The slots. */
-	wire [2:0] el = ls4[2:0] - psl;	/* log2 E (several lines) */
 	wire [127:0] kcv = kc_sel ? {kcf[3], kcf[2], kcf[1], kcf[0]} :
 		{atg_rop_unorm8(kc8[31:24]), atg_rop_unorm8(kc8[23:16]), atg_rop_unorm8(kc8[15:8]),
 		atg_rop_unorm8(kc8[7:0])};
@@ -208,11 +236,20 @@ module atg_rop_wpix #(
 	generate
 	for (k = 0; k < 4; k = k + 1) begin : g_slot
 		/* one line: lane k, sample i_g; several: n = E i_j + k */
-		wire [3:0] n = ({2'd0, i_j} << el) + k;
+		wire [3:0] nj;
+		wire [3:0] n;
+		wire [LINE_SHIFT-1:0] o1s, o1, om;
+		wire n_co_unused, o1_co_unused;
+		am_shift #(.W(4), .SW(3)) u_nj (.a({2'd0, i_j}), .amt(el), .left(1'b1), .arith(1'b0), .y(nj));
+		localparam [3:0] K4 = k;
+		am_add #(.W(4)) u_n (.a(nj), .b(K4), .ci(1'b0), .s(n), .co(n_co_unused));
 		wire [1:0] ln = multi ? {i_r, n[2]} : k;
-		wire [LINE_SHIFT-1:0] o1 = (k >= 2 ? i_off1 : i_off0) +
-			({{(LINE_SHIFT-3){1'b0}}, ms4 ? {k[0], i_g} : {2'b00, k[0]}} << psl);
-		wire [LINE_SHIFT-1:0] om = {{(LINE_SHIFT-2){1'b0}}, k[1:0]} << psl;
+		am_shift #(.W(LINE_SHIFT), .SW(3)) u_o1s (.a({{(LINE_SHIFT-3){1'b0}}, ms4 ? {k[0], i_g} :
+			{2'b00, k[0]}}), .amt(psl), .left(1'b1), .arith(1'b0), .y(o1s));
+		am_add #(.W(LINE_SHIFT)) u_o1 (.a(k >= 2 ? i_off1 : i_off0), .b(o1s), .ci(1'b0), .s(o1),
+			.co(o1_co_unused));
+		am_shift #(.W(LINE_SHIFT), .SW(3)) u_om (.a({{(LINE_SHIFT-2){1'b0}}, k[1:0]}), .amt(psl),
+			.left(1'b1), .arith(1'b0), .y(om));
 		wire [LINE_SHIFT-1:0] o = multi ? om : o1;
 		assign so[LINE_SHIFT * k +: LINE_SHIFT] = o;
 		assign en[k] = multi ? i_r : k >= 2;
@@ -294,7 +331,7 @@ module atg_rop_wpix #(
 	end
 	endgenerate
 
-	wire unused_ok = &{1'b0, f_idle, LS32[31:4], inf[67:9], inf[0], feat[25:8], feat[6:0], s_rt[8:3], s_bl[8:2],
+	wire unused_ok = &{1'b0, f_idle, yrs[48:32], LS32[31:4], inf[67:9], inf[0], feat[25:8], feat[6:0], s_rt[8:3], s_bl[8:2],
 		s_kc[8:2], nll[3:2]};
 endmodule
 

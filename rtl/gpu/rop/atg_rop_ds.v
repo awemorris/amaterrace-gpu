@@ -151,8 +151,24 @@ module atg_rop_ds #(
 	wire [31:0] zl = z[32 * sb +: 32];
 	/* the entry's byte in the line: (S x + s) ps from the row's address */
 	wire [2:0] ent = ms4 ? e : {2'b00, e[2]};
-	wire [LINE_SHIFT-1:0] bo = addr[LINE_SHIFT-1:0] +
-		(d16 ? {{(LINE_SHIFT-4){1'b0}}, ent, 1'b0} : {{(LINE_SHIFT-5){1'b0}}, ent, 2'b00});
+	wire [LINE_SHIFT-1:0] bo;
+	wire bo_co_unused;
+	am_add #(.W(LINE_SHIFT)) u_bo (.a(addr[LINE_SHIFT-1:0]),
+		.b(d16 ? {{(LINE_SHIFT-4){1'b0}}, ent, 1'b0} : {{(LINE_SHIFT-5){1'b0}}, ent, 2'b00}),
+		.ci(1'b0), .s(bo), .co(bo_co_unused));
+	/* The row's address: base + (y + r) stride + x S ps; the next entry. */
+	wire [16:0] yr;
+	wire [48:0] yrs;
+	wire [31:0] xo = ms4 ? (d16 ? {13'd0, d_xy[15:0], 3'b000} : {12'd0, d_xy[15:0], 4'b0000}) :
+		(d16 ? {15'd0, d_xy[15:0], 1'b0} : {14'd0, d_xy[15:0], 2'b00});
+	wire [31:0] row_a, row_addr;
+	wire [2:0] e_next;
+	wire yr_co_unused, ra_co_unused, rd_co_unused, en_co_unused;
+	am_add #(.W(17)) u_yr (.a({1'b0, d_xy[31:16]}), .b(17'd0), .ci(r), .s(yr), .co(yr_co_unused));
+	am_mul #(.AW(17), .BW(32)) u_yrs (.clk(clk), .en(1'b1), .a(yr), .b(ds_stride), .p(yrs));
+	am_add #(.W(32)) u_ra (.a(ds_base), .b(yrs[31:0]), .ci(1'b0), .s(row_a), .co(ra_co_unused));
+	am_add #(.W(32)) u_rd (.a(row_a), .b(xo), .ci(1'b0), .s(row_addr), .co(rd_co_unused));
+	am_add #(.W(3)) u_en (.a(e), .b(ms4 ? 3'd1 : 3'd4), .ci(1'b0), .s(e_next), .co(en_co_unused));
 	/* The entry's 32-bit word of the line and its half (D16).  bo is a
 	 * multiple of ps (the base and stride of docs/ghci.md section 8.5; the
 	 * low bits of one that is not are ignored), so the entry is the whole
@@ -206,8 +222,7 @@ module atg_rop_ds #(
 		S_ROW:
 			/* the row's address; skip a row without lanes */
 			if (mask[8 * r +: 8] != 8'd0) begin
-				addr <= ds_base + ({16'd0, d_xy[31:16]} + {31'd0, r}) * ds_stride +
-					(({14'd0, d_xy[15:0], 2'b00} << (ms4 ? 2 : 0)) >> (d16 ? 1 : 0));
+				addr <= row_addr;
 				st <= S_RD;
 			end else if (r)
 				st <= S_OUT;
@@ -246,7 +261,7 @@ module atg_rop_ds #(
 						req_be[k] <= 1'b1;
 					end
 			end
-			e <= e + (ms4 ? 3'd1 : 3'd4);
+			e <= e_next;
 			if (e == (ms4 ? 3'd7 : 3'd4))
 				st <= S_WR;
 		end
@@ -282,7 +297,7 @@ module atg_rop_ds #(
 		endcase
 	end
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, STENCIL != 0, WPL != 0, WB != 0, bo[0]};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, STENCIL != 0, WPL != 0, WB != 0, bo[0], yrs[48:32]};
 endmodule
 
 `default_nettype wire

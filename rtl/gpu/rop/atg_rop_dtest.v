@@ -59,10 +59,12 @@ module atg_rop_dtest (
 		input [31:0] a, b;
 		reg [32:0] ka, kb;
 		begin
-			ka = a[31] ? 33'd0 - {2'd0, a[30:0]} : {2'd0, a[30:0]};
-			kb = b[31] ? 33'd0 - {2'd0, b[30:0]} : {2'd0, b[30:0]};
+			/* the signed keys ka <= kb, from the signs and the magnitudes */
+			ka = {2'd0, a[30:0]};
+			kb = {2'd0, b[30:0]};
 			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
-				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) && $signed(ka) <= $signed(kb);
+				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) &&
+				(a[31] ? (b[31] ? ka >= kb : 1'b1) : (b[31] ? ka == 0 && kb == 0 : ka <= kb));
 		end
 	endfunction
 
@@ -98,21 +100,26 @@ module atg_rop_dtest (
 	wire [7:0] cm = ss[15:8];
 	wire s_cmp = atg_depth_pass(ss[26:24], {25'd0, ss[7:0] & cm}, {25'd0, s_a & cm}, 1'b0);
 	wire [2:0] sop = !s_cmp ? so[2:0] : d_ok ? so[5:3] : so[8:6];
+	/* s_a + 1 (ops 3, 6) or - 1 (ops 4, 7) */
+	wire [7:0] s_pm;
+	wire s_pm_co_unused;
+	am_addsub #(.W(8)) u_s_pm (.a(s_a), .b(8'd1), .sub(sop == 3'd4 || sop == 3'd7), .s(s_pm),
+		.co(s_pm_co_unused));
 	reg [7:0] s_new;
 	always @(*)
 		case (sop)
 		3'd0: s_new = s_a;
 		3'd1: s_new = 8'd0;
 		3'd2: s_new = ss[7:0];
-		3'd3: s_new = s_a == 8'hFF ? 8'hFF : s_a + 8'd1;
-		3'd4: s_new = s_a == 8'd0 ? 8'd0 : s_a - 8'd1;
+		3'd3: s_new = s_a == 8'hFF ? 8'hFF : s_pm;
+		3'd4: s_new = s_a == 8'd0 ? 8'd0 : s_pm;
 		3'd5: s_new = ~s_a;
 `ifdef MUT_STENCIL_WRAP
-		3'd6: s_new = s_a == 8'hFF ? 8'hFF : s_a + 8'd1;	/* wrap as clamp */
-		default: s_new = s_a == 8'd0 ? 8'd0 : s_a - 8'd1;
+		3'd6: s_new = s_a == 8'hFF ? 8'hFF : s_pm;	/* wrap as clamp */
+		default: s_new = s_a == 8'd0 ? 8'd0 : s_pm;
 `else
-		3'd6: s_new = s_a + 8'd1;
-		default: s_new = s_a - 8'd1;
+		3'd6: s_new = s_pm;
+		default: s_new = s_pm;
 `endif
 		endcase
 	wire [7:0] wm = ss[23:16];

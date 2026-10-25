@@ -65,47 +65,6 @@ module atg_tu_desc (
 	`include "atg_tu_fmt.vh"
 	localparam IDLE = 1'b0, RUN = 1'b1;
 
-	/* P_l: the plane of level l of a w x h image in bytes, a multiple of 64
-	 * (texels of 2^psl bytes in rows of w rounded up to a multiple of 2^ra;
-	 * tiled: 4-byte texels, or psl 1 for RGB565). */
-	function [31:0] plane;
-		input [31:0] sz;
-		input tiled;
-		input blk;	/* compressed 4 x 4 blocks of 2^psl bytes */
-		input [2:0] psl;
-		input [1:0] ra;
-		input [3:0] l;
-		reg [15:0] w0, h0, w, h;
-		reg [16:0] wr, m;
-		/* verilator lint_off UNUSEDSIGNAL */
-		reg [33:0] p;	/* bits 33:32 wrap, 5:0 rounded off */
-		reg [31:0] t;	/* tiles; below 2^28 */
-		/* verilator lint_on UNUSEDSIGNAL */
-		begin
-			w0 = sz[15:0] == 16'd0 ? 16'd1 : sz[15:0];
-			h0 = sz[31:16] == 16'd0 ? 16'd1 : sz[31:16];
-			w = w0 >> l;
-			h = h0 >> l;
-			w = w == 16'd0 ? 16'd1 : w;
-			h = h == 16'd0 ? 16'd1 : h;
-			m = (17'd1 << ra) - 17'd1;
-`ifdef MUT_TU_PITCHOFF
-			wr = {1'b0, w} | (m & 17'd0);	/* the planes of packed rows */
-`else
-			wr = ({1'b0, w} + m) & ~m;
-`endif
-			t = ({16'd0, 2'b00, w[15:2]} + {31'd0, w[1:0] != 2'd0}) *
-				({16'd0, 2'b00, h[15:2]} + {31'd0, h[1:0] != 2'd0});
-			if (tiled)
-				p = psl == 3'd1 ? {t[28:0], 5'd0} + 34'd63 : {t[27:0], 6'd0};
-			else if (blk)
-				p = ({2'b00, t} << psl) + 34'd63;
-			else
-				p = (({17'd0, wr} * {18'd0, h}) << psl) + 34'd63;
-			plane = {p[31:6], 6'd0};
-		end
-	endfunction
-
 	/* The slot's texel size and whether it is tiled (only 4-byte texels and
 	 * the earlier RGB565); [6:5] the row rule that applies (0 for tiled,
 	 * compressed and multisampled images). */
@@ -134,7 +93,9 @@ module atg_tu_desc (
 	reg [20:0] d_fmt [0:31];
 	reg [1:0] d_row [0:31];
 	reg [25:0] d_off [0:511];	/* {slot, level}: levels 1-12 */
-	wire [8:0] s_fs = st_idx[8:0] - GHCI_S_TU;
+	wire [8:0] s_fs;
+	wire [2:0] carry_unused;
+	am_sub #(.W(9)) u_s_fs (.a(st_idx[8:0]), .b(GHCI_S_TU), .bi(1'b0), .d(s_fs), .bo(carry_unused[0]));
 	wire in_fs = !st_idx[9] && st_idx[8:0] >= GHCI_S_TU && st_idx[8:0] < GHCI_S_TU + 9'd256;
 	wire in_vs = st_idx[9:8] == GHCI_S_TU_VS[9:8];
 	wire in_tu = st_we && (in_fs || in_vs);
@@ -191,14 +152,26 @@ module atg_tu_desc (
 	/* Level cl of slot cs: P x D. */
 	wire [31:0] cimg = d_img[cs];
 	wire [15:0] cnt = cimg[GHCI_IMG_COUNT +: 16] == 16'd0 ? 16'd1 : cimg[GHCI_IMG_COUNT +: 16];
-	wire [15:0] dsh = cnt >> cl;
+	wire [15:0] dsh;
+	am_shift #(.W(16), .SW(4)) u_dsh (.a(cnt), .amt(cl), .left(1'b0), .arith(1'b0), .y(dsh));
 	wire [15:0] dl = cimg[GHCI_IMG_TYPE +: 3] != 3'd2 || dsh == 16'd0 ? 16'd1 : dsh;
 	wire [6:0] clay = layout(cimg, d_fmt[cs], d_row[cs]);
-	wire [31:0] cp = plane(d_size[cs], clay[3], clay[4], clay[2:0], clay[6:5], cl);
-	wire [47:0] pd = cp * {16'd0, dl};
-	wire [31:0] nacc = acc + pd[31:0];
-	wire [31:0] clr = st == IDLE && dirty != 32'd0 ? 32'd1 << lo : 32'd0;
-	wire [31:0] set = mark ? 32'd1 << s_off[8:4] : 32'd0;
+	wire [31:0] cp, nacc;
+	wire [47:0] pd;
+	wire [3:0] cl1;
+	atg_tu_plane u_cp (.sz(d_size[cs]), .tiled(clay[3]), .blk(clay[4]), .psl(clay[2:0]), .ra(clay[6:5]),
+		.l(cl), .plane(cp));
+	am_mul #(.AW(32), .BW(16)) u_pd (.clk(clk), .en(1'b1), .a(cp), .b(dl), .p(pd));
+	am_add #(.W(32)) u_nacc (.a(acc), .b(pd[31:0]), .ci(1'b0), .s(nacc), .co(carry_unused[1]));
+	am_add #(.W(4)) u_cl1 (.a(cl), .b(4'd0), .ci(1'b1), .s(cl1), .co(carry_unused[2]));
+	/* the slot taken (lo) and the slot marked (s_off[8:4]), one-hot */
+	reg [31:0] clr, set;
+	integer o;
+	always @(*)
+		for (o = 0; o < 32; o = o + 1) begin
+			clr[o] = st == IDLE && dirty != 32'd0 && lo == o[4:0];
+			set[o] = mark && s_off[8:4] == o[4:0];
+		end
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -215,8 +188,8 @@ module atg_tu_desc (
 			end
 			default: begin
 				acc <= nacc;
-				d_off[{cs, cl + 4'd1}] <= nacc[31:6];
-				cl <= cl + 4'd1;
+				d_off[{cs, cl1}] <= nacc[31:6];
+				cl <= cl1;
 				if (cl == 4'd11)
 					st <= IDLE;
 			end
@@ -234,7 +207,8 @@ module atg_tu_desc (
 	assign rd_loff = rd_level == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level}], 6'd0};
 	assign rd_fmt = d_fmt[rd_slot];
 	wire [6:0] rlay = layout(d_img[rd_slot], d_fmt[rd_slot], d_row[rd_slot]);
-	assign rd_plane = plane(d_size[rd_slot], rlay[3], rlay[4], rlay[2:0], rlay[6:5], rd_level);
+	atg_tu_plane u_rd_plane (.sz(d_size[rd_slot]), .tiled(rlay[3]), .blk(rlay[4]), .psl(rlay[2:0]),
+		.ra(rlay[6:5]), .l(rd_level), .plane(rd_plane));
 	assign rd_row = rlay[6:5];
 
 	wire unused_ok = &{1'b0, s_fs[8], pd[47:32], nacc[5:0], acc[5:0]};

@@ -48,23 +48,30 @@ module atg_rx_fdiv (
 	assign busy = run;
 
 	wire ge = rem >= {2'b00, d};
-	wire [25:0] rem_n = ge ? rem - {2'b00, d} : rem;
+	wire [25:0] rem_d;
+	wire rd_bo_unused;
+	am_sub #(.W(26)) u_rem_d (.a(rem), .b({2'b00, d}), .bi(1'b0), .d(rem_d), .bo(rd_bo_unused));
+	wire [25:0] rem_n = ge ? rem_d : rem;
+	/* the exponent ea - eb + 126 (+ 1 when ma >= mb); cnt - 1 */
+	wire [9:0] eab, e_n;
+	wire [4:0] cnt_m1;
+	wire eab_bo_unused, en_co_unused, cm_bo_unused;
+	am_sub #(.W(10)) u_eab (.a({2'b00, ea}), .b({2'b00, eb}), .bi(1'b0), .d(eab), .bo(eab_bo_unused));
+	am_add #(.W(10)) u_e_n (.a(eab), .b(10'd126), .ci(!(ma < mb)), .s(e_n), .co(en_co_unused));
+	am_sub #(.W(5)) u_cnt (.a(cnt), .b(5'd0), .bi(1'b1), .d(cnt_m1), .bo(cm_bo_unused));
 
 	/* The end: round the 25 quotient bits (24 + guard) with the sticky. */
 	wire last = run && cnt == 5'd0;
 	wire [24:0] q_n = {q[23:0], ge};
 	wire sticky = rem_n != 26'd0;
-	reg [24:0] m;
-	reg [9:0] ef;
-
-	always @(*) begin
-		m = {1'b0, q_n[24:1]} + {24'd0, q_n[0] && (sticky || q_n[1])};
-		ef = e;
-		if (m[24]) begin
-			m = {1'b0, m[24:1]};
-			ef = ef + 10'd1;
-		end
-	end
+	wire [24:0] m0;
+	wire [9:0] ef;
+	wire m0_co_unused, ef_co_unused;
+	am_add #(.W(25)) u_m0 (.a({1'b0, q_n[24:1]}), .b(25'd0), .ci(q_n[0] && (sticky || q_n[1])),
+		.s(m0), .co(m0_co_unused));
+	wire [24:0] m = m0[24] ? {1'b0, m0[24:1]} : m0;
+	am_add #(.W(10)) u_ef (.a(e), .b(10'd0), .ci(m0[24]), .s(ef), .co(ef_co_unused));
+	wire unused_m = &{1'b0, m[24:23]};
 
 	always @(posedge clk) begin
 		o_done <= 1'b0;
@@ -88,16 +95,16 @@ module atg_rx_fdiv (
 				q <= 24'd0;
 				if (ma < mb) begin
 					rem <= {1'b0, ma, 1'b0};
-					e <= {2'b00, ea} - {2'b00, eb} + 10'd126;
+					e <= e_n;
 				end else begin
 					rem <= {2'b00, ma};
-					e <= {2'b00, ea} - {2'b00, eb} + 10'd127;
+					e <= e_n;
 				end
 			end
 		end else if (run) begin
 			q <= q_n[23:0];
 			rem <= {rem_n[24:0], 1'b0};
-			cnt <= cnt - 5'd1;
+			cnt <= cnt_m1;
 			if (last) begin
 				run <= 1'b0;
 				o_done <= 1'b1;

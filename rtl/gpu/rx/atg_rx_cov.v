@@ -40,16 +40,10 @@ module atg_rx_cov (
 	reg signed [47:0] op [0:2];
 	reg signed [47:0] oq [0:2];
 	reg signed [47:0] es [0:2];
-	integer k;
 
 	function signed [47:0] sx48;
 		input [23:0] v;
 		sx48 = {{24{v[23]}}, v};
-	endfunction
-
-	function [47:0] abs48;
-		input [47:0] v;
-		abs48 = v[47] ? -v : v;
 	endfunction
 
 	/* All the bits below the top set bit of v, set (v itself included). */
@@ -64,33 +58,43 @@ module atg_rx_cov (
 		end
 	endfunction
 
-	always @(posedge clk) begin
-		for (k = 0; k < 3; k = k + 1) begin
+	genvar ge;
+	generate
+	for (ge = 0; ge < 3; ge = ge + 1) begin : g_e
+		wire [47:0] a = sx48(i_ab[48 * ge +: 24]);
+		wire [47:0] b = sx48(i_ab[48 * ge + 24 +: 24]);
+		/* op = 32 A + 64 B + 32 B, oq = 64 A + 32 A - 32 B; |op|, |oq| */
+		wire [47:0] op1, op_n, oq1, oq_n, pa, qa, es_n;
+		wire [6:0] carry_unused;
+		am_add #(.W(48)) u_op1 (.a(a <<< 5), .b(b <<< 6), .ci(1'b0), .s(op1), .co(carry_unused[0]));
+		am_add #(.W(48)) u_op (.a(op1), .b(b <<< 5), .ci(1'b0), .s(op_n), .co(carry_unused[1]));
+		am_add #(.W(48)) u_oq1 (.a(a <<< 6), .b(a <<< 5), .ci(1'b0), .s(oq1), .co(carry_unused[2]));
+		am_sub #(.W(48)) u_oq (.a(oq1), .b(b <<< 5), .bi(1'b0), .d(oq_n), .bo(carry_unused[3]));
+		am_addsub #(.W(48)) u_pa (.a(48'd0), .b(op[ge]), .sub(op[ge][47]), .s(pa), .co(carry_unused[4]));
+		am_addsub #(.W(48)) u_qa (.a(48'd0), .b(oq[ge]), .sub(oq[ge][47]), .s(qa), .co(carry_unused[5]));
+		/* es: ec - op (start), ec + oq (sample 0), ec - oq (1), ec + op (2, 3) */
+		am_addsub #(.W(48)) u_es (.a(i_ec[48 * ge +: 48]), .b(i_start || i_sc[1] ? op[ge] : oq[ge]),
+`ifdef MUT_SAMPLE_SWAP
+			.sub(i_start || i_sc == 2'd0),
+`else
+			.sub(i_start || i_sc == 2'd1),
+`endif
+			.s(es_n), .co(carry_unused[6]));
+		always @(posedge clk) begin
 			if (i_load) begin
-				op[k] <= (sx48(i_ab[48 * k +: 24]) <<< 5) +
-					(sx48(i_ab[48 * k + 24 +: 24]) <<< 6) +
-					(sx48(i_ab[48 * k + 24 +: 24]) <<< 5);
-				oq[k] <= (sx48(i_ab[48 * k +: 24]) <<< 6) +
-					(sx48(i_ab[48 * k +: 24]) <<< 5) -
-					(sx48(i_ab[48 * k + 24 +: 24]) <<< 5);
+				op[ge] <= op_n;
+				oq[ge] <= oq_n;
 			end
 `ifdef MUT_COV_SKIP
-			o_lowm[48 * k +: 48] <= smear(abs48(op[k]) | abs48(oq[k])) >> 3;
+			o_lowm[48 * ge +: 48] <= smear(pa | qa) >> 3;
 `else
-			o_lowm[48 * k +: 48] <= smear(abs48(op[k]) | abs48(oq[k]));
+			o_lowm[48 * ge +: 48] <= smear(pa | qa);
 `endif
-			if (i_start)
-				es[k] <= $signed(i_ec[48 * k +: 48]) - op[k];
-			else if (i_step)
-`ifdef MUT_SAMPLE_SWAP
-				es[k] <= $signed(i_ec[48 * k +: 48]) +
-					(i_sc == 2'd0 ? -oq[k] : i_sc == 2'd1 ? oq[k] : op[k]);
-`else
-				es[k] <= $signed(i_ec[48 * k +: 48]) +
-					(i_sc == 2'd0 ? oq[k] : i_sc == 2'd1 ? -oq[k] : op[k]);
-`endif
+			if (i_start || i_step)
+				es[ge] <= es_n;
 		end
 	end
+	endgenerate
 
 	wire signed [47:0] es_0 = es[0], es_1 = es[1], es_2 = es[2];
 	assign o_eb = i_samp ? {es_2, es_1, es_0} : i_ec;

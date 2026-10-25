@@ -25,6 +25,9 @@ module atg_rx_order (
 );
 	/* spec/gpu/rx/atg_rx_order.md */
 	reg [15:0] cnt;
+	wire [15:0] cnt1;
+	wire c1_co_unused;
+	am_add #(.W(16)) u_cnt1 (.a(cnt), .b(16'd0), .ci(1'b1), .s(cnt1), .co(c1_co_unused));
 
 	assign sq_seq = cnt;
 	assign ord_valid = sq_req;
@@ -34,7 +37,7 @@ module atg_rx_order (
 		if (!rst_n)
 			cnt <= 16'd0;
 		else if (sq_req)
-			cnt <= cnt + 16'd1;
+			cnt <= cnt1;
 endmodule
 
 `default_nettype wire

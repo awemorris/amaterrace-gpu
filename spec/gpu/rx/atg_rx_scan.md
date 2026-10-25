@@ -1,6 +1,6 @@
 # atg_rx_scan
 
-RTL: `rtl/gpu/rx/atg_rx_scan.v`.  Child: `atg_rx_cov` (the sample offsets).  Parent: atg_rx.  Implemented in: p007 (direct), p009 (warps).
+RTL: `rtl/gpu/rx/atg_rx_scan.v`.  Children: `atg_rx_cov` (the sample offsets), `atg_rx_i2f` (i, j of the depth plane to fp32).  Parent: atg_rx.  Implemented in: p007 (direct), p009 (warps).
 
 ## 1. Purpose and place
 

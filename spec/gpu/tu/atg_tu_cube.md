@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_cube.v`.  Parent: atg_tu_addr.  Implemented in: p009 (pa
 
 ## 1. Purpose and place
 
-The face and the face coordinates of a cube map direction (docs/ghci.md §8.4): Vulkan's face selection and the division s_c / |m_a| done exactly, one bit a cycle.  No children.
+The face and the face coordinates of a cube map direction (docs/ghci.md §8.4): Vulkan's face selection and the division s_c / |m_a| done exactly, one bit a cycle.  Child: `atg_tu_cube_sc` (s_c', t_c' before the division; two instances).
 
 ## 2. Parameters
 

@@ -1,6 +1,6 @@
 # atg_rx_frag
 
-RTL: `rtl/gpu/rx/atg_rx_frag.v`.  Parent: atg_rx.  Child: `atg_rx_bary` (the lane arithmetic).  Implemented in: p009 (part B2; split off atg_rx_scan).
+RTL: `rtl/gpu/rx/atg_rx_frag.v`.  Parent: atg_rx.  Children: `atg_rx_bary` (the lane arithmetic), `atg_rx_i2f` (the lane's 2 x + 1, 2 y + 1 to fp32).  Implemented in: p009 (part B2; split off atg_rx_scan).
 
 ## 1. Purpose and place
 

@@ -1,6 +1,6 @@
 # atg_rop_blend
 
-RTL: `rtl/gpu/rop/atg_rop_blend.v`.  Parent: atg_rop.  Implemented in: p007.
+RTL: `rtl/gpu/rop/atg_rop_blend.v`.  Parent: atg_rop.  Children: `atg_rop_f2u8` (fp32 to unorm8), `atg_rop_div255` (round(x / 255)).  Implemented in: p007.
 
 ## 1. Purpose and place
 
