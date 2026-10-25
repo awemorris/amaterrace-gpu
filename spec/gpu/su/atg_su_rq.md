@@ -10,7 +10,7 @@ The reserved rq port (operand 63) and sactl to a systolic array (design §3.9): 
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `UOP_W` | `104` | Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh). |
 | `HAS_SA` | `0` | An SA is attached (v1: 0). |
 

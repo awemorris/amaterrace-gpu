@@ -10,7 +10,7 @@ The SU's warp scheduler: warp slots and their PCs, slot allocation for vertex wa
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `NSU` | `1` | Number of SUs (compute workgroups are shared out: this SU takes wg_id % NSU == SU_INDEX). |

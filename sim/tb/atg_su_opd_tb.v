@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_su_opd_tb: operand collection for NPHYS 8, 16 and 32.  Random
+ * atg_su_opd_tb: operand collection for NPHYS 4, 8, 16 and 32.  Random
  * instructions (random units, operand numbers 0-127 except 63, PAIR,
  * modifiers, PAIR with rs3: two operand passes) with a model RF and
  * constant bank behind the read ports and random unit_ready; every group
@@ -295,8 +295,8 @@ endmodule
 module atg_su_opd_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
-	wire [2:0] done;
-	wire [31:0] g0, g1, g2, s0, s1, s2, m0, m1, m2, k0, k1, k2;
+	wire [3:0] done;
+	wire [31:0] g0, g1, g2, g3, s0, s1, s2, s3, m0, m1, m2, m3, k0, k1, k2, k3;
 
 	always #5 clk = !clk;
 
@@ -306,19 +306,21 @@ module atg_su_opd_tb;
 		.e_gpr(g1), .e_spec(s1), .e_mod(m1), .e_mask(k1));
 	atg_su_opd_chk #(.NPHYS(32), .SEED(3)) c2 (.clk(clk), .rst_n(rst_n), .done(done[2]),
 		.e_gpr(g2), .e_spec(s2), .e_mod(m2), .e_mask(k2));
+	atg_su_opd_chk #(.NPHYS(4), .SEED(4)) c3 (.clk(clk), .rst_n(rst_n), .done(done[3]),
+		.e_gpr(g3), .e_spec(s3), .e_mod(m3), .e_mask(k3));
 
 	initial begin
 		#25 rst_n = 1'b1;
 		wait (&done);
-		if (g0 + g1 + g2 == 0) $display("PASS atg_su_opd.gpr");
-		else $display("FAIL atg_su_opd.gpr %0d %0d %0d", g0, g1, g2);
-		if (s0 + s1 + s2 == 0) $display("PASS atg_su_opd.special");
-		else $display("FAIL atg_su_opd.special %0d %0d %0d", s0, s1, s2);
-		if (m0 + m1 + m2 == 0) $display("PASS atg_su_opd.mods");
-		else $display("FAIL atg_su_opd.mods %0d %0d %0d", m0, m1, m2);
-		if (k0 + k1 + k2 == 0) $display("PASS atg_su_opd.mask");
-		else $display("FAIL atg_su_opd.mask %0d %0d %0d", k0, k1, k2);
-		if (g0 + g1 + g2 + s0 + s1 + s2 + m0 + m1 + m2 + k0 + k1 + k2 == 0)
+		if (g0 + g1 + g2 + g3 == 0) $display("PASS atg_su_opd.gpr");
+		else $display("FAIL atg_su_opd.gpr %0d %0d %0d %0d", g0, g1, g2, g3);
+		if (s0 + s1 + s2 + s3 == 0) $display("PASS atg_su_opd.special");
+		else $display("FAIL atg_su_opd.special %0d %0d %0d %0d", s0, s1, s2, s3);
+		if (m0 + m1 + m2 + m3 == 0) $display("PASS atg_su_opd.mods");
+		else $display("FAIL atg_su_opd.mods %0d %0d %0d %0d", m0, m1, m2, m3);
+		if (k0 + k1 + k2 + k3 == 0) $display("PASS atg_su_opd.mask");
+		else $display("FAIL atg_su_opd.mask %0d %0d %0d %0d", k0, k1, k2, k3);
+		if (g0 + g1 + g2 + g3 + s0 + s1 + s2 + s3 + m0 + m1 + m2 + m3 + k0 + k1 + k2 + k3 == 0)
 			$display("PASS atg_su_opd");
 		$finish;
 	end

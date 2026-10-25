@@ -13,7 +13,8 @@
  * vector), a random EXEC mask; the result must come exactly SHORT_LAT
  * cycles later with the uop's rd and the mask.  A second unit with PACKED
  * and PK_SHARED (the packed fp16 operations on this unit, atg_su_pk_tb)
- * must give the same outputs every cycle for the FPU's operations.
+ * must give the same outputs every cycle for the FPU's operations, and so
+ * must a unit of NPHYS 4 (the KC705's, GRP_W 3) on the low 4 lanes.
  */
 
 `timescale 1ns / 1ps
@@ -67,6 +68,30 @@ module atg_su_fpu_tb;
 		    {x_ready, s_valid, s_warp, s_grp, s_rd, s_lanes} ||
 		    (s_valid && s_data_s !== s_data))) begin
 			$display("FAIL atg_su_fpu: the PK_SHARED unit differs at vector %0d", n_out);
+			err[0] = err[0] + 1;
+		end
+
+	/* NPHYS 4 (GRP_W 3): the same as the low 4 lanes of dut. */
+	localparam DW4 = 4 * 32;
+	wire x_ready_4, s_valid_4;
+	wire [1:0] s_warp_4;
+	wire [2:0] s_grp_4;
+	wire [6:0] s_rd_4;
+	wire [DW4-1:0] s_data_4;
+	wire [3:0] s_lanes_4;
+	atg_su_fpu #(.NPHYS(4), .GRP_W(3), .SHORT_LAT(LAT)) dut_4 (
+		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(2'd1), .x_grp(3'd6),
+		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(x_a[DW4-1:0]),
+		.x_b(x_b[DW4-1:0]), .x_c(x_c[DW4-1:0]), .x_mask({x_mask[NPHYS +: 4], x_mask[3:0]}),
+		.x_info(32'd0), .x_ready(x_ready_4),
+		.s_valid(s_valid_4), .s_warp(s_warp_4), .s_grp(s_grp_4), .s_rd(s_rd_4),
+		.s_data(s_data_4), .s_lanes(s_lanes_4)
+	);
+	always @(posedge clk)
+		if (rst_n && ({x_ready_4, s_valid_4, s_warp_4, s_rd_4, s_lanes_4} !==
+		    {x_ready, s_valid, s_warp, s_rd, s_lanes[3:0]} || (s_valid && s_grp_4 !== 3'd6) ||
+		    (s_valid && s_data_4 !== s_data[DW4-1:0]))) begin
+			$display("FAIL atg_su_fpu: the NPHYS 4 unit differs at vector %0d", n_out);
 			err[0] = err[0] + 1;
 		end
 

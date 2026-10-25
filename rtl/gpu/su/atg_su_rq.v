@@ -19,7 +19,7 @@
 `default_nettype none
 
 module atg_su_rq #(
-	parameter NPHYS = 8,	/* Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
+	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
 	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
 	parameter HAS_SA = 0	/* An SA is attached (v1: 0) */
 ) (

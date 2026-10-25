@@ -7,9 +7,10 @@
 
 /*
  * atg_su_gfx_tb: the shader unit's graphics warps (design §3.1 M10,
- * §3.8), with PACKED and SUBGROUP, on NPHYS 8 (with PK_SHARED: the fp16
- * arithmetic on the FPU), 16 and 32 (the NPHYS 16 SU with 8 scoreboard
- * entries and FRAG_RESERVE 2).  The
+ * §3.8), with PACKED and SUBGROUP, on NPHYS 4 (the KC705's: 8 scoreboard
+ * entries and FRAG_RESERVE 2), 8 (with PK_SHARED: the fp16 arithmetic on
+ * the FPU), 16 and 32 (the NPHYS 16 SU with 8 scoreboard entries and
+ * FRAG_RESERVE 2).  The
  * testbench is the VF (vl_*), the RX (fl_*, pt_free) and the ROP (ex_*)
  * of one SU; code and data memories as in atg_su_tb.  Two parts:
  *
@@ -744,8 +745,8 @@ endmodule
 module atg_su_gfx_tb;
 	reg clk = 1'b0;
 	reg go = 1'b0;
-	wire [2:0] done;
-	wire [31:0] g0, g1, g2, l0, l1, l2, m0, m1, m2;
+	wire [3:0] done;
+	wire [31:0] g0, g1, g2, g3, l0, l1, l2, l3, m0, m1, m2, m3;
 
 	always #5 clk = !clk;
 
@@ -755,14 +756,16 @@ module atg_su_gfx_tb;
 		.clk(clk), .go(go), .done(done[1]), .e_gfx(g1), .e_loop(l1), .e_ms(m1));
 	atg_su_gfx_chk #(.NPHYS(32), .SEED(3)) n32 (.clk(clk), .go(go), .done(done[2]),
 		.e_gfx(g2), .e_loop(l2), .e_ms(m2));
+	atg_su_gfx_chk #(.NPHYS(4), .SEED(4), .FRAG_RESERVE(2), .SB_ENTRIES(8), .SBE_W(3)) n4 (
+		.clk(clk), .go(go), .done(done[3]), .e_gfx(g3), .e_loop(l3), .e_ms(m3));
 
 	initial begin
 		#20 go = 1'b1;
 		wait (&done);
-		if (g0 + g1 + g2 == 0) $display("PASS atg_su_gfx.gfx");
-		if (l0 + l1 + l2 == 0) $display("PASS atg_su_gfx.loop");
-		if (m0 + m1 + m2 == 0) $display("PASS atg_su_gfx.ms");
-		if (g0 + g1 + g2 + l0 + l1 + l2 + m0 + m1 + m2 == 0)
+		if (g0 + g1 + g2 + g3 == 0) $display("PASS atg_su_gfx.gfx");
+		if (l0 + l1 + l2 + l3 == 0) $display("PASS atg_su_gfx.loop");
+		if (m0 + m1 + m2 + m3 == 0) $display("PASS atg_su_gfx.ms");
+		if (g0 + g1 + g2 + g3 + l0 + l1 + l2 + l3 + m0 + m1 + m2 + m3 == 0)
 			$display("PASS atg_su_gfx");
 		$finish;
 	end

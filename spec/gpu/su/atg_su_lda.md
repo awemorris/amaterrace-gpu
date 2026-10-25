@@ -10,7 +10,7 @@ The primitive table: the three vertices' varyings of each fragment warp's primit
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
@@ -81,7 +81,7 @@ None beyond the above.
 
 `sim/tb/atg_su_lda_tb.v` prints, in this order:
 
-- `PASS atg_su_lda.rw` — RX-style writes then lda reads for several primitives per warp (through the map), in the NPHYS 8 (16 varying words), NPHYS 16 (the KC705's 64, two read cycles) and NPHYS 32 (32 words, four read cycles) shapes, with x_ready honoured, back-to-back groups and other units' groups in the read cycles; PT words 0-3, past the varyings and up to 127, vertex 3
+- `PASS atg_su_lda.rw` — RX-style writes then lda reads for several primitives per warp (through the map), in the NPHYS 8 (16 varying words), NPHYS 16 (64, two read cycles), NPHYS 32 (32 words, four read cycles) and NPHYS 4 (the KC705's 64, one quad a group, one read cycle) shapes, with x_ready honoured, back-to-back groups and other units' groups in the read cycles; PT words 0-3, past the varyings and up to 127, vertex 3
 - `PASS atg_su_lda.ms` — the RX's d_s words (0xFF8-0xFFB, multisampling) touch neither the table nor the map
 - `PASS atg_su_lda.ready` — x_ready is 0 exactly in the later read cycles of a group (`-DMUT_LDA_PHASE`, the later reads with the first quads' primitives, fails `.rw`)
 - `PASS atg_su_lda` at the end.

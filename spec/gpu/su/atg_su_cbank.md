@@ -10,7 +10,7 @@ The constant bank: 256 words loaded by LOAD_CONST (DMA from memory), read as c0-
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |

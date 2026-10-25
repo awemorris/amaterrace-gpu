@@ -38,7 +38,7 @@
 `default_nettype none
 
 module atg_su_tex #(
-	parameter NPHYS = 8,	/* Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
+	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
 	parameter NWARPS = 4,	/* Resident warps (slots): 2, 4 or 8 */
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit) */
@@ -94,6 +94,7 @@ module atg_su_tex #(
 
 	localparam NQ = NPHYS / 4;	/* quads in a lane group */
 	localparam QW = NQ > 1 ? $clog2(NQ) : 1;
+	localparam QS = $clog2(NQ);	/* the quad number's bits in a group (0 for NPHYS 4) */
 	localparam [1:0] IDLE = 2'd0, SEND = 2'd1, DREF = 2'd2;
 
 	reg [1:0] st;
@@ -148,7 +149,8 @@ module atg_su_tex #(
 				q_crd = crd[qi*640 +: 640];
 	end
 	assign tx_coord = q_crd;
-	wire [31:0] qn = ({{(32 - GRP_W){1'b0}}, grp} << QW) | {{(32 - QW){1'b0}}, q};
+	wire [31:0] qn = ({{(32 - GRP_W){1'b0}}, grp} << QS) |
+		(NQ > 1 ? {{(32 - QW){1'b0}}, q} : 32'd0);
 	wire [QW-1:0] q_next;
 	wire qn_co_unused;
 	am_add #(.W(QW)) u_q (.a(q), .b({QW{1'b0}}), .ci(1'b1), .s(q_next), .co(qn_co_unused));

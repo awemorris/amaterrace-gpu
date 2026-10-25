@@ -11,15 +11,17 @@
  * against real arithmetic on normal inputs whose exponents differ by at
  * most 24, so the double difference is exact and its rounding to single
  * is RNE) and qswap1/2/3, qbcast, SHORT_LAT cycles after x_valid.
- * "sub": with SUBGROUP 1 and NPHYS 8, 16 and 32 (atg_su_lane_sgchk),
+ * A unit of NPHYS 4 (the KC705's, GRP_W 3, one quad) on the low 4 lanes
+ * must give the same results as the low 4 lanes every cycle.
+ * "sub": with SUBGROUP 1 and NPHYS 4, 8, 16 and 32 (atg_su_lane_sgchk),
  * random shfl (every mode; sources in range, out of range, outside EXEC),
  * vote.any/all and ballot with EXEC full, empty, one lane and random,
  * interleaved with qswap/qbcast, against a model of the rules in the
  * module's header: the results (lanes outside EXEC and source operands of
  * those lanes are X on the bus, so no X may reach a written lane), the
  * lanes written, rd, warp and group, the cycle of each short result
- * (SHORT_LAT after x_end - (G-1) + g), and x_ready (0 for exactly G cycles
- * on the last group, 1 otherwise).
+ * (SHORT_LAT after x_end - (G-1) + g, also when G > SHORT_LAT), and
+ * x_ready (0 for exactly G cycles on the last group, 1 otherwise).
  */
 
 `timescale 1ns / 1ps
@@ -220,6 +222,12 @@ module atg_su_lane_sgchk #(
 				drive(g);
 				stall = 0;
 				#1;
+				/* The results of a subgroup instruction's groups k come from the
+				 * cycles after the last group's first: set them now, since with
+				 * G > SHORT_LAT (NPHYS 4) the first is due before x_ready. */
+				if (op != ATG_LANE_QD && x_last)
+					for (k = 0; k < G; k = k + 1)
+						expect_grp(t + 1 + k + LAT, k);
 				while (!x_ready) begin
 					if (op == ATG_LANE_QD || !x_last) begin
 						$display("FAIL atg_su_lane.sub NPHYS %0d inst %0d: x_ready 0 on group %0d",
@@ -240,8 +248,6 @@ module atg_su_lane_sgchk #(
 							NPHYS, i, stall, G);
 						errs = errs + 1;
 					end
-					for (k = 0; k < G; k = k + 1)
-						expect_grp(t - (G - 1) + k + LAT, k);
 				end
 				@(negedge clk);
 			end
@@ -326,8 +332,10 @@ module atg_su_lane_tb;
 		t <= t + 1;
 
 	reg go = 1'b0;
-	wire [2:0] sg_done;
-	wire [31:0] sg_e8, sg_e16, sg_e32;
+	wire [3:0] sg_done;
+	wire [31:0] sg_e4, sg_e8, sg_e16, sg_e32;
+	atg_su_lane_sgchk #(.NPHYS(4), .SEED(14)) sg4 (.clk(clk), .go(go), .done(sg_done[3]),
+		.errs(sg_e4));
 	atg_su_lane_sgchk #(.NPHYS(8), .SEED(11)) sg8 (.clk(clk), .go(go), .done(sg_done[0]),
 		.errs(sg_e8));
 	atg_su_lane_sgchk #(.NPHYS(16), .SEED(12)) sg16 (.clk(clk), .go(go), .done(sg_done[1]),
@@ -342,6 +350,30 @@ module atg_su_lane_tb;
 		.x_ready(x_ready), .s_valid(s_valid), .s_warp(s_warp), .s_grp(s_grp), .s_rd(s_rd),
 		.s_data(s_data), .s_lanes(s_lanes)
 	);
+
+	/* NPHYS 4: the low quad. */
+	wire x_ready_4, s_valid_4;
+	wire [1:0] s_warp_4;
+	wire [2:0] s_grp_4;
+	wire [6:0] s_rd_4;
+	wire [127:0] s_data_4;
+	wire [3:0] s_lanes_4;
+	atg_su_lane #(.NPHYS(4), .GRP_W(3), .SHORT_LAT(LAT)) dut_4 (
+		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(x_warp), .x_grp({1'b1, x_grp}),
+		.x_last(1'b0), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(x_a[127:0]),
+		.x_b(128'd0), .x_c(128'd0), .x_mask({x_mask[NPHYS +: 4], x_mask[3:0]}), .x_info(32'd0),
+		.x_ready(x_ready_4), .s_valid(s_valid_4), .s_warp(s_warp_4), .s_grp(s_grp_4),
+		.s_rd(s_rd_4), .s_data(s_data_4), .s_lanes(s_lanes_4)
+	);
+	integer err_4 = 0;
+	always @(posedge clk)
+		if (rst_n && ({x_ready_4, s_valid_4, s_warp_4, s_rd_4, s_lanes_4} !==
+		    {x_ready, s_valid, s_warp, s_rd, s_lanes[3:0]} ||
+		    (s_valid && (s_grp_4 !== {1'b1, s_grp} || s_data_4 !== s_data[127:0])))) begin
+			if (err_4 < 5)
+				$display("FAIL atg_su_lane.qd: the NPHYS 4 unit differs at cycle %0d", t);
+			err_4 = err_4 + 1;
+		end
 
 	function [31:0] rf;	/* a normal float, exponent 100-124 */
 		input integer dummy;
@@ -427,12 +459,12 @@ module atg_su_lane_tb;
 		end
 		x_valid = 1'b0;
 		repeat (LAT + 3) @(negedge clk);
-		if (errors == 0)
+		if (errors + err_4 == 0)
 			$display("PASS atg_su_lane.qd");
 		wait (&sg_done);
-		if (sg_e8 + sg_e16 + sg_e32 == 0)
+		if (sg_e4 + sg_e8 + sg_e16 + sg_e32 == 0)
 			$display("PASS atg_su_lane.sub");
-		if (errors + sg_e8 + sg_e16 + sg_e32 == 0)
+		if (errors + err_4 + sg_e4 + sg_e8 + sg_e16 + sg_e32 == 0)
 			$display("PASS atg_su_lane");
 		$finish;
 	end

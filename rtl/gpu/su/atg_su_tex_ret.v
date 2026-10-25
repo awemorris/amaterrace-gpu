@@ -27,7 +27,7 @@
 `default_nettype none
 
 module atg_su_tex_ret #(
-	parameter NPHYS = 8,	/* Physical lanes: 8, 16 or 32 */
+	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 */
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS) */
 	parameter SBE_W = 2	/* log2(SB_ENTRIES) */

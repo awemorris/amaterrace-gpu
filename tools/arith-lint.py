@@ -43,9 +43,11 @@ POW2 = ('mul', 'muls', 'div', 'divs', 'moddiv', 'moddivs')
 KC = ['-GLINE_BYTES=64', '-GLINE_SHIFT=6', '-GDATA_W=512', '-GS_ID_W=4', '-GS_LEN_W=8']
 KCSU = ('-GHAS_CPU=1 -GCPU_IMEM_WORDS=32768 -GCPU_DMEM_WORDS=16384 -GHAS_VF=1 -GHAS_RX=1 '
         '-GHAS_TU=1 -GHAS_ROP=1 -GEXT_CLIENT=1 -GHAS_JTAG=1 -GMS4=1 -GROP_STENCIL=1 '
-        '-GSU_NPHYS=8 -GSU_GRP_W=2 -GSU_NREGS=64 -GSU_SB_ENTRIES=8 -GSU_SBE_W=3 '
+        '-GSU_NPHYS=4 -GSU_GRP_W=3 -GSU_NREGS=64 -GSU_SB_ENTRIES=8 -GSU_SBE_W=3 '
         '-GSU_PACKED=1 -GSU_SUBGROUP=1 -GSU_FRAG_RESERVE=2 -GSU_LDS_BYTES=16384 '
         '-GSU_VARY_WORDS=64 -GNSU=1').split()
+# The same with the SU of NPHYS 8 (the ASIC's and a larger FPGA's).
+KCSU8 = [{'-GSU_NPHYS=4': '-GSU_NPHYS=8', '-GSU_GRP_W=3': '-GSU_GRP_W=2'}.get(a, a) for a in KCSU]
 
 
 def const_value(e):
@@ -248,6 +250,7 @@ def main():
             tops.append((m, [], m))
         tops.append(('atg_top', KC, 'atg_top_kc'))
         tops.append(('atg_top', KC + KCSU, 'atg_top_kcsu'))
+        tops.append(('atg_top', KC + KCSU8, 'atg_top_kcsu8'))
     for top, args, tag in tops:
         root = run(top, args, tag)
         if root is not None:

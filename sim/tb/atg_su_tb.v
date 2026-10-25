@@ -7,8 +7,8 @@
 
 /*
  * atg_su_tb: the shader unit running GSI1 programs (the check that
- * the same binary gives the same results on NPHYS 8, 16 and 32).  Three
- * SUs (NPHYS 8, 16, 32; NWARPS 4, NREGS 32; SUBGROUP 1) fetch code and load constants
+ * the same binary gives the same results on NPHYS 4, 8, 16 and 32).  Four
+ * SUs (NPHYS 4, 8, 16, 32; NWARPS 4, NREGS 32; SUBGROUP 1) fetch code and load constants
  * from one amb_mem behind their I$ port, and access data through a second
  * amb_mem behind their D$ port; at_* goes to atg_mc_atom, whose AMB port
  * shares that second amb_mem with the D$ through am_amb_mux.
@@ -27,11 +27,11 @@
  *   vadd: fp32 vector add over 2 workgroups (memory only)
  *   reduce: fp32 tree reduction in LDS and an integer atomic sum (128 lanes)
  *   sub: qd, shfl/vote/ballot with EXEC full, partial and empty (100 lanes)
- * A fourth SU (NPHYS 8, SUBGROUP 0) runs sub only and must report an ISA
+ * A fifth SU (NPHYS 8, SUBGROUP 0) runs sub only and must report an ISA
  * fault (the CP's kind 8) at the model's pc for every warp (sub.fault), with
  * the registers written before it (sub.fexp).
- * +quick (the short run, sim/run.sh -q): NPHYS 8 and 32 only, without
- * frand.
+ * +quick (the short run, sim/run.sh -q): NPHYS 4 (the KC705's), 8 and 32
+ * only, without frand.
  */
 
 `timescale 1ns / 1ps
@@ -378,8 +378,8 @@ endmodule
 module atg_su_tb;
 	reg clk = 1'b0;
 	reg go = 1'b0;
-	wire [3:0] done;
-	wire [31:0] e0, e1, e2, e3, c0, c1, c2, c3;
+	wire [4:0] done;
+	wire [31:0] e0, e1, e2, e3, e4, c0, c1, c2, c3, c4;
 
 	always #5 clk = !clk;
 	/* +quick: NPHYS 16 gets no clock and is not waited for. */
@@ -396,15 +396,18 @@ module atg_su_tb;
 		.cycles(c2));
 	atg_su_chk #(.NPHYS(8), .SEED(4), .SUBGROUP(0), .P_FIRST(7), .FAULTS(1)) n8f (.clk(clk),
 		.go(go), .done(done[3]), .errs(e3), .cycles(c3));
+	atg_su_chk #(.NPHYS(4), .SEED(5)) n4 (.clk(clk), .go(go), .done(done[4]), .errs(e4),
+		.cycles(c4));
 
 	initial begin
 		#20 go = 1'b1;
-		wait (done[0] && (done[1] || quick) && done[2] && done[3]);
+		wait (done[0] && (done[1] || quick) && done[2] && done[3] && done[4]);
+		if (e4 == 0) $display("PASS atg_su.nphys4");
 		if (e0 == 0) $display("PASS atg_su.nphys8");
 		if (e1 == 0 && !quick) $display("PASS atg_su.nphys16");
 		if (e2 == 0) $display("PASS atg_su.nphys32");
 		if (e3 == 0) $display("PASS atg_su.nosubgroup");
-		if (e0 + e1 + e2 + e3 == 0)
+		if (e0 + e1 + e2 + e3 + e4 == 0)
 			$display("PASS atg_su");
 		$finish;
 	end

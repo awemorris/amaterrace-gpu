@@ -18,6 +18,9 @@
  *          vectors wait for x_ready), the results from either s_* port,
  *          then ffma2 cases that a fp32 result rounded to nearest would
  *          round twice wrongly (the fp32 rounding is to odd).
+ * The PACKED unit and the PK_SHARED pair are also built with NPHYS 4 (the
+ * KC705's, GRP_W 3) on the low 4 lanes of the same inputs; their outputs
+ * must equal those lanes of the NPHYS 8 units every cycle (nphys4).
  */
 
 `timescale 1ns / 1ps
@@ -97,6 +100,53 @@ module atg_su_pk_tb;
 	wire [1:0] wss = vs_f ? ws_f : ws_p, gss = vs_f ? gs_f : gs_p;
 	reg [NPHYS-1:0] want_ms [0:NV+ND-1];
 	integer err_s, ns_out, is, ts;
+
+	/* NPHYS 4: the low 4 lanes. */
+	localparam DW4 = 4 * 32;
+	wire r1_4, v1_4, rs_p4, rs_f4, vs_p4, vs_f4;
+	wire [1:0] w1_4, ws_p4, ws_f4;
+	wire [2:0] g1_4, gs_p4, gs_f4;
+	wire [6:0] rd1_4, rds_p4, rds_f4;
+	wire [DW4-1:0] d1_4, ds_p4, ds_f4;
+	wire [3:0] m1_4, ms_p4, ms_f4;
+	atg_su_pk #(.NPHYS(4), .GRP_W(3), .SHORT_LAT(LAT), .PACKED(1)) pk1_4 (
+		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(2'd2), .x_grp(3'd5),
+		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(x_a[DW4-1:0]),
+		.x_b(x_b[DW4-1:0]), .x_c(x_c[DW4-1:0]), .x_mask({x_mask[NPHYS +: 4], x_mask[3:0]}),
+		.x_info(32'd0), .x_ready(r1_4),
+		.s_valid(v1_4), .s_warp(w1_4), .s_grp(g1_4), .s_rd(rd1_4), .s_data(d1_4), .s_lanes(m1_4)
+	);
+	atg_su_pk #(.NPHYS(4), .GRP_W(3), .SHORT_LAT(LAT), .PACKED(1), .PK_SHARED(1)) pks_4 (
+		.clk(clk), .rst_n(rst_n), .x_valid(xs_valid), .x_warp(2'd2), .x_grp(3'd5),
+		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(xs_uop), .x_a(xs_a[DW4-1:0]),
+		.x_b(xs_b[DW4-1:0]), .x_c(xs_c[DW4-1:0]), .x_mask({xs_mask[NPHYS +: 4], xs_mask[3:0]}),
+		.x_info(32'd0), .x_ready(rs_p4),
+		.s_valid(vs_p4), .s_warp(ws_p4), .s_grp(gs_p4), .s_rd(rds_p4), .s_data(ds_p4),
+		.s_lanes(ms_p4)
+	);
+	atg_su_fpu #(.NPHYS(4), .GRP_W(3), .SHORT_LAT(LAT), .PACKED(1), .PK_SHARED(1)) fpus_4 (
+		.clk(clk), .rst_n(rst_n), .x_valid(xs_valid), .x_warp(2'd2), .x_grp(3'd5),
+		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(xs_uop), .x_a(xs_a[DW4-1:0]),
+		.x_b(xs_b[DW4-1:0]), .x_c(xs_c[DW4-1:0]), .x_mask({xs_mask[NPHYS +: 4], xs_mask[3:0]}),
+		.x_info(32'd0), .x_ready(rs_f4),
+		.s_valid(vs_f4), .s_warp(ws_f4), .s_grp(gs_f4), .s_rd(rds_f4), .s_data(ds_f4),
+		.s_lanes(ms_f4)
+	);
+	integer err_4;
+	initial
+		err_4 = 0;
+	always @(posedge clk)
+		if (rst_n && ({r1_4, v1_4, w1_4, rd1_4, m1_4, rs_p4, rs_f4, vs_p4, vs_f4, ws_p4, ws_f4,
+		    rds_p4, rds_f4, ms_p4, ms_f4} !== {r1, v1, w1, rd1, m1[3:0], rs_p, rs_f, vs_p, vs_f,
+		    ws_p, ws_f, rds_p, rds_f, ms_p[3:0], ms_f[3:0]} ||
+		    (v1 && (g1_4 !== 3'd5 || d1_4 !== d1[DW4-1:0])) ||
+		    (vs_p && (gs_p4 !== 3'd5 || ds_p4 !== ds_p[DW4-1:0])) ||
+		    (vs_f && (gs_f4 !== 3'd5 || ds_f4 !== ds_f[DW4-1:0])))) begin
+			if (err_4 < 10)
+				$display("FAIL atg_su_pk: the NPHYS 4 units differ (vector %0d, shared %0d)",
+					n_out, ns_out);
+			err_4 = err_4 + 1;
+		end
 
 	always @(posedge clk) begin
 		if (rst_n && vs) begin
@@ -251,7 +301,8 @@ module atg_su_pk_tb;
 		if (err_p == 0) $display("PASS atg_su_pk.pack");
 		if (err_a == 0) $display("PASS atg_su_pk.arith");
 		if (err_s == 0) $display("PASS atg_su_pk.shared");
-		if (err_p + err_a + err_s == 0) $display("PASS atg_su_pk");
+		if (err_4 == 0) $display("PASS atg_su_pk.nphys4");
+		if (err_p + err_a + err_s + err_4 == 0) $display("PASS atg_su_pk");
 		$finish;
 	end
 

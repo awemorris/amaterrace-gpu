@@ -33,7 +33,7 @@
 `default_nettype none
 
 module atg_su_sb #(
-	parameter NPHYS = 8,	/* Physical lanes: 8, 16 or 32 */
+	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 */
 	parameter NWARPS = 4,	/* Resident warps (slots): 2, 4 or 8 */
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter SB_ENTRIES = 4,	/* Scoreboard entries per warp (KC705 8) */

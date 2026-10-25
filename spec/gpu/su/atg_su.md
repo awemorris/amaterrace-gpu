@@ -22,7 +22,7 @@ those instructions, so the module is not part of the tree (Q1, 2026-10-23).
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
@@ -196,8 +196,8 @@ None beyond the above.
 
 Wiring module; the SU as a whole is checked by two testbenches (and the parent's, and `tools/lint.sh`):
 
-- `sim/tb/atg_su_tb.v` — compute dispatches of the programs of `sim/tb/su` against `tools/gsi1model.py` on NPHYS 8, 16 and 32 (the same binary), and the ISA faults of the subgroup instructions without SUBGROUP: `PASS atg_su.nphys8`, `.nphys16`, `.nphys32`, `.nosubgroup`, `PASS atg_su`.
-- `sim/tb/atg_su_gfx_tb.v` — graphics warps with PACKED and SUBGROUP on NPHYS 8, 16 (the KC705's shape: 8 scoreboard entries, FRAG_RESERVE 2) and 32, the testbench as VF, RX and ROP:
+- `sim/tb/atg_su_tb.v` — compute dispatches of the programs of `sim/tb/su` against `tools/gsi1model.py` on NPHYS 4, 8, 16 and 32 (the same binary), and the ISA faults of the subgroup instructions without SUBGROUP: `PASS atg_su.nphys4`, `.nphys8`, `.nphys16`, `.nphys32`, `.nosubgroup`, `PASS atg_su`.
+- `sim/tb/atg_su_gfx_tb.v` — graphics warps with PACKED and SUBGROUP on NPHYS 4 (the KC705's shape: 8 scoreboard entries, FRAG_RESERVE 2), 8, 16 (8 scoreboard entries, FRAG_RESERVE 2) and 32, the testbench as VF, RX and ROP:
   - `PASS atg_su_gfx.gfx` — `sim/tb/su/gfx.s` as one vertex warp and three fragment warps (EXEC whole quads, coverage in the mask operand, so helper lanes, and killed lanes): qd, shfl, vote and ballot see the helper and killed lanes; sw, atom, sts and exp skip them (design §3.1 M10); the packed arithmetic; against `tools/gsi1model.py --warps`: the registers, the data memory, the quads at the ROP in sequence order (positions, masks, colours, exported or rasterized depth) and the vertex warp's PT entries (and the words it must not write).
   - `PASS atg_su_gfx.loop` — the closed loop of design §3.8 (vertex warps with random vl_mask, also 0; per block after pt_done 1-3 fragment warps ending out of order; the PT entries freed except the last three of a block until the next block's fragment warps, as atg_vf_asm holds its last primitive; the ROP at random): no deadlock, every vertex grant leaves more than FRAG_RESERVE slots free and gets a PT block with no entry in use, the quads in sequence order.  With PT_ENTRIES 32 (one block) the same loop deadlocks, which the testbench reports.
   - `PASS atg_su_gfx.ms` — the fragment warps' r6 (some lanes 0) and two SAMPLE_MASK exports: the beats' masks and ex_aux on the mask's lanes against `gfx.msexp`, the beat bits against `gfx.xexp` (`tools/gsi1model.py --ms-out`)

@@ -60,7 +60,7 @@ module atg_top #(
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29] with VF, RX, ROP, TU and an SU): the
 				 * blitter's RESOLVE, texsz.s */
 	/* The SUs' shape (design §3.7). */
-	parameter SU_NPHYS = 8,
+	parameter SU_NPHYS = 8,	/* Physical lanes of an SU: 4, 8, 16 or 32 */
 	parameter SU_NWARPS = 4,
 	parameter SU_WARP_W = 2,	/* log2(SU_NWARPS) */
 	parameter SU_GRP_W = 2,	/* log2(32/SU_NPHYS), 1 for SU_NPHYS 32 */

@@ -18,12 +18,13 @@
 `default_nettype none
 
 module atg_su_wb #(
-	parameter NPHYS = 8,	/* Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
+	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit) */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
 	parameter NS = 6,	/* Short sources (alu, fpu, pk, lane, lda, exec) */
-	parameter NL = 6	/* Long sources (lsu, lds, cbank, tex, xu, div) */
+	parameter NL = 6,	/* Long sources (lsu, lds, cbank, tex, xu, div) */
+	parameter SHORT_LAT = 6	/* Cycles from x_valid to the short result (sizes the input FIFOs) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -74,6 +75,17 @@ module atg_su_wb #(
 	localparam LP_W = NL > 1 ? $clog2(NL) : 1;
 	/* An input FIFO entry: {warp, reg, lane, data}. */
 	localparam IW = WARP_W + 6 + 5 + 32;
+	/*
+	 * The input FIFOs' depth.  A source writes one word a cycle and cannot
+	 * wait; a word waits while short results hold the port.  After the first
+	 * waiting word raises wb_stall, the short results still to come are at
+	 * most those in the units' pipelines (SHORT_LAT), the instruction in
+	 * atg_su_opd and the one issued in that cycle (G each; a subgroup
+	 * instruction's G more bus cycles carry no result) and the cycles of the
+	 * stall's latency (2); source 1 also waits while source 0 has words, so
+	 * twice that.  NPHYS 4 (G 8) needs 64; a fixed 16 lost RX writes there.
+	 */
+	localparam IN_LOG2 = $clog2(2 * (SHORT_LAT + 2 * G + 2));
 
 	/* The short result of this cycle (at most one source is valid). */
 	reg sv;
@@ -109,15 +121,22 @@ module atg_su_wb #(
 	genvar s;
 	generate
 		for (s = 0; s < 2; s = s + 1) begin : inq
-			wire unused_in_ready;
-			wire [4:0] unused_count;
-			am_fifo #(.W(IW), .DEPTH_LOG2(4)) q (
-				.clk(clk), .rst_n(rst_n), .in_valid(in_we[s]), .in_ready(unused_in_ready),
+			wire in_rdy;
+			wire [IN_LOG2:0] unused_count;
+			am_fifo #(.W(IW), .DEPTH_LOG2(IN_LOG2)) q (
+				.clk(clk), .rst_n(rst_n), .in_valid(in_we[s]), .in_ready(in_rdy),
 				.in_data({in_warp[s*WARP_W +: WARP_W], in_reg[s*6 +: 6], in_lane[s*5 +: 5],
 					in_data[s*32 +: 32]}),
 				.out_valid(fi_valid[s]), .out_ready(fi_ready[s]),
 				.out_data(fi_data[s*IW +: IW]), .count(unused_count)
 			);
+`ifndef SYNTHESIS
+			always @(posedge clk)
+				if (rst_n && in_we[s] && !in_rdy)
+					$display("ERROR atg_su_wb: input %0d FIFO full, a write lost", s);
+`else
+			wire unused_rdy = &{1'b0, in_rdy};
+`endif
 		end
 	endgenerate
 

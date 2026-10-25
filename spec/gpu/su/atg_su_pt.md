@@ -10,7 +10,7 @@ The post-transform buffer (PT): vertex warps' exports of the position and the va
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32. |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32. |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS) (1 for NPHYS 32). |

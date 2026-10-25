@@ -298,10 +298,11 @@ module atg_kc705_raster #(
 		.DC_FIFO_LOG2(11),
 		.DC_PX_FMT(1),
 		.ROP_STENCIL(1),
-		.SU_NPHYS(8),
+		/* NPHYS 4 (GRP_W 3): the SU's area for the board (ws288 p025 U106, 2026-10-26). */
+		.SU_NPHYS(4),
 		.SU_NWARPS(4),
 		.SU_WARP_W(2),
-		.SU_GRP_W(2),
+		.SU_GRP_W(3),
 		.SU_NREGS(64),
 		.SU_SB_ENTRIES(8),
 		.SU_SBE_W(3),

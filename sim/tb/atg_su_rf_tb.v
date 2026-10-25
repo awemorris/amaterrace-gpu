@@ -6,8 +6,9 @@
  */
 
 /*
- * atg_su_rf_tb: NPHYS 8, 16 and 32 register files (NWARPS 4, NREGS 32;
- * NPHYS 16 also with NREGS 64, NWARPS 8) against a model: random
+ * atg_su_rf_tb: NPHYS 4, 8, 16 and 32 register files (NWARPS 4, NREGS 32;
+ * NPHYS 16 also with NREGS 64, NWARPS 8; NPHYS 4 also with NREGS 64, the
+ * KC705's) against a model: random
  * lane-masked writes and three-port reads in the same cycles, then a
  * read and a write of one register in one cycle (old value).
  */
@@ -131,8 +132,8 @@ endmodule
 module atg_su_rf_tb;
 	reg clk = 1'b0;
 	reg go = 1'b0;
-	wire [3:0] done;
-	wire [31:0] e0, e1, e2, e3;
+	wire [5:0] done;
+	wire [31:0] e0, e1, e2, e3, e4, e5;
 
 	always #5 clk = !clk;
 
@@ -141,12 +142,15 @@ module atg_su_rf_tb;
 	atg_su_rf_chk #(.NPHYS(32), .SEED(3)) c2 (.clk(clk), .go(go), .done(done[2]), .errs(e2));
 	atg_su_rf_chk #(.NPHYS(16), .NWARPS(8), .WARP_W(3), .NREGS(64), .SEED(4)) c3 (
 		.clk(clk), .go(go), .done(done[3]), .errs(e3));
+	atg_su_rf_chk #(.NPHYS(4), .SEED(5)) c4 (.clk(clk), .go(go), .done(done[4]), .errs(e4));
+	atg_su_rf_chk #(.NPHYS(4), .NREGS(64), .SEED(6)) c5 (.clk(clk), .go(go), .done(done[5]),
+		.errs(e5));
 
 	initial begin
 		#20 go = 1'b1;
 		wait (&done);
 		/* The checkers run "rw" then "same"; errors print with their name. */
-		if (e0 == 0 && e1 == 0 && e2 == 0 && e3 == 0) begin
+		if (e0 == 0 && e1 == 0 && e2 == 0 && e3 == 0 && e4 == 0 && e5 == 0) begin
 			$display("PASS atg_su_rf.rw");
 			$display("PASS atg_su_rf.same");
 			$display("PASS atg_su_rf");

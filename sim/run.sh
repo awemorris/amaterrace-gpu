@@ -24,8 +24,9 @@
 # The short run (-q, make sim-quick) touches every block (528 s on the same
 # host with the former shapes): every testbench except the $LONG ones, and
 # those of them that $QUICK lists, shortened:
-#   atg_su +quick              NPHYS 8 and 32 and the no-SUBGROUP SU, no frand
-#                              (58 s)
+#   atg_su +quick              NPHYS 4, 8 and 32 and the no-SUBGROUP SU, no frand
+#                              (58 s without NPHYS 4; 196 s with it on 2026-10-26,
+#                              the host busy with other runs)
 #   atg_top_tex                VF, SU, RX, TU and ROP through the ring (the
 #                              KC705's shape alone took 173 s)
 #   atg_top_cs                 compute through the ring

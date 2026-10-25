@@ -12,7 +12,7 @@ Child: `atg_su_tex_ret` (the return half, §5).
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
@@ -101,11 +101,11 @@ One quad per cycle to the TU (an empty quad also takes a cycle of SEND).  A grou
 
 `sim/tb/atg_su_tex_tb.v` prints, in this order:
 
-- `PASS atg_su_tex.send` — quads, op modifiers and coordinates (with the .c forms' two passes) for NPHYS 8/16
+- `PASS atg_su_tex.send` — quads, op modifiers and coordinates (with the .c forms' two passes) for NPHYS 4/8/16/32
 - `PASS atg_su_tex.ret` — returns become rd..rd+3 beats
 - `PASS atg_su_tex` at the end.
 
-For NPHYS 8, 16 and 32, 300 random texture instructions (every op, slot, rd, scoreboard entry, EXEC full, partial, empty per quad and whole empty groups) mixed with other units' instructions, a model TU with random tx_ready and delays, random l_ready.
+For NPHYS 4, 8, 16 and 32, 300 random texture instructions (every op, slot, rd, scoreboard entry, EXEC full, partial, empty per quad and whole empty groups) mixed with other units' instructions, a model TU with random tx_ready and delays, random l_ready.
 
 ## 9. References
 
@@ -118,3 +118,5 @@ Implemented in WS288 p009 part C (P1, branch p1-tu), with the new child `atg_su_
 2026-10-25 (p009 part F, P3): the .3 forms (the uop's sub[4], set by atg_su_dec): a third coordinate in rs1+2 and, with .c, Dref in rs1+3.  A .c or .3 group comes twice; the second pass brings rs1+2 on x_a and rs1+3 on x_c (atg_su_opd): .3 puts x_a in word 4 and, with .c, x_c in word 3; .c alone x_a in word 3.  tx_coord 5 words a lane, the new port tx_off (the texel offsets from the uop's imm).  `sim/tb/atg_su_tex_tb.v` sends .3 forms, .c forms and both at random with random offsets.
 
 2026-10-25: tx_vs (the texture slots per stage of docs/ghci.md §8.5).
+
+2026-10-26 (WS288 p024's preparation, P1): NPHYS 4 (one quad a group): the tag's quad number is the group number alone (it was grp × 2, a wrong quad number in the tag; the TU passes the tag through, so only the tag was wrong).  The TB runs NPHYS 4.

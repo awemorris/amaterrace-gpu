@@ -6,9 +6,10 @@
  */
 
 /*
- * atg_su_lda_tb: atg_su_lda in three shapes: NPHYS 8 with 16 varying
- * words (one read cycle per lane group), the KC705's NPHYS 16 with 64
- * (two read cycles) and NPHYS 32 with 32 (four), all written by the same
+ * atg_su_lda_tb: atg_su_lda in four shapes: NPHYS 8 with 16 varying
+ * words (one read cycle per lane group), NPHYS 16 with 64 (two read
+ * cycles), NPHYS 32 with 32 (four) and the KC705's NPHYS 4 with 64 (one
+ * quad a group, one read cycle), all written by the same
  * RX-style primitive table writes (random varying words 0-63 of 8
  * primitives × 3 vertices of each of 4 warps, then a primitive map per
  * warp that puts different primitives in the quads), then lda lane
@@ -39,26 +40,29 @@ module atg_su_lda_tb;
 	reg [31:0] pw_data = 0;
 	reg x_valid = 1'b0;
 	reg [1:0] x_warp = 0;
-	reg [1:0] x_grp = 0;
+	reg [2:0] x_grp = 0;
 	reg [103:0] x_uop = 0;
 	reg [31:0] x_mask = 0;
-	reg [2:0] dsel = 0;	/* which shape gets the group: bit 0 NPHYS 8, 1 NPHYS 16, 2 NPHYS 32 */
+	reg [3:0] dsel = 0;	/* which shape gets the group: bit 0 NPHYS 8, 1 NPHYS 16, 2 NPHYS 32, 3 NPHYS 4 */
 
-	wire [2:0] rdy;
-	wire s8_valid, s16_valid, s32_valid;
-	wire [1:0] s8_warp, s16_warp, s32_warp;
+	wire [3:0] rdy;
+	wire s4_valid, s8_valid, s16_valid, s32_valid;
+	wire [1:0] s4_warp, s8_warp, s16_warp, s32_warp;
+	wire [2:0] s4_grp;
 	wire [1:0] s8_grp;
 	wire [0:0] s16_grp, s32_grp;
-	wire [6:0] s8_rd, s16_rd, s32_rd;
+	wire [6:0] s4_rd, s8_rd, s16_rd, s32_rd;
+	wire [127:0] s4_data;
 	wire [255:0] s8_data;
 	wire [511:0] s16_data;
 	wire [1023:0] s32_data;
+	wire [3:0] s4_lanes;
 	wire [7:0] s8_lanes;
 	wire [15:0] s16_lanes;
 	wire [31:0] s32_lanes;
 
 	atg_su_lda #(.NPHYS(8), .GRP_W(2), .VARY_WORDS(16)) d8 (
-		.clk(clk), .rst_n(rst_n), .x_valid(x_valid && dsel[0]), .x_warp(x_warp), .x_grp(x_grp),
+		.clk(clk), .rst_n(rst_n), .x_valid(x_valid && dsel[0]), .x_warp(x_warp), .x_grp(x_grp[1:0]),
 		.scrub(1'b0), .scrub_busy(),
 		.x_last(1'b0), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(256'd0), .x_b(256'd0),
 		.x_c(256'd0), .x_mask({8'd0, x_mask[7:0]}), .x_info(32'h10000), .x_ready(rdy[0]),
@@ -83,9 +87,17 @@ module atg_su_lda_tb;
 		.s_valid(s32_valid), .s_warp(s32_warp), .s_grp(s32_grp), .s_rd(s32_rd),
 		.s_data(s32_data), .s_lanes(s32_lanes),
 		.pw_we(pw_we), .pw_warp(pw_warp), .pw_addr(pw_addr), .pw_data(pw_data));
+	atg_su_lda #(.NPHYS(4), .GRP_W(3), .VARY_WORDS(64)) d4 (
+		.clk(clk), .rst_n(rst_n), .x_valid(x_valid && dsel[3]), .x_warp(x_warp), .x_grp(x_grp),
+		.scrub(1'b0), .scrub_busy(),
+		.x_last(1'b0), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(128'd0), .x_b(128'd0),
+		.x_c(128'd0), .x_mask({4'd0, x_mask[3:0]}), .x_info(32'h10000), .x_ready(rdy[3]),
+		.s_valid(s4_valid), .s_warp(s4_warp), .s_grp(s4_grp), .s_rd(s4_rd), .s_data(s4_data),
+		.s_lanes(s4_lanes),
+		.pw_we(pw_we), .pw_warp(pw_warp), .pw_addr(pw_addr), .pw_data(pw_data));
 
 	integer seed = 1, errors = 0, e_ready = 0, i, w, p, v, d, n, s, cyc = 0;
-	integer bz [0:2];	/* the shape reads until this cycle */
+	integer bz [0:3];	/* the shape reads until this cycle */
 	reg [31:0] tab [0:4*8*3*64-1];	/* warp, prim, vertex, varying word */
 	reg [23:0] pmap [0:3];
 
@@ -111,7 +123,7 @@ module atg_su_lda_tb;
 	endtask
 
 	/* expected results: per issue cycle, checked SHORT_LAT (6) cycles later */
-	reg [79:0] q_meta [0:1023];	/* {valid, shape(2), warp, grp(2), rd(7), lanes(32)} */
+	reg [79:0] q_meta [0:1023];	/* {valid, shape(2), warp, grp(3), rd(7), lanes(32)} */
 	reg [1023:0] q_data [0:1023];
 	always @(posedge clk)
 		cyc <= cyc + 1;
@@ -130,16 +142,16 @@ module atg_su_lda_tb;
 
 	/* one lane group of unit 11 (lda) or another, from the current cycle until taken */
 	task issue;
-		input integer shape;	/* 0 NPHYS 8, 1 NPHYS 16, 2 NPHYS 32 */
+		input integer shape;	/* 0 NPHYS 8, 1 NPHYS 16, 2 NPHYS 32, 3 NPHYS 4 */
 		input integer unit;
 		integer np, nr, g, imm, rd, ln, vw;
 		reg [1023:0] dv;
 		begin
-			np = shape == 2 ? 32 : shape ? 16 : 8;
-			nr = shape == 2 ? 4 : shape ? 2 : 1;
-			vw = shape == 2 ? 32 : shape ? 64 : 16;
+			np = shape == 3 ? 4 : shape == 2 ? 32 : shape ? 16 : 8;
+			nr = shape == 3 ? 1 : shape == 2 ? 4 : shape ? 2 : 1;
+			vw = shape == 3 ? 64 : shape == 2 ? 32 : shape ? 64 : 16;
 			x_valid = 1'b1;
-			dsel = 3'b001 << shape;
+			dsel = 4'b0001 << shape;
 			x_warp = $random(seed);
 			g = $unsigned($random(seed)) % (32 / np);
 			x_grp = g;
@@ -170,14 +182,15 @@ module atg_su_lda_tb;
 			dv = 1024'd0;
 			for (ln = 0; ln < np; ln = ln + 1)
 				dv[32 * ln +: 32] = word_of(x_warp, (g * np + ln) / 4, imm, vw);
-			q_meta[(cyc + 6) % 1024] = {31'd0, unit == 11, shape[1:0], x_warp, g[1:0], rd[6:0],
-				shape == 2 ? x_mask : shape ? {16'd0, x_mask[15:0]} : {24'd0, x_mask[7:0]}};
+			q_meta[(cyc + 6) % 1024] = {33'd0, unit == 11, shape[1:0], x_warp, g[2:0], rd[6:0],
+				shape == 3 ? {28'd0, x_mask[3:0]} : shape == 2 ? x_mask :
+				shape ? {16'd0, x_mask[15:0]} : {24'd0, x_mask[7:0]}};
 			q_data[(cyc + 6) % 1024] = dv;
 			if (unit == 11)
 				bz[shape] = cyc + nr;
 			tick;
 			x_valid = 1'b0;
-			dsel = 3'b000;
+			dsel = 4'b0000;
 		end
 	endtask
 
@@ -187,21 +200,25 @@ module atg_su_lda_tb;
 		#2;
 		m = q_meta[cyc % 1024];
 		q_meta[cyc % 1024] = 80'd0;
-		if (s8_valid !== (m[45] && m[44:43] == 2'd0) || s16_valid !== (m[45] && m[44:43] == 2'd1) ||
-		    s32_valid !== (m[45] && m[44:43] == 2'd2)) begin
+		if (s8_valid !== (m[46] && m[45:44] == 2'd0) || s16_valid !== (m[46] && m[45:44] == 2'd1) ||
+		    s32_valid !== (m[46] && m[45:44] == 2'd2) || s4_valid !== (m[46] && m[45:44] == 2'd3)) begin
 			errors = errors + 1;
-			$display("FAIL atg_su_lda.rw: cycle %0d valid %b %b %b, expected %b shape %0d", cyc,
-				s8_valid, s16_valid, s32_valid, m[45], m[44:43]);
-		end else if (s8_valid && (s8_warp !== m[42:41] || s8_grp !== m[40:39] ||
+			$display("FAIL atg_su_lda.rw: cycle %0d valid %b %b %b %b, expected %b shape %0d", cyc,
+				s8_valid, s16_valid, s32_valid, s4_valid, m[46], m[45:44]);
+		end else if (s4_valid && (s4_warp !== m[43:42] || s4_grp !== m[41:39] ||
+		    s4_rd !== m[38:32] || s4_lanes !== m[3:0] || s4_data !== q_data[cyc % 1024][127:0])) begin
+			errors = errors + 1;
+			$display("FAIL atg_su_lda.rw: NPHYS 4 result at cycle %0d", cyc);
+		end else if (s8_valid && (s8_warp !== m[43:42] || s8_grp !== m[40:39] ||
 		    s8_rd !== m[38:32] || s8_lanes !== m[7:0] || s8_data !== q_data[cyc % 1024][255:0])) begin
 			errors = errors + 1;
 			$display("FAIL atg_su_lda.rw: NPHYS 8 result at cycle %0d", cyc);
-		end else if (s16_valid && (s16_warp !== m[42:41] || s16_grp !== m[39] ||
+		end else if (s16_valid && (s16_warp !== m[43:42] || s16_grp !== m[39] ||
 		    s16_rd !== m[38:32] || s16_lanes !== m[15:0] ||
 		    s16_data !== q_data[cyc % 1024][511:0])) begin
 			errors = errors + 1;
 			$display("FAIL atg_su_lda.rw: NPHYS 16 result at cycle %0d", cyc);
-		end else if (s32_valid && (s32_warp !== m[42:41] || s32_rd !== m[38:32] ||
+		end else if (s32_valid && (s32_warp !== m[43:42] || s32_rd !== m[38:32] ||
 		    s32_lanes !== m[31:0] || s32_data !== q_data[cyc % 1024])) begin
 			errors = errors + 1;
 			$display("FAIL atg_su_lda.rw: NPHYS 32 result at cycle %0d", cyc);
@@ -211,7 +228,7 @@ module atg_su_lda_tb;
 	initial begin
 		for (i = 0; i < 1024; i = i + 1)
 			q_meta[i] = 80'd0;
-		for (i = 0; i < 3; i = i + 1)
+		for (i = 0; i < 4; i = i + 1)
 			bz[i] = 0;
 		repeat (3) tick;
 		rst_n = 1'b1;
@@ -234,7 +251,7 @@ module atg_su_lda_tb;
 						pw(w, 12'hFF8 + d[11:0], $random(seed));
 			end
 			for (i = 0; i < 900; i = i + 1) begin
-				s = $unsigned($random(seed)) % 3;
+				s = $unsigned($random(seed)) % 4;
 				issue(s, ($random(seed) & 7) == 0 ? 1 : 11);
 				if (($random(seed) & 3) == 0)
 					tick;

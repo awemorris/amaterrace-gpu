@@ -10,7 +10,7 @@ The SU's register file: NWARPS × NREGS × 32 lanes × 32 bits in block RAM, thr
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
@@ -64,7 +64,7 @@ None.
 
 `sim/tb/atg_su_rf_tb.v` prints, in this order:
 
-- `PASS atg_su_rf.rw` — random writes with lane enables, three-port reads compare with a model
+- `PASS atg_su_rf.rw` — random writes with lane enables, three-port reads compare with a model (NPHYS 4, 8, 16, 32; NPHYS 16 also with NREGS 64 and NWARPS 8, NPHYS 4 also with NREGS 64)
 - `PASS atg_su_rf.same` — read and write of one register in one cycle returns the old value
 - `PASS atg_su_rf` at the end.
 

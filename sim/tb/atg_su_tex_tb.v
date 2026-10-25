@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_su_tex_tb: atg_su_tex (with atg_su_tex_ret) for NPHYS 8, 16 and 32
+ * atg_su_tex_tb: atg_su_tex (with atg_su_tex_ret) for NPHYS 4, 8, 16 and 32
  * against a model TU.  Random texture instructions (texl, texb, texf,
  * texsz; random warp, slot, rd, scoreboard entry, operands and EXEC per
  * quad: full, partial, empty, a whole group empty), interleaved with
@@ -111,13 +111,13 @@ module atg_su_tex_run #(
 	reg [15:0] q_tag [0:4095];
 	reg q_last [0:4095];
 	integer qw = 0, qr = 0;
-	reg [1:0] g_warp [0:2047];
-	reg [GRP_W-1:0] g_grp [0:2047];
-	reg [6:0] g_rd [0:2047];
-	reg [2:0] g_sbe [0:2047];
-	reg g_last [0:2047], g_sz [0:2047];
-	reg [NPHYS-1:0] g_lanes [0:2047];
-	reg [DW*4-1:0] g_data [0:2047];
+	reg [1:0] g_warp [0:4095];
+	reg [GRP_W-1:0] g_grp [0:4095];
+	reg [6:0] g_rd [0:4095];
+	reg [2:0] g_sbe [0:4095];
+	reg g_last [0:4095], g_sz [0:4095];
+	reg [NPHYS-1:0] g_lanes [0:4095];
+	reg [DW*4-1:0] g_data [0:4095];
 	integer gw = 0, gr = 0;
 
 	/* The model TU: takes quads (checked against the expected), answers in order. */
@@ -347,8 +347,10 @@ module atg_su_tex_tb;
 	reg rst_n = 1'b0;
 	always #5 clk = !clk;
 
-	wire d8, d16, d32;
-	wire [31:0] s8, r8, s16, r16, s32, r32;
+	wire d4, d8, d16, d32;
+	wire [31:0] s4, r4, s8, r8, s16, r16, s32, r32;
+	atg_su_tex_run #(.NPHYS(4), .GRP_W(3), .SEED(24)) n4 (
+		.clk(clk), .rst_n(rst_n), .done(d4), .e_send(s4), .e_ret(r4));
 	atg_su_tex_run #(.NPHYS(8), .GRP_W(2), .SEED(21)) n8 (
 		.clk(clk), .rst_n(rst_n), .done(d8), .e_send(s8), .e_ret(r8));
 	atg_su_tex_run #(.NPHYS(16), .GRP_W(1), .SEED(22)) n16 (
@@ -359,16 +361,16 @@ module atg_su_tex_tb;
 	initial begin
 		repeat (3) @(posedge clk);
 		rst_n <= 1'b1;
-		wait (d8 && d16 && d32);
-		if (s8 + s16 + s32 == 0)
+		wait (d4 && d8 && d16 && d32);
+		if (s4 + s8 + s16 + s32 == 0)
 			$display("PASS atg_su_tex.send");
-		if (r8 + r16 + r32 == 0)
+		if (r4 + r8 + r16 + r32 == 0)
 			$display("PASS atg_su_tex.ret");
-		if (s8 + s16 + s32 + r8 + r16 + r32 == 0)
+		if (s4 + s8 + s16 + s32 + r4 + r8 + r16 + r32 == 0)
 			$display("PASS atg_su_tex");
 		else
-			$display("FAIL atg_su_tex: send %0d %0d %0d, ret %0d %0d %0d", s8, s16, s32, r8,
-				r16, r32);
+			$display("FAIL atg_su_tex: send %0d %0d %0d %0d, ret %0d %0d %0d %0d", s4, s8, s16,
+				s32, r4, r8, r16, r32);
 		$finish;
 	end
 

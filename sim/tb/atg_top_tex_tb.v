@@ -22,7 +22,7 @@
  * texture instructions, exp) ↔ TU (addressing, cache on its MC port,
  * filter) → ROP.  The colour and depth buffers must equal the reference
  * models' word for word.  In the KC705's shape (64-byte lines, 512-bit
- * AXI, NPHYS 8, 32 varying words). */
+ * AXI, NPHYS 4, 32 varying words). */
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -39,7 +39,7 @@ module atg_top_tex_tb;
 
 	atg_top_scene_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.TB("atg_top_tex"), .SCENE("sim/vec/tex_scene.txt"), .SEED(6), .HAS_VF(1),
-		.NSU(1), .HAS_TU(1), .SU_NPHYS(8), .SU_GRP_W(2), .SU_VARY_WORDS(64)) kc705 (
+		.NSU(1), .HAS_TU(1), .SU_NPHYS(4), .SU_GRP_W(3), .SU_VARY_WORDS(64)) kc705 (
 		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
 	);
 

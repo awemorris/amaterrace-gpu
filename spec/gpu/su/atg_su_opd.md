@@ -10,7 +10,7 @@ Operand collection: for each lane group of an issued instruction, reads the GPRs
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
 | `SBE_W` | `2` | log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits). |
@@ -95,7 +95,7 @@ One group per cycle when the unit is ready; 2 cycles from i_valid to the first x
 
 `sim/tb/atg_su_opd_tb.v` prints, in this order:
 
-- `PASS atg_su_opd.gpr` — operands from a model RF for NPHYS 8/16/32
+- `PASS atg_su_opd.gpr` — operands from a model RF for NPHYS 4/8/16/32
 - `PASS atg_su_opd.special` — every special operand 96-122
 - `PASS atg_su_opd.mods` — n/a modifiers on float units only
 - `PASS atg_su_opd.mask` — EXEC and side-effect masks; unit_ready back-pressure

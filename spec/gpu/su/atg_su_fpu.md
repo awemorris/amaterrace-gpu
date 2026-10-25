@@ -10,7 +10,7 @@ The fp32 unit of the SU, NPHYS lanes: fadd/fsub/fmul/fmadd family (FMA on DSPs),
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
@@ -70,7 +70,7 @@ NPHYS lanes per cycle; FMA 3 DSP + about 400 LUT per lane (design §3.6).
 
 `sim/tb/atg_su_fpu_tb.v` prints, in this order:
 
-- `PASS atg_su_fpu.arith` — random fadd/fmul/fmadd against a soft-float reference (sim model)
+- `PASS atg_su_fpu.arith` — random fadd/fmul/fmadd against a soft-float reference (sim model); a PK_SHARED unit and a unit of NPHYS 4 (on the low 4 lanes) give the same outputs every cycle
 - `PASS atg_su_fpu.cvt` — fcvt and fround in all rounding modes
 - `PASS atg_su_fpu.cmp` — Boolean compares including NaN
 - `PASS atg_su_fpu.mul` — integer mul/mulh*

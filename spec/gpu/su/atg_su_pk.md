@@ -10,7 +10,7 @@ The 16-bit packed unit: fadd2/fsub2/fmul2/ffma2/fmin2/fmax2/fcmp2, iadd2/isub2/i
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `NWARPS` | `4` | Resident warps (slots): 2, 4 or 8. |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
@@ -74,6 +74,8 @@ None beyond the above.
 
 - `PASS atg_su_pk.pack` — packh/unpackh round trips and rounding
 - `PASS atg_su_pk.arith` — packed arithmetic against a reference (PACKED = 1)
+- `PASS atg_su_pk.shared` — every vector on a PK_SHARED pair (atg_su_pk and atg_su_fpu)
+- `PASS atg_su_pk.nphys4` — the PACKED unit and the PK_SHARED pair of NPHYS 4 equal the low 4 lanes of the NPHYS 8 ones every cycle
 - `PASS atg_su_pk` at the end.
 
 ## 9. References

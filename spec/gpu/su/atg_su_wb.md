@@ -10,12 +10,13 @@ Write-back arbitration: one RF write port shared by the short pipeline (one resu
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NPHYS` | `8` | Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
+| `NPHYS` | `8` | Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles). |
 | `WARP_W` | `2` | log2(NWARPS). |
 | `GRP_W` | `2` | log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit). |
 | `SBE_W` | `2` | log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits). |
 | `NS` | `6` | Short sources (alu, fpu, pk, lane, lda, exec). |
 | `NL` | `6` | Long sources (lsu, lds, cbank, tex, xu, div). |
+| `SHORT_LAT` | `6` | Cycles from x_valid to the short result (atg_su's); sizes the input FIFOs. |
 
 ## 3. Ports
 
@@ -70,8 +71,12 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 ## 4. Behaviour
 
 - Priority (design §3.5): (1) the short result of this cycle; (2) input writes (only to slots that
-  are not running; they have no back-pressure, so they wait in a 16-entry FIFO per source and raise
-  wb_stall while waiting); (3) long beats, round-robin over the sources, in cycles without (1) or
+  are not running; they have no back-pressure, so they wait in a FIFO per source and raise
+  wb_stall while waiting; the FIFO holds 2 × (SHORT_LAT + 2 G + 2) words rounded up to a power of
+  two: the short results still to come after wb_stall (the units' pipelines, the instruction in
+  atg_su_opd and one more issued in that cycle, two cycles of the stall's latency), twice since
+  source 1 also waits for source 0's words.  32 for NPHYS 8, 16 and 32, 64 for NPHYS 4 at
+  SHORT_LAT 6.  A write into a full FIFO prints an ERROR in simulation); (3) long beats, round-robin over the sources, in cycles without (1) or
   (2) — a beat waiting more than 4 cycles raises wb_stall so a free cycle comes SHORT_LAT cycles
   later.  A long beat without data (l_wr 0) is taken in any cycle.
 - rd 63 → rq_push instead of the RF.  l_last → rel_* (also for l_wr 0).
@@ -104,3 +109,8 @@ design §3.5 (write port arbitration), §3.1.1.
 ## 10. Status
 
 Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_wb_tb.v`).  Differences from §4 (spec corrected here): the input writes have no back-pressure, so they go before long beats (short > input > long) and wait in a 16-entry FIFO per source while short results hold the port; a waiting input also raises wb_stall.  A long beat with l_wr = 0 (a store's completion) is taken in any cycle (it needs no port).  The VF/RX input path is exercised only by this TB until p009.
+
+2026-10-26 (WS288 p024's preparation, P1): the input FIFOs were 16 words; with NPHYS 4 (G 8) the
+short results held the port long enough after wb_stall that the RX's writes overflowed it
+(atg_top_shade lost 18 writes, 7 pixels wrong).  The depth now follows SHORT_LAT and G (above,
+the new parameter SHORT_LAT), and a lost write prints an ERROR in simulation.

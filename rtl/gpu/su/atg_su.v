@@ -20,7 +20,7 @@
 `default_nettype none
 
 module atg_su #(
-	parameter NPHYS = 8,	/* Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
+	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
 	parameter NWARPS = 4,	/* Resident warps (slots): 2, 4 or 8 */
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit) */
@@ -638,7 +638,8 @@ module atg_su #(
 		.sa_qstat(sa_qstat), .sa_stat(sa_stat), .sa_qtag(sa_qtag)
 	);
 
-	atg_su_wb #(.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .NS(6), .NL(6)) wb (
+	atg_su_wb #(.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .NS(6), .NL(6),
+		.SHORT_LAT(SHORT_LAT)) wb (
 		.clk(clk), .rst_n(rst_n),
 		.s_valid({exec_s_valid, lda_s_valid, lane_s_valid, pk_s_valid, fpu_s_valid, alu_s_valid}),
 		.s_warp({exec_s_warp, lda_s_warp, lane_s_warp, pk_s_warp, fpu_s_warp, alu_s_warp}),

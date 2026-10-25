@@ -19,7 +19,7 @@
 `default_nettype none
 
 module atg_su_sched #(
-	parameter NPHYS = 8,	/* Physical lanes: 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
+	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
 	parameter NWARPS = 4,	/* Resident warps (slots): 2, 4 or 8 */
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter NSU = 1,	/* Number of SUs (compute workgroups are shared out: this SU takes wg_id % NSU == SU_INDEX) */
