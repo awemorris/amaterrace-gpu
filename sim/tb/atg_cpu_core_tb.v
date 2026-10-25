@@ -9,7 +9,7 @@
  * atg_cpu_core_tb: runs the RV32IM test programs of sim/tb/cpu/ (built by
  * tools/cpu-tests.sh; rv32i and rv32m are generated with their expected
  * values by gen.py) on atg_cpu_core with a behavioural IMEM (synchronous
- * read, held while i_en is 0) and a data memory at 0x0001_0000.  A
+ * read, held while i_en is 0) and a data memory at 0x0002_0000.  A
  * program reports through TOHOST (0xF000_0000: 1 pass) or FAILHOST
  * (0xF000_0010: check n failed); IRQ_REQ (0xF000_0004) raises irq after the stored number of
  * cycles and IRQ_ACK (0xF000_0008) drops it.  The data port may answer at
@@ -53,17 +53,17 @@ module atg_cpu_core_tb;
 		.fault(fault), .fault_pc(fault_pc)
 	);
 
-	/* IMEM: 64 KiB, the whole IMEM range of the core. */
-	reg [31:0] imem [0:16383];
+	/* IMEM: 128 KiB, the whole IMEM range of the core. */
+	reg [31:0] imem [0:32767];
 
 	always @(posedge clk) begin
 		if (i_en)
-			i_rdata <= imem[i_addr[15:2]];
+			i_rdata <= imem[i_addr[16:2]];
 	end
 
-	/* Data memory at 0x0001_0000 and the testbench's I/O at 0xF000_0000. */
+	/* Data memory at 0x0002_0000 and the testbench's I/O at 0xF000_0000. */
 	reg [31:0] dmem [0:16383];
-	wire in_dmem = d_addr[31:16] == 16'h0001;
+	wire in_dmem = d_addr[31:16] == 16'h0002;
 	wire in_io = d_addr[31:16] == 16'hF000;
 	integer lat_mode = 0;	/* 0: ready at once, 1: random waits */
 	integer waited = 0;
@@ -189,16 +189,16 @@ module atg_cpu_core_tb;
 		reg [31:0] w;
 		integer fd;
 		begin
-			for (i = 0; i < 16384; i = i + 1) begin
+			for (i = 0; i < 32768; i = i + 1)
 				imem[i] = 32'd0;
+			for (i = 0; i < 16384; i = i + 1)
 				dmem[i] = 32'd0;
-			end
 			/* Registers start with garbage, not X (X would hide stale reads). */
 			for (i = 1; i < 32; i = i + 1)
 				dut.rf[i] = $random(seed);
 			$sformat(f, "sim/tb/cpu/%0s.imem.hex", name);
 			fd = $fopen(f, "r");
-			for (i = 0; i < 16384 && $fscanf(fd, "%h", w) == 1; i = i + 1)
+			for (i = 0; i < 32768 && $fscanf(fd, "%h", w) == 1; i = i + 1)
 				imem[i] = w;
 			$fclose(fd);
 			$sformat(f, "sim/tb/cpu/%0s.dmem.hex", name);
@@ -280,7 +280,7 @@ module atg_cpu_core_tb;
 		e0 = errors;
 		for (i = 0; i < 11; i = i + 1)
 			fpc[i] = 32'h100 + 16 * i;
-		fpc[7] = 32'h0001_0000;
+		fpc[7] = 32'h0002_0000;
 		fpc[10] = 32'h1A4;
 		for (n = 0; n < 11; n = n + 1) begin
 			load("fault");

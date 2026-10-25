@@ -27,7 +27,9 @@
  * lanes returns at once.
  *
  * States: IDLE →(group)→ ACCESS (NPHYS cycles, atom 2 NPHYS) → DRAIN →
- * BEAT →(l_ready)→ IDLE.
+ * BEAT →(l_ready)→ IDLE.  scrub (session protection, the unit idle) writes
+ * 0 to every word through the RAM's write port, one per cycle, while
+ * scrub_busy.
 */
 
 `timescale 1ns / 1ps
@@ -69,7 +71,10 @@ module atg_su_lds #(
 	output wire l_wr,
 	output wire l_last,
 	output wire [SBE_W:0] l_sbe,
-	output wire [2:0] l_cls
+	output wire [2:0] l_cls,
+	/* Session protection: clear the contents */
+	input wire scrub,
+	output wire scrub_busy
 );
 `include "atg_su_uop.vh"
 
@@ -177,12 +182,8 @@ module atg_su_lds #(
 				/* The read of an atom lane; the write is the next cycle. */
 				aph <= 1'b1;
 			end else begin
-				if (lane_on && rsts)
-					ram[a] <= rdat[li*32 +: 32];
-				if (lane_on && ratom) begin
-					ram[a] <= anew;
+				if (lane_on && ratom)
 					res[li*32 +: 32] <= q;
-				end
 				aph <= 1'b0;
 				pval <= lane_on && !rsts && !ratom;
 				pli <= li;
@@ -198,6 +199,23 @@ module atg_su_lds #(
 				res[pli*32 +: 32] <= q;
 		end
 	end
+
+	/* The RAM's write port: sts, an atom's new value, or the scrub's zeros. */
+	wire sc_on;
+	wire [AW-1:0] sc_a;
+
+	atg_su_scrub #(.DEPTH(NW), .AW(AW)) sc (
+		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
+	);
+
+	assign scrub_busy = sc_on;
+	wire ram_we = sc_on || st == ACCESS && !aread && lane_on && (rsts || ratom);
+	wire [AW-1:0] ram_wa = sc_on ? sc_a : a;
+	wire [31:0] ram_wd = sc_on ? 32'd0 : ratom ? anew : rdat[li*32 +: 32];
+
+	always @(posedge clk)
+		if (ram_we)
+			ram[ram_wa] <= ram_wd;
 
 	/* The RAM's registered read. */
 	always @(posedge clk)

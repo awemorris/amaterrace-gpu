@@ -46,6 +46,11 @@
 #define GHCI_GRANT_READ 0x1u
 #define GHCI_GRANT_WRITE 0x2u
 
+/* MEMORY flags (docs/ghci.md sections 7.2 and 11.6). */
+#define GHCI_MEMORY_HOST_VISIBLE 0x1u
+#define GHCI_MEMORY_IMPORTED 0x2u
+#define GHCI_MEMORY_READ_ONLY 0x4u
+
 /*
  * The GHCI_FRAME packet: dword0 GHCI_PKT_V(tag, 8), dword1 GHCI_GPU_OP_FRAME,
  * dword2 flags (GHCI_V_RESULT), dword3 the frame's result record, dword4-5

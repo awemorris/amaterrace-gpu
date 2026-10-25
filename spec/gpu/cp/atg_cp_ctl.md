@@ -45,6 +45,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `mc_fault_client` | in | 8 | Its client. |
 | `mc_fault_addr` | in | 32 | Its address. |
 | `mc_fault_write` | in | 1 | Its direction. |
+| `mc_fault_prot`, `mc_fault_mem`, `mc_fault_tag` | in | 1, 1, 8 | Session protection: refused for protection (FAULT_INFO[9]; a device fault also for client 0), a table read failed (kind 5), the session's job tag (FAULT_INFO[31:24]) |
 | `src_fault` | in | NSRC | Fault pulses of the CP modules and blocks. |
 | `src_kind` | in | NSRC*4 | Their kinds. |
 | `src_addr` | in | NSRC*32 | Their addresses. |
@@ -57,7 +58,9 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `core_rst_n` | out | 1 | Core reset (design §1.3 domain a), low for one cycle in the RESET order. |
 | `open` | out | 1 | IDLE or HALTED. |
 | `cp_state` | out | 4 | STATUS[19:16]. |
-| `host_kick` | out | 3 | KICK [0] BLIT [1] DRAW [2] DISPATCH, pulses, only when open. |
+| `host_kick` | out | 3 | KICK [0] BLIT [1] DRAW [2] DISPATCH, pulses, only when open and kick_prot_ok. |
+| `kick_prot_ok` | in | 1 | Session protection: the units are session 0's (atg_cp_prot's kick_ok; 1 without PROT). |
+| `wdt_tag` | in | 8 | FAULT_INFO[31:24] of a watchdog fault (atg_cp_prot: the drained session's during a switch; else 0). |
 | `step` | out | 1 | STEP pulse in HALTED. |
 | `ev_halted` | out | 1 | Pulse: HALTED reached. |
 | `ev_fault` | out | 1 | Pulse: FAULT raised. |
@@ -85,10 +88,10 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   (the debug port, a fence poll).  RUNNING → IDLE (RUN = 0) waits for STATUS[0] (CP busy) to be 0.
 - `run` = RUNNING and CTRL.RUN; `halt` = HALTING, HALTED, FAULTED or RESETTING; `quiesce` = `halt`
   (atg_cp lifts it for its own MC client).  STEP pulses `step` only in HALTED.
-- KICK of a present unit when not open or while it is busy: kind 6; of an absent unit: kind 2.
+- KICK of a present unit when not open, while it is busy or without kick_prot_ok: kind 6; of an absent unit: kind 2.
 - First-fault priority in one cycle: the MC, KICK (6), KICK absent (2), locked (7), the watchdog (4),
   then src 0..NSRC-1.  FAULT_INFO of src k: {tag, SRC_BLOCK[k], kind, 4'b0, SRC_CLIENT[k]}; of KICK,
-  locked and watchdog: {0, 0, kind, 0, 0}; of the MC: {0, client, 1, 3'b0, write, client}.  AXI_STUCK after 4 × WDT_CYCLES waiting for mc_idle.
+  locked: {0, 0, kind, 0, 0}; of the watchdog: {wdt_tag, 0, kind, 0, 0}; of the MC: {0, client, 1, 3'b0, write, client}.  AXI_STUCK after 4 × WDT_CYCLES waiting for mc_idle.
 - Watchdog: when WDT_EN, a counter of cycles with `cmd_active` and not `wdt_hold`; reset when
   cmd_active falls, kept while wdt_hold; at WDT_CYCLES → fault kind 4 and ev_wdt.
 
@@ -129,4 +132,4 @@ Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a0
 RS_WAIT, RS_PULSE, RS_REPLAY).  Spec changes in p004: the parameters `LINE_SHIFT`, `UNITS`,
 `SRC_BLOCK`, `SRC_CLIENT`; the ports `ring_busy`, `replay_busy`, `aperture_base/limit`.  Remaining
 differences from design §2.6: HALTING does not wait for the blocks' asynchronous work (p003 choice,
-the blocks freeze); RESET from RUNNING skips HALTING; the watchdog fault's job tag is 0.
+the blocks freeze); RESET from RUNNING skips HALTING; the watchdog fault's job tag is 0 (wdt_tag: 2026-10-25 p034, the drained session's during a session protection switch).

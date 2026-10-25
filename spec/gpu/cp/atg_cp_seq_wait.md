@@ -36,6 +36,7 @@ All combinational.  Busy bits in STATUS order: [1] BLT, [2] VF, [3] RX, [4] ROP,
 - SET_REG: the BLT range waits for the BLT; the VF's (0x020-0x04F, 0x1C0-0x1DF: ATTR_DST and ATTR_LIMIT) for the VF; the RX range (0x050-0x06F) and the ROP range (0x070-0x08F) for the VF, the SUs, the RX and the ROP (work that will read that state may still be upstream of the ROP's sequence numbers); the TU range (0x090-0x18F) for the VF, the SUs, the RX and the TU; the program range (0x190-0x1AF: the SU takes VS_BASE, FS_BASE and the rest when a warp starts) for the VF, the SUs and the RX; the others (0x1B0-0x1BF, the vendor words through SET_REG) do not wait.
 - DRAW_RAW's 9 words go to 0x1E0-0x1E8 and wait for the RX; DBG_MARK's word to 0x1FF; DISPATCH's 3 to 0x1E9-0x1EB and LOAD_CONST's 3 to 0x1EC-0x1EE wait for the SUs.
 - pre/post: BLIT pre BLT, post BLT when flags[0]; DRAW pre VF; FENCE pre all; WAIT_IDLE pre flags (0: all); LOAD_CONST pre VF, SU and RX (the constants of a draw upstream are read by its warps), post SU; RESULT pre all and the fence unit; DRAW_RAW pre RX.
+- Bit 0 of the busy bits is the units' memory (atg_mc's `!unit_idle`: requests of the units and of the CPU's DMA that the MC has not answered).  "All" includes it, and WAIT_IDLE waits for it whatever its flags: a unit's busy may fall before its last response (the TU's) and the CPU's DMA writes are in no busy bit.  `-DMUT_SEQ_NOMEM` (the earlier rule, bit 0 ignored) fails `atg_cp_seq.mem`.
 
 ## 5. State machine
 

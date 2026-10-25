@@ -36,7 +36,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `d_ready` | in | 1 | Completed this cycle; for loads d_rdata is valid in this cycle. |
 | `d_rdata` | in | 32 | Load data (whole word; the core extracts bytes). |
 | **Faults (to atg_cpu_fw)** | | | |
-| `fault` | out | 1 | Pulse (the cycle after the faulting instruction reached E): illegal instruction, CSR*/ECALL/EBREAK, misaligned access or jump/branch target, or an instruction fetched outside 0x0000_0000-0x0000_FFFF. |
+| `fault` | out | 1 | Pulse (the cycle after the faulting instruction reached E): illegal instruction, CSR*/ECALL/EBREAK, misaligned access or jump/branch target, or an instruction fetched outside 0x0000_0000-0x0001_FFFF. |
 | `fault_pc` | out | 32 | PC of the faulting instruction: valid with `fault` and held after it (before a fault it follows E). |
 
 17 ports.

@@ -15,6 +15,7 @@ Children: `am_amb_to_rt`, `atg_rt`.
 | --- | --- | --- |
 | `NCLIENT`, `HIGH_MASK` | 2, 0 | As atg_mc |
 | `HAS_ROOT`, `ROOT_CLIENT` | 0, 0 | A client one hop from the root |
+| `ROOT_SPLIT` | 0 | With `HAS_ROOT`: that client's leaf has its own channel to the root (`s_*`) instead of the top router (atg_mc with `HAS_PROT`) |
 | `TREE_L` | 1 | Levels of the tree of the other clients: clog2(`NCLIENT` − `HAS_ROOT`) |
 | `RW` | 1 | Route bits: max(1, `TREE_L` + `HAS_ROOT`) |
 | `ADDR_W`, `LINE_BYTES`, `LINE_SHIFT`, `VRAM_AW`, `VRAM_BASE` | | As atg_mc |
@@ -23,7 +24,9 @@ Children: `am_amb_to_rt`, `atg_rt`.
 
 Domain `clk`.  The packed client ports of atg_mc (request in, per-client response out) and the
 root's request and response channels; `rsp_idle` (no response flit in any router); `hold`
-(`NCLIENT`, WS288 p004): per client, the leaf starts no new packet (the MC's quiesce).
+(`NCLIENT`): per client, the leaf starts no new packet (the MC's quiesce); `c_req_chk`, `c_req_tbl`,
+`c_req_slot` (per client) go into the leaves' headers; `s_req_*`, `s_rsp_valid`, `s_rsp_data`: the
+root client's own channel with `ROOT_SPLIT` (else idle; its responses are always taken).
 
 ## 4. Behaviour
 

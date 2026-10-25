@@ -47,6 +47,7 @@ module atg_su_pt_tb;
 
 	atg_su_pt #(.NPHYS(NPHYS), .PT_ENTRIES(NE), .VARY_WORDS(VW)) dut (
 		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp),
+		.scrub(1'b0), .scrub_busy(),
 		.x_uop(x_uop), .x_b(x_b), .x_mask(x_mask), .x_info(x_info),
 		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx), .pt_ok(pt_ok), .pt_take(pt_take),

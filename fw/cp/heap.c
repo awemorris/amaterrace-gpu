@@ -85,6 +85,7 @@ fw_heap_init(void)
 	heap_lines = 0;
 	heap_free_count = 0;
 	memset(heap_sessions, 0, sizeof(heap_sessions));
+	fw_heap_init_visible();
 }
 
 /*
@@ -168,9 +169,31 @@ fw_heap_alloc(
 	uint32_t tag,
 	uint32_t bytes)
 {
+	/* The first extent that is large enough: any line is aligned to a line. */
+	return fw_heap_alloc_aligned(tag, bytes, FW_LINE_BYTES);
+}
+
+/*
+ * Takes a block of whole lines for a session's object at an address
+ * aligned to `align` bytes (a power of two of at least a line: the 4 KiB
+ * granules of session protection).
+ *
+ * Returns the block's GPU address, or 0 when the heap or the session's
+ * limit has no room for it.
+ */
+uint32_t
+fw_heap_alloc_aligned(
+	uint32_t tag,
+	uint32_t bytes,
+	uint32_t align)
+{
 	struct heap_session *session;
 	uint32_t lines;
 	uint32_t index;
+	uint32_t start;
+	uint32_t aligned;
+	uint32_t before;
+	uint32_t after;
 	uint32_t first;
 
 	/* The session pays for the lines. */
@@ -181,9 +204,13 @@ fw_heap_alloc(
 	if (session->limit != 0 && session->used + lines > session->limit)
 		return 0;
 
-	/* The first extent that is large enough. */
+	/* The first extent with room for the block after its aligned start. */
+	before = 0;
 	for (index = 0; index < heap_free_count; index++) {
-		if (heap_free_list[index].lines >= lines)
+		start = heap_base + heap_free_list[index].first * FW_LINE_BYTES;
+		aligned = (start + align - 1u) & ~(align - 1u);
+		before = (aligned - start) / FW_LINE_BYTES;
+		if (heap_free_list[index].lines >= before + lines)
 			break;
 	}
 
@@ -191,12 +218,18 @@ fw_heap_alloc(
 	if (index == heap_free_count)
 		return 0;
 
-	/* Takes the extent's first lines; an extent used up leaves the list. */
-	first = heap_free_list[index].first;
-	heap_free_list[index].first += lines;
-	heap_free_list[index].lines -= lines;
-	if (heap_free_list[index].lines == 0) {
-		heap_remove(index);
+	/* The lines before the block stay free; the ones after it are a new extent. */
+	first = heap_free_list[index].first + before;
+	after = heap_free_list[index].lines - before - lines;
+	if (before == 0) {
+		heap_free_list[index].first += lines;
+		heap_free_list[index].lines -= lines;
+		if (heap_free_list[index].lines == 0)
+			heap_remove(index);
+	} else {
+		heap_free_list[index].lines = before;
+		if (after != 0)
+			heap_insert(first + lines, after);
 	}
 
 	/* The session holds them. */
@@ -342,6 +375,9 @@ fw_session_close(
 
 	/* The objects first: they give their blocks back while the session pays. */
 	fw_object_close(tag);
+
+	/* A slab nothing gave back (it would keep the session's granules). */
+	fw_heap_close_visible(tag);
 
 	/* The slot is free. */
 	session = heap_session_of(tag);

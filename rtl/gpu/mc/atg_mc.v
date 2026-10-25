@@ -47,6 +47,19 @@
  * quiesce held) empties the tree and the root (the CP's RESET resets the
  * clients in the same cycle).  The AXI ports are those of am_axi_master.
  * The atomic unit (atg_mc_atom) is a client of its own.
+ *
+ * Session protection (HAS_PROT, spec/gpu/mc/atg_mc_prot.md, docs/ghci.md
+ * section 11.6): each client gives its requests chk, tbl and a 6-bit slot
+ * with the request (held like the rest); the root's grant (atg_mc_prot)
+ * checks those with chk against the protection table at prot_tbase and
+ * the grant CAM, and refuses a write into the table without tbl.  A
+ * refusal for protection pulses fault with fault_prot and fault_slot; a
+ * table read with an AXI error refuses its request with fault_mem.  With
+ * HAS_PROT, ROOT_CLIENT (the DC) has its own entry at the root and is not
+ * held by a stall of the tree.  chk_idle: no request with chk is in the
+ * tree or the root.  unit_idle: every request that UNIT_MASK's clients
+ * gave the MC has been answered (counted from the leaf to the response).
+ * A refused read returns zeros.
  */
 
 `timescale 1ns / 1ps
@@ -63,7 +76,14 @@ module atg_mc #(
 	parameter DATA_W = 64,
 	parameter OUTSTANDING_LOG2 = 2,
 	parameter VRAM_AW = 32,	/* address bits carried in the tree */
-	parameter [ADDR_W-1:0] VRAM_BASE = {ADDR_W{1'b0}}
+	parameter [ADDR_W-1:0] VRAM_BASE = {ADDR_W{1'b0}},
+	parameter [NCLIENT-1:0] UNIT_MASK = {NCLIENT{1'b0}},	/* clients counted by unit_idle */
+	parameter HAS_PROT = 0,	/* session protection */
+	parameter [NCLIENT-1:0] RMW_MASK = {NCLIENT{1'b0}},	/* reads judged as writes (atomics) */
+	parameter PROT_PLB = 4,	/* PLB lines */
+	parameter PROT_PLB_W = 2,	/* clog2(PROT_PLB) */
+	parameter PROT_GRANTS = 8,	/* grant CAM entries */
+	parameter PROT_GIDX_W = 3	/* clog2(PROT_GRANTS) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -75,6 +95,9 @@ module atg_mc #(
 	input wire [NCLIENT*LINE_BYTES-1:0] c_req_be,
 	input wire [NCLIENT*LINE_BYTES*8-1:0] c_req_wdata,
 	input wire [NCLIENT*8-1:0] c_req_tag,
+	input wire [NCLIENT-1:0] c_req_chk,
+	input wire [NCLIENT-1:0] c_req_tbl,
+	input wire [NCLIENT*6-1:0] c_req_slot,
 
 	output wire [NCLIENT-1:0] rsp_valid,
 	output wire [NCLIENT-1:0] rsp_write,
@@ -91,6 +114,21 @@ module atg_mc #(
 	output reg [7:0] fault_client,
 	output reg [ADDR_W-1:0] fault_addr,
 	output reg fault_write,
+	output reg fault_prot,	/* the refusal was for protection (FAULT_INFO[9]) */
+	output reg [5:0] fault_slot,
+	output reg fault_mem,	/* a protection table read had an AXI error (kind 5) */
+	output wire chk_idle,
+	output wire unit_idle,
+
+	/* Session protection, from the CP. */
+	input wire [ADDR_W-1:0] prot_tbase,
+	input wire prot_inv_valid,
+	input wire [ADDR_W-13:0] prot_inv_g,
+	input wire [31:0] prot_inv_n,
+	output wire prot_inv_pending,
+	input wire prot_gw_valid,
+	input wire [PROT_GIDX_W-1:0] prot_gw_idx,
+	input wire [49:0] prot_gw_data,
 
 	output wire [ADDR_W-1:0] m_awaddr,
 	output wire [7:0] m_awlen,
@@ -133,66 +171,57 @@ module atg_mc #(
 	localparam RFW = LINE_BITS + 10 + RW;
 	localparam UW = 16 + RW;
 	localparam RC = HAS_ROOT != 0 ? ROOT_CLIENT : 0;
+	localparam HAS_DC = HAS_PROT != 0 && HAS_ROOT != 0 ? 1 : 0;
+	localparam HPW = HW + 7;
 
 	/* The tree. */
 	wire t_req_valid, t_req_ready, t_req_last;
 	wire [LINE_BITS-1:0] t_req_data;
 	wire t_rsp_valid, t_rsp_ready, t_rsp_idle;
 	wire [RFW-1:0] t_rsp_data;
+	wire s_req_valid, s_req_ready, s_req_last, s_rsp_valid;
+	wire [LINE_BITS-1:0] s_req_data;
+	wire [RFW-1:0] s_rsp_data;
 
 	atg_mc_tree #(
-		.NCLIENT(NCLIENT), .HIGH_MASK(HIGH_MASK), .HAS_ROOT(HAS_ROOT), .ROOT_CLIENT(RC),
-		.TREE_L(TREE_L), .RW(RW), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES),
+		.NCLIENT(NCLIENT), .HIGH_MASK(HIGH_MASK), .HAS_ROOT(HAS_ROOT), .ROOT_SPLIT(HAS_DC),
+		.ROOT_CLIENT(RC), .TREE_L(TREE_L), .RW(RW), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT), .VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE)
 	) tree (
 		.clk(clk), .rst_n(rst_n), .flush(flush), .hold({NCLIENT{quiesce}} & ~QUIESCE_EXEMPT),
 		.c_req_valid(c_req_valid), .c_req_ready(c_req_ready), .c_req_write(c_req_write),
 		.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
 		.c_req_tag(c_req_tag),
+		.c_req_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}),
+		.c_req_tbl(HAS_PROT != 0 ? c_req_tbl : {NCLIENT{1'b0}}),
+		.c_req_slot(HAS_PROT != 0 ? c_req_slot : {6*NCLIENT{1'b0}}),
 		.c_rsp_valid(rsp_valid), .c_rsp_write(rsp_write), .c_rsp_tag(rsp_tag),
 		.c_rsp_rdata(rsp_rdata), .c_rsp_error(rsp_error),
 		.r_req_valid(t_req_valid), .r_req_ready(t_req_ready), .r_req_data(t_req_data),
 		.r_req_last(t_req_last),
 		.r_rsp_valid(t_rsp_valid), .r_rsp_ready(t_rsp_ready), .r_rsp_data(t_rsp_data),
+		.s_req_valid(s_req_valid), .s_req_ready(s_req_ready), .s_req_data(s_req_data),
+		.s_req_last(s_req_last), .s_rsp_valid(s_rsp_valid), .s_rsp_data(s_rsp_data),
 		.rsp_idle(t_rsp_idle)
 	);
 
 	/*
-	 * The request being assembled at the root: the header flit, then a
-	 * write's data flit.  a_hdr: a write's header is in, its data is not;
-	 * a_full: the request is complete and offered to the grant.
+	 * The requests being assembled at the root: the tree's (A) and the DC's
+	 * own (D, HAS_DC; without it D stays empty).
 	 */
-	reg a_hdr;
-	reg a_full;
-	reg [LINE_BITS-1:0] a_head;
-	reg [LINE_BITS-1:0] a_data;
+	wire a_full, d_full, a_take, d_take;
+	wire [LINE_BITS-1:0] a_head, a_data, d_head, d_data;
 
-	wire sel_write = a_head[1];
-	wire sel_outside = a_head[2];
-	wire [7:0] sel_tag = a_head[11:4];
-	wire [7:0] sel_client = a_head[19:12];
-	wire [RW-1:0] sel_route = a_head[20 +: RW];
-	wire [LAW-1:0] sel_off = a_head[20+RW +: LAW];
-	wire [LINE_BYTES-1:0] sel_be = a_head[20+RW+LAW +: LINE_BYTES];
-	wire [LA_W-1:0] sel_line;
-
-	generate
-	if (VRAM_AW < ADDR_W) begin : g_window
-		assign sel_line = {VRAM_BASE[ADDR_W-1:VRAM_AW], sel_off};
-		wire unused_base = &{1'b0, VRAM_BASE[VRAM_AW-1:0]};
-	end else begin : g_flat
-		assign sel_line = sel_off;
-		wire unused_base = &{1'b0, VRAM_BASE};
-	end
-	endgenerate
-
-	wire ap_ok;
-
-	atg_mc_aper #(.ADDR_W(ADDR_W), .LINE_SHIFT(LINE_SHIFT)) aper (
-		.line(sel_line), .base(aperture_base), .limit(aperture_limit), .ok(ap_ok)
+	atg_mc_asm #(.LINE_BYTES(LINE_BYTES)) asm_a (
+		.clk(clk), .rst_n(rst_n), .flush(flush), .t_valid(t_req_valid), .t_ready(t_req_ready),
+		.t_data(t_req_data), .t_last(t_req_last), .full(a_full), .head(a_head), .data(a_data),
+		.take(a_take)
 	);
-
-	wire sel_inside = ap_ok && !sel_outside;
+	atg_mc_asm #(.LINE_BYTES(LINE_BYTES)) asm_d (
+		.clk(clk), .rst_n(rst_n), .flush(flush), .t_valid(HAS_DC != 0 && s_req_valid),
+		.t_ready(s_req_ready), .t_data(s_req_data), .t_last(s_req_last), .full(d_full),
+		.head(d_head), .data(d_data), .take(d_take)
+	);
 
 	/* The error response of a refused request. */
 	reg err_v;
@@ -200,82 +229,77 @@ module atg_mc #(
 	reg [7:0] err_tag;
 	reg err_write;
 
-	wire m_req_ready;
+	wire g_valid, g_ready, g_write;
+	wire [LA_W-1:0] g_line;
+	wire [LINE_BYTES-1:0] g_be;
+	wire [LINE_BITS-1:0] g_wdata;
+	wire [UW-1:0] g_user;
+	wire bad, bad_prot, bad_mem, done, done_chk;
+	wire [HPW-1:0] bad_head;
+	wire [LA_W-1:0] bad_line;
+
 	wire m_rsp_valid;
 	wire m_rsp_write;
 	wire [UW-1:0] m_rsp_user;
 	wire [LINE_BITS-1:0] m_rsp_rdata;
 	wire m_rsp_error;
 	wire m_idle;
+	wire m_walk = m_rsp_user[15:8] == 8'hFF;
+
+	atg_mc_prot #(
+		.HAS_PROT(HAS_PROT), .HAS_DC(HAS_DC), .NCLIENT(NCLIENT), .RMW_MASK(RMW_MASK),
+		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .VRAM_AW(VRAM_AW),
+		.VRAM_BASE(VRAM_BASE), .RW(RW), .PLB(PROT_PLB), .PLB_W(PROT_PLB_W),
+		.NGRANT(PROT_GRANTS), .GIDX_W(PROT_GIDX_W)
+	) grant (
+		.clk(clk), .rst_n(rst_n), .flush(flush),
+		.a_valid(a_full), .a_head(a_head), .a_data(a_data), .a_take(a_take),
+		.d_valid(d_full), .d_head(d_head), .d_data(d_data), .d_take(d_take),
+		.aperture_base(aperture_base), .aperture_limit(aperture_limit),
+		.g_valid(g_valid), .g_ready(g_ready), .g_write(g_write), .g_line(g_line), .g_be(g_be),
+		.g_wdata(g_wdata), .g_user(g_user),
+		.err_busy(err_v), .bad(bad), .bad_head(bad_head), .bad_line(bad_line),
+		.bad_prot(bad_prot), .bad_mem(bad_mem), .done(done), .done_chk(done_chk),
+		.w_valid(m_rsp_valid && m_walk), .w_error(m_rsp_error), .w_rdata(m_rsp_rdata),
+		.tbase(prot_tbase), .inv_valid(prot_inv_valid), .inv_g(prot_inv_g),
+		.inv_n(prot_inv_n), .inv_pending(prot_inv_pending),
+		.gw_valid(prot_gw_valid), .gw_idx(prot_gw_idx), .gw_data(prot_gw_data)
+	);
 
 	/*
-	 * Quiesce holds new packets at the clients' leaves (except
-	 * QUIESCE_EXEMPT's); what is already in the tree is granted (drained).
-	 * pend counts the requests taken from the clients and not yet granted.
-	 */
-	wire may_grant = a_full && !err_v;
-	wire grant_ok = may_grant && sel_inside && m_req_ready;
-	wire grant_bad = may_grant && !sel_inside;
-	wire granted = grant_ok || grant_bad;
-
-	/* A flit is taken when the buffer has room for it. */
-	assign t_req_ready = !a_full || granted;
-	wire t_take = t_req_valid && t_req_ready;
-
-	always @(posedge clk) begin
-		if (!rst_n || flush) begin
-			a_hdr <= 1'b0;
-			a_full <= 1'b0;
-			a_head <= {LINE_BITS{1'b0}};
-			a_data <= {LINE_BITS{1'b0}};
-		end else begin
-			if (granted)
-				a_full <= 1'b0;
-			if (t_take) begin
-				if (!a_hdr) begin
-					a_head <= t_req_data;
-					a_hdr <= !t_req_last;
-					a_full <= t_req_last;
-				end else begin
-					a_data <= t_req_data;
-					a_hdr <= 1'b0;
-					a_full <= 1'b1;
-				end
-			end
-		end
-	end
-
-	/*
-	 * Responses into the tree: the AXI master's first, then a refused
-	 * request's.  The tree always takes a response (its leaves always do,
-	 * and a hop has room whenever the next one has), which the AXI master's
+	 * Responses: the AXI master's first (a walk's goes to atg_mc_prot), then
+	 * a refused request's.  Route bit 0 = 0 with HAS_DC is the DC's own
+	 * entry.  The tree always takes a response (its leaves always do, and a
+	 * hop has room whenever the next one has), which the AXI master's
 	 * responses need: they cannot wait.
 	 */
-	wire err_out = err_v && !m_rsp_valid && t_rsp_ready;
-	wire [RW-1:0] rsp_route = m_rsp_valid ? m_rsp_user[16 +: RW] : err_route;
+	wire m_out = m_rsp_valid && !m_walk;
+	wire err_out = err_v && !m_out && t_rsp_ready;
+	wire [RW-1:0] rsp_route = m_out ? m_rsp_user[16 +: RW] : err_route;
+	wire rsp_dc = HAS_DC != 0 && !rsp_route[0];
+`ifdef MUT_PROT_DATA
+	wire [LINE_BITS-1:0] rsp_line = m_rsp_rdata;
+`else
+	wire [LINE_BITS-1:0] rsp_line = m_out ? m_rsp_rdata : {LINE_BITS{1'b0}};
+`endif
+	wire [RFW-1:0] rsp_flit = {rsp_line, rsp_route, m_out ? m_rsp_user[7:0] : err_tag,
+		m_out ? m_rsp_error : 1'b1, m_out ? m_rsp_write : err_write};
 
-	assign t_rsp_valid = m_rsp_valid || err_out;
-	assign t_rsp_data = {m_rsp_rdata, rsp_route, m_rsp_valid ? m_rsp_user[7:0] : err_tag,
-		m_rsp_valid ? m_rsp_error : 1'b1, m_rsp_valid ? m_rsp_write : err_write};
+	assign t_rsp_valid = (m_out || err_out) && !rsp_dc;
+	assign t_rsp_data = rsp_flit;
+	assign s_rsp_valid = (m_out || err_out) && rsp_dc;
+	assign s_rsp_data = rsp_flit;
 
-	reg [7:0] pend;
-	integer pk;
-	reg [7:0] taken;
+	/* The requests in the tree and the root (pend), with chk, of the units. */
+	wire pend_zero;
 
-	always @(*) begin
-		taken = 8'd0;
-		for (pk = 0; pk < NCLIENT; pk = pk + 1)
-			taken = taken + {7'd0, c_req_valid[pk] && c_req_ready[pk]};
-	end
+	atg_mc_cnt #(.NCLIENT(NCLIENT), .UNIT_MASK(UNIT_MASK)) cnt (
+		.clk(clk), .rst_n(rst_n), .flush(flush), .take(c_req_valid & c_req_ready),
+		.take_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}), .rsp(rsp_valid), .done(done),
+		.done_chk(done_chk), .pend_zero(pend_zero), .chk_idle(chk_idle), .unit_idle(unit_idle)
+	);
 
-	always @(posedge clk) begin
-		if (!rst_n || flush)
-			pend <= 8'd0;
-		else
-			pend <= pend + taken - {7'd0, granted};
-	end
-
-	assign axi_idle = m_idle && !err_v && t_rsp_idle && pend == 8'd0;
+	assign axi_idle = m_idle && !err_v && t_rsp_idle && pend_zero;
 
 	always @(posedge clk) begin
 		if (!rst_n || flush) begin
@@ -287,17 +311,23 @@ module atg_mc #(
 			fault_client <= 8'd0;
 			fault_addr <= {ADDR_W{1'b0}};
 			fault_write <= 1'b0;
+			fault_prot <= 1'b0;
+			fault_slot <= 6'd0;
+			fault_mem <= 1'b0;
 		end else begin
 			fault <= 1'b0;
-			if (grant_bad) begin
+			if (bad) begin
 				err_v <= 1'b1;
-				err_route <= sel_route;
-				err_tag <= sel_tag;
-				err_write <= sel_write;
+				err_route <= bad_head[20 +: RW];
+				err_tag <= bad_head[11:4];
+				err_write <= bad_head[1];
 				fault <= 1'b1;
-				fault_client <= sel_client;
-				fault_addr <= {sel_line, {LINE_SHIFT{1'b0}}};
-				fault_write <= sel_write;
+				fault_client <= bad_head[19:12];
+				fault_addr <= {bad_line, {LINE_SHIFT{1'b0}}};
+				fault_write <= bad_head[1];
+				fault_prot <= bad_prot;
+				fault_slot <= bad_head[HW+1 +: 6];
+				fault_mem <= bad_mem;
 			end else if (err_out) begin
 				err_v <= 1'b0;
 			end
@@ -316,13 +346,13 @@ module atg_mc #(
 		.rst_n(rst_n),
 		.halt(1'b0),
 		.idle(m_idle),
-		.req_valid(may_grant && sel_inside),
-		.req_ready(m_req_ready),
-		.req_write(sel_write),
-		.req_line(sel_line),
-		.req_be(sel_be),
-		.req_wdata(a_data),
-		.req_user({sel_route, sel_client, sel_tag}),
+		.req_valid(g_valid),
+		.req_ready(g_ready),
+		.req_write(g_write),
+		.req_line(g_line),
+		.req_be(g_be),
+		.req_wdata(g_wdata),
+		.req_user(g_user),
 		.rsp_valid(m_rsp_valid),
 		.rsp_write(m_rsp_write),
 		.rsp_user(m_rsp_user),
@@ -359,8 +389,7 @@ module atg_mc #(
 		.m_rready(m_rready)
 	);
 
-	wire unused_ok = &{1'b0, a_head[3], a_head[0], m_rsp_user[15:8],
-		a_head[LINE_BITS-1:HW]};
+	wire unused_ok = &{1'b0, bad_head, s_req_valid};
 endmodule
 
 `default_nettype wire

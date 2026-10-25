@@ -6,6 +6,11 @@ RTL: `rtl/gpu/cp/atg_cpu_dma.v`.  Parent: atg_cpu.  Implemented in: p017.
 
 The CPU's line DMA between GPU memory (AMB) and IMEM/DMEM: the firmware's heap ↔ DMEM copies (window DMA_*) and the CPFW image load (from atg_cpu_fw).
 
+Session protection: DMA_GO[17] chk (the copy is checked for `dma_slot`, the taken packet's
+slot; not when it is 0) and [18] tbl (it writes the protection table) go with every request of
+the copy (`req_chk`, `req_tbl`, `req_slot`); an image load has neither.  `-DMUT_CPPROT_DMACHK`
+(ignores [17]) fails `atg_cpu_dma_tb`.
+
 ## 2. Parameters
 
 | Name | Default | Meaning |

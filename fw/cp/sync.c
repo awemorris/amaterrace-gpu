@@ -48,13 +48,13 @@ fw_cmd_create_event(
 	if (command->reader->error)
 		return;
 
-	/* The event and its word, reset. */
+	/* The event and its word (the work's µops write and wait on it: a visible block), reset. */
 	event = fw_cmd_new_object(command, device, id, FW_OBJ_EVENT);
 	if (event == NULL)
 		return;
 	zeros[0] = 0;
 	zeros[1] = 0;
-	error = fw_object_block(event, SYNC_EVENT_BYTES);
+	error = fw_object_block_visible(event, SYNC_EVENT_BYTES);
 	if (error == 0)
 		error = fw_copy_out(event->block, zeros, sizeof(zeros));
 	if (error != 0) {

@@ -57,6 +57,7 @@ static struct fw_object *record_state_owner;
 static int record_cache(struct fw_object *cmdbuf);
 static int record_new_chunk(struct fw_object *cmdbuf);
 static int replay_chunk(uint32_t chunk, uint32_t *next);
+static void record_free_data(uint32_t tag);
 
 /*
  * Appends whole µop packets (or one marker) to a command buffer's
@@ -85,11 +86,13 @@ fw_record_words(
 /*
  * Appends data to a command buffer's recording, where the units can read
  * it when the recording runs (the source of an update, a constant bank):
- * a padding packet [FW_MARK_DATA][words] that the replay skips.  `address`
- * gets the GPU address of the first word.
+ * whole lines of the recording's last data chunk, a visible block the
+ * µop chunks name with a marker [FW_MARK_DATA][address] (the replay skips
+ * it, the clear frees the chunk).  `address` gets the GPU address of the
+ * first word.
  *
- * Returns 0, or -1 when the data is longer than a chunk holds or the heap
- * has no room.
+ * Returns 0, or -1 when the data is longer than a chunk holds, the
+ * command buffer is not recording or the heap has no room.
  */
 int
 fw_record_data(
@@ -98,37 +101,49 @@ fw_record_data(
 	uint32_t count,
 	uint32_t *address)
 {
-	uint32_t head[2];
-	uint32_t used;
-	uint32_t packet;
+	struct fw_rstate *state;
+	uint32_t marker[3];
+	uint32_t bytes;
+	uint32_t lines;
+	uint32_t chunk;
+	uint32_t at;
 	int error;
 
-	/* The header and the code before the data, in one chunk. */
-	if (count + 2u > FW_CHUNK_PAYLOAD)
+	/* Whole lines of one chunk, while the command buffer records. */
+	bytes = count * 4u;
+	if (count == 0 || bytes > FW_DATA_CHUNK_BYTES || cmdbuf->block == 0)
 		return -1;
-	error = record_cache(cmdbuf);
-	if (error != 0)
+	lines = (bytes + FW_LINE_BYTES - 1u) / FW_LINE_BYTES;
+	state = fw_rstate(cmdbuf);
+	if (state == NULL)
 		return -1;
-	used = record_chunk[1];
-	if (used + count + 2u > FW_CHUNK_PAYLOAD) {
-		error = record_new_chunk(cmdbuf);
-		if (error != 0)
+
+	/* A new chunk when the last one has no room, named in the recording. */
+	if (state->data_chunk == 0 || state->data_used + lines > FW_DATA_CHUNK_BYTES / FW_LINE_BYTES) {
+		chunk = fw_heap_alloc_visible(cmdbuf->tag, FW_DATA_CHUNK_BYTES);
+		if (chunk == 0)
 			return -1;
+		marker[0] = GHCI_PKT_PAD(2u);
+		marker[1] = FW_MARK_DATA;
+		marker[2] = chunk;
+		error = fw_record_words(cmdbuf, marker, 3);
+		if (error != 0) {
+			fw_heap_free_visible(cmdbuf->tag, chunk, FW_DATA_CHUNK_BYTES);
+			return -1;
+		}
+		state->data_chunk = chunk;
+		state->data_used = 0;
 	}
 
-	/* The header, the code, then the data. */
-	head[0] = GHCI_PKT_PAD(count + 1u);
-	head[1] = FW_MARK_DATA;
-	error = fw_record_words_at(cmdbuf, head, 2, &packet);
+	/* The data (the rest of its last line zero). */
+	at = state->data_chunk + state->data_used * FW_LINE_BYTES;
+	error = fw_copy_out(at, words, bytes);
 	if (error != 0)
 		return -1;
-	used = record_chunk[1];
-	memcpy(&record_chunk[FW_CHUNK_HEAD + used], words, count * 4u);
-	record_chunk[1] = used + count;
-	record_dirty = 1;
+	state->data_used += lines;
 
-	/* Succeeded: the data follows the two words. */
-	*address = packet + 8u;
+	/* Succeeded: the data's address. */
+	*address = at;
 	return 0;
 }
 
@@ -177,7 +192,8 @@ fw_record_words_at(
 }
 
 /*
- * Empties a command buffer's recording and gives its chunks back.
+ * Empties a command buffer's recording and gives its chunks back, and the
+ * data chunks its markers name.
  */
 void
 fw_record_clear(
@@ -187,30 +203,30 @@ fw_record_clear(
 	uint32_t next;
 	int error;
 
-	/* The cache's copy of the last chunk is dropped, not written. */
-	if (record_owner == cmdbuf) {
-		record_owner = NULL;
-		record_dirty = 0;
-	}
+	/*
+	 * The cached chunk goes back to memory (the chain is whole there),
+	 * and the cache's words hold each chunk read.
+	 */
+	(void)fw_record_flush();
+	record_owner = NULL;
 
 	/* So is the recording state. */
 	if (record_state_owner == cmdbuf)
 		record_state_owner = NULL;
 
 	/*
-	 * Walks the chain; each chunk's first line links the next.  The last
-	 * chunk's link is not read: it may never have been written back.
+	 * Walks the chain; each chunk's first word links the next (the last
+	 * chunk's is not followed), and its packets name its data chunks.
 	 */
-	chunk = cmdbuf->a;
-	while (chunk != 0) {
+	for (chunk = cmdbuf->a; chunk != 0; chunk = next) {
 		next = 0;
-		if (chunk != cmdbuf->b) {
-			error = fw_dma_read(chunk, replay_words, 1);
-			if (error == 0)
-				next = replay_words[0];
+		error = fw_mem_read(chunk, record_chunk, FW_CHUNK_BYTES);
+		if (error == 0) {
+			if (chunk != cmdbuf->b)
+				next = record_chunk[0];
+			record_free_data(cmdbuf->tag);
 		}
 		fw_heap_free(cmdbuf->tag, chunk, FW_CHUNK_BYTES);
-		chunk = next;
 	}
 
 	/* The recording is empty. */
@@ -605,4 +621,34 @@ replay_chunk(
 
 	/* Succeeded: the chunk is replayed. */
 	return 0;
+}
+
+/* Gives back the data chunks the packets of the chunk in the cache's words name. */
+static void
+record_free_data(
+	uint32_t tag)
+{
+	uint32_t used;
+	uint32_t position;
+	uint32_t word;
+	uint32_t length;
+
+	/* The words in use (a chunk the memory refused names nothing). */
+	used = record_chunk[1];
+	if (used > FW_CHUNK_PAYLOAD)
+		return;
+
+	/* Each packet: a data marker frees its chunk; the others are skipped. */
+	position = FW_CHUNK_HEAD;
+	while (position < FW_CHUNK_HEAD + used) {
+		word = record_chunk[position];
+		if (GHCI_PKT_GET_CLASS(word) != GHCI_PKT_CLASS_PAD) {
+			position += 1u + (word & 0xFFu);
+			continue;
+		}
+		length = word & 0xFFFFu;
+		if (length >= 2u && position + 2u < FW_CHUNK_HEAD + used && record_chunk[position + 1u] == FW_MARK_DATA)
+			fw_heap_free_visible(tag, record_chunk[position + 2u], FW_DATA_CHUNK_BYTES);
+		position += 1u + length;
+	}
 }

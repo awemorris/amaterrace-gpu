@@ -72,6 +72,7 @@ module atg_su_exp_tb;
 
 	atg_su_exp #(.NPHYS(NPHYS)) dut (
 		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp),
+		.scrub(1'b0), .scrub_busy(),
 		.x_last(1'b0), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a({NPHYS{32'd0}}),
 		.x_b(x_b), .x_c({NPHYS{32'd0}}), .x_mask(x_mask), .x_info(x_info), .x_ready(x_ready),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),

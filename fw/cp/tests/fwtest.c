@@ -31,6 +31,10 @@
 #define MEMORY_BASE 0x01000000u
 #define MEMORY_BYTES 0x00800000u
 
+/* The protection table of the protected cases: a byte per granule of the 32 MiB memory. */
+#define TABLE_BASE 0x00200000u
+#define TABLE_GRANULES (HOST_MEM_BYTES >> 12)
+
 /* sTypes the staged structures carry (the firmware does not look at most). */
 #define ST_BUFFER 12u
 #define ST_IMAGE 14u
@@ -43,6 +47,13 @@
 
 static int test_case(const char *name, int failures_before);
 static void open_session(void);
+static void open_protected(uint32_t slots);
+static void start_firmware(void);
+static uint32_t table_count(uint32_t slot);
+static void stage_session_memory(uint32_t index, uint64_t id, uint32_t base, uint32_t bytes, uint32_t flags);
+static void ring_grant(uint32_t tag, uint32_t access, uint32_t address, uint32_t bytes);
+static void ring_revoke(uint32_t tag, uint32_t address, uint32_t bytes);
+static void test_protection(void);
 static void stage_memory(uint32_t index);
 static void stage_buffer(uint32_t index, uint64_t id, uint64_t size, uint32_t usage);
 static void stage_bind_buffer(uint32_t index, uint64_t buffer, uint64_t offset);
@@ -54,7 +65,7 @@ static void test_sessions(void);
 static void test_buffers(void);
 static void test_images(void);
 static void test_draw(void);
-static void test_compute(void);
+static void test_compute(int protect);
 static void test_transfer(void);
 static void stage_compute_pipeline(uint32_t index, uint64_t id);
 static void stage_image(uint32_t index, uint64_t id, uint32_t format, uint32_t width, uint32_t height, uint32_t usage);
@@ -69,9 +80,12 @@ main(
 	char **argv)
 {
 	int failed;
+	int tracing;
 
 	/* fwtest -t FILE: the scene of the cases to FILE as well. */
+	tracing = 0;
 	if (argc == 3 && strcmp(argv[1], "-t") == 0) {
+		tracing = 1;
 		failed = host_trace_open(argv[2]);
 		if (failed != 0) {
 			printf("FAIL fwtest: cannot write %s\n", argv[2]);
@@ -84,8 +98,17 @@ main(
 	test_buffers();
 	test_images();
 	test_draw();
-	test_compute();
+	test_compute(0);
 	test_transfer();
+
+	/*
+	 * Session protection: not in the scene (the harness's atg_top has no
+	 * PROT capability).
+	 */
+	if (!tracing) {
+		test_compute(1);
+		test_protection();
+	}
 	failed = host_trace_close();
 	if (failed != 0) {
 		printf("FAIL fwtest: the trace's writes\n");
@@ -119,9 +142,48 @@ test_case(
 static void
 open_session(void)
 {
-	uint32_t args[5];
+	uint32_t args[4];
 
 	host_reset();
+	start_firmware();
+	args[0] = TAG;
+	args[1] = 0;
+	args[2] = 0;
+	args[3] = 0;
+	host_ring(TAG, GHCI_GPU_OP_SESSION_OPEN, args, 4);
+	host_check(host_ring_result() == 0, "GHCI_SESSION_OPEN");
+}
+
+/*
+ * The same on a GPU with session protection (`slots` slots, 64 grants):
+ * the driver's order (the table zeroed, PROT_TABLE, GHCI_HEAP), then the
+ * session opened PROTECTED.
+ */
+static void
+open_protected(
+	uint32_t slots)
+{
+	uint32_t args[4];
+
+	host_reset();
+	host_prot_enable(slots, 64);
+	host_prot_table(TABLE_BASE, 0, TABLE_GRANULES);
+	fw_prot_init();
+	start_firmware();
+	args[0] = TAG;
+	args[1] = GHCI_SESSION_PROTECTED;
+	args[2] = 0;
+	args[3] = 0;
+	host_ring(TAG, GHCI_GPU_OP_SESSION_OPEN, args, 4);
+	host_check(host_ring_result() == 0, "GHCI_SESSION_OPEN PROTECTED");
+}
+
+/* The firmware's state from start-up, and the heap lent. */
+static void
+start_firmware(void)
+{
+	uint32_t args[5];
+
 	fw_heap_init();
 	fw_object_init();
 	fw_uop_reset();
@@ -132,12 +194,76 @@ open_session(void)
 	args[4] = 4;
 	host_ring(0, GHCI_GPU_OP_HEAP, args, 5);
 	host_check(host_ring_result() == 0, "GHCI_HEAP");
-	args[0] = TAG;
-	args[1] = 0;
-	args[2] = 0;
+}
+
+/* The table's bytes that name a slot as the owner. */
+static uint32_t
+table_count(
+	uint32_t slot)
+{
+	uint32_t granule;
+	uint32_t count;
+	uint32_t byte;
+
+	count = 0;
+	for (granule = 0; granule < TABLE_GRANULES; granule++) {
+		byte = host_prot_byte(granule << 12);
+		if ((byte & 0x80u) == 0 && (byte & 0x3Fu) == slot)
+			count++;
+	}
+	return count;
+}
+
+/* GHCI_MEMORY of a range. */
+static void
+stage_session_memory(
+	uint32_t index,
+	uint64_t id,
+	uint32_t base,
+	uint32_t bytes,
+	uint32_t flags)
+{
+	host_record(GHCI_GPU_OP_MEMORY, index);
+	host_u64(id);
+	host_u64(base);
+	host_u64(bytes);
+	host_u32(flags);
+}
+
+/* GHCI_BUFFER_GRANT in the ring (session 0's packet). */
+static void
+ring_grant(
+	uint32_t tag,
+	uint32_t access,
+	uint32_t address,
+	uint32_t bytes)
+{
+	uint32_t args[6];
+
+	args[0] = tag;
+	args[1] = access;
+	args[2] = address;
 	args[3] = 0;
-	host_ring(TAG, GHCI_GPU_OP_SESSION_OPEN, args, 4);
-	host_check(host_ring_result() == 0, "GHCI_SESSION_OPEN");
+	args[4] = bytes;
+	args[5] = 0;
+	host_ring(0, GHCI_GPU_OP_BUFFER_GRANT, args, 6);
+}
+
+/* GHCI_BUFFER_REVOKE in the ring. */
+static void
+ring_revoke(
+	uint32_t tag,
+	uint32_t address,
+	uint32_t bytes)
+{
+	uint32_t args[5];
+
+	args[0] = tag;
+	args[1] = address;
+	args[2] = 0;
+	args[3] = bytes;
+	args[4] = 0;
+	host_ring(0, GHCI_GPU_OP_BUFFER_REVOKE, args, 5);
 }
 
 /* GHCI_MEMORY of the cases' memory. */
@@ -1344,7 +1470,8 @@ stage_compute_pipeline(
  * and the query's copy.
  */
 static void
-test_compute(void)
+test_compute(
+	int protect)
 {
 	static const uint32_t cs_entries[] = {
 		6, 0, 0, 0,		/* storage buffer: set 0, binding 0, bank 0 */
@@ -1356,10 +1483,20 @@ test_compute(void)
 	uint32_t bank;
 	uint32_t event;
 	uint32_t pool;
+	uint32_t slot;
+	uint32_t scratch;
+	uint32_t selfs;
+	uint32_t args[1];
 	int before;
 
 	before = host_failures;
-	open_session();
+	bank = 0;
+	scratch = 0;
+	if (protect) {
+		open_protected(31);
+	} else {
+		open_session();
+	}
 	put_program(MEMORY_BASE + 0x700000u, 2, cs_entries, 3, 8);
 	host_poke(MEMORY_BASE + 0x700000u + 32u, 64);
 	host_poke(MEMORY_BASE + 0x6010u, 3);
@@ -1579,6 +1716,7 @@ test_compute(void)
 		host_check(host_peek(bank) == MEMORY_BASE + 0x4100u && host_peek(bank + 4u) == 0x200u, "the storage buffer's words");
 		host_check(host_peek(bank + 8u) == 0xAAAA0001u && host_peek(bank + 12u) == 0xAAAA0002u, "the push words");
 		host_check(host_peek(bank + 16u) != 0 && (host_peek(bank + 16u) & 63u) == 0, "the scratch address");
+		scratch = host_peek(bank + 16u);
 	}
 
 	/* The event is set; the query's {count, availability} copied. */
@@ -1587,7 +1725,37 @@ test_compute(void)
 	host_check(host_peek(MEMORY_BASE + 0x6040u + 16u) == 7u && host_peek(MEMORY_BASE + 0x6040u + 24u) == 1u,
 		   "the query's copy");
 	host_check(host_peek(MEMORY_BASE + 0x6040u + 8u) == 0u, "the unavailable query's availability");
-	(void)test_case("compute", before);
+	if (!protect) {
+		(void)test_case("compute", before);
+		return;
+	}
+
+	/*
+	 * Protected: the session's memory, the slabs of the event and the
+	 * pool, the recording's data chunk (the bank) and the scratch block
+	 * are the slot's; the program's, the indirect parameters' and the
+	 * copy's DMA were checked and none refused; the built-in part is public.
+	 */
+	slot = host_prot_slot(TAG);
+	host_check(slot != 0, "the session's slot");
+	host_check(host_prot_byte(MEMORY_BASE) == slot && host_prot_byte(MEMORY_BASE + MEMORY_BYTES - 1u) == slot,
+		   "the memory's granules");
+	host_check(host_prot_byte(event) == slot && host_prot_byte(pool) == slot, "the event's and the pool's slab");
+	host_check(host_prot_byte(bank) == slot, "the data chunk");
+	host_check(host_prot_byte(scratch) == slot, "the scratch block");
+	host_check(host_prot_checked >= 4u && host_prot_refused == 0, "checked DMA, none refused");
+	host_check(host_prot_byte(HOST_HEAP) == 0x80u && host_prot_byte(HOST_HEAP + FW_BUILTIN_PUBLIC_BYTES - 1u) == 0x80u,
+		   "the built-in part is public");
+	host_check(host_prot_byte(HOST_HEAP + FW_BUILTIN_PUBLIC_BYTES) == 0, "the wait word's granule is private");
+
+	/* The close drains, and every byte of the slot is free; the tag is unmapped. */
+	selfs = host_prot_selfs;
+	args[0] = TAG;
+	host_ring(0, GHCI_GPU_OP_SESSION_CLOSE, args, 1);
+	host_check(host_prot_selfs > selfs, "the close's drain");
+	host_check(table_count(slot) == 0, "no byte of the slot after the close");
+	host_check(host_prot_slot(TAG) == 0, "SLOT_MAP after the close");
+	(void)test_case("prot.compute", before);
 }
 
 /*
@@ -1758,4 +1926,193 @@ test_transfer(void)
 	}
 	host_check(ok, "the copy into the image");
 	(void)test_case("transfer", before);
+}
+
+/*
+ * Session protection (docs/ghci.md section 11.6, design §17.15): the
+ * PROTECTED open's failures, MEMORY's table bytes (READ_ONLY, unaligned,
+ * another session's range, IMPORTED, FREE_MEMORY), the grants (two of a
+ * range, the session's share of the CAM, REVOKE after a drain), the
+ * slabs (zeros, then the slot; an empty slab goes back), a PROGRAM in
+ * another session's memory (the checked DMA is refused), and the close.
+ */
+static void
+test_protection(void)
+{
+	static const uint32_t entries[] = { 7, 0, 0, 2 };
+	uint32_t args[4];
+	uint32_t slot;
+	uint32_t other;
+	uint32_t index;
+	uint32_t event;
+	uint32_t second;
+	uint32_t selfs;
+	uint32_t invs;
+	uint32_t refused;
+	int zero;
+	int before;
+
+	before = host_failures;
+
+	/* No table: the open fails (INITIALIZATION_FAILED); tag 0 never opens PROTECTED. */
+	host_reset();
+	host_prot_enable(2, 64);
+	fw_prot_init();
+	start_firmware();
+	args[0] = TAG;
+	args[1] = GHCI_SESSION_PROTECTED;
+	args[2] = 0;
+	args[3] = 0;
+	host_ring(0, GHCI_GPU_OP_SESSION_OPEN, args, 4);
+	host_check(host_ring_result() == FW_VK_ERROR_INITIALIZATION_FAILED, "PROTECTED without the table");
+	host_check(!fw_session_is_open(TAG), "the session is not open");
+	host_prot_table(TABLE_BASE, 0, TABLE_GRANULES);
+	args[0] = 0;
+	host_ring(0, GHCI_GPU_OP_SESSION_OPEN, args, 4);
+	host_check(host_ring_result() == FW_VK_ERROR_FEATURE_NOT_PRESENT, "PROTECTED session 0");
+
+	/* Two slots: the third protected session finds none. */
+	for (index = 0; index < 3u; index++) {
+		args[0] = TAG + index;
+		host_ring(0, GHCI_GPU_OP_SESSION_OPEN, args, 4);
+		if (index < 2u)
+			host_check(host_ring_result() == 0, "a protected session");
+	}
+	host_check(host_ring_result() == FW_VK_ERROR_OUT_OF_DEVICE_MEMORY, "no slot left");
+	host_check(host_prot_slot(TAG) != host_prot_slot(TAG + 1u) && host_prot_slot(TAG + 2u) == 0, "SLOT_MAP");
+	slot = host_prot_slot(TAG);
+	other = host_prot_slot(TAG + 1u);
+
+	/* MEMORY: the slot's bytes, READ_ONLY's bit; unaligned and another session's are refused. */
+	invs = host_prot_invs;
+	host_frame_begin();
+	stage_session_memory(0, 0x100, MEMORY_BASE, 0x2000, 0);
+	stage_session_memory(1, 0x101, MEMORY_BASE + 0x2000u, 0x1000, GHCI_MEMORY_READ_ONLY);
+	stage_session_memory(2, 0x102, MEMORY_BASE + 0x3000u, 0x800, 0);
+	stage_session_memory(3, 0x103, MEMORY_BASE + 0x10000u, 0x1000, GHCI_MEMORY_IMPORTED);
+	(void)host_frame_run(TAG, 4);
+	host_check(host_result(0) == 0 && host_result(1) == 0, "MEMORY");
+	host_check(host_result(2) == FW_VK_ERROR_INITIALIZATION_FAILED, "MEMORY not granule aligned");
+	host_check(host_result(3) == 0, "MEMORY IMPORTED");
+	host_check(host_prot_byte(MEMORY_BASE) == slot && host_prot_byte(MEMORY_BASE + 0x1000u) == slot, "the bytes");
+	host_check(host_prot_byte(MEMORY_BASE + 0x2000u) == (slot | 0x40u), "the READ_ONLY byte");
+	host_check(host_prot_byte(MEMORY_BASE + 0x3000u) == 0 && host_prot_byte(MEMORY_BASE + 0x10000u) == 0,
+		   "no bytes for the refused or the imported range");
+	host_check(host_prot_invs > invs, "the MC's copy invalidated");
+	host_frame_begin();
+	stage_session_memory(0, 0x200, MEMORY_BASE + 0x1000u, 0x1000, 0);
+	stage_session_memory(1, 0x201, MEMORY_BASE + 0x20000u, 0x1000, 0);
+	(void)host_frame_run(TAG + 1u, 2);
+	host_check(host_result(0) == FW_VK_ERROR_INITIALIZATION_FAILED, "MEMORY of another session's range");
+	host_check(host_result(1) == 0 && host_prot_byte(MEMORY_BASE + 0x20000u) == other, "the other session's MEMORY");
+	host_check(host_prot_byte(MEMORY_BASE + 0x1000u) == slot, "the first session's byte is kept");
+	host_check(host_prot_allowed(slot, MEMORY_BASE, 1) && !host_prot_allowed(other, MEMORY_BASE, 0) &&
+		   !host_prot_allowed(slot, MEMORY_BASE + 0x2000u, 1) && host_prot_allowed(slot, MEMORY_BASE + 0x2000u, 0),
+		   "the judgement of the bytes");
+
+	/* FREE_MEMORY: the bytes are free. */
+	host_frame_begin();
+	host_record(GHCI_VK_FREE_MEMORY, 0);
+	host_u64(DEVICE);
+	host_u64(0x100);
+	host_u64(0);
+	(void)host_frame_run(TAG, 1);
+	host_check(host_prot_byte(MEMORY_BASE) == 0 && host_prot_byte(MEMORY_BASE + 0x1000u) == 0, "FREE_MEMORY");
+
+	/* GRANT: two of a range are two entries; one session takes a quarter of the CAM at most. */
+	ring_grant(TAG, GHCI_GRANT_READ, MEMORY_BASE + 0x20000u, 0x1000);
+	host_check(host_ring_result() == 0, "BUFFER_GRANT");
+	ring_grant(TAG, GHCI_GRANT_READ, MEMORY_BASE + 0x20000u, 0x1000);
+	host_check(host_prot_cam(slot, MEMORY_BASE + 0x20000u, 0x1000) == 2u, "two entries");
+	host_check(host_prot_allowed(slot, MEMORY_BASE + 0x20000u, 0) && !host_prot_allowed(slot, MEMORY_BASE + 0x20000u, 1),
+		   "a read grant");
+	for (index = 2; index < 17u; index++)
+		ring_grant(TAG, GHCI_GRANT_READ, MEMORY_BASE + 0x20000u, 0x1000);
+	host_check(host_ring_result() == FW_VK_ERROR_OUT_OF_DEVICE_MEMORY, "the session's share of the CAM");
+	ring_grant(TAG, GHCI_GRANT_READ, MEMORY_BASE + 0x20800u, 0x1000);
+	host_check(host_ring_result() == FW_VK_ERROR_INITIALIZATION_FAILED, "a grant not granule aligned");
+
+	/* REVOKE: after a drain (the firmware's SELF wait), one entry goes; none: nothing. */
+	selfs = host_prot_selfs;
+	ring_revoke(TAG, MEMORY_BASE + 0x20000u, 0x1000);
+	host_check(host_ring_result() == 0 && host_prot_selfs > selfs, "BUFFER_REVOKE drains");
+	host_check(host_prot_cam(slot, MEMORY_BASE + 0x20000u, 0x1000) == 15u, "one entry revoked");
+	ring_revoke(TAG, MEMORY_BASE + 0x30000u, 0x1000);
+	host_check(host_ring_result() == 0, "REVOKE of no grant");
+
+	/* A slab: zeros over the heap's old bytes, then the slot; two events share it. */
+	memset(&host_mem[HOST_HEAP + FW_BUILTIN_BYTES], 0xA5, 0x40000);
+	host_frame_begin();
+	for (index = 0; index < 2u; index++) {
+		host_record(GHCI_VK_CREATE_EVENT, index);
+		host_u64(DEVICE);
+		host_u64(1);
+		host_u32(10);
+		host_u64(0);
+		host_u32(0);
+		host_u64(0);
+		host_u64(1);
+		host_u64(0x810u + index);
+	}
+	(void)host_frame_run(TAG, 2);
+	event = host_result_aux(0);
+	second = host_result_aux(1);
+	host_check(host_result(0) == 0 && host_result(1) == 0, "CREATE_EVENT");
+	host_check((event & 0xFFFu) == 0 && (second & ~0xFFFu) == event, "two events in one slab");
+	host_check(host_prot_byte(event) == slot, "the slab's byte");
+	zero = 1;
+	for (index = 0; index < 4096u; index += 4u) {
+		if (host_peek(event + index) != 0)
+			zero = 0;
+	}
+	host_check(zero, "the slab is zero");
+	host_frame_begin();
+	for (index = 0; index < 2u; index++) {
+		host_record(GHCI_VK_DESTROY_EVENT, index);
+		host_u64(DEVICE);
+		host_u64(0x810u + index);
+		host_u64(0);
+	}
+	(void)host_frame_run(TAG, 2);
+	host_check(host_prot_byte(event) == 0, "an empty slab goes back");
+
+	/* A PROGRAM in the other session's memory (not granted): the checked read is refused. */
+	put_program(MEMORY_BASE + 0x40000u, 2, entries, 1, 8);
+	refused = host_prot_refused;
+	host_frame_begin();
+	stage_session_memory(0, 0x202, MEMORY_BASE + 0x40000u, 0x1000, GHCI_MEMORY_READ_ONLY);
+	host_record(GHCI_GPU_OP_PROGRAM, 1);
+	host_u64(0x900);
+	host_u32(2);
+	host_u32(0x47534931u);
+	host_u64(MEMORY_BASE + 0x40000u);
+	host_u32(0x1000);
+	host_u32(0);
+	(void)host_frame_run(TAG + 1u, 2);
+	host_check(host_result(0) == 0 && host_result(1) == 0 && host_prot_refused == refused,
+		   "PROGRAM in the session's memory");
+	host_frame_begin();
+	host_record(GHCI_GPU_OP_PROGRAM, 0);
+	host_u64(0x900);
+	host_u32(2);
+	host_u32(0x47534931u);
+	host_u64(MEMORY_BASE + 0x40000u);
+	host_u32(0x1000);
+	host_u32(0);
+	(void)host_frame_run(TAG, 1);
+	host_check(host_result(0) == FW_VK_ERROR_INITIALIZATION_FAILED && host_prot_refused > refused,
+		   "PROGRAM in another session's memory");
+
+	/* The close: no byte of the slot, no entry, the slot unmapped; the other session keeps its own. */
+	args[0] = TAG;
+	host_ring(0, GHCI_GPU_OP_SESSION_CLOSE, args, 1);
+	host_check(table_count(slot) == 0 && host_prot_cam(slot, 0, 0) == 0 && host_prot_slot(TAG) == 0, "the close");
+	host_check(host_prot_byte(MEMORY_BASE + 0x20000u) == other, "the other session's byte");
+
+	/* The slot comes back last: the next open takes the other free one first. */
+	args[0] = TAG + 2u;
+	args[1] = GHCI_SESSION_PROTECTED;
+	host_ring(0, GHCI_GPU_OP_SESSION_OPEN, args, 4);
+	host_check(host_ring_result() == 0 && host_prot_slot(TAG + 2u) == slot, "the freed slot reused");
+	(void)test_case("prot", before);
 }

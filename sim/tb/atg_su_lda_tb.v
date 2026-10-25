@@ -59,6 +59,7 @@ module atg_su_lda_tb;
 
 	atg_su_lda #(.NPHYS(8), .GRP_W(2), .VARY_WORDS(16)) d8 (
 		.clk(clk), .rst_n(rst_n), .x_valid(x_valid && dsel[0]), .x_warp(x_warp), .x_grp(x_grp),
+		.scrub(1'b0), .scrub_busy(),
 		.x_last(1'b0), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(256'd0), .x_b(256'd0),
 		.x_c(256'd0), .x_mask({8'd0, x_mask[7:0]}), .x_info(32'h10000), .x_ready(rdy[0]),
 		.s_valid(s8_valid), .s_warp(s8_warp), .s_grp(s8_grp), .s_rd(s8_rd), .s_data(s8_data),
@@ -66,6 +67,7 @@ module atg_su_lda_tb;
 		.pw_we(pw_we), .pw_warp(pw_warp), .pw_addr(pw_addr), .pw_data(pw_data));
 	atg_su_lda #(.NPHYS(16), .GRP_W(1), .VARY_WORDS(64)) d16 (
 		.clk(clk), .rst_n(rst_n), .x_valid(x_valid && dsel[1]), .x_warp(x_warp),
+		.scrub(1'b0), .scrub_busy(),
 		.x_grp(x_grp[0]), .x_last(1'b0), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop),
 		.x_a(512'd0), .x_b(512'd0), .x_c(512'd0), .x_mask({16'd0, x_mask[15:0]}),
 		.x_info(32'h10000), .x_ready(rdy[1]),
@@ -74,6 +76,7 @@ module atg_su_lda_tb;
 		.pw_we(pw_we), .pw_warp(pw_warp), .pw_addr(pw_addr), .pw_data(pw_data));
 	atg_su_lda #(.NPHYS(32), .GRP_W(1), .VARY_WORDS(32)) d32 (
 		.clk(clk), .rst_n(rst_n), .x_valid(x_valid && dsel[2]), .x_warp(x_warp),
+		.scrub(1'b0), .scrub_busy(),
 		.x_grp(1'b0), .x_last(1'b0), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop),
 		.x_a(1024'd0), .x_b(1024'd0), .x_c(1024'd0), .x_mask({32'd0, x_mask}),
 		.x_info(32'h10000), .x_ready(rdy[2]),

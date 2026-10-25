@@ -36,6 +36,10 @@
  * warp without them: the slot's copy is cleared at its release).
  * ex_aux = {rt[1:0], qlast, qfirst, nocol, front, d_s, zexp, smask}: the
  * beat's attachment, its place in the quad, no colour, the warp's facing.
+ * scrub (session protection, the unit idle) writes 0 to every row of every
+ * bank through each array's write port, one row per cycle, while
+ * scrub_busy (a component a fragment does not export is not another
+ * session's).
  * See spec/gpu/su/atg_su_exp.md.
  */
 
@@ -93,7 +97,10 @@ module atg_su_exp #(
 	output wire xr_valid,
 	output wire [WARP_W-1:0] xr_warp,
 	input wire wc_end,
-	input wire [WARP_W-1:0] wc_warp
+	input wire [WARP_W-1:0] wc_warp,
+	/* Session protection: clear the buffer */
+	input wire scrub,
+	output wire scrub_busy
 );
 `include "atg_su_uop.vh"
 
@@ -166,6 +173,19 @@ module atg_su_exp #(
 	wire [31:0] dsm = smw[dwarp*32 +: 32];
 	wire [31:0] dr6 = r6w[dwarp*32 +: 32];
 
+	/* The scrub: rows of the attachments' arrays; the others take its row / 4. */
+	wire sc_on;
+	wire [RW+1:0] sc_a;
+
+	atg_su_scrub #(.DEPTH(ROWS * 4), .AW(RW + 2)) sc (
+		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
+	);
+
+	assign scrub_busy = sc_on;
+	wire [RW+1:0] c_wa = sc_on ? sc_a : xcrow;
+	wire [RW-1:0] r_wa = sc_on ? sc_a[RW+1:2] : xrow[RW-1:0];
+	wire [RW-1:0] z_wa = sc_on ? sc_a[RW+1:2] : zrow[RW-1:0];
+
 	/* NPHYS lane banks × {R, G, B, A of 4 attachments, depth, z} and {SAMPLE_MASK, r6}. */
 	wire [NPHYS*192-1:0] rdat;
 	wire [NPHYS*8-1:0] rsm;
@@ -180,19 +200,20 @@ module atg_su_exp #(
 		reg [31:0] mz [0:ROWS-1];
 		reg [3:0] m5 [0:ROWS-1];
 		reg [3:0] mr6 [0:ROWS-1];
-		wire [31:0] d = x_b[32 * b +: 32];
+		wire [31:0] d = sc_on ? 32'd0 : x_b[32 * b +: 32];
+		wire [31:0] fd = sc_on ? 32'd0 : fl_data;
 		wire we = side[b];
 		always @(posedge clk) begin
-			if (we && ex_col && comp == 2'd0) m0[xcrow] <= d;
-			if (we && ex_col && comp == 2'd1) m1[xcrow] <= d;
-			if (we && ex_col && comp == 2'd2) m2[xcrow] <= d;
-			if (we && ex_col && comp == 2'd3) m3[xcrow] <= d;
-			if (we && ex_dep) m4[xrow[RW-1:0]] <= d;
-			if (we && ex_sm) m5[xrow[RW-1:0]] <= d[3:0];
-			if (fl_we && fl_reg == 6'd3 && zbank == b)
-				mz[zrow[RW-1:0]] <= fl_data;
-			if (fl_we && fl_reg == 6'd6 && zbank == b)
-				mr6[zrow[RW-1:0]] <= fl_data[3:0];
+			if (sc_on || we && ex_col && comp == 2'd0) m0[c_wa] <= d;
+			if (sc_on || we && ex_col && comp == 2'd1) m1[c_wa] <= d;
+			if (sc_on || we && ex_col && comp == 2'd2) m2[c_wa] <= d;
+			if (sc_on || we && ex_col && comp == 2'd3) m3[c_wa] <= d;
+			if (sc_on || we && ex_dep) m4[r_wa] <= d;
+			if (sc_on || we && ex_sm) m5[r_wa] <= d[3:0];
+			if (sc_on || fl_we && fl_reg == 6'd3 && zbank == b)
+				mz[z_wa] <= fd;
+			if (sc_on || fl_we && fl_reg == 6'd6 && zbank == b)
+				mr6[z_wa] <= fd[3:0];
 		end
 		assign rsm[8 * b +: 8] = {m5[drow[RW-1:0]], mr6[drow[RW-1:0]]};
 		assign rdat[192 * b +: 192] = {mz[drow[RW-1:0]], m4[drow[RW-1:0]],

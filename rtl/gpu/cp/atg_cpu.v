@@ -46,6 +46,14 @@ module atg_cpu #(
 	output wire [31:0] fw_data,
 	output wire fw_last,
 	output wire fw_active,
+	output wire [6:0] fw_side,	/* the µop's {SELF, slot} (session protection) */
+	/* Session protection (atg_cp_prot): its window registers and SLOT_MAP */
+	output wire sb_we,
+	output wire sb_re,
+	output wire [5:0] sb_idx,
+	output wire [31:0] sb_wdata,
+	input wire [31:0] prot_rdata,
+	input wire [5:0] v_slot,
 	/* CP state */
 	output wire [9:0] st_ridx,
 	input wire [31:0] st_rdata,
@@ -65,6 +73,9 @@ module atg_cpu #(
 	output wire [LINE_BYTES-1:0] req_be,
 	output wire [LINE_BYTES*8-1:0] req_wdata,
 	output wire [7:0] req_tag,
+	output wire req_chk,
+	output wire req_tbl,
+	output wire [5:0] req_slot,
 	input wire rsp_valid,
 	input wire rsp_write,
 	input wire [7:0] rsp_tag,
@@ -85,9 +96,8 @@ module atg_cpu #(
 	wire [3:0] m_we;
 	wire [31:0] m_addr, m_wdata, m_rdata;
 	/* Window sub-bus. */
-	wire sb_we, sb_re;
-	wire [5:0] sb_idx;
-	wire [31:0] sb_wdata, dma_rdata, fw_rdata;
+	wire [31:0] dma_rdata, fw_rdata;
+	wire [5:0] pkt_slot;
 	/* Image load and DMA memory port. */
 	wire ld_start, ld_imem, ld_done, ld_error;
 	wire [31:0] ld_addr, ld_words;
@@ -123,10 +133,10 @@ module atg_cpu #(
 		.d_ready(d_ready), .d_rdata(d_rdata),
 		.m_en(m_en), .m_we(m_we), .m_addr(m_addr), .m_wdata(m_wdata), .m_rdata(m_rdata),
 		.sb_we(sb_we), .sb_re(sb_re), .sb_idx(sb_idx), .sb_wdata(sb_wdata),
-		.dma_rdata(dma_rdata), .fw_rdata(fw_rdata),
+		.dma_rdata(dma_rdata), .fw_rdata(fw_rdata | prot_rdata),
 		.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag), .v_done(v_done),
 		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data), .fw_last(fw_last),
-		.fw_active(fw_active),
+		.fw_active(fw_active), .fw_side(fw_side), .v_slot(v_slot), .pkt_slot(pkt_slot),
 		.st_ridx(st_ridx), .st_rdata(st_rdata), .fence_last(fence_last), .fence_ev(fence_ev),
 		.halt_req(halt_req), .irq(core_irq), .ev_result(ev_result), .stall(stall_win)
 	);
@@ -142,6 +152,7 @@ module atg_cpu #(
 		.x_rdata(x_rdata), .wait_amb(dma_wait),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write), .req_line(req_line),
 		.req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
+		.req_chk(req_chk), .req_tbl(req_tbl), .req_slot(req_slot), .dma_slot(pkt_slot),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata),
 		.rsp_error(rsp_error)
 	);

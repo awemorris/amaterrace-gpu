@@ -10,8 +10,8 @@ Address map of the core (byte addresses):
 
 | Range | What |
 | --- | --- |
-| 0x0000_0000-0x0000_FFFF | IMEM (fetch only; IMEM_WORDS words) |
-| 0x0001_0000-0x0001_FFFF | DMEM (load/store; DMEM_WORDS words: .data, .rodata, .bss, stack) |
+| 0x0000_0000-0x0001_FFFF | IMEM (fetch only; IMEM_WORDS words, 128 KiB at most) |
+| 0x0002_0000-0x0002_FFFF | DMEM (load/store; DMEM_WORDS words: .data, .rodata, .bss, stack) |
 | 0xF000_0000-0xF000_00FF | control window (atg_cpu_win; word index = sub-bus index) |
 
 Control window (word index, R/W):
@@ -36,9 +36,16 @@ Control window (word index, R/W):
 | 0x11 | DMA_MEM | dma | RW: DMEM byte offset (line aligned) |
 | 0x12 | DMA_GO | dma | W: [15:0] lines, [16] 1 = DMEM → memory, 0 = memory → DMEM |
 | 0x13 | DMA_STATUS | dma | R: [0] busy, [1] error, [15:8] writes not yet answered |
+| 0x28-0x31, 0x33 | PROT_* | atg_cp_prot | Session protection (spec/gpu/cp/atg_cp_prot.md) |
+| 0x32 | UOP_SELF | win | W: [0] the next µop packet (up to its UOP_LAST) is the firmware's own wait (SELF) |
 | 0x20 | FW_STATUS | fw | W: [15:8] → CPFW_STATUS[15:8] firmware state, [16] PARK (the firmware has stopped for a halt request: the core stops); any write is the ALIVE heartbeat.  R: CPFW_STATUS |
 | 0x21-0x24 | MBOX0-3 | fw | RW: CPFW_MBOX0..3 (shared with the host) |
 | 0x25 | FW_VERSION | fw | RW: CPFW_VERSION |
+
+Session protection: taking the packet (a PKT_INFO read with [31]) latches `v_slot` (SLOT_MAP of
+its tag, from atg_cp_prot) into `pkt_slot` (to the DMA), which v_done clears.  Every UOP_FIFO entry
+keeps {SELF, pkt_slot} of its write; `fw_side` gives the head's.  A µop written outside a packet
+has slot 0.  `PASS atg_cpu_win.side` checks it.
 
 ## 2. Parameters
 
