@@ -76,3 +76,5 @@ design §2.3, §3.4.3 (ATTR_DST).
 ## 10. Status
 
 Implemented in WS288 p009 part A (branch p1-vf).  Readings: the reference is the Python model `tools/vf-vectors.py` (the text said "a C reference"); fp16 converts exactly with denormals (the SU's `atg_su_h2f` flushes them; an attribute is data, not an fp16 operand); the reserved formats fill (0, 0, 0, 1.0).  Ports and parameters unchanged.  2026-10-25 (CAPS[30], spec first, the RTL follows): the VkFormat path through `atg_fmt_unpack` and the input `af_oob` (§3, §4); implemented the same day, every PASS of §8.  The attribute is enabled when ATTR_DST[31:24] or [7:0] is not 0 (as atg_vf_fetch).
+
+2026-10-25 (area): the VkFormat path converts the one component of the cycle (atg_fmt_comp), not all four; the words are unchanged.

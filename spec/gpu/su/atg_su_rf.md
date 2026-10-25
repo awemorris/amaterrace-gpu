@@ -75,3 +75,5 @@ design §3.5 (register file, U12), README (register file shape).
 ## 10. Status
 
 Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_rf_tb.v` with NPHYS 8/16/32 and NREGS 64/NWARPS 8).  One simple dual-port RAM per lane and copy; r_data holds while r_en is 0 (atg_su_opd relies on it under back-pressure).
+
+Session protection (2026-10-25): `scrub` writes 0 to every word through the write port, one word per cycle (`atg_su_scrub`), `scrub_busy` meanwhile; the RAM's declaration and read are unchanged.  Checked by `sim/tb/atg_su_scrub_tb.v`.

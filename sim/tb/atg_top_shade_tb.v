@@ -15,7 +15,7 @@
  * (lda, fmul, fmadd, exp) → ROP.  The colour and depth buffers must equal
  * the reference model's word for word.  In the KC705's shape
  * (64-byte lines, 512-bit AXI, and atg_top's blocks and SU shape
- * as in boards/kc705/atg_kc705_raster.v: the TU, NPHYS 16, NREGS 64, 8
+ * as in boards/kc705/atg_kc705_raster.v: the TU, NPHYS 8, NREGS 64, 8
  * scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32
  * varying words, the stencil ROP).
  */
@@ -35,7 +35,7 @@ module atg_top_shade_tb;
 
 	atg_top_scene_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.TB("atg_top_shade"), .SCENE("sim/vec/shade_scene.txt"), .SEED(6), .HAS_VF(1),
-		.NSU(1), .HAS_TU(1), .SU_NPHYS(16), .SU_GRP_W(1), .SU_VARY_WORDS(64), .SU_NREGS(64),
+		.NSU(1), .HAS_TU(1), .SU_NPHYS(8), .SU_GRP_W(2), .SU_VARY_WORDS(64), .SU_NREGS(64),
 		.SU_SB_ENTRIES(8), .SU_SBE_W(3), .SU_PACKED(1), .SU_SUBGROUP(1), .SU_FRAG_RESERVE(2),
 		.SU_LDS_BYTES(16384), .ROP_STENCIL(1)) kc705 (
 		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)

@@ -61,6 +61,7 @@ or changed in p004:
 | `blt_kick`, `draw_kick`, `cs_kick` | out | 1 | KICK (host, `atg_cp_ctl`) OR the sequencer's µop |
 | `lc_kick`, `raw_kick`, `inv` | out | 1, 1, 4 | From the sequencer |
 | `blt_busy`, `busy_ext[7:2]`, `blt_error*`, `x_fault*` | in | — | Busy levels and fault sources (STATUS, waits, FAULT_INFO) |
+| `busy_ext[0]` | in | 1 | The units' memory requests not yet answered (atg_mc's `!unit_idle`): for the sequencer's waits only (not in STATUS) |
 | `req_*`, `rsp_*` | — | AMB | MC client 0 through `am_amb_mux` (requester 0 ring, 1 fence, 2 dbg in tag bits [7:6]); **`rsp_tag` is new in p004** (the mux routes by it) |
 | `hcr_*`, `x_rdata`, `v_*`, `fw_*`, `cpu_st_*`, `cp_fence_last`, `cp_fence_ev`, `cp_halt`, `cp_open`, `cpu_*` | — | — | To and from `atg_cpu` (spec/gpu/cp/atg_cpu.md).  p017: the watchdog counts while a class V packet is open (`v_valid`) and pauses while `cpu_stall` with no µop running |
 

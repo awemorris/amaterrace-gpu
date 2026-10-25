@@ -89,3 +89,5 @@ design §3.5 (LDS), §3.4.1 (custom-0 lds/sts).
 ## 10. Status
 
 Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_lds_tb.v`).  One lane group at a time, every lane of the group takes one cycle (NPHYS + 2 cycles per group); for sts the higher lane wins on the same word.  atoms: two cycles per side-effect lane (read, then write), lanes in order.
+
+Session protection (2026-10-25): `scrub` writes 0 to every word through the write port, one word per cycle (`atg_su_scrub`), `scrub_busy` meanwhile; the RAM's declaration and read are unchanged.  Checked by `sim/tb/atg_su_scrub_tb.v`.

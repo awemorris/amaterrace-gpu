@@ -17,7 +17,10 @@
  * one at a time and writes the words one per cycle into the bank (and the
  * first 32 into the c-operand copy); busy meanwhile.  An error response
  * ends the load (the words before it stay).  inv drops the contents: c
- * operands and lwc read 0 until the next load.
+ * operands and lwc read 0 until the next load.  scrub (session
+ * protection, the unit idle) writes 0 to every word of the bank and the
+ * copy through their write port, one per cycle, while scrub_busy (a later
+ * load does not show another session's words beyond its own).
  * c operands: cr_en registers the three words cr_idx[4:0], [9:5], [14:10]
  * of the copy; cr_data holds while cr_en is 0 (like the RF).
  * lwc: one lane group at a time (x_ready 1 only in IDLE): the EXEC lanes'
@@ -95,7 +98,10 @@ module atg_su_cbank #(
 	input wire rsp_write,
 	input wire [7:0] rsp_tag,
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
-	input wire rsp_error
+	input wire rsp_error,
+	/* Session protection: clear the contents */
+	input wire scrub,
+	output wire scrub_busy
 );
 `include "atg_su_uop.vh"
 `include "ghci_regs.vh"
@@ -198,9 +204,6 @@ module atg_su_cbank #(
 				st <= rsp_error ? IDLE : LWR;
 			end
 			LWR: begin
-				bank[wi[CW-1:0]] <= lword;
-				if (wi < 32)
-					cw[wi[4:0]] <= lword;
 				wi <= wi + 1'b1;
 				ladr <= ladr + 32'd4;
 				if (wi + 1'b1 == nw)
@@ -228,6 +231,25 @@ module atg_su_cbank #(
 				crq <= valid ? {cw[cr_idx[14:10]], cw[cr_idx[9:5]], cw[cr_idx[4:0]]} : 96'd0;
 		end
 	end
+
+	/* The write port: a load's words, or the scrub's zeros. */
+	wire sc_on;
+	wire [CW-1:0] sc_a;
+
+	atg_su_scrub #(.DEPTH(CONST_WORDS), .AW(CW)) sc (
+		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
+	);
+
+	assign scrub_busy = sc_on;
+	wire [CW-1:0] b_wa = sc_on ? sc_a : wi[CW-1:0];
+	wire [31:0] b_wd = sc_on ? 32'd0 : lword;
+
+	always @(posedge clk)
+		if (sc_on || st == LWR) begin
+			bank[b_wa] <= b_wd;
+			if (sc_on ? {{(32-CW){1'b0}}, sc_a} < 32 : wi < 32)
+				cw[b_wa[4:0]] <= b_wd;
+		end
 
 	/* The bank's registered read. */
 	always @(posedge clk)

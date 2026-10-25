@@ -86,3 +86,7 @@ docs/ghci.md §8.4, §8.5 (texture slots, conversions); `spec/gpu/fmt/atg_fmt.md
 ## 10. Status
 
 Implemented (2026-10-25).  Readings: one fused multiply-add per term (design §16.11 named an fmul and an fadd; the fused form rounds once per term and needs one unit); the weight is rounded once as n × 2^-32 (the 8-bit weights of atg_tu_addr, the same as the 8-bit path); the bypass of a single texel of weight 1.  The ETC2 and EAC decoder (`atg_tu_etc`) is in this path (2026-10-25); the vectors have every block format with random blocks and texel positions.
+
+2026-10-25 (area): a block's texel (atg_tu_etc) is converted by the same atg_fmt_unpack as the other texels (atg_fmt_unpack_i with RGBA8's UNORM or sRGB table word, or EAC's two 11-bit UNORM components, the signed ones as their 10-bit magnitudes with the sign set), not by its own conversions; FIN takes the four lanes one a cycle (3 cycles more a quad).  The values are unchanged.
+
+2026-10-25 (area, later): one component of the texel is converted a cycle (atg_fmt_comp: c, or gather's component), so a lane that returns its texel as it is (bypass) takes a cycle per component of the format (was one cycle for all four).  The values are unchanged.

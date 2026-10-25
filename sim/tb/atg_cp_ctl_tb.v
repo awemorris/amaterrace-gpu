@@ -10,7 +10,9 @@
  * testbench: every transition of design §2.6, the RESET order (waits for
  * mc_idle, one core reset pulse with mc_flush, the replay, the bit
  * falls), AXI_STUCK, the first fault wins with its FAULT_INFO fields
- * (MC client 0 ignored), the watchdog, locked writes and KICK.
+ * (MC client 0 ignored), the watchdog (its job tag from wdt_tag), locked
+ * writes and KICK (refused while kick_prot_ok is 0: the units are a
+ * protected session's).
  */
 
 `timescale 1ns / 1ps
@@ -36,6 +38,8 @@ module atg_cp_ctl_tb;
 	reg [31:0] src_kind = 0;
 	reg [255:0] src_addr = 0;
 	reg [63:0] src_tag = 0;
+	reg kick_prot_ok = 1;
+	reg [7:0] wdt_tag = 0;
 	wire run, halt, quiesce, mc_flush, core_rst_n, open, step, ev_halted, ev_fault, ev_wdt;
 	wire [3:0] cp_state;
 	wire [2:0] host_kick;
@@ -43,6 +47,8 @@ module atg_cp_ctl_tb;
 
 	atg_cp_ctl #(.UNITS(8'h03)) dut (
 		.clk(clk), .rst_n(rst_n),
+		.mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0),
+		.kick_prot_ok(kick_prot_ok), .wdt_tag(wdt_tag),
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
 		.mc_idle(mc_idle), .mem_ready(1'b1), .busy_in(busy_in), .ring_empty(1'b1),
@@ -330,9 +336,11 @@ module atg_cp_ctl_tb;
 		repeat (100) @(negedge clk);
 		expect_state("wdt", GHCI_ST_RUNNING);
 		wdt_hold = 0;
+		wdt_tag = 8'h5C;	/* the session the units were draining */
 		repeat (30) @(negedge clk);
 		expect_state("wdt", GHCI_ST_FAULTED);
-		expect_info("wdt", {16'd0, GHCI_FAULT_WATCHDOG, 12'd0}, 32'd0);
+		expect_info("wdt", {8'h5C, 8'd0, GHCI_FAULT_WATCHDOG, 12'd0}, 32'd0);
+		wdt_tag = 8'd0;
 		cmd_active = 0;
 		if (wdts != 1) begin
 			errors = errors + 1;
@@ -364,6 +372,18 @@ module atg_cp_ctl_tb;
 		busy_in[1] = 0;
 		expect_info("locked", {16'd0, GHCI_FAULT_KICK, 12'd0}, 32'd0);
 		do_reset();
+		/* KICK.BLIT while the units are a protected session's: kind 6, no kick. */
+		kicks = 0;
+		kick_prot_ok = 0;
+		hcr_write(GHCI_KICK[11:0], 32'd1);
+		kick_prot_ok = 1;
+		expect_info("locked", {16'd0, GHCI_FAULT_KICK, 12'd0}, 32'd0);
+		if (kicks != 0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.locked: KICK passed for a protected session's units");
+		end
+		do_reset();
+		kicks = 1;
 		/* KICK.DRAW without a VF: kind 2. */
 		hcr_write(GHCI_KICK[11:0], 32'd2);
 		expect_info("locked", {16'd0, GHCI_FAULT_OPCODE, 12'd0}, 32'd0);

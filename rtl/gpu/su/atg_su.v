@@ -33,6 +33,7 @@ module atg_su #(
 	parameter SU_INDEX = 0,	/* This SU's number */
 	parameter FRAG_RESERVE = 1,	/* Slots kept for fragment warps */
 	parameter PACKED = 0,	/* Packed fp16 arithmetic */
+	parameter PK_SHARED = 0,	/* With PACKED: the fp16 arithmetic on the FPU's fp32 datapath, a half a cycle (atg_su_fpu) */
 	parameter SUBGROUP = 0,	/* shfl/vote/ballot */
 	parameter HAS_SA = 0,	/* SA attached (v1 0) */
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): texsz.s */
@@ -163,9 +164,14 @@ module atg_su #(
 	input wire [31:0] sa_qtag,
 	/* Status */
 	output wire busy,
+	/* Session protection: clear the RF, LDS, primitive tables, constants and export buffer */
+	input wire scrub,
+	output wire scrub_busy,
 	output wire fault,
 	output wire [31:0] fault_addr
 );
+	/* The memories' scrubs (session protection). */
+	wire scb_rf, scb_lda, scb_lds, scb_cbank, scb_exp, scb_pt;
 	localparam DW = NPHYS * 32;
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam LB = LINE_BYTES * 8;
@@ -424,6 +430,7 @@ module atg_su #(
 	atg_su_rf #(
 		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .NREGS(NREGS)
 	) rf (
+		.scrub(scrub), .scrub_busy(scb_rf),
 		.clk(clk), .rst_n(rst_n),
 		.w_en(w_en), .w_warp(w_warp), .w_grp(w_grp), .w_reg(w_reg), .w_data(w_data),
 		.w_lanes(w_lanes),
@@ -458,7 +465,8 @@ module atg_su #(
 		.s_data(alu_s_data), .s_lanes(alu_s_lanes)
 	);
 
-	atg_su_fpu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT)) fpu (
+	atg_su_fpu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT),
+		.PACKED(PACKED), .PK_SHARED(PK_SHARED)) fpu (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
@@ -467,7 +475,8 @@ module atg_su #(
 		.s_data(fpu_s_data), .s_lanes(fpu_s_lanes)
 	);
 
-	atg_su_pk #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .PACKED(PACKED)) pk (
+	atg_su_pk #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .PACKED(PACKED),
+		.PK_SHARED(PK_SHARED)) pk (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
@@ -486,6 +495,7 @@ module atg_su #(
 	);
 
 	atg_su_lda #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .VARY_WORDS(VARY_WORDS)) lda (
+		.scrub(scrub), .scrub_busy(scb_lda),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
@@ -522,6 +532,7 @@ module atg_su #(
 	);
 
 	atg_su_lds #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .LDS_BYTES(LDS_BYTES)) lds (
+		.scrub(scrub), .scrub_busy(scb_lds),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
@@ -532,6 +543,7 @@ module atg_su #(
 	);
 
 	atg_su_cbank #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) cbank (
+		.scrub(scrub), .scrub_busy(scb_cbank),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
@@ -587,6 +599,7 @@ module atg_su #(
 	);
 
 	atg_su_exp #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) exp (
+		.scrub(scrub), .scrub_busy(scb_exp),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
@@ -602,6 +615,7 @@ module atg_su #(
 	);
 
 	atg_su_pt #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .UOP_W(UOP_W), .PT_ENTRIES(PT_ENTRIES), .VARY_WORDS(VARY_WORDS)) pt (
+		.scrub(scrub), .scrub_busy(scb_pt),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_uop(x_uop), .x_b(x_b),
 		.x_mask(x_mask), .x_info(x_info),
@@ -678,6 +692,7 @@ module atg_su #(
 	assign cb_m_rsp_error = im_rsp_error;
 
 	assign busy = sched_busy || sb_busy || cbank_busy;
+	assign scrub_busy = scb_rf || scb_lda || scb_lds || scb_cbank || scb_exp || scb_pt;
 	assign fault = sb_fault;
 	assign fault_addr = {16'd0, sb_fault_pc};
 

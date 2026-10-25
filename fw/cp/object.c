@@ -37,6 +37,8 @@ static uint32_t object_hash(uint64_t id);
 static void object_unlink(struct fw_object *object);
 static void object_release(struct fw_object *object);
 static void object_children(struct fw_object *parent);
+static int object_block(struct fw_object *object, uint32_t bytes, uint32_t visible);
+static void object_free_block(struct fw_object *object);
 
 /*
  * Empties the object table.
@@ -139,22 +141,24 @@ fw_object_block(
 	struct fw_object *object,
 	uint32_t bytes)
 {
-	uint32_t block;
+	/* A block of the firmware's own. */
+	return object_block(object, bytes, 0);
+}
 
-	/* The earlier block goes back. */
-	fw_heap_free(object->tag, object->block, (uint32_t)object->lines * FW_LINE_BYTES);
-	object->block = 0;
-	object->lines = 0;
-
-	/* A new block of whole lines. */
-	block = fw_heap_alloc(object->tag, bytes);
-	if (block == 0)
-		return -1;
-
-	/* Succeeded: the object owns the block. */
-	object->block = block;
-	object->lines = (uint16_t)((bytes + FW_LINE_BYTES - 1u) / FW_LINE_BYTES);
-	return 0;
+/*
+ * Gives an object a heap block of at least `bytes` that its session's
+ * work reaches (fw_heap_alloc_visible: an event's word, a query pool's
+ * slots); an earlier block is returned first.
+ *
+ * Returns 0, or -1 when the heap or the session's limit has no room.
+ */
+int
+fw_object_block_visible(
+	struct fw_object *object,
+	uint32_t bytes)
+{
+	/* A visible block, which goes back as one. */
+	return object_block(object, bytes, FW_OBJF_VISIBLE);
 }
 
 /*
@@ -305,16 +309,74 @@ object_release(
 	if (object->kind == FW_OBJ_CMDBUF)
 		fw_record_clear(object);
 
+	/* A pipeline's scratch memory (a: its address, b: its bytes). */
+	if (object->kind == FW_OBJ_PIPELINE) {
+		fw_heap_free_visible(object->tag, object->a, object->b);
+		object->a = 0;
+		object->b = 0;
+	}
+
+	/* A protected session's own memory leaves the protection table. */
+	if (object->kind == FW_OBJ_MEMORY && (object->flags & FW_OBJF_OWNED) != 0)
+		fw_prot_disown(object->tag, object->a, object->b);
+
 	/* So does the object's block. */
-	fw_heap_free(object->tag, object->block, (uint32_t)object->lines * FW_LINE_BYTES);
-	object->block = 0;
-	object->lines = 0;
+	object_free_block(object);
 
 	/* The slot is free again. */
 	object_unlink(object);
 	object->kind = FW_OBJ_FREE;
 	object->next = NULL;
 	object->parent = NULL;
+}
+
+/* Gives an object a new block, visible (FW_OBJF_VISIBLE) or not; 0 or -1. */
+static int
+object_block(
+	struct fw_object *object,
+	uint32_t bytes,
+	uint32_t visible)
+{
+	uint32_t block;
+
+	/* The earlier block goes back. */
+	object_free_block(object);
+
+	/* A new block of whole lines. */
+	if (visible != 0) {
+		block = fw_heap_alloc_visible(object->tag, bytes);
+	} else {
+		block = fw_heap_alloc(object->tag, bytes);
+	}
+	if (block == 0)
+		return -1;
+
+	/* Succeeded: the object owns the block. */
+	object->block = block;
+	object->lines = (uint16_t)((bytes + FW_LINE_BYTES - 1u) / FW_LINE_BYTES);
+	object->flags |= (uint16_t)visible;
+	return 0;
+}
+
+/* Gives an object's block back to the heap, as the kind of block it is. */
+static void
+object_free_block(
+	struct fw_object *object)
+{
+	uint32_t bytes;
+
+	/* A visible block goes back through its slab. */
+	bytes = (uint32_t)object->lines * FW_LINE_BYTES;
+	if ((object->flags & FW_OBJF_VISIBLE) != 0) {
+		fw_heap_free_visible(object->tag, object->block, bytes);
+	} else {
+		fw_heap_free(object->tag, object->block, bytes);
+	}
+
+	/* The object has no block. */
+	object->block = 0;
+	object->lines = 0;
+	object->flags &= (uint16_t)~FW_OBJF_VISIBLE;
 }
 
 /* Releases the objects whose parent is a pool. */

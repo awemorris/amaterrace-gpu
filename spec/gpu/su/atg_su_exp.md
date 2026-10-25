@@ -120,3 +120,5 @@ Implemented in WS288 p009 part B1 (P1, branch p1-su-gfx).  Spec changes in p009 
 Multisampling (the MSAA work, docs/ghci.md §12.11): exp 0x105 (SAMPLE_MASK, lane banks of 4 bits, the last value written and a per-lane flag cleared at fl_go), the RX's r6 snooped like r3 (lane banks of 4 bits and a per-lane flag cleared at the slot's release: a lane the RX did not write takes 1111), the d_s words snooped from fl_pw_* (per slot, cleared at the release); the quad's sample mask = r6 & SAMPLE_MASK; ex_mask leaves out the lanes whose mask is 0; ex_ms.  New ports fl_pw_*, ex_ms (39).  323 lines.
 
 2026-10-25 (CAPS[30], colour attachments): COLOR1-3 (0x110-0x133), rtw, the beats and `ex_aux` (was `ex_ms`, 154 bits); the drain moved to the child `atg_su_exp_drain` (39 ports still; the design's text had it as a sibling).  The checks of `.frag` now follow the beats.
+
+Session protection (2026-10-25): `scrub` writes 0 to every word through the write port, one word per cycle (`atg_su_scrub`), `scrub_busy` meanwhile; the RAM's declaration and read are unchanged.  Checked by `sim/tb/atg_su_scrub_tb.v`.

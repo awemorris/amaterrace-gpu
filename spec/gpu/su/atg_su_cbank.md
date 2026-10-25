@@ -113,3 +113,5 @@ design §3.2 (c0-c31), §2.4.3 (LOAD_CONST), §3.5 (constant bank).
 ## 10. Status
 
 Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_cbank_tb.v`).  The c operands come from a 32-word copy of the bank's first words (three reads per cycle); lwc reads the bank one lane per cycle (NPHYS + 2 cycles per group, not 2).  LOAD_CONST of a region other than 0 loads nothing; a word count above CONST_WORDS loads CONST_WORDS; an error response ends the load.  A lc_kick that comes while a lwc group is in progress waits until the group is done (x_ready is 0 while a load is pending or running).
+
+Session protection (2026-10-25): `scrub` writes 0 to every word through the write port, one word per cycle (`atg_su_scrub`), `scrub_busy` meanwhile; the RAM's declaration and read are unchanged.  Checked by `sim/tb/atg_su_scrub_tb.v`.

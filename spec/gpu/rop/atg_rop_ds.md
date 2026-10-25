@@ -107,3 +107,5 @@ Multisampling (the MSAA work): MS_CTRL[3:0] = 2 makes the row's address base + y
 2026-10-25 (CAPS[30]): atg_rop_dtest per entry, q_front, D16, the stencil and the bounds (§4); every PASS of §8 (`-DMUT_STENCIL_FACE` fails `.stencil` and `.bounds`).  The earlier vectors are unchanged.
 
 2026-10-25 (CAPS[30], colour attachments): `q_beat`, `d_beat`.  The first beat of a quad is tested and written as before; a later beat goes to OUT with the first's surviving samples (no memory access) and is dropped when none survived.  A beat without colour goes on to atg_rop_wb (which drops it), so atg_rop counts the samples of every quad's first beat once (occlusion).  Checked by `sim/tb/atg_rop_beat_tb.v` (`-DMUT_DS_BEAT`, testing every beat, fails `.colour`).
+
+2026-10-25 (area): the entry's stored value and its new bytes are the 32-bit word of the line that holds the entry (D16: its half), the entry's offset being a multiple of ps as docs/ghci.md section 8.5 requires (bases multiples of 64, strides of 2 x S x ps); the low bits of an offset that is not are ignored (before, the bytes at the unaligned offset).  Aligned rows are unchanged.

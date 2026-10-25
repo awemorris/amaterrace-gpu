@@ -196,8 +196,6 @@ module atg_rop_wpix #(
 
 	/* The slots. */
 	wire [2:0] el = ls4[2:0] - psl;	/* log2 E (several lines) */
-	wire [LINE_BYTES*8+127:0] lpad0 = {128'd0, i_line0};
-	wire [LINE_BYTES*8+127:0] lpad1 = {128'd0, i_line1};
 	wire [127:0] kcv = kc_sel ? {kcf[3], kcf[2], kcf[1], kcf[0]} :
 		{atg_rop_unorm8(kc8[31:24]), atg_rop_unorm8(kc8[23:16]), atg_rop_unorm8(kc8[15:8]),
 		atg_rop_unorm8(kc8[7:0])};
@@ -219,7 +217,14 @@ module atg_rop_wpix #(
 		assign so[LINE_SHIFT * k +: LINE_SHIFT] = o;
 		assign en[k] = multi ? i_r : k >= 2;
 		assign mk[k] = multi ? (el == 3'd2 || k < 2) && i_smask[{ln, n[1:0]}] : i_smask[{ln, i_g}];
-		assign dst[128 * k +: 128] = en[k] ? lpad1[8 * o +: 128] : lpad0[8 * o +: 128];
+		/* the old pixel: its 16-byte block, then its ps bytes there (the
+		 * offset is a multiple of ps, as in atg_rop_wb; the bytes above ps
+		 * are 0) */
+		wire [127:0] blk = en[k] ? i_line1[128 * o[LINE_SHIFT-1:4] +: 128] :
+			i_line0[128 * o[LINE_SHIFT-1:4] +: 128];
+		assign dst[128 * k +: 128] = psl[2] ? blk : psl == 3'd3 ? {64'd0, blk[64 * o[3] +: 64]} :
+			psl == 3'd2 ? {96'd0, blk[32 * o[3:2] +: 32]} :
+			psl == 3'd1 ? {112'd0, blk[16 * o[3:1] +: 16]} : {120'd0, blk[8 * o[3:0] +: 8]};
 		assign src[128 * k +: 128] = i_color[128 * ln +: 128];
 		wire unused_n = &{1'b0, n[3]};
 	end

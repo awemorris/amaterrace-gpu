@@ -21,7 +21,12 @@
  * have been granted.  Responses are routed per client through the tree: a
  * response that reached the wrong client fails the data or the order
  * check of the receiver.  The router's priority and turn-taking are
- * checked in detail by atg_rt_tb.
+ * checked in detail by atg_rt_tb.  A refused read returns zeros.
+ * unit_idle (all clients counted) must say whether a request is
+ * outstanding, every cycle.  (C) is shape B with session protection
+ * built in (HAS_PROT: the root client has its own entry at the root) and
+ * every request without chk: it must behave as B.  The protection check
+ * itself is atg_mc_prot_tb's.
  */
 
 `timescale 1ns / 1ps
@@ -108,6 +113,10 @@ module atg_mc_client #(
 					if (!rsp_error && rsp_rdata !== rd_expect[found % 128]) begin
 						errors = errors + 1;
 						$display("FAIL atg_mc: client %0d read data", ID);
+					end
+					if (rsp_error && rsp_rdata !== 256'd0) begin
+						errors = errors + 1;
+						$display("FAIL atg_mc: client %0d refused read data not 0", ID);
 					end
 					rd_done[found % 128] = 1'b1;
 					if (!rsp_error)
@@ -212,6 +221,7 @@ module atg_mc_case #(
 	parameter ROOT = -1,
 	parameter VRAM_AW = 32,
 	parameter FAR = 0,
+	parameter PROT = 0,
 	parameter SEED0 = 3
 ) (
 	input wire clk,
@@ -230,7 +240,7 @@ module atg_mc_case #(
 	wire [N-1:0] rsp_valid, rsp_write, rsp_error;
 	wire [N*8-1:0] rsp_tag;
 	wire [N*256-1:0] rsp_rdata;
-	wire axi_idle, fault, fault_write;
+	wire axi_idle, fault, fault_write, unit_idle;
 	wire [7:0] fault_client;
 	wire [31:0] fault_addr;
 	wire [N-1:0] fin;
@@ -247,16 +257,21 @@ module atg_mc_case #(
 	wire [63:0] wdata, rdata;
 	wire [7:0] wstrb;
 
-	atg_mc #(.NCLIENT(N), .HIGH_MASK(HIGH), .ROOT_CLIENT(ROOT), .VRAM_AW(VRAM_AW)) dut (
+	atg_mc #(.NCLIENT(N), .HIGH_MASK(HIGH), .ROOT_CLIENT(ROOT), .VRAM_AW(VRAM_AW),
+		.UNIT_MASK({N{1'b1}}), .HAS_PROT(PROT)) dut (
 		.clk(clk), .rst_n(rst_n),
 		.c_req_valid(c_req_valid), .c_req_ready(c_req_ready), .c_req_write(c_req_write),
 		.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
-		.c_req_tag(c_req_tag), .rsp_valid(rsp_valid), .rsp_write(rsp_write),
+		.c_req_tag(c_req_tag), .c_req_chk({N{1'b0}}), .c_req_tbl({N{1'b0}}),
+		.c_req_slot({6*N{1'b0}}), .rsp_valid(rsp_valid), .rsp_write(rsp_write),
 		.rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata), .rsp_error(rsp_error),
 		.quiesce(quiesce), .flush(1'b0),
 		.aperture_base(32'h00002000), .aperture_limit(32'h00080000),
 		.axi_idle(axi_idle), .fault(fault), .fault_client(fault_client),
-		.fault_addr(fault_addr), .fault_write(fault_write),
+		.fault_addr(fault_addr), .fault_write(fault_write), .fault_prot(), .fault_slot(),
+		.fault_mem(), .chk_idle(), .unit_idle(unit_idle),
+		.prot_tbase(32'd0), .prot_inv_valid(1'b0), .prot_inv_g(20'd0), .prot_inv_n(32'd0),
+		.prot_inv_pending(), .prot_gw_valid(1'b0), .prot_gw_idx(3'd0), .prot_gw_data(50'd0),
 		.m_awaddr(awaddr), .m_awlen(awlen), .m_awsize(awsize), .m_awburst(awburst),
 		.m_awcache(awcache), .m_awprot(awprot), .m_awvalid(awvalid), .m_awready(awready),
 		.m_wdata(wdata), .m_wstrb(wstrb), .m_wlast(wlast), .m_wvalid(wvalid),
@@ -301,7 +316,22 @@ module atg_mc_case #(
 	integer q_taken [0:N-1];
 	integer k;
 	reg [26:0] line_k;
+	integer outst;
 	initial for (k = 0; k < N; k = k + 1) q_taken[k] = 0;
+	initial outst = 0;
+
+	/* unit_idle against the requests taken and not answered. */
+	always @(posedge clk) begin
+		if (rst_n) begin
+			if (unit_idle !== (outst == 0)) begin
+				errors = errors + 1;
+				$display("FAIL atg_mc: unit_idle %b with %0d outstanding", unit_idle, outst);
+			end
+			for (k = 0; k < N; k = k + 1)
+				outst = outst + (c_req_valid[k] && c_req_ready[k] ? 1 : 0) -
+					(rsp_valid[k] ? 1 : 0);
+		end
+	end
 
 	always @(posedge clk) begin
 		if (rst_n) begin
@@ -400,8 +430,8 @@ endmodule
 
 module atg_mc_tb;
 	reg clk = 1'b0;
-	wire done_a, done_b;
-	wire [31:0] err_a, err_b;
+	wire done_a, done_b, done_c;
+	wire [31:0] err_a, err_b, err_c;
 
 	always #5 clk = !clk;
 
@@ -411,13 +441,17 @@ module atg_mc_tb;
 	atg_mc_case #(.N(5), .HIGH(5'b10001), .ROOT(4), .VRAM_AW(20), .FAR(1), .SEED0(7)) b (
 		.clk(clk), .done(done_b), .errors(err_b)
 	);
+	atg_mc_case #(.N(5), .HIGH(5'b10001), .ROOT(4), .VRAM_AW(20), .FAR(1), .PROT(1),
+		.SEED0(11)) c (
+		.clk(clk), .done(done_c), .errors(err_c)
+	);
 
 	initial begin
-		wait (done_a && done_b);
-		if (err_a == 0 && err_b == 0)
+		wait (done_a && done_b && done_c);
+		if (err_a == 0 && err_b == 0 && err_c == 0)
 			$display("PASS atg_mc");
 		else
-			$display("FAIL atg_mc: %0d + %0d errors", err_a, err_b);
+			$display("FAIL atg_mc: %0d + %0d + %0d errors", err_a, err_b, err_c);
 		$finish;
 	end
 

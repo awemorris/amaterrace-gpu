@@ -42,6 +42,7 @@ module atg_cp_fence_tb;
 
 	atg_cp_fence #(.POLL(16)) dut (
 		.clk(clk), .rst_n(rst_n),
+		.f_chk(1'b1), .f_slot(6'd9), .req_chk(req_chk), .req_slot(req_slot),
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
 		.f_valid(f_valid), .f_ready(f_ready), .f_op(f_op), .f_addr(f_addr),
@@ -68,6 +69,15 @@ module atg_cp_fence_tb;
 	integer fences = 0, faults = 0, reads = 0;
 	integer e0, i;
 	reg [31:0] v;
+
+	/* Session protection: the request's side band goes with its memory requests. */
+	wire req_chk;
+	wire [5:0] req_slot;
+	always @(posedge clk)
+		if (req_valid && (req_chk !== 1'b1 || req_slot !== 6'd9)) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_fence: protection side %b %0d", req_chk, req_slot);
+		end
 
 	always @(posedge clk) begin
 		if (ev_fence) begin

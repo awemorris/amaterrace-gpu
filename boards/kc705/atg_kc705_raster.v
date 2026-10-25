@@ -7,7 +7,7 @@
 
 /*
  * atg_kc705_raster: The KC705 raster/compute configuration (design §3.6,
- * §3.7; no SA): CP with CPU, NSU SUs (NPHYS 16, NREGS 64), VF, RX, TU,
+ * §3.7; no SA): CP with CPU, NSU SUs (NPHYS 8, NREGS 64), VF, RX, TU,
  * ROP, BLT, MC on MIG DDR3, the DC inside the GPU (atg_top's HAS_DISP,
  * ADV7511 parallel output), the JTAG register bridge.
  *
@@ -165,7 +165,7 @@ module atg_kc705_raster #(
 		.HAS_CPU(1),
 		.CPU_IMEM_INIT(CPU_IMEM_INIT),
 		.CPU_DMEM_INIT(CPU_DMEM_INIT),
-		.CPU_IMEM_WORDS(16384),
+		.CPU_IMEM_WORDS(32768),
 		.CPU_DMEM_WORDS(8192),
 		.NSU(NSU),
 		.HAS_VF(1),
@@ -178,10 +178,10 @@ module atg_kc705_raster #(
 		.DC_FIFO_LOG2(11),
 		.DC_PX_FMT(1),
 		.ROP_STENCIL(1),
-		.SU_NPHYS(16),
+		.SU_NPHYS(8),
 		.SU_NWARPS(4),
 		.SU_WARP_W(2),
-		.SU_GRP_W(1),
+		.SU_GRP_W(2),
 		.SU_NREGS(64),
 		.SU_SB_ENTRIES(8),
 		.SU_SBE_W(3),
@@ -189,7 +189,15 @@ module atg_kc705_raster #(
 		.SU_SUBGROUP(1),
 		.SU_FRAG_RESERVE(2),
 		.SU_LDS_BYTES(16384),
-		.SU_VARY_WORDS(64)
+		.SU_VARY_WORDS(64),
+		/* Session protection (docs/ghci.md section 11.6): 31 protected sessions, 64 grants,
+		 * a 16-line PLB. */
+		.HAS_PROT(1),
+		.PROT_SLOTS(31),
+		.PROT_GRANTS(64),
+		.PROT_GIDX_W(6),
+		.PROT_PLB(16),
+		.PROT_PLB_W(4)
 	) gpu (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(mem_ready),
 		.s_awaddr(s_awaddr[16:0]), .s_awid(s_awid), .s_awvalid(s_awvalid), .s_awready(s_awready), .s_wdata(s_wdata), .s_wstrb(s_wstrb), .s_wlast(s_wlast), .s_wvalid(s_wvalid), .s_wready(s_wready), .s_bid(s_bid), .s_bresp(s_bresp), .s_bvalid(s_bvalid),

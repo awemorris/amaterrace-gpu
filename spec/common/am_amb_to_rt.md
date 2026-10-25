@@ -44,12 +44,14 @@ Header flit (request), from bit 0:
 | 0 | priority (`PRIO`) |
 | 1 | write |
 | 2 | outside the VRAM window (the line's bits above `VRAM_AW` differ from `VRAM_BASE`'s) |
-| 3 | 0 |
+| 3 | chk (session protection checks the request; `req_chk`) |
 | 11:4 | the client's tag |
 | 19:12 | `CLIENT` |
 | 20 … 20+RW−1 | `ROUTE` |
 | next `VRAM_AW − LINE_SHIFT` | the line inside the window |
 | next `LINE_BYTES` | byte enables |
+| next 1 | tbl (a write of the protection table; `req_tbl`) |
+| next 6 | the protection slot (`req_slot`) |
 | rest | 0 |
 
 A read is one flit (the header, `last` = 1); a write is the header and then one data flit (the

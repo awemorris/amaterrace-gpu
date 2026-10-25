@@ -71,3 +71,5 @@ docs/ghci.md §8.5 (ROP range, the colour formats), design §16.7; spec atg_rop_
 ## 10. Status
 
 Implemented 2026-10-25 (CAPS[30], colour attachments).  The design's text had wpix without a child; atg_rop_fblend sits here so that atg_rop_wb stays within 40 ports.
+
+2026-10-25 (area): the old pixel of a slot (o_bdst, the fblend destination, the kept bits of path 2) is read from the 16-byte block of its offset and then its ps bytes there, the offset being a multiple of ps as docs/ghci.md section 8.5 requires (as atg_rop_wb, whose merge ignores the low bits of an offset that is not); the bytes above ps are 0 (before, the next bytes of the line; no path uses them).

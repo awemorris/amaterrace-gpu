@@ -61,6 +61,7 @@ module atg_cp_seq #(
 	input wire [31:0] fw_data,
 	input wire fw_last,
 	input wire fw_active,
+	input wire [6:0] fw_side,	/* session protection: the firmware µop's {SELF, slot} */
 	input wire halt,
 	/* STATE writes (to atg_cp_state) */
 	output wire uop_we,
@@ -95,7 +96,12 @@ module atg_cp_seq #(
 	output wire fault,
 	output wire [3:0] fault_kind,
 	output wire [31:0] fault_addr,
-	output wire [7:0] fault_tag
+	output wire [7:0] fault_tag,
+	/* Session protection (atg_cp_prot): the µop's source and side, its unit kick */
+	output wire u_fw,
+	output wire [6:0] u_side,
+	output wire [1:0] u_req,	/* [0] it starts a unit, [1] it uses the shader units */
+	input wire u_ok		/* the units run for its slot: it may start them */
 );
 	`include "ghci_regs.vh"
 
@@ -133,6 +139,7 @@ module atg_cp_seq #(
 	reg [5:0] op;
 	reg [7:0] flags;
 	reg [7:0] tag;
+	reg [6:0] side;
 	reg [7:0] n;
 	reg [7:0] p;	/* payload dwords taken */
 	reg [9:0] sidx;	/* SET_REG: the index of the pair */
@@ -231,7 +238,15 @@ module atg_cp_seq #(
 	assign uop_idx = pay_idx;
 	assign uop_wdata = in_data;
 
-	wire exec_go = st == Q_EXEC && !settle && !(|(pre & busy_in)) && !(pre_f && f_busy);
+	/* A µop that starts a unit: BLIT, DRAW, DISPATCH, LOAD_CONST and class 1. */
+	wire unit_op = vendor || op == OP_BLIT || op == OP_DRAW || op == OP_DISPATCH ||
+		op == OP_LOAD_CONST;
+	assign u_req = {st == Q_EXEC && unit_op && (vendor || op != OP_BLIT), st == Q_EXEC && unit_op};
+	assign u_fw = use_fw;
+	assign u_side = side;
+
+	wire exec_go = st == Q_EXEC && !settle && !(|(pre & busy_in)) && !(pre_f && f_busy) &&
+		(u_ok || !unit_op);
 	wire is_op_std = !vendor && exec_go;
 
 	assign blt_kick = is_op_std && op == OP_BLIT;
@@ -274,6 +289,7 @@ module atg_cp_seq #(
 			op <= 6'd0;
 			flags <= 8'd0;
 			tag <= 8'd0;
+			side <= 7'd0;
 			n <= 8'd0;
 			p <= 8'd0;
 			sidx <= 10'd0;
@@ -295,6 +311,7 @@ module atg_cp_seq #(
 					op <= h_op;
 					flags <= hdr[15:8];
 					tag <= hdr[23:16];
+					side <= fw_active ? fw_side : 7'd0;
 					n <= h_n;
 					p <= 8'd0;
 					f_faddr <= 32'd0;
@@ -368,7 +385,7 @@ module atg_cp_seq #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, n_last, fw_last, busy_in[0]};
+	wire unused_ok = &{1'b0, n_last, fw_last};
 endmodule
 
 `default_nettype wire

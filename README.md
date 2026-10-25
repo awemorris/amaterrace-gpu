@@ -103,6 +103,9 @@ Vulkan-class GPUs, in the spirit of AHCI and xHCI.
     interrupt, fault, quiesce and reset semantics;
   - the state register file;
   - the display controller, as an extended capability;
+  - optional session protection: the memory of one client's GPU session kept
+    from the others' work, and the data one session leaves in the GPU kept
+    from the next (the PROT capability);
   - a standard shader ISA.
 - **Commands:** the ring carries zedBSD's GPU command protocol (the Kei GPU
   command protocol, whose numbers follow the Venus wire format).

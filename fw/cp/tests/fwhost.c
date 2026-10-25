@@ -10,7 +10,10 @@
  * control window, the line DMA and a model of the sequencer for the µops
  * the tests look at (SET_REG into STATE, BLIT of linear FILL, COPY and
  * the KEEP mask on the memory, the others only kept), and the writing of
- * frames as the driver stages them.  With a trace file (host_trace_open)
+ * frames as the driver stages them, and a model of session protection
+ * (host_prot_enable: the window's PROT registers, SLOT_MAP, the grant
+ * CAM and the MC's judgement of the DMA's checked lines and of writes to
+ * the table).  With a trace file (host_trace_open)
  * each packet the firmware runs becomes a step of a scene for the
  * Verilator firmware harness (sim/verilator/fw_harness.cpp):
  *   C              a case starts (the GPU and its memory from reset)
@@ -61,13 +64,46 @@ static uint32_t host_traced_uops;
 /* The STATE words a SET_REG wrote in the case. */
 static uint8_t host_state_set[HOST_STATE_WORDS];
 
+/* What session protection did (host_prot_enable). */
+uint32_t host_prot_invs;
+uint32_t host_prot_selfs;
+uint32_t host_prot_checked;
+uint32_t host_prot_refused;
+uint32_t host_prot_fault;
+
+/*
+ * The protection model: the capability, the table (PROT_TABLE and the
+ * granules it covers), SLOT_MAP, the CAM and the entry being written, and
+ * the slot of the packet being run (latched when it is taken).
+ */
+struct host_grant {
+	uint32_t valid;
+	uint32_t slot;
+	uint32_t control;
+	uint32_t first;
+	uint32_t end;
+};
+static int host_prot_has;
+static uint32_t host_prot_slots;
+static uint32_t host_prot_grants;
+static uint32_t host_prot_tbase;
+static uint32_t host_prot_g0;
+static uint32_t host_prot_g1;
+static uint8_t host_slot_map[256];
+static struct host_grant host_cam[HOST_PROT_CAM];
+static uint32_t host_gidx;
+static uint32_t host_gbase;
+static uint32_t host_glimit;
+static uint32_t host_packet_slot;
+
 static void host_run_uop(const uint32_t *packet, uint32_t count);
 static void host_blit(void);
 static void host_step(uint32_t tag);
 static void host_trace_memory(void);
 static void host_trace_results(void);
+static int host_prot_dma(uint32_t address, uint32_t lines, uint32_t go);
 
-/* Empties the memory, the µops and the STATE. */
+/* Empties the memory, the µops and the STATE; no session protection. */
 void
 host_reset(void)
 {
@@ -80,6 +116,17 @@ host_reset(void)
 	host_dones = 0;
 	memset(host_state_set, 0, sizeof(host_state_set));
 	host_traced_uops = 0;
+	host_prot_has = 0;
+	host_prot_tbase = 0;
+	host_prot_g0 = 0;
+	host_prot_g1 = 0;
+	memset(host_slot_map, 0, sizeof(host_slot_map));
+	memset(host_cam, 0, sizeof(host_cam));
+	host_prot_invs = 0;
+	host_prot_selfs = 0;
+	host_prot_checked = 0;
+	host_prot_refused = 0;
+	host_prot_fault = 0;
 	if (host_trace == NULL)
 		return;
 	memset(host_shadow, 0, HOST_MEM_BYTES);
@@ -169,6 +216,17 @@ hw_read(
 		return 64;
 	case HW_DMA_STATUS:
 		return 0;
+	case HW_PROT_INFO:
+		if (!host_prot_has)
+			return 0;
+		return HW_PROT_INFO_HAS | (host_prot_tbase != 0 ? HW_PROT_INFO_TABLE : 0) | HW_PROT_INFO_DRAINED |
+		       host_prot_slots << 8 | host_prot_grants << 16;
+	case HW_PROT_TBASE:
+		return host_prot_tbase;
+	case HW_PROT_G0:
+		return host_prot_g0;
+	case HW_PROT_G1:
+		return host_prot_g1;
 	default:
 		return 0;
 	}
@@ -200,9 +258,178 @@ hw_write(
 	case HW_DONE:
 		host_dones++;
 		return;
+	case HW_PROT_SLOT:
+		host_slot_map[value & 0xFFu] = (uint8_t)((value >> 8) & 0x3Fu);
+		host_slot_map[0] = 0;
+		return;
+	case HW_PROT_INV_N:
+		host_prot_invs++;
+		return;
+	case HW_UOP_SELF:
+		host_prot_selfs++;
+		return;
+	case HW_PROT_GIDX:
+		host_gidx = value;
+		return;
+	case HW_PROT_GBASE:
+		host_gbase = value;
+		return;
+	case HW_PROT_GLIMIT:
+		host_glimit = value;
+		return;
+	case HW_PROT_GCTL:
+		if (host_gidx >= HOST_PROT_CAM)
+			return;
+		host_cam[host_gidx].valid = value & HW_PROT_GCTL_VALID;
+		host_cam[host_gidx].slot = (value >> 8) & 0x3Fu;
+		host_cam[host_gidx].control = value;
+		host_cam[host_gidx].first = host_gbase;
+		host_cam[host_gidx].end = host_glimit;
+		return;
 	default:
 		return;
 	}
+}
+
+/* Gives the bench the PROT capability (the firmware reads it at fw_prot_init). */
+void
+host_prot_enable(
+	uint32_t slots,
+	uint32_t grants)
+{
+	host_prot_has = 1;
+	host_prot_slots = slots;
+	host_prot_grants = grants;
+}
+
+/* The driver writes PROT_TABLE: the table at tbase for the granules [g0, g1), zeroed. */
+void
+host_prot_table(
+	uint32_t tbase,
+	uint32_t g0,
+	uint32_t g1)
+{
+	host_prot_tbase = tbase;
+	host_prot_g0 = g0;
+	host_prot_g1 = g1;
+	memset(&host_mem[tbase], 0, host_prot_table_bytes());
+}
+
+/* PROT_TABLE_BYTES: a byte per granule, in whole 4 KiB. */
+uint32_t
+host_prot_table_bytes(void)
+{
+	return (host_prot_g1 - host_prot_g0 + 4095u) & ~4095u;
+}
+
+/* The table's byte of an address's granule (0 outside it). */
+uint32_t
+host_prot_byte(
+	uint32_t address)
+{
+	uint32_t granule;
+
+	granule = address >> 12;
+	if (host_prot_tbase == 0 || granule < host_prot_g0 || granule >= host_prot_g1)
+		return 0;
+	return host_mem[host_prot_tbase + granule - host_prot_g0];
+}
+
+/* A tag's slot in SLOT_MAP. */
+uint32_t
+host_prot_slot(
+	uint32_t tag)
+{
+	return host_slot_map[tag & 0xFFu];
+}
+
+/* The valid CAM entries of a slot (0: of every slot) for exactly [address, address + bytes). */
+uint32_t
+host_prot_cam(
+	uint32_t slot,
+	uint32_t address,
+	uint32_t bytes)
+{
+	uint32_t index;
+	uint32_t found;
+
+	found = 0;
+	for (index = 0; index < HOST_PROT_CAM; index++) {
+		if (!host_cam[index].valid)
+			continue;
+		if (slot != 0 && host_cam[index].slot != slot)
+			continue;
+		if (bytes != 0 && (host_cam[index].first != address >> 12 || host_cam[index].end != (address + bytes) >> 12))
+			continue;
+		found++;
+	}
+	return found;
+}
+
+/*
+ * The MC's judgement of one access (docs/ghci.md section 11.6, design
+ * §17.3): 1 when a checked request of the slot may make it.
+ */
+int
+host_prot_allowed(
+	uint32_t slot,
+	uint32_t address,
+	int write)
+{
+	uint32_t granule;
+	uint32_t byte;
+	uint32_t index;
+	struct host_grant *grant;
+
+	granule = address >> 12;
+	if (host_prot_tbase == 0 || granule < host_prot_g0 || granule >= host_prot_g1)
+		return 0;
+	byte = host_mem[host_prot_tbase + granule - host_prot_g0];
+	if (slot != 0 && (byte & 0x3Fu) == slot && (byte & 0x80u) == 0 && !(write && (byte & 0x40u) != 0))
+		return 1;
+	if ((byte & 0x80u) != 0 && !write)
+		return 1;
+	for (index = 0; index < HOST_PROT_CAM; index++) {
+		grant = &host_cam[index];
+		if (!grant->valid || slot == 0 || grant->slot != slot || granule < grant->first || granule >= grant->end)
+			continue;
+		if ((grant->control & (write ? HW_PROT_GCTL_WRITE : HW_PROT_GCTL_READ)) != 0)
+			return 1;
+	}
+	return 0;
+}
+
+/* The MC's checks of a DMA's lines; 0, or -1 when a line is refused. */
+static int
+host_prot_dma(
+	uint32_t address,
+	uint32_t lines,
+	uint32_t go)
+{
+	uint32_t line;
+	uint32_t at;
+	int write;
+
+	if (!host_prot_has)
+		return 0;
+	write = (go & HW_DMA_GO_WRITE) != 0;
+	if ((go & HW_DMA_GO_CHK) != 0)
+		host_prot_checked++;
+	for (line = 0; line < lines; line++) {
+		at = address + line * FW_LINE_BYTES;
+		if (write && host_prot_tbase != 0 && (go & HW_DMA_GO_TBL) == 0 &&
+		    at >= host_prot_tbase && at - host_prot_tbase < host_prot_table_bytes()) {
+			host_prot_refused++;
+			host_prot_fault = at;
+			return -1;
+		}
+		if ((go & HW_DMA_GO_CHK) != 0 && !host_prot_allowed(host_packet_slot, at, write)) {
+			host_prot_refused++;
+			host_prot_fault = at;
+			return -1;
+		}
+	}
+	return 0;
 }
 
 /* The line DMA on the memory. */
@@ -211,9 +438,11 @@ hw_host_dma(
 	uint32_t address,
 	void *dmem,
 	uint32_t lines,
-	int write)
+	uint32_t go)
 {
 	uint32_t bytes;
+	int write;
+	int error;
 
 	bytes = lines * FW_LINE_BYTES;
 	if ((address & (FW_LINE_BYTES - 1u)) != 0 || ((uintptr_t)dmem & (FW_LINE_BYTES - 1u)) != 0) {
@@ -222,6 +451,13 @@ hw_host_dma(
 	}
 	if (address >= HOST_MEM_BYTES || bytes > HOST_MEM_BYTES - address) {
 		host_check(0, "a DMA outside the memory");
+		return -1;
+	}
+	write = (go & HW_DMA_GO_WRITE) != 0;
+	error = host_prot_dma(address, lines, go);
+	if (error != 0) {
+		if (!write)
+			memset(dmem, 0, bytes);
 		return -1;
 	}
 	if (write) {
@@ -330,6 +566,9 @@ host_step(
 	uint32_t tag)
 {
 	uint32_t index;
+
+	/* The packet's slot, as the CP latches it when the firmware takes the packet. */
+	host_packet_slot = host_slot_map[tag & 0xFFu];
 
 	if (host_trace == NULL) {
 		fw_packet_run(tag);

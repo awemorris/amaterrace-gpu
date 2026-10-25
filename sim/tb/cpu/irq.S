@@ -79,7 +79,7 @@ fail:
 # x10 = a checksum of mixed work; uses x10-x19, returns through x1.
 block:
 	li x10, 0x1234
-	li x11, 0x10300
+	li x11, 0x20300
 	li x12, 7
 7:	sw x10, 0(x11)
 	lh x13, 2(x11)

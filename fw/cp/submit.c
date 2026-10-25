@@ -23,6 +23,7 @@
  */
 
 #include "fw.h"
+#include "hw.h"
 #include "ghci_frame.h"
 #include "ghci_packets.h"
 #include "ghci_regs.h"
@@ -194,6 +195,14 @@ fw_wait_units(void)
 	payload[2] = 0;
 	fw_emit_begin(NULL, 0);
 	fw_emit_op(GHCI_OP_WAIT_IDLE, 0, NULL, 0);
+	(void)fw_emit_end();
+
+	/*
+	 * The RESULT is the firmware's own (its wait word is no session's): SELF
+	 * keeps session protection from checking it for the packet's session.
+	 */
+	hw_write(HW_UOP_SELF, 1u);
+	fw_emit_begin(NULL, 0);
 	fw_emit_op(GHCI_OP_RESULT, 0, payload, 3);
 	(void)fw_emit_end();
 
@@ -262,6 +271,8 @@ submit_indirect(
 	uint32_t words;
 	uint32_t index;
 	uint32_t base;
+	uint32_t lines;
+	uint32_t mode;
 	int error;
 
 	/* The parameters are in memory once the earlier work is done. */
@@ -282,8 +293,16 @@ submit_indirect(
 		address = payload[1] + draw * payload[3];
 		if (draw * payload[3] + words * 4u > payload[4])
 			break;
+		/*
+		 * Only the lines that hold them (a line past the buffer may be
+		 * no memory of the session's); they are the session's memory, so
+		 * the reads are checked for its slot.
+		 */
 		base = address & ~(FW_LINE_BYTES - 1u);
-		error = fw_dma_read(base, line, 2);
+		lines = (address + words * 4u - 1u - base) / FW_LINE_BYTES + 1u;
+		mode = fw_dma_mode(FW_DMA_CHK);
+		error = fw_dma_read(base, line, lines);
+		(void)fw_dma_mode(mode);
 		if (error != 0)
 			return -1;
 		for (index = 0; index < words; index++)
