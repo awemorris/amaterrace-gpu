@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_ffilt.v`.  Parent: atg_tu (beside atg_tu_filter, after a
 
 ## 1. Purpose and place
 
-The TU's fp32 filter path: the texture formats of TEX_FORMAT (docs/ghci.md §8.5) that the 8-bit path atg_tu_filter does not take, that is every sampled format but R8G8B8A8, B8G8R8A8, A8B8G8R8, R8 and R8G8 UNORM and the compares (atg_tu_addr sets ta_ctl[20] for them): SNORM, sRGB, the 16-bit and packed formats, 16- and 32-bit floats, the integer formats, 8- and 16-byte texels, the depth formats without compare (filtered linearly) and the stencil aspect.  Children: `atg_tu_etc` (the block decode), `atg_fmt_cvt` (the conversion, atg_fmt_comp pipelined) and `atg_tu_fma` (the fused multiply-add, pipelined).
+The TU's fp32 filter path: the texture formats of TEX_FORMAT (docs/ghci.md §8.5) that the 8-bit path atg_tu_filter does not take, that is every sampled format but R8G8B8A8, B8G8R8A8, A8B8G8R8, R8 and R8G8 UNORM and the compares (atg_tu_addr sets ta_ctl[20] for them): SNORM, sRGB, the 16-bit and packed formats, 16- and 32-bit floats, the integer formats, 8- and 16-byte texels, the depth formats without compare (filtered linearly) and the stencil aspect.  Children: `atg_tu_ffront` (the step's value and weight: `atg_tu_etc` the block decode, `atg_fmt_cvt` the conversion, atg_fmt_comp pipelined) and `atg_tu_fma` (the fused multiply-add, pipelined).
 
 ## 2. Parameters
 

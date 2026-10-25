@@ -1,6 +1,6 @@
 # atg_tu_filter
 
-RTL: `rtl/gpu/tu/atg_tu_filter.v`.  Parent: atg_tu.  Implemented in: p009.
+RTL: `rtl/gpu/tu/atg_tu_filter.v`.  Parent: atg_tu.  Children (p038): atg_tu_fpre, four atg_tu_fsum, four atg_tu_frnd, atg_tu_fword, am_fifo.  Implemented in: p009.
 
 ## 1. Purpose and place
 

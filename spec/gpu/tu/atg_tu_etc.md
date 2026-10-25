@@ -1,6 +1,6 @@
 # atg_tu_etc
 
-RTL: `rtl/gpu/tu/atg_tu_etc.v`.  Parent: atg_tu_ffilt (the fp32 filter path decodes a block texel before converting it).
+RTL: `rtl/gpu/tu/atg_tu_etc.v`.  Parent: atg_tu_ffront (the fp32 filter path decodes a block texel before converting it).  Children: two atg_tu_eac (the EAC blocks).
 
 ## 1. Purpose and place
 

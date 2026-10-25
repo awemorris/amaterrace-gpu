@@ -117,82 +117,6 @@ module atg_tu_etc (
 		endcase
 	endfunction
 
-	/* -x as 5 bits (x below 16). */
-	function [4:0] neg5;
-		input [3:0] x;
-		case (x)
-		4'd0: neg5 = 5'h00;
-		4'd1: neg5 = 5'h1F;
-		4'd2: neg5 = 5'h1E;
-		4'd3: neg5 = 5'h1D;
-		4'd4: neg5 = 5'h1C;
-		4'd5: neg5 = 5'h1B;
-		4'd6: neg5 = 5'h1A;
-		4'd7: neg5 = 5'h19;
-		4'd8: neg5 = 5'h18;
-		4'd9: neg5 = 5'h17;
-		4'd10: neg5 = 5'h16;
-		4'd11: neg5 = 5'h15;
-		4'd12: neg5 = 5'h14;
-		4'd13: neg5 = 5'h13;
-		4'd14: neg5 = 5'h12;
-		default: neg5 = 5'h11;
-		endcase
-	endfunction
-
-	/* The EAC modifier of table ti, index ix (signed). */
-	function [4:0] eacm;
-		input [3:0] ti;
-		input [2:0] ix;
-		reg [31:0] r;	/* the row: eight 4-bit magnitudes, the first four negative */
-		reg [3:0] mg;
-		begin
-			case (ti)
-			4'd0: r = 32'hE852F963;
-			4'd1: r = 32'hC962DA73;
-			4'd2: r = 32'hC741D852;
-			4'd3: r = 32'hC531D642;
-			4'd4: r = 32'hB752C863;
-			4'd5: r = 32'hA862B973;
-			4'd6: r = 32'hA763B874;
-			4'd7: r = 32'hA742B853;
-			4'd8: r = 32'h9751A862;
-			4'd9: r = 32'h9741A852;
-			4'd10: r = 32'h9731A842;
-			4'd11: r = 32'h9641A752;
-			4'd12: r = 32'h9632A743;
-			4'd13: r = 32'h9210A321;
-			4'd14: r = 32'h87539864;
-			default: r = 32'h86429753;
-			endcase
-			mg = r[4 * ix +: 4];
-			eacm = ix[2] ? {1'b0, mg} : neg5(mg);
-		end
-	endfunction
-
-	/* The bit position of texel k's 3-bit index in an EAC block: 45 - 3k. */
-	function [5:0] eacp;
-		input [3:0] k;
-		case (k)
-		4'd0: eacp = 6'd45;
-		4'd1: eacp = 6'd42;
-		4'd2: eacp = 6'd39;
-		4'd3: eacp = 6'd36;
-		4'd4: eacp = 6'd33;
-		4'd5: eacp = 6'd30;
-		4'd6: eacp = 6'd27;
-		4'd7: eacp = 6'd24;
-		4'd8: eacp = 6'd21;
-		4'd9: eacp = 6'd18;
-		4'd10: eacp = 6'd15;
-		4'd11: eacp = 6'd12;
-		4'd12: eacp = 6'd9;
-		4'd13: eacp = 6'd6;
-		4'd14: eacp = 6'd3;
-		default: eacp = 6'd0;
-		endcase
-	endfunction
-
 	/* ---- E0: the block's two words, the colour block's word ---- */
 	wire [63:0] wa_i = w64(i_block, 1'b0), wb_i = w64(i_block, 1'b1);
 	wire rgbb_i = i_fmt == 4'd4 || i_fmt == 4'd5;	/* RGBA8: the colour block second */
@@ -291,39 +215,24 @@ module atg_tu_etc (
 	end
 	endgenerate
 
-	/* ---- E1, the EAC blocks (wa: R or alpha, wb: G): the modifier, the
-	 * base ---- */
-	wire r11 = !rgbb;	/* R11 (not RGBA8's 8-bit alpha) */
-	wire sg = fmt0[0];	/* signed R11 */
-	wire [13:0] e_vb [0:1];	/* the base */
-	wire [4:0] e_m [0:1];	/* the modifier */
-	wire [3:0] e_mu [0:1];	/* the multiplier */
-	generate
-	for (g = 0; g < 2; g = g + 1) begin : g_eac
-		wire [63:0] ew = g == 0 ? wa : wb;
-		assign e_m[g] = eacm(ew[51:48], ew[eacp(k) +: 3]);
-		assign e_mu[g] = ew[55:52];
-		assign e_vb[g] = !r11 ? {6'd0, ew[63:56]} : !sg ? {3'd0, ew[63:56], 3'd4} :
-			ew[63:56] == 8'h80 ? -14'sd1016 : {{3{ew[63]}}, ew[63:56], 3'd0};
-	end
-	endgenerate
+	/* ---- E1-E2, the EAC blocks (wa: R or alpha, wb: G) ---- */
+	wire [10:0] ea, eb;
+
+	atg_tu_eac eac_a (.clk(clk), .i_w(wa), .i_k(k), .i_r11(!rgbb), .i_sg(fmt0[0]), .o_v(ea));
+	atg_tu_eac eac_b (.clk(clk), .i_w(wb), .i_k(k), .i_r11(1'b1), .i_sg(fmt0[0]), .o_v(eb));
 
 	/* ---- E1 registers ---- */
 	reg [3:0] fmt1;
-	reg trn1, pm1, r11_1;
+	reg trn1, pm1;
 	reg [1:0] x1, y1;
 	reg [23:0] base1, po1;
 	reg [9:0] delta1;
 	reg [11:0] dh1 [0:2];
 	reg [11:0] dv1 [0:2];
-	reg [13:0] vb1 [0:1];
-	reg [4:0] m1 [0:1];
-	reg [3:0] mu1 [0:1];
 	always @(posedge clk) begin
 		fmt1 <= fmt0;
 		trn1 <= trn && !pm;
 		pm1 <= pm;
-		r11_1 <= r11;
 		x1 <= x;
 		y1 <= y;
 		base1 <= base;
@@ -333,37 +242,18 @@ module atg_tu_etc (
 			dh1[c] <= dh[c];
 			dv1[c] <= dv[c];
 		end
-		for (c = 0; c < 2; c = c + 1) begin
-			vb1[c] <= e_vb[c];
-			m1[c] <= e_m[c];
-			mu1[c] <= e_mu[c];
-		end
 	end
 
-	/* ---- E1b: planar's t1, t2; EAC's modifier times the multiplier
-	 * (shifts and adds) ---- */
+	/* ---- E1b: planar's t1, t2 ---- */
 	wire [11:0] t1 [0:2];
 	wire [11:0] t2 [0:2];
-	wire [13:0] e_va [0:1];	/* the modifier term */
 	wire [5:0] t_nc;
-	wire [5:0] e_nc;
 	generate
 	for (g = 0; g < 3; g = g + 1) begin : g_t
 		am_add #(.W(12)) u_t1 (.a(x1[0] ? dh1[g] : 12'd0), .b(y1[0] ? dv1[g] : 12'd0),
 			.ci(1'b0), .s(t1[g]), .co(t_nc[g*2]));
 		am_add #(.W(12)) u_t2 (.a(x1[1] ? dh1[g] : 12'd0), .b(y1[1] ? dv1[g] : 12'd0),
 			.ci(1'b0), .s(t2[g]), .co(t_nc[g*2 + 1]));
-	end
-	for (g = 0; g < 2; g = g + 1) begin : g_mm
-		wire [13:0] ms = {{9{m1[g][4]}}, m1[g]};
-		wire [3:0] mu = mu1[g];
-		wire [13:0] s01, s23, mm;
-		am_add #(.W(14)) u_s01 (.a(mu[0] ? ms : 14'd0), .b(mu[1] ? {ms[12:0], 1'b0} : 14'd0),
-			.ci(1'b0), .s(s01), .co(e_nc[g*3]));
-		am_add #(.W(14)) u_s23 (.a(mu[2] ? {ms[11:0], 2'b00} : 14'd0),
-			.b(mu[3] ? {ms[10:0], 3'b000} : 14'd0), .ci(1'b0), .s(s23), .co(e_nc[g*3 + 1]));
-		am_add #(.W(14)) u_mm (.a(s01), .b(s23), .ci(1'b0), .s(mm), .co(e_nc[g*3 + 2]));
-		assign e_va[g] = !r11_1 ? mm : mu == 4'd0 ? ms : {mm[10:0], 3'b000};
 	end
 	endgenerate
 
@@ -374,8 +264,6 @@ module atg_tu_etc (
 	reg [9:0] delta2;
 	reg [11:0] t1_2 [0:2];
 	reg [11:0] t2_2 [0:2];
-	reg [13:0] vb2 [0:1];
-	reg [13:0] va2 [0:1];
 	always @(posedge clk) begin
 		fmt2 <= fmt1;
 		trn2 <= trn1;
@@ -387,18 +275,13 @@ module atg_tu_etc (
 			t1_2[c] <= t1[c];
 			t2_2[c] <= t2[c];
 		end
-		for (c = 0; c < 2; c = c + 1) begin
-			vb2[c] <= vb1[c];
-			va2[c] <= e_va[c];
-		end
 	end
 
 	/* ---- E2: the sums and the clamps ---- */
 	wire [11:0] qn [0:2];	/* base + delta */
 	wire [11:0] qa [0:2];
 	wire [11:0] qp [0:2];	/* planar, before >> 2 */
-	wire [13:0] ev [0:1];
-	wire [10:0] q_nc;
+	wire [8:0] q_nc;
 	wire [23:0] pc;
 	generate
 	for (g = 0; g < 3; g = g + 1) begin : g_q
@@ -410,23 +293,9 @@ module atg_tu_etc (
 			.s(qp[g]), .co(q_nc[g*3 + 2]));
 		assign pc[g*8 +: 8] = pm2 ? clamp8({{2{qp[g][11]}}, qp[g][11:2]}) : clamp8(qn[g]);
 	end
-	for (g = 0; g < 2; g = g + 1) begin : g_ev
-		am_add #(.W(14)) u_ev (.a(vb2[g]), .b(va2[g]), .ci(1'b0), .s(ev[g]), .co(q_nc[9 + g]));
-	end
 	endgenerate
 
-	/* EAC: 8-bit alpha, unsigned or signed R11 */
-	function [10:0] eacc;
-		input signed [13:0] v;
-		input e_r11, e_sg;
-		eacc = !e_r11 ? {3'd0, v < 0 ? 8'd0 : v > 255 ? 8'd255 : v[7:0]} :
-			!e_sg ? (v < 0 ? 11'd0 : v > 2047 ? 11'd2047 : v[10:0]) :
-			(v < -1023 ? 11'h401 : v > 1023 ? 11'h3FF : v[10:0]);
-	endfunction
-
 	wire [31:0] rgbv = trn2 ? 32'd0 : {8'hFF, pc};
-	wire [10:0] ea = eacc(ev[0], fmt2 != 4'd4 && fmt2 != 4'd5, fmt2[0]);
-	wire [10:0] eb = eacc(ev[1], 1'b1, fmt2[0]);
 
 	always @(posedge clk) begin
 		o_kind <= 2'd0;
@@ -448,7 +317,7 @@ module atg_tu_etc (
 		endcase
 	end
 
-	wire unused_ok = &{1'b0, d_nc, dneg_nc, p_nc, t_nc, e_nc, q_nc, opq, hm, ea[10:8],
+	wire unused_ok = &{1'b0, d_nc, dneg_nc, p_nc, t_nc, q_nc, opq, hm, ea[10:8],
 		rgbv[31:24]};
 endmodule
 

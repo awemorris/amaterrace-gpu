@@ -8,62 +8,29 @@
 /*
  * atg_tu_ffilt: the TU's fp32 filter path (docs/ghci.md section 8.5):
  * the formats of TEX_FORMAT that atg_tu_filter does not take (tc_ctl[20]
- * = 1): every sampled format but RGBA8, BGRA8, R8, R8G8 UNORM and the
- * compares.  tools/tumodel.py (FFilter) is the reference, bit for bit.
+ * = 1).  tools/tumodel.py (FFilter) is the reference, bit for bit; the
+ * texel layout, borders, blocks, weights, bypass, gather and swizzle are
+ * in spec/gpu/tu/atg_tu_ffilt.md section 4.
  *
  * Takes one pass of a quad (tc_*) in IDLE; holds tr_* until taken (order
- * is kept).  The texels of a lane come from its four slots: 1- to 4-byte
- * texels are slots 0-3 (right-justified by atg_tu_cache), 8-byte texels
- * slots {1, 0} and {3, 2} (the texels i0 and i1 of the pass's row,
- * tc_ctl[22]), 16-byte texels slots {3, 2, 1, 0}; gather: slot t is the
- * word of texel t that holds the component (include/atg_tu_fmt.vh
- * tu_gwi).  ETC2 and EAC blocks (8 or 16 bytes) come as the 8- and 16-byte
- * texels, a block per texel, the texel's column and row in the block in
- * tc_lo (address bits 1:0 of the block's first and second slot), and are
- * decoded by atg_tu_etc; 16-byte blocks come one texel a pass (tc_ctl[49],
- * the pass's footprint texel {row, column [48]}), gather of 8-byte blocks
- * in the row passes.  Each texel's component is converted by atg_fmt_cvt
- * (atg_fmt_unpack's conversion; tc_ctl[34:27] the VkFormat, [35] the
- * stencil aspect), or is a border texel's (tc_bord): the border colour
- * (tc_ctl[7:6]: 0 transparent black, 1 opaque black, 2 opaque white;
- * integer 0 and 1 for the integer formats) in the format's components,
- * the others (0, 0, 0, 1).  sRGB texels are linear after the conversion,
- * before filtering.
- * Weights: texel t's integer weight wu x wv (bilinear: (256 - fu or fu) x
- * (256 - fv or fv) by its column and row; 8-byte row passes: the row's
- * 256 - fv or fv; nearest: 65536 for texel 0) times the pass's (256 - fw
- * or fw) x (256 - fl or fl) (tc_ctl[17], [18]), as fp32 n x 2^-32 rounded
- * to nearest even; a weight of 0 is skipped.  Each component c below the
- * format's count is accumulated by a fused multiply-add, A = fma(w, x, A)
- * (atg_tu_fma: one rounding to nearest even, denormals flushed), from A =
- * -0.0 at the quad's first pass (tc_ctl[5] = 0) over the passes; the
- * components the format does not have are (0, 0, 0, 1).  A lane with a
- * single texel of weight 1 (a quad of one pass without bilinear, or a
- * bilinear lane with fu = fv = 0) returns the converted texel as it is
- * (integer formats, texf and nearest sampling are exact).  Gather
- * returns the component of texels 2, 3, 1, 0.  The component swizzle
- * (tc_ctl[47:36]) is applied last (gather selects through it); lanes
- * outside tc_mask give 0.  A pass with tc_ctl[4] (more to follow) returns
- * nothing and keeps the sums.  idle: no quad in the unit (between the
- * passes of a quad it is 0; atg_tu hands a pass of the other path only
- * when idle).
+ * is kept); a pass with tc_ctl[4] (more to follow) returns nothing and
+ * keeps the sums.  idle: no quad in the unit (0 between the passes of a
+ * quad; atg_tu hands a pass of the other path only when idle).
  *
- * Pipeline: a pass's steps (one component of a lane's texel) are issued
- * one a cycle in the order texel, lane, component (LOAD makes the pass's
- * work, a mask of {texel, lane}), through P1 (the texel's bits, the
- * lane's weights), P2-P5 (atg_tu_etc's block decode, 4 cycles; the
- * weight's factors, wu wv and wa wb, n, its fp32 in P7), P6 (the
- * converter's inputs), P6-P13 (atg_fmt_cvt, 7 cycles), to P13: a bypassed
- * or gathered value is written to its accumulator there, a term goes into
- * atg_tu_fma, which reads the accumulator 3 cycles later and writes it 10
- * cycles later.  The steps of
+ * A pass's steps (one component of a lane's texel: a term A = fma(w, x,
+ * A), a bypassed component or a gathered texel) are issued one a cycle in
+ * the order texel, lane, component (LOAD makes the pass's work, a mask of
+ * {texel, lane}) into atg_tu_ffront, which gives the value and the weight
+ * 13 cycles later (PV): a bypassed or gathered value is written to its
+ * accumulator there, a term goes into atg_tu_fma, which reads the
+ * accumulator 3 cycles later and writes it 10 cycles later.  The terms of
  * one accumulator keep the reference's order (texels, then passes); a
- * term is issued only 8 cycles or more after the previous term of its
- * accumulator (the issue waits otherwise: a pass with few lanes and
- * components).  The next pass of the quad is taken while the last one's
- * steps are in the pipeline; after the last pass the unit waits until it
- * is empty (DRAIN), then FIN takes the lanes one a cycle.
- * See spec/gpu/tu/atg_tu_ffilt.md.
+ * term is issued only 8 or more cycles after the last term of its
+ * accumulator (the issue waits otherwise).  The next pass is taken while
+ * the last one's steps are in the pipeline; after a quad's last pass the
+ * unit waits until it is empty (DRAIN), then FIN takes the lanes one a
+ * cycle (the components the format has, (0, 0, 0, 1) for the others, the
+ * swizzle; lanes outside tc_mask 0).
  *
  * States: IDLE →(tc)→ LOAD → RUN → DRAIN → FIN (lanes 0-3) → OUT
  * →(tr_ready)→ IDLE; a pass with more to follow goes from RUN back to
@@ -101,8 +68,7 @@ module atg_tu_ffilt (
 		OUT = 3'd5;
 	/* A step's kind */
 	localparam [1:0] OP_FMA = 2'd0, OP_BYP = 2'd1, OP_GATH = 2'd2;
-	wire u_ifmt_nc, u_inc_nc, u_ru_nc, u_rv_nc, u_rl_nc, u_rw_nc, u_ner_nc, u_neg_nc,
-		u_e0_nc, u_e1_nc, u_wq_nc;	/* the carries not used */
+	wire u_ifmt_nc, u_inc_nc;	/* the carries not used */
 	integer i, m;
 
 	/* The component that swizzle code 3-6 (R, G, B, A) takes, by its bits
@@ -262,207 +228,23 @@ module atg_tu_ffilt (
 	am_add #(.W(2)) u_inc (.a(st == FIN ? kf : c), .b(2'd0), .ci(1'b1), .s(c_inc),
 		.co(u_inc_nc));
 
-	/* The texel's bits and border bit; its position in a block. */
-	wire [127:0] sl = tx[ik*128 +: 128];
-	wire [31:0] slw = sl[it*32 +: 32];
-	reg [127:0] raw_i;
-	always @(*) begin
-		if (wg)
-			case (gwi)
-			2'd0: raw_i = {96'd0, slw};
-			2'd1: raw_i = {64'd0, slw, 32'd0};
-			2'd2: raw_i = {32'd0, slw, 64'd0};
-			default: raw_i = {slw, 96'd0};
-			endcase
-		else if (b8)
-			raw_i = it[0] ? {64'd0, sl[127:64]} : {64'd0, sl[63:0]};
-		else if (b16)
-			raw_i = sl;
-		else
-			raw_i = {96'd0, slw};
-	end
-	wire tb_i = wg || !(b8 || b16) ? bd[{ik, it}] : b8 && it[0] ? bd[{ik, 2'd2}] : bd[{ik, 2'd0}];
-	wire [7:0] llo = lo[ik*8 +: 8];
-	wire [1:0] es_i = b16 || !it[0] ? llo[1:0] : llo[5:4];
-	wire [1:0] et_i = b16 || !it[0] ? llo[3:2] : llo[7:6];
+	/* ---- P1-PV: the step's value and weight (atg_tu_ffront) ---- */
+	wire vldv, f_busy0;
+	wire [11:0] metav;
+	wire [31:0] upv, wfv;
 
-	/* ---- P1 ---- */
-	reg [1:0] op1, cs1;
-	reg [3:0] aid1;
-	reg tb1;
-	reg [127:0] raw1;
-	reg [1:0] es1, et1, ft1;
-	reg [31:0] wl1;	/* the lane's {fw, fl, fv, fu} */
-	reg bil1, p17_1, p18_1;
-	always @(posedge clk) begin
-		op1 <= iop;
-		aid1 <= aid;
-		cs1 <= gathq ? gsrc : c;
-		tb1 <= tb_i;
-		raw1 <= raw_i;
-		es1 <= es_i;
-		et1 <= et_i;
-		ft1 <= ift;
-		wl1 <= wts[ik*32 +: 32];
-		bil1 <= bil;
-		p17_1 <= ctl[17];
-		p18_1 <= ctl[18];
-	end
-
-	/* ---- P1 → PE: the block decode (atg_tu_etc); the weight's factors ---- */
-	wire [1:0] e_kind;
-	wire [31:0] e_tx;
-
-	atg_tu_etc etc (
-		.clk(clk), .i_fmt(ifmt), .i_block(raw1), .i_s(es1), .i_t(et1), .o_kind(e_kind),
-		.o_texel(e_tx)
+	atg_tu_ffront front (
+		.clk(clk), .rst_n(rst_n), .i_vld(issue), .i_op(iop), .i_cs(gathq ? gsrc : c),
+		.i_aid(aid), .i_t(it), .i_sl(tx[ik*128 +: 128]), .i_bd(bd[ik*4 +: 4]),
+		.i_lo(lo[ik*8 +: 8]), .i_ft(ift), .i_wl(wts[ik*32 +: 32]), .i_bil(bil),
+		.i_p17(ctl[17]), .i_p18(ctl[18]), .i_wg(wg), .i_gwi(gwi), .i_b8(b8), .i_b16(b16),
+		.i_ifmt(ifmt), .i_blk(blk), .i_inf(inf_q), .i_sten(stq),
+		.o_vld(vldv), .o_meta(metav), .o_up(upv), .o_wf(wfv), .o_busy(f_busy0)
 	);
 
-	wire [8:0] ru, rv, rw, rl;
-
-	am_sub #(.W(9)) u_ru (.a(9'd256), .b({1'b0, wl1[7:0]}), .bi(1'b0), .d(ru), .bo(u_ru_nc));
-	am_sub #(.W(9)) u_rv (.a(9'd256), .b({1'b0, wl1[15:8]}), .bi(1'b0), .d(rv), .bo(u_rv_nc));
-	am_sub #(.W(9)) u_rl (.a(9'd256), .b({1'b0, wl1[23:16]}), .bi(1'b0), .d(rl), .bo(u_rl_nc));
-	am_sub #(.W(9)) u_rw (.a(9'd256), .b({1'b0, wl1[31:24]}), .bi(1'b0), .d(rw), .bo(u_rw_nc));
-
-	reg [8:0] wu2, wv2, wa2, wb2;
-	always @(posedge clk) begin
-		/* (the texel of an issued term is present) */
-		wu2 <= !bil1 ? 9'd256 : ft1[0] ? {1'b0, wl1[7:0]} : ru;
-		wv2 <= !bil1 ? 9'd256 : ft1[1] ? {1'b0, wl1[15:8]} : rv;
-		wa2 <= p17_1 ? {1'b0, wl1[31:24]} : rw;
-		wb2 <= p18_1 ? {1'b0, wl1[23:16]} : rl;
-	end
-
-	/* ---- The step's fields along the pipeline: {op, cs, aid, tb, raw}
-	 * from P1 to PE (atg_tu_etc's output), {op, cs, aid, tb, es, ers, egs}
-	 * from PC (atg_fmt_cvt's input) to PV (its output) ---- */
-	localparam ETC_LAT = 4, CVT_LAT = 7;
-	localparam PE = 1 + ETC_LAT, PC = PE + 1, PV = PC + CVT_LAT;
-	wire [136:0] fe1 = {op1, cs1, aid1, tb1, raw1};
-	reg [136:0] fe [2:PE];
-	always @(posedge clk) begin
-		fe[2] <= fe1;
-		for (m = 3; m <= PE; m = m + 1)
-			fe[m] <= fe[m - 1];
-	end
-	wire [1:0] ope = fe[PE][136:135], cse = fe[PE][134:133];
-	wire [3:0] aide = fe[PE][132:129];
-	wire tbe = fe[PE][128];
-	wire [127:0] rawe = fe[PE][127:0];
-
-	/* ---- PE → PC: the converter's inputs.  A block's texel: RGBA8 as
-	 * R8G8B8A8_UNORM or _SRGB; EAC R11 and RG11 as two 11-bit UNORM
-	 * components (the second 0 for R11), the signed ones as the
-	 * magnitudes' 10-bit UNORM with the sign set (-0.0 for -1024); the
-	 * components the block does not have (0, 0, 1.0). ---- */
-	wire [10:0] er = e_tx[10:0], eg = e_tx[26:16];
-	wire [10:0] ner, neg_g;
-
-	am_sub #(.W(11)) u_ner (.a(11'd0), .b(er), .bi(1'b0), .d(ner), .bo(u_ner_nc));
-	am_sub #(.W(11)) u_neg (.a(11'd0), .b(eg), .bi(1'b0), .d(neg_g), .bo(u_neg_nc));
-
-	wire [10:0] ear = er[10] ? ner : er, eag = eg[10] ? neg_g : eg;
-	wire esgn = e_kind == 2'd3;	/* signed EAC */
-	wire [67:0] e_inf = e_kind[1] ? (esgn ? atg_fmt_i(5'd4, 3'd2, ATG_FMT_UNORM, 3'b000,
-		atg_fmt_c(7'd0, 6'd10), atg_fmt_c(7'd16, 6'd10), atg_fmt_c(7'd0, 6'd0),
-		atg_fmt_c(7'd0, 6'd0)) : atg_fmt_i(5'd4, 3'd2, ATG_FMT_UNORM, 3'b000,
-		atg_fmt_c(7'd0, 6'd11), atg_fmt_c(7'd16, 6'd11), atg_fmt_c(7'd0, 6'd0),
-		atg_fmt_c(7'd0, 6'd0))) : e_kind[0] ? atg_fmt_info(8'd43) : atg_fmt_info(8'd37);
-	wire [127:0] e_raw = esgn ? {96'd0, 5'd0, eag, 5'd0, ear} : {96'd0, e_tx};
-
-	reg [127:0] crawc;
-	reg [67:0] cinfc;
-	reg [1:0] ckc;
-	reg cstenc;
-	reg [11:0] mc;	/* {op, cs, aid, tb, es, ers, egs} */
-	always @(posedge clk) begin
-		crawc <= blk ? e_raw : rawe;
-		cinfc <= blk ? e_inf : inf_q;
-		ckc <= cse;
-		cstenc <= stq && !blk;
-		mc <= {ope, cse, aide, tbe, esgn, er[10], eg[10]};
-	end
-
-	/* ---- PC → PV: the component (atg_fmt_cvt) ---- */
-	wire [31:0] upv;
-
-	atg_fmt_cvt cvt (.clk(clk), .i_raw(crawc), .i_inf(cinfc), .i_k(ckc), .i_sten(cstenc),
-		.o_val(upv));
-
-	reg [11:0] mv [PC+1:PV];
-	always @(posedge clk) begin
-		mv[PC+1] <= mc;
-		for (m = PC + 2; m <= PV; m = m + 1)
-			mv[m] <= mv[m - 1];
-	end
-
-	/* The weight: wu wv and wa wb (P3), n = wu wv wa wb (P4), as fp32 n x
-	 * 2^-32 rounded to nearest even (n > 0 for a term): P5 its leading
-	 * zeros, P6 shifted, P7 rounded, then delayed to PV. */
-	wire [17:0] wuv3, wab3;
-
-	am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(1)) u_wuv (
-		.clk(clk), .en(1'b1), .a(wu2), .b(wv2), .p(wuv3)
-	);
-	am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(1)) u_wab (
-		.clk(clk), .en(1'b1), .a(wa2), .b(wb2), .p(wab3)
-	);
-
-	wire [35:0] n4;
-
-	am_mul #(.AW(18), .BW(18), .SIGNED(0), .LAT(1)) u_n (
-		.clk(clk), .en(1'b1), .a(wuv3), .b(wab3), .p(n4)
-	);
-
-	reg [5:0] lz_w4;
-	always @(*) begin
-		lz_w4 = 6'd0;
-		for (i = 0; i < 33; i = i + 1)
-			if (n4[i])
-				lz_w4 = 6'd32 - i[5:0];
-	end
-
-	reg [32:0] n5;
-	reg [5:0] lz5;
-	always @(posedge clk) begin
-		n5 <= n4[32:0];
-		lz5 <= lz_w4;
-	end
-
-	wire [56:0] y5;
-	wire [7:0] e0_5, e1_5;
-
-	am_shift #(.W(57), .SW(6)) u_w2f (.a({n5, 24'd0}), .amt(lz5), .left(1'b1), .arith(1'b0),
-		.y(y5));
-	am_sub #(.W(8)) u_e0 (.a(8'd127), .b({2'd0, lz5}), .bi(1'b0), .d(e0_5), .bo(u_e0_nc));
-	am_sub #(.W(8)) u_e1 (.a(8'd128), .b({2'd0, lz5}), .bi(1'b0), .d(e1_5), .bo(u_e1_nc));
-
-	reg [24:0] y6;	/* bits 56:32 */
-	reg yst6;
-	reg [7:0] e0_6, e1_6;
-	always @(posedge clk) begin
-		y6 <= y5[56:32];
-		yst6 <= y5[31:0] != 32'd0;
-		e0_6 <= e0_5;
-		e1_6 <= e1_5;
-	end
-
-	wire [24:0] q6;
-
-	am_add #(.W(25)) u_wq (.a({1'b0, y6[24:1]}), .b(25'd0), .ci(y6[0] && (yst6 || y6[1])),
-		.s(q6), .co(u_wq_nc));
-
-	reg [31:0] wf [7:PV];
-	always @(posedge clk) begin
-		wf[7] <= {1'b0, q6[24] ? e1_6 : e0_6, q6[24] ? q6[23:1] : q6[22:0]};
-		for (m = 8; m <= PV; m = m + 1)
-			wf[m] <= wf[m - 1];
-	end
-
-	wire [1:0] opv = mv[PV][11:10], csv = mv[PV][9:8];
-	wire [3:0] aidv = mv[PV][7:4];
-	wire tbv = mv[PV][3], esv = mv[PV][2], ersv = mv[PV][1], egsv = mv[PV][0];
+	wire [1:0] opv = metav[11:10], csv = metav[9:8];
+	wire [3:0] aidv = metav[7:4];
+	wire tbv = metav[3], esv = metav[2], ersv = metav[1], egsv = metav[0];
 
 	/* ---- PV: the value; a bypass or gather writes it, a term goes on ---- */
 	wire [31:0] ev = {csv == 2'd0 ? esv && ersv : csv == 2'd1 ? esv && egsv : upv[31],
@@ -472,27 +254,20 @@ module atg_tu_ffilt (
 		csv == 2'd3 ? one : 32'd0;
 	wire [31:0] val = tbv ? bval : blk ? ev : upv;
 	wire [31:0] gval = gsw == 3'd1 ? 32'd0 : gsw == 3'd2 ? one : val;
-	reg [PV:1] vp;	/* a step in P1-PV */
-	wire wrv = vp[PV] && opv != OP_FMA;
+	wire wrv = vldv && opv != OP_FMA;
 
 	wire f_cvld, f_rvld, f_busy;
 	wire [3:0] f_ctag, f_rtag;
 	wire [31:0] f_r;
 
 	atg_tu_fma #(.TW(4)) fma (
-		.clk(clk), .rst_n(rst_n), .i_vld(vp[PV] && opv == OP_FMA), .i_tag(aidv),
-		.i_a(wf[PV]), .i_b(val), .c_vld(f_cvld), .c_tag(f_ctag), .c_val(acc[f_ctag*32 +: 32]),
+		.clk(clk), .rst_n(rst_n), .i_vld(vldv && opv == OP_FMA), .i_tag(aidv),
+		.i_a(wfv), .i_b(val), .c_vld(f_cvld), .c_tag(f_ctag), .c_val(acc[f_ctag*32 +: 32]),
 		.r_vld(f_rvld), .r_tag(f_rtag), .r_val(f_r), .o_busy(f_busy)
 	);
 
-	/* The valid bits; busy: a step in the pipeline. */
-	always @(posedge clk) begin
-		if (!rst_n)
-			vp <= {PV{1'b0}};
-		else
-			vp <= {vp[PV-1:1], issue};
-	end
-	wire busy = |vp || f_busy;
+	/* busy: a step in the pipeline. */
+	wire busy = f_busy0 || f_busy;
 
 	/* The result of lane kf (FIN takes the lanes one a cycle). */
 	reg [127:0] fin_q;
@@ -607,10 +382,8 @@ module atg_tu_ffilt (
 			ifmt <= ifmt_l;
 		end
 
-	wire unused_ok = &{1'b0, u_ifmt_nc, u_inc_nc, u_ru_nc, u_rv_nc, u_rl_nc, u_rw_nc,
-		u_ner_nc, u_neg_nc, u_e0_nc, u_e1_nc, u_wq_nc, n4[35:33], gpos_l[4:0],
-		ctl[33:23], ctl[16], ctl[20:19],
-		ctl[12:8], ctl[3:1], vkf[7:4], ear[10], eag[10], f_cvld};
+	wire unused_ok = &{1'b0, u_ifmt_nc, u_inc_nc, gpos_l[4:0], ctl[33:23], ctl[16],
+		ctl[20:19], ctl[12:8], ctl[3:1], vkf[7:4], f_cvld};
 endmodule
 
 `default_nettype wire
