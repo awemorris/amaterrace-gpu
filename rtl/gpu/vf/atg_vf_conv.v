@@ -24,7 +24,7 @@
  * pulses the cycle after the last word of the af with af_last (two cycles
  * after taking it when it writes nothing).  With ATTR_DST[k][31:24] (a
  * VkFormat, CAPS[30]) the format is that one instead, through
- * atg_fmt_unpack (a format without the vertex-buffer feature reads 0, 0,
+ * atg_fmt_comp (a format without the vertex-buffer feature reads 0, 0,
  * 0, 1.0); an af with af_oob (outside ATTR_LIMIT) writes (0, 0, 0, 1) in
  * the format's kind.  See spec/gpu/vf/atg_vf_conv.md.
  */
@@ -58,39 +58,6 @@ module atg_vf_conv (
 	`include "ghci_regs.vh"
 	`include "atg_srgb.vh"
 	`include "atg_fmt_info.vh"
-	`include "atg_fmt_unpack.vh"
-
-	/*
-	 * fp16 -> fp32, exact (denormals normalised); NaN -> 0x7FC00000: of h16
-	 * (component c_i, below).  p is the highest set bit of the fraction.
-	 */
-	wire [15:0] h16;
-	reg [3:0] h_p;
-	integer hj;
-	always @(*) begin
-		h_p = 4'd0;
-		for (hj = 0; hj < 10; hj = hj + 1)
-			if (h16[hj])
-				/* verilator lint_off WIDTHTRUNC */
-				h_p = hj;
-				/* verilator lint_on WIDTHTRUNC */
-	end
-	wire [3:0] h_sh;
-	wire [9:0] h_fr;
-	wire [7:0] h_ed;
-	wire [7:0] h_en;
-	wire hs_bo_unused, hd_co_unused, hn_co_unused;
-	am_sub #(.W(4)) u_h_sh (.a(4'd10), .b(h_p), .bi(1'b0), .d(h_sh), .bo(hs_bo_unused));
-	am_shift #(.W(10), .SW(4)) u_h_fr (.a(h16[9:0]), .amt(h_sh), .left(1'b1), .arith(1'b0),
-		.y(h_fr));
-	am_add #(.W(8)) u_h_ed (.a(8'd103), .b({4'd0, h_p}), .ci(1'b0),
-		.s(h_ed), .co(hd_co_unused));
-	am_add #(.W(8)) u_h_en (.a({3'd0, h16[14:10]}), .b(8'd112), .ci(1'b0),
-		.s(h_en), .co(hn_co_unused));
-	wire [31:0] h_inf = h16[9:0] != 10'd0 ? 32'h7FC00000 : {h16[15], 8'hFF, 23'd0};
-	wire [31:0] h_den = h16[9:0] == 10'd0 ? {h16[15], 31'd0} : {h16[15], h_ed, h_fr, 13'd0};
-	wire [31:0] h_f32 = h16[14:10] == 5'h1F ? h_inf : h16[14:10] == 5'd0 ? h_den :
-		{h16[15], h_en, h16[9:0], 13'd0};
 
 	/* STATE: ATTR[k]_DESC 0x031 + 2k (format [19:16]), ATTR_DST[k] 0x1C0 + k. */
 	reg [3:0] s_fmt [0:15];
@@ -144,13 +111,17 @@ module atg_vf_conv (
 	wire [25:0] vk_feat = atg_fmt_feat(c_vk, 1'b0);
 	wire vk_ok = vk_feat[19];	/* VERTEX_BUFFER */
 	wire vk_int = vk_ok && (vk_inf[11:9] == ATG_FMT_UINT || vk_inf[11:9] == ATG_FMT_SINT);
-	/* component c_i (one a cycle) */
-	wire [31:0] vk_c = atg_fmt_comp(c_raw, vk_inf, c_i, 1'b0);
+	/* Component c_i (one a cycle) through one atg_fmt_comp: of the VkFormat,
+	 * or for the fp16 formats 6 and 7 of R16G16B16A16_SFLOAT (component c
+	 * at bit 16 c, fp16 to fp32 exactly: denormals normalised, NaN
+	 * 0x7FC00000); the two are never needed in the same cycle. */
+	localparam [67:0] INF_H4 = atg_fmt_info(8'd97);
+	wire [31:0] vk_c;
+	atg_fmt_comp u_comp (.raw(c_raw), .inf(c_vk != 8'd0 ? vk_inf : INF_H4), .k(c_i), .sten(1'b0),
+		.v(vk_c));
 	wire isint = c_vk != 8'd0 ? vk_int : isint_l;
 	wire [31:0] w32 = c_raw[32 * c_i +: 32];
 	wire [7:0] w8 = c_raw[8 * c_i +: 8];
-	wire [15:0] w16 = c_raw[16 * c_i +: 16];
-	assign h16 = w16;
 	reg [31:0] word;
 	always @(*) begin
 		if (c_oob || (c_vk != 8'd0 && !vk_ok))
@@ -163,7 +134,7 @@ module atg_vf_conv (
 			case (c_fmt)
 			4'd4: word = atg_rop_unorm8(w8);
 			4'd5: word = {24'd0, w8};
-			4'd6, 4'd7: word = h_f32;
+			4'd6, 4'd7: word = vk_c;
 			default: word = w32;
 			endcase
 	end

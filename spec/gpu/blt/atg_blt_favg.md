@@ -1,6 +1,6 @@
 # atg_blt_favg
 
-RTL: `rtl/gpu/blt/atg_blt_favg.v`.  Parent: `atg_blt_rsv_px`.  Children: `atg_fmt_srgbenc`.
+RTL: `rtl/gpu/blt/atg_blt_favg.v`.  Parent: `atg_blt_rsv_px`.  Children: `atg_fmt_srgbenc`, `atg_fmt_h2f` (2: the two samples of a step), `atg_fmt_f2h`.
 
 ## 1. Purpose and place
 
@@ -52,3 +52,5 @@ docs/ghci.md §8.2, §8.5; `atg_blt_rsv_px.md`, `spec/gpu/fmt/atg_fmt_srgbenc.md
 New (2026-10-25).  Reading: GHCI leaves the precision of the linear sRGB values and the floats' rounding to the implementation; Amaterrace uses the GPU's fp32 rules and the order of the GHCI text.
 
 WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles): the sample and output places are am_shift and am_add of the same 32-bit values, the sRGB alpha averages four am_add each.
+
+WS288 p037 (2026-10-25, P3): the fp16 conversions are module instances (two atg_fmt_h2f, one atg_fmt_f2h) instead of the functions; unchanged (equal to the former module on 200,000 random cycles).

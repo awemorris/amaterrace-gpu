@@ -38,11 +38,9 @@ module atg_fmt_comp (
 		inf[55 +: 7];
 	wire [5:0] w = k == 2'd0 ? inf[23 +: 6] : k == 2'd1 ? inf[36 +: 6] : k == 2'd2 ? inf[49 +: 6] :
 		inf[62 +: 6];
-	reg [31:0] msk;
-	integer b;
-	always @(*)
-		for (b = 0; b < 32; b = b + 1)
-			msk[b] = b < w;
+	wire [31:0] wh;	/* the bits from w up */
+	am_shift #(.W(32), .SW(6)) u_wh (.a({32{1'b1}}), .amt(w), .left(1'b1), .arith(1'b0), .y(wh));
+	wire [31:0] msk = ~wh;	/* 2^w - 1 */
 	wire [31:0] fld = raw[pos +: 32] & msk;
 	/* one atg_fmt_unorm for UNORM, SNORM's magnitude and sRGB's alpha */
 	wire neg = w == 6'd8 ? fld[7] : fld[15];
@@ -66,15 +64,24 @@ module atg_fmt_comp (
 	wire hs = ty == ATG_FMT_SFLOAT && fld[15];
 	reg [3:0] lz;
 	reg found;
-	integer i;
 	always @(*) begin
-		lz = 4'd0;
-		found = 1'b0;
-		for (i = 0; i < 10; i = i + 1)
-			if (!found && x[9 - i]) begin
-				lz = i[3:0];
-				found = 1'b1;
-			end
+		found = 1'b1;
+		casez (x)
+		10'b1?????????: lz = 4'd0;
+		10'b01????????: lz = 4'd1;
+		10'b001???????: lz = 4'd2;
+		10'b0001??????: lz = 4'd3;
+		10'b00001?????: lz = 4'd4;
+		10'b000001????: lz = 4'd5;
+		10'b0000001???: lz = 4'd6;
+		10'b00000001??: lz = 4'd7;
+		10'b000000001?: lz = 4'd8;
+		10'b0000000001: lz = 4'd9;
+		default: begin
+			lz = 4'd0;
+			found = 1'b0;
+		end
+		endcase
 	end
 	wire [3:0] lz1;
 	wire [9:0] f;
@@ -107,7 +114,7 @@ module atg_fmt_comp (
 		sten ? (k == 2'd3 ? (inf[13] ? 32'd1 : 32'h3F800000) : k == 2'd0 && inf[13] ? {24'd0, raw[31:24]} :
 		32'd0) : {1'b0, k} >= inf[8:6] ? (k == 2'd3 ? (is_int ? 32'd1 : 32'h3F800000) : 32'd0) : cv;
 
-	wire unused_ok = &{1'b0, carry_unused, inf[15], inf[12], inf[5:1], f[0]};
+	wire unused_ok = &{1'b0, carry_unused, inf[15], inf[12], inf[5:1], f[0], found};
 endmodule
 
 `default_nettype wire

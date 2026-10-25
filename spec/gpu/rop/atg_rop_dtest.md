@@ -36,7 +36,7 @@ Combinational: no clock.
 
 ## 4. Behaviour
 
-The format is the one bit of DEPTH[7:5] that is set; with none or more than one there is no depth/stencil attachment: every test passes and nothing is written (pass = cov).  z_a is the stored depth: D16 and D24 as UNORM to fp32 (`atg_fmt_unorm`, nearest), D32F the stored word.
+The format is the one bit of DEPTH[7:5] that is set; with none or more than one there is no depth/stencil attachment: every test passes and nothing is written (pass = cov).  z_a is the stored depth: D16 and D24 as UNORM to fp32 (one `atg_fmt_unorm` for both, nearest), D32F the stored word.
 
 1. **Depth bounds** (DEPTH[9]): z_a below bmin or above bmax (fp32 order, -0 = +0; a NaN z_a is outside) → pass = 0, wbe = 0 (no stencil op: Vulkan sets the coverage to 0 before the stencil test).
 2. **Stencil** (DEPTH[8] and D24S8; the state of `front`'s face): s_a = stored[31:24]; the test is (reference & compare mask) op (s_a & compare mask) with the VkCompareOp.  Failed: new = op(fail op), pass = 0.  Passed: new = op(depth result ? pass op : depth-fail op), pass = the depth result.  Ops (VkStencilOp): 0 KEEP s_a, 1 ZERO, 2 REPLACE reference, 3 INCREMENT_AND_CLAMP min(s_a + 1, 255), 4 DECREMENT_AND_CLAMP max(s_a - 1, 0), 5 INVERT ~s_a, 6 INCREMENT_AND_WRAP s_a + 1, 7 DECREMENT_AND_WRAP s_a - 1 (8 bits).  The written stencil is (s_a & ~write mask) | (new & write mask); byte 3 is enabled when it differs from s_a.  Without the stencil test the stencil passes and is not written.
@@ -78,3 +78,5 @@ docs/ghci.md §8.5 (ROP range, the per-sample operations), `spec/gpu/rop/atg_rop
 Implemented 2026-10-25: every PASS of §8 (`sim/vec/rop_dtest.txt` from `tools/rop-vectors.py`, the model `dtest` in `tools/rxmodel.py`); `-DMUT_STENCIL_FACE` and `-DMUT_STENCIL_WRAP` fail `.stencil` (and the sections with a stencil).  wword's bytes outside wbe are unspecified (the TB compares the enabled ones).
 
 2026-10-25 (p037, P1): the D24 conversion and the D32F keys are instances of atg_fmt_depth_u24 and atg_fmt_depth_key (the shared arithmetic, docs/style.md); the behaviour is unchanged (the old module and the new one compared on 200,000 random inputs).
+
+2026-10-25 (p037, P3): the UNORM conversions are module instances: one atg_fmt_unorm for the stored D24 or D16 value (the two are never needed at once) and one atg_fmt_f2unorm (D16); unchanged (equal to the former module on 300,000 random inputs).

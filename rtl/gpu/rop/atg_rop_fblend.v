@@ -12,7 +12,7 @@
  * formats (VkFormat 43, 50, 57), A2B10G10R10_UNORM (64) and R16, R16G16,
  * R16G16B16A16_SFLOAT (76, 83, 97).
  *
- * For each lane of i_lanes: d = atg_fmt_unpack of the stored pixel (sRGB
+ * For each lane of i_lanes: d = the stored pixel unpacked (atg_fmt_comp; sRGB
  * decoded to linear, a missing alpha 1); for the fixed-point targets the
  * source and the constant are clamped to [0, 1] (NaN and negative to +0).
  * With i_blend[0], per channel: the ops 0 ADD s Fs + d Fd, 1 SUBTRACT,
@@ -46,10 +46,7 @@ module atg_rop_fblend (
 	output reg [255:0] o_raw,
 	output reg [255:0] o_keep
 );
-	`include "atg_srgb.vh"
 	`include "atg_fmt_info.vh"
-	`include "atg_fmt_unpack.vh"
-	`include "atg_fmt_pack.vh"
 	localparam [31:0] ONE = 32'h3F800000;
 
 	localparam [3:0] S_IDLE = 4'd0, S_CH = 4'd1, S_FS = 4'd2, S_FD = 4'd3, S_P = 4'd4,
@@ -103,62 +100,64 @@ module atg_rop_fblend (
 		fmax = isnan(a[30:0]) || isnan(b[30:0]) ? 32'h7FC00000 : fle(b, a) ? a : b;
 	endfunction
 
-	/* atg_fmt_unpack and atg_fmt_pack (instances below) for the formats of
-	 * this path, each with its format as a constant (it reduces to that format's fields
-	 * and conversions); the value for other formats is not used (their
-	 * lanes are skipped and give o_raw 0, o_keep all ones). */
-
 	/* The lane's values: source, destination, constant (clamped for fixed). */
 	wire [127:0] s_raw = src[128 * l +: 128];
-	/* The formats of this path; the format's info word. */
+	/* The formats of this path (the destination is unpacked and the result
+	 * packed for these only; the value for other formats is not used: their
+	 * lanes are skipped and give o_raw 0, o_keep all ones); the format's
+	 * info word. */
 	localparam [55:0] PFF = {8'd97, 8'd83, 8'd76, 8'd64, 8'd57, 8'd50, 8'd43};
 	wire [67:0] pinf = atg_fmt_info(fmt);
 	genvar gf;
-	/* The destination unpacked (atg_fmt_comp, one a component): the format's
-	 * component k moved to bit 0 (a constant shift a format), then converted
-	 * with the format's info word (its places 0). */
-	wire [127:0] d_raw = {64'd0, dst[64 * l +: 64]};
-	wire [67:0] uinf = pinf & ~{6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 16'd0};
-	wire [127:0] d_cv;
-	generate
-	for (gf = 0; gf < 4; gf = gf + 1) begin : g_un
-		reg [127:0] kraw;
-		integer uf;
-		always @(*) begin
-			kraw = 128'd0;
-			for (uf = 0; uf < 7; uf = uf + 1)
-				if (fmt == PFF[8 * uf +: 8])
-					kraw = d_raw >> atg_fmt_pos(PFF[8 * uf +: 8], gf);
-		end
-		localparam [1:0] K = gf;
-		atg_fmt_comp u_comp (.raw(kraw), .inf(uinf), .k(K), .sten(1'b0), .v(d_cv[32 * gf +: 32]));
-	end
-	endgenerate
-	reg d_known;
-	integer kf;
-	always @(*) begin
-		d_known = 1'b0;
-		for (kf = 0; kf < 7; kf = kf + 1)
-			if (fmt == PFF[8 * kf +: 8])
-				d_known = 1'b1;
-	end
-	wire [128:0] d_un = d_known ? {1'b0, d_cv} : 129'd0;
-	/* the place of component k of format f (constants) */
-	function [6:0] atg_fmt_pos;
-		input [7:0] f;
-		input integer k;
-		/* verilator lint_off UNUSEDSIGNAL */
-		reg [67:0] fi;	/* (the places only) */
-		/* verilator lint_on UNUSEDSIGNAL */
+	/* The places of component k of format i of PFF, at 7 (4 i + k). */
+	function [7*28-1:0] ppos;
+		input integer unused_n;
+		integer pi, pk;
+		reg [67:0] fi;
 		begin
-			fi = atg_fmt_info(f);
-			atg_fmt_pos = k == 0 ? fi[16 +: 7] : k == 1 ? fi[29 +: 7] : k == 2 ? fi[42 +: 7] : fi[55 +: 7];
+			ppos = {7*28{1'b0}};
+			for (pi = 0; pi < 7; pi = pi + 1) begin
+				fi = atg_fmt_info(PFF[8 * pi +: 8]);
+				for (pk = 0; pk < 4; pk = pk + 1)
+					ppos[7 * (4 * pi + pk) +: 7] = fi[16 + 13 * pk +: 7];
+			end
 		end
 	endfunction
+	localparam [7*28-1:0] PPOS = ppos(0);
+	/* The destination unpacked: components c and A (the two that a step
+	 * reads), each by one atg_fmt_comp from its field moved to bit 0 (a
+	 * constant place for each format and component) with the format's info
+	 * word, its places 0. */
+	wire [127:0] d_raw = {64'd0, dst[64 * l +: 64]};
+	wire [67:0] uinf = pinf & ~{6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 16'd0};
+	reg [31:0] craw, araw;
+	reg [6:0] up;
+	reg d_known;
+	integer uf, uk;
+	always @(*) begin
+		craw = 32'd0;
+		araw = 32'd0;
+		up = 7'd0;
+		d_known = 1'b0;
+		for (uf = 0; uf < 7; uf = uf + 1)
+			if (fmt == PFF[8 * uf +: 8]) begin
+				d_known = 1'b1;
+				for (uk = 0; uk < 4; uk = uk + 1) begin
+					up = PPOS[7 * (4 * uf + uk) +: 7];
+					if (c == uk[1:0])
+						craw = d_raw[up +: 32];
+					if (uk == 3)
+						araw = d_raw[up +: 32];
+				end
+			end
+	end
+	wire [31:0] d_cv, d_av;
+	atg_fmt_comp u_dc (.raw({96'd0, craw}), .inf(uinf), .k(c), .sten(1'b0), .v(d_cv));
+	atg_fmt_comp u_da (.raw({96'd0, araw}), .inf(uinf), .k(2'd3), .sten(1'b0), .v(d_av));
 	wire [31:0] s_c = fixed ? c01(s_raw[32 * c +: 32]) : s_raw[32 * c +: 32];
 	wire [31:0] s_a = fixed ? c01(s_raw[127:96]) : s_raw[127:96];
-	wire [31:0] d_c = d_un[32 * c +: 32];
-	wire [31:0] d_a = d_un[127:96];
+	wire [31:0] d_c = d_known ? d_cv : 32'd0;
+	wire [31:0] d_a = d_known ? d_av : 32'd0;
 	wire [31:0] k_c = fixed ? c01(kc[32 * c +: 32]) : kc[32 * c +: 32];
 	wire [31:0] k_a = fixed ? c01(kc[127:96]) : kc[127:96];
 	wire [3:0] f_s = c == 2'd3 ? bl[15:12] : bl[4:1];
@@ -220,21 +219,8 @@ module atg_rop_fblend (
 		atg_fmt_f2h u_hf (.f(rr_l[32 * gf +: 32]), .h(p_hf[16 * gf +: 16]));
 	end
 	endgenerate
-	wire [7*256-1:0] pks;
-	generate
-	for (gf = 0; gf < 7; gf = gf + 1) begin : g_pk
-		atg_fmt_pack #(.FMT(PFF[8 * gf +: 8])) u_pk (.c(rr_l), .un(p_un), .hf(p_hf), .wm(wm),
-			.o(pks[256 * gf +: 256]));
-	end
-	endgenerate
-	reg [255:0] pk;
-	integer pf;
-	always @(*) begin
-		pk = {{128{1'b1}}, 128'd0};
-		for (pf = 0; pf < 7; pf = pf + 1)
-			if (fmt == PFF[8 * pf +: 8])
-				pk = pks[256 * pf +: 256];
-	end
+	wire [255:0] pk;
+	atg_fmt_pack #(.N(7), .FMTS(PFF)) u_pk (.c(rr_l), .un(p_un), .hf(p_hf), .fmt(fmt), .wm(wm), .o(pk));
 
 	assign i_ready = st == S_IDLE;
 	assign o_valid = st == S_OUT;
@@ -402,7 +388,7 @@ module atg_rop_fblend (
 		endcase
 	end
 
-	wire unused_ok = &{1'b0, d_un[128], pk[127:64], pk[255:192]};
+	wire unused_ok = &{1'b0, pk[127:64], pk[255:192]};
 endmodule
 
 `default_nettype wire

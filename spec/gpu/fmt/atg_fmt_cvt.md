@@ -4,7 +4,7 @@ RTL: `rtl/gpu/fmt/atg_fmt_cvt.v`.  Parent: atg_tu_ffilt.  Written in WS288 p038 
 
 ## 1. Purpose and place
 
-One component of a texel to 32 bits, pipelined: bit for bit `atg_fmt_comp(raw, inf, k, stencil)` of `include/atg_fmt_unpack.vh` (`tools/fmtmodel.py` unpack; spec/gpu/fmt/atg_fmt.md): UNORM and SNORM to the nearest fp32, the 16-bit, packed unsigned and E5B9G9R9 floats exactly, integers zero or sign extended, sRGB R, G, B through atg_srgb_dec and A as UNORM, the stencil aspect, and the constants of the components a format does not have.
+One component of a texel to 32 bits, pipelined: bit for bit `atg_fmt_comp` (its combinational form) (`tools/fmtmodel.py` unpack; spec/gpu/fmt/atg_fmt.md): UNORM and SNORM to the nearest fp32, the 16-bit, packed unsigned and E5B9G9R9 floats exactly, integers zero or sign extended, sRGB R, G, B through atg_srgb_dec and A as UNORM, the stencil aspect, and the constants of the components a format does not have.
 
 ## 2. Parameters
 
@@ -43,7 +43,7 @@ None beyond atg_fmt_comp's.
 
 ## 9. References
 
-`include/atg_fmt_unpack.vh`, `include/atg_fmt_info.vh`.
+`spec/gpu/fmt/atg_fmt_comp.md`, `include/atg_fmt_info.vh`.
 
 ## 10. Status
 

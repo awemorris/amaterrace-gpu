@@ -6,8 +6,8 @@
  */
 
 /*
- * atg_fmt_cvt_tb: atg_fmt_cvt against atg_fmt_comp of
- * include/atg_fmt_unpack.vh, one conversion a cycle (seeded): every
+ * atg_fmt_cvt_tb: atg_fmt_cvt against atg_fmt_comp (its combinational
+ * form, checked against tools/fmtmodel.py by atg_fmt_tb), one conversion a cycle (seeded): every
  * VkFormat code 0-255 (atg_fmt_info, entries or not), the block kinds of
  * atg_tu_ffilt (atg_fmt_i of RGBA8 and the 11- and 10-bit EAC words),
  * each component, the stencil aspect, and texels of random bits, small
@@ -18,9 +18,7 @@
 `default_nettype none
 
 module atg_fmt_cvt_tb;
-	`include "atg_srgb.vh"
 	`include "atg_fmt_info.vh"
-	`include "atg_fmt_unpack.vh"
 	reg clk = 1'b0;
 	always #5 clk = !clk;
 
@@ -31,6 +29,8 @@ module atg_fmt_cvt_tb;
 	wire [31:0] val;
 
 	atg_fmt_cvt dut (.clk(clk), .i_raw(raw), .i_inf(inf), .i_k(k), .i_sten(sten), .o_val(val));
+	wire [31:0] ref_v;
+	atg_fmt_comp u_ref (.raw(raw), .inf(inf), .k(k), .sten(sten), .v(ref_v));
 
 	localparam LAT = 7;
 	integer seed, errs, j, n;
@@ -78,7 +78,7 @@ module atg_fmt_cvt_tb;
 				xq[n] = xq[n - 1];
 				vq[n] = vq[n - 1];
 			end
-			xq[0] = atg_fmt_comp(raw, inf, k, sten);
+			xq[0] = ref_v;
 			vq[0] = 1'b1;
 			#1;
 			if (vq[LAT - 1] && val !== xq[LAT - 1]) begin

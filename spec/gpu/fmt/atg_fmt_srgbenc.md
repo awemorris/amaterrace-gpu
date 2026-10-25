@@ -29,7 +29,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 
 ## 4. Behaviour
 
-The code is the number of thresholds T_i <= x, where T_i (i = 0..254, `atg_srgb_thr`) is the smallest fp32 above EOTF((i + 0.5) / 255): the code whose interval of the EOTF holds x, which is the nearest code in sRGB space.  A positive fp32 orders as its bits, so each step is an integer compare.  NaN, negative values and -0 give 0; values >= 1 and +infinity 255.  Eight steps: lo = 0; for bit 7..0, lo += 2^bit when x >= T[lo + 2^bit - 1].
+The code is the number of thresholds T_i <= x, where T_i (i = 0..254, `atg_srgb_thr`) is the smallest fp32 above EOTF((i + 0.5) / 255): the code whose interval of the EOTF holds x, which is the nearest code in sRGB space.  A positive fp32 orders as its bits, so each step is an integer compare.  NaN, negative values and -0 give 0; values >= 1 and +infinity 255.  Eight steps: lo = 0; for bit 7..0, lo += 2^bit when x >= T[lo + 2^bit - 1].  lo has no bit below the step, so lo + 2^bit - 1 is lo | (2^bit - 1) and lo + 2^bit is lo | 2^bit: the step is a one-hot register shifted right each step, beside the bits below it (no adder; docs/style.md, Arithmetic).
 
 ## 5. State machine
 

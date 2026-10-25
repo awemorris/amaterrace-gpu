@@ -1,6 +1,6 @@
 # atg_rop_fblend
 
-RTL: `rtl/gpu/rop/atg_rop_fblend.v` (new).  Parent: atg_rop_wpix (in atg_rop_wb, beside atg_rop_blend; atg_rop_wpix chooses the path).  Children: atg_rx_fmul, atg_rx_fadd, atg_fmt_srgbenc.
+RTL: `rtl/gpu/rop/atg_rop_fblend.v` (new).  Parent: atg_rop_wpix (in atg_rop_wb, beside atg_rop_blend; atg_rop_wpix chooses the path).  Children: atg_rx_fmul, atg_rx_fadd, atg_fmt_srgbenc, atg_fmt_comp (2), atg_fmt_f2unorm (4), atg_fmt_f2h (4), atg_fmt_pack.
 
 ## 1. Purpose and place
 
@@ -36,17 +36,17 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 
 ## 4. Behaviour
 
-For each lane in i_lanes: d = `atg_fmt_unpack(i_dst, i_fmt)` (sRGB: R, G, B decoded to linear; formats without alpha read a destination alpha of 1).  For a fixed-point target (UNORM, sRGB) the source, the destination, the constant and every factor are clamped to [0, 1] before blending (Vulkan's rule for fixed-point attachments).  With i_blend[0]:
+For each lane in i_lanes: d = the stored pixel unpacked (`atg_fmt_comp`; sRGB: R, G, B decoded to linear; formats without alpha read a destination alpha of 1).  For a fixed-point target (UNORM, sRGB) the source, the destination, the constant and every factor are clamped to [0, 1] before blending (Vulkan's rule for fixed-point attachments).  With i_blend[0]:
 
 - factors (VkBlendFactor 0-14) per channel: 0 ZERO, 1 ONE, 2 SRC_COLOR, 3 ONE_MINUS_SRC_COLOR, 4 DST_COLOR, 5 ONE_MINUS_DST_COLOR, 6 SRC_ALPHA, 7 ONE_MINUS_SRC_ALPHA, 8 DST_ALPHA, 9 ONE_MINUS_DST_ALPHA, 10 CONSTANT_COLOR, 11 ONE_MINUS_CONSTANT_COLOR, 12 CONSTANT_ALPHA, 13 ONE_MINUS_CONSTANT_ALPHA, 14 SRC_ALPHA_SATURATE (min(A_s, 1 - A_d) for R, G, B; 1 for A); 15 reads as ZERO.  "One minus x" is 1 - x on the fadd.
 - ops (VkBlendOp 0-4): 0 ADD s·Fs + d·Fd, 1 SUBTRACT s·Fs - d·Fd, 2 REVERSE_SUBTRACT d·Fd - s·Fs, 3 MIN min(s, d), 4 MAX max(s, d) (the factors are ignored); 5-7 read as ADD.  MIN and MAX compare as fp32 (-0 = +0); a NaN operand gives 0x7FC00000.
 - the arithmetic is atg_rx_fmul and atg_rx_fadd (fp32, round to nearest even, denormals flushed, as tools/rxmodel.py's fmul and fadd).
 
-Without i_blend[0] the result is the source.  Then the result is packed: sRGB R, G, B through an atg_fmt_srgbenc (one per lane), then `atg_fmt_pack(c, i_fmt, i_wm)`; o_keep is pack's keep, all ones for lanes outside i_lanes.
+Without i_blend[0] the result is the source.  Then the result is packed: sRGB R, G, B through an atg_fmt_srgbenc (one per lane), then packed with the write mask (`atg_fmt_pack` of the seven formats, the UNORM and fp16 conversions by one atg_fmt_f2unorm and one atg_fmt_f2h a component); o_keep is pack's keep, all ones for lanes outside i_lanes.
 
 ## 5. State machine
 
-IDLE →(i_valid)→ per lane and channel: CH (the source, MIN or MAX in one step) → FS, FD (a "one minus" factor on the fadd) → P, Q (s·Fs, d·Fd on the fmul) → R (the op) → … → ENC (sRGB only: R, G, B of each lane through the one encoder) → PACK (one lane per cycle) → OUT →(o_ready)→ IDLE.  One operation at a time (no overlap in v1); the lane's destination is unpacked by one atg_fmt_unpack.
+IDLE →(i_valid)→ per lane and channel: CH (the source, MIN or MAX in one step) → FS, FD (a "one minus" factor on the fadd) → P, Q (s·Fs, d·Fd on the fmul) → R (the op) → … → ENC (sRGB only: R, G, B of each lane through the one encoder) → PACK (one lane per cycle) → OUT →(o_ready)→ IDLE.  One operation at a time (no overlap in v1); a step reads the destination's channel c and its alpha, each from one atg_fmt_comp (the field of the format's component moved to bit 0 by a constant place a format).
 
 ## 6. Latency and throughput
 
@@ -73,3 +73,5 @@ docs/ghci.md §8.5 (ROP range, per-sample operations), `spec/gpu/rop/atg_rop_ble
 ## 10. Status
 
 Implemented 2026-10-25: every PASS of §8 (`sim/vec/rop_fblend.txt` from `tools/rop-vectors.py`, the model `fblend_lane` in `tools/rxmodel.py`).  Wired in atg_rop_wpix (2026-10-25; checked through `sim/tb/atg_rop_mrt_tb.v`).  One encoder instead of the four of the first text (§6).
+
+WS288 p037 (2026-10-25): the conversions are the modules of rtl/gpu/fmt (the functions are gone): two atg_fmt_comp (the channel of the step and the alpha, the only two a step reads), four atg_fmt_f2unorm and four atg_fmt_f2h (the pack of a lane needs its four components at once) and one atg_fmt_pack of the seven formats; the behaviour is unchanged (equal to the former module on random cycles, scratch harness).
