@@ -32,14 +32,16 @@ struct heap_extent {
 };
 
 /*
- * One open session: its tag, the heap lines its objects hold, and its
- * limit in lines (0: none).
+ * One open session: its tag, the heap lines its objects hold, its limit
+ * in lines (0: none), and whether a replay of its work failed after its
+ * submit had answered (lost: its later submits run nothing).
  */
 struct heap_session {
 	uint32_t tag;
 	uint32_t used;
 	uint32_t limit;
 	uint32_t open;
+	uint32_t lost;
 };
 
 /*
@@ -265,6 +267,7 @@ fw_session_open(
 	session->limit = 0;
 	if (limit != 0 && limit < (uint64_t)heap_lines * FW_LINE_BYTES)
 		session->limit = (uint32_t)(limit / FW_LINE_BYTES);
+	session->lost = 0;
 	session->open = 1;
 
 	/* Succeeded: the tag's objects can be made. */
@@ -286,6 +289,45 @@ fw_session_is_open(
 		return 0;
 
 	/* Succeeded: it is open. */
+	return 1;
+}
+
+/*
+ * Marks a session lost: a replay of its work failed after its submit had
+ * answered.
+ */
+void
+fw_session_lose(
+	uint32_t tag)
+{
+	struct heap_session *session;
+
+	/* The tag's slot; a closed session has nothing to lose. */
+	session = heap_session_of(tag);
+	if (session == NULL)
+		return;
+
+	/* Its later submits answer VK_ERROR_DEVICE_LOST. */
+	session->lost = 1;
+}
+
+/*
+ * Reports whether a session is lost (fw_session_lose).
+ */
+int
+fw_session_lost(
+	uint32_t tag)
+{
+	struct heap_session *session;
+
+	/* The tag's slot; a session that is not open is not lost. */
+	session = heap_session_of(tag);
+	if (session == NULL)
+		return 0;
+	if (!session->lost)
+		return 0;
+
+	/* Succeeded: the session is lost. */
 	return 1;
 }
 
