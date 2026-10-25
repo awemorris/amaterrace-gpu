@@ -53,6 +53,9 @@ static void test_sessions(void);
 static void test_buffers(void);
 static void test_images(void);
 static void test_draw(void);
+static void test_compute(void);
+static void test_transfer(void);
+static void stage_compute_pipeline(uint32_t index, uint64_t id);
 static void stage_image(uint32_t index, uint64_t id, uint32_t format, uint32_t width, uint32_t height, uint32_t usage);
 static void stage_view(uint32_t index, uint64_t id, uint64_t image, uint32_t format);
 static void put_program(uint32_t address, uint32_t stage, const uint32_t *entries, uint32_t count, uint32_t push);
@@ -65,6 +68,8 @@ main(void)
 	test_buffers();
 	test_images();
 	test_draw();
+	test_compute();
+	test_transfer();
 
 	if (host_failures != 0) {
 		printf("FAIL fwtest: %d failures\n", host_failures);
@@ -1116,4 +1121,458 @@ test_draw(void)
 	base = 0;
 	(void)base;
 	(void)test_case("draw", before);
+}
+
+/* CREATE_COMPUTE_PIPELINES of one pipeline (its program came with GHCI_PROGRAM). */
+static void
+stage_compute_pipeline(
+	uint32_t index,
+	uint64_t id)
+{
+	host_record(GHCI_VK_CREATE_COMPUTE_PIPELINES, index);
+	host_u64(DEVICE);
+	host_u64(0);
+	host_u32(1);
+	host_u64(1);
+	host_u32(29);
+	host_u64(0);
+	host_u32(0);
+	host_u32(18);
+	host_u64(0);
+	host_u32(0);
+	host_u32(0x20);
+	host_u64(0x100);
+	host_u64(5);
+	host_u32(0x6E69616Du);
+	host_u32(0);
+	host_u64(0);
+	host_u64(0x750);
+	host_u64(0);
+	host_u32(0xFFFFFFFFu);
+	host_u64(0);
+	host_u64(1);
+	host_u64(id);
+}
+
+/*
+ * A dispatch, an indirect dispatch, an event, an occlusion query and the
+ * copy of its result: the program range, the bank (a storage buffer, push
+ * constants, scratch memory), the indirect parameters, the event's word
+ * and the query's copy.
+ */
+static void
+test_compute(void)
+{
+	static const uint32_t cs_entries[] = {
+		6, 0, 0, 0,		/* storage buffer: set 0, binding 0, bank 0 */
+		7, 0, 0, 2,		/* push constants at bank 2 */
+		14, 0, 4, 128,		/* scratch: bank word 4, 128 bytes per warp */
+	};
+	uint32_t index;
+	uint32_t uop;
+	uint32_t bank;
+	uint32_t event;
+	uint32_t pool;
+	int before;
+
+	before = host_failures;
+	open_session();
+	put_program(MEMORY_BASE + 0x700000u, 2, cs_entries, 3, 8);
+	host_poke(MEMORY_BASE + 0x700000u + 32u, 64);
+	host_poke(MEMORY_BASE + 0x6010u, 3);
+	host_poke(MEMORY_BASE + 0x6014u, 2);
+	host_poke(MEMORY_BASE + 0x6018u, 1);
+
+	/* The objects. */
+	host_frame_begin();
+	stage_memory(0);
+	stage_buffer(1, 0x720, 0x1000, 0x20);
+	stage_bind_buffer(2, 0x720, 0x4000);
+	stage_buffer(3, 0x721, 0x100, 0x100);
+	stage_bind_buffer(4, 0x721, 0x6000);
+	host_record(GHCI_VK_CREATE_DESCRIPTOR_SET_LAYOUT, 5);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(32);
+	host_u64(0);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0);
+	host_u32(7);
+	host_u32(1);
+	host_u32(0x20);
+	host_u64(0);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x740);
+	host_record(GHCI_VK_CREATE_DESCRIPTOR_POOL, 6);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(33);
+	host_u64(0);
+	host_u32(1);
+	host_u32(4);
+	host_u32(1);
+	host_u64(1);
+	host_u32(7);
+	host_u32(4);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x741);
+	host_record(GHCI_VK_ALLOCATE_DESCRIPTOR_SETS, 7);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(34);
+	host_u64(0);
+	host_u64(0x741);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x740);
+	host_u64(1);
+	host_u64(0x742);
+	host_record(GHCI_VK_UPDATE_DESCRIPTOR_SETS, 8);
+	host_u64(DEVICE);
+	host_u32(1);
+	host_u64(1);
+	host_u32(35);
+	host_u64(0);
+	host_u64(0x742);
+	host_u32(0);
+	host_u32(0);
+	host_u32(1);
+	host_u32(7);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x720);
+	host_u64(0x100);
+	host_u64(0x200);
+	host_u64(0);
+	host_u32(0);
+	host_u64(0);
+	host_record(GHCI_VK_CREATE_PIPELINE_LAYOUT, 9);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(30);
+	host_u64(0);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x740);
+	host_u32(1);
+	host_u64(1);
+	host_u32(0x20);
+	host_u32(0);
+	host_u32(8);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x750);
+	host_record(GHCI_GPU_OP_PROGRAM, 10);
+	host_u64(0x800);
+	host_u32(2);
+	host_u32(0x47534931u);
+	host_u64(MEMORY_BASE + 0x700000u);
+	host_u32(0x1000);
+	host_u32(0);
+	stage_compute_pipeline(11, 0x800);
+	host_record(GHCI_VK_CREATE_EVENT, 12);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(10);
+	host_u64(0);
+	host_u32(0);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x810);
+	host_record(GHCI_VK_CREATE_QUERY_POOL, 13);
+	host_u64(DEVICE);
+	host_u64(1);
+	host_u32(11);
+	host_u64(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(2);
+	host_u32(0);
+	host_u64(0);
+	host_u64(1);
+	host_u64(0x820);
+	host_check(host_frame_run(TAG, 14) == 0, "the objects' frame");
+	for (index = 0; index < 14u; index++) {
+		if (host_result(index) != 0) {
+			printf("  record %u: %d\n", index, host_result(index));
+			host_check(0, "a record failed");
+		}
+	}
+	event = host_result_aux(12);
+	pool = host_result_aux(13);
+
+	/* The recording: dispatch, indirect dispatch, event, query and its copy. */
+	host_frame_begin();
+	stage_pool_and_buffer(0, 0x780, 0x781);
+	stage_begin(2, 0x781);
+	host_cmd(GHCI_VK_CMD_BIND_PIPELINE);
+	host_u64(0x781);
+	host_u32(1);
+	host_u64(0x800);
+	host_cmd(GHCI_VK_CMD_BIND_DESCRIPTOR_SETS);
+	host_u64(0x781);
+	host_u32(1);
+	host_u64(0x750);
+	host_u32(0);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x742);
+	host_u32(0);
+	host_u64(0);
+	host_cmd(GHCI_VK_CMD_PUSH_CONSTANTS);
+	host_u64(0x781);
+	host_u64(0x750);
+	host_u32(0x20);
+	host_u32(0);
+	host_u32(8);
+	host_u64(8);
+	host_u32(0xAAAA0001u);
+	host_u32(0xAAAA0002u);
+	host_cmd(GHCI_VK_CMD_DISPATCH);
+	host_u64(0x781);
+	host_u32(4);
+	host_u32(1);
+	host_u32(1);
+	host_cmd(GHCI_VK_CMD_DISPATCH_INDIRECT);
+	host_u64(0x781);
+	host_u64(0x721);
+	host_u64(0x10);
+	host_cmd(GHCI_VK_CMD_SET_EVENT);
+	host_u64(0x781);
+	host_u64(0x810);
+	host_u32(1);
+	host_cmd(GHCI_VK_CMD_RESET_QUERY_POOL);
+	host_u64(0x781);
+	host_u64(0x820);
+	host_u32(0);
+	host_u32(2);
+	host_cmd(GHCI_VK_CMD_BEGIN_QUERY);
+	host_u64(0x781);
+	host_u64(0x820);
+	host_u32(1);
+	host_u32(0);
+	host_cmd(GHCI_VK_CMD_END_QUERY);
+	host_u64(0x781);
+	host_u64(0x820);
+	host_u32(1);
+	host_cmd(GHCI_VK_CMD_COPY_QUERY_POOL_RESULTS);
+	host_u64(0x781);
+	host_u64(0x820);
+	host_u32(0);
+	host_u32(2);
+	host_u64(0x721);
+	host_u64(0x40);
+	host_u64(16);
+	host_u32(1u | 4u);
+	stage_end(13, 0x781);
+	stage_submit(14, 0x781);
+	host_check(host_frame_run(TAG, 15) == 0, "the recording's frame");
+	for (index = 0; index < 15u; index++) {
+		if (host_result(index) != 0 && host_result(index) != -1) {
+			printf("  record %u: %d\n", index, host_result(index));
+			host_check(0, "a record failed");
+		}
+	}
+
+	/* The program range and the two dispatches. */
+	host_check(host_state[GHCI_S_CS_BASE] == MEMORY_BASE + 0x700000u + 64u + 48u, "CS_BASE");
+	host_check(host_state[GHCI_S_WG_SIZE] == 64u, "WG_SIZE");
+	uop = host_uop_find(GHCI_OP_DISPATCH, 0);
+	host_check(uop < host_uop_count && host_uops[uop + 1u] == 4u, "the first DISPATCH");
+	uop = host_uop_find(GHCI_OP_DISPATCH, uop + 1u);
+	host_check(uop < host_uop_count && host_uops[uop + 1u] == 3u && host_uops[uop + 2u] == 2u &&
+		   host_uops[uop + 3u] == 1u, "the indirect DISPATCH");
+
+	/* The bank: {address, bytes} of the storage buffer, the push words, scratch. */
+	uop = host_uop_find(GHCI_OP_LOAD_CONST, 0);
+	host_check(uop < host_uop_count, "LOAD_CONST");
+	if (uop < host_uop_count) {
+		bank = host_uops[uop + 2u];
+		host_check(host_peek(bank) == MEMORY_BASE + 0x4100u && host_peek(bank + 4u) == 0x200u, "the storage buffer's words");
+		host_check(host_peek(bank + 8u) == 0xAAAA0001u && host_peek(bank + 12u) == 0xAAAA0002u, "the push words");
+		host_check(host_peek(bank + 16u) != 0 && (host_peek(bank + 16u) & 63u) == 0, "the scratch address");
+	}
+
+	/* The event is set; the query's {count, availability} copied. */
+	host_check(event != 0 && host_peek(event) == 1u, "the event's word");
+	host_check(pool != 0, "the query pool's slots");
+	host_check(host_peek(MEMORY_BASE + 0x6040u + 16u) == 7u && host_peek(MEMORY_BASE + 0x6040u + 24u) == 1u,
+		   "the query's copy");
+	host_check(host_peek(MEMORY_BASE + 0x6040u + 8u) == 0u, "the unavailable query's availability");
+	(void)test_case("compute", before);
+}
+
+/*
+ * The transfers of images: a depth/stencil clear, the stencil aspect to a
+ * buffer (the built-in compute program), a scaled blit (the built-in
+ * draw), a copy into an image.
+ */
+static void
+test_transfer(void)
+{
+	uint32_t index;
+	uint32_t ok;
+	uint32_t words;
+	uint32_t code;
+	struct fw_object *image;
+	int before;
+
+	before = host_failures;
+	open_session();
+	host_frame_begin();
+	stage_memory(0);
+	stage_image(1, 0x700, FW_VK_FORMAT_D24_UNORM_S8_UINT, 16, 8, 0x23);
+	host_record(GHCI_VK_BIND_IMAGE_MEMORY, 2);
+	host_u64(DEVICE);
+	host_u64(0x700);
+	host_u64(MEMORY);
+	host_u64(0x100000);
+	stage_image(3, 0x701, FW_VK_FORMAT_R8G8B8A8_UNORM, 32, 16, 0x7);
+	host_record(GHCI_VK_BIND_IMAGE_MEMORY, 4);
+	host_u64(DEVICE);
+	host_u64(0x701);
+	host_u64(MEMORY);
+	host_u64(0x200000);
+	stage_image(5, 0x702, FW_VK_FORMAT_B8G8R8A8_UNORM, 64, 32, 0x16);
+	host_record(GHCI_VK_BIND_IMAGE_MEMORY, 6);
+	host_u64(DEVICE);
+	host_u64(0x702);
+	host_u64(MEMORY);
+	host_u64(0x300000);
+	stage_buffer(7, 0x720, 0x10000, 3);
+	stage_bind_buffer(8, 0x720, 0x400000);
+	stage_pool_and_buffer(9, 0x780, 0x781);
+	stage_begin(11, 0x781);
+	host_cmd(GHCI_VK_CMD_CLEAR_DEPTH_STENCIL_IMAGE);
+	host_u64(0x781);
+	host_u64(0x700);
+	host_u32(7);
+	host_u64(1);
+	host_u32(0x3F800000u);
+	host_u32(5);
+	host_u32(1);
+	host_u64(1);
+	host_u32(FW_ASPECT_DEPTH | FW_ASPECT_STENCIL);
+	host_u32(0);
+	host_u32(1);
+	host_u32(0);
+	host_u32(1);
+	host_cmd(GHCI_VK_CMD_COPY_IMAGE_TO_BUFFER);
+	host_u64(0x781);
+	host_u64(0x700);
+	host_u32(6);
+	host_u64(0x720);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x100);
+	host_u32(0);
+	host_u32(0);
+	host_u32(FW_ASPECT_STENCIL);
+	host_u32(0);
+	host_u32(0);
+	host_u32(1);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(16);
+	host_u32(8);
+	host_u32(1);
+	host_cmd(GHCI_VK_CMD_COPY_BUFFER_TO_IMAGE);
+	host_u64(0x781);
+	host_u64(0x720);
+	host_u64(0x701);
+	host_u32(7);
+	host_u32(1);
+	host_u64(1);
+	host_u64(0x1000);
+	host_u32(0);
+	host_u32(0);
+	host_u32(FW_ASPECT_COLOR);
+	host_u32(0);
+	host_u32(0);
+	host_u32(1);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(32);
+	host_u32(16);
+	host_u32(1);
+	host_cmd(GHCI_VK_CMD_BLIT_IMAGE);
+	host_u64(0x781);
+	host_u64(0x701);
+	host_u32(6);
+	host_u64(0x702);
+	host_u32(7);
+	host_u32(1);
+	host_u64(1);
+	host_u32(FW_ASPECT_COLOR);
+	host_u32(0);
+	host_u32(0);
+	host_u32(1);
+	host_u64(2);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(32);
+	host_u32(16);
+	host_u32(1);
+	host_u32(FW_ASPECT_COLOR);
+	host_u32(0);
+	host_u32(0);
+	host_u32(1);
+	host_u64(2);
+	host_u32(64);
+	host_u32(0);
+	host_u32(0);
+	host_u32(0);
+	host_u32(32);
+	host_u32(1);
+	host_u32(1);
+	stage_end(16, 0x781);
+	stage_submit(17, 0x781);
+	for (index = 0; index < 32u * 16u; index++)
+		host_poke(MEMORY_BASE + 0x401000u + index * 4u, 0x01020300u + index);
+	host_check(host_frame_run(TAG, 18) == 0, "the frame");
+	for (index = 0; index < 18u; index++) {
+		if (host_result(index) != 0 && host_result(index) != -1) {
+			printf("  record %u: %d\n", index, host_result(index));
+			host_check(0, "a record failed");
+		}
+	}
+
+	/* The clear: depth 1.0 (0xFFFFFF) and stencil 5 in every texel (rows of 16). */
+	image = fw_object_find(TAG, 0x700, FW_OBJ_IMAGE);
+	ok = image != NULL;
+	for (index = 0; ok && index < 16u * 8u; index++) {
+		if (host_peek(image->a + index * 4u) != 0x05FFFFFFu)
+			ok = 0;
+	}
+	host_check(ok, "the depth/stencil clear");
+
+	/* The stencil copy is the built-in compute program; the blit the built-in draw. */
+	code = fw_builtin_program(FW_PROGRAM_S8_FROM_IMAGE, &words);
+	host_check(host_uops_of(GHCI_OP_DISPATCH) == 1u, "one DISPATCH");
+	host_check(host_state[GHCI_S_CS_BASE] == code, "the stencil program");
+	code = fw_builtin_program(FW_PROGRAM_BLIT_VS, &words);
+	host_check(host_uops_of(GHCI_OP_DRAW) == 1u, "one DRAW for the blit");
+	host_check(host_state[GHCI_S_VS_BASE] == code, "the blit's vertex program");
+	host_check(host_state[GHCI_S_RT_FORMATS] == FW_VK_FORMAT_B8G8R8A8_UNORM, "the blit's target format");
+	host_check(host_state[GHCI_S_TEX(0, GHCI_TEX_FORMAT)] == FW_VK_FORMAT_R8G8B8A8_UNORM, "the blit's source format");
+	host_check((host_state[GHCI_S_TEX(0, GHCI_TEX_SAMPLER)] & (GHCI_SAMP_UNNORM | GHCI_SAMP_MAG_LINEAR)) ==
+		   (GHCI_SAMP_UNNORM | GHCI_SAMP_MAG_LINEAR), "the blit's sampler");
+
+	/* The copy into the colour image. */
+	image = fw_object_find(TAG, 0x701, FW_OBJ_IMAGE);
+	ok = image != NULL;
+	for (index = 0; ok && index < 32u * 16u; index++) {
+		if (host_peek(image->a + index * 4u) != 0x01020300u + index)
+			ok = 0;
+	}
+	host_check(ok, "the copy into the image");
+	(void)test_case("transfer", before);
 }

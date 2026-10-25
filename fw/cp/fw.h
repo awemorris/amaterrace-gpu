@@ -270,7 +270,7 @@ struct fw_view {
 	uint32_t aspect;
 	uint32_t levels;
 	uint32_t view_type;
-	uint32_t image_base;	/* GPU address of the image (level 0, layer 0) */
+	uint32_t tex_row;	/* TEX_ROW: the rows' rounding (1: an attachment's even rows) */
 };
 
 /*
@@ -421,6 +421,11 @@ struct fw_pipeline {
 #define FW_RESIDENT_WARPS 4u		/* the warps that run at once when GHCI_HEAP does not say */
 #define FW_PIPE_NO_PUSH 0xFFFFFFFFu
 
+/* The texture slot's word +7 (CAPS[30], draft): the rows' rounding, log2 of the texels. */
+#ifndef GHCI_TEX_ROW
+#define GHCI_TEX_ROW 7u
+#endif
+
 /* VkImageUsageFlags the firmware looks at. */
 #define FW_USAGE_COLOR_ATTACHMENT 0x10u
 #define FW_USAGE_DEPTH_STENCIL_ATTACHMENT 0x20u
@@ -531,6 +536,8 @@ enum fw_builtin_program {
 	FW_PROGRAM_MASK = 0,		/* a fragment stage that keeps every sample */
 	FW_PROGRAM_BLIT_VS,		/* the blit draw's vertex program */
 	FW_PROGRAM_BLIT_FS,		/* the blit draw's fragment program */
+	FW_PROGRAM_S8_TO_IMAGE,		/* stencil bytes from a buffer into D24S8 texels */
+	FW_PROGRAM_S8_FROM_IMAGE,	/* stencil bytes of D24S8 texels into a buffer */
 	FW_BUILTIN_PROGRAMS
 };
 #define FW_BUILTIN_BYTES (FW_IDENTITY_WORDS * 4u + FW_BUILTIN_PROGRAMS * FW_BUILTIN_PROGRAM_BYTES + FW_LINE_BYTES)

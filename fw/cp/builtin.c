@@ -22,11 +22,15 @@ static const uint32_t *const builtin_code[FW_BUILTIN_PROGRAMS] = {
 	fw_program_mask,
 	fw_program_blit_vs,
 	fw_program_blit_fs,
+	fw_program_s8_to_image,
+	fw_program_s8_from_image,
 };
 static const uint32_t builtin_words[FW_BUILTIN_PROGRAMS] = {
 	FW_PROGRAM_MASK_WORDS,
 	FW_PROGRAM_BLIT_VS_WORDS,
 	FW_PROGRAM_BLIT_FS_WORDS,
+	FW_PROGRAM_S8_TO_IMAGE_WORDS,
+	FW_PROGRAM_S8_FROM_IMAGE_WORDS,
 };
 
 /*

@@ -385,7 +385,9 @@ fw_cmd_create_image_view(
 	}
 
 	/* The view's level and layer as the units see them. */
-	view.image_base = image->a;
+	view.tex_row = 0;
+	if (desc.attachment && desc.samples == 1u && !desc.block)
+		view.tex_row = 1;
 	view.layer_stride = desc.layer_stride;
 	view.base = image->a + base_layer * desc.layer_stride;
 	error = res_view_slot(&desc, view_type, base_level, levels, layers, &view);

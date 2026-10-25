@@ -1,9 +1,10 @@
 #!/bin/sh
 # Builds the CP firmware for the host (FW_HOST: the window and the DMA are
-# fwhost.c's) with the tests of fwtest.c and runs them; prints "PASS
-# fwtest.<case>" per case and "PASS fwtest" at the end, exit status 1 on
-# a failure.  Needs a host C compiler (cc); the build goes to
-# build/fw-host/.  About ten seconds.
+# fwhost.c's) with the tests of fwtest.c and runs them, then the built-in
+# compute programs on tools/gsi1model.py (kernels.py); prints "PASS
+# fwtest.<case>" per case and "PASS fwtest", "PASS kernels.<name>" and
+# "PASS kernels"; exit status 1 on a failure.  Needs a host C compiler
+# (cc) and python3; the build goes to build/fw-host/.  About ten seconds.
 #   fw/cp/tests/run.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -23,3 +24,5 @@ timeout 120 cc -std=c99 -O1 -g -DFW_HOST -DFW_LINE_BYTES=64u -I"$root/include" -
 	-Wall -Wextra -Werror -Wno-unused-parameter -fsanitize=address,undefined \
 	-fno-sanitize-recover=undefined -o "$out/fwtest" $srcs "$src/tests/fwhost.c" "$src/tests/fwtest.c"
 timeout 120 "$out/fwtest"
+# The built-in compute programs on the GSI1 model.
+timeout 300 python3 -I "$src/tests/kernels.py"

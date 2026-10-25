@@ -716,6 +716,7 @@ draw_texture(
 	fw_emit_set(first + GHCI_TEX_SAMPLER, sampler);
 	fw_emit_set(first + GHCI_TEX_LOD, lod);
 	fw_emit_set(first + GHCI_TEX_FORMAT, view->tex_format);
+	fw_emit_set(first + GHCI_TEX_ROW, view->tex_row);
 }
 
 /* The bank image as data in the recording, the blocks' copies into it, LOAD_CONST. */

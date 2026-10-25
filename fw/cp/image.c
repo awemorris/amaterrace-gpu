@@ -14,8 +14,7 @@
  * by side, so its blits are S times as wide.  One aspect of
  * D24_UNORM_S8_UINT is written with the blitter's KEEP mask; a copy
  * between the stencil aspect and a buffer of 1-byte stencil values
- * changes the texel size and is the built-in compute program's (not yet:
- * VK_ERROR_FEATURE_NOT_PRESENT).
+ * changes the texel size and is a built-in compute program.
  */
 
 #include "fw.h"
@@ -52,6 +51,7 @@ static uint32_t img_slice(const struct img_sub *sub, uint32_t layer, uint32_t z)
 static uint32_t img_keep(uint32_t format, uint32_t aspect);
 static void img_read_layers(struct fw_command *command, uint32_t *layers);
 static void img_read3(struct fw_command *command, uint32_t *values);
+static void img_s8_dispatch(struct img_sub *sub, uint32_t layer, const uint32_t *offset, const uint32_t *extent, uint32_t buffer, uint32_t row_length, int to_image);
 static int img_blit_draw(struct img_sub *src, struct img_sub *dst, const uint32_t *src_layers, const uint32_t *dst_layers, const uint32_t *src_box, const uint32_t *dst_box, uint32_t linear);
 
 /*
@@ -86,10 +86,13 @@ img_buffer_copy(
 	uint64_t buffer_offset;
 	uint64_t count;
 	uint64_t region;
+	struct fw_rstate *state;
+	int stencil;
 	int failed;
 	int error;
 
 	/* The command buffer, the buffer and the image. */
+	stencil = 0;
 	id = fw_reader_u64(command->reader);
 	if (to_image) {
 		buffer_id = fw_reader_u64(command->reader);
@@ -128,12 +131,6 @@ img_buffer_copy(
 		if (failed || command->reader->error)
 			continue;
 
-		/* The stencil aspect of D24S8 against 1-byte values: not a blit. */
-		if (sub.image.format == FW_VK_FORMAT_D24_UNORM_S8_UINT && layers[0] == FW_ASPECT_STENCIL) {
-			fw_cmd_record_error(cmdbuf, FW_VK_ERROR_FEATURE_NOT_PRESENT);
-			continue;
-		}
-
 		/* The level; texels or 4x4 blocks; the buffer's rows (0: the extent's). */
 		img_level(&sub, layers[1]);
 		texel = sub.image.texel_bytes;
@@ -148,6 +145,16 @@ img_buffer_copy(
 		buffer_slice = buffer_row * ((image_height + block - 1u) / block);
 		if (layers[3] == IMG_REMAINING)
 			layers[3] = sub.image.layers - layers[2];
+
+		/* The stencil aspect of D24S8 against 1-byte values: the built-in compute program. */
+		if (sub.image.format == FW_VK_FORMAT_D24_UNORM_S8_UINT && layers[0] == FW_ASPECT_STENCIL) {
+			for (layer = 0; layer < layers[3]; layer++)
+				img_s8_dispatch(&sub, layers[2] + layer, offset, extent,
+						buffer->a + (uint32_t)buffer_offset + layer * buffer_slice / 4u, row_length,
+						to_image);
+			stencil = 1;
+			continue;
+		}
 
 		/* A blit per layer and slice. */
 		memset(&blt, 0, sizeof(blt));
@@ -179,6 +186,11 @@ img_buffer_copy(
 	error = fw_emit_end();
 	if (error != 0)
 		fw_cmd_record_error(cmdbuf, FW_VK_ERROR_OUT_OF_DEVICE_MEMORY);
+
+	/* A dispatch wrote the program range: the next one writes its pipeline's again. */
+	state = fw_rstate(cmdbuf);
+	if (stencil && state != NULL)
+		state->emitted[FW_BIND_COMPUTE] = 0;
 }
 
 /* CMD_COPY_BUFFER_TO_IMAGE. */
@@ -686,6 +698,7 @@ img_blit_draw(
 	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_SAMPLER), sampler);
 	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_LOD), GHCI_TEX_LOD_VAL(0, 0));
 	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_FORMAT), GHCI_TFMT_VKFORMAT(src->image.format));
+	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_ROW), (src->image.attachment && !src->image.block) ? 1u : 0u);
 	index = 0;
 	fw_emit_op(GHCI_OP_LOAD_PROGRAM, 0, &index, 1);
 	payload[0] = 0;
@@ -708,6 +721,64 @@ img_blit_draw(
 
 	/* Succeeded: the draws are built (the caller's state is written again later). */
 	return 0;
+}
+
+/*
+ * The copy of a region of stencil bytes between a buffer and one layer of
+ * a D24S8 image: the built-in compute program, a lane per texel (the
+ * stencil of a D24S8 buffer copy is tightly packed: one byte per texel).
+ */
+static void
+img_s8_dispatch(
+	struct img_sub *sub,
+	uint32_t layer,
+	const uint32_t *offset,
+	const uint32_t *extent,
+	uint32_t buffer,
+	uint32_t row_length,
+	int to_image)
+{
+	uint32_t bank[8];
+	uint32_t payload[3];
+	uint32_t groups[3];
+	uint32_t code;
+	uint32_t words;
+	uint32_t texels;
+	uint32_t program;
+
+	/* The program of the direction. */
+	program = FW_PROGRAM_S8_FROM_IMAGE;
+	if (to_image)
+		program = FW_PROGRAM_S8_TO_IMAGE;
+	code = fw_builtin_program(program, &words);
+
+	/* The bank: width, texels, the buffer's start and row, the image's first texel and row. */
+	texels = extent[0] * extent[1];
+	bank[0] = extent[0];
+	bank[1] = texels;
+	bank[2] = buffer;
+	bank[3] = row_length;
+	bank[4] = img_slice(sub, layer, offset[2]) + offset[1] * sub->row + offset[0] * 4u;
+	bank[5] = sub->row;
+	bank[6] = 0;
+	bank[7] = 0;
+
+	/* The program range, the bank, then DISPATCH of 64-lane workgroups. */
+	fw_emit_set(GHCI_S_CS_BASE, code);
+	fw_emit_set(GHCI_S_CS_WORDS, words);
+	fw_emit_set(GHCI_S_LDS_BYTES, 0);
+	fw_emit_set(GHCI_S_WG_SIZE, 64);
+	groups[0] = 0;
+	fw_emit_op(GHCI_OP_LOAD_PROGRAM, 0, groups, 1);
+	payload[0] = 0;
+	payload[1] = fw_emit_data(bank, 8);
+	payload[2] = 8;
+	fw_emit_op(GHCI_OP_LOAD_CONST, 0, payload, 3);
+	fw_emit_op(GHCI_OP_INVALIDATE, 0x3u, NULL, 0);
+	groups[0] = (texels + 63u) / 64u;
+	groups[1] = 1;
+	groups[2] = 1;
+	fw_emit_op(GHCI_OP_DISPATCH, 0, groups, 3);
 }
 
 /* Reads a bound image of the session into a subresource (level 0). */

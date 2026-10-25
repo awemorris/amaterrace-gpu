@@ -347,6 +347,16 @@ host_run_uop(
 	}
 	if (op == GHCI_OP_BLIT)
 		host_blit();
+
+	/* RESULT and QUERY write their words (the counter of the model is 7). */
+	if (op == GHCI_OP_RESULT && count == 4u) {
+		host_poke(packet[1], packet[2]);
+		host_poke(packet[1] + 4u, packet[3]);
+	}
+	if (op == GHCI_OP_QUERY && count == 2u && (packet[0] & 0x100u) == 0) {
+		host_poke(packet[1], 7);
+		host_poke(packet[1] + 4u, 0);
+	}
 }
 
 /* The blitter's model: linear FILL and COPY of 1-16 byte pixels, KEEP. */
