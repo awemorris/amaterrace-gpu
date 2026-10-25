@@ -18,6 +18,7 @@ The GPU IP: an AXI slave for the GHCI registers (`s_*`, the low 17 address bits 
 | `LINE_BYTES` | 32 | AMB line | 32 or 64 (KC705) |
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`) | 5, 6 |
 | `DATA_W` | 64 | Memory AXI data width | 64, 512 (KC705) |
+| `LOCAL_BASE`, `LOCAL_BYTES`, `WINDOW_BYTES` | 0 | The MEM capability (GHCI §11.3), passed to the CP: local memory and the local window; 0 bytes = not listed (unified) | KC705: 0x8000_0000, 1 GiB, 64 MiB |
 
 Fixed inside: `NCLIENT` = 2, MC `HIGH_MASK` = 2'b01 (CP first), `OUTSTANDING_LOG2` = 2, `ADDR_W` = 32.
 
@@ -123,3 +124,5 @@ VF → SU (vertex) → PT → RX → SU (fragment) → ROP (§8).
 Varying 64 components (Vulkan 1.0's limit): `SU_VARY_WORDS` at most 64, the KC705 shape 64 (was 32; boards/kc705, tools/lint.sh and the KC705-shaped testbenches); `pt_word` 7 bits between RX and SU 0.
 
 2026-10-25: the STATE broadcast has 10-bit indices; the TU takes them all (0x200-0x2FF are its vertex-stage slots), the other blocks see st_we only for indices below 512 and their 9 bits; the SU's tx_vs reaches the TU; the CP's HAS_ETC is HAS_TU.
+
+**2026-10-25**: `LOCAL_BASE`, `LOCAL_BYTES`, `WINDOW_BYTES` (the MEM capability, default 0) and RESIDENT_WARPS[23:16] = `SU_NREGS` with an SU (0 without), both through atg_cp to atg_cp_regs.

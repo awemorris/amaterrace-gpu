@@ -15,7 +15,9 @@
  *
  *   - jtag: GHCI MAGIC through the bridge, SCRATCH written and read back,
  *     the DC's DC_ID and DC_CAPS (ADV7511) at +0x10000, CAPS and CAPS2 of
- *     the KC705 shape (packed, graphics, subgroup, TU), STATUS.MEM_READY
+ *     the KC705 shape (packed, graphics, subgroup, TU), the MEM capability
+ *     (1 GiB at 0x8000_0000, a 64 MiB window), 64 registers per lane in
+ *     RESIDENT_WARPS, STATUS.MEM_READY
  *     after the memory model's calibration;
  *   - fill: the aperture, a BLT FILL of 20 x 3 pixels from STATE writes
  *     and KICK, STATUS.BLT_BUSY polled, then DBG_ADDR/DBG_DATA read back
@@ -254,14 +256,18 @@ module atg_kc705_raster_tb;
 	reg [23:0] p0;
 	reg [15:0] want;
 
-	/* Walks the extended capability list: DISP must point at the DC (+0x10000), DBG be listed. */
+	/*
+	 * Walks the extended capability list: DISP must point at the DC
+	 * (+0x10000), DBG be listed, MEM give the DDR3 and the window.
+	 */
 	task check_extcap;
-		reg [31:0] off, w0, w1;
+		reg [31:0] off, w0, w1, m;
 		integer k;
-		reg disp, dbg;
+		reg disp, dbg, mem;
 		begin
 			disp = 1'b0;
 			dbg = 1'b0;
+			mem = 1'b0;
 			jr(GHCI_EXTCAP, off);
 			for (k = 0; k < 8 && off != 32'd0; k = k + 1) begin
 				jr(off, w0);
@@ -273,12 +279,26 @@ module atg_kc705_raster_tb;
 				end
 				if (w0[7:0] == GHCI_XCAP_DBG)
 					dbg = 1'b1;
+				if (w0[7:0] == GHCI_XCAP_MEM) begin
+					mem = 1'b1;
+					jr(w1 + {15'd0, GHCI_MEM_LOCAL_BASE}, m);
+					if (m != 32'h80000000)
+						fail("MEM LOCAL_BASE is not 0x8000_0000");
+					jr(w1 + {15'd0, GHCI_MEM_LOCAL_SIZE}, m);
+					if (m != 32'h40000000)
+						fail("MEM LOCAL_SIZE is not 1 GiB");
+					jr(w1 + {15'd0, GHCI_MEM_WINDOW_SIZE}, m);
+					if (m != 32'h04000000)
+						fail("MEM WINDOW_SIZE is not 64 MiB");
+				end
 				off = w0[31:16] == 16'd0 ? 32'd0 : off + {14'd0, w0[31:16], 2'd0};
 			end
 			if (!disp)
 				fail("no DISP capability");
 			if (!dbg)
 				fail("no DBG capability");
+			if (!mem)
+				fail("no MEM capability");
 		end
 	endtask
 
@@ -301,6 +321,8 @@ module atg_kc705_raster_tb;
 		expect_reg(GHCI_CAPS, 32'h19600104, 32'h19F00104);
 		expect_reg(GHCI_CAPS2, 32'h04000000, 32'h0F000000);
 		check_extcap;
+		/* RESIDENT_WARPS[23:16]: the SUs' 64 registers per lane. */
+		expect_reg(GHCI_RESIDENT_WARPS, 32'h00400000, 32'h00FF0000);
 		n = 0;
 		jr(GHCI_STATUS, v);
 		while (!v[GHCI_STATUS_MEM_READY] && n < 100) begin

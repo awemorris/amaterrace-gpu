@@ -16,11 +16,15 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `DEVICE_VERSION` | `32'h00000002` | Implementation version. |
 | `ISA_ID` | `32'h47534931` | "GSI1"; 0 when there is no SU. |
 | `NATIVE_ISA_ID` | `32'h47534931` | NATIVE_ISA_ID (0x048). |
-| `RESIDENT_WARPS` | `16'd0` | RESIDENT_WARPS (0x04C): the warps the GPU runs at once over its SUs (atg_top: NSU x SU_NWARPS). |
+| `RESIDENT_WARPS` | `16'd0` | RESIDENT_WARPS (0x04C) [15:0]: the warps the GPU runs at once over its SUs (atg_top: NSU x SU_NWARPS). |
+| `NREGS` | `8'd0` | RESIDENT_WARPS [23:16]: the general registers of a lane (atg_top: SU_NREGS with an SU, else 0). |
+| `LOCAL_BASE` | `32'd0` | MEM capability LOCAL_BASE (0x1C0). |
+| `LOCAL_BYTES` | `32'd0` | MEM capability LOCAL_SIZE (0x1C4). |
+| `WINDOW_BYTES` | `32'd0` | MEM capability WINDOW_SIZE (0x1C8). |
 | `CAPS` | `32'h00500002` | CAPS value (design §2.2), set by atg_top from its parameters. |
 | `CAPS2` | `32'h00000001` | CAPS2 value. |
 | `VEND` | `256'd0` | The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0. |
-| `XCAP_MASK` | `10'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, FMT 10 at 0x160, atg_cp_fmt). |
+| `XCAP_MASK` | `10'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8 at 0x1C0, FMT 10 at 0x160, atg_cp_fmt). |
 | `DISP_OFFSET` | `32'h00010000` | Where the DISP entry points (KC705 +0x10000). |
 | `PERF_SRC` | `32'hFFFFFFFF` | PERF_SRC0..3 (byte n = PERF_SRCn; 0xFF unused). Amaterrace 2D: 0xFFFF0801 (BLT busy, memory). |
 
@@ -77,7 +81,10 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 - EXTCAP list at 0x100: one 2-word entry per set bit of XCAP_MASK in id order; the first two at 0x100
   and 0x108, the others from 0x180 (0x110-0x17F hold PERF, CPFW and SA registers); EXTCAP reads 0
   when XCAP_MASK is 0 (PERF keeps its
-  registers at 0x110, design §2.4.10; VEND 0x0C0; CPFW 0x120; SA 0x140; DISP at DISP_OFFSET; DBG 0).
+  registers at 0x110, design §2.4.10; VEND 0x0C0; CPFW 0x120; SA 0x140; MEM 0x1C0, after the room of
+  a full list (0x100-0x1BF); DISP at DISP_OFFSET; DBG 0).
+- MEM (XCAP_MASK[7]): 0x1C0 LOCAL_BASE, 0x1C4 LOCAL_BYTES, 0x1C8 WINDOW_BYTES (read only); they read 0
+  when MEM is not listed.
 - COUNTER counts every clk.  PERFn counts cycles with `perf_busy[n]`; cleared by PERF_CTRL[0] or
   `perf_reset`.
 
@@ -101,8 +108,8 @@ Register read latency 1 cycle (the am_axi_regs contract).
 
 `sim/tb/atg_cp_regs_tb.v` prints, in this order:
 
-- `PASS atg_cp_regs.id` — identification, CAPS, CAPS2, VEND, RESIDENT_WARPS read their parameter values
-- `PASS atg_cp_regs.extcap` — the EXTCAP list walks to the end for several XCAP_MASK values
+- `PASS atg_cp_regs.id` — identification, CAPS, CAPS2, VEND, RESIDENT_WARPS (with NREGS in [23:16]) read their parameter values
+- `PASS atg_cp_regs.extcap` — the EXTCAP list walks to the end for several XCAP_MASK values; with MEM listed, its entry points at 0x1C0 and the three words read the parameters (0 without MEM)
 - `PASS atg_cp_regs.fmt` — (CAPS[30]) a bench with atg_cp_fmt beside it: the FMT entry (id 10, 0x160), FMT_INDEX written and read back (partial writes too), FMT_OPTIMAL, FMT_LINEAR and FMT_BUFFER for all 256 values against `sim/vec/fmt_info.txt`, FMT_LIMITS 4
 - `PASS atg_cp_regs.snoop` — a write gives one hcr_we with index, data and mask; a partial alias write gives no alias_we
 - `PASS atg_cp_regs.ormux` — reads OR the module inputs; COUNTER increments; PERF counts busy and clears
@@ -118,5 +125,7 @@ Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a0
 above.
 
 2026-10-25 (CAPS[30]): XCAP_MASK has 10 bits; FMT (id 10) points at 0x160 (atg_cp_fmt's window, ORed in by atg_cp through x_rdata).
+
+2026-10-25: the MEM capability (id 8, XCAP_MASK[7], registers at 0x1C0; parameters LOCAL_BASE, LOCAL_BYTES, WINDOW_BYTES) and RESIDENT_WARPS[23:16] = NREGS.
 
 2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.  The alias covers 0x1000-0x1BFC; 0x1C00-0x1FFC read 0 and ignore writes.
