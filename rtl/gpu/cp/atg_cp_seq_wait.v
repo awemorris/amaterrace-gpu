@@ -62,6 +62,13 @@ module atg_cp_seq_wait (
 );
 	`include "ghci_regs.vh"
 
+	/*
+	 * DISPATCH's grid words (0x1E9 is not aligned for an OR of p); RAW
+	 * (0x1E0, p < 9) and LC_REGION (0x1EC, p < 3) take p by an OR, their
+	 * low bits being 0.
+	 */
+	localparam [8:0] S_GRID_Y = GHCI_S_GRID_X + 9'd1;
+	localparam [8:0] S_GRID_Z = GHCI_S_GRID_X + 9'd2;
 	localparam [5:0] OP_BLIT = 6'd2;
 	localparam [5:0] OP_DRAW = 6'd3;
 	localparam [5:0] OP_DISPATCH = 6'd4;
@@ -126,18 +133,18 @@ module atg_cp_seq_wait (
 				(s9[8:5] == GHCI_S_ATTR_DST[8:5] && (VF_1D != 0 || !s9[4])) ? B_VF : 8'd0};
 		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
 			pay_we = 1'b1;
-			pay_idx = {1'b0, GHCI_S_RAW + {1'b0, p}};
+			pay_idx = {1'b0, GHCI_S_RAW | {5'd0, p[3:0]}};	/* 0x1E0 + p, p < 9 */
 			pay_wait = {1'b0, B_RX};
 		end else if (vendor && op == VOP_DBG_MARK && p == 8'd0) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, GHCI_S_DBG_MARK};
 		end else if (!vendor && op == OP_DISPATCH && p < 8'd3) begin
 			pay_we = 1'b1;
-			pay_idx = {1'b0, GHCI_S_GRID_X + {1'b0, p}};
+			pay_idx = {1'b0, p[1:0] == 2'd0 ? GHCI_S_GRID_X : p[1:0] == 2'd1 ? S_GRID_Y : S_GRID_Z};
 			pay_wait = {1'b0, B_SU};
 		end else if (!vendor && op == OP_LOAD_CONST && p < 8'd3) begin
 			pay_we = 1'b1;
-			pay_idx = {1'b0, GHCI_S_LC_REGION + {1'b0, p}};
+			pay_idx = {1'b0, GHCI_S_LC_REGION | {7'd0, p[1:0]}};	/* 0x1EC + p, p < 3 */
 			pay_wait = {1'b0, B_SU};
 		end else if (!vendor && op == OP_FLIP && p < 8'd4) begin
 			/* FLIP's staging: plane, base, record, value (0x3B8-0x3BB). */

@@ -77,25 +77,6 @@ module atg_mc_atom #(
 	localparam WW = LINE_SHIFT - 2;
 	localparam [2:0] IDLE = 3'd0, RREQ = 3'd1, RWAIT = 3'd2, WREQ = 3'd3, WWAIT = 3'd4;
 
-	/* The new value of the word. */
-	function [31:0] atom_op;
-		input [3:0] op;
-		input [31:0] old, a, b;
-		case (op)
-		4'd0: atom_op = old & a;
-		4'd1: atom_op = old | a;
-		4'd2: atom_op = old ^ a;
-		4'd3: atom_op = a;
-		4'd4: atom_op = old + a;
-		4'd5: atom_op = old - a;
-		4'd6: atom_op = $signed(old) > $signed(a) ? old : a;
-		4'd7: atom_op = $signed(old) < $signed(a) ? old : a;
-		4'd8: atom_op = old > a ? old : a;
-		4'd9: atom_op = old < a ? old : a;
-		4'd10: atom_op = old == b ? a : old;
-		default: atom_op = old;
-		endcase
-	endfunction
 
 	reg [2:0] st;
 	reg [AW-1:0] rr, rk;
@@ -104,24 +85,41 @@ module atg_mc_atom #(
 	reg [WW-1:0] rwi;
 	reg [31:0] ra, rb, rold;
 
-	/* The next requester: the first valid one after rr. */
-	reg [AW-1:0] pick;
-	reg any;
-	integer i, j;
+	/*
+	 * The next requester: the first valid one after rr, round the ring:
+	 * the lowest valid index above rr, else the lowest valid index.
+	 */
+	reg [AW-1:0] pick, hi_pick, lo_pick;
+	reg any, hi_any;
+	integer i;
 	always @(*) begin
-		pick = {AW{1'b0}};
+		hi_pick = {AW{1'b0}};
+		lo_pick = {AW{1'b0}};
+		hi_any = 1'b0;
 		any = 1'b0;
 		for (i = NATOM - 1; i >= 0; i = i - 1) begin
-			j = (i + {{(32 - AW){1'b0}}, rr} + 1) % NATOM;
-			if (at_valid[j]) begin
-				pick = j[AW-1:0];
+			if (at_valid[i]) begin
+				lo_pick = i[AW-1:0];
 				any = 1'b1;
+				if (i > {{(32 - AW){1'b0}}, rr}) begin
+					hi_pick = i[AW-1:0];
+					hi_any = 1'b1;
+				end
 			end
 		end
+		pick = hi_any ? hi_pick : lo_pick;
 	end
 
 	wire take = st == IDLE && any;
-	wire [31:0] badr = {at_addr[pick*30 +: 30], 2'b00};
+	/* The picked requester's address (a constant part-select per requester). */
+	reg [29:0] pick_addr;
+	always @(*) begin
+		pick_addr = 30'd0;
+		for (i = 0; i < NATOM; i = i + 1)
+			if ({{(32 - AW){1'b0}}, pick} == i)
+				pick_addr = at_addr[i*30 +: 30];
+	end
+	wire [31:0] badr = {pick_addr, 2'b00};
 	genvar g;
 	generate
 		for (g = 0; g < NATOM; g = g + 1) begin : g_ready
@@ -182,12 +180,40 @@ module atg_mc_atom #(
 	assign req_valid = st == RREQ || st == WREQ;
 	assign req_write = st == WREQ;
 	assign req_line = rline;
-	assign req_be = st == WREQ ? {{(LINE_BYTES - 4){1'b0}}, 4'hF} << {rwi, 2'b00} :
-		{LINE_BYTES{1'b0}};
-	assign req_wdata = {WPL{atom_op(rop, rold, ra, rb)}};
+	/* The written word's byte enables: word rwi of the line. */
+	reg [LINE_BYTES-1:0] be_w;
+	always @(*)
+		for (i = 0; i < WPL; i = i + 1)
+			be_w[i*4 +: 4] = {{(32 - WW){1'b0}}, rwi} == i ? 4'hF : 4'h0;
+	assign req_be = st == WREQ ? be_w : {LINE_BYTES{1'b0}};
+
+	/* The new value of the word: ADD and SUB share one adder-subtractor. */
+	wire [31:0] as_s;
+	wire as_co;
+	reg [31:0] new_word;
+
+	am_addsub #(.W(32)) as (.a(rold), .b(ra), .sub(rop == 4'd5), .s(as_s), .co(as_co));
+
+	always @(*) begin
+		case (rop)
+		4'd0: new_word = rold & ra;
+		4'd1: new_word = rold | ra;
+		4'd2: new_word = rold ^ ra;
+		4'd3: new_word = ra;
+		4'd4: new_word = as_s;
+		4'd5: new_word = as_s;
+		4'd6: new_word = $signed(rold) > $signed(ra) ? rold : ra;
+		4'd7: new_word = $signed(rold) < $signed(ra) ? rold : ra;
+		4'd8: new_word = rold > ra ? rold : ra;
+		4'd9: new_word = rold < ra ? rold : ra;
+		4'd10: new_word = rold == rb ? ra : rold;
+		default: new_word = rold;
+		endcase
+	end
+	assign req_wdata = {WPL{new_word}};
 	assign req_tag = 8'd0;
 
-	wire unused_ok = &{1'b0, rsp_tag, badr[1:0], j[31:AW]};
+	wire unused_ok = &{1'b0, rsp_tag, badr[1:0], as_co};
 endmodule
 
 `default_nettype wire

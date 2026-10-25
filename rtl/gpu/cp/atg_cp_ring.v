@@ -112,9 +112,20 @@ module atg_cp_ring #(
 	reg [17:0] wptr;
 	reg [17:0] rptr;
 
-	/* The ring's dword count - 1 (size 10..20: 2^8..2^18 dwords). */
-	wire [17:0] mask = (18'd1 << (size - 5'd2)) - 18'd1;
-	wire [18:0] nwords = {1'b0, mask} + 19'd1;
+	/*
+	 * The ring's dword count - 1 (size 10..20: 2^8..2^18 dwords) and the
+	 * count: bit i of the mask is i < size - 2, the count's only bit is
+	 * size - 2 (comparisons with constants; size is never below 10).
+	 */
+	reg [17:0] mask;
+	reg [18:0] nwords;
+	integer mi;
+	always @(*) begin
+		for (mi = 0; mi < 18; mi = mi + 1)
+			mask[mi] = {27'd0, size} > mi + 2;
+		for (mi = 0; mi < 19; mi = mi + 1)
+			nwords[mi] = {27'd0, size} == mi + 2;
+	end
 
 	reg [2:0] st;
 	reg ret_n;	/* the read is for R_N (else R_HDR) */
@@ -149,11 +160,35 @@ module atg_cp_ring #(
 	/* Header decode. */
 	wire [1:0] h_class = want_data[31:30];
 	wire [15:0] h_n = h_class[1] ? want_data[15:0] : {8'd0, want_data[7:0]};
-	wire [17:0] avail = (wptr - cur) & mask;	/* dwords written from cur */
-	wire [18:0] h_end = {1'b0, cur} + {3'd0, h_n} + 19'd1;
-	wire h_bad = h_end > nwords || {3'd0, h_n} + 19'd1 > {1'b0, avail};
+	/*
+	 * The dwords written from cur; the header's end cur + h_n + 1 (R_HDR)
+	 * and the packet's end cur + n + 1 (R_ADV) from one adder, as they are
+	 * never needed in the same cycle; h_n + 1 > avail as h_n >= avail.
+	 */
+	wire [17:0] avail_d, avail;
+	wire [18:0] end_s;
+	wire avail_bo, end_co;
+
+	am_sub #(.W(18)) avail_sub (.a(wptr), .b(cur), .bi(1'b0), .d(avail_d), .bo(avail_bo));
+	assign avail = avail_d & mask;	/* dwords written from cur */
+	am_add #(.W(19)) end_add (
+		.a({1'b0, cur}), .b({3'd0, st == R_ADV ? n : h_n}), .ci(1'b1), .s(end_s), .co(end_co)
+	);
+	wire [18:0] h_end = end_s;
+	wire h_bad = h_end > nwords || {3'd0, h_n} >= {1'b0, avail};
 	wire h_novf = h_class == 2'd2 && CLASS_V == 0;
-	wire [17:0] p_end = (cur + {2'd0, n} + 18'd1) & mask;	/* after the packet */
+	wire [17:0] p_end = end_s[17:0] & mask;	/* after the packet */
+
+	/* pa + 4 (R_N's next dword, and v_addr), the header's address base + 4 rptr, k + 1. */
+	wire [31:0] pa_4, pa_hdr;
+	wire [15:0] k_n;
+	wire pa_4_co, pa_hdr_co, k_co;
+
+	am_add #(.W(32)) pa_4_add (.a(pa), .b(32'd4), .ci(1'b0), .s(pa_4), .co(pa_4_co));
+	am_add #(.W(32)) pa_hdr_add (
+		.a(base), .b({12'd0, rptr, 2'b00}), .ci(1'b0), .s(pa_hdr), .co(pa_hdr_co)
+	);
+	am_add #(.W(16)) k_add (.a(k), .b(16'd0), .ci(1'b1), .s(k_n), .co(k_co));
 
 	reg f_pulse;
 	reg [3:0] f_kind;
@@ -173,7 +208,7 @@ module atg_cp_ring #(
 	assign n_last = k == n;
 
 	assign v_valid = st == R_V;
-	assign v_addr = pa + 32'd4;	/* pa is the header's address in R_V */
+	assign v_addr = pa_4;	/* pa is the header's address in R_V */
 	assign v_dwords = n;
 	assign v_tag = tag;
 
@@ -234,7 +269,7 @@ module atg_cp_ring #(
 			R_IDLE:
 				if (go && rptr != wptr) begin
 					cur <= rptr;
-					pa <= base + {12'd0, rptr, 2'b00};
+					pa <= pa_hdr;
 					step_pend <= 1'b0;
 					st <= R_HDR;
 				end
@@ -268,8 +303,8 @@ module atg_cp_ring #(
 					if (k == n) begin
 						st <= R_ADV;
 					end else begin
-						k <= k + 16'd1;
-						pa <= pa + 32'd4;
+						k <= k_n;
+						pa <= pa_4;
 					end
 				end
 			R_V:
@@ -306,7 +341,8 @@ module atg_cp_ring #(
 	assign hcr_rdata = hcr_ridx == I_BASE ? base : hcr_ridx == I_SIZE ? {27'd0, size} :
 		hcr_ridx == I_WPTR ? {14'd0, wptr} : hcr_ridx == I_RPTR ? {14'd0, rptr} : 32'd0;
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, h_end[18]};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, h_end[18], avail_bo, end_co, pa_4_co,
+		pa_hdr_co, k_co};
 endmodule
 
 `default_nettype wire

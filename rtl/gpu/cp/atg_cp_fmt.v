@@ -47,7 +47,11 @@ module atg_cp_fmt #(
 			idx <= (idx & ~hcr_wmask[7:0]) | (hcr_wdata[7:0] & hcr_wmask[7:0]);
 
 	wire [25:0] feat = atg_fmt_feat(idx, HAS_ETC != 0);
-	wire [9:0] off = hcr_ridx - BASE;
+	/* The register's index in the window: only its low 3 bits are used. */
+	wire [2:0] off;
+	wire off_bo;
+
+	am_sub #(.W(3)) off_sub (.a(hcr_ridx[2:0]), .b(BASE[2:0]), .bi(1'b0), .d(off), .bo(off_bo));
 	always @(*)
 		if (hcr_ridx < BASE || hcr_ridx >= BASE + 10'd8)
 			hcr_rdata = 32'd0;
@@ -60,7 +64,7 @@ module atg_cp_fmt #(
 			default: hcr_rdata = 32'd0;
 			endcase
 
-	wire unused_ok = &{1'b0, hcr_wdata[31:8], hcr_wmask[31:8], off[9:3]};
+	wire unused_ok = &{1'b0, hcr_wdata[31:8], hcr_wmask[31:8], off_bo};
 endmodule
 
 `default_nettype wire

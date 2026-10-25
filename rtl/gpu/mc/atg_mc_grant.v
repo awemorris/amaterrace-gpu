@@ -61,12 +61,20 @@ module atg_mc_grant #(
 		end
 	end
 
-	/* The entry's fields need no reset: valid says whether they mean anything. */
+	/*
+	 * The entry's fields need no reset: valid says whether they mean
+	 * anything.  The entry is chosen by comparing w_idx with each index (a
+	 * constant part-select per entry, no multiply of the index).
+	 */
+	integer j;
+
 	always @(posedge clk) begin
-		if (w_valid) begin
-			e_slot[w_idx*6 +: 6] <= w_data[6:1];
-			e_base[w_idx*20 +: 20] <= w_data[28:9];
-			e_limit[w_idx*21 +: 21] <= w_data[49:29];
+		for (j = 0; j < NGRANT; j = j + 1) begin
+			if (w_valid && {{(32 - IDX_W){1'b0}}, w_idx} == j) begin
+				e_slot[j*6 +: 6] <= w_data[6:1];
+				e_base[j*20 +: 20] <= w_data[28:9];
+				e_limit[j*21 +: 21] <= w_data[49:29];
+			end
 		end
 	end
 

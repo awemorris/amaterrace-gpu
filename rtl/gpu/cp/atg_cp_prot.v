@@ -151,6 +151,17 @@ module atg_cp_prot #(
 	wire slot_wr = sb_we && sb_idx == W_SLOT && w_tag != 8'd0;
 	/* A slot whose sessions ends: cleared, or replaced by another. */
 	wire slot_gone = slot_wr && w_old != 6'd0 && w_old != w_slot;
+
+	/* n_slots + 1 (a slot mapped) or - 1 (one unmapped), in one adder. */
+	wire ns_inc = w_old == 6'd0 && w_slot != 6'd0;
+	wire ns_dec = w_old != 6'd0 && w_slot == 6'd0;
+	wire [6:0] n_slots_n;
+	wire ns_co;
+
+	am_add #(.W(7)) ns_add (
+		.a(n_slots), .b({{6{ns_dec && !ns_inc}}, ns_inc ^ ns_dec}), .ci(1'b0), .s(n_slots_n),
+		.co(ns_co)
+	);
 	assign fault_tag = tag_v[fault_slot] ? tag_d[fault_slot] : 8'd0;
 	assign unit_tag = tag_v[prot_unit] ? tag_d[prot_unit] : 8'd0;
 
@@ -165,10 +176,8 @@ module atg_cp_prot #(
 				tag_v[w_old] <= 1'b0;
 			if (w_slot != 6'd0)
 				tag_v[w_slot] <= 1'b1;
-			if (w_old == 6'd0 && w_slot != 6'd0)
-				n_slots <= n_slots + 7'd1;
-			else if (w_old != 6'd0 && w_slot == 6'd0)
-				n_slots <= n_slots - 7'd1;
+			if (ns_inc || ns_dec)
+				n_slots <= n_slots_n;
 		end
 	end
 
@@ -207,6 +216,10 @@ module atg_cp_prot #(
 	reg [1:0] r_kind;
 	reg [5:0] r_slot;
 	reg [1:0] sw_cnt;
+	wire [1:0] sw_cnt_n;	/* sw_cnt + 1 */
+	wire sw_co;
+
+	am_add #(.W(2)) sw_add (.a(sw_cnt), .b(2'd0), .ci(1'b1), .s(sw_cnt_n), .co(sw_co));
 
 	wire need = u_req[0] && (cur_slot != prot_unit || !known);
 	assign u_ok = st == S_IDLE && !need;
@@ -274,7 +287,7 @@ module atg_cp_prot #(
 			end
 			default:	/* S_SWAIT: the SUs' busy rises after scrub, then falls */
 				if (sw_cnt != 2'd2)
-					sw_cnt <= sw_cnt + 2'd1;
+					sw_cnt <= sw_cnt_n;
 				else if (!scrub_busy) begin
 					r_kind <= R_NONE;
 					st <= S_IDLE;
@@ -299,9 +312,23 @@ module atg_cp_prot #(
 	/* ------------------------------------------- registers */
 
 	wire [GW-1:0] g0 = aperture_base[ADDR_W-1:12];
-	wire [ADDR_W:0] lim_up = {1'b0, aperture_limit} + 4095;
+	/*
+	 * The table's bytes for the aperture: one byte a 4 KiB granule of
+	 * [g0, g1), g1 the limit rounded up, rounded up to 4 KiB (two adders and
+	 * a subtractor).
+	 */
+	wire [ADDR_W:0] lim_up, tgran;
+	wire [GW:0] g_span;
+	wire lim_co, span_bo, tg_co;
+
+	am_add #(.W(ADDR_W + 1)) lim_add (
+		.a({1'b0, aperture_limit}), .b(4095), .ci(1'b0), .s(lim_up), .co(lim_co)
+	);
 	wire [GW:0] g1 = lim_up[ADDR_W:12];
-	wire [ADDR_W:0] tgran = {{(ADDR_W-GW){1'b0}}, g1 - {1'b0, g0}} + 4095;
+	am_sub #(.W(GW + 1)) span_sub (.a(g1), .b({1'b0, g0}), .bi(1'b0), .d(g_span), .bo(span_bo));
+	am_add #(.W(ADDR_W + 1)) tg_add (
+		.a({{(ADDR_W-GW){1'b0}}, g_span}), .b(4095), .ci(1'b0), .s(tgran), .co(tg_co)
+	);
 	wire [ADDR_W-1:0] tbytes = {tgran[ADDR_W-1:12], 12'd0};
 
 	reg inv_p, gw_p;
@@ -370,7 +397,8 @@ module atg_cp_prot #(
 		endcase
 	end
 
-	wire unused_ok = &{1'b0, lim_up, tgran, hcr_wdata, SLOTS[7:6], gctl[3], aperture_base[11:0]};
+	wire unused_ok = &{1'b0, lim_up, tgran, hcr_wdata, SLOTS[7:6], gctl[3], aperture_base[11:0],
+		ns_co, sw_co, lim_co, span_bo, tg_co};
 endmodule
 
 `default_nettype wire

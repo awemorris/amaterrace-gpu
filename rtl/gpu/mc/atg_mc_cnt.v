@@ -50,22 +50,61 @@ module atg_mc_cnt #(
 );
 	reg [7:0] pend, chk_n;
 	reg [9:0] unit_n;
-	reg [7:0] t_n, tc_n;
-	reg [9:0] u_in, u_out;
-	integer k;
 
-	always @(*) begin
-		t_n = 8'd0;
-		tc_n = 8'd0;
-		u_in = 10'd0;
-		u_out = 10'd0;
-		for (k = 0; k < NCLIENT; k = k + 1) begin
-			t_n = t_n + {7'd0, take[k] && !KEEP_MASK[k]};
-			tc_n = tc_n + {7'd0, take[k] && take_chk[k]};
-			u_in = u_in + {9'd0, take[k] && UNIT_MASK[k]};
-			u_out = u_out + {9'd0, rsp[k] && UNIT_MASK[k]};
+	/*
+	 * The counts of this cycle's takes and responses: a chain of one
+	 * adder per client for each (bit k added to the sum of the bits
+	 * before it).
+	 */
+	wire [8*(NCLIENT+1)-1:0] t_c, tc_c;
+	wire [10*(NCLIENT+1)-1:0] ui_c, uo_c;
+	wire [4*NCLIENT-1:0] chain_co;
+
+	assign t_c[7:0] = 8'd0;
+	assign tc_c[7:0] = 8'd0;
+	assign ui_c[9:0] = 10'd0;
+	assign uo_c[9:0] = 10'd0;
+
+	genvar g;
+	generate
+		for (g = 0; g < NCLIENT; g = g + 1) begin : pc
+			am_add #(.W(8)) t_add (
+				.a(t_c[8*g +: 8]), .b(8'd0), .ci(take[g] && !KEEP_MASK[g]),
+				.s(t_c[8*(g+1) +: 8]), .co(chain_co[4*g])
+			);
+			am_add #(.W(8)) tc_add (
+				.a(tc_c[8*g +: 8]), .b(8'd0), .ci(take[g] && take_chk[g]),
+				.s(tc_c[8*(g+1) +: 8]), .co(chain_co[4*g+1])
+			);
+			am_add #(.W(10)) ui_add (
+				.a(ui_c[10*g +: 10]), .b(10'd0), .ci(take[g] && UNIT_MASK[g]),
+				.s(ui_c[10*(g+1) +: 10]), .co(chain_co[4*g+2])
+			);
+			am_add #(.W(10)) uo_add (
+				.a(uo_c[10*g +: 10]), .b(10'd0), .ci(rsp[g] && UNIT_MASK[g]),
+				.s(uo_c[10*(g+1) +: 10]), .co(chain_co[4*g+3])
+			);
 		end
-	end
+	endgenerate
+
+	wire [7:0] t_n = t_c[8*NCLIENT +: 8];
+	wire [7:0] tc_n = tc_c[8*NCLIENT +: 8];
+	wire [9:0] u_in = ui_c[10*NCLIENT +: 10];
+	wire [9:0] u_out = uo_c[10*NCLIENT +: 10];
+
+	/* Each counter: n + this cycle's takes, less this cycle's ends (an adder and a subtractor). */
+	wire [7:0] pend_s, pend_n, chk_s, chk_nx;
+	wire [9:0] unit_s, unit_nx;
+	wire [5:0] cnt_co;
+
+	am_add #(.W(8)) pend_add (.a(pend), .b(t_n), .ci(1'b0), .s(pend_s), .co(cnt_co[0]));
+	am_sub #(.W(8)) pend_sub (
+		.a(pend_s), .b(8'd0), .bi(done && !done_keep), .d(pend_n), .bo(cnt_co[1])
+	);
+	am_add #(.W(8)) chk_add (.a(chk_n), .b(tc_n), .ci(1'b0), .s(chk_s), .co(cnt_co[2]));
+	am_sub #(.W(8)) chk_sub (.a(chk_s), .b(8'd0), .bi(done_chk), .d(chk_nx), .bo(cnt_co[3]));
+	am_add #(.W(10)) unit_add (.a(unit_n), .b(u_in), .ci(1'b0), .s(unit_s), .co(cnt_co[4]));
+	am_sub #(.W(10)) unit_sub (.a(unit_s), .b(u_out), .bi(1'b0), .d(unit_nx), .bo(cnt_co[5]));
 
 	always @(posedge clk) begin
 		if (!rst_n || flush) begin
@@ -73,9 +112,9 @@ module atg_mc_cnt #(
 			chk_n <= 8'd0;
 			unit_n <= 10'd0;
 		end else begin
-			pend <= pend + t_n - {7'd0, done && !done_keep};
-			chk_n <= chk_n + tc_n - {7'd0, done_chk};
-			unit_n <= unit_n + u_in - u_out;
+			pend <= pend_n;
+			chk_n <= chk_nx;
+			unit_n <= unit_nx;
 		end
 	end
 
@@ -100,7 +139,7 @@ module atg_mc_cnt #(
 
 	assign ax_zero = ax_n == 8'd0;
 
-	wire unused_ok = &{1'b0, ax_co_unused};
+	wire unused_ok = &{1'b0, ax_co_unused, chain_co, cnt_co};
 endmodule
 
 `default_nettype wire
