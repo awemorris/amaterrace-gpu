@@ -150,7 +150,7 @@ module atg_kc705_raster #(
 	wire xr_wr, xr_rd, x_req_ready, x_rsp_valid, x_rsp_write, x_rsp_error;
 	wire j_wr, j_rd, j_busy;
 	wire [16:0] xr_waddr, xr_raddr, j_waddr, j_raddr;
-	wire [31:0] xr_wdata, j_wdata, j_rdata;
+	wire [31:0] xr_wdata, xr_rdata, j_wdata, j_rdata;
 	wire [3:0] xr_wstrb, j_wstrb;
 	wire [511:0] x_rsp_rdata;
 	wire [7:0] x_rsp_tag;
@@ -327,7 +327,7 @@ module atg_kc705_raster #(
 		.m_awaddr(m_awaddr), .m_awlen(m_awlen), .m_awsize(m_awsize), .m_awburst(m_awburst), .m_awcache(m_awcache), .m_awprot(m_awprot), .m_awvalid(m_awvalid), .m_awready(m_awready), .m_wdata(m_wdata), .m_wstrb(m_wstrb), .m_wlast(m_wlast), .m_wvalid(m_wvalid), .m_wready(m_wready), .m_bresp(m_bresp), .m_bvalid(m_bvalid),
 		.m_bready(m_bready), .m_araddr(m_araddr), .m_arlen(m_arlen), .m_arsize(m_arsize), .m_arburst(m_arburst), .m_arcache(m_arcache), .m_arprot(m_arprot), .m_arvalid(m_arvalid), .m_arready(m_arready), .m_rdata(m_rdata), .m_rresp(m_rresp), .m_rlast(m_rlast), .m_rvalid(m_rvalid), .m_rready(m_rready),
 		.xr_wr(xr_wr), .xr_waddr(xr_waddr), .xr_wdata(xr_wdata), .xr_wstrb(xr_wstrb), .xr_rd(xr_rd),
-		.xr_raddr(xr_raddr), .xr_rdata(32'd0),
+		.xr_raddr(xr_raddr), .xr_rdata(xr_rdata),
 		.x_req_valid(1'b0), .x_req_ready(x_req_ready), .x_req_write(1'b0),
 		.x_req_line(26'd0), .x_req_be(64'd0), .x_req_wdata(512'd0), .x_req_tag(8'd0),
 		.x_rsp_valid(x_rsp_valid), .x_rsp_write(x_rsp_write), .x_rsp_tag(x_rsp_tag),
@@ -404,6 +404,8 @@ module atg_kc705_raster #(
 
 	atg_kc705_mig mig (
 		.clk(clk), .rst_n(rst_n), .sys_clk(ref_clk), .sys_rst_n(ref_rst_n), .mem_ready(mem_ready),
+		.xr_wr(xr_wr), .xr_waddr(xr_waddr), .xr_wdata(xr_wdata), .xr_rd(xr_rd),
+		.xr_raddr(xr_raddr), .xr_rdata(xr_rdata),
 		.s_awaddr(d_awaddr), .s_awlen(d_awlen), .s_awsize(d_awsize), .s_awburst(d_awburst), .s_awcache(d_awcache), .s_awprot(d_awprot), .s_awvalid(d_awvalid), .s_awready(d_awready), .s_wdata(d_wdata), .s_wstrb(d_wstrb), .s_wlast(d_wlast), .s_wvalid(d_wvalid), .s_wready(d_wready), .s_bresp(d_bresp), .s_bvalid(d_bvalid),
 		.s_bready(d_bready), .s_araddr(d_araddr), .s_arlen(d_arlen), .s_arsize(d_arsize), .s_arburst(d_arburst), .s_arcache(d_arcache), .s_arprot(d_arprot), .s_arvalid(d_arvalid), .s_arready(d_arready), .s_rdata(d_rdata), .s_rresp(d_rresp), .s_rlast(d_rlast), .s_rvalid(d_rvalid), .s_rready(d_rready),
 		.s2_clk(user_clk), .s2_rst_n(user_rst_n),
@@ -440,7 +442,7 @@ module atg_kc705_raster #(
 	assign led = {3'd0, link_up, mem_ready, 1'b0, irq, beat[26]};	/* [2] is free */
 
 	wire unused_ok = &{1'b0, tmds, d_awid, d_arid, h_awcache, h_arcache, h_awprot, h_arprot,
-		h_bid4[3:1], h_rid4[3:1], xr_wr, xr_rd, xr_waddr, xr_raddr, xr_wdata, xr_wstrb,
+		h_bid4[3:1], h_rid4[3:1], xr_wstrb,
 		x_req_ready, x_rsp_valid, x_rsp_write, x_rsp_error, x_rsp_rdata, x_rsp_tag};
 endmodule
 

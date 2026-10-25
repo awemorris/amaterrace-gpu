@@ -27,7 +27,8 @@
  *                      512, address 30, ID 4), system clock "No Buffer"
  *                      (ref_clk from atg_kc705_clk), the reference clock
  *                      "Use System Clock", sys_rst active low, XADC on
- *                      (device_temp), no extra user clocks.
+ *                      (device_temp), no extra user clocks, Debug on (the
+ *                      debug ports behind the registers at 0x1F000).
  *
  * The MIG's AXI reset (aresetn) is ui_clk_sync_rst inverted and registered
  * in ui_clk; the clock converter's master side uses it too.  mem_ready is
@@ -48,6 +49,14 @@ module atg_kc705_mig (
 	input wire sys_clk,
 	input wire sys_rst_n,
 	output wire mem_ready,
+	/* The board's registers at 0x1F000 (gclk, atg_top's xr_* bus): the MIG's
+	 * calibration status and its debug ports, ws288 p024. */
+	input wire xr_wr,
+	input wire [16:0] xr_waddr,
+	input wire [31:0] xr_wdata,
+	input wire xr_rd,
+	input wire [16:0] xr_raddr,
+	output reg [31:0] xr_rdata,
 	/* AXI4 slave (gclk), atg_top's m_* */
 	input wire [31:0] s_awaddr,
 	input wire [7:0] s_awlen,
@@ -127,13 +136,62 @@ module atg_kc705_mig (
 	output wire [7:0] ddr3_dm,
 	output wire ddr3_odt
 );
-	wire ui_clk, ui_rst, calib;
+	wire ui_clk, ui_rst, calib, locked;
 	reg aresetn = 1'b0;
 
 	always @(posedge ui_clk)
 		aresetn <= !ui_rst;
 
 	am_sync sync_ready (.clk(clk), .rst_n(rst_n), .d(calib), .q(mem_ready));
+
+	/* ---- The board's registers (0x1F000 + 4 * index) ----
+	 * 0 ID "K7MC"; 1 CTRL (RW): [0] holds the MIG in reset (sys_rst; 0
+	 * lets it calibrate again), [21:8] the MIG's ddr3_vio_sync_out
+	 * ([16:8] dbg_bit, [21:17] dbg_dqs: the byte lane of the per-lane
+	 * debug fields); 2 STATUS: [0] init_calib_complete, [1] mmcm_locked,
+	 * [2] ui_clk_sync_rst; 4-7 ddr3_ila_basic[119:0]; 8-11
+	 * ddr3_ila_rdpath[127:0]; 12-24 ddr3_ila_wrpath[390:0]; the others
+	 * read 0.  The debug ports are those of MIG 7 Series 4.2 with Debug
+	 * on (atg_kc705_ddr3.prj), in ui_clk; they come into gclk through
+	 * am_sync bit by bit (a snapshot, not coherent across bits). */
+	localparam [8:0] XR_PAGE = 9'h1F0;	/* 0x1F000 >> 8 */
+	wire [119:0] ila_basic;
+	wire [1023:0] ila_rdpath;
+	wire [390:0] ila_wrpath;
+	wire [2+120+128+391-1:0] dbg_g;
+	reg [31:0] ctrl;
+	wire hold_ref;
+
+	am_sync #(.W(2+120+128+391)) sync_dbg (
+		.clk(clk), .rst_n(rst_n), .d({ila_wrpath, ila_rdpath[127:0], ila_basic, ui_rst, locked}),
+		.q(dbg_g)
+	);
+	wire unused_dbg = &{1'b0, ila_rdpath[1023:128], xr_waddr[1:0], xr_raddr[1:0]};
+
+	am_sync sync_hold (.clk(sys_clk), .rst_n(1'b1), .d(ctrl[0]), .q(hold_ref));
+
+	wire [32*32-1:0] words = {
+		{7{32'd0}},
+		{25'd0, dbg_g[2+120+128+:391]},
+		dbg_g[2+120+:128],
+		{8'd0, dbg_g[2+:120]},
+		32'd0,
+		{29'd0, dbg_g[1], dbg_g[0], mem_ready},
+		ctrl,
+		32'h4B374D43
+	};
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			ctrl <= 32'd0;
+			xr_rdata <= 32'd0;
+		end else begin
+			if (xr_wr && xr_waddr[16:8] == XR_PAGE && xr_waddr[7:2] == 6'd1)
+				ctrl <= xr_wdata & 32'h003FFF01;
+			xr_rdata <= xr_rd && xr_raddr[16:8] == XR_PAGE && !xr_raddr[7] ?
+				words[32 * xr_raddr[6:2] +: 32] : 32'd0;
+		end
+	end
 
 	/* ---- BAR2: s2_clk -> gclk (128 bit), 128 -> 512 bit ---- */
 	wire [3:0] c_awid, c_bid, c_arid, c_rid;
@@ -333,11 +391,17 @@ module atg_kc705_mig (
 		.ddr3_cas_n(ddr3_cas_n), .ddr3_we_n(ddr3_we_n), .ddr3_reset_n(ddr3_reset_n),
 		.ddr3_ck_p(ddr3_ck_p), .ddr3_ck_n(ddr3_ck_n), .ddr3_cke(ddr3_cke),
 		.ddr3_cs_n(ddr3_cs_n), .ddr3_dm(ddr3_dm), .ddr3_odt(ddr3_odt),
-		.sys_clk_i(sys_clk), .sys_rst(sys_rst_n),
-		.ui_clk(ui_clk), .ui_clk_sync_rst(ui_rst), .mmcm_locked(),
+		.sys_clk_i(sys_clk), .sys_rst(sys_rst_n && !hold_ref),
+		.ui_clk(ui_clk), .ui_clk_sync_rst(ui_rst), .mmcm_locked(locked),
 		.aresetn(aresetn), .app_sr_req(1'b0), .app_ref_req(1'b0), .app_zq_req(1'b0),
 		.app_sr_active(), .app_ref_ack(), .app_zq_ack(),
 		.init_calib_complete(calib), .device_temp(),
+		.ddr3_ila_basic(ila_basic), .ddr3_ila_rdpath(ila_rdpath), .ddr3_ila_wrpath(ila_wrpath),
+		.ddr3_vio_sync_out(ctrl[21:8]), .dbg_byte_sel(4'd0), .dbg_sel_pi_incdec(1'b0),
+		.dbg_pi_f_inc(1'b0), .dbg_pi_f_dec(1'b0), .dbg_sel_po_incdec(1'b0), .dbg_po_f_inc(1'b0),
+		.dbg_po_f_dec(1'b0), .dbg_po_f_stg23_sel(1'b0), .dbg_pi_counter_read_val(),
+		.dbg_po_counter_read_val(), .dbg_prbs_final_dqs_tap_cnt_r(),
+		.dbg_prbs_first_edge_taps(), .dbg_prbs_second_edge_taps(),
 		.s_axi_awid({3'd0, u_awid}), .s_axi_awaddr(u_awaddr[29:0]), .s_axi_awlen(u_awlen),
 		.s_axi_awsize(u_awsize), .s_axi_awburst(u_awburst), .s_axi_awlock(u_awlock),
 		.s_axi_awcache(u_awcache), .s_axi_awprot(u_awprot), .s_axi_awqos(u_awqos),

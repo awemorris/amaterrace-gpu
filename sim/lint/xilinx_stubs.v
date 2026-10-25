@@ -1201,6 +1201,23 @@ module atg_kc705_ddr3 (
 	output wire app_zq_ack,
 	output wire init_calib_complete,
 	output wire [11:0] device_temp,
+	output wire [119:0] ddr3_ila_basic,
+	output wire [1023:0] ddr3_ila_rdpath,
+	output wire [390:0] ddr3_ila_wrpath,
+	input wire [13:0] ddr3_vio_sync_out,
+	input wire [3:0] dbg_byte_sel,
+	input wire dbg_sel_pi_incdec,
+	input wire dbg_pi_f_inc,
+	input wire dbg_pi_f_dec,
+	input wire dbg_sel_po_incdec,
+	input wire dbg_po_f_inc,
+	input wire dbg_po_f_dec,
+	input wire dbg_po_f_stg23_sel,
+	output wire [5:0] dbg_pi_counter_read_val,
+	output wire [8:0] dbg_po_counter_read_val,
+	output wire [107:0] dbg_prbs_final_dqs_tap_cnt_r,
+	output wire [107:0] dbg_prbs_first_edge_taps,
+	output wire [107:0] dbg_prbs_second_edge_taps,
 	input wire [3:0] s_axi_awid,
 	input wire [29:0] s_axi_awaddr,
 	input wire [7:0] s_axi_awlen,
@@ -1262,6 +1279,14 @@ module atg_kc705_ddr3 (
 	assign app_zq_ack = 1'b0;
 	assign init_calib_complete = 1'b0;
 	assign device_temp = 12'd0;
+	assign ddr3_ila_basic = 120'd0;
+	assign ddr3_ila_rdpath = 1024'd0;
+	assign ddr3_ila_wrpath = 391'd0;
+	assign dbg_pi_counter_read_val = 6'd0;
+	assign dbg_po_counter_read_val = 9'd0;
+	assign dbg_prbs_final_dqs_tap_cnt_r = 108'd0;
+	assign dbg_prbs_first_edge_taps = 108'd0;
+	assign dbg_prbs_second_edge_taps = 108'd0;
 	assign s_axi_awready = 1'b0;
 	assign s_axi_wready = 1'b0;
 	assign s_axi_bid = 4'd0;

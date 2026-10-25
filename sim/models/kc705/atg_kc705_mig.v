@@ -30,6 +30,13 @@ module atg_kc705_mig #(
 	input wire sys_clk,
 	input wire sys_rst_n,
 	output wire mem_ready,
+	/* The board's registers (0x1F000): the model returns ID and STATUS. */
+	input wire xr_wr,
+	input wire [16:0] xr_waddr,
+	input wire [31:0] xr_wdata,
+	input wire xr_rd,
+	input wire [16:0] xr_raddr,
+	output reg [31:0] xr_rdata,
 	input wire [31:0] s_awaddr,
 	input wire [7:0] s_awlen,
 	input wire [2:0] s_awsize,
@@ -116,6 +123,19 @@ module atg_kc705_mig #(
 			calib <= calib + 1;
 
 	assign mem_ready = calib == CALIB_CYCLES;
+
+	wire unused_xr = &{1'b0, xr_wr, xr_waddr, xr_wdata, xr_raddr[1:0]};
+
+	always @(posedge clk) begin
+		if (!rst_n)
+			xr_rdata <= 32'd0;
+		else if (xr_rd && xr_raddr[16:8] == 9'h1F0 && xr_raddr[7:2] == 6'd0)
+			xr_rdata <= 32'h4B374D43;
+		else if (xr_rd && xr_raddr[16:8] == 9'h1F0 && xr_raddr[7:2] == 6'd2)
+			xr_rdata <= {31'd0, mem_ready};
+		else
+			xr_rdata <= 32'd0;
+	end
 
 	axi_mem #(.DATA_W(512), .MEM_BYTES(MEM_BYTES), .SEED(SEED)) mem (
 		.clk(clk), .rst_n(rst_n),

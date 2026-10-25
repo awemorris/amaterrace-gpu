@@ -43,7 +43,8 @@
 #                       address 30, ID 4), system clock "No Buffer"
 #                       (atg_kc705_clk's ref_clk, 200 MHz), reference
 #                       clock "Use System Clock", sys_rst active low, XADC
-#                       on.
+#                       on, Debug on (the debug ports behind
+#                       atg_kc705_mig's registers at 0x1F000).
 # Every core is generated (instantiation template, synthesis) and
 # synthesised out of context (synth_ip), so that tools/vivado-build.tcl
 # reads OUT/*/*.xci.  NAMES (optional, after OUT) makes only those.
