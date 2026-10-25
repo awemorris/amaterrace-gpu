@@ -55,7 +55,7 @@ module atg_rx_bary (
 	wire [1:0] l = c[1:0];
 
 	/* The lane's i and j in eighths, with its offset. */
-	wire [2:0] os = i_osel[3 * l +: 3];
+	wire [2:0] os = l[1] ? (l[0] ? i_osel[11:9] : i_osel[8:6]) : (l[0] ? i_osel[5:3] : i_osel[2:0]);
 	reg signed [3:0] ox8, oy8;
 	always @(*) begin
 		case (os)
