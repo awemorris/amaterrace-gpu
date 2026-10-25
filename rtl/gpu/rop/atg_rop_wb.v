@@ -88,6 +88,7 @@ module atg_rop_wb #(
 	reg [LINE_BYTES*8-1:0] edat [0:1];
 	reg [LINE_BYTES-1:0] edirty [0:1];
 	wire [LINE_BYTES*8-1:0] edat0 = edat[0], edat1 = edat[1];
+	wire [LINE_BYTES-1:0] edirty0 = edirty[0], edirty1 = edirty[1];
 
 	localparam [3:0] S_IDLE = 4'd0, S_ROW = 4'd1, S_LOOK = 4'd2, S_EVW = 4'd3, S_FILL = 4'd4,
 		S_BLEND = 4'd5, S_BWAIT = 4'd6, S_FLUSH = 4'd7, S_FLW = 4'd8;
@@ -192,6 +193,39 @@ module atg_rop_wb #(
 		end
 	endtask
 
+	/* The entries with the pass's new bytes merged (taken in S_BWAIT): slot
+	 * l's p_ps bytes from byte p_soff of entry p_ent, a later slot over an
+	 * earlier one, bytes past the line dropped.  Each slot's bytes are
+	 * shifted to their place in a line, so that every byte of an entry
+	 * chooses among the four slots only. */
+	reg [LINE_BYTES*8-1:0] m_dat0, m_dat1;
+	reg [LINE_BYTES-1:0] m_dirty0, m_dirty1;
+	reg [LINE_BYTES*8+127:0] m_sh;	/* slot l's bytes at their place */
+	reg [LINE_BYTES+15:0] m_be;	/* and their byte enables */
+	always @(*) begin
+		m_dat0 = edat0;
+		m_dat1 = edat1;
+		m_dirty0 = edirty0;
+		m_dirty1 = edirty1;
+		for (l = 0; l < 4; l = l + 1) begin
+			m_sh = {{(LINE_BYTES*8){1'b0}}, p_res[128 * l +: 128]} <<
+				{p_soff[LINE_SHIFT * l +: LINE_SHIFT], 3'b000};
+			m_be = {{LINE_BYTES{1'b0}}, p_ps[4] ? 16'hFFFF : (16'd1 << p_ps[3:0]) - 16'd1} <<
+				p_soff[LINE_SHIFT * l +: LINE_SHIFT];
+			if (p_mask[l])
+				for (b = 0; b < LINE_BYTES; b = b + 1)
+					if (m_be[b]) begin
+						if (p_ent[l]) begin
+							m_dat1[8 * b +: 8] = m_sh[8 * b +: 8];
+							m_dirty1[b] = 1'b1;
+						end else begin
+							m_dat0[8 * b +: 8] = m_sh[8 * b +: 8];
+							m_dirty0[b] = 1'b1;
+						end
+					end
+		end
+	end
+
 	always @(posedge clk) begin
 		b_valid <= 1'b0;
 		f_go <= 1'b0;
@@ -281,16 +315,10 @@ module atg_rop_wb #(
 			end
 		S_BWAIT:
 			if (p_ready) begin
-				for (l = 0; l < 4; l = l + 1)
-					if (p_mask[l])
-						for (b = 0; b < 16; b = b + 1)
-							if (b < p_ps) begin
-								edat[p_ent[l]][8 * ({{(32-LINE_SHIFT){1'b0}},
-									p_soff[LINE_SHIFT * l +: LINE_SHIFT]} + b) +: 8] <=
-									p_res[128 * l + 8 * b +: 8];
-								edirty[p_ent[l]][{{(32-LINE_SHIFT){1'b0}},
-									p_soff[LINE_SHIFT * l +: LINE_SHIFT]} + b] <= 1'b1;
-							end
+				edat[0] <= m_dat0;
+				edat[1] <= m_dat1;
+				edirty[0] <= m_dirty0;
+				edirty[1] <= m_dirty1;
 				pass_done;
 			end
 		S_FLUSH:
@@ -324,7 +352,8 @@ module atg_rop_wb #(
 			$display("FAIL atg_rop_wb: attachment %0d row at %h crosses a line", rt, p_addr);
 `endif
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, m_sh[LINE_BYTES*8 +: 128],
+		m_be[LINE_BYTES +: 16]};
 endmodule
 
 `default_nettype wire

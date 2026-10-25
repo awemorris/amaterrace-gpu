@@ -68,24 +68,34 @@ module atg_blt_favg (
 	wire [2:0] cpp = m_fmt == 3'd3 ? 3'd3 : m_fmt == 3'd4 ? ps[3:1] : ps[4:2];
 
 	/* Sample s of channel j of pixel p, as fp32. */
-	reg [31:0] x [0:3];
-	integer s;
-	always @(*)
-		for (s = 0; s < 4; s = s + 1) begin
-			if (m_fmt == 3'd3)
-				x[s] = atg_srgb_dec(s_in[8 * (4 * (4 * p + s) + {29'd0, j}) +: 8]);
-			else if (m_fmt == 3'd4)
-				x[s] = atg_fmt_h2f(s_in[8 * ps * (4 * p + s) + 16 * {29'd0, j} +: 16]);
+	function [31:0] xs;	/* (everything it reads is an argument) */
+		input [511:0] si;
+		input [2:0] fm;
+		input [4:0] pz;
+		input [1:0] pp;
+		input [2:0] jj;
+		input [1:0] sn;
+		begin
+			if (fm == 3'd3)
+				xs = atg_srgb_dec(si[8 * (4 * (4 * pp + {30'd0, sn}) + {29'd0, jj}) +: 8]);
+			else if (fm == 3'd4)
+				xs = atg_fmt_h2f(si[8 * pz * (4 * pp + {30'd0, sn}) + 16 * {29'd0, jj} +: 16]);
 			else
-				x[s] = s_in[8 * ps * (4 * p + s) + 32 * {29'd0, j} +: 32];
+				xs = si[8 * pz * (4 * pp + {30'd0, sn}) + 32 * {29'd0, jj} +: 32];
 		end
-	wire [31:0] fa = step == 2'd0 ? x[0] : step == 2'd1 ? x[2] : step == 2'd2 ? r01 : sm;
-	wire [31:0] fb = step == 2'd3 ? QUARTER : ONE;
+	endfunction
+	/* Steps 0 and 1 add two samples each: (s0 + s1), then (s2 + s3); only
+	 * those two samples are decoded. */
 `ifdef MUT_FAVG_PAIR
-	wire [31:0] fc = step == 2'd0 ? x[2] : step == 2'd1 ? x[1] : step == 2'd2 ? r23 : 32'h80000000;
+	wire [31:0] xa = xs(s_in, m_fmt, ps, p, j, step == 2'd1 ? 2'd2 : 2'd0);
+	wire [31:0] xc = xs(s_in, m_fmt, ps, p, j, step == 2'd1 ? 2'd1 : 2'd2);
 `else
-	wire [31:0] fc = step == 2'd0 ? x[1] : step == 2'd1 ? x[3] : step == 2'd2 ? r23 : 32'h80000000;
+	wire [31:0] xa = xs(s_in, m_fmt, ps, p, j, step == 2'd1 ? 2'd2 : 2'd0);
+	wire [31:0] xc = xs(s_in, m_fmt, ps, p, j, step == 2'd1 ? 2'd3 : 2'd1);
 `endif
+	wire [31:0] fa = step[1] ? (step[0] ? sm : r01) : xa;
+	wire [31:0] fb = step == 2'd3 ? QUARTER : ONE;
+	wire [31:0] fc = step[1] ? (step[0] ? 32'h80000000 : r23) : xc;
 	wire [31:0] fr = atg_su_ffma(fa, fb, fc, 3'd0, 1'b0);
 	wire [15:0] fh = atg_fmt_f2h(fr);
 	wire lastj = j == cpp - 3'd1;
