@@ -94,13 +94,32 @@ module atg_blt_2d #(
 	reg [2:0] psl;		/* log2 of the pixel's bytes */
 	reg [3:0] m_keep;
 
-	/* The byte offset of pixel x in a row (linear or in 4x4 tiles). */
-	function [ADDR_W-1:0] x_bytes;
+	/* The pixel offset of pixel x in a row (linear or in 4x4 tiles); its bytes are this << psl. */
+	function [ADDR_W-1:0] x_pixels;
 		input [16:0] x;
 		input tiled;
+		x_pixels = tiled ? {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} :
+			{{(ADDR_W - 17){1'b0}}, x};
+	endfunction
+
+	/* A tile row's bytes, 4 << psl, and three of them, 12 << psl, by table. */
+	function [ADDR_W-1:0] tile_bytes;
 		input [2:0] pl;
-		x_bytes = (tiled ? {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} :
-			{{(ADDR_W - 17){1'b0}}, x}) << pl;
+		input three;
+		reg [ADDR_W-1:0] t;
+		begin
+			case (pl)
+			3'd0: t = 4;
+			3'd1: t = 8;
+			3'd2: t = 16;
+			3'd3: t = 32;
+			3'd4: t = 64;
+			3'd5: t = 128;
+			3'd6: t = 256;
+			default: t = 512;
+			endcase
+			tile_bytes = three ? {t[ADDR_W-2:0], 1'b0} | t : t;
+		end
 	endfunction
 
 	localparam [3:0] S_IDLE = 4'd0;
@@ -168,7 +187,10 @@ module atg_blt_2d #(
 
 	/* The copied line: the source window shifted by whole bytes. */
 	wire [2*LINE_BITS-1:0] both = {buf1, buf0};
-	wire [2*LINE_BITS-1:0] shifted = both >> {src_off, 3'd0};
+	wire [2*LINE_BITS-1:0] shifted;
+
+	am_shift #(.W(2 * LINE_BITS), .SW(US + 3)) h_copy (.a(both), .amt({src_off, 3'd0}), .left(1'b0), .arith(1'b0),
+		.y(shifted));
 	wire [LINE_BITS-1:0] copy_line = shifted[LINE_BITS-1:0];
 
 	/* Blend-over. */
@@ -201,35 +223,94 @@ module atg_blt_2d #(
 	/* The segment's end: the next pixel, or the next row. */
 	wire [16:0] sn17 = {{(16 - US){1'b0}}, sn};
 	wire seg_last = rem == sn17;
-	wire [ADDR_W-1:0] tile_step = {{(ADDR_W - 3){1'b0}}, 3'd4} << psl;
-	wire [ADDR_W-1:0] tile_back = {{(ADDR_W - 4){1'b0}}, 4'd12} << psl;
-	wire [ADDR_W-1:0] dst_step = m_dtile ? (ydl == 2'd3 ? dstride_u - tile_back : tile_step) :
+	wire [ADDR_W-1:0] tile_step = tile_bytes(psl, 1'b0);
+	wire [ADDR_W-1:0] tile_back = tile_bytes(psl, 1'b1);
+	wire [ADDR_W-1:0] dst_back, src_back;
+	wire [31:0] dst_neg, src_neg;
+	wire [16:0] y1_last, ys_rev;
+	wire [5:0] step_co_unused;
+
+	am_sub #(.W(ADDR_W)) s_dback (.a(dstride_u), .b(tile_back), .bi(1'b0), .d(dst_back), .bo(step_co_unused[0]));
+	am_sub #(.W(ADDR_W)) s_sback (.a(sstride_u), .b(tile_back), .bi(1'b0), .d(src_back), .bo(step_co_unused[1]));
+	am_sub #(.W(32)) s_dneg (.a(32'd0), .b(dstride_u), .bi(1'b0), .d(dst_neg), .bo(step_co_unused[2]));
+	am_sub #(.W(32)) s_sneg (.a(32'd0), .b(sstride_u), .bi(1'b0), .d(src_neg), .bo(step_co_unused[3]));
+	wire [ADDR_W-1:0] dst_step = m_dtile ? (ydl == 2'd3 ? dst_back : tile_step) :
 		dstride_u;
-	wire [ADDR_W-1:0] src_step = m_stile ? (ysl == 2'd3 ? sstride_u - tile_back : tile_step) :
+	wire [ADDR_W-1:0] src_step = m_stile ? (ysl == 2'd3 ? src_back : tile_step) :
 		sstride_u;
 
 	/* S_START: the first row (the last one when reversed). */
-	wire [16:0] yd_start = m_rev ? y1 - 1'b1 : y0;
-	wire [16:0] ys_start = m_rev ? sy0 + rows : sy0;
+	am_sub #(.W(17)) s_y1 (.a(y1), .b(17'd0), .bi(1'b1), .d(y1_last), .bo(step_co_unused[4]));
+	am_add #(.W(17)) a_ys (.a(sy0), .b(rows), .ci(1'b0), .s(ys_rev), .co(step_co_unused[5]));
+	wire [16:0] yd_start = m_rev ? y1_last : y0;
+	wire [16:0] ys_start = m_rev ? ys_rev : sy0;
 	wire row_go = state == S_START;
 	wire row_add = state == S_WR && wr_go && seg_last;
 	wire [ADDR_W-1:0] dst_row, src_row;
 	wire d_idle, s_idle;
 
+	/* The first row's address within its tile row: (y mod 4) x 4 pixels, in bytes. */
+	wire [ADDR_W-1:0] d_in_tile, s_in_tile;
+	wire [31:0] d_first, s_first;
+	wire [1:0] first_co_unused;
+
+	am_shift #(.W(ADDR_W), .SW(3)) h_dt (.a(m_dtile ? {{(ADDR_W - 4){1'b0}}, yd_start[1:0], 2'b00} : {ADDR_W{1'b0}}),
+		.amt(psl), .left(1'b1), .arith(1'b0), .y(d_in_tile));
+	am_shift #(.W(ADDR_W), .SW(3)) h_st (.a(m_stile ? {{(ADDR_W - 4){1'b0}}, ys_start[1:0], 2'b00} : {ADDR_W{1'b0}}),
+		.amt(psl), .left(1'b1), .arith(1'b0), .y(s_in_tile));
+	am_add #(.W(32)) a_df (.a(dbase_u), .b(d_in_tile), .ci(1'b0), .s(d_first), .co(first_co_unused[0]));
+	am_add #(.W(32)) a_sf (.a(sbase_u), .b(s_in_tile), .ci(1'b0), .s(s_first), .co(first_co_unused[1]));
+
 	atg_blt_acc dacc (
 		.clk(clk), .rst_n(rst_n), .go(row_go),
 		.y(m_dtile ? {2'b00, yd_start[16:2]} : yd_start), .s(dstride_u),
-		.b(dbase_u + (m_dtile ? {{(ADDR_W - 4){1'b0}}, yd_start[1:0], 2'b00} << psl :
-			{ADDR_W{1'b0}})),
-		.add(row_add), .d(m_rev ? 32'd0 - dstride_u : dst_step), .r(dst_row), .idle(d_idle)
+		.b(d_first),
+		.add(row_add), .d(m_rev ? dst_neg : dst_step), .r(dst_row), .idle(d_idle)
 	);
 	atg_blt_acc sacc (
 		.clk(clk), .rst_n(rst_n), .go(row_go),
 		.y(m_stile ? {2'b00, ys_start[16:2]} : ys_start), .s(sstride_u),
-		.b(sbase_u + (m_stile ? {{(ADDR_W - 4){1'b0}}, ys_start[1:0], 2'b00} << psl :
-			{ADDR_W{1'b0}})),
-		.add(row_add), .d(m_rev ? 32'd0 - sstride_u : src_step), .r(src_row), .idle(s_idle)
+		.b(s_first),
+		.add(row_add), .d(m_rev ? src_neg : src_step), .r(src_row), .idle(s_idle)
 	);
+
+	/*
+	 * The FSM's sums, each for the state that takes it: the rectangle's
+	 * size and source origin (S_CLIP), the rows' first pixels (S_START),
+	 * the pixel's addresses (S_SA), the segment's bytes (S_SB), its first
+	 * bytes (S_SC), and the next pixel, row and the pixels left (S_WR).
+	 */
+	wire [16:0] c_width, c_rows, c_dx, c_dy, c_sx0, c_sy0, x1_last, s_end, s_last;
+	wire [ADDR_W-1:0] d_px, s_px, d_xb, s_xb, d_addr, s_addr, d_lo, s_lo;
+	wire [US:0] seg_bytes;
+	wire [1:0] ydl_inc, ysl_inc;
+	wire [16:0] rows_dec, px_next, spx_next, rem_next;
+	wire [18:0] fsm_co_unused;
+
+	am_sub #(.W(17)) s_w (.a(x1), .b(x0), .bi(1'b0), .d(c_width), .bo(fsm_co_unused[0]));
+	am_sub #(.W(17)) s_rows (.a(y1), .b(y0), .bi(1'b1), .d(c_rows), .bo(fsm_co_unused[1]));
+	am_sub #(.W(17)) s_cdx (.a(x0), .b(dx), .bi(1'b0), .d(c_dx), .bo(fsm_co_unused[2]));
+	am_sub #(.W(17)) s_cdy (.a(y0), .b(dy), .bi(1'b0), .d(c_dy), .bo(fsm_co_unused[3]));
+	am_add #(.W(17)) a_sx0 (.a({1'b0, s_src_xy[15:0]}), .b(c_dx), .ci(1'b0), .s(c_sx0), .co(fsm_co_unused[4]));
+	am_add #(.W(17)) a_sy0 (.a({1'b0, s_src_xy[31:16]}), .b(c_dy), .ci(1'b0), .s(c_sy0), .co(fsm_co_unused[5]));
+	am_sub #(.W(17)) s_x1 (.a(x1), .b(17'd0), .bi(1'b1), .d(x1_last), .bo(fsm_co_unused[6]));
+	am_add #(.W(17)) a_send (.a(sx0), .b(width), .ci(1'b0), .s(s_end), .co(fsm_co_unused[7]));
+	am_sub #(.W(17)) s_slast (.a(s_end), .b(17'd0), .bi(1'b1), .d(s_last), .bo(fsm_co_unused[8]));
+	assign d_px = x_pixels(px, m_dtile);
+	assign s_px = x_pixels(spx, m_stile);
+	am_shift #(.W(ADDR_W), .SW(3)) h_dx (.a(d_px), .amt(psl), .left(1'b1), .arith(1'b0), .y(d_xb));
+	am_shift #(.W(ADDR_W), .SW(3)) h_sx (.a(s_px), .amt(psl), .left(1'b1), .arith(1'b0), .y(s_xb));
+	am_add #(.W(ADDR_W)) a_da (.a(dst_row), .b(d_xb), .ci(1'b0), .s(d_addr), .co(fsm_co_unused[9]));
+	am_add #(.W(ADDR_W)) a_sa (.a(src_row), .b(s_xb), .ci(1'b0), .s(s_addr), .co(fsm_co_unused[10]));
+	am_shift #(.W(US + 1), .SW(3)) h_sn (.a(seg_n), .amt(psl), .left(1'b1), .arith(1'b0), .y(seg_bytes));
+	am_sub #(.W(ADDR_W)) s_dlo (.a(da), .b(back), .bi(1'b0), .d(d_lo), .bo(fsm_co_unused[11]));
+	am_sub #(.W(ADDR_W)) s_slo (.a(sa), .b(back), .bi(1'b0), .d(s_lo), .bo(fsm_co_unused[12]));
+	am_add #(.W(2)) a_ydl (.a(ydl), .b(2'd0), .ci(1'b1), .s(ydl_inc), .co(fsm_co_unused[13]));
+	am_add #(.W(2)) a_ysl (.a(ysl), .b(2'd0), .ci(1'b1), .s(ysl_inc), .co(fsm_co_unused[14]));
+	am_sub #(.W(17)) s_rdec (.a(rows), .b(17'd0), .bi(1'b1), .d(rows_dec), .bo(fsm_co_unused[15]));
+	am_addsub #(.W(17)) as_px (.a(px), .b(sn17), .sub(m_rev), .s(px_next), .co(fsm_co_unused[16]));
+	am_addsub #(.W(17)) as_spx (.a(spx), .b(sn17), .sub(m_rev), .s(spx_next), .co(fsm_co_unused[17]));
+	am_sub #(.W(17)) s_rem (.a(rem), .b(sn17), .bi(1'b0), .d(rem_next), .bo(fsm_co_unused[18]));
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -279,15 +360,15 @@ module atg_blt_2d #(
 					done <= 1'b1;
 				end else begin
 					state <= S_START;
-					width <= x1 - x0;
-					rows <= y1 - y0 - 1'b1;
-					sx0 <= {1'b0, s_src_xy[15:0]} + (x0 - dx);
-					sy0 <= {1'b0, s_src_xy[31:16]} + (y0 - dy);
+					width <= c_width;
+					rows <= c_rows;
+					sx0 <= c_sx0;
+					sy0 <= c_sy0;
 				end
 			S_START: begin
 				state <= S_MUL;
-				px_row <= m_rev ? x1 - 1'b1 : x0;
-				spx_row <= m_rev ? sx0 + width - 1'b1 : sx0;
+				px_row <= m_rev ? x1_last : x0;
+				spx_row <= m_rev ? s_last : sx0;
 				ydl <= yd_start[1:0];
 				ysl <= ys_start[1:0];
 			end
@@ -303,18 +384,18 @@ module atg_blt_2d #(
 					state <= S_DRAIN;
 				end else begin
 					state <= S_SB;
-					da <= dst_row + x_bytes(px, m_dtile, psl);
-					sa <= src_row + x_bytes(spx, m_stile, psl);
+					da <= d_addr;
+					sa <= s_addr;
 				end
 			S_SB: begin
 				state <= S_SC;
 				sn <= seg_n;
-				snu <= seg_n << psl;
+				snu <= seg_bytes;
 			end
 			S_SC: begin
 				state <= S_SD;
-				dlo <= m_rev ? da - back : da;
-				slo <= m_rev ? sa - back : sa;
+				dlo <= m_rev ? d_lo : da;
+				slo <= m_rev ? s_lo : sa;
 			end
 			S_SD: begin
 				seg_line <= dlo[ADDR_W-1:US];
@@ -364,17 +445,17 @@ module atg_blt_2d #(
 					state <= S_DRAIN;
 				end else if (wr_go) begin
 					if (seg_last) begin
-						ydl <= ydl + 1'b1;
-						ysl <= ysl + 1'b1;
+						ydl <= ydl_inc;
+						ysl <= ysl_inc;
 						px <= px_row;
 						spx <= spx_row;
 						rem <= width;
-						rows <= rows - 1'b1;
+						rows <= rows_dec;
 						state <= rows == 17'd0 ? S_DRAIN : S_SA;
 					end else begin
-						px <= m_rev ? px - sn17 : px + sn17;
-						spx <= m_rev ? spx - sn17 : spx + sn17;
-						rem <= rem - sn17;
+						px <= px_next;
+						spx <= spx_next;
+						rem <= rem_next;
 						state <= S_SA;
 					end
 				end
@@ -394,7 +475,8 @@ module atg_blt_2d #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, shifted[2*LINE_BITS-1:LINE_BITS], c_op2, c_resolve};
+	wire unused_ok = &{1'b0, shifted[2*LINE_BITS-1:LINE_BITS], c_op2, c_resolve, step_co_unused, first_co_unused,
+		fsm_co_unused};
 endmodule
 
 `default_nettype wire

@@ -50,3 +50,5 @@ docs/ghci.md §8.2, §8.5; `atg_blt_rsv_px.md`, `spec/gpu/fmt/atg_fmt_srgbenc.md
 ## 10. Status
 
 New (2026-10-25).  Reading: GHCI leaves the precision of the linear sRGB values and the floats' rounding to the implementation; Amaterrace uses the GPU's fp32 rules and the order of the GHCI text.
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles): the sample and output places are am_shift and am_add of the same 32-bit values, the sRGB alpha averages four am_add each.

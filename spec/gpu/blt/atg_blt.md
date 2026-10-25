@@ -61,3 +61,5 @@ docs/ghci.md §8.2; design §15.8.  Related: `atg_blt_2d.md`, `atg_blt_rsv.md`.
 ## 10. Status
 
 Implemented as the wrapper of the two engines (the MSAA work).  2026-10-25: the engines take the pixel sizes, KEEP, BLT_COLOR1-3 and the averages 0-7 of docs/ghci.md §8.5; this module is unchanged.
+
+WS288 p037 (2026-10-25): no arithmetic of its own; its children use am_ modules.

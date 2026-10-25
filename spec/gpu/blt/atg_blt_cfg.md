@@ -60,3 +60,5 @@ docs/ghci.md §8.2, §8.5.
 ## 10. Status
 
 New (2026-10-25): the copy of the state moved out of the two engines (the split of the 2D engine below 400 lines; the RESOLVE engine uses it too).
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

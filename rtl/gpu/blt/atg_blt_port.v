@@ -69,6 +69,16 @@ module atg_blt_port #(
 	assign wr_idle = wr_out == 4'd0;
 	assign req_tag = {5'd0, req_write, slot};
 
+	/* The writes and the reads outstanding: one more for a request, one fewer for a response. */
+	wire [3:0] wr_up, wr_next;
+	wire [1:0] rd_up, rd_next;
+	wire [3:0] out_co_unused;
+
+	am_add #(.W(4)) a_wr (.a(wr_out), .b(4'd0), .ci(q_fire && req_write), .s(wr_up), .co(out_co_unused[0]));
+	am_sub #(.W(4)) s_wr (.a(wr_up), .b(4'd0), .bi(rsp_wr), .d(wr_next), .bo(out_co_unused[1]));
+	am_add #(.W(2)) a_rd (.a(rd_out), .b(2'd0), .ci(q_fire && !req_write), .s(rd_up), .co(out_co_unused[2]));
+	am_sub #(.W(2)) s_rd (.a(rd_up), .b(2'd0), .bi(rsp_rd), .d(rd_next), .bo(out_co_unused[3]));
+
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			req_valid <= 1'b0;
@@ -77,8 +87,8 @@ module atg_blt_port #(
 			rd_out <= 2'd0;
 			fail <= 1'b0;
 		end else begin
-			wr_out <= wr_out + {3'd0, q_fire && req_write} - {3'd0, rsp_wr};
-			rd_out <= rd_out + {1'b0, q_fire && !req_write} - {1'b0, rsp_rd};
+			wr_out <= wr_next;
+			rd_out <= rd_next;
 			if (rsp_rd) begin
 				case (rsp_tag[1:0])
 				2'd0: buf0 <= rsp_rdata;
@@ -103,7 +113,7 @@ module atg_blt_port #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, rsp_tag[7:2]};
+	wire unused_ok = &{1'b0, rsp_tag[7:2], out_co_unused};
 endmodule
 
 `default_nettype wire

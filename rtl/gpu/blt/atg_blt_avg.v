@@ -33,126 +33,184 @@ module atg_blt_avg (
 	input wire [511:0] in_s,
 	output reg [127:0] out_p
 );
-	/* sum / 4, rounded to the nearest integer, ties to even. */
-	function [9:0] rne4;
-		input [11:0] sum;
+	/*
+	 * The code of channel c of sample word wd: byte c (fmt 0), or field c
+	 * of the format (fmt 1, 6, 7; the fields from the low bits), 0 when
+	 * the format has no such field.  Called with c constant, so each case
+	 * is a fixed part-select.
+	 */
+	function [9:0] chan;
+		input [2:0] f;
+		input [1:0] c;
+		input [31:0] wd;
 		begin
-`ifdef MUT_RSV_RNE
-			rne4 = sum[11:2] + {9'd0, sum[1]};
-`else
-			rne4 = sum[11:2] + {9'd0, sum[1] && (sum[0] || sum[2])};
-`endif
+			chan = 10'd0;
+			case ({f, c})
+			{3'd0, 2'd0}: chan = {2'd0, wd[7:0]};
+			{3'd0, 2'd1}: chan = {2'd0, wd[15:8]};
+			{3'd0, 2'd2}: chan = {2'd0, wd[23:16]};
+			{3'd0, 2'd3}: chan = {2'd0, wd[31:24]};
+			{3'd1, 2'd0}: chan = {5'd0, wd[4:0]};
+			{3'd1, 2'd1}: chan = {4'd0, wd[10:5]};
+			{3'd1, 2'd2}: chan = {5'd0, wd[15:11]};
+			{3'd6, 2'd0}: chan = wd[9:0];
+			{3'd6, 2'd1}: chan = wd[19:10];
+			{3'd6, 2'd2}: chan = wd[29:20];
+			{3'd6, 2'd3}: chan = {8'd0, wd[31:30]};
+			{3'd7, 2'd0}: chan = {5'd0, wd[4:0]};
+			{3'd7, 2'd1}: chan = {5'd0, wd[9:5]};
+			{3'd7, 2'd2}: chan = {5'd0, wd[14:10]};
+			{3'd7, 2'd3}: chan = {9'd0, wd[15]};
+			default: chan = 10'd0;
+			endcase
 		end
 	endfunction
 
-	/* The fields of a format: {lowest bit, width} of up to four fields. */
-	function [43:0] fields;
+	/* Average avg of channel c placed in its field of a 32-bit pixel word (fmt 1, 6, 7; c constant). */
+	function [31:0] place;
 		input [2:0] f;
-		case (f)
-		3'd1: fields = {5'd0, 6'd0, 5'd11, 6'd5, 5'd5, 6'd6, 5'd0, 6'd5};
-		3'd6: fields = {5'd30, 6'd2, 5'd20, 6'd10, 5'd10, 6'd10, 5'd0, 6'd10};
-		3'd7: fields = {5'd15, 6'd1, 5'd10, 6'd5, 5'd5, 6'd5, 5'd0, 6'd5};
-		default: fields = 44'd0;
-		endcase
+		input [1:0] c;
+		input [9:0] avg;
+		begin
+			place = 32'd0;
+			case ({f, c})
+			{3'd1, 2'd0}: place = {27'd0, avg[4:0]};
+			{3'd1, 2'd1}: place = {21'd0, avg[5:0], 5'd0};
+			{3'd1, 2'd2}: place = {16'd0, avg[4:0], 11'd0};
+			{3'd6, 2'd0}: place = {22'd0, avg};
+			{3'd6, 2'd1}: place = {12'd0, avg, 10'd0};
+			{3'd6, 2'd2}: place = {2'd0, avg, 20'd0};
+			{3'd6, 2'd3}: place = {avg[1:0], 30'd0};
+			{3'd7, 2'd0}: place = {27'd0, avg[4:0]};
+			{3'd7, 2'd1}: place = {22'd0, avg[4:0], 5'd0};
+			{3'd7, 2'd2}: place = {17'd0, avg[4:0], 10'd0};
+			{3'd7, 2'd3}: place = {16'd0, avg[0], 15'd0};
+			default: place = 32'd0;
+			endcase
+		end
 	endfunction
 
-	/* The averages for format fm and pixel size 2^pl.  The output below
-	 * calls it with fm and pl as constants (every case of fmt and psl that
-	 * gives a different result), so that each call reduces to fixed fields
-	 * and byte places. */
-	function [127:0] avg;
-		input [2:0] fm;
+	/* SAMPLE0: the bytes of sample 0 of each pixel, for a pixel of 2^pl bytes (pl constant). */
+	function [127:0] sample0;
 		input [2:0] pl;
 		input [511:0] x;
-		integer p, k, s, f, ps;
+		integer p, k, ps;
 		reg [127:0] o;
-		reg [11:0] sum;
-		reg [9:0] q;
-		reg [31:0] wd, px;
-		reg [9:0] wf;
-		reg [21:0] wf_unused;
-		reg [43:0] fl;
-		reg [4:0] fpos;
-		reg [5:0] fw;
-		reg [31:0] msk;
 		begin
 			o = 128'd0;
 			ps = 1 << pl;
-			fl = fields(fm);
-			sum = 12'd0;
-			q = 10'd0;
-			px = 32'd0;
-			wd = 32'd0;
-			wf = 10'd0;
-			fpos = 5'd0;
-			fw = 6'd0;
-			msk = 32'd0;
-			for (p = 0; p < 4; p = p + 1) begin
-				if (fm == 3'd0) begin
-					/* UNORM8: every byte of the pixel. */
-					for (k = 0; k < 4; k = k + 1)
-						if (k < ps && ps <= 4) begin
-							sum = 12'd0;
-							for (s = 0; s < 4; s = s + 1)
-								sum = sum + {4'd0, x[8 * (ps * (4 * p + s) + k) +: 8]};
-							q = rne4(sum);
-							o[8 * (ps * p + k) +: 8] = q[7:0];
-						end
-				end else if (fm == 3'd1 || fm == 3'd6 || fm == 3'd7) begin
-					/* The fields of a 16- or 32-bit pixel. */
-					px = 32'd0;
-					for (f = 0; f < 4; f = f + 1) begin
-						fpos = fl[11 * f + 6 +: 5];
-						fw = fl[11 * f +: 6];
-						msk = (32'd1 << fw) - 32'd1;
-						sum = 12'd0;
-						for (s = 0; s < 4; s = s + 1) begin
-							wd = fm == 3'd6 ? x[32 * (4 * p + s) +: 32] :
-								{16'd0, x[16 * (4 * p + s) +: 16]};
-							{wf_unused, wf} = (wd >> fpos) & msk;
-							sum = sum + {2'd0, wf};
-						end
-						q = rne4(sum);
-						if (fw != 6'd0)
-							px = px | (({22'd0, q} & msk) << fpos);
-					end
-					if (fm == 3'd6)
-						o[32 * p +: 32] = px;
-					else
-						o[16 * p +: 16] = px[15:0];
-				end else begin
-					/* SAMPLE0: the bytes of sample 0. */
-					for (k = 0; k < 16; k = k + 1)
-						if (k < ps && ps * p + k < 16)
-							o[8 * (ps * p + k) +: 8] = x[8 * (ps * 4 * p + k) +: 8];
-				end
-			end
-			avg = o;
+			for (p = 0; p < 4; p = p + 1)
+				for (k = 0; k < 16; k = k + 1)
+					if (k < ps && ps * p + k < 16)
+						o[8 * (ps * p + k) +: 8] = x[8 * (ps * 4 * p + k) +: 8];
+			sample0 = o;
 		end
 	endfunction
 
-	always @(*)
+	/*
+	 * Sixteen averagers, one for channel c of pixel p (j = 4 p + c): the
+	 * sum of the four samples' codes (at most 4 x 1023) and its quarter,
+	 * rounded to the nearest code, ties to even.  The samples' words and
+	 * the codes are chosen by the format and the pixel size: UNORM8 byte c
+	 * of a pixel of 1, 2 or 4 bytes, or field c of a 16- or 32-bit pixel.
+	 */
+	wire [159:0] q;	/* average j at bits 10 j */
+
+	genvar j, sm;
+	generate
+	for (j = 0; j < 16; j = j + 1) begin : g_avg
+		localparam integer CH_I = j % 4;	/* the channel */
+		localparam [1:0] CH = CH_I[1:0];
+		wire [9:0] v [0:3];
+
+		for (sm = 0; sm < 4; sm = sm + 1) begin : g_s
+			reg [31:0] wd;
+			reg [2:0] cf;
+
+			/* Sample sm of pixel j / 4: the word of its slot, and the channel's format. */
+			always @(*) begin
+				wd = 32'd0;
+				cf = fmt;
+				if (fmt == 3'd0) begin
+					case (psl)
+					3'd0: wd = (j % 4) < 1 ? {24'd0, in_s[8 * (4 * (j / 4) + sm) +: 8]} : 32'd0;
+					3'd1: wd = (j % 4) < 2 ? {16'd0, in_s[16 * (4 * (j / 4) + sm) +: 16]} : 32'd0;
+					3'd2: wd = in_s[32 * (4 * (j / 4) + sm) +: 32];
+					default: wd = 32'd0;
+					endcase
+				end else if (fmt == 3'd6) begin
+					wd = in_s[32 * (4 * (j / 4) + sm) +: 32];
+				end else if (fmt == 3'd1 || fmt == 3'd7) begin
+					wd = {16'd0, in_s[16 * (4 * (j / 4) + sm) +: 16]};
+				end else begin
+					cf = 3'd2;
+				end
+			end
+			assign v[sm] = chan(cf, CH, wd);
+		end
+
+		wire [11:0] s01, s23, sum;
+		wire [2:0] sum_co_unused;
+		wire q_co_unused;
+
+		am_add #(.W(12)) a_01 (.a({2'd0, v[0]}), .b({2'd0, v[1]}), .ci(1'b0), .s(s01), .co(sum_co_unused[0]));
+		am_add #(.W(12)) a_23 (.a({2'd0, v[2]}), .b({2'd0, v[3]}), .ci(1'b0), .s(s23), .co(sum_co_unused[1]));
+		am_add #(.W(12)) a_s (.a(s01), .b(s23), .ci(1'b0), .s(sum), .co(sum_co_unused[2]));
+`ifdef MUT_RSV_RNE
+		wire round_up = sum[1];
+`else
+		wire round_up = sum[1] && (sum[0] || sum[2]);
+`endif
+		am_add #(.W(10)) a_q (.a(sum[11:2]), .b(10'd0), .ci(round_up), .s(q[10 * j +: 10]), .co(q_co_unused));
+
+		wire unused_ok = &{1'b0, sum_co_unused, q_co_unused};
+	end
+	endgenerate
+
+	/* The output pixels of each format and pixel size. */
+	reg [31:0] px;
+	integer pp, cc;
+
+	always @(*) begin
+		out_p = 128'd0;
+		px = 32'd0;
 		case (fmt)
 		3'd0:
 			case (psl)
-			3'd0: out_p = avg(3'd0, 3'd0, in_s);
-			3'd1: out_p = avg(3'd0, 3'd1, in_s);
-			3'd2: out_p = avg(3'd0, 3'd2, in_s);
-			default: out_p = avg(3'd0, 3'd3, in_s);	/* above 4 bytes: nothing */
+			3'd0:
+				for (pp = 0; pp < 4; pp = pp + 1)
+					out_p[8 * pp +: 8] = q[10 * (4 * pp) +: 8];
+			3'd1:
+				for (pp = 0; pp < 4; pp = pp + 1)
+					for (cc = 0; cc < 2; cc = cc + 1)
+						out_p[8 * (2 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
+			3'd2:
+				for (pp = 0; pp < 4; pp = pp + 1)
+					for (cc = 0; cc < 4; cc = cc + 1)
+						out_p[8 * (4 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
+			default:	/* above 4 bytes: nothing */
+				out_p = 128'd0;
 			endcase
-		3'd1: out_p = avg(3'd1, 3'd0, in_s);	/* the fields: any size */
-		3'd6: out_p = avg(3'd6, 3'd0, in_s);
-		3'd7: out_p = avg(3'd7, 3'd0, in_s);
+		3'd1, 3'd6, 3'd7:	/* the fields: any size */
+			for (pp = 0; pp < 4; pp = pp + 1) begin
+				px = place(fmt, 2'd0, q[10 * (4 * pp) +: 10]) | place(fmt, 2'd1, q[10 * (4 * pp + 1) +: 10]) |
+					place(fmt, 2'd2, q[10 * (4 * pp + 2) +: 10]) | place(fmt, 2'd3, q[10 * (4 * pp + 3) +: 10]);
+				if (fmt == 3'd6)
+					out_p[32 * pp +: 32] = px;
+				else
+					out_p[16 * pp +: 16] = px[15:0];
+			end
 		default:	/* SAMPLE0 */
 			case (psl)
-			3'd0: out_p = avg(3'd2, 3'd0, in_s);
-			3'd1: out_p = avg(3'd2, 3'd1, in_s);
-			3'd2: out_p = avg(3'd2, 3'd2, in_s);
-			3'd3: out_p = avg(3'd2, 3'd3, in_s);
-			3'd4: out_p = avg(3'd2, 3'd4, in_s);
-			default: out_p = avg(3'd2, 3'd5, in_s);	/* 32 bytes and more: as 16 */
+			3'd0: out_p = sample0(3'd0, in_s);
+			3'd1: out_p = sample0(3'd1, in_s);
+			3'd2: out_p = sample0(3'd2, in_s);
+			3'd3: out_p = sample0(3'd3, in_s);
+			3'd4: out_p = sample0(3'd4, in_s);
+			default: out_p = sample0(3'd5, in_s);	/* 32 bytes and more: as 16 */
 			endcase
 		endcase
+	end
 
 endmodule
 

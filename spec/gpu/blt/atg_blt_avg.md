@@ -50,3 +50,5 @@ docs/ghci.md §8.2.
 ## 10. Status
 
 Implemented (the MSAA work).  2026-10-25: `psl` instead of `is16`, the averages 6 and 7, 8-bit UNORM8 and SAMPLE0 of every size; SRGB8_A8 and SFLOAT16/32 are in `atg_blt_favg`.  The new cases are checked by `sim/tb/atg_blt_tb.v`.
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles): sixteen averagers (channel c of pixel p, three am_add for the sum and one for the rounding), their samples chosen by the format and the pixel size, instead of one set of sums for every format and size.

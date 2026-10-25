@@ -62,3 +62,5 @@ design §15.8.  Related: `atg_blt_rsv.md`, `atg_blt_avg.md`, `spec/common/am_fif
 ## 10. Status
 
 Implemented (the MSAA work).  2026-10-25: pixels of 1 to 16 bytes (`psl`), the slow averages through `atg_blt_favg`, a group that uses both lines of the window empties it.
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

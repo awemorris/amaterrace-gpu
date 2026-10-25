@@ -50,32 +50,37 @@ module atg_blt_blend #(
 	reg [WS-1:0] b_i;
 	reg [31:0] b_s;
 	reg [63:0] b_t;		/* four 16-bit products */
-	wire [7:0] inv_a = 8'd255 - a_s[31:24];
+	wire [7:0] inv_a = ~a_s[31:24];	/* 255 - a */
 
-	function [15:0] mul8;
-		input [7:0] x;
-		input [7:0] y;
-		mul8 = {8'd0, x} * {8'd0, y};
-	endfunction
+	/*
+	 * Per channel: the product d x (255 - a) (stage 2), then (stage 3)
+	 * s + round(t / 255) of t + 128 as (t + 128 + ((t + 128) >> 8)) >> 8,
+	 * saturated.
+	 */
+	wire [63:0] prod;
+	wire [31:0] b_out;
+	wire [WS:0] bi_inc;
+	wire bi_co_unused;
 
-	reg [31:0] b_out;
-	reg [16:0] t1;
-	reg [16:0] t2;
-	reg [8:0] sum;
-	integer c;
+	am_add #(.W(WS + 1)) a_bi (.a(bi), .b({(WS + 1){1'b0}}), .ci(1'b1), .s(bi_inc), .co(bi_co_unused));
 
-	always @(*) begin
-		b_out = 32'd0;
-		t1 = 17'd0;
-		t2 = 17'd0;
-		sum = 9'd0;
-		for (c = 0; c < 4; c = c + 1) begin
-			t1 = {1'b0, b_t[c*16 +: 16]} + 17'd128;
-			t2 = t1 + {8'd0, t1[16:8]};
-			sum = {1'b0, b_s[c*8 +: 8]} + t2[16:8];
-			b_out[c*8 +: 8] = sum[8] ? 8'hFF : sum[7:0];
-		end
+	genvar c;
+	generate
+	for (c = 0; c < 4; c = c + 1) begin : g_ch
+		wire [16:0] t1, t2;
+		wire [8:0] sum;
+		wire t1_co_unused, t2_co_unused, sum_co_unused;
+
+		am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(0)) m_p (.clk(clk), .en(1'b1), .a(a_d[c*8 +: 8]), .b(inv_a),
+			.p(prod[c*16 +: 16]));
+		am_add #(.W(17)) a_t1 (.a({1'b0, b_t[c*16 +: 16]}), .b(17'd128), .ci(1'b0), .s(t1), .co(t1_co_unused));
+		am_add #(.W(17)) a_t2 (.a(t1), .b({8'd0, t1[16:8]}), .ci(1'b0), .s(t2), .co(t2_co_unused));
+		am_add #(.W(9)) a_s (.a({1'b0, b_s[c*8 +: 8]}), .b(t2[16:8]), .ci(1'b0), .s(sum), .co(sum_co_unused));
+		assign b_out[c*8 +: 8] = sum[8] ? 8'hFF : sum[7:0];
+
+		wire unused_ok = &{1'b0, t1_co_unused, t2_co_unused, sum_co_unused, t2[7:0]};
 	end
+	endgenerate
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -98,14 +103,13 @@ module atg_blt_blend #(
 					a_s <= src[{bi[WS-1:0], 5'd0} +: 32];
 					a_d <= dst[{bi[WS-1:0], 5'd0} +: 32];
 					a_i <= bi[WS-1:0];
-					bi <= bi + 1'b1;
+					bi <= bi_inc;
 				end
 				/* Stage 2: its products. */
 				b_v <= a_v;
 				b_s <= a_s;
 				b_i <= a_i;
-				b_t <= {mul8(a_d[31:24], inv_a), mul8(a_d[23:16], inv_a),
-					mul8(a_d[15:8], inv_a), mul8(a_d[7:0], inv_a)};
+				b_t <= prod;
 				/* Stage 3: its sums. */
 				if (b_v)
 					out[{b_i, 5'd0} +: 32] <= b_out;
@@ -117,7 +121,7 @@ module atg_blt_blend #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, t2[7:0]};
+	wire unused_ok = &{1'b0, bi_co_unused};
 endmodule
 
 `default_nettype wire
