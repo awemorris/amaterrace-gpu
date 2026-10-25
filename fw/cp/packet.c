@@ -10,9 +10,10 @@
  * result record's address, then the arguments.  A GHCI_FRAME packet names
  * a frame of staged records instead; each record's result goes to the
  * frame's result page as it is decoded.  At the end the packet's result
- * is stored, every write is answered, IRQ_STATUS.RESULT is raised and
- * DONE lets the ring move on (the µops given meanwhile run first: DONE
- * waits for the FIFO to drain).
+ * is stored, every write is answered and IRQ_STATUS.RESULT is raised;
+ * then the submits' replays run (vkQueueSubmit has answered while the
+ * units work), and DONE lets the ring move on (the µops given meanwhile
+ * run first: DONE waits for the FIFO to drain).
  */
 
 #include "fw.h"
@@ -82,6 +83,12 @@ fw_packet_run(
 	if ((flags & GHCI_V_RESULT) != 0 && error == 0 && flushed == 0)
 		hw_write(HW_RESULT, 1);
 
+	/*
+	 * The submits' replays, after the host has the results; DONE comes
+	 * after them, so the driver's FENCE after the packet follows the work.
+	 */
+	fw_submit_run();
+
 	/* The ring moves on once the µops of the packet are taken. */
 	hw_write(HW_DONE, 1);
 }
@@ -126,6 +133,10 @@ packet_frame(
 			*status = FW_VK_ERROR_UNKNOWN;
 			break;
 		}
+
+		/* A command other than a submit sees the work of the submits before it. */
+		if (command.number != GHCI_VK_QUEUE_SUBMIT)
+			fw_submit_run();
 
 		/* Carries the command out. */
 		command.tag = tag;

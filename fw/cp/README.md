@@ -87,7 +87,7 @@ Behaviour
   in the staging buffer; each record's `{VkResult, aux}` goes to the result
   page as it is decoded, the frame's own `{VkResult, records decoded}` to
   the packet's result address (flags RESULT), then IRQ_STATUS.RESULT, then
-  DONE.  A number the firmware does not know ends the frame with
+  the submits' replays, then DONE.  A number the firmware does not know ends the frame with
   VK_ERROR_FEATURE_NOT_PRESENT (the wire has no lengths, the next record
   cannot be found).
 - The heap: GHCI_HEAP `[u64 address][u64 bytes][u32 resident warps]`
@@ -97,7 +97,12 @@ Behaviour
 - Recorded commands become µop packets at record time, in the command
   buffer's recording, with the constant bank's image as data; a uniform
   block's words are copied into the bank by a recorded blit when the
-  recording runs.  QUEUE_SUBMIT replays the recordings in ring order;
+  recording runs.  QUEUE_SUBMIT checks its command buffers and lists
+  them; the replays run in ring order after the packet's results (the
+  host's vkQueueSubmit returns while the units work) or before the next
+  record of the frame that is not a submit, and DONE follows them, so
+  the driver's FENCE still follows the work.  A replay that fails then
+  loses its session (its later submits answer VK_ERROR_DEVICE_LOST);
   what the replay must do itself (an indirect draw's counts, a copy of
   query results) is a marker in the recording.
 - Images are linear (`ghci_layout.h`); a view gives a texture slot's

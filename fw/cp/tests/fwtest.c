@@ -351,6 +351,7 @@ static void
 test_buffers(void)
 {
 	uint32_t index;
+	uint32_t uops;
 	uint32_t base_a;
 	uint32_t base_b;
 	uint32_t ok;
@@ -454,8 +455,35 @@ test_buffers(void)
 	host_check(host_result(0) == 0, "records and end in a frame");
 	host_frame_begin();
 	stage_submit(0, 0x400);
+	uops = host_uop_count;
 	(void)host_frame_run(TAG, 1);
 	host_check(host_result(0) == 0, "submit in a frame of its own");
+	host_check(host_result_uops == uops, "RESULT before the submit's replay");
+	host_check(host_uop_find(GHCI_OP_BLIT, uops) != host_uop_count, "the replay after RESULT");
+	host_check(host_peek(MEMORY_BASE + 0x10u) == 0xC0DE5678u, "the fill of the replay after RESULT");
+
+	/* A record after a submit in its frame sees the submit's work: the replay runs before it. */
+	host_frame_begin();
+	host_record(GHCI_VK_RESET_COMMAND_BUFFER, 0);
+	host_u64(0x400);
+	host_u32(0);
+	stage_begin(1, 0x400);
+	host_cmd(GHCI_VK_CMD_FILL_BUFFER);
+	host_u64(0x400);
+	host_u64(0x200);
+	host_u64(0x10);
+	host_u64(64);
+	host_u32(0xC0DE9ABCu);
+	stage_end(2, 0x400);
+	stage_submit(3, 0x400);
+	uops = host_uop_count;
+	host_record(GHCI_VK_RESET_COMMAND_BUFFER, 4);
+	host_u64(0x400);
+	host_u32(0);
+	(void)host_frame_run(TAG, 6);
+	host_check(host_result(3) == 0 && host_result(4) == 0, "submit, then a reset in its frame");
+	host_check(host_uop_find(GHCI_OP_BLIT, uops) < host_result_uops, "the replay before the next record");
+	host_check(host_peek(MEMORY_BASE + 0x10u) == 0xC0DE9ABCu, "the fill of the replay before the reset");
 
 	/* A reset of the spent command buffer, in a frame of its own, then a destroy. */
 	host_frame_begin();
