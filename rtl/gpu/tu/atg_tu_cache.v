@@ -128,8 +128,11 @@ module atg_tu_cache #(
 	 * the last slot of a lane without bilinear: 0, 1 or 3. */
 	wire [1:0] lsl = tc_ctl[26:25] == 2'd1 ? 2'd1 : tc_ctl[26:25] == 2'd2 ? 2'd3 : 2'd0;
 	wire use_t = tc_mask[t[3:2]] && (t[1:0] <= lsl || bil);
-	wire [4:0] nxt = !tc_mask[t[3:2]] || (!bil && t[1:0] == lsl) ? {1'b0, t[3:2], 2'b00} + 5'd4 :
-		{1'b0, t} + 5'd1;
+	wire nlane = !tc_mask[t[3:2]] || (!bil && t[1:0] == lsl);	/* to the next lane's slot 0 */
+	wire [4:0] nxt;
+	wire nxt_co_unused;
+	am_add #(.W(5)) u_nxt (.a(nlane ? {1'b0, t[3:2], 2'b00} : {1'b0, t}), .b(nlane ? 5'd4 : 5'd1),
+		.ci(1'b0), .s(nxt), .co(nxt_co_unused));
 	wire [1:0] tsz = tc_ctl[24:23];
 
 	assign ta_ready = st == IDLE;
@@ -160,8 +163,8 @@ module atg_tu_cache #(
 		end else begin
 			pv <= 1'b0;
 			if (pv)
-				tc_texels[pt*32 +: 32] <= pb ? braw : tsz == 2'd2 ? {24'd0, q[pw*32 + pby*8 +: 8]} :
-					h565 || tsz == 2'd1 ? {16'd0, q[pw*32 + pby[1]*16 +: 16]} : q[pw*32 +: 32];
+				tc_texels[pt*32 +: 32] <= pb ? braw : tsz == 2'd2 ? {24'd0, q[{pw, pby, 3'b000} +: 8]} :
+					h565 || tsz == 2'd1 ? {16'd0, q[{pw, pby[1], 4'b0000} +: 16]} : q[pw*32 +: 32];
 			case (st)
 			IDLE: if (ta_valid) begin
 				ta_addr_q <= ta_addr;

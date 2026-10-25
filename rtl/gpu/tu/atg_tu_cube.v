@@ -57,48 +57,6 @@ module atg_tu_cube (
 		end
 	endfunction
 
-	/* floor(v 2^(150 - em)) with the sign flipped by neg, clamped to
-	 * [-3 mm, 3 mm]; plus 3 mm: [0, 6 mm]. */
-	function [26:0] scaled;
-		input [31:0] v;
-		input neg;
-		input [7:0] em;
-		input [23:0] mm;
-		reg [8:0] sh;
-		reg [26:0] q, m3;
-		reg sticky, ng;
-		integer k;
-		begin
-			sh = {1'b0, v[30:23]} - {1'b0, em};
-			m3 = {3'd0, mm} + {2'd0, mm, 1'b0};
-			ng = v[31] ^ neg;
-			q = 27'd0;
-			sticky = 1'b0;
-			if (v[30:23] == 8'd0) begin
-				q = 27'd0;
-			end else if (!sh[8] && sh > 9'd2) begin
-				q = m3;
-			end else if (!sh[8]) begin
-				q = {3'd0, 1'b1, v[22:0]} << sh[1:0];
-			end else begin
-				k = 512 - {23'd0, sh};	/* the right shift, 1 .. */
-				if (k < 24) begin
-					q = {3'd0, 1'b1, v[22:0]} >> k;
-					sticky = |({1'b1, v[22:0]} & ((24'd1 << k) - 24'd1));
-				end else
-					sticky = 1'b1;
-			end
-			if (q > m3)
-				q = m3;
-			if (v[30:23] == 8'd0)
-				scaled = m3;
-			else if (ng)
-				scaled = q + {26'd0, sticky} >= m3 ? 27'd0 : m3 - q - {26'd0, sticky};
-			else
-				scaled = m3 + q;
-		end
-	endfunction
-
 	wire [31:0] cx = comp(x), cy = comp(y), cz = comp(z);
 	wire az_wins = cz[30:0] >= cx[30:0] && cz[30:0] >= cy[30:0];
 	wire ay_wins = cy[30:0] >= cx[30:0];
@@ -118,8 +76,13 @@ module atg_tu_cube (
 		endcase
 	end
 	wire [23:0] mm_in = {1'b1, vm[22:0]};
-	wire [26:0] sn_in = scaled(vs, ns, vm[30:23], mm_in);
-	wire [26:0] tn_in = scaled(vt, nt, vm[30:23], mm_in);
+	/* s_c' and t_c' (atg_tu_cube_sc), from 3 m */
+	wire [26:0] m3, sn_in, tn_in;
+	wire [5:0] carry_unused;
+	am_add #(.W(27)) u_m3 (.a({3'd0, mm_in}), .b({2'd0, mm_in, 1'b0}), .ci(1'b0), .s(m3),
+		.co(carry_unused[0]));
+	atg_tu_cube_sc u_sn (.v(vs), .neg(ns), .em(vm[30:23]), .m3(m3), .o(sn_in));
+	atg_tu_cube_sc u_tn (.v(vt), .neg(nt), .em(vm[30:23]), .m3(m3), .o(tn_in));
 
 	reg st;
 	reg [4:0] n;
@@ -129,10 +92,28 @@ module atg_tu_cube (
 	reg [24:0] rs, rt;
 	reg [25:0] qs, qt;
 	/* The numerator's next bit: num[2:0] then 23 zeros (num << 23). */
-	wire bs = n >= 5'd23 ? ns_num[n - 5'd23] : 1'b0;
-	wire bt = n >= 5'd23 ? nt_num[n - 5'd23] : 1'b0;
+	reg bs, bt;	/* num[n - 23] for n >= 23 */
+	integer b;
+	always @(*) begin
+		bs = 1'b0;
+		bt = 1'b0;
+		for (b = 0; b < 9; b = b + 1)
+			if ({27'd0, n} == b + 23) begin
+				bs = ns_num[b];
+				bt = nt_num[b];
+			end
+	end
 	wire [25:0] ts = {rs, bs}, tt = {rt, bt};
 	wire gs = ts >= {2'b00, mm}, gt = tt >= {2'b00, mm};
+	/* the remainders less m, n - 1, the quotients less 2^24 */
+	wire [24:0] rs_m, rt_m;
+	wire [4:0] n1;
+	wire [26:0] s_q, t_q;
+	am_sub #(.W(25)) u_rs_m (.a(ts[24:0]), .b({1'b0, mm}), .bi(1'b0), .d(rs_m), .bo(carry_unused[1]));
+	am_sub #(.W(25)) u_rt_m (.a(tt[24:0]), .b({1'b0, mm}), .bi(1'b0), .d(rt_m), .bo(carry_unused[2]));
+	am_sub #(.W(5)) u_n1 (.a(n), .b(5'd0), .bi(1'b1), .d(n1), .bo(carry_unused[3]));
+	am_sub #(.W(27)) u_s_q (.a({1'b0, qs}), .b(27'd16777216), .bi(1'b0), .d(s_q), .bo(carry_unused[4]));
+	am_sub #(.W(27)) u_t_q (.a({1'b0, qt}), .b(27'd16777216), .bi(1'b0), .d(t_q), .bo(carry_unused[5]));
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -151,11 +132,11 @@ module atg_tu_cube (
 				st <= DIV;
 			end
 			default: begin
-				rs <= gs ? ts[24:0] - {1'b0, mm} : ts[24:0];
-				rt <= gt ? tt[24:0] - {1'b0, mm} : tt[24:0];
+				rs <= gs ? rs_m : ts[24:0];
+				rt <= gt ? rt_m : tt[24:0];
 				qs <= {qs[24:0], gs};
 				qt <= {qt[24:0], gt};
-				n <= n - 5'd1;
+				n <= n1;
 				if (n == 5'd0)
 					st <= IDLE;
 			end
@@ -164,8 +145,8 @@ module atg_tu_cube (
 	end
 
 	assign bsy = st == DIV;
-	assign s = zero ? 27'sd8388608 : $signed({1'b0, qs}) - 27'sd16777216;
-	assign t = zero ? 27'sd8388608 : $signed({1'b0, qt}) - 27'sd16777216;
+	assign s = zero ? 27'sd8388608 : s_q;
+	assign t = zero ? 27'sd8388608 : t_q;
 
 	wire unused_ok = &{1'b0, vm[31]};	/* |ma|: the sign of the major axis is the face's */
 endmodule

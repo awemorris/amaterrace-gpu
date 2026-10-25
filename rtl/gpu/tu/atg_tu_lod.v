@@ -41,23 +41,6 @@ module atg_tu_lod (
 	`include "atg_tu_fn.vh"
 	localparam signed [16:0] LAM_MIN = -17'sd32768;
 
-	/* One axis: the lanes' fixed-point values a0..a2 against size n. */
-	function signed [16:0] axis;
-		input [95:0] a;
-		input [15:0] n;
-		reg signed [32:0] d1, d2;
-		reg [32:0] m1, m2, mx;
-		begin
-			d1 = $signed({a[63], a[63:32]}) - $signed({a[31], a[31:0]});
-			d2 = $signed({a[95], a[95:64]}) - $signed({a[31], a[31:0]});
-			m1 = d1[32] ? -d1 : d1;
-			m2 = d2[32] ? -d2 : d2;
-			mx = m1 > m2 ? m1 : m2;
-			axis = mx == 33'd0 ? LAM_MIN :
-				$signed({3'd0, tu_l2(mx)}) + $signed({3'd0, tu_l2({17'd0, n})}) - 17'sd4096;
-		end
-	endfunction
-
 	/* The axis' fixed-point lane values: floor(x × 2^16), or the cube's
 	 * >> 8, and its size. */
 	reg [95:0] fa;
@@ -69,7 +52,22 @@ module atg_tu_lod (
 				{{13{cs[i*27 + 26]}}, cs[i*27 + 8 +: 19]}) :
 				tu_fx32(ax[1] ? w[i*32 +: 32] : ax[0] ? v[i*32 +: 32] : u[i*32 +: 32], 5'd16);
 	wire [15:0] n = ax[1] ? d0 : ax[0] && !cube ? h0 : w0;
-	assign lam = ax[1] && !is3d ? LAM_MIN : axis(fa, n);
+	/* The axis: the lanes' differences to lane 0, the larger magnitude mx, then
+	 * log2(mx) + log2(n) - 1.0 (Q8 in a signed 17-bit value). */
+	wire [32:0] d1, d2, m1, m2;
+	wire [16:0] l2s, lsum;
+	wire [5:0] lod_carry_unused;
+	am_sub #(.W(33)) u_d1 (.a({fa[63], fa[63:32]}), .b({fa[31], fa[31:0]}), .bi(1'b0), .d(d1),
+		.bo(lod_carry_unused[0]));
+	am_sub #(.W(33)) u_d2 (.a({fa[95], fa[95:64]}), .b({fa[31], fa[31:0]}), .bi(1'b0), .d(d2),
+		.bo(lod_carry_unused[1]));
+	am_addsub #(.W(33)) u_m1 (.a(33'd0), .b(d1), .sub(d1[32]), .s(m1), .co(lod_carry_unused[2]));
+	am_addsub #(.W(33)) u_m2 (.a(33'd0), .b(d2), .sub(d2[32]), .s(m2), .co(lod_carry_unused[3]));
+	wire [32:0] mx = m1 > m2 ? m1 : m2;
+	am_add #(.W(17)) u_l2s (.a({3'd0, tu_l2(mx)}), .b({3'd0, tu_l2({17'd0, n})}), .ci(1'b0), .s(l2s),
+		.co(lod_carry_unused[4]));
+	am_sub #(.W(17)) u_lsum (.a(l2s), .b(17'd4096), .bi(1'b0), .d(lsum), .bo(lod_carry_unused[5]));
+	assign lam = ax[1] && !is3d ? LAM_MIN : mx == 33'd0 ? LAM_MIN : lsum;
 
 	wire unused_ok = &{1'b0, cs[7:0], cs[34:27], cs[61:54], ct[7:0], ct[34:27], ct[61:54]};
 endmodule
