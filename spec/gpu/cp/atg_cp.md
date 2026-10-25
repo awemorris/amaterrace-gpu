@@ -34,8 +34,11 @@ The CPU (`atg_cpu`) is outside, in `atg_top`, connected through the `hcr_*`, `v_
 | `PACKED` | 0 | The SU has the packed arithmetic: CAPS[28] | 0, 1 |
 | `SUBGROUP` | 0 | The SU has shfl/vote/ballot: CAPS[24] (`atg_top` passes NSU ≠ 0 && SU_SUBGROUP, WS288 p008) | 0, 1 |
 | `MS4` | 0 | 4x multisampling in the blocks (`atg_top`'s `MS4`): CAPS[29] when the VF, RX, ROP, TU and an SU are present too | 0, 1 |
+| `CORE1` | 0 | Vulkan 1.0 core rendering (`atg_top` sets it in the KC705's shape): CAPS[30] and CAPS[9] (stencil) when the VF, RX, ROP, TU and an SU are present too | 0, 1 |
+| `HAS_FMT` | 0 | The FMT capability (`atg_cp_fmt`, XCAP bit 9); `atg_top` passes `CORE1` | 0, 1 |
+| `HAS_ETC` | 0 | FMT reports the ETC2/EAC formats; `atg_top` passes HAS_TU | 0, 1 |
 
-Derived: CAPS = {2'd0, MS4 && graphics && TU && SU (CAPS[29]), PACKED && SU, VF && RX && ROP (graphics, CAPS[27]), TU (CAPS[26]), 0, SUBGROUP && SU (CAPS[24]), LS, 0, HAS_CPU, HAS_CPU, 0, state version 1, 4x4 tiles 1, HAS_VSYNC, 0, TU (bilinear, WS288 p009),
+Derived: CAPS = {0, CORE1 && graphics && TU && SU (CAPS[30]), MS4 && graphics && TU && SU (CAPS[29]), PACKED && SU, VF && RX && ROP (graphics, CAPS[27]), TU (CAPS[26]), 0, SUBGROUP && SU (CAPS[24]), LS, 0, HAS_CPU, HAS_CPU, 0, state version 1, 4x4 tiles 1, HAS_VSYNC, CAPS[30] (stencil, CAPS[9]), TU (bilinear, WS288 p009),
 SU ? 5 : 0, HAS_DISP, UNITS[6], UNITS[1], 1} (CP, BLT and MC alone: 0x00501803); CAPS2 = 1 (one ring) | (TU ? 4 : 0) << 24 (16 texture slots, WS288 p009); ISA_ID =
 NATIVE_ISA_ID = "GSI1" with an SU, else 0; EXTCAP list: PERF (+ CPFW with the CPU, + DISP pointing at +0x10000 with HAS_DISP, + DBG with HAS_DBG); PERF0 = BLT busy,
 PERF1 = memory busy (PERF_SRC 1, 8, 0xFF, 0xFF).

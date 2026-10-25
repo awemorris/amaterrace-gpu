@@ -1,10 +1,13 @@
 #!/bin/sh
 # Builds and runs the Verilator system harness (harness.cpp around atg_top
-# in its default shape: 32-byte lines, 64-bit AXI).  Output under
-# build/verilator/ (not in git).
-#   sim/verilator/run.sh
-# Prints "PASS verilator" on success.  Timeout: 600 s for the build, 300 s
-# for the run.
+# in the KC705's shape: 64-byte lines, 512-bit AXI, the KC705's SU) in
+# seven modes: the basic one (registers, the blitter, the ring), the
+# raster, shaded, textured, multisampling, compute and Vulkan 1.0 core
+# scenes.  Output under build/verilator/ (not in git).
+#   sim/verilator/run.sh [MODE...]   (no MODE: all; MODE basic, raster,
+#                                     shade, tex, msaa, compute, core)
+# Prints "PASS verilator" (basic) and "PASS verilator MODE" on success.
+# Timeout: 900 s for each build, 600 s for each run.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 root=$(cd "$(dirname -- "$0")/../.." && pwd)
@@ -14,69 +17,49 @@ export LC_ALL
 out=$root/build/verilator
 mkdir -p "$out"
 command -v verilator >/dev/null || { echo "verilator: not installed" >&2; exit 1; }
-timeout 600 verilator --cc --exe --build -j 4 -Wall -Iinclude \
-	--top-module atg_top -Mdir "$out/obj" -o "$out/atg_top_sim" \
-	-CFLAGS "-I$root/include -O1" \
-	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build.log" 2>&1 || {
-	tail -30 "$out/build.log" >&2
-	echo "FAIL verilator (build, log $out/build.log)"
-	exit 1
-}
-timeout 300 "$out/atg_top_sim"
 
-# The raster scene: HAS_RX and HAS_ROP, the colour buffer to a PNG.
-timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
-	--top-module atg_top -GHAS_RX=1 -GHAS_ROP=1 -Mdir "$out/obj-raster" -o "$out/atg_top_raster" \
-	-CFLAGS "-I$root/include -O1 -DRASTER" \
-	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build-raster.log" 2>&1 || {
-	tail -30 "$out/build-raster.log" >&2
-	echo "FAIL verilator raster (build, log $out/build-raster.log)"
-	exit 1
-}
-timeout 600 "$out/atg_top_raster"
+# The KC705's shape (boards/kc705/atg_kc705_raster.v), without the CPU,
+# the display and JTAG, which the harness does not drive.
+KC="-GLINE_BYTES=64 -GLINE_SHIFT=6 -GDATA_W=512"
+SU="-GNSU=1 -GSU_NPHYS=16 -GSU_GRP_W=1 -GSU_NREGS=64 -GSU_SB_ENTRIES=8 -GSU_SBE_W=3
+	-GSU_PACKED=1 -GSU_SUBGROUP=1 -GSU_FRAG_RESERVE=2 -GSU_LDS_BYTES=16384 -GSU_VARY_WORDS=64"
+GFX="-GHAS_VF=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GROP_STENCIL=1"
 
-# The shaded scene: HAS_VF, NSU 1, HAS_RX, HAS_ROP, the colour buffer to a PNG.
-timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
-	--top-module atg_top -GHAS_VF=1 -GNSU=1 -GHAS_RX=1 -GHAS_ROP=1 -Mdir "$out/obj-shade" \
-	-o "$out/atg_top_shade" -CFLAGS "-I$root/include -O1 -DSHADE" \
-	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build-shade.log" 2>&1 || {
-	tail -30 "$out/build-shade.log" >&2
-	echo "FAIL verilator shade (build, log $out/build-shade.log)"
-	exit 1
+# build NAME DEFINE PARAMS...: the harness as build/verilator/atg_top_NAME, then its run.
+build() {
+	name=$1
+	def=$2
+	shift 2
+	timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
+		--top-module atg_top $KC "$@" -Mdir "$out/obj-$name" -o "$out/atg_top_$name" \
+		-CFLAGS "-I$root/include -O1 $def" \
+		$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" \
+		>"$out/build-$name.log" 2>&1 || {
+		tail -30 "$out/build-$name.log" >&2
+		echo "FAIL verilator $name (build, log $out/build-$name.log)"
+		exit 1
+	}
+	timeout 600 "$out/atg_top_$name"
 }
-timeout 600 "$out/atg_top_shade"
 
-# The textured scene: HAS_VF, NSU 1, HAS_RX, HAS_TU, HAS_ROP, the colour buffer to a PNG.
-timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
-	--top-module atg_top -GHAS_VF=1 -GNSU=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 \
-	-Mdir "$out/obj-tex" -o "$out/atg_top_tex" -CFLAGS "-I$root/include -O1 -DTEX" \
-	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build-tex.log" 2>&1 || {
-	tail -30 "$out/build-tex.log" >&2
-	echo "FAIL verilator tex (build, log $out/build-tex.log)"
-	exit 1
-}
-timeout 600 "$out/atg_top_tex"
-
-# The multisampling scene: HAS_VF, NSU 1, HAS_RX, HAS_TU, HAS_ROP, MS4, the
-# resolved image to a PNG.
-timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
-	--top-module atg_top -GHAS_VF=1 -GNSU=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GMS4=1 \
-	-Mdir "$out/obj-msaa" -o "$out/atg_top_msaa" -CFLAGS "-I$root/include -O1 -DMSAA" \
-	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build-msaa.log" 2>&1 || {
-	tail -30 "$out/build-msaa.log" >&2
-	echo "FAIL verilator msaa (build, log $out/build-msaa.log)"
-	exit 1
-}
-timeout 600 "$out/atg_top_msaa"
-
-# The compute scene: NSU 1, GSI1 programs dispatched through
-# the ring, the memory against tools/gsi1model.py, an ISA fault.
-timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
-	--top-module atg_top -GNSU=1 -Mdir "$out/obj-compute" -o "$out/atg_top_compute" \
-	-CFLAGS "-I$root/include -O1 -DCOMPUTE" \
-	$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" >"$out/build-compute.log" 2>&1 || {
-	tail -30 "$out/build-compute.log" >&2
-	echo "FAIL verilator compute (build, log $out/build-compute.log)"
-	exit 1
-}
-timeout 600 "$out/atg_top_compute"
+# $SU and $GFX are split on purpose: one word per -G.
+for m in ${*:-basic raster shade tex msaa compute core}; do
+	case $m in
+	# The registers, a FILL and a COPY, the debug port, the ring.
+	basic) build basic "" ;;
+	# The raster scene: HAS_RX and HAS_ROP, the colour buffer to a PNG.
+	raster) build raster -DRASTER -GHAS_RX=1 -GHAS_ROP=1 ;;
+	# The shaded scene: VF, SU, RX, ROP, the colour buffer to a PNG.
+	shade) build shade -DSHADE -GHAS_VF=1 -GHAS_RX=1 -GHAS_ROP=1 $SU ;;
+	# The textured scene: VF, SU, RX, TU, ROP, the colour buffer to a PNG.
+	tex) build tex -DTEX $GFX $SU ;;
+	# The multisampling scene (MS4), the resolved image to a PNG.
+	msaa) build msaa -DMSAA $GFX $SU -GMS4=1 ;;
+	# The compute scene: GSI1 programs dispatched through the ring, the
+	# memory against tools/gsi1model.py, an ISA fault.
+	compute) build compute -DCOMPUTE $SU ;;
+	# The Vulkan 1.0 core scene (CAPS[30], tools/rx-core-scene.py).
+	core) build core -DCORE $GFX $SU -GMS4=1 ;;
+	*) echo "verilator: no mode $m" >&2; exit 1 ;;
+	esac
+done

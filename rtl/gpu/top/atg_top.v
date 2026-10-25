@@ -165,6 +165,10 @@ module atg_top #(
 	 * VF, TU, ROP, the atomic unit (with any SU), SA, EXT, and two per SU.
 	 */
 	localparam HAS_ATOM = NSU > 0 ? 1 : 0;
+	/* Vulkan 1.0 core rendering (CAPS[30] and the FMT capability): every graphics block and
+	 * Vulkan's 64 varying components (the KC705's shape). */
+	localparam CORE1 = HAS_VF != 0 && HAS_RX != 0 && HAS_ROP != 0 && HAS_TU != 0 && NSU != 0 &&
+		SU_VARY_WORDS >= 64;
 	localparam C_CPU = 2;
 	/* RESIDENT_WARPS: the warps the shader units run at once. */
 	localparam [31:0] CP_RESIDENT_WARPS = NSU * SU_NWARPS;
@@ -327,6 +331,8 @@ module atg_top #(
 		.LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
 		.MS4(MS4),
+		.CORE1(CORE1),
+		.HAS_FMT(CORE1),
 		.HAS_ETC(HAS_TU != 0)	/* the TU decodes ETC2 and EAC */
 	) cp (
 		.clk(clk),
