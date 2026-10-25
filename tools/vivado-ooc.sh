@@ -19,7 +19,8 @@
 # VIVADO_THREADS (default 8) is Vivado's general.maxThreads; OOC_FLATTEN
 # (none) keeps each module's logic in its own row of utilization_hier.rpt
 # (the default, rebuilt, optimizes across modules and the rows are only
-# approximate).
+# approximate); OOC_BLOCKS ("cell ...", e.g. "ffilt filter addr/foot")
+# writes blocks.txt (and route_blocks.txt): the worst path into each cell.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 root=$(cd "$(dirname -- "$0")/.." && pwd)

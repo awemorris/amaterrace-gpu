@@ -7,7 +7,7 @@
 # (the synthesis estimate), timing_paths.rpt (its 5 worst paths) and
 # TOP.dcp (synthesized).  The environment's VIVADO_THREADS sets
 # general.maxThreads, OOC_FLATTEN -flatten_hierarchy; OOC_IMPL=1 also
-# places and routes (below).
+# places and routes (below); OOC_BLOCKS the per-block worst paths (below).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 if {[llength $argv] < 5} {
@@ -63,6 +63,33 @@ write_checkpoint -force [file join $out $top.dcp]
 set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
 puts "vivado-ooc: $top on $part, $period ns, estimated WNS $wns ns"
 
+# OOC_BLOCKS (cell names, e.g. "ffilt filter addr/foot"): the worst path
+# that ends in each of them (slack, delay, logic levels, start and end)
+# into FILE (blocks.txt after synthesis, route_blocks.txt after routing).
+proc report_blocks {file} {
+	if {![info exists ::env(OOC_BLOCKS)]} {
+		return
+	}
+	set f [open $file w]
+	foreach c $::env(OOC_BLOCKS) {
+		set regs [get_cells -quiet -of_objects [all_registers] -filter "NAME =~ $c/*"]
+		set p {}
+		if {[llength $regs] > 0} {
+			set p [get_timing_paths -quiet -max_paths 1 -nworst 1 -setup -to $regs]
+		}
+		if {[llength $p] == 0} {
+			puts $f "$c: no path"
+			continue
+		}
+		puts $f [format "%-14s slack %8.3f  delay %7.3f  levels %3d  %s -> %s" $c \
+			[get_property SLACK $p] [get_property DATAPATH_DELAY $p] \
+			[get_property LOGIC_LEVELS $p] [get_property STARTPOINT_PIN $p] \
+			[get_property ENDPOINT_PIN $p]]
+	}
+	close $f
+}
+report_blocks [file join $out blocks.txt]
+
 # OOC_IMPL=1: also opt_design, place_design and route_design (no I/O
 # placement), and the routed timing: route_utilization.rpt,
 # route_timing_summary.rpt, route_timing_paths.rpt (the 5 worst paths).
@@ -75,6 +102,7 @@ if {[info exists ::env(OOC_IMPL)] && $::env(OOC_IMPL) eq "1"} {
 	report_timing_summary -max_paths 10 -file [file join $out route_timing_summary.rpt]
 	report_timing -max_paths 5 -nworst 1 -sort_by slack -file [file join $out route_timing_paths.rpt]
 	write_checkpoint -force [file join $out $top.routed.dcp]
+	report_blocks [file join $out route_blocks.txt]
 	set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
 	puts "vivado-ooc: $top on $part, $period ns, routed WNS $wns ns"
 }
