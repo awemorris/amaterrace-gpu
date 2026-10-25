@@ -14,8 +14,8 @@
  * (linear or 4×4 tiled), the reference of a compare sampler, and texsz.
  *
  * Children: atg_tu_desc (the descriptors and their level offsets),
- * atg_tu_cube (cube faces), atg_tu_lod (texb's quad LOD), atg_tu_foot (a
- * lane's footprint and addresses).
+ * atg_tu_cube (cube faces), atg_tu_lod (texb's quad LOD), atg_tu_lsel (a
+ * lane's λ and level), atg_tu_foot (a lane's footprint and addresses).
  * Takes one quad (tx_*) in IDLE while atg_tu_desc is not busy.  A cube
  * quad that samples first has each lane's face and face coordinates
  * computed by atg_tu_cube, one lane at a time; texb (and texqlod) on a

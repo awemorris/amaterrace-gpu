@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_foot.v`.  Parent: atg_tu_addr.  Implemented in: p009 (pa
 
 ## 1. Purpose and place
 
-One lane's footprint and texel addresses (combinational; stage B of atg_tu_addr).  No children.
+One lane's footprint and texel addresses (combinational; stage B of atg_tu_addr).  Children: `atg_tu_toff` (a texel's byte offset, one a slot), `atg_tu_iclamp` (texf's clamps).
 
 ## 2. Parameters
 

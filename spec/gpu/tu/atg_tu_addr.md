@@ -6,7 +6,7 @@ RTL: `rtl/gpu/tu/atg_tu_addr.v`.  Parent: atg_tu.  Implemented in: p009.
 
 TU addressing: per quad, the slot's descriptor, level of detail (texl explicit, texb from the quad derivatives + bias, texf level), mip selection and the passes of mip linear and 3D linear filtering, the layer (2D array), the slice (3D), the face (cube), wrap on integer texel coordinates after the texel offsets, clamp to border, cube edges, bilinear footprint, texel byte addresses (linear or 4×4 tiled; texels of 1-16 bytes), the path of the quad's format (the 8-bit filter or the fp32 filter), the reference of a compare sampler, and texsz.
 
-Children: `atg_tu_desc` (the descriptors and their level offsets), `atg_tu_cube` (cube faces and face coordinates), `atg_tu_lod` (texb's quad LOD, combinational), `atg_tu_foot` (a lane's footprint and addresses, combinational).
+Children: `atg_tu_desc` (the descriptors and their level offsets), `atg_tu_cube` (cube faces and face coordinates), `atg_tu_lod` (texb's quad LOD, combinational), `atg_tu_foot` (a lane's footprint and addresses, combinational), `atg_tu_lsel` (a lane's λ and level, combinational).
 
 ## 2. Parameters
 
