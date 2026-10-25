@@ -49,8 +49,9 @@ LLM:
 ```
 
 The blocks reach memory through a tree of small routers (`atg_rt`). The
-memory controller is at the root, and the display controller sits next to it
-with priority.
+memory controller is at the root, and the display controller has its own
+entry there with priority: its scan-out goes on through a quiesce or a reset
+of the GPU.
 
 Blocks
 ------
@@ -66,7 +67,7 @@ Blocks
 | ROP | Buffer Writer | Depth and stencil test, blending, and buffer write-back in primitive order; per sample with 4x multisampling (alpha to coverage, alpha to one). |
 | SA | Systolic Array | A 32 × 32 matrix engine for LLM work, 0.8 TOPS per SU at 200 MHz. |
 | MC | Memory Controller | The internal memory bus (AMB, 32- or 64-byte lines): the arbiter, an address aperture, quiesce, and one AXI master (AXI4 512-bit to the MIG DDR3 on the KC705). |
-| DC | Display Controller | A separate IP with its own top and memory port; TMDS (DVI/HDMI) and parallel outputs. |
+| DC | Display Controller | A unit of the GPU (GHCI's DISP2): the command processor sets its mode and flips its planes (the image and a 64 × 64 cursor) in ring order, so that a present scans the image where it is, without a copy; its events are GHCI interrupts. TMDS (DVI/HDMI) and parallel outputs. |
 
 Shader unit
 -----------
@@ -102,7 +103,9 @@ Vulkan-class GPUs, in the spirit of AHCI and xHCI.
   - the command processor's states and ring rules, complete fences, and the
     interrupt, fault, quiesce and reset semantics;
   - the state register file;
-  - the display controller, as an extended capability;
+  - the display controller, as an extended capability, driven through the
+    ring (mode, flips, a cursor plane) with its events in the GPU's
+    interrupt;
   - optional session protection: the memory of one client's GPU session kept
     from the others' work, and the data one session leaves in the GPU kept
     from the next (the PROT capability);

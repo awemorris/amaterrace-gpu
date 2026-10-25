@@ -1842,7 +1842,8 @@ Registers, at offsets from the capability's register offset:
 
 ### 13.2 DISP2: a display controller that is a unit of the GPU
 
-**Draft** (2026-10-25). A GPU with a command processor names its display
+**Draft** (2026-10-25; Amaterrace implements it, in simulation: the KC705's
+DC, WS288 p035). A GPU with a command processor names its display
 controller with a DISP2 capability (ID 11, version 1). The command
 processor changes what the controller shows, in ring order, with the
 micro-ops DISP_SET and FLIP (section 7.3); the controller's events are
