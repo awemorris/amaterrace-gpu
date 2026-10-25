@@ -103,6 +103,7 @@
 #define GHCI_CAPS_GRAPHICS (1u << 27)
 #define GHCI_CAPS_PACKED (1u << 28)
 #define GHCI_CAPS_MS4 (1u << 29) /* 4x multisampling (draft, section 12.11) */
+#define GHCI_CAPS_CORE1 (1u << 30) /* Vulkan 1.0 core rendering (draft, section 8.5) */
 
 /* CAPS2. */
 #define GHCI_CAPS2_QUEUES(c) ((c) & 0xFFu)
@@ -191,6 +192,14 @@
 #define GHCI_XCAP_SA 7u
 #define GHCI_XCAP_MEM 8u
 #define GHCI_XCAP_PROT 9u
+#define GHCI_XCAP_FMT 10u
+
+/* The FMT capability's registers (from its register offset, section 4; draft). */
+#define GHCI_FMT_INDEX 0x00u /* RW: a VkFormat value */
+#define GHCI_FMT_OPTIMAL 0x04u /* R: VkFormatFeatureFlags, optimal tiling */
+#define GHCI_FMT_LINEAR 0x08u /* R: the same, linear tiling */
+#define GHCI_FMT_BUFFER 0x0Cu /* R: the buffer features */
+#define GHCI_FMT_LIMITS 0x10u /* R: [3:0] colour attachments */
 
 /* The MEM capability's registers (from its register offset, section 11.3). */
 #define GHCI_MEM_LOCAL_BASE 0x0u

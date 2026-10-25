@@ -213,7 +213,7 @@ CAPS (0x020):
 | [27] | Graphics: the vertex fetcher, the rasterizer and the render output are present |
 | [28] | Packed fp16/int16 arithmetic (section 12.5) |
 | [29] | 4x multisampling (draft, section 12.11): the rasterizer's sample coverage, the render output per sample, `texf` of multisampled images and the blitter's RESOLVE (section 8.2) |
-| [30] | Vulkan 1.0 core rendering (draft, section 8.5): the stencil ops with front and back state ([9] says a stencil attachment exists), D16, depth bias, depth bounds, depth clamp and depth clipping, w, viewport and guard-band clipping, points and lines, four colour attachments, the formats that the FMT capability names, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT and rasterizer discard. The bit number is provisional ([29] is multisampling, section 12.11) |
+| [30] | Vulkan 1.0 core rendering (draft, section 8.5): the stencil ops with front and back state ([9] says a stencil attachment exists), D16, depth bias, depth bounds, depth clamp and depth clipping, w, viewport and guard-band clipping, points and lines, four colour attachments, the formats that the FMT capability names, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT and rasterizer discard, the vertex stage's texture slots (section 8.5) and 64 varying components (VARYING_COUNT) |
 
 CAPS2 (0x024):
 
@@ -479,7 +479,7 @@ GHCI_FRAME (gpu-op 0x10105, draft;
 | 11 | WAIT_VSYNC | 0 | Waits for one display vsync (CAPS[10] only) |
 | 12 | INVALIDATE | 0 | flags: [0] data cache, [1] texture cache, [2] constants, [3] instruction cache |
 | 13 | RESULT | 3: addr, status, aux | Writes {status, aux} to addr (8-byte aligned) after the earlier work |
-| 14 | QUERY | 1: addr | (Draft, CAPS[30].) After every earlier command has finished and its writes are answered (as RESULT), writes the occlusion counter (section 8.5) to addr as two words, low first (8-byte aligned); flags[0]: only clear the counter (no write, and no wait), flags[1]: clear it after the write. The counter has at least 32 bits (Amaterrace: 40) |
+| 14 | QUERY | 1: addr | (CAPS[30].) After every earlier command has finished and its writes are answered (as RESULT), writes the occlusion counter (section 8.5) to addr as two words, low first (8-byte aligned); flags[0]: only clear the counter (no write, and no wait), flags[1]: clear it after the write. The counter has at least 32 bits (Amaterrace: 40) |
 | 15-63 | reserved | | Fault 2 |
 
 ### 7.4 Class 1: vendor micro-ops
@@ -495,7 +495,7 @@ have is a fault of kind 2.
 
 - STATE[0..511] holds the fixed-function state that the commands use:
   indices 0x000-0x1DF are standard, 0x1E0-0x1FF vendor-defined.  With
-  CAPS[30] (draft) STATE also has 0x200-0x2FF, the vertex stage's
+  CAPS[30] STATE also has 0x200-0x2FF, the vertex stage's
   texture slots (section 8.5), and the alias reaches 0x1BFC.
 - Commands write it in the ring (SET_REG). The host reaches it through the
   alias at 0x1000 + 4 x index, in IDLE and HALTED only.
@@ -733,19 +733,23 @@ lambda and texel coordinates with 8 fraction bits, 8-bit filter weights):
 
 ### 8.5 The vertex, rasterizer and render-output ranges (draft)
 
-**Draft** (2026-10-25; not implemented yet). This section defines the VF,
-RX and ROP ranges and the additions of CAPS[30] (Vulkan 1.0 core
-rendering; section 12.11, multisampling, is a separate draft that is
-pending). The words that existed before CAPS[30] keep their meaning; a
+**Draft** (2026-10-25; Amaterrace implements it, in simulation). This
+section defines the VF, RX and ROP ranges and the additions of CAPS[30]
+(Vulkan 1.0 core rendering; section 12.11, multisampling, is a separate
+draft). The words that existed before CAPS[30] keep their meaning; a
 word of 0 in a new field keeps the earlier behaviour.
 
-**State and earlier draws** (pending). The ranges of this section are
-read by units that an earlier draw may still be using: a SET_REG into
-the RX or the ROP range, and into 0x1C0-0x1DF, is to wait until every
-earlier draw has left the units that read the range. The rule, and the
-same rule for the texture and program ranges and LOAD_CONST, is being
-revised separately; a host write to the STATE alias follows the same
-rule (section 8.1).
+**State and earlier draws.** The ranges of this section are read by
+units that an earlier draw may still be using. A SET_REG into the VF
+range (0x020-0x04F, 0x1C0-0x1DF) waits until every earlier draw has left
+the vertex fetcher; into the RX or the ROP range, until every earlier
+draw has left the vertex fetcher, the shader units, the rasterizer and
+the render output; into a texture range (0x090-0x18F, 0x200-0x2FF),
+until it has left the vertex fetcher, the shader units, the rasterizer
+and the texture unit; into the program range, until it has left the
+vertex fetcher, the shader units and the rasterizer; LOAD_CONST waits as
+the program range. So a change never reaches a draw already issued. The host writes the STATE alias
+only while the command processor is idle or halted (section 8.1).
 
 **Formats.** A format field holds a VkFormat value (8 bits; Vulkan 1.0's
 core formats are 0-184). A GPU reads a value it does not support as "no
@@ -1744,7 +1748,8 @@ fill and copy with KICK.BLIT, then read memory back through the debug port.
 
 ### 12.12 Colour outputs and primitive inputs (draft)
 
-**Draft** (2026-10-25; not implemented yet), with CAPS[30].
+**Draft** (2026-10-25; Amaterrace implements it, in simulation), with
+CAPS[30].
 
 - **Export targets of a fragment warp**: 0x100 + 16k + c is component c
   of colour attachment k (k = 0-3; 0x100-0x103 is attachment 0 as

@@ -127,11 +127,12 @@ simulation; timing closure at 200 MHz comes later.
 | --- | --- |
 | CP (with its RV32IM control core and firmware), BLT, MC | Implemented |
 | DC | Implemented |
-| RX, ROP | Implemented; triangles with depth and blending match the reference model in simulation |
+| RX, ROP | Implemented; triangles, lines and points with depth, stencil and blending match the reference model in simulation |
 | SU | Integer, fp32, memory, LDS and control paths implemented, in simulation |
 | VF | Implemented, in simulation |
-| SU graphics paths (export, primitive table), TU | In progress |
+| SU graphics paths (export, primitive table), TU | Implemented; the textured scenes match the reference model in simulation |
 | 4x multisampling (RX, SU, ROP, TU, BLT resolve) | Implemented; the scene matches the reference model in simulation |
+| Vulkan 1.0 core rendering (stencil, depth bias, bounds and clamp, points and lines, four colour attachments, the required formats, ETC2 and EAC, occlusion queries) | Implemented; the scene matches the reference model in simulation |
 | SA | Deferred until the SU implements the whole ISA |
 
 The whole pipeline targets the KC705. The KC705 is driven over USB JTAG for
@@ -148,7 +149,7 @@ Building and testing
 | `make lint` | Verilator lint of every module and top |
 | `make sim` | The Icarus Verilog unit testbenches, every one at full length (about 21 minutes) |
 | `make sim-quick` | A short run of the testbenches that touches every block (about 9 minutes): the long ones shortened or left out, as `sim/run.sh` lists |
-| `make verilator` | The Verilator system harness, including a raster scene written to `build/verilator/raster.png` |
+| `make verilator` | The Verilator system harness in the KC705 shape, including a raster scene written to `build/verilator/raster.png` |
 | `make check` | `lint`, `sim` and `verilator` |
 | `make oxc-core` | openXC7 (yosys) synthesis of the GPU core in the KC705 shape |
 | `make oxc` | openXC7 synthesis, place and route, and bitstream |

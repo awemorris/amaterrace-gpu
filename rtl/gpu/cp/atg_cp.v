@@ -51,6 +51,7 @@ module atg_cp #(
 	parameter PACKED = 0,	/* the SU has the packed arithmetic (CAPS[28]) */
 	parameter SUBGROUP = 0,	/* the SU has shfl/vote/ballot (CAPS[24]) */
 	parameter MS4 = 0,	/* 4x multisampling in the RX, ROP, TU, SU and BLT (CAPS[29]) */
+	parameter CORE1 = 0,	/* Vulkan 1.0 core rendering (CAPS[30], CAPS[9]) */
 	parameter HAS_FMT = 0,	/* the FMT capability (with CAPS[30]) */
 	parameter HAS_ETC = 0,	/* the TU's ETC2/EAC decoder (FMT reports those formats) */
 	parameter [15:0] RESIDENT_WARPS = 16'd0,	/* RESIDENT_WARPS: NSU x NWARPS (0: no shader unit) */
@@ -158,14 +159,16 @@ module atg_cp #(
 	/* verilator lint_on WIDTHTRUNC */
 	/* CAPS[27]: graphics (VF, RX and ROP); CAPS[28]: packed; CAPS[26]: the TU's mip linear,
 	 * border, depth formats and compare; CAPS[24]: subgroup; CAPS[29]: 4x multisampling
-	 * (with graphics, the TU and an SU). */
-	localparam [31:0] CAPS = {2'd0,
+	 * (with graphics, the TU and an SU); CAPS[30] and CAPS[9]: Vulkan 1.0 core rendering
+	 * with its stencil (with graphics, the TU and an SU). */
+	localparam [0:0] CORE = CORE1 != 0 && UNITS[2] && UNITS[3] && UNITS[4] && UNITS[5] && UNITS[6];
+	localparam [31:0] CAPS = {1'b0, CORE,
 		MS4 != 0 && UNITS[2] && UNITS[3] && UNITS[4] && UNITS[5] && UNITS[6],
 		UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4],
 		UNITS[5], 1'b0,
 		UNITS[6] && SUBGROUP != 0,
 		LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,
-		HAS_VSYNC != 0, 1'b0, UNITS[5], UNITS[6] ? 4'd5 : 4'd0, HAS_DISP != 0, UNITS[6], UNITS[1], 1'b1};
+		HAS_VSYNC != 0, CORE, UNITS[5], UNITS[6] ? 4'd5 : 4'd0, HAS_DISP != 0, UNITS[6], UNITS[1], 1'b1};
 	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4. */
 	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 24'h000001};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */

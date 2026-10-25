@@ -14,7 +14,12 @@
  * and tools/rx-msaa-scene.py) and the memory words of the E lines must
  * equal the model's.  A line "C NAME" among the E lines starts a case:
  * the harness prints "PASS TB(NAME).CASE" (or FAIL) for the E lines up to
- * the next C line.  CAPS[29] must be MS4 && HAS_VF && HAS_TU && NSU.
+ * the next C line.  CAPS[29] must be MS4 && HAS_VF && HAS_TU && NSU,
+ * CAPS[30] and CAPS[9] (Vulkan 1.0 core rendering, the KC705's shape)
+ * HAS_VF && HAS_TU && NSU && SU_VARY_WORDS >= 64.  Lines "F vkformat
+ * optimal linear buffer limits" (before the first E line, CORE scenes)
+ * are the FMT capability's words for that format, checked before the ring
+ * starts (PASS TB(NAME).fmt).
  */
 
 module atg_top_scene_harness #(
@@ -47,7 +52,10 @@ module atg_top_scene_harness #(
 	 * FENCE_LAST reads to wait for the scene's end */
 	parameter [31:0] RING = 32'h0005F000,
 	parameter RING_LOG2 = 11,
-	parameter WAIT_READS = 200000
+	parameter WAIT_READS = 200000,
+	/* the memory's bytes (log2) and the aperture's limit */
+	parameter MEM_LOG2 = 19,
+	parameter [31:0] APER_LIMIT = 32'h00060000
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -126,7 +134,7 @@ module atg_top_scene_harness #(
 		.j_raddr(17'd0), .j_rdata(), .j_busy()
 	);
 
-	axi_mem #(.DATA_W(DATA_W), .MEM_BYTES(1 << 19), .READ_EARLY(1), .SEED(SEED + 7)) mem (
+	axi_mem #(.DATA_W(DATA_W), .MEM_BYTES(1 << MEM_LOG2), .READ_EARLY(1), .SEED(SEED + 7)) mem (
 		.clk(clk), .rst_n(rst_n),
 		.awaddr(awaddr), .awlen(awlen), .awsize(awsize), .awburst(awburst),
 		.awvalid(awvalid), .awready(awready), .wdata(wdata), .wstrb(wstrb),
@@ -159,7 +167,9 @@ module atg_top_scene_harness #(
 		end
 	endtask
 
-	integer fd, rc, nr, wp, bad, bad_rt, bad_ds, cbad, ncase;
+	integer fd, rc, nr, wp, bad, bad_rt, bad_ds, cbad, ncase, nfmt, fmt_bad, fk;
+	reg [31:0] fmt_w [0:1279];	/* the F lines: 5 words each */
+	reg [31:0] fmt_regs, xoff, xw, f0, f1, f2, f3, f4;
 	reg [8*2-1:0] kind;
 	reg [8*32-1:0] cname;
 	reg [31:0] a, v, got;
@@ -172,6 +182,8 @@ module atg_top_scene_harness #(
 		bad_ds = 0;
 		cbad = 0;
 		ncase = 0;
+		nfmt = 0;
+		fmt_bad = 0;
 		wp = 0;
 		@(posedge rst_n);
 		repeat (8) @(posedge clk);
@@ -181,8 +193,13 @@ module atg_top_scene_harness #(
 			errors = errors + 1;
 			$display("FAIL %0s(%0s): CAPS %h, bit 29 (MS4) not as the shape", TB, NAME, got);
 		end
+		if (got[30] !== (HAS_VF != 0 && HAS_TU != 0 && NSU != 0 && SU_VARY_WORDS >= 64) ||
+				got[9] !== got[30]) begin
+			errors = errors + 1;
+			$display("FAIL %0s(%0s): CAPS %h, bits 30 and 9 (core) not as the shape", TB, NAME, got);
+		end
 		host_write(GHCI_APERTURE_BASE, 32'h00020000);
-		host_write(GHCI_APERTURE_LIMIT, 32'h00060000);
+		host_write(GHCI_APERTURE_LIMIT, APER_LIMIT);
 		fd = $fopen(SCENE, "r");
 		if (fd == 0) begin
 			errors = errors + 1;
@@ -199,8 +216,18 @@ module atg_top_scene_harness #(
 					rc = $fscanf(fd, " %h\n", v);
 					mem.poke32(RING + wp * 4, v);
 					wp = wp + 1;
+				end else if (kind == "F") begin
+					rc = $fscanf(fd, " %h %h %h %h %h\n", f0, f1, f2, f3, f4);
+					fmt_w[5 * nfmt] = f0;
+					fmt_w[5 * nfmt + 1] = f1;
+					fmt_w[5 * nfmt + 2] = f2;
+					fmt_w[5 * nfmt + 3] = f3;
+					fmt_w[5 * nfmt + 4] = f4;
+					nfmt = nfmt + 1;
 				end
 			end
+			if (nfmt != 0)
+				check_fmt;
 			host_write(GHCI_RING_BASE, RING);
 			host_write(GHCI_RING_SIZE, RING_LOG2);	/* 11: 512 words */
 			host_write(GHCI_FENCE_LAST, 32'd0);
@@ -278,6 +305,42 @@ module atg_top_scene_harness #(
 					bad_rt = bad_rt + 1;
 				else
 					bad_ds = bad_ds + 1;
+			end
+		end
+	endtask
+
+	/* The FMT capability (from the extended capability list) against the F lines. */
+	task check_fmt;
+		integer n;
+		begin
+			fmt_regs = 0;
+			host_read(GHCI_EXTCAP, xoff);
+			for (n = 0; n < 16 && xoff != 0; n = n + 1) begin
+				host_read(xoff, xw);
+				if (xw[7:0] == GHCI_XCAP_FMT)
+					host_read(xoff + 4, fmt_regs);
+				xoff = xw[31:16] == 16'd0 ? 32'd0 : xoff + {14'd0, xw[31:16], 2'd0};
+			end
+			if (fmt_regs == 0) begin
+				errors = errors + 1;
+				$display("FAIL %0s(%0s): no FMT capability", TB, NAME);
+			end else begin
+				for (n = 0; n < nfmt; n = n + 1) begin
+					host_write(fmt_regs + GHCI_FMT_INDEX, fmt_w[5 * n]);
+					for (fk = 1; fk < 5; fk = fk + 1) begin
+						host_read(fmt_regs + 4 * (fk - 1) + GHCI_FMT_OPTIMAL, xw);
+						if (xw !== fmt_w[5 * n + fk]) begin
+							if (fmt_bad < 8)
+								$display("FAIL %0s(%0s): FMT %0d word %0d = %h, model %h", TB,
+									NAME, fmt_w[5 * n], fk, xw, fmt_w[5 * n + fk]);
+							fmt_bad = fmt_bad + 1;
+						end
+					end
+				end
+				if (fmt_bad != 0)
+					errors = errors + 1;
+				else
+					$display("PASS %0s(%0s).fmt: %0d formats", TB, NAME, nfmt);
 			end
 		end
 	endtask
