@@ -38,7 +38,7 @@ localparam [16:0] GHCI_STATUS = 17'h00034;
 localparam [16:0] GHCI_IRQ_STATUS = 17'h00038;
 localparam [16:0] GHCI_IRQ_ENABLE = 17'h0003C;
 localparam [16:0] GHCI_IRQ_SET = 17'h00040;
-localparam [16:0] GHCI_RESIDENT_WARPS = 17'h0004C;	/* R: [15:0] warps the GPU runs at once */
+localparam [16:0] GHCI_RESIDENT_WARPS = 17'h0004C;	/* R: [15:0] warps the GPU runs at once, [23:16] registers per lane */
 localparam [16:0] GHCI_WDT_CYCLES = 17'h00044;
 localparam [16:0] GHCI_RING_BASE = 17'h00050;
 localparam [16:0] GHCI_RING_SIZE = 17'h00054;
@@ -75,6 +75,8 @@ localparam GHCI_CPFW_CTRL_HALT = 2;
 localparam GHCI_CPFW_STATUS_READY = 0;
 localparam GHCI_CPFW_STATUS_FAULT = 1;
 localparam GHCI_CPFW_STATUS_ALIVE = 2;
+localparam GHCI_CPFW_STATUS_STOPPED = 3;	/* the core is stopped or held in reset */
+localparam GHCI_CPFW_STATUS_LOADING = 4;
 
 /* CTRL bits. */
 localparam GHCI_CTRL_RUN = 0;
@@ -311,6 +313,13 @@ localparam [7:0] GHCI_XCAP_CPFW = 8'd6;
 localparam [7:0] GHCI_XCAP_SA = 8'd7;
 localparam [7:0] GHCI_XCAP_MEM = 8'd8;
 localparam [7:0] GHCI_XCAP_PROT = 8'd9;
+localparam [7:0] GHCI_XCAP_FMT = 8'd10;
+/* The FMT capability's registers (from its register offset, section 4; draft). */
+localparam [16:0] GHCI_FMT_INDEX = 17'h00000;	/* RW: a VkFormat value */
+localparam [16:0] GHCI_FMT_OPTIMAL = 17'h00004;	/* R: VkFormatFeatureFlags, optimal tiling */
+localparam [16:0] GHCI_FMT_LINEAR = 17'h00008;	/* R: the same, linear tiling */
+localparam [16:0] GHCI_FMT_BUFFER = 17'h0000C;	/* R: the buffer features */
+localparam [16:0] GHCI_FMT_LIMITS = 17'h00010;	/* R: [3:0] colour attachments */
 /* The MEM capability's registers (from its register offset, section 11.3). */
 localparam [16:0] GHCI_MEM_LOCAL_BASE = 17'h00000;
 localparam [16:0] GHCI_MEM_LOCAL_SIZE = 17'h00004;	/* 0 = no local memory (unified) */

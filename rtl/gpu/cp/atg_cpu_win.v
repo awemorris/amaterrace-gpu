@@ -20,11 +20,12 @@
  * 0x10-0x3F the sub-bus (one-cycle sb_we/sb_re, read data in that cycle);
  * anything else answers with 0 and drops a store.
  *
- * Class V packet: PKT_INFO[31] = v_valid until DONE (then 0 until v_valid
- * falls); reading PKT_INFO with [31] = 1 takes the packet (its interrupt
- * cause goes away).  DONE pulses v_done once the UOP_FIFO is empty.
- * fw_active is PKT_INFO[31]: the sequencer takes µops only while a packet
- * is open.  irq = |(IRQ & IRQ_EN): [0] packet waiting and not taken,
+ * Class V packet: PKT_INFO[31] = v_valid until DONE is written (then 0
+ * until v_valid falls, also while DONE waits for the FIFO); reading
+ * PKT_INFO with [31] = 1 takes the packet (its interrupt cause goes
+ * away).  DONE pulses v_done once the UOP_FIFO is empty.  fw_active is
+ * v_valid until v_done: the sequencer takes µops only while a packet is
+ * open, the packet's last ones too.  irq = |(IRQ & IRQ_EN): [0] packet waiting and not taken,
  * [1] fence event (sticky, W1C), [2] halt_req.
  * See spec/gpu/cp/atg_cpu_win.md.
  */
@@ -126,7 +127,9 @@ module atg_cpu_win #(
 	reg done_pend;	/* DONE written, waiting for the FIFO to drain */
 	reg done_sent;	/* v_done given, v_valid not yet fallen */
 
+	/* The packet is open until v_done; the firmware sees it until it writes DONE. */
 	wire pkt = v_valid && !done_sent;
+	wire pkt_info = pkt && !done_pend;
 	wire [2:0] cause = {halt_req, fence_pend, pkt && !taken};
 
 	wire own_wr = ack && q_own && q_write;
@@ -175,7 +178,7 @@ module atg_cpu_win #(
 			case (q_idx)
 			W_PKT_ADDR: d_rdata = v_addr;
 			W_PKT_DWORDS: d_rdata = {16'd0, v_dwords};
-			W_PKT_INFO: d_rdata = {pkt, 23'd0, v_tag};
+			W_PKT_INFO: d_rdata = {pkt_info, 23'd0, v_tag};
 			W_UOP_FREE: d_rdata = {{(31 - UOP_DEPTH_LOG2){1'b0}}, DEPTH - f_count};
 			W_STATE_IDX: d_rdata = {22'd0, st_idx};
 			W_STATE_DATA: d_rdata = st_rdata;
@@ -234,7 +237,7 @@ module atg_cpu_win #(
 				fence_pend <= 1'b1;
 			else if (own_wr && q_idx == W_IRQ && q_wdata[1])
 				fence_pend <= 1'b0;
-			if (own_rd && q_idx == W_PKT_INFO && pkt)
+			if (own_rd && q_idx == W_PKT_INFO && pkt_info)
 				taken <= 1'b1;
 			if (own_wr && q_idx == W_DONE && pkt)
 				done_pend <= 1'b1;

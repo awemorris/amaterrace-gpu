@@ -41,7 +41,9 @@
 #define GHCI_IRQ_ENABLE 0x03Cu
 #define GHCI_IRQ_SET 0x040u
 #define GHCI_WDT_CYCLES 0x044u
-#define GHCI_RESIDENT_WARPS 0x04Cu	/* R: [15:0] the warps the GPU runs at once (NSU x NWARPS) */
+#define GHCI_RESIDENT_WARPS 0x04Cu	/* R: [15:0] the warps the GPU runs at once (NSU x NWARPS), [23:16] registers per lane */
+#define GHCI_RESIDENT_WARPS_COUNT(v) ((v) & 0xFFFFu)
+#define GHCI_RESIDENT_WARPS_NREGS(v) (((v) >> 16) & 0xFFu) /* general registers per lane (32 or 64) */
 #define GHCI_RING_BASE 0x050u
 #define GHCI_RING_SIZE 0x054u
 #define GHCI_RING_WPTR 0x058u
@@ -75,6 +77,8 @@
 #define GHCI_CPFW_STATUS_READY (1u << 0)
 #define GHCI_CPFW_STATUS_FAULT (1u << 1)
 #define GHCI_CPFW_STATUS_ALIVE (1u << 2)
+#define GHCI_CPFW_STATUS_STOPPED (1u << 3) /* the core is stopped or held in reset */
+#define GHCI_CPFW_STATUS_LOADING (1u << 4)
 #define GHCI_CPFW_STATUS_STATE(s) (((s) >> 8) & 0xFFu)
 
 /* CAPS. */
@@ -99,6 +103,7 @@
 #define GHCI_CAPS_GRAPHICS (1u << 27)
 #define GHCI_CAPS_PACKED (1u << 28)
 #define GHCI_CAPS_MS4 (1u << 29) /* 4x multisampling (draft, section 12.11) */
+#define GHCI_CAPS_CORE1 (1u << 30) /* Vulkan 1.0 core rendering (draft, section 8.5) */
 
 /* CAPS2. */
 #define GHCI_CAPS2_QUEUES(c) ((c) & 0xFFu)
@@ -187,6 +192,14 @@
 #define GHCI_XCAP_SA 7u
 #define GHCI_XCAP_MEM 8u
 #define GHCI_XCAP_PROT 9u
+#define GHCI_XCAP_FMT 10u
+
+/* The FMT capability's registers (from its register offset, section 4; draft). */
+#define GHCI_FMT_INDEX 0x00u /* RW: a VkFormat value */
+#define GHCI_FMT_OPTIMAL 0x04u /* R: VkFormatFeatureFlags, optimal tiling */
+#define GHCI_FMT_LINEAR 0x08u /* R: the same, linear tiling */
+#define GHCI_FMT_BUFFER 0x0Cu /* R: the buffer features */
+#define GHCI_FMT_LIMITS 0x10u /* R: [3:0] colour attachments */
 
 /* The MEM capability's registers (from its register offset, section 11.3). */
 #define GHCI_MEM_LOCAL_BASE 0x0u

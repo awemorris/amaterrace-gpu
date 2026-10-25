@@ -6,16 +6,19 @@
  */
 
 /*
- * The Verilator system harness: atg_top in its default shape (32-byte
- * lines, 64-bit AXI) with a DDR model on its master port and a host on its
- * register port that uses include/ghci_regs.h, as the zedBSD driver will.
+ * The Verilator system harness: atg_top in the KC705's shape (64-byte
+ * lines, 512-bit AXI: a beat is VlWide<16>, sim/verilator/run.sh passes
+ * the KC705's parameters with -G) with a DDR model on its master port and
+ * a host on its register port that uses include/ghci_regs.h, as the
+ * zedBSD driver will.
  * The scene: identification, the aperture, a FILL and a COPY checked
  * against a C++ reference, a word read back through DBG_ADDR/DATA, then a
  * FILL and a FENCE through the ring (include/ghci_packets.h) with the
  * fence's interrupt.  COMPUTE: the compute scene of sim/vec/cs_scene.txt
  * instead; RASTER, SHADE, TEX: the raster, shaded and textured scenes, the
  * colour buffer to a PNG (sim/verilator/run.sh); MSAA: the multisampling
- * scene (a case whose words differ named), the resolved image to a PNG.
+ * scene (a case whose words differ named), the resolved image to a PNG;
+ * CORE: the Vulkan 1.0 core scene (sim/vec/core_scene.txt), CAPS[30].
  * Prints "PASS verilator" on success.
  */
 
@@ -38,8 +41,9 @@ extern "C" {
 namespace {
 
 constexpr uint32_t MEM_BYTES = 1u << 20;
-constexpr int BEAT_BYTES = 8;
-#ifdef MSAA
+constexpr int BEAT_BYTES = 64;	/* DATA_W 512 */
+constexpr int BEAT_WORDS = BEAT_BYTES / 4;
+#if defined(MSAA) || defined(CORE)
 constexpr long MAX_CYCLES = 40000000;
 #else
 constexpr long MAX_CYCLES = 2000000;
@@ -84,13 +88,12 @@ void tick()
 	top->m_rvalid = !ar_q.empty();
 	top->m_rresp = 0;
 	top->m_rlast = 0;
-	top->m_rdata = 0;
+	for (int k = 0; k < BEAT_WORDS; k++)
+		top->m_rdata[k] = 0;
 	if (!ar_q.empty()) {
 		const Burst &r = ar_q.front();
-		uint64_t d = 0;
-		for (int i = 0; i < BEAT_BYTES; i++)
-			d |= (uint64_t)mem[(r.addr + r.beat * BEAT_BYTES + i) % MEM_BYTES] << (8 * i);
-		top->m_rdata = d;
+		for (int k = 0; k < BEAT_WORDS; k++)
+			top->m_rdata[k] = peek32((r.addr + r.beat * BEAT_BYTES + 4 * k) % MEM_BYTES);
 		top->m_rlast = r.beat == r.len;
 	}
 	top->clk = 0;
@@ -103,8 +106,10 @@ void tick()
 	bool r = top->m_rvalid && top->m_rready;
 	Burst naw = {top->m_awaddr, top->m_awlen, 0};
 	Burst nar = {top->m_araddr, top->m_arlen, 0};
-	uint64_t wdata = top->m_wdata;
-	unsigned wstrb = top->m_wstrb;
+	uint32_t wdata[BEAT_WORDS];
+	for (int k = 0; k < BEAT_WORDS; k++)
+		wdata[k] = top->m_wdata[k];
+	uint64_t wstrb = top->m_wstrb;
 	bool wlast = top->m_wlast;
 
 	top->clk = 1;
@@ -116,7 +121,7 @@ void tick()
 		for (int i = 0; i < BEAT_BYTES; i++)
 			if (wstrb >> i & 1)
 				mem[(cur.addr + cur.beat * BEAT_BYTES + i) % MEM_BYTES] =
-				    (uint8_t)(wdata >> (8 * i));
+				    (uint8_t)(wdata[i / 4] >> (8 * (i % 4)));
 		if (wlast != (cur.beat == cur.len)) {
 			std::printf("FAIL verilator: WLAST on beat %u of %u\n", cur.beat, cur.len);
 			errors++;
@@ -265,10 +270,19 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
 }
 
 
-#if defined(RASTER) || defined(SHADE) || defined(TEX) || defined(MSAA)
+#if defined(RASTER) || defined(SHADE) || defined(TEX) || defined(MSAA) || defined(CORE)
 /* The ring of the scene (RING_SIZE: log2 of its bytes), the FENCE_LAST
  * reads to wait, and the image written to the PNG. */
-#if defined(MSAA)
+#if defined(CORE)
+#define SCENE_NAME "core"
+#define SCENE_RING 0xD0000u
+#define SCENE_RING_LOG2 15
+#define SCENE_WAIT 8000000
+#define SCENE_APER_LIMIT 0xF0000u
+#define PNG_W 32u
+#define PNG_H 24u
+#define PNG_STRIDE 128u
+#elif defined(MSAA)
 #define SCENE_NAME "msaa"
 #define SCENE_RING 0x5C000u
 #define SCENE_RING_LOG2 13
@@ -282,6 +296,9 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
 #define SCENE_NAME "shade"
 #else
 #define SCENE_NAME "raster"
+#endif
+#ifndef SCENE_APER_LIMIT
+#define SCENE_APER_LIMIT 0x60000u
 #endif
 #ifndef SCENE_RING
 #define SCENE_RING 0x5F000u
@@ -375,7 +392,10 @@ void write_png(const char *path, uint32_t base, unsigned w, unsigned h, unsigned
  * through the ring; the colour and depth buffers against the model (a C
  * line starts a case, reported by name when its words differ); the colour
  * buffer at 0x20000 to build/verilator/raster.png (shade.png, tex.png;
- * msaa.png: the resolved image of the RESOLVE case). */
+ * msaa.png: the resolved image of the RESOLVE case; core.png: the
+ * colour of its first case).  CORE: CAPS[30] and CAPS[9], and the FMT
+ * capability's words of the F lines (F vkformat optimal linear buffer
+ * limits). */
 int scene_main()
 {
 	FILE *f = std::fopen("sim/vec/" SCENE_NAME "_scene.txt", "r");
@@ -388,6 +408,7 @@ int scene_main()
 	char k[4], name[64] = "";
 	std::vector<std::pair<uint32_t, uint32_t>> exp;
 	std::vector<std::pair<size_t, std::string>> cases;	/* (first E line, name) */
+	std::vector<std::vector<uint32_t>> fmts;	/* F lines */
 	if (std::fscanf(f, "%3s %u", k, &nr) != 2)
 		return 1;
 	while (std::fscanf(f, "%3s", k) == 1) {
@@ -399,6 +420,11 @@ int scene_main()
 			exp.push_back({a, v});
 		else if (k[0] == 'C' && std::fscanf(f, "%63s", name) == 1)
 			cases.push_back({exp.size(), name});
+		else if (k[0] == 'F') {
+			std::vector<uint32_t> w(5);
+			if (std::fscanf(f, "%x %x %x %x %x", &w[0], &w[1], &w[2], &w[3], &w[4]) == 5)
+				fmts.push_back(w);
+		}
 	}
 	std::fclose(f);
 #ifdef TEX
@@ -407,11 +433,34 @@ int scene_main()
 	       (host_read(GHCI_CAPS) & GHCI_CAPS_TU_FULL) != 0, 1);
 	expect("CAPS2[27:24] (texture slots / 4)", (host_read(GHCI_CAPS2) >> 24) & 15, 4);
 #endif
-#ifdef MSAA
+#if defined(MSAA) || defined(CORE)
 	expect("CAPS[29] (4x multisampling)", (host_read(GHCI_CAPS) & GHCI_CAPS_MS4) != 0, 1);
 #endif
+#ifdef CORE
+	expect("CAPS[30] (Vulkan 1.0 core rendering)", (host_read(GHCI_CAPS) & GHCI_CAPS_CORE1) != 0, 1);
+	expect("CAPS[9] (stencil)", (host_read(GHCI_CAPS) & GHCI_CAPS_ROP_STENCIL) != 0, 1);
+	uint32_t fmt_regs = 0;
+	for (uint32_t off = host_read(GHCI_EXTCAP), n = 0; off != 0 && n < 16; n++) {
+		uint32_t w0 = host_read(off);
+		if (GHCI_XCAP_ID(w0) == GHCI_XCAP_FMT)
+			fmt_regs = host_read(off + 4);
+		off = GHCI_XCAP_NEXT(w0) ? off + 4 * GHCI_XCAP_NEXT(w0) : 0;
+	}
+	expect("FMT capability listed", fmt_regs != 0, 1);
+	for (auto &w : fmts) {
+		host_write(fmt_regs + GHCI_FMT_INDEX, w[0]);
+		static const uint32_t reg[4] = {GHCI_FMT_OPTIMAL, GHCI_FMT_LINEAR, GHCI_FMT_BUFFER,
+		    GHCI_FMT_LIMITS};
+		for (int i = 0; i < 4; i++)
+			if (host_read(fmt_regs + reg[i]) != w[i + 1]) {
+				std::printf("FAIL verilator core: FMT %u word %d = %08x, model %08x\n", w[0],
+				    i, host_read(fmt_regs + reg[i]), w[i + 1]);
+				errors++;
+			}
+	}
+#endif
 	host_write(GHCI_APERTURE_BASE, 0x20000);
-	host_write(GHCI_APERTURE_LIMIT, 0x60000);
+	host_write(GHCI_APERTURE_LIMIT, SCENE_APER_LIMIT);
 	host_write(GHCI_RING_BASE, ring);
 	host_write(GHCI_RING_SIZE, SCENE_RING_LOG2);	/* 11: 512 words */
 	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
@@ -538,7 +587,7 @@ int main(int argc, char **argv)
 		return rc;
 	}
 #endif
-#if defined(RASTER) || defined(SHADE) || defined(TEX) || defined(MSAA)
+#if defined(RASTER) || defined(SHADE) || defined(TEX) || defined(MSAA) || defined(CORE)
 	{
 		int rc = scene_main();
 		top->final();
@@ -555,7 +604,7 @@ int main(int argc, char **argv)
 	expect("DEVICE_ID", host_read(GHCI_DEVICE_ID), GHCI_FOURCC('A', 'T', 'G', '1'));
 	uint32_t caps = host_read(GHCI_CAPS);
 	expect("CAPS.BLT", caps & GHCI_CAPS_BLT, GHCI_CAPS_BLT);
-	expect("CAPS.LINE", GHCI_CAPS_LINE_LOG2(caps), 5);
+	expect("CAPS.LINE", GHCI_CAPS_LINE_LOG2(caps), 6);
 
 	host_write(GHCI_APERTURE_BASE, 0x10000);
 	host_write(GHCI_APERTURE_LIMIT, 0x50000);

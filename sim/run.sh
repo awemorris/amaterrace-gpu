@@ -9,8 +9,8 @@
 # Output (the vvp binary, the log) goes to build/sim/ (not in git).
 # A testbench that needs files outside rtl/ (a board top) names them in a
 # comment line " * sim-sources: FILE..." (paths from the repository root).
-# SEED=n is passed to the testbench as +seed=n.  Timeout per run: 900 s
-# (SIM_TIMEOUT=s to change it).
+# SEED=n is passed to the testbench as +seed=n.  Timeout per run: 1500 s
+# (SIM_TIMEOUT=s to change it; atg_top_core took 739 s on the host below).
 #
 # Every testbench (make sim) takes about 21 minutes, one after the other
 # (2026-10-25, a 64-thread Linux host: atg_top_tex 382 s, atg_su 201,
@@ -35,7 +35,9 @@
 # atg_top_raster and atg_top_shade are left out: atg_top_tex runs the warp
 # path through the same blocks and the RX/ROP unit testbenches the rest;
 # atg_top_msaa too (about 5 minutes on that host, busy): the RX, ROP, TU
-# and BLT unit testbenches run their multisampling cases.
+# and BLT unit testbenches run their multisampling cases; and atg_top_core
+# (the Vulkan 1.0 core scene), whose blocks' unit testbenches run in the
+# short run.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 root=$(cd "$(dirname -- "$0")/.." && pwd)
@@ -44,7 +46,7 @@ out=$root/build/sim
 mkdir -p "$out"
 command -v iverilog >/dev/null || { echo "sim: no iverilog" >&2; exit 1; }
 all=$(ls sim/tb/*_tb.v | sed 's|.*/||; s|_tb\.v$||')
-LONG="atg_su atg_top_shade atg_top_cs atg_top_tex atg_top_msaa atg_top_raster atg_dc_tgen atg_top_fw"
+LONG="atg_su atg_top_shade atg_top_cs atg_top_tex atg_top_msaa atg_top_core atg_top_raster atg_dc_tgen atg_top_fw"
 QUICK="atg_su:+quick atg_top_tex atg_top_cs atg_top_fw atg_dc_tgen:+quick"
 if [ "${1:-}" = -q ]; then
 	set -- $(for n in $all; do
@@ -81,7 +83,7 @@ for ent in "$@"; do
 		continue
 	fi
 	# $args is split on purpose: one word per plusarg.
-	timeout "${SIM_TIMEOUT:-900}" vvp -n "$out/$name.vvp" +seed="${SEED:-1}" $args \
+	timeout "${SIM_TIMEOUT:-1500}" vvp -n "$out/$name.vvp" +seed="${SEED:-1}" $args \
 		>"$log" 2>&1
 	t=$(($(date +%s) - t0))
 	if grep -q "^PASS $name\$" "$log" && ! grep -q 'FAIL\|ERROR' "$log"; then

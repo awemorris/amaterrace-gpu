@@ -265,6 +265,11 @@ module atg_cpu_win_tb;
 		repeat (5) @(negedge clk);
 		expect("v_done early", v_dones, 0);
 		expect("fw_active held", fw_active, 1);
+		/* While DONE waits for the FIFO the firmware does not see the packet again. */
+		access(0, WIN + 4 * 6'h02, 0);
+		expect("PKT_INFO in DONE wait", rd[31], 0);
+		expect("fw_active in DONE wait", fw_active, 1);
+		@(negedge clk);
 		fw_ready = 1'b1;
 		repeat (2) @(negedge clk);
 		fw_ready = 1'b0;
