@@ -110,8 +110,13 @@ endfunction
 
 /*
  * The FPU's helpers (reference: tools/gsi1fp.py).
- * rm: 0 RNE, 1 RTZ, 2 RDN, 3 RUP, 4 RMM, 5-7 RNE (7 is "dynamic": there is
- * no CSR; 5 and 6 never reach here, atg_su_dec faults them).
+ * rm: 0 RNE, 1 RTZ, 2 RDN, 3 RUP, 4 RMM, 7 RNE (7 is "dynamic": there is
+ * no CSR).  5 and 6 are not instruction modes (atg_su_dec faults them):
+ * here they round to odd (truncate, the last bit set when inexact; an
+ * overflow gives the largest finite), 6 with RDN's sign of an exact zero
+ * sum in atg_su_ffma.  atg_su_fpu uses them for the fp16 arithmetic of
+ * the packed unit: a fp16 result rounded once from the fp32 rounded to
+ * odd (24 bits, at least 11 + 2) is the fp16 rounded once from the exact.
  */
 
 /* Denormals become zeros of their sign. */
@@ -133,20 +138,20 @@ function [31:0] atg_su_rnd;
 	reg signed [11:0] er;
 	begin
 		case (rm)
-		3'd1: up = 1'b0;
+		3'd1, 3'd5, 3'd6: up = 1'b0;
 		3'd2: up = s && (g || st);
 		3'd3: up = !s && (g || st);
 		3'd4: up = g;
 		default: up = g && (st || m[0]);
 		endcase
-		mr = {1'b0, m} + {24'd0, up};
+		mr = {1'b0, m[23:1], m[0] | ((rm == 3'd5 || rm == 3'd6) && (g || st))} + {24'd0, up};
 		er = e;
 		if (mr[24]) begin
 			mr = mr >> 1;
 			er = er + 12'sd1;
 		end
 		if (er >= 12'sd255) begin
-			if (rm == 3'd1 || (rm == 3'd2 && !s) || (rm == 3'd3 && s))
+			if (rm == 3'd1 || rm == 3'd5 || rm == 3'd6 || (rm == 3'd2 && !s) || (rm == 3'd3 && s))
 				atg_su_rnd = {s, 8'hFE, 23'h7FFFFF};
 			else
 				atg_su_rnd = {s, 8'hFF, 23'd0};
@@ -157,15 +162,37 @@ function [31:0] atg_su_rnd;
 	end
 endfunction
 
+/* The significands of a * b in atg_su_ffma: {!z, m} of the flushed
+ * operands, 24 bits each (a multiplier shared with other operations takes
+ * them, atg_su_fpu). */
+function [47:0] atg_su_fsig;
+	input [30:0] a, b;	/* (the signs are not needed) */
+	atg_su_fsig = {a[30:23] != 8'd0 ? {1'b1, a[22:0]} : 24'd0,
+		b[30:23] != 8'd0 ? {1'b1, b[22:0]} : 24'd0};
+endfunction
+
 /* Fused a * b + c with one rounding; noc: there is no addend (fmul). */
 function [31:0] atg_su_ffma;
 	input [31:0] a0, b0, c0;
 	input [2:0] rm;
 	input noc;
+	reg [47:0] sg, pp;
+	begin
+		sg = atg_su_fsig(a0[30:0], b0[30:0]);
+		pp = sg[47:24] * sg[23:0];
+		atg_su_ffma = atg_su_ffma_p(a0, b0, c0, rm, noc, pp);
+	end
+endfunction
+
+/* atg_su_ffma with the product of the significands (atg_su_fsig) given. */
+function [31:0] atg_su_ffma_p;
+	input [31:0] a0, b0, c0;
+	input [2:0] rm;
+	input noc;
+	input [47:0] p;
 	reg [31:0] a, b, c;
 	reg sp, sc, nan_a, nan_b, nan_c, inf_a, inf_b, inf_c, za, zb, zc, rdn, sr;
-	reg [23:0] ma, mb, mc;
-	reg [47:0] p;
+	reg [23:0] mc;
 	reg signed [11:0] k, adj, er;
 	reg [4:0] rs;
 	reg [76:0] pw, cw, sum, nrm;
@@ -177,7 +204,7 @@ function [31:0] atg_su_ffma;
 		c = atg_su_flush(c0);
 		sp = a[31] ^ b[31];
 		sc = c[31];
-		rdn = rm == 3'd2;
+		rdn = rm == 3'd2 || rm == 3'd6;
 		nan_a = a[30:23] == 8'hFF && a[22:0] != 0;
 		nan_b = b[30:23] == 8'hFF && b[22:0] != 0;
 		nan_c = !noc && c[30:23] == 8'hFF && c[22:0] != 0;
@@ -187,25 +214,22 @@ function [31:0] atg_su_ffma;
 		za = a[30:23] == 8'd0;
 		zb = b[30:23] == 8'd0;
 		zc = noc || c[30:23] == 8'd0;
-		ma = {!za, a[22:0]};
-		mb = {!zb, b[22:0]};
 		mc = zc ? 24'd0 : {1'b1, c[22:0]};
-		atg_su_ffma = 32'd0;
+		atg_su_ffma_p = 32'd0;
 		if (nan_a || nan_b || nan_c || (inf_a && zb) || (inf_b && za))
-			atg_su_ffma = 32'h7FC00000;
+			atg_su_ffma_p = 32'h7FC00000;
 		else if (inf_a || inf_b)
-			atg_su_ffma = inf_c && sc != sp ? 32'h7FC00000 : {sp, 8'hFF, 23'd0};
+			atg_su_ffma_p = inf_c && sc != sp ? 32'h7FC00000 : {sp, 8'hFF, 23'd0};
 		else if (inf_c)
-			atg_su_ffma = c;
+			atg_su_ffma_p = c;
 		else if (za || zb) begin
 			if (!zc)
-				atg_su_ffma = c;
+				atg_su_ffma_p = c;
 			else if (noc)
-				atg_su_ffma = {sp, 31'd0};
+				atg_su_ffma_p = {sp, 31'd0};
 			else
-				atg_su_ffma = {rdn ? (sp | sc) : (sp & sc), 31'd0};
+				atg_su_ffma_p = {rdn ? (sp | sc) : (sp & sc), 31'd0};
 		end else begin
-			p = ma * mb;
 			/* C's LSB relative to P's (units of P's LSB), the window has
 			 * two bits below P's LSB. */
 			k = {4'd0, c[30:23]} - {4'd0, a[30:23]} - {4'd0, b[30:23]} + 12'sd150;
@@ -236,7 +260,7 @@ function [31:0] atg_su_ffma;
 				sr = sc;
 			end
 			if (sum == 77'd0)
-				atg_su_ffma = {rdn, 31'd0};
+				atg_su_ffma_p = {rdn, 31'd0};
 			else begin
 				msb = 7'd0;
 				for (i = 0; i < 77; i = i + 1)
@@ -244,7 +268,7 @@ function [31:0] atg_su_ffma;
 						msb = i[6:0];
 				nrm = sum << (7'd76 - msb);
 				er = {5'd0, msb} + {4'd0, a[30:23]} + {4'd0, b[30:23]} + adj - 12'sd175;
-				atg_su_ffma = atg_su_rnd(sr, er, nrm[76:53], nrm[52], |nrm[51:0], rm);
+				atg_su_ffma_p = atg_su_rnd(sr, er, nrm[76:53], nrm[52], |nrm[51:0], rm);
 			end
 		end
 	end

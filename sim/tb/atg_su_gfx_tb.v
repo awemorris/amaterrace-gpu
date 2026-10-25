@@ -7,8 +7,9 @@
 
 /*
  * atg_su_gfx_tb: the shader unit's graphics warps (design §3.1 M10,
- * §3.8), with PACKED and SUBGROUP, on NPHYS 8, 16 and 32 (the NPHYS 16 SU
- * in the KC705's shape: 8 scoreboard entries, FRAG_RESERVE 2).  The
+ * §3.8), with PACKED and SUBGROUP, on NPHYS 8 (with PK_SHARED: the fp16
+ * arithmetic on the FPU), 16 and 32 (the NPHYS 16 SU with 8 scoreboard
+ * entries and FRAG_RESERVE 2).  The
  * testbench is the VF (vl_*), the RX (fl_*, pt_free) and the ROP (ex_*)
  * of one SU; code and data memories as in atg_su_tb.  Two parts:
  *
@@ -50,6 +51,7 @@ module atg_su_gfx_chk #(
 	parameter SB_ENTRIES = 4,
 	parameter SBE_W = 2,
 	parameter PT_ENTRIES = 64,
+	parameter PK_SHARED = 0,	/* the fp16 arithmetic on the FPU (atg_su_fpu) */
 	parameter NV = 12	/* vertex warps of the loop */
 ) (
 	input wire clk,
@@ -133,7 +135,8 @@ module atg_su_gfx_chk #(
 	wire x_rsp_write, x_rsp_error;
 
 	atg_su #(.NPHYS(NPHYS), .GRP_W(GRP_W), .SB_ENTRIES(SB_ENTRIES), .SBE_W(SBE_W),
-		.FRAG_RESERVE(FRAG_RESERVE), .PACKED(1), .SUBGROUP(1), .PT_ENTRIES(PT_ENTRIES),
+		.FRAG_RESERVE(FRAG_RESERVE), .PACKED(1), .PK_SHARED(PK_SHARED), .SUBGROUP(1),
+		.PT_ENTRIES(PT_ENTRIES),
 		.VARY_WORDS(VARY)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.cs_kick(1'b0), .lc_kick(1'b0), .inv(4'd0),
@@ -745,7 +748,7 @@ module atg_su_gfx_tb;
 
 	always #5 clk = !clk;
 
-	atg_su_gfx_chk #(.NPHYS(8), .SEED(1)) n8 (.clk(clk), .go(go), .done(done[0]),
+	atg_su_gfx_chk #(.NPHYS(8), .SEED(1), .PK_SHARED(1)) n8 (.clk(clk), .go(go), .done(done[0]),
 		.e_gfx(g0), .e_loop(l0), .e_ms(m0));
 	atg_su_gfx_chk #(.NPHYS(16), .SEED(2), .FRAG_RESERVE(2), .SB_ENTRIES(8), .SBE_W(3)) n16 (
 		.clk(clk), .go(go), .done(done[1]), .e_gfx(g1), .e_loop(l1), .e_ms(m1));

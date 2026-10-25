@@ -11,7 +11,9 @@
  * the reference result of the exact soft-float model).  One vector per
  * group, lane l gets the vector rotated by l (so every lane sees every
  * vector), a random EXEC mask; the result must come exactly SHORT_LAT
- * cycles later with the uop's rd and the mask.
+ * cycles later with the uop's rd and the mask.  A second unit with PACKED
+ * and PK_SHARED (the packed fp16 operations on this unit, atg_su_pk_tb)
+ * must give the same outputs every cycle for the FPU's operations.
  */
 
 `timescale 1ns / 1ps
@@ -47,6 +49,26 @@ module atg_su_fpu_tb;
 		.s_valid(s_valid), .s_warp(s_warp), .s_grp(s_grp), .s_rd(s_rd), .s_data(s_data),
 		.s_lanes(s_lanes)
 	);
+
+	wire x_ready_s, s_valid_s;
+	wire [1:0] s_warp_s, s_grp_s;
+	wire [6:0] s_rd_s;
+	wire [DW-1:0] s_data_s;
+	wire [NPHYS-1:0] s_lanes_s;
+	atg_su_fpu #(.NPHYS(NPHYS), .SHORT_LAT(LAT), .PACKED(1), .PK_SHARED(1)) dut_s (
+		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(2'd1), .x_grp(2'd2),
+		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(x_a), .x_b(x_b),
+		.x_c(x_c), .x_mask(x_mask), .x_info(32'd0), .x_ready(x_ready_s),
+		.s_valid(s_valid_s), .s_warp(s_warp_s), .s_grp(s_grp_s), .s_rd(s_rd_s),
+		.s_data(s_data_s), .s_lanes(s_lanes_s)
+	);
+	always @(posedge clk)
+		if (rst_n && ({x_ready_s, s_valid_s, s_warp_s, s_grp_s, s_rd_s, s_lanes_s} !==
+		    {x_ready, s_valid, s_warp, s_grp, s_rd, s_lanes} ||
+		    (s_valid && s_data_s !== s_data))) begin
+			$display("FAIL atg_su_fpu: the PK_SHARED unit differs at vector %0d", n_out);
+			err[0] = err[0] + 1;
+		end
 
 	reg [143:0] vec [0:NV-1];
 	/* Expected outputs, by the cycle they were sent. */
