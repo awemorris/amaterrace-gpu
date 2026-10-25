@@ -75,6 +75,22 @@ a carry chain) where it can be checked once.
   A file that must keep its arithmetic is listed in the script's exception
   table with the reason, and here.
 
+Board clocking
+--------------
+
+- A clock into an IP block that makes its own clocks (the MIG, the PCIe
+  bridge, a transceiver) comes from the oscillator's pin on the dedicated
+  route: the clock-capable pin's IBUFDS (or IBUFDS_GTE2) straight to the
+  block's PLL/MMCM or GT, with no BUFG, global-tree detour or divider in
+  front of it.  A rate the block needs is made inside the block by its
+  own PLL/MMCM.  Vivado does not guarantee a correct clock route
+  otherwise (user, 2026-10-26; ws288 p024: the KC705's MIG did not
+  calibrate with SYSCLK through a BUFG in front of its PLL).
+- The fabric's clock managers may share that pin: the same IBUFDS also
+  drives a BUFG for them.  A block's reference input that only needs a
+  frequency, such as the MIG's IDELAYCTRL reference (clk_ref_i, made into
+  400 MHz by the MIG's own MMCM), may come from that BUFG.
+
 Testbenches
 -----------
 
