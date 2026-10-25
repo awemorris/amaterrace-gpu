@@ -27,6 +27,7 @@
 
 module atg_dc #(
 	parameter HAS_I2C = 0,	/* ADV7511 I2C master present (KC705, DC_CAPS[2]) */
+	parameter HAS_CURSOR = 1,	/* the cursor plane, plane 1 (DC_CAPS[8], atg_dc_cursor) */
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
@@ -129,15 +130,18 @@ module atg_dc #(
 	wire [11:0] g_line;
 	am_sync #(.W(12)) sync_line (.clk(clk), .rst_n(g_rst_n), .d(p_line), .q(g_line));
 
-	/* The cursor plane comes later (DC_CAPS[8] is 0): plane 1 is absent. */
-	assign taken[1] = 1'b0;
-	assign taken_cancel[1] = 1'b0;
-	assign pending[1] = 1'b0;
-	assign cursor_base = 32'd0;
-	assign idle = dma_idle;
 	assign d_rdata = regs_rdata | mode_rdata;
+	wire cur_idle, cur_err;
+	wire [31:0] dma_px_data;
+	wire dma_px_valid, dma_px_ready;
+	/* The DMA's AMB port (requester 0 of the DC's mux with the cursor). */
+	wire m_req_valid, m_req_ready, m_req_write, m_rsp_valid;
+	wire [ADDR_W-LINE_SHIFT-1:0] m_req_line;
+	wire [LINE_BYTES-1:0] m_req_be;
+	wire [LINE_BYTES*8-1:0] m_req_wdata;
+	wire [7:0] m_req_tag;
 
-	atg_dc_regs #(.HAS_I2C(HAS_I2C), .HAS_CURSOR(0)) regs (
+	atg_dc_regs #(.HAS_I2C(HAS_I2C), .HAS_CURSOR(HAS_CURSOR)) regs (
 		.clk(clk), .rst_n(rst_n),
 		.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(d_wmask), .d_ridx(d_ridx),
 		.d_rdata(regs_rdata),
@@ -146,8 +150,9 @@ module atg_dc #(
 		.dc_reset(dc_reset),
 		.flip_valid(flip_valid && !flip_plane), .flip_base(flip_base),
 		.taken(taken[0]), .taken_cancel(taken_cancel[0]), .pending(pending[0]),
-		.ev_vsync(g_ev[1]), .ev_underflow(g_ev[2]), .idle_in(dma_idle), .line(g_line),
-		.scan_sum(scan_sum), .scan_words(scan_words), .rd_err(dma_err), .dc_err(dc_err),
+		.ev_vsync(g_ev[1]), .ev_underflow(g_ev[2]), .idle_in(idle), .line(g_line),
+		.scan_sum(scan_sum), .scan_words(scan_words), .rd_err(dma_err || cur_err),
+		.dc_err(dc_err),
 		.connected(connected), .pending1(pending[1]),
 		.ev_vblank(ev_vblank), .ev_error(ev_error), .frame_count(frame_count),
 		.i2c_we(i2c_we), .i2c_idx(i2c_idx), .i2c_wdata(i2c_wdata), .i2c_rdata(i2c_rdata)
@@ -164,14 +169,81 @@ module atg_dc #(
 		.clk(clk), .rst_n(rst_n), .clear(dc_reset),
 		.enable(enable), .frame_start(g_ev[0]), .fb_base(fb_base), .fb_stride(fb_stride),
 		.fb_size(fb_size), .format(format),
-		.px_valid(px_w_valid), .px_ready(px_w_ready), .px_data(px_w_data), .idle(dma_idle),
-		.done(dma_done), .err(dma_err),
+		.px_valid(dma_px_valid), .px_ready(dma_px_ready), .px_data(dma_px_data),
+		.idle(dma_idle), .done(dma_done), .err(dma_err),
 		.scan_sum(scan_sum), .scan_words(scan_words),
-		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write), .req_line(req_line),
-		.req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
-		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata),
-		.rsp_error(rsp_error)
+		.req_valid(m_req_valid), .req_ready(m_req_ready), .req_write(m_req_write),
+		.req_line(m_req_line), .req_be(m_req_be), .req_wdata(m_req_wdata), .req_tag(m_req_tag),
+		.rsp_valid(m_rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
+		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
 	);
+
+	/* The cursor between the DMA and the pixel FIFO, its reads behind the DMA's. */
+	generate
+	if (HAS_CURSOR != 0) begin : g_cursor
+		wire c_req_valid, c_req_ready, c_req_write, c_rsp_valid;
+		wire [ADDR_W-LINE_SHIFT-1:0] c_req_line;
+		wire [LINE_BYTES-1:0] c_req_be;
+		wire [LINE_BYTES*8-1:0] c_req_wdata;
+		wire [7:0] c_req_tag, mux_rsp_tag;
+		wire mux_rsp_write, mux_rsp_error;
+		wire [LINE_BYTES*8-1:0] mux_rsp_rdata;
+
+		atg_dc_cursor #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) cursor (
+			.clk(clk), .rst_n(rst_n), .dc_reset(dc_reset), .enable(enable), .format(format),
+			.frame_start(g_ev[0]), .dma_done(dma_done), .fb_width(fb_size[15:0]),
+			.i_valid(dma_px_valid), .i_ready(dma_px_ready), .i_data(dma_px_data),
+			.o_valid(px_w_valid), .o_ready(px_w_ready), .o_data(px_w_data),
+			.pos(cur_pos), .show(cur_show),
+			.flip_valid(flip_valid && flip_plane), .flip_base(flip_base),
+			.taken(taken[1]), .taken_cancel(taken_cancel[1]), .pending(pending[1]),
+			.cursor_base(cursor_base), .idle(cur_idle), .err(cur_err),
+			.req_valid(c_req_valid), .req_ready(c_req_ready), .req_write(c_req_write),
+			.req_line(c_req_line), .req_be(c_req_be), .req_wdata(c_req_wdata),
+			.req_tag(c_req_tag),
+			.rsp_valid(c_rsp_valid), .rsp_write(mux_rsp_write), .rsp_tag(mux_rsp_tag),
+			.rsp_rdata(mux_rsp_rdata), .rsp_error(mux_rsp_error)
+		);
+
+		am_amb_mux #(
+			.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .N(2), .ID_W(1)
+		) amb (
+			.clk(clk), .rst_n(rst_n),
+			.i_req_valid({c_req_valid, m_req_valid}), .i_req_ready({c_req_ready, m_req_ready}),
+			.i_req_write({c_req_write, m_req_write}), .i_req_line({c_req_line, m_req_line}),
+			.i_req_be({c_req_be, m_req_be}), .i_req_wdata({c_req_wdata, m_req_wdata}),
+			.i_req_tag({c_req_tag, m_req_tag}),
+			.i_rsp_valid({c_rsp_valid, m_rsp_valid}), .i_rsp_write(mux_rsp_write),
+			.i_rsp_tag(mux_rsp_tag), .i_rsp_rdata(mux_rsp_rdata), .i_rsp_error(mux_rsp_error),
+			.o_req_valid(req_valid), .o_req_ready(req_ready), .o_req_write(req_write),
+			.o_req_line(req_line), .o_req_be(req_be), .o_req_wdata(req_wdata),
+			.o_req_tag(req_tag),
+			.o_rsp_valid(rsp_valid), .o_rsp_write(rsp_write), .o_rsp_tag(rsp_tag),
+			.o_rsp_rdata(rsp_rdata), .o_rsp_error(rsp_error)
+		);
+		assign idle = dma_idle && cur_idle;
+	end else begin : g_no_cursor
+		assign px_w_valid = dma_px_valid;
+		assign dma_px_ready = px_w_ready;
+		assign px_w_data = dma_px_data;
+		assign req_valid = m_req_valid;
+		assign m_req_ready = req_ready;
+		assign req_write = m_req_write;
+		assign req_line = m_req_line;
+		assign req_be = m_req_be;
+		assign req_wdata = m_req_wdata;
+		assign req_tag = m_req_tag;
+		assign m_rsp_valid = rsp_valid;
+		assign taken[1] = 1'b0;
+		assign taken_cancel[1] = 1'b0;
+		assign pending[1] = 1'b0;
+		assign cursor_base = 32'd0;
+		assign cur_idle = 1'b1;
+		assign cur_err = 1'b0;
+		assign idle = dma_idle;
+		wire unused_cur = &{1'b0, cur_pos, cur_show, dma_done};
+	end
+	endgenerate
 
 	am_afifo #(.W(32), .DEPTH_LOG2(FIFO_LOG2)) pixels (
 		.w_clk(clk), .w_rst_n(g_rst_n), .w_valid(px_w_valid), .w_ready(px_w_ready),
@@ -225,7 +297,7 @@ module atg_dc #(
 	end
 	endgenerate
 
-	wire unused_ok = &{1'b0, dma_done, cur_pos, cur_show};
+	wire unused_ok = &{1'b0, cur_idle};
 endmodule
 
 `default_nettype wire

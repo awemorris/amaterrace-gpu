@@ -29,7 +29,7 @@ module atg_dc_tb;
 	always #5 clk = !clk;
 	always #20 pclk = !pclk;
 
-	reg d_we = 0, flip_valid = 0;
+	reg d_we = 0, flip_valid = 0, flip_plane = 0;
 	reg [5:0] d_idx = 0, d_ridx = 0;
 	reg [31:0] d_wdata = 0, flip_base = 0;
 	wire [31:0] d_rdata, frame_count;
@@ -48,7 +48,7 @@ module atg_dc_tb;
 		.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
 		.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(32'hFFFFFFFF),
 		.d_ridx(d_ridx), .d_rdata(d_rdata),
-		.flip_valid(flip_valid), .flip_plane(1'b0), .flip_base(flip_base),
+		.flip_valid(flip_valid), .flip_plane(flip_plane), .flip_base(flip_base),
 		.taken(taken), .taken_cancel(taken_cancel), .pending(pending), .dc_err(2'b00),
 		.idle(idle), .frame_count(frame_count),
 		.ev_vblank(vsync), .ev_error(ev_error), .ev_hotplug(ev_hotplug), .pclk_sel(pclk_sel),
@@ -60,7 +60,7 @@ module atg_dc_tb;
 		.scl_t(scl_t), .scl_i(1'b1), .sda_t(sda_t), .sda_i(1'b1)
 	);
 
-	amb_mem #(.MEM_WORDS(8192), .ERR_BASE(32'h7000)) mem (
+	amb_mem #(.MEM_WORDS(16384), .ERR_BASE(32'hF000)) mem (
 		.clk(clk), .rst_n(rst_n),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
@@ -112,8 +112,10 @@ module atg_dc_tb;
 		end
 	endtask
 
-	integer n_taken = 0, n_cancel = 0, n_error = 0;
+	integer n_taken = 0, n_cancel = 0, n_error = 0, n_taken1 = 0;
 	always @(posedge clk) begin
+		if (taken[1] && !taken_cancel[1])
+			n_taken1 = n_taken1 + 1;
 		if (taken[0])
 			n_taken = n_taken + 1;
 		if (taken[0] && taken_cancel[0])
@@ -158,7 +160,7 @@ module atg_dc_tb;
 				mw = mem.peek(cmp_base + (px_n / W) * 128 + (px_n % W) * 2 & ~32'd3);
 				mw = (px_n % 2) ? mw[31:16] : mw[15:0];
 				want_rgb = {mw[15:11], mw[15:13], mw[10:5], mw[10:9], mw[4:0], mw[4:2]};
-			end else if (cmp_base + (px_n / W) * 256 >= 32'h7000) begin
+			end else if (cmp_base + (px_n / W) * 256 >= 32'hF000) begin
 				want_rgb = 24'd0;	/* a read error: black */
 			end else begin
 				mw = mem.peek(cmp_base + (px_n / W) * 256 + (px_n % W) * 4);
@@ -198,8 +200,8 @@ module atg_dc_tb;
 	initial begin
 		if (!$value$plusargs("seed=%d", seed))
 			seed = 1;
-		for (i = 0; i < 8192; i = i + 1)
-			mem.poke(i * 4, $random(seed));
+		for (i = 0; i < 16384; i = i + 1)
+			mem.poke(i * 4, i >= 32'h2000 && i < 32'h3000 ? 32'd0 : $random(seed));
 		repeat (4) @(posedge pclk);
 		rst_n = 1;
 		prst_n = 1;
@@ -243,12 +245,12 @@ module atg_dc_tb;
 		frames_ok("frames of fb 0x4000", 2);
 		rd(D + GHCI_DC_STATUS, v);
 		if (v[1:0] !== 2'b01) fail("STATUS running, no underflow", v, 1);
-		/* A read error: rows 6.. of the image at 0x6A00 are at 0x7000 and up. */
+		/* A read error: rows 6.. of the image at 0xEA00 are at 0xF000 and up. */
 		e0 = n_error;
-		flip(32'h6A00);
+		flip(32'hEA00);
 		@(posedge vsync);
 		@(negedge clk);
-		cmp_base = 32'h6A00;
+		cmp_base = 32'hEA00;
 		i = n_error;
 		frames_ok("frames with read errors", 3);
 		if (n_error - i < 3 || n_error - i > 5) fail("DISP_ERROR once a frame", n_error - i, 4);
@@ -278,6 +280,25 @@ module atg_dc_tb;
 		cmp_fmt = 2;
 		wr(D + GHCI_DC_CTRL, 32'h21);
 		frames_ok("frames of RGB565", 2);
+		/* The cursor (plane 1) shown over RGB565 with a transparent image (all
+		 * zero at 0x8000): its reads share the port with the scan-out's and
+		 * the frames stay as they are. */
+		wr(D + GHCI_DC_CURSOR_POS, {16'd2, 16'd5});
+		wr(D + GHCI_DC_CURSOR_CTRL, 32'd1);
+		@(negedge clk);
+		flip_plane = 1;
+		flip(32'h8000);
+		flip_plane = 0;
+		if (pending[1] !== 1'b1) fail("cursor pending", pending, 2);
+		i = 0;
+		while (n_taken1 == 0 && i < 200000) begin
+			@(negedge clk);
+			i = i + 1;
+		end
+		if (n_taken1 != 1) fail("cursor taken", n_taken1, 1);
+		rd(D + GHCI_DC_CURSOR_BASE, v);
+		if (v !== 32'h8000) fail("CURSOR_BASE", v, 32'h8000);
+		frames_ok("frames with the cursor", 2);
 		/* CTRL.RESET while running, with a pending flip and reads on the way. */
 		flip(32'h5000);
 		wait (!idle);

@@ -6,13 +6,14 @@ RTL: `rtl/gpu/dc/atg_dc.v`.  Parent: atg_top (HAS_DISP).  Implemented in: p005, 
 
 The display controller of DISP2 (docs/ghci.md §13.2, design §18.5), a unit of the GPU inside `atg_top`: registers and DMA in gclk, a pixel FIFO (am_afifo) to the pixel clock, timing generator, a TMDS encoder and a parallel output, optional I2C; one AMB client port (MC client `C_DC`).  The CP's `atg_cp_disp` drives it through the internal register bus (`d_*`), the flips (`flip_*`, `taken`) and the status for the records.  Until `atg_cp_disp` exists, `atg_top` bridges the host's register bus at +0x10000 to `d_*` (every write passes) and makes no flips.
 
-Children: `atg_dc_regs`, `atg_dc_mode`, `atg_dc_dma`, `atg_dc_tgen`, `atg_dc_tmds`, `atg_dc_ycc` (PX_FMT = 1), `atg_dc_i2c`, `am_afifo`, `am_sync`.
+Children: `atg_dc_regs`, `atg_dc_mode`, `atg_dc_dma`, `atg_dc_cursor` and `am_amb_mux` (HAS_CURSOR), `atg_dc_tgen`, `atg_dc_tmds`, `atg_dc_ycc` (PX_FMT = 1), `atg_dc_i2c`, `am_afifo`, `am_sync`.
 
 ## 2. Parameters
 
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `HAS_I2C` | `0` | ADV7511 I2C master present (KC705, DC_CAPS[2]). |
+| `HAS_CURSOR` | `1` | The cursor plane, plane 1 (DC_CAPS[8]): `atg_dc_cursor` between the DMA and the pixel FIFO, its reads behind the DMA's in an `am_amb_mux`. |
 | `ADDR_W` | `32` | GPU address width. |
 | `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
@@ -71,7 +72,7 @@ Clock/reset domain: clk (gclk) and pclk as marked unless the row says otherwise.
 
 ## 4. Behaviour
 
-Wiring with the only clock crossing of the DC: am_afifo for pixels, am_sync for ENABLE and CTRL.RESET (to pclk: the 32-cycle dc_reset pulse resets the pixel side too, so both sides of am_afifo are reset together) and for the event toggles and the line number (to gclk), plus a 3-bit register for the toggle edges.  scan_sum/scan_words and the read errors go from the DMA to the registers.  The DC's CTRL.RESET resets the gclk side of the FIFO, the I2C master and the event synchronisers, and clears the DMA without its count of outstanding reads (the responses of reads issued before still come).  The cursor plane (plane 1) is not there yet: `taken[1]`, `pending[1]` are 0.  The quasi-static configuration (timing, format, test pattern) goes to pclk directly (see atg_dc_regs §7).
+Wiring with the only clock crossing of the DC: am_afifo for pixels, am_sync for ENABLE and CTRL.RESET (to pclk: the 32-cycle dc_reset pulse resets the pixel side too, so both sides of am_afifo are reset together) and for the event toggles and the line number (to gclk), plus a 3-bit register for the toggle edges.  scan_sum/scan_words and the read errors go from the DMA to the registers.  The DC's CTRL.RESET resets the gclk side of the FIFO, the I2C master and the event synchronisers, and clears the DMA without its count of outstanding reads (the responses of reads issued before still come).  With `HAS_CURSOR` the cursor sits between the DMA's pixels and the pixel FIFO (no new clock crossing), takes `dma_done`, the frame start and CURSOR_POS/CTRL, and shares the AMB port (requester 0 the DMA, 1 the cursor); `idle` and the read errors cover both.  Without it `taken[1]`, `pending[1]` are 0.  The quasi-static configuration (timing, format, test pattern) goes to pclk directly (see atg_dc_regs §7).
 
 ## 5. State machine
 
@@ -87,7 +88,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_dc_tb.v` (it covers the clock crossings), driven as atg_cp_disp drives the DC: `PASS atg_dc.scanout` — frames compared with the image, VBLANK and FRAME_COUNT, a flip at once while disabled and one at a vsync (taken, FB_BASE), SCAN_WORDS, a read error (black lines, STATUS.read error, DISP_ERROR at most once a frame, W1C), ENABLE 0 with a pending flip (cancelled) and idle, RGB565, CTRL.RESET with a pending flip and reads on the way and frames after it — and `PASS atg_dc`.
+`sim/tb/atg_dc_tb.v` (it covers the clock crossings), driven as atg_cp_disp drives the DC: `PASS atg_dc.scanout` — frames compared with the image, VBLANK and FRAME_COUNT, a flip at once while disabled and one at a vsync (taken, FB_BASE), SCAN_WORDS, a read error (black lines, STATUS.read error, DISP_ERROR at most once a frame, W1C), ENABLE 0 with a pending flip (cancelled) and idle, RGB565, the cursor (a flip of plane 1, taken after its load through the shared port, CURSOR_BASE, frames unchanged under a transparent image), CTRL.RESET with a pending flip and reads on the way and frames after it — and `PASS atg_dc`.
 
 ## 9. References
 
@@ -102,4 +103,4 @@ unconnected (the tools remove it).  The VGA output (atg_dc_vga) was taken out wi
 target (2026-10-25; the source is kept under `docs/old/`): DC_CAPS[0] is 0.
 WS288 p035 D3 (design §18.5): moved to `rtl/gpu/dc/` as a child of atg_top; the register bus is the
 internal one, `atg_dc_mode` added, `STANDALONE`/`BASE` and the interrupt line are gone (the events
-are pulses for IRQ_STATUS), the CP's flips and the record status ports added.
+are pulses for IRQ_STATUS), the CP's flips and the record status ports added.  D5: the cursor plane (`HAS_CURSOR`, `atg_dc_cursor`).

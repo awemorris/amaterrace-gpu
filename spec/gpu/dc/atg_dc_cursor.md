@@ -1,6 +1,6 @@
 # atg_dc_cursor
 
-RTL: `rtl/gpu/dc/atg_dc_cursor.v`.  Parent: atg_dc.  Implemented in: (empty).
+RTL: `rtl/gpu/dc/atg_dc_cursor.v`.  Parent: atg_dc.  Implemented in: p035 D5.
 
 ## 1. Purpose and place
 
@@ -92,11 +92,7 @@ about 26k gclk at 720p60 and 13k at 480p60.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_dc_cursor_tb.v`: `clip`, `blend` (alpha 0, 255 and in between, saturation, against a
-model), `pos` (taken at the frame start), `load` (the reads fall between the frame's end and the
-next frame; the take after the load; a load across a frame start), `fmt` (RGBA8, RGB565, every
-565 value unchanged under alpha 0), `cancel` (ENABLE 0, the DC's reset), `err`, then
-`PASS atg_dc_cursor`.
+`sim/tb/atg_dc_cursor_tb.v` (every output pixel against a model, random valid/ready on both sides): `load` (no read before `dma_done`, hidden while loading, 16384 / `LINE_BYTES` reads, the take at the next frame start, CURSOR_BASE), `blend` (clipping at every edge with negative positions, alpha 0, 255 and in between, saturation, a cursor outside; at least 5000 blended pixels), `pos` (a write in the middle of a frame is taken at the next one), `fmt` (RGBA8, RGB565, every 565 value unchanged under a = 0, c = 0), `cancel` (ENABLE 0 at the flip, ENABLE falling before the load, the DC's reset during the load, then idle and a new load), `err` (an image in the error range: `err`, taken, not shown), then `PASS atg_dc_cursor`.  A mutation that swaps R and B in the BGRA8 blend fails it.
 
 ## 9. References
 
@@ -104,4 +100,4 @@ docs/ghci.md §13.2; design §18.5.
 
 ## 10. Status
 
-Empty (spec only, WS288 p035 D1).
+Implemented in WS288 p035 D5 (`atg_dc_cursor_tb` PASS: load, blend, pos, fmt, cancel, err).  About 340 lines, one FSM, gclk only; the BRAM is 4096 x 32 bits (BRAM36 x 4 when inferred), the line FIFO 4 lines.  Differences from the first draft of this spec: the blend's round is written as (t + (t >> 8)) >> 8 of t = p x (255 − a) + 128 (exact for every t, checked exhaustively off line); `test pattern` needs nothing here.
