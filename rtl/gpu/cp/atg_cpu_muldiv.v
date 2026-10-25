@@ -41,7 +41,6 @@ module atg_cpu_muldiv (
 	reg [1:0] op_r;	/* funct3[1:0]: the MUL half or REM */
 	/* Multiplier: operands extended to 33 bits by their signedness. */
 	reg signed [32:0] ma, mb;
-	reg signed [65:0] p;
 	/* Divider: magnitudes, partial remainder and quotient. */
 	reg [31:0] dq;	/* dividend shifting out, quotient shifting in */
 	reg [31:0] dd;	/* divisor magnitude */
@@ -58,18 +57,37 @@ module atg_cpu_muldiv (
 	wire b_signed = op[1:0] == 2'd1;
 	/* DIV and REM are signed (funct3 4 and 6). */
 	wire d_signed = !op[0];
-	wire [31:0] a_abs = (d_signed && a[31]) ? 32'd0 - a : a;
-	wire [31:0] b_abs = (d_signed && b[31]) ? 32'd0 - b : b;
+	/*
+	 * The negators: 0 - a (the dividend's magnitude, at the start) shares
+	 * one with the result's sign fix (0 - the remainder or the quotient, at
+	 * the end of the division); 0 - b has its own.
+	 */
+	wire [31:0] neg_x, neg_b;
+	wire [3:0] ar_bo;
+
+	am_sub #(.W(32)) neg_x_sub (
+		.a(32'd0), .b(state == S_DIV ? (op_r[1] ? dr[31:0] : dq) : a), .bi(1'b0), .d(neg_x),
+		.bo(ar_bo[0])
+	);
+	am_sub #(.W(32)) neg_b_sub (.a(32'd0), .b(b), .bi(1'b0), .d(neg_b), .bo(ar_bo[1]));
+	wire [31:0] a_abs = (d_signed && a[31]) ? neg_x : a;
+	wire [31:0] b_abs = (d_signed && b[31]) ? neg_b : b;
 
 	/* One restoring step. */
 	wire [32:0] trial = {dr[31:0], dq[31]};
-	wire [32:0] tsub = trial - {1'b0, dd};
+	wire [32:0] tsub;
+	wire [5:0] cnt_n;
+
+	am_sub #(.W(33)) tsub_sub (.a(trial), .b({1'b0, dd}), .bi(1'b0), .d(tsub), .bo(ar_bo[2]));
+	am_add #(.W(6)) cnt_add (.a(cnt), .b(6'd0), .ci(1'b1), .s(cnt_n), .co(ar_bo[3]));
 	wire take = !tsub[32];
 
-	always @(posedge clk) begin
-		if (state == S_MUL)
-			p <= ma * mb;
-	end
+	/* The 33 x 33 signed product, registered in S_MUL (one DSP multiply). */
+	wire [65:0] p;
+
+	am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(1)) mul (
+		.clk(clk), .en(state == S_MUL), .a(ma), .b(mb), .p(p)
+	);
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -111,15 +129,15 @@ module atg_cpu_muldiv (
 				if (cnt != 6'd32) begin
 					dr <= take ? tsub : trial;
 					dq <= {dq[30:0], take};
-					cnt <= cnt + 6'd1;
+					cnt <= cnt_n;
 				end else begin
 					/* Sign fix; op_r[1] = 1 is REM/REMU. */
 					if (dzero)
 						y <= op_r[1] ? a_r : 32'hFFFF_FFFF;
 					else if (op_r[1])
-						y <= neg_r ? 32'd0 - dr[31:0] : dr[31:0];
+						y <= neg_r ? neg_x : dr[31:0];
 					else
-						y <= neg_q ? 32'd0 - dq : dq;
+						y <= neg_q ? neg_x : dq;
 					done <= 1'b1;
 					state <= S_IDLE;
 				end
@@ -127,7 +145,7 @@ module atg_cpu_muldiv (
 		end
 	end
 
-	wire unused_ok = &{1'b0, p[65:64], dr[32]};
+	wire unused_ok = &{1'b0, p[65:64], dr[32], ar_bo};
 endmodule
 
 `default_nettype wire

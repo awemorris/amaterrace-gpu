@@ -133,6 +133,10 @@ module atg_cpu_win #(
 	/* Registers. */
 	reg [9:0] st_idx;
 	reg [31:0] cycle;
+	wire [31:0] cycle_n;	/* cycle + 1 */
+	wire cycle_co;
+
+	am_add #(.W(32)) cycle_add (.a(cycle), .b(32'd0), .ci(1'b1), .s(cycle_n), .co(cycle_co));
 	reg [2:0] irq_en;
 	reg fence_pend;
 	reg taken;	/* PKT_INFO read while the packet waited */
@@ -232,7 +236,7 @@ module atg_cpu_win #(
 			pkt_slot <= 6'd0;
 			self_next <= 1'b0;
 		end else begin
-			cycle <= cycle + 32'd1;
+			cycle <= cycle_n;
 			v_done <= 1'b0;
 			ev_result <= 1'b0;
 			if (take) begin
@@ -276,6 +280,7 @@ module atg_cpu_win #(
 	end
 
 	wire unused_ok = &{1'b0, d_addr[1:0]};
+	wire unused_cycle = &{1'b0, cycle_co};
 endmodule
 
 `default_nettype wire

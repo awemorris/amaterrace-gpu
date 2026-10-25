@@ -108,7 +108,12 @@ module atg_cpu_fw (
 	/* HCR. */
 	wire hw_mbox = hcr_we && hcr_widx[9:2] == R_MBOX0[9:2];
 	wire sw_mbox = sb_we && sb_idx >= W_MBOX0 && sb_idx < W_MBOX0 + 6'd4;
-	wire [1:0] sw_mi = sb_idx[1:0] - W_MBOX0[1:0];
+	wire [1:0] sw_mi;	/* the mailbox of a firmware write: sb_idx - W_MBOX0 */
+	wire sw_mi_bo;
+
+	am_sub #(.W(2)) sw_mi_sub (
+		.a(sb_idx[1:0]), .b(W_MBOX0[1:0]), .bi(1'b0), .d(sw_mi), .bo(sw_mi_bo)
+	);
 	wire load_ok = open && (core_stopped || !core_rst_n) && !loading;
 	wire load_go = hcr_we && hcr_widx == R_CTRL && hcr_wmask[GHCI_CPFW_CTRL_LOAD] &&
 		hcr_wdata[GHCI_CPFW_CTRL_LOAD] && load_ok;
@@ -268,6 +273,7 @@ module atg_cpu_fw (
 		end
 	end
 
+	wire unused_mi = &{1'b0, sw_mi_bo};
 endmodule
 
 `default_nettype wire
