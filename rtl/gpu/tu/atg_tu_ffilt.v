@@ -174,15 +174,16 @@ module atg_tu_ffilt (
 		atg_fmt_c(7'd0, ew), atg_fmt_c(7'd16, ew), atg_fmt_c(7'd0, 6'd0), atg_fmt_c(7'd0, 6'd0)) :
 		atg_fmt_info(e_kind[0] ? 8'd43 : 8'd37);
 	wire [127:0] e_raw = esgn ? {96'd0, 5'd0, eag, 5'd0, ear} : {96'd0, e_tx};
-	wire [128:0] up = atg_fmt_unpack_i(blk ? e_raw : raw, blk ? e_inf : inf, sten && !blk);
-	wire [127:0] ev = {up[127:64], esgn && eg[10], up[62:32], esgn && er[10], up[30:0]};
-	reg [127:0] bval;
-	integer q;
-	always @(*)
-		for (q = 0; q < 4; q = q + 1)
-			bval[q*32 +: 32] = q < ncomp ? (bcls == 2'd2 || (bcls == 2'd1 && q == 3) ? one : 32'd0) :
-				q == 3 ? one : 32'd0;
-	wire [127:0] val = tb ? bval : blk ? ev : up[127:0];
+	/* The texel's component cs (one a cycle: c, or gather's gsrc), or the
+	 * border colour's. */
+	wire [1:0] cs = gath ? gsrc : c;
+	wire [31:0] up = atg_fmt_comp(blk ? e_raw : raw, blk ? e_inf : inf, cs, sten && !blk);
+	wire [31:0] ev = {cs == 2'd0 ? esgn && er[10] : cs == 2'd1 ? esgn && eg[10] : up[31],
+		up[30:0]};
+	wire [31:0] bval = {1'b0, cs} < ncomp ?
+		(bcls == 2'd2 || (bcls == 2'd1 && cs == 2'd3) ? one : 32'd0) :
+		cs == 2'd3 ? one : 32'd0;
+	wire [31:0] val = tb ? bval : blk ? ev : up;
 	/* Its weight. */
 	wire [7:0] fu = wts[k*32 +: 8], fv = wts[k*32 + 8 +: 8];
 	wire [7:0] fl = wts[k*32 + 16 +: 8], fw = wts[k*32 + 24 +: 8];
@@ -203,7 +204,7 @@ module atg_tu_ffilt (
 	wire [31:0] wf = w2f(n[32:0]);
 	/* The lane is a single texel of weight 1. */
 	wire byp = !more && !ctl[5] && !gath && (!bil || (fu == 8'd0 && fv == 8'd0));
-	wire [31:0] sum = atg_su_ffma(wf, val[c*32 +: 32], acc[{k, c}*32 +: 32], 3'd0, 1'b0);
+	wire [31:0] sum = atg_su_ffma(wf, val, acc[{k, c}*32 +: 32], 3'd0, 1'b0);
 	/* The next lane; the next texel; is c the last component. */
 	wire lastc = {1'b0, c} == ncomp - 3'd1;
 	wire skip = n[32:0] == 33'd0 || ncomp == 3'd0;
@@ -226,7 +227,7 @@ module atg_tu_ffilt (
 
 	/* Gather word g of the lane: texel 2, 3, 1, 0 (texel t's place). */
 	wire [1:0] gpos = ft == 2'd2 ? 2'd0 : ft == 2'd3 ? 2'd1 : ft == 2'd1 ? 2'd2 : 2'd3;
-	wire [31:0] gval = gsw == 3'd1 ? 32'd0 : gsw == 3'd2 ? one : val[gsrc*32 +: 32];
+	wire [31:0] gval = gsw == 3'd1 ? 32'd0 : gsw == 3'd2 ? one : val;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -250,24 +251,26 @@ module atg_tu_ffilt (
 				st <= RUN;
 			end
 			RUN: begin
-				if (!mask[k] || byp || (!gath && t == 2'd3 && (skip || lastc)) ||
-				    (gath && t == 2'd3)) begin
+				if (!mask[k] || (byp && (lastc || ncomp == 3'd0)) ||
+				    (!byp && !gath && t == 2'd3 && (skip || lastc)) || (gath && t == 2'd3)) begin
 					/* the lane is done */
-					if (mask[k] && byp)
-						acc[k*128 +: 128] <= val;
 					k <= k + 2'd1;
 					t <= 2'd0;
 					c <= 2'd0;
 					if (k == 2'd3)
 						st <= more ? IDLE : FIN;
-				end else if (gath || skip || lastc) begin
+				end else if (byp)
+					c <= c + 2'd1;
+				else if (gath || skip || lastc) begin
 					t <= t + 2'd1;
 					c <= 2'd0;
 				end else
 					c <= c + 2'd1;
 				if (mask[k] && gath && pres)
 					acc[{k, gpos}*32 +: 32] <= gval;
-				else if (mask[k] && !gath && !byp && !skip)
+				else if (mask[k] && byp)
+					acc[{k, c}*32 +: 32] <= val;	/* the texel as it is */
+				else if (mask[k] && !gath && !skip)
 					acc[{k, c}*32 +: 32] <= sum;
 			end
 			FIN: begin
@@ -282,7 +285,7 @@ module atg_tu_ffilt (
 		end
 	end
 
-	wire unused_ok = &{1'b0, n[35:33], up[128], inf[67:15], inf[13:12], ctl[33:23], ctl[16],
+	wire unused_ok = &{1'b0, n[35:33], inf[67:15], inf[13:12], ctl[33:23], ctl[16],
 		ctl[20:19], ctl[12:8], ctl[3:1], vkf[7:4], ear[10], eag[10]};
 endmodule
 
