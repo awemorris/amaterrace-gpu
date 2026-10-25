@@ -320,7 +320,7 @@ module atg_top_cs_tb;
 	always #5 clk = !clk;
 
 	atg_top_cs_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
-		.SEED(12), .HAS_CPU(1), .CPU_IMEM_WORDS(32768), .CPU_DMEM_WORDS(8192),
+		.SEED(12), .HAS_CPU(1), .CPU_IMEM_WORDS(32768), .CPU_DMEM_WORDS(16384),
 		.CPU_IMEM_INIT("fw/cp/images/atg1-cp-kc705.imem.hex"),
 		.CPU_DMEM_INIT("fw/cp/images/atg1-cp-kc705.dmem.hex"), .SU_NPHYS(16), .SU_GRP_W(1),
 		.SU_NREGS(64), .SU_SB_ENTRIES(8), .SU_SBE_W(3), .SU_PACKED(1),

@@ -17,7 +17,7 @@ riscv32-unknown-elf -march=rv32im -mabi=ilp32 -ffreestanding -fno-builtin
 -nostdlib -Oz -Wall -Wextra -Werror`, linker relaxation on, used
 read-only) and writes the BRAM init images
 `images/atg1-cp-kc705.{imem,dmem}.hex` (64-byte AMB lines, IMEM 32768 and
-DMEM 8192 words).  The images are committed: the simulation
+DMEM 16384 words).  The images are committed: the simulation
 (`sim/tb/atg_top_fw_tb.v`, `sim/verilator/fw-run.sh`) and the Vivado build
 read them without a compiler; run the script after changing the firmware.
 There is no compiler-rt for riscv32 in the shared LLVM, so `lib.c` carries
@@ -40,7 +40,7 @@ Layout
 | File | What |
 | --- | --- |
 | `boot.S` | Start at 0: stack, `.data` copied from its original in the image on every boot (the DMEM BRAM keeps a running firmware's changes over RESET), `.bss` cleared; the interrupt vector at 0x10 reports the TRAP state (no interrupt is enabled) |
-| `link.ld` | IMEM 128 KiB from 0, DMEM 32 KiB from 0x0002_0000 (`.rodata`, the `.data` original, `.data` 1 KiB after it, `.bss`, the stack at the top) |
+| `link.ld` | IMEM 128 KiB from 0, DMEM 64 KiB from 0x0002_0000 (`.rodata`, the `.data` original, `.data` 1 KiB after it, `.bss`, the stack at the top) |
 | `hw.h` | The control window's registers (and the host bench's hooks with `FW_HOST`) |
 | `fw.h` | The firmware's internal interfaces |
 | `main.c` | The loop: poll for a packet, decode it, park on a halt request, heartbeat |
@@ -124,7 +124,7 @@ Limits and later work
   CTRL.HALT is 1.
 - The codec is written by hand; design §2.4.8 generates it from one table
   with the driver (`ghci_vkwire.inc`).
-- The image needs the KC705's CPU memories (128 KiB IMEM, 32 KiB DMEM); a
+- The image needs the KC705's CPU memories (128 KiB IMEM, 64 KiB DMEM); a
   smaller board needs a smaller firmware.
 
 Tests

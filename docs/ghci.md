@@ -1179,10 +1179,9 @@ client's buffer that a compositor imports) with:
 - On a GPU without the PROT capability, both gpu-ops fail with
   VK_ERROR_FEATURE_NOT_PRESENT. A grant to a session that is not
   protected fails with VK_ERROR_INITIALIZATION_FAILED; a grant that
-  exceeds PROT_CAPS[31:16] fails with VK_ERROR_OUT_OF_DEVICE_MEMORY. An
-  implementation may also limit the grants of one session (so that one
-  client cannot use them all up; Amaterrace: a quarter of PROT_CAPS[31:16]),
-  with the same error.
+  exceeds PROT_CAPS[31:16] fails with VK_ERROR_OUT_OF_DEVICE_MEMORY. The
+  PROT_CAPS[31:16] grants are one pool for all the sessions, taken first
+  come: one session may hold all of them.
 - Sessions are the driver's numbers, not operating-system process IDs. The
   driver maps processes to sessions, and turns its sharing decisions (an
   imported buffer, a closed file) into grants and revokes.

@@ -50,7 +50,7 @@ Control window (word index, R/W):
 | `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 | `IMEM_WORDS` | `8192` | IMEM size in 32-bit words (32 KiB; atg_top's CPU_IMEM_WORDS, KC705 32768 = 128 KiB). |
-| `DMEM_WORDS` | `4096` | DMEM size in words (16 KiB; atg_top's CPU_DMEM_WORDS, KC705 8192 = 32 KiB). |
+| `DMEM_WORDS` | `4096` | DMEM size in words (16 KiB; atg_top's CPU_DMEM_WORDS, KC705 16384 = 64 KiB). |
 | `IMEM_INIT` | `""` | IMEM image file. |
 | `DMEM_INIT` | `""` | DMEM image file. |
 
