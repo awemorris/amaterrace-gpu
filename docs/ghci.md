@@ -246,6 +246,7 @@ CAPS2 (0x024):
 | --- | --- |
 | [7:0] | Memory client number |
 | [8] | The access was a write |
+| [9] | Kind 1 only: the access was refused by session protection (section 11.6), not by the aperture |
 | [15:12] | Kind (below) |
 | [23:16] | Block: the STATUS busy-bit number (0 CP, 1 BLT, 2 VF, 3 RX, 4 ROP, 5 TU, 6 SU) |
 | [31:24] | Job tag of the work that faulted (section 7) |
@@ -320,7 +321,8 @@ count. [7:0] is one of:
 A reset keeps APERTURE_*, RING_BASE/SIZE, IRQ_ENABLE, WDT_CYCLES, SCRATCH
 and the state register file; the units see the kept state again after the
 reset. It clears RING_WPTR/RPTR, IRQ_STATUS, FAULT_ADDR/INFO, FENCE_LAST,
-CTRL.RUN/HALT, and everything inside the blocks (caches, queues, warps).
+CTRL.RUN/HALT, PROT_TABLE (section 11.6), and everything inside the blocks
+(caches, queues, warps, the sessions and grants of section 11.6).
 After a reset the driver starts the ring again from its beginning.
 
 6. The command ring
@@ -421,6 +423,12 @@ firmware:
   firmware that keeps its objects elsewhere may ignore it. A session's
   objects need the heap: without it they fail with
   VK_ERROR_OUT_OF_DEVICE_MEMORY.
+- **MEMORY** (0x10102) `[u64 memory][u64 GPU address][u64 bytes][u32
+  flags]`: the session's memory object `memory` (the client's handle) is
+  the range of GPU memory. flags: [0] HOST_VISIBLE (the client maps it),
+  [1] IMPORTED (memory that another session owns, imported by this one;
+  section 11.6), [2] READ_ONLY (the session's work only reads it; section
+  11.6); the other bits are 0.
 - SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT, BUFFER_REVOKE and HEAP are
   taken only as packets in the ring, never as staged commands inside a
   frame: inside a frame they end the frame with
@@ -1083,25 +1091,61 @@ need to know it.
 
 A GPU with the PROT capability can keep the sessions of different clients
 apart: work of a protected session may access only the memory of that
-session and the memory granted to it. The mechanism is inside the GPU (an
-access check, run by the command processor and the units); the driver does
-not see page tables and keeps one flat GPU address space. A GPU without the
-PROT capability conforms to this specification; the operating system then
-knows that clients are not isolated from each other and chooses its policy
-(for example, refusing untrusted clients).
+session, the memory granted to it, and the memory the firmware makes
+public to every protected session. The mechanism is inside the GPU (an
+access check of the memory accesses, and a scrub of the GPU's internal
+storage between sessions); the driver does not see page tables and keeps
+one flat GPU address space. A GPU without the PROT capability conforms to
+this specification; the operating system then knows that clients are not
+isolated from each other and chooses its policy (for example, refusing
+untrusted clients).
 
 **Sessions.**
 
 - SESSION_OPEN flags[0] PROTECTED opens a protected session. On a GPU
   without the PROT capability, the flag makes SESSION_OPEN fail with
   VK_ERROR_FEATURE_NOT_PRESENT; other unknown flags do the same.
-- Session 0 is the driver's own and is never protected.
+- Session 0 is the driver's own and is never protected: SESSION_OPEN of
+  tag 0 with PROTECTED fails with VK_ERROR_FEATURE_NOT_PRESENT.
+- SESSION_OPEN with PROTECTED fails with VK_ERROR_INITIALIZATION_FAILED
+  while PROT_TABLE is 0 (below), and with VK_ERROR_OUT_OF_DEVICE_MEMORY
+  when PROT_CAPS[7:0] protected sessions are already open.
 - Work whose job tag names an unprotected session, or session 0, is not
   checked.
+
+**The protection table.** The driver lends the GPU PROT_TABLE_BYTES of
+its own memory (aligned to 4 KiB, inside the aperture, given to no other
+user and never mapped to a client), fills it with zeros, makes that
+write complete (a fence), and writes its address to PROT_TABLE. The GPU
+keeps the ownership of the memory there; its format is the vendor's.
+
+- PROT_TABLE_BYTES depends on the aperture: the driver reads it after
+  writing APERTURE_BASE and APERTURE_LIMIT. Writing either aperture
+  register sets PROT_TABLE to 0, and so does a reset (CTRL.RESET).
+- PROT_TABLE can be written only while no protected session is open
+  (in any CP state; otherwise the write is ignored and is a fault of
+  kind 7).
+- The order at start and after every reset is: APERTURE_*, RUN, the
+  zeros in the table and a fence after them, PROT_TABLE, HEAP, then the
+  first SESSION_OPEN with PROTECTED. A reset loses every session
+  (section 10); the driver opens them again.
 
 **Ownership.** Memory that a protected session registers with MEMORY
 belongs to that session from the start. There is no window between
 creation and protection.
+
+- The range of such a MEMORY is aligned to the protection granule
+  (PROT_CAPS[15:8]); a range that is not, or one that already belongs to
+  another session, fails with VK_ERROR_INITIALIZATION_FAILED and creates
+  nothing.
+- MEMORY flags[1] IMPORTED (section 7.2) names memory that another
+  session owns and that this session imports: it creates the object but
+  no ownership; the session reaches the memory through a BUFFER_GRANT
+  that the driver sends first. flags[2] READ_ONLY makes the session's
+  own access read-only (for example, the memory of its programs).
+- FREE_MEMORY of an owned range ends the ownership. Work that still uses
+  the memory breaks Vulkan's rule against freeing memory in use, and its
+  accesses fault.
 
 **Sharing.** The driver shares a buffer between sessions (for example, a
 client's buffer that a compositor imports) with:
@@ -1109,41 +1153,67 @@ client's buffer that a compositor imports) with:
 | gpu-op | Arguments | Meaning |
 | --- | --- | --- |
 | BUFFER_GRANT (0x10106) | [u32 session][u32 access: [0] read, [1] write][u64 GPU address][u64 bytes] | The session may also access the range |
-| BUFFER_REVOKE (0x10107) | [u32 session][u64 GPU address][u64 bytes] | Removes a grant of exactly that range |
+| BUFFER_REVOKE (0x10107) | [u32 session][u64 GPU address][u64 bytes] | Removes one grant of exactly that range |
 
-- The range is aligned to the protection granule (PROT_CAPS[15:8]); the
-  driver allocates shareable buffers on that granule.
-- A grant or revoke applies to work after it in the ring. Work before a
-  revoke keeps its access until it completes; the driver reuses the memory
-  only after a later fence.
+- The range is aligned to the protection granule; the driver allocates
+  shareable buffers on that granule.
+- A grant applies to work after it in the ring (it may also apply to
+  earlier work that is still running). A revoke, and SESSION_CLOSE,
+  apply after the earlier work has completed: work before them keeps
+  its access until it completes; the driver reuses the memory only after
+  a later fence.
+- Two grants of the same range to the same session are two grants; a
+  revoke removes one of them, and a revoke of a range with no grant does
+  nothing (VK_SUCCESS).
 - On a GPU without the PROT capability, both gpu-ops fail with
-  VK_ERROR_FEATURE_NOT_PRESENT.
+  VK_ERROR_FEATURE_NOT_PRESENT. A grant to a session that is not
+  protected fails with VK_ERROR_INITIALIZATION_FAILED; a grant that
+  exceeds PROT_CAPS[31:16] fails with VK_ERROR_OUT_OF_DEVICE_MEMORY.
 - Sessions are the driver's numbers, not operating-system process IDs. The
   driver maps processes to sessions, and turns its sharing decisions (an
   imported buffer, a closed file) into grants and revokes.
 
 **What is checked.** Every memory access of the work of a protected
 session: the units started by its commands (the blitter, vertex fetch,
-shader loads, stores and atomics, texture reads, render output), the fence
-and result writes of its packets, and the native micro-ops it submits
-(class 0 and 1 addresses, such as the blitter's bases). A display
-controller's scanout belongs to the driver and is not checked.
+shader loads, stores and atomics, texture reads, instruction and constant
+fetch, render output), the micro-ops of class 0 and 1 that the work
+starts on those units (such as the blitter's bases), and the accesses the
+firmware makes for the session (the memory its commands name, such as a
+copy's buffers, an indirect draw's arguments and a query's results).
 
-**Violations.** An access that is not permitted is not made and is a
-fault of kind 1; FAULT_INFO[31:24] (the job tag) names the session. In
-version 1, recovery is still for the whole device (section 10): protection
-keeps a client from reading or writing another's memory, but not from
-stopping the other clients' work.
+- Not checked: the ring, the class 0 and 1 micro-ops in the ring that the
+  CP executes itself (FENCE, RESULT, WAIT_FENCE, QUERY, and the like: they
+  are the driver's), the debug port, and a display controller's scanout.
+  **The driver does not put an address that a client chose into the
+  CP-executed micro-ops of a protected session's packets.**
+- An access that is not permitted is not made: a refused write changes
+  nothing, a refused read returns zeros.
+
+**What does not leak.** Work of a protected session does not see data
+that the work of another session left inside the GPU: registers, shared
+memory, constants, primitive inputs (varyings), colour outputs that a
+fragment does not write, and the GPU's caches. Data that the same
+session left earlier may still be seen.
+
+**Violations.** A refused access is a fault of kind 1 with FAULT_INFO[9]
+set; FAULT_INFO[31:24] (the job tag) names the session. In version 1,
+recovery is still for the whole device (section 10): protection keeps a
+client from reading or writing another's memory, but not from stopping
+the other clients' work (an access outside a buffer that a program
+makes, where robust buffer access does not clamp it, stops every
+session).
 
 **The PROT capability (version 1)**, registers at the capability's register
 offset:
 
 | Offset | Name | Access | Contents |
 | --- | --- | --- | --- |
-| +0x0 | PROT_CAPS | R | [7:0] the number of protected sessions that can be open at once; [15:8] log2 of the protection granule in bytes (12 = 4 KiB); [31:16] the number of ranges (owned and granted, over all sessions) the GPU can hold |
+| +0x0 | PROT_CAPS | R | [7:0] the number of protected sessions that can be open at once; [15:8] log2 of the protection granule in bytes (12 = 4 KiB); [31:16] the number of grants (over all sessions) the GPU can hold |
+| +0x4 | PROT_TABLE | RW | The GPU address of the protection table, aligned to 4 KiB (the low 12 bits read 0); 0 = none. Written only while no protected session is open (above); set to 0 by writes of APERTURE_* and by a reset |
+| +0x8 | PROT_TABLE_BYTES | R | The bytes of memory PROT_TABLE needs for the current aperture, a multiple of 4 KiB |
 
 When a protected session would exceed these limits, the gpu-op that needs
-the room (SESSION_OPEN, MEMORY or BUFFER_GRANT) fails with
+the room (SESSION_OPEN or BUFFER_GRANT) fails with
 VK_ERROR_OUT_OF_DEVICE_MEMORY.
 
 12. The standard shader ISA (GSI1)
