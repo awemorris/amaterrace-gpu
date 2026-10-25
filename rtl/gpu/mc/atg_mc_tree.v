@@ -19,6 +19,11 @@
  * from the root.  The routes: bit 0 is the top router's choice, then one
  * bit per level; tree client j takes at level l the bit TREE_L-1-l of j.
  * Clients of HIGH_MASK send their packets with the priority bit.
+ * ROOT_SPLIT (with HAS_ROOT; session protection): ROOT_CLIENT's leaf is not
+ * under that router but goes to the root on its own channel (s_*), so
+ * that a stall of the tree at the root does not hold it; its route bit 0
+ * is 0 as before and the root sends its responses there.  c_req_chk,
+ * c_req_tbl and c_req_slot go into each leaf's header.
  */
 
 `timescale 1ns / 1ps
@@ -28,6 +33,7 @@ module atg_mc_tree #(
 	parameter NCLIENT = 2,
 	parameter [NCLIENT-1:0] HIGH_MASK = {NCLIENT{1'b0}},
 	parameter HAS_ROOT = 0,	/* 1: ROOT_CLIENT sits next to the root */
+	parameter ROOT_SPLIT = 0,	/* 1: ROOT_CLIENT has its own channel to the root (s_*) */
 	parameter ROOT_CLIENT = 0,
 	parameter TREE_L = 1,	/* clog2(NCLIENT - HAS_ROOT) */
 	parameter RW = 1,	/* route bits: max(1, TREE_L + HAS_ROOT) */
@@ -50,6 +56,9 @@ module atg_mc_tree #(
 	input wire [NCLIENT*LINE_BYTES-1:0] c_req_be,
 	input wire [NCLIENT*LINE_BYTES*8-1:0] c_req_wdata,
 	input wire [NCLIENT*8-1:0] c_req_tag,
+	input wire [NCLIENT-1:0] c_req_chk,
+	input wire [NCLIENT-1:0] c_req_tbl,
+	input wire [NCLIENT*6-1:0] c_req_slot,
 	output wire [NCLIENT-1:0] c_rsp_valid,
 	output wire [NCLIENT-1:0] c_rsp_write,
 	output wire [NCLIENT*8-1:0] c_rsp_tag,
@@ -64,6 +73,14 @@ module atg_mc_tree #(
 	input wire r_rsp_valid,
 	output wire r_rsp_ready,
 	input wire [LINE_BYTES*8+10+RW-1:0] r_rsp_data,
+
+	/* ROOT_CLIENT's own channel (ROOT_SPLIT; its responses always taken). */
+	output wire s_req_valid,
+	input wire s_req_ready,
+	output wire [LINE_BYTES*8-1:0] s_req_data,
+	output wire s_req_last,
+	input wire s_rsp_valid,
+	input wire [LINE_BYTES*8+10+RW-1:0] s_rsp_data,
 
 	output wire rsp_idle	/* no response flit in any router */
 );
@@ -123,6 +140,8 @@ module atg_mc_tree #(
 				.req_write(c_req_write[C]), .req_line(c_req_line[C*LA_W +: LA_W]),
 				.req_be(c_req_be[C*LINE_BYTES +: LINE_BYTES]),
 				.req_wdata(c_req_wdata[C*LB +: LB]), .req_tag(c_req_tag[C*8 +: 8]),
+				.req_chk(c_req_chk[C]), .req_tbl(c_req_tbl[C]),
+				.req_slot(c_req_slot[C*6 +: 6]),
 				.rsp_valid(c_rsp_valid[C]), .rsp_write(c_rsp_write[C]),
 				.rsp_tag(c_rsp_tag[C*8 +: 8]), .rsp_rdata(c_rsp_rdata[C*LB +: LB]),
 				.rsp_error(c_rsp_error[C]),
@@ -179,6 +198,8 @@ module atg_mc_tree #(
 			.req_be(c_req_be[ROOT_CLIENT*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[ROOT_CLIENT*LB +: LB]),
 			.req_tag(c_req_tag[ROOT_CLIENT*8 +: 8]),
+			.req_chk(c_req_chk[ROOT_CLIENT]), .req_tbl(c_req_tbl[ROOT_CLIENT]),
+			.req_slot(c_req_slot[ROOT_CLIENT*6 +: 6]),
 			.rsp_valid(c_rsp_valid[ROOT_CLIENT]), .rsp_write(c_rsp_write[ROOT_CLIENT]),
 			.rsp_tag(c_rsp_tag[ROOT_CLIENT*8 +: 8]),
 			.rsp_rdata(c_rsp_rdata[ROOT_CLIENT*LB +: LB]),
@@ -188,22 +209,51 @@ module atg_mc_tree #(
 			.t_rsp_data(rc_rsp_data)
 		);
 
-		atg_rt #(.FW(FW), .RFW(RFW), .RBIT(10)) rt (
-			.clk(clk), .rst_n(rst_n), .flush(flush),
-			.c0_req_valid(rc_req_valid), .c0_req_ready(rc_req_ready), .c0_req_data(rc_req_data),
-			.c0_req_last(rc_req_last),
-			.c1_req_valid(n_req_valid[1]), .c1_req_ready(n_req_ready[1]),
-			.c1_req_data(n_req_data[FW +: FW]), .c1_req_last(n_req_last[1]),
-			.p_req_valid(r_req_valid), .p_req_ready(r_req_ready), .p_req_data(r_req_data),
-			.p_req_last(r_req_last),
-			.p_rsp_valid(r_rsp_valid), .p_rsp_ready(r_rsp_ready), .p_rsp_data(r_rsp_data),
-			.c0_rsp_valid(rc_rsp_valid), .c0_rsp_ready(rc_rsp_ready), .c0_rsp_data(rc_rsp_data),
-			.c1_rsp_valid(n_rsp_valid[1]), .c1_rsp_ready(n_rsp_ready[1]),
-			.c1_rsp_data(n_rsp_data[RFW +: RFW]),
-			.rsp_idle(root_idle)
-		);
+		if (ROOT_SPLIT != 0) begin : g_split
+			/* The root client on its own channel; the tree's top is node 1. */
+			assign s_req_valid = rc_req_valid;
+			assign rc_req_ready = s_req_ready;
+			assign s_req_data = rc_req_data;
+			assign s_req_last = rc_req_last;
+			assign rc_rsp_valid = s_rsp_valid;
+			assign rc_rsp_data = s_rsp_data;
+			assign r_req_valid = n_req_valid[1];
+			assign n_req_ready[1] = r_req_ready;
+			assign r_req_data = n_req_data[FW +: FW];
+			assign r_req_last = n_req_last[1];
+			assign n_rsp_valid[1] = r_rsp_valid;
+			assign r_rsp_ready = n_rsp_ready[1];
+			assign n_rsp_data[RFW +: RFW] = r_rsp_data;
+			assign root_idle = 1'b1;
+			wire unused_split = &{1'b0, rc_rsp_ready};
+		end else begin : g_shared
+			atg_rt #(.FW(FW), .RFW(RFW), .RBIT(10)) rt (
+				.clk(clk), .rst_n(rst_n), .flush(flush),
+				.c0_req_valid(rc_req_valid), .c0_req_ready(rc_req_ready),
+				.c0_req_data(rc_req_data), .c0_req_last(rc_req_last),
+				.c1_req_valid(n_req_valid[1]), .c1_req_ready(n_req_ready[1]),
+				.c1_req_data(n_req_data[FW +: FW]), .c1_req_last(n_req_last[1]),
+				.p_req_valid(r_req_valid), .p_req_ready(r_req_ready),
+				.p_req_data(r_req_data), .p_req_last(r_req_last),
+				.p_rsp_valid(r_rsp_valid), .p_rsp_ready(r_rsp_ready),
+				.p_rsp_data(r_rsp_data),
+				.c0_rsp_valid(rc_rsp_valid), .c0_rsp_ready(rc_rsp_ready),
+				.c0_rsp_data(rc_rsp_data),
+				.c1_rsp_valid(n_rsp_valid[1]), .c1_rsp_ready(n_rsp_ready[1]),
+				.c1_rsp_data(n_rsp_data[RFW +: RFW]),
+				.rsp_idle(root_idle)
+			);
+			assign s_req_valid = 1'b0;
+			assign s_req_data = {FW{1'b0}};
+			assign s_req_last = 1'b0;
+			wire unused_shared = &{1'b0, s_req_ready, s_rsp_valid, s_rsp_data};
+		end
 		assign rsp_idle = root_idle && (&rt_idle);
 	end else begin : g_top
+		assign s_req_valid = 1'b0;
+		assign s_req_data = {FW{1'b0}};
+		assign s_req_last = 1'b0;
+		wire unused_top = &{1'b0, s_req_ready, s_rsp_valid, s_rsp_data};
 		assign r_req_valid = n_req_valid[1];
 		assign n_req_ready[1] = r_req_ready;
 		assign r_req_data = n_req_data[FW +: FW];

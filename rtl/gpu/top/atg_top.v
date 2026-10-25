@@ -269,6 +269,18 @@ module atg_top #(
 	wire [7:0] mc_fault_client;
 	wire [31:0] mc_fault_addr;
 	wire mc_fault_write;
+	/*
+	 * The MC's clients whose requests unit_idle counts: all but the CP's
+	 * (ring, fences, debug port) and the outside client (the DC).
+	 */
+	localparam [NCLIENT-1:0] MC_UNITS = ~({{(NCLIENT-1){1'b0}}, 1'b1} |
+		(EXT_CLIENT != 0 ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_EXT : {NCLIENT{1'b0}}));
+	wire mc_unit_idle;
+	/* Session protection (not wired to the CP yet). */
+	wire mc_fault_prot, mc_fault_mem, mc_chk_idle, mc_inv_pending;
+	wire [5:0] mc_fault_slot;
+	wire unused_prot = &{1'b0, mc_fault_prot, mc_fault_mem, mc_chk_idle, mc_inv_pending,
+		mc_fault_slot, mc_unit_idle};
 	wire st_we;
 	wire [9:0] st_idx;
 	/* The blocks but the TU see STATE[0..511] (0x200-0x2FF is the TU's). */
@@ -454,7 +466,8 @@ module atg_top #(
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
 		.DATA_W(DATA_W),
-		.OUTSTANDING_LOG2(2)
+		.OUTSTANDING_LOG2(2),
+		.UNIT_MASK(MC_UNITS)
 	) mc (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -465,6 +478,9 @@ module atg_top #(
 		.c_req_be(c_req_be),
 		.c_req_wdata(c_req_wdata),
 		.c_req_tag(c_req_tag),
+		.c_req_chk({NCLIENT{1'b0}}),
+		.c_req_tbl({NCLIENT{1'b0}}),
+		.c_req_slot({6*NCLIENT{1'b0}}),
 		.rsp_valid(rsp_valid),
 		.rsp_write(rsp_write_v),
 		.rsp_tag(rsp_tag_v),
@@ -479,6 +495,19 @@ module atg_top #(
 		.fault_client(mc_fault_client),
 		.fault_addr(mc_fault_addr),
 		.fault_write(mc_fault_write),
+		.fault_prot(mc_fault_prot),
+		.fault_slot(mc_fault_slot),
+		.fault_mem(mc_fault_mem),
+		.chk_idle(mc_chk_idle),
+		.unit_idle(mc_unit_idle),
+		.prot_tbase(32'd0),
+		.prot_inv_valid(1'b0),
+		.prot_inv_g(20'd0),
+		.prot_inv_n(32'd0),
+		.prot_inv_pending(mc_inv_pending),
+		.prot_gw_valid(1'b0),
+		.prot_gw_idx(3'd0),
+		.prot_gw_data(50'd0),
 		.m_awaddr(m_awaddr),
 		.m_awlen(m_awlen),
 		.m_awsize(m_awsize),
