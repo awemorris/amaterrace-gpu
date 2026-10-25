@@ -127,4 +127,4 @@ BLT error and of the watchdog is 0).
 
 RESIDENT_WARPS (parameter, default 0): the RESIDENT_WARPS register (0x04C), NSU x NWARPS from atg_top, passed to atg_cp_regs.
 
-2026-10-25: parameters NREGS (default 0: RESIDENT_WARPS[23:16], SU_NREGS from atg_top) and LOCAL_BASE, LOCAL_BYTES, WINDOW_BYTES (default 0: the MEM capability, XCAP bit 7 when LOCAL_BYTES is not 0), passed to atg_cp_regs.
+2026-10-25: parameters NREGS (default 0: RESIDENT_WARPS[23:16], SU_NREGS from atg_top) and LOCAL_BASE, LOCAL_BYTES, WINDOW_BYTES (default 0: the MEM capability, XCAP bit 7 when LOCAL_BYTES is not 0), passed to atg_cp_regs.  p039: HOST_LIMIT (default 0, MEM +0xC) likewise.

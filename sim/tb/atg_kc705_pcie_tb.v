@@ -20,6 +20,11 @@
  *     those bytes, a 64-byte burst written and read back; the GPU reads
  *     the same word at LOCAL_BASE + offset (DBG_ADDR/DBG_DATA through
  *     BAR0, aperture over the window);
+ *   - host (ws288 p039): the GPU reads a word that the host put in its
+ *     memory at bus address 0x1_2000 and writes one at 0x1_2040
+ *     (DBG_ADDR/DBG_DATA, aperture [0x1_0000, 0x8010_0000)): through
+ *     am_axi_split and the GPU -> host port into the model's host memory,
+ *     with no error; a local read after them still sees the DDR3;
  *   - msi: vector 0 for IRQ_SET of the soft interrupt (IRQ_ENABLE set),
  *     again after an IRQ_ENABLE write that leaves the line 1, none after
  *     the IRQ_STATUS write that clears it, one for the next IRQ_SET;
@@ -101,6 +106,21 @@ module atg_kc705_pcie_tb;
 				fail("a BAR0 write not OKAY");
 		end
 	endtask
+	task dbg_wait;
+		integer k;
+		reg [31:0] st;
+		begin
+			k = 0;
+			rd(GHCI_DBG_STATUS, st);
+			while (st[0] && k < 200) begin
+				rd(GHCI_DBG_STATUS, st);
+				k = k + 1;
+			end
+			if (st[0])
+				fail("the debug port stays busy");
+		end
+	endtask
+
 	task expect_reg;
 		input [16:0] off;
 		input [31:0] want;
@@ -200,6 +220,33 @@ module atg_kc705_pcie_tb;
 		expect_reg(GHCI_DBG_DATA, 32'hC0DE0002, 32'hFFFFFFFF);
 		if (errors == 0)
 			$display("PASS atg_kc705_pcie.bar2");
+		/* host: the GPU's accesses below HOST_LIMIT reach the host's memory */
+		dut.pcie.host_write(32'h0001_2000, 32'hFEED_0001);
+		wr(GHCI_APERTURE_BASE, 32'h0001_0000);
+		wr(GHCI_APERTURE_LIMIT, 32'h8010_0000);
+		n = dut.pcie.host_rd_n;
+		wr(GHCI_DBG_ADDR, 32'h0001_2000);
+		dbg_wait;
+		expect_reg(GHCI_DBG_STATUS, 32'd0, 32'd2);
+		expect_reg(GHCI_DBG_DATA, 32'hFEED_0001, 32'hFFFFFFFF);
+		if (dut.pcie.host_rd_n != n + 1)
+			fail("the GPU's host read did not reach the host");
+		n = dut.pcie.host_wr_n;
+		wr(GHCI_DBG_ADDR, 32'h0001_2040);
+		dbg_wait;
+		wr(GHCI_DBG_DATA, 32'hC0FF_EE02);
+		dbg_wait;
+		expect_reg(GHCI_DBG_STATUS, 32'd0, 32'd2);
+		dut.pcie.host_read(32'h0001_2040, v);
+		if (v !== 32'hC0FF_EE02 || dut.pcie.host_wr_n < n + 1)
+			fail("the GPU's host write is not in the host's memory");
+		if (dut.pcie.host_err_n != 0)
+			fail("a host access answered DECERR");
+		wr(GHCI_DBG_ADDR, 32'h8000_2008);
+		dbg_wait;
+		expect_reg(GHCI_DBG_DATA, 32'hC0DE0002, 32'hFFFFFFFF);
+		if (errors == 0)
+			$display("PASS atg_kc705_pcie.host");
 		/* msi */
 		wr(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_SOFT);
 		expect_msi(0, 0);

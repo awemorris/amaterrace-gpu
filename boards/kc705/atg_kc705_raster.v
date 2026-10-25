@@ -14,8 +14,13 @@
  * window (atg_kc705_pcie's m0_* through am_axi_cdc into atg_top's s_*,
  * beside the JTAG bridge), BAR2 the 64 MiB local window (m2_* to the
  * MIG's second port, not through the MC), MSI vectors 0 (the GPU) and 1
- * (the DC) by atg_pcie_msi.  The GPU -> host port of atg_kc705_pcie is
- * idle in version 1 (no host memory: its model answers DECERR).
+ * (the DC) by atg_pcie_msi.  The GPU's memory port (atg_top m_*) goes
+ * through am_axi_split (ws288 p039, docs/ghci.md section 11.2): local
+ * memory [LOCAL_BASE, + LOCAL_BYTES) (the MC's AXI ID 0) to the MIG's GPU
+ * port, the host window [0, HOST_LIMIT) (ID 1) to atg_kc705_pcie's GPU ->
+ * host port, DECERR elsewhere.  The MIG's GPU port has no ID: only ID 0
+ * reaches it (the same range in atg_top and the split), so its responses
+ * are given ID 0.
  *
  * Wiring of its children; see
  * spec/boards/kc705/atg_kc705_raster.md.  The HDMI output is the ADV7511's
@@ -73,6 +78,11 @@ module atg_kc705_raster #(
 	input wire [3:0] pcie_rxp,
 	input wire [3:0] pcie_rxn
 );
+	/* The GPU's address map (MEM capability): local DDR3 and the host window. */
+	localparam [31:0] LOCAL_BASE = 32'h80000000;	/* the MIG's 1 GiB (address bits 29:0) */
+	localparam [31:0] LOCAL_BYTES = 32'h40000000;
+	localparam [31:0] HOST_LIMIT = 32'h80000000;	/* the bridge's AXI BAR, 1:1 (ip.tcl) */
+
 	wire clk, rst_n, ref_clk, ref_rst_n, pclk, prst_n, pclk_sel, mem_ready, irq;
 	/* The host's register port: PCIe BAR0 through am_axi_cdc. */
 	wire [16:0] s_awaddr;
@@ -99,6 +109,7 @@ module atg_kc705_raster #(
 	wire s_rlast;
 	wire s_rvalid;
 	wire s_rready;
+	wire m_awid, m_bid, m_arid, m_rid;
 	wire [31:0] m_awaddr;
 	wire [7:0] m_awlen;
 	wire [2:0] m_awsize;
@@ -157,11 +168,21 @@ module atg_kc705_raster #(
 	wire [1:0] p2_awburst, p2_arburst, p2_bresp, p2_rresp;
 	wire p2_awvalid, p2_awready, p2_wlast, p2_wvalid, p2_wready, p2_bvalid, p2_bready;
 	wire p2_arvalid, p2_arready, p2_rlast, p2_rvalid, p2_rready;
-	wire [127:0] p2_wdata, p2_rdata, h_rdata;
+	wire [127:0] p2_wdata, p2_rdata;
 	wire [15:0] p2_wstrb;
-	wire h_awready, h_wready, h_bvalid, h_arready, h_rlast, h_rvalid;
-	wire [3:0] h_bid, h_rid;
-	wire [1:0] h_bresp, h_rresp;
+	/* The split's outputs: d_* to the MIG, h_* to the host. */
+	wire d_awid, d_arid, h_awid, h_arid, h_bid, h_rid;
+	wire [31:0] d_awaddr, d_araddr, h_awaddr, h_araddr;
+	wire [7:0] d_awlen, d_arlen, h_awlen, h_arlen;
+	wire [2:0] d_awsize, d_arsize, d_awprot, d_arprot, h_awsize, h_arsize, h_awprot, h_arprot;
+	wire [1:0] d_awburst, d_arburst, d_bresp, d_rresp, h_awburst, h_arburst, h_bresp, h_rresp;
+	wire [3:0] d_awcache, d_arcache, h_awcache, h_arcache, h_bid4, h_rid4;
+	wire d_awvalid, d_awready, d_wlast, d_wvalid, d_wready, d_bvalid, d_bready;
+	wire d_arvalid, d_arready, d_rlast, d_rvalid, d_rready;
+	wire h_awvalid, h_awready, h_wlast, h_wvalid, h_wready, h_bvalid, h_bready;
+	wire h_arvalid, h_arready, h_rlast, h_rvalid, h_rready;
+	wire [511:0] d_wdata, d_rdata, h_wdata, h_rdata;
+	wire [63:0] d_wstrb, h_wstrb;
 	wire [1:0] msi_req, msi_ack;
 
 	atg_kc705_pcie pcie (
@@ -184,14 +205,16 @@ module atg_kc705_raster #(
 		.m2_arsize(p2_arsize), .m2_arburst(p2_arburst), .m2_arvalid(p2_arvalid),
 		.m2_arready(p2_arready), .m2_rdata(p2_rdata), .m2_rid(p2_rid), .m2_rresp(p2_rresp),
 		.m2_rlast(p2_rlast), .m2_rvalid(p2_rvalid), .m2_rready(p2_rready),
-		/* GPU -> host memory: idle in version 1 */
-		.s_awaddr(32'd0), .s_awid(4'd0), .s_awlen(8'd0), .s_awsize(3'd4), .s_awburst(2'b01),
-		.s_awvalid(1'b0), .s_awready(h_awready), .s_wdata(128'd0), .s_wstrb(16'd0),
-		.s_wlast(1'b0), .s_wvalid(1'b0), .s_wready(h_wready), .s_bid(h_bid), .s_bresp(h_bresp),
-		.s_bvalid(h_bvalid), .s_bready(1'b1), .s_araddr(32'd0), .s_arid(4'd0), .s_arlen(8'd0),
-		.s_arsize(3'd4), .s_arburst(2'b01), .s_arvalid(1'b0), .s_arready(h_arready),
-		.s_rdata(h_rdata), .s_rid(h_rid), .s_rresp(h_rresp), .s_rlast(h_rlast),
-		.s_rvalid(h_rvalid), .s_rready(1'b1),
+		/* GPU -> host memory (gclk), the split's m1 */
+		.s_clk(clk), .s_rst_n(rst_n),
+		.s_awaddr(h_awaddr), .s_awid({3'd0, h_awid}), .s_awlen(h_awlen), .s_awsize(h_awsize),
+		.s_awburst(h_awburst), .s_awvalid(h_awvalid), .s_awready(h_awready),
+		.s_wdata(h_wdata), .s_wstrb(h_wstrb), .s_wlast(h_wlast), .s_wvalid(h_wvalid),
+		.s_wready(h_wready), .s_bid(h_bid4), .s_bresp(h_bresp), .s_bvalid(h_bvalid),
+		.s_bready(h_bready), .s_araddr(h_araddr), .s_arid({3'd0, h_arid}), .s_arlen(h_arlen),
+		.s_arsize(h_arsize), .s_arburst(h_arburst), .s_arvalid(h_arvalid),
+		.s_arready(h_arready), .s_rdata(h_rdata), .s_rid(h_rid4), .s_rresp(h_rresp),
+		.s_rlast(h_rlast), .s_rvalid(h_rvalid), .s_rready(h_rready),
 		.msi_req(msi_req), .msi_ack(msi_ack)
 	);
 
@@ -238,9 +261,10 @@ module atg_kc705_raster #(
 		.LINE_BYTES(64),
 		.LINE_SHIFT(6),
 		.DATA_W(512),
-		.LOCAL_BASE(32'h80000000),	/* the MIG's 1 GiB (it takes address bits 29:0) */
-		.LOCAL_BYTES(32'h40000000),
+		.LOCAL_BASE(LOCAL_BASE),
+		.LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(32'h04000000),	/* the 64 MiB local window of the PCIe BAR2 */
+		.HOST_LIMIT(HOST_LIMIT),
 		.HAS_CPU(1),
 		.CPU_IMEM_INIT(CPU_IMEM_INIT),
 		.CPU_DMEM_INIT(CPU_DMEM_INIT),
@@ -279,6 +303,7 @@ module atg_kc705_raster #(
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(mem_ready),
 		.s_awaddr(s_awaddr), .s_awid(s_awid), .s_awvalid(s_awvalid), .s_awready(s_awready), .s_wdata(s_wdata), .s_wstrb(s_wstrb), .s_wlast(s_wlast), .s_wvalid(s_wvalid), .s_wready(s_wready), .s_bid(s_bid), .s_bresp(s_bresp), .s_bvalid(s_bvalid),
 		.s_bready(s_bready), .s_araddr(s_araddr), .s_arid(s_arid), .s_arlen(s_arlen), .s_arvalid(s_arvalid), .s_arready(s_arready), .s_rdata(s_rdata), .s_rid(s_rid), .s_rresp(s_rresp), .s_rlast(s_rlast), .s_rvalid(s_rvalid), .s_rready(s_rready),
+		.m_awid(m_awid), .m_bid(m_bid), .m_arid(m_arid), .m_rid(m_rid),
 		.m_awaddr(m_awaddr), .m_awlen(m_awlen), .m_awsize(m_awsize), .m_awburst(m_awburst), .m_awcache(m_awcache), .m_awprot(m_awprot), .m_awvalid(m_awvalid), .m_awready(m_awready), .m_wdata(m_wdata), .m_wstrb(m_wstrb), .m_wlast(m_wlast), .m_wvalid(m_wvalid), .m_wready(m_wready), .m_bresp(m_bresp), .m_bvalid(m_bvalid),
 		.m_bready(m_bready), .m_araddr(m_araddr), .m_arlen(m_arlen), .m_arsize(m_arsize), .m_arburst(m_arburst), .m_arcache(m_arcache), .m_arprot(m_arprot), .m_arvalid(m_arvalid), .m_arready(m_arready), .m_rdata(m_rdata), .m_rresp(m_rresp), .m_rlast(m_rlast), .m_rvalid(m_rvalid), .m_rready(m_rready),
 		.xr_wr(xr_wr), .xr_waddr(xr_waddr), .xr_wdata(xr_wdata), .xr_wstrb(xr_wstrb), .xr_rd(xr_rd),
@@ -291,10 +316,48 @@ module atg_kc705_raster #(
 		.j_rdata(j_rdata), .j_busy(j_busy)
 	);
 
+	/* The GPU's memory port by address: local DDR3 (m0) or the host (m1). */
+	am_axi_split #(
+		.A_W(32), .D_W(512), .ID_W(1), .BASE0(LOCAL_BASE), .SIZE0(LOCAL_BYTES),
+		.BASE1(32'h00000000), .SIZE1(HOST_LIMIT), .CNT_W(3), .WQ_LOG2(2)
+	) split (
+		.clk(clk), .rst_n(rst_n),
+		.s_awid(m_awid), .s_awaddr(m_awaddr), .s_awlen(m_awlen), .s_awsize(m_awsize),
+		.s_awburst(m_awburst), .s_awcache(m_awcache), .s_awprot(m_awprot),
+		.s_awvalid(m_awvalid), .s_awready(m_awready), .s_wdata(m_wdata), .s_wstrb(m_wstrb),
+		.s_wlast(m_wlast), .s_wvalid(m_wvalid), .s_wready(m_wready), .s_bid(m_bid),
+		.s_bresp(m_bresp), .s_bvalid(m_bvalid), .s_bready(m_bready), .s_arid(m_arid),
+		.s_araddr(m_araddr), .s_arlen(m_arlen), .s_arsize(m_arsize), .s_arburst(m_arburst),
+		.s_arcache(m_arcache), .s_arprot(m_arprot), .s_arvalid(m_arvalid),
+		.s_arready(m_arready), .s_rid(m_rid), .s_rdata(m_rdata), .s_rresp(m_rresp),
+		.s_rlast(m_rlast), .s_rvalid(m_rvalid), .s_rready(m_rready),
+		.m0_awid(d_awid), .m0_awaddr(d_awaddr), .m0_awlen(d_awlen), .m0_awsize(d_awsize),
+		.m0_awburst(d_awburst), .m0_awcache(d_awcache), .m0_awprot(d_awprot),
+		.m0_awvalid(d_awvalid), .m0_awready(d_awready), .m0_wdata(d_wdata),
+		.m0_wstrb(d_wstrb), .m0_wlast(d_wlast), .m0_wvalid(d_wvalid), .m0_wready(d_wready),
+		.m0_bid(1'b0), .m0_bresp(d_bresp), .m0_bvalid(d_bvalid), .m0_bready(d_bready),
+		.m0_arid(d_arid), .m0_araddr(d_araddr), .m0_arlen(d_arlen), .m0_arsize(d_arsize),
+		.m0_arburst(d_arburst), .m0_arcache(d_arcache), .m0_arprot(d_arprot),
+		.m0_arvalid(d_arvalid), .m0_arready(d_arready), .m0_rid(1'b0), .m0_rdata(d_rdata),
+		.m0_rresp(d_rresp), .m0_rlast(d_rlast), .m0_rvalid(d_rvalid), .m0_rready(d_rready),
+		.m1_awid(h_awid), .m1_awaddr(h_awaddr), .m1_awlen(h_awlen), .m1_awsize(h_awsize),
+		.m1_awburst(h_awburst), .m1_awcache(h_awcache), .m1_awprot(h_awprot),
+		.m1_awvalid(h_awvalid), .m1_awready(h_awready), .m1_wdata(h_wdata),
+		.m1_wstrb(h_wstrb), .m1_wlast(h_wlast), .m1_wvalid(h_wvalid), .m1_wready(h_wready),
+		.m1_bid(h_bid), .m1_bresp(h_bresp), .m1_bvalid(h_bvalid), .m1_bready(h_bready),
+		.m1_arid(h_arid), .m1_araddr(h_araddr), .m1_arlen(h_arlen), .m1_arsize(h_arsize),
+		.m1_arburst(h_arburst), .m1_arcache(h_arcache), .m1_arprot(h_arprot),
+		.m1_arvalid(h_arvalid), .m1_arready(h_arready), .m1_rid(h_rid), .m1_rdata(h_rdata),
+		.m1_rresp(h_rresp), .m1_rlast(h_rlast), .m1_rvalid(h_rvalid), .m1_rready(h_rready)
+	);
+
+	assign h_bid = h_bid4[0];
+	assign h_rid = h_rid4[0];
+
 	atg_kc705_mig mig (
 		.clk(clk), .rst_n(rst_n), .sys_clk(ref_clk), .sys_rst_n(ref_rst_n), .mem_ready(mem_ready),
-		.s_awaddr(m_awaddr), .s_awlen(m_awlen), .s_awsize(m_awsize), .s_awburst(m_awburst), .s_awcache(m_awcache), .s_awprot(m_awprot), .s_awvalid(m_awvalid), .s_awready(m_awready), .s_wdata(m_wdata), .s_wstrb(m_wstrb), .s_wlast(m_wlast), .s_wvalid(m_wvalid), .s_wready(m_wready), .s_bresp(m_bresp), .s_bvalid(m_bvalid),
-		.s_bready(m_bready), .s_araddr(m_araddr), .s_arlen(m_arlen), .s_arsize(m_arsize), .s_arburst(m_arburst), .s_arcache(m_arcache), .s_arprot(m_arprot), .s_arvalid(m_arvalid), .s_arready(m_arready), .s_rdata(m_rdata), .s_rresp(m_rresp), .s_rlast(m_rlast), .s_rvalid(m_rvalid), .s_rready(m_rready),
+		.s_awaddr(d_awaddr), .s_awlen(d_awlen), .s_awsize(d_awsize), .s_awburst(d_awburst), .s_awcache(d_awcache), .s_awprot(d_awprot), .s_awvalid(d_awvalid), .s_awready(d_awready), .s_wdata(d_wdata), .s_wstrb(d_wstrb), .s_wlast(d_wlast), .s_wvalid(d_wvalid), .s_wready(d_wready), .s_bresp(d_bresp), .s_bvalid(d_bvalid),
+		.s_bready(d_bready), .s_araddr(d_araddr), .s_arlen(d_arlen), .s_arsize(d_arsize), .s_arburst(d_arburst), .s_arcache(d_arcache), .s_arprot(d_arprot), .s_arvalid(d_arvalid), .s_arready(d_arready), .s_rdata(d_rdata), .s_rresp(d_rresp), .s_rlast(d_rlast), .s_rvalid(d_rvalid), .s_rready(d_rready),
 		.s2_clk(user_clk), .s2_rst_n(user_rst_n),
 		.s2_awaddr(p2_awaddr), .s2_awid(p2_awid), .s2_awlen(p2_awlen), .s2_awsize(p2_awsize),
 		.s2_awburst(p2_awburst), .s2_awvalid(p2_awvalid), .s2_awready(p2_awready),
@@ -345,8 +408,8 @@ module atg_kc705_raster #(
 
 	assign led = {3'd0, link_up, mem_ready, dc_irq, irq, beat[26]};
 
-	wire unused_ok = &{1'b0, tmds, h_awready, h_wready, h_bid, h_bresp, h_bvalid, h_arready,
-		h_rdata, h_rid, h_rresp, h_rlast, h_rvalid};
+	wire unused_ok = &{1'b0, tmds, d_awid, d_arid, h_awcache, h_arcache, h_awprot, h_arprot,
+		h_bid4[3:1], h_rid4[3:1]};
 endmodule
 
 `default_nettype wire

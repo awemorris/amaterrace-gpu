@@ -32,6 +32,10 @@ module atg_top #(
 	parameter [31:0] LOCAL_BASE = 32'd0,
 	parameter [31:0] LOCAL_BYTES = 32'd0,
 	parameter [31:0] WINDOW_BYTES = 32'd0,
+	/* The host addresses the GPU reaches: below HOST_LIMIT, outside local memory (MEM
+	 * HOST_LIMIT, GHCI §11.2; 0 = all; KC705 0x8000_0000).  With local memory the MC
+	 * sends local accesses with AXI ID 0 and host accesses with ID 1 (m_awid/m_arid). */
+	parameter [31:0] HOST_LIMIT = 32'd0,
 	/* Which blocks are present (design §7.6; 0 = absent). */
 	parameter HAS_CPU = 0,	/* atg_cpu, the CP's firmware processor */
 	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
@@ -103,6 +107,7 @@ module atg_top #(
 	output wire s_rvalid,
 	input wire s_rready,
 
+	output wire m_awid,
 	output wire [31:0] m_awaddr,
 	output wire [7:0] m_awlen,
 	output wire [2:0] m_awsize,
@@ -116,9 +121,11 @@ module atg_top #(
 	output wire m_wlast,
 	output wire m_wvalid,
 	input wire m_wready,
+	input wire m_bid,
 	input wire [1:0] m_bresp,
 	input wire m_bvalid,
 	output wire m_bready,
+	output wire m_arid,
 	output wire [31:0] m_araddr,
 	output wire [7:0] m_arlen,
 	output wire [2:0] m_arsize,
@@ -127,6 +134,7 @@ module atg_top #(
 	output wire [2:0] m_arprot,
 	output wire m_arvalid,
 	input wire m_arready,
+	input wire m_rid,
 	input wire [DATA_W-1:0] m_rdata,
 	input wire [1:0] m_rresp,
 	input wire m_rlast,
@@ -378,6 +386,7 @@ module atg_top #(
 		.LOCAL_BASE(LOCAL_BASE),
 		.LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
+		.HOST_LIMIT(HOST_LIMIT),
 		.MS4(MS4),
 		.CORE1(CORE1),
 		.HAS_FMT(CORE1),
@@ -519,6 +528,8 @@ module atg_top #(
 		.LINE_SHIFT(LINE_SHIFT),
 		.DATA_W(DATA_W),
 		.OUTSTANDING_LOG2(2),
+		.LOCAL_BASE(LOCAL_BASE),
+		.LOCAL_BYTES(LOCAL_BYTES),
 		.UNIT_MASK(MC_UNITS),
 		.HAS_PROT(PROT),
 		.RMW_MASK(RMW),
@@ -566,6 +577,7 @@ module atg_top #(
 		.prot_gw_valid(prot_gw_valid),
 		.prot_gw_idx(prot_gw_idx),
 		.prot_gw_data(prot_gw_data),
+		.m_awid(m_awid),
 		.m_awaddr(m_awaddr),
 		.m_awlen(m_awlen),
 		.m_awsize(m_awsize),
@@ -579,9 +591,11 @@ module atg_top #(
 		.m_wlast(m_wlast),
 		.m_wvalid(m_wvalid),
 		.m_wready(m_wready),
+		.m_bid(m_bid),
 		.m_bresp(m_bresp),
 		.m_bvalid(m_bvalid),
 		.m_bready(m_bready),
+		.m_arid(m_arid),
 		.m_araddr(m_araddr),
 		.m_arlen(m_arlen),
 		.m_arsize(m_arsize),
@@ -590,6 +604,7 @@ module atg_top #(
 		.m_arprot(m_arprot),
 		.m_arvalid(m_arvalid),
 		.m_arready(m_arready),
+		.m_rid(m_rid),
 		.m_rdata(m_rdata),
 		.m_rresp(m_rresp),
 		.m_rlast(m_rlast),

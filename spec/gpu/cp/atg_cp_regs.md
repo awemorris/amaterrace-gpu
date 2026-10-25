@@ -21,6 +21,7 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `LOCAL_BASE` | `32'd0` | MEM capability LOCAL_BASE (0x1C0). |
 | `LOCAL_BYTES` | `32'd0` | MEM capability LOCAL_SIZE (0x1C4). |
 | `WINDOW_BYTES` | `32'd0` | MEM capability WINDOW_SIZE (0x1C8). |
+| `HOST_LIMIT` | `32'd0` | MEM capability HOST_LIMIT (0x1CC): host addresses below it; 0 = all (GHCI §11.2). |
 | `CAPS` | `32'h00500002` | CAPS value (design §2.2), set by atg_top from its parameters. |
 | `CAPS2` | `32'h00000001` | CAPS2 value. |
 | `VEND` | `256'd0` | The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0. |
@@ -83,7 +84,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   when XCAP_MASK is 0 (PERF keeps its
   registers at 0x110, design §2.4.10; VEND 0x0C0; CPFW 0x120; SA 0x140; MEM 0x1C0, after the room of
   a full list (0x100-0x1BF); DISP at DISP_OFFSET; DBG 0).
-- MEM (XCAP_MASK[7]): 0x1C0 LOCAL_BASE, 0x1C4 LOCAL_BYTES, 0x1C8 WINDOW_BYTES (read only); they read 0
+- MEM (XCAP_MASK[7]): 0x1C0 LOCAL_BASE, 0x1C4 LOCAL_BYTES, 0x1C8 WINDOW_BYTES, 0x1CC HOST_LIMIT (read only); they read 0
   when MEM is not listed.
 - COUNTER counts every clk.  PERFn counts cycles with `perf_busy[n]`; cleared by PERF_CTRL[0] or
   `perf_reset`.
@@ -125,6 +126,8 @@ Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a0
 above.
 
 2026-10-25 (CAPS[30]): XCAP_MASK has 10 bits; FMT (id 10) points at 0x160 (atg_cp_fmt's window, ORed in by atg_cp through x_rdata).
+
+2026-10-25 (p039): MEM HOST_LIMIT at 0x1CC (parameter HOST_LIMIT, through atg_cp from atg_top).
 
 2026-10-25: the MEM capability (id 8, XCAP_MASK[7], registers at 0x1C0; parameters LOCAL_BASE, LOCAL_BYTES, WINDOW_BYTES) and RESIDENT_WARPS[23:16] = NREGS.
 

@@ -18,7 +18,8 @@ The GPU IP: an AXI slave for the GHCI registers (`s_*`, the low 17 address bits 
 | `LINE_BYTES` | 32 | AMB line | 32 or 64 (KC705) |
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`) | 5, 6 |
 | `DATA_W` | 64 | Memory AXI data width | 64, 512 (KC705) |
-| `LOCAL_BASE`, `LOCAL_BYTES`, `WINDOW_BYTES` | 0 | The MEM capability (GHCI §11.3), passed to the CP: local memory and the local window; 0 bytes = not listed (unified) | KC705: 0x8000_0000, 1 GiB, 64 MiB |
+| `LOCAL_BASE`, `LOCAL_BYTES`, `WINDOW_BYTES` | 0 | The MEM capability (GHCI §11.3), passed to the CP: local memory and the local window; 0 bytes = not listed (unified). LOCAL_* also to the MC: the destination of each access (AXI ID 0 local, 1 host) | KC705: 0x8000_0000, 1 GiB, 64 MiB |
+| `HOST_LIMIT` | 0 | MEM HOST_LIMIT (GHCI §11.2): the host addresses the GPU reaches are below it; 0 = all. Only reported (the board's interconnect makes it true) | KC705: 0x8000_0000 |
 
 Fixed inside: `NCLIENT` = 2, MC `HIGH_MASK` = 2'b01 (CP first), `OUTSTANDING_LOG2` = 2, `ADDR_W` = 32.
 
@@ -33,7 +34,7 @@ All in domain `clk`. 57 ports.
 | `irq` | out | 1 | Level interrupt (from the CP) |
 | `mem_ready` | in | 1 | STATUS.MEM_READY (tie 1 when memory is ready from reset) |
 | `s_awaddr`, `s_awid`, `s_awvalid`/`s_awready`, `s_wdata`, `s_wstrb`, `s_wlast`, `s_wvalid`/`s_wready`, `s_bid`, `s_bresp`, `s_bvalid`/`s_bready`, `s_araddr`, `s_arid`, `s_arlen`, `s_arvalid`/`s_arready`, `s_rdata`, `s_rid`, `s_rresp`, `s_rlast`, `s_rvalid`/`s_rready` | — | 17-bit addresses, `S_ID_W` IDs, `S_LEN_W` ARLEN, 32-bit data | Host AXI slave; rules of `spec/common/am_axi_regs.md` |
-| `m_*` (29 signals) | — | 32-bit addresses, `DATA_W` data | Memory AXI master, AXI4-shaped; rules of `spec/common/am_axi_master.md` (an AXI3 port truncates AxLEN/AxSIZE and ties ID/WID to 0) |
+| `m_*` (33 signals) | — | 32-bit addresses, `DATA_W` data, 1-bit IDs | Memory AXI master, AXI4-shaped; rules of `spec/common/am_axi_master.md`.  `m_awid`/`m_arid`: 0 local memory, 1 host (always 0 without local memory); `m_bid`/`m_rid` come back with the responses (tie 0 on a one-ID port).  An AXI3 port truncates AxLEN/AxSIZE and ties WID to 0 |
 
 ## 4. Behaviour
 
@@ -130,6 +131,8 @@ Varying 64 components (Vulkan 1.0's limit): `SU_VARY_WORDS` at most 64, the KC70
 **Vulkan 1.0 core rendering**: `CORE1` (derived, not a parameter) is HAS_VF, HAS_RX, HAS_ROP, HAS_TU, an SU and `SU_VARY_WORDS` ≥ 64 (the KC705's shape; the default shape and the shapes with fewer varying words keep CAPS[30] at 0); it goes to the CP's `CORE1` (CAPS[30] and CAPS[9]) and `HAS_FMT` (the FMT capability).
 
 2026-10-25: the STATE broadcast has 10-bit indices; the TU takes them all (0x200-0x2FF are its vertex-stage slots), the other blocks see st_we only for indices below 512 and their 9 bits; the SU's tx_vs reaches the TU; the CP's HAS_ETC is HAS_TU.
+
+**2026-10-25 (p039)**: `HOST_LIMIT` (MEM +0xC) and the MC's AXI IDs per destination (`m_awid`, `m_arid`, `m_bid`, `m_rid`; the board routes by address, `am_axi_split` on the KC705).
 
 **2026-10-25**: `LOCAL_BASE`, `LOCAL_BYTES`, `WINDOW_BYTES` (the MEM capability, default 0) and RESIDENT_WARPS[23:16] = `SU_NREGS` with an SU (0 without), both through atg_cp to atg_cp_regs.
 

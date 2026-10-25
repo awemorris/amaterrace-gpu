@@ -388,6 +388,7 @@ module atg_mc_prot_tb;
 		.prot_tbase(tbase), .prot_inv_valid(inv_valid), .prot_inv_g(inv_g),
 		.prot_inv_n(inv_n), .prot_inv_pending(inv_pending), .prot_gw_valid(gw_valid),
 		.prot_gw_idx(gw_idx), .prot_gw_data(gw_data),
+		.m_awid(), .m_bid(1'b0), .m_arid(), .m_rid(1'b0),
 		.m_awaddr(awaddr), .m_awlen(awlen), .m_awsize(awsize), .m_awburst(awburst),
 		.m_awcache(awcache), .m_awprot(awprot), .m_awvalid(awvalid), .m_awready(awready),
 		.m_wdata(wdata), .m_wstrb(wstrb), .m_wlast(wlast), .m_wvalid(wvalid),

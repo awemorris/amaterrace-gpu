@@ -26,7 +26,13 @@
  * outstanding, every cycle.  (C) is shape B with session protection
  * built in (HAS_PROT: the root client has its own entry at the root) and
  * every request without chk: it must behave as B.  The protection check
- * itself is atg_mc_prot_tb's.
+ * itself is atg_mc_prot_tb's.  (D, ws288 p039) is shape B with protection
+ * and two destinations: local memory [0x2_0000, 0x4_0000) (LOCAL_BASE/
+ * LOCAL_BYTES, AXI ID 0) and the host (ID 1) behind am_axi_split, each on
+ * its own axi_mem (the local one slow); half of each client's lines are
+ * local (the client's line l + 0x1000 for l >= 16): every client still
+ * gets its responses in order per direction, and each memory sees only
+ * its own ID.
  */
 
 `timescale 1ns / 1ps
@@ -36,7 +42,8 @@ module atg_mc_client #(
 	parameter ID = 0,
 	parameter NREQ = 600,
 	parameter SEED = 1,
-	parameter FAR = 0	/* some refused requests also outside a 1 MiB VRAM window */
+	parameter FAR = 0,	/* some refused requests also outside a 1 MiB VRAM window */
+	parameter TWO = 0	/* lines 16-31 at +0x1000 lines (local memory in case D) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -164,7 +171,7 @@ module atg_mc_client #(
 				/* With FAR, half of the refused requests alias a good line of
 				 * the 1 MiB window: only the window check refuses them. */
 				req_line <= (bad ? ((FAR != 0 && line[0]) ? BASE + 27'h8000 : OUTSIDE) : BASE) +
-					line;
+					line + (TWO != 0 && !bad && line >= 16 ? 27'h1000 : 27'h0);
 				for (b = 0; b < 32; b = b + 1)
 					req_be[b] <= $random(seed);
 				for (b = 0; b < 8; b = b + 1)
@@ -222,6 +229,7 @@ module atg_mc_case #(
 	parameter VRAM_AW = 32,
 	parameter FAR = 0,
 	parameter PROT = 0,
+	parameter TWO = 0,	/* two destinations (case D) */
 	parameter SEED0 = 3
 ) (
 	input wire clk,
@@ -257,8 +265,12 @@ module atg_mc_case #(
 	wire [63:0] wdata, rdata;
 	wire [7:0] wstrb;
 
+	wire awid, arid, bid, rid;
+
 	atg_mc #(.NCLIENT(N), .HIGH_MASK(HIGH), .ROOT_CLIENT(ROOT), .VRAM_AW(VRAM_AW),
-		.UNIT_MASK({N{1'b1}}), .HAS_PROT(PROT)) dut (
+		.UNIT_MASK({N{1'b1}}), .HAS_PROT(PROT),
+		.LOCAL_BASE(TWO != 0 ? 32'h00020000 : 32'd0),
+		.LOCAL_BYTES(TWO != 0 ? 32'h00020000 : 32'd0)) dut (
 		.clk(clk), .rst_n(rst_n),
 		.c_req_valid(c_req_valid), .c_req_ready(c_req_ready), .c_req_write(c_req_write),
 		.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
@@ -272,6 +284,7 @@ module atg_mc_case #(
 		.fault_mem(), .chk_idle(), .unit_idle(unit_idle),
 		.prot_tbase(32'd0), .prot_inv_valid(1'b0), .prot_inv_g(20'd0), .prot_inv_n(32'd0),
 		.prot_inv_pending(), .prot_gw_valid(1'b0), .prot_gw_idx(3'd0), .prot_gw_data(50'd0),
+		.m_awid(awid), .m_bid(bid), .m_arid(arid), .m_rid(rid),
 		.m_awaddr(awaddr), .m_awlen(awlen), .m_awsize(awsize), .m_awburst(awburst),
 		.m_awcache(awcache), .m_awprot(awprot), .m_awvalid(awvalid), .m_awready(awready),
 		.m_wdata(wdata), .m_wstrb(wstrb), .m_wlast(wlast), .m_wvalid(wvalid),
@@ -282,20 +295,113 @@ module atg_mc_case #(
 		.m_rready(rready)
 	);
 
-	axi_mem #(.DATA_W(64), .MEM_BYTES(1 << 20), .SEED(9)) mem (
-		.clk(clk), .rst_n(rst_n),
-		.awaddr(awaddr), .awlen(awlen), .awsize(awsize), .awburst(awburst),
-		.awvalid(awvalid), .awready(awready), .wdata(wdata), .wstrb(wstrb),
-		.wlast(wlast), .wvalid(wvalid), .wready(wready), .bresp(bresp),
-		.bvalid(bvalid), .bready(bready), .araddr(araddr), .arlen(arlen),
-		.arsize(arsize), .arburst(arburst), .arvalid(arvalid), .arready(arready),
-		.rdata(rdata), .rresp(rresp), .rlast(rlast), .rvalid(rvalid), .rready(rready)
-	);
+	/* One memory, or two behind am_axi_split (case D: m0 local, m1 host). */
+	wire [31:0] mem_errors;
+
+	generate
+		if (TWO == 0) begin : one
+			axi_mem #(.DATA_W(64), .MEM_BYTES(1 << 20), .SEED(9)) mem (
+				.clk(clk), .rst_n(rst_n),
+				.awaddr(awaddr), .awlen(awlen), .awsize(awsize), .awburst(awburst),
+				.awvalid(awvalid), .awready(awready), .wdata(wdata), .wstrb(wstrb),
+				.wlast(wlast), .wvalid(wvalid), .wready(wready), .bresp(bresp),
+				.bvalid(bvalid), .bready(bready), .araddr(araddr), .arlen(arlen),
+				.arsize(arsize), .arburst(arburst), .arvalid(arvalid), .arready(arready),
+				.rdata(rdata), .rresp(rresp), .rlast(rlast), .rvalid(rvalid), .rready(rready)
+			);
+			assign bid = 1'b0;
+			assign rid = 1'b0;
+			assign mem_errors = mem.errors;
+		end else begin : two
+			wire [31:0] p_awaddr [0:1];
+			wire [31:0] p_araddr [0:1];
+			wire [7:0] p_awlen [0:1];
+			wire [7:0] p_arlen [0:1];
+			wire [2:0] p_awsize [0:1];
+			wire [2:0] p_arsize [0:1];
+			wire [1:0] p_awburst [0:1];
+			wire [1:0] p_arburst [0:1];
+			wire [1:0] p_bresp [0:1];
+			wire [1:0] p_rresp [0:1];
+			wire [63:0] p_wdata [0:1];
+			wire [63:0] p_rdata [0:1];
+			wire [7:0] p_wstrb [0:1];
+			wire [1:0] p_awid, p_arid, p_awvalid, p_awready, p_wlast, p_wvalid, p_wready;
+			wire [1:0] p_bvalid, p_bready, p_arvalid, p_arready, p_rlast, p_rvalid, p_rready;
+
+			am_axi_split #(
+				.A_W(32), .D_W(64), .ID_W(1), .BASE0(32'h00020000), .SIZE0(32'h00020000),
+				.BASE1(32'h00000000), .SIZE1(32'h00100000)
+			) split (
+				.clk(clk), .rst_n(rst_n),
+				.s_awid(awid), .s_awaddr(awaddr), .s_awlen(awlen), .s_awsize(awsize),
+				.s_awburst(awburst), .s_awcache(awcache), .s_awprot(awprot),
+				.s_awvalid(awvalid), .s_awready(awready), .s_wdata(wdata), .s_wstrb(wstrb),
+				.s_wlast(wlast), .s_wvalid(wvalid), .s_wready(wready), .s_bid(bid),
+				.s_bresp(bresp), .s_bvalid(bvalid), .s_bready(bready), .s_arid(arid),
+				.s_araddr(araddr), .s_arlen(arlen), .s_arsize(arsize), .s_arburst(arburst),
+				.s_arcache(arcache), .s_arprot(arprot), .s_arvalid(arvalid),
+				.s_arready(arready), .s_rid(rid), .s_rdata(rdata), .s_rresp(rresp),
+				.s_rlast(rlast), .s_rvalid(rvalid), .s_rready(rready),
+				.m0_awid(p_awid[0]), .m0_awaddr(p_awaddr[0]), .m0_awlen(p_awlen[0]),
+				.m0_awsize(p_awsize[0]), .m0_awburst(p_awburst[0]), .m0_awcache(),
+				.m0_awprot(), .m0_awvalid(p_awvalid[0]), .m0_awready(p_awready[0]),
+				.m0_wdata(p_wdata[0]), .m0_wstrb(p_wstrb[0]), .m0_wlast(p_wlast[0]),
+				.m0_wvalid(p_wvalid[0]), .m0_wready(p_wready[0]), .m0_bid(1'b0),
+				.m0_bresp(p_bresp[0]), .m0_bvalid(p_bvalid[0]), .m0_bready(p_bready[0]),
+				.m0_arid(p_arid[0]), .m0_araddr(p_araddr[0]), .m0_arlen(p_arlen[0]),
+				.m0_arsize(p_arsize[0]), .m0_arburst(p_arburst[0]), .m0_arcache(),
+				.m0_arprot(), .m0_arvalid(p_arvalid[0]), .m0_arready(p_arready[0]),
+				.m0_rid(1'b0), .m0_rdata(p_rdata[0]), .m0_rresp(p_rresp[0]),
+				.m0_rlast(p_rlast[0]), .m0_rvalid(p_rvalid[0]), .m0_rready(p_rready[0]),
+				.m1_awid(p_awid[1]), .m1_awaddr(p_awaddr[1]), .m1_awlen(p_awlen[1]),
+				.m1_awsize(p_awsize[1]), .m1_awburst(p_awburst[1]), .m1_awcache(),
+				.m1_awprot(), .m1_awvalid(p_awvalid[1]), .m1_awready(p_awready[1]),
+				.m1_wdata(p_wdata[1]), .m1_wstrb(p_wstrb[1]), .m1_wlast(p_wlast[1]),
+				.m1_wvalid(p_wvalid[1]), .m1_wready(p_wready[1]), .m1_bid(1'b1),
+				.m1_bresp(p_bresp[1]), .m1_bvalid(p_bvalid[1]), .m1_bready(p_bready[1]),
+				.m1_arid(p_arid[1]), .m1_araddr(p_araddr[1]), .m1_arlen(p_arlen[1]),
+				.m1_arsize(p_arsize[1]), .m1_arburst(p_arburst[1]), .m1_arcache(),
+				.m1_arprot(), .m1_arvalid(p_arvalid[1]), .m1_arready(p_arready[1]),
+				.m1_rid(1'b1), .m1_rdata(p_rdata[1]), .m1_rresp(p_rresp[1]),
+				.m1_rlast(p_rlast[1]), .m1_rvalid(p_rvalid[1]), .m1_rready(p_rready[1])
+			);
+
+			genvar m;
+			for (m = 0; m < 2; m = m + 1) begin : mems
+				/* The local memory (m0) answers slowly: more reordering between the two. */
+				axi_mem #(.DATA_W(64), .MEM_BYTES(1 << 20), .SEED(9 + 4 * m),
+					.READ_EARLY(m == 0 ? 1 : 0)) mem (
+					.clk(clk), .rst_n(rst_n),
+					.awaddr(p_awaddr[m]), .awlen(p_awlen[m]), .awsize(p_awsize[m]),
+					.awburst(p_awburst[m]), .awvalid(p_awvalid[m]), .awready(p_awready[m]),
+					.wdata(p_wdata[m]), .wstrb(p_wstrb[m]), .wlast(p_wlast[m]),
+					.wvalid(p_wvalid[m]), .wready(p_wready[m]), .bresp(p_bresp[m]),
+					.bvalid(p_bvalid[m]), .bready(p_bready[m]), .araddr(p_araddr[m]),
+					.arlen(p_arlen[m]), .arsize(p_arsize[m]), .arburst(p_arburst[m]),
+					.arvalid(p_arvalid[m]), .arready(p_arready[m]), .rdata(p_rdata[m]),
+					.rresp(p_rresp[m]), .rlast(p_rlast[m]), .rvalid(p_rvalid[m]),
+					.rready(p_rready[m])
+				);
+			end
+
+			/* Each memory sees only its own ID (the MC's destination). */
+			always @(posedge clk) begin
+				if (rst_n && (p_awvalid[0] && p_awid[0] || p_arvalid[0] && p_arid[0] ||
+				    p_awvalid[1] && !p_awid[1] || p_arvalid[1] && !p_arid[1])) begin
+					errors = errors + 1;
+					$display("FAIL atg_mc: an AXI ID at the wrong memory");
+				end
+			end
+
+			assign mem_errors = mems[0].mem.errors + mems[1].mem.errors;
+		end
+	endgenerate
 
 	genvar g;
 	generate
 		for (g = 0; g < N; g = g + 1) begin : cl
-			atg_mc_client #(.ID(g), .SEED(SEED0 * 100 + g), .FAR(FAR)) c (
+			atg_mc_client #(.ID(g), .SEED(SEED0 * 100 + g), .FAR(FAR), .TWO(TWO)) c (
 				.clk(clk), .rst_n(rst_n), .stop(quiesce),
 				.req_valid(c_req_valid[g]), .req_ready(c_req_ready[g]),
 				.req_write(c_req_write[g]), .req_line(c_req_line[g*27 +: 27]),
@@ -423,15 +529,15 @@ module atg_mc_case #(
 					faults[k], cbad[k]);
 			end
 		end
-		errors = errors + mem.errors;
+		errors = errors + mem_errors;
 		done = 1'b1;
 	end
 endmodule
 
 module atg_mc_tb;
 	reg clk = 1'b0;
-	wire done_a, done_b, done_c;
-	wire [31:0] err_a, err_b, err_c;
+	wire done_a, done_b, done_c, done_d;
+	wire [31:0] err_a, err_b, err_c, err_d;
 
 	always #5 clk = !clk;
 
@@ -445,13 +551,17 @@ module atg_mc_tb;
 		.SEED0(11)) c (
 		.clk(clk), .done(done_c), .errors(err_c)
 	);
+	atg_mc_case #(.N(5), .HIGH(5'b10001), .ROOT(4), .VRAM_AW(32), .FAR(0), .PROT(1), .TWO(1),
+		.SEED0(13)) d (
+		.clk(clk), .done(done_d), .errors(err_d)
+	);
 
 	initial begin
-		wait (done_a && done_b && done_c);
-		if (err_a == 0 && err_b == 0 && err_c == 0)
+		wait (done_a && done_b && done_c && done_d);
+		if (err_a == 0 && err_b == 0 && err_c == 0 && err_d == 0)
 			$display("PASS atg_mc");
 		else
-			$display("FAIL atg_mc: %0d + %0d + %0d errors", err_a, err_b, err_c);
+			$display("FAIL atg_mc: %0d + %0d + %0d + %0d errors", err_a, err_b, err_c, err_d);
 		$finish;
 	end
 

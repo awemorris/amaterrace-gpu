@@ -64,6 +64,7 @@ module atg_cp #(
 	parameter [31:0] LOCAL_BASE = 32'd0,	/* the MEM capability (listed when LOCAL_BYTES is not 0) */
 	parameter [31:0] LOCAL_BYTES = 32'd0,
 	parameter [31:0] WINDOW_BYTES = 32'd0,
+	parameter [31:0] HOST_LIMIT = 32'd0,
 	parameter HAS_PROT = 0	/* session protection: the PROT capability is listed (atg_cp_prot) */
 ) (
 	input wire clk,
@@ -243,7 +244,8 @@ module atg_cp #(
 		.DEVICE_VERSION(DEVICE_VERSION), .ISA_ID(ISA), .NATIVE_ISA_ID(ISA), .CAPS(CAPS),
 		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS),
 		.NREGS(NREGS), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
-		.WINDOW_BYTES(WINDOW_BYTES)
+		.WINDOW_BYTES(WINDOW_BYTES),
+		.HOST_LIMIT(HOST_LIMIT)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),

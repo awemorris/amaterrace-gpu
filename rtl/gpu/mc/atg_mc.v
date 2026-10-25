@@ -60,6 +60,15 @@
  * tree or the root.  unit_idle: every request that UNIT_MASK's clients
  * gave the MC has been answered (counted from the leaf to the response).
  * A refused read returns zeros.
+ *
+ * Destinations (ws288 p039, docs/ghci.md section 11.2): a granted request
+ * (a walk too) whose line is in [LOCAL_BASE, LOCAL_BASE + LOCAL_BYTES) is
+ * local and goes out with AXI ID 0; every other is a host access with ID 1
+ * (LOCAL_BYTES = 0: everything is ID 0).  The board routes by the address
+ * (am_axi_split with the same range).  am_axi_master keeps each client's
+ * order (its key is the client, 0xFF for a walk): a request of a client
+ * that has requests of the same direction outstanding at the other
+ * destination waits at the root until they are answered.
  */
 
 `timescale 1ns / 1ps
@@ -77,6 +86,8 @@ module atg_mc #(
 	parameter OUTSTANDING_LOG2 = 2,
 	parameter VRAM_AW = 32,	/* address bits carried in the tree */
 	parameter [ADDR_W-1:0] VRAM_BASE = {ADDR_W{1'b0}},
+	parameter [ADDR_W-1:0] LOCAL_BASE = {ADDR_W{1'b0}},	/* local memory (the MEM capability) */
+	parameter [ADDR_W-1:0] LOCAL_BYTES = {ADDR_W{1'b0}},	/* 0: none, one AXI ID */
 	parameter [NCLIENT-1:0] UNIT_MASK = {NCLIENT{1'b0}},	/* clients counted by unit_idle */
 	parameter HAS_PROT = 0,	/* session protection */
 	parameter [NCLIENT-1:0] RMW_MASK = {NCLIENT{1'b0}},	/* reads judged as writes (atomics) */
@@ -130,6 +141,7 @@ module atg_mc #(
 	input wire [PROT_GIDX_W-1:0] prot_gw_idx,
 	input wire [49:0] prot_gw_data,
 
+	output wire m_awid,	/* 0 local, 1 host */
 	output wire [ADDR_W-1:0] m_awaddr,
 	output wire [7:0] m_awlen,
 	output wire [2:0] m_awsize,
@@ -143,9 +155,11 @@ module atg_mc #(
 	output wire m_wlast,
 	output wire m_wvalid,
 	input wire m_wready,
+	input wire m_bid,
 	input wire [1:0] m_bresp,
 	input wire m_bvalid,
 	output wire m_bready,
+	output wire m_arid,
 	output wire [ADDR_W-1:0] m_araddr,
 	output wire [7:0] m_arlen,
 	output wire [2:0] m_arsize,
@@ -154,6 +168,7 @@ module atg_mc #(
 	output wire [2:0] m_arprot,
 	output wire m_arvalid,
 	input wire m_arready,
+	input wire m_rid,
 	input wire [DATA_W-1:0] m_rdata,
 	input wire [1:0] m_rresp,
 	input wire m_rlast,
@@ -173,6 +188,8 @@ module atg_mc #(
 	localparam RC = HAS_ROOT != 0 ? ROOT_CLIENT : 0;
 	localparam HAS_DC = HAS_PROT != 0 && HAS_ROOT != 0 ? 1 : 0;
 	localparam HPW = HW + 7;
+	localparam HAS_LOCAL = LOCAL_BYTES != {ADDR_W{1'b0}} ? 1 : 0;
+	localparam [ADDR_W:0] LOCAL_END = {1'b0, LOCAL_BASE} + {1'b0, LOCAL_BYTES};
 
 	/* The tree. */
 	wire t_req_valid, t_req_ready, t_req_last;
@@ -334,59 +351,29 @@ module atg_mc #(
 		end
 	end
 
+	/* The destination: local (ID 0) or host (ID 1). */
+	wire [ADDR_W:0] g_addr = {1'b0, g_line, {LINE_SHIFT{1'b0}}};
+	wire g_host = HAS_LOCAL != 0 && !(g_addr >= {1'b0, LOCAL_BASE} && g_addr < LOCAL_END);
+
 	am_axi_master #(
-		.ADDR_W(ADDR_W),
-		.LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT),
-		.DATA_W(DATA_W),
-		.UW(UW),
-		.OUTSTANDING_LOG2(OUTSTANDING_LOG2)
+		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+		.DATA_W(DATA_W), .UW(UW), .OUTSTANDING_LOG2(OUTSTANDING_LOG2),
+		.NID(HAS_LOCAL != 0 ? 2 : 1), .ID_W(1), .KEY_W(8)
 	) axi (
-		.clk(clk),
-		.rst_n(rst_n),
-		.halt(1'b0),
-		.idle(m_idle),
-		.req_valid(g_valid),
-		.req_ready(g_ready),
-		.req_write(g_write),
-		.req_line(g_line),
-		.req_be(g_be),
-		.req_wdata(g_wdata),
-		.req_user(g_user),
-		.rsp_valid(m_rsp_valid),
-		.rsp_write(m_rsp_write),
-		.rsp_user(m_rsp_user),
-		.rsp_rdata(m_rsp_rdata),
-		.rsp_error(m_rsp_error),
-		.m_awaddr(m_awaddr),
-		.m_awlen(m_awlen),
-		.m_awsize(m_awsize),
-		.m_awburst(m_awburst),
-		.m_awcache(m_awcache),
-		.m_awprot(m_awprot),
-		.m_awvalid(m_awvalid),
-		.m_awready(m_awready),
-		.m_wdata(m_wdata),
-		.m_wstrb(m_wstrb),
-		.m_wlast(m_wlast),
-		.m_wvalid(m_wvalid),
-		.m_wready(m_wready),
-		.m_bresp(m_bresp),
-		.m_bvalid(m_bvalid),
-		.m_bready(m_bready),
-		.m_araddr(m_araddr),
-		.m_arlen(m_arlen),
-		.m_arsize(m_arsize),
-		.m_arburst(m_arburst),
-		.m_arcache(m_arcache),
-		.m_arprot(m_arprot),
-		.m_arvalid(m_arvalid),
-		.m_arready(m_arready),
-		.m_rdata(m_rdata),
-		.m_rresp(m_rresp),
-		.m_rlast(m_rlast),
-		.m_rvalid(m_rvalid),
-		.m_rready(m_rready)
+		.clk(clk), .rst_n(rst_n), .halt(1'b0), .idle(m_idle), .req_valid(g_valid),
+		.req_ready(g_ready), .req_write(g_write), .req_line(g_line), .req_be(g_be),
+		.req_wdata(g_wdata), .req_user(g_user), .req_id(g_host),
+		.req_key(g_user[15:8]), .rsp_valid(m_rsp_valid), .rsp_write(m_rsp_write),
+		.rsp_user(m_rsp_user), .rsp_rdata(m_rsp_rdata), .rsp_error(m_rsp_error),
+		.m_awid(m_awid), .m_awaddr(m_awaddr), .m_awlen(m_awlen), .m_awsize(m_awsize),
+		.m_awburst(m_awburst), .m_awcache(m_awcache), .m_awprot(m_awprot),
+		.m_awvalid(m_awvalid), .m_awready(m_awready), .m_wdata(m_wdata),
+		.m_wstrb(m_wstrb), .m_wlast(m_wlast), .m_wvalid(m_wvalid), .m_wready(m_wready),
+		.m_bid(m_bid), .m_bresp(m_bresp), .m_bvalid(m_bvalid), .m_bready(m_bready),
+		.m_arid(m_arid), .m_araddr(m_araddr), .m_arlen(m_arlen), .m_arsize(m_arsize),
+		.m_arburst(m_arburst), .m_arcache(m_arcache), .m_arprot(m_arprot),
+		.m_arvalid(m_arvalid), .m_arready(m_arready), .m_rid(m_rid), .m_rdata(m_rdata),
+		.m_rresp(m_rresp), .m_rlast(m_rlast), .m_rvalid(m_rvalid), .m_rready(m_rready)
 	);
 
 	wire unused_ok = &{1'b0, bad_head, s_req_valid};
