@@ -38,7 +38,7 @@ module atg_top_core_tb;
 
 	atg_top_scene_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.TB("atg_top_core"), .SCENE("sim/vec/core_scene.txt"), .SEED(11), .HAS_VF(1),
-		.NSU(1), .HAS_TU(1), .SU_NPHYS(16), .SU_GRP_W(1), .SU_VARY_WORDS(64), .SU_NREGS(64),
+		.NSU(1), .HAS_TU(1), .SU_NPHYS(8), .SU_GRP_W(2), .SU_VARY_WORDS(64), .SU_NREGS(64),
 		.SU_SB_ENTRIES(8), .SU_SBE_W(3), .SU_PACKED(1), .SU_SUBGROUP(1), .SU_FRAG_RESERVE(2),
 		.SU_LDS_BYTES(16384), .ROP_STENCIL(1), .MS4(1), .RING(32'h000D0000), .RING_LOG2(15),
 		.WAIT_READS(8000000), .MEM_LOG2(20), .APER_LIMIT(32'h000F0000)) kc705 (

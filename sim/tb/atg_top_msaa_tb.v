@@ -21,7 +21,7 @@
  * TU / ROP -> BLT.  Every word of each case's images must equal the
  * reference models' (PASS atg_top_msaa(kc705).CASE for each of the 14);
  * CAPS[29] is set.  In the KC705's shape (64-byte lines, 512-bit AXI,
- * NPHYS 16, 32 varying words). */
+ * NPHYS 8, 32 varying words). */
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -38,7 +38,7 @@ module atg_top_msaa_tb;
 
 	atg_top_scene_harness #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .NAME("kc705"),
 		.TB("atg_top_msaa"), .SCENE("sim/vec/msaa_scene.txt"), .SEED(9), .HAS_VF(1),
-		.NSU(1), .HAS_TU(1), .SU_NPHYS(16), .SU_GRP_W(1), .SU_VARY_WORDS(64), .MS4(1),
+		.NSU(1), .HAS_TU(1), .SU_NPHYS(8), .SU_GRP_W(2), .SU_VARY_WORDS(64), .MS4(1),
 		.RING(32'h0005C000), .RING_LOG2(13), .WAIT_READS(4000000)) kc705 (
 		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
 	);

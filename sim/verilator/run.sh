@@ -21,7 +21,7 @@ command -v verilator >/dev/null || { echo "verilator: not installed" >&2; exit 1
 # The KC705's shape (boards/kc705/atg_kc705_raster.v), without the CPU,
 # the display and JTAG, which the harness does not drive.
 KC="-GLINE_BYTES=64 -GLINE_SHIFT=6 -GDATA_W=512"
-SU="-GNSU=1 -GSU_NPHYS=16 -GSU_GRP_W=1 -GSU_NREGS=64 -GSU_SB_ENTRIES=8 -GSU_SBE_W=3
+SU="-GNSU=1 -GSU_NPHYS=8 -GSU_GRP_W=2 -GSU_NREGS=64 -GSU_SB_ENTRIES=8 -GSU_SBE_W=3
 	-GSU_PACKED=1 -GSU_SUBGROUP=1 -GSU_FRAG_RESERVE=2 -GSU_LDS_BYTES=16384 -GSU_VARY_WORDS=64"
 GFX="-GHAS_VF=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GROP_STENCIL=1"
 
