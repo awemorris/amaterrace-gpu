@@ -187,8 +187,10 @@ module atg_tu_filter (
 				st <= IDLE;
 		end
 	end
+	/* The pass's fields are taken in every cycle of tc_ready (the enables
+	 * do not wait for tc_valid; a cycle without one goes to IDLE). */
 	always @(posedge clk) begin
-		if (take) begin
+		if (tc_ready) begin
 			tx <= tc_texels;
 			wts <= tc_wts;
 			mask <= tc_mask;
@@ -196,8 +198,10 @@ module atg_tu_filter (
 			val <= tc_value;
 			tag <= tc_tag;
 			last <= tc_last;
+		end
+		if (take)
 			k <= 2'd0;
-		end else if (st == RUN)
+		else if (st == RUN)
 			k <= k_inc;
 	end
 	wire issue = st == RUN;

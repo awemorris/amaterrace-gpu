@@ -15,8 +15,8 @@
  * the components a format does not have.
  *
  * One conversion a cycle, no stall: the inputs in cycle 0, o_val in cycle
- * 6 (a register).  Stages: U1 (the component's field and mask, the
- * constant results) R1; U2 (SNORM's magnitude, the inputs of the
+ * 7 (a register).  Stages: U1 (the component's place and width, the
+ * constant results) R0; U1b (the field and its mask) R1; U2 (SNORM's magnitude, the inputs of the
  * normalisations, the integer and sRGB results) R2; U3 (UNORM's repeated
  * bits; the 10-bit leading zeros of the floats) R3; U3b (UNORM's leading
  * zeros) R3b; U4 (UNORM normalised; the 16-bit, packed and E5 floats) R4;
@@ -72,12 +72,30 @@ module atg_fmt_cvt (
 		default: {w_u1, pos} = i_inf[67:55];
 		endcase
 	end
-	wire [159:0] rawx = {32'd0, i_raw};
-	wire [31:0] fsel = rawx[{1'b0, pos} +: 32];
+	reg cst0;
+	reg [31:0] cval0;
+	reg [127:0] raw0;
+	reg [6:0] pos0;
+	reg [5:0] w0;
+	reg [2:0] ty0;
+	reg [1:0] k0;
+	always @(posedge clk) begin
+		cst0 <= cst_u1;
+		cval0 <= cval_u1;
+		raw0 <= i_raw;
+		pos0 <= pos;
+		w0 <= w_u1;
+		ty0 <= ty;
+		k0 <= i_k;
+	end
+
+	/* ---- U1b: the field ---- */
+	wire [159:0] rawx = {32'd0, raw0};
+	wire [31:0] fsel = rawx[{1'b0, pos0} +: 32];
 	reg [31:0] msk_u1;
 	always @(*)
 		for (i = 0; i < 32; i = i + 1)
-			msk_u1[i] = i[5:0] < w_u1;
+			msk_u1[i] = i[5:0] < w0;
 
 	reg cst1;
 	reg [31:0] cval1, fld1;
@@ -86,13 +104,13 @@ module atg_fmt_cvt (
 	reg [1:0] k1;
 	reg [4:0] e5e1;
 	always @(posedge clk) begin
-		cst1 <= cst_u1;
-		cval1 <= cval_u1;
+		cst1 <= cst0;
+		cval1 <= cval0;
 		fld1 <= fsel & msk_u1;
-		w1 <= w_u1;
-		ty1 <= ty;
-		k1 <= i_k;
-		e5e1 <= i_raw[31:27];
+		w1 <= w0;
+		ty1 <= ty0;
+		k1 <= k0;
+		e5e1 <= raw0[31:27];
 	end
 
 	/* ---- U2 ---- */

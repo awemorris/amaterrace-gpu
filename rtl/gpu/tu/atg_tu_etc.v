@@ -11,9 +11,9 @@
  * texel's column s and row t in it to that texel, written from the
  * Khronos Data Format Specification's ETC2 and EAC text (tools/etcmodel.py
  * is the reference, bit for bit).  Pipelined: the inputs in cycle 0,
- * o_kind and o_texel in cycle 2 (registers), one texel a cycle; E1 the
- * mode, the colours and the modifier (and EAC's modifier times the
- * multiplier), E2 the sums and the clamps.
+ * o_kind and o_texel in cycle 3 (registers), one texel a cycle; E1 the
+ * mode, the colours and the modifier, EAC's modifier; E1b planar's terms,
+ * EAC's modifier times the multiplier; E2 the sums and the clamps.
  *
  * i_fmt = VkFormat - 147: 0 ETC2_R8G8B8_UNORM, 1 its SRGB, 2
  * ETC2_R8G8B8A1_UNORM, 3 its SRGB, 4 ETC2_R8G8B8A8_UNORM, 5 its SRGB, 6
@@ -261,77 +261,123 @@ module atg_tu_etc (
 
 	/* planar: (x (h - o) + y (v - o) + 4 o + 2) >> 2, as t1 + 2 t2 + 4 o + 2
 	 * with t1 = x[0] (h - o) + y[0] (v - o), t2 = x[1] (h - o) + y[1] (v - o)
-	 * (12-bit signed, as the reference) */
-	wire [23:0] po = {ext6({w[48], w[44:43], w[41:39]}), ext7({w[56], w[54:49]}), ext6(w[62:57])};
+	 * (12-bit signed, as the reference); E1 h - o and v - o, E1b t1, t2 */
+	wire [23:0] po = {ext6({w[48], w[44:43], w[41:39]}), ext7({w[56], w[54:49]}),
+		ext6(w[62:57])};
 	wire [23:0] ph = {ext6(w[24:19]), ext7(w[31:25]), ext6({w[38:34], w[32]})};
 	wire [23:0] pv = {ext6(w[5:0]), ext7(w[12:6]), ext6(w[18:13])};
 	wire [11:0] dh [0:2];
 	wire [11:0] dv [0:2];
-	wire [11:0] t1 [0:2];
-	wire [11:0] t2 [0:2];
-	wire [11:0] p_nc;
+	wire [5:0] p_nc;
 	genvar g;
 	generate
 	for (g = 0; g < 3; g = g + 1) begin : g_pl
 		am_sub #(.W(12)) u_dh (.a({4'd0, ph[g*8 +: 8]}), .b({4'd0, po[g*8 +: 8]}), .bi(1'b0),
-			.d(dh[g]), .bo(p_nc[g*4]));
+			.d(dh[g]), .bo(p_nc[g*2]));
 		am_sub #(.W(12)) u_dv (.a({4'd0, pv[g*8 +: 8]}), .b({4'd0, po[g*8 +: 8]}), .bi(1'b0),
-			.d(dv[g]), .bo(p_nc[g*4 + 1]));
-		am_add #(.W(12)) u_t1 (.a(x[0] ? dh[g] : 12'd0), .b(y[0] ? dv[g] : 12'd0), .ci(1'b0),
-			.s(t1[g]), .co(p_nc[g*4 + 2]));
-		am_add #(.W(12)) u_t2 (.a(x[1] ? dh[g] : 12'd0), .b(y[1] ? dv[g] : 12'd0), .ci(1'b0),
-			.s(t2[g]), .co(p_nc[g*4 + 3]));
+			.d(dv[g]), .bo(p_nc[g*2 + 1]));
 	end
 	endgenerate
 
-	/* ---- E1, the EAC blocks (wa: R or alpha, wb: G) ---- */
+	/* ---- E1, the EAC blocks (wa: R or alpha, wb: G): the modifier, the
+	 * base ---- */
 	wire r11 = !rgbb;	/* R11 (not RGBA8's 8-bit alpha) */
 	wire sg = i_fmt[0];	/* signed R11 */
 	wire [13:0] e_vb [0:1];	/* the base */
-	wire [13:0] e_va [0:1];	/* the modifier term */
-	wire [5:0] e_nc;
+	wire [4:0] e_m [0:1];	/* the modifier */
+	wire [3:0] e_mu [0:1];	/* the multiplier */
 	generate
 	for (g = 0; g < 2; g = g + 1) begin : g_eac
 		wire [63:0] ew = g == 0 ? wa : wb;
-		wire [4:0] m = eacm(ew[51:48], ew[eacp(k) +: 3]);
-		wire [13:0] ms = {{9{m[4]}}, m};
-		wire [3:0] mu = ew[55:52];
-		wire [13:0] s01, s23, mm;
-		/* m times the multiplier: shifts and adds */
-		am_add #(.W(14)) u_s01 (.a(mu[0] ? ms : 14'd0), .b(mu[1] ? {ms[12:0], 1'b0} : 14'd0),
-			.ci(1'b0), .s(s01), .co(e_nc[g*3]));
-		am_add #(.W(14)) u_s23 (.a(mu[2] ? {ms[11:0], 2'b00} : 14'd0),
-			.b(mu[3] ? {ms[10:0], 3'b000} : 14'd0), .ci(1'b0), .s(s23), .co(e_nc[g*3 + 1]));
-		am_add #(.W(14)) u_mm (.a(s01), .b(s23), .ci(1'b0), .s(mm), .co(e_nc[g*3 + 2]));
+		assign e_m[g] = eacm(ew[51:48], ew[eacp(k) +: 3]);
+		assign e_mu[g] = ew[55:52];
 		assign e_vb[g] = !r11 ? {6'd0, ew[63:56]} : !sg ? {3'd0, ew[63:56], 3'd4} :
 			ew[63:56] == 8'h80 ? -14'sd1016 : {{3{ew[63]}}, ew[63:56], 3'd0};
-		assign e_va[g] = !r11 ? mm : mu == 4'd0 ? ms : {mm[10:0], 3'b000};
 	end
 	endgenerate
 
 	/* ---- E1 registers ---- */
 	reg [3:0] fmt1;
-	reg trn1, pm1;
+	reg trn1, pm1, r11_1;
+	reg [1:0] x1, y1;
 	reg [23:0] base1, po1;
 	reg [9:0] delta1;
-	reg [11:0] t1_1 [0:2];
-	reg [11:0] t2_1 [0:2];
+	reg [11:0] dh1 [0:2];
+	reg [11:0] dv1 [0:2];
 	reg [13:0] vb1 [0:1];
-	reg [13:0] va1 [0:1];
+	reg [4:0] m1 [0:1];
+	reg [3:0] mu1 [0:1];
 	always @(posedge clk) begin
 		fmt1 <= i_fmt;
 		trn1 <= trn && !pm;
 		pm1 <= pm;
+		r11_1 <= r11;
+		x1 <= x;
+		y1 <= y;
 		base1 <= base;
 		delta1 <= delta;
 		po1 <= po;
 		for (c = 0; c < 3; c = c + 1) begin
-			t1_1[c] <= t1[c];
-			t2_1[c] <= t2[c];
+			dh1[c] <= dh[c];
+			dv1[c] <= dv[c];
 		end
 		for (c = 0; c < 2; c = c + 1) begin
 			vb1[c] <= e_vb[c];
-			va1[c] <= e_va[c];
+			m1[c] <= e_m[c];
+			mu1[c] <= e_mu[c];
+		end
+	end
+
+	/* ---- E1b: planar's t1, t2; EAC's modifier times the multiplier
+	 * (shifts and adds) ---- */
+	wire [11:0] t1 [0:2];
+	wire [11:0] t2 [0:2];
+	wire [13:0] e_va [0:1];	/* the modifier term */
+	wire [5:0] t_nc;
+	wire [5:0] e_nc;
+	generate
+	for (g = 0; g < 3; g = g + 1) begin : g_t
+		am_add #(.W(12)) u_t1 (.a(x1[0] ? dh1[g] : 12'd0), .b(y1[0] ? dv1[g] : 12'd0),
+			.ci(1'b0), .s(t1[g]), .co(t_nc[g*2]));
+		am_add #(.W(12)) u_t2 (.a(x1[1] ? dh1[g] : 12'd0), .b(y1[1] ? dv1[g] : 12'd0),
+			.ci(1'b0), .s(t2[g]), .co(t_nc[g*2 + 1]));
+	end
+	for (g = 0; g < 2; g = g + 1) begin : g_mm
+		wire [13:0] ms = {{9{m1[g][4]}}, m1[g]};
+		wire [3:0] mu = mu1[g];
+		wire [13:0] s01, s23, mm;
+		am_add #(.W(14)) u_s01 (.a(mu[0] ? ms : 14'd0), .b(mu[1] ? {ms[12:0], 1'b0} : 14'd0),
+			.ci(1'b0), .s(s01), .co(e_nc[g*3]));
+		am_add #(.W(14)) u_s23 (.a(mu[2] ? {ms[11:0], 2'b00} : 14'd0),
+			.b(mu[3] ? {ms[10:0], 3'b000} : 14'd0), .ci(1'b0), .s(s23), .co(e_nc[g*3 + 1]));
+		am_add #(.W(14)) u_mm (.a(s01), .b(s23), .ci(1'b0), .s(mm), .co(e_nc[g*3 + 2]));
+		assign e_va[g] = !r11_1 ? mm : mu == 4'd0 ? ms : {mm[10:0], 3'b000};
+	end
+	endgenerate
+
+	/* ---- E1b registers ---- */
+	reg [3:0] fmt2;
+	reg trn2, pm2;
+	reg [23:0] base2, po2;
+	reg [9:0] delta2;
+	reg [11:0] t1_2 [0:2];
+	reg [11:0] t2_2 [0:2];
+	reg [13:0] vb2 [0:1];
+	reg [13:0] va2 [0:1];
+	always @(posedge clk) begin
+		fmt2 <= fmt1;
+		trn2 <= trn1;
+		pm2 <= pm1;
+		base2 <= base1;
+		delta2 <= delta1;
+		po2 <= po1;
+		for (c = 0; c < 3; c = c + 1) begin
+			t1_2[c] <= t1[c];
+			t2_2[c] <= t2[c];
+		end
+		for (c = 0; c < 2; c = c + 1) begin
+			vb2[c] <= vb1[c];
+			va2[c] <= e_va[c];
 		end
 	end
 
@@ -344,16 +390,16 @@ module atg_tu_etc (
 	wire [23:0] pc;
 	generate
 	for (g = 0; g < 3; g = g + 1) begin : g_q
-		am_add #(.W(12)) u_qn (.a({4'd0, base1[g*8 +: 8]}), .b({{2{delta1[9]}}, delta1}),
+		am_add #(.W(12)) u_qn (.a({4'd0, base2[g*8 +: 8]}), .b({{2{delta2[9]}}, delta2}),
 			.ci(1'b0), .s(qn[g]), .co(q_nc[g*3]));
-		am_add #(.W(12)) u_qa (.a(t1_1[g]), .b({t2_1[g][10:0], 1'b0}), .ci(1'b0), .s(qa[g]),
+		am_add #(.W(12)) u_qa (.a(t1_2[g]), .b({t2_2[g][10:0], 1'b0}), .ci(1'b0), .s(qa[g]),
 			.co(q_nc[g*3 + 1]));
-		am_add #(.W(12)) u_qp (.a(qa[g]), .b({2'd0, po1[g*8 +: 8], 2'b10}), .ci(1'b0),
+		am_add #(.W(12)) u_qp (.a(qa[g]), .b({2'd0, po2[g*8 +: 8], 2'b10}), .ci(1'b0),
 			.s(qp[g]), .co(q_nc[g*3 + 2]));
-		assign pc[g*8 +: 8] = pm1 ? clamp8({{2{qp[g][11]}}, qp[g][11:2]}) : clamp8(qn[g]);
+		assign pc[g*8 +: 8] = pm2 ? clamp8({{2{qp[g][11]}}, qp[g][11:2]}) : clamp8(qn[g]);
 	end
 	for (g = 0; g < 2; g = g + 1) begin : g_ev
-		am_add #(.W(14)) u_ev (.a(vb1[g]), .b(va1[g]), .ci(1'b0), .s(ev[g]), .co(q_nc[9 + g]));
+		am_add #(.W(14)) u_ev (.a(vb2[g]), .b(va2[g]), .ci(1'b0), .s(ev[g]), .co(q_nc[9 + g]));
 	end
 	endgenerate
 
@@ -366,31 +412,32 @@ module atg_tu_etc (
 			(v < -1023 ? 11'h401 : v > 1023 ? 11'h3FF : v[10:0]);
 	endfunction
 
-	wire [31:0] rgbv = trn1 ? 32'd0 : {8'hFF, pc};
-	wire [10:0] ea = eacc(ev[0], fmt1 != 4'd4 && fmt1 != 4'd5, fmt1[0]);
-	wire [10:0] eb = eacc(ev[1], 1'b1, fmt1[0]);
+	wire [31:0] rgbv = trn2 ? 32'd0 : {8'hFF, pc};
+	wire [10:0] ea = eacc(ev[0], fmt2 != 4'd4 && fmt2 != 4'd5, fmt2[0]);
+	wire [10:0] eb = eacc(ev[1], 1'b1, fmt2[0]);
 
 	always @(posedge clk) begin
 		o_kind <= 2'd0;
 		o_texel <= 32'd0;
-		case (fmt1)
+		case (fmt2)
 		4'd0, 4'd1, 4'd2, 4'd3: begin
-			o_kind <= {1'b0, fmt1[0]};
+			o_kind <= {1'b0, fmt2[0]};
 			o_texel <= rgbv;
 		end
 		4'd4, 4'd5: begin
-			o_kind <= {1'b0, fmt1[0]};
+			o_kind <= {1'b0, fmt2[0]};
 			o_texel <= {ea[7:0], rgbv[23:0]};
 		end
 		4'd6, 4'd7, 4'd8, 4'd9: begin
-			o_kind <= fmt1[0] ? 2'd3 : 2'd2;
-			o_texel <= {5'd0, fmt1[3] ? eb : 11'd0, 5'd0, ea};
+			o_kind <= fmt2[0] ? 2'd3 : 2'd2;
+			o_texel <= {5'd0, fmt2[3] ? eb : 11'd0, 5'd0, ea};
 		end
 		default: ;
 		endcase
 	end
 
-	wire unused_ok = &{1'b0, d_nc, dneg_nc, p_nc, e_nc, q_nc, opq, hm, ea[10:8], rgbv[31:24]};
+	wire unused_ok = &{1'b0, d_nc, dneg_nc, p_nc, t_nc, e_nc, q_nc, opq, hm, ea[10:8],
+		rgbv[31:24]};
 endmodule
 
 `default_nettype wire

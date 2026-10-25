@@ -218,12 +218,14 @@ module atg_tu_fma #(
 
 	reg v7;
 	reg [TW-1:0] t7;
-	reg [76:0] sum7;
-	reg sr7, spec7;
+	reg [76:0] s1_7, s2_7;
+	reg neg7, sr7, spec7;
 	reg [11:0] eb7;
 	reg [31:0] sres7;
 	always @(posedge clk) begin
-		sum7 <= neg_b ? s2 : s1;
+		s1_7 <= s1;
+		s2_7 <= s2;
+		neg7 <= neg_b;
 		sr7 <= neg_b ? sc6 : sp6;
 		eb7 <= eb6;
 		spec7 <= spec6;
@@ -231,7 +233,8 @@ module atg_tu_fma #(
 		t7 <= t6;
 	end
 
-	/* ---- C1: leading zeros ---- */
+	/* ---- C1: the magnitude, its leading zeros ---- */
+	wire [76:0] sum7 = neg7 ? s2_7 : s1_7;
 	reg [6:0] lz_c1;
 	always @(*) begin
 		lz_c1 = 7'd0;

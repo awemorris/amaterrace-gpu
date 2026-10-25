@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_tu_etc_tb: atg_tu_etc (2 cycles) against tools/etcmodel.py
+ * atg_tu_etc_tb: atg_tu_etc (3 cycles) against tools/etcmodel.py
  * (sim/vec/tu_etc.txt), every texel of each block.  Groups: "modes" (RGB
  * blocks of every colour mode with and without the flip bit, RGB8A1 with
  * and without the opaque bit, EAC blocks of every table with multipliers 0,
@@ -57,7 +57,7 @@ module atg_tu_etc_tb;
 				block = x_block;
 				s = x_s;
 				t = x_t;
-				repeat (2)
+				repeat (3)
 					@(posedge clk);
 				#1;
 				if (kind !== x_kind || texel !== x_texel) begin
