@@ -52,6 +52,7 @@ static uint32_t img_slice(const struct img_sub *sub, uint32_t layer, uint32_t z)
 static uint32_t img_keep(uint32_t format, uint32_t aspect);
 static void img_read_layers(struct fw_command *command, uint32_t *layers);
 static void img_read3(struct fw_command *command, uint32_t *values);
+static int img_blit_draw(struct img_sub *src, struct img_sub *dst, const uint32_t *src_layers, const uint32_t *dst_layers, const uint32_t *src_box, const uint32_t *dst_box, uint32_t linear);
 
 /*
  * CMD_COPY_BUFFER_TO_IMAGE and CMD_COPY_IMAGE_TO_BUFFER: [cb][buffer]
@@ -451,8 +452,7 @@ fw_cmd_clear_depth_stencil_image(
  * CMD_BLIT_IMAGE: [cb][src][layout][dst][layout][u32 n][u64 n][{src
  * layers, u64 2, two offsets, dst layers, u64 2, two offsets}][filter].
  * A region of the same size in both images and the same format is a
- * copy; a scaled, flipped or converting blit is the built-in draw's (not
- * yet: VK_ERROR_FEATURE_NOT_PRESENT).
+ * copy; a scaled, flipped or converting blit is the built-in draw.
  */
 void
 fw_cmd_blit_image(
@@ -473,6 +473,9 @@ fw_cmd_blit_image(
 	uint64_t dst_id;
 	uint64_t count;
 	uint64_t region;
+	struct fw_reader saved;
+	struct fw_rstate *state;
+	uint32_t filter_linear;
 	int failed;
 	int error;
 
@@ -500,6 +503,14 @@ fw_cmd_blit_image(
 	if (!failed)
 		fw_emit_begin(cmdbuf, command->tag);
 
+	/* The filter comes after the regions (each 24 words): it is looked at first. */
+	saved = *command->reader;
+	fw_reader_skip(command->reader, (uint32_t)count * 96u);
+	filter_linear = fw_reader_u32(command->reader);
+	*command->reader = saved;
+	if (count > 0x10000u)
+		command->reader->error = 1;
+
 	/* Each region: its two boxes. */
 	for (region = 0; region < count && !command->reader->error; region++) {
 		img_read_layers(command, src_layers);
@@ -513,19 +524,23 @@ fw_cmd_blit_image(
 		if (failed || command->reader->error)
 			continue;
 
-		/* Only an unscaled, unflipped blit of one format is a copy. */
+		/* A scaled, flipped or converting blit is the built-in draw. */
+		img_level(&src, src_layers[1]);
+		img_level(&dst, dst_layers[1]);
+		if (src_layers[3] == IMG_REMAINING)
+			src_layers[3] = src.image.layers - src_layers[2];
 		if (src.image.format != dst.image.format ||
 		    src_box[3] < src_box[0] || src_box[4] < src_box[1] || src_box[5] < src_box[2] ||
 		    dst_box[3] - dst_box[0] != src_box[3] - src_box[0] ||
 		    dst_box[4] - dst_box[1] != src_box[4] - src_box[1] ||
 		    dst_box[5] - dst_box[2] != src_box[5] - src_box[2]) {
-			fw_cmd_record_error(cmdbuf, FW_VK_ERROR_FEATURE_NOT_PRESENT);
+			error = img_blit_draw(&src, &dst, src_layers, dst_layers, src_box, dst_box, filter_linear);
+			if (error != 0)
+				fw_cmd_record_error(cmdbuf, FW_VK_ERROR_FEATURE_NOT_PRESENT);
 			continue;
 		}
 
 		/* The copy, layer by layer and slice by slice. */
-		img_level(&src, src_layers[1]);
-		img_level(&dst, dst_layers[1]);
 		memset(&blt, 0, sizeof(blt));
 		blt.op = GHCI_BLT_COPY | fw_blt_pixel(src.image.texel_bytes);
 		blt.src_stride = src.row;
@@ -533,8 +548,6 @@ fw_cmd_blit_image(
 		blt.src_xy = src_box[1] << 16 | src_box[0];
 		blt.dst_xy = dst_box[1] << 16 | dst_box[0];
 		blt.size = (src_box[4] - src_box[1]) << 16 | (src_box[3] - src_box[0]);
-		if (src_layers[3] == IMG_REMAINING)
-			src_layers[3] = src.image.layers - src_layers[2];
 		for (layer = 0; layer < src_layers[3]; layer++) {
 			for (z = 0; z < src_box[5] - src_box[2]; z++) {
 				blt.src = img_slice(&src, src_layers[2] + layer, src_box[2] + z);
@@ -548,9 +561,153 @@ fw_cmd_blit_image(
 	(void)fw_reader_u32(command->reader);
 	if (failed)
 		return;
+
+	/* A blit draw wrote STATE: the next draw writes its pipeline's again. */
+	state = fw_rstate(cmdbuf);
+	if (state != NULL) {
+		state->emitted[FW_BIND_GRAPHICS] = 0;
+		state->emitted[FW_BIND_COMPUTE] = 0;
+	}
 	error = fw_emit_end();
 	if (error != 0)
 		fw_cmd_record_error(cmdbuf, FW_VK_ERROR_OUT_OF_DEVICE_MEMORY);
+}
+
+/*
+ * The built-in blit draw of one region: for each layer (and each slice of
+ * a 3D destination, the source's nearest slice), a triangle strip over
+ * the destination box whose fragments read the source box with the
+ * blit's filter (unnormalized coordinates, clamped to the edge).  The
+ * render output converts the format; nothing of the draw is counted by
+ * an occlusion query.
+ *
+ * Returns 0, or -1 for images the draw cannot blit (depth/stencil,
+ * multisampled, a destination without colour attachments).
+ */
+static int
+img_blit_draw(
+	struct img_sub *src,
+	struct img_sub *dst,
+	const uint32_t *src_layers,
+	const uint32_t *dst_layers,
+	const uint32_t *src_box,
+	const uint32_t *dst_box,
+	uint32_t linear)
+{
+	const struct fw_format *src_format;
+	const struct fw_format *dst_format;
+	uint32_t bank[8];
+	uint32_t payload[3];
+	uint32_t vs_words;
+	uint32_t fs_words;
+	uint32_t vs_code;
+	uint32_t fs_code;
+	uint32_t sampler;
+	uint32_t layer;
+	uint32_t z;
+	uint32_t slices;
+	uint32_t src_slice;
+	uint32_t index;
+
+	/* Colour images of one sample, a destination that can be rendered. */
+	src_format = fw_format_find(src->image.format);
+	dst_format = fw_format_find(dst->image.format);
+	if (src_format == NULL || dst_format == NULL || (dst_format->flags & FW_FMT_COLOR) == 0 ||
+	    (src_format->flags & (FW_FMT_DEPTH | FW_FMT_STENCIL)) != 0 ||
+	    src->image.samples != 1u || dst->image.samples != 1u)
+		return -1;
+
+	/* The bank: the destination's corners and the source's, in pixels and texels. */
+	for (index = 0; index < 2u; index++) {
+		bank[index] = fw_f32_from_int((int32_t)dst_box[index]);
+		bank[2u + index] = fw_f32_from_int((int32_t)dst_box[3u + index]);
+		bank[4u + index] = fw_f32_from_int((int32_t)src_box[index]);
+		bank[6u + index] = fw_f32_from_int((int32_t)src_box[3u + index]);
+	}
+
+	/* The draw's fixed state: no test, no blend, no cull, a strip, the identity viewport. */
+	vs_code = fw_builtin_program(FW_PROGRAM_BLIT_VS, &vs_words);
+	fs_code = fw_builtin_program(FW_PROGRAM_BLIT_FS, &fs_words);
+	fw_emit_set(GHCI_S_TOPOLOGY, 4);
+	fw_emit_set(GHCI_S_PRIM_RESTART, 0);
+	fw_emit_set(GHCI_S_CULL, 0);
+	fw_emit_set(GHCI_S_DEPTH_CLAMP, 2);
+	fw_emit_set(GHCI_S_RAST_MODE, 0);
+	fw_emit_set(GHCI_S_VARYING_COUNT, 2);
+	fw_emit_set(GHCI_S_VS_OUT_WORDS, 2);
+	fw_emit_set(GHCI_S_PROVOKING, 0);
+	fw_emit_set(GHCI_S_MS_CTRL, 0);
+	fw_emit_set(GHCI_S_SAMPLE_KILL, 0);
+	fw_emit_set(GHCI_S_DEPTH, 0);
+	fw_emit_set(GHCI_S_BLEND, 0);
+	for (index = 0; index < 3u; index++)
+		fw_emit_set(GHCI_S_BLEND1 + index, 0);
+	fw_emit_set(GHCI_S_WRITE_MASK, 0xFu);
+	fw_emit_set(GHCI_S_RT_FORMATS, dst->image.format & 0xFFu);
+	fw_emit_set(GHCI_S_ROP_CTRL, 2);
+	fw_emit_set(GHCI_S_VIEWPORT + 0u, 0x3F800000u);
+	fw_emit_set(GHCI_S_VIEWPORT + 1u, 0x3F800000u);
+	fw_emit_set(GHCI_S_VIEWPORT + 2u, 0);
+	fw_emit_set(GHCI_S_VIEWPORT + 3u, 0);
+	fw_emit_set(GHCI_S_VIEWPORT + 4u, 0x3F800000u);
+	fw_emit_set(GHCI_S_VIEWPORT + 5u, 0);
+	fw_emit_set(GHCI_S_SCISSOR_MIN, 0);
+	fw_emit_set(GHCI_S_SCISSOR_MAX, 0);
+	fw_emit_set(GHCI_S_RT_SIZE, dst->height << 16 | dst->width);
+	fw_emit_set(GHCI_S_RT_STRIDE, dst->row);
+	fw_emit_set(GHCI_S_RT_FORMAT, 0);
+	fw_emit_set(GHCI_S_DS_BASE, 0);
+	fw_emit_set(GHCI_S_VS_BASE, vs_code);
+	fw_emit_set(GHCI_S_VS_WORDS, vs_words);
+	fw_emit_set(GHCI_S_FS_BASE, fs_code);
+	fw_emit_set(GHCI_S_FS_WORDS, fs_words);
+
+	/* The vertex index from the identity buffer in r0; no other attribute. */
+	for (index = 0; index < FW_PIPE_ATTRIBUTES; index++)
+		fw_emit_set(GHCI_S_ATTR_DST + index, 0);
+	fw_emit_set(GHCI_S_ATTR_DST, (uint32_t)FW_VK_FORMAT_R32_UINT << 24);
+	fw_emit_set(GHCI_S_ATTR + 1u, 4);
+	fw_emit_set(GHCI_S_ATTR, fw_builtin_identity());
+	fw_emit_set(GHCI_S_ATTR_LIMIT, 0x80000000u | FW_IDENTITY_WORDS * 4u);
+	fw_emit_set(GHCI_S_FIRST, 0);
+	fw_emit_set(GHCI_S_COUNT, 4);
+	fw_emit_set(GHCI_S_INSTANCE_COUNT, 1);
+	fw_emit_set(GHCI_S_FIRST_INSTANCE, 0);
+	fw_emit_set(GHCI_S_VERTEX_OFFSET, 0);
+	fw_emit_set(GHCI_S_INDEX_FORMAT, 0);
+
+	/* The source's slot: a 2D level, the sampler of the blit's filter. */
+	sampler = GHCI_SAMP_WRAP_U(2) | GHCI_SAMP_WRAP_V(2) | GHCI_SAMP_WRAP_W(2) | GHCI_SAMP_UNNORM;
+	if (linear != 0)
+		sampler |= GHCI_SAMP_MAG_LINEAR | GHCI_SAMP_MIN_LINEAR;
+	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_SIZE), src->height << 16 | src->width);
+	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_IMAGE), GHCI_IMG_LEVELS(1));
+	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_LAYER_STRIDE), 0);
+	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_SAMPLER), sampler);
+	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_LOD), GHCI_TEX_LOD_VAL(0, 0));
+	fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_FORMAT), GHCI_TFMT_VKFORMAT(src->image.format));
+	index = 0;
+	fw_emit_op(GHCI_OP_LOAD_PROGRAM, 0, &index, 1);
+	payload[0] = 0;
+	payload[1] = fw_emit_data(bank, 8);
+	payload[2] = 8;
+	fw_emit_op(GHCI_OP_LOAD_CONST, 0, payload, 3);
+
+	/* Each layer, and each destination slice of a 3D image from the nearest source slice. */
+	slices = dst_box[5] - dst_box[2];
+	if (dst_box[5] < dst_box[2])
+		slices = 0;
+	for (layer = 0; layer < src_layers[3]; layer++) {
+		for (z = 0; z < slices; z++) {
+			src_slice = src_box[2] + (uint32_t)(((uint64_t)(2u * z + 1u) * (src_box[5] - src_box[2])) / (2u * slices));
+			fw_emit_set(GHCI_S_TEX(0, GHCI_TEX_BASE), img_slice(src, src_layers[2] + layer, src_slice));
+			fw_emit_set(GHCI_S_RT_BASE, img_slice(dst, dst_layers[2] + layer, dst_box[2] + z));
+			fw_emit_op(GHCI_OP_DRAW, 0, NULL, 0);
+		}
+	}
+
+	/* Succeeded: the draws are built (the caller's state is written again later). */
+	return 0;
 }
 
 /* Reads a bound image of the session into a subresource (level 0). */

@@ -35,6 +35,7 @@ module atg_cp_regs #(
 	parameter DEVICE_VERSION = 32'h00000002,	/* Implementation version */
 	parameter ISA_ID = 32'h47534931,	/* "GSI1"; 0 when there is no SU */
 	parameter NATIVE_ISA_ID = 32'h47534931,	/* NATIVE_ISA_ID (0x048) */
+	parameter [15:0] RESIDENT_WARPS = 16'd0,	/* RESIDENT_WARPS (0x04C): warps run at once over the SUs */
 	parameter CAPS = 32'h00500002,	/* CAPS value (design §2.2), set by atg_top from its parameters */
 	parameter CAPS2 = 32'h00000001,	/* CAPS2 value */
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
@@ -196,6 +197,7 @@ module atg_cp_regs #(
 		GHCI_SCRATCH[11:0]: own = scratch;
 		GHCI_COUNTER[11:0]: own = counter;
 		12'h048: own = NATIVE_ISA_ID;
+		GHCI_RESIDENT_WARPS[11:0]: own = {16'd0, RESIDENT_WARPS};
 		default: ;
 		endcase
 		if (roff[11:5] == 7'h06)	/* VEND 0x0C0-0x0DF */

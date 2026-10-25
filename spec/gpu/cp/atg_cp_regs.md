@@ -16,6 +16,7 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `DEVICE_VERSION` | `32'h00000002` | Implementation version. |
 | `ISA_ID` | `32'h47534931` | "GSI1"; 0 when there is no SU. |
 | `NATIVE_ISA_ID` | `32'h47534931` | NATIVE_ISA_ID (0x048). |
+| `RESIDENT_WARPS` | `16'd0` | RESIDENT_WARPS (0x04C): the warps the GPU runs at once over its SUs (atg_top: NSU x SU_NWARPS). |
 | `CAPS` | `32'h00500002` | CAPS value (design §2.2), set by atg_top from its parameters. |
 | `CAPS2` | `32'h00000001` | CAPS2 value. |
 | `VEND` | `256'd0` | The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0. |
@@ -100,7 +101,7 @@ Register read latency 1 cycle (the am_axi_regs contract).
 
 `sim/tb/atg_cp_regs_tb.v` prints, in this order:
 
-- `PASS atg_cp_regs.id` — identification, CAPS, CAPS2, VEND read their parameter values
+- `PASS atg_cp_regs.id` — identification, CAPS, CAPS2, VEND, RESIDENT_WARPS read their parameter values
 - `PASS atg_cp_regs.extcap` — the EXTCAP list walks to the end for several XCAP_MASK values
 - `PASS atg_cp_regs.fmt` — (CAPS[30]) a bench with atg_cp_fmt beside it: the FMT entry (id 10, 0x160), FMT_INDEX written and read back (partial writes too), FMT_OPTIMAL, FMT_LINEAR and FMT_BUFFER for all 256 values against `sim/vec/fmt_info.txt`, FMT_LIMITS 4
 - `PASS atg_cp_regs.snoop` — a write gives one hcr_we with index, data and mask; a partial alias write gives no alias_we

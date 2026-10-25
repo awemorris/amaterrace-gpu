@@ -161,6 +161,8 @@ module atg_top #(
 	 */
 	localparam HAS_ATOM = NSU > 0 ? 1 : 0;
 	localparam C_CPU = 2;
+	/* RESIDENT_WARPS: the warps the shader units run at once. */
+	localparam [31:0] CP_RESIDENT_WARPS = NSU * SU_NWARPS;
 	localparam C_VF = C_CPU + (HAS_CPU != 0 ? 1 : 0);
 	localparam C_TU = C_VF + (HAS_VF != 0 ? 1 : 0);
 	localparam C_ROP = C_TU + (HAS_TU != 0 ? 1 : 0);
@@ -309,6 +311,7 @@ module atg_top #(
 		.HAS_DBG(HAS_JTAG),
 		.PACKED(NSU != 0 && SU_PACKED != 0),
 		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0),
+		.RESIDENT_WARPS(CP_RESIDENT_WARPS[15:0]),
 		.MS4(MS4)
 	) cp (
 		.clk(clk),

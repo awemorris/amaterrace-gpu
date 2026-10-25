@@ -529,6 +529,8 @@ int fw_session_any(void);
 #define FW_BUILTIN_PROGRAM_BYTES 1024u
 enum fw_builtin_program {
 	FW_PROGRAM_MASK = 0,		/* a fragment stage that keeps every sample */
+	FW_PROGRAM_BLIT_VS,		/* the blit draw's vertex program */
+	FW_PROGRAM_BLIT_FS,		/* the blit draw's fragment program */
 	FW_BUILTIN_PROGRAMS
 };
 #define FW_BUILTIN_BYTES (FW_IDENTITY_WORDS * 4u + FW_BUILTIN_PROGRAMS * FW_BUILTIN_PROGRAM_BYTES + FW_LINE_BYTES)

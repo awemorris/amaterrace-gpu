@@ -52,7 +52,8 @@ module atg_cp #(
 	parameter SUBGROUP = 0,	/* the SU has shfl/vote/ballot (CAPS[24]) */
 	parameter MS4 = 0,	/* 4x multisampling in the RX, ROP, TU, SU and BLT (CAPS[29]) */
 	parameter HAS_FMT = 0,	/* the FMT capability (with CAPS[30]) */
-	parameter HAS_ETC = 0	/* the TU's ETC2/EAC decoder (FMT reports those formats) */
+	parameter HAS_ETC = 0,	/* the TU's ETC2/EAC decoder (FMT reports those formats) */
+	parameter [15:0] RESIDENT_WARPS = 16'd0	/* RESIDENT_WARPS: NSU x NWARPS (0: no shader unit) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -210,7 +211,7 @@ module atg_cp #(
 	atg_cp_regs #(
 		.GCLK_HZ(GCLK_HZ), .VENDOR_ID(VENDOR_ID), .DEVICE_ID(DEVICE_ID),
 		.DEVICE_VERSION(DEVICE_VERSION), .ISA_ID(ISA), .NATIVE_ISA_ID(ISA), .CAPS(CAPS),
-		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801)
+		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),

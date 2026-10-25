@@ -120,3 +120,5 @@ RUNNING skips HALTING), 6 (FAULT_INFO[23:16] of an MC refusal is the client numb
 BLT error and of the watchdog is 0).
 
 2026-10-25 (CAPS[30]): parameters HAS_FMT (default 0: the FMT capability, atg_cp_fmt, XCAP bit 9) and HAS_ETC (default 0: FMT reports the ETC2/EAC formats); ports occ_count (in, 40) and occ_clear (out) between atg_cp_seq's QUERY and atg_rop's occlusion counter (atg_top wires them).
+
+RESIDENT_WARPS (parameter, default 0): the RESIDENT_WARPS register (0x04C), NSU x NWARPS from atg_top, passed to atg_cp_regs.

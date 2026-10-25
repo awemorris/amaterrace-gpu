@@ -165,6 +165,7 @@ earlier work has completed.
 | 0x03C | IRQ_ENABLE | RW | [8:0]: the same bits |
 | 0x040 | IRQ_SET | W1S | [5] sets IRQ_STATUS.SOFT |
 | 0x044 | WDT_CYCLES | RW | Watchdog limit for one command, in core cycles (reset value 2^28) |
+| 0x04C | RESIDENT_WARPS | R | [15:0] the warps the GPU runs at once over all its shader units (the size of the `warp` operand's range, section 12.3; scratch memory, section 12.10); 0 without a shader unit. [31:16] 0 |
 | 0x050 | RING_BASE | RW | GPU address of the ring, 32-byte aligned (the low bits read 0) |
 | 0x054 | RING_SIZE | RW | log2 of the ring's size in bytes, 10..20 (values outside are clamped) |
 | 0x058 | RING_WPTR | RW | Write pointer, a dword index in the ring; writing it rings the doorbell |
@@ -412,8 +413,8 @@ firmware:
   of GPU memory the driver lends the firmware for its objects and the
   recordings of the command buffers (line aligned, inside the aperture,
   given to no other user), and the warps the GPU runs at once over its
-  shader units (from the vendor registers; a program's scratch memory,
-  section 12.10, has a part for each; 0 lets the firmware choose). The driver sends it after every start of the
+  shader units (RESIDENT_WARPS; a program's scratch memory, section
+  12.10, has a part for each; 0 lets the firmware choose). The driver sends it after every start of the
   firmware (RUN, a RESET) and before the first SESSION_OPEN; it is
   refused (VK_ERROR_INITIALIZATION_FAILED) while a session is open. A
   firmware that keeps its objects elsewhere may ignore it. A session's
