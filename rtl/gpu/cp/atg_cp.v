@@ -114,7 +114,8 @@ module atg_cp #(
 	output wire lc_kick,
 	output wire raw_kick,
 	output wire [3:0] inv,
-	input wire [7:0] busy_ext,	/* STATUS[7:0] bits of VF, RX, ROP, TU, SU, SA */
+	input wire [7:0] busy_ext,	/* STATUS[7:2] bits of VF, RX, ROP, TU, SU, SA; [0] the units'
+					 * memory requests not yet answered (atg_mc's !unit_idle) */
 	input wire vsync,
 	input wire [1:0] x_fault,	/* fault sources: 0 the SUs (ISA), 1 the other blocks */
 	input wire [7:0] x_fault_kind,
@@ -378,7 +379,7 @@ module atg_cp #(
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
 		.blt_kick(s_seq_blt_kick), .draw_kick(s_seq_draw_kick), .cs_kick(s_seq_cs_kick),
 		.lc_kick(lc_kick), .raw_kick(raw_kick), .inv(inv), .perf_reset(s_perf_reset),
-		.busy_in({busy_ext[7:2], blt_busy, 1'b0}), .vsync(vsync),
+		.busy_in({busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
 		.occ_count(occ_count), .occ_clear(occ_clear),
@@ -433,7 +434,7 @@ module atg_cp #(
 		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
 	);
 
-	wire unused_ok = &{1'b0, busy_ext[1:0], s_i_rsp_tag};
+	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag};
 endmodule
 
 `default_nettype wire

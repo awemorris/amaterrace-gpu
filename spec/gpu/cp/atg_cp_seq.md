@@ -45,7 +45,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `raw_kick` | out | 1 | DRAW_RAW (RX; 9 words in STATE 0x1E0-0x1E8). |
 | `inv` | out | 4 | INVALIDATE mask pulse: [0] D$, [1] T$, [2] constant, [3] I$ (DRAW also pulses [1:0]). |
 | `perf_reset` | out | 1 | PERF_RESET. |
-| `busy_in` | in | 8 | Block busy levels, STATUS[7:0] order (CP bit 0 ignored). |
+| `busy_in` | in | 8 | Block busy levels, STATUS[7:1] order; bit 0: the units' memory requests not yet answered (atg_mc's `!unit_idle`), which FENCE, WAIT_IDLE, RESULT and QUERY wait for. |
 | `vsync` | in | 1 | One-cycle pulse per display vsync (WAIT_VSYNC), 0 without a DC. |
 | **Fences (to atg_cp_fence)** | | | |
 | `f_valid` | out | 1 | Request valid. |
@@ -117,6 +117,7 @@ One SET_REG pair per 2 cycles (one dword per cycle); kick 1 cycle after the head
 - `PASS atg_cp_seq.drawstate` — SET_REG of RX state (0x05E) and ROP state (0x07A) right after a DRAW waits until the VF is idle, of ROP state (0x072) during a DISPATCH until the SUs are; the monitor fails any write to 0x050-0x08F while busy_in[2], [3], [4] or [6] is set (the earlier rule, RX/ROP only, fails it: `-DMUT_SEQ_DRAWSTATE`)
 - `PASS atg_cp_seq.tuwait`, `.progwait`, `.ldconst`, `.attrlimit_wait` — right after a DRAW (the VF busy): TU state 0x095, FS_BASE 0x192, a LOAD_CONST's kick and ATTR_LIMIT 0x1D2 wait until the VF is idle (monitors: the TU range not while the VF is busy, the program range not while the VF, the RX or the SUs are, LOAD_CONST not while the VF or the RX is, 0x1C0-0x1DF not while the VF is); the earlier rules (`-DMUT_SEQ_DRAWSTATE`) fail all four
 - `PASS atg_cp_seq.wait` — WAIT_IDLE with a mask waits only for those busy bits
+- `PASS atg_cp_seq.mem` — WAIT_IDLE(BLT) and WAIT_IDLE(0) wait while busy_in[0] (memory requests outstanding, as a CPU DMA write just before); `-DMUT_SEQ_NOMEM` fails it
 - `PASS atg_cp_seq.fence` — FENCE waits for idle then requests; RESULT waits for f_busy 0
 - `PASS atg_cp_seq.query` — (CAPS[30]) QUERY flags[0] clears at once while the BLT is busy; flags 0 waits for every block and the fence unit, then requests op 1 with addr, the counter's low word and its high bits; flags[1] clears with the request
 - `PASS atg_cp_seq.source` — fw_active switches the source; µops of the two sources never interleave

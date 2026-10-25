@@ -10,7 +10,12 @@
  * dword in hand, whether and where it writes STATE and which busy bits
  * (STATUS order: [1] BLT, [2] VF, [3] RX, [4] ROP, [5] TU, [6] SU) hold
  * it; for the µop, which busy bits it waits for before its act (pre, and
- * pre_f for the fence unit) and after its kick (post).
+ * pre_f for the fence unit) and after its kick (post).  Bit 0 of the busy
+ * bits is the units' memory: requests of the units (and the CPU's DMA)
+ * that the MC has not answered (atg_mc's unit_idle).  FENCE, WAIT_IDLE
+ * (whatever its flags), RESULT and QUERY wait for it too: a unit's busy
+ * may fall before its last response (the TU's) and the CPU's DMA writes
+ * are not in a busy bit at all.
  *
  * A block's STATE does not change under its work, nor while work that
  * will read it is still upstream:
@@ -67,7 +72,12 @@ module atg_cp_seq_wait (
 	localparam [7:0] B_ROP = 8'h10;
 	localparam [7:0] B_TU = 8'h20;
 	localparam [7:0] B_SU = 8'h40;
-	localparam [7:0] B_ALL = 8'hFE;
+`ifdef MUT_SEQ_NOMEM
+	localparam [7:0] B_MEM = 8'h00;	/* the earlier rule, for the TB's mutation check */
+`else
+	localparam [7:0] B_MEM = 8'h01;
+`endif
+	localparam [7:0] B_ALL = 8'hFE | B_MEM;
 `ifdef MUT_SEQ_DRAWSTATE
 	/* the earlier rules, for the TB's mutation check */
 	localparam [7:0] B_RXROP = B_RX | B_ROP;
@@ -131,7 +141,7 @@ module atg_cp_seq_wait (
 			end
 			OP_DRAW: pre = B_VF;
 			OP_FENCE: pre = B_ALL;
-			OP_WAIT_IDLE: pre = flags == 8'd0 ? B_ALL : flags & B_ALL;
+			OP_WAIT_IDLE: pre = flags == 8'd0 ? B_ALL : flags | B_MEM;
 			OP_LOAD_CONST: begin
 				pre = B_LCPRE;
 				post = B_SU;

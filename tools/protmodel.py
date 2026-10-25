@@ -169,10 +169,16 @@ def selftest():
 #   R client write chk tbl slot addr expect   a request (hex; expect 0 OK,
 #                                1 aperture, 2 protection)
 #   E                            the end
-# The requests of one client keep their order; the TB checks each response
-# (an error for a refusal with read data 0, the memory's data else).
+# Each client uses its own lines (line index = client mod 4 inside each
+# group of four), so that it can keep a reference of their data.  Client 0
+# never sets chk (as the CP's ring); client RMW_CLIENT is the atomic unit:
+# its reads are judged as writes.  A write into the table is sent with no
+# byte enabled by the TB (it must not change the table).  The requests of
+# one client keep their order; the TB checks each response (an error for
+# a refusal with read data 0, the memory's data else).
 
 NCLIENT = 4
+RMW_CLIENT = 3
 
 
 def vectors(path, seed):
@@ -196,22 +202,30 @@ def vectors(path, seed):
     for i, e in enumerate(grants):
         out.append('G %x %x %d %d %x %x' % (i, e.slot, e.read, e.write, e.base, e.limit))
     counts = [0, 0, 0]
+
+    def req(c, write, chk, tbl, addr):
+        slot = c if chk else 0
+        e = m.check(addr, write or c == RMW_CLIENT, chk, tbl, slot)
+        counts[e] += 1
+        out.append('R %x %d %d %d %x %x %d' % (c, write, chk, tbl, slot, addr, e))
+
     for c in range(NCLIENT):
+        # The grant's ends: client 1's last line of granule 0x23 and its first of 0x24.
+        if c == 1:
+            req(c, False, True, False, 0x23FA0)
+            req(c, False, True, False, 0x24020)
         for _ in range(300):
             k = rnd.randrange(16)
             if k == 0:
-                addr = rnd.choice([0x00400, 0xF8020, 0xFC000])
+                addr = rnd.choice([0x00400, 0xF8020, 0xFC000]) + 32 * c
             elif k == 1:
-                addr = m.tbase + rnd.randrange(0, 4096, 32)
+                addr = m.tbase + 128 * rnd.randrange(32) + 32 * c
             else:
-                addr = rnd.randrange(0x10000, 0x50000, 32)
+                addr = rnd.randrange(0x10000, 0x50000, 128) + 32 * c
             write = rnd.randrange(2) == 1
             chk = c != 0 and rnd.randrange(8) != 0
             tbl = k == 1 and rnd.randrange(4) == 0
-            slot = c if chk else 0
-            e = m.check(addr, write, chk, tbl, slot)
-            counts[e] += 1
-            out.append('R %x %d %d %d %x %x %d' % (c, write, chk, tbl, slot, addr, e))
+            req(c, write, chk, tbl, addr)
     out.append('E')
     with open(path, 'w') as f:
         f.write('\n'.join(out) + '\n')

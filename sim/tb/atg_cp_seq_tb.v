@@ -107,7 +107,7 @@ module atg_cp_seq_tb;
 	end
 
 	/* Blocks: busy for a while after the kick; SU long (for the mask test). */
-	integer c_blt = 0, c_vf = 0, c_su = 0, c_rx = 0, c_f = 0;
+	integer c_blt = 0, c_vf = 0, c_su = 0, c_rx = 0, c_f = 0, c_mem = 0;
 	integer su_len = 15;
 	always @(posedge clk) begin
 		if (c_blt > 0) c_blt = c_blt - 1;
@@ -118,7 +118,8 @@ module atg_cp_seq_tb;
 		if (draw_kick) c_vf = 12;
 		if (cs_kick || lc_kick) c_su = su_len;
 		if (raw_kick) c_rx = 9;
-		busy_in <= {1'b0, c_su != 0, 2'b00, c_rx != 0, c_vf != 0, c_blt != 0, 1'b0};
+		if (c_mem > 0) c_mem = c_mem - 1;
+		busy_in <= {1'b0, c_su != 0, 2'b00, c_rx != 0, c_vf != 0, c_blt != 0, c_mem != 0};
 		/* The fence unit: takes a request when ready, then busy. */
 		if (c_f > 0) c_f = c_f - 1;
 		if (f_valid && f_ready)
@@ -207,7 +208,7 @@ module atg_cp_seq_tb;
 			log({8'h08, 56'd0});
 		if (f_valid && f_ready) begin
 			log({8'h09, 6'd0, f_op, f_irq, 15'd0, f_addr ^ f_value ^ (f_op == 2'd1 ? f_aux : 32'd0)});
-			if (f_op != 2'd2 && busy_in[7:1] != 7'd0) begin
+			if (f_op != 2'd2 && busy_in != 8'd0) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq.fence: request while a block is busy (%b)", busy_in);
 			end
@@ -523,6 +524,31 @@ module atg_cp_seq_tb;
 		ev_n = 0;
 		if (errors == e0)
 			$display("PASS atg_cp_seq.wait");
+		e0 = errors;
+
+		/* mem: busy_in[0] (the units' memory requests not yet answered, as a
+		 * CPU DMA write just before) holds WAIT_IDLE, whatever its flags. */
+		for (i = 0; i < 2; i = i + 1) begin
+			c_mem = 200;
+			packet(1'b0, 1'b0, 6'd6, i == 0 ? 8'h02 : 8'h00, 8'd0);
+			pl[0] = 32'hD00D + i;
+			packet(1'b0, 1'b1, 6'd1, 8'd0, 8'd1);
+			mark_t = 0;
+			while (!(uop_we && uop_wdata == 32'hD00D + i) && mark_t < 2000) begin
+				@(posedge clk);
+				#1;
+				mark_t = mark_t + 1;
+			end
+			if (busy_in[0] || mark_t >= 2000) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.mem: WAIT_IDLE(%h) with memory requests outstanding",
+					i == 0 ? 8'h02 : 8'h00);
+			end
+		end
+		settle("mem");
+		ev_n = 0;
+		if (errors == e0)
+			$display("PASS atg_cp_seq.mem");
 		e0 = errors;
 
 		/* fence: after a BLIT, FENCE waits for the BLT; RESULT for the fence

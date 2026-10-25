@@ -467,7 +467,7 @@ GHCI_FRAME (gpu-op 0x10105, draft;
 | 3 | DRAW | 0 | Starts the vertex fetcher; invalidates the data and texture caches |
 | 4 | DISPATCH | 3: gx, gy, gz | A compute dispatch; invalidates no cache (send INVALIDATE first when the program reads rewritten memory) |
 | 5 | FENCE | 2: addr, value | A complete fence (section 9); flags[0]: raise IRQ_STATUS.FENCE |
-| 6 | WAIT_IDLE | 0 | Waits until the units in flags (a STATUS busy-bit mask; 0 = all) are idle |
+| 6 | WAIT_IDLE | 0 | Waits until the units in flags (a STATUS busy-bit mask; 0 = all) are idle and the memory accesses of the GPU's units (the firmware's included) have been answered |
 | 7 | LOAD_CONST | 3: region, addr, words | Loads a constant region (waits for the shader units) |
 | 8 | LOAD_PROGRAM | 1: stage | A stage's program changed: invalidates the instruction cache |
 | 9 | WAIT_FENCE | 2: addr, value | Polls the word until (int32)(mem - value) >= 0; the watchdog applies |

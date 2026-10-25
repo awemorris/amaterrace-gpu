@@ -368,7 +368,7 @@ module atg_cp_seq #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, n_last, fw_last, busy_in[0]};
+	wire unused_ok = &{1'b0, n_last, fw_last};
 endmodule
 
 `default_nettype wire

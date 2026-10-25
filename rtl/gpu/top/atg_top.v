@@ -280,7 +280,7 @@ module atg_top #(
 	wire mc_fault_prot, mc_fault_mem, mc_chk_idle, mc_inv_pending;
 	wire [5:0] mc_fault_slot;
 	wire unused_prot = &{1'b0, mc_fault_prot, mc_fault_mem, mc_chk_idle, mc_inv_pending,
-		mc_fault_slot, mc_unit_idle};
+		mc_fault_slot};
 	wire st_we;
 	wire [9:0] st_idx;
 	/* The blocks but the TU see STATE[0..511] (0x200-0x2FF is the TU's). */
@@ -392,7 +392,7 @@ module atg_top #(
 		.lc_kick(lc_kick),
 		.raw_kick(raw_kick),
 		.inv(inv),
-		.busy_ext({sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, 2'b00}),
+		.busy_ext({sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, 1'b0, !mc_unit_idle}),
 		.vsync(x_vsync),
 		.x_fault({1'b0, su_fault}),
 		.x_fault_kind(8'h08),

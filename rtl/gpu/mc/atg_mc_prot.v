@@ -340,7 +340,7 @@ module atg_mc_prot #(
 		reg [33:0] gs, ge, is, ie;
 		begin
 			gs = {{(34-GW){1'b0}}, g0} + {{(34-GW){1'b0}}, tag, {LINE_SHIFT{1'b0}}};
-			ge = gs + LINE_BYTES;
+			ge = gs + {{(33-LINE_SHIFT){1'b0}}, 1'b1, {LINE_SHIFT{1'b0}}};
 			is = {{(34-GW){1'b0}}, inv_g};
 			ie = is + {2'b00, inv_n};
 			overlap = inv_n == 32'd0 || gs < ie && is < ge;
