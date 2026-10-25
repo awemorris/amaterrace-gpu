@@ -30,7 +30,7 @@ set_property -dict { PACKAGE_PIN AD11 IOSTANDARD DIFF_SSTL15 } [get_ports sys_cl
 create_clock -name sysclk -period 5.000 [get_ports sys_clk_p]
 
 ## TCK of the BSCANE2 (the Digilent cable runs at most 30 MHz).
-create_clock -name tck -period 33.333 [get_nets -hier -filter {NAME =~ *jtag/tck_raw}]
+create_clock -name tck -period 33.333 [get_pins -hier -filter {NAME =~ *jtag/bscan/TCK}]
 
 ## The domains meet only through am_sync and am_afifo (and the JTAG
 ## bridge's handshake-protected words, am_jtag_regs; the DC's quasi-static
@@ -104,6 +104,14 @@ set_false_path -to [get_ports {hdmi_d[*] hdmi_de hdmi_hs hdmi_vs hdmi_clk}]
 
 ## CFGBVS / CONFIG_VOLTAGE: left out until bank 0's voltage is checked
 ## (still open from the board's bring-up).
+
+## DCI (ws288 p024): the DDR3's DQ/DQS in banks 32 and 34 use DCI
+## (SSTL15_T_DCI, the MIG's pins), and the MIG project has dci_cascade 1:
+## the reference resistors are on bank 33's VRN/VRP, cascaded to banks 32
+## and 34, so that bank 34's VR pin AB7 can be CPU_RESET (without this the
+## placer stops: "Place 30-110", AB7 occupied).  The usual KC705 MIG
+## constraint; not checked against the schematic (UG810 not read).
+set_property DCI_CASCADE {32 34} [get_iobanks 33]
 
 ## PCIe (ws288 p013): the edge connector's 100 MHz reference clock, PERST#
 ## and lanes 0-3 (Gen2 x4), pins from Vivado 2026.1's KC705 board file

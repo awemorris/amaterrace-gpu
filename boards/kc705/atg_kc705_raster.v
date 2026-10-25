@@ -86,6 +86,10 @@ module atg_kc705_raster #(
 	localparam [31:0] LOCAL_BASE = 32'h80000000;	/* the MIG's 1 GiB (address bits 29:0) */
 	localparam [31:0] LOCAL_BYTES = 32'h40000000;
 	localparam [31:0] HOST_LIMIT = 32'h80000000;	/* the bridge's AXI BAR, 1:1 (ip.tcl) */
+	/* gclk = 1000 MHz / GCLK_DIVIDE (atg_kc705_clk's MMCM).  50 (20 MHz) is a placeholder,
+	 * not the target: the clock is chosen in the timing work (ws288 p025). */
+	localparam integer GCLK_DIVIDE = 50;
+	localparam [31:0] GCLK_HZ = 32'd1000000000 / GCLK_DIVIDE;
 
 	wire clk, rst_n, ref_clk, ref_rst_n, pclk, prst_n, pclk_sel, mem_ready, irq;
 	/* The host's register port: PCIe BAR0 through am_axi_cdc. */
@@ -256,7 +260,7 @@ module atg_kc705_raster #(
 		.urst_n(user_rst_n), .msi_req(msi_req), .msi_ack(msi_ack)
 	);
 
-	atg_kc705_clk clocks (
+	atg_kc705_clk #(.GCLK_DIVIDE(GCLK_DIVIDE)) clocks (
 		.sys_clk_p(sys_clk_p), .sys_clk_n(sys_clk_n), .cpu_reset(cpu_reset), .pclk_sel(pclk_sel),
 		.gclk(clk), .grst_n(rst_n), .ref_clk(ref_clk), .ref_rst_n(ref_rst_n), .pclk(pclk),
 		.prst_n(prst_n)
@@ -268,7 +272,7 @@ module atg_kc705_raster #(
 	);
 
 	atg_top #(
-		.GCLK_HZ(32'd20000000),	/* atg_kc705_clk's gclk (bring-up, ws288 p024) */
+		.GCLK_HZ(GCLK_HZ),
 		.S_ID_W(4),
 		.S_LEN_W(8),
 		.LINE_BYTES(64),

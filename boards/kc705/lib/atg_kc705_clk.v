@@ -7,8 +7,7 @@
 
 /*
  * atg_kc705_clk: The KC705's clocks: SYSCLK 200 MHz (differential) →
- * MMCME2 → gclk 20 MHz (the board's bring-up clock, ws288 p024), the MIG
- * reference, and the pixel clocks (BUFGMUX
+ * MMCME2 → gclk (1000 MHz / GCLK_DIVIDE), the MIG reference, and the pixel clocks (BUFGMUX
  * by PCLK_SEL); resets synchronised per domain.  See
  * spec/boards/kc705/lib/atg_kc705_clk.md.
  *
@@ -16,9 +15,10 @@
  * MIG's system clock, which the MIG takes without its own buffer) and the
  * input of three clock managers:
  *
- *   gclk, MMCM: DIVCLK 1, MULT 5: VCO 1000 MHz, O0 50 -> 20 MHz (the
- *          synthesis estimate of the core's Fmax is about 23-25 MHz; a
- *          faster gclk waits for the pipelining of ws288 p025).
+ *   gclk, MMCM: DIVCLK 1, MULT 5: VCO 1000 MHz, O0 GCLK_DIVIDE (2 to
+ *          128; the board top gives it, with GCLK_HZ to match).  The
+ *          default 50 (20 MHz) is a placeholder, not the target: the
+ *          clock is chosen in the timing work (ws288 p025).
  *   sel 0 (640x480), PLL: DIVCLK 5, MULT 34: VCO 1360 MHz (PFD 40),
  *          O0 54 -> 25.185 MHz (VESA 25.175: +0.04 %).
  *   sel 1 (720p), MMCM: DIVCLK 10, MULT 59.375: VCO 1187.5 MHz (PFD 20),
@@ -39,7 +39,9 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_kc705_clk (
+module atg_kc705_clk #(
+	parameter integer GCLK_DIVIDE = 50	/* gclk = 1000 MHz / GCLK_DIVIDE */
+) (
 	input wire sys_clk_p,
 	input wire sys_clk_n,
 	input wire cpu_reset,
@@ -63,7 +65,7 @@ module atg_kc705_clk (
 		.CLKIN1_PERIOD(5.000),
 		.DIVCLK_DIVIDE(1),
 		.CLKFBOUT_MULT_F(5.000),
-		.CLKOUT0_DIVIDE_F(50.000)
+		.CLKOUT0_DIVIDE_F(GCLK_DIVIDE)
 	) mmcm_g (
 		.CLKIN1(ref_clk), .CLKFBIN(g_fb), .CLKFBOUT(g_fb), .RST(cpu_reset), .PWRDWN(1'b0),
 		.CLKOUT0(g_out), .LOCKED(g_locked),

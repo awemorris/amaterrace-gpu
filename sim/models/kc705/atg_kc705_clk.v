@@ -10,7 +10,7 @@
  * boards/kc705/lib/atg_kc705_clk.v (same name and ports) in the KC705
  * board testbench, which compiles this file instead of the real one.
  * gclk is sys_clk_p / 2 (100 MHz from the testbench's 200 MHz; the
- * board's MMCM gives 20 MHz, GCLK_HZ says so), ref_clk is
+ * board's MMCM gives 1000 MHz / GCLK_DIVIDE, GCLK_HZ says so), ref_clk is
  * sys_clk_p, and pclk runs from its own delay at 25.185 MHz (pclk_sel 0)
  * or 74.21875 MHz (1), the frequencies of the real clock managers.  Each
  * reset is released LOCK_CYCLES cycles of its clock after CPU_RESET falls
@@ -21,7 +21,8 @@
 `default_nettype none
 
 module atg_kc705_clk #(
-	parameter integer LOCK_CYCLES = 16
+	parameter integer LOCK_CYCLES = 16,
+	parameter integer GCLK_DIVIDE = 50	/* the board's MMCM setting; the model's gclk is sys_clk / 2 */
 ) (
 	input wire sys_clk_p,
 	input wire sys_clk_n,
