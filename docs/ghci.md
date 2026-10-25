@@ -165,6 +165,7 @@ earlier work has completed.
 | 0x03C | IRQ_ENABLE | RW | [8:0]: the same bits |
 | 0x040 | IRQ_SET | W1S | [5] sets IRQ_STATUS.SOFT |
 | 0x044 | WDT_CYCLES | RW | Watchdog limit for one command, in core cycles (reset value 2^28) |
+| 0x04C | RESIDENT_WARPS | R | [15:0] the warps the GPU runs at once over all its shader units (the size of the `warp` operand's range, section 12.3; scratch memory, section 12.10); 0 without a shader unit. [31:16] 0 |
 | 0x050 | RING_BASE | RW | GPU address of the ring, 32-byte aligned (the low bits read 0) |
 | 0x054 | RING_SIZE | RW | log2 of the ring's size in bytes, 10..20 (values outside are clamped) |
 | 0x058 | RING_WPTR | RW | Write pointer, a dword index in the ring; writing it rings the doorbell |
@@ -406,12 +407,24 @@ firmware:
 - A GPU without firmware (CAPS[17] = 0) faults with kind 2.
 - While the firmware works on a class 2 packet, the CP takes no other
   packet.
-- The GHCI gpu-ops (0x10100-0x10107, draft numbers): SESSION_OPEN,
-  SESSION_CLOSE, MEMORY, PROGRAM, NATIVE, FRAME, and BUFFER_GRANT and
-  BUFFER_REVOKE (section 11.6).
-- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT and BUFFER_REVOKE are taken
-  only as packets in the ring, never as staged commands inside a frame:
-  inside a frame they end the frame with VK_ERROR_FEATURE_NOT_PRESENT.
+- The GHCI gpu-ops (0x10100-0x10108, draft numbers): SESSION_OPEN,
+  SESSION_CLOSE, MEMORY, PROGRAM, NATIVE, FRAME, BUFFER_GRANT and
+  BUFFER_REVOKE (section 11.6), and HEAP.
+- **HEAP** (0x10108) `[u64 GPU address][u64 bytes][u32 warps]`: the range
+  of GPU memory the driver lends the firmware for its objects and the
+  recordings of the command buffers (line aligned, inside the aperture,
+  given to no other user), and the warps the GPU runs at once over its
+  shader units (RESIDENT_WARPS; a program's scratch memory, section
+  12.10, has a part for each; 0 lets the firmware choose). The driver sends it after every start of the
+  firmware (RUN, a RESET) and before the first SESSION_OPEN; it is
+  refused (VK_ERROR_INITIALIZATION_FAILED) while a session is open. A
+  firmware that keeps its objects elsewhere may ignore it. A session's
+  objects need the heap: without it they fail with
+  VK_ERROR_OUT_OF_DEVICE_MEMORY.
+- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT, BUFFER_REVOKE and HEAP are
+  taken only as packets in the ring, never as staged commands inside a
+  frame: inside a frame they end the frame with
+  VK_ERROR_FEATURE_NOT_PRESENT.
 
 **GHCI_FRAME.** A driver normally sends one class 2 packet per submission,
 GHCI_FRAME (gpu-op 0x10105, draft;
@@ -1169,7 +1182,7 @@ VK_ERROR_OUT_OF_DEVICE_MEMORY.
   for fragment discard).
 - Lanes outside EXEC neither write registers nor have side effects
   (except `exec.save`, `vote` and `ballot`, which write every lane). Killed
-  lanes and fragment helper lanes have no side effects (`sw`, `atom`,
+  lanes and fragment helper lanes have no side effects (`sw`, `atom`, `atoms`,
   `sts`, `exp`), except `sw.x`, the store to the warp's scratch memory
   (section 12.8), which every lane in EXEC makes.
 - Branches are per warp; the hardware does not reconverge. The compiler
@@ -1262,15 +1275,17 @@ word1 (bits 63:32):
 | 1100011 BRANCH | funct3 000 `bany rs1, off`, 001 `bnone`, 010 `ball`, 011 `j off`, 100 `bexnz off`, 101 `bexz off` |
 | 1010011 OP-FP (single) | `fadd.s fsub.s fmul.s` (funct7 0000000/0000100/0001000), `fsgnj.s` (0010000, funct3 000), `fmin.s fmax.s` (0010100, funct3 000/001), `fsqrt.s` (0101100, rs2 0), `fcvt.w.s fcvt.wu.s` (1100000, rs2 0/1), `fcvt.s.w fcvt.s.wu` (1101000, rs2 0/1), `feq.s flt.s fle.s fne.s` (1010000, funct3 010/001/000/011), `fround.s` (0100000, rs2 00100) |
 | 1000011 1000111 1001011 1001111 | `fmadd.s fmsub.s fnmsub.s fnmadd.s` (R4) |
-| 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
+| 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4; with sub[4] `atoms.<op>`, the same on shared memory), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
 | 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; slot = sub[3:0]; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22], [29:26], [13:10] texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`, 3: `texsz.s`), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
 | 1011011 custom-2 (packed) | funct3 000 `fadd2`, 001 `fsub2`, 010 `fmul2`, 011 `ffma2` (R4), 100 `fmin2`/`fmax2` (funct7 0/1), 101 `iadd2`/`isub2`/`imul2` (funct7 0/1/2), 110 `fcmp2.lt/ge/eq/ne` (funct7 0-3), 111: funct7 0000000 `packh rd, rs1, rs2`, 0000001 `unpackh rd, rs1` (sub 0 low, 1 high), 0000010 `swaph rd, rs1` |
 | 1111011 custom-3 | funct3 000 `sel rd, rs1, rs2, rs3` (R4, bitwise: (rs1 & rs2) \| (~rs1 & rs3)), 001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd` (sub 0-3), 010 `kill rs1`, 011 transcendental (sub 0 `rcp`, 1 `rsq`, 2 `exp2`, 3 `log2`, 4 `sin`, 5 `cos`, 6 `fract`), 100 `vote.any/all rd, rs1` (sub 0/1), 101 `ballot rd, rs1`, 110 `sactl rs1` (reserved), 111 `nop` |
 | 0000111 0100111 0001111 1110011 1010111 1110111 | Vendor extensions (not GSI1) |
 
-- **Atomic operations** (`atom` sub): 0 and, 1 or, 2 xor, 3 xchg, 4 add,
+- **Atomic operations** (`atom` sub[3:0]): 0 and, 1 or, 2 xor, 3 xchg, 4 add,
   5 sub, 6 smax, 7 smin, 8 umax, 9 umin, 10 cmpxchg (rs3 is the compare
-  value).
+  value). sub[4] selects the memory: 0 global (`atom`, rs1 a GPU
+  address), 1 shared (`atoms`, rs1 a byte address in shared memory,
+  section 12.8). rd gets the word's old value.
 - **`fence imm`:** imm[0] waits until the warp's stores and atomics are
   complete, imm[1] the same for shared memory, imm[2] (acquire)
   invalidates the data cache.
@@ -1305,7 +1320,7 @@ shader work), for:
 Undefined encodings, in detail: OP funct7 0100000 with funct3 001, 010 or
 011; funct7 0000101 with funct3 0xx; an R-form custom instruction whose
 funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); `texsz` with imm[11:0] other than 0, 1, 2 or (with CAPS[29]) 3; a texture slot with sub[4] set; a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
-`sw` sub above 1; `atom` sub above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
+`sw` sub above 1; `atom` sub[3:0] above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
 sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 1; `nop` sub other than 0.
 
@@ -1364,8 +1379,16 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   lane's or a killed lane's value can still reach a derivative, an
   implicit level of detail, an address or a loop's condition), and reads
   them back with `lw`.
-- **Shared memory (LDS):** `lds`/`sts` with byte addresses, word aligned,
-  wrapping at the LDS size; `bar` synchronizes the warps of a workgroup.
+- **Shared memory (LDS):** `lds`/`sts`/`atoms` with byte addresses, word
+  aligned, wrapping at the LDS size; `bar` synchronizes the warps of a
+  workgroup.
+  - Within a warp, shared-memory accesses take effect in program order;
+    when several lanes of one `sts` write the same word, the highest lane
+    wins.
+  - The lanes of one `atoms` act in lane order (a lane sees the words as
+    the lower lanes of the same instruction left them). An `atoms` is
+    indivisible with respect to every other access to shared memory
+    (`lds`, `sts` and `atoms` of any warp of the workgroup).
 - **Constant bank:** `lwc rd, imm(rs1)` reads word (rs1 + imm) modulo the
   bank size; c0-c31 are its first 32 words as operands. LOAD_CONST
   (section 7.3) loads the bank.
@@ -1480,8 +1503,8 @@ program is a 16-word header, the interface table and the code
 | 14 | Push-constant bytes |
 | 15 | 0 |
 
-Flags: [0] packed arithmetic, [1] subgroup operations, [2] LDS or `bar`,
-[3] atomics, [4] the systolic-array queue (reserved): what the program
+Flags: [0] packed arithmetic, [1] subgroup operations, [2] LDS or `bar` (`lds`, `sts`, `atoms`),
+[3] atomics (`atom`, `atoms`), [4] the systolic-array queue (reserved): what the program
 needs of the GPU (CAPS). A fragment program's [5]-[10] say what it asks
 of the pipeline's state: [5] CENTROID (it reads r7-r9: set MS_CTRL[4]),
 [6] it exports DEPTH (0x104), [7] it exports a SAMPLE_MASK of its own,

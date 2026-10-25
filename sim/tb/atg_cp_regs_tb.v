@@ -60,7 +60,8 @@ module regs_bench #(
 		.DEVICE_VERSION(32'h00070009), .ISA_ID(32'h49534131), .NATIVE_ISA_ID(32'h4E415431),
 		.CAPS(32'hCA950000 | TAG), .CAPS2(32'h0C0C0002),
 		.VEND({32'h77, 32'h66, 32'h55, 32'h44, 32'h33, 32'h22, 32'h11, 32'h00}),
-		.XCAP_MASK(XCAP), .DISP_OFFSET(32'h00010000), .PERF_SRC(32'hFFFF0801)
+		.XCAP_MASK(XCAP), .DISP_OFFSET(32'h00010000), .PERF_SRC(32'hFFFF0801),
+		.RESIDENT_WARPS(16'd24)
 	) dut (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
@@ -223,6 +224,7 @@ module atg_cp_regs_tb;
 		expect0("id", GHCI_CAPS, 32'hCA950000);
 		expect0("id", GHCI_CAPS2, 32'h0C0C0002);
 		expect0("id", 17'h048, 32'h4E415431);
+		expect0("id", GHCI_RESIDENT_WARPS, 32'd24);
 		for (i = 0; i < 8; i = i + 1)
 			expect0("id", 17'h0C0 + i * 4, 32'h11 * i);
 		expect0("id", 17'h0E0, 32'd0);

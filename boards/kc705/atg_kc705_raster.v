@@ -164,6 +164,8 @@ module atg_kc705_raster #(
 		.HAS_CPU(1),
 		.CPU_IMEM_INIT(CPU_IMEM_INIT),
 		.CPU_DMEM_INIT(CPU_DMEM_INIT),
+		.CPU_IMEM_WORDS(16384),
+		.CPU_DMEM_WORDS(8192),
 		.NSU(NSU),
 		.HAS_VF(1),
 		.HAS_RX(1),

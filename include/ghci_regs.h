@@ -41,6 +41,7 @@
 #define GHCI_IRQ_ENABLE 0x03Cu
 #define GHCI_IRQ_SET 0x040u
 #define GHCI_WDT_CYCLES 0x044u
+#define GHCI_RESIDENT_WARPS 0x04Cu	/* R: [15:0] the warps the GPU runs at once (NSU x NWARPS) */
 #define GHCI_RING_BASE 0x050u
 #define GHCI_RING_SIZE 0x054u
 #define GHCI_RING_WPTR 0x058u

@@ -87,10 +87,10 @@ def guess(w, pc, labels):
         return "movi %s, %s" % (reg_name(d["rd"]), num_text(A.sext(v, 32)))
     mn = n
     if mn == "atom":
-        if d["sub"] >= len(A.ATOMS):
+        if d["sub"] & 15 >= len(A.ATOMS):
             return None
-        mn = "atom." + A.ATOMS[d["sub"]]
-    cmpxchg = mn == "atom.cmpxchg"
+        mn = ("atoms." if d["sub"] & 16 else "atom.") + A.ATOMS[d["sub"] & 15]
+    cmpxchg = mn.endswith(".cmpxchg")
     if sat:
         mn += ".sat"
     if d["hsel"]:

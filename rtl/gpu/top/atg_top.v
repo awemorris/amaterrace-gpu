@@ -31,6 +31,8 @@ module atg_top #(
 	parameter HAS_CPU = 0,	/* atg_cpu, the CP's firmware processor */
 	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
 	parameter CPU_DMEM_INIT = "",	/* its DMEM image */
+	parameter CPU_IMEM_WORDS = 8192,	/* its IMEM in 32-bit words (KC705: 16384, 64 KiB) */
+	parameter CPU_DMEM_WORDS = 4096,	/* its DMEM in words (KC705: 8192, 32 KiB) */
 	parameter NSU = 0,	/* shader units */
 	parameter HAS_VF = 0,	/* vertex fetcher */
 	parameter HAS_RX = 0,	/* rasterizer */
@@ -159,6 +161,8 @@ module atg_top #(
 	 */
 	localparam HAS_ATOM = NSU > 0 ? 1 : 0;
 	localparam C_CPU = 2;
+	/* RESIDENT_WARPS: the warps the shader units run at once. */
+	localparam [31:0] CP_RESIDENT_WARPS = NSU * SU_NWARPS;
 	localparam C_VF = C_CPU + (HAS_CPU != 0 ? 1 : 0);
 	localparam C_TU = C_VF + (HAS_VF != 0 ? 1 : 0);
 	localparam C_ROP = C_TU + (HAS_TU != 0 ? 1 : 0);
@@ -310,6 +314,7 @@ module atg_top #(
 		.HAS_DBG(HAS_JTAG),
 		.PACKED(NSU != 0 && SU_PACKED != 0),
 		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0),
+		.RESIDENT_WARPS(CP_RESIDENT_WARPS[15:0]),
 		.MS4(MS4),
 		.HAS_ETC(HAS_TU != 0)	/* the TU decodes ETC2 and EAC */
 	) cp (
@@ -493,6 +498,7 @@ module atg_top #(
 	if (HAS_CPU != 0) begin : g_cpu
 		atg_cpu #(
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.IMEM_WORDS(CPU_IMEM_WORDS), .DMEM_WORDS(CPU_DMEM_WORDS),
 			.IMEM_INIT(CPU_IMEM_INIT), .DMEM_INIT(CPU_DMEM_INIT)
 		) cpu (
 			.clk(clk), .rst_n(core_rst_n),

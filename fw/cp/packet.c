@@ -51,12 +51,12 @@ fw_packet_run(
 	number = fw_reader_u32(&packet);
 	flags = fw_reader_u32(&packet);
 	result = fw_reader_u32(&packet);
-	status = GHCI_VK_SUCCESS;
+	status = FW_VK_SUCCESS;
 	aux = 0;
 
 	/* A frame, one command carried in the packet, or a packet too short. */
 	if (packet.error) {
-		status = GHCI_VK_ERROR_UNKNOWN;
+		status = FW_VK_ERROR_UNKNOWN;
 		flags = 0;
 	} else if (number == GHCI_GPU_OP_FRAME) {
 		packet_frame(&packet, tag, &status, &aux);
@@ -64,6 +64,7 @@ fw_packet_run(
 		command.number = number;
 		command.tag = tag;
 		command.reader = &packet;
+		command.in_frame = 0;
 		fw_command_decode(&command);
 		status = command.status;
 		aux = command.aux;
@@ -110,25 +111,26 @@ packet_frame(
 	page = fw_reader_u32(packet);
 	records = fw_reader_u32(packet);
 	if (packet->error) {
-		*status = GHCI_VK_ERROR_UNKNOWN;
+		*status = FW_VK_ERROR_UNKNOWN;
 		return;
 	}
 
 	/* Each record: [number][flags][result index][arguments]. */
 	fw_reader_init(&frame, staging, bytes);
-	*status = GHCI_VK_SUCCESS;
+	*status = FW_VK_SUCCESS;
 	for (record = 0; record < records; record++) {
 		command.number = fw_reader_u32(&frame);
 		(void)fw_reader_u32(&frame);
 		index = fw_reader_u32(&frame);
 		if (frame.error) {
-			*status = GHCI_VK_ERROR_UNKNOWN;
+			*status = FW_VK_ERROR_UNKNOWN;
 			break;
 		}
 
 		/* Carries the command out. */
 		command.tag = tag;
 		command.reader = &frame;
+		command.in_frame = 1;
 		fw_command_decode(&command);
 
 		/* Its result record, at once (the driver reads them after RESULT). */
@@ -137,7 +139,7 @@ packet_frame(
 			pair[1] = (int32_t)command.aux;
 			error = fw_store(page + index * PACKET_RESULT_BYTES, pair, PACKET_RESULT_BYTES);
 			if (error != 0) {
-				*status = GHCI_VK_ERROR_DEVICE_LOST;
+				*status = FW_VK_ERROR_DEVICE_LOST;
 				break;
 			}
 		}
