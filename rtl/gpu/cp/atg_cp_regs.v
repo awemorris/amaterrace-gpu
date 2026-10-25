@@ -124,13 +124,32 @@ module atg_cp_regs #(
 		(hcr_we && hcr_widx == I_PERF_CTRL && hcr_wmask[0] && hcr_wdata[0]);
 	integer i;
 
+	/* COUNTER + 1 and PERFn + busy: one incrementer each. */
+	wire [31:0] counter_n;
+	wire [127:0] perf_n;
+	wire [4:0] inc_co;
+
+	am_add #(.W(32)) counter_add (
+		.a(counter), .b(32'd0), .ci(1'b1), .s(counter_n), .co(inc_co[4])
+	);
+
+	genvar g;
+	generate
+		for (g = 0; g < 4; g = g + 1) begin : perf_inc
+			am_add #(.W(32)) perf_add (
+				.a(perf[g*32 +: 32]), .b(32'd0), .ci(perf_busy[g]), .s(perf_n[g*32 +: 32]),
+				.co(inc_co[g])
+			);
+		end
+	endgenerate
+
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			scratch <= 32'd0;
 			counter <= 32'd0;
 			win_q <= HAS_WINDOW;
 		end else begin
-			counter <= counter + 32'd1;
+			counter <= counter_n;
 			if (hcr_we && hcr_widx == I_SCRATCH)
 				scratch <= (scratch & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 			if (HAS_WINDOW && hcr_we && hcr_widx == I_WINDOW_CTRL && hcr_wmask[0])
@@ -140,7 +159,7 @@ module atg_cp_regs #(
 			if (!rst_n || perf_clear)
 				perf[i * 32 +: 32] <= 32'd0;
 			else
-				perf[i * 32 +: 32] <= perf[i * 32 +: 32] + {31'd0, perf_busy[i]};
+				perf[i * 32 +: 32] <= perf_n[i * 32 +: 32];
 	end
 
 	/* Reads: the registered index, answered the next cycle. */
@@ -252,7 +271,7 @@ module atg_cp_regs #(
 		rd_hcr_q ? (own | ctl_rdata | irq_rdata | ring_rdata | fence_rdata | dbg_rdata | x_rdata) :
 		32'd0;
 
-	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0]};
+	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0], inc_co};
 
 endmodule
 

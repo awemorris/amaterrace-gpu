@@ -111,13 +111,27 @@ module atg_cp_fence #(
 	assign req_line = addr[ADDR_W-1:LINE_SHIFT];
 	assign req_wdata = op == 2'd1 ? {(LINE_BYTES / 8){aux, value}} : {(LINE_BYTES / 4){value}};
 	/* FENCE: the word; RESULT: the 8-byte pair (8-byte aligned). */
-	assign req_be = is_read ? {LINE_BYTES{1'b0}} : op == 2'd1 ?
-		{{(LINE_BYTES - 8){1'b0}}, 8'hFF} << {word[WS-1:1], 3'd0} :
-		{{(LINE_BYTES - 4){1'b0}}, 4'hF} << {word, 2'd0};
+	reg [LINE_BYTES-1:0] be_word, be_pair;
+	integer bw;
+	always @(*)
+		for (bw = 0; bw < LINE_BYTES / 4; bw = bw + 1) begin
+			be_word[bw*4 +: 4] = {{(32 - WS){1'b0}}, word} == bw ? 4'hF : 4'h0;
+			be_pair[bw*4 +: 4] = {{(33 - WS){1'b0}}, word[WS-1:1]} == bw / 2 ? 4'hF : 4'h0;
+		end
+	assign req_be = is_read ? {LINE_BYTES{1'b0}} : op == 2'd1 ? be_pair : be_word;
 	assign req_tag = 8'd0;
 
 	wire [31:0] mem_word = rsp_rdata[{word, 5'd0} +: 32];
-	wire [31:0] diff = mem_word - value;
+	wire [31:0] diff;
+	wire diff_bo;
+
+	am_sub #(.W(32)) diff_sub (.a(mem_word), .b(value), .bi(1'b0), .d(diff), .bo(diff_bo));
+
+	/* The gap's count - 1. */
+	wire [7:0] gap_n;
+	wire gap_bo;
+
+	am_sub #(.W(8)) gap_sub (.a(gap), .b(8'd0), .bi(1'b1), .d(gap_n), .bo(gap_bo));
 	wire passed = !diff[31];
 
 	assign fault = st == F_RSP && rsp_valid && rsp_error;
@@ -178,7 +192,7 @@ module atg_cp_fence #(
 				if (gap <= 8'd1)
 					st <= F_REQ;
 				else
-					gap <= gap - 8'd1;
+					gap <= gap_n;
 			default:
 				;
 			endcase
@@ -187,7 +201,7 @@ module atg_cp_fence #(
 
 	assign hcr_rdata = hcr_ridx == I_LAST ? last : 32'd0;
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0]};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo};
 endmodule
 
 `default_nettype wire

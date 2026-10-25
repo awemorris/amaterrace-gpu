@@ -79,7 +79,13 @@ module atg_cp_dbg #(
 	assign req_write = q_write;
 	assign req_line = addr[ADDR_W-1:LINE_SHIFT];
 	assign req_wdata = {(LINE_BYTES / 4){q_word}};
-	assign req_be = {{(LINE_BYTES - 4){1'b0}}, q_strb} << {word, 2'd0};
+	/* The word's byte enables in the line: q_strb at word (a constant place per word). */
+	reg [LINE_BYTES-1:0] be_w;
+	integer bw;
+	always @(*)
+		for (bw = 0; bw < LINE_BYTES / 4; bw = bw + 1)
+			be_w[bw*4 +: 4] = {{(32 - WS){1'b0}}, word} == bw ? q_strb : 4'h0;
+	assign req_be = be_w;
 	assign req_tag = 8'd0;
 
 	wire [31:0] rsp_word = rsp_rdata[{word, 5'd0} +: 32];

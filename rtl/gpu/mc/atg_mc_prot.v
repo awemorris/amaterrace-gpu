@@ -230,7 +230,10 @@ module atg_mc_prot #(
 	wire [5:0] s_slot = s_head[HW+1 +: 6];
 	wire [GW-1:0] s_g = s_line[LA_W-1:GS];
 	wire s_rng = tb_on && s_g >= g0 && {1'b0, s_g} < g1;
-	wire [GW-1:0] s_idx = s_g - g0;
+	wire [GW-1:0] s_idx;
+	wire s_idx_bo;
+
+	am_sub #(.W(GW)) s_idx_sub (.a(s_g), .b(g0), .bi(1'b0), .d(s_idx), .bo(s_idx_bo));
 	wire [TAGW-1:0] s_tag = s_idx[GW-1:LINE_SHIFT];
 	wire [LINE_SHIFT-1:0] s_byte = s_idx[LINE_SHIFT-1:0];
 
@@ -286,9 +289,18 @@ module atg_mc_prot #(
 
 	/* --------------------------------------------- the selection */
 
-	wire [GW-1:0] p_idx = p_line[LA_W-1:GS] - g0;
+	wire [GW-1:0] p_idx;
+	wire [LA_W-1:0] w_line;
+	wire p_idx_bo, w_line_co;
+
+	am_sub #(.W(GW)) p_idx_sub (
+		.a(p_line[LA_W-1:GS]), .b(g0), .bi(1'b0), .d(p_idx), .bo(p_idx_bo)
+	);
 	assign p_tag = p_idx[GW-1:LINE_SHIFT];
-	wire [LA_W-1:0] w_line = tbase[ADDR_W-1:LINE_SHIFT] + {{(LA_W-TAGW){1'b0}}, p_tag};
+	am_add #(.W(LA_W)) w_line_add (
+		.a(tbase[ADDR_W-1:LINE_SHIFT]), .b({{(LA_W-TAGW){1'b0}}, p_tag}), .ci(1'b0),
+		.s(w_line), .co(w_line_co)
+	);
 
 	/* The AXI request: D, the walk, J or P, A. */
 	wire sel_d = d_on && d_inside;
@@ -386,7 +398,7 @@ module atg_mc_prot #(
 	end
 
 	wire unused_ok = &{1'b0, a_head, d_head, g_head, b_head, j_head, s_head, lim_up, tgran,
-		p_idx, tend};
+		p_idx, tend, s_idx_bo, p_idx_bo, w_line_co};
 endmodule
 
 `default_nettype wire

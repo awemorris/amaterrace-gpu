@@ -139,6 +139,15 @@ module atg_cp_ctl #(
 	reg [31:0] fault_info;
 	reg [31:0] wdt_count;
 	reg [33:0] stuck_count;
+	/* The watchdog's and AXI_STUCK's counts + 1. */
+	wire [31:0] wdt_count_n;
+	wire [33:0] stuck_count_n;
+	wire wdt_co, stuck_co;
+
+	am_add #(.W(32)) wdt_add (.a(wdt_count), .b(32'd0), .ci(1'b1), .s(wdt_count_n), .co(wdt_co));
+	am_add #(.W(34)) stuck_add (
+		.a(stuck_count), .b(34'd0), .ci(1'b1), .s(stuck_count_n), .co(stuck_co)
+	);
 	reg axi_stuck;
 
 	wire resetting = st == S_RS_WAIT || st == S_RS_PULSE || st == S_RS_REPLAY;
@@ -254,7 +263,7 @@ module atg_cp_ctl #(
 			/* The watchdog. */
 			if (ctrl_wdt_en && cmd_active && !faulted) begin
 				if (!wdt_hold)
-					wdt_count <= wdt_count + 32'd1;
+					wdt_count <= wdt_count_n;
 			end else begin
 				wdt_count <= 32'd0;
 			end
@@ -264,7 +273,7 @@ module atg_cp_ctl #(
 				if (stuck_count >= {wdt_cycles, 2'b00})
 					axi_stuck <= 1'b1;
 				else
-					stuck_count <= stuck_count + 34'd1;
+					stuck_count <= stuck_count_n;
 			end else begin
 				stuck_count <= 34'd0;
 			end
@@ -340,6 +349,7 @@ module atg_cp_ctl #(
 	end
 
 	assign hcr_rdata = rd;
+	wire unused_co = &{1'b0, wdt_co, stuck_co};
 endmodule
 
 `default_nettype wire

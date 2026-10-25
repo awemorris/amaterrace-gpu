@@ -86,6 +86,10 @@ module atg_cpu_core (
 
 	/* Pipeline state. */
 	reg [31:0] pc_f;	/* address fetched this cycle */
+	wire [31:0] pc_f_4;	/* pc_f + 4 */
+	wire pc_f_co;
+
+	am_add #(.W(32)) pc_f_add (.a(pc_f), .b(32'd4), .ci(1'b0), .s(pc_f_4), .co(pc_f_co));
 	reg [31:0] pc_d;	/* address of the instruction in D (i_rdata) */
 	reg d_vld;
 	reg [31:0] pc_e;	/* address of the instruction in E */
@@ -100,7 +104,8 @@ module atg_cpu_core (
 	reg faulted;
 	reg in_irq;
 	reg [31:0] mepc;
-	reg [31:0] rf [1:31];
+	/* x1..x31; rf[0] is never read (zero-based: an index needs no subtraction). */
+	reg [31:0] rf [0:31];
 
 	/* D: register read, with the value W writes in this cycle. */
 	wire [4:0] d_ra = i_rdata[19:15];
@@ -209,8 +214,14 @@ module atg_cpu_core (
 	end
 
 	/* PC arithmetic. */
-	wire [31:0] pc_imm = pc_e + (is_jal ? imm_j : is_br ? imm_b : imm_u);
-	wire [31:0] link = pc_e + 32'd4;
+	wire [31:0] pc_imm, link;
+	wire pc_imm_co, link_co;
+
+	am_add #(.W(32)) pc_imm_add (
+		.a(pc_e), .b(is_jal ? imm_j : is_br ? imm_b : imm_u), .ci(1'b0), .s(pc_imm),
+		.co(pc_imm_co)
+	);
+	am_add #(.W(32)) link_add (.a(pc_e), .b(32'd4), .ci(1'b0), .s(link), .co(link_co));
 	wire [31:0] jalr_t = {alu_y[31:1], 1'b0};
 	wire taken = is_jal || is_jalr || (is_br && br_cond) || is_mret;
 	wire [31:0] target = is_mret ? mepc : is_jalr ? jalr_t : pc_imm;
@@ -221,7 +232,12 @@ module atg_cpu_core (
 
 	/* Faults of the instruction in E. */
 	/* The data address has its own adder (not through the ALU's result mux: timing). */
-	wire [31:0] ea_full = rs1 + (is_st ? imm_s : imm_i);
+	wire [31:0] ea_full;
+	wire ea_co;
+
+	am_add #(.W(32)) ea_add (
+		.a(rs1), .b(is_st ? imm_s : imm_i), .ci(1'b0), .s(ea_full), .co(ea_co)
+	);
 	wire [1:0] ea = ea_full[1:0];
 	wire mis_mem = is_mem && (f3[1:0] == 2'd2 ? ea != 2'd0 :
 		f3[1:0] == 2'd1 ? ea[0] : 1'b0);
@@ -272,7 +288,8 @@ module atg_cpu_core (
 	always @(*) begin
 		case (f3[1:0])
 		2'd0: begin
-			d_be = 4'b0001 << ea;
+			d_be = ea == 2'd0 ? 4'b0001 : ea == 2'd1 ? 4'b0010 :
+				ea == 2'd2 ? 4'b0100 : 4'b1000;
 			d_wdata = {4{rs2[7:0]}};
 		end
 		2'd1: begin
@@ -287,7 +304,9 @@ module atg_cpu_core (
 	end
 
 	/* Load extraction. */
-	wire [31:0] ld_sh = d_rdata >> {ea, 3'b000};
+	/* The loaded word moved down to its byte (four constant shifts). */
+	wire [31:0] ld_sh = ea == 2'd0 ? d_rdata : ea == 2'd1 ? {8'd0, d_rdata[31:8]} :
+		ea == 2'd2 ? {16'd0, d_rdata[31:16]} : {24'd0, d_rdata[31:24]};
 	reg [31:0] ld_val;
 
 	always @(*) begin
@@ -371,7 +390,7 @@ module atg_cpu_core (
 				pc_f <= take_irq ? IRQ_VECTOR : target;
 				d_vld <= 1'b0;
 			end else if (i_en) begin
-				pc_f <= pc_f + 32'd4;
+				pc_f <= pc_f_4;
 				d_vld <= 1'b1;
 			end
 		end
@@ -396,7 +415,8 @@ module atg_cpu_core (
 		end
 	end
 
-	wire unused_ok = &{1'b0, md_busy, alu_eq, alu_lt, alu_ltu, br_y};
+	wire unused_ok = &{1'b0, md_busy, alu_eq, alu_lt, alu_ltu, br_y, pc_imm_co, link_co, ea_co,
+		pc_f_co};
 endmodule
 
 `default_nettype wire

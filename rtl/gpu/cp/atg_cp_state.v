@@ -77,6 +77,10 @@ module atg_cp_state (
 	reg rp_rd;
 	reg rp_out;
 	reg [9:0] rp_idx;
+	wire [9:0] rp_idx_n;	/* rp_idx + 1 */
+	wire rp_co;
+
+	am_add #(.W(10)) rp_add (.a(rp_idx), .b(10'd0), .ci(1'b1), .s(rp_idx_n), .co(rp_co));
 	reg [9:0] rp_oidx;
 
 	always @(posedge clk) begin
@@ -94,7 +98,7 @@ module atg_cp_state (
 			end else if (rp_rd) begin
 				if (rp_idx == 10'h2FF)
 					rp_rd <= 1'b0;
-				rp_idx <= rp_idx + 10'd1;
+				rp_idx <= rp_idx_n;
 			end
 		end
 	end
@@ -116,6 +120,7 @@ module atg_cp_state (
 	assign st_we = w || rp_out;
 	assign st_idx = w ? widx : rp_oidx;
 	assign st_wdata = w ? wdata : b_q;
+	wire unused_rp = &{1'b0, rp_co};
 endmodule
 
 `default_nettype wire

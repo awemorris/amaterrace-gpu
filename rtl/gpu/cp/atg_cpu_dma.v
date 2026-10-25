@@ -171,8 +171,49 @@ module atg_cpu_dma #(
 	assign x_en = st_we || g_en;
 	assign x_we = st_we;
 	assign x_imem = j_imem;
-	assign x_addr = st_we ? s_dst[st_slot] + {{(29 - WS){1'b0}}, st_w, 2'b00} :
-		j_mem + {{(29 - WS){1'b0}}, g_w, 2'b00};
+	/*
+	 * The arithmetic, one instance each: the BRAM address (the storing
+	 * slot's line or the gathered line, plus the word), st_w + 1, g_w + 1,
+	 * the copy's next line and BRAM offset, the words left (less this
+	 * read's, or a written line's: never in the same cycle), and the
+	 * writes in flight +- 1.
+	 */
+	wire [31:0] x_addr_s, j_mem_n, j_rem_n;
+	wire [WS:0] st_w_n, g_w_n;
+	wire [LW-1:0] j_line_n;
+	wire [7:0] wr_out_n;
+	wire [7:0] ar_co;
+	wire wr_inc = req_valid && req_ready && req_write && !wr_rsp;
+	wire wr_dec = !(req_valid && req_ready && req_write) && wr_rsp && wr_out != 8'd0;
+
+	am_add #(.W(32)) x_addr_add (
+		.a(st_we ? s_dst[st_slot] : j_mem),
+		.b({{(29 - WS){1'b0}}, st_we ? st_w : g_w, 2'b00}), .ci(1'b0), .s(x_addr_s),
+		.co(ar_co[0])
+	);
+	am_add #(.W(WS + 1)) st_w_add (
+		.a(st_w), .b({(WS + 1){1'b0}}), .ci(1'b1), .s(st_w_n), .co(ar_co[1])
+	);
+	am_add #(.W(WS + 1)) g_w_add (
+		.a(g_w), .b({(WS + 1){1'b0}}), .ci(1'b1), .s(g_w_n), .co(ar_co[2])
+	);
+	am_add #(.W(LW)) j_line_add (
+		.a(j_line), .b({LW{1'b0}}), .ci(1'b1), .s(j_line_n), .co(ar_co[3])
+	);
+	am_add #(.W(32)) j_mem_add (
+		.a(j_mem), .b(LINE_BYTES), .ci(1'b0), .s(j_mem_n), .co(ar_co[4])
+	);
+	am_sub #(.W(32)) j_rem_sub (
+		.a(j_rem), .b(rd_issue ? {{(31 - WS){1'b0}}, words_now} : WPL), .bi(1'b0),
+		.d(j_rem_n), .bo(ar_co[5])
+	);
+	am_add #(.W(8)) wr_out_add (
+		.a(wr_out), .b({{7{wr_dec && !wr_inc}}, wr_inc ^ wr_dec}), .ci(1'b0), .s(wr_out_n),
+		.co(ar_co[6])
+	);
+	assign ar_co[7] = 1'b0;
+
+	assign x_addr = x_addr_s;
 	assign x_wdata = st_word;
 
 	assign req_be = {LINE_BYTES{1'b1}};
@@ -193,8 +234,10 @@ module atg_cpu_dma #(
 	always @(posedge clk) begin
 		if (rd_rsp && s_busy[rsp_tag[1:0]])
 			lbuf[rsp_tag[1:0]] <= rsp_rdata;
-		if (g_cap)
-			wline[{g_w[WS-1:0] - 1'b1, 5'd0} +: 32] <= x_rdata;
+		/* The captured word is word g_w - 1 (mod WPL): a constant place per word. */
+		for (k = 0; k < WPL; k = k + 1)
+			if (g_cap && {{(32 - WS){1'b0}}, g_w[WS-1:0]} == (k + 1) % WPL)
+				wline[k*32 +: 32] <= x_rdata;
 	end
 
 	always @(posedge clk) begin
@@ -233,12 +276,8 @@ module atg_cpu_dma #(
 			/* Write responses count down whenever they come. */
 			if (wr_rsp && rsp_error)
 				err <= 1'b1;
-			if (req_valid && req_ready && req_write) begin
-				if (!wr_rsp)
-					wr_out <= wr_out + 8'd1;
-			end else if (wr_rsp && wr_out != 8'd0) begin
-				wr_out <= wr_out - 8'd1;
-			end
+			if (wr_inc || wr_dec)
+				wr_out <= wr_out_n;
 			if (req_valid && req_ready)
 				req_valid <= 1'b0;
 			/* Read side: responses and storing. */
@@ -251,12 +290,12 @@ module atg_cpu_dma #(
 				end
 			end
 			if (st_act) begin
-				if (st_w == s_nw[st_slot] - 1'b1) begin
+				if (st_w_n == s_nw[st_slot]) begin	/* st_w is the last word */
 					st_act <= 1'b0;
 					s_busy[st_slot] <= 1'b0;
 					s_full[st_slot] <= 1'b0;
 				end
-				st_w <= st_w + 1'b1;
+				st_w <= st_w_n;
 			end else if (have_full) begin
 				st_act <= 1'b1;
 				st_slot <= full_s;
@@ -270,14 +309,14 @@ module atg_cpu_dma #(
 				s_busy[free_s] <= 1'b1;
 				s_dst[free_s] <= j_mem;
 				s_nw[free_s] <= words_now;
-				j_line <= j_line + 1'b1;
-				j_mem <= j_mem + LINE_BYTES;
-				j_rem <= j_rem - {{(31 - WS){1'b0}}, words_now};
+				j_line <= j_line_n;
+				j_mem <= j_mem_n;
+				j_rem <= j_rem_n;
 			end
 			/* Write side: gather WPL words, then the request. */
 			g_cap <= g_en;
 			if (g_en)
-				g_w <= g_w + 1'b1;
+				g_w <= g_w_n;
 			case (state)
 			S_IDLE:
 				if (go) begin
@@ -330,9 +369,9 @@ module atg_cpu_dma #(
 				end
 			default:	/* S_WRITE */
 				if (req_ready) begin
-					j_line <= j_line + 1'b1;
-					j_mem <= j_mem + LINE_BYTES;
-					j_rem <= j_rem - WPL;
+					j_line <= j_line_n;
+					j_mem <= j_mem_n;
+					j_rem <= j_rem_n;
 					g_w <= {(WS + 1){1'b0}};
 					state <= (j_rem == WPL) ? S_IDLE : S_GATHER;
 				end
@@ -341,7 +380,7 @@ module atg_cpu_dma #(
 	end
 
 	wire unused_ok = &{1'b0, rsp_tag[7:2], dma_mem[LINE_SHIFT-1:0], dma_amb[LINE_SHIFT-1:0],
-		ld_paddr[LINE_SHIFT-1:0]};
+		ld_paddr[LINE_SHIFT-1:0], ar_co};
 endmodule
 
 `default_nettype wire

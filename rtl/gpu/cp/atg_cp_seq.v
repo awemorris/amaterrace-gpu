@@ -154,6 +154,10 @@ module atg_cp_seq #(
 	reg [6:0] side;
 	reg [7:0] n;
 	reg [7:0] p;	/* payload dwords taken */
+	wire [7:0] p_n;	/* p + 1 */
+	wire p_co;
+
+	am_add #(.W(8)) p_add (.a(p), .b(8'd0), .ci(1'b1), .s(p_n), .co(p_co));
 	reg [9:0] sidx;	/* SET_REG: the index of the pair */
 	reg [31:0] a0, a1, a2;	/* fence payload */
 	reg settle;
@@ -335,11 +339,11 @@ module atg_cp_seq #(
 						a1 <= in_data;
 					if (p == 8'd2)
 						a2 <= in_data;
-					p <= p + 8'd1;
+					p <= p_n;
 					/* The last payload word reaches the blocks a cycle later
 					 * (atg_cp registers the STATE broadcast), so the kick
 					 * waits a cycle (settle). */
-					if (p + 8'd1 == n) begin
+					if (p_n == n) begin
 						st <= Q_EXEC;
 						settle <= 1'b1;
 					end
@@ -378,6 +382,7 @@ module atg_cp_seq #(
 		end
 	end
 
+	wire unused_p = &{1'b0, p_co};
 endmodule
 
 `default_nettype wire

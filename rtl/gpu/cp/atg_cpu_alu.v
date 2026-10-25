@@ -41,7 +41,16 @@ module atg_cpu_alu (
 
 	wire [4:0] sh = b[4:0];
 	/* a - b with a borrow bit: diff[32] = 1 when a < b unsigned. */
-	wire [32:0] diff = {1'b0, a} - {1'b0, b};
+	wire [32:0] diff;
+	wire [31:0] sum, shifted;
+	wire diff_bo, sum_co;
+
+	am_sub #(.W(33)) diff_sub (.a({1'b0, a}), .b({1'b0, b}), .bi(1'b0), .d(diff), .bo(diff_bo));
+	am_add #(.W(32)) sum_add (.a(a), .b(b), .ci(1'b0), .s(sum), .co(sum_co));
+	/* SLL, SRL and SRA share one shifter. */
+	am_shift #(.W(32), .SW(5)) shifter (
+		.a(a), .amt(sh), .left(op == OP_SLL), .arith(op == OP_SRA), .y(shifted)
+	);
 
 	assign eq = a == b;
 	assign ltu = diff[32];
@@ -50,20 +59,22 @@ module atg_cpu_alu (
 
 	always @(*) begin
 		case (op)
-		OP_ADD: y = a + b;
+		OP_ADD: y = sum;
 		OP_SUB: y = diff[31:0];
-		OP_SLL: y = a << sh;
+		OP_SLL: y = shifted;
 		OP_SLT: y = {31'd0, lt};
 		OP_SLTU: y = {31'd0, ltu};
 		OP_XOR: y = a ^ b;
-		OP_SRL: y = a >> sh;
-		OP_SRA: y = $unsigned($signed(a) >>> sh);
+		OP_SRL: y = shifted;
+		OP_SRA: y = shifted;
 		OP_OR: y = a | b;
 		OP_AND: y = a & b;
 		OP_PASS_B: y = b;
 		default: y = 32'd0;
 		endcase
 	end
+
+	wire unused_ok = &{1'b0, diff_bo, sum_co};
 endmodule
 
 `default_nettype wire
