@@ -78,18 +78,18 @@ a carry chain) where it can be checked once.
 Board clocking
 --------------
 
-- A clock into an IP block that makes its own clocks (the MIG, the PCIe
-  bridge, a transceiver) comes from the oscillator's pin on the dedicated
-  route: the clock-capable pin's IBUFDS (or IBUFDS_GTE2) straight to the
-  block's PLL/MMCM or GT, with no BUFG, global-tree detour or divider in
-  front of it.  A rate the block needs is made inside the block by its
-  own PLL/MMCM.  Vivado does not guarantee a correct clock route
-  otherwise (user, 2026-10-26; ws288 p024: the KC705's MIG did not
-  calibrate with SYSCLK through a BUFG in front of its PLL).
-- The fabric's clock managers may share that pin: the same IBUFDS also
-  drives a BUFG for them.  A block's reference input that only needs a
-  frequency, such as the MIG's IDELAYCTRL reference (clk_ref_i, made into
-  400 MHz by the MIG's own MMCM), may come from that BUFG.
+- Never make a clock by dividing in logic (a counter, a toggling flip-flop
+  or anything else on fabric routing).  A clock of another rate comes from
+  a PLL/MMCM output divider: those outputs ride the dedicated clock
+  network (user, 2026-10-26).
+- An IP block's clock inputs follow the vendor reference's input path.
+  The KC705's MIG takes SYSCLK straight from the clock-capable pin's
+  IBUFDS into its PLL, as the MIG's own input buffer does in the
+  reference; ws288 p024: with a BUFG in front of the MIG's PLL the
+  calibration did not complete.  The same IBUFDS may also drive a BUFG
+  for the fabric's clock managers, and the MIG's IDELAYCTRL reference
+  (clk_ref_i, which the MIG's own MMCM makes into 400 MHz) comes from
+  that BUFG.  The PCIe bridge takes its reference from IBUFDS_GTE2.
 
 Testbenches
 -----------
