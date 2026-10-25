@@ -26,7 +26,8 @@ Combinational.
 | `w0` | in | 16 | Level 0's width. |
 | `h0` | in | 16 | Height. |
 | `d0` | in | 16 | Depth (3D). |
-| `lam` | out | 17 | λq, signed, 8 fraction bits. |
+| `ax` | in | 2 | The axis: 0 u, 1 v, 2 w. |
+| `lam` | out | 17 | λA of axis `ax` (w: −32768 but for a 3D image), signed, 8 fraction bits; λq is the largest of the three (atg_tu_addr). |
 
 11 ports.
 
@@ -57,3 +58,5 @@ docs/ghci.md §8.4.
 ## 10. Status
 
 Split off atg_tu_addr in WS288 p009 part F (P3) with the 3D and cube axes.
+
+2026-10-25 (area): one axis at a time (input `ax`); atg_tu_addr's LOD state takes λq as the largest over three cycles (was one cycle, all three axes at once).  The values are unchanged.

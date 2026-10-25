@@ -153,15 +153,12 @@ module atg_rop_ds #(
 	wire [2:0] ent = ms4 ? e : {2'b00, e[2]};
 	wire [LINE_SHIFT-1:0] bo = addr[LINE_SHIFT-1:0] +
 		(d16 ? {{(LINE_SHIFT-4){1'b0}}, ent, 1'b0} : {{(LINE_SHIFT-5){1'b0}}, ent, 2'b00});
-	wire [LINE_BYTES*8+31:0] lpad = {32'd0, line};
-	wire [31:0] stored = d16 ? {16'd0, lpad[8 * bo +: 16]} : lpad[8 * bo +: 32];
-	wire [LINE_SHIFT-1:0] bk [0:3];	/* the entry's bytes */
-	genvar g;
-	generate
-	for (g = 0; g < 4; g = g + 1) begin : g_bk
-		assign bk[g] = bo + g[LINE_SHIFT-1:0];
-	end
-	endgenerate
+	/* The entry's 32-bit word of the line and its half (D16).  bo is a
+	 * multiple of ps (the base and stride of docs/ghci.md section 8.5; the
+	 * low bits of one that is not are ignored), so the entry is the whole
+	 * word, or the half of it, that holds bo. */
+	wire [31:0] lword = line[32 * bo[LINE_SHIFT-1:2] +: 32];
+	wire [31:0] stored = d16 ? {16'd0, lword[16 * bo[1] +: 16]} : lword;
 	wire pass;
 	wire [31:0] wword;
 	wire [3:0] wbe;
@@ -239,11 +236,14 @@ module atg_rop_ds #(
 			if (mask[sb]) begin
 				if (!pass)
 					pm[sb] <= 1'b0;
-				for (k = 0; k < 4; k = k + 1)
-					if (wbe[k]) begin
-						wr_any <= 1'b1;
-						req_wdata[8 * bk[k] +: 8] <= wword[8 * k +: 8];
-						req_be[bk[k]] <= 1'b1;
+				if (wbe != 4'd0)
+					wr_any <= 1'b1;
+				/* byte k of the entry's word or half: byte b of the line */
+				for (k = 0; k < LINE_BYTES; k = k + 1)
+					if (k[LINE_SHIFT-1:2] == bo[LINE_SHIFT-1:2] && (!d16 || k[1] == bo[1]) &&
+					    wbe[d16 ? {1'b0, k[0]} : k[1:0]]) begin
+						req_wdata[8 * k +: 8] <= wword[{d16 ? {1'b0, k[0]} : k[1:0], 3'b000} +: 8];
+						req_be[k] <= 1'b1;
 					end
 			end
 			e <= e + (ms4 ? 3'd1 : 3'd4);
@@ -282,7 +282,7 @@ module atg_rop_ds #(
 		endcase
 	end
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, STENCIL != 0, WPL != 0, WB != 0};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, STENCIL != 0, WPL != 0, WB != 0, bo[0]};
 endmodule
 
 `default_nettype wire
