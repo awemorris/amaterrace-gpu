@@ -26,7 +26,7 @@
  * starts: the hidden mepc gets its PC (a WFI's next PC), the core jumps
  * to 0x10, and mret (0x30200073) returns.  WFI waits for irq.  A fault
  * (illegal instruction, CSR/ECALL/EBREAK, misaligned access or jump
- * target, fetch outside 0x0000_0000-0x0000_FFFF) pulses fault with the
+ * target, fetch outside 0x0000_0000-0x0001_FFFF) pulses fault with the
  * PC and stops the core until reset.  See spec/gpu/cp/atg_cpu_core.md.
  */
 
@@ -226,7 +226,7 @@ module atg_cpu_core (
 	wire mis_mem = is_mem && (f3[1:0] == 2'd2 ? ea != 2'd0 :
 		f3[1:0] == 2'd1 ? ea[0] : 1'b0);
 	wire mis_jump = taken && target[1:0] != 2'd0;
-	wire pc_out = pc_e[31:16] != 16'd0;
+	wire pc_out = pc_e[31:17] != 15'd0;
 	wire bad = !legal || mis_mem || mis_jump || pc_out;
 
 	/* Execution control. */

@@ -132,3 +132,16 @@ Varying 64 components (Vulkan 1.0's limit): `SU_VARY_WORDS` at most 64, the KC70
 2026-10-25: the STATE broadcast has 10-bit indices; the TU takes them all (0x200-0x2FF are its vertex-stage slots), the other blocks see st_we only for indices below 512 and their 9 bits; the SU's tx_vs reaches the TU; the CP's HAS_ETC is HAS_TU.
 
 **2026-10-25**: `LOCAL_BASE`, `LOCAL_BYTES`, `WINDOW_BYTES` (the MEM capability, default 0) and RESIDENT_WARPS[23:16] = `SU_NREGS` with an SU (0 without), both through atg_cp to atg_cp_regs.
+
+**Session protection** (docs/ghci.md §11.6, 2026-10-25): `HAS_PROT` (with `HAS_CPU`; the KC705
+1), `PROT_SLOTS` (31), `PROT_GRANTS` and `PROT_GIDX_W` (KC705 64, 6), `PROT_PLB` and `PROT_PLB_W`
+(KC705 16, 4).  `atg_cp_prot` sits beside `atg_cpu` (the CPU's sub-bus, the sequencer's µop, the
+units' switch).  Every MC client's requests carry chk, tbl and a slot: the CP's from its fence
+unit, the CPU's from its DMA, the DC's none, all the other units' `prot_unit`.  `drain_ok` = the
+units idle, no unit request waiting at a leaf, the MC's `chk_idle` and `unit_idle`.  The switch's
+`sw_inv` is ORed into the CP's `inv` (all four) and `occ_clear`; `scrub` goes to every SU and their
+`scrub_busy` back.  The MC's refusal tags: SLOT_TAG of the refused request's slot, or of
+prot_unit for a unit client's other faults.  The atomic unit's reads are judged as writes
+(`RMW_MASK`).  Without `HAS_PROT` the MC's `unit_idle` still holds the CP's FENCE, WAIT_IDLE,
+RESULT and QUERY (busy_ext[0]).  TB: `sim/tb/atg_top_prot_tb.v` (the PROT registers; the
+sessions with the firmware's support).

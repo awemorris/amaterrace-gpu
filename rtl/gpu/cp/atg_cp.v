@@ -27,6 +27,11 @@
  * QUIESCE_EXEMPT), so the CP's own accesses (the debug port in HALTED and
  * FAULTED, a ring line or fence already requested) go on while the blocks
  * are held.
+ * Session protection (atg_cp_prot, outside): the sequencer shows its µop
+ * (u_*) and waits for u_ok before it starts a unit; the fence unit's
+ * requests carry f_chk and f_slot (req_chk, req_slot when the mux picked
+ * the fence unit; the ring's and the debug port's are not checked); an MC
+ * refusal for protection is a device fault with mc_fault_tag.
  * rst_n is the board reset; core_rst_n (CTRL.RESET's pulse) resets the
  * ring's pointers, the sequencer, the fence unit, the debug port,
  * IRQ_STATUS and the blocks outside.
@@ -58,7 +63,8 @@ module atg_cp #(
 	parameter [7:0] NREGS = 8'd0,	/* RESIDENT_WARPS[23:16]: general registers per lane (0: no SU) */
 	parameter [31:0] LOCAL_BASE = 32'd0,	/* the MEM capability (listed when LOCAL_BYTES is not 0) */
 	parameter [31:0] LOCAL_BYTES = 32'd0,
-	parameter [31:0] WINDOW_BYTES = 32'd0
+	parameter [31:0] WINDOW_BYTES = 32'd0,
+	parameter HAS_PROT = 0	/* session protection: the PROT capability is listed (atg_cp_prot) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -85,6 +91,9 @@ module atg_cp #(
 	input wire [7:0] mc_fault_client,
 	input wire [ADDR_W-1:0] mc_fault_addr,
 	input wire mc_fault_write,
+	input wire mc_fault_prot,	/* the refusal was for session protection (FAULT_INFO[9]) */
+	input wire mc_fault_mem,	/* a protection table read failed (kind 5) */
+	input wire [7:0] mc_fault_tag,	/* the job tag of the refused request's slot */
 
 	output reg st_we,
 	output reg [9:0] st_idx,
@@ -102,6 +111,8 @@ module atg_cp #(
 	output wire [LINE_BYTES-1:0] req_be,
 	output wire [LINE_BYTES*8-1:0] req_wdata,
 	output wire [7:0] req_tag,
+	output wire req_chk,
+	output wire [5:0] req_slot,
 	input wire rsp_valid,
 	input wire rsp_write,
 	input wire [7:0] rsp_tag,
@@ -114,7 +125,8 @@ module atg_cp #(
 	output wire lc_kick,
 	output wire raw_kick,
 	output wire [3:0] inv,
-	input wire [7:0] busy_ext,	/* STATUS[7:0] bits of VF, RX, ROP, TU, SU, SA */
+	input wire [7:0] busy_ext,	/* STATUS[7:2] bits of VF, RX, ROP, TU, SU, SA; [0] the units'
+					 * memory requests not yet answered (atg_mc's !unit_idle) */
 	input wire vsync,
 	input wire [1:0] x_fault,	/* fault sources: 0 the SUs (ISA), 1 the other blocks */
 	input wire [7:0] x_fault_kind,
@@ -137,6 +149,16 @@ module atg_cp #(
 	input wire [31:0] fw_data,
 	input wire fw_last,
 	input wire fw_active,
+	input wire [6:0] fw_side,
+	output wire u_fw,	/* the sequencer's µop (session protection) */
+	output wire [6:0] u_side,
+	output wire [1:0] u_req,
+	output wire [7:0] u_tag,
+	input wire u_ok,
+	input wire kick_prot_ok,	/* KICK: the units are session 0's */
+	input wire [7:0] wdt_tag,	/* the job tag of a watchdog fault (the drained session's) */
+	input wire f_chk,
+	input wire [5:0] f_slot,
 	input wire [9:0] cpu_st_ridx,
 	output wire [31:0] cpu_st_rdata,
 	output wire [31:0] cp_fence_last,
@@ -175,7 +197,8 @@ module atg_cp #(
 	/* PERF always; CPFW with the CPU; DISP, DBG, MEM and FMT when present (bit id - 1). */
 	localparam [9:0] XCAP = 10'h004 | (HAS_CPU != 0 ? 10'h020 : 10'h000) |
 		(HAS_DISP != 0 ? 10'h001 : 10'h000) | (HAS_DBG != 0 ? 10'h002 : 10'h000) |
-		(LOCAL_BYTES != 32'd0 ? 10'h080 : 10'h000) | (HAS_FMT != 0 ? 10'h200 : 10'h000);
+		(LOCAL_BYTES != 32'd0 ? 10'h080 : 10'h000) | (HAS_FMT != 0 ? 10'h200 : 10'h000) |
+		(HAS_PROT != 0 ? 10'h100 : 10'h000);
 
 	/*
 	 * The STATE broadcast to the blocks, one register stage after
@@ -271,7 +294,9 @@ module atg_cp #(
 		.wdt_hold(!s_cmd_active && cpu_stall),
 		.replay_busy(s_replay_busy),
 		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
-		.mc_fault_write(mc_fault_write),
+		.mc_fault_write(mc_fault_write), .mc_fault_prot(mc_fault_prot),
+		.mc_fault_mem(mc_fault_mem), .mc_fault_tag(mc_fault_tag),
+		.kick_prot_ok(kick_prot_ok), .wdt_tag(wdt_tag),
 		.src_fault({x_fault[1], blt_error, cpu_fault, x_fault[0], s_fence_fault,
 			s_lock_fault, s_seq_fault, s_ring_fault}),
 		.src_kind({x_fault_kind[7:4], blt_error_kind, GHCI_FAULT_WATCHDOG, x_fault_kind[3:0],
@@ -334,6 +359,13 @@ module atg_cp #(
 		.o_rsp_rdata(rsp_rdata), .o_rsp_error(rsp_error)
 	);
 
+	/* Only the fence unit's (requester 1) requests carry the protection side band. */
+	wire s_f_req_chk;
+	wire [5:0] s_f_req_slot;
+	wire s_pick_f = req_tag[7:6] == 2'd1;
+	assign req_chk = s_pick_f && s_f_req_chk;
+	assign req_slot = s_pick_f ? s_f_req_slot : 6'd0;
+
 	/* The MC holds the blocks' new requests; its client 0 (this) is exempt. */
 	assign mc_quiesce = s_quiesce;
 
@@ -374,18 +406,20 @@ module atg_cp #(
 		.clk(clk), .rst_n(s_core_rst_n),
 		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data), .n_last(s_n_last),
 		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data), .fw_last(fw_last),
-		.fw_active(fw_active), .halt(s_seq_halt),
+		.fw_active(fw_active), .fw_side(fw_side), .halt(s_seq_halt),
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
 		.blt_kick(s_seq_blt_kick), .draw_kick(s_seq_draw_kick), .cs_kick(s_seq_cs_kick),
 		.lc_kick(lc_kick), .raw_kick(raw_kick), .inv(inv), .perf_reset(s_perf_reset),
-		.busy_in({busy_ext[7:2], blt_busy, 1'b0}), .vsync(vsync),
+		.busy_in({busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
 		.occ_count(occ_count), .occ_clear(occ_clear),
 		.busy(s_seq_busy), .cmd_active(s_cmd_active),
 		.fault(s_seq_fault), .fault_kind(s_seq_fault_kind), .fault_addr(s_seq_fault_addr),
-		.fault_tag(s_seq_fault_tag)
+		.fault_tag(s_seq_fault_tag),
+		.u_fw(u_fw), .u_side(u_side), .u_req(u_req), .u_ok(u_ok)
 	);
+	assign u_tag = s_seq_fault_tag;
 
 	assign blt_kick = s_host_kick[0] || s_seq_blt_kick;
 	assign draw_kick = s_host_kick[1] || s_seq_draw_kick;
@@ -397,7 +431,8 @@ module atg_cp #(
 		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_fence_rdata),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
-		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
+		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_chk(f_chk),
+		.f_slot(f_slot), .f_busy(s_f_busy),
 		.ev_fence(cp_fence_ev), .fence_last(cp_fence_last),
 		.fault(s_fence_fault), .fault_kind(s_fence_fault_kind),
 		.fault_addr(s_fence_fault_addr), .fault_tag(s_fence_fault_tag),
@@ -405,6 +440,7 @@ module atg_cp #(
 		.req_write(s_i_req_write[1]), .req_line(s_i_req_line[1*SLA_W +: SLA_W]),
 		.req_be(s_i_req_be[1*LINE_BYTES +: LINE_BYTES]),
 		.req_wdata(s_i_req_wdata[1*SLB +: SLB]), .req_tag(s_i_req_tag[1*8 +: 8]),
+		.req_chk(s_f_req_chk), .req_slot(s_f_req_slot),
 		.rsp_valid(s_i_rsp_valid[1]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
 		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
 	);
@@ -433,7 +469,7 @@ module atg_cp #(
 		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
 	);
 
-	wire unused_ok = &{1'b0, busy_ext[1:0], s_i_rsp_tag};
+	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag};
 endmodule
 
 `default_nettype wire

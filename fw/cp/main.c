@@ -48,6 +48,7 @@ main(void)
 	main_state(FW_STATE_BOOT);
 	fw_heap_init();
 	fw_object_init();
+	fw_prot_init();
 	fw_uop_reset();
 
 	/* Tells the host which firmware runs and that .data is fresh. */

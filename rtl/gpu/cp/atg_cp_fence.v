@@ -22,7 +22,10 @@
  * response before FENCE_LAST/ev_fence.  An error response is a fault of
  * kind 1 (aperture or AXI error) with the address; the unit then stops
  * until the core reset (rst_n).  FENCE_LAST (0x070) is also written by
- * the host (the driver restores it after RESET).
+ * the host (the driver restores it after RESET).  Session protection:
+ * f_chk and f_slot come with the request (a firmware µop of a protected
+ * session that is not SELF) and go with its memory requests (req_chk,
+ * req_slot).
  */
 
 `timescale 1ns / 1ps
@@ -51,6 +54,8 @@ module atg_cp_fence #(
 	input wire [31:0] f_value,
 	input wire [31:0] f_aux,
 	input wire f_irq,
+	input wire f_chk,
+	input wire [5:0] f_slot,
 	output wire f_busy,
 	/* Events */
 	output wire ev_fence,
@@ -68,6 +73,8 @@ module atg_cp_fence #(
 	output wire [LINE_BYTES-1:0] req_be,
 	output wire [LINE_BYTES*8-1:0] req_wdata,
 	output wire [7:0] req_tag,
+	output reg req_chk,
+	output reg [5:0] req_slot,
 	input wire rsp_valid,
 	input wire rsp_write,
 	input wire [7:0] rsp_tag,
@@ -128,6 +135,8 @@ module atg_cp_fence #(
 			value <= 32'd0;
 			aux <= 32'd0;
 			irq_on <= 1'b0;
+			req_chk <= 1'b0;
+			req_slot <= 6'd0;
 			last <= 32'd0;
 			gap <= 8'd0;
 		end else begin
@@ -141,6 +150,8 @@ module atg_cp_fence #(
 					value <= f_value;
 					aux <= f_aux;
 					irq_on <= f_irq;
+					req_chk <= f_chk;
+					req_slot <= f_slot;
 					st <= F_REQ;
 				end
 			F_REQ:

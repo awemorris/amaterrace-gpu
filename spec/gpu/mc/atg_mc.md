@@ -13,7 +13,8 @@ of 2-way routers (user, 2026-10-23: 「2分岐くらいのルーター（RT）�
 あって優先される必要がありますね。」).  The root assembles each request, checks it against the
 aperture and the VRAM window, gives it to the AXI master or refuses it, and sends the responses
 back down the tree.  Parent: `atg_top` (instance `mc`).  Children: `atg_mc_tree` (the leaves and
-routers), `atg_mc_aper` (the aperture check), `am_axi_master`.  The atomic unit `atg_mc_atom` is
+routers), `atg_mc_asm` (the root's assembly buffers), `atg_mc_prot` (the grant: the aperture check and,
+with `HAS_PROT`, session protection), `atg_mc_cnt` (the request counters), `am_axi_master`.  The atomic unit `atg_mc_atom` is
 a client of its own in `atg_top`.
 
 ## 2. Parameters
@@ -31,6 +32,10 @@ a client of its own in `atg_top`.
 | `OUTSTANDING_LOG2` | 2 | Passed to `am_axi_master` | 2 |
 | `VRAM_AW` | 32 | Address bits carried in the tree (the VRAM window is 2^VRAM_AW bytes) | `LINE_SHIFT` < `VRAM_AW` ≤ 32; 64 MiB: 26 |
 | `VRAM_BASE` | 0 | The window's base, aligned to its size; the root adds it | e.g. 0x1C000000 |
+| `UNIT_MASK` | 0 | Clients that `unit_idle` counts | `atg_top`: all but the CP and the DC |
+| `HAS_PROT` | 0 | Session protection (docs/ghci.md §11.6, `atg_mc_prot`) | 0, 1 |
+| `RMW_MASK` | 0 | Clients whose reads are judged as writes | `atg_top`: the atomic unit |
+| `PROT_PLB`, `PROT_PLB_W`, `PROT_GRANTS`, `PROT_GIDX_W` | 4, 2, 8, 3 | PLB lines, grant entries, and their clog2 | KC705 16, 4, 64, 6 |
 
 Derived (localparams): `HAS_ROOT`, `TREE_L` = clog2(`NCLIENT` − `HAS_ROOT`), `RW` (route bits) =
 max(1, `TREE_L` + `HAS_ROOT`), the header layout of `spec/common/am_amb_to_rt.md`.
@@ -44,6 +49,7 @@ Client vectors are packed, client 0 in the low bits.  Domain `clk` for all.
 | `clk`, `rst_n` | in | 1 | Clock; synchronous active-low reset (board reset, not the CP's core reset) |
 | `c_req_valid` / `c_req_ready` | in / out | `NCLIENT` | Per-client request handshake (the client's leaf takes it when its last flit enters the tree; several clients can be taken in one cycle).  Hold valid and payload until ready |
 | `c_req_write`, `c_req_line`, `c_req_be`, `c_req_wdata`, `c_req_tag` | in | per client | The request (as before) |
+| `c_req_chk`, `c_req_tbl`, `c_req_slot` | in | per client 1, 1, 6 | Session protection: check the request for the slot; a write of the protection table.  Held with the request.  Ignored without `HAS_PROT` |
 | `rsp_valid` | out | `NCLIENT` | One-cycle pulse to the answered client; no back-pressure.  Several clients may get a response in the same cycle |
 | `rsp_write`, `rsp_tag`, `rsp_rdata`, `rsp_error` | out | `NCLIENT` × 1, 8, `LINE_BYTES*8`, 1 | **Per client** (changed in p023: each leaf drives its own client's fields), valid with that client's `rsp_valid` |
 | `quiesce` | in | 1 | Level from the CP: the leaves outside `QUIESCE_EXEMPT` start no new packet; the tree drains |
@@ -51,6 +57,10 @@ Client vectors are packed, client 0 in the low bits.  Domain `clk` for all.
 | `aperture_base`, `aperture_limit` | in | `ADDR_W` | Allowed range [base, limit) |
 | `axi_idle` | out | 1 | `am_axi_master.idle`, no refusal pending and no response flit in the tree |
 | `fault`, `fault_client`, `fault_addr`, `fault_write` | out (reg) | 1, 8, `ADDR_W`, 1 | One-cycle pulse when a request was refused, with the client (from the header), the line address (VRAM_BASE + the window offset) and the direction |
+| `fault_prot`, `fault_slot`, `fault_mem` | out (reg) | 1, 6, 1 | With `fault`: refused for protection (FAULT_INFO[9]) and the request's slot; a protection table read had an AXI error (kind 5) |
+| `chk_idle` | out | 1 | No request with chk is in the tree or the root (taken from a leaf and not yet granted or refused) |
+| `unit_idle` | out | 1 | Every request of `UNIT_MASK`'s clients taken by a leaf has had its response |
+| `prot_tbase`, `prot_inv_valid`, `prot_inv_g`, `prot_inv_n`, `prot_inv_pending`, `prot_gw_valid`, `prot_gw_idx`, `prot_gw_data` | in, out | | The CP's protection registers (`spec/gpu/mc/atg_mc_prot.md`; one port group) |
 | `m_*` | — | — | The AXI master ports of `am_axi_master` (one port group) |
 
 ## 4. Behaviour
@@ -62,10 +72,15 @@ Client vectors are packed, client 0 in the low bits.  Domain `clk` for all.
   others take turns per router.  Responses are one flit (write, error, tag, route, line) and go
   down by the route bits, one register stage per hop.
 - Root: an assembly buffer takes the header flit and, for a write, the data flit.  The complete
-  request is granted when `!quiesce && !err_v`: inside the aperture and the window → to
-  `am_axi_master` (`grant_ok` when it is ready); else refused at once (`grant_bad`): next cycle
-  `err_v` holds the refusal and `fault` pulses.  The buffer takes the next flit in the cycle of
-  the grant.
+  request goes to `atg_mc_prot`, which grants it when `!err_v`: inside the aperture and the window
+  (and, with `HAS_PROT`, allowed by session protection) → to `am_axi_master` when it is ready;
+  else refused (`bad`): next cycle `err_v` holds the refusal and `fault` pulses.  The buffer takes
+  the next flit in the cycle the request leaves it.  With `HAS_PROT` and a `ROOT_CLIENT` (the DC)
+  that client has its own assembly buffer at the root (the tree's `ROOT_SPLIT`), first in the
+  grant, and its responses (route bit 0 = 0) go straight to its leaf.
+- A protection table read (atg_mc_prot's walk) goes to the AXI master with client 0xFF; its
+  response goes back to atg_mc_prot, not into the tree.  It counts for `axi_idle` (its request is
+  in `pend`, its read in the AXI master).
 - Responses: the AXI master's first (its user bits carry route, client and tag); a pending
   refusal goes out in the first cycle without one, with `rsp_error` = 1.  While `err_v` nothing
   is granted.  The tree always takes a response (the leaves always do, every hop has room when
@@ -114,7 +129,8 @@ none).  `flush`/`rst_n` → empty, none.  The routers and leaves have their own 
   response has left the tree.  **WS288 p004:** `atg_top` sets `QUIESCE_EXEMPT` to client 0, the CP,
   so that its debug port works in HALTED and FAULTED (and a ring line or fence it requested
   completes) while the blocks are held.  The KC705's outside client (DC) is held like the others.
-- `rsp_rdata` of a refusal is the AXI master's last read data (meaningless).
+- `rsp_rdata` of a refusal is 0 (session protection: a refused read returns zeros; before, it
+  was the AXI master's last read data).
 - The header must fit a line (`20 + RW + VRAM_AW − LINE_SHIFT + LINE_BYTES` ≤ `LINE_BYTES*8`:
   83 of 256 bits with 32-byte lines and 16 clients, 116 of 512 on the KC705 with 32 and a root client).
 
@@ -129,6 +145,9 @@ about 1/40 refused (outside the aperture; in B half of them alias a good line th
 window and only the window check refuses them) with an error response and a fault naming the
 client, line and direction; nothing refused reaches AXI; random quiesce: no request of a held client is taken
 under it and `axi_idle` comes within a bound; every client granted; fault count = refused count.
+Every cycle `unit_idle` against the requests outstanding; a refused read's data is 0.  (C) is
+shape B with `HAS_PROT` and no chk (the DC on its own root entry): the same checks.  Session
+protection itself: `sim/tb/atg_mc_prot_tb.v` (`spec/gpu/mc/atg_mc_prot.md`).
 The router's priority, turn-taking, packet locking and response demux are checked by
 `sim/tb/atg_rt_tb.v`.  Also covered by `atg_top_tb` and the Verilator harness.  Not checked:
 `flush` alone (through the CP's RESET in `atg_top_tb`), `NCLIENT` > 5, starvation bounds.
@@ -142,6 +161,8 @@ The router's priority, turn-taking, packet locking and response demux are checke
 ## 10. Status
 
 Implemented: p002 (70aaff5), the router tree in WS288 p023 milestone 4 (P1).  The flat arbiter
-(and `atg_mc_arb`) is gone.  About 290 lines; ports over 40 only by the AXI group.  Synthesis of
+(and `atg_mc_arb`) is gone.  Session protection (2026-10-25): the grant moved to `atg_mc_prot`,
+the assembly buffer to `atg_mc_asm`, the counters to `atg_mc_cnt`; about 395 lines; ports over 40
+only by the AXI group and the protection group.  Synthesis of
 the tree is not measured yet (a Vivado run is pending: each hop costs about `LINE_BYTES*8` + 30
 flip-flops per direction).

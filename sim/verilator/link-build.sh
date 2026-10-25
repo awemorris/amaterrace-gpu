@@ -26,7 +26,7 @@ bytes=0x40000000
 window=0x04000000
 timeout 1200 verilator --cc --build -j 8 -Wall -Iinclude \
 	--top-module atg_top -GLINE_BYTES=64 -GLINE_SHIFT=6 -GDATA_W=512 -GS_ID_W=4 -GS_LEN_W=8 \
-	-GHAS_CPU=1 -GCPU_IMEM_WORDS=16384 -GCPU_DMEM_WORDS=8192 \
+	-GHAS_CPU=1 -GCPU_IMEM_WORDS=32768 -GCPU_DMEM_WORDS=8192 \
 	"-GCPU_IMEM_INIT=\"$root/fw/cp/images/atg1-cp-kc705.imem.hex\"" \
 	"-GCPU_DMEM_INIT=\"$root/fw/cp/images/atg1-cp-kc705.dmem.hex\"" \
 	-GNSU=1 -GHAS_VF=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GROP_STENCIL=1 \

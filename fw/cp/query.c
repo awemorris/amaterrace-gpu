@@ -75,12 +75,12 @@ fw_cmd_create_query_pool(
 		return;
 	}
 
-	/* The pool and its slots, zero (unavailable). */
+	/* The pool and its slots (the QUERY µops write them: a visible block), zero (unavailable). */
 	pool = fw_cmd_new_object(command, device, id, FW_OBJ_QUERY_POOL);
 	if (pool == NULL)
 		return;
 	bytes = queries * QUERY_SLOT_BYTES;
-	error = fw_object_block(pool, bytes);
+	error = fw_object_block_visible(pool, bytes);
 	memset(zeros, 0, sizeof(zeros));
 	for (done = 0; done < bytes && error == 0; done += part) {
 		part = bytes - done;
@@ -339,6 +339,7 @@ fw_query_copy(
 	uint32_t words;
 	uint32_t available;
 	uint32_t flags;
+	uint32_t mode;
 	int error;
 
 	/* The marker's words. */
@@ -369,18 +370,24 @@ fw_query_copy(
 				values[words++] = 0;
 		}
 
-		/* An unavailable value is not written without PARTIAL; the availability is. */
+		/*
+		 * An unavailable value is not written without PARTIAL; the
+		 * availability is.  The destination is the session's buffer, so
+		 * the store's lines are checked for its slot.
+		 */
+		mode = fw_dma_mode(FW_DMA_CHK);
 		if (available != 0 || (flags & QUERY_PARTIAL) != 0) {
 			error = fw_store(payload[2] + query * payload[3], values, words * 4u);
 		} else if ((flags & QUERY_WITH_AVAILABILITY) != 0) {
 			error = fw_store(payload[2] + query * payload[3] + (words / 2u) * 4u, &values[words / 2u],
 					 (words / 2u) * 4u);
 		}
+		(void)fw_dma_mode(mode);
 		if (error != 0)
 			return -1;
 	}
 
-	/* Succeeded once the values are in memory. */
+	/* Succeeded once the values are in memory (the held line keeps its mode). */
 	error = fw_store_flush();
 	if (error != 0)
 		return -1;

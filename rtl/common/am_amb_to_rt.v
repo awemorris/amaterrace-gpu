@@ -14,10 +14,12 @@
  *   response  one flit: the header fields and the line
  *
  * Header flit (request), from bit 0: [0] priority (PRIO), [1] write,
- * [2] outside the VRAM window, [3] 0, [11:4] tag, [19:12] client (CLIENT),
- * then RW route bits (ROUTE: the child taken at each router, the root's
- * first), LAW line-address bits (the line inside the VRAM window), and
- * LINE_BYTES byte enables.  Response flit: [0] write, [1] error,
+ * [2] outside the VRAM window, [3] chk (session protection checks the
+ * request), [11:4] tag, [19:12] client (CLIENT), then RW route bits (ROUTE:
+ * the child taken at each router, the root's first), LAW line-address bits
+ * (the line inside the VRAM window), LINE_BYTES byte enables, tbl (a write
+ * of the protection table) and the 6-bit protection slot (spec
+ * gpu/mc/atg_mc_prot.md; 0 where the client has none).  Response flit: [0] write, [1] error,
  * [9:2] tag, then RW route bits, then the line from bit 10+RW.
  *
  * A request is taken from the client (req_ready) when its last flit is
@@ -59,6 +61,9 @@ module am_amb_to_rt #(
 	input wire [LINE_BYTES-1:0] req_be,
 	input wire [LINE_BYTES*8-1:0] req_wdata,
 	input wire [7:0] req_tag,
+	input wire req_chk,	/* session protection: held with the request like the rest */
+	input wire req_tbl,
+	input wire [5:0] req_slot,
 	output wire rsp_valid,
 	output wire rsp_write,
 	output wire [7:0] rsp_tag,
@@ -75,7 +80,7 @@ module am_amb_to_rt #(
 	input wire [RFW-1:0] t_rsp_data
 );
 	localparam LAW = VRAM_AW - LINE_SHIFT;
-	localparam HW = 20 + RW + LAW + LINE_BYTES;
+	localparam HW = 20 + RW + LAW + LINE_BYTES + 7;
 	localparam LINE_BITS = LINE_BYTES * 8;
 
 	/* 0: the header goes next, 1: the data flit of a write. */
@@ -92,8 +97,8 @@ module am_amb_to_rt #(
 	end
 	endgenerate
 
-	wire [HW-1:0] header = {req_be, req_line[LAW-1:0], ROUTE, CLIENT, req_tag, 1'b0, outside,
-		req_write, PRIO != 0};
+	wire [HW-1:0] header = {req_slot, req_tbl, req_be, req_line[LAW-1:0], ROUTE, CLIENT, req_tag,
+		req_chk, outside, req_write, PRIO != 0};
 
 	wire go = data_phase || !hold;
 

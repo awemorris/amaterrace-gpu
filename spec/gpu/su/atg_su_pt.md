@@ -102,3 +102,5 @@ design §3.4.3, §3.5 (PT), §3.8 (PT reservation, deadlock); spec atg_vf_asm.md
 Implemented in WS288 p009 part B1 (P1, branch p1-su-gfx), split off atg_su_exp (its PT part).  New ports against the earlier atg_su_exp: `pt_warp`, `vl_go`, `vl_mask`, `pt_done` (Q1's allocator decision of 2026-10-24 and the PT-ready rule); atg_su has the new output `pt_done`.
 
 Varying 64 components (Vulkan 1.0's limit): pt_word is 7 bits (PT words up to 67 with VARY_WORDS 64; was 6), VARY_WORDS at most 64 (exp targets 0x010-0x04F).  KC705 (NPHYS 16, PT_ENTRIES 64): 16 banks of 4 × 68 words, one BRAM18 each as before (estimate).
+
+Session protection (2026-10-25): `scrub` writes 0 to every word through the write port, one word per cycle (`atg_su_scrub`), `scrub_busy` meanwhile; the RAM's declaration and read are unchanged.  Checked by `sim/tb/atg_su_scrub_tb.v`.

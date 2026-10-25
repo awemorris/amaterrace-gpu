@@ -43,6 +43,10 @@ module atg_cpu_win_tb;
 	wire v_done;
 	wire fw_valid, fw_last, fw_active;
 	reg fw_ready = 1'b0;
+	wire [6:0] fw_side;
+	wire [5:0] pkt_slot;
+	reg [5:0] v_slot = 6'd0;
+	reg [6:0] pop_side [0:63];
 	wire [31:0] fw_data;
 	wire [9:0] st_ridx;
 	reg [31:0] st_rdata = 0;
@@ -53,7 +57,7 @@ module atg_cpu_win_tb;
 
 	integer seed = 1;
 	integer errors = 0;
-	integer e0, i, n, lat;
+	integer e0, i, n, lat, p0;
 	integer sb_writes = 0;
 	integer m_accesses = 0;
 	integer v_dones = 0;
@@ -71,6 +75,7 @@ module atg_cpu_win_tb;
 
 	atg_cpu_win dut (
 		.clk(clk), .rst_n(rst_n),
+		.fw_side(fw_side), .v_slot(v_slot), .pkt_slot(pkt_slot),
 		.d_valid(d_valid), .d_write(d_write), .d_addr(d_addr), .d_wdata(d_wdata), .d_be(d_be),
 		.d_ready(d_ready), .d_rdata(d_rdata),
 		.m_en(m_en), .m_we(m_we), .m_addr(m_addr), .m_wdata(m_wdata), .m_rdata(m_rdata),
@@ -108,6 +113,7 @@ module atg_cpu_win_tb;
 		if (fw_valid && fw_ready) begin
 			pop_data[pops] = fw_data;
 			pop_last[pops] = fw_last;
+			pop_side[pops] = fw_side;
 			pops = pops + 1;
 		end
 	end
@@ -161,12 +167,12 @@ module atg_cpu_win_tb;
 
 		/* decode */
 		e0 = errors;
-		access(1, 32'h0001_0100, 32'h1234_5678);
+		access(1, 32'h0002_0100, 32'h1234_5678);
 		expect("dmem store lat", lat, 2);
-		access(0, 32'h0001_0100, 0);
+		access(0, 32'h0002_0100, 0);
 		expect("dmem load", rd, 32'h1234_5678);
 		expect("dmem load lat", lat, 2);
-		access(0, 32'h0001_FFFC, 0);
+		access(0, 32'h0002_FFFC, 0);
 		expect("dmem top", rd, 32'hDEAD_3FFF);
 		expect("m_accesses", m_accesses, 3);
 		access(1, WIN + 4 * 6'h10, 32'hAB);	/* DMA_AMB */
@@ -295,6 +301,40 @@ module atg_cpu_win_tb;
 		expect("v_done 3", v_dones, 2);
 		if (errors == e0)
 			$display("PASS atg_cpu_win.packet");
+
+		/* side: each µop's {SELF, slot}: outside a packet slot 0; UOP_SELF marks
+		 * the next µop packet up to its UOP_LAST; the taken packet's slot. */
+		e0 = errors;
+		p0 = pops;
+		access(1, WIN + 4 * 6'h32, 1);	/* UOP_SELF */
+		access(1, WIN + 4 * 6'h04, 32'hBBBB_0001);
+		access(1, WIN + 4 * 6'h05, 32'hBBBB_0002);
+		access(1, WIN + 4 * 6'h05, 32'hBBBB_0003);
+		@(negedge clk);
+		v_valid = 1'b1;
+		v_tag = 8'h60;
+		v_slot = 6'd7;
+		access(0, WIN + 4 * 6'h02, 0);	/* take it */
+		v_slot = 6'd0;
+		expect("pkt_slot", pkt_slot, 7);
+		access(1, WIN + 4 * 6'h04, 32'hBBBB_0004);
+		access(1, WIN + 4 * 6'h32, 1);
+		access(1, WIN + 4 * 6'h05, 32'hBBBB_0005);
+		access(1, WIN + 4 * 6'h03, 0);	/* DONE */
+		@(negedge clk);
+		fw_ready = 1'b1;
+		repeat (8) @(negedge clk);
+		fw_ready = 1'b0;
+		expect("pkt_slot after DONE", pkt_slot, 0);
+		v_valid = 1'b0;
+		expect("side pops", pops - p0, 5);
+		expect("side 1", pop_side[p0], {1'b1, 6'd0});
+		expect("side 2", pop_side[p0 + 1], {1'b1, 6'd0});
+		expect("side 3", pop_side[p0 + 2], {1'b0, 6'd0});
+		expect("side 4", pop_side[p0 + 3], {1'b0, 6'd7});
+		expect("side 5", pop_side[p0 + 4], {1'b1, 6'd7});
+		if (errors == e0)
+			$display("PASS atg_cpu_win.side");
 
 		/* irq */
 		e0 = errors;

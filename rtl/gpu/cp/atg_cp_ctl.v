@@ -33,7 +33,10 @@
  * (KICK, locked write, watchdog), then src 0..NSRC-1):
  *   MC refusal of client c != 0: FAULT_INFO {0, c, 1, 0, write, c}
  *   src k: {tag, SRC_BLOCK[k], kind, 0, 0, SRC_CLIENT[k]}, FAULT_ADDR addr
- *   KICK not open or unit busy: kind 6; KICK of an absent unit: kind 2;
+ *   KICK not open, unit busy, or (session protection, kick_prot_ok = 0)
+ *   the units still another session's: kind 6; KICK of an absent unit: kind 2;
+ *   watchdog: kind 4, [31:24] wdt_tag (session protection: the session whose
+ *   work the units are draining, else 0);
  *   RING_BASE/SIZE, APERTURE_*, CP_HEAP_* written when not open: kind 7.
  * MC refusals of client 0 (the CP's own port) are reported by the ring,
  * the fence unit or the debug port themselves.
@@ -72,6 +75,11 @@ module atg_cp_ctl #(
 	input wire [7:0] mc_fault_client,
 	input wire [31:0] mc_fault_addr,
 	input wire mc_fault_write,
+	input wire mc_fault_prot,	/* refused for session protection: FAULT_INFO[9] */
+	input wire mc_fault_mem,	/* a protection table read failed: kind 5 */
+	input wire [7:0] mc_fault_tag,
+	input wire kick_prot_ok,	/* session protection: the units are session 0's (KICK) */
+	input wire [7:0] wdt_tag,	/* the job tag of a watchdog fault */
 	input wire [NSRC-1:0] src_fault,
 	input wire [NSRC*4-1:0] src_kind,
 	input wire [NSRC*32-1:0] src_addr,
@@ -155,7 +163,7 @@ module atg_cp_ctl #(
 		hcr_wdata[GHCI_KICK_BLIT]} : 3'd0;
 	wire [2:0] kick_present = {UNITS[6], UNITS[2], UNITS[1]};
 	wire [2:0] kick_busy = {busy_in[6], busy_in[2], busy_in[1]};
-	wire [2:0] kick_ok = kick_bits & kick_present & ~kick_busy & {3{open}};
+	wire [2:0] kick_ok = kick_bits & kick_present & ~kick_busy & {3{open && kick_prot_ok}};
 	assign host_kick = kick_ok;
 	wire kick_absent = |(kick_bits & ~kick_present);
 	wire kick_bad = |(kick_bits & kick_present & ~kick_ok);
@@ -168,7 +176,9 @@ module atg_cp_ctl #(
 	wire wdt_fire = ctrl_wdt_en && cmd_active && wdt_count >= wdt_cycles && st != S_FAULTED;
 
 	/* The first fault of this cycle. */
-	wire mc_gpu = mc_fault && mc_fault_client != 8'd0;
+	/* The MC's refusals of client 0 (the CP) are its own units' faults, except
+	 * those of session protection (a firmware µop's fence or result). */
+	wire mc_gpu = mc_fault && (mc_fault_client != 8'd0 || mc_fault_prot || mc_fault_mem);
 	reg any;
 	reg [31:0] n_info;
 	reg [31:0] n_addr;
@@ -179,8 +189,9 @@ module atg_cp_ctl #(
 		n_addr = 32'd0;
 		n_info = 32'd0;
 		if (mc_gpu) begin
-			n_info = {8'd0, mc_fault_client, GHCI_FAULT_APERTURE, 3'd0, mc_fault_write,
-				mc_fault_client};
+			n_info = {mc_fault_tag, mc_fault_client,
+				mc_fault_mem ? GHCI_FAULT_AXI : GHCI_FAULT_APERTURE, 2'd0, mc_fault_prot,
+				mc_fault_write, mc_fault_client};
 			n_addr = mc_fault_addr;
 		end else if (kick_bad) begin
 			n_info = {16'd0, GHCI_FAULT_KICK, 12'd0};
@@ -189,7 +200,7 @@ module atg_cp_ctl #(
 		end else if (locked_bad) begin
 			n_info = {16'd0, GHCI_FAULT_LOCKED, 12'd0};
 		end else if (wdt_fire) begin
-			n_info = {16'd0, GHCI_FAULT_WATCHDOG, 12'd0};
+			n_info = {wdt_tag, 8'd0, GHCI_FAULT_WATCHDOG, 12'd0};
 		end else begin
 			any = 1'b0;
 			for (k = NSRC - 1; k >= 0; k = k - 1)

@@ -10,7 +10,7 @@
 	.globl _start
 _start:
 	lui x31, 0xF0000
-	lui x1, 0x10
+	lui x1, 0x20
 	lw x2, 0(x1)
 	sw x2, MBOX3(x31)
 	li x3, 0x600D0002

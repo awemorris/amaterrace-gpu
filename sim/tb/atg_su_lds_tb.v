@@ -46,6 +46,7 @@ module atg_su_lds_tb;
 
 	atg_su_lds #(.NPHYS(NPHYS)) dut (
 		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp),
+		.scrub(1'b0), .scrub_busy(),
 		.x_last(x_last), .x_sbe(x_sbe), .x_pc(16'd0), .x_uop(x_uop), .x_a(x_a), .x_b(x_b),
 		.x_c(x_c), .x_mask(x_mask), .x_info(32'd0), .x_ready(x_ready),
 		.l_valid(l_valid), .l_ready(l_ready), .l_warp(l_warp), .l_grp(l_grp), .l_rd(l_rd),

@@ -21,6 +21,9 @@
  * NC = min(NPHYS/4, 2) copies in block RAM (design §3.5), read
  * synchronously: copy c reads quad p * NC + c in read cycle p, so a lane
  * group takes NR = NPHYS/4/NC cycles and x_ready is 0 in its later ones.
+ * scrub (session protection, the unit idle) writes 0 to every word of
+ * every copy through the table's write port, one word per cycle, while
+ * scrub_busy.
  * See spec/gpu/su/atg_su_lda.md.
  */
 
@@ -65,7 +68,10 @@ module atg_su_lda #(
 	input wire pw_we,
 	input wire [WARP_W-1:0] pw_warp,
 	input wire [11:0] pw_addr,
-	input wire [31:0] pw_data
+	input wire [31:0] pw_data,
+	/* Session protection: clear the table */
+	input wire scrub,
+	output wire scrub_busy
 );
 `include "atg_su_uop.vh"
 
@@ -95,6 +101,19 @@ module atg_su_lda #(
 	wire tab_we = pw_we && !pw_addr[11] && wvtx < 3 && wword < VARY_WORDS && wprim < PRIMS;
 	wire [31:0] waddr = ((({{(32-WARP_W){1'b0}}, pw_warp} * PRIMS + wprim) * 3 + wvtx) *
 		VARY_WORDS) + wword;
+
+	/* The write port: the RX's writes or the scrub's zeros. */
+	wire sc_on;
+	wire [AW-1:0] sc_a;
+
+	atg_su_scrub #(.DEPTH(DEPTH), .AW(AW)) sc (
+		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
+	);
+
+	assign scrub_busy = sc_on;
+	wire t_we = sc_on || tab_we;
+	wire [AW-1:0] t_wa = sc_on ? sc_a : waddr[AW-1:0];
+	wire [31:0] t_wd = sc_on ? 32'd0 : pw_data;
 
 	/* The read cycle of the group being read: 0 takes a group from x_*. */
 	reg [PW-1:0] ph;
@@ -153,8 +172,8 @@ module atg_su_lda #(
 		wire [31:0] raddr = ((({{(32-WARP_W){1'b0}}, c_warp} * PRIMS + {29'd0, prim}) * 3 +
 			rvtx) * VARY_WORDS) + rvary;
 		always @(posedge clk) begin
-			if (tab_we)
-				m[waddr[AW-1:0]] <= pw_data;
+			if (t_we)
+				m[t_wa] <= t_wd;
 			rq[32 * q +: 32] <= m[raddr[AW-1:0]];
 			rq_ok[q] <= rok && {29'd0, prim} < PRIMS;
 		end

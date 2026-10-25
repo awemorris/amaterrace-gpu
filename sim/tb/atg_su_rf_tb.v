@@ -43,9 +43,14 @@ module atg_su_rf_chk #(
 	integer i, l, k, phase;
 	reg chk;
 
+	/* The scrub's counter needs a reset (the TB never scrubs). */
+	reg rst_n = 1'b0;
+	initial #12 rst_n = 1'b1;
+
 	atg_su_rf #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W),
 		.NREGS(NREGS)) dut (
-		.clk(clk), .rst_n(1'b1), .w_en(w_en), .w_warp(w_warp), .w_grp(w_grp), .w_reg(w_reg),
+		.clk(clk), .rst_n(rst_n), .w_en(w_en), .w_warp(w_warp), .w_grp(w_grp), .w_reg(w_reg),
+		.scrub(1'b0), .scrub_busy(),
 		.w_data(w_data), .w_lanes(w_lanes), .r_en(r_en), .r_warp(r_warp), .r_grp(r_grp),
 		.r_reg1(r1), .r_reg2(r2), .r_reg3(r3), .r_data1(d1), .r_data2(d2), .r_data3(d3)
 	);
