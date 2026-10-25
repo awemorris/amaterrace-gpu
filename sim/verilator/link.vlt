@@ -1,0 +1,15 @@
+`verilator_config
+// The link (link.cpp) counts the µop words the CPU gives the sequencer and
+// the cycles the firmware spends in a packet: these wires stay visible to
+// the C++.
+public_flat_rd -module "atg_top" -var "fw_valid"
+public_flat_rd -module "atg_top" -var "fw_ready"
+public_flat_rd -module "atg_cpu_fw" -var "fw_state"
+// The trace of the CPU's line DMA (LINK_TRACE_DMA in the environment).
+public_flat_rd -module "atg_cpu_dma" -var "go"
+public_flat_rd -module "atg_cpu_dma" -var "dma_amb"
+public_flat_rd -module "atg_cpu_dma" -var "dma_mem"
+public_flat_rd -module "atg_cpu_dma" -var "sb_wdata"
+public_flat_rd -module "atg_cpu_dma" -var "sb_we"
+public_flat_rd -module "atg_cpu_dma" -var "sb_idx"
+public_flat_rd -module "atg_cpu_dma" -var "state"

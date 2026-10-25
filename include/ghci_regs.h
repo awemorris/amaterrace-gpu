@@ -77,6 +77,8 @@
 #define GHCI_CPFW_STATUS_READY (1u << 0)
 #define GHCI_CPFW_STATUS_FAULT (1u << 1)
 #define GHCI_CPFW_STATUS_ALIVE (1u << 2)
+#define GHCI_CPFW_STATUS_STOPPED (1u << 3) /* the core is stopped or held in reset */
+#define GHCI_CPFW_STATUS_LOADING (1u << 4)
 #define GHCI_CPFW_STATUS_STATE(s) (((s) >> 8) & 0xFFu)
 
 /* CAPS. */

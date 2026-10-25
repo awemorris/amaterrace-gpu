@@ -436,6 +436,41 @@ test_buffers(void)
 	stage_submit(0, 0x400);
 	(void)host_frame_run(TAG, 1);
 	host_check(host_result(0) == FW_VK_ERROR_UNKNOWN, "a one-time command buffer submitted twice");
+
+	/* As libvulkan sends them: begin alone, the records with the end, the submit, the reset. */
+	host_frame_begin();
+	stage_begin(0, 0x400);
+	(void)host_frame_run(TAG, 1);
+	host_check(host_result(0) == 0, "begin in a frame of its own");
+	host_frame_begin();
+	host_cmd(GHCI_VK_CMD_FILL_BUFFER);
+	host_u64(0x400);
+	host_u64(0x200);
+	host_u64(0x10);
+	host_u64(64);
+	host_u32(0xC0DE5678u);
+	stage_end(0, 0x400);
+	(void)host_frame_run(TAG, 2);
+	host_check(host_result(0) == 0, "records and end in a frame");
+	host_frame_begin();
+	stage_submit(0, 0x400);
+	(void)host_frame_run(TAG, 1);
+	host_check(host_result(0) == 0, "submit in a frame of its own");
+
+	/* A reset of the spent command buffer, in a frame of its own, then a destroy. */
+	host_frame_begin();
+	host_record(GHCI_VK_RESET_COMMAND_BUFFER, 0);
+	host_u64(0x400);
+	host_u32(0);
+	(void)host_frame_run(TAG, 1);
+	host_check(host_result(0) == 0, "reset after a one-time submit");
+	host_frame_begin();
+	host_record(GHCI_VK_DESTROY_BUFFER, 0);
+	host_u64(DEVICE);
+	host_u64(0x201);
+	host_u64(0);
+	(void)host_frame_run(TAG, 1);
+	host_check(host_result(0) == 0, "destroy after the reset");
 	(void)test_case("buffers", before);
 }
 

@@ -75,6 +75,8 @@ localparam GHCI_CPFW_CTRL_HALT = 2;
 localparam GHCI_CPFW_STATUS_READY = 0;
 localparam GHCI_CPFW_STATUS_FAULT = 1;
 localparam GHCI_CPFW_STATUS_ALIVE = 2;
+localparam GHCI_CPFW_STATUS_STOPPED = 3;	/* the core is stopped or held in reset */
+localparam GHCI_CPFW_STATUS_LOADING = 4;
 
 /* CTRL bits. */
 localparam GHCI_CTRL_RUN = 0;
