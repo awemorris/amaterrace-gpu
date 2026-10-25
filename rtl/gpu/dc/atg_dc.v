@@ -6,23 +6,26 @@
  */
 
 /*
- * atg_dc: The display controller IP (design §5): registers and DMA in
- * gclk, a pixel FIFO (am_afifo) to the pixel clock, timing generator, a
- * TMDS encoder and a parallel output, optional I2C; its own AMB client port (an MC client
- * of atg_top; STANDALONE: to its own am_axi_master).
+ * atg_dc: the display controller (DISP2, docs/ghci.md section 13.2), a
+ * unit of the GPU in atg_top: registers and DMA in gclk, a pixel FIFO
+ * (am_afifo) to the pixel clock, the timing generator, a TMDS encoder and
+ * a parallel output, optional I2C; one AMB client port (MC client C_DC).
+ * The CP reaches it through atg_cp_disp: the internal register bus (d_*),
+ * the flips (flip_*, taken) and the status for the records.
  *
  * Wiring of its children; see spec/gpu/dc/atg_dc.md.  The only clock
  * crossings: the pixel FIFO (am_afifo), ENABLE and CTRL.RESET to pclk, the
  * event toggles and the line to gclk (am_sync).  The timing, format and
- * test pattern are quasi-static and go to pclk directly (atg_dc_regs §7).
+ * test pattern are quasi-static and go to pclk directly (atg_dc_regs).
+ * rst_n is the board reset; the DC's own CTRL.RESET (dc_reset) resets the
+ * gclk side of the FIFO, the I2C master and the event synchronisers, and
+ * clears the DMA (whose count of outstanding reads survives it).
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
 module atg_dc #(
-	parameter STANDALONE = 0,	/* 1: a DC-only GHCI device: GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000) */
-	parameter BASE = 17'h10000,	/* Window of the DISP registers when STANDALONE = 0 */
 	parameter HAS_I2C = 0,	/* ADV7511 I2C master present (KC705, DC_CAPS[2]) */
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
@@ -34,16 +37,27 @@ module atg_dc #(
 	input wire rst_n,
 	input wire pclk,
 	input wire prst_n,
-	/* Register bus (am_axi_regs; the DC decodes its own window) */
-	input wire reg_wr,
-	input wire [16:0] reg_waddr,
-	input wire [31:0] reg_wdata,
-	input wire [3:0] reg_wstrb,
-	input wire reg_rd,
-	input wire [16:0] reg_raddr,
-	output wire [31:0] reg_rdata,
-	output wire irq,
-	output wire vsync,
+	/* The internal register bus (from atg_cp_disp) */
+	input wire d_we,
+	input wire [5:0] d_idx,
+	input wire [31:0] d_wdata,
+	input wire [31:0] d_wmask,
+	input wire [5:0] d_ridx,
+	output wire [31:0] d_rdata,
+	/* Flips and the status for the records (atg_cp_disp) */
+	input wire flip_valid,
+	input wire flip_plane,
+	input wire [31:0] flip_base,
+	output wire [1:0] taken,
+	output wire [1:0] taken_cancel,
+	output wire [1:0] pending,
+	input wire [1:0] dc_err,
+	output wire idle,
+	output wire [31:0] frame_count,
+	/* Events (one-cycle pulses): IRQ_STATUS VBLANK, DISP_ERROR, HOTPLUG */
+	output wire ev_vblank,
+	output wire ev_error,
+	output wire ev_hotplug,
 	output wire pclk_sel,
 	/* AMB client port (design §4.1) */
 	output wire req_valid,
@@ -70,9 +84,9 @@ module atg_dc #(
 	output wire sda_t,
 	input wire sda_i
 );
-	wire enable, test_pattern, dc_reset, dma_idle;
+	wire enable, test_pattern, dc_reset, dma_idle, dma_done, dma_err;
 	wire [1:0] format;
-	wire [31:0] fb_next, fb_stride, fb_size, fb_base, scan_sum, scan_words;
+	wire [31:0] fb_stride, fb_size, fb_base, scan_sum, scan_words;
 	wire [287:0] timing;
 	wire i2c_we;
 	wire [1:0] i2c_idx;
@@ -87,6 +101,10 @@ module atg_dc #(
 	wire [2:0] g_toggles;
 	reg [2:0] g_toggles_q;
 	wire g_rst_n = rst_n && !dc_reset;
+	wire [31:0] regs_rdata, mode_rdata;
+	wire connected;
+	wire [31:0] cur_pos, cursor_base;
+	wire cur_show;
 
 	/* pclk → gclk events as toggles (am_sync), edges here. */
 	am_sync #(.W(3)) sync_ev (
@@ -111,26 +129,43 @@ module atg_dc #(
 	wire [11:0] g_line;
 	am_sync #(.W(12)) sync_line (.clk(clk), .rst_n(g_rst_n), .d(p_line), .q(g_line));
 
-	assign vsync = g_ev[1];
+	/* The cursor plane comes later (DC_CAPS[8] is 0): plane 1 is absent. */
+	assign taken[1] = 1'b0;
+	assign taken_cancel[1] = 1'b0;
+	assign pending[1] = 1'b0;
+	assign cursor_base = 32'd0;
+	assign idle = dma_idle;
+	assign d_rdata = regs_rdata | mode_rdata;
 
-	atg_dc_regs #(.STANDALONE(STANDALONE), .BASE(BASE), .HAS_I2C(HAS_I2C)) regs (
+	atg_dc_regs #(.HAS_I2C(HAS_I2C), .HAS_CURSOR(0)) regs (
 		.clk(clk), .rst_n(rst_n),
-		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
-		.reg_rd(reg_rd), .reg_raddr(reg_raddr), .reg_rdata(reg_rdata),
-		.enable(enable), .test_pattern(test_pattern), .format(format), .fb_next(fb_next),
+		.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(d_wmask), .d_ridx(d_ridx),
+		.d_rdata(regs_rdata),
+		.enable(enable), .test_pattern(test_pattern), .format(format), .fb_base(fb_base),
 		.fb_stride(fb_stride), .fb_size(fb_size), .timing(timing), .pclk_sel(pclk_sel),
 		.dc_reset(dc_reset),
-		.ev_vsync(g_ev[1]), .ev_flip(g_ev[1]), .ev_underflow(g_ev[2]), .dma_idle(dma_idle),
-		.line(g_line), .scan_sum(scan_sum), .scan_words(scan_words), .fb_base(fb_base),
-		.irq(irq),
+		.flip_valid(flip_valid && !flip_plane), .flip_base(flip_base),
+		.taken(taken[0]), .taken_cancel(taken_cancel[0]), .pending(pending[0]),
+		.ev_vsync(g_ev[1]), .ev_underflow(g_ev[2]), .idle_in(dma_idle), .line(g_line),
+		.scan_sum(scan_sum), .scan_words(scan_words), .rd_err(dma_err), .dc_err(dc_err),
+		.connected(connected), .pending1(pending[1]),
+		.ev_vblank(ev_vblank), .ev_error(ev_error), .frame_count(frame_count),
 		.i2c_we(i2c_we), .i2c_idx(i2c_idx), .i2c_wdata(i2c_wdata), .i2c_rdata(i2c_rdata)
 	);
 
+	atg_dc_mode mode (
+		.clk(clk), .rst_n(rst_n), .dc_reset(dc_reset),
+		.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(d_wmask), .d_ridx(d_ridx),
+		.d_rdata(mode_rdata), .connected(connected), .ev_hotplug(ev_hotplug),
+		.cur_pos(cur_pos), .cur_show(cur_show), .cursor_base(cursor_base)
+	);
+
 	atg_dc_dma #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) dma (
-		.clk(clk), .rst_n(g_rst_n),
+		.clk(clk), .rst_n(rst_n), .clear(dc_reset),
 		.enable(enable), .frame_start(g_ev[0]), .fb_base(fb_base), .fb_stride(fb_stride),
 		.fb_size(fb_size), .format(format),
 		.px_valid(px_w_valid), .px_ready(px_w_ready), .px_data(px_w_data), .idle(dma_idle),
+		.done(dma_done), .err(dma_err),
 		.scan_sum(scan_sum), .scan_words(scan_words),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write), .req_line(req_line),
 		.req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
@@ -190,7 +225,7 @@ module atg_dc #(
 	end
 	endgenerate
 
-	wire unused_ok = &{1'b0, fb_next};
+	wire unused_ok = &{1'b0, dma_done, cur_pos, cur_show};
 endmodule
 
 `default_nettype wire

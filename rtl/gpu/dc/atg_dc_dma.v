@@ -32,6 +32,13 @@
  * scan_sum and scan_words are the sum and the number of the pixel words
  * pushed in the last frame (taken at the next frame_start or abort): a
  * check that the scan-out read the framebuffer, without a display.
+ *
+ * clear (the DC's CTRL.RESET) aborts like enable = 0 and starts no frame;
+ * the count of outstanding requests is kept (rst_n is the board reset), so
+ * the responses of reads issued before it are still counted and dropped.
+ * err pulses for an error response of the current frame (its line is
+ * black).  done is 1 when the frame has no line left to request and no
+ * pixel left to push (or there is no frame): the cursor may read then.
  */
 
 `timescale 1ns / 1ps
@@ -44,6 +51,7 @@ module atg_dc_dma #(
 ) (
 	input wire clk,
 	input wire rst_n,
+	input wire clear,
 	input wire enable,
 	input wire frame_start,
 	input wire [31:0] fb_base,
@@ -54,6 +62,8 @@ module atg_dc_dma #(
 	input wire px_ready,
 	output wire [31:0] px_data,
 	output wire idle,
+	output wire done,
+	output reg err,
 	output reg [31:0] scan_sum,
 	output reg [31:0] scan_words,
 	/* AMB client port (design §4.1) */
@@ -87,8 +97,8 @@ module atg_dc_dma #(
 
 	/* An abort ends the current frame; frame_start then starts the next. */
 	reg enable_q;
-	wire abort = frame_start || (enable_q && !enable);
-	wire start = frame_start && enable;
+	wire abort = frame_start || (enable_q && !enable) || clear;
+	wire start = frame_start && enable && !clear;
 	reg [3:0] epoch;
 	reg [3:0] tag_q;
 	assign req_tag = {4'd0, tag_q};
@@ -179,6 +189,12 @@ module atg_dc_dma #(
 	wire l_in_ready;	/* always 1 when a response comes: the requests wait for room */
 	wire keep = rsp_read && rsp_tag[3:0] == epoch && !abort;
 
+	always @(posedge clk)
+		if (!rst_n)
+			err <= 1'b0;
+		else
+			err <= keep && rsp_error;
+
 	am_fifo #(.W(LW), .DEPTH_LOG2(LFIFO_LOG2)) lines (
 		.clk(clk), .rst_n(rst_n && !abort),
 		.in_valid(keep), .in_ready(l_in_ready), .in_data(rsp_error ? {LW{1'b0}} : rsp_rdata),
@@ -198,6 +214,8 @@ module atg_dc_dma #(
 		l_data[32*up_idx[LINE_SHIFT-3:0] +: 32];
 
 	reg [31:0] sum_acc, words_acc;
+
+	assign done = !rq_active && !up_active;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin

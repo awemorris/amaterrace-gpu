@@ -1805,9 +1805,9 @@ in the ring: the image is scanned out where it is, without a copy.
 DISP_SET and FLIP do nothing outside RUNNING and HALTING (section 7.3), so
 the host and the command processor never write S at the same time: a
 packet still in the ring after a HALT does not undo what the host wrote
-in HALTED. A write of the timing, FB_STRIDE, FB_SIZE, PCLK_SEL, or of
-CTRL with another FORMAT, while ENABLE is 1 is ignored (CTRL's other bits
-are taken) and sets BAD_WRITE.
+in HALTED. A write of the timing, FB_STRIDE, FB_SIZE or PCLK_SEL while
+ENABLE is 1, or of CTRL with another FORMAT that keeps ENABLE 1, is
+ignored (CTRL's other bits are taken) and sets BAD_WRITE.
 
 Registers, at offsets from the capability's register offset (a window of
 256 bytes):

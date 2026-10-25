@@ -6,14 +6,16 @@
  */
 
 /*
- * atg_dc_tb: the whole DC (STANDALONE, 32-byte lines) with amb_mem and a
- * pixel clock of its own (gclk 100 MHz, pclk 25 MHz): the driver's steps
- * through the register bus (timing, FB_*, IRQ_ENABLE, ENABLE), then the
- * active pixels of frames compared with the framebuffer, the vsync
- * interrupt and FRAME_COUNT, a flip to a second framebuffer at a vsync
- * (FLIP_DONE), the scan sum, RGB565, no underflow, ENABLE = 0 → STATUS.idle,
- * CTRL.RESET and a frame after it.  Not in the spec's list (atg_dc is
- * wiring): it covers the clock crossings.
+ * atg_dc_tb: the whole DC (32-byte lines) with amb_mem and a pixel clock
+ * of its own (gclk 100 MHz, pclk 25 MHz), driven as atg_cp_disp drives it:
+ * the internal register bus (timing, FB_*, ENABLE) and the flips.  The
+ * active pixels of frames are compared with the image; VBLANK and
+ * FRAME_COUNT; a flip at once while disabled and one at a vsync (taken,
+ * FB_BASE); the scan sum; RGB565; no underflow; a read error (black lines,
+ * STATUS.read error, DISP_ERROR at most once a frame); ENABLE = 0 with a
+ * pending flip (cancelled) → STATUS.idle; CTRL.RESET with a pending flip
+ * and reads on the way, and frames after it.  Not in the spec's list
+ * (atg_dc is wiring): it covers the clock crossings.
  */
 
 `timescale 1ns / 1ps
@@ -27,11 +29,12 @@ module atg_dc_tb;
 	always #5 clk = !clk;
 	always #20 pclk = !pclk;
 
-	reg reg_wr = 0, reg_rd = 0;
-	reg [16:0] reg_waddr = 0, reg_raddr = 0;
-	reg [31:0] reg_wdata = 0;
-	wire [31:0] reg_rdata;
-	wire irq, vsync, pclk_sel;
+	reg d_we = 0, flip_valid = 0;
+	reg [5:0] d_idx = 0, d_ridx = 0;
+	reg [31:0] d_wdata = 0, flip_base = 0;
+	wire [31:0] d_rdata, frame_count;
+	wire [1:0] taken, taken_cancel, pending;
+	wire idle, vsync, ev_error, ev_hotplug, pclk_sel;
 	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
 	wire [26:0] req_line;
 	wire [31:0] req_be;
@@ -41,11 +44,14 @@ module atg_dc_tb;
 	wire px_de, px_hs, px_vs, scl_t, sda_t;
 	wire [23:0] px_rgb;
 
-	atg_dc #(.STANDALONE(1)) dut (
+	atg_dc dut (
 		.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
-		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(4'hF),
-		.reg_rd(reg_rd), .reg_raddr(reg_raddr), .reg_rdata(reg_rdata),
-		.irq(irq), .vsync(vsync), .pclk_sel(pclk_sel),
+		.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(32'hFFFFFFFF),
+		.d_ridx(d_ridx), .d_rdata(d_rdata),
+		.flip_valid(flip_valid), .flip_plane(1'b0), .flip_base(flip_base),
+		.taken(taken), .taken_cancel(taken_cancel), .pending(pending), .dc_err(2'b00),
+		.idle(idle), .frame_count(frame_count),
+		.ev_vblank(vsync), .ev_error(ev_error), .ev_hotplug(ev_hotplug), .pclk_sel(pclk_sel),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
@@ -54,7 +60,7 @@ module atg_dc_tb;
 		.scl_t(scl_t), .scl_i(1'b1), .sda_t(sda_t), .sda_i(1'b1)
 	);
 
-	amb_mem #(.MEM_WORDS(8192)) mem (
+	amb_mem #(.MEM_WORDS(8192), .ERR_BASE(32'h7000)) mem (
 		.clk(clk), .rst_n(rst_n),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
@@ -62,7 +68,7 @@ module atg_dc_tb;
 		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
 	);
 
-	localparam [16:0] D = GHCI_DC_STANDALONE_DISP;
+	localparam [7:0] D = 8'h00;
 	localparam W = 40, H = 12;
 
 	integer errors = 0;
@@ -70,30 +76,51 @@ module atg_dc_tb;
 	reg [31:0] v;
 
 	task wr;
-		input [16:0] addr;
+		input [7:0] addr;
 		input [31:0] data;
 		begin
 			@(negedge clk);
-			reg_wr = 1;
-			reg_waddr = addr;
-			reg_wdata = data;
+			d_we = 1;
+			d_idx = addr[7:2];
+			d_wdata = data;
 			@(negedge clk);
-			reg_wr = 0;
+			d_we = 0;
+			@(negedge clk);
 		end
 	endtask
 
 	task rd;
-		input [16:0] addr;
+		input [7:0] addr;
 		output [31:0] data;
 		begin
 			@(negedge clk);
-			reg_rd = 1;
-			reg_raddr = addr;
-			@(negedge clk);
-			reg_rd = 0;
-			data = reg_rdata;
+			d_ridx = addr[7:2];
+			#1;
+			data = d_rdata;
 		end
 	endtask
+
+	task flip;
+		input [31:0] base;
+		begin
+			@(negedge clk);
+			flip_valid = 1;
+			flip_base = base;
+			@(negedge clk);
+			flip_valid = 0;
+			@(negedge clk);
+		end
+	endtask
+
+	integer n_taken = 0, n_cancel = 0, n_error = 0;
+	always @(posedge clk) begin
+		if (taken[0])
+			n_taken = n_taken + 1;
+		if (taken[0] && taken_cancel[0])
+			n_cancel = n_cancel + 1;
+		if (ev_error)
+			n_error = n_error + 1;
+	end
 
 	task fail;
 		input [8*50-1:0] what;
@@ -131,6 +158,8 @@ module atg_dc_tb;
 				mw = mem.peek(cmp_base + (px_n / W) * 128 + (px_n % W) * 2 & ~32'd3);
 				mw = (px_n % 2) ? mw[31:16] : mw[15:0];
 				want_rgb = {mw[15:11], mw[15:13], mw[10:5], mw[10:9], mw[4:0], mw[4:2]};
+			end else if (cmp_base + (px_n / W) * 256 >= 32'h7000) begin
+				want_rgb = 24'd0;	/* a read error: black */
 			end else begin
 				mw = mem.peek(cmp_base + (px_n / W) * 256 + (px_n % W) * 4);
 				want_rgb = mw[23:0];
@@ -162,12 +191,9 @@ module atg_dc_tb;
 	endtask
 
 	integer irqs = 0;
-	reg irq_q = 0;
-	always @(posedge clk) begin
-		irq_q <= irq;
-		if (irq && !irq_q)
+	always @(posedge clk)
+		if (vsync)
 			irqs = irqs + 1;
-	end
 
 	initial begin
 		if (!$value$plusargs("seed=%d", seed))
@@ -190,49 +216,73 @@ module atg_dc_tb;
 		wr(D + GHCI_DC_TIMING + 24, 2);
 		wr(D + GHCI_DC_TIMING + 28, 3);
 		wr(D + GHCI_DC_SYNC_POL, 0);
-		wr(D + GHCI_DC_FB_NEXT, 32'h1000);
+		flip(32'h1000);	/* disabled: taken at once */
+		if (n_taken !== 1 || n_cancel !== 0) fail("flip at once", n_taken, 1);
 		wr(D + GHCI_DC_FB_STRIDE, 256);
 		wr(D + GHCI_DC_FB_SIZE, {16'd12, 16'd40});
-		wr(D + GHCI_DC_IRQ_ENABLE, 32'h7);
 		cmp_base = 32'h1000;
 		cmp_fmt = 0;
 		wr(D + GHCI_DC_CTRL, 32'h1);
 		frames_ok("frames of fb 0x1000", 3);
 		rd(D + GHCI_DC_FRAME_COUNT, v);
 		if (v < 4 || v > 6) fail("FRAME_COUNT", v, 4);
-		if (irqs < 1) fail("vsync irq", irqs, 1);
-		rd(D + GHCI_DC_IRQ_STATUS, v);
-		if (v[0] !== 1'b1) fail("IRQ_STATUS.VSYNC", v, 1);
-		if (v[1] !== 1'b0) fail("IRQ_STATUS.UNDERFLOW", v, 0);
+		if (irqs < 4) fail("VBLANK", irqs, 4);
+		rd(D + GHCI_DC_STATUS, v);
+		if (v[1] !== 1'b0) fail("no underflow", v, 0);
 		rd(D + GHCI_DC_SCAN_WORDS, v);
 		if (v !== W * H) fail("SCAN_WORDS", v, W * H);
-		/* Flip: FB_NEXT then the next vsync. */
-		wr(D + GHCI_DC_IRQ_STATUS, 32'h7);
-		wr(D + GHCI_DC_FB_NEXT, 32'h4000);
+		/* A flip of the CP: pending, taken at the next vsync. */
+		flip(32'h4000);
+		if (pending[0] !== 1'b1) fail("pending", pending, 1);
 		@(posedge vsync);
-		@(negedge clk);
+		repeat (3) @(negedge clk);
 		cmp_base = 32'h4000;
-		rd(D + GHCI_DC_IRQ_STATUS, v);
-		if (v[2] !== 1'b1) fail("FLIP_DONE", v, 4);
+		if (n_taken !== 2 || n_cancel !== 0) fail("taken at vsync", n_taken, 2);
 		rd(D + GHCI_DC_FB_BASE, v);
 		if (v !== 32'h4000) fail("FB_BASE after flip", v, 32'h4000);
 		frames_ok("frames of fb 0x4000", 2);
 		rd(D + GHCI_DC_STATUS, v);
 		if (v[1:0] !== 2'b01) fail("STATUS running, no underflow", v, 1);
-		/* Disable: idle. */
+		/* A read error: rows 6.. of the image at 0x6A00 are at 0x7000 and up. */
+		e0 = n_error;
+		flip(32'h6A00);
+		@(posedge vsync);
+		@(negedge clk);
+		cmp_base = 32'h6A00;
+		i = n_error;
+		frames_ok("frames with read errors", 3);
+		if (n_error - i < 3 || n_error - i > 5) fail("DISP_ERROR once a frame", n_error - i, 4);
+		rd(D + GHCI_DC_STATUS, v);
+		if (v[GHCI_DC_ST_READ_ERROR] !== 1'b1) fail("STATUS.read error", v, 8);
+		flip(32'h4000);
+		@(posedge vsync);
+		@(negedge clk);
+		cmp_base = 32'h4000;
+		wr(D + GHCI_DC_STATUS, 32'h8);
+		rd(D + GHCI_DC_STATUS, v);
+		if (v[GHCI_DC_ST_READ_ERROR] !== 1'b0) fail("W1C read error", v, 0);
+		/* Disable with a pending flip: cancelled; then idle. */
+		flip(32'h5000);
 		wr(D + GHCI_DC_CTRL, 32'h0);
+		if (n_cancel !== 1) fail("cancelled by ENABLE", n_cancel, 1);
 		repeat (200) @(posedge clk);
 		rd(D + GHCI_DC_STATUS, v);
 		if (v[2:0] !== 3'b100) fail("STATUS idle", v, 4);
+		if (idle !== 1'b1) fail("idle out", idle, 1);
+		rd(D + GHCI_DC_FB_BASE, v);
+		if (v !== 32'h4000) fail("FB_BASE kept", v, 32'h4000);
 		/* RGB565 with a stride of 128. */
-		wr(D + GHCI_DC_FB_NEXT, 32'h6000);
+		flip(32'h6000);
 		wr(D + GHCI_DC_FB_STRIDE, 128);
 		cmp_base = 32'h6000;
 		cmp_fmt = 2;
 		wr(D + GHCI_DC_CTRL, 32'h21);
 		frames_ok("frames of RGB565", 2);
-		/* CTRL.RESET while running, then enable again. */
+		/* CTRL.RESET while running, with a pending flip and reads on the way. */
+		flip(32'h5000);
+		wait (!idle);
 		wr(D + GHCI_DC_CTRL, 32'h23);
+		if (n_cancel !== 2) fail("cancelled by RESET", n_cancel, 2);
 		repeat (100) @(posedge clk);
 		rd(D + GHCI_DC_FRAME_COUNT, v);
 		if (v !== 32'd0) fail("FRAME_COUNT after RESET", v, 0);
@@ -255,7 +305,8 @@ module atg_dc_tb;
 		$finish;
 	end
 
-	wire unused_tb = &{1'b0, tmds, px_hs, scl_t, sda_t, pclk_sel};
+	wire unused_tb = &{1'b0, tmds, px_hs, scl_t, sda_t, pclk_sel, frame_count, ev_hotplug,
+		taken[1], taken_cancel[1], pending[1]};
 endmodule
 
 `default_nettype wire

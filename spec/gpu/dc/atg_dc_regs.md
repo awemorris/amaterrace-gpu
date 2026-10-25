@@ -1,66 +1,59 @@
 # atg_dc_regs
 
-RTL: `rtl/gpu/dc/atg_dc_regs.v`.  Parent: atg_dc.  Implemented in: p005.
+RTL: `rtl/gpu/dc/atg_dc_regs.v`.  Parent: atg_dc.  Implemented in: p005; DISP2 (p035 D3).
 
 ## 1. Purpose and place
 
-The DC's registers (design §5.1): DC_ID/VERSION/CAPS, CTRL, STATUS, IRQ, FB_*, timing, FRAME_COUNT, PCLK_SEL, the I2C window, and in the standalone bitstream the GHCI header that makes the DC a display-only GHCI device.
+The DC's scan-out registers of the DISP2 window (docs/ghci.md §13.2): DC_ID/VERSION/CAPS, CTRL, STATUS, FB_*, the timing, FRAME_COUNT, PCLK_SEL, the I2C window and Amaterrace's SCAN_SUM/SCAN_WORDS; plane 0's pending flip; the events VBLANK and DISP_ERROR.  The other registers of the window are `atg_dc_mode`'s (mode table, CONNECTED, cursor) and `atg_cp_disp`'s (STATUS[31], TAKEN0/1).
 
 ## 2. Parameters
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `STANDALONE` | `0` | 1: a DC-only GHCI device: GHCI header at 0x000, DISP registers at 0x200; 0: DISP registers at BASE (KC705 0x10000). |
-| `BASE` | `17'h10000` | Window of the DISP registers when STANDALONE = 0. |
 | `HAS_I2C` | `0` | ADV7511 I2C master present (KC705, DC_CAPS[2]). |
+| `HAS_CURSOR` | `0` | The cursor plane (DC_CAPS[8]). |
 
 ## 3. Ports
 
-Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchronous and active low.
+Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 
 | Name | Dir | Width | Meaning, handshake and timing |
 | --- | --- | --- | --- |
-| `clk` | in | 1 | Clock (gclk). |
-| `rst_n` | in | 1 | Synchronous reset, active low. |
-| **Register bus (am_axi_regs; the DC decodes its own window)** | | | |
-| `reg_wr` | in | 1 | Write strobe. |
-| `reg_waddr` | in | 17 | Byte address. |
-| `reg_wdata` | in | 32 | Data. |
-| `reg_wstrb` | in | 4 | Strobes. |
-| `reg_rd` | in | 1 | Read strobe. |
-| `reg_raddr` | in | 17 | Address. |
-| `reg_rdata` | out | 32 | Data the cycle after reg_rd, 0 outside the window (so a top can OR it with the GPU's). |
-| **Configuration to atg_dc_dma and atg_dc_tgen** | | | |
-| `enable` | out | 1 | CTRL.ENABLE (quasi-static, see §4). |
-| `test_pattern` | out | 1 | CTRL.TEST_PATTERN. |
-| `format` | out | 2 | CTRL.FORMAT. |
-| `fb_next` | out | 32 | FB_NEXT. |
-| `fb_stride` | out | 32 | FB_STRIDE. |
-| `fb_size` | out | 32 | FB_SIZE. |
-| `timing` | out | 288 | H_ACTIVE, H_FP, H_SYNC, H_BP, V_ACTIVE, V_FP, V_SYNC, V_BP, SYNC_POL (word 0 in [31:0]). |
-| `pclk_sel` | out | 1 | PCLK_SEL[0] (to the board's clock mux). |
-| `dc_reset` | out | 1 | CTRL.RESET pulse (gclk). |
-| **Status (gclk, already synchronised by atg_dc)** | | | |
-| `ev_vsync` | in | 1 | Vsync pulse. |
-| `ev_flip` | in | 1 | FB_NEXT was taken at this vsync. |
-| `ev_underflow` | in | 1 | Underflow pulse. |
-| `dma_idle` | in | 1 | No DMA outstanding. |
-| `line` | in | 12 | Current line (approximate, synchronised). |
-| `scan_sum` | in | 32 | From atg_dc_dma: sum of the last frame's pixel words (SCAN_SUM). |
-| `scan_words` | in | 32 | From atg_dc_dma: pixel words of the last frame (SCAN_WORDS). |
-| `fb_base` | out | 32 | FB_BASE: the frame being scanned (updated at ev_flip). |
-| `irq` | out | 1 | Level interrupt. |
-| **I2C window (to atg_dc_i2c)** | | | |
-| `i2c_we` | out | 1 | Write. |
-| `i2c_idx` | out | 2 | 0 CTRL, 1 DATA, 2 STATUS. |
-| `i2c_wdata` | out | 32 | Data. |
-| `i2c_rdata` | in | 32 | Data (combinational). |
+| `clk`, `rst_n` | in | 1 | gclk; the board reset. |
+| `d_we`, `d_idx`, `d_wdata`, `d_wmask` | in | 1, 6, 32, 32 | The DC's internal bus: a write (one cycle) of word `d_idx` of the window under the bit mask; every write that comes is taken (atg_cp_disp has checked who writes). |
+| `d_ridx` | in | 6 | Read index. |
+| `d_rdata` | out | 32 | This module's word at `d_ridx`, combinational; 0 for the words it does not hold. |
+| `enable`, `test_pattern`, `format` | out | 1, 1, 2 | CTRL (quasi-static, §7). |
+| `fb_base` | out | 32 | FB_BASE: plane 0's image. |
+| `fb_stride`, `fb_size` | out | 32 | FB_STRIDE, FB_SIZE. |
+| `timing` | out | 288 | H_ACTIVE .. V_BP, SYNC_POL (word 0 in [31:0]). |
+| `pclk_sel` | out | 1 | PCLK_SEL[0] (the board's clock mux). |
+| `dc_reset` | out | 1 | CTRL.RESET, a level for 32 cycles. |
+| `flip_valid`, `flip_base` | in | 1, 32 | One-cycle pulse: a flip of plane 0 by the CP. |
+| `taken`, `taken_cancel` | out | 1, 1 | One-cycle pulse the cycle after: a flip of the CP was taken (cancelled). |
+| `pending` | out | 1 | Plane 0 has a pending flip (the CP's or the host's). |
+| `ev_vsync`, `ev_underflow` | in | 1 | Pulses from atg_dc_tgen (synchronised). |
+| `idle_in` | in | 1 | No memory read of the DC outstanding (DMA and cursor). |
+| `line` | in | 12 | The current line (approximate). |
+| `scan_sum`, `scan_words` | in | 32 | atg_dc_dma's SCAN_SUM/SCAN_WORDS. |
+| `rd_err` | in | 1 | Pulse: a scan-out read had an error response. |
+| `dc_err` | in | 2 | Pulses from atg_cp_disp: [0] record error, [1] BAD_WRITE. |
+| `connected`, `pending1` | in | 1 | STATUS[28] and [30]. |
+| `ev_vblank` | out | 1 | VBLANK: `ev_vsync` while ENABLE is 1. |
+| `ev_error` | out | 1 | DISP_ERROR pulse. |
+| `frame_count` | out | 32 | FRAME_COUNT (for the records). |
+| `i2c_we`, `i2c_idx`, `i2c_wdata`, `i2c_rdata` | out, out, out, in | 1, 2, 32, 32 | To atg_dc_i2c. |
 
-31 ports (scan_sum and scan_words added in p005, Q1 to ACK).
+39 ports.
 
 ## 4. Behaviour
 
-Register map of design §5.1 (offsets from the DISP base; the window is 128 bytes, 128-byte aligned).  FRAME_COUNT counts ev_vsync.  CTRL.RESET (W1S) raises dc_reset for 32 cycles (so that atg_dc can carry it to pclk and reset both sides of the pixel FIFO) and clears ENABLE, IRQ_STATUS, the sticky underflow, FRAME_COUNT and a pending flip; the configuration registers keep their values.  STATUS: [0] ENABLE, [1] underflow (sticky; cleared by RESET and when ENABLE goes 0 → 1), [2] idle = ENABLE 0 and dma_idle, [15:4] line.  FB_NEXT written while ENABLE = 1 makes a flip pending: at the next ev_flip (a vsync) FB_BASE takes it and FLIP_DONE is raised; written while ENABLE = 0 (no vsyncs) it sets FB_BASE at once.  Amaterrace's debug registers after the I2C window: 0x70 SCAN_SUM and 0x74 SCAN_WORDS (R, scan_sum and scan_words).  I2C reads give i2c_rdata only with HAS_I2C.  IRQ_STATUS [0] VSYNC [1] UNDERFLOW [2] FLIP_DONE, W1C; irq = OR(status & enable).  Standalone header: MAGIC, VERSION, VENDOR "AMAT", DEVICE "ATDC", ISA 0, CAPS = bit 3 only, EXTCAP → one DISP entry pointing to 0x200.
+- CTRL: ENABLE, RESET (W1S), TEST_PATTERN, FORMAT, OUTPUT.  CTRL.RESET raises `dc_reset` for 32 cycles and clears ENABLE, the sticky status, FRAME_COUNT and a pending flip (a flip of the CP is taken as cancelled); the configuration keeps its values.
+- Refusals (BAD_WRITE): a write of the timing, FB_STRIDE, FB_SIZE or PCLK_SEL while ENABLE is 1, and a write of CTRL that keeps ENABLE 1 with another FORMAT (its other bits are taken).
+- STATUS: [0] ENABLE, [1] underflow, [2] idle (ENABLE 0 and `idle_in`), [3] read error, [4] record error, [5] BAD_WRITE ([1], [3]-[5] sticky, W1C; a set and a clear in the same cycle leave it set; [1] is also cleared when ENABLE goes 0 → 1), [27:16] line, [28] `connected`, [29] `pending`, [30] `pending1`, [31] 0 (atg_cp_disp ORs its own).
+- Plane 0: `flip_valid` or a write of FB_NEXT while ENABLE is 1 (and does not fall in that cycle) makes FB_NEXT pending, taken at the next `ev_vsync` (FB_BASE = FB_NEXT); while ENABLE is 0 it sets FB_BASE at once (a flip of the CP is then taken at once).  ENABLE falling takes a pending flip as cancelled; a write of FB_NEXT over a flip of the CP takes that one as cancelled and makes the host's pending.  `taken` pulses only for the CP's flips.
+- DISP_ERROR: a pulse when one of the sticky errors is set; while ENABLE is 1 at most once between two vsyncs, while it is 0 at every error.
+- FRAME_COUNT counts `ev_vsync`.  Amaterrace's 0x70 SCAN_SUM and 0x74 SCAN_WORDS (R).  I2C reads give `i2c_rdata` only with `HAS_I2C`.  DC_VERSION 0.2; DC_CAPS [1] TMDS or [2] the transmitter, [7:4] 0111, [8] `HAS_CURSOR`, [11:9] 2.
 
 ## 5. State machine
 
@@ -68,25 +61,27 @@ None.
 
 ## 6. Latency and throughput
 
-Register read latency 1.
+Reads are combinational from `d_ridx`; a write takes effect in its cycle.
 
 ## 7. Corner cases and errors
 
-- The timing and FB_STRIDE/SIZE are quasi-static: the driver changes them only with ENABLE = 0; atg_dc_tgen samples them in pclk without a synchroniser (documented exception: they are stable for many cycles before ENABLE, which crosses through am_sync).
+- The timing and FB_STRIDE/SIZE are quasi-static: they change only with ENABLE = 0 (now enforced); atg_dc_tgen samples them in pclk without a synchroniser (they are stable for many cycles before ENABLE, which crosses through am_sync).
+- A flip and ENABLE falling in the same cycle: the flip is taken at once (not left pending without vsyncs).
 
 ## 8. What the TB checks
 
 `sim/tb/atg_dc_regs_tb.v` prints, in this order:
 
-- `PASS atg_dc_regs.map` — every register
-- `PASS atg_dc_regs.header` — STANDALONE header and EXTCAP
-- `PASS atg_dc_regs.irq` — W1C and the line
+- `PASS atg_dc_regs.map` — every register, strobes, the outputs, the words of other modules read 0, STATUS's fields
+- `PASS atg_dc_regs.bad` — the refusals while ENABLE is 1 and BAD_WRITE, one DISP_ERROR for several in a frame, a FORMAT change with ENABLE 0 in the same write is taken
+- `PASS atg_dc_regs.flip` — at once while disabled, at a vsync, cancelled by ENABLE falling, by a host FB_NEXT (the host's image then taken without `taken`) and by CTRL.RESET
+- `PASS atg_dc_regs.status` — the sticky bits, W1C, set wins, DISP_ERROR once a frame and at every error while disabled, underflow cleared by ENABLE 0 → 1, FRAME_COUNT, VBLANK, CTRL.RESET's pulse and what it clears
 - `PASS atg_dc_regs` at the end.
 
 ## 9. References
 
-design §5.1, §2.2 (EXTCAP DISP).
+docs/ghci.md §13.2; design §18.5.
 
 ## 10. Status
 
-Implemented in WS288 p005 (TB `atg_dc_regs_tb` PASS).
+Implemented in WS288 p005; DISP2 in p035 D3 (the internal bus, plane 0's flips of the CP, the new STATUS, BAD_WRITE, DISP_ERROR; the standalone GHCI header, IRQ_STATUS/IRQ_ENABLE and `STANDALONE`/`BASE` are gone).  About 320 lines.

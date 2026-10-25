@@ -182,6 +182,8 @@ module atg_top #(
 	 * MC clients: 0 CP, 1 BLT, then the present blocks in this order: CPU,
 	 * VF, TU, ROP, the atomic unit (with any SU), SA, EXT, and two per SU.
 	 */
+	`include "ghci_regs.vh"
+
 	localparam HAS_ATOM = NSU > 0 ? 1 : 0;
 	/* Vulkan 1.0 core rendering (CAPS[30] and the FMT capability): every graphics block and
 	 * Vulkan's 64 varying components (the KC705's shape). */
@@ -822,18 +824,46 @@ module atg_top #(
 	end
 
 	if (HAS_DISP != 0) begin : g_dc
-		/* The display controller: board reset only (CTRL.RESET does not reset it). */
-		wire dc_irq;
+		/*
+		 * The display controller: board reset only (CTRL.RESET does not
+		 * reset it).  Until the CP's DISP2 path (atg_cp_disp) takes it, the
+		 * host reaches its window at +0x10000 directly (every write passes,
+		 * the read data the cycle after reg_rd) and there are no flips of
+		 * the CP; its events are not connected.
+		 */
+		wire [5:0] dc_ridx;
+		wire dc_ev_error, dc_ev_hotplug, dc_idle;
+		wire [1:0] dc_taken, dc_taken_cancel, dc_pending;
+		wire [31:0] dc_frame_count, dc_rdata;
+		reg dc_rhit;
+		reg [5:0] dc_ridx_q;
+
+		always @(posedge clk)
+			if (!rst_n) begin
+				dc_rhit <= 1'b0;
+				dc_ridx_q <= 6'd0;
+			end else if (reg_rd) begin
+				dc_rhit <= reg_raddr[16:8] == GHCI_DISP_KC705[16:8];
+				dc_ridx_q <= reg_raddr[7:2];
+			end
+		assign dc_ridx = dc_ridx_q;
+		assign dc_reg_rdata = dc_rhit ? dc_rdata : 32'd0;
 
 		atg_dc #(
-			.BASE(17'h10000), .HAS_I2C(DC_HAS_I2C), .LINE_BYTES(LINE_BYTES),
-			.LINE_SHIFT(LINE_SHIFT), .FIFO_LOG2(DC_FIFO_LOG2), .PX_FMT(DC_PX_FMT)
+			.HAS_I2C(DC_HAS_I2C), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.FIFO_LOG2(DC_FIFO_LOG2), .PX_FMT(DC_PX_FMT)
 		) dc (
 			.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
-			.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata),
-			.reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
-			.reg_rdata(dc_reg_rdata),
-			.irq(dc_irq), .vsync(dc_vsync), .pclk_sel(pclk_sel),
+			.d_we(reg_wr && reg_waddr[16:8] == GHCI_DISP_KC705[16:8]), .d_idx(reg_waddr[7:2]),
+			.d_wdata(reg_wdata),
+			.d_wmask({{8{reg_wstrb[3]}}, {8{reg_wstrb[2]}}, {8{reg_wstrb[1]}},
+				{8{reg_wstrb[0]}}}),
+			.d_ridx(dc_ridx), .d_rdata(dc_rdata),
+			.flip_valid(1'b0), .flip_plane(1'b0), .flip_base(32'd0),
+			.taken(dc_taken), .taken_cancel(dc_taken_cancel), .pending(dc_pending),
+			.dc_err(2'b00), .idle(dc_idle), .frame_count(dc_frame_count),
+			.ev_vblank(dc_vsync), .ev_error(dc_ev_error), .ev_hotplug(dc_ev_hotplug),
+			.pclk_sel(pclk_sel),
 			.req_valid(c_req_valid[C_DC]), .req_ready(c_req_ready[C_DC]),
 			.req_write(c_req_write[C_DC]), .req_line(c_req_line[C_DC*LA_W +: LA_W]),
 			.req_be(c_req_be[C_DC*LINE_BYTES +: LINE_BYTES]),
@@ -846,8 +876,8 @@ module atg_top #(
 			.tmds(tmds), .px_rgb(px_rgb), .px_de(px_de), .px_hs(px_hs), .px_vs(px_vs),
 			.scl_t(scl_t), .scl_i(scl_i), .sda_t(sda_t), .sda_i(sda_i)
 		);
-		/* The DC's interrupt becomes IRQ_STATUS bits later (DISP2); unused now. */
-		wire unused_dc = &{1'b0, dc_irq};
+		wire unused_dc = &{1'b0, dc_ev_error, dc_ev_hotplug, dc_idle, dc_taken,
+			dc_taken_cancel, dc_pending, dc_frame_count};
 	end else begin : g_no_dc
 		assign dc_reg_rdata = 32'd0;
 		assign dc_vsync = 1'b0;

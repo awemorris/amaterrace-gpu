@@ -439,7 +439,6 @@
 #define GHCI_DC_I2C_STATUS 0x68u
 #define GHCI_DC_SCAN_SUM 0x70u /* Amaterrace: sum of the last frame's pixel words */
 #define GHCI_DC_SCAN_WORDS 0x74u /* Amaterrace: pixel words of the last frame */
-#define GHCI_DC_STANDALONE_DISP 0x200u /* DISP of a DC-only window */
 #define GHCI_DC_CTRL_ENABLE (1u << 0)
 #define GHCI_DC_CTRL_RESET (1u << 1)
 #define GHCI_DC_CTRL_TEST_PATTERN (1u << 2)

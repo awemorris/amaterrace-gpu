@@ -353,7 +353,6 @@ localparam [16:0] GHCI_DC_PCLK_SEL = 17'h58;
 localparam [16:0] GHCI_DC_I2C = 17'h60;	/* 0x60 CTRL, 0x64 DATA, 0x68 STATUS */
 localparam [16:0] GHCI_DC_SCAN_SUM = 17'h70;	/* Amaterrace: sum of the last frame's pixel words */
 localparam [16:0] GHCI_DC_SCAN_WORDS = 17'h74;	/* Amaterrace: pixel words of the last frame */
-localparam [16:0] GHCI_DC_STANDALONE_DISP = 17'h200;	/* DISP of a DC-only window */
 localparam GHCI_DC_CTRL_ENABLE = 0;
 localparam GHCI_DC_CTRL_RESET = 1;
 localparam GHCI_DC_CTRL_TEST_PATTERN = 2;
