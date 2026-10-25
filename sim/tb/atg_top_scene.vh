@@ -52,7 +52,10 @@ module atg_top_scene_harness #(
 	 * FENCE_LAST reads to wait for the scene's end */
 	parameter [31:0] RING = 32'h0005F000,
 	parameter RING_LOG2 = 11,
-	parameter WAIT_READS = 200000
+	parameter WAIT_READS = 200000,
+	/* the memory's bytes (log2) and the aperture's limit */
+	parameter MEM_LOG2 = 19,
+	parameter [31:0] APER_LIMIT = 32'h00060000
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -131,7 +134,7 @@ module atg_top_scene_harness #(
 		.j_raddr(17'd0), .j_rdata(), .j_busy()
 	);
 
-	axi_mem #(.DATA_W(DATA_W), .MEM_BYTES(1 << 19), .READ_EARLY(1), .SEED(SEED + 7)) mem (
+	axi_mem #(.DATA_W(DATA_W), .MEM_BYTES(1 << MEM_LOG2), .READ_EARLY(1), .SEED(SEED + 7)) mem (
 		.clk(clk), .rst_n(rst_n),
 		.awaddr(awaddr), .awlen(awlen), .awsize(awsize), .awburst(awburst),
 		.awvalid(awvalid), .awready(awready), .wdata(wdata), .wstrb(wstrb),
@@ -196,7 +199,7 @@ module atg_top_scene_harness #(
 			$display("FAIL %0s(%0s): CAPS %h, bits 30 and 9 (core) not as the shape", TB, NAME, got);
 		end
 		host_write(GHCI_APERTURE_BASE, 32'h00020000);
-		host_write(GHCI_APERTURE_LIMIT, 32'h00060000);
+		host_write(GHCI_APERTURE_LIMIT, APER_LIMIT);
 		fd = $fopen(SCENE, "r");
 		if (fd == 0) begin
 			errors = errors + 1;

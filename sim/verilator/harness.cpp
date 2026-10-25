@@ -275,9 +275,10 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
  * reads to wait, and the image written to the PNG. */
 #if defined(CORE)
 #define SCENE_NAME "core"
-#define SCENE_RING 0x58000u
-#define SCENE_RING_LOG2 14
-#define SCENE_WAIT 4000000
+#define SCENE_RING 0xD0000u
+#define SCENE_RING_LOG2 15
+#define SCENE_WAIT 8000000
+#define SCENE_APER_LIMIT 0xF0000u
 #define PNG_W 32u
 #define PNG_H 24u
 #define PNG_STRIDE 128u
@@ -295,6 +296,9 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
 #define SCENE_NAME "shade"
 #else
 #define SCENE_NAME "raster"
+#endif
+#ifndef SCENE_APER_LIMIT
+#define SCENE_APER_LIMIT 0x60000u
 #endif
 #ifndef SCENE_RING
 #define SCENE_RING 0x5F000u
@@ -456,7 +460,7 @@ int scene_main()
 	}
 #endif
 	host_write(GHCI_APERTURE_BASE, 0x20000);
-	host_write(GHCI_APERTURE_LIMIT, 0x60000);
+	host_write(GHCI_APERTURE_LIMIT, SCENE_APER_LIMIT);
 	host_write(GHCI_RING_BASE, ring);
 	host_write(GHCI_RING_SIZE, SCENE_RING_LOG2);	/* 11: 512 words */
 	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
