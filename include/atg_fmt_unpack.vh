@@ -165,7 +165,14 @@ function [128:0] atg_fmt_unpack;
 	input fu_stencil;
 	reg [67:0] fu_inf;
 	reg [127:0] fu_o;
-	reg [31:0] fu_fld, fu_msk, fu_v;
+	reg [31:0] fu_fld, fu_msk, fu_v, fu_u;
+	reg [15:0] fu_mag;
+	reg fu_neg, fu_sn, fu_hs;
+	reg [2:0] fu_ty;
+	reg [4:0] fu_he;
+	reg [9:0] fu_x, fu_f;
+	reg [3:0] fu_lz;
+	reg [31:0] fu_hf;
 	reg [6:0] fu_pos;
 	reg [5:0] fu_w;
 	reg fu_int;
@@ -187,18 +194,49 @@ function [128:0] atg_fmt_unpack;
 					fu_w = fu_inf[23 + 13 * fu_k +: 6];
 					fu_msk = fu_w == 6'd32 ? 32'hFFFFFFFF : (32'd1 << fu_w) - 32'd1;
 					fu_fld = fu_raw[fu_pos +: 32] & fu_msk;
-					case (fu_inf[11:9])
-					ATG_FMT_UNORM: fu_v = atg_fmt_unorm(fu_fld[23:0], fu_w);
-					ATG_FMT_SNORM: fu_v = atg_fmt_snorm(fu_fld[15:0], fu_w);
+					/* One atg_fmt_unorm for UNORM, SNORM's magnitude (as in
+					 * atg_fmt_snorm) and sRGB's alpha. */
+					fu_neg = fu_w == 6'd8 ? fu_fld[7] : fu_fld[15];
+					fu_mag = fu_neg ? (fu_w == 6'd8 ? {8'd0, 8'd0 - fu_fld[7:0]} :
+						16'd0 - fu_fld[15:0]) : fu_fld[15:0];
+					fu_sn = fu_inf[11:9] == ATG_FMT_SNORM;
+					fu_u = atg_fmt_unorm(fu_sn ? {8'd0, fu_mag} : fu_fld[23:0],
+						fu_sn ? fu_w - 6'd1 : fu_inf[11:9] == ATG_FMT_SRGB ? 6'd8 : fu_w);
+					/* One normalisation for the 16-bit and packed unsigned
+					 * floats (as in atg_fmt_h2f, atg_fmt_uf2f) and E5B9G9R9's
+					 * components (atg_fmt_e5): x the mantissa left aligned in
+					 * 10 bits (E5: 0 and the 9 bits), its leading zeros lz,
+					 * f the bits below its leading one. */
+					fu_ty = fu_inf[11:9];
+					fu_he = fu_ty == ATG_FMT_SFLOAT ? fu_fld[14:10] :
+						fu_w == 6'd11 ? fu_fld[10:6] : fu_fld[9:5];
+					fu_x = fu_ty == ATG_FMT_SFLOAT ? fu_fld[9:0] : fu_ty == ATG_FMT_UFLOAT ?
+						(fu_w == 6'd11 ? {fu_fld[5:0], 4'd0} : {fu_fld[4:0], 5'd0}) :
+						{1'b0, fu_fld[8:0]};
+					fu_hs = fu_ty == ATG_FMT_SFLOAT && fu_fld[15];
+					fu_lz = atg_fmt_lz10(fu_x);
+					fu_f = fu_x << (fu_lz + 4'd1);
+					if (fu_he == 5'd31)
+						fu_hf = fu_x != 10'd0 ? 32'h7FC00000 : {fu_hs, 31'h7F800000};
+					else if (fu_he == 5'd0)
+						fu_hf = fu_x == 10'd0 ? {fu_hs, 31'd0} :
+							{fu_hs, 8'd112 - {4'd0, fu_lz}, fu_f, 13'd0};
+					else
+						fu_hf = {fu_hs, {3'd0, fu_he} + 8'd112, fu_x, 13'd0};
+					case (fu_ty)
+					ATG_FMT_UNORM: fu_v = fu_u;
+					ATG_FMT_SNORM:
+						fu_v = fu_neg && fu_mag == (fu_w == 6'd8 ? 16'h0080 : 16'h8000) ?
+							32'hBF800000 : {fu_neg | fu_u[31], fu_u[30:0]};
 					ATG_FMT_UINT: fu_v = fu_fld;
 					ATG_FMT_SINT:
 						fu_v = fu_fld | (fu_fld[fu_w[4:0] - 5'd1] ? ~fu_msk : 32'd0);
 					ATG_FMT_SFLOAT:
-						fu_v = fu_w == 6'd32 ? fu_fld : atg_fmt_h2f(fu_fld[15:0]);
-					ATG_FMT_SRGB: fu_v = fu_k < 3 ? atg_srgb_dec(fu_fld[7:0]) :
-						atg_fmt_unorm(fu_fld[23:0], 6'd8);
-					ATG_FMT_UFLOAT: fu_v = atg_fmt_uf2f(fu_fld[10:0], fu_w - 6'd5);
-					default: fu_v = atg_fmt_e5(fu_fld[8:0], fu_raw[31:27]);
+						fu_v = fu_w == 6'd32 ? fu_fld : fu_hf;
+					ATG_FMT_SRGB: fu_v = fu_k < 3 ? atg_srgb_dec(fu_fld[7:0]) : fu_u;
+					ATG_FMT_UFLOAT: fu_v = fu_hf;
+					default: fu_v = fu_x[8:0] == 9'd0 ? 32'd0 : {1'b0, 8'd112 +
+						{3'd0, fu_raw[31:27]} - {4'd0, fu_lz}, fu_f[9:1], 14'd0};
 					endcase
 					fu_o[32 * fu_k +: 32] = fu_v;
 				end
