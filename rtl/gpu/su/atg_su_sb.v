@@ -92,7 +92,9 @@ module atg_su_sb #(
 	wire [6:0] rs1 = u_uop[ATG_UOP_RS1 +: 7];
 	wire [6:0] rs2 = u_uop[ATG_UOP_RS2 +: 7];
 	wire [6:0] rs3 = u_uop[ATG_UOP_RS3 +: 7];
-	wire [6:0] rs1p = rs1 + 7'd1;
+	wire [6:0] rs1p;
+	wire r1p_co_unused, r3p_co_unused, rk_co_unused, r4_co_unused, rw_co_unused;
+	am_add #(.W(7)) u_rs1p (.a(rs1), .b(7'd0), .ci(1'b1), .s(rs1p), .co(r1p_co_unused));
 	wire wrd = u_uop[ATG_UOP_WRD];
 	wire pair = u_uop[ATG_UOP_PAIR];
 	wire ill = u_uop[ATG_UOP_ILL];
@@ -104,7 +106,13 @@ module atg_su_sb #(
 	wire src3 = u_uop[ATG_UOP_USE3] && rs3 < 7'd63;
 	wire src4 = pair && rs1p < 7'd63;
 	/* A texture .3 form with Dref also reads rs1+3 (rs3 + 1). */
-	wire [6:0] rs3p = rs3 + 7'd1;
+	wire [6:0] rs3p;
+	am_add #(.W(7)) u_rs3p (.a(rs3), .b(7'd0), .ci(1'b1), .s(rs3p), .co(r3p_co_unused));
+	/* The destination's end: rd + 4 (wide) or rd + 1; and rd + 4 (an entry inside a wide rd). */
+	wire [7:0] rd_k, rd_4;
+	am_add #(.W(8)) u_rd_k (.a({2'b00, rd[5:0]}), .b(wide ? 8'd4 : 8'd1), .ci(1'b0), .s(rd_k),
+		.co(rk_co_unused));
+	am_add #(.W(8)) u_rd_4 (.a({2'b00, rd[5:0]}), .b(8'd4), .ci(1'b0), .s(rd_4), .co(r4_co_unused));
 	wire src5 = unit == ATG_UNIT_TEX && u_uop[ATG_UOP_SUB + 4] && op[ATG_TEX_CFORM] &&
 		rs3p < 7'd63;
 	wire dst = wrd && rd < 7'd63;
@@ -119,49 +127,81 @@ module atg_su_sb #(
 
 	/* The release of this cycle, applied before the checks. */
 	wire rel_e = rel_valid && rel_sbe != {(SBE_W+1){1'b1}};
-	wire [31:0] rel_idx = {{(32-WARP_W){1'b0}}, rel_warp} * SB_ENTRIES +
-		{{(31-SBE_W){1'b0}}, rel_sbe};
+	/* warp SB_ENTRIES + entry (an entry index's top bit carries into the warp). */
+	wire [WARP_W-1:0] rel_w;
+	am_add #(.W(WARP_W)) u_rel_w (.a(rel_warp), .b({WARP_W{1'b0}}), .ci(rel_sbe[SBE_W]), .s(rel_w),
+		.co(rw_co_unused));
+	wire [NE_W-1:0] rel_idx = {rel_w, rel_sbe[SBE_W-1:0]};
 	reg [NE-1:0] ev;
 	integer n;
 	always @(*) begin
 		ev = e_valid;
 		if (rel_e)
-			ev[rel_idx[NE_W-1:0]] = 1'b0;
+			ev[rel_idx] = 1'b0;
 	end
 
-	function wq;
-		input [WARP_W-1:0] a;
-		input integer b;
-		wq = {{(32-WARP_W){1'b0}}, a} == b;
-	endfunction
-
+	/* x in [base, base_end): base_end is base + 4 (wide) or + 1, computed by the caller. */
 	function in_range;
 		input [6:0] x;
 		input [5:0] base;
-		input w4;
-		in_range = {1'b0, x} >= {2'b00, base} &&
-			{1'b0, x} < {2'b00, base} + (w4 ? 8'd4 : 8'd1);
+		input [7:0] base_end;
+		in_range = {1'b0, x} >= {2'b00, base} && {1'b0, x} < base_end;
 	endfunction
+
+	/* The warp's entries (valid, base, wide, the base's end) and counters. */
+	reg [SB_ENTRIES-1:0] uw_v;
+	reg [SB_ENTRIES*6-1:0] uw_base;
+	reg [SB_ENTRIES-1:0] uw_wide;
+	wire [SB_ENTRIES*8-1:0] uw_end;
+	reg [CNT_W-1:0] ucm, uct, ucx;
+	integer uj, uw;
+	always @(*) begin
+		uw_v = {SB_ENTRIES{1'b0}};
+		uw_base = {(SB_ENTRIES*6){1'b0}};
+		uw_wide = {SB_ENTRIES{1'b0}};
+		{ucm, uct, ucx} = {(3*CNT_W){1'b0}};
+		for (uw = 0; uw < NWARPS; uw = uw + 1)
+			if (u_warp == uw[WARP_W-1:0]) begin
+				for (uj = 0; uj < SB_ENTRIES; uj = uj + 1) begin
+					uw_v[uj] = ev[uw * SB_ENTRIES + uj];
+					uw_base[uj*6 +: 6] = e_base[(uw * SB_ENTRIES + uj)*6 +: 6];
+					uw_wide[uj] = e_wide[uw * SB_ENTRIES + uj];
+				end
+				{ucm, uct, ucx} = {cm[uw*CNT_W +: CNT_W], ct[uw*CNT_W +: CNT_W],
+					cx[uw*CNT_W +: CNT_W]};
+			end
+	end
+	genvar ge;
+	generate
+		for (ge = 0; ge < SB_ENTRIES; ge = ge + 1) begin : g_end
+			wire co_unused;
+			am_add #(.W(8)) u_end (.a({2'b00, uw_base[ge*6 +: 6]}), .b(uw_wide[ge] ? 8'd4 : 8'd1),
+				.ci(1'b0), .s(uw_end[ge*8 +: 8]), .co(co_unused));
+		end
+	endgenerate
 
 	/* Long hazards: a used source or the destination range meets an entry. */
 	reg hz_long;
 	reg [SBE_W:0] free_e;
 	reg have_free;
-	integer j, ix;
+	integer j;
+	reg [5:0] jb;
+	reg [7:0] je;
 	always @(*) begin
 		hz_long = 1'b0;
 		have_free = 1'b0;
 		free_e = {(SBE_W+1){1'b1}};
 		for (j = SB_ENTRIES - 1; j >= 0; j = j - 1) begin
-			ix = {{(32-WARP_W){1'b0}}, u_warp} * SB_ENTRIES + j;
-			if (ev[ix]) begin
-				if ((src1 && in_range(rs1, e_base[(ix)*6 +: 6], e_wide[ix])) ||
-				    (src2 && in_range(rs2, e_base[(ix)*6 +: 6], e_wide[ix])) ||
-				    (src3 && in_range(rs3, e_base[(ix)*6 +: 6], e_wide[ix])) ||
-				    (src4 && in_range(rs1p, e_base[(ix)*6 +: 6], e_wide[ix])) ||
-				    (src5 && in_range(rs3p, e_base[(ix)*6 +: 6], e_wide[ix])) ||
-				    (dst && (in_range(rd, e_base[(ix)*6 +: 6], e_wide[ix]) ||
-				    (wide && in_range({1'b0, e_base[(ix)*6 +: 6]}, rd[5:0], 1'b1)))))
+			jb = uw_base[j*6 +: 6];
+			je = uw_end[j*8 +: 8];
+			if (uw_v[j]) begin
+				if ((src1 && in_range(rs1, jb, je)) ||
+				    (src2 && in_range(rs2, jb, je)) ||
+				    (src3 && in_range(rs3, jb, je)) ||
+				    (src4 && in_range(rs1p, jb, je)) ||
+				    (src5 && in_range(rs3p, jb, je)) ||
+				    (dst && (in_range(rd, jb, je) ||
+				    (wide && in_range({1'b0, jb}, rd[5:0], rd_4)))))
 					hz_long = 1'b1;
 			end else begin
 				have_free = 1'b1;
@@ -196,7 +236,7 @@ module atg_su_sb #(
 			    (src3 && hit(rs3, f_rd[(m)*7 +: 7])) || (src4 && hit(rs1p, f_rd[(m)*7 +: 7])) ||
 			    (src5 && hit(rs3p, f_rd[(m)*7 +: 7])) ||
 			    (dst && is_long && (f_rd[(m)*7 +: 7] >= {1'b0, rd[5:0]}) &&
-			    (f_rd[(m)*7 +: 7] < {1'b0, rd[5:0]} + (wide ? 7'd4 : 7'd1)))))
+			    (f_rd[(m)*7 +: 7] < rd_k[6:0]))))
 				hz_short = 1'b1;
 		for (m = 0; m < NSH; m = m + 1)
 			if (c_valid[m] && c_warp[(m)*WARP_W +: WARP_W] == u_warp &&
@@ -204,17 +244,20 @@ module atg_su_sb #(
 			    (src2 && hit(rs2, {1'b0, c_rd[(m)*6 +: 6]})) || (src3 && hit(rs3, {1'b0, c_rd[(m)*6 +: 6]})) ||
 			    (src4 && hit(rs1p, {1'b0, c_rd[(m)*6 +: 6]})) ||
 			    (src5 && hit(rs3p, {1'b0, c_rd[(m)*6 +: 6]})))) ||
-			    (dst && is_long && in_range({1'b0, c_rd[(m)*6 +: 6]}, rd[5:0], wide))))
+			    (dst && is_long && in_range({1'b0, c_rd[(m)*6 +: 6]}, rd[5:0], rd_k))))
 				hz_short = 1'b1;
 	end
 
-	/* Counters and the instructions that wait for them. */
-	wire [CNT_W-1:0] rcm = cm[(u_warp)*CNT_W +: CNT_W] -
-		{{(CNT_W-1){1'b0}}, rel_valid && rel_warp == u_warp && rel_cls == ATG_CLS_M};
-	wire [CNT_W-1:0] rct = ct[(u_warp)*CNT_W +: CNT_W] -
-		{{(CNT_W-1){1'b0}}, rel_valid && rel_warp == u_warp && rel_cls == ATG_CLS_T};
-	wire [CNT_W-1:0] rcx = cx[(u_warp)*CNT_W +: CNT_W] -
-		{{(CNT_W-1){1'b0}}, rel_valid && rel_warp == u_warp && rel_cls == ATG_CLS_X};
+	/* Counters (the warp's, less this cycle's release) and the instructions that wait for them. */
+	wire rel_u = rel_valid && rel_warp == u_warp;
+	wire [CNT_W-1:0] rcm, rct, rcx;
+	wire rcm_bo_unused, rct_bo_unused, rcx_bo_unused;
+	am_sub #(.W(CNT_W)) u_rcm (.a(ucm), .b({CNT_W{1'b0}}), .bi(rel_u && rel_cls == ATG_CLS_M), .d(rcm),
+		.bo(rcm_bo_unused));
+	am_sub #(.W(CNT_W)) u_rct (.a(uct), .b({CNT_W{1'b0}}), .bi(rel_u && rel_cls == ATG_CLS_T), .d(rct),
+		.bo(rct_bo_unused));
+	am_sub #(.W(CNT_W)) u_rcx (.a(ucx), .b({CNT_W{1'b0}}), .bi(rel_u && rel_cls == ATG_CLS_X), .d(rcx),
+		.bo(rcx_bo_unused));
 	wire is_wait = unit == ATG_UNIT_CTL;
 	wire is_fence = unit == ATG_UNIT_LSU && op == ATG_LSU_FENCE;
 	wire is_end = unit == ATG_UNIT_EXEC && op == ATG_EXEC_END;
@@ -257,8 +300,38 @@ module atg_su_sb #(
 
 	/* State updates. */
 	wire alloc = issued && need_e;
-	wire [31:0] alloc_idx = {{(32-WARP_W){1'b0}}, u_warp} * SB_ENTRIES +
-		{{(31-SBE_W){1'b0}}, free_e};
+	wire [NE_W-1:0] alloc_idx = {u_warp, free_e[SBE_W-1:0]};	/* free_e < SB_ENTRIES at an alloc */
+
+	/* Each warp's counters: + 1 at an issue of the class, - 1 at its release. */
+	wire [NWARPS*CNT_W-1:0] cm_next, ct_next, cx_next;
+	genvar gq;
+	generate
+		for (gq = 0; gq < NWARPS; gq = gq + 1) begin : g_cnt
+			wire iw = issued && u_warp == gq;
+			wire rw = rel_valid && rel_warp == gq;
+			wire im = iw && cls == ATG_CLS_M, rm = rw && rel_cls == ATG_CLS_M;
+			wire it = iw && cls == ATG_CLS_T, rt = rw && rel_cls == ATG_CLS_T;
+			wire ix = iw && cls == ATG_CLS_X, rx = rw && rel_cls == ATG_CLS_X;
+			wire m_co_unused, t_co_unused, x_co_unused;
+			am_add #(.W(CNT_W)) u_cm (.a(cm[gq*CNT_W +: CNT_W]),
+				.b({{(CNT_W-1){rm && !im}}, im ^ rm}), .ci(1'b0), .s(cm_next[gq*CNT_W +: CNT_W]), .co(m_co_unused));
+			am_add #(.W(CNT_W)) u_ct (.a(ct[gq*CNT_W +: CNT_W]),
+				.b({{(CNT_W-1){rt && !it}}, it ^ rt}), .ci(1'b0), .s(ct_next[gq*CNT_W +: CNT_W]), .co(t_co_unused));
+			am_add #(.W(CNT_W)) u_cx (.a(cx[gq*CNT_W +: CNT_W]),
+				.b({{(CNT_W-1){rx && !ix}}, ix ^ rx}), .ci(1'b0), .s(cx_next[gq*CNT_W +: CNT_W]), .co(x_co_unused));
+		end
+	endgenerate
+
+	/* The short writers' countdowns, - 1 a cycle. */
+	wire [NSH*CD_W-1:0] c_cnt_m1;
+	genvar gc;
+	generate
+		for (gc = 0; gc < NSH; gc = gc + 1) begin : g_cd
+			wire bo_unused;
+			am_sub #(.W(CD_W)) u_cd (.a(c_cnt[gc*CD_W +: CD_W]), .b({CD_W{1'b0}}), .bi(1'b1),
+				.d(c_cnt_m1[gc*CD_W +: CD_W]), .bo(bo_unused));
+		end
+	endgenerate
 	wire short_w = (cls == ATG_CLS_A || cls == ATG_CLS_F) && dst;
 	/* The oldest issued instruction leaves atg_su_opd on x_end (index 0);
 	 * the free places after that shift. */
@@ -285,36 +358,28 @@ module atg_su_sb #(
 			e_valid <= {NE{1'b0}};
 			f_valid <= {NIF{1'b0}};
 			c_valid <= {NSH{1'b0}};
-			for (q = 0; q < NWARPS; q = q + 1) begin
-				cm[(q)*CNT_W +: CNT_W] <= {CNT_W{1'b0}};
-				ct[(q)*CNT_W +: CNT_W] <= {CNT_W{1'b0}};
-				cx[(q)*CNT_W +: CNT_W] <= {CNT_W{1'b0}};
-			end
+			cm <= {(NWARPS*CNT_W){1'b0}};
+			ct <= {(NWARPS*CNT_W){1'b0}};
+			cx <= {(NWARPS*CNT_W){1'b0}};
 		end else begin
 			/* Entries and counters. */
 			e_valid <= ev;
 			if (alloc) begin
-				e_valid[alloc_idx[NE_W-1:0]] <= 1'b1;
-				e_base[(alloc_idx[NE_W-1:0])*6 +: 6] <= rd[5:0];
-				e_wide[alloc_idx[NE_W-1:0]] <= wide;
+				e_valid[alloc_idx] <= 1'b1;
+				for (q = 0; q < NE; q = q + 1)
+					if (alloc_idx == q[NE_W-1:0])
+						e_base[q*6 +: 6] <= rd[5:0];
+				e_wide[alloc_idx] <= wide;
 			end
-			for (q = 0; q < NWARPS; q = q + 1) begin
-				cm[(q)*CNT_W +: CNT_W] <= cm[(q)*CNT_W +: CNT_W] + {{(CNT_W-1){1'b0}}, issued && wq(u_warp, q) &&
-					cls == ATG_CLS_M} - {{(CNT_W-1){1'b0}}, rel_valid && wq(rel_warp, q) &&
-					rel_cls == ATG_CLS_M};
-				ct[(q)*CNT_W +: CNT_W] <= ct[(q)*CNT_W +: CNT_W] + {{(CNT_W-1){1'b0}}, issued && wq(u_warp, q) &&
-					cls == ATG_CLS_T} - {{(CNT_W-1){1'b0}}, rel_valid && wq(rel_warp, q) &&
-					rel_cls == ATG_CLS_T};
-				cx[(q)*CNT_W +: CNT_W] <= cx[(q)*CNT_W +: CNT_W] + {{(CNT_W-1){1'b0}}, issued && wq(u_warp, q) &&
-					cls == ATG_CLS_X} - {{(CNT_W-1){1'b0}}, rel_valid && wq(rel_warp, q) &&
-					rel_cls == ATG_CLS_X};
-			end
+			cm <= cm_next;
+			ct <= ct_next;
+			cx <= cx_next;
 			/* Count down the short writers past the bus. */
 			for (q = 0; q < NSH; q = q + 1)
 				if (c_valid[q]) begin
 					if (c_cnt[(q)*CD_W +: CD_W] == 1)
 						c_valid[q] <= 1'b0;
-					c_cnt[(q)*CD_W +: CD_W] <= c_cnt[(q)*CD_W +: CD_W] - 1'b1;
+					c_cnt[(q)*CD_W +: CD_W] <= c_cnt_m1[(q)*CD_W +: CD_W];
 				end
 			if (x_end && f_valid[0] && f_short[0] && c_have) begin
 				c_valid[c_slot] <= 1'b1;
@@ -348,7 +413,7 @@ module atg_su_sb #(
 	end
 	assign busy = any_c;
 
-	wire unused_ok = &{1'b0, imm[31:12], u_uop, rel_idx, alloc_idx, ix, f_slot, c_slot};
+	wire unused_ok = &{1'b0, imm[31:12], u_uop, f_slot, c_slot, rd_k[7]};
 endmodule
 
 `default_nettype wire
