@@ -165,7 +165,13 @@ module atg_tu_filter (
 	wire [1:0] k_inc;
 	wire nq_nc, k_nc;
 
-	assign tc_ready = nq != 3'd4 && (st == IDLE || k == 2'd3);
+	/* tc_ready is a register (replicated: it enables the pass's fields,
+	 * about 900 registers): from the next st, k and nq. */
+	(* max_fanout = 64 *) reg rdy;
+	wire st_n = take ? RUN : st == RUN && k == 2'd3 ? IDLE : st;
+	wire [1:0] k_n = take ? 2'd0 : st == RUN ? k_inc : k;
+
+	assign tc_ready = rdy;
 	assign idle = st == IDLE && !mid && nq == 3'd0;
 
 	/* nq + (a last pass taken) - (a quad returned) */
@@ -178,8 +184,10 @@ module atg_tu_filter (
 			st <= IDLE;
 			mid <= 1'b0;
 			nq <= 3'd0;
+			rdy <= 1'b1;
 		end else begin
 			nq <= nq_n;
+			rdy <= nq_n != 3'd4 && (st_n == IDLE || k_n == 2'd3);
 			if (take) begin
 				st <= RUN;
 				mid <= tc_ctl[4];

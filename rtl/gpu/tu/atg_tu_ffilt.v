@@ -508,33 +508,41 @@ module atg_tu_ffilt (
 
 	reg mid;	/* a pass with more to follow taken, its last not yet */
 
-	assign tc_ready = st == IDLE;
+	/* ld: st is IDLE (its own register, replicated: it enables the pass's
+	 * fields, about 800 registers) */
+	(* max_fanout = 64 *) reg ld;
+
+	assign tc_ready = ld;
 	assign tr_valid = st == OUT;
-	assign idle = st == IDLE && !mid;
+	assign idle = ld && !mid;
+
+	/* The pass's fields, taken in every cycle of IDLE (the enables do not
+	 * wait for tc_valid). */
+	always @(posedge clk)
+		if (ld) begin
+			tx <= tc_texels;
+			bd <= tc_bord;
+			lo <= tc_lo;
+			wts <= tc_wts;
+			mask <= tc_mask;
+			ctl <= tc_ctl;
+			tr_tag <= tc_tag;
+			tr_last <= tc_last;
+		end
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= IDLE;
+			ld <= 1'b1;
 			mid <= 1'b0;
 			hist <= 35'd0;
 		end else begin
 			hist <= {hist[29:0], issue && iop == OP_FMA, aid};
 			case (st)
-			IDLE: begin
-				/* (taken every cycle of IDLE: the enables do not wait for
-				 * tc_valid) */
-				tx <= tc_texels;
-				bd <= tc_bord;
-				lo <= tc_lo;
-				wts <= tc_wts;
-				mask <= tc_mask;
-				ctl <= tc_ctl;
-				tr_tag <= tc_tag;
-				tr_last <= tc_last;
-				if (tc_valid) begin
-					mid <= tc_ctl[4];
-					st <= LOAD;
-				end
+			IDLE: if (tc_valid) begin
+				mid <= tc_ctl[4];
+				st <= LOAD;
+				ld <= 1'b0;
 			end
 			LOAD: begin
 				if (!ctl[5])	/* the quad's first pass: the pipeline is empty */
@@ -543,9 +551,10 @@ module atg_tu_ffilt (
 				c <= 2'd0;
 				st <= RUN;
 			end
-			RUN: if (rem == 16'd0 || (issue && rem_n == 16'd0))
+			RUN: if (rem == 16'd0 || (issue && rem_n == 16'd0)) begin
 				st <= more ? IDLE : DRAIN;
-			else if (issue) begin
+				ld <= more;
+			end else if (issue) begin
 				rem <= rem_n;
 				c <= lastc ? 2'd0 : c_inc;
 			end
@@ -559,8 +568,10 @@ module atg_tu_ffilt (
 				if (kf == 2'd3)
 					st <= OUT;
 			end
-			default: if (tr_ready)
+			default: if (tr_ready) begin
 				st <= IDLE;
+				ld <= 1'b1;
+			end
 			endcase
 			/* the accumulators: a bypass or gather (PV), a term (atg_tu_fma) */
 			if (wrv)
