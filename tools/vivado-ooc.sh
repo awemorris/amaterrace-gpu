@@ -10,7 +10,9 @@
 # IMEM and DMEM are writable RAMs, so their size does not depend on them).
 # Output: build/vivado/ooc-NAME/ (OOC_NAME, default kc705):
 # utilization.rpt, utilization_hier.rpt, timing_summary.rpt (the
-# synthesis estimate at PERIOD ns, default 5), TOP.dcp, vivado.log.
+# synthesis estimate at PERIOD ns, default 5), timing_paths.rpt (its 5
+# worst paths), TOP.dcp, vivado.log; with OOC_IMPL=1 also placed and
+# routed (route_*.rpt, TOP.routed.dcp; hours for the whole core).
 # Prints the utilisation's main rows and the run's time.
 # VIVADO, XILINXD_LICENSE_FILE and the libncurses.so.5 fallback as in
 # tools/vivado-build.sh.  VIVADO_TIMEOUT (default 7200 s) bounds the run;
@@ -83,5 +85,5 @@ if [ $rc -ne 0 ]; then
 fi
 grep -E '^\| (Slice LUTs\*? |  LUT as (Logic|Memory) |Slice Registers |Block RAM Tile |DSPs )' \
 	"$out/utilization.rpt" | head -8
-grep -E '^vivado-ooc:' "$out/vivado.log" | tail -1
+grep -E '^vivado-ooc:' "$out/vivado.log" | tail -2
 echo "vivado-ooc: $(grep -c '^WARNING' "$out/vivado.log") warnings, $(grep -c '^CRITICAL WARNING' "$out/vivado.log") critical, $(( $(date +%s) - start )) s, $out"
