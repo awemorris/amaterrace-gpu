@@ -62,4 +62,4 @@ docs/ghci.md §7.3; design §18.4.
 
 ## 10. Status
 
-Empty (spec only, WS288 p035 D1).
+Implemented (WS288 p035 D4, 2026-10-25, P3): about 140 lines, `n` rounded up to even with one `am_add`.  Checked through `atg_cp_seq_tb` (`disp`, `badop`).

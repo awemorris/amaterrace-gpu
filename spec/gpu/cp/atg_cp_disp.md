@@ -39,7 +39,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `kick_flip` | in | 1 | One-cycle pulse: `atg_cp_seq` executes the staged FLIP (its waits are done). |
 | `kick_idle` | in | 1 | One-cycle pulse: DISP_SET with flags[0] executes (the wait follows). |
 | `seq_tag` | in | 8 | The job tag of `atg_cp_seq`'s current µop (for the fault). |
-| `disp_wait` | out | 1 | Level to `atg_cp_seq`'s busy bit 8: the staged FLIP's plane is not free, or a DISP_SET wait has not seen the DC idle. |
+| `disp_wait` | out | 1 | Level to `atg_cp_seq`'s busy bit 8 (only while active): the staged FLIP's plane is not free, a DISP_SET wait has not seen the DC idle, or a host write waits in the buffer. |
 | `aperture_base`, `aperture_limit` | in | `ADDR_W` | APERTURE_BASE/LIMIT. |
 | `fault` | out | 1 | One-cycle pulse: a bad FLIP (kind 3). |
 | `fault_kind` | out | 4 | 3. |
@@ -92,7 +92,9 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
   kind (docs/ghci.md §13.2): S (CTRL, FB_NEXT, FB_STRIDE, FB_SIZE, 0x30-0x50, PCLK_SEL) passes only
   in IDLE, HALTED and FAULTED, else it is dropped and `dc_err[1]` pulses; C (0xA4, 0xA8), L
   (0x60, 0x64, 0x6C), I (0x80) and W (STATUS) always pass; others (R) are dropped.  A passed write
-  goes into a one-entry buffer and to the DC bus in the next cycle the sequencer does not write.
+  goes to the DC bus in its cycle, or, when the sequencer or the buffer has the bus in that cycle,
+  into a one-entry buffer that goes out in the next cycle; while the buffer is full `disp_wait` is 1,
+  so the sequencer's next DISP_SET write waits for it (the host may write in every cycle).
 - **Reads**: `d_ridx` = `hcr_ridx` − `BASE_IDX`; inside the window `hcr_rdata` = `d_rdata`, with
   STATUS[31] (a record due or being written) and TAKEN0/TAKEN1 from this module.
 
@@ -109,8 +111,8 @@ response.
 
 ## 7. Corner cases and errors
 
-- A host write and a sequencer write in the same cycle: the host's waits in the buffer (the
-  sequencer writes at most every second cycle, pairs).
+- A host write and a sequencer write in the same cycle: the host's waits in the buffer, and the
+  sequencer's next write waits for the buffer (busy bit 8).
 - HALT while a FLIP waits for its slot: the record of the plane's earlier flip may be written in
   HALTING, so the wait ends.
 - CTRL.RESET of the GPU: the slots and due records survive; the records are written once the CP is
@@ -122,7 +124,10 @@ response.
 `sim/tb/atg_cp_disp_tb.v` (design §18.12): `set`, `flip`, `take`, `excl`, `order`, `taken`,
 `cancel`, `gate`, `reset`, `err`, then `PASS atg_cp_disp`.  The FIFO's fault 2 is `atg_cp_seq`'s
 (`atg_cp_seq_tb`).  Mutations: `MUT_DISP_NOEXCL`, `MUT_DISP_NOGATE`, `MUT_DISP_EARLYIRQ`,
-`MUT_DISP_HALTSEND`.
+`MUT_DISP_HALTSEND`, `MUT_DISP_NOTAKE`.  As implemented (D4): the groups are `set`, `flip`, `take`,
+`taken` (TAKEN0/1, STATUS[31], cancelled flips; the host's FB_NEXT cancel is the DC's and is
+checked by `atg_dc_regs_tb`), `excl`, `gate`, `reset`, `err`; `order` (COMPLETE) is
+`atg_cp_seq_tb.disp`'s.  Each mutation fails the TB.
 
 ## 9. References
 
@@ -130,4 +135,9 @@ docs/ghci.md §7.3 (DISP_SET, FLIP), §13.2; design §18.4.
 
 ## 10. Status
 
-Empty (spec only, WS288 p035 D1).
+Implemented (WS288 p035 D4, 2026-10-25, P3): about 350 lines, 34 ports as above; one FSM (the
+record writer); no arithmetic (the checks are comparisons, the byte enables a decoder).  The fault
+is combinational in the kick's cycle so that `atg_cp_ctl` is FAULTED before the sequencer's next
+header.  A record is requested only in IDLE, RUNNING or HALTING; one already offered stays until
+ready (RS_WAIT waits for `mc_idle`, which counts the CP's client).  In `atg_cp` it is the fourth
+requester of the `am_amb_mux` (`req_chk` 0).

@@ -39,19 +39,22 @@
  *   work the units are draining, else 0);
  *   RING_BASE/SIZE, APERTURE_*, CP_HEAP_* written when not open: kind 7.
  * MC refusals of client 0 (the CP's own port) are reported by the ring,
- * the fence unit or the debug port themselves.
+ * the fence unit or the debug port themselves; those of DC_CLIENT (a
+ * DISP2 controller's scan-out reads) are not a device fault: the DC shows
+ * black and reports them itself (design §18.2).
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
 module atg_cp_ctl #(
-	parameter NSRC = 8,	/* Number of fault sources (0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks) */
+	parameter NSRC = 8,	/* Number of fault sources (0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks, 8 DISP) */
 	parameter WDT_RESET = 32'h10000000,	/* WDT_CYCLES after reset (2^28) */
 	parameter LINE_SHIFT = 5,	/* log2 of the line size: the aperture's alignment */
 	parameter [7:0] UNITS = 8'h03,	/* Present blocks, STATUS busy-bit order (KICK.DRAW: 2, DISPATCH: 6) */
 	parameter [NSRC*8-1:0] SRC_BLOCK = 64'h00_01_00_06_00_00_00_00,	/* FAULT_INFO[23:16] per source */
-	parameter [NSRC*8-1:0] SRC_CLIENT = 64'h00_01_00_00_00_00_00_00	/* FAULT_INFO[7:0] per source */
+	parameter [NSRC*8-1:0] SRC_CLIENT = 64'h00_01_00_00_00_00_00_00,	/* FAULT_INFO[7:0] per source */
+	parameter [7:0] DC_CLIENT = 8'hFF	/* the DC's MC client, whose refusals are not faults (0xFF: none) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -178,7 +181,8 @@ module atg_cp_ctl #(
 	/* The first fault of this cycle. */
 	/* The MC's refusals of client 0 (the CP) are its own units' faults, except
 	 * those of session protection (a firmware µop's fence or result). */
-	wire mc_gpu = mc_fault && (mc_fault_client != 8'd0 || mc_fault_prot || mc_fault_mem);
+	wire mc_gpu = mc_fault && (mc_fault_client != 8'd0 || mc_fault_prot || mc_fault_mem) &&
+		!(mc_fault_client == DC_CLIENT && !mc_fault_prot && !mc_fault_mem);
 	reg any;
 	reg [31:0] n_info;
 	reg [31:0] n_addr;

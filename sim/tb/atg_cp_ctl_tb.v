@@ -45,7 +45,7 @@ module atg_cp_ctl_tb;
 	wire [2:0] host_kick;
 	wire [31:0] ap_base, ap_limit;
 
-	atg_cp_ctl #(.UNITS(8'h03)) dut (
+	atg_cp_ctl #(.UNITS(8'h03), .DC_CLIENT(8'd5)) dut (
 		.clk(clk), .rst_n(rst_n),
 		.mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0),
 		.kick_prot_ok(kick_prot_ok), .wdt_tag(wdt_tag),
@@ -250,12 +250,19 @@ module atg_cp_ctl_tb;
 			$display("PASS atg_cp_ctl.stuck");
 		e0 = errors;
 
-		/* fault: an MC fault of client 0 is ignored; two sources at once:
+		/* fault: an MC fault of client 0 or of the DC is ignored; two sources at once:
 		 * the MC's wins; later faults are not recorded; RESET clears. */
 		ctrl(32'd1);
 		@(negedge clk);
 		mc_fault = 1;
 		mc_fault_client = 0;
+		@(negedge clk);
+		mc_fault = 0;
+		expect_state("fault", GHCI_ST_RUNNING);
+		/* The DC's (DC_CLIENT 5) refusal is not a device fault either. */
+		@(negedge clk);
+		mc_fault = 1;
+		mc_fault_client = 8'd5;
 		@(negedge clk);
 		mc_fault = 0;
 		expect_state("fault", GHCI_ST_RUNNING);

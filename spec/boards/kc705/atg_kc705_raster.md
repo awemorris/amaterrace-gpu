@@ -4,7 +4,7 @@ RTL: `boards/kc705/atg_kc705_raster.v`.  Parent: - (FPGA top).  Implemented in: 
 
 ## 1. Purpose and place
 
-The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU, NSU SUs (NPHYS 8, NREGS 64, 8 scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32 varying words), VF, RX, TU, ROP, BLT, MC on MIG DDR3, the DC inside the GPU (atg_top's HAS_DISP; registers at +0x10000, MC client C_DC, ADV7511 parallel output), the JTAG register bridge.
+The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU, NSU SUs (NPHYS 8, NREGS 64, 8 scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32 varying words), VF, RX, TU, ROP, BLT, MC on MIG DDR3, the DC inside the GPU (atg_top's HAS_DISP; its registers in the CP's DISP2 window at 0x200, MC client C_DC, ADV7511 parallel output), the JTAG register bridge.
 
 Children: `atg_kc705_clk`, `atg_kc705_jtag`, `atg_top` (with `atg_dc` inside), `atg_kc705_mig`.
 
@@ -85,7 +85,7 @@ None beyond the above.
 
 `sim/tb/atg_kc705_raster_tb.v` (p012) prints, in this order:
 
-- `PASS atg_kc705_raster.jtag` — MAGIC and SCRATCH through the JTAG bridge, the DC's ID and CAPS at +0x10000, the GPU's CAPS/CAPS2 of this shape (CAPS[28] packed, [27] graphics, [24] subgroup, 64-byte lines, the TU and its 16 slots), the MEM capability (1 GiB of DDR3 at 0x8000_0000, a 64 MiB window), 64 registers per lane in RESIDENT_WARPS[23:16], MEM_READY
+- `PASS atg_kc705_raster.jtag` — MAGIC and SCRATCH through the JTAG bridge, the DC's ID and CAPS in the DISP2 window (0x200; the CP stays IDLE, so the host's scan-out writes pass), the DISP2 capability pointing at it, the GPU's CAPS/CAPS2 of this shape (CAPS[28] packed, [27] graphics, [24] subgroup, 64-byte lines, the TU and its 16 slots), the MEM capability (1 GiB of DDR3 at 0x8000_0000, a 64 MiB window), 64 registers per lane in RESIDENT_WARPS[23:16], MEM_READY
 - `PASS atg_kc705_raster.fill` — a BLT FILL kicked from JTAG, DBG_ADDR/DBG_DATA read-back, the memory model holds exactly the area
 - `PASS atg_kc705_raster.i2c` — one byte to the I2C mux (slave model on the pins) through the DC's I2C registers
 - `PASS atg_kc705_raster.pattern` — TEST_PATTERN in a 32 × 4 mode: the HDMI pins (sampled on hdmi_clk) give the first frame as YCbCr 4:2:2

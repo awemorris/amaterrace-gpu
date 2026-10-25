@@ -66,7 +66,7 @@ localparam [16:0] GHCI_CPFW_VERSION = 17'h00138;
 localparam [16:0] GHCI_CPFW_MBOX0 = 17'h00150;	/* MBOX0-3, after SA's 0x140-0x14F */
 localparam [16:0] GHCI_KICK = 17'h00F00;
 localparam [16:0] GHCI_STATE_BASE = 17'h01000;	/* STATE[0..511] */
-localparam [16:0] GHCI_DISP_KC705 = 17'h10000;	/* DC registers on the KC705 */
+localparam [16:0] GHCI_DISP_KC705 = 17'h10000;	/* the KC705 DC's former window (DISP, before WS288 p035 D4); unused */
 
 /* CPFW_CTRL and CPFW_STATUS bits. */
 localparam GHCI_CPFW_CTRL_LOAD = 0;

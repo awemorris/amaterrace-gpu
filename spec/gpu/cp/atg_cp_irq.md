@@ -26,7 +26,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `hcr_wmask` | in | 32 | Bit mask from WSTRB (1 = written). |
 | `hcr_ridx` | in | 10 | Word index being read; the read data is due in the same cycle (combinational from this registered index). |
 | `hcr_rdata` | out | 32 | Read data of this module's registers at `hcr_ridx`, 0 for other indices (the parent ORs them). |
-| `ev` | in | 9 | Event pulses: [0] FENCE [1] FAULT [2] RING_EMPTY [3] WATCHDOG [4] DBG_DONE [5] (unused, SOFT is IRQ_SET) [6] HALTED [7] RESULT [8] RETIRE. |
+| `ev` | in | 13 | Event pulses: [0] FENCE [1] FAULT [2] RING_EMPTY [3] WATCHDOG [4] DBG_DONE [5] (unused, SOFT is IRQ_SET) [6] HALTED [7] RESULT [8] RETIRE [9] VBLANK [10] FLIP [11] DISP_ERROR [12] HOTPLUG (DISP2). |
 | `irq` | out | 1 | Level: OR(IRQ_STATUS & IRQ_ENABLE). |
 
 11 ports.
@@ -68,3 +68,5 @@ design §2.2 (IRQ registers), §2.5.
 
 Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  78 lines.  Spec changes in p004: the `core_rst_n` port; ev[2] is a level
 (edge detected here).
+
+WS288 p035 D4 (2026-10-25): 13 bits (DISP2's [12:9]); the TB's w1c group sets and clears them, the line group checks FLIP's.

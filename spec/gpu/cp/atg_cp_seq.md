@@ -12,6 +12,7 @@ The class N µop sequencer: takes µop packets from the ring or from the firmwar
 | --- | --- | --- |
 | `UNITS` | `8'h03` | Present blocks in STATUS busy-bit order; a µop of an absent unit (DRAW: VF, DISPATCH/LOAD_CONST: SU, DRAW_RAW: RX, BLIT: BLT) is a fault of kind 2. |
 | `HAS_VSYNC` | `0` | 1: WAIT_VSYNC is accepted (CAPS[10]); 0: fault kind 2. |
+| `HAS_DISP` | `0` | 1: a DISP2 controller, DISP_SET (15) and FLIP (16) are accepted from the ring (atg_cp_disp); 0, or from the firmware: fault kind 2. |
 
 ## 3. Ports
 
@@ -25,12 +26,10 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `n_valid` | in | 1 | Dword valid. |
 | `n_ready` | out | 1 | Taken. |
 | `n_data` | in | 32 | Header then payload. |
-| `n_last` | in | 1 | Last dword. |
 | **µop packets from the firmware (atg_cpu UOP_FIFO)** | | | |
 | `fw_valid` | in | 1 | Dword valid. |
 | `fw_ready` | out | 1 | Taken. |
 | `fw_data` | in | 32 | Header then payload (same envelope). |
-| `fw_last` | in | 1 | Last dword. |
 | `fw_active` | in | 1 | A class V packet is being processed: take µops from fw_* only. |
 | `halt` | in | 1 | Do not start a new µop (HALTING/FAULTED/RESETTING). |
 | **STATE writes (to atg_cp_state)** | | | |
@@ -38,16 +37,12 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `uop_idx` | out | 10 | Index. |
 | `uop_wdata` | out | 32 | Value. |
 | **Kicks (one-cycle pulses)** | | | |
-| `blt_kick` | out | 1 | BLIT. |
-| `draw_kick` | out | 1 | DRAW (VF). |
-| `cs_kick` | out | 1 | DISPATCH (the SUs; gx/gy/gz are in STATE 0x1E9-0x1EB). |
-| `lc_kick` | out | 1 | LOAD_CONST (the SUs' constant banks; region/addr/words in STATE 0x1EC-0x1EE). |
-| `raw_kick` | out | 1 | DRAW_RAW (RX; 9 words in STATE 0x1E0-0x1E8). |
+| `kick` | out | 1 | A kick, with its code (atg_cp splits them). |
+| `kick_code` | out | 3 | 0 BLIT, 1 DRAW (VF), 2 DISPATCH (the SUs; gx/gy/gz in STATE 0x1E9-0x1EB), 3 LOAD_CONST (region/addr/words in 0x1EC-0x1EE), 4 DRAW_RAW (RX; 9 words in 0x1E0-0x1E8), 5 PERF_RESET, 6 FLIP (atg_cp_disp places the staged flip), 7 DISP_SET flags[0] (atg_cp_disp waits for the DC's idle). |
 | `inv` | out | 4 | INVALIDATE mask pulse: [0] D$, [1] T$, [2] constant, [3] I$ (DRAW also pulses [1:0]). |
-| `perf_reset` | out | 1 | PERF_RESET. |
 | `fw_side` | in | 7 | Session protection: the firmware µop's {SELF, slot}, latched with its header |
 | `u_fw`, `u_side`, `u_req` / `u_ok` | out / in | 1, 7, 2 / 1 | The µop for atg_cp_prot: from the firmware, its side, {uses the SUs, starts a unit} (in Q_EXEC); a unit µop (BLIT, DRAW, DISPATCH, LOAD_CONST, class 1) starts only with `u_ok` (`PASS atg_cp_seq.prot`) |
-| `busy_in` | in | 8 | Block busy levels, STATUS[7:1] order; bit 0: the units' memory requests not yet answered (atg_mc's `!unit_idle`), which FENCE, WAIT_IDLE, RESULT and QUERY wait for. |
+| `busy_in` | in | 9 | Block busy levels, STATUS[7:1] order; bit 0: the units' memory requests not yet answered (atg_mc's `!unit_idle`), which FENCE, WAIT_IDLE, RESULT and QUERY wait for; bit 8: atg_cp_disp's `disp_wait` (outside B_ALL and the 8-bit WAIT_IDLE mask: FLIP, DISP_SET's writes and its flags[0] wait for it, nothing else). |
 | `vsync` | in | 1 | One-cycle pulse per display vsync (WAIT_VSYNC), 0 without a DC. |
 | **Fences (to atg_cp_fence)** | | | |
 | `f_valid` | out | 1 | Request valid. |
@@ -69,7 +64,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fault_addr` | out | 32 | FAULT_ADDR value (address or PC), valid with the pulse. |
 | `fault_tag` | out | 8 | JOB_TAG of the command at fault, valid with the pulse. |
 
-38 ports.
+39 ports (clk and rst_n included; p035 D4: the five kicks and PERF_RESET became `kick` and `kick_code`, the unused `n_last` and `fw_last` went).  The header and payload decoders are the child `atg_cp_seq_dec`.
 
 ## 4. Behaviour
 
@@ -147,3 +142,5 @@ The waits for work upstream (the MSAA work, branch p2-p027): SET_REG into 0x050-
 2026-10-25 (CAPS[30]): µop 14 QUERY (payload 1: addr; needs the ROP, UNITS[4]): after the waits of RESULT (every block idle, f_busy 0) the counter is taken (a1 = occ_count[31:0], a2 = occ_count[39:32]) and the fence unit's RESULT request (f_op 1) writes it; flags[0] only clears, without waiting or writing; flags[1] clears with the request.  Ports occ_count and occ_clear (the badop TB case moved from op 14 to op 15).  `PASS atg_cp_seq.query`.
 
 2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.
+
+WS288 p035 D4 (2026-10-25, P3): DISP_SET (its pairs to 0x3C0 + offset / 4, held while busy bit 8; flags[0]: kick 7, then busy bit 8) and FLIP (payload to 0x3B8-0x3BB; waits for busy bit 8, with flags[0] also for B_ALL; kick 6) with `HAS_DISP`; from the firmware both are fault 2.  `busy_in` has 9 bits; the kicks are one pulse with a code; the header decode moved to `atg_cp_seq_dec`.  About 384 lines.  `PASS atg_cp_seq.disp` (the pairs, the hold by bit 8, the idle wait before the next µop, FLIP's staging and kick, COMPLETE after a BLIT, FENCE while bit 8 is up, the bad offsets FB_NEXT, 0x12, 0x1A4, an odd n, a short FLIP, both from the firmware); `badop` uses op 17 and checks DISP_SET without `HAS_DISP`.  `-DMUT_DISP_NOWAIT` (FLIP COMPLETE without B_ALL) fails it.

@@ -10,7 +10,8 @@ The CP's state machine (design §2.6): CTRL (RUN/RESET/HALT/STEP/WDT_EN), STATUS
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NSRC` | `8` | Number of fault sources (0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks). |
+| `NSRC` | `8` | Number of fault sources (0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks; atg_cp: 9, 8 the DISP2 µops' fault 3 of atg_cp_disp). |
+| `DC_CLIENT` | `8'hFF` | The DC's MC client (atg_cp: atg_top's `C_DC` with `HAS_DISP`): its refusals (not for protection) are not device faults (design §18.2); 0xFF none. |
 | `WDT_RESET` | `32'h10000000` | WDT_CYCLES after reset (2^28). |
 | `LINE_SHIFT` | `5` | The aperture registers' alignment. |
 | `UNITS` | `8'h03` | Present blocks (STATUS order): KICK.DRAW needs bit 2, KICK.DISPATCH bit 6, else fault kind 2. |
@@ -133,3 +134,5 @@ RS_WAIT, RS_PULSE, RS_REPLAY).  Spec changes in p004: the parameters `LINE_SHIFT
 `SRC_BLOCK`, `SRC_CLIENT`; the ports `ring_busy`, `replay_busy`, `aperture_base/limit`.  Remaining
 differences from design §2.6: HALTING does not wait for the blocks' asynchronous work (p003 choice,
 the blocks freeze); RESET from RUNNING skips HALTING; the watchdog fault's job tag is 0 (wdt_tag: 2026-10-25 p034, the drained session's during a session protection switch).
+
+WS288 p035 D4 (2026-10-25): `DC_CLIENT`; atg_cp passes `NSRC` 9 (source 8: atg_cp_disp) with `SRC_BLOCK`/`SRC_CLIENT` of 72 bits.  `atg_cp_ctl_tb` (8 sources) sets `DC_CLIENT` 5 and checks in its fault group that client 5's refusal leaves the CP RUNNING.

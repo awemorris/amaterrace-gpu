@@ -191,8 +191,6 @@ module atg_top #(
 	 * MC clients: 0 CP, 1 BLT, then the present blocks in this order: CPU,
 	 * VF, TU, ROP, the atomic unit (with any SU), SA, EXT, and two per SU.
 	 */
-	`include "ghci_regs.vh"
-
 	localparam HAS_ATOM = NSU > 0 ? 1 : 0;
 	/* Vulkan 1.0 core rendering (CAPS[30] and the FMT capability): every graphics block and
 	 * Vulkan's 64 varying components (the KC705's shape). */
@@ -210,6 +208,7 @@ module atg_top #(
 	localparam C_SA = C_ATOM + HAS_ATOM;
 	localparam C_EXT = C_SA + (HAS_SA != 0 ? 1 : 0);
 	localparam C_DC = C_EXT;	/* the DC takes the outside client's place (HAS_DISP) */
+	localparam [7:0] C_DC8 = C_DC;
 	localparam HAS_EXT = EXT_CLIENT != 0 || HAS_DISP != 0;
 	localparam C_SU = C_EXT + (HAS_EXT ? 1 : 0);	/* SU k: C_SU+2k (D$), C_SU+2k+1 (I$) */
 	localparam NCLIENT = C_SU + 2 * NSU;
@@ -245,9 +244,13 @@ module atg_top #(
 	assign j_rdata = reg_rdata;
 	assign j_busy = a_busy;
 
-	wire [31:0] dc_reg_rdata;
-	wire dc_vsync;
-	assign reg_rdata = cp_reg_rdata | xr_rdata | dc_reg_rdata;
+	/* The DC (HAS_DISP) and the CP's atg_cp_disp: its register bus, flips and events. */
+	wire dc_vsync, dc_ev_error, dc_ev_hotplug, dc_idle;
+	wire dc_d_we, dc_flip_valid, dc_flip_plane;
+	wire [5:0] dc_d_idx, dc_d_ridx;
+	wire [31:0] dc_d_wdata, dc_d_wmask, dc_d_rdata, dc_flip_base, dc_frame_count;
+	wire [1:0] dc_taken, dc_taken_cancel, dc_pending, dc_err;
+	assign reg_rdata = cp_reg_rdata | xr_rdata;
 	assign xr_wr = reg_wr;
 	assign xr_waddr = reg_waddr;
 	assign xr_wdata = reg_wdata;
@@ -394,6 +397,7 @@ module atg_top #(
 			2'b11}),
 		.HAS_CPU(HAS_CPU),
 		.HAS_DISP(HAS_DISP),
+		.DC_CLIENT(C_DC8),
 		.HAS_DBG(HAS_JTAG),
 		.PACKED(NSU != 0 && SU_PACKED != 0),
 		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0),
@@ -500,7 +504,13 @@ module atg_top #(
 		.cpu_fault_addr(cpu_fault_addr),
 		.cpu_stall(cpu_stall),
 		.cpu_result(cpu_result),
-		.occ_count(occ_count), .occ_clear(cp_occ_clear)
+		.occ_count(occ_count), .occ_clear(cp_occ_clear),
+		.d_we(dc_d_we), .d_idx(dc_d_idx), .d_wdata(dc_d_wdata), .d_wmask(dc_d_wmask),
+		.d_ridx(dc_d_ridx), .d_rdata(dc_d_rdata), .flip_valid(dc_flip_valid),
+		.flip_plane(dc_flip_plane), .flip_base(dc_flip_base), .taken(dc_taken),
+		.taken_cancel(dc_taken_cancel), .dc_pending(dc_pending), .dc_idle(dc_idle),
+		.frame_count(dc_frame_count), .dc_err(dc_err),
+		.dc_ev({dc_ev_hotplug, dc_ev_error, dc_vsync})
 	);
 
 	atg_blt #(
@@ -1028,42 +1038,20 @@ module atg_top #(
 	if (HAS_DISP != 0) begin : g_dc
 		/*
 		 * The display controller: board reset only (CTRL.RESET does not
-		 * reset it).  Until the CP's DISP2 path (atg_cp_disp) takes it, the
-		 * host reaches its window at +0x10000 directly (every write passes,
-		 * the read data the cycle after reg_rd) and there are no flips of
-		 * the CP; its events are not connected.
+		 * reset it).  The host reaches its registers only through the CP's
+		 * DISP2 window (atg_cp_disp, HCR 0x200), which also flips its planes
+		 * and takes its events.
 		 */
-		wire [5:0] dc_ridx;
-		wire dc_ev_error, dc_ev_hotplug, dc_idle;
-		wire [1:0] dc_taken, dc_taken_cancel, dc_pending;
-		wire [31:0] dc_frame_count, dc_rdata;
-		reg dc_rhit;
-		reg [5:0] dc_ridx_q;
-
-		always @(posedge clk)
-			if (!rst_n) begin
-				dc_rhit <= 1'b0;
-				dc_ridx_q <= 6'd0;
-			end else if (reg_rd) begin
-				dc_rhit <= reg_raddr[16:8] == GHCI_DISP_KC705[16:8];
-				dc_ridx_q <= reg_raddr[7:2];
-			end
-		assign dc_ridx = dc_ridx_q;
-		assign dc_reg_rdata = dc_rhit ? dc_rdata : 32'd0;
-
 		atg_dc #(
 			.HAS_I2C(DC_HAS_I2C), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.FIFO_LOG2(DC_FIFO_LOG2), .PX_FMT(DC_PX_FMT)
 		) dc (
 			.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
-			.d_we(reg_wr && reg_waddr[16:8] == GHCI_DISP_KC705[16:8]), .d_idx(reg_waddr[7:2]),
-			.d_wdata(reg_wdata),
-			.d_wmask({{8{reg_wstrb[3]}}, {8{reg_wstrb[2]}}, {8{reg_wstrb[1]}},
-				{8{reg_wstrb[0]}}}),
-			.d_ridx(dc_ridx), .d_rdata(dc_rdata),
-			.flip_valid(1'b0), .flip_plane(1'b0), .flip_base(32'd0),
+			.d_we(dc_d_we), .d_idx(dc_d_idx), .d_wdata(dc_d_wdata), .d_wmask(dc_d_wmask),
+			.d_ridx(dc_d_ridx), .d_rdata(dc_d_rdata),
+			.flip_valid(dc_flip_valid), .flip_plane(dc_flip_plane), .flip_base(dc_flip_base),
 			.taken(dc_taken), .taken_cancel(dc_taken_cancel), .pending(dc_pending),
-			.dc_err(2'b00), .idle(dc_idle), .frame_count(dc_frame_count),
+			.dc_err(dc_err), .idle(dc_idle), .frame_count(dc_frame_count),
 			.ev_vblank(dc_vsync), .ev_error(dc_ev_error), .ev_hotplug(dc_ev_hotplug),
 			.pclk_sel(pclk_sel),
 			.req_valid(c_req_valid[C_DC]), .req_ready(c_req_ready[C_DC]),
@@ -1078,11 +1066,16 @@ module atg_top #(
 			.tmds(tmds), .px_rgb(px_rgb), .px_de(px_de), .px_hs(px_hs), .px_vs(px_vs),
 			.scl_t(scl_t), .scl_i(scl_i), .sda_t(sda_t), .sda_i(sda_i)
 		);
-		wire unused_dc = &{1'b0, dc_ev_error, dc_ev_hotplug, dc_idle, dc_taken,
-			dc_taken_cancel, dc_pending, dc_frame_count};
 	end else begin : g_no_dc
-		assign dc_reg_rdata = 32'd0;
 		assign dc_vsync = 1'b0;
+		assign dc_ev_error = 1'b0;
+		assign dc_ev_hotplug = 1'b0;
+		assign dc_idle = 1'b1;
+		assign dc_d_rdata = 32'd0;
+		assign dc_frame_count = 32'd0;
+		assign dc_taken = 2'b00;
+		assign dc_taken_cancel = 2'b00;
+		assign dc_pending = 2'b00;
 		assign pclk_sel = 1'b0;
 		assign tmds = 30'd0;
 		assign px_rgb = 24'd0;
@@ -1091,7 +1084,8 @@ module atg_top #(
 		assign px_vs = 1'b0;
 		assign scl_t = 1'b1;
 		assign sda_t = 1'b1;
-		wire unused_no_dc = &{1'b0, pclk, prst_n, scl_i, sda_i};
+		wire unused_no_dc = &{1'b0, pclk, prst_n, scl_i, sda_i, dc_d_we, dc_d_idx, dc_d_ridx,
+			dc_d_wdata, dc_d_wmask, dc_flip_valid, dc_flip_plane, dc_flip_base, dc_err};
 	end
 
 	if (HAS_DISP == 0 && EXT_CLIENT != 0) begin : g_ext
