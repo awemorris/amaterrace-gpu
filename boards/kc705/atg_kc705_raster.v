@@ -8,8 +8,8 @@
 /*
  * atg_kc705_raster: The KC705 raster/compute configuration (design §3.6,
  * §3.7; no SA): CP with CPU, NSU SUs (NPHYS 16, NREGS 64), VF, RX, TU,
- * ROP, BLT, MC on MIG DDR3, the DC next to the GPU (+0x10000, MC client
- * EXT, ADV7511 parallel output), the JTAG register bridge.
+ * ROP, BLT, MC on MIG DDR3, the DC inside the GPU (atg_top's HAS_DISP,
+ * ADV7511 parallel output), the JTAG register bridge.
  *
  * Wiring of its children; see
  * spec/boards/kc705/atg_kc705_raster.md.  The HDMI output is the ADV7511's
@@ -115,17 +115,15 @@ module atg_kc705_raster #(
 	wire m_rlast;
 	wire m_rvalid;
 	wire m_rready;
-	wire xr_wr, xr_rd, x_req_valid, x_req_ready, x_req_write, x_rsp_valid, x_rsp_write, x_rsp_error;
-	wire x_vsync, j_wr, j_rd, j_busy;
+	wire xr_wr, xr_rd, x_req_ready, x_rsp_valid, x_rsp_write, x_rsp_error;
+	wire j_wr, j_rd, j_busy;
 	wire [16:0] xr_waddr, xr_raddr, j_waddr, j_raddr;
-	wire [31:0] xr_wdata, xr_rdata, j_wdata, j_rdata;
+	wire [31:0] xr_wdata, j_wdata, j_rdata;
 	wire [3:0] xr_wstrb, j_wstrb;
-	wire [25:0] x_req_line;
-	wire [63:0] x_req_be;
-	wire [511:0] x_req_wdata, x_rsp_rdata;
-	wire [7:0] x_req_tag, x_rsp_tag;
+	wire [511:0] x_rsp_rdata;
+	wire [7:0] x_rsp_tag;
 	wire [29:0] tmds;
-	wire scl_t, sda_t, dc_irq;
+	wire scl_t, sda_t;
 	wire [23:0] px;
 
 	/* The host AXI slave is idle. */
@@ -174,9 +172,11 @@ module atg_kc705_raster #(
 		.HAS_RX(1),
 		.HAS_TU(1),
 		.HAS_ROP(1),
-		.EXT_CLIENT(1),
 		.HAS_JTAG(1),
 		.HAS_DISP(1),
+		.DC_HAS_I2C(1),
+		.DC_FIFO_LOG2(11),
+		.DC_PX_FMT(1),
 		.ROP_STENCIL(1),
 		.SU_NPHYS(16),
 		.SU_NWARPS(4),
@@ -197,13 +197,16 @@ module atg_kc705_raster #(
 		.m_awaddr(m_awaddr), .m_awlen(m_awlen), .m_awsize(m_awsize), .m_awburst(m_awburst), .m_awcache(m_awcache), .m_awprot(m_awprot), .m_awvalid(m_awvalid), .m_awready(m_awready), .m_wdata(m_wdata), .m_wstrb(m_wstrb), .m_wlast(m_wlast), .m_wvalid(m_wvalid), .m_wready(m_wready), .m_bresp(m_bresp), .m_bvalid(m_bvalid),
 		.m_bready(m_bready), .m_araddr(m_araddr), .m_arlen(m_arlen), .m_arsize(m_arsize), .m_arburst(m_arburst), .m_arcache(m_arcache), .m_arprot(m_arprot), .m_arvalid(m_arvalid), .m_arready(m_arready), .m_rdata(m_rdata), .m_rresp(m_rresp), .m_rlast(m_rlast), .m_rvalid(m_rvalid), .m_rready(m_rready),
 		.xr_wr(xr_wr), .xr_waddr(xr_waddr), .xr_wdata(xr_wdata), .xr_wstrb(xr_wstrb), .xr_rd(xr_rd),
-		.xr_raddr(xr_raddr), .xr_rdata(xr_rdata),
-		.x_req_valid(x_req_valid), .x_req_ready(x_req_ready), .x_req_write(x_req_write),
-		.x_req_line(x_req_line), .x_req_be(x_req_be), .x_req_wdata(x_req_wdata), .x_req_tag(x_req_tag),
+		.xr_raddr(xr_raddr), .xr_rdata(32'd0),
+		.x_req_valid(1'b0), .x_req_ready(x_req_ready), .x_req_write(1'b0),
+		.x_req_line(26'd0), .x_req_be(64'd0), .x_req_wdata(512'd0), .x_req_tag(8'd0),
 		.x_rsp_valid(x_rsp_valid), .x_rsp_write(x_rsp_write), .x_rsp_tag(x_rsp_tag),
-		.x_rsp_rdata(x_rsp_rdata), .x_rsp_error(x_rsp_error), .x_vsync(x_vsync),
+		.x_rsp_rdata(x_rsp_rdata), .x_rsp_error(x_rsp_error), .x_vsync(1'b0),
 		.j_wr(j_wr), .j_waddr(j_waddr), .j_wdata(j_wdata), .j_wstrb(j_wstrb), .j_rd(j_rd), .j_raddr(j_raddr),
-		.j_rdata(j_rdata), .j_busy(j_busy)
+		.j_rdata(j_rdata), .j_busy(j_busy),
+		.pclk(pclk), .prst_n(prst_n), .pclk_sel(pclk_sel),
+		.tmds(tmds), .px_rgb(px), .px_de(hdmi_de), .px_hs(hdmi_hs), .px_vs(hdmi_vs),
+		.scl_t(scl_t), .scl_i(iic_scl), .sda_t(sda_t), .sda_i(iic_sda)
 	);
 
 	atg_kc705_mig mig (
@@ -211,23 +214,6 @@ module atg_kc705_raster #(
 		.s_awaddr(m_awaddr), .s_awlen(m_awlen), .s_awsize(m_awsize), .s_awburst(m_awburst), .s_awcache(m_awcache), .s_awprot(m_awprot), .s_awvalid(m_awvalid), .s_awready(m_awready), .s_wdata(m_wdata), .s_wstrb(m_wstrb), .s_wlast(m_wlast), .s_wvalid(m_wvalid), .s_wready(m_wready), .s_bresp(m_bresp), .s_bvalid(m_bvalid),
 		.s_bready(m_bready), .s_araddr(m_araddr), .s_arlen(m_arlen), .s_arsize(m_arsize), .s_arburst(m_arburst), .s_arcache(m_arcache), .s_arprot(m_arprot), .s_arvalid(m_arvalid), .s_arready(m_arready), .s_rdata(m_rdata), .s_rresp(m_rresp), .s_rlast(m_rlast), .s_rvalid(m_rvalid), .s_rready(m_rready),
 		.ddr3_dq(ddr3_dq), .ddr3_dqs_p(ddr3_dqs_p), .ddr3_dqs_n(ddr3_dqs_n), .ddr3_addr(ddr3_addr), .ddr3_ba(ddr3_ba), .ddr3_ras_n(ddr3_ras_n), .ddr3_cas_n(ddr3_cas_n), .ddr3_we_n(ddr3_we_n), .ddr3_reset_n(ddr3_reset_n), .ddr3_ck_p(ddr3_ck_p), .ddr3_ck_n(ddr3_ck_n), .ddr3_cke(ddr3_cke), .ddr3_cs_n(ddr3_cs_n), .ddr3_dm(ddr3_dm), .ddr3_odt(ddr3_odt)
-	);
-
-	/* The display controller next to the GPU: registers at +0x10000, MC client EXT. */
-	atg_dc #(
-		.STANDALONE(0), .BASE(17'h10000), .HAS_I2C(1), .LINE_BYTES(64), .LINE_SHIFT(6),
-		.FIFO_LOG2(11), .PX_FMT(1)
-	) dc (
-		.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
-		.reg_wr(xr_wr), .reg_waddr(xr_waddr), .reg_wdata(xr_wdata), .reg_wstrb(xr_wstrb),
-		.reg_rd(xr_rd), .reg_raddr(xr_raddr), .reg_rdata(xr_rdata),
-		.irq(dc_irq), .vsync(x_vsync), .pclk_sel(pclk_sel),
-		.req_valid(x_req_valid), .req_ready(x_req_ready), .req_write(x_req_write),
-		.req_line(x_req_line), .req_be(x_req_be), .req_wdata(x_req_wdata), .req_tag(x_req_tag),
-		.rsp_valid(x_rsp_valid), .rsp_write(x_rsp_write), .rsp_tag(x_rsp_tag),
-		.rsp_rdata(x_rsp_rdata), .rsp_error(x_rsp_error),
-		.tmds(tmds), .px_rgb(px), .px_de(hdmi_de), .px_hs(hdmi_hs), .px_vs(hdmi_vs),
-		.scl_t(scl_t), .scl_i(iic_scl), .sda_t(sda_t), .sda_i(iic_sda)
 	);
 
 	/* Open-drain I2C (the tools infer IOBUFs). */
@@ -249,10 +235,12 @@ module atg_kc705_raster #(
 
 	wire unused_px = &{1'b0, px[23:16]};
 
-	assign led = {4'd0, mem_ready, dc_irq, irq, beat[26]};
+	assign led = {4'd0, mem_ready, 1'b0, irq, beat[26]};	/* [2] is free */
 
 	wire unused_ok = &{1'b0, s_awready, s_wready, s_bid, s_bresp, s_bvalid, s_arready, s_rdata,
-		s_rid, s_rresp, s_rlast, s_rvalid, tmds, s_awaddr[31:17], s_araddr[31:17]};
+		s_rid, s_rresp, s_rlast, s_rvalid, tmds, s_awaddr[31:17], s_araddr[31:17], xr_wr, xr_rd,
+		xr_waddr, xr_raddr, xr_wdata, xr_wstrb, x_req_ready, x_rsp_valid, x_rsp_write,
+		x_rsp_error, x_rsp_rdata, x_rsp_tag};
 endmodule
 
 `default_nettype wire

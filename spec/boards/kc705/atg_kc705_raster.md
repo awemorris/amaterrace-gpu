@@ -4,9 +4,9 @@ RTL: `boards/kc705/atg_kc705_raster.v`.  Parent: - (FPGA top).  Implemented in: 
 
 ## 1. Purpose and place
 
-The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU, NSU SUs (NPHYS 16, NREGS 64, 8 scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32 varying words), VF, RX, TU, ROP, BLT, MC on MIG DDR3, the DC next to the GPU (+0x10000, MC client EXT, ADV7511 parallel output), the JTAG register bridge.
+The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU, NSU SUs (NPHYS 16, NREGS 64, 8 scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32 varying words), VF, RX, TU, ROP, BLT, MC on MIG DDR3, the DC inside the GPU (atg_top's HAS_DISP; registers at +0x10000, MC client C_DC, ADV7511 parallel output), the JTAG register bridge.
 
-Children: `atg_kc705_clk`, `atg_kc705_jtag`, `atg_top`, `atg_kc705_mig`, `atg_dc`.
+Children: `atg_kc705_clk`, `atg_kc705_jtag`, `atg_top` (with `atg_dc` inside), `atg_kc705_mig`.
 
 The host AXI slave of atg_top is unused (no PCIe yet, design §4.3: JTAG first).  `tools/lint.sh` lints this top with its board helpers and the lint stand-ins of the primitives and IP cores (`sim/lint/xilinx_stubs.v`).  The XDC is `boards/kc705/atg_kc705_raster.xdc` (p012).
 
@@ -42,7 +42,7 @@ Clock/reset domain: clk (gclk 100 MHz) and pclk unless the row says otherwise.  
 | `ddr3_cs_n` | out | 1 | CS#. |
 | `ddr3_dm` | out | 8 | DM. |
 | `ddr3_odt` | out | 1 | ODT. |
-| `led` | out | 8 | GPIO LEDs: 0 heartbeat, 1 GPU interrupt, 2 DC interrupt, 3 MEM_READY. |
+| `led` | out | 8 | GPIO LEDs: 0 heartbeat, 1 GPU interrupt, 2 free (0), 3 MEM_READY. |
 | `hdmi_d` | out | 16 | ADV7511 pixel data HDMI_R_D[15:0]: YCbCr 4:2:2, [7:0] Y, [15:8] Cb/Cr (atg_dc_ycc). |
 | `hdmi_de` | out | 1 | DE. |
 | `hdmi_hs` | out | 1 | HSYNC. |
@@ -58,8 +58,8 @@ Clock/reset domain: clk (gclk 100 MHz) and pclk unless the row says otherwise.  
 
 Wiring.  One gclk (100 MHz); the MIG's crossing to ui_clk is inside atg_kc705_mig.
 
-- The DC is `atg_dc` with `PX_FMT` 1 (16-bit YCbCr 4:2:2 for the ADV7511), `FIFO_LOG2` 11 (720p),
-  HAS_I2C; its TMDS output is left open (not synthesised: user 2026-10-24; the DC has no VGA output since 2026-10-25).
+- The DC is atg_top's `atg_dc` with `DC_PX_FMT` 1 (16-bit YCbCr 4:2:2 for the ADV7511), `DC_FIFO_LOG2` 11 (720p),
+  `DC_HAS_I2C`; its TMDS output is left open (not synthesised: user 2026-10-24; the DC has no VGA output since 2026-10-25).
 - `hdmi_clk` comes from an ODDR (D1 0, D2 1) on pclk; the data, DE and syncs are the DC's
   registered outputs (IOB registers in the XDC).
 - The ADV7511 (behind the mux) is configured by the host through the DC's I2C registers
