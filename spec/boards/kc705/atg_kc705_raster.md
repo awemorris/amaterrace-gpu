@@ -4,11 +4,11 @@ RTL: `boards/kc705/atg_kc705_raster.v`.  Parent: - (FPGA top).  Implemented in: 
 
 ## 1. Purpose and place
 
-The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU, NSU SUs (NPHYS 8, NREGS 64, 8 scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32 varying words), VF, RX, TU, ROP, BLT, MC on MIG DDR3, the DC next to the GPU (+0x10000, MC client EXT, ADV7511 parallel output), the JTAG register bridge.
+The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU, NSU SUs (NPHYS 8, NREGS 64, 8 scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32 varying words), VF, RX, TU, ROP, BLT, MC on MIG DDR3, the DC inside the GPU (atg_top's HAS_DISP; its registers in the CP's DISP2 window at 0x200, MC client C_DC, ADV7511 parallel output), the JTAG register bridge.
 
-Children: `atg_kc705_clk`, `atg_kc705_jtag`, `atg_top`, `atg_kc705_mig`, `atg_dc`.
+Children: `atg_kc705_clk`, `atg_kc705_jtag`, `atg_top` (with `atg_dc` inside), `atg_kc705_mig`.
 
-The host AXI slave of atg_top is unused (no PCIe yet, design §4.3: JTAG first).  `tools/lint.sh` lints this top with its board helpers and the lint stand-ins of the primitives and IP cores (`sim/lint/xilinx_stubs.v`).  The XDC is `boards/kc705/atg_kc705_raster.xdc` (p012).
+The host AXI slave of atg_top is PCIe's BAR0 (p013): atg_kc705_pcie's m0_* through am_axi_cdc (user_clk → gclk) into atg_top's s_*, beside the JTAG bridge; BAR2 (m2_*) goes to the MIG wrapper's second port; atg_pcie_msi gives the MSI requests (one vector: GHCI's interrupt line, the DC's events are bits of IRQ_STATUS); the GPU → host port of atg_kc705_pcie is idle in version 1.  Ports added: pcie_refclk_p/n, pcie_perst_n, pcie_txp/txn[3:0], pcie_rxp/rxn[3:0] (pins in the XDC from the KC705 board file); LED 4 = link_up.  `tools/lint.sh` lints this top with its board helpers and the lint stand-ins of the primitives and IP cores (`sim/lint/xilinx_stubs.v`).  The XDC is `boards/kc705/atg_kc705_raster.xdc` (p012).
 
 ## 2. Parameters
 
@@ -42,7 +42,7 @@ Clock/reset domain: clk (gclk 100 MHz) and pclk unless the row says otherwise.  
 | `ddr3_cs_n` | out | 1 | CS#. |
 | `ddr3_dm` | out | 8 | DM. |
 | `ddr3_odt` | out | 1 | ODT. |
-| `led` | out | 8 | GPIO LEDs: 0 heartbeat, 1 GPU interrupt, 2 DC interrupt, 3 MEM_READY. |
+| `led` | out | 8 | GPIO LEDs: 0 heartbeat, 1 GPU interrupt, 2 free (0), 3 MEM_READY. |
 | `hdmi_d` | out | 16 | ADV7511 pixel data HDMI_R_D[15:0]: YCbCr 4:2:2, [7:0] Y, [15:8] Cb/Cr (atg_dc_ycc). |
 | `hdmi_de` | out | 1 | DE. |
 | `hdmi_hs` | out | 1 | HSYNC. |
@@ -58,8 +58,8 @@ Clock/reset domain: clk (gclk 100 MHz) and pclk unless the row says otherwise.  
 
 Wiring.  One gclk (100 MHz); the MIG's crossing to ui_clk is inside atg_kc705_mig.
 
-- The DC is `atg_dc` with `PX_FMT` 1 (16-bit YCbCr 4:2:2 for the ADV7511), `FIFO_LOG2` 11 (720p),
-  HAS_I2C; its TMDS output is left open (not synthesised: user 2026-10-24; the DC has no VGA output since 2026-10-25).
+- The DC is atg_top's `atg_dc` with `DC_PX_FMT` 1 (16-bit YCbCr 4:2:2 for the ADV7511), `DC_FIFO_LOG2` 11 (720p),
+  `DC_HAS_I2C`; its TMDS output is left open (not synthesised: user 2026-10-24; the DC has no VGA output since 2026-10-25).
 - `hdmi_clk` comes from an ODDR (D1 0, D2 1) on pclk; the data, DE and syncs are the DC's
   registered outputs (IOB registers in the XDC).
 - The ADV7511 (behind the mux) is configured by the host through the DC's I2C registers
@@ -85,7 +85,7 @@ None beyond the above.
 
 `sim/tb/atg_kc705_raster_tb.v` (p012) prints, in this order:
 
-- `PASS atg_kc705_raster.jtag` — MAGIC and SCRATCH through the JTAG bridge, the DC's ID and CAPS at +0x10000, the GPU's CAPS/CAPS2 of this shape (CAPS[28] packed, [27] graphics, [24] subgroup, 64-byte lines, the TU and its 16 slots), the MEM capability (1 GiB of DDR3 at 0x8000_0000, a 64 MiB window), 64 registers per lane in RESIDENT_WARPS[23:16], MEM_READY
+- `PASS atg_kc705_raster.jtag` — MAGIC and SCRATCH through the JTAG bridge, the DC's ID and CAPS in the DISP2 window (0x200; the CP stays IDLE, so the host's scan-out writes pass), the DISP2 capability pointing at it, the GPU's CAPS/CAPS2 of this shape (CAPS[28] packed, [27] graphics, [24] subgroup, 64-byte lines, the TU and its 16 slots), the MEM capability (1 GiB of DDR3 at 0x8000_0000, a 64 MiB window), 64 registers per lane in RESIDENT_WARPS[23:16], MEM_READY
 - `PASS atg_kc705_raster.fill` — a BLT FILL kicked from JTAG, DBG_ADDR/DBG_DATA read-back, the memory model holds exactly the area
 - `PASS atg_kc705_raster.i2c` — one byte to the I2C mux (slave model on the pins) through the DC's I2C registers
 - `PASS atg_kc705_raster.pattern` — TEST_PATTERN in a 32 × 4 mode: the HDMI pins (sampled on hdmi_clk) give the first frame as YCbCr 4:2:2
@@ -103,5 +103,7 @@ board).  Port changes (Q1 to ACK): `hdmi_d` 24 → 16 bits (the KC705 wires 16 l
 HDMI_R_D0..D15), `iic_mux_reset_n` added; parameters `CPU_IMEM_INIT`/`CPU_DMEM_INIT` added.
 Unverified until part B: the HDMI pins (two outside sources, see the XDC), the IP cores' port
 names, the clock managers' settings, the ADV7511's register settings.
+
+2026-10-25 (p039): the GPU's memory port through `am_axi_split`: [LOCAL_BASE, + LOCAL_BYTES) (the MC's ID 0) to the MIG's GPU port (no ID: only ID 0 reaches it, its responses get ID 0), [0, HOST_LIMIT = 0x8000_0000) (ID 1) to atg_kc705_pcie's GPU -> host port (512 bit in gclk), DECERR above 0xC000_0000.  The three values are localparams of the top, given to atg_top (MEM, the MC's destinations) and to the split.  The fill test moved to local memory (0x8004_0000; before, 0x0004_0000 reached the DDR3 only because the MIG drops address bits 31:30).  The TB checks MEM HOST_LIMIT.
 
 2026-10-25: atg_top's MEM capability for this board: LOCAL_BASE 0x8000_0000 (the MIG takes address bits 29:0, so the 1 GiB is at any 1 GiB-aligned base; 0x8000_0000 leaves the GPU addresses below 2 GiB to the host's bus addresses of a later PCIe binding), LOCAL_BYTES 1 GiB, WINDOW_BYTES 64 MiB (the PCIe BAR2 of design §6.2).  The TB walks to it.

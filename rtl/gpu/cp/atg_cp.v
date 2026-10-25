@@ -20,10 +20,13 @@
  *   atg_cp_fence  FENCE/RESULT writes, WAIT_FENCE polls, FENCE_LAST
  *   atg_cp_irq    IRQ_STATUS/ENABLE/SET and the line
  *   atg_cp_dbg    the asynchronous debug port
+ *   atg_cp_disp   (HAS_DISP) the DISP2 display controller's side: DISP_SET,
+ *                 FLIP, the host's gate to the DC's registers (window at
+ *                 0x200), the plane slots and the flip records
  *
- * The ring, the fence unit and the debug port share MC client 0 through
- * am_amb_mux (priority ring, fence, debug; the requester in tag bits
- * [7:6]).  The MC's quiesce does not hold client 0 (atg_top sets the MC's
+ * The ring, the fence unit, the debug port and atg_cp_disp's record
+ * writer share MC client 0 through am_amb_mux (priority ring, fence,
+ * debug, records; the requester in tag bits [7:6]).  The MC's quiesce does not hold client 0 (atg_top sets the MC's
  * QUIESCE_EXEMPT), so the CP's own accesses (the debug port in HALTED and
  * FAULTED, a ring line or fence already requested) go on while the blocks
  * are held.
@@ -34,7 +37,9 @@
  * refusal for protection is a device fault with mc_fault_tag.
  * rst_n is the board reset; core_rst_n (CTRL.RESET's pulse) resets the
  * ring's pointers, the sequencer, the fence unit, the debug port,
- * IRQ_STATUS and the blocks outside.
+ * IRQ_STATUS and the blocks outside.  atg_cp_disp is on rst_n (its slots
+ * and records survive CTRL.RESET).  The sequencer's kicks come as one
+ * pulse with a code, split here.
  */
 
 `timescale 1ns / 1ps
@@ -51,7 +56,9 @@ module atg_cp #(
 	parameter [7:0] UNITS = 8'h03,	/* present blocks, STATUS busy-bit order (CP, BLT) */
 	parameter HAS_CPU = 0,	/* atg_cpu takes class V packets */
 	parameter HAS_VSYNC = 0,	/* vsync is connected (CAPS[10], WAIT_VSYNC) */
-	parameter HAS_DISP = 0,	/* a display controller's registers are in this window at +0x10000 (CAPS[3], DISP) */
+	parameter HAS_DISP = 0,	/* a DISP2 display controller (atg_dc in atg_top): CAPS[3], the DISP2 capability, atg_cp_disp */
+	parameter DISP_PLANES = 2,	/* its planes: 2 with the cursor plane */
+	parameter [7:0] DC_CLIENT = 8'hFF,	/* its MC client (refusals are not device faults) */
 	parameter HAS_DBG = 0,	/* a debug bridge outside the host bus (JTAG; the DBG capability) */
 	parameter PACKED = 0,	/* the SU has the packed arithmetic (CAPS[28]) */
 	parameter SUBGROUP = 0,	/* the SU has shfl/vote/ballot (CAPS[24]) */
@@ -64,6 +71,7 @@ module atg_cp #(
 	parameter [31:0] LOCAL_BASE = 32'd0,	/* the MEM capability (listed when LOCAL_BYTES is not 0) */
 	parameter [31:0] LOCAL_BYTES = 32'd0,
 	parameter [31:0] WINDOW_BYTES = 32'd0,
+	parameter [31:0] HOST_LIMIT = 32'd0,
 	parameter HAS_PROT = 0	/* session protection: the PROT capability is listed (atg_cp_prot) */
 ) (
 	input wire clk,
@@ -170,7 +178,25 @@ module atg_cp #(
 	input wire cpu_stall,
 	input wire cpu_result,
 	input wire [39:0] occ_count,	/* the occlusion counter (atg_rop, QUERY) */
-	output wire occ_clear
+	output wire occ_clear,
+
+	/* The DISP2 display controller (atg_dc; HAS_DISP), through atg_cp_disp. */
+	output wire d_we,
+	output wire [5:0] d_idx,
+	output wire [31:0] d_wdata,
+	output wire [31:0] d_wmask,
+	output wire [5:0] d_ridx,
+	input wire [31:0] d_rdata,
+	output wire flip_valid,
+	output wire flip_plane,
+	output wire [31:0] flip_base,
+	input wire [1:0] taken,
+	input wire [1:0] taken_cancel,
+	input wire [1:0] dc_pending,
+	input wire dc_idle,
+	input wire [31:0] frame_count,
+	output wire [1:0] dc_err,
+	input wire [2:0] dc_ev	/* one-cycle pulses: [0] VBLANK, [1] DISP_ERROR, [2] HOTPLUG */
 );
 	`include "ghci_regs.vh"
 
@@ -194,11 +220,11 @@ module atg_cp #(
 	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4. */
 	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 24'h000001};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
-	/* PERF always; CPFW with the CPU; DISP, DBG, MEM and FMT when present (bit id - 1). */
-	localparam [9:0] XCAP = 10'h004 | (HAS_CPU != 0 ? 10'h020 : 10'h000) |
-		(HAS_DISP != 0 ? 10'h001 : 10'h000) | (HAS_DBG != 0 ? 10'h002 : 10'h000) |
-		(LOCAL_BYTES != 32'd0 ? 10'h080 : 10'h000) | (HAS_FMT != 0 ? 10'h200 : 10'h000) |
-		(HAS_PROT != 0 ? 10'h100 : 10'h000);
+	/* PERF always; CPFW with the CPU; DISP2, DBG, MEM, PROT and FMT when present (bit id - 1). */
+	localparam [10:0] XCAP = 11'h004 | (HAS_CPU != 0 ? 11'h020 : 11'h000) |
+		(HAS_DISP != 0 ? 11'h400 : 11'h000) | (HAS_DBG != 0 ? 11'h002 : 11'h000) |
+		(LOCAL_BYTES != 32'd0 ? 11'h080 : 11'h000) | (HAS_FMT != 0 ? 11'h200 : 11'h000) |
+		(HAS_PROT != 0 ? 11'h100 : 11'h000);
 
 	/*
 	 * The STATE broadcast to the blocks, one register stage after
@@ -237,13 +263,14 @@ module atg_cp #(
 	assign hcr_wmask = s_hcr_wmask;
 	assign hcr_ridx = s_hcr_ridx;
 
-	wire [31:0] s_fmt_rdata;
+	wire [31:0] s_fmt_rdata, s_disp_rdata;
 	atg_cp_regs #(
 		.GCLK_HZ(GCLK_HZ), .VENDOR_ID(VENDOR_ID), .DEVICE_ID(DEVICE_ID),
 		.DEVICE_VERSION(DEVICE_VERSION), .ISA_ID(ISA), .NATIVE_ISA_ID(ISA), .CAPS(CAPS),
 		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS),
 		.NREGS(NREGS), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
-		.WINDOW_BYTES(WINDOW_BYTES)
+		.WINDOW_BYTES(WINDOW_BYTES),
+		.HOST_LIMIT(HOST_LIMIT)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
@@ -253,7 +280,7 @@ module atg_cp #(
 		.alias_we(s_alias_we), .alias_idx(s_alias_idx), .alias_ridx(s_alias_ridx),
 		.ctl_rdata(s_ctl_rdata), .irq_rdata(s_irq_rdata), .ring_rdata(s_ring_rdata),
 		.fence_rdata(s_fence_rdata), .dbg_rdata(s_dbg_rdata), .state_rdata(s_state_rdata),
-		.x_rdata(x_rdata | s_fmt_rdata), .perf_busy({2'd0, !mc_idle, blt_busy}),
+		.x_rdata(x_rdata | s_fmt_rdata | s_disp_rdata), .perf_busy({2'd0, !mc_idle, blt_busy}),
 		.perf_reset(s_perf_reset)
 	);
 
@@ -279,12 +306,17 @@ module atg_cp #(
 	wire s_ring_empty, s_retire, s_ring_busy, s_seq_busy, s_cmd_active;
 	wire s_lock_fault;
 	wire s_dbg_done, s_dbg_busy;
-	wire s_ring_fault, s_seq_fault, s_fence_fault;
-	wire [3:0] s_ring_fault_kind, s_seq_fault_kind, s_fence_fault_kind;
-	wire [31:0] s_ring_fault_addr, s_seq_fault_addr, s_fence_fault_addr;
-	wire [7:0] s_ring_fault_tag, s_seq_fault_tag, s_fence_fault_tag;
+	wire s_ring_fault, s_seq_fault, s_fence_fault, s_disp_fault;
+	wire [3:0] s_ring_fault_kind, s_seq_fault_kind, s_fence_fault_kind, s_disp_fault_kind;
+	wire [31:0] s_ring_fault_addr, s_seq_fault_addr, s_fence_fault_addr, s_disp_fault_addr;
+	wire [7:0] s_ring_fault_tag, s_seq_fault_tag, s_fence_fault_tag, s_disp_fault_tag;
 
-	atg_cp_ctl #(.LINE_SHIFT(LINE_SHIFT), .UNITS(UNITS)) u_ctl (
+	/* Fault sources: 0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks, 8 DISP. */
+	atg_cp_ctl #(
+		.LINE_SHIFT(LINE_SHIFT), .UNITS(UNITS), .NSRC(9),
+		.SRC_BLOCK(72'h00_00_01_00_06_00_00_00_00), .SRC_CLIENT(72'h00_00_01_00_00_00_00_00_00),
+		.DC_CLIENT(HAS_DISP != 0 ? DC_CLIENT : 8'hFF)
+	) u_ctl (
 		.clk(clk), .rst_n(rst_n),
 		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_ctl_rdata),
@@ -297,14 +329,15 @@ module atg_cp #(
 		.mc_fault_write(mc_fault_write), .mc_fault_prot(mc_fault_prot),
 		.mc_fault_mem(mc_fault_mem), .mc_fault_tag(mc_fault_tag),
 		.kick_prot_ok(kick_prot_ok), .wdt_tag(wdt_tag),
-		.src_fault({x_fault[1], blt_error, cpu_fault, x_fault[0], s_fence_fault,
+		.src_fault({s_disp_fault, x_fault[1], blt_error, cpu_fault, x_fault[0], s_fence_fault,
 			s_lock_fault, s_seq_fault, s_ring_fault}),
-		.src_kind({x_fault_kind[7:4], blt_error_kind, GHCI_FAULT_WATCHDOG, x_fault_kind[3:0],
-			s_fence_fault_kind, GHCI_FAULT_LOCKED, s_seq_fault_kind, s_ring_fault_kind}),
-		.src_addr({x_fault_addr[63:32], 32'd0, cpu_fault_addr, x_fault_addr[31:0],
-			s_fence_fault_addr, 32'd0, s_seq_fault_addr, s_ring_fault_addr}),
-		.src_tag({x_fault_tag[15:8], 8'd0, 8'd0, x_fault_tag[7:0], s_fence_fault_tag, 8'd0,
-			s_seq_fault_tag, s_ring_fault_tag}),
+		.src_kind({s_disp_fault_kind, x_fault_kind[7:4], blt_error_kind, GHCI_FAULT_WATCHDOG,
+			x_fault_kind[3:0], s_fence_fault_kind, GHCI_FAULT_LOCKED, s_seq_fault_kind,
+			s_ring_fault_kind}),
+		.src_addr({s_disp_fault_addr, x_fault_addr[63:32], 32'd0, cpu_fault_addr,
+			x_fault_addr[31:0], s_fence_fault_addr, 32'd0, s_seq_fault_addr, s_ring_fault_addr}),
+		.src_tag({s_disp_fault_tag, x_fault_tag[15:8], 8'd0, 8'd0, x_fault_tag[7:0],
+			s_fence_fault_tag, 8'd0, s_seq_fault_tag, s_ring_fault_tag}),
 		.run(s_run), .halt(s_halt), .quiesce(s_quiesce), .mc_flush(s_mc_flush),
 		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state),
 		.host_kick(s_host_kick), .step(s_step),
@@ -326,25 +359,25 @@ module atg_cp #(
 		.clk(clk), .rst_n(rst_n),
 		.alias_we(s_alias_we), .alias_idx(s_alias_idx), .alias_wdata(s_hcr_wdata),
 		.alias_ridx(s_alias_ridx), .alias_rdata(s_state_rdata),
-		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
-		.open(s_open), .blt_busy(blt_busy), .lock_fault(s_lock_fault),
+		.uop_we(s_uop_we && s_uop_idx[9:8] != 2'b11), .uop_idx(s_uop_idx),
+		.uop_wdata(s_uop_wdata), .open(s_open), .blt_busy(blt_busy), .lock_fault(s_lock_fault),
 		.st_we(s_st_we), .st_idx(s_st_idx), .st_wdata(s_st_wdata),
 		.cpu_ridx(cpu_st_ridx), .cpu_rdata(cpu_st_rdata),
 		.replay(s_mc_flush), .replay_busy(s_replay_busy)
 	);
 
-	/* The CP's three memory users behind MC client 0: ring, fence, dbg. */
-	wire [2:0] s_i_req_valid, s_i_req_ready, s_i_req_write, s_i_rsp_valid;
-	wire [3*SLA_W-1:0] s_i_req_line;
-	wire [3*LINE_BYTES-1:0] s_i_req_be;
-	wire [3*SLB-1:0] s_i_req_wdata;
-	wire [23:0] s_i_req_tag;
+	/* The CP's memory users behind MC client 0: ring, fence, dbg, the records (DISP2). */
+	wire [3:0] s_i_req_valid, s_i_req_ready, s_i_req_write, s_i_rsp_valid;
+	wire [4*SLA_W-1:0] s_i_req_line;
+	wire [4*LINE_BYTES-1:0] s_i_req_be;
+	wire [4*SLB-1:0] s_i_req_wdata;
+	wire [31:0] s_i_req_tag;
 	wire s_i_rsp_write, s_i_rsp_error;
 	wire [7:0] s_i_rsp_tag;
 	wire [SLB-1:0] s_i_rsp_rdata;
 
 	am_amb_mux #(
-		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .N(3), .ID_W(2)
+		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .N(4), .ID_W(2)
 	) u_amb (
 		.clk(clk), .rst_n(rst_n),
 		.i_req_valid(s_i_req_valid), .i_req_ready(s_i_req_ready),
@@ -396,21 +429,21 @@ module atg_cp #(
 	);
 
 	/* The sequencer; it stops only in FAULTED and RESETTING. */
-	wire s_seq_blt_kick, s_seq_draw_kick, s_seq_cs_kick;
+	wire s_kick, s_disp_wait, s_ev_flip;
+	wire [2:0] s_kick_code;
 	wire s_f_valid, s_f_ready, s_f_irq, s_f_busy;
 	wire [1:0] s_f_op;
 	wire [31:0] s_f_addr, s_f_value, s_f_aux;
 	wire s_seq_halt = s_cp_state == GHCI_ST_FAULTED || s_cp_state == GHCI_ST_RESETTING;
 
-	atg_cp_seq #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC)) u_seq (
+	atg_cp_seq #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) u_seq (
 		.clk(clk), .rst_n(s_core_rst_n),
-		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data), .n_last(s_n_last),
-		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data), .fw_last(fw_last),
+		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data),
+		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data),
 		.fw_active(fw_active), .fw_side(fw_side), .halt(s_seq_halt),
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
-		.blt_kick(s_seq_blt_kick), .draw_kick(s_seq_draw_kick), .cs_kick(s_seq_cs_kick),
-		.lc_kick(lc_kick), .raw_kick(raw_kick), .inv(inv), .perf_reset(s_perf_reset),
-		.busy_in({busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
+		.kick(s_kick), .kick_code(s_kick_code), .inv(inv),
+		.busy_in({s_disp_wait, busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
 		.occ_count(occ_count), .occ_clear(occ_clear),
@@ -421,9 +454,15 @@ module atg_cp #(
 	);
 	assign u_tag = s_seq_fault_tag;
 
-	assign blt_kick = s_host_kick[0] || s_seq_blt_kick;
-	assign draw_kick = s_host_kick[1] || s_seq_draw_kick;
-	assign cs_kick = s_host_kick[2] || s_seq_cs_kick;
+	/* The kick codes (atg_cp_seq's K_*). */
+	assign blt_kick = s_host_kick[0] || s_kick && s_kick_code == 3'd0;
+	assign draw_kick = s_host_kick[1] || s_kick && s_kick_code == 3'd1;
+	assign cs_kick = s_host_kick[2] || s_kick && s_kick_code == 3'd2;
+	assign lc_kick = s_kick && s_kick_code == 3'd3;
+	assign raw_kick = s_kick && s_kick_code == 3'd4;
+	assign s_perf_reset = s_kick && s_kick_code == 3'd5;
+	wire s_kick_flip = s_kick && s_kick_code == 3'd6;
+	wire s_kick_idle = s_kick && s_kick_code == 3'd7;
 
 	/* Fences. */
 	atg_cp_fence #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) u_fence (
@@ -451,8 +490,8 @@ module atg_cp #(
 		.clk(clk), .rst_n(rst_n), .core_rst_n(s_core_rst_n),
 		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_irq_rdata),
-		.ev({s_retire, cpu_result, s_ev_halted, 1'b0, s_dbg_done, s_ev_wdt, s_ring_empty,
-			s_ev_fault, cp_fence_ev}),
+		.ev({dc_ev[2], dc_ev[1], s_ev_flip, dc_ev[0], s_retire, cpu_result, s_ev_halted, 1'b0,
+			s_dbg_done, s_ev_wdt, s_ring_empty, s_ev_fault, cp_fence_ev}),
 		.irq(irq)
 	);
 
@@ -469,7 +508,66 @@ module atg_cp #(
 		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
 	);
 
-	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag};
+	/* The DISP2 display controller's side (board reset). */
+	generate
+	if (HAS_DISP != 0) begin : g_disp
+		atg_cp_disp #(
+			.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.NPLANES(DISP_PLANES), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
+			.BASE_IDX(GHCI_DISP2_BASE[11:2])
+		) u_disp (
+			.clk(clk), .rst_n(rst_n),
+			.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+			.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_disp_rdata),
+			.cp_state(s_cp_state),
+			.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
+			.kick_flip(s_kick_flip), .kick_idle(s_kick_idle), .seq_tag(s_seq_fault_tag),
+			.disp_wait(s_disp_wait), .aperture_base(aperture_base),
+			.aperture_limit(aperture_limit),
+			.fault(s_disp_fault), .fault_kind(s_disp_fault_kind),
+			.fault_addr(s_disp_fault_addr), .fault_tag(s_disp_fault_tag),
+			.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(d_wmask), .d_ridx(d_ridx),
+			.d_rdata(d_rdata), .flip_valid(flip_valid), .flip_plane(flip_plane),
+			.flip_base(flip_base), .taken(taken), .taken_cancel(taken_cancel),
+			.dc_pending(dc_pending), .dc_idle(dc_idle), .frame_count(frame_count),
+			.dc_err(dc_err),
+			.req_valid(s_i_req_valid[3]), .req_ready(s_i_req_ready[3]),
+			.req_write(s_i_req_write[3]), .req_line(s_i_req_line[3*SLA_W +: SLA_W]),
+			.req_be(s_i_req_be[3*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(s_i_req_wdata[3*SLB +: SLB]), .req_tag(s_i_req_tag[3*8 +: 8]),
+			.rsp_valid(s_i_rsp_valid[3]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
+			.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error),
+			.ev_flip(s_ev_flip)
+		);
+	end else begin : g_no_disp
+		assign s_disp_rdata = 32'd0;
+		assign s_disp_wait = 1'b0;
+		assign s_disp_fault = 1'b0;
+		assign s_disp_fault_kind = 4'd0;
+		assign s_disp_fault_addr = 32'd0;
+		assign s_disp_fault_tag = 8'd0;
+		assign s_ev_flip = 1'b0;
+		assign d_we = 1'b0;
+		assign d_idx = 6'd0;
+		assign d_wdata = 32'd0;
+		assign d_wmask = 32'd0;
+		assign d_ridx = 6'd0;
+		assign flip_valid = 1'b0;
+		assign flip_plane = 1'b0;
+		assign flip_base = 32'd0;
+		assign dc_err = 2'b00;
+		assign s_i_req_valid[3] = 1'b0;
+		assign s_i_req_write[3] = 1'b0;
+		assign s_i_req_line[3*SLA_W +: SLA_W] = {SLA_W{1'b0}};
+		assign s_i_req_be[3*LINE_BYTES +: LINE_BYTES] = {LINE_BYTES{1'b0}};
+		assign s_i_req_wdata[3*SLB +: SLB] = {SLB{1'b0}};
+		assign s_i_req_tag[3*8 +: 8] = 8'd0;
+		wire unused_no_disp = &{1'b0, s_i_req_ready[3], s_i_rsp_valid[3], d_rdata, taken,
+			taken_cancel, dc_pending, dc_idle, frame_count, dc_ev, s_kick_flip, s_kick_idle};
+	end
+	endgenerate
+
+	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last};
 endmodule
 
 `default_nettype wire

@@ -18,7 +18,8 @@ The GPU IP: an AXI slave for the GHCI registers (`s_*`, the low 17 address bits 
 | `LINE_BYTES` | 32 | AMB line | 32 or 64 (KC705) |
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`) | 5, 6 |
 | `DATA_W` | 64 | Memory AXI data width | 64, 512 (KC705) |
-| `LOCAL_BASE`, `LOCAL_BYTES`, `WINDOW_BYTES` | 0 | The MEM capability (GHCI §11.3), passed to the CP: local memory and the local window; 0 bytes = not listed (unified) | KC705: 0x8000_0000, 1 GiB, 64 MiB |
+| `LOCAL_BASE`, `LOCAL_BYTES`, `WINDOW_BYTES` | 0 | The MEM capability (GHCI §11.3), passed to the CP: local memory and the local window; 0 bytes = not listed (unified). LOCAL_* also to the MC: the destination of each access (AXI ID 0 local, 1 host) | KC705: 0x8000_0000, 1 GiB, 64 MiB |
+| `HOST_LIMIT` | 0 | MEM HOST_LIMIT (GHCI §11.2): the host addresses the GPU reaches are below it; 0 = all. Only reported (the board's interconnect makes it true) | KC705: 0x8000_0000 |
 
 Fixed inside: `NCLIENT` = 2, MC `HIGH_MASK` = 2'b01 (CP first), `OUTSTANDING_LOG2` = 2, `ADDR_W` = 32.
 
@@ -33,7 +34,7 @@ All in domain `clk`. 57 ports.
 | `irq` | out | 1 | Level interrupt (from the CP) |
 | `mem_ready` | in | 1 | STATUS.MEM_READY (tie 1 when memory is ready from reset) |
 | `s_awaddr`, `s_awid`, `s_awvalid`/`s_awready`, `s_wdata`, `s_wstrb`, `s_wlast`, `s_wvalid`/`s_wready`, `s_bid`, `s_bresp`, `s_bvalid`/`s_bready`, `s_araddr`, `s_arid`, `s_arlen`, `s_arvalid`/`s_arready`, `s_rdata`, `s_rid`, `s_rresp`, `s_rlast`, `s_rvalid`/`s_rready` | — | 17-bit addresses, `S_ID_W` IDs, `S_LEN_W` ARLEN, 32-bit data | Host AXI slave; rules of `spec/common/am_axi_regs.md` |
-| `m_*` (29 signals) | — | 32-bit addresses, `DATA_W` data | Memory AXI master, AXI4-shaped; rules of `spec/common/am_axi_master.md` (an AXI3 port truncates AxLEN/AxSIZE and ties ID/WID to 0) |
+| `m_*` (33 signals) | — | 32-bit addresses, `DATA_W` data, 1-bit IDs | Memory AXI master, AXI4-shaped; rules of `spec/common/am_axi_master.md`.  `m_awid`/`m_arid`: 0 local memory, 1 host (always 0 without local memory); `m_bid`/`m_rid` come back with the responses (tie 0 on a one-ID port).  An AXI3 port truncates AxLEN/AxSIZE and ties WID to 0 |
 
 ## 4. Behaviour
 
@@ -131,7 +132,11 @@ Varying 64 components (Vulkan 1.0's limit): `SU_VARY_WORDS` at most 64, the KC70
 
 2026-10-25: the STATE broadcast has 10-bit indices; the TU takes them all (0x200-0x2FF are its vertex-stage slots), the other blocks see st_we only for indices below 512 and their 9 bits; the SU's tx_vs reaches the TU; the CP's HAS_ETC is HAS_TU.
 
+**2026-10-25 (p039)**: `HOST_LIMIT` (MEM +0xC) and the MC's AXI IDs per destination (`m_awid`, `m_arid`, `m_bid`, `m_rid`; the board routes by address, `am_axi_split` on the KC705).
+
 **2026-10-25**: `LOCAL_BASE`, `LOCAL_BYTES`, `WINDOW_BYTES` (the MEM capability, default 0) and RESIDENT_WARPS[23:16] = `SU_NREGS` with an SU (0 without), both through atg_cp to atg_cp_regs.
+
+**2026-10-25, the DC inside the GPU (design §18)**: `HAS_DISP` instantiates `atg_dc` (`rtl/gpu/dc/`) as a child, in the board reset's domain (CTRL.RESET does not reset it), with `DC_HAS_I2C`, `DC_FIFO_LOG2` (11), `DC_PX_FMT` and `DC_TEST_MODE` (0; 1 only in the Verilator link, `sim/verilator/link-build.sh`: one small test mode, p035 D6) passed on.  It takes the outside client's MC place (`C_DC` = `C_EXT`, high priority and `ROOT_CLIENT`); `EXT_CLIENT` is for another outside client and is not used together with `HAS_DISP`.  New ports: `pclk`, `prst_n`, `pclk_sel`, the video outputs `tmds`, `px_rgb`, `px_de`, `px_hs`, `px_vs` and the I2C pins `scl_t`/`scl_i`/`sda_t`/`sda_i` (without `HAS_DISP` the outputs are idle and the inputs unused).  Until D4 the DC decoded its registers at +0x10000 from the register bus (read data ORed); since D4 (below) the host reaches them only through the CP.  The testbenches tie the new inputs.  **D2b**: the MC's `QUIESCE_EXEMPT` has `C_DC` and `ROOT_KEEP` is 1 with `HAS_DISP` (the DC on its own root entry; quiesce, `flush` and `axi_idle` leave it alone, design §18.2); `C_DC` is outside `MC_UNITS` and its requests carry no chk (as the outside client's).
 
 **Session protection** (docs/ghci.md §11.6, 2026-10-25): `HAS_PROT` (with `HAS_CPU`; the KC705
 1), `PROT_SLOTS` (31), `PROT_GRANTS` and `PROT_GIDX_W` (KC705 64, 6), `PROT_PLB` and `PROT_PLB_W`
@@ -145,3 +150,7 @@ prot_unit for a unit client's other faults.  The atomic unit's reads are judged 
 (`RMW_MASK`).  Without `HAS_PROT` the MC's `unit_idle` still holds the CP's FENCE, WAIT_IDLE,
 RESULT and QUERY (busy_ext[0]).  TB: `sim/tb/atg_top_prot_tb.v` (the PROT registers; the
 sessions with the firmware's support).
+
+**WS288 p035 D4 (2026-10-25)**: the temporary +0x10000 bridge is gone.  `atg_dc`'s register bus, flips and status go to `atg_cp`'s new DC ports (`atg_cp_disp`: the DISP2 window at HCR 0x200, gated by the CP's state), its events to IRQ_STATUS[12:9] (`dc_ev`), its vblank also to the CP's `vsync`; `atg_cp` gets `DC_CLIENT` = `C_DC`.  The `ghci_regs.vh` include is not needed any more.
+
+**WS288 p035 D6 (2026-10-25)**: `sim/tb/atg_top_disp_tb.v` (`PASS atg_top_disp`, about 8 s): the KC705's lines and AXI with `HAS_DISP`, the BLT and the MC, no CPU, a 25 MHz pixel clock and a 32 x 4 mode; groups `regs` (DISP2 at 0x200), `on` (the driver's lighting order through the ring, the record, IRQ_STATUS.FLIP, SCAN_SUM of the fill), `gate` (a host FB_NEXT while RUNNING: BAD_WRITE, no fault), `flip` (FLIP COMPLETE after a fill, the record's FRAME_COUNT, the scan of the new image), `wait` (the record while the ring sits in WAIT_FENCE), `off` (the stop cancels the pending flip), `reset` (a pending flip through CTRL.RESET, then 30 resets at random points: the scan stays whole), `dcerr` (the DC's refused reads: STATUS.read error, no device fault).  `MUT_DISP_NOTAKE` and `MUT_DISP_NOGATE` fail it; `MUT_MC_NOKEEP` and `MUT_DISP_NOWAIT` do not (a flush seldom meets a DC read in this mode, and the fill is done before the next vsync: `atg_mc_tb` D/E and `atg_cp_seq_tb.disp` check those).

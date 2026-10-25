@@ -16,13 +16,21 @@
  * Every request carries UW bits of user data (the MC puts the client and
  * its tag there) that come back with its response.  Every request has
  * exactly one response: a read's with the line, a write's after its BRESP.
- * error is set for SLVERR and DECERR.  Reads are answered in request order
- * and so are writes (all bursts use ID 0); a read and a write are not
- * ordered against each other.  There is no back-pressure on responses: the
- * receiver takes rsp_valid when it comes.  R is always ready; B waits for
- * a cycle in which no read response is made.
+ * error is set for SLVERR and DECERR.  There is no back-pressure on
+ * responses: the receiver takes rsp_valid when it comes.  R is always
+ * ready; B waits for a cycle in which no read response is made.
  *
- * Up to 2^OUTSTANDING_LOG2 reads and as many writes are in flight.  A write
+ * IDs (ws288 p039): each request names one of NID AXI IDs (req_id; the MC
+ * uses one per destination, docs/ghci.md section 11.2).  The bursts of one
+ * ID are answered in order (AXI), reads and writes separately; those of
+ * different IDs may be answered in any order, and the read beats of
+ * different IDs may interleave (each ID has its own line buffer).  The
+ * order key (req_key, the MC's client): a request is not accepted while a
+ * burst of the same direction and key is outstanding on another ID, so the
+ * requests of one key are answered in order, reads and writes each (a read
+ * and a write are not ordered against each other).  NID = 1: one ID, 0.
+ *
+ * Up to 2^OUTSTANDING_LOG2 reads and as many writes are in flight per ID.  A write
  * is accepted when its address and all of its beats can go out, and its
  * beats follow from a line buffer, so W never waits for a request.
  *
@@ -33,7 +41,7 @@
  *
  * The AXI signals follow AXI4; an AXI3 port (a Zynq HP port) takes the low
  * four bits of m_awlen/m_arlen and the low two of m_awsize/m_arsize, and
- * its WID is 0.  AxCACHE is 0011 (normal, non-cacheable, bufferable),
+ * its WID is 0 (and its AxID the low bits of m_awid/m_arid).  AxCACHE is 0011 (normal, non-cacheable, bufferable),
  * AxPROT 000, AxBURST INCR.
  */
 
@@ -46,7 +54,10 @@ module am_axi_master #(
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter DATA_W = 64,
 	parameter UW = 16,
-	parameter OUTSTANDING_LOG2 = 2
+	parameter OUTSTANDING_LOG2 = 2,	/* per ID and direction */
+	parameter NID = 1,	/* AXI IDs used: 1 (ID 0) or 2^ID_W */
+	parameter ID_W = 1,	/* AxID bits */
+	parameter KEY_W = 8	/* order key bits */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -61,6 +72,8 @@ module am_axi_master #(
 	input wire [LINE_BYTES-1:0] req_be,
 	input wire [LINE_BYTES*8-1:0] req_wdata,
 	input wire [UW-1:0] req_user,
+	input wire [ID_W-1:0] req_id,
+	input wire [KEY_W-1:0] req_key,
 
 	output reg rsp_valid,
 	output reg rsp_write,
@@ -68,6 +81,7 @@ module am_axi_master #(
 	output reg [LINE_BYTES*8-1:0] rsp_rdata,
 	output reg rsp_error,
 
+	output wire [ID_W-1:0] m_awid,
 	output wire [ADDR_W-1:0] m_awaddr,
 	output wire [7:0] m_awlen,
 	output wire [2:0] m_awsize,
@@ -81,9 +95,11 @@ module am_axi_master #(
 	output wire m_wlast,
 	output wire m_wvalid,
 	input wire m_wready,
+	input wire [ID_W-1:0] m_bid,
 	input wire [1:0] m_bresp,
 	input wire m_bvalid,
 	output wire m_bready,
+	output wire [ID_W-1:0] m_arid,
 	output wire [ADDR_W-1:0] m_araddr,
 	output wire [7:0] m_arlen,
 	output wire [2:0] m_arsize,
@@ -92,6 +108,7 @@ module am_axi_master #(
 	output wire [2:0] m_arprot,
 	output wire m_arvalid,
 	input wire m_arready,
+	input wire [ID_W-1:0] m_rid,
 	input wire [DATA_W-1:0] m_rdata,
 	input wire [1:0] m_rresp,
 	input wire m_rlast,
@@ -121,19 +138,21 @@ module am_axi_master #(
 	assign m_awprot = 3'b000;
 	assign m_arprot = 3'b000;
 
-	/* Users of the outstanding bursts, in order. */
-	wire wq_in_ready;
-	wire wq_out_valid;
-	wire [UW-1:0] wq_user;
-	wire [O:0] wq_count;
-	wire rq_in_ready;
-	wire rq_out_valid;
-	wire [UW-1:0] rq_user;
-	wire [O:0] rq_count;
+	/* The IDs as indices (NID = 1: all 0). */
+	wire [ID_W-1:0] q_id = NID > 1 ? req_id : {ID_W{1'b0}};
+	wire [ID_W-1:0] b_id = NID > 1 ? m_bid : {ID_W{1'b0}};
+	wire [ID_W-1:0] r_id = NID > 1 ? m_rid : {ID_W{1'b0}};
+
+	/* Users of the outstanding bursts, in order, per ID: their room
+	 * (wq_rdy/rq_rdy), the key's presence (wq_has/rq_has), the oldest's
+	 * user (wq_user/rq_user) and whether any is outstanding. */
+	wire [NID-1:0] wq_rdy, wq_has, wq_any, rq_rdy, rq_has, rq_any;
+	wire [NID*UW-1:0] wq_user, rq_user;
 
 	/* Write path: the address register, the line buffer and the beat. */
 	reg aw_v;
 	reg [LA_W-1:0] aw_line;
+	reg [ID_W-1:0] aw_id;
 	reg w_busy;
 	reg [7:0] w_beat;
 	reg [LINE_BITS-1:0] w_buf;
@@ -142,18 +161,26 @@ module am_axi_master #(
 	/* Read path. */
 	reg ar_v;
 	reg [LA_W-1:0] ar_line;
-	reg r_err;
+	reg [ID_W-1:0] ar_id;
 
-	wire wr_can = !halt && !aw_v && !w_busy && wq_in_ready;
-	wire rd_can = !halt && !ar_v && rq_in_ready;
+	/* A burst of the key on another ID (same direction). */
+`ifdef MUT_AXI_NOKEY
+	wire w_other = 1'b0, r_other = 1'b0;
+`else
+	wire w_other = |(wq_has & ~({{(NID-1){1'b0}}, 1'b1} << q_id));
+	wire r_other = |(rq_has & ~({{(NID-1){1'b0}}, 1'b1} << q_id));
+`endif
+
+	wire wr_can = !halt && !aw_v && !w_busy && wq_rdy[q_id] && !w_other;
+	wire rd_can = !halt && !ar_v && rq_rdy[q_id] && !r_other;
 
 	assign req_ready = rst_n && (req_write ? wr_can : rd_can);
 	wire wr_take = req_valid && req_ready && req_write;
 	wire rd_take = req_valid && req_ready && !req_write;
 
-	assign idle = !aw_v && !w_busy && !ar_v && wq_count == {(O + 1){1'b0}} &&
-		rq_count == {(O + 1){1'b0}} && !rsp_valid;
+	assign idle = !aw_v && !w_busy && !ar_v && !(|wq_any) && !(|rq_any) && !rsp_valid;
 
+	assign m_awid = aw_id;
 	assign m_awaddr = {aw_line, {LINE_SHIFT{1'b0}}};
 	assign m_awvalid = aw_v;
 	assign m_wdata = w_buf[DATA_W-1:0];
@@ -161,6 +188,7 @@ module am_axi_master #(
 	assign m_wlast = w_beat == AXLEN;
 	assign m_wvalid = w_busy;
 
+	assign m_arid = ar_id;
 	assign m_araddr = {ar_line, {LINE_SHIFT{1'b0}}};
 	assign m_arvalid = ar_v;
 	assign m_rready = 1'b1;
@@ -169,55 +197,77 @@ module am_axi_master #(
 	assign m_bready = !r_done;
 	wire b_fire = m_bvalid && m_bready;
 
-	/* The line being read, beat 0 lowest: the beats so far are kept in
-	 * the top of r_buf and shifted down as the next one arrives. */
-	wire [LINE_BITS-1:0] r_line;
+	/* Per ID: the user FIFOs and the line being read (beat 0 lowest: the
+	 * beats so far are kept in the top of r_buf and shifted down as the
+	 * next one arrives), with its error. */
+	wire [NID*LINE_BITS-1:0] r_lines;
+	wire [NID-1:0] r_errs;
 
+	genvar g;
 	generate
-		if (BEATS == 1) begin : one_beat
-			assign r_line = m_rdata;
-		end else begin : beats
-			reg [LINE_BITS-DATA_W-1:0] r_buf;
+		for (g = 0; g < NID; g = g + 1) begin : ids
+			localparam [ID_W-1:0] GID = g;
+			wire [O:0] wq_count, rq_count;
+			wire wq_out_valid, rq_out_valid;
+			wire me_r = m_rvalid && r_id == GID;
+			reg r_err;
 
-			assign r_line = {m_rdata, r_buf};
+			am_fifo_key #(.W(UW), .KEY_W(KEY_W), .DEPTH_LOG2(O)) wq (
+				.clk(clk), .rst_n(rst_n),
+				.in_valid(wr_take && q_id == GID), .in_ready(wq_rdy[g]),
+				.in_data(req_user), .in_key(req_key),
+				.out_valid(wq_out_valid), .out_ready(b_fire && b_id == GID),
+				.out_data(wq_user[g*UW +: UW]), .count(wq_count), .key(req_key),
+				.has(wq_has[g])
+			);
+			am_fifo_key #(.W(UW), .KEY_W(KEY_W), .DEPTH_LOG2(O)) rq (
+				.clk(clk), .rst_n(rst_n),
+				.in_valid(rd_take && q_id == GID), .in_ready(rq_rdy[g]),
+				.in_data(req_user), .in_key(req_key),
+				.out_valid(rq_out_valid), .out_ready(r_done && r_id == GID),
+				.out_data(rq_user[g*UW +: UW]), .count(rq_count), .key(req_key),
+				.has(rq_has[g])
+			);
+
+			assign wq_any[g] = wq_count != {(O + 1){1'b0}};
+			assign rq_any[g] = rq_count != {(O + 1){1'b0}};
+
+			if (BEATS == 1) begin : one_beat
+				assign r_lines[g*LINE_BITS +: LINE_BITS] = m_rdata;
+			end else begin : beats
+				reg [LINE_BITS-DATA_W-1:0] r_buf;
+
+				assign r_lines[g*LINE_BITS +: LINE_BITS] = {m_rdata, r_buf};
+
+				always @(posedge clk) begin
+					if (!rst_n)
+						r_buf <= {(LINE_BITS - DATA_W){1'b0}};
+					else if (me_r)
+						r_buf <= r_lines[g*LINE_BITS+DATA_W +: LINE_BITS-DATA_W];
+				end
+			end
 
 			always @(posedge clk) begin
 				if (!rst_n)
-					r_buf <= {(LINE_BITS - DATA_W){1'b0}};
-				else if (m_rvalid)
-					r_buf <= r_line[LINE_BITS-1:DATA_W];
+					r_err <= 1'b0;
+				else if (me_r)
+					r_err <= m_rlast ? 1'b0 : r_err | m_rresp[1];
 			end
+
+			assign r_errs[g] = r_err;
+
+			/* A response with nothing outstanding is a broken slave; the
+			 * FIFOs do not underflow on it (sim/models/axi_mem.v checks the
+			 * slave). */
+			wire unused_q = &{1'b0, wq_out_valid, rq_out_valid};
 		end
 	endgenerate
-
-	am_fifo #(.W(UW), .DEPTH_LOG2(O)) wq (
-		.clk(clk),
-		.rst_n(rst_n),
-		.in_valid(wr_take),
-		.in_ready(wq_in_ready),
-		.in_data(req_user),
-		.out_valid(wq_out_valid),
-		.out_ready(b_fire),
-		.out_data(wq_user),
-		.count(wq_count)
-	);
-
-	am_fifo #(.W(UW), .DEPTH_LOG2(O)) rq (
-		.clk(clk),
-		.rst_n(rst_n),
-		.in_valid(rd_take),
-		.in_ready(rq_in_ready),
-		.in_data(req_user),
-		.out_valid(rq_out_valid),
-		.out_ready(r_done),
-		.out_data(rq_user),
-		.count(rq_count)
-	);
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			aw_v <= 1'b0;
 			aw_line <= {LA_W{1'b0}};
+			aw_id <= {ID_W{1'b0}};
 			w_busy <= 1'b0;
 			w_beat <= 8'd0;
 			w_buf <= {LINE_BITS{1'b0}};
@@ -226,6 +276,7 @@ module am_axi_master #(
 			if (wr_take) begin
 				aw_v <= 1'b1;
 				aw_line <= req_line;
+				aw_id <= q_id;
 				w_busy <= 1'b1;
 				w_beat <= 8'd0;
 				w_buf <= req_wdata;
@@ -248,16 +299,15 @@ module am_axi_master #(
 		if (!rst_n) begin
 			ar_v <= 1'b0;
 			ar_line <= {LA_W{1'b0}};
-			r_err <= 1'b0;
+			ar_id <= {ID_W{1'b0}};
 		end else begin
 			if (rd_take) begin
 				ar_v <= 1'b1;
 				ar_line <= req_line;
+				ar_id <= q_id;
 			end else if (ar_v && m_arready) begin
 				ar_v <= 1'b0;
 			end
-			if (m_rvalid)
-				r_err <= m_rlast ? 1'b0 : r_err | m_rresp[1];
 		end
 	end
 
@@ -272,22 +322,20 @@ module am_axi_master #(
 		end else if (r_done) begin
 			rsp_valid <= 1'b1;
 			rsp_write <= 1'b0;
-			rsp_user <= rq_user;
-			rsp_rdata <= r_line;
-			rsp_error <= r_err | m_rresp[1];
+			rsp_user <= rq_user[r_id*UW +: UW];
+			rsp_rdata <= r_lines[r_id*LINE_BITS +: LINE_BITS];
+			rsp_error <= r_errs[r_id] | m_rresp[1];
 		end else if (b_fire) begin
 			rsp_valid <= 1'b1;
 			rsp_write <= 1'b1;
-			rsp_user <= wq_user;
+			rsp_user <= wq_user[b_id*UW +: UW];
 			rsp_error <= m_bresp[1];
 		end else begin
 			rsp_valid <= 1'b0;
 		end
 	end
 
-	/* A response with nothing outstanding is a broken slave; the FIFOs
-	 * do not underflow on it (sim/models/axi_mem.v checks the slave). */
-	wire unused_ok = &{1'b0, wq_out_valid, rq_out_valid, m_bresp[0], m_rresp[0]};
+	wire unused_ok = &{1'b0, m_bresp[0], m_rresp[0]};
 endmodule
 
 `default_nettype wire

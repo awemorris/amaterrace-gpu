@@ -129,3 +129,5 @@ Known limitations and residuals:
 4. A memory error reports kind 5 with no address or direction.
 
 Renamed from `atg_blt` (the module's name and its header comment only; the behaviour and the timing are the same) when `atg_blt` became the wrapper of this engine and the RESOLVE engine (`spec/gpu/blt/atg_blt.md`).
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

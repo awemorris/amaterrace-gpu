@@ -52,3 +52,5 @@ docs/ghci.md §8.2, §8.5; `atg_blt_2d.md`.
 ## 10. Status
 
 New (2026-10-25): split off `atg_blt_2d`, in bytes for pixels of 1 to 16 bytes, KEEP.
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

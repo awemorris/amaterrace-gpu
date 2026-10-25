@@ -35,6 +35,12 @@ module atg_blt_acc #(
 
 	assign idle = my == 17'd0;
 
+	/* One adder for both sums (a step of the multiply, or the final add: never in one cycle). */
+	wire [W-1:0] sum;
+	wire sum_co_unused;
+
+	am_add #(.W(W)) a_sum (.a(r), .b(idle ? d : ms), .ci(1'b0), .s(sum), .co(sum_co_unused));
+
 	always @(posedge clk)
 		if (!rst_n) begin
 			my <= 17'd0;
@@ -44,11 +50,13 @@ module atg_blt_acc #(
 			r <= b;
 		end else if (!idle) begin
 			if (my[0])
-				r <= r + ms;
+				r <= sum;
 			my <= my >> 1;
 			ms <= ms << 1;
 		end else if (add)
-			r <= r + d;
+			r <= sum;
+
+	wire unused_ok = &{1'b0, sum_co_unused};
 endmodule
 
 `default_nettype wire

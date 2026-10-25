@@ -13,7 +13,12 @@
  * moment of each event (a kick only when its block is idle, a FENCE only
  * when every block is idle, RESULT only when the fence unit is idle, no
  * write to the BLT range while the BLT is busy, none to the RX and ROP
- * ranges while the VF, the SUs, the RX or the ROP are busy).
+ * ranges while the VF, the SUs, the RX or the ROP are busy).  Group disp
+ * (HAS_DISP): DISP_SET's pairs at 0x3C0 + offset / 4, held while busy
+ * bit 8 (atg_cp_disp's wait, a model here) is up, flags[0]'s idle kick and
+ * wait, its bad offsets; FLIP's staging at 0x3B8-0x3BB and its kick only
+ * with bit 8 down (and with COMPLETE, every unit idle); FENCE does not wait
+ * for bit 8; DISP_SET and FLIP from the firmware are fault 2.
  */
 
 `timescale 1ns / 1ps
@@ -41,13 +46,23 @@ module atg_cp_seq_tb;
 	wire fw_last = fq[fq_head % 1024][32];
 	wire n_ready, fw_ready;
 
-	wire uop_we, blt_kick, draw_kick, cs_kick, lc_kick, raw_kick, perf_reset;
+	wire uop_we, kick;
+	wire [2:0] kick_code;
+	/* The kick codes (atg_cp_seq's K_*), split as atg_cp does. */
+	wire blt_kick = kick && kick_code == 3'd0;
+	wire draw_kick = kick && kick_code == 3'd1;
+	wire cs_kick = kick && kick_code == 3'd2;
+	wire lc_kick = kick && kick_code == 3'd3;
+	wire raw_kick = kick && kick_code == 3'd4;
+	wire perf_reset = kick && kick_code == 3'd5;
+	wire flip_kick = kick && kick_code == 3'd6;
+	wire idle_kick = kick && kick_code == 3'd7;
 	wire [1:0] u_req;
 	reg u_ok = 1'b1;
 	wire [9:0] uop_idx;
 	wire [31:0] uop_wdata;
 	wire [3:0] inv;
-	reg [7:0] busy_in = 0;
+	reg [8:0] busy_in = 0;
 	reg vsync = 0;
 	wire f_valid, f_irq, busy, cmd_active, fault;
 	reg f_ready = 0, f_busy = 0;
@@ -58,15 +73,14 @@ module atg_cp_seq_tb;
 	reg [39:0] occ_count = 40'h0;
 	wire occ_clear;
 
-	atg_cp_seq #(.UNITS(8'hFF), .HAS_VSYNC(1)) dut (
+	atg_cp_seq #(.UNITS(8'hFF), .HAS_VSYNC(1), .HAS_DISP(1)) dut (
 		.clk(clk), .rst_n(rst_n),
 		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(u_req), .u_ok(u_ok),
-		.n_valid(n_valid), .n_ready(n_ready), .n_data(n_data), .n_last(n_last),
-		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data), .fw_last(fw_last),
+		.n_valid(n_valid), .n_ready(n_ready), .n_data(n_data),
+		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data),
 		.fw_active(fw_active), .halt(halt),
 		.uop_we(uop_we), .uop_idx(uop_idx), .uop_wdata(uop_wdata),
-		.blt_kick(blt_kick), .draw_kick(draw_kick), .cs_kick(cs_kick), .lc_kick(lc_kick),
-		.raw_kick(raw_kick), .inv(inv), .perf_reset(perf_reset), .busy_in(busy_in),
+		.kick(kick), .kick_code(kick_code), .inv(inv), .busy_in(busy_in),
 		.vsync(vsync),
 		.f_valid(f_valid), .f_ready(f_ready), .f_op(f_op), .f_addr(f_addr), .f_value(f_value),
 		.f_aux(f_aux), .f_irq(f_irq), .f_busy(f_busy),
@@ -83,11 +97,10 @@ module atg_cp_seq_tb;
 	atg_cp_seq #(.UNITS(8'h03)) u_small (
 		.clk(clk), .rst_n(rst_n),
 		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(), .u_ok(1'b1),
-		.n_valid(s_valid), .n_ready(s_n_ready), .n_data(s_data), .n_last(1'b1),
-		.fw_valid(1'b0), .fw_ready(), .fw_data(32'd0), .fw_last(1'b0), .fw_active(1'b0),
+		.n_valid(s_valid), .n_ready(s_n_ready), .n_data(s_data),
+		.fw_valid(1'b0), .fw_ready(), .fw_data(32'd0), .fw_active(1'b0),
 		.halt(1'b0), .uop_we(), .uop_idx(), .uop_wdata(),
-		.blt_kick(), .draw_kick(), .cs_kick(), .lc_kick(), .raw_kick(), .inv(),
-		.perf_reset(), .busy_in(8'd0), .vsync(1'b0),
+		.kick(), .kick_code(), .inv(), .busy_in(9'd0), .vsync(1'b0),
 		.f_valid(), .f_ready(1'b0), .f_op(), .f_addr(), .f_value(), .f_aux(), .f_irq(),
 		.f_busy(1'b0), .occ_count(40'd0), .occ_clear(), .busy(), .cmd_active(),
 		.fault(s_fault), .fault_kind(s_fault_kind), .fault_addr(), .fault_tag()
@@ -111,7 +124,9 @@ module atg_cp_seq_tb;
 	end
 
 	/* Blocks: busy for a while after the kick; SU long (for the mask test). */
-	integer c_blt = 0, c_vf = 0, c_su = 0, c_rx = 0, c_f = 0, c_mem = 0;
+	integer c_blt = 0, c_vf = 0, c_su = 0, c_rx = 0, c_f = 0, c_mem = 0, c_disp = 0;
+	reg disp_hold = 0;	/* bit 8 held up by the test */
+	reg flip_complete = 0, mark_disp = 0;
 	integer su_len = 15;
 	always @(posedge clk) begin
 		if (c_blt > 0) c_blt = c_blt - 1;
@@ -123,7 +138,10 @@ module atg_cp_seq_tb;
 		if (cs_kick || lc_kick) c_su = su_len;
 		if (raw_kick) c_rx = 9;
 		if (c_mem > 0) c_mem = c_mem - 1;
-		busy_in <= {1'b0, c_su != 0, 2'b00, c_rx != 0, c_vf != 0, c_blt != 0, c_mem != 0};
+		if (c_disp > 0) c_disp = c_disp - 1;
+		if (idle_kick || flip_kick) c_disp = 7;
+		busy_in <= {disp_hold || c_disp != 0, 1'b0, c_su != 0, 2'b00, c_rx != 0, c_vf != 0,
+			c_blt != 0, c_mem != 0};
 		/* The fence unit: takes a request when ready, then busy. */
 		if (c_f > 0) c_f = c_f - 1;
 		if (f_valid && f_ready)
@@ -169,7 +187,15 @@ module atg_cp_seq_tb;
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq.tuwait: TU state %h written while the VF is busy", uop_idx);
 			end
-			if (((uop_idx >= 9'h090 && uop_idx < 9'h190) || uop_idx[9]) &&
+			if (uop_idx == 10'h1FF && busy_in[8] && mark_disp) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.disp: DBG_MARK before DISP_SET's idle wait ended");
+			end
+			if (uop_idx[9:6] == 4'hF && busy_in[8]) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.disp: DISP_SET write %h while bit 8 is up", uop_idx);
+			end
+			if (((uop_idx >= 9'h090 && uop_idx < 9'h190) || uop_idx[9:8] == 2'b10) &&
 			    (busy_in[6] || busy_in[5] || busy_in[3])) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq.kicks: TU state %h written while the SU, TU or RX is busy",
@@ -210,9 +236,22 @@ module atg_cp_seq_tb;
 			log({8'h07, 52'd0, inv});
 		if (perf_reset)
 			log({8'h08, 56'd0});
+		if (flip_kick) begin
+			log({8'h0B, 56'd0});
+			if (busy_in[8]) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.disp: FLIP kicked while bit 8 is up");
+			end
+			if (flip_complete && busy_in[7:0] != 8'd0) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.disp: FLIP COMPLETE kicked with busy %b", busy_in);
+			end
+		end
+		if (idle_kick)
+			log({8'h0C, 56'd0});
 		if (f_valid && f_ready) begin
 			log({8'h09, 6'd0, f_op, f_irq, 15'd0, f_addr ^ f_value ^ (f_op == 2'd1 ? f_aux : 32'd0)});
-			if (f_op != 2'd2 && busy_in != 8'd0) begin
+			if (f_op != 2'd2 && busy_in[7:0] != 8'd0) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq.fence: request while a block is busy (%b)", busy_in);
 			end
@@ -701,9 +740,95 @@ module atg_cp_seq_tb;
 			$display("PASS atg_cp_seq.query");
 		e0 = errors;
 
-		/* badop: op 15, vendor op 5, class 2; a short payload (kind 3);
-		 * DRAW without a VF (kind 2). */
-		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd0);
+		/* disp: DISP_SET's pairs (CTRL, CURSOR_POS), held by bit 8. */
+		disp_hold = 1;
+		pl[0] = 32'h10; pl[1] = 32'h51;
+		pl[2] = 32'hA4; pl[3] = 32'h00200010;
+		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd4);
+		repeat (40) @(negedge clk);
+		if (ev_n != 0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_seq.disp: DISP_SET written while bit 8 is up");
+		end
+		disp_hold = 0;
+		expect_ev({8'h01, 14'd0, 10'h3C4, 32'h51});
+		expect_ev({8'h01, 14'd0, 10'h3E9, 32'h00200010});
+		settle("disp");
+		compare("disp");
+		/* flags[0]: the idle kick, then the wait for bit 8. */
+		mark_disp = 1;
+		pl[0] = 32'h10; pl[1] = 32'h50;
+		packet(1'b0, 1'b0, 6'd15, 8'd1, 8'd2);
+		pl[0] = 32'h100;
+		packet(1'b0, 1'b1, 6'd1, 8'd0, 8'd1);	/* DBG_MARK after it */
+		expect_ev({8'h01, 14'd0, 10'h3C4, 32'h50});
+		expect_ev({8'h0C, 56'd0});
+		expect_ev({8'h01, 14'd0, 10'h1FF, 32'h100});
+		settle("disp");
+		compare("disp");
+		mark_disp = 0;
+		/* FLIP: the staging, then the kick (the monitor checks bit 8). */
+		pl[0] = 32'd1; pl[1] = 32'h1000; pl[2] = 32'h2008; pl[3] = 32'h7;
+		c_disp = 30;
+		packet(1'b0, 1'b0, 6'd16, 8'd0, 8'd4);
+		expect_ev({8'h01, 14'd0, 10'h3B8, 32'd1});
+		expect_ev({8'h01, 14'd0, 10'h3B9, 32'h1000});
+		expect_ev({8'h01, 14'd0, 10'h3BA, 32'h2008});
+		expect_ev({8'h01, 14'd0, 10'h3BB, 32'h7});
+		expect_ev({8'h0B, 56'd0});
+		settle("disp");
+		compare("disp");
+		/* COMPLETE after a BLIT: the kick waits for the BLT. */
+		flip_complete = 1;
+		packet(1'b0, 1'b0, 6'd2, 8'd0, 8'd0);
+		pl[0] = 32'd0;
+		packet(1'b0, 1'b0, 6'd16, 8'd1, 8'd4);
+		expect_ev({8'h02, 56'd0});
+		expect_ev({8'h01, 14'd0, 10'h3B8, 32'd0});
+		expect_ev({8'h01, 14'd0, 10'h3B9, 32'h1000});
+		expect_ev({8'h01, 14'd0, 10'h3BA, 32'h2008});
+		expect_ev({8'h01, 14'd0, 10'h3BB, 32'h7});
+		expect_ev({8'h0B, 56'd0});
+		settle("disp");
+		compare("disp");
+		flip_complete = 0;
+		/* FENCE does not wait for bit 8. */
+		disp_hold = 1;
+		pl[0] = 32'h3000; pl[1] = 32'h9;
+		packet(1'b0, 1'b0, 6'd5, 8'd0, 8'd2);
+		expect_ev({8'h09, 6'd0, 2'd0, 1'b0, 15'd0, 32'h3000 ^ 32'h9});
+		settle("disp");
+		compare("disp");
+		disp_hold = 0;
+		/* Bad offsets: FB_NEXT, unaligned, above 0x100; an odd n; from the firmware. */
+		pl[0] = 32'h24; pl[1] = 32'h0;
+		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd2);
+		expect_fault("disp", GHCI_FAULT_RING, 32'h24);
+		pl[0] = 32'h12;
+		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd2);
+		expect_fault("disp", GHCI_FAULT_RING, 32'h12);
+		pl[0] = 32'h1A4;
+		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd2);
+		expect_fault("disp", GHCI_FAULT_RING, 32'h1A4);
+		pl[0] = 32'h10;
+		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd1);
+		expect_fault("disp", GHCI_FAULT_RING, 32'd0);
+		pl[0] = 32'h0; pl[1] = 32'h0; pl[2] = 32'h0; pl[3] = 32'h0;
+		packet(1'b0, 1'b0, 6'd16, 8'd0, 8'd3);
+		expect_fault("disp", GHCI_FAULT_RING, 32'd0);
+		fw_active = 1;
+		packet(1'b1, 1'b0, 6'd16, 8'd0, 8'd4);
+		expect_fault("disp", GHCI_FAULT_OPCODE, 32'd0);
+		packet(1'b1, 1'b0, 6'd15, 8'd0, 8'd0);
+		expect_fault("disp", GHCI_FAULT_OPCODE, 32'd0);
+		fw_active = 0;
+		if (errors == e0)
+			$display("PASS atg_cp_seq.disp");
+		e0 = errors;
+
+		/* badop: op 17, vendor op 5, class 2; a short payload (kind 3);
+		 * DRAW without a VF and DISP_SET without HAS_DISP (kind 2). */
+		packet(1'b0, 1'b0, 6'd17, 8'd0, 8'd0);
 		expect_fault("badop", GHCI_FAULT_OPCODE, 32'd0);
 		packet(1'b0, 1'b1, 6'd5, 8'd0, 8'd0);
 		expect_fault("badop", GHCI_FAULT_OPCODE, 32'd0);
@@ -721,6 +846,20 @@ module atg_cp_seq_tb;
 		if (!s_seen) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_seq.badop: DRAW without a VF");
+		end
+		@(negedge clk);
+		rst_n = 0;
+		@(negedge clk);
+		rst_n = 1;
+		s_seen = 0;
+		s_data = hdr(1'b0, 6'd15, 8'd0, 8'd0);
+		s_valid = 1;
+		@(negedge clk);
+		s_valid = 0;
+		repeat (3) @(negedge clk);
+		if (!s_seen) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_seq.badop: DISP_SET without HAS_DISP");
 		end
 		if (errors == e0)
 			$display("PASS atg_cp_seq.badop");

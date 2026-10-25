@@ -8,7 +8,7 @@
 /*
  * atg_dc_dma: The DC's scan-out DMA: reads the framebuffer FB_BASE line by
  * line (FB_STRIDE, FB_SIZE) through the AMB and pushes pixel words into
- * the pixel FIFO towards pclk.  See spec/dc/atg_dc_dma.md.
+ * the pixel FIFO towards pclk.  See spec/gpu/dc/atg_dc_dma.md.
  *
  * A frame starts at frame_start (with enable 1): the base, stride, size
  * and format are taken then.  Each row of FB_SIZE.w pixels (4 bytes, or 2
@@ -32,6 +32,13 @@
  * scan_sum and scan_words are the sum and the number of the pixel words
  * pushed in the last frame (taken at the next frame_start or abort): a
  * check that the scan-out read the framebuffer, without a display.
+ *
+ * clear (the DC's CTRL.RESET) aborts like enable = 0 and starts no frame;
+ * the count of outstanding requests is kept (rst_n is the board reset), so
+ * the responses of reads issued before it are still counted and dropped.
+ * err pulses for an error response of the current frame (its line is
+ * black).  done is 1 when the frame has no line left to request and no
+ * pixel left to push (or there is no frame): the cursor may read then.
  */
 
 `timescale 1ns / 1ps
@@ -44,6 +51,7 @@ module atg_dc_dma #(
 ) (
 	input wire clk,
 	input wire rst_n,
+	input wire clear,
 	input wire enable,
 	input wire frame_start,
 	input wire [31:0] fb_base,
@@ -54,6 +62,8 @@ module atg_dc_dma #(
 	input wire px_ready,
 	output wire [31:0] px_data,
 	output wire idle,
+	output wire done,
+	output reg err,
 	output reg [31:0] scan_sum,
 	output reg [31:0] scan_words,
 	/* AMB client port (design §4.1) */
@@ -87,8 +97,8 @@ module atg_dc_dma #(
 
 	/* An abort ends the current frame; frame_start then starts the next. */
 	reg enable_q;
-	wire abort = frame_start || (enable_q && !enable);
-	wire start = frame_start && enable;
+	wire abort = frame_start || (enable_q && !enable) || clear;
+	wire start = frame_start && enable && !clear;
 	reg [3:0] epoch;
 	reg [3:0] tag_q;
 	assign req_tag = {4'd0, tag_q};
@@ -99,7 +109,11 @@ module atg_dc_dma #(
 	reg f_16;
 	wire [17:0] row_bytes = format == 2'd2 ? {1'b0, fb_size[15:0], 1'b0} :
 		{fb_size[15:0], 2'b00};
-	wire [17:0] row_lines = (row_bytes + LINE_MASK) >> LINE_SHIFT;
+	wire [17:0] row_end_bytes;
+	wire [17:0] row_lines = row_end_bytes >> LINE_SHIFT;
+	wire row_co_unused;
+
+	am_add #(.W(18)) a_rowl (.a(row_bytes), .b(LINE_MASK), .ci(1'b0), .s(row_end_bytes), .co(row_co_unused));
 
 	/* Requests. */
 	reg rq_active;
@@ -109,9 +123,34 @@ module atg_dc_dma #(
 	wire [LFIFO_LOG2:0] lcount;
 	wire take = req_valid && req_ready;
 	wire rsp_read = rsp_valid && !rsp_write;
-	wire room = inflight + lcount < LFIFO;
+	wire [LFIFO_LOG2:0] used;
+	wire room = used < LFIFO;
 
 	assign idle = !req_valid && inflight == {(LFIFO_LOG2 + 1){1'b0}};
+
+	/*
+	 * The requests' sums: the lines in flight or waiting, the next counts
+	 * (in flight, epoch, row, line of the row, the next row's first line,
+	 * the line), and the last line of a row and the last row.
+	 */
+	wire [LFIFO_LOG2:0] infl_up, infl_next;
+	wire [3:0] epoch_inc;
+	wire [15:0] f_nl_last, rq_row_inc, f_h_last, rq_k_inc;
+	wire [AW-1:0] rq_next_row, rq_cur_inc;
+	wire [9:0] rq_co_unused;
+
+	am_add #(.W(LFIFO_LOG2 + 1)) a_used (.a(inflight), .b(lcount), .ci(1'b0), .s(used), .co(rq_co_unused[0]));
+	am_add #(.W(LFIFO_LOG2 + 1)) a_infl (.a(inflight), .b({(LFIFO_LOG2 + 1){1'b0}}), .ci(take), .s(infl_up),
+		.co(rq_co_unused[1]));
+	am_sub #(.W(LFIFO_LOG2 + 1)) s_infl (.a(infl_up), .b({(LFIFO_LOG2 + 1){1'b0}}), .bi(rsp_read), .d(infl_next),
+		.bo(rq_co_unused[2]));
+	am_add #(.W(4)) a_epoch (.a(epoch), .b(4'd0), .ci(1'b1), .s(epoch_inc), .co(rq_co_unused[3]));
+	am_sub #(.W(16)) s_nl (.a(f_nl), .b(16'd1), .bi(1'b0), .d(f_nl_last), .bo(rq_co_unused[4]));
+	am_add #(.W(16)) a_row (.a(rq_row), .b(16'd0), .ci(1'b1), .s(rq_row_inc), .co(rq_co_unused[5]));
+	am_add #(.W(AW)) a_nrow (.a(rq_row_line), .b(f_stride), .ci(1'b0), .s(rq_next_row), .co(rq_co_unused[6]));
+	am_sub #(.W(16)) s_h (.a(f_h), .b(16'd1), .bi(1'b0), .d(f_h_last), .bo(rq_co_unused[7]));
+	am_add #(.W(16)) a_k (.a(rq_k), .b(16'd0), .ci(1'b1), .s(rq_k_inc), .co(rq_co_unused[8]));
+	am_add #(.W(AW)) a_cur (.a(rq_cur), .b({AW{1'b0}}), .ci(1'b1), .s(rq_cur_inc), .co(rq_co_unused[9]));
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -133,12 +172,11 @@ module atg_dc_dma #(
 			f_16 <= 1'b0;
 		end else begin
 			enable_q <= enable;
-			inflight <= inflight + {{LFIFO_LOG2{1'b0}}, take} -
-				{{LFIFO_LOG2{1'b0}}, rsp_read};
+			inflight <= infl_next;
 			if (take)
 				req_valid <= 1'b0;
 			if (abort) begin
-				epoch <= epoch + 4'd1;
+				epoch <= epoch_inc;
 				rq_active <= 1'b0;
 			end
 			if (start) begin
@@ -157,16 +195,16 @@ module atg_dc_dma #(
 				req_valid <= 1'b1;
 				req_line <= rq_cur;
 				tag_q <= epoch;
-				if (rq_k == f_nl - 16'd1) begin
+				if (rq_k == f_nl_last) begin
 					rq_k <= 16'd0;
-					rq_row <= rq_row + 16'd1;
-					rq_row_line <= rq_row_line + f_stride;
-					rq_cur <= rq_row_line + f_stride;
-					if (rq_row == f_h - 16'd1)
+					rq_row <= rq_row_inc;
+					rq_row_line <= rq_next_row;
+					rq_cur <= rq_next_row;
+					if (rq_row == f_h_last)
 						rq_active <= 1'b0;
 				end else begin
-					rq_k <= rq_k + 16'd1;
-					rq_cur <= rq_cur + {{(AW - 1){1'b0}}, 1'b1};
+					rq_k <= rq_k_inc;
+					rq_cur <= rq_cur_inc;
 				end
 			end
 		end
@@ -178,6 +216,12 @@ module atg_dc_dma #(
 	wire l_pop;
 	wire l_in_ready;	/* always 1 when a response comes: the requests wait for room */
 	wire keep = rsp_read && rsp_tag[3:0] == epoch && !abort;
+
+	always @(posedge clk)
+		if (!rst_n)
+			err <= 1'b0;
+		else
+			err <= keep && rsp_error;
 
 	am_fifo #(.W(LW), .DEPTH_LOG2(LFIFO_LOG2)) lines (
 		.clk(clk), .rst_n(rst_n && !abort),
@@ -191,13 +235,33 @@ module atg_dc_dma #(
 	reg [5:0] up_idx;
 	wire [5:0] ppl = f_16 ? PPL16 : PPL32;
 	wire push = px_valid && px_ready;
-	wire row_end = up_x == f_w - 16'd1;
-	assign l_pop = push && (row_end || up_idx == ppl - 6'd1);
+	wire [15:0] f_w_last;
+	wire [5:0] ppl_last;
+	wire [1:0] up_co_unused;
+
+	am_sub #(.W(16)) s_w (.a(f_w), .b(16'd1), .bi(1'b0), .d(f_w_last), .bo(up_co_unused[0]));
+	am_sub #(.W(6)) s_ppl (.a(ppl), .b(6'd1), .bi(1'b0), .d(ppl_last), .bo(up_co_unused[1]));
+	wire row_end = up_x == f_w_last;
+	assign l_pop = push && (row_end || up_idx == ppl_last);
 	assign px_valid = up_active && l_valid && !abort;
 	assign px_data = f_16 ? {16'd0, l_data[16*up_idx[LINE_SHIFT-2:0] +: 16]} :
 		l_data[32*up_idx[LINE_SHIFT-3:0] +: 32];
 
 	reg [31:0] sum_acc, words_acc;
+
+	/* The unpacker's sums: the frame's sum and words, and the next row, column and pixel of the line. */
+	wire [31:0] sum_next, words_inc;
+	wire [15:0] up_row_inc, up_x_inc;
+	wire [5:0] up_idx_inc;
+	wire [4:0] acc_co_unused;
+
+	am_add #(.W(32)) a_sum (.a(sum_acc), .b(px_data), .ci(1'b0), .s(sum_next), .co(acc_co_unused[0]));
+	am_add #(.W(32)) a_words (.a(words_acc), .b(32'd0), .ci(1'b1), .s(words_inc), .co(acc_co_unused[1]));
+	am_add #(.W(16)) a_urow (.a(up_row), .b(16'd0), .ci(1'b1), .s(up_row_inc), .co(acc_co_unused[2]));
+	am_add #(.W(16)) a_ux (.a(up_x), .b(16'd0), .ci(1'b1), .s(up_x_inc), .co(acc_co_unused[3]));
+	am_add #(.W(6)) a_uidx (.a(up_idx), .b(6'd0), .ci(1'b1), .s(up_idx_inc), .co(acc_co_unused[4]));
+
+	assign done = !rq_active && !up_active;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -219,23 +283,24 @@ module atg_dc_dma #(
 			sum_acc <= 32'd0;
 			words_acc <= 32'd0;
 		end else if (push) begin
-			sum_acc <= sum_acc + px_data;
-			words_acc <= words_acc + 32'd1;
+			sum_acc <= sum_next;
+			words_acc <= words_inc;
 			if (row_end) begin
 				up_x <= 16'd0;
 				up_idx <= 6'd0;
-				up_row <= up_row + 16'd1;
-				if (up_row == f_h - 16'd1)
+				up_row <= up_row_inc;
+				if (up_row == f_h_last)
 					up_active <= 1'b0;
 			end else begin
-				up_x <= up_x + 16'd1;
-				up_idx <= up_idx == ppl - 6'd1 ? 6'd0 : up_idx + 6'd1;
+				up_x <= up_x_inc;
+				up_idx <= up_idx == ppl_last ? 6'd0 : up_idx_inc;
 			end
 		end
 	end
 
 	wire unused_ok = &{1'b0, fb_base[LINE_SHIFT-1:0], fb_stride[LINE_SHIFT-1:0],
-		rsp_tag[7:4], l_in_ready, row_lines[17:16], up_idx[5:LINE_SHIFT-1]};
+		rsp_tag[7:4], l_in_ready, row_lines[17:16], up_idx[5:LINE_SHIFT-1], row_co_unused, rq_co_unused,
+		up_co_unused, acc_co_unused};
 endmodule
 
 `default_nettype wire

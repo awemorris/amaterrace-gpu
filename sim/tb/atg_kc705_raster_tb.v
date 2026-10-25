@@ -14,7 +14,7 @@
  * fw/cp/images/.  Checks, in order:
  *
  *   - jtag: GHCI MAGIC through the bridge, SCRATCH written and read back,
- *     the DC's DC_ID and DC_CAPS (ADV7511) at +0x10000, CAPS and CAPS2 of
+ *     the DC's DC_ID and DC_CAPS (ADV7511) in the DISP2 window at 0x200, CAPS and CAPS2 of
  *     the KC705 shape (packed, graphics, subgroup, TU), the MEM capability
  *     (1 GiB at 0x8000_0000, a 64 MiB window), 64 registers per lane in
  *     RESIDENT_WARPS, STATUS.MEM_READY
@@ -75,7 +75,10 @@ module atg_kc705_raster_tb;
 		.ddr3_cs_n(ddr3_cs_n), .ddr3_dm(ddr3_dm), .ddr3_odt(ddr3_odt),
 		.led(led), .hdmi_d(hdmi_d), .hdmi_de(hdmi_de), .hdmi_hs(hdmi_hs),
 		.hdmi_vs(hdmi_vs), .hdmi_clk(hdmi_clk),
-		.iic_scl(iic_scl), .iic_sda(iic_sda), .iic_mux_reset_n(iic_mux_reset_n)
+		.iic_scl(iic_scl), .iic_sda(iic_sda), .iic_mux_reset_n(iic_mux_reset_n),
+		/* the PCIe link held in reset (atg_kc705_pcie_tb uses it) */
+		.pcie_refclk_p(1'b0), .pcie_refclk_n(1'b1), .pcie_perst_n(1'b0), .pcie_txp(),
+		.pcie_txn(), .pcie_rxp(4'd0), .pcie_rxn(4'hF)
 	);
 
 	task fail;
@@ -248,8 +251,9 @@ module atg_kc705_raster_tb;
 		end
 	end
 
-	localparam [31:0] DC = 32'h0001_0000;
-	localparam [31:0] FB = 32'h0004_0000;
+	localparam [31:0] DC = {15'd0, GHCI_DISP2_BASE};	/* the DISP2 window (the CP stays IDLE: S passes) */
+	localparam [31:0] FB = 32'h8004_0000;	/* local memory (DDR3 offset 0x4_0000) */
+	localparam [31:0] FB_OFF = 32'h0004_0000;
 	localparam [31:0] COLOR = 32'hAABBCCDD;
 	reg [31:0] v;
 	integer x, y, n;
@@ -257,8 +261,8 @@ module atg_kc705_raster_tb;
 	reg [15:0] want;
 
 	/*
-	 * Walks the extended capability list: DISP must point at the DC
-	 * (+0x10000), DBG be listed, MEM give the DDR3 and the window.
+	 * Walks the extended capability list: DISP2 must point at the DC's
+	 * window (0x200), DBG be listed, MEM give the DDR3 and the window.
 	 */
 	task check_extcap;
 		reg [31:0] off, w0, w1, m;
@@ -272,10 +276,10 @@ module atg_kc705_raster_tb;
 			for (k = 0; k < 8 && off != 32'd0; k = k + 1) begin
 				jr(off, w0);
 				jr(off + 32'd4, w1);
-				if (w0[7:0] == GHCI_XCAP_DISP) begin
+				if (w0[7:0] == GHCI_XCAP_DISP2) begin
 					disp = 1'b1;
 					if (w1 != DC)
-						fail("the DISP capability does not point at the DC");
+						fail("the DISP2 capability does not point at the DC");
 				end
 				if (w0[7:0] == GHCI_XCAP_DBG)
 					dbg = 1'b1;
@@ -290,11 +294,14 @@ module atg_kc705_raster_tb;
 					jr(w1 + {15'd0, GHCI_MEM_WINDOW_SIZE}, m);
 					if (m != 32'h04000000)
 						fail("MEM WINDOW_SIZE is not 64 MiB");
+					jr(w1 + {15'd0, GHCI_MEM_HOST_LIMIT}, m);
+					if (m != 32'h80000000)
+						fail("MEM HOST_LIMIT is not 0x8000_0000");
 				end
 				off = w0[31:16] == 16'd0 ? 32'd0 : off + {14'd0, w0[31:16], 2'd0};
 			end
 			if (!disp)
-				fail("no DISP capability");
+				fail("no DISP2 capability");
 			if (!dbg)
 				fail("no DBG capability");
 			if (!mem)
@@ -335,8 +342,8 @@ module atg_kc705_raster_tb;
 			$display("PASS atg_kc705_raster.jtag");
 
 		/* fill */
-		jw(GHCI_APERTURE_BASE, 32'h0);
-		jw(GHCI_APERTURE_LIMIT, 32'h0010_0000);
+		jw(GHCI_APERTURE_BASE, 32'h8000_0000);
+		jw(GHCI_APERTURE_LIMIT, 32'h8010_0000);
 		jw(GHCI_STATE_BASE + GHCI_S_BLT_OP * 4, {30'd0, GHCI_BLT_FILL});
 		jw(GHCI_STATE_BASE + GHCI_S_BLT_DST_BASE * 4, FB);
 		jw(GHCI_STATE_BASE + GHCI_S_BLT_DST_STRIDE * 4, 32'd256);
@@ -359,12 +366,12 @@ module atg_kc705_raster_tb;
 		expect_reg(GHCI_STATUS, 32'd0, 32'd1 << GHCI_STATUS_FAULT);
 		for (y = 0; y < 6; y = y + 1)
 			for (x = 0; x < 64; x = x + 1)
-				if (dut.mig.mem.peek32(FB + y * 256 + x * 4) !==
+				if (dut.mig.mem.peek32(FB_OFF + y * 256 + x * 4) !==
 				    (y >= 1 && y < 4 && x >= 3 && x < 23 ? COLOR : 32'd0)) begin
 					errors = errors + 1;
 					if (errors < 10)
 						$display("FAIL atg_kc705_raster: memory at (%0d, %0d) = %h", x, y,
-							dut.mig.mem.peek32(FB + y * 256 + x * 4));
+							dut.mig.mem.peek32(FB_OFF + y * 256 + x * 4));
 				end
 		if (errors == 0)
 			$display("PASS atg_kc705_raster.fill");

@@ -58,23 +58,37 @@ module atg_blt_seg #(
 	/* verilator lint_on WIDTHTRUNC */
 
 	wire [US-1:0] p_da = da;
-	wire [US:0] room_fb = LB_V - {1'b0, p_da};
-	wire [US:0] room_f = room_fb >> psl;
-	wire [US:0] room_r = ({1'b0, p_da} >> psl) + 1'b1;
-	wire [2:0] tile_room_d = 3'd4 - {1'b0, px};
-	wire [2:0] tile_room_s = 3'd4 - {1'b0, spx};
+	wire [US:0] room_fb, room_f, da_px, room_r, back_n, p_end;
+	wire [2:0] tile_room_d, tile_room_s;
+	wire [ADDR_W-1:0] src_next, src_last;
+	wire [8:0] seg_co_unused;
+
+	/* The pixels to the line's end (forward) or back to its start (reversed), and to the tile row's end. */
+	am_sub #(.W(US + 1)) s_fb (.a(LB_V), .b({1'b0, p_da}), .bi(1'b0), .d(room_fb), .bo(seg_co_unused[0]));
+	am_shift #(.W(US + 1), .SW(3)) h_f (.a(room_fb), .amt(psl), .left(1'b0), .arith(1'b0), .y(room_f));
+	am_shift #(.W(US + 1), .SW(3)) h_r (.a({1'b0, p_da}), .amt(psl), .left(1'b0), .arith(1'b0), .y(da_px));
+	am_add #(.W(US + 1)) a_r (.a(da_px), .b({(US + 1){1'b0}}), .ci(1'b1), .s(room_r), .co(seg_co_unused[1]));
+	am_sub #(.W(3)) s_td (.a(3'd4), .b({1'b0, px}), .bi(1'b0), .d(tile_room_d), .bo(seg_co_unused[2]));
+	am_sub #(.W(3)) s_ts (.a(3'd4), .b({1'b0, spx}), .bi(1'b0), .d(tile_room_s), .bo(seg_co_unused[3]));
 	wire [US:0] room_t = {{(US - 2){1'b0}}, tile_room_d};
 	wire [US:0] room_d = rev ? room_r : (dtile && room_t < room_f) ? room_t : room_f;
 	wire [US:0] room_s = {{(US - 2){1'b0}}, tile_room_s};
 	wire [US:0] room = (stile && room_s < room_d) ? room_s : room_d;
 	assign seg_n = rem < {{(16 - US){1'b0}}, room} ? rem[US:0] : room;
 
-	assign back = {{(ADDR_W - US - 1){1'b0}}, sn - 1'b1} << psl;
-	assign src_base = slo - {{(ADDR_W - US){1'b0}}, dlo};
-	wire [ADDR_W-1:0] src_last = slo + {{(ADDR_W - US - 1){1'b0}}, snu} - 1'b1;
+	/* The bytes back from the rightmost pixel, and the source window. */
+	am_sub #(.W(US + 1)) s_bn (.a(sn), .b({(US + 1){1'b0}}), .bi(1'b1), .d(back_n), .bo(seg_co_unused[4]));
+	am_shift #(.W(ADDR_W), .SW(3)) h_b (.a({{(ADDR_W - US - 1){1'b0}}, back_n}), .amt(psl), .left(1'b1),
+		.arith(1'b0), .y(back));
+	am_sub #(.W(ADDR_W)) s_sb (.a(slo), .b({{(ADDR_W - US){1'b0}}, dlo}), .bi(1'b0), .d(src_base),
+		.bo(seg_co_unused[5]));
+	am_add #(.W(ADDR_W)) a_sn (.a(slo), .b({{(ADDR_W - US - 1){1'b0}}, snu}), .ci(1'b0), .s(src_next),
+		.co(seg_co_unused[6]));
+	am_sub #(.W(ADDR_W)) s_sl (.a(src_next), .b({ADDR_W{1'b0}}), .bi(1'b1), .d(src_last), .bo(seg_co_unused[7]));
 	assign last_line = src_last[ADDR_W-1:US];
 
-	wire [US:0] p_end = {1'b0, p0} + snu;
+	/* The end of the write's bytes. */
+	am_add #(.W(US + 1)) a_pe (.a({1'b0, p0}), .b(snu), .ci(1'b0), .s(p_end), .co(seg_co_unused[8]));
 	integer u;
 
 	always @(*)
@@ -85,7 +99,7 @@ module atg_blt_seg #(
 			be[u] = u[US:0] >= {1'b0, p0} && u[US:0] < p_end && !keep[u % 4];
 `endif
 
-	wire unused_ok = &{1'b0, src_last[US-1:0], keep};
+	wire unused_ok = &{1'b0, src_last[US-1:0], keep, seg_co_unused};
 endmodule
 
 `default_nettype wire
