@@ -23,8 +23,9 @@ a client of its own in `atg_top`.
 | --- | --- | --- | --- |
 | `NCLIENT` | 2 | AMB clients | 2..32 (`fault_client` is 8 bits) |
 | `HIGH_MASK` | 0 | Clients that send with the priority bit | `atg_top`: the CP and the outside client (DC) |
-| `QUIESCE_EXEMPT` | 0 | Clients whose leaves `quiesce` does not hold (WS288 p004) | `atg_top`: the CP (client 0) |
-| `ROOT_CLIENT` | -1 | The client placed one hop from the root (child 0 of the top router); -1: none | `atg_top`: `C_EXT` with `EXT_CLIENT` (the KC705's DC) |
+| `QUIESCE_EXEMPT` | 0 | Clients whose leaves `quiesce` does not hold (WS288 p004) | `atg_top`: the CP (client 0) and, with `HAS_DISP`, the DC (`C_DC`) |
+| `ROOT_CLIENT` | -1 | The client placed one hop from the root (child 0 of the top router); -1: none | `atg_top`: `C_EXT` with `EXT_CLIENT` or `C_DC` with `HAS_DISP` (the KC705's DC) |
+| `ROOT_KEEP` | 0 | With `ROOT_CLIENT`: that client has its own entry at the root (as with `HAS_PROT`), `flush` does not empty its leaf, its entry or its refusal's response, and `axi_idle` does not wait for its requests (design §18.2) | `atg_top`: 1 with `HAS_DISP` |
 | `ADDR_W` | 32 | Address width | 32 |
 | `LINE_BYTES` | 32 | Line size | 32, 64 |
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`) | 5, 6 |
@@ -53,9 +54,9 @@ Client vectors are packed, client 0 in the low bits.  Domain `clk` for all.
 | `rsp_valid` | out | `NCLIENT` | One-cycle pulse to the answered client; no back-pressure.  Several clients may get a response in the same cycle |
 | `rsp_write`, `rsp_tag`, `rsp_rdata`, `rsp_error` | out | `NCLIENT` × 1, 8, `LINE_BYTES*8`, 1 | **Per client** (changed in p023: each leaf drives its own client's fields), valid with that client's `rsp_valid` |
 | `quiesce` | in | 1 | Level from the CP: the leaves outside `QUIESCE_EXEMPT` start no new packet; the tree drains |
-| `flush` | in | 1 | One-cycle pulse (with `quiesce` held): empties the tree and the root, clears the refusal and fault registers |
+| `flush` | in | 1 | One-cycle pulse (with `quiesce` held): empties the tree and the root and drops a pending refusal's response (with `ROOT_KEEP`: not `ROOT_CLIENT`'s leaf, entry or refusal) |
 | `aperture_base`, `aperture_limit` | in | `ADDR_W` | Allowed range [base, limit) |
-| `axi_idle` | out | 1 | `am_axi_master.idle`, no refusal pending and no response flit in the tree |
+| `axi_idle` | out | 1 | `am_axi_master.idle`, no refusal pending and no response flit in the tree.  With `ROOT_KEEP`, without `ROOT_CLIENT`'s requests: the other clients' requests granted to the AXI master (and the protection walks) are all answered (`atg_mc_cnt`'s `ax`), no refusal of theirs is pending, no response flit in the tree, none of theirs in the tree or the root |
 | `fault`, `fault_client`, `fault_addr`, `fault_write` | out (reg) | 1, 8, `ADDR_W`, 1 | One-cycle pulse when a request was refused, with the client (from the header), the line address (VRAM_BASE + the window offset) and the direction |
 | `fault_prot`, `fault_slot`, `fault_mem` | out (reg) | 1, 6, 1 | With `fault`: refused for protection (FAULT_INFO[9]) and the request's slot; a protection table read had an AXI error (kind 5) |
 | `chk_idle` | out | 1 | No request with chk is in the tree or the root (taken from a leaf and not yet granted or refused) |
@@ -128,7 +129,11 @@ none).  `flush`/`rst_n` → empty, none.  The routers and leaves have their own 
   requests taken from the clients and not yet granted), every granted request is answered and its
   response has left the tree.  **WS288 p004:** `atg_top` sets `QUIESCE_EXEMPT` to client 0, the CP,
   so that its debug port works in HALTED and FAULTED (and a ring line or fence it requested
-  completes) while the blocks are held.  The KC705's outside client (DC) is held like the others.
+  completes) while the blocks are held.  **WS288 p035 (design §18.2):** with `HAS_DISP` the DC is
+  in `QUIESCE_EXEMPT` too and `ROOT_KEEP` is 1: its scan-out reads go on through HALTED, FAULTED
+  and the RESET order, `axi_idle` does not wait for them, and `flush` keeps its path (dropping a
+  DC request or response would leave `atg_dc_dma`'s outstanding count stuck).  A refusal of the DC
+  in the flush cycle is kept, one of another client dropped.
 - `rsp_rdata` of a refusal is 0 (session protection: a refused read returns zeros; before, it
   was the AXI master's last read data).
 - The header must fit a line (`20 + RW + VRAM_AW − LINE_SHIFT + LINE_BYTES` ≤ `LINE_BYTES*8`:
@@ -146,11 +151,16 @@ window and only the window check refuses them) with an error response and a faul
 client, line and direction; nothing refused reaches AXI; random quiesce: no request of a held client is taken
 under it and `axi_idle` comes within a bound; every client granted; fault count = refused count.
 Every cycle `unit_idle` against the requests outstanding; a refused read's data is 0.  (C) is
-shape B with `HAS_PROT` and no chk (the DC on its own root entry): the same checks.  Session
+shape B with `HAS_PROT` and no chk (the DC on its own root entry): the same checks.  (D) is shape
+B with `ROOT_KEEP` (client 4 quiesce-exempt, one refusal in 4) and (E) the same with `HAS_PROT`:
+during each quiesce that reached `axi_idle`, `flush` in about half of the cycles; client 4 goes on
+and loses no response, the others' checks as before, and `axi_idle` must come at least once
+while client 4 has requests out.  The mutation `MUT_MC_NOKEEP` (the root leaf flushed) fails (D)
+and (E).  Session
 protection itself: `sim/tb/atg_mc_prot_tb.v` (`spec/gpu/mc/atg_mc_prot.md`).
 The router's priority, turn-taking, packet locking and response demux are checked by
 `sim/tb/atg_rt_tb.v`.  Also covered by `atg_top_tb` and the Verilator harness.  Not checked:
-`flush` alone (through the CP's RESET in `atg_top_tb`), `NCLIENT` > 5, starvation bounds.
+`flush` without `ROOT_KEEP` (through the CP's RESET in `atg_top_tb`), `NCLIENT` > 5, starvation bounds.
 
 ## 9. References
 
@@ -165,4 +175,5 @@ Implemented: p002 (70aaff5), the router tree in WS288 p023 milestone 4 (P1).  Th
 the assembly buffer to `atg_mc_asm`, the counters to `atg_mc_cnt`; about 395 lines; ports over 40
 only by the AXI group and the protection group.  Synthesis of
 the tree is not measured yet (a Vivado run is pending: each hop costs about `LINE_BYTES*8` + 30
-flip-flops per direction).
+flip-flops per direction).  **WS288 p035 D2b (2026-10-25):** `ROOT_KEEP` (the DC through the GPU's
+reset): about 385 lines (the AXI master's instance packed).

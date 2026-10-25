@@ -536,8 +536,12 @@ module atg_top #(
 	atg_mc #(
 		.NCLIENT(NCLIENT),
 		.HIGH_MASK(HIGH),
-		.QUIESCE_EXEMPT({{(NCLIENT-1){1'b0}}, 1'b1}),	/* the CP (its debug port) */
+		/* the CP (its debug port) and the DC (scan-out goes on through HALTED, FAULTED
+		 * and RESET; design §18.2) */
+		.QUIESCE_EXEMPT({{(NCLIENT-1){1'b0}}, 1'b1} |
+			(HAS_DISP != 0 ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_DC : {NCLIENT{1'b0}})),
 		.ROOT_CLIENT(HAS_EXT ? C_EXT : -1),
+		.ROOT_KEEP(HAS_DISP != 0 ? 1 : 0),	/* flush and axi_idle leave the DC alone */
 		.ADDR_W(32),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),

@@ -60,6 +60,14 @@
  * tree or the root.  unit_idle: every request that UNIT_MASK's clients
  * gave the MC has been answered (counted from the leaf to the response).
  * A refused read returns zeros.
+ *
+ * ROOT_KEEP (with ROOT_CLIENT; the KC705's DC, design §18.2): ROOT_CLIENT
+ * has its own entry at the root (as with HAS_PROT) that flush does not
+ * empty, and axi_idle does not wait for its requests (it counts the other
+ * clients' requests from the leaf to the root, those the root granted to
+ * the AXI master until its response, and a refusal's response).  The caller
+ * puts it in QUIESCE_EXEMPT: its scan-out reads go on through HALTED,
+ * FAULTED and the GPU's reset.
  */
 
 `timescale 1ns / 1ps
@@ -70,6 +78,7 @@ module atg_mc #(
 	parameter [NCLIENT-1:0] HIGH_MASK = {NCLIENT{1'b0}},
 	parameter [NCLIENT-1:0] QUIESCE_EXEMPT = {NCLIENT{1'b0}},	/* clients that quiesce does not hold */
 	parameter ROOT_CLIENT = -1,	/* the client one hop from the root, or -1 */
+	parameter ROOT_KEEP = 0,	/* 1: flush and axi_idle leave ROOT_CLIENT alone */
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
@@ -171,7 +180,10 @@ module atg_mc #(
 	localparam RFW = LINE_BITS + 10 + RW;
 	localparam UW = 16 + RW;
 	localparam RC = HAS_ROOT != 0 ? ROOT_CLIENT : 0;
-	localparam HAS_DC = HAS_PROT != 0 && HAS_ROOT != 0 ? 1 : 0;
+	localparam HAS_KEEP = ROOT_KEEP != 0 && HAS_ROOT != 0 ? 1 : 0;
+	localparam HAS_DC = (HAS_PROT != 0 || HAS_KEEP != 0) && HAS_ROOT != 0 ? 1 : 0;
+	localparam [NCLIENT-1:0] KEEP_MASK = HAS_KEEP != 0 ?
+		{{(NCLIENT-1){1'b0}}, 1'b1} << RC : {NCLIENT{1'b0}};
 	localparam HPW = HW + 7;
 
 	/* The tree. */
@@ -185,7 +197,7 @@ module atg_mc #(
 
 	atg_mc_tree #(
 		.NCLIENT(NCLIENT), .HIGH_MASK(HIGH_MASK), .HAS_ROOT(HAS_ROOT), .ROOT_SPLIT(HAS_DC),
-		.ROOT_CLIENT(RC), .TREE_L(TREE_L), .RW(RW), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES),
+		.ROOT_KEEP(HAS_KEEP), .ROOT_CLIENT(RC), .TREE_L(TREE_L), .RW(RW), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT), .VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE)
 	) tree (
 		.clk(clk), .rst_n(rst_n), .flush(flush), .hold({NCLIENT{quiesce}} & ~QUIESCE_EXEMPT),
@@ -218,7 +230,7 @@ module atg_mc #(
 		.take(a_take)
 	);
 	atg_mc_asm #(.LINE_BYTES(LINE_BYTES)) asm_d (
-		.clk(clk), .rst_n(rst_n), .flush(flush), .t_valid(HAS_DC != 0 && s_req_valid),
+		.clk(clk), .rst_n(rst_n), .flush(flush && HAS_KEEP == 0), .t_valid(HAS_DC != 0 && s_req_valid),
 		.t_ready(s_req_ready), .t_data(s_req_data), .t_last(s_req_last), .full(d_full),
 		.head(d_head), .data(d_data), .take(d_take)
 	);
@@ -293,16 +305,30 @@ module atg_mc #(
 	/* The requests in the tree and the root (pend), with chk, of the units. */
 	wire pend_zero;
 
-	atg_mc_cnt #(.NCLIENT(NCLIENT), .UNIT_MASK(UNIT_MASK)) cnt (
+	/*
+	 * ROOT_KEEP: the root client's grants (route bit 0 = 0, not a walk),
+	 * responses and refusals, left out of axi_idle.
+	 */
+	wire g_keep = HAS_KEEP != 0 && g_user[15:8] != 8'hFF && !g_user[16];
+	wire m_keep = HAS_KEEP != 0 && !m_walk && !m_rsp_user[16];
+	wire bad_keep = HAS_KEEP != 0 && !bad_head[20];
+	wire err_keep = HAS_KEEP != 0 && !err_route[0];
+	wire ax_zero;
+
+	atg_mc_cnt #(.NCLIENT(NCLIENT), .UNIT_MASK(UNIT_MASK), .KEEP_MASK(KEEP_MASK)) cnt (
 		.clk(clk), .rst_n(rst_n), .flush(flush), .take(c_req_valid & c_req_ready),
 		.take_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}), .rsp(rsp_valid), .done(done),
-		.done_chk(done_chk), .pend_zero(pend_zero), .chk_idle(chk_idle), .unit_idle(unit_idle)
+		.done_chk(done_chk), .done_keep(g_valid && g_ready ? g_keep : bad && bad_keep),
+		.ax_inc(g_valid && g_ready && !g_keep), .ax_dec(m_rsp_valid && !m_keep),
+		.pend_zero(pend_zero), .chk_idle(chk_idle), .unit_idle(unit_idle), .ax_zero(ax_zero)
 	);
 
-	assign axi_idle = m_idle && !err_v && t_rsp_idle && pend_zero;
+	assign axi_idle = (HAS_KEEP != 0 ? ax_zero && !(err_v && !err_keep) :
+		m_idle && !err_v) && t_rsp_idle && pend_zero;
 
+	/* flush drops a refusal's response, but not the root client's (ROOT_KEEP). */
 	always @(posedge clk) begin
-		if (!rst_n || flush) begin
+		if (!rst_n) begin
 			err_v <= 1'b0;
 			err_route <= {RW{1'b0}};
 			err_tag <= 8'd0;
@@ -316,7 +342,7 @@ module atg_mc #(
 			fault_mem <= 1'b0;
 		end else begin
 			fault <= 1'b0;
-			if (bad) begin
+			if (bad && (!flush || bad_keep)) begin
 				err_v <= 1'b1;
 				err_route <= bad_head[20 +: RW];
 				err_tag <= bad_head[11:4];
@@ -328,65 +354,29 @@ module atg_mc #(
 				fault_prot <= bad_prot;
 				fault_slot <= bad_head[HW+1 +: 6];
 				fault_mem <= bad_mem;
-			end else if (err_out) begin
+			end else if (err_out || flush && !err_keep) begin
 				err_v <= 1'b0;
 			end
 		end
 	end
 
 	am_axi_master #(
-		.ADDR_W(ADDR_W),
-		.LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT),
-		.DATA_W(DATA_W),
-		.UW(UW),
-		.OUTSTANDING_LOG2(OUTSTANDING_LOG2)
+		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .DATA_W(DATA_W),
+		.UW(UW), .OUTSTANDING_LOG2(OUTSTANDING_LOG2)
 	) axi (
-		.clk(clk),
-		.rst_n(rst_n),
-		.halt(1'b0),
-		.idle(m_idle),
-		.req_valid(g_valid),
-		.req_ready(g_ready),
-		.req_write(g_write),
-		.req_line(g_line),
-		.req_be(g_be),
-		.req_wdata(g_wdata),
-		.req_user(g_user),
-		.rsp_valid(m_rsp_valid),
-		.rsp_write(m_rsp_write),
-		.rsp_user(m_rsp_user),
-		.rsp_rdata(m_rsp_rdata),
-		.rsp_error(m_rsp_error),
-		.m_awaddr(m_awaddr),
-		.m_awlen(m_awlen),
-		.m_awsize(m_awsize),
-		.m_awburst(m_awburst),
-		.m_awcache(m_awcache),
-		.m_awprot(m_awprot),
-		.m_awvalid(m_awvalid),
-		.m_awready(m_awready),
-		.m_wdata(m_wdata),
-		.m_wstrb(m_wstrb),
-		.m_wlast(m_wlast),
-		.m_wvalid(m_wvalid),
-		.m_wready(m_wready),
-		.m_bresp(m_bresp),
-		.m_bvalid(m_bvalid),
-		.m_bready(m_bready),
-		.m_araddr(m_araddr),
-		.m_arlen(m_arlen),
-		.m_arsize(m_arsize),
-		.m_arburst(m_arburst),
-		.m_arcache(m_arcache),
-		.m_arprot(m_arprot),
-		.m_arvalid(m_arvalid),
-		.m_arready(m_arready),
-		.m_rdata(m_rdata),
-		.m_rresp(m_rresp),
-		.m_rlast(m_rlast),
-		.m_rvalid(m_rvalid),
-		.m_rready(m_rready)
+		.clk(clk), .rst_n(rst_n), .halt(1'b0), .idle(m_idle), .req_valid(g_valid),
+		.req_ready(g_ready), .req_write(g_write), .req_line(g_line), .req_be(g_be),
+		.req_wdata(g_wdata), .req_user(g_user), .rsp_valid(m_rsp_valid),
+		.rsp_write(m_rsp_write), .rsp_user(m_rsp_user), .rsp_rdata(m_rsp_rdata),
+		.rsp_error(m_rsp_error), .m_awaddr(m_awaddr), .m_awlen(m_awlen),
+		.m_awsize(m_awsize), .m_awburst(m_awburst), .m_awcache(m_awcache),
+		.m_awprot(m_awprot), .m_awvalid(m_awvalid), .m_awready(m_awready),
+		.m_wdata(m_wdata), .m_wstrb(m_wstrb), .m_wlast(m_wlast), .m_wvalid(m_wvalid),
+		.m_wready(m_wready), .m_bresp(m_bresp), .m_bvalid(m_bvalid), .m_bready(m_bready),
+		.m_araddr(m_araddr), .m_arlen(m_arlen), .m_arsize(m_arsize), .m_arburst(m_arburst),
+		.m_arcache(m_arcache), .m_arprot(m_arprot), .m_arvalid(m_arvalid),
+		.m_arready(m_arready), .m_rdata(m_rdata), .m_rresp(m_rresp), .m_rlast(m_rlast),
+		.m_rvalid(m_rvalid), .m_rready(m_rready)
 	);
 
 	wire unused_ok = &{1'b0, bad_head, s_req_valid};
