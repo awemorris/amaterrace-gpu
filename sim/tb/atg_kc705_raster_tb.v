@@ -252,7 +252,8 @@ module atg_kc705_raster_tb;
 	end
 
 	localparam [31:0] DC = {15'd0, GHCI_DISP2_BASE};	/* the DISP2 window (the CP stays IDLE: S passes) */
-	localparam [31:0] FB = 32'h0004_0000;
+	localparam [31:0] FB = 32'h8004_0000;	/* local memory (DDR3 offset 0x4_0000) */
+	localparam [31:0] FB_OFF = 32'h0004_0000;
 	localparam [31:0] COLOR = 32'hAABBCCDD;
 	reg [31:0] v;
 	integer x, y, n;
@@ -293,6 +294,9 @@ module atg_kc705_raster_tb;
 					jr(w1 + {15'd0, GHCI_MEM_WINDOW_SIZE}, m);
 					if (m != 32'h04000000)
 						fail("MEM WINDOW_SIZE is not 64 MiB");
+					jr(w1 + {15'd0, GHCI_MEM_HOST_LIMIT}, m);
+					if (m != 32'h80000000)
+						fail("MEM HOST_LIMIT is not 0x8000_0000");
 				end
 				off = w0[31:16] == 16'd0 ? 32'd0 : off + {14'd0, w0[31:16], 2'd0};
 			end
@@ -338,8 +342,8 @@ module atg_kc705_raster_tb;
 			$display("PASS atg_kc705_raster.jtag");
 
 		/* fill */
-		jw(GHCI_APERTURE_BASE, 32'h0);
-		jw(GHCI_APERTURE_LIMIT, 32'h0010_0000);
+		jw(GHCI_APERTURE_BASE, 32'h8000_0000);
+		jw(GHCI_APERTURE_LIMIT, 32'h8010_0000);
 		jw(GHCI_STATE_BASE + GHCI_S_BLT_OP * 4, {30'd0, GHCI_BLT_FILL});
 		jw(GHCI_STATE_BASE + GHCI_S_BLT_DST_BASE * 4, FB);
 		jw(GHCI_STATE_BASE + GHCI_S_BLT_DST_STRIDE * 4, 32'd256);
@@ -362,12 +366,12 @@ module atg_kc705_raster_tb;
 		expect_reg(GHCI_STATUS, 32'd0, 32'd1 << GHCI_STATUS_FAULT);
 		for (y = 0; y < 6; y = y + 1)
 			for (x = 0; x < 64; x = x + 1)
-				if (dut.mig.mem.peek32(FB + y * 256 + x * 4) !==
+				if (dut.mig.mem.peek32(FB_OFF + y * 256 + x * 4) !==
 				    (y >= 1 && y < 4 && x >= 3 && x < 23 ? COLOR : 32'd0)) begin
 					errors = errors + 1;
 					if (errors < 10)
 						$display("FAIL atg_kc705_raster: memory at (%0d, %0d) = %h", x, y,
-							dut.mig.mem.peek32(FB + y * 256 + x * 4));
+							dut.mig.mem.peek32(FB_OFF + y * 256 + x * 4));
 				end
 		if (errors == 0)
 			$display("PASS atg_kc705_raster.fill");

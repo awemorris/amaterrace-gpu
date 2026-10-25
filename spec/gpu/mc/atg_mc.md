@@ -33,6 +33,7 @@ a client of its own in `atg_top`.
 | `OUTSTANDING_LOG2` | 2 | Passed to `am_axi_master` | 2 |
 | `VRAM_AW` | 32 | Address bits carried in the tree (the VRAM window is 2^VRAM_AW bytes) | `LINE_SHIFT` < `VRAM_AW` ≤ 32; 64 MiB: 26 |
 | `VRAM_BASE` | 0 | The window's base, aligned to its size; the root adds it | e.g. 0x1C000000 |
+| `LOCAL_BASE`, `LOCAL_BYTES` | 0, 0 | Local memory (the MEM capability, docs/ghci.md §11.2): its accesses go out with AXI ID 0, all others (host) with ID 1; `LOCAL_BYTES` 0: one ID, 0 | KC705: 0x8000_0000, 1 GiB |
 | `UNIT_MASK` | 0 | Clients that `unit_idle` counts | `atg_top`: all but the CP and the DC |
 | `HAS_PROT` | 0 | Session protection (docs/ghci.md §11.6, `atg_mc_prot`) | 0, 1 |
 | `RMW_MASK` | 0 | Clients whose reads are judged as writes | `atg_top`: the atomic unit |
@@ -62,7 +63,7 @@ Client vectors are packed, client 0 in the low bits.  Domain `clk` for all.
 | `chk_idle` | out | 1 | No request with chk is in the tree or the root (taken from a leaf and not yet granted or refused) |
 | `unit_idle` | out | 1 | Every request of `UNIT_MASK`'s clients taken by a leaf has had its response |
 | `prot_tbase`, `prot_inv_valid`, `prot_inv_g`, `prot_inv_n`, `prot_inv_pending`, `prot_gw_valid`, `prot_gw_idx`, `prot_gw_data` | in, out | | The CP's protection registers (`spec/gpu/mc/atg_mc_prot.md`; one port group) |
-| `m_*` | — | — | The AXI master ports of `am_axi_master` (one port group) |
+| `m_*` | — | — | The AXI master ports of `am_axi_master` (one port group), with 1-bit `m_awid`/`m_arid` (0 local, 1 host) and `m_bid`/`m_rid` |
 
 ## 4. Behaviour
 
@@ -90,6 +91,14 @@ Client vectors are packed, client 0 in the low bits.  Domain `clk` for all.
   come back in order; reads in order and writes in order (am_axi_master); a read is not ordered
   after an earlier write.  **A refusal's error response may overtake the client's earlier
   requests' responses** (the CP treats it as a device fault).
+- Destinations (ws288 p039): after the grant, a request (a walk too) whose line is in
+  [`LOCAL_BASE`, + `LOCAL_BYTES`) gets AXI ID 0, every other ID 1; the board routes by the same
+  address range (`am_axi_split`).  The two destinations answer in any order relative to each
+  other; `am_axi_master` keeps each client's order (its key is the client, 0xFF for a walk): a
+  request of a client with requests of the same direction outstanding at the other destination
+  waits at the root (`g_ready` 0) until they are answered.  The DC's own root entry is granted
+  first, so it waits only for its own requests.  Quiesce, `flush`, `axi_idle` and `unit_idle`
+  are as before (`am_axi_master`'s `idle` covers both IDs; `flush` comes after `axi_idle`).
 - Priority and fairness: with the priority bit a client wins every router on its path, so it
   waits at most for the packets already in the registers of its path (one per hop, plus a write's
   data flit).  The others take turns per router, which halves a client's share at each level
@@ -161,6 +170,11 @@ protection itself: `sim/tb/atg_mc_prot_tb.v` (`spec/gpu/mc/atg_mc_prot.md`).
 The router's priority, turn-taking, packet locking and response demux are checked by
 `sim/tb/atg_rt_tb.v`.  Also covered by `atg_top_tb` and the Verilator harness.  Not checked:
 `flush` without `ROOT_KEEP` (through the CP's RESET in `atg_top_tb`), `NCLIENT` > 5, starvation bounds.
+(F, p039) is shape B with `HAS_PROT`, `VRAM_AW` 32 and two destinations: local memory
+[0x2_0000, 0x4_0000) behind `am_axi_split`'s m0 and the rest on m1, each on its own `axi_mem`
+(the local one with `READ_EARLY`, slow writes), half of each client's lines local: every client's
+responses stay in order per direction with the right data, and each memory sees only its own ID.
+`-DMUT_AXI_NOKEY` (am_axi_master without the key check) fails case F.
 
 ## 9. References
 
@@ -169,6 +183,10 @@ The router's priority, turn-taking, packet locking and response demux are checke
   `spec/gpu/mc/atg_mc_aper.md`, `spec/common/am_axi_master.md`.
 
 ## 10. Status
+
+2026-10-25 (p039): `LOCAL_BASE`/`LOCAL_BYTES`, the AXI IDs per destination and the order
+key; about 382 lines (the am_axi_master instance written compactly).
+
 
 Implemented: p002 (70aaff5), the router tree in WS288 p023 milestone 4 (P1).  The flat arbiter
 (and `atg_mc_arb`) is gone.  Session protection (2026-10-25): the grant moved to `atg_mc_prot`,

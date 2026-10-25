@@ -104,4 +104,6 @@ HDMI_R_D0..D15), `iic_mux_reset_n` added; parameters `CPU_IMEM_INIT`/`CPU_DMEM_I
 Unverified until part B: the HDMI pins (two outside sources, see the XDC), the IP cores' port
 names, the clock managers' settings, the ADV7511's register settings.
 
+2026-10-25 (p039): the GPU's memory port through `am_axi_split`: [LOCAL_BASE, + LOCAL_BYTES) (the MC's ID 0) to the MIG's GPU port (no ID: only ID 0 reaches it, its responses get ID 0), [0, HOST_LIMIT = 0x8000_0000) (ID 1) to atg_kc705_pcie's GPU -> host port (512 bit in gclk), DECERR above 0xC000_0000.  The three values are localparams of the top, given to atg_top (MEM, the MC's destinations) and to the split.  The fill test moved to local memory (0x8004_0000; before, 0x0004_0000 reached the DDR3 only because the MIG drops address bits 31:30).  The TB checks MEM HOST_LIMIT.
+
 2026-10-25: atg_top's MEM capability for this board: LOCAL_BASE 0x8000_0000 (the MIG takes address bits 29:0, so the 1 GiB is at any 1 GiB-aligned base; 0x8000_0000 leaves the GPU addresses below 2 GiB to the host's bus addresses of a later PCIe binding), LOCAL_BYTES 1 GiB, WINDOW_BYTES 64 MiB (the PCIe BAR2 of design §6.2).  The TB walks to it.

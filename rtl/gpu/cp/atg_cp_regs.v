@@ -23,7 +23,8 @@
  * The extended capability list at 0x100: one two-word entry per set bit
  * of XCAP_MASK in id order; the first two entries at 0x100 and 0x108, the
  * rest from 0x180 (0x110-0x17F hold the PERF, CPFW, SA and FMT registers).
- * The MEM capability's three words (LOCAL_BASE, LOCAL_SIZE, WINDOW_SIZE)
+ * The MEM capability's four words (LOCAL_BASE, LOCAL_SIZE, WINDOW_SIZE,
+ * HOST_LIMIT)
  * are at 0x1C0, after the room of a full list; the PROT capability's
  * (atg_cp_prot's, through x_rdata) at 0x1D0.  DISP2 points to its window at
  * 0x200 (atg_cp_disp answers it through x_rdata).  At most ten entries fit
@@ -45,6 +46,7 @@ module atg_cp_regs #(
 	parameter [31:0] LOCAL_BASE = 32'd0,	/* MEM: GPU address of local memory */
 	parameter [31:0] LOCAL_BYTES = 32'd0,	/* MEM: bytes of local memory */
 	parameter [31:0] WINDOW_BYTES = 32'd0,	/* MEM: bytes the local window shows */
+	parameter [31:0] HOST_LIMIT = 32'd0,	/* MEM: host addresses below it (0: all) */
 	parameter CAPS = 32'h00500002,	/* CAPS value (design §2.2), set by atg_top from its parameters */
 	parameter CAPS2 = 32'h00000001,	/* CAPS2 value */
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
@@ -215,6 +217,7 @@ module atg_cp_regs #(
 		12'h1C0: if (XCAP_MASK[7]) own = LOCAL_BASE;
 		12'h1C4: if (XCAP_MASK[7]) own = LOCAL_BYTES;
 		12'h1C8: if (XCAP_MASK[7]) own = WINDOW_BYTES;
+		12'h1CC: if (XCAP_MASK[7]) own = HOST_LIMIT;
 		default: ;
 		endcase
 		if (roff[11:5] == 7'h06)	/* VEND 0x0C0-0x0DF */

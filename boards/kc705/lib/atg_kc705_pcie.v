@@ -17,13 +17,18 @@
  *   atg_kc705_bar_xbar  the bridge's master to M00 (BAR0) and M01 (BAR2),
  *                       DECERR elsewhere.
  *   atg_kc705_bar0_dn   M00 128 -> 32 bit.
+ *   atg_kc705_host_dn   the GPU's host accesses 512 -> 128 bit (s_clk).
+ *   atg_kc705_bar2_cc   (a second instance) s_clk -> user_clk, 128 bit, to
+ *                       the bridge's S_AXI (ws288 p039).
  *
  * Ports for the board top: m0_* the register window (32-bit, offsets
  * 16:0, ID 0), m2_* the local window (128-bit, offsets 25:0), s_* the
- * GPU's host accesses (AXI -> PCIe, ID 4; version 1 drives nothing on
- * it), msi_req/msi_ack: the message of GHCI's one vector is requested
- * (msi_req held) and msi_ack pulses when the bridge granted it
- * (INTX_MSI_Request held until INTX_MSI_Grant; vector number 0).  user_rst_n: perst_n and the bridge's MMCM
+ * GPU's host accesses (AXI -> PCIe; 512-bit, ID 4, in s_clk = gclk, with
+ * s_rst_n; GPU addresses 0x0000_0000-0x7FFF_FFFF to the same bus
+ * addresses, DECERR elsewhere), msi_req/msi_ack: the message of GHCI's one
+ * vector is requested (msi_req held) and msi_ack pulses when the bridge
+ * granted it (INTX_MSI_Request held until INTX_MSI_Grant; vector number
+ * 0).  user_rst_n: perst_n and the bridge's MMCM
  * lock, synchronised to user_clk.  The bridge's control slave (s_axi_ctl)
  * is unused (ready, OKAY, reads 0).  The bridge's handshake details
  * (INTX_MSI_*, axi_aresetn) are from its port list, PG055 not read
@@ -101,7 +106,9 @@ module atg_kc705_pcie (
 	input wire m2_rlast,
 	input wire m2_rvalid,
 	output wire m2_rready,
-	/* GPU -> host memory */
+	/* GPU -> host memory (s_clk) */
+	input wire s_clk,
+	input wire s_rst_n,
 	input wire [31:0] s_awaddr,
 	input wire [3:0] s_awid,
 	input wire [7:0] s_awlen,
@@ -109,8 +116,8 @@ module atg_kc705_pcie (
 	input wire [1:0] s_awburst,
 	input wire s_awvalid,
 	output wire s_awready,
-	input wire [127:0] s_wdata,
-	input wire [15:0] s_wstrb,
+	input wire [511:0] s_wdata,
+	input wire [63:0] s_wstrb,
 	input wire s_wlast,
 	input wire s_wvalid,
 	output wire s_wready,
@@ -125,7 +132,7 @@ module atg_kc705_pcie (
 	input wire [1:0] s_arburst,
 	input wire s_arvalid,
 	output wire s_arready,
-	output wire [127:0] s_rdata,
+	output wire [511:0] s_rdata,
 	output wire [3:0] s_rid,
 	output wire [1:0] s_rresp,
 	output wire s_rlast,
@@ -162,22 +169,99 @@ module atg_kc705_pcie (
 	reg msi_q = 1'b0;
 	reg ack_q = 1'b0;
 
+	/* The GPU's host accesses: 512 -> 128 bit in s_clk (h_*), then into
+	 * user_clk (k_*) to the bridge's S_AXI. */
+	wire [31:0] h_awaddr, h_araddr, k_awaddr, k_araddr;
+	wire [7:0] h_awlen, h_arlen, k_awlen, k_arlen;
+	wire [2:0] h_awsize, h_arsize, h_awprot, h_arprot, k_awsize, k_arsize, k_awprot, k_arprot;
+	wire [1:0] h_awburst, h_arburst, h_bresp, h_rresp, k_awburst, k_arburst, k_bresp, k_rresp;
+	wire [3:0] h_awcache, h_arcache, h_awregion, h_arregion, h_awqos, h_arqos;
+	wire [3:0] k_awcache, k_arcache, k_awregion, k_arregion, k_awqos, k_arqos;
+	wire [3:0] k_awid, k_bid, k_arid, k_rid, h_bid, h_rid;
+	wire h_awlock, h_arlock, k_awlock, k_arlock;
+	wire h_awvalid, h_awready, h_wlast, h_wvalid, h_wready, h_bvalid, h_bready;
+	wire h_arvalid, h_arready, h_rlast, h_rvalid, h_rready;
+	wire k_awvalid, k_awready, k_wlast, k_wvalid, k_wready, k_bvalid, k_bready;
+	wire k_arvalid, k_arready, k_rlast, k_rvalid, k_rready;
+	wire [127:0] h_wdata, h_rdata, k_wdata, k_rdata;
+	wire [15:0] h_wstrb, k_wstrb;
+
+	atg_kc705_host_dn host_dn (
+		.s_axi_aclk(s_clk), .s_axi_aresetn(s_rst_n),
+		.s_axi_awid(s_awid), .s_axi_awaddr(s_awaddr), .s_axi_awlen(s_awlen),
+		.s_axi_awsize(s_awsize), .s_axi_awburst(s_awburst), .s_axi_awlock(1'b0),
+		.s_axi_awcache(4'b0011), .s_axi_awprot(3'd0), .s_axi_awregion(4'd0),
+		.s_axi_awqos(4'd0), .s_axi_awvalid(s_awvalid), .s_axi_awready(s_awready),
+		.s_axi_wdata(s_wdata), .s_axi_wstrb(s_wstrb), .s_axi_wlast(s_wlast),
+		.s_axi_wvalid(s_wvalid), .s_axi_wready(s_wready), .s_axi_bid(s_bid),
+		.s_axi_bresp(s_bresp), .s_axi_bvalid(s_bvalid), .s_axi_bready(s_bready),
+		.s_axi_arid(s_arid), .s_axi_araddr(s_araddr), .s_axi_arlen(s_arlen),
+		.s_axi_arsize(s_arsize), .s_axi_arburst(s_arburst), .s_axi_arlock(1'b0),
+		.s_axi_arcache(4'b0011), .s_axi_arprot(3'd0), .s_axi_arregion(4'd0),
+		.s_axi_arqos(4'd0), .s_axi_arvalid(s_arvalid), .s_axi_arready(s_arready),
+		.s_axi_rid(s_rid), .s_axi_rdata(s_rdata), .s_axi_rresp(s_rresp),
+		.s_axi_rlast(s_rlast), .s_axi_rvalid(s_rvalid), .s_axi_rready(s_rready),
+		.m_axi_awaddr(h_awaddr), .m_axi_awlen(h_awlen), .m_axi_awsize(h_awsize),
+		.m_axi_awburst(h_awburst), .m_axi_awlock(h_awlock), .m_axi_awcache(h_awcache),
+		.m_axi_awprot(h_awprot), .m_axi_awregion(h_awregion), .m_axi_awqos(h_awqos),
+		.m_axi_awvalid(h_awvalid), .m_axi_awready(h_awready), .m_axi_wdata(h_wdata),
+		.m_axi_wstrb(h_wstrb), .m_axi_wlast(h_wlast), .m_axi_wvalid(h_wvalid),
+		.m_axi_wready(h_wready), .m_axi_bresp(h_bresp), .m_axi_bvalid(h_bvalid),
+		.m_axi_bready(h_bready), .m_axi_araddr(h_araddr), .m_axi_arlen(h_arlen),
+		.m_axi_arsize(h_arsize), .m_axi_arburst(h_arburst), .m_axi_arlock(h_arlock),
+		.m_axi_arcache(h_arcache), .m_axi_arprot(h_arprot), .m_axi_arregion(h_arregion),
+		.m_axi_arqos(h_arqos), .m_axi_arvalid(h_arvalid), .m_axi_arready(h_arready),
+		.m_axi_rdata(h_rdata), .m_axi_rresp(h_rresp), .m_axi_rlast(h_rlast),
+		.m_axi_rvalid(h_rvalid), .m_axi_rready(h_rready)
+	);
+
+	atg_kc705_bar2_cc host_cc (
+		.s_axi_aclk(s_clk), .s_axi_aresetn(s_rst_n),
+		.s_axi_awid(4'd0), .s_axi_awaddr(h_awaddr), .s_axi_awlen(h_awlen),
+		.s_axi_awsize(h_awsize), .s_axi_awburst(h_awburst), .s_axi_awlock(h_awlock),
+		.s_axi_awcache(h_awcache), .s_axi_awprot(h_awprot), .s_axi_awregion(h_awregion),
+		.s_axi_awqos(h_awqos), .s_axi_awvalid(h_awvalid), .s_axi_awready(h_awready),
+		.s_axi_wdata(h_wdata), .s_axi_wstrb(h_wstrb), .s_axi_wlast(h_wlast),
+		.s_axi_wvalid(h_wvalid), .s_axi_wready(h_wready), .s_axi_bid(h_bid),
+		.s_axi_bresp(h_bresp), .s_axi_bvalid(h_bvalid), .s_axi_bready(h_bready),
+		.s_axi_arid(4'd0), .s_axi_araddr(h_araddr), .s_axi_arlen(h_arlen),
+		.s_axi_arsize(h_arsize), .s_axi_arburst(h_arburst), .s_axi_arlock(h_arlock),
+		.s_axi_arcache(h_arcache), .s_axi_arprot(h_arprot), .s_axi_arregion(h_arregion),
+		.s_axi_arqos(h_arqos), .s_axi_arvalid(h_arvalid), .s_axi_arready(h_arready),
+		.s_axi_rid(h_rid), .s_axi_rdata(h_rdata), .s_axi_rresp(h_rresp),
+		.s_axi_rlast(h_rlast), .s_axi_rvalid(h_rvalid), .s_axi_rready(h_rready),
+		.m_axi_aclk(aclk), .m_axi_aresetn(user_rst_n),
+		.m_axi_awid(k_awid), .m_axi_awaddr(k_awaddr), .m_axi_awlen(k_awlen),
+		.m_axi_awsize(k_awsize), .m_axi_awburst(k_awburst), .m_axi_awlock(k_awlock),
+		.m_axi_awcache(k_awcache), .m_axi_awprot(k_awprot), .m_axi_awregion(k_awregion),
+		.m_axi_awqos(k_awqos), .m_axi_awvalid(k_awvalid), .m_axi_awready(k_awready),
+		.m_axi_wdata(k_wdata), .m_axi_wstrb(k_wstrb), .m_axi_wlast(k_wlast),
+		.m_axi_wvalid(k_wvalid), .m_axi_wready(k_wready), .m_axi_bid(k_bid),
+		.m_axi_bresp(k_bresp), .m_axi_bvalid(k_bvalid), .m_axi_bready(k_bready),
+		.m_axi_arid(k_arid), .m_axi_araddr(k_araddr), .m_axi_arlen(k_arlen),
+		.m_axi_arsize(k_arsize), .m_axi_arburst(k_arburst), .m_axi_arlock(k_arlock),
+		.m_axi_arcache(k_arcache), .m_axi_arprot(k_arprot), .m_axi_arregion(k_arregion),
+		.m_axi_arqos(k_arqos), .m_axi_arvalid(k_arvalid), .m_axi_arready(k_arready),
+		.m_axi_rid(k_rid), .m_axi_rdata(k_rdata), .m_axi_rresp(k_rresp),
+		.m_axi_rlast(k_rlast), .m_axi_rvalid(k_rvalid), .m_axi_rready(k_rready)
+	);
+
 	atg_kc705_pcie_ip bridge (
 		.axi_aresetn(pcie_perst_n), .user_link_up(link_up), .axi_aclk_out(aclk),
 		.axi_ctl_aclk_out(ctl_aclk), .mmcm_lock(mmcm_lock), .interrupt_out(irq_out),
 		.INTX_MSI_Request(msi_q), .INTX_MSI_Grant(intx_grant), .MSI_enable(msi_en),
 		.MSI_Vector_Num(5'd0), .MSI_Vector_Width(msi_width),
-		.s_axi_awid(s_awid), .s_axi_awaddr(s_awaddr), .s_axi_awregion(4'd0),
-		.s_axi_awlen(s_awlen), .s_axi_awsize(s_awsize), .s_axi_awburst(s_awburst),
-		.s_axi_awvalid(s_awvalid), .s_axi_awready(s_awready), .s_axi_wdata(s_wdata),
-		.s_axi_wstrb(s_wstrb), .s_axi_wlast(s_wlast), .s_axi_wvalid(s_wvalid),
-		.s_axi_wready(s_wready), .s_axi_bid(s_bid), .s_axi_bresp(s_bresp),
-		.s_axi_bvalid(s_bvalid), .s_axi_bready(s_bready), .s_axi_arid(s_arid),
-		.s_axi_araddr(s_araddr), .s_axi_arregion(4'd0), .s_axi_arlen(s_arlen),
-		.s_axi_arsize(s_arsize), .s_axi_arburst(s_arburst), .s_axi_arvalid(s_arvalid),
-		.s_axi_arready(s_arready), .s_axi_rid(s_rid), .s_axi_rdata(s_rdata),
-		.s_axi_rresp(s_rresp), .s_axi_rlast(s_rlast), .s_axi_rvalid(s_rvalid),
-		.s_axi_rready(s_rready),
+		.s_axi_awid(k_awid), .s_axi_awaddr(k_awaddr), .s_axi_awregion(k_awregion),
+		.s_axi_awlen(k_awlen), .s_axi_awsize(k_awsize), .s_axi_awburst(k_awburst),
+		.s_axi_awvalid(k_awvalid), .s_axi_awready(k_awready), .s_axi_wdata(k_wdata),
+		.s_axi_wstrb(k_wstrb), .s_axi_wlast(k_wlast), .s_axi_wvalid(k_wvalid),
+		.s_axi_wready(k_wready), .s_axi_bid(k_bid), .s_axi_bresp(k_bresp),
+		.s_axi_bvalid(k_bvalid), .s_axi_bready(k_bready), .s_axi_arid(k_arid),
+		.s_axi_araddr(k_araddr), .s_axi_arregion(k_arregion), .s_axi_arlen(k_arlen),
+		.s_axi_arsize(k_arsize), .s_axi_arburst(k_arburst), .s_axi_arvalid(k_arvalid),
+		.s_axi_arready(k_arready), .s_axi_rid(k_rid), .s_axi_rdata(k_rdata),
+		.s_axi_rresp(k_rresp), .s_axi_rlast(k_rlast), .s_axi_rvalid(k_rvalid),
+		.s_axi_rready(k_rready),
 		.m_axi_awaddr(b_awaddr), .m_axi_awlen(b_awlen), .m_axi_awsize(b_awsize),
 		.m_axi_awburst(b_awburst), .m_axi_awprot(b_awprot), .m_axi_awvalid(b_awvalid),
 		.m_axi_awready(b_awready), .m_axi_awlock(b_awlock), .m_axi_awcache(b_awcache),
@@ -338,7 +422,8 @@ module atg_kc705_pcie (
 		d_arqos, x_awaddr[63:58], x_araddr[63:58], x_awaddr[31:0] & 32'd0, m0_bid, m0_rid,
 		m2_bid[3:1], m2_rid[3:1], x_awlock[1], x_arlock[1], x_awcache[7:4], x_arcache[7:4],
 		x_awprot[5:3], x_arprot[5:3], x_awregion[7:4], x_arregion[7:4], x_awqos[7:4],
-		x_arqos[7:4]};
+		x_arqos[7:4], h_bid, h_rid, k_awlock, k_arlock, k_awcache, k_arcache, k_awprot, k_arprot,
+		k_awqos, k_arqos};
 endmodule
 
 `default_nettype wire

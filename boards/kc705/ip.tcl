@@ -18,15 +18,19 @@
 #                       0 not yet regenerated with Vivado), no INTx;
 #                       class 03 80 00, vendor
 #                       10EE, device 7024; AXI -> PCIe (S_AXI, the GPU's
-#                       host accesses, version 1 idle) 0x0000_0000 -
-#                       0x7FFF_FFFF to bus addresses 1:1.
+#                       host accesses, ws288 p039) 0x0000_0000 -
+#                       0x7FFF_FFFF to bus addresses 1:1 (MEM HOST_LIMIT
+#                       0x8000_0000, docs/ghci.md section 11.2).
 #   atg_kc705_bar_xbar  AXI Crossbar, the bridge's master (128 bit) to two:
 #                       M00 0x0000_0000 + 128 KiB (BAR0), M01
 #                       0x8000_0000 + 64 MiB (BAR2); DECERR elsewhere.
 #   atg_kc705_bar0_dn   AXI Data Width Converter, 128 -> 32 bit (BAR0's
 #                       registers).
-#   atg_kc705_bar2_cc   AXI Clock Converter, 128 bit, ID 4: axi_aclk_out
-#                       -> gclk.
+#   atg_kc705_bar2_cc   AXI Clock Converter, 128 bit, ID 4, asynchronous:
+#                       axi_aclk_out -> gclk (BAR2), and a second instance
+#                       gclk -> axi_aclk_out (the GPU's host accesses).
+#   atg_kc705_host_dn   AXI Data Width Converter, 512 -> 128 bit, ID 4
+#                       (the GPU's host accesses, gclk).
 #   atg_kc705_bar2_up   AXI Data Width Converter, 128 -> 512 bit, ID 4.
 #   atg_kc705_mem_xbar  AXI Crossbar, 2 slaves (the GPU, BAR2) -> 1
 #                       master, 512 bit, gclk.
@@ -100,6 +104,10 @@ make atg_kc705_bar0_dn xilinx.com:ip:axi_dwidth_converter:2.1 [list \
 make atg_kc705_bar2_cc xilinx.com:ip:axi_clock_converter:2.1 [list \
 	CONFIG.PROTOCOL AXI4 CONFIG.DATA_WIDTH 128 CONFIG.ADDR_WIDTH 32 CONFIG.ID_WIDTH 4 \
 	CONFIG.ACLK_ASYNC 1]
+
+make atg_kc705_host_dn xilinx.com:ip:axi_dwidth_converter:2.1 [list \
+	CONFIG.PROTOCOL AXI4 CONFIG.SI_DATA_WIDTH 512 CONFIG.MI_DATA_WIDTH 128 \
+	CONFIG.ADDR_WIDTH 32 CONFIG.SI_ID_WIDTH 4]
 
 make atg_kc705_bar2_up xilinx.com:ip:axi_dwidth_converter:2.1 [list \
 	CONFIG.PROTOCOL AXI4 CONFIG.SI_DATA_WIDTH 128 CONFIG.MI_DATA_WIDTH 512 \

@@ -1039,11 +1039,20 @@ bring-up only; a driver does not depend on it.
 - The aperture is reset to an empty range, so a GPU touches no memory until
   the driver sets it.
 - Local memory, when present, is the range [LOCAL_BASE, LOCAL_BASE +
-  LOCAL_SIZE) of GPU addresses (MEM capability). Every other GPU address is
-  a host address: the access goes to the host bus at that address (a
-  physical address, or an I/O virtual address behind the platform's IOMMU).
-  The driver gives the GPU host buffers only at bus addresses outside the
-  local range and below 2^32.
+  LOCAL_SIZE) of GPU addresses (MEM capability). Every other GPU address
+  below HOST_LIMIT (MEM capability; 2^32 without the capability or when it
+  reads 0) is a host address: the access goes to the host bus at that
+  address (a physical address, or an I/O virtual address behind the
+  platform's IOMMU). The driver gives the GPU host buffers only at bus
+  addresses outside the local range and below HOST_LIMIT (and 2^32).
+- An access to a GPU address that is neither local nor below HOST_LIMIT
+  reaches no memory: it is a memory error (fault kind 5). The range is
+  fixed by the GPU's integration (for example the address range that a
+  PCIe bridge forwards to the host); the registers only report it.
+- Accesses to local memory and to the host may complete in any order
+  relative to each other. The GPU keeps the order that this specification
+  promises (for example, the writes before a fence, section 11.5) across
+  both.
 - The GPU moves memory in lines of 2^CAPS[23:20] bytes; the aperture is
   aligned to the line.
 - Without session protection (section 11.6), there is no isolation
@@ -1073,6 +1082,7 @@ offset:
 | +0x0 | LOCAL_BASE | R | GPU address of the first byte of local memory |
 | +0x4 | LOCAL_SIZE | R | Bytes of local memory; 0 = none (unified) |
 | +0x8 | WINDOW_SIZE | R | Bytes of local memory, from LOCAL_BASE, that the local window shows; 0 = no window. Where the window is on the host is defined by the binding (section 15) |
+| +0xC | HOST_LIMIT | R | GPU addresses below HOST_LIMIT, outside local memory, reach the host (section 11.2); 0 = every address outside local memory up to 2^32. 4 KiB aligned |
 
 A GPU without the MEM capability is unified.
 

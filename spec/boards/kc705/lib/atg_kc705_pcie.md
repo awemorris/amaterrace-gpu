@@ -22,15 +22,16 @@ None.
 | `link_up` | out | 1 | user_link_up. |
 | `m0_*` | | | AXI4 master: BAR0 (128 KiB, offsets 16:0, 32-bit data, ID 0). |
 | `m2_*` | | | AXI4 master: BAR2 (64 MiB, offsets 25:0, 128-bit data). |
-| `s_*` | | | AXI4 slave: the GPU's host accesses (AXI -> PCIe, 0x0000_0000-0x7FFF_FFFF to bus addresses 1:1); idle in version 1. |
+| `s_clk`, `s_rst_n` | in | 1 | The GPU's clock (gclk) and reset, for `s_*`. |
+| `s_*` | | | AXI4 slave in s_clk: the GPU's host accesses (512-bit, ID 4; AXI -> PCIe, 0x0000_0000-0x7FFF_FFFF to bus addresses 1:1, DECERR elsewhere: the bridge's). |
 | `msi_req` | in | 1 | A message requested (held; GHCI's one vector). |
 | `msi_ack` | out | 1 | Sent (one cycle). |
 
-13 ports and 3 AXI groups.
+15 ports and 3 AXI groups.
 
 ## 4. Behaviour
 
-The bridge's BAR0 maps to AXI 0x0000_0000 and BAR2 to 0x8000_0000; a crossbar splits them (DECERR elsewhere) and a width converter gives BAR0 32-bit beats.  BARs are 32-bit (the bridge has one BAR width for all and no prefetchable choice; §15.2 asks BAR2 64-bit prefetchable: recorded deviation).  Class 03 80 00, vendor 10EE, device 7024.  MSI: one vector (docs/ghci.md §15.2; the IP's NUM_MSI_REQ 0, not yet regenerated with Vivado), INTX_MSI_Request held until INTX_MSI_Grant, MSI_Vector_Num 0; only while MSI_enable.  The bridge's control slave is unused.
+The bridge's BAR0 maps to AXI 0x0000_0000 and BAR2 to 0x8000_0000; a crossbar splits them (DECERR elsewhere) and a width converter gives BAR0 32-bit beats.  BARs are 32-bit (the bridge has one BAR width for all and no prefetchable choice; §15.2 asks BAR2 64-bit prefetchable: recorded deviation).  Class 03 80 00, vendor 10EE, device 7024.  MSI: one vector (docs/ghci.md §15.2; the IP's NUM_MSI_REQ 0, not yet regenerated with Vivado), INTX_MSI_Request held until INTX_MSI_Grant, MSI_Vector_Num 0; only while MSI_enable.  The bridge's control slave is unused.  The GPU's host accesses (ws288 p039): `atg_kc705_host_dn` (512 -> 128 bit, in s_clk) and a second `atg_kc705_bar2_cc` (s_clk -> user_clk, 128 bit) into the bridge's S_AXI; the downsizer answers the IDs (its master side has none).
 
 ## 5. State machine
 
@@ -42,11 +43,11 @@ The bridge's.
 
 ## 7. Corner cases and errors
 
-PG055 was not read: the INTX_MSI_* handshake and axi_aresetn (PERST#) are taken from the port list (Unverified until the board).
+PG055 was not read: the INTX_MSI_* handshake and axi_aresetn (PERST#) are taken from the port list (Unverified until the board).  Unverified too: when the bridge answers BRESP for an AXI -> PCIe write (a posted write: possibly before it reached host memory), which bears on a fence in local memory after host writes (docs/ghci.md §11.5); and the clock converter's reset rule (its two resets are not asserted together: s_rst_n is the GPU's, the other user_rst_n).
 
 ## 8. What the TB checks
 
-Replaced in simulation by `sim/models/kc705/atg_kc705_pcie.v` (same ports: host tasks bar0_read/write, bar2_read/write(4), MSI acknowledgement and counts, DECERR for the GPU's host accesses); `sim/tb/atg_kc705_pcie_tb.v`.  Linted by `tools/lint.sh` with the generated cores' port lists as stubs (`sim/lint/xilinx_stubs.v`).
+Replaced in simulation by `sim/models/kc705/atg_kc705_pcie.v` (same ports: host tasks bar0_read/write, bar2_read/write(4), MSI acknowledgement and counts, a host memory for the GPU's host accesses with host_read/host_write, DECERR at 0x8000_0000 and above); `sim/tb/atg_kc705_pcie_tb.v` (`PASS atg_kc705_pcie.host`: the GPU's debug-port read and write below HOST_LIMIT reach the host memory).  Linted by `tools/lint.sh` with the generated cores' port lists as stubs (`sim/lint/xilinx_stubs.v`).
 
 ## 9. References
 

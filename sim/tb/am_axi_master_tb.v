@@ -66,6 +66,7 @@ module am_axi_master_harness #(
 		.clk(clk), .rst_n(rst_n), .halt(halt), .idle(idle),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_user(req_user),
+		.req_id(1'b0), .req_key(8'd0), .m_awid(), .m_bid(1'b0), .m_arid(), .m_rid(1'b0),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_user(rsp_user),
 		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error),
 		.m_awaddr(awaddr), .m_awlen(awlen), .m_awsize(awsize), .m_awburst(awburst),
