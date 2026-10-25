@@ -1,6 +1,6 @@
 # atg_tu_filter
 
-RTL: `rtl/gpu/tu/atg_tu_filter.v`.  Parent: atg_tu.  Implemented in: p009.
+RTL: `rtl/gpu/tu/atg_tu_filter.v`.  Parent: atg_tu.  Children (p038): atg_tu_fpre, four atg_tu_fsum, four atg_tu_frnd, atg_tu_fword, am_fifo.  Implemented in: p009.
 
 ## 1. Purpose and place
 
@@ -28,14 +28,15 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `tc_ctl` | in | 48 | As ta_ctl (atg_tu_addr.md §3). |
 | `tc_value` | in | 128 | As ta_value. |
 | `tc_last` | in | 1 | Last. |
+| `idle` | out | 1 | No quad taken and not yet returned, no pass with more to follow pending; atg_tu hands a pass of the fp32 path only then. |
 | **Return to the SU** | | | |
-| `tr_valid` | out | 1 | Returned quad (in request order). |
+| `tr_valid` | out | 1 | Returned quad (in request order; the head of a FIFO of 4 quads). |
 | `tr_ready` | in | 1 | Taken. |
 | `tr_tag` | out | 16 | Tag. |
 | `tr_data` | out | 512 | 4 lanes × RGBA fp32 (texsz: lane word 0 = {h, w}). |
 | `tr_last` | out | 1 | Last. |
 
-16 ports.
+17 ports.
 
 ## 4. Behaviour
 
@@ -55,11 +56,11 @@ TEX_FORMAT's formats of this path (tc_ctl[34:27] the VkFormat, 0 for the earlier
 
 ## 5. State machine
 
-IDLE →(tc_valid)→ RUN (lanes 0-3, one per cycle) → OUT →(tr_ready)→ IDLE; a pass with more to follow (tc_ctl[4]) goes from RUN to IDLE.
+IDLE →(tc_valid)→ RUN (lanes 0-3, one a cycle) → IDLE; the next pass is also taken in the cycle of lane 3 (RUN goes on).  A pass is taken only while the last passes taken whose quads are not yet returned are fewer than 4 (the FIFO's room).
 
 ## 6. Latency and throughput
 
-Target one quad per cycle.  v1: one lane (its four channels) per cycle, a quad in 4 cycles + 2 (p015).
+4 cycles a pass, the passes back to back, the quads of the path overlapping in the pipeline.  Pipeline of 18 stages without stalls (cycle of the stage after the issue): P1 the lane's texels (RGB565, R8 and R8G8 as RGBA8), weights, Dref; P2 Dref × (2^24 − 1) and × (2^16 − 1), the shift amounts, the order keys, 256 − f; P3 the shifts, the bilinear weights (256 − fu or fu)(256 − fv or fv) and W (am_mul); P4 the roundings, Dref's key; P5 the compares and the channels' bytes; P7 the bytes × the weights (16 am_mul); P8-P9 R, their sum; P11 R × W (am_mul); the sums A are read in P10 (registered) and written in P11 (A of a lane in the next pass comes 4 or more cycles later); P13-P14 A × 257 × 65537 + A × 2^32 = A × 0x0101010101; P14 the conversion's integer (the sum, or the depth's, gather's, the LOD query's, RGB565's); P15 leading zeros, P16 shifted, P17 rounded (rnd81); P18 the lane's words (depth, gather, swizzle, the queries, the mask), written to the quad's place; the quad goes into the FIFO with lane 3.  A quad returns 4 + 18 cycles after its last pass is taken.  Streamed (`atg_tu_filter_tb`, random gaps and tr_ready): 3420 quads in 39,436 cycles before p038, 33,306 after.  All the arithmetic through rtl/common (am_add, am_sub, am_shift, am_mul, am_fifo).
 
 ## 7. Corner cases and errors
 
@@ -80,7 +81,7 @@ None beyond the above.
 - `PASS atg_tu_filter.vkformat` — TEX_FORMAT's formats of this path: R8 and R8G8 (texels and border texels), D16 compare, the swizzle after filtering and compare, gather through the swizzle
 - `PASS atg_tu_filter` at the end.
 
-The reference is `tools/tumodel.py` (vectors `sim/vec/tu_filter.txt` from `tools/tu-vectors.py`): nearest = every byte value in every channel, both formats, texsz, texf, lane masks; bilinear = random texels and weights with the end values 0, 1, 128, 255.  Random gaps and tr_ready.
+The reference is `tools/tumodel.py` (vectors `sim/vec/tu_filter.txt` from `tools/tu-vectors.py`): nearest = every byte value in every channel, both formats, texsz, texf, lane masks; bilinear = random texels and weights with the end values 0, 1, 128, 255.  Passes go in as soon as they are taken (random gaps); tr_ready is random and sometimes low for 40 cycles (the FIFO full, the credits); the returns are checked in order, and a return without one expected fails (a pass with more to follow must return nothing).
 
 ## 9. References
 
@@ -95,3 +96,5 @@ Part F (P3): the passes accumulate (sums of 40 bits a channel, the pass weight f
 TEX_FORMAT (2026-10-25): tc_ctl 48 bits, R8 and R8G8, D16 compare, the swizzle (above); the other formats of TEX_FORMAT go to atg_tu_ffilt, the earlier codes are unchanged (the earlier vectors are kept).
 
 RGB565 (the MSAA work): ctl[19]: texf converts exactly (c × sum(2^5i) × 2^-80, c × sum(2^6i) × 2^-78, both rounded to nearest even: never a tie, so the correctly rounded c / 31 and c / 63; `tools/tu-vectors.py` checks every c against fractions); the other operations take the texel as RGBA8 ((c << 3) | (c >> 2), (c << 2) | (c >> 4), alpha 255).
+
+p038 (2026-10-25, the pipeline): §5, §6; the bilinear sum as the four bytes times their weights ((256 − fu)(256 − fv), fu (256 − fv), (256 − fu) fv, fu fv; the same integer); Dref's conversions and A × 0x0101010101 in stages through rtl/common; quads overlap (FIFO of 4, `idle` for atg_tu).  The values are unchanged.
