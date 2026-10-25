@@ -26,6 +26,10 @@ module atg_su_scrub #(
 	output reg on,
 	output reg [AW-1:0] a
 );
+	wire [AW-1:0] a_next;
+	wire a_co_unused;
+	am_add #(.W(AW)) u_a (.a(a), .b({AW{1'b0}}), .ci(1'b1), .s(a_next), .co(a_co_unused));
+
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			on <= 1'b0;
@@ -37,7 +41,7 @@ module atg_su_scrub #(
 			if ({{(32-AW){1'b0}}, a} == DEPTH - 1)
 				on <= 1'b0;
 			else
-				a <= a + 1'b1;
+				a <= a_next;
 		end
 	end
 endmodule

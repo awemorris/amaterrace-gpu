@@ -138,8 +138,20 @@ module atg_su_tex #(
 	wire [3:0] qmask = lanes[q*4 +: 4];
 	assign tx_valid = st == SEND && qmask != 4'd0;
 	assign tx_mask = qmask;
-	assign tx_coord = crd[q*640 +: 640];
-	wire [31:0] qn = {{(32 - GRP_W){1'b0}}, grp} * NQ + {{(32 - QW){1'b0}}, q};
+	/* Quad q's coordinates (a selection: 640 bits a quad), and the quad's number grp NQ + q. */
+	reg [639:0] q_crd;
+	integer qi;
+	always @(*) begin
+		q_crd = crd[639:0];
+		for (qi = 1; qi < NQ; qi = qi + 1)
+			if (q == qi[QW-1:0])
+				q_crd = crd[qi*640 +: 640];
+	end
+	assign tx_coord = q_crd;
+	wire [31:0] qn = ({{(32 - GRP_W){1'b0}}, grp} << QW) | {{(32 - QW){1'b0}}, q};
+	wire [QW-1:0] q_next;
+	wire qn_co_unused;
+	am_add #(.W(QW)) u_q (.a(q), .b({QW{1'b0}}), .ci(1'b1), .s(q_next), .co(qn_co_unused));
 	wire [2:0] qnum = qn[2:0];
 	wire [5:0] wpad = {{(6 - WARP_W){1'b0}}, warp};
 	assign tx_tag = {3'd0, wpad[2:0], qnum, rd};
@@ -176,7 +188,7 @@ module atg_su_tex #(
 				st <= qm != {NQ{1'b0}} ? SEND : IDLE;
 			end
 			SEND: if (!tx_valid || tx_ready) begin
-				q <= q + 1'b1;
+				q <= q_next;
 				if (q == lastq)
 					st <= IDLE;
 			end

@@ -184,6 +184,17 @@ module atg_su_lsu #(
 	reg [DW-1:0] rsel;
 	reg [WW-1:0] ro;
 	integer l3, l4;
+
+	/* The lanes' addresses: rs1 + imm (rs1 alone for an atomic). */
+	wire [DW-1:0] x_adr;
+	genvar la;
+	generate
+		for (la = 0; la < NPHYS; la = la + 1) begin : g_adr
+			wire co_unused;
+			am_add #(.W(32)) u_adr (.a(x_a[la*32 +: 32]), .b(op == ATG_LSU_ATOM ? 32'd0 : imm),
+				.ci(1'b0), .s(x_adr[la*32 +: 32]), .co(co_unused));
+		end
+	endgenerate
 	always @(*)
 		for (l3 = 0; l3 < NPHYS; l3 = l3 + 1) begin
 			ro = radr[l3*32 + 2 +: WW];
@@ -200,8 +211,7 @@ module atg_su_lsu #(
 			inv_q <= mine && st == IDLE && op == ATG_LSU_FENCE && imm[2];
 			case (st)
 			IDLE: if (take) begin
-				for (l4 = 0; l4 < NPHYS; l4 = l4 + 1)
-					radr[l4*32 +: 32] <= x_a[l4*32 +: 32] + (op == ATG_LSU_ATOM ? 32'd0 : imm);
+				radr <= x_adr;
 				rdat <= x_b;
 				rcmp <= x_c;
 				res <= {DW{1'b0}};

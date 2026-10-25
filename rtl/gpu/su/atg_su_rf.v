@@ -58,12 +58,16 @@ module atg_su_rf #(
 	localparam DEPTH = NWARPS * NREGS * G;
 	localparam A_W = $clog2(DEPTH);
 
+	localparam NR_W = $clog2(NREGS);	/* NREGS and G are powers of two: the fields are disjoint */
+	localparam G_W = $clog2(G);
+
+	/* (w NREGS + r mod NREGS) G + g mod G, as its bit fields. */
 	function [31:0] addr;
 		input [WARP_W-1:0] w;
 		input [5:0] r;
 		input [GRP_W-1:0] g;
-		addr = ({{(32-WARP_W){1'b0}}, w} * NREGS + {26'd0, r} % NREGS) * G +
-			{{(32-GRP_W){1'b0}}, g} % G;
+		addr = ({{(32-WARP_W){1'b0}}, w} << (NR_W + G_W)) | (({26'd0, r} % NREGS) << G_W) |
+			({{(32-GRP_W){1'b0}}, g} % G);
 	endfunction
 
 	wire [31:0] wa32 = addr(w_warp, w_reg, w_grp);
