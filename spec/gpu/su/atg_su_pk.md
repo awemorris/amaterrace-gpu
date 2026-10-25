@@ -1,6 +1,6 @@
 # atg_su_pk
 
-RTL: `rtl/gpu/su/atg_su_pk.v`.  Parent: atg_su.  Implemented in: p008 (part 2).
+RTL: `rtl/gpu/su/atg_su_pk.v`.  Parent: atg_su.  Children: atg_su_pk_half (two per lane), atg_su_h2f (one per lane).  Implemented in: p008 (part 2).
 
 ## 1. Purpose and place
 
@@ -18,6 +18,7 @@ The 16-bit packed unit: fadd2/fsub2/fmul2/ffma2/fmin2/fmax2/fcmp2, iadd2/isub2/i
 | `UOP_W` | `104` | Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh). |
 | `PACKED` | `0` | Packed arithmetic present (0: only packh/unpackh/swaph). |
 | `SHORT_LAT` | `6` | Cycles from x_valid to the short result (one fixed pipeline for classes a and f, design §3.1.1). |
+| `PK_SHARED` | `0` | With PACKED: the fp16 operations (fadd2 to fmax2 and the compares) on atg_su_fpu's fp32 datapath; this unit does not take them and its x_ready is 0 in the cycle after one is taken. |
 
 ## 3. Ports
 
@@ -82,3 +83,4 @@ design §3.4.1 (custom-2), U15.
 ## 10. Status
 
 Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_pk_tb.v` on the 4000 vectors of `tools/gsi1fp.py --pk-vec`, PACKED 1 and 0).  Choices made here: packh = {fp16(rs2), fp16(rs1)} (RNE, flushed, NaN 0x7E00), unpackh sub 0 the low half, 1 the high half; swaph is present with PACKED 0 too (the decoder faults it there, so the 7010 keeps only packh/unpackh, U15); hsel 01/10 compute one half and take the other from rs1, 11 swaps rs2's halves; fcmp2.ge is le with the operands swapped (unordered false); sat clamps the float halves; the fp16 fma is one fused datapath per half (include/atg_su_fp16.vh).  Open point: atg_su_opd applies the PK modifiers (bits 15 and 31) also to packh's fp32 operands; the model does the same.
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 100,000 random cycles in four shapes: PACKED 0, PACKED 1, PK_SHARED, NPHYS 32): per lane two atg_su_pk_half (the fused fp16 datapath, the compares, iadd2/isub2/imul2 and packh's conversion, sharing one multiplier, one 37-bit adder and one rounding) and one atg_su_h2f (unpackh) in place of the functions of include/atg_su_fp16.vh.
