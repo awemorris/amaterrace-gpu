@@ -14,7 +14,10 @@
 # Prints the utilisation's main rows and the run's time.
 # VIVADO, XILINXD_LICENSE_FILE and the libncurses.so.5 fallback as in
 # tools/vivado-build.sh.  VIVADO_TIMEOUT (default 7200 s) bounds the run;
-# VIVADO_THREADS (default 8) is Vivado's general.maxThreads.
+# VIVADO_THREADS (default 8) is Vivado's general.maxThreads; OOC_FLATTEN
+# (none) keeps each module's logic in its own row of utilization_hier.rpt
+# (the default, rebuilt, optimizes across modules and the rows are only
+# approximate).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 root=$(cd "$(dirname -- "$0")/.." && pwd)
@@ -78,7 +81,7 @@ if [ $rc -ne 0 ]; then
 	echo "vivado-ooc: failed rc $rc (log $out/vivado.log)" >&2
 	exit 1
 fi
-grep -E '^\| (Slice LUTs\*?   LUT as (Logic|Memory) |Slice Registers |Block RAM Tile |DSPs )' \
+grep -E '^\| (Slice LUTs\*? |  LUT as (Logic|Memory) |Slice Registers |Block RAM Tile |DSPs )' \
 	"$out/utilization.rpt" | head -8
 grep -E '^vivado-ooc:' "$out/vivado.log" | tail -1
 echo "vivado-ooc: $(grep -c '^WARNING' "$out/vivado.log") warnings, $(grep -c '^CRITICAL WARNING' "$out/vivado.log") critical, $(( $(date +%s) - start )) s, $out"

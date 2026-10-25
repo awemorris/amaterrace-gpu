@@ -101,9 +101,43 @@ module atg_rop_fblend (
 		fmax = isnan(a[30:0]) || isnan(b[30:0]) ? 32'h7FC00000 : fle(b, a) ? a : b;
 	endfunction
 
+	/* atg_fmt_unpack and atg_fmt_pack for the formats of this path, each
+	 * with its format as a constant (it reduces to that format's fields
+	 * and conversions); the value for other formats is not used (their
+	 * lanes are skipped and give o_raw 0, o_keep all ones). */
+	function [128:0] unpackf;
+		input [127:0] r;
+		input [7:0] f;
+		case (f)
+		8'd43: unpackf = atg_fmt_unpack(r, 8'd43, 1'b0);
+		8'd50: unpackf = atg_fmt_unpack(r, 8'd50, 1'b0);
+		8'd57: unpackf = atg_fmt_unpack(r, 8'd57, 1'b0);
+		8'd64: unpackf = atg_fmt_unpack(r, 8'd64, 1'b0);
+		8'd76: unpackf = atg_fmt_unpack(r, 8'd76, 1'b0);
+		8'd83: unpackf = atg_fmt_unpack(r, 8'd83, 1'b0);
+		8'd97: unpackf = atg_fmt_unpack(r, 8'd97, 1'b0);
+		default: unpackf = 129'd0;
+		endcase
+	endfunction
+	function [255:0] packf;
+		input [127:0] pf_c;
+		input [7:0] f;
+		input [3:0] pf_m;
+		case (f)
+		8'd43: packf = atg_fmt_pack(pf_c, 8'd43, pf_m);
+		8'd50: packf = atg_fmt_pack(pf_c, 8'd50, pf_m);
+		8'd57: packf = atg_fmt_pack(pf_c, 8'd57, pf_m);
+		8'd64: packf = atg_fmt_pack(pf_c, 8'd64, pf_m);
+		8'd76: packf = atg_fmt_pack(pf_c, 8'd76, pf_m);
+		8'd83: packf = atg_fmt_pack(pf_c, 8'd83, pf_m);
+		8'd97: packf = atg_fmt_pack(pf_c, 8'd97, pf_m);
+		default: packf = {{128{1'b1}}, 128'd0};
+		endcase
+	endfunction
+
 	/* The lane's values: source, destination, constant (clamped for fixed). */
 	wire [127:0] s_raw = src[128 * l +: 128];
-	wire [128:0] d_un = atg_fmt_unpack({64'd0, dst[64 * l +: 64]}, fmt, 1'b0);
+	wire [128:0] d_un = unpackf({64'd0, dst[64 * l +: 64]}, fmt);
 	wire [31:0] s_c = fixed ? c01(s_raw[32 * c +: 32]) : s_raw[32 * c +: 32];
 	wire [31:0] s_a = fixed ? c01(s_raw[127:96]) : s_raw[127:96];
 	wire [31:0] d_c = d_un[32 * c +: 32];
@@ -159,7 +193,7 @@ module atg_rop_fblend (
 		.i_x(rr_l[32 * c +: 32]), .o_valid(e_ov), .o_ready(1'b1), .o_code(e_code));
 
 	/* The pack of lane l. */
-	wire [255:0] pk = atg_fmt_pack(rr_l, fmt, wm);
+	wire [255:0] pk = packf(rr_l, fmt, wm);
 
 	assign i_ready = st == S_IDLE;
 	assign o_valid = st == S_OUT;

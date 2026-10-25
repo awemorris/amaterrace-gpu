@@ -4,7 +4,8 @@
 # Reads every rtl/**/*.v and include/ for `include, sets the NAME=VALUE
 # parameters on TOP, constrains the port clk to PERIOD ns, and writes
 # OUT/utilization.rpt, utilization_hier.rpt (8 levels), timing_summary.rpt
-# (the synthesis estimate) and TOP.dcp (synthesized).
+# (the synthesis estimate) and TOP.dcp (synthesized).  The environment's
+# VIVADO_THREADS sets general.maxThreads, OOC_FLATTEN -flatten_hierarchy.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 if {[llength $argv] < 5} {
@@ -43,6 +44,11 @@ set args [list -top $top -part $part -mode out_of_context \
 	-include_dirs [list [file join $root include]]]
 if {[llength $generics] > 0} {
 	lappend args -generic $generics
+}
+# OOC_FLATTEN: synth_design's -flatten_hierarchy (default rebuilt; none
+# keeps each module's logic in its own row of the hierarchy report).
+if {[info exists ::env(OOC_FLATTEN)]} {
+	lappend args -flatten_hierarchy $::env(OOC_FLATTEN)
 }
 synth_design {*}$args
 
