@@ -53,6 +53,22 @@ module atg_cpu_dma_harness #(
 	wire [LB-1:0] req_be;
 	wire [LB*8-1:0] req_wdata;
 	wire [7:0] req_tag;
+	wire req_chk, req_tbl;
+	wire [5:0] req_slot;
+	reg [5:0] dslot = 6'd0;
+	/* Session protection: the side band every request of a copy must carry. */
+	reg x_chk = 1'b0, x_tbl = 1'b0;
+	reg [5:0] x_slot = 6'd0;
+	integer n_side = 0;
+	always @(posedge clk)
+		if (req_valid) begin
+			n_side = n_side + 1;
+			if (req_chk !== x_chk || req_tbl !== x_tbl || req_slot !== x_slot) begin
+				$display("FAIL LB=%0d protection side %b %b %0d, expected %b %b %0d", LB,
+					req_chk, req_tbl, req_slot, x_chk, x_tbl, x_slot);
+				errors = errors + 1;
+			end
+		end
 	reg rsp_valid = 1'b0, rsp_write = 1'b0, rsp_error = 1'b0;
 	reg [7:0] rsp_tag = 0;
 	reg [LB*8-1:0] rsp_rdata = 0;
@@ -60,6 +76,7 @@ module atg_cpu_dma_harness #(
 
 	atg_cpu_dma #(.ADDR_W(32), .LINE_BYTES(LB), .LINE_SHIFT(LS)) dut (
 		.clk(clk), .rst_n(rst_n),
+		.req_chk(req_chk), .req_tbl(req_tbl), .req_slot(req_slot), .dma_slot(dslot),
 		.sb_we(sb_we), .sb_re(sb_re), .sb_idx(sb_idx), .sb_wdata(sb_wdata), .sb_rdata(sb_rdata),
 		.ld_start(ld_start), .ld_imem(ld_imem), .ld_addr(ld_addr), .ld_words(ld_words),
 		.ld_done(ld_done), .ld_error(ld_error),
@@ -366,6 +383,27 @@ module atg_cpu_dma_harness #(
 		load(1, BASE + 698 * LB, 4 * WPL);
 		if (!ld_done || !ld_error) begin
 			$display("FAIL LB=%0d load error: done %b error %b", LB, ld_done, ld_error);
+			errors = errors + 1;
+		end
+		/* Session protection: [17] chk with the packet's slot, [18] tbl; a slot of 0
+		 * (an unprotected session) is not checked. */
+		x_chk = 1'b1;
+		x_tbl = 1'b1;
+		x_slot = 6'd5;
+		dslot = 6'd5;
+		n_side = 0;
+		sbw(6'h10, BASE);
+		sbw(6'h11, 32'h100);
+		sbw(6'h12, 32'h00060002);	/* 2 lines, chk, tbl, memory -> DMEM */
+		wait_idle;
+		x_chk = 1'b0;
+		x_tbl = 1'b0;
+		x_slot = 6'd0;
+		dslot = 6'd0;
+		sbw(6'h12, 32'h00030001);	/* chk with slot 0, DMEM -> memory */
+		wait_idle;
+		if (n_side < 3) begin
+			$display("FAIL LB=%0d protection side: %0d requests seen", LB, n_side);
 			errors = errors + 1;
 		end
 		/* Requests outside the model's range would be errors: none expected. */

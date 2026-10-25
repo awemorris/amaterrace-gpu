@@ -62,7 +62,15 @@ module atg_top #(
 	parameter SU_SUBGROUP = 0,
 	parameter SU_FRAG_RESERVE = 1,	/* slots kept for fragment warps (design §3.8; KC705 2) */
 	parameter SU_LDS_BYTES = 4096,
-	parameter SU_VARY_WORDS = 16
+	parameter SU_VARY_WORDS = 16,
+	/* Session protection (docs/ghci.md section 11.6; needs HAS_CPU): the MC's check, the CP's
+	 * atg_cp_prot.  Slots, grant entries (and clog2), PLB lines (and clog2). */
+	parameter HAS_PROT = 0,
+	parameter PROT_SLOTS = 31,
+	parameter PROT_GRANTS = 8,
+	parameter PROT_GIDX_W = 3,
+	parameter PROT_PLB = 4,
+	parameter PROT_PLB_W = 2
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -276,11 +284,24 @@ module atg_top #(
 	localparam [NCLIENT-1:0] MC_UNITS = ~({{(NCLIENT-1){1'b0}}, 1'b1} |
 		(EXT_CLIENT != 0 ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_EXT : {NCLIENT{1'b0}}));
 	wire mc_unit_idle;
-	/* Session protection (not wired to the CP yet). */
+	/* Session protection: the MC's and the CP's sides (atg_cp_prot). */
+	localparam PROT = HAS_PROT != 0 && HAS_CPU != 0;
+	localparam [NCLIENT-1:0] RMW = HAS_ATOM != 0 ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_ATOM :
+		{NCLIENT{1'b0}};
 	wire mc_fault_prot, mc_fault_mem, mc_chk_idle, mc_inv_pending;
 	wire [5:0] mc_fault_slot;
-	wire unused_prot = &{1'b0, mc_fault_prot, mc_fault_mem, mc_chk_idle, mc_inv_pending,
-		mc_fault_slot};
+	wire [7:0] mc_fault_tag;
+	wire [NCLIENT-1:0] c_req_chk, c_req_tbl;
+	wire [NCLIENT*6-1:0] c_req_slot;
+	wire [31:0] prot_tbase, prot_inv_n;
+	wire [19:0] prot_inv_g;
+	wire prot_inv_valid, prot_gw_valid;
+	wire [PROT_GIDX_W-1:0] prot_gw_idx;
+	wire [49:0] prot_gw_data;
+	wire [5:0] prot_unit;
+	wire prot_sw_inv;
+	wire cp_req_chk, cpu_req_chk, cpu_req_tbl;
+	wire [5:0] cp_req_slot, cpu_req_slot;
 	wire st_we;
 	wire [9:0] st_idx;
 	/* The blocks but the TU see STATE[0..511] (0x200-0x2FF is the TU's). */
@@ -309,7 +330,7 @@ module atg_top #(
 
 	/* The CP's links to the blocks of design §7.6. */
 	wire draw_kick, cs_kick, lc_kick, raw_kick;
-	wire [3:0] inv;
+	wire [3:0] inv, cp_inv;
 	wire hcr_we;
 	wire [9:0] hcr_widx, hcr_ridx;
 	wire [31:0] hcr_wdata, hcr_wmask;
@@ -323,7 +344,19 @@ module atg_top #(
 	wire [31:0] cpu_st_rdata, cp_fence_last, cpu_hcr_rdata, cpu_fault_addr;
 	wire cp_fence_ev, cp_halt, cp_open, cpu_fault, cpu_stall, cpu_result;
 	wire [39:0] occ_count;	/* atg_rop's occlusion counter, for QUERY */
-	wire occ_clear;
+	wire occ_clear, cp_occ_clear;
+	/* The sequencer's µop and the CPU's window, for atg_cp_prot. */
+	wire [6:0] fw_side, u_side;
+	wire u_fw, u_ok, f_chk;
+	wire [1:0] u_req;
+	wire [7:0] u_tag;
+	wire [5:0] f_slot, v_slot;
+	wire sb_we, sb_re;
+	wire [5:0] sb_idx;
+	wire [31:0] sb_wdata, prot_sb_rdata, prot_hcr_rdata;
+
+	assign inv = cp_inv | {4{prot_sw_inv}};
+	assign occ_clear = cp_occ_clear || prot_sw_inv;
 
 	atg_cp #(
 		.ADDR_W(32),
@@ -345,7 +378,8 @@ module atg_top #(
 		.MS4(MS4),
 		.CORE1(CORE1),
 		.HAS_FMT(CORE1),
-		.HAS_ETC(HAS_TU != 0)	/* the TU decodes ETC2 and EAC */
+		.HAS_ETC(HAS_TU != 0),	/* the TU decodes ETC2 and EAC */
+		.HAS_PROT(PROT)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -368,6 +402,9 @@ module atg_top #(
 		.mc_fault_client(mc_fault_client),
 		.mc_fault_addr(mc_fault_addr),
 		.mc_fault_write(mc_fault_write),
+		.mc_fault_prot(mc_fault_prot),
+		.mc_fault_mem(mc_fault_mem),
+		.mc_fault_tag(mc_fault_tag),
 		.st_we(st_we),
 		.st_idx(st_idx),
 		.st_wdata(st_wdata),
@@ -382,6 +419,8 @@ module atg_top #(
 		.req_be(c_req_be[0*LINE_BYTES +: LINE_BYTES]),
 		.req_wdata(c_req_wdata[0*LINE_BITS +: LINE_BITS]),
 		.req_tag(c_req_tag[0*8 +: 8]),
+		.req_chk(cp_req_chk),
+		.req_slot(cp_req_slot),
 		.rsp_valid(rsp_valid[0]),
 		.rsp_write(rsp_write_v[0]),
 		.rsp_tag(rsp_tag_v[0*8 +: 8]),
@@ -391,7 +430,7 @@ module atg_top #(
 		.cs_kick(cs_kick),
 		.lc_kick(lc_kick),
 		.raw_kick(raw_kick),
-		.inv(inv),
+		.inv(cp_inv),
 		.busy_ext({sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, 1'b0, !mc_unit_idle}),
 		.vsync(x_vsync),
 		.x_fault({1'b0, su_fault}),
@@ -403,7 +442,7 @@ module atg_top #(
 		.hcr_wdata(hcr_wdata),
 		.hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx),
-		.x_rdata(cpu_hcr_rdata | sa_hcr_rdata),
+		.x_rdata(cpu_hcr_rdata | sa_hcr_rdata | prot_hcr_rdata),
 		.v_valid(v_valid),
 		.v_addr(v_addr),
 		.v_dwords(v_dwords),
@@ -414,6 +453,14 @@ module atg_top #(
 		.fw_data(fw_data),
 		.fw_last(fw_last),
 		.fw_active(fw_active),
+		.fw_side(fw_side),
+		.u_fw(u_fw),
+		.u_side(u_side),
+		.u_req(u_req),
+		.u_tag(u_tag),
+		.u_ok(u_ok),
+		.f_chk(f_chk),
+		.f_slot(f_slot),
 		.cpu_st_ridx(cpu_st_ridx),
 		.cpu_st_rdata(cpu_st_rdata),
 		.cp_fence_last(cp_fence_last),
@@ -424,7 +471,7 @@ module atg_top #(
 		.cpu_fault_addr(cpu_fault_addr),
 		.cpu_stall(cpu_stall),
 		.cpu_result(cpu_result),
-		.occ_count(occ_count), .occ_clear(occ_clear)
+		.occ_count(occ_count), .occ_clear(cp_occ_clear)
 	);
 
 	atg_blt #(
@@ -467,7 +514,13 @@ module atg_top #(
 		.LINE_SHIFT(LINE_SHIFT),
 		.DATA_W(DATA_W),
 		.OUTSTANDING_LOG2(2),
-		.UNIT_MASK(MC_UNITS)
+		.UNIT_MASK(MC_UNITS),
+		.HAS_PROT(PROT),
+		.RMW_MASK(RMW),
+		.PROT_PLB(PROT_PLB),
+		.PROT_PLB_W(PROT_PLB_W),
+		.PROT_GRANTS(PROT_GRANTS),
+		.PROT_GIDX_W(PROT_GIDX_W)
 	) mc (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -478,9 +531,9 @@ module atg_top #(
 		.c_req_be(c_req_be),
 		.c_req_wdata(c_req_wdata),
 		.c_req_tag(c_req_tag),
-		.c_req_chk({NCLIENT{1'b0}}),
-		.c_req_tbl({NCLIENT{1'b0}}),
-		.c_req_slot({6*NCLIENT{1'b0}}),
+		.c_req_chk(c_req_chk),
+		.c_req_tbl(c_req_tbl),
+		.c_req_slot(c_req_slot),
 		.rsp_valid(rsp_valid),
 		.rsp_write(rsp_write_v),
 		.rsp_tag(rsp_tag_v),
@@ -500,14 +553,14 @@ module atg_top #(
 		.fault_mem(mc_fault_mem),
 		.chk_idle(mc_chk_idle),
 		.unit_idle(mc_unit_idle),
-		.prot_tbase(32'd0),
-		.prot_inv_valid(1'b0),
-		.prot_inv_g(20'd0),
-		.prot_inv_n(32'd0),
+		.prot_tbase(prot_tbase),
+		.prot_inv_valid(prot_inv_valid),
+		.prot_inv_g(prot_inv_g),
+		.prot_inv_n(prot_inv_n),
 		.prot_inv_pending(mc_inv_pending),
-		.prot_gw_valid(1'b0),
-		.prot_gw_idx(3'd0),
-		.prot_gw_data(50'd0),
+		.prot_gw_valid(prot_gw_valid),
+		.prot_gw_idx(prot_gw_idx),
+		.prot_gw_data(prot_gw_data),
 		.m_awaddr(m_awaddr),
 		.m_awlen(m_awlen),
 		.m_awsize(m_awsize),
@@ -553,7 +606,9 @@ module atg_top #(
 			.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag),
 			.v_done(v_done),
 			.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data), .fw_last(fw_last),
-			.fw_active(fw_active),
+			.fw_active(fw_active), .fw_side(fw_side),
+			.sb_we(sb_we), .sb_re(sb_re), .sb_idx(sb_idx), .sb_wdata(sb_wdata),
+			.prot_rdata(prot_sb_rdata), .v_slot(v_slot),
 			.st_ridx(cpu_st_ridx), .st_rdata(cpu_st_rdata), .fence_last(cp_fence_last),
 			.fence_ev(cp_fence_ev), .halt_req(cp_halt), .open(cp_open),
 			.ev_result(cpu_result), .stall(cpu_stall), .fault(cpu_fault),
@@ -563,6 +618,7 @@ module atg_top #(
 			.req_be(c_req_be[C_CPU*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_CPU*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_CPU*8 +: 8]),
+			.req_chk(cpu_req_chk), .req_tbl(cpu_req_tbl), .req_slot(cpu_req_slot),
 			.rsp_valid(rsp_valid[C_CPU]), .rsp_write(rsp_write_v[C_CPU]), .rsp_tag(rsp_tag_v[C_CPU*8 +: 8]),
 			.rsp_rdata(rsp_rdata_v[C_CPU*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_CPU])
 		);
@@ -573,6 +629,14 @@ module atg_top #(
 		assign fw_data = 32'd0;
 		assign fw_last = 1'b0;
 		assign fw_active = 1'b0;
+		assign fw_side = 7'd0;
+		assign sb_we = 1'b0;
+		assign sb_re = 1'b0;
+		assign sb_idx = 6'd0;
+		assign sb_wdata = 32'd0;
+		assign cpu_req_chk = 1'b0;
+		assign cpu_req_tbl = 1'b0;
+		assign cpu_req_slot = 6'd0;
 		assign cpu_st_ridx = 10'd0;
 		assign cpu_result = 1'b0;
 		assign cpu_stall = 1'b0;
@@ -581,6 +645,101 @@ module atg_top #(
 		wire unused_cpu = &{1'b0, hcr_we, hcr_widx, hcr_wdata, hcr_wmask, hcr_ridx, v_valid,
 			v_addr, v_dwords, v_tag, fw_ready, cpu_st_rdata, cp_fence_last, cp_fence_ev,
 			cp_halt, cp_open};
+	end
+	endgenerate
+
+	/*
+	 * Session protection (PROT): atg_cp_prot beside the CPU.  The units'
+	 * requests carry prot_unit; the CP's fence unit and the CPU's DMA their
+	 * own; the DC's none.  drain_ok: the units idle, none of their requests
+	 * waiting at a leaf, none with chk in the MC, all of theirs answered.
+	 */
+	localparam [NCLIENT-1:0] UNIT_LEAF = MC_UNITS &
+		~(HAS_CPU != 0 ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_CPU : {NCLIENT{1'b0}});
+	wire prot_scrub;
+	wire [7:0] prot_fault_tag, prot_unit_tag;
+	wire units_busy = blt_busy || vf_busy || rx_busy || rop_busy || tu_busy || su_busy || sa_busy;
+	wire drain_ok = !units_busy && !(|(c_req_valid & UNIT_LEAF)) && mc_chk_idle && mc_unit_idle;
+
+	genvar pc;
+	generate
+	for (pc = 0; pc < NCLIENT; pc = pc + 1) begin : g_side
+		if (pc == 0) begin : g_cp
+			assign c_req_chk[pc] = PROT && cp_req_chk;
+			assign c_req_tbl[pc] = 1'b0;
+			assign c_req_slot[pc*6 +: 6] = PROT ? cp_req_slot : 6'd0;
+		end else if (HAS_CPU != 0 && pc == C_CPU) begin : g_cpu
+			assign c_req_chk[pc] = PROT && cpu_req_chk;
+			assign c_req_tbl[pc] = PROT && cpu_req_tbl;
+			assign c_req_slot[pc*6 +: 6] = PROT ? cpu_req_slot : 6'd0;
+		end else if (EXT_CLIENT != 0 && pc == C_EXT) begin : g_ext
+			assign c_req_chk[pc] = 1'b0;
+			assign c_req_tbl[pc] = 1'b0;
+			assign c_req_slot[pc*6 +: 6] = 6'd0;
+		end else begin : g_unit
+			assign c_req_chk[pc] = PROT && prot_unit != 6'd0;
+			assign c_req_tbl[pc] = 1'b0;
+			assign c_req_slot[pc*6 +: 6] = PROT ? prot_unit : 6'd0;
+		end
+	end
+
+	if (PROT) begin : g_prot
+		atg_cp_prot #(
+			.ADDR_W(32), .SLOTS(PROT_SLOTS[7:0]), .GRANTS(PROT_GRANTS[15:0]),
+			.GIDX_W(PROT_GIDX_W)
+		) prot (
+			.clk(clk), .rst_n(core_rst_n),
+			.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
+			.hcr_ridx(hcr_ridx), .hcr_rdata(prot_hcr_rdata),
+			.aperture_base(aperture_base), .aperture_limit(aperture_limit),
+			.sb_we(sb_we), .sb_idx(sb_idx), .sb_wdata(sb_wdata), .sb_rdata(prot_sb_rdata),
+			.v_tag(v_tag), .v_slot(v_slot),
+			.u_tag(u_tag), .u_fw(u_fw), .u_side(u_side), .u_req(u_req), .u_ok(u_ok),
+			.f_chk(f_chk), .f_slot(f_slot),
+			.drain_ok(drain_ok), .sw_inv(prot_sw_inv), .scrub(prot_scrub),
+			.scrub_busy(1'b0), .prot_unit(prot_unit),
+			.tbase(prot_tbase), .inv_valid(prot_inv_valid), .inv_g(prot_inv_g),
+			.inv_n(prot_inv_n), .inv_pending(mc_inv_pending), .gw_valid(prot_gw_valid),
+			.gw_idx(prot_gw_idx), .gw_data(prot_gw_data),
+			.fault_slot(mc_fault_slot), .fault_tag(prot_fault_tag), .unit_tag(prot_unit_tag)
+		);
+		/* The MC's refusal: the slot's session; a unit's other faults: prot_unit's. */
+		reg [7:0] f_tag;
+		integer fc;
+		always @(*) begin
+			f_tag = 8'd0;
+			for (fc = 0; fc < NCLIENT; fc = fc + 1)
+				if (UNIT_LEAF[fc] && mc_fault_client == fc[7:0])
+					f_tag = prot_unit_tag;
+			if (mc_fault_prot)
+				f_tag = prot_fault_tag;
+		end
+		assign mc_fault_tag = f_tag;
+		wire unused_p = &{1'b0, sb_re, prot_scrub};
+	end else begin : g_no_prot
+		assign prot_hcr_rdata = 32'd0;
+		assign prot_sb_rdata = 32'd0;
+		assign v_slot = 6'd0;
+		assign u_ok = 1'b1;
+		assign f_chk = 1'b0;
+		assign f_slot = 6'd0;
+		assign prot_sw_inv = 1'b0;
+		assign prot_scrub = 1'b0;
+		assign prot_unit = 6'd0;
+		assign prot_tbase = 32'd0;
+		assign prot_inv_valid = 1'b0;
+		assign prot_inv_g = 20'd0;
+		assign prot_inv_n = 32'd0;
+		assign prot_gw_valid = 1'b0;
+		assign prot_gw_idx = {PROT_GIDX_W{1'b0}};
+		assign prot_gw_data = 50'd0;
+		assign prot_fault_tag = 8'd0;
+		assign prot_unit_tag = 8'd0;
+		assign mc_fault_tag = 8'd0;
+		wire unused_np = &{1'b0, sb_we, sb_re, sb_idx, sb_wdata, u_tag, u_fw, u_side, u_req,
+			mc_fault_prot, mc_fault_mem, mc_fault_slot, mc_inv_pending, mc_chk_idle, drain_ok,
+			cp_req_chk, cp_req_slot, cpu_req_chk, cpu_req_tbl, cpu_req_slot, prot_scrub, v_slot,
+			prot_sb_rdata, prot_fault_tag, prot_unit_tag};
 	end
 	endgenerate
 

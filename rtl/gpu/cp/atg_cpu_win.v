@@ -27,6 +27,13 @@
  * v_valid until v_done: the sequencer takes µops only while a packet is
  * open, the packet's last ones too.  irq = |(IRQ & IRQ_EN): [0] packet waiting and not taken,
  * [1] fence event (sticky, W1C), [2] halt_req.
+ *
+ * Session protection: taking the packet (PKT_INFO) latches its slot
+ * (v_slot, the CP's SLOT_MAP of v_tag) into pkt_slot, which v_done clears;
+ * a write of UOP_SELF (sub-bus 0x32, [0]) marks the next µop packet SELF
+ * (the firmware's own wait) until its UOP_LAST.  Each UOP_FIFO entry keeps
+ * {SELF, pkt_slot} of its write, given with the FIFO's head on fw_side:
+ * a µop written outside a packet has slot 0.
  * See spec/gpu/cp/atg_cpu_win.md.
  */
 
@@ -71,6 +78,10 @@ module atg_cpu_win #(
 	output wire [31:0] fw_data,
 	output wire fw_last,
 	output wire fw_active,
+	output wire [6:0] fw_side,	/* the head's {SELF, slot} */
+	/* Session protection */
+	input wire [5:0] v_slot,	/* SLOT_MAP[v_tag] */
+	output reg [5:0] pkt_slot,	/* the taken packet's slot (0: none) */
 	/* Other */
 	output wire [9:0] st_ridx,
 	input wire [31:0] st_rdata,
@@ -88,6 +99,7 @@ module atg_cpu_win #(
 	localparam [5:0] W_DONE = 6'h03;
 	localparam [5:0] W_UOP = 6'h04;
 	localparam [5:0] W_UOP_LAST = 6'h05;
+	localparam [5:0] W_UOP_SELF = 6'h32;	/* sub-bus, also seen here */
 	localparam [5:0] W_UOP_FREE = 6'h06;
 	localparam [5:0] W_STATE_IDX = 6'h07;
 	localparam [5:0] W_STATE_DATA = 6'h08;
@@ -141,11 +153,13 @@ module atg_cpu_win #(
 	wire f_valid;
 	wire [UOP_DEPTH_LOG2:0] f_count;
 
-	am_fifo #(.W(33), .DEPTH_LOG2(UOP_DEPTH_LOG2)) uop_fifo (
+	reg self_next;
+
+	am_fifo #(.W(40), .DEPTH_LOG2(UOP_DEPTH_LOG2)) uop_fifo (
 		.clk(clk), .rst_n(rst_n),
 		.in_valid(ack && q_uop), .in_ready(f_ready),
-		.in_data({q_idx == W_UOP_LAST, q_wdata}),
-		.out_valid(f_valid), .out_ready(fw_ready), .out_data({fw_last, fw_data}),
+		.in_data({self_next, pkt_slot, q_idx == W_UOP_LAST, q_wdata}),
+		.out_valid(f_valid), .out_ready(fw_ready), .out_data({fw_side, fw_last, fw_data}),
 		.count(f_count)
 	);
 
@@ -215,6 +229,8 @@ module atg_cpu_win #(
 			done_sent <= 1'b0;
 			v_done <= 1'b0;
 			ev_result <= 1'b0;
+			pkt_slot <= 6'd0;
+			self_next <= 1'b0;
 		end else begin
 			cycle <= cycle + 32'd1;
 			v_done <= 1'b0;
@@ -237,8 +253,14 @@ module atg_cpu_win #(
 				fence_pend <= 1'b1;
 			else if (own_wr && q_idx == W_IRQ && q_wdata[1])
 				fence_pend <= 1'b0;
-			if (own_rd && q_idx == W_PKT_INFO && pkt_info)
+			if (own_rd && q_idx == W_PKT_INFO && pkt_info) begin
 				taken <= 1'b1;
+				pkt_slot <= v_slot;
+			end
+			if (sb_we && q_idx == W_UOP_SELF)
+				self_next <= q_wdata[0];
+			else if (ack && q_uop && f_ready && q_idx == W_UOP_LAST)
+				self_next <= 1'b0;
 			if (own_wr && q_idx == W_DONE && pkt)
 				done_pend <= 1'b1;
 			if (done_pend && !f_valid) begin
@@ -246,6 +268,7 @@ module atg_cpu_win #(
 				done_pend <= 1'b0;
 				taken <= 1'b0;
 				done_sent <= 1'b1;
+				pkt_slot <= 6'd0;
 			end
 			if (!v_valid)
 				done_sent <= 1'b0;

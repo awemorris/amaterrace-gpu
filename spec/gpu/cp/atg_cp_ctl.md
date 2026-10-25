@@ -45,6 +45,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `mc_fault_client` | in | 8 | Its client. |
 | `mc_fault_addr` | in | 32 | Its address. |
 | `mc_fault_write` | in | 1 | Its direction. |
+| `mc_fault_prot`, `mc_fault_mem`, `mc_fault_tag` | in | 1, 1, 8 | Session protection: refused for protection (FAULT_INFO[9]; a device fault also for client 0), a table read failed (kind 5), the session's job tag (FAULT_INFO[31:24]) |
 | `src_fault` | in | NSRC | Fault pulses of the CP modules and blocks. |
 | `src_kind` | in | NSRC*4 | Their kinds. |
 | `src_addr` | in | NSRC*32 | Their addresses. |

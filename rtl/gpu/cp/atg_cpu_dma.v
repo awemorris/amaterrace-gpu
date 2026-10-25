@@ -12,7 +12,10 @@
  *
  * Window (sub-bus, data at once): 0x10 DMA_AMB and 0x11 DMA_MEM (RW,
  * line aligned; the low bits are ignored), 0x12 DMA_GO (W: [15:0] lines,
- * [16] 1 = DMEM -> memory; ignored while busy or with 0 lines), 0x13
+ * [16] 1 = DMEM -> memory, [17] chk: session protection checks the
+ * copy's memory accesses for dma_slot, the slot of the class V packet the
+ * firmware works on (none when that slot is 0), [18] tbl: the copy writes
+ * the protection table; ignored while busy or with 0 lines), 0x13
  * DMA_STATUS (R: [0] busy, [1] error of the last copy, [15:8] writes not
  * yet answered).  An image load (ld_start) copies ld_words words from
  * ld_addr to offset 0 of IMEM or DMEM; it waits until a window copy has
@@ -25,7 +28,8 @@
  * cycle), then written (all bytes); the writes are counted until their
  * responses.  An error response stops the copy: no more requests, the
  * ones in flight are waited for and dropped, and error is set.  The AMB
- * request holds its payload until req_ready.
+ * request holds its payload until req_ready, and req_chk, req_tbl and
+ * req_slot those of its copy (an image load: 0).
  * See spec/gpu/cp/atg_cpu_dma.md.
  */
 
@@ -68,6 +72,10 @@ module atg_cpu_dma #(
 	output wire [LINE_BYTES-1:0] req_be,
 	output wire [LINE_BYTES*8-1:0] req_wdata,
 	output reg [7:0] req_tag,
+	output wire req_chk,	/* session protection, held with the copy */
+	output wire req_tbl,
+	output wire [5:0] req_slot,
+	input wire [5:0] dma_slot,	/* the class V packet's protection slot */
 	input wire rsp_valid,
 	input wire rsp_write,
 	input wire [7:0] rsp_tag,
@@ -101,6 +109,12 @@ module atg_cpu_dma #(
 	reg [LW-1:0] j_line;	/* next line to request */
 	reg [31:0] j_mem;	/* BRAM byte offset of that line */
 	reg [31:0] j_rem;	/* words not yet requested */
+	reg j_chk, j_tbl;	/* session protection of the copy */
+	reg [5:0] j_slot;
+
+	assign req_chk = j_chk;
+	assign req_tbl = j_tbl;
+	assign req_slot = j_slot;
 
 	/* Read side: 4 line buffers. */
 	reg [LINE_BYTES*8-1:0] lbuf [0:3];
@@ -197,6 +211,9 @@ module atg_cpu_dma #(
 			req_valid <= 1'b0;
 			req_write <= 1'b0;
 			req_tag <= 8'd0;
+			j_chk <= 1'b0;
+			j_tbl <= 1'b0;
+			j_slot <= 6'd0;
 			s_busy <= 4'd0;
 			s_full <= 4'd0;
 			st_act <= 1'b0;
@@ -266,6 +283,13 @@ module atg_cpu_dma #(
 				if (go) begin
 					err <= 1'b0;
 					j_imem <= 1'b0;
+`ifdef MUT_CPPROT_DMACHK
+					j_chk <= 1'b0;
+`else
+					j_chk <= sb_wdata[17] && dma_slot != 6'd0;
+`endif
+					j_tbl <= sb_wdata[18];
+					j_slot <= dma_slot;
 					j_line <= dma_amb[ADDR_W-1:LINE_SHIFT];
 					j_mem <= {dma_mem[31:LINE_SHIFT], {LINE_SHIFT{1'b0}}};
 					j_rem <= {{(16 - WS){1'b0}}, sb_wdata[15:0], {WS{1'b0}}};
@@ -275,6 +299,9 @@ module atg_cpu_dma #(
 					ld_pend <= 1'b0;
 					ld_job <= 1'b1;
 					err <= 1'b0;
+					j_chk <= 1'b0;
+					j_tbl <= 1'b0;
+					j_slot <= 6'd0;
 					j_imem <= ld_pimem;
 					j_line <= ld_paddr[ADDR_W-1:LINE_SHIFT];
 					j_mem <= 32'd0;

@@ -45,6 +45,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `raw_kick` | out | 1 | DRAW_RAW (RX; 9 words in STATE 0x1E0-0x1E8). |
 | `inv` | out | 4 | INVALIDATE mask pulse: [0] D$, [1] T$, [2] constant, [3] I$ (DRAW also pulses [1:0]). |
 | `perf_reset` | out | 1 | PERF_RESET. |
+| `fw_side` | in | 7 | Session protection: the firmware µop's {SELF, slot}, latched with its header |
+| `u_fw`, `u_side`, `u_req` / `u_ok` | out / in | 1, 7, 2 / 1 | The µop for atg_cp_prot: from the firmware, its side, {uses the SUs, starts a unit} (in Q_EXEC); a unit µop (BLIT, DRAW, DISPATCH, LOAD_CONST, class 1) starts only with `u_ok` (`PASS atg_cp_seq.prot`) |
 | `busy_in` | in | 8 | Block busy levels, STATUS[7:1] order; bit 0: the units' memory requests not yet answered (atg_mc's `!unit_idle`), which FENCE, WAIT_IDLE, RESULT and QUERY wait for. |
 | `vsync` | in | 1 | One-cycle pulse per display vsync (WAIT_VSYNC), 0 without a DC. |
 | **Fences (to atg_cp_fence)** | | | |

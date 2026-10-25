@@ -6,6 +6,10 @@ RTL: `rtl/gpu/cp/atg_cp_fence.v`.  Parent: atg_cp.  Implemented in: p004 (done).
 
 Writes fences and results to memory, polls WAIT_FENCE words, keeps FENCE_LAST and raises the FENCE interrupt; memory through the CP's AMB port.
 
+Session protection: `f_chk` and `f_slot` are latched with the request and go with its memory
+requests (`req_chk`, `req_slot`; atg_cp gives them to MC client 0 when the mux picked the fence
+unit).
+
 ## 2. Parameters
 
 | Name | Default | Meaning |

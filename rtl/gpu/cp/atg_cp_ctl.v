@@ -72,6 +72,9 @@ module atg_cp_ctl #(
 	input wire [7:0] mc_fault_client,
 	input wire [31:0] mc_fault_addr,
 	input wire mc_fault_write,
+	input wire mc_fault_prot,	/* refused for session protection: FAULT_INFO[9] */
+	input wire mc_fault_mem,	/* a protection table read failed: kind 5 */
+	input wire [7:0] mc_fault_tag,
 	input wire [NSRC-1:0] src_fault,
 	input wire [NSRC*4-1:0] src_kind,
 	input wire [NSRC*32-1:0] src_addr,
@@ -168,7 +171,9 @@ module atg_cp_ctl #(
 	wire wdt_fire = ctrl_wdt_en && cmd_active && wdt_count >= wdt_cycles && st != S_FAULTED;
 
 	/* The first fault of this cycle. */
-	wire mc_gpu = mc_fault && mc_fault_client != 8'd0;
+	/* The MC's refusals of client 0 (the CP) are its own units' faults, except
+	 * those of session protection (a firmware µop's fence or result). */
+	wire mc_gpu = mc_fault && (mc_fault_client != 8'd0 || mc_fault_prot || mc_fault_mem);
 	reg any;
 	reg [31:0] n_info;
 	reg [31:0] n_addr;
@@ -179,8 +184,9 @@ module atg_cp_ctl #(
 		n_addr = 32'd0;
 		n_info = 32'd0;
 		if (mc_gpu) begin
-			n_info = {8'd0, mc_fault_client, GHCI_FAULT_APERTURE, 3'd0, mc_fault_write,
-				mc_fault_client};
+			n_info = {mc_fault_tag, mc_fault_client,
+				mc_fault_mem ? GHCI_FAULT_AXI : GHCI_FAULT_APERTURE, 2'd0, mc_fault_prot,
+				mc_fault_write, mc_fault_client};
 			n_addr = mc_fault_addr;
 		end else if (kick_bad) begin
 			n_info = {16'd0, GHCI_FAULT_KICK, 12'd0};

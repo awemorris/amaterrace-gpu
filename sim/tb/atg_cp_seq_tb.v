@@ -42,6 +42,8 @@ module atg_cp_seq_tb;
 	wire n_ready, fw_ready;
 
 	wire uop_we, blt_kick, draw_kick, cs_kick, lc_kick, raw_kick, perf_reset;
+	wire [1:0] u_req;
+	reg u_ok = 1'b1;
 	wire [9:0] uop_idx;
 	wire [31:0] uop_wdata;
 	wire [3:0] inv;
@@ -58,6 +60,7 @@ module atg_cp_seq_tb;
 
 	atg_cp_seq #(.UNITS(8'hFF), .HAS_VSYNC(1)) dut (
 		.clk(clk), .rst_n(rst_n),
+		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(u_req), .u_ok(u_ok),
 		.n_valid(n_valid), .n_ready(n_ready), .n_data(n_data), .n_last(n_last),
 		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data), .fw_last(fw_last),
 		.fw_active(fw_active), .halt(halt),
@@ -79,6 +82,7 @@ module atg_cp_seq_tb;
 	reg s_valid = 0;
 	atg_cp_seq #(.UNITS(8'h03)) u_small (
 		.clk(clk), .rst_n(rst_n),
+		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(), .u_ok(1'b1),
 		.n_valid(s_valid), .n_ready(s_n_ready), .n_data(s_data), .n_last(1'b1),
 		.fw_valid(1'b0), .fw_ready(), .fw_data(32'd0), .fw_last(1'b0), .fw_active(1'b0),
 		.halt(1'b0), .uop_we(), .uop_idx(), .uop_wdata(),
@@ -549,6 +553,58 @@ module atg_cp_seq_tb;
 		ev_n = 0;
 		if (errors == e0)
 			$display("PASS atg_cp_seq.mem");
+		e0 = errors;
+
+		/* prot: a unit µop shows u_req ({uses the SUs, starts a unit}) and does
+		 * not start while u_ok is 0 (atg_cp_prot switches the units). */
+		u_ok = 1'b0;
+		packet(1'b0, 1'b0, 6'd2, 8'd0, 8'd0);	/* BLIT */
+		mark_t = 0;
+		while (!blt_kick && mark_t < 60) begin
+			@(posedge clk);
+			#1;
+			mark_t = mark_t + 1;
+			if (mark_t == 30 && u_req !== 2'b01) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_seq.prot: BLIT u_req %b", u_req);
+			end
+		end
+		if (blt_kick) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_seq.prot: BLIT started without u_ok");
+		end
+		u_ok = 1'b1;
+		#1;
+		while (!blt_kick && mark_t < 200) begin
+			@(posedge clk);
+			#1;
+			mark_t = mark_t + 1;
+		end
+		if (!blt_kick) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_seq.prot: BLIT did not start with u_ok");
+		end
+		@(posedge clk);
+		#1;
+		u_ok = 1'b0;
+		pl[0] = 32'd1; pl[1] = 32'd1; pl[2] = 32'd1;
+		packet(1'b0, 1'b0, 6'd4, 8'd0, 8'd3);	/* DISPATCH */
+		mark_t = 0;
+		while (u_req !== 2'b11 && mark_t < 100) begin
+			@(posedge clk);
+			#1;
+			mark_t = mark_t + 1;
+		end
+		if (u_req !== 2'b11 || cs_kick) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_seq.prot: DISPATCH u_req %b (st %0d op %0d busy %b)", u_req,
+				dut.st, dut.op, busy_in);
+		end
+		u_ok = 1'b1;
+		settle("prot");
+		ev_n = 0;
+		if (errors == e0)
+			$display("PASS atg_cp_seq.prot");
 		e0 = errors;
 
 		/* fence: after a BLIT, FENCE waits for the BLT; RESULT for the fence
