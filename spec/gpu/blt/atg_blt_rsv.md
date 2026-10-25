@@ -73,3 +73,5 @@ docs/ghci.md §8.2, §12.11; design §15.7 (the multisampled layout), §15.8 (th
 ## 10. Status
 
 Implemented (the MSAA work).  2026-10-25: pixels of 1 to 16 bytes, the averages 3-7 (`atg_blt_favg` for 3-5, `atg_blt_avg` for 6 and 7), the state in `atg_blt_cfg` and the row addresses in `atg_blt_acc` (below 400 lines); `sim/tb/atg_blt_tb.v` (`atg_blt.md` §8) checks the new combinations, `atg_blt_rsv_tb`'s refused example of SRGB8_A8 moved to the average 8.
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

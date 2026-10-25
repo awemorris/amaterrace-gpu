@@ -51,3 +51,5 @@ Through `sim/tb/atg_blt_tb.v`, `atg_blt_rsv_tb.v` and `atg_top_tb.v`.
 ## 10. Status
 
 New (2026-10-25): the multipliers of the two engines in one module.
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

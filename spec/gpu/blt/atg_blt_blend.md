@@ -49,3 +49,5 @@ docs/ghci.md §8.2.
 ## 10. Status
 
 New (2026-10-25): split off `atg_blt_2d` (the same arithmetic; one cycle more per blended segment).
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

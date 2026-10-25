@@ -127,8 +127,36 @@ module atg_blt_rsv #(
 	reg [2:0] psl, m_fmt;
 	reg m_tiled;
 
+	/*
+	 * The constants of a pixel size, by table (no shift): 4 ps - 1 (the
+	 * bits below four pixels), 4 ps and 12 ps (a tiled row's step and the
+	 * step back from the fourth row of a tile).
+	 */
+	function [31:0] by_size;
+		input [2:0] pl;
+		input [1:0] which;	/* 0: 4 ps - 1, 1: 4 ps, 2: 12 ps */
+		reg [31:0] four, low;
+		begin
+			case (pl)
+			3'd0: begin four = 32'd4; low = 32'd3; end
+			3'd1: begin four = 32'd8; low = 32'd7; end
+			3'd2: begin four = 32'd16; low = 32'd15; end
+			3'd3: begin four = 32'd32; low = 32'd31; end
+			3'd4: begin four = 32'd64; low = 32'd63; end
+			3'd5: begin four = 32'd128; low = 32'd127; end
+			3'd6: begin four = 32'd256; low = 32'd255; end
+			default: begin four = 32'd512; low = 32'd511; end
+			endcase
+			case (which)
+			2'd0: by_size = low;
+			2'd1: by_size = four;
+			default: by_size = {four[30:0], 1'b0} | four;
+			endcase
+		end
+	endfunction
+
 	/* The source's base and stride lose their bits below 4 ps. */
-	wire [ADDR_W-1:0] smask = ~((32'd4 << psl) - 32'd1);
+	wire [ADDR_W-1:0] smask = ~by_size(psl, 2'd0);
 	wire [ADDR_W-1:0] sbase = sbase_p & smask;
 	wire [ADDR_W-1:0] sstride = sstride_p & smask;
 
@@ -153,11 +181,22 @@ module atg_blt_rsv #(
 	wire row_go = state == S_CLIP && !empty;
 
 	/* S_RCALC: the row's source byte range and lines. */
-	wire [ADDR_W-1:0] sx_b = {{(ADDR_W - 17){1'b0}}, sx0} << (psl + 3'd2);
-	wire [ADDR_W-1:0] w_b = {{(ADDR_W - 17){1'b0}}, width} << (psl + 3'd2);
-	wire [ADDR_W-1:0] r_first = src_row + sx_b;
-	wire [ADDR_W-1:0] r_last = r_first + w_b - 1'b1;
-	wire [LA_W-1:0] r_nl = r_last[ADDR_W-1:LS] - r_first[ADDR_W-1:LS] + 1'b1;
+	wire [2:0] sh4;	/* log2 of 4 ps, modulo 8 as the 3-bit sum was */
+	wire [ADDR_W-1:0] sx_b, w_b, r_first, r_end, r_last;
+	wire [LA_W-1:0] r_span, r_nl;
+	wire [5:0] rc_co_unused;
+
+	am_add #(.W(3)) a_sh4 (.a(psl), .b(3'd2), .ci(1'b0), .s(sh4), .co(rc_co_unused[0]));
+	am_shift #(.W(ADDR_W), .SW(3)) h_sx (.a({{(ADDR_W - 17){1'b0}}, sx0}), .amt(sh4), .left(1'b1), .arith(1'b0),
+		.y(sx_b));
+	am_shift #(.W(ADDR_W), .SW(3)) h_w (.a({{(ADDR_W - 17){1'b0}}, width}), .amt(sh4), .left(1'b1), .arith(1'b0),
+		.y(w_b));
+	am_add #(.W(ADDR_W)) a_first (.a(src_row), .b(sx_b), .ci(1'b0), .s(r_first), .co(rc_co_unused[1]));
+	am_add #(.W(ADDR_W)) a_end (.a(r_first), .b(w_b), .ci(1'b0), .s(r_end), .co(rc_co_unused[2]));
+	am_sub #(.W(ADDR_W)) s_last (.a(r_end), .b({ADDR_W{1'b0}}), .bi(1'b1), .d(r_last), .bo(rc_co_unused[3]));
+	am_sub #(.W(LA_W)) s_span (.a(r_last[ADDR_W-1:LS]), .b(r_first[ADDR_W-1:LS]), .bi(1'b0), .d(r_span),
+		.bo(rc_co_unused[4]));
+	am_add #(.W(LA_W)) a_nl (.a(r_span), .b({LA_W{1'b0}}), .ci(1'b1), .s(r_nl), .co(rc_co_unused[5]));
 
 	reg desc_pend;
 	reg [RD_W-1:0] desc;
@@ -167,15 +206,27 @@ module atg_blt_rsv #(
 		rows != 17'd0;
 
 	/* The tiled destination's next row. */
-	wire [ADDR_W-1:0] tile_step = 32'd4 << psl;
-	wire [ADDR_W-1:0] tile_back = 32'd12 << psl;
-	wire [ADDR_W-1:0] dst_step = m_tiled ? (ydl == 2'd3 ? dstride - tile_back : tile_step) :
+	wire [ADDR_W-1:0] tile_step = by_size(psl, 2'd1);
+	wire [ADDR_W-1:0] tile_back = by_size(psl, 2'd2);
+	wire [ADDR_W-1:0] dst_back;
+	wire [16:0] c_dy, sy0;
+	wire [31:0] d_in_tile, d_first;
+	wire [3:0] st_co_unused;
+
+	am_sub #(.W(ADDR_W)) s_back (.a(dstride), .b(tile_back), .bi(1'b0), .d(dst_back), .bo(st_co_unused[0]));
+	wire [ADDR_W-1:0] dst_step = m_tiled ? (ydl == 2'd3 ? dst_back : tile_step) :
 		dstride;
-	wire [16:0] sy0 = {1'b0, s_src_xy[31:16]} + (y0 - dy);
+	am_sub #(.W(17)) s_cdy (.a(y0), .b(dy), .bi(1'b0), .d(c_dy), .bo(st_co_unused[1]));
+	am_add #(.W(17)) a_sy0 (.a({1'b0, s_src_xy[31:16]}), .b(c_dy), .ci(1'b0), .s(sy0), .co(st_co_unused[2]));
+
+	/* The first row's address within its tile row: (y mod 4) x 4 pixels, in bytes. */
+	am_shift #(.W(32), .SW(3)) h_dt (.a(m_tiled ? {28'd0, y0[1:0], 2'b00} : 32'd0), .amt(psl), .left(1'b1),
+		.arith(1'b0), .y(d_in_tile));
+	am_add #(.W(32)) a_df (.a(dbase), .b(d_in_tile), .ci(1'b0), .s(d_first), .co(st_co_unused[3]));
 
 	atg_blt_acc dacc (
 		.clk(clk), .rst_n(rst_n), .go(row_go), .y(m_tiled ? {2'b00, y0[16:2]} : y0),
-		.s(dstride), .b(dbase + (m_tiled ? {28'd0, y0[1:0], 2'b00} << psl : 32'd0)),
+		.s(dstride), .b(d_first),
 		.add(row_add), .d(dst_step), .r(dst_row), .idle(d_idle)
 	);
 	atg_blt_acc sacc (
@@ -240,8 +291,31 @@ module atg_blt_rsv #(
 	wire q_fire = q_valid && req_ready;
 	wire q_open = (!q_valid || q_fire) && !fail;
 	assign px_wr_ready = q_open && px_wr_valid;
-	wire [DEPTH_LOG2+1:0] held = {1'b0, rd_out} + {1'b0, ln_count} +
-		{{(DEPTH_LOG2 + 1){1'b0}}, q_valid && !q_write};
+	wire [DEPTH_LOG2+1:0] held;
+	wire [DEPTH_LOG2:0] rd_up, rd_next;
+	wire [7:0] wr_up, wr_next;
+	wire [LA_W-1:0] rd_line_inc;
+	wire [16:0] rd_left_dec, c_width, c_rows, c_dx, c_sx0, rows_dec;
+	wire [1:0] ydl_inc;
+	wire [12:0] q_co_unused;
+
+	/* The reads held (in flight, in the line FIFO, queued), and the counts' next values. */
+	am_add #(.W(DEPTH_LOG2 + 2)) a_held (.a({1'b0, rd_out}), .b({1'b0, ln_count}), .ci(q_valid && !q_write), .s(held),
+		.co(q_co_unused[0]));
+	am_add #(.W(DEPTH_LOG2 + 1)) a_rd (.a(rd_out), .b({(DEPTH_LOG2 + 1){1'b0}}), .ci(q_fire && !q_write), .s(rd_up),
+		.co(q_co_unused[1]));
+	am_sub #(.W(DEPTH_LOG2 + 1)) s_rd (.a(rd_up), .b({(DEPTH_LOG2 + 1){1'b0}}), .bi(rsp_rd), .d(rd_next),
+		.bo(q_co_unused[2]));
+	am_add #(.W(8)) a_wr (.a(wr_out), .b(8'd0), .ci(q_fire && q_write), .s(wr_up), .co(q_co_unused[3]));
+	am_sub #(.W(8)) s_wr (.a(wr_up), .b(8'd0), .bi(rsp_wr), .d(wr_next), .bo(q_co_unused[4]));
+	am_add #(.W(LA_W)) a_rl (.a(rd_line), .b({LA_W{1'b0}}), .ci(1'b1), .s(rd_line_inc), .co(q_co_unused[5]));
+	am_sub #(.W(17)) s_rl (.a(rd_left), .b(17'd0), .bi(1'b1), .d(rd_left_dec), .bo(q_co_unused[6]));
+	am_sub #(.W(17)) s_w (.a(x1), .b(x0), .bi(1'b0), .d(c_width), .bo(q_co_unused[7]));
+	am_sub #(.W(17)) s_rows (.a(y1), .b(y0), .bi(1'b1), .d(c_rows), .bo(q_co_unused[8]));
+	am_sub #(.W(17)) s_cdx (.a(x0), .b(dx), .bi(1'b0), .d(c_dx), .bo(q_co_unused[9]));
+	am_add #(.W(17)) a_sx0 (.a({1'b0, s_src_xy[15:0]}), .b(c_dx), .ci(1'b0), .s(c_sx0), .co(q_co_unused[10]));
+	am_sub #(.W(17)) s_rdec (.a(rows), .b(17'd0), .bi(1'b1), .d(rows_dec), .bo(q_co_unused[11]));
+	am_add #(.W(2)) a_ydl (.a(ydl), .b(2'd0), .ci(1'b1), .s(ydl_inc), .co(q_co_unused[12]));
 `ifdef MUT_RSV_CREDIT
 	wire credit = 1'b1;	/* no credit */
 `else
@@ -285,9 +359,8 @@ module atg_blt_rsv #(
 			error <= 1'b0;
 
 			/* The port and the outstanding requests. */
-			rd_out <= rd_out + {{DEPTH_LOG2{1'b0}}, q_fire && !q_write} -
-				{{DEPTH_LOG2{1'b0}}, rsp_rd};
-			wr_out <= wr_out + {7'd0, q_fire && q_write} - {7'd0, rsp_wr};
+			rd_out <= rd_next;
+			wr_out <= wr_next;
 			if (rsp_valid && rsp_error)
 				fail <= 1'b1;
 			if (q_fire)
@@ -303,8 +376,8 @@ module atg_blt_rsv #(
 				q_write <= 1'b0;
 				q_line <= rd_line;
 				q_be <= {LINE_BYTES{1'b1}};
-				rd_line <= rd_line + 1'b1;
-				rd_left <= rd_left - 1'b1;
+				rd_line <= rd_line_inc;
+				rd_left <= rd_left_dec;
 			end
 			if (desc_pend && px_rd_ready)
 				desc_pend <= 1'b0;
@@ -333,9 +406,9 @@ module atg_blt_rsv #(
 					done <= 1'b1;
 				end else begin
 					state <= S_MUL;
-					width <= x1 - x0;
-					rows <= y1 - y0 - 1'b1;
-					sx0 <= {1'b0, s_src_xy[15:0]} + (x0 - dx);
+					width <= c_width;
+					rows <= c_rows;
+					sx0 <= c_sx0;
 					ydl <= y0[1:0];
 				end
 			S_MUL:
@@ -361,8 +434,8 @@ module atg_blt_rsv #(
 						state <= S_DRAIN;
 					end else begin
 						state <= S_RCALC;
-						rows <= rows - 1'b1;
-						ydl <= ydl + 1'b1;
+						rows <= rows_dec;
+						ydl <= ydl_inc;
 					end
 				end
 			S_DRAIN:
@@ -393,7 +466,8 @@ module atg_blt_rsv #(
 	end
 `endif
 
-	wire unused_ok = &{1'b0, o_fmt[3], c_fill, c_ok, rsp_tag, r_nl[LA_W-1:17], r_last[LS-1:0]};
+	wire unused_ok = &{1'b0, o_fmt[3], c_fill, c_ok, rsp_tag, r_nl[LA_W-1:17], r_last[LS-1:0], rc_co_unused,
+		st_co_unused, q_co_unused};
 endmodule
 
 `default_nettype wire

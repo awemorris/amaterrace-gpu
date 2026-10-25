@@ -141,14 +141,22 @@ module atg_blt_rsv_px #(
 	reg [LS-1:0] ptr;
 
 	/* The group: n pixels at x. */
-	wire [LS:0] nfit = LB_V >> (psl + 3'd2);
+	wire [2:0] sh4;	/* log2 of 4 ps, modulo 8 as the 3-bit sum was */
+	wire [LS:0] nfit, room_b, room_l;
+	wire [ADDR_W-1:0] x_b, daddr;
+	wire [2:0] room_t;
+	wire [3:0] grp_co_unused;
+
+	am_add #(.W(3)) a_sh4 (.a(psl), .b(3'd2), .ci(1'b0), .s(sh4), .co(grp_co_unused[0]));
+	am_shift #(.W(LS + 1), .SW(3)) h_fit (.a(LB_V), .amt(sh4), .left(1'b0), .arith(1'b0), .y(nfit));
 	wire [2:0] nmax = nfit == {(LS + 1){1'b0}} ? 3'd1 : nfit >= 4 ? 3'd4 : nfit[2:0];
-	wire [ADDR_W-1:0] x_lin = {{(ADDR_W - 17){1'b0}}, x} << psl;
-	wire [ADDR_W-1:0] x_til = {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} << psl;
-	wire [ADDR_W-1:0] daddr = drow + (tiled ? x_til : x_lin);
-	wire [LS:0] room_b = LB_V - {1'b0, daddr[LS-1:0]};
-	wire [LS:0] room_l = room_b >> psl;
-	wire [2:0] room_t = 3'd4 - {1'b0, x[1:0]};
+	/* The pixel's bytes in the row (linear or in 4x4 tiles), its address, the room to the line's end. */
+	am_shift #(.W(ADDR_W), .SW(3)) h_x (.a(tiled ? {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} :
+		{{(ADDR_W - 17){1'b0}}, x}), .amt(psl), .left(1'b1), .arith(1'b0), .y(x_b));
+	am_add #(.W(ADDR_W)) a_da (.a(drow), .b(x_b), .ci(1'b0), .s(daddr), .co(grp_co_unused[1]));
+	am_sub #(.W(LS + 1)) s_room (.a(LB_V), .b({1'b0, daddr[LS-1:0]}), .bi(1'b0), .d(room_b), .bo(grp_co_unused[2]));
+	am_shift #(.W(LS + 1), .SW(3)) h_room (.a(room_b), .amt(psl), .left(1'b0), .arith(1'b0), .y(room_l));
+	am_sub #(.W(3)) s_rt (.a(3'd4), .b({1'b0, x[1:0]}), .bi(1'b0), .d(room_t), .bo(grp_co_unused[3]));
 	reg [2:0] n;
 
 	always @(*) begin
@@ -167,16 +175,22 @@ module atg_blt_rsv_px #(
 	end
 
 	/* The group's source bytes: 4 n ps, at ptr of the window. */
-	wire [6:0] gb = {4'd0, n} << (psl + 3'd2);
-	wire [7:0] gend = {{(7 - LS){1'b0}}, ptr} + {1'b0, gb};
+	wire [6:0] gb;
+	wire [7:0] gend;
+	wire [1:0] gb_co_unused;
+
+	am_shift #(.W(7), .SW(3)) h_gb (.a({4'd0, n}), .amt(sh4), .left(1'b1), .arith(1'b0), .y(gb));
+	am_add #(.W(8)) a_gend (.a({{(8 - LS){1'b0}}, ptr}), .b({1'b0, gb}), .ci(1'b0), .s(gend), .co(gb_co_unused[0]));
 	wire need2 = gend > {{(7 - LS){1'b0}}, LB_V};
 
 	wire [1023:0] win;
 	generate
 		if (2 * LBITS < 1024) begin : g_pad
-			assign win = {{(1024 - 2 * LBITS){1'b0}}, w1, w0} >> {ptr, 3'b000};
+			am_shift #(.W(1024), .SW(LS + 3)) h_win (.a({{(1024 - 2 * LBITS){1'b0}}, w1, w0}), .amt({ptr, 3'b000}),
+				.left(1'b0), .arith(1'b0), .y(win));
 		end else begin : g_full
-			assign win = {w1, w0} >> {ptr, 3'b000};
+			am_shift #(.W(1024), .SW(LS + 3)) h_win (.a({w1, w0}), .amt({ptr, 3'b000}), .left(1'b0), .arith(1'b0),
+				.y(win));
 		end
 	endgenerate
 
@@ -224,6 +238,13 @@ module atg_blt_rsv_px #(
 	reg [LS-1:0] nptr;
 	reg [7:0] pend;
 
+	/* gend less one or two lines (the window's lines the group used up; only one is taken in a cycle). */
+	wire two_used = gend >= {{(6 - LS){1'b0}}, LB_V, 1'b0};
+	wire [7:0] gend_left;
+
+	am_sub #(.W(8)) s_gl (.a(gend), .b(two_used ? {{(6 - LS){1'b0}}, LB_V, 1'b0} : {{(7 - LS){1'b0}}, LB_V}),
+		.bi(1'b0), .d(gend_left), .bo(gb_co_unused[1]));
+
 	always @(*) begin
 		nw0 = w0;
 		nv0 = v0;
@@ -231,16 +252,16 @@ module atg_blt_rsv_px #(
 		nptr = ptr;
 		pend = gend;
 		if (fire) begin
-			if (gend >= {{(6 - LS){1'b0}}, LB_V, 1'b0}) begin
+			if (two_used) begin
 				/* both lines used (16-byte pixels, 32-byte lines) */
 				nv0 = 1'b0;
 				nv1 = 1'b0;
-				pend = gend - {{(6 - LS){1'b0}}, LB_V, 1'b0};
+				pend = gend_left;
 			end else if (gend >= {{(7 - LS){1'b0}}, LB_V}) begin
 				nw0 = w1;
 				nv0 = v1;
 				nv1 = 1'b0;
-				pend = gend - {{(7 - LS){1'b0}}, LB_V};
+				pend = gend_left;
 			end
 			nptr = pend[LS-1:0];
 			if (row_end) begin
@@ -259,9 +280,29 @@ module atg_blt_rsv_px #(
 	assign rq_pop = !active && rq_valid;
 
 	/* The merge: the group's bytes at their offset of the line. */
-	wire [LBITS-1:0] a_shf = {{(LBITS - 128){1'b0}}, a_px} << {a_off, 3'b000};
-	wire [2*LB-1:0] a_ones = ({{(2 * LB - 1){1'b0}}, 1'b1} << a_nb) - 1'b1;
-	wire [LB-1:0] a_be = a_ones[LB-1:0] << a_off;
+	wire [LBITS-1:0] a_shf;
+	wire [2*LB-1:0] a_ones;	/* the lowest a_nb bits set (a_nb < 2 LB): 2^a_nb - 1 */
+	wire [LB-1:0] a_be;
+
+	am_shift #(.W(LBITS), .SW(LS + 3)) h_shf (.a({{(LBITS - 128){1'b0}}, a_px}), .amt({a_off, 3'b000}), .left(1'b1),
+		.arith(1'b0), .y(a_shf));
+	genvar ob;
+	generate
+		for (ob = 0; ob < 2 * LB; ob = ob + 1) begin : g_ones
+			assign a_ones[ob] = ob < a_nb;
+		end
+	endgenerate
+	am_shift #(.W(LB), .SW(LS)) h_be (.a(a_ones[LB-1:0]), .amt(a_off), .left(1'b1), .arith(1'b0), .y(a_be));
+
+	/* The row's counts: the lines left, the next pixel and the pixels left; a group's bytes. */
+	wire [16:0] ll_dec, x_next, rem_next;
+	wire [4:0] grp_nb;
+	wire [2:0] row_co_unused;
+
+	am_sub #(.W(17)) s_ll (.a(lines_left), .b(17'd0), .bi(1'b1), .d(ll_dec), .bo(row_co_unused[0]));
+	am_add #(.W(17)) a_x (.a(x), .b({14'd0, n}), .ci(1'b0), .s(x_next), .co(row_co_unused[1]));
+	am_sub #(.W(17)) s_rem (.a(rem), .b({14'd0, n}), .bi(1'b0), .d(rem_next), .bo(row_co_unused[2]));
+	am_shift #(.W(5), .SW(3)) h_nb (.a({2'd0, n}), .amt(psl), .left(1'b1), .arith(1'b0), .y(grp_nb));
 	reg [LBITS-1:0] a_sh;	/* only the group's bytes: the average's other pixels are 0 */
 	integer i;
 
@@ -317,7 +358,7 @@ module atg_blt_rsv_px #(
 				v1 <= nv1;
 				ptr <= nptr;
 				if (lq_pop) begin
-					lines_left <= lines_left - 1'b1;
+					lines_left <= ll_dec;
 					if (!nv0) begin
 						w0 <= lq_data;
 						v0 <= 1'b1;
@@ -327,8 +368,8 @@ module atg_blt_rsv_px #(
 					end
 				end
 				if (fire) begin
-					x <= x + {14'd0, n};
-					rem <= rem - {14'd0, n};
+					x <= x_next;
+					rem <= rem_next;
 					if (row_end)
 						active <= 1'b0;
 				end
@@ -369,7 +410,7 @@ module atg_blt_rsv_px #(
 				a_pend <= slow;
 				a_line <= daddr[ADDR_W-1:LS];
 				a_off <= daddr[LS-1:0];
-				a_nb <= {2'd0, n} << psl;
+				a_nb <= grp_nb;
 				a_px <= avg;
 			end else if (a_pend && f_valid) begin
 				a_v <= 1'b1;
@@ -388,7 +429,8 @@ module atg_blt_rsv_px #(
 				n, ptr, v0, v1, avg[63:0], win[127:0]);
 `endif
 
-	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB], room_b[1:0], pend};
+	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB], room_b[1:0], pend,
+		grp_co_unused, gb_co_unused, row_co_unused};
 endmodule
 
 `default_nettype wire

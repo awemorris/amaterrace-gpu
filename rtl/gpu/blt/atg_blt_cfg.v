@@ -122,8 +122,11 @@ module atg_blt_cfg #(
 	wire clip_en = s_clip_max != 32'd0;
 	assign dx = {1'b0, s_dst_xy[15:0]};
 	assign dy = {1'b0, s_dst_xy[31:16]};
-	wire [16:0] dx_end = dx + {1'b0, s_size[15:0]};
-	wire [16:0] dy_end = dy + {1'b0, s_size[31:16]};
+	wire [16:0] dx_end, dy_end;
+	wire [1:0] end_co_unused;
+
+	am_add #(.W(17)) a_dxe (.a(dx), .b({1'b0, s_size[15:0]}), .ci(1'b0), .s(dx_end), .co(end_co_unused[0]));
+	am_add #(.W(17)) a_dye (.a(dy), .b({1'b0, s_size[31:16]}), .ci(1'b0), .s(dy_end), .co(end_co_unused[1]));
 	wire [16:0] cx0 = {1'b0, s_clip_min[15:0]};
 	wire [16:0] cy0 = {1'b0, s_clip_min[31:16]};
 	wire [16:0] cx1 = {1'b0, s_clip_max[15:0]};
@@ -134,8 +137,24 @@ module atg_blt_cfg #(
 	assign y1 = clip_en && cy1 < dy_end ? cy1 : dy_end;
 	assign src_xy = s_src_xy;
 
+	/* The bits below the pixel size, 2^psl - 1, by table. */
+	function [31:0] low_bits;
+		input [2:0] l;
+		case (l)
+		3'd0: low_bits = 32'h00000000;
+		3'd1: low_bits = 32'h00000001;
+		3'd2: low_bits = 32'h00000003;
+		3'd3: low_bits = 32'h00000007;
+		3'd4: low_bits = 32'h0000000F;
+		3'd5: low_bits = 32'h0000001F;
+		3'd6: low_bits = 32'h0000003F;
+		default: low_bits = 32'h0000007F;
+		endcase
+	endfunction
+
 	/* Bases and strides without the bits below the pixel size. */
-	wire [31:0] mask = ~((32'd1 << psl) - 32'd1);
+	wire [31:0] low = low_bits(psl);
+	wire [31:0] mask = ~low;
 	assign dbase = s_dst_base & mask;
 	assign sbase = s_src_base & mask;
 	assign dstride = s_dst_stride & mask;
@@ -145,12 +164,12 @@ module atg_blt_cfg #(
 	genvar g;
 	generate
 		for (g = 0; g < LINE_BYTES; g = g + 1) begin : g_fill
-			assign fill_line[g*8 +: 8] = s_color[(g & ((1 << psl) - 1))*8 +: 8];
+			assign fill_line[g*8 +: 8] = s_color[(g & low)*8 +: 8];
 		end
 	endgenerate
 
 	wire unused_ok = &{1'b0, s_op[31:20], s_op[15:14], s_op[11:10], s_op[7:5], s_op[3],
-		s_resolve[31:9]};
+		s_resolve[31:9], end_co_unused};
 endmodule
 
 `default_nettype wire
