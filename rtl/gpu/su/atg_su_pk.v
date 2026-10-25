@@ -74,28 +74,56 @@ module atg_su_pk #(
 	wire sub = x_uop[ATG_UOP_SUB];
 	wire sat = x_uop[ATG_UOP_MOD + 6];
 
-	/* One half. */
+	/* One half.  The float add/sub/mul/fma share one fused datapath and
+	 * the compares one compare (ge is the swapped le), with the operands
+	 * of each operation selected in front of it. */
 	function [15:0] half;
 		input [3:0] o;
 		input [15:0] a, b, c;
 		input [2:0] r;
 		input st;
-		reg [15:0] y;
+		reg [15:0] y, fy, fz, ca, cb;
+		reg fnoc;
+		reg [1:0] cop;
 		begin
+			fy = 16'h3C00;
+			fz = b;
+			fnoc = 1'b0;
 			case (o)
-			ATG_PK_FADD2[3:0]: y = atg_su_hfma(a, 16'h3C00, b, r, 1'b0);
-			ATG_PK_FSUB2[3:0]: y = atg_su_hfma(a, 16'h3C00, {!b[15], b[14:0]}, r, 1'b0);
-			ATG_PK_FMUL2[3:0]: y = atg_su_hfma(a, b, 16'd0, r, 1'b1);
-			ATG_PK_FFMA2[3:0]: y = atg_su_hfma(a, b, c, r, 1'b0);
+			ATG_PK_FSUB2[3:0]: fz = {!b[15], b[14:0]};
+			ATG_PK_FMUL2[3:0]: begin
+				fy = b;
+				fz = 16'd0;
+				fnoc = 1'b1;
+			end
+			ATG_PK_FFMA2[3:0]: begin
+				fy = b;
+				fz = c;
+			end
+			default: ;
+			endcase
+			ca = a;
+			cb = b;
+			case (o)
+			ATG_PK_FCMPLT2[3:0]: cop = 2'd1;
+			ATG_PK_FCMPGE2[3:0]: begin
+				ca = b;
+				cb = a;
+				cop = 2'd2;
+			end
+			ATG_PK_FCMPEQ2[3:0]: cop = 2'd0;
+			default: cop = 2'd3;
+			endcase
+			case (o)
+			ATG_PK_FADD2[3:0], ATG_PK_FSUB2[3:0], ATG_PK_FMUL2[3:0], ATG_PK_FFMA2[3:0]:
+				y = atg_su_hfma(a, fy, fz, r, fnoc);
 			ATG_PK_FMIN2[3:0]: y = atg_su_hminmax(a, b, 1'b0);
 			ATG_PK_FMAX2[3:0]: y = atg_su_hminmax(a, b, 1'b1);
 			ATG_PK_IADD2[3:0]: y = a + b;
 			ATG_PK_ISUB2[3:0]: y = a - b;
 			ATG_PK_IMUL2[3:0]: y = a * b;
-			ATG_PK_FCMPLT2[3:0]: y = {16{atg_su_hcmp(a, b, 2'd1)}};
-			ATG_PK_FCMPGE2[3:0]: y = {16{atg_su_hcmp(b, a, 2'd2)}};
-			ATG_PK_FCMPEQ2[3:0]: y = {16{atg_su_hcmp(a, b, 2'd0)}};
-			ATG_PK_FCMPNE2[3:0]: y = {16{atg_su_hcmp(a, b, 2'd3)}};
+			ATG_PK_FCMPLT2[3:0], ATG_PK_FCMPGE2[3:0], ATG_PK_FCMPEQ2[3:0], ATG_PK_FCMPNE2[3:0]:
+				y = {16{atg_su_hcmp(ca, cb, cop)}};
 			default: y = 16'd0;
 			endcase
 			half = st && o <= ATG_PK_FMAX2[3:0] ? atg_su_hsat(y) : y;

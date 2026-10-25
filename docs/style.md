@@ -39,6 +39,42 @@ Verilog
   `verilator lint_off` / `lint_on` for that line only.
 - Indentation with tabs; lines up to about 100 columns.
 
+Arithmetic
+----------
+
+User decision (2026-10-25): every multiplier, divider, adder, subtractor
+and shifter is a shared module of `rtl/common/`, instantiated where it is
+needed, so that a design has only the arithmetic it really needs and each
+kind maps to the FPGA's best cell (a multiplier to DSP slices, an adder to
+a carry chain) where it can be checked once.
+
+- Signal arithmetic -- `+`, `-` (also unary), `*`, `/`, `%`, and a shift
+  (`<<`, `>>`, `>>>`) by an amount that is a signal -- is written only
+  inside the modules of `rtl/common/`.  Every other module instantiates
+  them:
+
+  | Module | What | Cells (7 series) |
+  | --- | --- | --- |
+  | `am_add` | `{co, s} = a + b + ci` | CARRY4 chain |
+  | `am_sub` | `d = a - b - bi`, borrow out | CARRY4 chain |
+  | `am_addsub` | `a + b` or `a - b` chosen by `sub` | CARRY4 chain and the XOR of b |
+  | `am_mul` | `a * b`, signed or unsigned, 0-n registers | DSP48E1 (use_dsp; 25 x 18 signed per slice) |
+  | `am_div` | unsigned `a / b` and `a % b`, one bit per cycle | LUTs and a CARRY4 chain (one subtractor) |
+  | `am_shift` | `a << n`, `a >> n`, `a >>> n` | LUTs (log2(W) levels of multiplexers) |
+
+- Operations of one module that are never needed in the same cycle share
+  one instance, with their operands selected in front of it.
+- Not covered (constants, wiring): parameter and localparam expressions and
+  any expression that is a constant after elaboration (a width, an index of
+  a generate or for loop, a function called only with constants); a shift
+  by a constant amount, and `*`, `/` or `%` by a constant power of two;
+  testbenches and `sim/`.  The comparisons (`<`, `==`, ...) are not
+  arithmetic in this rule.
+- `tools/arith-lint.py` counts the signal arithmetic outside `rtl/common/`
+  in the elaborated design (Verilator); it reports 0 when the rule holds.
+  A file that must keep its arithmetic is listed in the script's exception
+  table with the reason, and here.
+
 Testbenches
 -----------
 
