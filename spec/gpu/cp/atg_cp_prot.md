@@ -65,7 +65,7 @@ MC (8), faults (3).
   [G, G + N) granules, N 0: all), 0x2A GIDX, 0x2B GBASE (granule), 0x2C GLIMIT (granule,
   exclusive, 21 bits), 0x2D GCTL (W: [0] valid, [1] read, [2] write, [13:8] slot; writes the CAM
   entry GIDX), 0x2E PROT_INFO (R: [0] 1, [1] a table, [2] drained (`drain_ok`), [3] the MC's
-  inv_pending, [13:8] SLOTS), 0x2F PROT_TBASE, 0x30 PROT_G0, 0x31 PROT_G1.  0x32 UOP_SELF is
+  inv_pending, [13:8] SLOTS, [31:16] GRANTS), 0x2F PROT_TBASE, 0x30 PROT_G0, 0x31 PROT_G1.  0x32 UOP_SELF is
   atg_cpu_win's.
 
 ## 5. State machine

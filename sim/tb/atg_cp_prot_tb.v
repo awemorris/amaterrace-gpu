@@ -242,7 +242,7 @@ module atg_cp_prot_tb;
 		hr(12'h1D4, v);
 		check(v == 32'h00123000, "PROT_TABLE aligned");
 		sr(6'h2E, v);
-		check(v[1:0] == 2'b11 && v[13:8] == 6'd31, "PROT_INFO");
+		check(v[1:0] == 2'b11 && v[13:8] == 6'd31 && v[31:16] == 16'd64, "PROT_INFO");
 		hw(12'h060, 32'h00000800);
 		hr(12'h1D4, v);
 		check(v == 32'd0, "aperture clears PROT_TABLE");

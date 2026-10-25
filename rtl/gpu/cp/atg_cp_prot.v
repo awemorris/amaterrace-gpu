@@ -349,7 +349,8 @@ module atg_cp_prot #(
 		endcase
 		sb_rdata = 32'd0;
 		case (sb_idx)
-		W_INFO: sb_rdata = {18'd0, SLOTS[5:0], 4'd0, inv_pending, drain_ok, tbase != 0, 1'b1};
+		W_INFO: sb_rdata = {GRANTS, 2'd0, SLOTS[5:0], 4'd0, inv_pending, drain_ok, tbase != 0,
+			1'b1};
 		W_TBASE: sb_rdata = tbase;
 		W_G0: sb_rdata = {{(32-GW){1'b0}}, g0};
 		W_G1: sb_rdata = {{(31-GW){1'b0}}, g1};
