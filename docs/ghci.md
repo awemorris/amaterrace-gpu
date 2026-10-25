@@ -334,8 +334,7 @@ After a reset the driver starts the ring again from its beginning.
   dwords. RING_WPTR and RING_RPTR are dword indices, 0 <= x < n.
 - Empty: WPTR = RPTR. Full: (WPTR + 1) mod n = RPTR (one dword stays
   unused). The driver's free space is (RPTR - WPTR - 1) mod n.
-- The ring is in host memory by default. It may be in local memory where
-  the local window reaches it (section 11).
+- The ring is in host memory (section 11.3).
 
 ### 6.2 Writing commands
 
@@ -350,14 +349,10 @@ After a reset the driver starts the ring again from its beginning.
 
 ### 6.3 Doorbell ordering
 
-The ring's contents must be visible to the GPU before the RING_WPTR write.
-
-- **Ring in host memory:** the driver makes its writes visible with the
-  operating system's DMA synchronization (nothing on a coherent platform,
-  a cache clean on another; section 11.4), then a store barrier, then the
-  register write.
-- **Ring in local memory**, written through the local window: the driver
-  reads back the last word it wrote before the doorbell.
+The ring's contents must be visible to the GPU before the RING_WPTR write:
+the driver makes its writes visible with the operating system's DMA
+synchronization (nothing on a coherent platform, a cache clean on another;
+section 11.4), then a store barrier, then the register write.
 
 ### 6.4 How the CP reads the ring
 
@@ -966,8 +961,7 @@ nearest code after).
   flushed, and every write response has returned. FENCE_LAST is updated,
   and the FENCE interrupt raised, only after the fence write's own
   response.
-- Fence memory is in host memory by default (the driver polls it), or in
-  local memory.
+- Fence memory is in host memory (the driver polls it).
 - **Ordering:** the fence write, and an interrupt message where the
   binding has one (section 15.2), reach the host only after every earlier
   write of the GPU is visible there (section 11.5).
@@ -1014,15 +1008,16 @@ nearest code after).
 
 The host makes register accesses only: the register window, the doorbell
 (RING_WPTR) and, where the GPU has one, the **local window** onto its local
-memory. Every other memory access — the ring, command buffers, fences,
-programs and all resources — is made by the GPU itself, by DMA, on the
-host's memory or its own. Moving data between host memory and local memory
+memory. Every other memory access — the ring, command buffers and fences
+in host memory, programs and resources in host memory or its own — is made
+by the GPU itself, by DMA. Moving data between host memory and local memory
 (uploads, readbacks) is a copy command, completed by a fence.
 
-The local window is for the framebuffer (the boot console, a simple display
-path) and, optionally, for a ring or fence memory in local memory. The
-debug port (section 14) is for bring-up only; a driver does not depend on
-it.
+The local window is for the framebuffer only (the boot console, a simple
+display path). Before a doorbell whose commands use what the host wrote
+through the window (a write-combining mapping may hold it back), the driver
+reads back the last word it wrote. The debug port (section 14) is for
+bring-up only; a driver does not depend on it.
 
 ### 11.2 Addresses and the aperture
 
@@ -1058,7 +1053,7 @@ it.
 | --- | --- | --- |
 | MEM capability | Absent, or LOCAL_SIZE = 0 | LOCAL_SIZE > 0 |
 | Where the driver allocates | Everything in host memory | Device-local resources in local memory; host-visible resources (staging, uniforms the host rewrites, readback) in host memory |
-| Ring, command buffers, fences | Host memory | Host memory by default; local memory allowed |
+| Ring, command buffers, fences | Host memory | Host memory |
 | Upload and readback | Not needed: the host writes the buffer | A copy command between host and local memory, then a fence |
 | Framebuffer | Host memory | Local memory, through the local window |
 
@@ -1892,7 +1887,7 @@ Nothing else changes.
 | --- | --- |
 | Identification | Base class 03h (display controller), subclass 02h (3D controller), or 80h when it has a display controller without VGA compatibility. The vendor and device IDs are the implementer's. A driver identifies GHCI by GHCI_MAGIC and GHCI_VERSION at offset 0 of BAR0 (draft: no programming-interface value is assigned) |
 | BAR0 | 32-bit, non-prefetchable memory, 128 KiB: the register window of section 3 |
-| BAR2 (optional) | 64-bit, prefetchable memory: the local window, WINDOW_SIZE bytes rounded up to a power of two. It may be mapped write-combining; the driver reads back the last word it wrote before a doorbell (section 6.3) |
+| BAR2 (optional) | Memory, 32-bit or 64-bit (the BAR's type bits say which; no GHCI capability): the local window, WINDOW_SIZE bytes rounded up to a power of two. Prefetchable is recommended (it may then be mapped write-combining; section 11.1) but not required |
 | Interrupts | MSI or MSI-X with one vector, or INTx as a fallback. The device sends a message when OR(IRQ_STATUS & IRQ_ENABLE) goes from 0 to 1, and again after a write to IRQ_STATUS or IRQ_ENABLE that leaves it 1. INTx carries the level itself |
 | DMA | The GPU makes no memory access until Bus Master Enable is set in the command register and the aperture is set. GPU host addresses (section 11.2) are PCIe bus addresses. No Snoop is not set in version 1; the fence write and the interrupt message do not use Relaxed Ordering (section 11.5) |
 | Reset | CTRL.RESET is GHCI's reset (section 10). A function-level reset, where supported, resets the whole function, the display controller included |
@@ -1919,8 +1914,8 @@ A typical start, following the rules above:
    GPU is unified.
 3. Write CTRL.RESET and wait for it to fall (section 10). Wait for
    STATUS.MEM_READY.
-4. Allocate the ring and the fence memory (host memory by default,
-   section 11.3), and set APERTURE_BASE/LIMIT, RING_BASE and RING_SIZE in
+4. Allocate the ring and the fence memory (in host memory, section
+   11.3), and set APERTURE_BASE/LIMIT, RING_BASE and RING_SIZE in
    IDLE.
 5. Write FENCE_LAST and the fence memory with the starting fence value.
 6. Clear IRQ_STATUS, set IRQ_ENABLE (at least FENCE and FAULT), then set

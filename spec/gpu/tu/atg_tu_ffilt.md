@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_ffilt.v`.  Parent: atg_tu (beside atg_tu_filter, after a
 
 ## 1. Purpose and place
 
-The TU's fp32 filter path: the texture formats of TEX_FORMAT (docs/ghci.md §8.5) that the 8-bit path atg_tu_filter does not take, that is every sampled format but R8G8B8A8, B8G8R8A8, A8B8G8R8, R8 and R8G8 UNORM and the compares (atg_tu_addr sets ta_ctl[20] for them): SNORM, sRGB, the 16-bit and packed formats, 16- and 32-bit floats, the integer formats, 8- and 16-byte texels, the depth formats without compare (filtered linearly) and the stencil aspect.  No children; it uses the functions of `include/atg_fmt_unpack.vh` (the conversion), `include/atg_tu_fmt.vh` (gather's word) and `include/atg_su_fp.vh` (the fused multiply-add).
+The TU's fp32 filter path: the texture formats of TEX_FORMAT (docs/ghci.md §8.5) that the 8-bit path atg_tu_filter does not take, that is every sampled format but R8G8B8A8, B8G8R8A8, A8B8G8R8, R8 and R8G8 UNORM and the compares (atg_tu_addr sets ta_ctl[20] for them): SNORM, sRGB, the 16-bit and packed formats, 16- and 32-bit floats, the integer formats, 8- and 16-byte texels, the depth formats without compare (filtered linearly) and the stencil aspect.  Children: `atg_tu_ffront` (the step's value and weight: `atg_tu_etc` the block decode, `atg_fmt_cvt` the conversion, atg_fmt_comp pipelined) and `atg_tu_fma` (the fused multiply-add, pipelined).
 
 ## 2. Parameters
 
@@ -29,6 +29,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `tc_mask` | in | 4 | Lanes. |
 | `tc_ctl` | in | 50 | As ta_ctl (atg_tu_addr.md §3); used: [0] bilinear, [4] more passes follow, [5] not the first pass, [7:6] border colour class, [13] gather, [15:14] its component, [17] second slice, [18] second level, [21] row passes, [22] second row, [34:27] VkFormat, [35] stencil aspect, [47:36] swizzle, [48] second column, [49] four passes. |
 | `tc_last` | in | 1 | Last. |
+| `idle` | out | 1 | No quad in the unit (0 between the passes of a quad); atg_tu hands a pass of the 8-bit path only then. |
 | **Return to the SU** | | | |
 | `tr_valid` | out | 1 | The quad's result (after its last pass). |
 | `tr_ready` | in | 1 | Taken. |
@@ -36,7 +37,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `tr_data` | out | 512 | 4 lanes × 4 × 32 bits (fp32, or the integer bits of an integer format), R first. |
 | `tr_last` | out | 1 | Last. |
 
-17 ports.
+18 ports.
 
 ## 4. Behaviour
 
@@ -54,11 +55,11 @@ The reference is `tools/tumodel.py` `FFilter`, bit for bit.
 
 ## 5. State machine
 
-IDLE →(tc_valid)→ RUN (lane, texel, component: one step a cycle; a masked lane, a bypassed lane and a skipped texel one cycle each) → FIN (the 16 words, the swizzle) → OUT →(tr_ready)→ IDLE; a pass with more to follow goes from RUN back to IDLE.
+IDLE →(tc_valid)→ LOAD (the pass's work: a mask of {texel, lane}; the quad's constants) → RUN (the steps) → DRAIN (until the pipeline is empty) → FIN (the 16 words, the swizzle, a lane a cycle) → OUT →(tr_ready)→ IDLE; a pass with more to follow goes from RUN back to IDLE, its steps still in the pipeline.
 
 ## 6. Latency and throughput
 
-Per pass about 4 + Σ over the lanes of (texels with a weight × components) cycles: a bilinear RGBA quad 64 cycles a pass, a nearest quad 4, a gather 16, plus FIN and the handshake.  One quad at a time (atg_tu gives the next pass only when both filters are idle).  Combinational: one unpack, one weight conversion and one fused multiply-add per cycle (a later performance step pipelines them).
+A step is one component of a lane's texel (a term), a bypassed lane's component or a gathered texel; the steps are issued one a cycle in the order texel, lane, component (the work mask skips masked lanes, texels of weight 0 and the texels of a pass that are not present without a cycle).  Pipeline: P1 (the texel's bits and border bit, the lane's weights), P2-P5 (atg_tu_etc, 4 cycles; the weight's factors 256 − f, wu × wv and wa × wb, n = wu wv wa wb, n × 2^-32 as fp32 in P7), P6 (the converter's inputs), P6-P13 (atg_fmt_cvt, 7 cycles), P13 (a bypassed or gathered value is written to its accumulator; a term enters atg_tu_fma, which reads the accumulator in its cycle 3 and writes it in its cycle 10).  A term is issued only 8 or more cycles after the last term of the same accumulator (a pass with fewer than 8 accumulators in turn waits: few lanes, few components); the order of the terms of one accumulator is the reference's (texels, passes).  Per pass 1 (LOAD) + the steps (+ the waits) cycles; the next pass is taken while the last one's steps are in the pipeline; a quad's last pass then waits for the pipeline (about 13 cycles after a bypass or gather, 23 after a term) and FIN (4).  Measured by `atg_tu_ffilt_tb` (cycles a quad keeps the unit, the TB's gaps not counted; before → after p038): nearest 14.6 → 28.4, bilinear 32.2 → 48.5, passes (2-8) 80.3 → 80.3, gather 24.0 → 34.0, border 14.5 → 28.2.  One quad at a time (atg_tu).
 
 ## 7. Corner cases and errors
 
@@ -90,3 +91,5 @@ Implemented (2026-10-25).  Readings: one fused multiply-add per term (design §1
 2026-10-25 (area): a block's texel (atg_tu_etc) is converted by the same atg_fmt_unpack as the other texels (atg_fmt_unpack_i with RGBA8's UNORM or sRGB table word, or EAC's two 11-bit UNORM components, the signed ones as their 10-bit magnitudes with the sign set), not by its own conversions; FIN takes the four lanes one a cycle (3 cycles more a quad).  The values are unchanged.
 
 2026-10-25 (area, later): one component of the texel is converted a cycle (atg_fmt_comp: c, or gather's component), so a lane that returns its texel as it is (bypass) takes a cycle per component of the format (was one cycle for all four).  The values are unchanged.
+
+2026-10-25 (p038, the pipeline): the steps issued in the order texel, lane, component (was lane, texel, component) through a pipeline (§6); the conversion is atg_fmt_cvt, the accumulation atg_tu_fma, the weight's fp32 three stages; all its arithmetic through rtl/common (the block decoder atg_tu_etc still has its own).  The values are unchanged (the TB, the mutation `-DMUT_FFILT_ROW` fails; a hazard window of 6 instead of 7 cycles fails).
