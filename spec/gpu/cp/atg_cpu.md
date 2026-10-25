@@ -155,3 +155,5 @@ layout (MBOX0-3 at 0x150, see atg_cpu_fw).  With the firmware (fw/cp/, p017 part
 2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.
 
 2026-10-25 (ws288-p034, user decision "IMEM を 128 KiB"): IMEM 0x0000_0000-0x0001_FFFF (the core faults a fetch above it), DMEM moved to 0x0002_0000-0x0002_FFFF; the KC705 has IMEM 32768 words (128 KiB).  The firmware had reached 65520 of 64 KiB with session protection.
+
+2026-10-25 (ws288-p034, user decision "DMEM を広げて増やす"): the KC705's DMEM is 16384 words (64 KiB) at 0x0002_0000 (the window's DMEM decode already covered 64 KiB); the firmware's object table is 512 entries.
