@@ -72,11 +72,8 @@ module atg_rx_cpoly (
 	reg [223:0] xi;
 	integer q;
 
-	function [4:0] adr;
-		input h;
-		input [3:0] x;
-		adr = h ? {1'b0, x} + 5'd10 : {1'b0, x};
-	endfunction
+	/* The entry of vertex x of half h: x + 10 h (one adder an address). */
+	wire [4:0] a_vd, a_va, a_vb;
 
 	/* Inside: dist >= 0, -0 and denormals included, NaN outside. */
 	function cin;
@@ -91,12 +88,38 @@ module atg_rx_cpoly (
 		assign ins[g] = cin(dd[g]);
 	end
 	endgenerate
-	wire [9:0] vmask = (10'd1 << n) - 10'd1;
+	reg [9:0] vmask;	/* (1 << n) - 1: the vertices below n */
+	integer vq;
+	always @(*)
+		for (vq = 0; vq < 10; vq = vq + 1)
+			vmask[vq] = vq < {28'd0, n};
+	/* n - 1; CUT's p = (j + k) mod n and its successor q; the counters + 1 */
+	wire [3:0] nm1, pmn, pi, pi1, i1, m1, k1;
+	wire [4:0] psum;
+	wire [2:0] ph1, c1;
+	wire [8:0] cp_carry_unused;
+	wire [6:0] adr_carry_unused;
+	am_add #(.W(5)) u_a_vd (.a({1'b0, i}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_vd),
+		.co(adr_carry_unused[0]));
+	am_add #(.W(5)) u_a_va (.a({1'b0, ia}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_va),
+		.co(adr_carry_unused[1]));
+	am_add #(.W(5)) u_a_vb (.a({1'b0, ib}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_vb),
+		.co(adr_carry_unused[2]));
+	am_sub #(.W(4)) u_nm1 (.a(n), .b(4'd0), .bi(1'b1), .d(nm1), .bo(cp_carry_unused[0]));
+	am_add #(.W(5)) u_psum (.a({1'b0, j}), .b({1'b0, k}), .ci(1'b0), .s(psum), .co(cp_carry_unused[1]));
+	am_sub #(.W(4)) u_pmn (.a(psum[3:0]), .b(n), .bi(1'b0), .d(pmn), .bo(cp_carry_unused[2]));
+	assign pi = psum >= {1'b0, n} ? pmn : psum[3:0];
+	am_add #(.W(4)) u_pi1 (.a(pi), .b(4'd0), .ci(1'b1), .s(pi1), .co(cp_carry_unused[3]));
+	am_add #(.W(4)) u_i1 (.a(i), .b(4'd0), .ci(1'b1), .s(i1), .co(cp_carry_unused[4]));
+	am_add #(.W(4)) u_m1 (.a(m), .b(4'd0), .ci(1'b1), .s(m1), .co(cp_carry_unused[5]));
+	am_add #(.W(4)) u_k1 (.a(k), .b(4'd0), .ci(1'b1), .s(k1), .co(cp_carry_unused[6]));
+	am_add #(.W(3)) u_ph1 (.a(ph), .b(3'd0), .ci(1'b1), .s(ph1), .co(cp_carry_unused[7]));
+	am_add #(.W(3)) u_c1 (.a(c), .b(3'd0), .ci(1'b1), .s(c1), .co(cp_carry_unused[8]));
 	wire all_in = (ins & vmask) == vmask;
 	wire none_in = (ins & vmask) == 10'd0;
 	/* The first inside vertex after an outside one (a triangle). */
 	wire [15:0] ins16 = {6'd0, ins};
-	wire [9:0] prv = {ins[8:0], ins16[n - 4'd1]};	/* the vertex before is inside */
+	wire [9:0] prv = {ins[8:0], ins16[nm1]};	/* the vertex before is inside */
 	reg [3:0] jsel;
 	always @(*) begin
 		jsel = 4'd0;
@@ -108,16 +131,14 @@ module atg_rx_cpoly (
 	end
 
 	/* CUT: edge k from p = (j + k) mod n to its successor. */
-	wire [4:0] psum = {1'b0, j} + {1'b0, k};
-	wire [3:0] pi = psum >= {1'b0, n} ? psum[3:0] - n : psum[3:0];
-	wire [3:0] qi = pi + 4'd1 == n ? 4'd0 : pi + 4'd1;
+	wire [3:0] qi = pi1 == n ? 4'd0 : pi1;
 	wire cut_end = line ? k == 4'd2 : k == n;
 	wire xing = ins[pi] != ins[qi] && (!line || k == 4'd0);
 
 	/* The operands of the sequences. */
-	wire [223:0] vd = pb[adr(half, i)];
-	wire [223:0] va = pb[adr(half, ia)];
-	wire [223:0] vb = pb[adr(half, ib)];
+	wire [223:0] vd = pb[a_vd];
+	wire [223:0] va = pb[a_va];
+	wire [223:0] vb = pb[a_vb];
 	wire gy = plane == 3'd5 || plane == 3'd6;
 	wire [31:0] g_c = gy ? vd[63:32] : vd[31:0];
 	wire [31:0] g_sc = gy ? vp[63:32] : vp[31:0];
@@ -204,10 +225,15 @@ module atg_rx_cpoly (
 	end
 
 	wire issue = st == S_DOP || st == S_IOP;
-	wire [4:0] a_ld = adr(half, ld_idx);
-	wire [4:0] a_new = adr(!half, m);
-	wire [4:0] a_p = adr(half, pi);
-	wire [4:0] a_rd = adr(half, rd_idx);
+	wire [4:0] a_ld, a_new, a_p, a_rd;
+	am_add #(.W(5)) u_a_ld (.a({1'b0, ld_idx}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_ld),
+		.co(adr_carry_unused[3]));
+	am_add #(.W(5)) u_a_new (.a({1'b0, m}), .b(half ? 5'd0 : 5'd10), .ci(1'b0), .s(a_new),
+		.co(adr_carry_unused[4]));
+	am_add #(.W(5)) u_a_p (.a({1'b0, pi}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_p),
+		.co(adr_carry_unused[5]));
+	am_add #(.W(5)) u_a_rd (.a({1'b0, rd_idx}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_rd),
+		.co(adr_carry_unused[6]));
 	wire fa_o, fm_o, fd_o, fd_busy;
 	wire [31:0] fa_r, fm_r, fd_r;
 	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid(issue && op == 2'd0), .i_a(op_a),
@@ -250,8 +276,8 @@ module atg_rx_cpoly (
 		S_DOP:
 			if (plane == 3'd1) begin
 				dd[i] <= vd[95:64];
-				i <= i + 4'd1;
-				if (i + 4'd1 == n)
+				i <= i1;
+				if (i1 == n)
 					st <= S_DEC;
 			end else
 				st <= S_DW;
@@ -260,14 +286,14 @@ module atg_rx_cpoly (
 				if (d_last) begin
 					dd[i] <= res;
 					ph <= 3'd0;
-					i <= i + 4'd1;
-					st <= i + 4'd1 == n ? S_DEC : S_DOP;
+					i <= i1;
+					st <= i1 == n ? S_DEC : S_DOP;
 				end else begin
 					if (ph == 3'd0 || ph == 3'd2)
 						t0 <= res;
 					else
 						t1 <= res;
-					ph <= ph + 3'd1;
+					ph <= ph1;
 					st <= S_DOP;
 				end
 			end
@@ -295,7 +321,7 @@ module atg_rx_cpoly (
 			end else if (!cdone) begin
 				if (ins[pi]) begin
 					pb[a_new] <= pb[a_p];
-					m <= m + 4'd1;
+					m <= m1;
 				end
 				cdone <= 1'b1;
 			end else if (xing) begin
@@ -305,7 +331,7 @@ module atg_rx_cpoly (
 				c <= 3'd0;
 				st <= S_IOP;
 			end else begin
-				k <= k + 4'd1;
+				k <= k1;
 				cdone <= 1'b0;
 			end
 		S_IOP:
@@ -319,13 +345,13 @@ module atg_rx_cpoly (
 				3'd2, 3'd3: t0 <= res;	/* u */
 				default: xi[32 * c +: 32] <= res;
 				endcase
-				ph <= ph == 3'd4 ? 3'd2 : ph + 3'd1;
+				ph <= ph == 3'd4 ? 3'd2 : ph1;
 				if (ph == 3'd4) begin
-					c <= c + 3'd1;
+					c <= c1;
 					if (c == 3'd6) begin
 						pb[a_new] <= {res, xi[191:0]};
-						m <= m + 4'd1;
-						k <= k + 4'd1;
+						m <= m1;
+						k <= k1;
 						cdone <= 1'b0;
 						st <= S_CUT;
 					end

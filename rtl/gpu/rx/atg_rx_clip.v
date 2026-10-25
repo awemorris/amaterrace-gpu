@@ -121,6 +121,16 @@ module atg_rx_clip (
 
 	wire [223:0] vv0 = vv[0], vv1 = vv[1], vv2 = vv[2];
 	wire [3:0] rd_lim = kind == 2'd0 ? 4'd4 : kind == 2'd1 ? 4'd8 : 4'd12;
+	wire [3:0] rd_lim_m1 = kind == 2'd0 ? 4'd3 : kind == 2'd1 ? 4'd7 : 4'd11;
+	/* rd_n + 1, ld_idx + 1, es + 1, ti + 1, ti + 2 */
+	wire [3:0] rd_n1, ld1, ti1, ti2;
+	wire [2:0] es1;
+	wire [4:0] cnt_carry_unused;
+	am_add #(.W(4)) u_rd_n1 (.a(rd_n), .b(4'd0), .ci(1'b1), .s(rd_n1), .co(cnt_carry_unused[0]));
+	am_add #(.W(4)) u_ld1 (.a(ld_idx), .b(4'd0), .ci(1'b1), .s(ld1), .co(cnt_carry_unused[1]));
+	am_add #(.W(3)) u_es1 (.a(es), .b(3'd0), .ci(1'b1), .s(es1), .co(cnt_carry_unused[2]));
+	am_add #(.W(4)) u_ti1 (.a(ti), .b(4'd0), .ci(1'b1), .s(ti1), .co(cnt_carry_unused[3]));
+	am_add #(.W(4)) u_ti2 (.a(ti), .b(4'd2), .ci(1'b0), .s(ti2), .co(cnt_carry_unused[4]));
 	wire [1:0] nv = kind == 2'd0 ? 2'd1 : kind == 2'd1 ? 2'd2 : 2'd3;
 
 	/* a <= b for fp32, -0 = +0, denormals by value; 0 when either is NaN. */
@@ -131,9 +141,11 @@ module atg_rx_clip (
 		begin
 			nan = (a[30:23] == 8'hFF && a[22:0] != 23'd0) ||
 				(b[30:23] == 8'hFF && b[22:0] != 23'd0);
-			ka = a[31] ? 33'd0 - {2'd0, a[30:0]} : {2'd0, a[30:0]};
-			kb = b[31] ? 33'd0 - {2'd0, b[30:0]} : {2'd0, b[30:0]};
-			fle = !nan && $signed(ka) <= $signed(kb);
+			/* the signed keys ka <= kb, from the signs and the magnitudes */
+			ka = {2'd0, a[30:0]};
+			kb = {2'd0, b[30:0]};
+			fle = !nan && (a[31] ? (b[31] ? ka >= kb : 1'b1) :
+				(b[31] ? ka == 0 && kb == 0 : ka <= kb));
 		end
 	endfunction
 
@@ -149,21 +161,31 @@ module atg_rx_clip (
 	function [2:0] vtest;
 		input [30:0] ax, ay;	/* |x|, |y| */
 		input [31:0] z, w;
+		input [7:0] we2;	/* w's exponent + 2 */
 		input pn, pf, ox, oy;
 		reg [31:0] w4;
 		reg wi;
 		begin
 			wi = fle(EPS, w);
-			w4 = w[30:23] >= 8'd253 ? 32'h7F800000 : w + {9'd2, 23'd0};
+			w4 = w[30:23] >= 8'd253 ? 32'h7F800000 : {w[31], we2, w[22:0]};
 			vtest = {wi && ox && oy && fle({1'b0, ax}, w4) && fle({1'b0, ay}, w4),
 				(!pn || cin(z)) && (!pf || fle(z, w)), wi};
 		end
 	endfunction
-	wire [2:0] t0 = vtest(vv0[30:0], vv0[62:32], vv0[95:64], vv0[127:96], p_near, p_far,
+	wire [7:0] we0;
+	wire we0_co_unused;
+	am_add #(.W(8)) u_we0 (.a(vv0[126:119]), .b(8'd2), .ci(1'b0), .s(we0), .co(we0_co_unused));
+	wire [2:0] t0 = vtest(vv0[30:0], vv0[62:32], vv0[95:64], vv0[127:96], we0, p_near, p_far,
 		okx, oky);
-	wire [2:0] t1 = vtest(vv1[30:0], vv1[62:32], vv1[95:64], vv1[127:96], p_near, p_far,
+	wire [7:0] we1;
+	wire we1_co_unused;
+	am_add #(.W(8)) u_we1 (.a(vv1[126:119]), .b(8'd2), .ci(1'b0), .s(we1), .co(we1_co_unused));
+	wire [2:0] t1 = vtest(vv1[30:0], vv1[62:32], vv1[95:64], vv1[127:96], we1, p_near, p_far,
 		okx, oky);
-	wire [2:0] t2 = vtest(vv2[30:0], vv2[62:32], vv2[95:64], vv2[127:96], p_near, p_far,
+	wire [7:0] we2;
+	wire we2_co_unused;
+	am_add #(.W(8)) u_we2 (.a(vv2[126:119]), .b(8'd2), .ci(1'b0), .s(we2), .co(we2_co_unused));
+	wire [2:0] t2 = vtest(vv2[30:0], vv2[62:32], vv2[95:64], vv2[127:96], we2, p_near, p_far,
 		okx, oky);
 	wire [2:0] ta = t0 & (nv == 2'd1 ? 3'b111 : t1) & (nv == 2'd3 ? t2 : 3'b111);
 	wire accept = &ta;
@@ -258,10 +280,10 @@ module atg_rx_clip (
 			end
 		S_READ: begin
 			if (pt_rd)
-				rd_n <= rd_n + 4'd1;
+				rd_n <= rd_n1;
 			if (rd_v)
 				vv[rd_k[3:2]][32 * rd_k[1:0] +: 32] <= pt_rdata;
-			if (rd_v && rd_k == rd_lim - 4'd1)
+			if (rd_v && rd_k == rd_lim_m1)
 				st <= S_TRIV;
 		end
 		S_TRIV:
@@ -288,9 +310,9 @@ module atg_rx_clip (
 			end
 		S_LOAD:
 			/* vertex 1 and (a triangle) vertex 2 */
-			if (ld_idx + 4'd1 < {2'd0, nv}) begin
+			if (ld1 < {2'd0, nv}) begin
 				ld_we <= 1'b1;
-				ld_idx <= ld_idx + 4'd1;
+				ld_idx <= ld1;
 				ld_data <= ld_idx == 4'd0 ? vv1 : vv2;
 			end else
 				st <= S_CMD;
@@ -326,15 +348,15 @@ module atg_rx_clip (
 		S_EMIT: begin
 			/* read v0, v_ti, v_ti+1 (a line: v0, v1, v1); rd_data is the
 			 * word of rd_idx two cycles later */
-			es <= es + 3'd1;
-			rd_idx <= es == 3'd0 ? 4'd0 : es == 3'd1 || kind == 2'd1 ? ti : ti + 4'd1;
+			es <= es1;
+			rd_idx <= es == 3'd0 ? 4'd0 : es == 3'd1 || kind == 2'd1 ? ti : ti1;
 			if (es == 3'd2)
 				o0 <= rd_data;
 			if (es == 3'd3)
 				o1 <= rd_data;
 			if (es == 3'd4) begin
 				o2 <= rd_data;
-				ofl <= kind == 2'd1 || ti + 4'd2 == np;
+				ofl <= kind == 2'd1 || ti2 == np;
 				st <= S_OUT;
 			end
 		end
@@ -344,7 +366,7 @@ module atg_rx_clip (
 				if (ofl)
 					st <= S_IDLE;
 				else begin
-					ti <= ti + 4'd1;
+					ti <= ti1;
 					es <= 3'd0;
 					st <= S_EMIT;
 				end

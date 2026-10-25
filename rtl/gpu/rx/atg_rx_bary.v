@@ -54,24 +54,6 @@ module atg_rx_bary (
 	reg [5:0] c;	/* step counter */
 	wire [1:0] l = c[1:0];
 
-	/* A signed integer (|v| < 2^20) over 8 to fp32 (exact). */
-	function [31:0] i2f8;
-		input [20:0] v;
-		reg [20:0] m;
-		reg [4:0] lz;
-		integer b;
-		begin
-			m = v[20] ? -v : v;
-			lz = 5'd0;
-			for (b = 0; b < 21; b = b + 1)
-				if (m[b])
-					lz = 5'd20 - b[4:0];
-			m = m << lz;
-			i2f8 = m == 21'd0 ? 32'd0 :
-				{v[20], 8'd127 + 8'd17 - {3'd0, lz}, m[19:0], 3'd0};
-		end
-	endfunction
-
 	/* The lane's i and j in eighths, with its offset. */
 	wire [2:0] os = i_osel[3 * l +: 3];
 	reg signed [3:0] ox8, oy8;
@@ -84,10 +66,21 @@ module atg_rx_bary (
 		default: begin ox8 = 4'sd0; oy8 = 4'sd0; end
 		endcase
 	end
-	wire [16:0] di = {1'b0, i_qx} + {16'd0, l[0]} - {1'b0, i_bx0};
-	wire [16:0] dj = {1'b0, i_qy} + {16'd0, l[1]} - {1'b0, i_by0};
-	wire [31:0] fi = i2f8({{1{di[16]}}, di, 3'd0} + {{17{ox8[3]}}, ox8});
-	wire [31:0] fj = i2f8({{1{dj[16]}}, dj, 3'd0} + {{17{oy8[3]}}, oy8});
+	/* i = qx + l[0] - bx0, j = qy + l[1] - by0, in eighths with the offset, to fp32 */
+	wire [16:0] qi, qj, di, dj;
+	wire [20:0] i8, j8;
+	wire [31:0] fi, fj;
+	wire [5:0] ij_carry_unused;
+	am_add #(.W(17)) u_qi (.a({1'b0, i_qx}), .b(17'd0), .ci(l[0]), .s(qi), .co(ij_carry_unused[0]));
+	am_add #(.W(17)) u_qj (.a({1'b0, i_qy}), .b(17'd0), .ci(l[1]), .s(qj), .co(ij_carry_unused[1]));
+	am_sub #(.W(17)) u_di (.a(qi), .b({1'b0, i_bx0}), .bi(1'b0), .d(di), .bo(ij_carry_unused[2]));
+	am_sub #(.W(17)) u_dj (.a(qj), .b({1'b0, i_by0}), .bi(1'b0), .d(dj), .bo(ij_carry_unused[3]));
+	am_add #(.W(21)) u_i8 (.a({{1{di[16]}}, di, 3'd0}), .b({{17{ox8[3]}}, ox8}), .ci(1'b0), .s(i8),
+		.co(ij_carry_unused[4]));
+	am_add #(.W(21)) u_j8 (.a({{1{dj[16]}}, dj, 3'd0}), .b({{17{oy8[3]}}, oy8}), .ci(1'b0), .s(j8),
+		.co(ij_carry_unused[5]));
+	atg_rx_i2f #(.W(21), .F(3)) u_fi (.v(i8), .f(fi));
+	atg_rx_i2f #(.W(21), .F(3)) u_fj (.v(j8), .f(fj));
 
 	/* The sample offsets as fp32: dx_s, dy_s. */
 	function [31:0] sdx;
@@ -112,12 +105,30 @@ module atg_rx_bary (
 
 	/* The fp units. */
 	wire [1:0] pm = c[4:3];	/* the plane of a multiply in PL */
-	wire [1:0] pa = c[4:3] - 2'd1;	/* of an add */
+	wire [1:0] pa;	/* of an add: pm - 1 */
+	wire pa_bo_unused;
+	am_sub #(.W(2)) u_pa (.a(c[4:3]), .b(2'd0), .bi(1'b1), .d(pa), .bo(pa_bo_unused));
+	/* the planes' coefficients A (0), B (1), C (2) of plane p at 32 (3 p + k) */
+	reg [31:0] pl_m, pl_c;
+	integer pp;
+	always @(*) begin
+		pl_m = 32'd0;
+		pl_c = 32'd0;
+		for (pp = 0; pp < 4; pp = pp + 1) begin
+			if (pm == pp[1:0])
+				pl_m = c[2] ? i_pl[32 * (3 * pp + 1) +: 32] : i_pl[32 * (3 * pp) +: 32];
+			if (pa == pp[1:0])
+				pl_c = i_pl[32 * (3 * pp + 2) +: 32];
+		end
+	end
+	wire [5:0] c1;	/* c + 1 */
+	wire c1_co_unused;
+	am_add #(.W(6)) u_c1 (.a(c), .b(6'd0), .ci(1'b1), .s(c1), .co(c1_co_unused));
 	wire dz = st == S_DZ;
 	wire fm_v = (st == S_PL && c < 6'd32) || (st == S_BC && c < 6'd8) || (dz && c < 6'd8);
 	wire [31:0] fm_a = dz ? (c[2] ? i_pl[32 +: 32] : i_pl[0 +: 32]) :
 		st == S_BC ? (c[2] ? v[{2'd3, l}] : v[{2'd2, l}]) :
-		i_pl[32 * (3 * pm + (c[2] ? 1 : 0)) +: 32];
+		pl_m;
 	wire [31:0] fm_b = dz ? (c[2] ? sdy(l) : sdx(l)) : st == S_BC ? rw[l] : c[2] ? fj : fi;
 	wire fm_o, fa_o;
 	wire [31:0] fm_r, fa_r;
@@ -126,7 +137,7 @@ module atg_rx_bary (
 	wire fa_v = (st == S_PL && c >= 6'd8 && c < 6'd40) || (st == S_BC && c >= 6'd4 && c < 6'd12) ||
 		(dz && c >= 6'd8 && c < 6'd12);
 	wire [31:0] fa_a = dz ? t1[l] : st == S_BC ? (c < 6'd8 ? ONE : fa_r) : c[2] ? fa_r : t1[l];
-	wire [31:0] fa_b = dz ? fm_r : st == S_BC ? fm_r : c[2] ? i_pl[32 * (3 * pa + 2) +: 32] : fm_r;
+	wire [31:0] fa_b = dz ? fm_r : st == S_BC ? fm_r : c[2] ? pl_c : fm_r;
 	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(fa_a), .i_b(fa_b),
 		.i_sub(st == S_BC), .o_valid(fa_o), .o_r(fa_r));
 	reg dgo;
@@ -163,11 +174,11 @@ module atg_rx_bary (
 				st <= S_DZ;
 		end
 		S_PL: begin
-			c <= c + 6'd1;
+			c <= c1;
 			if (c >= 6'd4 && c < 6'd36 && c[2])
 				t1[l] <= fm_r;
 			if (c >= 6'd16 && !c[2])
-				v[{c[4:3] - 2'd2, l}] <= fa_r;
+				v[{~c[4], c[3], l}] <= fa_r;	/* plane c[4:3] - 2 */
 			if (c == 6'd43) begin
 				c <= 6'd0;
 				dgo <= 1'b0;
@@ -180,14 +191,14 @@ module atg_rx_bary (
 			else if (fd_done) begin
 				rw[l] <= fd_r;
 				dgo <= 1'b0;
-				c <= c + 6'd1;
+				c <= c1;
 				if (l == 2'd3) begin
 					c <= 6'd0;
 					st <= S_BC;
 				end
 			end
 		S_BC: begin
-			c <= c + 6'd1;
+			c <= c1;
 			if (c >= 6'd4 && c < 6'd8)
 				b0[l] <= fm_r;
 			if (c >= 6'd8 && c < 6'd12)
@@ -200,7 +211,7 @@ module atg_rx_bary (
 			end
 		end
 		S_DZ: begin
-			c <= c + 6'd1;
+			c <= c1;
 			if (c >= 6'd4 && c < 6'd8)
 				t1[l] <= fm_r;
 `ifdef MUT_DZ_SIGN

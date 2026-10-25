@@ -172,12 +172,24 @@ module atg_rx_setup (
 		input [31:0] a, b;
 		reg [32:0] ka, kb;
 		begin
-			ka = a[31] ? 33'd0 - {2'd0, a[30:0]} : {2'd0, a[30:0]};
-			kb = b[31] ? 33'd0 - {2'd0, b[30:0]} : {2'd0, b[30:0]};
+			/* the signed keys ka <= kb, from the signs and the magnitudes */
+			ka = {2'd0, a[30:0]};
+			kb = {2'd0, b[30:0]};
 			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
-				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) && $signed(ka) <= $signed(kb);
+				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) &&
+				(a[31] ? (b[31] ? ka >= kb : 1'b1) : (b[31] ? ka == 0 && kb == 0 : ka <= kb));
 		end
 	endfunction
+
+	/* e(a) - 23 (ULP); cnt + 1, cnt[2:0] - 5 (LOAD's VIEWPORT word); pc + 1 */
+	wire [7:0] ea23, pc1;
+	wire [5:0] cnt1;
+	wire [2:0] vpi;
+	wire [3:0] su_carry_unused;
+	am_sub #(.W(8)) u_ea23 (.a(opa[30:23]), .b(8'd23), .bi(1'b0), .d(ea23), .bo(su_carry_unused[0]));
+	am_add #(.W(6)) u_cnt1 (.a(cnt), .b(6'd0), .ci(1'b1), .s(cnt1), .co(su_carry_unused[1]));
+	am_sub #(.W(3)) u_vpi (.a(cnt[2:0]), .b(3'd5), .bi(1'b0), .d(vpi), .bo(su_carry_unused[2]));
+	am_add #(.W(8)) u_pc1 (.a(pc), .b(8'd0), .ci(1'b1), .s(pc1), .co(su_carry_unused[3]));
 
 	/* The one-cycle micro-ops: MOV, ABS, MAX (of magnitudes), ULP, BCL. */
 	reg [31:0] q1;
@@ -186,7 +198,7 @@ module atg_rx_setup (
 		4'd9: q1 = {1'b0, opa[30:0]};
 		4'd10: q1 = opb[30:0] > opa[30:0] ? opb : opa;
 		/* 2^(e(a) - 23); 0 when below the normal range */
-		4'd11: q1 = opa[30:23] > 8'd23 ? {1'b0, opa[30:23] - 8'd23, 23'd0} : 32'd0;
+		4'd11: q1 = opa[30:23] > 8'd23 ? {1'b0, ea23, 23'd0} : 32'd0;
 		/* the bias clamp: b > 0 min(a, b), b < 0 max(a, b), b = 0 a */
 		4'd12: q1 = opb[30:0] == 31'd0 ? opa : !opb[31] ? (fle(opa, opb) ? opa : opb) :
 			(fle(opb, opa) ? opa : opb);
@@ -237,8 +249,8 @@ module atg_rx_setup (
 			/* fp registers 0-20 from cl_tri, 21-26 VIEWPORT, 27 1.0 */
 			r_we <= 1'b1;
 			r_wa <= {1'b0, cnt};
-			r_wd <= cnt < 6'd21 ? cl_tri[cnt * 32 +: 32] : cnt < 6'd27 ? vp[cnt[2:0] - 3'd5] : ONE;
-			cnt <= cnt + 6'd1;
+			r_wd <= cnt < 6'd21 ? cl_tri[cnt * 32 +: 32] : cnt < 6'd27 ? vp[vpi] : ONE;
+			cnt <= cnt1;
 			if (cnt == 6'd27) begin
 				pc <= raw ? 8'd0 : ATG_RX_UC_PERSP;
 				st <= S_DEC;
@@ -251,9 +263,9 @@ module atg_rx_setup (
 			opb <= rsrc(u_b, R[u_b]);
 			case (u_op)
 			4'd0: st <= S_OUT;
-			4'd8: if (raw) st <= S_OUT; else begin pc <= pc + 8'd1; st <= S_DEC; end
+			4'd8: if (raw) st <= S_OUT; else begin pc <= pc1; st <= S_DEC; end
 			4'd7: begin pc <= u_t; st <= S_DEC; end
-			4'd13: begin pc <= cond ? u_t : pc + 8'd1; st <= S_DEC; end
+			4'd13: begin pc <= cond ? u_t : pc1; st <= S_DEC; end
 			4'd14: begin more <= 1'b1; st <= S_OUT; end
 			4'd6: begin e_start <= 1'b1; st <= S_INT; end
 			default: st <= S_GO;
@@ -266,7 +278,7 @@ module atg_rx_setup (
 				r_wd <= q1;
 				if (u_d >= 7'd64 && u_d < 7'd76)
 					pl[u_d[3:0]] <= q1;
-				pc <= pc + 8'd1;
+				pc <= pc1;
 				st <= S_DEC;
 			end else begin
 				fa_v <= u_op == 4'd1 || u_op == 4'd2;
@@ -281,7 +293,7 @@ module atg_rx_setup (
 				r_wd <= fa_o ? fa_r : fm_o ? fm_r : fd_r;
 				if (u_d >= 7'd64 && u_d < 7'd76)
 					pl[u_d[3:0]] <= fa_o ? fa_r : fm_o ? fm_r : fd_r;
-				pc <= pc + 8'd1;
+				pc <= pc1;
 				st <= S_DEC;
 			end
 		S_INT:
@@ -290,7 +302,7 @@ module atg_rx_setup (
 				if (e_empty)
 					st <= S_OUT;
 				else begin
-					pc <= pc + 8'd1;
+					pc <= pc1;
 					st <= S_DEC;
 				end
 			end
@@ -301,7 +313,7 @@ module atg_rx_setup (
 				if (more) begin
 					more <= 1'b0;
 					sub <= 1'b1;
-					pc <= pc + 8'd1;
+					pc <= pc1;
 					st <= S_DEC;
 				end else
 					st <= S_IDLE;
