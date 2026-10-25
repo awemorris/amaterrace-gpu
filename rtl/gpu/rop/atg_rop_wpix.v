@@ -279,47 +279,32 @@ module atg_rop_wpix #(
 		.i_wm(wm), .o_valid(f_done), .o_ready(f_take), .o_raw(f_raw), .o_keep(f_keep));
 
 	/* atg_fmt_pack for the formats of path 2 (the colour-attachment formats
-	 * that are neither path 0 nor 1), each with its format as a constant so
-	 * that it reduces to its own bit placement; a format without the
-	 * colour-attachment feature writes nothing, as in atg_fmt_pack.  For the
-	 * formats of paths 0 and 1 the value is not used. */
-	function [255:0] pack2;
-		input [127:0] c;
-		input [7:0] f;
-		input [3:0] m;
-		case (f)
-		8'd13: pack2 = atg_fmt_pack(c, 8'd13, m);
-		8'd14: pack2 = atg_fmt_pack(c, 8'd14, m);
-		8'd20: pack2 = atg_fmt_pack(c, 8'd20, m);
-		8'd21: pack2 = atg_fmt_pack(c, 8'd21, m);
-		8'd41: pack2 = atg_fmt_pack(c, 8'd41, m);
-		8'd42: pack2 = atg_fmt_pack(c, 8'd42, m);
-		8'd55: pack2 = atg_fmt_pack(c, 8'd55, m);
-		8'd56: pack2 = atg_fmt_pack(c, 8'd56, m);
-		8'd68: pack2 = atg_fmt_pack(c, 8'd68, m);
-		8'd74: pack2 = atg_fmt_pack(c, 8'd74, m);
-		8'd75: pack2 = atg_fmt_pack(c, 8'd75, m);
-		8'd81: pack2 = atg_fmt_pack(c, 8'd81, m);
-		8'd82: pack2 = atg_fmt_pack(c, 8'd82, m);
-		8'd95: pack2 = atg_fmt_pack(c, 8'd95, m);
-		8'd96: pack2 = atg_fmt_pack(c, 8'd96, m);
-		8'd98: pack2 = atg_fmt_pack(c, 8'd98, m);
-		8'd99: pack2 = atg_fmt_pack(c, 8'd99, m);
-		8'd100: pack2 = atg_fmt_pack(c, 8'd100, m);
-		8'd101: pack2 = atg_fmt_pack(c, 8'd101, m);
-		8'd102: pack2 = atg_fmt_pack(c, 8'd102, m);
-		8'd103: pack2 = atg_fmt_pack(c, 8'd103, m);
-		8'd107: pack2 = atg_fmt_pack(c, 8'd107, m);
-		8'd108: pack2 = atg_fmt_pack(c, 8'd108, m);
-		8'd109: pack2 = atg_fmt_pack(c, 8'd109, m);
-		default: pack2 = {{128{1'b1}}, 128'd0};
-		endcase
-	endfunction
+	 * that are neither path 0 nor 1), one instance a format so that each
+	 * reduces to its own bit placement; a format without the colour-attachment
+	 * feature writes nothing, as in atg_fmt_pack.  For the formats of paths 0
+	 * and 1 the value is not used. */
+	localparam [191:0] P2F = {8'd109, 8'd108, 8'd107, 8'd103, 8'd102, 8'd101, 8'd100, 8'd99, 8'd98,
+		8'd96, 8'd95, 8'd82, 8'd81, 8'd75, 8'd74, 8'd68, 8'd56, 8'd55, 8'd42, 8'd41, 8'd21, 8'd20,
+		8'd14, 8'd13};
 
 	/* The new pixels. */
 	generate
 	for (k = 0; k < 4; k = k + 1) begin : g_res
-		wire [255:0] pk = pack2(src[128 * k +: 128], vk, wm);
+		wire [24*256-1:0] pks;
+		genvar gf;
+		for (gf = 0; gf < 24; gf = gf + 1) begin : g_p2
+			/* (integer formats: no conversion) */
+			atg_fmt_pack #(.FMT(P2F[8 * gf +: 8])) u_pk (.c(src[128 * k +: 128]), .un(64'd0), .hf(64'd0),
+				.wm(wm), .o(pks[256 * gf +: 256]));
+		end
+		reg [255:0] pk;
+		integer pf;
+		always @(*) begin
+			pk = {{128{1'b1}}, 128'd0};
+			for (pf = 0; pf < 24; pf = pf + 1)
+				if (vk == P2F[8 * pf +: 8])
+					pk = pks[256 * pf +: 256];
+		end
 		wire [63:0] fr = (f_raw[64 * k +: 64] & ~f_keep[64 * k +: 64]) |
 			(dst[128 * k +: 64] & f_keep[64 * k +: 64]);
 		assign o_res[128 * k +: 128] = p_u8 ? {96'd0, b_pix[32 * k +: 32]} :
