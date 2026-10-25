@@ -25,6 +25,7 @@ Combinational.
 | `ms` | in | 1 | A multisampled image (texf: texel 4 i + smp of rows of roundup(wl, 2) × 4 texels). |
 | `smp` | in | 2 | texf's sample. |
 | `psl` | in | 3 | log2 of the texel's bytes (0-4). |
+| `ra` | in | 2 | Linear rows: wl rounded up to a multiple of 2^ra texels (TEX_ROW; atg_tu_desc gives 0 for the tiled, compressed and multisampled slots). |
 | `blk` | in | 1 | Compressed 4 × 4 blocks of 2^psl bytes. |
 | `row` | in | 1 | 8-byte texels: the pass's second row (j1). |
 | `col` | in | 1 | 16-byte blocks: the pass's second column (i1). |
@@ -52,7 +53,7 @@ Combinational.
 | `fuv` | out | 16 | {fv, fu}. |
 | `fw` | out | 8 | The depth weight (3D linear), else 0. |
 
-35 ports.
+36 ports.
 
 ## 4. Behaviour
 
@@ -85,3 +86,5 @@ Split off atg_tu_addr in WS288 p009 part F (P3) with the integer wrap, the offse
 Multisampling and RGB565 (the MSAA work): new inputs `ms` (a multisampled image: texf's texel 4 i + smp of rows of roundup(wl, 2) × 4 texels), `smp` (the sample), `b2` (2-byte texels: rows of wl × 2 bytes, 32-byte tiles); address bit 1 is kept (the half word of a 2-byte texel), bit 0 the border.
 
 TEX_FORMAT (2026-10-25): `b2` became `psl` (texels of 1-16 bytes: rows of wl × 2^psl bytes; tiled with psl 1, the earlier RGB565, 32-byte tiles), the slots of 8- and 16-byte texels (`row`) and gather's word (`gwi`); the border bit moved from address bit 0 to `bord` (a 1-byte texel's address uses bit 0).  `-DMUT_TU_ROW` reads the second row as the first.
+
+TEX_ROW (2026-10-25): new input `ra`; a linear row is wl rounded up to a multiple of 2^ra texels (17 bits).  `-DMUT_TU_PITCH` reads packed rows (fails `PASS atg_tu_addr.rows`).

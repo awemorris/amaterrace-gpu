@@ -590,7 +590,8 @@ command processor's firmware writes them from the descriptor sets:
 | +4 | TEX_SAMPLER | The sampler (below) |
 | +5 | TEX_LOD | [11:0] minLod, [23:12] 15.996 - maxLod (unsigned, 8 fraction bits; inverted so that a word of 0 does not clamp); [31:24] 0 |
 | +6 | TEX_FORMAT | (CAPS[30]) The VkFormat, the stencil aspect and the component swizzle (section 8.5); 0 keeps TEX_IMAGE's format |
-| +7..+15 | reserved | 0 |
+| +7 | TEX_ROW | [1:0] the row rule of a linear image: each level's rows hold w_l rounded up to a multiple of 2^n texels (0: w_l, packed rows; 1: an even number, the rows of an image that may be a colour or depth/stencil attachment, section 8.5); [31:2] 0 |
+| +8..+15 | reserved | 0 |
 
 TEX_IMAGE:
 
@@ -625,19 +626,25 @@ vkGetImageSubresourceLayout reports the same numbers):
 - Texels are 4 bytes (format 4: 2 bytes, the 4x4 tiles 32 bytes; a
   multisampled image: section 12.11).  Level l is w_l x h_l (x d_l for 3D) texels, w_l =
   max(1, width >> l), h_l = max(1, height >> l), d_l = max(1, depth >>
-  l).  Its plane P_l (one slice) is w_l x h_l x 4 bytes in rows of w_l x
-  4 bytes (linear) or the 4x4 tiles of section 8.2, a row of tiles
-  ceil(w_l / 4) x 64 bytes (tiled), rounded up to a multiple of 64.
+  l).  Its plane P_l (one slice) is r_l x h_l x 4 bytes in rows of r_l x
+  4 bytes (linear; r_l is w_l rounded up to a multiple of 2^TEX_ROW[1:0]
+  texels, w_l itself when TEX_ROW is 0) or the 4x4 tiles of section 8.2,
+  a row of tiles ceil(w_l / 4) x 64 bytes (tiled), rounded up to a
+  multiple of 64.  TEX_ROW holds for every level and slice of a linear
+  image; tiled, compressed (section 8.5) and multisampled (section 12.11)
+  images keep their own rows whatever it says.
 - A layer holds its levels back to back: level l starts at O_l = sum of
   P_k x D_k for k < l (D_k = d_k for 3D, 1 otherwise; 32-bit wrap); slice
   k of a 3D level at O_l + k x P_l.  Layer L starts at TEX_BASE + L x
   TEX_LAYER_STRIDE; a cube's faces are layers 0-5 (+X, -X, +Y, -Y, +Z,
   -Z) and its faces are squares of the width (the height is not looked
-  at).  The unit computes O_l from TEX_SIZE and TEX_IMAGE when they are
-  written.
+  at).  The unit computes O_l from TEX_SIZE, TEX_IMAGE, TEX_FORMAT and
+  TEX_ROW when they are written.
 - A view with baseMipLevel or baseArrayLayer is the image's description
   with TEX_BASE moved to that level or layer (the sizes and the level
-  count of the view; the layer stride of the image).
+  count of the view; the layer stride and TEX_ROW of the image: level k of
+  the view is level b + k of the image, max(1, max(1, w >> b) >> k) =
+  max(1, w >> (b + k)), so its rows are the same).
 
 Sampling (Vulkan's rules, with the implementation's precision; Amaterrace:
 lambda and texel coordinates with 8 fraction bits, 8-bit filter weights):
@@ -870,7 +877,11 @@ EAC formats (VkFormat 147-156, when the FMT capability reports them) are
 4 x 4 blocks of 8 or 16 bytes, rows of ceil(width / 4) blocks, each
 level's plane of ceil(w / 4) x ceil(h / 4) blocks a multiple of 64 bytes,
 never tiled; their texels are decoded before filtering (sRGB ones then
-converted to linear).
+converted to linear).  An image that may be a colour or depth/stencil
+attachment has rows of an even number of pixels in every level (the
+strides above are multiples of 2 x ps): a texture slot of it sets TEX_ROW
+to 1 (section 8.4), and its level offsets and layer stride are those of
+the planes of such rows.
 
 **Texture slots per stage** (with CAPS[30]): the texture instructions of
 a vertex program use the slots at STATE 0x200 + 16 x slot (the layout of

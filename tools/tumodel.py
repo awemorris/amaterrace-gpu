@@ -37,6 +37,9 @@ OPB_DEPTHQ = 3
 
 # Descriptor words (docs/ghci.md section 8.4: STATE 0x090 + 16 s + word).
 D_BASE, D_SIZE, D_IMAGE, D_STRIDE, D_SAMPLER, D_LOD, D_FORMAT = 0, 1, 2, 3, 4, 5, 6
+# TEX_ROW: [1:0] a linear level's rows hold w_l rounded up to a multiple of
+# 2^n texels (0 packed rows; 1 an attachment's even rows).
+D_ROW = 7
 # TEX_FORMAT (CAPS[30]): [7:0] VkFormat (0: TEX_IMAGE's code), [8] the
 # stencil aspect, [20:9] the swizzle of R, G, B, A (VkComponentSwizzle).
 TF_STENCIL, TF_SWZ = 8, 9
@@ -348,6 +351,20 @@ def depth_l(d, lv):
     return max(1, count(d) >> lv) if img(d, IMG_TYPE, 3) == TYPE_3D else 1
 
 
+def row_align(d):
+    """TEX_ROW[1:0] as it applies: 0 (packed rows) for the tiled, compressed
+    and multisampled images."""
+    if len(d) <= D_ROW or fclass(d).blk or tiled(d) or samples(d) > 1:
+        return 0
+    return d[D_ROW] & 3
+
+
+def row_texels(d, w):
+    """The texels of a linear row of a level w texels wide."""
+    m = (1 << row_align(d)) - 1
+    return (w + m) & ~m
+
+
 def plane(d, lv):
     """The bytes of a 2D plane of level lv, rounded up to 64 (a slice of a
     3D level, a level of the other types)."""
@@ -356,7 +373,7 @@ def plane(d, lv):
         return (((w + 3) >> 2) * ((h + 3) >> 2) * bpp(d) + 63) & ~63 & M32
     if tiled(d):
         return (((w + 3) >> 2) * ((h + 3) >> 2) * 16 * bpp(d) + 63) & ~63 & M32
-    return (w * h * bpp(d) + 63) & ~63 & M32
+    return (row_texels(d, w) * h * bpp(d) + 63) & ~63 & M32
 
 
 def level_offset(d, lv):
@@ -382,7 +399,7 @@ def texel_addr(d, lv, i, j, layer=0, k=0, s=None):
     elif s is not None:
         a = b + (j * (((w + 1) >> 1) * 8) + i * 4 + s) * bp
     else:
-        a = b + (j * w + i) * bp
+        a = b + (j * row_texels(d, w) + i) * bp
     return a & M32 & ~(bp - 1)
 
 

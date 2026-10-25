@@ -23,7 +23,9 @@
  * corner texel from the face itself (include/atg_tu_fn.vh tu_cube_texel).
  * texf: x + du, y + dv (and z + dw of a 3D level) clamped into the level.
  * Address = lbase + k × plane (+ face × stride for a cube) + the texel in
- * the plane (linear rows of wl texels of 2^psl bytes, or 4×4 tiles of 64
+ * the plane (linear rows of wl texels of 2^psl bytes, wl rounded up to a
+ * multiple of 2^ra (TEX_ROW; atg_tu_desc gives 0 for the tiled,
+ * compressed and multisampled images), or 4×4 tiles of 64
  * bytes, a row of tiles ceil(wl / 4) × 64 bytes; psl 1 tiled, the earlier
  * RGB565: 32-byte tiles); bord says which are border texels.  ms (a
  * multisampled image, texf only): texel 4 i + smp of rows of roundup(wl,
@@ -53,6 +55,7 @@ module atg_tu_foot (
 	input wire ms,	/* multisampled (4 samples, linear) */
 	input wire [1:0] smp,	/* texf: the sample */
 	input wire [2:0] psl,	/* log2 of the texel's bytes */
+	input wire [1:0] ra,	/* linear rows: log2 of the texel multiple of a row */
 	input wire blk,	/* compressed 4 x 4 blocks */
 	input wire row,	/* 8-byte texels: the pass's second row */
 	input wire col,	/* 16-byte blocks: the pass's second column */
@@ -89,11 +92,12 @@ module atg_tu_foot (
 		iclamp = v < 0 ? 16'd0 : v >= $signed({17'd0, n}) ? n - 16'd1 : v[15:0];
 	endfunction
 
-	/* The byte offset of texel (i, j) in a plane of width w. */
+	/* The byte offset of texel (i, j) in a plane of width w (linear: w
+	 * texels a row, up to 2^16). */
 	function [31:0] toff;
 		input [15:0] i;
 		input [15:0] j;
-		input [15:0] w;
+		input [16:0] w;
 		input tl;
 		input [2:0] pl;	/* log2 of the texel's bytes */
 		input bk;	/* blocks of 2^pl bytes */
@@ -103,7 +107,7 @@ module atg_tu_foot (
 		/* verilator lint_on UNUSEDSIGNAL */
 		begin
 			tw = {2'b00, w[15:2]} + {15'd0, w[1:0] != 2'd0};	/* tiles a row */
-			m = tl ? {18'd0, j[15:2]} * {16'd0, tw} : {16'd0, j} * {16'd0, w};
+			m = tl ? {18'd0, j[15:2]} * {16'd0, tw} : {16'd0, j} * {15'd0, w};
 			if (bk)
 				toff = ({18'd0, j[15:2]} * {16'd0, tw} + {18'd0, i[15:2]}) << pl;
 			else if (tl && pl == 3'd1)
@@ -148,6 +152,13 @@ module atg_tu_foot (
 	wire [15:0] wms = {wl[13:1] + {12'd0, wl[0]}, 3'b000};
 `endif
 	wire [15:0] fim = {fi[13:0], smp};
+	/* The row of a linear level: wl rounded up to a multiple of 2^ra. */
+	wire [16:0] rm = (17'd1 << ra) - 17'd1;
+`ifdef MUT_TU_PITCH
+	wire [16:0] wr = {1'b0, wl} | (rm & 17'd0);	/* packed rows whatever TEX_ROW says */
+`else
+	wire [16:0] wr = ({1'b0, wl} + rm) & ~rm;
+`endif
 	/* Cube: clamped (nearest) or across the faces (bilinear). */
 	wire [34:0] c00 = lin ? tu_cube_texel(face, i0, j0, wl) :
 		{face, tu_clamp(i0, wl), tu_clamp(j0, wl)};
@@ -193,7 +204,7 @@ module atg_tu_foot (
 				tb = (ft[0] ? wi1[16] : wi0[16]) | (ft[1] ? wj1[16] : wj0[16]) | bk;
 			end
 			a[t*32 +: 32] = lbase + kp[31:0] + (cube && !texf ? stride * {29'd0, tf} : 32'd0) +
-				toff(ti, tj, msf ? wms : wl, tiled, psl, blk) + {28'd0, part, 2'b00} +
+				toff(ti, tj, msf ? {1'b0, wms} : wr, tiled, psl, blk) + {28'd0, part, 2'b00} +
 				(blk && part == 2'd0 ? {30'd0, ti[1:0]} : blk && part == 2'd1 ? {30'd0, tj[1:0]} :
 				32'd0);
 			bd[t] = tb;
