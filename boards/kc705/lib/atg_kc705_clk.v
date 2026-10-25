@@ -14,8 +14,8 @@
  * SYSCLK goes through IBUFDS.  Its output, sys_cc, goes straight to the
  * MIG's PLL (the MIG's system clock "No Buffer": the dedicated route from
  * the clock-capable pin AD12 to the CMT of bank 33, as the MIG's own
- * IBUFGDS has in the KC705 reference; ws288 p024: through a BUFG the
- * calibration did not complete) and to a BUFG: that is ref_clk (200 MHz,
+ * IBUFGDS has in the KC705 reference; ws288 p024: with a BUFG in front
+ * the calibration failed, the suspected cause) and to a BUFG: that is ref_clk (200 MHz,
  * the MIG's IDELAYCTRL reference, "No Buffer") and the input of three
  * clock managers:
  *

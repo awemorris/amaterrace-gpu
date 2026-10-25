@@ -85,8 +85,8 @@ Board clocking
 - An IP block's clock inputs follow the vendor reference's input path.
   The KC705's MIG takes SYSCLK straight from the clock-capable pin's
   IBUFDS into its PLL, as the MIG's own input buffer does in the
-  reference; ws288 p024: with a BUFG in front of the MIG's PLL the
-  calibration did not complete.  The same IBUFDS may also drive a BUFG
+  reference.  With a BUFG in front of the MIG's PLL the calibration
+  failed; that BUFG is the suspected cause (ws288 p024).  The same IBUFDS may also drive a BUFG
   for the fabric's clock managers, and the MIG's IDELAYCTRL reference
   (clk_ref_i, which the MIG's own MMCM makes into 400 MHz) comes from
   that BUFG.  The PCIe bridge takes its reference from IBUFDS_GTE2.

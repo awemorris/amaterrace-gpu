@@ -32,7 +32,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-IBUFDS: sys_cc (the MIG's system clock, taken without the MIG's own buffer, straight to its PLL; ws288 p024: through the BUFG the calibration did not complete); then a BUFG: ref_clk (the MIG's IDELAYCTRL reference).
+IBUFDS: sys_cc (the MIG's system clock, taken without the MIG's own buffer, straight to its PLL; ws288 p024: with the BUFG in front the calibration failed, the suspected cause); then a BUFG: ref_clk (the MIG's IDELAYCTRL reference).
 Three clock managers from ref_clk: gclk MMCM (DIVCLK 1, MULT 5, O0 `GCLK_DIVIDE`, BUFG; 2026-10-25 p024: the parameter, was a fixed 10 = 100 MHz); 640×480
 PLL (DIVCLK 5, MULT 34, O0 54: 25.185 MHz); 720p MMCM (DIVCLK 10, MULT 59.375, O0 16: 74.21875
 MHz); BUFGMUX by pclk_sel.  No 5 × pixel clock (no TMDS on the KC705).  Each reset = CPU_RESET
