@@ -23,6 +23,7 @@
  */
 
 #include "fw.h"
+#include "hw.h"
 #include "ghci_frame.h"
 #include "ghci_packets.h"
 #include "ghci_regs.h"
@@ -194,6 +195,14 @@ fw_wait_units(void)
 	payload[2] = 0;
 	fw_emit_begin(NULL, 0);
 	fw_emit_op(GHCI_OP_WAIT_IDLE, 0, NULL, 0);
+	(void)fw_emit_end();
+
+	/*
+	 * The RESULT is the firmware's own (its wait word is no session's): SELF
+	 * keeps session protection from checking it for the packet's session.
+	 */
+	hw_write(HW_UOP_SELF, 1u);
+	fw_emit_begin(NULL, 0);
 	fw_emit_op(GHCI_OP_RESULT, 0, payload, 3);
 	(void)fw_emit_end();
 
