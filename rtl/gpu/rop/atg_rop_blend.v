@@ -71,8 +71,10 @@ module atg_rop_blend #(
 	reg [31:0] kc8, kcf;	/* BLEND_CONST; the fp32 constants as bytes */
 	reg kc_sel;	/* ROP_CTRL[1] */
 	reg [15:0] wms;
-	wire [1:0] s_k = st_idx[1:0] - 2'd3;	/* BLEND1-3 and BLEND_CONST_R-A: k */
-	wire [7:0] kcf_n = f2u8(st_wdata);
+	/* BLEND1-3 and BLEND_CONST_R-A: k = (st_idx - 3) mod 4 = st_idx[1:0] + 1 */
+	wire [1:0] s_k = {st_idx[1] ^ st_idx[0], !st_idx[0]};
+	wire [7:0] kcf_n;
+	atg_rop_f2u8 u_kcf (.f(st_wdata), .u(kcf_n));
 	integer i;
 	always @(posedge clk)
 		if (!rst_n) begin
@@ -110,47 +112,6 @@ module atg_rop_blend #(
 	wire [22:0] bl_n = bls[b_rt];
 	wire [3:0] wm_n = wms[4 * b_rt +: 4];
 
-	/* fp32 to unorm8: NaN, <= 0 to 0, >= 1 to 255, else RNE(f x 255). */
-	function [7:0] f2u8;
-		input [31:0] f;
-		reg [31:0] p;
-		reg [41:0] z;
-		reg [3:0] t;
-		begin
-			p = {8'd0, 1'b1, f[22:0]} * 32'd255;
-			t = 4'd14 - f[26:23];	/* s - 24 = 126 - e for e in 117..126 */
-			z = {p, 10'd0} >> t;
-			if (f[30:23] == 8'd0 || f[31] || (f[30:23] == 8'hFF && f[22:0] != 23'd0) ||
-			    f[30:23] < 8'd117)
-				f2u8 = 8'd0;
-			else if (f[30:23] >= 8'd127)
-				f2u8 = 8'd255;
-			else
-				f2u8 = z[41:34] + {7'd0, z[33] && (z[32:0] != 33'd0 || z[34])};
-		end
-	endfunction
-
-	/* round(x / 255) for x <= 2 x 255 x 255 without a wide adder:
-	 * y = x + 128; the low bytes give only a carry,
-	 * c = (y[7:0] + y[15:8] + y[18:16]) >> 8, and the result is
-	 * (y >> 8) + (y >> 16) + c.  Equal to (y + (y >> 8) + (y >> 16)) >> 8,
-	 * checked exact against round(x / 255) over the whole range on
-	 * 2026-10-24 (the earlier (x + 128) x 65793 >> 24 used 36-bit adds). */
-	/* verilator lint_off UNUSEDSIGNAL */
-	function [8:0] div255;
-		input [17:0] x;
-		reg [18:0] y;
-		reg [9:0] lo;
-		reg [10:0] hi;
-		begin
-			y = {1'b0, x} + 19'd128;
-			lo = {2'd0, y[7:0]} + {2'd0, y[15:8]} + {7'd0, y[18:16]};
-			hi = y[18:8] + {8'd0, y[18:16]} + {9'd0, lo[9:8]};
-			div255 = hi[8:0];
-		end
-	endfunction
-	/* verilator lint_on UNUSEDSIGNAL */
-
 	function [7:0] factor;
 		input [3:0] f;
 		input [7:0] sc, dc, kcc, sa, da, ka;
@@ -174,35 +135,21 @@ module atg_rop_blend #(
 		endcase
 	endfunction
 
-	/* 8 bits to 5 and 6: round(v x 31 / 255), round(v x 63 / 255). */
-	/* verilator lint_off UNUSEDSIGNAL */
-	function [4:0] div5;
-		input [7:0] x;
-		reg [8:0] t;
-		begin
-			t = div255({5'd0, x, 5'd0} - {10'd0, x});
-			div5 = t[4:0];
-		end
-	endfunction
-	function [5:0] div6;
-		input [7:0] x;
-		reg [8:0] t;
-		begin
-			t = div255({4'd0, x, 6'd0} - {10'd0, x});
-			div6 = t[5:0];
-		end
-	endfunction
-	/* verilator lint_on UNUSEDSIGNAL */
-
-	integer l, c;
+	genvar gl, gc;
 
 	/* Stage 1: RGBA8 per lane, channel c of lane l at [32l + 8c]. */
-	reg [127:0] s1_n, d1_n;
+	wire [127:0] s1_n;
+	reg [127:0] d1_n;
 	reg [31:0] dp;
+	integer l;
+	generate
+	for (gl = 0; gl < 16; gl = gl + 1) begin : g_f2u8
+		atg_rop_f2u8 u_f2u8 (.f(b_src[128 * (gl / 4) + 32 * (gl % 4) +: 32]),
+			.u(s1_n[32 * (gl / 4) + 8 * (gl % 4) +: 8]));
+	end
+	endgenerate
 	always @(*) begin
 		for (l = 0; l < 4; l = l + 1) begin
-			for (c = 0; c < 4; c = c + 1)
-				s1_n[32 * l + 8 * c +: 8] = f2u8(b_src[128 * l + 32 * c +: 32]);
 			dp = b_dst[32 * l +: 32];
 			case (fmt_n)
 			F_BGRA8: d1_n[32 * l +: 32] = {dp[31:24], dp[7:0], dp[15:8], dp[23:16]};
@@ -235,19 +182,23 @@ module atg_rop_blend #(
 	end
 
 	/* Stage 2: p = s x Fs, q = d x Fd per channel (16 bits each, channel 4l + c). */
-	reg [255:0] p_n, q_n;
-	reg [7:0] sc, dc, kcc;
-	always @(*)
-		for (l = 0; l < 4; l = l + 1)
-			for (c = 0; c < 4; c = c + 1) begin
-				sc = s1[32 * l + 8 * c +: 8];
-				dc = d1[32 * l + 8 * c +: 8];
-				kcc = kc1[8 * c +: 8];
-				p_n[16 * (4 * l + c) +: 16] = sc * factor(c == 3 ? bl1[15:12] : bl1[4:1], sc, dc,
-					kcc, s1[32 * l + 24 +: 8], d1[32 * l + 24 +: 8], kc1[31:24], c == 3);
-				q_n[16 * (4 * l + c) +: 16] = dc * factor(c == 3 ? bl1[19:16] : bl1[8:5], sc, dc,
-					kcc, s1[32 * l + 24 +: 8], d1[32 * l + 24 +: 8], kc1[31:24], c == 3);
-			end
+	wire [255:0] p_n, q_n;
+	generate
+	for (gl = 0; gl < 4; gl = gl + 1) begin : g_l2
+		for (gc = 0; gc < 4; gc = gc + 1) begin : g_c2
+			wire [7:0] sc = s1[32 * gl + 8 * gc +: 8];
+			wire [7:0] dc = d1[32 * gl + 8 * gc +: 8];
+			wire [7:0] fs = factor(gc == 3 ? bl1[15:12] : bl1[4:1], sc, dc, kc1[8 * gc +: 8],
+				s1[32 * gl + 24 +: 8], d1[32 * gl + 24 +: 8], kc1[31:24], gc == 3);
+			wire [7:0] fd = factor(gc == 3 ? bl1[19:16] : bl1[8:5], sc, dc, kc1[8 * gc +: 8],
+				s1[32 * gl + 24 +: 8], d1[32 * gl + 24 +: 8], kc1[31:24], gc == 3);
+			am_mul #(.AW(8), .BW(8)) u_p (.clk(clk), .en(1'b1), .a(sc), .b(fs),
+				.p(p_n[16 * (4 * gl + gc) +: 16]));
+			am_mul #(.AW(8), .BW(8)) u_q (.clk(clk), .en(1'b1), .a(dc), .b(fd),
+				.p(q_n[16 * (4 * gl + gc) +: 16]));
+		end
+	end
+	endgenerate
 	reg v2;
 	reg [3:0] m2;
 	reg [127:0] s2, d2, o2;
@@ -266,50 +217,75 @@ module atg_rop_blend #(
 	end
 
 	/* Stage 3: the operation, the mask, the format. */
-	reg [127:0] pix_n;
-	reg [31:0] r8;
-	reg [2:0] op;
-	reg [8:0] v;
-	reg [7:0] sv, dv;
-	reg [15:0] pp, qq, keep, px16, px15, keep15;
-	reg [31:0] px;
-	always @(*)
-		for (l = 0; l < 4; l = l + 1) begin
-			for (c = 0; c < 4; c = c + 1) begin
-				op = c == 3 ? bl2[22:20] : bl2[11:9];
-				sv = s2[32 * l + 8 * c +: 8];
-				dv = d2[32 * l + 8 * c +: 8];
-				pp = p2[16 * (4 * l + c) +: 16];
-				qq = q2[16 * (4 * l + c) +: 16];
+	wire [127:0] pix_n;
+	generate
+	for (gl = 0; gl < 4; gl = gl + 1) begin : g_l3
+		wire [31:0] r8;
+		for (gc = 0; gc < 4; gc = gc + 1) begin : g_c3
+			wire [2:0] op = gc == 3 ? bl2[22:20] : bl2[11:9];
+			wire [7:0] sv = s2[32 * gl + 8 * gc +: 8];
+			wire [7:0] dv = d2[32 * gl + 8 * gc +: 8];
+			wire [15:0] pp = p2[16 * (4 * gl + gc) +: 16];
+			wire [15:0] qq = q2[16 * (4 * gl + gc) +: 16];
+			/* p - q (op 1), q - p (op 2), else p + q: one adder, then round(/ 255) */
+			wire [16:0] pq;
+			wire [8:0] dq;
+			wire pq_co_unused;
+			am_addsub #(.W(17)) u_pq (.a({1'b0, op == 3'd2 ? qq : pp}), .b({1'b0, op == 3'd2 ? pp : qq}),
+				.sub(op == 3'd1 || op == 3'd2), .s(pq), .co(pq_co_unused));
+			atg_rop_div255 u_dq (.x(op == 3'd1 || op == 3'd2 ? {2'd0, pq[15:0]} : {1'b0, pq}), .q(dq));
+			reg [8:0] v;
+			always @(*) begin
 				case (op)
-				3'd1: v = pp > qq ? div255({2'd0, pp - qq}) : 9'd0;
-				3'd2: v = qq > pp ? div255({2'd0, qq - pp}) : 9'd0;
+				3'd1: v = pp > qq ? dq : 9'd0;
+				3'd2: v = qq > pp ? dq : 9'd0;
 				3'd3: v = {1'b0, sv < dv ? sv : dv};
 				3'd4: v = {1'b0, sv > dv ? sv : dv};
-				default: v = div255({2'd0, pp} + {2'd0, qq});
+				default: v = dq;
 				endcase
 				if (!bl2[0])
 					v = {1'b0, sv};
 				if (v[8])
 					v = 9'd255;
-				r8[8 * c +: 8] = wm2[c] ? v[7:0] : dv;
 			end
-			px16 = {div5(r8[7:0]), div6(r8[15:8]), div5(r8[23:16])};
-			keep = {wm2[0] ? 5'd0 : 5'h1F, wm2[1] ? 6'd0 : 6'h3F, wm2[2] ? 5'd0 : 5'h1F};
-			px15 = {r8[31], div5(r8[7:0]), div5(r8[15:8]), div5(r8[23:16])};
-			keep15 = {!wm2[3], wm2[0] ? 5'd0 : 5'h1F, wm2[1] ? 5'd0 : 5'h1F,
-				wm2[2] ? 5'd0 : 5'h1F};
+			assign r8[8 * gc +: 8] = wm2[gc] ? v[7:0] : dv;
+		end
+		/* 8 bits to 5 and 6: round(v x 31 / 255), round(v x 63 / 255) */
+		wire [17:0] x5r, x6g, x5g, x5b;
+		wire [8:0] t5r, t6g, t5g, t5b;
+		wire [3:0] x_bo_unused;
+		am_sub #(.W(18)) u_x5r (.a({5'd0, r8[7:0], 5'd0}), .b({10'd0, r8[7:0]}), .bi(1'b0), .d(x5r),
+			.bo(x_bo_unused[0]));
+		am_sub #(.W(18)) u_x6g (.a({4'd0, r8[15:8], 6'd0}), .b({10'd0, r8[15:8]}), .bi(1'b0), .d(x6g),
+			.bo(x_bo_unused[1]));
+		am_sub #(.W(18)) u_x5g (.a({5'd0, r8[15:8], 5'd0}), .b({10'd0, r8[15:8]}), .bi(1'b0), .d(x5g),
+			.bo(x_bo_unused[2]));
+		am_sub #(.W(18)) u_x5b (.a({5'd0, r8[23:16], 5'd0}), .b({10'd0, r8[23:16]}), .bi(1'b0),
+			.d(x5b), .bo(x_bo_unused[3]));
+		atg_rop_div255 u_t5r (.x(x5r), .q(t5r));
+		atg_rop_div255 u_t6g (.x(x6g), .q(t6g));
+		atg_rop_div255 u_t5g (.x(x5g), .q(t5g));
+		atg_rop_div255 u_t5b (.x(x5b), .q(t5b));
+		wire [15:0] px16 = {t5r[4:0], t6g[5:0], t5b[4:0]};
+		wire [15:0] keep = {wm2[0] ? 5'd0 : 5'h1F, wm2[1] ? 6'd0 : 6'h3F, wm2[2] ? 5'd0 : 5'h1F};
+		wire [15:0] px15 = {r8[31], t5r[4:0], t5g[4:0], t5b[4:0]};
+		wire [15:0] keep15 = {!wm2[3], wm2[0] ? 5'd0 : 5'h1F, wm2[1] ? 5'd0 : 5'h1F,
+			wm2[2] ? 5'd0 : 5'h1F};
+		reg [31:0] px;
+		always @(*)
 			case (fmt2)
 			F_BGRA8: px = {r8[31:24], r8[7:0], r8[15:8], r8[23:16]};
 			F_RGBA8: px = r8;
-			F_R8: px = {o2[32 * l + 8 +: 24], r8[7:0]};
-			F_RG8: px = {o2[32 * l + 16 +: 16], r8[15:0]};
-			F_1555: px = {o2[32 * l + 16 +: 16], (px15 & ~keep15) | (o2[32 * l +: 16] & keep15)};
-			F_565: px = {o2[32 * l + 16 +: 16], (px16 & ~keep) | (o2[32 * l +: 16] & keep)};
-			default: px = o2[32 * l +: 32];
+			F_R8: px = {o2[32 * gl + 8 +: 24], r8[7:0]};
+			F_RG8: px = {o2[32 * gl + 16 +: 16], r8[15:0]};
+			F_1555: px = {o2[32 * gl + 16 +: 16], (px15 & ~keep15) | (o2[32 * gl +: 16] & keep15)};
+			F_565: px = {o2[32 * gl + 16 +: 16], (px16 & ~keep) | (o2[32 * gl +: 16] & keep)};
+			default: px = o2[32 * gl +: 32];
 			endcase
-			pix_n[32 * l +: 32] = m2[l] ? px : o2[32 * l +: 32];
-		end
+		assign pix_n[32 * gl +: 32] = m2[gl] ? px : o2[32 * gl +: 32];
+		wire unused_t = &{1'b0, t5r[8:5], t6g[8:6], t5g[8:5], t5b[8:5]};
+	end
+	endgenerate
 	always @(posedge clk) begin
 		b_rvalid <= rst_n && v2;
 		b_pix <= pix_n;

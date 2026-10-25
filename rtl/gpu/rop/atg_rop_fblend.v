@@ -82,10 +82,12 @@ module atg_rop_fblend (
 		input [31:0] a, b;
 		reg [32:0] ka, kb;
 		begin
-			ka = a[31] ? 33'd0 - {2'd0, a[30:0]} : {2'd0, a[30:0]};
-			kb = b[31] ? 33'd0 - {2'd0, b[30:0]} : {2'd0, b[30:0]};
+			/* the signed keys ka <= kb, from the signs and the magnitudes */
+			ka = {2'd0, a[30:0]};
+			kb = {2'd0, b[30:0]};
 			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
-				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) && $signed(ka) <= $signed(kb);
+				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) &&
+				(a[31] ? (b[31] ? ka >= kb : 1'b1) : (b[31] ? ka == 0 && kb == 0 : ka <= kb));
 		end
 	endfunction
 	function isnan;
@@ -199,13 +201,19 @@ module atg_rop_fblend (
 	assign o_valid = st == S_OUT;
 	wire last_ch = c == 2'd3;
 
+	/* the next channel and lane numbers */
+	wire [1:0] c1, l1;
+	wire c1_co_unused, l1_co_unused;
+	am_add #(.W(2)) u_c1 (.a(c), .b(2'd0), .ci(1'b1), .s(c1), .co(c1_co_unused));
+	am_add #(.W(2)) u_l1 (.a(l), .b(2'd0), .ci(1'b1), .s(l1), .co(l1_co_unused));
+
 	/* next channel, lane, or the end of the arithmetic */
 	task next;
 		begin
-			c <= c + 2'd1;
+			c <= c1;
 			st <= S_CH;
 			if (last_ch) begin
-				l <= l + 2'd1;
+				l <= l1;
 				if (l == 2'd3) begin
 					l <= 2'd0;
 					c <= 2'd0;
@@ -239,7 +247,7 @@ module atg_rop_fblend (
 			if (!lanes[l] || !known) begin
 				/* skip the lane */
 				c <= 2'd0;
-				l <= l + 2'd1;
+				l <= l1;
 				if (l == 2'd3)
 					st <= is_srgb ? S_ENC : S_PACK;
 			end else if (!bl[0]) begin
@@ -327,7 +335,7 @@ module atg_rop_fblend (
 			/* R, G, B of each lane through the encoder */
 			if (!lanes[l] || c == 2'd3) begin
 				c <= 2'd0;
-				l <= l + 2'd1;
+				l <= l1;
 				if (l == 2'd3) begin
 					l <= 2'd0;
 					st <= S_PACK;
@@ -339,13 +347,13 @@ module atg_rop_fblend (
 		S_EW:
 			if (e_ov) begin
 				rr[l][32 * c +: 32] <= {24'd0, e_code};
-				c <= c + 2'd1;
+				c <= c1;
 				st <= S_ENC;
 			end
 		S_PACK: begin
 			o_raw[64 * l +: 64] <= known && lanes[l] ? pk[63:0] : 64'd0;
 			o_keep[64 * l +: 64] <= known && lanes[l] ? pk[191:128] : {64{1'b1}};
-			l <= l + 2'd1;
+			l <= l1;
 			if (l == 2'd3)
 				st <= S_OUT;
 		end

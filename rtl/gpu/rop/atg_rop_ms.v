@@ -114,10 +114,12 @@ module atg_rop_ms (
 		input [31:0] a, b;
 		reg [32:0] ka, kb;
 		begin
-			ka = a[31] ? 33'd0 - {2'd0, a[30:0]} : {2'd0, a[30:0]};
-			kb = b[31] ? 33'd0 - {2'd0, b[30:0]} : {2'd0, b[30:0]};
+			/* the signed keys ka <= kb, from the signs and the magnitudes */
+			ka = {2'd0, a[30:0]};
+			kb = {2'd0, b[30:0]};
 			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
-				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) && $signed(ka) <= $signed(kb);
+				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) &&
+				(a[31] ? (b[31] ? ka >= kb : 1'b1) : (b[31] ? ka == 0 && kb == 0 : ka <= kb));
 		end
 	endfunction
 	wire [31:0] zmin = fle(vzo, vzf) ? vzo : vzf;
@@ -174,7 +176,11 @@ module atg_rop_ms (
 	reg [127:0] ds;
 	reg [3:0] zexp;
 	wire [3:0] ci = c[3:0];	/* the add issued: lane ci[3:2], sample ci[1:0] */
-	wire [3:0] co = c[3:0] - 4'd4;	/* the result arriving */
+	wire [3:0] co;	/* the result arriving: c - 4 */
+	wire [4:0] c1;	/* c + 1 */
+	wire co_bo_unused, c1_co_unused;
+	am_sub #(.W(4)) u_co (.a(c[3:0]), .b(4'd4), .bi(1'b0), .d(co), .bo(co_bo_unused));
+	am_add #(.W(5)) u_c1 (.a(c), .b(5'd0), .ci(1'b1), .s(c1), .co(c1_co_unused));
 	wire fa_o;
 	wire [31:0] fa_r;
 	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid((st == S_Z && c < 5'd16) || zf_go),
@@ -250,7 +256,7 @@ module atg_rop_ms (
 				end
 			end
 		S_Z: begin
-			c <= c + 5'd1;
+			c <= c1;
 			if (c >= 5'd4)
 				o_sdepth[32 * co +: 32] <= zs4c;
 			if (c == 5'd19) begin
