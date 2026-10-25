@@ -31,14 +31,10 @@ module atg_su_rint (
 	am_shift #(.W(24), .SW(5)) u_q (.a(m), .amt(f[4:0]), .left(1'b0), .arith(1'b0), .y(q0));
 	wire [23:0] q = f >= 8'd24 ? 24'd0 : q0;
 	wire g = f > 8'd24 ? 1'b0 : m[fm1];
-	reg st;
-	integer i;
-	always @(*) begin
-		st = 1'b0;
-		for (i = 0; i < 24; i = i + 1)
-			if (i + 1 < f && m[i])
-				st = 1'b1;
-	end
+	/* the sticky bit: the bits of m below f - 1 (all of them for f > 24) */
+	wire [23:0] smk;
+	am_shift #(.W(24), .SW(5)) u_smk (.a(24'hFFFFFF), .amt(fm1), .left(1'b1), .arith(1'b0), .y(smk));
+	wire st = f > 8'd24 ? |m : f != 8'd0 && |(m & ~smk);
 	reg up;
 	always @(*)
 		case (rm)

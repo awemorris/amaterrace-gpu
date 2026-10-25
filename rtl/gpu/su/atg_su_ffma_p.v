@@ -65,14 +65,10 @@ module atg_su_ffma_p (
 	wire [76:0] cs;
 	am_shift #(.W(77), .SW(7)) u_cs (.a({53'd0, mc}), .amt(kleft ? kp2[6:0] : {2'd0, rs}), .left(kleft),
 		.arith(1'b0), .y(cs));
-	reg cst;
-	integer i;
-	always @(*) begin
-		cst = 1'b0;
-		for (i = 0; i < 24; i = i + 1)
-			if (i < rs)
-				cst = cst | mc[i];
-	end
+	/* the sticky bit: the bits of mc below rs */
+	wire [23:0] cmk;
+	am_shift #(.W(24), .SW(5)) u_cmk (.a(24'hFFFFFF), .amt(rs), .left(1'b1), .arith(1'b0), .y(cmk));
+	wire cst = |(mc & ~cmk);
 	wire [11:0] adj = !zc && kbig ? kadj : 12'd0;
 	wire [76:0] pw = !zc && kbig ? {76'd0, 1'b1} : {27'd0, p, 2'b00};
 	wire [76:0] cw = zc ? 77'd0 : kbig ? {2'b00, mc, 51'd0} : kleft ? cs : kright ? {cs[76:1], cs[0] | cst} : 77'd1;
@@ -84,13 +80,9 @@ module atg_su_ffma_p (
 		.co(carry_unused[6]));
 	wire sr = same || pge ? sp : sc;
 	/* normalised to bit 76; the exponent msb + ea + eb + adj - 175 */
-	reg [6:0] msb;
-	always @(*) begin
-		msb = 7'd0;
-		for (i = 0; i < 77; i = i + 1)
-			if (sum[i])
-				msb = i[6:0];
-	end
+	wire [6:0] msb;
+	wire sum_nz;
+	am_msb #(.W(77), .SW(7)) u_msb (.a(sum), .n(msb), .nz(sum_nz));
 	wire [6:0] nsh;
 	wire [76:0] nrm;
 	wire [11:0] t1, t2, er;
@@ -106,7 +98,7 @@ module atg_su_ffma_p (
 		inf_a || inf_b ? (inf_c && sc != sp ? 32'h7FC00000 : {sp, 8'hFF, 23'd0}) :
 		inf_c ? c :
 		za || zb ? (!zc ? c : noc ? {sp, 31'd0} : {rdn ? (sp | sc) : (sp & sc), 31'd0}) :
-		sum == 77'd0 ? {rdn, 31'd0} : rnd;
+		!sum_nz ? {rdn, 31'd0} : rnd;
 
 	wire unused_ok = &{1'b0, kp2[11:7]};
 endmodule

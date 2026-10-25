@@ -16,7 +16,7 @@ None.
 
 ## 4. Behaviour
 
-The magnitude is normalised to bit 31 (shifted left by 31 − msb = ~msb, am_shift), the exponent is msb + 127 (am_add), and atg_su_rnd rounds the top 24 bits with the guard and sticky bits below under rm; 0 gives a zero of the sign.
+The magnitude is normalised to bit 31 (the highest set bit by am_msb, shifted left by 31 − msb = ~msb, am_shift), the exponent is msb + 127 (am_add), and atg_su_rnd rounds the top 24 bits with the guard and sticky bits below under rm; 0 gives a zero of the sign.
 
 ## 5. State machine
 

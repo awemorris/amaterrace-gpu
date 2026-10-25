@@ -16,7 +16,7 @@ None.
 
 ## 4. Behaviour
 
-Round to nearest even, denormals flushed on input and output, NaN results 0x7FC00000 (design §3.1).  The smaller magnitude is aligned to the larger by the exponent difference (am_sub, am_shift right), the bits shifted out kept as a sticky bit (beyond 27 bits only the sticky bit).  One am_addsub gives the sum (same signs) or the difference; a carry shifts right by one, a cancellation normalises left by 26 − msb (am_sub, am_shift), and one am_addsub moves the exponent by the carry or by 26 − msb.  The rounding adds the round-up bit (am_add) and a carry out of the mantissa adds 1 to the exponent (am_add).  An exponent of 0 or below gives a zero of the sign (flushed), 255 and above an infinity.  NaN operands and inf − inf give 0x7FC00000, an infinity passes, (−0) + (−0) = −0, other zero sums +0.
+Round to nearest even, denormals flushed on input and output, NaN results 0x7FC00000 (design §3.1).  The smaller magnitude is aligned to the larger by the exponent difference (am_sub, am_shift right), the bits shifted out kept as a sticky bit (through a mask, am_shift of all ones; beyond 27 bits only the sticky bit).  One am_addsub gives the sum (same signs) or the difference; a carry shifts right by one, a cancellation normalises left by 26 − msb (am_msb, am_sub, am_shift), and one am_addsub moves the exponent by the carry or by 26 − msb.  The rounding adds the round-up bit (am_add) and a carry out of the mantissa adds 1 to the exponent (am_add).  An exponent of 0 or below gives a zero of the sign (flushed), 255 and above an infinity.  NaN operands and inf − inf give 0x7FC00000, an infinity passes, (−0) + (−0) = −0, other zero sums +0.
 
 ## 5. State machine
 

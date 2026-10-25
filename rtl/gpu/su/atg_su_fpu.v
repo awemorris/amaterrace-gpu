@@ -17,7 +17,7 @@
  * one rounding under the uop's rm (0 RNE, 1 RTZ, 2 RDN, 3 RUP, 4 RMM,
  * 7 = RNE), denormals flushed on input and output, canonical NaN
  * 0x7FC00000.  fadd/fsub/fmul and the fmadd family share one fused
- * datapath (atg_su_ffma of include/atg_su_fp.vh); fract = x - floor(x)
+ * datapath (atg_su_ffma_p in atg_su_fpu_op, one per lane); fract = x - floor(x)
  * through the same datapath (RNE); compares write Boolean (all ones/0);
  * the sat bit clamps float results to [0, 1].  mul* are the integer
  * multiplies of RISC-V M.  The reference is tools/gsi1fp.py.
@@ -29,9 +29,9 @@
  * kept then) in the next, in which x_ready is 0 (atg_su_pk's x_ready is 0
  * in that cycle too, and no FPU or PK group is taken).  The result is the
  * same, SHORT_LAT cycles after x_valid: the operands to fp32 (exact,
- * flushed, include/atg_su_fp16.vh atg_su_h2f), fma rounded to odd (rm 5,
- * 6 for RDN's zero sign; include/atg_su_fp.vh), the result to fp16 under
- * rm (one rounding of the exact result), min, max and the compares exact;
+ * flushed, atg_su_h2f), fma rounded to odd (rm 5, 6 for RDN's zero
+ * sign; atg_su_rnd), the result to fp16 under rm with atg_su_hrnd
+ * (one rounding of the exact result), min, max and the compares exact;
  * then hsel and sat as in atg_su_pk.
  */
 
@@ -101,33 +101,6 @@ module atg_su_fpu #(
 	reg k_sat;
 	reg [NPHYS*16-1:0] k_a, k_b, k_c;
 
-	/* fcvt.w.s / fcvt.wu.s of the flushed x from its rounded integer n
-	 * (atg_su_rint): atg_su_f2i with the rounding shared with fround. */
-	function [31:0] f2i_n;
-		input [31:0] x;
-		input [24:0] n;
-		input uns;
-		reg [31:0] mag;
-		reg s, nan, big;
-		begin
-			nan = x[30:23] == 8'hFF && x[22:0] != 0;
-			s = x[31] && !nan;
-			big = x[30:23] >= 8'd159;
-			if (x[30:23] >= 8'd150)
-				mag = {8'd0, 1'b1, x[22:0]} << (x[30:23] - 8'd150);
-			else
-				mag = {7'd0, n};
-			if (uns)
-				f2i_n = s ? 32'd0 : big ? 32'hFFFFFFFF : mag;	/* negatives give 0 */
-			else begin
-				if (big || (!s && mag[31]) || (s && mag > 32'h80000000))
-					f2i_n = s ? 32'h80000000 : 32'h7FFFFFFF;
-				else
-					f2i_n = s ? 32'd0 - mag : mag;
-			end
-		end
-	endfunction
-
 	/* The operands of a lane's one 33 x 33 signed multiply (am_mul): the
 	 * significands of the fused datapath's x * y (atg_su_fsig, zero
 	 * extended), or for mul, mulh, mulhsu and mulhu the operands extended
@@ -150,179 +123,22 @@ module atg_su_fpu #(
 		end
 	endfunction
 
-	/* One lane.  The operations share one rounding to an integer (fround,
-	 * fract, fcvt.w*), one integer-to-float (fround, fract, fcvt.s.w*)
-	 * and one 33 x 33 signed multiply pr (mulops: the fused datapath's
-	 * significands, or mul, mulh, mulhsu and mulhu); the results are those
-	 * of atg_su_ffma, atg_su_fround, atg_su_f2i, atg_su_i2f and the 64-bit
-	 * products.  (Measured with Vivado, NPHYS 8: with PK_SHARED one shared
-	 * multiplier is 20,774 LUTs and 32 DSP48E1, two multipliers (24 x 24
-	 * and 33 x 33) 21,076 and 48; without PK_SHARED 18,386 / 32 against
-	 * 17,431 / 48.) */
-	function [31:0] fpu;
-		input [4:0] o;
-		input [31:0] a, b, c;
-		input [2:0] r;
-		input st;
-		input [63:0] pr;	/* the product's low 64 bits */
-		reg [31:0] x, y, z, fl, res, xf, iv, in_n;
-		reg [24:0] n;
-		reg [2:0] rr, in_r;
-		reg noc, fma, flt, in_s;
-		begin
-			/* Rounding to an integer and integer to float, shared. */
-			xf = atg_su_flush(a);
-			n = atg_su_rint(xf, o == ATG_FPU_FRACT[4:0] ? 3'd2 : r);
-			case (o)
-			ATG_FPU_FCVTSW[4:0]: begin
-				in_s = a[31];
-				in_n = a[31] ? 32'd0 - a : a;
-				in_r = r;
-			end
-			ATG_FPU_FCVTSWU[4:0]: begin
-				in_s = 1'b0;
-				in_n = a;
-				in_r = r;
-			end
-			default: begin
-				in_s = xf[31];
-				in_n = {7'd0, n};
-				in_r = 3'd0;
-			end
-			endcase
-			iv = atg_su_i2f(in_s, in_n, in_r);
-			/* fround (atg_su_fround) */
-			if (xf[30:23] == 8'hFF && xf[22:0] != 0)
-				fl = 32'h7FC00000;
-			else if (xf[30:23] >= 8'd150 || xf[30:23] == 8'd0)
-				fl = xf;
-			else
-				fl = iv;
-			/* The fused datapath's operands. */
-			x = a;
-			y = 32'h3F800000;
-			z = b;
-			noc = 1'b0;
-			rr = r;
-			case (o)
-			ATG_FPU_FSUB[4:0]: z = {!b[31], b[30:0]};
-			ATG_FPU_FMUL[4:0]: begin
-				y = b;
-				noc = 1'b1;
-			end
-			ATG_FPU_FMADD[4:0]: begin
-				y = b;
-				z = c;
-			end
-			ATG_FPU_FMSUB[4:0]: begin
-				y = b;
-				z = {!c[31], c[30:0]};
-			end
-			ATG_FPU_FNMSUB[4:0]: begin
-				x = {!a[31], a[30:0]};
-				y = b;
-				z = c;
-			end
-			ATG_FPU_FNMADD[4:0]: begin
-				x = {!a[31], a[30:0]};
-				y = b;
-				z = {!c[31], c[30:0]};
-			end
-			ATG_FPU_FRACT[4:0]: begin
-				z = {!fl[31], fl[30:0]};
-				rr = 3'd0;
-			end
-			default: ;
-			endcase
-			fma = o <= ATG_FPU_FNMADD[4:0] || o == ATG_FPU_FRACT[4:0];
-			flt = 1'b1;
-			res = 32'd0;
-			if (fma)
-				res = atg_su_ffma_p(x, y, z, rr, noc, pr[47:0]);
-			else begin
-				case (o)
-				ATG_FPU_FSGNJ[4:0]: res = {b[31], a[30:0]};
-				ATG_FPU_FMIN[4:0]: res = atg_su_fminmax(a, b, 1'b0);
-				ATG_FPU_FMAX[4:0]: res = atg_su_fminmax(a, b, 1'b1);
-				ATG_FPU_FCVTWS[4:0], ATG_FPU_FCVTWUS[4:0]:
-					res = f2i_n(xf, n, o == ATG_FPU_FCVTWUS[4:0]);
-				ATG_FPU_FCVTSW[4:0], ATG_FPU_FCVTSWU[4:0]: res = iv;
-				ATG_FPU_FEQ[4:0]: res = {32{atg_su_fcmp(a, b, 2'd0)}};
-				ATG_FPU_FLT[4:0]: res = {32{atg_su_fcmp(a, b, 2'd1)}};
-				ATG_FPU_FLE[4:0]: res = {32{atg_su_fcmp(a, b, 2'd2)}};
-				ATG_FPU_FNE[4:0]: res = {32{atg_su_fcmp(a, b, 2'd3)}};
-				ATG_FPU_FROUND[4:0]: res = fl;
-				ATG_FPU_MUL[4:0]: res = pr[31:0];
-				ATG_FPU_MULH[4:0], ATG_FPU_MULHSU[4:0], ATG_FPU_MULHU[4:0]: res = pr[63:32];
-				default: ;
-				endcase
-			end
-			case (o)
-			ATG_FPU_FCVTWS[4:0], ATG_FPU_FCVTWUS[4:0], ATG_FPU_FEQ[4:0], ATG_FPU_FLT[4:0],
-			ATG_FPU_FLE[4:0], ATG_FPU_FNE[4:0], ATG_FPU_MUL[4:0], ATG_FPU_MULH[4:0],
-			ATG_FPU_MULHSU[4:0], ATG_FPU_MULHU[4:0]: flt = 1'b0;
-			default: ;
-			endcase
-			fpu = st && flt ? atg_su_sat(res) : res;
-		end
-	endfunction
-
-	/* fp32 -> fp16 under rm (atg_su_f2h's rules), flushed. */
-	function [15:0] f2hr;
-		input [31:0] x;
-		input [2:0] r;
-		begin
-			if (x[30:23] == 8'hFF)
-				f2hr = x[22:0] != 0 ? 16'h7E00 : {x[31], 5'h1F, 10'd0};
-			else if (x[30:23] == 8'd0)
-				f2hr = {x[31], 15'd0};
-			else
-				f2hr = atg_su_hrnd(x[31], {2'd0, x[30:23]} - 10'sd112, {1'b1, x[22:13]},
-					x[12], |x[11:0], r);
-		end
-	endfunction
-
-	/* A packed fp16 operation o (atg_su_pk's half) on halves a, b, c: the
-	 * FPU operation and its fp32 operands {op, a, b, c}. */
-	function [100:0] pkin;
+	/* A packed fp16 operation o (atg_su_pk's half): the FPU operation that
+	 * does it on the fp32 operands (fcmpge2: le with them swapped). */
+	function [4:0] pkop;
 		input [3:0] o;
-		input [15:0] a, b, c;
-		reg [4:0] fo;
-		reg [31:0] fa, fb;
-		begin
-			fa = atg_su_h2f(a);
-			fb = atg_su_h2f(b);
-			case (o)
-			ATG_PK_FADD2[3:0]: fo = ATG_FPU_FADD[4:0];
-			ATG_PK_FSUB2[3:0]: fo = ATG_FPU_FSUB[4:0];
-			ATG_PK_FMUL2[3:0]: fo = ATG_FPU_FMUL[4:0];
-			ATG_PK_FFMA2[3:0]: fo = ATG_FPU_FMADD[4:0];
-			ATG_PK_FMIN2[3:0]: fo = ATG_FPU_FMIN[4:0];
-			ATG_PK_FMAX2[3:0]: fo = ATG_FPU_FMAX[4:0];
-			ATG_PK_FCMPLT2[3:0]: fo = ATG_FPU_FLT[4:0];
-			ATG_PK_FCMPGE2[3:0]: begin	/* the swapped le */
-				fo = ATG_FPU_FLE[4:0];
-				fa = atg_su_h2f(b);
-				fb = atg_su_h2f(a);
-			end
-			ATG_PK_FCMPEQ2[3:0]: fo = ATG_FPU_FEQ[4:0];
-			default: fo = ATG_FPU_FNE[4:0];
-			endcase
-			pkin = {fo, fa, fb, atg_su_h2f(c)};
-		end
-	endfunction
-
-	/* Its fp16 result from fpu()'s z (computed with rm 5, or 6 for RDN). */
-	function [15:0] pkout;
-		input [3:0] o;
-		input [31:0] z;
-		input [2:0] r;
-		input st;
-		reg [15:0] h;
-		begin
-			h = o >= ATG_PK_FCMPLT2[3:0] ? z[15:0] : f2hr(z, r);
-			pkout = st && o < ATG_PK_FCMPLT2[3:0] ? atg_su_hsat(h) : h;
-		end
+		case (o)
+		ATG_PK_FADD2[3:0]: pkop = ATG_FPU_FADD[4:0];
+		ATG_PK_FSUB2[3:0]: pkop = ATG_FPU_FSUB[4:0];
+		ATG_PK_FMUL2[3:0]: pkop = ATG_FPU_FMUL[4:0];
+		ATG_PK_FFMA2[3:0]: pkop = ATG_FPU_FMADD[4:0];
+		ATG_PK_FMIN2[3:0]: pkop = ATG_FPU_FMIN[4:0];
+		ATG_PK_FMAX2[3:0]: pkop = ATG_FPU_FMAX[4:0];
+		ATG_PK_FCMPLT2[3:0]: pkop = ATG_FPU_FLT[4:0];
+		ATG_PK_FCMPGE2[3:0]: pkop = ATG_FPU_FLE[4:0];
+		ATG_PK_FCMPEQ2[3:0]: pkop = ATG_FPU_FEQ[4:0];
+		default: pkop = ATG_FPU_FNE[4:0];
+		endcase
 	endfunction
 
 	/* The lanes: this unit's operation, a packed group's low halves (the
@@ -332,41 +148,46 @@ module atg_su_fpu #(
 	genvar gl;
 	generate
 	for (gl = 0; gl < NPHYS; gl = gl + 1) begin : g_lane
-		reg [4:0] lo;
-		reg [31:0] la, lb, lc;
-		reg [2:0] lr;
-		reg lst;
-		reg [100:0] pi;
-		reg [15:0] bsw;	/* the low half of rs2, its halves swapped for hsel 11 */
+		/* the packed halves (kept ones in the busy cycle), to fp32 */
+		wire [3:0] po = busy ? k_op : pop;
+		wire [15:0] bsw = hsel == 2'd3 ? x_b[gl*32 + 16 +: 16] : x_b[gl*32 +: 16];
+		wire [15:0] ha = busy ? k_a[gl*16 +: 16] : x_a[gl*32 +: 16];
+		wire [15:0] hb = busy ? k_b[gl*16 +: 16] : bsw;
+		wire [15:0] hc = busy ? k_c[gl*16 +: 16] : x_c[gl*32 +: 16];
+		wire [31:0] fa, fb, fc;
+		atg_su_h2f u_ha (.h(po == ATG_PK_FCMPGE2[3:0] ? hb : ha), .f(fa));
+		atg_su_h2f u_hb (.h(po == ATG_PK_FCMPGE2[3:0] ? ha : hb), .f(fb));
+		atg_su_h2f u_hc (.h(hc), .f(fc));
+		wire pk = SH && (busy || mine_pk);
+		wire [4:0] lo = pk ? pkop(po) : op;
+		wire [31:0] la = pk ? fa : x_a[gl*32 +: 32];
+		wire [31:0] lb = pk ? fb : x_b[gl*32 +: 32];
+		wire [31:0] lc = pk ? fc : x_c[gl*32 +: 32];
+		wire [2:0] lr = pk ? ((busy ? k_rm : rm) == 3'd2 ? 3'd6 : 3'd5) : rm;
 		wire [65:0] mo = mulops(lo, la, lb);
 		wire [65:0] pr;
 		am_mul #(.AW(33), .BW(33), .SIGNED(1)) mul (
 			.clk(clk), .en(1'b1), .a(mo[32:0]), .b(mo[65:33]), .p(pr)
 		);
-		wire [31:0] res = fpu(lo, la, lb, lc, lr, lst, pr[63:0]);
-		wire unused_pr = &{1'b0, pr[65:64]};
-		always @(*) begin
-			bsw = hsel == 2'd3 ? x_b[gl*32 + 16 +: 16] : x_b[gl*32 +: 16];
-			if (SH && busy)
-				pi = pkin(k_op, k_a[gl*16 +: 16], k_b[gl*16 +: 16], k_c[gl*16 +: 16]);
-			else
-				pi = pkin(pop, x_a[gl*32 +: 16], bsw, x_c[gl*32 +: 16]);
-			if (SH && (busy || mine_pk)) begin
-				{lo, la, lb, lc} = pi;
-				lr = (busy ? k_rm : rm) == 3'd2 ? 3'd6 : 3'd5;
-				lst = 1'b0;
-			end else begin
-				lo = op;
-				la = x_a[gl*32 +: 32];
-				lb = x_b[gl*32 +: 32];
-				lc = x_c[gl*32 +: 32];
-				lr = rm;
-				lst = sat;
-			end
-		end
-		assign y[gl*32 +: 32] = SH && busy ? {16'd0, k_hs == 2'd1 ? k_a[gl*16 +: 16] :
-				pkout(k_op, res, k_rm, k_sat)} :
-			mine_pk ? {16'd0, hsel == 2'd2 ? x_a[gl*32 +: 16] : pkout(pop, res, rm, sat)} :
+		wire [31:0] res;
+		atg_su_fpu_op u_op (.o(lo), .ia(la), .ib(lb), .ic(lc), .irm(lr), .ist(!pk && sat), .pr(pr[63:0]),
+			.res(res));
+		/* the fp16 result (fp32 to fp16 under rm, flushed; compares as
+		 * they are) and sat */
+		wire [2:0] hr = busy ? k_rm : rm;
+		wire [9:0] he;
+		wire [15:0] hn;
+		wire he_bo;
+		am_sub #(.W(10)) u_he (.a({2'd0, res[30:23]}), .b(10'd112), .bi(1'b0), .d(he), .bo(he_bo));
+		atg_su_hrnd u_hn (.s(res[31]), .e(he), .m({1'b1, res[22:13]}), .g(res[12]), .st(|res[11:0]),
+			.rm(hr), .h(hn));
+		wire [15:0] f2h = res[30:23] == 8'hFF ? (res[22:0] != 0 ? 16'h7E00 : {res[31], 5'h1F, 10'd0}) :
+			res[30:23] == 8'd0 ? {res[31], 15'd0} : hn;
+		wire [15:0] ph = po >= ATG_PK_FCMPLT2[3:0] ? res[15:0] : f2h;
+		wire [15:0] pko = (busy ? k_sat : sat) && po < ATG_PK_FCMPLT2[3:0] ? atg_su_hsat(ph) : ph;
+		wire unused_pr = &{1'b0, pr[65:64], he_bo};
+		assign y[gl*32 +: 32] = SH && busy ? {16'd0, k_hs == 2'd1 ? k_a[gl*16 +: 16] : pko} :
+			mine_pk ? {16'd0, hsel == 2'd2 ? x_a[gl*32 +: 16] : pko} :
 			mine ? res : 32'd0;	/* (only for this unit's groups: fast simulation) */
 	end
 	endgenerate

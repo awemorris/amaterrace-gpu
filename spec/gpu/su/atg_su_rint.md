@@ -16,7 +16,7 @@ None.
 
 ## 4. Behaviour
 
-The fraction bits f = 150 − e (am_sub); the integer part is the significand shifted right by f (am_shift; 0 for f ≥ 24), the guard bit the one below it (f − 1, am_sub), the sticky bit the OR of those below; rounding up by rm (0 RNE, 1 RTZ, 2 RDN, 3 RUP, 4 RMM, others RNE; the directed modes by x's sign) adds 1 (am_add).  An exponent of 150 or more is not an input (the result is not used then).
+The fraction bits f = 150 − e (am_sub); the integer part is the significand shifted right by f (am_shift; 0 for f ≥ 24), the guard bit the one below it (f − 1, am_sub), the sticky bit the OR of those below (a mask, am_shift of all ones); rounding up by rm (0 RNE, 1 RTZ, 2 RDN, 3 RUP, 4 RMM, others RNE; the directed modes by x's sign) adds 1 (am_add).  An exponent of 150 or more is not an input (the result is not used then).
 
 ## 5. State machine
 

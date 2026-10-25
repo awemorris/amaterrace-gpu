@@ -44,14 +44,9 @@ module atg_su_fadd (
 	wire [26:0] sh = {my, 3'b000};
 	wire [26:0] shr;
 	am_shift #(.W(27), .SW(5)) u_al (.a(sh), .amt(d[4:0]), .left(1'b0), .arith(1'b0), .y(shr));
-	reg sst;
-	integer i;
-	always @(*) begin
-		sst = 1'b0;
-		for (i = 0; i < 27; i = i + 1)
-			if (i < d && sh[i])
-				sst = 1'b1;
-	end
+	wire [26:0] smk;	/* the bits of sh below d (d < 27) */
+	am_shift #(.W(27), .SW(5)) u_smk (.a(27'h7FFFFFF), .amt(d[4:0]), .left(1'b1), .arith(1'b0), .y(smk));
+	wire sst = |(sh & ~smk);
 	/* {carry, 24 bits, guard, round, sticky} */
 	wire [27:0] px = {1'b0, mx, 3'b000};
 	wire [27:0] py = d >= 8'd27 ? {27'd0, my != 24'd0} : {1'b0, shr[26:1], shr[0] | sst};
@@ -61,18 +56,13 @@ module atg_su_fadd (
 	wire same = sx == sy;
 	wire [27:0] r0;
 	am_addsub #(.W(28)) u_r (.a(px), .b(py), .sub(!same), .s(r0), .co(carry_unused[1]));
-	reg [4:0] msb;
-	always @(*) begin
-		msb = 5'd0;
-		for (i = 0; i < 27; i = i + 1)
-			if (r0[i])
-				msb = i[4:0];
-	end
+	wire [4:0] msb;
+	wire nz;
+	am_msb #(.W(27), .SW(5)) u_msb (.a(r0[26:0]), .n(msb), .nz(nz));
 	wire [4:0] nsh;
 	wire [27:0] rl;
 	am_sub #(.W(5)) u_nsh (.a(5'd26), .b(msb), .bi(1'b0), .d(nsh), .bo(carry_unused[2]));
 	am_shift #(.W(28), .SW(5)) u_nrm (.a(r0), .amt(nsh), .left(1'b1), .arith(1'b0), .y(rl));
-	wire nz = r0[26:0] != 27'd0;
 	wire [27:0] rn = same ? (r0[27] ? {1'b0, r0[27:2], r0[1] | r0[0]} : r0) : nz ? rl : r0;
 	/* the exponent: ex + carry or ex - (26 - msb) */
 	wire [9:0] er1;
