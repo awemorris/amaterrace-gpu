@@ -123,37 +123,49 @@ module atg_su_lane #(
 	reg [32*5-1:0] s_src;
 
 	/* The source lane of shfl for lane ln of the group on the bus. */
-	reg [NPHYS-1:0] c_ok;
-	reg [NPHYS*5-1:0] c_src;
-	reg [4:0] ln;
-	reg [31:0] bv;
-	reg [5:0] sum;
-	always @(*) begin
-		for (l = 0; l < NPHYS; l = l + 1) begin
+	/*
+	 * Lane ln = x_grp NPHYS + l (disjoint bits); ln + rs2 or ln - rs2 (up,
+	 * down) in one adder a lane.
+	 */
+	wire [NPHYS-1:0] c_ok;
+	wire [NPHYS*5-1:0] c_src;
+	genvar gl;
+	generate
+		for (gl = 0; gl < NPHYS; gl = gl + 1) begin : g_src
 			/* verilator lint_off WIDTHTRUNC */
-			ln = x_grp * NPHYS + l;
+			wire [4:0] ln = ({{(32-GRP_W){1'b0}}, x_grp} << $clog2(NPHYS)) | gl;
 			/* verilator lint_on WIDTHTRUNC */
-			bv = x_b[l*32 +: 32];
-			sum = {1'b0, ln} + {1'b0, bv[4:0]};
-			c_ok[l] = bv[31:5] == 27'd0;
-			case (sub[2:0])
-			3'd0: c_src[l*5 +: 5] = bv[4:0];
-			3'd2: begin
-				c_src[l*5 +: 5] = ln - bv[4:0];
-				c_ok[l] = c_ok[l] && bv[4:0] <= ln;
+			wire [31:0] bv = x_b[gl*32 +: 32];
+			wire [5:0] sum;
+			wire co_unused;
+			am_addsub #(.W(6)) u_sum (.a({1'b0, ln}), .b({1'b0, bv[4:0]}), .sub(sub[2:0] == 3'd2),
+				.s(sum), .co(co_unused));
+			/* (local regs: one block's writes do not wake the other lanes' blocks) */
+			reg ok;
+			reg [4:0] src;
+			always @(*) begin
+				ok = bv[31:5] == 27'd0;
+				case (sub[2:0])
+				3'd0: src = bv[4:0];
+				3'd2: begin
+					src = sum[4:0];	/* ln - rs2 */
+					ok = ok && bv[4:0] <= ln;
+				end
+				3'd3: begin
+					src = sum[4:0];
+					ok = ok && !sum[5];
+				end
+				3'd4: begin	/* rot: (l + rs2) mod 32, always a lane */
+					src = sum[4:0];
+					ok = 1'b1;
+				end
+				default: src = ln ^ bv[4:0];	/* 1 xor */
+				endcase
 			end
-			3'd3: begin
-				c_src[l*5 +: 5] = sum[4:0];
-				c_ok[l] = c_ok[l] && !sum[5];
-			end
-			3'd4: begin	/* rot: (l + rs2) mod 32, always a lane */
-				c_src[l*5 +: 5] = sum[4:0];
-				c_ok[l] = 1'b1;
-			end
-			default: c_src[l*5 +: 5] = ln ^ bv[4:0];	/* 1 xor */
-			endcase
+			assign c_ok[gl] = ok;
+			assign c_src[gl*5 +: 5] = src;
 		end
-	end
+	endgenerate
 
 	/* Results of group e_cnt.  shfl: the source lane's rs1 when the source
 	 * exists and is in EXEC, else the lane's own rs1.  ballot: the EXEC
@@ -161,14 +173,18 @@ module atg_su_lane #(
 	reg [31:0] bal;
 	reg [DW-1:0] z;
 	reg [4:0] el, es;
+	integer sl;
 	always @(*) begin
 		for (l = 0; l < 32; l = l + 1)
 			bal[l] = s_ex[l] && s_d[l*32 +: 32] != 32'd0;
 		for (l = 0; l < NPHYS; l = l + 1) begin
 			/* verilator lint_off WIDTHTRUNC */
-			el = e_cnt * NPHYS + l;
+			el = ({{(32-GRP_W){1'b0}}, e_cnt} << $clog2(NPHYS)) | l;
 			/* verilator lint_on WIDTHTRUNC */
-			es = s_src[el*5 +: 5];
+			es = s_src[4:0];
+			for (sl = 1; sl < 32; sl = sl + 1)
+				if (el == sl[4:0])
+					es = s_src[sl*5 +: 5];
 			if (op == ATG_LANE_BALLOT)
 				z[l*32 +: 32] = bal;
 			else if (op == ATG_LANE_VOTE)
@@ -178,7 +194,15 @@ module atg_su_lane #(
 		end
 	end
 	/* shfl writes the EXEC lanes; vote and ballot every lane. */
-	wire [31:0] ex_g = s_ex >> ({{(32-GRP_W){1'b0}}, e_cnt} * NPHYS);
+	wire [31:0] e_base = {{(32-GRP_W){1'b0}}, e_cnt} * NPHYS;
+	wire [31:0] ex_g;
+	wire [GRP_W-1:0] e_cnt_next;
+	wire ec_co_unused;
+	am_shift #(.W(32), .SW(6)) u_ex_g (.a(s_ex), .amt(e_base[5:0]), .left(1'b0), .arith(1'b0),
+		.y(ex_g));
+	wire unused_eb = &{1'b0, e_base[31:6]};
+	am_add #(.W(GRP_W)) u_e_cnt (.a(e_cnt), .b({GRP_W{1'b0}}), .ci(1'b1), .s(e_cnt_next),
+		.co(ec_co_unused));
 	wire [NPHYS-1:0] z_lanes = op == ATG_LANE_SHFL ? ex_g[NPHYS-1:0] : {NPHYS{1'b1}};
 
 	reg [EW-1:0] pipe [0:SHORT_LAT-1];
@@ -204,22 +228,22 @@ module atg_su_lane #(
 				if (e_last)
 					st <= S_IDLE;
 				else
-					e_cnt <= e_cnt + 1'b1;
+					e_cnt <= e_cnt_next;
 			end
 		end
 	end
 
 	/* The staging registers (no reset: written before they are read). */
+	integer m;
 	always @(posedge clk) begin
 		if (stage)
-			for (k = 0; k < NPHYS; k = k + 1) begin
-				/* verilator lint_off WIDTHTRUNC */
-				s_d[(x_grp * NPHYS + k)*32 +: 32] <= x_a[k*32 +: 32];
-				s_ex[x_grp * NPHYS + k] <= x_mask[k];
-				s_ok[x_grp * NPHYS + k] <= c_ok[k];
-				s_src[(x_grp * NPHYS + k)*5 +: 5] <= c_src[k*5 +: 5];
-				/* verilator lint_on WIDTHTRUNC */
-			end
+			for (m = 0; m < 32; m = m + 1)
+				if (m / NPHYS == {{(32-GRP_W){1'b0}}, x_grp}) begin
+					s_d[m*32 +: 32] <= x_a[(m % NPHYS)*32 +: 32];
+					s_ex[m] <= x_mask[m % NPHYS];
+					s_ok[m] <= c_ok[m % NPHYS];
+					s_src[m*5 +: 5] <= c_src[(m % NPHYS)*5 +: 5];
+				end
 	end
 
 	wire [EW-1:0] o = pipe[SHORT_LAT-1];

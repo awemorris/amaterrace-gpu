@@ -8,8 +8,8 @@
 /*
  * atg_tu_fpre: the per-lane front of atg_tu_filter (P1 → P5): the
  * compare reference Dref (the lane's tc_value word) as unorm24 (as
- * atg_depth_u24), unorm16 (as atg_fmt_f2unorm with 16 bits) or the fp32
- * order key (as atg_depth_key), the texels' keys, VkCompareOp i_op of Dref
+ * atg_fmt_depth_u24), unorm16 (as atg_fmt_f2unorm with 16 bits) or the fp32
+ * order key (atg_fmt_depth_key), the texels' keys, VkCompareOp i_op of Dref
  * against each texel (as atg_depth_pass: D32F a NaN on either side passes
  * NOT_EQUAL and ALWAYS only); the bilinear weights of the four texels
  * ((256 - fu or fu)(256 - fv or fv); without bilinear 65536 for texel 0)
@@ -44,15 +44,15 @@ module atg_tu_fpre (
 	`include "atg_depth.vh"
 	integer i, t;
 
-	/* ---- P1 → P2: Dref's conversions (as atg_depth_u24, atg_fmt_f2unorm
-	 * with 16 bits and atg_depth_key), the texels' keys, the weights ---- */
+	/* ---- P1 → P2: Dref's conversions (as atg_fmt_depth_u24, atg_fmt_f2unorm
+	 * with 16 bits and atg_fmt_depth_key), the texels' keys, the weights ---- */
 	wire [7:0] de = i_vw[30:23];
 	wire dnan = de == 8'hFF && i_vw[22:0] != 23'd0;
 	wire [47:0] p24, p16;
 	wire [4:0] t24;
 	wire [5:0] sam1;
-	wire [32:0] dneg;
-	wire p24_nc, p16_nc, t24_nc, sam1_nc, dneg_nc;
+	wire [32:0] dkey;
+	wire p24_nc, p16_nc, t24_nc, sam1_nc;
 
 	/* m (2^24 − 1) and m (2^16 − 1), m the significand */
 	am_sub #(.W(48)) u_p24 (.a({1'b1, i_vw[22:0], 24'd0}), .b({24'd0, 1'b1, i_vw[22:0]}),
@@ -61,16 +61,14 @@ module atg_tu_fpre (
 		.bi(1'b0), .d(p16), .bo(p16_nc));
 	am_sub #(.W(5)) u_t24 (.a(5'd30), .b(i_vw[27:23]), .bi(1'b0), .d(t24), .bo(t24_nc));
 	am_sub #(.W(6)) u_sam1 (.a(6'd21), .b(i_vw[28:23]), .bi(1'b0), .d(sam1), .bo(sam1_nc));
-	am_sub #(.W(33)) u_dneg (.a(33'd0), .b({2'b00, i_vw[30:0]}), .bi(1'b0), .d(dneg),
-		.bo(dneg_nc));
+	/* the fp32 order keys of Dref and of the four texels */
+	atg_fmt_depth_key u_dkey (.f(i_vw), .k(dkey));
 
-	wire [32:0] kneg [0:3];
-	wire [3:0] kneg_nc;
+	wire [32:0] tkey [0:3];
 	genvar gt;
 	generate
 	for (gt = 0; gt < 4; gt = gt + 1) begin : g_key
-		am_sub #(.W(33)) u_kneg (.a(33'd0), .b({2'b00, i_lt[gt*32 +: 31]}), .bi(1'b0),
-			.d(kneg[gt]), .bo(kneg_nc[gt]));
+		atg_fmt_depth_key u_tkey (.f(i_lt[gt*32 +: 32]), .k(tkey[gt]));
 	end
 	endgenerate
 
@@ -102,9 +100,9 @@ module atg_tu_fpre (
 	wire [3:0] knw;
 	generate
 	for (gt = 0; gt < 4; gt = gt + 1) begin : g_kb
-		wire [31:0] tw = i_lt[gt*32 +: 32];
-		assign kbw[gt*33 +: 33] = i_d32 ? (tw[30:23] == 8'd0 ? 33'd0 : tw[31] ? kneg[gt] :
-			{2'b00, tw[30:0]}) : i_d16 ? {17'd0, tw[15:0]} : {9'd0, tw[23:0]};
+		wire [30:0] tw = i_lt[gt*32 +: 31];	/* (the sign: in tkey) */
+		assign kbw[gt*33 +: 33] = i_d32 ? tkey[gt] : i_d16 ? {17'd0, tw[15:0]} :
+			{9'd0, tw[23:0]};
 		assign knw[gt] = i_d32 && (dnan || (tw[30:23] == 8'hFF && tw[22:0] != 23'd0));
 	end
 	endgenerate
@@ -113,7 +111,7 @@ module atg_tu_fpre (
 		p16_2 <= p16;
 		t24_2 <= t24;
 		sam1_2 <= sam1;
-		ka32_2 <= de == 8'd0 ? 33'd0 : i_vw[31] ? dneg : {2'b00, i_vw[30:0]};
+		ka32_2 <= dkey;
 		u24z2 <= de == 8'd0 || i_vw[31] || dnan || de < 8'd102;
 		u24o2 <= de >= 8'd127;
 		u16z2 <= i_vw[31] || dnan || de < 8'd103;
@@ -230,7 +228,7 @@ module atg_tu_fpre (
 	assign o_wp = wp5;
 	assign o_fa = fa5;
 
-	wire unused_ok = &{1'b0, q16_nc, q24_nc, dneg_nc, kneg_nc, p16_nc, p24_nc, sam1_nc, t24_nc, w_nc, s16[47:17], z24[46:0], wp4[17], w4[0][17], w4[1][17],
+	wire unused_ok = &{1'b0, q16_nc, q24_nc, p16_nc, p24_nc, sam1_nc, t24_nc, w_nc, s16[47:17], z24[46:0], wp4[17], w4[0][17], w4[1][17],
 		w4[2][17], w4[3][17]};
 endmodule
 

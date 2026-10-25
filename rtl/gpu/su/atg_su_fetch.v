@@ -48,7 +48,15 @@ module atg_su_fetch #(
 	reg [63:0] q_ins [0:1];
 	reg [1:0] q_have;
 	reg [1:0] wp, rp, fp;	/* request, read and fill pointers (mod 4, index bit 0) */
-	wire [1:0] used = wp - rp;
+	wire [1:0] used;
+	wire [1:0] wp_next;
+	wire [1:0] fp_next;
+	wire [1:0] rp_next;
+	wire us_bo_unused, wp_co_unused, fp_co_unused, rp_co_unused;
+	am_sub #(.W(2)) u_used (.a(wp), .b(rp), .bi(1'b0), .d(used), .bo(us_bo_unused));
+	am_add #(.W(2)) u_wp (.a(wp), .b(2'd0), .ci(1'b1), .s(wp_next), .co(wp_co_unused));
+	am_add #(.W(2)) u_fp (.a(fp), .b(2'd0), .ci(1'b1), .s(fp_next), .co(fp_co_unused));
+	am_add #(.W(2)) u_rp (.a(rp), .b(2'd0), .ci(1'b1), .s(rp_next), .co(rp_co_unused));
 	wire room = used != 2'd2;
 
 	assign ic_req = f_valid && room;
@@ -74,15 +82,15 @@ module atg_su_fetch #(
 				q_warp[wp[0]] <= f_warp;
 				q_pc[wp[0]] <= f_pc;
 				q_have[wp[0]] <= 1'b0;
-				wp <= wp + 2'd1;
+				wp <= wp_next;
 			end
 			if (ic_rvalid) begin
 				q_ins[fp[0]] <= ic_rdata;
 				q_have[fp[0]] <= 1'b1;
-				fp <= fp + 2'd1;
+				fp <= fp_next;
 			end
 			if (pop)
-				rp <= rp + 2'd1;
+				rp <= rp_next;
 		end
 	end
 endmodule

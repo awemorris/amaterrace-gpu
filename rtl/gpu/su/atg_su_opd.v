@@ -113,7 +113,13 @@ module atg_su_opd #(
 	wire [6:0] a_r1 = a_pass ? a_uop[ATG_UOP_RS3 +: 7] : a_uop[ATG_UOP_RS1 +: 7];
 	wire [6:0] a_n1 = a_r1;
 	wire [6:0] a_n2 = a_uop[ATG_UOP_RS2 +: 7];
-	wire [6:0] a_n3 = a_uop[ATG_UOP_PAIR] ? a_r1 + 7'd1 : a_uop[ATG_UOP_RS3 +: 7];
+	wire [6:0] a_r1p;
+	wire [GRP_W-1:0] a_grp_next;
+	wire ar_co_unused, ag_co_unused;
+	am_add #(.W(7)) u_a_r1p (.a(a_r1), .b(7'd0), .ci(1'b1), .s(a_r1p), .co(ar_co_unused));
+	am_add #(.W(GRP_W)) u_a_grp (.a(a_grp), .b({GRP_W{1'b0}}), .ci(1'b1), .s(a_grp_next),
+		.co(ag_co_unused));
+	wire [6:0] a_n3 = a_uop[ATG_UOP_PAIR] ? a_r1p : a_uop[ATG_UOP_RS3 +: 7];
 	assign r_en = a_adv;
 	assign r_warp = a_warp;
 	assign r_grp = a_grp;
@@ -168,7 +174,7 @@ module atg_su_opd #(
 					if (a_last)
 						a_act <= 1'b0;
 					else
-						a_grp <= a_grp + 1'b1;
+						a_grp <= a_grp_next;
 				end
 			end
 		end
@@ -178,14 +184,23 @@ module atg_su_opd #(
 	wire [6:0] b_r1 = b_pass ? b_uop[ATG_UOP_RS3 +: 7] : b_uop[ATG_UOP_RS1 +: 7];
 	wire [6:0] b_n1 = b_r1;
 	wire [6:0] b_n2 = b_uop[ATG_UOP_RS2 +: 7];
-	wire [6:0] b_n3 = b_uop[ATG_UOP_PAIR] ? b_r1 + 7'd1 : b_uop[ATG_UOP_RS3 +: 7];
+	wire [6:0] b_r1p;
+	wire br_co_unused;
+	am_add #(.W(7)) u_b_r1p (.a(b_r1), .b(7'd0), .ci(1'b1), .s(b_r1p), .co(br_co_unused));
+	wire [6:0] b_n3 = b_uop[ATG_UOP_PAIR] ? b_r1p : b_uop[ATG_UOP_RS3 +: 7];
 	wire [6:0] mods = b_uop[ATG_UOP_MOD +: 7];
 	wire fp_unit = b_unit == ATG_UNIT_FPU || b_unit == ATG_UNIT_XU;
 	wire pk_unit = b_unit == ATG_UNIT_PK;
 	wire [31:0] grp_base = {{(32-GRP_W){1'b0}}, b_grp} * NPHYS;
-	wire [31:0] exec_g = q_exec >> grp_base;
-	wire [31:0] kill_g = q_killed >> grp_base;
-	wire [31:0] cov_g = q_info[ATG_WI_MASK +: 32] >> grp_base;
+	wire [31:0] exec_g;
+	wire [31:0] kill_g;
+	wire [31:0] cov_g;
+	am_shift #(.W(32), .SW(6)) u_exec_g (.a(q_exec), .amt(grp_base[5:0]), .left(1'b0), .arith(1'b0),
+		.y(exec_g));
+	am_shift #(.W(32), .SW(6)) u_kill_g (.a(q_killed), .amt(grp_base[5:0]), .left(1'b0),
+		.arith(1'b0), .y(kill_g));
+	am_shift #(.W(32), .SW(6)) u_cov_g (.a(q_info[ATG_WI_MASK +: 32]), .amt(grp_base[5:0]),
+		.left(1'b0), .arith(1'b0), .y(cov_g));
 	assign q_warp = b_warp;
 
 	/* The value of operand n, split in two: the part that is the same in every
@@ -254,13 +269,14 @@ module atg_su_opd #(
 		input [31:0] com, gpr, rq;
 		input [4:0] lane;
 		input kl;
+		input [31:0] com_lane;	/* com + lane */
 		begin
 			case (k)
 			3'd1: opl = gpr;
 			3'd2: opl = rq;
 			3'd3: opl = {27'd0, lane};
 			3'd4: opl = {32{kl}};
-			3'd5: opl = com + {27'd0, lane};
+			3'd5: opl = com_lane;
 			default: opl = com;
 			endcase
 		end
@@ -292,9 +308,7 @@ module atg_su_opd #(
 		end
 	endfunction
 
-	reg [DW-1:0] va, vb, vc;
-	reg [4:0] ln;
-	integer l;
+	wire [DW-1:0] va, vb, vc;
 
 	/* The common part and the kind of each operand, once per instruction. */
 	wire [31:0] com1 = opc(b_n1, cr_data[31:0], b_warp, q_info, q_exec);
@@ -304,17 +318,29 @@ module atg_su_opd #(
 	wire [2:0] k2 = opk(b_n2);
 	wire [2:0] k3 = opk(b_n3);
 
-	always @(*) begin
-		for (l = 0; l < NPHYS; l = l + 1) begin
-			ln = grp_base[4:0] + l[4:0];
-			va[l*32 +: 32] = fmod(opl(k1, com1, r_data[l*32 +: 32], rq_data[l*32 +: 32],
-				ln, kill_g[l]), mods[0], mods[1], fp_unit, pk_unit);
-			vb[l*32 +: 32] = fmod(opl(k2, com2, r_data[DW + l*32 +: 32], rq_data[l*32 +: 32],
-				ln, kill_g[l]), mods[2], mods[3], fp_unit, pk_unit);
-			vc[l*32 +: 32] = fmod(opl(k3, com3, r_data[2*DW + l*32 +: 32], rq_data[l*32 +: 32],
-				ln, kill_g[l]), mods[4], mods[5], fp_unit, pk_unit);
+	/*
+	 * Per lane: its number in the warp (the group's base and l: disjoint
+	 * bits), each operand's common part + the lane (one adder each).
+	 */
+	genvar l;
+	generate
+		for (l = 0; l < NPHYS; l = l + 1) begin : g_lane
+			wire [4:0] ln = grp_base[4:0] | l[4:0];
+			wire [31:0] cl1;
+			wire [31:0] cl2;
+			wire [31:0] cl3;
+			wire c1_co_unused, c2_co_unused, c3_co_unused;
+			am_add #(.W(32)) u_cl1 (.a(com1), .b({27'd0, ln}), .ci(1'b0), .s(cl1), .co(c1_co_unused));
+			am_add #(.W(32)) u_cl2 (.a(com2), .b({27'd0, ln}), .ci(1'b0), .s(cl2), .co(c2_co_unused));
+			am_add #(.W(32)) u_cl3 (.a(com3), .b({27'd0, ln}), .ci(1'b0), .s(cl3), .co(c3_co_unused));
+			assign va[l*32 +: 32] = fmod(opl(k1, com1, r_data[l*32 +: 32], rq_data[l*32 +: 32],
+				ln, kill_g[l], cl1), mods[0], mods[1], fp_unit, pk_unit);
+			assign vb[l*32 +: 32] = fmod(opl(k2, com2, r_data[DW + l*32 +: 32], rq_data[l*32 +: 32],
+				ln, kill_g[l], cl2), mods[2], mods[3], fp_unit, pk_unit);
+			assign vc[l*32 +: 32] = fmod(opl(k3, com3, r_data[2*DW + l*32 +: 32], rq_data[l*32 +: 32],
+				ln, kill_g[l], cl3), mods[4], mods[5], fp_unit, pk_unit);
 		end
-	end
+	endgenerate
 
 	assign x_valid = b_valid;
 	assign x_warp = b_warp;

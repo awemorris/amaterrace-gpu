@@ -99,11 +99,32 @@ module atg_su_div #(
 	endfunction
 
 	wire [LW:0] first = next_lane(x_mask[NPHYS-1:0], {(LW+1){1'b0}});
-	wire [LW:0] after = next_lane(rm, {1'b0, li} + 1'b1);
+	wire [LW:0] li_1;
+	wire l1_co_unused;
+	am_add #(.W(LW + 1)) u_li_1 (.a({1'b0, li}), .b({(LW + 1){1'b0}}), .ci(1'b1), .s(li_1),
+		.co(l1_co_unused));
+	wire [LW:0] after = next_lane(rm, li_1);
 	wire [31:0] la = ra[li*32 +: 32];
 	wire [31:0] lb = rb[li*32 +: 32];
 	wire sgn = !rop[0];	/* div, rem */
-	wire [32:0] trial = {r[31:0], dn[31]} - {1'b0, dd};
+
+	/*
+	 * One 33-bit subtractor, by step: 0 - a at the load (step 0), the
+	 * trial r:dn[31] - d of the steps 1-32, 0 - the result at the end; and
+	 * 0 - b at the load.
+	 */
+	wire s_load = step == 6'd0;
+	wire s_end = step > 6'd32;
+	wire [32:0] d0;
+	wire [31:0] neg_b;
+	wire [5:0] step_next;
+	wire d0_bo_unused, nb_bo_unused, sn_co_unused;
+	am_sub #(.W(33)) u_d0 (.a(s_load || s_end ? 33'd0 : {r[31:0], dn[31]}),
+		.b(s_load ? {1'b0, la} : s_end ? {1'b0, rop[1] ? r[31:0] : q} : {1'b0, dd}), .bi(1'b0),
+		.d(d0), .bo(d0_bo_unused));
+	am_sub #(.W(32)) u_neg_b (.a(32'd0), .b(lb), .bi(1'b0), .d(neg_b), .bo(nb_bo_unused));
+	am_add #(.W(6)) u_step (.a(step), .b(6'd0), .ci(1'b1), .s(step_next), .co(sn_co_unused));
+	wire [32:0] trial = d0;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -134,8 +155,8 @@ module atg_su_div #(
 			DIV: begin
 				if (step == 6'd0) begin
 					/* Load the lane: magnitudes and the signs of the results. */
-					dn <= sgn && la[31] ? 32'd0 - la : la;
-					dd <= sgn && lb[31] ? 32'd0 - lb : lb;
+					dn <= sgn && la[31] ? d0[31:0] : la;
+					dd <= sgn && lb[31] ? neg_b : lb;
 					neg_q <= sgn && (la[31] ^ lb[31]);
 					neg_r <= sgn && la[31];
 					r <= 33'd0;
@@ -150,14 +171,14 @@ module atg_su_div #(
 						q <= {q[30:0], 1'b0};
 					end
 					dn <= {dn[30:0], 1'b0};
-					step <= step + 6'd1;
+					step <= step_next;
 				end else begin
 					if (lb == 32'd0)
 						rq[li*32 +: 32] <= rop[1] ? la : 32'hFFFFFFFF;
 					else if (rop[1])
-						rq[li*32 +: 32] <= neg_r ? 32'd0 - r[31:0] : r[31:0];
+						rq[li*32 +: 32] <= neg_r ? d0[31:0] : r[31:0];
 					else
-						rq[li*32 +: 32] <= neg_q ? 32'd0 - q : q;
+						rq[li*32 +: 32] <= neg_q ? d0[31:0] : q;
 					step <= 6'd0;
 					if (after == NPHYS[LW:0])
 						st <= RET;

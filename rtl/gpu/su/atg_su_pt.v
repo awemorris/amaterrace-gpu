@@ -76,12 +76,19 @@ module atg_su_pt #(
 	localparam G = 32 / NPHYS;	/* lane groups per warp (= rows per block per bank) */
 	localparam DEPTH = ROWS * WPV;
 	localparam AW = $clog2(DEPTH);
+	localparam G_W = $clog2(G);	/* G is a power of two: block G + group are disjoint bits */
+	/* verilator lint_off WIDTHTRUNC */
+	localparam [7:0] WPV_V = WPV;
+	/* verilator lint_on WIDTHTRUNC */
 
 	/* ---- The exp writes of vertex warps. */
 	wire [31:0] tgt = x_uop[ATG_UOP_IMM +: 32];
 	wire is_pos = tgt < 32'd4;
 	wire is_var = tgt >= 32'h10 && tgt < 32'h10 + VARY_WORDS;
-	wire [31:0] wword = is_pos ? tgt : tgt - 32'h10 + 32'd4;
+	wire [31:0] tgt_v;
+	wire tv_bo_unused;
+	am_sub #(.W(32)) u_tgt_v (.a(tgt), .b(32'd12), .bi(1'b0), .d(tgt_v), .bo(tv_bo_unused));
+	wire [31:0] wword = is_pos ? tgt : tgt_v;	/* varying v at word 4 + v */
 	wire wr = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && x_info[17:16] == 2'd0 &&
 		(is_pos || is_var);
 
@@ -90,11 +97,29 @@ module atg_su_pt #(
 	reg [NWARPS-1:0] wv;	/* a vertex warp that owns a block */
 	wire [BW-1:0] xblk = wblk[x_warp*BW +: BW];
 	/* the row (entry / NPHYS) of lane l of this group */
-	wire [31:0] wrow = {{(32-BW){1'b0}}, xblk} * G + {{(32-GRP_W){1'b0}}, x_grp};
-	wire [31:0] waddr = wrow * WPV + wword;
-
+	wire [31:0] wrow = ({{(32-BW){1'b0}}, xblk} << G_W) | ({{(32-GRP_W){1'b0}}, x_grp} % G);
 	wire [31:0] rrow = {24'd0, pt_idx} / NPHYS;
-	wire [31:0] raddr = rrow * WPV + {25'd0, pt_word};
+
+	/*
+	 * The word addresses row WPV + word, modulo 2^AW (the bank's): a
+	 * multiplier by the constant WPV each.
+	 */
+	wire [AW+7:0] wrow_w;
+	wire [AW+7:0] rrow_w;
+	wire [AW-1:0] waddr_a;
+	wire [AW-1:0] raddr_a;
+	wire [31:0] pt_word32 = {25'd0, pt_word};
+	wire wa_co_unused, ra_co_unused;
+	am_mul #(.AW(AW), .BW(8)) u_wrow (.clk(clk), .en(1'b1), .a(wrow[AW-1:0]), .b(WPV_V), .p(wrow_w));
+	am_mul #(.AW(AW), .BW(8)) u_rrow (.clk(clk), .en(1'b1), .a(rrow[AW-1:0]), .b(WPV_V), .p(rrow_w));
+	am_add #(.W(AW)) u_waddr (.a(wrow_w[AW-1:0]), .b(wword[AW-1:0]), .ci(1'b0), .s(waddr_a),
+		.co(wa_co_unused));
+	am_add #(.W(AW)) u_raddr (.a(rrow_w[AW-1:0]), .b(pt_word32[AW-1:0]), .ci(1'b0), .s(raddr_a),
+		.co(ra_co_unused));
+	wire [31:0] waddr = {{(32-AW){1'b0}}, waddr_a};
+	wire [31:0] raddr = {{(32-AW){1'b0}}, raddr_a};
+	wire unused_addr = &{1'b0, wword[31:AW], wrow[31:AW], rrow[31:AW], wrow_w[AW+7:AW],
+		rrow_w[AW+7:AW], pt_word32[31:AW]};
 	wire [31:0] rbank = {24'd0, pt_idx} % NPHYS;
 	reg [31:0] rb_q;
 	reg [NPHYS*32-1:0] rd_q;
@@ -150,14 +175,57 @@ module atg_su_pt #(
 	assign pt_base = {{(3-BW){1'b0}}, fb, 5'd0};
 	assign pt_done = {{(8-NB){1'b0}}, done};
 
-	/* entries returned at vl_go: the lanes outside vl_mask */
-	reg [5:0] unused_n;
-	always @(*) begin
-		unused_n = 6'd0;
-		for (i = 0; i < 32; i = i + 1)
-			unused_n = unused_n + {5'd0, !vl_mask[i]};
-	end
+	/* entries returned at vl_go: the lanes outside vl_mask (a tree of adders) */
+	wire [5:0] unused_n;
+	wire [31:0] nm = ~vl_mask;
+	wire [31:0] pc2;	/* 16 sums of 2 bits */
+	wire [23:0] pc4;	/* 8 sums of 3 bits */
+	wire [15:0] pc8;	/* 4 sums of 4 bits */
+	wire [9:0] pc16;	/* 2 sums of 5 bits */
+	genvar pi;
+	generate
+		for (pi = 0; pi < 16; pi = pi + 1) begin : g_pc2
+			wire co_unused;
+			am_add #(.W(2)) u (.a({1'b0, nm[2*pi]}), .b({1'b0, nm[2*pi+1]}), .ci(1'b0),
+				.s(pc2[2*pi +: 2]), .co(co_unused));
+		end
+		for (pi = 0; pi < 8; pi = pi + 1) begin : g_pc4
+			wire co_unused;
+			am_add #(.W(3)) u (.a({1'b0, pc2[4*pi +: 2]}), .b({1'b0, pc2[4*pi+2 +: 2]}), .ci(1'b0),
+				.s(pc4[3*pi +: 3]), .co(co_unused));
+		end
+		for (pi = 0; pi < 4; pi = pi + 1) begin : g_pc8
+			wire co_unused;
+			am_add #(.W(4)) u (.a({1'b0, pc4[6*pi +: 3]}), .b({1'b0, pc4[6*pi+3 +: 3]}), .ci(1'b0),
+				.s(pc8[4*pi +: 4]), .co(co_unused));
+		end
+		for (pi = 0; pi < 2; pi = pi + 1) begin : g_pc16
+			wire co_unused;
+			am_add #(.W(5)) u (.a({1'b0, pc8[8*pi +: 4]}), .b({1'b0, pc8[8*pi+4 +: 4]}), .ci(1'b0),
+				.s(pc16[5*pi +: 5]), .co(co_unused));
+		end
+	endgenerate
+	wire pc_co_unused;
+	am_add #(.W(6)) u_pc32 (.a({1'b0, pc16[4:0]}), .b({1'b0, pc16[9:5]}), .ci(1'b0), .s(unused_n),
+		.co(pc_co_unused));
 	wire [BW-1:0] free_blk = pt_free_idx[5 +: BW];
+
+	/* Each block's count: + 32 at its grant, - the unused lanes at vl_go, - 1 at a free. */
+	wire [NB*6-1:0] cnt_next;
+	genvar cb;
+	generate
+		for (cb = 0; cb < NB; cb = cb + 1) begin : g_cnt
+			wire [5:0] c1;
+			wire [5:0] c2;
+			wire c1_co_unused, c2_bo_unused, c3_bo_unused;
+			am_add #(.W(6)) u_take (.a(cnt[cb*6 +: 6]), .b(pt_take && fb == cb ? 6'd32 : 6'd0), .ci(1'b0),
+				.s(c1), .co(c1_co_unused));
+			am_sub #(.W(6)) u_go (.a(c1), .b(vl_go && last_blk == cb ? unused_n : 6'd0), .bi(1'b0),
+				.d(c2), .bo(c2_bo_unused));
+			am_sub #(.W(6)) u_free (.a(c2), .b(6'd0), .bi(pt_free && free_blk == cb), .d(cnt_next[cb*6 +: 6]),
+				.bo(c3_bo_unused));
+		end
+	endgenerate
 	wire [BW-1:0] end_blk = wblk[wc_warp*BW +: BW];
 	wire end_own = wc_end && wv[wc_warp] && own[end_blk*WARP_W +: WARP_W] == wc_warp;
 
@@ -170,11 +238,7 @@ module atg_su_pt #(
 			wblk <= {(NWARPS*BW){1'b0}};
 			wv <= {NWARPS{1'b0}};
 		end else begin
-			for (i = 0; i < NB; i = i + 1)
-				cnt[i*6 +: 6] <= cnt[i*6 +: 6] +
-					(pt_take && fb == i[BW-1:0] ? 6'd32 : 6'd0) -
-					(vl_go && last_blk == i[BW-1:0] ? unused_n : 6'd0) -
-					(pt_free && free_blk == i[BW-1:0] ? 6'd1 : 6'd0);
+			cnt <= cnt_next;
 			if (end_own)
 				done[end_blk] <= 1'b1;
 			if (wc_end)

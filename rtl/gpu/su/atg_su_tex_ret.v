@@ -96,14 +96,26 @@ module atg_su_tex_ret #(
 
 	/* Beat c: channel c of each lane (lane 4j + l: quad j, lane l). */
 	integer j;
+	reg [127:0] l_texel;
 	always @(*)
-		for (j = 0; j < NPHYS; j = j + 1)
-			l_data[j*32 +: 32] = buf_q[(j / 4) * 512 + (j % 4) * 128 + c * 32 +: 32];
+		for (j = 0; j < NPHYS; j = j + 1) begin
+			l_texel = buf_q[(j / 4) * 512 + (j % 4) * 128 +: 128];
+			l_data[j*32 +: 32] = l_texel[c * 32 +: 32];
+		end
+
+	/* The beat's register rd + c, the next beat and the next quad. */
+	wire [6:0] rd_c;
+	wire [1:0] c_next;
+	wire [QW-1:0] q_next;
+	wire rc_co_unused, cn_co_unused, qn_co_unused;
+	am_add #(.W(7)) u_rd (.a(rd), .b({5'd0, c}), .ci(1'b0), .s(rd_c), .co(rc_co_unused));
+	am_add #(.W(2)) u_c (.a(c), .b(2'd0), .ci(1'b1), .s(c_next), .co(cn_co_unused));
+	am_add #(.W(QW)) u_q (.a(q), .b({QW{1'b0}}), .ci(1'b1), .s(q_next), .co(qn_co_unused));
 
 	assign l_valid = st == BEAT;
 	assign l_warp = warp;
 	assign l_grp = grp;
-	assign l_rd = rd + {5'd0, c};
+	assign l_rd = rd_c;
 	assign l_lanes = lanes;
 	assign l_wr = 1'b1;
 	assign l_last = last && (sz || c == 2'd3);
@@ -124,12 +136,12 @@ module atg_su_tex_ret #(
 			GATHER: if (!qm[q] || tr_valid) begin
 				if (qm[q])
 					buf_q[q*512 +: 512] <= tr_data;
-				q <= q + 1'b1;
+				q <= q_next;
 				if (q_end)
 					st <= BEAT;
 			end
 			BEAT: if (l_ready) begin
-				c <= c + 2'd1;
+				c <= c_next;
 				if (sz || c == 2'd3)
 					st <= HEAD;
 			end

@@ -104,13 +104,13 @@ module atg_su_lds #(
 	function [31:0] atom_op;
 		input [3:0] op;
 		input [31:0] old, a, b;
+		input [31:0] sum;	/* old + a, or old - a for op 5 */
 		case (op)
 		4'd0: atom_op = old & a;
 		4'd1: atom_op = old | a;
 		4'd2: atom_op = old ^ a;
 		4'd3: atom_op = a;
-		4'd4: atom_op = old + a;
-		4'd5: atom_op = old - a;
+		4'd4, 4'd5: atom_op = sum;
 		4'd6: atom_op = $signed(old) > $signed(a) ? old : a;
 		4'd7: atom_op = $signed(old) < $signed(a) ? old : a;
 		4'd8: atom_op = old > a ? old : a;
@@ -125,13 +125,25 @@ module atg_su_lds #(
 	wire is_atom = x_uop[ATG_UOP_OP +: 8] == ATG_LDS_ATOM;
 	wire [NPHYS-1:0] xl = is_sts || is_atom ? x_mask[2*NPHYS-1:NPHYS] : x_mask[NPHYS-1:0];
 	wire [31:0] imm = is_atom ? 32'd0 : x_uop[ATG_UOP_IMM +: 32];
-	wire [AW-1:0] a = radr[li*AW +: AW];
+	/* Lane li's word address (a selection: AW bits a lane). */
+	reg [AW-1:0] a;
+	integer al;
+	always @(*) begin
+		a = radr[AW-1:0];
+		for (al = 1; al < NPHYS; al = al + 1)
+			if (li == al[LW-1:0])
+				a = radr[al*AW +: AW];
+	end
 	wire lane_on = lanes[li];
 	/* An atom lane's second cycle: q holds the word read in the first. */
+	wire [31:0] asum;
+	wire as_co_unused;
+	am_addsub #(.W(32)) u_asum (.a(q), .b(rdat[li*32 +: 32]), .sub(rsub == 4'd5), .s(asum),
+		.co(as_co_unused));
 `ifdef MUT_LDS_ATOM_NOCMP
-	wire [31:0] anew = atom_op(rsub, q, rdat[li*32 +: 32], rdat[li*32 +: 32]);
+	wire [31:0] anew = atom_op(rsub, q, rdat[li*32 +: 32], rdat[li*32 +: 32], asum);
 `else
-	wire [31:0] anew = atom_op(rsub, q, rdat[li*32 +: 32], rcmp[li*32 +: 32]);
+	wire [31:0] anew = atom_op(rsub, q, rdat[li*32 +: 32], rcmp[li*32 +: 32], asum);
 `endif
 `ifdef MUT_LDS_ATOM_RAW
 	wire aread = 1'b0;
@@ -140,15 +152,24 @@ module atg_su_lds #(
 `endif
 	assign x_ready = st == IDLE;
 
-	/* The word addresses of the group on x_*. */
-	reg [NPHYS*AW-1:0] xadr;
-	reg [31:0] ba;
-	integer l;
-	always @(*)
-		for (l = 0; l < NPHYS; l = l + 1) begin
-			ba = x_a[l*32 +: 32] + imm;
-			xadr[l*AW +: AW] = ba[AW+1:2];
+	/* The word addresses of the group on x_*: (rs1 + imm) / 4, its low AW bits. */
+	wire [NPHYS*AW-1:0] xadr;
+	genvar l;
+	generate
+		for (l = 0; l < NPHYS; l = l + 1) begin : g_adr
+			wire [AW+1:0] ba;
+			wire co_unused;
+			am_add #(.W(AW + 2)) u_ba (.a(x_a[l*32 +: AW + 2]), .b(imm[AW+1:0]), .ci(1'b0), .s(ba),
+				.co(co_unused));
+			assign xadr[l*AW +: AW] = ba[AW+1:2];
+			wire unused_b = &{1'b0, ba[1:0]};
 		end
+	endgenerate
+
+	/* The next lane. */
+	wire [LW-1:0] li_next;
+	wire li_co_unused;
+	am_add #(.W(LW)) u_li (.a(li), .b({LW{1'b0}}), .ci(1'b1), .s(li_next), .co(li_co_unused));
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -187,7 +208,7 @@ module atg_su_lds #(
 				aph <= 1'b0;
 				pval <= lane_on && !rsts && !ratom;
 				pli <= li;
-				li <= li + 1'b1;
+				li <= li_next;
 				if ({{(32-LW){1'b0}}, li} == NPHYS - 1)
 					st <= DRAIN;
 			end
@@ -232,7 +253,7 @@ module atg_su_lds #(
 	assign l_sbe = rsbe;
 	assign l_cls = ATG_CLS_M;
 
-	wire unused_ok = &{1'b0, x_pc, x_info, x_uop, imm, ba, (NWARPS != 0)};
+	wire unused_ok = &{1'b0, x_pc, x_info, x_uop, imm, x_a, (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

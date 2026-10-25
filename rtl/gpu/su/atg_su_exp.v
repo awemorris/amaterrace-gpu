@@ -107,21 +107,22 @@ module atg_su_exp #(
 	localparam G = 32 / NPHYS;
 	localparam ROWS = NWARPS * G;
 	localparam RW = ROWS > 1 ? $clog2(ROWS) : 1;
+	localparam G_W = $clog2(G);	/* G is a power of two: warp G + group are disjoint bits */
 
-	/* floor of a non-negative fp32 below 65536 (the pixel centre's x or y) */
-	function [15:0] ffloor;
-		input [23:0] f;	/* bits 31:8 of the fp32 */
-		reg [15:0] m;
-		begin
-			m = {1'b1, f[14:0]};
-			if (f[23] || f[22:15] < 8'd127)
-				ffloor = 16'd0;
-			else if (f[22:15] > 8'd142)
-				ffloor = 16'hFFFF;
-			else
-				ffloor = m >> (8'd142 - f[22:15]);
-		end
-	endfunction
+	/*
+	 * floor of a non-negative fp32 below 65536 (the pixel centre's x or
+	 * y), of fl_data[31:8]: 1.m >> (142 - e) for 127 <= e <= 142 (the
+	 * amount's low 4 bits, 14 - e[3:0]).
+	 */
+	wire [23:0] ff_f = fl_data[31:8];
+	wire [3:0] ff_sh;
+	wire [15:0] ff_m;
+	wire fs_bo_unused;
+	am_sub #(.W(4)) u_ff_sh (.a(4'd14), .b(ff_f[18:15]), .bi(1'b0), .d(ff_sh), .bo(fs_bo_unused));
+	am_shift #(.W(16), .SW(4)) u_ff_m (.a({1'b1, ff_f[14:0]}), .amt(ff_sh), .left(1'b0), .arith(1'b0),
+		.y(ff_m));
+	wire [15:0] fx_floor = ff_f[23] || ff_f[22:15] < 8'd127 ? 16'd0 : ff_f[22:15] > 8'd142 ? 16'hFFFF :
+		ff_m;
 
 	/* ---- Per warp. */
 	reg [NWARPS-1:0] fr;	/* the warp's facing (fl_info[48]) */
@@ -140,14 +141,16 @@ module atg_su_exp #(
 	wire ex_op = ex_col || ex_dep || ex_sm;
 	wire [1:0] tk = tgt[5:4];
 	wire [1:0] comp = tgt[1:0];
-	wire [31:0] xrow = {{(32-WARP_W){1'b0}}, x_warp} * G + {{(32-GRP_W){1'b0}}, x_grp};
+	wire [31:0] xrow = ({{(32-WARP_W){1'b0}}, x_warp} << G_W) | ({{(32-GRP_W){1'b0}}, x_grp} % G);
 	wire [NPHYS-1:0] side = x_mask[2*NPHYS-1:NPHYS];
 	wire [31:0] lane0 = {{(32-GRP_W){1'b0}}, x_grp} * NPHYS;
-	wire [31:0] side_w = {{(32-NPHYS){1'b0}}, side} << lane0[4:0];
-	wire [31:0] zrow = {{(32-WARP_W){1'b0}}, fl_slot} * G + {27'd0, fl_lane} / NPHYS;
+	wire [31:0] side_w;
+	am_shift #(.W(32), .SW(5)) u_side_w (.a({{(32-NPHYS){1'b0}}, side}), .amt(lane0[4:0]), .left(1'b1),
+		.arith(1'b0), .y(side_w));
+	wire [31:0] zrow = ({{(32-WARP_W){1'b0}}, fl_slot} << G_W) | ({27'd0, fl_lane} / NPHYS);
 	wire [31:0] zbank = {27'd0, fl_lane} % NPHYS;
-	wire [31:0] fq = ({{(32-WARP_W){1'b0}}, fl_slot} * 8 + {29'd0, fl_lane[4:2]}) * 16;
-	wire [15:0] fx = ffloor(fl_data[31:8]);
+	wire [31:0] fq = {{(25-WARP_W){1'b0}}, fl_slot, fl_lane[4:2], 4'd0};
+	wire [15:0] fx = fx_floor;
 
 	/* ---- The drain (atg_su_exp_drain): the beat of warp dwarp, quad dq, attachment drt. */
 	wire [WARP_W-1:0] dwarp;
@@ -270,9 +273,9 @@ module atg_su_exp #(
 		end else begin
 			/* The RX's r6 and d_s of the warp being built; cleared at a release. */
 			if (fl_we && fl_reg == 6'd6)
-				r6w[fl_slot*32 + {27'd0, fl_lane}] <= 1'b1;
+				r6w[{fl_slot, fl_lane}] <= 1'b1;
 			if (fl_pw_we && fl_pw_addr[11:2] == 10'h3FE)
-				dsv[fl_slot*128 + {fl_pw_addr[1:0], 5'd0} +: 32] <= fl_pw_data;
+				dsv[{fl_slot, fl_pw_addr[1:0], 5'd0} +: 32] <= fl_pw_data;
 			if (xr_valid) begin
 				r6w[xr_warp*32 +: 32] <= 32'd0;
 				dsv[xr_warp*128 +: 128] <= 128'd0;
@@ -293,7 +296,7 @@ module atg_su_exp #(
 		if (ex_op) begin
 			xp[x_warp*32 +: 32] <= xp[x_warp*32 +: 32] | side_w;
 			if (ex_col && side != {NPHYS{1'b0}})
-				rtw[x_warp*4 + {30'd0, tk}] <= 1'b1;
+				rtw[{x_warp, tk}] <= 1'b1;
 			if (ex_dep)
 				dw[x_warp*32 +: 32] <= dw[x_warp*32 +: 32] | side_w;
 			if (ex_sm)

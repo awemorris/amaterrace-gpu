@@ -86,15 +86,9 @@ module atg_su_sched #(
 	reg [15:0] grid_x, grid_y, grid_z;
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			vs_base <= 32'd0;
-			fs_base <= 32'd0;
-			cs_base <= 32'd0;
-			wg_x <= 8'd1;
-			wg_y <= 8'd1;
-			wg_z <= 8'd1;
-			grid_x <= 16'd1;
-			grid_y <= 16'd1;
-			grid_z <= 16'd1;
+			{vs_base, fs_base, cs_base} <= 96'd0;
+			{wg_x, wg_y, wg_z} <= {8'd1, 8'd1, 8'd1};
+			{grid_x, grid_y, grid_z} <= {16'd1, 16'd1, 16'd1};
 		end else if (st_we) begin
 			case (st_idx)
 			GHCI_S_VS_BASE: vs_base <= st_wdata;
@@ -120,12 +114,6 @@ module atg_su_sched #(
 		wi = {mask, seq, 5'd0, front, kind, lid, nwg, wg};
 	endfunction
 
-	function wq;
-		input [WARP_W-1:0] x;
-		input integer y;
-		wq = {{(32-WARP_W){1'b0}}, x} == y;
-	endfunction
-
 	/* Per slot. */
 	reg [NWARPS*3-1:0] st;
 	reg [NWARPS*16-1:0] pc;
@@ -140,11 +128,21 @@ module atg_su_sched #(
 	reg [3:0] wg_tag;
 	reg [3:0] wk;	/* next warp of the workgroup being launched */
 	reg launching;
-	wire [23:0] lanes = {16'd0, wg_x} * {16'd0, wg_y} * {16'd0, wg_z};
-	wire [23:0] nw_full = (lanes + 24'd31) >> 5;
+	wire [15:0] lanes_xy;
+	wire [23:0] lanes;
+	am_mul #(.AW(8), .BW(8)) u_lxy (.clk(clk), .en(1'b1), .a(wg_x), .b(wg_y), .p(lanes_xy));
+	am_mul #(.AW(16), .BW(8)) u_lanes (.clk(clk), .en(1'b1), .a(lanes_xy), .b(wg_z), .p(lanes));
+	wire [23:0] lanes31;
+	wire l31_co_unused, ix_co_unused, iy_co_unused, iz_co_unused;
+	am_add #(.W(24)) u_l31 (.a(lanes), .b(24'd31), .ci(1'b0), .s(lanes31), .co(l31_co_unused));
+	wire [23:0] nw_full = lanes31 >> 5;
 	wire [3:0] nw = nw_full > NWARPS ? NWARPS[3:0] : nw_full[3:0];
 	wire mine_wg = {24'd0, rot} == SU_INDEX;
-	wire last_id = id_x + 16'd1 == grid_x && id_y + 16'd1 == grid_y && id_z + 16'd1 == grid_z;
+	wire [15:0] id_x1, id_y1, id_z1;	/* the ids + 1 */
+	am_add #(.W(16)) u_idx1 (.a(id_x), .b(16'd0), .ci(1'b1), .s(id_x1), .co(ix_co_unused));
+	am_add #(.W(16)) u_idy1 (.a(id_y), .b(16'd0), .ci(1'b1), .s(id_y1), .co(iy_co_unused));
+	am_add #(.W(16)) u_idz1 (.a(id_z), .b(16'd0), .ci(1'b1), .s(id_z1), .co(iz_co_unused));
+	wire last_id = id_x1 == grid_x && id_y1 == grid_y && id_z1 == grid_z;
 
 	/* Free slots. */
 	reg [WARP_W-1:0] free_slot;
@@ -177,8 +175,15 @@ module atg_su_sched #(
 	assign vl_slot = vl_g ? free_slot : vl_s;
 
 	/* Initial EXEC: vertex/fragment go, else the next compute warp. */
-	wire [31:0] wlanes = {8'd0, lanes} - {23'd0, wk, 5'd0};
-	wire [31:0] cmask = wlanes >= 32 ? 32'hFFFFFFFF : (32'd1 << wlanes[4:0]) - 32'd1;
+	wire [31:0] wlanes;
+	wire wl_bo_unused;
+	am_sub #(.W(32)) u_wl (.a({8'd0, lanes}), .b({23'd0, wk, 5'd0}), .bi(1'b0), .d(wlanes), .bo(wl_bo_unused));
+	reg [31:0] lmask;	/* (1 << wlanes[4:0]) - 1 */
+	integer li;
+	always @(*)
+		for (li = 0; li < 32; li = li + 1)
+			lmask[li] = li < {27'd0, wlanes[4:0]};
+	wire [31:0] cmask = wlanes >= 32 ? 32'hFFFFFFFF : lmask;
 	wire cs_launch = launching && !vl_go && !fl_go && any_free;
 	assign init_valid = vl_go || fl_go || cs_launch;
 	assign init_warp = vl_go ? vl_s : fl_go ? fl_s : free_slot;
@@ -187,30 +192,69 @@ module atg_su_sched #(
 	/* Selection: round-robin over ready slots out of their gap. */
 	reg [WARP_W-1:0] rr, sel;
 	reg sel_v;
-	integer k, c;
+	integer k, c, r;
 	always @(*) begin
 		sel_v = 1'b0;
 		sel = {WARP_W{1'b0}};
-		for (k = NWARPS - 1; k >= 0; k = k - 1) begin
-			c = ({{(32-WARP_W){1'b0}}, rr} + k) % NWARPS;
-			if (st[(c)*3 +: 3] == S_READY && gap[(c)*2 +: 2] == 2'd0) begin
-				sel_v = 1'b1;
-				sel = c[WARP_W-1:0];
-			end
-		end
+		c = 0;
+		for (r = 0; r < NWARPS; r = r + 1)
+			if (rr == r[WARP_W-1:0])
+				for (k = NWARPS - 1; k >= 0; k = k - 1) begin
+					c = (r + k) % NWARPS;
+					if (st[c*3 +: 3] == S_READY && gap[c*2 +: 2] == 2'd0) begin
+						sel_v = 1'b1;
+						sel = c[WARP_W-1:0];
+					end
+				end
 	end
 	/* A fetch that is not taken keeps its warp (valid/ready). */
 	reg hold_v;
 	reg [WARP_W-1:0] hold_w;
 	wire [WARP_W-1:0] fsel = hold_v ? hold_w : sel;
 	wire fsel_v = hold_v || sel_v;
-	wire [1:0] sk = info[(fsel)*160 + ATG_WI_KIND +: 2];
+	reg [1:0] sk;
+	reg [159:0] q_i;
+	integer y;
+	always @(*) begin
+		sk = 2'd0;
+		q_i = 160'd0;
+		for (y = 0; y < NWARPS; y = y + 1) begin
+			if (fsel == y[WARP_W-1:0])
+				sk = info[y*160 + ATG_WI_KIND +: 2];
+			if (q_warp == y[WARP_W-1:0])
+				q_i = info[y*160 +: 160];
+		end
+	end
 	wire [31:0] base = sk == K_VERT ? vs_base : sk == K_FRAG ? fs_base : cs_base;
+	wire fa_co_unused;
 	assign f_valid = fsel_v;
 	assign f_warp = fsel;
 	assign f_pc = pc[(fsel)*16 +: 16];
-	assign f_addr = base + {13'd0, pc[(fsel)*16 +: 16], 3'd0};
-	assign q_info = info[(q_warp)*160 +: 160];
+	am_add #(.W(32)) u_fa (.a(base), .b({13'd0, pc[(fsel)*16 +: 16], 3'd0}), .ci(1'b0), .s(f_addr),
+		.co(fa_co_unused));
+	assign q_info = q_i;
+
+	/* Per slot: the gap and pc counted down / up; rr, rot, wk and the tag + 1. */
+	wire [NWARPS*2-1:0] gap_m1;
+	wire [NWARPS*16-1:0] pc_p1;
+	genvar gw;
+	generate
+		for (gw = 0; gw < NWARPS; gw = gw + 1) begin : g_w
+			wire g_bo_unused, p_co_unused;
+			am_sub #(.W(2)) u_gap (.a(gap[gw*2 +: 2]), .b(2'd0), .bi(1'b1), .d(gap_m1[gw*2 +: 2]),
+				.bo(g_bo_unused));
+			am_add #(.W(16)) u_pc (.a(pc[gw*16 +: 16]), .b(16'd0), .ci(1'b1), .s(pc_p1[gw*16 +: 16]),
+				.co(p_co_unused));
+		end
+	endgenerate
+	wire [WARP_W-1:0] rr_next;
+	wire [8:0] rot1;
+	wire [3:0] wk1, tag1;
+	wire rr_co_unused, rot_co_unused, wk_co_unused, tag_co_unused;
+	am_add #(.W(WARP_W)) u_rr (.a(fsel), .b({WARP_W{1'b0}}), .ci(1'b1), .s(rr_next), .co(rr_co_unused));
+	am_add #(.W(9)) u_rot (.a({1'b0, rot}), .b(9'd0), .ci(1'b1), .s(rot1), .co(rot_co_unused));
+	am_add #(.W(4)) u_wk (.a(wk), .b(4'd0), .ci(1'b1), .s(wk1), .co(wk_co_unused));
+	am_add #(.W(4)) u_tag (.a(wg_tag), .b(4'd0), .ci(1'b1), .s(tag1), .co(tag_co_unused));
 
 	/* Barrier: every warp of the workgroup is parked. */
 	reg [NWARPS-1:0] bar_go;
@@ -237,39 +281,29 @@ module atg_su_sched #(
 	integer w;
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			for (w = 0; w < NWARPS; w = w + 1) begin
-				st[(w)*3 +: 3] <= S_FREE;
-				pc[(w)*16 +: 16] <= 16'd0;
-				gap[(w)*2 +: 2] <= 2'd0;
-				info[(w)*160 +: 160] <= 160'd0;
-				tag[(w)*4 +: 4] <= 4'd0;
-			end
-			rr <= {WARP_W{1'b0}};
-			hold_v <= 1'b0;
-			hold_w <= {WARP_W{1'b0}};
-			vl_wait <= 1'b0;
-			fl_wait <= 1'b0;
-			vl_s <= {WARP_W{1'b0}};
-			fl_s <= {WARP_W{1'b0}};
-			cs_act <= 1'b0;
-			launching <= 1'b0;
-			id_x <= 16'd0;
-			id_y <= 16'd0;
-			id_z <= 16'd0;
+			st <= {NWARPS{S_FREE}};
+			pc <= {(NWARPS*16){1'b0}};
+			gap <= {(NWARPS*2){1'b0}};
+			info <= {(NWARPS*160){1'b0}};
+			tag <= {(NWARPS*4){1'b0}};
+			{rr, hold_v, hold_w} <= {(2*WARP_W+1){1'b0}};
+			{vl_wait, fl_wait, vl_s, fl_s} <= {(2*WARP_W+2){1'b0}};
+			{cs_act, launching} <= 2'b00;
+			{id_x, id_y, id_z} <= 48'd0;
 			rot <= 8'd0;
 			wg_tag <= 4'd0;
 			wk <= 4'd0;
 		end else begin
 			for (w = 0; w < NWARPS; w = w + 1) begin
 				if (gap[(w)*2 +: 2] != 2'd0)
-					gap[(w)*2 +: 2] <= gap[(w)*2 +: 2] - 2'd1;
+					gap[(w)*2 +: 2] <= gap_m1[(w)*2 +: 2];
 				/* Feedback and warp control. */
 				case (st[(w)*3 +: 3])
 				S_FETCH:
-					if (fb_valid && wq(fb_warp, w)) begin
+					if (fb_valid && fb_warp == w[WARP_W-1:0]) begin
 						if (fb_kind == 2'd0) begin
 							st[(w)*3 +: 3] <= S_READY;
-							pc[(w)*16 +: 16] <= pc[(w)*16 +: 16] + 16'd1;
+							pc[(w)*16 +: 16] <= pc_p1[(w)*16 +: 16];
 						end else if (fb_kind == 2'd1)
 							st[(w)*3 +: 3] <= S_WC;
 						else
@@ -279,7 +313,7 @@ module atg_su_sched #(
 					if (wake[w])
 						st[(w)*3 +: 3] <= S_READY;
 				S_WC:
-					if (wc_valid && wq(wc_warp, w)) begin
+					if (wc_valid && wc_warp == w[WARP_W-1:0]) begin
 						pc[(w)*16 +: 16] <= wc_pc;
 						st[(w)*3 +: 3] <= wc_op == 2'd1 ? S_ENDED : wc_op == 2'd2 ? S_BAR : S_READY;
 					end
@@ -287,7 +321,7 @@ module atg_su_sched #(
 					if (bar_go[w])
 						st[(w)*3 +: 3] <= S_READY;
 				S_ENDED:
-					if (xr_valid && wq(xr_warp, w))
+					if (xr_valid && xr_warp == w[WARP_W-1:0])
 						st[(w)*3 +: 3] <= S_FREE;
 				default: ;
 				endcase
@@ -295,40 +329,44 @@ module atg_su_sched #(
 			hold_v <= fsel_v && !f_ready;
 			hold_w <= fsel;
 			if (fsel_v && f_ready) begin
-				st[(fsel)*3 +: 3] <= S_FETCH;
+				for (w = 0; w < NWARPS; w = w + 1)
+					if (fsel == w[WARP_W-1:0])
+						st[w*3 +: 3] <= S_FETCH;
 				gap[(fsel)*2 +: 2] <= G[1:0] - 2'd1;
-				rr <= fsel + 1'b1;
+				rr <= rr_next;
 			end
 			/* Vertex and fragment slots. */
 			if (vl_g) begin
-				st[(free_slot)*3 +: 3] <= S_ALLOC;
 				vl_s <= free_slot;
 				vl_wait <= 1'b1;
 			end
 			if (fl_g) begin
-				st[(free_slot)*3 +: 3] <= S_ALLOC;
 				fl_s <= free_slot;
 				fl_wait <= 1'b1;
 			end
-			if (vl_go) begin
+			if (vl_go)
 				vl_wait <= 1'b0;
-				st[(vl_s)*3 +: 3] <= S_READY;
-				pc[(vl_s)*16 +: 16] <= 16'd0;
-				info[(vl_s)*160 +: 160] <= wi(48'd0, 48'd0, 8'd0, K_VERT, 1'b0, 16'd0, vl_mask);
-			end
-			if (fl_go) begin
+			if (fl_go)
 				fl_wait <= 1'b0;
-				st[(fl_s)*3 +: 3] <= S_READY;
-				pc[(fl_s)*16 +: 16] <= 16'd0;
-				info[(fl_s)*160 +: 160] <= wi(48'd0, 48'd0, 8'd0, K_FRAG, fl_info[48], fl_info[47:32],
-					fl_info[31:0]);
+			for (w = 0; w < NWARPS; w = w + 1) begin
+				if ((vl_g || fl_g) && free_slot == w[WARP_W-1:0])
+					st[w*3 +: 3] <= S_ALLOC;
+				if (vl_go && vl_s == w[WARP_W-1:0]) begin
+					st[w*3 +: 3] <= S_READY;
+					pc[w*16 +: 16] <= 16'd0;
+					info[w*160 +: 160] <= wi(48'd0, 48'd0, 8'd0, K_VERT, 1'b0, 16'd0, vl_mask);
+				end
+				if (fl_go && fl_s == w[WARP_W-1:0]) begin
+					st[w*3 +: 3] <= S_READY;
+					pc[w*16 +: 16] <= 16'd0;
+					info[w*160 +: 160] <= wi(48'd0, 48'd0, 8'd0, K_FRAG, fl_info[48], fl_info[47:32],
+						fl_info[31:0]);
+				end
 			end
 			/* Compute. */
 			if (cs_kick && !cs_act) begin
 				cs_act <= 1'b1;
-				id_x <= 16'd0;
-				id_y <= 16'd0;
-				id_z <= 16'd0;
+				{id_x, id_y, id_z} <= 48'd0;
 				rot <= 8'd0;
 			end
 			if (cs_try) begin
@@ -336,39 +374,43 @@ module atg_su_sched #(
 				wk <= 4'd0;
 			end
 			if (cs_try || cs_skip) begin
-				rot <= {24'd0, rot} + 1 == NSU ? 8'd0 : rot + 8'd1;
+				rot <= {23'd0, rot1} == NSU ? 8'd0 : rot1[7:0];
 				if (last_id)
 					cs_act <= 1'b0;
 			end
-			if (cs_skip || (cs_launch && wk + 4'd1 == nw)) begin
-				if (id_x + 16'd1 != grid_x)
-					id_x <= id_x + 16'd1;
+			if (cs_skip || (cs_launch && wk1 == nw)) begin
+				if (id_x1 != grid_x)
+					id_x <= id_x1;
 				else begin
 					id_x <= 16'd0;
-					if (id_y + 16'd1 != grid_y)
-						id_y <= id_y + 16'd1;
+					if (id_y1 != grid_y)
+						id_y <= id_y1;
 					else begin
 						id_y <= 16'd0;
-						id_z <= id_z + 16'd1;
+						id_z <= id_z1;
 					end
 				end
 			end
 			if (cs_launch) begin
-				st[(free_slot)*3 +: 3] <= S_READY;
+				for (w = 0; w < NWARPS; w = w + 1)
+					if (free_slot == w[WARP_W-1:0]) begin
+						st[w*3 +: 3] <= S_READY;
+						info[w*160 +: 160] <= wi({id_z, id_y, id_x}, {grid_z, grid_y, grid_x},
+							{wk[2:0], 5'd0}, K_COMP, 1'b0, 16'd0, cmask);
+					end
 				pc[(free_slot)*16 +: 16] <= 16'd0;
 				tag[(free_slot)*4 +: 4] <= wg_tag;
-				info[(free_slot)*160 +: 160] <= wi({id_z, id_y, id_x}, {grid_z, grid_y, grid_x},
-					{wk[2:0], 5'd0}, K_COMP, 1'b0, 16'd0, cmask);
-				wk <= wk + 4'd1;
-				if (wk + 4'd1 == nw) begin
+				wk <= wk1;
+				if (wk1 == nw) begin
 					launching <= 1'b0;
-					wg_tag <= wg_tag + 4'd1;
+					wg_tag <= tag1;
 				end
 			end
 		end
 	end
 
-	wire unused_ok = &{1'b0, fl_info[63:49], wk[3], lanes[23:16], nw_full, wlanes[31:5], c, (NSU != 0)};
+	wire unused_ok = &{1'b0, fl_info[63:49], wk[3], lanes[23:16], nw_full, wlanes[31:5], c, rot1[8],
+		(NSU != 0)};
 endmodule
 
 `default_nettype wire

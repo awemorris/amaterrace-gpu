@@ -102,7 +102,8 @@ module atg_su_dec_tab (
 				end else begin
 					unit = ATG_UNIT_FPU;
 					cls = ATG_CLS_F;
-					op = ATG_FPU_MUL + {6'd0, f3[1:0]};
+					op = f3[1] ? (f3[0] ? ATG_FPU_MUL + 8'd3 : ATG_FPU_MUL + 8'd2) :
+						(f3[0] ? ATG_FPU_MUL + 8'd1 : ATG_FPU_MUL);
 				end
 			end
 			7'b0000101: begin
@@ -234,7 +235,8 @@ module atg_su_dec_tab (
 			use3 = 1'b1;
 			wrd = 1'b1;
 			def = rm_ok && fmt2 == 2'd0;
-			op = ATG_FPU_FMADD + {6'd0, opc[3:2]};
+			op = opc[3] ? (opc[2] ? ATG_FPU_FMADD + 8'd3 : ATG_FPU_FMADD + 8'd2) :
+				(opc[2] ? ATG_FPU_FMADD + 8'd1 : ATG_FPU_FMADD);
 		end
 		default: ;
 		endcase

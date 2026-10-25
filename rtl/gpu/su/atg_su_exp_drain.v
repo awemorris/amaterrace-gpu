@@ -74,9 +74,18 @@ module atg_su_exp_drain #(
 	reg [WARP_W-1:0] vx_w;
 
 	/* the attachments above and below the beat's */
-	wire [3:0] above = d_rtw & ~((4'd2 << d_rt) - 4'd1);
-	wire [3:0] below = d_rtw & ((4'd1 << d_rt) - 4'd1);
-	wire [2:0] dq1 = d_q + 3'd1;
+	reg [3:0] above_m, below_m;
+	integer ab;
+	always @(*)
+		for (ab = 0; ab < 4; ab = ab + 1) begin
+			above_m[ab] = ab > d_rt;
+			below_m[ab] = ab < d_rt;
+		end
+	wire [3:0] above = d_rtw & above_m;
+	wire [3:0] below = d_rtw & below_m;
+	wire [2:0] dq1;
+	wire dq_co_unused;
+	am_add #(.W(3)) u_dq1 (.a(d_q), .b(3'd0), .ci(1'b1), .s(dq1), .co(dq_co_unused));
 	wire qlast = d_q == 3'd7 || d_cov[{dq1, 2'b00} +: 4] == 4'd0;
 
 	assign d_nocol = d_rtw == 4'd0;

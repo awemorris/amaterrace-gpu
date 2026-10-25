@@ -72,25 +72,21 @@ module atg_su_alu #(
 			rev[k] = x[31 - k];
 	endfunction
 
-	/* One lane.  sub, the compares, min and max share one subtraction
-	 * (a - b as 33 bits: bit 32 is a < b unsigned; with equal signs bit 31
-	 * is a < b signed); the shifts share one arithmetic right shift (sll
-	 * shifts the reversed a). */
+	/* One lane, given d (a + b for add, else a - b, as 33 bits: bit 32
+	 * is a < b unsigned; with equal signs bit 31 is a < b signed: sub, the
+	 * compares, min and max) and sh (the shifts' one arithmetic right
+	 * shift; sll shifts the reversed a), each of one shared module. */
 	function [31:0] alu;
 		input [4:0] o;
 		input [31:0] a, b, c, i;
-		reg [32:0] d;
-		reg [31:0] sv, sh;
-		reg sh_unused;
+		input [32:0] d;
+		input [31:0] sh;
 		reg ltu, lts;
 		begin
-			d = {1'b0, a} - {1'b0, b};
 			ltu = d[32];
 			lts = a[31] != b[31] ? a[31] : d[31];
-			sv = o == ATG_ALU_SLL ? rev(a) : a;
-			{sh_unused, sh} = $signed({o == ATG_ALU_SRA && a[31], sv}) >>> b[4:0];
 			case (o)
-			ATG_ALU_ADD: alu = a + b;
+			ATG_ALU_ADD: alu = d[31:0];
 			ATG_ALU_SUB: alu = d[31:0];
 			ATG_ALU_SLL: alu = rev(sh);
 			ATG_ALU_SLT: alu = {32{lts}};
@@ -113,13 +109,24 @@ module atg_su_alu #(
 		end
 	endfunction
 
-	reg [DW-1:0] y;
-	integer l;
-	always @(*) begin
-		for (l = 0; l < NPHYS; l = l + 1)
-			y[l*32 +: 32] = alu(op, x_a[l*32 +: 32], immb ? imm : x_b[l*32 +: 32],
-				x_c[l*32 +: 32], imm);
-	end
+	wire [DW-1:0] y;
+	genvar l;
+	generate
+		for (l = 0; l < NPHYS; l = l + 1) begin : g_lane
+			wire [31:0] la = x_a[l*32 +: 32];
+			wire [31:0] lb = immb ? imm : x_b[l*32 +: 32];
+			wire [31:0] sv = op == ATG_ALU_SLL ? rev(la) : la;
+			wire [32:0] d;
+			wire [32:0] sh;
+			wire d_co_unused;
+			am_addsub #(.W(33)) u_d (.a({1'b0, la}), .b({1'b0, lb}), .sub(op != ATG_ALU_ADD), .s(d),
+				.co(d_co_unused));
+			am_shift #(.W(33), .SW(5)) u_sh (.a({op == ATG_ALU_SRA && la[31], sv}), .amt(lb[4:0]),
+				.left(1'b0), .arith(1'b1), .y(sh));
+			assign y[l*32 +: 32] = alu(op, la, lb, x_c[l*32 +: 32], imm, d, sh[31:0]);
+			wire unused_l = &{1'b0, sh[32]};
+		end
+	endgenerate
 
 	/* SHORT_LAT stages; stage 0 is registered from x_*. */
 	reg [EW-1:0] pipe [0:SHORT_LAT-1];

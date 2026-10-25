@@ -40,7 +40,7 @@ The format is the one bit of DEPTH[7:5] that is set; with none or more than one 
 
 1. **Depth bounds** (DEPTH[9]): z_a below bmin or above bmax (fp32 order, -0 = +0; a NaN z_a is outside) → pass = 0, wbe = 0 (no stencil op: Vulkan sets the coverage to 0 before the stencil test).
 2. **Stencil** (DEPTH[8] and D24S8; the state of `front`'s face): s_a = stored[31:24]; the test is (reference & compare mask) op (s_a & compare mask) with the VkCompareOp.  Failed: new = op(fail op), pass = 0.  Passed: new = op(depth result ? pass op : depth-fail op), pass = the depth result.  Ops (VkStencilOp): 0 KEEP s_a, 1 ZERO, 2 REPLACE reference, 3 INCREMENT_AND_CLAMP min(s_a + 1, 255), 4 DECREMENT_AND_CLAMP max(s_a - 1, 0), 5 INVERT ~s_a, 6 INCREMENT_AND_WRAP s_a + 1, 7 DECREMENT_AND_WRAP s_a - 1 (8 bits).  The written stencil is (s_a & ~write mask) | (new & write mask); byte 3 is enabled when it differs from s_a.  Without the stencil test the stencil passes and is not written.
-3. **Depth** (DEPTH[0]): the compare op of the new depth against z_a: D32F by `atg_depth_key` order, D24 by `atg_depth_u24(zf)` against stored[23:0], D16 by RNE(clamp01(zf) x 65535) (`atg_fmt_f2unorm(zf, 16)`) against stored[15:0]; NaN as in `atg_depth_pass`.  Without the depth test the depth result is 1.  Written (bytes 0-2 for D24, 0-1 for D16, 0-3 for D32F) when DEPTH[1], the stencil passed and the depth passed.
+3. **Depth** (DEPTH[0]): the compare op of the new depth against z_a: D32F by the order keys of `atg_fmt_depth_key` (zf and the stored word, one instance each), D24 by `atg_fmt_depth_u24` of zf against stored[23:0], D16 by RNE(clamp01(zf) x 65535) (`atg_fmt_f2unorm(zf, 16)`) against stored[15:0]; NaN as in `atg_depth_pass`.  Without the depth test the depth result is 1.  Written (bytes 0-2 for D24, 0-1 for D16, 0-3 for D32F) when DEPTH[1], the stencil passed and the depth passed.
 4. `cov` = 0: pass = 0, wbe = 0.
 
 ## 5. State machine
@@ -71,8 +71,10 @@ Deliberate errors: `MUT_STENCIL_FACE` (front and back swapped) and `MUT_STENCIL_
 
 ## 9. References
 
-docs/ghci.md §8.5 (ROP range, the per-sample operations), `spec/gpu/rop/atg_rop_ds.md`, `spec/gpu/fmt/atg_fmt.md`, include/atg_depth.vh.  design §16.5, §16.6.  Values referenced: Vulkan specification, Depth Bounds Test, Stencil Test, Depth Test, VkStencilOp, VkCompareOp.
+docs/ghci.md §8.5 (ROP range, the per-sample operations), `spec/gpu/rop/atg_rop_ds.md`, `spec/gpu/fmt/atg_fmt.md`, `spec/gpu/fmt/atg_fmt_depth_u24.md`, `spec/gpu/fmt/atg_fmt_depth_key.md`, include/atg_depth.vh (`atg_depth_pass`).  design §16.5, §16.6.  Values referenced: Vulkan specification, Depth Bounds Test, Stencil Test, Depth Test, VkStencilOp, VkCompareOp.
 
 ## 10. Status
 
 Implemented 2026-10-25: every PASS of §8 (`sim/vec/rop_dtest.txt` from `tools/rop-vectors.py`, the model `dtest` in `tools/rxmodel.py`); `-DMUT_STENCIL_FACE` and `-DMUT_STENCIL_WRAP` fail `.stencil` (and the sections with a stencil).  wword's bytes outside wbe are unspecified (the TB compares the enabled ones).
+
+2026-10-25 (p037, P1): the D24 conversion and the D32F keys are instances of atg_fmt_depth_u24 and atg_fmt_depth_key (the shared arithmetic, docs/style.md); the behaviour is unchanged (the old module and the new one compared on 200,000 random inputs).

@@ -213,11 +213,13 @@ module atg_su_dec_tabc (
 				def = f7[6:1] == 6'd0;
 			end
 			3'd5: begin
-				op = ATG_PK_IADD2 + {6'd0, f7[1:0]};
+				op = f7[1] ? (f7[0] ? ATG_PK_IADD2 + 8'd3 : ATG_PK_IADD2 + 8'd2) :
+					(f7[0] ? ATG_PK_IADD2 + 8'd1 : ATG_PK_IADD2);
 				def = f7 <= 7'd2;
 			end
 			3'd6: begin
-				op = ATG_PK_FCMPLT2 + {6'd0, f7[1:0]};
+				op = f7[1] ? (f7[0] ? ATG_PK_FCMPLT2 + 8'd3 : ATG_PK_FCMPLT2 + 8'd2) :
+					(f7[0] ? ATG_PK_FCMPLT2 + 8'd1 : ATG_PK_FCMPLT2);
 				def = f7 <= 7'd3;
 			end
 			default: begin
@@ -256,7 +258,8 @@ module atg_su_dec_tabc (
 			end
 			3'd1: begin
 				unit = ATG_UNIT_EXEC;
-				op = ATG_EXEC_SET + {6'd0, sub[1:0]};
+				op = sub[1] ? (sub[0] ? ATG_EXEC_SET + 8'd3 : ATG_EXEC_SET + 8'd2) :
+					(sub[0] ? ATG_EXEC_SET + 8'd1 : ATG_EXEC_SET);
 				use1 = sub != 5'd3;
 				wrd = sub == 5'd3;
 				def = f7 == 7'd0 && sub <= 5'd3;
