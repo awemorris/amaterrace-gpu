@@ -51,9 +51,9 @@
  * Pipeline: a pass's steps (one component of a lane's texel) are issued
  * one a cycle in the order texel, lane, component (LOAD makes the pass's
  * work, a mask of {texel, lane}), through P1 (the texel's bits, the
- * lane's weights), P2-P4 (atg_tu_etc's block decode, 3 cycles; the
- * weight's factors, wu wv and wa wb, n, its fp32 in P7), P5 (the
- * converter's inputs), P5-P12 (atg_fmt_cvt, 7 cycles), to P12: a bypassed
+ * lane's weights), P2-P5 (atg_tu_etc's block decode, 4 cycles; the
+ * weight's factors, wu wv and wa wb, n, its fp32 in P7), P6 (the
+ * converter's inputs), P6-P13 (atg_fmt_cvt, 7 cycles), to P13: a bypassed
  * or gathered value is written to its accumulator there, a term goes into
  * atg_tu_fma, which reads the accumulator 3 cycles later and writes it 10
  * cycles later.  The steps of
@@ -337,7 +337,7 @@ module atg_tu_ffilt (
 	/* ---- The step's fields along the pipeline: {op, cs, aid, tb, raw}
 	 * from P1 to PE (atg_tu_etc's output), {op, cs, aid, tb, es, ers, egs}
 	 * from PC (atg_fmt_cvt's input) to PV (its output) ---- */
-	localparam ETC_LAT = 3, CVT_LAT = 7;
+	localparam ETC_LAT = 4, CVT_LAT = 7;
 	localparam PE = 1 + ETC_LAT, PC = PE + 1, PV = PC + CVT_LAT;
 	wire [136:0] fe1 = {op1, cs1, aid1, tb1, raw1};
 	reg [136:0] fe [2:PE];

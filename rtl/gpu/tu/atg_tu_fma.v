@@ -25,10 +25,10 @@
  * it): M0 (flush and classify a and b, the exponent sums) R1; the 24 x 24
  * product (am_mul, 3 registers) R2-R4 (the addend read in cycle 3, R4);
  * A1 (the addend: flush, classify, the alignment k, the special results)
- * R5; A2 (the addend aligned in the
- * 77-bit window of atg_su_ffma_p) R6; B (add or subtract) R7; C1 (leading
- * zeros) R8; C2 (normalised, the exponent) R9; D1 (round up) R10; D2
- * (carry, overflow, underflow, the special results) out.
+ * R5; A2 (the addend aligned in the 77-bit window of atg_su_ffma_p) R6; B
+ * (P + C and C - P) R7; C1 (the magnitude, its leading zeros) R8; C2
+ * (normalised, the exponent) R9; D1 (round up) R10; D2 (carry, overflow,
+ * underflow, the special results) out.
  * See spec/gpu/tu/atg_tu_fma.md.
  */
 
@@ -155,15 +155,19 @@ module atg_tu_fma #(
 	reg v5;
 	reg [TW-1:0] t5;
 	reg [47:0] p5;
-	reg signed [11:0] k5;
-	reg [11:0] u5, eb99_5, ec2_5;
+	reg big5, tiny5;
+	reg [6:0] amt5;
+	reg [11:0] eb99_5, ec2_5;
+	wire signed [11:0] ks = k_a1;
 	reg [23:0] mc5;
 	reg zc5, sc5, sp5, spec5;
 	reg [31:0] sres5;
 	always @(posedge clk) begin
 		p5 <= p4;
-		k5 <= k_a1;
-		u5 <= u_a1;
+		/* c far above P: P becomes a sticky bit; far below: c does */
+		big5 <= !zc && ks > 12'sd49;
+		tiny5 <= ks < -12'sd25;
+		amt5 <= !zc && ks > 12'sd49 ? 7'd74 : u_a1[6:0];
 		eb99_5 <= eb99_4;
 		ec2_5 <= ec2;
 		mc5 <= zc ? 24'd0 : {1'b1, c4[22:0]};
@@ -176,9 +180,8 @@ module atg_tu_fma #(
 	end
 
 	/* ---- A2: the window (P's LSB at bit 2) ---- */
-	wire big = !zc5 && k5 > 12'sd49;	/* c far above P: P becomes a sticky bit */
-	wire tiny = k5 < -12'sd25;	/* c far below P: c becomes a sticky bit */
-	wire [6:0] amt = big ? 7'd74 : u5[6:0];
+	wire big = big5, tiny = tiny5;
+	wire [6:0] amt = amt5;
 	wire [97:0] csh;
 
 	am_shift #(.W(98), .SW(7)) u_csh (
@@ -330,7 +333,7 @@ module atg_tu_fma #(
 	end
 
 	wire unused_ok = &{1'b0, u_eab_nc, u_q150_nc, u_q175_nc, u_eb99_nc, u_k_nc, u_u_nc,
-		u_ec2_nc, u_cp_nc, u_er_nc, u_rnd_nc, u_er1_nc, u5[11:7]};
+		u_ec2_nc, u_cp_nc, u_er_nc, u_rnd_nc, u_er1_nc, u_a1[11:7]};
 endmodule
 
 `default_nettype wire

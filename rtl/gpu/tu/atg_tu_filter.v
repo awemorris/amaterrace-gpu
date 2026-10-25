@@ -58,8 +58,8 @@
  * P1 the lane's texels, weights and Dref; P2-P4 Dref as unorm24 or
  * unorm16 and its key, the texels' keys, the bilinear weights and W
  * (am_mul); P5 the compares and the channels' bytes; P7 the bytes times
- * the weights; P8-P9 their sum R; P11 R × W, the sums A read and written
- * in that cycle (a lane's next pass comes 4 or more cycles later);
+ * the weights; P8-P9 their sum R; P11 R × W and the sums A (read in P10,
+ * written in P11: a lane's next pass comes 4 or more cycles later);
  * P13-P14 A × 0x0101010101; P14 the conversion's integer; P15-P17 its
  * rounding to fp32 (leading zeros, shift, round); P18 the lane's words,
  * written to the quad's place.  The quads go out through a FIFO of 4; a
@@ -259,7 +259,7 @@ module atg_tu_filter (
 	wire [127:0] lt4 = dl[4][246:119], lt14 = dl[14][246:119], lt18 = dl[18][246:119];
 	wire [15:0] r565_14 = dl[14][118:103];
 	wire [31:0] vw18 = dl[18][102:71];
-	wire [1:0] k11 = dl[11][17:16];
+	wire [1:0] k10 = dl[10][17:16], k11 = dl[11][17:16];
 	wire v11 = vd[11];
 	wire mk18 = dl[18][20], fin18 = dl[18][19], last18 = dl[18][18];
 	wire [1:0] k18 = dl[18][17:16];
@@ -509,8 +509,12 @@ module atg_tu_filter (
 	wire [40:0] rw11 [0:3];
 	wire [39:0] rr [0:3];
 	wire [3:0] rr_nc;
-	wire [159:0] al = k11 == 2'd0 ? acc[159:0] : k11 == 2'd1 ? acc[319:160] :
-		k11 == 2'd2 ? acc[479:320] : acc[639:480];
+	/* lane k's sums, read in P10 (the lane's previous pass wrote them 4 or
+	 * more cycles before) */
+	reg [159:0] al;
+	always @(posedge clk)
+		al <= k10 == 2'd0 ? acc[159:0] : k10 == 2'd1 ? acc[319:160] :
+			k10 == 2'd2 ? acc[479:320] : acc[639:480];
 	reg [39:0] rr12 [0:3];
 	generate
 	for (gc = 0; gc < 4; gc = gc + 1) begin : g_acc

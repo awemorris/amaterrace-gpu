@@ -11,9 +11,10 @@
  * texel's column s and row t in it to that texel, written from the
  * Khronos Data Format Specification's ETC2 and EAC text (tools/etcmodel.py
  * is the reference, bit for bit).  Pipelined: the inputs in cycle 0,
- * o_kind and o_texel in cycle 3 (registers), one texel a cycle; E1 the
- * mode, the colours and the modifier, EAC's modifier; E1b planar's terms,
- * EAC's modifier times the multiplier; E2 the sums and the clamps.
+ * o_kind and o_texel in cycle 4 (registers), one texel a cycle; E0 the
+ * words; E1 the mode, the colours and the modifier, EAC's modifier; E1b
+ * planar's terms, EAC's modifier times the multiplier; E2 the sums and the
+ * clamps.
  *
  * i_fmt = VkFormat - 147: 0 ETC2_R8G8B8_UNORM, 1 its SRGB, 2
  * ETC2_R8G8B8A1_UNORM, 3 its SRGB, 4 ETC2_R8G8B8A8_UNORM, 5 its SRGB, 6
@@ -192,14 +193,25 @@ module atg_tu_etc (
 		endcase
 	endfunction
 
-	wire [63:0] wa = w64(i_block, 1'b0), wb = w64(i_block, 1'b1);
-	wire [3:0] k = {i_s, i_t};
-	wire [1:0] x = i_s, y = i_t;
+	/* ---- E0: the block's two words, the colour block's word ---- */
+	wire [63:0] wa_i = w64(i_block, 1'b0), wb_i = w64(i_block, 1'b1);
+	wire rgbb_i = i_fmt == 4'd4 || i_fmt == 4'd5;	/* RGBA8: the colour block second */
+	reg [63:0] w, wa, wb;
+	reg [3:0] fmt0;
+	reg [1:0] x, y;
+	always @(posedge clk) begin
+		w <= rgbb_i ? wb_i : wa_i;
+		wa <= wa_i;
+		wb <= wb_i;
+		fmt0 <= i_fmt;
+		x <= i_s;
+		y <= i_t;
+	end
+	wire [3:0] k = {x, y};
 
 	/* ---- E1, the colour block: w the block, punch RGB8A1 ---- */
-	wire rgbb = i_fmt == 4'd4 || i_fmt == 4'd5;	/* RGBA8: the colour block second */
-	wire [63:0] w = rgbb ? wb : wa;
-	wire punch = !rgbb && i_fmt[1];
+	wire rgbb = fmt0 == 4'd4 || fmt0 == 4'd5;
+	wire punch = !rgbb && fmt0[1];
 	wire [1:0] idx = {w[{2'b01, k}], w[{2'b00, k}]};
 	wire opq = punch ? w[33] : 1'b1;
 	wire trn = punch && !w[33] && idx == 2'd2;
@@ -282,7 +294,7 @@ module atg_tu_etc (
 	/* ---- E1, the EAC blocks (wa: R or alpha, wb: G): the modifier, the
 	 * base ---- */
 	wire r11 = !rgbb;	/* R11 (not RGBA8's 8-bit alpha) */
-	wire sg = i_fmt[0];	/* signed R11 */
+	wire sg = fmt0[0];	/* signed R11 */
 	wire [13:0] e_vb [0:1];	/* the base */
 	wire [4:0] e_m [0:1];	/* the modifier */
 	wire [3:0] e_mu [0:1];	/* the multiplier */
@@ -308,7 +320,7 @@ module atg_tu_etc (
 	reg [4:0] m1 [0:1];
 	reg [3:0] mu1 [0:1];
 	always @(posedge clk) begin
-		fmt1 <= i_fmt;
+		fmt1 <= fmt0;
 		trn1 <= trn && !pm;
 		pm1 <= pm;
 		r11_1 <= r11;

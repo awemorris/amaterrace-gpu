@@ -19,7 +19,7 @@ None.
 | `i_inf` | in | 68 | The format's atg_fmt_info word, cycle 0. |
 | `i_k` | in | 2 | The component, cycle 0. |
 | `i_sten` | in | 1 | The stencil aspect, cycle 0. |
-| `o_val` | out | 32 | The component, cycle 5 (a register). |
+| `o_val` | out | 32 | The component, cycle 7 (a register). |
 
 ## 4. Behaviour
 
@@ -31,7 +31,7 @@ None (a pipeline).
 
 ## 6. Latency and throughput
 
-One conversion a cycle, 5 cycles: U1 (the field and mask, the constants) R1, U2 (SNORM's magnitude, the floats' inputs, the integer and sRGB results) R2, U3 (UNORM's repeated bits and leading zeros, the floats' 10-bit leading zeros) R3, U4 (UNORM normalised; the 16-bit, packed and E5 floats) R4, U5 (UNORM's rounding, SNORM's sign, the selection) o_val.  Arithmetic only through rtl/common.
+One conversion a cycle, 7 cycles: U1 (the component's place and width, the constants) R0, U1b (the field and its mask) R1, U2 (SNORM's magnitude, the floats' inputs, the integer and sRGB results) R2, U3 (UNORM's repeated bits, the floats' 10-bit leading zeros) R3, U3b (UNORM's leading zeros) R3b, U4 (UNORM normalised; the 16-bit, packed and E5 floats) R4, U5 (UNORM's rounding, SNORM's sign, the selection) o_val.  Arithmetic only through rtl/common.
 
 ## 7. Corner cases and errors
 

@@ -12,7 +12,7 @@ None.
 
 ## 3. Ports
 
-Inputs in cycle 0, outputs in cycle 2 (registers); one texel a cycle.
+Inputs in cycle 0, outputs in cycle 4 (registers); one texel a cycle.
 
 | Name | Dir | Width | Meaning, handshake and timing |
 | --- | --- | --- | --- |
@@ -35,7 +35,7 @@ None.
 
 ## 6. Latency and throughput
 
-Two stages (p038): E1 the mode (individual, differential, T, H, planar), the base colour and the signed offset of the three channels (the modifier or T and H's distance), planar's x (h − o) and y (v − o) parts, EAC's modifier times the multiplier (shifts and adds) and its base; E2 the sums and the clamps.  One texel a cycle, 2 cycles.  All the arithmetic through rtl/common.  A bilinear sample or gather of a 16-byte block format takes 4 passes and of an 8-byte one 2 (the four texels may lie in four blocks; atg_tu_addr and atg_tu_cache fetch a block per texel).
+Four stages (p038): E0 the block's words (the colour block's word chosen); E1 the mode (individual, differential, T, H, planar), the base colour and the signed offset of the three channels (the modifier or T and H's distance), planar's h − o and v − o, EAC's modifier and base; E1b planar's x (h − o) and y (v − o) parts, EAC's modifier times the multiplier (shifts and adds); E2 the sums and the clamps.  One texel a cycle, 4 cycles.  All the arithmetic through rtl/common.  A bilinear sample or gather of a 16-byte block format takes 4 passes and of an 8-byte one 2 (the four texels may lie in four blocks; atg_tu_addr and atg_tu_cache fetch a block per texel).
 
 ## 7. Corner cases and errors
 
@@ -60,4 +60,4 @@ design §16.11a; `spec/gpu/tu/atg_tu.md`.  Values referenced: Khronos Data Forma
 
 Implemented (2026-10-25), combinational instead of the two register stages first planned (it sits in atg_tu_ffilt's one-step-a-cycle loop).
 
-2026-10-25 (p038): pipelined in two stages (§6), the arithmetic through rtl/common (the negations by tables, 45 − 3k by a table, the EAC multiply by shifts and adds); the values are unchanged (the TB clocked, MUT_ETC_TMODE still fails).
+2026-10-25 (p038): pipelined in four stages (§6), the arithmetic through rtl/common (the negations by tables, 45 − 3k by a table, the EAC multiply by shifts and adds); the values are unchanged (the TB clocked, MUT_ETC_TMODE still fails).
