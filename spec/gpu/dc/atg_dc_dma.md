@@ -1,6 +1,6 @@
 # atg_dc_dma
 
-RTL: `rtl/dc/atg_dc_dma.v`.  Parent: atg_dc.  Implemented in: p005.
+RTL: `rtl/gpu/dc/atg_dc_dma.v`.  Parent: atg_dc.  Implemented in: p005.
 
 ## 1. Purpose and place
 
@@ -21,7 +21,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | Name | Dir | Width | Meaning, handshake and timing |
 | --- | --- | --- | --- |
 | `clk` | in | 1 | Clock (gclk). |
-| `rst_n` | in | 1 | Synchronous reset, active low. |
+| `rst_n` | in | 1 | Synchronous reset, active low (the board reset). |
+| `clear` | in | 1 | The DC's CTRL.RESET: aborts like ENABLE falling and starts no frame; the count of outstanding reads is kept. |
 | `enable` | in | 1 | ENABLE (gclk). |
 | `frame_start` | in | 1 | Pulse (from tgen via am_sync): start the frame at fb_base. |
 | `fb_base` | in | 32 | Frame address. |
@@ -32,6 +33,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `px_ready` | in | 1 | Room. |
 | `px_data` | out | 32 | One pixel (RGB565 in the low 16 bits). |
 | `idle` | out | 1 | No request offered or outstanding (STATUS.idle; detach quiesce). |
+| `done` | out | 1 | The frame has no line left to request and no pixel left to push (or there is no frame): the cursor may read. |
+| `err` | out | 1 | One-cycle pulse: an error response of the current frame (STATUS.read error). |
 | `scan_sum` | out | 32 | Sum of the pixel words pushed in the last frame (taken at the next frame_start or ENABLE fall; SCAN_SUM). |
 | `scan_words` | out | 32 | Their number (SCAN_WORDS). |
 | **AMB client port (design §4.1)** | | | |
@@ -48,7 +51,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
 | `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
 
-26 ports; 15 counting each AMB port and HCR snoop port as one group (spec/README.md).  scan_sum/scan_words added in p005 (Q1 to ACK).
+29 ports; 18 counting each AMB port and HCR snoop port as one group (spec/README.md).  scan_sum/scan_words added in p005 (Q1 to ACK).
 
 ## 4. Behaviour
 
@@ -64,15 +67,17 @@ Must sustain the pixel rate: 640×480@60 25 Mpx/s (100 MB/s), 720p 74 Mpx/s.
 
 ## 7. Corner cases and errors
 
-- An error response: the pixels are 0 (the MC raised the fault).
+- An error response: the line's pixels are 0 (black) and `err` pulses; the MC's fault of the DC's client is not a device fault (atg_cp_ctl).
+- `clear` in the middle of a frame with reads outstanding: they are still counted (rst_n is not pulsed), so `idle` comes when they are answered.
 - FB_SIZE w or h 0: no request (the test pattern needs none).
 
 ## 8. What the TB checks
 
 `sim/tb/atg_dc_dma_tb.v` prints, in this order:
 
-- `PASS atg_dc_dma.frame` — a frame's words in order
+- `PASS atg_dc_dma.frame` — a frame's words in order; error rows: black, one `err` per line; `done` after the frame
 - `PASS atg_dc_dma.stop` — ENABLE 0 stops and idle rises
+- `PASS atg_dc_dma.clear` — `clear` for one cycle with reads outstanding: idle and done after, then a whole frame (a mutation that resets the count fails it)
 - `PASS atg_dc_dma` at the end.
 
 ## 9. References
@@ -81,4 +86,6 @@ design §5.1 (atg_dc_dma), §4.2.
 
 ## 10. Status
 
-Implemented in WS288 p005 (TB `atg_dc_dma_tb` PASS).
+Implemented in WS288 p005 (TB `atg_dc_dma_tb` PASS).  p035 D3: `clear`, `done`, `err`.
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).

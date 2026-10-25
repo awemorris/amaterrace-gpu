@@ -26,7 +26,7 @@ Contents
 10. [Faults, watchdog, quiesce and reset](#10-faults-watchdog-quiesce-and-reset)
 11. [Memory model](#11-memory-model)
 12. [The standard shader ISA (GSI1)](#12-the-standard-shader-isa-gsi1)
-13. [The display controller capability (DISP)](#13-the-display-controller-capability-disp)
+13. [The display controller capabilities (DISP, DISP2)](#13-the-display-controller-capabilities-disp-disp2)
 14. [Bring-up: the debug port and KICK](#14-bring-up-the-debug-port-and-kick)
 15. [Bindings](#15-bindings)
 16. [Versions](#16-versions)
@@ -100,7 +100,7 @@ earlier work has completed.
 
 | Part | State |
 | --- | --- |
-| Host control registers, extended capabilities, CP states, the ring, fences, interrupts, faults, quiesce and reset, the debug port, the display capability | Draft |
+| Host control registers, extended capabilities, CP states, the ring, fences, interrupts, faults, quiesce and reset, the debug port, the display capabilities | Draft |
 | Memory model (unified and discrete, the MEM capability), platform and PCIe bindings | Draft |
 | Session protection (optional, the PROT capability) | Draft, version 1 complete: Amaterrace's KC705 configuration implements it (31 sessions, 64 grants) and zedBSD's driver uses it; not yet run on a board |
 | The command set | Draft: the packet envelope and the native micro-operations; the class 2 operations follow the Kei GPU command protocol |
@@ -161,8 +161,8 @@ earlier work has completed.
 | 0x02C | COUNTER | R | Free-running core clock count |
 | 0x030 | CTRL | RW | [0] RUN, [1] RESET (W1S; falls when the reset is done), [2] HALT, [3] STEP, [4] WDT_EN |
 | 0x034 | STATUS | R | Status (section 3.3) |
-| 0x038 | IRQ_STATUS | R/W1C | [0] FENCE, [1] FAULT, [2] RING_EMPTY, [3] WATCHDOG, [4] DBG_DONE, [5] SOFT, [6] HALTED, [7] RESULT (the firmware wrote a result), [8] RETIRE (RING_RPTR moved past a packet) |
-| 0x03C | IRQ_ENABLE | RW | [8:0]: the same bits |
+| 0x038 | IRQ_STATUS | R/W1C | [0] FENCE, [1] FAULT, [2] RING_EMPTY, [3] WATCHDOG, [4] DBG_DONE, [5] SOFT, [6] HALTED, [7] RESULT (the firmware wrote a result), [8] RETIRE (RING_RPTR moved past a packet), [9] VBLANK, [10] FLIP, [11] DISP_ERROR, [12] HOTPLUG (the events of a DISP2 display controller, section 13.2) |
+| 0x03C | IRQ_ENABLE | RW | [12:0]: the same bits |
 | 0x040 | IRQ_SET | W1S | [5] sets IRQ_STATUS.SOFT |
 | 0x044 | WDT_CYCLES | RW | Watchdog limit for one command, in core cycles (reset value 2^28) |
 | 0x04C | RESIDENT_WARPS | R | [15:0] the warps the GPU runs at once over all its shader units (the size of the `warp` operand's range, section 12.3; scratch memory, section 12.10); 0 without a shader unit. [23:16] the general registers of a lane (32 or 64, section 12.2: a program may use r0 to this number less one; the driver's compiler allocates within it); 0 without a shader unit. [31:24] 0 |
@@ -195,7 +195,7 @@ CAPS (0x020):
 | [0] | A command processor and ring are present |
 | [1] | A blitter is present |
 | [2] | A shader unit is present (ISA_ID is not 0) |
-| [3] | A display controller is in this window (with a DISP capability) |
+| [3] | A display controller is in this window (with a DISP or DISP2 capability) |
 | [7:4] | log2 of the shader subgroup width (0 without shaders) |
 | [8] | Bilinear texture filtering |
 | [9] | Stencil |
@@ -275,7 +275,7 @@ EXTCAP points to a list of entries of two words each:
 
 | ID | Name | Meaning |
 | --- | --- | --- |
-| 1 | DISP | A display controller (section 13) |
+| 1 | DISP | A display controller without a command processor (section 13.1) |
 | 2 | DBG | A debug bridge outside the host bus (for example JTAG) is present |
 | 3 | PERF | What PERF0..3 count (below) |
 | 4 | VEND | Vendor registers |
@@ -285,6 +285,7 @@ EXTCAP points to a list of entries of two words each:
 | 8 | MEM | The memory configuration: local memory and the local window (section 11.3) |
 | 9 | PROT | Session protection (section 11.6) |
 | 10 | FMT | The formats the GPU supports (draft, below) |
+| 11 | DISP2 | A display controller that is a unit of the GPU (draft, section 13.2) |
 
 **FMT (version 1, draft).** Registers at the capability's register
 offset (a window of 32 bytes): +0x0 FMT_INDEX (RW, a VkFormat value),
@@ -483,7 +484,17 @@ GHCI_FRAME (gpu-op 0x10105, draft;
 | 12 | INVALIDATE | 0 | flags: [0] data cache, [1] texture cache, [2] constants, [3] instruction cache |
 | 13 | RESULT | 3: addr, status, aux | Writes {status, aux} to addr (8-byte aligned) after the earlier work |
 | 14 | QUERY | 1: addr | (CAPS[30].) After every earlier command has finished and its writes are answered (as RESULT), writes the occlusion counter (section 8.5) to addr as two words, low first (8-byte aligned); flags[0]: only clear the counter (no write, and no wait), flags[1]: clear it after the write. The counter has at least 32 bits (Amaterrace: 40) |
-| 15-63 | reserved | | Fault 2 |
+| 15 | DISP_SET | (offset, value) x n/2 | (DISP2, section 13.2.) Writes the display controller's registers of kinds S (but not FB_NEXT) and C, in ring order; it does not wait for earlier work (send WAIT_IDLE first when that matters). flags[0] WAIT_IDLE: afterwards waits until the controller's STATUS.idle is 1 (the watchdog applies). An odd n, or an offset that is not of those registers: fault 3 (FAULT_ADDR = the offset) |
+| 16 | FLIP | 4: plane, base, record, value | (DISP2, section 13.2.) flags[0] COMPLETE: first waits, as FENCE does, until every earlier command has finished and its writes have been answered. A plane the controller does not have, a base outside the aperture or outside local memory (with a MEM capability) or not aligned (plane 0: the memory line, plane 1: 64 bytes), or a record that is not 8-byte aligned: fault 3. Then waits until the plane has no pending flip and no record still to be written (the watchdog applies) and makes base the plane's pending image (section 13.2). When the controller takes it, the GPU writes {value, FRAME_COUNT} to record (record 0: no write) and raises IRQ_STATUS.FLIP after that write's response (at the take when record is 0) |
+| 17-63 | reserved | | Fault 2 |
+
+DISP_SET and FLIP take effect only while the CP is RUNNING or HALTING: in
+another state, a STEP included, they do nothing (their payload is still
+read). They are taken only from the ring: where the CP's firmware issues
+micro-ops of its own (a vendor mechanism), op 15 or 16 from it is a fault
+of kind 2, as is either op on a GPU without a DISP2 capability. A display controller is not one of the
+units that FENCE, WAIT_IDLE, RESULT, QUERY and FLIP COMPLETE wait for: it
+is never idle while it shows an image.
 
 ### 7.4 Class 1: vendor micro-ops
 
@@ -999,7 +1010,8 @@ nearest code after).
   for one cycle, flush the memory clients' queues, clear CTRL.RESET. No
   reset happens in the middle of a bus transaction. The memory
   controller's bus side and a display controller are not reset by
-  CTRL.RESET.
+  CTRL.RESET; a DISP2 controller's scan-out reads go on through a quiesce
+  and a reset (section 13.2).
 
 11. Memory model
 ----------------
@@ -1770,8 +1782,44 @@ reached memory (WAIT_IDLE of every unit: the render output alone can be
 idle between two quads of a draw).  It uses only
 the blitter's range of STATE.
 
-13. The display controller capability (DISP)
---------------------------------------------
+### 12.12 Colour outputs and primitive inputs (draft)
+
+**Draft** (2026-10-25; Amaterrace implements it, in simulation), with
+CAPS[30].
+
+- **Export targets of a fragment warp**: 0x100 + 16k + c is component c
+  of colour attachment k (k = 0-3; 0x100-0x103 is attachment 0 as
+  before), 0x104 DEPTH, 0x105 SAMPLE_MASK (section 12.11), 0x108-0x10B
+  reserved (a second colour of attachment 0 for dual-source blending). An
+  attachment no lane of the warp exported is not written; in an
+  attachment some lane exported, a covered lane that exported another
+  target but not this attachment writes undefined values (Vulkan leaves
+  an output a shader does not write undefined).
+- **Inputs of a point's fragment warp**: r0 and r1 hold PointCoord (s, t)
+  = (1/2 + x_p - x_f, 1/2 + y_p - y_f) at the pixel centre (x_p, y_p) for
+  the vertex at (x_f, y_f) (points of size 1); r2 has no meaning. A
+  compiler that builds the program of a pipeline drawing points reads the
+  inputs of vertex 0 with `lda` and does not interpolate them.
+- **Inputs of a line's fragment warp**: as a triangle's, with b2 = 0 up
+  to rounding.
+- **Integer texels** (section 8.5): `texl`, `texb`, `texf` and `texg` of
+  an integer format write integer bits (sign or zero extended) to
+  rd..rd+3.
+- **Interface kinds** 9-11 (section 12.10) name resources that the
+  program reaches with `lw`, `sw` and `atom` (the compiler computes the
+  addresses): the command processor's firmware writes the constant-bank
+  words of the kind-specific word.
+
+13. The display controller capabilities (DISP, DISP2)
+-----------------------------------------------------
+
+A GPU shows images through a display controller, found with a DISP or a
+DISP2 capability. DISP describes a controller that the host drives
+directly (13.1); DISP2 one that is a unit of a GPU with a command
+processor, driven through the ring (13.2). A window has at most one of
+them.
+
+### 13.1 DISP: a display controller without a command processor
 
 A display controller is found through a DISP capability. It may share the
 window of a GPU (its registers at the capability's offset), or be a device
@@ -1813,7 +1861,138 @@ Registers, at offsets from the capability's register offset:
   vsync). STATUS.underflow is cleared when ENABLE goes from 0 to 1.
 - A frame starts with a vsync after ENABLE.
 
-**Handing over a boot framebuffer.** The platform's firmware may leave the
+### 13.2 DISP2: a display controller that is a unit of the GPU
+
+**Draft** (2026-10-25; Amaterrace implements it, in simulation: the KC705's
+DC, WS288 p035). A GPU with a command processor names its display
+controller with a DISP2 capability (ID 11, version 1). The command
+processor changes what the controller shows, in ring order, with the
+micro-ops DISP_SET and FLIP (section 7.3); the controller's events are
+bits 9-12 of IRQ_STATUS (one interrupt, section 9.2). A present is a FLIP
+in the ring: the image is scanned out where it is, without a copy.
+
+- The controller is not one of the units that FENCE, WAIT_IDLE, RESULT,
+  QUERY and FLIP COMPLETE wait for, and its memory reads are not counted
+  by AXI_IDLE nor held by a quiesce (section 10).
+- It has its own reset (its CTRL.RESET) and is not reset by the GPU's: it
+  keeps scanning through a GPU reset, and a pending flip is still taken.
+  The GPU writes the record of a flip (below) while the command
+  processor is IDLE, RUNNING or HALTING: a record due in HALTED, FAULTED
+  or RESETTING waits until it leaves those states.
+- An error of a scan-out read is not a device fault: the controller shows
+  black for the line it could not read and sets STATUS.read error.
+
+**Who writes.** Every register has one of these kinds:
+
+| Kind | Written by |
+| --- | --- |
+| R | Nobody: read-only (a write is ignored) |
+| I | The host, in every state (an index; no side effects) |
+| S | Scan-out state. DISP_SET (FB_NEXT: FLIP only) while the command processor is RUNNING or HALTING; the host while it is IDLE, HALTED or FAULTED. A host write in another state is ignored and sets STATUS.BAD_WRITE |
+| C | The cursor: the host in every state, and DISP_SET |
+| L | The link (I2C, CONNECTED): the host in every state |
+| W | The write-1-to-clear bits of STATUS: the host in every state |
+
+DISP_SET and FLIP do nothing outside RUNNING and HALTING (section 7.3), so
+the host and the command processor never write S at the same time: a
+packet still in the ring after a HALT does not undo what the host wrote
+in HALTED. A write of the timing, FB_STRIDE, FB_SIZE or PCLK_SEL while
+ENABLE is 1, or of CTRL with another FORMAT that keeps ENABLE 1, is
+ignored (CTRL's other bits are taken) and sets BAD_WRITE.
+
+Registers, at offsets from the capability's register offset (a window of
+256 bytes):
+
+| Offset | Name | Kind | Contents |
+| --- | --- | --- | --- |
+| 0x00 | DC_ID | R | FourCC of the controller |
+| 0x04 | DC_VERSION | R | [31:16] major, [15:0] minor |
+| 0x08 | DC_CAPS | R | [0] VGA, [1] TMDS, [2] external transmitter on the I2C registers (its parallel input format is the board's), [7:4] formats ([4] BGRA8, [5] RGBA8, [6] RGB565), [8] the cursor plane (plane 1), [11:9] the number of modes, [12] the controller senses the connection itself |
+| 0x10 | CTRL | S | [0] ENABLE, [1] RESET (W1S), [2] TEST_PATTERN, [5:4] FORMAT (0 BGRA8, 1 RGBA8, 2 RGB565), [6] OUTPUT (0 VGA, 1 HDMI). Written as a whole word |
+| 0x14 | STATUS | R, W | [0] running, [1] underflow, [2] idle (ENABLE is 0 and no memory read is outstanding, the cursor's included), [3] read error, [4] record error, [5] BAD_WRITE ([1] and [3]-[5] are sticky and W1C), [15:6] 0, [27:16] the current line, [28] CONNECTED, [29] plane 0 has a pending flip, [30] plane 1 has a pending flip, [31] a taken flip's record is not written yet |
+| 0x20 | FB_BASE | R | The image of plane 0 being scanned out |
+| 0x24 | FB_NEXT | S | Plane 0's pending image. A host write replaces a pending flip, which is taken as cancelled; it is taken at the next vsync, at once while ENABLE is 0 |
+| 0x28 | FB_STRIDE | S | Bytes per row, a multiple of the memory line |
+| 0x2C | FB_SIZE | S | [15:0] width, [31:16] height |
+| 0x30..0x4C | H_ACTIVE, H_FP, H_SYNC, H_BP, V_ACTIVE, V_FP, V_SYNC, V_BP | S | Timing |
+| 0x50 | SYNC_POL | S | [0] hsync, [1] vsync; 1 = active high |
+| 0x54 | FRAME_COUNT | R | Vsync count, cleared by the controller's reset (not a time base) |
+| 0x58 | PCLK_SEL | S | The pixel clock: a mode's MODE_FLAGS[7:4] |
+| 0x60 | I2C_CTRL | L | As in DISP (section 13.1) |
+| 0x64 | I2C_DATA | L | As in DISP |
+| 0x68 | I2C_STATUS | R | As in DISP |
+| 0x6C | CONNECTED | L | [0] the sink is connected (1 after the controller's reset). A write that changes it raises HOTPLUG. With DC_CAPS[12], R: the controller sets it |
+| 0x70..0x7C | vendor | R | Implementation-defined |
+| 0x80 | MODE_INDEX | I | Selects a mode, 0 to DC_CAPS[11:9] - 1, for the MODE registers |
+| 0x84 | MODE_H0 | R | [15:0] active pixels, [31:16] sync |
+| 0x88 | MODE_H1 | R | [15:0] front porch, [31:16] back porch |
+| 0x8C | MODE_V0 | R | [15:0] active lines, [31:16] sync |
+| 0x90 | MODE_V1 | R | [15:0] front porch, [31:16] back porch |
+| 0x94 | MODE_CLOCK | R | The pixel clock in kHz |
+| 0x98 | MODE_FLAGS | R | [0] hsync, [1] vsync active high; [7:4] the PCLK_SEL value |
+| 0xA0 | CURSOR_BASE | R | The image of plane 1 (FLIP sets it) |
+| 0xA4 | CURSOR_POS | C | [15:0] x, [31:16] y, signed: the image's top-left corner (the parts outside the screen are clipped); taken at the start of the next frame |
+| 0xA8 | CURSOR_CTRL | C | [0] shown; taken at the start of the next frame |
+| 0xB0 | TAKEN0 | R | The value of plane 0's last taken flip (bit 31: cancelled); kept through a GPU reset |
+| 0xB4 | TAKEN1 | R | The same for plane 1 |
+
+The other offsets read 0.
+
+**Images.** An image is scanned out as rows of FB_SIZE.width pixels,
+FB_STRIDE bytes apart, in linear layout (section 8), one sample, in the
+format of CTRL.FORMAT, in local memory when a MEM capability says there
+is local memory. Plane 1 (DC_CAPS[8]) is a 64 x 64 image of BGRA8, rows
+256 bytes apart, with premultiplied alpha, blended over plane 0 as
+c + round(p x (255 - a) / 255) per channel, saturated (red and blue
+swapped over an RGBA8 plane 0; an RGB565 plane 0 is widened by repeating
+its top bits, blended, and narrowed by rounding). TEST_PATTERN shows no
+cursor.
+
+**Flips.** Each plane has one pending flip at most (FLIP waits for it to
+be taken, section 7.3).
+
+- Plane 0 takes its pending image at the next vsync, or at once while
+  ENABLE is 0; FB_BASE then shows it.
+- Plane 1 takes its pending image once the controller has read it into
+  itself, between the end of a frame's reads and the start of the next
+  frame, whether the cursor is shown or not; the cursor shows it from that
+  frame. A flip of plane 1 while ENABLE is 0 is taken at once as
+  cancelled.
+- A pending flip of either plane is taken as cancelled when ENABLE falls
+  and at the controller's reset; a cancelled flip changes no image.
+- At the take, TAKENn gets the flip's value (bit 31 set when cancelled)
+  and the GPU writes the record: {value, FRAME_COUNT}, two words, value
+  first, at the flip's record address (no write when it is 0). The
+  driver's values use 31 bits; bit 31 of the written value says
+  cancelled. IRQ_STATUS.FLIP is raised after the write's response (at the
+  take when record is 0). A write that fails is not repeated: it sets
+  STATUS.record error and still raises FLIP.
+- STATUS[29], [30] and [31] say what is still pending; after a GPU reset
+  the driver waits for STATUS[31] to fall (in IDLE) and reads TAKEN0 and
+  TAKEN1 to learn which of its flips were taken (a FLIP still in the ring
+  at the reset was lost with the ring).
+
+**Events.** VBLANK at each vsync while ENABLE is 1. DISP_ERROR when one
+of STATUS[1] and [3]-[5] is set, at most once a frame while ENABLE is 1.
+HOTPLUG when CONNECTED changes. FLIP as above.
+
+**Starting and stopping.**
+
+- To start: DISP_SET CTRL with FORMAT and OUTPUT and ENABLE = 0 (flags[0]
+  waits for idle), the timing, SYNC_POL, PCLK_SEL, FB_STRIDE and FB_SIZE
+  of a mode, a FLIP of plane 0 (taken at once), then CTRL with ENABLE = 1.
+  A frame starts with a vsync after ENABLE; STATUS.underflow is cleared
+  when ENABLE goes from 0 to 1.
+- To stop: DISP_SET CTRL with ENABLE = 0 and flags[0] (or, in IDLE,
+  HALTED or FAULTED, the host writes CTRL and polls STATUS.idle). Every
+  pending flip is then taken as cancelled.
+- To show something while the command processor runs but the ring cannot
+  be used (a panic console), the host writes CTRL.HALT, waits for HALTED,
+  and writes the registers (in FAULTED it can write them at once).
+
+### 13.3 Handing over a boot framebuffer
+
+This holds for DISP and DISP2. The platform's firmware may leave the
 controller running on a framebuffer in local memory that it, and a boot
 console after it, write through the local window. A driver that finds
 CTRL.ENABLE set when it attaches reads that framebuffer from FB_BASE,
@@ -1852,33 +2031,6 @@ fill and copy with KICK.BLIT, then read memory back through the debug port.
 15. Bindings
 ------------
 
-### 12.12 Colour outputs and primitive inputs (draft)
-
-**Draft** (2026-10-25; Amaterrace implements it, in simulation), with
-CAPS[30].
-
-- **Export targets of a fragment warp**: 0x100 + 16k + c is component c
-  of colour attachment k (k = 0-3; 0x100-0x103 is attachment 0 as
-  before), 0x104 DEPTH, 0x105 SAMPLE_MASK (section 12.11), 0x108-0x10B
-  reserved (a second colour of attachment 0 for dual-source blending). An
-  attachment no lane of the warp exported is not written; in an
-  attachment some lane exported, a covered lane that exported another
-  target but not this attachment writes undefined values (Vulkan leaves
-  an output a shader does not write undefined).
-- **Inputs of a point's fragment warp**: r0 and r1 hold PointCoord (s, t)
-  = (1/2 + x_p - x_f, 1/2 + y_p - y_f) at the pixel centre (x_p, y_p) for
-  the vertex at (x_f, y_f) (points of size 1); r2 has no meaning. A
-  compiler that builds the program of a pipeline drawing points reads the
-  inputs of vertex 0 with `lda` and does not interpolate them.
-- **Inputs of a line's fragment warp**: as a triangle's, with b2 = 0 up
-  to rounding.
-- **Integer texels** (section 8.5): `texl`, `texb`, `texf` and `texg` of
-  an integer format write integer bits (sign or zero extended) to
-  rd..rd+3.
-- **Interface kinds** 9-11 (section 12.10) name resources that the
-  program reaches with `lw`, `sw` and `atom` (the compiler computes the
-  addresses): the command processor's firmware writes the constant-bank
-  words of the kind-specific word.
 ### 15.1 Platform binding
 
 The base form of GHCI. The platform's firmware describes the device:
@@ -1897,7 +2049,7 @@ Device tree (draft): `compatible = "ghci,ghci-1"`, optionally preceded by a
 vendor-specific string. A driver identifies the device by GHCI_MAGIC and
 GHCI_VERSION, not by the strings.
 
-A display controller of its own (section 13) is a separate device with its
+A display controller of its own (section 13.1) is a separate device with its
 own window and interrupt.
 
 ### 15.2 PCIe binding
@@ -1910,7 +2062,7 @@ Nothing else changes.
 | Identification | Base class 03h (display controller), subclass 02h (3D controller), or 80h when it has a display controller without VGA compatibility. The vendor and device IDs are the implementer's. A driver identifies GHCI by GHCI_MAGIC and GHCI_VERSION at offset 0 of BAR0 (draft: no programming-interface value is assigned) |
 | BAR0 | 32-bit, non-prefetchable memory, 128 KiB: the register window of section 3 |
 | BAR2 (optional) | Memory, 32-bit or 64-bit (the BAR's type bits say which; no GHCI capability): the local window, WINDOW_SIZE bytes rounded up to a power of two. Prefetchable is recommended (it may then be mapped write-combining; section 11.1) but not required |
-| Interrupts | MSI or MSI-X with one vector, or INTx as a fallback. The device sends a message when OR(IRQ_STATUS & IRQ_ENABLE) goes from 0 to 1, and again after a write to IRQ_STATUS or IRQ_ENABLE that leaves it 1. INTx carries the level itself |
+| Interrupts | MSI or MSI-X with one vector, or INTx as a fallback. The device sends a message when OR(IRQ_STATUS & IRQ_ENABLE) goes from 0 to 1, and again after a write to IRQ_STATUS or IRQ_ENABLE that leaves it 1. INTx carries the level itself. The events of a DISP2 display controller are bits of IRQ_STATUS: the one vector covers them |
 | DMA | The GPU makes no memory access until Bus Master Enable is set in the command register and the aperture is set. GPU host addresses (section 11.2) are PCIe bus addresses. No Snoop is not set in version 1; the fence write and the interrupt message do not use Relaxed Ordering (section 11.5) |
 | Reset | CTRL.RESET is GHCI's reset (section 10). A function-level reset, where supported, resets the whole function, the display controller included |
 | Power | Version 1 uses D0 only |

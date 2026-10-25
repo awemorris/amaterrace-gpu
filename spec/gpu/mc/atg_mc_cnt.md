@@ -9,13 +9,16 @@ The MC's request counters.
 
 ## 2. Parameters
 
-`NCLIENT`, `UNIT_MASK` (as atg_mc).
+`NCLIENT`, `UNIT_MASK` (as atg_mc); `KEEP_MASK` (0): the clients `pend` does not count (atg_mc's
+`ROOT_KEEP` client, the DC).
 
 ## 3. Ports
 
-Domain `clk`.  12 ports: `clk`, `rst_n`, `flush`; per client `take` (valid and ready of its AMB
+Domain `clk`.  16 ports: `clk`, `rst_n`, `flush`; per client `take` (valid and ready of its AMB
 port), `take_chk` (its request has chk), `rsp` (its response); `done`, `done_chk` (a request left
-the root, with chk); `pend_zero`, `chk_idle`, `unit_idle`.
+the root, with chk), `done_keep` (that request was a `KEEP_MASK` client's); `ax_inc` (the root
+granted a request to the AXI master), `ax_dec` (the AXI master answered one); `pend_zero`,
+`chk_idle`, `unit_idle`, `ax_zero`.
 
 ## 4. Behaviour
 
@@ -23,10 +26,12 @@ the root, with chk); `pend_zero`, `chk_idle`, `unit_idle`.
 - chk: those with chk (`chk_idle`; session protection's drain).
 - unit: requests of `UNIT_MASK`'s clients without their response yet (`unit_idle`; the CP's
   FENCE, WAIT_IDLE, RESULT and QUERY wait for it).
+- ax: requests in the AXI master (`ax_zero`; atg_mc's `axi_idle` with `ROOT_KEEP`, where the
+  caller leaves the DC's grants and responses out).  One `am_add`: n + {8{dec}} + inc.
 
 ## 5. State machine
 
-None: three counters (8, 8 and 10 bits).
+None: four counters (8, 8, 10 and 8 bits).
 
 ## 6. Latency and throughput
 
@@ -34,7 +39,8 @@ The counts change at the clock edge after the events.
 
 ## 7. Corner cases and errors
 
-rst_n and flush clear them (flush comes when the MC is idle).
+rst_n and flush clear pend, chk and unit (flush comes when the MC is idle); ax only rst_n: flush
+does not empty the AXI master.
 
 ## 8. What the TB checks
 
@@ -46,4 +52,4 @@ rst_n and flush clear them (flush comes when the MC is idle).
 
 ## 10. Status
 
-Implemented.  About 80 lines.
+Implemented.  About 80 lines.  `KEEP_MASK` and ax (WS288 p035 D2b, 2026-10-25).

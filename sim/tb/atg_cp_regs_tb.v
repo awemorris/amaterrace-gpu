@@ -12,14 +12,14 @@
  * the snoop and alias outputs of a write, the OR of the modules' read
  * data, COUNTER and the PERF counters; with atg_cp_fmt beside it (a fourth
  * bench, FMT in the list), the FMT capability's words for every VkFormat
- * value against sim/vec/fmt_info.txt.
+ * value against sim/vec/fmt_info.txt (and DISP2, id 11, pointing to 0x200).
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
 module regs_bench #(
-	parameter [9:0] XCAP = 10'h004,
+	parameter [10:0] XCAP = 11'h004,
 	parameter [31:0] TAG = 32'd0,
 	parameter FMT = 0	/* atg_cp_fmt beside it */
 ) (
@@ -120,7 +120,7 @@ module atg_cp_regs_tb;
 		.alias_we(), .alias_idx(), .alias_ridx(), .ctl_rdata(32'd0), .state_rdata(32'd0),
 		.perf_busy(4'd0), .perf_reset(1'b0), .win_en(win2)
 	);
-	regs_bench #(.XCAP(10'h204), .FMT(1)) b3 (
+	regs_bench #(.XCAP(11'h604), .FMT(1)) b3 (
 		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
 		.reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
 		.reg_rdata(rd3), .hcr_we(), .hcr_widx(), .hcr_wdata(), .hcr_wmask(), .hcr_ridx(),
@@ -407,7 +407,7 @@ module atg_cp_regs_tb;
 			$display("PASS atg_cp_regs.ormux");
 		e0 = errors;
 		/* fmt: the list entry, FMT_INDEX, the features of every value, LIMITS */
-		walk(3, 64'h0A03, {32'h160, 32'h110});
+		walk(3, 64'h0B0A03, {32'h200, 32'h160, 32'h110});
 		fd = $fopen("sim/vec/fmt_info.txt", "r");
 		if (fd == 0) begin
 			errors = errors + 1;

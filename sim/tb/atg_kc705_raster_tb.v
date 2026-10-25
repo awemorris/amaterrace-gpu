@@ -14,7 +14,7 @@
  * fw/cp/images/.  Checks, in order:
  *
  *   - jtag: GHCI MAGIC through the bridge, SCRATCH written and read back,
- *     the DC's DC_ID and DC_CAPS (ADV7511) at +0x10000, CAPS and CAPS2 of
+ *     the DC's DC_ID and DC_CAPS (ADV7511) in the DISP2 window at 0x200, CAPS and CAPS2 of
  *     the KC705 shape (packed, graphics, subgroup, TU), the MEM capability
  *     (1 GiB at 0x8000_0000, a 64 MiB window), 64 registers per lane in
  *     RESIDENT_WARPS, STATUS.MEM_READY
@@ -251,7 +251,7 @@ module atg_kc705_raster_tb;
 		end
 	end
 
-	localparam [31:0] DC = 32'h0001_0000;
+	localparam [31:0] DC = {15'd0, GHCI_DISP2_BASE};	/* the DISP2 window (the CP stays IDLE: S passes) */
 	localparam [31:0] FB = 32'h8004_0000;	/* local memory (DDR3 offset 0x4_0000) */
 	localparam [31:0] FB_OFF = 32'h0004_0000;
 	localparam [31:0] COLOR = 32'hAABBCCDD;
@@ -261,8 +261,8 @@ module atg_kc705_raster_tb;
 	reg [15:0] want;
 
 	/*
-	 * Walks the extended capability list: DISP must point at the DC
-	 * (+0x10000), DBG be listed, MEM give the DDR3 and the window.
+	 * Walks the extended capability list: DISP2 must point at the DC's
+	 * window (0x200), DBG be listed, MEM give the DDR3 and the window.
 	 */
 	task check_extcap;
 		reg [31:0] off, w0, w1, m;
@@ -276,10 +276,10 @@ module atg_kc705_raster_tb;
 			for (k = 0; k < 8 && off != 32'd0; k = k + 1) begin
 				jr(off, w0);
 				jr(off + 32'd4, w1);
-				if (w0[7:0] == GHCI_XCAP_DISP) begin
+				if (w0[7:0] == GHCI_XCAP_DISP2) begin
 					disp = 1'b1;
 					if (w1 != DC)
-						fail("the DISP capability does not point at the DC");
+						fail("the DISP2 capability does not point at the DC");
 				end
 				if (w0[7:0] == GHCI_XCAP_DBG)
 					dbg = 1'b1;
@@ -301,7 +301,7 @@ module atg_kc705_raster_tb;
 				off = w0[31:16] == 16'd0 ? 32'd0 : off + {14'd0, w0[31:16], 2'd0};
 			end
 			if (!disp)
-				fail("no DISP capability");
+				fail("no DISP2 capability");
 			if (!dbg)
 				fail("no DBG capability");
 			if (!mem)

@@ -1,6 +1,6 @@
 # atg_dc_tmds
 
-RTL: `rtl/dc/atg_dc_tmds.v`.  Parent: atg_dc.  Implemented in: p005.
+RTL: `rtl/gpu/dc/atg_dc_tmds.v`.  Parent: atg_dc.  Implemented in: p005.
 
 ## 1. Purpose and place
 
@@ -57,3 +57,5 @@ design §5.1 (HDMI), Values referenced: DVI 1.0 §3.2 (TMDS encoding).
 ## 10. Status
 
 Implemented in WS288 p005 (TB `atg_dc_tmds_tb` PASS).
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles): the counts of ones are a table of nibbles and one am_add, and the disparity is one sum for the three cases (two am_addsub).

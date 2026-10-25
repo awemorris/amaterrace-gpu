@@ -13,7 +13,10 @@
 #                       docs/ghci.md section 15.2 asks 64-bit
 #                       prefetchable: this IP has one BAR width for all
 #                       and no prefetchable choice), MSI
-#                       with 2 vectors, no INTx; class 03 80 00, vendor
+#                       with 1 vector (GHCI's one interrupt line; the
+#                       DC's events are bits of IRQ_STATUS; NUM_MSI_REQ
+#                       0 not yet regenerated with Vivado), no INTx;
+#                       class 03 80 00, vendor
 #                       10EE, device 7024; AXI -> PCIe (S_AXI, the GPU's
 #                       host accesses, ws288 p039) 0x0000_0000 -
 #                       0x7FFF_FFFF to bus addresses 1:1 (MEM HOST_LIMIT
@@ -84,7 +87,7 @@ make atg_kc705_pcie_ip xilinx.com:ip:axi_pcie:2.9 [list \
 	CONFIG.AXIBAR_0 0x00000000 \
 	CONFIG.AXIBAR_HIGHADDR_0 0x7FFFFFFF \
 	CONFIG.AXIBAR2PCIEBAR_0 0x00000000 \
-	CONFIG.NUM_MSI_REQ 1 \
+	CONFIG.NUM_MSI_REQ 0 \
 	CONFIG.INTERRUPT_PIN false \
 	CONFIG.XLNX_REF_BOARD KC705_REVC]
 

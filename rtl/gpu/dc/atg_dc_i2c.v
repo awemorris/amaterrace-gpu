@@ -8,7 +8,7 @@
 /*
  * atg_dc_i2c: A small I2C master for the KC705's ADV7511 HDMI transmitter
  * configuration (I2C_CTRL/DATA/STATUS of design §5.1).  See
- * spec/dc/atg_dc_i2c.md.
+ * spec/gpu/dc/atg_dc_i2c.md.
  *
  * Registers (i_idx): 0 CTRL, 1 DATA, 2 STATUS.  A write of CTRL while
  * idle starts one command: [0] START (a repeated start if the bus is
@@ -117,6 +117,16 @@ module atg_dc_i2c #(
 	wire stretch = !want_scl_low && !scl_s;
 	wire tick = busy && div == DIV_LAST && !stretch;
 
+	/* The counters' next values: the divider, the quarter of the bit and the bit of the byte. */
+	wire [DIV_W-1:0] div_inc;
+	wire [1:0] q_inc;
+	wire [2:0] bitn_dec;
+	wire [2:0] cnt_co_unused;
+
+	am_add #(.W(DIV_W)) a_div (.a(div), .b({DIV_W{1'b0}}), .ci(1'b1), .s(div_inc), .co(cnt_co_unused[0]));
+	am_add #(.W(2)) a_q (.a(q), .b(2'd0), .ci(1'b1), .s(q_inc), .co(cnt_co_unused[1]));
+	am_sub #(.W(3)) s_bitn (.a(bitn), .b(3'd0), .bi(1'b1), .d(bitn_dec), .bo(cnt_co_unused[2]));
+
 	/* What follows the byte: STOP, or the end of the command. */
 	wire [2:0] after_byte = c_stop ? S_STOP : S_IDLE;
 
@@ -151,10 +161,10 @@ module atg_dc_i2c #(
 						state <= S_STOP;
 				end
 			end else if (!stretch) begin
-				div <= tick ? {DIV_W{1'b0}} : div + 1'b1;
+				div <= tick ? {DIV_W{1'b0}} : div_inc;
 			end
 			if (tick) begin
-				q <= q + 2'd1;
+				q <= q_inc;
 				if (q == 2'd2 && state == S_BIT && c_read)
 					data[bitn] <= sda_s;
 				if (q == 2'd2 && state == S_ACK && c_write)
@@ -166,7 +176,7 @@ module atg_dc_i2c #(
 						state <= c_write || c_read ? S_BIT : after_byte;
 					end
 					S_BIT: begin
-						bitn <= bitn - 3'd1;
+						bitn <= bitn_dec;
 						if (bitn == 3'd0)
 							state <= S_ACK;
 					end
@@ -189,7 +199,7 @@ module atg_dc_i2c #(
 		i_idx == R_DATA ? {24'd0, data} :
 		i_idx == R_STATUS ? {30'd0, nack, busy} : 32'd0;
 
-	wire unused_ok = &{1'b0, i_wdata[31:5]};
+	wire unused_ok = &{1'b0, i_wdata[31:5], cnt_co_unused};
 endmodule
 
 `default_nettype wire
