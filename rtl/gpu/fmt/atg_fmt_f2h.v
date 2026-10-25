@@ -37,14 +37,10 @@ module atg_fmt_f2h (
 	am_sub #(.W(5)) u_sh1 (.a(sh), .b(5'd0), .bi(1'b1), .d(sh1), .bo(carry_unused[3]));
 	am_shift #(.W(24), .SW(5)) u_ds (.a(m), .amt(sh), .left(1'b0), .arith(1'b0), .y(ds));
 	wire g = m[sh1];
-	reg st;
-	integer b;
-	always @(*) begin
-		st = 1'b0;
-		for (b = 0; b < 24; b = b + 1)
-			if (b < sh1)
-				st = st | m[b];
-	end
+	/* the sticky bits below the guard: m & (2^sh1 - 1) */
+	wire [23:0] hi;	/* the bits from sh1 up */
+	am_shift #(.W(24), .SW(5)) u_hi (.a({24{1'b1}}), .amt(sh1), .left(1'b1), .arith(1'b0), .y(hi));
+	wire st = (m & ~hi) != 24'd0;
 	am_add #(.W(15)) u_dr (.a(ds[14:0]), .b(15'd0), .ci(g && (st || ds[0])), .s(dr),
 		.co(carry_unused[4]));
 	assign h = f[30:23] == 8'hFF ? (f[22:0] != 23'd0 ? 16'h7E00 : {f[31], 15'h7C00}) :

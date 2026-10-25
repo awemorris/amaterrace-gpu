@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-# fmtmodel.py: the reference model of the format functions of
-# include/atg_fmt_info.vh, atg_fmt_unpack.vh and atg_fmt_pack.vh, the sRGB
-# tables of include/atg_srgb.vh and the sRGB encoder atg_fmt_srgbenc.  It is
+# fmtmodel.py: the reference model of the format table of
+# include/atg_fmt_info.vh, the conversions of rtl/gpu/fmt (atg_fmt_comp,
+# atg_fmt_pack and their converters), the sRGB tables of include/atg_srgb.vh
+# and the sRGB encoder atg_fmt_srgbenc.  It is
 # written from Vulkan's conversion rules (docs/ghci.md section 8.5), not
 # from the RTL: every conversion to fp32 is exact and then rounded to
 # nearest even, with exact integer arithmetic.

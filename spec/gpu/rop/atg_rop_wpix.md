@@ -46,7 +46,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
   - One line: pass g's slot k is lane k, sample g, in entry k >> 1 at i_off + (S (k & 1) + g) ps.
   - Several lines: line j of row r holds the slots n = E j + k for k < E = LINE_BYTES / ps (lane 2 r + n / 4, sample n mod 4) at byte k ps of entry r; one pass.
   - A slot is in o_mask when its sample survived (i_smask).
-- **Paths**: 0 atg_rop_blend: B8G8R8A8, R8G8B8A8, A8B8G8R8, R5G6B5, R8, R8G8, A1R5G5B5 (UNORM); its result is the slot's 32-bit lane (the bytes above ps unused).  1 atg_rop_fblend: R8G8B8A8_SRGB, B8G8R8A8_SRGB, A8B8G8R8_SRGB, A2B10G10R10_UNORM, R16, R16G16, R16G16B16A16_SFLOAT; the constant is BLEND_CONST_R-A with ROP_CTRL[1], else BLEND_CONST's bytes / 255; o_res = raw where written, the old bits where kept.  2 the packing (`atg_fmt_pack`) of the source alone: the integer formats and R32, R32G32, R32G32B32A32_SFLOAT (Vulkan does not blend them; BLEND's enable is ignored); the same merge.
+- **Paths**: 0 atg_rop_blend: B8G8R8A8, R8G8B8A8, A8B8G8R8, R5G6B5, R8, R8G8, A1R5G5B5 (UNORM); its result is the slot's 32-bit lane (the bytes above ps unused).  1 atg_rop_fblend: R8G8B8A8_SRGB, B8G8R8A8_SRGB, A8B8G8R8_SRGB, A2B10G10R10_UNORM, R16, R16G16, R16G16B16A16_SFLOAT; the constant is BLEND_CONST_R-A with ROP_CTRL[1], else BLEND_CONST's bytes / 255; o_res = raw where written, the old bits where kept.  2 the packing (`atg_fmt_pack` of the 24 formats, one a lane; no conversion) of the source alone: the integer formats and R32, R32G32, R32G32B32A32_SFLOAT (Vulkan does not blend them; BLEND's enable is ignored); the same merge.
 
 ## 5. State machine
 
@@ -73,3 +73,5 @@ docs/ghci.md §8.5 (ROP range, the colour formats), design §16.7; spec atg_rop_
 Implemented 2026-10-25 (CAPS[30], colour attachments).  The design's text had wpix without a child; atg_rop_fblend sits here so that atg_rop_wb stays within 40 ports.
 
 2026-10-25 (area): the old pixel of a slot (o_bdst, the fblend destination, the kept bits of path 2) is read from the 16-byte block of its offset and then its ps bytes there, the offset being a multiple of ps as docs/ghci.md section 8.5 requires (as atg_rop_wb, whose merge ignores the low bits of an offset that is not); the bytes above ps are 0 (before, the next bytes of the line; no path uses them).
+
+WS288 p037 (2026-10-25): path 2's packing is one atg_fmt_pack a lane (the former function, one call a lane); the behaviour is unchanged (equal to the former module on random cycles, scratch harness).

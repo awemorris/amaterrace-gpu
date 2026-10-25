@@ -34,17 +34,13 @@ module atg_fmt_f2unorm (
 	am_sub #(.W(6)) u_sa1 (.a(sa), .b(6'd0), .bi(1'b1), .d(sa1), .bo(carry_unused[2]));
 	am_shift #(.W(48), .SW(6)) u_ps (.a(p), .amt(sa), .left(1'b0), .arith(1'b0), .y(ps));
 	wire g = p[sa1];
-	reg st;
-	reg [15:0] ones;	/* 2^w - 1 */
-	integer b;
-	always @(*) begin
-		st = 1'b0;
-		for (b = 0; b < 48; b = b + 1)
-			if (b < sa1)
-				st = st | p[b];
-		for (b = 0; b < 16; b = b + 1)
-			ones[b] = b < w;
-	end
+	/* the sticky bits below the guard: p & (2^sa1 - 1); 2^w - 1 */
+	wire [47:0] hi;	/* the bits from sa1 up */
+	wire [15:0] wh;	/* the bits from w up */
+	am_shift #(.W(48), .SW(6)) u_hi (.a({48{1'b1}}), .amt(sa1), .left(1'b1), .arith(1'b0), .y(hi));
+	am_shift #(.W(16), .SW(6)) u_wh (.a({16{1'b1}}), .amt(w), .left(1'b1), .arith(1'b0), .y(wh));
+	wire st = (p & ~hi) != 48'd0;
+	wire [15:0] ones = ~wh;	/* 2^w - 1 */
 	am_add #(.W(16)) u_r (.a(ps[15:0]), .b(16'd0), .ci(g && (st || ps[0])), .s(r),
 		.co(carry_unused[3]));
 	assign u = f[31] || (f[30:23] == 8'hFF && f[22:0] != 23'd0) || f[30:23] < 8'd103 ? 16'd0 :

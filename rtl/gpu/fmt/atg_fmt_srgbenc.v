@@ -12,6 +12,9 @@
  * thresholds of include/atg_srgb.vh (atg_srgb_thr: the smallest fp32 above
  * EOTF((c + 0.5) / 255)): the code is the count of thresholds <= x.  A
  * positive fp32 orders as its bits, so each step is an integer compare.
+ * The step is a one-hot bit (2^7 down to 2^0) and below it the bits
+ * under it: lo has no bit under the step, so lo + step - 1 is lo | below
+ * and lo + step is lo | step (no adder, docs/style.md "Arithmetic").
  * NaN, negative values and -0 give 0; values >= 1 (and +infinity) 255.
  *
  * i_valid/i_ready: one component, taken in IDLE.  o_valid/o_ready: the
@@ -41,12 +44,12 @@ module atg_fmt_srgbenc (
 	reg [1:0] state;
 	reg [30:0] x;	/* the magnitude; the sign and NaN are folded to 0 on input */
 	reg [7:0] lo;
-	reg [2:0] bitn;	/* the step: 7 down to 0 */
+	reg [7:0] step;	/* the step, one-hot: 2^7 down to 2^0 */
+	reg [6:0] below;	/* the bits under it (step - 1) */
 
-	wire [7:0] step = 8'd1 << bitn;
-	wire [7:0] probe = lo + step - 8'd1;
+	wire [7:0] probe = lo | {1'b0, below};
 `ifdef MUT_SRGB_ROUND
-	wire [31:0] thr = atg_srgb_thr(probe + 8'd1);	/* a deliberate error (the TB must fail) */
+	wire [31:0] thr = atg_srgb_thr(lo | step);	/* a deliberate error (the TB must fail) */
 `else
 	wire [31:0] thr = atg_srgb_thr(probe);
 `endif
@@ -61,21 +64,24 @@ module atg_fmt_srgbenc (
 			state <= S_IDLE;
 			x <= 31'd0;
 			lo <= 8'd0;
-			bitn <= 3'd7;
+			step <= 8'h80;
+			below <= 7'h7F;
 		end else begin
 			case (state)
 			S_IDLE:
 				if (i_valid) begin
 					x <= i_x[31] || nan ? 31'd0 : i_x[30:0];
 					lo <= 8'd0;
-					bitn <= 3'd7;
+					step <= 8'h80;
+					below <= 7'h7F;
 					state <= S_RUN;
 				end
 			S_RUN: begin
 				if ({1'b0, x} >= thr)
-					lo <= lo + step;
-				bitn <= bitn - 3'd1;
-				if (bitn == 3'd0)
+					lo <= lo | step;
+				step <= step >> 1;
+				below <= below >> 1;
+				if (step[0])
 					state <= S_OUT;
 			end
 			S_OUT:

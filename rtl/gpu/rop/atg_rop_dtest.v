@@ -44,10 +44,6 @@ module atg_rop_dtest (
 	output wire [3:0] wbe
 );
 	`include "atg_depth.vh"
-	`include "atg_srgb.vh"
-	`include "atg_fmt_info.vh"
-	`include "atg_fmt_unpack.vh"
-	`include "atg_fmt_pack.vh"
 
 	wire d24 = depth[7:5] == 3'b001;
 	wire d32 = depth[7:5] == 3'b010;
@@ -69,8 +65,10 @@ module atg_rop_dtest (
 	endfunction
 
 	/* 1. depth bounds */
-	wire [31:0] za = d32 ? stored : d24 ? atg_fmt_unorm(stored[23:0], 6'd24) :
-		atg_fmt_unorm({8'd0, stored[15:0]}, 6'd16);
+	wire [31:0] zun;	/* the stored D24 or D16 value as fp32 (one converter) */
+	atg_fmt_unorm u_zun (.c(d24 ? stored[23:0] : {8'd0, stored[15:0]}), .w(d24 ? 6'd24 : 6'd16),
+		.f(zun));
+	wire [31:0] za = d32 ? stored : zun;
 	wire b_ok = !depth[9] || (fle(bmin, za) && fle(za, bmax));
 
 	/* 3. depth (needed by the stencil's op) */
@@ -81,7 +79,8 @@ module atg_rop_dtest (
 	atg_fmt_depth_u24 u_zu24 (.f(zf), .u(zu24));
 	atg_fmt_depth_key u_zkey (.f(zf), .k(zkey));
 	atg_fmt_depth_key u_skey (.f(stored), .k(skey));
-	wire [15:0] zu16 = atg_fmt_f2unorm(zf, 6'd16);
+	wire [15:0] zu16;
+	atg_fmt_f2unorm u_zu16 (.f(zf), .w(6'd16), .u(zu16));
 	wire d_cmp = d32 ? atg_depth_pass(depth[4:2], zkey, skey, nan) :
 		d24 ? atg_depth_pass(depth[4:2], {9'd0, zu24}, {9'd0, stored[23:0]}, 1'b0) :
 		atg_depth_pass(depth[4:2], {17'd0, zu16}, {17'd0, stored[15:0]}, 1'b0);

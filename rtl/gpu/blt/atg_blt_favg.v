@@ -21,7 +21,7 @@
  *   fmt 5 SFLOAT32  every 32 bits of 32-, 64- and 128-bit pixels, averaged
  *
  * The average of a channel is ((s0 + s1) + (s2 + s3)) x 0.25 in fp32, each
- * step one fused multiply-add of include/atg_su_fp.vh (round to nearest
+ * step one fused multiply-add (atg_su_ffma_p; round to nearest
  * even, denormals flushed, NaN 0x7FC00000), four steps a channel (and the
  * encoder's nine cycles for sRGB).  i_valid/i_ready: a group, taken in
  * IDLE (npx pixels); o_valid/o_ready: its averages, held until taken.
@@ -48,10 +48,6 @@ module atg_blt_favg (
 	output reg [127:0] out_p
 );
 	`include "atg_srgb.vh"
-	`include "atg_fmt_info.vh"
-	`include "atg_fmt_unpack.vh"
-	`include "atg_fmt_pack.vh"
-	`include "atg_su_fp.vh"
 	localparam [1:0] IDLE = 2'd0, RUN = 2'd1, ENC = 2'd2, OUT = 2'd3;
 	localparam [31:0] ONE = 32'h3F800000, QUARTER = 32'h3E800000;
 
@@ -115,30 +111,38 @@ module atg_blt_favg (
 	am_add #(.W(32)) a_icf (.a({tc_ps[28:0], 3'b000}), .b({24'd0, j, 5'b00000}), .ci(1'b0), .s(ic_f), .co(idx_co_unused[5]));
 
 	/* Sample sn of channel j of pixel p, as fp32 (the places are 32-bit, as the former expressions were). */
+	wire [31:0] ha, hc;	/* the two fp16 samples as fp32 */
+	atg_fmt_h2f u_ha (.h(s_in[ia_h +: 16]), .f(ha));
+	atg_fmt_h2f u_hc (.h(s_in[ic_h +: 16]), .f(hc));
 	/* verilator lint_off UNUSEDSIGNAL */
 	function [31:0] xs;	/* (everything it reads is an argument) */
 		input [511:0] si;
 		input [2:0] fm;
 		input [31:0] i_s;
-		input [31:0] i_h;
+		input [31:0] hv;
 		input [31:0] i_f;
 		begin
 			if (fm == 3'd3)
 				xs = atg_srgb_dec(si[{i_s[28:0], 3'b000} +: 8]);
 			else if (fm == 3'd4)
-				xs = atg_fmt_h2f(si[i_h +: 16]);
+				xs = hv;
 			else
 				xs = si[i_f +: 32];
 		end
 	endfunction
 	/* verilator lint_on UNUSEDSIGNAL */
-	wire [31:0] xa = xs(s_in, m_fmt, ia_s, ia_h, ia_f);
-	wire [31:0] xc = xs(s_in, m_fmt, ic_s, ic_h, ic_f);
+	wire [31:0] xa = xs(s_in, m_fmt, ia_s, ha, ia_f);
+	wire [31:0] xc = xs(s_in, m_fmt, ic_s, hc, ic_f);
 	wire [31:0] fa = step[1] ? (step[0] ? sm : r01) : xa;
 	wire [31:0] fb = step == 2'd3 ? QUARTER : ONE;
 	wire [31:0] fc = step[1] ? (step[0] ? 32'h80000000 : r23) : xc;
-	wire [31:0] fr = atg_su_ffma(fa, fb, fc, 3'd0, 1'b0);
-	wire [15:0] fh = atg_fmt_f2h(fr);
+	/* The fma: fb is 1.0 or 0.25 (a significand of 2^23), so the product of
+	 * the significands is fa's shifted (no multiplier). */
+	wire [31:0] fr;
+	atg_su_ffma_p u_fma (.a0(fa), .b0(fb), .c0(fc), .rm(3'd0), .noc(1'b0),
+		.p({1'b0, fa[30:23] != 8'd0 ? {1'b1, fa[22:0]} : 24'd0, 23'd0}), .r(fr));
+	wire [15:0] fh;
+	atg_fmt_f2h u_fh (.f(fr), .h(fh));
 	wire [2:0] cpp_last, n_last;
 	wire [1:0] last_co_unused;
 
@@ -251,7 +255,7 @@ module atg_blt_favg (
 	end
 
 	wire unused_ok = &{1'b0, e_ready, idx_co_unused, last_co_unused, out_co_unused, ta_ps[31:29], tc_ps[31:29],
-		tp_ps[31:29], op_s[31:29], op_h[31:7], op_f[31:7]};
+		tp_ps[31:29], op_s[31:29], op_h[31:7], op_f[31:7], ia_h[31:9], ic_h[31:9]};
 endmodule
 
 `default_nettype wire

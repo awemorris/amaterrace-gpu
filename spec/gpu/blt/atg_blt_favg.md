@@ -1,6 +1,6 @@
 # atg_blt_favg
 
-RTL: `rtl/gpu/blt/atg_blt_favg.v`.  Parent: `atg_blt_rsv_px`.  Children: `atg_fmt_srgbenc`.
+RTL: `rtl/gpu/blt/atg_blt_favg.v`.  Parent: `atg_blt_rsv_px`.  Children: `atg_fmt_srgbenc`, `atg_fmt_h2f` (2: the two samples of a step), `atg_fmt_f2h`, `atg_su_ffma_p`.
 
 ## 1. Purpose and place
 
@@ -25,7 +25,7 @@ None.
 
 ## 4. Behaviour
 
-Per channel (sRGB: bytes 0-2 of 32-bit pixels; SFLOAT16: every 16 bits of 16-, 32-, 64-bit pixels; SFLOAT32: every 32 bits of 32-, 64-, 128-bit pixels): the four samples as fp32 (sRGB by `atg_srgb_dec`, fp16 exactly by `atg_fmt_h2f`), r01 = s0 + s1, r23 = s2 + s3, s = r01 + r23, avg = s × 0.25, each one fused multiply-add of `include/atg_su_fp.vh` (round to nearest even, denormals flushed, NaN 0x7FC00000); SFLOAT16 then `atg_fmt_f2h` (to nearest even), sRGB `atg_fmt_srgbenc` (the nearest code).  sRGB's byte 3: the UNORM8 average (ties to even).  The reference is `tools/blt-vectors.py` (`average`, with `tools/gsi1fp.py` fma and `tools/fmtmodel.py`).
+Per channel (sRGB: bytes 0-2 of 32-bit pixels; SFLOAT16: every 16 bits of 16-, 32-, 64-bit pixels; SFLOAT32: every 32 bits of 32-, 64-, 128-bit pixels): the four samples as fp32 (sRGB by `atg_srgb_dec`, fp16 exactly by `atg_fmt_h2f`), r01 = s0 + s1, r23 = s2 + s3, s = r01 + r23, avg = s × 0.25, each one fused multiply-add (`atg_su_ffma_p`: round to nearest even, denormals flushed, NaN 0x7FC00000; the factor is 1.0 or 0.25, so the product of the significands is the first operand's shifted and there is no multiplier); SFLOAT16 then `atg_fmt_f2h` (to nearest even), sRGB `atg_fmt_srgbenc` (the nearest code).  sRGB's byte 3: the UNORM8 average (ties to even).  The reference is `tools/blt-vectors.py` (`average`, with `tools/gsi1fp.py` fma and `tools/fmtmodel.py`).
 
 ## 5. State machine
 
@@ -52,3 +52,5 @@ docs/ghci.md §8.2, §8.5; `atg_blt_rsv_px.md`, `spec/gpu/fmt/atg_fmt_srgbenc.md
 New (2026-10-25).  Reading: GHCI leaves the precision of the linear sRGB values and the floats' rounding to the implementation; Amaterrace uses the GPU's fp32 rules and the order of the GHCI text.
 
 WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles): the sample and output places are am_shift and am_add of the same 32-bit values, the sRGB alpha averages four am_add each.
+
+WS288 p037 (2026-10-25, P3): the fp16 conversions and the fma are module instances (two atg_fmt_h2f, one atg_fmt_f2h, one atg_su_ffma_p without a multiplier) instead of the functions; unchanged (equal to the former module on 200,000 random cycles).
