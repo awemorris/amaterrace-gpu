@@ -124,24 +124,67 @@ module atg_su_wb #(
 	/* Long beats: round-robin from the pointer.  A beat that writes (the RF or
 	 * rq) needs the port; one without (a store's completion) does not. */
 	wire port_free = !sv && !(|fi_valid);
+	/* (The first eligible source at or after rr, else the first one.) */
 	reg [LP_W-1:0] rr;
 	reg lsel_v;
 	reg [LP_W-1:0] lsel;
-	integer k, c;
+	reg [LP_W-1:0] lsel_lo;
+	reg lsel_hv;
+	reg [NL-1:0] l_elig;
+	integer k;
 	always @(*) begin
 		lsel_v = 1'b0;
+		lsel_hv = 1'b0;
 		lsel = {LP_W{1'b0}};
+		lsel_lo = {LP_W{1'b0}};
 		for (k = NL - 1; k >= 0; k = k - 1) begin
-			c = ({{(32-LP_W){1'b0}}, rr} + k) % NL;
-			if (l_valid[c] && (port_free || !l_wr[c])) begin
+			l_elig[k] = l_valid[k] && (port_free || !l_wr[k]);
+			if (l_elig[k]) begin
 				lsel_v = 1'b1;
-				lsel = c[LP_W-1:0];
+				lsel_lo = k[LP_W-1:0];
+				if (k[LP_W-1:0] >= rr) begin
+					lsel_hv = 1'b1;
+					lsel = k[LP_W-1:0];
+				end
+			end
+		end
+		if (!lsel_hv)
+			lsel = lsel_lo;
+	end
+
+	/* The selected source's fields (a selection by lsel). */
+	reg [6:0] lrd;
+	reg [WARP_W-1:0] l_s_warp;
+	reg [GRP_W-1:0] l_s_grp;
+	reg [DW-1:0] l_s_data;
+	reg [NPHYS-1:0] l_s_lanes;
+	reg [SBE_W:0] l_s_sbe;
+	reg [2:0] l_s_cls;
+	reg [NL-1:0] l_s_one;
+	integer m;
+	always @(*) begin
+		lrd = l_rd[6:0];
+		l_s_warp = l_warp[WARP_W-1:0];
+		l_s_grp = l_grp[GRP_W-1:0];
+		l_s_data = l_data[DW-1:0];
+		l_s_lanes = l_lanes[NPHYS-1:0];
+		l_s_sbe = l_sbe[SBE_W:0];
+		l_s_cls = l_cls[2:0];
+		for (m = 0; m < NL; m = m + 1) begin
+			l_s_one[m] = lsel == m[LP_W-1:0];
+			if (m > 0 && l_s_one[m]) begin
+				lrd = l_rd[m*7 +: 7];
+				l_s_warp = l_warp[m*WARP_W +: WARP_W];
+				l_s_grp = l_grp[m*GRP_W +: GRP_W];
+				l_s_data = l_data[m*DW +: DW];
+				l_s_lanes = l_lanes[m*NPHYS +: NPHYS];
+				l_s_sbe = l_sbe[m*(SBE_W+1) +: SBE_W+1];
+				l_s_cls = l_cls[m*3 +: 3];
 			end
 		end
 	end
 	wire lw = lsel_v && l_wr[lsel];
-	wire [6:0] lrd = l_rd[lsel*7 +: 7];
-	assign l_ready = lsel_v ? ({{(NL-1){1'b0}}, 1'b1} << lsel) : {NL{1'b0}};
+	assign l_ready = lsel_v ? l_s_one : {NL{1'b0}};
 
 	/* Inputs take cycles without a short result, source 0 first. */
 	wire in_go = !sv && (|fi_valid);
@@ -164,31 +207,36 @@ module atg_su_wb #(
 	wire s_rq = sv && srd == 7'd63;
 	wire l_rq = !sv && !in_go && lw && lrd == 7'd63;
 	assign w_en = (sv && !s_rq) || in_go || (lw && !l_rq && !sv && !in_go);
-	assign w_warp = sv ? sw : in_go ? fe[IW-1 -: WARP_W] : l_warp[lsel*WARP_W +: WARP_W];
-	assign w_grp = sv ? sg : in_go ? fe_grp[GRP_W-1:0] : l_grp[lsel*GRP_W +: GRP_W];
+	assign w_warp = sv ? sw : in_go ? fe[IW-1 -: WARP_W] : l_s_warp;
+	assign w_grp = sv ? sg : in_go ? fe_grp[GRP_W-1:0] : l_s_grp;
 	assign w_reg = sv ? srd[5:0] : in_go ? fe[42:37] : lrd[5:0];
-	assign w_data = sv ? sd : in_go ? fe_data : l_data[lsel*DW +: DW];
-	assign w_lanes = sv ? sl : in_go ? fe_lanes : l_lanes[lsel*NPHYS +: NPHYS];
+	assign w_data = sv ? sd : in_go ? fe_data : l_s_data;
+	assign w_lanes = sv ? sl : in_go ? fe_lanes : l_s_lanes;
 	assign rq_push = s_rq || l_rq;
-	assign rq_data = sv ? sd : l_data[lsel*DW +: DW];
+	assign rq_data = sv ? sd : l_s_data;
 
 	assign rel_valid = lsel_v && l_last[lsel];
-	assign rel_warp = l_warp[lsel*WARP_W +: WARP_W];
-	assign rel_sbe = l_sbe[lsel*(SBE_W+1) +: SBE_W+1];
-	assign rel_cls = l_cls[lsel*3 +: 3];
+	assign rel_warp = l_s_warp;
+	assign rel_sbe = l_s_sbe;
+	assign rel_cls = l_s_cls;
 
 	/* A long beat that has waited more than 4 cycles, or a pending input,
 	 * stops the issue so that a free write cycle comes. */
 	reg [2:0] wait_n;
+	wire [LP_W-1:0] lsel_next;
+	wire [2:0] wait_next;
+	wire ls_co_unused, wn_co_unused;
+	am_add #(.W(LP_W)) u_lsel (.a(lsel), .b({LP_W{1'b0}}), .ci(1'b1), .s(lsel_next), .co(ls_co_unused));
+	am_add #(.W(3)) u_wait (.a(wait_n), .b(3'd0), .ci(1'b1), .s(wait_next), .co(wn_co_unused));
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			rr <= {LP_W{1'b0}};
 			wait_n <= 3'd0;
 		end else begin
 			if (lsel_v)
-				rr <= lsel + 1'b1 == NL ? {LP_W{1'b0}} : lsel + 1'b1;
+				rr <= {{(32-LP_W){1'b0}}, lsel} == NL - 1 ? {LP_W{1'b0}} : lsel_next;
 			if ((|(l_valid & ~l_ready)) && wait_n != 3'd7)
-				wait_n <= wait_n + 3'd1;
+				wait_n <= wait_next;
 			else if (!(|(l_valid & ~l_ready)))
 				wait_n <= 3'd0;
 		end
@@ -197,12 +245,23 @@ module atg_su_wb #(
 
 `ifndef SYNTHESIS
 	/* Two short results in one cycle cannot happen (fixed latency, one issue). */
+	reg s_any, s_two;
+	integer si;
+	always @(*) begin
+		s_any = 1'b0;
+		s_two = 1'b0;
+		for (si = 0; si < NS; si = si + 1)
+			if (s_valid[si]) begin
+				s_two = s_two || s_any;
+				s_any = 1'b1;
+			end
+	end
 	always @(posedge clk)
-		if (rst_n && (s_valid & (s_valid - 1'b1)) != {NS{1'b0}})
+		if (rst_n && s_two)
 			$display("ERROR atg_su_wb: two short results in one cycle (%b)", s_valid);
 `endif
 
-	wire unused_ok = &{1'b0, fe_grp, c, (G != 0)};
+	wire unused_ok = &{1'b0, fe_grp, (G != 0)};
 endmodule
 
 `default_nettype wire
