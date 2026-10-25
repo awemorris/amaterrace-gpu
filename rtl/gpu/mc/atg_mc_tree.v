@@ -23,7 +23,9 @@
  * under that router but goes to the root on its own channel (s_*), so
  * that a stall of the tree at the root does not hold it; its route bit 0
  * is 0 as before and the root sends its responses there.  c_req_chk,
- * c_req_tbl and c_req_slot go into each leaf's header.
+ * c_req_tbl and c_req_slot go into each leaf's header.  ROOT_KEEP (with
+ * ROOT_SPLIT; the KC705's DC): flush does not reset ROOT_CLIENT's leaf (its
+ * scan-out reads go on through the GPU's reset).
  */
 
 `timescale 1ns / 1ps
@@ -34,6 +36,7 @@ module atg_mc_tree #(
 	parameter [NCLIENT-1:0] HIGH_MASK = {NCLIENT{1'b0}},
 	parameter HAS_ROOT = 0,	/* 1: ROOT_CLIENT sits next to the root */
 	parameter ROOT_SPLIT = 0,	/* 1: ROOT_CLIENT has its own channel to the root (s_*) */
+	parameter ROOT_KEEP = 0,	/* 1 (with ROOT_SPLIT): flush leaves ROOT_CLIENT's leaf alone */
 	parameter ROOT_CLIENT = 0,
 	parameter TREE_L = 1,	/* clog2(NCLIENT - HAS_ROOT) */
 	parameter RW = 1,	/* route bits: max(1, TREE_L + HAS_ROOT) */
@@ -191,7 +194,12 @@ module atg_mc_tree #(
 			.VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE), .RW(RW), .ROUTE({RW{1'b0}}),
 			.CLIENT(RC8), .PRIO(HIGH_MASK[ROOT_CLIENT] ? 1 : 0)
 		) leaf (
+`ifdef MUT_MC_NOKEEP
 			.clk(clk), .rst_n(rst_n), .flush(flush), .hold(hold[ROOT_CLIENT]),
+`else
+			.clk(clk), .rst_n(rst_n), .flush(flush && !(ROOT_KEEP != 0 && ROOT_SPLIT != 0)),
+			.hold(hold[ROOT_CLIENT]),
+`endif
 			.req_valid(c_req_valid[ROOT_CLIENT]), .req_ready(c_req_ready[ROOT_CLIENT]),
 			.req_write(c_req_write[ROOT_CLIENT]),
 			.req_line(c_req_line[ROOT_CLIENT*LA_W +: LA_W]),

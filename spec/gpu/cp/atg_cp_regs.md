@@ -25,7 +25,7 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `CAPS` | `32'h00500002` | CAPS value (design §2.2), set by atg_top from its parameters. |
 | `CAPS2` | `32'h00000001` | CAPS2 value. |
 | `VEND` | `256'd0` | The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0. |
-| `XCAP_MASK` | `10'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8 at 0x1C0, FMT 10 at 0x160, atg_cp_fmt). |
+| `XCAP_MASK` | `11'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8 at 0x1C0, PROT 9 at 0x1D0, FMT 10 at 0x160, atg_cp_fmt; DISP2 11 at 0x200, atg_cp_disp).  At most ten entries fit before 0x1C0: DISP and DISP2 are not set together. |
 | `DISP_OFFSET` | `32'h00010000` | Where the DISP entry points (KC705 +0x10000). |
 | `PERF_SRC` | `32'hFFFFFFFF` | PERF_SRC0..3 (byte n = PERF_SRCn; 0xFF unused). Amaterrace 2D: 0xFFFF0801 (BLT busy, memory). |
 
@@ -132,3 +132,5 @@ above.
 2026-10-25: the MEM capability (id 8, XCAP_MASK[7], registers at 0x1C0; parameters LOCAL_BASE, LOCAL_BYTES, WINDOW_BYTES) and RESIDENT_WARPS[23:16] = NREGS.
 
 2026-10-25 (CAPS[30]): STATE has 0x000-0x2FF (0x200-0x2FF the vertex stage's texture slots, docs/ghci.md §8.1, §8.5); STATE indices are 10 bits.  The alias covers 0x1000-0x1BFC; 0x1C00-0x1FFC read 0 and ignore writes.
+
+WS288 p035 D4 (2026-10-25): XCAP_MASK has 11 bits; DISP2 (id 11) points at 0x200 (`GHCI_DISP2_BASE`, atg_cp_disp's window through x_rdata).  The TB's FMT bench lists PERF, FMT and DISP2.

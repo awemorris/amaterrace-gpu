@@ -15,7 +15,8 @@ Children: `am_amb_to_rt`, `atg_rt`.
 | --- | --- | --- |
 | `NCLIENT`, `HIGH_MASK` | 2, 0 | As atg_mc |
 | `HAS_ROOT`, `ROOT_CLIENT` | 0, 0 | A client one hop from the root |
-| `ROOT_SPLIT` | 0 | With `HAS_ROOT`: that client's leaf has its own channel to the root (`s_*`) instead of the top router (atg_mc with `HAS_PROT`) |
+| `ROOT_SPLIT` | 0 | With `HAS_ROOT`: that client's leaf has its own channel to the root (`s_*`) instead of the top router (atg_mc with `HAS_PROT` or `ROOT_KEEP`) |
+| `ROOT_KEEP` | 0 | With `ROOT_SPLIT`: `flush` does not reset that client's leaf (the DC's scan-out goes on through the GPU's reset; atg_mc's `ROOT_KEEP`).  Mutation `MUT_MC_NOKEEP` flushes it anyway |
 | `TREE_L` | 1 | Levels of the tree of the other clients: clog2(`NCLIENT` − `HAS_ROOT`) |
 | `RW` | 1 | Route bits: max(1, `TREE_L` + `HAS_ROOT`) |
 | `ADDR_W`, `LINE_BYTES`, `LINE_SHIFT`, `VRAM_AW`, `VRAM_BASE` | | As atg_mc |
@@ -66,4 +67,4 @@ design.md §4.1; `spec/gpu/mc/atg_rt.md`, `spec/common/am_amb_to_rt.md`, `spec/g
 
 ## 10. Status
 
-Implemented (WS288 p023 milestone 4).  About 220 lines of wiring.
+Implemented (WS288 p023 milestone 4).  About 220 lines of wiring.  `ROOT_KEEP` (WS288 p035 D2b, 2026-10-25).

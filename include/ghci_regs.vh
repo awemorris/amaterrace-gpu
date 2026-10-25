@@ -66,7 +66,7 @@ localparam [16:0] GHCI_CPFW_VERSION = 17'h00138;
 localparam [16:0] GHCI_CPFW_MBOX0 = 17'h00150;	/* MBOX0-3, after SA's 0x140-0x14F */
 localparam [16:0] GHCI_KICK = 17'h00F00;
 localparam [16:0] GHCI_STATE_BASE = 17'h01000;	/* STATE[0..511] */
-localparam [16:0] GHCI_DISP_KC705 = 17'h10000;	/* DC registers on the KC705 */
+localparam [16:0] GHCI_DISP_KC705 = 17'h10000;	/* the KC705 DC's former window (DISP, before WS288 p035 D4); unused */
 
 /* CPFW_CTRL and CPFW_STATUS bits. */
 localparam GHCI_CPFW_CTRL_LOAD = 0;
@@ -120,6 +120,10 @@ localparam GHCI_IRQ_SOFT = 5;
 localparam GHCI_IRQ_HALTED = 6;
 localparam GHCI_IRQ_RESULT = 7;
 localparam GHCI_IRQ_RETIRE = 8;
+localparam GHCI_IRQ_VBLANK = 9;	/* DISP2 (draft) */
+localparam GHCI_IRQ_FLIP = 10;
+localparam GHCI_IRQ_DISP_ERROR = 11;
+localparam GHCI_IRQ_HOTPLUG = 12;
 
 /* FAULT_INFO[15:12] kinds. */
 localparam [3:0] GHCI_FAULT_APERTURE = 4'd1;
@@ -314,6 +318,7 @@ localparam [7:0] GHCI_XCAP_SA = 8'd7;
 localparam [7:0] GHCI_XCAP_MEM = 8'd8;
 localparam [7:0] GHCI_XCAP_PROT = 8'd9;
 localparam [7:0] GHCI_XCAP_FMT = 8'd10;
+localparam [7:0] GHCI_XCAP_DISP2 = 8'd11;	/* draft */
 /* The FMT capability's registers (from its register offset, section 4; draft). */
 localparam [16:0] GHCI_FMT_INDEX = 17'h00000;	/* RW: a VkFormat value */
 localparam [16:0] GHCI_FMT_OPTIMAL = 17'h00004;	/* R: VkFormatFeatureFlags, optimal tiling */
@@ -351,7 +356,6 @@ localparam [16:0] GHCI_DC_PCLK_SEL = 17'h58;
 localparam [16:0] GHCI_DC_I2C = 17'h60;	/* 0x60 CTRL, 0x64 DATA, 0x68 STATUS */
 localparam [16:0] GHCI_DC_SCAN_SUM = 17'h70;	/* Amaterrace: sum of the last frame's pixel words */
 localparam [16:0] GHCI_DC_SCAN_WORDS = 17'h74;	/* Amaterrace: pixel words of the last frame */
-localparam [16:0] GHCI_DC_STANDALONE_DISP = 17'h200;	/* DISP of a DC-only window */
 localparam GHCI_DC_CTRL_ENABLE = 0;
 localparam GHCI_DC_CTRL_RESET = 1;
 localparam GHCI_DC_CTRL_TEST_PATTERN = 2;
@@ -363,5 +367,40 @@ localparam [1:0] GHCI_DC_FMT_RGB565 = 2'd2;
 localparam GHCI_DC_IRQ_VSYNC = 0;
 localparam GHCI_DC_IRQ_UNDERFLOW = 1;
 localparam GHCI_DC_IRQ_FLIP_DONE = 2;
+
+/* DISP2 (docs/ghci.md section 13.2, draft): the same offsets up to 0x68
+ * (IRQ_STATUS/IRQ_ENABLE are DISP's only), and these.  The window is
+ * 256 bytes; Amaterrace puts it at 0x200 of the host registers. */
+localparam [16:0] GHCI_DISP2_BASE = 17'h00200;	/* Amaterrace */
+localparam [16:0] GHCI_DC_CONNECTED = 17'h6C;
+localparam [16:0] GHCI_DC_MODE_INDEX = 17'h80;
+localparam [16:0] GHCI_DC_MODE_H0 = 17'h84;
+localparam [16:0] GHCI_DC_MODE_H1 = 17'h88;
+localparam [16:0] GHCI_DC_MODE_V0 = 17'h8C;
+localparam [16:0] GHCI_DC_MODE_V1 = 17'h90;
+localparam [16:0] GHCI_DC_MODE_CLOCK = 17'h94;
+localparam [16:0] GHCI_DC_MODE_FLAGS = 17'h98;
+localparam [16:0] GHCI_DC_CURSOR_BASE = 17'hA0;
+localparam [16:0] GHCI_DC_CURSOR_POS = 17'hA4;
+localparam [16:0] GHCI_DC_CURSOR_CTRL = 17'hA8;
+localparam [16:0] GHCI_DC_TAKEN0 = 17'hB0;
+localparam [16:0] GHCI_DC_TAKEN1 = 17'hB4;
+localparam GHCI_DC_CAPS_CURSOR = 8;
+localparam GHCI_DC_CAPS_MODES = 9;	/* [11:9] */
+localparam GHCI_DC_CAPS_SENSE = 12;
+localparam GHCI_DC_ST_RUNNING = 0;
+localparam GHCI_DC_ST_UNDERFLOW = 1;
+localparam GHCI_DC_ST_IDLE = 2;
+localparam GHCI_DC_ST_READ_ERROR = 3;
+localparam GHCI_DC_ST_RECORD_ERROR = 4;
+localparam GHCI_DC_ST_BAD_WRITE = 5;
+localparam GHCI_DC_ST_LINE = 16;	/* [27:16] */
+localparam GHCI_DC_ST_CONNECTED = 28;
+localparam GHCI_DC_ST_PENDING0 = 29;
+localparam GHCI_DC_ST_PENDING1 = 30;
+localparam GHCI_DC_ST_RECORD = 31;
+/* µops 15 and 16 (docs/ghci.md section 7.3, draft). */
+localparam [5:0] GHCI_OP_DISP_SET = 6'd15;
+localparam [5:0] GHCI_OP_FLIP = 6'd16;
 
 /* verilator lint_on UNUSEDPARAM */

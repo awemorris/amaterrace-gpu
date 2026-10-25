@@ -18,8 +18,8 @@
  *   bar2_write(off, data, strb), bar2_read(off, data): one 128-bit beat
  *   on the BAR2 AXI4 master (m2_*); bar2_write4/bar2_read4: an INCR burst
  *   of 4 beats (64 bytes).  resp in bar2_resp.
- *   MSI: msi_ack[v] answers msi_req[v] after MSI_DELAY cycles (a pulse);
- *   msi_count[v] counts the messages.
+ *   MSI (one vector): msi_ack answers msi_req after MSI_DELAY cycles (a
+ *   pulse); msi_count counts the messages.
  *   The GPU -> host slave (s_*, 512-bit, in s_clk; ws288 p039) is the
  *   host's memory: bus addresses below 0x8000_0000 (the bridge's AXI BAR)
  *   are HOST_BYTES of memory (the address modulo HOST_BYTES; OKAY),
@@ -138,8 +138,8 @@ module atg_kc705_pcie #(
 	output reg s_rvalid = 1'b0,
 	input wire s_rready,
 	/* MSI */
-	input wire [1:0] msi_req,
-	output reg [1:0] msi_ack = 2'b00
+	input wire msi_req,
+	output reg msi_ack = 1'b0
 );
 	always #4 user_clk = !user_clk;
 
@@ -331,28 +331,16 @@ module atg_kc705_pcie #(
 	endtask
 
 	/* ---- MSI ---- */
-	integer msi_count [0:1];
-	integer md0 = 0, md1 = 0;
-	initial begin
-		msi_count[0] = 0;
-		msi_count[1] = 0;
-	end
+	integer msi_count = 0;
+	integer md0 = 0;
 	always @(posedge user_clk) begin
-		msi_ack <= 2'b00;
-		if (msi_req[0] && !msi_ack[0]) begin
+		msi_ack <= 1'b0;
+		if (msi_req && !msi_ack) begin
 			md0 = md0 + 1;
 			if (md0 == MSI_DELAY) begin
 				md0 = 0;
-				msi_ack[0] <= 1'b1;
-				msi_count[0] = msi_count[0] + 1;
-			end
-		end
-		if (msi_req[1] && !msi_ack[1]) begin
-			md1 = md1 + 1;
-			if (md1 == MSI_DELAY) begin
-				md1 = 0;
-				msi_ack[1] <= 1'b1;
-				msi_count[1] = msi_count[1] + 1;
+				msi_ack <= 1'b1;
+				msi_count = msi_count + 1;
 			end
 		end
 	end

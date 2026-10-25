@@ -9,7 +9,7 @@
  * atg_dc_tgen: The DC's timing generator in the pixel clock: h/v counters,
  * DE/HSYNC/VSYNC, pixel pop from the FIFO, format conversion to RGB888,
  * the test pattern, frame start and vsync events.  See
- * spec/dc/atg_dc_tgen.md.
+ * spec/gpu/dc/atg_dc_tgen.md.
  *
  * A line is H_ACTIVE pixels, then the front porch, the sync and the back
  * porch; a frame is V_ACTIVE lines, then the same in lines.  Pixel (0, 0)
@@ -72,19 +72,32 @@ module atg_dc_tgen (
 	wire [11:0] t_vbp = timing[235:224];
 	wire [1:0] t_pol = timing[257:256];
 
+	/* The bounds: the sync's start and end and the last count of a line and of a frame. */
+	wire [11:0] hss_c, hse_c, htot_c, hlast_c, vss_c, vse_c, vtot_c, vlast_c;
+	wire [7:0] bnd_co_unused;
+
+	am_add #(.W(12)) a_hss (.a(t_ha), .b(t_hfp), .ci(1'b0), .s(hss_c), .co(bnd_co_unused[0]));
+	am_add #(.W(12)) a_hse (.a(hss_c), .b(t_hs), .ci(1'b0), .s(hse_c), .co(bnd_co_unused[1]));
+	am_add #(.W(12)) a_htot (.a(hse_c), .b(t_hbp), .ci(1'b0), .s(htot_c), .co(bnd_co_unused[2]));
+	am_sub #(.W(12)) s_hlast (.a(htot_c), .b(12'd1), .bi(1'b0), .d(hlast_c), .bo(bnd_co_unused[3]));
+	am_add #(.W(12)) a_vss (.a(t_va), .b(t_vfp), .ci(1'b0), .s(vss_c), .co(bnd_co_unused[4]));
+	am_add #(.W(12)) a_vse (.a(vss_c), .b(t_vs), .ci(1'b0), .s(vse_c), .co(bnd_co_unused[5]));
+	am_add #(.W(12)) a_vtot (.a(vse_c), .b(t_vbp), .ci(1'b0), .s(vtot_c), .co(bnd_co_unused[6]));
+	am_sub #(.W(12)) s_vlast (.a(vtot_c), .b(12'd1), .bi(1'b0), .d(vlast_c), .bo(bnd_co_unused[7]));
+
 	/* The bounds, registered. */
 	reg [11:0] ha, hss, hse, hlast, va, vss, vse, vlast, bar_w;
 	reg [1:0] pol;
 
 	always @(posedge clk) begin
 		ha <= t_ha;
-		hss <= t_ha + t_hfp;
-		hse <= t_ha + t_hfp + t_hs;
-		hlast <= t_ha + t_hfp + t_hs + t_hbp - 12'd1;
+		hss <= hss_c;
+		hse <= hse_c;
+		hlast <= hlast_c;
 		va <= t_va;
-		vss <= t_va + t_vfp;
-		vse <= t_va + t_vfp + t_vs;
-		vlast <= t_va + t_vfp + t_vs + t_vbp - 12'd1;
+		vss <= vss_c;
+		vse <= vse_c;
+		vlast <= vlast_c;
 		bar_w <= {3'd0, t_ha[11:3]};
 		pol <= t_pol;
 	end
@@ -103,6 +116,19 @@ module atg_dc_tgen (
 	 * cycles slower) does not change the frame being shown. */
 	reg tp;
 	reg [1:0] fmt;
+
+	/* The counters' next values, and the last column of a bar, of the screen and its last line. */
+	wire [11:0] h_inc, v_inc, bx_inc, bar_last, ha_last, va_last;
+	wire [2:0] bar_inc;
+	wire [6:0] cnt_co_unused;
+
+	am_add #(.W(12)) a_h (.a(h), .b(12'd0), .ci(1'b1), .s(h_inc), .co(cnt_co_unused[0]));
+	am_add #(.W(12)) a_v (.a(v), .b(12'd0), .ci(1'b1), .s(v_inc), .co(cnt_co_unused[1]));
+	am_add #(.W(12)) a_bx (.a(bx), .b(12'd0), .ci(1'b1), .s(bx_inc), .co(cnt_co_unused[2]));
+	am_add #(.W(3)) a_bar (.a(bar), .b(3'd0), .ci(1'b1), .s(bar_inc), .co(cnt_co_unused[3]));
+	am_sub #(.W(12)) s_barw (.a(bar_w), .b(12'd1), .bi(1'b0), .d(bar_last), .bo(cnt_co_unused[4]));
+	am_sub #(.W(12)) s_ha (.a(ha), .b(12'd1), .bi(1'b0), .d(ha_last), .bo(cnt_co_unused[5]));
+	am_sub #(.W(12)) s_va (.a(va), .b(12'd1), .bi(1'b0), .d(va_last), .bo(cnt_co_unused[6]));
 
 	wire de_c = h < ha && v < va;
 	wire hs_c = h >= hss && h < hse;
@@ -128,16 +154,16 @@ module atg_dc_tgen (
 			running <= 1'b1;
 		end else if (h == hlast) begin
 			h <= 12'd0;
-			v <= v == vlast ? 12'd0 : v + 12'd1;
+			v <= v == vlast ? 12'd0 : v_inc;
 			bx <= 12'd0;
 			bar <= 3'd0;
 		end else begin
-			h <= h + 12'd1;
-			if (bx == bar_w - 12'd1) begin
+			h <= h_inc;
+			if (bx == bar_last) begin
 				bx <= 12'd0;
-				bar <= bar + 3'd1;
+				bar <= bar_inc;
 			end else begin
-				bx <= bx + 12'd1;
+				bx <= bx_inc;
 			end
 		end
 	end
@@ -158,7 +184,7 @@ module atg_dc_tgen (
 	reg [23:0] pattern;
 
 	always @(*) begin
-		if (h == 12'd0 || h == ha - 12'd1 || v == 12'd0 || v == va - 12'd1)
+		if (h == 12'd0 || h == ha_last || v == 12'd0 || v == va_last)
 			pattern = 24'hFFFFFF;
 		else
 			case (bar)
@@ -203,7 +229,7 @@ module atg_dc_tgen (
 		end
 	end
 
-	wire unused_ok = &{1'b0, px_data[31:24], timing[287:258], timing[255:236], timing[223:204],
+	wire unused_ok = &{1'b0, bnd_co_unused, cnt_co_unused, px_data[31:24], timing[287:258], timing[255:236], timing[223:204],
 		timing[191:172], timing[159:140], timing[127:108], timing[95:76], timing[63:44],
 		timing[31:12]};
 endmodule

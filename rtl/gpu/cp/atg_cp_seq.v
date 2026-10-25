@@ -31,11 +31,19 @@
  *   counter (occ_count, low word, then the high bits) at addr; flags[0]:
  *   no wait and no write, only occ_clear; flags[1]: occ_clear with the
  *   write's request.  DRAW_RAW: raw_kick.  NOP, SET_REG, DBG_MARK: none.
+ *   DISP_SET (HAS_DISP): its pairs write the DISP2 registers through
+ *   0x3C0 + offset / 4 (atg_cp_disp); flags[0]: kick K_DISP_IDLE, then
+ *   wait for busy bit 8.  FLIP: payload to 0x3B8-0x3BB, waits for busy
+ *   bit 8 (the plane; flags[0] also every unit), kick K_FLIP.
+ * Kicks are one pulse (kick) with a code (kick_code, K_*): BLIT, DRAW,
+ * DISPATCH, LOAD_CONST, DRAW_RAW, PERF_RESET, FLIP, DISP_SET's idle wait.
  * A wait after a kick starts one cycle later (busy rises after the kick).
  * Faults stop the sequencer until the core reset (rst_n): kind 2 for an
  * unknown op, a class 2/3 header, or an op whose unit is absent (UNITS,
- * HAS_VSYNC); kind 3 for a payload shorter than the op needs or a bad
- * SET_REG index (fault_addr = the index).  A longer payload is skipped.
+ * HAS_VSYNC, HAS_DISP; DISP_SET and FLIP from the firmware); kind 3 for a
+ * payload shorter than the op needs, a bad SET_REG index or DISP_SET
+ * offset (fault_addr = the dword).  A longer payload is skipped.  The
+ * header and payload decoders are atg_cp_seq_dec's.
  * halt is looked at only between packets.  cmd_active (the watchdog) is 1
  * from a header to the end of its µop, except while waiting for the
  * firmware's next dword.
@@ -46,7 +54,8 @@
 
 module atg_cp_seq #(
 	parameter [7:0] UNITS = 8'h03,	/* Present blocks, STATUS busy-bit order */
-	parameter HAS_VSYNC = 0	/* 1: a display's vsync reaches the CP (WAIT_VSYNC) */
+	parameter HAS_VSYNC = 0,	/* 1: a display's vsync reaches the CP (WAIT_VSYNC) */
+	parameter HAS_DISP = 0	/* 1: a DISP2 controller (DISP_SET, FLIP; atg_cp_disp) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -54,12 +63,10 @@ module atg_cp_seq #(
 	input wire n_valid,
 	output wire n_ready,
 	input wire [31:0] n_data,
-	input wire n_last,
 	/* µop packets from the firmware (atg_cpu UOP_FIFO) */
 	input wire fw_valid,
 	output wire fw_ready,
 	input wire [31:0] fw_data,
-	input wire fw_last,
 	input wire fw_active,
 	input wire [6:0] fw_side,	/* session protection: the firmware µop's {SELF, slot} */
 	input wire halt,
@@ -67,15 +74,11 @@ module atg_cp_seq #(
 	output wire uop_we,
 	output wire [9:0] uop_idx,
 	output wire [31:0] uop_wdata,
-	/* Kicks (one-cycle pulses) */
-	output wire blt_kick,
-	output wire draw_kick,
-	output wire cs_kick,
-	output wire lc_kick,
-	output wire raw_kick,
+	/* Kicks: a one-cycle pulse with its code (K_*) */
+	output wire kick,
+	output wire [2:0] kick_code,
 	output wire [3:0] inv,
-	output wire perf_reset,
-	input wire [7:0] busy_in,
+	input wire [8:0] busy_in,	/* [8]: atg_cp_disp's wait (not in B_ALL) */
 	input wire vsync,
 	/* Fences (to atg_cp_fence) */
 	output wire f_valid,
@@ -105,14 +108,13 @@ module atg_cp_seq #(
 );
 	`include "ghci_regs.vh"
 
-	/* Standard µops (class 0) and Amaterrace's vendor µops (class 1). */
-	localparam [5:0] OP_NOP = 6'd0;
+	/* Standard µops (class 0) and Amaterrace's vendor µops (class 1); the header's
+	 * rules are atg_cp_seq_dec's. */
 	localparam [5:0] OP_SET_REG = 6'd1;
 	localparam [5:0] OP_BLIT = 6'd2;
 	localparam [5:0] OP_DRAW = 6'd3;
 	localparam [5:0] OP_DISPATCH = 6'd4;
 	localparam [5:0] OP_FENCE = 6'd5;
-	localparam [5:0] OP_WAIT_IDLE = 6'd6;
 	localparam [5:0] OP_LOAD_CONST = 6'd7;
 	localparam [5:0] OP_LOAD_PROGRAM = 6'd8;
 	localparam [5:0] OP_WAIT_FENCE = 6'd9;
@@ -121,8 +123,18 @@ module atg_cp_seq #(
 	localparam [5:0] OP_INVALIDATE = 6'd12;
 	localparam [5:0] OP_RESULT = 6'd13;
 	localparam [5:0] OP_QUERY = 6'd14;
+	localparam [5:0] OP_DISP_SET = 6'd15;
+	localparam [5:0] OP_FLIP = 6'd16;
 	localparam [5:0] VOP_DRAW_RAW = 6'd0;
-	localparam [5:0] VOP_DBG_MARK = 6'd1;
+
+	localparam [2:0] K_BLT = 3'd0;
+	localparam [2:0] K_DRAW = 3'd1;
+	localparam [2:0] K_CS = 3'd2;
+	localparam [2:0] K_LC = 3'd3;
+	localparam [2:0] K_RAW = 3'd4;
+	localparam [2:0] K_PERF = 3'd5;
+	localparam [2:0] K_FLIP = 3'd6;
+	localparam [2:0] K_DISP_IDLE = 3'd7;
 
 	localparam [2:0] Q_IDLE = 3'd0;
 	localparam [2:0] Q_PAY = 3'd1;	/* take the payload */
@@ -151,67 +163,30 @@ module atg_cp_seq #(
 	wire [31:0] hdr = fw_active ? fw_data : n_data;
 	wire hdr_valid = fw_active ? fw_valid : n_valid;
 
-	/* Header decode (combinational on hdr). */
+	/* Header and payload decode (combinational). */
 	wire h_vendor = hdr[30];
 	wire [5:0] h_op = hdr[29:24];
 	wire [7:0] h_n = hdr[7:0];
-	reg h_known;
-	reg h_absent;
-	reg [7:0] h_need;
+	wire h_known, h_absent, pay_bad;
+	wire [7:0] h_need;
 
-	always @(*) begin
-		h_known = 1'b1;
-		h_absent = 1'b0;
-		h_need = 8'd0;
-		if (hdr[31]) begin
-			h_known = 1'b0;
-		end else if (h_vendor) begin
-			case (h_op)
-			VOP_DRAW_RAW: begin
-				h_need = 8'd9;
-				h_absent = !UNITS[3];
-			end
-			VOP_DBG_MARK: h_need = 8'd1;
-			default: h_known = 1'b0;
-			endcase
-		end else begin
-			case (h_op)
-			OP_NOP, OP_BLIT, OP_WAIT_IDLE, OP_PERF_RESET, OP_INVALIDATE: ;
-			OP_SET_REG: h_need = {7'd0, h_n[0]} + h_n;	/* pairs: odd n is short */
-			OP_DRAW: h_absent = !UNITS[2];
-			OP_DISPATCH: begin
-				h_need = 8'd3;
-				h_absent = !UNITS[6];
-			end
-			OP_FENCE, OP_WAIT_FENCE: h_need = 8'd2;
-			OP_LOAD_CONST: begin
-				h_need = 8'd3;
-				h_absent = !UNITS[6];
-			end
-			OP_LOAD_PROGRAM: h_need = 8'd1;
-			OP_WAIT_VSYNC: h_absent = HAS_VSYNC == 0;
-			OP_RESULT: h_need = 8'd3;
-			OP_QUERY: begin
-				h_need = 8'd1;
-				h_absent = !UNITS[4];
-			end
-			default: h_known = 1'b0;
-			endcase
-		end
-		if (h_op == OP_BLIT && !hdr[30] && !UNITS[1])
-			h_absent = 1'b1;
-	end
+	atg_cp_seq_dec #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) dec (
+		.hdr(hdr), .hdr_fw(fw_active), .h_known(h_known), .h_absent(h_absent),
+		.h_need(h_need), .vendor(vendor), .op(op), .p(p), .in_data(in_data),
+		.pay_bad(pay_bad)
+	);
 
 	/* Payload: what this dword does; the waits (atg_cp_seq_wait). */
 	wire is_set = !vendor && op == OP_SET_REG;
-	wire set_val = is_set && p[0];
-	wire set_bad = is_set && !p[0] && (in_data[31:10] != 22'd0 || in_data[9:8] == 2'b11);
+	wire is_dset = !vendor && op == OP_DISP_SET;
+	wire set_val = (is_set || is_dset) && p[0];
+	wire set_bad = pay_bad;
 	wire pay_we;
 	wire [9:0] pay_idx;
-	wire [7:0] pay_wait;	/* busy bits that hold this dword */
-	wire [7:0] pre;
+	wire [8:0] pay_wait;	/* busy bits that hold this dword */
+	wire [8:0] pre;
 	wire pre_f;		/* also wait for !f_busy */
-	wire [7:0] post;
+	wire [8:0] post;
 
 	atg_cp_seq_wait wt (
 		.vendor(vendor),
@@ -249,12 +224,28 @@ module atg_cp_seq #(
 		(u_ok || !unit_op);
 	wire is_op_std = !vendor && exec_go;
 
-	assign blt_kick = is_op_std && op == OP_BLIT;
-	assign draw_kick = is_op_std && op == OP_DRAW;
-	assign cs_kick = is_op_std && op == OP_DISPATCH;
-	assign lc_kick = is_op_std && op == OP_LOAD_CONST;
-	assign raw_kick = vendor && exec_go && op == VOP_DRAW_RAW;
-	assign perf_reset = is_op_std && op == OP_PERF_RESET;
+	reg k_on;
+	reg [2:0] k_code;
+
+	always @(*) begin
+		k_on = is_op_std;
+		k_code = K_BLT;
+		if (vendor)
+			{k_on, k_code} = {exec_go && op == VOP_DRAW_RAW, K_RAW};
+		else case (op)
+		OP_BLIT: k_code = K_BLT;
+		OP_DRAW: k_code = K_DRAW;
+		OP_DISPATCH: k_code = K_CS;
+		OP_LOAD_CONST: k_code = K_LC;
+		OP_PERF_RESET: k_code = K_PERF;
+		OP_FLIP: k_code = K_FLIP;
+		OP_DISP_SET: {k_on, k_code} = {is_op_std && flags[0], K_DISP_IDLE};
+		default: k_on = 1'b0;
+		endcase
+	end
+
+	assign kick = k_on;
+	assign kick_code = k_code;
 	assign inv = !is_op_std ? 4'd0 : op == OP_DRAW ? 4'b0011 :
 		op == OP_LOAD_PROGRAM ? 4'b1000 : op == OP_INVALIDATE ? flags[3:0] : 4'd0;
 
@@ -336,6 +327,8 @@ module atg_cp_seq #(
 				end else if (pay_take) begin
 					if (is_set && !p[0])
 						sidx <= in_data[9:0];
+					if (is_dset && !p[0])
+						sidx <= {4'b1111, in_data[7:2]};	/* 0x3C0 + offset / 4 */
 					if (p == 8'd0)
 						a0 <= in_data;
 					if (p == 8'd1)
@@ -361,7 +354,7 @@ module atg_cp_seq #(
 						st <= Q_FREQ;
 					else if (!vendor && op == OP_WAIT_VSYNC)
 						st <= Q_VSYNC;
-					else if (post != 8'd0) begin
+					else if (post != 9'd0) begin
 						settle <= 1'b1;
 						st <= Q_POST;
 					end else
@@ -385,7 +378,6 @@ module atg_cp_seq #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, n_last, fw_last};
 endmodule
 
 `default_nettype wire

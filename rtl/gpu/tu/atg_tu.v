@@ -15,8 +15,9 @@
  * texel conversion, compare, the filters over the passes) and atg_tu_ffilt
  * (the fp32 path of the formats of TEX_FORMAT, ta_ctl[20]).  Quads go
  * through in request order: the cache hands a pass to the filter of its
- * path only while both filters are idle, so one quad at a time is in the
- * filters and their returns do not overtake each other.  busy approximates STATUS.TU_BUSY: a quad on one of the links or
+ * path when the filter of the other path is idle (has no quad), so the
+ * returns of the two do not overtake each other (atg_tu_filter keeps
+ * several quads of its path in its pipeline).  busy approximates STATUS.TU_BUSY: a quad on one of the links or
  * the level offsets being computed (a quad inside a child between them is
  * not seen; atg_cp_seq's SET_REG of the TU range also waits for the RX and
  * the SUs, which hold every fragment still to be textured).
@@ -110,28 +111,28 @@ module atg_tu #(
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write), .req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag), .rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
 	);
 
-	/* The two paths: a pass goes to its filter while both are idle. */
-	wire u_ready, f_ready, u_tr_valid, f_tr_valid, u_tr_last, f_tr_last;
+	/* The two paths: a pass goes to its filter when that one takes it and
+	 * the other is idle (has no quad), so their returns keep the order. */
+	wire u_ready, f_ready, u_idle, f_idle, u_tr_valid, f_tr_valid, u_tr_last, f_tr_last;
 	wire [15:0] u_tr_tag, f_tr_tag;
 	wire [511:0] u_tr_data, f_tr_data;
 	wire f32 = tc_ctl[20];
-	assign tc_ready = u_ready && f_ready;
+	assign tc_ready = f32 ? f_ready && u_idle : u_ready && f_idle;
 
 	atg_tu_filter filter (
 		.clk(clk), .rst_n(rst_n),
-		.tc_valid(tc_valid && !f32 && f_ready), .tc_ready(u_ready), .tc_texels(tc_texels),
+		.tc_valid(tc_valid && !f32 && f_idle), .tc_ready(u_ready), .tc_texels(tc_texels),
 		.tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask), .tc_ctl(tc_ctl),
-		.tc_value(tc_value), .tc_last(tc_last),
+		.tc_value(tc_value), .tc_last(tc_last), .idle(u_idle),
 		.tr_valid(u_tr_valid), .tr_ready(tr_ready), .tr_tag(u_tr_tag), .tr_data(u_tr_data),
 		.tr_last(u_tr_last)
 	);
 
 	atg_tu_ffilt ffilt (
 		.clk(clk), .rst_n(rst_n),
-		.tc_valid(tc_valid && f32 && u_ready), .tc_ready(f_ready), .tc_texels(tc_texels),
+		.tc_valid(tc_valid && f32 && u_idle), .tc_ready(f_ready), .tc_texels(tc_texels),
 		.tc_bord(tc_bord), .tc_lo(tc_lo), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask),
-		.tc_ctl(tc_ctl),
-		.tc_last(tc_last),
+		.tc_ctl(tc_ctl), .tc_last(tc_last), .idle(f_idle),
 		.tr_valid(f_tr_valid), .tr_ready(tr_ready), .tr_tag(f_tr_tag), .tr_data(f_tr_data),
 		.tr_last(f_tr_last)
 	);

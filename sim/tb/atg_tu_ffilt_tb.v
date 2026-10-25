@@ -43,10 +43,25 @@ module atg_tu_ffilt_tb;
 
 	atg_tu_ffilt dut (.clk(clk), .rst_n(rst_n), .tc_valid(tc_valid), .tc_ready(tc_ready),
 		.tc_texels(tc_texels), .tc_bord(tc_bord), .tc_lo(tc_lo), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask),
-		.tc_ctl(tc_ctl), .tc_last(tc_last), .tr_valid(tr_valid),
+		.tc_ctl(tc_ctl), .tc_last(tc_last), .idle(), .tr_valid(tr_valid),
 		.tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data), .tr_last(tr_last));
 
-	integer fd, code, seed, errs, gerrs, nq, tmo, w;
+	integer fd, code, seed, errs, gerrs, nq, tmo, w, gq0, gc0;
+
+	/* The cycles the unit is kept (an INFO line a group): from a pass's
+	 * taking to tc_ready again (a pass with more to follow) or to tr_valid
+	 * (the last pass), the testbench's gaps not counted. */
+	reg pend = 1'b0, plast = 1'b0;
+	integer cyc = 0;
+	always @(posedge clk) begin
+		if (pend)
+			cyc = cyc + 1;
+		if (tc_valid && tc_ready) begin
+			pend <= 1'b1;
+			plast <= !tc_ctl[4];
+		end else if (pend && (plast ? tr_valid : tc_ready))
+			pend <= 1'b0;
+	end
 	reg [8*10-1:0] kind, gname;
 	reg [511:0] tex, x_data;
 	reg [127:0] wts;
@@ -64,6 +79,8 @@ module atg_tu_ffilt_tb;
 		errs = 0;
 		gerrs = 0;
 		nq = 0;
+		gq0 = 0;
+		gc0 = 0;
 		fd = $fopen("sim/vec/tu_ffilt.txt", "r");
 		if (fd == 0) begin
 			$display("FAIL atg_tu_ffilt: no sim/vec/tu_ffilt.txt");
@@ -152,6 +169,10 @@ module atg_tu_ffilt_tb;
 				code = $fscanf(fd, "%s\n", gname);
 				if (gerrs == 0)
 					$display("PASS atg_tu_ffilt.%0s", gname);
+				$display("INFO atg_tu_ffilt.%0s: %0d quads, %0d cycles in the unit", gname,
+					nq - gq0, cyc - gc0);
+				gq0 = nq;
+				gc0 = cyc;
 				errs = errs + gerrs;
 				gerrs = 0;
 			end

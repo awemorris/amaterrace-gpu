@@ -3,7 +3,12 @@
 # board top's parameters: the CPU with the committed firmware image,
 # 64-byte lines, 512-bit AXI, one SU of the board's shape, VF, RX, TU, ROP
 # with stencil, the MEM capability: 1 GiB of local memory at 0x8000_0000,
-# a 64 MiB window) as a static library for a host program.
+# a 64 MiB window, the display controller without its I2C master) as a
+# static library for a host program.  The display controller names one
+# small test mode (DC_TEST_MODE: 320 x 240 at 25 MHz) instead of the
+# board's 640 x 480 and 720p, so that a frame is about 85,000 pixel clocks;
+# link.cpp runs the pixel clock at a quarter of the core clock.  The
+# board's own build (DC_TEST_MODE 0) is not this one.
 #   sim/verilator/link-build.sh [OUTDIR]   (default build/verilator-link)
 # Writes OUTDIR/link.o, OUTDIR/obj/Vatg_top__ALL.a, OUTDIR/obj/libverilated.a
 # and OUTDIR/link.flags: what a C++ linker needs after the program's
@@ -32,7 +37,7 @@ timeout 1200 verilator --cc --build -j 8 -Wall -Iinclude \
 	-GNSU=1 -GHAS_VF=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GROP_STENCIL=1 \
 	-GSU_NPHYS=8 -GSU_GRP_W=2 -GSU_NREGS=64 -GSU_SB_ENTRIES=8 \
 	-GSU_SBE_W=3 -GSU_PACKED=1 -GSU_SUBGROUP=1 -GSU_FRAG_RESERVE=2 -GSU_LDS_BYTES=16384 \
-	-GSU_VARY_WORDS=64 \
+	-GSU_VARY_WORDS=64 -GHAS_DISP=1 -GDC_HAS_I2C=0 -GDC_TEST_MODE=1 \
 	"-GLOCAL_BASE=32'h80000000" "-GLOCAL_BYTES=32'h40000000" "-GWINDOW_BYTES=32'h04000000" \
 	-Mdir "$out/obj" -CFLAGS "-O2" \
 	"$root/sim/verilator/link.vlt" $(find rtl -name '*.v' | sort) >"$out/build.log" 2>&1 || {

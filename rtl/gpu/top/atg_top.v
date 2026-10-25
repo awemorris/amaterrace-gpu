@@ -50,7 +50,12 @@ module atg_top #(
 	parameter HAS_SA = 0,	/* systolic array: reserved, 0 in v1 (design §3.9) */
 	parameter EXT_CLIENT = 0,	/* one more MC client outside (the KC705's DC), high priority */
 	parameter HAS_JTAG = 0,	/* a second register-bus master (am_jtag_regs, KC705) */
-	parameter HAS_DISP = 0,	/* a display controller's registers are next to the GPU at +0x10000 (KC705) */
+	parameter HAS_DISP = 0,	/* the display controller atg_dc, a unit of the GPU (KC705): its
+				 * registers in the CP's DISP2 window (0x200), MC client C_DC (not with EXT_CLIENT) */
+	parameter DC_HAS_I2C = 0,	/* atg_dc's I2C master (the KC705's ADV7511) */
+	parameter DC_FIFO_LOG2 = 11,	/* atg_dc's pixel FIFO (720p: 11) */
+	parameter DC_PX_FMT = 0,	/* atg_dc's parallel output (1: the ADV7511's YCbCr 4:2:2) */
+	parameter DC_TEST_MODE = 0,	/* 1: atg_dc names a simulation's one small mode (the Verilator link) */
 	parameter ROP_STENCIL = 0,
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29] with VF, RX, ROP, TU and an SU): the
 				 * blitter's RESOLVE, texsz.s */
@@ -175,7 +180,21 @@ module atg_top #(
 	input wire j_rd,
 	input wire [16:0] j_raddr,
 	output wire [31:0] j_rdata,
-	output wire j_busy
+	output wire j_busy,
+	/* The display controller (HAS_DISP): its pixel clock and reset, the
+	 * clock choice, the video outputs (pclk) and the I2C pins (open drain). */
+	input wire pclk,
+	input wire prst_n,
+	output wire pclk_sel,
+	output wire [29:0] tmds,
+	output wire [23:0] px_rgb,
+	output wire px_de,
+	output wire px_hs,
+	output wire px_vs,
+	output wire scl_t,
+	input wire scl_i,
+	output wire sda_t,
+	input wire sda_i
 );
 	/*
 	 * MC clients: 0 CP, 1 BLT, then the present blocks in this order: CPU,
@@ -197,10 +216,13 @@ module atg_top #(
 	localparam C_ATOM = C_ROP + (HAS_ROP != 0 ? 1 : 0);
 	localparam C_SA = C_ATOM + HAS_ATOM;
 	localparam C_EXT = C_SA + (HAS_SA != 0 ? 1 : 0);
-	localparam C_SU = C_EXT + (EXT_CLIENT != 0 ? 1 : 0);	/* SU k: C_SU+2k (D$), C_SU+2k+1 (I$) */
+	localparam C_DC = C_EXT;	/* the DC takes the outside client's place (HAS_DISP) */
+	localparam [7:0] C_DC8 = C_DC;
+	localparam HAS_EXT = EXT_CLIENT != 0 || HAS_DISP != 0;
+	localparam C_SU = C_EXT + (HAS_EXT ? 1 : 0);	/* SU k: C_SU+2k (D$), C_SU+2k+1 (I$) */
 	localparam NCLIENT = C_SU + 2 * NSU;
 	localparam [NCLIENT-1:0] HIGH = {{(NCLIENT-1){1'b0}}, 1'b1} |
-		({{(NCLIENT-1){1'b0}}, EXT_CLIENT != 0} << C_EXT);
+		({{(NCLIENT-1){1'b0}}, HAS_EXT} << C_EXT);
 	localparam LA_W = 32 - LINE_SHIFT;
 	localparam LINE_BITS = LINE_BYTES * 8;
 
@@ -231,6 +253,12 @@ module atg_top #(
 	assign j_rdata = reg_rdata;
 	assign j_busy = a_busy;
 
+	/* The DC (HAS_DISP) and the CP's atg_cp_disp: its register bus, flips and events. */
+	wire dc_vsync, dc_ev_error, dc_ev_hotplug, dc_idle;
+	wire dc_d_we, dc_flip_valid, dc_flip_plane;
+	wire [5:0] dc_d_idx, dc_d_ridx;
+	wire [31:0] dc_d_wdata, dc_d_wmask, dc_d_rdata, dc_flip_base, dc_frame_count;
+	wire [1:0] dc_taken, dc_taken_cancel, dc_pending, dc_err;
 	assign reg_rdata = cp_reg_rdata | xr_rdata;
 	assign xr_wr = reg_wr;
 	assign xr_waddr = reg_waddr;
@@ -291,7 +319,7 @@ module atg_top #(
 	 * (ring, fences, debug port) and the outside client (the DC).
 	 */
 	localparam [NCLIENT-1:0] MC_UNITS = ~({{(NCLIENT-1){1'b0}}, 1'b1} |
-		(EXT_CLIENT != 0 ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_EXT : {NCLIENT{1'b0}}));
+		(HAS_EXT ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_EXT : {NCLIENT{1'b0}}));
 	wire mc_unit_idle;
 	/* Session protection: the MC's and the CP's sides (atg_cp_prot). */
 	localparam PROT = HAS_PROT != 0 && HAS_CPU != 0;
@@ -378,6 +406,7 @@ module atg_top #(
 			2'b11}),
 		.HAS_CPU(HAS_CPU),
 		.HAS_DISP(HAS_DISP),
+		.DC_CLIENT(C_DC8),
 		.HAS_DBG(HAS_JTAG),
 		.PACKED(NSU != 0 && SU_PACKED != 0),
 		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0),
@@ -444,7 +473,7 @@ module atg_top #(
 		.raw_kick(raw_kick),
 		.inv(cp_inv),
 		.busy_ext({sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, 1'b0, !mc_unit_idle}),
-		.vsync(x_vsync),
+		.vsync(HAS_DISP != 0 ? dc_vsync : x_vsync),
 		.x_fault({1'b0, su_fault}),
 		.x_fault_kind(8'h08),
 		.x_fault_addr({32'd0, su_fault_addr}),
@@ -485,7 +514,13 @@ module atg_top #(
 		.cpu_fault_addr(cpu_fault_addr),
 		.cpu_stall(cpu_stall),
 		.cpu_result(cpu_result),
-		.occ_count(occ_count), .occ_clear(cp_occ_clear)
+		.occ_count(occ_count), .occ_clear(cp_occ_clear),
+		.d_we(dc_d_we), .d_idx(dc_d_idx), .d_wdata(dc_d_wdata), .d_wmask(dc_d_wmask),
+		.d_ridx(dc_d_ridx), .d_rdata(dc_d_rdata), .flip_valid(dc_flip_valid),
+		.flip_plane(dc_flip_plane), .flip_base(dc_flip_base), .taken(dc_taken),
+		.taken_cancel(dc_taken_cancel), .dc_pending(dc_pending), .dc_idle(dc_idle),
+		.frame_count(dc_frame_count), .dc_err(dc_err),
+		.dc_ev({dc_ev_hotplug, dc_ev_error, dc_vsync})
 	);
 
 	atg_blt #(
@@ -521,8 +556,12 @@ module atg_top #(
 	atg_mc #(
 		.NCLIENT(NCLIENT),
 		.HIGH_MASK(HIGH),
-		.QUIESCE_EXEMPT({{(NCLIENT-1){1'b0}}, 1'b1}),	/* the CP (its debug port) */
-		.ROOT_CLIENT(EXT_CLIENT != 0 ? C_EXT : -1),
+		/* the CP (its debug port) and the DC (scan-out goes on through HALTED, FAULTED
+		 * and RESET; design §18.2) */
+		.QUIESCE_EXEMPT({{(NCLIENT-1){1'b0}}, 1'b1} |
+			(HAS_DISP != 0 ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_DC : {NCLIENT{1'b0}})),
+		.ROOT_CLIENT(HAS_EXT ? C_EXT : -1),
+		.ROOT_KEEP(HAS_DISP != 0 ? 1 : 0),	/* flush and axi_idle leave the DC alone */
 		.ADDR_W(32),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
@@ -692,7 +731,7 @@ module atg_top #(
 			assign c_req_chk[pc] = PROT && cpu_req_chk;
 			assign c_req_tbl[pc] = PROT && cpu_req_tbl;
 			assign c_req_slot[pc*6 +: 6] = PROT ? cpu_req_slot : 6'd0;
-		end else if (EXT_CLIENT != 0 && pc == C_EXT) begin : g_ext
+		end else if (HAS_EXT && pc == C_EXT) begin : g_ext	/* the DC or the outside client: root */
 			assign c_req_chk[pc] = 1'b0;
 			assign c_req_tbl[pc] = 1'b0;
 			assign c_req_slot[pc*6 +: 6] = 6'd0;
@@ -1012,7 +1051,60 @@ module atg_top #(
 			sa_ctl_data};
 	end
 
-	if (EXT_CLIENT != 0) begin : g_ext
+	if (HAS_DISP != 0) begin : g_dc
+		/*
+		 * The display controller: board reset only (CTRL.RESET does not
+		 * reset it).  The host reaches its registers only through the CP's
+		 * DISP2 window (atg_cp_disp, HCR 0x200), which also flips its planes
+		 * and takes its events.
+		 */
+		atg_dc #(
+			.HAS_I2C(DC_HAS_I2C), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.FIFO_LOG2(DC_FIFO_LOG2), .PX_FMT(DC_PX_FMT), .TEST_MODE(DC_TEST_MODE)
+		) dc (
+			.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
+			.d_we(dc_d_we), .d_idx(dc_d_idx), .d_wdata(dc_d_wdata), .d_wmask(dc_d_wmask),
+			.d_ridx(dc_d_ridx), .d_rdata(dc_d_rdata),
+			.flip_valid(dc_flip_valid), .flip_plane(dc_flip_plane), .flip_base(dc_flip_base),
+			.taken(dc_taken), .taken_cancel(dc_taken_cancel), .pending(dc_pending),
+			.dc_err(dc_err), .idle(dc_idle), .frame_count(dc_frame_count),
+			.ev_vblank(dc_vsync), .ev_error(dc_ev_error), .ev_hotplug(dc_ev_hotplug),
+			.pclk_sel(pclk_sel),
+			.req_valid(c_req_valid[C_DC]), .req_ready(c_req_ready[C_DC]),
+			.req_write(c_req_write[C_DC]), .req_line(c_req_line[C_DC*LA_W +: LA_W]),
+			.req_be(c_req_be[C_DC*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(c_req_wdata[C_DC*LINE_BITS +: LINE_BITS]),
+			.req_tag(c_req_tag[C_DC*8 +: 8]),
+			.rsp_valid(rsp_valid[C_DC]), .rsp_write(rsp_write_v[C_DC]),
+			.rsp_tag(rsp_tag_v[C_DC*8 +: 8]),
+			.rsp_rdata(rsp_rdata_v[C_DC*LINE_BITS +: LINE_BITS]),
+			.rsp_error(rsp_error_v[C_DC]),
+			.tmds(tmds), .px_rgb(px_rgb), .px_de(px_de), .px_hs(px_hs), .px_vs(px_vs),
+			.scl_t(scl_t), .scl_i(scl_i), .sda_t(sda_t), .sda_i(sda_i)
+		);
+	end else begin : g_no_dc
+		assign dc_vsync = 1'b0;
+		assign dc_ev_error = 1'b0;
+		assign dc_ev_hotplug = 1'b0;
+		assign dc_idle = 1'b1;
+		assign dc_d_rdata = 32'd0;
+		assign dc_frame_count = 32'd0;
+		assign dc_taken = 2'b00;
+		assign dc_taken_cancel = 2'b00;
+		assign dc_pending = 2'b00;
+		assign pclk_sel = 1'b0;
+		assign tmds = 30'd0;
+		assign px_rgb = 24'd0;
+		assign px_de = 1'b0;
+		assign px_hs = 1'b0;
+		assign px_vs = 1'b0;
+		assign scl_t = 1'b1;
+		assign sda_t = 1'b1;
+		wire unused_no_dc = &{1'b0, pclk, prst_n, scl_i, sda_i, dc_d_we, dc_d_idx, dc_d_ridx,
+			dc_d_wdata, dc_d_wmask, dc_flip_valid, dc_flip_plane, dc_flip_base, dc_err};
+	end
+
+	if (HAS_DISP == 0 && EXT_CLIENT != 0) begin : g_ext
 		assign c_req_valid[C_EXT] = x_req_valid;
 		assign x_req_ready = c_req_ready[C_EXT];
 		assign c_req_write[C_EXT] = x_req_write;
@@ -1033,7 +1125,7 @@ module atg_top #(
 		assign x_rsp_rdata = {LINE_BITS{1'b0}};
 		assign x_rsp_error = 1'b0;
 		wire unused_ext = &{1'b0, x_req_valid, x_req_write, x_req_line, x_req_be, x_req_wdata,
-			x_req_tag};
+			x_req_tag, HAS_DISP != 0 ? x_vsync : 1'b0};
 	end
 	endgenerate
 

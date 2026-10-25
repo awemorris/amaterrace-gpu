@@ -34,6 +34,13 @@
  * constants of a draw upstream are read by its warps), and for the SUs
  * after it; DISPATCH and LOAD_CONST payloads wait for the SUs, DRAW_RAW's
  * for the RX.
+ *
+ * Bit 8 (B_DISP, outside B_ALL and the 8-bit WAIT_IDLE mask) is
+ * atg_cp_disp's wait (design §18.4): DISP_SET's register writes wait for
+ * its host buffer, FLIP waits for its plane (and with flags[0] COMPLETE
+ * for B_ALL first, as FENCE), DISP_SET with flags[0] waits for the
+ * controller's idle after its kick.  DISP_SET's pairs go to 0x3C0 +
+ * offset / 4 (sidx, set by atg_cp_seq), FLIP's four dwords to 0x3B8-0x3BB.
  */
 
 `timescale 1ns / 1ps
@@ -48,10 +55,10 @@ module atg_cp_seq_wait (
 	input wire [9:0] sidx,
 	output reg pay_we,
 	output reg [9:0] pay_idx,
-	output reg [7:0] pay_wait,
-	output reg [7:0] pre,
+	output reg [8:0] pay_wait,
+	output reg [8:0] pre,
 	output reg pre_f,
-	output reg [7:0] post
+	output reg [8:0] post
 );
 	`include "ghci_regs.vh"
 
@@ -63,6 +70,8 @@ module atg_cp_seq_wait (
 	localparam [5:0] OP_LOAD_CONST = 6'd7;
 	localparam [5:0] OP_RESULT = 6'd13;
 	localparam [5:0] OP_QUERY = 6'd14;
+	localparam [5:0] OP_DISP_SET = 6'd15;
+	localparam [5:0] OP_FLIP = 6'd16;
 	localparam [5:0] VOP_DRAW_RAW = 6'd0;
 	localparam [5:0] VOP_DBG_MARK = 6'd1;
 
@@ -78,6 +87,7 @@ module atg_cp_seq_wait (
 	localparam [7:0] B_MEM = 8'h01;
 `endif
 	localparam [7:0] B_ALL = 8'hFE | B_MEM;
+	localparam [8:0] B_DISP = 9'h100;
 `ifdef MUT_SEQ_DRAWSTATE
 	/* the earlier rules, for the TB's mutation check */
 	localparam [7:0] B_RXROP = B_RX | B_ROP;
@@ -100,61 +110,78 @@ module atg_cp_seq_wait (
 	always @(*) begin
 		pay_we = 1'b0;
 		pay_idx = 10'd0;
-		pay_wait = 8'd0;
-		if (set_val) begin
+		pay_wait = 9'd0;
+		if (set_val && sidx[9:8] == 2'b11) begin
+			/* DISP_SET's register write (SET_REG's index is below 0x300). */
+			pay_we = 1'b1;
+			pay_idx = sidx;
+			pay_wait = B_DISP;
+		end else if (set_val) begin
 			pay_we = 1'b1;
 			pay_idx = sidx;
 			/* 0x200-0x2FF: the vertex stage's texture slots, as the TU range. */
-			pay_wait = sidx[9] ? B_TUW : s9 < GHCI_S_VF ? B_BLT : s9 < GHCI_S_RX ? B_VF :
+			pay_wait = {1'b0, sidx[9] ? B_TUW : s9 < GHCI_S_VF ? B_BLT : s9 < GHCI_S_RX ? B_VF :
 				s9 < GHCI_S_ROP ? B_RXROP : s9 < GHCI_S_TU ? B_ROPW :
 				s9 < GHCI_S_PROG ? B_TUW : s9 < GHCI_S_SA ? B_PROGW :
-				(s9[8:5] == GHCI_S_ATTR_DST[8:5] && (VF_1D != 0 || !s9[4])) ? B_VF : 8'd0;
+				(s9[8:5] == GHCI_S_ATTR_DST[8:5] && (VF_1D != 0 || !s9[4])) ? B_VF : 8'd0};
 		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, GHCI_S_RAW + {1'b0, p}};
-			pay_wait = B_RX;
+			pay_wait = {1'b0, B_RX};
 		end else if (vendor && op == VOP_DBG_MARK && p == 8'd0) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, GHCI_S_DBG_MARK};
 		end else if (!vendor && op == OP_DISPATCH && p < 8'd3) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, GHCI_S_GRID_X + {1'b0, p}};
-			pay_wait = B_SU;
+			pay_wait = {1'b0, B_SU};
 		end else if (!vendor && op == OP_LOAD_CONST && p < 8'd3) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, GHCI_S_LC_REGION + {1'b0, p}};
-			pay_wait = B_SU;
+			pay_wait = {1'b0, B_SU};
+		end else if (!vendor && op == OP_FLIP && p < 8'd4) begin
+			/* FLIP's staging: plane, base, record, value (0x3B8-0x3BB). */
+			pay_we = 1'b1;
+			pay_idx = {8'b11101110, p[1:0]};
 		end
 	end
 
 	always @(*) begin
-		pre = 8'd0;
+		pre = 9'd0;
 		pre_f = 1'b0;
-		post = 8'd0;
+		post = 9'd0;
 		if (vendor) begin
-			pre = op == VOP_DRAW_RAW ? B_RX : 8'd0;
+			pre = {1'b0, op == VOP_DRAW_RAW ? B_RX : 8'd0};
 		end else begin
 			case (op)
 			OP_BLIT: begin
-				pre = B_BLT;
-				post = flags[0] ? B_BLT : 8'd0;
+				pre = {1'b0, B_BLT};
+				post = {1'b0, flags[0] ? B_BLT : 8'd0};
 			end
-			OP_DRAW: pre = B_VF;
-			OP_FENCE: pre = B_ALL;
-			OP_WAIT_IDLE: pre = flags == 8'd0 ? B_ALL : flags | B_MEM;
+			OP_DRAW: pre = {1'b0, B_VF};
+			OP_FENCE: pre = {1'b0, B_ALL};
+			OP_WAIT_IDLE: pre = {1'b0, flags == 8'd0 ? B_ALL : flags | B_MEM};
 			OP_LOAD_CONST: begin
-				pre = B_LCPRE;
-				post = B_SU;
+				pre = {1'b0, B_LCPRE};
+				post = {1'b0, B_SU};
 			end
 			OP_RESULT: begin
-				pre = B_ALL;
+				pre = {1'b0, B_ALL};
 				pre_f = 1'b1;
 			end
 			/* QUERY: as RESULT; flags[0] (clear only) does not wait */
 			OP_QUERY: begin
-				pre = flags[0] ? 8'd0 : B_ALL;
+				pre = {1'b0, flags[0] ? 8'd0 : B_ALL};
 				pre_f = !flags[0];
 			end
+			/* DISP_SET flags[0]: the controller's idle after the kick. */
+			OP_DISP_SET: post = flags[0] ? B_DISP : 9'd0;
+			/* FLIP: the plane free; flags[0] COMPLETE: every unit first. */
+			`ifdef MUT_DISP_NOWAIT
+			OP_FLIP: pre = B_DISP;
+			`else
+			OP_FLIP: pre = {1'b0, flags[0] ? B_ALL : 8'd0} | B_DISP;
+			`endif
 			default: ;
 			endcase
 		end

@@ -1,6 +1,6 @@
 # atg_dc_ycc
 
-RTL: `rtl/dc/atg_dc_ycc.v`.  Parent: atg_dc (PX_FMT = 1).  Implemented in: p012.
+RTL: `rtl/gpu/dc/atg_dc_ycc.v`.  Parent: atg_dc (PX_FMT = 1).  Implemented in: p012.
 
 ## 1. Purpose and place
 
@@ -73,3 +73,5 @@ register settings are not used here.
 
 New in WS288 p012 part A (TB `atg_dc_ycc_tb` PASS); not in design §7.6's list (added because the
 KC705 has 16 data lines to the ADV7511, not 24: Q1 to ACK).
+
+WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles): the nine constant products are sums of shifted copies in chains of am_add and am_sub (no DSP).

@@ -26,7 +26,9 @@
  * The MEM capability's four words (LOCAL_BASE, LOCAL_SIZE, WINDOW_SIZE,
  * HOST_LIMIT)
  * are at 0x1C0, after the room of a full list; the PROT capability's
- * (atg_cp_prot's, through x_rdata) at 0x1D0.
+ * (atg_cp_prot's, through x_rdata) at 0x1D0.  DISP2 points to its window at
+ * 0x200 (atg_cp_disp answers it through x_rdata).  At most ten entries fit
+ * before 0x1C0: DISP and DISP2 are not listed together.
  */
 
 `timescale 1ns / 1ps
@@ -48,7 +50,7 @@ module atg_cp_regs #(
 	parameter CAPS = 32'h00500002,	/* CAPS value (design §2.2), set by atg_top from its parameters */
 	parameter CAPS2 = 32'h00000001,	/* CAPS2 value */
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
-	parameter [9:0] XCAP_MASK = 10'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, PROT 9, FMT 10) */
+	parameter [10:0] XCAP_MASK = 11'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, PROT 9, FMT 10, DISP2 11) */
 	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
 	parameter PERF_SRC = 32'hFFFFFFFF	/* PERF_SRC0..3 (byte n = PERF_SRCn) */
 ) (
@@ -159,6 +161,7 @@ module atg_cp_regs #(
 		8: xcap_ptr = 32'h000001C0;
 		9: xcap_ptr = 32'h000001D0;	/* PROT: atg_cp_prot answers its registers */
 		10: xcap_ptr = 32'h00000160;
+		11: xcap_ptr = {15'd0, GHCI_DISP2_BASE};
 		default: xcap_ptr = 32'd0;
 		endcase
 	endfunction
@@ -172,12 +175,12 @@ module atg_cp_regs #(
 			xcap_word = 32'd0;
 			o = {20'd0, off};
 			k = 0;
-			for (id = 1; id <= 10; id = id + 1)
+			for (id = 1; id <= 11; id = id + 1)
 				if (XCAP_MASK[id - 1]) begin
 					/* The next entry, in dwords from this one. */
 					nxt = 16'd0;
 					k2 = k + 1;
-					for (id2 = 10; id2 > id; id2 = id2 - 1)
+					for (id2 = 11; id2 > id; id2 = id2 - 1)
 						if (XCAP_MASK[id2 - 1])
 							/* verilator lint_off WIDTHTRUNC */
 							nxt = (xcap_off(k2) - xcap_off(k)) / 4;	/* < 2^16 */
@@ -203,7 +206,7 @@ module atg_cp_regs #(
 		GHCI_DEVICE_ID[11:0]: own = DEVICE_ID;
 		GHCI_ISA_ID[11:0]: own = ISA_ID;
 		GHCI_DEVICE_VERSION[11:0]: own = DEVICE_VERSION;
-		GHCI_EXTCAP[11:0]: own = XCAP_MASK != 10'd0 ? {15'd0, GHCI_EXTCAP_LIST} : 32'd0;
+		GHCI_EXTCAP[11:0]: own = XCAP_MASK != 11'd0 ? {15'd0, GHCI_EXTCAP_LIST} : 32'd0;
 		GHCI_GCLK_HZ[11:0]: own = GCLK_HZ;
 		GHCI_CAPS[11:0]: own = CAPS;
 		GHCI_CAPS2[11:0]: own = CAPS2;

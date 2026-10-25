@@ -7,10 +7,14 @@
 
 /*
  * atg_tu_etc: the ETC2 and EAC block decoder of the TU (VkFormat 147-156,
- * docs/ghci.md section 8.5), combinational: one 4 x 4 block and the
+ * docs/ghci.md section 8.5): one 4 x 4 block and the
  * texel's column s and row t in it to that texel, written from the
  * Khronos Data Format Specification's ETC2 and EAC text (tools/etcmodel.py
- * is the reference, bit for bit).
+ * is the reference, bit for bit).  Pipelined: the inputs in cycle 0,
+ * o_kind and o_texel in cycle 4 (registers), one texel a cycle; E0 the
+ * words; E1 the mode, the colours and the modifier, EAC's modifier; E1b
+ * planar's terms, EAC's modifier times the multiplier; E2 the sums and the
+ * clamps.
  *
  * i_fmt = VkFormat - 147: 0 ETC2_R8G8B8_UNORM, 1 its SRGB, 2
  * ETC2_R8G8B8A1_UNORM, 3 its SRGB, 4 ETC2_R8G8B8A8_UNORM, 5 its SRGB, 6
@@ -33,6 +37,7 @@
 `default_nettype none
 
 module atg_tu_etc (
+	input wire clk,
 	input wire [3:0] i_fmt,
 	input wire [127:0] i_block,
 	input wire [1:0] i_s,
@@ -40,6 +45,8 @@ module atg_tu_etc (
 	output reg [1:0] o_kind,
 	output reg [31:0] o_texel
 );
+	integer c;
+
 	/* The 64-bit integer of bytes 8k..8k+7, byte 8k the most significant. */
 	function [63:0] w64;
 		input [127:0] b;
@@ -57,23 +64,23 @@ module atg_tu_etc (
 	endfunction
 
 	function [7:0] ext4;
-		input [3:0] c;
-		ext4 = {c, c};
+		input [3:0] x;
+		ext4 = {x, x};
 	endfunction
 
 	function [7:0] ext5;
-		input [4:0] c;
-		ext5 = {c, c[4:2]};
+		input [4:0] x;
+		ext5 = {x, x[4:2]};
 	endfunction
 
 	function [7:0] ext6;
-		input [5:0] c;
-		ext6 = {c, c[5:4]};
+		input [5:0] x;
+		ext6 = {x, x[5:4]};
 	endfunction
 
 	function [7:0] ext7;
-		input [6:0] c;
-		ext7 = {c, c[6]};
+		input [6:0] x;
+		ext7 = {x, x[6]};
 	endfunction
 
 	/* The modifier pairs (a, b) of the individual and differential modes,
@@ -110,198 +117,208 @@ module atg_tu_etc (
 		endcase
 	endfunction
 
-	/* The EAC modifier of table ti, index ix (signed). */
-	function signed [4:0] eacm;
-		input [3:0] ti;
-		input [2:0] ix;
-		reg [31:0] r;	/* the row: eight 4-bit magnitudes, the first four negative */
-		begin
-			case (ti)
-			4'd0: r = 32'hE852F963;
-			4'd1: r = 32'hC962DA73;
-			4'd2: r = 32'hC741D852;
-			4'd3: r = 32'hC531D642;
-			4'd4: r = 32'hB752C863;
-			4'd5: r = 32'hA862B973;
-			4'd6: r = 32'hA763B874;
-			4'd7: r = 32'hA742B853;
-			4'd8: r = 32'h9751A862;
-			4'd9: r = 32'h9741A852;
-			4'd10: r = 32'h9731A842;
-			4'd11: r = 32'h9641A752;
-			4'd12: r = 32'h9632A743;
-			4'd13: r = 32'h9210A321;
-			4'd14: r = 32'h87539864;
-			default: r = 32'h86429753;
-			endcase
-			eacm = ix[2] ? $signed({1'b0, r[4 * ix +: 4]}) : -$signed({1'b0, r[4 * ix +: 4]});
-		end
-	endfunction
+	/* ---- E0: the block's two words, the colour block's word ---- */
+	wire [63:0] wa_i = w64(i_block, 1'b0), wb_i = w64(i_block, 1'b1);
+	wire rgbb_i = i_fmt == 4'd4 || i_fmt == 4'd5;	/* RGBA8: the colour block second */
+	reg [63:0] w, wa, wb;
+	reg [3:0] fmt0;
+	reg [1:0] x, y;
+	always @(posedge clk) begin
+		w <= rgbb_i ? wb_i : wa_i;
+		wa <= wa_i;
+		wb <= wb_i;
+		fmt0 <= i_fmt;
+		x <= i_s;
+		y <= i_t;
+	end
+	wire [3:0] k = {x, y};
 
-	/* An RGB block's texel (x, y): {A, B, G, R}; punch: RGB8A1. */
-	function [31:0] rgb;
-		input [63:0] w;
-		input [1:0] x;
-		input [1:0] y;
-		input punch;
-		reg [3:0] k;
-		reg [1:0] idx;
-		reg opq, trn, sub;
-		reg [4:0] r5, g5, b5;
-		reg signed [5:0] r2, g2, b2;
-		reg [23:0] c1, c2, cb, v1, v2;
-		reg [15:0] ab;
-		reg signed [9:0] m;
-		reg [6:0] d;
-		reg [23:0] pc;
-		reg signed [11:0] q [0:2];
-		reg [7:0] o [0:2];
-		reg [7:0] h [0:2];
-		reg [7:0] v [0:2];
-		integer c;
-		begin
-			k = {x, y};
-			idx = {w[{2'b01, k}], w[{2'b00, k}]};
-			opq = punch ? w[33] : 1'b1;
-			trn = punch && !w[33] && idx == 2'd2;
-			r5 = w[63:59];
-			g5 = w[55:51];
-			b5 = w[47:43];
-			r2 = $signed({1'b0, r5}) + $signed({{3{w[58]}}, w[58:56]});
-			g2 = $signed({1'b0, g5}) + $signed({{3{w[50]}}, w[50:48]});
-			b2 = $signed({1'b0, b5}) + $signed({{3{w[42]}}, w[42:40]});
-			pc = 24'd0;
-			m = 10'sd0;
-			if ((!punch && !w[33]) || (r2 >= 0 && r2 <= 31 && g2 >= 0 && g2 <= 31 &&
-			    b2 >= 0 && b2 <= 31)) begin
-				/* individual or differential */
-				if (!punch && !w[33]) begin
-					c1 = {ext4(w[47:44]), ext4(w[55:52]), ext4(w[63:60])};
-					c2 = {ext4(w[43:40]), ext4(w[51:48]), ext4(w[59:56])};
-				end else begin
-					c1 = {ext5(b5), ext5(g5), ext5(r5)};
-					c2 = {ext5(b2[4:0]), ext5(g2[4:0]), ext5(r2[4:0])};
-				end
-				sub = w[32] ? y[1] : x[1];
-				ab = mods(sub ? w[36:34] : w[39:37]);
-				m = idx == 2'd0 ? $signed({2'b00, ab[7:0]}) : idx == 2'd1 ? $signed({2'b00, ab[15:8]}) :
-					idx == 2'd2 ? -$signed({2'b00, ab[7:0]}) : -$signed({2'b00, ab[15:8]});
-				if (!opq && !idx[0])
-					m = 10'sd0;
-				cb = sub ? c2 : c1;
-				for (c = 0; c < 3; c = c + 1)
-					pc[8 * c +: 8] = clamp8($signed({4'd0, cb[8 * c +: 8]}) + {{2{m[9]}}, m});
-			end else if (r2 < 0 || r2 > 31 || g2 < 0 || g2 > 31) begin
-				/* T or H */
-				if (r2 < 0 || r2 > 31) begin
-					c1 = {ext4(w[51:48]), ext4(w[55:52]), ext4({w[60:59], w[57:56]})};
-					c2 = {ext4(w[39:36]), ext4(w[43:40]), ext4(w[47:44])};
-					d = tdist({w[35:34], w[32]});
-				end else begin
-					c1 = {ext4({w[51], w[49:47]}), ext4({w[58:56], w[52]}), ext4(w[62:59])};
-					c2 = {ext4(w[38:35]), ext4(w[42:39]), ext4(w[46:43])};
-					v1 = {c1[7:0], c1[15:8], c1[23:16]};
-					v2 = {c2[7:0], c2[15:8], c2[23:16]};
-					d = tdist({w[34], w[32], v1 >= v2});
-				end
-				for (c = 0; c < 3; c = c + 1) begin
-					if (r2 < 0 || r2 > 31)
-						q[c] = idx == 2'd0 ? $signed({4'd0, c1[8 * c +: 8]}) :
-							idx == 2'd2 ? $signed({4'd0, c2[8 * c +: 8]}) :
-							idx == 2'd1 ? $signed({4'd0, c2[8 * c +: 8]}) + $signed({5'd0, d}) :
-							$signed({4'd0, c2[8 * c +: 8]}) - $signed({5'd0, d});
-					else
-						q[c] = idx[1] ? (idx[0] ? $signed({4'd0, c2[8 * c +: 8]}) - $signed({5'd0, d}) :
-							$signed({4'd0, c2[8 * c +: 8]}) + $signed({5'd0, d})) :
-							(idx[0] ? $signed({4'd0, c1[8 * c +: 8]}) - $signed({5'd0, d}) :
-							$signed({4'd0, c1[8 * c +: 8]}) + $signed({5'd0, d}));
-					pc[8 * c +: 8] = clamp8(q[c]);
-				end
-			end else begin
-				/* planar */
-				trn = 1'b0;
-				o[0] = ext6(w[62:57]);
-				o[1] = ext7({w[56], w[54:49]});
-				o[2] = ext6({w[48], w[44:43], w[41:39]});
-				h[0] = ext6({w[38:34], w[32]});
-				h[1] = ext7(w[31:25]);
-				h[2] = ext6(w[24:19]);
-				v[0] = ext6(w[18:13]);
-				v[1] = ext7(w[12:6]);
-				v[2] = ext6(w[5:0]);
-				for (c = 0; c < 3; c = c + 1) begin
-					q[c] = ($signed({10'd0, x}) * ($signed({4'd0, h[c]}) - $signed({4'd0, o[c]})) +
-						$signed({10'd0, y}) * ($signed({4'd0, v[c]}) - $signed({4'd0, o[c]})) +
-						$signed({2'd0, o[c], 2'd0}) + 12'sd2) >>> 2;
-					pc[8 * c +: 8] = clamp8(q[c]);
-				end
-			end
-			rgb = trn ? 32'd0 : {8'hFF, pc};
-		end
-	endfunction
+	/* ---- E1, the colour block: w the block, punch RGB8A1 ---- */
+	wire rgbb = fmt0 == 4'd4 || fmt0 == 4'd5;
+	wire punch = !rgbb && fmt0[1];
+	wire [1:0] idx = {w[{2'b01, k}], w[{2'b00, k}]};
+	wire opq = punch ? w[33] : 1'b1;
+	wire trn = punch && !w[33] && idx == 2'd2;
+	wire [4:0] r5 = w[63:59], g5 = w[55:51], b5 = w[47:43];
+	wire [5:0] r2, g2, b2;	/* the differential colour: signed, bit 5 set outside 0-31 */
+	wire [2:0] d_nc;
 
-	/* An EAC block's value of texel (x, y): s8 the 8-bit alpha (0) or
-	 * R11 (1); sg signed R11. */
-	function [10:0] eac;
-		input [63:0] w;
-		input [1:0] x;
-		input [1:0] y;
-		input r11;
-		input sg;
-		reg [3:0] k;
-		reg [5:0] p;
-		reg signed [4:0] m;
-		reg signed [13:0] bs, mm, v;
-		begin
-			k = {x, y};
-			p = 6'd45 - 6'd3 * {2'd0, k};
-			m = eacm(w[51:48], w[p +: 3]);
-			mm = $signed({{9{m[4]}}, m}) * $signed({10'd0, w[55:52]});
-			if (!r11) begin
-				v = $signed({6'd0, w[63:56]}) + mm;
-				eac = {3'd0, v < 0 ? 8'd0 : v > 255 ? 8'd255 : v[7:0]};
-			end else if (!sg) begin
-				v = $signed({3'd0, w[63:56], 3'd4}) + (w[55:52] == 4'd0 ? $signed({{9{m[4]}}, m}) :
-					mm <<< 3);
-				eac = v < 0 ? 11'd0 : v > 2047 ? 11'd2047 : v[10:0];
-			end else begin
-				bs = w[63:56] == 8'h80 ? -14'sd1016 : $signed({{3{w[63]}}, w[63:56], 3'd0});
-				v = bs + (w[55:52] == 4'd0 ? $signed({{9{m[4]}}, m}) : mm <<< 3);
-				eac = v < -1023 ? 11'h401 : v > 1023 ? 11'h3FF : v[10:0];
-			end
-		end
-	endfunction
+	am_add #(.W(6)) u_r2 (.a({1'b0, r5}), .b({{3{w[58]}}, w[58:56]}), .ci(1'b0), .s(r2),
+		.co(d_nc[0]));
+	am_add #(.W(6)) u_g2 (.a({1'b0, g5}), .b({{3{w[50]}}, w[50:48]}), .ci(1'b0), .s(g2),
+		.co(d_nc[1]));
+	am_add #(.W(6)) u_b2 (.a({1'b0, b5}), .b({{3{w[42]}}, w[42:40]}), .ci(1'b0), .s(b2),
+		.co(d_nc[2]));
 
-	wire [63:0] wa = w64(i_block, 1'b0), wb = w64(i_block, 1'b1);
-	reg [31:0] c;
-	reg [10:0] a8;	/* the alpha in [7:0] */
+	wire indiv = !punch && !w[33];
+	wire idv = indiv || (!r2[5] && !g2[5] && !b2[5]);	/* individual or differential */
+	wire tm = !idv && r2[5];	/* T */
+	wire hm = !idv && !r2[5] && g2[5];	/* H */
+	wire pm = !idv && !r2[5] && !g2[5];	/* planar */
 
+	/* individual and differential: the sub-block's colour and the modifier */
+	wire [23:0] i_c1 = indiv ? {ext4(w[47:44]), ext4(w[55:52]), ext4(w[63:60])} :
+		{ext5(b5), ext5(g5), ext5(r5)};
+	wire [23:0] i_c2 = indiv ? {ext4(w[43:40]), ext4(w[51:48]), ext4(w[59:56])} :
+		{ext5(b2[4:0]), ext5(g2[4:0]), ext5(r2[4:0])};
+	wire sub = w[32] ? y[1] : x[1];
+	wire [15:0] ab = mods(sub ? w[36:34] : w[39:37]);
+	wire [7:0] mb = idx[0] ? ab[15:8] : ab[7:0];
+	/* T and H: the colours and the distance */
+	wire [23:0] t_c1 = {ext4(w[51:48]), ext4(w[55:52]), ext4({w[60:59], w[57:56]})};
+	wire [23:0] t_c2 = {ext4(w[39:36]), ext4(w[43:40]), ext4(w[47:44])};
+	wire [23:0] h_c1 = {ext4({w[51], w[49:47]}), ext4({w[58:56], w[52]}), ext4(w[62:59])};
+	wire [23:0] h_c2 = {ext4(w[38:35]), ext4(w[42:39]), ext4(w[46:43])};
+	wire [23:0] h_v1 = {h_c1[7:0], h_c1[15:8], h_c1[23:16]};
+	wire [23:0] h_v2 = {h_c2[7:0], h_c2[15:8], h_c2[23:16]};
+	wire [6:0] d = tm ? tdist({w[35:34], w[32]}) : tdist({w[34], w[32], h_v1 >= h_v2});
+	/* The base colour and a signed offset of all three channels: q = base +
+	 * delta (individual, differential, T, H). */
+	wire [9:0] dmag = idv ? {2'b00, mb} : {3'd0, d};
+	wire [9:0] dneg;
+	wire dneg_nc;
+
+	am_sub #(.W(10)) u_dneg (.a(10'd0), .b(dmag), .bi(1'b0), .d(dneg), .bo(dneg_nc));
+
+	reg [23:0] base;
+	reg [9:0] delta;
 	always @(*) begin
-		o_kind = 2'd0;
-		o_texel = 32'd0;
-		c = 32'd0;
-		a8 = 11'd0;
-		case (i_fmt)
+		if (idv) begin
+			base = sub ? i_c2 : i_c1;
+			delta = !opq && !idx[0] ? 10'd0 : idx[1] ? dneg : dmag;
+		end else if (tm) begin
+			base = idx == 2'd0 ? t_c1 : t_c2;
+			delta = idx == 2'd1 ? dmag : idx == 2'd3 ? dneg : 10'd0;
+		end else begin
+			base = idx[1] ? h_c2 : h_c1;
+			delta = idx[0] ? dneg : dmag;
+		end
+	end
+
+	/* planar: (x (h - o) + y (v - o) + 4 o + 2) >> 2, as t1 + 2 t2 + 4 o + 2
+	 * with t1 = x[0] (h - o) + y[0] (v - o), t2 = x[1] (h - o) + y[1] (v - o)
+	 * (12-bit signed, as the reference); E1 h - o and v - o, E1b t1, t2 */
+	wire [23:0] po = {ext6({w[48], w[44:43], w[41:39]}), ext7({w[56], w[54:49]}),
+		ext6(w[62:57])};
+	wire [23:0] ph = {ext6(w[24:19]), ext7(w[31:25]), ext6({w[38:34], w[32]})};
+	wire [23:0] pv = {ext6(w[5:0]), ext7(w[12:6]), ext6(w[18:13])};
+	wire [11:0] dh [0:2];
+	wire [11:0] dv [0:2];
+	wire [5:0] p_nc;
+	genvar g;
+	generate
+	for (g = 0; g < 3; g = g + 1) begin : g_pl
+		am_sub #(.W(12)) u_dh (.a({4'd0, ph[g*8 +: 8]}), .b({4'd0, po[g*8 +: 8]}), .bi(1'b0),
+			.d(dh[g]), .bo(p_nc[g*2]));
+		am_sub #(.W(12)) u_dv (.a({4'd0, pv[g*8 +: 8]}), .b({4'd0, po[g*8 +: 8]}), .bi(1'b0),
+			.d(dv[g]), .bo(p_nc[g*2 + 1]));
+	end
+	endgenerate
+
+	/* ---- E1-E2, the EAC blocks (wa: R or alpha, wb: G) ---- */
+	wire [10:0] ea, eb;
+
+	atg_tu_eac eac_a (.clk(clk), .i_w(wa), .i_k(k), .i_r11(!rgbb), .i_sg(fmt0[0]), .o_v(ea));
+	atg_tu_eac eac_b (.clk(clk), .i_w(wb), .i_k(k), .i_r11(1'b1), .i_sg(fmt0[0]), .o_v(eb));
+
+	/* ---- E1 registers ---- */
+	reg [3:0] fmt1;
+	reg trn1, pm1;
+	reg [1:0] x1, y1;
+	reg [23:0] base1, po1;
+	reg [9:0] delta1;
+	reg [11:0] dh1 [0:2];
+	reg [11:0] dv1 [0:2];
+	always @(posedge clk) begin
+		fmt1 <= fmt0;
+		trn1 <= trn && !pm;
+		pm1 <= pm;
+		x1 <= x;
+		y1 <= y;
+		base1 <= base;
+		delta1 <= delta;
+		po1 <= po;
+		for (c = 0; c < 3; c = c + 1) begin
+			dh1[c] <= dh[c];
+			dv1[c] <= dv[c];
+		end
+	end
+
+	/* ---- E1b: planar's t1, t2 ---- */
+	wire [11:0] t1 [0:2];
+	wire [11:0] t2 [0:2];
+	wire [5:0] t_nc;
+	generate
+	for (g = 0; g < 3; g = g + 1) begin : g_t
+		am_add #(.W(12)) u_t1 (.a(x1[0] ? dh1[g] : 12'd0), .b(y1[0] ? dv1[g] : 12'd0),
+			.ci(1'b0), .s(t1[g]), .co(t_nc[g*2]));
+		am_add #(.W(12)) u_t2 (.a(x1[1] ? dh1[g] : 12'd0), .b(y1[1] ? dv1[g] : 12'd0),
+			.ci(1'b0), .s(t2[g]), .co(t_nc[g*2 + 1]));
+	end
+	endgenerate
+
+	/* ---- E1b registers ---- */
+	reg [3:0] fmt2;
+	reg trn2, pm2;
+	reg [23:0] base2, po2;
+	reg [9:0] delta2;
+	reg [11:0] t1_2 [0:2];
+	reg [11:0] t2_2 [0:2];
+	always @(posedge clk) begin
+		fmt2 <= fmt1;
+		trn2 <= trn1;
+		pm2 <= pm1;
+		base2 <= base1;
+		delta2 <= delta1;
+		po2 <= po1;
+		for (c = 0; c < 3; c = c + 1) begin
+			t1_2[c] <= t1[c];
+			t2_2[c] <= t2[c];
+		end
+	end
+
+	/* ---- E2: the sums and the clamps ---- */
+	wire [11:0] qn [0:2];	/* base + delta */
+	wire [11:0] qa [0:2];
+	wire [11:0] qp [0:2];	/* planar, before >> 2 */
+	wire [8:0] q_nc;
+	wire [23:0] pc;
+	generate
+	for (g = 0; g < 3; g = g + 1) begin : g_q
+		am_add #(.W(12)) u_qn (.a({4'd0, base2[g*8 +: 8]}), .b({{2{delta2[9]}}, delta2}),
+			.ci(1'b0), .s(qn[g]), .co(q_nc[g*3]));
+		am_add #(.W(12)) u_qa (.a(t1_2[g]), .b({t2_2[g][10:0], 1'b0}), .ci(1'b0), .s(qa[g]),
+			.co(q_nc[g*3 + 1]));
+		am_add #(.W(12)) u_qp (.a(qa[g]), .b({2'd0, po2[g*8 +: 8], 2'b10}), .ci(1'b0),
+			.s(qp[g]), .co(q_nc[g*3 + 2]));
+		assign pc[g*8 +: 8] = pm2 ? clamp8({{2{qp[g][11]}}, qp[g][11:2]}) : clamp8(qn[g]);
+	end
+	endgenerate
+
+	wire [31:0] rgbv = trn2 ? 32'd0 : {8'hFF, pc};
+
+	always @(posedge clk) begin
+		o_kind <= 2'd0;
+		o_texel <= 32'd0;
+		case (fmt2)
 		4'd0, 4'd1, 4'd2, 4'd3: begin
-			o_kind = {1'b0, i_fmt[0]};
-			o_texel = rgb(wa, i_s, i_t, i_fmt[1]);
+			o_kind <= {1'b0, fmt2[0]};
+			o_texel <= rgbv;
 		end
 		4'd4, 4'd5: begin
-			o_kind = {1'b0, i_fmt[0]};
-			c = rgb(wb, i_s, i_t, 1'b0);
-			a8 = eac(wa, i_s, i_t, 1'b0, 1'b0);
-			o_texel = {a8[7:0], c[23:0]};
+			o_kind <= {1'b0, fmt2[0]};
+			o_texel <= {ea[7:0], rgbv[23:0]};
 		end
 		4'd6, 4'd7, 4'd8, 4'd9: begin
-			o_kind = i_fmt[0] ? 2'd3 : 2'd2;
-			o_texel = {5'd0, i_fmt[3] ? eac(wb, i_s, i_t, 1'b1, i_fmt[0]) : 11'd0, 5'd0,
-				eac(wa, i_s, i_t, 1'b1, i_fmt[0])};
+			o_kind <= fmt2[0] ? 2'd3 : 2'd2;
+			o_texel <= {5'd0, fmt2[3] ? eb : 11'd0, 5'd0, ea};
 		end
 		default: ;
 		endcase
 	end
 
-	wire unused_ok = &{1'b0, c[31:24], a8[10:8]};
+	wire unused_ok = &{1'b0, d_nc, dneg_nc, p_nc, t_nc, q_nc, opq, hm, ea[10:8],
+		rgbv[31:24]};
 endmodule
 
 `default_nettype wire

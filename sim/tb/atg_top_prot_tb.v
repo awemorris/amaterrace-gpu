@@ -131,7 +131,8 @@ module atg_top_prot_tb;
 		.x_rsp_valid(), .x_rsp_write(), .x_rsp_tag(), .x_rsp_rdata(), .x_rsp_error(),
 		.x_vsync(1'b0),
 		.j_wr(1'b0), .j_waddr(17'd0), .j_wdata(32'd0), .j_wstrb(4'd0), .j_rd(1'b0),
-		.j_raddr(17'd0), .j_rdata(), .j_busy()
+		.j_raddr(17'd0), .j_rdata(), .j_busy(),
+		.pclk(1'b0), .prst_n(1'b0), .scl_i(1'b1), .sda_i(1'b1)
 	);
 
 	axi_mem #(.DATA_W(512), .MEM_BYTES(1 << 20), .READ_EARLY(1), .SEED(7)) mem (

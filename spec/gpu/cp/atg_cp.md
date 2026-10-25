@@ -29,7 +29,9 @@ The CPU (`atg_cpu`) is outside, in `atg_top`, connected through the `hcr_*`, `v_
 | `UNITS` | 8'h03 | Present blocks in STATUS busy-bit order (CP, BLT, VF, RX, ROP, TU, SU, SA); set by `atg_top` from its `HAS_*`/`NSU` | — |
 | `HAS_CPU` | 0 | `atg_cpu` takes class V packets (else they fault, kind 2); CAPS[17], [18]; CPFW in the EXTCAP list | 0, 1 |
 | `HAS_VSYNC` | 0 | A display's vsync reaches the CP: CAPS[10], WAIT_VSYNC | 0, 1 |
-| `HAS_DISP` | 0 | A display controller's registers are in this window at +0x10000: CAPS[3] and the DISP capability (WS288 p012, KC705) | 0, 1 |
+| `HAS_DISP` | 0 | A DISP2 display controller (atg_dc in atg_top; WS288 p035): CAPS[3], the DISP2 capability (window at 0x200) and the child `atg_cp_disp` | 0, 1 |
+| `DISP_PLANES` | 2 | The DC's planes (2: the cursor plane) | 1, 2 |
+| `DC_CLIENT` | 8'hFF | The DC's MC client: its refusals are not device faults (atg_cp_ctl) | atg_top: `C_DC` |
 | `HAS_DBG` | 0 | A debug bridge outside the host bus (JTAG): the DBG capability | 0, 1 |
 | `PACKED` | 0 | The SU has the packed arithmetic: CAPS[28] | 0, 1 |
 | `SUBGROUP` | 0 | The SU has shfl/vote/ballot: CAPS[24] (`atg_top` passes NSU ≠ 0 && SU_SUBGROUP, WS288 p008) | 0, 1 |
@@ -40,7 +42,7 @@ The CPU (`atg_cpu`) is outside, in `atg_top`, connected through the `hcr_*`, `v_
 
 Derived: CAPS = {0, CORE1 && graphics && TU && SU (CAPS[30]), MS4 && graphics && TU && SU (CAPS[29]), PACKED && SU, VF && RX && ROP (graphics, CAPS[27]), TU (CAPS[26]), 0, SUBGROUP && SU (CAPS[24]), LS, 0, HAS_CPU, HAS_CPU, 0, state version 1, 4x4 tiles 1, HAS_VSYNC, CAPS[30] (stencil, CAPS[9]), TU (bilinear, WS288 p009),
 SU ? 5 : 0, HAS_DISP, UNITS[6], UNITS[1], 1} (CP, BLT and MC alone: 0x00501803); CAPS2 = 1 (one ring) | (TU ? 4 : 0) << 24 (16 texture slots, WS288 p009); ISA_ID =
-NATIVE_ISA_ID = "GSI1" with an SU, else 0; EXTCAP list: PERF (+ CPFW with the CPU, + DISP pointing at +0x10000 with HAS_DISP, + DBG with HAS_DBG); PERF0 = BLT busy,
+NATIVE_ISA_ID = "GSI1" with an SU, else 0; EXTCAP list: PERF (+ CPFW with the CPU, + DISP2 pointing at 0x200 with HAS_DISP, + DBG with HAS_DBG); PERF0 = BLT busy,
 PERF1 = memory busy (PERF_SRC 1, 8, 0xFF, 0xFF).
 
 ## 3. Ports
@@ -128,3 +130,5 @@ BLT error and of the watchdog is 0).
 RESIDENT_WARPS (parameter, default 0): the RESIDENT_WARPS register (0x04C), NSU x NWARPS from atg_top, passed to atg_cp_regs.
 
 2026-10-25: parameters NREGS (default 0: RESIDENT_WARPS[23:16], SU_NREGS from atg_top) and LOCAL_BASE, LOCAL_BYTES, WINDOW_BYTES (default 0: the MEM capability, XCAP bit 7 when LOCAL_BYTES is not 0), passed to atg_cp_regs.  p039: HOST_LIMIT (default 0, MEM +0xC) likewise.
+
+**WS288 p035 D4 (2026-10-25, P3)**: the child `atg_cp_disp` (with `HAS_DISP`, on rst_n): the HCR snoop port, `cp_state`, the sequencer's payload writes (`uop_idx[9:8]` = 3 go to it, not to atg_cp_state), the kick codes 6 (FLIP) and 7 (DISP_SET's idle wait), busy bit 8 (`disp_wait`), fault source 8, the fourth requester of the `am_amb_mux` (the records; `req_chk` 0), IRQ_STATUS[12:9] (VBLANK, FLIP, DISP_ERROR, HOTPLUG; `dc_ev` [0] VBLANK, [1] DISP_ERROR, [2] HOTPLUG from the DC), and `hcr_rdata` through `x_rdata`.  New ports to the DC (in atg_top): `d_we`, `d_idx`, `d_wdata`, `d_wmask`, `d_ridx`, `d_rdata`, `flip_valid`, `flip_plane`, `flip_base`, `taken`, `taken_cancel`, `dc_pending`, `dc_idle`, `frame_count`, `dc_err`, `dc_ev` (idle without `HAS_DISP`).  `atg_cp_seq`'s kicks are one pulse and a code, split here into `blt_kick`, `draw_kick`, `cs_kick`, `lc_kick`, `raw_kick` and PERF_RESET.  `atg_cp_ctl` with `NSRC` 9 and `DC_CLIENT`.  XCAP has 11 bits (DISP2 bit 10; DISP, bit 0, is no longer listed by the CP).

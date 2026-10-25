@@ -13,7 +13,7 @@
  * order:
  *
  *   - bar0: GHCI_MAGIC and the major version, SCRATCH written and read
- *     back, the DC's DC_ID at +0x10000, STATUS.MEM_READY, RING_BASE
+ *     back, the DC's DC_ID in the DISP2 window, STATUS.MEM_READY, RING_BASE
  *     written and read back, a doorbell (RING_WPTR) taken (OKAY);
  *   - bar2: one 16-byte beat written and read back, the DDR3 model holds
  *     it at the window's offset, a write with byte strobes changes only
@@ -25,10 +25,12 @@
  *     (DBG_ADDR/DBG_DATA, aperture [0x1_0000, 0x8010_0000)): through
  *     am_axi_split and the GPU -> host port into the model's host memory,
  *     with no error; a local read after them still sees the DDR3;
- *   - msi: vector 0 for IRQ_SET of the soft interrupt (IRQ_ENABLE set),
- *     again after an IRQ_ENABLE write that leaves the line 1, none after
- *     the IRQ_STATUS write that clears it, one for the next IRQ_SET;
- *     vector 1 for the DC's VSYNC (a 32 x 4 test-pattern mode);
+ *   - msi (one vector, docs/ghci.md section 15.2): a message for IRQ_SET
+ *     of the soft interrupt (IRQ_ENABLE set), again after an IRQ_ENABLE
+ *     write that leaves the line 1, none after the IRQ_STATUS write that
+ *     clears it, one for the next IRQ_SET; one for the DC's VBLANK
+ *     (IRQ_STATUS [9], a 32 x 4 test-pattern mode, the CP IDLE so the
+ *     host writes the DISP2 window), and no more while it stays set;
  *   - no fault (STATUS.FAULT 0).
  *
  * sim-sources: boards/kc705/atg_kc705_raster.v boards/kc705/lib/atg_kc705_jtag.v
@@ -140,19 +142,18 @@ module atg_kc705_pcie_tb;
 		repeat (n) @(posedge dut.pcie.user_clk);
 	endtask
 	task expect_msi;
-		input integer vec;
 		input integer want;
 		begin
 			wait_uclk(100);
-			if (dut.pcie.msi_count[vec] != want) begin
+			if (dut.pcie.msi_count != want) begin
 				errors = errors + 1;
-				$display("FAIL atg_kc705_pcie: MSI vector %0d: %0d messages, expected %0d",
-					vec, dut.pcie.msi_count[vec], want);
+				$display("FAIL atg_kc705_pcie: %0d MSI messages, expected %0d",
+					dut.pcie.msi_count, want);
 			end
 		end
 	endtask
 
-	localparam [16:0] DC = 17'h1_0000;
+	localparam [16:0] DC = GHCI_DISP2_BASE;
 	reg [127:0] q, q2;
 	reg [511:0] b4, b4r;
 	integer n, i;
@@ -249,17 +250,17 @@ module atg_kc705_pcie_tb;
 			$display("PASS atg_kc705_pcie.host");
 		/* msi */
 		wr(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_SOFT);
-		expect_msi(0, 0);
+		expect_msi(0);
 		wr(GHCI_IRQ_SET, 32'd1 << GHCI_IRQ_SOFT);
-		expect_msi(0, 1);
+		expect_msi(1);
 		wr(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_SOFT);	/* leaves it 1 */
-		expect_msi(0, 2);
+		expect_msi(2);
 		wr(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_SOFT);	/* clears it */
-		expect_msi(0, 2);
+		expect_msi(2);
 		wr(GHCI_IRQ_SET, 32'd1 << GHCI_IRQ_SOFT);
-		expect_msi(0, 3);
+		expect_msi(3);
 		wr(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_SOFT);
-		/* the DC's VSYNC: 32 x 4 */
+		/* the DC's VBLANK: 32 x 4 */
 		wr(DC | GHCI_DC_TIMING, 32'd32);
 		wr(DC | (GHCI_DC_TIMING + 17'h04), 32'd2);
 		wr(DC | (GHCI_DC_TIMING + 17'h08), 32'd4);
@@ -270,19 +271,27 @@ module atg_kc705_pcie_tb;
 		wr(DC | (GHCI_DC_TIMING + 17'h1C), 32'd1);
 		wr(DC | GHCI_DC_FB_SIZE, {16'd4, 16'd32});
 		wr(DC | GHCI_DC_FB_STRIDE, 32'd128);
-		wr(DC | GHCI_DC_IRQ_ENABLE, 32'd1);	/* VSYNC */
+		wr(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_VBLANK);
+		expect_msi(3);
 		wr(DC | GHCI_DC_CTRL, (32'd1 << GHCI_DC_CTRL_ENABLE) |
 			(32'd1 << GHCI_DC_CTRL_TEST_PATTERN));
 		n = 0;
-		while (dut.pcie.msi_count[1] == 0 && n < 400) begin
+		while (dut.pcie.msi_count == 3 && n < 400) begin
 			wait_uclk(25);
 			n = n + 1;
 		end
-		if (dut.pcie.msi_count[1] == 0)
-			fail("no MSI for the DC's VSYNC");
-		if (dut.pcie.msi_count[0] != 3)
-			fail("an MSI of vector 0 for the DC");
+		if (dut.pcie.msi_count == 3)
+			fail("no MSI for the DC's VBLANK");
+		rd(GHCI_IRQ_STATUS, v);
+		if (!v[GHCI_IRQ_VBLANK])
+			fail("IRQ_STATUS.VBLANK not set");
+		/* more frames: the line stays 1, no more messages */
+		wait_uclk(5000);
+		if (dut.pcie.msi_count != 4)
+			fail("not one MSI for the DC's VBLANK");
 		wr(DC | GHCI_DC_CTRL, 32'd0);
+		wr(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_VBLANK);
+		wr(GHCI_IRQ_ENABLE, 32'd0);
 		if (errors == 0)
 			$display("PASS atg_kc705_pcie.msi");
 		expect_reg(GHCI_STATUS, 32'd0, 32'd1 << GHCI_STATUS_FAULT);

@@ -23,10 +23,10 @@ module atg_dc_dma_tb;
 	reg rst_n = 1'b0;
 	always #5 clk = !clk;
 
-	reg enable = 0, frame_start = 0;
+	reg enable = 0, frame_start = 0, clear = 0;
 	reg [31:0] fb_base = 0, fb_stride = 0, fb_size = 0;
 	reg [1:0] format = 0;
-	wire px_valid, idle;
+	wire px_valid, idle, done, err;
 	reg px_ready = 0;
 	wire [31:0] px_data, scan_sum, scan_words;
 	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
@@ -36,10 +36,10 @@ module atg_dc_dma_tb;
 	wire [7:0] req_tag, rsp_tag;
 
 	atg_dc_dma dut (
-		.clk(clk), .rst_n(rst_n), .enable(enable), .frame_start(frame_start),
+		.clk(clk), .rst_n(rst_n), .clear(clear), .enable(enable), .frame_start(frame_start),
 		.fb_base(fb_base), .fb_stride(fb_stride), .fb_size(fb_size), .format(format),
 		.px_valid(px_valid), .px_ready(px_ready), .px_data(px_data), .idle(idle),
-		.scan_sum(scan_sum), .scan_words(scan_words),
+		.done(done), .err(err), .scan_sum(scan_sum), .scan_words(scan_words),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
@@ -58,6 +58,11 @@ module atg_dc_dma_tb;
 	integer e0, i, seed, got_n, ready_pct;
 	reg [31:0] got [0:4095];
 	reg [31:0] sum;
+
+	integer n_err = 0;
+	always @(posedge clk)
+		if (err)
+			n_err = n_err + 1;
 
 	/* The sink: records every pixel taken. */
 	always @(posedge clk) begin
@@ -170,7 +175,17 @@ module atg_dc_dma_tb;
 				scan_words, scan_sum, sum);
 		end
 		ready_pct = 100;
+		i = n_err;
 		frame("error rows", 32'h5F00, 32'd64, 16, 8, 0);	/* rows 4.. at 0x6000 */
+		repeat (4) @(negedge clk);
+		if (n_err - i != 8) begin	/* 4 rows of 2 lines */
+			errors = errors + 1;
+			$display("FAIL atg_dc_dma.frame: %0d err pulses, expected 8", n_err - i);
+		end
+		if (!done) begin
+			errors = errors + 1;
+			$display("FAIL atg_dc_dma.frame: done is 0 after the frame");
+		end
 		ready_pct = 70;
 		frame("empty", 32'h0, 32'd64, 0, 4, 0);
 		if (errors == e0)
@@ -215,6 +230,45 @@ module atg_dc_dma_tb;
 		frame("after abort", 32'h0400, 32'd128, 32, 4, 0);
 		if (errors == e0)
 			$display("PASS atg_dc_dma.stop");
+
+		/* clear: the DC's reset in the middle of a frame with reads on the way. */
+		e0 = errors;
+		ready_pct = 30;
+		fb_base = 32'h0;
+		fb_stride = 32'd256;
+		fb_size = {16'd16, 16'd64};
+		format = 0;
+		pulse_start;
+		repeat (8) @(negedge clk);
+		if (done) begin
+			errors = errors + 1;
+			$display("FAIL atg_dc_dma.clear: done in the middle of a frame");
+		end
+		while (idle)
+			@(negedge clk);	/* a read is outstanding */
+		/* One cycle (the reads outstanding answer after it). */
+		clear = 1;
+		frame_start = 1;	/* ignored under clear */
+		@(negedge clk);
+		frame_start = 0;
+		clear = 0;
+		if (px_valid) begin
+			errors = errors + 1;
+			$display("FAIL atg_dc_dma.clear: a pixel under clear");
+		end
+		i = 0;
+		while (!idle && i < 200) begin
+			@(negedge clk);
+			i = i + 1;
+		end
+		if (!idle || !done) begin
+			errors = errors + 1;
+			$display("FAIL atg_dc_dma.clear: not idle and done after clear (%b %b)", idle, done);
+		end
+		ready_pct = 70;
+		frame("after clear", 32'h0500, 32'd128, 24, 3, 0);
+		if (errors == e0)
+			$display("PASS atg_dc_dma.clear");
 
 		if (errors == 0)
 			$display("PASS atg_dc_dma");

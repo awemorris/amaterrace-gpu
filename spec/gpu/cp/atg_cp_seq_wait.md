@@ -24,10 +24,10 @@ All combinational.  Busy bits in STATUS order: [1] BLT, [2] VF, [3] RX, [4] ROP,
 | `sidx` | in | 9 | The SET_REG index of the pair. |
 | `pay_we` | out | 1 | The dword writes STATE. |
 | `pay_idx` | out | 9 | At this index. |
-| `pay_wait` | out | 8 | Busy bits that hold the dword. |
-| `pre` | out | 8 | Busy bits the µop waits for before its act. |
+| `pay_wait` | out | 9 | Busy bits that hold the dword (bit 8: atg_cp_disp's wait). |
+| `pre` | out | 9 | Busy bits the µop waits for before its act. |
 | `pre_f` | out | 1 | It also waits for the fence unit. |
-| `post` | out | 8 | Busy bits it waits for after its kick. |
+| `post` | out | 9 | Busy bits it waits for after its kick. |
 
 12 ports.
 
@@ -63,3 +63,5 @@ design §2.4.3 (µops), §3.8 (DRAW order), §15.6 (state between draws).
 Implemented (moved out of `atg_cp_seq`; the RX and ROP ranges' wait widened at the same time).
 
 2026-10-25 (CAPS[30]): QUERY (op 14) has RESULT's pre-wait (every block, and f_busy 0) unless flags[0] (clear only: no wait).
+
+WS288 p035 D4 (2026-10-25): 9 busy bits (bit 8 B_DISP, outside B_ALL).  DISP_SET's writes (`set_val` with `sidx` 0x3C0 + offset / 4) go to `sidx` and wait for B_DISP; FLIP's four dwords to 0x3B8-0x3BB without a wait; FLIP's pre is B_DISP (with flags[0] also B_ALL); DISP_SET flags[0]'s post is B_DISP.  `MUT_DISP_NOWAIT` (FLIP COMPLETE without B_ALL) for atg_cp_seq_tb.
