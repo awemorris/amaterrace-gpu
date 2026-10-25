@@ -12,6 +12,7 @@ The DC's scan-out registers of the DISP2 window (docs/ghci.md §13.2): DC_ID/VER
 | --- | --- | --- |
 | `HAS_I2C` | `0` | ADV7511 I2C master present (KC705, DC_CAPS[2]). |
 | `HAS_CURSOR` | `0` | The cursor plane (DC_CAPS[8]). |
+| `MODES` | `2` | The modes of atg_dc_mode's table (DC_CAPS[11:9]): 2, or 1 with its `TEST_MODE`. |
 
 ## 3. Ports
 
@@ -53,7 +54,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 - STATUS: [0] ENABLE, [1] underflow, [2] idle (ENABLE 0 and `idle_in`), [3] read error, [4] record error, [5] BAD_WRITE ([1], [3]-[5] sticky, W1C; a set and a clear in the same cycle leave it set; [1] is also cleared when ENABLE goes 0 → 1), [27:16] line, [28] `connected`, [29] `pending`, [30] `pending1`, [31] 0 (atg_cp_disp ORs its own).
 - Plane 0: `flip_valid` or a write of FB_NEXT while ENABLE is 1 (and does not fall in that cycle) makes FB_NEXT pending, taken at the next `ev_vsync` (FB_BASE = FB_NEXT); while ENABLE is 0 it sets FB_BASE at once (a flip of the CP is then taken at once).  ENABLE falling takes a pending flip as cancelled; a write of FB_NEXT over a flip of the CP takes that one as cancelled and makes the host's pending.  `taken` pulses only for the CP's flips.
 - DISP_ERROR: a pulse when one of the sticky errors is set; while ENABLE is 1 at most once between two vsyncs, while it is 0 at every error.
-- FRAME_COUNT counts `ev_vsync`.  Amaterrace's 0x70 SCAN_SUM and 0x74 SCAN_WORDS (R).  I2C reads give `i2c_rdata` only with `HAS_I2C`.  DC_VERSION 0.2; DC_CAPS [1] TMDS or [2] the transmitter, [7:4] 0111, [8] `HAS_CURSOR`, [11:9] 2.
+- FRAME_COUNT counts `ev_vsync`.  Amaterrace's 0x70 SCAN_SUM and 0x74 SCAN_WORDS (R).  I2C reads give `i2c_rdata` only with `HAS_I2C`.  DC_VERSION 0.2; DC_CAPS [1] TMDS or [2] the transmitter, [7:4] 0111, [8] `HAS_CURSOR`, [11:9] `MODES`.
 
 ## 5. State machine
 

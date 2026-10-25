@@ -19,6 +19,7 @@ Children: `atg_dc_regs`, `atg_dc_mode`, `atg_dc_dma`, `atg_dc_cursor` and `am_am
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
 | `FIFO_LOG2` | `9` | Pixel FIFO depth (2 lines of 640 need ≥ 1280 → 11 for 720p; 9 is the stub default). |
 | `PX_FMT` | `0` | The parallel output `px_*`: 0 RGB888 (`px_rgb` = {r, g, b}, same cycle as TMDS); 1 YCbCr 4:2:2 16-bit through atg_dc_ycc (`px_rgb` = {8'd0, C, Y}, `px_de/hs/vs` two pclk later): the KC705's ADV7511 (p012). |
+| `TEST_MODE` | `0` | 1: a simulation's one small mode (320 x 240 at 25 MHz) instead of the board's two: `atg_dc_mode`'s `TEST_MODE`, and `MODES` 1 to `atg_dc_regs` (DC_CAPS[11:9]).  The Verilator link only (p035 D6). |
 
 ## 3. Ports
 

@@ -18,6 +18,14 @@
  * the CPU's line DMA to stderr (a diagnostic of the firmware's memory
  * traffic), LINK_TRACE_UOPS every µop word the CPU gives the sequencer
  * and every change of the units' busy bits.
+ *
+ * The display controller (HAS_DISP, with the test mode of DC_TEST_MODE)
+ * has its pixel clock at a quarter of the core clock (LINK_GCLK_HZ / 4,
+ * the mode's 25 MHz): the clock changes while the core clock is low, every
+ * second core cycle, so that its edges never meet the core clock's.  Its
+ * reset follows the board's.  The video outputs are not looked at (the
+ * frame is checked through SCAN_SUM and the record) and the I2C pins read
+ * high (no transmitter: DC_HAS_I2C is 0).
  */
 
 #include <cstdint>
@@ -65,6 +73,8 @@ struct atg_link_stats counts;
 uint64_t read_cycles;
 bool trace_dma;
 bool trace_uops;
+/* The pixel clock's phase: it changes when this counts to 0 (every second cycle). */
+unsigned pclk_phase;
 
 /* The units' busy bits in STATUS order: [1] BLT, [2] VF, [3] RX, [4] ROP, [5] TU, [6] SU. */
 unsigned busy_bits()
@@ -132,6 +142,9 @@ void tick()
 	}
 	for (int i = 0; i < BEAT_WORDS; i++)
 		top->m_rdata[i] = w[i];
+	pclk_phase = (pclk_phase + 1u) % 2u;
+	if (pclk_phase == 0)
+		top->pclk = !top->pclk;
 	top->clk = 0;
 	top->eval();
 
@@ -227,10 +240,14 @@ extern "C" int atg_link_start(void)
 	trace_uops = std::getenv("LINK_TRACE_UOPS") != nullptr;
 	top = new Vatg_top;
 	top->mem_ready = 1;
+	top->scl_i = 1;
+	top->sda_i = 1;
 	top->rst_n = 0;
+	top->prst_n = 0;
 	for (int i = 0; i < 16; i++)
 		tick();
 	top->rst_n = 1;
+	top->prst_n = 1;
 	tick();
 	return 0;
 }

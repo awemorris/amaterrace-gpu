@@ -32,7 +32,8 @@ module atg_dc #(
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter FIFO_LOG2 = 9,	/* Pixel FIFO depth (2 lines of 640 need ≥ 1280 → 11 for 720p; 9 is the stub default) */
-	parameter PX_FMT = 0	/* The parallel output: 0 RGB888 (px_rgb = {r, g, b}), 1 YCbCr 4:2:2 16-bit (px_rgb = {8'd0, C, Y}, the KC705's ADV7511, atg_dc_ycc) */
+	parameter PX_FMT = 0,	/* The parallel output: 0 RGB888 (px_rgb = {r, g, b}), 1 YCbCr 4:2:2 16-bit (px_rgb = {8'd0, C, Y}, the KC705's ADV7511, atg_dc_ycc) */
+	parameter TEST_MODE = 0	/* 1: a simulation's one small mode instead of the board's two (atg_dc_mode) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -141,7 +142,7 @@ module atg_dc #(
 	wire [LINE_BYTES*8-1:0] m_req_wdata;
 	wire [7:0] m_req_tag;
 
-	atg_dc_regs #(.HAS_I2C(HAS_I2C), .HAS_CURSOR(HAS_CURSOR)) regs (
+	atg_dc_regs #(.HAS_I2C(HAS_I2C), .HAS_CURSOR(HAS_CURSOR), .MODES(TEST_MODE != 0 ? 1 : 2)) regs (
 		.clk(clk), .rst_n(rst_n),
 		.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(d_wmask), .d_ridx(d_ridx),
 		.d_rdata(regs_rdata),
@@ -158,7 +159,7 @@ module atg_dc #(
 		.i2c_we(i2c_we), .i2c_idx(i2c_idx), .i2c_wdata(i2c_wdata), .i2c_rdata(i2c_rdata)
 	);
 
-	atg_dc_mode mode (
+	atg_dc_mode #(.TEST_MODE(TEST_MODE)) mode (
 		.clk(clk), .rst_n(rst_n), .dc_reset(dc_reset),
 		.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(d_wmask), .d_ridx(d_ridx),
 		.d_rdata(mode_rdata), .connected(connected), .ev_hotplug(ev_hotplug),

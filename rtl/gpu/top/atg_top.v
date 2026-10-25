@@ -51,6 +51,7 @@ module atg_top #(
 	parameter DC_HAS_I2C = 0,	/* atg_dc's I2C master (the KC705's ADV7511) */
 	parameter DC_FIFO_LOG2 = 11,	/* atg_dc's pixel FIFO (720p: 11) */
 	parameter DC_PX_FMT = 0,	/* atg_dc's parallel output (1: the ADV7511's YCbCr 4:2:2) */
+	parameter DC_TEST_MODE = 0,	/* 1: atg_dc names a simulation's one small mode (the Verilator link) */
 	parameter ROP_STENCIL = 0,
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29] with VF, RX, ROP, TU and an SU): the
 				 * blitter's RESOLVE, texsz.s */
@@ -1044,7 +1045,7 @@ module atg_top #(
 		 */
 		atg_dc #(
 			.HAS_I2C(DC_HAS_I2C), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
-			.FIFO_LOG2(DC_FIFO_LOG2), .PX_FMT(DC_PX_FMT)
+			.FIFO_LOG2(DC_FIFO_LOG2), .PX_FMT(DC_PX_FMT), .TEST_MODE(DC_TEST_MODE)
 		) dc (
 			.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
 			.d_we(dc_d_we), .d_idx(dc_d_idx), .d_wdata(dc_d_wdata), .d_wmask(dc_d_wmask),

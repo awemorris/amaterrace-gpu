@@ -40,7 +40,8 @@
 
 module atg_dc_regs #(
 	parameter HAS_I2C = 0,	/* ADV7511 I2C master present (KC705, DC_CAPS[2]) */
-	parameter HAS_CURSOR = 0	/* the cursor plane (DC_CAPS[8]) */
+	parameter HAS_CURSOR = 0,	/* the cursor plane (DC_CAPS[8]) */
+	parameter MODES = 2	/* the modes of atg_dc_mode's table (DC_CAPS[11:9]) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -92,8 +93,9 @@ module atg_dc_regs #(
 
 	localparam [31:0] DC_VERSION_VALUE = 32'h00000002;	/* 0.2: DISP2 */
 	/* DC_CAPS: [1] TMDS without the transmitter, [2] the transmitter with
-	 * it; [7:4] formats 0..2; [8] the cursor plane; [11:9] two modes. */
-	localparam [31:0] DC_CAPS_VALUE = {20'd0, 3'd2, HAS_CURSOR != 0, 4'b0111, 1'b0,
+	 * it; [7:4] formats 0..2; [8] the cursor plane; [11:9] the modes. */
+	localparam [2:0] MODES_VALUE = MODES;
+	localparam [31:0] DC_CAPS_VALUE = {20'd0, MODES_VALUE, HAS_CURSOR != 0, 4'b0111, 1'b0,
 		HAS_I2C != 0 ? 3'b100 : 3'b010};
 	localparam [5:0] RESET_CYCLES = 6'd32;
 	localparam [5:0] I_CTRL = GHCI_DC_CTRL[7:2];

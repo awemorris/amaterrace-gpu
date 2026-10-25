@@ -10,7 +10,8 @@
  * CTA-861 formats 1 and 4, an index without a mode), CONNECTED (its reset
  * value, HOTPLUG only on a change, the DC's reset), and the cursor's
  * registers (CURSOR_POS with strobes, CURSOR_CTRL, CURSOR_BASE from the
- * cursor).
+ * cursor); and a second instance with TEST_MODE 1 on the same bus: its one
+ * small mode at index 0 and nothing at index 1.
  */
 
 `timescale 1ns / 1ps
@@ -28,12 +29,21 @@ module atg_dc_mode_tb;
 	reg [31:0] d_wdata = 0, d_wmask = 32'hFFFFFFFF;
 	wire [31:0] d_rdata, cur_pos;
 	wire connected, ev_hotplug, cur_show;
+	wire [31:0] t_rdata, t_cur_pos;
+	wire t_connected, t_ev_hotplug, t_cur_show;
 
 	atg_dc_mode dut (
 		.clk(clk), .rst_n(rst_n), .dc_reset(dc_reset),
 		.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(d_wmask), .d_ridx(d_ridx),
 		.d_rdata(d_rdata), .connected(connected), .ev_hotplug(ev_hotplug),
 		.cur_pos(cur_pos), .cur_show(cur_show), .cursor_base(32'h3000_0040)
+	);
+
+	atg_dc_mode #(.TEST_MODE(1)) tdut (
+		.clk(clk), .rst_n(rst_n), .dc_reset(dc_reset),
+		.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(d_wmask), .d_ridx(d_ridx),
+		.d_rdata(t_rdata), .connected(t_connected), .ev_hotplug(t_ev_hotplug),
+		.cur_pos(t_cur_pos), .cur_show(t_cur_show), .cursor_base(32'h3000_0040)
 	);
 
 	integer n_hot = 0;
@@ -81,6 +91,19 @@ module atg_dc_mode_tb;
 			d_ridx = off[7:2];
 			#1;
 			check(what, d_rdata, want);
+		end
+	endtask
+
+	/* The same, of the TEST_MODE instance. */
+	task expect_test;
+		input [8*40-1:0] what;
+		input [7:0] off;
+		input [31:0] want;
+		begin
+			@(negedge clk);
+			d_ridx = off[7:2];
+			#1;
+			check(what, t_rdata, want);
 		end
 	endtask
 
@@ -154,6 +177,23 @@ module atg_dc_mode_tb;
 		expect_reg("not here: TAKEN0", GHCI_DC_TAKEN0[7:0], 32'd0);
 		if (errors == e0)
 			$display("PASS atg_dc_mode.cursor");
+
+		/* test: TEST_MODE's one mode (MODE_INDEX is written on both instances' bus). */
+		e0 = errors;
+		wr(GHCI_DC_MODE_INDEX[7:0], 32'd0);
+		expect_test("test H0", GHCI_DC_MODE_H0[7:0], {16'd8, 16'd320});
+		expect_test("test H1", GHCI_DC_MODE_H1[7:0], {16'd8, 16'd8});
+		expect_test("test V0", GHCI_DC_MODE_V0[7:0], {16'd2, 16'd240});
+		expect_test("test V1", GHCI_DC_MODE_V1[7:0], {16'd2, 16'd2});
+		expect_test("test CLOCK", GHCI_DC_MODE_CLOCK[7:0], 32'd25000);
+		expect_test("test FLAGS", GHCI_DC_MODE_FLAGS[7:0], 32'h00);
+		expect_reg("board mode 0 beside it", GHCI_DC_MODE_H0[7:0], {16'd96, 16'd640});
+		wr(GHCI_DC_MODE_INDEX[7:0], 32'd1);
+		expect_test("test: no mode 1 H0", GHCI_DC_MODE_H0[7:0], 32'd0);
+		expect_test("test: no mode 1 CLOCK", GHCI_DC_MODE_CLOCK[7:0], 32'd0);
+		expect_test("test CONNECTED", GHCI_DC_CONNECTED[7:0], 32'd0);
+		if (errors == e0)
+			$display("PASS atg_dc_mode.test");
 
 		if (errors == 0)
 			$display("PASS atg_dc_mode");

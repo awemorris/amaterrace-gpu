@@ -8,7 +8,9 @@ The DC's registers of the DISP2 window that are not the scan-out's (docs/ghci.md
 
 ## 2. Parameters
 
-None.
+| Name | Default | Meaning |
+| --- | --- | --- |
+| `TEST_MODE` | `0` | 1: the table is one small mode of a simulation (the Verilator link's, `sim/verilator/link-build.sh`), not a board's two (§4).  No board sets it. |
 
 ## 3. Ports
 
@@ -29,7 +31,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 
 ## 4. Behaviour
 
-- MODE_INDEX (3 bits) selects the mode that MODE_H0, H1, V0, V1, CLOCK and FLAGS show: 0 = 640 x 480 at 60 Hz (H 640/16/96/48, V 480/10/2/33, 25,200 kHz, FLAGS 0: negative syncs, PCLK_SEL 0), 1 = 1280 x 720 at 60 Hz (H 1280/110/40/220, V 720/5/5/20, 74,250 kHz, FLAGS 0x13: positive syncs, PCLK_SEL 1); the other indices read 0.  DC_CAPS[11:9] (atg_dc_regs) says 2.
+- MODE_INDEX (3 bits) selects the mode that MODE_H0, H1, V0, V1, CLOCK and FLAGS show: 0 = 640 x 480 at 60 Hz (H 640/16/96/48, V 480/10/2/33, 25,200 kHz, FLAGS 0: negative syncs, PCLK_SEL 0), 1 = 1280 x 720 at 60 Hz (H 1280/110/40/220, V 720/5/5/20, 74,250 kHz, FLAGS 0x13: positive syncs, PCLK_SEL 1); the other indices read 0.  DC_CAPS[11:9] (atg_dc_regs) says 2.  With `TEST_MODE` 1 the table is one mode instead: 0 = 320 x 240 (vkdemo's frame; H 320/8/8/8, V 240/2/2/2, a frame of 344 x 246 = 84,624 pixel clocks, 25,000 kHz, FLAGS 0: negative syncs, PCLK_SEL 0), the other indices read 0, and DC_CAPS[11:9] says 1 (atg_dc passes `MODES` 1 to atg_dc_regs).  It exists so that a frame takes about 85,000 pixel clocks in Verilator instead of 720p's 1.24 million; the driver is the same (it picks among the modes the controller names).
 - CONNECTED: 1 after the board reset and while `dc_reset`; a write of bit 0 sets it, and `ev_hotplug` pulses when the value changed.
 - CURSOR_POS (strobes apply) and CURSOR_CTRL[0] are stored; CURSOR_BASE reads `cursor_base`.
 
@@ -47,7 +49,7 @@ Reads combinational; writes take effect in their cycle.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_dc_mode_tb.v`: `PASS atg_dc_mode.modes` (both modes, their totals against the clock at 60 Hz, an index without a mode), `PASS atg_dc_mode.connected` (reset value, HOTPLUG only on a change, the DC's reset), `PASS atg_dc_mode.cursor` (the registers, strobes, the outputs, words of other modules read 0), then `PASS atg_dc_mode`.
+`sim/tb/atg_dc_mode_tb.v`: `PASS atg_dc_mode.modes` (both modes, their totals against the clock at 60 Hz, an index without a mode), `PASS atg_dc_mode.connected` (reset value, HOTPLUG only on a change, the DC's reset), `PASS atg_dc_mode.cursor` (the registers, strobes, the outputs, words of other modules read 0), `PASS atg_dc_mode.test` (a second instance with `TEST_MODE` 1 on the same bus: its one mode at index 0 beside the board's mode 0, nothing at index 1), then `PASS atg_dc_mode`.
 
 ## 9. References
 
@@ -55,4 +57,4 @@ docs/ghci.md §13.2; design §18.5.  Values referenced: CTA-861 video formats 1 
 
 ## 10. Status
 
-Implemented in p035 D3.  About 140 lines.
+Implemented in p035 D3.  `TEST_MODE` in p035 D6 (the Verilator e2e's display).  About 150 lines.

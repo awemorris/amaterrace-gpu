@@ -16,14 +16,20 @@
  * other words).  The mode table is Amaterrace's two modes (CTA-861
  * formats 1 and 4): 640 x 480 at 60 Hz (25.2 MHz, PCLK_SEL 0, negative
  * syncs) and 1280 x 720 at 60 Hz (74.25 MHz, PCLK_SEL 1, positive syncs).
- * CONNECTED is 1 after the board reset and after the DC's reset
- * (dc_reset); a write that changes it pulses ev_hotplug.
+ * TEST_MODE 1 (a simulation's, as the Verilator link's) replaces the table
+ * with one small mode, 320 x 240 (vkdemo's frame) at 25 MHz, PCLK_SEL 0,
+ * negative syncs, so that a frame takes about 85,000 pixel clocks instead
+ * of 720p's 1.24 million; atg_dc_regs then names one mode.  CONNECTED is
+ * 1 after the board reset and after the DC's reset (dc_reset); a write
+ * that changes it pulses ev_hotplug.
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_dc_mode (
+module atg_dc_mode #(
+	parameter TEST_MODE = 0	/* 1: the one small mode of a simulation (above), not a board's */
+) (
 	input wire clk,
 	input wire rst_n,
 	input wire dc_reset,
@@ -88,9 +94,21 @@ module atg_dc_mode (
 	/* The mode table: H0, H1, V0, V1, CLOCK (kHz), FLAGS. */
 	reg [31:0] m_h0, m_h1, m_v0, m_v1, m_clock, m_flags;
 
+	/* The table's row: TEST_MODE's one mode, or the board's two. */
+	wire is_test = TEST_MODE != 0;
+
 	always @(*) begin
-		case (r_mode)
-		3'd0: begin
+		case ({is_test, r_mode})
+		4'b1000: begin
+			/* 320 x 240: H 320/8/8/8, V 240/2/2/2, 344 x 246 at 25,000 kHz. */
+			m_h0 = {16'd8, 16'd320};
+			m_h1 = {16'd8, 16'd8};
+			m_v0 = {16'd2, 16'd240};
+			m_v1 = {16'd2, 16'd2};
+			m_clock = 32'd25000;
+			m_flags = 32'h00000000;
+		end
+		4'b0000: begin
 			m_h0 = {16'd96, 16'd640};
 			m_h1 = {16'd48, 16'd16};
 			m_v0 = {16'd2, 16'd480};
@@ -98,7 +116,7 @@ module atg_dc_mode (
 			m_clock = 32'd25200;
 			m_flags = 32'h00000000;
 		end
-		3'd1: begin
+		4'b0001: begin
 			m_h0 = {16'd40, 16'd1280};
 			m_h1 = {16'd220, 16'd110};
 			m_v0 = {16'd5, 16'd720};
