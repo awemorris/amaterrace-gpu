@@ -99,6 +99,7 @@
 #define GHCI_CAPS_GRAPHICS (1u << 27)
 #define GHCI_CAPS_PACKED (1u << 28)
 #define GHCI_CAPS_MS4 (1u << 29) /* 4x multisampling (draft, section 12.11) */
+#define GHCI_CAPS_CORE1 (1u << 30) /* Vulkan 1.0 core rendering (draft, section 8.5) */
 
 /* CAPS2. */
 #define GHCI_CAPS2_QUEUES(c) ((c) & 0xFFu)
