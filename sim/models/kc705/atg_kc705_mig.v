@@ -28,6 +28,7 @@ module atg_kc705_mig #(
 	input wire clk,
 	input wire rst_n,
 	input wire sys_clk,
+	input wire ref_clk,
 	input wire sys_rst_n,
 	output wire mem_ready,
 	/* The board's registers (0x1F000): the model returns ID and STATUS. */
@@ -227,7 +228,7 @@ module atg_kc705_mig #(
 	assign ddr3_dm = 8'd0;
 	assign ddr3_odt = 1'b0;
 
-	wire unused_ok = &{1'b0, sys_clk, sys_rst_n, s_awcache, s_awprot, s_arcache, s_arprot,
+	wire unused_ok = &{1'b0, sys_clk, ref_clk, sys_rst_n, s_awcache, s_awprot, s_arcache, s_arprot,
 		s2_awsize, s2_awburst, s2_arsize, s2_arburst};
 endmodule
 

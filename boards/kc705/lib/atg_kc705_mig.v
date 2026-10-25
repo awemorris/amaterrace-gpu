@@ -25,8 +25,10 @@
  *                      the board file's DDR3 preset (64 bit, 800 MHz,
  *                      4:1, ui_clk 200 MHz) with the AXI4 interface (data
  *                      512, address 30, ID 4), system clock "No Buffer"
- *                      (ref_clk from atg_kc705_clk), the reference clock
- *                      "Use System Clock", sys_rst active low, XADC on
+ *                      (sys_clk: SYSCLK 200 MHz straight from its IBUFDS,
+ *                      atg_kc705_clk's sys_cc), the reference clock "No
+ *                      Buffer" (ref_clk, the same 200 MHz after a BUFG),
+ *                      sys_rst active low, XADC on
  *                      (device_temp), no extra user clocks, Debug on (the
  *                      debug ports behind the registers at 0x1F000).
  *
@@ -47,6 +49,7 @@ module atg_kc705_mig (
 	input wire clk,
 	input wire rst_n,
 	input wire sys_clk,
+	input wire ref_clk,
 	input wire sys_rst_n,
 	output wire mem_ready,
 	/* The board's registers at 0x1F000 (gclk, atg_top's xr_* bus): the MIG's
@@ -168,7 +171,7 @@ module atg_kc705_mig (
 	);
 	wire unused_dbg = &{1'b0, ila_rdpath[1023:128], xr_waddr[1:0], xr_raddr[1:0]};
 
-	am_sync sync_hold (.clk(sys_clk), .rst_n(1'b1), .d(ctrl[0]), .q(hold_ref));
+	am_sync sync_hold (.clk(ref_clk), .rst_n(1'b1), .d(ctrl[0]), .q(hold_ref));
 
 	wire [32*32-1:0] words = {
 		{7{32'd0}},
@@ -391,7 +394,7 @@ module atg_kc705_mig (
 		.ddr3_cas_n(ddr3_cas_n), .ddr3_we_n(ddr3_we_n), .ddr3_reset_n(ddr3_reset_n),
 		.ddr3_ck_p(ddr3_ck_p), .ddr3_ck_n(ddr3_ck_n), .ddr3_cke(ddr3_cke),
 		.ddr3_cs_n(ddr3_cs_n), .ddr3_dm(ddr3_dm), .ddr3_odt(ddr3_odt),
-		.sys_clk_i(sys_clk), .sys_rst(sys_rst_n && !hold_ref),
+		.sys_clk_i(sys_clk), .clk_ref_i(ref_clk), .sys_rst(sys_rst_n && !hold_ref),
 		.ui_clk(ui_clk), .ui_clk_sync_rst(ui_rst), .mmcm_locked(locked),
 		.aresetn(aresetn), .app_sr_req(1'b0), .app_ref_req(1'b0), .app_zq_req(1'b0),
 		.app_sr_active(), .app_ref_ack(), .app_zq_ack(),

@@ -11,9 +11,13 @@
  * by PCLK_SEL); resets synchronised per domain.  See
  * spec/boards/kc705/lib/atg_kc705_clk.md.
  *
- * SYSCLK goes through IBUFDS and a BUFG: that is ref_clk (200 MHz, the
- * MIG's system clock, which the MIG takes without its own buffer) and the
- * input of three clock managers:
+ * SYSCLK goes through IBUFDS.  Its output, sys_cc, goes straight to the
+ * MIG's PLL (the MIG's system clock "No Buffer": the dedicated route from
+ * the clock-capable pin AD12 to the CMT of bank 33, as the MIG's own
+ * IBUFGDS has in the KC705 reference; ws288 p024: through a BUFG the
+ * calibration did not complete) and to a BUFG: that is ref_clk (200 MHz,
+ * the MIG's IDELAYCTRL reference, "No Buffer") and the input of three
+ * clock managers:
  *
  *   gclk, MMCM: DIVCLK 1, MULT 5: VCO 1000 MHz, O0 GCLK_DIVIDE (2 to
  *          128; the board top gives it, with GCLK_HZ to match).  The
@@ -48,6 +52,7 @@ module atg_kc705_clk #(
 	input wire pclk_sel,
 	output wire gclk,
 	output wire grst_n,
+	output wire sys_cc,
 	output wire ref_clk,
 	output wire ref_rst_n,
 	output wire pclk,
@@ -59,6 +64,7 @@ module atg_kc705_clk #(
 	wire b_fb, b_px, b_locked;
 
 	IBUFDS sys_buf (.I(sys_clk_p), .IB(sys_clk_n), .O(sys_ibuf));
+	assign sys_cc = sys_ibuf;
 	BUFG ref_bufg (.I(sys_ibuf), .O(ref_clk));
 
 	MMCME2_BASE #(

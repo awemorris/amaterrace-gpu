@@ -30,6 +30,7 @@ module atg_kc705_clk #(
 	input wire pclk_sel,
 	output wire gclk,
 	output wire grst_n,
+	output wire sys_cc,
 	output wire ref_clk,
 	output wire ref_rst_n,
 	output wire pclk,
@@ -51,6 +52,7 @@ module atg_kc705_clk #(
 
 	assign gclk = g;
 	assign ref_clk = sys_clk_p;
+	assign sys_cc = sys_clk_p;
 	assign pclk = p;
 
 	always @(posedge g)

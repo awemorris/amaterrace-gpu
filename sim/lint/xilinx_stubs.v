@@ -1188,6 +1188,7 @@ module atg_kc705_ddr3 (
 	output wire [7:0] ddr3_dm,
 	output wire [0:0] ddr3_odt,
 	input wire sys_clk_i,
+	input wire clk_ref_i,
 	input wire sys_rst,
 	output wire ui_clk,
 	output wire ui_clk_sync_rst,

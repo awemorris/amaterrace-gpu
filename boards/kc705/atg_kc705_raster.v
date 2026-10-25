@@ -91,7 +91,7 @@ module atg_kc705_raster #(
 	localparam integer GCLK_DIVIDE = 50;
 	localparam [31:0] GCLK_HZ = 32'd1000000000 / GCLK_DIVIDE;
 
-	wire clk, rst_n, ref_clk, ref_rst_n, pclk, prst_n, pclk_sel, mem_ready, irq;
+	wire clk, rst_n, sys_cc, ref_clk, ref_rst_n, pclk, prst_n, pclk_sel, mem_ready, irq;
 	/* The host's register port: PCIe BAR0 through am_axi_cdc. */
 	wire [16:0] s_awaddr;
 	wire [3:0] s_awid;
@@ -262,7 +262,7 @@ module atg_kc705_raster #(
 
 	atg_kc705_clk #(.GCLK_DIVIDE(GCLK_DIVIDE)) clocks (
 		.sys_clk_p(sys_clk_p), .sys_clk_n(sys_clk_n), .cpu_reset(cpu_reset), .pclk_sel(pclk_sel),
-		.gclk(clk), .grst_n(rst_n), .ref_clk(ref_clk), .ref_rst_n(ref_rst_n), .pclk(pclk),
+		.gclk(clk), .grst_n(rst_n), .sys_cc(sys_cc), .ref_clk(ref_clk), .ref_rst_n(ref_rst_n), .pclk(pclk),
 		.prst_n(prst_n)
 	);
 
@@ -403,7 +403,7 @@ module atg_kc705_raster #(
 	);
 
 	atg_kc705_mig mig (
-		.clk(clk), .rst_n(rst_n), .sys_clk(ref_clk), .sys_rst_n(ref_rst_n), .mem_ready(mem_ready),
+		.clk(clk), .rst_n(rst_n), .sys_clk(sys_cc), .ref_clk(ref_clk), .sys_rst_n(ref_rst_n), .mem_ready(mem_ready),
 		.xr_wr(xr_wr), .xr_waddr(xr_waddr), .xr_wdata(xr_wdata), .xr_rd(xr_rd),
 		.xr_raddr(xr_raddr), .xr_rdata(xr_rdata),
 		.s_awaddr(d_awaddr), .s_awlen(d_awlen), .s_awsize(d_awsize), .s_awburst(d_awburst), .s_awcache(d_awcache), .s_awprot(d_awprot), .s_awvalid(d_awvalid), .s_awready(d_awready), .s_wdata(d_wdata), .s_wstrb(d_wstrb), .s_wlast(d_wlast), .s_wvalid(d_wvalid), .s_wready(d_wready), .s_bresp(d_bresp), .s_bvalid(d_bvalid),

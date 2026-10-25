@@ -21,7 +21,7 @@
 
   <SystemClock>No Buffer</SystemClock>
 
-  <ReferenceClock>Use System Clock</ReferenceClock>
+  <ReferenceClock>No Buffer</ReferenceClock>
 
   <SysResetPolarity>ACTIVE LOW</SysResetPolarity>
 
@@ -179,6 +179,9 @@
     <System_Clock>
       <Pin Bank="Select Bank" PADName="No connect" name="sys_clk_i"/>
     </System_Clock>
+    <Reference_Clock>
+      <Pin Bank="Select Bank" PADName="No connect" name="clk_ref_i"/>
+    </Reference_Clock>
     <System_Control>
       <Pin Bank="Select Bank" PADName="No connect" name="sys_rst"/>
       <Pin Bank="Select Bank" PADName="No connect" name="init_calib_complete"/>
