@@ -63,6 +63,10 @@
 # error.
 # --fault-out: an ISA fault is not an error; the file gets one line per
 # faulting warp, "slot pc" in hex, and the warp stops.
+# --scratch ADDR,BYTES: a program's scratch memory (docs/ghci.md section
+# 12.10, kind 14) of BYTES bytes per warp at ADDR: every lw and sw from
+# ADDR up to 64 warps' parts must be in the part of the warp that makes
+# it, ADDR + slot x BYTES (the `warp` operand), or the model stops.
 #
 # Memory: DATA.hex (one 32-bit word per line) is the data image at DATA_BASE
 # (0x8000, 4096 words); everything else reads 0.  The constant bank holds the
@@ -165,6 +169,17 @@ class Machine:
         self.xexp = {}          # slot -> (colour[lane][4], depth[lane], exported mask)
         self.pt = [[None] * (4 + vary) for _ in range(32)]
         self.prims = None       # --prims: [slot][vertex][word], words of the primitive table
+        self.scratch = None     # --scratch: (address, bytes per warp)
+
+    def check_scratch(self, k, addr):
+        """Stops the model when warp k reaches another warp's scratch memory."""
+        if self.scratch is None:
+            return
+        base, size = self.scratch
+        addr &= M32 & ~3
+        if base <= addr < base + 64 * size and not base + k * size <= addr < base + (k + 1) * size:
+            raise SystemExit("gsi1model: warp %d reaches scratch address 0x%x outside its part "
+                             "[0x%x, 0x%x)" % (k, addr, base + k * size, base + (k + 1) * size))
 
     def rd32(self, addr):
         return self.mem.get((addr & M32) >> 2, 0)
@@ -259,6 +274,9 @@ class Machine:
                 write(exec_m, lambda a, b, c: FP.div(op, a, b))
             elif unit == A.U_LSU:
                 if op == 0:         # lw
+                    for ln in range(32):
+                        if exec_m >> ln & 1:
+                            self.check_scratch(k, operands(ln)[0] + imm)
                     write(exec_m, lambda a, b, c: self.rd32(a + imm))
                 elif op == 1:       # sw: lanes in order, the higher lane wins
                     # sw.x (sub 1, scratch memory): every EXEC lane, helper
@@ -267,6 +285,7 @@ class Machine:
                     for ln in range(32):
                         if lanes_m >> ln & 1:
                             a, b, c = operands(ln)
+                            self.check_scratch(k, a + imm)
                             self.wr32(a + imm, b)
                 elif op == 2:       # atom: lanes in order
                     olds = {}
@@ -490,6 +509,7 @@ def main():
     ap.add_argument("--ms-out")
     ap.add_argument("--pt-out")
     ap.add_argument("--prims")
+    ap.add_argument("--scratch")
     a = ap.parse_args()
     with open(a.src) as f:
         words = A.encode(f.read())
@@ -506,6 +526,9 @@ def main():
                                               front=t[5 * k + 4]) for k in range(4)]
     m = Machine(words, a.lanes, a.nregs, mem, a.groups, a.packed, a.subgroup, faults, gw,
                 a.vary)
+    if a.scratch:
+        base, size = a.scratch.split(",")
+        m.scratch = (int(base, 0), int(size, 0))
     if a.prims:
         t = load_hex(a.prims)
         m.prims = [[[t[(k * 3 + v) * 128 + w] if (k * 3 + v) * 128 + w < len(t) else 0
