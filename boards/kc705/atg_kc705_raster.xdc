@@ -30,16 +30,24 @@ set_property -dict { PACKAGE_PIN AD11 IOSTANDARD DIFF_SSTL15 } [get_ports sys_cl
 create_clock -name sysclk -period 5.000 [get_ports sys_clk_p]
 
 ## TCK of the BSCANE2 (the Digilent cable runs at most 30 MHz).
-create_clock -name tck -period 33.333 [get_nets -hier -filter {NAME =~ *jtag/tck_raw}]
+create_clock -name tck -period 33.333 [get_pins -hier -filter {NAME =~ *jtag/bscan/TCK}]
 
 ## The domains meet only through am_sync and am_afifo (and the JTAG
 ## bridge's handshake-protected words, am_jtag_regs; the DC's quasi-static
-## configuration, atg_dc_regs §7; the MIG side through the AXI clock
-## converter).
+## configuration, atg_dc_regs §7; the MIG side and BAR2 through the AXI
+## clock converters; BAR0 through am_axi_cdc; MSI through am_sync).  gclk
+## is 20 MHz for the board's bring-up (atg_kc705_clk, ws288 p024).  The
+## groups: gclk; the two pixel clocks (behind one BUFGMUX); the MIG's
+## ui_clk (200 MHz, from its own MMCM on ref_clk); the PCIe bridge's
+## axi_aclk_out (user_clk, 125 MHz from pcie_refclk); TCK.  Vivado would
+## otherwise time gclk against ui_clk (both from SYSCLK) and the PCIe clock
+## against everything.
 set_clock_groups -asynchronous \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/mmcm_g/CLKOUT0}]] \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/pll_a/CLKOUT0}]] \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/mmcm_b/CLKOUT0}]] \
+	-group [get_clocks -of_objects [get_pins mig/ddr3/ui_clk]] \
+	-group [get_clocks -of_objects [get_pins pcie/bridge/axi_aclk_out]] \
 	-group [get_clocks tck]
 
 ## CPU_RESET, active high.
@@ -96,6 +104,14 @@ set_false_path -to [get_ports {hdmi_d[*] hdmi_de hdmi_hs hdmi_vs hdmi_clk}]
 
 ## CFGBVS / CONFIG_VOLTAGE: left out until bank 0's voltage is checked
 ## (still open from the board's bring-up).
+
+## DCI (ws288 p024): the DDR3's DQ/DQS in banks 32 and 34 use DCI
+## (SSTL15_T_DCI, the MIG's pins), and the MIG project has dci_cascade 1:
+## the reference resistors are on bank 33's VRN/VRP, cascaded to banks 32
+## and 34, so that bank 34's VR pin AB7 can be CPU_RESET (without this the
+## placer stops: "Place 30-110", AB7 occupied).  The usual KC705 MIG
+## constraint; not checked against the schematic (UG810 not read).
+set_property DCI_CASCADE {32 34} [get_iobanks 33]
 
 ## PCIe (ws288 p013): the edge connector's 100 MHz reference clock, PERST#
 ## and lanes 0-3 (Gen2 x4), pins from Vivado 2026.1's KC705 board file

@@ -36,24 +36,49 @@
 #                       master, 512 bit, gclk.
 #   atg_kc705_axi_cc    AXI Clock Converter, 512 bit, ID 5: gclk ->
 #                       the MIG's ui_clk (atg_kc705_mig).
-# The MIG core (atg_kc705_ddr3) is not made here (p024).
+#   atg_kc705_ddr3      MIG 7 Series (ws288 p024) from atg_kc705_ddr3.prj
+#                       beside this script: the KC705 board file's DDR3
+#                       preset (1 GB SODIMM, 64 bit, 800 MHz, 4:1, ui_clk
+#                       200 MHz) with the AXI4 interface (data 512,
+#                       address 30, ID 4), system clock "No Buffer"
+#                       (atg_kc705_clk's ref_clk, 200 MHz), reference
+#                       clock "Use System Clock", sys_rst active low, XADC
+#                       on.
+# Every core is generated (instantiation template, synthesis) and
+# synthesised out of context (synth_ip), so that tools/vivado-build.tcl
+# reads OUT/*/*.xci.  NAMES (optional, after OUT) makes only those.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 if {[llength $argv] < 1} {
-	puts "usage: ip.tcl OUT"
+	puts "usage: ip.tcl OUT \[NAME...\]"
 	exit 2
 }
 set out [file normalize [lindex $argv 0]]
+set only [lrange $argv 1 end]
+set here [file dirname [file normalize [info script]]]
 file mkdir $out
 create_project -in_memory -part xc7k325tffg900-2
 set_property target_language Verilog [current_project]
 
+proc wanted {name} {
+	global only
+	return [expr {[llength $only] == 0 || [lsearch -exact $only $name] >= 0}]
+}
+
+proc finish {name} {
+	generate_target {instantiation_template synthesis} [get_ips $name]
+	synth_ip [get_ips $name]
+	puts "ip.tcl: $name done"
+}
+
 proc make {name vlnv props} {
 	global out
+	if {![wanted $name]} {
+		return
+	}
 	create_ip -vlnv $vlnv -module_name $name -dir $out
 	set_property -dict $props [get_ips $name]
-	generate_target {instantiation_template synthesis} [get_ips $name]
-	puts "ip.tcl: $name done"
+	finish $name
 }
 
 make atg_kc705_pcie_ip xilinx.com:ip:axi_pcie:2.9 [list \
@@ -121,5 +146,14 @@ make atg_kc705_mem_xbar xilinx.com:ip:axi_crossbar:2.1 [list \
 make atg_kc705_axi_cc xilinx.com:ip:axi_clock_converter:2.1 [list \
 	CONFIG.PROTOCOL AXI4 CONFIG.DATA_WIDTH 512 CONFIG.ADDR_WIDTH 32 CONFIG.ID_WIDTH 1 \
 	CONFIG.ACLK_ASYNC 1]
+
+# The MIG: its configuration is the project file (mig_a.prj in the core's directory).
+if {[wanted atg_kc705_ddr3]} {
+	create_ip -vlnv xilinx.com:ip:mig_7series:4.2 -module_name atg_kc705_ddr3 -dir $out
+	file copy -force [file join $here atg_kc705_ddr3.prj] [file join $out atg_kc705_ddr3 mig_a.prj]
+	set_property -dict [list CONFIG.XML_INPUT_FILE mig_a.prj CONFIG.RESET_BOARD_INTERFACE Custom \
+		CONFIG.MIG_DONT_TOUCH_PARAM Custom CONFIG.BOARD_MIG_PARAM Custom] [get_ips atg_kc705_ddr3]
+	finish atg_kc705_ddr3
+}
 
 puts "ip.tcl: all done"
