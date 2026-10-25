@@ -271,6 +271,8 @@ submit_indirect(
 	uint32_t words;
 	uint32_t index;
 	uint32_t base;
+	uint32_t lines;
+	uint32_t mode;
 	int error;
 
 	/* The parameters are in memory once the earlier work is done. */
@@ -291,8 +293,16 @@ submit_indirect(
 		address = payload[1] + draw * payload[3];
 		if (draw * payload[3] + words * 4u > payload[4])
 			break;
+		/*
+		 * Only the lines that hold them (a line past the buffer may be
+		 * no memory of the session's); they are the session's memory, so
+		 * the reads are checked for its slot.
+		 */
 		base = address & ~(FW_LINE_BYTES - 1u);
-		error = fw_dma_read(base, line, 2);
+		lines = (address + words * 4u - 1u - base) / FW_LINE_BYTES + 1u;
+		mode = fw_dma_mode(FW_DMA_CHK);
+		error = fw_dma_read(base, line, lines);
+		(void)fw_dma_mode(mode);
 		if (error != 0)
 			return -1;
 		for (index = 0; index < words; index++)

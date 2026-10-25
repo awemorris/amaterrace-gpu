@@ -77,11 +77,12 @@
 
 /*
  * A host build (the firmware's tests in fw/cp/tests/): the window and the
- * line DMA are the test's functions, and the DMA takes DMEM by pointer.
+ * line DMA are the test's functions, and the DMA takes DMEM by pointer
+ * (`go`: DMA_GO's bits above the lines, the direction and the protection).
  */
 uint32_t hw_read(uint32_t index);
 void hw_write(uint32_t index, uint32_t value);
-int hw_host_dma(uint32_t address, void *dmem, uint32_t lines, int write);
+int hw_host_dma(uint32_t address, void *dmem, uint32_t lines, uint32_t go);
 
 #else
 

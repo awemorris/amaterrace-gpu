@@ -85,6 +85,7 @@ fw_heap_init(void)
 	heap_lines = 0;
 	heap_free_count = 0;
 	memset(heap_sessions, 0, sizeof(heap_sessions));
+	fw_heap_init_visible();
 }
 
 /*
@@ -168,42 +169,8 @@ fw_heap_alloc(
 	uint32_t tag,
 	uint32_t bytes)
 {
-	struct heap_session *session;
-	uint32_t lines;
-	uint32_t index;
-	uint32_t first;
-
-	/* The session pays for the lines. */
-	session = heap_session_of(tag);
-	if (session == NULL || bytes == 0)
-		return 0;
-	lines = (bytes + FW_LINE_BYTES - 1u) / FW_LINE_BYTES;
-	if (session->limit != 0 && session->used + lines > session->limit)
-		return 0;
-
-	/* The first extent that is large enough. */
-	for (index = 0; index < heap_free_count; index++) {
-		if (heap_free_list[index].lines >= lines)
-			break;
-	}
-
-	/* No extent has room. */
-	if (index == heap_free_count)
-		return 0;
-
-	/* Takes the extent's first lines; an extent used up leaves the list. */
-	first = heap_free_list[index].first;
-	heap_free_list[index].first += lines;
-	heap_free_list[index].lines -= lines;
-	if (heap_free_list[index].lines == 0) {
-		heap_remove(index);
-	}
-
-	/* The session holds them. */
-	session->used += lines;
-
-	/* Succeeded: the block's address. */
-	return heap_base + first * FW_LINE_BYTES;
+	/* The first extent that is large enough: any line is aligned to a line. */
+	return fw_heap_alloc_aligned(tag, bytes, FW_LINE_BYTES);
 }
 
 /*
@@ -408,6 +375,9 @@ fw_session_close(
 
 	/* The objects first: they give their blocks back while the session pays. */
 	fw_object_close(tag);
+
+	/* A slab nothing gave back (it would keep the session's granules). */
+	fw_heap_close_visible(tag);
 
 	/* The slot is free. */
 	session = heap_session_of(tag);

@@ -29,33 +29,27 @@
 #define PROT_READ_ONLY 0x40u
 #define PROT_PUBLIC 0x80u
 
-/* The ranges a session's close clears; with more, its close sweeps the whole table. */
-#define PROT_RANGES 24u
+/* prot_table_write's value that only checks that every byte is 0. */
+#define PROT_CHECK 0x100u
 
 /* The grant entries the firmware keeps (the GPU's are PROT_INFO[31:16], at most these). */
 #define PROT_CAM 64u
 
 /*
- * A granule range the table gives a session: [first, first + count) in
- * absolute granule numbers (address >> 12).
- */
-struct prot_range {
-	uint32_t first;
-	uint32_t count;
-};
-
-/*
- * One protected session: its tag and slot (0: the entry is free), the
- * ranges its bytes were written for, whether more were written than the
- * table of ranges holds, and how many grants it has.
+ * One protected session: its tag and slot (0: the entry is free), how many
+ * granules the table gives it, whether a write of its bytes failed part
+ * way (its close then sweeps the whole table), and how many grants it has.
+ *
+ * The objects that own its granules (its memory objects, its visible
+ * slabs and blocks) give them back as they are released, the last at its
+ * close; a count left above 0 then also makes the close sweep.
  */
 struct prot_session {
 	uint32_t tag;
 	uint32_t slot;
-	uint32_t ranges;
-	uint32_t overflow;
+	uint32_t granules;
+	uint32_t sweep;
 	uint32_t grants;
-	struct prot_range range[PROT_RANGES];
 };
 
 /*
@@ -77,8 +71,10 @@ static uint32_t prot_slots;
 static uint32_t prot_grants;
 
 /*
- * The protected sessions; an entry whose slot is 0 is free.  Kept until
- * the session closes; RESET loses them with the firmware's other state.
+ * The protected sessions, by slot (entry 0 is never used); an entry whose
+ * slot is 0 is free.  Kept until the session closes; RESET loses them with
+ * the firmware's other state.  The firmware uses at most FW_SESSIONS - 1
+ * slots (the GPU may have more).
  */
 static struct prot_session prot_sessions[FW_SESSIONS];
 
@@ -94,13 +90,17 @@ static struct prot_grant prot_cam[PROT_CAM];
 static uint32_t prot_last_slot;
 
 /*
+ * The bytes the last prot_table_write cleared for a slot.
+ */
+static uint32_t prot_cleared;
+
+/*
  * The line of the table being read or changed.
  */
 static uint8_t prot_line[FW_LINE_BYTES] __attribute__((aligned(FW_LINE_BYTES)));
 
 static struct prot_session *prot_session_of(uint32_t tag);
-static int prot_table_check(uint32_t first, uint32_t count);
-static int prot_table_write(uint32_t first, uint32_t count, uint32_t slot, uint32_t value, int clear);
+static int prot_table_write(uint32_t first, uint32_t count, uint32_t slot, uint32_t value);
 static void prot_invalidate(uint32_t first, uint32_t count);
 static void prot_wait_pending(void);
 static void prot_cam_write(uint32_t index, uint32_t slot, uint32_t access, uint32_t first, uint32_t end);
@@ -120,6 +120,8 @@ fw_prot_init(void)
 	if ((info & HW_PROT_INFO_HAS) != 0)
 		prot_present = 1;
 	prot_slots = (info >> 8) & 0x3Fu;
+	if (prot_slots > FW_SESSIONS - 1u)
+		prot_slots = FW_SESSIONS - 1u;
 	prot_grants = info >> 16;
 	if (prot_grants > PROT_CAM)
 		prot_grants = PROT_CAM;
@@ -169,11 +171,8 @@ fw_prot_open(
 	uint32_t tag)
 {
 	struct prot_session *session;
-	uint32_t index;
 	uint32_t slot;
 	uint32_t tried;
-	uint32_t in_use;
-	uint32_t other;
 
 	/* Session 0 is the driver's own; a GPU without protection has none. */
 	if (!prot_present || tag == 0)
@@ -183,26 +182,11 @@ fw_prot_open(
 	if (hw_read(HW_PROT_TBASE) == 0)
 		return -2;
 
-	/* A free entry for the session. */
-	for (index = 0; index < FW_SESSIONS; index++) {
-		if (prot_sessions[index].slot == 0)
-			break;
-	}
-
-	/* No entry is free. */
-	if (index == FW_SESSIONS)
-		return -3;
-
-	/* The slots after the last one taken first (round robin). */
+	/* The slots after the last one taken first (round robin); each slot's entry is its own. */
 	slot = 0;
 	for (tried = 1; tried <= prot_slots; tried++) {
 		slot = (prot_last_slot + tried - 1u) % prot_slots + 1u;
-		in_use = 0;
-		for (other = 0; other < FW_SESSIONS; other++) {
-			if (prot_sessions[other].slot == slot)
-				in_use = 1;
-		}
-		if (!in_use)
+		if (prot_sessions[slot].slot == 0)
 			break;
 	}
 
@@ -210,8 +194,8 @@ fw_prot_open(
 	if (tried > prot_slots)
 		return -3;
 
-	/* The session, with no ranges and no grants yet. */
-	session = &prot_sessions[index];
+	/* The session, with no granules and no grants yet. */
+	session = &prot_sessions[slot];
 	memset(session, 0, sizeof(*session));
 	session->tag = tag;
 	session->slot = slot;
@@ -228,8 +212,9 @@ fw_prot_open(
  * Gives a protected session the range of a memory object it registers
  * (MEMORY): the range's bytes must belong to nobody.
  *
- * Returns 0 (also for a session that is not protected), -1 when the range
- * is not granule aligned or not free, or -2 when the memory refused a line.
+ * Returns 1 when the range is the session's, 0 for a session that is not
+ * protected, or -1 when the range is not granule aligned or not free, or
+ * the memory refused a line.
  */
 int
 fw_prot_own(
@@ -255,34 +240,29 @@ fw_prot_own(
 		return -1;
 
 	/* Every byte of the range must be free: the memory is nobody's yet. */
-	error = prot_table_check(first, count);
+	error = prot_table_write(first, count, 0, PROT_CHECK);
 	if (error != 0)
-		return error;
+		return -1;
 
 	/* The session owns the range, read-only when asked. */
 	value = session->slot;
 	if (read_only)
 		value |= PROT_READ_ONLY;
-	error = prot_table_write(first, count, 0, value, 0);
-	if (error != 0)
-		return -2;
-
-	/* The close clears the range (or sweeps the table when too many are recorded). */
-	if (session->ranges < PROT_RANGES) {
-		session->range[session->ranges].first = first;
-		session->range[session->ranges].count = count;
-		session->ranges++;
-	} else {
-		session->overflow = 1;
+	error = prot_table_write(first, count, 0, value);
+	if (error != 0) {
+		/* Some bytes may say the session: the close sweeps them. */
+		session->sweep = 1;
+		return -1;
 	}
 
-	/* Succeeded: the session's work reaches the range. */
-	return 0;
+	/* Succeeded: the session's work reaches the range; its release gives it back. */
+	session->granules += count;
+	return 1;
 }
 
 /*
- * Ends a protected session's ownership of a range (FREE_MEMORY, a slab
- * given back).
+ * Ends a protected session's ownership of a range (a memory object's
+ * release, a visible slab or block given back).
  */
 void
 fw_prot_disown(
@@ -293,7 +273,6 @@ fw_prot_disown(
 	struct prot_session *session;
 	uint32_t first;
 	uint32_t count;
-	uint32_t index;
 	int error;
 
 	/* Only a protected session's ranges are in the table. */
@@ -304,17 +283,16 @@ fw_prot_disown(
 	if (error != 0)
 		return;
 
-	/* The session's bytes of the range become free. */
-	(void)prot_table_write(first, count, session->slot, 0, 1);
-
-	/* The range leaves the close's record. */
-	for (index = 0; index < session->ranges; index++) {
-		if (session->range[index].first == first && session->range[index].count == count) {
-			session->ranges--;
-			session->range[index] = session->range[session->ranges];
-			break;
-		}
-	}
+	/*
+	 * The session's bytes of the range become free; a failed write leaves
+	 * the close a sweep (so does a count that does not add up: it is not 0
+	 * at the close).
+	 */
+	prot_cleared = 0;
+	error = prot_table_write(first, count, session->slot, 0);
+	if (error != 0)
+		session->sweep = 1;
+	session->granules -= prot_cleared;
 }
 
 /*
@@ -332,8 +310,8 @@ fw_prot_public(
 	uint32_t count;
 	int error;
 
-	/* Nothing to mark without the capability or the table. */
-	if (!prot_present || hw_read(HW_PROT_TBASE) == 0)
+	/* Nothing to mark without the table (a GPU without the capability reads 0). */
+	if (hw_read(HW_PROT_TBASE) == 0)
 		return 0;
 
 	/* Whole granules (the caller keeps the range aligned). */
@@ -342,7 +320,7 @@ fw_prot_public(
 		return -1;
 
 	/* The range's bytes say public. */
-	error = prot_table_write(first, count, 0, PROT_PUBLIC, 0);
+	error = prot_table_write(first, count, 0, PROT_PUBLIC);
 	if (error != 0)
 		return -1;
 
@@ -396,9 +374,6 @@ fw_prot_grant(
 		return -2;
 
 	/* The entry: from the next request the MC judges, the range is the session's too. */
-	prot_cam[index].slot = session->slot;
-	prot_cam[index].first = first;
-	prot_cam[index].end = first + count;
 	prot_cam_write(index, session->slot, access, first, first + count);
 	session->grants++;
 
@@ -452,7 +427,6 @@ fw_prot_revoke(
 
 	/* The entry is invalid in the CAM and free here. */
 	prot_cam_write(index, 0, 0, 0, 0);
-	prot_cam[index].slot = 0;
 	session->grants--;
 
 	/* Succeeded: the grant is gone. */
@@ -460,8 +434,10 @@ fw_prot_revoke(
 }
 
 /*
- * Closes a protected session (SESSION_CLOSE): after the earlier work, its
- * bytes in the table become free, its grants go, and its slot is unmapped.
+ * Ends a protected session (SESSION_CLOSE), after its drain and after its
+ * objects gave their granules back: the bytes still saying its slot (a
+ * write that failed, a granule not given back) are swept from the whole
+ * table, its grants go, and its slot is unmapped.
  */
 void
 fw_prot_close(
@@ -477,27 +453,17 @@ fw_prot_close(
 	if (session == NULL)
 		return;
 
-	/* The session's work finishes first (a drain that fails still closes: RESET follows). */
-	(void)fw_prot_drain();
-
-	/* Its bytes: the recorded ranges, or the whole table when the record overflowed. */
-	if (session->overflow) {
+	/* The whole table, only when some of its bytes may be left (rare: about 10 ms for 1 MiB). */
+	if (session->sweep || session->granules != 0) {
 		g0 = hw_read(HW_PROT_G0);
 		g1 = hw_read(HW_PROT_G1);
-		(void)prot_table_write(g0, g1 - g0, session->slot, 0, 1);
-	} else {
-		for (index = 0; index < session->ranges; index++) {
-			(void)prot_table_write(session->range[index].first, session->range[index].count,
-			    session->slot, 0, 1);
-		}
+		(void)prot_table_write(g0, g1 - g0, session->slot, 0);
 	}
 
 	/* Its grants. */
 	for (index = 0; index < prot_grants; index++) {
-		if (prot_cam[index].slot == session->slot) {
+		if (prot_cam[index].slot == session->slot)
 			prot_cam_write(index, 0, 0, 0, 0);
-			prot_cam[index].slot = 0;
-		}
 	}
 
 	/* SLOT_MAP: the tag is unchecked again, and the slot's data in the units is foreign. */
@@ -572,59 +538,18 @@ prot_range_of(
 	return 0;
 }
 
-/* Checks that every byte of the granules is free (-1 if not, -2 on a memory error). */
-static int
-prot_table_check(
-	uint32_t first,
-	uint32_t count)
-{
-	uint32_t tbase;
-	uint32_t g0;
-	uint32_t g1;
-	uint32_t index;
-	uint32_t end;
-	uint32_t line;
-	uint32_t byte;
-	int error;
-
-	/* The table's place and the granules it covers. */
-	tbase = hw_read(HW_PROT_TBASE);
-	g0 = hw_read(HW_PROT_G0);
-	g1 = hw_read(HW_PROT_G1);
-	if (tbase == 0 || first < g0 || first + count > g1 || first + count < first)
-		return -1;
-
-	/* Each line of the range's bytes. */
-	index = first - g0;
-	end = index + count;
-	while (index < end) {
-		line = (tbase + index) & ~(FW_LINE_BYTES - 1u);
-		error = fw_dma_read(line, prot_line, 1);
-		if (error != 0)
-			return -2;
-		for (byte = (tbase + index) - line; byte < FW_LINE_BYTES && index < end; byte++) {
-			if (prot_line[byte] != 0)
-				return -1;
-			index++;
-		}
-	}
-
-	/* Succeeded: the range is nobody's. */
-	return 0;
-}
-
 /*
- * Writes the granules' bytes: every byte to value, or (clear) the bytes
- * that slot owns to 0; then invalidates the MC's copy.  -1 on a memory
- * error.
+ * Writes the granules' bytes: every byte to value, or (slot not 0) the
+ * bytes that slot owns to 0, counting them in prot_cleared;
+ * then invalidates the MC's copy.  With PROT_CHECK, only checks that every
+ * byte is 0.  -1 on a memory error (or a byte that is not 0).
  */
 static int
 prot_table_write(
 	uint32_t first,
 	uint32_t count,
 	uint32_t slot,
-	uint32_t value,
-	int clear)
+	uint32_t value)
 {
 	uint32_t tbase;
 	uint32_t g0;
@@ -634,6 +559,8 @@ prot_table_write(
 	uint32_t line;
 	uint32_t byte;
 	uint32_t mode;
+	uint32_t old;
+	uint32_t new;
 	int changed;
 	int error;
 
@@ -655,14 +582,26 @@ prot_table_write(
 			break;
 		changed = 0;
 		for (byte = (tbase + index) - line; byte < FW_LINE_BYTES && index < end; byte++) {
-			if (!clear) {
-				prot_line[byte] = (uint8_t)value;
-				changed = 1;
-			} else if ((prot_line[byte] & PROT_PUBLIC) == 0 && (prot_line[byte] & PROT_OWNER) == slot) {
-				prot_line[byte] = 0;
-				changed = 1;
-			}
 			index++;
+			old = prot_line[byte];
+			if (value == PROT_CHECK) {
+				if (old != 0)
+					return -1;
+				continue;
+			}
+
+			/* The new byte: the value, or 0 for a byte the slot owns (not a public one). */
+			new = value;
+			if (slot != 0) {
+				new = old;
+				if ((old & (PROT_PUBLIC | PROT_OWNER)) == slot)
+					new = 0;
+			}
+			if (new != old) {
+				prot_line[byte] = (uint8_t)new;
+				changed = 1;
+				prot_cleared += slot != 0;
+			}
 		}
 		if (changed) {
 			mode = fw_dma_mode(FW_DMA_TBL);
@@ -671,8 +610,9 @@ prot_table_write(
 		}
 	}
 
-	/* The MC's copy of the range, after the writes' answers. */
-	prot_invalidate(first, count);
+	/* The MC's copy of the range, after the writes' answers (a check wrote none). */
+	if (value != PROT_CHECK)
+		prot_invalidate(first, count);
 
 	/* A refused line. */
 	if (error != 0)
@@ -711,7 +651,7 @@ prot_wait_pending(void)
 	}
 }
 
-/* Writes one CAM entry (slot 0: invalid). */
+/* Writes one CAM entry and the firmware's copy (slot 0: invalid, free). */
 static void
 prot_cam_write(
 	uint32_t index,
@@ -721,6 +661,11 @@ prot_cam_write(
 	uint32_t end)
 {
 	uint32_t control;
+
+	/* The copy the firmware finds entries by. */
+	prot_cam[index].slot = slot;
+	prot_cam[index].first = first;
+	prot_cam[index].end = end;
 
 	/* The entry's range, then its control word, which writes it. */
 	hw_write(HW_PROT_GIDX, index);

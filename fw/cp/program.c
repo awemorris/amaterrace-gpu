@@ -55,6 +55,7 @@ fw_cmd_program(
 	uint32_t words;
 	uint32_t index;
 	uint32_t kind;
+	uint32_t mode;
 	int error;
 
 	/* The arguments. */
@@ -81,12 +82,17 @@ fw_cmd_program(
 		return;
 	}
 
-	/* The header. */
+	/*
+	 * The header, then the interface table: the session's memory, so the
+	 * reads are checked for its slot (no other cursor reads meanwhile).
+	 */
+	mode = fw_dma_mode(FW_DMA_CHK);
 	fw_reader_init(&binary, address, bytes);
 	for (index = 0; index < GSI1_HEADER_WORDS; index++)
 		table[index] = fw_reader_u32(&binary);
 	error = program_check(table, stage, bytes);
 	if (binary.error || error != 0) {
+		(void)fw_dma_mode(mode);
 		command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
 		return;
 	}
@@ -97,6 +103,7 @@ fw_cmd_program(
 	words = table[GSI1_H_IFACE_ENTRIES] * GSI1_IFACE_WORDS;
 	for (index = 0; index < words; index++)
 		table[GSI1_HEADER_WORDS + index] = fw_reader_u32(&binary);
+	(void)fw_dma_mode(mode);
 	if (binary.error) {
 		command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
 		return;

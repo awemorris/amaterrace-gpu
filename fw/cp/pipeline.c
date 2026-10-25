@@ -288,8 +288,10 @@ pipe_create(
 }
 
 /*
- * Gives a finished pipeline its final block: the pipeline, then its
- * programs' scratch memory (the raw state is no longer needed).
+ * Gives a finished pipeline its final block (the raw state is no longer
+ * needed) and its programs' scratch memory, a visible block of its own
+ * (a: its address, b: its bytes): the programs read and write it, the
+ * pipeline's block is the firmware's.
  */
 static int
 pipe_place(
@@ -302,12 +304,21 @@ pipe_place(
 
 	/* The new block replaces the one of the raw state. */
 	pipeline = &pipe_work.pipeline;
-	error = fw_object_block(object, FW_ROUND_LINES(sizeof(*pipeline)) + pipeline->scratch_bytes);
+	error = fw_object_block(object, sizeof(*pipeline));
 	if (error != 0)
 		return -1;
 
+	/* The scratch memory, if the programs have any. */
+	base = 0;
+	if (pipeline->scratch_bytes != 0) {
+		base = fw_heap_alloc_visible(object->tag, pipeline->scratch_bytes);
+		if (base == 0)
+			return -1;
+		object->a = base;
+		object->b = pipeline->scratch_bytes;
+	}
+
 	/* The scratch parts' addresses. */
-	base = object->block + FW_ROUND_LINES(sizeof(*pipeline));
 	for (index = 0; index < pipeline->resources; index++) {
 		if (pipeline->resource[index].kind == GSI1_KIND_SCRATCH)
 			pipeline->resource[index].specific += base;
@@ -884,9 +895,9 @@ pipe_resources(
 		pipeline->resources++;
 
 		/*
-		 * Scratch memory: each resident warp's part, kept after the
-		 * pipeline in its block; `specific` becomes the part's offset
-		 * there (the address once the block is known).
+		 * Scratch memory: each resident warp's part, in the
+		 * pipeline's scratch block; `specific` becomes the part's
+		 * offset there (the address once the block is known).
 		 */
 		if (kind == GSI1_KIND_SCRATCH) {
 			bytes = resource->specific * fw_heap_warps();

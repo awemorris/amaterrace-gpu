@@ -55,6 +55,13 @@
 #define FW_CHUNK_HEAD 2u
 #define FW_CHUNK_PAYLOAD (FW_CHUNK_WORDS - FW_CHUNK_HEAD)
 
+/*
+ * A recording's data chunk (fw_record_data): the data the units read,
+ * line by line, in a visible block (a protected session's granule); no
+ * header (the µop chunks list the data chunks).
+ */
+#define FW_DATA_CHUNK_BYTES 4096u
+
 /* Bytes rounded up to whole lines (a DMEM buffer the DMA reads or writes). */
 #define FW_ROUND_LINES(bytes) (((bytes) + FW_LINE_BYTES - 1u) / FW_LINE_BYTES * FW_LINE_BYTES)
 
@@ -91,7 +98,7 @@ enum fw_object_kind {
 	FW_OBJ_PROGRAM_VS,	/* id: the pipeline; block: the program's header and interface table */
 	FW_OBJ_PROGRAM_FS,
 	FW_OBJ_PROGRAM_CS,
-	FW_OBJ_PIPELINE,	/* block: struct fw_pipeline */
+	FW_OBJ_PIPELINE,	/* block: struct fw_pipeline; a, b: its scratch memory's address and bytes */
 	FW_OBJ_RENDER_PASS,	/* block: struct fw_render_pass */
 	FW_OBJ_FRAMEBUFFER,	/* block: struct fw_framebuffer */
 	FW_OBJ_CMD_POOL,
@@ -119,11 +126,14 @@ enum fw_cmdbuf_state {
 #define FW_OBJF_ONE_TIME 0x04u		/* begun ONE_TIME_SUBMIT: invalid after its submit */
 #define FW_OBJF_FREE_SET 0x08u		/* a descriptor pool whose sets may be freed one by one */
 #define FW_OBJF_COMPUTE 0x10u		/* a compute pipeline */
+#define FW_OBJF_OWNED 0x4000u		/* a memory object whose range the protection table gives its session */
+#define FW_OBJF_VISIBLE 0x8000u		/* the block is visible to the session's work (fw_heap_alloc_visible) */
 
 /*
  * A cursor over a byte range of GPU memory (a frame in the staging buffer,
  * or a class V packet).
  *
+ * A refill reads in the protection mode of the moment (fw_dma_mode).
  * Reads that pass the end or meet a DMA error set the sticky error and
  * return 0, so a decoder reads a whole command and looks at the error
  * once; the shared line buffer is refilled as the cursor moves.
@@ -415,7 +425,7 @@ struct fw_pipeline {
 	struct fw_pipe_resource resource[FW_PIPE_RESOURCES];
 	uint32_t pairs;
 	uint32_t pair[FW_PIPE_PAIRS][2];
-	uint32_t scratch_bytes;		/* the programs' scratch memory, after this in the block */
+	uint32_t scratch_bytes;		/* the programs' scratch memory (the object's a and b) */
 };
 #define FW_PIPE_COMPUTE 0x1u
 #define FW_RESIDENT_WARPS 4u		/* the warps that run at once when GHCI_HEAP does not say */
@@ -487,13 +497,15 @@ struct fw_rstate {
 	uint32_t query;
 	uint64_t emitted[2];		/* the pipelines whose STATE words the recording last wrote */
 	uint32_t occlusion;		/* 1 while an occlusion query is active (ROP_CTRL[0]) */
+	uint32_t data_chunk;		/* the recording's last data chunk (0: none yet) */
+	uint32_t data_used;		/* its lines in use */
 };
 
 /* The replay's markers: work in a recording that the firmware does itself. */
 #define FW_MARK_INDIRECT 1u	/* [kind][address][count][stride][bytes]: indirect draw or dispatch */
 #define FW_MARK_QUERY_COPY 2u	/* [slots][queries][destination][stride][flags]: query results */
 #define FW_MARK_WAIT_EVENT 3u	/* reserved */
-#define FW_MARK_DATA 4u		/* data the units read (fw_record_data); the replay skips it */
+#define FW_MARK_DATA 4u		/* [address]: a data chunk of the recording; the replay skips it, the clear frees it */
 
 void *memcpy(void *dst, const void *src, size_t bytes);
 void *memset(void *dst, int value, size_t bytes);
@@ -540,8 +552,6 @@ uint32_t fw_heap_warps(void);
 int fw_heap_ready(void);
 uint32_t fw_heap_alloc(uint32_t tag, uint32_t bytes);
 uint32_t fw_heap_alloc_aligned(uint32_t tag, uint32_t bytes, uint32_t align);
-uint32_t fw_heap_alloc_visible(uint32_t tag, uint32_t bytes);
-void fw_heap_free_visible(uint32_t tag, uint32_t address, uint32_t bytes);
 void fw_heap_free(uint32_t tag, uint32_t address, uint32_t bytes);
 int fw_session_open(uint32_t tag, uint64_t limit);
 int fw_session_is_open(uint32_t tag);
@@ -549,6 +559,12 @@ void fw_session_lose(uint32_t tag);
 int fw_session_lost(uint32_t tag);
 void fw_session_close(uint32_t tag);
 int fw_session_any(void);
+
+/* visible.c: the heap blocks a session's work reaches. */
+uint32_t fw_heap_alloc_visible(uint32_t tag, uint32_t bytes);
+void fw_heap_free_visible(uint32_t tag, uint32_t address, uint32_t bytes);
+void fw_heap_close_visible(uint32_t tag);
+void fw_heap_init_visible(void);
 
 /* builtin.c: the firmware's own part of the heap. */
 #define FW_IDENTITY_WORDS 65536u		/* the identity buffer: vertex and instance indices */
@@ -578,6 +594,7 @@ void fw_object_init(void);
 struct fw_object *fw_object_find(uint32_t tag, uint64_t id, uint32_t kind);
 struct fw_object *fw_object_create(uint32_t tag, uint64_t id, uint32_t kind);
 int fw_object_block(struct fw_object *object, uint32_t bytes);
+int fw_object_block_visible(struct fw_object *object, uint32_t bytes);
 void fw_object_destroy(struct fw_object *object);
 void fw_object_each_child(struct fw_object *parent, void (*visit)(struct fw_object *child));
 void fw_object_close(uint32_t tag);

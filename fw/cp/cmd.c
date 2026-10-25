@@ -39,6 +39,7 @@ static void cmd_free_memory(struct fw_command *command);
 static void cmd_destroy_device(struct fw_command *command);
 static void cmd_create_semaphore(struct fw_command *command);
 static void cmd_destroy_semaphore(struct fw_command *command);
+static int cmd_grant_ready(struct fw_command *command);
 static void cmd_buffer_grant(struct fw_command *command);
 static void cmd_buffer_revoke(struct fw_command *command);
 
@@ -484,13 +485,16 @@ cmd_session_close(
 	}
 
 	/*
-	 * After its work: the protection of a protected session (its table
-	 * bytes, grants and slot), then its objects (closing a closed session
-	 * does nothing).
+	 * After its work (a protected session's drain): its objects, whose
+	 * memory and visible blocks leave the protection table as they go, then
+	 * the rest of its protection (a sweep when its bytes are not all gone,
+	 * its grants, its slot).  Closing a closed session does nothing.
 	 */
 	if (tag <= 255u) {
-		fw_prot_close(tag);
+		if (fw_prot_slot(tag) != 0)
+			(void)fw_prot_drain();
 		fw_session_close(tag);
+		fw_prot_close(tag);
 	}
 }
 
@@ -559,10 +563,15 @@ cmd_memory(
 	 */
 	if ((flags & GHCI_MEMORY_IMPORTED) == 0) {
 		error = fw_prot_own(command->tag, address, bytes, (flags & GHCI_MEMORY_READ_ONLY) != 0);
-		if (error != 0) {
+		if (error < 0) {
 			fw_object_destroy(memory);
 			command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
+			return;
 		}
+
+		/* Its release gives an owned range back (FREE_MEMORY, the session's close). */
+		if (error > 0)
+			memory->flags |= FW_OBJF_OWNED;
 	}
 }
 
@@ -584,11 +593,11 @@ cmd_free_memory(
 	if (memory == NULL)
 		return;
 
-	/* A protected session's own memory leaves the table (Vulkan frees no memory in use). */
-	if ((memory->flags & GHCI_MEMORY_IMPORTED) == 0)
-		fw_prot_disown(command->tag, memory->a, memory->b);
-
-	/* Forgets the allocation (the driver frees it after the session's fence). */
+	/*
+	 * Forgets the allocation (the driver frees it after the session's
+	 * fence); a protected session's own memory leaves the table with it, with
+	 * no drain (Vulkan frees no memory in use).
+	 */
 	fw_object_destroy(memory);
 }
 
@@ -639,6 +648,39 @@ cmd_destroy_semaphore(
 }
 
 /*
+ * Reports whether a BUFFER_GRANT or BUFFER_REVOKE whose arguments were read
+ * can run: a well-formed packet in the ring, on a GPU with session
+ * protection (which alone has grants).
+ */
+static int
+cmd_grant_ready(
+	struct fw_command *command)
+{
+	int present;
+
+	/* The arguments were read whole. */
+	if (command->reader->error)
+		return 0;
+
+	/* Not a staged command. */
+	if (command->in_frame) {
+		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
+		command->stop = 1;
+		return 0;
+	}
+
+	/* A GPU without session protection has no grants. */
+	present = fw_prot_present();
+	if (!present) {
+		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
+		return 0;
+	}
+
+	/* Succeeded: the grant or revoke runs. */
+	return 1;
+}
+
+/*
  * GHCI_BUFFER_GRANT: [u32 session][u32 access][u64 GPU address][u64 bytes];
  * a packet in the ring only.
  */
@@ -650,7 +692,7 @@ cmd_buffer_grant(
 	uint32_t access;
 	uint32_t address;
 	uint32_t bytes;
-	int present;
+	int ready;
 	int error;
 
 	/* The arguments. */
@@ -658,22 +700,9 @@ cmd_buffer_grant(
 	access = fw_reader_u32(command->reader);
 	address = fw_reader_address(command->reader);
 	bytes = fw_reader_address(command->reader);
-	if (command->reader->error)
+	ready = cmd_grant_ready(command);
+	if (!ready)
 		return;
-
-	/* Not a staged command. */
-	if (command->in_frame) {
-		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
-		command->stop = 1;
-		return;
-	}
-
-	/* A GPU without session protection has no grants. */
-	present = fw_prot_present();
-	if (!present) {
-		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
-		return;
-	}
 
 	/* The grant applies to the work after it (no drain). */
 	error = fw_prot_grant(tag, access, address, bytes);
@@ -692,29 +721,16 @@ cmd_buffer_revoke(
 	uint32_t tag;
 	uint32_t address;
 	uint32_t bytes;
-	int present;
+	int ready;
 	int error;
 
 	/* The arguments. */
 	tag = fw_reader_u32(command->reader);
 	address = fw_reader_address(command->reader);
 	bytes = fw_reader_address(command->reader);
-	if (command->reader->error)
+	ready = cmd_grant_ready(command);
+	if (!ready)
 		return;
-
-	/* Not a staged command. */
-	if (command->in_frame) {
-		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
-		command->stop = 1;
-		return;
-	}
-
-	/* A GPU without session protection has no grants. */
-	present = fw_prot_present();
-	if (!present) {
-		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
-		return;
-	}
 
 	/* After the earlier work: one grant of exactly the range goes (none: nothing). */
 	error = fw_prot_revoke(tag, address, bytes);

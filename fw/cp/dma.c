@@ -26,7 +26,10 @@
  * One reader is active at a time (a packet, then the frame it names);
  * reader_base is the address of reader_buffer[0], or 1 (never line
  * aligned) when the buffer holds nothing.  reader_valid counts the bytes
- * read in.
+ * read in.  A refill reads in the protection mode of the moment
+ * (fw_dma_mode): a caller that reads the session's memory keeps
+ * FW_DMA_CHK set from the cursor's start to its last read, with no other
+ * cursor read between (fw_reader_init empties the buffer).
  */
 static uint8_t reader_buffer[FW_READER_LINES * FW_LINE_BYTES] __attribute__((aligned(FW_LINE_BYTES)));
 static uint32_t reader_base = 1;
@@ -80,7 +83,7 @@ fw_dma_read(
 
 #ifdef FW_HOST
 	/* A host build: the test's memory. */
-	error = hw_host_dma(address, dmem, lines, 0);
+	error = hw_host_dma(address, dmem, lines, dma_go_bits());
 	if (error != 0)
 		return -1;
 	return 0;
@@ -115,7 +118,7 @@ fw_dma_write(
 
 #ifdef FW_HOST
 	/* A host build: the test's memory. */
-	error = hw_host_dma(address, (void *)(uintptr_t)dmem, lines, 1);
+	error = hw_host_dma(address, (void *)(uintptr_t)dmem, lines, dma_go_bits() | HW_DMA_GO_WRITE);
 	if (error != 0)
 		return -1;
 	return 0;

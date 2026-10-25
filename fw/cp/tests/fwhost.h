@@ -47,6 +47,20 @@ extern uint32_t host_result_uops;	/* the µop words given before the last RESULT
 extern uint32_t host_dones;
 extern int host_failures;
 
+/* The grant entries the protection model has. */
+#define HOST_PROT_CAM 64u
+
+/*
+ * Session protection (host_prot_enable): the invalidations, the SELF µop
+ * packets, the checked DMAs, the refused DMA lines and the last one's
+ * address.
+ */
+extern uint32_t host_prot_invs;
+extern uint32_t host_prot_selfs;
+extern uint32_t host_prot_checked;
+extern uint32_t host_prot_refused;
+extern uint32_t host_prot_fault;
+
 void host_reset(void);
 uint32_t host_peek(uint32_t address);
 void host_poke(uint32_t address, uint32_t value);
@@ -65,6 +79,14 @@ int32_t host_ring_result(void);
 int host_trace_open(const char *path);
 void host_trace_case(const char *name);
 int host_trace_close(void);
+
+void host_prot_enable(uint32_t slots, uint32_t grants);
+void host_prot_table(uint32_t tbase, uint32_t g0, uint32_t g1);
+uint32_t host_prot_table_bytes(void);
+uint32_t host_prot_byte(uint32_t address);
+uint32_t host_prot_slot(uint32_t tag);
+uint32_t host_prot_cam(uint32_t slot, uint32_t address, uint32_t bytes);
+int host_prot_allowed(uint32_t slot, uint32_t address, int write);
 
 void host_check(int condition, const char *what);
 uint32_t host_uop_find(uint32_t op, uint32_t from);
