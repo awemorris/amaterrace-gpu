@@ -311,6 +311,13 @@ localparam [7:0] GHCI_XCAP_CPFW = 8'd6;
 localparam [7:0] GHCI_XCAP_SA = 8'd7;
 localparam [7:0] GHCI_XCAP_MEM = 8'd8;
 localparam [7:0] GHCI_XCAP_PROT = 8'd9;
+localparam [7:0] GHCI_XCAP_FMT = 8'd10;
+/* The FMT capability's registers (from its register offset, section 4; draft). */
+localparam [16:0] GHCI_FMT_INDEX = 17'h00000;	/* RW: a VkFormat value */
+localparam [16:0] GHCI_FMT_OPTIMAL = 17'h00004;	/* R: VkFormatFeatureFlags, optimal tiling */
+localparam [16:0] GHCI_FMT_LINEAR = 17'h00008;	/* R: the same, linear tiling */
+localparam [16:0] GHCI_FMT_BUFFER = 17'h0000C;	/* R: the buffer features */
+localparam [16:0] GHCI_FMT_LIMITS = 17'h00010;	/* R: [3:0] colour attachments */
 /* The MEM capability's registers (from its register offset, section 11.3). */
 localparam [16:0] GHCI_MEM_LOCAL_BASE = 17'h00000;
 localparam [16:0] GHCI_MEM_LOCAL_SIZE = 17'h00004;	/* 0 = no local memory (unified) */
