@@ -154,6 +154,10 @@
 #define GHCI_IRQ_HALTED (1u << 6)
 #define GHCI_IRQ_RESULT (1u << 7)
 #define GHCI_IRQ_RETIRE (1u << 8)
+#define GHCI_IRQ_VBLANK (1u << 9) /* DISP2 (draft) */
+#define GHCI_IRQ_FLIP (1u << 10)
+#define GHCI_IRQ_DISP_ERROR (1u << 11)
+#define GHCI_IRQ_HOTPLUG (1u << 12)
 
 /* FAULT_INFO. */
 #define GHCI_FAULT_CLIENT(f) ((f) & 0xFFu)
@@ -193,6 +197,7 @@
 #define GHCI_XCAP_MEM 8u
 #define GHCI_XCAP_PROT 9u
 #define GHCI_XCAP_FMT 10u
+#define GHCI_XCAP_DISP2 11u /* draft */
 
 /* The FMT capability's registers (from its register offset, section 4; draft). */
 #define GHCI_FMT_INDEX 0x00u /* RW: a VkFormat value */
@@ -446,5 +451,38 @@
 #define GHCI_DC_IRQ_VSYNC (1u << 0)
 #define GHCI_DC_IRQ_UNDERFLOW (1u << 1)
 #define GHCI_DC_IRQ_FLIP_DONE (1u << 2)
+
+/* DISP2 (docs/ghci.md section 13.2, draft): the same offsets up to 0x68
+ * (IRQ_STATUS/IRQ_ENABLE are DISP's only), and these. */
+#define GHCI_DC2_WINDOW 0x100u /* bytes */
+#define GHCI_DC_CONNECTED 0x6Cu
+#define GHCI_DC_MODE_INDEX 0x80u
+#define GHCI_DC_MODE_H0 0x84u /* [15:0] active, [31:16] sync */
+#define GHCI_DC_MODE_H1 0x88u /* [15:0] front porch, [31:16] back porch */
+#define GHCI_DC_MODE_V0 0x8Cu
+#define GHCI_DC_MODE_V1 0x90u
+#define GHCI_DC_MODE_CLOCK 0x94u /* kHz */
+#define GHCI_DC_MODE_FLAGS 0x98u /* [0] hsync, [1] vsync high, [7:4] PCLK_SEL */
+#define GHCI_DC_CURSOR_BASE 0xA0u
+#define GHCI_DC_CURSOR_POS 0xA4u /* [15:0] x, [31:16] y, signed */
+#define GHCI_DC_CURSOR_CTRL 0xA8u /* [0] shown */
+#define GHCI_DC_TAKEN0 0xB0u
+#define GHCI_DC_TAKEN1 0xB4u
+#define GHCI_DC_CAPS_CURSOR (1u << 8)
+#define GHCI_DC_CAPS_MODES(c) (((c) >> 9) & 7u)
+#define GHCI_DC_CAPS_SENSE (1u << 12)
+#define GHCI_DC_ST_RUNNING (1u << 0)
+#define GHCI_DC_ST_UNDERFLOW (1u << 1)
+#define GHCI_DC_ST_IDLE (1u << 2)
+#define GHCI_DC_ST_READ_ERROR (1u << 3)
+#define GHCI_DC_ST_RECORD_ERROR (1u << 4)
+#define GHCI_DC_ST_BAD_WRITE (1u << 5)
+#define GHCI_DC_ST_LINE(s) (((s) >> 16) & 0xFFFu)
+#define GHCI_DC_ST_CONNECTED (1u << 28)
+#define GHCI_DC_ST_PENDING0 (1u << 29)
+#define GHCI_DC_ST_PENDING1 (1u << 30)
+#define GHCI_DC_ST_RECORD (1u << 31)
+#define GHCI_DC_MODE_PCLK_SEL(f) (((f) >> 4) & 0xFu)
+#define GHCI_DC_CURSOR_SIZE 64u /* plane 1: 64 x 64 BGRA8, rows 256 bytes apart */
 
 #endif /* GHCI_REGS_H */
