@@ -8,7 +8,7 @@ The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU
 
 Children: `atg_kc705_clk`, `atg_kc705_jtag`, `atg_top`, `atg_kc705_mig`, `atg_dc`.
 
-The host AXI slave of atg_top is unused (no PCIe yet, design §4.3: JTAG first).  `tools/lint.sh` lints this top with its board helpers and the lint stand-ins of the primitives and IP cores (`sim/lint/xilinx_stubs.v`).  The XDC is `boards/kc705/atg_kc705_raster.xdc` (p012).
+The host AXI slave of atg_top is PCIe's BAR0 (p013): atg_kc705_pcie's m0_* through am_axi_cdc (user_clk → gclk) into atg_top's s_*, beside the JTAG bridge; BAR2 (m2_*) goes to the MIG wrapper's second port; atg_pcie_msi gives the MSI requests (vector 0 the GPU, 1 the DC); the GPU → host port of atg_kc705_pcie is idle in version 1.  Ports added: pcie_refclk_p/n, pcie_perst_n, pcie_txp/txn[3:0], pcie_rxp/rxn[3:0] (pins in the XDC from the KC705 board file); LED 4 = link_up.  `tools/lint.sh` lints this top with its board helpers and the lint stand-ins of the primitives and IP cores (`sim/lint/xilinx_stubs.v`).  The XDC is `boards/kc705/atg_kc705_raster.xdc` (p012).
 
 ## 2. Parameters
 
