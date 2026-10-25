@@ -43,14 +43,17 @@ module atg_tu_lod (
 
 	/* The axis' fixed-point lane values: floor(x × 2^16), or the cube's
 	 * >> 8, and its size. */
-	reg [95:0] fa;
-	integer i;
-	always @(*)
-		for (i = 0; i < 3; i = i + 1)
-			fa[i*32 +: 32] = cube && !ax[1] ?
-				(ax[0] ? {{13{ct[i*27 + 26]}}, ct[i*27 + 8 +: 19]} :
-				{{13{cs[i*27 + 26]}}, cs[i*27 + 8 +: 19]}) :
-				tu_fx32(ax[1] ? w[i*32 +: 32] : ax[0] ? v[i*32 +: 32] : u[i*32 +: 32], 5'd16);
+	wire [95:0] fa;
+	genvar gi;
+	generate
+	for (gi = 0; gi < 3; gi = gi + 1) begin : g_fa
+		wire [31:0] fx;
+		atg_tu_fx32 u_fx (.f(ax[1] ? w[gi*32 +: 32] : ax[0] ? v[gi*32 +: 32] : u[gi*32 +: 32]), .sh(5'd16),
+			.q(fx));
+		assign fa[gi*32 +: 32] = cube && !ax[1] ? (ax[0] ? {{13{ct[gi*27 + 26]}}, ct[gi*27 + 8 +: 19]} :
+			{{13{cs[gi*27 + 26]}}, cs[gi*27 + 8 +: 19]}) : fx;
+	end
+	endgenerate
 	wire [15:0] n = ax[1] ? d0 : ax[0] && !cube ? h0 : w0;
 	/* The axis: the lanes' differences to lane 0, the larger magnitude mx, then
 	 * log2(mx) + log2(n) - 1.0 (Q8 in a signed 17-bit value). */

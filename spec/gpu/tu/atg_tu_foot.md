@@ -57,7 +57,7 @@ Combinational.
 
 ## 4. Behaviour
 
-As spec/gpu/tu/atg_tu_addr.md §4, "Footprint" and "Address" (`tools/tumodel.py` `lane_addr`), with the functions of `include/atg_tu_fn.vh` (`tu_wrap`, `tu_mod`, `tu_cube_texel`).
+As spec/gpu/tu/atg_tu_addr.md §4, "Footprint" and "Address" (`tools/tumodel.py` `lane_addr`), with the modules `atg_tu_wrap` (the former `tu_wrap`, `tu_mod`) and `atg_tu_cube_texel`.
 
 ## 5. State machine
 

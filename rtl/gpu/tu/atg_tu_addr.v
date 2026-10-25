@@ -38,7 +38,7 @@
  *   with the weight λ & 255; otherwise level 0 and the mag filter.  A depth
  *   format without compare is nearest only.
  *   Texel coordinates with 8 fraction bits: (the normalized coordinate's
- *   tu_coord) × size >> 16, a cube's face coordinate × size >> 16, or an
+ *   atg_tu_coord) × size >> 16, a cube's face coordinate × size >> 16, or an
  *   unnormalized coordinate's floor(x × 256).
  *   Layer: a 2D array's RNE(rs1+2) clamped (texf: the integer, also of a
  *   cube); level base = BASE + layer × LAYER_STRIDE + the level's offset.
@@ -105,7 +105,6 @@ module atg_tu_addr (
 	output reg ta_last
 );
 	`include "ghci_regs.vh"
-	`include "atg_tu_fn.vh"
 	`include "atg_fmt_info.vh"
 	`include "atg_tu_fmt.vh"
 	localparam [1:0] OP_TEXL = 2'd0, OP_TEXB = 2'd1, OP_TEXF = 2'd2, OP_TEXSZ = 2'd3;
@@ -247,32 +246,21 @@ module atg_tu_addr (
 	wire [15:0] hl1 = hl_s == 16'd0 ? 16'd1 : hl_s;
 	wire [15:0] hl = cube ? wl : hl1;	/* a cube's faces are squares of the width */
 	wire [15:0] dl = !is3dr || dl_s == 16'd0 ? 16'd1 : dl_s;
-	/* The texel coordinates with 8 fraction bits. */
-	wire signed [46:0] pu, pv, pw;
-	wire signed [43:0] qu, qv;
-	am_mul #(.AW(30), .BW(17), .SIGNED(1)) u_pu (.clk(clk), .en(1'b1), .a(tu_coord(cw0, mu)), .b({1'b0, wl}),
-		.p(pu));
-	am_mul #(.AW(30), .BW(17), .SIGNED(1)) u_pv (.clk(clk), .en(1'b1), .a(tu_coord(cw1, mv)), .b({1'b0, hl}),
-		.p(pv));
-	am_mul #(.AW(30), .BW(17), .SIGNED(1)) u_pw (.clk(clk), .en(1'b1), .a(tu_coord(cw4, mw)), .b({1'b0, dl}),
-		.p(pw));
-	am_mul #(.AW(27), .BW(17), .SIGNED(1)) u_qu (.clk(clk), .en(1'b1), .a(cs[k]), .b({1'b0, wl}),
-		.p(qu));
-	am_mul #(.AW(27), .BW(17), .SIGNED(1)) u_qv (.clk(clk), .en(1'b1), .a(ct[k]), .b({1'b0, wl}),
-		.p(qv));
-	wire signed [29:0] un0 = tu_unnorm(cw0), un1 = tu_unnorm(cw1);
-	wire signed [30:0] cu = cube ? {{3{qu[43]}}, qu[43:16]} : unn ? {un0[29], un0} : pu[46:16];
-	wire signed [30:0] cv = cube ? {{3{qv[43]}}, qv[43:16]} : unn ? {un1[29], un1} : pv[46:16];
+	/* The texel coordinates with 8 fraction bits (atg_tu_tcrd). */
+	wire signed [30:0] cu, cv, cwz;
+	atg_tu_tcrd tcrd (.cw0(cw0), .cw1(cw1), .cw4(cw4), .mu(mu), .mv(mv), .mw(mw), .wl(wl), .hl(hl), .dl(dl),
+		.fcs(cs[k]), .fct(ct[k]), .cube(cube), .unn(unn), .cu(cu), .cv(cv), .cw(cwz));
 	/* The lane's layer: a 2D array's; texf's integer layer of an array or a
 	 * cube (a cube's face is chosen per texel in atg_tu_foot). */
 	wire [31:0] sfl = cw4[31] ? 32'd0 : cw4;
-	wire [15:0] cnt1;
+	wire [15:0] cnt1, lyr;
+	atg_tu_layer u_lyr (.f(cw4), .cnt(cnt), .l(lyr));
 	wire [47:0] lstr;
 	wire [31:0] lb1, lbase_n;
 	wire [1:0] lax1, k1;
 	am_sub #(.W(16)) u_cnt1 (.a(cnt), .b(16'd0), .bi(1'b1), .d(cnt1), .bo(carry_unused[2]));
 	wire [15:0] lay = op == OP_TEXF ? (arr ? (sfl >= {16'd0, cnt} ? cnt1 : sfl[15:0]) :
-		cube ? (sfl > 32'd5 ? 16'd5 : sfl[15:0]) : 16'd0) : arr ? tu_layer(cw4, cnt) : 16'd0;
+		cube ? (sfl > 32'd5 ? 16'd5 : sfl[15:0]) : 16'd0) : arr ? lyr : 16'd0;
 	am_mul #(.AW(32), .BW(16)) u_lstr (.clk(clk), .en(1'b1), .a(stride), .b(lay), .p(lstr));
 	/* the level base, the axis and lane + 1 */
 	am_add #(.W(32)) u_lb1 (.a(base), .b(lstr[31:0]), .ci(1'b0), .s(lb1), .co(carry_unused[3]));
@@ -374,7 +362,7 @@ module atg_tu_addr (
 				r_dl <= dl;
 				r_cu <= cu;
 				r_cv <= cv;
-				r_cw <= pw[46:16];
+				r_cw <= cwz;
 				r_lbase <= lbase_n;
 				r_plane <= plane;
 				r_val <= smpq ? (ms ? 32'd4 : 32'd1) : nlevq ? {28'd0, nlev} : dszq ? {16'd0, dsz} :
@@ -411,8 +399,8 @@ module atg_tu_addr (
 		end
 	end
 
-	wire unused_ok = &{1'b0, fc[11:10], lamp[16], jcrd[127:64], pu[15:0], pv[15:0],
-		pw[15:0], qu[15:0], qv[15:0], lstr[47:32], samp[18:17], bcol[0], opr[7], opr[2],
+	wire unused_ok = &{1'b0, fc[11:10], lamp[16], jcrd[127:64],
+		lstr[47:32], samp[18:17], bcol[0], opr[7], opr[2],
 		dlod[31:24], OP_TEXL};
 endmodule
 

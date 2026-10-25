@@ -20,7 +20,7 @@
  * edge; clamp to border: outside is a border texel, bit 0 of the
  * address).  A cube's indices are not wrapped: nearest clamps them,
  * bilinear takes a texel beyond one edge from the adjacent face and a
- * corner texel from the face itself (include/atg_tu_fn.vh tu_cube_texel).
+ * corner texel from the face itself (atg_tu_cube_texel).
  * texf: x + du, y + dv (and z + dw of a 3D level) clamped into the level.
  * Address = lbase + k × plane (+ face × stride for a cube) + the texel in
  * the plane (linear rows of wl texels of 2^psl bytes, wl rounded up to a
@@ -83,7 +83,6 @@ module atg_tu_foot (
 	output wire [15:0] fuv,	/* {fv, fu} */
 	output wire [7:0] fw
 );
-	`include "atg_tu_fn.vh"
 
 	wire signed [23:0] du = {{20{off[3]}}, off[3:0]};
 	wire signed [23:0] dv = {{20{off[7]}}, off[7:4]};
@@ -100,7 +99,8 @@ module atg_tu_foot (
 		.bo(carry_unused[0]));
 	am_add #(.W(24)) u_ki (.a({cwm[30], cwm[30:8]}), .b(dw), .ci(dlin && p0), .s(ki),
 		.co(carry_unused[1]));
-	wire [16:0] kw = tu_wrap(ki, dl, mw);
+	wire [16:0] kw;
+	atg_tu_wrap u_kw (.i(ki), .n(dl), .mode(mw), .w(kw));
 	am_add #(.W(33)) u_zd (.a({z[31], z}), .b({{9{dw[23]}}, dw}), .ci(1'b0), .s(zd),
 		.co(carry_unused[2]));
 	atg_tu_iclamp u_kf (.v(zd), .n(dl), .c(kf));
@@ -123,8 +123,11 @@ module atg_tu_foot (
 	am_add #(.W(24)) u_i1 (.a(i0), .b(24'd0), .ci(lin), .s(i1), .co(carry_unused[7]));
 	am_add #(.W(24)) u_j1 (.a(j0), .b(24'd0), .ci(lin), .s(j1), .co(carry_unused[8]));
 	assign fuv = {cv2[7:0], cu2[7:0]};
-	wire [16:0] wi0 = tu_wrap(i0, wl, mu), wi1 = tu_wrap(i1, wl, mu);
-	wire [16:0] wj0 = tu_wrap(j0, hl, mv), wj1 = tu_wrap(j1, hl, mv);
+	wire [16:0] wi0, wi1, wj0, wj1;
+	atg_tu_wrap u_wi0 (.i(i0), .n(wl), .mode(mu), .w(wi0));
+	atg_tu_wrap u_wi1 (.i(i1), .n(wl), .mode(mu), .w(wi1));
+	atg_tu_wrap u_wj0 (.i(j0), .n(hl), .mode(mv), .w(wj0));
+	atg_tu_wrap u_wj1 (.i(j1), .n(hl), .mode(mv), .w(wj1));
 	wire [15:0] fi, fj;
 	am_add #(.W(33)) u_xd (.a({x[31], x}), .b({{9{du[23]}}, du}), .ci(1'b0), .s(xd),
 		.co(carry_unused[9]));
@@ -153,11 +156,15 @@ module atg_tu_foot (
 	wire [16:0] wr = wrm & ~rm;
 `endif
 	/* Cube: clamped (nearest) or across the faces (bilinear). */
-	wire [34:0] c00 = lin ? tu_cube_texel(face, i0, j0, wl) :
-		{face, tu_clamp(i0, wl), tu_clamp(j0, wl)};
-	wire [34:0] c10 = tu_cube_texel(face, i1, j0, wl);
-	wire [34:0] c01 = tu_cube_texel(face, i0, j1, wl);
-	wire [34:0] c11 = tu_cube_texel(face, i1, j1, wl);
+	wire [34:0] c00l, c10, c01, c11;
+	wire [15:0] ci0, cj0;
+	atg_tu_cube_texel u_c00 (.tface(face), .i(i0), .j(j0), .n(wl), .t(c00l));
+	atg_tu_cube_texel u_c10 (.tface(face), .i(i1), .j(j0), .n(wl), .t(c10));
+	atg_tu_cube_texel u_c01 (.tface(face), .i(i0), .j(j1), .n(wl), .t(c01));
+	atg_tu_cube_texel u_c11 (.tface(face), .i(i1), .j(j1), .n(wl), .t(c11));
+	atg_tu_iclamp u_ci0 (.v({{9{i0[23]}}, i0}), .n(wl), .c(ci0));
+	atg_tu_iclamp u_cj0 (.v({{9{j0[23]}}, j0}), .n(wl), .c(cj0));
+	wire [34:0] c00 = lin ? c00l : {face, ci0, cj0};
 
 	/* Slot t: its texel ft of the footprint and the word in the texel; its address
 	 * lbase + k plane (+ face stride) + the texel's offset + the word's byte. */

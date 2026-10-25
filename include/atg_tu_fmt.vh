@@ -68,9 +68,16 @@ function [1:0] tu_gwi;
 	reg [6:0] tg_pos;
 	begin
 		tg_i = atg_fmt_info(tg_f[7:0]);
-		tg_s = tg_f[GHCI_TFMT_SWIZZLE + 3 * tg_c +: 3];
-		tg_src = tg_s == 3'd0 || tg_s == 3'd7 ? tg_c : tg_s[1:0] + 2'd1;
-		tg_pos = tg_i[16 + 13 * tg_src +: 7];
+		/* (selections with constant offsets: component tg_c's swizzle, then the
+		 * source component's position) */
+		tg_s = tg_c == 2'd0 ? tg_f[GHCI_TFMT_SWIZZLE +: 3] : tg_c == 2'd1 ?
+			tg_f[GHCI_TFMT_SWIZZLE + 3 +: 3] : tg_c == 2'd2 ? tg_f[GHCI_TFMT_SWIZZLE + 6 +: 3] :
+			tg_f[GHCI_TFMT_SWIZZLE + 9 +: 3];
+		/* swizzles 3-6 (R, G, B, A) read component tg_s - 3 */
+		tg_src = tg_s == 3'd0 || tg_s == 3'd7 ? tg_c : tg_s == 3'd3 ? 2'd0 : tg_s == 3'd4 ? 2'd1 :
+			tg_s == 3'd5 ? 2'd2 : tg_s == 3'd6 ? 2'd3 : tg_s == 3'd1 ? 2'd2 : 2'd3;
+		tg_pos = tg_src == 2'd0 ? tg_i[16 +: 7] : tg_src == 2'd1 ? tg_i[29 +: 7] :
+			tg_src == 2'd2 ? tg_i[42 +: 7] : tg_i[55 +: 7];
 		tu_gwi = tg_s == 3'd1 || tg_s == 3'd2 || {1'b0, tg_src} >= tg_i[8:6] ? 2'd0 :
 			tg_pos[6:5];
 	end
