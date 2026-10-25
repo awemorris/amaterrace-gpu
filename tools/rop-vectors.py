@@ -9,6 +9,9 @@
 #   sim/vec/rop_dtest.txt    atg_rop_dtest_tb: bounds, stencil and depth
 #   sim/vec/rop_ds2.txt      atg_rop_ds_tb: stencil, D16 and bounds runs
 #   sim/vec/rop_msz.txt      atg_rop_msz_tb: atg_rop_ms's depth (DEPTH_CLAMP)
+#   sim/vec/rop_mrt.txt      atg_rop_mrt_tb: atg_rop_wb, atg_rop_wpix and
+#                            atg_rop_blend: four attachments of every
+#                            colour-attachment format, one and four samples
 # The earlier vectors stay in sim/vec/rop_blend.txt (tools/rx-vectors.py).
 # The files are in git; check `git diff sim/vec` after a change.
 #   python3 -I tools/rop-vectors.py
@@ -32,6 +35,15 @@
 #   F sect fmt blend const*4 wm lanes src*16 dst*4 raw*4 keep*4
 #                                a beat: sect 0 ops, 1 srgb; dst, raw and
 #                                keep 64 bits per lane
+# rop_mrt.txt lines:
+#   R ms4 ctrl fmts bl0..bl3 kc8 kcf0..kcf3 fmt0 wms base0..3 stride0..3 nw
+#                                a run: the ROP state (RT_FORMATS, BLEND,
+#                                BLEND1-3, BLEND_CONST, BLEND_CONST_R-A,
+#                                RT_FORMAT, WRITE_MASK, RTk_BASE/STRIDE,
+#                                ROP_CTRL, MS_CTRL) and the region's words
+#   M word*nw                    the region at 0x2000 before the run
+#   B x y rt nocol smask col*16  a beat (atg_rop_wb's d_*)
+#   F word*nw                    the region at the end
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import os
 import random
@@ -354,6 +366,115 @@ def msz_lines(r):
     return out
 
 
+RT_REG = 0x2000         # the targets' region in atg_rop_mrt_tb's memory
+MRT_W, MRT_H = 8, 4     # pixels of each attachment
+
+
+def mrt_fmts():
+    import fmtmodel as F
+    return sorted(v for v in F.FORMATS if F.features(v, False)[0] & F.F_COLOR)
+
+
+def mrt_pixel(vk, bl, kc8, kcf, ctrl, wm, color, old):
+    """atg_rop_wpix's new pixel (an integer of ps bytes) for one sample."""
+    import fmtmodel as F
+    fi = F.info(vk)
+    ps = fi.nbytes
+    allb = (1 << (8 * ps)) - 1
+    if vk in (44, 37, 51, 4, 9, 16, 8):
+        kc = sum(M.f2u8(kcf[c]) << (8 * c) for c in range(4)) if ctrl & 2 else kc8
+        return M.blend_pixel8(vk, bl, kc, wm, color, old) & allb
+    if vk in M.FBLEND_FMTS:
+        k = kcf if ctrl & 2 else [M.UNORM8[(kc8 >> (8 * c)) & 255] for c in range(4)]
+        raw, keep = M.fblend_lane(vk, bl, k, wm, color, old)
+    else:
+        raw, keep = F.pack(color, vk, wm)
+    return ((raw & ~keep) | (old & keep)) & allb
+
+
+def mrt_lines(r):
+    """rop_mrt.txt (the comment at the top)."""
+    import fmtmodel as F
+    cfmts = mrt_fmts()
+    out = []
+    for run in range(72):
+        ms4 = run % 2
+        S = 4 if ms4 else 1
+        fmt0 = r.randrange(3)
+        fmts = []
+        for k in range(4):
+            c = r.random()
+            if k == 0 and c < 0.15:
+                fmts.append(0)
+            elif k > 0 and c < 0.15:
+                fmts.append(0)
+            elif c < 0.35:
+                fmts.append(r.choice([97, 109, 103, 83, 64, 43, 50]))
+            else:
+                fmts.append(r.choice(cfmts))
+        evk = [fmts[0] or [44, 37, 4][fmt0]] + fmts[1:]
+        bls = [(r.getrandbits(23) | 1) if r.random() < 0.6 else 0 for _ in range(4)]
+        wms = r.getrandbits(16) if run % 3 == 0 else 0xFFFF
+        kc8 = r.getrandbits(32)
+        kcf = [r.choice([f(r.uniform(-0.2, 1.2)), M.ONE, M.UNORM8[r.randrange(256)]])
+               for _ in range(4)]
+        ctrl = r.getrandbits(1) << 1
+        bases, strides = [], []
+        a = RT_REG
+        for k in range(4):
+            ps = F.info(evk[k]).nbytes if evk[k] else 4
+            unit = 2 * S * ps
+            st = MRT_W * S * ps + unit * r.randrange(3)
+            bases.append(a)
+            strides.append(st)
+            a += (MRT_H * st + 63) // 64 * 64 + 64 * r.randrange(2)
+        nw = (a - RT_REG) // 4
+        mem = bytearray(r.getrandbits(8) for _ in range(4 * nw))
+        out.append('R %d %x %08x %06x %06x %06x %06x %08x %08x %08x %08x %08x %x %04x %s %s %x' % (
+            ms4, ctrl, fmts[0] | fmts[1] << 8 | fmts[2] << 16 | fmts[3] << 24, bls[0], bls[1],
+            bls[2], bls[3], kc8, kcf[0], kcf[1], kcf[2], kcf[3], fmt0, wms,
+            ' '.join('%08x' % b for b in bases), ' '.join('%08x' % s for s in strides), nw))
+        out.append('M ' + ' '.join('%08x' % int.from_bytes(mem[4 * i:4 * i + 4], 'little')
+                                   for i in range(nw)))
+        for q in range(24):
+            x, y = 2 * r.randrange(MRT_W // 2), 2 * r.randrange(MRT_H // 2)
+            smask = r.getrandbits(16) if ms4 else sum(r.getrandbits(1) << (4 * l)
+                                                       for l in range(4))
+            if not smask:
+                smask = 1
+            rts = [k for k in range(4) if r.random() < 0.6] if q % 7 else []
+            beats = rts if rts else [None]
+            for rt in beats:
+                color = [rnd_src(r) if r.random() < 0.7 else
+                         [r.getrandbits(32) for _ in range(4)] for _ in range(4)]
+                out.append('B %x %x %d %d %04x %s' % (
+                    x, y, rt or 0, 1 if rt is None else 0, smask,
+                    ' '.join('%08x' % w for px in color for w in px)))
+                if rt is None or not evk[rt]:
+                    continue
+                vk = evk[rt]
+                fi = F.info(vk)
+                ps = fi.nbytes
+                if not F.features(vk, False)[0] & F.F_COLOR:
+                    continue
+                wm = (wms >> (4 * rt)) & 15
+                if not wm & ((1 << len(fi.chans)) - 1):
+                    continue
+                for ln in range(4):
+                    for smp in range(S):
+                        if not smask >> (4 * ln + smp) & 1:
+                            continue
+                        px, py = x + (ln & 1), y + (ln >> 1)
+                        o = bases[rt] - RT_REG + py * strides[rt] + (S * px + smp) * ps
+                        old = int.from_bytes(mem[o:o + ps], 'little')
+                        new = mrt_pixel(vk, bls[rt], kc8, kcf, ctrl, wm, color[ln], old)
+                        mem[o:o + ps] = new.to_bytes(ps, 'little')
+        out.append('F ' + ' '.join('%08x' % int.from_bytes(mem[4 * i:4 * i + 4], 'little')
+                                   for i in range(nw)))
+    out.append('E')
+    return out
+
+
 def main():
     r = random.Random(288035)
     with open(os.path.join(VEC, 'rop_blend2.txt'), 'w') as fp:
@@ -366,7 +487,10 @@ def main():
         fp.write('\n'.join(ds2_lines(r)) + '\n')
     with open(os.path.join(VEC, 'rop_msz.txt'), 'w') as fp:
         fp.write('\n'.join(msz_lines(r)) + '\n')
-    print('rop-vectors: rop_blend2.txt, rop_fblend.txt, rop_dtest.txt, rop_ds2.txt, rop_msz.txt')
+    with open(os.path.join(VEC, 'rop_mrt.txt'), 'w') as fp:
+        fp.write('\n'.join(mrt_lines(r)) + '\n')
+    print('rop-vectors: rop_blend2.txt, rop_fblend.txt, rop_dtest.txt, rop_ds2.txt, rop_msz.txt,'
+          ' rop_mrt.txt')
 
 
 if __name__ == '__main__':

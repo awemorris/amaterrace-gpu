@@ -4,7 +4,7 @@
 # (32 lanes each) one after the other until a bar or end (a bar releases when
 # every warp that has not ended waits at it).  Units: the integer ALU, the FPU,
 # the packed unit, the transcendental unit and the divider (bit-exact through
-# tools/gsi1fp.py), lw/sw/atom/fence, lds/sts, lwc and the c operands, exec.*,
+# tools/gsi1fp.py), lw/sw/atom/fence, lds/sts/atoms, lwc and the c operands, exec.*,
 # kill, the branches, end, bar, wait and nop, and the lane unit (qd; shfl,
 # vote and ballot with --subgroup).  Texture stops the model with an error,
 # and lda without --prims; exp and lda only in --warps mode.  Programs must be free of races between
@@ -24,22 +24,24 @@
 # bit; I.hex (the -o format) holds the registers the VF or RX writes before
 # the start.  wgx/nwgx are 0 and lidn is the lane (atg_su_sched's warp
 # word).  The warps run one after the other in slot order.  Side effects
-# (sw, atom, sts, exp) take the lanes in EXEC, in the mask and not KILLED
-# (design §3.1, M10).  exp of a fragment warp: targets 0x100-0x103 (COLOR0),
-# 0x104 (DEPTH) and 0x105 (SAMPLE_MASK, docs/ghci.md section 12.11: the
-# last value written, bits 3:0); a lane is exported once one of them ran
-# for it.  The lane's sample mask is r6 as written before the start (the
+# (sw, atom, atoms, sts, exp) take the lanes in EXEC, in the mask and not KILLED
+# (design §3.1, M10); sw.x takes every EXEC lane.  exp of a fragment
+# warp: targets 0x100 + 16 k + c (colour attachment k, component c), 0x104 (DEPTH) and 0x105 (SAMPLE_MASK,
+# docs/ghci.md section 12.11: the last value written, bits 3:0); a lane is
+# exported once one of them ran for it.  The lane's sample mask is r6 as written before the start (the
 # rasterizer's sample mask; 15 when the init file leaves r6 unset) ANDed
 # with the last SAMPLE_MASK value.
-# --exp-out: the quads the ROP gets (atg_su_exp), fragment warps in
-# sequence order, the quads with coverage (packed from lane 0) in order:
-# the number of quads, then per quad 22 words: {seq[15:0], 7'd0, last,
-# 4'd0, mask[3:0]} with mask = covered and exported lanes whose sample
-# mask is not 0, {y, x} =
-# floor of r4 and r5 of the quad's lane 0, and per lane 0..3 COLOR0 RGBA
-# and the depth (exported, else r3 as written before the start; 0 for a
-# lane not in mask).  exp of a vertex warp: targets 0x000-0x003 (PT words
-# 0-3) and 0x010+v, v < --vary (PT word 4+v).  --ms-out: the same quads,
+# --exp-out: the beats the ROP gets (atg_su_exp), fragment warps in
+# sequence order, the quads with coverage (packed from lane 0) in order,
+# per quad one beat per colour attachment the warp exported (ascending), or
+# one beat without colour: the number of beats, then per beat 22 words:
+# {seq[15:0], 1'd0, rt[1:0], qlast, qfirst, nocol, 1'd0, last, 4'd0,
+# mask[3:0]} with mask = covered and exported lanes whose sample mask is
+# not 0 and last = the warp's last beat, {y, x} = floor of r4 and r5 of the
+# quad's lane 0, and per lane 0..3 attachment rt's RGBA and the depth
+# (exported, else r3 as written before the start; 0 for a lane not in
+# mask).  exp of a vertex warp: targets 0x000-0x003 (PT words
+# 0-3) and 0x010+v, v < --vary (PT word 4+v).  --ms-out: the same beats,
 # one word each: {12'd0, zexp[3:0], smask[15:0]} (zexp: the lane exported
 # DEPTH; smask bit 4 l + s: the sample mask of lane l, 0 for a lane not in
 # mask).  --pt-out: for the one
@@ -54,11 +56,17 @@
 # lanes whose rs1 is not 0; vote.any/all: whether that mask is not 0 / equals
 # EXEC, as a Boolean; both write every lane (as exec.save).
 # --prims P.hex: the primitive table lda reads in --warps mode, one 32-bit
-# word per line: slot 0..3, vertex 0..2, word 0..63 (word 4 + w is varying
-# word w, as atg_rx_frag copies it); lda of vertex 3 or of a word past 63
-# reads 0.  Without --prims, lda stops the model with an error.
+# word per line: slot 0..3, vertex 0..2, PT word 0..127 (word 4 + w is
+# varying word w, as atg_rx_frag copies it); lda (PT word imm[8:2], vertex
+# imm[1:0]) of vertex 3, of PT words 0-3 (the position, not in the table)
+# or past 4 + --vary reads 0.  Without --prims, lda stops the model with an
+# error.
 # --fault-out: an ISA fault is not an error; the file gets one line per
 # faulting warp, "slot pc" in hex, and the warp stops.
+# --scratch ADDR,BYTES: a program's scratch memory (docs/ghci.md section
+# 12.10, kind 14) of BYTES bytes per warp at ADDR: every lw and sw from
+# ADDR up to 64 warps' parts must be in the part of the warp that makes
+# it, ADDR + slot x BYTES (the `warp` operand), or the model stops.
 #
 # Memory: DATA.hex (one 32-bit word per line) is the data image at DATA_BASE
 # (0x8000, 4096 words); everything else reads 0.  The constant bank holds the
@@ -161,6 +169,17 @@ class Machine:
         self.xexp = {}          # slot -> (colour[lane][4], depth[lane], exported mask)
         self.pt = [[None] * (4 + vary) for _ in range(32)]
         self.prims = None       # --prims: [slot][vertex][word], words of the primitive table
+        self.scratch = None     # --scratch: (address, bytes per warp)
+
+    def check_scratch(self, k, addr):
+        """Stops the model when warp k reaches another warp's scratch memory."""
+        if self.scratch is None:
+            return
+        base, size = self.scratch
+        addr &= M32 & ~3
+        if base <= addr < base + 64 * size and not base + k * size <= addr < base + (k + 1) * size:
+            raise SystemExit("gsi1model: warp %d reaches scratch address 0x%x outside its part "
+                             "[0x%x, 0x%x)" % (k, addr, base + k * size, base + (k + 1) * size))
 
     def rd32(self, addr):
         return self.mem.get((addr & M32) >> 2, 0)
@@ -176,7 +195,8 @@ class Machine:
             exec_init = exec_m
         else:
             exec_m, exec_init = g["exec"], g["mask"]
-            col = [[0] * 4 for _ in range(32)]
+            col = [[0] * 16 for _ in range(32)]
+            rtw = [0]
             dep = [None] * 32
             xp = 0
             smv = [None] * 32
@@ -254,11 +274,18 @@ class Machine:
                 write(exec_m, lambda a, b, c: FP.div(op, a, b))
             elif unit == A.U_LSU:
                 if op == 0:         # lw
+                    for ln in range(32):
+                        if exec_m >> ln & 1:
+                            self.check_scratch(k, operands(ln)[0] + imm)
                     write(exec_m, lambda a, b, c: self.rd32(a + imm))
                 elif op == 1:       # sw: lanes in order, the higher lane wins
+                    # sw.x (sub 1, scratch memory): every EXEC lane, helper
+                    # and killed lanes too.
+                    lanes_m = exec_m if f["SUB"] & 1 else side
                     for ln in range(32):
-                        if side >> ln & 1:
+                        if lanes_m >> ln & 1:
                             a, b, c = operands(ln)
+                            self.check_scratch(k, a + imm)
                             self.wr32(a + imm, b)
                 elif op == 2:       # atom: lanes in order
                     olds = {}
@@ -276,6 +303,17 @@ class Machine:
                 if op == 0:
                     write(exec_m, lambda a, b, c: self.lds[((a + imm) & M32) >> 2 &
                                                            (LDS_WORDS - 1)])
+                elif op == 2:       # atoms: lanes in order, no immediate
+                    olds = {}
+                    for ln in range(32):
+                        if side >> ln & 1:
+                            a, b, c = operands(ln)
+                            w = (a & M32) >> 2 & (LDS_WORDS - 1)
+                            olds[ln] = self.lds[w]
+                            self.lds[w] = atom(f["SUB"] & 15, olds[ln], b, c) & M32
+                    if f["WRD"]:
+                        for ln, v in olds.items():
+                            r[rd][ln] = v
                 else:
                     for ln in range(32):
                         if side >> ln & 1:
@@ -316,7 +354,7 @@ class Machine:
                     killed |= bt & exec_m
                 elif op == 13:
                     if g is not None and g["kind"] == 1:
-                        self.xexp[k] = (col, dep, xp, smv)
+                        self.xexp[k] = (col, dep, xp, smv, rtw[0])
                     return
                 elif op == 14:
                     yield pc
@@ -325,8 +363,8 @@ class Machine:
             elif unit == A.U_LANE:
                 self.lane(f, exec_m, r, src)
             elif unit == A.U_LDA and g is not None and self.prims is not None:
-                vtx, wd = imm & 3, (imm >> 2) & 63
-                v = self.prims[k][vtx][wd] if vtx < 3 else 0
+                vtx, wd = imm & 3, (imm >> 2) & 127
+                v = self.prims[k][vtx][wd] if vtx < 3 and 4 <= wd < 4 + self.vary else 0
                 write(exec_m, lambda a, b, c: v)
             elif unit == A.U_EXP and g is not None:
                 t = imm & 0xFFF
@@ -334,13 +372,15 @@ class Machine:
                     if not side >> ln & 1:
                         continue
                     a, b, c = operands(ln)
-                    if g["kind"] == 1 and 0x100 <= t <= 0x105:
+                    if g["kind"] == 1 and (t in (0x104, 0x105) or
+                                           (t >> 6 == 4 and not t & 12)):
                         if t == 0x104:
                             dep[ln] = b
                         elif t == 0x105:
                             smv[ln] = b & 15
                         else:
-                            col[ln][t - 0x100] = b
+                            col[ln][4 * (t >> 4 & 3) + (t & 3)] = b
+                            rtw[0] |= 1 << (t >> 4 & 3)
                         xp |= 1 << ln
                     elif g["kind"] == 0 and t < 4:
                         self.pt[ln][t] = b
@@ -419,7 +459,8 @@ def write_exports(path, m, gw, init, ms_path=None):
     msw = []
     frags = sorted((g["seq"], k) for k, g in enumerate(gw) if g is not None and g["kind"] == 1)
     for seq, k in frags:
-        col, dep, xp, smv = m.xexp[k]
+        col, dep, xp, smv, rtw = m.xexp[k]
+        rts = [i for i in range(4) if rtw >> i & 1]
         cov = gw[k]["mask"]
 
         def smask(ln):
@@ -434,18 +475,22 @@ def write_exports(path, m, gw, init, ms_path=None):
             mask &= sum(1 << i for i in range(4) if smask(4 * q + i))
             sm = sum(smask(4 * q + i) << (4 * i) for i in range(4) if mask >> i & 1)
             ze = sum(1 << i for i in range(4) if mask >> i & 1 and dep[4 * q + i] is not None)
-            msw.append(ze << 16 | sm)
-            last = 1 if q == nq - 1 else 0
-            out.append(seq << 16 | last << 8 | mask)
             x, y = floor_f32(init[k][4][4 * q]), floor_f32(init[k][5][4 * q])
-            out.append(y << 16 | x)
-            for i in range(4):
-                ln = 4 * q + i
-                if mask >> i & 1:
-                    d = dep[ln] if dep[ln] is not None else init[k][3][ln]
-                    out += col[ln] + [d]
-                else:
-                    out += [0] * 5
+            beats = rts if rts else [None]
+            for bi, rt in enumerate(beats):
+                qlast = 1 if bi == len(beats) - 1 else 0
+                last = 1 if q == nq - 1 and qlast else 0
+                msw.append(ze << 16 | sm)
+                out.append(seq << 16 | (rt or 0) << 13 | qlast << 12 | (1 if bi == 0 else 0) << 11 |
+                           (1 if rt is None else 0) << 10 | last << 8 | mask)
+                out.append(y << 16 | x)
+                for i in range(4):
+                    ln = 4 * q + i
+                    if mask >> i & 1:
+                        d = dep[ln] if dep[ln] is not None else init[k][3][ln]
+                        out += col[ln][4 * (rt or 0):4 * (rt or 0) + 4] + [d]
+                    else:
+                        out += [0] * 5
     with open(path, "w") as f:
         f.write("%08x\n" % (len(out) // 22))
         for v in out:
@@ -475,6 +520,7 @@ def main():
     ap.add_argument("--ms-out")
     ap.add_argument("--pt-out")
     ap.add_argument("--prims")
+    ap.add_argument("--scratch")
     a = ap.parse_args()
     with open(a.src) as f:
         words = A.encode(f.read())
@@ -491,10 +537,13 @@ def main():
                                               front=t[5 * k + 4]) for k in range(4)]
     m = Machine(words, a.lanes, a.nregs, mem, a.groups, a.packed, a.subgroup, faults, gw,
                 a.vary)
+    if a.scratch:
+        base, size = a.scratch.split(",")
+        m.scratch = (int(base, 0), int(size, 0))
     if a.prims:
         t = load_hex(a.prims)
-        m.prims = [[[t[(k * 3 + v) * 64 + w] if (k * 3 + v) * 64 + w < len(t) else 0
-                     for w in range(64)] for v in range(3)] for k in range(4)]
+        m.prims = [[[t[(k * 3 + v) * 128 + w] if (k * 3 + v) * 128 + w < len(t) else 0
+                     for w in range(128)] for v in range(3)] for k in range(4)]
     if a.init:
         t = load_hex(a.init)
         for k in range(4):

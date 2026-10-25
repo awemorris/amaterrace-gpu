@@ -19,6 +19,7 @@
 # mnemonic suffix .hlo (01, low half only), .hhi (10) or .hswap (11, rs2's
 # halves swapped), after .sat.  ".inst 0x<64 bits>" puts a raw instruction
 # (tools/gsi1dis.py writes it for words that have no other text).
+# Atomics: atom.<op> on global memory, atoms.<op> on shared memory (sub[4]).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import argparse
 import random
@@ -51,7 +52,8 @@ OPC = dict(OP=0x33, OPIMM=0x13, LUI=0x37, LOAD=0x03, STORE=0x23, BRANCH=0x63, OP
 # The instruction table: mnemonic -> (format, opcode, funct3, funct7 (or rs2 / None),
 # unit, op, class, operands).  Formats: R, R4, I, S, B, U.  The operand string lists
 # the assembly operands: d rd, 1/2/3 sources, i immediate, m imm(rs1), a (rs1),
-# l label, t sub (texture slot), x export target (S immediate).
+# l label, t sub (texture slot), x export target (S immediate; a number or
+# color0.r-color3.a, 0x100 + 16 k + c).
 T = {}
 
 
@@ -78,7 +80,10 @@ ins("lui", "U", OPC["LUI"], None, None, U_ALU, 18, C_A, "di")
 ins("movi", "U", OPC["LUI"], None, None, U_ALU, 18, C_A, "di", movi=True)
 ins("lw", "I", OPC["LOAD"], 2, None, U_LSU, 0, C_M, "dm")
 ins("lwc", "I", OPC["LOAD"], 6, None, U_CBANK, 0, C_M, "dm")
-ins("sw", "S", OPC["STORE"], 2, None, U_LSU, 1, C_M, "2m", side=True)
+ins("sw", "S", OPC["STORE"], 2, None, U_LSU, 1, C_M, "2m", side=True, subv=0)
+# sw.x: the store of every EXEC lane, helper and killed lanes too (a warp's
+# scratch memory, docs/ghci.md section 12.8); the uop's sub[0].
+ins("sw.x", "S", OPC["STORE"], 2, None, U_LSU, 1, C_M, "2m", side=True, subv=1)
 for n, f3, ops in [("bany", 0, "1l"), ("bnone", 1, "1l"), ("ball", 2, "1l"), ("j", 3, "l"),
                    ("bexnz", 4, "l"), ("bexz", 5, "l")]:
     ins(n, "B", OPC["BRANCH"], f3, None, U_EXEC, f3, C_A, ops)
@@ -252,7 +257,7 @@ def uses(e, d):
     ops = e["ops"]
     u1 = "1" in ops or "m" in ops or "a" in ops
     u2 = "2" in ops
-    u3 = "3" in ops or (e.get("sub") == "atom" and d["sub"] == 10)
+    u3 = "3" in ops or (e.get("sub") == "atom" and d["sub"] & 15 == 10)
     return u1, u2, u3, "d" in ops
 
 
@@ -275,8 +280,12 @@ def decode(w, cfg):
                     ill = True
             elif d["rs1"] in (96 - k, 95, 94, 127, 126, 128 - k):
                 ill = True
-        if e.get("sub") == "atom" and d["sub"] > 10:
-            ill = True
+        if e.get("sub") == "atom":
+            if d["sub"] & 15 > 10:
+                ill = True
+            if d["sub"] & 16:
+                # The shared-memory form (atoms): the LDS unit.
+                e = dict(e, unit=U_LDS)
         if e["unit"] == U_TEX and d["sub"] > 15:
             ill = True
         if e.get("packed") and not cfg["PACKED"]:
@@ -362,6 +371,17 @@ def num(t):
     return int(t.strip(), 0)
 
 
+# Export targets by name (docs/ghci.md section 12.12): colourK.c is
+# 0x100 + 16 K + c, K = 0-3, c = r, g, b, a.
+EXP_NAMES = {"color%d.%s" % (k, ch): 0x100 + 16 * k + c
+             for k in range(4) for c, ch in enumerate("rgba")}
+
+
+def exp_target(t):
+    t = t.strip()
+    return EXP_NAMES[t] if t in EXP_NAMES else num(t)
+
+
 def split_imm(v, bits_lo=12):
     lo = sext(v, bits_lo)
     hi = (v - lo) >> bits_lo
@@ -379,8 +399,9 @@ def assemble_one(mn, args, pc, labels):
     if mn.endswith(".sat"):
         sat, mn = True, mn[:-4]
     atom = None
-    if mn.startswith("atom."):
-        atom, mn = mn[5:], "atom"
+    shared = mn.startswith("atoms.")
+    if mn.startswith("atom.") or shared:
+        atom, mn = mn.partition(".")[2], "atom"
     if mn not in T:
         raise ValueError("unknown mnemonic %r" % mn)
     e = T[mn]
@@ -422,7 +443,9 @@ def assemble_one(mn, args, pc, labels):
                 rs3 = n
         elif o == "a":
             rs1 = reg_num(a.strip("()"))
-        elif o in "iwx":
+        elif o == "x":
+            imm = exp_target(a)
+        elif o in "iw":
             imm = num(a)
         elif o == "m":
             mm = re.fullmatch(r"(.*)\((.*)\)", a)
@@ -433,7 +456,9 @@ def assemble_one(mn, args, pc, labels):
         elif o == "t":
             sub = num(a)
     if mn == "atom":
-        sub = ATOMS.index(atom)
+        if atom not in ATOMS:
+            raise ValueError("unknown atomic operation %r" % atom)
+        sub = ATOMS.index(atom) | (16 if shared else 0)
         if atom == "cmpxchg":
             if ai >= len(args):
                 raise ValueError("atom.cmpxchg: no compare value")
@@ -445,6 +470,8 @@ def assemble_one(mn, args, pc, labels):
         ai = 3
     if ai != len(args):
         raise ValueError("%s: too many operands" % mn)
+    if mn == "lda" and not 0 <= imm < 512:
+        raise ValueError("lda: immediate %d: 4 x PT word (0-127) + vertex" % imm)
     if mods and not e.get("fp"):
         raise ValueError("%s: modifiers on an integer instruction" % mn)
     if sat and not e.get("fp"):
@@ -576,7 +603,8 @@ def dec_table(path, seed=1):
             if "subv" in e and rnd.random() < 0.8:
                 w1 = (w1 & ~(31 << 17)) | e["subv"] << 17
             if e.get("sub") == "atom" and rnd.random() < 0.8:
-                w1 = (w1 & ~(31 << 17)) | rnd.randrange(11) << 17
+                # sub[4] (global or shared memory) stays random.
+                w1 = (w1 & ~(15 << 17)) | rnd.randrange(11) << 17
             if e["unit"] == U_TEX and rnd.random() < 0.8:
                 w1 &= ~(16 << 17)
             if e["unit"] == U_TEX and rnd.random() < 0.5:

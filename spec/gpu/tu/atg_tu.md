@@ -83,7 +83,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_tu_tb.v` prints `PASS atg_tu.quads (32)`, `PASS atg_tu.quads (64)` and `PASS atg_tu`: about 1500 quads (sim/vec/tu_quad.txt from `tools/tu-vectors.py`, `tools/tumodel.py` `sample`) through the whole TU with 32- and 64-byte lines on a memory model (word a = (a >> 2) × 0x9E3779B1, random request accept and latency): random descriptors of the earlier codes and of TEX_FORMAT's formats, every op, random gaps and tr_ready, the 16 words, tag and last of every quad in order (the two paths interleaved).  `sim/tb/atg_top_tex_tb.v` (`PASS atg_top_tex`) and the Verilator TEX mode run the whole TU in a textured scene.
+`sim/tb/atg_tu_tb.v` prints `PASS atg_tu.quads (32)`, `PASS atg_tu.quads (64)`, `PASS atg_tu.rows (32)`, `PASS atg_tu.rows (64)` and `PASS atg_tu`: about 1900 quads (sim/vec/tu_quad.txt from `tools/tu-vectors.py`, `tools/tumodel.py` `sample`) through the whole TU with 32- and 64-byte lines on a memory model (word a = (a >> 2) × 0x9E3779B1, random request accept and latency): random descriptors of the earlier codes and of TEX_FORMAT's formats, every op (rows: small images of odd widths with TEX_ROW 1-3), random gaps and tr_ready, the 16 words, tag and last of every quad in order (the two paths interleaved).  `sim/tb/atg_top_tex_tb.v` (`PASS atg_top_tex`) and the Verilator TEX mode run the whole TU in a textured scene.
 
 ## 9. References
 

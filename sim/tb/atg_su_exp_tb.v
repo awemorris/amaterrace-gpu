@@ -7,10 +7,11 @@
 
 /*
  * atg_su_exp_tb: atg_su_exp (NPHYS 8, 4 warps) with the RX's register
- * writes (r3 z, r4/r5 the pixel centre), fl_go, fragment exps of COLOR0
- * and DEPTH lane group by group under random side-effect masks, warp ends
- * in random order and a ROP model (ex_ready random, ex_next counting the
- * retired numbers).
+ * writes (r3 z, r4/r5 the pixel centre), fl_go, fragment exps of the
+ * colour attachments (0x100 + 16 k + c, a random subset of k per warp, none
+ * in some) and DEPTH lane group by group under random side-effect masks,
+ * warp ends in random order and a ROP model (ex_ready random, ex_next
+ * counting the retired numbers).
  *   frag    — every fragment warp drains after its end and only when its
  *             sequence number is ex_next: its quads (those with coverage)
  *             in order, xy from r4/r5, mask = exported & covered lanes,
@@ -22,10 +23,16 @@
  *             lanes take 1111) and the d_s table words 0xFF8-0xFFB of half
  *             of them (others 0: cleared at the release; the map and a
  *             varying word are not d_s), half the warps export SAMPLE_MASK
- *             (0x105) twice (the last value counts); ex_ms = {the warp's
+ *             (0x105) twice (the last value counts); ex_aux[147:0] = {the warp's
  *             d_s, the lanes that exported DEPTH, r6 & SAMPLE_MASK per
  *             lane} and a lane whose mask is 0 is not in ex_mask.
  *             -DMUT_SMASK_AND (the two exports ANDed) fails it.
+ *   mrt     — the beats: one per attachment the warp exported (ascending;
+ *             ex_aux rt, qfirst, qlast), or one without colour (nocol)
+ *             when it exported none; the beat's colours are that
+ *             attachment's; ex_aux[148] is the warp's facing (fl_info[48],
+ *             random); a SECOND_COLOR target (0x108) is ignored.
+ *             -DMUT_EXP_FRONT (the facing always 1) fails it.
  */
 
 `timescale 1ns / 1ps
@@ -54,7 +61,7 @@ module atg_su_exp_tb;
 	reg fl_pw_we = 1'b0;
 	reg [11:0] fl_pw_addr = 0;
 	reg [31:0] fl_pw_data = 0;
-	wire [148:0] ex_ms;
+	wire [153:0] ex_aux;
 	wire x_ready, ex_valid, ex_last, xr_valid;
 	wire [15:0] ex_seq;
 	wire [31:0] ex_xy;
@@ -72,7 +79,7 @@ module atg_su_exp_tb;
 		.ex_next(ex_next),
 		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane),
 		.fl_data(fl_data), .fl_go(fl_go), .fl_info(fl_info),
-		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_ms(ex_ms),
+		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_aux(ex_aux),
 		.xr_valid(xr_valid), .xr_warp(xr_warp), .wc_end(wc_end), .wc_warp(wc_warp));
 
 	integer seed = 1, errors = 0, e_rel = 0, i, j, k, l, c, r, t;
@@ -85,7 +92,12 @@ module atg_su_exp_tb;
 	reg [15:0] qys [0:31];
 	reg [31:0] zv [0:127];	/* slot*32 + lane */
 	reg [31:0] dv [0:127];
-	reg [31:0] cv [0:511];	/* (slot*32 + lane)*4 + comp */
+	reg [31:0] cv [0:2047];	/* (slot*32 + lane)*16 + 4 k + comp */
+	reg [3:0] rtwl [0:3];	/* the attachments exported */
+	reg [3:0] frs;	/* the warps' facing */
+	integer e_mrt = 0;
+	reg qstart;	/* the next beat starts a quad */
+	reg [1:0] brt;	/* the attachment of the next beat */
 	reg [3:0] r6v [0:127];	/* the RX's r6 */
 	reg [3:0] smv [0:127];	/* the last SAMPLE_MASK */
 	reg [31:0] smf [0:3];	/* SAMPLE_MASK exported */
@@ -197,7 +209,9 @@ module atg_su_exp_tb;
 			drained[s] = 1'b0;
 			fl_go = 1'b1;
 			fl_slot = s;
-			fl_info = {15'd0, 1'b1, seq, cov[s]};
+			frs[s] = $random(seed) & 1;
+			rtwl[s] = 4'd0;
+			fl_info = {15'd0, frs[s], seq, cov[s]};
 			tick;
 			fl_go = 1'b0;
 		end
@@ -223,7 +237,8 @@ module atg_su_exp_tb;
 			x_mask = {sm, {NPHYS{1'b1}}};
 			for (ln = 0; ln < NPHYS; ln = ln + 1) begin
 				x_b[32 * ln +: 32] = $random(seed);
-				if (sm[ln] && kd == 2'd1 && tg >= 32'h100 && tg <= 32'h105) begin
+				if (sm[ln] && kd == 2'd1 && (tg == 32'h104 || tg == 32'h105 ||
+				    (tg[31:6] == 26'd4 && tg[3:2] == 2'd0))) begin
 					xpl[s][g * NPHYS + ln] = 1'b1;
 					if (tg == 32'h105) begin
 						smf[s][g * NPHYS + ln] = 1'b1;
@@ -231,8 +246,11 @@ module atg_su_exp_tb;
 					end else if (tg == 32'h104) begin
 						dwl[s][g * NPHYS + ln] = 1'b1;
 						dv[s * 32 + g * NPHYS + ln] = x_b[32 * ln +: 32];
-					end else
-						cv[(s * 32 + g * NPHYS + ln) * 4 + tg - 32'h100] = x_b[32 * ln +: 32];
+					end else begin
+						cv[(s * 32 + g * NPHYS + ln) * 16 + 4 * tg[5:4] + tg[1:0]] =
+							x_b[32 * ln +: 32];
+						rtwl[s][tg[5:4]] = 1'b1;
+					end
 				end
 			end
 			tick;
@@ -254,7 +272,13 @@ module atg_su_exp_tb;
 		end
 	endtask
 
-	/* The ROP model: takes quads in order, checks them. */
+	/* The ROP model: takes beats in order, checks them. */
+	reg [3:0] bab, bbe;	/* the warp's attachments above and below the beat's */
+	reg blast;
+	function [1:0] low4;
+		input [3:0] m;
+		low4 = m[0] ? 2'd0 : m[1] ? 2'd1 : m[2] ? 2'd2 : m[3] ? 2'd3 : 2'd0;
+	endfunction
 	reg [31:0] want;
 	reg [15:0] lsm;
 	reg [3:0] okm;
@@ -268,23 +292,35 @@ module atg_su_exp_tb;
 				$display("FAIL atg_su_exp.frag: sequence %0d out while next is %0d", ex_seq, ex_next);
 			end
 			ms = slot_of_seq[ex_seq];
+			if (qstart)
+				brt = low4(rtwl[ms]);
+			bab = rtwl[ms] & ~((4'd2 << brt) - 4'd1);
+			bbe = rtwl[ms] & ((4'd1 << brt) - 4'd1);
+			if (ex_aux[153:148] !== {rtwl[ms] == 4'd0 ? 2'd0 : brt, bab == 4'd0, bbe == 4'd0,
+			    rtwl[ms] == 4'd0, frs[ms]}) begin
+				e_mrt = e_mrt + 1;
+				if (e_mrt < 6)
+					$display("FAIL atg_su_exp.mrt: seq %0d quad %0d beat %b, want rt %0d of %b front %b",
+						ex_seq, dq, ex_aux[153:148], brt, rtwl[ms], frs[ms]);
+			end
+			blast = bab == 4'd0;
 			okm = 4'd0;
 			for (ml = 0; ml < 4; ml = ml + 1) begin
 				lsm[4 * ml +: 4] = (r6f[ms] ? r6v[ms * 32 + 4 * dq + ml] : 4'hF) &
 					(smf[ms][4 * dq + ml] ? smv[ms * 32 + 4 * dq + ml] : 4'hF);
 				okm[ml] = lsm[4 * ml +: 4] != 4'd0;
 			end
-			if (ex_ms[15:0] !== lsm ||
-			    ex_ms[19:16] !== (dwl[ms][4 * dq +: 4] & xpl[ms][4 * dq +: 4] & cov[ms][4 * dq +: 4]) ||
-			    ex_ms[147:20] !== {dsr[ms * 4 + 3], dsr[ms * 4 + 2], dsr[ms * 4 + 1], dsr[ms * 4]}) begin
+			if (ex_aux[15:0] !== lsm ||
+			    ex_aux[19:16] !== (dwl[ms][4 * dq +: 4] & xpl[ms][4 * dq +: 4] & cov[ms][4 * dq +: 4]) ||
+			    ex_aux[147:20] !== {dsr[ms * 4 + 3], dsr[ms * 4 + 2], dsr[ms * 4 + 1], dsr[ms * 4]}) begin
 				e_ms = e_ms + 1;
 				if (e_ms < 6)
-					$display("FAIL atg_su_exp.ms: seq %0d quad %0d ex_ms %h smask want %h", ex_seq, dq,
-						ex_ms, lsm);
+					$display("FAIL atg_su_exp.ms: seq %0d quad %0d ex_aux %h smask want %h", ex_seq, dq,
+						ex_aux[147:0], lsm);
 			end
 			if (ex_xy !== {qys[ms * 8 + dq], qxs[ms * 8 + dq]} ||
 			    ex_mask !== (cov[ms][4 * dq +: 4] & xpl[ms][4 * dq +: 4] & okm) ||
-			    ex_last !== (dq == 7 || cov[ms][4 * dq + 4 +: 4] == 4'd0)) begin
+			    ex_last !== (blast && (dq == 7 || cov[ms][4 * dq + 4 +: 4] == 4'd0))) begin
 				errors = errors + 1;
 				$display("FAIL atg_su_exp.frag: seq %0d quad %0d xy %h mask %b last %b", ex_seq,
 					dq, ex_xy, ex_mask, ex_last);
@@ -298,18 +334,23 @@ module atg_su_exp_tb;
 							4 * dq + ml, ex_depth[32 * ml +: 32], want);
 					end
 					for (mc = 0; mc < 4; mc = mc + 1)
-						if (xpl[ms][4 * dq + ml] && ex_color[128 * ml + 32 * mc +: 32] !==
-						    cv[(ms * 32 + 4 * dq + ml) * 4 + mc]) begin
-							errors = errors + 1;
-							$display("FAIL atg_su_exp.frag: seq %0d lane %0d colour %0d", ex_seq,
-								4 * dq + ml, mc);
+						if (xpl[ms][4 * dq + ml] && rtwl[ms] != 4'd0 &&
+						    ex_color[128 * ml + 32 * mc +: 32] !==
+						    cv[(ms * 32 + 4 * dq + ml) * 16 + 4 * brt + mc]) begin
+							e_mrt = e_mrt + 1;
+							if (e_mrt < 6)
+								$display("FAIL atg_su_exp.mrt: seq %0d lane %0d attachment %0d colour %0d",
+									ex_seq, 4 * dq + ml, brt, mc);
 						end
 				end
+			qstart = blast;
+			if (!blast)
+				brt = low4(bab);
 			if (ex_last) begin
 				ex_next <= ex_next + 16'd1;
 				dq = 0;
 				wait_rel[ms] = 1'b1;
-			end else
+			end else if (blast)
 				dq = dq + 1;
 		end
 	end
@@ -343,6 +384,8 @@ module atg_su_exp_tb;
 		wait_rel = 0;
 		drained = 0;
 		dq = 0;
+		qstart = 1'b1;
+		brt = 2'd0;
 		nseq = 0;
 		repeat (3) tick;
 		rst_n = 1'b1;
@@ -361,9 +404,14 @@ module atg_su_exp_tb;
 				frag_warp(order[i], nseq + i);
 			kind[3] = 1'b0;
 			for (i = 0; i < 3; i = i + 1) begin
-				for (c = 0; c < 4; c = c + 1)
-					for (j = 0; j < G; j = j + 1)
-						exp_grp(i, j, 32'h100 + c, 2'd1);
+				/* attachment 0 alone in half the warps, a random set in the others */
+				t = ($random(seed) & 1) ? 1 : $random(seed) & 15;
+				for (k = 0; k < 4; k = k + 1)
+					if (t[k])
+						for (c = 0; c < 4; c = c + 1)
+							for (j = 0; j < G; j = j + 1)
+								exp_grp(i, j, 32'h100 + 16 * k + c, 2'd1);
+				exp_grp(i, 2, 32'h108, 2'd1);	/* SECOND_COLOR: ignored */
 				if ($random(seed) & 1)
 					for (j = 0; j < G; j = j + 1)
 						exp_grp(i, j, 32'h104, 2'd1);
@@ -402,10 +450,12 @@ module atg_su_exp_tb;
 			$display("PASS atg_su_exp.release");
 		if (e_ms == 0)
 			$display("PASS atg_su_exp.ms");
-		if (errors + e_rel + e_ms == 0)
+		if (e_mrt == 0)
+			$display("PASS atg_su_exp.mrt");
+		if (errors + e_rel + e_ms + e_mrt == 0)
 			$display("PASS atg_su_exp");
 		else
-			$display("FAIL atg_su_exp: %0d errors", errors + e_rel);
+			$display("FAIL atg_su_exp: %0d errors", errors + e_rel + e_ms + e_mrt);
 		$finish;
 	end
 endmodule

@@ -31,6 +31,8 @@ module atg_top #(
 	parameter HAS_CPU = 0,	/* atg_cpu, the CP's firmware processor */
 	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
 	parameter CPU_DMEM_INIT = "",	/* its DMEM image */
+	parameter CPU_IMEM_WORDS = 8192,	/* its IMEM in 32-bit words (KC705: 16384, 64 KiB) */
+	parameter CPU_DMEM_WORDS = 4096,	/* its DMEM in words (KC705: 8192, 32 KiB) */
 	parameter NSU = 0,	/* shader units */
 	parameter HAS_VF = 0,	/* vertex fetcher */
 	parameter HAS_RX = 0,	/* rasterizer */
@@ -159,6 +161,8 @@ module atg_top #(
 	 */
 	localparam HAS_ATOM = NSU > 0 ? 1 : 0;
 	localparam C_CPU = 2;
+	/* RESIDENT_WARPS: the warps the shader units run at once. */
+	localparam [31:0] CP_RESIDENT_WARPS = NSU * SU_NWARPS;
 	localparam C_VF = C_CPU + (HAS_CPU != 0 ? 1 : 0);
 	localparam C_TU = C_VF + (HAS_VF != 0 ? 1 : 0);
 	localparam C_ROP = C_TU + (HAS_TU != 0 ? 1 : 0);
@@ -310,6 +314,7 @@ module atg_top #(
 		.HAS_DBG(HAS_JTAG),
 		.PACKED(NSU != 0 && SU_PACKED != 0),
 		.SUBGROUP(NSU != 0 && SU_SUBGROUP != 0),
+		.RESIDENT_WARPS(CP_RESIDENT_WARPS[15:0]),
 		.MS4(MS4),
 		.HAS_ETC(HAS_TU != 0)	/* the TU decodes ETC2 and EAC */
 	) cp (
@@ -493,6 +498,7 @@ module atg_top #(
 	if (HAS_CPU != 0) begin : g_cpu
 		atg_cpu #(
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.IMEM_WORDS(CPU_IMEM_WORDS), .DMEM_WORDS(CPU_DMEM_WORDS),
 			.IMEM_INIT(CPU_IMEM_INIT), .DMEM_INIT(CPU_DMEM_INIT)
 		) cpu (
 			.clk(clk), .rst_n(core_rst_n),
@@ -559,7 +565,7 @@ module atg_top #(
 	/* RX ↔ SU 0. */
 	wire pt_rd, pt_free;
 	wire [7:0] pt_idx, pt_free_idx;
-	wire [5:0] pt_word;
+	wire [6:0] pt_word;
 	wire [31:0] pt_rdata;
 	wire fl_req, fl_gnt, fl_we, fl_pw_we, fl_go;
 	wire [5:0] fl_reg;
@@ -588,7 +594,7 @@ module atg_top #(
 	wire [31:0] ex_xy;
 	wire [3:0] ex_mask;
 	wire [511:0] ex_color;
-	wire [148:0] ex_ms;
+	wire [153:0] ex_aux;
 	wire [127:0] ex_depth;
 	/* SU 0 ↔ SA. */
 	wire sa_push_valid, sa_push_ready, sa_pop_valid, sa_pop_ready, sa_ctl_valid;
@@ -660,7 +666,7 @@ module atg_top #(
 		assign rx_prim_ready = 1'b0;
 		assign pt_rd = 1'b0;
 		assign pt_idx = 8'd0;
-		assign pt_word = 6'd0;
+		assign pt_word = 7'd0;
 		assign pt_free = 1'b0;
 		assign pt_free_idx = 8'd0;
 		assign fl_req = 1'b0;
@@ -723,7 +729,7 @@ module atg_top #(
 			.busy(rop_busy),
 			.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 			.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
-			.ex_next(ex_next), .ex_ms(ex_ms),
+			.ex_next(ex_next), .ex_aux(ex_aux),
 			.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 			.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 			.ord_valid(ord_valid), .ord_seq(ord_seq),
@@ -742,7 +748,7 @@ module atg_top #(
 		assign ex_ready = 1'b0;
 		assign ex_next = 16'd0;
 		assign dx_ready = 1'b0;
-		wire unused_rop = &{1'b0, ex_valid, ex_seq, ex_xy, ex_mask, ex_color, ex_depth, ex_last, ex_ms,
+		wire unused_rop = &{1'b0, ex_valid, ex_seq, ex_xy, ex_mask, ex_color, ex_depth, ex_last, ex_aux,
 			dx_valid, dx_seq, dx_xy, dx_mask, dx_depth, dx_last, ord_valid, ord_seq, occ_clear};
 	end
 
@@ -821,7 +827,7 @@ module atg_top #(
 		wire [15:0] s_tx_tag, s_ex_seq;
 		wire [511:0] s_ex_color;
 		wire [127:0] s_ex_depth;
-		wire [148:0] s_ex_ms;
+		wire [153:0] s_ex_aux;
 		wire [DW-1:0] s_sa_push_data;
 		wire g0 = k == 0;
 
@@ -852,7 +858,7 @@ module atg_top #(
 			.tr_last(tr_last),
 			.ex_valid(s_ex_valid), .ex_ready(g0 && ex_ready), .ex_seq(s_ex_seq), .ex_xy(s_ex_xy),
 			.ex_mask(s_ex_mask), .ex_color(s_ex_color), .ex_depth(s_ex_depth),
-			.ex_last(s_ex_last), .ex_next(ex_next), .ex_ms(s_ex_ms),
+			.ex_last(s_ex_last), .ex_next(ex_next), .ex_aux(s_ex_aux),
 			.d_req_valid(c_req_valid[CD]), .d_req_ready(c_req_ready[CD]),
 			.d_req_write(c_req_write[CD]), .d_req_line(c_req_line[CD*LA_W +: LA_W]),
 			.d_req_be(c_req_be[CD*LINE_BYTES +: LINE_BYTES]),
@@ -902,7 +908,7 @@ module atg_top #(
 			assign ex_color = s_ex_color;
 			assign ex_depth = s_ex_depth;
 			assign ex_last = s_ex_last;
-			assign ex_ms = s_ex_ms;
+			assign ex_aux = s_ex_aux;
 			assign sa_push_valid = s_sa_push_valid;
 			assign sa_push_data = s_sa_push_data;
 			assign sa_pop_ready = s_sa_pop_ready;
@@ -911,7 +917,7 @@ module atg_top #(
 		end else begin : g_sun
 			wire unused_sun = &{1'b0, s_vl_gnt, s_vl_ptbase, s_pt_done, s_fl_gnt, s_pt_rdata, s_tx_valid,
 				s_tx_op, s_tx_slot, s_tx_vs, s_tx_mask, s_tx_coord, s_tx_off, s_tx_tag, s_tx_last, s_tr_ready,
-				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last, s_ex_ms,
+				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last, s_ex_aux,
 				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data};
 		end
 		wire unused_slots = &{1'b0, s_vl_slot, s_fl_slot};
@@ -978,7 +984,7 @@ module atg_top #(
 		assign ex_color = 512'd0;
 		assign ex_depth = 128'd0;
 		assign ex_last = 1'b0;
-		assign ex_ms = 149'd0;
+		assign ex_aux = 154'd0;
 		assign sa_push_valid = 1'b0;
 		assign sa_push_data = {DW{1'b0}};
 		assign sa_pop_ready = 1'b0;

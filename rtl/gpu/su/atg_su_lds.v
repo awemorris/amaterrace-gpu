@@ -6,20 +6,28 @@
  */
 
 /*
- * atg_su_lds: Shared memory (LDS): lds/sts per lane, LDS_BYTES of block
- * RAM per SU (4 KiB by default, 16 KiB KC705), word addressed; returns as long
- * beats.
+ * atg_su_lds: Shared memory (LDS): lds/sts/atom (the shared form, atom sub[4])
+ * per lane, LDS_BYTES of block RAM per SU (4 KiB by default, 16 KiB KC705),
+ * word addressed; returns as long beats.
  *
  * One lane group at a time (x_ready is 1 only in IDLE).  The word
- * address of lane l is ((rs1 + imm) >> 2) mod LDS_BYTES/4.  The lanes go
- * through the RAM's one port one per cycle (lane 0 first; for sts a
- * later lane wins on the same word): lds reads the EXEC lanes (the read
- * data is registered, one more cycle at the end), sts writes the
- * side-effect lanes; then one beat: lds l_wr 1 with the EXEC lanes, sts
- * l_wr 0; l_last = x_last, class m.  A group without lanes returns at once.
+ * address of lane l is ((rs1 + imm) >> 2) mod LDS_BYTES/4 (atom: rs1, no
+ * immediate).  The lanes go through the RAM's one port one per cycle
+ * (lane 0 first; for sts a later lane wins on the same word): lds reads
+ * the EXEC lanes (the read data is registered, one more cycle at the
+ * end), sts writes the side-effect lanes; atom takes two cycles per
+ * side-effect lane, the read and then the write of the new value
+ * (docs/ghci.md section 12.5: sub[3:0] the operation, rs2 the operand, rs3
+ * cmpxchg's compare value), so each lane's read-modify-write is whole
+ * before the next lane's read: lanes on the same word act in lane order,
+ * and as the unit takes one group at a time, every atom is indivisible
+ * with respect to every other LDS access.  Then one beat: lds l_wr 1 with
+ * the EXEC lanes, atom l_wr = the uop's WRD with the side-effect lanes
+ * (the old values), sts l_wr 0; l_last = x_last, class m.  A group without
+ * lanes returns at once.
  *
- * States: IDLE →(group)→ ACCESS (NPHYS cycles) → DRAIN → BEAT
- * →(l_ready)→ IDLE.
+ * States: IDLE →(group)→ ACCESS (NPHYS cycles, atom 2 NPHYS) → DRAIN →
+ * BEAT →(l_ready)→ IDLE.
 */
 
 `timescale 1ns / 1ps
@@ -74,9 +82,10 @@ module atg_su_lds #(
 	reg [31:0] ram [0:NW-1];
 	reg [1:0] st;
 	reg [NPHYS*AW-1:0] radr;
-	reg [DW-1:0] rdat, res;
+	reg [DW-1:0] rdat, rcmp, res;
 	reg [NPHYS-1:0] lanes;
-	reg rsts;
+	reg rsts, ratom, rwrd, aph;
+	reg [3:0] rsub;
 	reg [6:0] rrd;
 	reg [WARP_W-1:0] rwarp;
 	reg [GRP_W-1:0] rgrp;
@@ -86,12 +95,44 @@ module atg_su_lds #(
 	reg pval;
 	reg [31:0] q;
 
+	/* The new value of an atomic's word (the order of docs/ghci.md section 12.5). */
+	function [31:0] atom_op;
+		input [3:0] op;
+		input [31:0] old, a, b;
+		case (op)
+		4'd0: atom_op = old & a;
+		4'd1: atom_op = old | a;
+		4'd2: atom_op = old ^ a;
+		4'd3: atom_op = a;
+		4'd4: atom_op = old + a;
+		4'd5: atom_op = old - a;
+		4'd6: atom_op = $signed(old) > $signed(a) ? old : a;
+		4'd7: atom_op = $signed(old) < $signed(a) ? old : a;
+		4'd8: atom_op = old > a ? old : a;
+		4'd9: atom_op = old < a ? old : a;
+		4'd10: atom_op = old == b ? a : old;
+		default: atom_op = old;
+		endcase
+	endfunction
+
 	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_LDS;
 	wire is_sts = x_uop[ATG_UOP_OP +: 8] == ATG_LDS_STS;
-	wire [NPHYS-1:0] xl = is_sts ? x_mask[2*NPHYS-1:NPHYS] : x_mask[NPHYS-1:0];
-	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
+	wire is_atom = x_uop[ATG_UOP_OP +: 8] == ATG_LDS_ATOM;
+	wire [NPHYS-1:0] xl = is_sts || is_atom ? x_mask[2*NPHYS-1:NPHYS] : x_mask[NPHYS-1:0];
+	wire [31:0] imm = is_atom ? 32'd0 : x_uop[ATG_UOP_IMM +: 32];
 	wire [AW-1:0] a = radr[li*AW +: AW];
 	wire lane_on = lanes[li];
+	/* An atom lane's second cycle: q holds the word read in the first. */
+`ifdef MUT_LDS_ATOM_NOCMP
+	wire [31:0] anew = atom_op(rsub, q, rdat[li*32 +: 32], rdat[li*32 +: 32]);
+`else
+	wire [31:0] anew = atom_op(rsub, q, rdat[li*32 +: 32], rcmp[li*32 +: 32]);
+`endif
+`ifdef MUT_LDS_ATOM_RAW
+	wire aread = 1'b0;
+`else
+	wire aread = ratom && lane_on && !aph;
+`endif
 	assign x_ready = st == IDLE;
 
 	/* The word addresses of the group on x_*. */
@@ -109,14 +150,19 @@ module atg_su_lds #(
 			st <= IDLE;
 			li <= {LW{1'b0}};
 			pval <= 1'b0;
+			aph <= 1'b0;
 		end else begin
 			pval <= 1'b0;
 			case (st)
 			IDLE: if (mine) begin
 				radr <= xadr;
 				rdat <= x_b;
+				rcmp <= x_c;
 				lanes <= xl;
 				rsts <= is_sts;
+				ratom <= is_atom;
+				rwrd <= x_uop[ATG_UOP_WRD];
+				rsub <= x_uop[ATG_UOP_SUB +: 4];
 				res <= {DW{1'b0}};
 				rrd <= x_uop[ATG_UOP_RD +: 7];
 				rwarp <= x_warp;
@@ -124,12 +170,21 @@ module atg_su_lds #(
 				rlast <= x_last;
 				rsbe <= x_sbe;
 				li <= {LW{1'b0}};
+				aph <= 1'b0;
 				st <= xl == {NPHYS{1'b0}} ? BEAT : ACCESS;
 			end
-			ACCESS: begin
+			ACCESS: if (aread) begin
+				/* The read of an atom lane; the write is the next cycle. */
+				aph <= 1'b1;
+			end else begin
 				if (lane_on && rsts)
 					ram[a] <= rdat[li*32 +: 32];
-				pval <= lane_on && !rsts;
+				if (lane_on && ratom) begin
+					ram[a] <= anew;
+					res[li*32 +: 32] <= q;
+				end
+				aph <= 1'b0;
+				pval <= lane_on && !rsts && !ratom;
 				pli <= li;
 				li <= li + 1'b1;
 				if ({{(32-LW){1'b0}}, li} == NPHYS - 1)
@@ -154,12 +209,12 @@ module atg_su_lds #(
 	assign l_rd = rrd;
 	assign l_data = res;
 	assign l_lanes = lanes;
-	assign l_wr = !rsts;
+	assign l_wr = ratom ? rwrd : !rsts;
 	assign l_last = rlast;
 	assign l_sbe = rsbe;
 	assign l_cls = ATG_CLS_M;
 
-	wire unused_ok = &{1'b0, x_pc, x_c, x_info, x_uop, imm, ba, (NWARPS != 0)};
+	wire unused_ok = &{1'b0, x_pc, x_info, x_uop, imm, ba, (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

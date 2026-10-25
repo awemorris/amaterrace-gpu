@@ -38,7 +38,7 @@ module atg_su #(
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): texsz.s */
 	parameter LDS_BYTES = 4096,	/* Shared memory bytes */
 	parameter PT_ENTRIES = 64,	/* PT vertices */
-	parameter VARY_WORDS = 16,	/* Varying words per vertex */
+	parameter VARY_WORDS = 16,	/* Varying words per vertex, at most 64 (KC705 64) */
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
@@ -81,7 +81,7 @@ module atg_su #(
 	/* PT read for the RX */
 	input wire pt_rd,
 	input wire [7:0] pt_idx,
-	input wire [5:0] pt_word,
+	input wire [6:0] pt_word,
 	output wire [31:0] pt_rdata,
 	input wire pt_free,
 	input wire [7:0] pt_free_idx,
@@ -112,7 +112,7 @@ module atg_su #(
 	output wire [127:0] ex_depth,
 	output wire ex_last,
 	input wire [15:0] ex_next,
-	output wire [148:0] ex_ms,	/* {front, d_s, zexp, smask} (atg_su_exp) */
+	output wire [153:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} (atg_su_exp) */
 	/* AMB client port (design §4.1) */
 	output wire d_req_valid,
 	input wire d_req_ready,
@@ -432,7 +432,8 @@ module atg_su #(
 	);
 
 	atg_su_opd #(
-		.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)
+		.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
+		.WARP_BASE(SU_INDEX * NWARPS)
 	) opd (
 		.clk(clk), .rst_n(rst_n),
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
@@ -484,7 +485,7 @@ module atg_su #(
 		.s_data(lane_s_data), .s_lanes(lane_s_lanes)
 	);
 
-	atg_su_lda #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .VARY_WORDS(VARY_WORDS + 4)) lda (
+	atg_su_lda #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .VARY_WORDS(VARY_WORDS)) lda (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
@@ -595,7 +596,7 @@ module atg_su #(
 		.ex_next(ex_next),
 		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane), .fl_data(fl_data),
 		.fl_go(fl_go), .fl_info(fl_info),
-		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_ms(ex_ms),
+		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_aux(ex_aux),
 		.xr_valid(xr_valid), .xr_warp(xr_warp),
 		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp)
 	);

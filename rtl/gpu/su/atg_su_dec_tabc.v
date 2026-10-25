@@ -83,15 +83,17 @@ module atg_su_dec_tabc (
 				side = 1'b1;
 			end
 			3'd2: begin
-				unit = ATG_UNIT_LSU;
-				op = ATG_LSU_ATOM;
+				/* atom: sub[4] 0 global memory (atg_su_lsu), 1 shared
+				 * memory (atg_su_lds); sub[3:0] the operation. */
+				unit = sub[4] ? ATG_UNIT_LDS : ATG_UNIT_LSU;
+				op = sub[4] ? ATG_LDS_ATOM : ATG_LSU_ATOM;
 				cls = ATG_CLS_M;
 				use1 = 1'b1;
 				use2 = 1'b1;
-				use3 = sub == 5'd10;
+				use3 = sub[3:0] == 4'd10;
 				wrd = 1'b1;
 				side = 1'b1;
-				def = sub <= 5'd10;
+				def = sub[3:0] <= 4'd10;
 			end
 			3'd4: begin
 				fmt = FM_I;

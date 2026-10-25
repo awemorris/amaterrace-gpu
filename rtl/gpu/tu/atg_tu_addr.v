@@ -137,11 +137,12 @@ module atg_tu_addr (
 	wire [3:0] lvl;
 	wire [31:0] base, dsize, image, stride, samp, dlod, loff, plane;
 	wire [20:0] tfmt;
+	wire [1:0] rowa;	/* the slot's row rule (TEX_ROW) */
 	atg_tu_desc desc (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.busy(desc_busy), .rd_slot(st == IDLE ? {tx_vs, tx_slot} : slot), .rd_level(lvl),
-		.rd_base(base), .rd_size(dsize), .rd_image(image), .rd_stride(stride),
-		.rd_samp(samp), .rd_lod(dlod), .rd_fmt(tfmt), .rd_loff(loff), .rd_plane(plane)
+		.rd_base(base), .rd_size(dsize), .rd_image(image), .rd_stride(stride), .rd_samp(samp),
+		.rd_lod(dlod), .rd_fmt(tfmt), .rd_row(rowa), .rd_loff(loff), .rd_plane(plane)
 	);
 	wire [15:0] w0 = dsize[15:0] == 16'd0 ? 16'd1 : dsize[15:0];
 	wire [15:0] h0 = dsize[31:16] == 16'd0 ? 16'd1 : dsize[31:16];
@@ -283,8 +284,8 @@ module atg_tu_addr (
 	wire [7:0] f_fw;
 	atg_tu_foot foot (
 		.op(op), .gather(gather), .cube(cube), .is3d(is3d), .tiled(tiled), .lin(r_lin),
-		.ms(ms), .smp(cw2[1:0]), .psl(psl), .blk(blk), .row(pas[2]), .col(pas[3]), .gwi(gwi),
-		.p0(pas[0]), .mu(mu), .mv(mv), .mw(mw), .off(cube ? 12'd0 : offs),
+		.ms(ms), .smp(cw2[1:0]), .psl(psl), .ra(rowa), .blk(blk), .row(pas[2]), .col(pas[3]),
+		.gwi(gwi), .p0(pas[0]), .mu(mu), .mv(mv), .mw(mw), .off(cube ? 12'd0 : offs),
 		.x(cw0), .y(cw1), .z(cw4), .cu(r_cu), .cv(r_cv), .cw(r_cw),
 		.wl(r_wl), .hl(r_hl), .dl(r_dl), .face(cf[k]), .lbase(r_lbase), .plane(r_plane),
 		.stride(stride), .addr(f_addr), .bord(f_bord), .fuv(f_fuv), .fw(f_fw)

@@ -6,8 +6,8 @@
  */
 
 /*
- * atg_su_pt_tb: atg_su_pt (NPHYS 8, 4 warps, 128 entries = 4 blocks, 16
- * varyings) driven like atg_su: grants (pt_take with a slot), exp lane
+ * atg_su_pt_tb: atg_su_pt (NPHYS 8, 4 warps, 128 entries = 4 blocks, 64
+ * varyings: the KC705's PT words 0-67) driven like atg_su: grants (pt_take with a slot), exp lane
  * groups of vertex warps on the execution bus, vl_go, warp ends, RX's
  * reads and frees.
  *   pt    — vertex exports (position 0-3, varyings 0x10+k, random lanes of
@@ -24,7 +24,7 @@
 `default_nettype none
 
 module atg_su_pt_tb;
-	localparam NPHYS = 8, G = 4, NE = 128, NB = 4, VW = 16, WPV = 20;
+	localparam NPHYS = 8, G = 4, NE = 128, NB = 4, VW = 64, WPV = 68;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
 	always #5 clk = !clk;
@@ -38,7 +38,7 @@ module atg_su_pt_tb;
 	reg [31:0] x_info = 0;
 	reg pt_rd = 1'b0, pt_free = 1'b0, pt_take = 1'b0, vl_go = 1'b0, wc_end = 1'b0;
 	reg [7:0] pt_idx = 0, pt_free_idx = 0;
-	reg [5:0] pt_word = 0;
+	reg [6:0] pt_word = 0;
 	reg [1:0] pt_warp = 0, wc_warp = 0;
 	reg [31:0] vl_mask = 0;
 	wire [31:0] pt_rdata;
@@ -217,7 +217,7 @@ module atg_su_pt_tb;
 			for (j = 0; j < G; j = j + 1)
 				for (i = 0; i < WPV + 4; i = i + 1) begin
 					t = i < 4 ? i : i < WPV ? 32'h10 + i - 4 : i == WPV ? 4 :
-						i == WPV + 1 ? 32'h10 + VW : i == WPV + 2 ? 32'h100 : 32'h3F;
+						i == WPV + 1 ? 32'h10 + VW : i == WPV + 2 ? 32'h100 : 32'h7F;
 					exp_grp(k + 1, j, t, 2'd0, $random(seed) | (i == 0 ? 8'hFF : 8'h00));
 					if (i < 4)
 						exp_grp(k + 1, j, t, 2'd1, 8'hFF);	/* fragment: ignored */

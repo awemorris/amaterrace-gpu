@@ -80,7 +80,7 @@ Those of the children: register read 3 cycles minimum per AXI read; memory throu
 Implemented (70aaff5, p002; unchanged at a217bf8). 317 lines, no FSM, one clock. **U38: 57 ports > 40** (29 memory AXI + 24 host AXI). A top that exposes two AXI interfaces cannot meet 40 by splitting; proposed: a U38 rule that a standard AXI interface counts as one port group (decision for Q1/user; same question as `am_axi_master` and `atg_mc`). Measured the whole of CP, BLT and MC on a Zynq-7010 (XC7Z010) (p003): 3,802 LUT, 3,719 FF, 0.5 BRAM, 0 DSP. Differences from design.md: none in what exists; §7.6's block parameters and the DC/other blocks do not exist at a217bf8 (P1's part 1 adds them).
 
 **WS288 p023 (P1) additions**: block parameters (design §7.6; the defaults keep CP, BLT and MC alone):
-`HAS_CPU` (with `CPU_IMEM_INIT`/`CPU_DMEM_INIT`) so far; MC client numbering 0 CP, 1 BLT, then
+`HAS_CPU` (with `CPU_IMEM_INIT`/`CPU_DMEM_INIT` and the memories `CPU_IMEM_WORDS`/`CPU_DMEM_WORDS`, 8192/4096 by default, 16384/8192 in the KC705 shapes) so far; MC client numbering 0 CP, 1 BLT, then
 the present blocks (`C_CPU` = 2, ...), `HIGH_MASK` = CP only; the CP's new ports wired (to
 atg_cpu when present, to constants otherwise).  `tools/lint.sh` lints the HAS_CPU shape.
 
@@ -118,6 +118,8 @@ VF → SU (vertex) → PT → RX → SU (fragment) → ROP (§8).
 
 **WS288 p008 (P2, branch p2-dispatch)**: FAULT_ADDR of an SU's ISA fault is its PC (ghci §12.6; it was 0): each SU's `fault_addr` goes to `su_fault_addr_v`, and the CP's fault source 4 gets the PC of the lowest-numbered SU that faults in that cycle.  `sim/tb/atg_top_cs_tb.v` and the Verilator COMPUTE mode check DISPATCH end to end (§8); no other change of the wiring was needed (cs_kick, lc_kick, inv, the STATE broadcast, busy and the SU's two MC clients and the atomic unit existed from p023).  Still v1: FAULT_INFO[31:24] (the job tag) of an SU fault is 0 — the SU does not carry the tag of the DISPATCH or DRAW whose warp faulted.
 
-**Multisampling**: `MS4` (default 0) goes to the CP (CAPS[29] with the VF, RX, ROP, TU and an SU), the SU (`texsz.s`) and the BLT (RESOLVE); the RX and the ROP read MS_CTRL and SAMPLE_KILL in every shape, and the SU's `ex_ms` (per-sample coverage, the exported-depth bits and the depth slopes) goes to the ROP.
+**Multisampling**: `MS4` (default 0) goes to the CP (CAPS[29] with the VF, RX, ROP, TU and an SU), the SU (`texsz.s`) and the BLT (RESOLVE); the RX and the ROP read MS_CTRL and SAMPLE_KILL in every shape, and the SU's `ex_aux` (the beat of a colour attachment, per-sample coverage, the exported-depth bits and the depth slopes) goes to the ROP.
+
+Varying 64 components (Vulkan 1.0's limit): `SU_VARY_WORDS` at most 64, the KC705 shape 64 (was 32; boards/kc705, tools/lint.sh and the KC705-shaped testbenches); `pt_word` 7 bits between RX and SU 0.
 
 2026-10-25: the STATE broadcast has 10-bit indices; the TU takes them all (0x200-0x2FF are its vertex-stage slots), the other blocks see st_we only for indices below 512 and their 9 bits; the SU's tx_vs reaches the TU; the CP's HAS_ETC is HAS_TU.

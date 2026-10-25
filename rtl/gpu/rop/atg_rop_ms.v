@@ -13,15 +13,15 @@
  * (alpha to one).
  *
  * MS_CTRL (0x05E): [3:0] = 2 four samples, else one; [8] alpha to
- * coverage; [9] alpha to one.  i_ms = {d_s[127:0], zexp[3:0], smask[15:0]}
+ * coverage; [9] alpha to one.  i_aux[147:0] = {d_s, zexp, smask}
  * from atg_su_exp (the direct path: every sample of a lane, its depth).
- *   Four samples: smask = i_ms's & the lanes of i_mask & (alpha to
+ *   Four samples: smask = i_aux's & the lanes of i_mask & (alpha to
  *   coverage: a mask of COLOR0's alpha: n = the number of 0.125, 0.375,
  *   0.625, 0.875 it reaches; n = 0 none, 1 {0}, 2 {0, 3}, 3 {0, 1, 3},
  *   4 all; NaN and negative alphas none); the depth of sample s of lane l
  *   is the exported depth (zexp) or clamp01(z + d_s) (fadd, RNE, then NaN
  *   and negatives 0, above 1 one), 16 adds one per cycle (24 cycles).
- *   One sample: bit 4 l = i_mask[l] & i_ms[4 l] (& alpha >= 0.5 with alpha
+ *   One sample: bit 4 l = i_mask[l] & i_aux[4 l] (& alpha >= 0.5 with alpha
  *   to coverage), the depth i_depth's (no add).
  * Alpha to one sets COLOR0's alpha to 1.0 after alpha to coverage.  Neither
  * applies to the direct path (i_dbg: DEBUG_COLOR later).  A quad whose
@@ -30,8 +30,14 @@
  * RX) z + d_s is not clamped to [0, 1]; with DEPTH_CLAMP[0] every
  * sample's depth (exported or not) is clamped to [min(n, f), max(n, f)],
  * n = VIEWPORT z offset (0x055), f = n + z scale (0x054; one fadd when
- * either is written, while the ROP is idle), a NaN to the minimum.  i_ms
+ * either is written, while the ROP is idle), a NaN to the minimum.  i_aux
  * [148] is the facing, passed on as o_front.
+ * Beats (CAPS[30]): a quad comes as one beat per colour attachment; the
+ * first (i_aux[150]) gives the coverage, the depths and, for alpha to
+ * coverage, the alpha (the lowest attachment exported: attachment 0's
+ * when it is); the later beats of the quad keep its o_smask and o_sdepth
+ * (dropped with it), and alpha to one applies to every beat.  o_beat =
+ * {rt, nocol, first} of i_aux[153:152], [149], [150].
  */
 
 `timescale 1ns / 1ps
@@ -52,7 +58,7 @@ module atg_rop_ms (
 	input wire [511:0] i_color,
 	input wire [127:0] i_depth,
 	input wire i_dbg,
-	input wire [148:0] i_ms,	/* {front, d_s, zexp, smask} */
+	input wire [153:0] i_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} */
 	/* To atg_rop_ds */
 	output reg o_valid,
 	input wire o_ready,
@@ -62,6 +68,7 @@ module atg_rop_ms (
 	output reg [511:0] o_sdepth,
 	output reg o_dbg,
 	output reg o_front,
+	output reg [3:0] o_beat,	/* {rt, nocol, first} */
 	output wire busy
 );
 	`include "ghci_regs.vh"
@@ -155,8 +162,8 @@ module atg_rop_ms (
 	always @(*) begin
 		for (l = 0; l < 4; l = l + 1) begin
 			am = a2c && !i_dbg ? a2c_mask(i_color[128 * l + 96 +: 32], ms4) : 4'hF;
-			sm[4 * l +: 4] = ms4 ? i_ms[4 * l +: 4] & {4{i_mask[l]}} & am :
-				{3'd0, i_ms[4 * l] & i_mask[l] & am[0]};
+			sm[4 * l +: 4] = ms4 ? i_aux[4 * l +: 4] & {4{i_mask[l]}} & am :
+				{3'd0, i_aux[4 * l] & i_mask[l] & am[0]};
 		end
 	end
 
@@ -187,6 +194,9 @@ module atg_rop_ms (
 	end
 	endgenerate
 
+	wire first = i_aux[150];
+	reg drop;	/* the quad's first beat had no sample */
+
 	assign i_ready = st == S_IDLE;
 	assign busy = st != S_IDLE;
 
@@ -195,25 +205,44 @@ module atg_rop_ms (
 			st <= S_IDLE;
 			o_valid <= 1'b0;
 			c <= 5'd0;
+			drop <= 1'b0;
 		end else case (st)
 		S_IDLE:
-			if (i_valid && sm != 16'd0) begin
+			if (i_valid && !first) begin
+				/* a later beat: the quad's coverage and depths stay */
+				o_xy <= i_xy;
+				o_dbg <= i_dbg;
+				o_beat <= {i_aux[153:152], i_aux[149], 1'b0};
+				o_color <= i_color;
+				if (a2one && !i_dbg)
+					for (l = 0; l < 4; l = l + 1)
+						o_color[128 * l + 96 +: 32] <= ONE;
+				if (!drop) begin
+					o_valid <= 1'b1;
+					st <= S_OUT;
+				end
+			end else if (i_valid) begin
+				drop <= sm == 16'd0;
 				o_xy <= i_xy;
 				o_smask <= sm;
 				o_dbg <= i_dbg;
-				o_front <= i_ms[148];
+				o_front <= i_aux[148];
+				o_beat <= {i_aux[153:152], i_aux[149], 1'b1};
 				o_color <= i_color;
 				if (a2one && !i_dbg)
 					for (l = 0; l < 4; l = l + 1)
 						o_color[128 * l + 96 +: 32] <= ONE;
 				z <= i_depth;
-				ds <= i_ms[147:20];
-				zexp <= i_ms[19:16];
+				ds <= i_aux[147:20];
+				zexp <= i_aux[19:16];
 				c <= 5'd0;
-				o_sdepth <= 512'd0;
-				if (ms4)
+				if (sm == 16'd0)
+					st <= S_IDLE;
+				else if (ms4) begin
+					o_sdepth <= 512'd0;
 					st <= S_Z;
-				else begin
+				end else begin
+					o_sdepth <= 512'd0;
 					for (l = 0; l < 4; l = l + 1)
 						o_sdepth[128 * l +: 32] <= d1c[32 * l +: 32];
 					o_valid <= 1'b1;

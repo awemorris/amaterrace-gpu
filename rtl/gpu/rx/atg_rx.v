@@ -35,7 +35,7 @@ module atg_rx #(
 	/* PT of SU 0 (atg_su pt_*) */
 	output wire pt_rd,
 	output wire [7:0] pt_idx,
-	output wire [5:0] pt_word,
+	output wire [6:0] pt_word,
 	input wire [31:0] pt_rdata,
 	output wire pt_free,
 	output wire [7:0] pt_free_idx,
@@ -70,7 +70,7 @@ module atg_rx #(
 	wire [767:0] sp_tri;
 	wire c_pt_rd, f_pt_rd, f_pt_busy;
 	wire [7:0] c_pt_idx, f_pt_idx;
-	wire [5:0] c_pt_word, f_pt_word;
+	wire [6:0] c_pt_word, f_pt_word;
 	wire s_sq_req, f_sq_req, sq_req;
 	wire [15:0] sq_seq;
 	wire clip_busy, setup_busy, scan_busy, frag_busy;

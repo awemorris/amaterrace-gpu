@@ -6,16 +6,18 @@
  */
 
 /*
- * The sessions and their Vulkan objects.  A session is a JOB_TAG the
- * driver opened (GHCI_SESSION_OPEN); its objects are named by (tag,
- * identity) and found through a hash of the identity.  Another session's
- * identities are never seen.
+ * The sessions' Vulkan objects.  An object is named by (tag, identity,
+ * kind) and found through a hash of the identity; another session's
+ * identities are never seen.  An object may own a block of the heap.
+ * Destroying an object returns what it owns: a pool its command buffers
+ * or descriptor sets, a command buffer its recording, a device every
+ * object made on it.
  */
 
 #include "fw.h"
 
 /* Objects the table holds, and its hash buckets (a power of two). */
-#define OBJECT_MAX 96u
+#define OBJECT_MAX 160u
 #define OBJECT_BUCKETS 64u
 
 /*
@@ -31,25 +33,20 @@ static struct fw_object object_table[OBJECT_MAX];
  */
 static struct fw_object *object_buckets[OBJECT_BUCKETS];
 
-/*
- * The open sessions, one bit per JOB_TAG.
- */
-static uint32_t session_open[8];
-
 static uint32_t object_hash(uint64_t id);
 static void object_unlink(struct fw_object *object);
 static void object_release(struct fw_object *object);
+static void object_children(struct fw_object *parent);
 
 /*
- * Empties the object table and closes every session.
+ * Empties the object table.
  */
 void
 fw_object_init(void)
 {
-	/* Every slot free, every chain empty, no session open. */
+	/* Every slot free, every chain empty. */
 	memset(object_table, 0, sizeof(object_table));
 	memset(object_buckets, 0, sizeof(object_buckets));
-	memset(session_open, 0, sizeof(session_open));
 }
 
 /*
@@ -65,6 +62,10 @@ fw_object_find(
 {
 	struct fw_object *object;
 	uint32_t bucket;
+
+	/* The null handle names no object. */
+	if (id == 0)
+		return NULL;
 
 	/* Walks the identity's chain. */
 	bucket = object_hash(id);
@@ -82,8 +83,8 @@ fw_object_find(
 /*
  * Creates a session's object.
  *
- * Returns NULL when the table is full or the identity is already in use
- * in the session.
+ * Returns NULL when the table is full, the identity is the null handle or
+ * it already names an object of the kind in the session.
  */
 struct fw_object *
 fw_object_create(
@@ -96,14 +97,10 @@ fw_object_create(
 	uint32_t bucket;
 	uint32_t index;
 
-	/* An identity names one object of a session (libvulkan never reuses one). */
-	bucket = object_hash(id);
-	for (found = object_buckets[bucket];
-	     found != NULL;
-	     found = found->next) {
-		if (found->id == id && found->tag == tag)
-			return NULL;
-	}
+	/* An identity names one object of a kind (libvulkan never reuses one). */
+	found = fw_object_find(tag, id, kind);
+	if (found != NULL || id == 0)
+		return NULL;
 
 	/* Takes a free slot. */
 	object = NULL;
@@ -119,6 +116,7 @@ fw_object_create(
 		return NULL;
 
 	/* Initializes the object and puts it on its chain. */
+	bucket = object_hash(id);
 	memset(object, 0, sizeof(*object));
 	object->id = id;
 	object->tag = (uint8_t)tag;
@@ -131,27 +129,64 @@ fw_object_create(
 }
 
 /*
- * Destroys an object and what it owns (a pool's command buffers, a
- * command buffer's recording).
+ * Gives an object a heap block of at least `bytes` (an earlier block is
+ * returned first).
+ *
+ * Returns 0, or -1 when the heap or the session's limit has no room.
+ */
+int
+fw_object_block(
+	struct fw_object *object,
+	uint32_t bytes)
+{
+	uint32_t block;
+
+	/* The earlier block goes back. */
+	fw_heap_free(object->tag, object->block, (uint32_t)object->lines * FW_LINE_BYTES);
+	object->block = 0;
+	object->lines = 0;
+
+	/* A new block of whole lines. */
+	block = fw_heap_alloc(object->tag, bytes);
+	if (block == 0)
+		return -1;
+
+	/* Succeeded: the object owns the block. */
+	object->block = block;
+	object->lines = (uint16_t)((bytes + FW_LINE_BYTES - 1u) / FW_LINE_BYTES);
+	return 0;
+}
+
+/*
+ * Destroys an object and what it owns.
  */
 void
 fw_object_destroy(
 	struct fw_object *object)
 {
-	uint32_t index;
-
-	/* A pool takes its command buffers with it. */
-	if (object->kind == FW_OBJ_POOL) {
-		for (index = 0; index < OBJECT_MAX; index++) {
-			if (object_table[index].kind == FW_OBJ_CMDBUF &&
-			    object_table[index].tag == object->tag &&
-			    object_table[index].pool == object->id)
-				object_release(&object_table[index]);
-		}
-	}
+	/* A pool takes its command buffers or descriptor sets with it. */
+	if (object->kind == FW_OBJ_CMD_POOL || object->kind == FW_OBJ_DESC_POOL)
+		object_children(object);
 
 	/* The object itself. */
 	object_release(object);
+}
+
+/*
+ * Calls a function for each object whose parent is a pool.
+ */
+void
+fw_object_each_child(
+	struct fw_object *parent,
+	void (*visit)(struct fw_object *child))
+{
+	uint32_t index;
+
+	/* Each slot that names the pool as its parent. */
+	for (index = 0; index < OBJECT_MAX; index++) {
+		if (object_table[index].kind != FW_OBJ_FREE && object_table[index].parent == parent)
+			visit(&object_table[index]);
+	}
 }
 
 /*
@@ -171,54 +206,60 @@ fw_object_close(
 }
 
 /*
- * Opens a session.
- *
- * Returns 0, or -1 when it is open already.
- */
-int
-fw_session_open(
-	uint32_t tag)
-{
-	uint32_t bit;
-
-	/* A session is opened once until it is closed. */
-	bit = 1u << (tag & 31u);
-	if ((session_open[(tag >> 5) & 7u] & bit) != 0)
-		return -1;
-
-	/* Succeeded: the tag's objects can be made. */
-	session_open[(tag >> 5) & 7u] |= bit;
-	return 0;
-}
-
-/*
- * Reports whether a session is open.
- */
-int
-fw_session_is_open(
-	uint32_t tag)
-{
-	uint32_t bit;
-
-	/* The tag's bit. */
-	bit = 1u << (tag & 31u);
-	if ((session_open[(tag >> 5) & 7u] & bit) != 0)
-		return 1;
-
-	/* Not open. */
-	return 0;
-}
-
-/*
- * Closes a session and returns its objects.
+ * Destroys a device of a session and every object made on it.
  */
 void
-fw_session_close(
-	uint32_t tag)
+fw_object_close_device(
+	uint32_t tag,
+	uint64_t device)
 {
-	/* The objects, then the session's bit. */
-	fw_object_close(tag);
-	session_open[(tag >> 5) & 7u] &= ~(1u << (tag & 31u));
+	struct fw_object *found;
+	uint32_t slot;
+	uint32_t index;
+
+	/* A device the firmware never saw has no objects. */
+	found = fw_object_find(tag, device, FW_OBJ_DEVICE);
+	if (found == NULL)
+		return;
+
+	/* Releases the device's objects, then the device. */
+	slot = (uint32_t)(found - object_table);
+	for (index = 0; index < OBJECT_MAX; index++) {
+		if (object_table[index].kind != FW_OBJ_FREE &&
+		    object_table[index].kind != FW_OBJ_DEVICE &&
+		    object_table[index].tag == tag &&
+		    object_table[index].device == slot)
+			object_release(&object_table[index]);
+	}
+	object_release(found);
+}
+
+/*
+ * Gives the slot of a session's device, which a create command names: the
+ * first command that names a device makes its object (the driver keeps
+ * vkCreateDevice to itself).
+ *
+ * Returns the slot, or -1 when the table is full.
+ */
+int
+fw_object_device(
+	uint32_t tag,
+	uint64_t device)
+{
+	struct fw_object *found;
+
+	/* An existing device. */
+	found = fw_object_find(tag, device, FW_OBJ_DEVICE);
+	if (found != NULL)
+		return (int)(found - object_table);
+
+	/* The first time the device is named. */
+	found = fw_object_create(tag, device, FW_OBJ_DEVICE);
+	if (found == NULL)
+		return -1;
+
+	/* Succeeded: the new device's slot. */
+	return (int)(found - object_table);
 }
 
 /* Folds a 64-bit identity into a bucket index. */
@@ -255,17 +296,37 @@ object_unlink(
 		*link = object->next;
 }
 
-/* Frees an object's recording and its slot. */
+/* Frees what an object owns and its slot. */
 static void
 object_release(
 	struct fw_object *object)
 {
-	/* A command buffer's chunks go back to the heap. */
+	/* A command buffer's recording goes back to the heap. */
 	if (object->kind == FW_OBJ_CMDBUF)
-		fw_uop_clear(object);
+		fw_record_clear(object);
+
+	/* So does the object's block. */
+	fw_heap_free(object->tag, object->block, (uint32_t)object->lines * FW_LINE_BYTES);
+	object->block = 0;
+	object->lines = 0;
 
 	/* The slot is free again. */
 	object_unlink(object);
 	object->kind = FW_OBJ_FREE;
 	object->next = NULL;
+	object->parent = NULL;
+}
+
+/* Releases the objects whose parent is a pool. */
+static void
+object_children(
+	struct fw_object *parent)
+{
+	uint32_t index;
+
+	/* Each slot that names the pool as its parent. */
+	for (index = 0; index < OBJECT_MAX; index++) {
+		if (object_table[index].kind != FW_OBJ_FREE && object_table[index].parent == parent)
+			object_release(&object_table[index]);
+	}
 }

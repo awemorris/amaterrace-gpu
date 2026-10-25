@@ -44,6 +44,12 @@ static uint8_t store_line[FW_LINE_BYTES] __attribute__((aligned(FW_LINE_BYTES)))
 static uint32_t store_base = 1;
 static int store_dirty;
 
+/*
+ * The bounce lines of fw_copy_in and fw_copy_out, which let a caller's
+ * buffer be anywhere in DMEM (on the stack, unaligned).
+ */
+static uint8_t bounce_lines[FW_BOUNCE_BYTES] __attribute__((aligned(FW_LINE_BYTES)));
+
 static int dma_wait(void);
 static int reader_fill(struct fw_reader *reader, uint32_t address);
 static void reader_bytes(struct fw_reader *reader, void *dst, uint32_t bytes) __attribute__((noinline));
@@ -60,6 +66,14 @@ fw_dma_read(
 	uint32_t lines)
 {
 	int error;
+
+#ifdef FW_HOST
+	/* A host build: the test's memory. */
+	error = hw_host_dma(address, dmem, lines, 0);
+	if (error != 0)
+		return -1;
+	return 0;
+#endif
 
 	/* Points the DMA at the lines and the DMEM place and starts it. */
 	hw_write(HW_DMA_AMB, address);
@@ -88,6 +102,14 @@ fw_dma_write(
 {
 	int error;
 
+#ifdef FW_HOST
+	/* A host build: the test's memory. */
+	error = hw_host_dma(address, (void *)(uintptr_t)dmem, lines, 1);
+	if (error != 0)
+		return -1;
+	return 0;
+#endif
+
 	/* Points the DMA at the lines and the DMEM place and starts the write. */
 	hw_write(HW_DMA_AMB, address);
 	hw_write(HW_DMA_MEM, (uint32_t)(uintptr_t)dmem - HW_DMEM_BASE);
@@ -99,6 +121,128 @@ fw_dma_write(
 		return -1;
 
 	/* Succeeded: the lines are in memory, visible to the other clients. */
+	return 0;
+}
+
+/*
+ * Reads whole lines of GPU memory into a line-aligned DMEM buffer, `bytes`
+ * rounded up to whole lines.
+ *
+ * Returns 0, or -1 when the memory refused a line.
+ */
+int
+fw_mem_read(
+	uint32_t address,
+	void *dmem,
+	uint32_t bytes)
+{
+	uint32_t lines;
+	int error;
+
+	/* The lines that hold the bytes. */
+	lines = (bytes + FW_LINE_BYTES - 1u) / FW_LINE_BYTES;
+	error = fw_dma_read(address, dmem, lines);
+	if (error != 0)
+		return -1;
+
+	/* Succeeded: the bytes are in DMEM. */
+	return 0;
+}
+
+/*
+ * Writes a line-aligned DMEM buffer to whole lines of GPU memory, `bytes`
+ * rounded up to whole lines, and waits for the answers.
+ *
+ * Returns 0, or -1 when the memory refused a line.
+ */
+int
+fw_mem_write(
+	uint32_t address,
+	const void *dmem,
+	uint32_t bytes)
+{
+	uint32_t lines;
+	int error;
+
+	/* The lines that hold the bytes. */
+	lines = (bytes + FW_LINE_BYTES - 1u) / FW_LINE_BYTES;
+	error = fw_dma_write(address, dmem, lines);
+	if (error != 0)
+		return -1;
+
+	/* Succeeded: the bytes are in memory, visible to the other clients. */
+	return 0;
+}
+
+/*
+ * Reads bytes of GPU memory that start a line (a heap block) into any
+ * DMEM buffer, through the bounce lines.
+ *
+ * Returns 0, or -1 when the memory refused a line.
+ */
+int
+fw_copy_in(
+	uint32_t address,
+	void *dst,
+	uint32_t bytes)
+{
+	uint8_t *to;
+	uint32_t part;
+	int error;
+
+	/* A bounce buffer's worth at a time. */
+	to = dst;
+	while (bytes > 0) {
+		part = bytes;
+		if (part > FW_BOUNCE_BYTES)
+			part = FW_BOUNCE_BYTES;
+		error = fw_mem_read(address, bounce_lines, part);
+		if (error != 0)
+			return -1;
+		memcpy(to, bounce_lines, part);
+		to += part;
+		address += part;
+		bytes -= part;
+	}
+
+	/* Succeeded: the bytes are in the buffer. */
+	return 0;
+}
+
+/*
+ * Writes any DMEM buffer to GPU memory that starts a line (a heap block),
+ * through the bounce lines; the last line's bytes past the buffer are
+ * written as zeros.
+ *
+ * Returns 0, or -1 when the memory refused a line.
+ */
+int
+fw_copy_out(
+	uint32_t address,
+	const void *src,
+	uint32_t bytes)
+{
+	const uint8_t *from;
+	uint32_t part;
+	int error;
+
+	/* A bounce buffer's worth at a time; the tail of the last line is zero. */
+	from = src;
+	while (bytes > 0) {
+		part = bytes;
+		if (part > FW_BOUNCE_BYTES)
+			part = FW_BOUNCE_BYTES;
+		memset(bounce_lines, 0, FW_ROUND_LINES(part));
+		memcpy(bounce_lines, from, part);
+		error = fw_mem_write(address, bounce_lines, part);
+		if (error != 0)
+			return -1;
+		from += part;
+		address += part;
+		bytes -= part;
+	}
+
+	/* Succeeded: the bytes are in memory. */
 	return 0;
 }
 
@@ -194,6 +338,67 @@ fw_reader_address(
 
 	/* Succeeded: the address. */
 	return (uint32_t)value;
+}
+
+/*
+ * Reads consecutive little-endian u32 at the cursor into an array.
+ */
+void
+fw_reader_words(
+	struct fw_reader *reader,
+	uint32_t *dst,
+	uint32_t count)
+{
+	uint32_t index;
+
+	/* One word after the other (0 with the sticky error). */
+	for (index = 0; index < count; index++)
+		dst[index] = fw_reader_u32(reader);
+}
+
+/*
+ * Reads an array's u64 element count, which must not pass `limit`.
+ *
+ * Returns the count (0 with the error set when it passes the limit).
+ */
+uint32_t
+fw_reader_count(
+	struct fw_reader *reader,
+	uint32_t limit)
+{
+	uint64_t count;
+
+	/* The count as the wire gives it. */
+	count = fw_reader_u64(reader);
+	if (count > limit) {
+		reader->error = 1;
+		return 0;
+	}
+
+	/* Succeeded: the count. */
+	return (uint32_t)count;
+}
+
+/*
+ * Moves the cursor past bytes (a string's characters, an opaque payload).
+ */
+void
+fw_reader_skip(
+	struct fw_reader *reader,
+	uint32_t bytes)
+{
+	/* Nothing more after an error. */
+	if (reader->error)
+		return;
+
+	/* Skipping past the range is a malformed command. */
+	if (bytes > reader->end - reader->addr) {
+		reader->error = 1;
+		return;
+	}
+
+	/* The cursor moves; the buffer is refilled when it is read next. */
+	reader->addr += bytes;
 }
 
 /*

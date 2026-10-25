@@ -46,7 +46,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   (sext(imm_hi) << 12); B offsets in instructions; U/movi).
 - Unit and class per the §3.4.1/§3.4.2 tables (e.g. OP funct7 0000001 div* → DIV/x, mul* → FPU/f).
   NDST 4 for texl/texb/texf, 1 for texsz and other writers, 0 for stores/branches.  PAIR for the
-  texture instructions.  SIDE for sw/atom/exp/tex*/sts.
+  texture instructions.  SIDE for sw/atom/atoms/exp/tex*/sts.  STORE: sub 0 `sw`, 1 `sw.x` (the uop's
+  sub, which atg_su_lsu reads), any other sub undefined.
 - ISA fault (ILL = 1, unit NONE): word0[1:0] ≠ 11, undefined opcode/funct/sub, a register ≥ NREGS
   (except 63 when HAS_SA, 64-127 as sources only), packed ops without PACKED, subgroup ops without
   SUBGROUP, rq/sactl without HAS_SA, class m/t/x with rd = 63.
@@ -84,6 +85,6 @@ Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_dec_tb.v` on 4976 vec
 - The OP field values per unit are the `ATG_<UNIT>_*` localparams of include/atg_su_uop.vh; ALU OP bit 7 (`ATG_ALU_IMMB`) means operand b is the immediate (I forms).
 - An ILL uop has only the ILL bit set (all other fields 0).  U forms (lui/movi) have RS1-3, MOD, HSEL, SUB and RM 0; other forms carry all operand fields as encoded (used or not), RM = funct3.
 - rm: 0-4 and 7 are accepted (7, "dynamic", is RNE: there is no CSR); 5 and 6 are faults; fround accepts 0-3 only.
-- Undefined encodings that fault: OP funct7 0100000 with funct3 001/010/011, Zbb funct7 0000101 with funct3 0xx, R4 forms with fmt/funct2 ≠ 00 (except atom), any R-form custom instruction with funct7 ≠ its value (bar, end, exec.*, kill, qd, shfl, vote, ballot, sactl, nop; texl 0/1/2/3/6/10/14, texb 0/1/0x10, texf 0, each also with funct7 [5] (the .3 forms)), texsz with imm[11:0] other than 0, 1 or 2, a texture slot with sub[4] = 1, atom sub > 10, qd sub > 5, shfl sub > 4, transcendental sub > 6, exec.* sub > 3, vote sub > 1, unpackh sub > 1, nop sub ≠ 0.
+- Undefined encodings that fault: OP funct7 0100000 with funct3 001/010/011, Zbb funct7 0000101 with funct3 0xx, R4 forms with fmt/funct2 ≠ 00 (except atom), any R-form custom instruction with funct7 ≠ its value (bar, end, exec.*, kill, qd, shfl, vote, ballot, sactl, nop; texl 0/1/2/3/6/10/14, texb 0/1/0x10, texf 0, each also with funct7 [5] (the .3 forms)), texsz with imm[11:0] other than 0, 1 or 2, a texture slot with sub[4] = 1, atom sub[3:0] > 10 (sub[4] selects the memory: 0 global, the LSU; 1 shared, the LDS unit), qd sub > 5, shfl sub > 4, transcendental sub > 6, exec.* sub > 3, vote sub > 1, unpackh sub > 1, nop sub ≠ 0.
 - custom-2 funct7: fmin2 0 / fmax2 1 (funct3 100); iadd2 0 / isub2 1 / imul2 2 (101); fcmp2 lt 0 / ge 1 / eq 2 / ne 3 (110).
 - fence is unit LSU, class a (atg_su_sb waits for cm = 0 before issuing it); a PAIR rs1 must leave rs1+1 inside the GPRs (rs1 ≤ NREGS-2, not 62) or be c0-c30 / a special other than 127.  A texture .c form (TEX op bit 2) or .3 form (funct7 [5]) reads rs1+2 (Dref or the third coordinate): the uop's rs3 is rs1+2 (use3), which must stay inside the GPRs (rs1 ≤ NREGS-3, not 61-62) or the constants (not c30, c31) or the specials (not 126, 127); a .3 form with .c also reads rs1+3 (Dref), one more (rs1 ≤ NREGS-4, not 60-62, not c29-c31, not 125-127).  A .3 form sets the uop's sub[4] (the slot is sub[3:0]).  The texture R forms' imm is their texel offsets {word1 [13:10], [29:26], [25:22]} (dw, dv, du; docs/ghci.md §12.9); texsz.d (imm 2) is TEX op 3 with bit 3.

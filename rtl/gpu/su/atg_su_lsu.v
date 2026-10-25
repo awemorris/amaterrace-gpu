@@ -19,7 +19,9 @@
  *        with byte enables (when two lanes write one word the higher lane
  *        wins); each write's response is waited for; then a beat without
  *        data (l_wr 0), so cm falls after the stores are done (design
- *        §3.1.1);
+ *        §3.1.1); sw.x (the uop's sub[0], a store to the warp's scratch
+ *        memory) takes the EXEC lanes instead, helper and killed lanes
+ *        included;
  *   atom one at_* operation per side-effect lane, in lane order (at_op =
  *        the uop's sub: and or xor xchg add sub smax smin umax umin
  *        cmpxchg), the D$ invalidated first (dc_inv); the old values are
@@ -135,6 +137,9 @@ module atg_su_lsu #(
 	wire mine = x_valid && unit == ATG_UNIT_LSU;
 	wire take = mine && st == IDLE && op != ATG_LSU_FENCE;
 	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
+	/* The lanes of the access: EXEC for lw and sw.x, the side-effect lanes otherwise. */
+	wire use_exec = op == ATG_LSU_LW || (op == ATG_LSU_SW && x_uop[ATG_UOP_SUB]);
+	wire [NPHYS-1:0] amask = use_exec ? x_mask[NPHYS-1:0] : x_mask[2*NPHYS-1:NPHYS];
 	assign x_ready = st == IDLE;
 
 	/* The first pending lane and the lanes in its line, with the write's
@@ -209,10 +214,9 @@ module atg_su_lsu #(
 				rgrp <= x_grp;
 				rlast <= x_last;
 				rsbe <= x_sbe;
-				lanes <= op == ATG_LSU_LW ? x_mask[NPHYS-1:0] : x_mask[2*NPHYS-1:NPHYS];
-				pend <= op == ATG_LSU_LW ? x_mask[NPHYS-1:0] : x_mask[2*NPHYS-1:NPHYS];
-				if ((op == ATG_LSU_LW ? x_mask[NPHYS-1:0] : x_mask[2*NPHYS-1:NPHYS]) ==
-				    {NPHYS{1'b0}})
+				lanes <= amask;
+				pend <= amask;
+				if (amask == {NPHYS{1'b0}})
 					st <= BEAT;
 				else if (op == ATG_LSU_ATOM) begin
 					inv_q <= 1'b1;

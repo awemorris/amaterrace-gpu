@@ -6,11 +6,12 @@
  */
 
 /*
- * atg_su_exp: the fragment export buffer: exp of COLOR0 (0x100-0x103) and
- * DEPTH (0x104) by fragment warps into the warp's buffer, drained to the
- * ROP quad by quad after the warp's end, in sequence-number order; the
- * slot release (xr_*) of every ended warp.  The PT and its allocator are
- * atg_su_pt.
+ * atg_su_exp: the fragment export buffer: exp of the colour attachments
+ * 0-3 (0x100 + 16 k + c, CAPS[30]) and DEPTH (0x104) by fragment warps
+ * into the warp's buffer, drained to the ROP after the warp's end, in
+ * sequence-number order, by atg_su_exp_drain (one beat per exported
+ * attachment of each quad); the slot release (xr_*) of every ended warp.
+ * The PT and its allocator are atg_su_pt.
  *
  * The warp's quads come from the RX's register writes (fl_*): r3 (z) of
  * every lane is the depth unless the shader exports 0x104, r4/r5 (the
@@ -19,23 +20,22 @@
  * the warp is one with coverage (RX packs the quads from lane 0).
  * ex_mask = the covered lanes that some fragment exp wrote under the
  * side-effect mask (EXEC & coverage & ~KILLED).  Storage: NPHYS lane
- * banks × 6 words (R, G, B, A, depth, z) × NWARPS×32/NPHYS rows, written
- * one word per bank per cycle, read asynchronously (a quad's 4 lanes are
- * in 4 banks of one row).
- *
- * States: IDLE →(an ended fragment warp whose number is ex_next)→ DRAIN
- * (one quad per ex_ready) →(last quad)→ RET (xr_valid) → IDLE.  Vertex
- * and compute warps release at once (xr_valid the cycle after wc_end; a
- * drain's release waits a cycle when both fall together).
+ * banks × 18 words (R, G, B, A of 4 attachments, depth, z) × NWARPS×32/NPHYS
+ * rows, written one word per bank per cycle, read asynchronously (a
+ * quad's 4 lanes are in 4 banks of one row).  The warp's attachments
+ * (rtw) are those some fragment exp of a colour wrote under a non-empty
+ * side-effect mask; every beat of a quad carries the same ex_mask.
  *
  * Multisampling (docs/ghci.md section 12.11): the RX's r6 (the lane's
  * samples after the sample mask test) is snooped like r3 (a lane the RX
  * did not write takes 1111); exp 0x105 (SAMPLE_MASK) keeps the last value
  * written per lane; the quad's sample mask is r6 AND that value (1111 when
- * none), lane l at ex_ms bits 4 l + s.  A lane whose mask is 0 does not go
- * out (ex_mask).  ex_ms also carries the lanes that exported DEPTH and the
+ * none), lane l at ex_aux bits 4 l + s.  A lane whose mask is 0 does not go
+ * out (ex_mask).  ex_aux also carries the lanes that exported DEPTH and the
  * warp's d_s (the RX's table words 0xFF8-0xFFB, one per sample; 0 for a
  * warp without them: the slot's copy is cleared at its release).
+ * ex_aux = {rt[1:0], qlast, qfirst, nocol, front, d_s, zexp, smask}: the
+ * beat's attachment, its place in the quad, no colour, the warp's facing.
  * See spec/gpu/su/atg_su_exp.md.
  */
 
@@ -87,8 +87,8 @@ module atg_su_exp #(
 	input wire fl_pw_we,
 	input wire [11:0] fl_pw_addr,
 	input wire [31:0] fl_pw_data,
-	/* Multisampling to the ROP: {d_s[127:0], zexp[3:0], smask[15:0]} */
-	output wire [148:0] ex_ms,	/* {front, d_s, zexp, smask} */
+	/* The beat's attachment and multisampling to the ROP */
+	output wire [153:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} */
 	/* Slot release (atg_su_sched) */
 	output wire xr_valid,
 	output wire [WARP_W-1:0] xr_warp,
@@ -100,7 +100,6 @@ module atg_su_exp #(
 	localparam G = 32 / NPHYS;
 	localparam ROWS = NWARPS * G;
 	localparam RW = ROWS > 1 ? $clog2(ROWS) : 1;
-	localparam [1:0] S_IDLE = 2'd0, S_DRAIN = 2'd1, S_RET = 2'd2;
 
 	/* floor of a non-negative fp32 below 65536 (the pixel centre's x or y) */
 	function [15:0] ffloor;
@@ -118,19 +117,22 @@ module atg_su_exp #(
 	endfunction
 
 	/* ---- Per warp. */
-	reg [NWARPS-1:0] frag, ended;
-	reg [NWARPS*16-1:0] seq;
 	reg [NWARPS-1:0] fr;	/* the warp's facing (fl_info[48]) */
+	reg [NWARPS*4-1:0] rtw;	/* the attachments exported */
 	reg [NWARPS*32-1:0] cov, xp, dw;	/* coverage, exported lanes, depth written */
 	reg [NWARPS*32-1:0] smw, r6w;	/* SAMPLE_MASK exported, r6 written by the RX */
 	reg [NWARPS*128-1:0] dsv;	/* the warp's d_s */
 	reg [NWARPS*8*16-1:0] qx, qy;
 
-	/* ---- Exports of fragment warps. */
+	/* ---- Exports of fragment warps: colour k component c at 0x100 + 16 k + c. */
 	wire [31:0] tgt = x_uop[ATG_UOP_IMM +: 32];
-	wire ex_op = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && x_info[17:16] == 2'd1 &&
-		tgt >= 32'h100 && tgt <= 32'h105;
-	wire [2:0] comp = tgt[2:0];
+	wire ex_frag = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && x_info[17:16] == 2'd1;
+	wire ex_col = ex_frag && tgt[31:6] == 26'd4 && tgt[3:2] == 2'd0;
+	wire ex_dep = ex_frag && tgt == 32'h104;
+	wire ex_sm = ex_frag && tgt == 32'h105;
+	wire ex_op = ex_col || ex_dep || ex_sm;
+	wire [1:0] tk = tgt[5:4];
+	wire [1:0] comp = tgt[1:0];
 	wire [31:0] xrow = {{(32-WARP_W){1'b0}}, x_warp} * G + {{(32-GRP_W){1'b0}}, x_grp};
 	wire [NPHYS-1:0] side = x_mask[2*NPHYS-1:NPHYS];
 	wire [31:0] lane0 = {{(32-GRP_W){1'b0}}, x_grp} * NPHYS;
@@ -140,47 +142,53 @@ module atg_su_exp #(
 	wire [31:0] fq = ({{(32-WARP_W){1'b0}}, fl_slot} * 8 + {29'd0, fl_lane[4:2]}) * 16;
 	wire [15:0] fx = ffloor(fl_data[31:8]);
 
-	/* ---- The drain. */
-	reg [1:0] st;
-	reg [WARP_W-1:0] dwarp;
-	reg [2:0] dq;
-	reg vx_v;	/* a vertex/compute warp's release, this cycle */
-	reg [WARP_W-1:0] vx_w;
+	/* ---- The drain (atg_su_exp_drain): the beat of warp dwarp, quad dq, attachment drt. */
+	wire [WARP_W-1:0] dwarp;
+	wire [2:0] dq;
+	wire [1:0] drt;
+	wire dfirst, dlastb, dnocol;
+	wire [31:0] dcov = cov[dwarp*32 +: 32];
+	atg_su_exp_drain #(.NWARPS(NWARPS), .WARP_W(WARP_W)) drain (
+		.clk(clk), .rst_n(rst_n), .fl_go(fl_go), .fl_slot(fl_slot), .fl_seq(fl_info[47:32]),
+		.wc_end(wc_end), .wc_warp(wc_warp), .d_cov(dcov), .d_rtw(rtw[dwarp*4 +: 4]),
+		.d_warp(dwarp), .d_q(dq), .d_rt(drt), .d_first(dfirst), .d_lastb(dlastb),
+		.d_nocol(dnocol), .ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq),
+		.ex_last(ex_last), .ex_next(ex_next), .xr_valid(xr_valid), .xr_warp(xr_warp)
+	);
 
 	wire [4:0] dl0 = {dq, 2'b00};
 	wire [31:0] drow = {{(32-WARP_W){1'b0}}, dwarp} * G + {27'd0, dl0} / NPHYS;
-	wire [31:0] dcov = cov[dwarp*32 +: 32];
-	wire [2:0] dq1 = dq + 3'd1;
-	wire dlast = dq == 3'd7 || dcov[{dq1, 2'b00} +: 4] == 4'd0;
+	wire [RW+1:0] dcrow = {drow[RW-1:0], drt};
+	wire [RW+1:0] xcrow = {xrow[RW-1:0], tk};
 	wire [31:0] dqs = ({{(32-WARP_W){1'b0}}, dwarp} * 8 + {29'd0, dq}) * 16;
 	wire [31:0] dxp = xp[dwarp*32 +: 32] & dcov;
 	wire [31:0] ddw = dw[dwarp*32 +: 32];
 	wire [31:0] dsm = smw[dwarp*32 +: 32];
 	wire [31:0] dr6 = r6w[dwarp*32 +: 32];
 
-	/* NPHYS lane banks × {R, G, B, A, depth, z} and {SAMPLE_MASK, r6}. */
+	/* NPHYS lane banks × {R, G, B, A of 4 attachments, depth, z} and {SAMPLE_MASK, r6}. */
 	wire [NPHYS*192-1:0] rdat;
 	wire [NPHYS*8-1:0] rsm;
 	genvar b;
 	generate
 	for (b = 0; b < NPHYS; b = b + 1) begin : g_bank
-		reg [31:0] m0 [0:ROWS-1];
-		reg [31:0] m1 [0:ROWS-1];
-		reg [31:0] m2 [0:ROWS-1];
-		reg [31:0] m3 [0:ROWS-1];
+		reg [31:0] m0 [0:ROWS*4-1];
+		reg [31:0] m1 [0:ROWS*4-1];
+		reg [31:0] m2 [0:ROWS*4-1];
+		reg [31:0] m3 [0:ROWS*4-1];
 		reg [31:0] m4 [0:ROWS-1];
 		reg [31:0] mz [0:ROWS-1];
 		reg [3:0] m5 [0:ROWS-1];
 		reg [3:0] mr6 [0:ROWS-1];
 		wire [31:0] d = x_b[32 * b +: 32];
-		wire we = ex_op && side[b];
+		wire we = side[b];
 		always @(posedge clk) begin
-			if (we && comp == 3'd0) m0[xrow[RW-1:0]] <= d;
-			if (we && comp == 3'd1) m1[xrow[RW-1:0]] <= d;
-			if (we && comp == 3'd2) m2[xrow[RW-1:0]] <= d;
-			if (we && comp == 3'd3) m3[xrow[RW-1:0]] <= d;
-			if (we && comp == 3'd4) m4[xrow[RW-1:0]] <= d;
-			if (we && comp == 3'd5) m5[xrow[RW-1:0]] <= d[3:0];
+			if (we && ex_col && comp == 2'd0) m0[xcrow] <= d;
+			if (we && ex_col && comp == 2'd1) m1[xcrow] <= d;
+			if (we && ex_col && comp == 2'd2) m2[xcrow] <= d;
+			if (we && ex_col && comp == 2'd3) m3[xcrow] <= d;
+			if (we && ex_dep) m4[xrow[RW-1:0]] <= d;
+			if (we && ex_sm) m5[xrow[RW-1:0]] <= d[3:0];
 			if (fl_we && fl_reg == 6'd3 && zbank == b)
 				mz[zrow[RW-1:0]] <= fl_data;
 			if (fl_we && fl_reg == 6'd6 && zbank == b)
@@ -188,7 +196,7 @@ module atg_su_exp #(
 		end
 		assign rsm[8 * b +: 8] = {m5[drow[RW-1:0]], mr6[drow[RW-1:0]]};
 		assign rdat[192 * b +: 192] = {mz[drow[RW-1:0]], m4[drow[RW-1:0]],
-			m3[drow[RW-1:0]], m2[drow[RW-1:0]], m1[drow[RW-1:0]], m0[drow[RW-1:0]]};
+			m3[dcrow], m2[dcrow], m1[dcrow], m0[dcrow]};
 	end
 	endgenerate
 
@@ -221,46 +229,24 @@ module atg_su_exp #(
 		end
 	end
 
-	/* An ended fragment warp whose sequence number is the ROP's next one. */
-	reg [WARP_W-1:0] cand;
-	reg cand_v;
-	integer w;
-	always @(*) begin
-		cand_v = 1'b0;
-		cand = {WARP_W{1'b0}};
-		for (w = NWARPS - 1; w >= 0; w = w - 1)
-			if (frag[w] && ended[w] && seq[w*16 +: 16] == ex_next) begin
-				cand_v = 1'b1;
-				cand = w[WARP_W-1:0];
-			end
-	end
-
 	assign x_ready = 1'b1;
-	assign ex_valid = st == S_DRAIN;
-	assign ex_seq = seq[dwarp*16 +: 16];
 	assign ex_xy = {qy[dqs +: 16], qx[dqs +: 16]};
 	assign ex_mask = dxp[dl0 +: 4] & smok;
-	assign ex_ms = {fr[dwarp], dsv[dwarp*128 +: 128], zexp & dxp[dl0 +: 4], smask};
+`ifdef MUT_EXP_FRONT
+	assign ex_aux = {drt, dlastb, dfirst, dnocol, 1'b1, dsv[dwarp*128 +: 128],
+		zexp & dxp[dl0 +: 4], smask};
+`else
+	assign ex_aux = {drt, dlastb, dfirst, dnocol, fr[dwarp], dsv[dwarp*128 +: 128],
+		zexp & dxp[dl0 +: 4], smask};
+`endif
 	assign ex_color = col;
 	assign ex_depth = dep;
-	assign ex_last = dlast;
-	assign xr_valid = vx_v || st == S_RET;
-	assign xr_warp = vx_v ? vx_w : dwarp;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			frag <= {NWARPS{1'b0}};
-			ended <= {NWARPS{1'b0}};
 			r6w <= {(NWARPS*32){1'b0}};
 			dsv <= {(NWARPS*128){1'b0}};
-			st <= S_IDLE;
-			vx_v <= 1'b0;
-			vx_w <= {WARP_W{1'b0}};
-			dwarp <= {WARP_W{1'b0}};
-			dq <= 3'd0;
 		end else begin
-			vx_v <= wc_end && !frag[wc_warp];
-			vx_w <= wc_warp;
 			/* The RX's r6 and d_s of the warp being built; cleared at a release. */
 			if (fl_we && fl_reg == 6'd6)
 				r6w[fl_slot*32 + {27'd0, fl_lane}] <= 1'b1;
@@ -270,55 +256,32 @@ module atg_su_exp #(
 				r6w[xr_warp*32 +: 32] <= 32'd0;
 				dsv[xr_warp*128 +: 128] <= 128'd0;
 			end
-			if (wc_end && frag[wc_warp])
-				ended[wc_warp] <= 1'b1;
-			if (fl_go) begin
-				frag[fl_slot] <= 1'b1;
-				ended[fl_slot] <= 1'b0;
-				seq[fl_slot*16 +: 16] <= fl_info[47:32];
-				fr[fl_slot] <= fl_info[48];
-				cov[fl_slot*32 +: 32] <= fl_info[31:0];
-				xp[fl_slot*32 +: 32] <= 32'd0;
-				dw[fl_slot*32 +: 32] <= 32'd0;
-				smw[fl_slot*32 +: 32] <= 32'd0;
-			end
-			if (fl_we && fl_lane[1:0] == 2'd0 && fl_reg == 6'd4)
-				qx[fq +: 16] <= fx;
-			if (fl_we && fl_lane[1:0] == 2'd0 && fl_reg == 6'd5)
-				qy[fq +: 16] <= fx;
-			if (ex_op) begin
-				xp[x_warp*32 +: 32] <= xp[x_warp*32 +: 32] | side_w;
-				if (comp == 3'd4)
-					dw[x_warp*32 +: 32] <= dw[x_warp*32 +: 32] | side_w;
-				if (comp == 3'd5)
-					smw[x_warp*32 +: 32] <= smw[x_warp*32 +: 32] | side_w;
-			end
-			case (st)
-			S_IDLE:
-				if (cand_v) begin
-					dwarp <= cand;
-					dq <= 3'd0;
-					st <= S_DRAIN;
-				end
-			S_DRAIN:
-				if (ex_ready) begin
-					if (dlast)
-						st <= S_RET;
-					else
-						dq <= dq1;
-				end
-			default:	/* S_RET: the release (after a vertex warp's of this cycle) */
-				if (!vx_v) begin
-					frag[dwarp] <= 1'b0;
-					ended[dwarp] <= 1'b0;
-					st <= S_IDLE;
-				end
-			endcase
+		end
+		if (fl_go) begin
+			fr[fl_slot] <= fl_info[48];
+			rtw[fl_slot*4 +: 4] <= 4'd0;
+			cov[fl_slot*32 +: 32] <= fl_info[31:0];
+			xp[fl_slot*32 +: 32] <= 32'd0;
+			dw[fl_slot*32 +: 32] <= 32'd0;
+			smw[fl_slot*32 +: 32] <= 32'd0;
+		end
+		if (fl_we && fl_lane[1:0] == 2'd0 && fl_reg == 6'd4)
+			qx[fq +: 16] <= fx;
+		if (fl_we && fl_lane[1:0] == 2'd0 && fl_reg == 6'd5)
+			qy[fq +: 16] <= fx;
+		if (ex_op) begin
+			xp[x_warp*32 +: 32] <= xp[x_warp*32 +: 32] | side_w;
+			if (ex_col && side != {NPHYS{1'b0}})
+				rtw[x_warp*4 + {30'd0, tk}] <= 1'b1;
+			if (ex_dep)
+				dw[x_warp*32 +: 32] <= dw[x_warp*32 +: 32] | side_w;
+			if (ex_sm)
+				smw[x_warp*32 +: 32] <= smw[x_warp*32 +: 32] | side_w;
 		end
 	end
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_a, x_c, x_mask[NPHYS-1:0], x_info,
-		x_uop, fl_info[63:48], fl_data[7:0], tgt, xrow, lane0, zrow, drow, fq, dqs};
+		x_uop, fl_info[63:49], fl_data[7:0], tgt, xrow, lane0, zrow, drow, fq, dqs};
 endmodule
 
 `default_nettype wire

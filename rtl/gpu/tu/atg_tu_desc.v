@@ -12,20 +12,24 @@
  * here slots 16-31, section 8.5) and the byte offsets of their mip
  * levels.
  *
- * Keeps words 0-6 of each slot (BASE, SIZE, IMAGE, LAYER_STRIDE, SAMPLER,
- * LOD, FORMAT's 21 bits; words 7-15 are reserved and not kept).  A write
- * of SIZE, IMAGE or FORMAT marks the slot; one at a time, lowest slot
- * first, the offsets of levels 1-12 are computed again, a level a cycle:
- * off[l + 1] = off[l] + P_l x D_l with P_l the level's plane in bytes
- * rounded up to 64 (linear: w_l x h_l x ps, ps the texel's bytes, 1-16, of
- * the format (include/atg_tu_fmt.vh); tiled, only 4-byte texels and the
+ * Keeps words 0-7 of each slot (BASE, SIZE, IMAGE, LAYER_STRIDE, SAMPLER,
+ * LOD, FORMAT's 21 bits, ROW's 2 bits; words 8-15 are reserved and not
+ * kept).  A write of SIZE, IMAGE, FORMAT or ROW marks the slot; one at a
+ * time, lowest slot first, the offsets of levels 1-12 are computed again,
+ * a level a cycle: off[l + 1] = off[l] + P_l x D_l with P_l the level's
+ * plane in bytes rounded up to 64 (linear: r_l x h_l x ps, ps the texel's
+ * bytes, 1-16, of the format (include/atg_tu_fmt.vh), r_l the row's
+ * texels, w_l rounded up to a multiple of 2^TEX_ROW[1:0] (the rule is 0,
+ * packed rows, for tiled, compressed and multisampled images); tiled, only
+ * 4-byte texels and the
  * earlier RGB565 code: ceil(w_l / 4) x ceil(h_l / 4) x 16 ps) and D_l =
  * max(1, depth >> l) for the view type 3D, 1 otherwise (32-bit wrap;
  * offsets are multiples of 64 and kept as bits 31:6).  busy is high while
  * a slot is marked or being computed; atg_tu_addr takes no quad then, and
  * the CP holds a SET_REG of the TU range while the TU is busy.
- * The read port is combinational: the seven words of rd_slot, the offset
- * of level rd_level (0 for level 0) and the plane P of that level.
+ * The read port is combinational: the eight words of rd_slot (ROW as the
+ * rule that applies), the offset of level rd_level (0 for level 0) and the
+ * plane P of that level.
  * See spec/gpu/tu/atg_tu_desc.md.
  *
  * States: IDLE →(a marked slot)→ RUN (levels 0-11) → IDLE.
@@ -52,6 +56,7 @@ module atg_tu_desc (
 	output wire [31:0] rd_samp,
 	output wire [31:0] rd_lod,
 	output wire [20:0] rd_fmt,
+	output wire [1:0] rd_row,	/* log2 of a row's texel multiple (0: packed) */
 	output wire [31:0] rd_loff,
 	output wire [31:0] rd_plane
 );
@@ -61,14 +66,17 @@ module atg_tu_desc (
 	localparam IDLE = 1'b0, RUN = 1'b1;
 
 	/* P_l: the plane of level l of a w x h image in bytes, a multiple of 64
-	 * (texels of 2^psl bytes; tiled: 4-byte texels, or psl 1 for RGB565). */
+	 * (texels of 2^psl bytes in rows of w rounded up to a multiple of 2^ra;
+	 * tiled: 4-byte texels, or psl 1 for RGB565). */
 	function [31:0] plane;
 		input [31:0] sz;
 		input tiled;
 		input blk;	/* compressed 4 x 4 blocks of 2^psl bytes */
 		input [2:0] psl;
+		input [1:0] ra;
 		input [3:0] l;
 		reg [15:0] w0, h0, w, h;
+		reg [16:0] wr, m;
 		/* verilator lint_off UNUSEDSIGNAL */
 		reg [33:0] p;	/* bits 33:32 wrap, 5:0 rounded off */
 		reg [31:0] t;	/* tiles; below 2^28 */
@@ -80,6 +88,12 @@ module atg_tu_desc (
 			h = h0 >> l;
 			w = w == 16'd0 ? 16'd1 : w;
 			h = h == 16'd0 ? 16'd1 : h;
+			m = (17'd1 << ra) - 17'd1;
+`ifdef MUT_TU_PITCHOFF
+			wr = {1'b0, w} | (m & 17'd0);	/* the planes of packed rows */
+`else
+			wr = ({1'b0, w} + m) & ~m;
+`endif
 			t = ({16'd0, 2'b00, w[15:2]} + {31'd0, w[1:0] != 2'd0}) *
 				({16'd0, 2'b00, h[15:2]} + {31'd0, h[1:0] != 2'd0});
 			if (tiled)
@@ -87,22 +101,27 @@ module atg_tu_desc (
 			else if (blk)
 				p = ({2'b00, t} << psl) + 34'd63;
 			else
-				p = (({18'd0, w} * {18'd0, h}) << psl) + 34'd63;
+				p = (({17'd0, wr} * {18'd0, h}) << psl) + 34'd63;
 			plane = {p[31:6], 6'd0};
 		end
 	endfunction
 
 	/* The slot's texel size and whether it is tiled (only 4-byte texels and
-	 * the earlier RGB565). */
-	function [4:0] layout;
+	 * the earlier RGB565); [6:5] the row rule that applies (0 for tiled,
+	 * compressed and multisampled images). */
+	function [6:0] layout;
 		input [31:0] img;
 		input [20:0] tf;
+		input [1:0] ra;
 		/* verilator lint_off UNUSEDSIGNAL */
 		reg [12:0] c;	/* the size, legacy and block bits */
 		/* verilator lint_on UNUSEDSIGNAL */
+		reg tl;
 		begin
 			c = tu_fcls(tf, img[GHCI_IMG_FMT +: 4]);
-			layout = {c[12], img[GHCI_IMG_TILED] && (c[3] || c[2:0] == 3'd2), c[2:0]};
+			tl = img[GHCI_IMG_TILED] && (c[3] || c[2:0] == 3'd2);
+			layout = {tl || c[12] || (img[GHCI_IMG_SAMPLES +: 4] == 4'd2 &&
+				!img[GHCI_IMG_TILED]) ? 2'd0 : ra, c[12], tl, c[2:0]};
 		end
 	endfunction
 
@@ -113,6 +132,7 @@ module atg_tu_desc (
 	reg [31:0] d_samp [0:31];
 	reg [31:0] d_lod [0:31];
 	reg [20:0] d_fmt [0:31];
+	reg [1:0] d_row [0:31];
 	reg [25:0] d_off [0:511];	/* {slot, level}: levels 1-12 */
 	wire [8:0] s_fs = st_idx[8:0] - GHCI_S_TU;
 	wire in_fs = !st_idx[9] && st_idx[8:0] >= GHCI_S_TU && st_idx[8:0] < GHCI_S_TU + 9'd256;
@@ -135,16 +155,23 @@ module atg_tu_desc (
 			if (s_off[3:0] == GHCI_TEX_LOD)
 				d_lod[s_off[8:4]] <= st_wdata;
 		end
-	/* TEX_FORMAT is 0 (the earlier formats) until written. */
+	/* TEX_FORMAT is 0 (the earlier formats) and TEX_ROW 0 (packed rows)
+	 * until written. */
 	integer r;
 	always @(posedge clk)
 		if (!rst_n) begin
-			for (r = 0; r < 32; r = r + 1)
+			for (r = 0; r < 32; r = r + 1) begin
 				d_fmt[r] <= 21'd0;
-		end else if (in_tu && s_off[3:0] == GHCI_TEX_FORMAT)
-			d_fmt[s_off[8:4]] <= st_wdata[20:0];
+				d_row[r] <= 2'd0;
+			end
+		end else begin
+			if (in_tu && s_off[3:0] == GHCI_TEX_FORMAT)
+				d_fmt[s_off[8:4]] <= st_wdata[20:0];
+			if (in_tu && s_off[3:0] == GHCI_TEX_ROW)
+				d_row[s_off[8:4]] <= st_wdata[GHCI_TROW_ALIGN +: 2];
+		end
 	wire mark = in_tu && (s_off[3:0] == GHCI_TEX_SIZE || s_off[3:0] == GHCI_TEX_IMAGE ||
-		s_off[3:0] == GHCI_TEX_FORMAT);
+		s_off[3:0] == GHCI_TEX_FORMAT || s_off[3:0] == GHCI_TEX_ROW);
 
 	reg st;
 	reg [31:0] dirty;
@@ -166,8 +193,8 @@ module atg_tu_desc (
 	wire [15:0] cnt = cimg[GHCI_IMG_COUNT +: 16] == 16'd0 ? 16'd1 : cimg[GHCI_IMG_COUNT +: 16];
 	wire [15:0] dsh = cnt >> cl;
 	wire [15:0] dl = cimg[GHCI_IMG_TYPE +: 3] != 3'd2 || dsh == 16'd0 ? 16'd1 : dsh;
-	wire [4:0] clay = layout(cimg, d_fmt[cs]);
-	wire [31:0] cp = plane(d_size[cs], clay[3], clay[4], clay[2:0], cl);
+	wire [6:0] clay = layout(cimg, d_fmt[cs], d_row[cs]);
+	wire [31:0] cp = plane(d_size[cs], clay[3], clay[4], clay[2:0], clay[6:5], cl);
 	wire [47:0] pd = cp * {16'd0, dl};
 	wire [31:0] nacc = acc + pd[31:0];
 	wire [31:0] clr = st == IDLE && dirty != 32'd0 ? 32'd1 << lo : 32'd0;
@@ -206,8 +233,9 @@ module atg_tu_desc (
 	assign rd_lod = d_lod[rd_slot];
 	assign rd_loff = rd_level == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level}], 6'd0};
 	assign rd_fmt = d_fmt[rd_slot];
-	wire [4:0] rlay = layout(d_img[rd_slot], d_fmt[rd_slot]);
-	assign rd_plane = plane(d_size[rd_slot], rlay[3], rlay[4], rlay[2:0], rd_level);
+	wire [6:0] rlay = layout(d_img[rd_slot], d_fmt[rd_slot], d_row[rd_slot]);
+	assign rd_plane = plane(d_size[rd_slot], rlay[3], rlay[4], rlay[2:0], rlay[6:5], rd_level);
+	assign rd_row = rlay[6:5];
 
 	wire unused_ok = &{1'b0, s_fs[8], pd[47:32], nacc[5:0], acc[5:0]};
 endmodule

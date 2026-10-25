@@ -43,7 +43,7 @@ One increment per cycle; count is the value after the last cycle's update.
 ## 7. Corner cases and errors
 
 - Reset clears the counter.
-- A quad with no colour attachment (a depth-only or a nocol beat) still counts (atg_rop_ds sends inc_valid for its first beat).
+- A quad with no colour attachment (a nocol beat) still counts: atg_rop_ds passes it on and atg_rop gives inc_valid for the first beat of every quad.
 
 ## 8. What the TB checks
 
@@ -52,7 +52,7 @@ One increment per cycle; count is the value after the last cycle's update.
 - `PASS atg_rop_occ.count` — random increments against a model with ROP_CTRL[0] switched, clears alone and with an increment
 - `PASS atg_rop_occ` at the end.
 
-`MUT_OCC_BEAT` (in atg_rop_ds: count every beat) is checked by the scene, not here.
+`MUT_OCC_BEAT` (in atg_rop: count every beat) is checked by `sim/tb/atg_rop_beat_tb.v` (`PASS atg_rop_beat.occ`), not here.
 
 ## 9. References
 
@@ -60,4 +60,4 @@ docs/ghci.md §7.3 (QUERY), §8.5 (ROP_CTRL), design §16.8.  Values referenced:
 
 ## 10. Status
 
-Implemented 2026-10-25: every PASS of §8.  Wired in atg_rop (inc_valid = atg_rop_ds's d_valid and d_ready, inc_n its d_smask's popcount) and to atg_cp_seq's QUERY through atg_top; a nocol beat's count comes with the attachment beats (S8 of the plan).
+Implemented 2026-10-25: every PASS of §8.  Wired in atg_rop (inc_valid = atg_rop_ds's d_valid and d_ready of a first beat, d_beat[0]; inc_n its d_smask's popcount) and to atg_cp_seq's QUERY through atg_top.

@@ -17,8 +17,8 @@ The primitive table: the three vertices' varyings of each fragment warp's primit
 | `SBE_W` | `2` | log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits). |
 | `UOP_W` | `104` | Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh). |
 | `PRIMS` | `8` | Primitives per warp slot. |
-| `VARY_WORDS` | `36` | Words per vertex (4 + 32 varyings). |
-| `SHORT_LAT` | `6` | Cycles from x_valid to the short result (one fixed pipeline for classes a and f, design §3.1.1). |
+| `VARY_WORDS` | `32` | Varying words per vertex, at most 64 (KC705 64: Vulkan's 64 output and input components; ZYBO 16). |
+| `SHORT_LAT` | `6` | Cycles from x_valid to the short result (one fixed pipeline for classes a and f, design §3.1.1); at least 1 + the read cycles of a group (NPHYS/8, at least 1). |
 
 ## 3. Ports
 
@@ -41,7 +41,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `x_c` | in | NPHYS*32 | Operand rs3 (or rs1+1 for the PAIR instructions). |
 | `x_mask` | in | 2*NPHYS | [NPHYS-1:0] EXEC lanes of the group, [2*NPHYS-1:NPHYS] side-effect lanes (EXEC & coverage & ~KILLED). |
 | `x_info` | in | 32 | x_info [15:0] fragment sequence number, [17:16] warp kind (0 vertex, 1 fragment, 2 compute), [18] front facing, [31:19] 0. |
-| `x_ready` | out | 1 | This unit can take a group of its own this cycle (atg_su_opd waits otherwise). |
+| `x_ready` | out | 1 | This unit can take a group of its own this cycle (atg_su_opd waits otherwise): 0 in the read cycles after the first of a group (NPHYS 16: one cycle, NPHYS 32: three). |
 | **Short result to atg_su_wb (exactly SHORT_LAT cycles after x_valid)** | | | |
 | `s_valid` | out | 1 | Result of one lane group. |
 | `s_warp` | out | WARP_W | Warp. |
@@ -52,14 +52,18 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **Primitive table writes (from atg_rx through the atg_su ports fl_pw_*)** | | | |
 | `pw_we` | in | 1 | Write one word. |
 | `pw_warp` | in | WARP_W | Warp slot (fl_slot). |
-| `pw_addr` | in | 12 | [10:8] primitive, [7:6] vertex, [5:0] word ([11] 0); 0xFFF: the warp's primitive map. |
+| `pw_addr` | in | 12 | [10:8] primitive, [7:6] vertex, [5:0] varying word w (PT word 4 + w; [11] 0); 0xFFF: the warp's primitive map. |
 | `pw_data` | in | 32 | Data. |
 
 25 ports.
 
 ## 4. Behaviour
 
-lda rd, imm: each lane reads word imm[7:2] (the PT word: 0-3 position, 4.. varyings) of vertex imm[1:0] of its quad's primitive; 0 for a word at or beyond VARY_WORDS or vertex 3.  The quad's primitive comes from the warp's primitive map, written by RX at pw_addr 0xFFF: bits 3q+2..3q are quad q's primitive (RX writes the map for every warp; v1's RX puts one triangle in a warp, map 0).  The result goes to atg_su_wb SHORT_LAT cycles after x_valid with s_lanes = the EXEC lanes.  NPHYS/4 copies of the table, one read per quad of the group, read asynchronously (design §3.5).
+lda rd, imm: imm[8:2] is a PT word (0-3 position, 4 + w varying word w), imm[1:0] a vertex; each lane reads varying word w of vertex imm[1:0] of its quad's primitive; 0 for a word below 4 (the table does not keep the position), at or beyond 4 + VARY_WORDS, or vertex 3 (imm[31:9] are ignored).  The quad's primitive comes from the warp's primitive map, written by RX at pw_addr 0xFFF: bits 3q+2..3q are quad q's primitive (RX writes the map for every warp; v1's RX puts one triangle in a warp, map 0).  The result goes to atg_su_wb SHORT_LAT cycles after the group was taken (x_valid && x_ready) with s_lanes = the EXEC lanes.
+
+Table writes: pw_addr [5:0] = w < VARY_WORDS of vertex [7:6] < 3 of primitive [10:8] < PRIMS (others, and pw_addr[11] = 1: the map 0xFFF and the RX's d_s words 0xFF8-0xFFB, do not touch the table).
+
+Storage (design §3.5, BRAM): NC = min(NPHYS/4, 2) copies of NWARPS × PRIMS × 3 × VARY_WORDS words, each copy written by every table write and read through one synchronous port (block RAM).  A lane group has NQ = NPHYS/4 quads; copy c reads quad p × NC + c in read cycle p, so a group takes NR = NQ / NC cycles (NPHYS 4 and 8: 1, NPHYS 16: 2, NPHYS 32: 4).  The first read is from x_* in the cycle the group is taken; the later ones from the group's latched warp, quads' primitives and immediate.  x_ready is 0 in the later read cycles; another unit's group may be issued in them (it is not this unit's).
 
 ## 5. State machine
 
@@ -67,7 +71,7 @@ None.
 
 ## 6. Latency and throughput
 
-One group per cycle.
+One group per NR cycles (1 for NPHYS 4 and 8, 2 for NPHYS 16, 4 for NPHYS 32); the result SHORT_LAT cycles after the group was taken.
 
 ## 7. Corner cases and errors
 
@@ -77,8 +81,9 @@ None beyond the above.
 
 `sim/tb/atg_su_lda_tb.v` prints, in this order:
 
-- `PASS atg_su_lda.rw` — RX-style writes then lda reads for several primitives per warp (through the map), in the NPHYS 8 and 16 shapes
+- `PASS atg_su_lda.rw` — RX-style writes then lda reads for several primitives per warp (through the map), in the NPHYS 8 (16 varying words), NPHYS 16 (the KC705's 64, two read cycles) and NPHYS 32 (32 words, four read cycles) shapes, with x_ready honoured, back-to-back groups and other units' groups in the read cycles; PT words 0-3, past the varyings and up to 127, vertex 3
 - `PASS atg_su_lda.ms` — the RX's d_s words (0xFF8-0xFFB, multisampling) touch neither the table nor the map
+- `PASS atg_su_lda.ready` — x_ready is 0 exactly in the later read cycles of a group (`-DMUT_LDA_PHASE`, the later reads with the first quads' primitives, fails `.rw`)
 - `PASS atg_su_lda` at the end.
 
 ## 9. References
@@ -88,3 +93,5 @@ design §3.4.1 (custom-1 lda), §3.5 (primitive table), §3.8 (clip).
 ## 10. Status
 
 Implemented in WS288 p009 part B1 (P1, branch p1-su-gfx).  Readings of the earlier text: the pw_addr fields as above (12 bits hold 3 + 2 + 6, so [11] marks the map at 0xFFF), the map's layout (3 bits per quad, the earlier "low bits of fl_info" dropped: fl_info has no room), words past VARY_WORDS and vertex 3 read 0.  Ports and parameters unchanged.  Storage NWARPS × PRIMS × 3 × VARY_WORDS words × NPHYS/4 copies (NPHYS 8: 4×8×3×20×2 = 3840 words: distributed RAM; sized for v1, not optimised).
+
+Varying 64 components (Vulkan 1.0's maxVertexOutputComponents and maxFragmentInputComponents): VARY_WORDS now counts the varying words only (was 4 + the varyings; the position words 0-3 were kept but never written), at most 64 (pw_addr[5:0] is w, was the PT word 4 + w); lda's word field imm[8:2] (was [7:2]); the table is NC = min(NPHYS/4, 2) copies read synchronously in NR cycles (was NPHYS/4 copies read asynchronously, distributed RAM), so x_ready is 0 in the later read cycles.  KC705 (NPHYS 16, NWARPS 4, 64 words): 2 × 6144 words = 2 × 6 BRAM36 (estimate; was 4 copies of 3456 words).

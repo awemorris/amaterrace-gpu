@@ -101,7 +101,7 @@ module atg_su_chk #(
 		.fl_req(1'b0), .fl_gnt(), .fl_slot(), .fl_we(1'b0), .fl_reg(6'd0), .fl_lane(5'd0),
 		.fl_data(32'd0), .fl_pw_we(1'b0), .fl_pw_addr(12'd0), .fl_pw_data(32'd0),
 		.fl_go(1'b0), .fl_mask(32'd0), .fl_info(64'd0),
-		.pt_rd(1'b0), .pt_idx(8'd0), .pt_word(6'd0), .pt_rdata(), .pt_free(1'b0),
+		.pt_rd(1'b0), .pt_idx(8'd0), .pt_word(7'd0), .pt_rdata(), .pt_free(1'b0),
 		.pt_free_idx(8'd0), .pt_done(),
 		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_mask(), .tx_coord(), .tx_off(),
 		.tx_tag(), .tx_last(), .tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0),

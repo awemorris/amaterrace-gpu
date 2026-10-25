@@ -335,13 +335,15 @@ def wb_vectors(r):
     return out
 
 
-def frag_vectors(r):
+def frag_vectors(r, dclip=False):
     """atg_rx_frag: per triangle "T sp_tri VARYING_COUNT warps", per warp
     "W quads", per quad "Q x y coverage" and 4 lines "L" of r0-r5 (lanes
-    0-3)."""
+    0-3).  dclip: DEPTH_CLAMP[1] (r3 not clamped) with depths in
+    [-0.5, 1.5] (viewport z scale 2, offset -0.5)."""
     out = []
     st = st_default()
-    for k, v in enumerate((16.0, 12.0, 16.0, 12.0, 1.0, 0.0)):
+    zv = (2.0, -0.5) if dclip else (1.0, 0.0)
+    for k, v in enumerate((16.0, 12.0, 16.0, 12.0) + zv):
         st.set(M.S_VIEWPORT + k, f(v))
     st.set(M.S_RT_SIZE, (24 << 16) | 32)
     for n in range(20):
@@ -361,7 +363,8 @@ def frag_vectors(r):
                 out.append('Q %04x %04x %x' % (x, y, m))
                 for ln in range(4):
                     out.append('L ' + ' '.join('%08x' % v for v in
-                                               M.frag_lane(rs, x + (ln & 1), y + (ln >> 1))))
+                                               M.frag_lane(rs, x + (ln & 1), y + (ln >> 1),
+                                                           clamp=not dclip)))
     out.append('E')
     return out
 
@@ -376,6 +379,7 @@ def main():
     put('rop_ds.txt', ds_vectors(r))
     put('rop_wb.txt', wb_vectors(r))
     put('rx_frag.txt', frag_vectors(random.Random(288009)))
+    put('rx_frag_dc.txt', frag_vectors(random.Random(288030), dclip=True))
 
 
 if __name__ == '__main__':

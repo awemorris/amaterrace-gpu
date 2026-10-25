@@ -8,7 +8,9 @@
 /*
  * atg_rop_order: ROP ordering (design §3.8): retires fragment quads in
  * sequence-number order from SU 0's exports and the RX's direct quads;
- * tells the SU which sequence it waits for.
+ * tells the SU which sequence it waits for.  The SU's quads come as beats
+ * (one per colour attachment, CAPS[30]); a warp's beats pass in order and
+ * its number retires with ex_last.
  *
  * Two counters (spec/gpu/rop/atg_rop_order.md).
  */
@@ -29,7 +31,7 @@ module atg_rop_order (
 	input wire [127:0] ex_depth,
 	input wire ex_last,
 	output wire [15:0] ex_next,
-	input wire [148:0] ex_ms,
+	input wire [153:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} */
 	/* Direct fragments to the ROP (no SU: DEBUG_COLOR) */
 	input wire dx_valid,
 	output wire dx_ready,
@@ -49,7 +51,7 @@ module atg_rop_order (
 	output wire [511:0] q_color,
 	output wire [127:0] q_depth,
 	output wire q_dbg,
-	output wire [148:0] q_ms,
+	output wire [153:0] q_aux,
 	output wire busy
 );
 	/* spec/gpu/rop/atg_rop_order.md */
@@ -67,10 +69,10 @@ module atg_rop_order (
 	assign q_color = ex_ok ? ex_color : 512'd0;
 	assign q_depth = ex_ok ? ex_depth : dx_depth;
 	assign q_dbg = !ex_ok;
-	/* the SU's {front, d_s, zexp, smask}; the direct path: front, every
-	 * sample of a covered lane, with the lane's depth (zexp) */
-	assign q_ms = ex_ok ? ex_ms : {1'b1, 128'd0, 4'hF, {4{dx_mask[3]}}, {4{dx_mask[2]}}, {4{dx_mask[1]}},
-		{4{dx_mask[0]}}};
+	/* the SU's beat (ex_aux); the direct path: one beat of attachment 0,
+	 * front, every sample of a covered lane, with the lane's depth (zexp) */
+	assign q_aux = ex_ok ? ex_aux : {2'd0, 1'b1, 1'b1, 1'b0, 1'b1, 128'd0, 4'hF, {4{dx_mask[3]}},
+		{4{dx_mask[2]}}, {4{dx_mask[1]}}, {4{dx_mask[0]}}};
 	assign busy = issued != next;
 
 	always @(posedge clk)

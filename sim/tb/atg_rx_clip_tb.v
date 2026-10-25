@@ -36,7 +36,7 @@ module atg_rx_clip_tb;
 	reg [31:0] pt_rdata = 0;
 	wire prim_ready, pt_rd, cl_valid, cl_last, busy;
 	wire [7:0] pt_idx;
-	wire [5:0] pt_word;
+	wire [6:0] pt_word;
 	wire [701:0] cl_tri;
 
 	atg_rx_clip dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),

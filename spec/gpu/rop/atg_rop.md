@@ -6,7 +6,7 @@ RTL: `rtl/gpu/rop/atg_rop.v`.  Parent: atg_top (HAS_ROP).  Implemented in: p007.
 
 The ROP / buffer writer (design §2.3, §3.8): primitive-order retirement, depth/stencil, blend, write-back; one MC client (depth and colour behind am_amb_mux).
 
-Children: `atg_rop_order`, `atg_rop_ms`, `atg_rop_ds`, `atg_rop_blend`, `atg_rop_wb`, `am_amb_mux`.
+Children: `atg_rop_order`, `atg_rop_ms`, `atg_rop_ds`, `atg_rop_occ`, `atg_rop_blend`, `atg_rop_wb` (with `atg_rop_wpix` and its `atg_rop_fblend`), `am_amb_mux`.
 
 ## 2. Parameters
 
@@ -39,7 +39,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `ex_color` | in | 512 | Colour. |
 | `ex_depth` | in | 128 | Depth. |
 | `ex_last` | in | 1 | Last quad of the warp. |
-| `ex_ms` | in | 149 | {front, d_s, zexp, smask} of the quad (atg_su_exp; front with CAPS[30], to atg_rop_ds through atg_rop_ms). |
+| `ex_aux` | in | 154 | The beat's {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} (atg_su_exp, CAPS[30]: one beat per colour attachment of the quad; front to atg_rop_ds through atg_rop_ms). |
 | `ex_next` | out | 16 | The next sequence number to retire. |
 | **Direct fragments to the ROP (no SU: DEBUG_COLOR)** | | | |
 | `dx_valid` | in | 1 | A quad. |
@@ -88,7 +88,14 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): covered by the parent's testbench and `tools/lint.sh`.
+`sim/tb/atg_rop_beat_tb.v` (CAPS[30], the whole ROP with one sample, a D32_SFLOAT test and the occlusion counter: a quad of four beats, attachment 2 without a format, a beat without colour, a warp of two quads) prints:
+
+- `PASS atg_rop_beat.colour` — attachments 0 (R8G8B8A8_UNORM), 1 (R32_UINT) and 3 (R32G32B32A32_UINT) take the passing lanes of the quad's first beat; attachment 2 and the beat without colour write nothing; `-DMUT_DS_BEAT` fails it
+- `PASS atg_rop_beat.depth` — the depths written once per quad
+- `PASS atg_rop_beat.occ` — the counter takes each quad's passing samples once; `-DMUT_OCC_BEAT` (every beat counted) fails it
+- `PASS atg_rop_beat` at the end.
+
+`sim/tb/atg_rop_ms_tb.v` checks the whole ROP with multisampling (`atg_rop_ms.md` §8).
 
 ## 9. References
 
@@ -103,3 +110,5 @@ Wiring written in WS288 p023 (children are stubs unless their spec says otherwis
 Multisampling (the MSAA work, docs/ghci.md §12.11): `atg_rop_ms` between the order and the depth test (the per-sample coverage, depth, alpha to coverage, alpha to one); `atg_rop_ds` and `atg_rop_wb` take the 16-bit sample mask and the sample-interleaved layout; new port `ex_ms`.  `sim/tb/atg_rop_ms_tb.v` checks the whole ROP (`atg_rop_ms.md` §8).
 
 2026-10-25 (CAPS[30]): atg_rop_occ counts the popcount of atg_rop_ds's d_smask at each d_valid and d_ready (a quad with no sample left is not sent, so it adds 0); ports occ_count and occ_clear (39).  atg_rop_ds takes the facing from atg_rop_ms (o_front).
+
+2026-10-25 (CAPS[30], colour attachments): `ex_ms` became `ex_aux` (154 bits, the beat); atg_rop_ms and atg_rop_ds pass the beat's {rt, nocol, first} (o_beat, d_beat); atg_rop_occ counts only the first beat of each quad (a beat without colour included); atg_rop_wb takes d_rt and d_nocol and gives atg_rop_blend its b_rt.

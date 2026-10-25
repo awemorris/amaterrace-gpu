@@ -20,7 +20,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `rst_n` | in | 1 | Synchronous reset, active low. |
 | **STATE broadcast (from atg_cp_state)** | | | |
 | `st_we` | in | 1 | One-cycle write of STATE[st_idx]. |
-| `st_idx` | in | 9 | STATE index; this module keeps VARYING_COUNT (0x05B, 0-32 words) and MS_CTRL (0x05E: [3:0] = 2 four samples, [4] CENTROID). |
+| `st_idx` | in | 9 | STATE index; this module keeps VARYING_COUNT (0x05B, 0-64 words) and MS_CTRL (0x05E: [3:0] = 2 four samples, [4] CENTROID). |
 | `st_wdata` | in | 32 | STATE value. |
 | **The triangle** | | | |
 | `t_load` | in | 1 | atg_rx_scan takes a set-up triangle (sp_valid && sp_ready). |
@@ -36,7 +36,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | **PT of SU 0 (the read port shared with atg_rx_clip)** | | | |
 | `pt_rd` | out | 1 | Read one PT word. |
 | `pt_idx` | out | 8 | Entry. |
-| `pt_word` | out | 6 | Word (4 + varying). |
+| `pt_word` | out | 7 | Word (4 + varying word). |
 | `pt_rdata` | in | 32 | Data, the cycle after pt_rd. |
 | `pt_busy` | out | 1 | Copying (atg_rx_clip does not read). |
 | **Fragment warps to the SU (atg_su fl_*)** | | | |
@@ -47,7 +47,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `fl_lane` | out | 5 | Lane (4 × quad + lane of the quad). |
 | `fl_data` | out | 32 | Data. |
 | `fl_pw_we` | out | 1 | Primitive table word. |
-| `fl_pw_addr` | out | 12 | [10:8] primitive (0), [7:6] vertex, [5:0] word; 0xFFF the primitive map; 0xFF8-0xFFB the samples' depth slopes (4 samples). |
+| `fl_pw_addr` | out | 12 | [10:8] primitive (0), [7:6] vertex, [5:0] varying word w (PT word 4 + w); 0xFFF the primitive map; 0xFF8-0xFFB the samples' depth slopes (4 samples). |
 | `fl_pw_data` | out | 32 | Data. |
 | `fl_go` | out | 1 | Start the warp. |
 | `fl_mask` | out | 32 | EXEC: the warp's quads, all 4 lanes (helper lanes, design §3.1). |
@@ -63,7 +63,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 - Collect: quads are taken while fewer than 8 are held; at 8, or at the end marker with at least one,
   the warp is built (the end marker with none is just taken).  A warp holds quads of one triangle only.
 - After fl_gnt: the 3 vertices × VARYING_COUNT words (PT word 4 + w of the triangle's PT entry v →
-  table word {0, v, 4 + w}, vertex by vertex), then the primitive map (0xFFF, 0: one triangle per warp).
+  table word {0, v, w}, vertex by vertex), then the primitive map (0xFFF, 0: one triangle per warp).
 - Per quad, per lane (pixel (x, y), i = x − bbox x0, j = y − bbox y0 as fp32, the RX's fmul, fadd, fdiv,
   round to nearest even, denormals flushed):
   - P = (A i + B j) + C for the planes z, 1/w, b0/w, b1/w of sp_tri;
@@ -88,15 +88,16 @@ About 200 cycles per quad plus 3 × VARYING_COUNT + 2 cycles per warp; one quad 
 
 - A triangle without covered quads makes no warp and takes no sequence number.
 - Helper lanes (covered quad, uncovered lane) get the same computation, extrapolated.
-- VARYING_COUNT above 32 is taken as 32; the driver keeps it within the SU's VARY_WORDS.
+- VARYING_COUNT above 64 is taken as 64 (the whole word is compared); the driver keeps it within the SU's VARY_WORDS (GHCI: 64 with CAPS[30]).
 
 ## 8. What the TB checks
 
 `sim/tb/atg_rx_frag_tb.v` prints, in this order:
 
-- `PASS atg_rx_frag.copy` — per warp the 3 × VARYING_COUNT table writes from the PT and the map, after the grant, with pt_busy
+- `PASS atg_rx_frag.copy` — per warp the 3 × VARYING_COUNT table writes from the PT and the map, after the grant, with pt_busy; VARYING_COUNT of the file (0, 1, 4, 32) and, from the testbench, 64 and 200 (read as 64)
 - `PASS atg_rx_frag.warps` — the warps of sim/vec/rx_frag.txt (tools/rx-vectors.py, unchanged by the multisampling work): r0-r5 of every lane bit for bit and r6 the lane's coverage bit, fl_go with EXEC, coverage, sequence number and facing
 - `PASS atg_rx_frag.ms` — sim/vec/rx_frag_ms.txt (tools/rx-msaa-vectors.py, tools/msmodel.py): 4 samples with and without CENTROID and 1 sample with it: r0-r9, the d_s words after the map; `-DMUT_R3_CLAMP` and `-DMUT_DZ_SIGN` (in atg_rx_bary) fail it
+- `PASS atg_rx_frag.r3` — (CAPS[30]) sim/vec/rx_frag_dc.txt (tools/rx-vectors.py): the warps of 20 more triangles with depths in [-0.5, 1.5] and DEPTH_CLAMP[1]: r3 not clamped; `-DMUT_RX_DCLIP` fails it
 - `PASS atg_rx_frag` at the end.
 
 ## 9. References
@@ -105,6 +106,8 @@ design §3.4.3 (the fragment warp's inputs), §3.8 (clip, barycentrics, ROP orde
 
 ## 10. Status
 
-Implemented in WS288 p009 part B2 (P1, branch p1-su-gfx), split off atg_rx_scan (its p009 warp path).  320 lines, one FSM.  2026-10-25 (CAPS[30]): with DEPTH_CLAMP[1] (0x059) r3 is not clamped with one sample either (the RX clips the depth geometrically); DEPTH_CLAMP[1] = 0 as before.  Not yet in this TB (the scene of the integration step checks it).
+Implemented in WS288 p009 part B2 (P1, branch p1-su-gfx), split off atg_rx_scan (its p009 warp path).  320 lines, one FSM.  2026-10-25 (CAPS[30]): with DEPTH_CLAMP[1] (0x059) r3 is not clamped with one sample either (the RX clips the depth geometrically); DEPTH_CLAMP[1] = 0 as before.  Checked by `PASS atg_rx_frag.r3` (§8).
 
 Multisampling (the MSAA work): the lane arithmetic moved to `atg_rx_bary` (for the line limit), r6, the centroid's pass and r7-r9, d_s, MS_CTRL; `fq_cov` became `fq_scov` and `fq_ccov` (33 ports).  342 lines.
+
+Varying 64 components (Vulkan 1.0's limit): VARYING_COUNT up to 64 (was 32), pt_word 7 bits, fl_pw_addr[5:0] is the varying word w (was the PT word 4 + w, which 6 bits could not hold past w = 59).

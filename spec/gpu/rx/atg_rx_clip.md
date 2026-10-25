@@ -32,7 +32,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **PT read (shared with atg_rx_frag in atg_rx: frag has priority)** | | | |
 | `pt_rd` | out | 1 | Read one PT word. |
 | `pt_idx` | out | 8 | Entry. |
-| `pt_word` | out | 6 | Word. |
+| `pt_word` | out | 7 | Word (this module reads the position, 0-3). |
 | `pt_rdata` | in | 32 | Data, next cycle. |
 | `pt_busy` | in | 1 | atg_rx_frag is using the PT port: do not read. |
 | **To atg_rx_setup** | | | |

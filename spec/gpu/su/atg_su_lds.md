@@ -4,7 +4,7 @@ RTL: `rtl/gpu/su/atg_su_lds.v`.  Parent: atg_su.  Implemented in: p008.
 
 ## 1. Purpose and place
 
-Shared memory (LDS): lds/sts per lane, LDS_BYTES of block RAM per SU (4 KiB by default, 16 KiB KC705), word addressed; returns as long beats.
+Shared memory (LDS): lds/sts/atoms (atom with sub[4], docs/ghci.md section 12.5) per lane, LDS_BYTES of block RAM per SU (4 KiB by default, 16 KiB KC705), word addressed; returns as long beats.
 
 ## 2. Parameters
 
@@ -59,13 +59,15 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 Per group, NPHYS lanes access the RAM in 32/NPHYS... in v1 one lane per cycle (a bank per physical lane is a later optimisation); lds returns one beat per group; sts completes with a beat without data.  Addresses wrap at LDS_BYTES.
 
+atoms (unit LDS, op ATG_LDS_ATOM, the uop's sub[3:0] the operation of docs/ghci.md section 12.5): the word address is rs1 >> 2 (no immediate); each side-effect lane takes two cycles, the read and then the write of the new value (operand rs2, cmpxchg's compare value rs3), so a lane's read-modify-write ends before the next lane's read: lanes on one word act in lane order, and as the unit takes one group at a time, an atoms is indivisible with respect to every other lds, sts and atoms.  The beat returns the old values to the side-effect lanes (l_wr = the uop's WRD).
+
 ## 5. State machine
 
-IDLE → ACCESS (lanes) → RETURN → IDLE.
+IDLE → ACCESS (lanes; atoms two cycles per side-effect lane) → DRAIN → BEAT → IDLE.
 
 ## 6. Latency and throughput
 
-Latency 2 per access (design §3.4.2); one lane per cycle in v1.
+Latency 2 per access (design §3.4.2); one lane per cycle in v1, two per side-effect lane of an atoms.
 
 ## 7. Corner cases and errors
 
@@ -77,6 +79,7 @@ Latency 2 per access (design §3.4.2); one lane per cycle in v1.
 
 - `PASS atg_su_lds.rw` — sts then lds of random lanes
 - `PASS atg_su_lds.mask` — lanes outside the side-effect mask do not write
+- `PASS atg_su_lds.atom` — atoms of every operation (cmpxchg equal and not) on few words, many lanes on one word in lane order, the old values (l_wr = WRD) and the RAM afterwards, mixed with sts and lds; the immediate field is ignored.  Mutations: `MUT_LDS_ATOM_RAW` (no read cycle: the new value from a stale read) and `MUT_LDS_ATOM_NOCMP` (cmpxchg compares with rs2) make it FAIL.
 - `PASS atg_su_lds` at the end.
 
 ## 9. References
@@ -85,4 +88,4 @@ design §3.5 (LDS), §3.4.1 (custom-0 lds/sts).
 
 ## 10. Status
 
-Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_lds_tb.v`).  One lane group at a time, every lane of the group takes one cycle (NPHYS + 2 cycles per group); for sts the higher lane wins on the same word.
+Implemented in WS288 p008 part 2 (branch p1-su2; TB `sim/tb/atg_su_lds_tb.v`).  One lane group at a time, every lane of the group takes one cycle (NPHYS + 2 cycles per group); for sts the higher lane wins on the same word.  atoms: two cycles per side-effect lane (read, then write), lanes in order.

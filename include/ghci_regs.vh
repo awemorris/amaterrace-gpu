@@ -38,6 +38,7 @@ localparam [16:0] GHCI_STATUS = 17'h00034;
 localparam [16:0] GHCI_IRQ_STATUS = 17'h00038;
 localparam [16:0] GHCI_IRQ_ENABLE = 17'h0003C;
 localparam [16:0] GHCI_IRQ_SET = 17'h00040;
+localparam [16:0] GHCI_RESIDENT_WARPS = 17'h0004C;	/* R: [15:0] warps the GPU runs at once */
 localparam [16:0] GHCI_WDT_CYCLES = 17'h00044;
 localparam [16:0] GHCI_RING_BASE = 17'h00050;
 localparam [16:0] GHCI_RING_SIZE = 17'h00054;
@@ -220,7 +221,7 @@ localparam [8:0] GHCI_S_ROP_CTRL = 9'h08D;	/* [0] occlusion count, [1] fp32 blen
 /* TU (0x090-0x18F, docs/ghci.md section 8.4): slot s's words at
  * GHCI_S_TU + 16 s + GHCI_TEX_*: the image words (BASE, SIZE, IMAGE,
  * LAYER_STRIDE), the sampler words (SAMPLER, LOD), +6 TEX_FORMAT
- * (CAPS[30], docs/ghci.md section 8.5), +7..+15 reserved. */
+ * (CAPS[30], docs/ghci.md section 8.5), +7 TEX_ROW, +8..+15 reserved. */
 localparam [3:0] GHCI_TEX_BASE = 4'd0;	/* level 0 of layer 0, a multiple of 64 */
 localparam [3:0] GHCI_TEX_SIZE = 4'd1;	/* [15:0] width, [31:16] height */
 localparam [3:0] GHCI_TEX_IMAGE = 4'd2;
@@ -228,6 +229,8 @@ localparam [3:0] GHCI_TEX_LAYER_STRIDE = 4'd3;	/* bytes between layers, a multip
 localparam [3:0] GHCI_TEX_SAMPLER = 4'd4;
 localparam [3:0] GHCI_TEX_LOD = 4'd5;
 localparam [3:0] GHCI_TEX_FORMAT = 4'd6;	/* CAPS[30]: [7:0] VkFormat (0: TEX_IMAGE[7:4]) */
+localparam [3:0] GHCI_TEX_ROW = 4'd7;	/* [1:0]: rows of w_l rounded up to 2^n texels (0: packed) */
+localparam GHCI_TROW_ALIGN = 0;	/* TEX_ROW [1:0] */
 localparam GHCI_TFMT_STENCIL = 8;	/* TEX_FORMAT [8]: the stencil aspect of D24_UNORM_S8_UINT */
 localparam GHCI_TFMT_SWIZZLE = 9;	/* [20:9]: VkComponentSwizzle of R, G, B, A, 3 bits each */
 localparam GHCI_IMG_LEVELS = 0;	/* TEX_IMAGE [3:0]: the level count (0 reads as 1, > 13 as 13) */

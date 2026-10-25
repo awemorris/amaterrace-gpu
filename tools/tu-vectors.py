@@ -112,6 +112,7 @@ def rdesc(r, tiled=None, samp_mask=SAMP_BASIC, samp_set=0, clamps=False, fmt=Non
          r.choice([r.getrandbits(32) & ~63, r.getrandbits(20) & ~63, 0x10000]), samp, lod]
     d += [r.getrandbits(32) if r.random() < 0.3 else 0 for _ in range(10)]	# reserved
     d[T.D_FORMAT] = 0	# TEX_FORMAT 0: the earlier formats
+    d[T.D_ROW] = 0	# TEX_ROW 0: packed rows
     return d
 
 
@@ -861,6 +862,142 @@ def fmt_addr_vectors(r):
     return out
 
 
+def row_vectors(r):
+    """TEX_ROW (a separate random stream: the sections above stay as they
+    were): rows of w_l rounded up to 2, 4 or 8 texels in every level and
+    view type (an attachment's even rows: 1), odd widths, texels of 1-16
+    bytes, every op; tiled, compressed and multisampled images keep their
+    rows whatever TEX_ROW says.  First a fixed case: a 5 x 3 RGBA8 image of
+    three levels with even rows, texf of the last column of each level."""
+    out = []
+    stats = {'border': 0, 'passes': 0}
+    d = [0x10000, 3 << 16 | 5, img_word(3), 0x1000, 0, T.LOD_NONE] + [0] * 10
+    d[T.D_ROW] = 1
+    set_desc(out, 0, d)
+    for lv, (i, j) in enumerate(((4, 2), (1, 0), (0, 0))):
+        quad(out, r, 2, 0, d, [(i, j, lv, 0, 0)] * 4, 15, stats)
+    descs = {}
+    for n in range(800):
+        if n % 50 == 0:
+            for sl in range(32):
+                t = r.choice([0, 0, 0, 1, 2, 3])
+                dd = rdesc(r, typ=t, square=t == 3, samp_mask=0x1FFFF,
+                           cnt=r.choice([0, 1, 2, 3, 5]) if t in (1, 2) else 0)
+                w = r.choice([1, 3, 5, 7, 9, 13, 31, 33, 65, 99, 101, 255, 65535,
+                              r.randrange(1, 300) | 1, r.randrange(1, 70000)])
+                dd[T.D_SIZE] = (dd[T.D_SIZE] & ~0xFFFF) | min(w, 65535)
+                if t == 3:
+                    dd[T.D_SIZE] = (dd[T.D_SIZE] & 0xFFFF) * 0x10001
+                dd[T.D_IMAGE] = (dd[T.D_IMAGE] & ~15) | r.choice([1, 2, 3, 5, 13])
+                k = r.random()
+                if k < 0.6:
+                    dd[T.D_FORMAT] = rtfmt(r, r.choice(SAMPLED))
+                elif k < 0.7:
+                    dd[T.D_FORMAT] = rtfmt(r, r.choice(BLOCKS))
+                elif k < 0.8 and t in (0, 1):
+                    dd[T.D_IMAGE] = ((dd[T.D_IMAGE] & ~(15 | 15 << T.IMG_SAMPLES | 1 << T.IMG_TILED))
+                                     | 1 | 2 << T.IMG_SAMPLES)
+                    if dd[T.D_SIZE] & 0xFFFF > 16382:	# a multisampled image's limit
+                        dd[T.D_SIZE] = (dd[T.D_SIZE] & ~0xFFFF) | 16382
+                dd[T.D_ROW] = r.choice([1, 1, 1, 2, 3, 0, r.getrandbits(32)])
+                descs[sl] = dd
+                set_desc(out, sl, dd)
+        sl = r.randrange(32)
+        dd = descs[sl]
+        op = r.choice([0, 0, 1, 1, 2, 2, 2, 3, 0x08, 0x28, 0x41])
+        if op & 3 == 2:
+            coords = [(r.choice([r.randrange(-2, 120), r.getrandbits(32)]) & T.M32,
+                       r.choice([r.randrange(-2, 40), r.getrandbits(32)]) & T.M32,
+                       r.choice([r.randrange(-1, 14), 0]) & T.M32, r.getrandbits(32),
+                       r.choice([r.randrange(-1, 9), 0]) & T.M32) for _ in range(4)]
+        elif op & 3 == 1:
+            coords = lod_coords(r, third='w')
+        else:
+            coords = [(rcoord(r), rcoord(r), r.choice([0, f32(r.uniform(-2, 8)), rcoord(r)]),
+                       r.choice([f32(r.uniform(0, 1)), rcoord(r)]),
+                       r.choice([f32(r.uniform(-1, 3)), rcoord(r)])) for _ in range(4)]
+        quad(out, r, op, sl, dd, coords, r.choice([15, 15, r.randrange(16)]), stats,
+             off=r.choice([0, 0, r.getrandbits(12)]))
+    out.append('P rows')
+    return out
+
+
+def row_quad_vectors(r):
+    """TEX_ROW through the whole TU (the memory's words): small images of
+    odd widths with even rows (and 4- and 8-texel rows), every op."""
+    out = []
+    mem = HashMem()
+    descs = {}
+    for n in range(400):
+        if n % 50 == 0:
+            for sl in range(32):
+                t = r.choice([0, 0, 1, 2, 3])
+                d = rdesc(r, typ=t, square=t == 3, samp_mask=0x1FFFF,
+                          cnt=r.choice([0, 1, 2, 5]) if t in (1, 2) else 0)
+                d[T.D_BASE] &= 0x00FFFFC0
+                d[T.D_STRIDE] &= 0xFFFC0
+                d[T.D_SIZE] = (r.randrange(1, 40) | 1) | r.randrange(1, 40) << 16
+                if t == 3:
+                    d[T.D_SIZE] = (d[T.D_SIZE] & 0xFFFF) * 0x10001
+                if r.random() < 0.7:
+                    d[T.D_FORMAT] = rtfmt(r, r.choice(SAMPLED))
+                d[T.D_ROW] = r.choice([1, 1, 2, 3])
+                descs[sl] = d
+                set_desc(out, sl, d)
+        sl = r.randrange(32)
+        d = descs[sl]
+        op = r.choice([0, 0, 1, 2, 2, 3, 0x08, 0x28])
+        if op & 3 == 2:
+            coords = [(r.randrange(-2, 42) & T.M32, r.randrange(-2, 42) & T.M32,
+                       r.randrange(0, 3), 0, r.randrange(0, 4)) for _ in range(4)]
+        elif op & 3 == 1:
+            coords = lod_coords(r, -8, 0, third='w')
+        else:
+            coords = [(f32(r.uniform(-1, 2)), f32(r.uniform(-1, 2)), f32(r.uniform(-1, 4)),
+                       f32(r.uniform(0, 1)), f32(r.uniform(0, 3))) for _ in range(4)]
+        mask = r.choice([15, 15, r.randrange(16)])
+        off = r.choice([0, 0, r.getrandbits(12)])
+        coords = [tuple(c) + (0,) * (5 - len(c)) for c in coords]
+        words = T.sample(mem, op, d, coords, mask, off)
+        out.append('Q %02x %02x %x %03x %0160x %0128x' %
+                   (op, sl, mask, off, pack([w for c in coords for w in c]), pack(words)))
+    out.append('P rows')
+    return out
+
+
+def row_checks(r):
+    """The rows of TEX_ROW against the image layout written out plainly
+    (the levels back to back, a level's planes of rows of roundup(w_l, 2^n)
+    texels rounded up to 64 bytes), and the fixed case's addresses."""
+    d = [0x10000, 3 << 16 | 5, img_word(3), 0x1000, 0, T.LOD_NONE] + [0] * 10
+    d[T.D_ROW] = 1
+    # Level 0: rows of 6 texels; level 1 (2 x 1): 2; level 2 (1 x 1): 2.
+    assert T.texel_addr(d, 0, 4, 2) == 0x10000 + (2 * 6 + 4) * 4
+    assert T.level_offset(d, 1) == 128 and T.texel_addr(d, 1, 1, 0) == 0x10000 + 128 + 4
+    assert T.level_offset(d, 2) == 192
+    for _ in range(3000):
+        vk = r.choice([v for v in SAMPLED if not FM.info(v).block])
+        t = r.choice([0, 1, 2])
+        w, h, c = r.randrange(1, 200), r.randrange(1, 60), r.randrange(1, 9)
+        n, a = r.randrange(1, 9), r.randrange(4)
+        d = [r.getrandbits(26) << 6, h << 16 | w, img_word(n, 0, 0, t, c),
+             r.getrandbits(20) << 6, 0, T.LOD_NONE, vk] + [0] * 9
+        d[T.D_ROW] = a
+        ps = T.bpp(d)	# the texel size is not what this checks
+        off = 0
+        for lv in range(n):
+            wl, hl = max(1, w >> lv), max(1, h >> lv)
+            dl = max(1, c >> lv) if t == 2 else 1
+            row = -(-wl // (1 << a)) * (1 << a) * ps
+            pl = -(-(row * hl) // 64) * 64
+            assert T.level_offset(d, lv) == off & T.M32, (d, lv)
+            i, j, k = r.randrange(wl), r.randrange(hl), r.randrange(dl)
+            lay = r.randrange(c) if t == 1 else 0
+            want = d[T.D_BASE] + lay * d[T.D_STRIDE] + off + k * pl + j * row + i * ps
+            assert T.texel_addr(d, lv, i, j, lay, k) == want & T.M32, (d, lv, i, j, k)
+            off += pl * dl
+
+
 def rtexel(r, vk, sten):
     """A random raw texel word of a format (special values often)."""
     f = FM.info(vk)
@@ -1153,6 +1290,7 @@ def model_checks(r):
 def main():
     r = random.Random(288009)
     model_checks(r)
+    row_checks(random.Random(288116))
     ffilt_checks(random.Random(288031))
     # The filter's exactness for nearest texels: c << 16 is c / 255 rounded.
     for c in range(256):
@@ -1173,12 +1311,14 @@ def main():
     os.makedirs(VEC, exist_ok=True)
     r2 = random.Random(288027)
     r3 = random.Random(288030)
+    r4 = random.Random(288016)
+    rows, row_quads = row_vectors(r4), row_quad_vectors(r4)
     for name, lines in (('tu_addr.txt', addr_vectors(r) + ms_addr_vectors(r2) +
-                         fmt_addr_vectors(r3)),
+                         fmt_addr_vectors(r3) + rows),
                         ('tu_filter.txt', filter_vectors(r) + ms_filter_vectors(r2) +
                          u8_fmt_vectors(r3)),
                         ('tu_ffilt.txt', ffilt_vectors(r3)),
-                        ('tu_quad.txt', quad_vectors(r3))):
+                        ('tu_quad.txt', quad_vectors(r3) + row_quads)):
         with open(os.path.join(VEC, name), 'w') as fp:
             fp.write('\n'.join(lines) + '\n')
         print('tu-vectors: %d lines -> sim/vec/%s' % (len(lines), name))

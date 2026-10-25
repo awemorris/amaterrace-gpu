@@ -47,6 +47,7 @@
 #define GHCI_OP_WAIT_VSYNC 11u	/* 0 */
 #define GHCI_OP_INVALIDATE 12u	/* 0; flags: [0] D$ [1] T$ [2] constants [3] I$ */
 #define GHCI_OP_RESULT 13u	/* 3: addr, status, aux */
+#define GHCI_OP_QUERY 14u	/* 1: addr; flags [0] clear only, [1] clear after (CAPS[30], draft) */
 #define GHCI_FENCE_IRQ 0x01u	/* FENCE flags */
 #define GHCI_BLIT_WAIT 0x01u	/* BLIT flags */
 

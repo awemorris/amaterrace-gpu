@@ -87,6 +87,7 @@
 #define GSI1_KIND_TEXEL_BUFFER 11u	/* bank word of {base, elements}: a storage texel buffer */
 #define GSI1_KIND_UNIFORM_MEMORY 12u	/* bank word of {address, bytes}: a uniform buffer read with lw */
 #define GSI1_KIND_SYSTEM 13u		/* binding: GSI1_SYSTEM_*; the register it arrives in */
+#define GSI1_KIND_SCRATCH 14u		/* binding: the bank word of the scratch memory's address; bytes per warp */
 
 /*
  * The kind-specific word of a varying (kind 2, and kind 3 of a vertex
@@ -187,9 +188,14 @@
 #define GSI1_EXP_SAMPLE_MASK 0x105u
 #define GSI1_COLOR_ATTACHMENTS 4u
 
-/* lda's immediate: the primitive table word (position 0-3, varying w at 4 + w) and the vertex. */
-#define GSI1_LDA(word, vertex) ((((word) & 0x3Fu) << 2) | ((vertex) & 3u))
+/*
+ * lda's immediate (section 12.10): the PT word in [8:2] (varying w at
+ * 4 + w; words 0-3 read 0) and the vertex in [1:0].  A GPU with CAPS[30]
+ * has the varying words 0-63 (Vulkan's 64 output and input components).
+ */
+#define GSI1_LDA(word, vertex) ((((word) & 0x7Fu) << 2) | ((vertex) & 3u))
 #define GSI1_PT_VARYING(w) (4u + (w))
+#define GSI1_VARYING_WORDS 64u
 
 /*
  * Instruction fields (section 12.4).  word0 is a RISC-V 32-bit layout;
@@ -288,6 +294,10 @@
 #define GSI1_F3_LWC 6u
 #define GSI1_F3_SW 2u
 
+/* STORE: the sub field (word1 [21:17]); sw.x is made by every EXEC lane (the warp's scratch memory). */
+#define GSI1_SW_PLAIN 0u
+#define GSI1_SW_X 1u
+
 /* BRANCH: funct3 (warp branches; the offset counts instructions). */
 #define GSI1_F3_BANY 0u
 #define GSI1_F3_BNONE 1u
@@ -323,7 +333,7 @@
 /* custom-0: funct3. */
 #define GSI1_F3_LDS 0u
 #define GSI1_F3_STS 1u
-#define GSI1_F3_ATOM 2u			/* R4, sub = GSI1_ATOM_* */
+#define GSI1_F3_ATOM 2u			/* R4, sub = GSI1_ATOM_* [| GSI1_ATOM_SHARED] */
 #define GSI1_F3_FENCE 4u		/* I, imm GSI1_FENCE_* */
 #define GSI1_F3_BAR 5u
 #define GSI1_F3_WAIT 6u			/* I, imm cm | ct << 4 | cx << 8 */
@@ -342,6 +352,7 @@
 #define GSI1_ATOM_UMAX 8u
 #define GSI1_ATOM_UMIN 9u
 #define GSI1_ATOM_CMPXCHG 10u		/* rs3 is the compare value */
+#define GSI1_ATOM_SHARED (1u << 4)	/* atoms: shared memory (rs1 a byte address) */
 
 /*
  * custom-1: funct3, the funct7 modifiers of the texture R forms (section

@@ -16,6 +16,8 @@
 
 uint64_t __udivdi3(uint64_t dividend, uint64_t divisor);
 uint64_t __umoddi3(uint64_t dividend, uint64_t divisor);
+int64_t __ashldi3(int64_t value, int shift);
+int64_t __lshrdi3(int64_t value, int shift);
 
 static uint64_t udivmod64(uint64_t dividend, uint64_t divisor, uint64_t *remainder);
 
@@ -179,4 +181,72 @@ udivmod64(
 	/* Succeeded: the quotient, the remainder through the pointer. */
 	*remainder = rest;
 	return quotient;
+}
+
+/*
+ * Shifts a 64-bit value left (the compiler calls it when optimizing for
+ * size).
+ */
+int64_t
+__ashldi3(
+	int64_t value,
+	int shift)
+{
+	uint32_t halves[2];
+	uint32_t low;
+	uint32_t high;
+
+	/* The two halves (no 64-bit shift: the compiler would call this again). */
+	memcpy(halves, &value, sizeof(halves));
+	low = halves[0];
+	high = halves[1];
+
+	/* By 32 or more: the low half moves up. */
+	if (shift >= 32) {
+		high = low << (shift - 32);
+		low = 0;
+	} else if (shift > 0) {
+		high = high << shift | low >> (32 - shift);
+		low = low << shift;
+	}
+
+	/* Succeeded: the shifted value. */
+	halves[0] = low;
+	halves[1] = high;
+	memcpy(&value, halves, sizeof(value));
+	return value;
+}
+
+/*
+ * Shifts a 64-bit value right, logically (the compiler calls it when
+ * optimizing for size).
+ */
+int64_t
+__lshrdi3(
+	int64_t value,
+	int shift)
+{
+	uint32_t halves[2];
+	uint32_t low;
+	uint32_t high;
+
+	/* The two halves (no 64-bit shift: the compiler would call this again). */
+	memcpy(halves, &value, sizeof(halves));
+	low = halves[0];
+	high = halves[1];
+
+	/* By 32 or more: the high half moves down. */
+	if (shift >= 32) {
+		low = high >> (shift - 32);
+		high = 0;
+	} else if (shift > 0) {
+		low = low >> shift | high << (32 - shift);
+		high = high >> shift;
+	}
+
+	/* Succeeded: the shifted value. */
+	halves[0] = low;
+	halves[1] = high;
+	memcpy(&value, halves, sizeof(value));
+	return value;
 }
