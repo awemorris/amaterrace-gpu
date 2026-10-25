@@ -19,7 +19,8 @@
 # VIVADO_THREADS (default 8) is Vivado's general.maxThreads; OOC_FLATTEN
 # (none) keeps each module's logic in its own row of utilization_hier.rpt
 # (the default, rebuilt, optimizes across modules and the rows are only
-# approximate).
+# approximate); OOC_BLOCKS ("cell ...", e.g. "ffilt filter addr/foot")
+# writes blocks.txt (and route_blocks.txt): the worst path into each cell.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 root=$(cd "$(dirname -- "$0")/.." && pwd)
@@ -29,7 +30,7 @@ name=${OOC_NAME:-kc705}
 period=${PERIOD:-5}
 if [ "$top" = atg_top ]; then
 	shape="S_ID_W=4 S_LEN_W=8 LINE_BYTES=64 LINE_SHIFT=6 DATA_W=512
-		HAS_CPU=1 CPU_IMEM_WORDS=32768 CPU_DMEM_WORDS=8192 NSU=1
+		HAS_CPU=1 CPU_IMEM_WORDS=32768 CPU_DMEM_WORDS=16384 NSU=1
 		HAS_VF=1 HAS_RX=1 HAS_TU=1 HAS_ROP=1 HAS_JTAG=1 HAS_DISP=1 DC_HAS_I2C=1 DC_PX_FMT=1
 		ROP_STENCIL=1 MS4=1 SU_NPHYS=8 SU_NWARPS=4 SU_WARP_W=2 SU_GRP_W=2
 		SU_NREGS=64 SU_SB_ENTRIES=8 SU_SBE_W=3 SU_PACKED=1 SU_SUBGROUP=1

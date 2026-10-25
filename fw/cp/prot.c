@@ -38,7 +38,7 @@
 /*
  * One protected session: its tag and slot (0: the entry is free), how many
  * granules the table gives it, whether a write of its bytes failed part
- * way (its close then sweeps the whole table), and how many grants it has.
+ * way (its close then sweeps the whole table).
  *
  * The objects that own its granules (its memory objects, its visible
  * slabs and blocks) give them back as they are released, the last at its
@@ -49,7 +49,6 @@ struct prot_session {
 	uint32_t slot;
 	uint32_t granules;
 	uint32_t sweep;
-	uint32_t grants;
 };
 
 /*
@@ -333,8 +332,8 @@ fw_prot_public(
  * (BUFFER_GRANT).  It applies to work after it (a grant needs no drain).
  *
  * Returns 0, -1 when the session is not protected or the range is not
- * granule aligned, or -2 when the CAM (or the session's share of it) is
- * full.
+ * granule aligned, or -2 when the CAM is full (its entries are one pool
+ * for all the sessions, first come: a session may take every entry).
  */
 int
 fw_prot_grant(
@@ -359,10 +358,6 @@ fw_prot_grant(
 	if (error != 0)
 		return -1;
 
-	/* One session takes at most a quarter of the CAM. */
-	if (session->grants >= prot_grants / 4u)
-		return -2;
-
 	/* A free entry. */
 	for (index = 0; index < prot_grants; index++) {
 		if (prot_cam[index].slot == 0)
@@ -375,7 +370,6 @@ fw_prot_grant(
 
 	/* The entry: from the next request the MC judges, the range is the session's too. */
 	prot_cam_write(index, session->slot, access, first, first + count);
-	session->grants++;
 
 	/* Succeeded: the grant is in the CAM. */
 	return 0;
@@ -427,7 +421,6 @@ fw_prot_revoke(
 
 	/* The entry is invalid in the CAM and free here. */
 	prot_cam_write(index, 0, 0, 0, 0);
-	session->grants--;
 
 	/* Succeeded: the grant is gone. */
 	return 0;

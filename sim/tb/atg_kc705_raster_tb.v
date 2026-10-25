@@ -75,7 +75,10 @@ module atg_kc705_raster_tb;
 		.ddr3_cs_n(ddr3_cs_n), .ddr3_dm(ddr3_dm), .ddr3_odt(ddr3_odt),
 		.led(led), .hdmi_d(hdmi_d), .hdmi_de(hdmi_de), .hdmi_hs(hdmi_hs),
 		.hdmi_vs(hdmi_vs), .hdmi_clk(hdmi_clk),
-		.iic_scl(iic_scl), .iic_sda(iic_sda), .iic_mux_reset_n(iic_mux_reset_n)
+		.iic_scl(iic_scl), .iic_sda(iic_sda), .iic_mux_reset_n(iic_mux_reset_n),
+		/* the PCIe link held in reset (atg_kc705_pcie_tb uses it) */
+		.pcie_refclk_p(1'b0), .pcie_refclk_n(1'b1), .pcie_perst_n(1'b0), .pcie_txp(),
+		.pcie_txn(), .pcie_rxp(4'd0), .pcie_rxn(4'hF)
 	);
 
 	task fail;

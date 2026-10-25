@@ -42,7 +42,7 @@ module atg_top_fw_harness #(
 	parameter IMEM = "fw/cp/images/atg1-cp-kc705.imem.hex",
 	parameter DMEM = "fw/cp/images/atg1-cp-kc705.dmem.hex",
 	parameter IMEM_WORDS = 32768,	/* the KC705's CPU memories (the images' sizes) */
-	parameter DMEM_WORDS = 8192,
+	parameter DMEM_WORDS = 16384,
 	parameter SEED = 1
 ) (
 	input wire clk,
@@ -134,7 +134,7 @@ module atg_top_fw_harness #(
 	localparam [31:0] AREA_N = 32'h00020000;	/* class N: fill at +0, copy at +0x4000 */
 	localparam [31:0] AREA_V = 32'h00030000;	/* class V: the memory object */
 	localparam [31:0] AREA_BYTES = 32'h00008000;
-	localparam [31:0] IMG_I = 32'h00080000;	/* CPFW images: IMEM 128 KiB, DMEM 32 KiB (in the heap: */
+	localparam [31:0] IMG_I = 32'h00080000;	/* CPFW images: IMEM 128 KiB, DMEM 64 KiB (in the heap: */
 	localparam [31:0] IMG_D = 32'h000A0000;	/* lent again after the load) */
 	localparam [31:0] HEAP = 32'h00080000;	/* the firmware's heap (GHCI_HEAP) */
 	localparam [31:0] HEAP_BYTES = 32'h00080000;
@@ -467,7 +467,7 @@ module atg_top_fw_harness #(
 		mem.poke32(FENCES, 32'd0);
 		host_write(GHCI_FENCE_LAST, 32'd0);
 		host_write(GHCI_CPFW_CTRL, 32'd1 << GHCI_CPFW_CTRL_RUN);
-		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 20000);	/* IDLE, READY, running */
+		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 80000);	/* IDLE, READY, running (the boot clears the DMEM) */
 		expect_reg(GHCI_CPFW_VERSION, 32'h00020000, 32'hFFFFFFFF);
 		expect_reg(GHCI_CPFW_MBOX0 + 12, DATA_CHECK, 32'hFFFFFFFF);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
@@ -654,7 +654,7 @@ module atg_top_fw_harness #(
 		mem.poke32(FENCES, fence_value);
 		host_write(GHCI_FENCE_LAST, fence_value);
 		host_write(GHCI_CPFW_CTRL, 32'd1 << GHCI_CPFW_CTRL_RUN);
-		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 20000);
+		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 80000);
 		expect_reg(GHCI_CPFW_MBOX0 + 12, DATA_CHECK, 32'hFFFFFFFF);	/* .data restored */
 		if (errors == 0)
 			$display("PASS atg_top_fw(%0s).watchdog", NAME);

@@ -280,9 +280,12 @@ void start_case(Case &c)
 	host_write(GHCI_FENCE_LAST, 0);
 	host_write(GHCI_CPFW_CTRL, GHCI_CPFW_CTRL_RUN);
 
-	/* The firmware is up: CPFW_STATUS IDLE, READY, running (as atg_top_fw_tb). */
+	/*
+	 * The firmware is up: CPFW_STATUS IDLE, READY, running (as atg_top_fw_tb;
+	 * the boot clears the whole DMEM first).
+	 */
 	uint32_t status = 0;
-	for (int i = 0; i < 20000; i++) {
+	for (int i = 0; i < 80000; i++) {
 		status = host_read(GHCI_CPFW_STATUS);
 		if ((status & 0xFF09u) == 0x0201u)
 			break;

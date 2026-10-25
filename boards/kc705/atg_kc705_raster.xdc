@@ -96,3 +96,33 @@ set_false_path -to [get_ports {hdmi_d[*] hdmi_de hdmi_hs hdmi_vs hdmi_clk}]
 
 ## CFGBVS / CONFIG_VOLTAGE: left out until bank 0's voltage is checked
 ## (still open from the board's bring-up).
+
+## PCIe (ws288 p013): the edge connector's 100 MHz reference clock, PERST#
+## and lanes 0-3 (Gen2 x4), pins from Vivado 2026.1's KC705 board file
+## (data/xhub/boards/.../kc705/1.7/part0_pins.xml).  The GT locations of the
+## bridge's lanes come with the IP (XLNX_REF_BOARD KC705_REVC).  Not yet
+## built or tried on the board.
+set_property PACKAGE_PIN U8 [get_ports pcie_refclk_p]
+set_property PACKAGE_PIN U7 [get_ports pcie_refclk_n]
+create_clock -name pcie_refclk -period 10.000 [get_ports pcie_refclk_p]
+set_property -dict { PACKAGE_PIN G25 IOSTANDARD LVCMOS25 PULLUP true } [get_ports pcie_perst_n]
+set_false_path -from [get_ports pcie_perst_n]
+set_property PACKAGE_PIN M6 [get_ports {pcie_rxp[0]}]
+set_property PACKAGE_PIN M5 [get_ports {pcie_rxn[0]}]
+set_property PACKAGE_PIN P6 [get_ports {pcie_rxp[1]}]
+set_property PACKAGE_PIN P5 [get_ports {pcie_rxn[1]}]
+set_property PACKAGE_PIN R4 [get_ports {pcie_rxp[2]}]
+set_property PACKAGE_PIN R3 [get_ports {pcie_rxn[2]}]
+set_property PACKAGE_PIN T6 [get_ports {pcie_rxp[3]}]
+set_property PACKAGE_PIN T5 [get_ports {pcie_rxn[3]}]
+set_property PACKAGE_PIN L4 [get_ports {pcie_txp[0]}]
+set_property PACKAGE_PIN L3 [get_ports {pcie_txn[0]}]
+set_property PACKAGE_PIN M2 [get_ports {pcie_txp[1]}]
+set_property PACKAGE_PIN M1 [get_ports {pcie_txn[1]}]
+set_property PACKAGE_PIN N4 [get_ports {pcie_txp[2]}]
+set_property PACKAGE_PIN N3 [get_ports {pcie_txn[2]}]
+set_property PACKAGE_PIN P2 [get_ports {pcie_txp[3]}]
+set_property PACKAGE_PIN P1 [get_ports {pcie_txn[3]}]
+## The bridge's user clock (axi_aclk_out) and gclk are asynchronous: the
+## crossings are am_axi_cdc/am_sync (BAR0, MSI) and the AXI clock converter
+## (BAR2).

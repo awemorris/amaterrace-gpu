@@ -47,7 +47,7 @@ module atg_top #(
 	parameter EXT_CLIENT = 0,	/* one more MC client outside (the KC705's DC), high priority */
 	parameter HAS_JTAG = 0,	/* a second register-bus master (am_jtag_regs, KC705) */
 	parameter HAS_DISP = 0,	/* the display controller atg_dc, a unit of the GPU (KC705): its
-				 * registers at +0x10000, MC client C_DC (not with EXT_CLIENT) */
+				 * registers in the CP's DISP2 window (0x200), MC client C_DC (not with EXT_CLIENT) */
 	parameter DC_HAS_I2C = 0,	/* atg_dc's I2C master (the KC705's ADV7511) */
 	parameter DC_FIFO_LOG2 = 11,	/* atg_dc's pixel FIFO (720p: 11) */
 	parameter DC_PX_FMT = 0,	/* atg_dc's parallel output (1: the ADV7511's YCbCr 4:2:2) */

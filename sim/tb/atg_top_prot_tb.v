@@ -106,7 +106,7 @@ module atg_top_prot_tb;
 
 	atg_top #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .HAS_CPU(1),
 		.CPU_IMEM_INIT(IMEM), .CPU_DMEM_INIT(DMEM), .CPU_IMEM_WORDS(32768),
-		.CPU_DMEM_WORDS(8192), .HAS_PROT(1), .PROT_SLOTS(31), .PROT_GRANTS(64),
+		.CPU_DMEM_WORDS(16384), .HAS_PROT(1), .PROT_SLOTS(31), .PROT_GRANTS(64),
 		.PROT_GIDX_W(6), .PROT_PLB(16), .PROT_PLB_W(4)) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.s_awaddr(h_awaddr), .s_awid(h_awid), .s_awvalid(h_awvalid), .s_awready(h_awready),

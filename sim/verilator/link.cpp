@@ -339,5 +339,5 @@ extern "C" void atg_link_stats(struct atg_link_stats *stats)
 
 extern "C" uint32_t atg_link_dmem(uint32_t offset)
 {
-	return top->rootp->atg_top__DOT__g_cpu__DOT__cpu__DOT__mem__DOT__dmem[(offset / 4u) % 8192u];
+	return top->rootp->atg_top__DOT__g_cpu__DOT__cpu__DOT__mem__DOT__dmem[(offset / 4u) % 16384u];
 }

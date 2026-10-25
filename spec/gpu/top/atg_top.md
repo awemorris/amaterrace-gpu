@@ -85,7 +85,7 @@ The Verilator harness (`sim/verilator/harness.cpp`, `run.sh`) runs every mode in
 Implemented (70aaff5, p002; unchanged at a217bf8). 317 lines, no FSM, one clock. **U38: 57 ports > 40** (29 memory AXI + 24 host AXI). A top that exposes two AXI interfaces cannot meet 40 by splitting; proposed: a U38 rule that a standard AXI interface counts as one port group (decision for Q1/user; same question as `am_axi_master` and `atg_mc`). Measured the whole of CP, BLT and MC on a Zynq-7010 (XC7Z010) (p003): 3,802 LUT, 3,719 FF, 0.5 BRAM, 0 DSP. Differences from design.md: none in what exists; §7.6's block parameters and the DC/other blocks do not exist at a217bf8 (P1's part 1 adds them).
 
 **WS288 p023 (P1) additions**: block parameters (design §7.6; the defaults keep CP, BLT and MC alone):
-`HAS_CPU` (with `CPU_IMEM_INIT`/`CPU_DMEM_INIT` and the memories `CPU_IMEM_WORDS`/`CPU_DMEM_WORDS`, 8192/4096 by default, 16384/8192 in the KC705 shapes) so far; MC client numbering 0 CP, 1 BLT, then
+`HAS_CPU` (with `CPU_IMEM_INIT`/`CPU_DMEM_INIT` and the memories `CPU_IMEM_WORDS`/`CPU_DMEM_WORDS`, 8192/4096 by default, 32768/16384 in the KC705 shapes) so far; MC client numbering 0 CP, 1 BLT, then
 the present blocks (`C_CPU` = 2, ...), `HIGH_MASK` = CP only; the CP's new ports wired (to
 atg_cpu when present, to constants otherwise).  `tools/lint.sh` lints the HAS_CPU shape.
 

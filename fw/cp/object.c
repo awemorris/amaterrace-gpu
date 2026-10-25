@@ -17,8 +17,8 @@
 #include "fw.h"
 
 /* Objects the table holds, and its hash buckets (a power of two). */
-#define OBJECT_MAX 160u
-#define OBJECT_BUCKETS 64u
+#define OBJECT_MAX 512u
+#define OBJECT_BUCKETS 128u
 
 /*
  * The object table.
