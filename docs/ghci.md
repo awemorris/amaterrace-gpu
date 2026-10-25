@@ -102,7 +102,7 @@ earlier work has completed.
 | --- | --- |
 | Host control registers, extended capabilities, CP states, the ring, fences, interrupts, faults, quiesce and reset, the debug port, the display capability | Draft |
 | Memory model (unified and discrete, the MEM capability), platform and PCIe bindings | Draft |
-| Session protection (optional, the PROT capability) | Draft |
+| Session protection (optional, the PROT capability) | Draft, version 1 complete: Amaterrace's KC705 configuration implements it (31 sessions, 64 grants) and zedBSD's driver uses it; not yet run on a board |
 | The command set | Draft: the packet envelope and the native micro-operations; the class 2 operations follow the Kei GPU command protocol |
 | The state register file | Draft: the mechanism and the blitter range. The other ranges follow the command set |
 | The standard shader ISA (GSI1) | Draft (section 12) |
@@ -1179,7 +1179,10 @@ client's buffer that a compositor imports) with:
 - On a GPU without the PROT capability, both gpu-ops fail with
   VK_ERROR_FEATURE_NOT_PRESENT. A grant to a session that is not
   protected fails with VK_ERROR_INITIALIZATION_FAILED; a grant that
-  exceeds PROT_CAPS[31:16] fails with VK_ERROR_OUT_OF_DEVICE_MEMORY.
+  exceeds PROT_CAPS[31:16] fails with VK_ERROR_OUT_OF_DEVICE_MEMORY. An
+  implementation may also limit the grants of one session (so that one
+  client cannot use them all up; Amaterrace: a quarter of PROT_CAPS[31:16]),
+  with the same error.
 - Sessions are the driver's numbers, not operating-system process IDs. The
   driver maps processes to sessions, and turns its sharing decisions (an
   imported buffer, a closed file) into grants and revokes.
@@ -1207,7 +1210,11 @@ fragment does not write, and the GPU's caches. Data that the same
 session left earlier may still be seen.
 
 **Violations.** A refused access is a fault of kind 1 with FAULT_INFO[9]
-set; FAULT_INFO[31:24] (the job tag) names the session. In version 1,
+set; FAULT_INFO[31:24] (the job tag) names the session. A watchdog fault
+while the GPU waits for a protected session's work to finish before
+another session's work names the session whose work it waited for. KICK
+(section 14) runs as session 0: it is refused (kind 6) while the units
+still run for a protected session. In version 1,
 recovery is still for the whole device (section 10): protection keeps a
 client from reading or writing another's memory, but not from stopping
 the other clients' work (an access outside a buffer that a program
