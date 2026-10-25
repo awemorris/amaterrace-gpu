@@ -107,39 +107,36 @@ module atg_tu_filter (
 		end
 	endfunction
 
-	/* A / (255 × 2^32): A × 0x0101010101 × 2^-72 (A < 2^40). */
-	function [31:0] conv40;
+	/* The conversions are rnd81(p, eb) of the products below; each lane's
+	 * four components share four rnd81 (the cases that use them exclude
+	 * one another).
+	 * A / (255 × 2^32): A × 0x0101010101 × 2^-72 (A < 2^40), eb 55; an
+	 * 8-bit a / 255 is A = a × 2^32. */
+	function [80:0] p40;
 		input [39:0] a;
-		reg [80:0] p;
-		begin
-			p = {41'd0, a} + ({41'd0, a} << 8) + ({41'd0, a} << 16) + ({41'd0, a} << 24) +
-				({41'd0, a} << 32);
-			conv40 = rnd81(p, 8'd55);
-		end
+		p40 = {41'd0, a} + ({41'd0, a} << 8) + ({41'd0, a} << 16) + ({41'd0, a} << 24) +
+			({41'd0, a} << 32);
 	endfunction
 
-	/* c / 31 (5 bits): c × sum(2^5i, i < 16) × 2^-80; c / 63 (6 bits):
-	 * c × sum(2^6i, i < 13) × 2^-78 (never a tie: rounding is exact). */
-	function [31:0] conv5;
+	/* c / 31 (5 bits): c × sum(2^5i, i < 16) × 2^-80, eb 47; c / 63 (6
+	 * bits): c × sum(2^6i, i < 13) × 2^-78, eb 49 (never a tie: rounding
+	 * is exact). */
+	function [80:0] p5;
 		input [4:0] c;
-		reg [80:0] p;
 		integer i;
 		begin
-			p = 81'd0;
+			p5 = 81'd0;
 			for (i = 0; i < 16; i = i + 1)
-				p = p + ({76'd0, c} << (5 * i));
-			conv5 = rnd81(p, 8'd47);
+				p5 = p5 | ({76'd0, c} << (5 * i));
 		end
 	endfunction
-	function [31:0] conv6;
+	function [80:0] p6;
 		input [5:0] c;
-		reg [80:0] p;
 		integer i;
 		begin
-			p = 81'd0;
+			p6 = 81'd0;
 			for (i = 0; i < 13; i = i + 1)
-				p = p + ({75'd0, c} << (6 * i));
-			conv6 = rnd81(p, 8'd49);
+				p6 = p6 | ({75'd0, c} << (6 * i));
 		end
 	endfunction
 
@@ -171,30 +168,12 @@ module atg_tu_filter (
 		end
 	endfunction
 
-	/* An 8-bit value a / 255. */
-	function [31:0] conv8;
-		input [7:0] a;
-		conv8 = conv40({a, 32'd0});
-	endfunction
-
-	/* A signed 16-bit value with 8 fraction bits as fp32 (exact). */
-	function [31:0] fix8;
-		input [15:0] v;
-		reg [15:0] a;
-		begin
-			a = v[15] ? -v : v;
-			fix8 = {v[15], 31'd0} | rnd81({65'd0, a}, 8'd119);
-		end
-	endfunction
-
-	/* unorm24 to fp32: c × (2^48 + 2^24 + 1) × 2^-72. */
-	function [31:0] conv24;
+	/* unorm24 to fp32: c × (2^48 + 2^24 + 1) × 2^-72, eb 55.  A signed
+	 * 16-bit value v with 8 fraction bits as fp32 (exact): the sign of v
+	 * and rnd81(|v|, 119). */
+	function [80:0] p24;
 		input [23:0] c;
-		reg [80:0] p;
-		begin
-			p = {57'd0, c} + ({57'd0, c} << 24) + ({57'd0, c} << 48);
-			conv24 = rnd81(p, 8'd55);
-		end
+		p24 = {57'd0, c} | ({57'd0, c} << 24) | ({57'd0, c} << 48);
 	endfunction
 
 	reg [1:0] st;
@@ -225,7 +204,7 @@ module atg_tu_filter (
 	wire d16 = vkf == 8'd124;
 	wire [32:0] dkey = atg_depth_key(dref);
 	wire dnan = dref[30:23] == 8'hFF && dref[22:0] != 23'd0;
-	reg [127:0] res;
+	reg [127:0] res, rn;
 	reg [159:0] sums;
 	reg [31:0] tex, tx0;
 	reg [3:0] ok;
@@ -235,6 +214,11 @@ module atg_tu_filter (
 	reg [39:0] rr;
 	reg [31:0] gt;
 	reg [7:0] gb;
+	reg [15:0] fx, fa;
+	reg [80:0] np;
+	reg [7:0] ne;
+	reg [32:0] ka, kb;
+	reg kn;
 	integer c, t, g;
 	/* Gather: the component the swizzle puts in place ctl[15:14] (gsw 1, 2:
 	 * the constants), and its byte (BGRA8 swaps R and B). */
@@ -242,18 +226,19 @@ module atg_tu_filter (
 	wire [1:0] gsrc = gsw >= 3'd3 && gsw <= 3'd6 ? gsw[1:0] + 2'd1 : ctl[15:14];
 	wire [1:0] gsel = ctl[1] && !gsrc[0] ? gsrc ^ 2'd2 : gsrc;
 	always @(*) begin
-		gt = 32'd0;
-		gb = 8'd0;
-		/* Depth compare of the four texels. */
+		/* Depth compare of the four texels: D32F the fp32 keys, D16 and D24
+		 * the integers. */
+		ka = ctl[1] ? dkey : d16 ? {17'd0, dref16} : {9'd0, dref24};
 		for (t = 0; t < 4; t = t + 1) begin
 			tex = lt[t*32 +: 32];
-			ok[t] = ctl[1] ? atg_depth_pass(ctl[12:10], dkey, atg_depth_key(tex),
-				dnan || (tex[30:23] == 8'hFF && tex[22:0] != 23'd0)) :
-				d16 ? atg_depth_pass(ctl[12:10], {17'd0, dref16}, {17'd0, tex[15:0]}, 1'b0) :
-				atg_depth_pass(ctl[12:10], {9'd0, dref24}, {9'd0, tex[23:0]}, 1'b0);
+			kb = ctl[1] ? atg_depth_key(tex) : d16 ? {17'd0, tex[15:0]} : {9'd0, tex[23:0]};
+			kn = ctl[1] && (dnan || (tex[30:23] == 8'hFF && tex[22:0] != 23'd0));
+			ok[t] = atg_depth_pass(ctl[12:10], ka, kb, kn);
 		end
 		res = 128'd0;
+		rn = 128'd0;
 		sums = 160'd0;
+		tx0 = lt[31:0];
 		for (c = 0; c < 4; c = c + 1) begin
 			if (ctl[9]) begin
 				/* (pass, 0, 0, 1) as bytes */
@@ -278,33 +263,56 @@ module atg_tu_filter (
 				{2'd0, ca, 16'd0};
 			rr = (ctl[5] ? al[c*40 +: 40] : 40'd0) + {16'd0, r[23:0]} * {22'd0, wp};
 			sums[c*40 +: 40] = rr;
-			res[c*32 +: 32] = conv40(rr);
+			/* Component c's conversion (word c of a gather): the LOD query's
+			 * fixed point; gather's D24 or byte; a depth texel's D24; RGB565's
+			 * texf; the sum. */
+			t = c == 0 ? 2 : c == 1 ? 3 : c == 2 ? 1 : 0;
+			gt = lt[t*32 +: 32];
+			gb = gt[gsel*8 +: 8];
+			fx = val[k*32 + 16*(c & 1) +: 16];
+			fa = fx[15] ? -fx : fx;
+			ne = 8'd55;
+			if (ctl[2]) begin
+				np = {65'd0, fa};
+				ne = 8'd119;
+			end else if (ctl[13])
+				np = ctl[8] ? p24(gt[23:0]) : p40({gb, 32'd0});
+			else if (ctl[8] && !ctl[9] && c == 0)
+				np = p24(tx0[23:0]);
+			else if (ctl[19] && ctl[3] && c == 1) begin
+				np = p6(lraw[10:5]);
+				ne = 8'd49;
+			end else if (ctl[19] && ctl[3] && c != 3) begin
+				np = p5(c == 0 ? lraw[15:11] : lraw[4:0]);
+				ne = 8'd47;
+			end else
+				np = p40(rr);
+			rn[c*32 +: 32] = rnd81(np, ne);
 		end
-		tx0 = lt[31:0];
+		res = rn;
 		if (ctl[19] && ctl[3])	/* texf of RGB565: exact */
-			res = {32'h3F800000, conv5(lraw[4:0]), conv6(lraw[10:5]), conv5(lraw[15:11])};
+			res[127:96] = 32'h3F800000;
 		if (ctl[8] && !ctl[9])
-			res = {32'h3F800000, 64'd0, ctl[1] ? tx0 : conv24(tx0[23:0])};
+			res = {32'h3F800000, 64'd0, ctl[1] ? tx0 : rn[31:0]};
 		if (ctl[13]) begin
 			/* gather: word g is texel 2, 3, 1, 0 */
 			for (g = 0; g < 4; g = g + 1) begin
 				t = g == 0 ? 2 : g == 1 ? 3 : g == 2 ? 1 : 0;
 				gt = lt[t*32 +: 32];
-				gb = gt[gsel*8 +: 8];
 				if (ctl[9])
 					res[g*32 +: 32] = ok[t] ? 32'h3F800000 : 32'd0;
 				else if (gsw == 3'd1 || gsw == 3'd2)
 					res[g*32 +: 32] = gsw == 3'd2 ? 32'h3F800000 : 32'd0;
 				else if (ctl[8])
-					res[g*32 +: 32] = gsrc == 2'd0 ? (ctl[1] ? gt : conv24(gt[23:0])) :
+					res[g*32 +: 32] = gsrc == 2'd0 ? (ctl[1] ? gt : rn[g*32 +: 32]) :
 						gsrc == 2'd3 ? 32'h3F800000 : 32'd0;
 				else
-					res[g*32 +: 32] = conv8(gb);
+					res[g*32 +: 32] = rn[g*32 +: 32];
 			end
 		end else
 			res = swz4(res, ctl[47:36]);
 		if (ctl[2])
-			res = ctl[16] ? {64'd0, fix8(val[k*32 + 16 +: 16]), fix8(val[k*32 +: 16])} :
+			res = ctl[16] ? {64'd0, val[k*32 + 31], rn[62:32], val[k*32 + 15], rn[30:0]} :
 				{96'd0, val[k*32 +: 32]};
 		if (!mask[k])
 			res = 128'd0;
