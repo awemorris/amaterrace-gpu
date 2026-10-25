@@ -123,28 +123,12 @@ module atg_su_xu #(
 		end
 	endfunction
 
-	/* An integer n (< 2^41) times 2^e, sign s, to fp32 (RNE, flushed). */
-	function [31:0] nr;
-		input s;
-		input [40:0] v;
-		input signed [11:0] e;
-		input sticky;
-		reg [5:0] p;
-		reg [40:0] w;
-		integer i;
-		begin
-			p = 6'd0;
-			for (i = 0; i < 41; i = i + 1)
-				if (v[i])
-					p = i[5:0];
-			w = v << (6'd40 - p);
-			nr = atg_su_rnd(s, {6'd0, p} + e + 12'sd127, w[40:17], w[16], |w[15:0] || sticky,
-				3'd0);
-		end
-	endfunction
-
+	wire [21:0] carry_unused;	/* the adders' carries and borrows */
 	wire [LW:0] first = next_lane(x_mask[NPHYS-1:0], {(LW+1){1'b0}});
-	wire [LW:0] after = next_lane(rmask, {1'b0, li} + 1'b1);
+	wire [LW:0] li1;
+	am_add #(.W(LW+1)) u_li1 (.a({1'b0, li}), .b({(LW+1){1'b0}}), .ci(1'b1), .s(li1),
+		.co(carry_unused[0]));
+	wire [LW:0] after = next_lane(rmask, li1);
 	/* The lane's input, flushed, and its fields. */
 	wire [31:0] lx = atg_su_flush(rx[li*32 +: 32]);
 	wire ls = lx[31];
@@ -156,49 +140,108 @@ module atg_su_xu #(
 	wire lodd = le[0];	/* e - 150 odd */
 	wire [24:0] lmm = lodd ? {lm, 1'b0} : {1'b0, lm};
 	/* ee/2 with ee = e - 150 (- 1 when odd). */
-	wire signed [11:0] hee = ($signed({4'd0, le}) - 12'sd150 - $signed({11'd0, lodd})) >>> 1;
+	wire [11:0] hee_d, esh, tsh;
+	wire [6:0] ersh;
+	wire [7:0] trsh;
+	am_sub #(.W(12)) u_hee (.a({4'd0, le}), .b(12'd150), .bi(lodd), .d(hee_d), .bo(carry_unused[1]));
+	wire signed [11:0] hee = $signed(hee_d) >>> 1;
 	/* exp2: x in Q8.30 (sh = e - 120 <= 14 here). */
-	wire signed [11:0] esh = $signed({4'd0, le}) - 12'sd120;
-	wire [6:0] ersh = 7'd120 - le[6:0];
-	wire [38:0] ev0 = esh >= 0 ? {15'd0, lm} << esh[3:0] : {15'd0, lm} >> ersh;
-	wire signed [38:0] ev = ls ? -$signed(ev0) : $signed(ev0);
+	am_sub #(.W(12)) u_esh (.a({4'd0, le}), .b(12'd120), .bi(1'b0), .d(esh), .bo(carry_unused[2]));
+	am_sub #(.W(7)) u_ersh (.a(7'd120), .b(le[6:0]), .bi(1'b0), .d(ersh), .bo(carry_unused[3]));
+	wire [38:0] ev0, ev;
+	am_shift #(.W(39), .SW(7)) u_ev0 (.a({15'd0, lm}), .amt(esh[11] ? ersh : {3'd0, esh[3:0]}),
+		.left(!esh[11]), .arith(1'b0), .y(ev0));
+	am_addsub #(.W(39)) u_ev (.a(39'd0), .b(ev0), .sub(ls), .s(ev), .co(carry_unused[6]));
 	/* sin/cos: the turns. */
-	wire [82:0] tp = lm * XU_INV2PI;
-	wire signed [11:0] tsh = $signed({4'd0, le}) - 12'sd171;
-	wire [7:0] trsh = 8'd171 - le;
-	wire [82:0] tpr = tp >> trsh;
-	wire [39:0] tpl = tp[39:0] << tsh[5:0];
-	wire [39:0] t0 = tsh >= 0 ? (tsh >= 12'sd40 ? 40'd0 : tpl) : tpr[39:0];
-	wire [39:0] t1 = ls ? 40'd0 - t0 : t0;
-	wire [39:0] tt = rop == ATG_XU_COS[2:0] ? t1 + 40'h4000000000 : t1;
+	wire [82:0] tp, tps;
+	am_mul #(.AW(24), .BW(59)) u_tp (.clk(clk), .en(1'b1), .a(lm), .b(XU_INV2PI), .p(tp));
+	am_sub #(.W(12)) u_tsh (.a({4'd0, le}), .b(12'd171), .bi(1'b0), .d(tsh), .bo(carry_unused[4]));
+	am_sub #(.W(8)) u_trsh (.a(8'd171), .b(le), .bi(1'b0), .d(trsh), .bo(carry_unused[5]));
+	/* The low 40 bits of tp[39:0] << tsh or tp >> -tsh: one shifter. */
+	am_shift #(.W(83), .SW(8)) u_tps (.a(tp), .amt(tsh[11] ? trsh : {2'd0, tsh[5:0]}), .left(!tsh[11]),
+		.arith(1'b0), .y(tps));
+	wire [39:0] t0 = $signed(tsh) >= 12'sd40 ? 40'd0 : tps[39:0];
+	wire [39:0] t1, tt;
+	am_addsub #(.W(40)) u_t1 (.a(40'd0), .b(t0), .sub(ls), .s(t1), .co(carry_unused[7]));
+	am_add #(.W(40)) u_tt (.a(t1), .b(rop == ATG_XU_COS[2:0] ? 40'h4000000000 : 40'd0), .ci(1'b0),
+		.s(tt), .co(carry_unused[8]));
 	/* The shared multiplier (exp2: y * K, log2: y * y). */
 	wire [41:0] mb = rop == ATG_XU_EXP2[2:0] ? {2'd0, xu_expk(step[4:0])} : y;
-	wire [83:0] prod = y * mb;
+	wire [83:0] prod;
+	am_mul #(.AW(42), .BW(42)) u_prod (.clk(clk), .en(1'b1), .a(y), .b(mb), .p(prod));
 	/* The division step (rcp, rsq phase 1) and the sqrt step. */
-	wire [34:0] dtr = {rem, 1'b0} - (rop == ATG_XU_RCP[2:0] ? {11'd0, lm} : {5'd0, root});
+	wire [34:0] dtr, strl;
 	wire [33:0] srem = {rem[31:0], n[59:58]};
-	wire [34:0] strl = {1'b0, srem} - {3'd0, root, 2'b01};
+	am_sub #(.W(35)) u_dtr (.a({rem, 1'b0}), .b(rop == ATG_XU_RCP[2:0] ? {11'd0, lm} : {5'd0, root}),
+		.bi(1'b0), .d(dtr), .bo(carry_unused[9]));
+	am_sub #(.W(35)) u_strl (.a({1'b0, srem}), .b({3'd0, root, 2'b01}), .bi(1'b0), .d(strl),
+		.bo(carry_unused[10]));
 	wire [33:0] snext = strl[34] ? srem : strl[33:0];
-	/* The step counts. */
-	wire [5:0] nsteps = rop == ATG_XU_RCP[2:0] ? 6'd28 : rop == ATG_XU_FSQRT[2:0] ? 6'd26 :
-		rop == ATG_XU_RSQ[2:0] ? (ph ? 6'd29 : 6'd30) :
-		(rop == ATG_XU_SIN[2:0] || rop == ATG_XU_COS[2:0]) ? 6'd26 : 6'd30;
+	/* The step counts, less one. */
+	wire [5:0] nsteps_m1 = rop == ATG_XU_RCP[2:0] ? 6'd27 : rop == ATG_XU_FSQRT[2:0] ? 6'd25 :
+		rop == ATG_XU_RSQ[2:0] ? (ph ? 6'd28 : 6'd29) :
+		(rop == ATG_XU_SIN[2:0] || rop == ATG_XU_COS[2:0]) ? 6'd25 : 6'd29;
 	wire [39:0] atn = xu_atan(step[4:0]);
-	wire [10:0] lue = {3'd0, le} - 11'd127;
+	wire [10:0] lue;
+	am_sub #(.W(11)) u_lue (.a({3'd0, le}), .b(11'd127), .bi(1'b0), .d(lue), .bo(carry_unused[11]));
 	wire [40:0] lv = {lue, fr};	/* log2: (e - 127) << 30 | fraction, signed */
-	/* The result of a finished lane (state FIN). */
-	reg [31:0] fin;
+	wire [40:0] lva;
+	am_addsub #(.W(41)) u_lva (.a(41'd0), .b(lv), .sub(lv[40]), .s(lva), .co(carry_unused[12]));
+	/* The result of a finished lane (state FIN): an integer v (< 2^41) times 2^e, sign s, to
+	 * fp32 (RNE, flushed). */
+	reg ns, nst, nz, fbit;	/* nz: the result is 0; fbit: fr[29 - step] (exp2) */
+	reg [40:0] nv;
+	reg [11:0] ne;
+	reg [5:0] np;
+	integer pi;
 	always @(*) begin
+		{ns, nst, nz, ne} = {3'b000, ex};
 		case (rop)
-		ATG_XU_RCP[2:0]: fin = nr(ls, {13'd0, root[27:0]}, ex, rem != 34'd0);
-		ATG_XU_FSQRT[2:0]: fin = nr(1'b0, {15'd0, root[25:0]}, ex, rem != 34'd0);
-		ATG_XU_RSQ[2:0]: fin = nr(1'b0, {12'd0, n[28:0]}, ex, rem != 34'd0 || stk);
-		ATG_XU_EXP2[2:0]: fin = nr(1'b0, y[40:0], ex, 1'b0);
-		ATG_XU_LOG2[2:0]: fin = lv == 41'd0 ? 32'd0 :
-			nr(lv[40], lv[40] ? 41'd0 - lv : lv, -12'sd30, 1'b0);
-		default: fin = cy <= 36'sd0 ? 32'd0 : nr(qneg, {5'd0, cy}, -12'sd34, 1'b0);
+		ATG_XU_RCP[2:0]: {ns, nv, nst} = {ls, 13'd0, root[27:0], rem != 34'd0};
+		ATG_XU_FSQRT[2:0]: {nv, nst} = {15'd0, root[25:0], rem != 34'd0};
+		ATG_XU_RSQ[2:0]: {nv, nst} = {12'd0, n[28:0], rem != 34'd0 || stk};
+		ATG_XU_EXP2[2:0]: nv = y[40:0];
+		ATG_XU_LOG2[2:0]: {ns, nv, ne, nz} = {lv[40], lva, -12'sd30, lv == 41'd0};
+		default: {ns, nv, ne, nz} = {qneg, 5'd0, cy, -12'sd34, cy <= 36'sd0};
 		endcase
+		np = 6'd0;
+		for (pi = 0; pi < 41; pi = pi + 1)
+			if (nv[pi])
+				np = pi[5:0];
+		fbit = 1'b0;
+		for (pi = 0; pi < 30; pi = pi + 1)
+			if (step[4:0] == pi[4:0])
+				fbit = fr[29 - pi];
 	end
+	wire [5:0] nsh;
+	wire [40:0] nw;
+	wire [11:0] ne127, nexp;
+	am_sub #(.W(6)) u_nsh (.a(6'd40), .b(np), .bi(1'b0), .d(nsh), .bo(carry_unused[13]));
+	am_shift #(.W(41), .SW(6)) u_nw (.a(nv), .amt(nsh), .left(1'b1), .arith(1'b0), .y(nw));
+	am_add #(.W(12)) u_ne (.a(ne), .b(12'd127), .ci(1'b0), .s(ne127), .co(carry_unused[14]));
+	am_add #(.W(12)) u_nx (.a(ne127), .b({6'd0, np}), .ci(1'b0), .s(nexp), .co(carry_unused[15]));
+	wire [31:0] nr = atg_su_rnd(ns, nexp, nw[40:17], nw[16], |nw[15:0] || nst, 3'd0);
+	wire [31:0] fin = nz ? 32'd0 : nr;
+
+	/* LOAD: the result's exponent (rcp, rsq, fsqrt, exp2); z of sin/cos. */
+	wire [23:0] exab = rop == ATG_XU_RCP[2:0] ? {12'd100, 4'd0, le} :	/* -50 - (e - 150) */
+		rop == ATG_XU_RSQ[2:0] ? {-12'sd40, hee} : rop == ATG_XU_FSQRT[2:0] ? {hee, 12'd13} :
+		{{3{ev[38]}}, ev[38:30], 12'd38};
+	wire [11:0] ex_l;
+	wire [38:0] zq;
+	am_sub #(.W(12)) u_ex (.a(exab[23:12]), .b(exab[11:0]), .bi(1'b0), .d(ex_l), .bo(carry_unused[16]));
+	am_sub #(.W(39)) u_zq (.a(39'h4000000000), .b({1'b0, tt[37:0]}), .bi(1'b0), .d(zq),
+		.bo(carry_unused[17]));
+	/* STEP: the step count and the CORDIC rotation. */
+	wire [5:0] step1;
+	am_add #(.W(6)) u_step (.a(step), .b(6'd0), .ci(1'b1), .s(step1), .co(carry_unused[18]));
+	wire [35:0] cysh, cxsh, cx_n, cy_n;
+	wire [40:0] z_n;
+	am_shift #(.W(36), .SW(6)) u_cysh (.a(cy), .amt(step), .left(1'b0), .arith(1'b1), .y(cysh));
+	am_shift #(.W(36), .SW(6)) u_cxsh (.a(cx), .amt(step), .left(1'b0), .arith(1'b1), .y(cxsh));
+	am_addsub #(.W(36)) u_cx (.a(cx), .b(cysh), .sub(!z[40]), .s(cx_n), .co(carry_unused[19]));
+	am_addsub #(.W(36)) u_cy (.a(cy), .b(cxsh), .sub(z[40]), .s(cy_n), .co(carry_unused[20]));
+	am_addsub #(.W(41)) u_z (.a(z), .b({1'b0, atn}), .sub(!z[40]), .s(z_n), .co(carry_unused[21]));
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -240,7 +283,7 @@ module atg_su_xu #(
 						sres <= 1'b0;
 						rem <= 34'h000400000;
 						root <= 30'd0;
-						ex <= 12'sd100 - $signed({4'd0, le});	/* -50 - (e - 150) */
+						ex <= ex_l;
 						st <= STEP;
 					end
 				ATG_XU_RSQ[2:0], ATG_XU_FSQRT[2:0]:
@@ -256,7 +299,7 @@ module atg_su_xu #(
 							{1'b0, lmm, 26'd0, 8'd0};
 						rem <= 34'd0;
 						root <= 30'd0;
-						ex <= rop == ATG_XU_RSQ[2:0] ? -12'sd40 - hee : hee - 12'sd13;
+						ex <= ex_l;
 						st <= STEP;
 					end
 				ATG_XU_EXP2[2:0]:
@@ -268,7 +311,7 @@ module atg_su_xu #(
 						sres <= 1'b0;
 						y <= 42'd1 << 38;
 						fr <= ev[29:0];
-						ex <= {{3{ev[38]}}, ev[38:30]} - 12'sd38;
+						ex <= ex_l;
 						st <= STEP;
 					end
 				ATG_XU_LOG2[2:0]:
@@ -292,8 +335,7 @@ module atg_su_xu #(
 					else begin
 						sres <= 1'b0;
 						qneg <= tt[39];
-						z <= tt[38] ? $signed({2'b0, 39'h4000000000 - {1'b0, tt[37:0]}}) :
-							$signed({3'b0, tt[37:0]});
+						z <= tt[38] ? $signed({2'b0, zq}) : $signed({3'b0, tt[37:0]});
 						cx <= $signed({1'b0, XU_CG[34:0]});
 						cy <= 36'sd0;
 						st <= STEP;
@@ -301,7 +343,7 @@ module atg_su_xu #(
 				endcase
 			end
 			STEP: begin
-				step <= step + 6'd1;
+				step <= step1;
 				case (rop)
 				ATG_XU_RCP[2:0]: begin
 					if (!dtr[34]) begin
@@ -327,7 +369,7 @@ module atg_su_xu #(
 						root <= {root[28:0], !strl[34]};
 					end
 				ATG_XU_EXP2[2:0]:
-					if (fr[5'd29 - step[4:0]])
+					if (fbit)
 						y <= {2'd0, prod[77:38]};
 				ATG_XU_LOG2[2:0]: begin
 					if (prod[81]) begin
@@ -339,17 +381,9 @@ module atg_su_xu #(
 					end
 				end
 				default:
-					if (!z[40]) begin
-						cx <= cx - (cy >>> step);
-						cy <= cy + (cx >>> step);
-						z <= z - $signed({1'b0, atn});
-					end else begin
-						cx <= cx + (cy >>> step);
-						cy <= cy - (cx >>> step);
-						z <= z + $signed({1'b0, atn});
-					end
+					{cx, cy, z} <= {cx_n, cy_n, z_n};
 				endcase
-				if (step == nsteps - 6'd1) begin
+				if (step == nsteps_m1) begin
 					step <= 6'd0;
 					if (rop == ATG_XU_RSQ[2:0] && !ph) begin
 						/* 2^57 / t: t = the root (30 bits). */
@@ -394,7 +428,7 @@ module atg_su_xu #(
 	assign l_cls = ATG_CLS_X;
 
 	wire unused_ok = &{1'b0, x_pc, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
-		prod, tp[82:40], tpr[82:40], y[41], (NWARPS != 0)};
+		prod, tp[82:40], tps[82:40], y[41], esh[10:4], (NWARPS != 0)};
 endmodule
 
 `default_nettype wire
