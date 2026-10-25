@@ -183,6 +183,32 @@ module atg_vf_index #(
 	wire rq_take = rq_pend && req_ready;
 	wire rd_rsp = rsp_valid && !rsp_write;
 
+	/*
+	 * The counters: the reads in flight and the buffers reserved (+1, -1);
+	 * a request's next line or, at the instance's last line, the instances
+	 * left to request; the emitter's next index (its vertex + 1, indices
+	 * left - 1) or, at the instance's end, the next instance (+ 1,
+	 * instances left - 1).
+	 */
+	wire alloc_pop = pop;
+	wire [1:0] inflight_next;
+	wire [1:0] nalloc_next;
+	wire if_co_unused, na_co_unused, rq_co_unused, ex_co_unused, ey_co_unused;
+	am_add #(.W(2)) u_inflight (.a(inflight), .b({rd_rsp && !rq_take, rq_take ^ rd_rsp}), .ci(1'b0),
+		.s(inflight_next), .co(if_co_unused));
+	am_add #(.W(2)) u_nalloc (.a(nalloc), .b({alloc_pop && !rq_new, rq_new ^ alloc_pop}), .ci(1'b0),
+		.s(nalloc_next), .co(na_co_unused));
+	wire rq_wrap = rq_l == lend;
+	wire [31:0] rq_next;
+	am_addsub #(.W(32)) u_rq (.a(rq_wrap ? rq_ileft : {{(32 - LA_W){1'b0}}, rq_l}), .b(32'd1),
+		.sub(rq_wrap), .s(rq_next), .co(rq_co_unused));
+	wire [31:0] ex_next;
+	wire [31:0] ey_next;
+	am_add #(.W(32)) u_ex (.a(inst_end ? e_inst : e_v), .b(32'd0), .ci(1'b1), .s(ex_next),
+		.co(ex_co_unused));
+	am_sub #(.W(32)) u_ey (.a(inst_end ? e_ileft : e_n), .b(32'd0), .bi(1'b1), .d(ey_next),
+		.bo(ey_co_unused));
+
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= ST_IDLE;
@@ -202,23 +228,23 @@ module atg_vf_index #(
 					buf0 <= rsp_error ? {LB{1'b0}} : rsp_rdata;
 				bv[rsp_tag[0]] <= 1'b1;
 			end
-			inflight <= inflight + {1'b0, rq_take} - {1'b0, rd_rsp};
+			inflight <= inflight_next;
 
 			/* Requests: at most two buffers ahead of the emitter. */
 			if (rq_take) begin
 				rq_pend <= 1'b0;
-				if (rq_l == lend) begin
+				if (rq_wrap) begin
 					rq_l <= l0;
-					rq_ileft <= rq_ileft - 32'd1;
+					rq_ileft <= rq_next;
 					if (rq_ileft == 32'd1)
 						rq_more <= 1'b0;
 				end else
-					rq_l <= rq_l + {{(LA_W-1){1'b0}}, 1'b1};
+					rq_l <= rq_next[LA_W-1:0];
 			end else if (rq_new) begin
 				rq_pend <= 1'b1;
 				rq_slot <= !rq_slot;
 			end
-			nalloc <= nalloc + {1'b0, rq_new} - {1'b0, pop};
+			nalloc <= nalloc_next;
 			if (pop)
 				bv[e_slot] <= 1'b0;
 
@@ -252,14 +278,14 @@ module atg_vf_index #(
 						e_n <= s_count;
 						e_a <= a0;
 						e_v <= s_first;
-						e_inst <= e_inst + 32'd1;
-						e_ileft <= e_ileft - 32'd1;
+						e_inst <= ex_next;
+						e_ileft <= ey_next;
 						if (e_ileft == 32'd1)
 							st <= ST_IDLE;
 					end else begin
-						e_n <= e_n - 32'd1;
+						e_n <= ey_next;
 						e_a <= e_anext;
-						e_v <= e_v + 32'd1;
+						e_v <= ex_next;
 					end
 				end
 			default:

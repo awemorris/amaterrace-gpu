@@ -60,35 +60,46 @@ module atg_vf_conv (
 	`include "atg_fmt_info.vh"
 	`include "atg_fmt_unpack.vh"
 
-	/* fp16 -> fp32, exact (denormals normalised); NaN -> 0x7FC00000. */
-	function [31:0] h2f;
-		input [15:0] h;
-		integer j;
-		reg [3:0] p;
-		reg [9:0] fr;
-		begin
-			p = 4'd0;
-			for (j = 0; j < 10; j = j + 1)
-				if (h[j])
-					/* verilator lint_off WIDTHTRUNC */
-					p = j;
-					/* verilator lint_on WIDTHTRUNC */
-			fr = h[9:0] << (4'd10 - p);
-			if (h[14:10] == 5'h1F)
-				h2f = h[9:0] != 10'd0 ? 32'h7FC00000 : {h[15], 8'hFF, 23'd0};
-			else if (h[14:10] == 5'd0)
-				h2f = h[9:0] == 10'd0 ? {h[15], 31'd0} :
-					{h[15], 8'd103 + {4'd0, p}, fr, 13'd0};
-			else
-				h2f = {h[15], {3'd0, h[14:10]} + 8'd112, h[9:0], 13'd0};
-		end
-	endfunction
+	/*
+	 * fp16 -> fp32, exact (denormals normalised); NaN -> 0x7FC00000: of h16
+	 * (component c_i, below).  p is the highest set bit of the fraction.
+	 */
+	wire [15:0] h16;
+	reg [3:0] h_p;
+	integer hj;
+	always @(*) begin
+		h_p = 4'd0;
+		for (hj = 0; hj < 10; hj = hj + 1)
+			if (h16[hj])
+				/* verilator lint_off WIDTHTRUNC */
+				h_p = hj;
+				/* verilator lint_on WIDTHTRUNC */
+	end
+	wire [3:0] h_sh;
+	wire [9:0] h_fr;
+	wire [7:0] h_ed;
+	wire [7:0] h_en;
+	wire hs_bo_unused, hd_co_unused, hn_co_unused;
+	am_sub #(.W(4)) u_h_sh (.a(4'd10), .b(h_p), .bi(1'b0), .d(h_sh), .bo(hs_bo_unused));
+	am_shift #(.W(10), .SW(4)) u_h_fr (.a(h16[9:0]), .amt(h_sh), .left(1'b1), .arith(1'b0),
+		.y(h_fr));
+	am_add #(.W(8)) u_h_ed (.a(8'd103), .b({4'd0, h_p}), .ci(1'b0),
+		.s(h_ed), .co(hd_co_unused));
+	am_add #(.W(8)) u_h_en (.a({3'd0, h16[14:10]}), .b(8'd112), .ci(1'b0),
+		.s(h_en), .co(hn_co_unused));
+	wire [31:0] h_inf = h16[9:0] != 10'd0 ? 32'h7FC00000 : {h16[15], 8'hFF, 23'd0};
+	wire [31:0] h_den = h16[9:0] == 10'd0 ? {h16[15], 31'd0} : {h16[15], h_ed, h_fr, 13'd0};
+	wire [31:0] h_f32 = h16[14:10] == 5'h1F ? h_inf : h16[14:10] == 5'd0 ? h_den :
+		{h16[15], h_en, h16[9:0], 13'd0};
 
 	/* STATE: ATTR[k]_DESC 0x031 + 2k (format [19:16]), ATTR_DST[k] 0x1C0 + k. */
 	reg [3:0] s_fmt [0:15];
 	reg [7:0] s_dst [0:15];
 	reg [7:0] s_vk [0:15];	/* ATTR_DST[31:24] */
-	wire [8:0] s_off = st_idx - GHCI_S_ATTR;
+	wire [8:0] s_off;
+	wire so_bo_unused;
+	am_sub #(.W(9)) u_s_off (.a(st_idx), .b(GHCI_S_ATTR), .bi(1'b0),
+		.d(s_off), .bo(so_bo_unused));
 	wire s_desc = st_idx >= GHCI_S_ATTR && st_idx < GHCI_S_ATTR + 9'd32 && s_off[0];
 	integer i;
 	always @(posedge clk)
@@ -139,6 +150,7 @@ module atg_vf_conv (
 	wire [31:0] w32 = c_raw[32 * c_i +: 32];
 	wire [7:0] w8 = c_raw[8 * c_i +: 8];
 	wire [15:0] w16 = c_raw[16 * c_i +: 16];
+	assign h16 = w16;
 	reg [31:0] word;
 	always @(*) begin
 		if (c_oob || (c_vk != 8'd0 && !vk_ok))
@@ -151,12 +163,20 @@ module atg_vf_conv (
 			case (c_fmt)
 			4'd4: word = atg_rop_unorm8(w8);
 			4'd5: word = {24'd0, w8};
-			4'd6, 4'd7: word = h2f(w16);
+			4'd6, 4'd7: word = h_f32;
 			default: word = w32;
 			endcase
 	end
 
 	wire c_end = c_v && c_i == c_dst[7:6];
+
+	/* The register of component c_i, and the next component. */
+	wire [5:0] reg_c;
+	wire [1:0] c_i_next;
+	wire rc_co_unused, cn_co_unused;
+	am_add #(.W(6)) u_reg (.a(c_dst[5:0]), .b({4'd0, c_i}), .ci(1'b0),
+		.s(reg_c), .co(rc_co_unused));
+	am_add #(.W(2)) u_c_i (.a(c_i), .b(2'd0), .ci(1'b1), .s(c_i_next), .co(cn_co_unused));
 	assign af_ready = !c_v || c_end;
 	wire take = af_valid && af_ready;
 	wire [7:0] t_dst = s_dst[af_attr];
@@ -170,13 +190,13 @@ module atg_vf_conv (
 			conv_done <= 1'b0;
 		end else begin
 			vl_we <= c_v;
-			vl_reg <= c_dst[5:0] + {4'd0, c_i};
+			vl_reg <= reg_c;
 			vl_lane <= c_lane;
 			vl_data <= word;
 			fin <= (c_end && c_last) || (take && !t_en && af_last);
 			conv_done <= fin;
 			if (c_v)
-				c_i <= c_i + 2'd1;
+				c_i <= c_i_next;
 			if (c_end)
 				c_v <= 1'b0;
 			if (take && t_en) begin

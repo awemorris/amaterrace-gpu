@@ -138,6 +138,9 @@ module atg_vf_asm (
 	reg [1:0] g_cnt;
 	reg [4:0] g0, g1, g2;
 	reg [2:0] g_fa, g_fl;
+	wire [1:0] cnt_inc;
+	wire ci_co_unused;
+	am_add #(.W(2)) u_cnt (.a(cnt), .b(2'd0), .ci(1'b1), .s(cnt_inc), .co(ci_co_unused));
 	always @(*) begin
 		g_emit = 1'b0;
 		g0 = L;
@@ -166,7 +169,7 @@ module atg_vf_asm (
 		T_TRIS: begin
 			/* (A, B, V); last: (V, A, B) */
 			g_wb = cnt == 2'd1;
-			g_cnt = cnt == 2'd2 ? 2'd0 : cnt + 2'd1;
+			g_cnt = cnt == 2'd2 ? 2'd0 : cnt_inc;
 			if (cnt == 2'd2) begin
 				g_emit = 1'b1;
 				g0 = s_last ? L : a_lane;
@@ -207,14 +210,20 @@ module atg_vf_asm (
 	/* SEND: what happens to the item on iv. */
 	wire vfree = !vb_valid || vb_ready;
 	wire inst_chg = iv_inst != cur_inst && cnt != 2'd0;
-	wire early = t_list && cnt == 2'd0 && 6'd32 - lane < t_need;
+	wire [5:0] lanes_left;
+	wire ll_bo_unused;
+	am_sub #(.W(6)) u_left (.a(6'd32), .b(lane), .bi(1'b0), .d(lanes_left), .bo(ll_bo_unused));
+	wire early = t_list && cnt == 2'd0 && lanes_left < t_need;
 	wire c_put = st == ST_SEND && vfree && carry != 2'd0;
 	wire s_go = st == ST_SEND && vfree && carry == 2'd0 && iv_valid;
 	wire s_rst = s_go && iv_restart;
 	wire s_put = s_go && !iv_restart && !inst_chg && !early;
 	wire n_rst = st == ST_NEXT && iv_valid && iv_restart;
 	assign iv_ready = s_rst || s_put || n_rst;
-	wire [31:0] v_idx = s_ind ? iv_index + s_voff : iv_index;
+	wire [31:0] v_off;
+	wire vo_co_unused;
+	am_add #(.W(32)) u_voff (.a(iv_index), .b(s_voff), .ci(1'b0), .s(v_off), .co(vo_co_unused));
+	wire [31:0] v_idx = s_ind ? v_off : iv_index;
 	wire seg_end = s_rst || (s_go && !iv_restart && inst_chg);
 
 	assign vl_req = st == ST_ALLOC;
@@ -232,6 +241,42 @@ module atg_vf_asm (
 	/* Push the open primitive: superseded (fa) or final (fa | fl). */
 	wire p_push = p_v && (seg_end || st == ST_CLOSE && vfree || s_put && g_emit);
 	wire p_final = seg_end || st == ST_CLOSE;
+
+	/*
+	 * The counters: the list's write and read places and its entries (+1,
+	 * -1), the next lane and the carried vertices left; the lanes a
+	 * primitive uses (one-hot); a listed primitive's PT entries (ptbase +
+	 * lane).
+	 */
+	wire f_pop = st == ST_PRIMS && f_n != 6'd0 && (!h_v || h_take);
+	wire [4:0] f_wp_next;
+	wire [4:0] f_rp_next;
+	wire [5:0] f_n_next;
+	wire [5:0] lane_next;
+	wire [1:0] carry_next;
+	wire fw_co_unused, fr_co_unused, fn_co_unused, ln_co_unused, cy_bo_unused;
+	am_add #(.W(5)) u_f_wp (.a(f_wp), .b(5'd0), .ci(1'b1), .s(f_wp_next), .co(fw_co_unused));
+	am_add #(.W(5)) u_f_rp (.a(f_rp), .b(5'd0), .ci(1'b1), .s(f_rp_next), .co(fr_co_unused));
+	am_add #(.W(6)) u_f_n (.a(f_n), .b({{5{f_pop && !p_push}}, p_push ^ f_pop}), .ci(1'b0),
+		.s(f_n_next),
+		.co(fn_co_unused));
+	am_add #(.W(6)) u_lane (.a(lane), .b(6'd0), .ci(1'b1), .s(lane_next), .co(ln_co_unused));
+	am_sub #(.W(2)) u_carry (.a(carry), .b(2'd0), .bi(1'b1), .d(carry_next), .bo(cy_bo_unused));
+	reg [31:0] g_used;
+	integer gi;
+	always @(*)
+		for (gi = 0; gi < 32; gi = gi + 1)
+			g_used[gi] = g0 == gi[4:0] || g1 == gi[4:0] || g2 == gi[4:0];
+	wire [7:0] pt0;
+	wire [7:0] pt1;
+	wire [7:0] pt2;
+	wire p0_co_unused, p1_co_unused, p2_co_unused;
+	am_add #(.W(8)) u_pt0 (.a(ptbase), .b({3'd0, f_top[4:0]}), .ci(1'b0),
+		.s(pt0), .co(p0_co_unused));
+	am_add #(.W(8)) u_pt1 (.a(ptbase), .b({3'd0, f_top[9:5]}), .ci(1'b0),
+		.s(pt1), .co(p1_co_unused));
+	am_add #(.W(8)) u_pt2 (.a(ptbase), .b({3'd0, f_top[14:10]}), .ci(1'b0),
+		.s(pt2), .co(p2_co_unused));
 
 	always @(posedge clk) begin
 		vl_go <= 1'b0;
@@ -252,7 +297,7 @@ module atg_vf_asm (
 				vb_valid <= 1'b0;
 			if (p_push) begin
 				f_mem[f_wp] <= {p_final ? p_fa | p_fl : p_fa, p_l};
-				f_wp <= f_wp + 5'd1;
+				f_wp <= f_wp_next;
 			end
 			if (seg_end) begin
 				p_v <= 1'b0;
@@ -296,11 +341,11 @@ module atg_vf_asm (
 					sg_idx <= c_put ? (lane[0] ? b_idx : a_idx) : v_idx;
 					sg_inst <= c_put ? (lane[0] ? b_inst : a_inst) : iv_inst;
 					sg_lane <= L;
-					lane <= lane + 6'd1;
+					lane <= lane_next;
 				end
 				if (c_put)
 					/* The carried vertices (A at lane 0, B at lane 1). */
-					carry <= carry - 2'd1;
+					carry <= carry_next;
 				else if (s_rst) begin
 					if (iv_last) begin
 						fin <= 1'b1;
@@ -316,7 +361,7 @@ module atg_vf_asm (
 						p_l <= {g2, g1, g0};
 						p_fa <= g_fa;
 						p_fl <= g_fl;
-						used <= used | (32'd1 << g0) | (32'd1 << g1) | (32'd1 << g2);
+						used <= used | g_used;
 					end
 					cnt <= g_cnt;
 					if (g_wa) begin
@@ -367,10 +412,9 @@ module atg_vf_asm (
 				/* PRIMS: the list in order; the last one waits for its successor. */
 				if (f_n != 6'd0 && (!h_v || h_take)) begin
 					h_v <= 1'b1;
-					h_vtx <= {ptbase + {3'd0, f_top[14:10]}, ptbase + {3'd0, f_top[9:5]},
-						ptbase + {3'd0, f_top[4:0]}};
+					h_vtx <= {pt2, pt1, pt0};
 					h_free <= f_top[17:15];
-					f_rp <= f_rp + 5'd1;
+					f_rp <= f_rp_next;
 				end else if (h_take)
 					h_v <= 1'b0;
 				if (f_n == 6'd0) begin
@@ -385,8 +429,7 @@ module atg_vf_asm (
 				end
 			end
 			endcase
-			f_n <= f_n + {5'd0, p_push} -
-				{5'd0, st == ST_PRIMS && f_n != 6'd0 && (!h_v || h_take)};
+			f_n <= f_n_next;
 		end
 	end
 
