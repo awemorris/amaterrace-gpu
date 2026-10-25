@@ -9,7 +9,7 @@
  * atg_dc_tmds: DVI/HDMI TMDS encoding (8b/10b with DC balance, control
  * symbols in blanking) of the three channels; the 10-bit symbols are
  * serialised by OSERDESE2 in the board top (vendor primitive).  See
- * spec/dc/atg_dc_tmds.md.
+ * spec/gpu/dc/atg_dc_tmds.md.
  *
  * The DVI 1.0 algorithm per channel (Values referenced: DVI 1.0 §3.2.3,
  * the encoder's flow chart): stage 1 makes the transition-minimised q_m

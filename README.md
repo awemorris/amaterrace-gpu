@@ -171,7 +171,7 @@ Repository layout
 
 | Path | Contents |
 | --- | --- |
-| [rtl/](rtl/) | `common/`, `gpu/{cp,blt,vf,rx,su,tu,rop,sa,mc,top}/`, `dc/` |
+| [rtl/](rtl/) | `common/`, `gpu/{cp,blt,vf,rx,su,tu,rop,sa,mc,dc,top}/` |
 | [spec/](spec/) | One specification per module: ports, behaviour, and what its testbench checks |
 | [include/](include/) | RTL constants and the shared C headers |
 | [fw/cp/](fw/cp/) | Firmware of the command processor's control core |

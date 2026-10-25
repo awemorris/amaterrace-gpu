@@ -8,7 +8,7 @@
 /*
  * atg_dc_i2c: A small I2C master for the KC705's ADV7511 HDMI transmitter
  * configuration (I2C_CTRL/DATA/STATUS of design §5.1).  See
- * spec/dc/atg_dc_i2c.md.
+ * spec/gpu/dc/atg_dc_i2c.md.
  *
  * Registers (i_idx): 0 CTRL, 1 DATA, 2 STATUS.  A write of CTRL while
  * idle starts one command: [0] START (a repeated start if the bus is

@@ -9,7 +9,7 @@
  * atg_dc_regs: The DC's registers (design §5.1): DC_ID/VERSION/CAPS, CTRL,
  * STATUS, IRQ, FB_*, timing, FRAME_COUNT, PCLK_SEL, the I2C window, and in
  * the standalone bitstream the GHCI header that makes the DC a
- * display-only GHCI device.  See spec/dc/atg_dc_regs.md.
+ * display-only GHCI device.  See spec/gpu/dc/atg_dc_regs.md.
  *
  * The register bus is am_axi_regs': a write takes effect in its cycle, a
  * read answers in the next cycle and reads 0 outside the DC's window

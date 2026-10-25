@@ -11,7 +11,7 @@
  * TMDS encoder and a parallel output, optional I2C; its own AMB client port (an MC client
  * of atg_top; STANDALONE: to its own am_axi_master).
  *
- * Wiring of its children; see spec/dc/atg_dc.md.  The only clock
+ * Wiring of its children; see spec/gpu/dc/atg_dc.md.  The only clock
  * crossings: the pixel FIFO (am_afifo), ENABLE and CTRL.RESET to pclk, the
  * event toggles and the line to gclk (am_sync).  The timing, format and
  * test pattern are quasi-static and go to pclk directly (atg_dc_regs §7).

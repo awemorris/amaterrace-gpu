@@ -1,6 +1,6 @@
 # atg_dc
 
-RTL: `rtl/dc/atg_dc.v`.  Parent: the board top (atg_kc705_raster, next to atg_top).  Implemented in: p005, p012.
+RTL: `rtl/gpu/dc/atg_dc.v`.  Parent: the board top (atg_kc705_raster, next to atg_top).  Implemented in: p005, p012.
 
 ## 1. Purpose and place
 

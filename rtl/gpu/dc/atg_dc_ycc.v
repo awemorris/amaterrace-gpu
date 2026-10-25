@@ -8,7 +8,7 @@
 /*
  * atg_dc_ycc: The KC705 HDMI pixel format: RGB888 to 16-bit YCbCr 4:2:2
  * for the ADV7511's parallel input (separate syncs), two register
- * stages.  See spec/dc/atg_dc_ycc.md.
+ * stages.  See spec/gpu/dc/atg_dc_ycc.md.
  *
  * BT.601 with the studio range (Y 16..235, Cb/Cr 16..240), 8-bit
  * coefficients:

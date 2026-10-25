@@ -1,6 +1,6 @@
 # atg_dc_ycc
 
-RTL: `rtl/dc/atg_dc_ycc.v`.  Parent: atg_dc (PX_FMT = 1).  Implemented in: p012.
+RTL: `rtl/gpu/dc/atg_dc_ycc.v`.  Parent: atg_dc (PX_FMT = 1).  Implemented in: p012.
 
 ## 1. Purpose and place
 

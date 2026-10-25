@@ -1,6 +1,6 @@
 # atg_dc_i2c
 
-RTL: `rtl/dc/atg_dc_i2c.v`.  Parent: atg_dc.  Implemented in: p012.
+RTL: `rtl/gpu/dc/atg_dc_i2c.v`.  Parent: atg_dc.  Implemented in: p012.
 
 ## 1. Purpose and place
 

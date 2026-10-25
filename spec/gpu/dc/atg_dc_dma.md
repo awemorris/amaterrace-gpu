@@ -1,6 +1,6 @@
 # atg_dc_dma
 
-RTL: `rtl/dc/atg_dc_dma.v`.  Parent: atg_dc.  Implemented in: p005.
+RTL: `rtl/gpu/dc/atg_dc_dma.v`.  Parent: atg_dc.  Implemented in: p005.
 
 ## 1. Purpose and place
 

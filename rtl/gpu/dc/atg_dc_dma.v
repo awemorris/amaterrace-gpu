@@ -8,7 +8,7 @@
 /*
  * atg_dc_dma: The DC's scan-out DMA: reads the framebuffer FB_BASE line by
  * line (FB_STRIDE, FB_SIZE) through the AMB and pushes pixel words into
- * the pixel FIFO towards pclk.  See spec/dc/atg_dc_dma.md.
+ * the pixel FIFO towards pclk.  See spec/gpu/dc/atg_dc_dma.md.
  *
  * A frame starts at frame_start (with enable 1): the base, stride, size
  * and format are taken then.  Each row of FB_SIZE.w pixels (4 bytes, or 2

@@ -9,7 +9,7 @@
  * atg_dc_tgen: The DC's timing generator in the pixel clock: h/v counters,
  * DE/HSYNC/VSYNC, pixel pop from the FIFO, format conversion to RGB888,
  * the test pattern, frame start and vsync events.  See
- * spec/dc/atg_dc_tgen.md.
+ * spec/gpu/dc/atg_dc_tgen.md.
  *
  * A line is H_ACTIVE pixels, then the front porch, the sync and the back
  * porch; a frame is V_ACTIVE lines, then the same in lines.  Pixel (0, 0)
