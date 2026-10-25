@@ -84,23 +84,62 @@ module atg_su_lda #(
 	localparam DEPTH = NWARPS * PRIMS * 3 * VARY_WORDS;
 	localparam AW = $clog2(DEPTH);
 	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS;
+	localparam PL = $clog2(PRIMS);	/* PRIMS, VARY_WORDS, NQ and NC are powers of two */
+	localparam VL = $clog2(VARY_WORDS);
+
+	/*
+	 * A table word's address ((warp PRIMS + prim) 3 + vertex) VARY_WORDS +
+	 * word, modulo 2^AW, for prim < PRIMS and word < VARY_WORDS: the 3 x by
+	 * two adders, the rest disjoint bits.
+	 */
+	function [AW-1:0] tab_x;	/* warp PRIMS + prim */
+		input [WARP_W-1:0] w;
+		input [2:0] pr;
+		/* verilator lint_off WIDTHTRUNC */
+		tab_x = ({{(32-WARP_W){1'b0}}, w} << PL) | {29'd0, pr};
+		/* verilator lint_on WIDTHTRUNC */
+	endfunction
+
+	/* A selection: warp w's primitive map. */
+	function [23:0] map_of;
+		input [NWARPS*24-1:0] mp;
+		input [WARP_W-1:0] w;
+		integer mi;
+		begin
+			map_of = mp[23:0];
+			for (mi = 1; mi < NWARPS; mi = mi + 1)
+				if (w == mi[WARP_W-1:0])
+					map_of = mp[mi*24 +: 24];
+		end
+	endfunction
 
 	/* The primitive maps. */
 	reg [NWARPS*24-1:0] pmap;
+	integer pm;
 	wire map_we = pw_we && pw_addr == 12'hFFF;
 	always @(posedge clk)
 		if (!rst_n)
 			pmap <= {(NWARPS*24){1'b0}};
 		else if (map_we)
-			pmap[pw_warp*24 +: 24] <= pw_data[23:0];
+			for (pm = 0; pm < NWARPS; pm = pm + 1)
+				if (pw_warp == pm[WARP_W-1:0])
+					pmap[pm*24 +: 24] <= pw_data[23:0];
 
 	/* Table writes. */
 	wire [31:0] wprim = {29'd0, pw_addr[10:8]};
 	wire [31:0] wvtx = {30'd0, pw_addr[7:6]};
 	wire [31:0] wword = {26'd0, pw_addr[5:0]};
 	wire tab_we = pw_we && !pw_addr[11] && wvtx < 3 && wword < VARY_WORDS && wprim < PRIMS;
-	wire [31:0] waddr = ((({{(32-WARP_W){1'b0}}, pw_warp} * PRIMS + wprim) * 3 + wvtx) *
-		VARY_WORDS) + wword;
+	wire [AW-1:0] wx = tab_x(pw_warp, wprim[2:0]);
+	wire [AW-1:0] wx3;
+	wire [AW-1:0] wy;
+	wire wx3_co_unused, wy_co_unused;
+	am_add #(.W(AW)) u_wx3 (.a({wx[AW-2:0], 1'b0}), .b(wx), .ci(1'b0), .s(wx3), .co(wx3_co_unused));
+	am_add #(.W(AW)) u_wy (.a(wx3), .b(wvtx[AW-1:0]), .ci(1'b0), .s(wy), .co(wy_co_unused));
+	/* verilator lint_off WIDTHTRUNC */
+	wire [AW-1:0] waddr_a = (wy << VL) | wword[AW-1:0];
+	/* verilator lint_on WIDTHTRUNC */
+	wire [31:0] waddr = {{(32-AW){1'b0}}, waddr_a};
 
 	/* The write port: the RX's writes or the scrub's zeros. */
 	wire sc_on;
@@ -117,6 +156,9 @@ module atg_su_lda #(
 
 	/* The read cycle of the group being read: 0 takes a group from x_*. */
 	reg [PW-1:0] ph;
+	wire [PW-1:0] ph_next;
+	wire ph_co_unused;
+	am_add #(.W(PW)) u_ph (.a(ph), .b({PW{1'b0}}), .ci(1'b1), .s(ph_next), .co(ph_co_unused));
 	assign x_ready = ph == {PW{1'b0}};
 	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_LDA && x_uop[ATG_UOP_WRD];
 	wire take = mine && x_ready;
@@ -128,7 +170,8 @@ module atg_su_lda #(
 	reg [8:0] l_imm;
 	wire [WARP_W-1:0] c_warp = x_ready ? x_warp : l_warp;
 	wire [GRP_W-1:0] c_grp = x_ready ? x_grp : l_grp;
-	wire [23:0] c_map = x_ready ? pmap[x_warp*24 +: 24] : l_map;
+	wire [23:0] x_map = map_of(pmap, x_warp);
+	wire [23:0] c_map = x_ready ? x_map : l_map;
 	wire [8:0] c_imm = x_ready ? x_uop[ATG_UOP_IMM +: 9] : l_imm;
 	always @(posedge clk)
 		if (!rst_n) begin
@@ -141,19 +184,21 @@ module atg_su_lda #(
 			if (take) begin
 				l_warp <= x_warp;
 				l_grp <= x_grp;
-				l_map <= pmap[x_warp*24 +: 24];
+				l_map <= x_map;
 				l_imm <= x_uop[ATG_UOP_IMM +: 9];
 			end
 			if (NR > 1 && (take || !x_ready))
-				ph <= ph + {{(PW-1){1'b0}}, 1'b1};
+				ph <= ph_next;
 		end
 
 	wire [31:0] rvtx = {30'd0, c_imm[1:0]};
 	wire [31:0] rword = {25'd0, c_imm[8:2]};
 	wire rok = rvtx < 3 && rword >= 4 && rword < 4 + VARY_WORDS;
-	wire [31:0] rvary = rword - 32'd4;
-	wire [31:0] qbase = {{(32-GRP_W){1'b0}}, c_grp} * NQ +
-		{{(32-PW){1'b0}}, ph} * NC;	/* the quad copy 0 reads */
+	wire [6:0] rvary;
+	wire rv_bo_unused;
+	am_sub #(.W(7)) u_rvary (.a(rword[6:0]), .b(7'd4), .bi(1'b0), .d(rvary), .bo(rv_bo_unused));
+	/* the quad copy 0 reads: group NQ + ph NC (disjoint bits) */
+	wire [31:0] qbase = ({{(32-GRP_W){1'b0}}, c_grp} * NQ) | ({{(32-PW){1'b0}}, ph} * NC);
 
 	/* The copies: one synchronous read each per cycle. */
 	reg [NC*32-1:0] rq;
@@ -162,15 +207,33 @@ module atg_su_lda #(
 	generate
 	for (q = 0; q < NC; q = q + 1) begin : g_copy
 		reg [31:0] m [0:DEPTH-1];
-		wire [31:0] qi = qbase + q;
+		wire [31:0] qi = qbase | q;
 `ifdef MUT_LDA_PHASE
-		wire [31:0] qm = {{(32-GRP_W){1'b0}}, c_grp} * NQ + q;
-		wire [2:0] prim = c_map[3 * qm[2:0] +: 3];
+		wire [31:0] qm = ({{(32-GRP_W){1'b0}}, c_grp} * NQ) | q;
+		wire [2:0] pqi = qm[2:0];
 `else
-		wire [2:0] prim = c_map[3 * qi[2:0] +: 3];
+		wire [2:0] pqi = qi[2:0];
 `endif
-		wire [31:0] raddr = ((({{(32-WARP_W){1'b0}}, c_warp} * PRIMS + {29'd0, prim}) * 3 +
-			rvtx) * VARY_WORDS) + rvary;
+		/* The quad's primitive (a selection: 3 bits a quad). */
+		reg [2:0] prim;
+		integer pq;
+		always @(*) begin
+			prim = c_map[2:0];
+			for (pq = 1; pq < 8; pq = pq + 1)
+				if (pqi == pq[2:0])
+					prim = c_map[3 * pq +: 3];
+		end
+		wire [AW-1:0] rx = tab_x(c_warp, prim);
+		wire [AW-1:0] rx3;
+		wire [AW-1:0] ry;
+		wire rx3_co_unused, ry_co_unused;
+		am_add #(.W(AW)) u_rx3 (.a({rx[AW-2:0], 1'b0}), .b(rx), .ci(1'b0), .s(rx3),
+			.co(rx3_co_unused));
+		am_add #(.W(AW)) u_ry (.a(rx3), .b(rvtx[AW-1:0]), .ci(1'b0), .s(ry), .co(ry_co_unused));
+		/* verilator lint_off WIDTHTRUNC */
+		wire [AW-1:0] raddr_a = (ry << VL) | {{(AW > 7 ? AW - 7 : 0){1'b0}}, rvary};
+		/* verilator lint_on WIDTHTRUNC */
+		wire [31:0] raddr = {{(32-AW){1'b0}}, raddr_a};
 		always @(posedge clk) begin
 			if (t_we)
 				m[t_wa] <= t_wd;
