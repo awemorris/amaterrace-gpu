@@ -19,7 +19,8 @@
  * resolve attachments are the blitter's RESOLVE when it ends, after
  * WAIT_IDLE (the render output alone can be idle between two quads,
  * docs/ghci.md section 12.11).  A clear inside a subpass waits for the
- * draws before it in the same way.
+ * draws before it in the same way, and so does the end of the render
+ * pass for the commands after it.
  */
 
 #include "fw.h"
@@ -217,11 +218,18 @@ fw_cmd_end_render_pass(
 		return;
 	}
 
-	/* The last subpass's resolves. */
+	/*
+	 * The last subpass's resolves, then the wait for the render pass's
+	 * work: the commands after it may depend on it through a subpass
+	 * dependency to VK_SUBPASS_EXTERNAL (a copy of the colour attachment,
+	 * say), which the firmware does not keep, so the end always waits as
+	 * a pipeline barrier does.
+	 */
 	fw_emit_begin(cmdbuf, command->tag);
 	error = passrec_resolve(command, state);
 	if (error != 0)
 		fw_cmd_record_error(cmdbuf, FW_VK_ERROR_UNKNOWN);
+	passrec_wait();
 	error = fw_emit_end();
 	if (error != 0)
 		fw_cmd_record_error(cmdbuf, FW_VK_ERROR_OUT_OF_DEVICE_MEMORY);

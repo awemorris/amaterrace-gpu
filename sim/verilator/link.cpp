@@ -16,7 +16,8 @@
  * idle cycles for a read when the environment says so (a PCIe read's
  * round trip).  LINK_TRACE_DMA in the environment prints every DMA_GO of
  * the CPU's line DMA to stderr (a diagnostic of the firmware's memory
- * traffic).
+ * traffic), LINK_TRACE_UOPS every µop word the CPU gives the sequencer
+ * and every change of the units' busy bits.
  */
 
 #include <cstdint>
@@ -63,6 +64,15 @@ std::deque<int> b_q;
 struct atg_link_stats counts;
 uint64_t read_cycles;
 bool trace_dma;
+bool trace_uops;
+
+/* The units' busy bits in STATUS order: [1] BLT, [2] VF, [3] RX, [4] ROP, [5] TU, [6] SU. */
+unsigned busy_bits()
+{
+	return (top->rootp->atg_top__DOT__blt_busy ? 0x02u : 0u) | (top->rootp->atg_top__DOT__vf_busy ? 0x04u : 0u) |
+	    (top->rootp->atg_top__DOT__rx_busy ? 0x08u : 0u) | (top->rootp->atg_top__DOT__rop_busy ? 0x10u : 0u) |
+	    (top->rootp->atg_top__DOT__tu_busy ? 0x20u : 0u) | (top->rootp->atg_top__DOT__su_busy ? 0x40u : 0u);
+}
 
 /* The local memory's byte at a GPU address, or nullptr outside it. */
 uint8_t *byte_at(uint32_t a)
@@ -134,8 +144,19 @@ void tick()
 	Burst nar = {top->m_araddr, top->m_arlen, 0};
 	VlWide<BEAT_WORDS> wdata = top->m_wdata;
 	uint64_t wstrb = top->m_wstrb;
-	if (top->rootp->atg_top__DOT__fw_valid && top->rootp->atg_top__DOT__fw_ready)
+	if (top->rootp->atg_top__DOT__fw_valid && top->rootp->atg_top__DOT__fw_ready) {
 		counts.uop_words++;
+		if (trace_uops)
+			std::fprintf(stderr, "link: cycle %llu uop %08x busy %02x\n", (unsigned long long)counts.cycles,
+			    (unsigned)top->rootp->atg_top__DOT__fw_data, busy_bits());
+	}
+	if (trace_uops) {
+		static unsigned last_busy;
+		unsigned now_busy = busy_bits();
+		if (now_busy != last_busy)
+			std::fprintf(stderr, "link: cycle %llu busy %02x\n", (unsigned long long)counts.cycles, now_busy);
+		last_busy = now_busy;
+	}
 	if (top->rootp->atg_top__DOT__g_cpu__DOT__cpu__DOT__fw__DOT__fw_state == 3)
 		counts.fw_packet_cycles++;
 	if (trace_dma && top->rootp->atg_top__DOT__g_cpu__DOT__cpu__DOT__dma__DOT__sb_we &&
@@ -203,6 +224,7 @@ extern "C" int atg_link_start(void)
 	if (extra != nullptr)
 		read_cycles = std::strtoull(extra, nullptr, 0);
 	trace_dma = std::getenv("LINK_TRACE_DMA") != nullptr;
+	trace_uops = std::getenv("LINK_TRACE_UOPS") != nullptr;
 	top = new Vatg_top;
 	top->mem_ready = 1;
 	top->rst_n = 0;
