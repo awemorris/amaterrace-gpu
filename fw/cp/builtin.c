@@ -70,6 +70,11 @@ fw_builtin_init(
 			return -1;
 	}
 
+	/* Every protected session reads them (a heap not 4 KiB aligned cannot say so). */
+	error = fw_prot_public(base, FW_BUILTIN_PUBLIC_BYTES);
+	if (error != 0)
+		return -1;
+
 	/* Succeeded: the firmware's part of the heap is ready. */
 	return 0;
 }
@@ -119,12 +124,12 @@ fw_builtin_program(
 }
 
 /*
- * Gives the GPU address of the words the firmware waits on (after the
- * programs, one line).
+ * Gives the GPU address of the words the firmware waits on (the first line
+ * after the public part: no protected session reaches it).
  */
 uint32_t
 fw_builtin_wait_word(void)
 {
-	/* The line after the programs. */
-	return builtin_base + FW_IDENTITY_WORDS * 4u + FW_BUILTIN_PROGRAMS * FW_BUILTIN_PROGRAM_BYTES;
+	/* The line after the public granules. */
+	return builtin_base + FW_BUILTIN_PUBLIC_BYTES;
 }

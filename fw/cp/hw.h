@@ -40,10 +40,31 @@
 #define HW_FW_STATUS 0x20u	/* W: [15:8] state, [16] PARK; R: CPFW_STATUS */
 #define HW_MBOX0 0x21u	/* RW: CPFW_MBOX0..3 at 0x21-0x24 */
 #define HW_FW_VERSION 0x25u	/* RW: CPFW_VERSION */
+#define HW_PROT_SLOT 0x28u	/* W: [7:0] tag, [13:8] slot (0: unmapped) */
+#define HW_PROT_INV_G 0x29u	/* W: the first granule of an invalidation */
+#define HW_PROT_GIDX 0x2Au	/* W: the CAM entry GCTL writes */
+#define HW_PROT_GBASE 0x2Bu	/* W: its first granule */
+#define HW_PROT_GLIMIT 0x2Cu	/* W: its end granule (exclusive) */
+#define HW_PROT_GCTL 0x2Du	/* W: [0] valid, [1] read, [2] write, [13:8] slot; writes the entry */
+#define HW_PROT_INFO 0x2Eu	/* R: [0] PROT, [1] a table, [2] drained, [3] invalidation pending, [13:8] slots, [31:16] grants */
+#define HW_PROT_TBASE 0x2Fu	/* R: PROT_TABLE */
+#define HW_PROT_G0 0x30u	/* R: the table's first granule */
+#define HW_PROT_G1 0x31u	/* R: its end granule */
+#define HW_UOP_SELF 0x32u	/* W: [0] the next µop packet is the firmware's own wait */
+#define HW_PROT_INV_N 0x33u	/* W: granules of the invalidation (0: all); starts it */
 
 #define HW_PKT_INFO_WAITING 0x80000000u
 #define HW_IRQ_HALT 0x4u
 #define HW_DMA_GO_WRITE 0x10000u
+#define HW_DMA_GO_CHK 0x20000u	/* the copy is checked for the packet's protected session */
+#define HW_DMA_GO_TBL 0x40000u	/* the copy writes the protection table */
+#define HW_PROT_INFO_HAS 0x1u
+#define HW_PROT_INFO_TABLE 0x2u
+#define HW_PROT_INFO_DRAINED 0x4u
+#define HW_PROT_INFO_PENDING 0x8u
+#define HW_PROT_GCTL_VALID 0x1u
+#define HW_PROT_GCTL_READ 0x2u
+#define HW_PROT_GCTL_WRITE 0x4u
 #define HW_DMA_BUSY 0x1u
 #define HW_DMA_ERROR 0x2u
 #define HW_DMA_WRITES 0xFF00u

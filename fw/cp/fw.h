@@ -516,6 +516,22 @@ void fw_reader_words(struct fw_reader *reader, uint32_t *dst, uint32_t count);
 uint32_t fw_reader_count(struct fw_reader *reader, uint32_t limit);
 int fw_store(uint32_t address, const void *src, uint32_t bytes);
 int fw_store_flush(void);
+#define FW_DMA_CHK 0x1u		/* the copies reach the packet's session's memory (checked) */
+#define FW_DMA_TBL 0x2u		/* the copies write the protection table */
+uint32_t fw_dma_mode(uint32_t mode);
+
+/* prot.c: session protection (docs/ghci.md section 11.6). */
+void fw_prot_init(void);
+int fw_prot_present(void);
+uint32_t fw_prot_slot(uint32_t tag);
+int fw_prot_open(uint32_t tag);
+int fw_prot_own(uint32_t tag, uint32_t address, uint32_t bytes, int read_only);
+void fw_prot_disown(uint32_t tag, uint32_t address, uint32_t bytes);
+int fw_prot_public(uint32_t address, uint32_t bytes);
+int fw_prot_grant(uint32_t tag, uint32_t access, uint32_t address, uint32_t bytes);
+int fw_prot_revoke(uint32_t tag, uint32_t address, uint32_t bytes);
+void fw_prot_close(uint32_t tag);
+int fw_prot_drain(void);
 
 /* heap.c: the heap in GPU memory and the sessions. */
 void fw_heap_init(void);
@@ -540,7 +556,13 @@ enum fw_builtin_program {
 	FW_PROGRAM_S8_FROM_IMAGE,	/* stencil bytes of D24S8 texels into a buffer */
 	FW_BUILTIN_PROGRAMS
 };
-#define FW_BUILTIN_BYTES (FW_IDENTITY_WORDS * 4u + FW_BUILTIN_PROGRAMS * FW_BUILTIN_PROGRAM_BYTES + FW_LINE_BYTES)
+/*
+ * The firmware's part: the identity buffer and the programs, public to the
+ * protected sessions and so whole 4 KiB granules, then the wait word in a
+ * granule of its own (private), from which the heap's free lines start.
+ */
+#define FW_BUILTIN_PUBLIC_BYTES ((FW_IDENTITY_WORDS * 4u + FW_BUILTIN_PROGRAMS * FW_BUILTIN_PROGRAM_BYTES + 4095u) & ~4095u)
+#define FW_BUILTIN_BYTES (FW_BUILTIN_PUBLIC_BYTES + FW_LINE_BYTES)
 int fw_builtin_init(uint32_t base);
 uint32_t fw_builtin_identity(void);
 uint32_t fw_builtin_program(uint32_t program, uint32_t *words);

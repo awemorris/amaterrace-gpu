@@ -50,7 +50,18 @@ static int store_dirty;
  */
 static uint8_t bounce_lines[FW_BOUNCE_BYTES] __attribute__((aligned(FW_LINE_BYTES)));
 
+/*
+ * The session protection of the copies that follow (fw_dma_mode):
+ * FW_DMA_CHK when they reach the memory of the packet's session (the MC
+ * checks them for its slot), FW_DMA_TBL when they write the protection
+ * table, 0 for the firmware's own memory and the driver's.  The store keeps
+ * the mode its held line was stored with.
+ */
+static uint32_t dma_mode;
+static uint32_t store_mode;
+
 static int dma_wait(void);
+static uint32_t dma_go_bits(void);
 static int reader_fill(struct fw_reader *reader, uint32_t address);
 static void reader_bytes(struct fw_reader *reader, void *dst, uint32_t bytes) __attribute__((noinline));
 
@@ -78,7 +89,7 @@ fw_dma_read(
 	/* Points the DMA at the lines and the DMEM place and starts it. */
 	hw_write(HW_DMA_AMB, address);
 	hw_write(HW_DMA_MEM, (uint32_t)(uintptr_t)dmem - HW_DMEM_BASE);
-	hw_write(HW_DMA_GO, lines);
+	hw_write(HW_DMA_GO, dma_go_bits() | lines);
 
 	/* Waits for the copy and reports a refused line. */
 	error = dma_wait();
@@ -113,7 +124,7 @@ fw_dma_write(
 	/* Points the DMA at the lines and the DMEM place and starts the write. */
 	hw_write(HW_DMA_AMB, address);
 	hw_write(HW_DMA_MEM, (uint32_t)(uintptr_t)dmem - HW_DMEM_BASE);
-	hw_write(HW_DMA_GO, HW_DMA_GO_WRITE | lines);
+	hw_write(HW_DMA_GO, dma_go_bits() | HW_DMA_GO_WRITE | lines);
 
 	/* Waits until every write is answered and reports a refused line. */
 	error = dma_wait();
@@ -427,8 +438,8 @@ fw_store(
 		if (part > bytes)
 			part = bytes;
 
-		/* Another line: writes the held one back and reads this one. */
-		if (line != store_base) {
+		/* Another line (or another protection mode): writes the held one back and reads this one. */
+		if (line != store_base || dma_mode != store_mode) {
 			error = fw_store_flush();
 			if (error != 0)
 				return -1;
@@ -438,6 +449,7 @@ fw_store(
 				return -1;
 
 			store_base = line;
+			store_mode = dma_mode;
 		}
 
 		/* Changes the bytes of this line. */
@@ -461,6 +473,7 @@ int
 fw_store_flush(void)
 {
 	uint32_t line;
+	uint32_t mode;
 	int error;
 
 	/*
@@ -474,14 +487,52 @@ fw_store_flush(void)
 	if (!store_dirty)
 		return 0;
 
-	/* Writes the line and waits for its answer. */
+	/* Writes the line, in the mode it was stored with, and waits for its answer. */
 	store_dirty = 0;
+	mode = dma_mode;
+	dma_mode = store_mode;
 	error = fw_dma_write(line, store_line, 1);
+	dma_mode = mode;
 	if (error != 0)
 		return -1;
 
 	/* Succeeded: the stored bytes are in memory. */
 	return 0;
+}
+
+/*
+ * Sets the session protection of the copies that follow and gives the one
+ * before (to restore it): FW_DMA_CHK, FW_DMA_TBL or 0.
+ */
+uint32_t
+fw_dma_mode(
+	uint32_t mode)
+{
+	uint32_t old;
+
+	/* The next DMA_GO carries it. */
+	old = dma_mode;
+	dma_mode = mode;
+
+	/* Succeeded: the mode before. */
+	return old;
+}
+
+/* Gives DMA_GO's protection bits for the current mode. */
+static uint32_t
+dma_go_bits(void)
+{
+	uint32_t bits;
+
+	/* chk for the session's memory, tbl for the table. */
+	bits = 0;
+	if ((dma_mode & FW_DMA_CHK) != 0)
+		bits |= HW_DMA_GO_CHK;
+	if ((dma_mode & FW_DMA_TBL) != 0)
+		bits |= HW_DMA_GO_TBL;
+
+	/* Succeeded: the bits. */
+	return bits;
 }
 
 /* Waits until the DMA is idle and every write answered; reports its error flag. */

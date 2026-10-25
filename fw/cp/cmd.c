@@ -39,7 +39,8 @@ static void cmd_free_memory(struct fw_command *command);
 static void cmd_destroy_device(struct fw_command *command);
 static void cmd_create_semaphore(struct fw_command *command);
 static void cmd_destroy_semaphore(struct fw_command *command);
-static void cmd_unsupported(struct fw_command *command);
+static void cmd_buffer_grant(struct fw_command *command);
+static void cmd_buffer_revoke(struct fw_command *command);
 
 /*
  * The gpu-ops this firmware decodes.
@@ -50,8 +51,8 @@ static const struct cmd_entry cmd_table[] = {
 	{ GHCI_GPU_OP_HEAP, cmd_heap },
 	{ GHCI_GPU_OP_MEMORY, cmd_memory },
 	{ GHCI_GPU_OP_PROGRAM, fw_cmd_program },
-	{ GHCI_GPU_OP_BUFFER_GRANT, cmd_unsupported },
-	{ GHCI_GPU_OP_BUFFER_REVOKE, cmd_unsupported },
+	{ GHCI_GPU_OP_BUFFER_GRANT, cmd_buffer_grant },
+	{ GHCI_GPU_OP_BUFFER_REVOKE, cmd_buffer_revoke },
 	{ GHCI_VK_DESTROY_DEVICE, cmd_destroy_device },
 	{ GHCI_VK_QUEUE_SUBMIT, fw_cmd_queue_submit },
 	{ GHCI_VK_FREE_MEMORY, cmd_free_memory },
@@ -410,6 +411,7 @@ cmd_session_open(
 	uint32_t tag;
 	uint32_t flags;
 	uint64_t limit;
+	int present;
 	int error;
 
 	/* The arguments. */
@@ -426,18 +428,39 @@ cmd_session_open(
 		return;
 	}
 
-	/* No flag is known: PROTECTED needs the PROT capability, which Amaterrace lacks. */
-	if (flags != 0 || tag > 255u) {
+	/* PROTECTED is the only flag; it needs the PROT capability and is never session 0's. */
+	if ((flags & ~GHCI_SESSION_PROTECTED) != 0 || tag > 255u) {
 		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
 		return;
+	}
+	if ((flags & GHCI_SESSION_PROTECTED) != 0) {
+		present = fw_prot_present();
+		if (!present || tag == 0) {
+			command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
+			return;
+		}
 	}
 
 	/* A session is opened once; the slots may be used up. */
 	error = fw_session_open(tag, limit);
 	if (error == -1) {
 		command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
+		return;
 	} else if (error != 0) {
 		command->status = FW_VK_ERROR_OUT_OF_DEVICE_MEMORY;
+		return;
+	}
+
+	/* A protected session takes a slot; without the table or a slot it is not opened. */
+	if ((flags & GHCI_SESSION_PROTECTED) != 0) {
+		error = fw_prot_open(tag);
+		if (error != 0) {
+			fw_session_close(tag);
+			if (error == -2)
+				command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
+			else
+				command->status = FW_VK_ERROR_OUT_OF_DEVICE_MEMORY;
+		}
 	}
 }
 
@@ -460,9 +483,15 @@ cmd_session_close(
 		return;
 	}
 
-	/* Returns the session's objects (closing a closed session does nothing). */
-	if (tag <= 255u)
+	/*
+	 * After its work: the protection of a protected session (its table
+	 * bytes, grants and slot), then its objects (closing a closed session
+	 * does nothing).
+	 */
+	if (tag <= 255u) {
+		fw_prot_close(tag);
 		fw_session_close(tag);
+	}
 }
 
 /* GHCI_HEAP: [u64 GPU address][u64 bytes][u32 warps]; a packet in the ring only, no session open. */
@@ -504,12 +533,14 @@ cmd_memory(
 	uint64_t id;
 	uint32_t address;
 	uint32_t bytes;
+	uint32_t flags;
+	int error;
 
 	/* The arguments; the size is an address range, so it fits 32 bits. */
 	id = fw_reader_u64(command->reader);
 	address = fw_reader_address(command->reader);
 	bytes = fw_reader_address(command->reader);
-	(void)fw_reader_u32(command->reader);
+	flags = fw_reader_u32(command->reader);
 	if (command->reader->error)
 		return;
 
@@ -519,6 +550,20 @@ cmd_memory(
 		return;
 	memory->a = address;
 	memory->b = bytes;
+	memory->flags = (uint16_t)(flags & (GHCI_MEMORY_IMPORTED | GHCI_MEMORY_READ_ONLY));
+
+	/*
+	 * A protected session owns its memory from here (an import is reached
+	 * through the grant the driver sent first); a range of another session's,
+	 * or one not granule aligned, is refused and the object is not made.
+	 */
+	if ((flags & GHCI_MEMORY_IMPORTED) == 0) {
+		error = fw_prot_own(command->tag, address, bytes, (flags & GHCI_MEMORY_READ_ONLY) != 0);
+		if (error != 0) {
+			fw_object_destroy(memory);
+			command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
+		}
+	}
 }
 
 /* FREE_MEMORY: [device][memory][u64 0]. */
@@ -526,8 +571,25 @@ static void
 cmd_free_memory(
 	struct fw_command *command)
 {
+	struct fw_object *memory;
+	uint64_t id;
+
+	/* The destroy form. */
+	id = fw_wire_destroy(command);
+	if (command->reader->error)
+		return;
+
+	/* The allocation, if the session has it. */
+	memory = fw_object_find(command->tag, id, FW_OBJ_MEMORY);
+	if (memory == NULL)
+		return;
+
+	/* A protected session's own memory leaves the table (Vulkan frees no memory in use). */
+	if ((memory->flags & GHCI_MEMORY_IMPORTED) == 0)
+		fw_prot_disown(command->tag, memory->a, memory->b);
+
 	/* Forgets the allocation (the driver frees it after the session's fence). */
-	fw_cmd_destroy_object(command, FW_OBJ_MEMORY);
+	fw_object_destroy(memory);
 }
 
 /* DESTROY_DEVICE: [device][u64 0]. */
@@ -576,12 +638,86 @@ cmd_destroy_semaphore(
 	fw_cmd_destroy_object(command, FW_OBJ_SEMAPHORE);
 }
 
-/* BUFFER_GRANT, BUFFER_REVOKE: Amaterrace has no PROT capability. */
+/*
+ * GHCI_BUFFER_GRANT: [u32 session][u32 access][u64 GPU address][u64 bytes];
+ * a packet in the ring only.
+ */
 static void
-cmd_unsupported(
+cmd_buffer_grant(
 	struct fw_command *command)
 {
-	/* The arguments are skipped by the command's end: the packet ends here. */
-	command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
-	command->stop = 1;
+	uint32_t tag;
+	uint32_t access;
+	uint32_t address;
+	uint32_t bytes;
+	int present;
+	int error;
+
+	/* The arguments. */
+	tag = fw_reader_u32(command->reader);
+	access = fw_reader_u32(command->reader);
+	address = fw_reader_address(command->reader);
+	bytes = fw_reader_address(command->reader);
+	if (command->reader->error)
+		return;
+
+	/* Not a staged command. */
+	if (command->in_frame) {
+		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
+		command->stop = 1;
+		return;
+	}
+
+	/* A GPU without session protection has no grants. */
+	present = fw_prot_present();
+	if (!present) {
+		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
+		return;
+	}
+
+	/* The grant applies to the work after it (no drain). */
+	error = fw_prot_grant(tag, access, address, bytes);
+	if (error == -1) {
+		command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
+	} else if (error != 0) {
+		command->status = FW_VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	}
+}
+
+/* GHCI_BUFFER_REVOKE: [u32 session][u64 GPU address][u64 bytes]; a packet in the ring only. */
+static void
+cmd_buffer_revoke(
+	struct fw_command *command)
+{
+	uint32_t tag;
+	uint32_t address;
+	uint32_t bytes;
+	int present;
+	int error;
+
+	/* The arguments. */
+	tag = fw_reader_u32(command->reader);
+	address = fw_reader_address(command->reader);
+	bytes = fw_reader_address(command->reader);
+	if (command->reader->error)
+		return;
+
+	/* Not a staged command. */
+	if (command->in_frame) {
+		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
+		command->stop = 1;
+		return;
+	}
+
+	/* A GPU without session protection has no grants. */
+	present = fw_prot_present();
+	if (!present) {
+		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
+		return;
+	}
+
+	/* After the earlier work: one grant of exactly the range goes (none: nothing). */
+	error = fw_prot_revoke(tag, address, bytes);
+	if (error != 0)
+		command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
 }
