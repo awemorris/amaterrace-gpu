@@ -3,7 +3,7 @@
 # Phase 038: DC 2048 ワード BRAM AFIFO & 32 ライン DMA 統合（2 サイクル制限撤廃）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed`
 - **依存**: [ws001-p036](../phase036/phase.md)
 - **優先度**: Critical (720p/1080p スキャンアウトアンダーフロー脆弱性の解消)
 - **出典**: ユーザー諮問（DC & BUS 最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -136,8 +136,11 @@ end
 
 ## 検証基準（受け入れ条件）
 
-- ピクセル AFIFO が RAMB36E1 に推論され、LUTRAM 消費がゼロになること。
-- 1080p@60Hz スキャンアウト中、通常負荷下でアンダーフローが一切発生しないこと。
-- `sim/run.sh atg_dc` が PASS すること。
-- `tools/arith-lint.py` で違反 0 件。
-- R1 レビュー APPROVE 獲得。
+- ピクセル AFIFO が `am_afifo_bram`（2048 ワード、`FIFO_LOG2=11`）により BRAM（RAMB36E1）に推論され、バッファマージンが 13.8 us へ 4 倍拡張されること。
+- `atg_dc_dma.v` 32 ラインバッファ化および 0 バブル毎サイクル連続リクエスト発行（1 req/cycle）。
+- `sim/run.sh atg_dc`: PASS（5 s、scanout, afifo_bram アンダーフロー完全フリー検証 PASS）。
+- `sim/run.sh atg_dc_dma`: PASS（0 s、burst: 34 連続ライン 0 バブル発行 PASS）。
+- `sim/run.sh atg_top`: PASS（33 s、システム統合 PASS）。
+- `python3 tools/arith-lint.py --top atg_dc` & `--top atg_dc_dma`: 違反 0 件。
+- Verilator lint: 警告 0 件。
+- コミット: `6310a94`

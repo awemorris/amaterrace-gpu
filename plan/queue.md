@@ -44,15 +44,15 @@
 | `q001-i30` | **P3** | [ws001-p035](ws001/phase035/phase.md) | 完全スキッドバッファ（am_skid.v）の共通ライブラリ化（0 サイクルスループット・Backpressure 分離） | cleared | `q001-i01` | 実装・単体 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i31` | **P3** | [ws001-p036](ws001/phase036/phase.md) | BRAM 推論可能非同期 FIFO（am_afifo_bram.v）実装（同期 Read + 2段スキッド 0-cycle FWFT） | cleared | `q001-i30` | 実装完了（commit c3e9c7b）。単体 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i32` | **P2** | [ws001-p037](ws001/phase037/phase.md) | am_axi_master.v 深い Outstanding（16〜32要求）& 独立 R/W チャネル化（DDR 帯域 85%+ 飽和） | cleared | `q001-i30` | 実装完了（commit 0cd9ffe）。32枠深層 Outstanding & Skid 統合、deep_32/reorder PASS。R1 レビュー中。 |
-| `q001-i33` | **P2** | [ws001-p038](ws001/phase038/phase.md) | atg_dc.v 2048 ワード BRAM AFIFO & 連続フェッチ（1080p@60Hz 148.5MHz 完全保証） | in-progress | `q001-i31`, `q001-i32` | P2 着手。32B DMA 境界停止・アンダーフロー根絶。 |
-| `q001-i34` | **P2** | [ws001-p039](ws001/phase039/phase.md) | DC Urgent / Panic プレエンプション & MC QoS 優先アービトレーション（アンダーフロー即時回避） | queued | `q001-i33`, `q001-i23` | P1 より移管。P2 待機。3D 描画過負荷時も画面描画破綻ゼロ。 |
+| `q001-i33` | **P2** | [ws001-p038](ws001/phase038/phase.md) | atg_dc.v 2048 ワード BRAM AFIFO & 連続フェッチ（1080p@60Hz 148.5MHz 完全保証） | cleared | `q001-i31`, `q001-i32` | 実装完了（commit 6310a94）。2048ワードBRAM AFIFO & 32ライン連続バーストDMA。R1レビュー中。 |
+| `q001-i34` | **P2** | [ws001-p039](ws001/phase039/phase.md) | DC Urgent / Panic プレエンプション & MC QoS 優先アービトレーション（アンダーフロー即時回避） | in-progress | `q001-i33`, `q001-i23` | P2 着手。3D 描画過負荷時も画面描画破綻ゼロ。 |
 
 ## サブエージェント実行状態（N=3）
 
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
 | **P1** | 実装（メモリ・相互結合） | Claude Opus 5.5 Medium | active | `q001-i22`: `ws001-p027`（MC バースト結合） | `q001-i23`: `ws001-p028`（MC フラットクロスバー） |
-| **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC） | Claude Opus 5.5 Medium | active | `q001-i33`: `ws001-p038`（atg_dc 2048ワード BRAM AFIFO） | `q001-i34`: `ws001-p039`（DC QoS） |
+| **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC） | Claude Opus 5.5 Medium | active | `q001-i34`: `ws001-p039`（DC QoS） | `q001-i16`: `ws001-p021`（TU MSHR） |
 | **P3** | 実装（インフラ・ジオメトリ・SU） | Claude Opus 5.5 Medium | active | `q001-i28`: `ws001-p033`（PT-VC） | `q001-i17`: `ws001-p022`（RX Setup） |
 | **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | WS001（31件）& WS002（10件）全 41 Phase 実装設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
