@@ -102,7 +102,10 @@ module atg_mc #(
 	parameter PROT_PLB = 4,	/* PLB lines */
 	parameter PROT_PLB_W = 2,	/* clog2(PROT_PLB) */
 	parameter PROT_GRANTS = 8,	/* grant CAM entries */
-	parameter PROT_GIDX_W = 3	/* clog2(PROT_GRANTS) */
+	parameter PROT_GIDX_W = 3,	/* clog2(PROT_GRANTS) */
+	parameter HAS_L2 = 1,		/* 256 KiB 16-way L2 cache (LLC) */
+	parameter L2_WAYS = 16,
+	parameter L2_SET_W = 8
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -267,13 +270,15 @@ module atg_mc #(
 	wire [HPW-1:0] bad_head;
 	wire [LA_W-1:0] bad_line;
 
-	wire m_rsp_valid;
-	wire m_rsp_write;
-	wire [UW-1:0] m_rsp_user;
-	wire [LINE_BITS-1:0] m_rsp_rdata;
-	wire m_rsp_error;
+	/* Responses from L2 cache / AXI master subsystem */
+	wire l2_rsp_valid;
+	wire l2_rsp_write;
+	wire [UW-1:0] l2_rsp_user;
+	wire [LINE_BITS-1:0] l2_rsp_rdata;
+	wire l2_rsp_error;
+	wire l2_idle;
 	wire m_idle;
-	wire m_walk = m_rsp_user[15:8] == 8'hFF;
+	wire l2_walk = l2_rsp_user[15:8] == 8'hFF;
 
 	atg_mc_prot #(
 		.HAS_PROT(HAS_PROT), .HAS_DC(HAS_DC), .NCLIENT(NCLIENT), .RMW_MASK(RMW_MASK),
@@ -289,30 +294,30 @@ module atg_mc #(
 		.g_wdata(g_wdata), .g_user(g_user),
 		.err_busy(err_v), .bad(bad), .bad_head(bad_head), .bad_line(bad_line),
 		.bad_prot(bad_prot), .bad_mem(bad_mem), .done(done), .done_chk(done_chk),
-		.w_valid(m_rsp_valid && m_walk), .w_error(m_rsp_error), .w_rdata(m_rsp_rdata),
+		.w_valid(l2_rsp_valid && l2_walk), .w_error(l2_rsp_error), .w_rdata(l2_rsp_rdata),
 		.tbase(prot_tbase), .inv_valid(prot_inv_valid), .inv_g(prot_inv_g),
 		.inv_n(prot_inv_n), .inv_pending(prot_inv_pending),
 		.gw_valid(prot_gw_valid), .gw_idx(prot_gw_idx), .gw_data(prot_gw_data)
 	);
 
 	/*
-	 * Responses: the AXI master's first (a walk's goes to atg_mc_prot), then
+	 * Responses: the L2/AXI subsystem's first (a walk's goes to atg_mc_prot), then
 	 * a refused request's.  Route bit 0 = 0 with HAS_DC is the DC's own
 	 * entry.  The tree always takes a response (its leaves always do, and a
 	 * hop has room whenever the next one has), which the AXI master's
 	 * responses need: they cannot wait.
 	 */
-	wire m_out = m_rsp_valid && !m_walk;
+	wire m_out = l2_rsp_valid && !l2_walk;
 	wire err_out = err_v && !m_out && t_rsp_ready;
-	wire [RW-1:0] rsp_route = m_out ? m_rsp_user[16 +: RW] : err_route;
+	wire [RW-1:0] rsp_route = m_out ? l2_rsp_user[16 +: RW] : err_route;
 	wire rsp_dc = HAS_DC != 0 && !rsp_route[0];
 `ifdef MUT_PROT_DATA
-	wire [LINE_BITS-1:0] rsp_line = m_rsp_rdata;
+	wire [LINE_BITS-1:0] rsp_line = l2_rsp_rdata;
 `else
-	wire [LINE_BITS-1:0] rsp_line = m_out ? m_rsp_rdata : {LINE_BITS{1'b0}};
+	wire [LINE_BITS-1:0] rsp_line = m_out ? l2_rsp_rdata : {LINE_BITS{1'b0}};
 `endif
-	wire [RFW-1:0] rsp_flit = {rsp_line, rsp_route, m_out ? m_rsp_user[7:0] : err_tag,
-		m_out ? m_rsp_error : 1'b1, m_out ? m_rsp_write : err_write};
+	wire [RFW-1:0] rsp_flit = {rsp_line, rsp_route, m_out ? l2_rsp_user[7:0] : err_tag,
+		m_out ? l2_rsp_error : 1'b1, m_out ? l2_rsp_write : err_write};
 
 	assign t_rsp_valid = (m_out || err_out) && !rsp_dc;
 	assign t_rsp_data = rsp_flit;
@@ -327,7 +332,7 @@ module atg_mc #(
 	 * responses and refusals, left out of axi_idle.
 	 */
 	wire g_keep = HAS_KEEP != 0 && g_user[15:8] != 8'hFF && !g_user[16];
-	wire m_keep = HAS_KEEP != 0 && !m_walk && !m_rsp_user[16];
+	wire l2_keep = HAS_KEEP != 0 && !l2_walk && !l2_rsp_user[16];
 	wire bad_keep = HAS_KEEP != 0 && !bad_head[20];
 	wire err_keep = HAS_KEEP != 0 && !err_route[0];
 	wire ax_zero;
@@ -336,12 +341,12 @@ module atg_mc #(
 		.clk(clk), .rst_n(rst_n), .flush(flush), .take(c_req_valid & c_req_ready),
 		.take_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}), .rsp(rsp_valid), .done(done),
 		.done_chk(done_chk), .done_keep(g_valid && g_ready ? g_keep : bad && bad_keep),
-		.ax_inc(g_valid && g_ready && !g_keep), .ax_dec(m_rsp_valid && !m_keep),
+		.ax_inc(g_valid && g_ready && !g_keep), .ax_dec(l2_rsp_valid && !l2_keep),
 		.pend_zero(pend_zero), .chk_idle(chk_idle), .unit_idle(unit_idle), .ax_zero(ax_zero)
 	);
 
 	assign axi_idle = (HAS_KEEP != 0 ? ax_zero && !(err_v && !err_keep) :
-		m_idle && !err_v) && t_rsp_idle && pend_zero;
+		(m_idle && l2_idle) && !err_v) && t_rsp_idle && pend_zero;
 
 	/* flush drops a refusal's response, but not the root client's (ROOT_KEEP). */
 	always @(posedge clk) begin
@@ -381,16 +386,76 @@ module atg_mc #(
 	wire [ADDR_W:0] g_addr = {1'b0, g_line, {LINE_SHIFT{1'b0}}};
 	wire g_host = HAS_LOCAL != 0 && !(g_addr >= {1'b0, LOCAL_BASE} && g_addr < LOCAL_END);
 
+	/* Downstream AXI request/response wires */
+	wire axi_req_valid, axi_req_ready, axi_req_write, axi_req_id;
+	wire [LA_W-1:0] axi_req_line;
+	wire [LINE_BYTES-1:0] axi_req_be;
+	wire [LINE_BITS-1:0] axi_req_wdata;
+	wire [UW-1:0] axi_req_user;
+	wire [7:0] axi_req_key;
+
+	wire ax_rsp_valid, ax_rsp_write, ax_rsp_error;
+	wire [UW-1:0] ax_rsp_user;
+	wire [LINE_BITS-1:0] ax_rsp_rdata;
+
+	generate
+	if (HAS_L2 != 0) begin : g_l2
+		wire s_high = HAS_DC != 0 && !g_user[16];
+		wire l2_ctrl_inv_done;
+		wire [3:0] l2_fsm;
+
+		atg_mc_l2 #(
+			.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.UW(UW), .WAYS(L2_WAYS), .SET_W(L2_SET_W)
+		) l2 (
+			.clk(clk), .rst_n(rst_n), .flush(flush), .quiesce(quiesce),
+			.s_req_valid(g_valid), .s_req_ready(g_ready), .s_req_write(g_write),
+			.s_req_line(g_line), .s_req_be(g_be), .s_req_wdata(g_wdata),
+			.s_req_user(g_user), .s_req_id(g_host), .s_req_nc(g_host),
+			.s_req_high(s_high),
+			.s_rsp_valid(l2_rsp_valid), .s_rsp_write(l2_rsp_write), .s_rsp_user(l2_rsp_user),
+			.s_rsp_rdata(l2_rsp_rdata), .s_rsp_error(l2_rsp_error),
+			.m_req_valid(axi_req_valid), .m_req_ready(axi_req_ready), .m_req_write(axi_req_write),
+			.m_req_line(axi_req_line), .m_req_be(axi_req_be), .m_req_wdata(axi_req_wdata),
+			.m_req_user(axi_req_user), .m_req_id(axi_req_id), .m_req_key(axi_req_key),
+			.m_rsp_valid(ax_rsp_valid), .m_rsp_write(ax_rsp_write), .m_rsp_user(ax_rsp_user),
+			.m_rsp_rdata(ax_rsp_rdata), .m_rsp_error(ax_rsp_error),
+			.ctrl_inv_valid(1'b0), .ctrl_inv_clean(1'b0), .ctrl_inv_range(1'b0),
+			.ctrl_inv_base({LA_W{1'b0}}), .ctrl_inv_limit({LA_W{1'b0}}),
+			.ctrl_inv_done(l2_ctrl_inv_done),
+			.idle(l2_idle), .fsm(l2_fsm)
+		);
+		wire unused_l2 = &{1'b0, l2_ctrl_inv_done, l2_fsm};
+	end else begin : g_no_l2
+		assign g_ready = axi_req_ready;
+		assign axi_req_valid = g_valid;
+		assign axi_req_write = g_write;
+		assign axi_req_line = g_line;
+		assign axi_req_be = g_be;
+		assign axi_req_wdata = g_wdata;
+		assign axi_req_user = g_user;
+		assign axi_req_id = g_host;
+		assign axi_req_key = g_user[15:8];
+
+		assign l2_rsp_valid = ax_rsp_valid;
+		assign l2_rsp_write = ax_rsp_write;
+		assign l2_rsp_user = ax_rsp_user;
+		assign l2_rsp_rdata = ax_rsp_rdata;
+		assign l2_rsp_error = ax_rsp_error;
+		assign l2_idle = 1'b1;
+	end
+	endgenerate
+
 	am_axi_master #(
 		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 		.DATA_W(DATA_W), .UW(UW), .OUTSTANDING_LOG2(OUTSTANDING_LOG2),
 		.NID(HAS_LOCAL != 0 ? 2 : 1), .ID_W(1), .KEY_W(8)
 	) axi (
-		.clk(clk), .rst_n(rst_n), .halt(1'b0), .idle(m_idle), .req_valid(g_valid),
-		.req_ready(g_ready), .req_write(g_write), .req_line(g_line), .req_be(g_be),
-		.req_wdata(g_wdata), .req_user(g_user), .req_id(g_host),
-		.req_key(g_user[15:8]), .rsp_valid(m_rsp_valid), .rsp_write(m_rsp_write),
-		.rsp_user(m_rsp_user), .rsp_rdata(m_rsp_rdata), .rsp_error(m_rsp_error),
+		.clk(clk), .rst_n(rst_n), .halt(1'b0), .idle(m_idle), .req_valid(axi_req_valid),
+		.req_ready(axi_req_ready), .req_write(axi_req_write), .req_line(axi_req_line), .req_be(axi_req_be),
+		.req_wdata(axi_req_wdata), .req_user(axi_req_user), .req_id(axi_req_id),
+		.req_key(axi_req_key), .rsp_valid(ax_rsp_valid), .rsp_write(ax_rsp_write),
+		.rsp_user(ax_rsp_user), .rsp_rdata(ax_rsp_rdata), .rsp_error(ax_rsp_error),
 		.m_awid(m_awid), .m_awaddr(m_awaddr), .m_awlen(m_awlen), .m_awsize(m_awsize),
 		.m_awburst(m_awburst), .m_awcache(m_awcache), .m_awprot(m_awprot),
 		.m_awvalid(m_awvalid), .m_awready(m_awready), .m_wdata(m_wdata),
@@ -402,7 +467,7 @@ module atg_mc #(
 		.m_rresp(m_rresp), .m_rlast(m_rlast), .m_rvalid(m_rvalid), .m_rready(m_rready)
 	);
 
-	assign fsm = {!m_idle, !axi_idle, !chk_idle, !unit_idle};
+	assign fsm = {!(m_idle && l2_idle), !axi_idle, !chk_idle, !unit_idle};
 	wire unused_ok = &{1'b0, bad_head, s_req_valid};
 endmodule
 

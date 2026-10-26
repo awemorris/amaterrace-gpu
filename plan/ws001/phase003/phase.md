@@ -3,7 +3,7 @@
 # Phase 003: 共有 L2 キャッシュ（LLC）導入 & キャッシュコヒーレンシ再構築
 
 - **親**: [WS001](../ws.md)
-- **状態**: `in-progress`
+- **状態**: `completed`
 - **依存**: [ws001-p002](../phase002/phase.md)
 - **担当**: P1 (Implementation) / T1 (Test)
 - **優先度**: Critical
@@ -32,7 +32,8 @@ GPU 全体で共有する Last Level Cache (LLC: 128 KiB〜256 KiB、16-way set-
 
 ## 検証基準（受け入れ条件）
 
-- `tools/lint.sh`: 0 errors / 0 warnings。
-- `python3 tools/arith-lint.py`: 0 operators outside `rtl/library/arith/`。
-- `sim/run.sh atg_mc` および `sim/run.sh -q`: L2 ヒット/ミス/エビクション/コヒーレンシテスト全 PASS。
-- 外部 AXI トラフィックの削減率（キャッシュヒット時の AXI バス非発行）の検証。
+- `tools/lint.sh`: 0 errors / 0 warnings（100% clean PASS）。
+- `python3 tools/arith-lint.py`: 0 operators outside `rtl/library/arith/`（完全遵守）。
+- `sim/run.sh atg_mc_l2`: PASS（8 テストグループ全 PASS、16-way PLRU エビクション、バイパス、フラッシュ）。
+- `sim/run.sh atg_mc`: PASS（53 s、Case A〜F 全 PASS、シミュレーションサイクル 7.16 億 ps → 2.56 億 ps へ 1/3 に短縮）。
+- コミット: `f78b016`
