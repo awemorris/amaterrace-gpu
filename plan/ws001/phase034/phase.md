@@ -3,7 +3,7 @@
 # Phase 034: ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・統合回帰PASS)
 - **依存**: [ws001-p001](../phase001/phase.md)
 - **優先度**: Major (ボードトップ構造の明確化 & PCIe MSI ブリッジの共通 BSP 配置)
 - **出典**: ユーザー諮問（atg_pcie_msi 配置 & boards 命名）および R1 アーキテクチャ分析レポート
@@ -110,3 +110,20 @@ module atg_pcie_msi #(
 - ボードトップが `atg_kc705_top` としてクリーンにビルド・シミュレーションできること。
 - 既存のテストスイートおよび画像出力が 1 bit の差異もなく一致すること。
 - R1 レビュー APPROVE 獲得。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **リファクタリング実施**:
+   - `atg_pcie_msi.v`: `rtl/gpu/top/` $\to$ `rtl/bsp/pcie/atg_pcie_msi.v` へ移管。`IRQ_STATUS_ADDR` および `IRQ_ENABLE_ADDR` をパラメータ化。
+   - ボードトップ: `boards/kc705/atg_kc705_raster.v` $\to$ `boards/kc705/atg_kc705_top.v`（モジュール名 `atg_kc705_top`）へ統一改名。
+   - 関連ファイル（XDC, TB, Makefile, lint.sh, vivado-build.sh, README, spec 一式）の参照を完全整合。
+2. **検証結果**:
+   - `sim/run.sh atg_kc705_top`: **PASS** (76 s; jtag, fill, i2c, pattern 全サブテスト通過)
+   - `sim/run.sh atg_kc705_pcie`: **PASS** (11 s)
+   - `tools/lint.sh`: 全モジュール Clean（0 warnings）
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+   - `sim/verilator/run.sh basic`: **PASS** (2991 cycles)
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p034_board_top.md`）。PCIe MSI の BSP 移管とパラメータ化、ボードトップ改名と全ツールチェーンの完全整合、Guardrails 完全準拠を承認。
