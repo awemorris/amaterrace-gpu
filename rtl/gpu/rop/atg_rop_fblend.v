@@ -453,8 +453,11 @@ module atg_rop_fblend (
 		end
 
 		wire [255:0] pk;
-		atg_fmt_pack #(.N(7), .FMTS(PFF)) u_pk (.c(comp_vec), .un(p_un), .hf(p_hf),
-			.fmt(fmt4), .wm(wm4), .o(pk));
+		atg_fmt_pack #(.N(7), .FMTS(PFF), .LAT(0)) u_pk (
+			.clk(clk), .rst_n(rst_n), .en(pipe_en),
+			.c(comp_vec), .un(p_un), .hf(p_hf),
+			.fmt(fmt4), .wm(wm4), .o(pk)
+		);
 
 		assign raw_out_w[64 * gl +: 64] = (known4 && lanes4[gl]) ? pk[63:0] : 64'd0;
 		assign keep_out_w[64 * gl +: 64] = (known4 && lanes4[gl]) ? pk[191:128] : {64{1'b1}};

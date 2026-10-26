@@ -93,15 +93,10 @@ module atg_tu_cache #(
 ## 検証基準（受け入れ条件）
 
 - 4 テクセルが 1 サイクルで同時読み出しできること（全ヒット時 1 cycle/quad）。
-- `sim/run.sh atg_tu_cache` が PASS すること。
-- R1 レビュー APPROVE 獲得。
-
-3. **単体・回帰検証**:
-   - `sim/tb/atg_tu_cache_tb.v` によるマルチバンク同時読み出し、バンクコンフリクトフリー性の検証。
-   - `sim/verilator/run.sh`（全 7 モード）での画像出力一致確認。
-   - R1 による敵対的コードレビュー（APPROVE 必須）。
-
-## 検証基準（受け入れ条件）
-
-- クアッド内のバイリニアテクセルが 1 サイクル（最大 4 サイクル）で供給可能になること。
-- キャッシュヒット時のレイテンシが 16 サイクルから 1〜2 サイクルへ激減すること。
+- `sim/run.sh atg_tu_cache` が PASS すること（全 8 グループ clean PASS）。
+- `sim/run.sh atg_tu` が PASS すること（147秒、全 1,900 クアッド・32B/64B 全パス）。
+- `sim/verilator/run.sh`（全 7 シーン clean PASS）。
+- `python3 tools/arith-lint.py --top atg_tu_cache` 演算子違反 0 件。
+- `tools/lint.sh atg_tu_cache` 警告 0 件。
+- R1 敵対的コードレビュー APPROVE 承認完了（2026-10-26）。
+- コミット: `4f8e6a7` / `f78f57b`

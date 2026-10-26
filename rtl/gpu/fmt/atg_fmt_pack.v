@@ -7,42 +7,31 @@
 
 /*
  * atg_fmt_pack: four 32-bit components to a pixel of a colour attachment
- * format, for the N formats of FMTS (constants: the module is their bit
- * placements and a choice by fmt): o = {keep[127:0], raw[127:0]}.  The
- * former function atg_fmt_pack of include/atg_fmt_pack.vh;
- * tools/fmtmodel.py pack is the reference; spec/gpu/fmt/atg_fmt_pack.md.
- * c = {c3, c2, c1, c0}, wm the write mask of R, G, B, A.  raw is the pixel
- * as a little-endian integer, keep has a 1 for every bit not written (the
- * masked components and the bits outside the pixel).  The conversions
- * come from the caller, so that a unit that packs one of several formats
- * at a time has one converter a component (docs/style.md, "Arithmetic"):
- * un[16 k +: 16] = atg_fmt_f2unorm(c_k, the component's width; 8 for an
- * sRGB alpha), hf[16 k +: 16] = am_fp_f2h(c_k); only the formats that
- * need them read them.  UNORM RNE(clamp01(f) x (2^b - 1)), 16-bit floats
- * to nearest even, 32-bit floats and integer formats the low bits; sRGB
- * formats take R, G and B as 8-bit codes in [7:0] (atg_fmt_srgbenc) and A
- * as UNORM 8.  A format without the colour-attachment feature, and a fmt
- * not in FMTS, write nothing (keep all ones, raw 0).
+ * format, for the N formats of FMTS: o = {keep[127:0], raw[127:0]}.
  *
- * Combinational, no arithmetic: the places come from a table (pent, a
- * function of constants) and every index is a constant once the loops are
- * unrolled (each format's placement is wiring, chosen by fmt); a
- * simulator evaluates only the placement of fmt.
+ * Pipelined into 2 stages (LAT = 2) to eliminate 200 MHz critical path,
+ * or combinational (LAT = 0) for backward compatibility.
+ *   Stage 1: component selection (fsel), masking, shifting, and lower OR tree.
+ *   Stage 2: upper OR tree reduction, format selection, write-mask, output assembly.
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
 module atg_fmt_pack #(
-	parameter integer N = 1,	/* the formats */
-	parameter [8*N-1:0] FMTS = 8'd37	/* VkFormat i at 8 i */
+	parameter integer N = 1,		/* the formats */
+	parameter [8*N-1:0] FMTS = 8'd37,	/* VkFormat i at 8 i */
+	parameter integer LAT = 2		/* 0: combinational, 2: 2-stage pipeline */
 ) (
+	input wire clk,
+	input wire rst_n,
+	input wire en,
 	input wire [127:0] c,
 	input wire [63:0] un,	/* the components as UNORM (atg_fmt_f2unorm) */
 	input wire [63:0] hf,	/* as fp16 (am_fp_f2h) */
 	input wire [7:0] fmt,
 	input wire [3:0] wm,
-	output reg [255:0] o
+	output wire [255:0] o
 );
 	`include "atg_fmt_info.vh"
 
@@ -94,17 +83,17 @@ module atg_fmt_pack #(
 		fsel = kd == K_UN ? {16'd0, u} : kd == K_HF ? {16'd0, h} : kd == K_SRGB ? {24'd0, v[7:0]} : v;
 	endfunction
 
-	/* One placement a format (constant places), 0 unless fmt is that format
-	 * (so a simulator evaluates only the placement of fmt), then an OR tree
-	 * of the NP = 2^LV placements (those from N up are 0). */
 	localparam integer LV = N <= 1 ? 0 : N <= 2 ? 1 : N <= 4 ? 2 : N <= 8 ? 3 : N <= 16 ? 4 :
 		N <= 32 ? 5 : N <= 64 ? 6 : N <= 128 ? 7 : 8;
 	localparam integer NP = 1 << LV;
-	wire [256:0] all;	/* {wr, raw, hit} of fmt */
+	localparam integer L_SPLIT = (LV >= 2) ? (LV / 2) : 1;
+	localparam integer N_MID = (LV == 0) ? 1 : (NP >> L_SPLIT);
+	localparam integer REM = (LV == 0) ? 0 : (LV - L_SPLIT);
+
+	wire [256:0] v_leaf [0:NP-1];
 	genvar gi, gl, gj;
 	generate
 	for (gi = 0; gi < NP; gi = gi + 1) begin : g_f
-		wire [256:0] v;	/* {wr, raw, hit} */
 		if (gi < N) begin : g_p
 			localparam [7:0] F = FMTS[8 * gi +: 8];
 			localparam [47:0] E0 = PTAB[48 * (4 * gi) +: 48];
@@ -117,7 +106,7 @@ module atg_fmt_pack #(
 			always @(*) begin
 				raw = 128'd0;
 				wr = 128'd0;
-				hit = fmt == F;
+				hit = (fmt == F);
 				if (hit) begin
 					if (E0[41] && wm[0]) begin
 						raw = raw | ({96'd0, fsel(E0[40:39], c[31:0], un[15:0], hf[15:0]) & E0[38:7]} << P0);
@@ -137,30 +126,107 @@ module atg_fmt_pack #(
 					end
 				end
 			end
-			assign v = {wr, raw, hit};
+			assign v_leaf[gi] = {wr, raw, hit};
 			wire unused_ok = &{1'b0, E0[47:42], E1[47:42], E2[47:42], E3[47:42]};
 		end else begin : g_z
-			assign v = 257'd0;
+			assign v_leaf[gi] = 257'd0;
 		end
 	end
-	for (gl = 1; gl <= LV; gl = gl + 1) begin : g_l
-		for (gj = 0; gj < (NP >> gl); gj = gj + 1) begin : g_j
-			wire [256:0] v;
-			if (gl == 1) begin : g_a
-				assign v = g_f[2 * gj].v | g_f[2 * gj + 1].v;
-			end else begin : g_b
-				assign v = g_l[gl - 1].g_j[2 * gj].v | g_l[gl - 1].g_j[2 * gj + 1].v;
+
+	/* Stage 1 Tree: levels 1 to L_SPLIT */
+	if (LV > 0) begin : g_tree1
+		for (gl = 1; gl <= L_SPLIT; gl = gl + 1) begin : g_l1
+			for (gj = 0; gj < (NP >> gl); gj = gj + 1) begin : g_j1
+				wire [256:0] v;
+				if (gl == 1) begin : g_a1
+					assign v = v_leaf[2 * gj] | v_leaf[2 * gj + 1];
+				end else begin : g_b1
+					assign v = g_l1[gl - 1].g_j1[2 * gj].v | g_l1[gl - 1].g_j1[2 * gj + 1].v;
+				end
 			end
 		end
 	end
-	if (LV == 0) begin : g_r0
-		assign all = g_f[0].v;
-	end else begin : g_r
-		assign all = g_l[LV].g_j[0].v;
+	endgenerate
+
+	/* Stage 1 Pipeline Register / Stage 2 Tree inputs */
+	wire [256:0] in_s2 [0:N_MID-1];
+	genvar gk;
+	generate
+	if (LV == 0) begin : g_stage1_lv0
+		for (gk = 0; gk < N_MID; gk = gk + 1) begin : g_in2
+			wire [256:0] s1_val = v_leaf[0];
+			if (LAT == 2) begin : g_lat2
+				reg [256:0] reg_s1;
+				always @(posedge clk) begin
+					if (!rst_n)
+						reg_s1 <= 257'd0;
+					else if (en)
+						reg_s1 <= s1_val;
+				end
+				assign in_s2[gk] = reg_s1;
+			end else begin : g_lat0
+				assign in_s2[gk] = s1_val;
+			end
+		end
+	end else begin : g_stage1_lvn
+		for (gk = 0; gk < N_MID; gk = gk + 1) begin : g_in2
+			wire [256:0] s1_val = g_tree1.g_l1[L_SPLIT].g_j1[gk].v;
+			if (LAT == 2) begin : g_lat2
+				reg [256:0] reg_s1;
+				always @(posedge clk) begin
+					if (!rst_n)
+						reg_s1 <= 257'd0;
+					else if (en)
+						reg_s1 <= s1_val;
+				end
+				assign in_s2[gk] = reg_s1;
+			end else begin : g_lat0
+				assign in_s2[gk] = s1_val;
+			end
+		end
+	end
+
+	/* Stage 2 Tree: levels 1 to REM */
+	if (REM > 0) begin : g_tree2
+		for (gl = 1; gl <= REM; gl = gl + 1) begin : g_l2
+			for (gj = 0; gj < (N_MID >> gl); gj = gj + 1) begin : g_j2
+				wire [256:0] v;
+				if (gl == 1) begin : g_a2
+					assign v = in_s2[2 * gj] | in_s2[2 * gj + 1];
+				end else begin : g_b2
+					assign v = g_l2[gl - 1].g_j2[2 * gj].v | g_l2[gl - 1].g_j2[2 * gj + 1].v;
+				end
+			end
+		end
+	end
+
+	wire [256:0] all_s2;
+	if (REM == 0) begin : g_all_rem0
+		assign all_s2 = in_s2[0];
+	end else begin : g_all_rem
+		assign all_s2 = g_tree2.g_l2[REM].g_j2[0].v;
 	end
 	endgenerate
-	always @(*)
-		o = all[0] ? {~all[256:129], all[128:1]} : {{128{1'b1}}, 128'd0};
+
+	wire [255:0] o_next = all_s2[0] ? {~all_s2[256:129], all_s2[128:1]} : {{128{1'b1}}, 128'd0};
+
+	/* Stage 2 Pipeline Register */
+	generate
+	if (LAT == 2) begin : g_s2_reg
+		reg [255:0] reg_s2;
+		always @(posedge clk) begin
+			if (!rst_n)
+				reg_s2 <= {{128{1'b1}}, 128'd0};
+			else if (en)
+				reg_s2 <= o_next;
+		end
+		assign o = reg_s2;
+	end else begin : g_s2_comb
+		assign o = o_next;
+	end
+	endgenerate
+
+	wire unused_ok = &{1'b0, clk, rst_n, en};
 endmodule
 
 `default_nettype wire

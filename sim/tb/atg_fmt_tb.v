@@ -79,7 +79,9 @@ module atg_fmt_tb;
 		am_fp_f2h #(.LAT(0)) u_hf (.f(p_c[32 * gk +: 32]), .h(p_hf[16 * gk +: 16]));
 	end
 	endgenerate
-	atg_fmt_pack #(.N(256), .FMTS(ALL)) u_pk (.c(p_c), .un(p_un), .hf(p_hf), .fmt(fmt), .wm(wm),
+	atg_fmt_pack #(.N(256), .FMTS(ALL), .LAT(0)) u_pk (
+		.clk(1'b0), .rst_n(1'b1), .en(1'b1),
+		.c(p_c), .un(p_un), .hf(p_hf), .fmt(fmt), .wm(wm),
 		.o(p_o));
 	am_fp_h2f #(.DENORM(1), .LAT(0)) u_h2f (.h(h), .f(h_f));
 	atg_fmt_comp u_href (.raw({112'd0, h}), .inf(atg_fmt_info(8'd76)), .k(2'd0), .sten(1'b0),

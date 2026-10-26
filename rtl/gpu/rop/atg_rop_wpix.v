@@ -292,8 +292,11 @@ module atg_rop_wpix #(
 	generate
 	for (k = 0; k < 4; k = k + 1) begin : g_res
 		wire [255:0] pk;
-		atg_fmt_pack #(.N(24), .FMTS(P2F)) u_pk (.c(src[128 * k +: 128]), .un(64'd0), .hf(64'd0),
-			.fmt(vk), .wm(wm), .o(pk));
+		atg_fmt_pack #(.N(24), .FMTS(P2F), .LAT(0)) u_pk (
+			.clk(clk), .rst_n(rst_n), .en(1'b1),
+			.c(src[128 * k +: 128]), .un(64'd0), .hf(64'd0),
+			.fmt(vk), .wm(wm), .o(pk)
+		);
 		wire [63:0] fr = (f_raw[64 * k +: 64] & ~f_keep[64 * k +: 64]) |
 			(dst[128 * k +: 64] & f_keep[64 * k +: 64]);
 		assign o_res[128 * k +: 128] = p_u8 ? {96'd0, b_pix[32 * k +: 32]} :
