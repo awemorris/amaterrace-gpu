@@ -103,7 +103,7 @@ module atg_mc #(
 	parameter PROT_PLB_W = 2,	/* clog2(PROT_PLB) */
 	parameter PROT_GRANTS = 8,	/* grant CAM entries */
 	parameter PROT_GIDX_W = 3,	/* clog2(PROT_GRANTS) */
-	parameter HAS_L2 = 1,		/* 256 KiB 16-way L2 cache (LLC) */
+	parameter HAS_L2 = 0,		/* 256 KiB 16-way L2 cache (LLC) */
 	parameter L2_WAYS = 16,
 	parameter L2_SET_W = 8
 ) (
