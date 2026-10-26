@@ -43,6 +43,7 @@ close $f
 read_xdc -mode out_of_context $xdc
 
 set args [list -top $top -part $part -mode out_of_context \
+	-verilog_define SYNTH_KINTEX7 \
 	-include_dirs [list [file join $root include]]]
 if {[llength $generics] > 0} {
 	lappend args -generic $generics
