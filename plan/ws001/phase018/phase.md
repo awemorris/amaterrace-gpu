@@ -3,7 +3,7 @@
 # Phase 018: TU 4 レーン並列ストリームアドレス生成（atg_tu_addr 逐次 FSM 撤廃・1 cycle/quad 化）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・1 cycle/quad達成)
 - **依存**: [ws001-p001](../phase001/phase.md)
 - **優先度**: Critical (アドレス生成レイテンシ 8〜16 サイクルから 1 サイクルへ短縮)
 - **出典**: ユーザー諮問（TU パイプライン化）および R1 敵対的アーキテクチャ分析レポート
@@ -109,3 +109,21 @@ module atg_tu_addr #(
 
 - アドレス生成が 1 cycle/quad のスループットで連続処理できること。
 - 既存テストにおいて画像出力が 1 bit の差異もなく一致すること。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **RTL パイプライン化実装**:
+   - `rtl/gpu/tu/atg_tu_addr.v`: 8〜16 サイクルの逐次 FSM（LA $\to$ LB × 4）を解体し、4 レーン並列 2 段ストリームパイプライン（LA $\to$ LB $\to$ OUT）へ刷新。$u, v, w$ 軸並列の LOD 評価回路により、スループット 1 cycle/quad、レイテンシ 2 サイクルを達成。
+   - `rtl/gpu/tu/atg_tu_desc.v`: 4 レーン並列読み出しポート（`rd_level0..3` $\to$ `rd_loff0..3`, `rd_plane0..3`）を追加。
+   - `rtl/gpu/rop/atg_rop_cache.v`: Verilator lint 警告の完全クリーン化。
+   - `spec/gpu/tu/atg_tu_addr.md`: 仕様書改定。
+2. **検証結果**:
+   - `sim/run.sh atg_tu_addr`: **PASS** (101 s; 全 24 機能テストグループ完全通過)
+   - `sim/run.sh atg_tu`: **PASS** (140 s; 32B/64B 両構成の統合テスト通過)
+   - `tools/lint.sh`: 全モジュール Clean（0 warnings）
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+   - `sim/verilator/run.sh`: 全 7 シーン **PASS**（tex.png, core.png 完全一致）。
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p018_tu_addr.md`）。4 レーン並列ストリーム化、1 cycle/quad スループット、Guardrails 完全準拠を承認。
