@@ -73,6 +73,7 @@ module atg_rop_wpix #(
 	input wire f_take,
 	/* To atg_rop_wb */
 	output wire [31:0] o_addr,
+	output wire [31:0] o_addr1,
 	output wire [1:0] o_nl,
 	output wire [1:0] o_np,
 	output wire o_multi,
@@ -219,6 +220,9 @@ module atg_rop_wpix #(
 		.b(multi ? {{(30-LINE_SHIFT){1'b0}}, i_j, {LINE_SHIFT{1'b0}}} : 32'd0),
 `endif
 		.ci(1'b0), .s(o_addr), .co(a3_co_unused));
+
+	wire a3_1_co_unused;
+	am_add #(.W(32)) u_a3_1 (.a(o_addr), .b(stride[i_rt]), .ci(1'b0), .s(o_addr1), .co(a3_1_co_unused));
 
 	/* The slots. */
 	wire [127:0] kcv = kc_sel ? {kcf[3], kcf[2], kcf[1], kcf[0]} :

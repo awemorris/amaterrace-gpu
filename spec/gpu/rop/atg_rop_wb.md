@@ -74,7 +74,10 @@ IDLE →(beat)→ ROW (the row's or line's address from atg_rop_wpix; drop) → 
 
 ## 6. Latency and throughput
 
-One beat at a time.  One sample of a 4-byte format on hits: ROW, LOOK, ROW, LOOK, BLEND, BWAIT (3 cycles of atg_rop_blend): about 9 cycles a beat.  The fp32 path takes atg_rop_fblend's cycles (up to about 640 per pass).  A quad of several attachments evicts the other attachments' lines (two entries); faster write-back is p025's.
+- **Streaming Path (Fast Path)**: Non-conflicting quads hitting the current cache lines stream through a 4-stage pipeline with **1 beat / cycle sustained throughput** and 4 cycles latency (Issue -> Blend -> Commit).
+- **Hazard Interlock**: In-flight quad coordinates `{RT[1:0], Y[15:1], X[15:1]}` are tracked by `atg_rop_hazard` (16-entry CAM). Quads targeting the same pixel coordinate stall at issue until the earlier quad commits, preventing RAW hazards while allowing non-conflicting quads to stream without stall.
+- **Miss & Multi-pass Handling**: Cache misses, multi-line quads, and multisampling passes serialize via the background FSM after draining in-flight streaming beats.
+- Draining / Flush: After 16 idle cycles, dirty lines are flushed to memory. Busy falls only once all memory writes are acknowledged.
 
 ## 7. Corner cases and errors
 
