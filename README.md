@@ -1,10 +1,15 @@
 Amaterrace GPU
 ==============
 
+
 [![CI](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml/badge.svg)](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml)
 [![License: Zlib](https://img.shields.io/badge/License-Zlib-blue.svg)](https://opensource.org/licenses/Zlib)
 [![GHCI Standard: 1.0](https://img.shields.io/badge/GHCI-1.0-indigo.svg)](docs/ghci.md)
 [![Target: Xilinx KC705](https://img.shields.io/badge/Target-Xilinx%20KC705-emerald.svg)](boards/)
+
+Gonna illuminate the world!
+
+---
 
 `Amaterrace GPU` (device `ATG1`) is an open-source, Vulkan-compatible graphics and compute GPU implemented in synthesizable Verilog-2005.
 
@@ -12,7 +17,6 @@ Designed for high-efficiency graphics and parallel compute with clean architectu
 
 - **Host Interface:** [GHCI 1.0](docs/ghci.md) (GPU Host Controller Interface) — a slim, register-free in-memory command architecture.
 - **Shader ISA:** [GSI1](docs/ghci.md#12-the-standard-shader-isa-gsi1) — standard 64-bit shader instruction set architecture with scalar PEs and packed FP16×2 support.
-- **License:** Zlib License (compatible with zedBSD), including the complete GHCI and GSI1 specifications.
 
 ---
 
@@ -301,5 +305,5 @@ amaterrace-gpu/
 7. Misc & Trivia
 ----------------
 
-The name `Amaterrace` comes from the Japanese sun goddess Amaterasu.  
-The reduced configuration of the architecture is named `Moonphaser`.
+- The name `Amaterrace` comes from the Japanese Mythology.
+- The entire SoC that uses `Amaterrace GPU` and [Sukuna RISC](https://github.com/awemorris/sukuna-risc/) is named `Moonphaser`.
