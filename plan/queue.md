@@ -24,7 +24,7 @@
 | `q001-i10` | **P2** | [ws001-p015](ws001/phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle 100倍高速化） | cleared | `q001-i09` | 実装完了（commit 16d2a8c）。5段ストリーム化・3.8万サイクル短縮。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i11` | **P2** | [ws001-p016](ws001/phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | cleared | `q001-i10` | 実装完了（commit a739ed2）。16エントリ CAM・Stop-and-Wait 撤廃。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i12` | **P2** | [ws001-p017](ws001/phase017/phase.md) | ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消（8KB Color/Depth） | cleared | `q001-i11`, `q001-i06` | 実装完了（commit 92bc3ee）。RAMB36E1 4-way 8KB タイルキャッシュ・Tree-PLRU。R1 敵対的レビュー APPROVE 承認完了。 |
-| `q001-i13` | **P2** | [ws001-p018](ws001/phase018/phase.md) | TU 4 レーン並列ストリームアドレス生成（atg_tu_addr 逐次 FSM 撤廃・1 cycle/quad 化） | cleared | `q001-i01` | 実装完了（commit 562a280）。4レーン並列2段ストリーム・1 cycle/quad。T1/R1 検証中。 |
+| `q001-i13` | **P2** | [ws001-p018](ws001/phase018/phase.md) | TU 4 レーン並列ストリームアドレス生成（atg_tu_addr 逐次 FSM 撤廃・1 cycle/quad 化） | cleared | `q001-i01` | 実装完了（commit 562a280）。4レーン並列2段ストリーム・1 cycle/quad。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i14` | **P2** | [ws001-p019](ws001/phase019/phase.md) | TU フィルタリングパイプライン統合 & 相互排他ウェイト撤廃（u_idle/f_idle 撤廃） | in-progress | `q001-i13` | 非同期フローに基づき P2 着手。u_idle/f_idle 撤廃・固定遅延統合ストリーム化。 |
 | `q001-i15` | **P2** | [ws001-p020](ws001/phase020/phase.md) | TU マルチバンク・4-way L1 テクスチャキャッシュ（4 バンク同時読み出し） | queued | `q001-i13` | P2 待機。16テクセル逐次ルックアップ撤廃。 |
 | `q001-i16` | **P2** | [ws001-p021](ws001/phase021/phase.md) | TU MSHR ノンブロッキングフェッチ & メモリ統合（Hit-Under-Miss、実効スループット 30〜50倍） | queued | `q001-i15`, `q001-i06` | P2 待機。1 Outstanding 完全停止解消。 |
