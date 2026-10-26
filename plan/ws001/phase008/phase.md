@@ -21,15 +21,19 @@
 
 ## 範囲・作業内容
 
-1. **Step 1: 変換器のライブラリ化**:
-   - `rtl/gpu/rx/atg_rx_i2f.v` → `rtl/library/fp/am_fp_i2f.v`
-   - `rtl/library/fp/am_fp_f2fix.v` の新設（パラメータ `W`, `F`, `ROUND`, `SATURATE`）
-   - RX / TU の接続を新ライブラリに切り替え。
-2. **Step 2: 浮動小数点除算器のライブラリ化**:
-   - `rtl/gpu/rx/atg_rx_fdiv.v` → `rtl/library/fp/am_fp_div.v`
-   - RX の接続更新とテストベンチ確認。
-3. **Step 3: 統合 FPU コア（`am_fpu_core.v`）の設計・実装**:
+1. **Step 1: 変換器のライブラリ化（[済] 完了）**:
+   - `rtl/library/fp/am_fp_fix2f.v`（`atg_rx_i2f.v` を汎用拡張・互換ラッパー配置）
+   - `rtl/library/fp/am_fp_f2fix.v`（パラメータ `W`, `F`, `SIGNED`, `ROUND`, `SATURATE`, `SAT_BITS`）
+   - 仕様書 `spec/library/fp/am_fp_fix2f.md`, `spec/library/fp/am_fp_f2fix.md`
+   - RX（`atg_rx_setup`, `bary`, `cpoly`, `frag`, `scan`, `edge`）の接続を新ライブラリに切り替え。
+   - 単体等価検証 110 万パターン 100% 一致確認。
+2. **Step 2: 浮動小数点除算器のライブラリ化（[済] 完了）**:
+   - `atg_rx_fdiv.v` → `rtl/library/fp/am_fp_div.v`（27 サイクル回復法、互換ラッパー配置）
+   - 仕様書 `spec/library/fp/am_fp_div.md` 作成。
+   - RX 回帰シミュレーション（`atg_rx_fp`, `clip`, `setup`, `cpoly`, `frag`, `scan`）全件 PASS。
+3. **Step 3: 統合 FPU コア（`am_fpu_core.v`）の設計・実装（進行中）**:
    - 1 レーン分の FMA/ADD/SUB/MUL/MIN/MAX/FCMP/F2I/I2F/IMUL を完結して処理するパイプラインコアの実装。
+   - 乗算器部に `am_mul.v`（DSP48E1 カスケード）を活用し、33×33 乗算器（4×DSP48E1）を mux で共有。
    - 単体等価テストベンチの作成・検証。
 4. **Step 4: `atg_su_fpu.v` の置換 & 全体回帰検証**:
    - `atg_su_fpu.v` 内部を `am_fpu_core` に置換。
