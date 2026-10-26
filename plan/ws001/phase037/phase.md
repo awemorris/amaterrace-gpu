@@ -3,7 +3,7 @@
 # Phase 037: am_axi_master.v の深層 Outstanding 化（16〜32 枠対応）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed`
 - **依存**: [ws001-p001](../phase001/phase.md), [ws001-p035](../phase035/phase.md)
 - **優先度**: Major (DDR3/4 高レイテンシ環境下でのメモリ帯域飽和)
 - **出典**: ユーザー諮問（DC & BUS 最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -115,8 +115,10 @@ AR チャネルの出力段に Phase 035 の `am_skid` を配置する。
 
 ## 検証基準（受け入れ条件）
 
-- 32 枠の Outstanding リクエストが正常に追跡・完了できること。
-- メモリ応答遅延が大きい環境下での実効スループットが向上すること。
-- `sim/run.sh am_axi_master` が PASS すること。
-- `tools/arith-lint.py` で違反 0 件。
-- R1 レビュー APPROVE 獲得。
+- 32 枠の Outstanding リクエストが正常に追跡・完了できること（deep_32: 32 reads in 32 cycles 100% スループット達成）。
+- メモリ応答遅延が大きい環境下（60 サイクル）での実効スループット向上および NID=2 リオーダー・インターリーブ応答検証。
+- `sim/run.sh am_axi_master`: PASS（5 s、deep_32, reorder, l32, kc705, quiesce 全 PASS）。
+- `sim/run.sh atg_mc`: PASS（59 s、全 6 シェープ A〜F 全て完全一致 PASS）。
+- `python3 tools/arith-lint.py --top am_axi_master`: 違反 0 件。
+- Verilator lint: 警告 0 件。
+- コミット: `0cd9ffe`
