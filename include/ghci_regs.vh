@@ -17,8 +17,8 @@
 
 /* Identification. */
 localparam [31:0] GHCI_MAGIC_VALUE = 32'h47484349;	/* "GHCI" */
-localparam [15:0] GHCI_VERSION_MAJOR = 16'd2;
-localparam [15:0] GHCI_VERSION_MINOR = 16'd0;
+localparam [15:0] GHCI_VERSION_MAJOR = 16'd1;
+localparam [15:0] GHCI_VERSION_MINOR = 16'd1;
 
 /*
  * ============================================================================
