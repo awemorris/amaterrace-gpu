@@ -251,5 +251,5 @@
     </g>
 
     <!-- Connectors between Center Interconnect and Bottom DRAM -->
-    <path d="M 490 370 L 490 395" stroke="#059669" stroke-width="2.5" marker-end="url(#arrow-emerald)" fill="none"/>
+    <path fill="none" d="M 490 370 L 490 395" stroke="#059669" stroke-width="2.5" marker-end="url(#arrow-emerald)"/>
 </svg>

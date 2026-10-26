@@ -120,10 +120,10 @@
 
     <!-- Header Block -->
     <g transform="translate(30, 24)">
-        <text class="title" x="0" y="20">Amaterrace Shader Unit (SU) — 32-Thread SIMT Architecture</text>
-        <text class="subtitle" x="0" y="40">4 Quads (32 Scalar PEs, FP16×2 Packed) • GSI1 64-bit ISA • DSP48E1 FP32 FMA Cascade • LDS Scratchpad</text>
+        <text class="title" x="0" y="20">Amaterrace Shader Unit (SU) — 32-Lane SIMD Architecture</text>
+        <text class="subtitle" x="0" y="40">4 Quads (32 SIMD Lanes) • GSI1 64-bit ISA • Full-Width DSP48E1 FP32 FMA Cascade • LDS Scratchpad</text>
         <rect x="750" y="4" width="240" height="28" rx="14" fill="#d97706" opacity="0.12"/>
-        <text x="870" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#b45309">32-THREAD SIMT WARP</text>
+        <text x="870" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#b45309">32-LANE FULL IMPLEMENTATION</text>
     </g>
 
     <!-- Top Frontend: Instruction & Warp Management -->
@@ -166,13 +166,13 @@
     <g transform="translate(30, 215)">
         <rect width="960" height="340" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow-sm)"/>
         <path d="M 0 10 Q 0 0 10 0 L 950 0 Q 960 0 960 10 L 960 32 L 0 32 Z" fill="#f8fafc"/>
-        <text class="group-label" x="18" y="21" fill="#334155">32-Thread Warp Execution Array (4 Quads × 8 Scalar PEs with FP16×2 Packed)</text>
+        <text class="group-label" x="18" y="21" fill="#334155">32 SIMD Lanes Execution Array (4 Quads × 8 Lanes)</text>
 
         <!-- Quad 0 -->
         <g transform="translate(18, 44)">
             <rect width="220" height="280" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
             <text class="card-title" x="14" y="22" fill="#b45309">QUAD 0 (Lanes 0 - 7)</text>
-            <text class="card-subtitle" x="14" y="38" fill="#d97706">8 Scalar PEs (FP16×2 Packed)</text>
+            <text class="card-subtitle" x="14" y="38" fill="#d97706">8 SIMD Compute Units</text>
 
             <g transform="translate(10, 48)">
                 <rect width="200" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
@@ -181,13 +181,13 @@
             </g>
             <g transform="translate(10, 104)">
                 <rect width="200" height="54" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
-                <text class="card-title" x="10" y="18" font-size="11.5">Scalar FP32 &amp; FP16×2</text>
-                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 Cascade (am_mul)</text>
-                <text class="card-body" x="10" y="46" font-size="10">1 Cyc / Scalar PE, Packed FP16</text>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP32 FMA / am_mul</text>
+                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 24×17 Cascade</text>
+                <text class="card-body" x="10" y="46" font-size="10">1 Cycle Throughput</text>
             </g>
             <g transform="translate(10, 166)">
                 <rect width="200" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
-                <text class="card-title" x="10" y="18" font-size="11.5">32-bit Scalar ALU</text>
+                <text class="card-title" x="10" y="18" font-size="11.5">Integer ALU &amp; Bitwise</text>
                 <text class="card-body" x="10" y="34" font-size="10">Add, Sub, Shift, Logic, Cmp</text>
             </g>
             <g transform="translate(10, 222)">
@@ -201,7 +201,7 @@
         <g transform="translate(254, 44)">
             <rect width="220" height="280" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
             <text class="card-title" x="14" y="22" fill="#b45309">QUAD 1 (Lanes 8 - 15)</text>
-            <text class="card-subtitle" x="14" y="38" fill="#d97706">8 Scalar PEs (FP16×2 Packed)</text>
+            <text class="card-subtitle" x="14" y="38" fill="#d97706">8 SIMD Compute Units</text>
 
             <g transform="translate(10, 48)">
                 <rect width="200" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
@@ -210,13 +210,13 @@
             </g>
             <g transform="translate(10, 104)">
                 <rect width="200" height="54" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
-                <text class="card-title" x="10" y="18" font-size="11.5">Scalar FP32 &amp; FP16×2</text>
-                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 Cascade (am_mul)</text>
-                <text class="card-body" x="10" y="46" font-size="10">1 Cyc / Scalar PE, Packed FP16</text>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP32 FMA / am_mul</text>
+                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 24×17 Cascade</text>
+                <text class="card-body" x="10" y="46" font-size="10">1 Cycle Throughput</text>
             </g>
             <g transform="translate(10, 166)">
                 <rect width="200" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
-                <text class="card-title" x="10" y="18" font-size="11.5">32-bit Scalar ALU</text>
+                <text class="card-title" x="10" y="18" font-size="11.5">Integer ALU &amp; Bitwise</text>
                 <text class="card-body" x="10" y="34" font-size="10">Add, Sub, Shift, Logic, Cmp</text>
             </g>
             <g transform="translate(10, 222)">
@@ -230,7 +230,7 @@
         <g transform="translate(490, 44)">
             <rect width="220" height="280" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
             <text class="card-title" x="14" y="22" fill="#b45309">QUAD 2 (Lanes 16 - 23)</text>
-            <text class="card-subtitle" x="14" y="38" fill="#d97706">8 Scalar PEs (FP16×2 Packed)</text>
+            <text class="card-subtitle" x="14" y="38" fill="#d97706">8 SIMD Compute Units</text>
 
             <g transform="translate(10, 48)">
                 <rect width="200" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
@@ -239,13 +239,13 @@
             </g>
             <g transform="translate(10, 104)">
                 <rect width="200" height="54" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
-                <text class="card-title" x="10" y="18" font-size="11.5">Scalar FP32 &amp; FP16×2</text>
-                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 Cascade (am_mul)</text>
-                <text class="card-body" x="10" y="46" font-size="10">1 Cyc / Scalar PE, Packed FP16</text>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP32 FMA / am_mul</text>
+                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 24×17 Cascade</text>
+                <text class="card-body" x="10" y="46" font-size="10">1 Cycle Throughput</text>
             </g>
             <g transform="translate(10, 166)">
                 <rect width="200" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
-                <text class="card-title" x="10" y="18" font-size="11.5">32-bit Scalar ALU</text>
+                <text class="card-title" x="10" y="18" font-size="11.5">Integer ALU &amp; Bitwise</text>
                 <text class="card-body" x="10" y="34" font-size="10">Add, Sub, Shift, Logic, Cmp</text>
             </g>
             <g transform="translate(10, 222)">
@@ -259,7 +259,7 @@
         <g transform="translate(726, 44)">
             <rect width="216" height="280" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
             <text class="card-title" x="14" y="22" fill="#b45309">QUAD 3 (Lanes 24 - 31)</text>
-            <text class="card-subtitle" x="14" y="38" fill="#d97706">8 Scalar PEs (FP16×2 Packed)</text>
+            <text class="card-subtitle" x="14" y="38" fill="#d97706">8 SIMD Compute Units</text>
 
             <g transform="translate(10, 48)">
                 <rect width="196" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
@@ -268,13 +268,13 @@
             </g>
             <g transform="translate(10, 104)">
                 <rect width="196" height="54" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
-                <text class="card-title" x="10" y="18" font-size="11.5">Scalar FP32 &amp; FP16×2</text>
-                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 Cascade (am_mul)</text>
-                <text class="card-body" x="10" y="46" font-size="10">1 Cyc / Scalar PE, Packed FP16</text>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP32 FMA / am_mul</text>
+                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 24×17 Cascade</text>
+                <text class="card-body" x="10" y="46" font-size="10">1 Cycle Throughput</text>
             </g>
             <g transform="translate(10, 166)">
                 <rect width="196" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
-                <text class="card-title" x="10" y="18" font-size="11.5">32-bit Scalar ALU</text>
+                <text class="card-title" x="10" y="18" font-size="11.5">Integer ALU &amp; Bitwise</text>
                 <text class="card-body" x="10" y="34" font-size="10">Add, Sub, Shift, Logic, Cmp</text>
             </g>
             <g transform="translate(10, 222)">

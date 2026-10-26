@@ -308,14 +308,14 @@ def generate_ghci_gpu_architecture():
         </g>
 
         <!-- Arrows between Pipeline Stages -->
-        <path d="M 215 100 L 215 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
-        <path d="M 390 100 L 390 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
-        <path d="M 250 255 L 265 255" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
-        <path d="M 405 230 L 420 230" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
-        <path d="M 420 270 L 405 270" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
-        <path d="M 405 285 L 560 285" stroke="#475569" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
-        <path d="M 405 200 L 560 200" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
-        <path d="M 615 175 L 615 186" stroke="#475569" stroke-width="1.8"/>
+        <path fill="none" d="M 215 100 L 215 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <path fill="none" d="M 390 100 L 390 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <path fill="none" d="M 250 255 L 265 255" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <path fill="none" d="M 405 230 L 420 230" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <path fill="none" d="M 420 270 L 405 270" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <path fill="none" d="M 405 285 L 560 285" stroke="#475569" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+        <path fill="none" d="M 405 200 L 560 200" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <path fill="none" d="M 615 175 L 615 186" stroke="#475569" stroke-width="1.8"/>
 
         <!-- atg_rt Interconnect Router Bar -->
         <g transform="translate(20, 360)">
@@ -366,11 +366,11 @@ def generate_ghci_gpu_architecture():
 
     <!-- Cross connections from Host to GPU -->
     <!-- Doorbell write -->
-    <path d="M 210 240 L 260 240 L 260 110 L 280 110" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+    <path fill="none" d="M 210 240 L 260 240 L 260 110 L 280 110" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
     <text class="conn-label" x="235" y="180" fill="#7c3aed" text-anchor="middle" transform="rotate(-90 235 180)">WPTR Doorbell</text>
 
     <!-- Interrupt line -->
-    <path d="M 280 130 L 245 130 L 245 360 L 210 360" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 280 130 L 245 130 L 245 360 L 210 360" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
     <text class="conn-label" x="235" y="290" fill="#dc2626" text-anchor="middle" transform="rotate(-90 235 290)">IRQ Line</text>
 </svg>
 """
@@ -519,7 +519,7 @@ def generate_ghci_uma_system():
     </g>
 
     <!-- Connectors between Center Interconnect and Bottom DRAM -->
-    <path d="M 490 370 L 490 395" stroke="#059669" stroke-width="2.5" marker-end="url(#arrow-emerald)"/>
+    <path fill="none" d="M 490 370 L 490 395" stroke="#059669" stroke-width="2.5" marker-end="url(#arrow-emerald)"/>
 </svg>
 """
 
@@ -617,7 +617,7 @@ def generate_ghci_discrete_system():
         </g>
 
         <!-- Bidirectional Flow Arrows -->
-        <path d="M 65 390 L 65 470" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+        <path fill="none" d="M 65 390 L 65 470" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
         <text class="conn-sub" x="65" y="495" text-anchor="middle" font-weight="700">PCIe Link</text>
     </g>
 
@@ -843,11 +843,11 @@ def generate_ghci_command_flow():
     </g>
 
     <!-- Flow Arrows connecting stages -->
-    <path d="M 310 135 L 340 135" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
-    <path d="M 310 200 L 340 200" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
-    <path d="M 660 100 L 690 100" stroke="#7c3aed" stroke-width="2.5" marker-end="url(#arrow-purple)"/>
-    <path d="M 660 220 L 685 220 L 685 130 L 690 130" stroke="#7c3aed" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrow-purple)"/>
-    <path d="M 310 400 L 340 400 L 340 480 L 690 480" stroke="#059669" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow-emerald)"/>
+    <path fill="none" d="M 310 135 L 340 135" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    <path fill="none" d="M 310 200 L 340 200" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+    <path fill="none" d="M 660 100 L 690 100" stroke="#7c3aed" stroke-width="2.5" marker-end="url(#arrow-purple)"/>
+    <path fill="none" d="M 660 220 L 685 220 L 685 130 L 690 130" stroke="#7c3aed" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrow-purple)"/>
+    <path fill="none" d="M 310 400 L 340 400 L 340 480 L 690 480" stroke="#059669" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow-emerald)"/>
 </svg>
 """
 
@@ -932,7 +932,7 @@ def generate_ghci_command_sequence():
         <text class="seq-step" x="185" y="-8" text-anchor="middle">Write CMD_BIND_PIPELINE + CMD_DRAW</text>
 
         <!-- Doorbell directly to CP -->
-        <path d="M 105 10 L 105 25 L 435 25" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <path fill="none" d="M 105 10 L 105 25 L 435 25" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
         <text class="seq-step" x="270" y="38" text-anchor="middle" fill="#7c3aed">MMIO Write: RING_WPTR (Doorbell)</text>
     </g>
 
@@ -990,7 +990,7 @@ def generate_ghci_command_sequence():
         <text class="seq-step" x="590" y="-8" text-anchor="middle" fill="#047857">Write Fence Counter to DRAM &amp; Assert IRQ Line</text>
 
         <!-- IRQ back to Host -->
-        <path d="M 270 12 L 105 12" stroke="#dc2626" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+        <path fill="none" d="M 270 12 L 105 12" stroke="#dc2626" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
         <text class="seq-desc" x="185" y="28" text-anchor="middle" fill="#dc2626">Host ISR unblocks synchronization primitive</text>
     </g>
 </svg>
@@ -1546,9 +1546,9 @@ def generate_atg_rx_rasterizer():
     </g>
 
     <!-- Connectors between stages -->
-    <path d="M 240 200 L 265 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)"/>
-    <path d="M 475 200 L 500 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)"/>
-    <path d="M 710 200 L 735 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 240 200 L 265 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 475 200 L 500 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 710 200 L 735 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)"/>
 </svg>
 """
 
@@ -1714,11 +1714,16 @@ def generate_atg_rop_backend():
     </g>
 
     <!-- Connectors between stages -->
-    <path d="M 240 200 L 265 200" stroke="#be123c" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
-    <path d="M 475 200 L 500 200" stroke="#be123c" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
-    <path d="M 710 200 L 735 200" stroke="#be123c" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
+    <path fill="none" d="M 240 200 L 265 200" stroke="#be123c" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
+    <path fill="none" d="M 475 200 L 500 200" stroke="#be123c" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
+    <path fill="none" d="M 710 200 L 735 200" stroke="#be123c" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
 </svg>
 """
+
+def generate_atg_data_paths():
+    """10. docs/svg/atg_data_paths.svg"""
+    from tools.generate_datapath_svg import generate_atg_data_paths as _gen
+    return _gen()
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1731,12 +1736,13 @@ def main():
         ("ghci_command_flow.svg", generate_ghci_command_flow),
         ("ghci_command_sequence.svg", generate_ghci_command_sequence),
         ("atg_top_architecture.svg", generate_atg_top_architecture),
+        ("atg_data_paths.svg", generate_atg_data_paths),
         ("atg_su_32lane.svg", generate_atg_su_32lane),
         ("atg_rx_rasterizer.svg", generate_atg_rx_rasterizer),
         ("atg_rop_backend.svg", generate_atg_rop_backend),
     ]
 
-    print(f"Generating 9 SVG architecture diagrams in {output_dir}...")
+    print(f"Generating 10 SVG architecture diagrams in {output_dir}...")
     for filename, gen_func in generators:
         filepath = os.path.join(output_dir, filename)
         content = gen_func()
