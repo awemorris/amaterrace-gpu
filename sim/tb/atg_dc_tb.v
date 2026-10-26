@@ -315,6 +315,14 @@ module atg_dc_tb;
 		if (v[1] !== 1'b0) fail("no underflow after RESET", v, 0);
 		if (errors == e0)
 			$display("PASS atg_dc.scanout");
+
+		/* Underflow tolerance: verify zero underflow with 2048-word BRAM AFIFO */
+		rd(D + GHCI_DC_STATUS, v);
+		if (v[GHCI_DC_ST_UNDERFLOW] !== 1'b0)
+			fail("underflow in 2048-word AFIFO", v, 0);
+		else
+			$display("PASS atg_dc.afifo_bram (2048-word AFIFO zero underflow verified)");
+
 		if (errors == 0)
 			$display("PASS atg_dc");
 		$finish;

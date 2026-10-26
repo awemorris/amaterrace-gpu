@@ -47,7 +47,8 @@
 module atg_dc_dma #(
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
-	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
+	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
+	parameter LFIFO_LOG2 = 5	/* 32 entries (ws001-p038) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -82,8 +83,8 @@ module atg_dc_dma #(
 );
 	localparam LW = LINE_BYTES * 8;
 	localparam AW = ADDR_W - LINE_SHIFT;
-	localparam LFIFO_LOG2 = 3;
 	localparam [LFIFO_LOG2:0] LFIFO = 1 << LFIFO_LOG2;
+	localparam [LFIFO_LOG2:0] LFIFO_M1 = LFIFO - 1;
 	localparam integer PPL32_I = LINE_BYTES / 4;	/* pixels in a line */
 	localparam integer PPL16_I = LINE_BYTES / 2;
 	localparam [5:0] PPL32 = PPL32_I[5:0];
@@ -124,7 +125,8 @@ module atg_dc_dma #(
 	wire take = req_valid && req_ready;
 	wire rsp_read = rsp_valid && !rsp_write;
 	wire [LFIFO_LOG2:0] used;
-	wire room = used < LFIFO;
+	wire room = req_valid ? (used < LFIFO_M1) : (used < LFIFO);
+	wire can_issue = !abort && enable && rq_active && room;
 
 	assign idle = !req_valid && inflight == {(LFIFO_LOG2 + 1){1'b0}};
 
@@ -173,13 +175,13 @@ module atg_dc_dma #(
 		end else begin
 			enable_q <= enable;
 			inflight <= infl_next;
-			if (take)
-				req_valid <= 1'b0;
 			if (abort) begin
 				epoch <= epoch_inc;
 				rq_active <= 1'b0;
 			end
 			if (start) begin
+				if (take)
+					req_valid <= 1'b0;
 				rq_active <= fb_size[15:0] != 16'd0 && fb_size[31:16] != 16'd0;
 				rq_row <= 16'd0;
 				rq_k <= 16'd0;
@@ -190,7 +192,7 @@ module atg_dc_dma #(
 				f_h <= fb_size[31:16];
 				f_nl <= row_lines[15:0];
 				f_16 <= format == 2'd2;
-			end else if (!abort && enable && rq_active && !req_valid && room) begin
+			end else if (can_issue && (take || !req_valid)) begin
 				/* One line of the frame. */
 				req_valid <= 1'b1;
 				req_line <= rq_cur;
@@ -206,6 +208,8 @@ module atg_dc_dma #(
 					rq_k <= rq_k_inc;
 					rq_cur <= rq_cur_inc;
 				end
+			end else if (take) begin
+				req_valid <= 1'b0;
 			end
 		end
 	end

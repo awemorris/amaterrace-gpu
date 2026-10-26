@@ -13,6 +13,7 @@ The DC's scan-out DMA: reads the framebuffer FB_BASE line by line (FB_STRIDE, FB
 | `ADDR_W` | `32` | GPU address width. |
 | `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
+| `LFIFO_LOG2` | `5` | log2 of the line FIFO depth (32 lines, ws001-p038). |
 
 ## 3. Ports
 
@@ -55,7 +56,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-At frame_start (with ENABLE) the base, stride, size and format are taken.  A row of w pixels (4 bytes, 2 for RGB565) is ceil(row bytes / LINE_BYTES) lines from base + y × stride (base and stride LINE_BYTES aligned, low bits ignored).  Read responses go to a line FIFO of 8 entries (am_fifo); a request is made only when the requests outstanding and the lines waiting fit in it (the responses have no back-pressure), at most one request every two cycles (am_axi_master keeps 4 reads outstanding).  The unpacker sends the line's pixels in order, one per cycle, with px_valid/px_ready into the pixel FIFO.  frame_start during a frame and ENABLE falling abort it: no new request (one already offered stays until req_ready), the line FIFO and the unpacker are cleared, and the responses still to come are dropped: req_tag[3:0] is the frame's epoch and responses of an older epoch are not kept.  px_valid may fall without px_ready at an abort (am_afifo does not mind).  ENABLE = 0 stops new requests; idle when the responses are in.
+At frame_start (with ENABLE) the base, stride, size and format are taken.  A row of w pixels (4 bytes, 2 for RGB565) is ceil(row bytes / LINE_BYTES) lines from base + y × stride (base and stride LINE_BYTES aligned, low bits ignored).  Read responses go to a line FIFO of 32 entries (am_fifo, LFIFO_LOG2 = 5); a request is made whenever the requests outstanding and the lines waiting fit in it (the responses have no back-pressure), streaming continuously at 1 request/cycle without bubbles while req_ready and room allow (Phase 038).  The unpacker sends the line's pixels in order, one per cycle, with px_valid/px_ready into the pixel FIFO.  frame_start during a frame and ENABLE falling abort it: no new request (one already offered stays until req_ready), the line FIFO and the unpacker are cleared, and the responses still to come are dropped: req_tag[3:0] is the frame's epoch and responses of an older epoch are not kept.  px_valid may fall without px_ready at an abort (am_afifo / am_afifo_bram does not mind).  ENABLE = 0 stops new requests; idle when the responses are in.
 
 ## 5. State machine
 
@@ -78,6 +79,7 @@ Must sustain the pixel rate: 640×480@60 25 Mpx/s (100 MB/s), 720p 74 Mpx/s.
 - `PASS atg_dc_dma.frame` — a frame's words in order; error rows: black, one `err` per line; `done` after the frame
 - `PASS atg_dc_dma.stop` — ENABLE 0 stops and idle rises
 - `PASS atg_dc_dma.clear` — `clear` for one cycle with reads outstanding: idle and done after, then a whole frame (a mutation that resets the count fails it)
+- `PASS atg_dc_dma.burst` — continuous burst of requests issued without bubbles (Phase 038)
 - `PASS atg_dc_dma` at the end.
 
 ## 9. References

@@ -31,7 +31,7 @@ module atg_dc #(
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter FIFO_LOG2 = 9,	/* Pixel FIFO depth (2 lines of 640 need ≥ 1280 → 11 for 720p; 9 is the stub default) */
+	parameter FIFO_LOG2 = 11,	/* Pixel FIFO depth (2048 words, ws001-p038: 13.8 us margin at 1080p@60Hz) */
 	parameter PX_FMT = 0,	/* The parallel output: 0 RGB888 (px_rgb = {r, g, b}), 1 YCbCr 4:2:2 16-bit (px_rgb = {8'd0, C, Y}, the KC705's ADV7511, atg_dc_ycc) */
 	parameter TEST_MODE = 0	/* 1: a simulation's one small mode instead of the board's two (atg_dc_mode) */
 ) (
@@ -246,12 +246,15 @@ module atg_dc #(
 	end
 	endgenerate
 
-	am_afifo #(.W(32), .DEPTH_LOG2(FIFO_LOG2)) pixels (
+	wire [FIFO_LOG2:0] px_fifo_count;
+	am_afifo_bram #(.W(32), .DEPTH_LOG2(FIFO_LOG2)) pixels (
 		.w_clk(clk), .w_rst_n(g_rst_n), .w_valid(px_w_valid), .w_ready(px_w_ready),
 		.w_data(px_w_data),
 		.r_clk(pclk), .r_rst_n(p_rst_n), .r_valid(px_r_valid), .r_ready(px_r_ready),
-		.r_data(px_r_data)
+		.r_data(px_r_data),
+		.r_count(px_fifo_count)
 	);
+	wire unused_px_cnt = &{1'b0, px_fifo_count};
 
 	atg_dc_tgen tgen (
 		.clk(pclk), .rst_n(p_rst_n), .enable(p_enable), .test_pattern(test_pattern),

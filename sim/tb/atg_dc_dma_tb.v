@@ -56,6 +56,7 @@ module atg_dc_dma_tb;
 
 	integer errors = 0;
 	integer e0, i, seed, got_n, ready_pct;
+	integer burst_count, max_burst;
 	reg [31:0] got [0:4095];
 	reg [31:0] sum;
 
@@ -269,6 +270,36 @@ module atg_dc_dma_tb;
 		frame("after clear", 32'h0500, 32'd128, 24, 3, 0);
 		if (errors == e0)
 			$display("PASS atg_dc_dma.clear");
+
+		/* Continuous burst verification: verify that DMA issues multiple lines back-to-back without 1-cycle bubbles */
+		e0 = errors;
+		enable = 0;
+		@(negedge clk);
+		enable = 1;
+		fb_base = 32'h0600;
+		fb_stride = 32'd256;
+		fb_size = {16'd32, 16'd64};
+		format = 0;
+		pulse_start;
+		burst_count = 0;
+		max_burst = 0;
+		for (i = 0; i < 80; i = i + 1) begin
+			@(posedge clk);
+			if (req_valid && req_ready)
+				burst_count = burst_count + 1;
+			else if (req_valid && !req_ready)
+				burst_count = burst_count;
+			else
+				burst_count = 0;
+			if (burst_count > max_burst)
+				max_burst = burst_count;
+		end
+		if (max_burst < 16) begin
+			errors = errors + 1;
+			$display("FAIL atg_dc_dma.burst: max consecutive issued lines %0d < 16", max_burst);
+		end else begin
+			$display("PASS atg_dc_dma.burst (%0d consecutive lines issued without bubbles)", max_burst);
+		end
 
 		if (errors == 0)
 			$display("PASS atg_dc_dma");

@@ -24,6 +24,9 @@ module amb_mem #(
 	parameter LINE_SHIFT = 5,
 	parameter MEM_WORDS = 4096,
 	parameter [31:0] ERR_BASE = 32'h80000000,
+	parameter QUEUE_DEPTH = 64,
+	parameter LATENCY_MIN = 2,
+	parameter LATENCY_RAND = 8,
 	parameter SEED = 1
 ) (
 	input wire clk,
@@ -48,12 +51,12 @@ module amb_mem #(
 	integer writes;
 	integer i, b;
 
-	/* The queue of accepted requests (at most 16). */
-	reg q_write [0:15];
-	reg [7:0] q_tag [0:15];
-	reg [LINE_BYTES*8-1:0] q_data [0:15];
-	reg q_err [0:15];
-	integer q_due [0:15];
+	/* The queue of accepted requests (QUEUE_DEPTH entries). */
+	reg q_write [0:QUEUE_DEPTH-1];
+	reg [7:0] q_tag [0:QUEUE_DEPTH-1];
+	reg [LINE_BYTES*8-1:0] q_data [0:QUEUE_DEPTH-1];
+	reg q_err [0:QUEUE_DEPTH-1];
+	integer q_due [0:QUEUE_DEPTH-1];
 	integer q_head, q_tail, now;
 
 	function [31:0] peek;
@@ -95,12 +98,12 @@ module amb_mem #(
 			q_tail = 0;
 			req_ready <= 1'b0;
 		end else begin
-			if (req_valid && req_ready && q_tail - q_head < 16) begin
+			if (req_valid && req_ready && (q_tail - q_head) < QUEUE_DEPTH) begin
 				base = {req_line, {LINE_SHIFT{1'b0}}};
-				q_write[q_tail % 16] = req_write;
-				q_tag[q_tail % 16] = req_tag;
-				q_err[q_tail % 16] = base >= ERR_BASE;
-				q_due[q_tail % 16] = now + 2 + ($unsigned($random(seed)) % 8);
+				q_write[q_tail % QUEUE_DEPTH] = req_write;
+				q_tag[q_tail % QUEUE_DEPTH] = req_tag;
+				q_err[q_tail % QUEUE_DEPTH] = base >= ERR_BASE;
+				q_due[q_tail % QUEUE_DEPTH] = now + LATENCY_MIN + ($unsigned($random(seed)) % LATENCY_RAND);
 				line = 0;
 				for (i = 0; i < WPL; i = i + 1) begin
 					w = peek(base + i * 4);
@@ -114,16 +117,16 @@ module amb_mem #(
 				end
 				if (req_write && base < ERR_BASE)
 					writes = writes + 1;
-				q_data[q_tail % 16] = line;
+				q_data[q_tail % QUEUE_DEPTH] = line;
 				q_tail = q_tail + 1;
 			end
-			req_ready <= ($random(seed) & 3) != 0;
-			if (q_head != q_tail && q_due[q_head % 16] <= now) begin
+			req_ready <= (q_tail - q_head) < (QUEUE_DEPTH - 2) && (($random(seed) & 3) != 0);
+			if (q_head != q_tail && q_due[q_head % QUEUE_DEPTH] <= now) begin
 				rsp_valid <= 1'b1;
-				rsp_write <= q_write[q_head % 16];
-				rsp_tag <= q_tag[q_head % 16];
-				rsp_rdata <= q_data[q_head % 16];
-				rsp_error <= q_err[q_head % 16];
+				rsp_write <= q_write[q_head % QUEUE_DEPTH];
+				rsp_tag <= q_tag[q_head % QUEUE_DEPTH];
+				rsp_rdata <= q_data[q_head % QUEUE_DEPTH];
+				rsp_error <= q_err[q_head % QUEUE_DEPTH];
 				q_head = q_head + 1;
 			end
 		end
