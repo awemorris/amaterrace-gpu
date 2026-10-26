@@ -79,8 +79,8 @@ module atg_rx_bary (
 		.co(ij_carry_unused[4]));
 	am_add #(.W(21)) u_j8 (.a({{1{dj[16]}}, dj, 3'd0}), .b({{17{oy8[3]}}, oy8}), .ci(1'b0), .s(j8),
 		.co(ij_carry_unused[5]));
-	atg_rx_i2f #(.W(21), .F(3)) u_fi (.v(i8), .f(fi));
-	atg_rx_i2f #(.W(21), .F(3)) u_fj (.v(j8), .f(fj));
+	am_fp_fix2f #(.W(21), .F(3), .SIGNED(1)) u_fi (.v(i8), .f(fi));
+	am_fp_fix2f #(.W(21), .F(3), .SIGNED(1)) u_fj (.v(j8), .f(fj));
 
 	/* The sample offsets as fp32: dx_s, dy_s. */
 	function [31:0] sdx;
@@ -143,7 +143,7 @@ module atg_rx_bary (
 	reg dgo;
 	wire fd_busy, fd_done;
 	wire [31:0] fd_r;
-	atg_rx_fdiv fdiv (.clk(clk), .rst_n(rst_n), .i_start(st == S_DIV && !dgo), .i_a(ONE),
+	am_fp_div fdiv (.clk(clk), .rst_n(rst_n), .i_start(st == S_DIV && !dgo), .i_a(ONE),
 		.i_b(v[{2'd1, l}]), .busy(fd_busy), .o_done(fd_done), .o_r(fd_r));
 
 	assign busy = st != S_IDLE;

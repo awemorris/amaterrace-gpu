@@ -208,7 +208,7 @@ module atg_rx_scan #(
 		.co(lij_carry_unused[0]));
 	am_sub #(.W(17)) u_lij (.a(lq), .b({1'b0, zi ? bx0 : by0}), .bi(1'b0), .d(lij),
 		.bo(lij_carry_unused[1]));
-	atg_rx_i2f #(.W(17), .F(0)) u_fm_b (.v(lij), .f(fm_b));
+	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fm_b (.v(lij), .f(fm_b));
 	wire fm_v = st == S_Z && zc < 5'd8;
 	wire [31:0] fm_a = zi ? az : bz;
 	wire fa_v = st == S_Z && zc >= 5'd8 && zc < 5'd16;

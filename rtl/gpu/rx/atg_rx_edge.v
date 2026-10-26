@@ -63,7 +63,14 @@ module atg_rx_edge (
 
 	wire [23:0] snap;
 	wire [48:0] carry_unused;	/* the adders' carries */
-	atg_rx_f2fix u_snap (.f(r_rd), .q(snap));
+	am_fp_f2fix #(
+		.W(24),
+		.F(8),
+		.SIGNED(1),
+		.ROUND(1),
+		.SATURATE(1),
+		.SAT_BITS(22)
+	) u_snap (.f(r_rd), .q(snap));
 
 	/* The registers read, in order: 31 32 34 35 37 38, then 76-79: register i + 1 is
 	 * 31 + i + i / 2 below 6, else 70 + i. */

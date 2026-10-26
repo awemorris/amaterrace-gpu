@@ -240,7 +240,7 @@ module atg_rx_cpoly (
 		.i_b(op_b), .i_sub(op_sub), .o_valid(fa_o), .o_r(fa_r));
 	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(issue && op == 2'd1), .i_a(op_a),
 		.i_b(op_b), .o_valid(fm_o), .o_r(fm_r));
-	atg_rx_fdiv fdiv (.clk(clk), .rst_n(rst_n), .i_start(issue && op == 2'd2), .i_a(op_a),
+	am_fp_div fdiv (.clk(clk), .rst_n(rst_n), .i_start(issue && op == 2'd2), .i_a(op_a),
 		.i_b(op_b), .busy(fd_busy), .o_done(fd_o), .o_r(fd_r));
 	wire res_v = fa_o || fm_o || fd_o;
 	wire [31:0] res = fa_o ? fa_r : fm_o ? fm_r : fd_r;

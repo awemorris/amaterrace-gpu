@@ -164,7 +164,7 @@ module atg_rx_setup (
 		.i_sub(u_op == 4'd2), .o_valid(fa_o), .o_r(fa_r));
 	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(opa), .i_b(opb),
 		.o_valid(fm_o), .o_r(fm_r));
-	atg_rx_fdiv fdiv (.clk(clk), .rst_n(rst_n), .i_start(fd_v), .i_a(opa), .i_b(opb),
+	am_fp_div fdiv (.clk(clk), .rst_n(rst_n), .i_start(fd_v), .i_a(opa), .i_b(opb),
 		.busy(fd_busy), .o_done(fd_o), .o_r(fd_r));
 
 	/* a <= b for fp32, -0 = +0; 0 when either is NaN. */

@@ -203,8 +203,8 @@ module atg_rx_frag (
 	wire [3:0] xy_carry_unused;
 	am_add #(.W(16)) u_xl (.a(qx), .b(16'd0), .ci(wl[0]), .s(xl), .co(xy_carry_unused[0]));
 	am_add #(.W(16)) u_yl (.a(qy), .b(16'd0), .ci(wl[1]), .s(yl), .co(xy_carry_unused[1]));
-	atg_rx_i2f #(.W(17), .F(0)) u_x2 (.v({1'b0, xl[14:0], 1'b1}), .f(x2));
-	atg_rx_i2f #(.W(17), .F(0)) u_y2 (.v({1'b0, yl[14:0], 1'b1}), .f(y2));
+	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_x2 (.v({1'b0, xl[14:0], 1'b1}), .f(x2));
+	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_y2 (.v({1'b0, yl[14:0], 1'b1}), .f(y2));
 	am_sub #(.W(32)) u_xc (.a(x2), .b(32'h00800000), .bi(1'b0), .d(xc), .bo(xy_carry_unused[2]));
 	am_sub #(.W(32)) u_yc (.a(y2), .b(32'h00800000), .bi(1'b0), .d(yc), .bo(xy_carry_unused[3]));
 	wire [31:0] zr = oz[32 * wl +: 32];
