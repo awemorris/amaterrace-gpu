@@ -40,6 +40,7 @@
 | `q001-i26` | **P1〜P8 待機** | [ws001-p031](ws001/phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | queued | `q001-i25` | ユーザー承認に基づきスケジュール。1 quad/cycle 達成。 |
 | `q001-i27` | **P1〜P8 待機** | [ws001-p032](ws001/phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | queued | `q001-i22` | ユーザー承認に基づきスケジュール。頂点供給レート 4 倍向上。 |
 | `q001-i28` | **P1〜P8 待機** | [ws001-p033](ws001/phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | queued | `q001-i27`, `q001-i10` | ユーザー承認に基づきスケジュール。頂点シェーダ負荷半減。 |
+| `q001-i29` | **P1〜P8 待機** | [ws001-p034](ws001/phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/） | queued | `q001-i01` | ユーザー承認（2026-10-26）に基づきスケジュール。即時着手可能。 |
 
 ## サブエージェント実行状態（N=2）
 
@@ -87,4 +88,5 @@
 32. **[ws001-p031](ws001/phase031/phase.md)**: BLT 1サイクル並列 MSAA 4x Resolve。
 33. **[ws001-p032](ws001/phase032/phase.md)**: VF 4ストリーム並列属性 DMA & ラインバッファ拡張。
 34. **[ws001-p033](ws001/phase033/phase.md)**: VF 32エントリ Post-Transform Vertex Cache（PT-VC）。
-35. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites、MultiDrawIndirect、非同期 DMA 等、後回し）。
+35. **[ws001-p034](ws001/phase034/phase.md)**: ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/）。
+36. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites、MultiDrawIndirect、非同期 DMA 等、後回し）。

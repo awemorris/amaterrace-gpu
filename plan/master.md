@@ -86,4 +86,5 @@
     - **CP**: [ws001-p029](ws001/phase029/phase.md)（64ワード循環コマンドプリフェッチ FIFO、ノーウェイト供給）
     - **BLT**: [ws001-p030](ws001/phase030/phase.md)〜[p031](ws001/phase031/phase.md)（ストリーミングバースト DMA 1.0+ GB/s、MSAA 4x 1 cycle 並列 Resolve）
     - **VF**: [ws001-p032](ws001/phase032/phase.md)〜[p033](ws001/phase033/phase.md)（4ストリーム並列属性 DMA、32エントリ Post-Transform 頂点キャッシュ）
+    - **Board / BSP**: [ws001-p034](ws001/phase034/phase.md)（ボードトップ命名刷新 atg_kc705_top & atg_pcie_msi の rtl/bsp/pcie/ 移動）
 11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites、MultiDrawIndirect、非同期 DMA 等、後回し）。

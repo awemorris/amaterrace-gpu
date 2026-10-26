@@ -60,6 +60,7 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 | [p031](phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | p030 | planned |
 | [p032](phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | p027 | planned |
 | [p033](phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | p032, p010 | planned |
+| [p034](phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動 | p001 | planned |
 
 ---
 
