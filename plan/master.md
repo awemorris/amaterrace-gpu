@@ -81,4 +81,9 @@
     - **ROP**: [ws001-p014](ws001/phase014/phase.md)〜[p017](ws001/phase017/phase.md)（div255 1段化、Lerp 最適化、fp32 ストリーム化、Hazard Tracker、L1 タイルキャッシュ）
     - **TU**: [ws001-p018](ws001/phase018/phase.md)〜[p021](ws001/phase021/phase.md)（4レーン並列アドレス生成、フィルタ統合、マルチバンク L1 T$、MSHR ノンブロッキング）
     - **RX**: [ws001-p022](ws001/phase022/phase.md)〜[p025](ws001/phase025/phase.md)（Stream Setup、MSAA 4x 並列 & Coarse タイルスキップ、Fast DDA 1 cycle 平面評価、6段ストリーム統合）
-11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites 等、後回し）。
+    - **FMT**: [ws001-p026](ws001/phase026/phase.md)（atg_fmt_pack 2段パイプライン化、200MHz タイミングクロージャ）
+    - **MC**: [ws001-p027](ws001/phase027/phase.md)〜[p028](ws001/phase028/phase.md)（AXI バースト結合キュー、2段 QoS フラットクロスバー）
+    - **CP**: [ws001-p029](ws001/phase029/phase.md)（64ワード循環コマンドプリフェッチ FIFO、ノーウェイト供給）
+    - **BLT**: [ws001-p030](ws001/phase030/phase.md)〜[p031](ws001/phase031/phase.md)（ストリーミングバースト DMA 1.0+ GB/s、MSAA 4x 1 cycle 並列 Resolve）
+    - **VF**: [ws001-p032](ws001/phase032/phase.md)〜[p033](ws001/phase033/phase.md)（4ストリーム並列属性 DMA、32エントリ Post-Transform 頂点キャッシュ）
+11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites、MultiDrawIndirect、非同期 DMA 等、後回し）。

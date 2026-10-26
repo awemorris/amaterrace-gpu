@@ -52,6 +52,14 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 | [p023](phase023/phase.md) | MSAA 4x 並列カバレッジ & Coarse Tile Rasterizer（`atg_rx_scan` 1 サイクル化と $8 \times 8$ タイルスキップ） | p022 | planned |
 | [p024](phase024/phase.md) | Fast DDA Plane Evaluator（`atg_rx_bary` & `atg_rx_frag` 200 サイクルボトルネック撤廃） | p022 | planned |
 | [p025](phase025/phase.md) | RX ストリームパイプライン統合 & 全シーン回帰検証（6段ストリーム化） | p022, p023, p024 | planned |
+| [p026](phase026/phase.md) | `atg_fmt_pack` 2段パイプライン化（LAT=2、200 MHz クリティカルパス解消） | p001 | planned |
+| [p027](phase027/phase.md) | MC AXI バースト結合キュー（Burst Coalescer: ARLEN=3/7 自動マージ） | p003 | planned |
+| [p028](phase028/phase.md) | MC フラットクロスバー & QoS アービタ（遅延 8clk $\to$ 2clk、DC 優先帯域保証） | p027 | planned |
+| [p029](phase029/phase.md) | CP 64ワード循環コマンドプリフェッチ FIFO（ノーウェイトパケット供給） | p002 | planned |
+| [p030](phase030/phase.md) | BLT ストリーミングバースト DMA エンジン（FSM 撤廃、1.0+ GB/s 転送） | p027 | planned |
+| [p031](phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | p030 | planned |
+| [p032](phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | p027 | planned |
+| [p033](phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | p032, p010 | planned |
 
 ---
 

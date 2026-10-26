@@ -25,3 +25,5 @@ Amaterrace GPU のハードウェアパイプライン化および物理最適�
 | [p005](phase005/phase.md) | TU シームレスキューブマップフィルタリング（面境界テクセル補間） | ws001-p018 | planned |
 | [p006](phase006/phase.md) | TU デスクトップ標準圧縮テクスチャ（BC1〜BC7 ハードウェアデコーダ） | ws001-p020 | planned |
 | [p007](phase007/phase.md) | RX 拡張プリミティブ（Wide Lines, Point Sprites, Multi-Viewport 等） | ws001-p025 | planned |
+| [p008](phase008/phase.md) | 間接描画 & インスタンシング（MultiDrawIndirect, Vertex Attribute Divisor） | ws001-p033 | planned |
+| [p009](phase009/phase.md) | 非同期 DMA 転送キュー & 3D ボリュームコピー（専用キュー・ボリューム画像） | ws001-p030 | planned |

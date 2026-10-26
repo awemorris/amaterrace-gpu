@@ -32,6 +32,14 @@
 | `q001-i18` | **P1〜P8 待機** | [ws001-p023](ws001/phase023/phase.md) | MSAA 4x 並列カバレッジ & Coarse Tile Rasterizer（atg_rx_scan 1 cycle化 & 8x8 タイルスキップ） | queued | `q001-i17` | ユーザー承認に基づきスケジュール。外側タイル一撃スキップ。 |
 | `q001-i19` | **P1〜P8 待機** | [ws001-p024](ws001/phase024/phase.md) | Fast DDA Plane Evaluator（atg_rx_bary & atg_rx_frag 200 サイクルボトルネック撤廃） | queued | `q001-i17` | ユーザー承認に基づきスケジュール。1 クアッド/サイクル化。 |
 | `q001-i20` | **P1〜P8 待機** | [ws001-p025](ws001/phase025/phase.md) | RX ストリームパイプライン統合 & 全シーン回帰検証（6段ストリーム統合） | queued | `q001-i17`, `q001-i18`, `q001-i19` | ユーザー承認に基づきスケジュール。200MHz タイミング収束。 |
+| `q001-i21` | **P1〜P8 待機** | [ws001-p026](ws001/phase026/phase.md) | atg_fmt_pack 2段パイプライン化（LAT=2、200 MHz クリティカルパス解消） | queued | `q001-i01` | ユーザー承認（2026-10-26）に基づきスケジュール。論理深さ 50% 削減。 |
+| `q001-i22` | **P1〜P8 待機** | [ws001-p027](ws001/phase027/phase.md) | MC AXI バースト結合キュー（Burst Coalescer: ARLEN=3/7 自動マージ） | queued | `q001-i06` | ユーザー承認に基づきスケジュール。DDR 稼働率 85% 以上へ引き上げ。 |
+| `q001-i23` | **P1〜P8 待機** | [ws001-p028](ws001/phase028/phase.md) | MC フラットクロスバー & QoS アービタ（遅延 8clk -> 2clk、DC 優先帯域保証） | queued | `q001-i22` | ユーザー承認に基づきスケジュール。往復遅延 75% 削減。 |
+| `q001-i24` | **P1〜P8 待機** | [ws001-p029](ws001/phase029/phase.md) | CP 64ワード循環コマンドプリフェッチ FIFO（ノーウェイトパケット供給） | queued | `q001-i03` | ユーザー承認に基づきスケジュール。32B 境界停止の完全消滅。 |
+| `q001-i25` | **P1〜P8 待機** | [ws001-p030](ws001/phase030/phase.md) | BLT ストリーミングバースト DMA エンジン（FSM 撤廃、1.0+ GB/s 転送） | queued | `q001-i22` | ユーザー承認に基づきスケジュール。転送速度 7〜10 倍高速化。 |
+| `q001-i26` | **P1〜P8 待機** | [ws001-p031](ws001/phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | queued | `q001-i25` | ユーザー承認に基づきスケジュール。1 quad/cycle 達成。 |
+| `q001-i27` | **P1〜P8 待機** | [ws001-p032](ws001/phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | queued | `q001-i22` | ユーザー承認に基づきスケジュール。頂点供給レート 4 倍向上。 |
+| `q001-i28` | **P1〜P8 待機** | [ws001-p033](ws001/phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | queued | `q001-i27`, `q001-i10` | ユーザー承認に基づきスケジュール。頂点シェーダ負荷半減。 |
 
 ## サブエージェント実行状態（N=2）
 
@@ -71,4 +79,12 @@
 24. **[ws001-p023](ws001/phase023/phase.md)**: MSAA 4x 並列カバレッジ & Coarse Tile Rasterizer（atg_rx_scan 1 cycle化 & 8x8 タイルスキップ）。
 25. **[ws001-p024](ws001/phase024/phase.md)**: Fast DDA Plane Evaluator（atg_rx_bary 200 サイクルボトルネック撤廃、1 クアッド/サイクル化）。
 26. **[ws001-p025](ws001/phase025/phase.md)**: RX ストリームパイプライン統合 & 全シーン回帰検証（6段ストリーム化）。
-27. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites 等、後回し）。
+27. **[ws001-p026](ws001/phase026/phase.md)**: atg_fmt_pack 2段パイプライン化（200 MHz クリティカルパス解消）。
+28. **[ws001-p027](ws001/phase027/phase.md)**: MC AXI バースト結合キュー（Burst Coalescer）。
+29. **[ws001-p028](ws001/phase028/phase.md)**: MC フラットクロスバー & QoS アービタ（遅延 8clk -> 2clk）。
+30. **[ws001-p029](ws001/phase029/phase.md)**: CP 64ワード循環コマンドプリフェッチ FIFO。
+31. **[ws001-p030](ws001/phase030/phase.md)**: BLT ストリーミングバースト DMA エンジン（1.0+ GB/s）。
+32. **[ws001-p031](ws001/phase031/phase.md)**: BLT 1サイクル並列 MSAA 4x Resolve。
+33. **[ws001-p032](ws001/phase032/phase.md)**: VF 4ストリーム並列属性 DMA & ラインバッファ拡張。
+34. **[ws001-p033](ws001/phase033/phase.md)**: VF 32エントリ Post-Transform Vertex Cache（PT-VC）。
+35. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites、MultiDrawIndirect、非同期 DMA 等、後回し）。
