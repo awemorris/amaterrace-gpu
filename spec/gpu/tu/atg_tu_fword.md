@@ -34,7 +34,7 @@ None (a pipeline).
 
 ## 6. Latency and throughput
 
-Combinational.  All the arithmetic through rtl/common.
+Combinational.  All the arithmetic through rtl/library/arith.
 
 ## 7. Corner cases and errors
 

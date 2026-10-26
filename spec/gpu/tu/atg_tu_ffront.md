@@ -55,7 +55,7 @@ None (a pipeline).
 
 ## 6. Latency and throughput
 
-One step a cycle, no stall, 13 cycles.  All the arithmetic through rtl/common.
+One step a cycle, no stall, 13 cycles.  All the arithmetic through rtl/library/arith.
 
 ## 7. Corner cases and errors
 

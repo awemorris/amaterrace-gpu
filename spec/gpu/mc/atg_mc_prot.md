@@ -47,7 +47,7 @@ write port (3).
 
 ## 4. Behaviour
 
-- **Header** (spec/common/am_amb_to_rt.md): [1] write, [2] outside the window, [3] chk, [11:4] tag,
+- **Header** (spec/library/bus/am_amb_to_rt.md): [1] write, [2] outside the window, [3] chk, [11:4] tag,
   [19:12] client, route, line, byte enables, then tbl and the 6-bit slot.
 - **A and D**: refused at once when outside the aperture or the window (aperture fault), or when
   a write into [tbase, tbase + table bytes) without tbl while tbase ≠ 0 (protection; with or
@@ -112,7 +112,7 @@ built in, no chk: the same behaviour as shape B.
 ## 9. References
 
 docs/ghci.md §11.6; `spec/gpu/mc/atg_mc.md`, `spec/gpu/mc/atg_mc_grant.md`,
-`spec/common/am_amb_to_rt.md`; `tools/protmodel.py`.
+`spec/library/bus/am_amb_to_rt.md`; `tools/protmodel.py`.
 
 ## 10. Status
 

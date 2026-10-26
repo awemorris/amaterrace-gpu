@@ -22,7 +22,7 @@
  * the order texel, lane, component (LOAD makes the pass's work, a mask of
  * {texel, lane}) into atg_tu_ffront, which gives the value and the weight
  * 13 cycles later (PV): a bypassed or gathered value is written to its
- * accumulator there, a term goes into atg_tu_fma, which reads the
+ * accumulator there, a term goes into am_fp_fma, which reads the
  * accumulator 3 cycles later and writes it 10 cycles later.  The terms of
  * one accumulator keep the reference's order (texels, then passes); a
  * term is issued only 8 or more cycles after the last term of its
@@ -260,9 +260,10 @@ module atg_tu_ffilt (
 	wire [3:0] f_ctag, f_rtag;
 	wire [31:0] f_r;
 
-	atg_tu_fma #(.TW(4)) fma (
+	am_fp_fma #(.TW(4), .LAT(10)) fma (
 		.clk(clk), .rst_n(rst_n), .i_vld(vldv && opv == OP_FMA), .i_tag(aidv),
 		.i_a(wfv), .i_b(val), .c_vld(f_cvld), .c_tag(f_ctag), .c_val(acc[f_ctag*32 +: 32]),
+		.rm(3'd0), .noc(1'b0),
 		.r_vld(f_rvld), .r_tag(f_rtag), .r_val(f_r), .o_busy(f_busy)
 	);
 
@@ -348,7 +349,7 @@ module atg_tu_ffilt (
 				ld <= 1'b1;
 			end
 			endcase
-			/* the accumulators: a bypass or gather (PV), a term (atg_tu_fma) */
+			/* the accumulators: a bypass or gather (PV), a term (am_fp_fma) */
 			if (wrv)
 				acc[aidv*32 +: 32] <= opv == OP_GATH ? gval : val;
 			if (f_rvld)

@@ -74,7 +74,8 @@ def run(top, args, tag):
     """Elaborates one top; returns the XML root or None."""
     os.makedirs(OUT, exist_ok=True)
     mdir = os.path.join(OUT, tag)
-    srcs = sorted(glob.glob(os.path.join('rtl', '**', '*.v'), recursive=True))
+    srcs = [f for f in sorted(glob.glob(os.path.join('rtl', '**', '*.v'), recursive=True))
+            if not f.startswith(os.path.join('rtl', 'bsp', 'xilinx7')) and not f.endswith('am_jtag_bscan.v')]
     cmd = ['verilator', '--xml-only', '-Iinclude', '--top-module', top, '--Mdir', mdir] + \
         args + srcs
     env = dict(os.environ, LC_ALL='C')
@@ -219,7 +220,7 @@ def scan(root, found):
             fid = loc.split(',')[0]
             fname = files.get(fid, '')
             counted = fname.startswith('rtl/') or fname.startswith('include/')
-            if not counted or fname.startswith('rtl/common/'):
+            if not counted or fname.startswith('rtl/library/arith/'):
                 continue
             if fname in EXCEPTIONS:
                 continue
@@ -246,6 +247,8 @@ def main():
         tops = [(sys.argv[sys.argv.index('--top') + 1], [], 'one')]
     else:
         for f in sorted(glob.glob(os.path.join(ROOT, 'rtl', '**', '*.v'), recursive=True)):
+            if f.startswith(os.path.join(ROOT, 'rtl', 'bsp', 'xilinx7')) or f.endswith('am_jtag_bscan.v'):
+                continue
             m = os.path.basename(f)[:-2]
             tops.append((m, [], m))
         tops.append(('atg_top', KC, 'atg_top_kc'))
@@ -264,7 +267,7 @@ def main():
     if '--files' in sys.argv:
         for fname in sorted(per):
             print('%5d %s' % (per[fname], fname))
-    print('arith-lint: %d operators outside rtl/common' % len(found))
+    print('arith-lint: %d operators outside rtl/library/arith' % len(found))
     sys.exit(1 if found else 0)
 
 

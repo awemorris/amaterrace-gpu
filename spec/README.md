@@ -30,7 +30,7 @@ Rules (design §7.6, U38)
 
 - One module ≤ 400 lines of Verilog, one state machine, one clock domain (crossings only
   through `am_afifo`/`am_sync`), ≤ 40 ports.  A module that would exceed these is split.
-- The line count leaves out the instances of the shared arithmetic modules of `rtl/common`
+- The line count leaves out the instances of the shared arithmetic modules of `rtl/library/arith/`
   (`am_add`, `am_sub`, `am_addsub`, `am_mul`, `am_div`, `am_shift`; docs/style.md,
   Arithmetic): the rest of the module stays within 400 lines (user, 2026-10-25).
 - Counting ports: one standard AXI or AXI-Lite interface, one AMB client port (the 12

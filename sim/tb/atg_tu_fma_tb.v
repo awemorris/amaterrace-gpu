@@ -34,8 +34,9 @@ module atg_tu_fma_tb;
 	reg [31:0] cmem [0:65535];
 	reg [31:0] xmem [0:65535];
 
-	atg_tu_fma #(.TW(16)) dut (.clk(clk), .rst_n(rst_n), .i_vld(i_vld), .i_tag(i_tag),
+	am_fp_fma #(.TW(16), .LAT(10)) dut (.clk(clk), .rst_n(rst_n), .i_vld(i_vld), .i_tag(i_tag),
 		.i_a(i_a), .i_b(i_b), .c_vld(c_vld), .c_tag(c_tag), .c_val(cmem[c_tag]),
+		.rm(3'd0), .noc(1'b0),
 		.r_vld(r_vld), .r_tag(r_tag), .r_val(r_val), .o_busy());
 
 	integer seed, errs, n, nr, j;

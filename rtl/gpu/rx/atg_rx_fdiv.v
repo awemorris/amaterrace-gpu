@@ -8,7 +8,7 @@
 /*
  * atg_rx_fdiv: the RX's fp32 divider a / b, one quotient bit per cycle
  * (27 cycles from i_start to o_done; 2 for the special cases), with the
- * rules of atg_rx_fadd (correctly rounded to nearest even, denormals
+ * rules of am_fp_add (correctly rounded to nearest even, denormals
  * flushed, canonical NaN).  i_start is taken only while !busy.
  * See spec/gpu/rx/atg_rx_fdiv.md.
  */

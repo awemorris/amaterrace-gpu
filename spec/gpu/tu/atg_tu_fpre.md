@@ -41,7 +41,7 @@ None (a pipeline).
 
 ## 6. Latency and throughput
 
-One lane a cycle, no stall.  All the arithmetic through rtl/common.
+One lane a cycle, no stall.  All the arithmetic through rtl/library/arith.
 
 ## 7. Corner cases and errors
 

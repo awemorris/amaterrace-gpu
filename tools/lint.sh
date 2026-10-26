@@ -11,7 +11,7 @@ cd "$root" || exit 1
 LC_ALL=C
 export LC_ALL
 command -v verilator >/dev/null || { echo "lint: no verilator" >&2; exit 1; }
-srcs=$(find rtl -name '*.v' | sort)
+srcs=$(find rtl -name '*.v' | grep -v 'rtl/bsp/xilinx7' | grep -v 'am_jtag_bscan' | sort)
 fail=0
 run() {
 	name=$1
@@ -28,6 +28,8 @@ for f in $srcs; do
 	m=$(basename "$f" .v)
 	run "$m" --top-module "$m"
 done
+run "am_jtag_bscan (generic)" sim/lint/xilinx_stubs.v rtl/bsp/generic/am_jtag_bscan.v --top-module am_jtag_bscan
+run "am_jtag_bscan (xilinx7)" -DSYNTH_KINTEX7 sim/lint/xilinx_stubs.v rtl/bsp/xilinx7/am_jtag_bscan.v --top-module am_jtag_bscan
 # The format table of include/atg_fmt_info.vh for any format value, through
 # a lint-only top (sim/lint/atg_fmt_lint.v).
 run "atg_fmt functions (lint top)" --top-module atg_fmt_lint sim/lint/atg_fmt_lint.v

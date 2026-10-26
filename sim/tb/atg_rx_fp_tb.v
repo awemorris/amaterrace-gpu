@@ -33,9 +33,9 @@ module atg_rx_fp_tb;
 	wire aov, mov, dbusy, ddone;
 	wire [31:0] ar, mr, dr;
 
-	atg_rx_fadd add (.clk(clk), .rst_n(rst_n), .i_valid(av), .i_a(aa), .i_b(ab),
+	am_fp_add #(.LAT(4)) add (.clk(clk), .rst_n(rst_n), .i_valid(av), .i_a(aa), .i_b(ab),
 		.i_sub(asub), .o_valid(aov), .o_r(ar));
-	atg_rx_fmul mul (.clk(clk), .rst_n(rst_n), .i_valid(mv), .i_a(ma), .i_b(mb),
+	am_fp_mul #(.LAT(4)) mul (.clk(clk), .rst_n(rst_n), .i_valid(mv), .i_a(ma), .i_b(mb),
 		.o_valid(mov), .o_r(mr));
 	atg_rx_fdiv div (.clk(clk), .rst_n(rst_n), .i_start(ds), .i_a(da), .i_b(db),
 		.busy(dbusy), .o_done(ddone), .o_r(dr));

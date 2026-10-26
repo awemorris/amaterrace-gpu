@@ -79,7 +79,7 @@ reach their child in order; `rsp_idle` at the end.  Mutations checked by hand on
 
 ## 9. References
 
-design.md §4.1; `spec/gpu/mc/atg_mc_tree.md` (where the routers sit), `spec/common/am_amb_to_rt.md`
+design.md §4.1; `spec/gpu/mc/atg_mc_tree.md` (where the routers sit), `spec/library/bus/am_amb_to_rt.md`
 (the flit formats).
 
 ## 10. Status

@@ -94,7 +94,7 @@ module atg_su_pk #(
 	 * One lane: two atg_su_pk_half (each with its fused fp16 datapath,
 	 * compares and 16-bit integer arithmetic, and packh's fp32 -> fp16 of
 	 * one source: rs1 low, rs2 high) and unpackh's fp16 -> fp32
-	 * (atg_su_h2f).  y is 0 but for this unit's groups.
+	 * (am_fp_h2f).  y is 0 but for this unit's groups.
 	 */
 	wire [DW-1:0] y;
 	genvar l;
@@ -114,7 +114,7 @@ module atg_su_pk #(
 			.o(op), .ha(la[31:16]), .hb(lb[31:16]), .hc(lc[31:16]), .r(rm), .sat(sat), .xw(lb0),
 			.y(hi)
 		);
-		atg_su_h2f u_un (.h(sub ? la[31:16] : la[15:0]), .f(un));
+		am_fp_h2f #(.DENORM(0), .LAT(0)) u_un (.h(sub ? la[31:16] : la[15:0]), .f(un));
 		wire [31:0] v = op == ATG_PK_PACKH[3:0] ? {hi, lo} : op == ATG_PK_UNPACKH[3:0] ? un :
 			op == ATG_PK_SWAPH[3:0] ? {la[15:0], la[31:16]} :
 			PACKED != 0 ? {hsel == 2'd1 ? la[31:16] : hi, hsel == 2'd2 ? la[15:0] : lo} :

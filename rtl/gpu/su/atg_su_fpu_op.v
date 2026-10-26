@@ -9,9 +9,9 @@
  * atg_su_fpu_op: one lane's operation of atg_su_fpu (o: ATG_FPU_*), given
  * the product pr of its multiplier (the significands of the fused
  * datapath's x * y, or the integer operands; atg_su_fpu's mulops).  The
- * operations share one rounding to an integer (atg_su_rint: fround,
- * fract, fcvt.w*), one integer to float (atg_su_i2f: fround, fract,
- * fcvt.s.w*) and the fused datapath (atg_su_ffma_p: fadd, fsub, fmul,
+ * operations share one rounding to an integer (am_fp_rint: fround,
+ * fract, fcvt.w*), one integer to float (am_fp_i2f: fround, fract,
+ * fcvt.s.w*) and the fused datapath (am_fp_fma_p: fadd, fsub, fmul,
  * the fmadd family, fract = x - floor(x) with RNE).  ist: the sat bit
  * (float results clamped to [0, 1]).  The former function fpu of
  * atg_su_fpu (tools/gsi1fp.py).  Combinational.
@@ -36,14 +36,14 @@ module atg_su_fpu_op (
 	/* Rounding to an integer and integer to float, shared. */
 	wire [31:0] xf = atg_su_flush(ia);
 	wire [24:0] n;
-	atg_su_rint u_rint (.x(xf), .rm(o == ATG_FPU_FRACT[4:0] ? 3'd2 : irm), .n(n));
+	am_fp_rint #(.LAT(0)) u_rint (.x(xf), .rm(o == ATG_FPU_FRACT[4:0] ? 3'd2 : irm), .n(n));
 	wire [31:0] nega;
 	wire carry_unused;
 	am_sub #(.W(32)) u_neg (.a(32'd0), .b(ia), .bi(1'b0), .d(nega), .bo(carry_unused));
 	wire cvsw = o == ATG_FPU_FCVTSW[4:0];
 	wire cvswu = o == ATG_FPU_FCVTSWU[4:0];
 	wire [31:0] iv;
-	atg_su_i2f u_i2f (.s(cvsw ? ia[31] : cvswu ? 1'b0 : xf[31]),
+	am_fp_i2f #(.LAT(0)) u_i2f (.s(cvsw ? ia[31] : cvswu ? 1'b0 : xf[31]),
 		.n(cvsw ? (ia[31] ? nega : ia) : cvswu ? ia : {7'd0, n}),
 		.rm(cvsw || cvswu ? irm : 3'd0), .r(iv));
 	/* fround */
@@ -92,8 +92,8 @@ module atg_su_fpu_op (
 		endcase
 	end
 	wire [31:0] fr, ri;
-	atg_su_ffma_p u_fma (.a0(fx), .b0(fy), .c0(fz), .rm(rr), .noc(noc), .p(pr[47:0]), .r(fr));
-	atg_su_f2i u_f2i (.x(xf), .n(n), .uns(o == ATG_FPU_FCVTWUS[4:0]), .r(ri));
+	am_fp_fma_p #(.LAT(0)) u_fma (.a0(fx), .b0(fy), .c0(fz), .rm(rr), .noc(noc), .p(pr[47:0]), .r(fr));
+	am_fp_f2i #(.LAT(0)) u_f2i (.x(xf), .n(n), .uns(o == ATG_FPU_FCVTWUS[4:0]), .r(ri));
 
 	wire fma = o <= ATG_FPU_FNMADD[4:0] || o == ATG_FPU_FRACT[4:0];
 	reg [31:0] rs;

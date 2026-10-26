@@ -33,7 +33,7 @@ build() {
 	timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 		--top-module atg_top $KC "$@" -Mdir "$out/obj-$name" -o "$out/atg_top_$name" \
 		-CFLAGS "-I$root/include -O1 $def" \
-		$(find rtl -name '*.v' | sort) "$root/sim/verilator/harness.cpp" \
+		$(find rtl -name '*.v' | grep -v 'rtl/bsp/xilinx7' | sort) "$root/sim/verilator/harness.cpp" \
 		>"$out/build-$name.log" 2>&1 || {
 		tail -30 "$out/build-$name.log" >&2
 		echo "FAIL verilator $name (build, log $out/build-$name.log)"

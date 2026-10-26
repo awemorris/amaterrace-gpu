@@ -216,9 +216,9 @@ module atg_rx_scan #(
 	wire [31:0] fm_r, fa_r;
 	wire [31:0] fa_a = zc < 5'd12 ? t1[zl] : fa_r;
 	wire [31:0] fa_b = zc < 5'd12 ? fm_r : cz;
-	atg_rx_fmul fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(fm_a), .i_b(fm_b),
+	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(fm_a), .i_b(fm_b),
 		.o_valid(fm_o), .o_r(fm_r));
-	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(fa_a), .i_b(fa_b),
+	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(fa_a), .i_b(fa_b),
 		.i_sub(1'b0), .o_valid(fa_o), .o_r(fa_r));
 	wire [31:0] zcl = fa_r[31] || (fa_r[30:23] == 8'hFF && fa_r[22:0] != 23'd0) ? 32'd0 :
 		fa_r > 32'h3F800000 ? 32'h3F800000 : fa_r;

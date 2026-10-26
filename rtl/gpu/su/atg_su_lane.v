@@ -85,10 +85,19 @@ module atg_su_lane #(
 	generate
 		for (gq = 0; gq < NPHYS / 4; gq = gq + 1) begin : g_qd
 			wire [31:0] qa, qb;
-			atg_su_fadd u_qa (.a(sub[0] ? x_a[(4*gq + 2)*32 +: 32] : x_a[(4*gq + 1)*32 +: 32]),
-				.b(x_a[(4*gq)*32 +: 32] ^ 32'h80000000), .r(qa));
-			atg_su_fadd u_qb (.a(x_a[(4*gq + 3)*32 +: 32]),
-				.b((sub[0] ? x_a[(4*gq + 1)*32 +: 32] : x_a[(4*gq + 2)*32 +: 32]) ^ 32'h80000000), .r(qb));
+			wire unused_qa_v, unused_qb_v;
+			am_fp_add #(.LAT(0)) u_qa (
+				.clk(1'b0), .rst_n(1'b1), .i_valid(1'b1),
+				.i_a(sub[0] ? x_a[(4*gq + 2)*32 +: 32] : x_a[(4*gq + 1)*32 +: 32]),
+				.i_b(x_a[(4*gq)*32 +: 32]), .i_sub(1'b1),
+				.o_valid(unused_qa_v), .o_r(qa)
+			);
+			am_fp_add #(.LAT(0)) u_qb (
+				.clk(1'b0), .rst_n(1'b1), .i_valid(1'b1),
+				.i_a(x_a[(4*gq + 3)*32 +: 32]),
+				.i_b(sub[0] ? x_a[(4*gq + 1)*32 +: 32] : x_a[(4*gq + 2)*32 +: 32]), .i_sub(1'b1),
+				.o_valid(unused_qb_v), .o_r(qb)
+			);
 			for (gm = 4*gq; gm < 4*gq + 4; gm = gm + 1) begin : g_l
 				assign y[gm*32 +: 32] = sub[2:0] == 3'd0 ? ((gm & 2) != 0 ? qb : qa) :
 					sub[2:0] == 3'd1 ? ((gm & 1) != 0 ? qb : qa) :
