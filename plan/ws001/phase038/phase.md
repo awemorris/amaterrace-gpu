@@ -143,4 +143,5 @@ end
 - `sim/run.sh atg_top`: PASS（33 s、システム統合 PASS）。
 - `python3 tools/arith-lint.py --top atg_dc` & `--top atg_dc_dma`: 違反 0 件。
 - Verilator lint: 警告 0 件。
+- R1 敵対的コードレビュー APPROVE 承認完了（2026-10-26）。
 - コミット: `6310a94`
