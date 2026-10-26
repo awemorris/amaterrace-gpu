@@ -77,9 +77,8 @@ module atg_tu_cache #(
 	localparam [2:0] IDLE       = 3'd0,
 	                 LANE_CHECK = 3'd1,
 	                 MREQ       = 3'd2,
-	                 MWAIT      = 3'd3,
-	                 LANE_READ  = 3'd4,
-	                 OUT        = 3'd5;
+	                 LANE_READ  = 3'd3,
+	                 OUT        = 3'd4;
 
 	/* 4 Banks of RAM arrays (Simple Dual Port BRAM inference) */
 	reg [LB-1:0] data_b0 [0:NSETS-1][0:WAYS-1];
@@ -94,8 +93,6 @@ module atg_tu_cache #(
 	reg [2:0] st;
 	reg [1:0] lane;
 	reg drop;
-	reg [ADDR_W-LINE_SHIFT-1:0] mline;
-	reg [1:0] miss_slot;
 	reg [3:0] slot_err;
 	reg [511:0] ta_addr_q;
 
@@ -184,22 +181,116 @@ module atg_tu_cache #(
 	wire s3_hit  = s3_hit0 || s3_hit1 || s3_hit2 || s3_hit3;
 	wire [1:0] s3_way = s3_hit3 ? 2'd3 : s3_hit2 ? 2'd2 : s3_hit1 ? 2'd1 : 2'd0;
 
+	localparam LA_W = ADDR_W - LINE_SHIFT;
+
+	wire [LA_W-1:0] a0_line = a0[ADDR_W-1:LINE_SHIFT];
+	wire [LA_W-1:0] a1_line = a1[ADDR_W-1:LINE_SHIFT];
+	wire [LA_W-1:0] a2_line = a2[ADDR_W-1:LINE_SHIFT];
+	wire [LA_W-1:0] a3_line = a3[ADDR_W-1:LINE_SHIFT];
+
+	/* MSHR instantiation for tracking in-flight misses */
+	wire mshr_alloc_req = (st == LANE_CHECK) && any_unreq;
+	wire mshr_alloc_ready;
+	wire [1:0] mshr_alloc_idx;
+	wire mshr_alloc_merged;
+
+	wire mshr_ready_valid;
+	wire [5:0] mshr_ready_quad_id;
+	wire [63:0] mshr_ready_mask;
+	wire [LB-1:0] mshr_ready_data;
+	wire [LA_W-1:0] mshr_ready_line;
+	wire mshr_ready_error;
+	wire [1:0] mshr_ready_idx;
+	wire [2:0] mshr_active_count;
+	wire mshr_empty, mshr_full;
+	wire [3:0] mshr_vld_vec;
+	wire [4*LA_W-1:0] mshr_line_vec;
+
+	wire mshr_check_hit;
+	wire [1:0] mshr_check_idx;
+
+	atg_tu_mshr #(
+		.NENTRIES(4),
+		.ADDR_W(ADDR_W),
+		.LINE_BYTES(LINE_BYTES),
+		.LINE_SHIFT(LINE_SHIFT),
+		.QUAD_ID_W(6)
+	) u_mshr (
+		.clk(clk),
+		.rst_n(rst_n),
+		.check_valid(1'b0),
+		.check_line_addr({LA_W{1'b0}}),
+		.check_hit(mshr_check_hit),
+		.check_mshr_idx(mshr_check_idx),
+		.alloc_valid(mshr_alloc_req),
+		.alloc_ready(mshr_alloc_ready),
+		.alloc_line_addr(unreq_line),
+		.alloc_quad_id(6'd0),
+		.alloc_mshr_idx(mshr_alloc_idx),
+		.alloc_merged(mshr_alloc_merged),
+		.refill_valid(rsp_valid),
+		.refill_mshr_idx(rsp_tag[1:0]),
+		.refill_data(rsp_rdata),
+		.refill_error(rsp_error),
+		.mshr_ready_valid(mshr_ready_valid),
+		.mshr_ready_quad_id(mshr_ready_quad_id),
+		.mshr_ready_mask(mshr_ready_mask),
+		.mshr_ready_data(mshr_ready_data),
+		.mshr_ready_line(mshr_ready_line),
+		.mshr_ready_error(mshr_ready_error),
+		.mshr_ready_idx(mshr_ready_idx),
+		.active_count(mshr_active_count),
+		.empty(mshr_empty),
+		.full(mshr_full),
+		.mshr_vld_vec(mshr_vld_vec),
+		.mshr_line_vec(mshr_line_vec)
+	);
+
+	function in_mshr;
+		input [LA_W-1:0] l;
+		input [3:0] v;
+		input [4*LA_W-1:0] lines;
+		begin
+			in_mshr = (v[0] && lines[0*LA_W +: LA_W] == l) ||
+			          (v[1] && lines[1*LA_W +: LA_W] == l) ||
+			          (v[2] && lines[2*LA_W +: LA_W] == l) ||
+			          (v[3] && lines[3*LA_W +: LA_W] == l);
+		end
+	endfunction
+
+	wire s0_in_mshr = in_mshr(a0_line, mshr_vld_vec, mshr_line_vec) ||
+	                  (mshr_ready_valid && mshr_ready_line == a0_line);
+	wire s1_in_mshr = in_mshr(a1_line, mshr_vld_vec, mshr_line_vec) ||
+	                  (mshr_ready_valid && mshr_ready_line == a1_line);
+	wire s2_in_mshr = in_mshr(a2_line, mshr_vld_vec, mshr_line_vec) ||
+	                  (mshr_ready_valid && mshr_ready_line == a2_line);
+	wire s3_in_mshr = in_mshr(a3_line, mshr_vld_vec, mshr_line_vec) ||
+	                  (mshr_ready_valid && mshr_ready_line == a3_line);
+
 	/* Miss determination */
 	wire s0_miss = use_slot[0] && !border0 && !s0_hit && !slot_err[0];
 	wire s1_miss = use_slot[1] && !border1 && !s1_hit && !slot_err[1];
 	wire s2_miss = use_slot[2] && !border2 && !s2_hit && !slot_err[2];
 	wire s3_miss = use_slot[3] && !border3 && !s3_hit && !slot_err[3];
-	wire any_miss = s0_miss || s1_miss || s2_miss || s3_miss;
 
-	wire [1:0] miss_slot_next = s0_miss ? 2'd0 :
-	                            s1_miss ? 2'd1 :
-	                            s2_miss ? 2'd2 : 2'd3;
+	wire s0_unreq = s0_miss && !s0_in_mshr;
+	wire s1_unreq = s1_miss && !s1_in_mshr && (a1_line != a0_line || !s0_unreq);
+	wire s2_unreq = s2_miss && !s2_in_mshr && (a2_line != a0_line || !s0_unreq) && (a2_line != a1_line || !s1_unreq);
+	wire s3_unreq = s3_miss && !s3_in_mshr && (a3_line != a0_line || !s0_unreq) && (a3_line != a1_line || !s1_unreq) && (a3_line != a2_line || !s2_unreq);
+	wire any_unreq = s0_unreq || s1_unreq || s2_unreq || s3_unreq;
 
-	wire [ADDR_W-LINE_SHIFT-1:0] miss_line_next =
-		(miss_slot_next == 2'd0) ? a0[ADDR_W-1:LINE_SHIFT] :
-		(miss_slot_next == 2'd1) ? a1[ADDR_W-1:LINE_SHIFT] :
-		(miss_slot_next == 2'd2) ? a2[ADDR_W-1:LINE_SHIFT] :
-		                           a3[ADDR_W-1:LINE_SHIFT];
+	wire [1:0] unreq_slot = s0_unreq ? 2'd0 :
+	                        s1_unreq ? 2'd1 :
+	                        s2_unreq ? 2'd2 : 2'd3;
+
+	wire [LA_W-1:0] unreq_line = (unreq_slot == 2'd0) ? a0_line :
+	                             (unreq_slot == 2'd1) ? a1_line :
+	                             (unreq_slot == 2'd2) ? a2_line : a3_line;
+
+	wire all_slots_ready = (!use_slot[0] || border0 || s0_hit || slot_err[0]) &&
+	                       (!use_slot[1] || border1 || s1_hit || slot_err[1]) &&
+	                       (!use_slot[2] || border2 || s2_hit || slot_err[2]) &&
+	                       (!use_slot[3] || border3 || s3_hit || slot_err[3]);
 
 	/* 4 Banks read concurrently for the 4 slots */
 	wire [IW-1:0] b0_set = s0_set;
@@ -294,17 +385,21 @@ module atg_tu_cache #(
 	wire nxt_lane_co_unused;
 	am_add #(.W(2)) u_inc_lane (.a(lane), .b(2'd1), .ci(1'b0), .s(nxt_lane), .co(nxt_lane_co_unused));
 
+	reg req_valid_r;
+	reg [LA_W-1:0] req_line_r;
+	reg [7:0] req_tag_r;
+
 	assign ta_ready = st == IDLE;
 	assign tc_valid = st == OUT;
-	assign req_valid = st == MREQ;
+	assign req_valid = req_valid_r;
 	assign req_write = 1'b0;
-	assign req_line = mline;
+	assign req_line = req_line_r;
 	assign req_be = {LINE_BYTES{1'b0}};
 	assign req_wdata = {LB{1'b0}};
-	assign req_tag = 8'd0;
+	assign req_tag = req_tag_r;
 
-	wire [IW-1:0] mline_set = mline[IW-1:0];
-	wire [1:0] fill_way = get_victim(vld[mline_set], plru[mline_set]);
+	wire [IW-1:0] r_set = mshr_ready_line[IW-1:0];
+	wire [1:0] r_fill_way = get_victim(vld[r_set], plru[r_set]);
 
 	integer j, s_init;
 	always @(posedge clk) begin
@@ -312,14 +407,32 @@ module atg_tu_cache #(
 			st <= IDLE;
 			lane <= 2'd0;
 			drop <= 1'b0;
-			mline <= {(ADDR_W-LINE_SHIFT){1'b0}};
-			miss_slot <= 2'd0;
 			slot_err <= 4'd0;
+			req_valid_r <= 1'b0;
+			req_line_r <= {LA_W{1'b0}};
+			req_tag_r <= 8'd0;
 			for (s_init = 0; s_init < NSETS; s_init = s_init + 1) begin
 				vld[s_init] <= {WAYS{1'b0}};
 				plru[s_init] <= 3'd0;
 			end
 		end else begin
+			if (mshr_ready_valid) begin
+				if (mshr_ready_error) begin
+					if (a0_line == mshr_ready_line) slot_err[0] <= 1'b1;
+					if (a1_line == mshr_ready_line) slot_err[1] <= 1'b1;
+					if (a2_line == mshr_ready_line) slot_err[2] <= 1'b1;
+					if (a3_line == mshr_ready_line) slot_err[3] <= 1'b1;
+				end else begin
+					data_b0[r_set][r_fill_way] <= mshr_ready_data;
+					data_b1[r_set][r_fill_way] <= mshr_ready_data;
+					data_b2[r_set][r_fill_way] <= mshr_ready_data;
+					data_b3[r_set][r_fill_way] <= mshr_ready_data;
+					tags[r_set][r_fill_way] <= mshr_ready_line[LA_W-1 -: TW];
+					vld[r_set][r_fill_way] <= !drop && !inv;
+					plru[r_set] <= update_plru(plru[r_set], r_fill_way);
+				end
+			end
+
 			case (st)
 			IDLE: if (ta_valid) begin
 				ta_addr_q <= ta_addr;
@@ -335,6 +448,7 @@ module atg_tu_cache #(
 				tc_texels <= 512'd0;
 				lane <= 2'd0;
 				slot_err <= 4'd0;
+				req_valid_r <= 1'b0;
 				st <= ta_ctl[2] ? OUT : LANE_CHECK;
 			end
 			LANE_CHECK: begin
@@ -346,35 +460,22 @@ module atg_tu_cache #(
 						lane <= nxt_lane;
 						slot_err <= 4'd0;
 					end
-				end else if (any_miss) begin
-					mline <= miss_line_next;
-					miss_slot <= miss_slot_next;
-					drop <= 1'b0;
-					st <= MREQ;
-				end else begin
+				end else if (any_unreq) begin
+					if (mshr_alloc_ready) begin
+						req_valid_r <= 1'b1;
+						req_line_r <= unreq_line;
+						req_tag_r <= {6'd0, mshr_alloc_idx};
+						drop <= 1'b0;
+						st <= MREQ;
+					end
+				end else if (all_slots_ready) begin
 					/* All active non-border slots HIT: read from 4 banks */
 					st <= LANE_READ;
 				end
 			end
-			MREQ: if (req_ready) begin
-				st <= MWAIT;
-			end
-			MWAIT: if (rsp_valid) begin
-				if (rsp_error) begin
-					/* Error region: texel stays 0, mark slot */
-					if (a0[ADDR_W-1:LINE_SHIFT] == mline) slot_err[0] <= 1'b1;
-					if (a1[ADDR_W-1:LINE_SHIFT] == mline) slot_err[1] <= 1'b1;
-					if (a2[ADDR_W-1:LINE_SHIFT] == mline) slot_err[2] <= 1'b1;
-					if (a3[ADDR_W-1:LINE_SHIFT] == mline) slot_err[3] <= 1'b1;
-					st <= LANE_CHECK;
-				end else begin
-					data_b0[mline_set][fill_way] <= rsp_rdata;
-					data_b1[mline_set][fill_way] <= rsp_rdata;
-					data_b2[mline_set][fill_way] <= rsp_rdata;
-					data_b3[mline_set][fill_way] <= rsp_rdata;
-					tags[mline_set][fill_way] <= mline[ADDR_W-LINE_SHIFT-1 -: TW];
-					vld[mline_set][fill_way] <= !drop && !inv;
-					plru[mline_set] <= update_plru(plru[mline_set], fill_way);
+			MREQ: begin
+				if (req_ready) begin
+					req_valid_r <= 1'b0;
 					st <= LANE_CHECK;
 				end
 			end
@@ -419,11 +520,16 @@ module atg_tu_cache #(
 					vld[s_init] <= {WAYS{1'b0}};
 				drop <= 1'b1;
 			end
+			if (mshr_empty) begin
+				drop <= 1'b0;
+			end
 		end
 	end
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, nxt_lane_co_unused,
-	                   miss_slot, a0[ADDR_W-1:LINE_SHIFT]};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag[7:2], nxt_lane_co_unused,
+	                   unreq_slot, a0_line, mshr_ready_quad_id, mshr_ready_mask,
+	                   mshr_ready_idx, mshr_active_count, mshr_full, mshr_alloc_merged,
+	                   mshr_check_hit, mshr_check_idx};
 endmodule
 
 `default_nettype wire

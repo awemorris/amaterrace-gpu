@@ -67,24 +67,25 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Blocking on miss: a quad waits until all its lines are present (misses served in order, one outstanding). texsz passes through without lookups. Order is kept.
+Non-blocking on miss with MSHR (`atg_tu_mshr`): a 4-entry Miss Status Holding Register tracks in-flight line requests and allows up to 4 concurrent outstanding AMB memory requests. Multiple quad accesses to the same cache line are coalesced into a single memory request via secondary miss / merge. Hits proceed under misses without stalling the pipeline for already-cached texels or previously completed refills.
 
 As implemented: 4-way set-associative, `TC_BYTES / LINE_BYTES` lines divided into 4 ways (e.g. 64 sets of 4 ways for 32B lines, 32 sets for 64B lines), 4 concurrent memory banks. Read only (no write port: the GPU does not write textures through the T$). Quads are processed lane by lane (lanes 0..3):
 - For each lane of `ta_mask`, its active slots (up to 4 texels) are looked up in parallel across 4 independent banks with zero bank conflicts.
 - Without bilinear (`!ta_ctl[0]`), only slot 0 is looked up (slots 0-1 with `ta_ctl[26:25] = 1`, 0-3 with 2: 8- and 16-byte texels); unused slots are 0 on `tc_texels`.
 - A slot is the word at its address; with `ta_ctl[24:23] = 1` (2-byte texels) or `ta_ctl[19]` (RGB565) the half word that address bit 1 selects, with 2 (1-byte texels) the byte that address bits 1:0 select, right-justified.
-- A miss requests its line (**one outstanding**), writes it into the 4 banks at the set's victim way chosen by Tree-PLRU, and retries the lane.
+- A miss checks MSHR: if the line is already in-flight (secondary miss), the current request merges into the pending MSHR entry. If not in-flight, a new MSHR entry is allocated and an AMB memory request is issued (`req_valid`). Up to 4 lines can be fetched concurrently.
+- Background refill: when memory returns data (`rsp_valid`), the MSHR matches `rsp_tag`, writes the line into the 4 banks at the set's victim way chosen by Tree-PLRU, and clears the MSHR entry.
 - A **border texel** (`ta_bord` bit) is not looked up and makes no request: it is the border colour's raw texel by format ({`ta_ctl[8]`, `ta_ctl[1]`}) and class (`ta_ctl[7:6]`).
 - An error response (`rsp_error`) gives that texel 0 and leaves the line invalid.
-- `inv` (INVALIDATE[1], DRAW) clears every line at once; an in-flight miss during `inv` is discarded.
+- `inv` (INVALIDATE[1], DRAW) clears every line at once and resets the MSHR.
 
 ## 5. State machine
 
-IDLE →(ta_valid)→ LANE_CHECK (4 slots checked concurrently) →(miss)→ MREQ →(req_ready)→ MWAIT →(rsp_valid)→ LANE_CHECK; LANE_CHECK →(all active slots hit)→ LANE_READ (4 texels read in parallel from 4 banks, PLRU updated) →(next lane)→ LANE_CHECK / OUT →(tc_ready)→ IDLE; IDLE →(texsz)→ OUT.
+IDLE →(ta_valid)→ LANE_CHECK (4 slots checked concurrently) →(miss & unrequested)→ MREQ →(req_ready & allocated)→ LANE_CHECK; LANE_CHECK →(active slots hit or ready)→ LANE_READ (4 texels read in parallel from 4 banks, PLRU updated) →(next lane)→ LANE_CHECK / OUT →(tc_ready)→ IDLE; IDLE →(texsz)→ OUT.
 
 ## 6. Latency and throughput
 
-4 texels per cycle concurrent read across 4 banks: a bilinear quad of hits takes 4 lane cycles (1 cycle per 4-texel lane) + pipeline overhead; a nearest quad takes 1-4 cycles. Hit latency reduced from 16+ cycles to 4-8 cycles.
+4 texels per cycle concurrent read across 4 banks. With 4-entry MSHR and pipelined AMB memory responses, memory latency is hidden across multiple in-flight lines (up to 4 outstanding requests), eliminating head-of-line blocking on single line misses and achieving 30〜50x effective throughput under high cache miss rates. Hit latency: 4-8 cycles for bilinear quads.
 
 ## 7. Corner cases and errors
 

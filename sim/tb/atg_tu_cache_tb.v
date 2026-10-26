@@ -74,6 +74,7 @@ module atg_tu_cache_run #(
 	wire [LINE_BYTES-1:0] req_be;
 	wire [LB-1:0] req_wdata;
 	wire [7:0] req_tag;
+	reg [7:0] rsp_tag = 0;
 	reg rsp_valid = 1'b0;
 	reg rsp_error = 1'b0;
 	reg [LB-1:0] rsp_rdata = 0;
@@ -87,7 +88,7 @@ module atg_tu_cache_run #(
 		.tc_value(tc_value), .tc_last(tc_last),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
-		.rsp_valid(rsp_valid), .rsp_write(1'b0), .rsp_tag(8'd0), .rsp_rdata(rsp_rdata),
+		.rsp_valid(rsp_valid), .rsp_write(1'b0), .rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata),
 		.rsp_error(rsp_error)
 	);
 
@@ -101,26 +102,46 @@ module atg_tu_cache_run #(
 		memword = (a[31:2] * 32'h9E3779B1) ^ (a < 32'h1000 ? g * 32'h01000193 : 32'd0);
 	endfunction
 
-	/* The memory: one request at a time (the cache has one outstanding). */
+	/* The memory: pipelined response queue (supports multiple outstanding requests). */
+	localparam MQ_DEPTH = 16;
+	reg [LB-1:0] mq_data [0:MQ_DEPTH-1];
+	reg [7:0]    mq_tag  [0:MQ_DEPTH-1];
+	reg          mq_err  [0:MQ_DEPTH-1];
+	integer      mq_due  [0:MQ_DEPTH-1];
+	integer      mq_head = 0, mq_tail = 0, mq_cnt = 0, now = 0;
 	reg [31:0] la;
 	reg [LB-1:0] line;
-	integer d, w;
+	integer w;
+
 	always @(posedge clk) begin
-		req_ready <= ($random(seed) & 1) == 0;
+		now = now + 1;
 		rsp_valid <= 1'b0;
+
+		/* Service due response from queue */
+		if (mq_cnt > 0 && mq_due[mq_head] <= now) begin
+			rsp_valid <= 1'b1;
+			rsp_rdata <= mq_data[mq_head];
+			rsp_tag   <= mq_tag[mq_head];
+			rsp_error <= mq_err[mq_head];
+			mq_head = (mq_head + 1) % MQ_DEPTH;
+			mq_cnt = mq_cnt - 1;
+		end
+
+		/* Accept new request when queue has space */
+		req_ready <= (mq_cnt < MQ_DEPTH) && (($random(seed) & 1) == 0);
 		if (req_valid && req_ready) begin
 			nreq = nreq + 1;
 			la = {req_line, {LINE_SHIFT{1'b0}}};
 			if (req_write)
 				$display("FAIL atg_tu_cache: a write request");
-			/* the data as memory holds it when the request is taken */
 			for (w = 0; w < LINE_BYTES / 4; w = w + 1)
 				line[w*32 +: 32] = memword(la + w * 4, gen);
-			d = $random(seed) & 15;
-			repeat (d) @(posedge clk);
-			rsp_rdata <= line;
-			rsp_error <= la[31:20] == 12'h00E;
-			rsp_valid <= 1'b1;
+			mq_data[mq_tail] = line;
+			mq_tag[mq_tail]  = req_tag;
+			mq_err[mq_tail]  = (la[31:20] == 12'h00E);
+			mq_due[mq_tail]  = now + ($random(seed) & 15) + 1;
+			mq_tail = (mq_tail + 1) % MQ_DEPTH;
+			mq_cnt = mq_cnt + 1;
 		end
 	end
 

@@ -3,10 +3,30 @@
 # Phase 021: MSHR ノンブロッキングフェッチ & メモリ統合（実効スループット 30〜50 倍向上）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `implemented`
 - **依存**: [ws001-p020](../phase020/phase.md), [ws001-p003](../phase003/phase.md)
 - **優先度**: Critical (1 Outstanding ブロッキング停止の解体 & Hit-Under-Miss 実現)
 - **出典**: ユーザー諮問（TU パイプライン化）および R1 敵対的アーキテクチャ分析レポート
+
+## 実施結果
+
+1. **MSHR 実装 (`rtl/gpu/tu/atg_tu_mshr.v`)**:
+   - 4エントリ MSHR を新規実装。CAM 検索による重複ライン要求の結合（Secondary Miss / Merge）、Primary Miss 割り当て、最大4本の独立フェッチ並行追跡、メモリリフィル時のキャッシュ更新通知・即時エントリ再利用を完全サポート。
+   - 純粋ブール論理マルチプレクサおよび `am_shift` を採用し、演算子 0 件を達成。
+2. **キャッシュ統合 (`rtl/gpu/tu/atg_tu_cache.v`)**:
+   - ブロッキング単一待機ステート（`MWAIT`）を完全撤廃し、MSHR 連携によるノンブロッキング・Hit-Under-Miss パイプラインを構築。
+   - リフィル完了と同時に 4 バンク BRAM へのライン書き込みとタグ更新を実施。
+3. **仕様書・テストベンチ**:
+   - `spec/gpu/tu/atg_tu_mshr.md` 作成。
+   - `spec/gpu/tu/atg_tu_cache.md` 改訂。
+   - `sim/tb/atg_tu_mshr_tb.v` 作成：エントリ確保、満杯バックプレッシャー、セカンダリミスマージ、アウトオブオーダーリフィル、即時再利用、80サイクルレイテンシ Hit-Under-Miss 全項目検証。
+4. **検証結果**:
+   - `sim/run.sh atg_tu_mshr` PASS (0s)
+   - `sim/run.sh atg_tu_cache` PASS (2s)
+   - `sim/run.sh atg_tu` PASS (128s, 21,358 テストベクタ全パス)
+   - `sim/run.sh atg_top` PASS (19s)
+   - `tools/lint.sh atg_top` 全項目 clean (0 warnings)
+   - `python3 tools/arith-lint.py` 0 operators outside `rtl/library/arith/`
 
 ## 目的
 

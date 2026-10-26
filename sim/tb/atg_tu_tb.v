@@ -76,24 +76,42 @@ module atg_tu_tb_run #(
 
 	integer seed = SEED;
 
-	/* The memory: one request at a time (the cache has one outstanding). */
+	/* The memory: pipelined response queue (supports multiple outstanding requests). */
+	localparam MQ_DEPTH = 16;
+	reg [LB-1:0] mq_data [0:MQ_DEPTH-1];
+	reg [7:0]    mq_tag  [0:MQ_DEPTH-1];
+	integer      mq_due  [0:MQ_DEPTH-1];
+	integer      mq_head = 0, mq_tail = 0, mq_cnt = 0, now = 0;
 	reg [31:0] la;
 	reg [LB-1:0] line;
-	integer d, w;
+	integer w;
+
 	always @(posedge clk) begin
-		req_ready <= ($random(seed) & 1) == 0;
+		now = now + 1;
 		rsp_valid <= 1'b0;
+
+		/* Service due response from queue */
+		if (mq_cnt > 0 && mq_due[mq_head] <= now) begin
+			rsp_valid <= 1'b1;
+			rsp_rdata <= mq_data[mq_head];
+			rsp_tag   <= mq_tag[mq_head];
+			mq_head = (mq_head + 1) % MQ_DEPTH;
+			mq_cnt = mq_cnt - 1;
+		end
+
+		/* Accept new request when queue has space */
+		req_ready <= (mq_cnt < MQ_DEPTH) && (($random(seed) & 1) == 0);
 		if (req_valid && req_ready) begin
 			la = {req_line, {LINE_SHIFT{1'b0}}};
 			if (req_write)
 				$display("FAIL atg_tu(%0d): a write request", LINE_BYTES);
 			for (w = 0; w < LINE_BYTES / 4; w = w + 1)
 				line[w*32 +: 32] = ((la >> 2) + w) * 32'h9E3779B1;
-			d = $random(seed) & 7;
-			repeat (d) @(posedge clk);
-			rsp_rdata <= line;
-			rsp_tag <= req_tag;
-			rsp_valid <= 1'b1;
+			mq_data[mq_tail] = line;
+			mq_tag[mq_tail]  = req_tag;
+			mq_due[mq_tail]  = now + ($random(seed) & 7) + 1;
+			mq_tail = (mq_tail + 1) % MQ_DEPTH;
+			mq_cnt = mq_cnt + 1;
 		end
 	end
 
