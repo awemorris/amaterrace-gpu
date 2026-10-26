@@ -38,8 +38,8 @@
 | `q001-i24` | **P3** | [ws001-p029](ws001/phase029/phase.md) | CP 64ワード循環コマンドプリフェッチ FIFO（ノーウェイトパケット供給） | cleared | `q001-i03` | 実装完了（commit fdead8a）。FW全14件PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i25` | **P3** | [ws001-p030](ws001/phase030/phase.md) | BLT ストリーミングバースト DMA エンジン（FSM 撤廃、1.0+ GB/s 転送） | cleared | `q001-i22`, `q001-i30` | 実装完了（commit 379d820）。1KiB ピングポン DMA で実効 2.0 GB/s 達成。R1/T1 検証中。 |
 | `q001-i26` | **P3** | [ws001-p031](ws001/phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | cleared | `q001-i25` | 実装完了（commit abb858c）。持続 1 quad/1.42 cyc 達成。R1 レビュー中。 |
-| `q001-i27` | **P3** | [ws001-p032](ws001/phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | in-progress | `q001-i22`, `q001-i30` | P3 着手。頂点供給レート 4 倍向上。 |
-| `q001-i28` | **P3** | [ws001-p033](ws001/phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | queued | `q001-i27`, `q001-i10` | P3 待機。頂点シェーダ負荷半減。 |
+| `q001-i27` | **P3** | [ws001-p032](ws001/phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | cleared | `q001-i22`, `q001-i30` | 実装完了（commit 13aa21f）。4ストリーム1KiBバッファ、0cyc即時EMIT。R1レビュー中。 |
+| `q001-i28` | **P3** | [ws001-p033](ws001/phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | in-progress | `q001-i27`, `q001-i10` | P3 着手。頂点シェーダ負荷半減。 |
 | `q001-i29` | **P3** | [ws001-p034](ws001/phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/） | cleared | `q001-i01` | 実装完了（commit da4e0a7）。統合回帰 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i30` | **P3** | [ws001-p035](ws001/phase035/phase.md) | 完全スキッドバッファ（am_skid.v）の共通ライブラリ化（0 サイクルスループット・Backpressure 分離） | cleared | `q001-i01` | 実装・単体 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i31` | **P3** | [ws001-p036](ws001/phase036/phase.md) | BRAM 推論可能非同期 FIFO（am_afifo_bram.v）実装（同期 Read + 2段スキッド 0-cycle FWFT） | cleared | `q001-i30` | 実装完了（commit c3e9c7b）。単体 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
@@ -53,7 +53,7 @@
 | :---: | :---: | :--- | :--- | :--- | :--- |
 | **P1** | 実装（メモリ・相互結合） | Claude Opus 5.5 Medium | active | `q001-i22`: `ws001-p027`（MC バースト結合） | `q001-i23`: `ws001-p028`（MC フラットクロスバー） |
 | **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC） | Claude Opus 5.5 Medium | active | `q001-i33`: `ws001-p038`（atg_dc 2048ワード BRAM AFIFO） | `q001-i34`: `ws001-p039`（DC QoS） |
-| **P3** | 実装（インフラ・ジオメトリ・SU） | Claude Opus 5.5 Medium | active | `q001-i27`: `ws001-p032`（VF 4並列 DMA） | `q001-i28`: `ws001-p033`（PT-VC） |
+| **P3** | 実装（インフラ・ジオメトリ・SU） | Claude Opus 5.5 Medium | active | `q001-i28`: `ws001-p033`（PT-VC） | `q001-i17`: `ws001-p022`（RX Setup） |
 | **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | WS001（31件）& WS002（10件）全 41 Phase 実装設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
 | **R1** | レビュー | Gemini 4 Argon Medium | active | 敵対的 RTL & 仕様レビュー常時待機 | 各レーン成果物レビューディスパッチ |

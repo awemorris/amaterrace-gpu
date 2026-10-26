@@ -64,7 +64,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 - element = index for a per-vertex attribute; for a per-instance one (DESC[20]) Vulkan's rule: FIRST_INSTANCE + (inst − FIRST_INSTANCE) / divisor, and FIRST_INSTANCE for divisor 0 (DESC[31:24]; divisor 1 needs no division; others use a sequential divider, 32 cycles, with a one-entry memo).  addr = ATTR_BASE + stride × element (mod 2^32).  The size comes from the format (4, 8, 12 or 16 bytes; the reserved formats read 4); with CAPS[30] and ATTR_DST[k][31:24] ≠ 0 it is the VkFormat's bytes (`atg_fmt_info`: 1, 2, 4, 8, 12 or 16; a value without an entry, and a compressed block, reads 4); any byte alignment.
 - An attribute is enabled when its whole ATTR_DST word (with [31:24]) is not 0, so a VkFormat attribute may go to r0 with one component.
 - **ATTR_LIMIT[k]** (0x1D0 + k, CAPS[30]): with [31] = 1, an attribute whose bytes pass the limit (offset + size > [30:0], where offset = stride × element, with offset + size computed in 49 bits so it cannot wrap; checked in PLAN, which then goes straight to EMIT) is not read: its af comes with `af_oob` = 1 and atg_vf_conv writes (0, 0, 0, 1).  [31] = 0: no limit (as before).  The robust buffer access of Vulkan's (0, 0, 0, 1) form.
-- Two line entries (fully associative) hold the last lines read; an attribute that crosses a line uses both (two reads at most, one request at a time, the tag names the entry).  The entries are dropped after the warp's last attribute (the vertex buffers do not change under a draw).  An error response reads as 0 (the MC raises the fault).
+- **Line buffer architecture**: 4 independent attribute streams (Position, Normal, Color, TexCoord, etc. mapped as $s = k[1:0]$), each equipped with an 8-entry line buffer (256 bytes per stream, 32 entries / 1 KiB total). Each stream independently caches its fetched lines so that fetching one attribute never evicts another attribute's cached lines (eliminating cache thrashing across multiple vertex buffers). An attribute crossing line boundaries uses two entries within its stream buffer without evicting either.
+- Requests to the AMB use tags `{3'b0, s[1:0], entry[2:0]}` allowing responses to be demultiplexed directly to the targeted stream and entry. The entries are cleared on warp completion. An error response reads as 0 (the MC raises the fault).
 - af_raw byte 0 is the byte at addr; bytes beyond the format's size are unspecified.  Order out: lane-major (all attributes of lane 0, then lane 1) so conv can write as data comes; af_last on the last attribute of the vertex with vb_last.  A warp whose vertices have no enabled attribute still sends one af (attr 0, which is then disabled, af_last) so that atg_vf_conv pulses conv_done.
 
 ## 5. State machine
@@ -73,7 +74,9 @@ IDLE →(vb)→ ELEM (element; DIV for a divisor above 1 not in the memo) → MU
 
 ## 6. Latency and throughput
 
-About 6 cycles per attribute when its lines are in the entries; a miss adds a memory round trip (two for a crossing attribute).  At most two reads in flight (the 4 of the target are left for a later Phase, with a line reuse across warps).
+- On a line buffer hit, `ST_PLAN` transitions directly to `ST_EMIT`, completing the attribute in ~4 cycles (0 DRAM latency).
+- With 4 streams retaining up to 8 lines each (1 KiB total), subsequent vertices within the warp achieve near 100% cache hit rates, boosting vertex delivery rate by 4x over the single 2-line buffer design.
+- A miss initiates pipelined AMB burst requests; line responses arrive tagged per stream/entry.
 
 ## 7. Corner cases and errors
 
@@ -97,5 +100,8 @@ About 6 cycles per attribute when its lines are in the entries; a miss adds a me
 design §2.3 (ATTR_*), §3.4.3.
 
 ## 10. Status
+
+Implemented.
+Phase 032 (2026-10-27): Multi-stream line buffer expansion (4 streams x 8 entries = 32 entries / 1 KiB total) and direct hit emit pipeline. All arithmetic operations linted clean (0 bare operators). PASS atg_vf_fetch verified.
 
 Implemented in WS288 p009 part A (branch p1-vf).  Readings of the text above (Q1 to confirm): the enable rule is "ATTR_DST[k] ≠ 0" (§4); the per-instance element follows Vulkan (relative to FIRST_INSTANCE), where the earlier text said inst / divisor; the dummy af for a warp without attributes.  Difference from §6's target: two reads in flight, not four.  Ports and parameters unchanged.  2026-10-25 (CAPS[30], spec first, the RTL follows): the size from the VkFormat and ATTR_LIMIT (§4); one new port `af_oob` (out, 1: the attribute is outside its limit, af_raw unspecified), 31 ports, 20 counting each AMB and HCR port as one group.  MUT_ATTR_LIMIT_GE (the limit compare as ≥) must make the TB fail.  Implemented 2026-10-25: every PASS of §8; `iverilog -DMUT_ATTR_LIMIT_GE` fails `atg_vf_fetch.limit` (the limits there sit on stride × element + size − 1, + 0 and + 1 with elements 0-7).

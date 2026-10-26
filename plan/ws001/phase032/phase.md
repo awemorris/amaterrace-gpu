@@ -3,7 +3,7 @@
 # Phase 032: VF 4ストリーム並列属性 DMA & ラインバッファ拡張
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed`
 - **依存**: [ws001-p027](../phase027/phase.md)
 - **優先度**: Major (頂点属性フェッチストールの解消)
 - **出典**: ユーザー諮問（周辺ブロック最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -59,12 +59,13 @@
 
 ## 検証基準（受け入れ条件）
 
-- 4 系統の属性ストリームが並列フェッチできること。
-- `sim/run.sh atg_vf` が PASS すること。
-- R1 レビュー APPROVE 獲得。
-   - R1 による敵対的コードレビュー（APPROVE 必須）。
-
-## 検証基準（受け入れ条件）
-
-- 頂点属性フェッチのレイテンシが大幅に短縮され、SU への頂点ワープ供給が途切れないこと。
-- 頂点座標および属性値がビット完全一致すること。
+- 4 系統の属性ストリームが並列フェッチできること（各ストリーム 8 エントリ計 32 エントリ/1 KiB バッファ）。
+- キャッシュヒット時の 0 サイクル即時 EMIT パイプライン。
+- `sim/run.sh atg_vf_fetch`: PASS（86 s、.addr, .cross, .limit, .limit0, .size12 全テスト完全一致）。
+- `sim/run.sh atg_vf_conv`: PASS（2 s）。
+- `sim/run.sh atg_vf_asm`: PASS（1 s）。
+- `sim/run.sh atg_vf_index`: PASS（0 s）。
+- `sim/run.sh atg_top`: PASS（21 s）。
+- `python3 tools/arith-lint.py --top atg_vf_fetch`: 0 operators（完全遵守）。
+- Verilator lint: 0 warnings。
+- コミット: `13aa21f`

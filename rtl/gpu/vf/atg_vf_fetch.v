@@ -197,12 +197,63 @@ module atg_vf_fetch #(
 	wire past = bend > {18'd0, lim[30:0]};
 `endif
 
-	/* Two line entries. */
-	reg [LA_W-1:0] e_tag0, e_tag1;
-	reg [LB-1:0] e_dat0, e_dat1;
-	reg [1:0] e_v;
-	reg rr;	/* the next victim */
-	reg sel1, sel2, miss1, miss2;
+	/*
+	 * Multi-stream line buffer (Phase 032):
+	 * 4 streams (Position, Normal, Color, TexCoord, etc. mapped as s = k[1:0]),
+	 * 8 entries per stream (32 entries total, 1 KiB total).
+	 * Eliminates cross-attribute buffer thrashing and read starvation.
+	 */
+	reg [LA_W-1:0] s_tag [0:31];
+	reg [LB-1:0]   s_dat [0:31];
+	reg [31:0]     s_val;
+	reg [31:0]     s_pnd;
+	reg [2:0]      s_rr [0:3];
+
+	function [2:0] inc3;
+		input [2:0] v;
+		case (v)
+		3'd0: inc3 = 3'd1;
+		3'd1: inc3 = 3'd2;
+		3'd2: inc3 = 3'd3;
+		3'd3: inc3 = 3'd4;
+		3'd4: inc3 = 3'd5;
+		3'd5: inc3 = 3'd6;
+		3'd6: inc3 = 3'd7;
+		default: inc3 = 3'd0;
+		endcase
+	endfunction
+
+	function [7:0] dec8;
+		input [2:0] idx;
+		case (idx)
+		3'd0: dec8 = 8'b00000001;
+		3'd1: dec8 = 8'b00000010;
+		3'd2: dec8 = 8'b00000100;
+		3'd3: dec8 = 8'b00001000;
+		3'd4: dec8 = 8'b00010000;
+		3'd5: dec8 = 8'b00100000;
+		3'd6: dec8 = 8'b01000000;
+		3'd7: dec8 = 8'b10000000;
+		default: dec8 = 8'b00000000;
+		endcase
+	endfunction
+
+	function [2:0] prio8;
+		input [7:0] m;
+		casez (m)
+		8'b???????1: prio8 = 3'd0;
+		8'b??????10: prio8 = 3'd1;
+		8'b?????100: prio8 = 3'd2;
+		8'b????1000: prio8 = 3'd3;
+		8'b???10000: prio8 = 3'd4;
+		8'b??100000: prio8 = 3'd5;
+		8'b?1000000: prio8 = 3'd6;
+		8'b10000000: prio8 = 3'd7;
+		default: prio8 = 3'd0;
+		endcase
+	endfunction
+
+	wire [1:0] s = k[1:0];
 	wire [LA_W-1:0] l1 = addr[ADDR_W-1:LINE_SHIFT];
 	wire [LA_W-1:0] l2;	/* the next line */
 
@@ -214,20 +265,78 @@ module atg_vf_fetch #(
 	am_add #(.W(LINE_SHIFT + 1)) os (.a({1'b0, off}), .b({{(LINE_SHIFT-4){1'b0}}, size}),
 		.ci(1'b0), .s(osum), .co(osum_co_unused));
 	wire xline = osum[LINE_SHIFT] && osum[LINE_SHIFT-1:0] != {LINE_SHIFT{1'b0}};
-	wire h1_0 = e_v[0] && e_tag0 == l1, h1_1 = e_v[1] && e_tag1 == l1;
-	wire h2_0 = e_v[0] && e_tag0 == l2, h2_1 = e_v[1] && e_tag1 == l2;
 
-	reg rq_pend, rq_tag;
+	/* Tag match for all 32 entries */
+	wire [31:0] tag_m1, tag_m2;
+	genvar gi;
+	generate
+		for (gi = 0; gi < 32; gi = gi + 1) begin: g_tag_match
+			assign tag_m1[gi] = s_tag[gi] == l1;
+			assign tag_m2[gi] = s_tag[gi] == l2;
+		end
+	endgenerate
+
+	wire [4:0] sb = {s, 3'b000};
+	wire [7:0] s_val_8  = s_val[sb +: 8];
+	wire [7:0] s_pnd_8  = s_pnd[sb +: 8];
+	wire [7:0] tag_m1_8 = tag_m1[sb +: 8];
+	wire [7:0] tag_m2_8 = tag_m2[sb +: 8];
+
+	wire [7:0] hit1_mask = s_val_8 & tag_m1_8;
+	wire [7:0] pnd1_mask = s_pnd_8 & tag_m1_8;
+	wire [7:0] hit2_mask = s_val_8 & tag_m2_8;
+	wire [7:0] pnd2_mask = s_pnd_8 & tag_m2_8;
+	wire [7:0] free_mask = ~(s_val_8 | s_pnd_8);
+
+	wire h1_hit = |hit1_mask;
+	wire p1_pnd = |pnd1_mask;
+	wire h2_hit = |hit2_mask;
+	wire p2_pnd = |pnd2_mask;
+
+	wire match1 = |(hit1_mask | pnd1_mask);
+	wire [2:0] m1_idx = prio8(hit1_mask | pnd1_mask);
+	wire match2 = |(hit2_mask | pnd2_mask);
+	wire [2:0] m2_idx = prio8(hit2_mask | pnd2_mask);
+
+	wire [7:0] prot1 = match1 ? dec8(m1_idx) : 8'd0;
+	wire [7:0] prot2 = match2 ? dec8(m2_idx) : 8'd0;
+	wire [7:0] free_for_1 = free_mask & ~prot2;
+	wire [7:0] free_for_2 = free_mask & ~prot1;
+
+	wire [2:0] rr0 = s_rr[s];
+	wire [2:0] rr1 = inc3(rr0);
+	wire [2:0] rr2 = inc3(rr1);
+
+	wire [2:0] vic1 = (rr0 == m2_idx && match2) ? rr1 : rr0;
+	wire [2:0] vic2 = (rr0 == m1_idx && match1) ? rr1 :
+	                  ((vic1 == rr0) ? rr1 : rr2);
+
+	wire [2:0] sel1_calc = match1 ? m1_idx : (|free_for_1 ? prio8(free_for_1) : vic1);
+	wire [7:0] free_for_2_adj = free_for_2 & ~dec8(sel1_calc);
+	wire [2:0] sel2_calc = match2 ? m2_idx :
+		(|free_for_2_adj ? prio8(free_for_2_adj) :
+		((vic2 == sel1_calc) ? inc3(vic2) : vic2));
+
+	reg [2:0] sel1, sel2;
+	reg miss1, miss2;
+
+	reg rq_pend;
+	reg [7:0] rq_tag;
 	reg [LA_W-1:0] rq_line;
 	assign req_valid = rq_pend;
 	assign req_write = 1'b0;
 	assign req_line = rq_line;
 	assign req_be = {LINE_BYTES{1'b0}};
 	assign req_wdata = {LB{1'b0}};
-	assign req_tag = {7'd0, rq_tag};
+	assign req_tag = rq_tag;
 	wire rd_rsp = rsp_valid && !rsp_write;
 
-	wire [2*LB-1:0] pair = {sel2 ? e_dat1 : e_dat0, sel1 ? e_dat1 : e_dat0};
+	wire [4:0] rsp_idx = {rsp_tag[4:3], rsp_tag[2:0]};
+	wire [4:0] e_sel1 = {s, sel1};
+	wire [4:0] e_sel2 = {s, sel2};
+	wire [4:0] miss_idx = {s, miss1 ? sel1 : sel2};
+
+	wire [2*LB-1:0] pair = {s_dat[e_sel2], s_dat[e_sel1]};
 	wire [2*LB-1:0] pair_sh;
 
 	/* The attribute's bytes from the pair of lines. */
@@ -258,23 +367,32 @@ module atg_vf_fetch #(
 	assign af_last = v_last && (st == ST_NONE || rem_next == 16'd0);
 	assign busy = st != ST_IDLE;
 
+	integer si, sei;
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= ST_IDLE;
-			e_v <= 2'b00;
-			rr <= 1'b0;
+			s_val <= 32'd0;
+			s_pnd <= 32'd0;
+			for (si = 0; si < 4; si = si + 1)
+				s_rr[si] <= 3'd0;
+			for (sei = 0; sei < 32; sei = sei + 1) begin
+				s_tag[sei] <= {LA_W{1'b0}};
+				s_dat[sei] <= {LB{1'b0}};
+			end
 			m_v <= 1'b0;
 			rq_pend <= 1'b0;
 			oob <= 1'b0;
 			d_start <= 1'b0;
+			sel1 <= 3'd0;
+			sel2 <= 3'd0;
+			miss1 <= 1'b0;
+			miss2 <= 1'b0;
 		end else begin
 			d_start <= 1'b0;
 			if (rd_rsp) begin
-				if (rsp_tag[0])
-					e_dat1 <= rsp_error ? {LB{1'b0}} : rsp_rdata;
-				else
-					e_dat0 <= rsp_error ? {LB{1'b0}} : rsp_rdata;
-				e_v[rsp_tag[0]] <= 1'b1;
+				s_dat[rsp_idx] <= rsp_error ? {LB{1'b0}} : rsp_rdata;
+				s_val[rsp_idx] <= 1'b1;
+				s_pnd[rsp_idx] <= 1'b0;
 			end
 			case (st)
 			ST_IDLE:
@@ -322,29 +440,27 @@ module atg_vf_fetch #(
 				st <= ST_PLAN;
 			end
 			ST_PLAN: begin
-				/* Choose the entries of line 1 (and line 2 when crossing). */
-				miss1 <= !h1_0 && !h1_1;
-				miss2 <= xline && !h2_0 && !h2_1;
-				if (h1_0 || h1_1)
-					sel1 <= h1_1;
-				else if (xline && (h2_0 || h2_1))
-					sel1 <= !h2_1;
-				else
-					sel1 <= xline ? 1'b0 : rr;
-				if (h2_0 || h2_1)
-					sel2 <= h2_1;
-				else if (h1_0 || h1_1)
-					sel2 <= !h1_1;
-				else
-					sel2 <= 1'b1;
 				/* Outside ATTR_LIMIT: no read, no entry changes. */
 				oob <= lim[31] && past;
 				if (lim[31] && past)
 					st <= ST_EMIT;
 				else begin
-					if (!h1_0 && !h1_1 && !xline)
-						rr <= !rr;
-					st <= ST_REQ;
+					/* Choose entries for line 1 and line 2 */
+					sel1 <= sel1_calc;
+					sel2 <= sel2_calc;
+					miss1 <= !h1_hit && !p1_pnd;
+					miss2 <= xline && !h2_hit && !p2_pnd;
+
+					if (h1_hit && (!xline || h2_hit)) begin
+						/* Full cache hit: immediate emit! */
+						st <= ST_EMIT;
+					end else if (!(!h1_hit && !p1_pnd) && !(xline && !h2_hit && !p2_pnd)) begin
+						/* Already pending in flight: wait in DATA */
+						st <= ST_DATA;
+					end else begin
+						/* Issue missing read requests */
+						st <= ST_REQ;
+					end
 				end
 			end
 			ST_REQ:
@@ -359,17 +475,17 @@ module atg_vf_fetch #(
 					end
 				end else if (miss1 || miss2) begin
 					rq_pend <= 1'b1;
-					rq_tag <= miss1 ? sel1 : sel2;
+					rq_tag <= {3'd0, s, miss1 ? sel1 : sel2};
 					rq_line <= miss1 ? l1 : l2;
-					e_v[miss1 ? sel1 : sel2] <= 1'b0;
-					if (miss1 ? sel1 : sel2)
-						e_tag1 <= miss1 ? l1 : l2;
-					else
-						e_tag0 <= miss1 ? l1 : l2;
+					s_pnd[miss_idx] <= 1'b1;
+					s_tag[miss_idx] <= miss1 ? l1 : l2;
+					s_val[miss_idx] <= 1'b0;
+					if (miss1 ? (sel1 == rr0) : (sel2 == rr0))
+						s_rr[s] <= rr1;
 				end else
 					st <= ST_DATA;
 			ST_DATA:
-				if (e_v[sel1] && (!xline || e_v[sel2]))
+				if (s_val[e_sel1] && (!xline || s_val[e_sel2]))
 					st <= ST_EMIT;
 			ST_EMIT:
 				if (af_ready) begin
@@ -378,20 +494,25 @@ module atg_vf_fetch #(
 						st <= ST_ELEM;
 					else begin
 						st <= ST_IDLE;
-						if (v_last)
-							e_v <= 2'b00;
+						if (v_last) begin
+							s_val <= 32'd0;
+							s_pnd <= 32'd0;
+						end
 					end
 				end
 			default:
 				if (af_ready) begin
 					st <= ST_IDLE;
-					e_v <= 2'b00;
+					if (v_last) begin
+						s_val <= 32'd0;
+						s_pnd <= 32'd0;
+					end
 				end
 			endcase
 		end
 	end
 
-	wire unused_ok = &{1'b0, rsp_tag[7:1], s_off[8:5], pair_sh[2*LB-1:128], vk_inf[67:15],
+	wire unused_ok = &{1'b0, rsp_tag[7:5], s_off[8:5], pair_sh[2*LB-1:128], vk_inf[67:15],
 		vk_inf[13:6]};
 endmodule
 
