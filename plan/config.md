@@ -23,3 +23,5 @@
 - Workstream: [ws001/ws.md](ws001/ws.md)
   - Phase: [ws001/phase001/phase.md](ws001/phase001/phase.md)
   - Work Spec: [ws001/phase001/work-spec.md](ws001/phase001/work-spec.md)
+- Workstream 002: [ws002/ws.md](ws002/ws.md)
+  - Phase: [ws002/phase001/phase.md](ws002/phase001/phase.md)

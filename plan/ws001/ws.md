@@ -27,14 +27,23 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | RTL の階層（bsp・library・gpu）と FP の演算器の重複の整理（旧 ws288-p042） | なし（今すぐ） | uncleared |
-| [p002](phase002/phase.md) | GHCI 1.1 起動ハンドシェイク規格化 & 診断ダンプ強化（R1 敵対的レビュー対応） | p001 | planned |
-| [p003](phase003/phase.md) | 共有 L2 キャッシュ（LLC）導入 & キャッシュコヒーレンシ再構築（R1 敵対的レビュー対応） | p002 | planned |
-| [p004](phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定 & 実装 | p002 | planned |
+| [p001](phase001/phase.md) | RTL の階層（bsp・library・gpu）と FP の演算器の重複の整理（旧 ws288-p042） | なし | completed |
+| [p002](phase002/phase.md) | GHCI 1.1 起動ハンドシェイク規格化 & 診断ダンプ強化（R1 敵対的レビュー対応） | p001 | completed |
+| [p003](phase003/phase.md) | 共有 L2 キャッシュ（LLC）導入 & キャッシュコヒーレンシ再構築（R1 敵対的レビュー対応） | p002 | in-progress |
+| [p004](phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定 & 実装 | p002 | in-progress |
 | [p005](phase005/phase.md) | マルチエンジン独立キューイング & ハードウェアプリエンプション（R1 敵対的レビュー対応） | p004 | planned |
-| [p006](phase006/phase.md) | 細粒度同期（Timeline Semaphore / パイプラインバリア）& Vulkan 1.0 必須機能補完 | p003, p005 | planned |
-| [p007](phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新 | p002, p004 | in-progress |
-| [p008](phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装 | p001 | in-progress |
+| [p006](phase006/phase.md) | 細粒度同期（Timeline Semaphore / パイプラインバリア）& 描画同期基盤 | p003, p005 | planned |
+| [p007](phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新 | p002, p004 | completed |
+| [p008](phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装 | p001 | completed |
+| [p009](phase009/phase.md) | `rtl/library/arith/` 物理最適化（ビット反転右シフト & Non-restoring 除算器） | p001 | planned |
+| [p010](phase010/phase.md) | SU 実 6段パイプライン化（偽遅延FF排除・`am_fpu_core` 4段分割・遅延均等化） | p008, p009 | planned |
+| [p011](phase011/phase.md) | SU オペランド・フォワーディング / バイパスネットワーク（RAW ストール解消） | p010 | planned |
+| [p012](phase012/phase.md) | SU スコアボード連動ワープスケジューラ（`warp_ready`・リプレイゼロ） | p010, p011 | planned |
+| [p013](phase013/phase.md) | SU レジスタファイル最適化（BRAM 半減・マルチ SU 面積削減） | p010 | planned |
+| [p014](phase014/phase.md) | 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減） | p001 | planned |
+| [p015](phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle） | p014 | planned |
+| [p016](phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | p014, p015 | planned |
+| [p017](phase017/phase.md) | ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消（8KB Color/Depth） | p016, p003 | planned |
 
 ---
 

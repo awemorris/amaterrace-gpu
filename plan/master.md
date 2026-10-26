@@ -48,6 +48,7 @@
 | **MG002** KC705 実機動作・DC 200MHz 独立・端から端統合 | O1, O2 | DC クロック領域の 200 MHz 化による 720p アンダーフロー解消、VF2 PCIe / QEMU VFIO 経由での zedBSD Vulkan 描画 | 前提 Phase 準備中 | WS001 |
 | **MG003** パイプライン化と 200 MHz タイミング収束 | O2 | 各ブロック（SU, TU, ROP, RX 等）の LAT=3 パイプライン化、KC705 上での WNS >= 0 ns 達成 | 計画 | WS001 |
 | **MG004** 複数 SU・キャッシュブロッキング・ASIC 展開 | O1, O2 | 複数 SU スケーリング、タイリング/キャッシュブロッキング、3nm ASIC フロー検討 | Future Work | WS001 |
+| **MG005** Vulkan 1.0 完全適合・拡張グラフィックス機能 | O1 | Logic Op、Dual Source Blend、MRT 8 アタッチメント、異方性フィルタ等の完全実装 | 計画（後回し） | WS002 |
 
 ## Current Focused Goals
 
@@ -60,7 +61,8 @@
 
 | WS | Primary Milestone | 名称・概要 | 状態 | 再開点・次の作業 |
 | --- | --- | --- | --- | --- |
-| [WS001](ws001/ws.md) | MG001 | Amaterrace GPU IP（階層整理・FP 演算器統合・DSP48E1 最適化・GHCI 拡張） | in-progress | [p001](ws001/phase001/phase.md), [p002](ws001/phase002/phase.md), [p007](ws001/phase007/phase.md), [p008](ws001/phase008/phase.md) 完了。[p003](ws001/phase003/phase.md) 実行中。 |
+| [WS001](ws001/ws.md) | MG001 | Amaterrace GPU IP（階層整理・FP 演算器統合・DSP48E1 最適化・パイプライン化） | in-progress | [p001](ws001/phase001/phase.md), [p002](ws001/phase002/phase.md), [p007](ws001/phase007/phase.md), [p008](ws001/phase008/phase.md) 完了。[p003](ws001/phase003/phase.md), [p004](ws001/phase004/phase.md) 実行中。 |
+| [WS002](ws002/ws.md) | MG005 | Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8） | planned | コアパイプライン化完了後に着手（後回し）。 |
 
 ## 優先順位
 
@@ -73,4 +75,8 @@
 7. **[ws001-p007](ws001/phase007/phase.md)**: GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新（19 レジスタスリム MMIO、インメモリ PSO/ディスクリプタ、`CMD_BIND_PIPELINE`/`CMD_DRAW`、UMA セカンダリコマンドフェッチ）。
 8. **[ws001-p008](ws001/phase008/phase.md)**: FP 演算ライブラリ再編 & 統合 FPU コア（`am_fpu_core`）実装（4x DSP48E1 共有 FMA/IMUL、`am_fp_div`, `am_fp_f2fix`, `am_fp_i2f` のライブラリ共通化）。
 9. **DC の 200 MHz クロック領域分離**: SYSCLK 直結による 720p scanout アンダーフロー解消。
-10. **ブロック別パイプライン化**: SU → TU → ROP … の順に各ブロックの乗算・演算器遅延を LAT=3 に合わせてパイプライン化し、タイミングを収束。
+10. **物理最適化 & コアパイプライン化**:
+    - **Arith**: [ws001-p009](ws001/phase009/phase.md)（ビット反転右シフタ、Non-restoring 除算器）
+    - **SU**: [ws001-p010](ws001/phase010/phase.md)〜[p013](ws001/phase013/phase.md)（実 6段化、フォワーディング、スコアボード、RF 時分割）
+    - **ROP**: [ws001-p014](ws001/phase014/phase.md)〜[p017](ws001/phase017/phase.md)（div255 1段化、Lerp 最適化、fp32 ストリーム化、Hazard Tracker、L1 タイルキャッシュ）
+11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8 アタッチメント等、後回し）。
