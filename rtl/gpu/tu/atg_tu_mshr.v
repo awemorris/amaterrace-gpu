@@ -22,6 +22,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
 module atg_tu_mshr #(
 	parameter NENTRIES   = 4,
 	parameter ADDR_W     = 32,
@@ -68,6 +70,8 @@ module atg_tu_mshr #(
 	output wire [NENTRIES-1:0] mshr_vld_vec,
 	output wire [NENTRIES*LA_W-1:0] mshr_line_vec
 );
+
+`ifdef CFG_ENABLE_MSHR
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam LB   = LINE_BYTES * 8;
 	localparam QMASK_W = 1 << QUAD_ID_W;
@@ -198,6 +202,50 @@ module atg_tu_mshr #(
 			end
 		end
 	end
+
+`else
+
+	localparam LA_W = ADDR_W - LINE_SHIFT;
+	localparam LB   = LINE_BYTES * 8;
+	localparam QMASK_W = 1 << QUAD_ID_W;
+
+	assign check_hit = 1'b0;
+	assign check_mshr_idx = 2'd0;
+	assign alloc_ready = 1'b0;
+	assign alloc_mshr_idx = 2'd0;
+	assign alloc_merged = 1'b0;
+	assign active_count = 3'd0;
+	assign empty = 1'b1;
+	assign full = 1'b0;
+	assign mshr_vld_vec = {NENTRIES{1'b0}};
+	assign mshr_line_vec = {(NENTRIES*LA_W){1'b0}};
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			mshr_ready_valid   <= 1'b0;
+			mshr_ready_quad_id <= {QUAD_ID_W{1'b0}};
+			mshr_ready_mask    <= {QMASK_W{1'b0}};
+			mshr_ready_data    <= {LB{1'b0}};
+			mshr_ready_line    <= {LA_W{1'b0}};
+			mshr_ready_error   <= 1'b0;
+			mshr_ready_idx     <= 2'd0;
+		end else begin
+			mshr_ready_valid   <= 1'b0;
+			mshr_ready_quad_id <= {QUAD_ID_W{1'b0}};
+			mshr_ready_mask    <= {QMASK_W{1'b0}};
+			mshr_ready_data    <= {LB{1'b0}};
+			mshr_ready_line    <= {LA_W{1'b0}};
+			mshr_ready_error   <= 1'b0;
+			mshr_ready_idx     <= 2'd0;
+		end
+	end
+
+	wire unused_mshr_stub = &{1'b0, check_valid, check_line_addr, alloc_valid,
+		alloc_line_addr, alloc_quad_id, refill_valid, refill_mshr_idx,
+		refill_data, refill_error};
+
+`endif
+
 endmodule
 
 `default_nettype wire

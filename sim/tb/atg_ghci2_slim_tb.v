@@ -52,6 +52,7 @@ module atg_ghci2_slim_tb;
 	wire [31:0] tb_state_rdata = 32'h12345678;
 
 	atg_cp_regs #(
+		.DEVICE_CAPS(32'h00500002),
 		.CAPS(32'h00500002),
 		.SLIM_MMIO(1)
 	) u_slim_regs (

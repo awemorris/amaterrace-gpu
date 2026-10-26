@@ -15,6 +15,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
 module atg_tu_decp (
 	input  wire         clk,
 	input  wire         rst_n,
@@ -41,6 +43,7 @@ module atg_tu_decp (
 	wire [31:0] bc_out_rgba;
 	wire [63:0] bc_out_fp16;
 
+`ifdef CFG_ENABLE_BC
 	atg_tu_bc u_bc (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -54,6 +57,25 @@ module atg_tu_decp (
 		.out_rgba(bc_out_rgba),
 		.out_fp16(bc_out_fp16)
 	);
+`else
+	reg stub_valid;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			stub_valid <= 1'b0;
+		end else begin
+			if (out_ready || !stub_valid) begin
+				stub_valid <= bc_in_valid;
+			end
+		end
+	end
+
+	assign bc_in_ready  = out_ready || !stub_valid;
+	assign bc_out_valid = stub_valid;
+	assign bc_out_rgba  = 32'd0;
+	assign bc_out_fp16  = 64'd0;
+	wire unused_decp_stub = &{1'b0, fmt, sub_texel, in_block[127:32]};
+`endif
 
 	/* Pass-through register for non-BC formats */
 	reg non_bc_valid;

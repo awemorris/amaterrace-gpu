@@ -14,3 +14,7 @@ obj_dir/
 *~
 # Python byte code.
 __pycache__/
+# Local configuration and generated headers.
+/config.mk
+/include/atg_config.vh
+

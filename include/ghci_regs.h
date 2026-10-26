@@ -107,6 +107,45 @@
 #define GHCI_CAPS_PACKED (1u << 28)
 #define GHCI_CAPS_MS4 (1u << 29) /* 4x multisampling (draft, section 12.11) */
 #define GHCI_CAPS_CORE1 (1u << 30) /* Vulkan 1.0 core rendering (draft, section 8.5) */
+#define GHCI_CAPS_TEX_ADV GHCI_CAPS_TU_FULL
+#define GHCI_CAPS_PACKED_MATH GHCI_CAPS_PACKED
+#define GHCI_CAPS_MSAA GHCI_CAPS_MS4
+
+/* DEVICE_CAPS (0x008) bits */
+#define GHCI_DEVICE_CAPS 0x008u
+#define GHCI_DEV_CAP_UMA (1u << 0)
+#define GHCI_DEV_CAP_IOMMU (1u << 1)
+#define GHCI_DEV_CAP_HW_WALKER (1u << 2)
+#define GHCI_DEV_CAP_INDIRECT_DRAW (1u << 3)
+#define GHCI_DEV_CAP_SECONDARY_RING (1u << 4)
+#define GHCI_DEV_CAP_DUAL_SOURCE (1u << 5)
+#define GHCI_DEV_CAP_FP16 (1u << 6)
+#define GHCI_DEV_CAP_GSI1 (1u << 7)
+#define GHCI_DEV_CAP_PHYS_LANES(c) (((c) >> 8) & 0xFFu)
+#define GHCI_DEV_CAP_NUM_SU(c) (((c) >> 16) & 0xFFu)
+#define GHCI_DEV_CAP_TASK_SHADER (1u << 30)
+#define GHCI_DEV_CAP_MESH_SHADER (1u << 31)
+
+/* EXT_CAP_* registers (0x080+) */
+#define GHCI_EXT_CAP_FMT0 0x080u
+#define GHCI_EXT_CAP_FEATURE 0x084u
+
+#define GHCI_EXT_FMT_BC1 (1u << 0)
+#define GHCI_EXT_FMT_BC2 (1u << 1)
+#define GHCI_EXT_FMT_BC3 (1u << 2)
+#define GHCI_EXT_FMT_BC4 (1u << 3)
+#define GHCI_EXT_FMT_BC5 (1u << 4)
+#define GHCI_EXT_FMT_BC6H (1u << 5)
+#define GHCI_EXT_FMT_BC7 (1u << 6)
+
+#define GHCI_EXT_FEAT_LOGIC_OP (1u << 0)
+#define GHCI_EXT_FEAT_EARLY_Z (1u << 1)
+#define GHCI_EXT_FEAT_HW_CURSOR (1u << 2)
+#define GHCI_EXT_FEAT_COLOR_LUT (1u << 3)
+#define GHCI_EXT_FEAT_MAX_MRT(c) (((c) >> 4) & 0xFu)
+#define GHCI_EXT_FEAT_DUAL_SOURCE (1u << 8)
+#define GHCI_EXT_FEAT_COARSE_SCAN (1u << 9)
+#define GHCI_EXT_FEAT_FAST_CLEAR (1u << 10)
 
 /* CAPS2. */
 #define GHCI_CAPS2_QUEUES(c) ((c) & 0xFFu)

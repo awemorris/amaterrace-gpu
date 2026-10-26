@@ -456,7 +456,7 @@ module atg_su_alu #(
 	assign fwd_ex5_lanes = s5_mask;
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
-		s3_sh_comb[32], s2_co_unused, (NWARPS != 0)};
+		s3_sh_comb[32], s2_co_unused, (NWARPS != 0), (SHORT_LAT != 0)};
 endmodule
 
 `default_nettype wire

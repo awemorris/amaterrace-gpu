@@ -20,6 +20,10 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifndef CFG_ROP_DUAL_SOURCE
+`define CFG_ROP_DUAL_SOURCE 1
+`endif
+
 module atg_rop_dualsrc_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
@@ -34,7 +38,7 @@ module atg_rop_dualsrc_tb;
 	reg b_has_src1 = 1'b0;
 	reg [127:0] b_dst = 0;
 	reg [3:0] b_mask = 4'b1111;
-	reg [1:0] b_rt = 2'd0;
+	reg [2:0] b_rt = 3'd0;
 	wire b_rvalid;
 	wire [127:0] b_pix;
 

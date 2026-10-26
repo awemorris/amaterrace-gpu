@@ -18,13 +18,30 @@
 
 `timescale 1ns / 1ps
 `default_nettype none
+`include "atg_config.vh"
 
 module atg_su #(
-	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
-	parameter NWARPS = 4,	/* Resident warps (slots): 2, 4 or 8 */
+`ifdef CFG_SU_NPHYS
+	parameter NPHYS = `CFG_SU_NPHYS,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
+`else
+	parameter NPHYS = 8,
+`endif
+`ifdef CFG_SU_NWARPS
+	parameter NWARPS = `CFG_SU_NWARPS,	/* Resident warps (slots): 2, 4 or 8 */
+`else
+	parameter NWARPS = 4,
+`endif
 	parameter WARP_W = 2,	/* log2(NWARPS) */
-	parameter GRP_W = 2,	/* log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit) */
-	parameter NREGS = 32,	/* GPRs per thread: 32 or 64 (r0..r62 at most; 63 is rq) */
+`ifdef CFG_SU_GRP_W
+	parameter GRP_W = `CFG_SU_GRP_W,	/* log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit) */
+`else
+	parameter GRP_W = 2,
+`endif
+`ifdef CFG_SU_NREGS
+	parameter NREGS = `CFG_SU_NREGS,	/* GPRs per thread: 32 or 64 (r0..r62 at most; 63 is rq) */
+`else
+	parameter NREGS = 32,
+`endif
 	parameter SB_ENTRIES = 4,	/* Scoreboard entries per warp (KC705 8) */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
 	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
@@ -32,12 +49,33 @@ module atg_su #(
 	parameter NSU = 1,	/* SUs in the GPU */
 	parameter SU_INDEX = 0,	/* This SU's number */
 	parameter FRAG_RESERVE = 1,	/* Slots kept for fragment warps */
-	parameter PACKED = 0,	/* Packed fp16 arithmetic */
+`ifdef CFG_ENABLE_FP16
+	parameter PACKED = 1,	/* Packed fp16 arithmetic */
+`else
+	parameter PACKED = 0,
+`endif
 	parameter PK_SHARED = 0,	/* With PACKED: the fp16 arithmetic on the FPU's fp32 datapath, a half a cycle (atg_su_fpu) */
-	parameter SUBGROUP = 0,	/* shfl/vote/ballot */
-	parameter HAS_SA = 0,	/* SA attached (v1 0) */
+`ifdef CFG_ENABLE_SUBGROUP
+	parameter SUBGROUP = 1,	/* shfl/vote/ballot */
+`else
+	parameter SUBGROUP = 0,
+`endif
+`ifdef CFG_ENABLE_SA
+	parameter HAS_SA = 1,	/* SA attached (v1 0) */
+`else
+	parameter HAS_SA = 0,
+`endif
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29]): texsz.s */
-	parameter LDS_BYTES = 4096,	/* Shared memory bytes */
+`ifdef CFG_SU_LDS_KB
+	parameter LDS_BYTES = `CFG_SU_LDS_KB * 1024,	/* Shared memory bytes */
+`else
+	parameter LDS_BYTES = 4096,
+`endif
+`ifdef CFG_ENABLE_SFU
+	parameter HAS_SFU = 1,	/* Hardware SFU (XU transcendental unit) */
+`else
+	parameter HAS_SFU = 0,
+`endif
 	parameter PT_ENTRIES = 64,	/* PT vertices */
 	parameter VARY_WORDS = 16,	/* Varying words per vertex, at most 64 (KC705 64) */
 	parameter ADDR_W = 32,	/* GPU address width */
@@ -114,6 +152,12 @@ module atg_su #(
 	output wire ex_last,
 	input wire [15:0] ex_next,
 	output wire [153:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} (atg_su_exp) */
+	/* NGG Meshlet Primitive Export to RX (atg_rx_setup) */
+	output wire ngg_valid,
+	input wire ngg_ready,
+	output wire [701:0] ngg_tri,
+	output wire ngg_last,
+	output wire [15:0] ngg_mesh_id,
 	/* AMB client port (design §4.1) */
 	output wire d_req_valid,
 	input wire d_req_ready,
@@ -575,6 +619,11 @@ module atg_su #(
 		.at_error(at_error), .dc_inv(dc_inv)
 	);
 
+	localparam LDS_AW = $clog2(LDS_BYTES / 4);
+	wire ngg_lds_rd_en;
+	wire [LDS_AW-1:0] ngg_lds_rd_addr;
+	wire [31:0] ngg_lds_rd_data;
+
 	atg_su_lds #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .LDS_BYTES(LDS_BYTES)) lds (
 		.scrub(scrub), .scrub_busy(scb_lds),
 		.clk(clk), .rst_n(rst_n),
@@ -583,7 +632,8 @@ module atg_su #(
 		.x_info(x_info), .x_ready(lds_ready),
 		.l_valid(lds_l_valid), .l_ready(lds_l_ready), .l_warp(lds_l_warp),
 		.l_grp(lds_l_grp), .l_rd(lds_l_rd), .l_data(lds_l_data), .l_lanes(lds_l_lanes),
-		.l_wr(lds_l_wr), .l_last(lds_l_last), .l_sbe(lds_l_sbe), .l_cls(lds_l_cls)
+		.l_wr(lds_l_wr), .l_last(lds_l_last), .l_sbe(lds_l_sbe), .l_cls(lds_l_cls),
+		.ngg_rd_en(ngg_lds_rd_en), .ngg_rd_addr(ngg_lds_rd_addr), .ngg_rd_data(ngg_lds_rd_data)
 	);
 
 	atg_su_cbank #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) cbank (
@@ -616,15 +666,32 @@ module atg_su #(
 		.tr_last(tr_last)
 	);
 
-	atg_su_xu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) xu (
-		.clk(clk), .rst_n(rst_n),
-		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
-		.x_info(x_info), .x_ready(xu_ready),
-		.l_valid(xu_l_valid), .l_ready(xu_l_ready), .l_warp(xu_l_warp),
-		.l_grp(xu_l_grp), .l_rd(xu_l_rd), .l_data(xu_l_data), .l_lanes(xu_l_lanes),
-		.l_wr(xu_l_wr), .l_last(xu_l_last), .l_sbe(xu_l_sbe), .l_cls(xu_l_cls)
-	);
+	generate
+		if (HAS_SFU) begin : g_xu
+			atg_su_xu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) xu (
+				.clk(clk), .rst_n(rst_n),
+				.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
+				.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
+				.x_info(x_info), .x_ready(xu_ready),
+				.l_valid(xu_l_valid), .l_ready(xu_l_ready), .l_warp(xu_l_warp),
+				.l_grp(xu_l_grp), .l_rd(xu_l_rd), .l_data(xu_l_data), .l_lanes(xu_l_lanes),
+				.l_wr(xu_l_wr), .l_last(xu_l_last), .l_sbe(xu_l_sbe), .l_cls(xu_l_cls)
+			);
+		end else begin : g_no_xu
+			assign xu_ready = 1'b0;
+			assign xu_l_valid = 1'b0;
+			assign xu_l_warp = {WARP_W{1'b0}};
+			assign xu_l_grp = {GRP_W{1'b0}};
+			assign xu_l_rd = 7'd0;
+			assign xu_l_data = {DW{1'b0}};
+			assign xu_l_lanes = {NPHYS{1'b0}};
+			assign xu_l_wr = 1'b0;
+			assign xu_l_last = 1'b0;
+			assign xu_l_sbe = {(SBE_W+1){1'b0}};
+			assign xu_l_cls = 3'd0;
+			wire unused_xu_ready = xu_l_ready;
+		end
+	endgenerate
 
 	atg_su_div #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) div (
 		.clk(clk), .rst_n(rst_n),
@@ -644,7 +711,11 @@ module atg_su #(
 
 	wire [511:0] ex_color1_unused;
 	wire ex_has_src1_unused;
-	atg_su_exp #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) exp (
+	wire ngg_busy_unused;
+	atg_su_exp #(
+		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
+		.LDS_BYTES(LDS_BYTES), .LDS_AW(LDS_AW)
+	) exp (
 		.scrub(scrub), .scrub_busy(scb_exp),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
@@ -657,7 +728,10 @@ module atg_su #(
 		.fl_go(fl_go), .fl_info(fl_info),
 		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_aux(ex_aux),
 		.xr_valid(xr_valid), .xr_warp(xr_warp),
-		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp)
+		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp),
+		.ngg_valid(ngg_valid), .ngg_ready(ngg_ready), .ngg_tri(ngg_tri), .ngg_last(ngg_last),
+		.ngg_mesh_id(ngg_mesh_id), .ngg_busy(ngg_busy_unused),
+		.ngg_lds_rd_en(ngg_lds_rd_en), .ngg_lds_rd_addr(ngg_lds_rd_addr), .ngg_lds_rd_data(ngg_lds_rd_data)
 	);
 
 	atg_su_pt #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .UOP_W(UOP_W), .PT_ENTRIES(PT_ENTRIES), .VARY_WORDS(VARY_WORDS)) pt (
@@ -744,7 +818,7 @@ module atg_su #(
 	assign fault = sb_fault;
 	assign fault_addr = {16'd0, sb_fault_pc};
 
-	wire unused_ok = &{1'b0, inv[1], ex_color1_unused, ex_has_src1_unused};	/* T$: the TU's */
+	wire unused_ok = &{1'b0, inv[1], ex_color1_unused, ex_has_src1_unused, ngg_busy_unused};	/* T$: the TU's */
 endmodule
 
 `default_nettype wire

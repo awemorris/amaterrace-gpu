@@ -108,23 +108,29 @@
         </filter>
 
         <!-- Arrow Markers -->
-        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
         </marker>
-        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
         </marker>
-        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
         </marker>
-        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
         </marker>
-        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
         </marker>
-        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+        <marker id="arrow-fuchsia" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#c026d3"/>
+        </marker>
+        <marker id="arrow-cyan" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0891b2"/>
         </marker>
 
         <!-- Linear Gradients -->
@@ -142,7 +148,7 @@
     <!-- Header Block -->
     <g transform="translate(30, 24)">
         <text class="title" x="0" y="20">Amaterrace Shader Unit (SU) — Scalable SIMT Warp Architecture</text>
-        <text class="subtitle" x="0" y="40">32-Thread Logical Warp • Configurable NPHYS Scalar PEs (4 / 8 / 16 / 32) • G = 32/NPHYS Cycles • FP16×2 Packed Math</text>
+        <text class="subtitle" x="0" y="40">32-Thread Logical Warp • Configurable NPHYS Scalar PEs (1 / 2 / 4 / 8 / 16 / 32) • G = 32/NPHYS Cycles • FP16×2 Packed Math</text>
         <rect x="730" y="4" width="260" height="28" rx="14" fill="#d97706" opacity="0.12"/>
         <text x="860" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#b45309">SCALABLE SIMT WARP (NPHYS)</text>
     </g>
@@ -187,7 +193,7 @@
     <g transform="translate(30, 215)">
         <rect width="960" height="340" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow-sm)"/>
         <path d="M 0 10 Q 0 0 10 0 L 950 0 Q 960 0 960 10 L 960 32 L 0 32 Z" fill="#f8fafc"/>
-        <text class="group-label" x="18" y="21" fill="#334155">Physical Execution Array: Configurable NPHYS Scalar PEs (NPHYS = 4, 8, 16, or 32 Lanes; G = 32/NPHYS Cycles)</text>
+        <text class="group-label" x="18" y="21" fill="#334155">Physical Execution Array: Configurable NPHYS Scalar PEs (NPHYS = 1, 2, 4, 8, 16, or 32 Lanes; G = 32/NPHYS Cycles)</text>
 
         <!-- Lane 0 / PE 0 -->
         <g transform="translate(18, 44)">

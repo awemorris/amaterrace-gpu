@@ -17,15 +17,15 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
 module atg_tu_cache #(
 	parameter ADDR_W     = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter TC_BYTES   = 8192,	/* Size in bytes: 8 KiB (4 ways) */
 	parameter WAYS       = 4,
-	/* verilator lint_off UNUSEDPARAM */
-	parameter NBANKS     = 4
-	/* verilator lint_on UNUSEDPARAM */
+	parameter NBANKS     = 4	/* Number of cache banks (1, 2, 4) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -425,7 +425,7 @@ module atg_tu_cache #(
 	end
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag, nxt_lane_co_unused,
-	                   miss_slot, a0[ADDR_W-1:LINE_SHIFT], lsl};
+	                   miss_slot, a0[ADDR_W-1:LINE_SHIFT], lsl, (NBANKS != 0)};
 endmodule
 
 `default_nettype wire

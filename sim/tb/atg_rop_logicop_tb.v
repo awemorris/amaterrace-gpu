@@ -19,6 +19,10 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifndef CFG_ROP_ENABLE_LOGICOP
+`define CFG_ROP_ENABLE_LOGICOP 1
+`endif
+
 module atg_rop_logicop_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
@@ -43,6 +47,8 @@ module atg_rop_logicop_tb;
 		.st_wdata(st_wdata),
 		.b_valid(b_valid),
 		.b_src(b_src),
+		.b_src1(512'd0),
+		.b_has_src1(1'b0),
 		.b_dst(b_dst),
 		.b_mask(b_mask),
 		.b_rt(b_rt),

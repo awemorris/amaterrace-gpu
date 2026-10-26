@@ -38,6 +38,141 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
+`ifdef CFG_SU_NPHYS
+`define ATG_DEF_PHYS_LANES ((`CFG_SU_NPHYS == 4) ? 8'd4 : (`CFG_SU_NPHYS == 8) ? 8'd8 : (`CFG_SU_NPHYS == 16) ? 8'd16 : 8'd32)
+`else
+`define ATG_DEF_PHYS_LANES 8'd8
+`endif
+
+`ifdef CFG_ENABLE_FP16
+`define ATG_DEF_FP16 ((`CFG_ENABLE_FP16 != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_FP16 1'b0
+`endif
+
+`ifdef CFG_CP_AUTONOMOUS_MMU
+`define ATG_DEF_HW_WALKER ((`CFG_CP_AUTONOMOUS_MMU != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_HW_WALKER 1'b0
+`endif
+
+`ifdef CFG_CP_USE_RV32_CORE
+`define ATG_DEF_RV32 ((`CFG_CP_USE_RV32_CORE != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_RV32 1'b0
+`endif
+
+`ifdef CFG_ROP_DUAL_SOURCE
+`define ATG_DEF_DUAL_SRC ((`CFG_ROP_DUAL_SOURCE != 0) ? 1'b1 : 1'b0)
+`elsif defined(CFG_ENABLE_DUAL_SOURCE)
+`define ATG_DEF_DUAL_SRC ((`CFG_ENABLE_DUAL_SOURCE != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_DUAL_SRC 1'b0
+`endif
+
+`ifdef CFG_ENABLE_MESH
+`define ATG_DEF_MESH ((`CFG_ENABLE_MESH != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_MESH 1'b0
+`endif
+
+`ifdef CFG_ENABLE_SUBGROUP
+`define ATG_DEF_SUBGROUP ((`CFG_ENABLE_SUBGROUP != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_SUBGROUP 1'b0
+`endif
+
+`ifdef CFG_ENABLE_SA
+`define ATG_DEF_SA ((`CFG_ENABLE_SA != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_SA 1'b0
+`endif
+
+`ifdef CFG_ENABLE_TRILINEAR
+`define ATG_DEF_TRILINEAR ((`CFG_ENABLE_TRILINEAR != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_TRILINEAR 1'b0
+`endif
+
+`ifdef CFG_ENABLE_MSAA
+`define ATG_DEF_MSAA ((`CFG_ENABLE_MSAA != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_MSAA 1'b0
+`endif
+
+`ifdef CFG_ENABLE_BC
+`define ATG_DEF_BC ((`CFG_ENABLE_BC != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_BC 1'b0
+`endif
+
+`ifdef CFG_ROP_ENABLE_LOGICOP
+`define ATG_DEF_LOGICOP ((`CFG_ROP_ENABLE_LOGICOP != 0) ? 1'b1 : 1'b0)
+`elsif defined(CFG_ENABLE_LOGICOP)
+`define ATG_DEF_LOGICOP ((`CFG_ENABLE_LOGICOP != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_LOGICOP 1'b0
+`endif
+
+`ifdef CFG_ENABLE_EARLY_Z
+`define ATG_DEF_EARLY_Z ((`CFG_ENABLE_EARLY_Z != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_EARLY_Z 1'b0
+`endif
+
+`ifdef CFG_DC_ENABLE_CURSOR
+`define ATG_DEF_CURSOR ((`CFG_DC_ENABLE_CURSOR != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_CURSOR 1'b0
+`endif
+
+`ifdef CFG_ROP_MRT_COUNT
+`define ATG_DEF_MRT_COUNT ((`CFG_ROP_MRT_COUNT == 8) ? 4'd8 : (`CFG_ROP_MRT_COUNT == 4) ? 4'd4 : (`CFG_ROP_MRT_COUNT == 2) ? 4'd2 : 4'd1)
+`else
+`define ATG_DEF_MRT_COUNT 4'd1
+`endif
+
+`ifdef CFG_COARSE_SCAN
+`define ATG_DEF_COARSE_SCAN ((`CFG_COARSE_SCAN != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_COARSE_SCAN 1'b0
+`endif
+
+`ifdef CFG_ROP_FAST_CLEAR
+`define ATG_DEF_FAST_CLEAR ((`CFG_ROP_FAST_CLEAR != 0) ? 1'b1 : 1'b0)
+`else
+`define ATG_DEF_FAST_CLEAR 1'b0
+`endif
+
+`define ATG_DEF_DEVICE_CAPS { \
+	`ATG_DEF_MESH, `ATG_DEF_MESH, 6'd0, 8'd1, `ATG_DEF_PHYS_LANES, \
+	1'b1, `ATG_DEF_FP16, `ATG_DEF_DUAL_SRC, `ATG_DEF_RV32, `ATG_DEF_RV32, `ATG_DEF_HW_WALKER, 1'b0, 1'b0 \
+}
+
+`define ATG_DEF_LANES_LOG2 ( \
+	(`ATG_DEF_PHYS_LANES == 8'd4)  ? 4'd2 : \
+	(`ATG_DEF_PHYS_LANES == 8'd8)  ? 4'd3 : \
+	(`ATG_DEF_PHYS_LANES == 8'd16) ? 4'd4 : \
+	(`ATG_DEF_PHYS_LANES == 8'd32) ? 4'd5 : 4'd3 \
+)
+
+`define ATG_DEF_CAPS { \
+	1'b0, 1'b0, `ATG_DEF_MSAA, `ATG_DEF_FP16, 1'b1, `ATG_DEF_TRILINEAR, `ATG_DEF_SA, `ATG_DEF_SUBGROUP, \
+	4'd6, 1'b0, 1'b0, `ATG_DEF_RV32, `ATG_DEF_HW_WALKER, 4'd0, 1'b0, 1'b0, \
+	1'b1, 1'b1, `ATG_DEF_LANES_LOG2, 1'b1, 1'b1, 1'b1, 1'b1 \
+}
+
+`define ATG_DEF_EXT_CAP_FMT0 { \
+	25'd0, `ATG_DEF_BC, 1'b0, `ATG_DEF_BC, `ATG_DEF_BC, `ATG_DEF_BC, `ATG_DEF_BC, `ATG_DEF_BC \
+}
+
+`define ATG_DEF_EXT_CAP_FEATURE { \
+	21'd0, `ATG_DEF_FAST_CLEAR, `ATG_DEF_COARSE_SCAN, `ATG_DEF_DUAL_SRC, `ATG_DEF_MRT_COUNT, \
+	1'b1, `ATG_DEF_CURSOR, `ATG_DEF_EARLY_Z, `ATG_DEF_LOGICOP \
+}
+
 module atg_cp_regs #(
 	parameter GCLK_HZ = 32'd100000000,	/* GCLK_HZ register */
 	parameter VENDOR_ID = 32'h414D4154,	/* "AMAT" */
@@ -51,8 +186,11 @@ module atg_cp_regs #(
 	parameter [31:0] LOCAL_BYTES = 32'd0,	/* MEM: bytes of local memory */
 	parameter [31:0] WINDOW_BYTES = 32'd0,	/* MEM: bytes the local window shows */
 	parameter [31:0] HOST_LIMIT = 32'd0,	/* MEM: host addresses below it (0: all) */
+	parameter [31:0] DEVICE_CAPS = 32'd0,	/* 0: dynamic from config macros */
 	parameter CAPS = 32'h00500002,	/* CAPS value (design §2.2), set by atg_top from its parameters */
 	parameter CAPS2 = 32'h00000003,	/* CAPS2 value: [7:0] = 3 independent queues (Graphics, Compute, Copy/DMA) */
+	parameter [31:0] EXT_CAP_FMT0 = `ATG_DEF_EXT_CAP_FMT0,
+	parameter [31:0] EXT_CAP_FEATURE = `ATG_DEF_EXT_CAP_FEATURE,
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
 	parameter [10:0] XCAP_MASK = 11'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, PROT 9, FMT 10, DISP2 11) */
 	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
@@ -224,7 +362,9 @@ module atg_cp_regs #(
 		end else if (reg_rd) begin
 			raddr_q <= reg_raddr;
 			ridx_q <= SLIM_MMIO ? slim_ridx(reg_raddr) : reg_raddr[11:2];
-			rd_hcr_q <= SLIM_MMIO ? (reg_raddr <= GHCI_2_REG_SCRATCH) : (reg_raddr[16:12] == 5'd0);
+			rd_hcr_q <= SLIM_MMIO ? (reg_raddr <= GHCI_2_REG_SCRATCH ||
+			                         reg_raddr == GHCI_2_REG_EXT_CAP_FMT0 ||
+			                         reg_raddr == GHCI_2_REG_EXT_CAP_FEATURE) : (reg_raddr[16:12] == 5'd0);
 			rd_state_q <= !SLIM_MMIO && (reg_raddr[16:12] == 5'b00001 && reg_raddr[11:10] != 2'b11);
 		end
 	end
@@ -282,6 +422,10 @@ module atg_cp_regs #(
 		end
 	endfunction
 
+	wire [31:0] eff_dev_caps = (DEVICE_CAPS != 32'd0) ? DEVICE_CAPS :
+	                           (CAPS != 32'h00500002) ? CAPS : `ATG_DEF_DEVICE_CAPS;
+	wire [31:0] eff_caps = (CAPS != 32'h00500002) ? CAPS : `ATG_DEF_CAPS;
+
 	reg [31:0] own;
 	wire [11:0] roff = {ridx_q, 2'b00};
 
@@ -291,13 +435,15 @@ module atg_cp_regs #(
 			case (raddr_q)
 			GHCI_2_REG_MAGIC: own = GHCI_MAGIC_VALUE;
 			GHCI_2_REG_VERSION: own = 32'h00020000;
-			GHCI_2_REG_DEVICE_CAPS: own = CAPS;
+			GHCI_2_REG_DEVICE_CAPS: own = eff_dev_caps;
 			GHCI_2_REG_EXTCAP_PTR: own = 32'd0;
 			GHCI_2_REG_RING_BASE_HI: own = 32'd0;
 			GHCI_2_REG_FAULT_ADDR_HI: own = 32'd0;
 			GHCI_2_REG_DIAG_CP_PC: own = diag_cp_pc;
 			GHCI_2_REG_DIAG_CP_STATUS: own = diag_cp_status;
 			GHCI_2_REG_SCRATCH: own = scratch;
+			GHCI_2_REG_EXT_CAP_FMT0: own = EXT_CAP_FMT0;
+			GHCI_2_REG_EXT_CAP_FEATURE: own = EXT_CAP_FEATURE;
 			default: ;
 			endcase
 		end else begin
@@ -311,12 +457,14 @@ module atg_cp_regs #(
 			GHCI_DEVICE_VERSION[11:0]: own = DEVICE_VERSION;
 			GHCI_EXTCAP[11:0]: own = XCAP_MASK != 11'd0 ? {15'd0, GHCI_EXTCAP_LIST} : 32'd0;
 			GHCI_GCLK_HZ[11:0]: own = GCLK_HZ;
-			GHCI_CAPS[11:0]: own = CAPS;
+			GHCI_CAPS[11:0]: own = eff_caps;
 			GHCI_CAPS2[11:0]: own = CAPS2;
 			GHCI_SCRATCH[11:0]: own = scratch;
 			GHCI_COUNTER[11:0]: own = counter;
 			12'h048: own = NATIVE_ISA_ID;
 			GHCI_RESIDENT_WARPS[11:0]: own = {8'd0, NREGS, RESIDENT_WARPS};
+			12'h080: own = (XCAP_MASK[2]) ? perf[0 +: 32] : EXT_CAP_FMT0;
+			12'h084: own = (XCAP_MASK[2]) ? perf[32 +: 32] : EXT_CAP_FEATURE;
 			A_LOCAL_BASE: if (XCAP_MASK[7]) own = LOCAL_BASE;
 			A_LOCAL_SIZE: if (XCAP_MASK[7]) own = LOCAL_BYTES;
 			A_WINDOW_SIZE: if (XCAP_MASK[7]) own = WINDOW_BYTES;

@@ -22,8 +22,12 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `LOCAL_BYTES` | `32'd0` | MEM capability LOCAL_SIZE (0x1E4). |
 | `WINDOW_BYTES` | `32'd0` | MEM capability WINDOW_SIZE (0x1E8); not 0 gives WINDOW_CTRL its bit. |
 | `HOST_LIMIT` | `32'd0` | MEM capability HOST_LIMIT (0x1EC): host addresses below it; 0 = all (GHCI §11.2). |
-| `CAPS` | `32'h00500002` | CAPS value (design §2.2), set by atg_top from its parameters. |
+| `CAPS` | `32'h00500002` | CAPS value (design §2.2), set by atg_top from its parameters or dynamically populated from `atg_config.vh`. |
 | `CAPS2` | `32'h00000001` | CAPS2 value. |
+| `DEVICE_CAPS` | `32'd0` | GHCI 2.0 device capabilities bitfield (PHYS_LANES, Task/Mesh Shader, FP16, etc.; 0: dynamically populated from `atg_config.vh`). |
+| `EXT_CAP_FMT0` | dynamic | Extended capability format bitmap (BC1-BC7 texture compression support). |
+| `EXT_CAP_FEATURE` | dynamic | Extended capability feature bitmap (LogicOp, EarlyZ, HW Cursor, MRT count, etc.). |
+| `SLIM_MMIO` | `0` | GHCI 2.0 Slim MMIO architecture (19 core registers). |
 | `VEND` | `256'd0` | The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0. |
 | `XCAP_MASK` | `11'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8 at 0x1E0, PROT 9 at 0x1D0 (atg_cp_prot), FMT 10 at 0x160, atg_cp_fmt; DISP2 11 at 0x200, atg_cp_disp).  At most ten entries fit in the list (0x100-0x10F, 0x180-0x1BF): DISP and DISP2 are not set together. |
 | `DISP_OFFSET` | `32'h00010000` | Where the DISP entry points (KC705 +0x10000). |

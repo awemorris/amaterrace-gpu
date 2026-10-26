@@ -22,6 +22,10 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifndef CFG_ENABLE_MSHR
+`define CFG_ENABLE_MSHR 1
+`endif
+
 module atg_tu_mshr_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;

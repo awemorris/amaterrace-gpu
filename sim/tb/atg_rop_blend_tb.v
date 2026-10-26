@@ -40,7 +40,8 @@ module atg_rop_blend_tb;
 	wire [127:0] b_pix;
 
 	atg_rop_blend #(.LAT(3)) dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
-		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask),
+		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_src1(512'd0), .b_has_src1(1'b0),
+		.b_dst(b_dst), .b_mask(b_mask),
 		.b_rt(b_rt), .b_rvalid(b_rvalid), .b_pix(b_pix));
 
 	reg [3:0] v_fmt [0:N-1];

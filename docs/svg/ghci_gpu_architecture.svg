@@ -108,23 +108,29 @@
         </filter>
 
         <!-- Arrow Markers -->
-        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
         </marker>
-        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
         </marker>
-        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
         </marker>
-        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
         </marker>
-        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
         </marker>
-        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+        <marker id="arrow-fuchsia" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#c026d3"/>
+        </marker>
+        <marker id="arrow-cyan" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0891b2"/>
         </marker>
 
         <!-- Linear Gradients -->
@@ -144,7 +150,7 @@
         <text class="title" x="0" y="20">GHCI 1.0 GPU Architecture</text>
         <text class="subtitle" x="0" y="40">Vulkan-Class Host Controller Interface • Slim MMIO • Autonomous MMU • In-Memory Pipeline State</text>
         <rect x="680" y="4" width="260" height="28" rx="14" fill="#3b82f6" opacity="0.1"/>
-        <text x="810" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">TO-BE SPECIFICATION (GHCI 1.0)</text>
+        <text x="810" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">GHCI 1.0 SPECIFICATION</text>
     </g>
 
     <!-- Boundary: Host Interface (Left) -->
@@ -352,7 +358,7 @@
 
         <!-- atg_rt to L2C and DC -->
         <line x1="255" y1="394" x2="255" y2="415" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
-        <line x1="600" y1="394" x2="600" y2="415" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="600" y1="394" x2="600" y2="415" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow-fuchsia)"/>
 
         <!-- Memory Controller (MC) -->
         <g transform="translate(20, 525)">
@@ -364,7 +370,7 @@
         </g>
 
         <line x1="255" y1="505" x2="255" y2="525" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
-        <line x1="600" y1="505" x2="600" y2="525" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="600" y1="505" x2="600" y2="525" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow-fuchsia)"/>
     </g>
 
     <!-- Cross connections from Host to GPU (Clean routing) -->
@@ -373,6 +379,6 @@
     <text class="conn-label" x="248" y="175" fill="#7c3aed" text-anchor="middle" transform="rotate(-90 248 175)">WPTR Doorbell</text>
 
     <!-- Interrupt line -->
-    <path fill="none" d="M 280 135 L 250 135 L 250 360 L 240 360" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 280 135 L 250 135 L 250 360 L 240 360" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
     <text class="conn-label" x="245" y="290" fill="#dc2626" text-anchor="middle" transform="rotate(-90 245 290)">IRQ Line</text>
 </svg>

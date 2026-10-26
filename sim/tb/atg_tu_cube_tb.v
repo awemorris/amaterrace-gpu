@@ -21,6 +21,10 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifndef CFG_ENABLE_3D_CUBE
+`define CFG_ENABLE_3D_CUBE 1
+`endif
+
 module atg_tu_cube_tb;
 
 	reg [2:0]         face_in;

@@ -87,8 +87,14 @@ extern "C" {
 #define GHCI_CAP_DUAL_SOURCE        (1u << 5)  /* 1 = Dual-source color blending supported */
 #define GHCI_CAP_FP16               (1u << 6)  /* 1 = Packed FP16 arithmetic supported */
 #define GHCI_CAP_GSI1               (1u << 7)  /* 1 = GSI1 standard shader ISA native */
-#define GHCI_CAP_SIMD_LANES(caps)   (((caps) >> 8) & 0xFFu)  /* Physical lanes (32) */
+#define GHCI_CAP_SIMD_LANES(caps)   (((caps) >> 8) & 0xFFu)  /* Physical lanes (4, 8, 16, 32) */
 #define GHCI_CAP_NUM_SU(caps)       (((caps) >> 16) & 0xFFu) /* Number of Shader Units */
+#define GHCI_CAP_TASK_SHADER        (1u << 30) /* 1 = VK_EXT Task Shader supported */
+#define GHCI_CAP_MESH_SHADER        (1u << 31) /* 1 = VK_EXT Mesh Shader supported */
+
+/* Extended Capability Registers (0x080+) */
+#define GHCI_REG_EXT_CAP_FMT0       0x080u  /* Texture compression format bitmap (BC1-BC7) */
+#define GHCI_REG_EXT_CAP_FEATURE    0x084u  /* Rendering feature detail bitmap */
 
 /* CTRL bits (0x010) */
 #define GHCI2_CTRL_RUN              (1u << 0)  /* Enable ring processing */

@@ -44,6 +44,43 @@ localparam [16:0] GHCI_2_REG_FAULT_ADDR_HI  = 17'h0003C;
 localparam [16:0] GHCI_2_REG_DIAG_CP_PC     = 17'h00040;
 localparam [16:0] GHCI_2_REG_DIAG_CP_STATUS = 17'h00044;
 localparam [16:0] GHCI_2_REG_SCRATCH        = 17'h00048;
+localparam [16:0] GHCI_2_REG_EXT_CAP_FMT0   = 17'h00080;
+localparam [16:0] GHCI_2_REG_EXT_CAP_FEATURE= 17'h00084;
+
+/* DEVICE_CAPS bits (0x008) */
+localparam GHCI_DEV_CAP_UMA            = 0;
+localparam GHCI_DEV_CAP_IOMMU          = 1;
+localparam GHCI_DEV_CAP_HW_WALKER      = 2;
+localparam GHCI_DEV_CAP_INDIRECT_DRAW  = 3;
+localparam GHCI_DEV_CAP_SECONDARY_RING = 4;
+localparam GHCI_DEV_CAP_DUAL_SOURCE    = 5;
+localparam GHCI_DEV_CAP_FP16           = 6;
+localparam GHCI_DEV_CAP_GSI1           = 7;
+localparam GHCI_DEV_CAP_TASK_SHADER    = 30;
+localparam GHCI_DEV_CAP_MESH_SHADER    = 31;
+
+/* CAPS bit aliases */
+localparam GHCI_CAPS_TEX_ADV_BIT       = 26;
+localparam GHCI_CAPS_PACKED_MATH_BIT   = 28;
+localparam GHCI_CAPS_MSAA_BIT          = 29;
+
+/* EXT_CAP_FMT0 bits (0x080) */
+localparam GHCI_EXT_FMT_BC1            = 0;
+localparam GHCI_EXT_FMT_BC2            = 1;
+localparam GHCI_EXT_FMT_BC3            = 2;
+localparam GHCI_EXT_FMT_BC4            = 3;
+localparam GHCI_EXT_FMT_BC5            = 4;
+localparam GHCI_EXT_FMT_BC6H           = 5;
+localparam GHCI_EXT_FMT_BC7            = 6;
+
+/* EXT_CAP_FEATURE bits (0x084) */
+localparam GHCI_EXT_FEAT_LOGIC_OP      = 0;
+localparam GHCI_EXT_FEAT_EARLY_Z       = 1;
+localparam GHCI_EXT_FEAT_HW_CURSOR     = 2;
+localparam GHCI_EXT_FEAT_COLOR_LUT     = 3;
+localparam GHCI_EXT_FEAT_DUAL_SOURCE   = 8;
+localparam GHCI_EXT_FEAT_COARSE_SCAN   = 9;
+localparam GHCI_EXT_FEAT_FAST_CLEAR    = 10;
 
 /* Legacy Host control register offsets (bytes in the 128 KiB decode). */
 localparam [16:0] GHCI_MAGIC = 17'h00000;

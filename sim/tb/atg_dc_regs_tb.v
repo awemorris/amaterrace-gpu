@@ -173,7 +173,7 @@ module atg_dc_regs_tb;
 		e0 = errors;
 		expect_reg("DC_ID", GHCI_DC_ID[7:0], GHCI_DC_ID_VALUE);
 		expect_reg("DC_VERSION", GHCI_DC_VERSION[7:0], 32'h00000002);
-		expect_reg("DC_CAPS", GHCI_DC_CAPS[7:0], 32'h00000574);
+		expect_reg("DC_CAPS", GHCI_DC_CAPS[7:0], 32'h0000e5f4);
 		wr(GHCI_DC_CTRL[7:0], 32'h0000_0065);	/* ENABLE, TEST_PATTERN, FORMAT 2, OUTPUT */
 		expect_reg("CTRL", GHCI_DC_CTRL[7:0], 32'h0000_0065);
 		check("enable/test/format", {29'd0, enable, test_pattern, format}, {29'd0, 1'b1, 1'b1, 2'd2});

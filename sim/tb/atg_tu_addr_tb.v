@@ -36,6 +36,13 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifndef CFG_ENABLE_3D_CUBE
+`define CFG_ENABLE_3D_CUBE 1
+`endif
+`ifndef CFG_ENABLE_TRILINEAR
+`define CFG_ENABLE_TRILINEAR 1
+`endif
+
 module atg_tu_addr_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;

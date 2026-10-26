@@ -37,10 +37,17 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
+`ifndef CFG_ROP_MRT_COUNT
+`define CFG_ROP_MRT_COUNT 1
+`endif
+
 module atg_rop_wb #(
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
-	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
+	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
+	parameter MRT_COUNT = `CFG_ROP_MRT_COUNT
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -486,7 +493,7 @@ module atg_rop_wb #(
 			$display("FAIL atg_rop_wb: attachment %0d row at %h crosses a line", rt, p_addr);
 `endif
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, c_ps[0]};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, c_ps[0], (MRT_COUNT != 0)};
 endmodule
 
 `default_nettype wire

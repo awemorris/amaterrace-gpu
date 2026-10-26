@@ -25,6 +25,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
 module atg_rop_cache #(
 	parameter LINE_BYTES = 64,
 	parameter WAYS       = 4,
@@ -72,6 +74,11 @@ module atg_rop_cache #(
 	reg [WAYS-1:0]  dirty [0:NUM_SETS-1];
 	reg [TAG_W-1:0] tag   [0:NUM_SETS-1][0:WAYS-1];
 	reg [2:0]       plru  [0:NUM_SETS-1];
+`ifdef CFG_ROP_FAST_CLEAR
+	/* Hardware Fast Clear metadata tracking RAM: tracks cleared status per line/tile */
+	(* ram_style = "distributed" *)
+	reg [WAYS-1:0] fast_cleared [0:NUM_SETS-1];
+`endif
 
 	/* Block RAM Data Storage (8 KiB total = 128 lines * 64 bytes) */
 	(* ram_style = "block" *)
@@ -204,6 +211,9 @@ module atg_rop_cache #(
 				valid[i] <= {WAYS{1'b0}};
 				dirty[i] <= {WAYS{1'b0}};
 				plru[i]  <= 3'd0;
+`ifdef CFG_ROP_FAST_CLEAR
+				fast_cleared[i] <= {WAYS{1'b0}};
+`endif
 				for (j = 0; j < WAYS; j = j + 1)
 					tag[i][j] <= {TAG_W{1'b0}};
 			end
@@ -223,6 +233,9 @@ module atg_rop_cache #(
 						if (req_write) begin
 							data_mem[{set_idx, hit_way}] <= apply_be(data_mem[{set_idx, hit_way}], req_wdata, req_be);
 							dirty[set_idx][hit_way] <= 1'b1;
+`ifdef CFG_ROP_FAST_CLEAR
+							fast_cleared[set_idx][hit_way] <= 1'b0;
+`endif
 							rsp_valid <= 1'b1;
 						end else begin
 							rsp_valid <= 1'b1;
@@ -277,6 +290,9 @@ module atg_rop_cache #(
 					valid[cur_set][cur_victim_way] <= 1'b1;
 					tag[cur_set][cur_victim_way]   <= cur_tag;
 					plru[cur_set] <= update_plru(plru[cur_set], cur_victim_way);
+`ifdef CFG_ROP_FAST_CLEAR
+					fast_cleared[cur_set][cur_victim_way] <= 1'b0;
+`endif
 
 					if (cur_req_write) begin
 						data_mem[{cur_set, cur_victim_way}] <= apply_be(mem_rsp_rdata, cur_req_wdata, cur_req_be);
@@ -336,7 +352,12 @@ module atg_rop_cache #(
 		end
 	end
 
+`ifdef CFG_ROP_FAST_CLEAR
+	wire tile_is_fast_cleared = hit && fast_cleared[set_idx][hit_way];
+	wire unused_ok = &{1'b0, flush_set_co, flush_way_co, byte_off, cur_req_addr[LINE_SHIFT-1:0], tile_is_fast_cleared};
+`else
 	wire unused_ok = &{1'b0, flush_set_co, flush_way_co, byte_off, cur_req_addr[LINE_SHIFT-1:0]};
+`endif
 endmodule
 
 `default_nettype wire

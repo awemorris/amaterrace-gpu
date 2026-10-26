@@ -154,7 +154,9 @@ module atg_su_lane #(
 				3'd0: src = bv[4:0];
 				3'd2: begin
 					src = sum[4:0];	/* ln - rs2 */
+					/* verilator lint_off CMPCONST */
 					ok = ok && bv[4:0] <= ln;
+					/* verilator lint_on CMPCONST */
 				end
 				3'd3: begin
 					src = sum[4:0];

@@ -856,7 +856,8 @@ module atg_rx_setup (
 	assign sp_tri[351:0] = {e_bbox, e_edges};
 	assign sp_tri[767:736] = {1'b0, kind, raw, e_front, more ? 3'd0 : keep[26:24], keep[23:0]};
 
-	wire unused_ok = &{1'b0, fd_busy, rm[2:1], su_bo_unused, max_z[31], max_z[22:0]};
+	wire unused_ok = &{1'b0, fd_busy, rm[2:1], su_bo_unused, max_z[31], max_z[22:0],
+		lw_fix[23:16], ps_fix[23:16], div_busy};
 endmodule
 
 `default_nettype wire

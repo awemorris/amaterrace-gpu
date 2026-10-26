@@ -78,6 +78,7 @@ module atg_su_sched #(
 `include "ghci_regs.vh"
 
 	localparam G = 32 / NPHYS;
+	localparam GAP_W = 3;
 	localparam [2:0] S_FREE = 3'd0, S_ALLOC = 3'd1, S_READY = 3'd2, S_FETCH = 3'd3,
 		S_WC = 3'd4, S_REPLAY = 3'd5, S_BAR = 3'd6, S_ENDED = 3'd7;
 	localparam [1:0] K_VERT = 2'd0, K_FRAG = 2'd1, K_COMP = 2'd2;
@@ -119,7 +120,7 @@ module atg_su_sched #(
 	/* Per slot. */
 	reg [NWARPS*3-1:0] st;
 	reg [NWARPS*16-1:0] pc;
-	reg [NWARPS*2-1:0] gap;
+	reg [NWARPS*GAP_W-1:0] gap;
 	reg [NWARPS*160-1:0] info;
 	reg [NWARPS*4-1:0] tag;	/* workgroup of a compute warp (barriers) */
 
@@ -196,7 +197,7 @@ module atg_su_sched #(
 	genvar gc;
 	generate
 		for (gc = 0; gc < NWARPS; gc = gc + 1) begin : g_cand
-			assign cand[gc] = (st[gc*3 +: 3] == S_READY) && (gap[gc*2 +: 2] == 2'd0) && warp_ready[gc];
+			assign cand[gc] = (st[gc*3 +: 3] == S_READY) && (gap[gc*GAP_W +: GAP_W] == {GAP_W{1'b0}}) && warp_ready[gc];
 		end
 	endgenerate
 
@@ -305,13 +306,13 @@ module atg_su_sched #(
 	assign q_info = q_i;
 
 	/* Per slot: the gap and pc counted down / up; rr, rot, wk and the tag + 1. */
-	wire [NWARPS*2-1:0] gap_m1;
+	wire [NWARPS*GAP_W-1:0] gap_m1;
 	wire [NWARPS*16-1:0] pc_p1;
 	genvar gw;
 	generate
 		for (gw = 0; gw < NWARPS; gw = gw + 1) begin : g_w
 			wire g_bo_unused, p_co_unused;
-			am_sub #(.W(2)) u_gap (.a(gap[gw*2 +: 2]), .b(2'd0), .bi(1'b1), .d(gap_m1[gw*2 +: 2]),
+			am_sub #(.W(GAP_W)) u_gap (.a(gap[gw*GAP_W +: GAP_W]), .b({GAP_W{1'b0}}), .bi(1'b1), .d(gap_m1[gw*GAP_W +: GAP_W]),
 				.bo(g_bo_unused));
 			am_add #(.W(16)) u_pc (.a(pc[gw*16 +: 16]), .b(16'd0), .ci(1'b1), .s(pc_p1[gw*16 +: 16]),
 				.co(p_co_unused));
@@ -353,7 +354,7 @@ module atg_su_sched #(
 		if (!rst_n) begin
 			st <= {NWARPS{S_FREE}};
 			pc <= {(NWARPS*16){1'b0}};
-			gap <= {(NWARPS*2){1'b0}};
+			gap <= {(NWARPS*GAP_W){1'b0}};
 			info <= {(NWARPS*160){1'b0}};
 			tag <= {(NWARPS*4){1'b0}};
 			{rr, hold_v, hold_w} <= {(2*WARP_W+1){1'b0}};
@@ -368,8 +369,8 @@ module atg_su_sched #(
 			wk <= 4'd0;
 		end else begin
 			for (w = 0; w < NWARPS; w = w + 1) begin
-				if (gap[(w)*2 +: 2] != 2'd0)
-					gap[(w)*2 +: 2] <= gap_m1[(w)*2 +: 2];
+				if (gap[(w)*GAP_W +: GAP_W] != {GAP_W{1'b0}})
+					gap[(w)*GAP_W +: GAP_W] <= gap_m1[(w)*GAP_W +: GAP_W];
 				/* Feedback and warp control. */
 				case (st[(w)*3 +: 3])
 				S_FETCH:
@@ -403,9 +404,10 @@ module atg_su_sched #(
 			hold_w <= fsel;
 			if (fsel_v && f_ready) begin
 				for (w = 0; w < NWARPS; w = w + 1)
-					if (fsel == w[WARP_W-1:0])
+					if (fsel == w[WARP_W-1:0]) begin
 						st[w*3 +: 3] <= S_FETCH;
-				gap[(fsel)*2 +: 2] <= G[1:0] - 2'd1;
+						gap[w*GAP_W +: GAP_W] <= G[GAP_W-1:0] - {{(GAP_W-1){1'b0}}, 1'b1};
+					end
 				rr <= rr_next;
 				last_warp <= fsel;
 				active_valid <= 1'b1;

@@ -23,7 +23,9 @@
 `default_nettype none
 
 module atg_tu_aniso #(
+	/* verilator lint_off UNUSEDPARAM */
 	parameter MAX_SAMPLES = 16
+	/* verilator lint_on UNUSEDPARAM */
 ) (
 	input  wire        clk,
 	input  wire        rst_n,
@@ -656,7 +658,7 @@ module atg_tu_aniso #(
 		eval_co_unused, acc_cnt_co_unused,
 		prod_su[15:0], prod_sv[15:0], dudx_q[31:24], dudx_q[7:0],
 		dvdx_q[31:24], dvdx_q[7:0], dudy_q[31:24], dudy_q[7:0],
-		dvdy_q[31:24], dvdy_q[7:0]};
+		dvdy_q[31:24], dvdy_q[7:0], delta_l2[0]};
 
 endmodule
 

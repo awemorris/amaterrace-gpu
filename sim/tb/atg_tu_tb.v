@@ -22,6 +22,16 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifndef CFG_ENABLE_BC
+`define CFG_ENABLE_BC 1
+`endif
+`ifndef CFG_ENABLE_3D_CUBE
+`define CFG_ENABLE_3D_CUBE 1
+`endif
+`ifndef CFG_ENABLE_TRILINEAR
+`define CFG_ENABLE_TRILINEAR 1
+`endif
+
 module atg_tu_tb_run #(
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,

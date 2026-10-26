@@ -19,6 +19,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
 module atg_tu_cube_edge (
 	input  wire [2:0]         face_in,      /* 0:+X, 1:-X, 2:+Y, 3:-Y, 4:+Z, 5:-Z */
 	input  wire signed [15:0] u_in,
@@ -29,6 +31,8 @@ module atg_tu_cube_edge (
 	output reg  [15:0]        u_out,
 	output reg  [15:0]        v_out         /* Transformed texel coordinates */
 );
+
+`ifdef CFG_ENABLE_3D_CUBE
 
 	/* Out-of-bounds detection */
 	wire oi_lo = u_in[15];
@@ -120,6 +124,18 @@ module atg_tu_cube_edge (
 	end
 
 	wire unused_ok = &{1'b0, sub_bo_unused};
+
+`else
+
+	always @(*) begin
+		face_out = face_in;
+		u_out    = u_in[15:0];
+		v_out    = v_in[15:0];
+	end
+
+	wire unused_cube_edge_stub = &{1'b0, size};
+
+`endif
 
 endmodule
 

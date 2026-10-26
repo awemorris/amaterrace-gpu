@@ -26,6 +26,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
 module atg_tu_bc (
 	input  wire         clk,
 	input  wire         rst_n,
@@ -43,6 +45,8 @@ module atg_tu_bc (
 	output reg  [31:0]  out_rgba,
 	output reg  [63:0]  out_fp16
 );
+
+`ifdef CFG_ENABLE_BC
 
 	assign in_ready = out_ready || !out_valid;
 
@@ -533,6 +537,28 @@ module atg_tu_bc (
 		sum_m6_r32[15:14], sum_m6_r32[5:0], sum_m6_g32[15:14], sum_m6_g32[5:0],
 		sum_m6_b32[15:14], sum_m6_b32[5:0], sum_m6_a32[15:14], sum_m6_a32[5:0],
 		p_w0_a0, p_w1_a1, p_gw0_g0, p_gw1_g1};
+
+`else
+
+	assign in_ready = out_ready || !out_valid;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			out_valid <= 1'b0;
+			out_rgba  <= 32'd0;
+			out_fp16  <= 64'd0;
+		end else begin
+			if (out_ready || !out_valid) begin
+				out_valid <= in_valid;
+				out_rgba  <= 32'd0;
+				out_fp16  <= 64'd0;
+			end
+		end
+	end
+
+	wire unused_bc_stub = &{1'b0, fmt_bc, in_block, sub_texel};
+
+`endif
 
 endmodule
 

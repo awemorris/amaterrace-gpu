@@ -13,6 +13,10 @@ Children: `atg_rx_clip` (with `atg_rx_cpoly`), `atg_rx_setup`, `atg_rx_scan`, `a
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `HAS_SU` | `1` | Fragment warps to an SU (0: DEBUG_COLOR quads to the ROP). |
+| `ENABLE_MSAA` | `CFG_ENABLE_MSAA` (1) | Enable Multisampling sample evaluation and coverage logic. |
+| `MSAA_SAMPLES` | `CFG_MSAA_SAMPLES` (4) | Number of MSAA samples evaluated in parallel (1, 2, 4). |
+| `ENABLE_EARLY_Z` | `CFG_ENABLE_EARLY_Z` (1) | Hierarchical Early-Z (Hi-Z) RAM culling capability. |
+| `COARSE_SCAN` | `CFG_COARSE_SCAN` (1) | Two-level hierarchical 8x8 coarse tile scanning before fine scan. |
 
 ## 3. Ports
 

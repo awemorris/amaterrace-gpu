@@ -2,7 +2,7 @@
 """
 generate_svgs.py
 
-Generates 10 high-quality SVG architecture diagrams for GHCI 2.0 specification
+Generates high-quality SVG architecture diagrams for GHCI 1.0 specification
 and Amaterrace GPU (ATG1) documentation:
 1. ghci_gpu_architecture.svg
 2. ghci_uma_system.svg
@@ -11,7 +11,7 @@ and Amaterrace GPU (ATG1) documentation:
 5. ghci_command_sequence.svg
 6. atg_top_architecture.svg
 7. atg_data_paths.svg
-8. atg_su_32lane.svg
+8. atg_su_architecture.svg (and atg_su_32lane.svg)
 9. atg_rx_rasterizer.svg
 10. atg_rop_backend.svg
 """
@@ -129,23 +129,29 @@ DEFS_COMMON = """
         </filter>
 
         <!-- Arrow Markers -->
-        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
         </marker>
-        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
         </marker>
-        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
         </marker>
-        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
         </marker>
-        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
         </marker>
-        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+        <marker id="arrow-fuchsia" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#c026d3"/>
+        </marker>
+        <marker id="arrow-cyan" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0891b2"/>
         </marker>
 
         <!-- Linear Gradients -->
@@ -169,10 +175,10 @@ def generate_ghci_gpu_architecture():
 
     <!-- Header Block -->
     <g transform="translate(30, 24)">
-        <text class="title" x="0" y="20">GHCI 2.0 GPU Architecture</text>
+        <text class="title" x="0" y="20">GHCI 1.0 GPU Architecture</text>
         <text class="subtitle" x="0" y="40">Vulkan-Class Host Controller Interface • Slim MMIO • Autonomous MMU • In-Memory Pipeline State</text>
         <rect x="680" y="4" width="260" height="28" rx="14" fill="#3b82f6" opacity="0.1"/>
-        <text x="810" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">TO-BE SPECIFICATION (GHCI 2.0)</text>
+        <text x="810" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">GHCI 1.0 SPECIFICATION</text>
     </g>
 
     <!-- Boundary: Host Interface (Left) -->
@@ -229,7 +235,7 @@ def generate_ghci_gpu_architecture():
     <g transform="translate(260, 80)">
         <rect width="710" height="600" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow-sm)"/>
         <path d="M 0 10 Q 0 0 10 0 L 700 0 Q 710 0 710 10 L 710 38 L 0 38 Z" fill="#f1f5f9"/>
-        <text class="group-label" x="20" y="24" fill="#334155">GHCI 2.0 Conforming GPU Core (Amaterrace / ATG1)</text>
+        <text class="group-label" x="20" y="24" fill="#334155">GHCI 1.0 Conforming GPU Core (Amaterrace / ATG1)</text>
 
         <!-- Command Processor (CP) -->
         <g transform="translate(20, 50)">
@@ -380,7 +386,7 @@ def generate_ghci_gpu_architecture():
 
         <!-- atg_rt to L2C and DC -->
         <line x1="255" y1="394" x2="255" y2="415" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
-        <line x1="600" y1="394" x2="600" y2="415" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="600" y1="394" x2="600" y2="415" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow-fuchsia)"/>
 
         <!-- Memory Controller (MC) -->
         <g transform="translate(20, 525)">
@@ -392,7 +398,7 @@ def generate_ghci_gpu_architecture():
         </g>
 
         <line x1="255" y1="505" x2="255" y2="525" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
-        <line x1="600" y1="505" x2="600" y2="525" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="600" y1="505" x2="600" y2="525" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow-fuchsia)"/>
     </g>
 
     <!-- Cross connections from Host to GPU (Clean routing) -->
@@ -401,7 +407,7 @@ def generate_ghci_gpu_architecture():
     <text class="conn-label" x="248" y="175" fill="#7c3aed" text-anchor="middle" transform="rotate(-90 248 175)">WPTR Doorbell</text>
 
     <!-- Interrupt line -->
-    <path fill="none" d="M 280 135 L 250 135 L 250 360 L 240 360" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 280 135 L 250 135 L 250 360 L 240 360" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
     <text class="conn-label" x="245" y="290" fill="#dc2626" text-anchor="middle" transform="rotate(-90 245 290)">IRQ Line</text>
 </svg>
 """
@@ -419,10 +425,10 @@ def generate_ghci_uma_system():
 
     <!-- Header Block -->
     <g transform="translate(30, 22)">
-        <text class="title" x="0" y="20">GHCI Unified Memory Architecture (UMA) System</text>
+        <text class="title" x="0" y="20">GHCI 1.0 Unified Memory Architecture (UMA) System</text>
         <text class="subtitle" x="0" y="38">Zero-Copy Shared DRAM (LOCAL_SIZE = 0) • Autonomous On-Chip GPU Command Processor • Platform Bus</text>
         <rect x="740" y="4" width="240" height="26" rx="13" fill="#059669" opacity="0.12"/>
-        <text x="860" y="21" text-anchor="middle" font-size="11.5" font-weight="700" fill="#047857">UMA MODEL (LOCAL_SIZE = 0)</text>
+        <text x="860" y="21" text-anchor="middle" font-size="11.5" font-weight="700" fill="#047857">GHCI 1.0 UMA (LOCAL_SIZE = 0)</text>
     </g>
 
     <!-- TOP LEFT: HOST CPU & OPERATING SYSTEM -->
@@ -648,10 +654,10 @@ def generate_ghci_discrete_system():
 
     <!-- Header Block -->
     <g transform="translate(30, 24)">
-        <text class="title" x="0" y="20">GHCI Discrete System Architecture (PCIe Binding)</text>
+        <text class="title" x="0" y="20">GHCI 1.0 Discrete System Architecture (PCIe Binding)</text>
         <text class="subtitle" x="0" y="40">BAR0 Slim MMIO • PCIe Interconnect • Bus Master DMA • Dedicated Local VRAM (LOCAL_SIZE &gt; 0)</text>
         <rect x="710" y="4" width="240" height="28" rx="14" fill="#2563eb" opacity="0.12"/>
-        <text x="830" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">DISCRETE (LOCAL_SIZE &gt; 0)</text>
+        <text x="830" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">GHCI 1.0 DISCRETE (LOCAL_SIZE &gt; 0)</text>
     </g>
 
     <!-- Host Side (Left) -->
@@ -794,9 +800,9 @@ def generate_ghci_discrete_system():
     <path fill="none" d="M 538 240 L 586 240" stroke="#7c3aed" stroke-width="1.8" marker-end="url(#arrow-purple)"/>
 
     <!-- GPU IRQ to PCIe MSI-X -->
-    <path fill="none" d="M 586 410 L 538 410" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 586 410 L 538 410" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow-rose)"/>
     <!-- MSI-X to Host KMD -->
-    <path fill="none" d="M 392 410 L 316 410" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 392 410 L 316 410" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow-rose)"/>
 </svg>
 """
 
@@ -813,10 +819,10 @@ def generate_ghci_command_flow():
 
     <!-- Header Block -->
     <g transform="translate(30, 24)">
-        <text class="title" x="0" y="20">GHCI 2.0 Command Flow &amp; In-Memory Architecture</text>
+        <text class="title" x="0" y="20">GHCI 1.0 Command Flow &amp; In-Memory Architecture</text>
         <text class="subtitle" x="0" y="40">Zero-State-Register Model • Pointer-Based Pipeline State Objects (PSO) • Autonomous GPU Dispatch</text>
         <rect x="730" y="4" width="220" height="28" rx="14" fill="#7c3aed" opacity="0.12"/>
-        <text x="840" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#6d28d9">GHCI 2.0 IN-MEMORY PSO</text>
+        <text x="840" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#6d28d9">GHCI 1.0 IN-MEMORY PSO</text>
     </g>
 
     <!-- Stage 1: Host Application & UMD (Top Left) -->
@@ -1082,7 +1088,7 @@ def generate_ghci_command_sequence():
     <g transform="translate(0, 405)">
         <circle cx="440" cy="0" r="10" fill="#7c3aed"/>
         <text class="seq-num" x="440" y="4" text-anchor="middle">5</text>
-        <line x1="440" y1="0" x2="600" y2="0" stroke="#0891b2" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="440" y1="0" x2="600" y2="0" stroke="#0891b2" stroke-width="2" marker-end="url(#arrow-cyan)"/>
         <text class="seq-step" x="520" y="-8" text-anchor="middle">Dispatch Draw &amp; Pipeline State</text>
         <text class="seq-desc" x="520" y="16" text-anchor="middle">VF fetches attributes; SU runs Vertex Shader</text>
     </g>
@@ -1091,7 +1097,7 @@ def generate_ghci_command_sequence():
     <g transform="translate(0, 465)">
         <circle cx="605" cy="0" r="10" fill="#0891b2"/>
         <text class="seq-num" x="605" y="4" text-anchor="middle">6</text>
-        <line x1="605" y1="0" x2="760" y2="0" stroke="#0891b2" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="605" y1="0" x2="760" y2="0" stroke="#0891b2" stroke-width="2" marker-end="url(#arrow-cyan)"/>
         <text class="seq-step" x="685" y="-8" text-anchor="middle">Rasterization &amp; Early Z</text>
         <text class="seq-desc" x="685" y="16" text-anchor="middle">Triangle setup, bounding box scan, 2×2 quads</text>
     </g>
@@ -1113,7 +1119,7 @@ def generate_ghci_command_sequence():
         <text class="seq-step" x="590" y="-8" text-anchor="middle" fill="#047857">Write Fence Counter to DRAM &amp; Assert IRQ Line</text>
 
         <!-- IRQ back to Host -->
-        <path fill="none" d="M 440 12 L 105 12" stroke="#dc2626" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+        <path fill="none" d="M 440 12 L 105 12" stroke="#dc2626" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrow-rose)"/>
         <text class="seq-desc" x="270" y="28" text-anchor="middle" fill="#dc2626">Host ISR unblocks synchronization primitive</text>
     </g>
 </svg>
@@ -1292,7 +1298,7 @@ def generate_atg_top_architecture():
     </g>
 
     <line x1="340" y1="625" x2="340" y2="642" stroke="#059669" stroke-width="2.5" marker-end="url(#arrow-emerald)"/>
-    <line x1="842" y1="625" x2="842" y2="642" stroke="#c026d3" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <line x1="842" y1="625" x2="842" y2="642" stroke="#c026d3" stroke-width="2.5" marker-end="url(#arrow-fuchsia)"/>
 </svg>
 """
 
@@ -1677,8 +1683,8 @@ def generate_atg_data_paths():
 </svg>
 """
 
-def generate_atg_su_32lane():
-    """8. docs/svg/atg_su_32lane.svg"""
+def generate_atg_su_architecture():
+    """8. docs/svg/atg_su_architecture.svg (and atg_su_32lane.svg)"""
     width, height = 1020, 720
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
     <style>{COMMON_STYLE}</style>
@@ -1691,7 +1697,7 @@ def generate_atg_su_32lane():
     <!-- Header Block -->
     <g transform="translate(30, 24)">
         <text class="title" x="0" y="20">Amaterrace Shader Unit (SU) — Scalable SIMT Warp Architecture</text>
-        <text class="subtitle" x="0" y="40">32-Thread Logical Warp • Configurable NPHYS Scalar PEs (4 / 8 / 16 / 32) • G = 32/NPHYS Cycles • FP16×2 Packed Math</text>
+        <text class="subtitle" x="0" y="40">32-Thread Logical Warp • Configurable NPHYS Scalar PEs (1 / 2 / 4 / 8 / 16 / 32) • G = 32/NPHYS Cycles • FP16×2 Packed Math</text>
         <rect x="730" y="4" width="260" height="28" rx="14" fill="#d97706" opacity="0.12"/>
         <text x="860" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#b45309">SCALABLE SIMT WARP (NPHYS)</text>
     </g>
@@ -1736,7 +1742,7 @@ def generate_atg_su_32lane():
     <g transform="translate(30, 215)">
         <rect width="960" height="340" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow-sm)"/>
         <path d="M 0 10 Q 0 0 10 0 L 950 0 Q 960 0 960 10 L 960 32 L 0 32 Z" fill="#f8fafc"/>
-        <text class="group-label" x="18" y="21" fill="#334155">Physical Execution Array: Configurable NPHYS Scalar PEs (NPHYS = 4, 8, 16, or 32 Lanes; G = 32/NPHYS Cycles)</text>
+        <text class="group-label" x="18" y="21" fill="#334155">Physical Execution Array: Configurable NPHYS Scalar PEs (NPHYS = 1, 2, 4, 8, 16, or 32 Lanes; G = 32/NPHYS Cycles)</text>
 
         <!-- Lane 0 / PE 0 -->
         <g transform="translate(18, 44)">
@@ -2232,6 +2238,8 @@ def generate_atg_rop_backend():
 </svg>
 """
 
+generate_atg_su_32lane = generate_atg_su_architecture
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_dir = script_dir
@@ -2244,12 +2252,13 @@ def main():
         ("ghci_command_sequence.svg", generate_ghci_command_sequence),
         ("atg_top_architecture.svg", generate_atg_top_architecture),
         ("atg_data_paths.svg", generate_atg_data_paths),
-        ("atg_su_32lane.svg", generate_atg_su_32lane),
+        ("atg_su_architecture.svg", generate_atg_su_architecture),
+        ("atg_su_32lane.svg", generate_atg_su_architecture),
         ("atg_rx_rasterizer.svg", generate_atg_rx_rasterizer),
         ("atg_rop_backend.svg", generate_atg_rop_backend),
     ]
 
-    print(f"Generating 10 SVG architecture diagrams in {output_dir}...")
+    print(f"Generating SVG architecture diagrams in {output_dir}...")
     for filename, gen_func in generators:
         filepath = os.path.join(output_dir, filename)
         content = gen_func()

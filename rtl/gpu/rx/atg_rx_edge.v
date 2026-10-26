@@ -464,7 +464,7 @@ module atg_rx_edge (
 	wire unused_ok = &{1'b0, acc[49:48], ce[8], bx0[17:16], by0[17:16], bx1[17:16],
 		by1[17:16], adx[23], ady[23], q0x[7:0], q1x[7:0],
 		q2x[7:0], q3x[7:0], q0y[7:0], q1y[7:0], q2y[7:0], q3y[7:0], s6[7:0], s7[7:0],
-		s8[7:0], s9[7:0]};
+		s8[7:0], s9[7:0], eff_line_w[0], eff_point_s[0]};
 endmodule
 
 `default_nettype wire

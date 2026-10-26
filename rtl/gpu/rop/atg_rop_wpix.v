@@ -337,7 +337,7 @@ module atg_rop_wpix #(
 	endgenerate
 
 	wire unused_ok = &{1'b0, f_idle, yrs[48:32], LS32[31:4], inf[67:9], inf[0], feat[25:8], feat[6:0], s_rt[8:3], s_bl[8:2],
-		s_kc[8:2], nll[3:2]};
+		s_kc[8:2], nll[3:2], s_ext[8:3], s_ext_bo_unused};
 endmodule
 
 `default_nettype wire

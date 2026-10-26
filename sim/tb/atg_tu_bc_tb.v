@@ -21,6 +21,10 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifndef CFG_ENABLE_BC
+`define CFG_ENABLE_BC 1
+`endif
+
 module atg_tu_bc_tb;
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;

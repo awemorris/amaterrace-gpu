@@ -81,7 +81,9 @@ module atg_su_exp_tb;
 		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane),
 		.fl_data(fl_data), .fl_go(fl_go), .fl_info(fl_info),
 		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_aux(ex_aux),
-		.xr_valid(xr_valid), .xr_warp(xr_warp), .wc_end(wc_end), .wc_warp(wc_warp));
+		.xr_valid(xr_valid), .xr_warp(xr_warp), .wc_end(wc_end), .wc_warp(wc_warp),
+		.ngg_valid(), .ngg_ready(1'b1), .ngg_tri(), .ngg_last(), .ngg_mesh_id(), .ngg_busy(),
+		.ngg_lds_rd_en(), .ngg_lds_rd_addr(), .ngg_lds_rd_data(32'd0));
 
 	integer seed = 1, errors = 0, e_rel = 0, i, j, k, l, c, r, t;
 	/* per slot: the warp's reference */

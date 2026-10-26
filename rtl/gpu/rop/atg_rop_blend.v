@@ -28,8 +28,15 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
+`ifndef CFG_ROP_MRT_COUNT
+`define CFG_ROP_MRT_COUNT 1
+`endif
+
 module atg_rop_blend #(
-	parameter LAT = 3	/* Pipeline cycles from b_valid to b_rvalid (the RTL has 3) */
+	parameter LAT = 3,	/* Pipeline cycles from b_valid to b_rvalid (the RTL has 3) */
+	parameter MRT_COUNT = `CFG_ROP_MRT_COUNT
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -72,10 +79,16 @@ module atg_rop_blend #(
 	reg [26:0] bls [0:7];
 	reg [31:0] kc8, kcf;	/* BLEND_CONST; the fp32 constants as bytes */
 	reg kc_sel;	/* ROP_CTRL[1] */
+`ifdef CFG_ROP_DUAL_SOURCE
 	reg dual_src_en;	/* ROP_CTRL[7] */
+`else
+	wire dual_src_en = 1'b0;
+`endif
 	reg [31:0] wms;
+`ifdef CFG_ROP_ENABLE_LOGICOP
 	reg lop_en [0:7];
 	reg [3:0] lop_op [0:7];
+`endif
 	/* BLEND1-3 and BLEND_CONST_R-A: k = (st_idx - 3) mod 4 = st_idx[1:0] + 1 */
 	wire [1:0] s_k;
 	wire s_k_co_unused;
@@ -98,13 +111,17 @@ module atg_rop_blend #(
 			fmts <= 64'd0;
 			for (i = 0; i < 8; i = i + 1) begin
 				bls[i] <= 27'd0;
+`ifdef CFG_ROP_ENABLE_LOGICOP
 				lop_en[i] <= 1'b0;
 				lop_op[i] <= 4'd0;
+`endif
 			end
 			kc8 <= 32'd0;
 			kcf <= 32'd0;
 			kc_sel <= 1'b0;
+`ifdef CFG_ROP_DUAL_SOURCE
 			dual_src_en <= 1'b0;
+`endif
 			wms <= 32'd0;
 		end else if (st_we) begin
 			if (st_idx == GHCI_S_RT_FORMAT)
@@ -127,12 +144,17 @@ module atg_rop_blend #(
 				kcf[8 * s_k +: 8] <= kcf_n;
 			if (st_idx == GHCI_S_ROP_CTRL) begin
 				kc_sel <= st_wdata[1];
+`ifdef CFG_ROP_DUAL_SOURCE
 				dual_src_en <= st_wdata[7];
+`endif
+`ifdef CFG_ROP_ENABLE_LOGICOP
 				for (i = 0; i < 8; i = i + 1) begin
 					lop_en[i] <= st_wdata[2];
 					lop_op[i] <= st_wdata[6:3];
 				end
+`endif
 			end
+`ifdef CFG_ROP_ENABLE_LOGICOP
 			if (st_idx == GHCI_S_LOGIC_OP) begin
 				if (st_wdata[31:8] == 24'd0) begin
 					for (i = 0; i < 8; i = i + 1) begin
@@ -150,6 +172,7 @@ module atg_rop_blend #(
 					lop_op[3] <= st_wdata[28:25];
 				end
 			end
+`endif
 			if (st_idx == GHCI_S_WRITE_MASK) begin
 				wms[15:0] <= st_wdata[15:0];
 				if (st_wdata[31:16] != 16'd0)
@@ -165,8 +188,13 @@ module atg_rop_blend #(
 		fmt0 == 2'd1 ? F_RGBA8 : F_565) : fcode(fvk);
 	wire [26:0] bl_n = bls[b_rt];
 	wire [3:0] wm_n = wms[4 * b_rt +: 4];
+`ifdef CFG_ROP_ENABLE_LOGICOP
 	wire lop_en_n = lop_en[b_rt];
 	wire [3:0] lop_op_n = lop_op[b_rt];
+`else
+	wire lop_en_n = 1'b0;
+	wire [3:0] lop_op_n = 4'd0;
+`endif
 
 	function [7:0] factor;
 		input [4:0] f;
@@ -187,14 +215,19 @@ module atg_rop_blend #(
 		5'd12: factor = ka;
 		5'd13: factor = ~ka;
 		5'd14: factor = is_a ? 8'd255 : (sa < ~da ? sa : ~da);
+`ifdef CFG_ROP_DUAL_SOURCE
 		5'd15: factor = s1c;
 		5'd16: factor = ~s1c;
 		5'd17: factor = s1a;
 		5'd18: factor = ~s1a;
+`else
+		5'd15, 5'd16, 5'd17, 5'd18: factor = (s1c ^ s1a) & 8'd0;
+`endif
 		default: factor = 8'd0;
 		endcase
 	endfunction
 
+`ifdef CFG_ROP_ENABLE_LOGICOP
 	function [7:0] calc_logic_op;
 		input [3:0] op;
 		input [7:0] s;
@@ -218,11 +251,12 @@ module atg_rop_blend #(
 		4'd15: calc_logic_op = 8'hFF;
 		endcase
 	endfunction
+`endif
 
 	genvar gl, gc;
 
 	/* Stage 1: RGBA8 per lane, channel c of lane l at [32l + 8c]. */
-	wire [127:0] s1_n, s1_1_n;
+	wire [127:0] s1_n;
 	reg [127:0] d1_n;
 	reg [31:0] dp;
 	integer l;
@@ -230,10 +264,21 @@ module atg_rop_blend #(
 	for (gl = 0; gl < 16; gl = gl + 1) begin : g_f2u8
 		atg_rop_f2u8 u_f2u8 (.f(b_src[128 * (gl / 4) + 32 * (gl % 4) +: 32]),
 			.u(s1_n[32 * (gl / 4) + 8 * (gl % 4) +: 8]));
+	end
+	endgenerate
+
+`ifdef CFG_ROP_DUAL_SOURCE
+	wire [127:0] s1_1_n;
+	generate
+	for (gl = 0; gl < 16; gl = gl + 1) begin : g_f2u8_1
 		atg_rop_f2u8 u_f2u8_1 (.f(b_src1[128 * (gl / 4) + 32 * (gl % 4) +: 32]),
 			.u(s1_1_n[32 * (gl / 4) + 8 * (gl % 4) +: 8]));
 	end
 	endgenerate
+`else
+	wire [127:0] s1_1_n = 128'd0;
+	wire unused_src1 = &{1'b0, b_src1, b_has_src1};
+`endif
 	always @(*) begin
 		for (l = 0; l < 4; l = l + 1) begin
 			dp = b_dst[32 * l +: 32];
@@ -253,25 +298,34 @@ module atg_rop_blend #(
 	reg [3:0] m1, wm1, wm2;
 	reg [2:0] fmt1, fmt2;
 	reg [26:0] bl1, bl2;
+`ifdef CFG_ROP_ENABLE_LOGICOP
 	reg lop_en1, lop_en2;
 	reg [3:0] lop_op1, lop_op2;
+`endif
 	reg [31:0] kc1;
-	reg [127:0] s1, s1_1, d1, o1;
+	reg [127:0] s1, d1, o1;
+`ifdef CFG_ROP_DUAL_SOURCE
+	reg [127:0] s1_1;
 	reg dual_src_en1, dual_src_en2;
+`endif
 	always @(posedge clk) begin
 		v1 <= rst_n && b_valid;
 		m1 <= b_mask;
 		fmt1 <= fmt_n;
 		bl1 <= bl_n;
 		wm1 <= wm_n;
+`ifdef CFG_ROP_ENABLE_LOGICOP
 		lop_en1 <= lop_en_n;
 		lop_op1 <= lop_op_n;
+`endif
 		kc1 <= kc;
 		o1 <= b_dst;
 		s1 <= s1_n;
+`ifdef CFG_ROP_DUAL_SOURCE
 		s1_1 <= s1_1_n;
-		d1 <= d1_n;
 		dual_src_en1 <= rst_n && dual_src_en;
+`endif
+		d1 <= d1_n;
 	end
 
 	/* Stage 2: p = s x Fs, q = d x Fd per channel (16 bits each, channel 4l + c). */
@@ -281,10 +335,15 @@ module atg_rop_blend #(
 		for (gc = 0; gc < 4; gc = gc + 1) begin : g_c2
 			wire [7:0] sc = s1[32 * gl + 8 * gc +: 8];
 			wire [7:0] dc = d1[32 * gl + 8 * gc +: 8];
+`ifdef CFG_ROP_DUAL_SOURCE
 			wire [7:0] s1c = s1_1[32 * gl + 8 * gc +: 8];
+			wire [7:0] s1a = s1_1[32 * gl + 24 +: 8];
+`else
+			wire [7:0] s1c = 8'd0;
+			wire [7:0] s1a = 8'd0;
+`endif
 			wire [7:0] sa = s1[32 * gl + 24 +: 8];
 			wire [7:0] da = d1[32 * gl + 24 +: 8];
-			wire [7:0] s1a = s1_1[32 * gl + 24 +: 8];
 			wire [4:0] f_s = gc == 3 ? {bl1[25], bl1[15:12]} : {bl1[23], bl1[4:1]};
 			wire [4:0] f_d = gc == 3 ? {bl1[26], bl1[19:16]} : {bl1[24], bl1[8:5]};
 			wire [7:0] fs = factor(f_s, sc, dc, kc1[8 * gc +: 8], sa, da, kc1[31:24], s1c, s1a, gc == 3);
@@ -306,14 +365,18 @@ module atg_rop_blend #(
 		fmt2 <= fmt1;
 		bl2 <= bl1;
 		wm2 <= wm1;
+`ifdef CFG_ROP_ENABLE_LOGICOP
 		lop_en2 <= lop_en1;
 		lop_op2 <= lop_op1;
+`endif
 		s2 <= s1;
 		d2 <= d1;
 		o2 <= o1;
 		p2 <= p_n;
 		q2 <= q_n;
+`ifdef CFG_ROP_DUAL_SOURCE
 		dual_src_en2 <= rst_n && dual_src_en1;
+`endif
 	end
 
 	/* Stage 3: the operation, the mask, the format. */
@@ -345,8 +408,10 @@ module atg_rop_blend #(
 				endcase
 				if (!bl2[0])
 					v = {1'b0, sv};
+`ifdef CFG_ROP_ENABLE_LOGICOP
 				if (lop_en2)
 					v = {1'b0, calc_logic_op(lop_op2, sv, dv)};
+`endif
 				if (v[8])
 					v = 9'd255;
 			end
@@ -393,7 +458,11 @@ module atg_rop_blend #(
 		b_pix <= pix_n;
 	end
 
-	wire unused_ok = &{LAT != 0, bl2[26:0], b_has_src1, dual_src_en, dual_src_en2};
+`ifdef CFG_ROP_DUAL_SOURCE
+	wire unused_ok = &{LAT != 0, (MRT_COUNT != 0), bl2[26:0], b_has_src1, dual_src_en, dual_src_en2};
+`else
+	wire unused_ok = &{LAT != 0, (MRT_COUNT != 0), bl2[26:0], dual_src_en, lop_en_n, lop_op_n, s1_1_n};
+`endif
 endmodule
 
 `default_nettype wire

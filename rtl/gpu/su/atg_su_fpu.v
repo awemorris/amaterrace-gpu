@@ -94,7 +94,6 @@ module atg_su_fpu #(
 `include "atg_su_fp16.vh"
 
 	localparam DW = NPHYS * 32;
-	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS + DW;
 
 	localparam SH = PK_SHARED != 0 && PACKED != 0;
 
@@ -403,7 +402,7 @@ module atg_su_fpu #(
 	assign fwd_ex5_lanes = s5_mask;
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
-		(NWARPS != 0)};
+		k_hs, k_sat, (SHORT_LAT != 0), (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

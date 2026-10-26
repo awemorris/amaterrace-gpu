@@ -27,6 +27,12 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
+`ifndef CFG_TU_L1_BANKS
+`define CFG_TU_L1_BANKS 4
+`endif
+
 module atg_tu #(
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
@@ -100,7 +106,12 @@ module atg_tu #(
 		.ta_last(ta_last)
 	);
 
-	atg_tu_cache #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) cache (
+	atg_tu_cache #(
+		.ADDR_W(ADDR_W),
+		.LINE_BYTES(LINE_BYTES),
+		.LINE_SHIFT(LINE_SHIFT),
+		.NBANKS(`CFG_TU_L1_BANKS)
+	) cache (
 		.clk(clk), .rst_n(rst_n), .inv(inv),
 		.ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr), .ta_bord(ta_bord),
 		.ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl), .ta_value(ta_value),

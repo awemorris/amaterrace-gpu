@@ -98,7 +98,7 @@ earlier work has completed.
   route through a multi-banked shared L2 cache before reaching the Memory
   Controller, providing low-latency caching and write-combining.
 - **QoS Display Controller Integration:** The Display Controller operates on an
-  independent 200 MHz pixel clock domain with a dedicated high-priority port
+  independent pixel clock (`pclk`) domain with a dedicated high-priority port
   directly to the Memory Controller, ensuring glitch-free display scanout even
   during GPU reset or heavy compute saturation.
 
@@ -254,7 +254,7 @@ For current hardware bring-up and legacy firmware compatibility, the physical ha
 | [5] | CAP_DUAL_SOURCE | 1 = Dual-source color blending supported (`Src1Color` / `Src1Alpha`) |
 | [6] | CAP_FP16 | 1 = Packed 16-bit float/integer arithmetic supported |
 | [7] | CAP_GSI1 | 1 = Native GSI1 standard shader ISA execution |
-| [15:8] | SIMD_LANES | Number of physical SIMD lanes per Shader Unit (32) |
+| [15:8] | PHYS_LANES | Number of physical execution lanes per Shader Unit (NPHYS = 1, 2, 4, 8, 16, 32) |
 | [23:16] | NUM_SU | Number of Shader Units present (e.g. 1, 2, 4) |
 | [31:24] | RESERVED | Reserved (reads 0) |
 

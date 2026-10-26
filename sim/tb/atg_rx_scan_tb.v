@@ -26,6 +26,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
 module atg_rx_scan_tb;
 	localparam MAXT = 64;
 	localparam MAXQ = 4096;
@@ -241,9 +243,12 @@ module atg_rx_scan_tb;
 		end
 	end
 
+	reg quick = 1'b0;
 	initial begin
 		if (!$value$plusargs("seed=%d", seed))
 			seed = 1;
+		if ($test$plusargs("quick"))
+			quick = 1'b1;
 		fd = $fopen("sim/vec/rx_scan.txt", "r");
 		if (fd == 0) begin
 			$display("FAIL atg_rx_scan: no sim/vec/rx_scan.txt");
@@ -256,18 +261,24 @@ module atg_rx_scan_tb;
 			code = $fscanf(fd, "%c", tag);
 			if (tag == "T") begin
 				code = $fscanf(fd, " %h %d\n", sp, j);
-				t_sp[nt] = sp;
-				t_nq[nt] = j;
-				nt = nt + 1;
+				if (quick && nt >= 4) begin
+					code = 0;
+				end else begin
+					t_sp[nt] = sp;
+					t_nq[nt] = j;
+					nt = nt + 1;
+				end
 			end else if (tag == "Q") begin
 				code = $fscanf(fd, " %h %h %h %d %h %h %h %h\n", x, y, m, j, z0, z1, z2, z3);
-				q_x[nq] = x;
-				q_y[nq] = y;
-				q_m[nq] = m;
-				q_l[nq] = j;
-				q_z[nq] = {z3, z2, z1, z0};
-				q_t[nq] = nt - 1;
-				nq = nq + 1;
+				if (!quick || nt <= 4) begin
+					q_x[nq] = x;
+					q_y[nq] = y;
+					q_m[nq] = m;
+					q_l[nq] = j;
+					q_z[nq] = {z3, z2, z1, z0};
+					q_t[nq] = nt - 1;
+					nq = nq + 1;
+				end
 			end else
 				code = 0;
 		end
@@ -363,49 +374,61 @@ module atg_rx_scan_tb;
 		e_ms = w_err;
 
 		/* ms: the multisampling vectors. */
-		fd = $fopen("sim/vec/rx_scan_ms.txt", "r");
-		if (fd == 0) begin
-			e_ms = e_ms + 1;
-			$display("FAIL atg_rx_scan.ms: no sim/vec/rx_scan_ms.txt");
+`ifdef CFG_ENABLE_MSAA
+		if (`CFG_ENABLE_MSAA != 0) begin
+			fd = $fopen("sim/vec/rx_scan_ms.txt", "r");
+			if (fd == 0) begin
+				e_ms = e_ms + 1;
+				$display("FAIL atg_rx_scan.ms: no sim/vec/rx_scan_ms.txt");
+			end
+			w_err = 0;
+			ntm = 0;
+			code = fd != 0;
+			while (code > 0) begin
+				code = $fscanf(fd, "%c", tag);
+				if (tag == "T") begin
+					code = $fscanf(fd, " %h %h %h %d\n", sp, ms_ctrl, ms_kill, j);
+					if (quick && ntm >= 4) begin
+						code = 0;
+					end else begin
+						w_got = 0;
+						w_ends = 0;
+						w_n = j;
+						for (k = 0; k < j; k = k + 1) begin
+							code = $fscanf(fd, "Q %h %h %h %h\n", x, y, s16, m);
+							wq_x[k] = x;
+							wq_y[k] = y;
+							wq_s[k] = s16;
+							wq_c[k] = m;
+							wq_seen[k] = 1'b0;
+						end
+						w_st(9'h05E, ms_ctrl);
+						w_st(9'h05F, ms_kill);
+						w_tri(sp);
+						if (w_got != w_n || w_ends != 1) begin
+							w_err = w_err + 1;
+							$display("FAIL atg_rx_scan.ms: tri %0d: %0d of %0d quads, %0d ends", ntm, w_got,
+								w_n, w_ends);
+							for (k = 0; k < j; k = k + 1)
+								if (!wq_seen[k])
+									$display("MISSING MS QUAD: tri %0d quad %0d: %h scov %h ccov %h", ntm, k, {wq_y[k], wq_x[k]}, wq_s[k], wq_c[k]);
+						end
+						ntm = ntm + 1;
+					end
+				end else
+					code = 0;
+			end
+			$display("atg_rx_scan: %0d multisampling triangles", ntm);
+			if (w_err == 0 && (quick ? ntm >= 4 : ntm > 20))
+				$display("PASS atg_rx_scan.ms");
+			else
+				e_ms = e_ms + 1;
+		end else begin
+			$display("SKIP atg_rx_scan.ms: CFG_ENABLE_MSAA=0");
 		end
-		w_err = 0;
-		ntm = 0;
-		code = fd != 0;
-		while (code > 0) begin
-			code = $fscanf(fd, "%c", tag);
-			if (tag == "T") begin
-				code = $fscanf(fd, " %h %h %h %d\n", sp, ms_ctrl, ms_kill, j);
-				w_got = 0;
-				w_ends = 0;
-				w_n = j;
-				for (k = 0; k < j; k = k + 1) begin
-					code = $fscanf(fd, "Q %h %h %h %h\n", x, y, s16, m);
-					wq_x[k] = x;
-					wq_y[k] = y;
-					wq_s[k] = s16;
-					wq_c[k] = m;
-					wq_seen[k] = 1'b0;
-				end
-				w_st(9'h05E, ms_ctrl);
-				w_st(9'h05F, ms_kill);
-				w_tri(sp);
-				if (w_got != w_n || w_ends != 1) begin
-					w_err = w_err + 1;
-					$display("FAIL atg_rx_scan.ms: tri %0d: %0d of %0d quads, %0d ends", ntm, w_got,
-						w_n, w_ends);
-					for (k = 0; k < j; k = k + 1)
-						if (!wq_seen[k])
-							$display("MISSING MS QUAD: tri %0d quad %0d: %h scov %h ccov %h", ntm, k, {wq_y[k], wq_x[k]}, wq_s[k], wq_c[k]);
-				end
-				ntm = ntm + 1;
-			end else
-				code = 0;
-		end
-		$display("atg_rx_scan: %0d multisampling triangles", ntm);
-		if (w_err == 0 && ntm > 20)
-			$display("PASS atg_rx_scan.ms");
-		else
-			e_ms = e_ms + 1;
+`else
+		$display("SKIP atg_rx_scan.ms: CFG_ENABLE_MSAA=0");
+`endif
 		if (e_cov + e_dir + e_free + e_ms == 0)
 			$display("PASS atg_rx_scan");
 		$finish;

@@ -108,23 +108,29 @@
         </filter>
 
         <!-- Arrow Markers -->
-        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
         </marker>
-        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
         </marker>
-        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
         </marker>
-        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
         </marker>
-        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
         </marker>
-        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+        <marker id="arrow-fuchsia" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#c026d3"/>
+        </marker>
+        <marker id="arrow-cyan" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0891b2"/>
         </marker>
 
         <!-- Linear Gradients -->
@@ -141,10 +147,10 @@
 
     <!-- Header Block -->
     <g transform="translate(30, 24)">
-        <text class="title" x="0" y="20">GHCI Discrete System Architecture (PCIe Binding)</text>
+        <text class="title" x="0" y="20">GHCI 1.0 Discrete System Architecture (PCIe Binding)</text>
         <text class="subtitle" x="0" y="40">BAR0 Slim MMIO • PCIe Interconnect • Bus Master DMA • Dedicated Local VRAM (LOCAL_SIZE &gt; 0)</text>
         <rect x="710" y="4" width="240" height="28" rx="14" fill="#2563eb" opacity="0.12"/>
-        <text x="830" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">DISCRETE (LOCAL_SIZE &gt; 0)</text>
+        <text x="830" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">GHCI 1.0 DISCRETE (LOCAL_SIZE &gt; 0)</text>
     </g>
 
     <!-- Host Side (Left) -->
@@ -287,7 +293,7 @@
     <path fill="none" d="M 538 240 L 586 240" stroke="#7c3aed" stroke-width="1.8" marker-end="url(#arrow-purple)"/>
 
     <!-- GPU IRQ to PCIe MSI-X -->
-    <path fill="none" d="M 586 410 L 538 410" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 586 410 L 538 410" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow-rose)"/>
     <!-- MSI-X to Host KMD -->
-    <path fill="none" d="M 392 410 L 316 410" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+    <path fill="none" d="M 392 410 L 316 410" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow-rose)"/>
 </svg>

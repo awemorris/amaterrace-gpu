@@ -15,8 +15,37 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+`ifdef CFG_ENABLE_MSAA
+`define ATG_DEFAULT_ENABLE_MSAA (`CFG_ENABLE_MSAA != 0)
+`else
+`define ATG_DEFAULT_ENABLE_MSAA 0
+`endif
+
+`ifdef CFG_MSAA_SAMPLES
+`define ATG_DEFAULT_MSAA_SAMPLES `CFG_MSAA_SAMPLES
+`else
+`define ATG_DEFAULT_MSAA_SAMPLES 1
+`endif
+
+`ifdef CFG_ENABLE_EARLY_Z
+`define ATG_DEFAULT_ENABLE_EARLY_Z (`CFG_ENABLE_EARLY_Z != 0)
+`else
+`define ATG_DEFAULT_ENABLE_EARLY_Z 0
+`endif
+
+`ifdef CFG_COARSE_SCAN
+`define ATG_DEFAULT_COARSE_SCAN (`CFG_COARSE_SCAN != 0)
+`else
+`define ATG_DEFAULT_COARSE_SCAN 0
+`endif
+
 module atg_rx #(
-	parameter HAS_SU = 1	/* Fragment warps to an SU (0: DEBUG_COLOR quads to the ROP) */
+	parameter HAS_SU = 1,	/* Fragment warps to an SU (0: DEBUG_COLOR quads to the ROP) */
+	parameter ENABLE_MSAA = `ATG_DEFAULT_ENABLE_MSAA,
+	parameter MSAA_SAMPLES = `ATG_DEFAULT_MSAA_SAMPLES,
+	parameter ENABLE_EARLY_Z = `ATG_DEFAULT_ENABLE_EARLY_Z,
+	parameter COARSE_SCAN = `ATG_DEFAULT_COARSE_SCAN
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -113,7 +142,13 @@ module atg_rx #(
 		.cur_viewport_idx(rx_viewport_idx)
 	);
 
-	atg_rx_scan #(.HAS_SU(HAS_SU)) scan (
+	atg_rx_scan #(
+		.HAS_SU(HAS_SU),
+		.ENABLE_MSAA(ENABLE_MSAA),
+		.MSAA_SAMPLES(MSAA_SAMPLES),
+		.ENABLE_EARLY_Z(ENABLE_EARLY_Z),
+		.COARSE_SCAN(COARSE_SCAN)
+	) scan (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
@@ -144,6 +179,8 @@ module atg_rx #(
 
 	assign busy = clip_busy || setup_busy || scan_busy || frag_busy;
 	assign fsm = {frag_busy, scan_busy, setup_busy, clip_busy};
+
+	wire unused_ok = &{1'b0, rx_prim_type, rx_line_width, rx_point_size, rx_viewport_idx};
 endmodule
 
 `default_nettype wire

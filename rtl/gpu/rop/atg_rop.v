@@ -20,11 +20,18 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
+`ifndef CFG_ROP_MRT_COUNT
+`define CFG_ROP_MRT_COUNT 1
+`endif
+
 module atg_rop #(
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter STENCIL = 0	/* ROP_STENCIL */
+	parameter STENCIL = 0,	/* ROP_STENCIL */
+	parameter MRT_COUNT = `CFG_ROP_MRT_COUNT
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -169,14 +176,19 @@ module atg_rop #(
 `endif .clear(occ_clear), .count(occ_count)
 	);
 
-	atg_rop_blend blend (
+	atg_rop_blend #(.MRT_COUNT(MRT_COUNT)) blend (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.b_valid(b_valid), .b_src(b_src), .b_src1(512'd0), .b_has_src1(1'b0),
 		.b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),
 		.b_rvalid(b_rvalid), .b_pix(b_pix)
 	);
 
-	atg_rop_wb #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) wb (
+	atg_rop_wb #(
+		.ADDR_W(ADDR_W),
+		.LINE_BYTES(LINE_BYTES),
+		.LINE_SHIFT(LINE_SHIFT),
+		.MRT_COUNT(MRT_COUNT)
+	) wb (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_smask(d_smask), .d_color(d_color),
 		.d_rt({1'b0, d_beat[3:2]}), .d_nocol(d_beat[1]),

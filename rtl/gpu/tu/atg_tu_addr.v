@@ -51,6 +51,7 @@ module atg_tu_addr (
 	output reg [127:0] ta_value,
 	output reg ta_last
 );
+	`include "atg_config.vh"
 	`include "ghci_regs.vh"
 	`include "atg_fmt_info.vh"
 	`include "atg_tu_fmt.vh"
@@ -114,7 +115,11 @@ module atg_tu_addr (
 	wire unn = samp[GHCI_SAMP_UNNORM];
 	wire [2:0] traw = image[GHCI_IMG_TYPE +: 3];
 	wire is3dr = traw == 3'd2;
+`ifdef CFG_ENABLE_3D_CUBE
 	wire arr = !unn && traw == 3'd1, is3d = !unn && is3dr, cube = !unn && traw == 3'd3;
+`else
+	wire arr = !unn && traw == 3'd1, is3d = 1'b0, cube = 1'b0;
+`endif
 	wire [15:0] cnt = image[GHCI_IMG_COUNT +: 16] == 16'd0 ? 16'd1 : image[GHCI_IMG_COUNT +: 16];
 	wire signed [16:0] minlod = $signed({5'd0, dlod[GHCI_TEX_MIN_LOD +: 12]});
 	wire signed [16:0] maxlod = $signed({5'd0, 12'hFFF - dlod[GHCI_TEX_MAX_LOD +: 12]});
@@ -137,7 +142,11 @@ module atg_tu_addr (
 	wire filt = legacy ? !depth || cmp : fc[6] || cmp;
 	wire f32 = !legacy && !nofetch && !(fc[5] || cmp);	/* the fp32 path */
 	wire [1:0] gwi = f32 && gather ? tu_gwi(tfmt, opr[5:4]) : 2'd0;
+`ifdef CFG_ENABLE_TRILINEAR
 	wire miplin = filt && !gather && !unn && samp[GHCI_SAMP_MIP_LINEAR];
+`else
+	wire miplin = 1'b0;
+`endif
 	wire [2:0] cmp_op = samp[GHCI_SAMP_COMPARE_OP +: 3];
 	wire [2:0] bcol = samp[GHCI_SAMP_BORDER +: 3];
 	wire [1:0] bcls = bcol[2:1] == 2'd3 ? 2'd0 : bcol[2:1];
@@ -156,6 +165,7 @@ module atg_tu_addr (
 
 	wire [159:0] jcrd = jlane[1] ? (jlane[0] ? crd[480 +: 160] : crd[320 +: 160]) :
 		(jlane[0] ? crd[160 +: 160] : crd[0 +: 160]);
+`ifdef CFG_ENABLE_3D_CUBE
 	wire c_bsy;
 	wire [2:0] c_face;
 	wire signed [26:0] c_s, c_t;
@@ -164,6 +174,12 @@ module atg_tu_addr (
 		.x(jcrd[0 +: 32]), .y(jcrd[32 +: 32]), .z(jcrd[128 +: 32]), .fix(jfix), .fface(cf[0]),
 		.bsy(c_bsy), .face(c_face), .s(c_s), .t(c_t)
 	);
+`else
+	wire c_bsy = 1'b0;
+	wire [2:0] c_face = 3'd0;
+	wire signed [26:0] c_s = 27'sd0;
+	wire signed [26:0] c_t = 27'sd0;
+`endif
 
 	/* Parallel Quad LOD Evaluation across u, v, w axes (0 cycles) */
 	wire signed [16:0] lam_u, lam_v, lam_w;
@@ -425,6 +441,7 @@ module atg_tu_addr (
 		end
 	end
 
+`ifdef CFG_ENABLE_3D_CUBE
 	/* Cube seamless edge mapping reference (Phase 005 / ws002-p005) */
 	wire [2:0] cube_edge_fout;
 	wire [15:0] cube_edge_uout, cube_edge_vout;
@@ -437,6 +454,17 @@ module atg_tu_addr (
 		.u_out(cube_edge_uout),
 		.v_out(cube_edge_vout)
 	);
+`else
+	wire [2:0] cube_edge_fout = 3'd0;
+	wire [15:0] cube_edge_uout = 16'd0;
+	wire [15:0] cube_edge_vout = 16'd0;
+`endif
+
+`ifdef CFG_ENABLE_3D_CUBE
+	wire unused_cube_signals = 1'b0;
+`else
+	wire unused_cube_signals = &{1'b0, jcrd[159:128], jcrd[63:0], jfix};
+`endif
 
 	wire unused_ok = &{1'b0, fc[11:10], jcrd[127:64],
 		samp[18:17], bcol[0], opr[7], opr[2],
@@ -444,7 +472,7 @@ module atg_tu_addr (
 		cnt1_bo_unused, lb1_co_unused, lbase_co_unused,
 		lamp_l[0][16], lamp_l[1][16], lamp_l[2][16], lamp_l[3][16],
 		lstr_l[0][47:32], lstr_l[1][47:32], lstr_l[2][47:32], lstr_l[3][47:32],
-		cube_edge_fout, cube_edge_uout, cube_edge_vout};
+		cube_edge_fout, cube_edge_uout, cube_edge_vout, unused_cube_signals};
 endmodule
 
 `default_nettype wire

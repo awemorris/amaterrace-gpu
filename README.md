@@ -6,7 +6,7 @@ Amaterrace GPU
 [![GHCI Standard: 1.0](https://img.shields.io/badge/GHCI-1.0-indigo.svg)](docs/ghci.md)
 [![Target: Xilinx KC705](https://img.shields.io/badge/Target-Xilinx%20KC705-emerald.svg)](boards/)
 
-`Amaterrace GPU` (device `ATG1`) is an open-source, Vulkan-class graphics and compute GPU implemented in synthesizable Verilog-2005.
+`Amaterrace GPU` (device `ATG1`) is an open-source, Vulkan-compatible graphics and compute GPU implemented in synthesizable Verilog-2005.
 
 Designed for high-efficiency graphics and parallel compute with clean architectural decoupling:
 
@@ -102,7 +102,7 @@ DRAM Framebuffer ──> MC Priority Arbiter ──> Dual-Clock CDC AFIFO ──
 3. GHCI 1.0 Host Interface & System Topologies
 ----------------------------------------------
 
-Amaterrace GPU implements the **GHCI 1.0 (GPU Host Controller Interface)** specification ([docs/ghci.md](docs/ghci.md)). GHCI defines an AHCI/xHCI-style unified programming interface for Vulkan-class GPUs.
+Amaterrace GPU implements the **GHCI 1.0 (GPU Host Controller Interface)** specification ([docs/ghci.md](docs/ghci.md)). GHCI defines an AHCI/xHCI-style unified programming interface for high-efficiency graphics and parallel compute GPUs.
 
 ![GHCI 1.0 GPU Architecture](docs/svg/ghci_gpu_architecture.svg)
 
@@ -170,9 +170,9 @@ The swimlane sequence diagram below illustrates the end-to-end command lifecycle
 
 The Shader Unit (`atg_su`) executes the standard GSI1 64-bit ISA. It implements a 32-thread logical SIMT warp execution model with parameterizable physical hardware width:
 
-![Amaterrace SU Architecture](docs/svg/atg_su_32lane.svg)
+![Amaterrace SU Architecture](docs/svg/atg_su_architecture.svg)
 
-- **Parameterizable Physical Lanes (`NPHYS`):** The physical execution width is configurable at synthesis (`NPHYS = 4, 8, 16, or 32` lanes). A 32-thread logical warp executes across physical lanes in $G = 32 / \text{NPHYS}$ time cycles.
+- **Parameterizable Physical Lanes (`NPHYS`):** The physical execution width is configurable at synthesis (`NPHYS = 1, 2, 4, 8, 16, or 32` lanes, with RTL default `NPHYS = 8`). A 32-thread logical warp executes across physical lanes in $G = 32 / \text{NPHYS}$ time cycles.
 - **Scalar Processing Elements (Scalar PEs):** Each physical lane is an independent scalar PE (`atg_su_lane`), comprising:
   - **Thread Register File:** 32 or 64 general-purpose 32-bit registers (`r0..r62`, `rq`) per thread.
   - **Integer ALU:** 32-bit add, sub, bitwise logic, shifts, and comparisons (`atg_su_alu`).
@@ -284,7 +284,7 @@ amaterrace-gpu/
 ├── docs/                         # Specifications & Architectural Documentation
 │   ├── ghci.md                   # GHCI 1.0 Specification & GSI1 Shader ISA Standard
 │   ├── style.md                  # Verilog-2005 Coding Standard & Guardrails
-│   └── svg/                      # Vector Architecture & Datapath Diagrams (10 SVGs)
+│   └── svg/                      # Vector Architecture & Datapath Diagrams (11 SVGs)
 ├── fw/cp/                        # Command Processor Firmware (C / Assembly for RV32IM)
 ├── include/                      # Shared RTL Verilog Headers & C Definitions
 ├── plan/                         # Awesome Plan Local-Only Project Management Records

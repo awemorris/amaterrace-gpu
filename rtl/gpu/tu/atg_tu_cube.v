@@ -28,6 +28,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
 module atg_tu_cube (
 	input wire clk,
 	input wire rst_n,
@@ -42,6 +44,8 @@ module atg_tu_cube (
 	output wire signed [26:0] s,
 	output wire signed [26:0] t
 );
+
+`ifdef CFG_ENABLE_3D_CUBE
 	localparam IDLE = 1'b0, DIV = 1'b1;
 
 	/* A component: zeros, denormals, NaN +0; infinities the largest finite. */
@@ -149,6 +153,24 @@ module atg_tu_cube (
 	assign t = zero ? 27'sd8388608 : t_q;
 
 	wire unused_ok = &{1'b0, vm[31]};	/* |ma|: the sign of the major axis is the face's */
+
+`else
+
+	assign bsy = 1'b0;
+	assign s = 27'sd0;
+	assign t = 27'sd0;
+
+	always @(posedge clk) begin
+		if (!rst_n)
+			face <= 3'd0;
+		else
+			face <= 3'd0;
+	end
+
+	wire unused_cube_stub = &{1'b0, go, x, y, z, fix, fface};
+
+`endif
+
 endmodule
 
 `default_nettype wire

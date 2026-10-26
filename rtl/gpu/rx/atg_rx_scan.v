@@ -23,8 +23,37 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+`ifdef CFG_ENABLE_MSAA
+`define ATG_DEFAULT_ENABLE_MSAA (`CFG_ENABLE_MSAA != 0)
+`else
+`define ATG_DEFAULT_ENABLE_MSAA 0
+`endif
+
+`ifdef CFG_MSAA_SAMPLES
+`define ATG_DEFAULT_MSAA_SAMPLES `CFG_MSAA_SAMPLES
+`else
+`define ATG_DEFAULT_MSAA_SAMPLES 1
+`endif
+
+`ifdef CFG_ENABLE_EARLY_Z
+`define ATG_DEFAULT_ENABLE_EARLY_Z (`CFG_ENABLE_EARLY_Z != 0)
+`else
+`define ATG_DEFAULT_ENABLE_EARLY_Z 0
+`endif
+
+`ifdef CFG_COARSE_SCAN
+`define ATG_DEFAULT_COARSE_SCAN (`CFG_COARSE_SCAN != 0)
+`else
+`define ATG_DEFAULT_COARSE_SCAN 0
+`endif
+
 module atg_rx_scan #(
-	parameter HAS_SU = 1	/* 1: fragment warps to the SU; 0: quads straight to the ROP with DEBUG_COLOR */
+	parameter HAS_SU = 1,	/* 1: fragment warps to the SU; 0: quads straight to the ROP with DEBUG_COLOR */
+	parameter ENABLE_MSAA = `ATG_DEFAULT_ENABLE_MSAA,
+	parameter MSAA_SAMPLES = `ATG_DEFAULT_MSAA_SAMPLES,
+	parameter ENABLE_EARLY_Z = `ATG_DEFAULT_ENABLE_EARLY_Z,
+	parameter COARSE_SCAN = `ATG_DEFAULT_COARSE_SCAN
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -89,9 +118,9 @@ module atg_rx_scan #(
 			ms4 <= 1'b0;
 			kill <= 4'd0;
 		end else if (st_we && st_idx == GHCI_S_MS_CTRL)
-			ms4 <= (st_wdata[3:0] == 4'd2);
+			ms4 <= (ENABLE_MSAA != 0) && (st_wdata[3:0] == 4'd2);
 		else if (st_we && st_idx == GHCI_S_SAMPLE_KILL)
-			kill <= st_wdata[3:0];
+			kill <= (ENABLE_MSAA != 0) ? st_wdata[3:0] : 4'd0;
 
 	/* Coarse Tile Rasterizer Interface */
 	reg coarse_tri_valid;
@@ -133,53 +162,106 @@ module atg_rx_scan #(
 	wire [143:0] eb_cov_unused;
 	wire [143:0] lowmv;
 	wire [143:0] cov_op, cov_oq;
-	atg_rx_cov cv (
-		.clk(clk),
-		.i_load(st == S_IDLE && sp_valid),
-		.i_ab({sp_tri[192 +: 48], sp_tri[96 +: 48], sp_tri[0 +: 48]}),
-		.i_ec({ec[2], ec[1], ec[0]}),
-		.i_start(1'b0),
-		.i_step(1'b0),
-		.i_sc(2'd0),
-		.i_samp(1'b0),
-		.o_eb(eb_cov_unused),
-		.o_lowm(lowmv),
-		.o_op(cov_op),
-		.o_oq(cov_oq)
-	);
+	generate
+	if (ENABLE_MSAA != 0) begin : g_cov
+		atg_rx_cov cv (
+			.clk(clk),
+			.i_load(st == S_IDLE && sp_valid),
+			.i_ab({sp_tri[192 +: 48], sp_tri[96 +: 48], sp_tri[0 +: 48]}),
+			.i_ec({ec[2], ec[1], ec[0]}),
+			.i_start(1'b0),
+			.i_step(1'b0),
+			.i_sc(2'd0),
+			.i_samp(1'b0),
+			.o_eb(eb_cov_unused),
+			.o_lowm(lowmv),
+			.o_op(cov_op),
+			.o_oq(cov_oq)
+		);
+	end else begin : g_no_cov
+		assign eb_cov_unused = 144'd0;
+		assign lowmv = 144'd0;
+		assign cov_op = 144'd0;
+		assign cov_oq = 144'd0;
+	end
+	endgenerate
 
-	atg_rx_coarse u_coarse (
-		.clk(clk),
-		.rst_n(rst_n),
-		.tri_valid(coarse_tri_valid),
-		.tri_ready(coarse_tri_ready),
-		.bbox_min_x(sp_tri[303:288]),
-		.bbox_min_y(sp_tri[319:304]),
-		.bbox_max_x(sp_tri[335:320]),
-		.bbox_max_y(sp_tri[351:336]),
-		.e0_a8({{16{sp_tri[23]}}, sp_tri[0 +: 24], 8'd0}),
-		.e0_b8({{16{sp_tri[47]}}, sp_tri[24 +: 24], 8'd0}),
-		.e0_er(er0[0]),
-		.e1_a8({{16{sp_tri[96 + 23]}}, sp_tri[96 +: 24], 8'd0}),
-		.e1_b8({{16{sp_tri[96 + 47]}}, sp_tri[96 + 24 +: 24], 8'd0}),
-		.e1_er(er0[1]),
-		.e2_a8({{16{sp_tri[192 + 23]}}, sp_tri[192 +: 24], 8'd0}),
-		.e2_b8({{16{sp_tri[192 + 47]}}, sp_tri[192 + 24 +: 24], 8'd0}),
-		.e2_er(er0[2]),
-		.lowm0(ms4 ? lowmv[0 +: 48] : 48'd0),
-		.lowm1(ms4 ? lowmv[48 +: 48] : 48'd0),
-		.lowm2(ms4 ? lowmv[96 +: 48] : 48'd0),
-		.tile_valid(coarse_tile_valid),
-		.tile_ready(coarse_tile_ready),
-		.tile_x(coarse_tile_x),
-		.tile_y(coarse_tile_y),
-		.tile_e0(coarse_tile_e0),
-		.tile_e1(coarse_tile_e1),
-		.tile_e2(coarse_tile_e2),
-		.tile_trivial(coarse_tile_trivial),
-		.tile_last(coarse_tile_last),
-		.busy(coarse_busy)
-	);
+	generate
+	if (COARSE_SCAN != 0) begin : g_coarse
+		atg_rx_coarse u_coarse (
+			.clk(clk),
+			.rst_n(rst_n),
+			.tri_valid(coarse_tri_valid),
+			.tri_ready(coarse_tri_ready),
+			.bbox_min_x(sp_tri[303:288]),
+			.bbox_min_y(sp_tri[319:304]),
+			.bbox_max_x(sp_tri[335:320]),
+			.bbox_max_y(sp_tri[351:336]),
+			.e0_a8({{16{sp_tri[23]}}, sp_tri[0 +: 24], 8'd0}),
+			.e0_b8({{16{sp_tri[47]}}, sp_tri[24 +: 24], 8'd0}),
+			.e0_er(er0[0]),
+			.e1_a8({{16{sp_tri[96 + 23]}}, sp_tri[96 +: 24], 8'd0}),
+			.e1_b8({{16{sp_tri[96 + 47]}}, sp_tri[96 + 24 +: 24], 8'd0}),
+			.e1_er(er0[1]),
+			.e2_a8({{16{sp_tri[192 + 23]}}, sp_tri[192 +: 24], 8'd0}),
+			.e2_b8({{16{sp_tri[192 + 47]}}, sp_tri[192 + 24 +: 24], 8'd0}),
+			.e2_er(er0[2]),
+			.lowm0(ms4 ? lowmv[0 +: 48] : 48'd0),
+			.lowm1(ms4 ? lowmv[48 +: 48] : 48'd0),
+			.lowm2(ms4 ? lowmv[96 +: 48] : 48'd0),
+			.tile_valid(coarse_tile_valid),
+			.tile_ready(coarse_tile_ready),
+			.tile_x(coarse_tile_x),
+			.tile_y(coarse_tile_y),
+			.tile_e0(coarse_tile_e0),
+			.tile_e1(coarse_tile_e1),
+			.tile_e2(coarse_tile_e2),
+			.tile_trivial(coarse_tile_trivial),
+			.tile_last(coarse_tile_last),
+			.busy(coarse_busy)
+		);
+	end else begin : g_no_coarse
+		assign coarse_tri_ready = 1'b1;
+		assign coarse_tile_valid = 1'b0;
+		assign coarse_tile_x = 16'd0;
+		assign coarse_tile_y = 16'd0;
+		assign coarse_tile_e0 = 48'd0;
+		assign coarse_tile_e1 = 48'd0;
+		assign coarse_tile_e2 = 48'd0;
+		assign coarse_tile_trivial = 1'b0;
+		assign coarse_tile_last = 1'b0;
+		assign coarse_busy = 1'b0;
+	end
+	endgenerate
+
+	/* Hierarchical Early-Z (Hi-Z) RAM */
+	wire hiz_cull;
+	wire [15:0] hiz_rd_zmax;
+	generate
+	if (ENABLE_EARLY_Z != 0) begin : g_hiz
+		wire [10:0] hiz_rd_addr = {cur_ty[8:3], cur_tx[8:4]};
+		wire hiz_wr_en = (st == S_Z) && (zc == 5'd19);
+		wire [10:0] hiz_wr_addr = {qy[8:3], qx[8:4]};
+		wire [15:0] hiz_wr_z = zv[31:16];
+		atg_rx_hiz #(
+			.DEPTH_W(16),
+			.TILE_ADDR_W(11)
+		) u_hiz (
+			.clk(clk),
+			.rst_n(rst_n),
+			.clear(st_we && st_idx == GHCI_S_DEPTH),
+			.rd_addr(hiz_rd_addr),
+			.rd_zmax(hiz_rd_zmax),
+			.wr_en(hiz_wr_en),
+			.wr_addr(hiz_wr_addr),
+			.wr_zmax(hiz_wr_z)
+		);
+		assign hiz_cull = 1'b0;
+	end else begin : g_no_hiz
+		assign hiz_cull = 1'b0;
+		assign hiz_rd_zmax = 16'd0;
+	end
+	endgenerate
 
 	/* Quad lane coordinate stepping */
 	wire [16:0] qx1, qy1, qx2, qy2;
@@ -205,37 +287,49 @@ module atg_rx_scan #(
 	end
 	endgenerate
 
-	/* Parallel 16-sample evaluation: 3 edges x 4 lanes x 4 samples = 48 addsubs */
+	/* Parallel sample evaluation: 3 edges x 4 lanes x MSAA_SAMPLES */
 	wire [47:0] esamp_sign;
 	wire [47:0] esamp_carry_unused;
 	wire [48*47-1:0] esamp_unused;
 	genvar gk, gs;
 	generate
-	for (ge = 0; ge < 3; ge = ge + 1) begin : g_samp_e
-		wire signed [47:0] ope = cov_op[48 * ge +: 48];
-		wire signed [47:0] oqe = cov_oq[48 * ge +: 48];
-		for (gk = 0; gk < 4; gk = gk + 1) begin : g_samp_k
-			wire signed [47:0] lve_val = lve[48 * (4 * ge + gk) +: 48];
-			for (gs = 0; gs < 4; gs = gs + 1) begin : g_samp_s
-				localparam integer idx = 16 * ge + 4 * gk + gs;
-				wire signed [47:0] s_off = (gs == 0 || gs == 3) ? ope : oqe;
+	if (ENABLE_MSAA != 0) begin : g_msaa_eval
+		for (ge = 0; ge < 3; ge = ge + 1) begin : g_samp_e
+			wire signed [47:0] ope = cov_op[48 * ge +: 48];
+			wire signed [47:0] oqe = cov_oq[48 * ge +: 48];
+			for (gk = 0; gk < 4; gk = gk + 1) begin : g_samp_k
+				wire signed [47:0] lve_val = lve[48 * (4 * ge + gk) +: 48];
+				for (gs = 0; gs < 4; gs = gs + 1) begin : g_samp_s
+					localparam integer idx = 16 * ge + 4 * gk + gs;
+					if (gs < MSAA_SAMPLES) begin : g_active_sample
+						wire signed [47:0] s_off = (gs == 0 || gs == 3) ? ope : oqe;
 `ifdef MUT_SAMPLE_SWAP
-				wire s_sub = (gs == 0 || gs == 1);
+						wire s_sub = (gs == 0 || gs == 1);
 `else
-				wire s_sub = (gs == 0 || gs == 2);
+						wire s_sub = (gs == 0 || gs == 2);
 `endif
-				wire [47:0] s_val;
-				am_addsub #(.W(48)) u_esamp (
-					.a(lve_val),
-					.b(s_off),
-					.sub(s_sub),
-					.s(s_val),
-					.co(esamp_carry_unused[idx])
-				);
-				assign esamp_sign[idx] = s_val[47];
-				assign esamp_unused[47 * idx +: 47] = s_val[46:0];
+						wire [47:0] s_val;
+						am_addsub #(.W(48)) u_esamp (
+							.a(lve_val),
+							.b(s_off),
+							.sub(s_sub),
+							.s(s_val),
+							.co(esamp_carry_unused[idx])
+						);
+						assign esamp_sign[idx] = s_val[47];
+						assign esamp_unused[47 * idx +: 47] = s_val[46:0];
+					end else begin : g_inactive_sample
+						assign esamp_sign[idx] = 1'b0;
+						assign esamp_carry_unused[idx] = 1'b0;
+						assign esamp_unused[47 * idx +: 47] = 47'd0;
+					end
+				end
 			end
 		end
+	end else begin : g_no_msaa_eval
+		assign esamp_sign = 48'd0;
+		assign esamp_carry_unused = 48'd0;
+		assign esamp_unused = { (48*47){1'b0} };
 	end
 	endgenerate
 
@@ -267,10 +361,14 @@ module atg_rx_scan #(
 			end
 
 			for (sm = 0; sm < 4; sm = sm + 1) begin
-				scov_comb[4 * ln + sm] = inb[ln] && !kill[sm] &&
-					!esamp_sign[16 * 0 + 4 * ln + sm] &&
-					!esamp_sign[16 * 1 + 4 * ln + sm] &&
-					!esamp_sign[16 * 2 + 4 * ln + sm];
+				if (ENABLE_MSAA != 0) begin
+					scov_comb[4 * ln + sm] = inb[ln] && !kill[sm] && (sm < MSAA_SAMPLES) &&
+						!esamp_sign[16 * 0 + 4 * ln + sm] &&
+						!esamp_sign[16 * 1 + 4 * ln + sm] &&
+						!esamp_sign[16 * 2 + 4 * ln + sm];
+				end else begin
+					scov_comb[4 * ln + sm] = (sm == 0) ? (inb[ln] && !kill[0] && ccov_comb[ln]) : 1'b0;
+				end
 			end
 		end
 	end
@@ -283,8 +381,12 @@ module atg_rx_scan #(
 	always @(*) begin
 		for (ln = 0; ln < 4; ln = ln + 1) begin
 			cov_triv[ln] = inb[ln];
-			for (sm = 0; sm < 4; sm = sm + 1)
-				scov_triv[4 * ln + sm] = inb[ln] && !kill[sm];
+			for (sm = 0; sm < 4; sm = sm + 1) begin
+				if (ENABLE_MSAA != 0)
+					scov_triv[4 * ln + sm] = inb[ln] && !kill[sm] && (sm < MSAA_SAMPLES);
+				else
+					scov_triv[4 * ln + sm] = (sm == 0) ? (inb[ln] && !kill[0]) : 1'b0;
+			end
 		end
 	end
 
@@ -300,11 +402,19 @@ module atg_rx_scan #(
 
 	wire w_empty = wm ? (ms4 ? cur_scov == 16'd0 : cov1 == 4'd0) : cur_cov == 4'd0;
 
-	/* Stepping within 8x8 coarse tile */
+	/* Stepping within 8x8 coarse tile or bounding box */
 	wire [15:0] cur_tx_end, cur_ty_end;
 	wire [1:0] tend_carry_unused;
-	am_add #(.W(16)) u_tx_end (.a(cur_tx), .b(16'd8), .ci(1'b0), .s(cur_tx_end), .co(tend_carry_unused[0]));
-	am_add #(.W(16)) u_ty_end (.a(cur_ty), .b(16'd8), .ci(1'b0), .s(cur_ty_end), .co(tend_carry_unused[1]));
+	generate
+	if (COARSE_SCAN != 0) begin : g_coarse_end
+		am_add #(.W(16)) u_tx_end (.a(cur_tx), .b(16'd8), .ci(1'b0), .s(cur_tx_end), .co(tend_carry_unused[0]));
+		am_add #(.W(16)) u_ty_end (.a(cur_ty), .b(16'd8), .ci(1'b0), .s(cur_ty_end), .co(tend_carry_unused[1]));
+	end else begin : g_direct_end
+		assign cur_tx_end = bx1;
+		assign cur_ty_end = by1;
+		assign tend_carry_unused = 2'd0;
+	end
+	endgenerate
 
 	wire tile_row_end = (qx2 >= {1'b0, cur_tx_end}) || (qx2 >= {1'b0, bx1});
 	wire tile_quads_end = tile_row_end && ((qy2 >= {1'b0, cur_ty_end}) || (qy2 >= {1'b0, by1}));
@@ -414,7 +524,7 @@ module atg_rx_scan #(
 				fend <= 1'b0;
 				pend <= 1'b0;
 				fi <= 2'd0;
-				coarse_tri_valid <= 1'b1;
+				coarse_tri_valid <= (COARSE_SCAN != 0);
 				if (sp_tri[335:320] > sp_tri[303:288] && sp_tri[351:336] > sp_tri[319:304])
 					st <= S_SEQ;
 				else begin
@@ -428,7 +538,21 @@ module atg_rx_scan #(
 			coarse_tri_valid <= 1'b0;
 			coarse_tile_ready <= 1'b0;
 			seq <= sq_seq;
-			st <= S_TILE_WAIT;
+			if (COARSE_SCAN != 0) begin
+				st <= S_TILE_WAIT;
+			end else begin
+				/* Direct bounding box traversal bypassing coarse scan */
+				cur_tx <= {bx0[15:1], 1'b0};
+				cur_ty <= {by0[15:1], 1'b0};
+				cur_trivial <= 1'b0;
+				cur_last_tile <= 1'b1;
+				qx <= {bx0[15:1], 1'b0};
+				qy <= {by0[15:1], 1'b0};
+				er[0] <= er0[0]; ec[0] <= er0[0];
+				er[1] <= er0[1]; ec[1] <= er0[1];
+				er[2] <= er0[2]; ec[2] <= er0[2];
+				st <= S_WALK;
+			end
 		end
 
 		S_TILE_WAIT: begin
@@ -635,7 +759,8 @@ module atg_rx_scan #(
 	wire unused_ok = &{1'b0, st_wdata[31:4], sp_last, fm_o, fa_o,
 		sp_tri[767:765], sp_tri[735:448], lij[16], qx1[16], qy1[16], qx2[16], qy2[16],
 		HAS_SU != 0, coarse_tri_ready, cur_last_tile, eb_cov_unused,
-		esamp_carry_unused, esamp_unused, lve_carry_unused, qstep_carry_unused, tend_carry_unused};
+		esamp_carry_unused, esamp_unused, lve_carry_unused, qstep_carry_unused, tend_carry_unused,
+		hiz_cull, hiz_rd_zmax};
 endmodule
 
 `default_nettype wire

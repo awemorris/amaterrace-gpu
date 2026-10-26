@@ -11,6 +11,10 @@ RX quad traversal: walks the bounding box via the Coarse Tile Rasterizer `atg_rx
 | Name | Default | Meaning |
 | --- | --- | --- |
 | `HAS_SU` | `1` | 1: non-raw triangles' quads to atg_rx_frag (fragment warps); 0: every quad straight to the ROP with DEBUG_COLOR (a GPU without SUs). DRAW_RAW is direct either way. |
+| `ENABLE_MSAA` | `CFG_ENABLE_MSAA` (1) | Enable Multisampling sample evaluation and coverage logic. |
+| `MSAA_SAMPLES` | `CFG_MSAA_SAMPLES` (4) | Number of MSAA samples evaluated in parallel (1, 2, 4). |
+| `ENABLE_EARLY_Z` | `CFG_ENABLE_EARLY_Z` (1) | Hierarchical Early-Z (Hi-Z) RAM culling capability. |
+| `COARSE_SCAN` | `CFG_COARSE_SCAN` (1) | Two-level hierarchical 8x8 coarse tile scanning before fine scan. |
 
 ## 3. Ports
 

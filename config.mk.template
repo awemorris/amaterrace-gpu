@@ -1,0 +1,129 @@
+# ==============================================================================
+# Amaterrace GPU (ATG1) Build Configuration Template
+# Copyright (C) 2026 Awe Morris
+# SPDX-License-Identifier: Zlib
+# ==============================================================================
+# Copy this file to `config.mk` and customize it for your target board,
+# simulation parameters, or FPGA resource budget.
+# `include/atg_config.vh` is generated automatically from `config.mk`.
+# ==============================================================================
+
+# Target Board Preset: kc705, basys3, arty_a7, minimal_sim
+TARGET_PRESET            ?= kc705
+
+# ------------------------------------------------------------------------------
+# 1. Shader Unit (SU) Scaling & Capabilities
+# ------------------------------------------------------------------------------
+# CONFIG_SU_NPHYS: Number of physical SIMD execution lanes per SU.
+#   Logical warp width is fixed at 32 threads.
+#   Execution latency per instruction is 32 / NPHYS cycles:
+#     32 : 1 cycle/inst  (High-end FPGA, Kintex UltraScale+, Virtex-7)
+#     16 : 2 cycles/inst (Mid-range FPGA, Kintex-7 325T, Zynq-7030)
+#      8 : 4 cycles/inst (Default standard configuration, Kintex-7 KC705, Artix-7 100T)
+#      4 : 8 cycles/inst (Entry-level FPGA, Artix-7 50T, Gowin GW2A-55)
+CONFIG_SU_NPHYS          ?= 8
+
+# CONFIG_SU_NWARPS: Maximum concurrent resident warp slots (2, 4, 8). Default: 4.
+CONFIG_SU_NWARPS         ?= 4
+
+# CONFIG_SU_NREGS: General purpose registers (GPRs) allocated per thread (32 or 64). Default: 32.
+CONFIG_SU_NREGS          ?= 32
+
+# CONFIG_SU_ENABLE_FP16: Packed FP16x2 arithmetic support (1: Enabled, 0: Disabled).
+#   Provides 2x compute throughput for half-precision floating-point.
+CONFIG_SU_ENABLE_FP16    ?= 1
+
+# CONFIG_SU_ENABLE_SUBGROUP: Intra-warp communication instructions (shfl, vote, ballot).
+#   1: Enabled (Vulkan subgroup support), 0: Disabled.
+CONFIG_SU_ENABLE_SUBGROUP ?= 1
+
+# CONFIG_SU_ENABLE_SFU: Special Function Unit for transcendental math (rcp, rsq, sin, cos).
+#   1: Hardware SFU, 0: Software emulation / trap.
+CONFIG_SU_ENABLE_SFU     ?= 1
+
+# CONFIG_SU_LDS_KB: Workgroup Local Data Share (shared memory) size in KB: 0, 1, 2, 4. Default: 4.
+CONFIG_SU_LDS_KB         ?= 4
+
+# CONFIG_SU_ENABLE_SA: Systolic Tensor Accelerator attachment.
+#   1: Enabled (AI/GEMM coprocessor attached to SU), 0: Disabled.
+CONFIG_SU_ENABLE_SA      ?= 0
+
+# CONFIG_SU_ENABLE_MESH: VK_EXT_mesh_shader capability (Task & Mesh Shaders, WS004).
+#   1: Enabled, 0: Disabled.
+CONFIG_SU_ENABLE_MESH    ?= 0
+
+# ------------------------------------------------------------------------------
+# 2. Rasterizer (RX) Configuration
+# ------------------------------------------------------------------------------
+# CONFIG_RX_ENABLE_MSAA: Multisample Anti-Aliasing support.
+#   1: Enabled (2x/4x sample generation), 0: 1x sampling only.
+CONFIG_RX_ENABLE_MSAA    ?= 1
+
+# CONFIG_RX_MSAA_SAMPLES: Maximum MSAA sample count when MSAA is enabled (2 or 4). Default: 4.
+CONFIG_RX_MSAA_SAMPLES   ?= 4
+
+# CONFIG_RX_ENABLE_EARLY_Z: Hierarchical Hi-Z occlusion culling RAM.
+#   1: Early-Z active (saves shader work), 0: Late-Z only (reduces BRAM usage).
+CONFIG_RX_ENABLE_EARLY_Z ?= 1
+
+# CONFIG_RX_COARSE_SCAN: Two-level hierarchical tile scanning.
+#   1: Coarse 8x8 / 4x4 tile traversal before fine scan, 0: Direct fine bounding-box scan.
+CONFIG_RX_COARSE_SCAN    ?= 1
+
+# ------------------------------------------------------------------------------
+# 3. Texture Unit (TU) Configuration
+# ------------------------------------------------------------------------------
+# CONFIG_TU_ENABLE_BC: Block Compression hardware decompressors (BC1 - BC7).
+#   1: Enabled (decompresses compressed textures in HW), 0: Uncompressed only (saves LUTs).
+CONFIG_TU_ENABLE_BC      ?= 0
+
+# CONFIG_TU_ENABLE_TRILINEAR: Mipmap level filtering and trilinear interpolation.
+#   1: Trilinear filtering enabled, 0: Bilinear / Nearest only.
+CONFIG_TU_ENABLE_TRILINEAR ?= 1
+
+# CONFIG_TU_ENABLE_3D_CUBE: 3D volumetric textures and Cube map addressing.
+#   1: Enabled, 0: 2D textures only.
+CONFIG_TU_ENABLE_3D_CUBE ?= 0
+
+# CONFIG_TU_L1_BANKS: Texture cache L1 bank count (1, 2, 4). Default: 4.
+CONFIG_TU_L1_BANKS       ?= 4
+
+# CONFIG_TU_ENABLE_MSHR: Non-blocking Miss Status Holding Registers for L1 cache.
+#   1: Non-blocking MSHR pipeline, 0: Blocking single-issue cache access.
+CONFIG_TU_ENABLE_MSHR    ?= 1
+
+# ------------------------------------------------------------------------------
+# 4. Render Output Backend (ROP) Configuration
+# ------------------------------------------------------------------------------
+# CONFIG_ROP_DUAL_SOURCE: Vulkan Dual-Source Blending (Src1Color / Src1Alpha).
+#   1: Enabled (required for complex font/subpixel blending), 0: Disabled.
+CONFIG_ROP_DUAL_SOURCE   ?= 0
+
+# CONFIG_ROP_ENABLE_LOGICOP: Vulkan 16-mode bitwise LogicOp operations.
+#   1: Enabled, 0: Standard alpha blending only.
+CONFIG_ROP_ENABLE_LOGICOP ?= 0
+
+# CONFIG_ROP_FAST_CLEAR: Tile metadata fast clear mechanism.
+#   1: Enabled (clears color/depth tile buffer tags instantaneously), 0: Direct write clear.
+CONFIG_ROP_FAST_CLEAR    ?= 1
+
+# CONFIG_ROP_MRT_COUNT: Simultaneous Multiple Render Targets (1, 2, 4). Default: 1.
+CONFIG_ROP_MRT_COUNT     ?= 1
+
+# ------------------------------------------------------------------------------
+# 5. Command Processor (CP) & Memory Hierarchy
+# ------------------------------------------------------------------------------
+# CONFIG_CP_AUTONOMOUS_MMU: Two-level hardware page table walker.
+#   1: Autonomous hardware page walking, 0: Static address mapping or software walk.
+CONFIG_CP_AUTONOMOUS_MMU ?= 1
+
+# CONFIG_CP_USE_RV32_CORE: RV32IM microcode processor for complex packet sequencing.
+#   1: RV32IM core active, 0: Lightweight hardwired FSM (minimal resource footprint).
+CONFIG_CP_USE_RV32_CORE  ?= 1
+
+# CONFIG_MC_L2_CACHE_KB: Shared Last-Level Cache (L2) capacity in KB (0, 16, 32, 64, 128). Default: 64.
+CONFIG_MC_L2_CACHE_KB    ?= 64
+
+# CONFIG_DC_ENABLE_CURSOR: Display Controller hardware cursor plane.
+#   1: Hardware cursor plane active, 0: Software cursor.
+CONFIG_DC_ENABLE_CURSOR  ?= 1
