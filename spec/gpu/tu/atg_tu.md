@@ -65,9 +65,13 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Wiring only; busy is the OR of the stage valids (the cache's misses are inside ta_valid).  The cache's output goes to atg_tu_filter, or with tc_ctl[20] to atg_tu_ffilt, and is taken by the filter of its path only while the other filter is idle (holds no quad): atg_tu_filter keeps up to 4 quads of its path in its pipeline and FIFO, atg_tu_ffilt one, and the returns (tr_* is the one filter's that holds a result) stay in request order; a switch of path waits until the other path's quads are returned.
+Wiring and order-management FIFO; busy is the OR of the stage valids, filter active signals, and order FIFO occupancy. The cache's output goes to `atg_tu_filter` (8-bit UNORM/SNORM path) or, when `tc_ctl[20]` (or `tc_ctl[23]`) is asserted, to `atg_tu_ffilt` (fp32 path: FP16/32, INT8/16/32, sRGB, ETC2/EAC). Both filter pipelines operate decoupled and concurrently:
+- Quads are dispatched into either `atg_tu_filter` or `atg_tu_ffilt` without stalling on the other path's idle state.
+- A 16-entry order FIFO (`order_fifo`) records the path identity (`f32` bit) of each quad upon dispatch of its final pass (`!tc_ctl[4]`).
+- Outputs from `atg_tu_filter` and `atg_tu_ffilt` (buffered via a 4-entry completion queue `u_ffilt_outq`) are steered to `tr_*` strictly in the order recorded by the order FIFO.
+- Backpressure on `tc_ready` is asserted if either the target filter is full or `order_fifo` is full (for the quad's final pass).
 
-As implemented: busy = tx_valid | ta_valid | tc_valid | tr_valid | desc_busy (a quad on one of the links, or atg_tu_desc computing level offsets; a quad being worked on inside a child is not seen).  STATUS.TU_BUSY is therefore approximate; the STATE of the TU is protected by atg_cp_seq, whose SET_REG of 0x090-0x18F also waits for the RX and the SUs (they hold every fragment that is still to be textured).
+As implemented: `busy` = `tx_valid | ta_valid | tc_valid | tr_valid | desc_busy | !u_idle | !f_idle | !order_empty | f_outq_valid` (any quad on intermediate links, being processed inside either filter, buffered in completion queues, or pending retirement in the order FIFO, or `atg_tu_desc` computing level offsets). STATUS.TU_BUSY is protected by `atg_cp_seq`, whose SET_REG of 0x090-0x18F waits for RX, TU, and SUs.
 
 ## 5. State machine
 
@@ -96,3 +100,5 @@ Wiring written in WS288 p023; the children implemented in WS288 p009 part C (P1,
 TEX_FORMAT (2026-10-25, Vulkan 1.0's formats, docs/ghci.md §8.5): atg_tu_ffilt and the routing of the two paths; ta_bord / tc_bord, ta_ctl / tc_ctl 48 bits inside; the ports are unchanged.  The CAPS bit (CAPS[30]) is set with the rest of CAPS[30]'s work.
 
 Part F (P3, branch p3-p009f): the descriptor of docs/ghci.md §8.4 (2D arrays, 3D, cube maps, the level offsets computed by atg_tu_desc), texel offsets (the new port tx_off), unnormalized coordinates; tx_coord 5 words a lane; ta_wts / tc_wts 128 bits (fw added); busy includes desc_busy.  CAPS[26] now says the whole of §8.4.
+
+WS001 Phase 019: Decoupled filter pipelines and order-management FIFO. Eliminated mutual exclusion (`u_idle`/`f_idle` waits) between `atg_tu_filter` and `atg_tu_ffilt`. UNORM8 and FP16/FP32/sRGB quads can now stream and process concurrently with retired results reordered strictly in dispatch sequence via a 16-entry order FIFO and 4-entry completion queue. busy incorporates active filter and order FIFO flags.

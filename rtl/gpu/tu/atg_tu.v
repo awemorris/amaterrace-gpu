@@ -111,37 +111,97 @@ module atg_tu #(
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write), .req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag), .rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
 	);
 
-	/* The two paths: a pass goes to its filter when that one takes it and
-	 * the other is idle (has no quad), so their returns keep the order. */
-	wire u_ready, f_ready, u_idle, f_idle, u_tr_valid, f_tr_valid, u_tr_last, f_tr_last;
-	wire [15:0] u_tr_tag, f_tr_tag;
-	wire [511:0] u_tr_data, f_tr_data;
+	/* The two paths: passes are dispatched to the appropriate filter path
+	 * (filter for 8-bit/UNORM8, ffilt for fp32) without mutual idle waiting.
+	 * An in-order commit FIFO records the issue sequence of quads so that
+	 * results from both paths return to the SU in strictly in-order fashion. */
+	wire u_ready, f_ready, u_idle, f_idle;
+	wire u_tr_valid, u_tr_ready, u_tr_last;
+	wire [15:0] u_tr_tag;
+	wire [511:0] u_tr_data;
+
+	wire f_tr_valid_raw, f_tr_ready_raw, f_tr_last_raw;
+	wire [15:0] f_tr_tag_raw;
+	wire [511:0] f_tr_data_raw;
+
+	wire [528:0] f_fifo_out;
+	wire f_tr_valid, f_tr_ready, f_tr_last;
+	wire [15:0] f_tr_tag;
+	wire [511:0] f_tr_data;
+	wire [2:0] f_fifo_count;
+	wire f_fifo_in_ready;
+
+	am_fifo #(.W(529), .DEPTH_LOG2(2)) u_ffilt_outq (
+		.clk(clk), .rst_n(rst_n),
+		.in_valid(f_tr_valid_raw),
+		.in_ready(f_fifo_in_ready),
+		.in_data({f_tr_last_raw, f_tr_tag_raw, f_tr_data_raw}),
+		.out_valid(f_tr_valid),
+		.out_ready(f_tr_ready),
+		.out_data(f_fifo_out),
+		.count(f_fifo_count)
+	);
+	assign f_tr_ready_raw = f_fifo_in_ready;
+	assign f_tr_data = f_fifo_out[511:0];
+	assign f_tr_tag = f_fifo_out[527:512];
+	assign f_tr_last = f_fifo_out[528];
+
+	/* Order FIFO: records the path (0: filter, 1: ffilt) of each committed quad */
 	wire f32 = tc_ctl[20];
-	assign tc_ready = f32 ? f_ready && u_idle : u_ready && f_idle;
+	wire order_in_valid = tc_valid && tc_ready && !tc_ctl[4];
+	wire order_in_ready;
+	wire order_out_valid, order_out_ready;
+	wire order_path;
+	wire [4:0] order_count;
+
+	am_fifo #(.W(1), .DEPTH_LOG2(4)) u_order_fifo (
+		.clk(clk), .rst_n(rst_n),
+		.in_valid(order_in_valid),
+		.in_ready(order_in_ready),
+		.in_data(f32),
+		.out_valid(order_out_valid),
+		.out_ready(order_out_ready),
+		.out_data(order_path),
+		.count(order_count)
+	);
+
+	wire order_can_take = tc_ctl[4] || order_in_ready;
+	assign tc_ready = (f32 ? f_ready : u_ready) && order_can_take;
 
 	atg_tu_filter filter (
 		.clk(clk), .rst_n(rst_n),
-		.tc_valid(tc_valid && !f32 && f_idle), .tc_ready(u_ready), .tc_texels(tc_texels),
+		.tc_valid(tc_valid && !f32 && order_can_take), .tc_ready(u_ready), .tc_texels(tc_texels),
 		.tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask), .tc_ctl(tc_ctl),
 		.tc_value(tc_value), .tc_last(tc_last), .idle(u_idle),
-		.tr_valid(u_tr_valid), .tr_ready(tr_ready), .tr_tag(u_tr_tag), .tr_data(u_tr_data),
+		.tr_valid(u_tr_valid), .tr_ready(u_tr_ready), .tr_tag(u_tr_tag), .tr_data(u_tr_data),
 		.tr_last(u_tr_last)
 	);
 
 	atg_tu_ffilt ffilt (
 		.clk(clk), .rst_n(rst_n),
-		.tc_valid(tc_valid && f32 && u_idle), .tc_ready(f_ready), .tc_texels(tc_texels),
+		.tc_valid(tc_valid && f32 && order_can_take), .tc_ready(f_ready), .tc_texels(tc_texels),
 		.tc_bord(tc_bord), .tc_lo(tc_lo), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask),
 		.tc_ctl(tc_ctl), .tc_last(tc_last), .idle(f_idle),
-		.tr_valid(f_tr_valid), .tr_ready(tr_ready), .tr_tag(f_tr_tag), .tr_data(f_tr_data),
-		.tr_last(f_tr_last)
+		.tr_valid(f_tr_valid_raw), .tr_ready(f_tr_ready_raw), .tr_tag(f_tr_tag_raw), .tr_data(f_tr_data_raw),
+		.tr_last(f_tr_last_raw)
 	);
 
-	assign tr_valid = u_tr_valid || f_tr_valid;
-	assign tr_tag = f_tr_valid ? f_tr_tag : u_tr_tag;
-	assign tr_data = f_tr_valid ? f_tr_data : u_tr_data;
-	assign tr_last = f_tr_valid ? f_tr_last : u_tr_last;
-	assign busy = tx_valid || ta_valid || tc_valid || tr_valid || desc_busy;
+	/* In-order return based on order_fifo */
+	wire cur_is_f32 = order_path;
+	assign tr_valid = order_out_valid && (cur_is_f32 ? f_tr_valid : u_tr_valid);
+	assign tr_tag   = cur_is_f32 ? f_tr_tag : u_tr_tag;
+	assign tr_data  = cur_is_f32 ? f_tr_data : u_tr_data;
+	assign tr_last  = cur_is_f32 ? f_tr_last : u_tr_last;
+
+	wire tr_fire = tr_valid && tr_ready;
+	assign u_tr_ready = tr_fire && !cur_is_f32;
+	assign f_tr_ready = tr_fire && cur_is_f32;
+	assign order_out_ready = tr_fire;
+
+	assign busy = tx_valid || ta_valid || tc_valid || tr_valid || desc_busy ||
+		!u_idle || !f_idle || order_out_valid || f_tr_valid;
+
+	wire unused_tu_ok = &{1'b0, f_fifo_count, order_count};
 endmodule
 
 `default_nettype wire
