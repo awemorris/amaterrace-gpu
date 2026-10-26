@@ -116,16 +116,14 @@ module atg_rop_cache #(
 	function [2:0] update_plru;
 		input [2:0] p;
 		input [1:0] acc_way;
-		reg [2:0] p_new;
 		begin
-			p_new = p;
 			case (acc_way)
-			2'd0: begin p_new[0] = 1'b1; p_new[1] = 1'b1; end
-			2'd1: begin p_new[0] = 1'b1; p_new[1] = 1'b0; end
-			2'd2: begin p_new[0] = 1'b0; p_new[2] = 1'b1; end
-			2'd3: begin p_new[0] = 1'b0; p_new[2] = 1'b0; end
+			2'd0: update_plru = {p[2], 1'b1, 1'b1};
+			2'd1: update_plru = {p[2], 1'b0, 1'b1};
+			2'd2: update_plru = {1'b1, p[1], 1'b0};
+			2'd3: update_plru = {1'b0, p[1], 1'b0};
+			default: update_plru = p;
 			endcase
-			update_plru = p_new;
 		end
 	endfunction
 
@@ -167,6 +165,7 @@ module atg_rop_cache #(
 	assign busy = (st != S_IDLE) || flush;
 
 	/* Helper for byte-masked write */
+	/* verilator lint_off BLKSEQ */
 	function [LINE_BYTES*8-1:0] apply_be;
 		input [LINE_BYTES*8-1:0] orig_line;
 		input [LINE_BYTES*8-1:0] new_data;
@@ -182,6 +181,7 @@ module atg_rop_cache #(
 			apply_be = res;
 		end
 	endfunction
+	/* verilator lint_on BLKSEQ */
 
 	integer i, j;
 	always @(posedge clk) begin
@@ -336,7 +336,7 @@ module atg_rop_cache #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, flush_set_co, flush_way_co, byte_off};
+	wire unused_ok = &{1'b0, flush_set_co, flush_way_co, byte_off, cur_req_addr[LINE_SHIFT-1:0]};
 endmodule
 
 `default_nettype wire

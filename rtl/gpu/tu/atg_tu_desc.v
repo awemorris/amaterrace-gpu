@@ -49,6 +49,9 @@ module atg_tu_desc (
 	/* Read port (combinational) */
 	input wire [4:0] rd_slot,	/* [4]: the vertex stage's */
 	input wire [3:0] rd_level,
+	input wire [3:0] rd_level1,
+	input wire [3:0] rd_level2,
+	input wire [3:0] rd_level3,
 	output wire [31:0] rd_base,
 	output wire [31:0] rd_size,
 	output wire [31:0] rd_image,
@@ -58,7 +61,13 @@ module atg_tu_desc (
 	output wire [20:0] rd_fmt,
 	output wire [1:0] rd_row,	/* log2 of a row's texel multiple (0: packed) */
 	output wire [31:0] rd_loff,
-	output wire [31:0] rd_plane
+	output wire [31:0] rd_plane,
+	output wire [31:0] rd_loff1,
+	output wire [31:0] rd_plane1,
+	output wire [31:0] rd_loff2,
+	output wire [31:0] rd_plane2,
+	output wire [31:0] rd_loff3,
+	output wire [31:0] rd_plane3
 );
 	`include "ghci_regs.vh"
 	`include "atg_fmt_info.vh"
@@ -205,10 +214,19 @@ module atg_tu_desc (
 	assign rd_samp = d_samp[rd_slot];
 	assign rd_lod = d_lod[rd_slot];
 	assign rd_loff = rd_level == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level}], 6'd0};
+	assign rd_loff1 = rd_level1 == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level1}], 6'd0};
+	assign rd_loff2 = rd_level2 == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level2}], 6'd0};
+	assign rd_loff3 = rd_level3 == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level3}], 6'd0};
 	assign rd_fmt = d_fmt[rd_slot];
 	wire [6:0] rlay = layout(d_img[rd_slot], d_fmt[rd_slot], d_row[rd_slot]);
 	atg_tu_plane u_rd_plane (.sz(d_size[rd_slot]), .tiled(rlay[3]), .blk(rlay[4]), .psl(rlay[2:0]),
 		.ra(rlay[6:5]), .l(rd_level), .plane(rd_plane));
+	atg_tu_plane u_rd_plane1 (.sz(d_size[rd_slot]), .tiled(rlay[3]), .blk(rlay[4]), .psl(rlay[2:0]),
+		.ra(rlay[6:5]), .l(rd_level1), .plane(rd_plane1));
+	atg_tu_plane u_rd_plane2 (.sz(d_size[rd_slot]), .tiled(rlay[3]), .blk(rlay[4]), .psl(rlay[2:0]),
+		.ra(rlay[6:5]), .l(rd_level2), .plane(rd_plane2));
+	atg_tu_plane u_rd_plane3 (.sz(d_size[rd_slot]), .tiled(rlay[3]), .blk(rlay[4]), .psl(rlay[2:0]),
+		.ra(rlay[6:5]), .l(rd_level3), .plane(rd_plane3));
 	assign rd_row = rlay[6:5];
 
 	wire unused_ok = &{1'b0, s_fs[8], pd[47:32], nacc[5:0], acc[5:0]};

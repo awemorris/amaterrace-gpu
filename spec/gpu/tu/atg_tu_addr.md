@@ -6,7 +6,7 @@ RTL: `rtl/gpu/tu/atg_tu_addr.v`.  Parent: atg_tu.  Implemented in: p009.
 
 TU addressing: per quad, the slot's descriptor, level of detail (texl explicit, texb from the quad derivatives + bias, texf level), mip selection and the passes of mip linear and 3D linear filtering, the layer (2D array), the slice (3D), the face (cube), wrap on integer texel coordinates after the texel offsets, clamp to border, cube edges, bilinear footprint, texel byte addresses (linear or 4×4 tiled; texels of 1-16 bytes), the path of the quad's format (the 8-bit filter or the fp32 filter), the reference of a compare sampler, and texsz.
 
-Children: `atg_tu_desc` (the descriptors and their level offsets), `atg_tu_cube` (cube faces and face coordinates), `atg_tu_lod` (texb's quad LOD, combinational), `atg_tu_foot` (a lane's footprint and addresses, combinational), `atg_tu_lsel` (a lane's λ and level, combinational).
+Children: `atg_tu_desc` (the descriptors and their level offsets; 4 parallel level read ports), `atg_tu_cube` (cube faces and face coordinates), 3 instances of `atg_tu_lod` (texb's quad LOD across u, v, w combinational in parallel), 4 instances of `atg_tu_lsel` (per-lane λ and level selection), 4 instances of `atg_tu_tcrd` (per-lane texel coordinate calculation), 4 instances of `atg_tu_layer` (per-lane array layer calculation), and 4 instances of `atg_tu_foot` (per-lane footprint and address generation).
 
 ## 2. Parameters
 
@@ -73,11 +73,12 @@ The numbers, bit for bit (the reference is `tools/tumodel.py`, `quad_addr`; the 
 
 ## 5. State machine
 
-IDLE →(tx_valid, desc not busy)→ [CUBE ⇄ CWAIT (one atg_tu_cube run per job: lane 0, with the LOD lanes 1 and 2 on lane 0's face, then lanes 1-3)] → [LOD (texb)] → LA (lane k: λ, level, sizes, texel coordinates, layer, level base) → LB (lane k: footprint, addresses, weights) → LA … (lanes 0-3) → OUT →(ta_ready)→ IDLE, or LA (the next pass).  One state machine; the children atg_tu_desc and atg_tu_cube have their own.
+IDLE →(tx_valid, desc not busy)→ [CUBE ⇄ CWAIT (cube only: iterative face and coordinate projection)] → LA (Stage A: all 4 lanes in parallel compute λ, level, sizes, texel coordinates, layer, and level base) → LB (Stage B: all 4 lanes in parallel compute footprint, texel addresses, and bilinear weights) → OUT →(ta_ready)→ IDLE, or LA (the next pass).
+The 4-lane datapath removes the serial lane iteration loop (LA -> LB x 4), completing the quad address generation in a streamlined 2-stage execution per pass. The children atg_tu_desc and atg_tu_cube have their own state machines.
 
 ## 6. Latency and throughput
 
-Target one quad per cycle.  v1: 2 cycles per lane, 9 cycles per quad (10 for texb) plus the handshake, for each pass (up to 4); a cube quad adds about 28 cycles per atg_tu_cube run (4 runs, 6 for texb); one quad at a time (p015, the performance Phase, pipelines it).
+Streaming throughput: 1 quad per cycle for successive single-pass requests when pipelined. Latency: 2 cycles per pass (LA -> LB -> OUT) for standard 2D/3D operations plus handshake; cube maps run iterative projections via `atg_tu_cube`. Serial FSM multiplexing across lanes 0..3 has been eliminated.
 
 ## 7. Corner cases and errors
 
@@ -138,3 +139,5 @@ TEX_FORMAT (Vulkan 1.0's formats, docs/ghci.md §8.5, CAPS[30]; 2026-10-25): the
 TEX_ROW (2026-10-25, docs/ghci.md §8.4 word +7): atg_tu_desc keeps TEX_ROW[1:0] (rd_row, 0 for tiled, compressed and multisampled slots) and computes the planes and level offsets of rows of w_l rounded up to a multiple of 2^n texels; atg_tu_foot (`ra`) addresses those rows.  The firmware sets 1 for an image that may be an attachment (the render output's even rows), so an odd-width attachment is read as it was written.  Vectors of word +7 = 0 are those of before (the reserved word +7 that the earlier vectors wrote at random is now written 0; their quads and outputs are unchanged).
 
 2026-10-25 (area): texb's LOD state takes three cycles (atg_tu_lod an axis a cycle, the largest kept), was one; the results are unchanged.
+
+Phase 018 (ws001-p018, 2026-10-27): TU 4-lane parallel stream address generation. Replaced the 8-16 cycle serial lane loop with 4-lane parallel Stage A and Stage B datapaths (4 instances each of `atg_tu_lsel`, `atg_tu_tcrd`, `atg_tu_layer`, `atg_tu_foot`, 3 parallel axis instances for `atg_tu_lod`, and 4 level read ports on `atg_tu_desc`). Latency is reduced to 2 cycles per pass (LA -> LB -> OUT), delivering 1 quad/cycle streaming capability for sequential single-pass quads.
