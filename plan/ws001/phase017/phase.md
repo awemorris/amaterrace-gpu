@@ -3,7 +3,7 @@
 # Phase 017: ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・単体PASS)
 - **依存**: [ws001-p016](../phase016/phase.md), [ws001-p003](../phase003/phase.md)
 - **優先度**: Major (外部 DRAM トラフィック 70〜80% 削減 & キャッシュスラッシング解消)
 - **出典**: ユーザー諮問（ROP パイプライン化）および R1 敵対的アーキテクチャ分析レポート
@@ -111,3 +111,22 @@ module atg_rop_cache #(
 
 - 連続するトライアングル描画においてタイルキャッシュヒット率が 90% 以上となり、外部メモリアクセスが劇的に削減されること。
 - 全既存テストベンチにおいて画像崩れなく完全 PASS すること。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **RTL タイルキャッシュ実装**:
+   - `rtl/gpu/rop/atg_rop_cache.v`: 8 KiB 容量（32 sets × 4 ways × 64B = 128 lines）4-way Set-Associative タイルキャッシュ。RAMB36E1 ブロック RAM 2 個に推論される同期リード記述、バイトライトイネーブル対応。
+   - Tree-PLRU 置換アルゴリズム（セットあたり 3-bit PLRU 決定木）、ダーティビット追跡によるライトバックポリシー。
+   - 4-way 並列タグ照合による 1 サイクルヒットスループット（1 req/cycle）。
+   - 全 128 ラインを自動走査してダーティラインを外部メモリへ書き戻す Flush エンジン実装。
+   - `spec/gpu/rop/atg_rop_cache.md`: 仕様書新設。
+   - `sim/tb/atg_rop_cache_tb.v`: 単体テストベンチ新設。
+2. **検証結果**:
+   - `sim/run.sh atg_rop_cache`: **PASS** (0 s; hit, plru, flush 全サブテスト通過)
+   - `tools/lint.sh`: 全モジュール Clean（0 warnings）
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+   - `sim/verilator/run.sh basic`: **PASS** (2991 cycles)
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p017_rop_cache.md`）。8 KiB RAMB36E1 推論構造、Tree-PLRU 置換、ダーティライトバック、1 サイクルヒットスループット、Guardrails 完全準拠を承認。
