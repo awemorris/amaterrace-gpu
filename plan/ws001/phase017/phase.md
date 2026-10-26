@@ -24,6 +24,84 @@
    - Phase 016 の 5 段パイプラインの Stage 1（TAG/Read）および Stage 4（COMM/Write）と直結。
    - ミス時のリフィルおよびエビクションは、Phase 003 の共有 L2 キャッシュ（LLC）と AMB バースト転送で連携。
 
+3. **Guardrails & リント**:
+   - `python3 tools/arith-lint.py` で生演算子 0 件。
+   - BRAM 推論可能同期リード構造の徹底。
+   - R1 による敵対的コードレビュー（APPROVE 必須）。
+
+---
+
+## 実装設計詳細ガイドライン（Opus 5.5 向け）
+
+### 1. 対象ファイル一覧（絶対パス）
+- 新設: `/home/awe/amaterrace-gpu/rtl/gpu/rop/atg_rop_cache.v`
+- 新設: `/home/awe/amaterrace-gpu/spec/gpu/rop/atg_rop_cache.md`
+- 新設・検証: `/home/awe/amaterrace-gpu/sim/tb/atg_rop_cache_tb.v`
+
+### 2. モジュールインターフェース設計 (`atg_rop_cache.v`)
+
+```verilog
+`timescale 1ns / 1ps
+`default_nettype none
+
+module atg_rop_cache #(
+    parameter LINE_BYTES = 64,
+    parameter WAYS       = 4,
+    parameter SETS_LOG2  = 5    // 32 sets * 4 ways * 64B = 8 KiB
+)(
+    input  wire        clk,
+    input  wire        rst_n,
+
+    // ROP パイプライン側リード/ライトポート
+    input  wire        req_valid,
+    output wire        req_ready,
+    input  wire        req_write,
+    input  wire [31:0] req_addr,
+    input  wire [LINE_BYTES-1:0]   req_be,
+    input  wire [LINE_BYTES*8-1:0] req_wdata,
+    output reg         rsp_valid,
+    output reg  [LINE_BYTES*8-1:0] rsp_rdata,
+
+    // 外部 AMB / L2 バス側ポート
+    output wire        mem_req_valid,
+    input  wire        mem_req_ready,
+    output wire        mem_req_write,
+    output wire [25:0] mem_req_line,
+    output wire [LINE_BYTES*8-1:0] mem_req_wdata,
+    input  wire        mem_rsp_valid,
+    input  wire [LINE_BYTES*8-1:0] mem_rsp_rdata
+);
+```
+
+### 3. RTL アーキテクチャと BRAM 推論構造
+- データ RAM は `(* ram_style = "block" *) reg [LINE_BYTES*8-1:0] data_mem [0:WAYS*(1<<SETS_LOG2)-1];` のように定義し、必ず同期読み出しを行う。
+- タグ照合は 4-way 並列比較。
+- キャッシュヒット時は 1 サイクルで `req_ready=1` かつ即時応答。
+- キャッシュミス時は MSHR / リフィル FSM が AMB へ 64B バースト要求を発行。
+
+### 4. 厳格な Guardrails 注意事項
+- **算術演算子禁止**: タグ計算、オフセット加算等には必ず `am_add` を用いること。
+
+### 5. テストベンチ検証シナリオ（T1/P1 共通）
+- **テストファイル**: `sim/tb/atg_rop_cache_tb.v`
+- **検証項目**:
+  1. **キャッシュヒット 100% 連続アクセス**: 同一 64B ラインに対する複数クアッドのリード・ライトが 1 cycle/req で完走すること。
+  2. **Tree-PLRU エビクションとダーティライトバック**: 4-way 満杯後に別アドレスへアクセスし、ダーティラインが正しく外部メモリへライトバックされること。
+- **実行コマンド**:
+  ```bash
+  ./sim/run.sh atg_rop_cache
+  python3 tools/arith-lint.py
+  ```
+
+---
+
+## 検証基準（受け入れ条件）
+
+- 8 KiB Color / Depth キャッシュが BRAM に推論されること。
+- ヒット時のスループットが毎サイクル 1 トランザクションを維持できること。
+- `sim/run.sh atg_rop_cache` が PASS すること。
+- R1 レビュー APPROVE 獲得。
+
 3. **単体・回帰検証**:
    - `sim/tb/atg_rop_cache_tb.v` によるキャッシュヒット/ミス、エビクション、ダーティフラッシュの完全検証。
    - `sim/verilator/run.sh`（全 7 モード）での画像出力一致確認。

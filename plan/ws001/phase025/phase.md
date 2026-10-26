@@ -23,6 +23,51 @@ SU へのワープパッキング・ディスパッチとのインターフェ�
    - **ST4: DDA Plane Interpolator**: 1 サイクル増分平面評価
    - **ST5: Warp Pack & Fire**: 8 クアッドを 32 レーンワープへパッキングし SU へディスパッチ
 
+2. **バックプレッシャー & キューイング整備**:
+   - ステージ間に Phase 035 の `am_skid` を挿入し、長距離タイミングパスを完全切断。
+   - SU のディスパッチ FIFO が満杯になった場合のバックプレッシャー伝搬。
+
+3. **Guardrails & リント**:
+   - `python3 tools/arith-lint.py` で生演算子 0 件。
+   - R1 による敵対的コードレビュー（APPROVE 必須）。
+
+---
+
+## 実装設計詳細ガイドライン（Opus 5.5 向け）
+
+### 1. 対象ファイル一覧（絶対パス）
+- 更新: `/home/awe/amaterrace-gpu/rtl/gpu/rx/atg_rx.v`
+- 更新: `/home/awe/amaterrace-gpu/rtl/gpu/rx/atg_rx_frag.v`
+- 更新: `/home/awe/amaterrace-gpu/spec/gpu/rx/atg_rx.md`
+- 新設・検証: `/home/awe/amaterrace-gpu/sim/tb/atg_rx_pipeline_tb.v`
+
+### 2. モジュールインターフェース設計 (`atg_rx.v` トップ)
+- 外部入出力ポートは完全互換。
+- 内部の各サブモジュール間接続に Skid Buffer（`am_skid`）を用いてステージ間のタイミングパスを完全にフリップフロップで絶縁。
+
+### 3. RTL アーキテクチャと検証方針
+- 6 段パイプライン各段のレイテンシとハンドシェイク（`valid`/`ready`）を統合。
+- 8 個の有効クアッドが集まった時点で 32 レーンワープとして SU へイシュー。
+- トライアングル末尾のパディング（フラッシュ）制御。
+
+### 4. テストベンチ検証シナリオ（T1/P1 共通）
+- **テストコマンド**:
+  ```bash
+  ./sim/run.sh atg_rx_pipeline
+  ./sim/verilator/run.sh
+  python3 tools/arith-lint.py
+  ```
+- 既存の Verilator 画像出力（triangle, cube, tex_cube 等）が 1 ピクセルも崩れずに完全一致すること。
+
+---
+
+## 検証基準（受け入れ条件）
+
+- 6 段ストリームパイプラインが 1 quad/cycle スループットで完走すること。
+- 全 7 種の Verilator E2E レンダリングテストで画像が完全一致すること。
+- `tools/arith-lint.py` 違反 0 件。
+- R1 レビュー APPROVE 獲得。
+
 2. **バックプレッシャー & フロー制御の最適化**:
    - SU からの `fl_gnt` 待ち時にパイプラインが適切にストール・再開する Skid Buffer 機構の整備。
 

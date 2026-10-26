@@ -24,6 +24,81 @@
    - メモリデータ到着時に該当 MSHR エントリをアンロックし、停止していたクアッドのパイプライン処理を再開。
    - インオーダー完了を保証するリオーダリング機構の整備。
 
+3. **Guardrails & リント**:
+   - `python3 tools/arith-lint.py` で生演算子 0 件。
+   - R1 による敵対的コードレビュー（APPROVE 必須）。
+
+---
+
+## 実装設計詳細ガイドライン（Opus 5.5 向け）
+
+### 1. 対象ファイル一覧（絶対パス）
+- 新設: `/home/awe/amaterrace-gpu/rtl/gpu/tu/atg_tu_mshr.v`
+- 新設: `/home/awe/amaterrace-gpu/spec/gpu/tu/atg_tu_mshr.md`
+- 更新: `/home/awe/amaterrace-gpu/rtl/gpu/tu/atg_tu_cache.v`
+- 新設・検証: `/home/awe/amaterrace-gpu/sim/tb/atg_tu_mshr_tb.v`
+
+### 2. モジュールインターフェース設計 (`atg_tu_mshr.v`)
+
+```verilog
+`timescale 1ns / 1ps
+`default_nettype none
+
+module atg_tu_mshr #(
+    parameter NENTRIES   = 4,
+    parameter LINE_BYTES = 64
+)(
+    input  wire        clk,
+    input  wire        rst_n,
+
+    // ミス登録インターフェース (キャッシュミス発生時)
+    input  wire        alloc_valid,
+    output wire        alloc_ready,     // MSHR に空きがあるか
+    input  wire [25:0] alloc_line_addr,
+    input  wire [5:0]  alloc_quad_id,
+    output wire [1:0]  alloc_mshr_idx,
+
+    // メモリリフィル応答インターフェース
+    input  wire        refill_valid,
+    input  wire [1:0]  refill_mshr_idx,
+    input  wire [LINE_BYTES*8-1:0] refill_data,
+
+    // キャッシュ更新 & 完了通知
+    output reg         mshr_ready_valid,
+    output reg  [5:0]  mshr_ready_quad_id,
+    output reg  [LINE_BYTES*8-1:0] mshr_ready_data
+);
+```
+
+### 3. RTL アーキテクチャと Hit-Under-Miss
+- キャッシュミスが発生した際、MSHR に同一ラインアドレスの先行リクエストが存在するかチェック（Merge）。
+- 存在する場合はそのエントリに相乗り（Secondary Miss）。
+- 存在しない場合は新規 MSHR エントリを確保し、外部 AMB へフェッチ要求を送出（Primary Miss）。
+- 後続のクアッドが既存キャッシュラインにヒットする場合は、MSHR のフェッチ待ちに関わらずパイプラインを即座に通過（Hit-Under-Miss）。
+
+### 4. 厳格な Guardrails 注意事項
+- **算術演算子禁止**: MSHR 空きエントリカウント等は必ず `am_add` / `am_sub` を用いること。
+
+### 5. テストベンチ検証シナリオ（T1/P1 共通）
+- **テストファイル**: `sim/tb/atg_tu_mshr_tb.v`
+- **検証項目**:
+  1. **Hit-Under-Miss 動作確認**: 1 本目のミス（遅延 80 サイクル）が発生している最中に、後続のヒット要求が 1 サイクルで応答を返し続けること。
+  2. **4 枠フルインフライト並行リフィル**: 4 本の独立したキャッシュラインミスが同時にインフライトとなり、メモリからの戻りに応じて正確にキャッシュへ書き戻されること。
+- **実行コマンド**:
+  ```bash
+  ./sim/run.sh atg_tu_mshr
+  python3 tools/arith-lint.py
+  ```
+
+---
+
+## 検証基準（受け入れ条件）
+
+- キャッシュミス発生中もヒット要求がストールせず実行されること（Hit-Under-Miss）。
+- 4 本のミスが並行して解決できること。
+- `sim/run.sh atg_tu_mshr` が PASS すること。
+- R1 レビュー APPROVE 獲得。
+
 3. **単体・回帰検証**:
    - `sim/tb/atg_tu_mshr_tb.v` による連続キャッシュミス、Hit-Under-Miss、Miss-Under-Miss のストレステスト。
    - `sim/verilator/run.sh`（全 7 モード）での画像出力一致確認。

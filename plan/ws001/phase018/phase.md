@@ -24,6 +24,82 @@
    - 入力 `tx_valid` / `tx_ready` から出力 `ta_valid` / `ta_ready` までの固定 2 サイクルパイプライン化。
    - スループット 1 cycle/quad の連続受け入れ対応。
 
+3. **Guardrails & リント**:
+   - `python3 tools/arith-lint.py` で生演算子 0 件。
+   - 乗算演算子 `*` 禁止（`am_mul` 使用）。
+   - R1 による敵対的コードレビュー（APPROVE 必須）。
+
+---
+
+## 実装設計詳細ガイドライン（Opus 5.5 向け）
+
+### 1. 対象ファイル一覧（絶対パス）
+- 更新: `/home/awe/amaterrace-gpu/rtl/gpu/tu/atg_tu_addr.v`
+- 更新: `/home/awe/amaterrace-gpu/spec/gpu/tu/atg_tu_addr.md`
+- 新設・更新: `/home/awe/amaterrace-gpu/sim/tb/atg_tu_addr_tb.v`
+
+### 2. モジュールインターフェース設計 (`atg_tu_addr.v`)
+
+```verilog
+`timescale 1ns / 1ps
+`default_nettype none
+
+module atg_tu_addr #(
+    parameter NLANES = 4
+)(
+    input  wire        clk,
+    input  wire        rst_n,
+
+    // 上流（サンプラー要求）インターフェース
+    input  wire        in_valid,
+    output wire        in_ready,
+    input  wire [NLANES*32-1:0] in_u,       // 4 レーン U 座標 (fp32 または fx32)
+    input  wire [NLANES*32-1:0] in_v,       // 4 レーン V 座標
+    input  wire [15:0]         in_tex_w,   // テクスチャ幅
+    input  wire [15:0]         in_tex_h,   // テクスチャ高さ
+    input  wire [3:0]          in_wrap_m,  // Wrap モード (Repeat, Clamp, etc.)
+    input  wire [3:0]          in_filter,  // Point / Bilinear / Trilinear
+
+    // 下流（キャッシュアクセス）インターフェース
+    output wire        out_valid,
+    input  wire        out_ready,
+    output wire [NLANES*4*32-1:0] out_texel_addr, // 最大 16 テクセル物理アドレス
+    output wire [NLANES*16-1:0]   out_frac_u,     // 補間用 frac_u
+    output wire [NLANES*16-1:0]   out_frac_v      // 補間用 frac_v
+);
+```
+
+### 3. RTL アーキテクチャ詳細
+- **Stage 1 (LOD & Unnormalized Coords)**:
+  クアッド内レーン差分 $|u_1 - u_0|$, $|v_1 - v_0|$ からフットプリント直径を計算し、LOD レベル（ミップレベル）を算出。
+- **Stage 2 (4 レーン並列 Wrap & $2 \times 2$ アドレス展開)**:
+  4 レーンそれぞれに対して、整数座標 $(X_0, Y_0)$ と $(X_1, Y_1)$ を Wrap 規則（Repeat: `X & (W-1)`、Clamp: 飽和）に従い並列生成。
+  ベースアドレス＋ストライド加算は `am_add` / `am_mul` を通して行い、16 テクセル分のアドレスを生成。
+
+### 4. 厳格な Guardrails 注意事項
+- **乗算 `*` 厳禁**: ストライド乗算には必ず `am_mul` を使用すること。
+- **算術演算子禁止**: すべての加減算には `am_add`, `am_sub` を使用すること。
+
+### 5. テストベンチ検証シナリオ（T1/P1 共通）
+- **テストファイル**: `sim/tb/atg_tu_addr_tb.v`
+- **検証項目**:
+  1. 毎サイクル 1 クアッドの連続入力に対して、2 サイクル遅延後に毎サイクル 16 テクセルアドレスが出力されること。
+  2. Repeat / Clamp / Mirror 各 Wrap モードの境界値でのアドレス計算の正確性検証。
+- **実行コマンド**:
+  ```bash
+  ./sim/run.sh atg_tu_addr
+  python3 tools/arith-lint.py
+  ```
+
+---
+
+## 検証基準（受け入れ条件）
+
+- 逐次ステートマシンが撤廃され、スループット 1 cycle/quad を達成すること。
+- `sim/run.sh atg_tu_addr` が PASS すること。
+- `tools/arith-lint.py` 違反 0 件。
+- R1 レビュー APPROVE 獲得。
+
 3. **単体・回帰検証**:
    - `sim/tb/atg_tu_addr_tb.v` による全 Wrap モード・全テクスチャサイズの並列計算ベクトル検証。
    - `sim/run.sh atg_tu`, `sim/verilator/run.sh`（`tex.png`, `core.png`）でのビット完全一致確認。

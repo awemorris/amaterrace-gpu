@@ -20,9 +20,47 @@
    - FIFO 残量が閾値（例: 32 ワード）を下回った際、自動的にリングバッファから先行バーストフェッチを発行。
 2. **パケット境界アライメント制御**:
    - コマンドデコーダ（`atg_cp_seq_dec.v`）に対し、ワード境界を跨ぐパケットをノーウェイトで連続供給。
-3. **単体・回帰検証**:
-   - `fw/cp/tests/run.sh`（全 14 テスト）でのパケットフェッチ・同期の完全検証。
-   - `sim/verilator/run.sh` PASS。
+3. **Guardrails & リント**:
+   - `python3 tools/arith-lint.py` で生演算子 0 件。
+   - R1 による敵対的コードレビュー（APPROVE 必須）。
+
+---
+
+## 実装設計詳細ガイドライン（Opus 5.5 向け）
+
+### 1. 対象ファイル一覧（絶対パス）
+- 更新: `/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_ring.v`
+- 更新: `/home/awe/amaterrace-gpu/spec/gpu/cp/atg_cp_ring.md`
+- テスト検証: `/home/awe/amaterrace-gpu/fw/cp/tests/run.sh`
+
+### 2. モジュールインターフェース設計 (`atg_cp_ring.v`)
+- CP 内部バスおよびデコーダ向けインターフェースは完全互換を維持。
+- パケット読み出しインターフェース（`pkt_valid`, `pkt_ready`, `pkt_data[31:0]`）は FWFT（First-Word Fall-Through）動作。
+
+### 3. RTL アーキテクチャとプリフェッチ制御
+- FIFO 深度: 64 ワード（256 バイト）。
+- 水位監視: FIFO 内のワード数が 32 未満（`fifo_count < 32`）かつリングバッファに未読データがある場合、AMB 経由で 32 バイト（8 ワード）ラインリード要求を自動的に先行発行。
+- これにより、デコーダがコマンドを解析・実行している背後で常に次パケットがプリフェッチされ、32B 境界での停止が完全に消滅する。
+
+### 4. 厳格な Guardrails 注意事項
+- **算術演算子禁止**: ポインタインクリメント、残量計算等はすべて `am_add` / `am_sub` を使用すること。
+
+### 5. テスト検証シナリオ（T1/P1 共通）
+- **テストコマンド**:
+  ```bash
+  ./fw/cp/tests/run.sh
+  ./sim/run.sh atg_cp_tb
+  python3 tools/arith-lint.py
+  ```
+- CP コマンドリングテスト全 14 ケースがすべて PASS すること。
+
+---
+
+## 検証基準（受け入れ条件）
+
+- 32 バイト境界でのデコーダ停止が完全に解消されること。
+- `fw/cp/tests/run.sh` が PASS すること。
+- R1 レビュー APPROVE 獲得。
    - R1 による敵対的コードレビュー（APPROVE 必須）。
 
 ## 検証基準（受け入れ条件）
