@@ -54,7 +54,7 @@
 | **P1** | 実装（メモリ・相互結合） | Claude Opus 5.5 Medium | active | `q001-i06`: `ws001-p003` 共有 L2 キャッシュ（LLC）設計・実装 | `q001-i22`: `ws001-p027`（MC バースト結合） |
 | **P2** | 実装（ROP・ピクセル・テクスチャ） | Claude Opus 5.5 Medium | active | `q001-i09`: `ws001-p014` 8-bit 高速ブレンド & div255 1段化（Lerp 最適化） | `q001-i10`: `ws001-p015`（fp32/sRGB ストリーム） |
 | **P3** | 実装（インフラ・ジオメトリ・SU） | Claude Opus 5.5 Medium | active | `q001-i30`: `ws001-p035` 完全スキッドバッファ（am_skid.v）共通化 | `q001-i31`: `ws001-p036`（BRAM AFIFO） |
-| **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | active | 未実施 Phase の実装ガイド・ファイル変更詳細・契約仕様の補強 | 随時サポート |
+| **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | WS001（31件）& WS002（10件）全 41 Phase 実装設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
 | **R1** | レビュー | Gemini 4 Argon Medium | active | 敵対的 RTL & 仕様レビュー常時待機 | 各レーン成果物レビューディスパッチ |
 
