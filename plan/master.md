@@ -61,7 +61,7 @@
 
 | WS | Primary Milestone | 名称・概要 | 状態 | 再開点・次の作業 |
 | --- | --- | --- | --- | --- |
-| [WS001](ws001/ws.md) | MG001 | Amaterrace GPU IP（階層整理・FP 演算器統合・DSP48E1 最適化・パイプライン化） | in-progress | [p001](ws001/phase001/phase.md), [p002](ws001/phase002/phase.md), [p007](ws001/phase007/phase.md), [p008](ws001/phase008/phase.md) 完了。[p003](ws001/phase003/phase.md), [p004](ws001/phase004/phase.md) 実行中。 |
+| [WS001](ws001/ws.md) | MG001 | Amaterrace GPU IP（階層整理・FP 演算器統合・DSP48E1 最適化・パイプライン化） | in-progress | [p001](ws001/phase001/phase.md), [p002](ws001/phase002/phase.md), [p004](ws001/phase004/phase.md), [p007](ws001/phase007/phase.md), [p008](ws001/phase008/phase.md) 完了。[p003](ws001/phase003/phase.md), [p009](ws001/phase009/phase.md) 実行中。 |
 | [WS002](ws002/ws.md) | MG005 | Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8） | planned | コアパイプライン化完了後に着手（後回し）。 |
 
 ## 優先順位
@@ -80,4 +80,5 @@
     - **SU**: [ws001-p010](ws001/phase010/phase.md)〜[p013](ws001/phase013/phase.md)（実 6段化、フォワーディング、スコアボード、RF 時分割）
     - **ROP**: [ws001-p014](ws001/phase014/phase.md)〜[p017](ws001/phase017/phase.md)（div255 1段化、Lerp 最適化、fp32 ストリーム化、Hazard Tracker、L1 タイルキャッシュ）
     - **TU**: [ws001-p018](ws001/phase018/phase.md)〜[p021](ws001/phase021/phase.md)（4レーン並列アドレス生成、フィルタ統合、マルチバンク L1 T$、MSHR ノンブロッキング）
-11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮等、後回し）。
+    - **RX**: [ws001-p022](ws001/phase022/phase.md)〜[p025](ws001/phase025/phase.md)（Stream Setup、MSAA 4x 並列 & Coarse タイルスキップ、Fast DDA 1 cycle 平面評価、6段ストリーム統合）
+11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites 等、後回し）。

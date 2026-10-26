@@ -30,12 +30,12 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 | [p001](phase001/phase.md) | RTL の階層（bsp・library・gpu）と FP の演算器の重複の整理（旧 ws288-p042） | なし | completed |
 | [p002](phase002/phase.md) | GHCI 1.1 起動ハンドシェイク規格化 & 診断ダンプ強化（R1 敵対的レビュー対応） | p001 | completed |
 | [p003](phase003/phase.md) | 共有 L2 キャッシュ（LLC）導入 & キャッシュコヒーレンシ再構築（R1 敵対的レビュー対応） | p002 | in-progress |
-| [p004](phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定 & 実装 | p002 | in-progress |
+| [p004](phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定 & 実装 | p002 | completed |
 | [p005](phase005/phase.md) | マルチエンジン独立キューイング & ハードウェアプリエンプション（R1 敵対的レビュー対応） | p004 | planned |
 | [p006](phase006/phase.md) | 細粒度同期（Timeline Semaphore / パイプラインバリア）& 描画同期基盤 | p003, p005 | planned |
 | [p007](phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新 | p002, p004 | completed |
 | [p008](phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装 | p001 | completed |
-| [p009](phase009/phase.md) | `rtl/library/arith/` 物理最適化（ビット反転右シフト & Non-restoring 除算器） | p001 | planned |
+| [p009](phase009/phase.md) | `rtl/library/arith/` 物理最適化（ビット反転右シフト & Non-restoring 除算器） | p001 | in-progress |
 | [p010](phase010/phase.md) | SU 実 6段パイプライン化（偽遅延FF排除・`am_fpu_core` 4段分割・遅延均等化） | p008, p009 | planned |
 | [p011](phase011/phase.md) | SU オペランド・フォワーディング / バイパスネットワーク（RAW ストール解消） | p010 | planned |
 | [p012](phase012/phase.md) | SU スコアボード連動ワープスケジューラ（`warp_ready`・リプレイゼロ） | p010, p011 | planned |
@@ -48,6 +48,10 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 | [p019](phase019/phase.md) | フィルタリングパイプライン統合 & 相互排他ウェイト撤廃（`u_idle`/`f_idle` 撤廃） | p018 | planned |
 | [p020](phase020/phase.md) | マルチバンク・4-way L1 テクスチャキャッシュ（4 バンク同時読み出し） | p018 | planned |
 | [p021](phase021/phase.md) | MSHR ノンブロッキングフェッチ & メモリ統合（Hit-Under-Miss、実効スループット 30〜50 倍向上） | p020, p003 | planned |
+| [p022](phase022/phase.md) | Stream Setup Engine 実装（`atg_rx_setup` マイクロコード撤廃と完全パイプライン化） | p001 | planned |
+| [p023](phase023/phase.md) | MSAA 4x 並列カバレッジ & Coarse Tile Rasterizer（`atg_rx_scan` 1 サイクル化と $8 \times 8$ タイルスキップ） | p022 | planned |
+| [p024](phase024/phase.md) | Fast DDA Plane Evaluator（`atg_rx_bary` & `atg_rx_frag` 200 サイクルボトルネック撤廃） | p022 | planned |
+| [p025](phase025/phase.md) | RX ストリームパイプライン統合 & 全シーン回帰検証（6段ストリーム化） | p022, p023, p024 | planned |
 
 ---
 

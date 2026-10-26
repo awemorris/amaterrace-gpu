@@ -18,8 +18,8 @@
 | `q001-i04` | **P2** | [ws001-p007](ws001/phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & インメモリ PSO・構造化コマンドパケット仕様策定・ヘッダ整備 | cleared | `q001-i02` | `docs/ghci.md` §3/§7/§8 改定および `include/ghci2_regs.h` 整備完了（コミット `bb80789`）。 |
 | `q001-i05` | **P2 / R1** | [ws001-p008](ws001/phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装（Step 1-4 完了、R1 承認済） | cleared | `q001-i04` | i2f/f2fix/fdiv ライブラリ化・am_fpu_core 実装・atg_su_fpu 置換完了。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i06` | **P1** | [ws001-p003](ws001/phase003/phase.md) | 共有 L2 キャッシュ（LLC: 256 KiB、16-way）導入 & キャッシュコヒーレンシ再構築 | in-progress | `q001-i03` | ユーザー承認（「推奨で行きます」）に基づき着手。MC 前段に LLC を導入中。 |
-| `q001-i07` | **P2** | [ws001-p004](ws001/phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定・アーキテクチャ設計・RTL 実装 | in-progress | `q001-i05` | ユーザー承認（「P2を起動してOKです」）に基づき着手。極薄ドライバ・自律 MMU 確立。 |
-| `q001-i08` | **P1 または P3** | [ws001-p009](ws001/phase009/phase.md) | 算術演算ライブラリ（am_shift Bit Reversal 1本化、am_div 非回復法化）の物理最適化 | queued | `q001-i02` | ユーザー承認に基づき登録。P1 (L2完了後) または P3 起動時に着手。 |
+| `q001-i07` | **P2 / R1 / T1** | [ws001-p004](ws001/phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定・アーキテクチャ設計・RTL 実装 | cleared | `q001-i05` | 実装完了。R1 敵対的レビュー APPROVE 承認完了、T1 フル回帰 ALL PASS 完了。 |
+| `q001-i08` | **P2** | [ws001-p009](ws001/phase009/phase.md) | 算術演算ライブラリ（am_shift Bit Reversal 1本化、am_div 非回復法化）の物理最適化 | in-progress | `q001-i02` | ユーザー承認（「アサインは推奨でいい」）に基づき P2 が着手。 |
 | `q001-i09` | **P1〜P8 待機** | [ws001-p014](ws001/phase014/phase.md) | 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減、遅延 75% 削減） | queued | `q001-i01` | ユーザー承認（2026-10-26）に基づきスケジュール。即時着手可能。 |
 | `q001-i10` | **P1〜P8 待機** | [ws001-p015](ws001/phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle 100倍高速化） | queued | `q001-i09` | ユーザー承認に基づきスケジュール。4段ストリームパイプライン。 |
 | `q001-i11` | **P1〜P8 待機** | [ws001-p016](ws001/phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | queued | `q001-i10` | ユーザー承認に基づきスケジュール。フィルレート 20〜50 倍向上。 |
@@ -28,24 +28,28 @@
 | `q001-i14` | **P1〜P8 待機** | [ws001-p019](ws001/phase019/phase.md) | TU フィルタリングパイプライン統合 & 相互排他ウェイト撤廃（u_idle/f_idle 撤廃） | queued | `q001-i13` | ユーザー承認に基づきスケジュール。完全ストリーム化。 |
 | `q001-i15` | **P1〜P8 待機** | [ws001-p020](ws001/phase020/phase.md) | TU マルチバンク・4-way L1 テクスチャキャッシュ（4 バンク同時読み出し） | queued | `q001-i13` | ユーザー承認に基づきスケジュール。16テクセル逐次ルックアップ撤廃。 |
 | `q001-i16` | **P1〜P8 待機** | [ws001-p021](ws001/phase021/phase.md) | TU MSHR ノンブロッキングフェッチ & メモリ統合（Hit-Under-Miss、実効スループット 30〜50倍） | queued | `q001-i15`, `q001-i06` | ユーザー承認に基づきスケジュール。1 Outstanding 完全停止解消。 |
+| `q001-i17` | **P1〜P8 待機** | [ws001-p022](ws001/phase022/phase.md) | Stream Setup Engine 実装（atg_rx_setup マイクロコード撤廃と固定遅延パイプライン化） | queued | `q001-i01` | ユーザー承認（2026-10-26）に基づきスケジュール。スループット 1〜2 cyc/tri。 |
+| `q001-i18` | **P1〜P8 待機** | [ws001-p023](ws001/phase023/phase.md) | MSAA 4x 並列カバレッジ & Coarse Tile Rasterizer（atg_rx_scan 1 cycle化 & 8x8 タイルスキップ） | queued | `q001-i17` | ユーザー承認に基づきスケジュール。外側タイル一撃スキップ。 |
+| `q001-i19` | **P1〜P8 待機** | [ws001-p024](ws001/phase024/phase.md) | Fast DDA Plane Evaluator（atg_rx_bary & atg_rx_frag 200 サイクルボトルネック撤廃） | queued | `q001-i17` | ユーザー承認に基づきスケジュール。1 クアッド/サイクル化。 |
+| `q001-i20` | **P1〜P8 待機** | [ws001-p025](ws001/phase025/phase.md) | RX ストリームパイプライン統合 & 全シーン回帰検証（6段ストリーム統合） | queued | `q001-i17`, `q001-i18`, `q001-i19` | ユーザー承認に基づきスケジュール。200MHz タイミング収束。 |
 
 ## サブエージェント実行状態（N=2）
 
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
-| **P1** | 実装 | Claude Opus 5.5 Medium | active | `q001-i06`: `ws001-p003` 共有 L2 キャッシュ（LLC）設計・実装 | `q001-i08`: `ws001-p009` |
-| **P2** | 設計・実装 | Claude Opus 5.5 Medium | active | `q001-i07`: `ws001-p004` IOMMU 連携 & CP 自律型 MMU 仕様策定・設計・RTL 実装 | R1 レビュー |
-| **P3〜P8** | 実装 | Claude Opus 5.5 Medium | unassigned | — | $N=3$ 拡張時に `q001-i08` を割り当て可能 |
-| **T1** | テスト | 標準 / Flash | active | システム回帰テスト（Verilator 7 モード ALL PASS 達成） | L2 キャッシュ検証 |
-| **R1** | レビュー | Gemini 4 Argon Medium | active | Phase 001/002/008 APPROVE 承認完了 | 次期実装成果物レビュー |
+| **P1** | 実装 | Claude Opus 5.5 Medium | active | `q001-i06`: `ws001-p003` 共有 L2 キャッシュ（LLC）設計・実装 | T1 テスト・R1 レビュー |
+| **P2** | 設計・実装 | Claude Opus 5.5 Medium | active | `q001-i08`: `ws001-p009` 算術演算ライブラリ物理最適化（右シフタ1本化・除算器） | `q001-i09`: `ws001-p014` |
+| **P3〜P8** | 実装 | Claude Opus 5.5 Medium | unassigned | — | $N=3$ 拡張時に `q001-i09` を割り当て可能 |
+| **T1** | テスト | 標準 / Flash | active | Phase 004 MMU 検証完了（全 14 本 PASS） | L2 キャッシュ検証待機 |
+| **R1** | レビュー | Gemini 4 Argon Medium | active | Phase 001/002/004/008 APPROVE 承認完了 | L2 キャッシュ成果物レビュー待機 |
 
 ## Upcoming Work Outlook（見通し）
 
 1. **[ws001-p001](ws001/phase001/phase.md)**: 完了（Step A・Step B ともに完了確定）。
 2. **[ws001-p002](ws001/phase002/phase.md)**: 完了（GHCI 1.1 INIT & 診断 MMIO レジスタ実装・R1 承認完了）。
 3. **[ws001-p003](ws001/phase003/phase.md)**: 共有 L2 キャッシュ（LLC: 256 KiB、16-way）導入 & キャッシュコヒーレンシ再構築（P1 実行中）。
-4. **[ws001-p004](ws001/phase004/phase.md)**: IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定 & 実装（P2 実行中）。
-5. **[ws001-p009](ws001/phase009/phase.md)**: 算術演算ライブラリ（`am_shift` 右シフタ 1 本化、`am_div` 非回復法化）の物理最適化（キュー登録済）。
+4. **[ws001-p004](ws001/phase004/phase.md)**: 完了（IOMMU 連携 & CP 自律 MMU・R1 承認完了、T1 回帰 ALL PASS）。
+5. **[ws001-p009](ws001/phase009/phase.md)**: 算術演算ライブラリ（`am_shift` 右シフタ 1 本化、`am_div` 非回復法化）の物理最適化（P2 着手）。
 6. **[ws001-p005](ws001/phase005/phase.md)**: マルチエンジン独立キュー & ハードウェアプリエンプション。
 7. **[ws001-p006](ws001/phase006/phase.md)**: 細粒度同期 & Vulkan 1.0 必須機能補完。
 8. **[ws001-p007](ws001/phase007/phase.md)**: GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新（ヘッダ・仕様完了）。
@@ -63,5 +67,8 @@
 20. **[ws001-p019](ws001/phase019/phase.md)**: TU フィルタリングパイプライン統合 & 相互排他ウェイト撤廃。
 21. **[ws001-p020](ws001/phase020/phase.md)**: TU マルチバンク・4-way L1 テクスチャキャッシュ（4 バンク同時読み出し）。
 22. **[ws001-p021](ws001/phase021/phase.md)**: TU MSHR ノンブロッキングフェッチ & メモリ統合（Hit-Under-Miss）。
-23. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮等、後回し）。
-24. **RX パイプライン化**: 各ブロックの乗算・演算器遅延を LAT=3 に合わせてパイプライン化。
+23. **[ws001-p022](ws001/phase022/phase.md)**: Stream Setup Engine 実装（atg_rx_setup マイクロコード撤廃と固定遅延パイプライン化）。
+24. **[ws001-p023](ws001/phase023/phase.md)**: MSAA 4x 並列カバレッジ & Coarse Tile Rasterizer（atg_rx_scan 1 cycle化 & 8x8 タイルスキップ）。
+25. **[ws001-p024](ws001/phase024/phase.md)**: Fast DDA Plane Evaluator（atg_rx_bary 200 サイクルボトルネック撤廃、1 クアッド/サイクル化）。
+26. **[ws001-p025](ws001/phase025/phase.md)**: RX ストリームパイプライン統合 & 全シーン回帰検証（6段ストリーム化）。
+27. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites 等、後回し）。

@@ -24,3 +24,4 @@ Amaterrace GPU のハードウェアパイプライン化および物理最適�
 | [p004](phase004/phase.md) | TU 異方性フィルタリング（Anisotropic Filtering 最大 16x EWA ループ） | ws001-p021 | planned |
 | [p005](phase005/phase.md) | TU シームレスキューブマップフィルタリング（面境界テクセル補間） | ws001-p018 | planned |
 | [p006](phase006/phase.md) | TU デスクトップ標準圧縮テクスチャ（BC1〜BC7 ハードウェアデコーダ） | ws001-p020 | planned |
+| [p007](phase007/phase.md) | RX 拡張プリミティブ（Wide Lines, Point Sprites, Multi-Viewport 等） | ws001-p025 | planned |
