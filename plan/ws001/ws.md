@@ -27,7 +27,7 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | RTL の階層（bsp・library・gpu）と FP の演算器の重複の整理（旧 ws288-p042） | なし（今すぐ） | in-progress |
+| [p001](phase001/phase.md) | RTL の階層（bsp・library・gpu）と FP の演算器の重複の整理（旧 ws288-p042） | なし（今すぐ） | completed |
 | [p002](phase002/phase.md) | GHCI 1.1 起動ハンドシェイク規格化 & 診断ダンプ強化（R1 敵対的レビュー対応） | p001 | planned |
 | [p003](phase003/phase.md) | 共有 L2 キャッシュ（LLC）導入 & キャッシュコヒーレンシ再構築（R1 敵対的レビュー対応） | p002 | planned |
 | [p004](phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定 & 実装 | p002 | planned |

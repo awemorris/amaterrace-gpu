@@ -3,7 +3,7 @@
 # ws001-p001 RTL の階層（bsp・library・gpu）と FP の演算器の重複の整理
 
 - 親: [WS001](../ws.md)。設計: [design.md](../design.md) §19.5.5。作業仕様書: [work-spec.md](work-spec.md)（amaterrace-gpu/ws288-p042-plan.md より）。
-- 状態: in-progress（2026-10-26 17:59 ユーザー「N=1で実行してください。」により承認、P1 起動）
+- 状態: completed（2026-10-26 確かめ 1〜4 すべて PASS、完了）
 - 依存・順: 今すぐ。p001 → SU の下位の部品の pipeline 化（SU → TU → ROP … の順に block ごと）。DC の 200 MHz は並行して進める。名前の移動は多くの file に触れるため、p001 の担当以外は amaterrace の rtl/common・FP の module を触らない。
 - 進め方（2 段階のマイルストーン）:
   - Step A（階層整理と FP 統合）: 範囲 1・2・4（SYNTH_KINTEX7 以外）を実施し、確かめ 1・3（等価検証・日常 sim/lint・arith-lint 0）がすべて PASS することを確認して中間記録・コミット境界とする。
@@ -96,3 +96,12 @@
 - 2026-10-26 19:06 P1 が Step B の実装・単体等価検証（76 インスタンス対すべて PASS）を完了（コミット `5713e49`）。Q1 が main にマージ。
 - 2026-10-26 19:08 T1 が Step A の「確かめ 1」（FP 単体試験 3 本: `atg_rx_fp`, `atg_tu_fma`, `atg_fmt`）および「確かめ 3」（日常回帰 sim 109 本・Verilator 7 本）の完全 PASS を報告。エラー 0 件。
 - 2026-10-26 19:09 Q1 が P1 に T1 テスト完了を伝達。Step B の「確かめ 2」（Unisim 等価試験 PASS 確認済み）を受け、「確かめ 4（KC705 板ビルド）」の実行承認待ち。
+- 2026-10-26 20:01 ユーザー承認「進行中」に基づき、Q1 が「確かめ 4（KC705/Kintex-7 合成・リソース評価）」を開始（`OOC_NAME=p001-n8 SU_NPHYS=8 tools/vivado-ooc.sh`）。
+- 2026-10-26 20:20 Vivado 2026.1 合成が完走（736 s、エラー 0 件、Critical Warning 0 件、Warning 274 件）。
+  - リソース比較（対 p037-rb-n8 基準）:
+    - Slice LUTs: 168,445 → **142,666**（-25,779 LUTs、82.65% → 70.00% へ大幅削減）
+    - Slice Registers: 84,324 → **81,762**（-2,562 FFs）
+    - DSP48E1: 192 → **165**（-27 DSPs、全幅カスケードによる削減）
+    - Block RAM Tile: 127 → **127**（変動なし）
+  - 全 165 個の DSP48E1 設定を `plan/ws001/evidence/p001-n8-dsp_cells.rpt` に保存。
+  - 確かめ 1〜4 すべて PASS、受け入れ条件を完全に満たし ws001-p001 完了。
