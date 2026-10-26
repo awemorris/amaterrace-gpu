@@ -34,7 +34,7 @@ module atg_rop_wb_tb;
 	wire [511:0] b_src;
 	wire [127:0] b_dst, b_pix;
 	wire [3:0] b_mask;
-	wire [1:0] b_rt;
+	wire [2:0] b_rt;
 	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
 	wire [26:0] req_line;
 	wire [31:0] req_be;
@@ -44,14 +44,15 @@ module atg_rop_wb_tb;
 	atg_rop_wb dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy),
 		.d_smask({3'd0, d_mask[3], 3'd0, d_mask[2], 3'd0, d_mask[1], 3'd0, d_mask[0]}),
-		.d_color(d_color), .d_rt(2'd0), .d_nocol(1'b0), .b_valid(b_valid), .b_src(b_src),
+		.d_color(d_color), .d_rt(3'd0), .d_nocol(1'b0), .b_valid(b_valid), .b_src(b_src),
 		.b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt), .b_rvalid(b_rvalid), .b_pix(b_pix), .busy(busy),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
 		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error));
 	atg_rop_blend blend (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
-		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask),
+		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_src1(512'd0), .b_has_src1(1'b0),
+		.b_dst(b_dst), .b_mask(b_mask),
 		.b_rt(b_rt), .b_rvalid(b_rvalid), .b_pix(b_pix));
 	amb_mem #(.MEM_WORDS(8192), .SEED(9)) mem (.clk(clk), .rst_n(rst_n),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),

@@ -33,50 +33,110 @@ module atg_rx_setup (
 	input wire sp_ready,
 	output wire [767:0] sp_tri,
 	output wire sp_last,
-	output wire busy
+	output wire busy,
+	/* Extended primitive interfaces */
+	output wire [2:0] prim_type,
+	output wire [15:0] cur_line_width,
+	output wire [15:0] cur_point_size,
+	output wire [3:0] cur_viewport_idx
 );
 	`include "ghci_regs.vh"
 
 	localparam [31:0] ONE  = 32'h3F800000;
 	localparam [31:0] HALF = 32'h3F000000;
 
-	/* STATE: VIEWPORT 0x050-0x055, SCISSOR 0x056-0x057, CULL 0x058,
-	 * RAST_MODE 0x05A, DEPTH_BIAS_* 0x060-0x062, RT_SIZE 0x073.
+	/* STATE: VIEWPORT 0x050-0x055 (16-entry array), SCISSOR 0x056-0x057 (16 entries),
+	 * CULL 0x058, RAST_MODE 0x05A, DEPTH_BIAS_* 0x060-0x062, LINE_WIDTH 0x063,
+	 * POINT_SIZE 0x064, VIEWPORT_IDX 0x065, RT_SIZE 0x073.
 	 * VIEWPORT words: 0 x_scale, 1 y_scale, 2 x_offset, 3 y_offset, 4 z_scale, 5 z_offset. */
-	reg [31:0] vp [0:5];
-	reg [31:0] smin, smax, rts, b_const, b_slope, b_clamp;
+	reg [31:0] vp_array [0:15][0:5];
+	reg [31:0] smin_array [0:15];
+	reg [31:0] smax_array [0:15];
+	reg [3:0] vp_idx;
+	reg [15:0] line_width;
+	reg [15:0] point_size;
+	reg [31:0] rts, b_const, b_slope, b_clamp;
 	reg [2:0] cull;
 	reg [5:0] rm;	/* RAST_MODE[5:0] */
 
+	wire [23:0] lw_fix, ps_fix;
+	atg_rx_f2fix u_lw_fix (.f(st_wdata), .q(lw_fix));
+	atg_rx_f2fix u_ps_fix (.f(st_wdata), .q(ps_fix));
+
+	wire [31:0] ps_in_fp32;
+	am_fp_fix2f #(.W(16), .F(8), .SIGNED(0)) u_ps2f (.v(st_wdata[15:0]), .f(ps_in_fp32));
+	wire [31:0] div_b = (st_wdata[31:23] != 9'd0) ? st_wdata : ps_in_fp32;
+	reg [31:0] inv_ps;
+	wire [31:0] div_inv_ps;
+	wire div_inv_done, div_busy;
+	reg div_inv_start;
+	am_fp_div u_ps_div (
+		.clk(clk), .rst_n(rst_n),
+		.i_start(div_inv_start),
+		.i_a(32'h3F800000), .i_b(div_b),
+		.busy(div_busy), .o_done(div_inv_done), .o_r(div_inv_ps)
+	);
+
+	assign prim_type = {1'b0, kind};
+	assign cur_line_width = line_width;
+	assign cur_point_size = point_size;
+	assign cur_viewport_idx = vp_idx;
+
+	integer vpi_init, vpk_init;
 	always @(posedge clk)
 		if (!rst_n) begin
-			smin <= 32'd0;
-			smax <= 32'd0;
+			for (vpk_init = 0; vpk_init < 16; vpk_init = vpk_init + 1) begin
+				smin_array[vpk_init] <= 32'd0;
+				smax_array[vpk_init] <= 32'd0;
+				for (vpi_init = 0; vpi_init < 6; vpi_init = vpi_init + 1)
+					vp_array[vpk_init][vpi_init] <= 32'd0;
+			end
+			vp_idx <= 4'd0;
+			line_width <= 16'h0100;
+			point_size <= 16'h0100;
+			inv_ps <= 32'h3F800000;
+			div_inv_start <= 1'b0;
 			rts <= 32'd0;
 			cull <= 3'd0;
 			rm <= 6'd0;
 			b_const <= 32'd0;
 			b_slope <= 32'd0;
 			b_clamp <= 32'd0;
-		end else if (st_we) begin
-			if (st_idx >= GHCI_S_VIEWPORT && st_idx <= GHCI_S_VIEWPORT + 9'd5)
-				vp[st_idx[2:0]] <= st_wdata;
-			if (st_idx == GHCI_S_SCISSOR_MIN)
-				smin <= st_wdata;
-			if (st_idx == GHCI_S_SCISSOR_MAX)
-				smax <= st_wdata;
-			if (st_idx == GHCI_S_CULL)
-				cull <= st_wdata[2:0];
-			if (st_idx == GHCI_S_RAST_MODE)
-				rm <= st_wdata[5:0];
-			if (st_idx == GHCI_S_DEPTH_BIAS_CONST)
-				b_const <= st_wdata;
-			if (st_idx == GHCI_S_DEPTH_BIAS_SLOPE)
-				b_slope <= st_wdata;
-			if (st_idx == GHCI_S_DEPTH_BIAS_CLAMP)
-				b_clamp <= st_wdata;
-			if (st_idx == GHCI_S_RT_SIZE)
-				rts <= st_wdata;
+		end else begin
+			div_inv_start <= 1'b0;
+			if (st_we) begin
+				if (st_idx == GHCI_S_VIEWPORT_IDX)
+					vp_idx <= st_wdata[3:0];
+				if (st_idx >= GHCI_S_VIEWPORT && st_idx <= GHCI_S_VIEWPORT + 9'd5)
+					vp_array[vp_idx][st_idx[2:0]] <= st_wdata;
+				if (st_idx == GHCI_S_SCISSOR_MIN)
+					smin_array[vp_idx] <= st_wdata;
+				if (st_idx == GHCI_S_SCISSOR_MAX)
+					smax_array[vp_idx] <= st_wdata;
+				if (st_idx == GHCI_S_LINE_WIDTH)
+					line_width <= (st_wdata[31:23] != 9'd0) ? lw_fix[15:0] : st_wdata[15:0];
+				if (st_idx == GHCI_S_POINT_SIZE) begin
+					point_size <= (st_wdata[31:23] != 9'd0) ? ps_fix[15:0] : st_wdata[15:0];
+					if (st_wdata == 32'h0100 || st_wdata == 32'h3F800000)
+						inv_ps <= 32'h3F800000;
+					else
+						div_inv_start <= 1'b1;
+				end
+				if (st_idx == GHCI_S_CULL)
+					cull <= st_wdata[2:0];
+				if (st_idx == GHCI_S_RAST_MODE)
+					rm <= st_wdata[5:0];
+				if (st_idx == GHCI_S_DEPTH_BIAS_CONST)
+					b_const <= st_wdata;
+				if (st_idx == GHCI_S_DEPTH_BIAS_SLOPE)
+					b_slope <= st_wdata;
+				if (st_idx == GHCI_S_DEPTH_BIAS_CLAMP)
+					b_clamp <= st_wdata;
+				if (st_idx == GHCI_S_RT_SIZE)
+					rts <= st_wdata;
+			end
+			if (div_inv_done)
+				inv_ps <= div_inv_ps;
 		end
 
 	/*
@@ -198,8 +258,9 @@ module atg_rx_setup (
 
 	atg_rx_edge edge_u (
 		.clk(clk), .rst_n(rst_n), .start(e_start),
-		.mode({raw, sub, kind}), .smin(smin), .smax(smax), .rts(rts), .cull(cull),
-		.vprect(rm[3]), .r_ra(e_ra), .r_rd(e_rd), .r_we(e_we), .r_wa(e_wa), .r_wd(e_wd),
+		.mode({raw, sub, kind}), .smin(smin_array[vp_idx]), .smax(smax_array[vp_idx]), .rts(rts), .cull(cull),
+		.vprect(rm[3]), .line_width(line_width), .point_size(point_size),
+		.r_ra(e_ra), .r_rd(e_rd), .r_we(e_we), .r_wa(e_wa), .r_wd(e_wd),
 		.done(e_done), .edges(e_edges), .bbox(e_bbox), .front(e_front), .empty(e_empty)
 	);
 
@@ -310,8 +371,8 @@ module atg_rx_setup (
 				/* 1-cycle parallel load */
 				for (i = 0; i < 21; i = i + 1)
 					R[i] <= cl_tri[i * 32 +: 32];
-				R[21] <= vp[0]; R[22] <= vp[1]; R[23] <= vp[2];
-				R[24] <= vp[3]; R[25] <= vp[4]; R[26] <= vp[5];
+				R[21] <= vp_array[vp_idx][0]; R[22] <= vp_array[vp_idx][1]; R[23] <= vp_array[vp_idx][2];
+				R[24] <= vp_array[vp_idx][3]; R[25] <= vp_array[vp_idx][4]; R[26] <= vp_array[vp_idx][5];
 				R[27] <= ONE;
 
 				if (cl_tri[699]) begin
@@ -561,11 +622,17 @@ module atg_rx_setup (
 					/* Point: direct plane assignment */
 					pl[0] <= 32'd0; pl[1] <= 32'd0; pl[2] <= R[33];
 					pl[3] <= 32'd0; pl[4] <= 32'd0; pl[5] <= ONE;
-					pl[6] <= ONE;   pl[7] <= 32'd0;
-					pl[9] <= 32'd0; pl[10] <= ONE;
-					fa_v <= 1'b1; fa_a <= HALF; fa_b <= R[45]; fa_sub <= 1'b0;	/* 0.5 + OX */
-					seq_step <= 5'd0;
-					st <= S_PLANE_DIV;
+					pl[6] <= inv_ps; pl[7] <= 32'd0;
+					pl[9] <= 32'd0; pl[10] <= inv_ps;
+					if (point_size != 16'h0100) begin
+						fm_v <= 1'b1; fm_a <= R[45]; fm_b <= inv_ps;
+						seq_step <= 5'd0;
+						st <= S_PLANE_DIV;
+					end else begin
+						fa_v <= 1'b1; fa_a <= HALF; fa_b <= R[45]; fa_sub <= 1'b0;	/* 0.5 + OX */
+						seq_step <= 5'd2;
+						st <= S_PLANE_DIV;
+					end
 				end else begin
 					/* Triangle or line: start 1/DF */
 					fd_v <= 1'b1;
@@ -578,16 +645,33 @@ module atg_rx_setup (
 
 		S_PLANE_DIV:
 			if (kind == 2'd0) begin
-				/* Point path */
-				if (seq_step == 5'd0 && fa_o) begin
+				/* Point path: cleanly serialized arithmetic (no missed pulse races) */
+				case (seq_step)
+				5'd0: if (fm_o) begin
+					fa_v <= 1'b1; fa_a <= HALF; fa_b <= fm_r; fa_sub <= 1'b0;	/* 0.5 + OX_scaled */
+					seq_step <= 5'd1;
+				end
+				5'd1: if (fa_o) begin
+					pl[8] <= fa_r;	/* b0/w C */
+					fm_v <= 1'b1; fm_a <= R[46]; fm_b <= inv_ps;	/* launch OY * inv_ps */
+					seq_step <= 5'd3;
+				end
+				5'd3: if (fm_o) begin
+					fa_v <= 1'b1; fa_a <= HALF; fa_b <= fm_r; fa_sub <= 1'b0;	/* 0.5 + OY_scaled */
+					seq_step <= 5'd4;
+				end
+				5'd2: if (fa_o) begin
 					pl[8] <= fa_r;	/* b0/w C */
 					fa_v <= 1'b1; fa_a <= HALF; fa_b <= R[46]; fa_sub <= 1'b0;	/* 0.5 + OY */
-					seq_step <= 5'd1;
-				end else if (seq_step == 5'd1 && fa_o) begin
+					seq_step <= 5'd4;
+				end
+				5'd4: if (fa_o) begin
 					pl[11] <= fa_r;	/* b1/w C */
 					more <= !sub;	/* 1st sub-triangle: more=1; 2nd: more=0 */
 					st <= S_OUT;
 				end
+				default: ;
+				endcase
 			end else if (fd_o) begin
 				R[47] <= fd_r;	/* RD = 1/DF */
 				p_plane <= 2'd0;

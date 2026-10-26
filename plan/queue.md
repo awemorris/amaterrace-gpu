@@ -52,22 +52,25 @@
 | `q001-i38` | **P1** | [ws001-p011](ws001/phase011/phase.md) | オペランドフォワーディング（Bypass ネットワーク）の実装 | cleared | `q001-i35` | P1 実装・単体・`atg_su:+quick` 全構成 PASS（commit `c15201a`）。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i39` | **P2 / R1** | [ws001-p007](ws001/phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新 | cleared | `q001-i02`, `q001-i04` | P2 実装・単体・FW・回帰 PASS（commit `5d5f819`）。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i40` | **P3** | [ws001-p013](ws001/phase013/phase.md) | レジスタファイル最適化（BRAM 半減・マルチ SU 面積削減） | cleared | `q001-i35` | P3 実装・True Dual-Port BRAM 統合・`atg_su:+quick`全構成PASS。R1 敵対的レビュー APPROVE 承認完了。 |
-| `q001-i41` | **P1** | [ws001-p012](ws001/phase012/phase.md) | スコアボード主導型ワープスケジューラ（GTO & Replay 根絶） | in-review | `q001-i38` | P1 実装・GTO単体PASS・`atg_su:+quick`全構成PASS（commit `c37e924`）。R1 レビュー待ち。 |
+| `q001-i41` | **P1** | [ws001-p012](ws001/phase012/phase.md) | スコアボード主導型ワープスケジューラ（GTO & Replay 根絶） | cleared | `q001-i38` | P1 実装・GTO単体PASS・`atg_su:+quick`全構成PASS。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i42` | **P2** | [ws002-p004](../ws002/phase004/phase.md) | TU 異方性フィルタリング（Anisotropic Filtering 最大 16x EWA ループ） | cleared | `q001-i16` | P2 実装・全8テスト PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i43` | **P2** | [ws002-p005](../ws002/phase005/phase.md) | TU シームレスキューブマップフィルタリング（面境界テクセル補間） | cleared | `q001-i13` | P2 実装・全1266テスト PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
-| `q001-i44` | **P2** | [ws002-p006](../ws002/phase006/phase.md) | TU デスクトップ標準圧縮テクスチャ（BC1〜BC7 ハードウェアデコーダ） | in-review | `q001-i15` | P2 実装・全24テスト PASS、`arith-lint` 0件（commit `18e83e2`）。R1 レビュー待ち。 |
-| `q001-i45` | **P3** | [ws002-p001](../ws002/phase001/phase.md) | ROP Logic Op（論理演算 16 種）& Independent Blend per RT | in-review | `q001-i09` | P3 実装・単体・Verilator全7Suite PASS、`arith-lint` 0件（commit `1f11dba`）。R1 レビュー待ち。 |
-| `q001-i46` | **P2** | [ws002-p007](../ws002/phase007/phase.md) | RX 拡張プリミティブ（Wide Lines, Point Sprites, Multi-Viewport） | in-progress | `q001-i20` | P2 着手。線幅・ポイントスプライト四角形展開・Multi-Viewport。 |
-| `q001-i47` | **P3** | [ws002-p002](../ws002/phase002/phase.md) | SU / ROP Dual Source Blending（フォント描画用 src1 カラー出力） | in-progress | `q001-i45`, `q001-i35` | P3 着手。SU export パス拡張 & ROP 第2ソースブレンドファクタ。 |
-| `q001-i48` | **P1** | [ws002-p003](../ws002/phase003/phase.md) | MRT 8 アタッチメント拡張（CAPS[30] 4 -> 8 拡張 & ディスクリプタ対応） | in-progress | `q001-i45` | P1 着手。b_rt [2:0] 8アタッチメント化・Hazardタグ拡張・レジスタ空間。 |
+| `q001-i44` | **P2** | [ws002-p006](../ws002/phase006/phase.md) | TU デスクトップ標準圧縮テクスチャ（BC1〜BC7 ハードウェアデコーダ） | cleared | `q001-i15` | P2 実装・全24テストPASS・TU全回帰PASS。R1 敵対的レビュー APPROVE 承認完了。 |
+| `q001-i45` | **P3** | [ws002-p001](../ws002/phase001/phase.md) | ROP Logic Op（論理演算 16 種）& Independent Blend per RT | cleared | `q001-i09` | P3 実装・全16種真理値表・RT独立ブレンドPASS。R1 敵対的レビュー APPROVE 承認完了。 |
+| `q001-i46` | **P2** | [ws002-p007](../ws002/phase007/phase.md) | RX 拡張プリミティブ（Wide Lines, Point Sprites, Multi-Viewport） | cleared | `q001-i20` | P2 実装・全単体PASS・RX全回帰PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
+| `q001-i47` | **P3** | [ws002-p002](../ws002/phase002/phase.md) | SU / ROP Dual Source Blending（フォント描画用 src1 カラー出力） | cleared | `q001-i45`, `q001-i35` | P3 実装・サブピクセル文字描画PASS・全7Suite PASS。R1 敵対的レビュー APPROVE 承認完了。 |
+| `q001-i48` | **P1** | [ws002-p003](../ws002/phase003/phase.md) | MRT 8 アタッチメント拡張（CAPS[30] 4 -> 8 拡張 & ディスクリプタ対応） | cleared | `q001-i45` | P1 実装・mrt8単体PASS・atg_rop_mrt回帰PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
+| `q001-i49` | **P1** | [ws002-p008](../ws002/phase008/phase.md) | 間接描画 & インスタンシング（MultiDrawIndirect, Vertex Divisor） | cleared | `q001-i28` | P1 実装・100回展開単体PASS・atg_top回帰PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
+| `q001-i50` | **P3** | [ws002-p009](../ws002/phase009/phase.md) | 非同期 DMA 転送キュー & 3D ボリュームコピー | cleared | `q001-i25` | P3 実装・atg_blt_async PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
+| `q001-i51` | **P2** | [ws002-p010](../ws002/phase010/phase.md) | WSI 高度表示機能（HDR10、マルチプレーンオーバーレイ、VRR） | cleared | `q001-i34` | P2 実装・atg_dc_wsi PASS、atg_dc_tgen PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
 
 ## サブエージェント実行状態（N=3）
 
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
-| **P1** | 実装（メモリ・相互結合・コア） | Claude Opus 5.5 Medium | active | `q001-i48`: `ws002-p003`（MRT 8 アタッチメント拡張） | `ws002-p008`（間接描画 & インスタンシング） |
-| **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC・CP） | Claude Opus 5.5 Medium | active | `q001-i46`: `ws002-p007`（RX 拡張プリミティブ） | `ws002-p008`（間接描画 & インスタンシング） |
-| **P3** | 実装（インフラ・ジオメトリ・SU・ROP） | Claude Opus 5.5 Medium | active | `q001-i47`: `ws002-p002`（Dual Source Blending） | `ws002-p003`（MRT 8 アタッチメント） |
+| **P1** | 実装（メモリ・相互結合・コア・CP・VF） | Claude Opus 5.5 Medium | idle | 全担当 Phase 実装完了・待機中 | レビュー対応・統合支援 |
+| **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC・CP） | Claude Opus 5.5 Medium | idle | 全担当 Phase 実装完了・待機中 | レビュー対応 |
+| **P3** | 実装（インフラ・ジオメトリ・SU・ROP・BLT） | Claude Opus 5.5 Medium | idle | 全担当 Phase 実装完了・待機中 | レビュー対応 |
 | **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | WS001（31件）& WS002（10件）全 41 Phase 実装設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
 | **R1** | レビュー | Gemini 4 Argon Medium | active | 敵対的 RTL & 仕様レビュー常時待機 | 各レーン成果物レビューディスパッチ |

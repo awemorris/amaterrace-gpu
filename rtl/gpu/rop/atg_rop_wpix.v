@@ -55,7 +55,7 @@ module atg_rop_wpix #(
 	input wire [31:0] st_wdata,
 	/* The beat (atg_rop_wb's copy) and the place in it */
 	input wire [31:0] i_xy,
-	input wire [1:0] i_rt,
+	input wire [2:0] i_rt,
 	input wire [15:0] i_smask,	/* bit 4 l + s: sample s of lane l */
 	input wire [511:0] i_color,
 	input wire i_r,	/* row */
@@ -96,14 +96,15 @@ module atg_rop_wpix #(
 	/* STATE: RT_BASE 0x070, RT_STRIDE 0x071, RT_FORMAT 0x072, BLEND 0x07A,
 	 * BLEND_CONST 0x07B, WRITE_MASK 0x07C, RT_FORMATS 0x07D, RT1-3_BASE and
 	 * _STRIDE 0x07E-0x083, BLEND1-3 0x084-0x086, BLEND_CONST_R-A
-	 * 0x087-0x08A, ROP_CTRL 0x08D, MS_CTRL 0x05E. */
-	reg [31:0] base [0:3];
-	reg [31:0] stride [0:3];
-	reg [22:0] bls [0:3];
+	 * 0x087-0x08A, ROP_CTRL 0x08D, MS_CTRL 0x05E; RT_EXT 0x1B0-0x1BD (Phase 003: MRT 8). */
+	reg [31:0] base [0:7];
+	reg [31:0] stride [0:7];
+	reg [22:0] bls [0:7];
 	reg [31:0] kcf [0:3];
 	reg [1:0] fmt0;
-	reg [31:0] fmts, kc8;
-	reg [15:0] wms;
+	reg [63:0] fmts;
+	reg [31:0] kc8;
+	reg [31:0] wms;
 	reg kc_sel, ms4;
 	/* The index within RT1-3_BASE/_STRIDE (2 (k - 1) + stride), BLEND1-3 or
 	 * BLEND_CONST_R-A: the three ranges follow each other, one subtracter. */
@@ -115,19 +116,27 @@ module atg_rop_wpix #(
 	wire [8:0] s_rt = s_off;
 	wire [8:0] s_bl = s_off;
 	wire [8:0] s_kc = s_off;
+
+	/* Extended ROP space for RT4-7 (0x1B0-0x1BF, CAPS[30]) */
+	wire [8:0] s_ext;
+	wire s_ext_bo_unused;
+	am_sub #(.W(9)) u_s_ext (.a(st_idx), .b(GHCI_S_RT_EXT), .bi(1'b0), .d(s_ext),
+		.bo(s_ext_bo_unused));
+
 	integer i;
 	always @(posedge clk)
 		if (!rst_n) begin
-			for (i = 0; i < 4; i = i + 1) begin
+			for (i = 0; i < 8; i = i + 1) begin
 				base[i] <= 32'd0;
 				stride[i] <= 32'd0;
 				bls[i] <= 23'd0;
-				kcf[i] <= 32'd0;
 			end
+			for (i = 0; i < 4; i = i + 1)
+				kcf[i] <= 32'd0;
 			fmt0 <= 2'd0;
-			fmts <= 32'd0;
+			fmts <= 64'd0;
 			kc8 <= 32'd0;
-			wms <= 16'd0;
+			wms <= 32'd0;
 			kc_sel <= 1'b0;
 			ms4 <= 1'b0;
 		end else if (st_we) begin
@@ -143,31 +152,50 @@ module atg_rop_wpix #(
 						else
 							base[(i + 1) % 4] <= st_wdata;
 					end
+			if (st_idx >= GHCI_S_RT_EXT && st_idx < GHCI_S_RT_EXT + 9'd8)
+				for (i = 0; i < 4; i = i + 1)
+					if (s_ext[2:1] == i[1:0]) begin
+						if (s_ext[0])
+							stride[{1'b1, i[1:0]}] <= st_wdata;
+						else
+							base[{1'b1, i[1:0]}] <= st_wdata;
+					end
 			if (st_idx == GHCI_S_RT_FORMAT)
 				fmt0 <= st_wdata[1:0];
 			if (st_idx == GHCI_S_RT_FORMATS)
-				fmts <= st_wdata;
+				fmts[31:0] <= st_wdata;
+			if (st_idx == GHCI_S_RT_FORMATS1 || st_idx == 9'h08E)
+				fmts[63:32] <= st_wdata;
 			if (st_idx == GHCI_S_BLEND)
 				bls[0] <= st_wdata[22:0];
 			if (st_idx >= GHCI_S_BLEND1 && st_idx < GHCI_S_BLEND1 + 9'd3)
 				for (i = 0; i < 4; i = i + 1)	/* BLEND s_bl + 1 */
 					if (s_bl[1:0] == i[1:0])
 						bls[(i + 1) % 4] <= st_wdata[22:0];
+			if (st_idx >= GHCI_S_BLEND4 && st_idx < GHCI_S_BLEND4 + 9'd4)
+				for (i = 0; i < 4; i = i + 1)
+					if (s_ext[1:0] == i[1:0])
+						bls[{1'b1, i[1:0]}] <= st_wdata[22:0];
 			if (st_idx == GHCI_S_BLEND_CONST)
 				kc8 <= st_wdata;
 			if (st_idx >= GHCI_S_BLEND_CONST_R && st_idx < GHCI_S_BLEND_CONST_R + 9'd4)
 				kcf[s_kc[1:0]] <= st_wdata;
 			if (st_idx == GHCI_S_ROP_CTRL)
 				kc_sel <= st_wdata[1];
-			if (st_idx == GHCI_S_WRITE_MASK)
-				wms <= st_wdata[15:0];
+			if (st_idx == GHCI_S_WRITE_MASK) begin
+				wms[15:0] <= st_wdata[15:0];
+				if (st_wdata[31:16] != 16'd0)
+					wms[31:16] <= st_wdata[31:16];
+			end
+			if (st_idx == GHCI_S_WRITE_MASK1)
+				wms[31:16] <= st_wdata[15:0];
 			if (st_idx == GHCI_S_MS_CTRL)
 				ms4 <= st_wdata[3:0] == 4'd2;
 		end
 
 	/* The attachment's format, pixel size, channels and path. */
 	wire [7:0] fsel = fmts[8 * i_rt +: 8];
-	wire [7:0] vk = i_rt == 2'd0 && fsel == 8'd0 ? (fmt0 == 2'd0 ? 8'd44 : fmt0 == 2'd1 ? 8'd37 :
+	wire [7:0] vk = i_rt == 3'd0 && fsel == 8'd0 ? (fmt0 == 2'd0 ? 8'd44 : fmt0 == 2'd1 ? 8'd37 :
 		8'd4) : fsel;
 	wire [67:0] inf = atg_fmt_info(vk);
 	wire [25:0] feat = atg_fmt_feat(vk, 1'b0);

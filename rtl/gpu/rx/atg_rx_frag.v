@@ -84,12 +84,12 @@ module atg_rx_frag (
 	reg [6:0] vc;	/* VARYING_COUNT, 0-64 */
 	reg ms4;	/* MS_CTRL[3:0] = 2 */
 	reg cent;	/* MS_CTRL[4] */
-	reg dclip;	/* DEPTH_CLAMP[1] (CAPS[30]): r3 not clamped */
+	reg dclip;	/* DEPTH_CLAMP[1] (CAPS[30]): r3 not clamped when depth clip and not clamp */
 	always @(posedge clk)
 		if (!rst_n)
 			dclip <= 1'b0;
 		else if (st_we && st_idx == GHCI_S_DEPTH_CLAMP)
-			dclip <= st_wdata[1];
+			dclip <= st_wdata[1] && !st_wdata[0];
 	always @(posedge clk)
 		if (!rst_n) begin
 			vc <= 7'd0;

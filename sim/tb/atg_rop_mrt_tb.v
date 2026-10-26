@@ -45,12 +45,12 @@ module atg_rop_mrt_tbc #(
 	reg [31:0] d_xy = 0;
 	reg [15:0] d_smask = 0;
 	reg [511:0] d_color = 0;
-	reg [1:0] d_rt = 0;
+	reg [2:0] d_rt = 0;
 	wire d_ready, b_valid, b_rvalid, busy;
 	wire [511:0] b_src;
 	wire [127:0] b_dst, b_pix;
 	wire [3:0] b_mask;
-	wire [1:0] b_rt;
+	wire [2:0] b_rt;
 	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
 	wire [LA_W-1:0] req_line;
 	wire [LINE_BYTES-1:0] req_be;
@@ -67,7 +67,8 @@ module atg_rop_mrt_tbc #(
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
 		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error));
 	atg_rop_blend blend (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
-		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask),
+		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_src1(512'd0), .b_has_src1(1'b0),
+		.b_dst(b_dst), .b_mask(b_mask),
 		.b_rt(b_rt), .b_rvalid(b_rvalid), .b_pix(b_pix));
 	amb_mem #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .MEM_WORDS(8192), .SEED(SEED)) mem (
 		.clk(clk), .rst_n(rst_n), .req_valid(req_valid), .req_ready(req_ready),

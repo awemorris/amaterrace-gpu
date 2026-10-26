@@ -8,11 +8,11 @@
 /*
  * atg_rop_hazard: Pixel Lock CAM and RAW Hazard Tracker for ROP pipeline.
  *
- * Tracks in-flight quad coordinates {RT[1:0], Y[15:1], X[15:1]} across the
- * ROP pipeline.
+ * Tracks in-flight quad coordinates {RT[2:0], Y[15:1], X[15:1]} across the
+ * ROP pipeline (Phase 003: MRT 8 attachments).
  * - Compares incoming quad tag against 16 parallel CAM entries.
  * - Stalls allocation (alloc_ready = 0) when an in-flight quad matches the same
- *   pixel coordinates (preventing RAW hazard).
+ *   pixel coordinates and RT attachment (preventing RAW hazard).
  * - Issues non-conflicting quads with 0-wait (1 beat/cycle throughput).
  * - Releases CAM entry when quad commits at the end of the pipeline.
  */
@@ -22,7 +22,7 @@
 
 module atg_rop_hazard #(
 	parameter NUM_ENTRIES = 16,
-	parameter TAG_W = 32	/* {RT[1:0], Y[15:1], X[15:1]} */
+	parameter TAG_W = 33	/* {RT[2:0], Y[15:1], X[15:1]} */
 ) (
 	input wire clk,
 	input wire rst_n,

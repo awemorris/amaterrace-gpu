@@ -272,6 +272,23 @@
 #define GHCI_S_TU 0x090u /* 16 slots of 16 words */
 #define GHCI_S_PROG 0x190u
 #define GHCI_S_SA 0x1B0u /* reserved */
+
+/* Extended ROP for MRT 8 attachments (0x1B0-0x1BF, CAPS[30]). */
+#define GHCI_S_RT_EXT 0x1B0u
+#define GHCI_S_RT4_BASE (GHCI_S_RT_EXT + 0u)
+#define GHCI_S_RT4_STRIDE (GHCI_S_RT_EXT + 1u)
+#define GHCI_S_RT5_BASE (GHCI_S_RT_EXT + 2u)
+#define GHCI_S_RT5_STRIDE (GHCI_S_RT_EXT + 3u)
+#define GHCI_S_RT6_BASE (GHCI_S_RT_EXT + 4u)
+#define GHCI_S_RT6_STRIDE (GHCI_S_RT_EXT + 5u)
+#define GHCI_S_RT7_BASE (GHCI_S_RT_EXT + 6u)
+#define GHCI_S_RT7_STRIDE (GHCI_S_RT_EXT + 7u)
+#define GHCI_S_BLEND4 (GHCI_S_RT_EXT + 8u)
+#define GHCI_S_BLEND5 (GHCI_S_RT_EXT + 9u)
+#define GHCI_S_BLEND6 (GHCI_S_RT_EXT + 10u)
+#define GHCI_S_BLEND7 (GHCI_S_RT_EXT + 11u)
+#define GHCI_S_RT_FORMATS1 (GHCI_S_RT_EXT + 12u)
+#define GHCI_S_WRITE_MASK1 (GHCI_S_RT_EXT + 13u)
 #define GHCI_S_ATTR_DST 0x1C0u /* VF: ATTR_DST[0..15] */
 #define GHCI_S_ATTR_LIMIT 0x1D0u /* VF: ATTR_LIMIT[0..15], draft, CAPS[30] */
 
@@ -302,6 +319,9 @@
 #define GHCI_S_DEPTH_BIAS_CONST (GHCI_S_RX + 16u) /* draft, CAPS[30] */
 #define GHCI_S_DEPTH_BIAS_SLOPE (GHCI_S_RX + 17u) /* draft, CAPS[30] */
 #define GHCI_S_DEPTH_BIAS_CLAMP (GHCI_S_RX + 18u) /* draft, CAPS[30] */
+#define GHCI_S_LINE_WIDTH (GHCI_S_RX + 19u)
+#define GHCI_S_POINT_SIZE (GHCI_S_RX + 20u)
+#define GHCI_S_VIEWPORT_IDX (GHCI_S_RX + 21u)
 
 /* ROP. */
 #define GHCI_S_RT_BASE (GHCI_S_ROP + 0u)

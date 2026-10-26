@@ -39,9 +39,11 @@ module atg_rop_blend #(
 	input wire [31:0] st_wdata,
 	input wire b_valid,
 	input wire [511:0] b_src,
+	input wire [511:0] b_src1,
+	input wire b_has_src1,
 	input wire [127:0] b_dst,
 	input wire [3:0] b_mask,
-	input wire [1:0] b_rt,
+	input wire [2:0] b_rt,
 	output reg b_rvalid,
 	output reg [127:0] b_pix
 );
@@ -64,58 +66,76 @@ module atg_rop_blend #(
 
 	/* STATE: RT_FORMAT 0x072, BLEND 0x07A, BLEND_CONST 0x07B, WRITE_MASK 0x07C,
 	 * RT_FORMATS 0x07D, BLEND1-3 0x084-0x086, BLEND_CONST_R-A 0x087-0x08A,
-	 * ROP_CTRL 0x08D, LOGIC_OP 0x08E. */
+	 * ROP_CTRL 0x08D, LOGIC_OP 0x08E; RT_EXT 0x1B0-0x1BD (Phase 003: MRT 8). */
 	reg [1:0] fmt0;	/* RT_FORMAT */
-	reg [31:0] fmts;	/* RT_FORMATS */
-	reg [22:0] bls [0:3];
+	reg [63:0] fmts;	/* RT_FORMATS (0..7) */
+	reg [26:0] bls [0:7];
 	reg [31:0] kc8, kcf;	/* BLEND_CONST; the fp32 constants as bytes */
 	reg kc_sel;	/* ROP_CTRL[1] */
-	reg [15:0] wms;
-	reg lop_en [0:3];
-	reg [3:0] lop_op [0:3];
+	reg dual_src_en;	/* ROP_CTRL[7] */
+	reg [31:0] wms;
+	reg lop_en [0:7];
+	reg [3:0] lop_op [0:7];
 	/* BLEND1-3 and BLEND_CONST_R-A: k = (st_idx - 3) mod 4 = st_idx[1:0] + 1 */
 	wire [1:0] s_k;
 	wire s_k_co_unused;
 	am_add #(.W(2)) u_s_k (.a(st_idx[1:0]), .b(2'd0), .ci(1'b1), .s(s_k), .co(s_k_co_unused));
+
+	/* Extended ROP space for RT4-7 (0x1B0-0x1BF, CAPS[30]) */
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire [8:0] s_ext;
+	/* verilator lint_on UNUSEDSIGNAL */
+	wire s_ext_bo_unused;
+	am_sub #(.W(9)) u_s_ext (.a(st_idx), .b(GHCI_S_RT_EXT), .bi(1'b0), .d(s_ext),
+		.bo(s_ext_bo_unused));
+
 	wire [7:0] kcf_n;
 	atg_rop_f2u8 u_kcf (.f(st_wdata), .u(kcf_n));
 	integer i;
 	always @(posedge clk)
 		if (!rst_n) begin
 			fmt0 <= 2'd0;
-			fmts <= 32'd0;
-			for (i = 0; i < 4; i = i + 1) begin
-				bls[i] <= 23'd0;
+			fmts <= 64'd0;
+			for (i = 0; i < 8; i = i + 1) begin
+				bls[i] <= 27'd0;
 				lop_en[i] <= 1'b0;
 				lop_op[i] <= 4'd0;
 			end
 			kc8 <= 32'd0;
 			kcf <= 32'd0;
 			kc_sel <= 1'b0;
-			wms <= 16'd0;
+			dual_src_en <= 1'b0;
+			wms <= 32'd0;
 		end else if (st_we) begin
 			if (st_idx == GHCI_S_RT_FORMAT)
 				fmt0 <= st_wdata[1:0];
 			if (st_idx == GHCI_S_RT_FORMATS)
-				fmts <= st_wdata;
+				fmts[31:0] <= st_wdata;
+			if (st_idx == GHCI_S_RT_FORMATS1)
+				fmts[63:32] <= st_wdata;
 			if (st_idx == GHCI_S_BLEND)
-				bls[0] <= st_wdata[22:0];
+				bls[0] <= st_wdata[26:0];
 			if (st_idx >= GHCI_S_BLEND1 && st_idx < GHCI_S_BLEND1 + 9'd3)
-				bls[s_k] <= st_wdata[22:0];
+				bls[{1'b0, s_k}] <= st_wdata[26:0];
+			if (st_idx >= GHCI_S_BLEND4 && st_idx < GHCI_S_BLEND4 + 9'd4)
+				for (i = 0; i < 4; i = i + 1)
+					if (s_ext[1:0] == i[1:0])
+						bls[{1'b1, i[1:0]}] <= st_wdata[26:0];
 			if (st_idx == GHCI_S_BLEND_CONST)
 				kc8 <= st_wdata;
 			if (st_idx >= GHCI_S_BLEND_CONST_R && st_idx < GHCI_S_BLEND_CONST_R + 9'd4)
 				kcf[8 * s_k +: 8] <= kcf_n;
 			if (st_idx == GHCI_S_ROP_CTRL) begin
 				kc_sel <= st_wdata[1];
-				for (i = 0; i < 4; i = i + 1) begin
+				dual_src_en <= st_wdata[7];
+				for (i = 0; i < 8; i = i + 1) begin
 					lop_en[i] <= st_wdata[2];
 					lop_op[i] <= st_wdata[6:3];
 				end
 			end
 			if (st_idx == GHCI_S_LOGIC_OP) begin
 				if (st_wdata[31:8] == 24'd0) begin
-					for (i = 0; i < 4; i = i + 1) begin
+					for (i = 0; i < 8; i = i + 1) begin
 						lop_en[i] <= st_wdata[0];
 						lop_op[i] <= st_wdata[4:1];
 					end
@@ -130,38 +150,47 @@ module atg_rop_blend #(
 					lop_op[3] <= st_wdata[28:25];
 				end
 			end
-			if (st_idx == GHCI_S_WRITE_MASK)
-				wms <= st_wdata[15:0];
+			if (st_idx == GHCI_S_WRITE_MASK) begin
+				wms[15:0] <= st_wdata[15:0];
+				if (st_wdata[31:16] != 16'd0)
+					wms[31:16] <= st_wdata[31:16];
+			end
+			if (st_idx == GHCI_S_WRITE_MASK1)
+				wms[31:16] <= st_wdata[15:0];
 		end
 	wire [31:0] kc = kc_sel ? kcf : kc8;
 	/* the beat's attachment */
 	wire [7:0] fvk = fmts[8 * b_rt +: 8];
-	wire [2:0] fmt_n = b_rt == 2'd0 && fvk == 8'd0 ? (fmt0 == 2'd0 ? F_BGRA8 :
+	wire [2:0] fmt_n = b_rt == 3'd0 && fvk == 8'd0 ? (fmt0 == 2'd0 ? F_BGRA8 :
 		fmt0 == 2'd1 ? F_RGBA8 : F_565) : fcode(fvk);
-	wire [22:0] bl_n = bls[b_rt];
+	wire [26:0] bl_n = bls[b_rt];
 	wire [3:0] wm_n = wms[4 * b_rt +: 4];
 	wire lop_en_n = lop_en[b_rt];
 	wire [3:0] lop_op_n = lop_op[b_rt];
 
 	function [7:0] factor;
-		input [3:0] f;
-		input [7:0] sc, dc, kcc, sa, da, ka;
+		input [4:0] f;
+		input [7:0] sc, dc, kcc, sa, da, ka, s1c, s1a;
 		input is_a;
 		case (f)
-		4'd1: factor = 8'd255;
-		4'd2: factor = sc;
-		4'd3: factor = ~sc;
-		4'd4: factor = dc;
-		4'd5: factor = ~dc;
-		4'd6: factor = sa;
-		4'd7: factor = ~sa;
-		4'd8: factor = da;
-		4'd9: factor = ~da;
-		4'd10: factor = kcc;
-		4'd11: factor = ~kcc;
-		4'd12: factor = ka;
-		4'd13: factor = ~ka;
-		4'd14: factor = is_a ? 8'd255 : (sa < ~da ? sa : ~da);
+		5'd1: factor = 8'd255;
+		5'd2: factor = sc;
+		5'd3: factor = ~sc;
+		5'd4: factor = dc;
+		5'd5: factor = ~dc;
+		5'd6: factor = sa;
+		5'd7: factor = ~sa;
+		5'd8: factor = da;
+		5'd9: factor = ~da;
+		5'd10: factor = kcc;
+		5'd11: factor = ~kcc;
+		5'd12: factor = ka;
+		5'd13: factor = ~ka;
+		5'd14: factor = is_a ? 8'd255 : (sa < ~da ? sa : ~da);
+		5'd15: factor = s1c;
+		5'd16: factor = ~s1c;
+		5'd17: factor = s1a;
+		5'd18: factor = ~s1a;
 		default: factor = 8'd0;
 		endcase
 	endfunction
@@ -193,7 +222,7 @@ module atg_rop_blend #(
 	genvar gl, gc;
 
 	/* Stage 1: RGBA8 per lane, channel c of lane l at [32l + 8c]. */
-	wire [127:0] s1_n;
+	wire [127:0] s1_n, s1_1_n;
 	reg [127:0] d1_n;
 	reg [31:0] dp;
 	integer l;
@@ -201,6 +230,8 @@ module atg_rop_blend #(
 	for (gl = 0; gl < 16; gl = gl + 1) begin : g_f2u8
 		atg_rop_f2u8 u_f2u8 (.f(b_src[128 * (gl / 4) + 32 * (gl % 4) +: 32]),
 			.u(s1_n[32 * (gl / 4) + 8 * (gl % 4) +: 8]));
+		atg_rop_f2u8 u_f2u8_1 (.f(b_src1[128 * (gl / 4) + 32 * (gl % 4) +: 32]),
+			.u(s1_1_n[32 * (gl / 4) + 8 * (gl % 4) +: 8]));
 	end
 	endgenerate
 	always @(*) begin
@@ -221,11 +252,12 @@ module atg_rop_blend #(
 	reg v1;
 	reg [3:0] m1, wm1, wm2;
 	reg [2:0] fmt1, fmt2;
-	reg [22:0] bl1, bl2;
+	reg [26:0] bl1, bl2;
 	reg lop_en1, lop_en2;
 	reg [3:0] lop_op1, lop_op2;
 	reg [31:0] kc1;
-	reg [127:0] s1, d1, o1;
+	reg [127:0] s1, s1_1, d1, o1;
+	reg dual_src_en1, dual_src_en2;
 	always @(posedge clk) begin
 		v1 <= rst_n && b_valid;
 		m1 <= b_mask;
@@ -237,7 +269,9 @@ module atg_rop_blend #(
 		kc1 <= kc;
 		o1 <= b_dst;
 		s1 <= s1_n;
+		s1_1 <= s1_1_n;
 		d1 <= d1_n;
+		dual_src_en1 <= rst_n && dual_src_en;
 	end
 
 	/* Stage 2: p = s x Fs, q = d x Fd per channel (16 bits each, channel 4l + c). */
@@ -247,10 +281,14 @@ module atg_rop_blend #(
 		for (gc = 0; gc < 4; gc = gc + 1) begin : g_c2
 			wire [7:0] sc = s1[32 * gl + 8 * gc +: 8];
 			wire [7:0] dc = d1[32 * gl + 8 * gc +: 8];
-			wire [7:0] fs = factor(gc == 3 ? bl1[15:12] : bl1[4:1], sc, dc, kc1[8 * gc +: 8],
-				s1[32 * gl + 24 +: 8], d1[32 * gl + 24 +: 8], kc1[31:24], gc == 3);
-			wire [7:0] fd = factor(gc == 3 ? bl1[19:16] : bl1[8:5], sc, dc, kc1[8 * gc +: 8],
-				s1[32 * gl + 24 +: 8], d1[32 * gl + 24 +: 8], kc1[31:24], gc == 3);
+			wire [7:0] s1c = s1_1[32 * gl + 8 * gc +: 8];
+			wire [7:0] sa = s1[32 * gl + 24 +: 8];
+			wire [7:0] da = d1[32 * gl + 24 +: 8];
+			wire [7:0] s1a = s1_1[32 * gl + 24 +: 8];
+			wire [4:0] f_s = gc == 3 ? {bl1[25], bl1[15:12]} : {bl1[23], bl1[4:1]};
+			wire [4:0] f_d = gc == 3 ? {bl1[26], bl1[19:16]} : {bl1[24], bl1[8:5]};
+			wire [7:0] fs = factor(f_s, sc, dc, kc1[8 * gc +: 8], sa, da, kc1[31:24], s1c, s1a, gc == 3);
+			wire [7:0] fd = factor(f_d, sc, dc, kc1[8 * gc +: 8], sa, da, kc1[31:24], s1c, s1a, gc == 3);
 			am_mul #(.AW(8), .BW(8)) u_p (.clk(clk), .en(1'b1), .a(sc), .b(fs),
 				.p(p_n[16 * (4 * gl + gc) +: 16]));
 			am_mul #(.AW(8), .BW(8)) u_q (.clk(clk), .en(1'b1), .a(dc), .b(fd),
@@ -275,6 +313,7 @@ module atg_rop_blend #(
 		o2 <= o1;
 		p2 <= p_n;
 		q2 <= q_n;
+		dual_src_en2 <= rst_n && dual_src_en1;
 	end
 
 	/* Stage 3: the operation, the mask, the format. */
@@ -354,7 +393,7 @@ module atg_rop_blend #(
 		b_pix <= pix_n;
 	end
 
-	wire unused_ok = &{LAT != 0, bl2[19:12], bl2[8:1]};
+	wire unused_ok = &{LAT != 0, bl2[26:0], b_has_src1, dual_src_en, dual_src_en2};
 endmodule
 
 `default_nettype wire

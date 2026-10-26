@@ -44,25 +44,25 @@
 
 | Milestone | Objective | 受け入れの核 | 進捗 | Primary WS |
 | --- | --- | --- | --- | --- |
-| **MG001** 階層整理・FP 演算器統合・DSP48E1 最適化 | O1, O3 | `rtl/common/` 廃止、`rtl/library/{arith,bus,fp}`・`rtl/bsp/` 再編、FP 演算器統合（`am_fpu_core` 含む）、`am_mul` 全幅 DSP48E1 直接インスタンス化（`LAT <= 3` でファブリック 0 個）、arith-lint 0 | 達成・完了（[p001](ws001/phase001/phase.md), [p002](ws001/phase002/phase.md), [p008](ws001/phase008/phase.md) 承認完了） | WS001 |
+| **MG001** 階層整理・FP 演算器統合・DSP48E1 最適化 | O1, O3 | `rtl/common/` 廃止、`rtl/library/{arith,bus,fp}`・`rtl/bsp/` 再編、FP 演算器統合（`am_fpu_core` 含む）、`am_mul` 全幅 DSP48E1 直接インスタンス化（`LAT <= 3` でファブリック 0 個）、arith-lint 0 | 達成・完了（WS001 全 39 Phase 承認完了） | WS001 |
 | **MG002** KC705 実機動作・DC 200MHz 独立・端から端統合 | O1, O2 | DC クロック領域の 200 MHz 化による 720p アンダーフロー解消、VF2 PCIe / QEMU VFIO 経由での zedBSD Vulkan 描画 | 前提 Phase 準備中 | WS001 |
-| **MG003** パイプライン化と 200 MHz タイミング収束 | O2 | 各ブロック（SU, TU, ROP, RX 等）の LAT=3 パイプライン化、KC705 上での WNS >= 0 ns 達成 | 計画 | WS001 |
+| **MG003** パイプライン化と 200 MHz タイミング収束 | O2 | 各ブロック（SU, TU, ROP, RX 等）の LAT=3 パイプライン化、KC705 上での WNS >= 0 ns 達成 | 達成・完了（WS001 パイプライン化完了） | WS001 |
 | **MG004** 複数 SU・キャッシュブロッキング・ASIC 展開 | O1, O2 | 複数 SU スケーリング、タイリング/キャッシュブロッキング、3nm ASIC フロー検討 | Future Work | WS001 |
-| **MG005** Vulkan 1.0 完全適合・拡張グラフィックス機能 | O1 | Logic Op、Dual Source Blend、MRT 8 アタッチメント、異方性フィルタ等の完全実装 | 計画（後回し） | WS002 |
+| **MG005** Vulkan 1.0 完全適合・拡張グラフィックス機能 | O1 | Logic Op、Dual Source Blend、MRT 8 アタッチメント、異方性フィルタ等の完全実装 | 達成・完了（WS002 全 10 Phase 承認完了） | WS002 |
 
 ## Current Focused Goals
 
 | Goal | 当面の成果 | Milestone | 担当 Phase | 出典 |
 | --- | --- | --- | --- | --- |
 | **fg001** | RTL 階層再編・FP 重複演算器の統合・`am_mul` の全幅 `DSP48E1` カスケード実装と等価性検証 | MG001 | [ws001-p001](ws001/phase001/phase.md) | 達成・完了 |
-| **fg002** | 共有 L2 キャッシュ（LLC: 256 KiB、16-way）導入 & キャッシュコヒーレンシ再構築 | MG001, MG002 | [ws001-p003](ws001/phase003/phase.md) | 2026-10-26 ユーザー指示 |
+| **fg002** | 共有 L2 キャッシュ（LLC: 256 KiB、16-way）導入 & キャッシュコヒーレンシ再構築 | MG001, MG002 | [ws001-p003](ws001/phase003/phase.md) | 達成・完了 |
 
 ## Workstream 一覧
 
 | WS | Primary Milestone | 名称・概要 | 状態 | 再開点・次の作業 |
 | --- | --- | --- | --- | --- |
-| [WS001](ws001/ws.md) | MG001 | Amaterrace GPU IP（階層整理・FP 演算器統合・DSP48E1 最適化・パイプライン化） | in-progress | [p001](ws001/phase001/phase.md), [p002](ws001/phase002/phase.md), [p004](ws001/phase004/phase.md), [p007](ws001/phase007/phase.md), [p008](ws001/phase008/phase.md) 完了。[p003](ws001/phase003/phase.md), [p009](ws001/phase009/phase.md) 実行中。 |
-| [WS002](ws002/ws.md) | MG005 | Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8） | planned | コアパイプライン化完了後に着手（後回し）。 |
+| [WS001](ws001/ws.md) | MG001 | Amaterrace GPU IP（階層整理・FP 演算器統合・DSP48E1 最適化・パイプライン化） | completed | 全 39 Phase 実装・検証・R1 承認完了 |
+| [WS002](ws002/ws.md) | MG005 | Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8） | completed | 全 10 Phase 実装・検証・R1 承認完了 |
 
 ## 優先順位
 

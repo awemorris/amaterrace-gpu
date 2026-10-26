@@ -6,7 +6,7 @@ RTL: `rtl/gpu/dc/atg_dc.v`.  Parent: atg_top (HAS_DISP).  Implemented in: p005, 
 
 The display controller of DISP2 (docs/ghci.md §13.2, design §18.5), a unit of the GPU inside `atg_top`: registers and DMA in gclk, a pixel FIFO (am_afifo) to the pixel clock, timing generator, a TMDS encoder and a parallel output, optional I2C; one AMB client port (MC client `C_DC`).  The CP's `atg_cp_disp` drives it through the internal register bus (`d_*`), the flips (`flip_*`, `taken`) and the status for the records.  Until `atg_cp_disp` exists, `atg_top` bridges the host's register bus at +0x10000 to `d_*` (every write passes) and makes no flips.
 
-Children: `atg_dc_regs`, `atg_dc_mode`, `atg_dc_dma`, `atg_dc_cursor` and `am_amb_mux` (HAS_CURSOR), `atg_dc_tgen`, `atg_dc_tmds`, `atg_dc_ycc` (PX_FMT = 1), `atg_dc_i2c`, `am_afifo_bram` (Phase 036/038), `am_sync`.
+Children: `atg_dc_regs`, `atg_dc_mode`, `atg_dc_dma`, `atg_dc_cursor` and `am_amb_mux` (HAS_CURSOR), `atg_dc_tgen`, `atg_dc_plane2`, `atg_dc_hdr`, `atg_dc_tmds`, `atg_dc_ycc` (PX_FMT = 1), `atg_dc_i2c`, `am_afifo_bram` (Phase 036/038), `am_sync`.
 
 ## 2. Parameters
 
@@ -94,6 +94,12 @@ None beyond the above.
 
 `sim/tb/atg_dc_tb.v` (it covers the clock crossings), driven as atg_cp_disp drives the DC: `PASS atg_dc.scanout` — frames compared with the image, VBLANK and FRAME_COUNT, a flip at once while disabled and one at a vsync (taken, FB_BASE), SCAN_WORDS, a read error (black lines, STATUS.read error, DISP_ERROR at most once a frame, W1C), ENABLE 0 with a pending flip (cancelled) and idle, RGB565, the cursor (a flip of plane 1, taken after its load through the shared port, CURSOR_BASE, frames unchanged under a transparent image), CTRL.RESET with a pending flip and reads on the way and frames after it; `PASS atg_dc.afifo_bram` (2048-word BRAM AFIFO zero underflow check); `PASS atg_dc.watermarks` (urgent/panic transitions verified) — and `PASS atg_dc`.
 
+`sim/tb/atg_dc_wsi_tb.v` (ws002-p010: WSI advanced display features):
+- 10-bit / HDR10 pipeline (`atg_dc_hdr.v`): BT.709 -> BT.2020 color space matrix (via `am_mul`), SMPTE ST 2084 (PQ) 1024-entry EOTF LUT conversion accuracy, and bit-exact passthrough when disabled.
+- Multi-Plane Hardware Overlay (`atg_dc_plane2.v`): independent video plane, NV12 YUV 4:2:0 -> RGB matrix conversion (via `am_mul`), bounding box placement, color key transparency, and alpha blending.
+- VRR (Variable Refresh Rate / Adaptive Sync) in `atg_dc_tgen.v`: dynamic VBLANK extension during irregular render intervals, flip synchronization (`flip_ready`), tearing-free scanout, and `vrr_vmax` timeout protection.
+- DISP2 MMIO & Extended Features: Format 3 (A2B10G10R10) support, DC_CAPS[15:13] reporting (HDR, VRR, PLANE2), and MMIO register read/write verification.
+
 ## 9. References
 
 design §5, §1.3 (pclk, pclk5).
@@ -108,3 +114,4 @@ target (2026-10-25; the source is kept under `docs/old/`): DC_CAPS[0] is 0.
 WS288 p035 D3 (design §18.5): moved to `rtl/gpu/dc/` as a child of atg_top; the register bus is the
 internal one, `atg_dc_mode` added, `STANDALONE`/`BASE` and the interrupt line are gone (the events
 are pulses for IRQ_STATUS), the CP's flips and the record status ports added.  D5: the cursor plane (`HAS_CURSOR`, `atg_dc_cursor`).
+WS002-P010: WSI Advanced Display Features: HDR10 (BT.2020 & SMPTE ST 2084 PQ EOTF LUT via `atg_dc_hdr.v`), Multi-Plane Hardware Overlay (`atg_dc_plane2.v`: NV12 YUV420 to RGB conversion, color keying, alpha blending), and VRR Adaptive Sync (`atg_dc_tgen.v`: dynamic VBLANK extension, flip synchronization, timeout fallback). Verified in `sim/tb/atg_dc_wsi_tb.v` with 0 arith-lint violations.

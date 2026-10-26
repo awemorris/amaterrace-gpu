@@ -35,7 +35,7 @@ module atg_rop_blend_tb;
 	reg [511:0] b_src = 0;
 	reg [127:0] b_dst = 0;
 	reg [3:0] b_mask = 0;
-	reg [1:0] b_rt = 0;
+	reg [2:0] b_rt = 0;
 	wire b_rvalid;
 	wire [127:0] b_pix;
 

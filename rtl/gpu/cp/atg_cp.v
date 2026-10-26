@@ -416,6 +416,10 @@ module atg_cp #(
 	wire [31:0] s_n_data;
 	wire [1:0] s_queue_id;
 	wire s_preempt_ev;
+	wire s_dma_req_valid, s_dma_empty, s_dma_busy;
+	wire [31:0] s_dma_src_base, s_dma_dst_base, s_dma_src_row_stride, s_dma_dst_row_stride;
+	wire [31:0] s_dma_src_slice_stride, s_dma_dst_slice_stride;
+	wire [15:0] s_dma_copy_w, s_dma_copy_h, s_dma_copy_d;
 
 	atg_cp_ring #(
 		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
@@ -428,6 +432,12 @@ module atg_cp #(
 		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data), .n_last(s_n_last),
 		.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag),
 		.v_done(v_done),
+		.dma_req_valid(s_dma_req_valid), .dma_req_ready(1'b1),
+		.dma_src_base(s_dma_src_base), .dma_dst_base(s_dma_dst_base),
+		.dma_src_row_stride(s_dma_src_row_stride), .dma_dst_row_stride(s_dma_dst_row_stride),
+		.dma_src_slice_stride(s_dma_src_slice_stride), .dma_dst_slice_stride(s_dma_dst_slice_stride),
+		.dma_copy_w(s_dma_copy_w), .dma_copy_h(s_dma_copy_h), .dma_copy_d(s_dma_copy_d),
+		.dma_done(1'b0), .dma_empty(s_dma_empty), .dma_busy(s_dma_busy),
 		.empty(s_ring_empty), .retire(s_retire), .busy(s_ring_busy),
 		.queue_id(s_queue_id), .preempt_ev(s_preempt_ev),
 		.fault(s_ring_fault), .fault_kind(s_ring_fault_kind), .fault_addr(s_ring_fault_addr),
@@ -579,7 +589,60 @@ module atg_cp #(
 	end
 	endgenerate
 
-	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev};
+	/* Indirect draw fetcher (Phase 008, ws002-p008) */
+	wire ind_cmd_valid = 1'b0;
+	wire ind_cmd_ready;
+	wire [31:0] ind_arg_buffer_addr = 32'd0;
+	wire [31:0] ind_draw_count = 32'd0;
+	wire [31:0] ind_stride = 32'd0;
+	wire ind_is_indexed = 1'b0;
+	wire ind_dma_req_valid;
+	wire ind_dma_req_ready = 1'b0;
+	wire [25:0] ind_dma_req_line;
+	wire ind_dma_rsp_valid = 1'b0;
+	wire [255:0] ind_dma_rsp_data = 256'd0;
+	wire ind_draw_valid;
+	wire ind_draw_ready = 1'b1;
+	wire [31:0] ind_vertex_count;
+	wire [31:0] ind_instance_count;
+	wire [31:0] ind_first_vertex;
+	wire [31:0] ind_first_instance;
+	wire [31:0] ind_first_index;
+	wire [31:0] ind_vertex_offset;
+
+	atg_cp_indirect u_indirect (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.cmd_valid(ind_cmd_valid),
+		.cmd_ready(ind_cmd_ready),
+		.arg_buffer_addr(ind_arg_buffer_addr),
+		.draw_count(ind_draw_count),
+		.stride(ind_stride),
+		.is_indexed(ind_is_indexed),
+		.dma_req_valid(ind_dma_req_valid),
+		.dma_req_ready(ind_dma_req_ready),
+		.dma_req_line(ind_dma_req_line),
+		.dma_rsp_valid(ind_dma_rsp_valid),
+		.dma_rsp_data(ind_dma_rsp_data),
+		.draw_valid(ind_draw_valid),
+		.draw_ready(ind_draw_ready),
+		.vertex_count(ind_vertex_count),
+		.instance_count(ind_instance_count),
+		.first_vertex(ind_first_vertex),
+		.first_instance(ind_first_instance),
+		.first_index(ind_first_index),
+		.vertex_offset(ind_vertex_offset)
+	);
+
+	wire unused_indirect = &{1'b0, ind_cmd_ready, ind_dma_req_valid, ind_dma_req_line,
+		ind_draw_valid, ind_vertex_count, ind_instance_count, ind_first_vertex,
+		ind_first_instance, ind_first_index, ind_vertex_offset};
+
+	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev, unused_indirect,
+		s_dma_req_valid, s_dma_empty, s_dma_busy,
+		s_dma_src_base, s_dma_dst_base, s_dma_src_row_stride, s_dma_dst_row_stride,
+		s_dma_src_slice_stride, s_dma_dst_slice_stride,
+		s_dma_copy_w, s_dma_copy_h, s_dma_copy_d};
 endmodule
 
 `default_nettype wire

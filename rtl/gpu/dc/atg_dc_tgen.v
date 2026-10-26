@@ -59,7 +59,13 @@ module atg_dc_tgen (
 	output reg frame_toggle,
 	output reg vsync_toggle,
 	output reg underflow_toggle,
-	output wire [11:0] line
+	output wire [11:0] line,
+	/* Extended WSI / VRR ports (ws002-p010) */
+	input wire vrr_en,
+	input wire flip_ready,
+	input wire [11:0] vrr_vmax,
+	output wire [11:0] col,
+	output reg [29:0] rgb10
 );
 	/* The timing words (12 bits used of each). */
 	wire [11:0] t_ha = timing[11:0];
@@ -110,6 +116,7 @@ module atg_dc_tgen (
 	reg running;
 
 	assign line = v;
+	assign col = h;
 
 	/* TEST_PATTERN and FORMAT are taken while stopped and at each vsync,
 	 * so a write of CTRL that clears them with ENABLE (whose am_sync is two
@@ -143,6 +150,27 @@ module atg_dc_tgen (
 		end
 	end
 
+	reg vrr_flip_latched;
+	reg [11:0] vrr_lines;
+	wire [11:0] vrr_lines_inc;
+	wire vrr_co_unused;
+	am_add #(.W(12)) a_vrr_lines (.a(vrr_lines), .b(12'd0), .ci(1'b1), .s(vrr_lines_inc), .co(vrr_co_unused));
+
+	wire [11:0] eff_vmax = (vrr_vmax != 12'd0) ? vrr_vmax : vlast;
+	wire vrr_hold = vrr_en && (v == vss) && !flip_ready && !vrr_flip_latched && (vrr_lines < eff_vmax);
+	wire vrr_take = vrr_en && (v == vss) && (h == hlast) && !vrr_hold;
+
+	always @(posedge clk) begin
+		if (!rst_n || !enable) begin
+			vrr_flip_latched <= 1'b0;
+		end else begin
+			if (flip_ready)
+				vrr_flip_latched <= 1'b1;
+			else if (vrr_take)
+				vrr_flip_latched <= 1'b0;
+		end
+	end
+
 	always @(posedge clk) begin
 		if (!rst_n || !enable) begin
 			h <= 12'd0;
@@ -150,13 +178,20 @@ module atg_dc_tgen (
 			bx <= 12'd0;
 			bar <= 3'd0;
 			running <= 1'b0;
+			vrr_lines <= 12'd0;
 		end else if (!running) begin
 			running <= 1'b1;
 		end else if (h == hlast) begin
 			h <= 12'd0;
-			v <= v == vlast ? 12'd0 : v_inc;
 			bx <= 12'd0;
 			bar <= 3'd0;
+			if (vrr_hold) begin
+				v <= vss;
+				vrr_lines <= vrr_lines_inc;
+			end else begin
+				v <= v == vlast ? 12'd0 : v_inc;
+				vrr_lines <= 12'd0;
+			end
 		end else begin
 			h <= h_inc;
 			if (bx == bar_last) begin
@@ -168,18 +203,35 @@ module atg_dc_tgen (
 		end
 	end
 
+	/* verilator lint_off UNUSEDSIGNAL */
 	/* A memory pixel to RGB888. */
 	function [23:0] convert;
 		input [1:0] f;
-		input [23:0] w;	/* the alpha byte is not shown */
+		input [31:0] w;	/* full 32-bit pixel */
 		begin
 			case (f)
 			2'd1: convert = {w[7:0], w[15:8], w[23:16]};
 			2'd2: convert = {w[15:11], w[15:13], w[10:5], w[10:9], w[4:0], w[4:2]};
+			2'd3: convert = {w[9:2], w[19:12], w[29:22]}; /* A2B10G10R10 */
 			default: convert = w[23:0];
 			endcase
 		end
 	endfunction
+
+	/* A memory pixel to 10-bit RGB (30-bit: [29:20] R, [19:10] G, [9:0] B). */
+	function [29:0] convert10;
+		input [1:0] f;
+		input [31:0] w;
+		begin
+			case (f)
+			2'd0: convert10 = {{w[23:16], w[23:22]}, {w[15:8], w[15:14]}, {w[7:0], w[7:6]}}; /* BGRA8 */
+			2'd1: convert10 = {{w[7:0], w[7:6]}, {w[15:8], w[15:14]}, {w[23:16], w[23:22]}}; /* RGBA8 */
+			2'd2: convert10 = {{w[15:11], w[15:11]}, {w[10:5], w[10:7]}, {w[4:0], w[4:0]}}; /* RGB565 */
+			2'd3: convert10 = {w[9:0], w[19:10], w[29:20]}; /* A2B10G10R10 */
+			endcase
+		end
+	endfunction
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	reg [23:0] pattern;
 
@@ -202,6 +254,7 @@ module atg_dc_tgen (
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			rgb <= 24'd0;
+			rgb10 <= 30'd0;
 			de <= 1'b0;
 			hs <= 1'b0;
 			vs <= 1'b0;
@@ -212,14 +265,19 @@ module atg_dc_tgen (
 			de <= running && de_c;
 			hs <= (running && hs_c) == pol[0];
 			vs <= (running && vs_c) == pol[1];
-			if (!running || !de_c)
+			if (!running || !de_c) begin
 				rgb <= 24'd0;
-			else if (tp)
+				rgb10 <= 30'd0;
+			end else if (tp) begin
 				rgb <= pattern;
-			else if (px_valid)
-				rgb <= convert(fmt, px_data[23:0]);
-			else
+				rgb10 <= {{pattern[23:16], pattern[23:22]}, {pattern[15:8], pattern[15:14]}, {pattern[7:0], pattern[7:6]}};
+			end else if (px_valid) begin
+				rgb <= convert(fmt, px_data);
+				rgb10 <= convert10(fmt, px_data);
+			end else begin
 				rgb <= 24'd0;
+				rgb10 <= 30'd0;
+			end
 			if (running && h == 12'd0 && v == vss)
 				vsync_toggle <= !vsync_toggle;
 			if (running && h == 12'd0 && v == vse)
@@ -229,7 +287,8 @@ module atg_dc_tgen (
 		end
 	end
 
-	wire unused_ok = &{1'b0, bnd_co_unused, cnt_co_unused, px_data[31:24], timing[287:258], timing[255:236], timing[223:204],
+	wire unused_ok = &{1'b0, bnd_co_unused, cnt_co_unused, vrr_co_unused,
+		timing[287:258], timing[255:236], timing[223:204],
 		timing[191:172], timing[159:140], timing[127:108], timing[95:76], timing[63:44],
 		timing[31:12]};
 endmodule

@@ -98,7 +98,6 @@ module atg_dc #(
 	wire [31:0] i2c_wdata, i2c_rdata;
 	wire px_w_valid, px_w_ready, px_r_valid, px_r_ready;
 	wire [31:0] px_w_data, px_r_data;
-	wire [23:0] rgb;
 	wire de, hs, vs;
 	wire frame_toggle, vsync_toggle, underflow_toggle;
 	wire [11:0] p_line;
@@ -110,6 +109,20 @@ module atg_dc #(
 	wire connected;
 	wire [31:0] cur_pos, cursor_base;
 	wire cur_show;
+
+	/* Extended WSI / HDR / VRR / Plane2 signals */
+	wire hdr_en, vrr_en, flip_ready, plane2_en;
+	wire [11:0] vrr_vmax;
+	wire [11:0] plane2_pos_x, plane2_pos_y, plane2_width, plane2_height;
+	wire [7:0]  plane2_alpha;
+	wire        plane2_colorkey_en, plane2_yuv_mode;
+	wire [23:0] plane2_colorkey;
+
+	wire p_hdr_en, p_vrr_en, p_flip_ready, p_plane2_en;
+	am_sync sync_hdr (.clk(pclk), .rst_n(prst_n), .d(hdr_en), .q(p_hdr_en));
+	am_sync sync_vrr (.clk(pclk), .rst_n(prst_n), .d(vrr_en), .q(p_vrr_en));
+	am_sync sync_fr  (.clk(pclk), .rst_n(prst_n), .d(flip_ready), .q(p_flip_ready));
+	am_sync sync_p2  (.clk(pclk), .rst_n(prst_n), .d(plane2_en), .q(p_plane2_en));
 
 	/* pclk → gclk events as toggles (am_sync), edges here. */
 	am_sync #(.W(3)) sync_ev (
@@ -159,7 +172,12 @@ module atg_dc #(
 		.dc_err(dc_err),
 		.connected(connected), .pending1(pending[1]),
 		.ev_vblank(ev_vblank), .ev_error(ev_error), .frame_count(frame_count),
-		.i2c_we(i2c_we), .i2c_idx(i2c_idx), .i2c_wdata(i2c_wdata), .i2c_rdata(i2c_rdata)
+		.i2c_we(i2c_we), .i2c_idx(i2c_idx), .i2c_wdata(i2c_wdata), .i2c_rdata(i2c_rdata),
+		.hdr_en(hdr_en), .vrr_en(vrr_en), .vrr_vmax(vrr_vmax), .flip_ready(flip_ready),
+		.plane2_en(plane2_en), .plane2_pos_x(plane2_pos_x), .plane2_pos_y(plane2_pos_y),
+		.plane2_width(plane2_width), .plane2_height(plane2_height),
+		.plane2_alpha(plane2_alpha), .plane2_colorkey_en(plane2_colorkey_en),
+		.plane2_colorkey(plane2_colorkey), .plane2_yuv_mode(plane2_yuv_mode)
 	);
 
 	atg_dc_mode #(.TEST_MODE(TEST_MODE)) mode (
@@ -280,17 +298,64 @@ module atg_dc #(
 		.clk(clk), .rst_n(g_rst_n), .d(p_panic), .q(dc_panic)
 	);
 
+	wire [11:0] p_col;
+	wire [23:0] tgen_rgb, p2_rgb, final_rgb;
+	wire [29:0] tgen_rgb10;
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire p2_de;
+	/* verilator lint_on UNUSEDSIGNAL */
+	wire [9:0] hdr_in_r, hdr_in_g, hdr_in_b;
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire [9:0] hdr_out_r, hdr_out_g, hdr_out_b;
+	/* verilator lint_on UNUSEDSIGNAL */
+
 	atg_dc_tgen tgen (
 		.clk(pclk), .rst_n(p_rst_n), .enable(p_enable), .test_pattern(test_pattern),
 		.format(format), .timing(timing),
 		.px_valid(px_r_valid), .px_ready(px_r_ready), .px_data(px_r_data),
-		.rgb(rgb), .de(de), .hs(hs), .vs(vs),
+		.rgb(tgen_rgb), .de(de), .hs(hs), .vs(vs),
 		.frame_toggle(frame_toggle), .vsync_toggle(vsync_toggle),
-		.underflow_toggle(underflow_toggle), .line(p_line)
+		.underflow_toggle(underflow_toggle), .line(p_line),
+		.vrr_en(p_vrr_en), .flip_ready(p_flip_ready), .vrr_vmax(vrr_vmax),
+		.col(p_col), .rgb10(tgen_rgb10)
 	);
 
+	/* verilator lint_off PINCONNECTEMPTY */
+	atg_dc_plane2 #(
+		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)
+	) u_plane2 (
+		.clk(pclk), .rst_n(p_rst_n), .enable(p_enable),
+		.plane_en(p_plane2_en),
+		.pos_x(plane2_pos_x), .pos_y(plane2_pos_y),
+		.width(plane2_width), .height(plane2_height),
+		.alpha(plane2_alpha), .colorkey_en(plane2_colorkey_en),
+		.colorkey(plane2_colorkey), .yuv_mode(plane2_yuv_mode),
+		.cur_x(p_col), .cur_y(p_line),
+		.prim_rgb(tgen_rgb), .prim_valid(de),
+		.out_rgb(p2_rgb), .out_valid(p2_de),
+		.ov_valid(1'b0), .ov_ready(), .ov_y(8'd0), .ov_u(8'd0), .ov_v(8'd0), .ov_rgb(24'd0),
+		.req_valid(), .req_ready(1'b0), .req_write(), .req_line(), .req_be(), .req_wdata(), .req_tag(),
+		.rsp_valid(1'b0), .rsp_write(1'b0), .rsp_tag(8'd0), .rsp_rdata({(LINE_BYTES*8){1'b0}}), .rsp_error(1'b0)
+	);
+	/* verilator lint_on PINCONNECTEMPTY */
+
+	assign hdr_in_r = p_plane2_en ? {p2_rgb[23:16], p2_rgb[23:22]} : tgen_rgb10[29:20];
+	assign hdr_in_g = p_plane2_en ? {p2_rgb[15:8],  p2_rgb[15:14]}  : tgen_rgb10[19:10];
+	assign hdr_in_b = p_plane2_en ? {p2_rgb[7:0],   p2_rgb[7:6]}   : tgen_rgb10[9:0];
+
+	atg_dc_hdr #(
+		.CSC_ENABLE(1)
+	) u_hdr (
+		.pclk(pclk), .prst_n(p_rst_n),
+		.hdr_en(p_hdr_en),
+		.in_r(hdr_in_r), .in_g(hdr_in_g), .in_b(hdr_in_b),
+		.out_r(hdr_out_r), .out_g(hdr_out_g), .out_b(hdr_out_b)
+	);
+
+	assign final_rgb = p_hdr_en ? {hdr_out_r[9:2], hdr_out_g[9:2], hdr_out_b[9:2]} : (p_plane2_en ? p2_rgb : tgen_rgb);
+
 	atg_dc_tmds tmds_enc (
-		.clk(pclk), .rst_n(p_rst_n), .rgb(rgb), .de(de), .hs(hs), .vs(vs), .tmds(tmds)
+		.clk(pclk), .rst_n(p_rst_n), .rgb(final_rgb), .de(de), .hs(hs), .vs(vs), .tmds(tmds)
 	);
 
 	/* The parallel output (KC705 ADV7511). */
@@ -299,12 +364,12 @@ module atg_dc #(
 		wire [15:0] ycc;
 
 		atg_dc_ycc ycc_enc (
-			.clk(pclk), .rst_n(p_rst_n), .rgb(rgb), .de(de), .hs(hs), .vs(vs),
+			.clk(pclk), .rst_n(p_rst_n), .rgb(final_rgb), .de(de), .hs(hs), .vs(vs),
 			.ycc(ycc), .ycc_de(px_de), .ycc_hs(px_hs), .ycc_vs(px_vs)
 		);
 		assign px_rgb = {8'd0, ycc};
 	end else begin : g_rgb
-		assign px_rgb = rgb;
+		assign px_rgb = final_rgb;
 		assign px_de = de;
 		assign px_hs = hs;
 		assign px_vs = vs;

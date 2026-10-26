@@ -26,17 +26,27 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `st_wdata` | in | 32 | STATE value; the block keeps the words of its range. |
 | `b_valid` | in | 1 | Blend 4 pixels. |
 | `b_src` | in | 512 | Source colours (fp32). |
+| `b_src1` | in | 512 | Secondary source colours for dual-source blending (fp32). |
+| `b_has_src1`| in | 1 | Dual-source blend active for this beat. |
 | `b_dst` | in | 128 | Destination pixels (RT_FORMAT). |
 | `b_mask` | in | 4 | Lanes. |
 | `b_rt` | in | 2 | (CAPS[30]) The colour attachment of the beat: its format, BLEND word and write mask. |
 | `b_rvalid` | out | 1 | Result LAT cycles later. |
 | `b_pix` | out | 128 | Result pixels (RT_FORMAT; masked lanes keep b_dst). |
 
-12 ports (11 before CAPS[30]).
+14 ports (12 before ws002-p002, 11 before CAPS[30]).
 
 ## 4. Behaviour
 
 Formats BGRA8, RGBA8, RGB565 (RT_FORMAT).  Blend equation per design §2.3 BLEND (the v1 bit layout of the blitter's blend for the factors; one/zero/src alpha/one minus src alpha/dst/const).
+
+**Dual-Source Blending (ws002-p002)**:
+Supports factors 15..18 for subpixel font anti-aliasing and dual-source color output:
+- 15: `VK_BLEND_FACTOR_SRC1_COLOR` ($s1_c$ for RGB, $s1_a$ for alpha)
+- 16: `VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR` ($1 - s1_c$ for RGB, $1 - s1_a$ for alpha)
+- 17: `VK_BLEND_FACTOR_SRC1_ALPHA` ($s1_a$ for all channels)
+- 18: `VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA` ($1 - s1_a$ for all channels)
+When enabled in `ROP_CTRL[7]`, high factor bits are packed into `BLEND[26:23]` (bit 23 for src_color MSB, bit 24 for dst_color MSB, bit 25 for src_alpha MSB, bit 26 for dst_alpha MSB). Subpixel font rendering uses $C_{res} = C_{text} \cdot M + C_{dst} \cdot (1 - M)$ with factor 15 on source and factor 16 on destination.
 
 **With CAPS[30]** (the 8-bit path of the render output; atg_rop_fblend takes the other blendable formats):
 
@@ -91,6 +101,13 @@ None beyond the above.
 - `PASS atg_rop_logicop.formats` — formats BGRA8, RGBA8, R8, RG8 with logic op
 - `PASS atg_rop_logicop` at the end.
 
+`sim/tb/atg_rop_dualsrc_tb.v` prints:
+- `PASS atg_rop_dualsrc.factors` — dual source blend factors 15..18
+- `PASS atg_rop_dualsrc.subpixel_font` — subpixel font anti-aliasing
+- `PASS atg_rop_dualsrc.masks` — channel write masks and lane masks with dual source
+- `PASS atg_rop_dualsrc.formats` — formats RGBA8, BGRA8 with dual source
+- `PASS atg_rop_dualsrc` at the end.
+
 ## 9. References
 
 design §2.3 (BLEND, WRITE_MASK).
@@ -104,3 +121,5 @@ Implemented in p007 (the three RT_FORMAT codes).  2026-10-25: this spec adds the
 2026-10-26 (Phase 014): Stage 2 multiplier count halved from 32 to 16 (1 multiplier per channel). Standard alpha blend (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) and related modes are optimized using linear interpolation (Lerp: $D + (S - D) \cdot \alpha = D \pm \text{div255}(|S - D| \cdot \alpha)$) with unsigned multiplication. Coupled with the single-stage `atg_rop_div255` adder, critical path delay is reduced by ~75%.
 
 2026-10-27 (Phase ws002-p001): 16 `VkLogicOp` operations implemented in Stage 3, decoded from `GHCI_S_ROP_CTRL` (0x08D) and `GHCI_S_LOGIC_OP` (0x08E). Independent blend and logic op across RT 0..3 supported. Dedicated testbench `sim/tb/atg_rop_logicop_tb.v`.
+
+2026-10-27 (Phase ws002-p002): Dual Source Blending (factors 15..18) implemented for subpixel font rendering and dual-source color blending. Secondary color output `b_src1` and `b_has_src1`. Dedicated testbench `sim/tb/atg_rop_dualsrc_tb.v`.

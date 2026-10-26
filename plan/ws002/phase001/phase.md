@@ -3,7 +3,7 @@
 # Phase 001: ROP Logic Op（論理演算 16 種）& Independent Blend per RT
 
 - **親**: [WS002](../ws.md)
-- **状態**: `in-review`
+- **状態**: `completed`
 - **依存**: [ws001-p014](../../ws001/phase014/phase.md)
 - **優先度**: Minor (Vulkan 1.0 適合性・後回し実装)
 - **出典**: ユーザー指示（Vulkan 1.0 適合の後回し WS 切り出し）および R1 アドバイス書

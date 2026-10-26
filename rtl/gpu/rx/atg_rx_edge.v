@@ -43,6 +43,8 @@ module atg_rx_edge (
 	input wire [31:0] rts,
 	input wire [2:0] cull,
 	input wire vprect,
+	input wire [15:0] line_width,
+	input wire [15:0] point_size,
 	output reg [6:0] r_ra,
 	input wire [31:0] r_rd,
 	output reg r_we,
@@ -95,16 +97,20 @@ module atg_rx_edge (
 `else
 	wire xmaj = adx >= ady;
 `endif
-	wire signed [23:0] ox = xmaj ? 24'sd0 : 24'sd128;
-	wire signed [23:0] oy = xmaj ? 24'sd128 : 24'sd0;
+	wire [15:0] eff_line_w = line_width == 16'd0 ? 16'h0100 : line_width;
+	wire [15:0] eff_point_s = point_size == 16'd0 ? 16'h0100 : point_size;
+	wire signed [23:0] half_line_w = {9'd0, eff_line_w[15:1]};
+	wire signed [23:0] half_point_s = {9'd0, eff_point_s[15:1]};
+	wire signed [23:0] ox = xmaj ? 24'sd0 : half_line_w;
+	wire signed [23:0] oy = xmaj ? half_line_w : 24'sd0;
 
 	/* The corners: a triangle's vertices (and v0 again); a line's a-, a+,
 	 * b-, b+; a point's p--, p+-, p++, p-+.  The walked triangle is corners
 	 * (0, w1, w2). */
 	wire is_line = !is_tri && kind == 2'd1;
 	wire signed [23:0] vx2 = sv[4], vy2 = sv[5];
-	wire signed [23:0] hx = is_line ? ox : 24'sd128;
-	wire signed [23:0] hy = is_line ? oy : 24'sd128;
+	wire signed [23:0] hx = is_line ? ox : half_point_s;
+	wire signed [23:0] hy = is_line ? oy : half_point_s;
 	/* a -+ h and b -+ h */
 	wire signed [23:0] axm, axp, aym, ayp, bxm, bxp, bym, byp;
 	am_sub #(.W(24)) u_axm (.a(ax), .b(hx), .bi(1'b0), .d(axm), .bo(carry_unused[7]));

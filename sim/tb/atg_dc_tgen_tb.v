@@ -40,7 +40,8 @@ module atg_dc_tgen_tb;
 		.px_valid(px_valid), .px_ready(px_ready), .px_data(px_data),
 		.rgb(rgb), .de(de), .hs(hs), .vs(vs),
 		.frame_toggle(frame_toggle), .vsync_toggle(vsync_toggle),
-		.underflow_toggle(underflow_toggle), .line(line)
+		.underflow_toggle(underflow_toggle), .line(line),
+		.vrr_en(1'b0), .flip_ready(1'b0), .vrr_vmax(12'd0), .col(), .rgb10()
 	);
 
 	integer errors = 0;

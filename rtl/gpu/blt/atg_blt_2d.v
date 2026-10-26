@@ -76,6 +76,8 @@ module atg_blt_2d #(
 	wire [3:0] o_keep;
 	wire [16:0] clip_x0, clip_y0, clip_x1, clip_y1, dx, dy;
 	wire [31:0] s_src_xy, dbase_u, sbase_u, dstride_u, sstride_u;
+	wire [31:0] src_slice_u, dst_slice_u;
+	wire [15:0] depth_u;
 	wire [LINE_BITS-1:0] fill_line;
 	wire c_op2;
 	wire [8:0] c_resolve;
@@ -85,7 +87,7 @@ module atg_blt_2d #(
 		.op(o_op), .op2(c_op2), .resolve(c_resolve), .blend(o_blend), .rev(o_rev), .psl(o_psl), .keep(o_keep), .op_ok(op_ok),
 		.x0(clip_x0), .y0(clip_y0), .x1(clip_x1), .y1(clip_y1), .dx(dx), .dy(dy),
 		.src_xy(s_src_xy), .dbase(dbase_u), .sbase(sbase_u), .dstride(dstride_u),
-		.sstride(sstride_u), .fill_line(fill_line)
+		.sstride(sstride_u), .src_slice(src_slice_u), .dst_slice(dst_slice_u), .depth(depth_u), .fill_line(fill_line)
 	);
 
 	/* The mode of the blit in progress, taken at the kick. */
@@ -859,7 +861,8 @@ module atg_blt_2d #(
 	end
 
 	wire unused_ok = &{1'b0, shifted[2*LINE_BITS-1:LINE_BITS], pp_shifted[2*LINE_BITS-1:LINE_BITS],
-		c_op2, c_resolve, step_co_unused, first_co_unused, fsm_co_unused, bst_co_unused};
+		c_op2, c_resolve, step_co_unused, first_co_unused, fsm_co_unused, bst_co_unused,
+		src_slice_u, dst_slice_u, depth_u};
 endmodule
 
 `default_nettype wire

@@ -67,23 +67,30 @@ module atg_rx_clip (
 	localparam [31:0] EPS = 32'h37800000;	/* 2^-16 */
 	localparam [223:0] EMPTY = {96'd0, ONE, 96'd0};	/* (0, 0, 0, 1), weights 0 */
 
-	/* STATE: VIEWPORT 0x050-0x053, DEPTH_CLAMP 0x059, RAST_MODE[6], and
-	 * DRAW_RAW's words 0x1E0-0x1E8 (x, y, z of each vertex). */
+	/* STATE: VIEWPORT 0x050-0x053 (16-entry array), DEPTH_CLAMP 0x059, RAST_MODE[6],
+	 * VIEWPORT_IDX 0x065, and DRAW_RAW's words 0x1E0-0x1E8 (x, y, z of each vertex). */
 	reg [31:0] rw [0:8];
-	reg [127:0] vp;
+	reg [127:0] vp_array [0:15];
+	reg [3:0] vp_idx;
+	wire [127:0] vp = vp_array[vp_idx];
 	reg [1:0] dc;
 	reg discard;
+	integer vpi;
 	always @(posedge clk)
 		if (st_we && st_idx >= GHCI_S_RAW && st_idx <= GHCI_S_RAW + 9'd8)
 			rw[st_idx[3:0]] <= st_wdata;
 	always @(posedge clk)
 		if (!rst_n) begin
-			vp <= 128'd0;
+			vp_idx <= 4'd0;
+			for (vpi = 0; vpi < 16; vpi = vpi + 1)
+				vp_array[vpi] <= 128'd0;
 			dc <= 2'd0;
 			discard <= 1'b0;
 		end else if (st_we) begin
+			if (st_idx == GHCI_S_VIEWPORT_IDX)
+				vp_idx <= st_wdata[3:0];
 			if (st_idx >= GHCI_S_VIEWPORT && st_idx < GHCI_S_VIEWPORT + 9'd4)
-				vp[32 * st_idx[1:0] +: 32] <= st_wdata;
+				vp_array[vp_idx][32 * st_idx[1:0] +: 32] <= st_wdata;
 			if (st_idx == GHCI_S_DEPTH_CLAMP)
 				dc <= st_wdata[1:0];
 			if (st_idx == GHCI_S_RAST_MODE)

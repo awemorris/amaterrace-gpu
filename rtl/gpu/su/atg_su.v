@@ -642,6 +642,8 @@ module atg_su #(
 		.m_req_valid(d_req_valid), .m_req_ready(d_req_ready), .m_req_write(d_req_write), .m_req_line(d_req_line), .m_req_be(d_req_be), .m_req_wdata(d_req_wdata), .m_req_tag(d_req_tag), .m_rsp_valid(d_rsp_valid), .m_rsp_write(d_rsp_write), .m_rsp_tag(d_rsp_tag), .m_rsp_rdata(d_rsp_rdata), .m_rsp_error(d_rsp_error)
 	);
 
+	wire [511:0] ex_color1_unused;
+	wire ex_has_src1_unused;
 	atg_su_exp #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) exp (
 		.scrub(scrub), .scrub_busy(scb_exp),
 		.clk(clk), .rst_n(rst_n),
@@ -649,7 +651,7 @@ module atg_su #(
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
 		.x_info(x_info), .x_ready(exp_ready),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
-		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
+		.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(ex_color1_unused), .ex_has_src1(ex_has_src1_unused), .ex_depth(ex_depth), .ex_last(ex_last),
 		.ex_next(ex_next),
 		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane), .fl_data(fl_data),
 		.fl_go(fl_go), .fl_info(fl_info),
@@ -742,7 +744,7 @@ module atg_su #(
 	assign fault = sb_fault;
 	assign fault_addr = {16'd0, sb_fault_pc};
 
-	wire unused_ok = &{1'b0, inv[1]};	/* T$: the TU's */
+	wire unused_ok = &{1'b0, inv[1], ex_color1_unused, ex_has_src1_unused};	/* T$: the TU's */
 endmodule
 
 `default_nettype wire

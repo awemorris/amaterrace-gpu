@@ -63,6 +63,7 @@ module ring_bench #(
 		.run(run), .halt(halt), .step(step), .open(open),
 		.n_valid(n_valid), .n_ready(n_ready), .n_data(n_data), .n_last(n_last),
 		.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag), .v_done(v_done),
+		.dma_req_ready(1'b0), .dma_done(1'b0),
 		.empty(empty), .retire(retire), .busy(busy),
 		.fault(fault), .fault_kind(fault_kind), .fault_addr(fault_addr), .fault_tag(fault_tag),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),

@@ -3,7 +3,7 @@
 # Phase 002: SU / ROP Dual Source Blending（フォント描画用 src1 カラー出力）
 
 - **親**: [WS002](../ws.md)
-- **状態**: `in-progress`
+- **状態**: `completed`
 - **依存**: [ws001-p010](../../ws001/phase010/phase.md), [ws002-p001](../phase001/phase.md)
 - **優先度**: Minor (Vulkan 1.0 適合性・後回し実装)
 - **出典**: ユーザー指示（Vulkan 1.0 適合の後回し WS 切り出し）および R1 アドバイス書

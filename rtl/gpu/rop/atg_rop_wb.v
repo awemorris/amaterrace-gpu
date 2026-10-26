@@ -54,14 +54,14 @@ module atg_rop_wb #(
 	input wire [31:0] d_xy,
 	input wire [15:0] d_smask,	/* bit 4 l + s: sample s of lane l */
 	input wire [511:0] d_color,
-	input wire [1:0] d_rt,	/* the beat's attachment */
+	input wire [2:0] d_rt,	/* the beat's attachment (Phase 003: MRT 8) */
 	input wire d_nocol,	/* a beat without colour */
 	/* atg_rop_blend */
 	output wire b_valid,
 	output wire [511:0] b_src,
 	output wire [127:0] b_dst,
 	output wire [3:0] b_mask,
-	output wire [1:0] b_rt,
+	output wire [2:0] b_rt,
 	input wire b_rvalid,
 	input wire [127:0] b_pix,
 	output wire busy,
@@ -107,7 +107,7 @@ module atg_rop_wb #(
 	reg [31:0] xy;
 	reg [15:0] mask;
 	reg [511:0] color;
-	reg [1:0] rt;
+	reg [2:0] rt;
 	reg [31:0] addr;
 	reg [LINE_SHIFT-1:0] off [0:1];	/* the quad's first byte in each row's line */
 	reg f_go;
@@ -124,7 +124,7 @@ module atg_rop_wb #(
 	wire f_take = st == S_BWAIT && p_path == 2'd1 && f_done;
 
 	wire [31:0] eff_xy = (st == S_IDLE) ? d_xy : xy;
-	wire [1:0] eff_rt = (st == S_IDLE) ? d_rt : rt;
+	wire [2:0] eff_rt = (st == S_IDLE) ? d_rt : rt;
 	wire [15:0] eff_mask = (st == S_IDLE) ? d_smask : mask;
 	wire [511:0] eff_color = (st == S_IDLE) ? d_color : color;
 	wire eff_r = (st == S_IDLE) ? 1'b0 : r;
@@ -173,7 +173,7 @@ module atg_rop_wb #(
 
 	atg_rop_hazard #(
 		.NUM_ENTRIES(16),
-		.TAG_W(32)
+		.TAG_W(33)
 	) u_hazard (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -331,7 +331,7 @@ module atg_rop_wb #(
 			edirty[0] <= {LINE_BYTES{1'b0}};
 			edirty[1] <= {LINE_BYTES{1'b0}};
 			idle <= 5'd0;
-			rt <= 2'd0;
+			rt <= 3'd0;
 			pipe_v <= 3'd0;
 			release_valid <= 1'b0;
 			release_id <= 4'd0;

@@ -87,7 +87,21 @@ module atg_dc_regs #(
 	output wire i2c_we,
 	output wire [1:0] i2c_idx,
 	output wire [31:0] i2c_wdata,
-	input wire [31:0] i2c_rdata
+	input wire [31:0] i2c_rdata,
+	/* Extended WSI / HDR / VRR / Plane2 outputs */
+	output wire hdr_en,
+	output wire vrr_en,
+	output wire [11:0] vrr_vmax,
+	output wire flip_ready,
+	output wire plane2_en,
+	output wire [11:0] plane2_pos_x,
+	output wire [11:0] plane2_pos_y,
+	output wire [11:0] plane2_width,
+	output wire [11:0] plane2_height,
+	output wire [7:0]  plane2_alpha,
+	output wire        plane2_colorkey_en,
+	output wire [23:0] plane2_colorkey,
+	output wire        plane2_yuv_mode
 );
 	`include "ghci_regs.vh"
 
@@ -95,7 +109,7 @@ module atg_dc_regs #(
 	/* DC_CAPS: [1] TMDS without the transmitter, [2] the transmitter with
 	 * it; [7:4] formats 0..2; [8] the cursor plane; [11:9] the modes. */
 	localparam [2:0] MODES_VALUE = MODES;
-	localparam [31:0] DC_CAPS_VALUE = {20'd0, MODES_VALUE, HAS_CURSOR != 0, 4'b0111, 1'b0,
+	localparam [31:0] DC_CAPS_VALUE = {16'd0, 1'b1, 1'b1, 1'b1, 1'b0, MODES_VALUE, HAS_CURSOR != 0, 4'b1111, 1'b0,
 		HAS_I2C != 0 ? 3'b100 : 3'b010};
 	localparam [5:0] RESET_CYCLES = 6'd32;
 	localparam [5:0] I_CTRL = GHCI_DC_CTRL[7:2];
@@ -111,6 +125,14 @@ module atg_dc_regs #(
 	localparam [5:0] I_I2C = GHCI_DC_I2C[7:2];
 	localparam [5:0] I_SCAN_SUM = GHCI_DC_SCAN_SUM[7:2];
 	localparam [5:0] I_SCAN_WORDS = GHCI_DC_SCAN_WORDS[7:2];
+	localparam [5:0] I_PLANE2_BASE = GHCI_DC_PLANE2_BASE[7:2];
+	localparam [5:0] I_PLANE2_POS = GHCI_DC_PLANE2_POS[7:2];
+	localparam [5:0] I_PLANE2_SIZE = GHCI_DC_PLANE2_SIZE[7:2];
+	localparam [5:0] I_PLANE2_CTRL = GHCI_DC_PLANE2_CTRL[7:2];
+	localparam [5:0] I_PLANE2_COLORKEY = GHCI_DC_PLANE2_COLORKEY[7:2];
+	localparam [5:0] I_VRR_CTRL = GHCI_DC_VRR_CTRL[7:2];
+	localparam [5:0] I_HDR_CTRL = GHCI_DC_HDR_CTRL[7:2];
+	localparam [5:0] I_FLIP_READY = GHCI_DC_FLIP_READY[7:2];
 
 	reg r_enable, r_test, r_output;
 	reg [1:0] r_format;
@@ -123,6 +145,11 @@ module atg_dc_regs #(
 	reg [31:0] r_frame_count;
 	reg [5:0] reset_left;
 
+	reg r_hdr_en, r_vrr_en, r_plane2_en;
+	reg [31:0] r_plane2_base, r_plane2_pos, r_plane2_size, r_plane2_ctrl, r_plane2_colorkey;
+	reg [31:0] r_vrr_ctrl, r_hdr_ctrl;
+	reg r_flip_ready;
+
 	assign enable = r_enable;
 	assign test_pattern = r_test;
 	assign format = r_format;
@@ -134,6 +161,20 @@ module atg_dc_regs #(
 	assign pending = pend;
 	assign frame_count = r_frame_count;
 	assign ev_vblank = ev_vsync && r_enable;
+
+	assign hdr_en = r_hdr_en || r_hdr_ctrl[0] || (r_format == GHCI_DC_FMT_A2B10G10R10);
+	assign vrr_en = r_vrr_en || r_vrr_ctrl[0];
+	assign vrr_vmax = r_vrr_ctrl[27:16];
+	assign flip_ready = r_flip_ready;
+	assign plane2_en = r_plane2_en || r_plane2_ctrl[0];
+	assign plane2_pos_x = r_plane2_pos[11:0];
+	assign plane2_pos_y = r_plane2_pos[27:16];
+	assign plane2_width = r_plane2_size[11:0];
+	assign plane2_height = r_plane2_size[27:16];
+	assign plane2_alpha = r_plane2_ctrl[15:8];
+	assign plane2_colorkey_en = r_plane2_ctrl[16];
+	assign plane2_yuv_mode = r_plane2_ctrl[17];
+	assign plane2_colorkey = r_plane2_colorkey[23:0];
 
 	genvar t;
 	generate
@@ -151,7 +192,7 @@ module atg_dc_regs #(
 	am_sub #(.W(4)) s_wtidx (.a(d_idx[3:0]), .b(I_TIMING[3:0]), .bi(1'b0), .d(w_tidx), .bo(idx_bo_unused[0]));
 	wire w_quasi = w_timing || (d_we && (d_idx == I_FB_STRIDE || d_idx == I_FB_SIZE ||
 		d_idx == I_PCLK_SEL));
-	wire [31:0] ctrl_old = {25'd0, r_output, r_format, 1'b0, r_test, 1'b0, r_enable};
+	wire [31:0] ctrl_old = {22'd0, r_plane2_en, r_vrr_en, r_hdr_en, r_output, r_format, 1'b0, r_test, 1'b0, r_enable};
 	wire [31:0] ctrl_new = (ctrl_old & ~d_wmask) | wbits;
 	wire w_ctrl = d_we && d_idx == I_CTRL;
 	wire do_reset = w_ctrl && ctrl_new[GHCI_DC_CTRL_RESET];
@@ -203,6 +244,17 @@ module atg_dc_regs #(
 			err_frame <= 1'b0;
 			r_frame_count <= 32'd0;
 			reset_left <= 6'd0;
+			r_hdr_en <= 1'b0;
+			r_vrr_en <= 1'b0;
+			r_plane2_en <= 1'b0;
+			r_plane2_base <= 32'd0;
+			r_plane2_pos <= 32'd0;
+			r_plane2_size <= 32'd0;
+			r_plane2_ctrl <= 32'd0;
+			r_plane2_colorkey <= 32'd0;
+			r_vrr_ctrl <= 32'd0;
+			r_hdr_ctrl <= 32'd0;
+			r_flip_ready <= 1'b0;
 		end else if (do_reset) begin
 			r_enable <= 1'b0;
 			st_underflow <= 1'b0;
@@ -268,6 +320,7 @@ module atg_dc_regs #(
 				if (pend_cp)
 					taken <= 1'b1;
 			end
+			r_flip_ready <= (d_we && d_idx == I_FLIP_READY && wbits[0]) || flip_valid || w_next;
 			if (w_ctrl) begin
 				/* ENABLE rising clears the sticky underflow. */
 				if (ctrl_new[GHCI_DC_CTRL_ENABLE] && !r_enable)
@@ -277,7 +330,24 @@ module atg_dc_regs #(
 				if (!fmt_bad)
 					r_format <= ctrl_new[GHCI_DC_CTRL_FORMAT +: 2];
 				r_output <= ctrl_new[GHCI_DC_CTRL_OUTPUT];
+				r_hdr_en <= ctrl_new[GHCI_DC_CTRL_HDR];
+				r_vrr_en <= ctrl_new[GHCI_DC_CTRL_VRR];
+				r_plane2_en <= ctrl_new[GHCI_DC_CTRL_PLANE2];
 			end
+			if (d_we && d_idx == I_PLANE2_BASE)
+				r_plane2_base <= (r_plane2_base & ~d_wmask) | wbits;
+			if (d_we && d_idx == I_PLANE2_POS)
+				r_plane2_pos <= (r_plane2_pos & ~d_wmask) | wbits;
+			if (d_we && d_idx == I_PLANE2_SIZE)
+				r_plane2_size <= (r_plane2_size & ~d_wmask) | wbits;
+			if (d_we && d_idx == I_PLANE2_CTRL)
+				r_plane2_ctrl <= (r_plane2_ctrl & ~d_wmask) | wbits;
+			if (d_we && d_idx == I_PLANE2_COLORKEY)
+				r_plane2_colorkey <= (r_plane2_colorkey & ~d_wmask) | wbits;
+			if (d_we && d_idx == I_VRR_CTRL)
+				r_vrr_ctrl <= (r_vrr_ctrl & ~d_wmask) | wbits;
+			if (d_we && d_idx == I_HDR_CTRL)
+				r_hdr_ctrl <= (r_hdr_ctrl & ~d_wmask) | wbits;
 			if (!quasi_bad) begin
 				if (d_we && d_idx == I_FB_STRIDE)
 					r_stride <= (r_stride & ~d_wmask) | wbits;
@@ -319,6 +389,14 @@ module atg_dc_regs #(
 		I_PCLK_SEL: d_rdata = {28'd0, r_pclk_sel};
 		I_SCAN_SUM: d_rdata = scan_sum;
 		I_SCAN_WORDS: d_rdata = scan_words;
+		I_PLANE2_BASE: d_rdata = r_plane2_base;
+		I_PLANE2_POS: d_rdata = r_plane2_pos;
+		I_PLANE2_SIZE: d_rdata = r_plane2_size;
+		I_PLANE2_CTRL: d_rdata = r_plane2_ctrl;
+		I_PLANE2_COLORKEY: d_rdata = r_plane2_colorkey;
+		I_VRR_CTRL: d_rdata = r_vrr_ctrl;
+		I_HDR_CTRL: d_rdata = r_hdr_ctrl;
+		I_FLIP_READY: d_rdata = {31'd0, r_flip_ready};
 		default:
 			if (r_timing_hit)
 				d_rdata = timing[32*r_tidx +: 32];

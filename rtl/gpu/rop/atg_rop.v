@@ -92,7 +92,7 @@ module atg_rop #(
 	wire [511:0] b_src;
 	wire [127:0] b_dst, b_pix;
 	wire [3:0] b_mask;
-	wire [1:0] b_rt;
+	wire [2:0] b_rt;
 	wire order_busy, ds_busy, wb_busy;
 	wire ds_req_valid, ds_req_ready, ds_req_write, ds_rsp_valid, ds_rsp_write, ds_rsp_error;
 	wire [ADDR_W-LINE_SHIFT-1:0] ds_req_line;
@@ -171,15 +171,17 @@ module atg_rop #(
 
 	atg_rop_blend blend (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-		.b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),
+		.b_valid(b_valid), .b_src(b_src), .b_src1(512'd0), .b_has_src1(1'b0),
+		.b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),
 		.b_rvalid(b_rvalid), .b_pix(b_pix)
 	);
 
 	atg_rop_wb #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) wb (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_smask(d_smask), .d_color(d_color),
-		.d_rt(d_beat[3:2]), .d_nocol(d_beat[1]),
-		.b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),
+		.d_rt({1'b0, d_beat[3:2]}), .d_nocol(d_beat[1]),
+		.b_valid(b_valid), .b_src(b_src),
+		.b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),
 		.b_rvalid(b_rvalid), .b_pix(b_pix), .busy(wb_busy),
 		.req_valid(wb_req_valid), .req_ready(wb_req_ready), .req_write(wb_req_write), .req_line(wb_req_line), .req_be(wb_req_be), .req_wdata(wb_req_wdata), .req_tag(wb_req_tag), .rsp_valid(wb_rsp_valid), .rsp_write(wb_rsp_write), .rsp_tag(wb_rsp_tag), .rsp_rdata(wb_rsp_rdata), .rsp_error(wb_rsp_error)
 	);

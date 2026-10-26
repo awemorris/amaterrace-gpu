@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""
+Draft and validate new ghci_uma_system.svg
+"""
+import xml.etree.ElementTree as ET
+
+def generate_ghci_uma_system():
+    width, height = 1040, 720
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
+    <defs>
+        <!-- Dropshadow Filters -->
+        <filter id="shadow-sm" x="-4%" y="-4%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.06"/>
+        </filter>
+        <filter id="shadow-md" x="-6%" y="-6%" width="112%" height="112%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+        </filter>
+
+        <!-- Arrow Markers -->
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
+        </marker>
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
+        </marker>
+    </defs>
+
+    <style><![CDATA[
+        text {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }}
+        .title {{
+            font-size: 20px;
+            font-weight: 700;
+            fill: #0f172a;
+        }}
+        .subtitle {{
+            font-size: 13px;
+            font-weight: 500;
+            fill: #475569;
+        }}
+        .group-label {{
+            font-size: 12.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }}
+        .card-title {{
+            font-size: 12.5px;
+            font-weight: 700;
+            fill: #1e293b;
+        }}
+        .card-sub {{
+            font-size: 10px;
+            font-weight: 600;
+            fill: #64748b;
+        }}
+        .card-body {{
+            font-size: 10px;
+            font-weight: 400;
+            fill: #334155;
+        }}
+        .card-bullet {{
+            font-size: 10px;
+            font-weight: 400;
+            fill: #475569;
+        }}
+        .conn-label {{
+            font-size: 10.5px;
+            font-weight: 600;
+            fill: #334155;
+        }}
+    ]]></style>
+
+    <!-- Background Canvas -->
+    <rect width="{width}" height="{height}" fill="#f8fafc" rx="12"/>
+    <rect x="1" y="1" width="{width-2}" height="{height-2}" fill="none" stroke="#e2e8f0" stroke-width="1.5" rx="11"/>
+
+    <!-- Header Block -->
+    <g transform="translate(30, 22)">
+        <text class="title" x="0" y="20">GHCI Unified Memory Architecture (UMA) System</text>
+        <text class="subtitle" x="0" y="38">Zero-Copy In-Memory PSO &amp; Descriptors • Autonomous On-Chip GPU Command Processor • Platform Bus</text>
+        <rect x="790" y="4" width="190" height="26" rx="13" fill="#059669" opacity="0.12"/>
+        <text x="885" y="21" text-anchor="middle" font-size="11.5" font-weight="700" fill="#047857">UMA ZERO-COPY</text>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- TOP LEFT: HOST CPU & OPERATING SYSTEM                          -->
+    <!-- ============================================================== -->
+    <g transform="translate(30, 72)">
+        <rect width="430" height="280" rx="10" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 420 0 Q 430 0 430 10 L 430 36 L 0 36 Z" fill="#eff6ff"/>
+        <text class="group-label" x="16" y="24" fill="#1d4ed8">Host CPU Subsystem (No GPU Logic)</text>
+
+        <!-- User Space -->
+        <g transform="translate(16, 48)">
+            <rect width="190" height="216" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
+            <rect x="0" y="0" width="190" height="26" rx="6" fill="#e0f2fe"/>
+            <text class="card-title" x="95" y="17" text-anchor="middle" fill="#0369a1">User Space (App / UMD)</text>
+            <text class="card-body" x="12" y="44">• Vulkan 1.3 Application</text>
+            <text class="card-body" x="12" y="64">• Amaterrace User-Mode</text>
+            <text class="card-body" x="12" y="80">  Driver (UMD / Mesa)</text>
+            <text class="card-body" x="12" y="102">• Builds GhciPipelineState</text>
+            <text class="card-body" x="12" y="118">  (48B Immutable PSOs)</text>
+            <text class="card-body" x="12" y="140">• Populates Descriptor Tables</text>
+            <text class="card-body" x="12" y="162">• Writes Command Ring</text>
+            <rect x="10" y="180" width="170" height="24" rx="4" fill="#dbeafe"/>
+            <text x="95" y="196" text-anchor="middle" font-size="10" font-weight="700" fill="#1e40af">Zero-Copy Memory Alloc</text>
+        </g>
+
+        <!-- Kernel Space -->
+        <g transform="translate(220, 48)">
+            <rect width="194" height="216" rx="6" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
+            <rect x="0" y="0" width="194" height="26" rx="6" fill="#dcfce7"/>
+            <text class="card-title" x="97" y="17" text-anchor="middle" fill="#15803d">Kernel Space (KMD / OS)</text>
+            <text class="card-body" x="12" y="44">• Amaterrace DRM / KMD</text>
+            <text class="card-body" x="12" y="64">• Unified Virtual Memory</text>
+            <text class="card-body" x="12" y="80">  (UVM) Manager</text>
+            <text class="card-body" x="12" y="102">• Maps Unified Page Tables</text>
+            <text class="card-body" x="12" y="124">• Writes Ring Doorbell</text>
+            <text class="card-body" x="12" y="140">  (RING_WPTR register)</text>
+            <text class="card-body" x="12" y="162">• Handles IRQ / Fences</text>
+            <rect x="10" y="180" width="174" height="24" rx="4" fill="#bbf7d0"/>
+            <text x="97" y="196" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">76B Slim MMIO Only</text>
+        </g>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- TOP RIGHT: GPU SUBSYSTEM (CONTAINING CP AND PIPELINE)          -->
+    <!-- ============================================================== -->
+    <g transform="translate(485, 72)">
+        <rect width="525" height="280" rx="10" fill="#ffffff" stroke="#c4b5fd" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 515 0 Q 525 0 525 10 L 525 36 L 0 36 Z" fill="#f5f3ff"/>
+        <text class="group-label" x="16" y="24" fill="#6d28d9">GPU Subsystem (On-Die Hardware ATG1)</text>
+
+        <!-- Top Inner Block: Command Processor (CP) -->
+        <g transform="translate(14, 46)">
+            <rect width="497" height="106" rx="8" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.2"/>
+            <rect x="0" y="0" width="497" height="24" rx="8" fill="#f3e8ff"/>
+            <text class="card-title" x="15" y="17" fill="#6b21a8">GPU Front-End: Command Processor (CP) — atg_cp</text>
+            <text class="card-sub" x="480" y="16" text-anchor="end" fill="#7c3aed">Autonomous Hardware Controller</text>
+
+            <g transform="translate(12, 32)">
+                <!-- Sub 1: RV32IM Core -->
+                <rect width="112" height="64" rx="4" fill="#ffffff" stroke="#e9d5ff" stroke-width="1"/>
+                <text class="card-title" x="56" y="18" text-anchor="middle" font-size="10.5" fill="#581c87">RV32IM Core</text>
+                <text class="card-desc" x="56" y="34" text-anchor="middle" font-size="8.5">• Microcode FW</text>
+                <text class="card-desc" x="56" y="46" text-anchor="middle" font-size="8.5">• Ring Fetcher</text>
+                <text class="card-desc" x="56" y="58" text-anchor="middle" font-size="8.5">• Preemption</text>
+            </g>
+            <g transform="translate(132, 32)">
+                <!-- Sub 2: HW Page Table Walker -->
+                <rect width="120" height="64" rx="4" fill="#ffffff" stroke="#e9d5ff" stroke-width="1"/>
+                <text class="card-title" x="60" y="18" text-anchor="middle" font-size="10.5" fill="#581c87">Page Walker</text>
+                <text class="card-desc" x="60" y="34" text-anchor="middle" font-size="8.5">• 2-Level Walk</text>
+                <text class="card-desc" x="60" y="46" text-anchor="middle" font-size="8.5">• Traverses UMA</text>
+                <text class="card-desc" x="60" y="58" text-anchor="middle" font-size="8.5">• Zero CPU Pin</text>
+            </g>
+            <g transform="translate(260, 32)">
+                <!-- Sub 3: TLB Hierarchy -->
+                <rect width="105" height="64" rx="4" fill="#ffffff" stroke="#e9d5ff" stroke-width="1"/>
+                <text class="card-title" x="52" y="18" text-anchor="middle" font-size="10.5" fill="#581c87">L1/L2 TLBs</text>
+                <text class="card-desc" x="52" y="34" text-anchor="middle" font-size="8.5">• Hardware TLB</text>
+                <text class="card-desc" x="52" y="46" text-anchor="middle" font-size="8.5">• Auto-Refill</text>
+                <text class="card-desc" x="52" y="58" text-anchor="middle" font-size="8.5">• Fast Invalidate</text>
+            </g>
+            <g transform="translate(373, 32)">
+                <!-- Sub 4: Pipeline Dispatch -->
+                <rect width="112" height="64" rx="4" fill="#ede9fe" stroke="#c084fc" stroke-width="1"/>
+                <text class="card-title" x="56" y="18" text-anchor="middle" font-size="10.5" fill="#4c1d95">Dispatch Engine</text>
+                <text class="card-desc" x="56" y="34" text-anchor="middle" font-size="8.5">• Configures VF/SU</text>
+                <text class="card-desc" x="56" y="46" text-anchor="middle" font-size="8.5">• Multi-Queue Arb</text>
+                <text class="card-desc" x="56" y="58" text-anchor="middle" font-size="8.5">• Zero-MMIO State</text>
+            </g>
+        </g>
+
+        <!-- Downward Dispatch Arrows from CP to Execution Pipeline -->
+        <path fill="none" d="M 70 152 L 70 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <path fill="none" d="M 230 152 L 230 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <path fill="none" d="M 390 152 L 390 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <text class="flow-label" x="262" y="162" text-anchor="middle" fill="#6b21a8" font-size="9" font-weight="700">Internal Hardware Configuration &amp; Draw Dispatch Bus</text>
+
+        <!-- Bottom Inner Block: GPU Execution Engines & Pipeline -->
+        <g transform="translate(14, 172)">
+            <rect width="497" height="96" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+            <rect x="0" y="0" width="497" height="22" rx="8" fill="#f1f5f9"/>
+            <text class="card-title" x="15" y="15" fill="#334155">GPU 3D, Compute &amp; 2D Execution Engines</text>
+
+            <g transform="translate(8, 28)">
+                <rect width="90" height="60" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+                <text class="card-title" x="45" y="16" text-anchor="middle" font-size="10">VF</text>
+                <text class="card-body" x="45" y="32" text-anchor="middle" font-size="8.5">Vertex Fetch</text>
+                <text class="card-body" x="45" y="46" text-anchor="middle" font-size="8.5">32-Entry PT-VC</text>
+            </g>
+            <g transform="translate(104, 28)">
+                <rect width="96" height="60" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+                <text class="card-title" x="48" y="16" text-anchor="middle" font-size="10">SU (Warps)</text>
+                <text class="card-body" x="48" y="32" text-anchor="middle" font-size="8.5">32-Thread SIMT</text>
+                <text class="card-body" x="48" y="46" text-anchor="middle" font-size="8.5">Scalar PE Array</text>
+            </g>
+            <g transform="translate(206, 28)">
+                <rect width="90" height="60" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+                <text class="card-title" x="45" y="16" text-anchor="middle" font-size="10">RX</text>
+                <text class="card-body" x="45" y="32" text-anchor="middle" font-size="8.5">8×8 Tile Skip</text>
+                <text class="card-body" x="45" y="46" text-anchor="middle" font-size="8.5">16-Sample MSAA</text>
+            </g>
+            <g transform="translate(302, 28)">
+                <rect width="94" height="60" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+                <text class="card-title" x="47" y="16" text-anchor="middle" font-size="10">TU &amp; ROP</text>
+                <text class="card-body" x="47" y="32" text-anchor="middle" font-size="8.5">MSHR Cache</text>
+                <text class="card-body" x="47" y="46" text-anchor="middle" font-size="8.5">Tile SRAM Blend</text>
+            </g>
+            <g transform="translate(402, 28)">
+                <rect width="88" height="60" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+                <text class="card-title" x="44" y="16" text-anchor="middle" font-size="10">BLT &amp; DC</text>
+                <text class="card-body" x="44" y="32" text-anchor="middle" font-size="8.5">2.0 GB/s DMA</text>
+                <text class="card-body" x="44" y="46" text-anchor="middle" font-size="8.5">200MHz Scanout</text>
+            </g>
+        </g>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- CENTER BRIDGE: SYSTEM BUS & IOMMU                              -->
+    <!-- ============================================================== -->
+    <g transform="translate(30, 375)">
+        <rect width="980" height="64" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>
+        <text class="card-title" x="20" y="26" fill="#1e293b">Unified Platform Bus &amp; Hardware IOMMU (AXI4-Coherent)</text>
+        <text class="card-subtitle" x="20" y="48" fill="#475569">48-bit Virtual Addressing • CPU maps shared ring &amp; PSOs • GPU CP traverses page tables autonomously without OS pinning</text>
+        <rect x="745" y="17" width="215" height="30" rx="5" fill="#e2e8f0"/>
+        <text x="852" y="37" text-anchor="middle" font-size="11" font-weight="700" fill="#334155">Zero Staging Copies</text>
+    </g>
+
+    <!-- Connections between Host, GPU, and Center Bus -->
+    <!-- Host KMD Doorbell to GPU CP -->
+    <path fill="none" d="M 330 352 L 330 365 L 560 365 L 560 180 L 515 180" stroke="#2563eb" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow-blue)"/>
+    <text class="flow-label" x="445" y="361" text-anchor="middle" fill="#2563eb" font-size="9" font-weight="700">Slim MMIO Doorbell (WPTR Write)</text>
+
+    <!-- GPU CP to Bus (Ring & Page Walk) -->
+    <path fill="none" d="M 640 352 L 640 375" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+    <text class="flow-label" x="640" y="367" text-anchor="middle" fill="#7c3aed" font-size="8.5">CP Memory Port</text>
+
+    <!-- GPU Execution Pipeline to Bus (Textures, Framebuffer) -->
+    <path fill="none" d="M 850 352 L 850 375" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+    <text class="flow-label" x="850" y="367" text-anchor="middle" fill="#7c3aed" font-size="8.5">Shared L2C Port</text>
+
+    <!-- Host App to Bus (Zero-Copy Ring & PSO Write) -->
+    <path fill="none" d="M 130 352 L 130 375" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    <text class="flow-label" x="130" y="367" text-anchor="middle" fill="#2563eb" font-size="8.5">App Writes</text>
+
+    <!-- ============================================================== -->
+    <!-- BOTTOM: UNIFIED SYSTEM DRAM                                    -->
+    <!-- ============================================================== -->
+    <g transform="translate(30, 460)">
+        <rect width="980" height="235" rx="10" fill="#ffffff" stroke="#6ee7b7" stroke-width="1.5" filter="url(#shadow-md)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 970 0 Q 980 0 980 10 L 980 36 L 0 36 Z" fill="#ecfdf5"/>
+        <text class="group-label" x="20" y="24" fill="#047857">Shared Physical Memory (Unified System DRAM)</text>
+        <text class="card-subtitle" x="420" y="24" fill="#059669">Single Physical Pool: Host CPU and GPU Engines read/write zero-copy data structures directly</text>
+
+        <!-- Memory Buffer Cards -->
+        <g transform="translate(20, 52)">
+            <rect width="220" height="165" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1.2"/>
+            <rect x="0" y="0" width="220" height="24" rx="6" fill="#e0f2fe"/>
+            <text class="card-title" x="110" y="17" text-anchor="middle" fill="#0369a1">Command Ring Buffer</text>
+            <text class="card-body" x="12" y="44">• Host app writes packets into DRAM</text>
+            <text class="card-body" x="12" y="64">• GPU CP fetches via DMA/AXI master</text>
+            <text class="card-body" x="12" y="84">• Lockless circular WPTR/RPTR</text>
+            <text class="card-body" x="12" y="104">• BIND_PIPELINE, DRAW, DISPATCH</text>
+            <rect x="10" y="128" width="200" height="24" rx="4" fill="#dbeafe"/>
+            <text x="110" y="144" text-anchor="middle" font-size="10" font-weight="700" fill="#0284c7">Host: Write │ GPU CP: Read</text>
+        </g>
+
+        <g transform="translate(260, 52)">
+            <rect width="220" height="165" rx="6" fill="#fdf4ff" stroke="#f0abfc" stroke-width="1.2"/>
+            <rect x="0" y="0" width="220" height="24" rx="6" fill="#fae8ff"/>
+            <text class="card-title" x="110" y="17" text-anchor="middle" fill="#a21caf">In-Memory PSO (48B)</text>
+            <text class="card-body" x="12" y="44">• Immutable GhciPipelineState struct</text>
+            <text class="card-body" x="12" y="64">• Shader GSI1 instruction pointers</text>
+            <text class="card-body" x="12" y="84">• Raster, blend &amp; stencil states</text>
+            <text class="card-body" x="12" y="104">• Created once, bound by pointer</text>
+            <rect x="10" y="128" width="200" height="24" rx="4" fill="#f5d0fe"/>
+            <text x="110" y="144" text-anchor="middle" font-size="10" font-weight="700" fill="#c026d3">Zero Register Configuration</text>
+        </g>
+
+        <g transform="translate(500, 52)">
+            <rect width="220" height="165" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
+            <rect x="0" y="0" width="220" height="24" rx="6" fill="#fef3c7"/>
+            <text class="card-title" x="110" y="17" text-anchor="middle" fill="#b45309">Descriptor &amp; Page Tables</text>
+            <text class="card-body" x="12" y="44">• Flat 64-bit GPU virtual address array</text>
+            <text class="card-body" x="12" y="64">• OS 2-level page tables in DRAM</text>
+            <text class="card-body" x="12" y="84">• Direct HW TU / VF descriptor fetch</text>
+            <text class="card-body" x="12" y="104">• GPU CP walks page tables directly</text>
+            <rect x="10" y="128" width="200" height="24" rx="4" fill="#fde68a"/>
+            <text x="110" y="144" text-anchor="middle" font-size="10" font-weight="700" fill="#d97706">Hardware Page Walking</text>
+        </g>
+
+        <g transform="translate(740, 52)">
+            <rect width="220" height="165" rx="6" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1.2"/>
+            <rect x="0" y="0" width="220" height="24" rx="6" fill="#d1fae5"/>
+            <text class="card-title" x="110" y="17" text-anchor="middle" fill="#047857">Buffers &amp; Framebuffers</text>
+            <text class="card-body" x="12" y="44">• Vertex &amp; Index mesh attributes</text>
+            <text class="card-body" x="12" y="64">• Textures, Mipmaps, Depth Buffers</text>
+            <text class="card-body" x="12" y="84">• Color Render Targets / Framebuffers</text>
+            <text class="card-body" x="12" y="104">• Direct Display Scanout (DC)</text>
+            <rect x="10" y="128" width="200" height="24" rx="4" fill="#a7f3d0"/>
+            <text x="110" y="144" text-anchor="middle" font-size="10" font-weight="700" fill="#059669">Zero-Copy DC Scanout</text>
+        </g>
+    </g>
+
+    <!-- Connectors between Center Interconnect and Bottom DRAM -->
+    <path fill="none" d="M 520 439 L 520 460" stroke="#059669" stroke-width="2.5" marker-end="url(#arrow-emerald)"/>
+</svg>
+"""
+
+if __name__ == "__main__":
+    content = generate_ghci_uma_system()
+    ET.fromstring(content)
+    print("XML valid! Size:", len(content))

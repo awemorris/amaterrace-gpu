@@ -23,7 +23,7 @@ module am_fp_fix2f #(
 	input wire [W-1:0] v,
 	output wire [31:0] f
 );
-	localparam [7:0] E0 = 127 + W - SIGNED - F;
+	localparam [7:0] E0 = 127 + W - 1 - F;
 	localparam [4:0] TOP = W - 1;
 
 	wire sign = SIGNED ? v[W-1] : 1'b0;

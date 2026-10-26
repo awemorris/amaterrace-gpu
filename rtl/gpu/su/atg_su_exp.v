@@ -77,6 +77,8 @@ module atg_su_exp #(
 	output wire [31:0] ex_xy,
 	output wire [3:0] ex_mask,
 	output wire [511:0] ex_color,
+	output wire [511:0] ex_color1,
+	output wire ex_has_src1,
 	output wire [127:0] ex_depth,
 	output wire ex_last,
 	input wire [15:0] ex_next,
@@ -127,15 +129,18 @@ module atg_su_exp #(
 	/* ---- Per warp. */
 	reg [NWARPS-1:0] fr;	/* the warp's facing (fl_info[48]) */
 	reg [NWARPS*4-1:0] rtw;	/* the attachments exported */
+	reg [NWARPS-1:0] has_src1;	/* whether the warp exported src1 (COLOR1) */
 	reg [NWARPS*32-1:0] cov, xp, dw;	/* coverage, exported lanes, depth written */
 	reg [NWARPS*32-1:0] smw, r6w;	/* SAMPLE_MASK exported, r6 written by the RX */
 	reg [NWARPS*128-1:0] dsv;	/* the warp's d_s */
 	reg [NWARPS*8*16-1:0] qx, qy;
 
-	/* ---- Exports of fragment warps: colour k component c at 0x100 + 16 k + c. */
+	/* ---- Exports of fragment warps: colour k component c at 0x100 + 16 k + c;
+	 * 0x108 + c is the second colour (src1) of attachment 0 for dual-source blending. */
 	wire [31:0] tgt = x_uop[ATG_UOP_IMM +: 32];
 	wire ex_frag = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && x_info[17:16] == 2'd1;
 	wire ex_col = ex_frag && tgt[31:6] == 26'd4 && tgt[3:2] == 2'd0;
+	wire ex_col1 = ex_frag && tgt[31:6] == 26'd4 && tgt[5:4] == 2'd0 && tgt[3:2] == 2'b10;
 	wire ex_dep = ex_frag && tgt == 32'h104;
 	wire ex_sm = ex_frag && tgt == 32'h105;
 	wire ex_op = ex_col || ex_dep || ex_sm;
@@ -191,6 +196,7 @@ module atg_su_exp #(
 
 	/* NPHYS lane banks × {R, G, B, A of 4 attachments, depth, z} and {SAMPLE_MASK, r6}. */
 	wire [NPHYS*192-1:0] rdat;
+	wire [NPHYS*128-1:0] rdat1;
 	wire [NPHYS*8-1:0] rsm;
 	genvar b;
 	generate
@@ -199,6 +205,10 @@ module atg_su_exp #(
 		reg [31:0] m1 [0:ROWS*4-1];
 		reg [31:0] m2 [0:ROWS*4-1];
 		reg [31:0] m3 [0:ROWS*4-1];
+		reg [31:0] ms1_0 [0:ROWS-1];
+		reg [31:0] ms1_1 [0:ROWS-1];
+		reg [31:0] ms1_2 [0:ROWS-1];
+		reg [31:0] ms1_3 [0:ROWS-1];
 		reg [31:0] m4 [0:ROWS-1];
 		reg [31:0] mz [0:ROWS-1];
 		reg [3:0] m5 [0:ROWS-1];
@@ -211,6 +221,10 @@ module atg_su_exp #(
 			if (sc_on || we && ex_col && comp == 2'd1) m1[c_wa] <= d;
 			if (sc_on || we && ex_col && comp == 2'd2) m2[c_wa] <= d;
 			if (sc_on || we && ex_col && comp == 2'd3) m3[c_wa] <= d;
+			if (sc_on || we && ex_col1 && comp == 2'd0) ms1_0[r_wa] <= d;
+			if (sc_on || we && ex_col1 && comp == 2'd1) ms1_1[r_wa] <= d;
+			if (sc_on || we && ex_col1 && comp == 2'd2) ms1_2[r_wa] <= d;
+			if (sc_on || we && ex_col1 && comp == 2'd3) ms1_3[r_wa] <= d;
 			if (sc_on || we && ex_dep) m4[r_wa] <= d;
 			if (sc_on || we && ex_sm) m5[r_wa] <= d[3:0];
 			if (sc_on || fl_we && fl_reg == 6'd3 && zbank == b)
@@ -221,13 +235,16 @@ module atg_su_exp #(
 		assign rsm[8 * b +: 8] = {m5[drow[RW-1:0]], mr6[drow[RW-1:0]]};
 		assign rdat[192 * b +: 192] = {mz[drow[RW-1:0]], m4[drow[RW-1:0]],
 			m3[dcrow], m2[dcrow], m1[dcrow], m0[dcrow]};
+		assign rdat1[128 * b +: 128] = {ms1_3[drow[RW-1:0]], ms1_2[drow[RW-1:0]],
+			ms1_1[drow[RW-1:0]], ms1_0[drow[RW-1:0]]};
 	end
 	endgenerate
 
 	/* The quad's lanes i = 0..3 are lanes 4 dq + i, banks (4 dq + i) mod NPHYS. */
-	reg [511:0] col;
+	reg [511:0] col, col1;
 	reg [127:0] dep;
 	reg [191:0] lw;
+	reg [127:0] lw1;
 	reg [7:0] ls;
 	reg [15:0] smask;
 	reg [3:0] zexp;
@@ -235,11 +252,14 @@ module atg_su_exp #(
 	integer i;
 	always @(*) begin
 		lw = 192'd0;
+		lw1 = 128'd0;
 		ls = 8'd0;
 		for (i = 0; i < 4; i = i + 1) begin
 			lw = rdat[192 * (({27'd0, dl0} + i) % NPHYS) +: 192];
+			lw1 = rdat1[128 * (({27'd0, dl0} + i) % NPHYS) +: 128];
 			ls = rsm[8 * (({27'd0, dl0} + i) % NPHYS) +: 8];
 			col[128 * i +: 128] = lw[127:0];
+			col1[128 * i +: 128] = lw1;
 			dep[32 * i +: 32] = ddw[dl0 + i[4:0]] ? lw[159:128] : lw[191:160];
 			zexp[i] = ddw[dl0 + i[4:0]];
 `ifdef MUT_SMASK_AND
@@ -264,6 +284,8 @@ module atg_su_exp #(
 		zexp & dxp[dl0 +: 4], smask};
 `endif
 	assign ex_color = col;
+	assign ex_color1 = col1;
+	assign ex_has_src1 = has_src1[dwarp];
 	assign ex_depth = dep;
 
 	always @(posedge clk) begin
@@ -284,6 +306,7 @@ module atg_su_exp #(
 		if (fl_go) begin
 			fr[fl_slot] <= fl_info[48];
 			rtw[fl_slot*4 +: 4] <= 4'd0;
+			has_src1[fl_slot] <= 1'b0;
 			cov[fl_slot*32 +: 32] <= fl_info[31:0];
 			xp[fl_slot*32 +: 32] <= 32'd0;
 			dw[fl_slot*32 +: 32] <= 32'd0;
@@ -297,6 +320,8 @@ module atg_su_exp #(
 			xp[x_warp*32 +: 32] <= xp[x_warp*32 +: 32] | side_w;
 			if (ex_col && side != {NPHYS{1'b0}})
 				rtw[{x_warp, tk}] <= 1'b1;
+			if (ex_col1 && side != {NPHYS{1'b0}})
+				has_src1[x_warp] <= 1'b1;
 			if (ex_dep)
 				dw[x_warp*32 +: 32] <= dw[x_warp*32 +: 32] | side_w;
 			if (ex_sm)

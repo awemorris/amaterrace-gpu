@@ -58,6 +58,9 @@ module atg_blt_cfg #(
 	output wire [31:0] sbase,
 	output wire [31:0] dstride,
 	output wire [31:0] sstride,
+	output wire [31:0] src_slice,
+	output wire [31:0] dst_slice,
+	output wire [15:0] depth,
 	/* The FILL line: the pixel repeated */
 	output wire [LINE_BYTES*8-1:0] fill_line
 );
@@ -65,6 +68,7 @@ module atg_blt_cfg #(
 
 	reg [31:0] s_op, s_dst_base, s_dst_stride, s_src_base, s_src_stride, s_dst_xy, s_src_xy;
 	reg [31:0] s_size, s_clip_min, s_clip_max, s_resolve;
+	reg [31:0] s_src_slice, s_dst_slice, s_depth;
 	reg [127:0] s_color;	/* COLOR, COLOR1-COLOR3 */
 
 	always @(posedge clk) begin
@@ -74,6 +78,9 @@ module atg_blt_cfg #(
 			s_dst_stride <= 32'd0;
 			s_src_base <= 32'd0;
 			s_src_stride <= 32'd0;
+			s_src_slice <= 32'd0;
+			s_dst_slice <= 32'd0;
+			s_depth <= 32'd1;
 			s_dst_xy <= 32'd0;
 			s_src_xy <= 32'd0;
 			s_size <= 32'd0;
@@ -88,6 +95,9 @@ module atg_blt_cfg #(
 			GHCI_S_BLT_DST_STRIDE: s_dst_stride <= st_wdata;
 			GHCI_S_BLT_SRC_BASE: s_src_base <= st_wdata;
 			GHCI_S_BLT_SRC_STRIDE: s_src_stride <= st_wdata;
+			GHCI_S_BLT_SRC_SLICE: s_src_slice <= st_wdata;
+			GHCI_S_BLT_DST_SLICE: s_dst_slice <= st_wdata;
+			GHCI_S_BLT_DEPTH: s_depth <= st_wdata;
 			GHCI_S_BLT_DST_XY: s_dst_xy <= st_wdata;
 			GHCI_S_BLT_SRC_XY: s_src_xy <= st_wdata;
 			GHCI_S_BLT_SIZE: s_size <= st_wdata;
@@ -159,6 +169,9 @@ module atg_blt_cfg #(
 	assign sbase = s_src_base & mask;
 	assign dstride = s_dst_stride & mask;
 	assign sstride = s_src_stride & mask;
+	assign src_slice = s_src_slice & mask;
+	assign dst_slice = s_dst_slice & mask;
+	assign depth = s_depth[15:0] != 16'd0 ? s_depth[15:0] : 16'd1;
 
 	/* The FILL line. */
 	genvar g;
@@ -169,7 +182,7 @@ module atg_blt_cfg #(
 	endgenerate
 
 	wire unused_ok = &{1'b0, s_op[31:20], s_op[15:14], s_op[11:10], s_op[7:5], s_op[3],
-		s_resolve[31:9], end_co_unused};
+		s_resolve[31:9], end_co_unused, s_depth[31:16]};
 endmodule
 
 `default_nettype wire

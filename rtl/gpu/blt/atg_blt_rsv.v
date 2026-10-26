@@ -95,6 +95,8 @@ module atg_blt_rsv #(
 	wire [8:0] s_resolve;
 	wire [16:0] clip_x0, clip_y0, clip_x1, clip_y1, dx, dy;
 	wire [31:0] s_src_xy, dbase, sbase_p, dstride, sstride_p;
+	wire [31:0] unused_rsv_src_slice, unused_rsv_dst_slice;
+	wire [15:0] unused_rsv_depth;
 	wire [LBITS-1:0] c_fill;
 	wire c_ok;
 
@@ -103,7 +105,8 @@ module atg_blt_rsv #(
 		.op(o_op), .op2(o_op2), .resolve(s_resolve), .blend(o_blend), .rev(o_rev),
 		.psl(o_psl), .keep(o_keep), .op_ok(c_ok), .x0(clip_x0), .y0(clip_y0), .x1(clip_x1),
 		.y1(clip_y1), .dx(dx), .dy(dy), .src_xy(s_src_xy), .dbase(dbase), .sbase(sbase_p),
-		.dstride(dstride), .sstride(sstride_p), .fill_line(c_fill)
+		.dstride(dstride), .sstride(sstride_p), .src_slice(unused_rsv_src_slice),
+		.dst_slice(unused_rsv_dst_slice), .depth(unused_rsv_depth), .fill_line(c_fill)
 	);
 
 	/* The combinations taken: the average's pixel sizes (psl). */
@@ -467,7 +470,7 @@ module atg_blt_rsv #(
 `endif
 
 	wire unused_ok = &{1'b0, o_fmt[3], c_fill, c_ok, rsp_tag, r_nl[LA_W-1:17], r_last[LS-1:0], rc_co_unused,
-		st_co_unused, q_co_unused};
+		st_co_unused, q_co_unused, unused_rsv_src_slice, unused_rsv_dst_slice, unused_rsv_depth};
 endmodule
 
 `default_nettype wire

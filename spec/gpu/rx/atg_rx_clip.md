@@ -21,7 +21,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | **STATE broadcast (from atg_cp_state)** | | | |
 | `st_we` | in | 1 | One-cycle write of STATE[st_idx]. |
 | `st_idx` | in | 9 | STATE index (design §2.3). |
-| `st_wdata` | in | 32 | STATE value; the module keeps VIEWPORT 0x050-0x053, DEPTH_CLAMP 0x059, RAST_MODE 0x05A and DRAW_RAW's 0x1E0-0x1E8. |
+| `st_wdata` | in | 32 | STATE value; the module keeps 16-entry VIEWPORT 0x050-0x053 array indexed by VIEWPORT_IDX 0x065, DEPTH_CLAMP 0x059, RAST_MODE 0x05A and DRAW_RAW's 0x1E0-0x1E8. |
 | `raw_kick` | in | 1 | DRAW_RAW. |
 | **Primitives to the RX** | | | |
 | `prim_valid` | in | 1 | A primitive. |
@@ -99,3 +99,5 @@ design §3.8 (clip), §16.9; `spec/gpu/rx/atg_rx_cpoly.md`; docs/ghci.md §8.5 (
 2026-10-24 Q1 (P3's p007 decision, ACKed): the near plane is Vulkan's z ≥ 0 (not the GL form z > -w); DEPTH_CLAMP is ignored and z is always clamped to [0, 1].
 
 Implemented in p007: the near plane only, prim_vtx 24 and cl_tri 700 bits, the fp units inside this module (the PASS lines pass, near, raw, ptbusy).  2026-10-25: this spec describes the CAPS[30] form (planes 0-6, kinds, atg_rx_cpoly, DISCARD, the 2 bits of kind); implemented the same day, every PASS of §8 (`sim/vec/rx_clip.txt` unchanged, the new cases in `sim/vec/rx_clip2.txt` from `tools/rx-clip-vectors.py`, the model `clip2` in `tools/rxmodel.py`); `-DMUT_FARCLIP` and `-DMUT_WCLIP` fail it.  DEPTH_CLAMP[1] = 0's results are unchanged except where a vertex has w < 2^-16 or leaves the guard band (checked: 6000 random near-plane triangles with and without a 640 × 480 viewport give clip()'s result).  The trivial bound is 4w (with the viewport limits), not w as the first text said, so that a triangle partly off the screen needs no polygon work.
+
+WS002 p007 (P2): Added 16-entry VIEWPORT array indexing via VIEWPORT_IDX (0x065), complete depth clamping bypass; verified with `sim/tb/atg_rx_ext_prim_tb.v`.
