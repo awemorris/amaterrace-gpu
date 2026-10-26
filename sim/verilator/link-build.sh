@@ -43,7 +43,7 @@ timeout 1200 verilator --cc --build -j 8 -Wall -Iinclude \
 	"-GLOCAL_BASE=32'h80000000" "-GLOCAL_BYTES=32'h40000000" "-GWINDOW_BYTES=32'h04000000" \
 	"-GHOST_LIMIT=32'h80000000" \
 	-Mdir "$out/obj" -CFLAGS "-O2" \
-	"$root/sim/verilator/link.vlt" $(find rtl -name '*.v' | sort) >"$out/build.log" 2>&1 || {
+	"$root/sim/verilator/link.vlt" $(find rtl -name '*.v' | grep -v 'rtl/bsp/xilinx7' | sort) >"$out/build.log" 2>&1 || {
 	tail -30 "$out/build.log" >&2
 	echo "FAIL link-build (Verilator, log $out/build.log)"
 	exit 1

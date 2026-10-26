@@ -76,12 +76,12 @@ module atg_fmt_tb;
 		atg_fmt_comp u_comp (.raw(raw), .inf(u_inf), .k(K), .sten(st), .v(u_v[32 * gk +: 32]));
 		atg_fmt_f2unorm u_un (.f(p_c[32 * gk +: 32]), .w(u_inf[11:9] == ATG_FMT_SRGB ? 6'd8 :
 			u_inf[23 + 13 * gk +: 6]), .u(p_un[16 * gk +: 16]));
-		atg_fmt_f2h u_hf (.f(p_c[32 * gk +: 32]), .h(p_hf[16 * gk +: 16]));
+		am_fp_f2h #(.LAT(0)) u_hf (.f(p_c[32 * gk +: 32]), .h(p_hf[16 * gk +: 16]));
 	end
 	endgenerate
 	atg_fmt_pack #(.N(256), .FMTS(ALL)) u_pk (.c(p_c), .un(p_un), .hf(p_hf), .fmt(fmt), .wm(wm),
 		.o(p_o));
-	atg_fmt_h2f u_h2f (.h(h), .f(h_f));
+	am_fp_h2f #(.DENORM(1), .LAT(0)) u_h2f (.h(h), .f(h_f));
 	atg_fmt_comp u_href (.raw({112'd0, h}), .inf(atg_fmt_info(8'd76)), .k(2'd0), .sten(1'b0),
 		.v(h_ref));
 

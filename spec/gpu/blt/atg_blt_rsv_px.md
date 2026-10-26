@@ -57,7 +57,7 @@ Through `sim/tb/atg_blt_rsv_tb.v` (`atg_blt_rsv.md` §8); its monitor fails a li
 
 ## 9. References
 
-design §15.8.  Related: `atg_blt_rsv.md`, `atg_blt_avg.md`, `spec/common/am_fifo.md`.
+design §15.8.  Related: `atg_blt_rsv.md`, `atg_blt_avg.md`, `spec/library/bus/am_fifo.md`.
 
 ## 10. Status
 

@@ -33,7 +33,7 @@ None (a pipeline).
 
 ## 6. Latency and throughput
 
-One texel a cycle: E1 the modifier and the base, E1b the modifier times the multiplier (shifts and adds), E2 the sum and the clamp.  All the arithmetic through rtl/common.
+One texel a cycle: E1 the modifier and the base, E1b the modifier times the multiplier (shifts and adds), E2 the sum and the clamp.  All the arithmetic through rtl/library/arith.
 
 ## 7. Corner cases and errors
 

@@ -17,7 +17,7 @@
  * come from the caller, so that a unit that packs one of several formats
  * at a time has one converter a component (docs/style.md, "Arithmetic"):
  * un[16 k +: 16] = atg_fmt_f2unorm(c_k, the component's width; 8 for an
- * sRGB alpha), hf[16 k +: 16] = atg_fmt_f2h(c_k); only the formats that
+ * sRGB alpha), hf[16 k +: 16] = am_fp_f2h(c_k); only the formats that
  * need them read them.  UNORM RNE(clamp01(f) x (2^b - 1)), 16-bit floats
  * to nearest even, 32-bit floats and integer formats the low bits; sRGB
  * formats take R, G and B as 8-bit codes in [7:0] (atg_fmt_srgbenc) and A
@@ -39,7 +39,7 @@ module atg_fmt_pack #(
 ) (
 	input wire [127:0] c,
 	input wire [63:0] un,	/* the components as UNORM (atg_fmt_f2unorm) */
-	input wire [63:0] hf,	/* as fp16 (atg_fmt_f2h) */
+	input wire [63:0] hf,	/* as fp16 (am_fp_f2h) */
 	input wire [7:0] fmt,
 	input wire [3:0] wm,
 	output reg [255:0] o

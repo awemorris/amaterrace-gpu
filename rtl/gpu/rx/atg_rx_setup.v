@@ -160,9 +160,9 @@ module atg_rx_setup (
 	reg fa_v, fm_v, fd_v;
 	wire fa_o, fm_o, fd_o, fd_busy;
 	wire [31:0] fa_r, fm_r, fd_r;
-	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(opa), .i_b(opb),
+	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(opa), .i_b(opb),
 		.i_sub(u_op == 4'd2), .o_valid(fa_o), .o_r(fa_r));
-	atg_rx_fmul fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(opa), .i_b(opb),
+	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(opa), .i_b(opb),
 		.o_valid(fm_o), .o_r(fm_r));
 	atg_rx_fdiv fdiv (.clk(clk), .rst_n(rst_n), .i_start(fd_v), .i_a(opa), .i_b(opb),
 		.busy(fd_busy), .o_done(fd_o), .o_r(fd_r));

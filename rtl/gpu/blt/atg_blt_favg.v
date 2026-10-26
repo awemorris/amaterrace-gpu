@@ -17,11 +17,11 @@
  *                   (atg_fmt_srgbenc); byte 3 as UNORM8 (atg_blt_avg's rule)
  *   fmt 4 SFLOAT16  every 16 bits of 16-, 32- and 64-bit pixels: to fp32
  *                   exactly, averaged, to binary16 to nearest even
- *                   (atg_fmt_f2h)
+ *                   (am_fp_f2h)
  *   fmt 5 SFLOAT32  every 32 bits of 32-, 64- and 128-bit pixels, averaged
  *
  * The average of a channel is ((s0 + s1) + (s2 + s3)) x 0.25 in fp32, each
- * step one fused multiply-add (atg_su_ffma_p; round to nearest
+ * step one fused multiply-add (am_fp_fma_p; round to nearest
  * even, denormals flushed, NaN 0x7FC00000), four steps a channel (and the
  * encoder's nine cycles for sRGB).  i_valid/i_ready: a group, taken in
  * IDLE (npx pixels); o_valid/o_ready: its averages, held until taken.
@@ -112,8 +112,8 @@ module atg_blt_favg (
 
 	/* Sample sn of channel j of pixel p, as fp32 (the places are 32-bit, as the former expressions were). */
 	wire [31:0] ha, hc;	/* the two fp16 samples as fp32 */
-	atg_fmt_h2f u_ha (.h(s_in[ia_h +: 16]), .f(ha));
-	atg_fmt_h2f u_hc (.h(s_in[ic_h +: 16]), .f(hc));
+	am_fp_h2f #(.DENORM(1), .LAT(0)) u_ha (.h(s_in[ia_h +: 16]), .f(ha));
+	am_fp_h2f #(.DENORM(1), .LAT(0)) u_hc (.h(s_in[ic_h +: 16]), .f(hc));
 	/* verilator lint_off UNUSEDSIGNAL */
 	function [31:0] xs;	/* (everything it reads is an argument) */
 		input [511:0] si;
@@ -139,10 +139,10 @@ module atg_blt_favg (
 	/* The fma: fb is 1.0 or 0.25 (a significand of 2^23), so the product of
 	 * the significands is fa's shifted (no multiplier). */
 	wire [31:0] fr;
-	atg_su_ffma_p u_fma (.a0(fa), .b0(fb), .c0(fc), .rm(3'd0), .noc(1'b0),
+	am_fp_fma_p #(.LAT(0)) u_fma (.a0(fa), .b0(fb), .c0(fc), .rm(3'd0), .noc(1'b0),
 		.p({1'b0, fa[30:23] != 8'd0 ? {1'b1, fa[22:0]} : 24'd0, 23'd0}), .r(fr));
 	wire [15:0] fh;
-	atg_fmt_f2h u_fh (.f(fr), .h(fh));
+	am_fp_f2h #(.LAT(0)) u_fh (.f(fr), .h(fh));
 	wire [2:0] cpp_last, n_last;
 	wire [1:0] last_co_unused;
 

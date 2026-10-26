@@ -27,7 +27,7 @@
  *   sin, cos  x / (2 pi) in turns (Q0.40, mod 1), the quadrant, then 26
  *          CORDIC rotations; |x| < 2^-12 gives x and 1.0 (absolute error
  *          about 2^-24 on [-pi, pi]).
- * Inputs are flushed (denormals as zeros); results through atg_su_rnd
+ * Inputs are flushed (denormals as zeros); results through am_fp_rnd
  * (RNE, flushed).  Constants: include/atg_su_xu_tab.vh.
  *
  * States: IDLE →(group)→ LOAD → STEP (per op) → FIN → (next lane | RET)
@@ -221,7 +221,7 @@ module atg_su_xu #(
 	am_add #(.W(12)) u_ne (.a(ne), .b(12'd127), .ci(1'b0), .s(ne127), .co(carry_unused[14]));
 	am_add #(.W(12)) u_nx (.a(ne127), .b({6'd0, np}), .ci(1'b0), .s(nexp), .co(carry_unused[15]));
 	wire [31:0] nr;
-	atg_su_rnd u_nr (.s(ns), .e(nexp), .m(nw[40:17]), .g(nw[16]), .st(|nw[15:0] || nst), .rm(3'd0), .r(nr));
+	am_fp_rnd #(.LAT(0)) u_nr (.s(ns), .e(nexp), .m(nw[40:17]), .g(nw[16]), .st(|nw[15:0] || nst), .rm(3'd0), .r(nr));
 	wire [31:0] fin = nz ? 32'd0 : nr;
 
 	/* LOAD: the result's exponent (rcp, rsq, fsqrt, exp2); z of sin/cos. */

@@ -45,7 +45,7 @@ timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
 	'-GCPU_DMEM_INIT="fw/cp/images/atg1-cp-kc705.dmem.hex"' \
 	-GNSU=1 -GHAS_VF=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GROP_STENCIL=1 \
 	-Mdir "$out/obj" -o "$out/atg_top_fw_sim" -CFLAGS "-I$root/include -O1" \
-	"$root/sim/verilator/fw_harness.vlt" $(find rtl -name '*.v' | sort) \
+	"$root/sim/verilator/fw_harness.vlt" $(find rtl -name '*.v' | grep -v 'rtl/bsp/xilinx7' | sort) \
 	"$root/sim/verilator/fw_harness.cpp" >"$out/build.log" 2>&1 || {
 	tail -30 "$out/build.log" >&2
 	echo "FAIL verilator fw (build, log $out/build.log)"

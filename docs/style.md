@@ -29,7 +29,7 @@ Verilog
 - Valid/ready handshakes: a source does not drop valid or change its
   payload before ready.  Responses without ready are named as such.
 - Vendor primitives (PS7, BUFG, MMCME2, BSCANE2, ...) only in `boards/`
-  and `rtl/common/xilinx/`.
+  and `rtl/bsp/xilinx7/`.
 - Register offsets and fields come from `include/ghci_regs.vh`, never as
   bare numbers.
 - Lint clean: `tools/lint.sh` reports no warning.  An unavoidable warning
@@ -43,14 +43,14 @@ Arithmetic
 ----------
 
 User decision (2026-10-25): every multiplier, divider, adder, subtractor
-and shifter is a shared module of `rtl/common/`, instantiated where it is
+and shifter is a shared module of `rtl/library/arith/`, instantiated where it is
 needed, so that a design has only the arithmetic it really needs and each
 kind maps to the FPGA's best cell (a multiplier to DSP slices, an adder to
 a carry chain) where it can be checked once.
 
 - Signal arithmetic -- `+`, `-` (also unary), `*`, `/`, `%`, and a shift
   (`<<`, `>>`, `>>>`) by an amount that is a signal -- is written only
-  inside the modules of `rtl/common/`.  Every other module instantiates
+  inside the modules of `rtl/library/arith/`.  Every other module instantiates
   them:
 
   | Module | What | Cells (7 series) |
@@ -58,10 +58,14 @@ a carry chain) where it can be checked once.
   | `am_add` | `{co, s} = a + b + ci` | CARRY4 chain |
   | `am_sub` | `d = a - b - bi`, borrow out | CARRY4 chain |
   | `am_addsub` | `a + b` or `a - b` chosen by `sub` | CARRY4 chain and the XOR of b |
-  | `am_mul` | `a * b`, signed or unsigned, 0-n registers | DSP48E1 (use_dsp; 25 x 18 signed per slice) |
+  | `am_mul` | `a * b`, signed or unsigned, 0-n registers | DSP48E1 (`SYNTH_KINTEX7` cascade, generic otherwise) |
   | `am_div` | unsigned `a / b` and `a % b`, one bit per cycle | LUTs and a CARRY4 chain (one subtractor) |
   | `am_shift` | `a << n`, `a >> n`, `a >>> n` | LUTs (log2(W) levels of multiplexers) |
 
+- `*` is written only in `am_mul.v` (generic `ifndef SYNTH_KINTEX7`).  Under `SYNTH_KINTEX7`,
+  `am_mul.v` instantiates `DSP48E1` primitives directly with `PCOUT -> PCIN` cascade.
+- Adders and shifters remain mapped to fabric (`CARRY4` and LUTs).
+- Floating-point operators are unified in `rtl/library/fp/` (`am_fp_*`).
 - Operations of one module that are never needed in the same cycle share
   one instance, with their operands selected in front of it.
 - Not covered (constants, wiring): parameter and localparam expressions and
@@ -70,7 +74,7 @@ a carry chain) where it can be checked once.
   by a constant amount, and `*`, `/` or `%` by a constant power of two;
   testbenches and `sim/`.  The comparisons (`<`, `==`, ...) are not
   arithmetic in this rule.
-- `tools/arith-lint.py` counts the signal arithmetic outside `rtl/common/`
+- `tools/arith-lint.py` counts the signal arithmetic outside `rtl/library/arith/`
   in the elaborated design (Verilator); it reports 0 when the rule holds.
   A file that must keep its arithmetic is listed in the script's exception
   table with the reason, and here.

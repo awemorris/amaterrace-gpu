@@ -56,7 +56,7 @@ if [ "${1:-}" = -q ]; then
 elif [ $# -eq 0 ]; then
 	set -- $all
 fi
-rtl=$(find rtl sim/models -name '*.v' | sort)
+rtl=$(find rtl sim/models -name '*.v' | grep -v 'rtl/bsp/xilinx7' | sort)
 fail=0
 for ent in "$@"; do
 	name=${ent%%:*}

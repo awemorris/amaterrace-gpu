@@ -34,7 +34,7 @@ None (a pipeline).
 
 ## 6. Latency and throughput
 
-One lane a cycle: products in 7 (am_mul, 2 registers), R in 9, R × W in 11 (am_mul, 2 registers).  All the arithmetic through rtl/common.
+One lane a cycle: products in 7 (am_mul, 2 registers), R in 9, R × W in 11 (am_mul, 2 registers).  All the arithmetic through rtl/library/arith.
 
 ## 7. Corner cases and errors
 

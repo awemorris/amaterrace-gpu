@@ -19,8 +19,8 @@
  * 2 REVERSE_SUBTRACT (5-7 as ADD) with the factors of VkBlendFactor 0-14
  * (15 as ZERO; "one minus x" is 1 - x on the fadd; SRC_ALPHA_SATURATE
  * min(A_s, 1 - A_d), 1 for alpha), 3 MIN and 4 MAX (fp32 order, NaN gives
- * 0x7FC00000); without it the source.  The arithmetic is one atg_rx_fmul
- * and one atg_rx_fadd, one operation at a time.  sRGB R, G, B go through
+ * 0x7FC00000); without it the source.  The arithmetic is one am_fp_mul
+ * and one am_fp_add, one operation at a time.  sRGB R, G, B go through
  * one atg_fmt_srgbenc, then atg_fmt_pack (the write mask) gives o_raw and
  * o_keep (all ones for lanes outside i_lanes and for other formats).  See
  * spec/gpu/rop/atg_rop_fblend.md.
@@ -194,9 +194,9 @@ module atg_rop_fblend (
 	reg [31:0] opa, opb;
 	wire fa_o, fm_o;
 	wire [31:0] fa_r, fm_r;
-	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(opa), .i_b(opb),
+	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(opa), .i_b(opb),
 		.i_sub(fa_sub), .o_valid(fa_o), .o_r(fa_r));
-	atg_rx_fmul fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(opa), .i_b(opb),
+	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(opa), .i_b(opb),
 		.o_valid(fm_o), .o_r(fm_r));
 	wire [31:0] res = fa_o ? fa_r : fm_r;
 
@@ -216,7 +216,7 @@ module atg_rop_fblend (
 	for (gf = 0; gf < 4; gf = gf + 1) begin : g_cv
 		atg_fmt_f2unorm u_un (.f(rr_l[32 * gf +: 32]), .w(pinf[11:9] == ATG_FMT_SRGB ? 6'd8 :
 			pinf[23 + 13 * gf +: 6]), .u(p_un[16 * gf +: 16]));
-		atg_fmt_f2h u_hf (.f(rr_l[32 * gf +: 32]), .h(p_hf[16 * gf +: 16]));
+		am_fp_f2h #(.LAT(0)) u_hf (.f(rr_l[32 * gf +: 32]), .h(p_hf[16 * gf +: 16]));
 	end
 	endgenerate
 	wire [255:0] pk;

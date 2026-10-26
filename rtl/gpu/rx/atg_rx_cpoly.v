@@ -236,9 +236,9 @@ module atg_rx_cpoly (
 		.co(adr_carry_unused[6]));
 	wire fa_o, fm_o, fd_o, fd_busy;
 	wire [31:0] fa_r, fm_r, fd_r;
-	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid(issue && op == 2'd0), .i_a(op_a),
+	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(issue && op == 2'd0), .i_a(op_a),
 		.i_b(op_b), .i_sub(op_sub), .o_valid(fa_o), .o_r(fa_r));
-	atg_rx_fmul fmul (.clk(clk), .rst_n(rst_n), .i_valid(issue && op == 2'd1), .i_a(op_a),
+	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(issue && op == 2'd1), .i_a(op_a),
 		.i_b(op_b), .o_valid(fm_o), .o_r(fm_r));
 	atg_rx_fdiv fdiv (.clk(clk), .rst_n(rst_n), .i_start(issue && op == 2'd2), .i_a(op_a),
 		.i_b(op_b), .busy(fd_busy), .o_done(fd_o), .o_r(fd_r));

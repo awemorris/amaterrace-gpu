@@ -22,7 +22,7 @@
  * operations, none of which is needed with another: one am_mul 16 x 16
  * (the fma's 11 x 11 mantissas, imul2), one am_addsub of 37 bits (the
  * fma's aligned sum, iadd2/isub2), one am_sub of the exponent (the fma's
- * normalised exponent, packh's rebias) and one atg_su_hrnd (the fma's
+ * normalised exponent, packh's rebias) and one am_fp_hrnd (the fma's
  * rounding, packh's).
  */
 
@@ -183,7 +183,7 @@ module atg_su_pk_half #(
 		.bi(!f2h), .d(er), .bo(er_bo_unused)
 	);
 	wire [15:0] hr;
-	atg_su_hrnd u_rnd (
+	am_fp_hrnd #(.LAT(0)) u_rnd (
 		.s(f2h ? xf[31] : sr), .e(er), .m(f2h ? {1'b1, xf[22:13]} : nrm[36:26]),
 		.g(f2h ? xf[12] : nrm[25]), .st(f2h ? |xf[11:0] : |nrm[24:0]),
 		.rm(f2h ? 3'd0 : r), .h(hr)

@@ -132,13 +132,13 @@ module atg_rx_bary (
 	wire [31:0] fm_b = dz ? (c[2] ? sdy(l) : sdx(l)) : st == S_BC ? rw[l] : c[2] ? fj : fi;
 	wire fm_o, fa_o;
 	wire [31:0] fm_r, fa_r;
-	atg_rx_fmul fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(fm_a), .i_b(fm_b),
+	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(fm_a), .i_b(fm_b),
 		.o_valid(fm_o), .o_r(fm_r));
 	wire fa_v = (st == S_PL && c >= 6'd8 && c < 6'd40) || (st == S_BC && c >= 6'd4 && c < 6'd12) ||
 		(dz && c >= 6'd8 && c < 6'd12);
 	wire [31:0] fa_a = dz ? t1[l] : st == S_BC ? (c < 6'd8 ? ONE : fa_r) : c[2] ? fa_r : t1[l];
 	wire [31:0] fa_b = dz ? fm_r : st == S_BC ? fm_r : c[2] ? pl_c : fm_r;
-	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(fa_a), .i_b(fa_b),
+	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(fa_a), .i_b(fa_b),
 		.i_sub(st == S_BC), .o_valid(fa_o), .o_r(fa_r));
 	reg dgo;
 	wire fd_busy, fd_done;

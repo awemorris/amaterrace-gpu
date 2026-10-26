@@ -40,7 +40,7 @@ a client of its own in `atg_top`.
 | `PROT_PLB`, `PROT_PLB_W`, `PROT_GRANTS`, `PROT_GIDX_W` | 4, 2, 8, 3 | PLB lines, grant entries, and their clog2 | KC705 16, 4, 64, 6 |
 
 Derived (localparams): `HAS_ROOT`, `TREE_L` = clog2(`NCLIENT` − `HAS_ROOT`), `RW` (route bits) =
-max(1, `TREE_L` + `HAS_ROOT`), the header layout of `spec/common/am_amb_to_rt.md`.
+max(1, `TREE_L` + `HAS_ROOT`), the header layout of `spec/library/bus/am_amb_to_rt.md`.
 
 ## 3. Ports
 
@@ -179,8 +179,8 @@ responses stay in order per direction with the right data, and each memory sees 
 ## 9. References
 
 - design.md §4.1 (AMB, the tree, priority, aperture), §1.3 (quiesce, flush).
-- `spec/gpu/mc/atg_mc_tree.md`, `spec/gpu/mc/atg_rt.md`, `spec/common/am_amb_to_rt.md`,
-  `spec/gpu/mc/atg_mc_aper.md`, `spec/common/am_axi_master.md`.
+- `spec/gpu/mc/atg_mc_tree.md`, `spec/gpu/mc/atg_rt.md`, `spec/library/bus/am_amb_to_rt.md`,
+  `spec/gpu/mc/atg_mc_aper.md`, `spec/library/bus/am_axi_master.md`.
 
 ## 10. Status
 

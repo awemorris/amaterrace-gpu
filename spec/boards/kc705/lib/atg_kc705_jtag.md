@@ -53,7 +53,7 @@ No unit testbench (wiring only): covered by `sim/tb/atg_kc705_raster_tb.v` (thro
 
 ## 9. References
 
-design §4.4, spec/common/am_jtag_regs.md.
+design §4.4, spec/bsp/generic/am_jtag_regs.md.
 
 ## 10. Status
 

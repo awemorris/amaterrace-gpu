@@ -63,7 +63,7 @@ client and 2 levels).
 
 ## 9. References
 
-design.md §4.1; `spec/gpu/mc/atg_rt.md`, `spec/common/am_amb_to_rt.md`, `spec/gpu/mc/atg_mc.md`.
+design.md §4.1; `spec/gpu/mc/atg_rt.md`, `spec/library/bus/am_amb_to_rt.md`, `spec/gpu/mc/atg_mc.md`.
 
 ## 10. Status
 

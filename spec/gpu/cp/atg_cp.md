@@ -114,7 +114,7 @@ image runs).  The children's unit TBs: their specs §8.
 
 ## 9. References
 
-design.md §1.3, §2.2-§2.7, §7.6, §8 (p004); docs/ghci.md; the children's specs; spec/common/am_amb_mux.md;
+design.md §1.3, §2.2-§2.7, §7.6, §8 (p004); docs/ghci.md; the children's specs; spec/library/bus/am_amb_mux.md;
 spec/gpu/mc/atg_mc.md (quiesce exception).
 
 ## 10. Status

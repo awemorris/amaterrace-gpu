@@ -17,7 +17,7 @@
  * one rounding under the uop's rm (0 RNE, 1 RTZ, 2 RDN, 3 RUP, 4 RMM,
  * 7 = RNE), denormals flushed on input and output, canonical NaN
  * 0x7FC00000.  fadd/fsub/fmul and the fmadd family share one fused
- * datapath (atg_su_ffma_p in atg_su_fpu_op, one per lane); fract = x - floor(x)
+ * datapath (am_fp_fma_p in atg_su_fpu_op, one per lane); fract = x - floor(x)
  * through the same datapath (RNE); compares write Boolean (all ones/0);
  * the sat bit clamps float results to [0, 1].  mul* are the integer
  * multiplies of RISC-V M.  The reference is tools/gsi1fp.py.
@@ -29,8 +29,8 @@
  * kept then) in the next, in which x_ready is 0 (atg_su_pk's x_ready is 0
  * in that cycle too, and no FPU or PK group is taken).  The result is the
  * same, SHORT_LAT cycles after x_valid: the operands to fp32 (exact,
- * flushed, atg_su_h2f), fma rounded to odd (rm 5, 6 for RDN's zero
- * sign; atg_su_rnd), the result to fp16 under rm with atg_su_hrnd
+ * flushed, am_fp_h2f), fma rounded to odd (rm 5, 6 for RDN's zero
+ * sign; am_fp_rnd), the result to fp16 under rm with am_fp_hrnd
  * (one rounding of the exact result), min, max and the compares exact;
  * then hsel and sat as in atg_su_pk.
  */
@@ -155,9 +155,9 @@ module atg_su_fpu #(
 		wire [15:0] hb = busy ? k_b[gl*16 +: 16] : bsw;
 		wire [15:0] hc = busy ? k_c[gl*16 +: 16] : x_c[gl*32 +: 16];
 		wire [31:0] fa, fb, fc;
-		atg_su_h2f u_ha (.h(po == ATG_PK_FCMPGE2[3:0] ? hb : ha), .f(fa));
-		atg_su_h2f u_hb (.h(po == ATG_PK_FCMPGE2[3:0] ? ha : hb), .f(fb));
-		atg_su_h2f u_hc (.h(hc), .f(fc));
+		am_fp_h2f #(.DENORM(0), .LAT(0)) u_ha (.h(po == ATG_PK_FCMPGE2[3:0] ? hb : ha), .f(fa));
+		am_fp_h2f #(.DENORM(0), .LAT(0)) u_hb (.h(po == ATG_PK_FCMPGE2[3:0] ? ha : hb), .f(fb));
+		am_fp_h2f #(.DENORM(0), .LAT(0)) u_hc (.h(hc), .f(fc));
 		wire pk = SH && (busy || mine_pk);
 		wire [4:0] lo = pk ? pkop(po) : op;
 		wire [31:0] la = pk ? fa : x_a[gl*32 +: 32];
@@ -179,7 +179,7 @@ module atg_su_fpu #(
 		wire [15:0] hn;
 		wire he_bo;
 		am_sub #(.W(10)) u_he (.a({2'd0, res[30:23]}), .b(10'd112), .bi(1'b0), .d(he), .bo(he_bo));
-		atg_su_hrnd u_hn (.s(res[31]), .e(he), .m({1'b1, res[22:13]}), .g(res[12]), .st(|res[11:0]),
+		am_fp_hrnd #(.LAT(0)) u_hn (.s(res[31]), .e(he), .m({1'b1, res[22:13]}), .g(res[12]), .st(|res[11:0]),
 			.rm(hr), .h(hn));
 		wire [15:0] f2h = res[30:23] == 8'hFF ? (res[22:0] != 0 ? 16'h7E00 : {res[31], 5'h1F, 10'd0}) :
 			res[30:23] == 8'd0 ? {res[31], 15'd0} : hn;

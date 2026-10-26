@@ -183,7 +183,7 @@ module atg_rop_ms (
 	am_add #(.W(5)) u_c1 (.a(c), .b(5'd0), .ci(1'b1), .s(c1), .co(c1_co_unused));
 	wire fa_o;
 	wire [31:0] fa_r;
-	atg_rx_fadd fadd (.clk(clk), .rst_n(rst_n), .i_valid((st == S_Z && c < 5'd16) || zf_go),
+	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid((st == S_Z && c < 5'd16) || zf_go),
 		.i_a(zf_go ? vzo : z[32 * ci[3:2] +: 32]), .i_b(zf_go ? vzs : ds[32 * ci[1:0] +: 32]),
 		.i_sub(1'b0), .o_valid(fa_o), .o_r(fa_r));
 	/* earlier: clamp01; DEPTH_CLAMP[1]: as added */
