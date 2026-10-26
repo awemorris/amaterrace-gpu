@@ -6,12 +6,14 @@
  */
 
 /*
- * atg_rop_div255: round(x / 255) for x <= 2 × 255 × 255, without a wide
- * adder (the former function div255 of atg_rop_blend): y = x + 128; the
- * low bytes give only a carry, c = (y[7:0] + y[15:8] + y[18:16]) >> 8,
- * and the result is (y >> 8) + (y >> 16) + c.  Equal to
- * (y + (y >> 8) + (y >> 16)) >> 8, checked exact against round(x / 255)
- * over the whole range on 2026-10-24.  Combinational.
+ * atg_rop_div255: round(x / 255) for 0 <= x <= 255 * 255 (65025).
+ * Mathematical identity:
+ *   t = x + 128 => q = (t + (t >> 8)) >> 8
+ * Since (x + 128) >> 8 = (x >> 8) + x[7],
+ *   t + (t >> 8) = x + ((x >> 8) + 128) + x[7].
+ * For x <= 65025, (x >> 8) + 128 = {x[15], ~x[15], x[14:8]} by pure bit wiring.
+ * Hence q = (x + {x[15], ~x[15], x[14:8]} + x[7]) >> 8, implemented in a
+ * single 17-bit am_add with ci = x[7] and no intermediate carry chains.
  */
 
 `timescale 1ns / 1ps
@@ -21,20 +23,22 @@ module atg_rop_div255 (
 	input wire [17:0] x,
 	output wire [8:0] q
 );
-	wire [18:0] y;
-	wire [9:0] lo0, lo;
-	wire [10:0] hi0, hi;
-	wire y_co_unused, l0_co_unused, l_co_unused, h0_co_unused, h_co_unused;
-	am_add #(.W(19)) u_y (.a({1'b0, x}), .b(19'd128), .ci(1'b0), .s(y), .co(y_co_unused));
-	am_add #(.W(10)) u_lo0 (.a({2'd0, y[7:0]}), .b({2'd0, y[15:8]}), .ci(1'b0), .s(lo0),
-		.co(l0_co_unused));
-	am_add #(.W(10)) u_lo (.a(lo0), .b({7'd0, y[18:16]}), .ci(1'b0), .s(lo), .co(l_co_unused));
-	am_add #(.W(11)) u_hi0 (.a(y[18:8]), .b({8'd0, y[18:16]}), .ci(1'b0), .s(hi0), .co(h0_co_unused));
-	am_add #(.W(11)) u_hi (.a(hi0), .b({9'd0, lo[9:8]}), .ci(1'b0), .s(hi), .co(h_co_unused));
+	wire [16:0] a = {1'b0, x[15:0]};
+	wire [16:0] b = {8'd0, x[15], ~x[15], x[14:8]};
+	wire [16:0] s;
+	wire s_co_unused;
 
-	assign q = hi[8:0];
+	am_add #(.W(17)) u_add (
+		.a(a),
+		.b(b),
+		.ci(x[7]),
+		.s(s),
+		.co(s_co_unused)
+	);
 
-	wire unused_ok = &{1'b0, lo[7:0], hi[10:9]};
+	assign q = s[16:8];
+
+	wire unused_ok = &{1'b0, x[17:16], s[7:0], s_co_unused};
 endmodule
 
 `default_nettype wire
