@@ -86,10 +86,22 @@ Board clocking
   The KC705's MIG takes SYSCLK straight from the clock-capable pin's
   IBUFDS into its PLL, as the MIG's own input buffer does in the
   reference.  With a BUFG in front of the MIG's PLL the calibration
-  failed; that BUFG is the suspected cause (ws288 p024).  The same IBUFDS may also drive a BUFG
+  depended on the build: the board's build failed every time, a build
+  with the MIG's debug ports passed; with the direct path both builds
+  (Debug on and off) calibrated 50 times out of 50 (ws288 p024).  The same IBUFDS may also drive a BUFG
   for the fabric's clock managers, and the MIG's IDELAYCTRL reference
   (clk_ref_i, which the MIG's own MMCM makes into 400 MHz) comes from
   that BUFG.  The PCIe bridge takes its reference from IBUFDS_GTE2.
+
+Board builds
+------------
+
+- A board bitstream records the Vivado version and build (2026.1, SW
+  Build 6511674 for the KC705 now), the strategy (Default unless the
+  record says otherwise) and the commit it was built from.
+- A board fault that goes away when debug cores or ports are added is a
+  warning sign, not a fix: the netlist changed, so placement and routing
+  changed.  Find the cause in the build without them.
 
 Testbenches
 -----------
