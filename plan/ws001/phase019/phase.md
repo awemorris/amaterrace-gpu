@@ -3,7 +3,7 @@
 # Phase 019: フィルタリングパイプライン統合 & 相互排他ウェイト撤廃
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・並行パイプライン化達成)
 - **依存**: [ws001-p018](../phase018/phase.md)
 - **優先度**: Major (パイプライン相互排他空転の根絶)
 - **出典**: ユーザー諮問（TU パイプライン化）および R1 敵対的アーキテクチャ分析レポート
@@ -75,3 +75,23 @@
 
 - 異なるフォーマットのクアッドが連続しても相互排他ストールが発生しないこと。
 - 補間精度および画像出力が既存仕様と完全一致すること。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **RTL パイプライン化実装**:
+   - `rtl/gpu/tu/atg_tu.v`: `u_idle` / `f_idle` による相互排他ウェイト（`assign tc_ready = f32 ? f_ready && u_idle : u_ready && f_idle;`）を完全撤廃。
+   - `order_fifo`（16 エントリ）を新設し、クアッド最終パスの発行順を記録。`u_ffilt_outq`（4 エントリ）によるデカップリングバッファを配置し、返却出力を投入順序どおりにインオーダーでマルチプレクス。
+   - `spec/gpu/tu/atg_tu.md`: 仕様書更新。
+   - `sim/tb/atg_tu_pipeline_tb.v`: 単体パイプライン検証ベンチ新設。
+2. **検証結果**:
+   - `sim/run.sh atg_tu_pipeline`: **PASS** (3 s; UNORM8 と FP16 の交互連続 40 クアッド並行実行、タグ順序不一致 0 件)
+   - `sim/run.sh atg_tu_filter`: **PASS** (20 s)
+   - `sim/run.sh atg_tu_ffilt`: **PASS** (26 s)
+   - `sim/run.sh atg_tu`: **PASS** (140 s; 32B/64B 全構成通過)
+   - `tools/lint.sh`: 全モジュール Clean（0 warnings）
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+   - `sim/verilator/run.sh`: 全 7 シーン **PASS**（tex.png 286,371 サイクル、画像完全一致）。
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p019_tu_pipeline.md`）。相互排他ウェイト完全撤廃、Order FIFO によるインオーダー返却、Guardrails 完全準拠を承認。
