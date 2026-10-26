@@ -31,7 +31,7 @@
 #endif
 
 /* The firmware's version in CPFW_VERSION: [31:16] major, [15:0] minor. */
-#define FW_VERSION 0x00020000u
+#define FW_VERSION 0x00020001u
 
 /* The firmware states in CPFW_STATUS[15:8]. */
 #define FW_STATE_BOOT 0x01u	/* start-up */
@@ -174,7 +174,10 @@ struct fw_object {
  *
  * `stop` is set when the command's end cannot be found (an unknown number
  * or a malformed wire), so the frame cannot go on.  `in_frame` is set for
- * a staged command: the ring-only gpu-ops refuse to run there.
+ * a staged command: the ring-only gpu-ops refuse to run there.  `reply` is
+ * the packet's result address when the packet asked for a result (INIT
+ * and the diagnostics write their reply's words after the first two
+ * there), else 0; a staged command has none.
  */
 struct fw_command {
 	uint32_t number;
@@ -184,6 +187,7 @@ struct fw_command {
 	uint32_t aux;
 	int stop;
 	int in_frame;
+	uint32_t reply;
 };
 
 /*
@@ -682,6 +686,10 @@ struct fw_object *fw_cmd_new_object(struct fw_command *command, uint64_t device,
 void fw_cmd_destroy_object(struct fw_command *command, uint32_t kind);
 
 /* The handlers of the command table, by file. */
+void fw_cmd_init(struct fw_command *command);
+void fw_cmd_diag_echo(struct fw_command *command);
+void fw_cmd_diag_write(struct fw_command *command);
+void fw_cmd_diag_sum(struct fw_command *command);
 void fw_cmd_program(struct fw_command *command);
 void fw_cmd_queue_submit(struct fw_command *command);
 void fw_cmd_bind_buffer(struct fw_command *command);

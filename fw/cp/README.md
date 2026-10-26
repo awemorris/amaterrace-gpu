@@ -46,6 +46,7 @@ Layout
 | `main.c` | The loop: poll for a packet, decode it, park on a halt request, heartbeat |
 | `packet.c` | One class V packet; a GHCI_FRAME and its staged records; the result records, RESULT, DONE |
 | `cmd.c` | The gpu-op decoder, the command table and the wire readers; the session, heap and memory gpu-ops |
+| `diag.c` | GHCI_INIT (the driver's handshake: version, protocol, features) and the diagnostics DIAG_ECHO, DIAG_WRITE and DIAG_SUM (docs/ghci.md section 7.2) |
 | `object.c` | The objects of the sessions (a table in DMEM found by a hash of the identity; payloads in heap blocks) |
 | `heap.c` | The heap the driver lends (GHCI_HEAP): blocks in whole lines, first fit; the sessions |
 | `builtin.c` | The firmware's own part of the heap: the identity buffer, the built-in programs, words it waits on |
@@ -78,10 +79,15 @@ Behaviour
   an interrupt between unmasking IRQ_EN and a WFI would return to a WFI
   nothing wakes.
 - Start-up: CPFW_STATUS[15:8] 1 (boot) then 2 (idle), CPFW_VERSION
-  0x0002_0000, MBOX3 = 0x0DA7A001 (a `.data` word, checked to be restored
+  0x0002_0001 (0x0002_0000 before GHCI_INIT and the diagnostics), MBOX3 = 0x0DA7A001 (a `.data` word, checked to be restored
   after RESET).  A packet: state 3.  A halt request between packets: PARK
   (state 4) until the halt ends.  The heartbeat writes FW_STATUS every 1024
   polls (CPFW_STATUS.ALIVE toggles).
+- GHCI_INIT `[u32 token][u32 protocol]` and the diagnostics answer with
+  a reply of 16 words at the result address (the token and its
+  complement, the version, the features; the echoed words; the bytes a
+  pattern took; the sums of the words read).  The driver sends INIT
+  after every start of the firmware, before GHCI_HEAP.
 - A packet is `[gpu-op][flags][result address][arguments]`.  GHCI_FRAME
   points at a frame of records `[number][flags][result index][arguments]`
   in the staging buffer; each record's `{VkResult, aux}` goes to the result
@@ -131,9 +137,9 @@ Tests
 -----
 
 - `fw/cp/tests/run.sh`: the firmware built for the host against a model
-  of the window, the DMA, the sequencer's SET_REG and the blitter; six
-  cases (sessions, buffers, images, a draw in the command sequence of a
-  vkdemo frame, compute, transfer) check the result records, the µops,
+  of the window, the DMA, the sequencer's SET_REG and the blitter; seven
+  cases (INIT and the diagnostics, sessions, buffers, images, a draw in
+  the command sequence of a vkdemo frame, compute, transfer) check the result records, the µops,
   the STATE and the memory; `kernels.py` runs the built-in compute
   programs on tools/gsi1model.py.
 - `sim/tb/atg_top_fw_tb.v` (iverilog): the image in atg_top, a frame

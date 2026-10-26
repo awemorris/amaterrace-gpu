@@ -405,9 +405,10 @@ firmware:
 - A GPU without firmware (CAPS[17] = 0) faults with kind 2.
 - While the firmware works on a class 2 packet, the CP takes no other
   packet.
-- The GHCI gpu-ops (0x10100-0x10108, draft numbers): SESSION_OPEN,
+- The GHCI gpu-ops (0x10100-0x1010C, draft numbers): SESSION_OPEN,
   SESSION_CLOSE, MEMORY, PROGRAM, NATIVE, FRAME, BUFFER_GRANT and
-  BUFFER_REVOKE (section 11.6), and HEAP.
+  BUFFER_REVOKE (section 11.6), HEAP, and INIT and the diagnostics
+  DIAG_ECHO, DIAG_WRITE and DIAG_SUM (below).
 - **HEAP** (0x10108) `[u64 GPU address][u64 bytes][u32 warps]`: the range
   of GPU memory the driver lends the firmware for its objects and the
   recordings of the command buffers (line aligned, inside the aperture,
@@ -425,10 +426,55 @@ firmware:
   [1] IMPORTED (memory that another session owns, imported by this one;
   section 11.6), [2] READ_ONLY (the session's work only reads it; section
   11.6); the other bits are 0.
-- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT, BUFFER_REVOKE and HEAP are
-  taken only as packets in the ring, never as staged commands inside a
-  frame: inside a frame they end the frame with
+- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT, BUFFER_REVOKE, HEAP, INIT
+  and the diagnostics are taken only as packets in the ring, never as
+  staged commands inside a frame: inside a frame they end the frame with
   VK_ERROR_FEATURE_NOT_PRESENT.
+
+**INIT and the diagnostics (draft).** INIT is the driver's handshake with
+the firmware; the diagnostics check the paths a packet uses one at a
+time: the CP's reads of the ring in host memory, the firmware's reads and
+writes of host memory, and its reads and writes of local memory.
+
+- They answer with a **reply** of 16 words at dword3 (8-byte aligned,
+  inside the aperture), written only when dword2 has RESULT: word 0 the
+  VkResult, word 1 the aux, words 2-15 as the gpu-op says; a word the
+  gpu-op does not name is written 0. As with every packet, the reply is
+  written and answered, then IRQ_STATUS.RESULT is raised, then RING_RPTR
+  passes the packet (section 7.2, GHCI_FRAME).
+- They change nothing in the firmware's state (its heap, sessions and
+  objects), and their memory accesses are the driver's (session 0,
+  section 11.6). An address outside the aperture or a bus error refuses
+  the access: the reply is VK_ERROR_DEVICE_LOST.
+- A firmware that predates them answers them as any gpu-op it does not
+  know: VK_ERROR_FEATURE_NOT_PRESENT with aux 0.
+
+| Gpu-op | Arguments | Reply |
+| --- | --- | --- |
+| **INIT** (0x10109) | `[u32 token][u32 protocol]` | 1: the token; 2: NOT token; 3: the firmware's version (CPFW_VERSION); 4: the protocol the firmware speaks (0x0001_0000); 5: the features: [0] the diagnostics, [1] the Vulkan objects (HEAP, sessions), [2] session protection (section 11.6), [3] a heap is lent; 6: the memory line in bytes; 7: the sessions it holds at once; 8: the GPU address the firmware read the packet's dword1 from |
+| **DIAG_ECHO** (0x1010A) | `[u32 count][count words]`, count <= 14 | 1: the count; 2 to count + 1: the words |
+| **DIAG_WRITE** (0x1010B) | `[u64 address][u32 bytes][u32 pattern][u32 step]` | 1: the bytes written |
+| **DIAG_SUM** (0x1010C) | `[u64 address][u32 bytes]` | 1: the bytes read; 2: the sum of the words w(i); 3: the sum of (i + 1) x w(i); 4-7: w(0) to w(3); 8: the last word |
+
+- **INIT.** protocol is the version of this table the driver speaks,
+  [31:16] major, [15:0] minor (0x0001_0000). The driver sends INIT after
+  every start of the firmware (RUN, a RESET, a reload of its image),
+  before HEAP, with a new token each time, and takes the firmware as
+  running only when the reply is VK_SUCCESS with its token and NOT token.
+  A major the firmware does not speak answers VK_ERROR_INCOMPATIBLE_DRIVER,
+  with the rest of the reply written.
+- **DIAG_WRITE** writes `bytes` from `address`, word i (0, 1, ...) being
+  pattern + i x step (32-bit arithmetic; step 0 fills). **DIAG_SUM**
+  reads them and adds them up, in 32-bit arithmetic. For both, address is
+  aligned to the memory line (CAPS[23:20]) and bytes is a whole number of
+  lines from one line to 1 MiB; otherwise the reply is
+  VK_ERROR_INITIALIZATION_FAILED with aux 0 and nothing is accessed. A
+  refused line ends the gpu-op with VK_ERROR_DEVICE_LOST, aux the bytes
+  done before it. DIAG_WRITE's writes are answered before its reply is
+  written, so the reply, or the fence after the packet, means the words
+  are in memory.
+- DIAG_ECHO with count > 14 answers VK_ERROR_INITIALIZATION_FAILED with
+  aux 0.
 
 **GHCI_FRAME.** A driver normally sends one class 2 packet per submission,
 GHCI_FRAME (gpu-op 0x10105, draft;

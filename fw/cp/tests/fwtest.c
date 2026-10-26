@@ -31,6 +31,9 @@
 #define MEMORY_BASE 0x01000000u
 #define MEMORY_BYTES 0x00800000u
 
+/* Where the diagnostics write and sum (away from the Verilator harness's ring and fence). */
+#define DIAG_ADDRESS 0x00300000u
+
 /* The protection table of the protected cases: a byte per granule of the 32 MiB memory. */
 #define TABLE_BASE 0x00200000u
 #define TABLE_GRANULES (HOST_MEM_BYTES >> 12)
@@ -62,6 +65,10 @@ static void stage_begin(uint32_t index, uint64_t cmdbuf);
 static void stage_end(uint32_t index, uint64_t cmdbuf);
 static void stage_submit(uint32_t index, uint64_t cmdbuf);
 static void test_sessions(void);
+static void test_diag(void);
+static void reply_clear(void);
+static uint32_t reply_word(uint32_t index);
+static int reply_zero_from(uint32_t first);
 static void test_buffers(void);
 static void test_images(void);
 static void test_draw(void);
@@ -94,6 +101,7 @@ main(
 	}
 
 	/* Each case on a fresh bench and firmware. */
+	test_diag();
 	test_sessions();
 	test_buffers();
 	test_images();
@@ -470,6 +478,208 @@ test_sessions(void)
 	host_ring(0, GHCI_GPU_OP_HEAP, args, 5);
 	host_check(host_ring_result() == 0, "GHCI_HEAP after the close");
 	(void)test_case("sessions", before);
+}
+
+/*
+ * GHCI_INIT and the diagnostics: the reply's words, the features before and
+ * after the heap, another protocol, the echo, a pattern written and summed
+ * in memory, the ranges refused, and INIT refused inside a frame.
+ */
+static void
+test_diag(void)
+{
+	uint32_t args[16];
+	uint32_t index;
+	uint32_t word;
+	uint32_t plain;
+	uint32_t weighted;
+	uint32_t status;
+	int zero;
+	int same;
+	int before;
+
+	before = host_failures;
+	host_reset();
+	fw_heap_init();
+	fw_object_init();
+	fw_uop_reset();
+
+	/* INIT before the heap: the token, its complement, the firmware, where the packet was. */
+	reply_clear();
+	args[0] = 0x12345678u;
+	args[1] = GHCI_INIT_PROTOCOL;
+	host_ring(0, GHCI_GPU_OP_INIT, args, 2);
+	host_check(host_ring_result() == 0, "INIT: VK_SUCCESS");
+	host_check(reply_word(1) == 0x12345678u, "INIT: the token");
+	host_check(reply_word(GHCI_INIT_NOT_TOKEN) == ~0x12345678u, "INIT: NOT token");
+	host_check(reply_word(GHCI_INIT_VERSION) == FW_VERSION, "INIT: the version");
+	host_check(reply_word(GHCI_INIT_PROTOCOL_WORD) == GHCI_INIT_PROTOCOL, "INIT: the protocol");
+	host_check(reply_word(GHCI_INIT_FEATURES) == (GHCI_INIT_F_DIAG | GHCI_INIT_F_VULKAN), "INIT: the features without a heap");
+	host_check(reply_word(GHCI_INIT_LINE) == FW_LINE_BYTES, "INIT: the line");
+	host_check(reply_word(GHCI_INIT_SESSIONS) == FW_SESSIONS, "INIT: the sessions");
+	host_check(reply_word(GHCI_INIT_PACKET) == HOST_PACKET, "INIT: where the packet was read");
+	zero = reply_zero_from(GHCI_INIT_PACKET + 1u);
+	host_check(zero, "INIT: the other words are 0");
+
+	/* Another major version of the protocol: refused, with the rest of the reply. */
+	reply_clear();
+	args[0] = 0xCAFE0001u;
+	args[1] = 0x00020000u;
+	host_ring(0, GHCI_GPU_OP_INIT, args, 2);
+	host_check(host_ring_result() == FW_VK_ERROR_INCOMPATIBLE_DRIVER, "INIT of protocol 2: refused");
+	host_check(reply_word(1) == 0xCAFE0001u && reply_word(GHCI_INIT_NOT_TOKEN) == ~0xCAFE0001u, "INIT of protocol 2: the token");
+	host_check(reply_word(GHCI_INIT_VERSION) == FW_VERSION, "INIT of protocol 2: the version");
+
+	/* After the heap, INIT says it is lent. */
+	start_firmware();
+	reply_clear();
+	args[0] = 0x0BADF00Du;
+	args[1] = GHCI_INIT_PROTOCOL;
+	host_ring(0, GHCI_GPU_OP_INIT, args, 2);
+	host_check(host_ring_result() == 0, "INIT after the heap");
+	host_check(reply_word(GHCI_INIT_FEATURES) == (GHCI_INIT_F_DIAG | GHCI_INIT_F_VULKAN | GHCI_INIT_F_HEAP), "INIT: the features with the heap");
+
+	/* The echo of three words, and of more than the reply holds. */
+	reply_clear();
+	args[0] = 3;
+	args[1] = 0x11111111u;
+	args[2] = 0x22222222u;
+	args[3] = 0xFFFFFFFFu;
+	host_ring(0, GHCI_GPU_OP_DIAG_ECHO, args, 4);
+	host_check(host_ring_result() == 0 && reply_word(1) == 3, "ECHO: the count");
+	host_check(reply_word(2) == 0x11111111u && reply_word(3) == 0x22222222u && reply_word(4) == 0xFFFFFFFFu, "ECHO: the words");
+	zero = reply_zero_from(5);
+	host_check(zero, "ECHO: the other words are 0");
+	reply_clear();
+	args[0] = GHCI_DIAG_ECHO_WORDS + 1u;
+	for (index = 1; index < 16; index++)
+		args[index] = index;
+	host_ring(0, GHCI_GPU_OP_DIAG_ECHO, args, 16);
+	host_check(host_ring_result() == FW_VK_ERROR_INITIALIZATION_FAILED && reply_word(1) == 0, "ECHO of 15 words: refused");
+	zero = reply_zero_from(2);
+	host_check(zero, "ECHO of 15 words: no word");
+
+	/* A pattern of 4 KiB and a line in memory, the words around it untouched. */
+	for (index = 0; index < 0x1100u; index += 4u)
+		host_poke(DIAG_ADDRESS - 0x40u + index, 0xEEEEEEEEu);
+	reply_clear();
+	args[0] = DIAG_ADDRESS;
+	args[1] = 0;
+	args[2] = 0x1000u;
+	args[3] = 0xA5000000u;
+	args[4] = 3;
+	host_ring(0, GHCI_GPU_OP_DIAG_WRITE, args, 5);
+	host_check(host_ring_result() == 0 && reply_word(1) == 0x1000u, "WRITE: the bytes written");
+	zero = reply_zero_from(2);
+	host_check(zero, "WRITE: the other words are 0");
+	same = 1;
+	for (index = 0; index < 0x400u; index++) {
+		word = host_peek(DIAG_ADDRESS + index * 4u);
+		if (word != 0xA5000000u + index * 3u)
+			same = 0;
+	}
+	host_check(same, "WRITE: the pattern");
+	host_check(host_peek(DIAG_ADDRESS - 4u) == 0xEEEEEEEEu && host_peek(DIAG_ADDRESS + 0x1000u) == 0xEEEEEEEEu, "WRITE: nothing around it");
+
+	/* Its sums, as the driver works them out. */
+	plain = 0;
+	weighted = 0;
+	for (index = 0; index < 0x400u; index++) {
+		word = 0xA5000000u + index * 3u;
+		plain += word;
+		weighted += (index + 1u) * word;
+	}
+	reply_clear();
+	args[0] = DIAG_ADDRESS;
+	args[1] = 0;
+	args[2] = 0x1000u;
+	host_ring(0, GHCI_GPU_OP_DIAG_SUM, args, 3);
+	host_check(host_ring_result() == 0 && reply_word(1) == 0x1000u, "SUM: the bytes read");
+	host_check(reply_word(GHCI_DIAG_SUM_PLAIN) == plain, "SUM: the sum");
+	host_check(reply_word(GHCI_DIAG_SUM_WEIGHTED) == weighted, "SUM: the weighted sum");
+	host_check(reply_word(GHCI_DIAG_SUM_FIRST) == 0xA5000000u && reply_word(GHCI_DIAG_SUM_FIRST + 3u) == 0xA5000009u, "SUM: the first words");
+	host_check(reply_word(GHCI_DIAG_SUM_LAST) == 0xA5000000u + 0x3FFu * 3u, "SUM: the last word");
+	zero = reply_zero_from(GHCI_DIAG_SUM_LAST + 1u);
+	host_check(zero, "SUM: the other words are 0");
+
+	/* A fill of one line (step 0), summed. */
+	args[0] = DIAG_ADDRESS + 0x40u;
+	args[1] = 0;
+	args[2] = FW_LINE_BYTES;
+	args[3] = 0x5A5A5A5Au;
+	args[4] = 0;
+	host_ring(0, GHCI_GPU_OP_DIAG_WRITE, args, 5);
+	host_check(host_ring_result() == 0 && host_peek(DIAG_ADDRESS + 0x40u + FW_LINE_BYTES - 4u) == 0x5A5A5A5Au, "WRITE: a fill of a line");
+	reply_clear();
+	args[2] = FW_LINE_BYTES;
+	host_ring(0, GHCI_GPU_OP_DIAG_SUM, args, 3);
+	host_check(reply_word(GHCI_DIAG_SUM_PLAIN) == 0x5A5A5A5Au * (FW_LINE_BYTES / 4u), "SUM: a line of the fill");
+
+	/* Ranges that are not whole lines change nothing and are refused. */
+	reply_clear();
+	args[0] = DIAG_ADDRESS + 4u;
+	args[1] = 0;
+	args[2] = FW_LINE_BYTES;
+	args[3] = 0;
+	args[4] = 0;
+	host_ring(0, GHCI_GPU_OP_DIAG_WRITE, args, 5);
+	host_check(host_ring_result() == FW_VK_ERROR_INITIALIZATION_FAILED && reply_word(1) == 0, "WRITE at an unaligned address: refused");
+	args[0] = DIAG_ADDRESS;
+	args[2] = 0;
+	host_ring(0, GHCI_GPU_OP_DIAG_WRITE, args, 5);
+	host_check(host_ring_result() == FW_VK_ERROR_INITIALIZATION_FAILED, "WRITE of no bytes: refused");
+	args[2] = 100;
+	host_ring(0, GHCI_GPU_OP_DIAG_SUM, args, 3);
+	host_check(host_ring_result() == FW_VK_ERROR_INITIALIZATION_FAILED, "SUM of part of a line: refused");
+	args[2] = GHCI_DIAG_BYTES_MAX + FW_LINE_BYTES;
+	host_ring(0, GHCI_GPU_OP_DIAG_SUM, args, 3);
+	host_check(host_ring_result() == FW_VK_ERROR_INITIALIZATION_FAILED, "SUM of more than 1 MiB: refused");
+	host_check(host_peek(DIAG_ADDRESS) == 0xA5000000u, "the refused writes changed nothing");
+
+	/* INIT is a packet in the ring only: inside a frame it ends the frame. */
+	host_frame_begin();
+	host_record(GHCI_GPU_OP_INIT, 0);
+	host_u32(1);
+	host_u32(GHCI_INIT_PROTOCOL);
+	status = host_frame_run(0, 1);
+	host_check(status == (uint32_t)FW_VK_ERROR_FEATURE_NOT_PRESENT, "INIT in a frame");
+	(void)test_case("diag", before);
+}
+
+/* Fills the reply of the next ring packet with a word the firmware never writes. */
+static void
+reply_clear(void)
+{
+	uint32_t index;
+
+	/* Every word of the reply. */
+	for (index = 0; index < GHCI_REPLY_WORDS; index++)
+		host_poke(HOST_FRAME_RESULT + 16u + index * 4u, 0xCCCCCCCCu);
+}
+
+/* A word of the last ring packet's reply. */
+static uint32_t
+reply_word(
+	uint32_t index)
+{
+	return host_peek(HOST_FRAME_RESULT + 16u + index * 4u);
+}
+
+/* Reports whether the reply's words from `first` to the end are 0: 1 when they are. */
+static int
+reply_zero_from(
+	uint32_t first)
+{
+	uint32_t index;
+
+	/* Each word to the end of the reply. */
+	for (index = first; index < GHCI_REPLY_WORDS; index++) {
+		if (reply_word(index) != 0)
+			return 0;
+	}
+
+	/* Succeeded: the firmware wrote 0 there. */
+	return 1;
 }
 
 /* vkCmdFillBuffer, vkCmdCopyBuffer (odd sizes), vkCmdUpdateBuffer, through a submit. */
