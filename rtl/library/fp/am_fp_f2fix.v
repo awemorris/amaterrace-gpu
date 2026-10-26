@@ -55,7 +55,7 @@ module am_fp_f2fix #(
 	/* Rounding */
 	wire [W-1:0] unrounded = shifted[47:48-W];
 	wire guard = (ROUND != 0) ? shifted[47-W] : 1'b0;
-	wire sticky = (ROUND != 0) ? (shifted[46-W:0] != 0 || mant != 23'd0) : 1'b0;
+	wire sticky = (ROUND != 0) ? (shifted[46-W:0] != 0) : 1'b0;
 	wire lsb = unrounded[0];
 	wire round_up = (ROUND != 0) ? (guard && (sticky || lsb)) : 1'b0;
 
