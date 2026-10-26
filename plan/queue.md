@@ -35,12 +35,12 @@
 | `q001-i21` | **P2** | [ws001-p026](ws001/phase026/phase.md) | atg_fmt_pack 2段パイプライン化（LAT=2、200 MHz クリティカルパス解消） | queued | `q001-i01` | P2 待機。論理深さ 50% 削減。 |
 | `q001-i22` | **P1** | [ws001-p027](ws001/phase027/phase.md) | MC AXI バースト結合キュー（Burst Coalescer: ARLEN=3/7 自動マージ） | queued | `q001-i06` | P1 次期タスク候補。DDR 稼働率 85% 以上へ引き上げ。 |
 | `q001-i23` | **P1** | [ws001-p028](ws001/phase028/phase.md) | MC フラットクロスバー & QoS アービタ（遅延 8clk -> 2clk、DC 優先帯域保証） | queued | `q001-i22` | P1 待機。往復遅延 75% 削減。 |
-| `q001-i24` | **P3** | [ws001-p029](ws001/phase029/phase.md) | CP 64ワード循環コマンドプリフェッチ FIFO（ノーウェイトパケット供給） | queued | `q001-i03` | P3 待機。32B 境界停止の完全消滅。 |
+| `q001-i24` | **P3** | [ws001-p029](ws001/phase029/phase.md) | CP 64ワード循環コマンドプリフェッチ FIFO（ノーウェイトパケット供給） | in-progress | `q001-i03` | 非同期フローに基づき P3 着手。64ワード循環先行フェッチ・32B境界停止根絶。 |
 | `q001-i25` | **P3** | [ws001-p030](ws001/phase030/phase.md) | BLT ストリーミングバースト DMA エンジン（FSM 撤廃、1.0+ GB/s 転送） | queued | `q001-i22`, `q001-i30` | P3 待機。転送速度 7〜10 倍高速化。 |
 | `q001-i26` | **P3** | [ws001-p031](ws001/phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | queued | `q001-i25` | P3 待機。1 quad/cycle 達成。 |
 | `q001-i27` | **P3** | [ws001-p032](ws001/phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | queued | `q001-i22`, `q001-i30` | P3 待機。頂点供給レート 4 倍向上。 |
 | `q001-i28` | **P3** | [ws001-p033](ws001/phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | queued | `q001-i27`, `q001-i10` | P3 待機。頂点シェーダ負荷半減。 |
-| `q001-i29` | **P3** | [ws001-p034](ws001/phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/） | in-progress | `q001-i01` | 非同期フローに基づき P3 着手。トップ命名整理 & PCIe MSI の BSP 移管。 |
+| `q001-i29` | **P3** | [ws001-p034](ws001/phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/） | cleared | `q001-i01` | 実装完了（commit da4e0a7）。T1 検証 & R1 敵対的レビュー中。 |
 | `q001-i30` | **P3** | [ws001-p035](ws001/phase035/phase.md) | 完全スキッドバッファ（am_skid.v）の共通ライブラリ化（0 サイクルスループット・Backpressure 分離） | cleared | `q001-i01` | 実装・単体 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i31` | **P3** | [ws001-p036](ws001/phase036/phase.md) | BRAM 推論可能非同期 FIFO（am_afifo_bram.v）実装（同期 Read + 2段スキッド 0-cycle FWFT） | cleared | `q001-i30` | 実装完了（commit c3e9c7b）。単体 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i32` | **P1** | [ws001-p037](ws001/phase037/phase.md) | am_axi_master.v 深い Outstanding（16〜32要求）& 独立 R/W チャネル化（DDR 帯域 85%+ 飽和） | queued | `q001-i30` | P1 待機。60〜80 サイクル往復遅延の隠蔽。 |
@@ -53,7 +53,7 @@
 | :---: | :---: | :--- | :--- | :--- | :--- |
 | **P1** | 実装（メモリ・相互結合） | Claude Opus 5.5 Medium | active | `q001-i06`: `ws001-p003` 共有 L2 キャッシュ（LLC）設計・実装 | `q001-i22`: `ws001-p027`（MC バースト結合） |
 | **P2** | 実装（ROP・ピクセル・テクスチャ） | Claude Opus 5.5 Medium | active | `q001-i09`: `ws001-p014` 差し戻し修正（atg_rop_blend 32乗算器・18bit div255） | `q001-i10`: `ws001-p015` |
-| **P3** | 実装（インフラ・ジオメトリ・SU） | Claude Opus 5.5 Medium | active | `q001-i29`: `ws001-p034` ボードトップ刷新 & MSI 移動 | `q001-i24`: `ws001-p029`（CP プリフェッチ） |
+| **P3** | 実装（インフラ・ジオメトリ・SU） | Claude Opus 5.5 Medium | active | `q001-i24`: `ws001-p029` CP 64ワード循環プリフェッチ FIFO | `q001-i25`: `ws001-p030`（BLT DMA） |
 | **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | WS001（31件）& WS002（10件）全 41 Phase 実装設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
 | **R1** | レビュー | Gemini 4 Argon Medium | active | 敵対的 RTL & 仕様レビュー常時待機 | 各レーン成果物レビューディスパッチ |
