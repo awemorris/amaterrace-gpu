@@ -109,8 +109,6 @@ module atg_tu_cache #(
 	wire bil = tc_ctl[0];
 	wire h565 = tc_ctl[19];
 	wire [1:0] tsz = tc_ctl[24:23];
-	wire [1:0] lsl = (tc_ctl[26:25] == 2'd1) ? 2'd1 :
-	                 (tc_ctl[26:25] == 2'd2) ? 2'd3 : 2'd0;
 
 	/* Border raw texel by format ({ctl[8], ctl[1]}) and class (ctl[7:6]) */
 	wire [31:0] bwhite = h565 ? 32'h0000FFFF :
