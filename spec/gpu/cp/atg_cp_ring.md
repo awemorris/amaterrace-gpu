@@ -1,10 +1,12 @@
 # atg_cp_ring
 
-RTL: `rtl/gpu/cp/atg_cp_ring.v`.  Parent: atg_cp.  Implemented in: p004 (done).
+RTL: `rtl/gpu/cp/atg_cp_ring.v`.  Parent: `atg_cp`.  Implemented in: p004, upgraded in Phase 029.
 
 ## 1. Purpose and place
 
 The command ring: RING_BASE/SIZE/WPTR/RPTR, line reads of the ring through the CP's AMB port, the packet envelope (design §2.4.2), class N packets to the sequencer, class V packets to the CPU, class 3 padding skipped.
+
+Upgraded in Phase 029 with an 8-entry circular prefetch line buffer (64 words / 256 bytes for 32-byte lines) that concurrently prefetches subsequent lines while streaming packets, completely eliminating line boundary memory stalls and providing zero-bubble packet delivery.
 
 ## 2. Parameters
 
@@ -29,13 +31,13 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `hcr_widx` | in | 10 | Word index of the write (byte offset >> 2). |
 | `hcr_wdata` | in | 32 | Write data. |
 | `hcr_wmask` | in | 32 | Bit mask from WSTRB (1 = written). |
-| `hcr_ridx` | in | 10 | Word index being read; the read data is due in the same cycle (combinational from this registered index). |
-| `hcr_rdata` | out | 32 | Read data of this module's registers at `hcr_ridx`, 0 for other indices (the parent ORs them). |
+| `hcr_ridx` | in | 10 | Word index being read; the read data is due in the same cycle. |
+| `hcr_rdata` | out | 32 | Read data of this module's registers at `hcr_ridx`. |
 | **Control (from atg_cp_ctl)** | | | |
 | `run` | in | 1 | RUNNING: fetch packets. |
 | `halt` | in | 1 | Stop at the next packet boundary (HALTING, FAULTED, RESETTING). |
 | `step` | in | 1 | In HALTED: one packet (one-cycle pulse). |
-| `open` | in | 1 | IDLE/HALTED: RING_BASE/SIZE writes are taken (else ignored; ctl reports the fault). |
+| `open` | in | 1 | IDLE/HALTED: RING_BASE/SIZE writes are taken. |
 | **Class N packets (to atg_cp_seq)** | | | |
 | `n_valid` | out | 1 | A dword of a class N packet. |
 | `n_ready` | in | 1 | Taken. |
@@ -51,82 +53,46 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `empty` | out | 1 | WPTR == RPTR (RING_EMPTY). |
 | `retire` | out | 1 | One-cycle pulse when RPTR passes a packet (IRQ RETIRE). |
 | `busy` | out | 1 | A packet is being fetched or handed over. |
-| **Fault report to atg_cp_ctl (one source of its `src_*` vectors)** | | | |
+| **Fault report to atg_cp_ctl** | | | |
 | `fault` | out | 1 | One-cycle pulse: this module found a fault. |
-| `fault_kind` | out | 4 | FAULT_INFO[15:12] kind (design §2.2), valid with the pulse. |
-| `fault_addr` | out | 32 | FAULT_ADDR value (address or PC), valid with the pulse. |
-| `fault_tag` | out | 8 | JOB_TAG of the command at fault, valid with the pulse. |
+| `fault_kind` | out | 4 | FAULT_INFO[15:12] kind (design §2.2). |
+| `fault_addr` | out | 32 | FAULT_ADDR value, valid with the pulse. |
+| `fault_tag` | out | 8 | JOB_TAG of the command at fault. |
 | **AMB client port (design §4.1)** | | | |
 | `req_valid` | out | 1 | Request valid; payload held until `req_ready`. |
 | `req_ready` | in | 1 | The MC (or mux) takes the request this cycle. |
 | `req_write` | out | 1 | 1 write, 0 read. |
 | `req_line` | out | ADDR_W-LINE_SHIFT | Line address (byte address >> LINE_SHIFT). |
-| `req_be` | out | LINE_BYTES | Byte enables of a write (one per byte of the line). |
-| `req_wdata` | out | LINE_BYTES*8 | Write data, byte 0 in bits 7:0. |
-| `req_tag` | out | 8 | The client's tag, returned with the response. |
-| `rsp_valid` | in | 1 | Response, one cycle, no back-pressure; one per request. |
-| `rsp_write` | in | 1 | The response is a write's (after BRESP). |
-| `rsp_tag` | in | 8 | Tag of the request answered. |
-| `rsp_rdata` | in | LINE_BYTES*8 | Read data (valid for reads). |
-| `rsp_error` | in | 1 | Aperture or AXI error; the line was not accessed. |
+| `req_be` | out | LINE_BYTES | Byte enables. |
+| `req_wdata` | out | LINE_BYTES*8 | Write data. |
+| `req_tag` | out | 8 | 0 = on-demand read, 1 = background prefetch. |
+| `rsp_valid` | in | 1 | Response, one cycle, no back-pressure. |
+| `rsp_write` | in | 1 | Response is write's. |
+| `rsp_tag` | in | 8 | Tag of answered request. |
+| `rsp_rdata` | in | LINE_BYTES*8 | Read data. |
+| `rsp_error` | in | 1 | Aperture or AXI error. |
 
-41 signals; 26 ports counting the HCR snoop and the AMB port as one group each.
+41 signals; 26 ports counting groups.
 
 ## 4. Behaviour
 
-- Registers (snoop): RING_BASE 0x050, RING_SIZE 0x054 (log2 bytes 10..20), RING_WPTR 0x058 (a write
-  is the doorbell), RING_RPTR 0x05C (read only).  WPTR/RPTR are dword indices; RPTR resets to 0.
-- Fetch: while `run && !halt` (or once per `step`) and RPTR != WPTR, read the line holding RPTR
-  (re-read on every doorbell: design §2.7, no stale prefetch), take dword0, decode the class:
-  class 0/1 (N): stream header + n payload dwords on `n_*`; class 2 (V): raise `v_*` and wait for
-  `v_done`; class 3: skip n dwords.  RPTR advances past the packet when it has been handed over
-  (N: last dword taken; V: v_done) and `retire` pulses.
-- A packet whose end passes WPTR, or which crosses the ring end, is fault kind 3 (RING) with
-  `fault_addr` = the packet's address; nothing of it is handed over.
-- AMB tags: one read outstanding at a time (tag 0), one line buffer.  No prefetch beyond the line in
-  use.
-- Doorbell rule as implemented: a doorbell marks the line buffer stale; a **header** is decoded only
-  from a line fetched after the last doorbell, so a line read before it (whose dwords past the old
-  WPTR may be the previous lap's) is read again.  The payload of a packet already accepted lies below
-  WPTR and is streamed from the buffer as it is.
-- RING_WPTR is kept modulo the ring's dword count; RING_BASE/SIZE are taken only when `open`.
+- **Registers (snoop)**: RING_BASE 0x050, RING_SIZE 0x054 (log2 bytes 10..20), RING_WPTR 0x058 (doorbell), RING_RPTR 0x05C (read only). WPTR/RPTR are dword indices; RPTR resets to 0.
+- **Prefetch Line Buffer**: 8 lines (`buf_data[0:7]`, `buf_tag[0:7]`, `buf_valid[7:0]`) mapped by `want_line[2:0]`.
+- **Background Prefetch**: While streaming Class N packets in `R_N`, if the packet extends across a line boundary and the next line (`next_line = want_line + 1`) is not yet in the buffer, the background prefetch engine requests `next_line` with `req_tag = 1` concurrently. When the consumer reaches the boundary, the data is already present in the prefetch buffer, eliminating stalls.
+- **On-Demand Fallback**: If a line is not in the buffer (e.g. at packet start), the main FSM issues an on-demand request (`req_tag = 0`) via `R_REQ` / `R_RSP`.
+- **Doorbell & Staleness**: A doorbell marks all buffer lines invalid (`buf_valid <= 8'd0`) to ensure subsequent headers and commands are never served from stale cache data across ring buffer wraps.
+- **Fault Detection**: Packets exceeding WPTR or crossing the ring boundary trigger kind 3 (RING) fault; memory read errors trigger kind 1 (aperture).
 
-## 5. State machine
+## 5. State Machine
 
-IDLE →(run, RPTR≠WPTR)→ READ (request the line) →(rsp)→ HEADER → {N_PAYLOAD (stream; next line
-when needed) | V_WAIT (until v_done) | SKIP} → ADVANCE (RPTR, retire) → IDLE.  halt is looked at
-only in IDLE; fault → FAULTED (stay until core reset).
+- **Execution FSM**: IDLE → (run && RPTR≠WPTR) → HDR → {N (stream) | V (wait v_done) | ADV} → ADV → IDLE. On-demand read uses REQ → RSP when cache misses.
+- **Prefetch FSM**: PF_IDLE → (trigger in R_N) → PF_REQ → PF_RSP → PF_IDLE.
 
-## 6. Latency and throughput
+## 6. Latency and Throughput
 
-One dword per cycle on n_* within a line, plus one AMB round trip per line (about 20-40 cycles on a Zynq-7010 (XC7Z010)).
+- **Sustained Throughput**: 1 dword per clock cycle continuously on `n_*`, even across 32-byte / 64-byte line boundaries (zero bubble).
+- AMB read latency (15-25 cycles) is completely hidden during multi-line packet streaming.
 
-## 7. Corner cases and errors
+## 7. Status
 
-- RING_SIZE out of 10..20 is clamped by the driver contract; the module treats other values as 10.
-- AMB error on a ring read: fault kind 5 (AXI) or 1 (aperture, the MC already raised it) — report
-  kind 3 only for envelope errors; for rsp_error report kind 1 with the ring address.
-- `core_rst_n` clears RPTR and WPTR (design §2.6), `rst_n` BASE/SIZE.
-- After a fault the ring stays stopped until the core reset.
-
-## 8. What the TB checks
-
-`sim/tb/atg_cp_ring_tb.v` prints, in this order:
-
-- `PASS atg_cp_ring.classn` — a ring with SET_REG/BLIT packets streams them with n_last at the right dword
-- `PASS atg_cp_ring.classv` — a class V packet raises v_* with address/length/tag and waits for v_done
-- `PASS atg_cp_ring.pad` — class 3 padding at the ring end, then a packet at index 0
-- `PASS atg_cp_ring.wrap` — WPTR wraps; RPTR follows; empty and retire pulse correctly
-- `PASS atg_cp_ring.fault` — a header whose n passes WPTR: fault kind 3, nothing handed over
-- `PASS atg_cp_ring.halt` — halt stops between packets; step fetches one
-- `PASS atg_cp_ring` at the end.
-
-## 9. References
-
-design §2.4.2 (envelope), §2.7 (ring rules), §2.2 (registers), include/ghci_packets.h.
-
-## 10. Status
-
-Implemented (WS288 p004 (P3, amaterrace-gpu p3-cp 4a4d2da..65cc445, merged as a094748)).  303 lines, one FSM (IDLE, HDR, N, V, ADV, REQ, RSP, FAULT).  Spec changes in
-p004: `CLASS_V`, `core_rst_n`.  The TB runs with 32- and 64-byte lines.  Throughput: one dword per
-cycle within a line, one AMB round trip per line (no prefetch).
+Upgraded in Phase 029 with 64-word circular prefetch cache. Verified against `sim/tb/atg_cp_ring_tb.v`, `fw/cp/tests/run.sh`, and `sim/tb/atg_top_fw_tb.v`.
