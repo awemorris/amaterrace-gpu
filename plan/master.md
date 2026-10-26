@@ -69,5 +69,6 @@
 5. **[ws001-p005](ws001/phase005/phase.md)**: マルチエンジン独立キューイング（Graphics/Compute/DMA 独立リング）& ハードウェアプリエンプション。
 6. **[ws001-p006](ws001/phase006/phase.md)**: 細粒度同期（Timeline Semaphore / パイプラインバリア）& Vulkan 1.0 必須機能補完（MultiDrawIndirect、DualSourceBlend、LogicOp、異方性フィルタ）。
 7. **[ws001-p007](ws001/phase007/phase.md)**: GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新（19 レジスタスリム MMIO、インメモリ PSO/ディスクリプタ、`CMD_BIND_PIPELINE`/`CMD_DRAW`、UMA セカンダリコマンドフェッチ）。
-8. **DC の 200 MHz クロック領域分離**: SYSCLK 直結による 720p scanout アンダーフロー解消。
-9. **ブロック別パイプライン化**: SU → TU → ROP … の順に各ブロックの乗算・演算器遅延を LAT=3 に合わせてパイプライン化し、タイミングを収束。
+8. **[ws001-p008](ws001/phase008/phase.md)**: FP 演算ライブラリ再編 & 統合 FPU コア（`am_fpu_core`）実装（4x DSP48E1 共有 FMA/IMUL、`am_fp_div`, `am_fp_f2fix`, `am_fp_i2f` のライブラリ共通化）。
+9. **DC の 200 MHz クロック領域分離**: SYSCLK 直結による 720p scanout アンダーフロー解消。
+10. **ブロック別パイプライン化**: SU → TU → ROP … の順に各ブロックの乗算・演算器遅延を LAT=3 に合わせてパイプライン化し、タイミングを収束。
