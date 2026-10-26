@@ -25,7 +25,7 @@
 | `q001-i11` | **P2** | [ws001-p016](ws001/phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | cleared | `q001-i10` | 実装完了（commit a739ed2）。16エントリ CAM・Stop-and-Wait 撤廃。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i12` | **P2** | [ws001-p017](ws001/phase017/phase.md) | ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消（8KB Color/Depth） | cleared | `q001-i11`, `q001-i06` | 実装完了（commit 92bc3ee）。RAMB36E1 4-way 8KB タイルキャッシュ・Tree-PLRU。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i13` | **P2** | [ws001-p018](ws001/phase018/phase.md) | TU 4 レーン並列ストリームアドレス生成（atg_tu_addr 逐次 FSM 撤廃・1 cycle/quad 化） | cleared | `q001-i01` | 実装完了（commit 562a280）。4レーン並列2段ストリーム・1 cycle/quad。R1 敵対的レビュー APPROVE 承認完了。 |
-| `q001-i14` | **P2** | [ws001-p019](ws001/phase019/phase.md) | TU フィルタリングパイプライン統合 & 相互排他ウェイト撤廃（u_idle/f_idle 撤廃） | cleared | `q001-i13` | 実装完了（commit 71c0d8c）。u_idle/f_idle 撤廃・Order FIFO インオーダー保証。T1/R1 検証中。 |
+| `q001-i14` | **P2** | [ws001-p019](ws001/phase019/phase.md) | TU フィルタリングパイプライン統合 & 相互排他ウェイト撤廃（u_idle/f_idle 撤廃） | cleared | `q001-i13` | 実装完了（commit 71c0d8c）。排他ウェイト撤廃・Order FIFO インオーダー保証。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i15` | **P2** | [ws001-p020](ws001/phase020/phase.md) | TU マルチバンク・4-way L1 テクスチャキャッシュ（4 バンク同時読み出し） | in-progress | `q001-i13` | 非同期フローに基づき P2 着手。4バンク・インターリーブ & 4-way 16テクセル 1cyc 同時読出。 |
 | `q001-i16` | **P2** | [ws001-p021](ws001/phase021/phase.md) | TU MSHR ノンブロッキングフェッチ & メモリ統合（Hit-Under-Miss、実効スループット 30〜50倍） | queued | `q001-i15`, `q001-i06` | P2 待機。1 Outstanding 完全停止解消。 |
 | `q001-i17` | **P3** | [ws001-p022](ws001/phase022/phase.md) | Stream Setup Engine 実装（atg_rx_setup マイクロコード撤廃と固定遅延パイプライン化） | queued | `q001-i01` | P3 待機。スループット 1〜2 cyc/tri。 |
