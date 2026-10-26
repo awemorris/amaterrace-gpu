@@ -1512,6 +1512,7 @@ module am_mul_dsp_tb;
 		end
 
 		if (err_count == 0) begin
+			$display("PASS am_mul_dsp");
 			$display("PASS am_mul_dsp_tb (all 76 instances clean)");
 		end else begin
 			$display("FAIL am_mul_dsp_tb: %0d errors", err_count);
