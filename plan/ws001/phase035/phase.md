@@ -3,7 +3,7 @@
 # Phase 035: Full Skid Buffer（am_skid.v）実装と形式検証（0 バブル切断）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・単体PASS)
 - **依存**: [ws001-p001](../phase001/phase.md)
 - **優先度**: Critical (長距離ハンドシェイク配線の完全タイミング切断 & 100% スループット保証)
 - **出典**: ユーザー諮問（DC & BUS 最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -153,3 +153,18 @@ end
 - `sim/run.sh am_skid` が PASS すること。
 - `tools/arith-lint.py` で算術演算子違反 0 件であること。
 - R1 レビュー APPROVE 獲得。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **RTL 実装**:
+   - `rtl/library/bus/am_skid.v`: ゼロバブル 2 エントリ（メイン/スキッド）レジスタスライス。Forward/Reverse 双方の FF 絶縁を達成。
+   - `spec/library/bus/am_skid.md`: 仕様書作成。
+   - `sim/tb/am_skid_tb.v`: 単体テストベンチ作成。
+2. **検証結果**:
+   - `sim/run.sh am_skid`: **PASS** (0 s)
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+   - `verilator --lint-only -Wall`: 警告 0 件。
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p035_skid.md`）。組み合わせパスの完全遮断、ゼロバブルスループット、背圧スキッド保持、Guardrails 完全準拠を承認。
