@@ -40,7 +40,7 @@
 | `q001-i26` | **P3** | [ws001-p031](ws001/phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | queued | `q001-i25` | P3 待機。1 quad/cycle 達成。 |
 | `q001-i27` | **P3** | [ws001-p032](ws001/phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | queued | `q001-i22`, `q001-i30` | P3 待機。頂点供給レート 4 倍向上。 |
 | `q001-i28` | **P3** | [ws001-p033](ws001/phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | queued | `q001-i27`, `q001-i10` | P3 待機。頂点シェーダ負荷半減。 |
-| `q001-i29` | **P3** | [ws001-p034](ws001/phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/） | cleared | `q001-i01` | 実装完了（commit da4e0a7）。T1 検証 & R1 敵対的レビュー中。 |
+| `q001-i29` | **P3** | [ws001-p034](ws001/phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/） | cleared | `q001-i01` | 実装完了（commit da4e0a7）。統合回帰 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i30` | **P3** | [ws001-p035](ws001/phase035/phase.md) | 完全スキッドバッファ（am_skid.v）の共通ライブラリ化（0 サイクルスループット・Backpressure 分離） | cleared | `q001-i01` | 実装・単体 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i31` | **P3** | [ws001-p036](ws001/phase036/phase.md) | BRAM 推論可能非同期 FIFO（am_afifo_bram.v）実装（同期 Read + 2段スキッド 0-cycle FWFT） | cleared | `q001-i30` | 実装完了（commit c3e9c7b）。単体 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i32` | **P1** | [ws001-p037](ws001/phase037/phase.md) | am_axi_master.v 深い Outstanding（16〜32要求）& 独立 R/W チャネル化（DDR 帯域 85%+ 飽和） | queued | `q001-i30` | P1 待機。60〜80 サイクル往復遅延の隠蔽。 |
