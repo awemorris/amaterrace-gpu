@@ -3,7 +3,7 @@
 # Phase 004: TU 異方性フィルタリング（Anisotropic Filtering 最大 16x）
 
 - **親**: [WS002](../ws.md)
-- **状態**: `planned`
+- **状態**: `cleared` (2026-10-27 R1 敵対的レビュー APPROVE 承認完了)
 - **依存**: [ws001-p021](../../ws001/phase021/phase.md)
 - **優先度**: Minor (Vulkan 1.0 適合性・後回し実装)
 - **出典**: ユーザー指示（Vulkan 1.0 適合の後回し WS 切り出し）および R1 アドバイス書

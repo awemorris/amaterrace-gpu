@@ -19,6 +19,7 @@
 
 #include "fw.h"
 #include "ghci_frame.h"
+#include "ghci_cmd.h"
 
 /* The handler of one gpu-op number. */
 typedef void (*cmd_handler)(struct fw_command *command);
@@ -152,6 +153,15 @@ static const struct cmd_entry cmd_table[] = {
 	{ GHCI_VK_CMD_BLIT_IMAGE, fw_cmd_blit_image },
 	{ GHCI_VK_CMD_UPDATE_BUFFER, fw_cmd_update_buffer },
 	{ GHCI_VK_CMD_FILL_BUFFER, fw_cmd_fill_buffer },
+	/* GHCI 2.0 Structured Commands */
+	{ GHCI_CMD_BIND_PIPELINE, fw_cmd_bind_pipeline_pso },
+	{ GHCI_CMD_SET_VIEWPORT, fw_cmd_set_viewport_packet },
+	{ GHCI_CMD_SET_SCISSOR, fw_cmd_set_scissor_packet },
+	{ GHCI_CMD_DRAW, fw_cmd_draw_packet },
+	{ GHCI_CMD_DRAW_INDEXED, fw_cmd_draw_indexed_packet },
+	{ GHCI_CMD_DISPATCH, fw_cmd_dispatch_packet },
+	{ GHCI_CMD_BARRIER, fw_cmd_barrier_packet },
+	{ GHCI_CMD_EXECUTE_COMMANDS, fw_cmd_execute_commands_packet },
 };
 
 /*

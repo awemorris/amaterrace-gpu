@@ -39,6 +39,16 @@
         font-weight: 400;
         fill: #475569;
     }
+    .card-sub {
+        font-size: 10px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-desc {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #475569;
+    }
     .conn-label {
         font-size: 11px;
         font-weight: 600;
@@ -74,6 +84,17 @@
         font-size: 10.5px;
         font-weight: 700;
         fill: #ffffff;
+    }
+    .flow-label {
+        font-size: 9.5px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .sec-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 ]]></style>
     
@@ -127,7 +148,6 @@
     </g>
 
     <!-- Pipeline Stages Horizontal Flow -->
-
     <!-- Stage 1: Triangle Setup & Bounding Box (Left) -->
     <g transform="translate(30, 80)">
         <rect width="210" height="520" rx="10" fill="#ffffff" stroke="#67e8f9" stroke-width="1.5" filter="url(#shadow-sm)"/>
@@ -172,7 +192,7 @@
         <g transform="translate(12, 50)">
             <rect width="186" height="110" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
             <text class="card-title" x="10" y="20" fill="#0369a1">Coarse Tile Walker</text>
-            <text class="card-body" x="10" y="38">• Walks 8×8 or 16×16 tiles</text>
+            <text class="card-body" x="10" y="38">• Walks Coarse Tiles</text>
             <text class="card-body" x="10" y="54">• Tests corner equations</text>
             <text class="card-body" x="10" y="70">• Fast-rejects exterior tiles</text>
             <text class="card-body" x="10" y="94" font-weight="600" fill="#0284c7">Fast-accepts interior tiles</text>
@@ -184,8 +204,8 @@
             <text class="card-body" x="10" y="38">• Hierarchical Z (Hi-Z) RAM</text>
             <text class="card-body" x="10" y="54">• Compares nearest tile Z</text>
             <text class="card-body" x="10" y="70">  against coarse depth buffer</text>
-            <text class="card-body" x="10" y="92" font-weight="700" fill="#dc2626">• Discards 50-80%</text>
-            <text class="card-body" x="10" y="108" font-weight="700" fill="#dc2626">  of occluded fragments</text>
+            <text class="card-body" x="10" y="92" font-weight="700" fill="#dc2626">• Discards occluded fragments</text>
+            <text class="card-body" x="10" y="108" font-weight="700" fill="#dc2626">  prior to pixel shading</text>
             <text class="card-body" x="10" y="128">• Bypasses downstream</text>
             <text class="card-body" x="10" y="144">  fragment shading load</text>
         </g>
@@ -221,7 +241,7 @@
             <text class="card-bullet" x="16" y="70">λ1 = E1(x, y) / Area</text>
             <text class="card-bullet" x="16" y="86">λ2 = 1.0 - λ0 - λ1</text>
             <text class="card-body" x="10" y="108">• Perspective-correct (1/W)</text>
-            <text class="card-body" x="10" y="124">• Sub-pixel precision (1/16th)</text>
+            <text class="card-body" x="10" y="124">• Sub-pixel precision</text>
         </g>
 
         <g transform="translate(12, 325)">
@@ -252,7 +272,7 @@
         <g transform="translate(12, 185)">
             <rect width="191" height="145" rx="6" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.2"/>
             <text class="card-title" x="10" y="20" fill="#b45309">Dispatch to SU / Warp</text>
-            <text class="card-body" x="10" y="38">• Groups quads into 32-lane</text>
+            <text class="card-body" x="10" y="38">• Assembles 32-thread fragment</text>
             <text class="card-body" x="10" y="54">  warps (8 quads = 32 pixels)</text>
             <text class="card-body" x="10" y="74">• Dispatches to Fragment</text>
             <text class="card-body" x="10" y="90">  Shader Warp Queue</text>

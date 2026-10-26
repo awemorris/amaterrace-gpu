@@ -125,6 +125,25 @@ module atg_cp_seq #(
 	localparam [5:0] OP_QUERY = 6'd14;
 	localparam [5:0] OP_DISP_SET = 6'd15;
 	localparam [5:0] OP_FLIP = 6'd16;
+
+	/* GHCI 2.0 Structured Command Opcodes */
+	/* verilator lint_off UNUSEDPARAM */
+	localparam [5:0] CMD_BIND_PIPELINE         = 6'h20;
+	localparam [5:0] CMD_BIND_VERTEX_BUFFERS   = 6'h21;
+	localparam [5:0] CMD_BIND_INDEX_BUFFER     = 6'h22;
+	localparam [5:0] CMD_BIND_DESCRIPTOR_TABLE = 6'h23;
+	localparam [5:0] CMD_SET_VIEWPORT          = 6'h24;
+	localparam [5:0] CMD_SET_SCISSOR           = 6'h25;
+	localparam [5:0] CMD_SET_DYNAMIC_STATE     = 6'h26;
+	localparam [5:0] CMD_DRAW                  = 6'h27;
+	localparam [5:0] CMD_DRAW_INDEXED          = 6'h28;
+	localparam [5:0] CMD_DRAW_INDIRECT         = 6'h29;
+	localparam [5:0] CMD_DISPATCH              = 6'h30;
+	localparam [5:0] CMD_BARRIER               = 6'h31;
+	localparam [5:0] CMD_EXECUTE_COMMANDS      = 6'h32;
+	localparam [5:0] CMD_FENCE                 = 6'h33;
+	/* verilator lint_on UNUSEDPARAM */
+
 	localparam [5:0] VOP_DRAW_RAW = 6'd0;
 
 	localparam [2:0] K_BLT = 3'd0;
@@ -168,9 +187,16 @@ module atg_cp_seq #(
 	wire hdr_valid = fw_active ? fw_valid : n_valid;
 
 	/* Header and payload decode (combinational). */
-	wire h_vendor = hdr[30];
-	wire [5:0] h_op = hdr[29:24];
-	wire [7:0] h_n = hdr[7:0];
+	wire is_ghci2_hdr = (hdr[7:0] >= 8'h20 && hdr[7:0] <= 8'h33) && (hdr[15:8] >= 8'd1);
+	wire [7:0] ghci2_n;
+	wire ghci2_sub_bo;
+	am_sub #(.W(8)) sub_ghci2_n (
+		.a(hdr[15:8]), .b(8'd1), .bi(1'b0), .d(ghci2_n), .bo(ghci2_sub_bo)
+	);
+
+	wire h_vendor = is_ghci2_hdr ? 1'b0 : hdr[30];
+	wire [5:0] h_op = is_ghci2_hdr ? hdr[5:0] : hdr[29:24];
+	wire [7:0] h_n = is_ghci2_hdr ? ghci2_n : hdr[7:0];
 	wire h_known, h_absent, pay_bad;
 	wire [7:0] h_need;
 
@@ -219,7 +245,8 @@ module atg_cp_seq #(
 
 	/* A µop that starts a unit: BLIT, DRAW, DISPATCH, LOAD_CONST and class 1. */
 	wire unit_op = vendor || op == OP_BLIT || op == OP_DRAW || op == OP_DISPATCH ||
-		op == OP_LOAD_CONST;
+		op == OP_LOAD_CONST || op == CMD_DRAW || op == CMD_DRAW_INDEXED ||
+		op == CMD_DRAW_INDIRECT || op == CMD_DISPATCH;
 	assign u_req = {st == Q_EXEC && unit_op && (vendor || op != OP_BLIT), st == Q_EXEC && unit_op};
 	assign u_fw = use_fw;
 	assign u_side = side;
@@ -238,8 +265,8 @@ module atg_cp_seq #(
 			{k_on, k_code} = {exec_go && op == VOP_DRAW_RAW, K_RAW};
 		else case (op)
 		OP_BLIT: k_code = K_BLT;
-		OP_DRAW: k_code = K_DRAW;
-		OP_DISPATCH: k_code = K_CS;
+		OP_DRAW, CMD_DRAW, CMD_DRAW_INDEXED, CMD_DRAW_INDIRECT: k_code = K_DRAW;
+		OP_DISPATCH, CMD_DISPATCH: k_code = K_CS;
 		OP_LOAD_CONST: k_code = K_LC;
 		OP_PERF_RESET: k_code = K_PERF;
 		OP_FLIP: k_code = K_FLIP;
@@ -250,16 +277,16 @@ module atg_cp_seq #(
 
 	assign kick = k_on;
 	assign kick_code = k_code;
-	assign inv = !is_op_std ? 4'd0 : op == OP_DRAW ? 4'b0011 :
+	assign inv = !is_op_std ? 4'd0 : (op == OP_DRAW || op == CMD_DRAW || op == CMD_DRAW_INDEXED || op == CMD_DRAW_INDIRECT) ? 4'b0011 :
 		op == OP_LOAD_PROGRAM ? 4'b1000 : op == OP_INVALIDATE ? flags[3:0] : 4'd0;
 
 	wire is_query = !vendor && op == OP_QUERY;
 	wire fence_op = !vendor && (op == OP_FENCE || op == OP_WAIT_FENCE || op == OP_RESULT ||
-		(op == OP_QUERY && !flags[0]));
+		(op == OP_QUERY && !flags[0]) || op == CMD_FENCE);
 	assign occ_clear = (is_op_std && op == OP_QUERY && flags[0]) ||
 		(st == Q_FREQ && f_ready && is_query && flags[1]);
 	assign f_valid = st == Q_FREQ;
-	assign f_op = op == OP_FENCE ? 2'd0 : op == OP_RESULT || op == OP_QUERY ? 2'd1 : 2'd2;
+	assign f_op = (op == OP_FENCE || op == CMD_FENCE) ? 2'd0 : op == OP_RESULT || op == OP_QUERY ? 2'd1 : 2'd2;
 	assign f_addr = a0;
 	assign f_value = a1;
 	assign f_aux = a2;
@@ -304,7 +331,7 @@ module atg_cp_seq #(
 					use_fw <= fw_active;
 					vendor <= h_vendor;
 					op <= h_op;
-					flags <= hdr[15:8];
+					flags <= is_ghci2_hdr ? hdr[31:24] : hdr[15:8];
 					tag <= hdr[23:16];
 					side <= fw_active ? fw_side : 7'd0;
 					n <= h_n;
@@ -335,9 +362,9 @@ module atg_cp_seq #(
 						sidx <= {4'b1111, in_data[7:2]};	/* 0x3C0 + offset / 4 */
 					if (p == 8'd0)
 						a0 <= in_data;
-					if (p == 8'd1)
+					if ((op == CMD_FENCE && p == 8'd2) || (op != CMD_FENCE && p == 8'd1))
 						a1 <= in_data;
-					if (p == 8'd2)
+					if ((op == CMD_FENCE && p == 8'd3) || (op != CMD_FENCE && p == 8'd2))
 						a2 <= in_data;
 					p <= p_n;
 					/* The last payload word reaches the blocks a cycle later
@@ -382,7 +409,7 @@ module atg_cp_seq #(
 		end
 	end
 
-	wire unused_p = &{1'b0, p_co};
+	wire unused_p = &{1'b0, p_co, ghci2_sub_bo};
 endmodule
 
 `default_nettype wire

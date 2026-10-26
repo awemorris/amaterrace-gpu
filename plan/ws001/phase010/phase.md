@@ -3,7 +3,7 @@
 # Phase 010: SU パイプライン真の 6 段化（Real Pipelining）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `cleared`
 - **依存**: [ws001-p008](../phase008/phase.md), [ws001-p009](../phase009/phase.md)
 - **優先度**: Critical (200 MHz タイミング完全収束 & 1 GHz+ ASIC 化)
 - **出典**: ユーザー諮問（SU 設計問題とパイプライン化）および R1 敵対的アーキテクチャ分析レポート

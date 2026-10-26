@@ -1,6 +1,6 @@
 # atg_rx_bary
 
-RTL: `rtl/gpu/rx/atg_rx_bary.v`.  Parent: atg_rx_frag.  Children: `atg_rx_fmul`, `atg_rx_fadd`, `atg_rx_fdiv`, `atg_rx_i2f` (i, j in eighths to fp32).
+RTL: `rtl/gpu/rx/atg_rx_bary.v`.  Parent: atg_rx_frag.  Children: `am_fp_mul`, `am_fp_add`, `am_fp_div`, `am_fp_fix2f` (i, j in eighths to fp32).
 
 ## 1. Purpose and place
 
@@ -30,15 +30,18 @@ None.
 ## 4. Behaviour
 
 - The pass: i = x − bx0 + dx, j = y − by0 + dy as fp32 (8 i + 8 dx is an integer, converted exactly and scaled by 1/8; the centre has dx = dy = 0 and gives the same bits as before); per lane P = (A i + B j) + C for the four planes, r = 1 / (1/w), b0 = (b0/w) r, b1 = (b1/w) r, b2 = (1 − b0) − b1 (RNE, denormals flushed: the RX's units).
-- d_s = Az dx_s + Bz dy_s: two fmul and one fadd per sample.  The offsets (dx, dy): (−1/8, −3/8), (3/8, −1/8), (−3/8, 1/8), (1/8, 3/8) (Values referenced: Vulkan specification, Multisampling, standard sample locations).
+- Evaluates all 4 quad lanes in parallel across planes Z, 1/W, B0/W, B1/W using a 2-stage adder pipeline (`u_fadd1`, `u_fadd2`) to eliminate structural hazards, followed by 4 parallel `am_fp_div` units for perspective reciprocal division.
+- d_s = Az dx_s + Bz dy_s: two fmul and one fadd per sample evaluated across the 4 samples in parallel. The offsets (dx, dy): (−1/8, −3/8), (3/8, −1/8), (−3/8, 1/8), (1/8, 3/8) (Values referenced: Vulkan specification, Multisampling, standard sample locations).
 
 ## 5. State machine
 
-IDLE →(i_start)→ PL (44 cycles) → DIV (4 divisions) → BC (16 cycles) → IDLE with o_done; IDLE →(i_dz)→ DZ (16 cycles) → IDLE with o_done.
+IDLE →(i_start)→ PL (20 cycles) → DIV (28 cycles, 4 lanes parallel) → BC (13 cycles) → IDLE with o_done;
+IDLE →(i_dz)→ DZ (10 cycles) → IDLE with o_done.
 
 ## 6. Latency and throughput
 
-About 200 cycles per pass (the division per lane dominates); 16 for DZ.
+- Barycentric pass: 61 cycles total (PL: 20 cycles, DIV: 28 cycles, BC: 13 cycles). Speedup of >3x over legacy 200-cycle serial engine.
+- Depth slope pass (DZ): 10 cycles total.
 
 ## 7. Corner cases and errors
 
@@ -46,7 +49,8 @@ About 200 cycles per pass (the division per lane dominates); 16 for DZ.
 
 ## 8. What the TB checks
 
-Through `sim/tb/atg_rx_frag_tb.v` (`.warps`: the centre, bit for bit as before; `.ms`: the samples and d_s).
+- Unit testbench: `sim/tb/atg_rx_bary_tb.v` (verifies depth slopes, plane evaluations, 4-lane parallel divisions, and barycentric identity $b0+b1+b2 = 1$).
+- Full rasterization pipeline: `sim/tb/atg_rx_frag_tb.v` (`.warps`: the centre, bit for bit as before; `.ms`: the samples and d_s).
 
 ## 9. References
 
@@ -54,4 +58,4 @@ design §15.4; spec atg_rx_frag.md, atg_rx_setup.md (the planes).
 
 ## 10. Status
 
-Implemented (the MSAA work).
+Implemented & verified (Phase 024 Fast Parallel Plane Evaluator).

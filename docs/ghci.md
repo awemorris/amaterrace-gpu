@@ -59,7 +59,7 @@ Contents
 ```
             Host                                       GPU
   +----------------------+                  +-------------------------------+
-  | Driver               |  register window |  Host control registers (Slim)|
+  | Driver               |  register window |  Host control registers       |
   |   registers ---------+----------------->|  RING_WPTR (doorbell)         |
   |   doorbell ----------+----------------->|        |                      |
   |                      |                  |        v                      |
@@ -85,7 +85,7 @@ earlier work has completed.
 
 #### Key Architecture Tenets (GHCI 2.0 TO-BE Specification)
 
-- **Slim Host Control Registers:** Exactly 19 32-bit registers (76 bytes total).
+- **Host Control Registers:** Exactly 19 32-bit registers (76 bytes total).
   All dynamic state registers (`STATE_*`) are eliminated from MMIO to eliminate
   bus stalls and kernel transitions.
 - **In-Memory Immutable PSO:** State is baked into compact in-memory pipeline
@@ -166,14 +166,14 @@ earlier work has completed.
 3. Host control registers
 -------------------------
 
-GHCI 2.0 defines a slim 19-register host MMIO window (76 bytes total:
+GHCI 2.0 defines a 19-register host MMIO window (76 bytes total:
 offsets `0x000` to `0x048`), mapped to a 4 KiB host physical page. All dynamic
 state registers (`STATE_*`, 0x1000..0x1BFC) and legacy `KICK`/`APERTURE_*`
 registers are completely abolished. All pipeline state is submitted through
 in-memory Pipeline State Objects (`GhciPipelineState`) and structured ring
 commands.
 
-### 3.1 Slim Register Map (19 Registers, 76 Bytes)
+### 3.1 Register Map (19 Registers, 76 Bytes)
 
 | Offset | Name | Access | Contents |
 | --- | --- | --- | --- |
@@ -364,7 +364,7 @@ count. [7:0] is one of:
 
 | State (STATUS[19:16]) | Entered | Accepts | Leaves |
 | --- | --- | --- | --- |
-| 0 IDLE | After reset, or CTRL.RUN = 0 | Slim MMIO register writes (RING_BASE, RING_SIZE, SCRATCH, etc.) | CTRL.RUN = 1: RUNNING |
+| 0 IDLE | After reset, or CTRL.RUN = 0 | MMIO register writes (RING_BASE, RING_SIZE, SCRATCH, etc.) | CTRL.RUN = 1: RUNNING |
 | 1 RUNNING | CTRL.RUN = 1 | RING_WPTR (doorbell), IRQ_*, SCRATCH, CTRL.HALT, CTRL.RESET | CTRL.HALT: HALTING. A fault: FAULTED. CTRL.RUN = 0: IDLE after current command |
 | 2 HALTING | CTRL.HALT = 1 | Reads | When the current command has finished and memory accesses are quiesced: HALTED, with IRQ_STATUS |
 | 3 HALTED | After HALTING | Reads, SCRATCH, CTRL.RESET | CTRL.HALT = 0: back to RUNNING or IDLE. CTRL.RESET = 1: RESETTING |
@@ -919,7 +919,7 @@ dedicated high-bandwidth local memory (VRAM):
 
 ![GHCI Discrete System Architecture](svg/ghci_discrete_system.svg)
 
-- **BAR0 Slim MMIO Window:** Exactly 76 bytes mapped into host physical address
+- **BAR0 MMIO Window:** Exactly 76 bytes mapped into host physical address
   space for doorbells and interrupt control.
 - **Bus Master DMA:** The GPU's autonomous DMA engine fetches ring packets and
   stages large assets between host memory and local VRAM across PCIe.
@@ -1865,7 +1865,7 @@ closes the window when it attaches.
 14. Bring-up and Diagnostics
 ------------------------------
 
-In GHCI 2.0, board bring-up and driver development rely on the slim MMIO
+In GHCI 2.0, board bring-up and driver development rely on the MMIO
 diagnostics registers rather than complex debug memory ports:
 
 - **Liveness & MMIO Verification:** The host reads `GHCI_MAGIC` (`0x47484349`)

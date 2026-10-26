@@ -50,7 +50,7 @@ module atg_su_sb_tb;
 
 	always #5 clk = !clk;
 
-	atg_su_sb #(.NPHYS(8), .SHORT_LAT(LAT)) dut (
+	atg_su_sb #(.NPHYS(8), .SHORT_LAT(LAT), .BYPASS(0)) dut (
 		.clk(clk), .rst_n(rst_n), .u_valid(u_valid), .u_ready(u_ready), .u_warp(u_warp),
 		.u_pc(u_pc), .u_uop(u_uop), .i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp),
 		.i_pc(i_pc), .i_uop(i_uop), .i_sbe(i_sbe), .x_end(x_end), .fb_valid(fb_valid),

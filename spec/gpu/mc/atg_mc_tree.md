@@ -1,70 +1,44 @@
 # atg_mc_tree
 
-RTL: `rtl/gpu/mc/atg_mc_tree.v`.  Parent: `atg_mc`.  Implemented in WS288 p023 milestone 4
-(P1, 2026-10-23).
+RTL: `rtl/gpu/mc/atg_mc_tree.v`. Parent: `atg_mc`. Implemented in: WS288 p023 milestone 4; refreshed to Flat Crossbar & QoS in ws001-p028.
 
 ## 1. Purpose and place
 
-The MC's client tree, wiring only: one `am_amb_to_rt` leaf per client and a binary tree of
-`atg_rt` routers built with `generate` from `NCLIENT`; its top connects to atg_mc's root.
-Children: `am_amb_to_rt`, `atg_rt`.
+The MC's client crossbar: connects all client AMB ports (`am_amb_to_rt` leaves) to the MC root (`atg_mc`) via a 2-stage QoS-prioritized flat crossbar, replacing the previous multi-hop binary tree.
+
+Latency:
+- Request path: 1 cycle (via registered skid buffer `am_skid`).
+- Response path: 1 cycle (via registered demux slice).
+- Total roundtrip arbitration latency: **2 cycles** (down from 8 cycles in the binary tree).
 
 ## 2. Parameters
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `NCLIENT`, `HIGH_MASK` | 2, 0 | As atg_mc |
-| `HAS_ROOT`, `ROOT_CLIENT` | 0, 0 | A client one hop from the root |
-| `ROOT_SPLIT` | 0 | With `HAS_ROOT`: that client's leaf has its own channel to the root (`s_*`) instead of the top router (atg_mc with `HAS_PROT` or `ROOT_KEEP`) |
-| `ROOT_KEEP` | 0 | With `ROOT_SPLIT`: `flush` does not reset that client's leaf (the DC's scan-out goes on through the GPU's reset; atg_mc's `ROOT_KEEP`).  Mutation `MUT_MC_NOKEEP` flushes it anyway |
-| `TREE_L` | 1 | Levels of the tree of the other clients: clog2(`NCLIENT` − `HAS_ROOT`) |
-| `RW` | 1 | Route bits: max(1, `TREE_L` + `HAS_ROOT`) |
-| `ADDR_W`, `LINE_BYTES`, `LINE_SHIFT`, `VRAM_AW`, `VRAM_BASE` | | As atg_mc |
+| `NCLIENT`, `HIGH_MASK` | 2, 0 | As `atg_mc`. `HIGH_MASK` marks priority-1 clients. |
+| `HAS_ROOT`, `ROOT_CLIENT` | 0, 0 | Client one hop from the root (e.g. DC). |
+| `ROOT_SPLIT` | 0 | With `HAS_ROOT`: `ROOT_CLIENT` has its own channel (`s_*`) directly to the root. |
+| `ROOT_KEEP` | 0 | With `ROOT_SPLIT`: `flush` leaves `ROOT_CLIENT` alone. |
+| `TREE_L` | 1 | $\lceil \log_2(\text{NCLIENT} - \text{HAS\_ROOT}) \rceil$. |
+| `RW` | 1 | Route bits: $\max(1, \text{TREE\_L} + \text{HAS\_ROOT})$. |
+| `ADDR_W`, `LINE_BYTES`, `LINE_SHIFT`, `VRAM_AW`, `VRAM_BASE` | | As `atg_mc`. |
 
 ## 3. Ports
 
-Domain `clk`.  The packed client ports of atg_mc (request in, per-client response out) and the
-root's request and response channels; `rsp_idle` (no response flit in any router); `hold`
-(`NCLIENT`): per client, the leaf starts no new packet (the MC's quiesce); `c_req_chk`, `c_req_tbl`,
-`c_req_slot` (per client) go into the leaves' headers; `s_req_*`, `s_rsp_valid`, `s_rsp_data`: the
-root client's own channel with `ROOT_SPLIT` (else idle; its responses are always taken).
+Clock/reset domain: `clk`, `rst_n` (active low synchronous).
 
-## 4. Behaviour
+- Client ports: `c_req_*`, `c_rsp_*` (packed, client 0 in low bits).
+- Root request/response: `r_req_*`, `r_rsp_*`.
+- Dedicated root client channel: `s_req_*`, `s_rsp_*`.
+- Status: `rsp_idle` (high when no response flit is in transit).
 
-- The clients other than `ROOT_CLIENT` are numbered j = 0 … NT−1 in client order and sit at the
-  leaves of a complete binary tree of 2^TREE_L leaves; unused leaves are idle (no request,
-  responses taken and dropped — none come).  Routers are numbered as a heap: node 1 is the top,
-  node i has the children 2i (child 0) and 2i+1 (child 1), leaf j is node 2^TREE_L + j.
-- With `HAS_ROOT`, one more router is on top: child 0 is `ROOT_CLIENT`'s leaf, child 1 is node 1.
-- Routes: bit 0 is the top router's choice (with `HAS_ROOT`: 0 for the root client, 1 for the
-  others), then one bit per level; tree client j takes at level l the bit TREE_L−1−l of j.  The
-  router at node i reads response bit `10 + HAS_ROOT + floor(log2 i)`.
-- Priority comes from `HIGH_MASK` (each leaf's `PRIO`).
+## 4. QoS and Arbitration Behaviour
 
-## 5. State machine
-
-None (wiring).
-
-## 6. Latency and throughput
-
-`TREE_L` hops (+1 with `HAS_ROOT`) each way.  Routers: 2^TREE_L − 1 (+1); with the KC705's
-22 clients and the DC as the root client, 31 + 1 routers in 5 + 1 levels.
-
-## 7. Corner cases and errors
-
-- `TREE_L` = 0 (one tree client): no router; the leaf is node 1.
-- Unbalanced use: idle leaves cost the routers above them (their registers stay, the arbitration
-  of the idle side is removed by synthesis).
-
-## 8. What the TB checks
-
-Covered by `sim/tb/atg_mc_tb.v` (3 clients in 2 levels with an idle leaf; 5 clients with a root
-client and 2 levels).
-
-## 9. References
-
-design.md §4.1; `spec/gpu/mc/atg_rt.md`, `spec/library/bus/am_amb_to_rt.md`, `spec/gpu/mc/atg_mc.md`.
-
-## 10. Status
-
-Implemented (WS288 p023 milestone 4).  About 220 lines of wiring.  `ROOT_KEEP` (WS288 p035 D2b, 2026-10-25).
+1. **Priority Level 1 (Strict Priority)**:
+   - Clients marked in `HIGH_MASK` (such as the Display Controller) are granted immediately whenever they have a valid request.
+2. **Priority Level 0 (Fair Round Robin)**:
+   - 3D/compute clients (SU, TU, ROP, BLT, VF) are arbitrated fairly with a deficit round-robin pointer to prevent starvation.
+3. **Packet Atomicity**:
+   - Multi-flit write packets (`last == 0` header followed by data flit) maintain arbiter lock until `last` handshakes.
+4. **Register Slices**:
+   - Input/output paths are decoupled using `am_skid` buffers, guaranteeing 200 MHz timing closure.

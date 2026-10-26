@@ -79,6 +79,26 @@ module atg_cp_seq_wait (
 	localparam [5:0] OP_QUERY = 6'd14;
 	localparam [5:0] OP_DISP_SET = 6'd15;
 	localparam [5:0] OP_FLIP = 6'd16;
+	localparam [5:0] OP_BARRIER = 6'd20;
+	localparam [5:0] OP_SEMAPHORE_SIGNAL = 6'd21;
+	localparam [5:0] OP_SEMAPHORE_WAIT = 6'd22;
+
+	/* GHCI 2.0 Structured Command Opcodes */
+	localparam [5:0] CMD_BIND_PIPELINE         = 6'h20;
+	localparam [5:0] CMD_BIND_VERTEX_BUFFERS   = 6'h21;
+	localparam [5:0] CMD_BIND_INDEX_BUFFER     = 6'h22;
+	localparam [5:0] CMD_BIND_DESCRIPTOR_TABLE = 6'h23;
+	localparam [5:0] CMD_SET_VIEWPORT          = 6'h24;
+	localparam [5:0] CMD_SET_SCISSOR           = 6'h25;
+	localparam [5:0] CMD_SET_DYNAMIC_STATE     = 6'h26;
+	localparam [5:0] CMD_DRAW                  = 6'h27;
+	localparam [5:0] CMD_DRAW_INDEXED          = 6'h28;
+	localparam [5:0] CMD_DRAW_INDIRECT         = 6'h29;
+	localparam [5:0] CMD_DISPATCH              = 6'h30;
+	localparam [5:0] CMD_BARRIER               = 6'h31;
+	localparam [5:0] CMD_EXECUTE_COMMANDS      = 6'h32;
+	localparam [5:0] CMD_FENCE                 = 6'h33;
+
 	localparam [5:0] VOP_DRAW_RAW = 6'd0;
 	localparam [5:0] VOP_DBG_MARK = 6'd1;
 
@@ -168,6 +188,14 @@ module atg_cp_seq_wait (
 			OP_DRAW: pre = {1'b0, B_VF};
 			OP_FENCE: pre = {1'b0, B_ALL};
 			OP_WAIT_IDLE: pre = {1'b0, flags == 8'd0 ? B_ALL : flags | B_MEM};
+			OP_BARRIER: pre = {1'b0, flags == 8'd0 ? B_ALL : flags | B_MEM};
+			OP_SEMAPHORE_SIGNAL: begin
+				pre = {1'b0, flags == 8'd0 ? B_ALL : flags | B_MEM};
+				pre_f = 1'b1;
+			end
+			OP_SEMAPHORE_WAIT: begin
+				pre_f = 1'b1;
+			end
 			OP_LOAD_CONST: begin
 				pre = {1'b0, B_LCPRE};
 				post = {1'b0, B_SU};
@@ -189,6 +217,19 @@ module atg_cp_seq_wait (
 			`else
 			OP_FLIP: pre = {1'b0, flags[0] ? B_ALL : 8'd0} | B_DISP;
 			`endif
+			/* GHCI 2.0 Structured Commands */
+			CMD_BIND_PIPELINE: pre = {1'b0, B_PROGW};
+			CMD_BIND_VERTEX_BUFFERS, CMD_BIND_INDEX_BUFFER: pre = {1'b0, B_VF};
+			CMD_BIND_DESCRIPTOR_TABLE: pre = {1'b0, B_TUW};
+			CMD_SET_VIEWPORT, CMD_SET_SCISSOR, CMD_SET_DYNAMIC_STATE: pre = {1'b0, B_RXROP};
+			CMD_DRAW, CMD_DRAW_INDEXED, CMD_DRAW_INDIRECT: pre = {1'b0, B_VF};
+			CMD_DISPATCH: pre = {1'b0, B_SU};
+			CMD_BARRIER: pre = {1'b0, flags == 8'd0 ? B_ALL : flags | B_MEM};
+			CMD_EXECUTE_COMMANDS: pre = 9'd0;
+			CMD_FENCE: begin
+				pre = {1'b0, B_ALL};
+				pre_f = 1'b1;
+			end
 			default: ;
 			endcase
 		end

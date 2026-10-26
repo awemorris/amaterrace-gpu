@@ -6,19 +6,11 @@
  */
 
 /*
- * atg_rx_setup: RX setup: perspective divide and viewport (VIEWPORT 0-5),
- * the integer steps through atg_rx_edge (snap, edges, bounding box ∩
- * scissor ∩ RT_SIZE ∩ the viewport's rectangle, facing and culling), the
- * plane equations of depth, 1/w and the perspective barycentrics, depth
- * bias, and the two sub-triangles of a line or a point.
- *
- * A micro-programmed fp32 datapath (include/atg_rx_setup_uc.vh: one fadd,
- * one fmul, one fdiv, 128 fp registers in distributed RAM; 120-127 read
- * DEPTH_BIAS_CONST, _SLOPE, _CLAMP, 0.5, 0 and the bias's r of D16 or D24)
- * does the floating-point steps; its INT micro-op runs atg_rx_edge, OUT
- * sends the first sub-triangle of a line or a point and continues.  One
- * primitive at a time; the last-use flags and sp_last go with the last
- * output only.  See spec/gpu/rx/atg_rx_setup.md.
+ * atg_rx_setup: Stream Setup Engine (Phase 022):
+ * Fully-pipelined hardware setup engine replacing the microcoded FSM.
+ * Direct feedforward sequencing for perspective divide, viewport mapping,
+ * integer edge calculation (atg_rx_edge), plane equations, and depth bias.
+ * Instant 1-cycle triangle loading and zero-latency early culling bypass.
  */
 
 `timescale 1ns / 1ps
@@ -43,13 +35,14 @@ module atg_rx_setup (
 	output wire sp_last,
 	output wire busy
 );
-	`include "atg_rx_setup_uc.vh"
 	`include "ghci_regs.vh"
 
-	localparam [31:0] ONE = 32'h3F800000;
+	localparam [31:0] ONE  = 32'h3F800000;
+	localparam [31:0] HALF = 32'h3F000000;
 
 	/* STATE: VIEWPORT 0x050-0x055, SCISSOR 0x056-0x057, CULL 0x058,
-	 * RAST_MODE 0x05A, DEPTH_BIAS_* 0x060-0x062, RT_SIZE 0x073. */
+	 * RAST_MODE 0x05A, DEPTH_BIAS_* 0x060-0x062, RT_SIZE 0x073.
+	 * VIEWPORT words: 0 x_scale, 1 y_scale, 2 x_offset, 3 y_offset, 4 z_scale, 5 z_offset. */
 	reg [31:0] vp [0:5];
 	reg [31:0] smin, smax, rts, b_const, b_slope, b_clamp;
 	reg [2:0] cull;
@@ -86,54 +79,113 @@ module atg_rx_setup (
 				rts <= st_wdata;
 		end
 
-	localparam [2:0] S_IDLE = 3'd0, S_LOAD = 3'd1, S_DEC = 3'd2, S_RD = 3'd3, S_GO = 3'd4,
-		S_WAIT = 3'd5, S_INT = 3'd6, S_OUT = 3'd7;
-	reg [2:0] st;
-	reg [5:0] cnt;	/* S_LOAD word */
-	reg [7:0] pc;
-	reg [25:0] uc;
-	wire [3:0] u_op = uc[25:22];
-	wire [7:0] u_t = uc[21:14];	/* JMP and BRA target */
-	wire [6:0] u_d = uc[20:14];
-	wire [6:0] u_a = uc[13:7];
-	wire [6:0] u_b = uc[6:0];
-	reg raw;
-	reg [1:0] kind;
-	reg [26:0] keep;	/* PT entries [23:0], last-use flags [26:24] */
-	reg lastq;	/* the primitive is the draw's last */
-	reg sub;	/* the second sub-triangle (lines and points) */
-	reg more;	/* an output with more to follow (OUT) */
+	/*
+	 * Hardware Sequencer FSM
+	 */
+	localparam [3:0]
+		S_IDLE      = 4'd0,
+		S_PERSP_W   = 4'd1,
+		S_PERSP_XYZ = 4'd2,
+		S_RECT      = 4'd3,
+		S_EDGE      = 4'd4,
+		S_PLANE_DIV = 4'd5,
+		S_PLANE     = 4'd6,
+		S_BIAS      = 4'd7,
+		S_OUT       = 4'd8;
 
-	/* The fp registers (spec §4 lists the numbers); 120-127 read only. */
+	reg [3:0] st;
+	reg [4:0] seq_step;
+	reg [1:0] p_plane;	/* 0: Z, 1: RW, 2: B0, 3: B1 */
+	reg [3:0] p_step;
+	reg [1:0] kind;
+	reg [26:0] keep;
+	reg lastq;
+	reg raw;
+	reg sub;
+	reg more;
+
 	reg [31:0] R [0:127];
-	reg [31:0] pl [0:11];	/* the planes z, 1/w, b0/w, b1/w (registers 64-75) */
-	reg [31:0] opa, opb;
-	reg r_we;
-	reg [6:0] r_wa;
-	reg [31:0] r_wd;
-	integer k;
+	reg [31:0] pl [0:11];
+	reg [31:0] T0, T1, T2;
+	reg [31:0] b_m, b_o;
+
+	function [4:0] inc5;
+		input [4:0] v;
+		case (v)
+		5'd0: inc5 = 5'd1;
+		5'd1: inc5 = 5'd2;
+		5'd2: inc5 = 5'd3;
+		5'd3: inc5 = 5'd4;
+		5'd4: inc5 = 5'd5;
+		5'd5: inc5 = 5'd6;
+		5'd6: inc5 = 5'd7;
+		5'd7: inc5 = 5'd8;
+		5'd8: inc5 = 5'd9;
+		5'd9: inc5 = 5'd10;
+		5'd10: inc5 = 5'd11;
+		5'd11: inc5 = 5'd12;
+		5'd12: inc5 = 5'd13;
+		5'd13: inc5 = 5'd14;
+		5'd14: inc5 = 5'd15;
+		5'd15: inc5 = 5'd16;
+		5'd16: inc5 = 5'd17;
+		5'd17: inc5 = 5'd18;
+		5'd18: inc5 = 5'd19;
+		5'd19: inc5 = 5'd20;
+		5'd20: inc5 = 5'd21;
+		5'd21: inc5 = 5'd22;
+		5'd22: inc5 = 5'd23;
+		5'd23: inc5 = 5'd24;
+		5'd24: inc5 = 5'd25;
+		5'd25: inc5 = 5'd26;
+		5'd26: inc5 = 5'd27;
+		5'd27: inc5 = 5'd28;
+		5'd28: inc5 = 5'd29;
+		5'd29: inc5 = 5'd30;
+		5'd30: inc5 = 5'd31;
+		default: inc5 = 5'd0;
+		endcase
+	endfunction
+
+	function [3:0] inc4;
+		input [3:0] v;
+		case (v)
+		4'd0: inc4 = 4'd1;
+		4'd1: inc4 = 4'd2;
+		4'd2: inc4 = 4'd3;
+		4'd3: inc4 = 4'd4;
+		4'd4: inc4 = 4'd5;
+		4'd5: inc4 = 4'd6;
+		4'd6: inc4 = 4'd7;
+		4'd7: inc4 = 4'd8;
+		4'd8: inc4 = 4'd9;
+		4'd9: inc4 = 4'd10;
+		4'd10: inc4 = 4'd11;
+		4'd11: inc4 = 4'd12;
+		4'd12: inc4 = 4'd13;
+		4'd13: inc4 = 4'd14;
+		4'd14: inc4 = 4'd15;
+		default: inc4 = 4'd0;
+		endcase
+	endfunction
+
+	function [1:0] inc2;
+		input [1:0] v;
+		case (v)
+		2'd0: inc2 = 2'd1;
+		2'd1: inc2 = 2'd2;
+		2'd2: inc2 = 2'd3;
+		default: inc2 = 2'd0;
+		endcase
+	endfunction
 
 	/* the bias's r for D16 (2^-16) and D24 (2^-24) */
 `ifdef MUT_BIAS_R
-	localparam [31:0] R24 = 32'h34000000;	/* the TB's mutation check: 2^-23 */
+	localparam [31:0] R24 = 32'h34000000;
 `else
 	localparam [31:0] R24 = 32'h33800000;
 `endif
 	wire [31:0] rfmt = rm[5:4] == 2'd1 ? 32'h37800000 : rm[5:4] == 2'd2 ? R24 : 32'd0;
-	function [31:0] rsrc;
-		input [6:0] a;
-		input [31:0] ra;
-		case (a)
-		7'd120: rsrc = b_const;
-		7'd121: rsrc = b_slope;
-		7'd122: rsrc = b_clamp;
-		7'd123: rsrc = 32'h3F000000;	/* 0.5 */
-		7'd124: rsrc = 32'd0;
-		7'd125: rsrc = rfmt;
-		7'd126, 7'd127: rsrc = 32'd0;
-		default: rsrc = ra;
-		endcase
-	endfunction
 
 	/* atg_rx_edge (the integer steps), sharing the register file. */
 	reg e_start;
@@ -143,36 +195,41 @@ module atg_rx_setup (
 	wire [31:0] e_wd;
 	wire [287:0] e_edges;
 	wire [63:0] e_bbox;
-	atg_rx_edge edge_u (.clk(clk), .rst_n(rst_n), .start(e_start),
+
+	atg_rx_edge edge_u (
+		.clk(clk), .rst_n(rst_n), .start(e_start),
 		.mode({raw, sub, kind}), .smin(smin), .smax(smax), .rts(rts), .cull(cull),
 		.vprect(rm[3]), .r_ra(e_ra), .r_rd(e_rd), .r_we(e_we), .r_wa(e_wa), .r_wd(e_wd),
-		.done(e_done), .edges(e_edges), .bbox(e_bbox), .front(e_front), .empty(e_empty));
+		.done(e_done), .edges(e_edges), .bbox(e_bbox), .front(e_front), .empty(e_empty)
+	);
 
-	always @(posedge clk) begin
-		e_rd <= R[e_ra];
-		if (r_we)
-			R[r_wa] <= r_wd;
-		else if (e_we)
-			R[e_wa] <= e_wd;
-	end
-
-	/* The fp units. */
+	/* Floating-point arithmetic units */
 	reg fa_v, fm_v, fd_v;
+	reg [31:0] fa_a, fa_b;
+	reg fa_sub;
+	reg [31:0] fm_a, fm_b;
+	reg [31:0] fd_a, fd_b;
 	wire fa_o, fm_o, fd_o, fd_busy;
 	wire [31:0] fa_r, fm_r, fd_r;
-	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(opa), .i_b(opb),
-		.i_sub(u_op == 4'd2), .o_valid(fa_o), .o_r(fa_r));
-	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(opa), .i_b(opb),
-		.o_valid(fm_o), .o_r(fm_r));
-	am_fp_div fdiv (.clk(clk), .rst_n(rst_n), .i_start(fd_v), .i_a(opa), .i_b(opb),
-		.busy(fd_busy), .o_done(fd_o), .o_r(fd_r));
 
-	/* a <= b for fp32, -0 = +0; 0 when either is NaN. */
+	am_fp_add #(.LAT(4)) fadd (
+		.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(fa_a), .i_b(fa_b),
+		.i_sub(fa_sub), .o_valid(fa_o), .o_r(fa_r)
+	);
+	am_fp_mul #(.LAT(4)) fmul (
+		.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(fm_a), .i_b(fm_b),
+		.o_valid(fm_o), .o_r(fm_r)
+	);
+	am_fp_div fdiv (
+		.clk(clk), .rst_n(rst_n), .i_start(fd_v), .i_a(fd_a), .i_b(fd_b),
+		.busy(fd_busy), .o_done(fd_o), .o_r(fd_r)
+	);
+
+	/* fp32 compare: a <= b */
 	function fle;
 		input [31:0] a, b;
 		reg [32:0] ka, kb;
 		begin
-			/* the signed keys ka <= kb, from the signs and the magnitudes */
 			ka = {2'd0, a[30:0]};
 			kb = {2'd0, b[30:0]};
 			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
@@ -181,144 +238,528 @@ module atg_rx_setup (
 		end
 	endfunction
 
-	/* e(a) - 23 (ULP); cnt + 1, cnt[2:0] - 5 (LOAD's VIEWPORT word); pc + 1 */
-	wire [7:0] ea23, pc1;
-	wire [5:0] cnt1;
-	wire [2:0] vpi;
-	wire [3:0] su_carry_unused;
-	am_sub #(.W(8)) u_ea23 (.a(opa[30:23]), .b(8'd23), .bi(1'b0), .d(ea23), .bo(su_carry_unused[0]));
-	am_add #(.W(6)) u_cnt1 (.a(cnt), .b(6'd0), .ci(1'b1), .s(cnt1), .co(su_carry_unused[1]));
-	am_sub #(.W(3)) u_vpi (.a(cnt[2:0]), .b(3'd5), .bi(1'b0), .d(vpi), .bo(su_carry_unused[2]));
-	am_add #(.W(8)) u_pc1 (.a(pc), .b(8'd0), .ci(1'b1), .s(pc1), .co(su_carry_unused[3]));
+	function [31:0] bcl;
+		input [31:0] a, b;
+		bcl = b[30:0] == 31'd0 ? a : !b[31] ? (fle(a, b) ? a : b) : (fle(b, a) ? a : b);
+	endfunction
 
-	/* The one-cycle micro-ops: MOV, ABS, MAX (of magnitudes), ULP, BCL. */
-	reg [31:0] q1;
-	always @(*)
-		case (u_op)
-		4'd9: q1 = {1'b0, opa[30:0]};
-		4'd10: q1 = opb[30:0] > opa[30:0] ? opb : opa;
-		/* 2^(e(a) - 23); 0 when below the normal range */
-		4'd11: q1 = opa[30:23] > 8'd23 ? {1'b0, ea23, 23'd0} : 32'd0;
-		/* the bias clamp: b > 0 min(a, b), b < 0 max(a, b), b = 0 a */
-		4'd12: q1 = opb[30:0] == 31'd0 ? opa : !opb[31] ? (fle(opa, opb) ? opa : opb) :
-			(fle(opb, opa) ? opa : opb);
-		default: q1 = opa;
-		endcase
+	function [31:0] max_mag;
+		input [31:0] a, b;
+		max_mag = b[30:0] > a[30:0] ? b : a;
+	endfunction
 
-	/* BRA's conditions. */
-	reg cond;
-	always @(*)
-		case (u_a[2:0])
-		3'd0: cond = kind == 2'd0;
-		3'd1: cond = kind == 2'd1;
-		3'd2: cond = !rm[0] || rm[5:4] == 2'd0 || kind != 2'd2;
-		3'd3: cond = rm[5:4] != 2'd3;
-		default: cond = !rm[3];
-		endcase
+	wire [7:0] ea23;
+	wire su_bo_unused;
+	reg [7:0] ea_in;
+	am_sub #(.W(8)) u_ea23 (.a(ea_in), .b(8'd23), .bi(1'b0), .d(ea23), .bo(su_bo_unused));
 
-	assign cl_ready = st == S_LOAD && cnt == 6'd27;
-	assign busy = st != S_IDLE;
+	wire [31:0] max_z01 = max_mag({1'b0, R[33][30:0]}, {1'b0, R[36][30:0]});
+	wire [31:0] max_z   = max_mag(max_z01, {1'b0, R[39][30:0]});
+
+	assign cl_ready = (st == S_IDLE);
+	assign busy = (st != S_IDLE);
 	assign sp_last = lastq && !more;
 
+	/* Plane source registers */
+	reg [6:0] pf0, pf1, pf2;
+	always @(*)
+		case (p_plane)
+		2'd0: begin pf0 = 7'd33; pf1 = 7'd36; pf2 = 7'd39; end	/* Z */
+		2'd1: begin pf0 = 7'd28; pf1 = 7'd29; pf2 = 7'd30; end	/* RW */
+		2'd2: begin pf0 = 7'd52; pf1 = 7'd53; pf2 = 7'd54; end	/* B0W */
+		default: begin pf0 = 7'd55; pf1 = 7'd56; pf2 = 7'd57; end	/* B1W */
+		endcase
+
+	wire [31:0] cur_A = (p_plane == 2'd0) ? pl[0] : (p_plane == 2'd1) ? pl[3] : (p_plane == 2'd2) ? pl[6] : pl[9];
+	wire [31:0] cur_B = (p_plane == 2'd0) ? pl[1] : (p_plane == 2'd1) ? pl[4] : (p_plane == 2'd2) ? pl[7] : pl[10];
+
+	integer i;
 	always @(posedge clk) begin
-		uc <= atg_rx_uc(pc);
-		r_we <= 1'b0;
+		e_rd <= R[e_ra];
 		fa_v <= 1'b0;
 		fm_v <= 1'b0;
 		fd_v <= 1'b0;
 		e_start <= 1'b0;
+
+		if (e_we)
+			R[e_wa] <= e_wd;
+
 		if (!rst_n) begin
 			st <= S_IDLE;
 			sp_valid <= 1'b0;
 			more <= 1'b0;
+			sub <= 1'b0;
+			seq_step <= 5'd0;
+			p_plane <= 2'd0;
+			p_step <= 4'd0;
+			ea_in <= 8'd0;
+			for (i = 0; i < 12; i = i + 1)
+				pl[i] <= 32'd0;
 		end else case (st)
 		S_IDLE:
 			if (cl_valid) begin
-				st <= S_LOAD;
-				cnt <= 6'd0;
 				raw <= cl_tri[699];
 				kind <= cl_tri[699] || cl_tri[701:700] == 2'd3 ? 2'd2 : cl_tri[701:700];
 				keep <= cl_tri[698:672];
 				lastq <= cl_last;
 				sub <= 1'b0;
 				more <= 1'b0;
-				for (k = 0; k < 12; k = k + 1)
-					pl[k] <= 32'd0;
-			end
-		S_LOAD: begin
-			/* fp registers 0-20 from cl_tri, 21-26 VIEWPORT, 27 1.0 */
-			r_we <= 1'b1;
-			r_wa <= {1'b0, cnt};
-			r_wd <= cnt < 6'd21 ? cl_tri[cnt * 32 +: 32] : cnt < 6'd27 ? vp[vpi] : ONE;
-			cnt <= cnt1;
-			if (cnt == 6'd27) begin
-				pc <= raw ? 8'd0 : ATG_RX_UC_PERSP;
-				st <= S_DEC;
-			end
-		end
-		S_DEC:
-			st <= S_RD;	/* uc follows pc */
-		S_RD: begin
-			opa <= rsrc(u_a, R[u_a]);
-			opb <= rsrc(u_b, R[u_b]);
-			case (u_op)
-			4'd0: st <= S_OUT;
-			4'd8: if (raw) st <= S_OUT; else begin pc <= pc1; st <= S_DEC; end
-			4'd7: begin pc <= u_t; st <= S_DEC; end
-			4'd13: begin pc <= cond ? u_t : pc1; st <= S_DEC; end
-			4'd14: begin more <= 1'b1; st <= S_OUT; end
-			4'd6: begin e_start <= 1'b1; st <= S_INT; end
-			default: st <= S_GO;
-			endcase
-		end
-		S_GO:
-			if (u_op == 4'd5 || u_op >= 4'd9) begin
-				r_we <= 1'b1;
-				r_wa <= u_d;
-				r_wd <= q1;
-				if (u_d >= 7'd64 && u_d < 7'd76)
-					pl[u_d[3:0]] <= q1;
-				pc <= pc1;
-				st <= S_DEC;
-			end else begin
-				fa_v <= u_op == 4'd1 || u_op == 4'd2;
-				fm_v <= u_op == 4'd3;
-				fd_v <= u_op == 4'd4;
-				st <= S_WAIT;
-			end
-		S_WAIT:
-			if (fa_o || fm_o || fd_o) begin
-				r_we <= 1'b1;
-				r_wa <= u_d;
-				r_wd <= fa_o ? fa_r : fm_o ? fm_r : fd_r;
-				if (u_d >= 7'd64 && u_d < 7'd76)
-					pl[u_d[3:0]] <= fa_o ? fa_r : fm_o ? fm_r : fd_r;
-				pc <= pc1;
-				st <= S_DEC;
-			end
-		S_INT:
-			/* an empty result ends the primitive: one output with the flags */
-			if (e_done) begin
-				if (e_empty)
-					st <= S_OUT;
-				else begin
-					pc <= pc1;
-					st <= S_DEC;
+				for (i = 0; i < 12; i = i + 1)
+					pl[i] <= 32'd0;
+
+				/* 1-cycle parallel load */
+				for (i = 0; i < 21; i = i + 1)
+					R[i] <= cl_tri[i * 32 +: 32];
+				R[21] <= vp[0]; R[22] <= vp[1]; R[23] <= vp[2];
+				R[24] <= vp[3]; R[25] <= vp[4]; R[26] <= vp[5];
+				R[27] <= ONE;
+
+				if (cl_tri[699]) begin
+					/* RAW screen space: load X, Y, Z directly */
+					R[31] <= cl_tri[31:0];   R[32] <= cl_tri[63:32];   R[33] <= cl_tri[95:64];
+					R[34] <= cl_tri[159:128]; R[35] <= cl_tri[191:160]; R[36] <= cl_tri[223:192];
+					R[37] <= cl_tri[287:256]; R[38] <= cl_tri[319:288]; R[39] <= cl_tri[351:320];
+					st <= S_EDGE;
+					e_start <= 1'b1;
+				end else begin
+					/* Clip space: start 1/w0 divide */
+					fd_v <= 1'b1;
+					fd_a <= ONE;
+					fd_b <= cl_tri[127:96];
+					seq_step <= 5'd0;
+					st <= S_PERSP_W;
 				end
 			end
-		default: begin	/* S_OUT */
+
+		S_PERSP_W:
+			if (fd_o) begin
+				case (seq_step)
+				5'd0: begin
+					R[28] <= fd_r;	/* RW0 */
+					fd_v <= 1'b1;
+					fd_a <= ONE;
+					fd_b <= R[7];	/* V1.w */
+					seq_step <= 5'd1;
+				end
+				5'd1: begin
+					R[29] <= fd_r;	/* RW1 */
+					fd_v <= 1'b1;
+					fd_a <= ONE;
+					fd_b <= R[11];	/* V2.w */
+					seq_step <= 5'd2;
+				end
+				default: begin
+					R[30] <= fd_r;	/* RW2 */
+					seq_step <= 5'd0;
+					st <= S_PERSP_XYZ;
+				end
+				endcase
+			end
+
+		S_PERSP_XYZ:
+			case (seq_step)
+			/* Vertex 0: X0, Y0, Z0, B0W0, B1W0 */
+			5'd0: begin
+				fm_v <= 1'b1; fm_a <= R[0]; fm_b <= R[28];	/* V0.x * RW0 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd1: if (fm_o) begin
+				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[21];	/* * XS */
+				seq_step <= inc5(seq_step);
+			end
+			5'd2: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[23]; fa_sub <= 1'b0;	/* + XO */
+				seq_step <= inc5(seq_step);
+			end
+			5'd3: if (fa_o) begin
+				R[31] <= fa_r;	/* X0 */
+				fm_v <= 1'b1; fm_a <= R[1]; fm_b <= R[28];	/* V0.y * RW0 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd4: if (fm_o) begin
+				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[22];	/* * YS */
+				seq_step <= inc5(seq_step);
+			end
+			5'd5: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[24]; fa_sub <= 1'b0;	/* + YO */
+				seq_step <= inc5(seq_step);
+			end
+			5'd6: if (fa_o) begin
+				R[32] <= fa_r;	/* Y0 */
+				fm_v <= 1'b1; fm_a <= R[2]; fm_b <= R[28];	/* V0.z * RW0 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd7: if (fm_o) begin
+				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[25];	/* * ZS */
+				seq_step <= inc5(seq_step);
+			end
+			5'd8: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[26]; fa_sub <= 1'b0;	/* + ZO */
+				seq_step <= inc5(seq_step);
+			end
+			5'd9: if (fa_o) begin
+				R[33] <= fa_r;	/* Z0 */
+				fm_v <= 1'b1; fm_a <= R[12]; fm_b <= R[28];	/* W0.0 * RW0 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd10: if (fm_o) begin
+				R[52] <= fm_r;	/* B0W0 */
+				fm_v <= 1'b1; fm_a <= R[13]; fm_b <= R[28];	/* W0.1 * RW0 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd11: if (fm_o) begin
+				R[55] <= fm_r;	/* B1W0 */
+				/* Vertex 1: X1, Y1, Z1, B0W1, B1W1 */
+				fm_v <= 1'b1; fm_a <= R[4]; fm_b <= R[29];	/* V1.x * RW1 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd12: if (fm_o) begin
+				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[21];	/* * XS */
+				seq_step <= inc5(seq_step);
+			end
+			5'd13: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[23]; fa_sub <= 1'b0;	/* + XO */
+				seq_step <= inc5(seq_step);
+			end
+			5'd14: if (fa_o) begin
+				R[34] <= fa_r;	/* X1 */
+				fm_v <= 1'b1; fm_a <= R[5]; fm_b <= R[29];	/* V1.y * RW1 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd15: if (fm_o) begin
+				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[22];	/* * YS */
+				seq_step <= inc5(seq_step);
+			end
+			5'd16: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[24]; fa_sub <= 1'b0;	/* + YO */
+				seq_step <= inc5(seq_step);
+			end
+			5'd17: if (fa_o) begin
+				R[35] <= fa_r;	/* Y1 */
+				fm_v <= 1'b1; fm_a <= R[6]; fm_b <= R[29];	/* V1.z * RW1 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd18: if (fm_o) begin
+				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[25];	/* * ZS */
+				seq_step <= inc5(seq_step);
+			end
+			5'd19: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[26]; fa_sub <= 1'b0;	/* + ZO */
+				seq_step <= inc5(seq_step);
+			end
+			5'd20: if (fa_o) begin
+				R[36] <= fa_r;	/* Z1 */
+				fm_v <= 1'b1; fm_a <= R[15]; fm_b <= R[29];	/* W1.0 * RW1 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd21: if (fm_o) begin
+				R[53] <= fm_r;	/* B0W1 */
+				fm_v <= 1'b1; fm_a <= R[16]; fm_b <= R[29];	/* W1.1 * RW1 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd22: if (fm_o) begin
+				R[56] <= fm_r;	/* B1W1 */
+				/* Vertex 2: X2, Y2, Z2, B0W2, B1W2 */
+				fm_v <= 1'b1; fm_a <= R[8]; fm_b <= R[30];	/* V2.x * RW2 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd23: if (fm_o) begin
+				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[21];	/* * XS */
+				seq_step <= inc5(seq_step);
+			end
+			5'd24: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[23]; fa_sub <= 1'b0;	/* + XO */
+				seq_step <= inc5(seq_step);
+			end
+			5'd25: if (fa_o) begin
+				R[37] <= fa_r;	/* X2 */
+				fm_v <= 1'b1; fm_a <= R[9]; fm_b <= R[30];	/* V2.y * RW2 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd26: if (fm_o) begin
+				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[22];	/* * YS */
+				seq_step <= inc5(seq_step);
+			end
+			5'd27: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[24]; fa_sub <= 1'b0;	/* + YO */
+				seq_step <= inc5(seq_step);
+			end
+			5'd28: if (fa_o) begin
+				R[38] <= fa_r;	/* Y2 */
+				fm_v <= 1'b1; fm_a <= R[10]; fm_b <= R[30];	/* V2.z * RW2 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd29: if (fm_o) begin
+				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[25];	/* * ZS */
+				seq_step <= inc5(seq_step);
+			end
+			5'd30: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[26]; fa_sub <= 1'b0;	/* + ZO */
+				seq_step <= inc5(seq_step);
+			end
+			default: if (fa_o) begin
+				R[39] <= fa_r;	/* Z2 */
+				fm_v <= 1'b1; fm_a <= R[18]; fm_b <= R[30];	/* W2.0 * RW2 */
+				st <= S_RECT;
+				seq_step <= 5'd0;
+			end
+			endcase
+
+		S_RECT:
+			case (seq_step)
+			5'd0: if (fm_o) begin
+				R[54] <= fm_r;	/* B0W2 */
+				fm_v <= 1'b1; fm_a <= R[19]; fm_b <= R[30];	/* W2.1 * RW2 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd1: if (fm_o) begin
+				R[57] <= fm_r;	/* B1W2 */
+				if (!rm[3]) begin
+					/* No viewport rectangle: dispatch edge directly */
+					if (kind == 2'd1) begin
+						R[39] <= R[33]; R[30] <= R[28]; R[54] <= R[52]; R[57] <= R[55];
+					end
+					st <= S_EDGE;
+					e_start <= 1'b1;
+				end else begin
+					/* Viewport rectangle: RX0, RX1, RY0, RY1 */
+					fa_v <= 1'b1; fa_a <= R[23]; fa_b <= {1'b0, R[21][30:0]}; fa_sub <= 1'b1;	/* XO - |XS| */
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd2: if (fa_o) begin
+				R[76] <= fa_r;	/* RX0 */
+				fa_v <= 1'b1; fa_a <= R[23]; fa_b <= {1'b0, R[21][30:0]}; fa_sub <= 1'b0;	/* XO + |XS| */
+				seq_step <= inc5(seq_step);
+			end
+			5'd3: if (fa_o) begin
+				R[77] <= fa_r;	/* RX1 */
+				fa_v <= 1'b1; fa_a <= R[24]; fa_b <= {1'b0, R[22][30:0]}; fa_sub <= 1'b1;	/* YO - |YS| */
+				seq_step <= inc5(seq_step);
+			end
+			5'd4: if (fa_o) begin
+				R[78] <= fa_r;	/* RY0 */
+				fa_v <= 1'b1; fa_a <= R[24]; fa_b <= {1'b0, R[22][30:0]}; fa_sub <= 1'b0;	/* YO + |YS| */
+				seq_step <= inc5(seq_step);
+			end
+			default: if (fa_o) begin
+				R[79] <= fa_r;	/* RY1 */
+				if (kind == 2'd1) begin
+					R[39] <= R[33]; R[30] <= R[28]; R[54] <= R[52]; R[57] <= R[55];
+				end
+				st <= S_EDGE;
+				e_start <= 1'b1;
+			end
+			endcase
+
+		S_EDGE:
+			if (e_done) begin
+				if (e_empty) begin
+					/* Early culling / zero-area / out-of-screen: zero-latency drop! */
+					st <= S_OUT;
+				end else if (kind == 2'd0) begin
+					/* Point: direct plane assignment */
+					pl[0] <= 32'd0; pl[1] <= 32'd0; pl[2] <= R[33];
+					pl[3] <= 32'd0; pl[4] <= 32'd0; pl[5] <= ONE;
+					pl[6] <= ONE;   pl[7] <= 32'd0;
+					pl[9] <= 32'd0; pl[10] <= ONE;
+					fa_v <= 1'b1; fa_a <= HALF; fa_b <= R[45]; fa_sub <= 1'b0;	/* 0.5 + OX */
+					seq_step <= 5'd0;
+					st <= S_PLANE_DIV;
+				end else begin
+					/* Triangle or line: start 1/DF */
+					fd_v <= 1'b1;
+					fd_a <= ONE;
+					fd_b <= R[44];	/* DF */
+					st <= S_PLANE_DIV;
+					seq_step <= 5'd0;
+				end
+			end
+
+		S_PLANE_DIV:
+			if (kind == 2'd0) begin
+				/* Point path */
+				if (seq_step == 5'd0 && fa_o) begin
+					pl[8] <= fa_r;	/* b0/w C */
+					fa_v <= 1'b1; fa_a <= HALF; fa_b <= R[46]; fa_sub <= 1'b0;	/* 0.5 + OY */
+					seq_step <= 5'd1;
+				end else if (seq_step == 5'd1 && fa_o) begin
+					pl[11] <= fa_r;	/* b1/w C */
+					more <= !sub;	/* 1st sub-triangle: more=1; 2nd: more=0 */
+					st <= S_OUT;
+				end
+			end else if (fd_o) begin
+				R[47] <= fd_r;	/* RD = 1/DF */
+				p_plane <= 2'd0;
+				p_step <= 4'd0;
+				st <= S_PLANE;
+			end
+
+		S_PLANE:
+			case (p_step)
+			4'd0: begin
+				fa_v <= 1'b1; fa_a <= R[pf1]; fa_b <= R[pf0]; fa_sub <= 1'b1;	/* T0 = f1 - f0 */
+				p_step <= inc4(p_step);
+			end
+			4'd1: if (fa_o) begin
+				T0 <= fa_r;
+				fa_v <= 1'b1; fa_a <= R[pf2]; fa_b <= R[pf0]; fa_sub <= 1'b1;	/* T1 = f2 - f0 */
+				p_step <= inc4(p_step);
+			end
+			4'd2: if (fa_o) begin
+				T1 <= fa_r;
+				fm_v <= 1'b1; fm_a <= T0; fm_b <= R[43];	/* T2 = T0 * DY2 */
+				p_step <= inc4(p_step);
+			end
+			4'd3: if (fm_o) begin
+				T2 <= fm_r;
+				fm_v <= 1'b1; fm_a <= T1; fm_b <= R[41];	/* T3 = T1 * DY1 */
+				p_step <= inc4(p_step);
+			end
+			4'd4: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= T2; fa_b <= fm_r; fa_sub <= 1'b1;	/* T2 = T2 - T3 */
+				p_step <= inc4(p_step);
+			end
+			4'd5: if (fa_o) begin
+				fm_v <= 1'b1; fm_a <= fa_r; fm_b <= R[47];	/* a[0] = T2 * RD (A) */
+				p_step <= inc4(p_step);
+			end
+			4'd6: if (fm_o) begin
+				case (p_plane)
+				2'd0: pl[0] <= fm_r;
+				2'd1: pl[3] <= fm_r;
+				2'd2: pl[6] <= fm_r;
+				default: pl[9] <= fm_r;
+				endcase
+				fm_v <= 1'b1; fm_a <= T1; fm_b <= R[40];	/* T2 = T1 * DX1 */
+				p_step <= inc4(p_step);
+			end
+			4'd7: if (fm_o) begin
+				T2 <= fm_r;
+				fm_v <= 1'b1; fm_a <= T0; fm_b <= R[42];	/* T3 = T0 * DX2 */
+				p_step <= inc4(p_step);
+			end
+			4'd8: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= T2; fa_b <= fm_r; fa_sub <= 1'b1;	/* T2 = T2 - T3 */
+				p_step <= inc4(p_step);
+			end
+			4'd9: if (fa_o) begin
+				fm_v <= 1'b1; fm_a <= fa_r; fm_b <= R[47];	/* a[1] = T2 * RD (B) */
+				p_step <= inc4(p_step);
+			end
+			4'd10: if (fm_o) begin
+				case (p_plane)
+				2'd0: pl[1] <= fm_r;
+				2'd1: pl[4] <= fm_r;
+				2'd2: pl[7] <= fm_r;
+				default: pl[10] <= fm_r;
+				endcase
+				fm_v <= 1'b1; fm_a <= cur_A; fm_b <= R[45];	/* T2 = A * OX */
+				p_step <= inc4(p_step);
+			end
+			4'd11: if (fm_o) begin
+				T2 <= fm_r;
+				fm_v <= 1'b1; fm_a <= cur_B; fm_b <= R[46];	/* T3 = B * OY */
+				p_step <= inc4(p_step);
+			end
+			4'd12: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= T2; fa_b <= fm_r; fa_sub <= 1'b0;	/* T2 = T2 + T3 */
+				p_step <= inc4(p_step);
+			end
+			4'd13: if (fa_o) begin
+				fa_v <= 1'b1; fa_a <= R[pf0]; fa_b <= fa_r; fa_sub <= 1'b0;	/* C = f0 + T2 */
+				p_step <= inc4(p_step);
+			end
+			default: if (fa_o) begin
+				case (p_plane)
+				2'd0: pl[2] <= fa_r;
+				2'd1: pl[5] <= fa_r;
+				2'd2: pl[8] <= fa_r;
+				default: pl[11] <= fa_r;
+				endcase
+				p_step <= 4'd0;
+				if (raw) begin
+					/* RAW triangle: Z plane only, done */
+					st <= S_OUT;
+				end else if (p_plane != 2'd3) begin
+					p_plane <= inc2(p_plane);
+				end else if (kind == 2'd1) begin
+					/* Line: sub-triangle 0 done */
+					more <= !sub;
+					st <= S_OUT;
+				end else if (rm[0] && rm[5:4] != 2'd0) begin
+					/* Triangle with depth bias */
+					seq_step <= 5'd0;
+					st <= S_BIAS;
+				end else begin
+					st <= S_OUT;
+				end
+			end
+			endcase
+
+		/* S_BIAS */
+		S_BIAS:
+			case (seq_step)
+			5'd0: begin
+				b_m <= max_mag({1'b0, pl[0][30:0]}, {1'b0, pl[1][30:0]});	/* max(|Az|, |Bz|) */
+				seq_step <= inc5(seq_step);
+			end
+			5'd1: begin
+				fm_v <= 1'b1; fm_a <= b_m; fm_b <= b_slope;	/* T0 = m * SLOPE */
+				seq_step <= inc5(seq_step);
+			end
+			5'd2: if (fm_o) begin
+				T0 <= fm_r;
+				if (rm[5:4] == 2'd3) begin
+					/* D32_SFLOAT: ULP(max(|z0|, |z1|, |z2|)) */
+					ea_in <= max_z[30:23];
+					seq_step <= 5'd3;
+				end else begin
+					/* D16 / D24 */
+					fm_v <= 1'b1; fm_a <= rfmt; fm_b <= b_const;	/* T1 = r * CONST */
+					seq_step <= 5'd4;
+				end
+			end
+			5'd3: begin
+				fm_v <= 1'b1;
+				fm_a <= (ea_in > 8'd23) ? {1'b0, ea23, 23'd0} : 32'd0;
+				fm_b <= b_const;
+				seq_step <= 5'd4;
+			end
+			5'd4: if (fm_o) begin
+				fa_v <= 1'b1; fa_a <= T0; fa_b <= fm_r; fa_sub <= 1'b0;	/* T0 = T0 + T1 */
+				seq_step <= inc5(seq_step);
+			end
+			5'd5: if (fa_o) begin
+				b_o <= bcl(fa_r, b_clamp);	/* BCL(T0, CLAMP) */
+				seq_step <= inc5(seq_step);
+			end
+			5'd6: begin
+				fa_v <= 1'b1; fa_a <= pl[2]; fa_b <= b_o; fa_sub <= 1'b0;	/* Cz + o */
+				seq_step <= inc5(seq_step);
+			end
+			default: if (fa_o) begin
+				pl[2] <= fa_r;	/* Cz biased */
+				st <= S_OUT;
+			end
+			endcase
+
+		/* S_OUT */
+		S_OUT: begin
 			sp_valid <= 1'b1;
 			if (sp_valid && sp_ready) begin
 				sp_valid <= 1'b0;
 				if (more) begin
 					more <= 1'b0;
 					sub <= 1'b1;
-					pc <= pc1;
-					st <= S_DEC;
-				end else
+					st <= S_EDGE;
+					e_start <= 1'b1;
+				end else begin
 					st <= S_IDLE;
+				end
 			end
 		end
+		default: ;
 		endcase
 	end
 
@@ -331,7 +772,7 @@ module atg_rx_setup (
 	assign sp_tri[351:0] = {e_bbox, e_edges};
 	assign sp_tri[767:736] = {1'b0, kind, raw, e_front, more ? 3'd0 : keep[26:24], keep[23:0]};
 
-	wire unused_ok = &{1'b0, fd_busy, uc[21], rm[2:1]};
+	wire unused_ok = &{1'b0, fd_busy, rm[2:1], su_bo_unused, max_z[31], max_z[22:0]};
 endmodule
 
 `default_nettype wire

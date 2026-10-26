@@ -6,16 +6,13 @@
  */
 
 /*
- * atg_cp_ring: the command ring: RING_BASE/SIZE/WPTR/RPTR, line reads of
- * the ring through the CP's AMB port, the packet envelope of design
- * §2.4.2 (version 3): class N packets (0 standard, 1 vendor µops) go to
- * the sequencer dword by dword, class V packets (2) to the CPU or, without
- * one (CLASS_V = 0), are a fault of kind 2, class 3 padding is skipped.
- *
- * Upgraded in Phase 029 with an 8-entry circular line prefetch cache
- * (64 words / 256 bytes) providing continuous, zero-bubble packet delivery
- * across line boundaries. When streaming Class N packets, next lines are
- * prefetched concurrently in the background, eliminating AMB wait bubbles.
+ * atg_cp_ring: the multi-engine command ring:
+ *   - 3 independent hardware queues (0: Graphics, 1: Compute, 2: Copy/DMA)
+ *   - Independent BASE/SIZE/WPTR/RPTR per queue
+ *   - Dynamic fetch arbiter (priority + round-robin)
+ *   - Hardware preemption (CP_PREEMPT) and context switch
+ *   - Inter-queue lightweight semaphore synchronization (CP_SEMA)
+ *   - 8-entry circular line prefetch cache for zero-bubble packet delivery
  */
 
 `timescale 1ns / 1ps
@@ -57,6 +54,9 @@ module atg_cp_ring #(
 	output wire empty,
 	output wire retire,
 	output wire busy,
+	/* Multi-queue & Preemption status */
+	output wire [1:0] queue_id,
+	output wire preempt_ev,
 	/* Fault report to atg_cp_ctl (one source of its `src_*` vectors) */
 	output wire fault,
 	output wire [3:0] fault_kind,
@@ -80,45 +80,173 @@ module atg_cp_ring #(
 
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam WS = LINE_SHIFT - 2;
-	localparam [9:0] I_BASE = GHCI_RING_BASE[11:2];
-	localparam [9:0] I_SIZE = GHCI_RING_SIZE[11:2];
-	localparam [9:0] I_WPTR = GHCI_RING_WPTR[11:2];
-	localparam [9:0] I_RPTR = GHCI_RING_RPTR[11:2];
 
-	localparam [2:0] R_IDLE = 3'd0;
-	localparam [2:0] R_HDR  = 3'd1;	/* decode the header at cur */
-	localparam [2:0] R_N    = 3'd2;	/* stream a class N packet */
-	localparam [2:0] R_V    = 3'd3;	/* a class V packet waits for v_done */
-	localparam [2:0] R_ADV  = 3'd4;	/* move RPTR past the packet */
-	localparam [2:0] R_REQ  = 3'd5;	/* on-demand line read request */
-	localparam [2:0] R_RSP  = 3'd6;	/* on-demand line read response */
-	localparam [2:0] R_FAULT = 3'd7;
+	localparam [9:0] I_BASE0 = GHCI_RING_BASE[11:2];
+	localparam [9:0] I_SIZE0 = GHCI_RING_SIZE[11:2];
+	localparam [9:0] I_WPTR0 = GHCI_RING_WPTR[11:2];
+	localparam [9:0] I_RPTR0 = GHCI_RING_RPTR[11:2];
+
+	localparam [9:0] I_BASE1 = GHCI_RING1_BASE[11:2];
+	localparam [9:0] I_SIZE1 = GHCI_RING1_SIZE[11:2];
+	localparam [9:0] I_WPTR1 = GHCI_RING1_WPTR[11:2];
+	localparam [9:0] I_RPTR1 = GHCI_RING1_RPTR[11:2];
+
+	localparam [9:0] I_BASE2 = GHCI_RING2_BASE[11:2];
+	localparam [9:0] I_SIZE2 = GHCI_RING2_SIZE[11:2];
+	localparam [9:0] I_WPTR2 = GHCI_RING2_WPTR[11:2];
+	localparam [9:0] I_RPTR2 = GHCI_RING2_RPTR[11:2];
+
+	localparam [9:0] I_PREEMPT        = GHCI_CP_PREEMPT[11:2];
+	localparam [9:0] I_PREEMPT_STATUS = GHCI_CP_PREEMPT_STATUS[11:2];
+	localparam [9:0] I_CTX_BASE       = GHCI_CP_CTX_BASE[11:2];
+	localparam [9:0] I_SEMA           = GHCI_CP_SEMA[11:2];
+
+	localparam [3:0] R_IDLE         = 4'd0;
+	localparam [3:0] R_HDR          = 4'd1;	/* decode the header at cur */
+	localparam [3:0] R_N            = 4'd2;	/* stream a class N packet */
+	localparam [3:0] R_V            = 4'd3;	/* a class V packet waits for v_done */
+	localparam [3:0] R_ADV          = 4'd4;	/* move RPTR past the packet */
+	localparam [3:0] R_REQ          = 4'd5;	/* on-demand line read request */
+	localparam [3:0] R_RSP          = 4'd6;	/* on-demand line read response */
+	localparam [3:0] R_FAULT        = 4'd7;
+	localparam [3:0] R_CTX_SAVE_REQ = 4'd8;	/* preemption context save AMB write req */
+	localparam [3:0] R_CTX_SAVE_RSP = 4'd9;	/* preemption context save AMB write rsp */
+	localparam [3:0] R_CTX_REST_REQ = 4'd10;	/* preemption context restore AMB read req */
+	localparam [3:0] R_CTX_REST_RSP = 4'd11;	/* preemption context restore AMB read rsp */
 
 	localparam [1:0] PF_IDLE = 2'd0;
 	localparam [1:0] PF_REQ  = 2'd1;
 	localparam [1:0] PF_RSP  = 2'd2;
 
-	reg [31:0] base;
-	reg [4:0] size;
-	reg [17:0] wptr;
-	reg [17:0] rptr;
-
 	/*
-	 * The ring's dword count - 1 (size 10..20: 2^8..2^18 dwords) and the
-	 * count: bit i of the mask is i < size - 2, the count's only bit is
-	 * size - 2 (comparisons with constants; size is never below 10).
+	 * 3 Independent Hardware Queues
 	 */
-	reg [17:0] mask;
-	reg [18:0] nwords;
+	reg [31:0] base [0:2];
+	reg [4:0] size [0:2];
+	reg [17:0] wptr [0:2];
+	reg [17:0] rptr [0:2];
+
+	wire [4:0] size0 = size[0];
+	wire [4:0] size1 = size[1];
+	wire [4:0] size2 = size[2];
+
+	reg [17:0] mask0, mask1, mask2;
+	reg [18:0] nwords0, nwords1, nwords2;
+
 	integer mi;
 	always @(*) begin
-		for (mi = 0; mi < 18; mi = mi + 1)
-			mask[mi] = {27'd0, size} > mi + 2;
-		for (mi = 0; mi < 19; mi = mi + 1)
-			nwords[mi] = {27'd0, size} == mi + 2;
+		for (mi = 0; mi < 18; mi = mi + 1) begin
+			mask0[mi] = {27'd0, size0} > mi + 2;
+			mask1[mi] = {27'd0, size1} > mi + 2;
+			mask2[mi] = {27'd0, size2} > mi + 2;
+		end
+		for (mi = 0; mi < 19; mi = mi + 1) begin
+			nwords0[mi] = {27'd0, size0} == mi + 2;
+			nwords1[mi] = {27'd0, size1} == mi + 2;
+			nwords2[mi] = {27'd0, size2} == mi + 2;
+		end
 	end
 
-	reg [2:0] st;
+	wire [17:0] mask [0:2];
+	assign mask[0] = mask0;
+	assign mask[1] = mask1;
+	assign mask[2] = mask2;
+
+	wire [18:0] nwords [0:2];
+	assign nwords[0] = nwords0;
+	assign nwords[1] = nwords1;
+	assign nwords[2] = nwords2;
+
+	reg [1:0] active_qid;
+	reg [1:0] interrupted_qid;
+	reg [17:0] saved_rptr;
+	reg [31:0] ctx_base;
+	reg preempt_pending;
+	reg preempt_active;
+	reg preempt_saved;
+	reg preempt_auto;
+	reg [3:0] prio_mode;
+	reg preempt_pulse;
+	reg [1:0] last_non_q0;
+
+	/*
+	 * Lightweight Semaphores (8 entries)
+	 */
+	reg [7:0] sema [0:7];
+	reg [2:0] queue_sema_id [0:2];
+	reg [2:0] queue_sema_wait;
+
+	wire [1:0] sema_cmd = hcr_wdata[1:0];
+	wire [2:0] sema_w_id = hcr_wdata[4:2];
+	wire [1:0] sema_w_qid = hcr_wdata[6:5];
+	wire sema_set_q_wait = hcr_wdata[7];
+	wire sema_clr_q_wait = hcr_wdata[8];
+
+	wire [7:0] sema_cur = sema[sema_w_id];
+	wire [7:0] sema_op_val = (hcr_wdata[23:16] == 8'd0) ? 8'd1 : hcr_wdata[23:16];
+	wire [7:0] sema_next;
+	wire sema_co;
+
+	am_addsub #(.W(8)) u_sema_addsub (
+		.a(sema_cur),
+		.b(sema_op_val),
+		.sub(sema_cmd == 2'd2),
+		.s(sema_next),
+		.co(sema_co)
+	);
+
+	/*
+	 * Active Queue Signals & Status
+	 */
+	wire [2:0] q_empty;
+	assign q_empty[0] = (wptr[0] == rptr[0]);
+	assign q_empty[1] = (wptr[1] == rptr[1]);
+	assign q_empty[2] = (wptr[2] == rptr[2]);
+
+	wire [2:0] has_work;
+	assign has_work[0] = !q_empty[0] && !(queue_sema_wait[0] && (sema[queue_sema_id[0]] == 8'd0));
+	assign has_work[1] = !q_empty[1] && !(queue_sema_wait[1] && (sema[queue_sema_id[1]] == 8'd0));
+	assign has_work[2] = !q_empty[2] && !(queue_sema_wait[2] && (sema[queue_sema_id[2]] == 8'd0));
+
+	wire [17:0] wptr_act   = wptr[active_qid];
+	wire [17:0] rptr_act   = rptr[active_qid];
+	wire [31:0] base_act   = base[active_qid];
+	wire [17:0] mask_act   = mask[active_qid];
+	wire [18:0] nwords_act = nwords[active_qid];
+
+	/*
+	 * Arbiter Selection
+	 */
+	wire [1:0] rr_next1 = (active_qid == 2'd0) ? 2'd1 : ((active_qid == 2'd1) ? 2'd2 : 2'd0);
+	wire [1:0] rr_next2 = (active_qid == 2'd0) ? 2'd2 : ((active_qid == 2'd1) ? 2'd0 : 2'd1);
+
+	reg [1:0] next_qid;
+	always @(*) begin
+		if (preempt_active) begin
+			next_qid = 2'd0;
+		end else case (prio_mode)
+		4'd1: begin
+			/* Strict Priority: Q0 > Q1 > Q2 */
+			next_qid = has_work[0] ? 2'd0 :
+				has_work[1] ? 2'd1 :
+				has_work[2] ? 2'd2 : active_qid;
+		end
+		4'd2: begin
+			/* Pure Round Robin */
+			next_qid = has_work[rr_next1] ? rr_next1 :
+				has_work[rr_next2] ? rr_next2 :
+				has_work[active_qid] ? active_qid : active_qid;
+		end
+		default: begin
+			/* Balanced: Graphics prioritized, Compute & Copy interleaved */
+			next_qid = has_work[0] ? 2'd0 :
+				(last_non_q0 == 2'd1) ? (has_work[2] ? 2'd2 : (has_work[1] ? 2'd1 : 2'd0)) :
+				(has_work[1] ? 2'd1 : (has_work[2] ? 2'd2 : 2'd0));
+		end
+		endcase
+	end
+
+	reg [3:0] st;
 	reg ret_n;	/* the read is for R_N (else R_HDR) */
 	reg [17:0] cur;	/* the header's dword index */
 	reg [15:0] n;	/* dwords after the header */
@@ -135,8 +263,7 @@ module atg_cp_ring #(
 	reg [LINE_BYTES*8-1:0] buf_data [0:7];
 
 	/*
-	 * The dword wanted (the header, or dword k of the packet) as a byte
-	 * address in a register.
+	 * The dword wanted as byte address in memory
 	 */
 	reg [31:0] pa;
 	wire [31:0] want_addr = pa;
@@ -148,8 +275,16 @@ module atg_cp_ring #(
 	wire [31:0] want_data = buf_data[want_idx][{want_word, 5'd0} +: 32];
 
 	wire go = (run && !halt) || step_pend;
-	wire doorbell = hcr_we && hcr_widx == I_WPTR;
-	wire [17:0] wptr_new = ((wptr & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) & mask;
+
+	/* Doorbells for the 3 queues */
+	wire [2:0] doorbell;
+	assign doorbell[0] = hcr_we && (hcr_widx == I_WPTR0);
+	assign doorbell[1] = hcr_we && (hcr_widx == I_WPTR1);
+	assign doorbell[2] = hcr_we && (hcr_widx == I_WPTR2);
+
+	wire [17:0] wptr_new0 = ((wptr[0] & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) & mask[0];
+	wire [17:0] wptr_new1 = ((wptr[1] & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) & mask[1];
+	wire [17:0] wptr_new2 = ((wptr[2] & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) & mask[2];
 
 	/* Header decode */
 	wire [1:0] h_class = want_data[31:30];
@@ -159,15 +294,15 @@ module atg_cp_ring #(
 	wire [18:0] end_s;
 	wire avail_bo, end_co;
 
-	am_sub #(.W(18)) avail_sub (.a(wptr), .b(cur), .bi(1'b0), .d(avail_d), .bo(avail_bo));
-	assign avail = avail_d & mask;
+	am_sub #(.W(18)) avail_sub (.a(wptr_act), .b(cur), .bi(1'b0), .d(avail_d), .bo(avail_bo));
+	assign avail = avail_d & mask_act;
 	am_add #(.W(19)) end_add (
 		.a({1'b0, cur}), .b({3'd0, st == R_ADV ? n : h_n}), .ci(1'b1), .s(end_s), .co(end_co)
 	);
 	wire [18:0] h_end = end_s;
-	wire h_bad = h_end > nwords || {3'd0, h_n} >= {1'b0, avail};
+	wire h_bad = h_end > nwords_act || {3'd0, h_n} >= {1'b0, avail};
 	wire h_novf = (h_class == 2'd2) && (CLASS_V == 0);
-	wire [17:0] p_end = end_s[17:0] & mask;
+	wire [17:0] p_end = end_s[17:0] & mask_act;
 
 	wire [31:0] pa_4, pa_hdr;
 	wire [15:0] k_n;
@@ -175,7 +310,7 @@ module atg_cp_ring #(
 
 	am_add #(.W(32)) pa_4_add (.a(pa), .b(32'd4), .ci(1'b0), .s(pa_4), .co(pa_4_co));
 	am_add #(.W(32)) pa_hdr_add (
-		.a(base), .b({12'd0, rptr, 2'b00}), .ci(1'b0), .s(pa_hdr), .co(pa_hdr_co)
+		.a(base_act), .b({12'd0, rptr_act, 2'b00}), .ci(1'b0), .s(pa_hdr), .co(pa_hdr_co)
 	);
 	am_add #(.W(16)) k_add (.a(k), .b(16'd0), .ci(1'b1), .s(k_n), .co(k_co));
 
@@ -194,9 +329,13 @@ module atg_cp_ring #(
 	reg [LA_W-1:0] pf_line;
 	wire [2:0] pf_idx = pf_line[2:0];
 
+	wire ctx_save_req = (st == R_CTX_SAVE_REQ);
+	wire ctx_rest_req = (st == R_CTX_REST_REQ);
+	wire ctx_req = ctx_save_req || ctx_rest_req;
+
 	// Prefetch next line while executing Class N packet before boundary hit
 	wire pf_trigger = (st == R_N) && (k != n) && !next_hit && (pf_st == PF_IDLE) &&
-		(st != R_REQ) && (st != R_RSP) && go;
+		(st != R_REQ) && (st != R_RSP) && !ctx_req && go;
 
 	reg f_pulse;
 	reg [3:0] f_kind;
@@ -208,8 +347,11 @@ module atg_cp_ring #(
 	assign fault_addr = f_addr;
 	assign fault_tag = tag;
 	assign retire = ret_pulse;
-	assign empty = (wptr == rptr);
-	assign busy = (st != R_IDLE && st != R_FAULT) || (pf_st != PF_IDLE);
+	assign empty = q_empty[0] && q_empty[1] && q_empty[2];
+	assign busy = (st != R_IDLE && st != R_FAULT) || (pf_st != PF_IDLE) ||
+		preempt_pending || preempt_active;
+	assign queue_id = active_qid;
+	assign preempt_ev = preempt_pulse;
 
 	assign n_valid = (st == R_N) && hit;
 	assign n_data = want_data;
@@ -220,36 +362,81 @@ module atg_cp_ring #(
 	assign v_dwords = n;
 	assign v_tag = tag;
 
-	// AMB port multiplexing: on-demand read (st == R_REQ) takes priority over prefetch
+	// AMB port multiplexing
 	wire demand_req = (st == R_REQ);
-	assign req_valid = demand_req || (pf_st == PF_REQ);
-	assign req_write = 1'b0;
-	assign req_line = demand_req ? want_line : pf_line;
-	assign req_be = {LINE_BYTES{1'b0}};
-	assign req_wdata = {(LINE_BYTES * 8){1'b0}};
-	assign req_tag = demand_req ? 8'd0 : 8'd1;
+	wire [LA_W-1:0] ctx_line = ctx_base[ADDR_W-1:LINE_SHIFT];
+	wire [LINE_BYTES*8-1:0] ctx_save_wdata =
+		{{(LINE_BYTES*8 - 80){1'b0}}, 14'd0, saved_rptr, 14'd0, interrupted_qid, 32'h43545853};
+
+	assign req_valid = ctx_req || demand_req || (pf_st == PF_REQ);
+	assign req_write = ctx_save_req;
+	assign req_line = ctx_req ? ctx_line : (demand_req ? want_line : pf_line);
+	assign req_be = ctx_save_req ? {LINE_BYTES{1'b1}} : {LINE_BYTES{1'b0}};
+	assign req_wdata = ctx_save_req ? ctx_save_wdata : {(LINE_BYTES * 8){1'b0}};
+	assign req_tag = ctx_save_req ? 8'd2 : (ctx_rest_req ? 8'd3 : (demand_req ? 8'd0 : 8'd1));
 
 	/* Registers surviving CTRL.RESET */
+	integer bi;
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			base <= 32'd0;
-			size <= 5'd12;
-		end else if (hcr_we && open) begin
-			if (hcr_widx == I_BASE)
-				base <= ((base & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
-			if (hcr_widx == I_SIZE && hcr_wmask[0])
-				size <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
-					hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
+			for (bi = 0; bi < 3; bi = bi + 1) begin
+				base[bi] <= 32'd0;
+				size[bi] <= 5'd12;
+			end
+			ctx_base <= 32'd0;
+			prio_mode <= 4'd0;
+			preempt_auto <= 1'b0;
+		end else if (hcr_we) begin
+			if (open) begin
+				if (hcr_widx == I_BASE0)
+					base[0] <= ((base[0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
+				if (hcr_widx == I_SIZE0 && hcr_wmask[0])
+					size[0] <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
+						hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
+
+				if (hcr_widx == I_BASE1)
+					base[1] <= ((base[1] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
+				if (hcr_widx == I_SIZE1 && hcr_wmask[0])
+					size[1] <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
+						hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
+
+				if (hcr_widx == I_BASE2)
+					base[2] <= ((base[2] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
+				if (hcr_widx == I_SIZE2 && hcr_wmask[0])
+					size[2] <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
+						hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
+
+				if (hcr_widx == I_CTX_BASE)
+					ctx_base <= ((ctx_base & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
+			end
+			if (hcr_widx == I_PREEMPT && hcr_wmask[0]) begin
+				prio_mode <= hcr_wdata[7:4];
+				preempt_auto <= hcr_wdata[4];
+			end
 		end
 	end
-
-	integer bi;
 
 	/* Main sequential logic */
 	always @(posedge clk) begin
 		if (!core_rst_n) begin
-			wptr      <= 18'd0;
-			rptr      <= 18'd0;
+			for (bi = 0; bi < 3; bi = bi + 1) begin
+				wptr[bi] <= 18'd0;
+				rptr[bi] <= 18'd0;
+				queue_sema_id[bi] <= 3'd0;
+			end
+			queue_sema_wait <= 3'd0;
+			for (bi = 0; bi < 8; bi = bi + 1)
+				sema[bi] <= 8'd0;
+
+			active_qid      <= 2'd0;
+			interrupted_qid <= 2'd0;
+			saved_rptr      <= 18'd0;
+			preempt_pending <= 1'b0;
+			preempt_active  <= 1'b0;
+			preempt_saved   <= 1'b0;
+			preempt_pulse   <= 1'b0;
+			last_non_q0     <= 2'd1;
+
 			st        <= R_IDLE;
 			ret_n     <= 1'b0;
 			pa        <= 32'd0;
@@ -271,13 +458,57 @@ module atg_cp_ring #(
 			f_addr    <= 32'd0;
 			ret_pulse <= 1'b0;
 		end else begin
-			f_pulse   <= 1'b0;
-			ret_pulse <= 1'b0;
+			f_pulse       <= 1'b0;
+			ret_pulse     <= 1'b0;
+			preempt_pulse <= 1'b0;
 
-			if (doorbell) begin
-				wptr      <= wptr_new;
-				stale     <= 1'b1;
-				buf_valid <= 8'd0; // Invalidate cache lines on doorbell to prevent stale reads
+			/* Doorbells */
+			if (doorbell[0]) begin
+				wptr[0] <= wptr_new0;
+				if (active_qid == 2'd0) begin
+					stale     <= 1'b1;
+					buf_valid <= 8'd0;
+				end
+			end
+			if (doorbell[1]) begin
+				wptr[1] <= wptr_new1;
+				if (active_qid == 2'd1) begin
+					stale     <= 1'b1;
+					buf_valid <= 8'd0;
+				end
+			end
+			if (doorbell[2]) begin
+				wptr[2] <= wptr_new2;
+				if (active_qid == 2'd2) begin
+					stale     <= 1'b1;
+					buf_valid <= 8'd0;
+				end
+			end
+
+			/* Preemption request from host */
+			if (hcr_we && (hcr_widx == I_PREEMPT)) begin
+				if (hcr_wdata[0] && !preempt_active)
+					preempt_pending <= 1'b1;
+			end
+
+			/* Auto-preempt when Queue 0 receives work during Queue 1/2 execution */
+			if (preempt_auto && has_work[0] && (active_qid != 2'd0) && !preempt_active)
+				preempt_pending <= 1'b1;
+
+			/* Semaphore update from host or ring */
+			if (hcr_we && (hcr_widx == I_SEMA)) begin
+				if (sema_set_q_wait && (sema_w_qid < 2'd3)) begin
+					queue_sema_wait[sema_w_qid] <= 1'b1;
+					queue_sema_id[sema_w_qid]   <= sema_w_id;
+				end
+				if (sema_clr_q_wait && (sema_w_qid < 2'd3)) begin
+					queue_sema_wait[sema_w_qid] <= 1'b0;
+				end
+				if (sema_cmd == 2'd1 || sema_cmd == 2'd2) begin
+					sema[sema_w_id] <= sema_next;
+				end else if (sema_cmd == 2'd3) begin
+					sema[sema_w_id] <= hcr_wdata[23:16];
+				end
 			end
 
 			if (step)
@@ -296,7 +527,7 @@ module atg_cp_ring #(
 				end
 			end
 			PF_REQ: begin
-				if (req_ready && !demand_req)
+				if (req_ready && !demand_req && !ctx_req)
 					pf_st <= PF_RSP;
 			end
 			PF_RSP: begin
@@ -317,18 +548,52 @@ module atg_cp_ring #(
 			// ---------------------------------------------------------
 			case (st)
 			R_IDLE: begin
-				if (go && rptr != wptr) begin
-					cur       <= rptr;
-					pa        <= pa_hdr;
-					step_pend <= 1'b0;
-					st        <= R_HDR;
+				if (preempt_pending && (active_qid != 2'd0)) begin
+					interrupted_qid <= active_qid;
+					saved_rptr      <= rptr[active_qid];
+					if (ctx_base == 32'd0) begin
+						/* Instant shadow context switch */
+						preempt_saved   <= 1'b1;
+						preempt_pending <= 1'b0;
+						preempt_active  <= 1'b1;
+						preempt_pulse   <= 1'b1;
+						active_qid      <= 2'd0;
+						buf_valid       <= 8'd0;
+					end else begin
+						st <= R_CTX_SAVE_REQ;
+					end
+				end else if (preempt_active && q_empty[0]) begin
+					/* High-priority Queue 0 finished: restore interrupted queue */
+					if (ctx_base == 32'd0) begin
+						preempt_active  <= 1'b0;
+						preempt_saved   <= 1'b0;
+						preempt_pulse   <= 1'b1;
+						active_qid      <= interrupted_qid;
+						rptr[interrupted_qid] <= saved_rptr;
+						buf_valid       <= 8'd0;
+					end else begin
+						st <= R_CTX_REST_REQ;
+					end
+				end else if (go) begin
+					if (has_work[active_qid]) begin
+						cur       <= rptr_act;
+						pa        <= pa_hdr;
+						step_pend <= 1'b0;
+						st        <= R_HDR;
+					end else if (|has_work) begin
+						/* Arbiter switches to next active queue */
+						active_qid <= next_qid;
+						if (next_qid != 2'd0)
+							last_non_q0 <= next_qid;
+						buf_valid  <= 8'd0;
+					end
 				end
 			end
 
 			R_HDR: begin
 				if (!hit || stale) begin
 					ret_n <= 1'b0;
-					stale <= doorbell;
+					stale <= doorbell[active_qid];
 					st    <= R_REQ;
 				end else begin
 					tag <= want_data[23:16];
@@ -369,9 +634,27 @@ module atg_cp_ring #(
 			end
 
 			R_ADV: begin
-				rptr      <= p_end;
-				ret_pulse <= 1'b1;
-				st        <= R_IDLE;
+				rptr[active_qid] <= p_end;
+				ret_pulse        <= 1'b1;
+				if (queue_sema_wait[active_qid])
+					queue_sema_wait[active_qid] <= 1'b0;
+				if (preempt_pending && (active_qid != 2'd0)) begin
+					interrupted_qid <= active_qid;
+					saved_rptr      <= p_end;
+					if (ctx_base == 32'd0) begin
+						preempt_saved   <= 1'b1;
+						preempt_pending <= 1'b0;
+						preempt_active  <= 1'b1;
+						preempt_pulse   <= 1'b1;
+						active_qid      <= 2'd0;
+						buf_valid       <= 8'd0;
+						st              <= R_IDLE;
+					end else begin
+						st <= R_CTX_SAVE_REQ;
+					end
+				end else begin
+					st <= R_IDLE;
+				end
 			end
 
 			R_REQ: begin
@@ -395,18 +678,65 @@ module atg_cp_ring #(
 				end
 			end
 
+			R_CTX_SAVE_REQ: begin
+				if (req_ready && ctx_save_req)
+					st <= R_CTX_SAVE_RSP;
+			end
+
+			R_CTX_SAVE_RSP: begin
+				if (rsp_valid && (rsp_tag == 8'd2)) begin
+					preempt_saved   <= 1'b1;
+					preempt_pending <= 1'b0;
+					preempt_active  <= 1'b1;
+					preempt_pulse   <= 1'b1;
+					active_qid      <= 2'd0;
+					buf_valid       <= 8'd0;
+					st              <= R_IDLE;
+				end
+			end
+
+			R_CTX_REST_REQ: begin
+				if (req_ready && ctx_rest_req)
+					st <= R_CTX_REST_RSP;
+			end
+
+			R_CTX_REST_RSP: begin
+				if (rsp_valid && (rsp_tag == 8'd3)) begin
+					preempt_active        <= 1'b0;
+					preempt_saved         <= 1'b0;
+					preempt_pulse         <= 1'b1;
+					active_qid            <= interrupted_qid;
+					rptr[interrupted_qid] <= saved_rptr;
+					buf_valid             <= 8'd0;
+					st                    <= R_IDLE;
+				end
+			end
+
 			default: ;
 			endcase
 		end
 	end
 
-	assign hcr_rdata = (hcr_ridx == I_BASE) ? base :
-		(hcr_ridx == I_SIZE) ? {27'd0, size} :
-		(hcr_ridx == I_WPTR) ? {14'd0, wptr} :
-		(hcr_ridx == I_RPTR) ? {14'd0, rptr} : 32'd0;
+	assign hcr_rdata =
+		(hcr_ridx == I_BASE0) ? base[0] :
+		(hcr_ridx == I_SIZE0) ? {27'd0, size[0]} :
+		(hcr_ridx == I_WPTR0) ? {14'd0, wptr[0]} :
+		(hcr_ridx == I_RPTR0) ? {14'd0, rptr[0]} :
+		(hcr_ridx == I_BASE1) ? base[1] :
+		(hcr_ridx == I_SIZE1) ? {27'd0, size[1]} :
+		(hcr_ridx == I_WPTR1) ? {14'd0, wptr[1]} :
+		(hcr_ridx == I_RPTR1) ? {14'd0, rptr[1]} :
+		(hcr_ridx == I_BASE2) ? base[2] :
+		(hcr_ridx == I_SIZE2) ? {27'd0, size[2]} :
+		(hcr_ridx == I_WPTR2) ? {14'd0, wptr[2]} :
+		(hcr_ridx == I_RPTR2) ? {14'd0, rptr[2]} :
+		(hcr_ridx == I_PREEMPT) ? {24'd0, interrupted_qid, 2'd0, preempt_saved, preempt_pending, preempt_active, 1'b0} :
+		(hcr_ridx == I_PREEMPT_STATUS) ? {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid} :
+		(hcr_ridx == I_CTX_BASE) ? ctx_base :
+		(hcr_ridx == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
 
 	wire unused_ok = &{1'b0, rsp_write, h_end[18], avail_bo, end_co, pa_4_co,
-		pa_hdr_co, k_co, unused_nl_co};
+		pa_hdr_co, k_co, unused_nl_co, sema_co};
 
 endmodule
 

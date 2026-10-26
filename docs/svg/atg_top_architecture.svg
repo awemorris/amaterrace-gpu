@@ -39,6 +39,16 @@
         font-weight: 400;
         fill: #475569;
     }
+    .card-sub {
+        font-size: 10px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-desc {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #475569;
+    }
     .conn-label {
         font-size: 11px;
         font-weight: 600;
@@ -74,6 +84,17 @@
         font-size: 10.5px;
         font-weight: 700;
         fill: #ffffff;
+    }
+    .flow-label {
+        font-size: 9.5px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .sec-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 ]]></style>
     
@@ -121,7 +142,7 @@
     <!-- Header Block -->
     <g transform="translate(30, 24)">
         <text class="title" x="0" y="20">Amaterrace GPU (ATG1) SoC Top-Level Architecture</text>
-        <text class="subtitle" x="0" y="40">Complete Internal Interconnect • Shared L2 Cache (LLC) • Independent 200 MHz Display Controller</text>
+        <text class="subtitle" x="0" y="40">Complete Internal Interconnect • Shared L2 Cache (LLC) • Independent Pixel Clock Display Controller</text>
         <rect x="740" y="4" width="260" height="28" rx="14" fill="#1e293b" opacity="0.08"/>
         <text x="870" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#0f172a">AMATERRACE HARDWARE TO-BE</text>
     </g>
@@ -190,15 +211,15 @@
             <text class="card-body" x="12" y="114">• Instancing</text>
         </g>
 
-        <!-- SU: 32-Lane Shader Unit -->
+        <!-- SU: Scalable SIMT Shader Unit -->
         <g transform="translate(315, 46)">
             <rect width="180" height="140" rx="6" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.2"/>
             <text class="card-title" x="12" y="22" fill="#b45309">SU (Shader Unit)</text>
-            <text class="card-subtitle" x="12" y="38" fill="#d97706">32-Lane Full SIMD</text>
-            <text class="card-body" x="12" y="60">• 4 Quads (32 SIMD Lanes)</text>
-            <text class="card-body" x="12" y="78">• DSP48E1 FP32 FMA Cascade</text>
-            <text class="card-body" x="12" y="96">• Local Data Share (LDS)</text>
-            <text class="card-body" x="12" y="114">• Warp Scheduler (Scoreboard)</text>
+            <text class="card-subtitle" x="12" y="38" fill="#d97706">Scalable SIMT Warp</text>
+            <text class="card-body" x="12" y="60">• 32-Thread Logical Warp</text>
+            <text class="card-body" x="12" y="78">• Config NPHYS PEs (4/8/16/32)</text>
+            <text class="card-body" x="12" y="96">• FP32 &amp; FP16×2 Packed Math</text>
+            <text class="card-body" x="12" y="114">• LDS &amp; Scoreboard Scheduler</text>
         </g>
 
         <!-- RX: Rasterizer -->
@@ -254,7 +275,7 @@
         <g transform="translate(0, 0)">
             <rect width="680" height="110" rx="8" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5" filter="url(#shadow-sm)"/>
             <text class="card-title" x="20" y="24" fill="#047857">Shared L2 Cache (LLC: Last Level Cache)</text>
-            <text class="card-subtitle" x="20" y="42" fill="#059669">512KB - 2MB Shared SRAM • Multi-Banked • Low-Latency On-Chip Storage</text>
+            <text class="card-subtitle" x="20" y="42" fill="#059669">Multi-Banked Shared Cache • Low-Latency On-Chip Storage</text>
             <text class="card-body" x="20" y="66">• Caches all client traffic: VF attributes, SU instruction &amp; data, TU textures, ROP tile writeback</text>
             <text class="card-body" x="20" y="84">• Integrates Write-Combining and Coherency Barrier invalidation engine</text>
         </g>
@@ -263,7 +284,7 @@
         <g transform="translate(705, 0)">
             <rect width="275" height="110" rx="8" fill="#fdf4ff" stroke="#f0abfc" stroke-width="1.5" filter="url(#shadow-sm)"/>
             <text class="card-title" x="14" y="24" fill="#a21caf">Display Controller (DC) — atg_dc</text>
-            <text class="card-subtitle" x="14" y="42" fill="#c026d3">Independent 200 MHz Pixel Clock</text>
+            <text class="card-subtitle" x="14" y="42" fill="#c026d3">Independent Pixel Clock Domain (pclk)</text>
             <text class="card-body" x="14" y="66">• High-Priority QoS Port directly into MC</text>
             <text class="card-body" x="14" y="84">• Never starved during heavy 3D rendering</text>
             <text class="card-body" x="14" y="100">• Survives GPU Quiesce and Reset</text>
@@ -274,12 +295,11 @@
     <g transform="translate(30, 642)">
         <rect width="980" height="65" rx="8" fill="#1e293b" stroke="#0f172a" stroke-width="1.5"/>
         <text class="card-title" x="24" y="26" fill="#f8fafc">Memory Controller (MC) — atg_mc</text>
-        <text class="card-subtitle" x="24" y="46" fill="#94a3b8">Multi-Port High-Bandwidth DRAM Interface (DDR3 / DDR4 / LPDDR4 / AXI4 Coherent UMA)</text>
+        <text class="card-subtitle" x="24" y="46" fill="#94a3b8">Multi-Port High-Bandwidth Interface (DDR / LPDDR / AXI4 Coherent System Interconnect)</text>
         <rect x="740" y="16" width="220" height="34" rx="6" fill="#334155"/>
-        <text x="850" y="38" text-anchor="middle" font-size="12" font-weight="700" fill="#38bdf8">Physical DRAM Memory</text>
+        <text x="850" y="38" text-anchor="middle" font-size="12" font-weight="700" fill="#38bdf8">Physical Memory Subsystem</text>
     </g>
 
-    <!-- Connections to MC -->
     <line x1="340" y1="625" x2="340" y2="642" stroke="#059669" stroke-width="2.5" marker-end="url(#arrow-emerald)"/>
     <line x1="842" y1="625" x2="842" y2="642" stroke="#c026d3" stroke-width="2.5" marker-end="url(#arrow)"/>
 </svg>

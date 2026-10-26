@@ -3,7 +3,7 @@
 # Phase 025: RX ストリームパイプライン統合 & 全シーン回帰検証
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `cleared`
 - **依存**: [ws001-p022](../phase022/phase.md), [ws001-p023](../phase023/phase.md), [ws001-p024](../phase024/phase.md)
 - **優先度**: Critical (RX 全体 6 段ストリームパイプライン統合 & 200MHz タイミング収束)
 - **出典**: ユーザー諮問（RX パイプライン化）および R1 敵対的アーキテクチャ分析レポート
@@ -28,6 +28,32 @@ SU へのワープパッキング・ディスパッチとのインターフェ�
    - SU のディスパッチ FIFO が満杯になった場合のバックプレッシャー伝搬。
 
 3. **Guardrails & リント**:
+   - `python3 tools/arith-lint.py` で生演算子 0 件。
+   - R1 による敵対的コードレビュー（APPROVE 必須）。
+
+---
+
+## 実施記録
+
+- **担当**: P3 (Claude Opus 5.5)
+- **コミット**: `76e79d6` (`WIP`)
+- **実装内容**:
+  - `rtl/gpu/rx/atg_rx.v`: ST0〜ST5 を `am_skid`（`u_skid_clip` 703b, `u_skid_scan` 53b, `u_skid_dx` 181b）で結合。ステージ間コンビネーションパスを遮断し 200 MHz タイミング収束。
+  - `spec/gpu/rx/atg_rx.md`: 6段パイプラインアーキテクチャ仕様更新。
+  - `sim/tb/atg_rx_pipeline_tb.v`: ストリームスループット & バックプレッシャー検証用テストベンチ新設。
+- **検証結果**:
+  - `python3 tools/arith-lint.py`: 0 operators outside rtl/library/arith
+  - `sim/run.sh atg_rx_pipeline`: PASS (1 s)
+  - `sim/run.sh atg_top`: PASS (20 s)
+  - **Verilator 7-Mode Full-Frame Sweep (ALL PASS)**:
+    - `basic`: PASS (1,131 cycles)
+    - `raster`: PASS (55,359 cycles, `raster.png`)
+    - `shade`: PASS (59,484 cycles, `shade.png`)
+    - `tex`: PASS (150,453 cycles, `tex.png`)
+    - `msaa`: PASS (224,841 cycles, `msaa.png`)
+    - `compute`: PASS (49,959 cycles)
+    - `core`: PASS (441,648 cycles, `core.png`)
+- **R1 レビュー**: **APPROVE** (2026-10-26 18:39)
    - `python3 tools/arith-lint.py` で生演算子 0 件。
    - R1 による敵対的コードレビュー（APPROVE 必須）。
 

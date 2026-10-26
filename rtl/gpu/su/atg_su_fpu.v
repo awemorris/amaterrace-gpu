@@ -51,6 +51,7 @@ module atg_su_fpu #(
 ) (
 	input wire clk,
 	input wire rst_n,
+	input wire en,
 	/* Issued instruction, one lane group per cycle (from atg_su_opd, shared by all units) */
 	input wire x_valid,
 	input wire [WARP_W-1:0] x_warp,
@@ -71,7 +72,22 @@ module atg_su_fpu #(
 	output wire [GRP_W-1:0] s_grp,
 	output wire [6:0] s_rd,
 	output wire [NPHYS*32-1:0] s_data,
-	output wire [NPHYS-1:0] s_lanes
+	output wire [NPHYS-1:0] s_lanes,
+
+	/* Forwarding buses (to atg_su_opd) */
+	output wire fwd_ex4_valid,
+	output wire [WARP_W-1:0] fwd_ex4_warp,
+	output wire [GRP_W-1:0] fwd_ex4_grp,
+	output wire [6:0] fwd_ex4_rd,
+	output wire [NPHYS*32-1:0] fwd_ex4_data,
+	output wire [NPHYS-1:0] fwd_ex4_lanes,
+
+	output wire fwd_ex5_valid,
+	output wire [WARP_W-1:0] fwd_ex5_warp,
+	output wire [GRP_W-1:0] fwd_ex5_grp,
+	output wire [6:0] fwd_ex5_rd,
+	output wire [NPHYS*32-1:0] fwd_ex5_data,
+	output wire [NPHYS-1:0] fwd_ex5_lanes
 );
 `include "atg_su_uop.vh"
 `include "atg_su_fp.vh"
@@ -123,7 +139,7 @@ module atg_su_fpu #(
 	/* The lanes: this unit's operation, a packed group's low halves (the
 	 * high ones from rs1 for hsel 10), or in the busy cycle the kept high
 	 * halves (those of rs1 for hsel 01); each lane's one multiplier. */
-	wire [DW-1:0] y;
+	wire [DW-1:0] fpu_res;
 	genvar gl;
 	generate
 	for (gl = 0; gl < NPHYS; gl = gl + 1) begin : g_lane
@@ -144,10 +160,10 @@ module atg_su_fpu #(
 		wire [31:0] lc = pk ? fc : x_c[gl*32 +: 32];
 		wire [2:0] lr = pk ? ((busy ? k_rm : rm) == 3'd2 ? 3'd6 : 3'd5) : rm;
 		wire [31:0] res;
-		am_fpu_core #(.LAT(0)) u_core (
+		am_fpu_core #(.LAT(4)) u_core (
 			.clk(clk),
 			.rst_n(rst_n),
-			.en(1'b1),
+			.en(en),
 			.op(lo),
 			.rm(lr),
 			.sat(!pk && sat),
@@ -156,42 +172,182 @@ module atg_su_fpu #(
 			.c(lc),
 			.res(res)
 		);
-		/* the fp16 result (fp32 to fp16 under rm, flushed; compares as
-		 * they are) and sat */
-		wire [2:0] hr = busy ? k_rm : rm;
-		wire [9:0] he;
-		wire [15:0] hn;
-		wire he_bo;
-		am_sub #(.W(10)) u_he (.a({2'd0, res[30:23]}), .b(10'd112), .bi(1'b0), .d(he), .bo(he_bo));
-		am_fp_hrnd #(.LAT(0)) u_hn (.s(res[31]), .e(he), .m({1'b1, res[22:13]}), .g(res[12]), .st(|res[11:0]),
-			.rm(hr), .h(hn));
-		wire [15:0] f2h = res[30:23] == 8'hFF ? (res[22:0] != 0 ? 16'h7E00 : {res[31], 5'h1F, 10'd0}) :
-			res[30:23] == 8'd0 ? {res[31], 15'd0} : hn;
-		wire [15:0] ph = po >= ATG_PK_FCMPLT2[3:0] ? res[15:0] : f2h;
-		wire [15:0] pko = (busy ? k_sat : sat) && po < ATG_PK_FCMPLT2[3:0] ? atg_su_hsat(ph) : ph;
-		wire unused_pr = &{1'b0, he_bo};
-		assign y[gl*32 +: 32] = SH && busy ? {16'd0, k_hs == 2'd1 ? k_a[gl*16 +: 16] : pko} :
-			mine_pk ? {16'd0, hsel == 2'd2 ? x_a[gl*32 +: 16] : pko} :
-			mine ? res : 32'd0;	/* (only for this unit's groups: fast simulation) */
+		assign fpu_res[gl*32 +: 32] = res;
 	end
 	endgenerate
 
-	/* SHORT_LAT stages; stage 0 is registered from x_*. */
-	reg [EW-1:0] pipe [0:SHORT_LAT-1];
-	integer k;
+	/* Pipeline control registers for Stages 1 to 4 */
+	reg s1_valid, s2_valid, s3_valid, s4_valid;
+	reg [WARP_W-1:0] s1_warp, s2_warp, s3_warp, s4_warp;
+	reg [GRP_W-1:0]  s1_grp,  s2_grp,  s3_grp,  s4_grp;
+	reg [6:0]        s1_rd,   s2_rd,   s3_rd,   s4_rd;
+	reg [NPHYS-1:0]  s1_mask, s2_mask, s3_mask, s4_mask;
+	reg s1_pk, s2_pk, s3_pk, s4_pk;
+	reg [1:0] s1_hsel, s2_hsel, s3_hsel, s4_hsel;
+	reg s1_sat, s2_sat, s3_sat, s4_sat;
+	reg [3:0] s1_pop, s2_pop, s3_pop, s4_pop;
+	reg [2:0] s1_rm, s2_rm, s3_rm, s4_rm;
+	reg [NPHYS*16-1:0] s1_xa, s2_xa, s3_xa, s4_xa;
+	reg s1_busy, s2_busy, s3_busy, s4_busy;
+	reg [3:0] s1_k_op, s2_k_op, s3_k_op, s4_k_op;
+	reg [2:0] s1_k_rm, s2_k_rm, s3_k_rm, s4_k_rm;
+	reg [1:0] s1_k_hs, s2_k_hs, s3_k_hs, s4_k_hs;
+	reg s1_k_sat, s2_k_sat, s3_k_sat, s4_k_sat;
+	reg [NPHYS*16-1:0] s1_k_a, s2_k_a, s3_k_a, s4_k_a;
+
+	integer p;
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			for (k = 0; k < SHORT_LAT; k = k + 1)
-				pipe[k] <= {EW{1'b0}};
-		end else begin
-			pipe[0] <= {mine || mine_pk, x_warp, x_grp, x_uop[ATG_UOP_RD +: 7],
-				x_mask[NPHYS-1:0], y};
-			for (k = 1; k < SHORT_LAT; k = k + 1)
-				pipe[k] <= pipe[k-1];
-			/* The high halves join their group in stage 1. */
-			if (SH && busy)
-				for (k = 0; k < NPHYS; k = k + 1)
-					pipe[1][k*32 + 16 +: 16] <= y[k*32 +: 16];
+			s1_valid <= 1'b0; s2_valid <= 1'b0; s3_valid <= 1'b0; s4_valid <= 1'b0;
+			s1_warp  <= 0;    s2_warp  <= 0;    s3_warp  <= 0;    s4_warp  <= 0;
+			s1_grp   <= 0;    s2_grp   <= 0;    s3_grp   <= 0;    s4_grp   <= 0;
+			s1_rd    <= 0;    s2_rd    <= 0;    s3_rd    <= 0;    s4_rd    <= 0;
+			s1_mask  <= 0;    s2_mask  <= 0;    s3_mask  <= 0;    s4_mask  <= 0;
+			s1_pk    <= 0;    s2_pk    <= 0;    s3_pk    <= 0;    s4_pk    <= 0;
+			s1_hsel  <= 0;    s2_hsel  <= 0;    s3_hsel  <= 0;    s4_hsel  <= 0;
+			s1_sat   <= 0;    s2_sat   <= 0;    s3_sat   <= 0;    s4_sat   <= 0;
+			s1_pop   <= 0;    s2_pop   <= 0;    s3_pop   <= 0;    s4_pop   <= 0;
+			s1_rm    <= 0;    s2_rm    <= 0;    s3_rm    <= 0;    s4_rm    <= 0;
+			s1_xa    <= 0;    s2_xa    <= 0;    s3_xa    <= 0;    s4_xa    <= 0;
+			s1_busy  <= 0;    s2_busy  <= 0;    s3_busy  <= 0;    s4_busy  <= 0;
+			s1_k_op  <= 0;    s2_k_op  <= 0;    s3_k_op  <= 0;    s4_k_op  <= 0;
+			s1_k_rm  <= 0;    s2_k_rm  <= 0;    s3_k_rm  <= 0;    s4_k_rm  <= 0;
+			s1_k_hs  <= 0;    s2_k_hs  <= 0;    s3_k_hs  <= 0;    s4_k_hs  <= 0;
+			s1_k_sat <= 0;    s2_k_sat <= 0;    s3_k_sat <= 0;    s4_k_sat <= 0;
+			s1_k_a   <= 0;    s2_k_a   <= 0;    s3_k_a   <= 0;    s4_k_a   <= 0;
+		end else if (en) begin
+			s1_valid <= mine || mine_pk;
+			s1_warp  <= x_warp;
+			s1_grp   <= x_grp;
+			s1_rd    <= x_uop[ATG_UOP_RD +: 7];
+			s1_mask  <= x_mask[NPHYS-1:0];
+			s1_pk    <= SH && mine_pk;
+			s1_hsel  <= hsel;
+			s1_sat   <= sat;
+			s1_pop   <= pop;
+			s1_rm    <= rm;
+			for (p = 0; p < NPHYS; p = p + 1)
+				s1_xa[p*16 +: 16] <= x_a[p*32 +: 16];
+			s1_busy  <= busy;
+			s1_k_op  <= pop;
+			s1_k_rm  <= rm;
+			s1_k_hs  <= hsel;
+			s1_k_sat <= sat;
+			for (p = 0; p < NPHYS; p = p + 1)
+				s1_k_a[p*16 +: 16] <= x_a[p*32 + 16 +: 16];
+
+			s2_valid <= s1_valid; s2_warp <= s1_warp; s2_grp <= s1_grp; s2_rd <= s1_rd;
+			s2_mask  <= s1_mask;  s2_pk   <= s1_pk;   s2_hsel <= s1_hsel; s2_sat <= s1_sat;
+			s2_pop   <= s1_pop;   s2_rm   <= s1_rm;   s2_xa   <= s1_xa;   s2_busy <= s1_busy;
+			s2_k_op  <= s1_k_op;  s2_k_rm <= s1_k_rm; s2_k_hs <= s1_k_hs; s2_k_sat <= s1_k_sat;
+			s2_k_a   <= s1_k_a;
+
+			s3_valid <= s2_valid; s3_warp <= s2_warp; s3_grp <= s2_grp; s3_rd <= s2_rd;
+			s3_mask  <= s2_mask;  s3_pk   <= s2_pk;   s3_hsel <= s2_hsel; s3_sat <= s2_sat;
+			s3_pop   <= s2_pop;   s3_rm   <= s2_rm;   s3_xa   <= s2_xa;   s3_busy <= s2_busy;
+			s3_k_op  <= s2_k_op;  s3_k_rm <= s2_k_rm; s3_k_hs <= s2_k_hs; s3_k_sat <= s2_k_sat;
+			s3_k_a   <= s2_k_a;
+
+			s4_valid <= s3_valid; s4_warp <= s3_warp; s4_grp <= s3_grp; s4_rd <= s3_rd;
+			s4_mask  <= s3_mask;  s4_pk   <= s3_pk;   s4_hsel <= s3_hsel; s4_sat <= s3_sat;
+			s4_pop   <= s3_pop;   s4_rm   <= s3_rm;   s4_xa   <= s3_xa;   s4_busy <= s3_busy;
+			s4_k_op  <= s3_k_op;  s4_k_rm <= s3_k_rm; s4_k_hs <= s3_k_hs; s4_k_sat <= s3_k_sat;
+			s4_k_a   <= s3_k_a;
+		end
+	end
+
+	/* Stage 4: fp16 formatting and rounding */
+	wire [NPHYS*16-1:0] pko_comb;
+	genvar g4;
+	generate
+	for (g4 = 0; g4 < NPHYS; g4 = g4 + 1) begin : g_pko
+		wire [31:0] res4 = fpu_res[g4*32 +: 32];
+		wire [3:0] po4 = s4_busy ? s4_k_op : s4_pop;
+		wire [2:0] hr4 = s4_busy ? s4_k_rm : s4_rm;
+		wire sat4 = s4_busy ? s4_k_sat : s4_sat;
+		wire [9:0] he4;
+		wire he4_bo;
+		wire [15:0] hn4;
+		am_sub #(.W(10)) u_he (.a({2'd0, res4[30:23]}), .b(10'd112), .bi(1'b0), .d(he4), .bo(he4_bo));
+		am_fp_hrnd #(.LAT(0)) u_hn (.s(res4[31]), .e(he4), .m({1'b1, res4[22:13]}), .g(res4[12]), .st(|res4[11:0]),
+			.rm(hr4), .h(hn4));
+		wire [15:0] f2h4 = res4[30:23] == 8'hFF ? (res4[22:0] != 0 ? 16'h7E00 : {res4[31], 5'h1F, 10'd0}) :
+			res4[30:23] == 8'd0 ? {res4[31], 15'd0} : hn4;
+		wire [15:0] ph4 = po4 >= ATG_PK_FCMPLT2[3:0] ? res4[15:0] : f2h4;
+		wire [15:0] pko4 = sat4 && po4 < ATG_PK_FCMPLT2[3:0] ? atg_su_hsat(ph4) : ph4;
+		assign pko_comb[g4*16 +: 16] = pko4;
+		wire unused_he4 = &{1'b0, he4_bo};
+	end
+	endgenerate
+
+	/* Stage 5 & 6 registers */
+	reg s5_valid;
+	reg [WARP_W-1:0] s5_warp;
+	reg [GRP_W-1:0]  s5_grp;
+	reg [6:0]        s5_rd;
+	reg [NPHYS-1:0]  s5_mask;
+	reg s5_pk;
+	reg [1:0] s5_k_hs;
+	reg [NPHYS*16-1:0] s5_k_a;
+	reg [DW-1:0] s5_data;
+
+	reg s6_valid;
+	reg [WARP_W-1:0] s6_warp;
+	reg [GRP_W-1:0]  s6_grp;
+	reg [6:0]        s6_rd;
+	reg [NPHYS-1:0]  s6_lanes;
+	reg [DW-1:0]     s6_data;
+
+	integer i5;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			s5_valid <= 1'b0;
+			s5_warp  <= 0;
+			s5_grp   <= 0;
+			s5_rd    <= 0;
+			s5_mask  <= 0;
+			s5_pk    <= 0;
+			s5_k_hs  <= 0;
+			s5_k_a   <= 0;
+			s5_data  <= 0;
+
+			s6_valid <= 1'b0;
+			s6_warp  <= 0;
+			s6_grp   <= 0;
+			s6_rd    <= 0;
+			s6_lanes <= 0;
+			s6_data  <= 0;
+		end else if (en) begin
+			/* Stage 5 captures Stage 4 output */
+			s5_valid <= s4_valid;
+			s5_warp  <= s4_warp;
+			s5_grp   <= s4_grp;
+			s5_rd    <= s4_rd;
+			s5_mask  <= s4_mask;
+			s5_pk    <= s4_pk;
+			s5_k_hs  <= s4_k_hs;
+			s5_k_a   <= s4_k_a;
+			for (i5 = 0; i5 < NPHYS; i5 = i5 + 1) begin
+				s5_data[i5*32 +: 32] <= s4_pk ?
+					{16'd0, (s4_hsel == 2'd2) ? s4_xa[i5*16 +: 16] : pko_comb[i5*16 +: 16]} :
+					fpu_res[i5*32 +: 32];
+			end
+
+			/* Stage 6 captures Stage 5 output (and high half joins here) */
+			s6_valid <= s5_valid;
+			s6_warp  <= s5_warp;
+			s6_grp   <= s5_grp;
+			s6_rd    <= s5_rd;
+			s6_lanes <= s5_mask;
+			for (i5 = 0; i5 < NPHYS; i5 = i5 + 1) begin
+				if (s5_pk) begin
+					s6_data[i5*32 +: 16]      <= s5_data[i5*32 +: 16];
+					s6_data[i5*32 + 16 +: 16] <= (s5_k_hs == 2'd1) ?
+						s5_k_a[i5*16 +: 16] : pko_comb[i5*16 +: 16];
+				end else begin
+					s6_data[i5*32 +: 32] <= s5_data[i5*32 +: 32];
+				end
+			end
 		end
 	end
 
@@ -199,9 +355,9 @@ module atg_su_fpu #(
 	always @(posedge clk) begin
 		if (!rst_n)
 			busy <= 1'b0;
-		else
+		else if (en)
 			busy <= mine_pk;
-		if (mine_pk) begin
+		if (mine_pk && en) begin
 			k_op <= pop;
 			k_rm <= rm;
 			k_hs <= hsel;
@@ -214,14 +370,37 @@ module atg_su_fpu #(
 		end
 	end
 
-	wire [EW-1:0] o = pipe[SHORT_LAT-1];
-	assign s_valid = o[EW-1];
-	assign s_warp = o[EW-2 -: WARP_W];
-	assign s_grp = o[EW-2-WARP_W -: GRP_W];
-	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];
-	assign s_lanes = o[DW +: NPHYS];
-	assign s_data = o[DW-1:0];
+	assign s_valid = s6_valid;
+	assign s_warp  = s6_warp;
+	assign s_grp   = s6_grp;
+	assign s_rd    = s6_rd;
+	assign s_lanes = s6_lanes;
+	assign s_data  = s6_data;
 	assign x_ready = !busy;
+
+	wire [DW-1:0] fpu_s4_data;
+	genvar gf;
+	generate
+	for (gf = 0; gf < NPHYS; gf = gf + 1) begin : g_fwd4
+		assign fpu_s4_data[gf*32 +: 32] = s4_pk ?
+			{16'd0, (s4_hsel == 2'd2) ? s4_xa[gf*16 +: 16] : pko_comb[gf*16 +: 16]} :
+			fpu_res[gf*32 +: 32];
+	end
+	endgenerate
+
+	assign fwd_ex4_valid = s4_valid;
+	assign fwd_ex4_warp  = s4_warp;
+	assign fwd_ex4_grp   = s4_grp;
+	assign fwd_ex4_rd    = s4_rd;
+	assign fwd_ex4_data  = fpu_s4_data;
+	assign fwd_ex4_lanes = s4_mask;
+
+	assign fwd_ex5_valid = s5_valid;
+	assign fwd_ex5_warp  = s5_warp;
+	assign fwd_ex5_grp   = s5_grp;
+	assign fwd_ex5_rd    = s5_rd;
+	assign fwd_ex5_data  = s5_data;
+	assign fwd_ex5_lanes = s5_mask;
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
 		(NWARPS != 0)};

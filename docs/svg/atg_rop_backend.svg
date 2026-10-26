@@ -39,6 +39,16 @@
         font-weight: 400;
         fill: #475569;
     }
+    .card-sub {
+        font-size: 10px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-desc {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #475569;
+    }
     .conn-label {
         font-size: 11px;
         font-weight: 600;
@@ -74,6 +84,17 @@
         font-size: 10.5px;
         font-weight: 700;
         fill: #ffffff;
+    }
+    .flow-label {
+        font-size: 9.5px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .sec-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 ]]></style>
     
@@ -152,7 +173,7 @@
             <text class="card-body" x="10" y="110">  write operations</text>
             <text class="card-body" x="10" y="130">• Eliminates DRAM read traffic</text>
             <text class="card-body" x="10" y="146">  during heavy blend/depth</text>
-            <text class="card-subtitle" x="10" y="166" fill="#be123c">8×8 / 16×16 Tile Size</text>
+            <text class="card-subtitle" x="10" y="166" fill="#be123c">Tile Cache Storage</text>
         </g>
 
         <g transform="translate(12, 370)">
@@ -186,13 +207,13 @@
         <g transform="translate(12, 220)">
             <rect width="186" height="155" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
             <text class="card-title" x="10" y="20" fill="#15803d">Depth Test Unit</text>
-            <text class="card-body" x="10" y="38">• Standard 24-bit / 32-bit</text>
-            <text class="card-body" x="10" y="54">  fixed / float depth test</text>
+            <text class="card-body" x="10" y="38">• Standard fixed / float</text>
+            <text class="card-body" x="10" y="54">  depth buffer comparison</text>
             <text class="card-body" x="10" y="74">• Compare funcs (LESS, LEQUAL,</text>
             <text class="card-body" x="10" y="90">  GREATER, EQUAL, etc.)</text>
             <text class="card-body" x="10" y="110">• Depth write enable mask</text>
             <text class="card-body" x="10" y="126">• Updates Tile Buffer depth</text>
-            <text class="card-subtitle" x="10" y="146" fill="#16a34a">Late Z Reject Gate</text>
+            <text class="card-subtitle" x="10" y="146" fill="#166534">Late Z Reject Gate</text>
         </g>
     </g>
 
@@ -241,18 +262,18 @@
             <text class="card-title" x="10" y="20" fill="#15803d">Write Combiner</text>
             <text class="card-body" x="10" y="38">• Merges active tile pixels</text>
             <text class="card-body" x="10" y="54">• Coalesces writes into</text>
-            <text class="card-body" x="10" y="70">  64-byte / 128-byte bursts</text>
+            <text class="card-body" x="10" y="70">  multi-word burst transfers</text>
             <text class="card-body" x="10" y="94" font-weight="600" fill="#166534">Minimizes Bus Overhead</text>
         </g>
 
-        <!-- Color Compression -->
+        <!-- Tile Optimization -->
         <g transform="translate(12, 175)">
             <rect width="191" height="110" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
-            <text class="card-title" x="10" y="20">Tile Compression (Lossless)</text>
+            <text class="card-title" x="10" y="20">Tile State &amp; Fast Clear</text>
             <text class="card-body" x="10" y="38">• Fast clear flag optimization</text>
-            <text class="card-body" x="10" y="54">• 2:1 / 4:1 Tile delta compression</text>
-            <text class="card-body" x="10" y="70">• Reduces memory bandwidth</text>
-            <text class="card-subtitle" x="10" y="94" fill="#475569">Bandwidth Saver</text>
+            <text class="card-body" x="10" y="54">• Dirty block state tracking</text>
+            <text class="card-body" x="10" y="70">• Eliminates redundant writes</text>
+            <text class="card-subtitle" x="10" y="94" fill="#475569">Memory Bandwidth Saver</text>
         </g>
 
         <!-- Shared L2C Writeback -->
@@ -262,7 +283,7 @@
             <text class="card-body" x="10" y="42">• Writes directly into Shared</text>
             <text class="card-body" x="10" y="58">  L2 Cache (LLC)</text>
             <text class="card-body" x="10" y="78">• Coherent writeback prevents</text>
-            <text class="card-body" x="10" y="94">  DRAM page-churn</text>
+            <text class="card-body" x="10" y="94">  external bus churn</text>
             <text class="card-body" x="10" y="112">• Readily available for DC</text>
             <text class="card-body" x="10" y="128">  scanout or texture sampling</text>
         </g>

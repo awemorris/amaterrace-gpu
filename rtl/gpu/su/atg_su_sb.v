@@ -39,7 +39,8 @@ module atg_su_sb #(
 	parameter SB_ENTRIES = 4,	/* Scoreboard entries per warp (KC705 8) */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
 	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
-	parameter SHORT_LAT = 6	/* Cycles from x_valid to the short result */
+	parameter SHORT_LAT = 6,	/* Cycles from x_valid to the short result */
+	parameter BYPASS = 1	/* Short interlock bypass support (0: stall until RF write, 1: bypass) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -77,6 +78,7 @@ module atg_su_sb #(
 `include "atg_su_uop.vh"
 
 	localparam G = 32 / NPHYS;
+	localparam SHORT_BP_WAIT = 3 + G;
 	localparam NE = NWARPS * SB_ENTRIES;
 	localparam CNT_W = 6;
 	localparam CD_W = 4;	/* the short countdown, up to SHORT_LAT + 1 */
@@ -215,10 +217,12 @@ module atg_su_sb #(
 	reg [NIF*WARP_W-1:0] f_warp;
 	reg [NIF*7-1:0] f_rd;
 	reg [NIF-1:0] f_short;
+	reg [NIF-1:0] f_pipe;
 	reg [NSH-1:0] c_valid;
 	reg [NSH*WARP_W-1:0] c_warp;
 	reg [NSH*6-1:0] c_rd;
 	reg [NSH*CD_W-1:0] c_cnt;
+	reg [NSH-1:0] c_pipe;
 
 	function hit;
 		input [6:0] x;
@@ -231,21 +235,30 @@ module atg_su_sb #(
 	always @(*) begin
 		hz_short = 1'b0;
 		for (m = 0; m < NIF; m = m + 1)
-			if (f_valid[m] && f_short[m] && f_warp[(m)*WARP_W +: WARP_W] == u_warp &&
-			    ((src1 && hit(rs1, f_rd[(m)*7 +: 7])) || (src2 && hit(rs2, f_rd[(m)*7 +: 7])) ||
-			    (src3 && hit(rs3, f_rd[(m)*7 +: 7])) || (src4 && hit(rs1p, f_rd[(m)*7 +: 7])) ||
-			    (src5 && hit(rs3p, f_rd[(m)*7 +: 7])) ||
-			    (dst && is_long && (f_rd[(m)*7 +: 7] >= {1'b0, rd[5:0]}) &&
-			    (f_rd[(m)*7 +: 7] < rd_k[6:0]))))
-				hz_short = 1'b1;
+			if (f_valid[m] && f_short[m] && f_warp[(m)*WARP_W +: WARP_W] == u_warp) begin
+				if ((!BYPASS || is_long || !f_pipe[m] || (G < 4)) &&
+				    ((src1 && hit(rs1, f_rd[(m)*7 +: 7])) || (src2 && hit(rs2, f_rd[(m)*7 +: 7])) ||
+				    (src3 && hit(rs3, f_rd[(m)*7 +: 7])) || (src4 && hit(rs1p, f_rd[(m)*7 +: 7])) ||
+				    (src5 && hit(rs3p, f_rd[(m)*7 +: 7]))))
+					hz_short = 1'b1;
+				if (dst && is_long && (f_rd[(m)*7 +: 7] >= {1'b0, rd[5:0]}) &&
+				    (f_rd[(m)*7 +: 7] < rd_k[6:0]))
+					hz_short = 1'b1;
+			end
 		for (m = 0; m < NSH; m = m + 1)
-			if (c_valid[m] && c_warp[(m)*WARP_W +: WARP_W] == u_warp &&
-			    (({28'd0, c_cnt[(m)*CD_W +: CD_W]} > G + 1 && ((src1 && hit(rs1, {1'b0, c_rd[(m)*6 +: 6]})) ||
-			    (src2 && hit(rs2, {1'b0, c_rd[(m)*6 +: 6]})) || (src3 && hit(rs3, {1'b0, c_rd[(m)*6 +: 6]})) ||
-			    (src4 && hit(rs1p, {1'b0, c_rd[(m)*6 +: 6]})) ||
-			    (src5 && hit(rs3p, {1'b0, c_rd[(m)*6 +: 6]})))) ||
-			    (dst && is_long && in_range({1'b0, c_rd[(m)*6 +: 6]}, rd[5:0], rd_k))))
-				hz_short = 1'b1;
+			if (c_valid[m] && c_warp[(m)*WARP_W +: WARP_W] == u_warp) begin
+				if (((!BYPASS && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > G + 1) ||
+				     (BYPASS && is_long && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > 1) ||
+				     (BYPASS && !is_long && !c_pipe[m] && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > G + 1) ||
+				     (BYPASS && !is_long && c_pipe[m] && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > SHORT_BP_WAIT)) &&
+				    ((src1 && hit(rs1, {1'b0, c_rd[(m)*6 +: 6]})) ||
+				    (src2 && hit(rs2, {1'b0, c_rd[(m)*6 +: 6]})) || (src3 && hit(rs3, {1'b0, c_rd[(m)*6 +: 6]})) ||
+				    (src4 && hit(rs1p, {1'b0, c_rd[(m)*6 +: 6]})) ||
+				    (src5 && hit(rs3p, {1'b0, c_rd[(m)*6 +: 6]}))))
+					hz_short = 1'b1;
+				if (dst && is_long && in_range({1'b0, c_rd[(m)*6 +: 6]}, rd[5:0], rd_k))
+					hz_short = 1'b1;
+			end
 	end
 
 	/* Counters (the warp's, less this cycle's release) and the instructions that wait for them. */
@@ -357,7 +370,9 @@ module atg_su_sb #(
 		if (!rst_n) begin
 			e_valid <= {NE{1'b0}};
 			f_valid <= {NIF{1'b0}};
+			f_pipe  <= {NIF{1'b0}};
 			c_valid <= {NSH{1'b0}};
+			c_pipe  <= {NSH{1'b0}};
 			cm <= {(NWARPS*CNT_W){1'b0}};
 			ct <= {(NWARPS*CNT_W){1'b0}};
 			cx <= {(NWARPS*CNT_W){1'b0}};
@@ -386,6 +401,7 @@ module atg_su_sb #(
 				c_warp[(c_slot)*WARP_W +: WARP_W] <= f_warp[(0)*WARP_W +: WARP_W];
 				c_rd[(c_slot)*6 +: 6] <= f_rd[5:0];
 				c_cnt[(c_slot)*CD_W +: CD_W] <= SHORT_LAT[CD_W-1:0] + 1'b1;
+				c_pipe[c_slot] <= f_pipe[0];
 			end
 			/* The in-order list: pop on x_end, push on issue. */
 			if (x_end)
@@ -393,6 +409,7 @@ module atg_su_sb #(
 					f_warp[(q)*WARP_W +: WARP_W] <= f_warp[(q+1)*WARP_W +: WARP_W];
 					f_rd[(q)*7 +: 7] <= f_rd[(q+1)*7 +: 7];
 					f_short[q] <= f_short[q+1];
+					f_pipe[q] <= f_pipe[q+1];
 				end
 			f_valid <= f_shift;
 			if (issued) begin
@@ -400,6 +417,7 @@ module atg_su_sb #(
 				f_warp[(f_slot)*WARP_W +: WARP_W] <= u_warp;
 				f_rd[(f_slot)*7 +: 7] <= rd;
 				f_short[f_slot] <= short_w;
+				f_pipe[f_slot] <= (unit == ATG_UNIT_ALU || unit == ATG_UNIT_FPU);
 			end
 		end
 	end

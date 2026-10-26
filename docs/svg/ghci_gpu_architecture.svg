@@ -39,6 +39,16 @@
         font-weight: 400;
         fill: #475569;
     }
+    .card-sub {
+        font-size: 10px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-desc {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #475569;
+    }
     .conn-label {
         font-size: 11px;
         font-weight: 600;
@@ -74,6 +84,17 @@
         font-size: 10.5px;
         font-weight: 700;
         fill: #ffffff;
+    }
+    .flow-label {
+        font-size: 9.5px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .sec-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 ]]></style>
     
@@ -213,7 +234,7 @@
 
         <!-- 3D Pipeline Blocks & 2D BLT -->
         <g transform="translate(20, 168)">
-            <!-- 2D Engine -->
+            <!-- 2D Engine: BLT (x: 0..115) -->
             <g transform="translate(0, 0)">
                 <rect width="115" height="175" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
                 <text class="card-title" x="12" y="24" fill="#15803d">BLT (2D)</text>
@@ -225,7 +246,7 @@
                 <text class="card-body" x="12" y="150" font-weight="600" fill="#166534">Direct to L2C</text>
             </g>
 
-            <!-- VF: Vertex Fetcher -->
+            <!-- VF: Vertex Fetcher (x: 130..250) -->
             <g transform="translate(130, 0)">
                 <rect width="120" height="175" rx="8" fill="#ecfeff" stroke="#67e8f9" stroke-width="1.2"/>
                 <text class="card-title" x="12" y="24" fill="#0e7490">VF</text>
@@ -237,19 +258,20 @@
                 <text class="card-body" x="12" y="150" font-weight="600" fill="#0e7490">Streams to SU</text>
             </g>
 
-            <!-- SU: Shader Unit -->
+            <!-- SU: Shader Unit (x: 265..405) -->
             <g transform="translate(265, 0)">
                 <rect width="140" height="175" rx="8" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.2"/>
                 <text class="card-title" x="12" y="24" fill="#b45309">SU (Shader)</text>
-                <text class="card-subtitle" x="12" y="40" fill="#d97706">32-Lane SIMD</text>
-                <text class="card-body" x="12" y="65">• GSI1 64-bit ISA</text>
-                <text class="card-body" x="12" y="83">• Warp Scheduler</text>
-                <text class="card-body" x="12" y="101">• DSP48E1 FMA</text>
-                <text class="card-body" x="12" y="119">• LDS Scratchpad</text>
-                <text class="card-body" x="12" y="137">• Vertex / Frag / CS</text>
+                <text class="card-subtitle" x="12" y="40" fill="#d97706">SIMT Warp Array</text>
+                <text class="card-body" x="12" y="63">• GSI1 64-bit ISA</text>
+                <text class="card-body" x="12" y="79">• 32-Thread Warps</text>
+                <text class="card-body" x="12" y="95">• Config NPHYS PEs</text>
+                <text class="card-body" x="12" y="111">• FP16×2 Packed Math</text>
+                <text class="card-body" x="12" y="127">• DSP48E1 am_mul</text>
+                <text class="card-body" x="12" y="143">• Shared LDS BRAM</text>
             </g>
 
-            <!-- RX: Rasterizer -->
+            <!-- RX: Rasterizer (x: 420..545) -->
             <g transform="translate(420, 0)">
                 <rect width="125" height="175" rx="8" fill="#ecfeff" stroke="#67e8f9" stroke-width="1.2"/>
                 <text class="card-title" x="12" y="24" fill="#0e7490">RX (Raster)</text>
@@ -257,11 +279,11 @@
                 <text class="card-body" x="12" y="65">• Triangle Setup</text>
                 <text class="card-body" x="12" y="83">• Coarse Scan</text>
                 <text class="card-body" x="12" y="101">• Early Z-Cull</text>
-                <text class="card-body" x="12" y="119">• Fine 2x2 Quads</text>
+                <text class="card-body" x="12" y="119">• Fine 2×2 Quads</text>
                 <text class="card-body" x="12" y="137">• Barycentrics</text>
             </g>
 
-            <!-- TU: Texture Unit -->
+            <!-- TU: Texture Unit (x: 560..670, y: 0..82) -->
             <g transform="translate(560, 0)">
                 <rect width="110" height="82" rx="6" fill="#f0f9ff" stroke="#7dd3fc" stroke-width="1.2"/>
                 <text class="card-title" x="10" y="22" fill="#0369a1">TU (Texture)</text>
@@ -270,7 +292,7 @@
                 <text class="card-body" x="10" y="72">• Descriptors</text>
             </g>
 
-            <!-- ROP: Render Output -->
+            <!-- ROP: Render Output (x: 560..670, y: 93..175) -->
             <g transform="translate(560, 93)">
                 <rect width="110" height="82" rx="6" fill="#fff1f2" stroke="#fda4af" stroke-width="1.2"/>
                 <text class="card-title" x="10" y="22" fill="#be123c">ROP (Output)</text>
@@ -280,15 +302,23 @@
             </g>
         </g>
 
-        <!-- Arrows between Pipeline Stages -->
-        <path fill="none" d="M 215 100 L 215 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
-        <path fill="none" d="M 390 100 L 390 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
-        <path fill="none" d="M 250 255 L 265 255" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
-        <path fill="none" d="M 405 230 L 420 230" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
-        <path fill="none" d="M 420 270 L 405 270" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
-        <path fill="none" d="M 405 285 L 560 285" stroke="#475569" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
-        <path fill="none" d="M 405 200 L 560 200" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
-        <path fill="none" d="M 615 175 L 615 186" stroke="#475569" stroke-width="1.8"/>
+        <!-- Clean Pipeline Flow Arrows (Coordinates in parent translate(260, 80)) -->
+        <!-- CP to VF Dispatch (CP ends at y=150, Pipeline top is y=168) -->
+        <path fill="none" d="M 210 150 L 210 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <!-- CP to SU Dispatch -->
+        <path fill="none" d="M 355 150 L 355 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <!-- VF (ends x=270) to SU (starts x=285) -->
+        <path fill="none" d="M 270 255 L 285 255" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <!-- SU (ends x=425) to RX (starts x=440) - Vertices / Triangles -->
+        <path fill="none" d="M 425 220 L 440 220" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <!-- RX (starts x=440) to SU (ends x=425) - Shaded Quads -->
+        <path fill="none" d="M 440 270 L 425 270" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <!-- SU (ends x=425) to TU (starts x=580) via top channel -->
+        <path fill="none" d="M 390 168 L 390 158 L 615 158 L 615 168" stroke="#0284c7" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow-blue)"/>
+        <!-- RX to ROP Early Z pass -->
+        <path fill="none" d="M 565 290 L 580 290" stroke="#be123c" stroke-width="1.8" marker-end="url(#arrow-rose)"/>
+        <!-- TU to ROP connection -->
+        <path fill="none" d="M 615 250 L 615 261" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
 
         <!-- atg_rt Interconnect Router Bar -->
         <g transform="translate(20, 360)">
@@ -296,17 +326,17 @@
             <text class="card-title" x="335" y="22" text-anchor="middle" fill="#334155" letter-spacing="1">atg_rt MEMORY ROUTER INTERCONNECT TREE</text>
         </g>
 
-        <!-- Pipeline connections to atg_rt -->
+        <!-- Pipeline connections to atg_rt (Pipeline bottom is y=343, atg_rt is y=360) -->
         <line x1="77" y1="343" x2="77" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
-        <line x1="190" y1="343" x2="190" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
-        <line x1="335" y1="343" x2="335" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
-        <line x1="615" y1="343" x2="615" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="210" y1="343" x2="210" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="355" y1="343" x2="355" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="635" y1="343" x2="635" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
 
         <!-- Shared L2 Cache (LLC: Last Level Cache) -->
         <g transform="translate(20, 415)">
             <rect width="470" height="90" rx="8" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
             <text class="card-title" x="18" y="24" fill="#047857">Shared L2 Cache (LLC: Last Level Cache)</text>
-            <text class="card-subtitle" x="18" y="42" fill="#059669">Unified Multi-Banked Cache • 512KB - 2MB • Write-Combining Buffer</text>
+            <text class="card-subtitle" x="18" y="42" fill="#059669">Multi-Banked Shared Cache • Write-Combining Buffer</text>
             <text class="card-body" x="18" y="66">• Caches VF, SU (D$), TU, and ROP Writebacks</text>
             <text class="card-body" x="18" y="80">• Enforces Memory Barriers &amp; Invalidation for Host/Shader Coherency</text>
         </g>
@@ -315,7 +345,7 @@
         <g transform="translate(510, 415)">
             <rect width="180" height="90" rx="8" fill="#fdf4ff" stroke="#f0abfc" stroke-width="1.5"/>
             <text class="card-title" x="12" y="24" fill="#a21caf">DC (Display)</text>
-            <text class="card-subtitle" x="12" y="42" fill="#c026d3">Independent 200 MHz</text>
+            <text class="card-subtitle" x="12" y="42" fill="#c026d3">Independent Pixel Clock (pclk)</text>
             <text class="card-body" x="12" y="64">• High-Priority QoS Port</text>
             <text class="card-body" x="12" y="78">• Survives GPU Reset</text>
         </g>
@@ -330,19 +360,19 @@
             <text class="card-title" x="20" y="24" fill="#f8fafc">Memory Controller (MC)</text>
             <text class="card-subtitle" x="20" y="42" fill="#94a3b8">AXI4 Coherent System Interface • Priority Arbiter for Display &amp; L2 Cache</text>
             <rect x="490" y="12" width="165" height="30" rx="4" fill="#334155"/>
-            <text x="572" y="32" text-anchor="middle" font-size="11.5" font-weight="600" fill="#38bdf8">DRAM / Host UMA Bus</text>
+            <text x="572" y="32" text-anchor="middle" font-size="11.5" font-weight="600" fill="#38bdf8">DRAM / System Bus</text>
         </g>
 
         <line x1="255" y1="505" x2="255" y2="525" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
         <line x1="600" y1="505" x2="600" y2="525" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow)"/>
     </g>
 
-    <!-- Cross connections from Host to GPU -->
+    <!-- Cross connections from Host to GPU (Clean routing) -->
     <!-- Doorbell write -->
-    <path fill="none" d="M 210 240 L 260 240 L 260 110 L 280 110" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
-    <text class="conn-label" x="235" y="180" fill="#7c3aed" text-anchor="middle" transform="rotate(-90 235 180)">WPTR Doorbell</text>
+    <path fill="none" d="M 240 240 L 255 240 L 255 110 L 280 110" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+    <text class="conn-label" x="248" y="175" fill="#7c3aed" text-anchor="middle" transform="rotate(-90 248 175)">WPTR Doorbell</text>
 
     <!-- Interrupt line -->
-    <path fill="none" d="M 280 130 L 245 130 L 245 360 L 210 360" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
-    <text class="conn-label" x="235" y="290" fill="#dc2626" text-anchor="middle" transform="rotate(-90 235 290)">IRQ Line</text>
+    <path fill="none" d="M 280 135 L 250 135 L 250 360 L 240 360" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+    <text class="conn-label" x="245" y="290" fill="#dc2626" text-anchor="middle" transform="rotate(-90 245 290)">IRQ Line</text>
 </svg>

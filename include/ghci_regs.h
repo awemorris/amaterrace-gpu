@@ -323,7 +323,8 @@
 #define GHCI_S_BLEND_CONST_R (GHCI_S_ROP + 23u) /* BLEND_CONST_R, _G, _B, _A (fp32) */
 #define GHCI_S_DEPTH_BOUNDS_MIN (GHCI_S_ROP + 27u)
 #define GHCI_S_DEPTH_BOUNDS_MAX (GHCI_S_ROP + 28u)
-#define GHCI_S_ROP_CTRL (GHCI_S_ROP + 29u) /* [0] occlusion count, [1] fp32 blend constants */
+#define GHCI_S_ROP_CTRL (GHCI_S_ROP + 29u) /* [0] occlusion count, [1] fp32 blend constants, [2] logic_op_en, [6:3] logic_op */
+#define GHCI_S_LOGIC_OP (GHCI_S_ROP + 30u) /* [0] logic_op_en, [4:1] logic_op (VkLogicOp 0..15) */
 
 /* TU (docs/ghci.md section 8.4): slot s's words, TEX_IMAGE, TEX_SAMPLER
  * and TEX_LOD. */

@@ -425,12 +425,26 @@ module atg_tu_addr (
 		end
 	end
 
+	/* Cube seamless edge mapping reference (Phase 005 / ws002-p005) */
+	wire [2:0] cube_edge_fout;
+	wire [15:0] cube_edge_uout, cube_edge_vout;
+	atg_tu_cube_edge u_cube_edge_ref (
+		.face_in(cf[0]),
+		.u_in(16'd0),
+		.v_in(16'd0),
+		.size(16'd1),
+		.face_out(cube_edge_fout),
+		.u_out(cube_edge_uout),
+		.v_out(cube_edge_vout)
+	);
+
 	wire unused_ok = &{1'b0, fc[11:10], jcrd[127:64],
 		samp[18:17], bcol[0], opr[7], opr[2],
 		dlod[31:24], OP_TEXL,
 		cnt1_bo_unused, lb1_co_unused, lbase_co_unused,
 		lamp_l[0][16], lamp_l[1][16], lamp_l[2][16], lamp_l[3][16],
-		lstr_l[0][47:32], lstr_l[1][47:32], lstr_l[2][47:32], lstr_l[3][47:32]};
+		lstr_l[0][47:32], lstr_l[1][47:32], lstr_l[2][47:32], lstr_l[3][47:32],
+		cube_edge_fout, cube_edge_uout, cube_edge_vout};
 endmodule
 
 `default_nettype wire

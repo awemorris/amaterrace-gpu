@@ -416,7 +416,7 @@ module atg_su #(
 	);
 
 	atg_su_sb #(
-		.NPHYS(NPHYS), .SHORT_LAT(SHORT_LAT), .NWARPS(NWARPS), .WARP_W(WARP_W), .SB_ENTRIES(SB_ENTRIES), .SBE_W(SBE_W), .UOP_W(UOP_W)
+		.NPHYS(NPHYS), .SHORT_LAT(SHORT_LAT), .BYPASS(1), .NWARPS(NWARPS), .WARP_W(WARP_W), .SB_ENTRIES(SB_ENTRIES), .SBE_W(SBE_W), .UOP_W(UOP_W)
 	) sb (
 		.clk(clk), .rst_n(rst_n),
 		.u_valid(u_valid), .u_ready(u_ready), .u_warp(u_warp), .u_pc(u_pc), .u_uop(u_uop),
@@ -439,6 +439,27 @@ module atg_su #(
 		.r_reg3(r_regs[17:12]), .r_data1(r_data1), .r_data2(r_data2), .r_data3(r_data3)
 	);
 
+	wire alu_fwd_ex4_valid, alu_fwd_ex5_valid;
+	wire [WARP_W-1:0] alu_fwd_ex4_warp, alu_fwd_ex5_warp;
+	wire [GRP_W-1:0] alu_fwd_ex4_grp, alu_fwd_ex5_grp;
+	wire [6:0] alu_fwd_ex4_rd, alu_fwd_ex5_rd;
+	wire [DW-1:0] alu_fwd_ex4_data, alu_fwd_ex5_data;
+	wire [NPHYS-1:0] alu_fwd_ex4_lanes, alu_fwd_ex5_lanes;
+
+	wire fpu_fwd_ex4_valid, fpu_fwd_ex5_valid;
+	wire [WARP_W-1:0] fpu_fwd_ex4_warp, fpu_fwd_ex5_warp;
+	wire [GRP_W-1:0] fpu_fwd_ex4_grp, fpu_fwd_ex5_grp;
+	wire [6:0] fpu_fwd_ex4_rd, fpu_fwd_ex5_rd;
+	wire [DW-1:0] fpu_fwd_ex4_data, fpu_fwd_ex5_data;
+	wire [NPHYS-1:0] fpu_fwd_ex4_lanes, fpu_fwd_ex5_lanes;
+
+	wire fwd_wb_valid = w_en;
+	wire [WARP_W-1:0] fwd_wb_warp = w_warp;
+	wire [GRP_W-1:0] fwd_wb_grp = w_grp;
+	wire [6:0] fwd_wb_rd = {1'b0, w_reg};
+	wire [DW-1:0] fwd_wb_data = w_data;
+	wire [NPHYS-1:0] fwd_wb_lanes = w_lanes;
+
 	atg_su_opd #(
 		.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
 		.WARP_BASE(SU_INDEX * NWARPS)
@@ -454,26 +475,44 @@ module atg_su #(
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
 		.x_info(x_info),
-		.unit_ready(unit_ready)
+		.unit_ready(unit_ready),
+		.fwd_alu_ex4_valid(alu_fwd_ex4_valid), .fwd_alu_ex4_warp(alu_fwd_ex4_warp), .fwd_alu_ex4_grp(alu_fwd_ex4_grp),
+		.fwd_alu_ex4_rd(alu_fwd_ex4_rd), .fwd_alu_ex4_data(alu_fwd_ex4_data), .fwd_alu_ex4_lanes(alu_fwd_ex4_lanes),
+		.fwd_alu_ex5_valid(alu_fwd_ex5_valid), .fwd_alu_ex5_warp(alu_fwd_ex5_warp), .fwd_alu_ex5_grp(alu_fwd_ex5_grp),
+		.fwd_alu_ex5_rd(alu_fwd_ex5_rd), .fwd_alu_ex5_data(alu_fwd_ex5_data), .fwd_alu_ex5_lanes(alu_fwd_ex5_lanes),
+		.fwd_fpu_ex4_valid(fpu_fwd_ex4_valid), .fwd_fpu_ex4_warp(fpu_fwd_ex4_warp), .fwd_fpu_ex4_grp(fpu_fwd_ex4_grp),
+		.fwd_fpu_ex4_rd(fpu_fwd_ex4_rd), .fwd_fpu_ex4_data(fpu_fwd_ex4_data), .fwd_fpu_ex4_lanes(fpu_fwd_ex4_lanes),
+		.fwd_fpu_ex5_valid(fpu_fwd_ex5_valid), .fwd_fpu_ex5_warp(fpu_fwd_ex5_warp), .fwd_fpu_ex5_grp(fpu_fwd_ex5_grp),
+		.fwd_fpu_ex5_rd(fpu_fwd_ex5_rd), .fwd_fpu_ex5_data(fpu_fwd_ex5_data), .fwd_fpu_ex5_lanes(fpu_fwd_ex5_lanes),
+		.fwd_wb_valid(fwd_wb_valid), .fwd_wb_warp(fwd_wb_warp), .fwd_wb_grp(fwd_wb_grp),
+		.fwd_wb_rd(fwd_wb_rd), .fwd_wb_data(fwd_wb_data), .fwd_wb_lanes(fwd_wb_lanes)
 	);
 
 	atg_su_alu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT)) alu (
-		.clk(clk), .rst_n(rst_n),
+		.clk(clk), .rst_n(rst_n), .en(1'b1),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
 		.x_info(x_info), .x_ready(alu_ready),
 		.s_valid(alu_s_valid), .s_warp(alu_s_warp), .s_grp(alu_s_grp), .s_rd(alu_s_rd),
-		.s_data(alu_s_data), .s_lanes(alu_s_lanes)
+		.s_data(alu_s_data), .s_lanes(alu_s_lanes),
+		.fwd_ex4_valid(alu_fwd_ex4_valid), .fwd_ex4_warp(alu_fwd_ex4_warp), .fwd_ex4_grp(alu_fwd_ex4_grp),
+		.fwd_ex4_rd(alu_fwd_ex4_rd), .fwd_ex4_data(alu_fwd_ex4_data), .fwd_ex4_lanes(alu_fwd_ex4_lanes),
+		.fwd_ex5_valid(alu_fwd_ex5_valid), .fwd_ex5_warp(alu_fwd_ex5_warp), .fwd_ex5_grp(alu_fwd_ex5_grp),
+		.fwd_ex5_rd(alu_fwd_ex5_rd), .fwd_ex5_data(alu_fwd_ex5_data), .fwd_ex5_lanes(alu_fwd_ex5_lanes)
 	);
 
 	atg_su_fpu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT),
 		.PACKED(PACKED), .PK_SHARED(PK_SHARED)) fpu (
-		.clk(clk), .rst_n(rst_n),
+		.clk(clk), .rst_n(rst_n), .en(1'b1),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
 		.x_info(x_info), .x_ready(fpu_ready),
 		.s_valid(fpu_s_valid), .s_warp(fpu_s_warp), .s_grp(fpu_s_grp), .s_rd(fpu_s_rd),
-		.s_data(fpu_s_data), .s_lanes(fpu_s_lanes)
+		.s_data(fpu_s_data), .s_lanes(fpu_s_lanes),
+		.fwd_ex4_valid(fpu_fwd_ex4_valid), .fwd_ex4_warp(fpu_fwd_ex4_warp), .fwd_ex4_grp(fpu_fwd_ex4_grp),
+		.fwd_ex4_rd(fpu_fwd_ex4_rd), .fwd_ex4_data(fpu_fwd_ex4_data), .fwd_ex4_lanes(fpu_fwd_ex4_lanes),
+		.fwd_ex5_valid(fpu_fwd_ex5_valid), .fwd_ex5_warp(fpu_fwd_ex5_warp), .fwd_ex5_grp(fpu_fwd_ex5_grp),
+		.fwd_ex5_rd(fpu_fwd_ex5_rd), .fwd_ex5_data(fpu_fwd_ex5_data), .fwd_ex5_lanes(fpu_fwd_ex5_lanes)
 	);
 
 	atg_su_pk #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .PACKED(PACKED),

@@ -3,9 +3,11 @@
 # Phase 007: GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新
 
 - **親**: [WS001](../ws.md)
-- **状態**: `in-progress`
+- **状態**: `cleared`
 - **依存**: [ws001-p002](../phase002/phase.md), [ws001-p004](../phase004/phase.md)
 - **優先度**: Critical (根本設計刷新)
+- **完了日**: 2026-10-27
+- **レビュー結果**: R1 APPROVE (2026-10-27)
 - **出典**: ユーザー諮問（GHCI レジスタ多すぎ問題の解消、最小限レジスタセット、コマンド/ディスクリプタ移行）および R1 設計提案
 
 ## 目的
@@ -52,3 +54,20 @@ NVMe や Virtio-GPU のように、真に最小限のホスト MMIO レジスタ
 - ホスト MMIO 空間が 19 レジスタ（76 バイト）のみで動作し、STATE レジスタが皆無であること。
 - 新しい構造化コマンド（`CMD_BIND_PIPELINE`、`CMD_DRAW`、`CMD_EXECUTE_COMMANDS` 等）を用いて三角形描画・テクスチャマッピングが正常に動作すること。
 - CPU 側の MMIO アクセス回数が大幅に削減され、ドローコール発行スループットが劇的に向上すること。
+
+---
+
+## 実施記録
+
+- **担当**: P2 (Claude Opus 5.5)
+- **コミット**: `5d5f819` (`WIP`)
+- **実装内容**:
+  1. `rtl/gpu/cp/atg_cp_regs.v`: パラメータ `SLIM_MMIO` 追加。19 レジスタ（0x000〜0x048）の厳格デコード、ホスト STATE アクセス完全遮断（`alias_we = 0`, リード値 0）。
+  2. `rtl/gpu/cp/atg_cp_seq_dec.v`, `atg_cp_seq.v`, `atg_cp_seq_wait.v`: GHCI 2.0 構造化コマンドパケット（`CMD_BIND_PIPELINE` 0x20 〜 `CMD_FENCE` 0x33）デコードおよびステージ別ビジー待機、キック・フェンス発行。
+  3. `fw/cp/ghci2_cmd.c`, `fw/cp/cmd.c`, `fw/cp/fw.h`: 不変 PSO DMA フェッチ & 内部レジスタディスパッチ、ビューポート/シザー動的状態、セカンダリコマンドバッファ直接実行。
+  4. `sim/tb/atg_ghci2_slim_tb.v`: 全 19 MMIO レジスタ、STATE アクセス遮断、全構造化コマンドデコードの総合単体テストベンチ。
+- **検証結果**:
+  - `sim/run.sh atg_ghci2_slim`: PASS (1 s)
+  - `fw/cp/tests/run.sh`: 全 14 テスト PASS
+  - `tools/arith-lint.py`: 全域で 0 operators outside rtl/library/arith
+  - 回帰: `atg_cp_regs` PASS, `atg_top_barrier` PASS, `atg_cp_multi_queue` PASS, `atg_top` PASS (22 s)

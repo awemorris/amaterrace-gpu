@@ -59,11 +59,32 @@ module atg_cp_seq_dec #(
 	localparam [5:0] OP_QUERY = 6'd14;
 	localparam [5:0] OP_DISP_SET = 6'd15;
 	localparam [5:0] OP_FLIP = 6'd16;
+	localparam [5:0] OP_BARRIER = 6'd20;
+	localparam [5:0] OP_SEMAPHORE_SIGNAL = 6'd21;
+	localparam [5:0] OP_SEMAPHORE_WAIT = 6'd22;
+
+	/* GHCI 2.0 Structured Command Opcodes */
+	localparam [5:0] CMD_BIND_PIPELINE         = 6'h20;
+	localparam [5:0] CMD_BIND_VERTEX_BUFFERS   = 6'h21;
+	localparam [5:0] CMD_BIND_INDEX_BUFFER     = 6'h22;
+	localparam [5:0] CMD_BIND_DESCRIPTOR_TABLE = 6'h23;
+	localparam [5:0] CMD_SET_VIEWPORT          = 6'h24;
+	localparam [5:0] CMD_SET_SCISSOR           = 6'h25;
+	localparam [5:0] CMD_SET_DYNAMIC_STATE     = 6'h26;
+	localparam [5:0] CMD_DRAW                  = 6'h27;
+	localparam [5:0] CMD_DRAW_INDEXED          = 6'h28;
+	localparam [5:0] CMD_DRAW_INDIRECT         = 6'h29;
+	localparam [5:0] CMD_DISPATCH              = 6'h30;
+	localparam [5:0] CMD_BARRIER               = 6'h31;
+	localparam [5:0] CMD_EXECUTE_COMMANDS      = 6'h32;
+	localparam [5:0] CMD_FENCE                 = 6'h33;
+
 	localparam [5:0] VOP_DRAW_RAW = 6'd0;
 	localparam [5:0] VOP_DBG_MARK = 6'd1;
 
-	wire h_vendor = hdr[30];
-	wire [5:0] h_op = hdr[29:24];
+	wire is_ghci2 = (hdr[7:0] >= 8'h20 && hdr[7:0] <= 8'h33) && (hdr[15:8] >= 8'd1);
+	wire h_vendor = is_ghci2 ? 1'b0 : hdr[30];
+	wire [5:0] h_op = is_ghci2 ? hdr[5:0] : hdr[29:24];
 	wire [7:0] h_n = hdr[7:0];
 
 	/* n rounded up to even (the pairs of SET_REG and DISP_SET). */
@@ -78,7 +99,7 @@ module atg_cp_seq_dec #(
 		h_known = 1'b1;
 		h_absent = 1'b0;
 		h_need = 8'd0;
-		if (hdr[31]) begin
+		if (hdr[31] && !is_ghci2) begin
 			h_known = 1'b0;
 		end else if (h_vendor) begin
 			case (h_op)
@@ -119,6 +140,39 @@ module atg_cp_seq_dec #(
 				h_need = 8'd4;
 				h_absent = HAS_DISP == 0 || hdr_fw;
 			end
+			OP_BARRIER: begin
+				h_need = 8'd1;	/* payload: {accessMask[15:0], 8'd0, dstStageMask[7:0]} */
+			end
+			OP_SEMAPHORE_SIGNAL, OP_SEMAPHORE_WAIT: begin
+				h_need = 8'd4;	/* payload: addr[63:0], val[63:0] */
+			end
+			/* GHCI 2.0 Structured Commands */
+			CMD_BIND_PIPELINE: h_need = 8'd2;
+			CMD_BIND_VERTEX_BUFFERS: h_need = 8'd1;
+			CMD_BIND_INDEX_BUFFER: h_need = 8'd3;
+			CMD_BIND_DESCRIPTOR_TABLE: h_need = 8'd3;
+			CMD_SET_VIEWPORT: h_need = 8'd6;
+			CMD_SET_SCISSOR: h_need = 8'd4;
+			CMD_SET_DYNAMIC_STATE: h_need = 8'd5;
+			CMD_DRAW: begin
+				h_need = 8'd4;
+				h_absent = !UNITS[2];
+			end
+			CMD_DRAW_INDEXED: begin
+				h_need = 8'd5;
+				h_absent = !UNITS[2];
+			end
+			CMD_DRAW_INDIRECT: begin
+				h_need = 8'd5;
+				h_absent = !UNITS[2];
+			end
+			CMD_DISPATCH: begin
+				h_need = 8'd3;
+				h_absent = !UNITS[6];
+			end
+			CMD_BARRIER: h_need = 8'd3;
+			CMD_EXECUTE_COMMANDS: h_need = 8'd3;
+			CMD_FENCE: h_need = 8'd4;
 			default: h_known = 1'b0;
 			endcase
 		end

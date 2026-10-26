@@ -3,7 +3,7 @@
 # Phase 021: MSHR ノンブロッキングフェッチ & メモリ統合（実効スループット 30〜50 倍向上）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `implemented`
+- **状態**: `cleared`
 - **依存**: [ws001-p020](../phase020/phase.md), [ws001-p003](../phase003/phase.md)
 - **優先度**: Critical (1 Outstanding ブロッキング停止の解体 & Hit-Under-Miss 実現)
 - **出典**: ユーザー諮問（TU パイプライン化）および R1 敵対的アーキテクチャ分析レポート

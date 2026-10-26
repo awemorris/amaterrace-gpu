@@ -64,8 +64,39 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `x_mask` | out | 2*NPHYS | {side-effect lanes, EXEC lanes} of the group. |
 | `x_info` | out | 32 | x_info [15:0] fragment sequence number, [17:16] warp kind (0 vertex, 1 fragment, 2 compute), [18] front facing, [31:19] 0. |
 | `unit_ready` | in | 16 | x_ready of each unit, indexed by ATG_UNIT_*; the group waits until its unit is ready. |
+| **Forwarding / Bypass (ALU EX4/5, FPU EX4/5, WB)** | | | |
+| `fwd_alu_ex4_valid` | in | 1 | ALU EX4 forwarding valid. |
+| `fwd_alu_ex4_warp` | in | WARP_W | ALU EX4 warp. |
+| `fwd_alu_ex4_grp` | in | GRP_W | ALU EX4 lane group. |
+| `fwd_alu_ex4_rd` | in | 7 | ALU EX4 destination register ([6]=long, [5:0]=reg index). |
+| `fwd_alu_ex4_data` | in | NPHYS*32 | ALU EX4 result data vector. |
+| `fwd_alu_ex4_lanes` | in | NPHYS | ALU EX4 active lane mask. |
+| `fwd_alu_ex5_valid` | in | 1 | ALU EX5 forwarding valid. |
+| `fwd_alu_ex5_warp` | in | WARP_W | ALU EX5 warp. |
+| `fwd_alu_ex5_grp` | in | GRP_W | ALU EX5 lane group. |
+| `fwd_alu_ex5_rd` | in | 7 | ALU EX5 destination register ([6]=long, [5:0]=reg index). |
+| `fwd_alu_ex5_data` | in | NPHYS*32 | ALU EX5 result data vector. |
+| `fwd_alu_ex5_lanes` | in | NPHYS | ALU EX5 active lane mask. |
+| `fwd_fpu_ex4_valid` | in | 1 | FPU EX4 forwarding valid. |
+| `fwd_fpu_ex4_warp` | in | WARP_W | FPU EX4 warp. |
+| `fwd_fpu_ex4_grp` | in | GRP_W | FPU EX4 lane group. |
+| `fwd_fpu_ex4_rd` | in | 7 | FPU EX4 destination register ([6]=long, [5:0]=reg index). |
+| `fwd_fpu_ex4_data` | in | NPHYS*32 | FPU EX4 result data vector. |
+| `fwd_fpu_ex4_lanes` | in | NPHYS | FPU EX4 active lane mask. |
+| `fwd_fpu_ex5_valid` | in | 1 | FPU EX5 forwarding valid. |
+| `fwd_fpu_ex5_warp` | in | WARP_W | FPU EX5 warp. |
+| `fwd_fpu_ex5_grp` | in | GRP_W | FPU EX5 lane group. |
+| `fwd_fpu_ex5_rd` | in | 7 | FPU EX5 destination register ([6]=long, [5:0]=reg index). |
+| `fwd_fpu_ex5_data` | in | NPHYS*32 | FPU EX5 result data vector. |
+| `fwd_fpu_ex5_lanes` | in | NPHYS | FPU EX5 active lane mask. |
+| `fwd_wb_valid` | in | 1 | WB forwarding valid (active on all RF writes). |
+| `fwd_wb_warp` | in | WARP_W | WB warp. |
+| `fwd_wb_grp` | in | GRP_W | WB lane group. |
+| `fwd_wb_rd` | in | 7 | WB destination register ([6]=long, [5:0]=reg index). |
+| `fwd_wb_data` | in | NPHYS*32 | WB result data vector. |
+| `fwd_wb_lanes` | in | NPHYS | WB active lane mask. |
 
-35 ports.
+65 ports.
 
 ## 4. Behaviour
 
@@ -78,6 +109,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   ~KILLED.
 - PAIR (texl/texb/texf): x_c = rs1+1.
 - PAIR with USE3 (a texture .c or .3 form: rs1, rs1+1, rs2 and rs3 = rs1+2, with .3.c also rs1+3; four or five sources for three read ports): each lane group goes out twice, back to back in the order (g, pass 0), (g, pass 1); the second pass reads rs3 as operand 1 (x_a) and rs3+1 as operand 3 (x_c; x_b as in the first), sets TEX op bit 7 on x_uop (ATG_TEX_PASS2) and carries x_last on the last group; rq pops only on the first pass.  Such an instruction takes 2 × 32/NPHYS bus cycles.
+- Operand Forwarding / Bypass Network (p011): When an operand source is a GPR (0-62), forwarding comparison logic checks if an active writer exists in ALU EX4/EX5, FPU EX4/EX5, WB, or the 1-cycle registered RF write bypass (`fwd_rf` covering BRAM same-cycle read-write collision) matching the same `warp`, `grp`, and register index (`rd < 63`). Priority is strictly ALU/FPU EX4 > ALU/FPU EX5 > WB > RF write bypass > RF read. Forwarding is performed per-lane: if `fwd_*_lanes[lane]` is active, the forwarded result word is taken; otherwise, the value from the RF read port (or lower-priority stage) is preserved. This eliminates RAW hazard pipeline bubbles for short instructions, enabling 1.0 IPC back-to-back issue.
 
 ## 5. State machine
 
@@ -112,3 +144,5 @@ Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_opd_tb.v` with NPHYS 
 2026-10-25 (p009 part E, P3): the second operand pass for PAIR + USE3 uops (§4), for the texture .c forms of docs/ghci.md §12.9.  Ports unchanged.  `sim/tb/atg_su_opd_tb.v` issues such uops at random and checks both passes.
 
 2026-10-25 (p009 part F, P3): the second pass of a PAIR + USE3 uop reads rs3+1 as operand 3 (x_c), for the texture .3 forms with Dref (rs1+3).  Ports unchanged.  `sim/tb/atg_su_opd_tb.v` checks operand 3 of both passes.
+
+2026-10-27 (p011, P1): Added operand forwarding / bypass network ports `fwd_ex4_*`, `fwd_ex5_*`, `fwd_wb_*` and per-lane bypass MUX logic (EX4 > EX5 > WB > RF) in Stage B. Enables 1.0 IPC back-to-back RAW execution without scoreboard stall bubbles. Verified with `sim/tb/atg_su_forwarding_tb.v` and `sim/tb/atg_su_opd_tb.v`.

@@ -3,7 +3,7 @@
 # Phase 006: 細粒度同期（Timeline Semaphore / パイプラインバリア）& Vulkan 1.0 必須機能補完
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `cleared`
 - **依存**: [ws001-p003](../phase003/phase.md), [ws001-p005](../phase005/phase.md)
 - **優先度**: Major
 - **出典**: R1 敵対的仕様レビュー（観点2 & 4: Complete Fence による性能低下、Vulkan 1.0 必須機能欠落）

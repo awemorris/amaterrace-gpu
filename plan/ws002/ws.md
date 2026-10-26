@@ -18,12 +18,12 @@ Amaterrace GPU のハードウェアパイプライン化および物理最適�
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | ROP Logic Op（論理演算 16 種）& Independent Blend per RT（RT 個別ブレンド） | ws001-p014 | planned |
+| [p001](phase001/phase.md) | ROP Logic Op（論理演算 16 種）& Independent Blend per RT（RT 個別ブレンド） | ws001-p014 | in-progress |
 | [p002](phase002/phase.md) | SU / ROP Dual Source Blending（フォント描画用 src1 カラー出力） | ws001-p010, p001 | planned |
 | [p003](phase003/phase.md) | MRT 8 アタッチメント拡張（CAPS[30] 4 -> 8 拡張 & ディスクリプタ対応） | p001 | planned |
-| [p004](phase004/phase.md) | TU 異方性フィルタリング（Anisotropic Filtering 最大 16x EWA ループ） | ws001-p021 | planned |
-| [p005](phase005/phase.md) | TU シームレスキューブマップフィルタリング（面境界テクセル補間） | ws001-p018 | planned |
-| [p006](phase006/phase.md) | TU デスクトップ標準圧縮テクスチャ（BC1〜BC7 ハードウェアデコーダ） | ws001-p020 | planned |
+| [p004](phase004/phase.md) | TU 異方性フィルタリング（Anisotropic Filtering 最大 16x EWA ループ） | ws001-p021 | completed |
+| [p005](phase005/phase.md) | TU シームレスキューブマップフィルタリング（面境界テクセル補間） | ws001-p018 | completed |
+| [p006](phase006/phase.md) | TU デスクトップ標準圧縮テクスチャ（BC1〜BC7 ハードウェアデコーダ） | ws001-p020 | in-progress |
 | [p007](phase007/phase.md) | RX 拡張プリミティブ（Wide Lines, Point Sprites, Multi-Viewport 等） | ws001-p025 | planned |
 | [p008](phase008/phase.md) | 間接描画 & インスタンシング（MultiDrawIndirect, Vertex Attribute Divisor） | ws001-p033 | planned |
 | [p009](phase009/phase.md) | 非同期 DMA 転送キュー & 3D ボリュームコピー（専用キュー・ボリューム画像） | ws001-p030 | planned |

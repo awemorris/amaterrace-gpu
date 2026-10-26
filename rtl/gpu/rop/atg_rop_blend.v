@@ -64,13 +64,15 @@ module atg_rop_blend #(
 
 	/* STATE: RT_FORMAT 0x072, BLEND 0x07A, BLEND_CONST 0x07B, WRITE_MASK 0x07C,
 	 * RT_FORMATS 0x07D, BLEND1-3 0x084-0x086, BLEND_CONST_R-A 0x087-0x08A,
-	 * ROP_CTRL 0x08D. */
+	 * ROP_CTRL 0x08D, LOGIC_OP 0x08E. */
 	reg [1:0] fmt0;	/* RT_FORMAT */
 	reg [31:0] fmts;	/* RT_FORMATS */
 	reg [22:0] bls [0:3];
 	reg [31:0] kc8, kcf;	/* BLEND_CONST; the fp32 constants as bytes */
 	reg kc_sel;	/* ROP_CTRL[1] */
 	reg [15:0] wms;
+	reg lop_en [0:3];
+	reg [3:0] lop_op [0:3];
 	/* BLEND1-3 and BLEND_CONST_R-A: k = (st_idx - 3) mod 4 = st_idx[1:0] + 1 */
 	wire [1:0] s_k;
 	wire s_k_co_unused;
@@ -82,8 +84,11 @@ module atg_rop_blend #(
 		if (!rst_n) begin
 			fmt0 <= 2'd0;
 			fmts <= 32'd0;
-			for (i = 0; i < 4; i = i + 1)
+			for (i = 0; i < 4; i = i + 1) begin
 				bls[i] <= 23'd0;
+				lop_en[i] <= 1'b0;
+				lop_op[i] <= 4'd0;
+			end
 			kc8 <= 32'd0;
 			kcf <= 32'd0;
 			kc_sel <= 1'b0;
@@ -101,8 +106,30 @@ module atg_rop_blend #(
 				kc8 <= st_wdata;
 			if (st_idx >= GHCI_S_BLEND_CONST_R && st_idx < GHCI_S_BLEND_CONST_R + 9'd4)
 				kcf[8 * s_k +: 8] <= kcf_n;
-			if (st_idx == GHCI_S_ROP_CTRL)
+			if (st_idx == GHCI_S_ROP_CTRL) begin
 				kc_sel <= st_wdata[1];
+				for (i = 0; i < 4; i = i + 1) begin
+					lop_en[i] <= st_wdata[2];
+					lop_op[i] <= st_wdata[6:3];
+				end
+			end
+			if (st_idx == GHCI_S_LOGIC_OP) begin
+				if (st_wdata[31:8] == 24'd0) begin
+					for (i = 0; i < 4; i = i + 1) begin
+						lop_en[i] <= st_wdata[0];
+						lop_op[i] <= st_wdata[4:1];
+					end
+				end else begin
+					lop_en[0] <= st_wdata[0];
+					lop_op[0] <= st_wdata[4:1];
+					lop_en[1] <= st_wdata[8];
+					lop_op[1] <= st_wdata[12:9];
+					lop_en[2] <= st_wdata[16];
+					lop_op[2] <= st_wdata[20:17];
+					lop_en[3] <= st_wdata[24];
+					lop_op[3] <= st_wdata[28:25];
+				end
+			end
 			if (st_idx == GHCI_S_WRITE_MASK)
 				wms <= st_wdata[15:0];
 		end
@@ -113,6 +140,8 @@ module atg_rop_blend #(
 		fmt0 == 2'd1 ? F_RGBA8 : F_565) : fcode(fvk);
 	wire [22:0] bl_n = bls[b_rt];
 	wire [3:0] wm_n = wms[4 * b_rt +: 4];
+	wire lop_en_n = lop_en[b_rt];
+	wire [3:0] lop_op_n = lop_op[b_rt];
 
 	function [7:0] factor;
 		input [3:0] f;
@@ -134,6 +163,30 @@ module atg_rop_blend #(
 		4'd13: factor = ~ka;
 		4'd14: factor = is_a ? 8'd255 : (sa < ~da ? sa : ~da);
 		default: factor = 8'd0;
+		endcase
+	endfunction
+
+	function [7:0] calc_logic_op;
+		input [3:0] op;
+		input [7:0] s;
+		input [7:0] d;
+		case (op)
+		4'd0:  calc_logic_op = 8'h00;
+		4'd1:  calc_logic_op = s & d;
+		4'd2:  calc_logic_op = s & ~d;
+		4'd3:  calc_logic_op = s;
+		4'd4:  calc_logic_op = ~s & d;
+		4'd5:  calc_logic_op = d;
+		4'd6:  calc_logic_op = s ^ d;
+		4'd7:  calc_logic_op = s | d;
+		4'd8:  calc_logic_op = ~(s | d);
+		4'd9:  calc_logic_op = ~(s ^ d);
+		4'd10: calc_logic_op = ~d;
+		4'd11: calc_logic_op = s | ~d;
+		4'd12: calc_logic_op = ~s;
+		4'd13: calc_logic_op = ~s | d;
+		4'd14: calc_logic_op = ~(s & d);
+		4'd15: calc_logic_op = 8'hFF;
 		endcase
 	endfunction
 
@@ -169,6 +222,8 @@ module atg_rop_blend #(
 	reg [3:0] m1, wm1, wm2;
 	reg [2:0] fmt1, fmt2;
 	reg [22:0] bl1, bl2;
+	reg lop_en1, lop_en2;
+	reg [3:0] lop_op1, lop_op2;
 	reg [31:0] kc1;
 	reg [127:0] s1, d1, o1;
 	always @(posedge clk) begin
@@ -177,6 +232,8 @@ module atg_rop_blend #(
 		fmt1 <= fmt_n;
 		bl1 <= bl_n;
 		wm1 <= wm_n;
+		lop_en1 <= lop_en_n;
+		lop_op1 <= lop_op_n;
 		kc1 <= kc;
 		o1 <= b_dst;
 		s1 <= s1_n;
@@ -211,6 +268,8 @@ module atg_rop_blend #(
 		fmt2 <= fmt1;
 		bl2 <= bl1;
 		wm2 <= wm1;
+		lop_en2 <= lop_en1;
+		lop_op2 <= lop_op1;
 		s2 <= s1;
 		d2 <= d1;
 		o2 <= o1;
@@ -247,6 +306,8 @@ module atg_rop_blend #(
 				endcase
 				if (!bl2[0])
 					v = {1'b0, sv};
+				if (lop_en2)
+					v = {1'b0, calc_logic_op(lop_op2, sv, dv)};
 				if (v[8])
 					v = 9'd255;
 			end

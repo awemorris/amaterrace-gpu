@@ -3,7 +3,7 @@
 # Phase 027: MC AXI バースト結合キュー（Burst Coalescer: ARLEN=3/7 自動マージ）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed`
 - **依存**: [ws001-p003](../phase003/phase.md)
 - **優先度**: Critical (DDR3 バス物理稼働率 25% 未満から 85% 以上へ引き上げ)
 - **出典**: ユーザー諮問（周辺ブロック最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -97,6 +97,9 @@ module atg_mc_coalesce #(
 - 連続メモリアクセスが自動的に AXI バーストに結合され、DDR バス稼働率が向上すること。
 - `sim/run.sh atg_mc_coalesce` が PASS すること。
 - R1 レビュー APPROVE 獲得。
+- コミット: `28c81ba`
+- R1 レビュー: **APPROVE** (2026-10-27, `adversarial_review_ws001_p027_mc_coalesce.md`)
+- 完了確定: 2026-10-27 (Phase 027 完了)
    - `sim/verilator/run.sh`（全 7 モード）での全パス確認。
    - R1 による敵対的コードレビュー（APPROVE 必須）。
 

@@ -15,6 +15,8 @@
  * Reuses one 33x33 signed multiplier (4 DSP48E1 slices under SYNTH_KINTEX7)
  * via front-end operand multiplexing, eliminating duplicate DSP slice
  * allocation across disparate execution pipelines.
+ *
+ * Supports LAT = 0 (combinational) and LAT = 4 (balanced 4-stage pipeline).
  * See spec/library/fp/am_fpu_core.md.
  */
 
@@ -22,7 +24,7 @@
 `default_nettype none
 
 module am_fpu_core #(
-	parameter LAT = 0	/* latency: 0 = combinational */
+	parameter LAT = 0	/* latency: 0 = combinational, 4 = 4-stage pipelined */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -156,167 +158,396 @@ module am_fpu_core #(
 		end
 	endfunction
 
-	/* 33x33 signed multiplier: exactly 4 DSP48E1 slices */
-	wire [65:0] mo = mulops(op, a, b);
-	wire [65:0] pr;
-	am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(0)) u_mul (
-		.clk(clk),
-		.en(en),
-		.a(mo[32:0]),
-		.b(mo[65:33]),
-		.p(pr)
-	);
+	generate
+	if (LAT == 0) begin : g_lat0
+		/* 33x33 signed multiplier: exactly 4 DSP48E1 slices */
+		wire [65:0] mo = mulops(op, a, b);
+		wire [65:0] pr;
+		am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(0)) u_mul (
+			.clk(clk),
+			.en(en),
+			.a(mo[32:0]),
+			.b(mo[65:33]),
+			.p(pr)
+		);
 
-	/* Integer rounding and integer-to-float conversions */
-	wire [31:0] xf = f_flush(a);
-	wire [24:0] n;
-	am_fp_rint #(.LAT(0)) u_rint (
-		.x(xf),
-		.rm(op == OP_FRACT ? 3'd2 : rm),
-		.n(n)
-	);
+		/* Integer rounding and integer-to-float conversions */
+		wire [31:0] xf = f_flush(a);
+		wire [24:0] n;
+		am_fp_rint #(.LAT(0)) u_rint (
+			.x(xf),
+			.rm(op == OP_FRACT ? 3'd2 : rm),
+			.n(n)
+		);
 
-	wire [31:0] nega;
-	wire carry_unused;
-	am_sub #(.W(32)) u_neg (
-		.a(32'd0),
-		.b(a),
-		.bi(1'b0),
-		.d(nega),
-		.bo(carry_unused)
-	);
+		wire [31:0] nega;
+		wire carry_unused;
+		am_sub #(.W(32)) u_neg (
+			.a(32'd0),
+			.b(a),
+			.bi(1'b0),
+			.d(nega),
+			.bo(carry_unused)
+		);
 
-	wire cvsw = (op == OP_FCVTSW);
-	wire cvswu = (op == OP_FCVTSWU);
-	wire [31:0] iv;
-	am_fp_i2f #(.LAT(0)) u_i2f (
-		.s(cvsw ? a[31] : cvswu ? 1'b0 : xf[31]),
-		.n(cvsw ? (a[31] ? nega : a) : cvswu ? a : {7'd0, n}),
-		.rm((cvsw || cvswu) ? rm : 3'd0),
-		.r(iv)
-	);
+		wire cvsw = (op == OP_FCVTSW);
+		wire cvswu = (op == OP_FCVTSWU);
+		wire [31:0] iv;
+		am_fp_i2f #(.LAT(0)) u_i2f (
+			.s(cvsw ? a[31] : cvswu ? 1'b0 : xf[31]),
+			.n(cvsw ? (a[31] ? nega : a) : cvswu ? a : {7'd0, n}),
+			.rm((cvsw || cvswu) ? rm : 3'd0),
+			.r(iv)
+		);
 
-	/* fround */
-	wire [31:0] fl = (xf[30:23] == 8'hFF && xf[22:0] != 23'd0) ? 32'h7FC00000 :
-		(xf[30:23] >= 8'd150 || xf[30:23] == 8'd0) ? xf : iv;
+		/* fround */
+		wire [31:0] fl = (xf[30:23] == 8'hFF && xf[22:0] != 23'd0) ? 32'h7FC00000 :
+			(xf[30:23] >= 8'd150 || xf[30:23] == 8'd0) ? xf : iv;
 
-	/* Fused datapath operands */
-	reg [31:0] fx, fy, fz;
-	reg [2:0] rr;
-	reg noc;
-	always @(*) begin
-		fx = a;
-		fy = 32'h3F800000;
-		fz = b;
-		noc = 1'b0;
-		rr = rm;
-		case (op)
-		OP_FADD:   ;
-		OP_FSUB:   fz = {!b[31], b[30:0]};
-		OP_FMUL:   begin
-			fy = b;
-			noc = 1'b1;
-		end
-		OP_FMADD:  begin
-			fy = b;
-			fz = c;
-		end
-		OP_FMSUB:  begin
-			fy = b;
-			fz = {!c[31], c[30:0]};
-		end
-		OP_FNMSUB: begin
-			fx = {!a[31], a[30:0]};
-			fy = b;
-			fz = c;
-		end
-		OP_FNMADD: begin
-			fx = {!a[31], a[30:0]};
-			fy = b;
-			fz = {!c[31], c[30:0]};
-		end
-		OP_FRACT:  begin
-			fz = {!fl[31], fl[30:0]};
-			rr = 3'd0;
-		end
-		default: ;
-		endcase
-	end
-
-	wire [31:0] fr, ri;
-	am_fp_fma_p #(.LAT(0)) u_fma (
-		.a0(fx),
-		.b0(fy),
-		.c0(fz),
-		.rm(rr),
-		.noc(noc),
-		.p(pr[47:0]),
-		.r(fr)
-	);
-
-	am_fp_f2i #(.LAT(0)) u_f2i (
-		.x(xf),
-		.n(n),
-		.uns(op == OP_FCVTWUS),
-		.r(ri)
-	);
-
-	/* Operation result multiplexing */
-	wire fma = (op <= OP_FNMADD) || (op == OP_FRACT);
-	reg [31:0] rs;
-	reg flt;
-	always @(*) begin
-		flt = 1'b1;
-		rs = 32'd0;
-		if (fma)
-			rs = fr;
-		else begin
+		/* Fused datapath operands */
+		reg [31:0] fx, fy, fz;
+		reg [2:0] rr;
+		reg noc;
+		always @(*) begin
+			fx = a;
+			fy = 32'h3F800000;
+			fz = b;
+			noc = 1'b0;
+			rr = rm;
 			case (op)
-			OP_FSGNJ:   rs = {b[31], a[30:0]};
-			OP_FMIN:    rs = f_minmax(a, b, 1'b0);
-			OP_FMAX:    rs = f_minmax(a, b, 1'b1);
-			OP_FCVTWS, OP_FCVTWUS: rs = ri;
-			OP_FCVTSW, OP_FCVTSWU: rs = iv;
-			OP_FEQ:     rs = {32{f_cmp(a, b, 2'd0)}};
-			OP_FLT:     rs = {32{f_cmp(a, b, 2'd1)}};
-			OP_FLE:     rs = {32{f_cmp(a, b, 2'd2)}};
-			OP_FNE:     rs = {32{f_cmp(a, b, 2'd3)}};
-			OP_FROUND:  rs = fl;
-			OP_MUL:     rs = pr[31:0];
-			OP_MULH, OP_MULHSU, OP_MULHU: rs = pr[63:32];
+			OP_FADD:   ;
+			OP_FSUB:   fz = {!b[31], b[30:0]};
+			OP_FMUL:   begin
+				fy = b;
+				noc = 1'b1;
+			end
+			OP_FMADD:  begin
+				fy = b;
+				fz = c;
+			end
+			OP_FMSUB:  begin
+				fy = b;
+				fz = {!c[31], c[30:0]};
+			end
+			OP_FNMSUB: begin
+				fx = {!a[31], a[30:0]};
+				fy = b;
+				fz = c;
+			end
+			OP_FNMADD: begin
+				fx = {!a[31], a[30:0]};
+				fy = b;
+				fz = {!c[31], c[30:0]};
+			end
+			OP_FRACT:  begin
+				fz = {!fl[31], fl[30:0]};
+				rr = 3'd0;
+			end
 			default: ;
 			endcase
 		end
-		case (op)
-		OP_FCVTWS, OP_FCVTWUS, OP_FEQ, OP_FLT, OP_FLE, OP_FNE,
-		OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU: flt = 1'b0;
-		default: ;
-		endcase
-	end
 
-	wire [31:0] core_res = (sat && flt) ? f_sat(rs) : rs;
+		wire [31:0] fr, ri;
+		am_fp_fma_p #(.LAT(0)) u_fma (
+			.a0(fx),
+			.b0(fy),
+			.c0(fz),
+			.rm(rr),
+			.noc(noc),
+			.p(pr[47:0]),
+			.r(fr)
+		);
 
-	generate
-		if (LAT == 0) begin : g_lat0
-			assign res = core_res;
-		end else begin : g_lat_pipe
-			reg [31:0] r_pipe [0:LAT-1];
-			integer i;
-			always @(posedge clk) begin
-				if (!rst_n) begin
-					for (i = 0; i < LAT; i = i + 1)
-						r_pipe[i] <= 32'd0;
-				end else if (en) begin
-					r_pipe[0] <= core_res;
-					for (i = 1; i < LAT; i = i + 1)
-						r_pipe[i] <= r_pipe[i-1];
-				end
+		am_fp_f2i #(.LAT(0)) u_f2i (
+			.x(xf),
+			.n(n),
+			.uns(op == OP_FCVTWUS),
+			.r(ri)
+		);
+
+		/* Operation result multiplexing */
+		wire fma = (op <= OP_FNMADD) || (op == OP_FRACT);
+		reg [31:0] rs;
+		reg flt;
+		always @(*) begin
+			flt = 1'b1;
+			rs = 32'd0;
+			if (fma)
+				rs = fr;
+			else begin
+				case (op)
+				OP_FSGNJ:   rs = {b[31], a[30:0]};
+				OP_FMIN:    rs = f_minmax(a, b, 1'b0);
+				OP_FMAX:    rs = f_minmax(a, b, 1'b1);
+				OP_FCVTWS, OP_FCVTWUS: rs = ri;
+				OP_FCVTSW, OP_FCVTSWU: rs = iv;
+				OP_FEQ:     rs = {32{f_cmp(a, b, 2'd0)}};
+				OP_FLT:     rs = {32{f_cmp(a, b, 2'd1)}};
+				OP_FLE:     rs = {32{f_cmp(a, b, 2'd2)}};
+				OP_FNE:     rs = {32{f_cmp(a, b, 2'd3)}};
+				OP_FROUND:  rs = fl;
+				OP_MUL:     rs = pr[31:0];
+				OP_MULH, OP_MULHSU, OP_MULHU: rs = pr[63:32];
+				default: ;
+				endcase
 			end
-			assign res = r_pipe[LAT-1];
+			case (op)
+			OP_FCVTWS, OP_FCVTWUS, OP_FEQ, OP_FLT, OP_FLE, OP_FNE,
+			OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU: flt = 1'b0;
+			default: ;
+			endcase
 		end
+
+		assign res = (sat && flt) ? f_sat(rs) : rs;
+		wire unused_c0 = &{1'b0, carry_unused, pr[65:64], clk, rst_n};
+	end else begin : g_lat4
+		/*
+		 * Real 4-Stage Physical Pipeline:
+		 * Stage 1 (Cycle 1): Front-End Operands (Register 1)
+		 * Stage 2 (Cycle 2): Multiplier AREG/BREG (Register 2)
+		 * Stage 3 (Cycle 3): Multiplier MREG Cascade (Register 3)
+		 * Stage 4 (Cycle 4): Multiplier PREG Output arrives, Post-Addition, Normalization, Rounding (Register 4)
+		 */
+
+		/* --- Stage 1: Front-end operands (Register 1) --- */
+		wire [65:0] mo_s0 = mulops(op, a, b);
+
+		reg [31:0] s1_a, s1_b, s1_c;
+		reg [4:0]  s1_op;
+		reg [2:0]  s1_rm;
+		reg        s1_sat;
+		reg [65:0] s1_mo;
+
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				s1_a   <= 32'd0;
+				s1_b   <= 32'd0;
+				s1_c   <= 32'd0;
+				s1_op  <= 5'd0;
+				s1_rm  <= 3'd0;
+				s1_sat <= 1'b0;
+				s1_mo  <= 66'd0;
+			end else if (en) begin
+				s1_a   <= a;
+				s1_b   <= b;
+				s1_c   <= c;
+				s1_op  <= op;
+				s1_rm  <= rm;
+				s1_sat <= sat;
+				s1_mo  <= mo_s0;
+			end
+		end
+
+		/* 33x33 multiplier with LAT=3: exactly 3 internal DSP48E1 pipeline registers */
+		wire [65:0] pr_s4;
+		am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(3)) u_mul4 (
+			.clk(clk),
+			.en(en),
+			.a(s1_mo[32:0]),
+			.b(s1_mo[65:33]),
+			.p(pr_s4)
+		);
+
+		/* --- Stage 2: Pipeline match (Register 2) --- */
+		reg [31:0] s2_a, s2_b, s2_c;
+		reg [4:0]  s2_op;
+		reg [2:0]  s2_rm;
+		reg        s2_sat;
+
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				s2_a   <= 32'd0;
+				s2_b   <= 32'd0;
+				s2_c   <= 32'd0;
+				s2_op  <= 5'd0;
+				s2_rm  <= 3'd0;
+				s2_sat <= 1'b0;
+			end else if (en) begin
+				s2_a   <= s1_a;
+				s2_b   <= s1_b;
+				s2_c   <= s1_c;
+				s2_op  <= s1_op;
+				s2_rm  <= s1_rm;
+				s2_sat <= s1_sat;
+			end
+		end
+
+		/* --- Stage 3: Pipeline match (Register 3) --- */
+		reg [31:0] s3_a, s3_b, s3_c;
+		reg [4:0]  s3_op;
+		reg [2:0]  s3_rm;
+		reg        s3_sat;
+
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				s3_a   <= 32'd0;
+				s3_b   <= 32'd0;
+				s3_c   <= 32'd0;
+				s3_op  <= 5'd0;
+				s3_rm  <= 3'd0;
+				s3_sat <= 1'b0;
+			end else if (en) begin
+				s3_a   <= s2_a;
+				s3_b   <= s2_b;
+				s3_c   <= s2_c;
+				s3_op  <= s2_op;
+				s3_rm  <= s2_rm;
+				s3_sat <= s2_sat;
+			end
+		end
+
+		/* --- Stage 4: Multiplier PREG Output arrives in sync with Register 4 --- */
+		reg [31:0] s4_a, s4_b, s4_c;
+		reg [4:0]  s4_op;
+		reg [2:0]  s4_rm;
+		reg        s4_sat;
+
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				s4_a   <= 32'd0;
+				s4_b   <= 32'd0;
+				s4_c   <= 32'd0;
+				s4_op  <= 5'd0;
+				s4_rm  <= 3'd0;
+				s4_sat <= 1'b0;
+			end else if (en) begin
+				s4_a   <= s3_a;
+				s4_b   <= s3_b;
+				s4_c   <= s3_c;
+				s4_op  <= s3_op;
+				s4_rm  <= s3_rm;
+				s4_sat <= s3_sat;
+			end
+		end
+
+		wire [31:0] s4_xf = f_flush(s4_a);
+		wire [24:0] s4_n;
+		am_fp_rint #(.LAT(0)) u_rint4 (
+			.x(s4_xf),
+			.rm(s4_op == OP_FRACT ? 3'd2 : s4_rm),
+			.n(s4_n)
+		);
+
+		wire [31:0] s4_nega;
+		wire carry_unused4;
+		am_sub #(.W(32)) u_neg4 (
+			.a(32'd0),
+			.b(s4_a),
+			.bi(1'b0),
+			.d(s4_nega),
+			.bo(carry_unused4)
+		);
+
+		wire cvsw4 = (s4_op == OP_FCVTSW);
+		wire cvswu4 = (s4_op == OP_FCVTSWU);
+		wire [31:0] s4_iv;
+		am_fp_i2f #(.LAT(0)) u_i2f4 (
+			.s(cvsw4 ? s4_a[31] : cvswu4 ? 1'b0 : s4_xf[31]),
+			.n(cvsw4 ? (s4_a[31] ? s4_nega : s4_a) : cvswu4 ? s4_a : {7'd0, s4_n}),
+			.rm((cvsw4 || cvswu4) ? s4_rm : 3'd0),
+			.r(s4_iv)
+		);
+
+		wire [31:0] s4_fl = (s4_xf[30:23] == 8'hFF && s4_xf[22:0] != 23'd0) ? 32'h7FC00000 :
+			(s4_xf[30:23] >= 8'd150 || s4_xf[30:23] == 8'd0) ? s4_xf : s4_iv;
+
+		reg [31:0] s4_fx, s4_fy, s4_fz;
+		reg [2:0]  s4_rr;
+		reg        s4_noc;
+		always @(*) begin
+			s4_fx = s4_a;
+			s4_fy = 32'h3F800000;
+			s4_fz = s4_b;
+			s4_noc = 1'b0;
+			s4_rr = s4_rm;
+			case (s4_op)
+			OP_FADD:   ;
+			OP_FSUB:   s4_fz = {!s4_b[31], s4_b[30:0]};
+			OP_FMUL:   begin
+				s4_fy = s4_b;
+				s4_noc = 1'b1;
+			end
+			OP_FMADD:  begin
+				s4_fy = s4_b;
+				s4_fz = s4_c;
+			end
+			OP_FMSUB:  begin
+				s4_fy = s4_b;
+				s4_fz = {!s4_c[31], s4_c[30:0]};
+			end
+			OP_FNMSUB: begin
+				s4_fx = {!s4_a[31], s4_a[30:0]};
+				s4_fy = s4_b;
+				s4_fz = s4_c;
+			end
+			OP_FNMADD: begin
+				s4_fx = {!s4_a[31], s4_a[30:0]};
+				s4_fy = s4_b;
+				s4_fz = {!s4_c[31], s4_c[30:0]};
+			end
+			OP_FRACT:  begin
+				s4_fz = {!s4_fl[31], s4_fl[30:0]};
+				s4_rr = 3'd0;
+			end
+			default: ;
+			endcase
+		end
+
+		wire [31:0] s4_fr, s4_ri;
+		am_fp_fma_p #(.LAT(0)) u_fma4 (
+			.a0(s4_fx),
+			.b0(s4_fy),
+			.c0(s4_fz),
+			.rm(s4_rr),
+			.noc(s4_noc),
+			.p(pr_s4[47:0]),
+			.r(s4_fr)
+		);
+
+		am_fp_f2i #(.LAT(0)) u_f2i4 (
+			.x(s4_xf),
+			.n(s4_n),
+			.uns(s4_op == OP_FCVTWUS),
+			.r(s4_ri)
+		);
+
+		wire s4_fma = (s4_op <= OP_FNMADD) || (s4_op == OP_FRACT);
+		reg [31:0] s4_rs;
+		reg s4_flt;
+		always @(*) begin
+			s4_flt = 1'b1;
+			s4_rs = 32'd0;
+			if (s4_fma)
+				s4_rs = s4_fr;
+			else begin
+				case (s4_op)
+				OP_FSGNJ:   s4_rs = {s4_b[31], s4_a[30:0]};
+				OP_FMIN:    s4_rs = f_minmax(s4_a, s4_b, 1'b0);
+				OP_FMAX:    s4_rs = f_minmax(s4_a, s4_b, 1'b1);
+				OP_FCVTWS, OP_FCVTWUS: s4_rs = s4_ri;
+				OP_FCVTSW, OP_FCVTSWU: s4_rs = s4_iv;
+				OP_FEQ:     s4_rs = {32{f_cmp(s4_a, s4_b, 2'd0)}};
+				OP_FLT:     s4_rs = {32{f_cmp(s4_a, s4_b, 2'd1)}};
+				OP_FLE:     s4_rs = {32{f_cmp(s4_a, s4_b, 2'd2)}};
+				OP_FNE:     s4_rs = {32{f_cmp(s4_a, s4_b, 2'd3)}};
+				OP_FROUND:  s4_rs = s4_fl;
+				OP_MUL:     s4_rs = pr_s4[31:0];
+				OP_MULH, OP_MULHSU, OP_MULHU: s4_rs = pr_s4[63:32];
+				default: ;
+				endcase
+			end
+			case (s4_op)
+			OP_FCVTWS, OP_FCVTWUS, OP_FEQ, OP_FLT, OP_FLE, OP_FNE,
+			OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU: s4_flt = 1'b0;
+			default: ;
+			endcase
+		end
+
+		assign res = (s4_sat && s4_flt) ? f_sat(s4_rs) : s4_rs;
+		wire unused_c4 = &{1'b0, carry_unused4, pr_s4[65:64]};
+	end
 	endgenerate
 
-	wire unused_ok = &{1'b0, carry_unused, pr[65:64], rst_n};
 endmodule
 
 `default_nettype wire

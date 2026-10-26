@@ -253,7 +253,8 @@ localparam [8:0] GHCI_S_BLEND1 = 9'h084;	/* BLEND1-BLEND3 */
 localparam [8:0] GHCI_S_BLEND_CONST_R = 9'h087;	/* BLEND_CONST_R, _G, _B, _A (fp32) */
 localparam [8:0] GHCI_S_DEPTH_BOUNDS_MIN = 9'h08B;
 localparam [8:0] GHCI_S_DEPTH_BOUNDS_MAX = 9'h08C;
-localparam [8:0] GHCI_S_ROP_CTRL = 9'h08D;	/* [0] occlusion count, [1] fp32 blend constants */
+localparam [8:0] GHCI_S_ROP_CTRL = 9'h08D;	/* [0] occlusion count, [1] fp32 blend constants, [2] logic_op_en, [6:3] logic_op */
+localparam [8:0] GHCI_S_LOGIC_OP = 9'h08E;	/* [0] logic_op_en, [4:1] logic_op (VkLogicOp 0..15) */
 
 /* TU (0x090-0x18F, docs/ghci.md section 8.4): slot s's words at
  * GHCI_S_TU + 16 s + GHCI_TEX_*: the image words (BASE, SIZE, IMAGE,

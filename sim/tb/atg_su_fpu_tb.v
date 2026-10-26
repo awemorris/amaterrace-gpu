@@ -44,7 +44,7 @@ module atg_su_fpu_tb;
 	localparam UOP_W = 104;
 
 	atg_su_fpu #(.NPHYS(NPHYS), .SHORT_LAT(LAT)) dut (
-		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(2'd1), .x_grp(2'd2),
+		.clk(clk), .rst_n(rst_n), .en(1'b1), .x_valid(x_valid), .x_warp(2'd1), .x_grp(2'd2),
 		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(x_a), .x_b(x_b),
 		.x_c(x_c), .x_mask(x_mask), .x_info(32'd0), .x_ready(x_ready),
 		.s_valid(s_valid), .s_warp(s_warp), .s_grp(s_grp), .s_rd(s_rd), .s_data(s_data),
@@ -57,7 +57,7 @@ module atg_su_fpu_tb;
 	wire [DW-1:0] s_data_s;
 	wire [NPHYS-1:0] s_lanes_s;
 	atg_su_fpu #(.NPHYS(NPHYS), .SHORT_LAT(LAT), .PACKED(1), .PK_SHARED(1)) dut_s (
-		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(2'd1), .x_grp(2'd2),
+		.clk(clk), .rst_n(rst_n), .en(1'b1), .x_valid(x_valid), .x_warp(2'd1), .x_grp(2'd2),
 		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(x_a), .x_b(x_b),
 		.x_c(x_c), .x_mask(x_mask), .x_info(32'd0), .x_ready(x_ready_s),
 		.s_valid(s_valid_s), .s_warp(s_warp_s), .s_grp(s_grp_s), .s_rd(s_rd_s),
@@ -80,7 +80,7 @@ module atg_su_fpu_tb;
 	wire [DW4-1:0] s_data_4;
 	wire [3:0] s_lanes_4;
 	atg_su_fpu #(.NPHYS(4), .GRP_W(3), .SHORT_LAT(LAT)) dut_4 (
-		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(2'd1), .x_grp(3'd6),
+		.clk(clk), .rst_n(rst_n), .en(1'b1), .x_valid(x_valid), .x_warp(2'd1), .x_grp(3'd6),
 		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(x_a[DW4-1:0]),
 		.x_b(x_b[DW4-1:0]), .x_c(x_c[DW4-1:0]), .x_mask({x_mask[NPHYS +: 4], x_mask[3:0]}),
 		.x_info(32'd0), .x_ready(x_ready_4),

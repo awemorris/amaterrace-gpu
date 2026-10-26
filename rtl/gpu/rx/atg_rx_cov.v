@@ -35,7 +35,9 @@ module atg_rx_cov (
 	input wire [1:0] i_sc,
 	input wire i_samp,
 	output wire [143:0] o_eb,
-	output reg [143:0] o_lowm
+	output reg [143:0] o_lowm,
+	output wire [143:0] o_op,
+	output wire [143:0] o_oq
 );
 	reg signed [47:0] op [0:2];
 	reg signed [47:0] oq [0:2];
@@ -98,6 +100,8 @@ module atg_rx_cov (
 
 	wire signed [47:0] es_0 = es[0], es_1 = es[1], es_2 = es[2];
 	assign o_eb = i_samp ? {es_2, es_1, es_0} : i_ec;
+	assign o_op = {op[2], op[1], op[0]};
+	assign o_oq = {oq[2], oq[1], oq[0]};
 endmodule
 
 `default_nettype wire

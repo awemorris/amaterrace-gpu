@@ -72,7 +72,8 @@ module atg_cp #(
 	parameter [31:0] LOCAL_BYTES = 32'd0,
 	parameter [31:0] WINDOW_BYTES = 32'd0,
 	parameter [31:0] HOST_LIMIT = 32'd0,
-	parameter HAS_PROT = 0	/* session protection: the PROT capability is listed (atg_cp_prot) */
+	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
+	parameter SLIM_MMIO = 0	/* 1: GHCI 2.0 Slim 19 MMIO registers (0x00..0x48) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -223,8 +224,8 @@ module atg_cp #(
 		UNITS[6] && SUBGROUP != 0,
 		LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,
 		HAS_VSYNC != 0, CORE, UNITS[5], UNITS[6] ? 4'd5 : 4'd0, HAS_DISP != 0, UNITS[6], UNITS[1], 1'b1};
-	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4. */
-	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 24'h000001};
+	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4; CAPS2[7:0]: 3 queues. */
+	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 16'd0, 8'd3};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
 	/* PERF always; CPFW with the CPU; DISP2, DBG, MEM, PROT and FMT when present (bit id - 1). */
 	localparam [10:0] XCAP = 11'h004 | (HAS_CPU != 0 ? 11'h020 : 11'h000) |
@@ -276,7 +277,8 @@ module atg_cp #(
 		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS),
 		.NREGS(NREGS), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
-		.HOST_LIMIT(HOST_LIMIT)
+		.HOST_LIMIT(HOST_LIMIT),
+		.SLIM_MMIO(SLIM_MMIO)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
@@ -412,6 +414,8 @@ module atg_cp #(
 	/* The ring. */
 	wire s_n_valid, s_n_ready, s_n_last;
 	wire [31:0] s_n_data;
+	wire [1:0] s_queue_id;
+	wire s_preempt_ev;
 
 	atg_cp_ring #(
 		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
@@ -425,6 +429,7 @@ module atg_cp #(
 		.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag),
 		.v_done(v_done),
 		.empty(s_ring_empty), .retire(s_retire), .busy(s_ring_busy),
+		.queue_id(s_queue_id), .preempt_ev(s_preempt_ev),
 		.fault(s_ring_fault), .fault_kind(s_ring_fault_kind), .fault_addr(s_ring_fault_addr),
 		.fault_tag(s_ring_fault_tag),
 		.req_valid(s_i_req_valid[0]), .req_ready(s_i_req_ready[0]),
@@ -574,7 +579,7 @@ module atg_cp #(
 	end
 	endgenerate
 
-	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last};
+	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev};
 endmodule
 
 `default_nettype wire

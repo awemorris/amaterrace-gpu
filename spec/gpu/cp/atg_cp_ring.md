@@ -76,7 +76,13 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-- **Registers (snoop)**: RING_BASE 0x050, RING_SIZE 0x054 (log2 bytes 10..20), RING_WPTR 0x058 (doorbell), RING_RPTR 0x05C (read only). WPTR/RPTR are dword indices; RPTR resets to 0.
+- **Registers (snoop)**:
+  - Queue 0 (Graphics): RING0_BASE 0x050, RING0_SIZE 0x054, RING0_WPTR 0x058 (doorbell), RING0_RPTR 0x05C.
+  - Queue 1 (Compute): RING1_BASE 0x0B0, RING1_SIZE 0x0B4, RING1_WPTR 0x0B8 (doorbell), RING1_RPTR 0x0BC.
+  - Queue 2 (Copy/DMA): RING2_BASE 0x0E0, RING2_SIZE 0x0E4, RING2_WPTR 0x0E8 (doorbell), RING2_RPTR 0x0EC.
+  - Preemption & Semaphores: CP_PREEMPT 0x0F0, CP_PREEMPT_STATUS 0x0F4, CP_CTX_BASE 0x0F8, CP_SEMA 0x0FC.
+- **Fetch Arbiter**: Independent multi-queue arbiter with strict priority, round-robin, and balanced fairness modes.
+- **Hardware Preemption & Context Switch**: Saves interrupted queue state (`CTXS` record) to memory at `CP_CTX_BASE` via AMB write (`req_tag = 2`), switches execution to high-priority Graphics Queue 0, and restores context upon completion.
 - **Prefetch Line Buffer**: 8 lines (`buf_data[0:7]`, `buf_tag[0:7]`, `buf_valid[7:0]`) mapped by `want_line[2:0]`.
 - **Background Prefetch**: While streaming Class N packets in `R_N`, if the packet extends across a line boundary and the next line (`next_line = want_line + 1`) is not yet in the buffer, the background prefetch engine requests `next_line` with `req_tag = 1` concurrently. When the consumer reaches the boundary, the data is already present in the prefetch buffer, eliminating stalls.
 - **On-Demand Fallback**: If a line is not in the buffer (e.g. at packet start), the main FSM issues an on-demand request (`req_tag = 0`) via `R_REQ` / `R_RSP`.

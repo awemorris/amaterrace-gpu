@@ -201,7 +201,37 @@ module atg_tu #(
 	assign busy = tx_valid || ta_valid || tc_valid || tr_valid || desc_busy ||
 		!u_idle || !f_idle || order_out_valid || f_tr_valid;
 
-	wire unused_tu_ok = &{1'b0, f_fifo_count, order_count};
+	/* Anisotropic filtering engine (Phase 004 / ws002-p004) */
+	wire aniso_req_ready;
+	wire aniso_samp_valid;
+	wire [31:0] aniso_samp_u, aniso_samp_v;
+	wire [16:0] aniso_samp_weight;
+	wire aniso_res_valid;
+	wire [31:0] aniso_res_texel;
+
+	atg_tu_aniso #(.MAX_SAMPLES(16)) u_aniso (
+		.clk(clk),
+		.rst_n(rst_n),
+		.req_valid(1'b0),
+		.req_ready(aniso_req_ready),
+		.dudx(32'd0),
+		.dudy(32'd0),
+		.dvdx(32'd0),
+		.dvdy(32'd0),
+		.max_aniso(4'd0),	/* 4'd0 encodes 16x */
+		.samp_valid(aniso_samp_valid),
+		.samp_ready(1'b1),
+		.samp_u(aniso_samp_u),
+		.samp_v(aniso_samp_v),
+		.samp_weight(aniso_samp_weight),
+		.filt_valid(1'b0),
+		.filt_texel(32'd0),
+		.res_valid(aniso_res_valid),
+		.res_texel(aniso_res_texel)
+	);
+
+	wire unused_tu_ok = &{1'b0, f_fifo_count, order_count, aniso_req_ready, aniso_samp_valid,
+		aniso_samp_u, aniso_samp_v, aniso_samp_weight, aniso_res_valid, aniso_res_texel};
 endmodule
 
 `default_nettype wire

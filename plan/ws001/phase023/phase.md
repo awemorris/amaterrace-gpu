@@ -3,7 +3,7 @@
 # Phase 023: MSAA 4x 並列カバレッジ & Coarse Tile Rasterizer
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `cleared`
 - **依存**: [ws001-p022](../phase022/phase.md)
 - **優先度**: Critical (外側空クアッド走査のスキップ & MSAA 4 サイクル直列化の撤廃)
 - **出典**: ユーザー諮問（RX パイプライン化）および R1 敵対的アーキテクチャ分析レポート

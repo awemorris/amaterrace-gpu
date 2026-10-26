@@ -36,4 +36,9 @@ GPU 全体で共有する Last Level Cache (LLC: 128 KiB〜256 KiB、16-way set-
 - `python3 tools/arith-lint.py`: 0 operators outside `rtl/library/arith/`（完全遵守）。
 - `sim/run.sh atg_mc_l2`: PASS（8 テストグループ全 PASS、16-way PLRU エビクション、バイパス、フラッシュ）。
 - `sim/run.sh atg_mc`: PASS（53 s、Case A〜F 全 PASS、シミュレーションサイクル 7.16 億 ps → 2.56 億 ps へ 1/3 に短縮）。
-- コミット: `f78b016`
+- コミット: `f78b016` (初期), `28c81ba` (是正)
+- R1 レビュー: **APPROVE** (2026-10-27, `adversarial_review_ws001_p003_remediation.md`)
+  - `HAS_L2 = 0` デフォルト化による後方互換性担保。
+  - `flush` による全 256 セットダーティライン書き戻し・フラッシュ（`S_FLUSH_STEP`）動作確認。
+  - `sim/run.sh atg_mc_l2` PASS (1 s), `sim/run.sh atg_mc` PASS (56 s), `sim/run.sh atg_top` PASS (23 s), `sim/verilator/run.sh basic` PASS (1,131 cycles)。
+- 完了確定: 2026-10-27 (Phase 003 是正完了承認)

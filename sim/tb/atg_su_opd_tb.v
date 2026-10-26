@@ -85,7 +85,17 @@ module atg_su_opd_chk #(
 		.q_killed(killed[q_warp]), .rq_pop(rq_pop), .rq_data({DW{1'b0}}),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
-		.x_info(x_info), .unit_ready(unit_ready)
+		.x_info(x_info), .unit_ready(unit_ready),
+		.fwd_alu_ex4_valid(1'b0), .fwd_alu_ex4_warp(2'd0), .fwd_alu_ex4_grp({GRP_W{1'b0}}),
+		.fwd_alu_ex4_rd(7'd0), .fwd_alu_ex4_data({DW{1'b0}}), .fwd_alu_ex4_lanes({NPHYS{1'b0}}),
+		.fwd_alu_ex5_valid(1'b0), .fwd_alu_ex5_warp(2'd0), .fwd_alu_ex5_grp({GRP_W{1'b0}}),
+		.fwd_alu_ex5_rd(7'd0), .fwd_alu_ex5_data({DW{1'b0}}), .fwd_alu_ex5_lanes({NPHYS{1'b0}}),
+		.fwd_fpu_ex4_valid(1'b0), .fwd_fpu_ex4_warp(2'd0), .fwd_fpu_ex4_grp({GRP_W{1'b0}}),
+		.fwd_fpu_ex4_rd(7'd0), .fwd_fpu_ex4_data({DW{1'b0}}), .fwd_fpu_ex4_lanes({NPHYS{1'b0}}),
+		.fwd_fpu_ex5_valid(1'b0), .fwd_fpu_ex5_warp(2'd0), .fwd_fpu_ex5_grp({GRP_W{1'b0}}),
+		.fwd_fpu_ex5_rd(7'd0), .fwd_fpu_ex5_data({DW{1'b0}}), .fwd_fpu_ex5_lanes({NPHYS{1'b0}}),
+		.fwd_wb_valid(1'b0), .fwd_wb_warp(2'd0), .fwd_wb_grp({GRP_W{1'b0}}),
+		.fwd_wb_rd(7'd0), .fwd_wb_data({DW{1'b0}}), .fwd_wb_lanes({NPHYS{1'b0}})
 	);
 
 	integer l;

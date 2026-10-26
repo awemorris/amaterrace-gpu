@@ -76,7 +76,43 @@ module atg_su_opd #(
 	output wire [NPHYS*32-1:0] x_c,
 	output wire [2*NPHYS-1:0] x_mask,
 	output wire [31:0] x_info,
-	input wire [15:0] unit_ready
+	input wire [15:0] unit_ready,
+
+	/* Forwarding buses (from ALU, FPU execution pipelines and WB) */
+	input wire fwd_alu_ex4_valid,
+	input wire [WARP_W-1:0] fwd_alu_ex4_warp,
+	input wire [GRP_W-1:0] fwd_alu_ex4_grp,
+	input wire [6:0] fwd_alu_ex4_rd,
+	input wire [NPHYS*32-1:0] fwd_alu_ex4_data,
+	input wire [NPHYS-1:0] fwd_alu_ex4_lanes,
+
+	input wire fwd_alu_ex5_valid,
+	input wire [WARP_W-1:0] fwd_alu_ex5_warp,
+	input wire [GRP_W-1:0] fwd_alu_ex5_grp,
+	input wire [6:0] fwd_alu_ex5_rd,
+	input wire [NPHYS*32-1:0] fwd_alu_ex5_data,
+	input wire [NPHYS-1:0] fwd_alu_ex5_lanes,
+
+	input wire fwd_fpu_ex4_valid,
+	input wire [WARP_W-1:0] fwd_fpu_ex4_warp,
+	input wire [GRP_W-1:0] fwd_fpu_ex4_grp,
+	input wire [6:0] fwd_fpu_ex4_rd,
+	input wire [NPHYS*32-1:0] fwd_fpu_ex4_data,
+	input wire [NPHYS-1:0] fwd_fpu_ex4_lanes,
+
+	input wire fwd_fpu_ex5_valid,
+	input wire [WARP_W-1:0] fwd_fpu_ex5_warp,
+	input wire [GRP_W-1:0] fwd_fpu_ex5_grp,
+	input wire [6:0] fwd_fpu_ex5_rd,
+	input wire [NPHYS*32-1:0] fwd_fpu_ex5_data,
+	input wire [NPHYS-1:0] fwd_fpu_ex5_lanes,
+
+	input wire fwd_wb_valid,
+	input wire [WARP_W-1:0] fwd_wb_warp,
+	input wire [GRP_W-1:0] fwd_wb_grp,
+	input wire [6:0] fwd_wb_rd,
+	input wire [NPHYS*32-1:0] fwd_wb_data,
+	input wire [NPHYS-1:0] fwd_wb_lanes
 );
 `include "atg_su_uop.vh"
 
@@ -310,6 +346,32 @@ module atg_su_opd #(
 
 	wire [DW-1:0] va, vb, vc;
 
+	/* Register to catch RF write-read collision (1-cycle delay from fwd_wb) */
+	reg fwd_rf_valid;
+	reg [WARP_W-1:0] fwd_rf_warp;
+	reg [GRP_W-1:0]  fwd_rf_grp;
+	reg [6:0]        fwd_rf_rd;
+	reg [DW-1:0]     fwd_rf_data;
+	reg [NPHYS-1:0]  fwd_rf_lanes;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			fwd_rf_valid <= 1'b0;
+			fwd_rf_warp  <= {WARP_W{1'b0}};
+			fwd_rf_grp   <= {GRP_W{1'b0}};
+			fwd_rf_rd    <= 7'd0;
+			fwd_rf_data  <= {DW{1'b0}};
+			fwd_rf_lanes <= {NPHYS{1'b0}};
+		end else begin
+			fwd_rf_valid <= fwd_wb_valid;
+			fwd_rf_warp  <= fwd_wb_warp;
+			fwd_rf_grp   <= fwd_wb_grp;
+			fwd_rf_rd    <= fwd_wb_rd;
+			fwd_rf_data  <= fwd_wb_data;
+			fwd_rf_lanes <= fwd_wb_lanes;
+		end
+	end
+
 	/* The common part and the kind of each operand, once per instruction. */
 	wire [31:0] com1 = opc(b_n1, cr_data[31:0], b_warp, q_info, q_exec);
 	wire [31:0] com2 = opc(b_n2, cr_data[63:32], b_warp, q_info, q_exec);
@@ -317,6 +379,28 @@ module atg_su_opd #(
 	wire [2:0] k1 = opk(b_n1);
 	wire [2:0] k2 = opk(b_n2);
 	wire [2:0] k3 = opk(b_n3);
+
+	/* Operand forwarding comparison for GPRs */
+	wire hit_alu_ex4_1 = fwd_alu_ex4_valid && (k1 == 3'd1) && (fwd_alu_ex4_rd < 7'd63) && (fwd_alu_ex4_warp == b_warp) && (fwd_alu_ex4_grp == b_grp) && (fwd_alu_ex4_rd[5:0] == b_n1[5:0]);
+	wire hit_fpu_ex4_1 = fwd_fpu_ex4_valid && (k1 == 3'd1) && (fwd_fpu_ex4_rd < 7'd63) && (fwd_fpu_ex4_warp == b_warp) && (fwd_fpu_ex4_grp == b_grp) && (fwd_fpu_ex4_rd[5:0] == b_n1[5:0]);
+	wire hit_alu_ex5_1 = fwd_alu_ex5_valid && (k1 == 3'd1) && (fwd_alu_ex5_rd < 7'd63) && (fwd_alu_ex5_warp == b_warp) && (fwd_alu_ex5_grp == b_grp) && (fwd_alu_ex5_rd[5:0] == b_n1[5:0]);
+	wire hit_fpu_ex5_1 = fwd_fpu_ex5_valid && (k1 == 3'd1) && (fwd_fpu_ex5_rd < 7'd63) && (fwd_fpu_ex5_warp == b_warp) && (fwd_fpu_ex5_grp == b_grp) && (fwd_fpu_ex5_rd[5:0] == b_n1[5:0]);
+	wire hit_wb_1      = fwd_wb_valid      && (k1 == 3'd1) && (fwd_wb_rd < 7'd63)      && (fwd_wb_warp      == b_warp) && (fwd_wb_grp      == b_grp) && (fwd_wb_rd[5:0]      == b_n1[5:0]);
+	wire hit_rf_1      = fwd_rf_valid      && (k1 == 3'd1) && (fwd_rf_rd < 7'd63)      && (fwd_rf_warp      == b_warp) && (fwd_rf_grp      == b_grp) && (fwd_rf_rd[5:0]      == b_n1[5:0]);
+
+	wire hit_alu_ex4_2 = fwd_alu_ex4_valid && (k2 == 3'd1) && (fwd_alu_ex4_rd < 7'd63) && (fwd_alu_ex4_warp == b_warp) && (fwd_alu_ex4_grp == b_grp) && (fwd_alu_ex4_rd[5:0] == b_n2[5:0]);
+	wire hit_fpu_ex4_2 = fwd_fpu_ex4_valid && (k2 == 3'd1) && (fwd_fpu_ex4_rd < 7'd63) && (fwd_fpu_ex4_warp == b_warp) && (fwd_fpu_ex4_grp == b_grp) && (fwd_fpu_ex4_rd[5:0] == b_n2[5:0]);
+	wire hit_alu_ex5_2 = fwd_alu_ex5_valid && (k2 == 3'd1) && (fwd_alu_ex5_rd < 7'd63) && (fwd_alu_ex5_warp == b_warp) && (fwd_alu_ex5_grp == b_grp) && (fwd_alu_ex5_rd[5:0] == b_n2[5:0]);
+	wire hit_fpu_ex5_2 = fwd_fpu_ex5_valid && (k2 == 3'd1) && (fwd_fpu_ex5_rd < 7'd63) && (fwd_fpu_ex5_warp == b_warp) && (fwd_fpu_ex5_grp == b_grp) && (fwd_fpu_ex5_rd[5:0] == b_n2[5:0]);
+	wire hit_wb_2      = fwd_wb_valid      && (k2 == 3'd1) && (fwd_wb_rd < 7'd63)      && (fwd_wb_warp      == b_warp) && (fwd_wb_grp      == b_grp) && (fwd_wb_rd[5:0]      == b_n2[5:0]);
+	wire hit_rf_2      = fwd_rf_valid      && (k2 == 3'd1) && (fwd_rf_rd < 7'd63)      && (fwd_rf_warp      == b_warp) && (fwd_rf_grp      == b_grp) && (fwd_rf_rd[5:0]      == b_n2[5:0]);
+
+	wire hit_alu_ex4_3 = fwd_alu_ex4_valid && (k3 == 3'd1) && (fwd_alu_ex4_rd < 7'd63) && (fwd_alu_ex4_warp == b_warp) && (fwd_alu_ex4_grp == b_grp) && (fwd_alu_ex4_rd[5:0] == b_n3[5:0]);
+	wire hit_fpu_ex4_3 = fwd_fpu_ex4_valid && (k3 == 3'd1) && (fwd_fpu_ex4_rd < 7'd63) && (fwd_fpu_ex4_warp == b_warp) && (fwd_fpu_ex4_grp == b_grp) && (fwd_fpu_ex4_rd[5:0] == b_n3[5:0]);
+	wire hit_alu_ex5_3 = fwd_alu_ex5_valid && (k3 == 3'd1) && (fwd_alu_ex5_rd < 7'd63) && (fwd_alu_ex5_warp == b_warp) && (fwd_alu_ex5_grp == b_grp) && (fwd_alu_ex5_rd[5:0] == b_n3[5:0]);
+	wire hit_fpu_ex5_3 = fwd_fpu_ex5_valid && (k3 == 3'd1) && (fwd_fpu_ex5_rd < 7'd63) && (fwd_fpu_ex5_warp == b_warp) && (fwd_fpu_ex5_grp == b_grp) && (fwd_fpu_ex5_rd[5:0] == b_n3[5:0]);
+	wire hit_wb_3      = fwd_wb_valid      && (k3 == 3'd1) && (fwd_wb_rd < 7'd63)      && (fwd_wb_warp      == b_warp) && (fwd_wb_grp      == b_grp) && (fwd_wb_rd[5:0]      == b_n3[5:0]);
+	wire hit_rf_3      = fwd_rf_valid      && (k3 == 3'd1) && (fwd_rf_rd < 7'd63)      && (fwd_rf_warp      == b_warp) && (fwd_rf_grp      == b_grp) && (fwd_rf_rd[5:0]      == b_n3[5:0]);
 
 	/*
 	 * Per lane: its number in the warp (the group's base and l: disjoint
@@ -333,11 +417,34 @@ module atg_su_opd #(
 			am_add #(.W(32)) u_cl1 (.a(com1), .b({27'd0, ln}), .ci(1'b0), .s(cl1), .co(c1_co_unused));
 			am_add #(.W(32)) u_cl2 (.a(com2), .b({27'd0, ln}), .ci(1'b0), .s(cl2), .co(c2_co_unused));
 			am_add #(.W(32)) u_cl3 (.a(com3), .b({27'd0, ln}), .ci(1'b0), .s(cl3), .co(c3_co_unused));
-			assign va[l*32 +: 32] = fmod(opl(k1, com1, r_data[l*32 +: 32], rq_data[l*32 +: 32],
+
+			wire [31:0] gpr1 = (hit_alu_ex4_1 && fwd_alu_ex4_lanes[l]) ? fwd_alu_ex4_data[l*32 +: 32] :
+			                   (hit_fpu_ex4_1 && fwd_fpu_ex4_lanes[l]) ? fwd_fpu_ex4_data[l*32 +: 32] :
+			                   (hit_alu_ex5_1 && fwd_alu_ex5_lanes[l]) ? fwd_alu_ex5_data[l*32 +: 32] :
+			                   (hit_fpu_ex5_1 && fwd_fpu_ex5_lanes[l]) ? fwd_fpu_ex5_data[l*32 +: 32] :
+			                   (hit_wb_1      && fwd_wb_lanes[l])      ? fwd_wb_data[l*32 +: 32]      :
+			                   (hit_rf_1      && fwd_rf_lanes[l])      ? fwd_rf_data[l*32 +: 32]      :
+			                   r_data[l*32 +: 32];
+			wire [31:0] gpr2 = (hit_alu_ex4_2 && fwd_alu_ex4_lanes[l]) ? fwd_alu_ex4_data[l*32 +: 32] :
+			                   (hit_fpu_ex4_2 && fwd_fpu_ex4_lanes[l]) ? fwd_fpu_ex4_data[l*32 +: 32] :
+			                   (hit_alu_ex5_2 && fwd_alu_ex5_lanes[l]) ? fwd_alu_ex5_data[l*32 +: 32] :
+			                   (hit_fpu_ex5_2 && fwd_fpu_ex5_lanes[l]) ? fwd_fpu_ex5_data[l*32 +: 32] :
+			                   (hit_wb_2      && fwd_wb_lanes[l])      ? fwd_wb_data[l*32 +: 32]      :
+			                   (hit_rf_2      && fwd_rf_lanes[l])      ? fwd_rf_data[l*32 +: 32]      :
+			                   r_data[DW + l*32 +: 32];
+			wire [31:0] gpr3 = (hit_alu_ex4_3 && fwd_alu_ex4_lanes[l]) ? fwd_alu_ex4_data[l*32 +: 32] :
+			                   (hit_fpu_ex4_3 && fwd_fpu_ex4_lanes[l]) ? fwd_fpu_ex4_data[l*32 +: 32] :
+			                   (hit_alu_ex5_3 && fwd_alu_ex5_lanes[l]) ? fwd_alu_ex5_data[l*32 +: 32] :
+			                   (hit_fpu_ex5_3 && fwd_fpu_ex5_lanes[l]) ? fwd_fpu_ex5_data[l*32 +: 32] :
+			                   (hit_wb_3      && fwd_wb_lanes[l])      ? fwd_wb_data[l*32 +: 32]      :
+			                   (hit_rf_3      && fwd_rf_lanes[l])      ? fwd_rf_data[l*32 +: 32]      :
+			                   r_data[2*DW + l*32 +: 32];
+
+			assign va[l*32 +: 32] = fmod(opl(k1, com1, gpr1, rq_data[l*32 +: 32],
 				ln, kill_g[l], cl1), mods[0], mods[1], fp_unit, pk_unit);
-			assign vb[l*32 +: 32] = fmod(opl(k2, com2, r_data[DW + l*32 +: 32], rq_data[l*32 +: 32],
+			assign vb[l*32 +: 32] = fmod(opl(k2, com2, gpr2, rq_data[l*32 +: 32],
 				ln, kill_g[l], cl2), mods[2], mods[3], fp_unit, pk_unit);
-			assign vc[l*32 +: 32] = fmod(opl(k3, com3, r_data[2*DW + l*32 +: 32], rq_data[l*32 +: 32],
+			assign vc[l*32 +: 32] = fmod(opl(k3, com3, gpr3, rq_data[l*32 +: 32],
 				ln, kill_g[l], cl3), mods[4], mods[5], fp_unit, pk_unit);
 		end
 	endgenerate

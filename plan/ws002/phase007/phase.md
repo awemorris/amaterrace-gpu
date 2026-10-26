@@ -3,7 +3,7 @@
 # Phase 007: RX 拡張プリミティブ（Wide Lines, Point Sprites, Multi-Viewport）
 
 - **親**: [WS002](../ws.md)
-- **状態**: `planned`
+- **状態**: `in-progress`
 - **依存**: [ws001-p025](../../ws001/phase025/phase.md)
 - **優先度**: Minor (Vulkan 1.0 適合性・後回し実装)
 - **出典**: ユーザー指示（Vulkan 1.0 適合の後回し WS 切り出し）および R1 アドバイス書

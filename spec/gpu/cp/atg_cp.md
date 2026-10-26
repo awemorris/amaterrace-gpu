@@ -41,9 +41,56 @@ The CPU (`atg_cpu`) is outside, in `atg_top`, connected through the `hcr_*`, `v_
 | `HAS_ETC` | 0 | FMT reports the ETC2/EAC formats; `atg_top` passes HAS_TU | 0, 1 |
 
 Derived: CAPS = {0, CORE1 && graphics && TU && SU (CAPS[30]), MS4 && graphics && TU && SU (CAPS[29]), PACKED && SU, VF && RX && ROP (graphics, CAPS[27]), TU (CAPS[26]), 0, SUBGROUP && SU (CAPS[24]), LS, 0, HAS_CPU, HAS_CPU, 0, state version 1, 4x4 tiles 1, HAS_VSYNC, CAPS[30] (stencil, CAPS[9]), TU (bilinear, WS288 p009),
-SU ? 5 : 0, HAS_DISP, UNITS[6], UNITS[1], 1} (CP, BLT and MC alone: 0x00501803); CAPS2 = 1 (one ring) | (TU ? 4 : 0) << 24 (16 texture slots, WS288 p009); ISA_ID =
+SU ? 5 : 0, HAS_DISP, UNITS[6], UNITS[1], 1} (CP, BLT and MC alone: 0x00501803); CAPS2 = 3 (3 rings: Graphics, Compute, Copy/DMA, Phase 005) | (TU ? 4 : 0) << 24 (16 texture slots, WS288 p009); ISA_ID =
 NATIVE_ISA_ID = "GSI1" with an SU, else 0; EXTCAP list: PERF (+ CPFW with the CPU, + DISP2 pointing at 0x200 with HAS_DISP, + DBG with HAS_DBG); PERF0 = BLT busy,
 PERF1 = memory busy (PERF_SRC 1, 8, 0xFF, 0xFF).
+
+### Multi-Queue & Preemption Architecture (Phase 005)
+
+- **3 Independent Hardware Queues**:
+  - Queue 0: Graphics (UI / 3D Rendering)
+  - Queue 1: Compute (Asynchronous Compute)
+  - Queue 2: Copy/DMA (Background DMA transfers)
+  Each queue has dedicated MMIO registers: `RING[i]_BASE`, `RING[i]_SIZE`, `RING[i]_WPTR` (Doorbell), `RING[i]_RPTR`.
+- **Independent Fetch Arbiter**:
+  Round-robin with priority control across active queues. Allows simultaneous submission from multiple threads without host locks.
+- **Hardware Preemption & Context Switch (`CP_PREEMPT`)**:
+  Low-latency preemption for OS compositor and high-priority graphics commands. At draw call or warp completion boundaries, the running queue (e.g. Compute) is interrupted, its context state is saved to memory at `CP_CTX_BASE` via AMB DMA, and high-priority Queue 0 is executed. Upon completion, context is restored and the interrupted workload resumes seamlessly.
+- **Inter-Queue Synchronization (`CP_SEMA`)**:
+  Lightweight hardware semaphores allowing cross-queue dependencies without stalling other independent queues.
+
+### Fine-Grained Synchronization & Vulkan 1.0 Core Features (Phase 006)
+
+- **Fine-Grained Pipeline Barrier (`BARRIER`, Opcode 20)**:
+  Decodes `srcStageMask` and `dstStageMask` to selectively gate only dependent pipeline stages (VF, SU, RX, TU, ROP) without stalling unrelated engines.
+- **64-bit Timeline Semaphores (`SEMAPHORE_SIGNAL` 21, `SEMAPHORE_WAIT` 22)**:
+  Monotonically increasing timeline semaphores supporting asynchronous many-to-many synchronization.
+- **Vulkan 1.0 Graphics Enhancements**:
+  - **VF**: MultiDrawIndirect (MDI) indirect draw batching.
+  - **ROP**: Dual-Source Blending (`SRC1_COLOR`, `SRC1_ALPHA`) and all 16 Boolean LogicOps (`ROP_CTRL` [2], [6:3]).
+  - **TU**: Anisotropic texture filtering (up to 16x) via multi-pass accumulation.
+
+### GHCI 2.0 Slim MMIO & Structured Command Architecture (Phase 007)
+
+- **Slim Host MMIO Architecture (19 Registers / 76 Bytes)**:
+  - Eliminates all 512+ fixed-function `STATE` registers (0x1000..0x1BFC) from host MMIO.
+  - Total host BAR0 footprint fits within a single 4KB page (0x000..0x048):
+    - Identification: `MAGIC` (0x000, "GHCI"), `VERSION` (0x004, 0x00020000), `DEVICE_CAPS` (0x008), `EXTCAP_PTR` (0x00C).
+    - Control & Status: `CTRL` (0x010), `STATUS` (0x014), `IRQ_STATUS` (0x018), `IRQ_ENABLE` (0x01C).
+    - Command Ring: `RING_BASE_LO` (0x020), `RING_BASE_HI` (0x024), `RING_SIZE` (0x028), `RING_RPTR` (0x02C), `RING_WPTR` (0x030 / Doorbell).
+    - Diagnostics & Fault: `FAULT_INFO` (0x034), `FAULT_ADDR_LO` (0x038), `FAULT_ADDR_HI` (0x03C), `DIAG_CP_PC` (0x040), `DIAG_CP_STATUS` (0x044), `SCRATCH` (0x048).
+  - Configurable via parameter `SLIM_MMIO` (1: strict 19-register slim MMIO mode; 0: legacy compatibility).
+
+- **Structured Command Packets**:
+  - Replaces legacy repetitive `SET_REG` packets with high-level command packets:
+    - `CMD_BIND_PIPELINE` (0x20): In-memory immutable PSO DMA fetch & pipeline state dispatch.
+    - `CMD_BIND_VERTEX_BUFFERS` (0x21), `CMD_BIND_INDEX_BUFFER` (0x22), `CMD_BIND_DESCRIPTOR_TABLE` (0x23).
+    - `CMD_SET_VIEWPORT` (0x24), `CMD_SET_SCISSOR` (0x25), `CMD_SET_DYNAMIC_STATE` (0x26).
+    - `CMD_DRAW` (0x27), `CMD_DRAW_INDEXED` (0x28), `CMD_DRAW_INDIRECT` (0x29).
+    - `CMD_DISPATCH` (0x30), `CMD_BARRIER` (0x31).
+    - `CMD_EXECUTE_COMMANDS` (0x32): UMA zero-copy secondary command buffer direct fetch and execution.
+    - `CMD_FENCE` (0x33): 64-bit sequence fence writeback and optional host IRQ.
+
 
 ## 3. Ports
 

@@ -390,9 +390,9 @@ module atg_mc_l2 #(
 						req_nc    <= s_req_nc;
 						req_high  <= s_req_high;
 						state     <= S_LOOKUP;
-					end else if (ctrl_inv_valid) begin
-						inv_clean_r <= ctrl_inv_clean;
-						inv_range_r <= ctrl_inv_range;
+					end else if (ctrl_inv_valid || flush) begin
+						inv_clean_r <= ctrl_inv_valid ? ctrl_inv_clean : 1'b1;
+						inv_range_r <= ctrl_inv_valid ? ctrl_inv_range : 1'b0;
 						inv_base_r  <= ctrl_inv_base;
 						inv_limit_r <= ctrl_inv_limit;
 						flush_set   <= {SET_W{1'b0}};
@@ -615,7 +615,7 @@ module atg_mc_l2 #(
 		end
 	end
 
-	wire unused_co = &{1'b0, flush_set_co, quiesce, req_high, flush};
+	wire unused_co = &{1'b0, flush_set_co, quiesce, req_high};
 endmodule
 
 `default_nettype wire

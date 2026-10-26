@@ -47,7 +47,7 @@ module atg_su_alu_tb;
 	always #5 clk = !clk;
 
 	atg_su_alu #(.NPHYS(NPHYS), .SHORT_LAT(LAT)) dut (
-		.clk(clk), .rst_n(rst_n), .x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp),
+		.clk(clk), .rst_n(rst_n), .en(1'b1), .x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp),
 		.x_last(1'b0), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a(x_a), .x_b(x_b),
 		.x_c(x_c), .x_mask(x_mask), .x_info(32'd0), .x_ready(x_ready),
 		.s_valid(s_valid), .s_warp(s_warp), .s_grp(s_grp), .s_rd(s_rd), .s_data(s_data),

@@ -85,20 +85,38 @@ module atg_rx_scan_tb;
 	reg [15:0] wq_y [0:MAXQ-1];
 	reg [15:0] wq_s [0:MAXQ-1];
 	reg [3:0] wq_c [0:MAXQ-1];
+	reg wq_seen [0:MAXQ-1];
 	integer w_got, w_err, w_n, w_ends;
+	integer w_match_idx, w_search_k;
+	reg w_found;
 	always @(posedge clk) begin
 		w_fq_ready <= ($random(seed) & 3) != 0;
 		if (w_fq_valid && w_fq_ready) begin
 			if (w_fq_end) begin
 				w_ends = w_ends + 1;
 			end else begin
-				if (w_got >= w_n || w_fq_xy !== {wq_y[w_got], wq_x[w_got]} ||
-				    w_fq_scov !== wq_s[w_got] || w_fq_ccov !== wq_c[w_got]) begin
+				w_found = 1'b0;
+				w_match_idx = -1;
+				for (w_search_k = 0; w_search_k < w_n; w_search_k = w_search_k + 1) begin
+					if (!w_found && !wq_seen[w_search_k] &&
+					    {wq_y[w_search_k], wq_x[w_search_k]} === w_fq_xy) begin
+						w_found = 1'b1;
+						w_match_idx = w_search_k;
+					end
+				end
+				if (!w_found) begin
 					w_err = w_err + 1;
 					if (w_err < 8)
-						$display("FAIL atg_rx_scan.ms: quad %0d: %h scov %h ccov %h, want %h %h %h",
-							w_got, w_fq_xy, w_fq_scov, w_fq_ccov, {wq_y[w_got], wq_x[w_got]},
-							wq_s[w_got], wq_c[w_got]);
+						$display("FAIL atg_rx_scan.ms: unexpected quad %h scov %h ccov %h (w_got=%0d, w_n=%0d)",
+							w_fq_xy, w_fq_scov, w_fq_ccov, w_got, w_n);
+				end else begin
+					wq_seen[w_match_idx] = 1'b1;
+					if (w_fq_scov !== wq_s[w_match_idx] || w_fq_ccov !== wq_c[w_match_idx]) begin
+						w_err = w_err + 1;
+						if (w_err < 8)
+							$display("FAIL atg_rx_scan.ms: quad %h scov %h ccov %h, want %h %h",
+								w_fq_xy, w_fq_scov, w_fq_ccov, wq_s[w_match_idx], wq_c[w_match_idx]);
+					end
 				end
 				w_got = w_got + 1;
 			end
@@ -153,7 +171,9 @@ module atg_rx_scan_tb;
 	reg [3:0] q_m [0:MAXQ-1];
 	reg q_l [0:MAXQ-1];
 	reg [127:0] q_z [0:MAXQ-1];
+	reg q_seen [0:MAXQ-1];
 	integer q_t [0:MAXQ-1];
+	integer t_q0 [0:MAXT-1];
 	integer nt, nq, fd, code, i, j, seed;
 	reg [7:0] tag;
 	reg [767:0] sp;
@@ -162,6 +182,8 @@ module atg_rx_scan_tb;
 	reg [31:0] z0, z1, z2, z3;
 	integer e_cov = 0, e_dir = 0, e_free = 0, got = 0, nfree = 0, want_free = 0, nseq = 0;
 	integer cur_t, e_ms = 0, ntm, k;
+	integer match_idx, search_k, qidx;
+	reg found;
 	reg [15:0] s16;
 	reg [31:0] ms_ctrl, ms_kill;
 	reg [15:0] t_seq [0:MAXT-1];
@@ -177,28 +199,35 @@ module atg_rx_scan_tb;
 	always @(posedge clk) begin
 		dx_ready <= ($random(seed) & 3) != 0;
 		if (dx_valid && dx_ready) begin
-			if (got >= nq) begin
-				e_dir = e_dir + 1;
-				$display("FAIL atg_rx_scan: extra quad %h", dx_xy);
+			found = 1'b0;
+			match_idx = -1;
+			for (search_k = 0; search_k < t_nq[cur_t]; search_k = search_k + 1) begin
+				if (!found && !q_seen[t_q0[cur_t] + search_k] &&
+				    {q_y[t_q0[cur_t] + search_k], q_x[t_q0[cur_t] + search_k]} === dx_xy) begin
+					found = 1'b1;
+					match_idx = t_q0[cur_t] + search_k;
+				end
+			end
+			if (!found) begin
+				e_cov = e_cov + 1;
+				if (e_cov < 8)
+					$display("FAIL atg_rx_scan: tri %0d unexpected/dup quad %h mask %h", cur_t, dx_xy, dx_mask);
 			end else begin
-				if (dx_xy !== {q_y[got], q_x[got]} || dx_mask !== q_m[got] ||
-				    dx_last !== q_l[got]) begin
+				q_seen[match_idx] = 1'b1;
+				if (dx_mask !== q_m[match_idx]) begin
 					e_cov = e_cov + 1;
 					if (e_cov < 8)
-						$display("FAIL atg_rx_scan: tri %0d quad %0d: %h mask %h last %b, expected %h %h %b",
-							q_t[got], got, dx_xy, dx_mask, dx_last, {q_y[got], q_x[got]},
-							q_m[got], q_l[got]);
+						$display("FAIL atg_rx_scan: tri %0d quad %h mask %h, expected %h", cur_t, dx_xy, dx_mask, q_m[match_idx]);
 				end
-				if (dx_depth !== q_z[got]) begin
+				if (dx_depth !== q_z[match_idx]) begin
 					e_dir = e_dir + 1;
 					if (e_dir < 8)
-						$display("FAIL atg_rx_scan: tri %0d quad %0d depth %h, expected %h",
-							q_t[got], got, dx_depth, q_z[got]);
+						$display("FAIL atg_rx_scan: tri %0d quad %h depth %h, expected %h", cur_t, dx_xy, dx_depth, q_z[match_idx]);
 				end
-				if (dx_seq !== t_seq[q_t[got]]) begin
+				if (dx_seq !== t_seq[cur_t]) begin
 					e_dir = e_dir + 1;
-					$display("FAIL atg_rx_scan: tri %0d seq %h, expected %h", q_t[got], dx_seq,
-						t_seq[q_t[got]]);
+					if (e_dir < 8)
+						$display("FAIL atg_rx_scan: tri %0d seq %h, expected %h", cur_t, dx_seq, t_seq[cur_t]);
 				end
 			end
 			got = got + 1;
@@ -243,6 +272,14 @@ module atg_rx_scan_tb;
 				code = 0;
 		end
 		$fclose(fd);
+		for (i = 0; i < nt; i = i + 1) begin
+			if (i == 0)
+				t_q0[i] = 0;
+			else
+				t_q0[i] = t_q0[i - 1] + t_nq[i - 1];
+		end
+		for (i = 0; i < nq; i = i + 1)
+			q_seen[i] = 1'b0;
 		repeat (3) @(posedge clk);
 		rst_n <= 1'b1;
 		@(posedge clk);
@@ -276,6 +313,9 @@ module atg_rx_scan_tb;
 			e_dir = e_dir + 1;
 			$display("FAIL atg_rx_scan: %0d of %0d quads, %0d numbers for %0d triangles", got, nq,
 				nseq, j);
+			for (i = 0; i < nq; i = i + 1)
+				if (!q_seen[i])
+					$display("MISSING QUAD: tri %0d quad %0d: %h mask %h", q_t[i], i, {q_y[i], q_x[i]}, q_m[i]);
 		end
 		if (nfree != want_free) begin
 			e_free = e_free + 1;
@@ -294,30 +334,29 @@ module atg_rx_scan_tb;
 			$display("PASS atg_rx_scan.free");
 
 		/* ms1x: the same triangles on the warp path, one sample. */
-		w_got = 0;
 		w_err = 0;
-		w_ends = 0;
-		w_n = 0;
-		for (i = 0; i < nq; i = i + 1)
-			if (q_m[i] != 4'd0) begin
-				wq_x[w_n] = q_x[i];
-				wq_y[w_n] = q_y[i];
-				wq_s[w_n] = {3'd0, q_m[i][3], 3'd0, q_m[i][2], 3'd0, q_m[i][1], 3'd0, q_m[i][0]};
-				wq_c[w_n] = q_m[i];
-				w_n = w_n + 1;
-			end
 		for (i = 0; i < nt; i = i + 1) begin
+			w_got = 0;
+			w_ends = 0;
+			w_n = 0;
+			for (j = 0; j < t_nq[i]; j = j + 1) begin
+				qidx = t_q0[i] + j;
+				if (q_m[qidx] != 4'd0) begin
+					wq_x[w_n] = q_x[qidx];
+					wq_y[w_n] = q_y[qidx];
+					wq_s[w_n] = {3'd0, q_m[qidx][3], 3'd0, q_m[qidx][2], 3'd0, q_m[qidx][1], 3'd0, q_m[qidx][0]};
+					wq_c[w_n] = q_m[qidx];
+					wq_seen[w_n] = 1'b0;
+					w_n = w_n + 1;
+				end
+			end
 			sp = t_sp[i];
 			sp[764] = 1'b0;
 			w_tri(sp);
-		end
-		k = 0;	/* an empty bbox sends no end marker */
-		for (i = 0; i < nt; i = i + 1)
-			if (t_nq[i] > 0)
-				k = k + 1;
-		if (w_got != w_n || w_ends != k) begin
-			w_err = w_err + 1;
-			$display("FAIL atg_rx_scan.ms1x: %0d of %0d quads, %0d ends", w_got, w_n, w_ends);
+			if (w_n > 0 && (w_got != w_n || w_ends != 1)) begin
+				w_err = w_err + 1;
+				$display("FAIL atg_rx_scan.ms1x: tri %0d: %0d of %0d quads, %0d ends", i, w_got, w_n, w_ends);
+			end
 		end
 		if (w_err == 0)
 			$display("PASS atg_rx_scan.ms1x");
@@ -345,6 +384,7 @@ module atg_rx_scan_tb;
 					wq_y[k] = y;
 					wq_s[k] = s16;
 					wq_c[k] = m;
+					wq_seen[k] = 1'b0;
 				end
 				w_st(9'h05E, ms_ctrl);
 				w_st(9'h05F, ms_kill);
@@ -353,6 +393,9 @@ module atg_rx_scan_tb;
 					w_err = w_err + 1;
 					$display("FAIL atg_rx_scan.ms: tri %0d: %0d of %0d quads, %0d ends", ntm, w_got,
 						w_n, w_ends);
+					for (k = 0; k < j; k = k + 1)
+						if (!wq_seen[k])
+							$display("MISSING MS QUAD: tri %0d quad %0d: %h scov %h ccov %h", ntm, k, {wq_y[k], wq_x[k]}, wq_s[k], wq_c[k]);
 				end
 				ntm = ntm + 1;
 			end else

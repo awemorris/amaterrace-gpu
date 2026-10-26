@@ -809,4 +809,14 @@ struct fw_object *fw_cmd_recording(struct fw_command *command, uint64_t id);
 void fw_cmd_record_error(struct fw_object *cmdbuf, int32_t status);
 struct fw_rstate *fw_cmd_record_state(struct fw_command *command, uint64_t id, struct fw_object **cmdbuf);
 
+/* ghci2_cmd.c: GHCI 2.0 Structured Command Handlers */
+void fw_cmd_bind_pipeline_pso(struct fw_command *command);
+void fw_cmd_set_viewport_packet(struct fw_command *command);
+void fw_cmd_set_scissor_packet(struct fw_command *command);
+void fw_cmd_draw_packet(struct fw_command *command);
+void fw_cmd_draw_indexed_packet(struct fw_command *command);
+void fw_cmd_dispatch_packet(struct fw_command *command);
+void fw_cmd_barrier_packet(struct fw_command *command);
+void fw_cmd_execute_commands_packet(struct fw_command *command);
+
 #endif
