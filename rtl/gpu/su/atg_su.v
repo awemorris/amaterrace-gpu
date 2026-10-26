@@ -374,9 +374,11 @@ module atg_su #(
 	wire [7:0] im_rsp_tag;
 	wire [LB-1:0] im_rsp_rdata;
 
+	wire [NWARPS-1:0] warp_ready;
+
 	atg_su_sched #(
 		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .NSU(NSU), .SU_INDEX(SU_INDEX),
-		.FRAG_RESERVE(FRAG_RESERVE)
+		.FRAG_RESERVE(FRAG_RESERVE), .GTO(1)
 	) sched (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.cs_kick(cs_kick),
@@ -385,6 +387,7 @@ module atg_su #(
 		.fl_info(fl_info),
 		.f_valid(f_valid), .f_ready(f_ready), .f_warp(f_warp), .f_pc(f_pc), .f_addr(f_addr),
 		.fb_valid(fb_valid), .fb_warp(fb_warp), .fb_kind(fb_kind), .wake(wake),
+		.warp_ready(warp_ready),
 		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
 		.q_warp(q_warp), .q_info(q_info),
 		.init_valid(init_valid), .init_warp(init_warp), .init_mask(init_mask),
@@ -423,6 +426,7 @@ module atg_su #(
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
 		.i_sbe(i_sbe), .x_end(x_end),
 		.fb_valid(fb_valid), .fb_warp(fb_warp), .fb_kind(fb_kind), .wake(wake),
+		.warp_ready(warp_ready),
 		.rel_valid(rel_valid), .rel_warp(rel_warp), .rel_sbe(rel_sbe), .rel_cls(rel_cls),
 		.wb_stall(wb_stall), .rq_empty(rq_empty), .rq_full(rq_full),
 		.busy(sb_busy), .fault(sb_fault), .fault_pc(sb_fault_pc)

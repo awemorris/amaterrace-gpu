@@ -16,6 +16,7 @@ The SU's warp scheduler: warp slots and their PCs, slot allocation for vertex wa
 | `NSU` | `1` | Number of SUs (compute workgroups are shared out: this SU takes wg_id % NSU == SU_INDEX). |
 | `SU_INDEX` | `0` | This SU's number. |
 | `FRAG_RESERVE` | `1` | Slots kept for fragment warps (design §3.8; KC705 2). |
+| `GTO` | `1` | Scheduling policy: 1 = Greedy-Then-Oldest (Phase 012), 0 = Round-Robin. |
 
 ## 3. Ports
 
@@ -54,6 +55,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fb_warp` | in | WARP_W | Warp. |
 | `fb_kind` | in | 2 | 0 issued (next pc = pc+1), 1 issued, wait for wc_* (branch/end/bar), 2 replay (hazard: fetch the same pc after a wake). |
 | `wake` | in | NWARPS | Pulses: an entry of that warp was released (replayed warps become ready). |
+| `warp_ready` | in | NWARPS | Readiness mask from atg_su_sb: 1 when the warp has no outstanding long operations/hazards. |
 | `wc_valid` | in | 1 | Warp control from atg_su_exec. |
 | `wc_warp` | in | WARP_W | Warp. |
 | `wc_op` | in | 2 | 0 continue at wc_pc, 1 end (free the slot after the export buffer drains), 2 barrier wait (continue at wc_pc when the workgroup arrives). |
@@ -75,9 +77,14 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 - Slot states: FREE → ALLOC (granted, inputs being written) → READY ↔ (FETCHING → WAIT_FB) →
   {READY | WAIT_WC | REPLAY} … → ENDED → FREE (after xr_valid).
-- Selection: each cycle, round-robin over READY slots; a selected slot is not selectable again for
-  32/NPHYS cycles after its previous issue (the group sequencing of design §3.1) and until its
-  feedback.
+- Candidate readiness: a slot is selectable for fetch when in READY, its issue gap (32/NPHYS cycles)
+  has counted out, and `warp_ready[slot]` from `atg_su_sb` is 1 (no outstanding scoreboard hazards).
+- Selection (`GTO = 1`): Greedy-Then-Oldest policy:
+  - **Greedy**: While the currently active warp remains ready and executing without hazard/stall,
+    it continues to be fetched consecutively to maximize instruction cache and register file locality.
+  - **Oldest**: When the active warp stalls (`warp_ready == 0`, e.g. memory load / long latency wait),
+    the scheduler switches to the candidate warp that has been waiting the longest (maximum `wait_age`).
+- Selection (`GTO = 0`): Legacy round-robin among ready candidates.
 - Grants: a vertex grant needs a FREE slot beyond FRAG_RESERVE and pt_ok (pulse pt_take inside atg_su_pt is
   derived from vl_gnt by the parent); a fragment grant needs any FREE slot.  Compute: after cs_kick,
   one workgroup of WG_SIZE lanes is launched as ceil(size/32) warps when that many slots are free,
@@ -110,6 +117,14 @@ One fetch per cycle; a warp issues at most every 32/NPHYS cycles.
 - `PASS atg_su_sched.end` — end frees the slot only after xr_valid
 - `PASS atg_su_sched` at the end.
 
+`sim/tb/atg_su_sched_gto_tb.v` verifies GTO scheduling (Phase 012):
+
+- `PASS atg_su_sched_gto.greedy` — consecutive execution of the same ready warp
+- `PASS atg_su_sched_gto.stall_switch` — immediate switch away upon `warp_ready` deassertion
+- `PASS atg_su_sched_gto.oldest` — prioritization of the longest-waiting candidate warp
+- `PASS atg_su_sched_gto.no_replay` — zero replay feedback events
+- `PASS atg_su_sched_gto` at the end.
+
 ## 9. References
 
 design §3.1, §3.5 (scheduler), §3.8 (slot reservation), §2.3 (program STATE 0x190-0x19A), include/atg_su_uop.vh (warp-info word).
@@ -117,3 +132,4 @@ design §3.1, §3.5 (scheduler), §3.8 (slot reservation), §2.3 (program STATE 
 ## 10. Status
 
 Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_sched_tb.v`).  A fetch that is not taken keeps its warp on f_* (valid/ready).  Compute warps of a workgroup get EXEC = the lanes below WG_SIZE, LID = 32 × warp, and a 4-bit workgroup tag for barriers; a workgroup is launched one warp per cycle while vertex/fragment grants wait.  Vertex/fragment q_info: kind, front, sequence and coverage from fl_info; LID 0.
+Phase 012 (ws001-p012): Scoreboard feedback `warp_ready` integrated and GTO scheduling policy added (`.GTO(1)`). TB `sim/tb/atg_su_sched_gto_tb.v`.

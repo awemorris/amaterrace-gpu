@@ -73,7 +73,8 @@ module atg_su_sb #(
 	input wire rq_full,
 	output wire busy,
 	output wire fault,
-	output wire [15:0] fault_pc
+	output wire [15:0] fault_pc,
+	output wire [NWARPS-1:0] warp_ready
 );
 `include "atg_su_uop.vh"
 
@@ -430,6 +431,16 @@ module atg_su_sb #(
 				any_c = 1'b1;
 	end
 	assign busy = any_c;
+
+	/* Warp readiness feedback to scheduler (Phase 012) */
+	genvar gw_r;
+	generate
+		for (gw_r = 0; gw_r < NWARPS; gw_r = gw_r + 1) begin : g_wr
+			wire [SB_ENTRIES-1:0] w_ev = ev[gw_r * SB_ENTRIES +: SB_ENTRIES];
+			wire w_u_hold = u_valid && (u_warp == gw_r[WARP_W-1:0]) && !i_valid;
+			assign warp_ready[gw_r] = !(|w_ev) && !w_u_hold;
+		end
+	endgenerate
 
 	wire unused_ok = &{1'b0, imm[31:12], u_uop, f_slot, c_slot, rd_k[7]};
 endmodule

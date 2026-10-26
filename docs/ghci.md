@@ -1,7 +1,7 @@
 GHCI — GPU Host Controller Interface
 ====================================
 
-**Version 1.0 — Draft, 2026-10-24**
+**Version 0.1 — Draft, 2026-10-24**
 License: Zlib (the same as the rest of this repository)
 
 GHCI is a public, versioned host interface for Vulkan-class GPUs, in the
@@ -54,7 +54,7 @@ Contents
 
 ### 1.2 Overview
 
-![GHCI 2.0 GPU Architecture](svg/ghci_gpu_architecture.svg)
+![GHCI 1.0 GPU Architecture](svg/ghci_gpu_architecture.svg)
 
 ```
             Host                                       GPU
@@ -83,7 +83,7 @@ autonomous page table walker and TLB, and starts the units. A fence command
 writes a value to memory, and optionally raises an interrupt, when all
 earlier work has completed.
 
-#### Key Architecture Tenets (GHCI 2.0 TO-BE Specification)
+#### Key Architecture Tenets (GHCI 1.0 TO-BE Specification)
 
 - **Host Control Registers:** Exactly 19 32-bit registers (76 bytes total).
   All dynamic state registers (`STATE_*`) are eliminated from MMIO to eliminate
@@ -166,7 +166,7 @@ earlier work has completed.
 3. Host control registers
 -------------------------
 
-GHCI 2.0 defines a 19-register host MMIO window (76 bytes total:
+GHCI 1.0 defines a 19-register host MMIO window (76 bytes total:
 offsets `0x000` to `0x048`), mapped to a 4 KiB host physical page. All dynamic
 state registers (`STATE_*`, 0x1000..0x1BFC) and legacy `KICK`/`APERTURE_*`
 registers are completely abolished. All pipeline state is submitted through
@@ -380,13 +380,13 @@ After a reset, the driver restarts ring submission from `RING_WPTR = 0`.
 -------------------
 
 The command ring is the primary communication channel through which the host
-driver submits work to the GPU. In GHCI 2.0, the ring uses an in-memory
+driver submits work to the GPU. In GHCI 1.0, the ring uses an in-memory
 descriptor and pipeline-state architecture: instead of issuing hundreds of
 register-write commands per draw call, the driver writes compact command packets
 that reference immutable, pre-baked `GhciPipelineState` objects and flat
 descriptor arrays located in shared memory.
 
-![GHCI 2.0 Command Flow](svg/ghci_command_flow.svg)
+![GHCI 1.0 Command Flow](svg/ghci_command_flow.svg)
 
 ### 6.0 Command Execution Lifecycle
 
@@ -456,7 +456,7 @@ section 11.4), then a store barrier, then the register write.
 7. The command set
 ------------------
 
-GHCI 2.0 replaces legacy register-poking loops (such as repetitive `SET_REG`
+GHCI 1.0 replaces legacy register-poking loops (such as repetitive `SET_REG`
 packets) with a modern, structured command packet protocol. The driver records
 packets into the shared command ring (Ring 0) in host or shared memory.
 
@@ -647,7 +647,7 @@ In traditional architectures, pipeline state changes required hundreds of
 MMIO register writes or `SET_REG` packets per draw call, generating massive bus
 chatter and stalling the CPU driver thread.
 
-GHCI 2.0 moves all static and semi-static pipeline states into **in-memory
+GHCI 1.0 moves all static and semi-static pipeline states into **in-memory
 immutable data structures**:
 - **Bake Once, Execute Anywhere:** The User-Mode Driver (UMD) validates state
   combinations and bakes `GhciPipelineState` objects into shared memory during
@@ -839,7 +839,7 @@ on it.
 
 ### 11.2 Addresses, Virtual Memory & Autonomous MMU
 
-GHCI 2.0 establishes an **autonomous virtual memory architecture** optimized for commercial operating systems and Unified Memory Architectures (UMA). Rather than exposing raw Graphics Translation Tables (GTT), multi-level page tables, or manual TLB invalidation registers (`TLB_INVALIDATE`) to the host, GHCI delegates all virtual memory page table allocation, updates, and TLB invalidation to the on-chip Command Processor (CP) and hardware Memory Management Unit (MMU).
+GHCI 1.0 establishes an **autonomous virtual memory architecture** optimized for commercial operating systems and Unified Memory Architectures (UMA). Rather than exposing raw Graphics Translation Tables (GTT), multi-level page tables, or manual TLB invalidation registers (`TLB_INVALIDATE`) to the host, GHCI delegates all virtual memory page table allocation, updates, and TLB invalidation to the on-chip Command Processor (CP) and hardware Memory Management Unit (MMU).
 
 #### Architecture & Host Abstraction Model
 - **Ultra-Thin Host Driver:** The host operating system kernel and UMD driver are completely decoupled from GPU hardware page table layouts and TLB micro-architectures (analogous to Apple Silicon DART + AGX firmware or modern game console architectures). The host communicates virtual memory operations solely through structured ring commands.
@@ -891,7 +891,7 @@ When `VM_UNMAP` is executed:
 
 ### 11.3 Unified and discrete
 
-GHCI 2.0 defines a single, unified driver programming model for both Unified
+GHCI 1.0 defines a single, unified driver programming model for both Unified
 Memory Architecture (UMA) and Discrete GPU systems. The driver uses the same
 register layout, command set, and synchronization model across both
 topologies.
@@ -1865,7 +1865,7 @@ closes the window when it attaches.
 14. Bring-up and Diagnostics
 ------------------------------
 
-In GHCI 2.0, board bring-up and driver development rely on the MMIO
+In GHCI 1.0, board bring-up and driver development rely on the MMIO
 diagnostics registers rather than complex debug memory ports:
 
 - **Liveness & MMIO Verification:** The host reads `GHCI_MAGIC` (`0x47484349`)
@@ -1947,7 +1947,7 @@ A typical start, following the rules above:
 1. Read `GHCI_MAGIC` and `GHCI_VERSION`; stop unless the major version is
    supported (section 16). For minor >= 1 (GHCI 1.1+), the driver may read diagnostic
    registers (`CP_PC`, `CP_STATUS`, `PIPE_FSM`).
-2. Read capabilities (`DEVICE_CAPS` in GHCI 2.0, or `VENDOR_ID`, `DEVICE_ID`, `CAPS`, `CAPS2` in GHCI 1.1) and walk extended capabilities (section 4).
+2. Read capabilities (`DEVICE_CAPS` in GHCI 1.0, or `VENDOR_ID`, `DEVICE_ID`, `CAPS`, `CAPS2` in GHCI 1.1) and walk extended capabilities (section 4).
 3. If `STATUS.FAULT` is asserted, write `CTRL.RESET` and wait for it to clear. Wait for `STATUS.READY` / `STATUS.MEM_READY`.
 4. Allocate command ring and fence memory in host or shared memory (section 11.3). Set ring base and size registers.
 5. Initialize fence memory with starting sequence values.

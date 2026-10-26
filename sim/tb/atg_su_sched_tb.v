@@ -63,25 +63,27 @@ module atg_su_sched_tb;
 	always @(posedge clk)
 		cyc <= cyc + 1;
 
-	atg_su_sched #(.NPHYS(8), .NWARPS(4), .NSU(1), .SU_INDEX(0), .FRAG_RESERVE(1)) a (
+	atg_su_sched #(.NPHYS(8), .NWARPS(4), .NSU(1), .SU_INDEX(0), .FRAG_RESERVE(1), .GTO(0)) a (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.cs_kick(cs_kick), .vl_req(vl_req), .vl_gnt(vl_gnt), .vl_slot(vl_slot),
 		.vl_go(vl_go), .vl_mask(vl_mask), .fl_req(fl_req), .fl_gnt(fl_gnt),
 		.fl_slot(fl_slot), .fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
 		.f_valid(f_valid), .f_ready(f_ready), .f_warp(f_warp), .f_pc(f_pc), .f_addr(f_addr),
 		.fb_valid(fb_valid), .fb_warp(fb_warp), .fb_kind(fb_kind), .wake(wake),
+		.warp_ready(4'b1111),
 		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
 		.q_warp(q_warp), .q_info(q_info), .init_valid(init_valid), .init_warp(init_warp),
 		.init_mask(init_mask), .pt_ok(pt_ok), .xr_valid(xr_valid), .xr_warp(xr_warp),
 		.busy(busy)
 	);
-	atg_su_sched #(.NPHYS(8), .NWARPS(4), .NSU(2), .SU_INDEX(1), .FRAG_RESERVE(1)) b (
+	atg_su_sched #(.NPHYS(8), .NWARPS(4), .NSU(2), .SU_INDEX(1), .FRAG_RESERVE(1), .GTO(0)) b (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.cs_kick(cs_kick), .vl_req(1'b0), .vl_gnt(), .vl_slot(), .vl_go(1'b0),
 		.vl_mask(32'd0), .fl_req(1'b0), .fl_gnt(), .fl_slot(), .fl_go(1'b0),
 		.fl_mask(32'd0), .fl_info(64'd0),
 		.f_valid(f_valid_b), .f_ready(1'b0), .f_warp(f_warp_b), .f_pc(f_pc_b),
 		.f_addr(f_addr_b), .fb_valid(1'b0), .fb_warp(2'd0), .fb_kind(2'd0), .wake(4'd0),
+		.warp_ready(4'b1111),
 		.wc_valid(1'b0), .wc_warp(2'd0), .wc_op(2'd0), .wc_pc(16'd0),
 		.q_warp(q_warp), .q_info(q_info_b), .init_valid(init_valid_b),
 		.init_warp(init_warp_b), .init_mask(init_mask_b), .pt_ok(1'b1), .xr_valid(1'b0),

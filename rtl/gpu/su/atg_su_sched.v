@@ -24,7 +24,8 @@ module atg_su_sched #(
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter NSU = 1,	/* Number of SUs (compute workgroups are shared out: this SU takes wg_id % NSU == SU_INDEX) */
 	parameter SU_INDEX = 0,	/* This SU's number */
-	parameter FRAG_RESERVE = 1	/* Slots kept for fragment warps (design §3.8; KC705 2) */
+	parameter FRAG_RESERVE = 1,	/* Slots kept for fragment warps (design §3.8; KC705 2) */
+	parameter GTO = 1	/* Scheduling policy: 1 = Greedy-Then-Oldest, 0 = Round-Robin */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -57,6 +58,7 @@ module atg_su_sched #(
 	input wire [WARP_W-1:0] fb_warp,
 	input wire [1:0] fb_kind,
 	input wire [NWARPS-1:0] wake,
+	input wire [NWARPS-1:0] warp_ready,
 	input wire wc_valid,
 	input wire [WARP_W-1:0] wc_warp,
 	input wire [1:0] wc_op,
@@ -189,23 +191,91 @@ module atg_su_sched #(
 	assign init_warp = vl_go ? vl_s : fl_go ? fl_s : free_slot;
 	assign init_mask = vl_go ? vl_mask : fl_go ? fl_mask : cmask;
 
-	/* Selection: round-robin over ready slots out of their gap. */
+	/* Candidates: slots that are READY, out of gap, and warp_ready from scoreboard */
+	wire [NWARPS-1:0] cand;
+	genvar gc;
+	generate
+		for (gc = 0; gc < NWARPS; gc = gc + 1) begin : g_cand
+			assign cand[gc] = (st[gc*3 +: 3] == S_READY) && (gap[gc*2 +: 2] == 2'd0) && warp_ready[gc];
+		end
+	endgenerate
+
+	/* Wait ages for GTO Oldest policy */
+	reg [NWARPS*16-1:0] wait_age;
+	wire [NWARPS*16-1:0] age_p1;
+	genvar ga;
+	generate
+		for (ga = 0; ga < NWARPS; ga = ga + 1) begin : g_age
+			wire age_co_unused;
+			am_add #(.W(16)) u_age_add (
+				.a(wait_age[ga*16 +: 16]),
+				.b(16'd0),
+				.ci(1'b1),
+				.s(age_p1[ga*16 +: 16]),
+				.co(age_co_unused)
+			);
+		end
+	endgenerate
+
+	/* Selection: GTO (Greedy-Then-Oldest) or Round-Robin */
 	reg [WARP_W-1:0] rr, sel;
+	reg [WARP_W-1:0] last_warp;
+	reg active_valid;
 	reg sel_v;
 	integer k, c, r;
+	reg found_cand;
+	reg [15:0] max_age;
+	integer w_idx, ga_i;
+	reg active_st_ok;
+	reg active_warp_ready;
+
+	always @(*) begin
+		active_st_ok = 1'b0;
+		active_warp_ready = 1'b0;
+		for (ga_i = 0; ga_i < NWARPS; ga_i = ga_i + 1) begin
+			if (last_warp == ga_i[WARP_W-1:0]) begin
+				active_st_ok = (st[ga_i*3 +: 3] == S_READY) || (st[ga_i*3 +: 3] == S_FETCH);
+				active_warp_ready = warp_ready[ga_i];
+			end
+		end
+	end
+	wire active_live = active_valid && active_warp_ready && active_st_ok;
+
 	always @(*) begin
 		sel_v = 1'b0;
 		sel = {WARP_W{1'b0}};
+		found_cand = 1'b0;
+		max_age = 16'd0;
 		c = 0;
-		for (r = 0; r < NWARPS; r = r + 1)
-			if (rr == r[WARP_W-1:0])
-				for (k = NWARPS - 1; k >= 0; k = k - 1) begin
-					c = (r + k) % NWARPS;
-					if (st[c*3 +: 3] == S_READY && gap[c*2 +: 2] == 2'd0) begin
-						sel_v = 1'b1;
-						sel = c[WARP_W-1:0];
+		if (GTO != 0) begin
+			if (active_live) begin
+				if (cand[last_warp]) begin
+					sel_v = 1'b1;
+					sel = last_warp;
+				end
+			end else begin
+				for (w_idx = 0; w_idx < NWARPS; w_idx = w_idx + 1) begin
+					if (cand[w_idx]) begin
+						if (!found_cand || wait_age[w_idx*16 +: 16] > max_age) begin
+							found_cand = 1'b1;
+							max_age = wait_age[w_idx*16 +: 16];
+							sel = w_idx[WARP_W-1:0];
+						end
 					end
 				end
+				sel_v = found_cand;
+			end
+		end else begin
+			for (r = 0; r < NWARPS; r = r + 1)
+				if (rr == r[WARP_W-1:0])
+					for (k = NWARPS - 1; k >= 0; k = k - 1) begin
+						c = (r + k) % NWARPS;
+						if (cand[c]) begin
+							sel_v = 1'b1;
+							sel = c[WARP_W-1:0];
+						end
+					end
+		end
 	end
 	/* A fetch that is not taken keeps its warp (valid/ready). */
 	reg hold_v;
@@ -287,6 +357,9 @@ module atg_su_sched #(
 			info <= {(NWARPS*160){1'b0}};
 			tag <= {(NWARPS*4){1'b0}};
 			{rr, hold_v, hold_w} <= {(2*WARP_W+1){1'b0}};
+			last_warp <= {WARP_W{1'b0}};
+			active_valid <= 1'b0;
+			wait_age <= {(NWARPS*16){1'b0}};
 			{vl_wait, fl_wait, vl_s, fl_s} <= {(2*WARP_W+2){1'b0}};
 			{cs_act, launching} <= 2'b00;
 			{id_x, id_y, id_z} <= 48'd0;
@@ -334,6 +407,18 @@ module atg_su_sched #(
 						st[w*3 +: 3] <= S_FETCH;
 				gap[(fsel)*2 +: 2] <= G[1:0] - 2'd1;
 				rr <= rr_next;
+				last_warp <= fsel;
+				active_valid <= 1'b1;
+			end
+			for (w = 0; w < NWARPS; w = w + 1) begin
+				if (cand[w]) begin
+					if (fsel_v && f_ready && fsel == w[WARP_W-1:0])
+						wait_age[w*16 +: 16] <= 16'd0;
+					else if (wait_age[w*16 +: 16] != 16'hFFFF)
+						wait_age[w*16 +: 16] <= age_p1[w*16 +: 16];
+				end else begin
+					wait_age[w*16 +: 16] <= 16'd0;
+				end
 			end
 			/* Vertex and fragment slots. */
 			if (vl_g) begin

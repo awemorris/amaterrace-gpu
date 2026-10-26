@@ -3,14 +3,14 @@ Amaterrace GPU
 
 [![CI](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml/badge.svg)](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml)
 [![License: Zlib](https://img.shields.io/badge/License-Zlib-blue.svg)](https://opensource.org/licenses/Zlib)
-[![GHCI Standard: 2.0](https://img.shields.io/badge/GHCI-2.0-indigo.svg)](docs/ghci.md)
+[![GHCI Standard: 1.0](https://img.shields.io/badge/GHCI-1.0-indigo.svg)](docs/ghci.md)
 [![Target: Xilinx KC705](https://img.shields.io/badge/Target-Xilinx%20KC705-emerald.svg)](boards/)
 
 `Amaterrace GPU` (device `ATG1`) is an open-source, Vulkan-class graphics and compute GPU implemented in synthesizable Verilog-2005.
 
 Designed for high-efficiency graphics and parallel compute with clean architectural decoupling:
 
-- **Host Interface:** [GHCI 2.0](docs/ghci.md) (GPU Host Controller Interface) — a slim, register-free in-memory command architecture.
+- **Host Interface:** [GHCI 1.0](docs/ghci.md) (GPU Host Controller Interface) — a slim, register-free in-memory command architecture.
 - **Shader ISA:** [GSI1](docs/ghci.md#12-the-standard-shader-isa-gsi1) — standard 64-bit shader instruction set architecture with scalar PEs and packed FP16×2 support.
 - **License:** Zlib License (compatible with zedBSD), including the complete GHCI and GSI1 specifications.
 
@@ -25,7 +25,7 @@ Table of Contents
    - [2D Blit & Streaming Copy](#2d-blit--streaming-copy)
    - [Systolic Matrix & Tensor Accelerator](#systolic-matrix--tensor-accelerator)
    - [Display Scanout & QoS Preemption](#display-scanout--qos-preemption)
-3. [GHCI 2.0 Host Interface & System Topologies](#3-ghci-20-host-interface--system-topologies)
+3. [GHCI 1.0 Host Interface & System Topologies](#3-ghci-10-host-interface--system-topologies)
    - [Unified Memory Architecture (UMA)](#unified-memory-architecture-uma)
    - [Discrete GPU Architecture (PCIe Binding)](#discrete-gpu-architecture-pcie-binding)
    - [Slim MMIO & In-Memory Pipeline State Objects (PSO)](#slim-mmio--in-memory-pipeline-state-objects-pso)
@@ -99,12 +99,12 @@ DRAM Framebuffer ──> MC Priority Arbiter ──> Dual-Clock CDC AFIFO ──
 
 ---
 
-3. GHCI 2.0 Host Interface & System Topologies
+3. GHCI 1.0 Host Interface & System Topologies
 ----------------------------------------------
 
-Amaterrace GPU implements the **GHCI 2.0 (GPU Host Controller Interface)** specification ([docs/ghci.md](docs/ghci.md)). GHCI defines an AHCI/xHCI-style unified programming interface for Vulkan-class GPUs.
+Amaterrace GPU implements the **GHCI 1.0 (GPU Host Controller Interface)** specification ([docs/ghci.md](docs/ghci.md)). GHCI defines an AHCI/xHCI-style unified programming interface for Vulkan-class GPUs.
 
-![GHCI 2.0 GPU Architecture](docs/svg/ghci_gpu_architecture.svg)
+![GHCI 1.0 GPU Architecture](docs/svg/ghci_gpu_architecture.svg)
 
 ### Unified Memory Architecture (UMA)
 
@@ -133,7 +133,7 @@ Per GHCI §11.3, discrete memory is indicated by `LOCAL_SIZE > 0`:
 
 ### Slim MMIO & In-Memory Pipeline State Objects (PSO)
 
-GHCI 2.0 eliminates dynamic hardware state registers (`STATE_*`) from MMIO, preventing kernel overhead and bus stalls:
+GHCI 1.0 eliminates dynamic hardware state registers (`STATE_*`) from MMIO, preventing kernel overhead and bus stalls:
 
 - **19 Slim MMIO Registers (76 Bytes Total):** Identification, capabilities, ring base/size, doorbell write pointer (`RING_WPTR`), read pointer (`RING_RPTR`), fence status, interrupt mask/status, and reset control.
 - **In-Memory Immutable PSO:** Render states (rasterization, blend equations, depth/stencil modes, shader program pointers) are baked by the user-mode driver into compact 48-byte structs (`GhciPipelineState`). Commands bind states by passing 64-bit GPU virtual addresses (`CMD_BIND_PIPELINE`).
@@ -282,7 +282,7 @@ amaterrace-gpu/
 │       └── top/                  # SoC Top-Level Integrations (atg_top, atg_kc705_top)
 ├── boards/                       # Board Top-Level Wrappers & Constraints (Xilinx KC705)
 ├── docs/                         # Specifications & Architectural Documentation
-│   ├── ghci.md                   # GHCI 2.0 Specification & GSI1 Shader ISA Standard
+│   ├── ghci.md                   # GHCI 1.0 Specification & GSI1 Shader ISA Standard
 │   ├── style.md                  # Verilog-2005 Coding Standard & Guardrails
 │   └── svg/                      # Vector Architecture & Datapath Diagrams (10 SVGs)
 ├── fw/cp/                        # Command Processor Firmware (C / Assembly for RV32IM)
