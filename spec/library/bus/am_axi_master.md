@@ -15,7 +15,7 @@ Turns memory-line requests into AXI bursts. One request is one aligned line of `
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`), passed explicitly | 5, 6 |
 | `DATA_W` | 64 | AXI data width | 64 (an AXI3 HP port), 512 (KC705 MIG); `LINE_BYTES*8` must be a multiple. AxSIZE is derived (8..512 bits) |
 | `UW` | 16 | User bits carried from request to response | `atg_mc` uses 16: `{client[7:0], tag[7:0]}` |
-| `OUTSTANDING_LOG2` | 2 | log2 of the reads, and separately of the writes, in flight per ID | 2 (4 + 4); ≥ 1 (`am_fifo_key`) |
+| `OUTSTANDING_LOG2` | 5 | log2 of the reads, and separately of the writes, in flight per ID | 5 (32 + 32, ws001-p037); ≥ 1 (`am_fifo_key`) |
 | `NID` | 1 | AXI IDs used: 1 (all ID 0) or 2^`ID_W` | `atg_mc`: 2 with local memory (0 local, 1 host), else 1 |
 | `ID_W` | 1 | AxID bits | 1 |
 | `KEY_W` | 8 | Order key bits | `atg_mc`: 8 (the client) |
@@ -47,25 +47,25 @@ AXI master (`m_*`, AXI4-shaped; for an AXI3 port take the low 4 bits of AxLEN an
 
 ## 4. Behaviour
 
-- Write: accepted when `!halt`, no AW pending, no write burst sending and the write user FIFO has room (`wr_can`). The line and its enables go into a line buffer (`w_buf`, `w_be`); AW is shown from the next cycle; the beats follow from the buffer, shifted by `DATA_W` per accepted beat, so W never waits for the requester. BRESP pops the write user FIFO and makes the response.
-- Read: accepted when `!halt`, no AR pending and the read user FIFO has room. AR from the next cycle. R beats are collected in `r_buf` (beat 0 lowest); the last beat makes the response with the full line. The error is the OR of RRESP[1] over the beats.
+- Write: accepted when `!halt`, AW skid buffer has room (`aw_skid_in_ready`), no write burst sending (`!w_busy`) and the write user FIFO has room (`wr_can`). Address and ID are pushed to the AW `am_skid` buffer (decoupling address issue from beat serialization); the line and its enables go into a line buffer (`w_buf`, `w_be`); the beats follow from the buffer, shifted by `DATA_W` per accepted beat, so W never waits for the requester. BRESP pops the write user FIFO and makes the response.
+- Read: accepted when `!halt`, AR skid buffer has room (`ar_skid_in_ready`) and the read user FIFO has room. Handled through `am_skid` (`u_ar_skid`), enabling 100% throughput back-to-back address issuing (1 request/cycle) without the 1-cycle serialization bubble. R beats are collected in `r_buf` (beat 0 lowest); the last beat makes the response with the full line. The error is the OR of RRESP[1] over the beats.
 - One response per cycle: a finished read first; a BRESP waits (`m_bready` = 0) in that cycle.
 - Order: per ID, reads are answered in request order and so are writes (AXI). Bursts of different IDs may be answered in any order and their R beats may interleave (a line buffer per ID). Per key, reads and writes are each answered in order: a request of a key with bursts of the same direction outstanding on another ID waits (ws288 p039: the MC's client order across its two destinations). A read and a write are **not** ordered against each other.
 - Responses are matched by `m_bid`/`m_rid` to the ID's user FIFO.
 - Lines are aligned, so no burst crosses 4 KiB.
-- Quiesce: with `halt` = 1, no new request; an accepted write still sends all beats; every outstanding burst still gets its response; `idle` rises when all are delivered (including the `rsp_valid` cycle).
+- Quiesce: with `halt` = 1, no new request; an accepted write still sends all beats; every outstanding burst still gets its response; `idle` rises when all are delivered (including the `rsp_valid` cycle, and when both skid buffers are empty).
 
 ## 5. State machine
 
 No encoded FSM; two independent paths:
 
-- Write path: idle →(`wr_take`)→ AW pending + beats sending (`aw_v`, `w_busy`) →(AW handshake clears `aw_v`; beat with `m_wlast` clears `w_busy`)→ idle. Up to 2^`OUTSTANDING_LOG2` writes waiting for B (in `wq`).
-- Read path: idle →(`rd_take`)→ AR pending (`ar_v`) →(AR handshake)→ idle. Up to 2^`OUTSTANDING_LOG2` reads waiting for R (in `rq`).
+- Write path: AW address skid buffer `u_aw_skid` (`am_skid`), line buffer and beat counter (`w_busy`). Up to 2^`OUTSTANDING_LOG2` writes waiting for B (in `wq`).
+- Read path: AR address skid buffer `u_ar_skid` (`am_skid`). Up to 2^`OUTSTANDING_LOG2` reads waiting for R (in `rq`).
 
 ## 6. Latency and throughput
 
-- Write: AW and the first beat one cycle after the accept; beats at one per cycle; a new write accepted the cycle after the last beat, so at best one line every `BEATS + 1` cycles (5 cycles for a 32-byte line on 64 bits: 80% of W). Response 1 cycle after the B handshake (later if a read finishes in that cycle).
-- Read: AR one cycle after the accept, a new read accepted the cycle after the AR handshake, so at best one AR every 2 cycles; up to 4 in flight. Response 1 cycle after the last R beat.
+- Write: AW address is accepted into `u_aw_skid` and presented on `m_awvalid` with registered timing; beats stream at one per cycle; a new write accepted the cycle after the last beat (`!w_busy && aw_skid_in_ready`). Response 1 cycle after the B handshake (later if a read finishes in that cycle).
+- Read: AR address is accepted into `u_ar_skid` and presented on `m_arvalid` with registered timing. Upstream can issue back-to-back requests every cycle (1 cycle per beat) as long as `m_arready` and `rq_rdy` permit. Up to 32 requests in flight per ID (`OUTSTANDING_LOG2 = 5`). Response 1 cycle after the last R beat.
 - Measured on a Zynq-7010 (XC7Z010) (p003): FILL 5.0 cycles per 32-byte line (640 MB/s at 100 MHz); the copy rate (about 50 cycles/line) is bound by the BLT's serial read-then-write, not by this module.
 
 ## 7. Corner cases and errors
@@ -78,7 +78,10 @@ No encoded FSM; two independent paths:
 
 ## 8. What the TB checks
 
-`sim/tb/am_axi_master_tb.v` → `PASS am_axi_master`: two shapes (32 B/64 bit/4 beats, KC705 64 B/512 bit/1 beat), 2000 random requests each on 64 lines against `axi_mem` (random ready and latency, protocol checker) and a reference copy; reads and writes each in order with their user bits; data with byte masks; 1/50 of the requests in the SLVERR region answer error; random `halt`: `req_ready` stays 0 under it, `idle` comes within 400 cycles with no response owed, traffic resumes; idle at the end; zero protocol violations. Seeds: `+seed` (p003 also 3 and 42). Not checked: the read/write reorder (the TB avoids a read after a pending write to the same line), `OUTSTANDING_LOG2` other than 2, AXI3 truncation (done by the board top).
+`sim/tb/am_axi_master_tb.v` → `PASS am_axi_master`:
+- `deep`: 32 outstanding in-flight reads with 60-cycle latency responder. Verifies 32 requests issued back-to-back in exactly 32 cycles (1 req/cycle), all 32 responses delivered and scoreboarded with bit-exact data.
+- `reorder`: Multi-ID (`NID = 2`) reordering and interleaved multi-beat responses. 16 requests on ID 0 and 16 requests on ID 1, out-of-order response delivery verified.
+- `l32` and `kc705`: Two shapes (32 B/64 bit/4 beats, KC705 64 B/512 bit/1 beat), 2000 random requests each on 64 lines against `axi_mem` (random ready and latency, protocol checker) and a reference copy; reads and writes each in order with their user bits; data with byte masks; 1/50 of the requests in the SLVERR region answer error; random `halt`: `req_ready` stays 0 under it, `idle` comes within 400 cycles with no response owed, traffic resumes; idle at the end; zero protocol violations.
 
 ## 9. References
 

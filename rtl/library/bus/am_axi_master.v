@@ -54,7 +54,7 @@ module am_axi_master #(
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter DATA_W = 64,
 	parameter UW = 16,
-	parameter OUTSTANDING_LOG2 = 2,	/* per ID and direction */
+	parameter OUTSTANDING_LOG2 = 5,	/* per ID and direction */
 	parameter NID = 1,	/* AXI IDs used: 1 (ID 0) or 2^ID_W */
 	parameter ID_W = 1,	/* AxID bits */
 	parameter KEY_W = 8	/* order key bits */
@@ -149,19 +149,53 @@ module am_axi_master #(
 	wire [NID-1:0] wq_rdy, wq_has, wq_any, rq_rdy, rq_has, rq_any;
 	wire [NID*UW-1:0] wq_user, rq_user;
 
-	/* Write path: the address register, the line buffer and the beat. */
-	reg aw_v;
-	reg [LA_W-1:0] aw_line;
-	reg [ID_W-1:0] aw_id;
+	/* Write path: the address skid buffer, the line buffer and the beat. */
+	localparam AW_SKID_W = ID_W + LA_W;
+	wire [AW_SKID_W-1:0] aw_skid_in_data = {q_id, req_line};
+	wire aw_skid_in_ready;
+	wire aw_skid_out_valid;
+	wire [AW_SKID_W-1:0] aw_skid_out_data;
+	wire [ID_W-1:0] aw_skid_out_id;
+	wire [LA_W-1:0] aw_skid_out_line;
+	assign {aw_skid_out_id, aw_skid_out_line} = aw_skid_out_data;
+
+	am_skid #(.W(AW_SKID_W)) u_aw_skid (
+		.clk(clk),
+		.rst_n(rst_n),
+		.in_valid(wr_take),
+		.in_ready(aw_skid_in_ready),
+		.in_data(aw_skid_in_data),
+		.out_valid(aw_skid_out_valid),
+		.out_ready(m_awready),
+		.out_data(aw_skid_out_data)
+	);
+
 	reg w_busy;
 	reg [7:0] w_beat;
 	reg [LINE_BITS-1:0] w_buf;
 	reg [LINE_BYTES-1:0] w_be;
 
-	/* Read path. */
-	reg ar_v;
-	reg [LA_W-1:0] ar_line;
-	reg [ID_W-1:0] ar_id;
+	/* Read path via am_skid: provides full 100% throughput, back-to-back
+	 * continuous address issue without the 1-cycle serialization bubble. */
+	localparam AR_SKID_W = ID_W + LA_W;
+	wire [AR_SKID_W-1:0] ar_skid_in_data = {q_id, req_line};
+	wire ar_skid_in_ready;
+	wire ar_skid_out_valid;
+	wire [AR_SKID_W-1:0] ar_skid_out_data;
+	wire [ID_W-1:0] ar_skid_out_id;
+	wire [LA_W-1:0] ar_skid_out_line;
+	assign {ar_skid_out_id, ar_skid_out_line} = ar_skid_out_data;
+
+	am_skid #(.W(AR_SKID_W)) u_ar_skid (
+		.clk(clk),
+		.rst_n(rst_n),
+		.in_valid(rd_take),
+		.in_ready(ar_skid_in_ready),
+		.in_data(ar_skid_in_data),
+		.out_valid(ar_skid_out_valid),
+		.out_ready(m_arready),
+		.out_data(ar_skid_out_data)
+	);
 
 	/* A burst of the key on another ID (same direction). */
 `ifdef MUT_AXI_NOKEY
@@ -171,26 +205,26 @@ module am_axi_master #(
 	wire r_other = |(rq_has & ~({{(NID-1){1'b0}}, 1'b1} << q_id));
 `endif
 
-	wire wr_can = !halt && !aw_v && !w_busy && wq_rdy[q_id] && !w_other;
-	wire rd_can = !halt && !ar_v && rq_rdy[q_id] && !r_other;
+	wire wr_can = !halt && aw_skid_in_ready && !w_busy && wq_rdy[q_id] && !w_other;
+	wire rd_can = !halt && ar_skid_in_ready && rq_rdy[q_id] && !r_other;
 
 	assign req_ready = rst_n && (req_write ? wr_can : rd_can);
 	wire wr_take = req_valid && req_ready && req_write;
 	wire rd_take = req_valid && req_ready && !req_write;
 
-	assign idle = !aw_v && !w_busy && !ar_v && !(|wq_any) && !(|rq_any) && !rsp_valid;
+	assign idle = !aw_skid_out_valid && !w_busy && !ar_skid_out_valid && !(|wq_any) && !(|rq_any) && !rsp_valid;
 
-	assign m_awid = aw_id;
-	assign m_awaddr = {aw_line, {LINE_SHIFT{1'b0}}};
-	assign m_awvalid = aw_v;
+	assign m_awid = aw_skid_out_id;
+	assign m_awaddr = {aw_skid_out_line, {LINE_SHIFT{1'b0}}};
+	assign m_awvalid = aw_skid_out_valid;
 	assign m_wdata = w_buf[DATA_W-1:0];
 	assign m_wstrb = w_be[DATA_W/8-1:0];
 	assign m_wlast = w_beat == AXLEN;
 	assign m_wvalid = w_busy;
 
-	assign m_arid = ar_id;
-	assign m_araddr = {ar_line, {LINE_SHIFT{1'b0}}};
-	assign m_arvalid = ar_v;
+	assign m_arid = ar_skid_out_id;
+	assign m_araddr = {ar_skid_out_line, {LINE_SHIFT{1'b0}}};
+	assign m_arvalid = ar_skid_out_valid;
 	assign m_rready = 1'b1;
 
 	wire r_done = m_rvalid && m_rlast;
@@ -271,48 +305,22 @@ module am_axi_master #(
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			aw_v <= 1'b0;
-			aw_line <= {LA_W{1'b0}};
-			aw_id <= {ID_W{1'b0}};
 			w_busy <= 1'b0;
 			w_beat <= 8'd0;
 			w_buf <= {LINE_BITS{1'b0}};
 			w_be <= {LINE_BYTES{1'b0}};
 		end else begin
 			if (wr_take) begin
-				aw_v <= 1'b1;
-				aw_line <= req_line;
-				aw_id <= q_id;
 				w_busy <= 1'b1;
 				w_beat <= 8'd0;
 				w_buf <= req_wdata;
 				w_be <= req_be;
-			end else begin
-				if (aw_v && m_awready)
-					aw_v <= 1'b0;
-				if (w_busy && m_wready) begin
-					w_beat <= w_beat_n;
-					w_buf <= w_buf >> DATA_W;
-					w_be <= w_be >> (DATA_W / 8);
-					if (m_wlast)
-						w_busy <= 1'b0;
-				end
-			end
-		end
-	end
-
-	always @(posedge clk) begin
-		if (!rst_n) begin
-			ar_v <= 1'b0;
-			ar_line <= {LA_W{1'b0}};
-			ar_id <= {ID_W{1'b0}};
-		end else begin
-			if (rd_take) begin
-				ar_v <= 1'b1;
-				ar_line <= req_line;
-				ar_id <= q_id;
-			end else if (ar_v && m_arready) begin
-				ar_v <= 1'b0;
+			end else if (w_busy && m_wready) begin
+				w_beat <= w_beat_n;
+				w_buf <= w_buf >> DATA_W;
+				w_be <= w_be >> (DATA_W / 8);
+				if (m_wlast)
+					w_busy <= 1'b0;
 			end
 		end
 	end
