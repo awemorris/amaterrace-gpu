@@ -141,10 +141,10 @@
 
     <!-- Header Block -->
     <g transform="translate(30, 24)">
-        <text class="title" x="0" y="20">GHCI 2.0 GPU Architecture</text>
+        <text class="title" x="0" y="20">GHCI 1.0 GPU Architecture</text>
         <text class="subtitle" x="0" y="40">Vulkan-Class Host Controller Interface • Slim MMIO • Autonomous MMU • In-Memory Pipeline State</text>
         <rect x="680" y="4" width="260" height="28" rx="14" fill="#3b82f6" opacity="0.1"/>
-        <text x="810" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">TO-BE SPECIFICATION (GHCI 2.0)</text>
+        <text x="810" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">TO-BE SPECIFICATION (GHCI 1.0)</text>
     </g>
 
     <!-- Boundary: Host Interface (Left) -->
@@ -201,7 +201,7 @@
     <g transform="translate(260, 80)">
         <rect width="710" height="600" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow-sm)"/>
         <path d="M 0 10 Q 0 0 10 0 L 700 0 Q 710 0 710 10 L 710 38 L 0 38 Z" fill="#f1f5f9"/>
-        <text class="group-label" x="20" y="24" fill="#334155">GHCI 2.0 Conforming GPU Core (Amaterrace / ATG1)</text>
+        <text class="group-label" x="20" y="24" fill="#334155">GHCI 1.0 Conforming GPU Core (Amaterrace / ATG1)</text>
 
         <!-- Command Processor (CP) -->
         <g transform="translate(20, 50)">

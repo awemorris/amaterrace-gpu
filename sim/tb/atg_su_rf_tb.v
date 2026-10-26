@@ -34,12 +34,12 @@ module atg_su_rf_chk #(
 	reg w_en = 1'b0, r_en = 1'b0;
 	reg [WARP_W-1:0] w_warp = 0, r_warp = 0;
 	reg [GRP_W-1:0] w_grp = 0, r_grp = 0;
-	reg [5:0] w_reg = 0, r1 = 0, r2 = 0, r3 = 0;
+	reg [5:0] w_reg = 0, r1 = 0, r2 = 0;
 	reg [DW-1:0] w_data = 0;
 	reg [NPHYS-1:0] w_lanes = 0;
-	wire [DW-1:0] d1, d2, d3;
+	wire [DW-1:0] d1, d2;
 	reg [31:0] model [0:NWARPS*NREGS*32-1];
-	reg [DW-1:0] e1, e2, e3;
+	reg [DW-1:0] e1, e2;
 	integer seed = SEED;
 	integer i, l, k, phase;
 	reg chk;
@@ -53,7 +53,7 @@ module atg_su_rf_chk #(
 		.clk(clk), .rst_n(rst_n), .w_en(w_en), .w_warp(w_warp), .w_grp(w_grp), .w_reg(w_reg),
 		.scrub(1'b0), .scrub_busy(),
 		.w_data(w_data), .w_lanes(w_lanes), .r_en(r_en), .r_warp(r_warp), .r_grp(r_grp),
-		.r_reg1(r1), .r_reg2(r2), .r_reg3(r3), .r_data1(d1), .r_data2(d2), .r_data3(d3)
+		.r_reg1(r1), .r_reg2(r2), .r_data1(d1), .r_data2(d2)
 	);
 
 	function integer idx;
@@ -66,7 +66,6 @@ module atg_su_rf_chk #(
 			for (l = 0; l < NPHYS; l = l + 1) begin
 				e1[l*32 +: 32] = model[idx(r_warp, r1, r_grp, l)];
 				e2[l*32 +: 32] = model[idx(r_warp, r2, r_grp, l)];
-				e3[l*32 +: 32] = model[idx(r_warp, r3, r_grp, l)];
 			end
 		end
 	endtask
@@ -95,7 +94,7 @@ module atg_su_rf_chk #(
 			for (i = 0; i < 4000; i = i + 1) begin
 				@(negedge clk);
 				/* Check last cycle's read. */
-				if (chk && (d1 !== e1 || d2 !== e2 || d3 !== e3)) begin
+				if (chk && (d1 !== e1 || d2 !== e2)) begin
 					$display("FAIL atg_su_rf.%s NPHYS %0d at %0d",
 						phase ? "same" : "rw", NPHYS, i);
 					errs = errs + 1;
@@ -105,7 +104,6 @@ module atg_su_rf_chk #(
 				r_grp = $unsigned($random(seed)) % G;
 				r1 = $unsigned($random(seed)) % NREGS;
 				r2 = $unsigned($random(seed)) % NREGS;
-				r3 = $unsigned($random(seed)) % NREGS;
 				if (r_en) begin
 					expect;
 					chk = 1'b1;

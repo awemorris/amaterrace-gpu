@@ -6,14 +6,15 @@
  */
 
 /*
- * atg_su_rf: The SU register file (design §3.5): three copies of
- * NWARPS × NREGS × 32 lanes × 32 bits so that three sources are read in
- * one cycle, one bank per physical lane (NPHYS banks, each holding
+ * atg_su_rf: The SU register file (design §3.5): two copies of
+ * NWARPS × NREGS × 32 lanes × 32 bits in True Dual-Port Block RAM
+ * so that two sources are read concurrently every cycle alongside
+ * one writeback port, one bank per physical lane (NPHYS banks, each holding
  * 32/NPHYS architectural lanes).
  *
  * Write: w_en writes register w_reg of lane group w_grp of warp w_warp in
- * the lanes of w_lanes, in every copy.  Read: r_en reads r_reg1/2/3 of
- * one lane group; r_data1/2/3 are valid the cycle after r_en and hold
+ * the lanes of w_lanes, in every copy.  Read: r_en reads r_reg1 and r_reg2 of
+ * one lane group; r_data1 and r_data2 are valid the cycle after r_en and hold
  * until the next r_en.  A read of a register written in the same cycle
  * returns the old value (no bypass).  Address = {warp, reg, grp}.  The
  * contents are not reset.  scrub (session protection) writes 0 to every
@@ -46,10 +47,8 @@ module atg_su_rf #(
 	input wire [GRP_W-1:0] r_grp,
 	input wire [5:0] r_reg1,
 	input wire [5:0] r_reg2,
-	input wire [5:0] r_reg3,
 	output wire [NPHYS*32-1:0] r_data1,
 	output wire [NPHYS*32-1:0] r_data2,
-	output wire [NPHYS*32-1:0] r_data3,
 	/* Session protection: clear the contents */
 	input wire scrub,
 	output wire scrub_busy
@@ -73,11 +72,9 @@ module atg_su_rf #(
 	wire [31:0] wa32 = addr(w_warp, w_reg, w_grp);
 	wire [31:0] ra1_32 = addr(r_warp, r_reg1, r_grp);
 	wire [31:0] ra2_32 = addr(r_warp, r_reg2, r_grp);
-	wire [31:0] ra3_32 = addr(r_warp, r_reg3, r_grp);
 	wire [A_W-1:0] wa = wa32[A_W-1:0];
 	wire [A_W-1:0] ra1 = ra1_32[A_W-1:0];
 	wire [A_W-1:0] ra2 = ra2_32[A_W-1:0];
-	wire [A_W-1:0] ra3 = ra3_32[A_W-1:0];
 
 	wire sc_on;
 	wire [A_W-1:0] sc_a;
@@ -90,33 +87,29 @@ module atg_su_rf #(
 	/* The write port: the scrub's zeros or the write-back's data. */
 	wire [A_W-1:0] wam = sc_on ? sc_a : wa;
 
-	/* One bank per lane and copy: a simple dual-port RAM (one write, one read port). */
+	/* Two copies per lane: m1 for read port 1, m2 for read port 2. Both written on write-back. */
 	genvar l;
 	generate
 		for (l = 0; l < NPHYS; l = l + 1) begin : lane
-			reg [31:0] m1 [0:DEPTH-1];
-			reg [31:0] m2 [0:DEPTH-1];
-			reg [31:0] m3 [0:DEPTH-1];
-			reg [31:0] q1, q2, q3;
+			(* ram_style = "block" *) reg [31:0] m1 [0:DEPTH-1];
+			(* ram_style = "block" *) reg [31:0] m2 [0:DEPTH-1];
+			reg [31:0] q1, q2;
 			always @(posedge clk) begin
-				if (sc_on || w_en && w_lanes[l]) begin
+				if (sc_on || (w_en && w_lanes[l])) begin
 					m1[wam] <= sc_on ? 32'd0 : w_data[l*32 +: 32];
 					m2[wam] <= sc_on ? 32'd0 : w_data[l*32 +: 32];
-					m3[wam] <= sc_on ? 32'd0 : w_data[l*32 +: 32];
 				end
 				if (r_en) begin
 					q1 <= m1[ra1];
 					q2 <= m2[ra2];
-					q3 <= m3[ra3];
 				end
 			end
 			assign r_data1[l*32 +: 32] = q1;
 			assign r_data2[l*32 +: 32] = q2;
-			assign r_data3[l*32 +: 32] = q3;
 		end
 	endgenerate
 
-	wire unused_ok = &{1'b0, wa32, ra1_32, ra2_32, ra3_32};
+	wire unused_ok = &{1'b0, wa32, ra1_32, ra2_32};
 endmodule
 
 `default_nettype wire

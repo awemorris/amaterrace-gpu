@@ -46,8 +46,8 @@ module atg_su_opd_chk #(
 	wire r_en, cr_en, rq_pop;
 	wire [1:0] r_warp, q_warp;
 	wire [GRP_W-1:0] r_grp, x_grp;
-	wire [17:0] r_regs;
-	reg [3*DW-1:0] r_data = 0;
+	wire [11:0] r_regs;
+	reg [2*DW-1:0] r_data = 0;
 	wire [14:0] cr_idx;
 	reg [95:0] cr_data = 0;
 	wire x_valid, x_last;
@@ -104,7 +104,6 @@ module atg_su_opd_chk #(
 			for (l = 0; l < NPHYS; l = l + 1) begin
 				r_data[l*32 +: 32] <= gv(r_warp, r_regs[5:0], r_grp * NPHYS + l);
 				r_data[DW + l*32 +: 32] <= gv(r_warp, r_regs[11:6], r_grp * NPHYS + l);
-				r_data[2*DW + l*32 +: 32] <= gv(r_warp, r_regs[17:12], r_grp * NPHYS + l);
 			end
 		if (cr_en)
 			cr_data <= {cv(cr_idx[14:10]), cv(cr_idx[9:5]), cv(cr_idx[4:0])};
@@ -199,7 +198,7 @@ module atg_su_opd_chk #(
 			n3 = u[ATG_UOP_PAIR] ? n1 + 7'd1 : u[ATG_UOP_RS3 +: 7];
 			for (l = 0; l < NPHYS; l = l + 1) begin
 				lane = grp * NPHYS + l;
-				for (src = 0; src < 3; src = src + 1) begin
+				for (src = 0; src < (u[ATG_UOP_USE3] || u[ATG_UOP_PAIR] ? 3 : 2); src = src + 1) begin
 					want = ref_op(src == 0 ? n1 : src == 1 ? n2 : n3, w, lane);
 					want = ref_mod(want, u[ATG_UOP_MOD + 2*src], u[ATG_UOP_MOD + 2*src + 1],
 						u[ATG_UOP_UNIT +: 4]);
@@ -285,8 +284,8 @@ module atg_su_opd_chk #(
 			if (i_uop[ATG_UOP_PAIR] && (i_uop[ATG_UOP_RS1 +: 7] == 62 ||
 			    i_uop[ATG_UOP_RS1 +: 7] == 95 || i_uop[ATG_UOP_RS1 +: 7] == 127))
 				i_uop[ATG_UOP_RS1 +: 7] = 7'd5;
-			/* a four-operand uop (a texture .c form): PAIR and rs3 */
-			i_uop[ATG_UOP_USE3] = i_uop[ATG_UOP_PAIR] && ($random(seed) & 1);
+			/* three- or four-operand uop: PAIR and/or USE3 */
+			i_uop[ATG_UOP_USE3] = ($random(seed) & 1);
 			q_uop[n_iss] = i_uop;
 			q_w[n_iss] = i_warp;
 			#1;

@@ -51,7 +51,7 @@
 | `q001-i37` | **P2** | [ws001-p006](ws001/phase006/phase.md) | 細粒度同期（Timeline Semaphore / パイプラインバリア）& Vulkan 1.0 必須機能補完 | cleared | `q001-i06`, `q001-i36` | 実装・テスト PASS。R1 敵対的レビュー APPROVE 承認完了（ステージ別バリア & DualSrc/LogicOp）。 |
 | `q001-i38` | **P1** | [ws001-p011](ws001/phase011/phase.md) | オペランドフォワーディング（Bypass ネットワーク）の実装 | cleared | `q001-i35` | P1 実装・単体・`atg_su:+quick` 全構成 PASS（commit `c15201a`）。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i39` | **P2 / R1** | [ws001-p007](ws001/phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新 | cleared | `q001-i02`, `q001-i04` | P2 実装・単体・FW・回帰 PASS（commit `5d5f819`）。R1 敵対的レビュー APPROVE 承認完了。 |
-| `q001-i40` | **P3** | [ws001-p013](ws001/phase013/phase.md) | レジスタファイル最適化（BRAM 半減・マルチ SU 面積削減） | in-review | `q001-i35` | P3 実装・単体・Icarus 全回帰・Verilator 全7モード PASS（commit `437039a`）。R1 レビュー待ち。 |
+| `q001-i40` | **P3** | [ws001-p013](ws001/phase013/phase.md) | レジスタファイル最適化（BRAM 半減・マルチ SU 面積削減） | cleared | `q001-i35` | P3 実装・True Dual-Port BRAM 統合・`atg_su:+quick`全構成PASS。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i41` | **P1** | [ws001-p012](ws001/phase012/phase.md) | スコアボード主導型ワープスケジューラ（GTO & Replay 根絶） | in-review | `q001-i38` | P1 実装・GTO単体PASS・`atg_su:+quick`全構成PASS（commit `c37e924`）。R1 レビュー待ち。 |
 | `q001-i42` | **P2** | [ws002-p004](../ws002/phase004/phase.md) | TU 異方性フィルタリング（Anisotropic Filtering 最大 16x EWA ループ） | cleared | `q001-i16` | P2 実装・全8テスト PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i43` | **P2** | [ws002-p005](../ws002/phase005/phase.md) | TU シームレスキューブマップフィルタリング（面境界テクセル補間） | cleared | `q001-i13` | P2 実装・全1266テスト PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |

@@ -45,12 +45,12 @@ module atg_su_opd #(
 	input wire [15:0] i_pc,
 	input wire [UOP_W-1:0] i_uop,
 	input wire [SBE_W:0] i_sbe,
-	/* Register file (atg_su_rf read port) */
+	/* Register file (atg_su_rf read port: dual read port) */
 	output wire r_en,
 	output wire [WARP_W-1:0] r_warp,
 	output wire [GRP_W-1:0] r_grp,
-	output wire [17:0] r_regs,
-	input wire [3*NPHYS*32-1:0] r_data,
+	output wire [11:0] r_regs,
+	input wire [2*NPHYS*32-1:0] r_data,
 	/* Constant bank (atg_su_cbank) */
 	output wire cr_en,
 	output wire [14:0] cr_idx,
@@ -126,6 +126,7 @@ module atg_su_opd #(
 	reg [UOP_W-1:0] a_uop;
 	reg [SBE_W:0] a_sbe;
 	reg [GRP_W-1:0] a_grp;
+	reg a_step;	/* 0 = step 0 (reads rs1, rs2), 1 = step 1 (reads rs3) */
 	reg a_pass;	/* the second operand pass of a four-operand uop */
 	/* Stage B: the group on x_*. */
 	reg b_valid, b_last;
@@ -135,12 +136,18 @@ module atg_su_opd #(
 	reg [SBE_W:0] b_sbe;
 	reg [GRP_W-1:0] b_grp;
 	reg b_pass;
+	reg b_step1;
+	reg [DW-1:0] hold_r1;
+	reg [DW-1:0] hold_r2;
 
 	wire [3:0] b_unit = b_uop[ATG_UOP_UNIT +: 4];
 	wire b_adv = !b_valid || unit_ready[b_unit];
 	wire a_adv = a_act && b_adv;
 	wire a_wide = a_uop[ATG_UOP_PAIR] && a_uop[ATG_UOP_USE3];
-	wire a_last = {{(32-GRP_W){1'b0}}, a_grp} == G - 1 && (!a_wide || a_pass);
+	wire a_needs_step1 = a_uop[ATG_UOP_USE3] || a_uop[ATG_UOP_PAIR];
+	wire a_step_done = !a_needs_step1 || a_step;
+	wire a_pass_done = (!a_wide || a_pass) && a_step_done;
+	wire a_last = ({{(32-GRP_W){1'b0}}, a_grp} == G - 1) && a_pass_done;
 	assign i_ready = !a_act || (a_adv && a_last);
 	wire take = i_valid && i_ready;
 
@@ -156,13 +163,17 @@ module atg_su_opd #(
 	am_add #(.W(GRP_W)) u_a_grp (.a(a_grp), .b({GRP_W{1'b0}}), .ci(1'b1), .s(a_grp_next),
 		.co(ag_co_unused));
 	wire [6:0] a_n3 = a_uop[ATG_UOP_PAIR] ? a_r1p : a_uop[ATG_UOP_RS3 +: 7];
+
+	wire [6:0] a_rf_r1 = a_step ? a_n3 : a_r1;
+	wire [6:0] a_rf_r2 = a_step ? 7'd0 : a_n2;
+
 	assign r_en = a_adv;
 	assign r_warp = a_warp;
 	assign r_grp = a_grp;
-	assign r_regs = {a_n3[5:0], a_n2[5:0], a_n1[5:0]};
-	assign cr_en = a_adv;
+	assign r_regs = {a_rf_r2[5:0], a_rf_r1[5:0]};
+	assign cr_en = a_adv && (!a_needs_step1 || !a_step);
 	assign cr_idx = {a_n3[4:0], a_n2[4:0], a_n1[4:0]};
-	assign rq_pop = a_adv && a_uop[ATG_UOP_RQS] && !a_pass;
+	assign rq_pop = a_adv && a_uop[ATG_UOP_RQS] && !a_pass && (!a_needs_step1 || !a_step);
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -173,26 +184,39 @@ module atg_su_opd #(
 			a_uop <= {UOP_W{1'b0}};
 			a_sbe <= {(SBE_W+1){1'b0}};
 			a_grp <= {GRP_W{1'b0}};
+			a_step <= 1'b0;
 			a_pass <= 1'b0;
 			b_pass <= 1'b0;
+			b_step1 <= 1'b0;
 			b_last <= 1'b0;
 			b_warp <= {WARP_W{1'b0}};
 			b_pc <= 16'd0;
 			b_uop <= {UOP_W{1'b0}};
 			b_sbe <= {(SBE_W+1){1'b0}};
 			b_grp <= {GRP_W{1'b0}};
+			hold_r1 <= {DW{1'b0}};
+			hold_r2 <= {DW{1'b0}};
 		end else begin
 			if (b_adv) begin
-				b_valid <= a_act;
-				if (a_act) begin
-					b_warp <= a_warp;
-					b_pc <= a_pc;
-					b_uop <= a_uop;
-					b_sbe <= a_sbe;
-					b_grp <= a_grp;
-					b_pass <= a_pass;
-					b_last <= a_last;
+				if (a_adv) begin
+					b_valid <= a_step_done;
+					if (a_step_done) begin
+						b_warp <= a_warp;
+						b_pc <= a_pc;
+						b_uop <= a_uop;
+						b_sbe <= a_sbe;
+						b_grp <= a_grp;
+						b_pass <= a_pass;
+						b_last <= a_last;
+						b_step1 <= a_needs_step1;
+					end
+				end else begin
+					b_valid <= 1'b0;
 				end
+			end
+			if (a_step) begin
+				hold_r1 <= r_data[0 +: DW];
+				hold_r2 <= r_data[DW +: DW];
 			end
 			if (take) begin
 				a_act <= 1'b1;
@@ -201,16 +225,22 @@ module atg_su_opd #(
 				a_uop <= i_uop;
 				a_sbe <= i_sbe;
 				a_grp <= {GRP_W{1'b0}};
+				a_step <= 1'b0;
 				a_pass <= 1'b0;
 			end else if (a_adv) begin
-				if (a_wide && !a_pass) begin
-					a_pass <= 1'b1;
+				if (a_needs_step1 && !a_step) begin
+					a_step <= 1'b1;
 				end else begin
-					a_pass <= 1'b0;
-					if (a_last)
-						a_act <= 1'b0;
-					else
-						a_grp <= a_grp_next;
+					a_step <= 1'b0;
+					if (a_wide && !a_pass) begin
+						a_pass <= 1'b1;
+					end else begin
+						a_pass <= 1'b0;
+						if (a_last)
+							a_act <= 1'b0;
+						else
+							a_grp <= a_grp_next;
+					end
 				end
 			end
 		end
@@ -402,6 +432,10 @@ module atg_su_opd #(
 	wire hit_wb_3      = fwd_wb_valid      && (k3 == 3'd1) && (fwd_wb_rd < 7'd63)      && (fwd_wb_warp      == b_warp) && (fwd_wb_grp      == b_grp) && (fwd_wb_rd[5:0]      == b_n3[5:0]);
 	wire hit_rf_3      = fwd_rf_valid      && (k3 == 3'd1) && (fwd_rf_rd < 7'd63)      && (fwd_rf_warp      == b_warp) && (fwd_rf_grp      == b_grp) && (fwd_rf_rd[5:0]      == b_n3[5:0]);
 
+	wire [DW-1:0] rf_src1 = b_step1 ? hold_r1 : r_data[0 +: DW];
+	wire [DW-1:0] rf_src2 = b_step1 ? hold_r2 : r_data[DW +: DW];
+	wire [DW-1:0] rf_src3 = r_data[0 +: DW];
+
 	/*
 	 * Per lane: its number in the warp (the group's base and l: disjoint
 	 * bits), each operand's common part + the lane (one adder each).
@@ -424,21 +458,21 @@ module atg_su_opd #(
 			                   (hit_fpu_ex5_1 && fwd_fpu_ex5_lanes[l]) ? fwd_fpu_ex5_data[l*32 +: 32] :
 			                   (hit_wb_1      && fwd_wb_lanes[l])      ? fwd_wb_data[l*32 +: 32]      :
 			                   (hit_rf_1      && fwd_rf_lanes[l])      ? fwd_rf_data[l*32 +: 32]      :
-			                   r_data[l*32 +: 32];
+			                   rf_src1[l*32 +: 32];
 			wire [31:0] gpr2 = (hit_alu_ex4_2 && fwd_alu_ex4_lanes[l]) ? fwd_alu_ex4_data[l*32 +: 32] :
 			                   (hit_fpu_ex4_2 && fwd_fpu_ex4_lanes[l]) ? fwd_fpu_ex4_data[l*32 +: 32] :
 			                   (hit_alu_ex5_2 && fwd_alu_ex5_lanes[l]) ? fwd_alu_ex5_data[l*32 +: 32] :
 			                   (hit_fpu_ex5_2 && fwd_fpu_ex5_lanes[l]) ? fwd_fpu_ex5_data[l*32 +: 32] :
 			                   (hit_wb_2      && fwd_wb_lanes[l])      ? fwd_wb_data[l*32 +: 32]      :
 			                   (hit_rf_2      && fwd_rf_lanes[l])      ? fwd_rf_data[l*32 +: 32]      :
-			                   r_data[DW + l*32 +: 32];
+			                   rf_src2[l*32 +: 32];
 			wire [31:0] gpr3 = (hit_alu_ex4_3 && fwd_alu_ex4_lanes[l]) ? fwd_alu_ex4_data[l*32 +: 32] :
 			                   (hit_fpu_ex4_3 && fwd_fpu_ex4_lanes[l]) ? fwd_fpu_ex4_data[l*32 +: 32] :
 			                   (hit_alu_ex5_3 && fwd_alu_ex5_lanes[l]) ? fwd_alu_ex5_data[l*32 +: 32] :
 			                   (hit_fpu_ex5_3 && fwd_fpu_ex5_lanes[l]) ? fwd_fpu_ex5_data[l*32 +: 32] :
 			                   (hit_wb_3      && fwd_wb_lanes[l])      ? fwd_wb_data[l*32 +: 32]      :
 			                   (hit_rf_3      && fwd_rf_lanes[l])      ? fwd_rf_data[l*32 +: 32]      :
-			                   r_data[2*DW + l*32 +: 32];
+			                   rf_src3[l*32 +: 32];
 
 			assign va[l*32 +: 32] = fmod(opl(k1, com1, gpr1, rq_data[l*32 +: 32],
 				ln, kill_g[l], cl1), mods[0], mods[1], fp_unit, pk_unit);
@@ -464,7 +498,7 @@ module atg_su_opd #(
 	assign x_info = {13'd0, q_info[ATG_WI_FRONT], q_info[ATG_WI_KIND +: 2],
 		q_info[ATG_WI_SEQ +: 16]};
 
-	wire unused_ok = &{1'b0, a_n1[6], a_n2[6], a_n3[6], mods[6], exec_g, kill_g, cov_g, grp_base, q_info};
+	wire unused_ok = &{1'b0, a_n1, a_n2[6], a_n3[6], a_rf_r1[6], a_rf_r2[6], mods[6], exec_g, kill_g, cov_g, grp_base, q_info};
 endmodule
 
 `default_nettype wire

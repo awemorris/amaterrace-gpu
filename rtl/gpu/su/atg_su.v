@@ -231,8 +231,8 @@ module atg_su #(
 	wire r_en;
 	wire [WARP_W-1:0] r_warp;
 	wire [GRP_W-1:0] r_grp;
-	wire [17:0] r_regs;
-	wire [DW-1:0] r_data1, r_data2, r_data3;
+	wire [11:0] r_regs;
+	wire [DW-1:0] r_data1, r_data2;
 	wire cr_en;
 	wire [14:0] cr_idx;
 	wire [95:0] cr_data;
@@ -440,7 +440,7 @@ module atg_su #(
 		.w_en(w_en), .w_warp(w_warp), .w_grp(w_grp), .w_reg(w_reg), .w_data(w_data),
 		.w_lanes(w_lanes),
 		.r_en(r_en), .r_warp(r_warp), .r_grp(r_grp), .r_reg1(r_regs[5:0]), .r_reg2(r_regs[11:6]),
-		.r_reg3(r_regs[17:12]), .r_data1(r_data1), .r_data2(r_data2), .r_data3(r_data3)
+		.r_data1(r_data1), .r_data2(r_data2)
 	);
 
 	wire alu_fwd_ex4_valid, alu_fwd_ex5_valid;
@@ -472,7 +472,7 @@ module atg_su #(
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
 		.i_sbe(i_sbe),
 		.r_en(r_en), .r_warp(r_warp), .r_grp(r_grp), .r_regs(r_regs),
-		.r_data({r_data3, r_data2, r_data1}),
+		.r_data({r_data2, r_data1}),
 		.cr_en(cr_en), .cr_idx(cr_idx), .cr_data(cr_data),
 		.q_warp(q_warp), .q_info(q_info), .q_exec(q_exec), .q_killed(q_killed),
 		.rq_pop(rq_pop), .rq_data(rq_pop_data),
