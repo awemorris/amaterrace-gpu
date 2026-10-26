@@ -20,8 +20,8 @@
 | `q001-i06` | **P1** | [ws001-p003](ws001/phase003/phase.md) | 共有 L2 キャッシュ（LLC: 256 KiB、16-way）導入 & キャッシュコヒーレンシ再構築 | in-progress | `q001-i03` | ユーザー承認（「推奨で行きます」）に基づき着手。MC 前段に LLC を導入中。 |
 | `q001-i07` | **P2 / R1 / T1** | [ws001-p004](ws001/phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定・アーキテクチャ設計・RTL 実装 | cleared | `q001-i05` | 実装完了。R1 敵対的レビュー APPROVE 承認完了、T1 フル回帰 ALL PASS 完了。 |
 | `q001-i08` | **P2** | [ws001-p009](ws001/phase009/phase.md) | 算術演算ライブラリ（am_shift Bit Reversal 1本化、am_div 非回復法化）の物理最適化 | cleared | `q001-i02` | 実装完了（commit 0b683e9）。T1 フル回帰 ALL PASS & R1 APPROVE 承認完了。 |
-| `q001-i09` | **P2** | [ws001-p014](ws001/phase014/phase.md) | 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減、遅延 75% 削減） | cleared | `q001-i01` | 是正修正完了（18bit div255 & 32乗算器完全互換、commit 16d2a8c）。T1/R1 再検証中。 |
-| `q001-i10` | **P2** | [ws001-p015](ws001/phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle 100倍高速化） | cleared | `q001-i09` | 実装完了（commit 16d2a8c）。5段ストリーム化・3.8万サイクル短縮。T1/R1 検証中。 |
+| `q001-i09` | **P2** | [ws001-p014](ws001/phase014/phase.md) | 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減、遅延 75% 削減） | cleared | `q001-i01` | 是正修正完了（18bit div255 & 32乗算器完全互換、commit 16d2a8c）。R1 再審査 APPROVE 承認完了。 |
+| `q001-i10` | **P2** | [ws001-p015](ws001/phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle 100倍高速化） | cleared | `q001-i09` | 実装完了（commit 16d2a8c）。5段ストリーム化・3.8万サイクル短縮。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i11` | **P2** | [ws001-p016](ws001/phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | in-progress | `q001-i10` | 非同期フローに基づき P2 着手。16エントリ CAM 座標追跡・Stop-and-Wait 撤廃。 |
 | `q001-i12` | **P2** | [ws001-p017](ws001/phase017/phase.md) | ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消（8KB Color/Depth） | queued | `q001-i11`, `q001-i06` | P2 待機。DRAM トラフィック 70〜80% 削減。 |
 | `q001-i13` | **P2** | [ws001-p018](ws001/phase018/phase.md) | TU 4 レーン並列ストリームアドレス生成（atg_tu_addr 逐次 FSM 撤廃・1 cycle/quad 化） | queued | `q001-i01` | P2 待機。即時着手可能。 |
