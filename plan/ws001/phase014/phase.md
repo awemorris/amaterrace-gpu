@@ -3,7 +3,7 @@
 # Phase 014: 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・全数網羅PASS)
+- **状態**: `in-progress` (T1 回帰テスト REJECT: atg_rop_blend 失敗による差し戻し修正中)
 - **依存**: [ws001-p001](../phase001/phase.md)
 - **優先度**: Critical (ROP クリティカルパス遅延 75% 削減 & 乗算器 50% 削減)
 - **出典**: ユーザー諮問（ROP ブレンド高速化）および R1 敵対的アーキテクチャ分析レポート
@@ -50,3 +50,9 @@
    - `sim/verilator/run.sh`: 全 7 スイート（`basic`, `raster`, `shade`, `tex`, `msaa`, `compute`, `core`）すべて **PASS**（画像 1 bit の狂いもなく完全一致）。
 3. **敵対的レビュー（R1 判定）**:
    - **APPROVE**（`adversarial_review_ws001_p014_rop_blend.md`）。恒等式に基づく 1 段加算器化、全数網羅テスト、Lerp による乗算器半減、LAT=3 遅延不変性、Guardrails 完全準拠を承認。
+
+4. **T1 回帰テスト差し戻し（REJECT: 2026-10-26）**:
+   - `sim/run.sh atg_rop_blend`: **FAIL**
+   - 不具合 1: `atg_rop_div255.v` が 16 ビット入力（$x \le 65,025$）に制限され、ブレンド加算値 $p + q = S \times F_s + D \times F_d \le 130,050$（18 ビット）の上位 2 ビット `x[17:16]` を破棄してオーバーフロー発生。
+   - 不具合 2: `atg_rop_blend.v` の Lerp 変換により任意ブレンドモード（$F_s, F_d \ne \alpha$）で一方の係数乗算が欠落。
+   - 対応: `atg_rop_blend.v` は各チャンネル 2 乗算器（計 32 乗算器）構成を堅持し、`atg_rop_div255.v` は 18 ビット入力（$x \le 130,050$）を正しく丸め除算するよう修正。
