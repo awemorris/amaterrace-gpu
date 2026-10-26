@@ -17,17 +17,15 @@
  * and the clip rectangle.  Other combinations are refused with an error
  * of kind OPCODE.
  *
- * The walk works in bytes: segments inside one destination line (and one
- * row of a tile), their addresses in four cycles (atg_blt_seg); FILL
- * streams its writes; COPY, TILE and UNTILE wait for every earlier write
- * (the MC does not order a read after a write), read the one or two
- * source lines (atg_blt_port) and shift them into place; blend-over reads
- * the destination line too.  busy, done and error (kind AXI after an error
- * response, when every request is answered) as spec/gpu/blt/atg_blt_2d.md.
- *
- * States: S_IDLE →(kick)→ S_CLIP → S_START → S_MUL → S_SA → S_SB → S_SC →
- * S_SD → [S_CRD → S_CWAIT] → [S_DRD → S_DWAIT → S_BLEND] → S_WR → S_SA
- * (next segment or row) or S_DRAIN → S_IDLE.
+ * Streaming burst DMA architecture (Phase 030):
+ * For COPY, TILE, UNTILE and FILL without blend/RAW smear, a 1 KiB ping-pong
+ * buffer (Bank 0 / Bank 1, 512B each) and decoupled prefetch walk decouple
+ * source burst reads from destination pipeline writes. Source lines are
+ * prefetched into the active filling bank, aligned via a single-cycle barrel
+ * shifter on read-out, and written as continuous pipeline bursts without
+ * per-segment stop-and-wait roundtrip penalties, achieving 1.0+ GB/s throughput.
+ * Blend-over and self-overlapping smear operations fall back to the serial
+ * verified path.
  */
 
 `timescale 1ns / 1ps
@@ -67,6 +65,9 @@ module atg_blt_2d #(
 	localparam LINE_BITS = LINE_BYTES * 8;
 	localparam US = LINE_SHIFT;		/* log2 of the bytes of a line */
 	localparam LA_W = ADDR_W - LINE_SHIFT;
+	localparam [2:0] MAX_SEGS_M1 = (LINE_SHIFT == 5) ? 3'd7 : 3'd3;
+	localparam [3:0] SLOT_LIMIT1 = (LINE_SHIFT == 5) ? 4'd15 : 4'd7;
+	localparam [3:0] SLOT_LIMIT2 = (LINE_SHIFT == 5) ? 4'd14 : 4'd6;
 
 	/* The state and the operation (atg_blt_cfg). */
 	wire [1:0] o_op;
@@ -94,6 +95,7 @@ module atg_blt_2d #(
 	reg m_dtile, m_stile;	/* the destination (TILE), the source (UNTILE) is tiled */
 	reg [2:0] psl;		/* log2 of the pixel's bytes */
 	reg [3:0] m_keep;
+	reg m_burst;
 
 	/* The pixel offset of pixel x in a row (linear or in 4x4 tiles); its bytes are this << psl. */
 	function [ADDR_W-1:0] x_pixels;
@@ -138,6 +140,7 @@ module atg_blt_2d #(
 	localparam [3:0] S_BLEND = 4'd12;	/* blend the line */
 	localparam [3:0] S_WR = 4'd13;		/* queue the segment's write */
 	localparam [3:0] S_DRAIN = 4'd14;	/* wait for every response */
+	localparam [3:0] S_BURST = 4'd15;	/* decoupled streaming burst DMA */
 
 	reg [3:0] state;
 
@@ -165,19 +168,94 @@ module atg_blt_2d #(
 	reg n0_slot;
 	reg rd_first, rd_second;	/* the first, a needed second source read is to go */
 
+	/*
+	 * =========================================================================
+	 * Burst Engine Signals & Registers
+	 * =========================================================================
+	 */
+	/* 1 KiB RAM (32 slots) */
+	reg [LINE_BITS-1:0] pp_ram [0:31];
+
+	/* Bank Metadata (2 Banks, up to 8 segments each) */
+	reg [LA_W-1:0] meta_dline [0:1][0:7];
+	reg [LINE_BYTES-1:0] meta_be [0:1][0:7];
+	reg [US-1:0] meta_off [0:1][0:7];
+	reg [3:0] meta_slot0 [0:1][0:7];
+	reg [3:0] meta_slot1 [0:1][0:7];
+	reg [7:0] meta_n0slot [0:1];
+	reg [3:0] bank_num_segs [0:1];
+	reg [1:0] bank_is_last;
+	reg [1:0] bank_active;
+	reg [1:0] bank_closed;
+	reg [1:0] bank_ready;
+	reg [4:0] bank_rd_pending [0:1];
+
+	/* Burst Walk & Prefetch registers */
+	reg bw_bank;
+	reg [2:0] bw_seg_idx;
+	reg [3:0] bw_slot_cnt;
+	reg bw_sub;
+	reg bw_done_all;
+	reg [16:0] px_b, spx_b, rem_b, rows_b;
+	reg [1:0] ydl_b, ysl_b;
+	reg [ADDR_W-1:0] dst_row_b, src_row_b;
+
+	/* Burst Write & Commit registers */
+	reg br_bank;
+	reg [2:0] br_seg_idx;
+	reg br_active;
+	reg b_draining;
+	reg [4:0] burst_wr_out;
+
+	/* Mux inputs to address and segment logic */
+	wire bw_slot_full = bst_two_lines ? (bw_slot_cnt >= SLOT_LIMIT2) : (bw_slot_cnt >= SLOT_LIMIT1);
+	wire is_burst_state = (state == S_BURST);
+	wire [16:0] cur_px = is_burst_state ? px_b : px;
+	wire [16:0] cur_spx = is_burst_state ? spx_b : spx;
+	wire [16:0] cur_rem = is_burst_state ? rem_b : rem;
+	wire [ADDR_W-1:0] cur_dst_row = is_burst_state ? dst_row_b : dst_row;
+	wire [ADDR_W-1:0] cur_src_row = is_burst_state ? src_row_b : src_row;
+
+	/*
+	 * =========================================================================
+	 * Segment Geometry & Addresses: Common Combinational Datapath
+	 * =========================================================================
+	 */
+	wire [ADDR_W-1:0] cur_da_full = d_addr;
+	wire [ADDR_W-1:0] cur_sa_full = s_addr;
+
 	/* The segment's geometry (atg_blt_seg, combinational). */
 	wire [US:0] seg_n;
 	wire [ADDR_W-1:0] back, src_base_u;
 	wire [LA_W-1:0] last_line;
 	wire [LINE_BYTES-1:0] seg_be;
 
+	wire [ADDR_W-1:0] cur_dlo_comb = m_rev ? d_lo : cur_da_full;
+	wire [ADDR_W-1:0] cur_slo_comb = m_rev ? s_lo : cur_sa_full;
+
+	wire [US-1:0] seg_in_da = is_burst_state ? cur_da_full[US-1:0] : da[US-1:0];
+	wire [US:0]   seg_in_sn = is_burst_state ? seg_n : sn;
+	wire [US:0]   seg_in_snu = is_burst_state ? seg_bytes : snu;
+	wire [US-1:0] seg_in_dlo = is_burst_state ? cur_dlo_comb[US-1:0] : dlo[US-1:0];
+	wire [ADDR_W-1:0] seg_in_slo = is_burst_state ? cur_slo_comb : slo;
+	wire [US-1:0] seg_in_p0 = is_burst_state ? cur_dlo_comb[US-1:0] : seg_p0;
+
 	atg_blt_seg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) seg (
 		.psl(psl), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
-		.da(da[US-1:0]), .px(px[1:0]), .spx(spx[1:0]), .rem(rem), .sn(sn), .snu(snu), .dlo(dlo[US-1:0]),
-		.slo(slo), .p0(seg_p0), .seg_n(seg_n), .back(back), .src_base(src_base_u),
+		.da(seg_in_da), .px(cur_px[1:0]), .spx(cur_spx[1:0]), .rem(cur_rem),
+		.sn(seg_in_sn), .snu(seg_in_snu), .dlo(seg_in_dlo), .slo(seg_in_slo),
+		.p0(seg_in_p0), .seg_n(seg_n), .back(back), .src_base(src_base_u),
 		.last_line(last_line), .be(seg_be)
 	);
 	wire [LA_W-1:0] src_lo = src_base_u[ADDR_W-1:US];
+
+	/* Burst Engine segment fields */
+	wire [LA_W-1:0] bst_seg_line = cur_dlo_comb[ADDR_W-1:US];
+	wire [LA_W-1:0] bst_src_n0   = cur_slo_comb[ADDR_W-1:US];
+	wire [LA_W-1:0] bst_src_n1   = last_line;
+	wire            bst_two_lines = (bst_src_n1 != bst_src_n0);
+	wire [US-1:0]   bst_src_off  = src_base_u[US-1:0];
+	wire            bst_n0_slot  = (cur_slo_comb[ADDR_W-1:US] != src_lo);
 
 	/* The port: the request, the outstanding requests, the line buffers. */
 	wire q_free, rd_idle, wr_idle, fail;
@@ -204,27 +282,103 @@ module atg_blt_2d #(
 		.dst(bufd), .done(bl_done), .out(bl_out)
 	);
 
+	/* Legacy port instance */
+	wire leg_req_valid, leg_req_write;
+	wire [LA_W-1:0] leg_req_line;
+	wire [LINE_BYTES-1:0] leg_req_be;
+	wire [LINE_BITS-1:0] leg_req_wdata;
+	wire [7:0] leg_req_tag;
+
 	atg_blt_port #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) port (
 		.clk(clk), .rst_n(rst_n), .clr(state == S_IDLE && kick),
-		.issue(rd_go || drd_go || wr_go), .i_write(wr_go),
+		.issue((rd_go || drd_go || wr_go) && !m_burst), .i_write(wr_go),
 		.i_line(rd_go ? (rd_first ? src_n0 : src_n1) : seg_line),
 		.i_slot(rd_go ? (rd_first ? {1'b0, n0_slot} : 2'd1) : drd_go ? 2'd2 : 2'd0),
 		.i_be(wr_go ? seg_be : {LINE_BYTES{1'b1}}),
 		.i_wdata(m_blend ? bl_out : m_copy ? copy_line : fill_line),
 		.free(q_free), .rd_idle(rd_idle), .wr_idle(wr_idle), .fail(fail),
 		.buf0(buf0), .buf1(buf1), .bufd(bufd),
-		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
-		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
-		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
+		.req_valid(leg_req_valid), .req_ready(req_ready && !m_burst), .req_write(leg_req_write),
+		.req_line(leg_req_line), .req_be(leg_req_be), .req_wdata(leg_req_wdata), .req_tag(leg_req_tag),
+		.rsp_valid(rsp_valid && !m_burst), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
 		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
 	);
+
+	/*
+	 * =========================================================================
+	 * Burst Engine Read/Write Data Path & Barrel Shifter
+	 * =========================================================================
+	 */
+	/* Read-out from ping-pong RAM */
+	wire [3:0] r_slot0 = meta_slot0[br_bank][br_seg_idx];
+	wire [3:0] r_slot1 = meta_slot1[br_bank][br_seg_idx];
+	wire [LINE_BITS-1:0] pp_sdata0 = pp_ram[{br_bank, r_slot0}];
+	wire [LINE_BITS-1:0] pp_sdata1 = pp_ram[{br_bank, r_slot1}];
+	wire r_n0slot = meta_n0slot[br_bank][br_seg_idx];
+	wire [US-1:0] r_off = meta_off[br_bank][br_seg_idx];
+	wire [2*LINE_BITS-1:0] pp_both = r_n0slot ? {pp_sdata0, pp_sdata1} : {pp_sdata1, pp_sdata0};
+	wire [2*LINE_BITS-1:0] pp_shifted;
+
+	am_shift #(.W(2 * LINE_BITS), .SW(US + 3)) h_pp_shift (
+		.a(pp_both), .amt({r_off, 3'd0}), .left(1'b0), .arith(1'b0), .y(pp_shifted)
+	);
+	wire [LINE_BITS-1:0] pp_copy_line = pp_shifted[LINE_BITS-1:0];
+
+	/* Burst requests to AMB */
+	wire bst_can_fill = !bw_done_all && (!bank_active[bw_bank] || !bank_closed[bw_bank]);
+	wire bst_rd_need = m_copy;
+
+	reg bst_rd_valid;
+	reg [LA_W-1:0] bst_rd_line;
+	reg [7:0] bst_rd_tag;
+
+	always @(*) begin
+		bst_rd_valid = 1'b0;
+		bst_rd_line = bst_src_n0;
+		bst_rd_tag = {1'b0, 2'd0, bw_bank, bw_slot_cnt};
+		if (state == S_BURST && bst_can_fill && bst_rd_need && !fail) begin
+			bst_rd_valid = 1'b1;
+			if (bw_sub) begin
+				bst_rd_line = bst_src_n1;
+				bst_rd_tag = {1'b0, 2'd0, bw_bank, bw_slot_p1};
+			end else begin
+				bst_rd_line = bst_src_n0;
+				bst_rd_tag = {1'b0, 2'd0, bw_bank, bw_slot_cnt};
+			end
+		end
+	end
+
+	wire bst_wr_valid = (state == S_BURST) && br_active && !fail;
+	wire [LA_W-1:0] bst_wr_line = meta_dline[br_bank][br_seg_idx];
+	wire [LINE_BYTES-1:0] bst_wr_be = meta_be[br_bank][br_seg_idx];
+	wire [LINE_BITS-1:0] bst_wr_wdata = m_copy ? pp_copy_line : fill_line;
+	wire [7:0] bst_wr_tag = 8'h80;
+
+	/* AMB Arbiter: write takes precedence over read to clear buffer space */
+	wire bst_wr_fire = bst_wr_valid && req_ready;
+	wire bst_rd_fire = bst_rd_valid && !bst_wr_valid && req_ready;
+
+	wire bst_req_valid = bst_wr_valid || bst_rd_valid;
+	wire bst_req_write = bst_wr_valid;
+	wire [LA_W-1:0] bst_req_line = bst_wr_valid ? bst_wr_line : bst_rd_line;
+	wire [LINE_BYTES-1:0] bst_req_be = bst_wr_valid ? bst_wr_be : {LINE_BYTES{1'b1}};
+	wire [LINE_BITS-1:0] bst_req_wdata = bst_wr_wdata;
+	wire [7:0] bst_req_tag = bst_wr_valid ? bst_wr_tag : bst_rd_tag;
+
+	/* Mux external AMB outputs between burst and legacy port */
+	assign req_valid = m_burst ? bst_req_valid : leg_req_valid;
+	assign req_write = m_burst ? bst_req_write : leg_req_write;
+	assign req_line = m_burst ? bst_req_line : leg_req_line;
+	assign req_be = m_burst ? bst_req_be : leg_req_be;
+	assign req_wdata = m_burst ? bst_req_wdata : leg_req_wdata;
+	assign req_tag = m_burst ? bst_req_tag : leg_req_tag;
 
 	assign busy = state != S_IDLE;
 	assign fsm = state;
 
 	/* The segment's end: the next pixel, or the next row. */
-	wire [16:0] sn17 = {{(16 - US){1'b0}}, sn};
-	wire seg_last = rem == sn17;
+	wire [16:0] sn17 = {{(16 - US){1'b0}}, seg_n};
+	wire seg_last = cur_rem == sn17;
 	wire [ADDR_W-1:0] tile_step = tile_bytes(psl, 1'b0);
 	wire [ADDR_W-1:0] tile_back = tile_bytes(psl, 1'b1);
 	wire [ADDR_W-1:0] dst_back, src_back;
@@ -248,6 +402,7 @@ module atg_blt_2d #(
 	wire [16:0] ys_start = m_rev ? ys_rev : sy0;
 	wire row_go = state == S_START;
 	wire row_add = state == S_WR && wr_go && seg_last;
+
 	wire [ADDR_W-1:0] dst_row, src_row;
 	wire d_idle, s_idle;
 
@@ -298,21 +453,62 @@ module atg_blt_2d #(
 	am_sub #(.W(17)) s_x1 (.a(x1), .b(17'd0), .bi(1'b1), .d(x1_last), .bo(fsm_co_unused[6]));
 	am_add #(.W(17)) a_send (.a(sx0), .b(width), .ci(1'b0), .s(s_end), .co(fsm_co_unused[7]));
 	am_sub #(.W(17)) s_slast (.a(s_end), .b(17'd0), .bi(1'b1), .d(s_last), .bo(fsm_co_unused[8]));
-	assign d_px = x_pixels(px, m_dtile);
-	assign s_px = x_pixels(spx, m_stile);
+	assign d_px = x_pixels(cur_px, m_dtile);
+	assign s_px = x_pixels(cur_spx, m_stile);
 	am_shift #(.W(ADDR_W), .SW(3)) h_dx (.a(d_px), .amt(psl), .left(1'b1), .arith(1'b0), .y(d_xb));
 	am_shift #(.W(ADDR_W), .SW(3)) h_sx (.a(s_px), .amt(psl), .left(1'b1), .arith(1'b0), .y(s_xb));
-	am_add #(.W(ADDR_W)) a_da (.a(dst_row), .b(d_xb), .ci(1'b0), .s(d_addr), .co(fsm_co_unused[9]));
-	am_add #(.W(ADDR_W)) a_sa (.a(src_row), .b(s_xb), .ci(1'b0), .s(s_addr), .co(fsm_co_unused[10]));
+	am_add #(.W(ADDR_W)) a_da (.a(cur_dst_row), .b(d_xb), .ci(1'b0), .s(d_addr), .co(fsm_co_unused[9]));
+	am_add #(.W(ADDR_W)) a_sa (.a(cur_src_row), .b(s_xb), .ci(1'b0), .s(s_addr), .co(fsm_co_unused[10]));
 	am_shift #(.W(US + 1), .SW(3)) h_sn (.a(seg_n), .amt(psl), .left(1'b1), .arith(1'b0), .y(seg_bytes));
-	am_sub #(.W(ADDR_W)) s_dlo (.a(da), .b(back), .bi(1'b0), .d(d_lo), .bo(fsm_co_unused[11]));
-	am_sub #(.W(ADDR_W)) s_slo (.a(sa), .b(back), .bi(1'b0), .d(s_lo), .bo(fsm_co_unused[12]));
+	wire [ADDR_W-1:0] sub_da_in = is_burst_state ? d_addr : da;
+	wire [ADDR_W-1:0] sub_sa_in = is_burst_state ? s_addr : sa;
+	am_sub #(.W(ADDR_W)) s_dlo (.a(sub_da_in), .b(back), .bi(1'b0), .d(d_lo), .bo(fsm_co_unused[11]));
+	am_sub #(.W(ADDR_W)) s_slo (.a(sub_sa_in), .b(back), .bi(1'b0), .d(s_lo), .bo(fsm_co_unused[12]));
 	am_add #(.W(2)) a_ydl (.a(ydl), .b(2'd0), .ci(1'b1), .s(ydl_inc), .co(fsm_co_unused[13]));
 	am_add #(.W(2)) a_ysl (.a(ysl), .b(2'd0), .ci(1'b1), .s(ysl_inc), .co(fsm_co_unused[14]));
 	am_sub #(.W(17)) s_rdec (.a(rows), .b(17'd0), .bi(1'b1), .d(rows_dec), .bo(fsm_co_unused[15]));
-	am_addsub #(.W(17)) as_px (.a(px), .b(sn17), .sub(m_rev), .s(px_next), .co(fsm_co_unused[16]));
-	am_addsub #(.W(17)) as_spx (.a(spx), .b(sn17), .sub(m_rev), .s(spx_next), .co(fsm_co_unused[17]));
-	am_sub #(.W(17)) s_rem (.a(rem), .b(sn17), .bi(1'b0), .d(rem_next), .bo(fsm_co_unused[18]));
+	am_addsub #(.W(17)) as_px (.a(cur_px), .b(sn17), .sub(m_rev), .s(px_next), .co(fsm_co_unused[16]));
+	am_addsub #(.W(17)) as_spx (.a(cur_spx), .b(sn17), .sub(m_rev), .s(spx_next), .co(fsm_co_unused[17]));
+	am_sub #(.W(17)) s_rem (.a(cur_rem), .b(sn17), .bi(1'b0), .d(rem_next), .bo(fsm_co_unused[18]));
+
+	/*
+	 * Burst Engine Arithmetic Instances (Guardrails Compliant)
+	 */
+	wire [16:0] rows_b_dec;
+	wire [3:0] bw_seg_cnt_next;
+	wire [3:0] br_seg_cnt_next;
+	wire [3:0] bw_slot_p1, bw_slot_p2;
+	wire [1:0] ydl_b_inc, ysl_b_inc;
+	wire [ADDR_W-1:0] dst_row_b_next, src_row_b_next;
+	wire [4:0] brdp0_up, brdp0_next, brdp1_up, brdp1_next;
+	wire [4:0] bwr_up, bwr_next;
+	wire [14:0] bst_co_unused;
+
+	am_sub #(.W(17)) s_rowsb (.a(rows_b), .b(17'd0), .bi(1'b1), .d(rows_b_dec), .bo(bst_co_unused[0]));
+	am_add #(.W(4)) a_bwseg (.a({1'b0, bw_seg_idx}), .b(4'd0), .ci(1'b1), .s(bw_seg_cnt_next), .co(bst_co_unused[1]));
+	am_add #(.W(4)) a_bwsp1 (.a(bw_slot_cnt), .b(4'd0), .ci(1'b1), .s(bw_slot_p1), .co(bst_co_unused[2]));
+	am_add #(.W(4)) a_bwsp2 (.a(bw_slot_cnt), .b(4'd1), .ci(1'b1), .s(bw_slot_p2), .co(bst_co_unused[3]));
+	am_add #(.W(4)) a_brseg (.a({1'b0, br_seg_idx}), .b(4'd0), .ci(1'b1), .s(br_seg_cnt_next), .co(bst_co_unused[4]));
+	am_add #(.W(2)) a_ydlb (.a(ydl_b), .b(2'd0), .ci(1'b1), .s(ydl_b_inc), .co(bst_co_unused[5]));
+	am_add #(.W(2)) a_yslb (.a(ysl_b), .b(2'd0), .ci(1'b1), .s(ysl_b_inc), .co(bst_co_unused[6]));
+	wire [ADDR_W-1:0] b_dst_step = m_dtile ? (ydl_b == 2'd3 ? dst_back : tile_step) : dstride_u;
+	wire [ADDR_W-1:0] b_src_step = m_stile ? (ysl_b == 2'd3 ? src_back : tile_step) : sstride_u;
+	am_add #(.W(ADDR_W)) a_drb (.a(dst_row_b), .b(m_rev ? dst_neg : b_dst_step), .ci(1'b0), .s(dst_row_b_next), .co(bst_co_unused[7]));
+	am_add #(.W(ADDR_W)) a_srb (.a(src_row_b), .b(m_rev ? src_neg : b_src_step), .ci(1'b0), .s(src_row_b_next), .co(bst_co_unused[8]));
+
+	wire rsp_rd_bst = rsp_valid && !rsp_write && m_burst && (rsp_tag[7] == 1'b0);
+	am_add #(.W(5)) a_brdp0 (.a(bank_rd_pending[0]), .b(5'd0), .ci(bst_rd_fire && (bw_bank == 1'b0)), .s(brdp0_up), .co(bst_co_unused[9]));
+	am_sub #(.W(5)) s_brdp0 (.a(brdp0_up), .b(5'd0), .bi(rsp_rd_bst && (rsp_tag[4] == 1'b0)), .d(brdp0_next), .bo(bst_co_unused[10]));
+	am_add #(.W(5)) a_brdp1 (.a(bank_rd_pending[1]), .b(5'd0), .ci(bst_rd_fire && (bw_bank == 1'b1)), .s(brdp1_up), .co(bst_co_unused[11]));
+	am_sub #(.W(5)) s_brdp1 (.a(brdp1_up), .b(5'd0), .bi(rsp_rd_bst && (rsp_tag[4] == 1'b1)), .d(brdp1_next), .bo(bst_co_unused[12]));
+
+	wire rsp_wr_bst = rsp_valid && rsp_write && m_burst;
+	am_add #(.W(5)) a_bwr (.a(burst_wr_out), .b(5'd0), .ci(bst_wr_fire), .s(bwr_up), .co(bst_co_unused[13]));
+	am_sub #(.W(5)) s_bwr (.a(bwr_up), .b(5'd0), .bi(rsp_wr_bst), .d(bwr_next), .bo(bst_co_unused[14]));
+
+	/* Mode determination at kick */
+	wire is_smear = (sbase_u == dbase_u) && !o_rev && ({1'b0, s_src_xy[15:0]} < clip_x0);
+	wire op_burst = !o_blend && !is_smear;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -327,13 +523,53 @@ module atg_blt_2d #(
 			m_stile <= 1'b0;
 			psl <= 3'd2;
 			m_keep <= 4'd0;
+			m_burst <= 1'b0;
 			rd_first <= 1'b0;
 			rd_second <= 1'b0;
 			bl_go <= 1'b0;
+			bw_bank <= 1'b0;
+			bw_seg_idx <= 3'd0;
+			bw_slot_cnt <= 4'd0;
+			bw_sub <= 1'b0;
+			bw_done_all <= 1'b0;
+			br_bank <= 1'b0;
+			br_seg_idx <= 3'd0;
+			br_active <= 1'b0;
+			b_draining <= 1'b0;
+			bank_active <= 2'b00;
+			bank_closed <= 2'b00;
+			bank_ready <= 2'b00;
+			bank_rd_pending[0] <= 5'd0;
+			bank_rd_pending[1] <= 5'd0;
+			burst_wr_out <= 5'd0;
+			px_b <= 17'd0;
+			spx_b <= 17'd0;
+			rem_b <= 17'd0;
+			rows_b <= 17'd0;
+			ydl_b <= 2'd0;
+			ysl_b <= 2'd0;
+			dst_row_b <= {ADDR_W{1'b0}};
+			src_row_b <= {ADDR_W{1'b0}};
 		end else begin
 			done <= 1'b0;
 			error <= 1'b0;
 			bl_go <= 1'b0;
+
+			/* Track pending read responses in ping-pong RAM */
+			if (state == S_BURST) begin
+				bank_rd_pending[0] <= brdp0_next;
+				bank_rd_pending[1] <= brdp1_next;
+				burst_wr_out <= bwr_next;
+			end else begin
+				bank_rd_pending[0] <= 5'd0;
+				bank_rd_pending[1] <= 5'd0;
+				burst_wr_out <= 5'd0;
+			end
+
+			/* Write into ping-pong RAM from AMB read response */
+			if (m_burst && rsp_rd_bst) begin
+				pp_ram[rsp_tag[4:0]] <= rsp_rdata;
+			end
 
 			case (state)
 			S_IDLE:
@@ -345,6 +581,7 @@ module atg_blt_2d #(
 					m_stile <= o_op == GHCI_BLT_UNTILE;
 					psl <= o_psl;
 					m_keep <= o_keep;
+					m_burst <= op_burst && op_ok;
 					if (!op_ok) begin
 						error <= 1'b1;
 						error_kind <= GHCI_FAULT_OPCODE;
@@ -376,11 +613,155 @@ module atg_blt_2d #(
 			end
 			S_MUL:
 				if (d_idle && s_idle) begin
-					state <= S_SA;
-					px <= px_row;
-					spx <= spx_row;
-					rem <= width;
+					if (m_burst) begin
+						state <= S_BURST;
+						px_b <= px_row;
+						spx_b <= spx_row;
+						rem_b <= width;
+						rows_b <= rows;
+						ydl_b <= yd_start[1:0];
+						ysl_b <= ys_start[1:0];
+						dst_row_b <= dst_row;
+						src_row_b <= src_row;
+						bw_bank <= 1'b0;
+						bw_seg_idx <= 3'd0;
+						bw_slot_cnt <= 4'd0;
+						bw_sub <= 1'b0;
+						bw_done_all <= 1'b0;
+						br_bank <= 1'b0;
+						br_seg_idx <= 3'd0;
+						br_active <= 1'b0;
+						b_draining <= 1'b0;
+						bank_active <= 2'b00;
+						bank_closed <= 2'b00;
+						bank_ready <= 2'b00;
+					end else begin
+						state <= S_SA;
+						px <= px_row;
+						spx <= spx_row;
+						rem <= width;
+					end
 				end
+
+			/*
+			 * =================================================================
+			 * S_BURST: Streaming Burst DMA Engine (Phase 030)
+			 * =================================================================
+			 */
+			S_BURST: begin
+				if (fail) begin
+					state <= S_DRAIN;
+				end else begin
+					/*
+					 * 1. Bank Read Ready detection:
+					 * Once bank is closed, when all read responses arrived (or FILL), mark READY.
+					 */
+					if (bank_closed[0] && !bank_ready[0] && (!m_copy || brdp0_next == 5'd0))
+						bank_ready[0] <= 1'b1;
+					if (bank_closed[1] && !bank_ready[1] && (!m_copy || brdp1_next == 5'd0))
+						bank_ready[1] <= 1'b1;
+
+					/*
+					 * 2. Walk & Prefetch Channel
+					 */
+					if (bst_can_fill) begin
+						bank_active[bw_bank] <= 1'b1;
+
+						/* Check if current segment transfer step is complete */
+						if (!m_copy || (bst_two_lines ? (bw_sub && bst_rd_fire) : bst_rd_fire)) begin
+							/* Segment complete: save metadata */
+							meta_dline[bw_bank][bw_seg_idx] <= bst_seg_line;
+							meta_be[bw_bank][bw_seg_idx] <= seg_be;
+							meta_off[bw_bank][bw_seg_idx] <= bst_src_off;
+							meta_slot0[bw_bank][bw_seg_idx] <= bw_slot_cnt;
+							meta_slot1[bw_bank][bw_seg_idx] <= bst_two_lines ? bw_slot_p1 : bw_slot_cnt;
+							meta_n0slot[bw_bank][bw_seg_idx] <= bst_n0_slot;
+							bw_sub <= 1'b0;
+
+							/* Advance walk coordinates */
+							if (seg_last) begin
+								px_b <= px_row;
+								spx_b <= spx_row;
+								rem_b <= width;
+								rows_b <= rows_b_dec;
+								ydl_b <= ydl_b_inc;
+								ysl_b <= ysl_b_inc;
+								dst_row_b <= dst_row_b_next;
+								src_row_b <= src_row_b_next;
+							end else begin
+								px_b <= px_next;
+								spx_b <= spx_next;
+								rem_b <= rem_next;
+							end
+
+							/* Advance bank segment and slot count */
+							bw_seg_idx <= bw_seg_cnt_next[2:0];
+							bw_slot_cnt <= bst_two_lines ? bw_slot_p2 : bw_slot_p1;
+
+							/* Check bank close condition */
+							if ((seg_last && rows_b == 17'd0) ||
+							    (bw_seg_idx == MAX_SEGS_M1) ||
+							    bw_slot_full) begin
+								bank_closed[bw_bank] <= 1'b1;
+								bank_num_segs[bw_bank] <= bw_seg_cnt_next;
+								bank_is_last[bw_bank] <= (seg_last && rows_b == 17'd0);
+								bw_bank <= ~bw_bank;
+								bw_seg_idx <= 3'd0;
+								bw_slot_cnt <= 4'd0;
+								if (seg_last && rows_b == 17'd0)
+									bw_done_all <= 1'b1;
+							end
+						end else if (m_copy && bst_two_lines && !bw_sub && bst_rd_fire) begin
+							/* First of two read beats fired */
+							bw_sub <= 1'b1;
+						end
+					end
+
+					/*
+					 * 3. Commit & Write Channel
+					 */
+					if (!br_active) begin
+						if (bank_ready[br_bank]) begin
+							br_active <= 1'b1;
+							br_seg_idx <= 3'd0;
+						end
+					end else begin
+						if (bst_wr_fire) begin
+							if (br_seg_cnt_next == bank_num_segs[br_bank]) begin
+								/* Bank write complete: release bank */
+								bank_active[br_bank] <= 1'b0;
+								bank_closed[br_bank] <= 1'b0;
+								bank_ready[br_bank] <= 1'b0;
+								br_bank <= ~br_bank;
+								br_seg_idx <= 3'd0;
+								if (bank_is_last[br_bank]) begin
+									br_active <= 1'b0;
+									b_draining <= 1'b1;
+								end else begin
+									/* Switch directly to next bank if already ready */
+									br_active <= bank_ready[~br_bank];
+								end
+							end else begin
+								br_seg_idx <= br_seg_cnt_next[2:0];
+							end
+						end
+					end
+
+					/*
+					 * 4. Drain & Done Completion
+					 */
+					if (b_draining && bwr_next == 5'd0 && !rsp_valid) begin
+						state <= S_IDLE;
+						done <= 1'b1;
+					end
+				end
+			end
+
+			/*
+			 * =================================================================
+			 * Legacy Sequential Path (Blend & RAW Smear Compatibility)
+			 * =================================================================
+			 */
 			S_SA:
 				if (fail) begin
 					state <= S_DRAIN;
@@ -477,8 +858,8 @@ module atg_blt_2d #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, shifted[2*LINE_BITS-1:LINE_BITS], c_op2, c_resolve, step_co_unused, first_co_unused,
-		fsm_co_unused};
+	wire unused_ok = &{1'b0, shifted[2*LINE_BITS-1:LINE_BITS], pp_shifted[2*LINE_BITS-1:LINE_BITS],
+		c_op2, c_resolve, step_co_unused, first_co_unused, fsm_co_unused, bst_co_unused};
 endmodule
 
 `default_nettype wire

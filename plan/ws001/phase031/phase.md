@@ -3,7 +3,7 @@
 # Phase 031: BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `in-progress`
 - **依存**: [ws001-p030](../phase030/phase.md)
 - **優先度**: Major (MSAA Resolve スループットの大幅引き上げ)
 - **出典**: ユーザー諮問（周辺ブロック最適化）および R1 敵対的アーキテクチャ分析レポート

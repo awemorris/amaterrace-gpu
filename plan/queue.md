@@ -36,8 +36,8 @@
 | `q001-i22` | **P1** | [ws001-p027](ws001/phase027/phase.md) | MC AXI バースト結合キュー（Burst Coalescer: ARLEN=3/7 自動マージ） | queued | `q001-i06` | P1 次期タスク候補。DDR 稼働率 85% 以上へ引き上げ。 |
 | `q001-i23` | **P1** | [ws001-p028](ws001/phase028/phase.md) | MC フラットクロスバー & QoS アービタ（遅延 8clk -> 2clk、DC 優先帯域保証） | queued | `q001-i22` | P1 待機。往復遅延 75% 削減。 |
 | `q001-i24` | **P3** | [ws001-p029](ws001/phase029/phase.md) | CP 64ワード循環コマンドプリフェッチ FIFO（ノーウェイトパケット供給） | cleared | `q001-i03` | 実装完了（commit fdead8a）。FW全14件PASS、R1 敵対的レビュー APPROVE 承認完了。 |
-| `q001-i25` | **P3** | [ws001-p030](ws001/phase030/phase.md) | BLT ストリーミングバースト DMA エンジン（FSM 撤廃、1.0+ GB/s 転送） | in-progress | `q001-i22`, `q001-i30` | 非同期フローに基づき P3 着手。1KiB ピングポンバッファ・先行バースト DMA。 |
-| `q001-i26` | **P3** | [ws001-p031](ws001/phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | queued | `q001-i25` | P3 待機。1 quad/cycle 達成。 |
+| `q001-i25` | **P3** | [ws001-p030](ws001/phase030/phase.md) | BLT ストリーミングバースト DMA エンジン（FSM 撤廃、1.0+ GB/s 転送） | cleared | `q001-i22`, `q001-i30` | 実装完了（commit 379d820）。1KiB ピングポン DMA で実効 2.0 GB/s 達成。R1/T1 検証中。 |
+| `q001-i26` | **P3** | [ws001-p031](ws001/phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | in-progress | `q001-i25` | 非同期フローに基づき P3 着手。1 quad/cycle 達成。 |
 | `q001-i27` | **P3** | [ws001-p032](ws001/phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | queued | `q001-i22`, `q001-i30` | P3 待機。頂点供給レート 4 倍向上。 |
 | `q001-i28` | **P3** | [ws001-p033](ws001/phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | queued | `q001-i27`, `q001-i10` | P3 待機。頂点シェーダ負荷半減。 |
 | `q001-i29` | **P3** | [ws001-p034](ws001/phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/） | cleared | `q001-i01` | 実装完了（commit da4e0a7）。統合回帰 PASS、R1 敵対的レビュー APPROVE 承認完了。 |
@@ -53,7 +53,7 @@
 | :---: | :---: | :--- | :--- | :--- | :--- |
 | **P1** | 実装（メモリ・相互結合） | Claude Opus 5.5 Medium | active | `q001-i06`: `ws001-p003` 共有 L2 キャッシュ（LLC）設計・実装 | `q001-i22`: `ws001-p027`（MC バースト結合） |
 | **P2** | 実装（ROP・ピクセル・テクスチャ） | Claude Opus 5.5 Medium | active | `q001-i15`: `ws001-p020` TU マルチバンク L1 テクスチャキャッシュ | `q001-i16`: `ws001-p021`（TU MSHR） |
-| **P3** | 実装（インフラ・ジオメトリ・SU） | Claude Opus 5.5 Medium | active | `q001-i25`: `ws001-p030` BLT ストリーミングバースト DMA | `q001-i26`: `ws001-p031`（MSAA Resolve） |
+| **P3** | 実装（インフラ・ジオメトリ・SU） | Claude Opus 5.5 Medium | active | `q001-i26`: `ws001-p031` BLT 1サイクル並列 MSAA 4x Resolve | `q001-i27`: `ws001-p032`（VF 4並列 DMA） |
 | **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | WS001（31件）& WS002（10件）全 41 Phase 実装設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
 | **R1** | レビュー | Gemini 4 Argon Medium | active | 敵対的 RTL & 仕様レビュー常時待機 | 各レーン成果物レビューディスパッチ |

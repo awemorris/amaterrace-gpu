@@ -37,7 +37,7 @@ module atg_blt_tb_run #(
 	output reg [31:0] ncase
 );
 	localparam LB = LINE_BYTES * 8;
-	localparam MEMB = 32768;
+	localparam MEMB = 131072;
 
 	reg st_we = 1'b0;
 	reg [8:0] st_idx = 0;
@@ -182,6 +182,118 @@ module atg_blt_tb_run #(
 		end
 	endtask
 
+	/* Phase 030: 64 KiB Streaming DMA Throughput Verification */
+	task run_throughput_test;
+		integer t_k, t_cyc, t_mbps;
+		reg t_bad;
+		begin
+			/* Initialize 64 KiB source at 0x00000, clear dest at 0x10000 */
+			for (t_k = 0; t_k < 65536; t_k = t_k + 1) begin
+				mem[t_k] = hbyte(t_k);
+				mem[65536 + t_k] = 8'h00;
+			end
+			/* BLT state: COPY, 32bpp, 64x256 (64 KiB), stride 256 */
+			st_we <= 1'b1; st_idx <= 9'h000; st_wdata <= 32'h00000001; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h001; st_wdata <= 32'h00010000; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h002; st_wdata <= 32'h00000100; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h003; st_wdata <= 32'h00000000; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h004; st_wdata <= 32'h00000100; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h005; st_wdata <= 32'h00000000; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h006; st_wdata <= 32'h00000000; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h007; st_wdata <= {16'd256, 16'd64}; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h00a; st_wdata <= 32'h00000000; @(posedge clk);
+			st_we <= 1'b0; @(posedge clk);
+
+			got_done <= 1'b0;
+			got_err <= 1'b0;
+			kick <= 1'b1; @(posedge clk);
+			kick <= 1'b0;
+			t_cyc = 0;
+			while (!got_done && !got_err && t_cyc < 100000) begin
+				@(posedge clk);
+				t_cyc = t_cyc + 1;
+			end
+			@(posedge clk);
+
+			/* 65536 bytes / (t_cyc * 10ns) = (65536 * 100) / t_cyc MB/s */
+			t_mbps = (65536 * 100) / t_cyc;
+			if (t_cyc > 6553) begin
+				$display("FAIL atg_blt(%0d): 64 KiB throughput %0d MB/s (< 1000 MB/s, %0d cycles)",
+					LINE_BYTES, t_mbps, t_cyc);
+				errs = errs + 1;
+			end else begin
+				$display("PASS atg_blt(%0d).throughput: 64 KiB in %0d cycles (%0d MB/s >= 1000 MB/s)",
+					LINE_BYTES, t_cyc, t_mbps);
+			end
+
+			/* Verify byte exact match */
+			t_bad = 1'b0;
+			for (t_k = 0; t_k < 65536; t_k = t_k + 1) begin
+				if (mem[65536 + t_k] !== mem[t_k]) begin
+					if (!t_bad)
+						$display("FAIL atg_blt(%0d): 64 KiB dest byte %h: %h, expected %h",
+							LINE_BYTES, 65536 + t_k, mem[65536 + t_k], mem[t_k]);
+					t_bad = 1'b1;
+				end
+			end
+			if (t_bad)
+				errs = errs + 1;
+		end
+	endtask
+
+	/* Phase 030: 2D Sub-Rectangle Stride Copy Verification */
+	task run_2d_subrect_test;
+		integer r_x, r_y, r_k;
+		reg r_bad;
+		integer s_addr_calc, d_addr_calc;
+		begin
+			/* Clear dest area */
+			for (r_k = 65536; r_k < 131072; r_k = r_k + 1)
+				mem[r_k] = 8'hAA;
+
+			/* BLT state: COPY, 32bpp, width=37, height=50, stride=512, offset=(11, 7) to (23, 13) */
+			st_we <= 1'b1; st_idx <= 9'h000; st_wdata <= 32'h00000001; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h001; st_wdata <= 32'h00010000; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h002; st_wdata <= 32'h00000200; @(posedge clk); // stride 512
+			st_we <= 1'b1; st_idx <= 9'h003; st_wdata <= 32'h00000000; @(posedge clk);
+			st_we <= 1'b1; st_idx <= 9'h004; st_wdata <= 32'h00000200; @(posedge clk); // stride 512
+			st_we <= 1'b1; st_idx <= 9'h005; st_wdata <= {16'd13, 16'd23}; @(posedge clk); // dst (23, 13)
+			st_we <= 1'b1; st_idx <= 9'h006; st_wdata <= {16'd7, 16'd11}; @(posedge clk);  // src (11, 7)
+			st_we <= 1'b1; st_idx <= 9'h007; st_wdata <= {16'd50, 16'd37}; @(posedge clk); // 37x50 pixels
+			st_we <= 1'b1; st_idx <= 9'h00a; st_wdata <= 32'h00000000; @(posedge clk);
+			st_we <= 1'b0; @(posedge clk);
+
+			got_done <= 1'b0;
+			got_err <= 1'b0;
+			kick <= 1'b1; @(posedge clk);
+			kick <= 1'b0;
+			while (!got_done && !got_err)
+				@(posedge clk);
+			@(posedge clk);
+
+			/* Verify each pixel in 2D rectangle */
+			r_bad = 1'b0;
+			for (r_y = 0; r_y < 50; r_y = r_y + 1) begin
+				for (r_x = 0; r_x < 37; r_x = r_x + 1) begin
+					s_addr_calc = (7 + r_y) * 512 + (11 + r_x) * 4;
+					d_addr_calc = 65536 + (13 + r_y) * 512 + (23 + r_x) * 4;
+					for (r_k = 0; r_k < 4; r_k = r_k + 1) begin
+						if (mem[d_addr_calc + r_k] !== mem[s_addr_calc + r_k]) begin
+							if (!r_bad)
+								$display("FAIL atg_blt(%0d): 2D subrect (%0d,%0d) byte %0d mismatch",
+									LINE_BYTES, r_x, r_y, r_k);
+							r_bad = 1'b1;
+						end
+					end
+				end
+			end
+			if (r_bad)
+				errs = errs + 1;
+			else
+				$display("PASS atg_blt(%0d).subrect2d: 37x50 sub-rectangle bit-exact", LINE_BYTES);
+		end
+	endtask
+
 	initial begin
 		done_all = 1'b0;
 		errs = 0;
@@ -257,6 +369,13 @@ module atg_blt_tb_run #(
 			end
 		end
 		$fclose(fd);
+
+		/* Phase 030: 64 KiB Streaming DMA Throughput Verification */
+		run_throughput_test;
+
+		/* Phase 030: 2D Sub-Rectangle Stride Copy Verification */
+		run_2d_subrect_test;
+
 		done_all = 1'b1;
 	end
 endmodule
