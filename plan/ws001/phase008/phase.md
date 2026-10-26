@@ -31,13 +31,16 @@
    - `atg_rx_fdiv.v` → `rtl/library/fp/am_fp_div.v`（27 サイクル回復法、互換ラッパー配置）
    - 仕様書 `spec/library/fp/am_fp_div.md` 作成。
    - RX 回帰シミュレーション（`atg_rx_fp`, `clip`, `setup`, `cpoly`, `frag`, `scan`）全件 PASS。
-3. **Step 3: 統合 FPU コア（`am_fpu_core.v`）の設計・実装（進行中）**:
+3. **Step 3: 統合 FPU コア（`am_fpu_core.v`）の設計・実装（[済] 完了）**:
    - 1 レーン分の FMA/ADD/SUB/MUL/MIN/MAX/FCMP/F2I/I2F/IMUL を完結して処理するパイプラインコアの実装。
    - 乗算器部に `am_mul.v`（DSP48E1 カスケード）を活用し、33×33 乗算器（4×DSP48E1）を mux で共有。
-   - 単体等価テストベンチの作成・検証。
-4. **Step 4: `atg_su_fpu.v` の置換 & 全体回帰検証**:
-   - `atg_su_fpu.v` 内部を `am_fpu_core` に置換。
-   - `make check`（lint, sim, verilator）および全ラスタライズテストの完全一致確認。
+   - 単体等価テストベンチ（`sim/tb/am_fpu_core_tb.v`、6,000 ベクトル全 PASS）の作成・検証。
+   - 仕様書 `spec/library/fp/am_fpu_core.md` 作成。
+4. **Step 4: `atg_su_fpu.v` の置換 & 全体回帰検証（[済] 完了）**:
+   - `atg_su_fpu.v` 内部の個別乗算器を `am_fpu_core` に置換。
+   - 回帰テスト（`atg_su_fpu`, `atg_su_pk`, `atg_su:+quick`、RX 各種）全 PASS。
+   - `python3 tools/arith-lint.py`: 0 operators。
+   - 現在 R1 による敵対的レビュー中。
 
 ## 検証基準（受け入れ条件）
 

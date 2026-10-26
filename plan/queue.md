@@ -16,7 +16,7 @@
 | `q001-i02` | **P1 / T1** | [ws001-p001](ws001/phase001/phase.md) | Step B: `am_mul.v` の完全な `DSP48E1` 直接インスタンス化（`*` 完全撤廃、内部レジスタ・カスケード結線） | verifying | `q001-i01` | P1 実装完了・main マージ済。現在 T1 にてテスト検証中。 |
 | `q001-i03` | **P1 / T1** | [ws001-p002](ws001/phase002/phase.md) | GHCI 1.1 起動ハンドシェイク規格化（INIT/INIT_ACK 相互認証）& 診断レジスタ（CP_PC/STATUS/PIPE_FSM）実装 | verifying | `q001-i02` | P1 実装完了・main マージ済。現在 T1 にてテスト検証中。 |
 | `q001-i04` | **P2** | [ws001-p007](ws001/phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & インメモリ PSO・構造化コマンドパケット仕様策定・ヘッダ整備 | cleared | `q001-i02` | `docs/ghci.md` §3/§7/§8 改定および `include/ghci_*.h` 整備完了（コミット `b9af41a`, `592a70a`）。 |
-| `q001-i05` | **P2** | [ws001-p008](ws001/phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装（Step 1-2 完了、Step 3 進行中） | in-progress | `q001-i04` | i2f/f2fix/fdiv ライブラリ化完了。統合コア am_fpu_core.v（33x33 DSP 乗算器アレイ）設計中。 |
+| `q001-i05` | **P2 / R1** | [ws001-p008](ws001/phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装（Step 1-4 完了、R1 レビュー中） | verifying | `q001-i04` | i2f/f2fix/fdiv ライブラリ化・am_fpu_core 実装・atg_su_fpu 置換完了（コミット `349c8b2`）。現在 R1 審査中。 |
 | `q001-i06` | **P1** | [ws001-p003](ws001/phase003/phase.md) | 共有 L2 キャッシュ（LLC: 256 KiB、16-way）導入 & キャッシュコヒーレンシ再構築 | in-progress | `q001-i03` | ユーザー承認（「推奨で行きます」）に基づき着手。MC 前段に LLC を導入。 |
 
 ## サブエージェント実行状態（N=2）
