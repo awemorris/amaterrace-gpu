@@ -3,7 +3,8 @@
 # Phase 004: IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定 & 実装
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `in-progress`
+- **担当**: P2 (Architecture & Implementation) / R1 (Review)
 - **依存**: [ws001-p002](../phase002/phase.md)
 - **優先度**: Critical
 - **出典**: ユーザー設計方針（独自商用OS、Unified Memory前提、IOMMU＋CP管理MMU、TLB隠蔽）および R1 再評価レポート

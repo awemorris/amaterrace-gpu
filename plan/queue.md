@@ -18,13 +18,14 @@
 | `q001-i04` | **P2** | [ws001-p007](ws001/phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & インメモリ PSO・構造化コマンドパケット仕様策定・ヘッダ整備 | cleared | `q001-i02` | `docs/ghci.md` §3/§7/§8 改定および `include/ghci2_regs.h` 整備完了（コミット `bb80789`）。 |
 | `q001-i05` | **P2 / R1** | [ws001-p008](ws001/phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装（Step 1-4 完了、R1 承認済） | cleared | `q001-i04` | i2f/f2fix/fdiv ライブラリ化・am_fpu_core 実装・atg_su_fpu 置換完了。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i06` | **P1** | [ws001-p003](ws001/phase003/phase.md) | 共有 L2 キャッシュ（LLC: 256 KiB、16-way）導入 & キャッシュコヒーレンシ再構築 | in-progress | `q001-i03` | ユーザー承認（「推奨で行きます」）に基づき着手。MC 前段に LLC を導入中。 |
+| `q001-i07` | **P2** | [ws001-p004](ws001/phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定・アーキテクチャ設計・RTL 実装 | in-progress | `q001-i05` | ユーザー承認（「P2を起動してOKです」）に基づき着手。極薄ドライバ・自律 MMU 確立。 |
 
 ## サブエージェント実行状態（N=2）
 
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
 | **P1** | 実装 | Claude Opus 5.5 Medium | active | `q001-i06`: `ws001-p003` 共有 L2 キャッシュ（LLC）設計・実装 | R1 レビュー |
-| **P2** | 設計・ドキュメント | Claude Opus 5.5 Medium | idle | `q001-i05` 完了（R1 承認受領） | `ws001-p004` IOMMU / 自律 MMU 設計 |
+| **P2** | 設計・実装 | Claude Opus 5.5 Medium | active | `q001-i07`: `ws001-p004` IOMMU 連携 & CP 自律型 MMU 仕様策定・設計・RTL 実装 | R1 レビュー |
 | **P3〜P8** | 実装 | Claude Opus 5.5 Medium | unassigned | — | $N$ 増加時に割り当て |
 | **T1** | テスト | 標準 / Flash | active | システム回帰テスト（Verilator 7 モード ALL PASS 達成） | L2 キャッシュ検証 |
 | **R1** | レビュー | Gemini 4 Argon Medium | active | Phase 001/002/008 APPROVE 承認完了 | 次期実装成果物レビュー |
