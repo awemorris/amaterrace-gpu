@@ -65,6 +65,23 @@ proc env_or {name default} {
 	}
 	return $default
 }
+
+proc report_dsp_cells {file_path label} {
+	set dsps [get_cells -hierarchical -filter {REF_NAME == DSP48E1 || PRIMITIVE_TYPE =~ ADVANCED.MULT.*}]
+	set f [open $file_path a]
+	puts $f "=== DSP48E1 Cells ($label) ==="
+	puts $f "Total count: [llength $dsps]"
+	foreach d [lsort $dsps] {
+		set areg [get_property -quiet AREG $d]
+		set breg [get_property -quiet BREG $d]
+		set mreg [get_property -quiet MREG $d]
+		set preg [get_property -quiet PREG $d]
+		set use_mult [get_property -quiet USE_MULT $d]
+		puts $f [format "%-60s AREG=%s BREG=%s MREG=%s PREG=%s USE_MULT=%s" $d $areg $breg $mreg $preg $use_mult]
+	}
+	puts $f ""
+	close $f
+}
 set strategy [env_or VIVADO_STRATEGY Default]
 if {![info exists strategies($strategy)]} {
 	puts "vivado-build: unknown VIVADO_STRATEGY $strategy"
@@ -82,13 +99,15 @@ if {$from_synth ne ""} {
 	close_project -quiet
 	open_checkpoint $from_synth
 } else {
-	synth_design -top $top -part $part -include_dirs [list [file join $root include]]
+	synth_design -top $top -part $part -verilog_define SYNTH_KINTEX7 -include_dirs [list [file join $root include]]
 	write_checkpoint -force [file join $out ${top}_synth.dcp]
 }
+report_dsp_cells [file join $out dsp_cells.rpt] "Post-Synthesis"
 opt_design -directive $d_opt
 place_design -directive $d_place
 phys_opt_design -directive $d_phys
 route_design -directive $d_route
+report_dsp_cells [file join $out dsp_cells.rpt] "Post-Route"
 
 report_utilization -file [file join $out utilization.rpt]
 report_utilization -hierarchical -hierarchical_depth 3 -file [file join $out utilization_hier.rpt]

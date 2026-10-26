@@ -30,6 +30,7 @@ for f in $srcs; do
 done
 run "am_jtag_bscan (generic)" sim/lint/xilinx_stubs.v rtl/bsp/generic/am_jtag_bscan.v --top-module am_jtag_bscan
 run "am_jtag_bscan (xilinx7)" -DSYNTH_KINTEX7 sim/lint/xilinx_stubs.v rtl/bsp/xilinx7/am_jtag_bscan.v --top-module am_jtag_bscan
+run "am_mul (SYNTH_KINTEX7)" -DSYNTH_KINTEX7 sim/lint/xilinx_stubs.v --top-module am_mul
 # The format table of include/atg_fmt_info.vh for any format value, through
 # a lint-only top (sim/lint/atg_fmt_lint.v).
 run "atg_fmt functions (lint top)" --top-module atg_fmt_lint sim/lint/atg_fmt_lint.v

@@ -166,6 +166,101 @@ module ODDR #(
 	assign Q = C ? D1 : D2;
 endmodule
 
+module DSP48E1 #(
+	parameter integer ACASCREG = 1,
+	parameter integer ADREG = 1,
+	parameter integer ALUMODEREG = 1,
+	parameter integer AREG = 1,
+	parameter AUTORESET_PATDET = "NO_RESET",
+	parameter A_INPUT = "DIRECT",
+	parameter integer BCASCREG = 1,
+	parameter integer BREG = 1,
+	parameter B_INPUT = "DIRECT",
+	parameter integer CARRYINREG = 1,
+	parameter integer CARRYINSELREG = 1,
+	parameter integer CREG = 1,
+	parameter integer DREG = 1,
+	parameter integer INMODEREG = 1,
+	parameter [3:0] IS_ALUMODE_INVERTED = 4'b0000,
+	parameter [0:0] IS_CARRYIN_INVERTED = 1'b0,
+	parameter [0:0] IS_CLK_INVERTED = 1'b0,
+	parameter [4:0] IS_INMODE_INVERTED = 5'b00000,
+	parameter [6:0] IS_OPMODE_INVERTED = 7'b0000000,
+	parameter [47:0] MASK = 48'h3FFFFFFFFFFF,
+	parameter integer MREG = 1,
+	parameter integer OPMODEREG = 1,
+	parameter [47:0] PATTERN = 48'h000000000000,
+	parameter integer PREG = 1,
+	parameter SEL_MASK = "MASK",
+	parameter SEL_PATTERN = "PATTERN",
+	parameter USE_DPORT = "FALSE",
+	parameter USE_MULT = "MULTIPLY",
+	parameter USE_PATTERN_DETECT = "NO_PATDET",
+	parameter USE_SIMD = "ONE48"
+) (
+	output wire [29:0] ACOUT,
+	output wire [17:0] BCOUT,
+	output wire CARRYCASCOUT,
+	output wire [3:0] CARRYOUT,
+	output wire MULTSIGNOUT,
+	output wire OVERFLOW,
+	output wire [47:0] P,
+	output wire PATTERNBDETECT,
+	output wire PATTERNDETECT,
+	output wire [47:0] PCOUT,
+	output wire UNDERFLOW,
+	input wire [29:0] A,
+	input wire [29:0] ACIN,
+	input wire [3:0] ALUMODE,
+	input wire [17:0] B,
+	input wire [17:0] BCIN,
+	input wire [47:0] C,
+	input wire CARRYCASCIN,
+	input wire CARRYIN,
+	input wire [2:0] CARRYINSEL,
+	input wire CEA1,
+	input wire CEA2,
+	input wire CEAD,
+	input wire CEALUMODE,
+	input wire CEB1,
+	input wire CEB2,
+	input wire CEC,
+	input wire CECARRYIN,
+	input wire CECTRL,
+	input wire CED,
+	input wire CEINMODE,
+	input wire CEM,
+	input wire CEP,
+	input wire CLK,
+	input wire [24:0] D,
+	input wire [4:0] INMODE,
+	input wire MULTSIGNIN,
+	input wire [6:0] OPMODE,
+	input wire [47:0] PCIN,
+	input wire RSTA,
+	input wire RSTALLCARRYIN,
+	input wire RSTALUMODE,
+	input wire RSTB,
+	input wire RSTC,
+	input wire RSTCTRL,
+	input wire RSTD,
+	input wire RSTINMODE,
+	input wire RSTM,
+	input wire RSTP
+);
+	assign ACOUT = 30'd0;
+	assign BCOUT = 18'd0;
+	assign CARRYCASCOUT = 1'b0;
+	assign CARRYOUT = 4'd0;
+	assign MULTSIGNOUT = 1'b0;
+	assign OVERFLOW = 1'b0;
+	assign P = 48'd0;
+	assign PATTERNBDETECT = 1'b0;
+	assign PATTERNDETECT = 1'b0;
+	assign PCOUT = 48'd0;
+	assign UNDERFLOW = 1'b0;
+endmodule
+
 /* The KC705 IP cores of boards/kc705/ip.tcl (ports as Vivado 2026.1 generates them). */
 module atg_kc705_pcie_ip (
 	input wire axi_aresetn,
