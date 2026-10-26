@@ -1,0 +1,17 @@
+#version 450
+// Atomics on a storage buffer, their old values kept.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) buffer Counters { uint c[]; } counters;
+layout(std430, set = 0, binding = 1) buffer Out { uint r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	atomicAdd(counters.c[0], i);
+	atomicMax(counters.c[1], i * 37u);
+	atomicMin(counters.c[2], i + 5u);
+	atomicOr(counters.c[3], 1u << (i & 31u));
+	atomicAnd(counters.c[4], ~(1u << (i & 31u)));
+	atomicXor(counters.c[5], i);
+	dst.r[i] = atomicCompSwap(counters.c[6 + (i & 3u)], counters.c[6 + (i & 3u)], i);
+	dst.r[i + 32u] = atomicExchange(counters.c[16u + i], i * 3u);
+}

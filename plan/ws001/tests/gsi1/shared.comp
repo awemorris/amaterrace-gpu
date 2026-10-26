@@ -1,0 +1,17 @@
+#version 450
+// Shared memory across the warps of a workgroup, with barriers.
+layout(local_size_x = 128) in;
+layout(std430, set = 0, binding = 0) buffer In { uint a[]; } src;
+layout(std430, set = 0, binding = 1) buffer Out { uint r[]; } dst;
+shared uint tile[128];
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	tile[i] = src.a[i] + gl_WorkGroupID.x;
+	barrier();
+	uint v = tile[127u - i] + tile[(i + 1u) & 127u];
+	barrier();
+	tile[i] = v;
+	barrier();
+	dst.r[i + 128u * (gl_WorkGroupID.x & 1u)] = tile[(i * 5u) & 127u];
+}

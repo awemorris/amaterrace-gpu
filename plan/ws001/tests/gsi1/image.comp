@@ -1,0 +1,18 @@
+#version 450
+// Storage images: reads, writes, an array and a size query.
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0, r32ui) uniform uimage2D counts;
+layout(set = 0, binding = 1, rgba8) uniform image2DArray colours;
+layout(set = 0, binding = 2, rgba32f) uniform image2D wide;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	ivec2 p = ivec2(i & 7u, i >> 3u);
+	uint c = imageLoad(counts, p).x;
+	imageStore(counts, p, uvec4(c * 3u + uint(imageSize(counts).x), 0u, 0u, 0u));
+	vec4 v = imageLoad(colours, ivec3(p, 1));
+	imageStore(colours, ivec3(p.yx, 0), v.wzyx * 0.5 + vec4(0.25));
+	vec4 w = imageLoad(wide, p);
+	imageStore(wide, ivec2(7 - p.x, p.y), w * 2.0 - 1.0);
+	imageStore(wide, ivec2(9, 2), vec4(5.0));
+}

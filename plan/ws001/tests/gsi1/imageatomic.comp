@@ -1,0 +1,14 @@
+#version 450
+// Atomics on the texels of a storage image and of a texel buffer.
+layout(local_size_x = 32) in;
+layout(set = 0, binding = 0, r32ui) uniform uimage2D counts;
+layout(set = 0, binding = 1, r32ui) uniform uimageBuffer list;
+layout(std430, set = 0, binding = 2) buffer Out { uint r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	dst.r[i] = imageAtomicAdd(counts, ivec2(i & 3u, 1), i);
+	imageAtomicMax(counts, ivec2(5, 5), i * 7u);
+	dst.r[i + 32u] = imageAtomicCompSwap(list, int(i & 7u), 0u, i);
+	imageAtomicAdd(counts, ivec2(9, 0), 1u);
+}

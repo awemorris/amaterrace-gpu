@@ -1,0 +1,25 @@
+/*
+ * The SD-boot device tree of the ZYBO (platform/armv7/zybo/zybo-sd.dts)
+ * with the top 64 MiB of DDR, 0x1C000000-0x1FFFFFFF, reserved for the GPU
+ * in the programmable logic (WS288 p003): the kernel leaves it alone, and
+ * the GPU's aperture is set to it, so fill and copy results checked through
+ * the GPU's debug port touch nothing of the system's.  The memory node
+ * stays at 512 MiB (make-zybo-boot-files.py checks it); the reservation is
+ * a child of /reserved-memory, which the kernel takes out of its pages
+ * (src/hal/armv7/fdt.c, page.c).
+ *   python3 platform/armv7/tools/make-zybo-boot-files.py dtb \
+ *       --dts plan/ws288/tests/zybo-gpu-sd.dts OUT/system.dtb
+ *   plan/tools/zybo/deploy.sh KERNEL --dtb OUT/system.dtb
+ *
+ * Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+ */
+/include/ "../../../platform/armv7/zybo/zybo-sd.dts"
+/ {
+	model = "Digilent ZYBO (SD boot, GPU memory reserved)";
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+		gpu@1c000000 { reg = <0x1c000000 0x04000000>; no-map; };
+	};
+};

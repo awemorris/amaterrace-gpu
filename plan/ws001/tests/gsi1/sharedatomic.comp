@@ -1,0 +1,48 @@
+#version 450
+// Atomics on shared memory: every operation on words all the lanes of two
+// warps share (read after a barrier, so the order does not matter), on a
+// word of each lane's own (the old values), and one under a condition.
+// The results go to both buffers (each has 256 words).
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) buffer InOut { uint a[]; } src;
+layout(std430, set = 0, binding = 1) buffer Out { uint r[]; } dst;
+shared uint common_words[8];
+shared int signed_words[2];
+shared uint own[64];
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	uint x = src.a[i];
+	if (i < 8u)
+		common_words[i] = (i == 2u || i == 4u) ? 0xffffffffu : 0u;
+	if (i < 2u)
+		signed_words[i] = 0;
+	own[i] = x;
+	barrier();
+	atomicAdd(common_words[0], x);
+	atomicMax(common_words[1], x ^ 0x55u);
+	atomicMin(common_words[2], x + 7u);
+	atomicOr(common_words[3], 1u << (i & 31u));
+	atomicAnd(common_words[4], ~(1u << ((i * 5u) & 31u)));
+	atomicXor(common_words[5], i * 3u);
+	atomicMax(signed_words[0], int(x & 0xffu) - 100);
+	atomicMin(signed_words[1], int(x & 0xffu) - 100);
+	if ((x & 1u) != 0u)
+		atomicAdd(common_words[6], 1u);
+	uint o0 = atomicAdd(own[i], 5u);
+	uint o1 = atomicExchange(own[i], i * 7u);
+	uint o2 = atomicCompSwap(own[i], i * 7u, o0);
+	uint o3 = atomicCompSwap(own[i], 12345u, 1u);
+	uint o4 = atomicMin(own[i], i * 9u);
+	uint o5 = atomicOr(own[i], 0x100u);
+	barrier();
+	dst.r[i] = o0;
+	dst.r[i + 64u] = o1;
+	dst.r[i + 128u] = o2;
+	dst.r[i + 192u] = o3 ^ o4;
+	src.a[i] = o5 + own[i];
+	if (i < 8u)
+		src.a[64u + i] = common_words[i];
+	if (i < 2u)
+		src.a[72u + i] = uint(signed_words[i]);
+}

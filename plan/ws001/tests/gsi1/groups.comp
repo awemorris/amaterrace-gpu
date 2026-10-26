@@ -1,0 +1,10 @@
+#version 450
+// The workgroup's built-ins and the array length.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) buffer Out { uint r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex + 32u * gl_WorkGroupID.x;
+	dst.r[i] = gl_WorkGroupID.x * 1000u + gl_LocalInvocationID.x + gl_NumWorkGroups.x * 100000u;
+	dst.r[i + 128u] = gl_GlobalInvocationID.x + uint(dst.r.length());
+}

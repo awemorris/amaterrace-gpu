@@ -1,0 +1,20 @@
+g_su?0?.su/fpu|-31.554|36.186|8.912|27.274|114|g_su[0].su/opd/b_warp_reg[0]/C|g_su[0].su/fpu/pipe_reg[0][224]/R
+g_su?0?.su/lane|-23.020|27.857|5.561|22.296|75|g_su[0].su/opd/b_warp_reg[0]/C|g_su[0].su/lane/pipe_reg[3][0]_srl4___pipe_reg_r_12/D
+g_su?0?.su/pk|-19.013|23.987|7.014|16.973|49|g_su[0].su/opd/b_warp_reg[0]/C|g_su[0].su/pk/pipe_reg[0][160]/D
+g_su?0?.su/xu|-8.032|13.006|7.293|5.713|38|g_su[0].su/xu/rx_reg[249]/C|g_su[0].su/xu/z_reg[34]/D
+g_su?0?.su/lsu|-0.529|5.543|1.809|3.734|16|g_su[0].su/opd/b_warp_reg[0]/C|g_su[0].su/lsu/radr_reg[253]/D
+g_su?0?.su-fpu,lane,pk,xu|-5.898|10.530|4.380|6.150|15|g_su[0].su/sched/wg_y_reg[2]/C|g_su[0].su/exp/dw_reg[0]/R
+g_su?0?.su|-31.554|36.186|8.912|27.274|114|g_su[0].su/opd/b_warp_reg[0]/C|g_su[0].su/fpu/pipe_reg[0][224]/R
+g_tu.tu|-31.469|36.443|12.849|23.594|97|g_tu.tu/ffilt/ctl_reg[28]/C|g_tu.tu/ffilt/acc_reg[118]/D
+g_tu.tu/filter|-29.897|34.871|14.361|20.510|82|g_tu.tu/filter/val_reg[27]/C|g_tu.tu/filter/tr_data_reg[122]/D
+g_tu.tu/ffilt|-31.469|36.443|12.849|23.594|97|g_tu.tu/ffilt/ctl_reg[28]/C|g_tu.tu/ffilt/acc_reg[118]/D
+g_tu.tu/addr|-25.100|30.074|12.983|17.091|88|g_tu.tu/addr/crd_reg[249]/C|g_tu.tu/addr/r_plane_reg[28]/D
+g_tu.tu-filter,ffilt|-25.100|30.074|12.983|17.091|88|g_tu.tu/addr/crd_reg[249]/C|g_tu.tu/addr/r_plane_reg[28]/D
+g_rx.rx|-10.765|15.739|6.700|9.039|50|g_rx.rx/setup/edge_u/sv_reg[2][3]/C|g_rx.rx/setup/edge_u/bx1_reg[0]/D
+g_rop.rop|-9.357|14.331|3.262|11.069|38|g_rop.rop/ds/depth_reg[5]/C|g_rop.rop/ds/req_be_reg[0]/D
+g_vf.vf|-8.057|13.031|2.918|10.113|31|g_vf.vf/conv/c_vk_reg[5]/C|g_vf.vf/conv/vl_data_reg[0]/D
+blt|-23.588|28.562|7.420|21.142|84|blt/g_rsv.rsv/px/fv/p_reg[0]/C|blt/g_rsv.rsv/px/fv/out_p_reg[107]/D
+cp|-1.306|6.045|0.941|5.104|14|g_su[0].su/sb/cm_reg[1]/C|cp/u_ctl/fault_addr_reg[0]/CE
+g_cpu.cpu|-0.486|5.118|1.374|3.744|14|cp/u_ctl/ap_base_reg[6]/C|g_cpu.cpu/dma/g_w_reg[0]/R
+mc|-1.153|6.167|1.894|4.273|18|cp/u_ctl/ap_base_reg[6]/C|mc/pend_reg[5]/D
+g_dc.dc|no path

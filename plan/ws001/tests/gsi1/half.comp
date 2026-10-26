@@ -1,0 +1,13 @@
+#version 450
+// Half floats packed and unpacked.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) buffer In { float a[]; } src;
+layout(std430, set = 0, binding = 1) buffer Out { uint r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	uint p = packHalf2x16(vec2(src.a[i], src.a[i + 32u]));
+	vec2 u = unpackHalf2x16(p ^ 0x80000000u);
+	dst.r[i] = p;
+	dst.r[i + 32u] = floatBitsToUint(u.x + u.y);
+}

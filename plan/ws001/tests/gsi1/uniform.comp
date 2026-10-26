@@ -1,0 +1,12 @@
+#version 450
+// Push constants and a uniform block.
+layout(local_size_x = 32) in;
+layout(push_constant) uniform Push { uint scale; uint bias; uint pad[6]; } push;
+layout(std140, set = 0, binding = 0) uniform Block { uvec4 k[4]; uint last; } block;
+layout(std430, set = 0, binding = 1) buffer Out { uint r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	dst.r[i] = i * push.scale + push.bias + block.k[i & 3u].x;
+	dst.r[i + 32u] = block.k[2].w + block.last + push.pad[5];
+}

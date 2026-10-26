@@ -1,0 +1,20 @@
+g_su?0?.su/fpu|-38.599|43.515|9.527|33.988|122|g_su[0].su/opd/b_warp_reg[1]/C|g_su[0].su/fpu/pipe_reg[3][128]_srl4___pipe_reg_r_2/D
+g_su?0?.su/lane|-23.174|28.011|5.586|22.425|76|g_su[0].su/opd/b_warp_reg[0]/C|g_su[0].su/lane/pipe_reg[3][128]_srl4___pipe_reg_r_17/D
+g_su?0?.su/pk|-4.913|9.887|4.374|5.513|21|g_su[0].su/opd/b_warp_reg[0]/C|g_su[0].su/pk/pipe_reg[0][219]/D
+g_su?0?.su/xu|-8.032|13.006|7.293|5.713|38|g_su[0].su/xu/rx_reg[249]/C|g_su[0].su/xu/z_reg[34]/D
+g_su?0?.su/lsu|-0.483|5.497|1.809|3.688|16|g_su[0].su/opd/b_warp_reg[0]/C|g_su[0].su/lsu/radr_reg[61]/D
+g_su?0?.su-fpu,lane,pk,xu|-5.898|10.530|4.380|6.150|15|g_su[0].su/sched/wg_y_reg[2]/C|g_su[0].su/exp/dw_reg[0]/R
+g_su?0?.su|-38.599|43.515|9.527|33.988|122|g_su[0].su/opd/b_warp_reg[1]/C|g_su[0].su/fpu/pipe_reg[3][128]_srl4___pipe_reg_r_2/D
+g_tu.tu|-39.223|44.197|14.029|30.168|121|g_tu.tu/ffilt/ctl_reg[32]/C|g_tu.tu/ffilt/acc_reg[118]/D
+g_tu.tu/filter|-29.654|34.628|14.496|20.132|81|g_tu.tu/filter/val_reg[27]/C|g_tu.tu/filter/tr_data_reg[154]/D
+g_tu.tu/ffilt|-39.223|44.197|14.029|30.168|121|g_tu.tu/ffilt/ctl_reg[32]/C|g_tu.tu/ffilt/acc_reg[118]/D
+g_tu.tu/addr|-25.546|30.520|13.015|17.505|89|g_tu.tu/addr/k_reg[1]_rep__1/C|g_tu.tu/addr/r_plane_reg[28]/D
+g_tu.tu-filter,ffilt|-25.546|30.520|13.015|17.505|89|g_tu.tu/addr/k_reg[1]_rep__1/C|g_tu.tu/addr/r_plane_reg[28]/D
+g_rx.rx|-10.765|15.739|6.700|9.039|50|g_rx.rx/setup/edge_u/sv_reg[2][3]/C|g_rx.rx/setup/edge_u/bx1_reg[0]/D
+g_rop.rop|-7.937|12.676|3.153|9.523|36|g_rop.rop/ds/depth_reg[5]/C|g_rop.rop/ds/req_wdata_reg[0]/CE
+g_vf.vf|-7.814|12.788|3.692|9.096|34|g_vf.vf/conv/c_vk_reg[1]/C|g_vf.vf/conv/vl_data_reg[10]/D
+blt|-23.584|28.558|7.962|20.596|88|blt/g_rsv.rsv/px/fv/m_psl_reg[2]/C|blt/g_rsv.rsv/px/fv/out_p_reg[123]/D
+cp|-1.306|6.045|0.941|5.104|14|g_su[0].su/sb/cm_reg[1]/C|cp/u_ctl/fault_addr_reg[0]/CE
+g_cpu.cpu|-0.486|5.118|1.374|3.744|14|cp/u_ctl/ap_base_reg[6]/C|g_cpu.cpu/dma/g_w_reg[0]/R
+mc|-1.264|6.278|1.905|4.373|18|g_atom.atom/ra_reg[0]/C|mc/pend_reg[5]/D
+g_dc.dc|no path

@@ -1,0 +1,97 @@
+#version 450
+// Forty words loaded before any is used, a loop of a different length in each lane that reads
+// some of them, and the words folded in reverse: more values live at once than the registers
+// hold.  Two warps to a workgroup, two workgroups.
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer Input { uint word[]; } src;
+layout(std430, set = 0, binding = 1) writeonly buffer Output { uint word[]; } dst;
+void main()
+{
+	uint n = gl_GlobalInvocationID.x;
+	uint a0 = src.word[(n * 7u + 0u) & 255u];
+	uint a1 = src.word[(n * 7u + 3u) & 255u];
+	uint a2 = src.word[(n * 7u + 6u) & 255u];
+	uint a3 = src.word[(n * 7u + 9u) & 255u];
+	uint a4 = src.word[(n * 7u + 12u) & 255u];
+	uint a5 = src.word[(n * 7u + 15u) & 255u];
+	uint a6 = src.word[(n * 7u + 18u) & 255u];
+	uint a7 = src.word[(n * 7u + 21u) & 255u];
+	uint a8 = src.word[(n * 7u + 24u) & 255u];
+	uint a9 = src.word[(n * 7u + 27u) & 255u];
+	uint a10 = src.word[(n * 7u + 30u) & 255u];
+	uint a11 = src.word[(n * 7u + 33u) & 255u];
+	uint a12 = src.word[(n * 7u + 36u) & 255u];
+	uint a13 = src.word[(n * 7u + 39u) & 255u];
+	uint a14 = src.word[(n * 7u + 42u) & 255u];
+	uint a15 = src.word[(n * 7u + 45u) & 255u];
+	uint a16 = src.word[(n * 7u + 48u) & 255u];
+	uint a17 = src.word[(n * 7u + 51u) & 255u];
+	uint a18 = src.word[(n * 7u + 54u) & 255u];
+	uint a19 = src.word[(n * 7u + 57u) & 255u];
+	uint a20 = src.word[(n * 7u + 60u) & 255u];
+	uint a21 = src.word[(n * 7u + 63u) & 255u];
+	uint a22 = src.word[(n * 7u + 66u) & 255u];
+	uint a23 = src.word[(n * 7u + 69u) & 255u];
+	uint a24 = src.word[(n * 7u + 72u) & 255u];
+	uint a25 = src.word[(n * 7u + 75u) & 255u];
+	uint a26 = src.word[(n * 7u + 78u) & 255u];
+	uint a27 = src.word[(n * 7u + 81u) & 255u];
+	uint a28 = src.word[(n * 7u + 84u) & 255u];
+	uint a29 = src.word[(n * 7u + 87u) & 255u];
+	uint a30 = src.word[(n * 7u + 90u) & 255u];
+	uint a31 = src.word[(n * 7u + 93u) & 255u];
+	uint a32 = src.word[(n * 7u + 96u) & 255u];
+	uint a33 = src.word[(n * 7u + 99u) & 255u];
+	uint a34 = src.word[(n * 7u + 102u) & 255u];
+	uint a35 = src.word[(n * 7u + 105u) & 255u];
+	uint a36 = src.word[(n * 7u + 108u) & 255u];
+	uint a37 = src.word[(n * 7u + 111u) & 255u];
+	uint a38 = src.word[(n * 7u + 114u) & 255u];
+	uint a39 = src.word[(n * 7u + 117u) & 255u];
+	uint count = (a0 & 3u) + 1u;
+	uint acc = a1;
+	for (uint k = 0u; k < count; k++)
+		acc = (acc * 5u + a39) ^ (a2 + k);
+	uint r = acc;
+	r = r * 3u + a39;
+	r = r * 3u + a38;
+	r = r * 3u + a37;
+	r = r * 3u + a36;
+	r = r * 3u + a35;
+	r = r * 3u + a34;
+	r = r * 3u + a33;
+	r = r * 3u + a32;
+	r = r * 3u + a31;
+	r = r * 3u + a30;
+	r = r * 3u + a29;
+	r = r * 3u + a28;
+	r = r * 3u + a27;
+	r = r * 3u + a26;
+	r = r * 3u + a25;
+	r = r * 3u + a24;
+	r = r * 3u + a23;
+	r = r * 3u + a22;
+	r = r * 3u + a21;
+	r = r * 3u + a20;
+	r = r * 3u + a19;
+	r = r * 3u + a18;
+	r = r * 3u + a17;
+	r = r * 3u + a16;
+	r = r * 3u + a15;
+	r = r * 3u + a14;
+	r = r * 3u + a13;
+	r = r * 3u + a12;
+	r = r * 3u + a11;
+	r = r * 3u + a10;
+	r = r * 3u + a9;
+	r = r * 3u + a8;
+	r = r * 3u + a7;
+	r = r * 3u + a6;
+	r = r * 3u + a5;
+	r = r * 3u + a4;
+	r = r * 3u + a3;
+	r = r * 3u + a2;
+	r = r * 3u + a1;
+	r = r * 3u + a0;
+	dst.word[n] = r;
+}

@@ -1,0 +1,10 @@
+#version 450
+// A storage texel buffer read, written and sized.
+layout(local_size_x = 32) in;
+layout(set = 0, binding = 0, r32ui) uniform uimageBuffer counts;
+void main()
+{
+	int i = int(gl_LocalInvocationIndex);
+	uint c = imageLoad(counts, i).x;
+	imageStore(counts, i + 32, uvec4(c + uint(imageSize(counts)), 0u, 0u, 0u));
+}

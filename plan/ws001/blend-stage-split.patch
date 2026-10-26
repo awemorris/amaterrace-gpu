@@ -1,0 +1,135 @@
+diff --git a/rtl/gpu/rop/atg_rop_blend.v b/rtl/gpu/rop/atg_rop_blend.v
+index 03d4d73..0dffd1d 100644
+--- a/rtl/gpu/rop/atg_rop_blend.v
++++ b/rtl/gpu/rop/atg_rop_blend.v
+@@ -20,7 +20,7 @@
+ `default_nettype none
+ 
+ module atg_rop_blend #(
+-	parameter LAT = 3	/* Pipeline cycles from b_valid to b_rvalid (the RTL has 3) */
++	parameter LAT = 4	/* Pipeline cycles from b_valid to b_rvalid (the RTL has 4) */
+ ) (
+ 	input wire clk,
+ 	input wire rst_n,
+@@ -198,46 +198,76 @@ module atg_rop_blend #(
+ 		q2 <= q_n;
+ 	end
+ 
+-	/* Stage 3: the operation, the mask, the format. */
+-	reg [127:0] pix_n;
+-	reg [31:0] r8;
++	/* Stage 3: the operation up to the divide: x3 is the sum or difference to
++	 * divide by 255, or (n3 set) the result itself (min, max, blending off). */
++	reg [16:0] x3_n;
++	reg [271:0] x3_w;
++	reg [15:0] n3_n;
+ 	reg [2:0] op;
+-	reg [8:0] v;
+ 	reg [7:0] sv, dv;
+-	reg [15:0] pp, qq, keep, px16;
+-	reg [31:0] px;
++	reg [15:0] pp, qq;
+ 	always @(*)
+-		for (l = 0; l < 4; l = l + 1) begin
++		for (l = 0; l < 4; l = l + 1)
+ 			for (c = 0; c < 4; c = c + 1) begin
+ 				op = c == 3 ? bl[22:20] : bl[11:9];
+ 				sv = s2[32 * l + 8 * c +: 8];
+ 				dv = d2[32 * l + 8 * c +: 8];
+ 				pp = p2[16 * (4 * l + c) +: 16];
+ 				qq = q2[16 * (4 * l + c) +: 16];
+-				case (op)
+-				3'd1: v = pp > qq ? div255({2'd0, pp - qq}) : 9'd0;
+-				3'd2: v = qq > pp ? div255({2'd0, qq - pp}) : 9'd0;
+-				3'd3: v = {1'b0, sv < dv ? sv : dv};
+-				3'd4: v = {1'b0, sv > dv ? sv : dv};
+-				default: v = div255({2'd0, pp} + {2'd0, qq});
+-				endcase
++				n3_n[4 * l + c] = !bl[0] || op == 3'd3 || op == 3'd4;
+ 				if (!bl[0])
+-					v = {1'b0, sv};
++					x3_n = {9'd0, sv};
++				else
++					case (op)
++					3'd1: x3_n = pp > qq ? {1'b0, pp - qq} : 17'd0;
++					3'd2: x3_n = qq > pp ? {1'b0, qq - pp} : 17'd0;
++					3'd3: x3_n = {9'd0, sv < dv ? sv : dv};
++					3'd4: x3_n = {9'd0, sv > dv ? sv : dv};
++					default: x3_n = {1'b0, pp} + {1'b0, qq};
++					endcase
++				x3_w[17 * (4 * l + c) +: 17] = x3_n;
++			end
++	reg v3;
++	reg [3:0] m3;
++	reg [127:0] d3, o3;
++	reg [271:0] x3;
++	reg [15:0] n3;
++	always @(posedge clk) begin
++		v3 <= rst_n && v2;
++		m3 <= m2;
++		d3 <= d2;
++		o3 <= o2;
++		x3 <= x3_w;
++		n3 <= n3_n;
++	end
++
++	/* Stage 4: the divide, the clamp, the mask, the format. */
++	reg [127:0] pix_n;
++	reg [31:0] r8;
++	reg [8:0] v;
++	reg [16:0] xx;
++	reg [15:0] keep, px16;
++	reg [31:0] px;
++	always @(*)
++		for (l = 0; l < 4; l = l + 1) begin
++			for (c = 0; c < 4; c = c + 1) begin
++				xx = x3[17 * (4 * l + c) +: 17];
++				v = n3[4 * l + c] ? {1'b0, xx[7:0]} : div255({1'b0, xx});
+ 				if (v[8])
+ 					v = 9'd255;
+-				r8[8 * c +: 8] = wm[c] ? v[7:0] : dv;
++				r8[8 * c +: 8] = wm[c] ? v[7:0] : d3[32 * l + 8 * c +: 8];
+ 			end
+ 			px16 = {div5(r8[7:0]), div6(r8[15:8]), div5(r8[23:16])};
+ 			keep = {wm[0] ? 5'd0 : 5'h1F, wm[1] ? 6'd0 : 6'h3F, wm[2] ? 5'd0 : 5'h1F};
+ 			case (fmt)
+ 			2'd0: px = {r8[31:24], r8[7:0], r8[15:8], r8[23:16]};
+ 			2'd1: px = r8;
+-			default: px = {o2[32 * l + 16 +: 16], (px16 & ~keep) | (o2[32 * l +: 16] & keep)};
++			default: px = {o3[32 * l + 16 +: 16], (px16 & ~keep) | (o3[32 * l +: 16] & keep)};
+ 			endcase
+-			pix_n[32 * l +: 32] = m2[l] ? px : o2[32 * l +: 32];
++			pix_n[32 * l +: 32] = m3[l] ? px : o3[32 * l +: 32];
+ 		end
+ 	always @(posedge clk) begin
+-		b_rvalid <= rst_n && v2;
++		b_rvalid <= rst_n && v3;
+ 		b_pix <= pix_n;
+ 	end
+ 
+diff --git a/sim/tb/atg_rop_blend_tb.v b/sim/tb/atg_rop_blend_tb.v
+index 4d2b370..9f151f3 100644
+--- a/sim/tb/atg_rop_blend_tb.v
++++ b/sim/tb/atg_rop_blend_tb.v
+@@ -33,7 +33,7 @@ module atg_rop_blend_tb;
+ 	wire b_rvalid;
+ 	wire [127:0] b_pix;
+ 
+-	atg_rop_blend #(.LAT(3)) dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
++	atg_rop_blend #(.LAT(4)) dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
+ 		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_dst(b_dst), .b_mask(b_mask),
+ 		.b_rvalid(b_rvalid), .b_pix(b_pix));
+ 
+diff --git a/spec/gpu/rop/atg_rop_blend.md b/spec/gpu/rop/atg_rop_blend.md
+index f27bebc..d853576 100644
+--- a/spec/gpu/rop/atg_rop_blend.md
++++ b/spec/gpu/rop/atg_rop_blend.md
+@@ -10,7 +10,7 @@ ROP blend: converts fp32 colour to the render-target format, blends with the des
+ 
+ | Name | Default | Meaning |
+ | --- | --- | --- |
+-| `LAT` | `3` | Pipeline cycles from b_valid to b_rvalid. |
++| `LAT` | `4` | Pipeline cycles from b_valid to b_rvalid. |
+ 
+ ## 3. Ports
+ 

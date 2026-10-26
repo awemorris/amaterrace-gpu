@@ -1,0 +1,21 @@
+#version 450
+// Loops whose trip counts differ by lane, with a break and a nested loop.
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) buffer In { uint a[]; } src;
+layout(std430, set = 0, binding = 1) buffer Out { uint r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	uint n = src.a[i] % 13u;
+	uint s = 1u;
+	uint t = 0u;
+	for (uint k = 0u; k < n; k++) {
+		s = s * 3u + k;
+		if (s > 100000u)
+			break;
+		for (uint j = 0u; j < (k & 3u); j++)
+			t += j + k;
+	}
+	dst.r[i] = s;
+	dst.r[i + 64u] = t;
+}

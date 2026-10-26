@@ -1,0 +1,19 @@
+#version 450
+// Stores under conditions, an early return and a select of loads.
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) buffer In { uint a[]; } src;
+layout(std430, set = 0, binding = 1) buffer Out { uint r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	uint x = src.a[i];
+	if (x > 3000u)
+		return;
+	if ((x & 1u) != 0u) {
+		dst.r[i] = x * 2u;
+	} else if ((x & 2u) != 0u) {
+		dst.r[i] = src.a[(x + 5u) & 255u];
+	} else {
+		dst.r[i + 64u] = 7u;
+	}
+}

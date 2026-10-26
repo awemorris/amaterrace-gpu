@@ -1,0 +1,18 @@
+#version 450
+// The transcendental unit: division, square roots, exponentials and trigonometry.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) buffer In { float a[]; } src;
+layout(std430, set = 0, binding = 1) buffer Out { float r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	float x = abs(src.a[i]) + 0.5;
+	float y = src.a[i + 32u];
+	uint o = i * 6u;
+	dst.r[o + 0u] = y / x;
+	dst.r[o + 1u] = sqrt(x) + inversesqrt(x);
+	dst.r[o + 2u] = exp2(y * 0.5) + log2(x);
+	dst.r[o + 3u] = sin(y * 0.3) + cos(y * 0.3);
+	dst.r[o + 4u] = pow(x, 1.5);
+	dst.r[o + 5u] = 1.0 / x;
+}

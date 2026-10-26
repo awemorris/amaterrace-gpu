@@ -1,0 +1,20 @@
+#version 450
+// Float arithmetic, rounding, conversion and comparison.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) buffer In { float a[]; } src;
+layout(std430, set = 0, binding = 1) buffer Out { float r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	float x = src.a[i];
+	float y = src.a[i + 32u];
+	uint o = i * 8u;
+	dst.r[o + 0u] = x * y + x - y;
+	dst.r[o + 1u] = min(x, y) + max(x, -y) + abs(x);
+	dst.r[o + 2u] = floor(x) + fract(y) + trunc(x * 3.0) + roundEven(y * 2.5);
+	dst.r[o + 3u] = float(int(x * 100.0)) + float(uint(abs(y) * 10.0));
+	dst.r[o + 4u] = x < y ? x : (x >= 0.5 ? y : 1.5);
+	dst.r[o + 5u] = clamp(x, -1.0, 1.0) * 0.25 + step(0.0, y);
+	dst.r[o + 6u] = mix(x, y, 0.3);
+	dst.r[o + 7u] = (x == y || x != 2.0) ? -x : y;
+}

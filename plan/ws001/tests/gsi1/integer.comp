@@ -1,0 +1,22 @@
+#version 450
+// Integer arithmetic, shifts, comparisons, division and selection.
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) buffer In { uint a[]; } src;
+layout(std430, set = 0, binding = 1) buffer Out { uint r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex + 64u * gl_WorkGroupID.x;
+	uint x = src.a[i & 255u];
+	uint y = src.a[(i * 7u + 3u) & 255u] + 1u;
+	int sx = int(x) - 2000;
+	int sy = int(y) - 1500;
+	uint o = (i * 8u) & 255u;
+	dst.r[o + 0u] = x + y * 3u - (x ^ y);
+	dst.r[o + 1u] = (x << (y & 7u)) | (y >> 3u);
+	dst.r[o + 2u] = x / y + x % y;
+	dst.r[o + 3u] = uint(sx / (sy == 0 ? 1 : sy)) + uint(sx % (sy == 0 ? 1 : sy));
+	dst.r[o + 4u] = uint(sx >> 2) + uint(-sx);
+	dst.r[o + 5u] = (x < y ? 1u : 2u) + (sx >= sy ? 4u : 8u) + (x == y ? 16u : 0u) + (x != 5u ? 32u : 0u);
+	dst.r[o + 6u] = max(x, y) - min(x, y) + uint(max(sx, sy)) + uint(min(sx, -sy));
+	dst.r[o + 7u] = ~x & 0xffffu;
+}
