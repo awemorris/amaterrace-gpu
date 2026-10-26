@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_kc705_raster_tb: the KC705 board top, driven only through its JTAG
+ * atg_kc705_top_tb: the KC705 board top, driven only through its JTAG
  * bridge as a host's JTAG tool would (the BSCANE2 model's scan
  * task, TCK 25 MHz), with the board's clock and memory wrappers replaced
  * by their simulation models (sim/models/kc705/: 200 MHz SYSCLK -> gclk
@@ -32,13 +32,13 @@
  *     of the test pattern (white border, eight bars of 4), and HSYNC and
  *     VSYNC come.
  *
- * sim-sources: boards/kc705/atg_kc705_raster.v boards/kc705/lib/atg_kc705_jtag.v
+ * sim-sources: boards/kc705/atg_kc705_top.v boards/kc705/lib/atg_kc705_jtag.v
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_kc705_raster_tb;
+module atg_kc705_top_tb;
 	`include "ghci_regs.vh"
 
 	reg sys_clk = 1'b0;
@@ -62,7 +62,7 @@ module atg_kc705_raster_tb;
 
 	i2c_slave #(.ADDR(7'h74)) iic_mux (.scl(iic_scl), .sda(iic_sda));
 
-	atg_kc705_raster #(
+	atg_kc705_top #(
 		.NSU(1),
 		.CPU_IMEM_INIT("fw/cp/images/atg1-cp-kc705.imem.hex"),
 		.CPU_DMEM_INIT("fw/cp/images/atg1-cp-kc705.dmem.hex")
@@ -85,7 +85,7 @@ module atg_kc705_raster_tb;
 		input [8*64-1:0] what;
 		begin
 			errors = errors + 1;
-			$display("FAIL atg_kc705_raster: %0s at %0t", what, $time);
+			$display("FAIL atg_kc705_top: %0s at %0t", what, $time);
 		end
 	endtask
 
@@ -144,7 +144,7 @@ module atg_kc705_raster_tb;
 			jr(addr, got);
 			if ((got & mask) !== (want & mask)) begin
 				errors = errors + 1;
-				$display("FAIL atg_kc705_raster: reg %h = %h, expected %h (mask %h)", addr, got,
+				$display("FAIL atg_kc705_top: reg %h = %h, expected %h (mask %h)", addr, got,
 					want, mask);
 			end
 		end
@@ -339,7 +339,7 @@ module atg_kc705_raster_tb;
 		if (!v[GHCI_STATUS_MEM_READY])
 			fail("MEM_READY does not come");
 		if (errors == 0)
-			$display("PASS atg_kc705_raster.jtag");
+			$display("PASS atg_kc705_top.jtag");
 
 		/* fill */
 		jw(GHCI_APERTURE_BASE, 32'h8000_0000);
@@ -370,11 +370,11 @@ module atg_kc705_raster_tb;
 				    (y >= 1 && y < 4 && x >= 3 && x < 23 ? COLOR : 32'd0)) begin
 					errors = errors + 1;
 					if (errors < 10)
-						$display("FAIL atg_kc705_raster: memory at (%0d, %0d) = %h", x, y,
+						$display("FAIL atg_kc705_top: memory at (%0d, %0d) = %h", x, y,
 							dut.mig.mem.peek32(FB_OFF + y * 256 + x * 4));
 				end
 		if (errors == 0)
-			$display("PASS atg_kc705_raster.fill");
+			$display("PASS atg_kc705_top.fill");
 
 		/* i2c: select the mux's channel 5 (the ADV7511 on the KC705). */
 		if (iic_mux_reset_n !== 1'b1)
@@ -389,7 +389,7 @@ module atg_kc705_raster_tb;
 		if (iic_mux.last !== 8'h20 || iic_mux.wbytes != 1 || iic_mux.stops != 1)
 			fail("I2C mux byte");
 		if (errors == 0)
-			$display("PASS atg_kc705_raster.i2c");
+			$display("PASS atg_kc705_top.i2c");
 
 		/* pattern: 32 x 4, porches and syncs of a few pixels. */
 		jw(DC + GHCI_DC_TIMING + 32'h00, 32'd32);
@@ -426,23 +426,23 @@ module atg_kc705_raster_tb;
 				if (frame[y][x] !== want) begin
 					errors = errors + 1;
 					if (errors < 10)
-						$display("FAIL atg_kc705_raster: pixel (%0d, %0d) = %h, expected %h",
+						$display("FAIL atg_kc705_top: pixel (%0d, %0d) = %h, expected %h",
 							x, y, frame[y][x], want);
 				end
 			end
 		if (errors == 0)
-			$display("PASS atg_kc705_raster.pattern");
+			$display("PASS atg_kc705_top.pattern");
 
 		if (errors == 0)
-			$display("PASS atg_kc705_raster");
+			$display("PASS atg_kc705_top");
 		else
-			$display("FAIL atg_kc705_raster: %0d errors", errors);
+			$display("FAIL atg_kc705_top: %0d errors", errors);
 		$finish;
 	end
 
 	initial begin
 		#20000000;
-		$display("FAIL atg_kc705_raster: timeout");
+		$display("FAIL atg_kc705_top: timeout");
 		$finish;
 	end
 endmodule

@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_kc705_raster: The KC705 raster/compute configuration (design §3.6,
+ * atg_kc705_top: The KC705 board top configuration (design §3.6,
  * §3.7; no SA): CP with CPU, NSU SUs (NPHYS 8, NREGS 64), VF, RX, TU,
  * ROP, BLT, MC on MIG DDR3, the DC inside the GPU (atg_top's HAS_DISP,
  * ADV7511 parallel output), the JTAG register bridge, and the PCIe
@@ -27,7 +27,7 @@
  * split), so its responses are given ID 0.
  *
  * Wiring of its children; see
- * spec/boards/kc705/atg_kc705_raster.md.  The HDMI output is the ADV7511's
+ * spec/boards/kc705/atg_kc705_top.md.  The HDMI output is the ADV7511's
  * 16-bit YCbCr 4:2:2 input with separate syncs (the DC's PX_FMT 1): the
  * DC's registered outputs drive the pins (IOB registers in the XDC), and
  * the pixel clock is forwarded through an ODDR with D1 0 / D2 1, so the
@@ -36,13 +36,13 @@
  * held high (the PCA9548 out of reset); the ADV7511 behind it is set up by
  * the host over the DC's I2C registers.  In simulation atg_kc705_clk and
  * atg_kc705_mig are replaced by sim/models/kc705/ and the primitives by
- * sim/models/xilinx/ (sim/tb/atg_kc705_raster_tb.v).
+ * sim/models/xilinx/ (sim/tb/atg_kc705_top_tb.v).
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_kc705_raster #(
+module atg_kc705_top #(
 	parameter NSU = 1,	/* Shader units (1 for now; 4 to 6 later) */
 	parameter CPU_IMEM_INIT = "atg1-cp-kc705.imem.hex",	/* CP firmware (Vivado finds it among the sources) */
 	parameter CPU_DMEM_INIT = "atg1-cp-kc705.dmem.hex"

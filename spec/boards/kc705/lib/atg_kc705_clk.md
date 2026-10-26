@@ -1,6 +1,6 @@
 # atg_kc705_clk
 
-RTL: `boards/kc705/lib/atg_kc705_clk.v`.  Parent: atg_kc705_raster.  Implemented in: p012.
+RTL: `boards/kc705/lib/atg_kc705_clk.v`.  Parent: atg_kc705_top.  Implemented in: p012.
 
 ## 1. Purpose and place
 

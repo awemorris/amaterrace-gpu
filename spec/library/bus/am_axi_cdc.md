@@ -1,6 +1,6 @@
 # am_axi_cdc
 
-RTL: `rtl/library/bus/am_axi_cdc.v`.  Parent: atg_kc705_raster (the PCIe BAR0 into atg_top's register port).  Written in WS288 p013 (2026-10-25).
+RTL: `rtl/library/bus/am_axi_cdc.v`.  Parent: atg_kc705_top (the PCIe BAR0 into atg_top's register port).  Written in WS288 p013 (2026-10-25).
 
 ## 1. Purpose and place
 

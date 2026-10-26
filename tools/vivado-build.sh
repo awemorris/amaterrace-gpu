@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds a board top with Vivado in non-project batch mode
 # (tools/vivado-build.tcl).  Output stays under build/vivado/ (not in git).
-#   tools/vivado-build.sh BOARD TOP     e.g. tools/vivado-build.sh kc705 atg_kc705_raster
+#   tools/vivado-build.sh BOARD TOP     e.g. tools/vivado-build.sh kc705 atg_kc705_top
 # BOARD is a directory of boards/ with TOP.v and TOP.xdc; the part is the
 # board's (kc705: xc7k325tffg900-2; PART overrides).
 # VIVADO is the installation's settings64.sh (default

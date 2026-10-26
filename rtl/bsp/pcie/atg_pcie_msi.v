@@ -7,8 +7,8 @@
 
 /*
  * atg_pcie_msi: the MSI rule of GHCI's PCIe binding (docs/ghci.md section
- * 15.2) for the KC705, one vector: the message goes out when irq (GHCI's
- * interrupt line, OR(IRQ_STATUS & IRQ_ENABLE)) goes from 0 to 1, and
+ * 15.2) for FPGA board tops, one vector: the message goes out when irq
+ * (GHCI's interrupt line, OR(IRQ_STATUS & IRQ_ENABLE)) goes from 0 to 1, and
  * again after a write through the host's register port (BAR0) to
  * IRQ_STATUS or IRQ_ENABLE that leaves irq 1.  The display controller's
  * events are bits of IRQ_STATUS (DISP2), so the one vector covers them.
@@ -24,13 +24,16 @@
  * uclk side: msi_req rises for a message and stays 1 until msi_ack (one
  * cycle; the PCIe IP's grant or ack), then falls; a message waiting
  * meanwhile is sent next.
- * See spec/gpu/top/atg_pcie_msi.md.
+ * See spec/bsp/pcie/atg_pcie_msi.md.
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_pcie_msi (
+module atg_pcie_msi #(
+	parameter [16:0] IRQ_STATUS_ADDR = 17'h00038, // GHCI_IRQ_STATUS
+	parameter [16:0] IRQ_ENABLE_ADDR = 17'h0003C  // GHCI_IRQ_ENABLE
+) (
 	input wire clk,
 	input wire rst_n,
 	input wire irq,
@@ -42,10 +45,8 @@ module atg_pcie_msi (
 	output reg msi_req,
 	input wire msi_ack
 );
-	`include "ghci_regs.vh"
-
 	/* The writes, in order: does each re-arm the message? */
-	wire hit = aw_addr == GHCI_IRQ_STATUS || aw_addr == GHCI_IRQ_ENABLE;
+	wire hit = (aw_addr == IRQ_STATUS_ADDR) || (aw_addr == IRQ_ENABLE_ADDR);
 	wire whit;
 	wire wq_ready, wq_valid;
 	wire [3:0] wq_count;

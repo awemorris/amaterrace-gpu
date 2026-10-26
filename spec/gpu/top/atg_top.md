@@ -6,7 +6,7 @@ RTL: `rtl/gpu/top/atg_top.v`. Written from the RTL at amaterrace-gpu main a217bf
 
 ## 1. Purpose and place
 
-The GPU IP: an AXI slave for the GHCI registers (`s_*`, the low 17 address bits of the window), one AXI master to memory (`m_*`) and a level interrupt. At a217bf8 it holds `am_axi_regs`, `atg_cp` (CP v0), `atg_blt` and `atg_mc` with two clients (0 CP debug port, 1 BLT) (the defaults). Parent: the board top (`boards/kc705/atg_kc705_raster.v`). Children: `regs` (`am_axi_regs`), `cp` (`atg_cp`), `blt` (`atg_blt`), `mc` (`atg_mc`).
+The GPU IP: an AXI slave for the GHCI registers (`s_*`, the low 17 address bits of the window), one AXI master to memory (`m_*`) and a level interrupt. At a217bf8 it holds `am_axi_regs`, `atg_cp` (CP v0), `atg_blt` and `atg_mc` with two clients (0 CP debug port, 1 BLT) (the defaults). Parent: the board top (`boards/kc705/atg_kc705_top.v`). Children: `regs` (`am_axi_regs`), `cp` (`atg_cp`), `blt` (`atg_blt`), `mc` (`atg_mc`).
 
 ## 2. Parameters
 

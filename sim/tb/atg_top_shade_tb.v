@@ -15,7 +15,7 @@
  * (lda, fmul, fmadd, exp) → ROP.  The colour and depth buffers must equal
  * the reference model's word for word.  In the KC705's shape
  * (64-byte lines, 512-bit AXI, and atg_top's blocks and SU shape
- * as in boards/kc705/atg_kc705_raster.v: the TU, NPHYS 4, NREGS 64, 8
+ * as in boards/kc705/atg_kc705_top.v: the TU, NPHYS 4, NREGS 64, 8
  * scoreboard entries, PACKED, SUBGROUP, FRAG_RESERVE 2, 16 KiB LDS, 32
  * varying words, the stencil ROP).
  */

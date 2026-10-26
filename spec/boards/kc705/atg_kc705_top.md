@@ -1,6 +1,6 @@
-# atg_kc705_raster
+# atg_kc705_top
 
-RTL: `boards/kc705/atg_kc705_raster.v`.  Parent: - (FPGA top).  Implemented in: p012, p014, p015.
+RTL: `boards/kc705/atg_kc705_top.v`.  Parent: - (FPGA top).  Implemented in: p012, p014, p015.
 
 ## 1. Purpose and place
 
@@ -8,7 +8,7 @@ The KC705 raster/compute configuration (design §3.6, §3.7; no SA): CP with CPU
 
 Children: `atg_kc705_clk`, `atg_kc705_jtag`, `atg_top` (with `atg_dc` inside), `atg_kc705_mig`.
 
-The host AXI slave of atg_top is PCIe's BAR0 (p013): atg_kc705_pcie's m0_* through am_axi_cdc (user_clk → gclk) into atg_top's s_*, beside the JTAG bridge; BAR2 (m2_*) goes to the MIG wrapper's second port; atg_pcie_msi gives the MSI requests (one vector: GHCI's interrupt line, the DC's events are bits of IRQ_STATUS); the GPU → host port of atg_kc705_pcie is idle in version 1.  Ports added: pcie_refclk_p/n, pcie_perst_n, pcie_txp/txn[3:0], pcie_rxp/rxn[3:0] (pins in the XDC from the KC705 board file); LED 4 = link_up.  `tools/lint.sh` lints this top with its board helpers and the lint stand-ins of the primitives and IP cores (`sim/lint/xilinx_stubs.v`).  The XDC is `boards/kc705/atg_kc705_raster.xdc` (p012).
+The host AXI slave of atg_top is PCIe's BAR0 (p013): atg_kc705_pcie's m0_* through am_axi_cdc (user_clk → gclk) into atg_top's s_*, beside the JTAG bridge; BAR2 (m2_*) goes to the MIG wrapper's second port; atg_pcie_msi gives the MSI requests (one vector: GHCI's interrupt line, the DC's events are bits of IRQ_STATUS); the GPU → host port of atg_kc705_pcie is idle in version 1.  Ports added: pcie_refclk_p/n, pcie_perst_n, pcie_txp/txn[3:0], pcie_rxp/rxn[3:0] (pins in the XDC from the KC705 board file); LED 4 = link_up.  `tools/lint.sh` lints this top with its board helpers and the lint stand-ins of the primitives and IP cores (`sim/lint/xilinx_stubs.v`).  The XDC is `boards/kc705/atg_kc705_top.xdc` (p012).
 
 ## 2. Parameters
 
@@ -65,7 +65,7 @@ Wiring.  One gclk (100 MHz); the MIG's crossing to ui_clk is inside atg_kc705_mi
 - The ADV7511 (behind the mux) is configured by the host through the DC's I2C registers
   (part B: mux channel, input ID 1 = 16-bit 4:2:2 separate syncs, the style for {C, Y} on
   D[15:0], the CSC to RGB or a YCbCr output; not in the RTL).
-- Simulation: `sim/tb/atg_kc705_raster_tb.v` compiles this top and `lib/atg_kc705_jtag.v`, and
+- Simulation: `sim/tb/atg_kc705_top_tb.v` compiles this top and `lib/atg_kc705_jtag.v`, and
   takes `atg_kc705_clk` and `atg_kc705_mig` from `sim/models/kc705/` (same names and ports) and
   BSCANE2, BUFG and ODDR from `sim/models/xilinx/`.
 
@@ -83,13 +83,13 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_kc705_raster_tb.v` (p012) prints, in this order:
+`sim/tb/atg_kc705_top_tb.v` (p012) prints, in this order:
 
-- `PASS atg_kc705_raster.jtag` — MAGIC and SCRATCH through the JTAG bridge, the DC's ID and CAPS in the DISP2 window (0x200; the CP stays IDLE, so the host's scan-out writes pass), the DISP2 capability pointing at it, the GPU's CAPS/CAPS2 of this shape (CAPS[28] packed, [27] graphics, [24] subgroup, 64-byte lines, the TU and its 16 slots), the MEM capability (1 GiB of DDR3 at 0x8000_0000, a 64 MiB window), 64 registers per lane in RESIDENT_WARPS[23:16], MEM_READY
-- `PASS atg_kc705_raster.fill` — a BLT FILL kicked from JTAG, DBG_ADDR/DBG_DATA read-back, the memory model holds exactly the area
-- `PASS atg_kc705_raster.i2c` — one byte to the I2C mux (slave model on the pins) through the DC's I2C registers
-- `PASS atg_kc705_raster.pattern` — TEST_PATTERN in a 32 × 4 mode: the HDMI pins (sampled on hdmi_clk) give the first frame as YCbCr 4:2:2
-- `PASS atg_kc705_raster` at the end.
+- `PASS atg_kc705_top.jtag` — MAGIC and SCRATCH through the JTAG bridge, the DC's ID and CAPS in the DISP2 window (0x200; the CP stays IDLE, so the host's scan-out writes pass), the DISP2 capability pointing at it, the GPU's CAPS/CAPS2 of this shape (CAPS[28] packed, [27] graphics, [24] subgroup, 64-byte lines, the TU and its 16 slots), the MEM capability (1 GiB of DDR3 at 0x8000_0000, a 64 MiB window), 64 registers per lane in RESIDENT_WARPS[23:16], MEM_READY
+- `PASS atg_kc705_top.fill` — a BLT FILL kicked from JTAG, DBG_ADDR/DBG_DATA read-back, the memory model holds exactly the area
+- `PASS atg_kc705_top.i2c` — one byte to the I2C mux (slave model on the pins) through the DC's I2C registers
+- `PASS atg_kc705_top.pattern` — TEST_PATTERN in a 32 × 4 mode: the HDMI pins (sampled on hdmi_clk) give the first frame as YCbCr 4:2:2
+- `PASS atg_kc705_top` at the end.
 
 ## 9. References
 

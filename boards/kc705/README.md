@@ -1,12 +1,12 @@
 KC705 (XC7K325T-2FFG900)
 ========================
 
-`atg_kc705_raster`: CP with its CPU, the shader units (`NSU`),
+`atg_kc705_top`: CP with its CPU, the shader units (`NSU`),
 VF, RX, TU, ROP, BLT, MC on the MIG DDR3 (512-bit AXI through an AXI clock
 converter, 64-byte lines), the display controller inside the GPU
 (atg_top's `HAS_DISP`, the DISP2 window at 0x200, HDMI through the
 ADV7511's 16-bit YCbCr 4:2:2 input, its I2C registers for the ADV7511), and the JTAG register bridge (`am_jtag_regs`
-on BSCANE2 USER2), with `atg_kc705_raster.xdc`.
+on BSCANE2 USER2), with `atg_kc705_top.xdc`.
 
 The PCIe endpoint (`lib/atg_kc705_pcie.v`, ws288 p013): the AXI Memory
 Mapped To PCI Express bridge, Gen2 x4: BAR0 the GHCI register window
@@ -28,7 +28,7 @@ context by `ip.tcl` (`vivado -mode batch -source boards/kc705/ip.tcl
 Built with `VIVADO_IP=OUT tools/vivado-build.sh kc705 TOP` (part
 xc7k325tffg900-2).  gclk is 1000 MHz / GCLK_DIVIDE (the board top's
 localparam; 50 for now, a placeholder until the timing work, p025).  Linted by
-`tools/lint.sh` and simulated by `sim/tb/atg_kc705_raster_tb.v`, where `lib/atg_kc705_clk.v` and
+`tools/lint.sh` and simulated by `sim/tb/atg_kc705_top_tb.v`, where `lib/atg_kc705_clk.v` and
 `lib/atg_kc705_mig.v` are replaced by `sim/models/kc705/` (same names and
 ports) and the primitives by `sim/models/xilinx/`.  Not yet built or tried
 on the board.

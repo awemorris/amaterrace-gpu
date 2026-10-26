@@ -9,7 +9,7 @@
 # prints the targets.
 
 BOARD ?= kc705
-TOP ?= atg_kc705_raster
+TOP ?= atg_kc705_top
 PART ?= xc7k325tffg900-2
 DIE ?= xc7k325t
 # openXC7's data: the prjxray database and nextpnr's chip-database generator.

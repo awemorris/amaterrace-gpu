@@ -1,6 +1,6 @@
 # atg_kc705_jtag
 
-RTL: `boards/kc705/lib/atg_kc705_jtag.v`.  Parent: atg_kc705_raster.  Implemented in: p012.
+RTL: `boards/kc705/lib/atg_kc705_jtag.v`.  Parent: atg_kc705_top.  Implemented in: p012.
 
 ## 1. Purpose and place
 
@@ -49,7 +49,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): covered by `sim/tb/atg_kc705_raster_tb.v` (through the BSCANE2 model) and `tools/lint.sh`; am_jtag_regs has its own.
+No unit testbench (wiring only): covered by `sim/tb/atg_kc705_top_tb.v` (through the BSCANE2 model) and `tools/lint.sh`; am_jtag_regs has its own.
 
 ## 9. References
 
@@ -57,4 +57,4 @@ design §4.4, spec/bsp/generic/am_jtag_regs.md.
 
 ## 10. Status
 
-Implemented in WS288 p012 part A (in `atg_kc705_raster_tb`, lint).  Not tried on the board.
+Implemented in WS288 p012 part A (in `atg_kc705_top_tb`, lint).  Not tried on the board.

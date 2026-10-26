@@ -18,7 +18,7 @@ out=$root/build/verilator
 mkdir -p "$out"
 command -v verilator >/dev/null || { echo "verilator: not installed" >&2; exit 1; }
 
-# The KC705's shape (boards/kc705/atg_kc705_raster.v), without the CPU,
+# The KC705's shape (boards/kc705/atg_kc705_top.v), without the CPU,
 # the display and JTAG, which the harness does not drive.
 KC="-GLINE_BYTES=64 -GLINE_SHIFT=6 -GDATA_W=512"
 SU="-GNSU=1 -GSU_NPHYS=4 -GSU_GRP_W=3 -GSU_NREGS=64 -GSU_SB_ENTRIES=8 -GSU_SBE_W=3

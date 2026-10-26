@@ -1,6 +1,6 @@
 # atg_kc705_pcie
 
-RTL: `boards/kc705/lib/atg_kc705_pcie.v`.  Parent: atg_kc705_raster.  Written in WS288 p013 (2026-10-25).
+RTL: `boards/kc705/lib/atg_kc705_pcie.v`.  Parent: atg_kc705_top.  Written in WS288 p013 (2026-10-25).
 
 ## 1. Purpose and place
 

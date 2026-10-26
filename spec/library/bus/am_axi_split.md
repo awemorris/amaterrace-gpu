@@ -1,6 +1,6 @@
 # am_axi_split
 
-RTL: `rtl/library/bus/am_axi_split.v`.  Parent: atg_kc705_raster (the GPU's memory port to the DDR3 and to the host).  Children: two `am_axi_idtrack` (`wtr`, `rtr`), two `am_fifo` (`wq`, `eb`), two `am_arb3` (`barb`, `rarb`), one `am_sub`.  Written in WS288 p039 (2026-10-25; the user's decision of that day: a generic part, not KC705's, that sends one AXI to two).
+RTL: `rtl/library/bus/am_axi_split.v`.  Parent: atg_kc705_top (the GPU's memory port to the DDR3 and to the host).  Children: two `am_axi_idtrack` (`wtr`, `rtr`), two `am_fifo` (`wq`, `eb`), two `am_arb3` (`barb`, `rarb`), one `am_sub`.  Written in WS288 p039 (2026-10-25; the user's decision of that day: a generic part, not KC705's, that sends one AXI to two).
 
 ## 1. Purpose and place
 

@@ -38,7 +38,7 @@
  *     host writes the DISP2 window), and no more while it stays set;
  *   - no fault (STATUS.FAULT 0).
  *
- * sim-sources: boards/kc705/atg_kc705_raster.v boards/kc705/lib/atg_kc705_jtag.v
+ * sim-sources: boards/kc705/atg_kc705_top.v boards/kc705/lib/atg_kc705_jtag.v
  */
 
 `timescale 1ns / 1ps
@@ -68,7 +68,7 @@ module atg_kc705_pcie_tb;
 	pullup (iic_scl);
 	pullup (iic_sda);
 
-	atg_kc705_raster #(
+	atg_kc705_top #(
 		.NSU(1),
 		.CPU_IMEM_INIT("fw/cp/images/atg1-cp-kc705.imem.hex"),
 		.CPU_DMEM_INIT("fw/cp/images/atg1-cp-kc705.dmem.hex")

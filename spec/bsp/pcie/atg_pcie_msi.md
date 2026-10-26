@@ -1,14 +1,19 @@
 # atg_pcie_msi
 
-RTL: `rtl/gpu/top/atg_pcie_msi.v`.  Parent: atg_kc705_raster.  Written in WS288 p013 (2026-10-25).
+RTL: `rtl/bsp/pcie/atg_pcie_msi.v`.  Parent: `atg_kc705_top` (and other FPGA board tops).
 
 ## 1. Purpose and place
 
-The MSI rule of GHCI's PCIe binding (docs/ghci.md §15.2) for the KC705, one vector: GHCI's interrupt line (OR(IRQ_STATUS & IRQ_ENABLE)).  The display controller's events are bits of IRQ_STATUS (DISP2, [12:9]), so it has no vector of its own (ws288 p035; the first version, p013, had vector 1 for the DC at +0x10000).
+The MSI rule of GHCI's PCIe binding (docs/ghci.md §15.2) for FPGA board tops, one vector: GHCI's interrupt line (OR(IRQ_STATUS & IRQ_ENABLE)).  The display controller's events are bits of IRQ_STATUS (DISP2, [12:9]), so it has no vector of its own (ws288 p035).
+
+Located in `rtl/bsp/pcie/` as a common board support package module for PCIe-enabled FPGA targets.
 
 ## 2. Parameters
 
-None.
+| Name | Default | Meaning | Values |
+| --- | --- | --- | --- |
+| `IRQ_STATUS_ADDR` | 17'h00038 | Byte offset of GHCI_IRQ_STATUS in host register port | 17-bit address |
+| `IRQ_ENABLE_ADDR` | 17'h0003C | Byte offset of GHCI_IRQ_ENABLE in host register port | 17-bit address |
 
 ## 3. Ports
 
@@ -27,7 +32,7 @@ None.
 
 ## 4. Behaviour
 
-A message when irq goes from 0 to 1, and again 2 cycles after the response of a write through the register port to IRQ_STATUS or IRQ_ENABLE (GHCI 0x38, 0x3C) if irq is then 1.  The events are gathered in gclk and handed to uclk by a 4-phase handshake (am_sync both ways); events during a handshake are gathered for the next round, so none is lost and close ones give one message.  msi_req rises for a message, falls after msi_ack; one requested meanwhile follows.  Writes are matched to their responses through an 8-deep FIFO.
+A message when irq goes from 0 to 1, and again 2 cycles after the response of a write through the register port to IRQ_STATUS or IRQ_ENABLE if irq is then 1.  The events are gathered in gclk and handed to uclk by a 4-phase handshake (am_sync both ways); events during a handshake are gathered for the next round, so none is lost and close ones give one message.  msi_req rises for a message, falls after msi_ack; one requested meanwhile follows.  Writes are matched to their responses through an 8-deep FIFO.
 
 ## 5. State machine
 
@@ -51,4 +56,4 @@ docs/ghci.md §9.2, §15.2.
 
 ## 10. Status
 
-Implemented (2026-10-25, p013); one vector (2026-10-25, p035).
+Implemented in `rtl/bsp/pcie/atg_pcie_msi.v` (parameterized in Phase 034).

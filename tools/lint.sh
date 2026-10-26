@@ -50,7 +50,7 @@ run "atg_top (SA reserved: 1 SU + atg_sa)" --top-module atg_top $kc -GNSU=1 -GHA
 # (sim/lint/xilinx_stubs.v).  PINMISSING: primitive pins left open on
 # purpose; PINCONNECTEMPTY: atg_top outputs a board does not use.
 # -fno-dedup: Verilator 5.032's V3Gate dedup aborts with an internal error
-# ("Consumer doesn't match lhs of assign") on atg_kc705_raster once the
+# ("Consumer doesn't match lhs of assign") on atg_kc705_top once the
 # SU <-> TU link is live; dedup is an optimisation, the
 # lint checks are the same.
 for f in boards/*/*.v; do

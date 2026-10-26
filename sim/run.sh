@@ -15,7 +15,7 @@
 # Every testbench (make sim) takes about 21 minutes, one after the other
 # (2026-10-25, a 64-thread Linux host: atg_top_tex 382 s, atg_su 201,
 # atg_top_shade 183, atg_top_cs 138, atg_top_raster 79, atg_dc_tgen 56,
-# atg_top_fw 40, atg_top 30, atg_kc705_raster 25, the others about 120
+# atg_top_fw 40, atg_top 30, atg_kc705_top 25, the others about 120
 # together); the default timeout leaves room for atg_top_tex (about 380 s) and atg_su on a
 # slower or busy host too.  Those times are of the atg_top_* testbenches
 # with two harnesses each; they now run the KC705's shape only, so their

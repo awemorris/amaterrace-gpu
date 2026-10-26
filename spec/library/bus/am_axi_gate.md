@@ -1,6 +1,6 @@
 # am_axi_gate
 
-RTL: `rtl/library/bus/am_axi_gate.v`.  Parent: atg_kc705_raster (the PCIe BAR2 path to the MIG's second port).  Children: four `am_add` (the write count, the W lead, the read count, the closed read's beat).  Written in WS288 p040 (2026-10-25; the user's decision of that day: the MEM capability's window enable bit, GHCI §11.1).
+RTL: `rtl/library/bus/am_axi_gate.v`.  Parent: atg_kc705_top (the PCIe BAR2 path to the MIG's second port).  Children: four `am_add` (the write count, the W lead, the read count, the closed read's beat).  Written in WS288 p040 (2026-10-25; the user's decision of that day: the MEM capability's window enable bit, GHCI §11.1).
 
 ## 1. Purpose and place
 

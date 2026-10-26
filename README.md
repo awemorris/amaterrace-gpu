@@ -205,7 +205,7 @@ Building and testing
 --------------------
 
 `make` alone lists the targets. The defaults are `BOARD=kc705`,
-`TOP=atg_kc705_raster` and `PART=xc7k325tffg900-2`.
+`TOP=atg_kc705_top` and `PART=xc7k325tffg900-2`.
 
 | Command | What it does |
 | --- | --- |

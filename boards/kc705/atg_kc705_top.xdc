@@ -3,7 +3,7 @@
 ##
 ## SPDX-License-Identifier: Zlib
 ##
-## atg_kc705_raster on the Xilinx KC705 (XC7K325T-2FFG900C).  Not yet
+## atg_kc705_top on the Xilinx KC705 (XC7K325T-2FFG900C).  Not yet
 ## built or tried on the board.
 ##
 ## Values referenced:

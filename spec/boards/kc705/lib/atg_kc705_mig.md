@@ -1,6 +1,6 @@
 # atg_kc705_mig
 
-RTL: `boards/kc705/lib/atg_kc705_mig.v`.  Parent: atg_kc705_raster.  Implemented in: p012.
+RTL: `boards/kc705/lib/atg_kc705_mig.v`.  Parent: atg_kc705_top.  Implemented in: p012.
 
 ## 1. Purpose and place
 
@@ -114,7 +114,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): its model is exercised by `sim/tb/atg_kc705_raster_tb.v`; `tools/lint.sh` lints the wrapper.
+No unit testbench (wiring only): its model is exercised by `sim/tb/atg_kc705_top_tb.v`; `tools/lint.sh` lints the wrapper.
 
 ## 9. References
 
