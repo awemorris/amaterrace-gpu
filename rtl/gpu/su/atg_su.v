@@ -152,12 +152,12 @@ module atg_su #(
 	output wire ex_last,
 	input wire [15:0] ex_next,
 	output wire [153:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} (atg_su_exp) */
-	/* NGG Meshlet Primitive Export to RX (atg_rx_setup) */
-	output wire ngg_valid,
-	input wire ngg_ready,
-	output wire [701:0] ngg_tri,
-	output wire ngg_last,
-	output wire [15:0] ngg_mesh_id,
+	/* Meshlet Primitive Export to RX (atg_rx_setup) */
+	output wire mesh_valid,
+	input wire mesh_ready,
+	output wire [701:0] mesh_tri,
+	output wire mesh_last,
+	output wire [15:0] mesh_id,
 	/* AMB client port (design §4.1) */
 	output wire d_req_valid,
 	input wire d_req_ready,
@@ -620,9 +620,9 @@ module atg_su #(
 	);
 
 	localparam LDS_AW = $clog2(LDS_BYTES / 4);
-	wire ngg_lds_rd_en;
-	wire [LDS_AW-1:0] ngg_lds_rd_addr;
-	wire [31:0] ngg_lds_rd_data;
+	wire mesh_lds_rd_en;
+	wire [LDS_AW-1:0] mesh_lds_rd_addr;
+	wire [31:0] mesh_lds_rd_data;
 
 	atg_su_lds #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .LDS_BYTES(LDS_BYTES)) lds (
 		.scrub(scrub), .scrub_busy(scb_lds),
@@ -633,7 +633,7 @@ module atg_su #(
 		.l_valid(lds_l_valid), .l_ready(lds_l_ready), .l_warp(lds_l_warp),
 		.l_grp(lds_l_grp), .l_rd(lds_l_rd), .l_data(lds_l_data), .l_lanes(lds_l_lanes),
 		.l_wr(lds_l_wr), .l_last(lds_l_last), .l_sbe(lds_l_sbe), .l_cls(lds_l_cls),
-		.ngg_rd_en(ngg_lds_rd_en), .ngg_rd_addr(ngg_lds_rd_addr), .ngg_rd_data(ngg_lds_rd_data)
+		.mesh_rd_en(mesh_lds_rd_en), .mesh_rd_addr(mesh_lds_rd_addr), .mesh_rd_data(mesh_lds_rd_data)
 	);
 
 	atg_su_cbank #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) cbank (
@@ -711,7 +711,7 @@ module atg_su #(
 
 	wire [511:0] ex_color1_unused;
 	wire ex_has_src1_unused;
-	wire ngg_busy_unused;
+	wire mesh_busy_unused;
 	atg_su_exp #(
 		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
 		.LDS_BYTES(LDS_BYTES), .LDS_AW(LDS_AW)
@@ -729,9 +729,9 @@ module atg_su #(
 		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_aux(ex_aux),
 		.xr_valid(xr_valid), .xr_warp(xr_warp),
 		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp),
-		.ngg_valid(ngg_valid), .ngg_ready(ngg_ready), .ngg_tri(ngg_tri), .ngg_last(ngg_last),
-		.ngg_mesh_id(ngg_mesh_id), .ngg_busy(ngg_busy_unused),
-		.ngg_lds_rd_en(ngg_lds_rd_en), .ngg_lds_rd_addr(ngg_lds_rd_addr), .ngg_lds_rd_data(ngg_lds_rd_data)
+		.mesh_valid(mesh_valid), .mesh_ready(mesh_ready), .mesh_tri(mesh_tri), .mesh_last(mesh_last),
+		.mesh_id(mesh_id), .mesh_busy(mesh_busy_unused),
+		.mesh_lds_rd_en(mesh_lds_rd_en), .mesh_lds_rd_addr(mesh_lds_rd_addr), .mesh_lds_rd_data(mesh_lds_rd_data)
 	);
 
 	atg_su_pt #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .UOP_W(UOP_W), .PT_ENTRIES(PT_ENTRIES), .VARY_WORDS(VARY_WORDS)) pt (
@@ -818,7 +818,7 @@ module atg_su #(
 	assign fault = sb_fault;
 	assign fault_addr = {16'd0, sb_fault_pc};
 
-	wire unused_ok = &{1'b0, inv[1], ex_color1_unused, ex_has_src1_unused, ngg_busy_unused};	/* T$: the TU's */
+	wire unused_ok = &{1'b0, inv[1], ex_color1_unused, ex_has_src1_unused, mesh_busy_unused};	/* T$: the TU's */
 endmodule
 
 `default_nettype wire

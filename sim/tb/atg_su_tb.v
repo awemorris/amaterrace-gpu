@@ -109,7 +109,7 @@ module atg_su_chk #(
 		.tr_data(512'd0), .tr_last(1'b0),
 		.ex_valid(), .ex_ready(1'b1), .ex_seq(), .ex_xy(), .ex_mask(), .ex_color(),
 		.ex_depth(), .ex_last(), .ex_next(16'd0), .ex_aux(),
-		.ngg_valid(), .ngg_ready(1'b1), .ngg_tri(), .ngg_last(), .ngg_mesh_id(),
+		.mesh_valid(), .mesh_ready(1'b1), .mesh_tri(), .mesh_last(), .mesh_id(),
 		.d_req_valid(d_req_valid), .d_req_ready(d_req_ready), .d_req_write(d_req_write),
 		.d_req_line(d_req_line), .d_req_be(d_req_be), .d_req_wdata(d_req_wdata),
 		.d_req_tag(d_req_tag), .d_rsp_valid(d_rsp_valid), .d_rsp_write(d_rsp_write),

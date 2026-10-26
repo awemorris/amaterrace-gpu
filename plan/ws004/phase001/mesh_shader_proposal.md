@@ -1,8 +1,8 @@
 <!-- awesome-plan project=amaterrace-gpu record=ws004-p001-proposal -->
 
-# AMD NGG（Next-Generation Geometry）方式に倣う Task / Mesh Shader シェーダ内蔵アーキテクチャ方式検討書
+# SU support for task/mesh shader（vk_ext_mesh_shader, vk_ext_task_shader）内蔵アーキテクチャ方式検討書
 
-**文書管理番号**: `AP-DOC-20261027-WS004-NGG`  
+**文書管理番号**: `AP-DOC-20261027-WS004-MESH`  
 **対象ワークストリーム**: [WS004](../../ws004/ws.md) Phase 001 (`ws004-p001`)  
 **対象アーキテクチャ**: Amaterrace GPU (`ATG1`) / GSI1 64-bit ISA / Verilog-2005  
 **作成エージェント**: D1 (Documentation Subagent)  
@@ -12,10 +12,10 @@
 
 ## 1. エグゼクティブサマリー（Executive Summary）
 
-本検討書は、Vulkan 次世代ジオメトリ拡張である `VK_EXT_mesh_shader`（Task Shader および Mesh Shader）を Amaterrace GPU (`ATG1`) に統合するにあたり、**独立した専用固定ハードウェア回路を新設するのではなく、AMD RDNA の NGG（Next-Generation Geometry）方式に倣い、Shader Unit（SU）内部の既存リソース（Warp スケジューラ、スカラー PE、LDS、EXP エクスポートバス）を活用してシェーダ内蔵で実行するアーキテクチャ** の方式比較・設計案を提示するものである。
+本検討書は、Vulkan 次世代ジオメトリ拡張である `VK_EXT_mesh_shader`（Task Shader および Mesh Shader）を Amaterrace GPU (`ATG1`) に統合するにあたり、**独立した専用固定ハードウェア回路を新設するのではなく、Shader Unit（SU）内部の既存リソース（Warp スケジューラ、スカラー PE、LDS、EXP エクスポートバス）を活用して task shader および mesh shader（vk_ext_mesh_shader, vk_ext_task_shader）を実行する SU support for task/mesh shader アーキテクチャ** の方式比較・設計案を提示するものである。
 
 ### 1.1 結論の要約
-1. **リソース効率**: 独立固定機能回路を設ける方式と比較し、NGG 方式を採用することで、追加の BRAM 消費を **約 70% 削減**（10〜12 BRAM $\rightarrow$ 0〜2 BRAM）、追加ロジック（LUT）を **約 80% 削減**（5,000〜6,500 LUT $\rightarrow$ 800〜1,200 LUT）できる。
+1. **リソース効率**: 独立固定機能回路を設ける方式と比較し、SU support for task/mesh shader 方式を採用することで、追加の BRAM 消費を **約 70% 削減**（10〜12 BRAM $\rightarrow$ 0〜2 BRAM）、追加ロジック（LUT）を **約 80% 削減**（5,000〜6,500 LUT $\rightarrow$ 800〜1,200 LUT）できる。
 2. **既存資産の最大活用**: SU の 4 KiB 共有メモリ（LDS: `atg_su_lds`）を頂点バッファおよびプリミティブトポロジバッファとして共有し、スカラー PE 群（INT/FP）で直接プリミティブカリング（Backface / Frustum / Small Primitive）を演算する。
 3. **ラスタライザ直結（VF バイパス）**: 従来の頂点フェッチャ（`atg_vf`）および Position Table（`atg_su_pt`）を経由せず、SU のエクスポートインターフェース（`atg_su_exp`）からラスタライザの三角形セットアップエンジン（`atg_rx_setup`）へ直接 VALID/READY ハンドシェイクでカリング済ストリームを供給する。
 
@@ -29,13 +29,13 @@ flowchart LR
         PA1 & PT1 --> RX1["Rasterizer Setup (RX)<br>セットアップ・走査"]
     end
 
-    subgraph NGG["AMD NGG 方式（本提案：シェーダ内蔵型）"]
+    subgraph MESH["SU support for task/mesh shader 方式（本提案：シェーダ内蔵型）"]
         direction TB
         CP2["Command Processor (CP)<br>Task / Mesh Dispatch"] --> TS2["Task Shader (SU)<br>カリング & Mesh数計算"]
         TS2 -. Payload & Count .-> MS2["Mesh Shader (SU)<br>Meshlet 頂点/プリミティブ生成<br>& シェーダ内カリング"]
         MS2 --> LDS2["Local Data Share (LDS)<br>頂点・トポロジ一時保持"]
-        LDS2 --> NGGEXP["NGG Direct Export<br>VALID/READY スキッド"]
-        NGGEXP --> RX2["Rasterizer Setup (RX)<br>エッジ方程式・走査"]
+        LDS2 --> MESHEXP["Mesh Direct Export<br>VALID/READY スキッド"]
+        MESHEXP --> RX2["Rasterizer Setup (RX)<br>エッジ方程式・走査"]
     end
 ```
 
@@ -59,23 +59,23 @@ Amaterrace GPU の現行パイプラインは、Direct3D 9〜11 / OpenGL / Vulka
 
 ---
 
-## 3. AMD NGG（Next-Generation Geometry）アプローチの本質
+## 3. SU support for task/mesh shader アプローチの本質
 
-### 3.1 NGG（Next-Generation Geometry）の基本原理
-AMD は RDNA アーキテクチャにおいて、長年使用されてきた固定 Geometry Engine（GE）を事実上解体し、**「すべてのジオメトリ処理を汎用コンピュートパイプライン（Compute Unit / Workgroup Processor）で完結させる」** NGG アプローチへと舵を切った。
+### 3.1 シェーダ内蔵型メッシュシェーダの基本原理
+本設計では、固定 Geometry Engine を新設するのではなく、**「すべてのジオメトリ処理を汎用コンピュートパイプライン（Shader Unit）で完結させる」** SU support for task/mesh shader アプローチを採用する。
 
 ```
 [従来のパイプライン]
 IA(入力アセンブラ) -> VS -> (Tess/GS) -> PA(プリミティブアセンブラ) -> Rasterizer
    [固定]          [SU]     [固定/SU]         [固定]                 [固定]
 
-[AMD NGG パイプライン]
-Memory -> Unified Compute / NGG Shader (SU + LDS) -> Direct Export -> Rasterizer
+[Mesh Shader パイプライン]
+Memory -> Unified Compute / Mesh Shader (SU + LDS) -> Direct Export -> Rasterizer
                [頂点変換 + トポロジ + カリング]            [EXP]          [固定]
 ```
 
 ### 3.2 シェーダ主導のカリング（Primitive Culling in Shader）
-NGG では、プリミティブの可視判定をラスタライザの固定回路に任せるのではなく、シェーダコード内のスカラー PE 群で並列計算する：
+mesh shader では、プリミティブの可視判定をラスタライザの固定回路に任せるのではなく、シェーダコード内のスカラー PE 群で並列計算する：
 - **Backface Culling**: 3 頂点の外積（Signed Area $2A = (x_1 - x_0)(y_2 - y_0) - (y_1 - y_0)(x_2 - x_0)$）を計算し、符号で即座に破棄。
 - **Frustum Culling**: メッシュレット全体のバウンディングボックス（または三角形の AABB）がクリップ空間外にあるかを一括判定。
 - **Small Primitive Culling**: サブピクセルサイズ以下の三角形（面積が極小）をラスタライザに渡す前に除外。
@@ -83,11 +83,11 @@ NGG では、プリミティブの可視判定をラスタライザの固定回�
 
 ### 3.3 中間バッファの排除とダイレクトエクスポート
 従来のパイプラインでは、頂点ステージとジオメトリ/テッセレーションステージの間で膨大な中間リングバッファ（AMD GCN における ESGS / GSVS リングバッファ、主メモリ上のスピル）を必要としていた。  
-NGG では、チップ内のローカルメモリ（LDS）とエクスポートバス（EXP）を直結することで、**外部メモリへの一切の中間スピルを発生させずにラスタライザへ直接ストリーム転送** する。
+mesh shader では、チップ内のローカルメモリ（LDS）とエクスポートバス（EXP）を直結することで、**外部メモリへの一切の中間スピルを発生させずにラスタライザへ直接ストリーム転送** する。
 
 ---
 
-## 4. Amaterrace GPU への NGG 方式適用アーキテクチャ設計
+## 4. Amaterrace GPU への SU support for task/mesh shader 適用アーキテクチャ設計
 
 ### 4.1 全体構造図
 Amaterrace GPU (`ATG1`) では、既存の Compute 実行基盤および LDS をそのまま活用し、Task Shader と Mesh Shader を「ジオメトリ出力能力を持つ特殊なコンピュートワークグループ」として実行する。
@@ -100,7 +100,7 @@ sequenceDiagram
     participant PAY as Task Payload (L2C / Scratch)
     participant SU_MS as SU: Mesh Shader (Warp)
     participant LDS as SU LDS (atg_su_lds)
-    participant EXP as SU EXP (NGG Streamer)
+    participant EXP as SU EXP (Mesh Streamer)
     participant RX as RX Setup (atg_rx_setup)
 
     CP->>SU_TS: Dispatch Task Workgroup (DispatchMeshTasks)
@@ -201,16 +201,16 @@ Mesh Shader 内では、頂点シェーダ計算とプリミティブアセン�
 
 ---
 
-### 4.4 RX（ラスタライザ）への直結エクスポートバス（NGG Export Interface）
+### 4.4 RX（ラスタライザ）への直結エクスポートバス（Mesh Export Interface）
 
 従来の固定頂点パイプラインでは、頂点は Position Table（`atg_su_pt`）に保存され、VF が RX に向けて三角形インデックスを送信していた。  
-NGG 方式では、**VF および `atg_su_pt` を完全にバイパス** し、SU からラスタライザの三角形セットアップエンジン（`atg_rx_setup`）へ直接三角形データをストリーム出力する。
+mesh shader 方式では、**VF および `atg_su_pt` を完全にバイパス** し、SU からラスタライザの三角形セットアップエンジン（`atg_rx_setup`）へ直接三角形データをストリーム出力する。
 
 ```mermaid
 flowchart LR
     subgraph SU["Shader Unit (atg_su)"]
         LDS["Local Data Share<br>(atg_su_lds)"]
-        EXP_FSM["NGG Export Sequencer<br>(atg_su_exp 内蔵)"]
+        EXP_FSM["Mesh Export Sequencer<br>(atg_su_exp 内蔵)"]
         SKID["Skid Buffer (FIFO)<br>Ping-Pong 2-stage"]
         LDS -->|Burst Read| EXP_FSM
         EXP_FSM --> SKID
@@ -223,21 +223,21 @@ flowchart LR
         SETUP --> EDGE --> SCAN
     end
 
-    SKID -->|ngg_valid / ngg_ready| SETUP
-    SKID -->|ngg_tri [701:0]| SETUP
+    SKID -->|mesh_valid / mesh_ready| SETUP
+    SKID -->|mesh_tri [701:0]| SETUP
 ```
 
 #### 4.4.1 ハードウェアインターフェース仕様（信号定義）
 
 | 信号名 | 方向 | ビット幅 | 説明 |
 | :--- | :---: | :---: | :--- |
-| `ngg_valid` | SU $\rightarrow$ RX | 1 | NGG 三角形ストリーム有効信号 |
-| `ngg_ready` | RX $\rightarrow$ SU | 1 | RX セットアップ受け入れ可能信号（Backpressure） |
-| `ngg_tri` | SU $\rightarrow$ RX | 702 | 三角形完全データ（`atg_rx_setup` の `cl_tri` と完全互換） |
-| `ngg_last` | SU $\rightarrow$ RX | 1 | メッシュレット内の最終三角形フラグ |
-| `ngg_mesh_id`| SU $\rightarrow$ RX | 16 | メッシュレット識別子（デバッグ・同期用） |
+| `mesh_valid` | SU $\rightarrow$ RX | 1 | Mesh 三角形ストリーム有効信号 |
+| `mesh_ready` | RX $\rightarrow$ SU | 1 | RX セットアップ受け入れ可能信号（Backpressure） |
+| `mesh_tri` | SU $\rightarrow$ RX | 702 | 三角形完全データ（`atg_rx_setup` の `cl_tri` と完全互換） |
+| `mesh_last` | SU $\rightarrow$ RX | 1 | メッシュレット内の最終三角形フラグ |
+| `mesh_id`| SU $\rightarrow$ RX | 16 | メッシュレット識別子（デバッグ・同期用） |
 
-#### 4.4.2 `ngg_tri`（702-bit）の内部データフォーマット
+#### 4.4.2 `mesh_tri`（702-bit）の内部データフォーマット
 `atg_rx_setup` の入力バス `cl_tri[701:0]` に直結可能なフォーマットを採用する：
 - **頂点 0 座標**: $X_0, Y_0, Z_0, W_0$ (FP32 × 4 = 128 bit)
 - **頂点 1 座標**: $X_1, Y_1, Z_1, W_1$ (FP32 × 4 = 128 bit)
@@ -246,11 +246,11 @@ flowchart LR
 - **コントロールフラグ**: 26 bit（カリングモード、両面描画フラグ、ビューポートインデックス等）
 - **合計**: $128 \times 3 + 288 + 26 = 698$ bit（702-bit バウンダリ）
 
-#### 4.4.3 NGG Export Sequencer の動作
+#### 4.4.3 Mesh Export Sequencer の動作
 1. Mesh Shader が完了し、`emitprim` または `exp.mesh` 命令を実行すると、LDS のエクスポートシーケンサがキックされる。
 2. シーケンサは LDS からカリング済インデックス（V0, V1, V2）を読み出し、対応する頂点座標およびアトリビュートを LDS バンクから 4 サイクルでバーストリードする。
-3. 2 段のスキッドバッファ（Ping-Pong レジスタ）を介して `ngg_valid` をアサートし、RX の `atg_rx_setup` へ供給する。
-4. RX 側がビジー（`ngg_ready == 0`）の場合はスキッドバッファでバックプレッシャーを受け止め、SU パイプラインを安全にストールさせる。
+3. 2 段のスキッドバッファ（Ping-Pong レジスタ）を介して `mesh_valid` をアサートし、RX の `atg_rx_setup` へ供給する。
+4. RX 側がビジー（`mesh_ready == 0`）の場合はスキッドバッファでバックプレッシャーを受け止め、SU パイプラインを安全にストールさせる。
 
 ---
 
@@ -258,7 +258,7 @@ flowchart LR
 
 ### 5.1 リソース定量比較表（Xilinx 7-Series / Kintex-7 想定）
 
-| リソース項目 | ① 独立固定ハードウェア方式 | ② AMD NGG 方式（本提案） | 削減効果 / 差異 |
+| リソース項目 | ① 独立固定ハードウェア方式 | ② AMD SU support for task/mesh shader 方式（本提案） | 削減効果 / 差異 |
 | :--- | :---: | :---: | :--- |
 | **ロジックセル (LUT)** | 約 5,500 〜 6,800 LUT<br>（VF拡張, 固定Mesh展開回路, 専用FIFO制御） | **約 800 〜 1,100 LUT**<br>（EXP シーケンサ, CPディスパッチ拡張） | **約 83% 削減**（省面積・配線遅延最小化） |
 | **レジスタ (FF)** | 約 4,000 〜 5,200 FF | **約 900 〜 1,200 FF** | **約 77% 削減** |
@@ -269,7 +269,7 @@ flowchart LR
 ### 5.2 メモリ帯域とパイプライン効率の分析
 - **外部メモリ（DRAM / L2C）トラフィック**:
   - 従来パイプラインでは、頂点インデックスおよび頂点アトリビュートを必ずメモリからロードする必要があった。
-  - NGG 方式では、メッシュレットの圧縮表現（例えば 8-bit 相対座標や量子化法線）をシェーダで直接ロード・展開可能であり、**ジオメトリフェッチ帯域を 30%〜60% 削減** できる。
+  - mesh shader では、メッシュレットの圧縮表現（例えば 8-bit 相対座標や量子化法線）をシェーダで直接ロード・展開可能であり、**ジオメトリフェッチ帯域を 30%〜60% 削減** できる。
 - **無駄なラスタライズの排除**:
   - シェーダ内での早期カリング（Backface / Frustum / Small Primitive）により、不可視な三角形がラスタライザに一切投入されないため、RX の三角形セットアップおよびファインスキャンの飽和を完全に防止できる。
 
@@ -281,7 +281,7 @@ Amaterrace GPU の 64-bit 固定長命令セット「GSI1」において、次�
 
 ### 6.1 GSI1 命令フォーマットの空き領域活用
 現行の GSI1 では、`custom-0` (`0001011`) および `custom-1` (`0101011`) にカスタム拡張が割り振られている（[docs/ghci.md](../../docs/ghci.md) Section 12.3）。  
-NGG 制御命令は、`custom-0` の予約領域または `custom-1` の `exp` 命令拡張として定義する。
+mesh shader 制御命令は、`custom-0` の予約領域または `custom-1` の `exp` 命令拡張として定義する。
 
 ### 6.2 拡張命令詳細一覧
 
@@ -305,10 +305,10 @@ NGG 制御命令は、`custom-0` の予約領域または `custom-1` の `exp` �
 - **オペランド**:
   - `rs1`: 出力頂点数 (`gl_NumWorkgroups` / `maxVertices`, 最大 64 または 256)
   - `rs2`: 出力プリミティブ数 (`maxPrimitives`, 最大 126 または 512)
-- **機能**: NGG エクスポートシーケンサに対して、本メッシュレットが生成する最終頂点数および三角形数を宣言する（Vulkan の `SetMeshOutputCountsEXT` に対応）。
+- **機能**: mesh shader エクスポートシーケンサに対して、本メッシュレットが生成する最終頂点数および三角形数を宣言する（Vulkan の `SetMeshOutputCountsEXT` に対応）。
 
 #### ③ `emitprim rs1, rs2`（Mesh Shader 専用）
-- **Opcode**: `custom-1` (`0101011`), `funct3 = 3'b100` (`exp`), `target = 0x200` (NGG Primitive)
+- **Opcode**: `custom-1` (`0101011`), `funct3 = 3'b100` (`exp`), `target = 0x200` (Mesh Primitive)
 - **オペランド**:
   - `rs1`: 三角形インデックス `{V2[7:0], V1[7:0], V0[7:0]}`
   - `rs2`: プリミティブ属性フラグ（Cull mask, Viewport index 等）
@@ -319,7 +319,7 @@ NGG 制御命令は、`custom-0` の予約領域または `custom-1` の `exp` �
 - **オペランド**:
   - `rs2`: エクスポートする頂点アトリビュート値
   - `target`: `0x210` (Position XYZW), `0x211`〜`0x21F` (各 Varying)
-- **機能**: 各レーンが計算した頂点座標および属性を、NGG エクスポートバッファ（または LDS）へ転送する。
+- **機能**: 各レーンが計算した頂点座標および属性を、mesh エクスポートバッファ（または LDS）へ転送する。
 
 ---
 
@@ -396,8 +396,8 @@ end
 
 ### 論点 4: レガシー頂点パイプライン（VF）との共存方式
 - **選択肢 A (推奨)**: **静的排他マルチプレクサ（RX 入力セレクタ）**
-  - `CAPS[31]`（Mesh Shader 有効フラグ）に基づき、パイプライン作成時に「VF パス」と「NGG パス」をマルチプレクサで切り替える。既存の `atg_vf` や `atg_su_pt` には一切変更を加えずに共存可能。
-- **選択肢 B**: **完全置換（VF 廃止・全ジオメトリ NGG 統合）**
+  - `CAPS[31]`（Mesh Shader 有効フラグ）に基づき、パイプライン作成時に「VF パス」と「Mesh パス」をマルチプレクサで切り替える。既存の `atg_vf` や `atg_su_pt` には一切変更を加えずに共存可能。
+- **選択肢 B**: **完全置換（VF 廃止・全ジオメトリ mesh shader 統合）**
   - レガシーの Draw コールもすべてドライバ側で内部 Mesh Shader に変換して実行する（AMD RDNA のドライバ実装に近いアプローチ）。ハードウェアから `atg_vf` を完全削除して最大のリソース削減を達成できるが、ドライバ／コンパイラの開発負荷が増大する。
 
 ---
@@ -408,7 +408,7 @@ end
 
 ```mermaid
 flowchart TD
-    p001["<b>Phase 001 (ws004-p001)</b><br>NGG 方式検討・比較資料作成<br>【★本提案書・レビュー中】"]
+    p001["<b>Phase 001 (ws004-p001)</b><br>SU support for task/mesh shader 方式検討・比較資料作成<br>【★本提案書・レビュー中】"]
     p002["<b>Phase 002 (ws004-p002)</b><br>SU 内部 Meshlet プリミティブエクスポート<br>& LDS インターフェース設計・RTL 実装"]
     p003["<b>Phase 003 (ws004-p003)</b><br>CP タスクディスパッチ & メッシュパイプライン統合<br>& シミュレーション検証"]
 
@@ -418,9 +418,9 @@ flowchart TD
 
 1. **Phase 001 承認**: ユーザーレビューを受け、論点 1〜4 の設計方針を確定・承認。
 2. **Phase 002 実装**:
-   - `atg_su_exp` に NGG エクスポートシーケンサおよび VALID/READY スキッドバッファを追加。
+   - `atg_su_exp` に mesh shader エクスポートシーケンサおよび VALID/READY スキッドバッファを追加。
    - `atg_su_lds` の読み出しポートとエクスポートシーケンサを結合。
-   - `atg_rx_setup` に NGG ストリーム入力ポートを新設。
+   - `atg_rx_setup` に mesh ストリーム入力ポートを新設。
 3. **Phase 003 統合**:
    - `atg_cp_disp` に Task/Mesh ワークグループディスパッチ論理を追加。
    - GSI1 アセンブラに `emitmesh`, `setprim`, `emitprim` を追加。

@@ -52,7 +52,7 @@ module atg_su_lds_tb;
 		.l_valid(l_valid), .l_ready(l_ready), .l_warp(l_warp), .l_grp(l_grp), .l_rd(l_rd),
 		.l_data(l_data), .l_lanes(l_lanes), .l_wr(l_wr), .l_last(l_last), .l_sbe(l_sbe),
 		.l_cls(l_cls),
-		.ngg_rd_en(1'b0), .ngg_rd_addr(10'd0), .ngg_rd_data()
+		.mesh_rd_en(1'b0), .mesh_rd_addr(10'd0), .mesh_rd_data()
 	);
 
 	reg [31:0] shadow [0:1023];

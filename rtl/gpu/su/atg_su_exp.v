@@ -105,17 +105,17 @@ module atg_su_exp #(
 	/* Session protection: clear the buffer */
 	input wire scrub,
 	output wire scrub_busy,
-	/* NGG Meshlet Primitive Export to RX (atg_rx_setup) */
-	output wire ngg_valid,
-	input wire ngg_ready,
-	output wire [701:0] ngg_tri,
-	output wire ngg_last,
-	output wire [15:0] ngg_mesh_id,
-	output wire ngg_busy,
+	/* Meshlet Primitive Export to RX (atg_rx_setup) */
+	output wire mesh_valid,
+	input wire mesh_ready,
+	output wire [701:0] mesh_tri,
+	output wire mesh_last,
+	output wire [15:0] mesh_id,
+	output wire mesh_busy,
 	/* LDS Port B Read Interface */
-	output wire ngg_lds_rd_en,
-	output wire [LDS_AW-1:0] ngg_lds_rd_addr,
-	input wire [31:0] ngg_lds_rd_data
+	output wire mesh_lds_rd_en,
+	output wire [LDS_AW-1:0] mesh_lds_rd_addr,
+	input wire [31:0] mesh_lds_rd_data
 );
 `include "atg_su_uop.vh"
 
@@ -342,37 +342,37 @@ module atg_su_exp #(
 		end
 	end
 
-	/* ---- NGG Meshlet Primitive Export Sequencer */
-	wire ex_ngg = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && tgt == 32'h200;
-	wire [7:0] ngg_k_prim = (x_b[7:0] != 8'd0) ? x_b[7:0] : x_a[23:16];
-	wire [7:0] ngg_k_vert = (x_b[15:8] != 8'd0) ? x_b[15:8] : x_a[31:24];
-	wire [LDS_AW-1:0] ngg_k_pbase = (x_c[LDS_AW-1:0] != {LDS_AW{1'b0}}) ? x_c[LDS_AW-1:0] : {{(LDS_AW-10){1'b0}}, 10'd512};
+	/* ---- Unified Meshlet Primitive Export Sequencer */
+	wire ex_mesh = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && tgt == 32'h200;
+	wire [7:0] mesh_k_prim = (x_b[7:0] != 8'd0) ? x_b[7:0] : x_a[23:16];
+	wire [7:0] mesh_k_vert = (x_b[15:8] != 8'd0) ? x_b[15:8] : x_a[31:24];
+	wire [LDS_AW-1:0] mesh_k_pbase = (x_c[LDS_AW-1:0] != {LDS_AW{1'b0}}) ? x_c[LDS_AW-1:0] : {{(LDS_AW-10){1'b0}}, 10'd512};
 
-	wire ngg_done_unused;
+	wire mesh_done_unused;
 
-	atg_su_exp_ngg #(.AW(LDS_AW), .DATA_W(32)) u_ngg (
+	atg_su_exp_mesh #(.AW(LDS_AW), .DATA_W(32)) u_mesh (
 		.clk(clk), .rst_n(rst_n),
-		.kick_valid(ex_ngg),
+		.kick_valid(ex_mesh),
 		.kick_mesh_id(x_info[15:0]),
-		.kick_prim_count(ngg_k_prim),
-		.kick_vert_count(ngg_k_vert),
-		.kick_prim_base(ngg_k_pbase),
+		.kick_prim_count(mesh_k_prim),
+		.kick_vert_count(mesh_k_vert),
+		.kick_prim_base(mesh_k_pbase),
 		.kick_pos_base({LDS_AW{1'b0}}),
 		.kick_var_base({{(LDS_AW-10){1'b0}}, 10'd256}),
-		.busy(ngg_busy),
-		.done(ngg_done_unused),
-		.lds_rd_en(ngg_lds_rd_en),
-		.lds_rd_addr(ngg_lds_rd_addr),
-		.lds_rd_data(ngg_lds_rd_data),
-		.ngg_valid(ngg_valid),
-		.ngg_ready(ngg_ready),
-		.ngg_tri(ngg_tri),
-		.ngg_last(ngg_last),
-		.ngg_mesh_id(ngg_mesh_id)
+		.busy(mesh_busy),
+		.done(mesh_done_unused),
+		.lds_rd_en(mesh_lds_rd_en),
+		.lds_rd_addr(mesh_lds_rd_addr),
+		.lds_rd_data(mesh_lds_rd_data),
+		.mesh_valid(mesh_valid),
+		.mesh_ready(mesh_ready),
+		.mesh_tri(mesh_tri),
+		.mesh_last(mesh_last),
+		.mesh_id(mesh_id)
 	);
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_a, x_c, x_mask[NPHYS-1:0], x_info,
-		x_uop, fl_info[63:49], fl_data[7:0], tgt, xrow, lane0, zrow, drow, fq, dqs, ngg_done_unused};
+		x_uop, fl_info[63:49], fl_data[7:0], tgt, xrow, lane0, zrow, drow, fq, dqs, mesh_done_unused};
 endmodule
 
 `default_nettype wire

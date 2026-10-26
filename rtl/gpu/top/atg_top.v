@@ -1166,9 +1166,9 @@ module atg_top #(
 		localparam CD = C_SU + 2 * k;
 		localparam CI = C_SU + 2 * k + 1;
 		wire s_vl_gnt, s_fl_gnt, s_tx_valid, s_tx_last, s_tr_ready, s_ex_valid, s_ex_last;
-		wire s_ngg_valid, s_ngg_last;
-		wire [701:0] s_ngg_tri;
-		wire [15:0] s_ngg_mesh_id;
+		wire s_mesh_valid, s_mesh_last;
+		wire [701:0] s_mesh_tri;
+		wire [15:0] s_mesh_id;
 		wire s_sa_push_valid, s_sa_pop_ready, s_sa_ctl_valid;
 		wire [SU_WARP_W-1:0] s_vl_slot, s_fl_slot;
 		wire [7:0] s_vl_ptbase, s_pt_done;
@@ -1213,8 +1213,8 @@ module atg_top #(
 			.ex_valid(s_ex_valid), .ex_ready(g0 && ex_ready), .ex_seq(s_ex_seq), .ex_xy(s_ex_xy),
 			.ex_mask(s_ex_mask), .ex_color(s_ex_color), .ex_depth(s_ex_depth),
 			.ex_last(s_ex_last), .ex_next(ex_next), .ex_aux(s_ex_aux),
-			.ngg_valid(s_ngg_valid), .ngg_ready(1'b1), .ngg_tri(s_ngg_tri),
-			.ngg_last(s_ngg_last), .ngg_mesh_id(s_ngg_mesh_id),
+			.mesh_valid(s_mesh_valid), .mesh_ready(1'b1), .mesh_tri(s_mesh_tri),
+			.mesh_last(s_mesh_last), .mesh_id(s_mesh_id),
 			.d_req_valid(c_req_valid[CD]), .d_req_ready(c_req_ready[CD]),
 			.d_req_write(c_req_write[CD]), .d_req_line(c_req_line[CD*LA_W +: LA_W]),
 			.d_req_be(c_req_be[CD*LINE_BYTES +: LINE_BYTES]),
@@ -1278,7 +1278,7 @@ module atg_top #(
 				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last, s_ex_aux,
 				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data};
 		end
-		wire unused_slots = &{1'b0, s_vl_slot, s_fl_slot, s_ngg_valid, s_ngg_last, s_ngg_tri, s_ngg_mesh_id};
+		wire unused_slots = &{1'b0, s_vl_slot, s_fl_slot, s_mesh_valid, s_mesh_last, s_mesh_tri, s_mesh_id};
 	end
 
 	if (NSU > 0) begin : g_atom

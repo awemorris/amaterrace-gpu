@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_su_exp_ngg: Next-Generation Geometry (NGG) Meshlet Primitive Export Sequencer.
+ * atg_su_exp_mesh: Unified Meshlet Primitive Export Sequencer.
  *
  * Reads culled primitive topology and corresponding vertex attributes directly
  * from Local Data Share (LDS) via a dedicated read port (Port B), formats each
@@ -20,13 +20,13 @@
  *   - 2-stage Skid Buffer for full wire-speed throughput and backpressure handling.
  *   - Zero additional Block RAM overhead (shares existing LDS).
  *
- * See spec/gpu/su/atg_su_exp.md and plan/ws004/phase001/ngg_mesh_shader_proposal.md.
+ * See spec/gpu/su/atg_su_exp.md and plan/ws004/phase001/mesh_shader_proposal.md.
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_su_exp_ngg #(
+module atg_su_exp_mesh #(
 	parameter AW = 10,		/* LDS word address width (10 for 4 KiB, 12 for 16 KiB) */
 	parameter DATA_W = 32		/* LDS word data width */
 ) (
@@ -49,12 +49,12 @@ module atg_su_exp_ngg #(
 	output reg [AW-1:0] lds_rd_addr,
 	input wire [DATA_W-1:0] lds_rd_data,
 
-	/* NGG Stream Output to RX (atg_rx_setup) */
-	output wire ngg_valid,
-	input wire ngg_ready,
-	output wire [701:0] ngg_tri,
-	output wire ngg_last,
-	output wire [15:0] ngg_mesh_id
+	/* Mesh Stream Output to RX (atg_rx_setup) */
+	output wire mesh_valid,
+	input wire mesh_ready,
+	output wire [701:0] mesh_tri,
+	output wire mesh_last,
+	output wire [15:0] mesh_id
 );
 
 	/* State Machine */
@@ -301,13 +301,13 @@ module atg_su_exp_ngg #(
 	reg s1_last;
 	reg s1_valid;
 
-	assign skid_push_ready = !s0_valid || ngg_ready;
+	assign skid_push_ready = !s0_valid || mesh_ready;
 	assign skid_empty = !s0_valid && !s1_valid;
 
-	assign ngg_valid = s1_valid;
-	assign ngg_tri = s1_tri;
-	assign ngg_last = s1_last;
-	assign ngg_mesh_id = mesh_id_reg;
+	assign mesh_valid = s1_valid;
+	assign mesh_tri = s1_tri;
+	assign mesh_last = s1_last;
+	assign mesh_id = mesh_id_reg;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -319,7 +319,7 @@ module atg_su_exp_ngg #(
 			s1_last <= 1'b0;
 		end else begin
 			/* Stage 1 drain / advance */
-			if (ngg_ready && s1_valid) begin
+			if (mesh_ready && s1_valid) begin
 				if (s0_valid) begin
 					s1_tri <= s0_tri;
 					s1_last <= s0_last;
@@ -332,7 +332,7 @@ module atg_su_exp_ngg #(
 
 			/* Stage 0 / Stage 1 load */
 			if (skid_push_valid) begin
-				if (!s1_valid || (ngg_ready && s1_valid && !s0_valid)) begin
+				if (!s1_valid || (mesh_ready && s1_valid && !s0_valid)) begin
 					s1_tri <= skid_push_data;
 					s1_last <= skid_push_last;
 					s1_valid <= 1'b1;

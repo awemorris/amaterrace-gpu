@@ -70,8 +70,8 @@
 | `q001-i56` | **P3 / R1** | [ws003-p005](../ws003/phase005/phase.md) | ROP（Dual Source, LogicOp, MRT, Fast Clear）の Capability 化 | cleared | `q001-i52` | P3 是正完了。Lint 0警告、単体全PASS。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i57` | **P2 / R1** | [ws003-p006](../ws003/phase006/phase.md) | CP & GHCI レジスタ連携（動的 Capability 反映、Task/Mesh ビット定義） | cleared | `q001-i53`, `q001-i54`, `q001-i55`, `q001-i56` | P2 実装完了。DEVICE_CAPS/CAPS/EXT_CAP_* 動的反映、新設ビット定義、atg_cp_tb PASS、arith-lint 0件。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i58` | **P2 / T1 / R1** | [ws003-p007](../ws003/phase007/phase.md) | プロファイル別プリセットビルド検証 & 全体回帰テスト | in-progress | `q001-i57` | P2 がプロファイル別プリセットビルド検証（Minimal, Balanced, High-Perf）に着手。 |
-| `q001-i59` | **D1** | [ws004-p001](../ws004/phase001/phase.md) | AMD NGG 方式に倣う Task / Mesh Shader 内蔵アーキテクチャ方式検討資料作成 | cleared | なし | 検討完了。全主要論点で推奨案（64頂点/126プリミティブ、L2Cペイロード、LDS直結DMA、静的MUX）採用でユーザー承認完了。 |
-| `q001-i60` | **P3** | [ws004-p002](../ws004/phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート & LDS インターフェース設計・実装 | in-progress | `q001-i59` | NGG 推奨案に基づき P3 が即座に着手。 |
+| `q001-i59` | **D1** | [ws004-p001](../ws004/phase001/phase.md) | SU support for task/mesh shader（vk_ext_mesh_shader, vk_ext_task_shader）内蔵アーキテクチャ方式検討資料作成 | cleared | なし | 検討完了。全主要論点で推奨案（64頂点/126プリミティブ、L2Cペイロード、LDS直結DMA、静的MUX）採用でユーザー承認完了。 |
+| `q001-i60` | **P3** | [ws004-p002](../ws004/phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート & LDS インターフェース設計・実装 | in-progress | `q001-i59` | 推奨案に基づき P3 が即座に着手。 |
 
 ## サブエージェント実行状態（N=3）
 

@@ -1,6 +1,6 @@
 # atg_su_exp
 
-RTL: `rtl/gpu/su/atg_su_exp.v`.  Parent: atg_su.  Child: `atg_su_exp_drain`, `atg_su_exp_ngg`.  Implemented in: p009, ws004-p002.
+RTL: `rtl/gpu/su/atg_su_exp.v`.  Parent: atg_su.  Child: `atg_su_exp_drain`, `atg_su_exp_mesh`.  Implemented in: p009, ws004-p002.
 
 ## 1. Purpose and place
 
@@ -66,17 +66,17 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `xr_warp` | out | WARP_W | Warp. |
 | `wc_end` | in | 1 | atg_su_exec ended a warp (with wc_warp). |
 | `wc_warp` | in | WARP_W | Warp. |
-| **NGG Meshlet Export (to atg_rx_setup via atg_su_exp_ngg)** | | | |
-| `ngg_valid` | out | 1 | NGG triangle stream valid. |
-| `ngg_ready` | in | 1 | RX setup ready (backpressure). |
-| `ngg_tri` | out | 702 | Triangle package (3 vertices positions & varyings, control flags, indices). |
-| `ngg_last` | out | 1 | Last primitive of the meshlet. |
-| `ngg_mesh_id` | out | 16 | Meshlet ID. |
-| `ngg_busy` | out | 1 | Sequencer active. |
+| **Meshlet Primitive Export (to atg_rx_setup via atg_su_exp_mesh)** | | | |
+| `mesh_valid` | out | 1 | Mesh triangle stream valid. |
+| `mesh_ready` | in | 1 | RX setup ready (backpressure). |
+| `mesh_tri` | out | 702 | Triangle package (3 vertices positions & varyings, control flags, indices). |
+| `mesh_last` | out | 1 | Last primitive of the meshlet. |
+| `mesh_id` | out | 16 | Meshlet ID. |
+| `mesh_busy` | out | 1 | Sequencer active. |
 | **LDS Port B (Memory Interface to atg_su_lds)** | | | |
-| `ngg_lds_rd_en` | out | 1 | LDS Port B read enable. |
-| `ngg_lds_rd_addr` | out | LDS_AW | LDS Port B word address. |
-| `ngg_lds_rd_data` | in | 32 | LDS Port B read data (1-cycle latency). |
+| `mesh_lds_rd_en` | out | 1 | LDS Port B read enable. |
+| `mesh_lds_rd_addr` | out | LDS_AW | LDS Port B word address. |
+| `mesh_lds_rd_data` | in | 32 | LDS Port B read data (1-cycle latency). |
 
 ## 4. Behaviour
 
@@ -92,8 +92,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   covered quad is not made by the RX (atg_rop_order §7: quad 0 would be sent with mask 0 and ex_last).
 - Vertex and compute warps: xr_valid the cycle after wc_end (their exports, if any, are already in
   the PT).  If that coincides with a drain's release, the drain's release waits one cycle.
-- NGG Meshlet Export (ws004-p002): target 0x200 (`emitprim` / `exp.mesh`) kicks the NGG export
-  sequencer (`atg_su_exp_ngg`).  The sequencer autonomously reads culled primitive topology and corresponding
+- Unified Meshlet Export (ws004-p002): target 0x200 (`emitprim` / `exp.mesh`) kicks the meshlet export
+  sequencer (`atg_su_exp_mesh`).  The sequencer autonomously reads culled primitive topology and corresponding
   vertex coordinates/varyings from Local Data Share (LDS) via Port B, formats them into 702-bit triangle packages
   (compatible with `atg_rx_setup`'s `cl_tri`), and streams them through a 2-stage Skid Buffer directly
   to the rasterizer.  Hardware culling skip discards culled primitives (flag bit 7 set) in a single cycle.
@@ -104,13 +104,13 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 In `atg_su_exp_drain`: IDLE →(an ended fragment warp whose sequence number is ex_next)→ FIRST → DRAIN (one beat per ex_ready) →(last beat taken)→ RET (xr_valid) → IDLE.  Per warp only flags (fragment, ended).
 
-In `atg_su_exp_ngg`: IDLE →(kick_valid)→ PRIM_REQ → PRIM_WAIT → PRIM_LATCH →(culled? next/DRAIN_WAIT : VERT_REQ)→ VERT_REQ (burst 21 words) → VERT_WAIT → SKID_WAIT →(last primitive? DRAIN_WAIT : PRIM_REQ)→ DRAIN_WAIT (wait for skid empty) → IDLE.
+In `atg_su_exp_mesh`: IDLE →(kick_valid)→ PRIM_REQ → PRIM_WAIT → PRIM_LATCH →(culled? next/DRAIN_WAIT : VERT_REQ)→ VERT_REQ (burst 21 words) → VERT_WAIT → SKID_WAIT →(last primitive? DRAIN_WAIT : PRIM_REQ)→ DRAIN_WAIT (wait for skid empty) → IDLE.
 
 ## 6. Latency and throughput
 
 One group per cycle in; one beat per cycle to the ROP (and one cycle per warp before its first beat).  Storage: NPHYS lane banks × 18 words (R, G, B, A of 4 attachments, exported depth, rasterized z) × NWARPS×32/NPHYS rows, written one word per bank per cycle, read asynchronously (a quad's 4 lanes are 4 banks of one row): distributed RAM.
 
-NGG Export: 21 words per active primitive burst-read from LDS Port B (1 word/cycle), assembled into 702-bit triangle and emitted through 2-stage Skid Buffer at wire speed (1 cycle per handshake with `ngg_ready`).  Culled primitives skip vertex reads and take 1 cycle.  Zero additional Block RAMs.
+Meshlet Export: 21 words per active primitive burst-read from LDS Port B (1 word/cycle), assembled into 702-bit triangle and emitted through 2-stage Skid Buffer at wire speed (1 cycle per handshake with `mesh_ready`).  Culled primitives skip vertex reads and take 1 cycle.  Zero additional Block RAMs.
 
 ## 7. Corner cases and errors
 

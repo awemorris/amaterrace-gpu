@@ -75,10 +75,10 @@ module atg_su_lds #(
 	/* Session protection: clear the contents */
 	input wire scrub,
 	output wire scrub_busy,
-	/* Port B: NGG Read Port */
-	input wire ngg_rd_en,
-	input wire [$clog2(LDS_BYTES/4)-1:0] ngg_rd_addr,
-	output reg [31:0] ngg_rd_data
+	/* Port B: Mesh Read Port */
+	input wire mesh_rd_en,
+	input wire [$clog2(LDS_BYTES/4)-1:0] mesh_rd_addr,
+	output reg [31:0] mesh_rd_data
 );
 `include "atg_su_uop.vh"
 
@@ -246,10 +246,10 @@ module atg_su_lds #(
 	always @(posedge clk)
 		q <= ram[a];
 
-	/* Port B registered read for NGG meshlet export. */
+	/* Port B registered read for meshlet export. */
 	always @(posedge clk)
-		if (ngg_rd_en)
-			ngg_rd_data <= ram[ngg_rd_addr];
+		if (mesh_rd_en)
+			mesh_rd_data <= ram[mesh_rd_addr];
 
 	assign l_valid = st == BEAT;
 	assign l_warp = rwarp;

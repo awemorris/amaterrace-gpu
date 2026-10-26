@@ -9,6 +9,8 @@
 *.vvp
 *.vcd
 *.fst
+a.out
+err.txt
 obj_dir/
 # Editor backups.
 *~
@@ -17,4 +19,3 @@ __pycache__/
 # Local configuration and generated headers.
 /config.mk
 /include/atg_config.vh
-

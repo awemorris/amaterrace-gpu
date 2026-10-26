@@ -6,20 +6,20 @@
  */
 
 /*
- * atg_su_exp_ngg_tb: Unit testbench for Next-Generation Geometry (NGG)
+ * atg_su_exp_mesh_tb: Unit testbench for Shader-Integrated Mesh Shading /
  * Meshlet Primitive Export Sequencer and LDS Port B interface.
  *
  * Tests:
  *   1. Full triangle assembly (V0, V1, V2 positions & varyings, indices, control flags).
  *   2. Hardware culling skip (primitives with cull flag bit 7 are discarded without reading vertices).
- *   3. 2-stage Skid Buffer backpressure & flow control (stalling when ngg_ready == 0).
+ *   3. 2-stage Skid Buffer backpressure & flow control (stalling when mesh_ready == 0).
  *   4. Boundary conditions (single primitive, last flag, zero primitives).
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_su_exp_ngg_tb;
+module atg_su_exp_mesh_tb;
 
 	localparam AW = 10;
 	localparam DATA_W = 32;
@@ -44,15 +44,15 @@ module atg_su_exp_ngg_tb;
 	wire [AW-1:0] lds_rd_addr;
 	wire [DATA_W-1:0] lds_rd_data;
 
-	/* NGG Stream */
-	wire ngg_valid;
-	reg ngg_ready = 1'b0;
-	wire [701:0] ngg_tri;
-	wire ngg_last;
-	wire [15:0] ngg_mesh_id;
+	/* Mesh Stream */
+	wire mesh_valid;
+	reg mesh_ready = 1'b0;
+	wire [701:0] mesh_tri;
+	wire mesh_last;
+	wire [15:0] mesh_mesh_id;
 
 	/* DUT */
-	atg_su_exp_ngg #(
+	atg_su_exp_mesh #(
 		.AW(AW),
 		.DATA_W(DATA_W)
 	) dut (
@@ -70,11 +70,11 @@ module atg_su_exp_ngg_tb;
 		.lds_rd_en(lds_rd_en),
 		.lds_rd_addr(lds_rd_addr),
 		.lds_rd_data(lds_rd_data),
-		.ngg_valid(ngg_valid),
-		.ngg_ready(ngg_ready),
-		.ngg_tri(ngg_tri),
-		.ngg_last(ngg_last),
-		.ngg_mesh_id(ngg_mesh_id)
+		.mesh_valid(mesh_valid),
+		.mesh_ready(mesh_ready),
+		.mesh_tri(mesh_tri),
+		.mesh_last(mesh_last),
+		.mesh_id(mesh_mesh_id)
 	);
 
 	/* LDS Block RAM instance */
@@ -111,9 +111,9 @@ module atg_su_exp_ngg_tb;
 		.l_cls(),
 		.scrub(1'b0),
 		.scrub_busy(),
-		.ngg_rd_en(lds_rd_en),
-		.ngg_rd_addr(lds_rd_addr),
-		.ngg_rd_data(lds_rd_data)
+		.mesh_rd_en(lds_rd_en),
+		.mesh_rd_addr(lds_rd_addr),
+		.mesh_rd_data(lds_rd_data)
 	);
 
 	integer err = 0;
@@ -198,40 +198,40 @@ module atg_su_exp_ngg_tb;
 		kick_prim_base <= 10'd512;
 		kick_pos_base <= 10'd0;
 		kick_var_base <= 10'd256;
-		ngg_ready <= 1'b1;
+		mesh_ready <= 1'b1;
 		@(posedge clk);
 		kick_valid <= 1'b0;
 
 		/* Wait for Prim 0 to be emitted */
-		while (!ngg_valid) @(posedge clk);
+		while (!mesh_valid) @(posedge clk);
 
 		/* Verify Prim 0 */
-		if (ngg_mesh_id !== 16'hA1B2) begin
-			$display("FAIL: ngg_mesh_id mismatch %h want A1B2", ngg_mesh_id);
+		if (mesh_mesh_id !== 16'hA1B2) begin
+			$display("FAIL: mesh_mesh_id mismatch %h want A1B2", mesh_mesh_id);
 			err = err + 1;
 		end
-		if (ngg_last !== 1'b0) begin
-			$display("FAIL: ngg_last should be 0 for prim 0");
+		if (mesh_last !== 1'b0) begin
+			$display("FAIL: mesh_last should be 0 for prim 0");
 			err = err + 1;
 		end
-		if (ngg_tri[695:672] !== {8'd2, 8'd1, 8'd0}) begin
-			$display("FAIL: Prim 0 indices mismatch %h want 020100", ngg_tri[695:672]);
+		if (mesh_tri[695:672] !== {8'd2, 8'd1, 8'd0}) begin
+			$display("FAIL: Prim 0 indices mismatch %h want 020100", mesh_tri[695:672]);
 			err = err + 1;
 		end
-		if (ngg_tri[698:696] !== 3'd5) begin
-			$display("FAIL: Prim 0 flags mismatch %d want 5", ngg_tri[698:696]);
+		if (mesh_tri[698:696] !== 3'd5) begin
+			$display("FAIL: Prim 0 flags mismatch %d want 5", mesh_tri[698:696]);
 			err = err + 1;
 		end
-		if (ngg_tri[701:700] !== 2'd2) begin
-			$display("FAIL: Prim 0 kind mismatch %d want 2 (triangle)", ngg_tri[701:700]);
+		if (mesh_tri[701:700] !== 2'd2) begin
+			$display("FAIL: Prim 0 kind mismatch %d want 2 (triangle)", mesh_tri[701:700]);
 			err = err + 1;
 		end
-		if (ngg_tri[127:0] !== {32'h3F800000, 32'd0, 32'd0, 32'd0}) begin
-			$display("FAIL: Prim 0 V0 pos mismatch %h", ngg_tri[127:0]);
+		if (mesh_tri[127:0] !== {32'h3F800000, 32'd0, 32'd0, 32'd0}) begin
+			$display("FAIL: Prim 0 V0 pos mismatch %h", mesh_tri[127:0]);
 			err = err + 1;
 		end
-		if (ngg_tri[479:384] !== {32'h00001002, 32'h00001001, 32'h00001000}) begin
-			$display("FAIL: Prim 0 V0 var mismatch %h", ngg_tri[479:384]);
+		if (mesh_tri[479:384] !== {32'h00001002, 32'h00001001, 32'h00001000}) begin
+			$display("FAIL: Prim 0 V0 var mismatch %h", mesh_tri[479:384]);
 			err = err + 1;
 		end
 
@@ -239,15 +239,15 @@ module atg_su_exp_ngg_tb;
 		@(posedge clk);
 
 		/* Wait for Prim 2 to be emitted (Prim 1 must be skipped due to culling) */
-		while (!ngg_valid) @(posedge clk);
+		while (!mesh_valid) @(posedge clk);
 
 		/* Verify Prim 2 (last primitive) */
-		if (ngg_last !== 1'b1) begin
-			$display("FAIL: ngg_last should be 1 for prim 2");
+		if (mesh_last !== 1'b1) begin
+			$display("FAIL: mesh_last should be 1 for prim 2");
 			err = err + 1;
 		end
-		if (ngg_tri[695:672] !== {8'd3, 8'd2, 8'd1}) begin
-			$display("FAIL: Prim 2 indices mismatch %h want 030201", ngg_tri[695:672]);
+		if (mesh_tri[695:672] !== {8'd3, 8'd2, 8'd1}) begin
+			$display("FAIL: Prim 2 indices mismatch %h want 030201", mesh_tri[695:672]);
 			err = err + 1;
 		end
 
@@ -269,30 +269,30 @@ module atg_su_exp_ngg_tb;
 		kick_mesh_id <= 16'h55AA;
 		kick_prim_count <= 8'd1;
 		kick_prim_base <= 10'd512;
-		ngg_ready <= 1'b0;	/* RX is busy / backpressuring */
+		mesh_ready <= 1'b0;	/* RX is busy / backpressuring */
 		@(posedge clk);
 		kick_valid <= 1'b0;
 
 		/* Wait until triangle is assembled and presented */
-		while (!ngg_valid) @(posedge clk);
+		while (!mesh_valid) @(posedge clk);
 
-		/* Hold ngg_ready low for 10 cycles to verify skid buffer stability */
+		/* Hold mesh_ready low for 10 cycles to verify skid buffer stability */
 		for (k = 0; k < 10; k = k + 1) begin
-			if (!ngg_valid) begin
-				$display("FAIL: ngg_valid dropped while backpressured at cycle %0d", k);
+			if (!mesh_valid) begin
+				$display("FAIL: mesh_valid dropped while backpressured at cycle %0d", k);
 				err = err + 1;
 			end
-			if (ngg_mesh_id !== 16'h55AA) begin
-				$display("FAIL: ngg_mesh_id unstable while backpressured");
+			if (mesh_mesh_id !== 16'h55AA) begin
+				$display("FAIL: mesh_mesh_id unstable while backpressured");
 				err = err + 1;
 			end
 			@(posedge clk);
 		end
 
 		/* Now accept the triangle */
-		ngg_ready <= 1'b1;
+		mesh_ready <= 1'b1;
 		@(posedge clk);
-		ngg_ready <= 1'b0;
+		mesh_ready <= 1'b0;
 
 		/* Wait for done */
 		while (!saw_done) @(posedge clk);
@@ -304,7 +304,7 @@ module atg_su_exp_ngg_tb;
 		kick_valid <= 1'b1;
 		kick_mesh_id <= 16'h0000;
 		kick_prim_count <= 8'd0;
-		ngg_ready <= 1'b1;
+		mesh_ready <= 1'b1;
 		@(posedge clk);
 		kick_valid <= 1'b0;
 
@@ -317,15 +317,15 @@ module atg_su_exp_ngg_tb;
 
 		#50;
 		if (err == 0)
-			$display("PASS atg_su_exp_ngg");
+			$display("PASS atg_su_exp_mesh");
 		else
-			$display("FAIL atg_su_exp_ngg with %0d errors", err);
+			$display("FAIL atg_su_exp_mesh with %0d errors", err);
 		$finish;
 	end
 
 	initial begin
 		#100000;
-		$display("FAIL atg_su_exp_ngg timeout");
+		$display("FAIL atg_su_exp_mesh timeout");
 		$finish;
 	end
 endmodule
