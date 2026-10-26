@@ -29,8 +29,9 @@
  *                      atg_kc705_clk's sys_cc), the reference clock "No
  *                      Buffer" (ref_clk, the same 200 MHz after a BUFG),
  *                      sys_rst active low, XADC on
- *                      (device_temp), no extra user clocks, Debug on (the
- *                      debug ports behind the registers at 0x1F000).
+ *                      (device_temp), no extra user clocks, Debug off
+ *                      (Debug_En ON with MIG_DEBUG 1: the debug ports
+ *                      behind the registers at 0x1F000).
  *
  * The MIG's AXI reset (aresetn) is ui_clk_sync_rst inverted and registered
  * in ui_clk; the clock converter's master side uses it too.  mem_ready is
@@ -45,7 +46,11 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_kc705_mig (
+module atg_kc705_mig #(
+	/* 1: the MIG core has Debug on (atg_kc705_ddr3.prj Debug_En ON) and its
+	 * debug ports feed ILA_* below; 0 (the board's default): Debug off, ILA_* read 0. */
+	parameter integer MIG_DEBUG = 0
+) (
 	input wire clk,
 	input wire rst_n,
 	input wire sys_clk,
@@ -388,37 +393,70 @@ module atg_kc705_mig (
 	assign u_bid = u_bid4[0];
 	assign u_rid = u_rid4[0];
 
-	atg_kc705_ddr3 ddr3 (
-		.ddr3_dq(ddr3_dq), .ddr3_dqs_n(ddr3_dqs_n), .ddr3_dqs_p(ddr3_dqs_p),
-		.ddr3_addr(ddr3_addr), .ddr3_ba(ddr3_ba), .ddr3_ras_n(ddr3_ras_n),
-		.ddr3_cas_n(ddr3_cas_n), .ddr3_we_n(ddr3_we_n), .ddr3_reset_n(ddr3_reset_n),
-		.ddr3_ck_p(ddr3_ck_p), .ddr3_ck_n(ddr3_ck_n), .ddr3_cke(ddr3_cke),
-		.ddr3_cs_n(ddr3_cs_n), .ddr3_dm(ddr3_dm), .ddr3_odt(ddr3_odt),
-		.sys_clk_i(sys_clk), .clk_ref_i(ref_clk), .sys_rst(sys_rst_n && !hold_ref),
-		.ui_clk(ui_clk), .ui_clk_sync_rst(ui_rst), .mmcm_locked(locked),
-		.aresetn(aresetn), .app_sr_req(1'b0), .app_ref_req(1'b0), .app_zq_req(1'b0),
-		.app_sr_active(), .app_ref_ack(), .app_zq_ack(),
-		.init_calib_complete(calib), .device_temp(),
-		.ddr3_ila_basic(ila_basic), .ddr3_ila_rdpath(ila_rdpath), .ddr3_ila_wrpath(ila_wrpath),
-		.ddr3_vio_sync_out(ctrl[21:8]), .dbg_byte_sel(4'd0), .dbg_sel_pi_incdec(1'b0),
-		.dbg_pi_f_inc(1'b0), .dbg_pi_f_dec(1'b0), .dbg_sel_po_incdec(1'b0), .dbg_po_f_inc(1'b0),
-		.dbg_po_f_dec(1'b0), .dbg_po_f_stg23_sel(1'b0), .dbg_pi_counter_read_val(),
-		.dbg_po_counter_read_val(), .dbg_prbs_final_dqs_tap_cnt_r(),
-		.dbg_prbs_first_edge_taps(), .dbg_prbs_second_edge_taps(),
-		.s_axi_awid({3'd0, u_awid}), .s_axi_awaddr(u_awaddr[29:0]), .s_axi_awlen(u_awlen),
-		.s_axi_awsize(u_awsize), .s_axi_awburst(u_awburst), .s_axi_awlock(u_awlock),
-		.s_axi_awcache(u_awcache), .s_axi_awprot(u_awprot), .s_axi_awqos(u_awqos),
-		.s_axi_awvalid(u_awvalid), .s_axi_awready(u_awready),
-		.s_axi_wdata(u_wdata), .s_axi_wstrb(u_wstrb), .s_axi_wlast(u_wlast),
-		.s_axi_wvalid(u_wvalid), .s_axi_wready(u_wready),
-		.s_axi_bready(u_bready), .s_axi_bid(u_bid4), .s_axi_bresp(u_bresp), .s_axi_bvalid(u_bvalid),
-		.s_axi_arid({3'd0, u_arid}), .s_axi_araddr(u_araddr[29:0]), .s_axi_arlen(u_arlen),
-		.s_axi_arsize(u_arsize), .s_axi_arburst(u_arburst), .s_axi_arlock(u_arlock),
-		.s_axi_arcache(u_arcache), .s_axi_arprot(u_arprot), .s_axi_arqos(u_arqos),
-		.s_axi_arvalid(u_arvalid), .s_axi_arready(u_arready),
-		.s_axi_rready(u_rready), .s_axi_rid(u_rid4), .s_axi_rdata(u_rdata), .s_axi_rresp(u_rresp),
-		.s_axi_rlast(u_rlast), .s_axi_rvalid(u_rvalid)
-	);
+	generate
+	if (MIG_DEBUG != 0) begin : g_dbg
+		atg_kc705_ddr3 ddr3 (
+			.ddr3_dq(ddr3_dq), .ddr3_dqs_n(ddr3_dqs_n), .ddr3_dqs_p(ddr3_dqs_p),
+			.ddr3_addr(ddr3_addr), .ddr3_ba(ddr3_ba), .ddr3_ras_n(ddr3_ras_n),
+			.ddr3_cas_n(ddr3_cas_n), .ddr3_we_n(ddr3_we_n), .ddr3_reset_n(ddr3_reset_n),
+			.ddr3_ck_p(ddr3_ck_p), .ddr3_ck_n(ddr3_ck_n), .ddr3_cke(ddr3_cke),
+			.ddr3_cs_n(ddr3_cs_n), .ddr3_dm(ddr3_dm), .ddr3_odt(ddr3_odt),
+			.sys_clk_i(sys_clk), .clk_ref_i(ref_clk), .sys_rst(sys_rst_n && !hold_ref),
+			.ui_clk(ui_clk), .ui_clk_sync_rst(ui_rst), .mmcm_locked(locked),
+			.aresetn(aresetn), .app_sr_req(1'b0), .app_ref_req(1'b0), .app_zq_req(1'b0),
+			.app_sr_active(), .app_ref_ack(), .app_zq_ack(),
+			.init_calib_complete(calib), .device_temp(),
+			.ddr3_ila_basic(ila_basic), .ddr3_ila_rdpath(ila_rdpath), .ddr3_ila_wrpath(ila_wrpath),
+			.ddr3_vio_sync_out(ctrl[21:8]), .dbg_byte_sel(4'd0), .dbg_sel_pi_incdec(1'b0),
+			.dbg_pi_f_inc(1'b0), .dbg_pi_f_dec(1'b0), .dbg_sel_po_incdec(1'b0), .dbg_po_f_inc(1'b0),
+			.dbg_po_f_dec(1'b0), .dbg_po_f_stg23_sel(1'b0), .dbg_pi_counter_read_val(),
+			.dbg_po_counter_read_val(), .dbg_prbs_final_dqs_tap_cnt_r(),
+			.dbg_prbs_first_edge_taps(), .dbg_prbs_second_edge_taps(),
+			.s_axi_awid({3'd0, u_awid}), .s_axi_awaddr(u_awaddr[29:0]), .s_axi_awlen(u_awlen),
+			.s_axi_awsize(u_awsize), .s_axi_awburst(u_awburst), .s_axi_awlock(u_awlock),
+			.s_axi_awcache(u_awcache), .s_axi_awprot(u_awprot), .s_axi_awqos(u_awqos),
+			.s_axi_awvalid(u_awvalid), .s_axi_awready(u_awready),
+			.s_axi_wdata(u_wdata), .s_axi_wstrb(u_wstrb), .s_axi_wlast(u_wlast),
+			.s_axi_wvalid(u_wvalid), .s_axi_wready(u_wready),
+			.s_axi_bready(u_bready), .s_axi_bid(u_bid4), .s_axi_bresp(u_bresp), .s_axi_bvalid(u_bvalid),
+			.s_axi_arid({3'd0, u_arid}), .s_axi_araddr(u_araddr[29:0]), .s_axi_arlen(u_arlen),
+			.s_axi_arsize(u_arsize), .s_axi_arburst(u_arburst), .s_axi_arlock(u_arlock),
+			.s_axi_arcache(u_arcache), .s_axi_arprot(u_arprot), .s_axi_arqos(u_arqos),
+			.s_axi_arvalid(u_arvalid), .s_axi_arready(u_arready),
+			.s_axi_rready(u_rready), .s_axi_rid(u_rid4), .s_axi_rdata(u_rdata), .s_axi_rresp(u_rresp),
+			.s_axi_rlast(u_rlast), .s_axi_rvalid(u_rvalid)
+		);
+	end else begin : g_nodbg
+		atg_kc705_ddr3 ddr3 (
+			.ddr3_dq(ddr3_dq), .ddr3_dqs_n(ddr3_dqs_n), .ddr3_dqs_p(ddr3_dqs_p),
+			.ddr3_addr(ddr3_addr), .ddr3_ba(ddr3_ba), .ddr3_ras_n(ddr3_ras_n),
+			.ddr3_cas_n(ddr3_cas_n), .ddr3_we_n(ddr3_we_n), .ddr3_reset_n(ddr3_reset_n),
+			.ddr3_ck_p(ddr3_ck_p), .ddr3_ck_n(ddr3_ck_n), .ddr3_cke(ddr3_cke),
+			.ddr3_cs_n(ddr3_cs_n), .ddr3_dm(ddr3_dm), .ddr3_odt(ddr3_odt),
+			.sys_clk_i(sys_clk), .clk_ref_i(ref_clk), .sys_rst(sys_rst_n && !hold_ref),
+			.ui_clk(ui_clk), .ui_clk_sync_rst(ui_rst), .mmcm_locked(locked),
+			.aresetn(aresetn), .app_sr_req(1'b0), .app_ref_req(1'b0), .app_zq_req(1'b0),
+			.app_sr_active(), .app_ref_ack(), .app_zq_ack(),
+			.init_calib_complete(calib), .device_temp(),
+			.s_axi_awid({3'd0, u_awid}), .s_axi_awaddr(u_awaddr[29:0]), .s_axi_awlen(u_awlen),
+			.s_axi_awsize(u_awsize), .s_axi_awburst(u_awburst), .s_axi_awlock(u_awlock),
+			.s_axi_awcache(u_awcache), .s_axi_awprot(u_awprot), .s_axi_awqos(u_awqos),
+			.s_axi_awvalid(u_awvalid), .s_axi_awready(u_awready),
+			.s_axi_wdata(u_wdata), .s_axi_wstrb(u_wstrb), .s_axi_wlast(u_wlast),
+			.s_axi_wvalid(u_wvalid), .s_axi_wready(u_wready),
+			.s_axi_bready(u_bready), .s_axi_bid(u_bid4), .s_axi_bresp(u_bresp), .s_axi_bvalid(u_bvalid),
+			.s_axi_arid({3'd0, u_arid}), .s_axi_araddr(u_araddr[29:0]), .s_axi_arlen(u_arlen),
+			.s_axi_arsize(u_arsize), .s_axi_arburst(u_arburst), .s_axi_arlock(u_arlock),
+			.s_axi_arcache(u_arcache), .s_axi_arprot(u_arprot), .s_axi_arqos(u_arqos),
+			.s_axi_arvalid(u_arvalid), .s_axi_arready(u_arready),
+			.s_axi_rready(u_rready), .s_axi_rid(u_rid4), .s_axi_rdata(u_rdata), .s_axi_rresp(u_rresp),
+			.s_axi_rlast(u_rlast), .s_axi_rvalid(u_rvalid)
+		);
+		assign ila_basic = 120'd0;
+		assign ila_rdpath = 1024'd0;
+		assign ila_wrpath = 391'd0;
+	end
+	endgenerate
 
 	/* The MIG's 1 GB takes address bits 29:0. */
 	wire unused_ok = &{1'b0, u_awaddr[31:30], u_araddr[31:30], u_bid4[3:1], u_rid4[3:1], e_awregion, e_arregion,

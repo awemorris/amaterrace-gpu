@@ -7,7 +7,7 @@
 
   <dci_inputs>1</dci_inputs>
 
-  <Debug_En>ON</Debug_En>
+  <Debug_En>OFF</Debug_En>
 
   <DataDepth_En>1024</DataDepth_En>
 

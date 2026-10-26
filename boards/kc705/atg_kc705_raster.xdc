@@ -46,7 +46,7 @@ set_clock_groups -asynchronous \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/mmcm_g/CLKOUT0}]] \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/pll_a/CLKOUT0}]] \
 	-group [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *clocks/mmcm_b/CLKOUT0}]] \
-	-group [get_clocks -of_objects [get_pins mig/ddr3/ui_clk]] \
+	-group [get_clocks -of_objects [get_pins -of_objects [get_cells -hier -filter {REF_NAME == atg_kc705_ddr3}] -filter {REF_PIN_NAME == ui_clk}]] \
 	-group [get_clocks -of_objects [get_pins pcie/bridge/axi_aclk_out]] \
 	-group [get_clocks tck]
 

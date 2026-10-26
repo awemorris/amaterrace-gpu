@@ -8,7 +8,9 @@ The KC705 memory: MIG 7 Series DDR3 (1 GB, 64 bit, AXI4 512 bit, ui_clk 200 MHz,
 
 ## 2. Parameters
 
-None.
+| Name | Default | Meaning |
+| --- | --- | --- |
+| `MIG_DEBUG` | 0 | 1: the MIG core is generated with Debug on (`atg_kc705_ddr3.prj` Debug_En ON) and its debug ports feed ILA_*; 0: Debug off (the board's build), ILA_* read 0. |
 
 ## 3. Ports
 
@@ -91,7 +93,7 @@ The board's registers (ws288 p024), at 0x1F000 + 4 * index in the GHCI register 
 | 0 | ID | 0x4B374D43 ("K7MC"). |
 | 1 | CTRL | RW, reset 0: [0] holds the MIG in reset (its sys_rst; writing 0 again makes it calibrate again); [21:8] the MIG's ddr3_vio_sync_out ([16:8] dbg_bit, [21:17] dbg_dqs, the byte lane of the per-lane fields below). |
 | 2 | STATUS | [0] init_calib_complete (mem_ready), [1] mmcm_locked, [2] ui_clk_sync_rst. |
-| 4-7 | ILA_BASIC | ddr3_ila_basic[119:0] (MIG 7 Series 4.2 with Debug on: [0] calibration complete, [3:1] write levelling start/done/error, [6:4] phaser lock, [9:7] DQS found, [15:10] read levelling, [17:16] OCLKDELAY, [21:19] write calibration, [27:22] the init state, [92:29] read data). |
+| 4-7 | ILA_BASIC | ddr3_ila_basic[119:0] (MIG_DEBUG 1, MIG 7 Series 4.2 with Debug on: [0] calibration complete, [3:1] write levelling start/done/error, [6:4] phaser lock, [9:7] DQS found, [15:10] read levelling, [17:16] OCLKDELAY, [21:19] write calibration, [27:22] the init state, [92:29] read data). |
 | 8-11 | ILA_RDPATH | ddr3_ila_rdpath[127:0]. |
 | 12-24 | ILA_WRPATH | ddr3_ila_wrpath[390:0]. |
 
@@ -107,7 +109,7 @@ None beyond the above.
 
 ## 7. Corner cases and errors
 
-- The MIG's Debug option is on (atg_kc705_ddr3.prj, for the registers above).
+- The MIG's Debug option is off in the board's build; for ILA_* set Debug_En ON in atg_kc705_ddr3.prj, regenerate the core and set MIG_DEBUG 1.
 - The cores' ports were compared with the generated `_stub.v` files and `sim/lint/xilinx_stubs.v` (Vivado 2026.1, ws288 p024): all match.  The MIG's calibration on the board is not tried yet.
 
 ## 8. What the TB checks
