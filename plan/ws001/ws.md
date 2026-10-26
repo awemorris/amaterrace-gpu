@@ -34,7 +34,7 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 | [p005](phase005/phase.md) | マルチエンジン独立キューイング & ハードウェアプリエンプション（R1 敵対的レビュー対応） | p004 | planned |
 | [p006](phase006/phase.md) | 細粒度同期（Timeline Semaphore / パイプラインバリア）& Vulkan 1.0 必須機能補完 | p003, p005 | planned |
 | [p007](phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新 | p002, p004 | in-progress |
-| [p008](phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装 | p001 | planned |
+| [p008](phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装 | p001 | in-progress |
 
 ---
 

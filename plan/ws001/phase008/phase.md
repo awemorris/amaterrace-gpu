@@ -3,7 +3,7 @@
 # Phase 008: FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `in-progress`
 - **依存**: [ws001-p001](../phase001/phase.md)
 - **優先度**: Major (DSP48E1 リソース最適化 & ライブラリ共通化)
 - **出典**: ユーザー諮問（FPU ライブラリ化・DSP 再利用、fdiv/f2fix/i2f ライブラリ化）および R1 技術アドバイス
