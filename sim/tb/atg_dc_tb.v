@@ -43,6 +43,16 @@ module atg_dc_tb;
 	wire [29:0] tmds;
 	wire px_de, px_hs, px_vs, scl_t, sda_t;
 	wire [23:0] px_rgb;
+	wire dc_urgent, dc_panic;
+	reg saw_urgent = 0, saw_panic = 0, saw_normal = 0;
+
+	always @(posedge clk) begin
+		if (rst_n) begin
+			if (dc_panic) saw_panic <= 1'b1;
+			if (dc_urgent) saw_urgent <= 1'b1;
+			if (!dc_urgent && !dc_panic) saw_normal <= 1'b1;
+		end
+	end
 
 	atg_dc dut (
 		.clk(clk), .rst_n(rst_n), .pclk(pclk), .prst_n(prst_n),
@@ -52,6 +62,7 @@ module atg_dc_tb;
 		.taken(taken), .taken_cancel(taken_cancel), .pending(pending), .dc_err(2'b00),
 		.idle(idle), .frame_count(frame_count),
 		.ev_vblank(vsync), .ev_error(ev_error), .ev_hotplug(ev_hotplug), .pclk_sel(pclk_sel),
+		.dc_urgent(dc_urgent), .dc_panic(dc_panic),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
@@ -322,6 +333,12 @@ module atg_dc_tb;
 			fail("underflow in 2048-word AFIFO", v, 0);
 		else
 			$display("PASS atg_dc.afifo_bram (2048-word AFIFO zero underflow verified)");
+
+		/* Watermark preemption verification (ws001-p039) */
+		if (!saw_panic || !saw_urgent || !saw_normal)
+			fail("watermark levels not observed", {29'd0, saw_panic, saw_urgent, saw_normal}, 32'd7);
+		else
+			$display("PASS atg_dc.watermarks (urgent/panic transitions verified)");
 
 		if (errors == 0)
 			$display("PASS atg_dc");

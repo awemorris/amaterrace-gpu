@@ -55,6 +55,8 @@ Client vectors are packed, client 0 in the low bits.  Domain `clk` for all.
 | `rsp_valid` | out | `NCLIENT` | One-cycle pulse to the answered client; no back-pressure.  Several clients may get a response in the same cycle |
 | `rsp_write`, `rsp_tag`, `rsp_rdata`, `rsp_error` | out | `NCLIENT` × 1, 8, `LINE_BYTES*8`, 1 | **Per client** (changed in p023: each leaf drives its own client's fields), valid with that client's `rsp_valid` |
 | `quiesce` | in | 1 | Level from the CP: the leaves outside `QUIESCE_EXEMPT` start no new packet; the tree drains |
+| `dc_urgent` | in | 1 | (ws001-p039) Urgent watermark from DC: holds all leaves except `ROOT_CLIENT` |
+| `dc_panic` | in | 1 | (ws001-p039) Panic watermark from DC: holds all leaves except `ROOT_CLIENT` and suppresses non-DC grant at root for zero-bubble preemption |
 | `flush` | in | 1 | One-cycle pulse (with `quiesce` held): empties the tree and the root and drops a pending refusal's response (with `ROOT_KEEP`: not `ROOT_CLIENT`'s leaf, entry or refusal) |
 | `aperture_base`, `aperture_limit` | in | `ADDR_W` | Allowed range [base, limit) |
 | `axi_idle` | out | 1 | `am_axi_master.idle`, no refusal pending and no response flit in the tree.  With `ROOT_KEEP`, without `ROOT_CLIENT`'s requests: the other clients' requests granted to the AXI master (and the protection walks) are all answered (`atg_mc_cnt`'s `ax`), no refusal of theirs is pending, no response flit in the tree, none of theirs in the tree or the root |
@@ -104,6 +106,12 @@ Client vectors are packed, client 0 in the low bits.  Domain `clk` for all.
   data flit).  The others take turns per router, which halves a client's share at each level
   (with all clients always busy, a leaf at depth d gets 1/2^d of the root's packets; a balanced
   tree is fair when all clients are equally busy).  `ROOT_CLIENT` is one hop from the root.
+- Watermark Preemption (ws001-p039):
+  When `dc_urgent` or `dc_panic` is asserted, `atg_mc` holds all non-DC leaves (`tree_hold` sets bit 1
+  for non-DC clients), preventing 3D clients from starting new flit packets into the tree.
+  When `dc_panic` is asserted, `grant` suppresses non-DC requests at the root (`.a_valid(a_full && !(HAS_DC != 0 && dc_panic))`),
+  immediately freeing the AXI master pipeline for DC's upcoming reads and eliminating head-of-line blocking
+  to achieve zero-bubble preemption.
 - `flush`: the routers, leaves and the root buffer drop what they hold (the CP's RESET resets the
   clients in the same cycle: their requests are void).  Granted requests are already answered:
   RESET waits for `axi_idle` first.

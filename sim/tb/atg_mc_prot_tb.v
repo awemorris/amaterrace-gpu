@@ -385,6 +385,7 @@ module atg_mc_prot_tb;
 		.fault_addr(fault_addr), .fault_write(fault_write), .fault_prot(fault_prot),
 		.fault_slot(fault_slot), .fault_mem(fault_mem), .chk_idle(chk_idle),
 		.unit_idle(unit_idle),
+		.dc_urgent(1'b0), .dc_panic(1'b0),
 		.prot_tbase(tbase), .prot_inv_valid(inv_valid), .prot_inv_g(inv_g),
 		.prot_inv_n(inv_n), .prot_inv_pending(inv_pending), .prot_gw_valid(gw_valid),
 		.prot_gw_idx(gw_idx), .prot_gw_data(gw_data),

@@ -618,6 +618,8 @@ module atg_top #(
 		.fault_mem(mc_fault_mem),
 		.chk_idle(mc_chk_idle),
 		.unit_idle(mc_unit_idle),
+		.dc_urgent(dc_urgent),
+		.dc_panic(dc_panic),
 		.prot_tbase(prot_tbase),
 		.prot_inv_valid(prot_inv_valid),
 		.prot_inv_g(prot_inv_g),
@@ -1073,6 +1075,8 @@ module atg_top #(
 			sa_ctl_data};
 	end
 
+	wire dc_urgent, dc_panic;
+
 	if (HAS_DISP != 0) begin : g_dc
 		/*
 		 * The display controller: board reset only (CTRL.RESET does not
@@ -1092,6 +1096,7 @@ module atg_top #(
 			.dc_err(dc_err), .idle(dc_idle), .frame_count(dc_frame_count),
 			.ev_vblank(dc_vsync), .ev_error(dc_ev_error), .ev_hotplug(dc_ev_hotplug),
 			.pclk_sel(pclk_sel),
+			.dc_urgent(dc_urgent), .dc_panic(dc_panic),
 			.req_valid(c_req_valid[C_DC]), .req_ready(c_req_ready[C_DC]),
 			.req_write(c_req_write[C_DC]), .req_line(c_req_line[C_DC*LA_W +: LA_W]),
 			.req_be(c_req_be[C_DC*LINE_BYTES +: LINE_BYTES]),
@@ -1105,6 +1110,8 @@ module atg_top #(
 			.scl_t(scl_t), .scl_i(scl_i), .sda_t(sda_t), .sda_i(sda_i)
 		);
 	end else begin : g_no_dc
+		assign dc_urgent = 1'b0;
+		assign dc_panic = 1'b0;
 		assign dc_vsync = 1'b0;
 		assign dc_ev_error = 1'b0;
 		assign dc_ev_hotplug = 1'b0;

@@ -238,6 +238,7 @@ module atg_mc_case #(
 	parameter PROT = 0,
 	parameter TWO = 0,	/* two destinations (case F) */
 	parameter KEEP = 0,	/* ROOT_KEEP, ROOT in QUIESCE_EXEMPT, flush after each quiesce */
+	parameter URGENT = 0,	/* exercise dc_urgent / dc_panic preemption */
 	parameter SEED0 = 3
 ) (
 	input wire clk,
@@ -247,6 +248,10 @@ module atg_mc_case #(
 	reg rst_n = 1'b0;
 	reg quiesce = 1'b0;
 	reg flush = 1'b0;
+	reg dc_urgent = 1'b0;
+	reg dc_panic = 1'b0;
+	integer urgent_pulses = 0;
+	integer panic_pulses = 0;
 	integer seed;
 	localparam [N-1:0] EXEMPT = KEEP != 0 ? {{(N-1){1'b0}}, 1'b1} << ROOT : {N{1'b0}};
 
@@ -293,6 +298,7 @@ module atg_mc_case #(
 		.axi_idle(axi_idle), .fault(fault), .fault_client(fault_client),
 		.fault_addr(fault_addr), .fault_write(fault_write), .fault_prot(), .fault_slot(),
 		.fault_mem(), .chk_idle(), .unit_idle(unit_idle),
+		.dc_urgent(dc_urgent), .dc_panic(dc_panic),
 		.prot_tbase(32'd0), .prot_inv_valid(1'b0), .prot_inv_g(20'd0), .prot_inv_n(32'd0),
 		.prot_inv_pending(), .prot_gw_valid(1'b0), .prot_gw_idx(3'd0), .prot_gw_data(50'd0),
 		.m_awid(awid), .m_bid(bid), .m_arid(arid), .m_rid(rid),
@@ -502,6 +508,10 @@ module atg_mc_case #(
 				errors = errors + 1;
 				$display("FAIL atg_mc: a refused request reached AXI");
 			end
+			if (dc_panic && ROOT != -1 && dut.grant.a_valid) begin
+				errors = errors + 1;
+				$display("FAIL atg_mc: non-root grant valid during dc_panic");
+			end
 		end
 	end
 
@@ -519,6 +529,17 @@ module atg_mc_case #(
 		rst_n <= 1'b1;
 		while (fin != {N{1'b1}}) begin
 			@(posedge clk);
+			if (URGENT != 0 && $unsigned($random(seed)) % 150 == 0 && !quiesce) begin
+				dc_urgent <= 1'b1;
+				urgent_pulses = urgent_pulses + 1;
+				if ($unsigned($random(seed)) % 2 == 0) begin
+					dc_panic <= 1'b1;
+					panic_pulses = panic_pulses + 1;
+				end
+				repeat ($unsigned($random(seed)) % 25 + 5) @(posedge clk);
+				dc_panic <= 1'b0;
+				dc_urgent <= 1'b0;
+			end
 			if ($unsigned($random(seed)) % 300 == 0) begin
 				quiesce <= 1'b1;
 				wait_idle = 0;
@@ -560,6 +581,11 @@ module atg_mc_case #(
 			errors = errors + 1;
 			$display("FAIL atg_mc: axi_idle never came with the root client's requests out");
 		end
+		if (URGENT != 0 && (urgent_pulses == 0 || panic_pulses == 0)) begin
+			errors = errors + 1;
+			$display("FAIL atg_mc: urgent/panic pulses not injected (%0d / %0d)",
+				urgent_pulses, panic_pulses);
+		end
 		done = 1'b1;
 	end
 endmodule
@@ -582,7 +608,7 @@ module atg_mc_tb;
 		.clk(clk), .done(done_c), .errors(err_c)
 	);
 	atg_mc_case #(.N(5), .HIGH(5'b10001), .ROOT(4), .VRAM_AW(20), .FAR(1), .KEEP(1),
-		.SEED0(13)) d (
+		.URGENT(1), .SEED0(13)) d (
 		.clk(clk), .done(done_d), .errors(err_d)
 	);
 	atg_mc_case #(.N(5), .HIGH(5'b10001), .ROOT(4), .VRAM_AW(20), .FAR(1), .PROT(1),

@@ -44,6 +44,9 @@ Clock/reset domain: clk (gclk) and pclk as marked unless the row says otherwise.
 | `frame_count` | out | 32 | FRAME_COUNT. |
 | `ev_vblank`, `ev_error`, `ev_hotplug` | out | 1 | One-cycle pulses: IRQ_STATUS VBLANK (also the CP's WAIT_VSYNC), DISP_ERROR, HOTPLUG. |
 | `pclk_sel` | out | 1 | To the board's BUFGMUX (0 25.2 MHz, 1 74.25 MHz). |
+| **Watermark preemption (gclk, ws001-p039)** | | | |
+| `dc_urgent` | out | 1 | Pixel AFIFO fill level < 40% (819 words). Synchronised to gclk; holds other MC clients. |
+| `dc_panic` | out | 1 | Pixel AFIFO fill level < 20% (409 words). Synchronised to gclk; zero-bubble MC preemption. |
 | **AMB client port (design §4.1)** | | | |
 | `req_valid` | out | 1 | Request valid; payload held until `req_ready`. |
 | `req_ready` | in | 1 | The MC (or mux) takes the request this cycle. |
@@ -69,11 +72,11 @@ Clock/reset domain: clk (gclk) and pclk as marked unless the row says otherwise.
 | `sda_t` | out | 1 | Release SDA. |
 | `sda_i` | in | 1 | SDA. |
 
-43 ports; 32 counting the AMB port as one group (spec/README.md); a wiring module.
+45 ports; 34 counting the AMB port as one group (spec/README.md); a wiring module.
 
 ## 4. Behaviour
 
-Wiring with the only clock crossing of the DC: am_afifo for pixels, am_sync for ENABLE and CTRL.RESET (to pclk: the 32-cycle dc_reset pulse resets the pixel side too, so both sides of am_afifo are reset together) and for the event toggles and the line number (to gclk), plus a 3-bit register for the toggle edges.  scan_sum/scan_words and the read errors go from the DMA to the registers.  The DC's CTRL.RESET resets the gclk side of the FIFO, the I2C master and the event synchronisers, and clears the DMA without its count of outstanding reads (the responses of reads issued before still come).  With `HAS_CURSOR` the cursor sits between the DMA's pixels and the pixel FIFO (no new clock crossing), takes `dma_done`, the frame start and CURSOR_POS/CTRL, and shares the AMB port (requester 0 the DMA, 1 the cursor); `idle` and the read errors cover both.  Without it `taken[1]`, `pending[1]` are 0.  The quasi-static configuration (timing, format, test pattern) goes to pclk directly (see atg_dc_regs §7).
+Wiring with clock crossings of the DC: am_afifo_bram for pixels, am_sync for ENABLE and CTRL.RESET (to pclk: the 32-cycle dc_reset pulse resets the pixel side too, so both sides of am_afifo are reset together) and for the event toggles, the line number, and watermarks `dc_urgent`/`dc_panic` (to gclk), plus a 3-bit register for the toggle edges.  scan_sum/scan_words and the read errors go from the DMA to the registers.  Watermarks: in the pclk domain, `px_fifo_count` is compared with `WM_URGENT` (< 40% fill, 819 words for 2048-word FIFO) and `WM_PANIC` (< 20% fill, 409 words); the resulting single-bit status levels are synchronised to gclk via `am_sync` to yield `dc_urgent` and `dc_panic` for preemption at `atg_mc` (ws001-p039).  The DC's CTRL.RESET resets the gclk side of the FIFO, the I2C master and the event synchronisers, and clears the DMA without its count of outstanding reads (the responses of reads issued before still come).  With `HAS_CURSOR` the cursor sits between the DMA's pixels and the pixel FIFO (no new clock crossing), takes `dma_done`, the frame start and CURSOR_POS/CTRL, and shares the AMB port (requester 0 the DMA, 1 the cursor); `idle` and the read errors cover both.  Without it `taken[1]`, `pending[1]` are 0.  The quasi-static configuration (timing, format, test pattern) goes to pclk directly (see atg_dc_regs §7).
 
 ## 5. State machine
 
@@ -89,7 +92,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_dc_tb.v` (it covers the clock crossings), driven as atg_cp_disp drives the DC: `PASS atg_dc.scanout` — frames compared with the image, VBLANK and FRAME_COUNT, a flip at once while disabled and one at a vsync (taken, FB_BASE), SCAN_WORDS, a read error (black lines, STATUS.read error, DISP_ERROR at most once a frame, W1C), ENABLE 0 with a pending flip (cancelled) and idle, RGB565, the cursor (a flip of plane 1, taken after its load through the shared port, CURSOR_BASE, frames unchanged under a transparent image), CTRL.RESET with a pending flip and reads on the way and frames after it; `PASS atg_dc.afifo_bram` (2048-word BRAM AFIFO zero underflow check) — and `PASS atg_dc`.
+`sim/tb/atg_dc_tb.v` (it covers the clock crossings), driven as atg_cp_disp drives the DC: `PASS atg_dc.scanout` — frames compared with the image, VBLANK and FRAME_COUNT, a flip at once while disabled and one at a vsync (taken, FB_BASE), SCAN_WORDS, a read error (black lines, STATUS.read error, DISP_ERROR at most once a frame, W1C), ENABLE 0 with a pending flip (cancelled) and idle, RGB565, the cursor (a flip of plane 1, taken after its load through the shared port, CURSOR_BASE, frames unchanged under a transparent image), CTRL.RESET with a pending flip and reads on the way and frames after it; `PASS atg_dc.afifo_bram` (2048-word BRAM AFIFO zero underflow check); `PASS atg_dc.watermarks` (urgent/panic transitions verified) — and `PASS atg_dc`.
 
 ## 9. References
 

@@ -61,6 +61,9 @@ module atg_dc #(
 	output wire ev_error,
 	output wire ev_hotplug,
 	output wire pclk_sel,
+	/* Watermark preemption signals to MC (ws001-p039) */
+	output wire dc_urgent,
+	output wire dc_panic,
 	/* AMB client port (design §4.1) */
 	output wire req_valid,
 	input wire req_ready,
@@ -254,7 +257,28 @@ module atg_dc #(
 		.r_data(px_r_data),
 		.r_count(px_fifo_count)
 	);
-	wire unused_px_cnt = &{1'b0, px_fifo_count};
+
+	/* Watermark detection in pclk domain, synchronized to clk */
+	localparam [FIFO_LOG2:0] WM_URGENT = (40 * (1 << FIFO_LOG2)) / 100;
+	localparam [FIFO_LOG2:0] WM_PANIC  = (20 * (1 << FIFO_LOG2)) / 100;
+
+	reg p_urgent, p_panic;
+	always @(posedge pclk) begin
+		if (!p_rst_n) begin
+			p_urgent <= 1'b0;
+			p_panic  <= 1'b0;
+		end else begin
+			p_urgent <= p_enable && (px_fifo_count < WM_URGENT);
+			p_panic  <= p_enable && (px_fifo_count < WM_PANIC);
+		end
+	end
+
+	am_sync sync_urgent (
+		.clk(clk), .rst_n(g_rst_n), .d(p_urgent), .q(dc_urgent)
+	);
+	am_sync sync_panic (
+		.clk(clk), .rst_n(g_rst_n), .d(p_panic), .q(dc_panic)
+	);
 
 	atg_dc_tgen tgen (
 		.clk(pclk), .rst_n(p_rst_n), .enable(p_enable), .test_pattern(test_pattern),

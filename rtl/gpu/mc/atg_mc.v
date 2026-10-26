@@ -142,6 +142,9 @@ module atg_mc #(
 	output wire chk_idle,
 	output wire unit_idle,
 	output wire [3:0] fsm,
+	/* Display Controller watermark preemption signals (ws001-p039) */
+	input wire dc_urgent,
+	input wire dc_panic,
 
 	/* Session protection, from the CP. */
 	input wire [ADDR_W-1:0] prot_tbase,
@@ -215,12 +218,17 @@ module atg_mc #(
 	wire [LINE_BITS-1:0] s_req_data;
 	wire [RFW-1:0] s_rsp_data;
 
+	/* DC preemption: when dc_urgent or dc_panic is asserted, hold all other clients */
+	wire [NCLIENT-1:0] dc_preempt = (HAS_DC != 0 && (dc_urgent || dc_panic)) ?
+		~({{(NCLIENT-1){1'b0}}, 1'b1} << RC) : {NCLIENT{1'b0}};
+	wire [NCLIENT-1:0] tree_hold = ({NCLIENT{quiesce}} & ~QUIESCE_EXEMPT) | dc_preempt;
+
 	atg_mc_tree #(
 		.NCLIENT(NCLIENT), .HIGH_MASK(HIGH_MASK), .HAS_ROOT(HAS_ROOT), .ROOT_SPLIT(HAS_DC),
 		.ROOT_KEEP(HAS_KEEP), .ROOT_CLIENT(RC), .TREE_L(TREE_L), .RW(RW), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT), .VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE)
 	) tree (
-		.clk(clk), .rst_n(rst_n), .flush(flush), .hold({NCLIENT{quiesce}} & ~QUIESCE_EXEMPT),
+		.clk(clk), .rst_n(rst_n), .flush(flush), .hold(tree_hold),
 		.c_req_valid(c_req_valid), .c_req_ready(c_req_ready), .c_req_write(c_req_write),
 		.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
 		.c_req_tag(c_req_tag),
@@ -287,7 +295,7 @@ module atg_mc #(
 		.NGRANT(PROT_GRANTS), .GIDX_W(PROT_GIDX_W)
 	) grant (
 		.clk(clk), .rst_n(rst_n), .flush(flush),
-		.a_valid(a_full), .a_head(a_head), .a_data(a_data), .a_take(a_take),
+		.a_valid(a_full && !(HAS_DC != 0 && dc_panic)), .a_head(a_head), .a_data(a_data), .a_take(a_take),
 		.d_valid(d_full), .d_head(d_head), .d_data(d_data), .d_take(d_take),
 		.aperture_base(aperture_base), .aperture_limit(aperture_limit),
 		.g_valid(g_valid), .g_ready(g_ready), .g_write(g_write), .g_line(g_line), .g_be(g_be),
