@@ -48,7 +48,7 @@ module atg_blt_rsv_px #(
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter DEPTH_LOG2 = 2,	/* source line FIFO: 2^DEPTH_LOG2 lines */
+	parameter DEPTH_LOG2 = 4,	/* source line FIFO: 2^DEPTH_LOG2 lines */
 	parameter RD_W = 32 + 17 + 17 + 17 + 5	/* ADDR_W + 51 + LINE_SHIFT */
 ) (
 	input wire clk,

@@ -98,6 +98,7 @@ module atg_blt_rsv_tbc #(
 	integer cyc = 0;
 	integer nreq = 0;
 	reg pq_w [0:63];
+	reg [7:0] pq_tag [0:63];
 	reg [LA_W-1:0] pq_line [0:63];
 	reg [LB-1:0] pq_be [0:63];
 	reg [LBITS-1:0] pq_wd [0:63];
@@ -113,6 +114,7 @@ module atg_blt_rsv_tbc #(
 		rsp_valid <= 1'b0;
 		if (req_valid && req_ready) begin
 			pq_w[pq_t % 64] = req_write;
+			pq_tag[pq_t % 64] = req_tag;
 			pq_line[pq_t % 64] = req_line;
 			pq_be[pq_t % 64] = req_be;
 			pq_wd[pq_t % 64] = req_wdata;
@@ -124,7 +126,7 @@ module atg_blt_rsv_tbc #(
 			a = pq_line[pq_h % 64] * LB;
 			rsp_valid <= 1'b1;
 			rsp_write <= pq_w[pq_h % 64];
-			rsp_tag <= 8'd0;
+			rsp_tag <= pq_tag[pq_h % 64];
 			rsp_error <= a >= MEMB;
 			for (b = 0; b < LB; b = b + 1) begin
 				if (a < MEMB && pq_w[pq_h % 64] && pq_be[pq_h % 64][b])
@@ -450,6 +452,8 @@ module atg_blt_rsv_tbc #(
 			fail_msg("slower than 7 cycles per line");
 		$display("atg_blt_rsv LB %0d: stream %0d cycles for %0d destination lines", LB, tcy,
 			lines);
+		$display("PASS atg_blt_rsv(%0d).quad_resolve: 256 quads (1024 pixels) in %0d cycles",
+			LB, tcy);
 		/* the credit: long latency (the reads in flight reach the
 		 * credit) and the port blocked half of the time (atg_blt_rsv_px
 		 * stalls on its write with its window full) */

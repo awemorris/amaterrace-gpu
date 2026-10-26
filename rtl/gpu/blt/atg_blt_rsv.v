@@ -50,7 +50,7 @@ module atg_blt_rsv #(
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter DEPTH_LOG2 = 2
+	parameter DEPTH_LOG2 = 4
 ) (
 	input wire clk,
 	input wire rst_n,

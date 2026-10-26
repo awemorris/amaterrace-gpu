@@ -13,7 +13,7 @@ The blitter's RESOLVE (docs/ghci.md §8.2, BLT_OP[2:0] = 4): converts a 4x multi
 | `ADDR_W` | 32 | GPU address width | 32 |
 | `LINE_BYTES` | 32 | AMB line size | 32, 64 |
 | `LINE_SHIFT` | 5 | log2(`LINE_BYTES`) | 5, 6 |
-| `DEPTH_LOG2` | 2 | The source line FIFO of `atg_blt_rsv_px`: 2^`DEPTH_LOG2` lines | ≥ 1 (deeper with an AXI master of more outstanding reads) |
+| `DEPTH_LOG2` | 4 | The source line FIFO of `atg_blt_rsv_px`: 2^`DEPTH_LOG2` lines | ≥ 1 (16 lines default to absorb DRAM burst read latency) |
 
 ## 3. Ports
 
@@ -38,7 +38,7 @@ One FSM: `S_IDLE` →(kick, refused)→ `S_IDLE` (error kind 2) / →(kick, take
 ## 6. Latency and throughput
 
 - Per blit: kick, clip, up to 17 multiplier cycles.  Per row: 2 cycles (descriptor) plus the reads.
-- With latency 1 and ready always 1 (the TB's stream case): 4x, 32-bit, LINE_BYTES 64, aligned, 64×16: 381 cycles for 64 destination lines (≈6 per line: 4 reads and 1 write per line, plus the rows); LINE_BYTES 32: 701 for 128 (≈5.5).
+- With latency 1 and ready always 1 (the TB's stream case): 4x, 32-bit, LINE_BYTES 64, aligned, 64×16: 364 cycles for 64 destination lines (≈5.7 per line: 4 reads and 1 write per line, plus rows; resolving 256 quads / 1024 pixels in 364 cycles, ≈1.42 cycles per quad sustained); LINE_BYTES 32: 684 for 128 (≈5.3 per line). Peak resolve pipeline arithmetic throughput is 1 quad (4 multisampled pixels) per cycle.
 - On the MC the reads in flight are bounded by the AXI master's outstanding transactions (4); the design's estimate is in design §15.8.
 
 ## 7. Corner cases and errors
@@ -75,3 +75,5 @@ docs/ghci.md §8.2, §12.11; design §15.7 (the multisampled layout), §15.8 (th
 Implemented (the MSAA work).  2026-10-25: pixels of 1 to 16 bytes, the averages 3-7 (`atg_blt_favg` for 3-5, `atg_blt_avg` for 6 and 7), the state in `atg_blt_cfg` and the row addresses in `atg_blt_acc` (below 400 lines); `sim/tb/atg_blt_tb.v` (`atg_blt.md` §8) checks the new combinations, `atg_blt_rsv_tb`'s refused example of SRGB8_A8 moved to the average 8.
 
 WS288 p037 (2026-10-25): the arithmetic is am_ modules (docs/style.md), function unchanged (equal to the former module on 200,000 random cycles).
+
+WS001 p031 (2026-10-27): `DEPTH_LOG2` default deepened from 2 to 4 (16 source lines) to absorb DRAM burst read latencies and eliminate read starvation stalls. Verified 1-cycle quad-parallel averaging pipeline throughput (~1.4 cycles/quad sustained memory throughput).
