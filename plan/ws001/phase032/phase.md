@@ -68,4 +68,6 @@
 - `sim/run.sh atg_top`: PASS（21 s）。
 - `python3 tools/arith-lint.py --top atg_vf_fetch`: 0 operators（完全遵守）。
 - Verilator lint: 0 warnings。
+- R1 敵対的コードレビュー APPROVE 承認完了（2026-10-26）。
+- コミット: `13aa21f` / `6956ec7`
 - コミット: `13aa21f`
