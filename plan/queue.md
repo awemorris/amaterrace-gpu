@@ -41,6 +41,11 @@
 | `q001-i27` | **P1〜P8 待機** | [ws001-p032](ws001/phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | queued | `q001-i22` | ユーザー承認に基づきスケジュール。頂点供給レート 4 倍向上。 |
 | `q001-i28` | **P1〜P8 待機** | [ws001-p033](ws001/phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | queued | `q001-i27`, `q001-i10` | ユーザー承認に基づきスケジュール。頂点シェーダ負荷半減。 |
 | `q001-i29` | **P1〜P8 待機** | [ws001-p034](ws001/phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/） | queued | `q001-i01` | ユーザー承認（2026-10-26）に基づきスケジュール。即時着手可能。 |
+| `q001-i30` | **P1〜P8 待機** | [ws001-p035](ws001/phase035/phase.md) | 完全スキッドバッファ（am_skid.v）の共通ライブラリ化（0 サイクルスループット・Backpressure 分離） | queued | `q001-i01` | ユーザー承認（2026-10-26）に基づきスケジュール。即時着手可能。 |
+| `q001-i31` | **P1〜P8 待機** | [ws001-p036](ws001/phase036/phase.md) | BRAM 推論可能非同期 FIFO（am_afifo_bram.v）実装（同期 Read + 2段スキッド 0-cycle FWFT） | queued | `q001-i30` | ユーザー承認に基づきスケジュール。LUTRAM 浪費根絶・200MHz タイミング収束。 |
+| `q001-i32` | **P1〜P8 待機** | [ws001-p037](ws001/phase037/phase.md) | am_axi_master.v 深い Outstanding（16〜32要求）& 独立 R/W チャネル化（DDR 帯域 85%+ 飽和） | queued | `q001-i30` | ユーザー承認に基づきスケジュール。60〜80 サイクル往復遅延の隠蔽。 |
+| `q001-i33` | **P1〜P8 待機** | [ws001-p038](ws001/phase038/phase.md) | atg_dc.v 2048 ワード BRAM AFIFO & 連続フェッチ（1080p@60Hz 148.5MHz 完全保証） | queued | `q001-i31`, `q001-i32` | ユーザー承認に基づきスケジュール。32B DMA 境界停止・アンダーフロー根絶。 |
+| `q001-i34` | **P1〜P8 待機** | [ws001-p039](ws001/phase039/phase.md) | DC Urgent / Panic プレエンプション & MC QoS 優先アービトレーション（アンダーフロー即時回避） | queued | `q001-i33`, `q001-i23` | ユーザー承認に基づきスケジュール。3D 描画過負荷時も画面描画破綻ゼロ。 |
 
 ## サブエージェント実行状態（N=2）
 
@@ -89,4 +94,9 @@
 33. **[ws001-p032](ws001/phase032/phase.md)**: VF 4ストリーム並列属性 DMA & ラインバッファ拡張。
 34. **[ws001-p033](ws001/phase033/phase.md)**: VF 32エントリ Post-Transform Vertex Cache（PT-VC）。
 35. **[ws001-p034](ws001/phase034/phase.md)**: ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動（rtl/bsp/pcie/）。
-36. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites、MultiDrawIndirect、非同期 DMA 等、後回し）。
+36. **[ws001-p035](ws001/phase035/phase.md)**: 完全スキッドバッファ（am_skid.v）の共通ライブラリ化。
+37. **[ws001-p036](ws001/phase036/phase.md)**: BRAM 推論可能非同期 FIFO（am_afifo_bram.v）実装（同期 Read + 2段スキッド 0-cycle FWFT）。
+38. **[ws001-p037](ws001/phase037/phase.md)**: am_axi_master.v 深い Outstanding（16〜32要求）& 独立 R/W チャネル化。
+39. **[ws001-p038](ws001/phase038/phase.md)**: atg_dc.v 2048 ワード BRAM AFIFO & 連続フェッチ（1080p@60Hz 148.5MHz 完全保証）。
+40. **[ws001-p039](ws001/phase039/phase.md)**: DC Urgent / Panic プレエンプション & MC QoS 優先アービトレーション。
+41. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites、MultiDrawIndirect、非同期 DMA、DC HDMI/DP リンク層等、後回し）。

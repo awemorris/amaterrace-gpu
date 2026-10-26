@@ -27,3 +27,4 @@ Amaterrace GPU のハードウェアパイプライン化および物理最適�
 | [p007](phase007/phase.md) | RX 拡張プリミティブ（Wide Lines, Point Sprites, Multi-Viewport 等） | ws001-p025 | planned |
 | [p008](phase008/phase.md) | 間接描画 & インスタンシング（MultiDrawIndirect, Vertex Attribute Divisor） | ws001-p033 | planned |
 | [p009](phase009/phase.md) | 非同期 DMA 転送キュー & 3D ボリュームコピー（専用キュー・ボリューム画像） | ws001-p030 | planned |
+| [p010](phase010/phase.md) | WSI 高度表示機能（HDR10、マルチプレーンオーバーレイ、VRR） | ws001-p039 | planned |

@@ -35,12 +35,12 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 | [p006](phase006/phase.md) | 細粒度同期（Timeline Semaphore / パイプラインバリア）& 描画同期基盤 | p003, p005 | planned |
 | [p007](phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新 | p002, p004 | completed |
 | [p008](phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装 | p001 | completed |
-| [p009](phase009/phase.md) | `rtl/library/arith/` 物理最適化（ビット反転右シフト & Non-restoring 除算器） | p001 | in-progress |
+| [p009](phase009/phase.md) | `rtl/library/arith/` 物理最適化（ビット反転右シフト & Non-restoring 除算器） | p001 | completed |
 | [p010](phase010/phase.md) | SU 実 6段パイプライン化（偽遅延FF排除・`am_fpu_core` 4段分割・遅延均等化） | p008, p009 | planned |
 | [p011](phase011/phase.md) | SU オペランド・フォワーディング / バイパスネットワーク（RAW ストール解消） | p010 | planned |
 | [p012](phase012/phase.md) | SU スコアボード連動ワープスケジューラ（`warp_ready`・リプレイゼロ） | p010, p011 | planned |
 | [p013](phase013/phase.md) | SU レジスタファイル最適化（BRAM 半減・マルチ SU 面積削減） | p010 | planned |
-| [p014](phase014/phase.md) | 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減） | p001 | planned |
+| [p014](phase014/phase.md) | 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減） | p001 | in-progress |
 | [p015](phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle） | p014 | planned |
 | [p016](phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | p014, p015 | planned |
 | [p017](phase017/phase.md) | ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消（8KB Color/Depth） | p016, p003 | planned |
@@ -61,6 +61,11 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 | [p032](phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | p027 | planned |
 | [p033](phase033/phase.md) | VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減） | p032, p010 | planned |
 | [p034](phase034/phase.md) | ボードトップ命名刷新（atg_kc705_top）& atg_pcie_msi の BSP 移動 | p001 | planned |
+| [p035](phase035/phase.md) | Full Skid Buffer（`am_skid.v`）実装と形式検証（0 バブル切断） | p001 | planned |
+| [p036](phase036/phase.md) | BRAM 推論可能非同期 FIFO（`am_afifo_bram.v`）実装（2048 ワード展開） | p035 | planned |
+| [p037](phase037/phase.md) | `am_axi_master.v` の深層 Outstanding 化（16〜32 枠対応） | p001 | planned |
+| [p038](phase038/phase.md) | DC 2048 ワード BRAM AFIFO & 32 ライン DMA 統合（2 サイクル制限撤廃） | p036 | planned |
+| [p039](phase039/phase.md) | DC -> MC Urgent / Panic ウォーターマークプリエンプション実装 | p038, p028 | planned |
 
 ---
 

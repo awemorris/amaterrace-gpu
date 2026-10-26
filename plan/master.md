@@ -87,4 +87,5 @@
     - **BLT**: [ws001-p030](ws001/phase030/phase.md)〜[p031](ws001/phase031/phase.md)（ストリーミングバースト DMA 1.0+ GB/s、MSAA 4x 1 cycle 並列 Resolve）
     - **VF**: [ws001-p032](ws001/phase032/phase.md)〜[p033](ws001/phase033/phase.md)（4ストリーム並列属性 DMA、32エントリ Post-Transform 頂点キャッシュ）
     - **Board / BSP**: [ws001-p034](ws001/phase034/phase.md)（ボードトップ命名刷新 atg_kc705_top & atg_pcie_msi の rtl/bsp/pcie/ 移動）
-11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites、MultiDrawIndirect、非同期 DMA 等、後回し）。
+    - **DC & BUS**: [ws001-p035](ws001/phase035/phase.md)〜[p039](ws001/phase039/phase.md)（完全スキッドバッファ am_skid、BRAM AFIFO am_afifo_bram、深い Outstanding AXI マスタ、DC 2048 ワード BRAM AFIFO & 連続フェッチ、DC Urgent/Panic プレエンプション）
+11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮、Wide Lines、Point Sprites、MultiDrawIndirect、非同期 DMA、DC HDMI/DP リンク層等、後回し）。
