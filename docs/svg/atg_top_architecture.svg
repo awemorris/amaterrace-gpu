@@ -194,11 +194,11 @@
         <g transform="translate(315, 46)">
             <rect width="180" height="140" rx="6" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.2"/>
             <text class="card-title" x="12" y="22" fill="#b45309">SU (Shader Unit)</text>
-            <text class="card-subtitle" x="12" y="38" fill="#d97706">32-Lane SIMT</text>
-            <text class="card-body" x="12" y="60">• Warp Scheduler</text>
-            <text class="card-body" x="12" y="78">• Local Data Share (LDS)</text>
-            <text class="card-body" x="12" y="96">• FP16 x2 Packed</text>
-            <text class="card-body" x="12" y="114">• Explicit Score Boarding</text>
+            <text class="card-subtitle" x="12" y="38" fill="#d97706">32-Lane Full SIMD</text>
+            <text class="card-body" x="12" y="60">• 4 Quads (32 SIMD Lanes)</text>
+            <text class="card-body" x="12" y="78">• DSP48E1 FP32 FMA Cascade</text>
+            <text class="card-body" x="12" y="96">• Local Data Share (LDS)</text>
+            <text class="card-body" x="12" y="114">• Warp Scheduler (Scoreboard)</text>
         </g>
 
         <!-- RX: Rasterizer -->
