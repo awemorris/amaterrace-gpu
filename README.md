@@ -28,7 +28,7 @@ Table of Contents
 3. [GHCI 1.0 Host Interface & System Topologies](#3-ghci-10-host-interface--system-topologies)
    - [Unified Memory Architecture (UMA)](#unified-memory-architecture-uma)
    - [Discrete GPU Architecture (PCIe Binding)](#discrete-gpu-architecture-pcie-binding)
-   - [Slim MMIO & In-Memory Pipeline State Objects (PSO)](#slim-mmio--in-memory-pipeline-state-objects-pso)
+   - [MMIO & In-Memory Pipeline State Objects (PSO)](#mmio--in-memory-pipeline-state-objects-pso)
 4. [Hardware Blocks & Microarchitecture](#4-hardware-blocks--microarchitecture)
    - [Core Blocks Overview](#core-blocks-overview)
    - [Shader Unit (Scalable SIMT Warp Architecture)](#shader-unit-scalable-simt-warp-architecture)
@@ -126,16 +126,16 @@ Per GHCI §11.3, discrete memory is indicated by `LOCAL_SIZE > 0`:
 
 ![GHCI Discrete System Architecture](docs/svg/ghci_discrete_system.svg)
 
-- **Identical Programming Model:** Both UMA and Discrete configurations expose the identical 19 slim MMIO registers, command ring structures, fence/interrupt models, and GSI1 ISA.
+- **Identical Programming Model:** Both UMA and Discrete configurations expose the identical 19 MMIO registers, command ring structures, fence/interrupt models, and GSI1 ISA.
 - **Dedicated Local VRAM:** Render targets, depth/stencil buffers, pipeline state objects, and high-frequency textures reside in dedicated local VRAM.
 - **Asynchronous DMA Copy Engine:** The GPU's DMA engine stages assets between host DRAM and dedicated local VRAM across PCIe using explicit copy commands (`COPY`).
 - **Optional Local Window (BAR1):** An optional host aperture allows firmware (e.g., UEFI GOP or boot console) to write directly to a boot framebuffer without an active driver.
 
-### Slim MMIO & In-Memory Pipeline State Objects (PSO)
+### MMIO & In-Memory Pipeline State Objects (PSO)
 
 GHCI 1.0 eliminates dynamic hardware state registers (`STATE_*`) from MMIO, preventing kernel overhead and bus stalls:
 
-- **19 Slim MMIO Registers (76 Bytes Total):** Identification, capabilities, ring base/size, doorbell write pointer (`RING_WPTR`), read pointer (`RING_RPTR`), fence status, interrupt mask/status, and reset control.
+- **19 MMIO Registers (76 Bytes Total):** Identification, capabilities, ring base/size, doorbell write pointer (`RING_WPTR`), read pointer (`RING_RPTR`), fence status, interrupt mask/status, and reset control.
 - **In-Memory Immutable PSO:** Render states (rasterization, blend equations, depth/stencil modes, shader program pointers) are baked by the user-mode driver into compact 48-byte structs (`GhciPipelineState`). Commands bind states by passing 64-bit GPU virtual addresses (`CMD_BIND_PIPELINE`).
 
 ![GHCI Command Flow](docs/svg/ghci_command_flow.svg)
