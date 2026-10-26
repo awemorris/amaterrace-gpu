@@ -3,7 +3,7 @@
 # Phase 029: CP 64ワード循環コマンドプリフェッチ FIFO（ノーウェイトパケット供給）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・FW全14件PASS)
 - **依存**: [ws001-p002](../phase002/phase.md)
 - **優先度**: Major (コマンドリング 32B 境界停止の完全消滅)
 - **出典**: ユーザー諮問（周辺ブロック最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -67,3 +67,21 @@
 
 - コマンドライン境界を跨ぐ描画パケット列において、フェッチストールが一切発生しないこと。
 - 全既存テストベンチが完全 PASS すること。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **RTL 最適化実装**:
+   - `rtl/gpu/cp/atg_cp_ring.v`: 8 エントリ（64 ワード / 256 バイト）の循環ラインバッファ（キャッシュ）およびバックグラウンド・プリフェッチ FSM を新設。
+   - クラス N パケットデコードの背後で次ラインを自動先行フェッチし、32B/64B 境界でのリード待ち（15〜25 サイクル）を完全隠蔽（0 サイクル・ノーウェイト供給）。
+   - ドアベル書き込み時のアトミックなキャッシュ無効化（`buf_valid <= 8'd0`, `stale <= 1'b1`）により、周回時の古いデータの誤読を完全防止。
+   - `spec/gpu/cp/atg_cp_ring.md`: 仕様書更新。
+2. **検証結果**:
+   - `sim/run.sh atg_cp_ring`: **PASS** (1 s)
+   - `fw/cp/tests/run.sh`: **全 14 ケース PASS**（diag, sessions, buffers, images, draw, compute, transfer, mmu, prot 等）
+   - `sim/run.sh atg_top_fw`: **PASS** (104 s)
+   - `tools/lint.sh`: 全モジュール Clean（0 warnings）
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p029_cp_ring.md`）。64 ワード循環プリフェッチキャッシュ、バックグラウンドフェッチ FSM、ドアベル無効化、Guardrails 完全準拠を承認。
