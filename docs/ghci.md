@@ -395,10 +395,11 @@ driver, shared memory, the Command Processor, and the graphics pipeline units.
 
 ![GHCI Command Execution Sequence](svg/ghci_command_sequence.svg)
 
-1. **State Baking:** The User-Mode Driver (UMD) compiles shader binaries into
-   GSI1 ISA and builds immutable `GhciPipelineState` structures (48 bytes) and
-   descriptor tables directly in shared memory.
-2. **Command Recording:** UMD records high-level structured packets
+1. **State Baking:** The User-Mode Driver (UMD) or Kernel-Mode Driver (KMD) 
+   compiles shader binaries into GSI1 ISA and builds immutable
+   `GhciPipelineState` structures (48 bytes) and descriptor tables directly
+   in shared memory.
+2. **Command Recording:** UMD or KMD records high-level structured packets
    (`CMD_BIND_PIPELINE`, `CMD_BIND_DESCRIPTOR`, `CMD_DRAW_INDIRECT`, etc.) into
    the shared ring buffer.
 3. **Doorbell:** The Kernel-Mode Driver (KMD) writes the new head position to
