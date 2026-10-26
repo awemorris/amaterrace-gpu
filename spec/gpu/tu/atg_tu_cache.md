@@ -13,7 +13,9 @@ The texture cache: 4 KiB (KC705), lines from the AMB, 16 texels per quad looked 
 | `ADDR_W` | `32` | GPU address width. |
 | `LINE_BYTES` | `32` | AMB line size: 32 or 64 (KC705). |
 | `LINE_SHIFT` | `5` | log2(LINE_BYTES). |
-| `TC_BYTES` | `4096` | Size in bytes. |
+| `TC_BYTES` | `8192` | Size in bytes (8 KiB, 4 ways). |
+| `WAYS` | `4` | Associativity ways. |
+| `NBANKS` | `4` | Concurrent memory banks. |
 
 ## 3. Ports
 
@@ -65,17 +67,24 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-Blocking in v1: a quad waits until all its lines are present (misses served in order, up to 2 outstanding).  texsz passes through without lookups.  Order is kept.
+Blocking on miss: a quad waits until all its lines are present (misses served in order, one outstanding). texsz passes through without lookups. Order is kept.
 
-As implemented: direct mapped, TC_BYTES / LINE_BYTES lines (128 of 32 bytes, 64 of 64), read only (no write port: the GPU does not write textures through the T$).  The slots of a quad are looked up one per cycle, lane 0 slot 0 to lane 3 slot 3, only for the lanes of ta_mask and, without ta_ctl[0], only slot 0 (slots 0-1 with ta_ctl[26:25] = 1, 0-3 with 2: the words of 8- and 16-byte texels); slots not looked up are 0 on tc_texels.  A slot is the word at its address; with ta_ctl[24:23] = 1 (2-byte texels) or ta_ctl[19] (RGB565) the half word that address bit 1 selects, with 2 (1-byte texels) the byte that address bits 1:0 select, right-justified.  A miss requests its line (**one outstanding**), writes it into the cache when it comes and looks the texel up again.  A **border texel** (its ta_bord bit, from atg_tu_addr's clamp to border) is not looked up and makes no request: it is the border colour's raw texel by format ({ta_ctl[8], ta_ctl[1]}) and class (ta_ctl[7:6]): RGBA8/BGRA8 0, 0xFF000000, 0xFFFFFFFF; D24 and D16 0, 0, 0x00FFFFFF; D32F 0, 0, 0x3F800000 (class 3: 0); the fp32 path's filter puts in its own values.  The filter then treats it as any texel (tools/tumodel.py `border_raw`).  An error response (rsp_error) gives that texel 0 and leaves the line invalid (the next use requests it again); there is no fault from the TU.  inv (INVALIDATE[1], DRAW) clears every line at once; a line whose request was outstanding when inv came is not kept (its texel misses again and is fetched anew).  The other fields go through unchanged.
+As implemented: 4-way set-associative, `TC_BYTES / LINE_BYTES` lines divided into 4 ways (e.g. 64 sets of 4 ways for 32B lines, 32 sets for 64B lines), 4 concurrent memory banks. Read only (no write port: the GPU does not write textures through the T$). Quads are processed lane by lane (lanes 0..3):
+- For each lane of `ta_mask`, its active slots (up to 4 texels) are looked up in parallel across 4 independent banks with zero bank conflicts.
+- Without bilinear (`!ta_ctl[0]`), only slot 0 is looked up (slots 0-1 with `ta_ctl[26:25] = 1`, 0-3 with 2: 8- and 16-byte texels); unused slots are 0 on `tc_texels`.
+- A slot is the word at its address; with `ta_ctl[24:23] = 1` (2-byte texels) or `ta_ctl[19]` (RGB565) the half word that address bit 1 selects, with 2 (1-byte texels) the byte that address bits 1:0 select, right-justified.
+- A miss requests its line (**one outstanding**), writes it into the 4 banks at the set's victim way chosen by Tree-PLRU, and retries the lane.
+- A **border texel** (`ta_bord` bit) is not looked up and makes no request: it is the border colour's raw texel by format ({`ta_ctl[8]`, `ta_ctl[1]`}) and class (`ta_ctl[7:6]`).
+- An error response (`rsp_error`) gives that texel 0 and leaves the line invalid.
+- `inv` (INVALIDATE[1], DRAW) clears every line at once; an in-flight miss during `inv` is discarded.
 
 ## 5. State machine
 
-IDLE →(ta_valid)→ LOOKUP (one texel a cycle) →(miss)→ MREQ →(req_ready)→ MWAIT →(rsp_valid)→ LOOKUP; LOOKUP →(last texel)→ DRAIN (the last hit's data) → OUT →(tc_ready)→ IDLE; IDLE →(texsz)→ OUT.
+IDLE →(ta_valid)→ LANE_CHECK (4 slots checked concurrently) →(miss)→ MREQ →(req_ready)→ MWAIT →(rsp_valid)→ LANE_CHECK; LANE_CHECK →(all active slots hit)→ LANE_READ (4 texels read in parallel from 4 banks, PLRU updated) →(next lane)→ LANE_CHECK / OUT →(tc_ready)→ IDLE; IDLE →(texsz)→ OUT.
 
 ## 6. Latency and throughput
 
-Target: hits one quad per 4 cycles (4 texels per cycle).  v1: one texel per cycle: a nearest quad of hits in 4 cycles + 3 (DRAIN, OUT, IDLE), a bilinear one in 16 + 3; a miss adds the MC's latency (one at a time).  Banking and more outstanding misses are p015's.
+4 texels per cycle concurrent read across 4 banks: a bilinear quad of hits takes 4 lane cycles (1 cycle per 4-texel lane) + pipeline overhead; a nearest quad takes 1-4 cycles. Hit latency reduced from 16+ cycles to 4-8 cycles.
 
 ## 7. Corner cases and errors
 
@@ -92,6 +101,8 @@ Target: hits one quad per 4 cycles (4 texels per cycle).  v1: one texel per cycl
 - `PASS atg_tu_cache.border` — border texels
 - `PASS atg_tu_cache.h16` — RGB565 (ctl[19]): the half word of address bit 1, its border texels (0, 0, 0xFFFF)
 - `PASS atg_tu_cache.parts` — the slots of 8- and 16-byte texels without bilinear, the half words and bytes of 2- and 1-byte texels (ctl[24:23]), border texels among them
+- `PASS atg_tu_cache.assoc` — 4-way set associativity and Tree-PLRU replacement
+- `PASS atg_tu_cache.bank` — 4-bank concurrent read without bank conflicts
 - `PASS atg_tu_cache` at the end.
 
 Both line sizes (32 and 64 bytes), a memory model with random request acceptance and latency and an error region: hit = a quad repeated three times makes no request; miss = 400 random quads over 64 KiB (conflicting lines), every ta_ctl, error texels, an error line requested again; inv = changed memory is not seen before inv and is after, inv while a miss is outstanding (with memory changed meanwhile: the new data is returned, the line refetched and then kept); border = 200 quads with random border texels among fetched ones (every format and class), 20 quads of border texels only that make no request.
@@ -109,3 +120,5 @@ Part F (P3): ta_wts / tc_wts 128 bits (fw, the depth weight); the pass bits of t
 RGB565 (the MSAA work): with ta_ctl[19] a texel is the half word that address bit 1 selects (bits 15:0 of the texel word), the border texels 0, 0, 0xFFFF.
 
 TEX_FORMAT (2026-10-25): ta_bord / tc_bord (the border bit left the address), ta_ctl 48 bits, the slots of 8- and 16-byte texels and the 1- and 2-byte texels.
+
+WS001 Phase 020: 4-way set-associative, 4-bank L1 texture cache (8 KiB). 4 texels per cycle concurrent read across 4 banks with zero bank conflicts. Tree-PLRU replacement policy per set.

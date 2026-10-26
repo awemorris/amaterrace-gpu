@@ -42,7 +42,9 @@ module atg_tu_cache_run #(
 	output reg [31:0] e_inv,
 	output reg [31:0] e_border,
 	output reg [31:0] e_h16,
-	output reg [31:0] e_parts
+	output reg [31:0] e_parts,
+	output reg [31:0] e_assoc,
+	output reg [31:0] e_bank
 );
 	localparam LB = LINE_BYTES * 8;
 
@@ -241,6 +243,8 @@ module atg_tu_cache_run #(
 		e_border = 0;
 		e_h16 = 0;
 		e_parts = 0;
+		e_assoc = 0;
+		e_bank = 0;
 		gen_seen = 0;
 		@(posedge rst_n);
 		repeat (2) @(posedge clk);
@@ -380,6 +384,103 @@ module atg_tu_cache_run #(
 			quad(a, b, $random(seed), ctl, e);
 			e_parts = e_parts + e;
 		end
+		/* assoc: 4-way set-associativity and Tree-PLRU eviction */
+		begin : b_assoc
+			reg [31:0] set_stride;
+			reg [31:0] l0, l1, l2, l3, l4;
+			set_stride = 32'd2048;
+			l0 = 32'h00002000;
+			l1 = 32'h00002000 + set_stride;
+			l2 = 32'h00002000 + 2 * set_stride;
+			l3 = 32'h00002000 + 3 * set_stride;
+			l4 = 32'h00002000 + 4 * set_stride;
+
+			// Fill 4 lines of the same set
+			a = {16{l0}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			a = {16{l1}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			a = {16{l2}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			a = {16{l3}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+
+			// All 4 lines must hit
+			n0 = nreq;
+			a = {16{l0}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			a = {16{l1}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			a = {16{l2}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			a = {16{l3}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			if (nreq != n0) begin
+				e_assoc = e_assoc + 1;
+				$display("FAIL atg_tu_cache(%0d): 4-way lines not all cached", LINE_BYTES);
+			end
+
+			// Access l0, l1, l2 so l3 is least recently used
+			a = {16{l0}}; quad(a, 16'd0, 4'h1, 48'h0, e);
+			a = {16{l1}}; quad(a, 16'd0, 4'h1, 48'h0, e);
+			a = {16{l2}}; quad(a, 16'd0, 4'h1, 48'h0, e);
+
+			// Now bring in 5th line l4 (must evict l3 via PLRU)
+			n0 = nreq;
+			a = {16{l4}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			if (nreq != n0 + 1) begin
+				e_assoc = e_assoc + 1;
+				$display("FAIL atg_tu_cache(%0d): 5th line did not miss as expected", LINE_BYTES);
+			end
+
+			// l0, l1, l2, l4 must all HIT
+			n0 = nreq;
+			a = {16{l0}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			a = {16{l1}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			a = {16{l2}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			a = {16{l4}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			if (nreq != n0) begin
+				e_assoc = e_assoc + 1;
+				$display("FAIL atg_tu_cache(%0d): PLRU survivors did not hit", LINE_BYTES);
+			end
+
+			// l3 was evicted, so accessing l3 MUST MISS
+			n0 = nreq;
+			a = {16{l3}}; quad(a, 16'd0, 4'h1, 48'h0, e); e_assoc = e_assoc + e;
+			if (nreq != n0 + 1) begin
+				e_assoc = e_assoc + 1;
+				$display("FAIL atg_tu_cache(%0d): evicted line l3 did not miss", LINE_BYTES);
+			end
+		end
+		/* bank: 4-bank concurrent read verification */
+		begin : b_bank
+			integer cyc;
+			// Preload a 2x2 bilinear quad in lane 0 (slots 0..3)
+			a = 512'd0;
+			a[0*32 +: 32] = 32'h00003000;
+			a[1*32 +: 32] = 32'h00003004;
+			a[2*32 +: 32] = 32'h00003020;
+			a[3*32 +: 32] = 32'h00003024;
+			ctl = 48'h000001; // bilinear enabled
+			quad(a, 16'd0, 4'h1, ctl, e); // warmup lines
+			e_bank = e_bank + e;
+
+			// Now measure cycle count on cached hit: 1 active lane with 4 slots
+			ta_valid <= 1'b1;
+			ta_addr <= a;
+			ta_bord <= 16'd0;
+			ta_mask <= 4'h1; // lane 0 only
+			ta_ctl <= ctl;
+			@(posedge clk);
+			while (!ta_ready) @(posedge clk);
+			ta_valid <= 1'b0;
+			cyc = 0;
+			while (!tc_valid && cyc < 100) begin
+				@(posedge clk);
+				cyc = cyc + 1;
+			end
+			tc_ready <= 1'b1;
+			@(posedge clk);
+			tc_ready <= 1'b0;
+			// With 4 banks reading in parallel, 1 lane finishes in <= 6 cycles (not 16+ cycles!)
+			if (cyc > 6) begin
+				e_bank = e_bank + 1;
+				$display("FAIL atg_tu_cache(%0d): 4-bank parallel read took %0d cycles (expected <= 6)",
+					LINE_BYTES, cyc);
+			end
+		end
 		done = 1'b1;
 	end
 endmodule
@@ -390,13 +491,13 @@ module atg_tu_cache_tb;
 	always #5 clk = !clk;
 
 	wire d32, d64;
-	wire [31:0] h32, m32, i32, b32, h64, m64, i64, b64, s32, s64, p32, p64;
+	wire [31:0] h32, m32, i32, b32, h64, m64, i64, b64, s32, s64, p32, p64, a32, a64, k32, k64;
 	atg_tu_cache_run #(.LINE_BYTES(32), .LINE_SHIFT(5), .SEED(11)) r32 (
 		.clk(clk), .rst_n(rst_n), .done(d32), .e_hit(h32), .e_miss(m32), .e_inv(i32),
-		.e_border(b32), .e_h16(s32), .e_parts(p32));
+		.e_border(b32), .e_h16(s32), .e_parts(p32), .e_assoc(a32), .e_bank(k32));
 	atg_tu_cache_run #(.LINE_BYTES(64), .LINE_SHIFT(6), .SEED(12)) r64 (
 		.clk(clk), .rst_n(rst_n), .done(d64), .e_hit(h64), .e_miss(m64), .e_inv(i64),
-		.e_border(b64), .e_h16(s64), .e_parts(p64));
+		.e_border(b64), .e_h16(s64), .e_parts(p64), .e_assoc(a64), .e_bank(k64));
 
 	initial begin
 		repeat (3) @(posedge clk);
@@ -414,11 +515,15 @@ module atg_tu_cache_tb;
 			$display("PASS atg_tu_cache.h16");
 		if (p32 == 0 && p64 == 0)
 			$display("PASS atg_tu_cache.parts");
-		if (h32 + h64 + m32 + m64 + i32 + i64 + b32 + b64 + s32 + s64 + p32 + p64 == 0)
+		if (a32 == 0 && a64 == 0)
+			$display("PASS atg_tu_cache.assoc");
+		if (k32 == 0 && k64 == 0)
+			$display("PASS atg_tu_cache.bank");
+		if (h32 + h64 + m32 + m64 + i32 + i64 + b32 + b64 + s32 + s64 + p32 + p64 + a32 + a64 + k32 + k64 == 0)
 			$display("PASS atg_tu_cache");
 		else
-			$display("FAIL atg_tu_cache: %0d %0d %0d %0d / %0d %0d %0d %0d", h32, m32, i32, b32,
-				h64, m64, i64, b64);
+			$display("FAIL atg_tu_cache: %0d %0d %0d %0d / %0d %0d %0d %0d / %0d %0d", h32, m32, i32, b32,
+				h64, m64, i64, b64, a32 + a64, k32 + k64);
 		$finish;
 	end
 
