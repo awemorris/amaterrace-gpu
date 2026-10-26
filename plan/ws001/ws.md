@@ -33,6 +33,7 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 | [p004](phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定 & 実装 | p002 | planned |
 | [p005](phase005/phase.md) | マルチエンジン独立キューイング & ハードウェアプリエンプション（R1 敵対的レビュー対応） | p004 | planned |
 | [p006](phase006/phase.md) | 細粒度同期（Timeline Semaphore / パイプラインバリア）& Vulkan 1.0 必須機能補完 | p003, p005 | planned |
+| [p007](phase007/phase.md) | GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新 | p002, p004 | planned |
 
 ---
 

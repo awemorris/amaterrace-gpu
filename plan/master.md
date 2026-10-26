@@ -68,5 +68,6 @@
 4. **[ws001-p004](ws001/phase004/phase.md)**: IOMMU 連携 & CP 自律型 MMU（Hardware Page Walker + 隠蔽 TLB）仕様策定 & 実装（商用独自 OS・Unified Memory 前提、極薄ドライバ、ゼロコピー）。
 5. **[ws001-p005](ws001/phase005/phase.md)**: マルチエンジン独立キューイング（Graphics/Compute/DMA 独立リング）& ハードウェアプリエンプション。
 6. **[ws001-p006](ws001/phase006/phase.md)**: 細粒度同期（Timeline Semaphore / パイプラインバリア）& Vulkan 1.0 必須機能補完（MultiDrawIndirect、DualSourceBlend、LogicOp、異方性フィルタ）。
-7. **DC の 200 MHz クロック領域分離**: SYSCLK 直結による 720p scanout アンダーフロー解消。
-8. **ブロック別パイプライン化**: SU → TU → ROP … の順に各ブロックの乗算・演算器遅延を LAT=3 に合わせてパイプライン化し、タイミングを収束。
+7. **[ws001-p007](ws001/phase007/phase.md)**: GHCI 2.0 スリム MMIO 化 & 構造化ディスクリプタ・コマンドアーキテクチャの刷新（19 レジスタスリム MMIO、インメモリ PSO/ディスクリプタ、`CMD_BIND_PIPELINE`/`CMD_DRAW`、UMA セカンダリコマンドフェッチ）。
+8. **DC の 200 MHz クロック領域分離**: SYSCLK 直結による 720p scanout アンダーフロー解消。
+9. **ブロック別パイプライン化**: SU → TU → ROP … の順に各ブロックの乗算・演算器遅延を LAT=3 に合わせてパイプライン化し、タイミングを収束。
