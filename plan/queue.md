@@ -19,8 +19,8 @@
 | `q001-i05` | **P2 / R1** | [ws001-p008](ws001/phase008/phase.md) | FP 演算ライブラリ再編 & 統合 FPU コア（am_fpu_core）実装（Step 1-4 完了、R1 承認済） | cleared | `q001-i04` | i2f/f2fix/fdiv ライブラリ化・am_fpu_core 実装・atg_su_fpu 置換完了。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i06` | **P1** | [ws001-p003](ws001/phase003/phase.md) | 共有 L2 キャッシュ（LLC: 256 KiB、16-way）導入 & キャッシュコヒーレンシ再構築 | in-progress | `q001-i03` | ユーザー承認（「推奨で行きます」）に基づき着手。MC 前段に LLC を導入中。 |
 | `q001-i07` | **P2 / R1 / T1** | [ws001-p004](ws001/phase004/phase.md) | IOMMU 連携 & CP 自律型 MMU（Hardware Walker + 隠蔽 TLB）仕様策定・アーキテクチャ設計・RTL 実装 | cleared | `q001-i05` | 実装完了。R1 敵対的レビュー APPROVE 承認完了、T1 フル回帰 ALL PASS 完了。 |
-| `q001-i08` | **P2** | [ws001-p009](ws001/phase009/phase.md) | 算術演算ライブラリ（am_shift Bit Reversal 1本化、am_div 非回復法化）の物理最適化 | in-progress | `q001-i02` | ユーザー承認（「アサインは推奨でいい」）に基づき P2 が着手。 |
-| `q001-i09` | **P1〜P8 待機** | [ws001-p014](ws001/phase014/phase.md) | 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減、遅延 75% 削減） | queued | `q001-i01` | ユーザー承認（2026-10-26）に基づきスケジュール。即時着手可能。 |
+| `q001-i08` | **P2** | [ws001-p009](ws001/phase009/phase.md) | 算術演算ライブラリ（am_shift Bit Reversal 1本化、am_div 非回復法化）の物理最適化 | cleared | `q001-i02` | 実装完了（commit 0b683e9）。T1/R1 レビュー・検証中。 |
+| `q001-i09` | **P2** | [ws001-p014](ws001/phase014/phase.md) | 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減、遅延 75% 削減） | in-progress | `q001-i01` | 非同期フローに基づき P2 が着手。1段 div255 & Lerp 乗算半減。 |
 | `q001-i10` | **P1〜P8 待機** | [ws001-p015](ws001/phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle 100倍高速化） | queued | `q001-i09` | ユーザー承認に基づきスケジュール。4段ストリームパイプライン。 |
 | `q001-i11` | **P1〜P8 待機** | [ws001-p016](ws001/phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | queued | `q001-i10` | ユーザー承認に基づきスケジュール。フィルレート 20〜50 倍向上。 |
 | `q001-i12` | **P1〜P8 待機** | [ws001-p017](ws001/phase017/phase.md) | ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消（8KB Color/Depth） | queued | `q001-i11`, `q001-i06` | ユーザー承認に基づきスケジュール。DRAM トラフィック 70〜80% 削減。 |
@@ -47,7 +47,7 @@
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
 | **P1** | 実装 | Claude Opus 5.5 Medium | active | `q001-i06`: `ws001-p003` 共有 L2 キャッシュ（LLC）設計・実装 | T1 テスト・R1 レビュー |
-| **P2** | 設計・実装 | Claude Opus 5.5 Medium | active | `q001-i08`: `ws001-p009` 算術演算ライブラリ物理最適化（右シフタ1本化・除算器） | `q001-i09`: `ws001-p014` |
+| **P2** | 設計・実装 | Claude Opus 5.5 Medium | active | `q001-i09`: `ws001-p014` 8-bit 高速ブレンド & div255 1段化（Lerp 最適化） | `q001-i10`: `ws001-p015` |
 | **P3〜P8** | 実装 | Claude Opus 5.5 Medium | unassigned | — | $N=3$ 拡張時に `q001-i09` を割り当て可能 |
 | **T1** | テスト | 標準 / Flash | active | Phase 004 MMU 検証完了（全 14 本 PASS） | L2 キャッシュ検証待機 |
 | **R1** | レビュー | Gemini 4 Argon Medium | active | Phase 001/002/004/008 APPROVE 承認完了 | L2 キャッシュ成果物レビュー待機 |
