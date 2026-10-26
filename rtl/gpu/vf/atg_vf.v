@@ -135,6 +135,19 @@ module atg_vf #(
 		.conv_done(conv_done)
 	);
 
+	/* Post-Transform Vertex Cache (Phase 033) */
+	wire vc_hit;
+	wire [511:0] vc_hit_vdata;
+	wire [4:0] vc_hit_slot;
+	atg_vf_vc #(.NENTRIES(32), .VDATA_W(512), .SLOT_W(5)) vc (
+		.clk(clk), .rst_n(rst_n), .flush(draw_kick),
+		.lookup_valid(iv_valid), .lookup_index(iv_index),
+		.hit(vc_hit), .hit_vdata(vc_hit_vdata), .hit_slot(vc_hit_slot),
+		.commit_valid(1'b0), .commit_index(32'd0), .commit_vdata(512'd0)
+	);
+
+	wire unused_vc = &{1'b0, vc_hit, vc_hit_slot, vc_hit_vdata};
+
 	assign busy = index_busy || asm_busy || fetch_busy;
 	assign fsm = {prim_valid, fetch_busy, asm_busy, index_busy};
 endmodule

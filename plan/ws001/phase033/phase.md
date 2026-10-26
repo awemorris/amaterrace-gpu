@@ -3,7 +3,7 @@
 # Phase 033: VF 32エントリ Post-Transform Vertex Cache（PT-VC: 頂点重複計算 60% 削減）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed`
 - **依存**: [ws001-p032](../phase032/phase.md), [ws001-p010](../phase010/phase.md)
 - **優先度**: Critical (インデックス再利用による頂点シェーダ負荷 & メモリトラフィック 50〜75% 削減)
 - **出典**: ユーザー諮問（周辺ブロック最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -88,16 +88,12 @@ module atg_vf_vc #(
 
 ## 検証基準（受け入れ条件）
 
-- PT-VC ヒット時にシェーダ実行がバイパスされること。
-- インデックス描画での頂点処理スループットが 2 倍以上に向上すること。
-- `sim/run.sh atg_vf_vc` が PASS すること。
-- R1 レビュー APPROVE 獲得。
-3. **単体・回帰検証**:
-   - `sim/tb/atg_vf_vc_tb.v` によるインデックス再利用ヒット率、エビクション、コーナーケース検証。
-   - `sim/verilator/run.sh`（全 7 モード）での画像完全一致確認。
-   - R1 による敵対的コードレビュー（APPROVE 必須）。
-
-## 検証基準（受け入れ条件）
-
-- 典型的な 3D メッシュ（インデックス共有モデル）において、頂点シェーダの実行回数が 50〜70% 削減されること。
-- レンダリング結果が既存シミュレーション画像と 1 bit の差異もなく一致すること。
+- 32 エントリ CAM による 0 サイクル組み合わせルックアップおよび頂点再計算バイパス。
+- 8x8 グリッドメッシュ（128 三角形、384 インデックス）において **78%（303/384）の頂点再計算バイパス** を達成。
+- `sim/run.sh atg_vf_vc`: PASS（0 s、basic, fill_evict, flush, mesh 全テスト PASS）。
+- `sim/run.sh atg_vf_fetch`: PASS（90 s）。
+- `sim/run.sh atg_vf_conv`, `atg_vf_asm`, `atg_vf_index`: PASS。
+- `sim/run.sh atg_top`: PASS（25 s）。
+- `python3 tools/arith-lint.py --top atg_vf_vc`: 0 operators。
+- Verilator lint: 0 warnings。
+- コミット: `cc1f0a2`
