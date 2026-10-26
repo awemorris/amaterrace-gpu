@@ -3,7 +3,7 @@
 # Phase 014: 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `in-progress` (T1 回帰テスト REJECT: atg_rop_blend 失敗による差し戻し修正中)
+- **状態**: `completed` (2026-10-26 是正修正完了・R1敵対的再審査APPROVE)
 - **依存**: [ws001-p001](../phase001/phase.md)
 - **優先度**: Critical (ROP クリティカルパス遅延 75% 削減 & 乗算器 50% 削減)
 - **出典**: ユーザー諮問（ROP ブレンド高速化）および R1 敵対的アーキテクチャ分析レポート
@@ -56,3 +56,11 @@
    - 不具合 1: `atg_rop_div255.v` が 16 ビット入力（$x \le 65,025$）に制限され、ブレンド加算値 $p + q = S \times F_s + D \times F_d \le 130,050$（18 ビット）の上位 2 ビット `x[17:16]` を破棄してオーバーフロー発生。
    - 不具合 2: `atg_rop_blend.v` の Lerp 変換により任意ブレンドモード（$F_s, F_d \ne \alpha$）で一方の係数乗算が欠落。
    - 対応: `atg_rop_blend.v` は各チャンネル 2 乗算器（計 32 乗算器）構成を堅持し、`atg_rop_div255.v` は 18 ビット入力（$x \le 130,050$）を正しく丸め除算するよう修正。
+
+5. **是正実装 & 再レビュー承認（R1 APPROVE: 2026-10-26）**:
+   - `atg_rop_div255.v`: 18-bit 2 段加算器アーキテクチャに刷新。$y = x + 128 \implies q = (y + (y \gg 8) + y[16]) \gg 8$ により、0..130,050 全 130,051 値で厳密な数学的丸め除算と 100% 完全一致（誤差 0）。
+   - `atg_rop_blend.v`: 32 基の乗算器を維持し、全 15 係数モードおよび全ブレンド演算で完全互換。
+   - `sim/run.sh atg_rop_div255`: **PASS** (1 s)
+   - `sim/run.sh atg_rop_blend`: **PASS** (11 s, 全 1600 quads / 1946 テストケース通過)
+   - `python3 tools/arith-lint.py`: **PASS** (0 operators)
+   - R1 敵対的再審査: **APPROVE**（`adversarial_review_ws001_p014_p015_rop_blend.md`）。18-bit 領域の数学的証明と全 32 乗算器の互換性を承認。

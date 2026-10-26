@@ -3,7 +3,7 @@
 # Phase 015: fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・1 beat/cycle達成)
 - **依存**: [ws001-p014](../phase014/phase.md)
 - **優先度**: Critical (sRGB / HDR レンダリングスループット 100 倍向上)
 - **出典**: ユーザー諮問（ROP ブレンド高速化）および R1 敵対的アーキテクチャ分析レポート
@@ -107,3 +107,20 @@ module atg_rop_fblend #(
 
 - `atg_rop_fblend` が 1 beat/cycle のスループットで連続入力可能であること。
 - sRGB / SFLOAT / UNORM10 フォーマットのブレンド結果が仕様と完全一致すること。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **RTL パイプライン化実装**:
+   - `rtl/gpu/rop/atg_rop_fblend.v`: 12 状態逐次 FSM（最大 638 サイクル/beat）を解体し、5 段完全ストリームパイプラインに刷新（定常時 1 beat/cycle、レイテンシ 5 サイクル）。
+   - 構成: Stage 1（Unpack/Clamp: 16基 `atg_fmt_comp`）$\to$ Stage 2（係数生成 & $1.0 - x$）$\to$ Stage 3A（FP乗算: 32基 `am_fp_mul`）$\to$ Stage 3B（FP加減算: 16基 `am_fp_add`）$\to$ Stage 4（Encode/Pack: `srgb_encode_comb`）$\to$ Stage 5（Handshake & `pipe_stall`）。
+   - `spec/gpu/rop/atg_rop_fblend.md`: 仕様書更新。
+   - `sim/tb/atg_rop_fblend_tb.v`: 16-beat 連続バーストストリーミングテスト新設。
+2. **検証結果**:
+   - `sim/run.sh atg_rop_fblend`: **PASS** (20 s; ops, srgb, 16-beat burst 全通過)
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+   - `tools/lint.sh`: 全モジュール Clean（0 warnings）
+   - `sim/verilator/run.sh`: 全 7 シーン **PASS**（core シーン実行サイクル数 854,736 $\to$ 816,552 へ約 3.8 万サイクル短縮達成）。
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p014_p015_rop_blend.md`）。5 段ストリーム化（1 beat/cycle スループット）、`pipe_stall` バックプレッシャー制御、Guardrails 完全準拠を承認。
