@@ -85,6 +85,11 @@ module atg_cp #(
 	input wire [16:0] reg_raddr,
 	output wire [31:0] reg_rdata,
 
+	/* Diagnostics (0x074, 0x078, 0x07C) */
+	input wire [31:0] diag_cp_pc,
+	input wire [31:0] diag_cp_status,
+	input wire [31:0] diag_pipe_fsm,
+
 	output wire irq,
 	input wire mem_ready,
 
@@ -282,7 +287,8 @@ module atg_cp #(
 		.ctl_rdata(s_ctl_rdata), .irq_rdata(s_irq_rdata), .ring_rdata(s_ring_rdata),
 		.fence_rdata(s_fence_rdata), .dbg_rdata(s_dbg_rdata), .state_rdata(s_state_rdata),
 		.x_rdata(x_rdata | s_fmt_rdata | s_disp_rdata), .perf_busy({2'd0, !mc_idle, blt_busy}),
-		.perf_reset(s_perf_reset), .win_en(win_en)
+		.perf_reset(s_perf_reset), .win_en(win_en),
+		.diag_cp_pc(diag_cp_pc), .diag_cp_status(diag_cp_status), .diag_pipe_fsm(diag_pipe_fsm)
 	);
 
 	/* The FMT capability (id 10) at 0x160. */

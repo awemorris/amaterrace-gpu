@@ -138,6 +138,7 @@ module atg_mc #(
 	output reg fault_mem,	/* a protection table read had an AXI error (kind 5) */
 	output wire chk_idle,
 	output wire unit_idle,
+	output wire [3:0] fsm,
 
 	/* Session protection, from the CP. */
 	input wire [ADDR_W-1:0] prot_tbase,
@@ -401,6 +402,7 @@ module atg_mc #(
 		.m_rresp(m_rresp), .m_rlast(m_rlast), .m_rvalid(m_rvalid), .m_rready(m_rready)
 	);
 
+	assign fsm = {!m_idle, !axi_idle, !chk_idle, !unit_idle};
 	wire unused_ok = &{1'b0, bad_head, s_req_valid};
 endmodule
 

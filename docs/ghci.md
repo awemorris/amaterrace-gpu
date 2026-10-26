@@ -197,6 +197,51 @@ commands.
 | 0x044 | DIAG_CP_STATUS | R | CP internal FSM state and in-flight draw counter (debug) |
 | 0x048 | SCRATCH | RW | 32-bit scratchpad register for host bring-up and liveness tests |
 
+### 3.1.1 GHCI 1.1 Active Register Map (Hardware Bring-up & Compatibility)
+
+For current hardware bring-up and legacy firmware compatibility, the physical hardware decodes the following 128 KiB register aperture:
+
+| Offset | Name | Access | Contents |
+| --- | --- | --- | --- |
+| 0x000 | GHCI_MAGIC | R | `0x47484349` ("GHCI") |
+| 0x004 | GHCI_VERSION | R | [31:16] major (1), [15:0] minor (1) |
+| 0x008 | VENDOR_ID | R | FourCC of the vendor |
+| 0x00C | DEVICE_ID | R | FourCC of the device |
+| 0x010 | ISA_ID | R | FourCC of the native shader ISA ("GSI1" when the GPU runs GSI1 natively); 0 = no shader unit (section 12) |
+| 0x014 | DEVICE_VERSION | R | The vendor's implementation version: [31:16] major, [15:0] minor |
+| 0x018 | EXTCAP | R | Byte offset of the first extended capability; 0 = none (section 4) |
+| 0x01C | GCLK_HZ | R | Core clock in Hz; the driver converts cycle counts with it |
+| 0x020 | CAPS | R | Capabilities (section 3.2) |
+| 0x024 | CAPS2 | R | Sizes (section 3.2) |
+| 0x028 | SCRATCH | RW | 32 bits for the driver (bring-up, liveness) |
+| 0x02C | COUNTER | R | Free-running core clock count |
+| 0x030 | CTRL | RW | [0] RUN, [1] RESET (W1S; falls when the reset is done), [2] HALT, [3] STEP, [4] WDT_EN |
+| 0x034 | STATUS | R | Status (section 3.3) |
+| 0x038 | IRQ_STATUS | R/W1C | [0] FENCE, [1] FAULT, [2] RING_EMPTY, [3] WATCHDOG, [4] DBG_DONE, [5] SOFT, [6] HALTED, [7] RESULT, [8] RETIRE, [9] VBLANK, [10] FLIP, [11] DISP_ERROR, [12] HOTPLUG |
+| 0x03C | IRQ_ENABLE | RW | [12:0]: the same bits |
+| 0x040 | IRQ_SET | W1S | [5] sets IRQ_STATUS.SOFT |
+| 0x044 | WDT_CYCLES | RW | Watchdog limit for one command, in core cycles (reset value 2^28) |
+| 0x04C | RESIDENT_WARPS | R | [15:0] warps GPU runs at once, [23:16] registers per lane |
+| 0x050 | RING_BASE | RW | GPU address of the ring, 32-byte aligned |
+| 0x054 | RING_SIZE | RW | log2 of the ring's size in bytes, 10..20 |
+| 0x058 | RING_WPTR | RW | Write pointer, dword index in the ring; writing it rings doorbell |
+| 0x05C | RING_RPTR | R | Read pointer: dword index up to which CP parsed commands |
+| 0x060 | APERTURE_BASE | RW | First GPU address the GPU may access |
+| 0x064 | APERTURE_LIMIT | RW | End of that range (exclusive) |
+| 0x068 | FAULT_ADDR | R | Address of the first fault since last reset |
+| 0x06C | FAULT_INFO | R | The first fault details |
+| 0x070 | FENCE_LAST | RW | Last fence value written |
+| 0x074 | GHCI_CP_PC | R | (GHCI 1.1) Current PC of the CP firmware processor (atg_cpu); 0 if no CPU |
+| 0x078 | GHCI_CP_STATUS | R | (GHCI 1.1) Status of CP firmware: [7:0] fw_state, [15:8] mcause, [16] in_irq, [17] faulted |
+| 0x07C | GHCI_PIPE_FSM | R | (GHCI 1.1) Pipeline FSM states: [3:0] VF, [7:4] RX, [11:8] ROP, [15:12] SU0, [19:16] MC, [23:20] BLT, [31:24] unit busy flags |
+| 0x080..0x08C | PERF0..PERF3 | R | Busy-cycle counters |
+| 0x090 | PERF_CTRL | RW | [0] clears PERF0..3 (W1S) |
+| 0x0A0 | DBG_ADDR | RW | Debug port address |
+| 0x0A4 | DBG_DATA | RW | Debug port data |
+| 0x0A8 | DBG_STATUS | R | Debug port status |
+| 0x0F00 | KICK | W | [0] BLIT, [1] DRAW, [2] DISPATCH |
+| 0x1000..0x17FC | STATE[0..511] | RW | Legacy state register file (section 8) |
+
 ### 3.2 DEVICE_CAPS (0x008)
 
 | Bits | Name | Meaning |
@@ -464,7 +509,7 @@ Binds one or more contiguous vertex attribute stream buffers.
 
 - `dword 0`: Header (`opcode = 0x21`, `dwords = 2 + 4 * binding_count`)
 - `dword 1`: `[15:0] first_binding`, `[31:16] binding_count`
-- For each binding $i \in [0, 	ext{binding\_count}-1]$ (4 dwords each):
+- For each binding $i \in [0, \text{binding\_count}-1]$ (4 dwords each):
   - `dword 2 + 4*i`: `buffer_va[31:0]`
   - `dword 3 + 4*i`: `buffer_va[63:32]`
   - `dword 4 + 4*i`: `size_bytes`
@@ -566,6 +611,31 @@ Emits a 64-bit sequence counter to memory upon completion of all earlier work.
 - `dword 2`: `fence_addr_hi`
 - `dword 3`: `fence_seq_lo`
 - `dword 4`: `[15:0] fence_seq_hi`, `[31:16] flags` (`[16]` 1 = raise `IRQ_FENCE` interrupt)
+
+### 7.5 Legacy Class 2 Gpu-ops & GHCI 1.1 INIT / Diagnostics
+
+For backward compatibility with existing hardware firmware (e.g. `fw/cp/` on Kintex-7 KC705):
+- A GPU without firmware (`CAPS[17] = 0`) faults with kind 2.
+- While the firmware works on a class 2 packet, the CP takes no other packet.
+- The GHCI gpu-ops (`0x10100`-`0x1010C`): `SESSION_OPEN`, `SESSION_CLOSE`, `MEMORY`, `PROGRAM`, `NATIVE`, `FRAME`, `BUFFER_GRANT`, `BUFFER_REVOKE`, `HEAP`, and `INIT` and the diagnostics `DIAG_ECHO`, `DIAG_WRITE` and `DIAG_SUM`.
+- **HEAP** (`0x10108`) `[u64 GPU address][u64 bytes][u32 warps]`: the range of GPU memory the driver lends the firmware for its objects and the recordings of the command buffers.
+- **MEMORY** (`0x10102`) `[u64 memory][u64 GPU address][u64 bytes][u32 flags]`: the session's memory object.
+
+#### GHCI 1.1 Mandatory INIT Handshake & Diagnostics
+`INIT` is the driver's bidirectional handshake with the firmware; the diagnostics check the paths a packet uses one at a time: CP reads of the ring in host memory, firmware reads/writes of host memory, and reads/writes of local memory.
+
+- They answer with a **reply** of 16 words at `dword 3` (8-byte aligned, inside the aperture), written only when `dword 2` has `RESULT`: word 0 the `VkResult`, word 1 the aux, words 2-15 as the gpu-op says.
+- They change nothing in firmware state (heap, sessions, objects).
+
+| Gpu-op | Arguments | Reply |
+| --- | --- | --- |
+| **INIT** (`0x10109`) | `[u32 token][u32 protocol]` | 1: token; 2: ~token; 3: firmware version (`CPFW_VERSION`); 4: protocol (`0x00010001`); 5: features; 6: line bytes; 7: sessions; 8: GPU address; 9: build commit hash prefix |
+| **DIAG_ECHO** (`0x1010A`) | `[u32 count][count words]`, count <= 14 | 1: count; 2 to count + 1: the words |
+| **DIAG_WRITE** (`0x1010B`) | `[u64 address][u32 bytes][u32 pattern][u32 step]` | 1: bytes written |
+| **DIAG_SUM** (`0x1010C`) | `[u64 address][u32 bytes]` | 1: bytes read; 2: sum of words $w(i)$; 3: sum of $(i + 1) \times w(i)$; 4-7: $w(0..3)$; 8: last word |
+
+- **INIT Protocol**: The driver sends `INIT` after every firmware start (`RUN`, `RESET`), before `HEAP`, with a new token each time. The driver considers the firmware initialized only when reply word 0 is `VK_SUCCESS`, word 1 matches token, word 2 matches ~token, and word 9 matches the expected git commit hash.
+- **GHCI_FRAME**: Legacy submissions may use `GHCI_FRAME` (`0x10105`, [`include/ghci_frame.h`](../include/ghci_frame.h)).
 
 8. In-Memory Pipeline State and Descriptors
 ------------------------------------------
@@ -1839,25 +1909,29 @@ Nothing else changes.
   commands.
 - A driver checks GHCI_MAGIC and the major version before anything else,
   and accepts only the major versions it knows.
+- **1.1**: Added host diagnostic MMIO registers (`GHCI_CP_PC` at 0x074,
+  `GHCI_CP_STATUS` at 0x078, `GHCI_PIPE_FSM` at 0x07C), standardized the
+  bidirectional INIT handshake with commit hash in reply word 9 (`ghci_init_ack.commit_hash`),
+  and enhanced diagnostic dumps.
 
 Appendix A. Driver initialization (informative)
 -----------------------------------------------
 
 A typical start, following the rules above:
 
-1. Read GHCI_MAGIC and GHCI_VERSION; stop unless the major version is
-   supported (section 16).
-2. Read DEVICE_CAPS and walk the extended capability list (section 4).
-3. If STATUS.FAULT is asserted, write CTRL.RESET and wait for it to clear. Wait
-   for STATUS.READY.
-4. Allocate the command ring and fence memory in host or shared memory
-   (section 11.3). Write RING_BASE_LO, RING_BASE_HI, and RING_SIZE.
+1. Read `GHCI_MAGIC` and `GHCI_VERSION`; stop unless the major version is
+   supported (section 16). For minor >= 1 (GHCI 1.1+), the driver may read diagnostic
+   registers (`CP_PC`, `CP_STATUS`, `PIPE_FSM`).
+2. Read capabilities (`DEVICE_CAPS` in GHCI 2.0, or `VENDOR_ID`, `DEVICE_ID`, `CAPS`, `CAPS2` in GHCI 1.1) and walk extended capabilities (section 4).
+3. If `STATUS.FAULT` is asserted, write `CTRL.RESET` and wait for it to clear. Wait for `STATUS.READY` / `STATUS.MEM_READY`.
+4. Allocate command ring and fence memory in host or shared memory (section 11.3). Set ring base and size registers.
 5. Initialize fence memory with starting sequence values.
-6. Clear IRQ_STATUS (write 1 to clear), set IRQ_ENABLE (at least
-   IRQ_FENCE and IRQ_FAULT), and set CTRL.IRQ_GLOBAL. Set CTRL.RUN = 1.
-7. Submit: record command packets, ensure memory visibility (section 6.3),
-   and write the new ring byte offset to RING_WPTR (the Doorbell). End each
-   frame submission with a `CMD_FENCE`.
+6. Clear `IRQ_STATUS` (write 1 to clear), set `IRQ_ENABLE` (at least `IRQ_FENCE` and `IRQ_FAULT`), and set `CTRL.RUN = 1`.
+7. **Bidirectional INIT Handshake (Mandatory in GHCI 1.1+)**:
+   Submit an `INIT` packet with a unique non-zero token before submitting workload commands. Wait for reply and validate that reply word 0 is `VK_SUCCESS`, word 1 matches token, word 2 matches ~token, and word 9 matches the expected firmware commit hash.
+8. Submit workloads: record command packets, ensure memory visibility (section 6.3), and write the new ring offset to `RING_WPTR` (Doorbell). End each submission with a `CMD_FENCE`.
 
-On a fault: log FAULT_INFO, reset, rebuild the ring and the fence memory,
-and complete the outstanding fences with an error (section 10).
+On a fault or timeout: read and log `STATUS`, `FAULT_INFO`, `FAULT_ADDR`, and
+the diagnostic dump registers (`CP_PC` at 0x074, `CP_STATUS` at 0x078, and
+`PIPE_FSM` at 0x07C). Reset via `CTRL.RESET`, rebuild the ring and the fence
+memory, and complete outstanding fences with an error (section 10).

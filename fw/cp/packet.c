@@ -66,6 +66,13 @@ fw_packet_run(
 		command.tag = tag;
 		command.reader = &packet;
 		command.in_frame = 0;
+
+		/* INIT and the diagnostics write their reply where the packet's result goes. */
+		command.reply = 0;
+		if ((flags & GHCI_V_RESULT) != 0)
+			command.reply = result;
+
+		/* Carries the command out. */
 		fw_command_decode(&command);
 		status = command.status;
 		aux = command.aux;
@@ -142,6 +149,7 @@ packet_frame(
 		command.tag = tag;
 		command.reader = &frame;
 		command.in_frame = 1;
+		command.reply = 0;
 		fw_command_decode(&command);
 
 		/* Its result record, at once (the driver reads them after RESULT). */

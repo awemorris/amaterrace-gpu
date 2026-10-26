@@ -26,6 +26,7 @@ module atg_rx #(
 	input wire [31:0] st_wdata,
 	input wire raw_kick,
 	output wire busy,
+	output wire [3:0] fsm,
 	/* Primitives to the RX */
 	input wire prim_valid,
 	output wire prim_ready,
@@ -134,6 +135,7 @@ module atg_rx #(
 	);
 
 	assign busy = clip_busy || setup_busy || scan_busy || frag_busy;
+	assign fsm = {frag_busy, scan_busy, setup_busy, clip_busy};
 endmodule
 
 `default_nettype wire

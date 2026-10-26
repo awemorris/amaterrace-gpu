@@ -61,7 +61,9 @@ module atg_cpu_fw (
 	input wire open,
 	/* Fault (to atg_cp_ctl, source 5) */
 	output reg fault,
-	output reg [31:0] fault_addr
+	output reg [31:0] fault_addr,
+	/* State (to diagnostics) */
+	output wire [7:0] fw_curr_state
 );
 `include "ghci_regs.vh"
 
@@ -101,6 +103,7 @@ module atg_cpu_fw (
 
 	assign core_rst_n = !loading && !held;
 	assign core_run = run && !(park && halting);
+	assign fw_curr_state = fw_state;
 
 	wire [31:0] status = {16'd0, fw_state, 3'd0, loading, core_stopped || !core_rst_n,
 		alive, fault_st, ready};

@@ -73,7 +73,8 @@ module regs_bench #(
 		.alias_ridx(alias_ridx),
 		.ctl_rdata(ctl_rdata), .irq_rdata(32'd0), .ring_rdata(32'd0), .fence_rdata(32'd0),
 		.dbg_rdata(32'd0), .state_rdata(state_rdata), .x_rdata(fmt_rdata),
-		.perf_busy(perf_busy), .perf_reset(perf_reset), .win_en(win_en)
+		.perf_busy(perf_busy), .perf_reset(perf_reset), .win_en(win_en),
+		.diag_cp_pc(32'd0), .diag_cp_status(32'd0), .diag_pipe_fsm(32'd0)
 	);
 endmodule
 
@@ -219,7 +220,7 @@ module atg_cp_regs_tb;
 		rst_n = 1;
 		/* id */
 		expect0("id", GHCI_MAGIC, GHCI_MAGIC_VALUE);
-		expect0("id", GHCI_VERSION, 32'h00010000);
+		expect0("id", GHCI_VERSION, 32'h00010001);
 		expect0("id", GHCI_VENDOR_ID, 32'h56454E44);
 		expect0("id", GHCI_DEVICE_ID, 32'h44455631);
 		expect0("id", GHCI_ISA_ID, 32'h49534131);

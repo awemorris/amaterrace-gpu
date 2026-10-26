@@ -43,6 +43,7 @@ module atg_blt #(
 
 	input wire kick,
 	output wire busy,
+	output wire [3:0] fsm,
 	output wire done,
 	output wire error,
 	output wire [3:0] error_kind,
@@ -84,6 +85,7 @@ module atg_blt #(
 
 	/* The 2D engine. */
 	wire d_busy;
+	wire [3:0] d_fsm;
 	wire d_done;
 	wire d_error;
 	wire [3:0] d_kind;
@@ -106,6 +108,7 @@ module atg_blt #(
 		.st_wdata(st_wdata),
 		.kick(kick && !op2),
 		.busy(d_busy),
+		.fsm(d_fsm),
 		.done(d_done),
 		.error(d_error),
 		.error_kind(d_kind),
@@ -197,6 +200,7 @@ module atg_blt #(
 	assign req_be = own ? r_req_be : d_req_be;
 	assign req_wdata = own ? r_req_wdata : d_req_wdata;
 	assign req_tag = own ? r_req_tag : d_req_tag;
+	assign fsm = d_fsm;
 endmodule
 
 `default_nettype wire

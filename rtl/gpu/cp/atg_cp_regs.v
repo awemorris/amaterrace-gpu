@@ -90,7 +90,11 @@ module atg_cp_regs #(
 	input wire [3:0] perf_busy,
 	input wire perf_reset,
 	/* MEM: WINDOW_CTRL.ENABLE, the local window is open (to the board's window path) */
-	output wire win_en
+	output wire win_en,
+	/* Diagnostics (0x074, 0x078, 0x07C) */
+	input wire [31:0] diag_cp_pc,
+	input wire [31:0] diag_cp_status,
+	input wire [31:0] diag_pipe_fsm
 );
 	`include "ghci_regs.vh"
 
@@ -257,6 +261,9 @@ module atg_cp_regs #(
 		A_WINDOW_SIZE: if (XCAP_MASK[7]) own = WINDOW_BYTES;
 		A_HOST_LIMIT: if (XCAP_MASK[7]) own = HOST_LIMIT;
 		A_WINDOW_CTRL: if (XCAP_MASK[7]) own = {31'd0, win_q};
+		GHCI_CP_PC[11:0]: own = diag_cp_pc;
+		GHCI_CP_STATUS[11:0]: own = diag_cp_status;
+		GHCI_PIPE_FSM[11:0]: own = diag_pipe_fsm;
 		default: ;
 		endcase
 		if (roff[11:5] == 7'h06)	/* VEND 0x0C0-0x0DF */

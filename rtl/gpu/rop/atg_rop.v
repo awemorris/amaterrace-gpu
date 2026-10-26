@@ -33,6 +33,7 @@ module atg_rop #(
 	input wire [8:0] st_idx,
 	input wire [31:0] st_wdata,
 	output wire busy,
+	output wire [3:0] fsm,
 	/* Fragment output of SU 0 (atg_su ex_*) */
 	input wire ex_valid,
 	output wire ex_ready,
@@ -184,6 +185,7 @@ module atg_rop #(
 	);
 
 	assign busy = order_busy || ms_busy || ds_busy || wb_busy;
+	assign fsm = {wb_busy, ms_busy, ds_busy, order_busy};
 endmodule
 
 `default_nettype wire

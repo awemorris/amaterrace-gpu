@@ -78,6 +78,59 @@
  */
 #define GHCI_GPU_OP_HEAP 0x10108u
 
+/*
+ * INIT and the diagnostics (draft, docs/ghci.md section 7.2), packets in
+ * the ring only, each answered with a reply of GHCI_REPLY_WORDS words at
+ * dword3 (with GHCI_V_RESULT): word 0 the VkResult, word 1 the aux, the
+ * words the gpu-op does not name 0.
+ *   INIT        [u32 token][u32 protocol]
+ *   DIAG_ECHO   [u32 count][count words]
+ *   DIAG_WRITE  [u64 address][u32 bytes][u32 pattern][u32 step]
+ *   DIAG_SUM    [u64 address][u32 bytes]
+ */
+#define GHCI_GPU_OP_INIT 0x10109u
+#define GHCI_GPU_OP_DIAG_ECHO 0x1010Au
+#define GHCI_GPU_OP_DIAG_WRITE 0x1010Bu
+#define GHCI_GPU_OP_DIAG_SUM 0x1010Cu
+
+/* The words of a reply, and the protocol of INIT ([31:16] major, [15:0] minor). */
+#define GHCI_REPLY_WORDS 16u
+#define GHCI_INIT_PROTOCOL 0x00010000u
+
+/* INIT's reply: the words after the VkResult and the aux (the token). */
+#define GHCI_INIT_NOT_TOKEN 2u
+#define GHCI_INIT_VERSION 3u
+#define GHCI_INIT_PROTOCOL_WORD 4u
+#define GHCI_INIT_FEATURES 5u
+#define GHCI_INIT_LINE 6u
+#define GHCI_INIT_SESSIONS 7u
+#define GHCI_INIT_PACKET 8u
+#define GHCI_INIT_COMMIT_HASH 9u
+
+/* Bidirectional INIT handshake acknowledgement struct (4 words). */
+struct ghci_init_ack {
+	uint32_t seq_no;
+	uint32_t fw_version;
+	uint32_t fw_commit_hash;
+	uint32_t negotiated_features;
+};
+
+/* INIT's features. */
+#define GHCI_INIT_F_DIAG 0x1u	/* DIAG_ECHO, DIAG_WRITE, DIAG_SUM */
+#define GHCI_INIT_F_VULKAN 0x2u	/* HEAP and the sessions' Vulkan objects */
+#define GHCI_INIT_F_PROT 0x4u	/* session protection */
+#define GHCI_INIT_F_HEAP 0x8u	/* a heap is lent */
+
+/* DIAG_ECHO's most words; DIAG_WRITE's and DIAG_SUM's most bytes. */
+#define GHCI_DIAG_ECHO_WORDS 14u
+#define GHCI_DIAG_BYTES_MAX 0x100000u
+
+/* DIAG_SUM's reply: the sums, the first words, the last word. */
+#define GHCI_DIAG_SUM_PLAIN 2u
+#define GHCI_DIAG_SUM_WEIGHTED 3u
+#define GHCI_DIAG_SUM_FIRST 4u
+#define GHCI_DIAG_SUM_LAST 8u
+
 /* The Vulkan gpu-ops the Amaterrace firmware decodes (zedBSD gpu-op.h). */
 #define GHCI_VK_DESTROY_DEVICE 12u
 #define GHCI_VK_QUEUE_SUBMIT 18u

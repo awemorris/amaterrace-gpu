@@ -80,8 +80,16 @@ module atg_cpu #(
 	input wire rsp_write,
 	input wire [7:0] rsp_tag,
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
-	input wire rsp_error
+	input wire rsp_error,
+	/* Diagnostics */
+	output wire [31:0] diag_cp_pc,
+	output wire [31:0] diag_cp_status
 );
+	/* Diagnostics wires */
+	wire [31:0] core_curr_pc, core_curr_mepc;
+	wire [3:0] core_curr_mcause;
+	wire core_curr_in_irq, core_curr_faulted;
+	wire [7:0] fw_curr_state;
 	/* Core. */
 	wire fw_core_rst_n, core_run, core_stopped, core_irq;
 	wire core_fault;
@@ -113,7 +121,9 @@ module atg_cpu #(
 		.i_en(i_en), .i_addr(i_addr), .i_rdata(i_rdata),
 		.d_valid(d_valid), .d_write(d_write), .d_addr(d_addr), .d_wdata(d_wdata),
 		.d_be(d_be), .d_ready(d_ready), .d_rdata(d_rdata),
-		.fault(core_fault), .fault_pc(core_fault_pc)
+		.fault(core_fault), .fault_pc(core_fault_pc),
+		.curr_pc(core_curr_pc), .curr_mcause(core_curr_mcause), .curr_mepc(core_curr_mepc),
+		.curr_in_irq(core_curr_in_irq), .curr_faulted(core_curr_faulted)
 	);
 
 	atg_cpu_mem #(
@@ -166,8 +176,13 @@ module atg_cpu #(
 		.ld_done(ld_done), .ld_error(ld_error),
 		.core_rst_n(fw_core_rst_n), .core_run(core_run), .core_stopped(core_stopped),
 		.core_fault(core_fault), .core_fault_pc(core_fault_pc),
-		.halt_req(halt_req), .open(open), .fault(fault), .fault_addr(fault_addr)
+		.halt_req(halt_req), .open(open), .fault(fault), .fault_addr(fault_addr),
+		.fw_curr_state(fw_curr_state)
 	);
+
+	assign diag_cp_pc = core_curr_pc;
+	assign diag_cp_status = {core_curr_mepc[17:2], fw_curr_state, core_run, core_curr_in_irq, core_stopped, core_curr_faulted, core_curr_mcause};
+	wire _unused_mepc = &{1'b0, core_curr_mepc[31:18], core_curr_mepc[1:0]};
 endmodule
 
 `default_nettype wire

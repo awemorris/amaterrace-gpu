@@ -53,7 +53,13 @@ module atg_cpu_core (
 	input wire [31:0] d_rdata,
 	/* Faults (to atg_cpu_fw) */
 	output reg fault,
-	output reg [31:0] fault_pc
+	output reg [31:0] fault_pc,
+	/* Diagnostics */
+	output wire [31:0] curr_pc,
+	output wire [3:0] curr_mcause,
+	output wire [31:0] curr_mepc,
+	output wire curr_in_irq,
+	output wire curr_faulted
 );
 	localparam [31:0] IRQ_VECTOR = 32'h0000_0010;
 	/* SYSTEM: only these two; CSR*, ECALL, EBREAK fault. */
@@ -104,6 +110,7 @@ module atg_cpu_core (
 	reg faulted;
 	reg in_irq;
 	reg [31:0] mepc;
+	reg [3:0] mcause_q;
 	/* x1..x31; rf[0] is never read (zero-based: an index needs no subtraction). */
 	reg [31:0] rf [0:31];
 
@@ -356,6 +363,7 @@ module atg_cpu_core (
 			faulted <= 1'b0;
 			in_irq <= 1'b0;
 			mepc <= 32'd0;
+			mcause_q <= 4'd0;
 			fault <= 1'b0;
 			fault_pc <= 32'd0;
 		end else begin
@@ -363,6 +371,18 @@ module atg_cpu_core (
 			if (do_fault) begin
 				faulted <= 1'b1;
 				fault <= 1'b1;
+				if (pc_out)
+					mcause_q <= 4'd1;
+				else if (!legal)
+					mcause_q <= 4'd2;
+				else if (mis_jump)
+					mcause_q <= 4'd0;
+				else if (is_ld && mis_mem)
+					mcause_q <= 4'd4;
+				else if (is_st && mis_mem)
+					mcause_q <= 4'd6;
+				else
+					mcause_q <= 4'd2;
 			end
 			/* Follows E until the fault, then holds (no enable on the
 			 * fault checks: timing). */
@@ -375,6 +395,7 @@ module atg_cpu_core (
 			if (take_irq) begin
 				mepc <= is_wfi ? link : pc_e;
 				in_irq <= 1'b1;
+				mcause_q <= 4'd11;
 			end else if (e_done && is_mret) begin
 				in_irq <= 1'b0;
 			end
@@ -414,6 +435,12 @@ module atg_cpu_core (
 			w_val <= wb;
 		end
 	end
+
+	assign curr_pc = faulted ? fault_pc : (e_vld ? pc_e : pc_f);
+	assign curr_mcause = mcause_q;
+	assign curr_mepc = mepc;
+	assign curr_in_irq = in_irq;
+	assign curr_faulted = faulted;
 
 	wire unused_ok = &{1'b0, md_busy, alu_eq, alu_lt, alu_ltu, br_y, pc_imm_co, link_co, ea_co,
 		pc_f_co};

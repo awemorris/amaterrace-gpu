@@ -45,6 +45,7 @@ module atg_blt_2d #(
 	input wire [31:0] st_wdata,
 	input wire kick,
 	output wire busy,
+	output wire [3:0] fsm,
 	output reg done,
 	output reg error,
 	output reg [3:0] error_kind,
@@ -219,6 +220,7 @@ module atg_blt_2d #(
 	);
 
 	assign busy = state != S_IDLE;
+	assign fsm = state;
 
 	/* The segment's end: the next pixel, or the next row. */
 	wire [16:0] sn17 = {{(16 - US){1'b0}}, sn};
