@@ -54,30 +54,53 @@ Contents
 
 ### 1.2 Overview
 
+![GHCI 2.0 GPU Architecture](svg/ghci_gpu_architecture.svg)
+
 ```
             Host                                       GPU
   +----------------------+                  +-------------------------------+
-  | Driver               |  register window |  Host control registers       |
+  | Driver               |  register window |  Host control registers (Slim)|
   |   registers ---------+----------------->|  RING_WPTR (doorbell)         |
   |   doorbell ----------+----------------->|        |                      |
   |                      |                  |        v                      |
   |                      |  local window    |  Command processor (CP)       |
-  |   framebuffer -------+-----------+      |    reads the ring, sets state,|
-  |                      |           |      |    starts the units           |
-  | Host memory          |           |      |        |                      |
-  |   ring               |<----------+------+-- DMA  v                      |
-  |   command buffers    |           |      |  BLT  VF  SU  RX  TU  ROP     |
-  |   fences, resources  |           |      |        |                      |
-  +----------------------+           |      |        v                      |
-                                     +----->|  Local memory (discrete only) |
+  |   framebuffer -------+-----------+      |    RV32IM + HW Walker + TLB   |
+  |                      |           |      |        |                      |
+  | Host memory          |           |      |        v                      |
+  |   ring               |<----------+------+-- DMA  BLT  VF  SU  RX  TU ROP|
+  |   PSO / Descriptors  |           |      |        |                      |
+  |   fences, resources  |           |      |        v                      |
+  +----------------------+           |      |  Shared L2 Cache (LLC)        |
+                                     |      |        v                      |
+                                     +----->|  Memory Controller (MC)       |
                                             +-------------------------------+
 ```
 
 The driver writes commands into a ring in memory and moves the write
 pointer (the doorbell). The command processor reads the commands by DMA,
-writes the state register file, and starts the units. A fence command
+resolves in-memory Pipeline State Objects (PSO) and descriptors via its
+autonomous page table walker and TLB, and starts the units. A fence command
 writes a value to memory, and optionally raises an interrupt, when all
 earlier work has completed.
+
+#### Key Architecture Tenets (GHCI 2.0 TO-BE Specification)
+
+- **Slim Host Control Registers:** Exactly 19 32-bit registers (76 bytes total).
+  All dynamic state registers (`STATE_*`) are eliminated from MMIO to eliminate
+  bus stalls and kernel transitions.
+- **In-Memory Immutable PSO:** State is baked into compact in-memory pipeline
+  state objects (`GhciPipelineState`, 48 bytes) and descriptor tables, mapped
+  in user-space and fetched directly by the GPU.
+- **Autonomous Address Translation:** The Command Processor incorporates a
+  hardware page table walker and unified L1/L2 TLB, traversing host/shared page
+  tables without software intervention or mandatory page pinning.
+- **Shared Last-Level Cache (LLC):** All execution units (VF, SU, TU, ROP, BLT)
+  route through a multi-banked shared L2 cache before reaching the Memory
+  Controller, providing low-latency caching and write-combining.
+- **QoS Display Controller Integration:** The Display Controller operates on an
+  independent 200 MHz pixel clock domain with a dedicated high-priority port
+  directly to the Memory Controller, ensuring glitch-free display scanout even
+  during GPU reset or heavy compute saturation.
 
 ### 1.3 Terms
 
@@ -328,6 +351,44 @@ After a reset the driver starts the ring again from its beginning.
 
 6. The command ring
 -------------------
+
+The command ring is the primary communication channel through which the host
+driver submits work to the GPU. In GHCI 2.0, the ring uses an in-memory
+descriptor and pipeline-state architecture: instead of issuing hundreds of
+register-write commands per draw call, the driver writes compact command packets
+that reference immutable, pre-baked `GhciPipelineState` objects and flat
+descriptor arrays located in shared memory.
+
+![GHCI 2.0 Command Flow](svg/ghci_command_flow.svg)
+
+### 6.0 Command Execution Lifecycle
+
+The diagram below details the end-to-end execution sequence across the host
+driver, shared memory, the Command Processor, and the graphics pipeline units.
+
+![GHCI Command Execution Sequence](svg/ghci_command_sequence.svg)
+
+1. **State Baking:** The User-Mode Driver (UMD) compiles shader binaries into
+   GSI1 ISA and builds immutable `GhciPipelineState` structures (48 bytes) and
+   descriptor tables directly in shared memory.
+2. **Command Recording:** UMD records high-level structured packets
+   (`CMD_BIND_PIPELINE`, `CMD_BIND_DESCRIPTOR`, `CMD_DRAW_INDIRECT`, etc.) into
+   the shared ring buffer.
+3. **Doorbell:** The Kernel-Mode Driver (KMD) writes the new head position to
+   the 32-bit `RING_WPTR` MMIO register.
+4. **Autonomous Fetch & Translation:** The Command Processor (CP) detects the
+   updated `RING_WPTR`, fetches packets over DMA/AXI, and resolves memory
+   pointers through its internal hardware page table walker and TLB.
+5. **Direct Pipeline Configuration:** The CP configures the execution pipeline
+   (VF, SU, RX, TU, ROP) without generating register bus cycles.
+6. **Geometry & Rasterization:** VF streams vertices to the 32-lane Shader Unit
+   (SU); SU feeds primitives to the Rasterizer (RX) for triangle setup, coarse
+   scan, hierarchical early-Z culling, and 2x2 quad generation.
+7. **Shading & Output:** SU executes fragment warps, querying textures via TU,
+   and streams fragment quads to ROP for tile-buffered depth/stencil tests and
+   color blending, flushing results to the Shared L2 Cache (LLC).
+8. **Synchronization:** A `CMD_FENCE` packet signals completion by updating
+   the fence counter in memory and raising the host interrupt line.
 
 ### 6.1 Layout
 
@@ -1069,6 +1130,43 @@ on it.
   an address-translating GPU MMU behind the MMU capability.
 
 ### 11.3 Unified and discrete
+
+GHCI 2.0 defines a single, unified driver programming model for both Unified
+Memory Architecture (UMA) and Discrete GPU systems. The driver uses the same
+register layout, command set, and synchronization model across both
+topologies.
+
+#### Unified Memory Architecture (UMA)
+
+On UMA platforms (such as integrated SoCs), the host CPU and GPU share a
+single physical DRAM pool over an AXI4-coherent interconnect. The GPU Command
+Processor integrates an autonomous hardware page table walker and unified L1/L2
+TLBs, enabling complete zero-copy resource sharing:
+
+![GHCI UMA System Architecture](svg/ghci_uma_system.svg)
+
+- **Zero-Copy Pipeline Objects:** Pipeline state structures (`GhciPipelineState`),
+  descriptor tables, and vertex buffers are shared directly without staging copies.
+- **Hardware Page Table Walking:** The GPU resolves virtual addresses directly
+  from shared OS page tables, avoiding pinned-memory overhead.
+- **Direct Scanout:** Framebuffers generated in shared DRAM can be scanned out
+  directly by the Display Controller or read back by the host without bus transfers.
+
+#### Discrete GPU Architecture (PCIe Binding)
+
+On discrete GPU platforms, the GPU operates as a PCIe endpoint device with
+dedicated high-bandwidth local memory (VRAM):
+
+![GHCI Discrete System Architecture](svg/ghci_discrete_system.svg)
+
+- **BAR0 Slim MMIO Window:** Exactly 76 bytes mapped into host physical address
+  space for doorbells and interrupt control.
+- **Bus Master DMA:** The GPU's autonomous DMA engine fetches ring packets and
+  stages large assets between host memory and local VRAM across PCIe.
+- **Local Shared L2 Cache & VRAM:** Render targets, depth buffers, and high-frequency
+  textures reside in local VRAM with on-chip Shared L2 Cache (LLC) acceleration.
+
+#### Comparison Table
 
 | | Unified | Discrete |
 | --- | --- | --- |

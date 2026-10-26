@@ -1,0 +1,275 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 640" width="980" height="640">
+    <style><![CDATA[
+    /* Fonts & Resets */
+    text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .title {
+        font-size: 20px;
+        font-weight: 700;
+        fill: #0f172a;
+    }
+    .subtitle {
+        font-size: 13px;
+        font-weight: 500;
+        fill: #475569;
+    }
+    .badge-text {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #ffffff;
+    }
+    .card-title {
+        font-size: 14px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .card-subtitle {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-body {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #334155;
+    }
+    .card-bullet {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .conn-label {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .conn-sub {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #64748b;
+    }
+    .group-label {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+    }
+    .seq-actor {
+        font-size: 13px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .seq-step {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #1e293b;
+    }
+    .seq-desc {
+        font-size: 10px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .seq-num {
+        font-size: 10.5px;
+        font-weight: 700;
+        fill: #ffffff;
+    }
+]]></style>
+    
+    <defs>
+        <!-- Dropshadow Filters -->
+        <filter id="shadow-sm" x="-4%" y="-4%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.06"/>
+        </filter>
+        <filter id="shadow-md" x="-6%" y="-6%" width="112%" height="112%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+        </filter>
+
+        <!-- Arrow Markers -->
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
+        </marker>
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
+        </marker>
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
+        </marker>
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+
+        <!-- Linear Gradients -->
+        <linearGradient id="header-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="#8b5cf6"/>
+        </linearGradient>
+    </defs>
+
+
+    <!-- Background Canvas -->
+    <rect width="980" height="640" fill="#f8fafc" rx="12"/>
+    <rect x="1" y="1" width="978" height="638" fill="none" stroke="#e2e8f0" stroke-width="1.5" rx="11"/>
+
+    <!-- Header Block -->
+    <g transform="translate(30, 24)">
+        <text class="title" x="0" y="20">Amaterrace Render Output Unit (ROP) Architecture</text>
+        <text class="subtitle" x="0" y="40">On-Chip Tile Buffer • Stencil &amp; Depth Test • Dual-Source Alpha Blending • Shared L2 Cache Writeback</text>
+        <rect x="730" y="4" width="220" height="28" rx="14" fill="#e11d48" opacity="0.12"/>
+        <text x="840" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#be123c">ROP RENDER BACKEND</text>
+    </g>
+
+    <!-- Stage 1: Fragment Input FIFO & Tile Buffer (Left) -->
+    <g transform="translate(30, 80)">
+        <rect width="210" height="520" rx="10" fill="#ffffff" stroke="#fda4af" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 200 0 Q 210 0 210 10 L 210 36 L 0 36 Z" fill="#fff1f2"/>
+        <text class="group-label" x="14" y="24" fill="#be123c">1. Fragment Ingestion</text>
+
+        <g transform="translate(12, 50)">
+            <rect width="186" height="110" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
+            <text class="card-title" x="10" y="20" fill="#0369a1">Fragment Input FIFO</text>
+            <text class="card-body" x="10" y="38">• Shaded pixel color (RGBA)</text>
+            <text class="card-body" x="10" y="54">• Dual-source color 1 (RGBA1)</text>
+            <text class="card-body" x="10" y="70">• Interpolated depth (Z)</text>
+            <text class="card-body" x="10" y="86">• Coverage mask &amp; Stencil ref</text>
+        </g>
+
+        <!-- Tile Buffer -->
+        <g transform="translate(12, 175)">
+            <rect width="186" height="180" rx="6" fill="#fff1f2" stroke="#fca5a5" stroke-width="1.2"/>
+            <text class="card-title" x="10" y="20" fill="#be123c">On-Chip Tile Buffer</text>
+            <text class="card-subtitle" x="10" y="36" fill="#e11d48">Fast Multi-Banked SRAM</text>
+            <text class="card-body" x="10" y="58">• Holds active tile depth,</text>
+            <text class="card-body" x="10" y="74">  stencil, and color buffers</text>
+            <text class="card-body" x="10" y="94">• Single-cycle read-modify-</text>
+            <text class="card-body" x="10" y="110">  write operations</text>
+            <text class="card-body" x="10" y="130">• Eliminates DRAM read traffic</text>
+            <text class="card-body" x="10" y="146">  during heavy blend/depth</text>
+            <text class="card-subtitle" x="10" y="166" fill="#be123c">8×8 / 16×16 Tile Size</text>
+        </g>
+
+        <g transform="translate(12, 370)">
+            <rect width="186" height="75" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+            <text class="card-title" x="10" y="20">Tile State Tracker</text>
+            <text class="card-body" x="10" y="38">• Tracks dirty lines &amp; tags</text>
+            <text class="card-body" x="10" y="54">• Triggers auto writeback</text>
+        </g>
+    </g>
+
+    <!-- Stage 2: Stencil & Depth Test Units (Center-Left) -->
+    <g transform="translate(265, 80)">
+        <rect width="210" height="520" rx="10" fill="#ffffff" stroke="#fda4af" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 200 0 Q 210 0 210 10 L 210 36 L 0 36 Z" fill="#fff1f2"/>
+        <text class="group-label" x="14" y="24" fill="#be123c">2. Stencil &amp; Depth</text>
+
+        <!-- Stencil Test Unit -->
+        <g transform="translate(12, 50)">
+            <rect width="186" height="155" rx="6" fill="#fdf4ff" stroke="#f0abfc" stroke-width="1"/>
+            <text class="card-title" x="10" y="20" fill="#a21caf">Stencil Test Unit</text>
+            <text class="card-body" x="10" y="38">• Front / Back Stencil state</text>
+            <text class="card-body" x="10" y="54">• Compare functions (NEVER,</text>
+            <text class="card-body" x="10" y="70">  LESS, EQUAL, ALWAYS, etc.)</text>
+            <text class="card-body" x="10" y="90">• Ops: KEEP, ZERO, REPLACE,</text>
+            <text class="card-body" x="10" y="106">  INCR, DECR, INVERT</text>
+            <text class="card-body" x="10" y="126">• Stencil write mask support</text>
+            <text class="card-subtitle" x="10" y="146" fill="#c026d3">Per-Pixel Pass/Fail Flag</text>
+        </g>
+
+        <!-- Depth Test Unit -->
+        <g transform="translate(12, 220)">
+            <rect width="186" height="155" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
+            <text class="card-title" x="10" y="20" fill="#15803d">Depth Test Unit</text>
+            <text class="card-body" x="10" y="38">• Standard 24-bit / 32-bit</text>
+            <text class="card-body" x="10" y="54">  fixed / float depth test</text>
+            <text class="card-body" x="10" y="74">• Compare funcs (LESS, LEQUAL,</text>
+            <text class="card-body" x="10" y="90">  GREATER, EQUAL, etc.)</text>
+            <text class="card-body" x="10" y="110">• Depth write enable mask</text>
+            <text class="card-body" x="10" y="126">• Updates Tile Buffer depth</text>
+            <text class="card-subtitle" x="10" y="146" fill="#16a34a">Late Z Reject Gate</text>
+        </g>
+    </g>
+
+    <!-- Stage 3: Color Blending & Logic Op (Center-Right) -->
+    <g transform="translate(500, 80)">
+        <rect width="210" height="520" rx="10" fill="#ffffff" stroke="#fda4af" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 200 0 Q 210 0 210 10 L 210 36 L 0 36 Z" fill="#fff1f2"/>
+        <text class="group-label" x="14" y="24" fill="#be123c">3. Color Blend &amp; Logic</text>
+
+        <!-- Color Blender -->
+        <g transform="translate(12, 50)">
+            <rect width="186" height="175" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
+            <text class="card-title" x="10" y="20" fill="#b45309">Color Blender Engine</text>
+            <text class="card-body" x="10" y="38">• Blend Factors: ZERO, ONE,</text>
+            <text class="card-body" x="10" y="54">  SRC_ALPHA, ONE_MINUS_SRC,</text>
+            <text class="card-body" x="10" y="70">  DST_ALPHA, CONST_COLOR</text>
+            <text class="card-body" x="10" y="90">• Equations: ADD, SUBTRACT,</text>
+            <text class="card-body" x="10" y="106">  REVERSE_SUB, MIN, MAX</text>
+            <text class="card-body" x="10" y="126" font-weight="700" fill="#d97706">• Dual-Source Blending:</text>
+            <text class="card-body" x="10" y="142">  Src0, Src1, Dst alpha blending</text>
+            <text class="card-subtitle" x="10" y="164" fill="#b45309">Vulkan 1.3 Conforming</text>
+        </g>
+
+        <!-- Logic Operations -->
+        <g transform="translate(12, 240)">
+            <rect width="186" height="135" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+            <text class="card-title" x="10" y="20">Logic Operation Unit</text>
+            <text class="card-body" x="10" y="38">• Vulkan LogicOp modes:</text>
+            <text class="card-body" x="10" y="54">  CLEAR, AND, AND_REVERSE,</text>
+            <text class="card-body" x="10" y="70">  COPY, AND_INVERTED, NOOP,</text>
+            <text class="card-body" x="10" y="86">  XOR, OR, NOR, EQUIV, INVERT</text>
+            <text class="card-body" x="10" y="102">• Bitwise ROP2/ROP3 modes</text>
+            <text class="card-subtitle" x="10" y="124" fill="#475569">Bypasses Blend if Active</text>
+        </g>
+    </g>
+
+    <!-- Stage 4: Writeback & L2 Cache Interface (Right) -->
+    <g transform="translate(735, 80)">
+        <rect width="215" height="520" rx="10" fill="#ffffff" stroke="#fda4af" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 205 0 Q 215 0 215 10 L 215 36 L 0 36 Z" fill="#fff1f2"/>
+        <text class="group-label" x="14" y="24" fill="#be123c">4. Memory Writeback</text>
+
+        <!-- Write Combiner -->
+        <g transform="translate(12, 50)">
+            <rect width="191" height="110" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
+            <text class="card-title" x="10" y="20" fill="#15803d">Write Combiner</text>
+            <text class="card-body" x="10" y="38">• Merges active tile pixels</text>
+            <text class="card-body" x="10" y="54">• Coalesces writes into</text>
+            <text class="card-body" x="10" y="70">  64-byte / 128-byte bursts</text>
+            <text class="card-body" x="10" y="94" font-weight="600" fill="#166534">Minimizes Bus Overhead</text>
+        </g>
+
+        <!-- Color Compression -->
+        <g transform="translate(12, 175)">
+            <rect width="191" height="110" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+            <text class="card-title" x="10" y="20">Tile Compression (Lossless)</text>
+            <text class="card-body" x="10" y="38">• Fast clear flag optimization</text>
+            <text class="card-body" x="10" y="54">• 2:1 / 4:1 Tile delta compression</text>
+            <text class="card-body" x="10" y="70">• Reduces memory bandwidth</text>
+            <text class="card-subtitle" x="10" y="94" fill="#475569">Bandwidth Saver</text>
+        </g>
+
+        <!-- Shared L2C Writeback -->
+        <g transform="translate(12, 300)">
+            <rect width="191" height="145" rx="6" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+            <text class="card-title" x="10" y="22" fill="#047857">Shared L2 Cache Flush</text>
+            <text class="card-body" x="10" y="42">• Writes directly into Shared</text>
+            <text class="card-body" x="10" y="58">  L2 Cache (LLC)</text>
+            <text class="card-body" x="10" y="78">• Coherent writeback prevents</text>
+            <text class="card-body" x="10" y="94">  DRAM page-churn</text>
+            <text class="card-body" x="10" y="112">• Readily available for DC</text>
+            <text class="card-body" x="10" y="128">  scanout or texture sampling</text>
+        </g>
+    </g>
+
+    <!-- Connectors between stages -->
+    <path d="M 240 200 L 265 200" stroke="#be123c" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
+    <path d="M 475 200 L 500 200" stroke="#be123c" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
+    <path d="M 710 200 L 735 200" stroke="#be123c" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
+</svg>

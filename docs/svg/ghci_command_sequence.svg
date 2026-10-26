@@ -1,0 +1,252 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720" width="1000" height="720">
+    <style><![CDATA[
+    /* Fonts & Resets */
+    text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .title {
+        font-size: 20px;
+        font-weight: 700;
+        fill: #0f172a;
+    }
+    .subtitle {
+        font-size: 13px;
+        font-weight: 500;
+        fill: #475569;
+    }
+    .badge-text {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #ffffff;
+    }
+    .card-title {
+        font-size: 14px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .card-subtitle {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-body {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #334155;
+    }
+    .card-bullet {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .conn-label {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .conn-sub {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #64748b;
+    }
+    .group-label {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+    }
+    .seq-actor {
+        font-size: 13px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .seq-step {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #1e293b;
+    }
+    .seq-desc {
+        font-size: 10px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .seq-num {
+        font-size: 10.5px;
+        font-weight: 700;
+        fill: #ffffff;
+    }
+]]></style>
+    
+    <defs>
+        <!-- Dropshadow Filters -->
+        <filter id="shadow-sm" x="-4%" y="-4%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.06"/>
+        </filter>
+        <filter id="shadow-md" x="-6%" y="-6%" width="112%" height="112%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+        </filter>
+
+        <!-- Arrow Markers -->
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
+        </marker>
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
+        </marker>
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
+        </marker>
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+
+        <!-- Linear Gradients -->
+        <linearGradient id="header-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="#8b5cf6"/>
+        </linearGradient>
+    </defs>
+
+
+    <!-- Background Canvas -->
+    <rect width="1000" height="720" fill="#f8fafc" rx="12"/>
+    <rect x="1" y="1" width="998" height="718" fill="none" stroke="#e2e8f0" stroke-width="1.5" rx="11"/>
+
+    <!-- Header Block -->
+    <g transform="translate(30, 24)">
+        <text class="title" x="0" y="20">GHCI Command Execution Swimlane Sequence</text>
+        <text class="subtitle" x="0" y="40">End-to-End Execution Trace: In-Memory PSO Binding, Draw Indirect, Texture Fetch, Blend &amp; Fence</text>
+        <rect x="730" y="4" width="220" height="28" rx="14" fill="#059669" opacity="0.12"/>
+        <text x="840" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#047857">EXECUTION SEQUENCE</text>
+    </g>
+
+    <!-- Swimlane Columns -->
+    <!-- Column 1: Host Driver -->
+    <g transform="translate(40, 80)">
+        <rect width="130" height="40" rx="6" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.2"/>
+        <text class="seq-actor" x="65" y="25" text-anchor="middle">Host Driver</text>
+        <line x1="65" y1="40" x2="65" y2="600" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+    </g>
+
+    <!-- Column 2: Shared DRAM (Ring & PSO) -->
+    <g transform="translate(200, 80)">
+        <rect width="140" height="40" rx="6" fill="#f0f9ff" stroke="#7dd3fc" stroke-width="1.2"/>
+        <text class="seq-actor" x="70" y="25" text-anchor="middle">Shared DRAM</text>
+        <line x1="70" y1="40" x2="70" y2="600" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+    </g>
+
+    <!-- Column 3: CP Firmware & HW Walker -->
+    <g transform="translate(370, 80)">
+        <rect width="140" height="40" rx="6" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.2"/>
+        <text class="seq-actor" x="70" y="25" text-anchor="middle">CP (RV32IM)</text>
+        <line x1="70" y1="40" x2="70" y2="600" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+    </g>
+
+    <!-- Column 4: Geometry & Compute (VF->SU) -->
+    <g transform="translate(540, 80)">
+        <rect width="130" height="40" rx="6" fill="#ecfeff" stroke="#67e8f9" stroke-width="1.2"/>
+        <text class="seq-actor" x="65" y="25" text-anchor="middle">VF / SU (32-Lane)</text>
+        <line x1="65" y1="40" x2="65" y2="600" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+    </g>
+
+    <!-- Column 5: Raster & Output (RX->TU->ROP) -->
+    <g transform="translate(700, 80)">
+        <rect width="130" height="40" rx="6" fill="#fff1f2" stroke="#fda4af" stroke-width="1.2"/>
+        <text class="seq-actor" x="65" y="25" text-anchor="middle">RX / TU / ROP</text>
+        <line x1="65" y1="40" x2="65" y2="600" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+    </g>
+
+    <!-- Column 6: Shared L2C & Fence Unit -->
+    <g transform="translate(850, 80)">
+        <rect width="120" height="40" rx="6" fill="#ecfdf5" stroke="#86efac" stroke-width="1.2"/>
+        <text class="seq-actor" x="60" y="25" text-anchor="middle">L2C / Fence</text>
+        <line x1="60" y1="40" x2="60" y2="600" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+    </g>
+
+    <!-- Sequence Steps -->
+
+    <!-- Step 1: Host builds PSO in Shared DRAM -->
+    <g transform="translate(0, 145)">
+        <circle cx="105" cy="0" r="10" fill="#2563eb"/>
+        <text class="seq-num" x="105" y="4" text-anchor="middle">1</text>
+        <line x1="105" y1="0" x2="265" y2="0" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text class="seq-step" x="185" y="-8" text-anchor="middle">Build Immutable PSO &amp; Descriptors</text>
+        <text class="seq-desc" x="185" y="16" text-anchor="middle">GhciPipelineState struct (48B) written to DRAM</text>
+    </g>
+
+    <!-- Step 2: Host writes Commands into Ring & hits Doorbell -->
+    <g transform="translate(0, 210)">
+        <circle cx="105" cy="0" r="10" fill="#2563eb"/>
+        <text class="seq-num" x="105" y="4" text-anchor="middle">2</text>
+        <line x1="105" y1="0" x2="265" y2="0" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text class="seq-step" x="185" y="-8" text-anchor="middle">Write CMD_BIND_PIPELINE + CMD_DRAW</text>
+
+        <!-- Doorbell directly to CP -->
+        <path d="M 105 10 L 105 25 L 435 25" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <text class="seq-step" x="270" y="38" text-anchor="middle" fill="#7c3aed">MMIO Write: RING_WPTR (Doorbell)</text>
+    </g>
+
+    <!-- Step 3: CP fetches command packet from DRAM -->
+    <g transform="translate(0, 285)">
+        <circle cx="440" cy="0" r="10" fill="#7c3aed"/>
+        <text class="seq-num" x="440" y="4" text-anchor="middle">3</text>
+        <line x1="440" y1="0" x2="275" y2="0" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <text class="seq-step" x="355" y="-8" text-anchor="middle">Fetch Command Packet</text>
+        <text class="seq-desc" x="355" y="16" text-anchor="middle">DMA Ring fetch via WPTR/RPTR</text>
+    </g>
+
+    <!-- Step 4: CP autonomous address translation & PSO read -->
+    <g transform="translate(0, 345)">
+        <circle cx="440" cy="0" r="10" fill="#7c3aed"/>
+        <text class="seq-num" x="440" y="4" text-anchor="middle">4</text>
+        <line x1="440" y1="0" x2="275" y2="0" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <text class="seq-step" x="355" y="-8" text-anchor="middle">Autonomous Page Walk / TLB Hit</text>
+        <text class="seq-desc" x="355" y="16" text-anchor="middle">Resolves PSO pointer &amp; configures HW pipeline</text>
+    </g>
+
+    <!-- Step 5: CP dispatches Draw to VF & SU -->
+    <g transform="translate(0, 405)">
+        <circle cx="440" cy="0" r="10" fill="#7c3aed"/>
+        <text class="seq-num" x="440" y="4" text-anchor="middle">5</text>
+        <line x1="440" y1="0" x2="600" y2="0" stroke="#0891b2" stroke-width="2" marker-end="url(#arrow)"/>
+        <text class="seq-step" x="520" y="-8" text-anchor="middle">Dispatch Draw &amp; Pipeline State</text>
+        <text class="seq-desc" x="520" y="16" text-anchor="middle">VF fetches attributes; SU runs Vertex Shader</text>
+    </g>
+
+    <!-- Step 6: SU outputs primitives to RX (Rasterizer) -->
+    <g transform="translate(0, 465)">
+        <circle cx="605" cy="0" r="10" fill="#0891b2"/>
+        <text class="seq-num" x="605" y="4" text-anchor="middle">6</text>
+        <line x1="605" y1="0" x2="760" y2="0" stroke="#0891b2" stroke-width="2" marker-end="url(#arrow)"/>
+        <text class="seq-step" x="685" y="-8" text-anchor="middle">Rasterization &amp; Early Z</text>
+        <text class="seq-desc" x="685" y="16" text-anchor="middle">Triangle setup, bounding box scan, 2x2 quads</text>
+    </g>
+
+    <!-- Step 7: RX & SU fragment shading + TU sampling + ROP blending -->
+    <g transform="translate(0, 525)">
+        <circle cx="765" cy="0" r="10" fill="#e11d48"/>
+        <text class="seq-num" x="765" y="4" text-anchor="middle">7</text>
+        <line x1="765" y1="0" x2="905" y2="0" stroke="#e11d48" stroke-width="2" marker-end="url(#arrow-rose)"/>
+        <text class="seq-step" x="835" y="-8" text-anchor="middle">Tile Buffer &amp; L2C Flush</text>
+        <text class="seq-desc" x="835" y="16" text-anchor="middle">Dual-source blend, depth test, write to LLC</text>
+    </g>
+
+    <!-- Step 8: Fence completion & Host IRQ -->
+    <g transform="translate(0, 585)">
+        <circle cx="910" cy="0" r="10" fill="#059669"/>
+        <text class="seq-num" x="910" y="4" text-anchor="middle">8</text>
+        <!-- Writeback to DRAM -->
+        <line x1="910" y1="0" x2="275" y2="0" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
+        <text class="seq-step" x="590" y="-8" text-anchor="middle" fill="#047857">Write Fence Counter to DRAM &amp; Assert IRQ Line</text>
+
+        <!-- IRQ back to Host -->
+        <path d="M 270 12 L 105 12" stroke="#dc2626" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+        <text class="seq-desc" x="185" y="28" text-anchor="middle" fill="#dc2626">Host ISR unblocks synchronization primitive</text>
+    </g>
+</svg>

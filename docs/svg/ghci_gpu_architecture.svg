@@ -1,0 +1,348 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720" width="1000" height="720">
+    <style><![CDATA[
+    /* Fonts & Resets */
+    text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .title {
+        font-size: 20px;
+        font-weight: 700;
+        fill: #0f172a;
+    }
+    .subtitle {
+        font-size: 13px;
+        font-weight: 500;
+        fill: #475569;
+    }
+    .badge-text {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #ffffff;
+    }
+    .card-title {
+        font-size: 14px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .card-subtitle {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-body {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #334155;
+    }
+    .card-bullet {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .conn-label {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .conn-sub {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #64748b;
+    }
+    .group-label {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+    }
+    .seq-actor {
+        font-size: 13px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .seq-step {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #1e293b;
+    }
+    .seq-desc {
+        font-size: 10px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .seq-num {
+        font-size: 10.5px;
+        font-weight: 700;
+        fill: #ffffff;
+    }
+]]></style>
+    
+    <defs>
+        <!-- Dropshadow Filters -->
+        <filter id="shadow-sm" x="-4%" y="-4%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.06"/>
+        </filter>
+        <filter id="shadow-md" x="-6%" y="-6%" width="112%" height="112%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+        </filter>
+
+        <!-- Arrow Markers -->
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
+        </marker>
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
+        </marker>
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
+        </marker>
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+
+        <!-- Linear Gradients -->
+        <linearGradient id="header-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="#8b5cf6"/>
+        </linearGradient>
+    </defs>
+
+
+    <!-- Background Canvas -->
+    <rect width="1000" height="720" fill="#f8fafc" rx="12"/>
+    <rect x="1" y="1" width="998" height="718" fill="none" stroke="#e2e8f0" stroke-width="1.5" rx="11"/>
+
+    <!-- Header Block -->
+    <g transform="translate(30, 24)">
+        <text class="title" x="0" y="20">GHCI 2.0 GPU Architecture</text>
+        <text class="subtitle" x="0" y="40">Vulkan-Class Host Controller Interface • Slim MMIO • Autonomous MMU • In-Memory Pipeline State</text>
+        <rect x="680" y="4" width="260" height="28" rx="14" fill="#3b82f6" opacity="0.1"/>
+        <text x="810" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">TO-BE SPECIFICATION (GHCI 2.0)</text>
+    </g>
+
+    <!-- Boundary: Host Interface (Left) -->
+    <g transform="translate(30, 80)">
+        <rect width="210" height="600" rx="10" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 200 0 Q 210 0 210 10 L 210 38 L 0 38 Z" fill="#eff6ff"/>
+        <text class="group-label" x="15" y="24" fill="#1d4ed8">Host CPU / Driver</text>
+
+        <!-- Host Entities -->
+        <g transform="translate(12, 50)">
+            <rect width="186" height="70" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
+            <text class="card-title" x="10" y="20">User-Mode Driver</text>
+            <text class="card-body" x="10" y="38">• In-Memory PSO Builder</text>
+            <text class="card-body" x="10" y="54">• Descriptor Tables &amp; Shaders</text>
+        </g>
+
+        <g transform="translate(12, 130)">
+            <rect width="186" height="70" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
+            <text class="card-title" x="10" y="20">Kernel Driver (KMD)</text>
+            <text class="card-body" x="10" y="38">• Doorbell (WPTR) Updates</text>
+            <text class="card-body" x="10" y="54">• Interrupt Handler / Fences</text>
+        </g>
+
+        <!-- Slim MMIO Card -->
+        <g transform="translate(12, 220)">
+            <rect width="186" height="195" rx="8" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+            <rect x="0" y="0" width="186" height="28" rx="8" fill="#ede9fe"/>
+            <text class="card-title" x="10" y="19" fill="#5b21b6">Slim MMIO Window</text>
+            <text class="card-subtitle" x="10" y="44" fill="#6d28d9">19 Regs (76 Bytes Total)</text>
+            <text class="card-bullet" x="10" y="64">• ID / CAP0, CAP1, CAP2</text>
+            <text class="card-bullet" x="10" y="80">• RING_BASE_LO / HI, SIZE</text>
+            <text class="card-bullet" x="10" y="96">• RING_WPTR, RING_RPTR</text>
+            <text class="card-bullet" x="10" y="112">• FENCE_STATUS, FENCE_ACK</text>
+            <text class="card-bullet" x="10" y="128">• IRQ_STATUS, IRQ_MASK</text>
+            <text class="card-bullet" x="10" y="144">• RESET_REQ, RESET_STATUS</text>
+            <rect x="8" y="156" width="170" height="28" rx="4" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
+            <text x="93" y="174" text-anchor="middle" font-size="10.5" font-weight="700" fill="#dc2626">NO STATE REGISTERS</text>
+        </g>
+
+        <!-- Command Ring Buffer representation -->
+        <g transform="translate(12, 435)">
+            <rect width="186" height="150" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+            <text class="card-title" x="10" y="20">Shared Ring Buffer</text>
+            <text class="card-body" x="10" y="38">• CMD_BIND_PIPELINE</text>
+            <text class="card-body" x="10" y="54">• CMD_BIND_DESCRIPTOR</text>
+            <text class="card-body" x="10" y="70">• CMD_DRAW_INDIRECT</text>
+            <text class="card-body" x="10" y="86">• CMD_DISPATCH</text>
+            <text class="card-body" x="10" y="102">• CMD_BARRIER / FENCE</text>
+            <text class="card-subtitle" x="10" y="132" fill="#0284c7">Zero-Copy DMA Region</text>
+        </g>
+    </g>
+
+    <!-- GPU Core Container -->
+    <g transform="translate(260, 80)">
+        <rect width="710" height="600" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 700 0 Q 710 0 710 10 L 710 38 L 0 38 Z" fill="#f1f5f9"/>
+        <text class="group-label" x="20" y="24" fill="#334155">GHCI 2.0 Conforming GPU Core (Amaterrace / ATG1)</text>
+
+        <!-- Command Processor (CP) -->
+        <g transform="translate(20, 50)">
+            <rect width="670" height="100" rx="8" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.5"/>
+            <text class="card-title" x="16" y="22" fill="#6b21a8">Command Processor (CP)</text>
+            <text class="card-subtitle" x="16" y="38" fill="#9333ea">Hardware Dispatcher &amp; Autonomous Address Translation</text>
+
+            <!-- Sub modules in CP -->
+            <g transform="translate(16, 46)">
+                <rect width="145" height="42" rx="4" fill="#ffffff" stroke="#c084fc" stroke-width="1"/>
+                <text class="card-title" x="72" y="18" text-anchor="middle" font-size="11.5">RV32IM Core</text>
+                <text class="card-body" x="72" y="32" text-anchor="middle" font-size="9.5">Firmware / Scheduler</text>
+            </g>
+            <g transform="translate(173, 46)">
+                <rect width="155" height="42" rx="4" fill="#ffffff" stroke="#c084fc" stroke-width="1"/>
+                <text class="card-title" x="77" y="18" text-anchor="middle" font-size="11.5">Command Decoder</text>
+                <text class="card-body" x="77" y="32" text-anchor="middle" font-size="9.5">Direct HW Dispatch</text>
+            </g>
+            <g transform="translate(340, 46)">
+                <rect width="155" height="42" rx="4" fill="#ffffff" stroke="#c084fc" stroke-width="1"/>
+                <text class="card-title" x="77" y="18" text-anchor="middle" font-size="11.5">HW Page Table Walker</text>
+                <text class="card-body" x="77" y="32" text-anchor="middle" font-size="9.5">Autonomous 2-Level Walk</text>
+            </g>
+            <g transform="translate(507, 46)">
+                <rect width="145" height="42" rx="4" fill="#ffffff" stroke="#c084fc" stroke-width="1"/>
+                <text class="card-title" x="72" y="18" text-anchor="middle" font-size="11.5">Unified L1/L2 TLB</text>
+                <text class="card-body" x="72" y="32" text-anchor="middle" font-size="9.5">Hardware Invalidation</text>
+            </g>
+        </g>
+
+        <!-- 3D Pipeline Blocks & 2D BLT -->
+        <g transform="translate(20, 168)">
+            <!-- 2D Engine -->
+            <g transform="translate(0, 0)">
+                <rect width="115" height="175" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+                <text class="card-title" x="12" y="24" fill="#15803d">BLT (2D)</text>
+                <text class="card-subtitle" x="12" y="40" fill="#16a34a">BitBLT &amp; DMA</text>
+                <text class="card-body" x="12" y="65">• Fast Clear</text>
+                <text class="card-body" x="12" y="83">• Buffer Copies</text>
+                <text class="card-body" x="12" y="101">• Linear-Tiled</text>
+                <text class="card-body" x="12" y="119">• DMA Transfer</text>
+                <text class="card-body" x="12" y="150" font-weight="600" fill="#166534">Direct to L2C</text>
+            </g>
+
+            <!-- VF: Vertex Fetcher -->
+            <g transform="translate(130, 0)">
+                <rect width="120" height="175" rx="8" fill="#ecfeff" stroke="#67e8f9" stroke-width="1.2"/>
+                <text class="card-title" x="12" y="24" fill="#0e7490">VF</text>
+                <text class="card-subtitle" x="12" y="40" fill="#0891b2">Vertex Fetch</text>
+                <text class="card-body" x="12" y="65">• In-Memory PSO</text>
+                <text class="card-body" x="12" y="83">• Index Buffer</text>
+                <text class="card-body" x="12" y="101">• Attr Unpack</text>
+                <text class="card-body" x="12" y="119">• Instancing</text>
+                <text class="card-body" x="12" y="150" font-weight="600" fill="#0e7490">Streams to SU</text>
+            </g>
+
+            <!-- SU: Shader Unit -->
+            <g transform="translate(265, 0)">
+                <rect width="140" height="175" rx="8" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.2"/>
+                <text class="card-title" x="12" y="24" fill="#b45309">SU (Shader)</text>
+                <text class="card-subtitle" x="12" y="40" fill="#d97706">32-Lane SIMD</text>
+                <text class="card-body" x="12" y="65">• GSI1 64-bit ISA</text>
+                <text class="card-body" x="12" y="83">• Warp Scheduler</text>
+                <text class="card-body" x="12" y="101">• DSP48E1 FMA</text>
+                <text class="card-body" x="12" y="119">• LDS Scratchpad</text>
+                <text class="card-body" x="12" y="137">• Vertex / Frag / CS</text>
+            </g>
+
+            <!-- RX: Rasterizer -->
+            <g transform="translate(420, 0)">
+                <rect width="125" height="175" rx="8" fill="#ecfeff" stroke="#67e8f9" stroke-width="1.2"/>
+                <text class="card-title" x="12" y="24" fill="#0e7490">RX (Raster)</text>
+                <text class="card-subtitle" x="12" y="40" fill="#0891b2">Hierarchical Scan</text>
+                <text class="card-body" x="12" y="65">• Triangle Setup</text>
+                <text class="card-body" x="12" y="83">• Coarse Scan</text>
+                <text class="card-body" x="12" y="101">• Early Z-Cull</text>
+                <text class="card-body" x="12" y="119">• Fine 2x2 Quads</text>
+                <text class="card-body" x="12" y="137">• Barycentrics</text>
+            </g>
+
+            <!-- TU: Texture Unit -->
+            <g transform="translate(560, 0)">
+                <rect width="110" height="82" rx="6" fill="#f0f9ff" stroke="#7dd3fc" stroke-width="1.2"/>
+                <text class="card-title" x="10" y="22" fill="#0369a1">TU (Texture)</text>
+                <text class="card-body" x="10" y="40">• Bilinear/Tri</text>
+                <text class="card-body" x="10" y="56">• Tex L1 Cache</text>
+                <text class="card-body" x="10" y="72">• Descriptors</text>
+            </g>
+
+            <!-- ROP: Render Output -->
+            <g transform="translate(560, 93)">
+                <rect width="110" height="82" rx="6" fill="#fff1f2" stroke="#fda4af" stroke-width="1.2"/>
+                <text class="card-title" x="10" y="22" fill="#be123c">ROP (Output)</text>
+                <text class="card-body" x="10" y="40">• Tile Buffer</text>
+                <text class="card-body" x="10" y="56">• Z / Stencil Test</text>
+                <text class="card-body" x="10" y="72">• Dual Blend/Logic</text>
+            </g>
+        </g>
+
+        <!-- Arrows between Pipeline Stages -->
+        <path d="M 215 100 L 215 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <path d="M 390 100 L 390 168" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <path d="M 250 255 L 265 255" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <path d="M 405 230 L 420 230" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <path d="M 420 270 L 405 270" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <path d="M 405 285 L 560 285" stroke="#475569" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+        <path d="M 405 200 L 560 200" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
+        <path d="M 615 175 L 615 186" stroke="#475569" stroke-width="1.8"/>
+
+        <!-- atg_rt Interconnect Router Bar -->
+        <g transform="translate(20, 360)">
+            <rect width="670" height="34" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.2"/>
+            <text class="card-title" x="335" y="22" text-anchor="middle" fill="#334155" letter-spacing="1">atg_rt MEMORY ROUTER INTERCONNECT TREE</text>
+        </g>
+
+        <!-- Pipeline connections to atg_rt -->
+        <line x1="77" y1="343" x2="77" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="190" y1="343" x2="190" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="335" y1="343" x2="335" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="615" y1="343" x2="615" y2="360" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+        <!-- Shared L2 Cache (LLC: Last Level Cache) -->
+        <g transform="translate(20, 415)">
+            <rect width="470" height="90" rx="8" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+            <text class="card-title" x="18" y="24" fill="#047857">Shared L2 Cache (LLC: Last Level Cache)</text>
+            <text class="card-subtitle" x="18" y="42" fill="#059669">Unified Multi-Banked Cache • 512KB - 2MB • Write-Combining Buffer</text>
+            <text class="card-body" x="18" y="66">• Caches VF, SU (D$), TU, and ROP Writebacks</text>
+            <text class="card-body" x="18" y="80">• Enforces Memory Barriers &amp; Invalidation for Host/Shader Coherency</text>
+        </g>
+
+        <!-- Display Controller (DC) -->
+        <g transform="translate(510, 415)">
+            <rect width="180" height="90" rx="8" fill="#fdf4ff" stroke="#f0abfc" stroke-width="1.5"/>
+            <text class="card-title" x="12" y="24" fill="#a21caf">DC (Display)</text>
+            <text class="card-subtitle" x="12" y="42" fill="#c026d3">Independent 200 MHz</text>
+            <text class="card-body" x="12" y="64">• High-Priority QoS Port</text>
+            <text class="card-body" x="12" y="78">• Survives GPU Reset</text>
+        </g>
+
+        <!-- atg_rt to L2C and DC -->
+        <line x1="255" y1="394" x2="255" y2="415" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
+        <line x1="600" y1="394" x2="600" y2="415" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Memory Controller (MC) -->
+        <g transform="translate(20, 525)">
+            <rect width="670" height="55" rx="8" fill="#1e293b" stroke="#0f172a" stroke-width="1.5"/>
+            <text class="card-title" x="20" y="24" fill="#f8fafc">Memory Controller (MC)</text>
+            <text class="card-subtitle" x="20" y="42" fill="#94a3b8">AXI4 Coherent System Interface • Priority Arbiter for Display &amp; L2 Cache</text>
+            <rect x="490" y="12" width="165" height="30" rx="4" fill="#334155"/>
+            <text x="572" y="32" text-anchor="middle" font-size="11.5" font-weight="600" fill="#38bdf8">DRAM / Host UMA Bus</text>
+        </g>
+
+        <line x1="255" y1="505" x2="255" y2="525" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
+        <line x1="600" y1="505" x2="600" y2="525" stroke="#c026d3" stroke-width="2" marker-end="url(#arrow)"/>
+    </g>
+
+    <!-- Cross connections from Host to GPU -->
+    <!-- Doorbell write -->
+    <path d="M 210 240 L 260 240 L 260 110 L 280 110" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+    <text class="conn-label" x="235" y="180" fill="#7c3aed" text-anchor="middle" transform="rotate(-90 235 180)">WPTR Doorbell</text>
+
+    <!-- Interrupt line -->
+    <path d="M 280 130 L 245 130 L 245 360 L 210 360" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+    <text class="conn-label" x="235" y="290" fill="#dc2626" text-anchor="middle" transform="rotate(-90 235 290)">IRQ Line</text>
+</svg>

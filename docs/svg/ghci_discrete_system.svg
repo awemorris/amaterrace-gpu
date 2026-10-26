@@ -1,0 +1,257 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 640" width="980" height="640">
+    <style><![CDATA[
+    /* Fonts & Resets */
+    text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .title {
+        font-size: 20px;
+        font-weight: 700;
+        fill: #0f172a;
+    }
+    .subtitle {
+        font-size: 13px;
+        font-weight: 500;
+        fill: #475569;
+    }
+    .badge-text {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #ffffff;
+    }
+    .card-title {
+        font-size: 14px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .card-subtitle {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-body {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #334155;
+    }
+    .card-bullet {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .conn-label {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .conn-sub {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #64748b;
+    }
+    .group-label {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+    }
+    .seq-actor {
+        font-size: 13px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .seq-step {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #1e293b;
+    }
+    .seq-desc {
+        font-size: 10px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .seq-num {
+        font-size: 10.5px;
+        font-weight: 700;
+        fill: #ffffff;
+    }
+]]></style>
+    
+    <defs>
+        <!-- Dropshadow Filters -->
+        <filter id="shadow-sm" x="-4%" y="-4%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.06"/>
+        </filter>
+        <filter id="shadow-md" x="-6%" y="-6%" width="112%" height="112%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+        </filter>
+
+        <!-- Arrow Markers -->
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
+        </marker>
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
+        </marker>
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
+        </marker>
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+
+        <!-- Linear Gradients -->
+        <linearGradient id="header-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="#8b5cf6"/>
+        </linearGradient>
+    </defs>
+
+
+    <!-- Background Canvas -->
+    <rect width="980" height="640" fill="#f8fafc" rx="12"/>
+    <rect x="1" y="1" width="978" height="638" fill="none" stroke="#e2e8f0" stroke-width="1.5" rx="11"/>
+
+    <!-- Header Block -->
+    <g transform="translate(30, 24)">
+        <text class="title" x="0" y="20">GHCI Discrete System Architecture (PCIe Binding)</text>
+        <text class="subtitle" x="0" y="40">BAR0 Slim MMIO • PCIe IOMMU • Bus Master DMA • Dedicated High-Bandwidth VRAM</text>
+        <rect x="730" y="4" width="220" height="28" rx="14" fill="#2563eb" opacity="0.12"/>
+        <text x="840" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">DISCRETE PCIe MODEL</text>
+    </g>
+
+    <!-- Host Side (Left) -->
+    <g transform="translate(30, 80)">
+        <rect width="360" height="520" rx="10" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 350 0 Q 360 0 360 10 L 360 36 L 0 36 Z" fill="#eff6ff"/>
+        <text class="group-label" x="16" y="24" fill="#1d4ed8">Host Subsystem (Motherboard)</text>
+
+        <!-- Host CPU & Driver -->
+        <g transform="translate(16, 50)">
+            <rect width="328" height="110" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
+            <text class="card-title" x="12" y="22">Host CPU &amp; Kernel Driver</text>
+            <text class="card-body" x="12" y="42">• Maps BAR0 MMIO window for Slim MMIO (76B)</text>
+            <text class="card-body" x="12" y="60">• Writes Doorbell (`RING_WPTR`) to trigger CP</text>
+            <text class="card-body" x="12" y="78">• Receives MSI / MSI-X or INTx Interrupts</text>
+            <text class="card-body" x="12" y="96">• Manages VRAM page migrations / staging buffers</text>
+        </g>
+
+        <!-- Host Physical DRAM -->
+        <g transform="translate(16, 175)">
+            <rect width="328" height="155" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+            <text class="card-title" x="12" y="22">Host Physical DRAM</text>
+            <text class="card-body" x="12" y="42">• Command Ring Buffer (Host memory)</text>
+            <text class="card-body" x="12" y="60">• Staging Upload Buffers (Textures, Meshes)</text>
+            <text class="card-body" x="12" y="78">• Host-cached Descriptors &amp; Shaders</text>
+            <text class="card-body" x="12" y="96">• Readback buffers for fence status / query</text>
+            <rect x="10" y="115" width="308" height="26" rx="4" fill="#e2e8f0"/>
+            <text x="164" y="132" text-anchor="middle" font-size="10.5" font-weight="600" fill="#334155">Directly readable by GPU via PCIe Bus Master</text>
+        </g>
+
+        <!-- Root Complex & PCIe IOMMU -->
+        <g transform="translate(16, 345)">
+            <rect width="328" height="145" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
+            <text class="card-title" x="12" y="22" fill="#15803d">PCIe Root Complex &amp; IOMMU</text>
+            <text class="card-body" x="12" y="42">• Translates GPU Bus Master DMA requests</text>
+            <text class="card-body" x="12" y="60">• Provides hardware isolation &amp; memory protection</text>
+            <text class="card-body" x="12" y="78">• Manages BAR apertures (BAR0: MMIO, BAR1: VRAM)</text>
+            <text class="card-subtitle" x="12" y="112" fill="#166534">PCIe Gen3 / Gen4 x8 / x16 Interface</text>
+        </g>
+    </g>
+
+    <!-- Center Bus (PCIe) -->
+    <g transform="translate(415, 80)">
+        <rect width="130" height="520" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+        <text class="group-label" x="65" y="24" text-anchor="middle" fill="#475569">PCIe Bus</text>
+
+        <!-- PCIe Channels -->
+        <g transform="translate(12, 50)">
+            <rect width="106" height="65" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+            <text class="conn-label" x="53" y="24" text-anchor="middle">BAR0 MMIO</text>
+            <text class="conn-sub" x="53" y="40" text-anchor="middle">Host -> GPU</text>
+            <text class="conn-sub" x="53" y="54" text-anchor="middle">76B Regs</text>
+        </g>
+
+        <g transform="translate(12, 130)">
+            <rect width="106" height="75" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+            <text class="conn-label" x="53" y="24" text-anchor="middle">Bus Master DMA</text>
+            <text class="conn-sub" x="53" y="40" text-anchor="middle">GPU -> Host</text>
+            <text class="conn-sub" x="53" y="54" text-anchor="middle">Ring &amp; Data Fetch</text>
+            <text class="conn-sub" x="53" y="68" text-anchor="middle">(High Bandwidth)</text>
+        </g>
+
+        <g transform="translate(12, 220)">
+            <rect width="106" height="65" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+            <text class="conn-label" x="53" y="24" text-anchor="middle">BAR1 Aperture</text>
+            <text class="conn-sub" x="53" y="40" text-anchor="middle">Host -> VRAM</text>
+            <text class="conn-sub" x="53" y="54" text-anchor="middle">(Resizable BAR)</text>
+        </g>
+
+        <g transform="translate(12, 300)">
+            <rect width="106" height="65" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+            <text class="conn-label" x="53" y="24" text-anchor="middle">MSI-X / IRQ</text>
+            <text class="conn-sub" x="53" y="40" text-anchor="middle">GPU -> Host</text>
+            <text class="conn-sub" x="53" y="54" text-anchor="middle">Fence Wakeup</text>
+        </g>
+
+        <!-- Bidirectional Flow Arrows -->
+        <path d="M 65 390 L 65 470" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+        <text class="conn-sub" x="65" y="495" text-anchor="middle" font-weight="700">PCIe Link</text>
+    </g>
+
+    <!-- Discrete GPU Card (Right) -->
+    <g transform="translate(570, 80)">
+        <rect width="380" height="520" rx="10" fill="#ffffff" stroke="#c4b5fd" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 370 0 Q 380 0 380 10 L 380 36 L 0 36 Z" fill="#f5f3ff"/>
+        <text class="group-label" x="16" y="24" fill="#6d28d9">Discrete GPU Card (Amaterrace Hardware)</text>
+
+        <!-- PCIe Endpoint & DMA Engine -->
+        <g transform="translate(16, 50)">
+            <rect width="348" height="68" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
+            <text class="card-title" x="12" y="20">PCIe Endpoint &amp; DMA Controller</text>
+            <text class="card-body" x="12" y="38">• BAR0 MMIO Window &amp; Doorbell register latch</text>
+            <text class="card-body" x="12" y="54">• Asynchronous DMA Engine: Host DRAM &lt;--&gt; Local VRAM</text>
+        </g>
+
+        <!-- Command Processor & MMU -->
+        <g transform="translate(16, 128)">
+            <rect width="348" height="95" rx="6" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#6b21a8">Command Processor (CP)</text>
+            <text class="card-body" x="12" y="38">• Autonomous Ring DMA Engine (Fetches from Host)</text>
+            <text class="card-body" x="12" y="54">• GPU Page Table Walker: Handles Local VRAM &amp; Host Pages</text>
+            <text class="card-body" x="12" y="70">• Dispatches commands to 3D Pipeline &amp; BLT Engine</text>
+            <text class="card-subtitle" x="12" y="86" fill="#7c3aed">Decoupled execution from Host PCIe Latency</text>
+        </g>
+
+        <!-- GPU Core Pipeline -->
+        <g transform="translate(16, 233)">
+            <rect width="348" height="75" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#b45309">GPU Pipeline Core</text>
+            <text class="card-body" x="12" y="38">• VF, SU (32-Lane), RX, TU, ROP, BLT</text>
+            <text class="card-body" x="12" y="56">• High clock frequency graphics compute</text>
+        </g>
+
+        <!-- Shared L2 Cache -->
+        <g transform="translate(16, 318)">
+            <rect width="348" height="55" rx="6" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#047857">Shared L2 Cache (LLC)</text>
+            <text class="card-body" x="12" y="38">• 512KB - 2MB On-Chip Cache for high hit rate</text>
+        </g>
+
+        <!-- Local Dedicated VRAM -->
+        <g transform="translate(16, 385)">
+            <rect width="348" height="115" rx="8" fill="#1e293b" stroke="#0f172a" stroke-width="1.5"/>
+            <text class="card-title" x="14" y="24" fill="#f8fafc">Local Dedicated VRAM (GDDR / DDR)</text>
+            <text class="card-subtitle" x="14" y="42" fill="#38bdf8">High Bandwidth Dedicated Physical Memory (2GB - 16GB)</text>
+            <text class="card-body" x="14" y="65" fill="#e2e8f0">• Render Targets, Depth/Stencil, G-Buffers</text>
+            <text class="card-body" x="14" y="82" fill="#e2e8f0">• Textures, Geometry Buffers, Pipeline States</text>
+            <text class="card-body" x="14" y="99" fill="#94a3b8">• Display Scanout (DC reads without crossing PCIe)</text>
+        </g>
+    </g>
+</svg>

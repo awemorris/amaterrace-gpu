@@ -17,111 +17,168 @@ Contents
 --------
 
 1. [Architecture](#architecture)
-2. [Blocks](#blocks)
-3. [Shader unit](#shader-unit)
-4. [GHCI](#ghci)
-5. [Status](#status)
-6. [Building and testing](#building-and-testing)
-7. [Repository layout](#repository-layout)
+2. [GHCI 2.0 Host Interface](#ghci-20-host-interface)
+3. [Blocks & Implementation Details](#blocks--implementation-details)
+   - [Shader Unit (32-Lane SIMD)](#shader-unit-32-lane-simd)
+   - [Rasterizer Unit (RX)](#rasterizer-unit-rx)
+   - [Render Output Backend (ROP)](#render-output-backend-rop)
+   - [Shared L2 Cache & Display Controller](#shared-l2-cache--display-controller)
+4. [Status](#status)
+5. [Building and testing](#building-and-testing)
+6. [Repository layout](#repository-layout)
 
 Architecture
 ------------
 
-The host CPU reaches the GPU through the command processor:
+Amaterrace GPU (device `ATG1`) is a Vulkan-class graphics processing unit
+implementing the GHCI 2.0 specification. The diagram below illustrates the
+top-level SoC architecture, internal interconnects, shared last-level caching,
+and memory subsystems:
 
-```
-CPU -- (AXI4) -- Command Processor
-```
+![Amaterrace GPU SoC Top-Level Architecture](docs/svg/atg_top_architecture.svg)
 
-The data paths:
+### Data Paths
 
-```
-Fill/Copy:
-  CP --> BLT --> MC
-
-Primitive:
-  CP --> VF --> SU --> RX --> SU --> ROP --> MC
+- **Fill / Copy:** `CP --> BLT --> atg_rt --> Shared L2 Cache --> MC`
+- **Graphics Pipeline:**
+  ```
+  CP --> VF --> SU --> RX --> SU --> ROP --> atg_rt --> Shared L2 Cache --> MC
                               |
                               +--> TU
+  ```
+- **Matrix / LLM Accelerator:**
+  ```
+  CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP --> Shared L2C --> MC
+  ```
 
-LLM:
-  CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP -> MC
-```
+Internal blocks communicate through a tree of distributed routers (`atg_rt`),
+converging into a unified **Shared L2 Cache (LLC)** (512 KiB – 2 MiB) that
+buffers vertex attributes, shader memory, texture lookups, and tile writebacks.
+The **Display Controller (DC)** operates in its own independent 200 MHz pixel clock
+domain with a dedicated high-priority QoS bypass port directly into the Memory
+Controller (MC), preventing scanout stutter or starvation even during GPU quiesce
+or full reset.
 
-The blocks reach memory through a tree of small routers (`atg_rt`). The
-memory controller is at the root, and the display controller has its own
-entry there with priority: its scan-out goes on through a quiesce or a reset
-of the GPU.
+GHCI 2.0 Host Interface
+-----------------------
 
-Blocks
-------
+Amaterrace GPU is driven through the **GHCI 2.0 (GPU Host Controller Interface)**
+specification ([docs/ghci.md](docs/ghci.md)), designed for modern zero-copy
+virtual memory OS architectures:
+
+![GHCI 2.0 GPU Architecture](docs/svg/ghci_gpu_architecture.svg)
+
+### System Topologies (UMA & Discrete)
+
+GHCI 2.0 provides an identical programming model for both Unified Memory
+Architecture (UMA) and Discrete PCIe graphics devices:
+
+| Topology | Architecture Diagram | Key Characteristics |
+| --- | --- | --- |
+| **Unified Memory (UMA)** | ![GHCI UMA System](docs/svg/ghci_uma_system.svg) | Shared physical DRAM pool; hardware page table walker & L1/L2 TLBs in CP; zero-copy pipeline states, descriptors, and display framebuffers. |
+| **Discrete GPU (PCIe)** | ![GHCI Discrete System](docs/svg/ghci_discrete_system.svg) | BAR0 76-byte Slim MMIO window; Bus Master DMA engine; dedicated high-bandwidth VRAM with on-board Shared L2 Cache. |
+
+### Command Submission & In-Memory Pipeline State
+
+GHCI 2.0 introduces a zero-register-traffic command architecture:
+
+![GHCI Command Flow](docs/svg/ghci_command_flow.svg)
+
+- **Slim MMIO Interface:** Dynamic state registers (`STATE_*`) are eliminated.
+  The host interface contains only 19 registers (76 bytes) for ring pointers
+  (`WPTR`/`RPTR`), fence synchronization, interrupts, and power/reset control.
+- **In-Memory Immutable PSO:** Shaders, rasterizer configuration, and blend
+  parameters are baked into immutable `GhciPipelineState` structures (48 bytes)
+  allocated in user-space memory.
+- **Autonomous CP Execution:** The Command Processor traverses page tables and
+  configures the pipeline directly without generating MMIO bus traffic.
+
+The swimlane sequence diagram below illustrates the end-to-end command lifecycle:
+
+![GHCI Command Sequence](docs/svg/ghci_command_sequence.svg)
+
+Blocks & Implementation Details
+-------------------------------
 
 | Block | Name | Role |
 | --- | --- | --- |
-| CP | Command Processor | GHCI host registers, the command ring, the state register file, fences, interrupts, and a debug memory port (`DBG_ADDR`/`DBG_DATA`) for bring-up without a driver. A small RV32IM core runs its firmware. |
-| BLT | Blitter | 2D fill, copy (with optional alpha-over), linear↔tiled copy for textures, and the resolve of multisampled images. |
-| VF | Vertex Fetcher | Index and vertex fetch, attribute format conversion, instancing, and primitive assembly. |
-| SU | Shader Unit | Runs vertex, fragment and compute warps (see [Shader unit](#shader-unit)). |
-| RX | Rasterizer | Near-plane clipping, the viewport transform, an edge-function rasterizer with 1 or 4 samples per pixel, and quad traversal. |
-| TU | Texture Unit | A sampler with a small texture cache: 2D, 2D array, 3D and cube images with mipmaps (cube edges seamless); nearest, bilinear and trilinear filtering (3D: in all three axes); repeat, mirrored repeat, clamp to edge and clamp to border (Vulkan's border colours); texel offsets and unnormalized coordinates; the sampler's LOD bias and min/max LOD clamp; RGBA8/BGRA8 and the depth formats D24 and D32F with depth compare (percentage-closer filtering); gather (with compare); size, layer count, level count and LOD queries; 4x multisampled images and RGB565 read with `texf`. |
-| ROP | Buffer Writer | Depth and stencil test, blending, and buffer write-back in primitive order; per sample with 4x multisampling (alpha to coverage, alpha to one). |
-| SA | Systolic Array | A 32 × 32 matrix engine for LLM work, 0.8 TOPS per SU at 200 MHz. |
-| MC | Memory Controller | The internal memory bus (AMB, 32- or 64-byte lines): the arbiter, an address aperture, quiesce, and one AXI master (AXI4 512-bit to the MIG DDR3 on the KC705). |
-| DC | Display Controller | A unit of the GPU (GHCI's DISP2): the command processor sets its mode and flips its planes (the image and a 64 × 64 cursor) in ring order, so that a present scans the image where it is, without a copy; its events are GHCI interrupts. TMDS (DVI/HDMI) and parallel outputs. |
+| **CP** | Command Processor | RV32IM RISC-V core running firmware; hardware 2-level page table walker; unified L1/L2 TLB; ring fetcher and hardware dispatch engine. |
+| **BLT** | Blitter | 2D fast fill, copy (with optional alpha-over), linear↔tiled copy for textures, and resolve of multisampled images. |
+| **VF** | Vertex Fetcher | Autonomous descriptor fetch, index and vertex attribute parsing, instancing, and primitive assembly. |
+| **SU** | Shader Unit | 32-lane SIMD compute core running vertex, fragment, and compute warps (GSI1 64-bit ISA). |
+| **RX** | Rasterizer | Triangle setup, coarse tile scan, hierarchical early-Z cull, fine 2×2 quad scan, and perspective barycentric evaluation. |
+| **TU** | Texture Unit | Sampler with texture L1 cache: 2D, 2D array, 3D, and cube maps with mipmapping; bilinear and trilinear filtering; format decompression. |
+| **ROP** | Render Output Backend | Fast on-chip Tile Buffer, stencil and depth tests, dual-source color blending, logic operations, and coherent Shared L2 Cache writeback. |
+| **L2C** | Shared L2 Cache | Multi-banked unified cache (512 KiB – 2 MiB) with write-combining and barrier-driven invalidation. |
+| **SA** | Systolic Array | 32 × 32 matrix multiplication engine for LLM acceleration, offering 0.8 TOPS per SU at 200 MHz. |
+| **MC** | Memory Controller | Internal AMB bus arbiter with AXI4 master interfacing host DRAM or local VRAM. |
+| **DC** | Display Controller | Independent 200 MHz pixel clock domain; direct high-priority scanout port to MC; HDMI/DVI scanout surviving GPU reset. |
 
-Shader unit
------------
+### Shader Unit (32-Lane SIMD)
 
-- **Warp:** 32 lanes, scalar 32-bit per lane, with 16-bit packed operations
-  (2 × fp16/int16 per register). A warp runs over 32/NPHYS cycles on NPHYS
-  physical lanes, so one binary runs on every configuration. fp32 is
-  available on every lane.
-- **Divergence:** the compiler manages the execution mask (`EXEC_*`
-  instructions); there is no hardware divergence stack.
-- **Scoreboard:** a small per-warp hardware scoreboard tracks the destination
-  registers of outstanding long operations (memory, texture, transcendental,
-  divide) and stalls only the instructions that depend on them. `WAIT`, with
-  per-class counters, remains for store completion and memory ordering.
-- **Register file:** 32 lanes × NREGS × NWARPS × 32-bit in BRAM, replicated
-  for 3 read ports. On the XC7K325T: NREGS 64, NWARPS 4 (24 BRAM36 per SU).
-- **Per unit:** small instruction and data caches, shared memory (LDS), a
-  constant bank, a post-transform buffer and a primitive table for varying
-  interpolation, one shared transcendental unit, and one divider.
-- **ISA:** GSI1, the GHCI standard ISA ([docs/ghci.md section 12](docs/ghci.md#12-the-standard-shader-isa-gsi1)).
+The Shader Unit executes the standard GSI1 ISA with a full 32-lane SIMD
+architecture organized into 4 Quads (8 lanes per Quad):
 
-GHCI
-----
+![Amaterrace SU 32-Lane Architecture](docs/svg/atg_su_32lane.svg)
 
-GHCI (GPU Host Controller Interface) is a public, versioned host interface for
-Vulkan-class GPUs, in the spirit of AHCI and xHCI.
+- **Execution Array:** 32 physical SIMD lanes grouped into Quad 0 (0–7),
+  Quad 1 (8–15), Quad 2 (16–23), and Quad 3 (24–31).
+- **DSP48E1 FP32 FMA Cascade:** Each lane integrates a dedicated full-width
+  FP32 fused multiply-add pipeline (`am_mul`), cascaded across Xilinx DSP48E1
+  slices for single-cycle throughput.
+- **Local Data Share (LDS):** 32 KiB on-chip multi-banked scratchpad memory for
+  low-latency cross-lane communication and compute group sharing without bank
+  conflicts.
+- **Scoreboard & Scheduler:** Per-warp hardware scoreboard tracks long-latency
+  operations (memory, texture, transcendental) across 8–16 concurrent warps with
+  zero-cycle switching overhead.
 
-- **What it standardizes:**
-  - the host control registers: identification, capabilities, the
-    extended-capability list, control/status/IRQ, the command ring, the
-    address aperture, faults, the watchdog, performance counters, and the
-    debug memory port;
-  - the command processor's states and ring rules, complete fences, and the
-    interrupt, fault, quiesce and reset semantics;
-  - the state register file;
-  - the display controller, as an extended capability, driven through the
-    ring (mode, flips, a cursor plane) with its events in the GPU's
-    interrupt;
-  - optional session protection: the memory of one client's GPU session kept
-    from the others' work, and the data one session leaves in the GPU kept
-    from the next (the PROT capability);
-  - a standard shader ISA.
-- **Commands:** the ring carries zedBSD's GPU command protocol (the Kei GPU
-  command protocol, whose numbers follow the Venus wire format).
-- **Shader ISA:** a standard ISA based on RISC-V (but not bound to the RISC-V
-  specification) that takes in what is common across GPUs. A GPU runs it
-  natively, or its command processor translates it to a native ISA. A driver
-  may also submit programs in the GPU's native ISA directly.
-- **Vendor-specific and optional:** native ISAs, texture tiling, and vendor
-  state and registers.
-- **Amaterrace GPU:** implements GHCI 1.0 with vendor `AMAT` and device `ATG1`;
-  its native ISA is the standard one.
-- **Specification:** [docs/ghci.md](docs/ghci.md) (draft). The C headers in
-  [include/](include/) are the ones an OS driver copies.
+### Rasterizer Unit (RX)
+
+The Rasterizer converts primitives into covered pixel quads through a
+high-throughput two-level hierarchical pipeline:
+
+![Amaterrace RX Rasterizer Pipeline](docs/svg/atg_rx_rasterizer.svg)
+
+1. **Triangle Setup & Bounding Box:** Generates edge equations ($A \cdot x + B \cdot y + C$),
+   computes double-area ($2 \times \text{Area}$), performs back-face culling, and clamps
+   bounding boxes to the scissor rectangle.
+2. **Coarse Scan & Early Z-Cull:** Walks $8\times 8$ or $16\times 16$ coarse tiles.
+   The **Early Z-Cull Engine** evaluates hierarchical Z (Hi-Z) RAM against the
+   bounding box, discarding 50–80% of occluded geometry before fragment shading.
+3. **Fine Scan (2×2 Quads):** Evaluates sub-tile $2\times 2$ pixel fragments with
+   perspective-correct barycentric interpolation ($\lambda_0, \lambda_1, \lambda_2$)
+   and sub-pixel precision ($1/16\text{th}$).
+4. **Quad Output:** Bundles covered fragments with interpolated varyings (UV,
+   normals, colors, depth) into 32-pixel fragment warps dispatched directly to SU.
+
+### Render Output Backend (ROP)
+
+The Render Output Backend processes shaded fragment quads and commits pixels to memory:
+
+![Amaterrace ROP Architecture](docs/svg/atg_rop_backend.svg)
+
+- **On-Chip Tile Buffer:** Multi-banked SRAM tile cache holding active color,
+  depth, and stencil data for single-cycle read-modify-write operations,
+  eliminating off-chip bus contention during heavy blending.
+- **Stencil & Depth Test:** Full Vulkan 1.3 compare operations and stencil ops
+  (KEEP, ZERO, REPLACE, INCR, DECR, INVERT) with independent write masks.
+- **Color Blending & Dual-Source:** Conforming color blender supporting standard
+  modes (Add, Subtract, Reverse Sub, Min, Max) and **Dual-Source Blending**
+  ($\text{Src0}, \text{Src1}, \text{Dst}$).
+- **Logic Operations:** Hardware implementation of all 16 Vulkan LogicOp modes
+  and bitwise ROP2/ROP3 functions.
+- **Shared L2C Writeback:** Lossless tile compression and write-combining buffers
+  flush pixel data directly into the Shared L2 Cache.
+
+### Shared L2 Cache & Display Controller
+
+- **Last-Level Cache (LLC):** Sits directly in front of the Memory Controller,
+  coalescing memory traffic from VF, SU, TU, ROP, and BLT.
+- **Independent Display Domain:** The Display Controller operates on an isolated
+  200 MHz pixel clock domain and connects directly to an unthrottled high-priority
+  QoS port on the Memory Controller, guaranteeing tear-free display scanout even
+  during GPU stress tests, quiesce cycles, or hardware resets.
 
 Status
 ------
