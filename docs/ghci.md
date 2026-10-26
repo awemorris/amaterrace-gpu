@@ -21,13 +21,13 @@ Contents
 5. [Command processor states](#5-command-processor-states)
 6. [The command ring](#6-the-command-ring)
 7. [The command set](#7-the-command-set)
-8. [The state register file](#8-the-state-register-file)
+8. [In-Memory Pipeline State and Descriptors](#8-in-memory-pipeline-state-and-descriptors)
 9. [Fences and interrupts](#9-fences-and-interrupts)
 10. [Faults, watchdog, quiesce and reset](#10-faults-watchdog-quiesce-and-reset)
 11. [Memory model](#11-memory-model)
 12. [The standard shader ISA (GSI1)](#12-the-standard-shader-isa-gsi1)
 13. [The display controller capabilities (DISP, DISP2)](#13-the-display-controller-capabilities-disp-disp2)
-14. [Bring-up: the debug port and KICK](#14-bring-up-the-debug-port-and-kick)
+14. [Bring-up and Diagnostics](#14-bring-up-and-diagnostics)
 15. [Bindings](#15-bindings)
 16. [Versions](#16-versions)
 - [Appendix A. Driver initialization (informative)](#appendix-a-driver-initialization-informative)
@@ -166,126 +166,110 @@ earlier work has completed.
 3. Host control registers
 -------------------------
 
-### 3.1 Register map
+GHCI 2.0 defines a slim 19-register host MMIO window (76 bytes total:
+offsets `0x000` to `0x048`), mapped to a 4 KiB host physical page. All dynamic
+state registers (`STATE_*`, 0x1000..0x1BFC) and legacy `KICK`/`APERTURE_*`
+registers are completely abolished. All pipeline state is submitted through
+in-memory Pipeline State Objects (`GhciPipelineState`) and structured ring
+commands.
+
+### 3.1 Slim Register Map (19 Registers, 76 Bytes)
 
 | Offset | Name | Access | Contents |
 | --- | --- | --- | --- |
 | 0x000 | GHCI_MAGIC | R | `0x47484349` ("GHCI") |
-| 0x004 | GHCI_VERSION | R | [31:16] major (1), [15:0] minor (0) |
-| 0x008 | VENDOR_ID | R | FourCC of the vendor |
-| 0x00C | DEVICE_ID | R | FourCC of the device |
-| 0x010 | ISA_ID | R | FourCC of the native shader ISA ("GSI1" when the GPU runs GSI1 natively); 0 = no shader unit (section 12) |
-| 0x014 | DEVICE_VERSION | R | The vendor's implementation version: [31:16] major, [15:0] minor |
-| 0x018 | EXTCAP | R | Byte offset of the first extended capability; 0 = none (section 4) |
-| 0x01C | GCLK_HZ | R | Core clock in Hz; the driver converts cycle counts with it |
-| 0x020 | CAPS | R | Capabilities (section 3.2) |
-| 0x024 | CAPS2 | R | Sizes (section 3.2) |
-| 0x028 | SCRATCH | RW | 32 bits for the driver (bring-up, liveness) |
-| 0x02C | COUNTER | R | Free-running core clock count |
-| 0x030 | CTRL | RW | [0] RUN, [1] RESET (W1S; falls when the reset is done), [2] HALT, [3] STEP, [4] WDT_EN |
-| 0x034 | STATUS | R | Status (section 3.3) |
-| 0x038 | IRQ_STATUS | R/W1C | [0] FENCE, [1] FAULT, [2] RING_EMPTY, [3] WATCHDOG, [4] DBG_DONE, [5] SOFT, [6] HALTED, [7] RESULT (the firmware wrote a result), [8] RETIRE (RING_RPTR moved past a packet), [9] VBLANK, [10] FLIP, [11] DISP_ERROR, [12] HOTPLUG (the events of a DISP2 display controller, section 13.2) |
-| 0x03C | IRQ_ENABLE | RW | [12:0]: the same bits |
-| 0x040 | IRQ_SET | W1S | [5] sets IRQ_STATUS.SOFT |
-| 0x044 | WDT_CYCLES | RW | Watchdog limit for one command, in core cycles (reset value 2^28) |
-| 0x04C | RESIDENT_WARPS | R | [15:0] the warps the GPU runs at once over all its shader units (the size of the `warp` operand's range, section 12.3; scratch memory, section 12.10); 0 without a shader unit. [23:16] the general registers of a lane (32 or 64, section 12.2: a program may use r0 to this number less one; the driver's compiler allocates within it); 0 without a shader unit. [31:24] 0 |
-| 0x050 | RING_BASE | RW | GPU address of the ring, 32-byte aligned (the low bits read 0) |
-| 0x054 | RING_SIZE | RW | log2 of the ring's size in bytes, 10..20 (values outside are clamped) |
-| 0x058 | RING_WPTR | RW | Write pointer, a dword index in the ring; writing it rings the doorbell |
-| 0x05C | RING_RPTR | R | Read pointer: the dword index up to which the CP has parsed the commands and handed them on |
-| 0x060 | APERTURE_BASE | RW | First GPU address the GPU may access; aligned to the memory line (CAPS[23:20]); the low bits read 0 |
-| 0x064 | APERTURE_LIMIT | RW | End of that range (exclusive), aligned the same way |
-| 0x068 | FAULT_ADDR | R | Address of the first fault since the last reset (0 when there is none) |
-| 0x06C | FAULT_INFO | R | The first fault (section 3.4) |
-| 0x070 | FENCE_LAST | RW | Last fence value written; the driver restores it after a reset (section 9) |
-| 0x080..0x08C | PERF0..PERF3 | R | Busy-cycle counters (what each counts is listed in the PERF capability) |
-| 0x090 | PERF_CTRL | RW | [0] clears PERF0..3 (W1S) |
-| 0x0A0 | DBG_ADDR | RW | Debug port address (section 14); writing it starts a read |
-| 0x0A4 | DBG_DATA | RW | Read: the last debug read's value. Write: starts a write of the value to DBG_ADDR |
-| 0x0A8 | DBG_STATUS | R | [0] busy, [1] error (the last access was refused) |
-| 0x0F00 | KICK | W | [0] BLIT, [1] DRAW, [2] DISPATCH, on the state register file's values (section 14) |
-| 0x1000..0x17FC | STATE[0..511] | RW | The state register file (section 8) |
-| 0x1800..0x1BFC | STATE[0x200..0x2FF] | RW | (CAPS[30]) The vertex stage's texture slots (sections 8.1, 8.5) |
+| 0x004 | GHCI_VERSION | R | [31:16] major (2), [15:0] minor (0) |
+| 0x008 | DEVICE_CAPS | R | Device capabilities bitfield (section 3.2) |
+| 0x00C | EXTCAP_PTR | R | Byte offset of the first extended capability; 0 = none (section 4) |
+| 0x010 | CTRL | RW | Core execution and reset control (section 3.3) |
+| 0x014 | STATUS | R | Hardware execution status (section 3.3) |
+| 0x018 | IRQ_STATUS | R/W1C | Interrupt status flags (write 1 to clear) (section 3.4) |
+| 0x01C | IRQ_ENABLE | RW | Interrupt delivery enable mask (section 3.4) |
+| 0x020 | RING_BASE_LO | RW | Command ring 64-bit base address [31:0], 64-byte aligned |
+| 0x024 | RING_BASE_HI | RW | Command ring 64-bit base address [63:32] |
+| 0x028 | RING_SIZE | RW | Command ring size in bytes (power of 2, 4 KiB .. 16 MiB) |
+| 0x02C | RING_RPTR | R | Command ring read pointer (byte offset from RING_BASE) |
+| 0x030 | RING_WPTR | RW | Command ring write pointer / Doorbell (byte offset from RING_BASE) |
+| 0x034 | FAULT_INFO | R | Fault classification, source unit, and syndrome (section 3.5) |
+| 0x038 | FAULT_ADDR_LO | R | Faulting GPU virtual/physical memory address [31:0] |
+| 0x03C | FAULT_ADDR_HI | R | Faulting GPU virtual/physical memory address [63:32] |
+| 0x040 | DIAG_CP_PC | R | Current RV32IM Program Counter of CP firmware (debug) |
+| 0x044 | DIAG_CP_STATUS | R | CP internal FSM state and in-flight draw counter (debug) |
+| 0x048 | SCRATCH | RW | 32-bit scratchpad register for host bring-up and liveness tests |
 
-The extended capability list starts at 0x100 when present.
+### 3.2 DEVICE_CAPS (0x008)
 
-### 3.2 CAPS and CAPS2
+| Bits | Name | Meaning |
+| --- | --- | --- |
+| [0] | CAP_UMA | 1 = Unified Memory Architecture (Shared DRAM), 0 = Discrete VRAM |
+| [1] | CAP_IOMMU | 1 = System / Platform IOMMU translation supported and active |
+| [2] | CAP_HW_WALKER | 1 = CP contains autonomous 2-level hardware page table walker |
+| [3] | CAP_INDIRECT_DRAW | 1 = Native MultiDrawIndirect and indirect dispatch supported |
+| [4] | CAP_SECONDARY_RING | 1 = Secondary command buffer direct execution supported (`CMD_EXECUTE_COMMANDS`) |
+| [5] | CAP_DUAL_SOURCE | 1 = Dual-source color blending supported (`Src1Color` / `Src1Alpha`) |
+| [6] | CAP_FP16 | 1 = Packed 16-bit float/integer arithmetic supported |
+| [7] | CAP_GSI1 | 1 = Native GSI1 standard shader ISA execution |
+| [15:8] | SIMD_LANES | Number of physical SIMD lanes per Shader Unit (32) |
+| [23:16] | NUM_SU | Number of Shader Units present (e.g. 1, 2, 4) |
+| [31:24] | RESERVED | Reserved (reads 0) |
 
-CAPS (0x020):
+### 3.3 CTRL and STATUS (0x010, 0x014)
 
-| Bits | Meaning |
-| --- | --- |
-| [0] | A command processor and ring are present |
-| [1] | A blitter is present |
-| [2] | A shader unit is present (ISA_ID is not 0) |
-| [3] | A display controller is in this window (with a DISP or DISP2 capability) |
-| [7:4] | log2 of the shader subgroup width (0 without shaders) |
-| [8] | Bilinear texture filtering |
-| [9] | Stencil |
-| [10] | The CP can wait for a display vsync |
-| [11] | Texture layout: 0 linear only, 1 also 4x4 tiles |
-| [15:12] | Version of the standard state layout (1) |
-| [16] | GPU MMU (MMU capability) |
-| [17] | The command processor has firmware: class 2 packets are decoded (section 7.2) |
-| [18] | The firmware can be reloaded (CPFW capability) |
-| [19] | The native ISA (ISA_ID) differs from GSI1 |
-| [23:20] | log2 of the memory line size in bytes (5 = 32, 6 = 64) |
-| [24] | Subgroup operations: `shfl`, `vote`, `ballot` (section 12.5) |
-| [25] | A systolic array (SA capability; reserved) |
-| [26] | The texture unit of section 8.4: the view types (2D arrays, 3D, cube maps), texel offsets, unnormalized coordinates, mipmap mode linear, clamp to border, the depth formats and depth compare, gather and the queries (Vulkan 1.0 core texture sampling, multisampled images aside) |
-| [27] | Graphics: the vertex fetcher, the rasterizer and the render output are present |
-| [28] | Packed fp16/int16 arithmetic (section 12.5) |
-| [29] | 4x multisampling (draft, section 12.11): the rasterizer's sample coverage, the render output per sample, `texf` of multisampled images and the blitter's RESOLVE (section 8.2) |
-| [30] | Vulkan 1.0 core rendering (draft, section 8.5): the stencil ops with front and back state ([9] says a stencil attachment exists), D16, depth bias, depth bounds, depth clamp and depth clipping, w, viewport and guard-band clipping, points and lines, four colour attachments, the formats that the FMT capability names, fp32 blend constants, the occlusion counter (micro-op QUERY), ATTR_LIMIT and rasterizer discard, the vertex stage's texture slots (section 8.5) and 64 varying components (VARYING_COUNT) |
+**CTRL (0x010)**:
+- `[0] RUN`: 1 = Enable ring processing; 0 = CP pauses command fetch.
+- `[1] HALT`: 1 = Request CP to halt execution gracefully after current packet.
+- `[2] RESET`: 1 = Issue GPU software reset. Self-clearing; hardware clears this
+  bit and asserts `STATUS.READY` when reset completes.
+- `[3] IRQ_GLOBAL`: 1 = Global interrupt enable to host CPU.
+- `[4] TLB_FLUSH`: 1 = Invalidate CP L1/L2 TLBs immediately.
+- `[31:5]`: Reserved (write 0).
 
-CAPS2 (0x024):
+**STATUS (0x014)**:
+- `[0] READY`: 1 = GPU is powered, calibrated, and ready to accept commands.
+- `[1] BUSY`: 1 = GPU is currently processing commands or executing shaders.
+- `[2] HALTED`: 1 = CP is halted.
+- `[3] FAULT`: 1 = Unrecoverable hardware or memory translation fault occurred.
+- `[4] RESETTING`: 1 = Reset sequence in progress.
+- `[31:5]`: Reserved (reads 0).
 
-| Bits | Meaning |
-| --- | --- |
-| [7:0] | Number of rings (queues) |
-| [15:8] | Shared memory per workgroup, in KiB |
-| [23:16] | Constant words / 16 |
-| [27:24] | Texture slots / 4 (with CAPS[30]: per shader stage, section 8.5) |
-| [31:28] | Vertex attributes / 4 |
+### 3.4 IRQ_STATUS and IRQ_ENABLE (0x018, 0x01C)
 
-### 3.3 STATUS
+`IRQ_STATUS` is write-1-to-clear (RW1C). When an event occurs and its corresponding
+bit in `IRQ_ENABLE` is 1 and `CTRL.IRQ_GLOBAL` is 1, the GPU asserts its host
+interrupt line.
 
-| Bits | Meaning |
-| --- | --- |
-| [0] | CP busy (parsing, a debug access in progress, or resetting) |
-| [1]..[6] | Busy: BLT, VF, RX, ROP, TU, SU (the OR of all units of a kind) |
-| [8] | AXI_IDLE: no memory access of the GPU's own blocks is outstanding (a display controller that scans out is not counted) |
-| [9] | FAULT |
-| [10] | HALTED |
-| [11] | RING_EMPTY (RING_WPTR = RING_RPTR) |
-| [12] | MEM_READY: the GPU's memory is usable (a memory controller's calibration is done; 1 where there is none) |
-| [13] | AXI_STUCK: a quiesce has waited 4 x WDT_CYCLES for outstanding accesses (section 10) |
-| [14] | QUIESCED: no new memory access is issued |
-| [19:16] | CP state (section 5) |
+| Bits | Name | Meaning |
+| --- | --- | --- |
+| [0] | IRQ_FENCE | A `CMD_FENCE` packet with interrupt flag completed |
+| [1] | IRQ_FAULT | Unrecoverable memory page fault, illegal packet, or shader fault |
+| [2] | IRQ_WATCHDOG | Command execution exceeded watchdog cycle limit |
+| [3] | IRQ_DISPLAY | Display Controller VSYNC or flip completion event |
+| [31:4] | RESERVED | Reserved (reads 0) |
 
-### 3.4 FAULT_INFO
+### 3.5 FAULT_INFO, FAULT_ADDR and DIAG (0x034 - 0x044)
 
-| Bits | Meaning |
-| --- | --- |
-| [7:0] | Memory client number |
-| [8] | The access was a write |
-| [9] | Kind 1 only: the access was refused by session protection (section 11.6), not by the aperture |
-| [15:12] | Kind (below) |
-| [23:16] | Block: the STATUS busy-bit number (0 CP, 1 BLT, 2 VF, 3 RX, 4 ROP, 5 TU, 6 SU) |
-| [31:24] | Job tag of the work that faulted (section 7) |
+When an unrecoverable fault occurs, `STATUS.FAULT` is asserted, `IRQ_STATUS.IRQ_FAULT`
+is raised, and the first fault's details are latched:
 
-| Kind | Cause |
-| --- | --- |
-| 1 | Access outside the aperture, or not permitted to the session (section 11.6) |
-| 2 | Unknown or unsupported command or operation |
-| 3 | Ring error (a packet runs past RING_WPTR, a bad state index) |
-| 4 | Watchdog: one command ran longer than WDT_CYCLES |
-| 5 | Memory error (AXI SLVERR or DECERR) |
-| 6 | KICK in a state that does not take it, or while the unit is busy |
-| 7 | A write to a register that is locked in the current state |
-| 8 | ISA fault: a shader instruction that GSI1 does not define or the GPU does not support (FAULT_ADDR = the PC; section 12.6) |
+**FAULT_INFO (0x034)**:
+- `[7:0] FAULT_KIND`:
+  - 0: None
+  - 1: Invalid command opcode or malformed packet header
+  - 2: Ring buffer boundary overrun
+  - 3: MMU Page Fault on Read
+  - 4: MMU Page Fault on Write
+  - 5: TLB Translation Fault / invalid descriptor
+  - 6: Shader Instruction Fault (GSI1 illegal op or invalid PC)
+  - 7: Memory protection violation
+- `[15:8] SOURCE_UNIT`: 0 = CP, 1 = VF, 2 = SU, 3 = RX, 4 = TU, 5 = ROP, 6 = BLT.
+- `[31:16] SYNDROME`: Detailed hardware syndrome or error code.
 
-Only the first fault since the last reset is recorded.
+**FAULT_ADDR_LO / HI (0x038, 0x03C)**:
+64-bit GPU virtual or physical address where the fault occurred.
+
+**DIAG_CP_PC / DIAG_CP_STATUS (0x040, 0x044)**:
+Exposes the internal RV32IM microcontroller Program Counter and state machine
+for driver timeout diagnosis, eliminating the need for dedicated debug MMIO ports.
 
 4. Extended capabilities
 ------------------------
@@ -335,19 +319,17 @@ count. [7:0] is one of:
 
 | State (STATUS[19:16]) | Entered | Accepts | Leaves |
 | --- | --- | --- | --- |
-| 0 IDLE | After reset, or RUN = 0 | Every register write, KICK, the STATE alias, the debug port | RUN = 1: RUNNING |
-| 1 RUNNING | RUN = 1 | RING_WPTR (doorbell), IRQ_*, SCRATCH, the debug port, HALT, RESET. RING_BASE/SIZE, APERTURE_*, the STATE alias and KICK are ignored and raise a fault (kind 6 or 7) | HALT: HALTING. A fault: FAULTED. RUN = 0: IDLE after the current command (the doorbell is kept) |
-| 2 HALTING | HALT = 1 | Reads | When the current command (and the asynchronous work it started) has finished or stopped and the memory accesses are quiesced: HALTED, with IRQ_STATUS.HALTED |
-| 3 HALTED | After HALTING | As IDLE (the debug port included), plus STEP (one command) | HALT = 0: back to RUNNING or IDLE. RESET: RESETTING |
-| 4 FAULTED | A fault | Reads, the debug port, IRQ_STATUS/ENABLE; quiesces by itself | RESET only |
-| 5 RESETTING | RESET = 1, from any state | Reads | Quiesced and AXI_IDLE: the core is reset, the memory clients' queues are flushed, CTRL.RESET falls: IDLE |
+| 0 IDLE | After reset, or CTRL.RUN = 0 | Slim MMIO register writes (RING_BASE, RING_SIZE, SCRATCH, etc.) | CTRL.RUN = 1: RUNNING |
+| 1 RUNNING | CTRL.RUN = 1 | RING_WPTR (doorbell), IRQ_*, SCRATCH, CTRL.HALT, CTRL.RESET | CTRL.HALT: HALTING. A fault: FAULTED. CTRL.RUN = 0: IDLE after current command |
+| 2 HALTING | CTRL.HALT = 1 | Reads | When the current command has finished and memory accesses are quiesced: HALTED, with IRQ_STATUS |
+| 3 HALTED | After HALTING | Reads, SCRATCH, CTRL.RESET | CTRL.HALT = 0: back to RUNNING or IDLE. CTRL.RESET = 1: RESETTING |
+| 4 FAULTED | A fault | Reads, IRQ_STATUS/ENABLE; quiesces by itself | CTRL.RESET only |
+| 5 RESETTING | CTRL.RESET = 1, from any state | Reads | Quiesced: core is reset, queues are flushed, CTRL.RESET self-clears: IDLE |
 
-A reset keeps APERTURE_*, RING_BASE/SIZE, IRQ_ENABLE, WDT_CYCLES, SCRATCH
-and the state register file; the units see the kept state again after the
-reset. It clears RING_WPTR/RPTR, IRQ_STATUS, FAULT_ADDR/INFO, FENCE_LAST,
-CTRL.RUN/HALT, PROT_TABLE (section 11.6), and everything inside the blocks
-(caches, queues, warps, the sessions and grants of section 11.6).
-After a reset the driver starts the ring again from its beginning.
+A reset preserves `RING_BASE_LO/HI`, `RING_SIZE`, `IRQ_ENABLE`, and `SCRATCH`.
+It clears `RING_WPTR`, `RING_RPTR`, `IRQ_STATUS`, `FAULT_ADDR`, `FAULT_INFO`,
+`CTRL.RUN`, `CTRL.HALT`, internal TLB caches, and GPU pipeline states.
+After a reset, the driver restarts ring submission from `RING_WPTR = 0`.
 
 6. The command ring
 -------------------
@@ -428,595 +410,279 @@ section 11.4), then a store barrier, then the register write.
 7. The command set
 ------------------
 
-### 7.1 Packets
+GHCI 2.0 replaces legacy register-poking loops (such as repetitive `SET_REG`
+packets) with a modern, structured command packet protocol. The driver records
+packets into the shared command ring (Ring 0) in host or shared memory.
 
-The ring carries packets of dwords
-([`include/ghci_packets.h`](../include/ghci_packets.h)). Every packet
-starts with dword0:
+### 7.1 Packet Format
 
-| Bits | Class 0/1 (native micro-ops) | Class 2 (a gpu-op) | Class 3 (padding) |
+Every packet begins with a 32-bit header (`dword 0`):
+
+| Bits | Field | Meaning |
+| --- | --- | --- |
+| [7:0] | `opcode` | Command opcode (section 7.2) |
+| [15:8] | `dwords` | Total size of packet in dwords, including header (1..255) |
+| [31:16] | `flags` | Command-specific flags or sequence tag |
+
+Packets are 4-byte aligned and must not wrap across the ring boundary (the driver
+pads to the end with `CMD_NOP` when the remaining space cannot hold the next
+packet). Packets are processed in strict in-order sequence by the Command Processor.
+
+### 7.2 Structured Command Opcodes
+
+| Opcode | Name | Size (dw) | Description |
 | --- | --- | --- | --- |
-| [31:30] | 0 standard, 1 vendor | 2 | 3 |
-| [29:24] | op | 0 | 0 |
-| [23:16] | job tag (FAULT_INFO[31:24]) | job tag | 0 |
-| [15:0] | [15:8] flags, [7:0] n | n | n |
+| `0x00` | `CMD_NOP` | variable | Padding / no-operation |
+| `0x20` | `CMD_BIND_PIPELINE` | 3 | Binds immutable PSO via 64-bit GPU virtual address |
+| `0x21` | `CMD_BIND_VERTEX_BUFFERS` | 2 + 4×N | Binds vertex buffer arrays (VA, size, stride) |
+| `0x22` | `CMD_BIND_INDEX_BUFFER` | 4 | Binds index buffer (VA, index type, size) |
+| `0x23` | `CMD_BIND_DESCRIPTOR_TABLE` | 4 | Binds resource descriptor table (set slot, table VA, count) |
+| `0x24` | `CMD_SET_VIEWPORT` | 7 | Dynamic viewport bounds (X, Y, W, H, MinZ, MaxZ) |
+| `0x25` | `CMD_SET_SCISSOR` | 5 | Dynamic scissor rectangle (X, Y, W, H) |
+| `0x26` | `CMD_SET_DYNAMIC_STATE` | 6 | Dynamic depth bias, blend constants, stencil reference |
+| `0x27` | `CMD_DRAW` | 5 | Direct non-indexed primitive draw |
+| `0x28` | `CMD_DRAW_INDEXED` | 6 | Indexed primitive draw |
+| `0x29` | `CMD_DRAW_INDIRECT` | 6 | MultiDrawIndirect from GPU buffer |
+| `0x30` | `CMD_DISPATCH` | 4 | Compute shader workgroup dispatch (X, Y, Z) |
+| `0x31` | `CMD_BARRIER` | 4 | Pipeline synchronization & cache/TLB invalidation |
+| `0x32` | `CMD_EXECUTE_COMMANDS` | 4 | Direct execution of secondary command buffers (UMA zero-copy) |
+| `0x33` | `CMD_FENCE` | 5 | Complete memory fence writeback & optional host IRQ |
 
-- n is the number of dwords after dword0.
-- A packet never wraps around the ring's end (pad to the end with class 3);
-  a packet whose end passes RING_WPTR is a fault of kind 3.
-- Packets are processed in ring order.
-- The job tag of a class 2 packet names the **session** the packet belongs
-  to (a GPU context the driver opened with SESSION_OPEN). Only the driver
-  writes the ring, so the session of the work is always the driver's
-  choice, never the content of a client's buffer.
+### 7.3 Detailed Command Binary Specifications
 
-### 7.2 Class 2: gpu-ops for the CP's firmware
+#### `CMD_BIND_PIPELINE` (0x20)
+Binds an immutable Pipeline State Object (`GhciPipelineState`, section 8.2).
+The CP fetches the 128-byte state structure via DMA/AXI and configures the
+hardware pipeline in 1–2 cycles.
 
-Class 2 packets carry the **Kei GPU command protocol** (zedBSD's GPU command
-protocol, whose numbers follow the Venus wire format), decoded by the CP's
-firmware:
+- `dword 0`: Header (`opcode = 0x20`, `dwords = 3`)
+- `dword 1`: `pso_gpu_va[31:0]` (64-bit GPU VA, 64-byte aligned)
+- `dword 2`: `pso_gpu_va[63:32]`
 
-| Dword | Contents |
-| --- | --- |
-| 1 | The gpu-op number |
-| 2 | [0] REPLY, [1] RESULT |
-| 3 | The result's address |
-| 4.. | The gpu-op's arguments |
+#### `CMD_BIND_VERTEX_BUFFERS` (0x21)
+Binds one or more contiguous vertex attribute stream buffers.
 
-- A GPU without firmware (CAPS[17] = 0) faults with kind 2.
-- While the firmware works on a class 2 packet, the CP takes no other
-  packet.
-- The GHCI gpu-ops (0x10100-0x10108, draft numbers): SESSION_OPEN,
-  SESSION_CLOSE, MEMORY, PROGRAM, NATIVE, FRAME, BUFFER_GRANT and
-  BUFFER_REVOKE (section 11.6), and HEAP.
-- **HEAP** (0x10108) `[u64 GPU address][u64 bytes][u32 warps]`: the range
-  of GPU memory the driver lends the firmware for its objects and the
-  recordings of the command buffers (line aligned, inside the aperture,
-  given to no other user), and the warps the GPU runs at once over its
-  shader units (RESIDENT_WARPS; a program's scratch memory, section
-  12.10, has a part for each; 0 lets the firmware choose). The driver sends it after every start of the
-  firmware (RUN, a RESET) and before the first SESSION_OPEN; it is
-  refused (VK_ERROR_INITIALIZATION_FAILED) while a session is open. A
-  firmware that keeps its objects elsewhere may ignore it. A session's
-  objects need the heap: without it they fail with
-  VK_ERROR_OUT_OF_DEVICE_MEMORY.
-- **MEMORY** (0x10102) `[u64 memory][u64 GPU address][u64 bytes][u32
-  flags]`: the session's memory object `memory` (the client's handle) is
-  the range of GPU memory. flags: [0] HOST_VISIBLE (the client maps it),
-  [1] IMPORTED (memory that another session owns, imported by this one;
-  section 11.6), [2] READ_ONLY (the session's work only reads it; section
-  11.6); the other bits are 0.
-- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT, BUFFER_REVOKE and HEAP are
-  taken only as packets in the ring, never as staged commands inside a
-  frame: inside a frame they end the frame with
-  VK_ERROR_FEATURE_NOT_PRESENT.
+- `dword 0`: Header (`opcode = 0x21`, `dwords = 2 + 4 * binding_count`)
+- `dword 1`: `[15:0] first_binding`, `[31:16] binding_count`
+- For each binding $i \in [0, 	ext{binding\_count}-1]$ (4 dwords each):
+  - `dword 2 + 4*i`: `buffer_va[31:0]`
+  - `dword 3 + 4*i`: `buffer_va[63:32]`
+  - `dword 4 + 4*i`: `size_bytes`
+  - `dword 5 + 4*i`: `stride_bytes`
 
-**GHCI_FRAME.** A driver normally sends one class 2 packet per submission,
-GHCI_FRAME (gpu-op 0x10105, draft;
-[`include/ghci_frame.h`](../include/ghci_frame.h)), with n = 8:
+#### `CMD_BIND_INDEX_BUFFER` (0x22)
+Binds the index buffer for indexed draw calls.
 
-| Dword | Contents |
-| --- | --- |
-| 4-5 | Address of a frame of staged commands |
-| 6 | The frame's size in bytes |
-| 7 | A result page |
-| 8 | The number of commands |
+- `dword 0`: Header (`opcode = 0x22`, `dwords = 4`)
+- `dword 1`: `buffer_va[31:0]`
+- `dword 2`: `buffer_va[63:32]`
+- `dword 3`: `[15:0] index_type` (`0` = UINT16, `1` = UINT32), `[31:16] reserved`
 
-- A staged command is `[number][flags][result index][arguments]`.
-- The firmware writes each command's result record `{VkResult, aux}` at
-  result page + 8 x index when it has decoded the command (index
-  0xFFFFFFFF: no record).
-- Then it writes the frame's result `{VkResult, commands decoded}` at
-  dword3 (when dword2 bit 1 is set), raises IRQ_STATUS.RESULT, and lets
-  RING_RPTR pass the packet.
-- A command that the firmware cannot decode ends the frame with
-  VK_ERROR_FEATURE_NOT_PRESENT (the wire format has no lengths).
-- The results mean "decoded and checked", not "done": the driver's FENCE
-  after the packet completes the work.
-- **A submit does not wait for its work.** The firmware may write a
-  QUEUE_SUBMIT's result, the later records' results and the frame's
-  result, and raise IRQ_STATUS.RESULT, before it hands the submitted
-  command buffers' work to the units; it hands that work over before it
-  decodes a later command that is not a submit, and before it lets
-  RING_RPTR pass the packet, so every later command and the driver's
-  FENCE after the packet still follow the work. The driver therefore
-  must not take RING_RPTR or the RESULT interrupt as "the packet's work
-  is handed over"; only the fence says the work is done. An error the
-  firmware finds while it hands the work over (after the submit's
-  result) loses the session: its later submits answer
-  VK_ERROR_DEVICE_LOST and run nothing.
+#### `CMD_BIND_DESCRIPTOR_TABLE` (0x23)
+Binds a descriptor table for textures, samplers, and buffers (section 8.4).
 
-### 7.3 Class 0: standard micro-ops
+- `dword 0`: Header (`opcode = 0x23`, `dwords = 4`)
+- `dword 1`: `table_va[31:0]`
+- `dword 2`: `table_va[63:32]`
+- `dword 3`: `[15:0] set_index` (Descriptor set slot 0..3), `[31:16] descriptor_count`
 
-| Op | Name | Payload | Meaning |
+#### `CMD_SET_VIEWPORT` (0x24) & `CMD_SET_SCISSOR` (0x25)
+Dynamic state updates without pipeline recompilation.
+
+- `CMD_SET_VIEWPORT`: 7 dwords. `dword 1..6`: `x`, `y`, `width`, `height`,
+  `min_depth`, `max_depth` (all single-precision IEEE 754 floats).
+- `CMD_SET_SCISSOR`: 5 dwords. `dword 1..4`: `x` (int32), `y` (int32),
+  `width` (uint32), `height` (uint32).
+
+#### `CMD_SET_DYNAMIC_STATE` (0x26)
+Overrides fine-grained dynamic pipeline parameters.
+
+- `dword 0`: Header (`opcode = 0x26`, `dwords = 6`)
+- `dword 1`: `state_mask` (`[0]` depth bias, `[1]` blend constants, `[2]` stencil ref)
+- `dword 2`: `depth_bias_constant` (float / 24.8 fixed point)
+- `dword 3`: `depth_bias_slope`
+- `dword 4`: `blend_constant_rgba` (packed 4×UNORM8)
+- `dword 5`: `[7:0] stencil_ref_front`, `[15:8] stencil_ref_back`
+
+#### `CMD_DRAW` (0x27) & `CMD_DRAW_INDEXED` (0x28)
+Issues draw calls to the graphics pipeline.
+
+- `CMD_DRAW`:
+  - `dword 0`: Header (`opcode = 0x27`, `dwords = 5`)
+  - `dword 1`: `vertex_count`
+  - `dword 2`: `instance_count` (1 for non-instanced)
+  - `dword 3`: `first_vertex`
+  - `dword 4`: `first_instance`
+- `CMD_DRAW_INDEXED`:
+  - `dword 0`: Header (`opcode = 0x28`, `dwords = 6`)
+  - `dword 1`: `index_count`
+  - `dword 2`: `instance_count`
+  - `dword 3`: `first_index`
+  - `dword 4`: `vertex_offset` (signed 32-bit offset added to index values)
+  - `dword 5`: `first_instance`
+
+#### `CMD_DRAW_INDIRECT` (0x29)
+Direct support for Vulkan `vkCmdDrawIndirect` and `vkCmdDrawIndexedIndirect`.
+Arguments are read by the CP from GPU memory without host CPU intervention.
+
+- `dword 0`: Header (`opcode = 0x29`, `dwords = 6`)
+- `dword 1`: `args_buffer_va[31:0]`
+- `dword 2`: `args_buffer_va[63:32]`
+- `dword 3`: `draw_count`
+- `dword 4`: `stride_bytes` (typically 16 or 20 bytes)
+- `dword 5`: `flags` (`[0]` 0 = direct draw count, 1 = read count from buffer)
+
+#### `CMD_DISPATCH` (0x30)
+Dispatches compute workgroups.
+
+- `dword 0`: Header (`opcode = 0x30`, `dwords = 4`)
+- `dword 1`: `group_count_x`
+- `dword 2`: `group_count_y`
+- `dword 3`: `group_count_z`
+
+#### `CMD_BARRIER` (0x31)
+Enforces execution ordering and cache/TLB consistency between pipeline stages.
+
+- `dword 0`: Header (`opcode = 0x31`, `dwords = 4`)
+- `dword 1`: `src_stage_mask` (bits: VF, VS, FS, CS, ROP, BLT)
+- `dword 2`: `dst_stage_mask` (bits: VF, VS, FS, CS, ROP, BLT)
+- `dword 3`: `flags` (`[0]` Flush Shared L2 Cache, `[1]` Invalidate L1 Caches, `[2]` Invalidate CP TLB)
+
+#### `CMD_EXECUTE_COMMANDS` (0x32)
+Zero-copy secondary command buffer execution optimized for UMA and multi-threaded
+command recording. The CP pauses execution of the primary ring, traverses the
+secondary command buffer in memory, and resumes when complete.
+
+- `dword 0`: Header (`opcode = 0x32`, `dwords = 4`)
+- `dword 1`: `secondary_ring_va[31:0]` (64-byte aligned)
+- `dword 2`: `secondary_ring_va[63:32]`
+- `dword 3`: `command_dwords` (Length of secondary stream)
+
+#### `CMD_FENCE` (0x33)
+Emits a 64-bit sequence counter to memory upon completion of all earlier work.
+
+- `dword 0`: Header (`opcode = 0x33`, `dwords = 5`)
+- `dword 1`: `fence_addr_lo`
+- `dword 2`: `fence_addr_hi`
+- `dword 3`: `fence_seq_lo`
+- `dword 4`: `[15:0] fence_seq_hi`, `[31:16] flags` (`[16]` 1 = raise `IRQ_FENCE` interrupt)
+
+8. In-Memory Pipeline State and Descriptors
+------------------------------------------
+
+### 8.1 Architectural Principles
+
+In traditional architectures, pipeline state changes required hundreds of
+MMIO register writes or `SET_REG` packets per draw call, generating massive bus
+chatter and stalling the CPU driver thread.
+
+GHCI 2.0 moves all static and semi-static pipeline states into **in-memory
+immutable data structures**:
+- **Bake Once, Execute Anywhere:** The User-Mode Driver (UMD) validates state
+  combinations and bakes `GhciPipelineState` objects into shared memory during
+  pipeline creation (`vkCreateGraphicsPipelines`).
+- **Single Pointer Binding:** Switching pipelines requires only a 3-dword
+  `CMD_BIND_PIPELINE(pso_va)` packet.
+- **Fast Hardware Prefetch:** The Command Processor prefetches the 128-byte
+  PSO in two 64-byte burst reads, broadcasting configuration registers to
+  VF, SU, RX, and ROP in parallel.
+
+### 8.2 Immutable Pipeline State Object (`GhciPipelineState`)
+
+The `GhciPipelineState` structure is exactly 128 bytes (aligned to 64 or 128
+bytes) ([`include/ghci_cmd.h`](../include/ghci_cmd.h)):
+
+| Byte Offset | Field Name | Type | Description |
 | --- | --- | --- | --- |
-| 0 | NOP | n (skipped) | |
-| 1 | SET_REG | (index, value) x n/2 | STATE[index] = value; index >= 512 (with CAPS[30]: >= 0x300) or odd n: fault 3 |
-| 2 | BLIT | 0 | Starts the blitter on the state; flags[0]: wait for its end |
-| 3 | DRAW | 0 | Starts the vertex fetcher; invalidates the data and texture caches |
-| 4 | DISPATCH | 3: gx, gy, gz | A compute dispatch; invalidates no cache (send INVALIDATE first when the program reads rewritten memory) |
-| 5 | FENCE | 2: addr, value | A complete fence (section 9); flags[0]: raise IRQ_STATUS.FENCE |
-| 6 | WAIT_IDLE | 0 | Waits until the units in flags (a STATUS busy-bit mask; 0 = all) are idle and the memory accesses of the GPU's units (the firmware's included) have been answered |
-| 7 | LOAD_CONST | 3: region, addr, words | Loads a constant region (waits for the shader units) |
-| 8 | LOAD_PROGRAM | 1: stage | A stage's program changed: invalidates the instruction cache |
-| 9 | WAIT_FENCE | 2: addr, value | Polls the word until (int32)(mem - value) >= 0; the watchdog applies |
-| 10 | PERF_RESET | 0 | Clears PERF0..3 |
-| 11 | WAIT_VSYNC | 0 | Waits for one display vsync (CAPS[10] only) |
-| 12 | INVALIDATE | 0 | flags: [0] data cache, [1] texture cache, [2] constants, [3] instruction cache |
-| 13 | RESULT | 3: addr, status, aux | Writes {status, aux} to addr (8-byte aligned) after the earlier work |
-| 14 | QUERY | 1: addr | (CAPS[30].) After every earlier command has finished and its writes are answered (as RESULT), writes the occlusion counter (section 8.5) to addr as two words, low first (8-byte aligned); flags[0]: only clear the counter (no write, and no wait), flags[1]: clear it after the write. The counter has at least 32 bits (Amaterrace: 40) |
-| 15 | DISP_SET | (offset, value) x n/2 | (DISP2, section 13.2.) Writes the display controller's registers of kinds S (but not FB_NEXT) and C, in ring order; it does not wait for earlier work (send WAIT_IDLE first when that matters). flags[0] WAIT_IDLE: afterwards waits until the controller's STATUS.idle is 1 (the watchdog applies). An odd n, or an offset that is not of those registers: fault 3 (FAULT_ADDR = the offset) |
-| 16 | FLIP | 4: plane, base, record, value | (DISP2, section 13.2.) flags[0] COMPLETE: first waits, as FENCE does, until every earlier command has finished and its writes have been answered. A plane the controller does not have, a base outside the aperture or outside local memory (with a MEM capability) or not aligned (plane 0: the memory line, plane 1: 64 bytes), or a record that is not 8-byte aligned: fault 3. Then waits until the plane has no pending flip and no record still to be written (the watchdog applies) and makes base the plane's pending image (section 13.2). When the controller takes it, the GPU writes {value, FRAME_COUNT} to record (record 0: no write) and raises IRQ_STATUS.FLIP after that write's response (at the take when record is 0) |
-| 17-63 | reserved | | Fault 2 |
+| `0x00` | `vs_code_va` | uint64_t | Vertex Shader instruction base (64-bit GPU VA) |
+| `0x08` | `fs_code_va` | uint64_t | Fragment Shader instruction base (64-bit GPU VA) |
+| `0x10` | `cs_code_va` | uint64_t | Compute Shader instruction base (64-bit GPU VA) |
+| `0x18` | `vertex_stride` | uint16_t | Vertex buffer byte stride (0..4095) |
+| `0x1A` | `topology` | uint8_t | 0=Point, 1=Line, 2=LineStrip, 3=Triangle, 4=TriangleStrip |
+| `0x1B` | `primitive_restart`| uint8_t | 1 = Enable 0xFFFF / 0xFFFFFFFF index restart |
+| `0x1C` | `attribute_mask` | uint32_t | Bitmask of active vertex attribute slots (0..15) |
+| `0x20` | `attr_formats_lo`| uint32_t | Formats for attributes 0..7 (4 bits per attr) |
+| `0x24` | `attr_formats_hi`| uint32_t | Formats for attributes 8..15 (4 bits per attr) |
+| `0x28` | `attr_offsets_0_3`| uint32_t | Packed 8-bit byte offsets for attributes 0..3 |
+| `0x2C` | `attr_offsets_4_7`| uint32_t | Packed 8-bit byte offsets for attributes 4..7 |
+| `0x30` | `cull_mode` | uint8_t | 0=None, 1=Front, 2=Back, 3=FrontAndBack |
+| `0x31` | `front_face` | uint8_t | 0=CounterClockwise (CCW), 1=Clockwise (CW) |
+| `0x32` | `polygon_mode` | uint8_t | 0=Fill, 1=Line, 2=Point |
+| `0x33` | `depth_clamp_en` | uint8_t | 1 = Clamp depth to [0.0, 1.0] instead of clipping |
+| `0x34` | `depth_bias_const`| uint32_t | Constant depth bias term |
+| `0x38` | `depth_bias_slope`| uint32_t | Slope-scaled depth bias factor |
+| `0x3C` | `depth_bias_clamp`| uint32_t | Maximum depth bias clamp |
+| `0x40` | `depth_test_en` | uint8_t | 1 = Enable depth comparison test |
+| `0x41` | `depth_write_en` | uint8_t | 1 = Enable depth buffer writes |
+| `0x42` | `depth_compare_op`| uint8_t | 0=Never, 1=Less, 2=Equal, 3=LEqual, 4=Greater, 5=NEqual, 6=GEqual, 7=Always |
+| `0x43` | `stencil_test_en`| uint8_t | 1 = Enable stencil test |
+| `0x44` | `stencil_front` | uint32_t | [7:0] fail, [15:8] pass, [23:16] depth_fail, [31:24] compare_op |
+| `0x48` | `stencil_back` | uint32_t | Back-facing stencil operations |
+| `0x4C` | `stencil_cmp_mask`| uint16_t | Stencil compare mask |
+| `0x4E` | `stencil_wr_mask` | uint16_t | Stencil write mask |
+| `0x50` | `blend_enable` | uint8_t | 1 = Enable color blending |
+| `0x51` | `src_color_factor`| uint8_t | Blend factor (Zero, One, SrcAlpha, OneMinusSrcAlpha, etc.) |
+| `0x52` | `dst_color_factor`| uint8_t | Destination blend factor |
+| `0x53` | `color_blend_op` | uint8_t | 0=Add, 1=Subtract, 2=ReverseSubtract, 3=Min, 4=Max |
+| `0x54` | `src_alpha_factor`| uint8_t | Source alpha factor |
+| `0x55` | `dst_alpha_factor`| uint8_t | Destination alpha factor |
+| `0x56` | `alpha_blend_op` | uint8_t | Alpha blend operator |
+| `0x57` | `color_write_mask`| uint8_t | Bitmask: [0]=R, [1]=G, [2]=B, [3]=A write enables |
+| `0x58` | `dual_source_blend`| uint8_t| 1 = Dual-source blend active (uses `Src1Color`/`Src1Alpha`) |
+| `0x59` | `logic_op_enable`| uint8_t | 1 = Enable bitwise logic operations |
+| `0x5A` | `logic_op` | uint8_t | Vulkan LogicOp opcode (0..15) |
+| `0x5B` | `sample_count` | uint8_t | MSAA sample count (1, 2, 4, 8) |
+| `0x5C` | `dyn_state_mask` | uint32_t | Mask of states overridden dynamically via `CMD_SET_*` |
+| `0x60..0x7F` | `reserved` | 32 bytes | Padding to 128 bytes |
 
-DISP_SET and FLIP take effect only while the CP is RUNNING or HALTING: in
-another state, a STEP included, they do nothing (their payload is still
-read). They are taken only from the ring: where the CP's firmware issues
-micro-ops of its own (a vendor mechanism), op 15 or 16 from it is a fault
-of kind 2, as is either op on a GPU without a DISP2 capability. A display controller is not one of the
-units that FENCE, WAIT_IDLE, RESULT, QUERY and FLIP COMPLETE wait for: it
-is never idle while it shows an image.
+### 8.3 In-Memory Resource Descriptors
 
-### 7.4 Class 1: vendor micro-ops
+#### Texture Descriptor (`GhciTextureDescriptor`, 32 Bytes)
+A compact 32-byte structure describing a texture resource:
 
-Class 1 ops are the vendor's. A payload shorter than the op needs is a
-fault of kind 3; a longer one is skipped. An op of a unit the GPU does not
-have is a fault of kind 2.
+| Byte Offset | Field Name | Type | Description |
+| --- | --- | --- | --- |
+| `0x00` | `base_address` | uint64_t | 64-bit GPU virtual address of level 0 texel data |
+| `0x08` | `width` | uint16_t | Width in texels (1..16384) |
+| `0x0A` | `height` | uint16_t | Height in texels (1..16384) |
+| `0x0C` | `depth` | uint16_t | 3D depth or 2D array layer count |
+| `0x0E` | `format` | uint8_t | Format code (RGBA8, BGRA8, RGB565, D24S8, D32F, BC1..BC7, ETC2) |
+| `0x0F` | `mip_levels` | uint8_t | Number of mipmap levels (1..15) |
+| `0x10` | `row_pitch_bytes` | uint32_t | Pitch in bytes between texel rows |
+| `0x14` | `slice_pitch_bytes`| uint32_t | Pitch in bytes between 2D slices or array layers |
+| `0x18` | `sample_count` | uint8_t | MSAA sample count (1, 2, 4) |
+| `0x19` | `dimension` | uint8_t | 0=1D, 1=2D, 2=3D, 3=CubeMap |
+| `0x1A` | `flags` | uint16_t | `[0]` 0=Linear, 1=Tiled; `[1]` sRGB format |
+| `0x1C` | `reserved` | uint32_t | Reserved (must be 0) |
 
-8. The state register file
---------------------------
+#### Sampler Descriptor (`GhciSamplerDescriptor`, 16 Bytes)
+A compact 16-byte structure describing texture sampling parameters:
 
-### 8.1 Mechanism
+| Byte Offset | Field Name | Type | Description |
+| --- | --- | --- | --- |
+| `0x00` | `min_filter` | uint8_t | 0=Nearest, 1=Linear |
+| `0x01` | `mag_filter` | uint8_t | 0=Nearest, 1=Linear |
+| `0x02` | `mipmap_mode` | uint8_t | 0=Nearest, 1=Linear |
+| `0x03` | `address_mode_u` | uint8_t | 0=Repeat, 1=MirroredRepeat, 2=ClampToEdge, 3=ClampToBorder |
+| `0x04` | `address_mode_v` | uint8_t | Address mode V |
+| `0x05` | `address_mode_w` | uint8_t | Address mode W |
+| `0x06` | `compare_enable` | uint8_t | 1 = Enable depth comparison (Percentage-Closer Filtering) |
+| `0x07` | `compare_op` | uint8_t | Depth compare operator (Less, Equal, LEqual, etc.) |
+| `0x08` | `lod_bias_fx8` | int16_t | Signed 8.8 fixed-point LOD bias |
+| `0x0A` | `min_lod_fx4` | uint8_t | Unsigned 4.4 fixed-point minimum LOD clamp |
+| `0x0B` | `max_lod_fx4` | uint8_t | Unsigned 4.4 fixed-point maximum LOD clamp |
+| `0x0C` | `border_color` | uint32_t | Packed RGBA8 border color (or transparent black) |
 
-- STATE[0..511] holds the fixed-function state that the commands use:
-  indices 0x000-0x1DF are standard, 0x1E0-0x1FF vendor-defined.  With
-  CAPS[30] STATE also has 0x200-0x2FF, the vertex stage's
-  texture slots (section 8.5), and the alias reaches 0x1BFC.
-- Commands write it in the ring (SET_REG). The host reaches it through the
-  alias at 0x1000 + 4 x index, in IDLE and HALTED only.
-- A host write in another state, or to a range that belongs to a busy
-  unit, is ignored and raises a fault of kind 7. A write with partial byte
-  enables is ignored.
+### 8.4 Descriptor Tables & Shader Resource Binding
 
-The blitter range (section 8.2), the program range (section 8.3), the
-texture range (section 8.4, draft) and the VF, RX and ROP ranges
-(section 8.5, draft) are defined; the other standard ranges
-follow the command set and are not yet part of this draft.
-
-### 8.2 The blitter range
-
-| Index | Name | Contents |
-| --- | --- | --- |
-| 0x000 | BLT_OP | [2:0] 0 FILL, 1 COPY, 2 TILE (linear to the vendor's tiles), 3 UNTILE, 4 RESOLVE (CAPS[29], draft), 5-7 refused; [4] blend over; [9:8] pixel size (0 = 32 bits, 1 = 16 bits; 2 and 3: 64 and 8 bits with CAPS[30], section 8.5, refused otherwise); [12] reverse direction (bottom-right first, for overlapping copies); [13] and [19:16]: section 8.5 (CAPS[30]) |
-| 0x001 | BLT_DST_BASE | GPU address of the destination image |
-| 0x002 | BLT_DST_STRIDE | Bytes per destination row |
-| 0x003 | BLT_SRC_BASE | GPU address of the source image (COPY, TILE, UNTILE, RESOLVE) |
-| 0x004 | BLT_SRC_STRIDE | Bytes per source row |
-| 0x005 | BLT_DST_XY | [15:0] x, [31:16] y of the destination rectangle, in pixels |
-| 0x006 | BLT_SRC_XY | The same for the source |
-| 0x007 | BLT_SIZE | [15:0] width, [31:16] height |
-| 0x008 | BLT_COLOR | FILL colour (the pixel's bits) |
-| 0x009 | BLT_CLIP_MIN | [15:0] x, [31:16] y, inclusive |
-| 0x00A | BLT_CLIP_MAX | [15:0] x, [31:16] y, exclusive; 0 = no clipping |
-| 0x00B | BLT_RESOLVE | RESOLVE only (draft): [3:0] log2 of the source's samples per pixel; [7:4] the average (below); [8] the destination is in 4x4 tiles (CAPS[11]); [31:9] 0 |
-| 0x00C-0x00E | BLT_COLOR1-BLT_COLOR3 | (CAPS[30]) Bits 63:32, 95:64, 127:96 of a 64- or 128-bit FILL colour (section 8.5) |
-
-- Bases and strides are multiples of the pixel size. The destination
-  rectangle is clipped to the clip rectangle; the source moves with it.
-- **FILL** writes BLT_COLOR (its low 16 bits for 16-bit pixels). **COPY**
-  copies the source rectangle.
-- **Overlapping copies** are correct when they run in the right direction:
-  forward (top row first, left to right) when the destination starts
-  before the source, reverse ([12]) when it starts after.
-- **Blend over** ([4], FILL and COPY of 32-bit pixels): source-over with
-  premultiplied alpha in bits 31:24, per byte
-  `out = src + round(dst x (255 - src.alpha) / 255)`, saturated at 255. The
-  source is BLT_COLOR for FILL.
-- **TILE** copies a linear source into a tiled destination, **UNTILE** a
-  tiled source into a linear destination. The tile layout is the vendor's,
-  and CAPS[11] names it. BLT_DST_XY and BLT_SRC_XY are pixel coordinates in
-  either layout; the stride of a tiled image is the bytes of one row of
-  tiles. Blend over and the reverse direction do not apply.
-- **4x4 tiles** (CAPS[11] = 1): pixel (x, y) is at
-  `base + (y / 4) x stride + (x / 4) x 16 x ps + ((y % 4) x 4 + x % 4) x ps`,
-  where ps is the pixel size in bytes. The base and the stride of a tiled
-  image are multiples of 16 x ps bytes.
-- **RESOLVE** (draft, CAPS[29]) converts a multisampled source to one
-  sample per pixel: destination pixel (x, y) gets the average of the S
-  samples of source pixel (x', y') (the source rectangle's pixel at the
-  same place).  The source is a multisampled image in the layout of
-  section 12.11: sample s of pixel (x', y') at `BLT_SRC_BASE + y' x
-  BLT_SRC_STRIDE + (x' x S + s) x ps`; BLT_SRC_XY and BLT_SIZE count
-  pixels, not samples.  The destination is linear, or in 4x4 tiles with
-  BLT_RESOLVE[8].  The pixel size ps ([9:8]) is that of one sample and of
-  a destination pixel.  The source base is a multiple of 64 bytes and its
-  stride a multiple of 2 x S x ps bytes; a tiled destination's base and
-  stride are multiples of 16 x ps bytes (lower bits are ignored).  The
-  average (BLT_RESOLVE[7:4]; the pixel sizes it takes in brackets):
-
-  | Value | Average |
-  | --- | --- |
-  | 0 UNORM8 | [16, 32 bits] Every byte is an 8-bit unsigned normalized channel (RGBA8, BGRA8): the mean of the S codes, rounded to the nearest code, ties to even |
-  | 1 UNORM565 | [16 bits] The fields [15:11], [10:5], [4:0], each an unsigned normalized channel of its width: the mean of the S codes, rounded to the nearest code, ties to even |
-  | 2 SAMPLE0 | [16, 32 bits] Sample 0 (integer formats) |
-  | 3 SRGB8_A8 | [32 bits] Bytes 0-2 sRGB: decoded to linear, averaged and encoded (the precision of the linear values is implementation-defined); byte 3 as UNORM8 |
-  | 4 SFLOAT16 | [16, 32 bits] Every 16 bits a binary16: the mean of the samples in binary32 (with 4 samples ((s0 + s1) + (s2 + s3)) x 0.25), then to binary16; rounding, NaNs and denormals implementation-defined |
-  | 5 SFLOAT32 | [32 bits] Every 32 bits a binary32, the same mean |
-  | 6-15 | Refused (6 and 7 with CAPS[30]: section 8.5) |
-
-  A blitter does the averages of the formats its render output writes
-  (Amaterrace: 0-7, the pixel sizes of section 8.5) and the sample counts of the device
-  (Amaterrace: 4).  Other averages and sample counts, a pixel size the
-  average does not take, blend over, the reverse direction and a RESOLVE
-  without CAPS[29] are refused.  Source and destination must not overlap
-  in memory (the result is undefined otherwise).  Depth and stencil are
-  not resolved (Vulkan 1.0 resolves colour only).
-- A combination that the blitter does not do is a fault of kind 2
-  (block 1).
-
-### 8.3 The program range (draft)
-
-| Index | Name | Contents |
-| --- | --- | --- |
-| 0x190 | VS_BASE | GPU address of the vertex program's first instruction |
-| 0x191 | VS_WORDS | Its code words |
-| 0x192 | FS_BASE | The same for the fragment program |
-| 0x193 | FS_WORDS | |
-| 0x194 | CS_BASE | The same for the compute program |
-| 0x195 | CS_WORDS | |
-| 0x196 | CONST_BASE | GPU address of constant region 0 |
-| 0x197 | CONST_WORDS | Its words |
-| 0x198 | LDS_BYTES | Shared memory per workgroup |
-| 0x199 | WG_SIZE | [7:0] x, [15:8] y, [23:16] z |
-| 0x19A | VS_OUT_WORDS | Varying words after the position |
-
-- A warp starts at instruction 0 of its *_BASE; branch offsets and
-  FAULT_ADDR count from there. The base is the address of the code, after
-  the program header (section 12.10), with the entry point already added.
-
-### 8.4 The texture range (draft)
-
-STATE 0x090-0x18F holds the texture slots (CAPS2[27:24] x 4 of them), 16
-words each; slot s starts at 0x090 + 16 s.  Words 0-3 describe the image
-(a VkImageView), words 4-5 the sampler (a VkSampler); a driver or the
-command processor's firmware writes them from the descriptor sets:
-
-| Word | Name | Contents |
-| --- | --- | --- |
-| +0 | TEX_BASE | GPU address of level 0 of layer 0; a multiple of 64 |
-| +1 | TEX_SIZE | [15:0] width, [31:16] height of level 0 (0 reads as 1) |
-| +2 | TEX_IMAGE | The image (below) |
-| +3 | TEX_LAYER_STRIDE | Bytes from one layer (array layer, cube face) to the next; a multiple of 64 |
-| +4 | TEX_SAMPLER | The sampler (below) |
-| +5 | TEX_LOD | [11:0] minLod, [23:12] 15.996 - maxLod (unsigned, 8 fraction bits; inverted so that a word of 0 does not clamp); [31:24] 0 |
-| +6 | TEX_FORMAT | (CAPS[30]) The VkFormat, the stencil aspect and the component swizzle (section 8.5); 0 keeps TEX_IMAGE's format |
-| +7 | TEX_ROW | [1:0] the row rule of a linear image: each level's rows hold w_l rounded up to a multiple of 2^n texels (0: w_l, packed rows; 1: an even number, the rows of an image that may be a colour or depth/stencil attachment, section 8.5); [31:2] 0 |
-| +8..+15 | reserved | 0 |
-
-TEX_IMAGE:
-
-| Bits | Meaning |
-| --- | --- |
-| [3:0] | The number of mip levels (0 reads as 1, above 13 as 13) |
-| [7:4] | Format: 0 RGBA8 UNORM, 1 BGRA8 UNORM, 2 D24 (X8_D24_UNORM_PACK32, the depth aspect of D24_UNORM_S8_UINT), 3 D32_SFLOAT, 4 R5G6B5 UNORM (draft, CAPS[29]: 2-byte texels; `texf` exact, section 12.11; the other instructions implementation-defined, Amaterrace filters it as RGBA8 of the bits replicated); 5-15 reserved (read as 0) |
-| [8] | Layout: 0 linear rows, 1 4x4 tiles (CAPS[11]) |
-| [11:9] | View type: 0 2D (1D: height 1), 1 2D array (1D array: height 1), 2 3D, 3 cube; 4-7 reserved (read as 2D; a cube array would be 4) |
-| [15:12] | log2 of the samples per texel (0 one, 2 four; draft, CAPS[29], section 12.11: linear, one level, `texf` only); other values read as one |
-| [31:16] | The depth of level 0 (3D) or the number of layers (2D array); 0 reads as 1; not looked at for the other types |
-
-TEX_SAMPLER:
-
-| Bits | Meaning |
-| --- | --- |
-| [1:0], [3:2], [5:4] | Address mode in u, v, w: 0 repeat, 1 mirrored repeat, 2 clamp to edge, 3 clamp to border |
-| [6] | Magnification filter linear (0 nearest) |
-| [7] | Minification filter linear |
-| [8] | Mipmap mode linear (0 nearest) |
-| [9] | Compare enable (depth formats) |
-| [12:10] | Compare op (VkCompareOp numbers) |
-| [15:13] | Border colour (VkBorderColor numbers 0-5; 6 and 7 read as 0) |
-| [16] | unnormalizedCoordinates |
-| [18:17] | 0 |
-| [31:19] | mipLodBias (signed, 8 fraction bits: -16 to 15.996) |
-
-The memory of an image (Vulkan leaves the layout of an optimally tiled
-image to the implementation; GHCI fixes it, and a driver's
-vkGetImageSubresourceLayout reports the same numbers):
-
-- Texels are 4 bytes (format 4: 2 bytes, the 4x4 tiles 32 bytes; a
-  multisampled image: section 12.11).  Level l is w_l x h_l (x d_l for 3D) texels, w_l =
-  max(1, width >> l), h_l = max(1, height >> l), d_l = max(1, depth >>
-  l).  Its plane P_l (one slice) is r_l x h_l x 4 bytes in rows of r_l x
-  4 bytes (linear; r_l is w_l rounded up to a multiple of 2^TEX_ROW[1:0]
-  texels, w_l itself when TEX_ROW is 0) or the 4x4 tiles of section 8.2,
-  a row of tiles ceil(w_l / 4) x 64 bytes (tiled), rounded up to a
-  multiple of 64.  TEX_ROW holds for every level and slice of a linear
-  image; tiled, compressed (section 8.5) and multisampled (section 12.11)
-  images keep their own rows whatever it says.
-- A layer holds its levels back to back: level l starts at O_l = sum of
-  P_k x D_k for k < l (D_k = d_k for 3D, 1 otherwise; 32-bit wrap); slice
-  k of a 3D level at O_l + k x P_l.  Layer L starts at TEX_BASE + L x
-  TEX_LAYER_STRIDE; a cube's faces are layers 0-5 (+X, -X, +Y, -Y, +Z,
-  -Z) and its faces are squares of the width (the height is not looked
-  at).  The unit computes O_l from TEX_SIZE, TEX_IMAGE, TEX_FORMAT and
-  TEX_ROW when they are written.
-- A view with baseMipLevel or baseArrayLayer is the image's description
-  with TEX_BASE moved to that level or layer (the sizes and the level
-  count of the view; the layer stride and TEX_ROW of the image: level k of
-  the view is level b + k of the image, max(1, max(1, w >> b) >> k) =
-  max(1, w >> (b + k)), so its rows are the same).
-
-Sampling (Vulkan's rules, with the implementation's precision; Amaterrace:
-lambda and texel coordinates with 8 fraction bits, 8-bit filter weights):
-
-- Level of detail: lambda' is the instruction's level of detail (`texl`:
-  rs2; `texb`: the derivatives' plus the bias rs2) plus mipLodBias;
-  lambda = max(min(lambda', maxLod), minLod).  The derivatives are of u
-  and v against the size (and of w against the depth for 3D; of a cube's
-  face coordinates against the face size, the quad's lanes taken on the
-  face of its first lane).  lambda > 0 minifies, otherwise magnifies
-  (level 0).  Mipmap mode nearest takes level ceil(lambda + 0.5) - 1,
-  mipmap mode linear blends levels floor(lambda) and floor(lambda) + 1 by
-  the fraction of lambda (the last level alone at the end), both with the
-  minification filter.
-- Texel coordinates: u x w_l (and v, w alike) plus the instruction's
-  texel offset (ConstOffset, section 12.9); nearest takes floor(u), linear
-  floor(u - 0.5) and the next texel with the fraction as the weight, in
-  every axis of the image (u and v; also w for 3D: 8 texels, 16 with
-  mipmap mode linear).  Each integer coordinate is then wrapped by its
-  address mode as Vulkan says: repeat i mod size, mirrored repeat (size -
-  1) - mirror((i mod 2 size) - size), clamp to edge clamp(i, 0, size - 1),
-  clamp to border: a coordinate outside the level gives the border colour
-  (for the UNORM formats and the depth formats the INT and FLOAT colours
-  give the same values; a depth texel of the border is 0 for the black
-  colours and 1.0 for the white ones), filtered with the others.
-- Arrays: the layer is clamp(RNE(rs1+2), 0, layers - 1) (`texf`: the
-  integer clamped).  It is not filtered.
-- Cube maps: the face is that of the direction (rs1, rs1+1, rs1+2) with
-  the largest magnitude (z before y before x on ties, as Vulkan's first
-  rules), and (s, t) = ((s_c / |m_a| + 1) / 2, (t_c / |m_a| + 1) / 2) by
-  Vulkan's table; the address modes are not used (and offsets are not
-  allowed).  Nearest clamps to the face; linear is seamless: a texel past
-  one edge of the face is taken from the adjacent face, and a texel past
-  two (a corner) is replaced by the face's own corner texel (Vulkan:
-  "implementations may replace the cube map corner texel by other
-  methods", keeping the value of three equal texels).  `texf` on a cube
-  reads it as an array of 6 layers.
-- unnormalizedCoordinates: u and v are texel coordinates of level 0
-  (lambda is 0, the magnification filter, repeat and mirrored repeat read
-  as clamp to edge, the view read as 2D); Vulkan limits such samplers to
-  one level, 1D and 2D views, explicit levels and no offsets.
-- A depth format returns (D, 0, 0, 1). Without compare it is sampled
-  nearest (the filter and mipmap bits read as nearest). With compare (texl
-  and texb) each texel's result is 1.0 when `Dref op D` holds and 0.0
-  otherwise, and the results are filtered (percentage closer filtering);
-  D24 compares Dref clamped to [0, 1] and converted to 24-bit UNORM,
-  D32_SFLOAT compares fp32 values (a NaN passes NOT_EQUAL and ALWAYS
-  only). Compare on a colour format is ignored. Dref comes from the
-  instruction (`.c` forms, section 12.9).
-- Gather (`texg`, section 12.9) takes the bilinear footprint of level 0
-  whatever the filters and the level of detail, with the address modes,
-  the offsets, the border, the layer and the cube's edges.
-- CAPS[26] = 1 says the texture unit does all of this section (the view
-  types, offsets, unnormalized coordinates, mipmap mode linear, clamp to
-  border, the depth formats, compare, minLod / maxLod / mipLodBias, gather
-  and the queries of section 12.9: the texture sampling of Vulkan 1.0's
-  core, multisampled images aside); without it a driver uses only 2D
-  views, TEX_SAMPLER bits [3:0], [7:6], TEX_IMAGE [8:0] with the colour
-  formats, TEX_LOD 0, and `texl`, `texb`, `texf` and `texsz` without
-  offsets.
-
-### 8.5 The vertex, rasterizer and render-output ranges (draft)
-
-**Draft** (2026-10-25; Amaterrace implements it, in simulation). This
-section defines the VF, RX and ROP ranges and the additions of CAPS[30]
-(Vulkan 1.0 core rendering; section 12.11, multisampling, is a separate
-draft). The words that existed before CAPS[30] keep their meaning; a
-word of 0 in a new field keeps the earlier behaviour.
-
-**State and earlier draws.** The ranges of this section are read by
-units that an earlier draw may still be using. A SET_REG into the VF
-range (0x020-0x04F, 0x1C0-0x1DF) waits until every earlier draw has left
-the vertex fetcher; into the RX or the ROP range, until every earlier
-draw has left the vertex fetcher, the shader units, the rasterizer and
-the render output; into a texture range (0x090-0x18F, 0x200-0x2FF),
-until it has left the vertex fetcher, the shader units, the rasterizer
-and the texture unit; into the program range, until it has left the
-vertex fetcher, the shader units and the rasterizer; LOAD_CONST waits as
-the program range. So a change never reaches a draw already issued. The host writes the STATE alias
-only while the command processor is idle or halted (section 8.1).
-
-**Formats.** A format field holds a VkFormat value (8 bits; Vulkan 1.0's
-core formats are 0-184). A GPU reads a value it does not support as "no
-format"; the FMT capability (section 4) lists what it supports. Values
-referenced: Vulkan specification, VkFormat, Required Format Support.
-
-Conversions follow Vulkan's rules: UNORM c / (2^b - 1) and SNORM
-max(c / (2^(b-1) - 1), -1); 16-bit floats and the packed unsigned floats
-convert exactly; missing components read (0, 0, 0, 1) (integer 1 for
-integer formats); integer formats give their integer bits. Writes to
-UNORM clamp to [0, 1] (NaN to 0); writes to integer formats keep the low
-bits. sRGB formats convert R, G and B with the sRGB transfer function:
-reads before filtering, blending in linear values. The rounding is the
-vendor's (Amaterrace: reads to the nearest fp32, writes to UNORM and
-16-bit floats to nearest even, sRGB writes to the nearest 8-bit code).
-
-**VF range** (0x020-0x04F and 0x1C0-0x1DF):
-
-| Index | Name | Contents |
-| --- | --- | --- |
-| 0x020 | TOPOLOGY | [2:0] 0 points, 1 lines, 2 line strip, 3 triangles, 4 triangle strip, 5 triangle fan (6, 7 read as points) |
-| 0x021 | INDEX_BASE | GPU address of the index buffer |
-| 0x022 | INDEX_FORMAT | 0 none, 1 u16, 2 u32 |
-| 0x023 | FIRST | First vertex or first index |
-| 0x024 | COUNT | Vertices or indices |
-| 0x025 | PRIM_RESTART | [0]: 0xFFFF (u16) or 0xFFFFFFFF (u32) restarts a strip or a fan |
-| 0x026 | INSTANCE_COUNT | |
-| 0x027 | FIRST_INSTANCE | |
-| 0x028 | VERTEX_OFFSET | Added to each index (signed) |
-| 0x030 + 2k | ATTR[k]_BASE | GPU address of attribute k of the first element (the binding's address plus the attribute's offset), k < 16 |
-| 0x031 + 2k | ATTR[k]_DESC | [15:0] stride; [19:16] the earlier format code (used when ATTR_DST[k][31:24] is 0); [20] per instance; [31:24] divisor |
-| 0x1C0 + k | ATTR_DST[k] | [5:0] first register, [7:6] components - 1; [31:24] the VkFormat (CAPS[30]; 0: ATTR_DESC[19:16]); 0 disables the attribute |
-| 0x1D0 + k | ATTR_LIMIT[k] | (CAPS[30]) [31] the limit applies, [30:0] the bytes from ATTR[k]_BASE that the attribute may read; [31] = 0: no limit. An attribute whose bytes pass the limit (offset + size > limit, without overflow) reads (0, 0, 0, 1) without a memory access (robust buffer access) |
-
-**RX range** (0x050-0x06F):
-
-| Index | Name | Contents |
-| --- | --- | --- |
-| 0x050-0x055 | VIEWPORT | fp32: x scale, y scale, x offset, y offset, z scale, z offset (window = offset + scale x NDC) |
-| 0x056 | SCISSOR_MIN | {y, x}, inclusive |
-| 0x057 | SCISSOR_MAX | {y, x}, exclusive; 0 = no scissor |
-| 0x058 | CULL | [1:0] 1 front, 2 back, 3 both; [2] front = counter-clockwise |
-| 0x059 | DEPTH_CLAMP | (CAPS[30]) [0] depth clamp: no depth clipping, the depth clamped to the viewport's depth range; [1] DEPTH_CLIP: Vulkan's depth clipping (the near and far planes) and an unclamped r3 (0: the earlier behaviour, the near plane only and r3 clamped to [0, 1]) |
-| 0x05A | RAST_MODE | (CAPS[30]) [0] depth bias; [2:1] polygon mode, 0 fill (others read as fill); [3] fragments only inside the viewport's rectangle; [5:4] the depth format the bias is for: 0 none (no bias), 1 D16, 2 D24, 3 D32_SFLOAT; [6] rasterizer discard: no primitive is rasterized |
-| 0x05B | VARYING_COUNT | Varying words per vertex for the fragment warps: up to 64 with CAPS[30] (Vulkan's 64 output and input components), up to 16 without; a larger value reads as the limit |
-| 0x05C | DEBUG_COLOR | RGBA8 (R in [7:0]) of the direct path without shaders |
-| 0x05D | PROVOKING | [0] 0 first, 1 last vertex |
-| 0x05E, 0x05F | MS_CTRL, SAMPLE_KILL | Multisampling (section 12.11) |
-| 0x060 | DEPTH_BIAS_CONST | (CAPS[30]) fp32 constant factor |
-| 0x061 | DEPTH_BIAS_SLOPE | fp32 slope factor |
-| 0x062 | DEPTH_BIAS_CLAMP | fp32: positive, the bias is at most this; negative, at least this; 0, no clamp |
-
-With CAPS[30] the rasterizer does what Vulkan's rasterization requires
-for the fill mode with line and point widths of 1:
-
-- **Primitives** come with their kind (point, line, triangle) from the
-  vertex fetcher. Lines and points are front facing and are not culled.
-- **Clipping**: triangles and lines are clipped against w >= a small
-  epsilon (always; Amaterrace: 2^-16), with DEPTH_CLAMP[1] and without
-  DEPTH_CLAMP[0] against the near plane z >= 0 and the far plane z <= w
-  (without DEPTH_CLAMP[1]: the near plane only), and, where a vertex
-  leaves the guard band, against the guard band in x and y (planes x_off
-  x w + x_scale x x <= G x w and >= -G x w, the same in y, G the guard band's half size in pixels; Amaterrace: 16383); points
-  outside the w, near or far plane are discarded. A clipped line stays
-  one line. Lines shorter than a subpixel are discarded.
-- **Viewport** (RAST_MODE[3]): fragments are produced only inside the
-  viewport's rectangle, rounded to whole pixels, as well as inside the
-  scissor and the render target. DRAW_RAW does not use it.
-- **Lines** (strictLines = false) cover a parallelogram: the major axis
-  is the one with the larger distance between the endpoints (x when
-  equal); two edges run through the endpoints along the minor axis, one
-  pixel long, and two connect their ends. Attributes vary along the major
-  axis only (as two triangles whose vertices at each end carry the same
-  attributes); b0 and b1 are the weights of the primitive's vertices 0
-  and 1, b2 is 0 up to rounding.
-- **Points** cover a 1 x 1 square centred at the vertex. A point's
-  fragment program gets PointCoord (s, t) in r0 and r1 instead of
-  barycentrics; its inputs are those of the vertex.
-- **Depth bias** (triangles, RAST_MODE[0]): o = m x SLOPE + r x CONST,
-  clamped by DEPTH_BIAS_CLAMP, with m = max(|dz/dx|, |dz/dy|) and r =
-  2^-16 (D16), 2^-24 (D24) or 2^(e - 23) (D32_SFLOAT, e the largest
-  exponent of the triangle's depths). The fragment's depth, FragCoord.z
-  included, is biased. (Values referenced: Vulkan specification, Depth
-  Bias Computation; Basic Line Segment Rasterization; Basic Point
-  Rasterization.)
-
-**ROP range** (0x070-0x08F):
-
-| Index | Name | Contents |
-| --- | --- | --- |
-| 0x070 | RT_BASE | GPU address of colour attachment 0 (8-byte aligned; 4 for 16-bit pixels; with CAPS[30] the bases of every attachment and of the depth/stencil attachment are multiples of 64 and their strides multiples of 2 x S x ps, S the samples and ps the pixel bytes) |
-| 0x071 | RT_STRIDE | Bytes per row |
-| 0x072 | RT_FORMAT | [1:0] the earlier code of attachment 0: 0 BGRA8, 1 RGBA8, 2 RGB565 (used when RT_FORMATS[7:0] is 0) |
-| 0x073 | RT_SIZE | {height, width} of the render area's targets |
-| 0x074 | DS_BASE | GPU address of the depth/stencil attachment |
-| 0x075 | DS_STRIDE | Bytes per row |
-| 0x076 | DEPTH | [0] depth test, [1] depth write, [4:2] compare op (VkCompareOp); the format: [5] D24_UNORM_S8_UINT (also X8_D24), [6] D32_SFLOAT, [7] D16_UNORM (CAPS[30]); [8] stencil test (CAPS[30], D24S8 only), [9] depth bounds test (CAPS[30]). No test without exactly one format bit |
-| 0x077 | STENCIL_FRONT | (CAPS[30]) [7:0] reference, [15:8] compare mask, [23:16] write mask, [26:24] compare op |
-| 0x078 | STENCIL_OPS | (CAPS[30]) [2:0] front fail op, [5:3] front pass op, [8:6] front depth-fail op, [18:16], [21:19], [24:22] the same for back faces (VkStencilOp) |
-| 0x079 | STENCIL_BACK | As STENCIL_FRONT, for back-facing triangles |
-| 0x07A | BLEND | Attachment 0: [0] enable, [4:1] source colour factor, [8:5] destination colour factor, [11:9] colour op, [15:12] source alpha factor, [19:16] destination alpha factor, [22:20] alpha op (VkBlendFactor 0-14, VkBlendOp 0-4) |
-| 0x07B | BLEND_CONST | The blend constant as RGBA8 (R in [7:0]), used when ROP_CTRL[1] is 0 |
-| 0x07C | WRITE_MASK | [3:0] RGBA of attachment 0; with CAPS[30] [7:4], [11:8], [15:12] of attachments 1-3. An attachment with mask 0 is neither read nor written |
-| 0x07D | RT_FORMATS | (CAPS[30]) [7:0] the VkFormat of attachment 0 (0: RT_FORMAT), [15:8], [23:16], [31:24] attachments 1-3 (0: no attachment) |
-| 0x07E, 0x07F | RT1_BASE, RT1_STRIDE | Attachment 1 |
-| 0x080, 0x081 | RT2_BASE, RT2_STRIDE | Attachment 2 |
-| 0x082, 0x083 | RT3_BASE, RT3_STRIDE | Attachment 3 |
-| 0x084-0x086 | BLEND1-BLEND3 | As BLEND, for attachments 1-3 (independent blending) |
-| 0x087-0x08A | BLEND_CONST_R, _G, _B, _A | fp32 blend constants, used when ROP_CTRL[1] is 1 |
-| 0x08B, 0x08C | DEPTH_BOUNDS_MIN, _MAX | fp32 |
-| 0x08D | ROP_CTRL | (CAPS[30]) [0] count the samples that pass (the occlusion counter, micro-op QUERY); [1] the fp32 blend constants |
-
-Per-sample operations with CAPS[30], in this order after the fragment
-program and section 12.11's coverage (sample mask, alpha to coverage
-with attachment 0's alpha, alpha to one for every attachment):
-
-1. **Depth**: the exported depth (0x104) if any, else the sample's depth
-   from the rasterizer (biased); with DEPTH_CLAMP[0] clamped to [min(n,
-   f), max(n, f)]. A UNORM attachment saturates the value to [0, 1].
-2. **Depth bounds** (DEPTH[9]): the stored depth outside [MIN, MAX]
-   discards the sample; nothing is written for it.
-3. **Stencil** (DEPTH[8]): the masked reference against the masked
-   stored value; on failure the fail op is applied and the sample is
-   discarded; otherwise the pass or the depth-fail op by the depth test.
-   Only the bits of the write mask change. Triangles use the state of
-   their facing; lines, points and the direct path the front state.
-4. **Depth** (DEPTH[0]): the compare op; on success with DEPTH[1] the
-   depth is written.
-5. **Occlusion**: with ROP_CTRL[0], each sample still covered adds 1.
-6. **Colour**, for each attachment the program exported: blending (not
-   for integer formats and the formats without blending; a format
-   without alpha reads a destination alpha of 1), the write mask, the
-   write.
-
-Colour attachments may have the formats that the FMT capability names
-with the colour-attachment feature; their pixels are 1, 2, 4, 8 or 16
-bytes, in rows of RT_STRIDE (multisampled: section 12.11's layout with
-the pixel size).
-
-**Texture slots** (with CAPS[30]; in the slot layout of section 8.4's
-revision with TEX_IMAGE): word +6 TEX_FORMAT: [7:0] the VkFormat (0:
-TEX_IMAGE[7:4]), [8] the stencil aspect of D24_UNORM_S8_UINT (read as an
-integer (s, 0, 0, 1)), [20:9] the component swizzle of R, G, B and A, 3
-bits each (VkComponentSwizzle 0-6, applied last). Texels are 1, 2, 4, 8
-or 16 bytes; only 4-byte texels may be tiled (TEX_IMAGE[8] reads as
-linear otherwise). Integer formats are sampled nearest and return integer
-bits; the border colours give integer 0 and 1 for them (a border texel
-replaces the components the format has; the others read (0, 0, 0, 1)).
-The depth formats are filtered linearly with and without compare (the
-earlier codes of TEX_IMAGE[7:4] keep section 8.4's nearest without
-compare); a format without the FILTER_LINEAR feature is sampled nearest
-whatever the sampler says.  The ETC2 and
-EAC formats (VkFormat 147-156, when the FMT capability reports them) are
-4 x 4 blocks of 8 or 16 bytes, rows of ceil(width / 4) blocks, each
-level's plane of ceil(w / 4) x ceil(h / 4) blocks a multiple of 64 bytes,
-never tiled; their texels are decoded before filtering (sRGB ones then
-converted to linear).  An image that may be a colour or depth/stencil
-attachment has rows of an even number of pixels in every level (the
-strides above are multiples of 2 x ps): a texture slot of it sets TEX_ROW
-to 1 (section 8.4), and its level offsets and layer stride are those of
-the planes of such rows.
-
-**Texture slots per stage** (with CAPS[30]): the texture instructions of
-a vertex program use the slots at STATE 0x200 + 16 x slot (the layout of
-section 8.4's slots at 0x090 + 16 x slot); fragment and compute programs
-use the slots at 0x090.  CAPS2[27:24] counts the slots of one stage. sRGB texels are
-converted before filtering, and the border colour of an sRGB format is
-linear. Gather selects the component after the swizzle. With texels of
-other than 4 bytes, TEX_BASE and each level's plane are multiples of 64
-bytes.
-
-**Blitter** (with CAPS[30], section 8.2): the pixel size is BLT_OP
-[9:8] 0 = 32, 1 = 16, 2 = 64, 3 = 8 bits, or 128 bits with BLT_OP [13] = 1
-and [9:8] = 0 ([13] with another [9:8] is refused; TILE and UNTILE take 16
-and 32 bits only, blend over 32 bits only); a FILL of 64 or 128
-bits takes BLT_COLOR as its low word and BLT_COLOR1-BLT_COLOR3
-(0x00C-0x00E) above it. BLT_OP [19:16] KEEP, for FILL and COPY of 32-bit
-pixels without blending: the bytes of each pixel that are not written
-(0x8 writes the depth of a D24_UNORM_S8_UINT pixel only, 0x7 its stencil
-only). RESOLVE (section 8.2, draft) takes, besides its averages 0-5,
-6 UNORM2_10_10_10 (32 bits: three 10-bit and one 2-bit unsigned
-normalized field, [9:0], [19:10], [29:20], [31:30]) and 7 UNORM1555 (16
-bits: [15] one bit, [14:10], [9:5], [4:0] five bits), each the mean of
-the codes rounded to nearest even; UNORM8 also takes 8-bit pixels,
-SFLOAT16 16 to 64 bits, SFLOAT32 32 to 128 bits and SAMPLE0 8 to 128
-bits; averages 8-15 are refused, and Amaterrace does all of 0-7.  A
-tiled RESOLVE destination takes 16- and 32-bit pixels; KEEP is not taken
-by RESOLVE, TILE, UNTILE or blend over.  The floating-point averages are
-((s0 + s1) + (s2 + s3)) x 0.25 in binary32 (Amaterrace: each step rounded
-to nearest even with denormals flushed; SFLOAT16 then to binary16 to
-nearest even; SRGB8_A8's linear values from the sRGB decode table, the
-nearest code after).
+Resource binding follows a flat, table-based descriptor architecture:
+- The driver allocates arrays of `GhciTextureDescriptor` and `GhciSamplerDescriptor`
+  structures in shared memory.
+- The `CMD_BIND_DESCRIPTOR_TABLE(set_index, table_va, count)` packet binds a
+  table to one of 4 hardware descriptor set slots (`set 0` .. `set 3`).
+- Shader instructions (`tex ld`, `tex f`, `gsi1_load`) index descriptors
+  directly using immediate offsets or register operands, resolving addresses
+  through the Texture Unit's descriptor cache without generating ring or MMIO traffic.
 
 9. Fences and interrupts
 ------------------------
@@ -1030,15 +696,14 @@ nearest code after).
 - A fence command is **complete**: the GPU writes the fence value to
   memory only after every earlier command — asynchronous blits, draws and
   dispatches included — has finished, every pending write has been
-  flushed, and every write response has returned. FENCE_LAST is updated,
-  and the FENCE interrupt raised, only after the fence write's own
-  response.
+  flushed, and every write response has returned. The FENCE interrupt is
+  raised only after the fence write's own response has been acknowledged.
 - Fence memory is in host memory (the driver polls it).
 - **Ordering:** the fence write, and an interrupt message where the
   binding has one (section 15.2), reach the host only after every earlier
   write of the GPU is visible there (section 11.5).
 - After a reset the driver writes the last completed fence value to its
-  fence memory and to FENCE_LAST before RUN.
+  fence memory before setting CTRL.RUN.
 
 ### 9.2 Interrupts
 
@@ -2102,29 +1767,30 @@ driver closes the window if it does not use it (section 11.1). A
 controller found with ENABLE clear has no boot framebuffer: the driver
 closes the window when it attaches.
 
-14. Bring-up: the debug port and KICK
--------------------------------------
+14. Bring-up and Diagnostics
+------------------------------
 
-- **Debug port.** DBG_ADDR, DBG_DATA and DBG_STATUS access one 32-bit word
-  of GPU memory through the GPU's own memory path, so the aperture applies.
-  Writing DBG_ADDR starts a read of that word; writing DBG_DATA starts a
-  write of the value (with its byte enables) to DBG_ADDR. Both are
-  asynchronous: the host polls DBG_STATUS.busy (or takes
-  IRQ_STATUS.DBG_DONE), then reads DBG_DATA. A write to DBG_ADDR or
-  DBG_DATA while busy is ignored. A refused access sets DBG_STATUS.error
-  and is not a device fault.
-- **KICK** starts a unit directly on the state register file's values,
-  without the ring, in IDLE and HALTED only: [0] BLIT, [1] DRAW,
-  [2] DISPATCH. The host polls the unit's STATUS busy bit for the end. A
-  KICK in another state, or while the unit is busy, is a fault of kind 6;
-  a KICK of a unit the GPU does not have is a fault of kind 2. With the
-  PROT capability (section 11.6) a KICK runs as session 0: it is a fault
-  of kind 6 while the units still run for a protected session (after a
-  protected session's work, until a packet of session 0 has started a
-  unit).
+In GHCI 2.0, board bring-up and driver development rely on the slim MMIO
+diagnostics registers rather than complex debug memory ports:
 
-With these two, a board can be brought up with register accesses alone:
-fill and copy with KICK.BLIT, then read memory back through the debug port.
+- **Liveness & MMIO Verification:** The host reads `GHCI_MAGIC` (`0x47484349`)
+  and `GHCI_VERSION` (`0x00020000`) to confirm bus connectivity and BAR mapping.
+  The driver then writes test bit patterns to `SCRATCH` (0x048) and reads them
+  back to verify 32-bit read/write bus timing.
+- **Hardware Capability Audit:** Reading `DEVICE_CAPS` (0x008) reports whether
+  the hardware operates in UMA mode (`CAP_UMA`), has IOMMU/walker support
+  (`CAP_HW_WALKER`), the physical SIMD lane width (32 lanes), and the active
+  Shader Unit count.
+- **Microcontroller Diagnostics (`DIAG_CP_PC` and `DIAG_CP_STATUS`):**
+  The driver monitors the CP's internal RV32IM program counter (`DIAG_CP_PC`)
+  and state machine status (`DIAG_CP_STATUS`). If a hang or fault occurs,
+  the driver immediately inspects the exact instruction address and pipeline
+  state without halting the system bus.
+- **Minimal Ring Bring-up:** A board test requires only allocating a 4 KiB
+  command ring in memory, writing `RING_BASE_LO/HI` and `RING_SIZE`, setting
+  `CTRL.RUN = 1`, and submitting a single `CMD_FENCE` packet via `RING_WPTR`.
+  A successful fence writeback and level-triggered IRQ verify the entire DMA,
+  command fetch, and interrupt pipeline.
 
 15. Bindings
 ------------
@@ -2180,22 +1846,18 @@ Appendix A. Driver initialization (informative)
 A typical start, following the rules above:
 
 1. Read GHCI_MAGIC and GHCI_VERSION; stop unless the major version is
-   known (section 16).
-2. Read VENDOR_ID, DEVICE_ID, ISA_ID, CAPS, CAPS2, GCLK_HZ, and walk the
-   extended capability list (section 4). Without a MEM capability, the
-   GPU is unified.
-3. Write CTRL.RESET and wait for it to fall (section 10). Wait for
-   STATUS.MEM_READY.
-4. Allocate the ring and the fence memory (in host memory, section
-   11.3), and set APERTURE_BASE/LIMIT, RING_BASE and RING_SIZE in
-   IDLE.
-5. Write FENCE_LAST and the fence memory with the starting fence value.
-   With a local window, close it unless a boot framebuffer is still in
-   use (WINDOW_CTRL, sections 11.1 and 13).
-6. Clear IRQ_STATUS, set IRQ_ENABLE (at least FENCE and FAULT), then set
-   CTRL.RUN.
-7. Submit: write packets, make them visible (section 6.3), write
-   RING_WPTR. End each submission with a FENCE.
+   supported (section 16).
+2. Read DEVICE_CAPS and walk the extended capability list (section 4).
+3. If STATUS.FAULT is asserted, write CTRL.RESET and wait for it to clear. Wait
+   for STATUS.READY.
+4. Allocate the command ring and fence memory in host or shared memory
+   (section 11.3). Write RING_BASE_LO, RING_BASE_HI, and RING_SIZE.
+5. Initialize fence memory with starting sequence values.
+6. Clear IRQ_STATUS (write 1 to clear), set IRQ_ENABLE (at least
+   IRQ_FENCE and IRQ_FAULT), and set CTRL.IRQ_GLOBAL. Set CTRL.RUN = 1.
+7. Submit: record command packets, ensure memory visibility (section 6.3),
+   and write the new ring byte offset to RING_WPTR (the Doorbell). End each
+   frame submission with a `CMD_FENCE`.
 
 On a fault: log FAULT_INFO, reset, rebuild the ring and the fence memory,
 and complete the outstanding fences with an error (section 10).

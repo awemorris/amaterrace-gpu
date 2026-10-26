@@ -17,10 +17,35 @@
 
 /* Identification. */
 localparam [31:0] GHCI_MAGIC_VALUE = 32'h47484349;	/* "GHCI" */
-localparam [15:0] GHCI_VERSION_MAJOR = 16'd1;
+localparam [15:0] GHCI_VERSION_MAJOR = 16'd2;
 localparam [15:0] GHCI_VERSION_MINOR = 16'd0;
 
-/* Host control register offsets (bytes in the 128 KiB decode). */
+/*
+ * ============================================================================
+ * GHCI 2.0 Slim Host MMIO Registers (19 registers, 76 bytes: 17'h00 - 17'h48)
+ * ============================================================================
+ */
+localparam [16:0] GHCI_2_REG_MAGIC          = 17'h00000;
+localparam [16:0] GHCI_2_REG_VERSION        = 17'h00004;
+localparam [16:0] GHCI_2_REG_DEVICE_CAPS    = 17'h00008;
+localparam [16:0] GHCI_2_REG_EXTCAP_PTR     = 17'h0000C;
+localparam [16:0] GHCI_2_REG_CTRL           = 17'h00010;
+localparam [16:0] GHCI_2_REG_STATUS         = 17'h00014;
+localparam [16:0] GHCI_2_REG_IRQ_STATUS     = 17'h00018;
+localparam [16:0] GHCI_2_REG_IRQ_ENABLE     = 17'h0001C;
+localparam [16:0] GHCI_2_REG_RING_BASE_LO   = 17'h00020;
+localparam [16:0] GHCI_2_REG_RING_BASE_HI   = 17'h00024;
+localparam [16:0] GHCI_2_REG_RING_SIZE      = 17'h00028;
+localparam [16:0] GHCI_2_REG_RING_RPTR      = 17'h0002C;
+localparam [16:0] GHCI_2_REG_RING_WPTR      = 17'h00030;
+localparam [16:0] GHCI_2_REG_FAULT_INFO     = 17'h00034;
+localparam [16:0] GHCI_2_REG_FAULT_ADDR_LO  = 17'h00038;
+localparam [16:0] GHCI_2_REG_FAULT_ADDR_HI  = 17'h0003C;
+localparam [16:0] GHCI_2_REG_DIAG_CP_PC     = 17'h00040;
+localparam [16:0] GHCI_2_REG_DIAG_CP_STATUS = 17'h00044;
+localparam [16:0] GHCI_2_REG_SCRATCH        = 17'h00048;
+
+/* Legacy Host control register offsets (bytes in the 128 KiB decode). */
 localparam [16:0] GHCI_MAGIC = 17'h00000;
 localparam [16:0] GHCI_VERSION = 17'h00004;
 localparam [16:0] GHCI_VENDOR_ID = 17'h00008;
