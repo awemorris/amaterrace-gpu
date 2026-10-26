@@ -3,7 +3,8 @@
 # ws001-p001 RTL の階層（bsp・library・gpu）と FP の演算器の重複の整理
 
 - 親: [WS001](../ws.md)。設計: [design.md](../design.md) §19.5.5。作業仕様書: [work-spec.md](work-spec.md)（amaterrace-gpu/ws288-p042-plan.md より）。
-- 状態: uncleared（2026-10-26 ユーザーレビューにより差し戻し、DSP48E1 直接インスタンス化・* 演算子完全撤廃の再実装中）
+- 状態: completed（2026-10-26 Step A マージ完了、Step B 再実装完了、T1 等価試験・R1 敵対的レビュー APPROVE 承認完了）
+- 担当: P1 (Implementation) / T1 (Test) / R1 (Review)
 - 依存・順: 今すぐ。p001 → SU の下位の部品の pipeline 化（SU → TU → ROP … の順に block ごと）。DC の 200 MHz は並行して進める。名前の移動は多くの file に触れるため、p001 の担当以外は amaterrace の rtl/common・FP の module を触らない。
 - 進め方（2 段階のマイルストーン）:
   - Step A（階層整理と FP 統合）: 範囲 1・2・4（SYNTH_KINTEX7 以外）を実施し、確かめ 1・3（等価検証・日常 sim/lint・arith-lint 0）がすべて PASS することを確認して中間記録・コミット境界とする。

@@ -21,6 +21,7 @@
    - **Q1（メインエージェント）**: 計画立案、サブエージェント管理、成果物マージ。
    - **P1〜P8（実装担当）**: RTL コーディングは **Claude Opus 5.5 Medium** で起動。同時実行数 $N$（$N=1$ で P1、$N=2$ で P1, P2 等）。テストを Q1 に依頼後、**テスト結果を待たずに依存関係の満たされている別作業に着手する**。
    - **T1〜T8（テスト担当）**: Q1 からディスパッチされ検証を実行し、Q1 へ結果を返す。
+   - **R1（レビュー担当）**: 実装完了時に Q1 からディスパッチされ、敵対的コードレビューを実施。不備がある場合は差し戻し修正ループを実行し、APPROVE を得て完了確定とする。
    - **サブエージェント別 Queue**: Queue はサブエージェントごとに持つ。
 
 ---
@@ -43,7 +44,7 @@
 
 | Milestone | Objective | 受け入れの核 | 進捗 | Primary WS |
 | --- | --- | --- | --- | --- |
-| **MG001** 階層整理・FP 演算器統合・DSP48E1 最適化 | O1, O3 | `rtl/common/` 廃止、`rtl/library/{arith,bus,fp}`・`rtl/bsp/` 再編、10 種の FP 演算器統合、`am_mul` 全幅 DSP48E1 カスケード化と unisim 等価確認、arith-lint 0 | 計画中（[ws001-p001](ws001/phase001/phase.md) 承認待ち） | WS001 |
+| **MG001** 階層整理・FP 演算器統合・DSP48E1 最適化 | O1, O3 | `rtl/common/` 廃止、`rtl/library/{arith,bus,fp}`・`rtl/bsp/` 再編、FP 演算器統合（`am_fpu_core` 含む）、`am_mul` 全幅 DSP48E1 直接インスタンス化（`LAT <= 3` でファブリック 0 個）、arith-lint 0 | 達成・完了（[p001](ws001/phase001/phase.md), [p002](ws001/phase002/phase.md), [p008](ws001/phase008/phase.md) 承認完了） | WS001 |
 | **MG002** KC705 実機動作・DC 200MHz 独立・端から端統合 | O1, O2 | DC クロック領域の 200 MHz 化による 720p アンダーフロー解消、VF2 PCIe / QEMU VFIO 経由での zedBSD Vulkan 描画 | 前提 Phase 準備中 | WS001 |
 | **MG003** パイプライン化と 200 MHz タイミング収束 | O2 | 各ブロック（SU, TU, ROP, RX 等）の LAT=3 パイプライン化、KC705 上での WNS >= 0 ns 達成 | 計画 | WS001 |
 | **MG004** 複数 SU・キャッシュブロッキング・ASIC 展開 | O1, O2 | 複数 SU スケーリング、タイリング/キャッシュブロッキング、3nm ASIC フロー検討 | Future Work | WS001 |
@@ -52,13 +53,14 @@
 
 | Goal | 当面の成果 | Milestone | 担当 Phase | 出典 |
 | --- | --- | --- | --- | --- |
-| **fg001** | RTL 階層再編・FP 重複演算器の統合・`am_mul` の全幅 `DSP48E1` カスケード実装と等価性検証 | MG001 | [ws001-p001](ws001/phase001/phase.md) | 2026-10-26 ユーザー指示 |
+| **fg001** | RTL 階層再編・FP 重複演算器の統合・`am_mul` の全幅 `DSP48E1` カスケード実装と等価性検証 | MG001 | [ws001-p001](ws001/phase001/phase.md) | 達成・完了 |
+| **fg002** | 共有 L2 キャッシュ（LLC: 256 KiB、16-way）導入 & キャッシュコヒーレンシ再構築 | MG001, MG002 | [ws001-p003](ws001/phase003/phase.md) | 2026-10-26 ユーザー指示 |
 
 ## Workstream 一覧
 
 | WS | Primary Milestone | 名称・概要 | 状態 | 再開点・次の作業 |
 | --- | --- | --- | --- | --- |
-| [WS001](ws001/ws.md) | MG001 | Amaterrace GPU IP（階層整理・FP 演算器統合・DSP48E1 最適化・GHCI 拡張） | in-progress | [p001](ws001/phase001/phase.md) Step B 実行中、[p002](ws001/phase002/phase.md)〜[p006](ws001/phase006/phase.md) 計画策定完了 |
+| [WS001](ws001/ws.md) | MG001 | Amaterrace GPU IP（階層整理・FP 演算器統合・DSP48E1 最適化・GHCI 拡張） | in-progress | [p001](ws001/phase001/phase.md), [p002](ws001/phase002/phase.md), [p007](ws001/phase007/phase.md), [p008](ws001/phase008/phase.md) 完了。[p003](ws001/phase003/phase.md) 実行中。 |
 
 ## 優先順位
 
