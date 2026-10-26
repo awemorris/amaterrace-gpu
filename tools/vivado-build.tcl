@@ -6,6 +6,16 @@
 # generated and synthesised out of context by its ip.tcl).  Writes
 # OUT/TOP.bit, TOP.dcp (routed), utilization.rpt, utilization_hier.rpt,
 # timing_summary.rpt, clock_interaction.rpt, drc.rpt.  No project.
+# The implementation's directives come from the environment (Vivado's
+# names; unset = Default): VIVADO_STRATEGY sets all four from a named
+# strategy (Default, Performance_Explore, Performance_ExtraTimingOpt,
+# Performance_NetDelay_high, Congestion_SpreadLogic_high), and
+# VIVADO_OPT_DIRECTIVE, VIVADO_PLACE_DIRECTIVE, VIVADO_PHYS_DIRECTIVE,
+# VIVADO_ROUTE_DIRECTIVE override one step.  The run writes
+# OUT/TOP_synth.dcp after synthesis; VIVADO_FROM_SYNTH names such a
+# checkpoint to implement instead of synthesising again (so several
+# strategies share one synthesis).  Board bitstreams record the Vivado
+# version and the directives they were built with (docs/style.md).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 if {[llength $argv] < 5} {
@@ -24,26 +34,61 @@ proc rtl_files {dir} {
 	return [lsort $files]
 }
 
-read_verilog [concat [rtl_files [file join $root rtl]] [list [file join $topdir $top.v]] \
-	[lsort [glob -nocomplain -directory [file join $topdir lib] *.v]]]
-read_xdc [file join $topdir $top.xdc]
-if {[info exists ipdir] && $ipdir ne ""} {
-	foreach xci [lsort [glob -directory $ipdir */*.xci]] {
-		read_ip $xci
+set synth [expr {![info exists ::env(VIVADO_FROM_SYNTH)] || $::env(VIVADO_FROM_SYNTH) eq ""}]
+if {$synth} {
+	read_verilog [concat [rtl_files [file join $root rtl]] [list [file join $topdir $top.v]] \
+		[lsort [glob -nocomplain -directory [file join $topdir lib] *.v]]]
+	read_xdc [file join $topdir $top.xdc]
+	if {[info exists ipdir] && $ipdir ne ""} {
+		foreach xci [lsort [glob -directory $ipdir */*.xci]] {
+			read_ip $xci
+		}
+	}
+
+	# The CP firmware's BRAM images ($readmemh in atg_cpu_mem): the run reads
+	# them from its directory.
+	foreach image [glob -nocomplain -directory [file join $root fw cp images] *.hex] {
+		file copy -force $image $out
 	}
 }
 
-# The CP firmware's BRAM images ($readmemh in atg_cpu_mem): the run reads
-# them from its directory.
-foreach image [glob -nocomplain -directory [file join $root fw cp images] *.hex] {
-	file copy -force $image $out
+array set strategies {
+	Default {Default Default Default Default}
+	Performance_Explore {Explore Explore Explore Explore}
+	Performance_ExtraTimingOpt {Default ExtraTimingOpt Explore NoTimingRelaxation}
+	Performance_NetDelay_high {Default ExtraNetDelay_high AggressiveExplore NoTimingRelaxation}
+	Congestion_SpreadLogic_high {Default AltSpreadLogic_high AggressiveExplore AlternateCLBRouting}
 }
+proc env_or {name default} {
+	if {[info exists ::env($name)] && $::env($name) ne ""} {
+		return $::env($name)
+	}
+	return $default
+}
+set strategy [env_or VIVADO_STRATEGY Default]
+if {![info exists strategies($strategy)]} {
+	puts "vivado-build: unknown VIVADO_STRATEGY $strategy"
+	exit 2
+}
+lassign $strategies($strategy) d_opt d_place d_phys d_route
+set d_opt [env_or VIVADO_OPT_DIRECTIVE $d_opt]
+set d_place [env_or VIVADO_PLACE_DIRECTIVE $d_place]
+set d_phys [env_or VIVADO_PHYS_DIRECTIVE $d_phys]
+set d_route [env_or VIVADO_ROUTE_DIRECTIVE $d_route]
+puts "vivado-build: [version -short] strategy $strategy opt $d_opt place $d_place phys $d_phys route $d_route"
 
-synth_design -top $top -part $part -include_dirs [list [file join $root include]]
-opt_design
-place_design
-phys_opt_design
-route_design
+set from_synth [env_or VIVADO_FROM_SYNTH ""]
+if {$from_synth ne ""} {
+	close_project -quiet
+	open_checkpoint $from_synth
+} else {
+	synth_design -top $top -part $part -include_dirs [list [file join $root include]]
+	write_checkpoint -force [file join $out ${top}_synth.dcp]
+}
+opt_design -directive $d_opt
+place_design -directive $d_place
+phys_opt_design -directive $d_phys
+route_design -directive $d_route
 
 report_utilization -file [file join $out utilization.rpt]
 report_utilization -hierarchical -hierarchical_depth 3 -file [file join $out utilization_hier.rpt]

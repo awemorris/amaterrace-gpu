@@ -16,7 +16,9 @@
 # directory of generated IP cores (boards/BOARD/ip.tcl's OUT) that the
 # build reads (kc705: the MIG, the PCIe bridge and the AXI cores).
 # VIVADO_LOCK (default /tmp/zedbsd-vivado.lock): the run holds it, one
-# Vivado at a time on the host.
+# Vivado at a time on the host.  VIVADO_OUT replaces the output directory
+# (default build/vivado/TOP).  VIVADO_STRATEGY, VIVADO_*_DIRECTIVE and
+# VIVADO_FROM_SYNTH: tools/vivado-build.tcl.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 [ $# -eq 2 ] || { echo "usage: vivado-build.sh BOARD TOP" >&2; exit 2; }
@@ -47,7 +49,7 @@ if ! /sbin/ldconfig -p | grep -q 'libncurses\.so\.5 '; then
 	LD_LIBRARY_PATH=$XILINX_VIVADO/lib/lnx64.o/Ubuntu/24${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 	export LD_LIBRARY_PATH
 fi
-out=$root/build/vivado/$top
+out=${VIVADO_OUT:-$root/build/vivado/$top}
 mkdir -p "$out"
 start=$(date +%s)
 rc=0
