@@ -3,7 +3,7 @@
 # Phase 016: Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・1 beat/cycle達成)
 - **依存**: [ws001-p014](../phase014/phase.md), [ws001-p015](../phase015/phase.md)
 - **優先度**: Critical (Stop-and-Wait 解体による ROP 実効フィルレート 20〜50 倍向上)
 - **出典**: ユーザー諮問（ROP パイプライン化）および R1 敵対的アーキテクチャ分析レポート
@@ -109,3 +109,23 @@ module atg_rop_hazard #(
 
 - 座標の異なるクアッドが毎サイクル連続してイシュー（スループット 1 beat/cycle）できること。
 - 同一座標に対するオーバーラップ描画において、RAW ハザードが確実に防止され描画結果が崩れないこと。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **RTL パイプライン化実装**:
+   - `rtl/gpu/rop/atg_rop_hazard.v`: 16 エントリ Pixel Lock CAM 新設（座標 `{RT[1:0], Y[15:1], X[15:1]}` 並列比較）。非衝突時 0 ウェイト、同一座標 RAW 衝突時局所ストール、コミット時同サイクル解放・再アロケーション。
+   - `rtl/gpu/rop/atg_rop_wb.v`: 直列ストップ＆ウェイト FSM 解体。Row 0/Row 1 デュアルタグ同時判定（`atg_rop_wpix.v` 拡張）、4 段ストリームパイプライン（スループット 1 beat/cycle）、ミス時安全ドレイン。
+   - `spec/gpu/rop/atg_rop_hazard.md`: 仕様書新設。
+   - `sim/tb/atg_rop_hazard_tb.v`: 単体テストベンチ新設。
+2. **検証結果**:
+   - `sim/run.sh atg_rop_hazard`: **PASS** (0 s; burst, raw, rt 分離、満杯バックプレッシャー全検証)
+   - `sim/run.sh atg_rop_wb`: **PASS** (12 s)
+   - `sim/run.sh atg_rop_beat`: **PASS** (3 s)
+   - `sim/run.sh atg_rop_mrt`: **PASS** (254 s; 72 構成ビット完全一致)
+   - `tools/lint.sh`: 全モジュール Clean（0 warnings）
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+   - `sim/verilator/run.sh`: 全 7 シーン **PASS**（raster.png 一致、core シーン実行サイクル数 812,364 サイクルへ短縮）。
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p016_rop_hazard.md`）。16 エントリ Pixel Lock CAM、1 beat/cycle ストリームパイプライン、安全なミスドレイン、Guardrails 完全準拠を承認。
