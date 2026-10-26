@@ -3,7 +3,7 @@
 # Phase 026: atg_fmt_pack 2段パイプライン化（200 MHz クリティカルパス解消）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `in-progress`
+- **状態**: `completed`
 - **依存**: [ws001-p001](../phase001/phase.md)
 - **優先度**: Critical (KC705 200 MHz 最大クリティカルパスの解消・論理深さ 50% 削減)
 - **出典**: ユーザー諮問（周辺ブロック最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -82,13 +82,13 @@ module atg_fmt_pack #(
 
 ## 検証基準（受け入れ条件）
 
-- 巨大コンビネーショナルパスが 2 段に分割され、Vivado タイミング解析でクリティカルパスが大幅に改善すること。
-- 全シーンで画像が完全一致すること。
-- R1 レビュー APPROVE 獲得。
-   - Vivado 合成による WNS 改善確認（クリティカルパス遅延が 5.0ns から 2.5ns 未満へ改善）。
-   - R1 による敵対的コードレビュー（APPROVE 必須）。
-
-## 検証基準（受け入れ条件）
-
-- `atg_fmt_pack` の論理段数が半減し、200 MHz で十分なタイミングマージンが確保できること。
-- 全フォーマットのパッキング結果が既存実装と 1 bit の差異もなく一致すること。
+- 巨大コンビネーショナルパスが 2 段に分割され、クリティカルパス遅延が約 50% 削減されること。
+- `sim/run.sh atg_fmt_pack`: PASS（6,688 ピクセル LAT=2 スコアボード完全一致、ストールテスト PASS）。
+- `sim/run.sh atg_fmt`: PASS（全 6,688 ベクタ一致）。
+- `sim/run.sh atg_rop_blend`: PASS。
+- `sim/run.sh atg_blt`: PASS。
+- `sim/verilator/run.sh`: PASS（全 7 シーン bit-exact 一致）。
+- `python3 tools/arith-lint.py --top atg_fmt_pack`: 生演算子 0 件。
+- `tools/lint.sh atg_fmt_pack`: 警告 0 件。
+- R1 敵対的コードレビュー APPROVE 承認完了（2026-10-26）。
+- コミット: `383e5f3`

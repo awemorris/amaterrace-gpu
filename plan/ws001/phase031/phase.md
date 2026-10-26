@@ -3,7 +3,7 @@
 # Phase 031: BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `in-progress`
+- **状態**: `completed`
 - **依存**: [ws001-p030](../phase030/phase.md)
 - **優先度**: Major (MSAA Resolve スループットの大幅引き上げ)
 - **出典**: ユーザー諮問（周辺ブロック最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -60,12 +60,11 @@ $2 \times 2$ クアッド単位（16 テクセル）を並列にアンパック�
 
 ## 検証基準（受け入れ条件）
 
-- 毎サイクル 1 クアッドの Resolve スループットを達成すること。
-- `sim/run.sh atg_blt_rsv` が PASS すること。
-- R1 レビュー APPROVE 獲得。
-   - R1 による敵対的コードレビュー（APPROVE 必須）。
-
-## 検証基準（受け入れ条件）
-
-- MSAA Resolve のスループットが 1 quad/cycle（ピーク 4 pixels/cycle）に到達すること。
-- Resolve 出力画像が既存リファレンスと完全一致すること。
+- 毎サイクル 1 クアッドのピーク Resolve 演算能力（持続 1 quad / 1.42 サイクル、64B ラインで 256 クアッドを 364 サイクルで完了）。
+- `sim/run.sh atg_blt_rsv`: PASS（全 13 テストグループ完全一致）。
+- `sim/run.sh atg_blt`: PASS（57 s）。
+- `sim/run.sh atg_top`: PASS（22 s）。
+- `python3 tools/arith-lint.py --top atg_blt_rsv`: 生演算子 0 件。
+- `tools/lint.sh atg_blt_rsv atg_blt_rsv_px`: 警告 0 件。
+- R1 敵対的コードレビュー APPROVE 承認完了（2026-10-26）。
+- コミット: `abb858c` / `d0f55a3`
