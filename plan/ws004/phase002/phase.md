@@ -3,7 +3,7 @@
 # Phase ws004-p002: SU 内部 Meshlet プリミティブエクスポート（atg_su_exp_mesh）& LDS インターフェース設計・実装
 
 - Workstream: [WS004](../ws.md)
-- Status: `review`
+- Status: `cleared`
 - Depends on: ws004-p001
 
 ## 目的

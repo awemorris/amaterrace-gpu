@@ -64,25 +64,26 @@
 | `q001-i50` | **P3** | [ws002-p009](../ws002/phase009/phase.md) | 非同期 DMA 転送キュー & 3D ボリュームコピー | cleared | `q001-i25` | P3 実装・atg_blt_async PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i51` | **P2** | [ws002-p010](../ws002/phase010/phase.md) | WSI 高度表示機能（HDR10、マルチプレーンオーバーレイ、VRR） | cleared | `q001-i34` | P2 実装・atg_dc_wsi PASS、atg_dc_tgen PASS、`arith-lint` 0件。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i52` | **P1** | [ws003-p001](../ws003/phase001/phase.md) | ビルド設定基盤（config.mk.template, config.mk, Makefile, atg_config.vh, menuconfig） | cleared | なし | 実装完了。tools/menuconfig.py (curses TUI & headless CLI) 実装、Makefile 連携、atg_config.vh 自動生成確認。 |
-| `q001-i53` | **P1** | [ws003-p002](../ws003/phase002/phase.md) | SU 物理レーン（NPHYS=4,8,16,32）および演算オプションのパラメータ化 | queued | `q001-i52` | N=3 並行レーン P1 担当。 |
+| `q001-i53` | **P1 / R1** | [ws003-p002](../ws003/phase002/phase.md) | SU 物理レーン（NPHYS=4,8,16,32）および演算オプションのパラメータ化 | cleared | `q001-i52` | P1 実装完了。GAP_W=3拡張、atg_su:+quick 全4構成PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i54` | **P2 / R1** | [ws003-p003](../ws003/phase003/phase.md) | RX（MSAA 有効/無効/サンプル数、Hi-Z Early-Z 着脱、Coarse Scan 着脱）の Capability 化 | cleared | `q001-i52` | P2 是正完了。Lint 0警告、Hi-Z仕様書更新、arith-lint 0件。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i55` | **P3 / R1** | [ws003-p004](../ws003/phase004/phase.md) | TU（テクスチャ圧縮 BC1-BC7 デコーダ着脱、トライリニア補間着脱）の Capability 化 | cleared | `q001-i52` | P3 是正完了。Lint 0警告、スタブデッドロック解消、atg_tu PASS 138s。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i56` | **P3 / R1** | [ws003-p005](../ws003/phase005/phase.md) | ROP（Dual Source, LogicOp, MRT, Fast Clear）の Capability 化 | cleared | `q001-i52` | P3 是正完了。Lint 0警告、単体全PASS。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i57` | **P2 / R1** | [ws003-p006](../ws003/phase006/phase.md) | CP & GHCI レジスタ連携（動的 Capability 反映、Task/Mesh ビット定義） | cleared | `q001-i53`, `q001-i54`, `q001-i55`, `q001-i56` | P2 実装完了。DEVICE_CAPS/CAPS/EXT_CAP_* 動的反映、新設ビット定義、atg_cp_tb PASS、arith-lint 0件。R1 敵対的レビュー APPROVE 承認完了。 |
-| `q001-i58` | **P2 / T1 / R1** | [ws003-p007](../ws003/phase007/phase.md) | プロファイル別プリセットビルド検証 & 全体回帰テスト | in-progress | `q001-i57` | P2 がプロファイル別プリセットビルド検証（Minimal, Balanced, High-Perf）に着手。 |
+| `q001-i58` | **P2 / T1 / R1** | [ws003-p007](../ws003/phase007/phase.md) | プロファイル別プリセットビルド検証 & 全体回帰テスト | cleared | `q001-i57` | P2 実装・検証完了。minimal/balanced/high-perf 3プリセット切替、全215モジュールLint 0警告、arith-lint 0件。 |
 | `q001-i59` | **D1** | [ws004-p001](../ws004/phase001/phase.md) | SU support for task/mesh shader（vk_ext_mesh_shader, vk_ext_task_shader）内蔵アーキテクチャ方式検討資料作成 | cleared | なし | 検討完了。全主要論点で推奨案（64頂点/126プリミティブ、L2Cペイロード、LDS直結DMA、静的MUX）採用でユーザー承認完了。 |
-| `q001-i60` | **P3** | [ws004-p002](../ws004/phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート & LDS インターフェース設計・実装 | in-progress | `q001-i59` | 推奨案に基づき P3 が即座に着手。 |
+| `q001-i60` | **P3 / R1** | [ws004-p002](../ws004/phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート（atg_su_exp_mesh）& LDS インターフェース設計・実装 | cleared | `q001-i59` | P3 実装完了。NGG完全撤廃確認、単体・atg_su:+quick PASS、R1 敵対的レビュー APPROVE 承認完了。 |
+| `q001-i61` | **P3** | [ws004-p003](../ws004/phase003/phase.md) | CP タスクディスパッチ & メッシュパイプライン統合・検証 | queued | `q001-i60` | 承認後着手。 |
 
 ## サブエージェント実行状態（N=3）
 
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
-| **P1** | 実装（メモリ・相互結合・コア・CP・VF） | Claude Opus 5.5 Medium | active | `ws003-p002` (SU 物理レーン & 演算オプション) | 統合検証支援 |
-| **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC・CP） | Claude Opus 5.5 Medium | active | `ws003-p007` (プリセットビルド検証 & 全体回帰) | レビュー対応 |
-| **P3** | 実装（インフラ・ジオメトリ・SU・ROP・BLT・TU） | Claude Opus 5.5 Medium | active | `ws004-p002` (SU 内部 Meshlet エクスポート & LDS 実装) | レビュー対応 |
-| **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | WS001（31件）& WS002（10件）全 41 Phase 実装設計書作成完了（終了済） | 任務完了 |
+| **P1** | 実装（メモリ・相互結合・コア・CP・VF） | Claude Opus 5.5 Medium | idle | 待機中（ws003-p002 完了） | 次期タスク |
+| **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC・CP） | Claude Opus 5.5 Medium | idle | 待機中（ws003-p007 完了） | 次期タスク |
+| **P3** | 実装（インフラ・ジオメトリ・SU・ROP・BLT・TU） | Claude Opus 5.5 Medium | idle | 待機中（ws004-p002 完了） | ws004-p003 |
+| **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | 全設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
-| **R1** | レビュー | Gemini 4 Argon Medium | active | `ws003-p004` (TU) 敵対的レビュー中 | 各レーン成果物レビューディスパッチ |
+| **R1** | レビュー | Gemini 4 Argon Medium | active | 敵対的レビュー待機中 | 各レーン成果物レビュー |
 
 ## Upcoming Work Outlook（見通し）
 

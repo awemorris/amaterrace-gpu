@@ -3,7 +3,7 @@
 # Phase ws003-p002: SU 物理レーンスケーリング（4, 8, 16, 32）および演算オプションのパラメータ化
 
 - Workstream: [WS003](../ws.md)
-- Status: `review`
+- Status: `cleared`
 - Depends on: ws003-p001
 
 ## 目的

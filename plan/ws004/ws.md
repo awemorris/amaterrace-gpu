@@ -20,5 +20,5 @@
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | SU support for task/mesh shader（vk_ext_mesh_shader, vk_ext_task_shader）内蔵アーキテクチャ方式検討・比較資料作成 | - | completed |
-| [p002](phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート（atg_su_exp_mesh）& LDS インターフェース設計・実装 | p001 | active |
+| [p002](phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート（atg_su_exp_mesh）& LDS インターフェース設計・実装 | p001 | completed |
 | [p003](phase003/phase.md) | CP タスクディスパッチ & メッシュパイプライン統合・検証（承認後着手） | p002 | queued |

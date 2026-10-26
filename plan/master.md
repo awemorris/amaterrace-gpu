@@ -63,8 +63,8 @@
 | --- | --- | --- | --- | --- |
 | [WS001](ws001/ws.md) | MG001 | Amaterrace GPU IP（階層整理・FP 演算器統合・DSP48E1 最適化・パイプライン化） | completed | 全 39 Phase 実装・検証・R1 承認完了 |
 | [WS002](ws002/ws.md) | MG005 | Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8） | completed | 全 10 Phase 実装・検証・R1 承認完了 |
-| [WS003](ws003/ws.md) | MG006 | Vulkan 互換 API モジュール別 Capability 化 & config.mk ビルド設定 | active | [ws003-p001](ws003/phase001/phase.md) |
-| [WS004](ws004/ws.md) | MG007 | 次世代ジオメトリ（VK_EXT_mesh_shader, VK_EXT_task_shader）SU support for task/mesh shader アーキテクチャ | active | [ws004-p002](ws004/phase002/phase.md) |
+| [WS003](ws003/ws.md) | MG006 | Vulkan 互換 API モジュール別 Capability 化 & config.mk ビルド設定 | completed | 全 7 Phase 実装・検証・R1 承認完了 |
+| [WS004](ws004/ws.md) | MG007 | 次世代ジオメトリ（VK_EXT_mesh_shader, VK_EXT_task_shader）SU support for task/mesh shader アーキテクチャ | active | [ws004-p003](ws004/phase003/phase.md) |
 
 ## 優先順位
 
