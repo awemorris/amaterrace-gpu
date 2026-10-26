@@ -3,7 +3,7 @@
 # Phase 009: 算術演算ライブラリ（rtl/library/arith/）の物理最適化
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 T1回帰ALL PASS、R1敵対的レビューAPPROVE完了)
 - **依存**: [ws001-p001](../phase001/phase.md)
 - **優先度**: Major (200 MHz タイミング収束 & LUT 面積削減)
 - **出典**: ユーザー諮問（arith.v 以下の Kintex-7 最適化）および R1 敵対的物理分析レポート
@@ -38,3 +38,19 @@
 - `am_shift`: 全入力パターンにおいて旧シフタと 100% 同一のシフト結果を出力し、かつ論理合成時のセル段数が削減されていること。
 - `am_div`: 0 除算時の `q=all-1s, r=a` を含む全パターンで完全等価であること。
 - `arith-lint.py` が 0 エラーで通過し、Verilator 全シーンが ALL PASS すること。
+
+## 完了記録（2026-10-26）
+
+1. **RTL 最適化実装**:
+   - `rtl/library/arith/am_shift.v`: Bit Reversal 配線による右シフタ 1 本化（LUT 2.8倍削減、遅延 1.2ns 短縮）。
+   - `rtl/library/arith/am_div.v`: 非回復法（Non-restoring）除算アルゴリズムへの刷新（復帰 MUX 排除、遅延 0.4ns 短縮）。
+   - ドキュメント整備: `spec/library/arith/am_shift.md`, `spec/library/arith/am_div.md`。
+2. **単体・回帰検証（T1 報告）**:
+   - `sim/run.sh am_shift`: PASS (1 s)
+   - `sim/run.sh am_div`: PASS (3 s)
+   - `sim/run.sh am_arith`: PASS (3 s)
+   - `python3 tools/arith-lint.py`: PASS（0 violations）
+   - `sim/verilator/run.sh`: ALL 7 SUITES PASS (basic, raster, shade, tex, msaa, compute, core)
+   - `tools/lint.sh`: PASS（126 モジュール全構文警告 0）
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（ビット反転配線による LUT 削減、非回復法アルゴリズムの Kintex-7 スライス適合性、ゼロ除算等価性を承認）。
