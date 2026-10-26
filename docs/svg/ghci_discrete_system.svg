@@ -201,7 +201,7 @@
         </g>
 
         <!-- Bidirectional Flow Arrows -->
-        <path d="M 65 390 L 65 470" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M 65 390 L 65 470" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
         <text class="conn-sub" x="65" y="495" text-anchor="middle" font-weight="700">PCIe Link</text>
     </g>
 

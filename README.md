@@ -19,7 +19,7 @@ Contents
 1. [Architecture](#architecture)
 2. [GHCI 2.0 Host Interface](#ghci-20-host-interface)
 3. [Blocks & Implementation Details](#blocks--implementation-details)
-   - [Shader Unit (32-Lane SIMD)](#shader-unit-32-lane-simd)
+   - [Shader Unit (SIMT Warp Architecture)](#shader-unit-simt-warp-architecture)
    - [Rasterizer Unit (RX)](#rasterizer-unit-rx)
    - [Render Output Backend (ROP)](#render-output-backend-rop)
    - [Shared L2 Cache & Display Controller](#shared-l2-cache--display-controller)
@@ -105,7 +105,7 @@ Blocks & Implementation Details
 | **CP** | Command Processor | RV32IM RISC-V core running firmware; hardware 2-level page table walker; unified L1/L2 TLB; ring fetcher and hardware dispatch engine. |
 | **BLT** | Blitter | 2D fast fill, copy (with optional alpha-over), linear↔tiled copy for textures, and resolve of multisampled images. |
 | **VF** | Vertex Fetcher | Autonomous descriptor fetch, index and vertex attribute parsing, instancing, and primitive assembly. |
-| **SU** | Shader Unit | 32-lane SIMD compute core running vertex, fragment, and compute warps (GSI1 64-bit ISA). |
+| **SU** | Shader Unit | 32-thread SIMT compute core with scalar PEs (FP16×2 packed support) executing vertex, fragment, and compute warps (GSI1 64-bit ISA). |
 | **RX** | Rasterizer | Triangle setup, coarse tile scan, hierarchical early-Z cull, fine 2×2 quad scan, and perspective barycentric evaluation. |
 | **TU** | Texture Unit | Sampler with texture L1 cache: 2D, 2D array, 3D, and cube maps with mipmapping; bilinear and trilinear filtering; format decompression. |
 | **ROP** | Render Output Backend | Fast on-chip Tile Buffer, stencil and depth tests, dual-source color blending, logic operations, and coherent Shared L2 Cache writeback. |
@@ -114,18 +114,20 @@ Blocks & Implementation Details
 | **MC** | Memory Controller | Internal AMB bus arbiter with AXI4 master interfacing host DRAM or local VRAM. |
 | **DC** | Display Controller | Independent 200 MHz pixel clock domain; direct high-priority scanout port to MC; HDMI/DVI scanout surviving GPU reset. |
 
-### Shader Unit (32-Lane SIMD)
+### Shader Unit (SIMT Warp Architecture)
 
-The Shader Unit executes the standard GSI1 ISA with a full 32-lane SIMD
-architecture organized into 4 Quads (8 lanes per Quad):
+The Shader Unit executes the standard GSI1 ISA with a 32-thread SIMT warp
+architecture. Each lane is a 32-bit scalar Processing Element (scalar PE) with
+FP16×2 packed arithmetic support, organized into 4 Quads (8 scalar lanes per Quad):
 
 ![Amaterrace SU 32-Lane Architecture](docs/svg/atg_su_32lane.svg)
 
-- **Execution Array:** 32 physical SIMD lanes grouped into Quad 0 (0–7),
-  Quad 1 (8–15), Quad 2 (16–23), and Quad 3 (24–31).
-- **DSP48E1 FP32 FMA Cascade:** Each lane integrates a dedicated full-width
+- **Execution Array:** 32 scalar Processing Elements (PEs) across 4 Quads:
+  Quad 0 (0–7), Quad 1 (8–15), Quad 2 (16–23), and Quad 3 (24–31). Each lane operates
+  as a scalar execution pipeline executing 1 thread of the 32-thread warp (subvectored across `NPHYS` physical lanes).
+- **Scalar FP32 & Packed FP16×2:** Each scalar lane integrates a dedicated
   FP32 fused multiply-add pipeline (`am_mul`), cascaded across Xilinx DSP48E1
-  slices for single-cycle throughput.
+  slices for single-cycle throughput, with packed FP16×2 execution for double-rate half-precision math.
 - **Local Data Share (LDS):** 32 KiB on-chip multi-banked scratchpad memory for
   low-latency cross-lane communication and compute group sharing without bank
   conflicts.

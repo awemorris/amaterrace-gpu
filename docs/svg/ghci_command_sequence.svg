@@ -188,7 +188,7 @@
         <text class="seq-step" x="185" y="-8" text-anchor="middle">Write CMD_BIND_PIPELINE + CMD_DRAW</text>
 
         <!-- Doorbell directly to CP -->
-        <path d="M 105 10 L 105 25 L 435 25" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <path d="M 105 10 L 105 25 L 435 25" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)" fill="none"/>
         <text class="seq-step" x="270" y="38" text-anchor="middle" fill="#7c3aed">MMIO Write: RING_WPTR (Doorbell)</text>
     </g>
 
@@ -246,7 +246,7 @@
         <text class="seq-step" x="590" y="-8" text-anchor="middle" fill="#047857">Write Fence Counter to DRAM &amp; Assert IRQ Line</text>
 
         <!-- IRQ back to Host -->
-        <path d="M 270 12 L 105 12" stroke="#dc2626" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+        <path d="M 270 12 L 105 12" stroke="#dc2626" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrow)" fill="none"/>
         <text class="seq-desc" x="185" y="28" text-anchor="middle" fill="#dc2626">Host ISR unblocks synchronization primitive</text>
     </g>
 </svg>

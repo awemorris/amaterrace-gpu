@@ -271,7 +271,7 @@
     </g>
 
     <!-- Connectors between stages -->
-    <path d="M 240 200 L 265 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)"/>
-    <path d="M 475 200 L 500 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)"/>
-    <path d="M 710 200 L 735 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M 240 200 L 265 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)" fill="none"/>
+    <path d="M 475 200 L 500 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)" fill="none"/>
+    <path d="M 710 200 L 735 200" stroke="#0891b2" stroke-width="2.5" marker-end="url(#arrow)" fill="none"/>
 </svg>
