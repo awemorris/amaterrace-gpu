@@ -177,6 +177,8 @@
 #define GHCI_FAULT_KICK 6u
 #define GHCI_FAULT_LOCKED 7u
 #define GHCI_FAULT_ISA 8u
+#define GHCI_FAULT_GPU_PAGE_FAULT 9u      /* GPU VA unmapped / page fault */
+#define GHCI_FAULT_GPU_PERM_VIOLATION 10u /* Permission violation (read/write/exec) */
 
 /* DBG_STATUS. */
 #define GHCI_DBG_BUSY (1u << 0)

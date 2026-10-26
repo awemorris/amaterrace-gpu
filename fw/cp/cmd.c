@@ -42,6 +42,8 @@ static void cmd_destroy_semaphore(struct fw_command *command);
 static int cmd_grant_ready(struct fw_command *command);
 static void cmd_buffer_grant(struct fw_command *command);
 static void cmd_buffer_revoke(struct fw_command *command);
+static void cmd_vm_map(struct fw_command *command);
+static void cmd_vm_unmap(struct fw_command *command);
 
 /*
  * The gpu-ops this firmware decodes.
@@ -49,6 +51,8 @@ static void cmd_buffer_revoke(struct fw_command *command);
 static const struct cmd_entry cmd_table[] = {
 	{ GHCI_GPU_OP_SESSION_OPEN, cmd_session_open },
 	{ GHCI_GPU_OP_SESSION_CLOSE, cmd_session_close },
+	{ GHCI_GPU_OP_VM_MAP, cmd_vm_map },
+	{ GHCI_GPU_OP_VM_UNMAP, cmd_vm_unmap },
 	{ GHCI_GPU_OP_HEAP, cmd_heap },
 	{ GHCI_GPU_OP_MEMORY, cmd_memory },
 	{ GHCI_GPU_OP_PROGRAM, fw_cmd_program },
@@ -499,6 +503,7 @@ cmd_session_close(
 			(void)fw_prot_drain();
 		fw_session_close(tag);
 		fw_prot_close(tag);
+		fw_mmu_session_close(tag);
 	}
 }
 
@@ -740,4 +745,76 @@ cmd_buffer_revoke(
 	error = fw_prot_revoke(tag, address, bytes);
 	if (error != 0)
 		command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
+}
+
+/*
+ * GHCI_GPU_OP_VM_MAP: [u32 session][u32 flags][u32 reserved][u64 gpu_va][u64 phys_addr][u64 size];
+ * autonomous virtual memory mapping.
+ */
+static void
+cmd_vm_map(
+	struct fw_command *command)
+{
+	uint32_t session_id;
+	uint32_t flags;
+	uint64_t gpu_va;
+	uint64_t phys_addr;
+	uint64_t size_bytes;
+	int error;
+
+	/* The arguments. */
+	session_id = fw_reader_u32(command->reader);
+	flags = fw_reader_u32(command->reader);
+	(void)fw_reader_u32(command->reader); /* reserved / padding */
+	gpu_va = fw_reader_u64(command->reader);
+	phys_addr = fw_reader_u64(command->reader);
+	size_bytes = fw_reader_u64(command->reader);
+	if (command->reader->error)
+		return;
+
+	/* Not a staged command. */
+	if (command->in_frame) {
+		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
+		command->stop = 1;
+		return;
+	}
+
+	error = fw_mmu_map(session_id, flags, gpu_va, phys_addr, size_bytes);
+	if (error != FW_VK_SUCCESS)
+		command->status = error;
+}
+
+/*
+ * GHCI_GPU_OP_VM_UNMAP: [u32 session][u32 flags][u32 reserved][u64 gpu_va][u64 size];
+ * autonomous virtual memory unmapping with race-free drain and TLB flush.
+ */
+static void
+cmd_vm_unmap(
+	struct fw_command *command)
+{
+	uint32_t session_id;
+	uint32_t flags;
+	uint64_t gpu_va;
+	uint64_t size_bytes;
+	int error;
+
+	/* The arguments. */
+	session_id = fw_reader_u32(command->reader);
+	flags = fw_reader_u32(command->reader);
+	(void)fw_reader_u32(command->reader); /* reserved / padding */
+	gpu_va = fw_reader_u64(command->reader);
+	size_bytes = fw_reader_u64(command->reader);
+	if (command->reader->error)
+		return;
+
+	/* Not a staged command. */
+	if (command->in_frame) {
+		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
+		command->stop = 1;
+		return;
+	}
+
+	error = fw_mmu_unmap(session_id, flags, gpu_va, size_bytes);
+	if (error != FW_VK_SUCCESS)
+		command->status = error;
 }

@@ -44,6 +44,10 @@ Amaterrace GPU の RTL 階層を整理し（`rtl/common/` 廃止 → `rtl/librar
 | [p015](phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle） | p014 | planned |
 | [p016](phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | p014, p015 | planned |
 | [p017](phase017/phase.md) | ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消（8KB Color/Depth） | p016, p003 | planned |
+| [p018](phase018/phase.md) | TU 4 レーン並列ストリームアドレス生成（`atg_tu_addr` 逐次 FSM 撤廃・1 cycle/quad 化） | p001 | planned |
+| [p019](phase019/phase.md) | フィルタリングパイプライン統合 & 相互排他ウェイト撤廃（`u_idle`/`f_idle` 撤廃） | p018 | planned |
+| [p020](phase020/phase.md) | マルチバンク・4-way L1 テクスチャキャッシュ（4 バンク同時読み出し） | p018 | planned |
+| [p021](phase021/phase.md) | MSHR ノンブロッキングフェッチ & メモリ統合（Hit-Under-Miss、実効スループット 30〜50 倍向上） | p020, p003 | planned |
 
 ---
 

@@ -79,4 +79,5 @@
     - **Arith**: [ws001-p009](ws001/phase009/phase.md)（ビット反転右シフタ、Non-restoring 除算器）
     - **SU**: [ws001-p010](ws001/phase010/phase.md)〜[p013](ws001/phase013/phase.md)（実 6段化、フォワーディング、スコアボード、RF 時分割）
     - **ROP**: [ws001-p014](ws001/phase014/phase.md)〜[p017](ws001/phase017/phase.md)（div255 1段化、Lerp 最適化、fp32 ストリーム化、Hazard Tracker、L1 タイルキャッシュ）
-11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8 アタッチメント等、後回し）。
+    - **TU**: [ws001-p018](ws001/phase018/phase.md)〜[p021](ws001/phase021/phase.md)（4レーン並列アドレス生成、フィルタ統合、マルチバンク L1 T$、MSHR ノンブロッキング）
+11. **[WS002](ws002/ws.md) Vulkan 1.0 仕様適合性・グラフィックス機能補完**: コアパイプライン化完了後に着手（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮等、後回し）。

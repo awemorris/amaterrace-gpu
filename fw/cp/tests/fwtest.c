@@ -74,6 +74,7 @@ static void test_images(void);
 static void test_draw(void);
 static void test_compute(int protect);
 static void test_transfer(void);
+static void test_mmu(void);
 static void stage_compute_pipeline(uint32_t index, uint64_t id);
 static void stage_image(uint32_t index, uint64_t id, uint32_t format, uint32_t width, uint32_t height, uint32_t usage);
 static void stage_view(uint32_t index, uint64_t id, uint64_t image, uint32_t format);
@@ -108,6 +109,7 @@ main(
 	test_draw();
 	test_compute(0);
 	test_transfer();
+	test_mmu();
 
 	/*
 	 * Session protection: not in the scene (the harness's atg_top has no
@@ -2136,6 +2138,63 @@ test_transfer(void)
 	}
 	host_check(ok, "the copy into the image");
 	(void)test_case("transfer", before);
+}
+
+/*
+ * Autonomous MMU: VM_MAP, VM_UNMAP, and SESSION_CLOSE cleanup.
+ */
+static void
+test_mmu(void)
+{
+	uint32_t args[9];
+	int before;
+
+	before = host_failures;
+	open_session();
+
+	/* 1. Map 2 pages (8 KiB) at GPU VA 0x40000000 -> PA 0x10000000 */
+	args[0] = TAG;
+	args[1] = GHCI_VM_FLAG_READ | GHCI_VM_FLAG_WRITE;
+	args[2] = 0; /* reserved */
+	args[3] = 0x40000000u;
+	args[4] = 0;
+	args[5] = 0x10000000u;
+	args[6] = 0;
+	args[7] = 0x2000u;
+	args[8] = 0;
+	host_ring(TAG, GHCI_GPU_OP_VM_MAP, args, 9);
+	host_check(host_ring_result() == 0, "VM_MAP 8KiB");
+
+	/* 2. Map 1 page at GPU VA 0x40002000 -> PA 0x10002000 (same L2 table) */
+	args[0] = TAG;
+	args[1] = GHCI_VM_FLAG_READ;
+	args[2] = 0;
+	args[3] = 0x40002000u;
+	args[4] = 0;
+	args[5] = 0x10002000u;
+	args[6] = 0;
+	args[7] = 0x1000u;
+	args[8] = 0;
+	host_ring(TAG, GHCI_GPU_OP_VM_MAP, args, 9);
+	host_check(host_ring_result() == 0, "VM_MAP second page");
+
+	/* 3. Unmap 1 page at GPU VA 0x40001000 */
+	args[0] = TAG;
+	args[1] = 0;
+	args[2] = 0;
+	args[3] = 0x40001000u;
+	args[4] = 0;
+	args[5] = 0x1000u;
+	args[6] = 0;
+	host_ring(TAG, GHCI_GPU_OP_VM_UNMAP, args, 7);
+	host_check(host_ring_result() == 0, "VM_UNMAP 4KiB");
+
+	/* 4. Close session: frees L2 page tables and root page table */
+	args[0] = TAG;
+	host_ring(0, GHCI_GPU_OP_SESSION_CLOSE, args, 1);
+	host_check(host_ring_result() == 0, "SESSION_CLOSE frees MMU tables");
+
+	(void)test_case("mmu", before);
 }
 
 /*

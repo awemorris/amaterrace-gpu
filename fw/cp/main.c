@@ -49,6 +49,7 @@ main(void)
 	fw_heap_init();
 	fw_object_init();
 	fw_prot_init();
+	fw_mmu_init();
 	fw_uop_reset();
 
 	/* Tells the host which firmware runs and that .data is fresh. */

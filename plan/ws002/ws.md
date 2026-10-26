@@ -21,3 +21,6 @@ Amaterrace GPU のハードウェアパイプライン化および物理最適�
 | [p001](phase001/phase.md) | ROP Logic Op（論理演算 16 種）& Independent Blend per RT（RT 個別ブレンド） | ws001-p014 | planned |
 | [p002](phase002/phase.md) | SU / ROP Dual Source Blending（フォント描画用 src1 カラー出力） | ws001-p010, p001 | planned |
 | [p003](phase003/phase.md) | MRT 8 アタッチメント拡張（CAPS[30] 4 -> 8 拡張 & ディスクリプタ対応） | p001 | planned |
+| [p004](phase004/phase.md) | TU 異方性フィルタリング（Anisotropic Filtering 最大 16x EWA ループ） | ws001-p021 | planned |
+| [p005](phase005/phase.md) | TU シームレスキューブマップフィルタリング（面境界テクセル補間） | ws001-p018 | planned |
+| [p006](phase006/phase.md) | TU デスクトップ標準圧縮テクスチャ（BC1〜BC7 ハードウェアデコーダ） | ws001-p020 | planned |

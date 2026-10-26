@@ -598,6 +598,12 @@ uint32_t fw_builtin_identity(void);
 uint32_t fw_builtin_program(uint32_t program, uint32_t *words);
 uint32_t fw_builtin_wait_word(void);
 
+/* mmu.c: autonomous 2-level page table and TLB management. */
+void fw_mmu_init(void);
+int fw_mmu_map(uint32_t session_id, uint32_t flags, uint64_t gpu_va, uint64_t phys_addr, uint64_t size_bytes);
+int fw_mmu_unmap(uint32_t session_id, uint32_t flags, uint64_t gpu_va, uint64_t size_bytes);
+void fw_mmu_session_close(uint32_t session_id);
+
 /* object.c: the object table. */
 void fw_object_init(void);
 struct fw_object *fw_object_find(uint32_t tag, uint64_t id, uint32_t kind);

@@ -42,6 +42,8 @@ extern "C" {
 #define GHCI_CMD_BARRIER                0x31u
 #define GHCI_CMD_EXECUTE_COMMANDS       0x32u
 #define GHCI_CMD_FENCE                  0x33u
+#define GHCI_CMD_VM_MAP                 0x10110u
+#define GHCI_CMD_VM_UNMAP               0x10111u
 
 /* Packet header helper */
 #define GHCI_MAKE_HEADER(opcode, dwords, flags) \
@@ -322,6 +324,43 @@ typedef struct GhciCmdFence {
 	uint16_t fence_seq_hi;
 	uint16_t flags;                 /* GHCI_FENCE_FLAG_* */
 } GhciCmdFence;
+
+/*
+ * ============================================================================
+ * Autonomous Virtual Memory Management (VM_MAP / VM_UNMAP)
+ * ============================================================================
+ */
+#define GHCI_VM_FLAG_READ       (1u << 0)
+#define GHCI_VM_FLAG_WRITE      (1u << 1)
+#define GHCI_VM_FLAG_EXEC       (1u << 2)
+#define GHCI_VM_FLAG_COHERENT   (1u << 3)
+#define GHCI_VM_FLAG_WC         (1u << 4)
+
+/* CMD_VM_MAP (0x10110): 10 dwords (40 bytes) */
+typedef struct GhciCmdVmMap {
+	uint32_t header;                /* opcode: GHCI_CMD_VM_MAP, dwords: 10 */
+	uint32_t session_id;            /* client session identifier */
+	uint32_t flags;                 /* GHCI_VM_FLAG_* */
+	uint32_t reserved;              /* alignment padding */
+	uint32_t gpu_va_lo;             /* GPU virtual address (4KB aligned) [31:0] */
+	uint32_t gpu_va_hi;             /* GPU virtual address [63:32] */
+	uint32_t phys_lo;               /* IOVA / host physical address [31:0] */
+	uint32_t phys_hi;               /* IOVA / host physical address [63:32] */
+	uint32_t size_lo;               /* mapping size in bytes [31:0] */
+	uint32_t size_hi;               /* mapping size in bytes [63:32] */
+} GhciCmdVmMap;
+
+/* CMD_VM_UNMAP (0x10111): 8 dwords (32 bytes) */
+typedef struct GhciCmdVmUnmap {
+	uint32_t header;                /* opcode: GHCI_CMD_VM_UNMAP, dwords: 8 */
+	uint32_t session_id;            /* client session identifier */
+	uint32_t flags;                 /* unmap flags / options */
+	uint32_t reserved;              /* alignment padding */
+	uint32_t gpu_va_lo;             /* GPU virtual address (4KB aligned) [31:0] */
+	uint32_t gpu_va_hi;             /* GPU virtual address [63:32] */
+	uint32_t size_lo;               /* unmap size in bytes [31:0] */
+	uint32_t size_hi;               /* unmap size in bytes [63:32] */
+} GhciCmdVmUnmap;
 
 #ifdef __cplusplus
 }

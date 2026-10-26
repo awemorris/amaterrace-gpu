@@ -24,6 +24,10 @@
 | `q001-i10` | **P1〜P8 待機** | [ws001-p015](ws001/phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle 100倍高速化） | queued | `q001-i09` | ユーザー承認に基づきスケジュール。4段ストリームパイプライン。 |
 | `q001-i11` | **P1〜P8 待機** | [ws001-p016](ws001/phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | queued | `q001-i10` | ユーザー承認に基づきスケジュール。フィルレート 20〜50 倍向上。 |
 | `q001-i12` | **P1〜P8 待機** | [ws001-p017](ws001/phase017/phase.md) | ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消（8KB Color/Depth） | queued | `q001-i11`, `q001-i06` | ユーザー承認に基づきスケジュール。DRAM トラフィック 70〜80% 削減。 |
+| `q001-i13` | **P1〜P8 待機** | [ws001-p018](ws001/phase018/phase.md) | TU 4 レーン並列ストリームアドレス生成（atg_tu_addr 逐次 FSM 撤廃・1 cycle/quad 化） | queued | `q001-i01` | ユーザー承認（2026-10-26）に基づきスケジュール。即時着手可能。 |
+| `q001-i14` | **P1〜P8 待機** | [ws001-p019](ws001/phase019/phase.md) | TU フィルタリングパイプライン統合 & 相互排他ウェイト撤廃（u_idle/f_idle 撤廃） | queued | `q001-i13` | ユーザー承認に基づきスケジュール。完全ストリーム化。 |
+| `q001-i15` | **P1〜P8 待機** | [ws001-p020](ws001/phase020/phase.md) | TU マルチバンク・4-way L1 テクスチャキャッシュ（4 バンク同時読み出し） | queued | `q001-i13` | ユーザー承認に基づきスケジュール。16テクセル逐次ルックアップ撤廃。 |
+| `q001-i16` | **P1〜P8 待機** | [ws001-p021](ws001/phase021/phase.md) | TU MSHR ノンブロッキングフェッチ & メモリ統合（Hit-Under-Miss、実効スループット 30〜50倍） | queued | `q001-i15`, `q001-i06` | ユーザー承認に基づきスケジュール。1 Outstanding 完全停止解消。 |
 
 ## サブエージェント実行状態（N=2）
 
@@ -55,5 +59,9 @@
 16. **[ws001-p015](ws001/phase015/phase.md)**: fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle）。
 17. **[ws001-p016](ws001/phase016/phase.md)**: Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶）。
 18. **[ws001-p017](ws001/phase017/phase.md)**: ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消。
-19. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source Blend、MRT 8 アタッチメント、後回し）。
-20. **TU・RX パイプライン化**: 各ブロックの乗算・演算器遅延を LAT=3 に合わせてパイプライン化。
+19. **[ws001-p018](ws001/phase018/phase.md)**: TU 4 レーン並列ストリームアドレス生成（atg_tu_addr 逐次 FSM 撤廃・1 cycle/quad 化）。
+20. **[ws001-p019](ws001/phase019/phase.md)**: TU フィルタリングパイプライン統合 & 相互排他ウェイト撤廃。
+21. **[ws001-p020](ws001/phase020/phase.md)**: TU マルチバンク・4-way L1 テクスチャキャッシュ（4 バンク同時読み出し）。
+22. **[ws001-p021](ws001/phase021/phase.md)**: TU MSHR ノンブロッキングフェッチ & メモリ統合（Hit-Under-Miss）。
+23. **[WS002](ws002/ws.md)**: Vulkan 1.0 仕様適合性・グラフィックス機能補完（Logic Op、Dual Source、MRT 8、Aniso 16x、Seamless Cube、BC 圧縮等、後回し）。
+24. **RX パイプライン化**: 各ブロックの乗算・演算器遅延を LAT=3 に合わせてパイプライン化。

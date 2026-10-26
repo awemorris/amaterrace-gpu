@@ -836,33 +836,57 @@ mapping may hold it back), the driver reads back the last word it wrote.
 The debug port (section 14) is for bring-up only; a driver does not depend
 on it.
 
-### 11.2 Addresses and the aperture
+### 11.2 Addresses, Virtual Memory & Autonomous MMU
 
-- GPU addresses are 32 bits. Every access of every block is checked against
-  [APERTURE_BASE, APERTURE_LIMIT); an access outside is not made and is a
-  fault of kind 1.
-- The aperture is reset to an empty range, so a GPU touches no memory until
-  the driver sets it.
-- Local memory, when present, is the range [LOCAL_BASE, LOCAL_BASE +
-  LOCAL_SIZE) of GPU addresses (MEM capability). Every other GPU address
-  below HOST_LIMIT (MEM capability; 2^32 without the capability or when it
-  reads 0) is a host address: the access goes to the host bus at that
-  address (a physical address, or an I/O virtual address behind the
-  platform's IOMMU). The driver gives the GPU host buffers only at bus
-  addresses outside the local range and below HOST_LIMIT (and 2^32).
-- An access to a GPU address that is neither local nor below HOST_LIMIT
-  reaches no memory: it is a memory error (fault kind 5). The range is
-  fixed by the GPU's integration (for example the address range that a
-  PCIe bridge forwards to the host); the registers only report it.
-- Accesses to local memory and to the host may complete in any order
-  relative to each other. The GPU keeps the order that this specification
-  promises (for example, the writes before a fence, section 11.5) across
-  both.
-- The GPU moves memory in lines of 2^CAPS[23:20] bytes; the aperture is
-  aligned to the line.
-- Without session protection (section 11.6), there is no isolation
-  between the driver's clients inside the aperture. A later version may add
-  an address-translating GPU MMU behind the MMU capability.
+GHCI 2.0 establishes an **autonomous virtual memory architecture** optimized for commercial operating systems and Unified Memory Architectures (UMA). Rather than exposing raw Graphics Translation Tables (GTT), multi-level page tables, or manual TLB invalidation registers (`TLB_INVALIDATE`) to the host, GHCI delegates all virtual memory page table allocation, updates, and TLB invalidation to the on-chip Command Processor (CP) and hardware Memory Management Unit (MMU).
+
+#### Architecture & Host Abstraction Model
+- **Ultra-Thin Host Driver:** The host operating system kernel and UMD driver are completely decoupled from GPU hardware page table layouts and TLB micro-architectures (analogous to Apple Silicon DART + AGX firmware or modern game console architectures). The host communicates virtual memory operations solely through structured ring commands.
+- **Unified Memory (UMA) & IOVA Passthrough:** The host maps unified DRAM buffers into its platform/PCIe IOMMU and passes the resulting I/O Virtual Address (IOVA) or physical address directly to the GPU via `VM_MAP`. Zero-copy sharing is natively supported across CPU and GPU pipelines.
+- **Hardware Page Table Walker:** A 2-level hardware page table walker autonomously services L2 TLB misses from memory, avoiding any CPU intervention or interrupt overhead during runtime address translation.
+- **Internal Fault Trapping & Isolation:** When an unmapped address or permission violation occurs, the GPU hardware MMU traps the access internally, records the faulting session and GPU virtual address into `FAULT_INFO` and `FAULT_ADDR`, and halts only the offending client context. The invalid access is strictly suppressed from reaching the external system bus/interconnect, completely preventing catastrophic host IOMMU panics or kernel crashes.
+
+#### Ring-Based Virtual Memory Operations
+The host submits virtual memory management operations as structured gpu-op packets on the command ring:
+
+| gpu-op | Opcode | Arguments | Meaning |
+| :---: | :---: | :--- | :--- |
+| `VM_MAP` | `0x10110` | `[u32 session_id][u32 flags][u32 rsvd][u64 gpu_va][u64 iova_or_phys][u64 size_bytes]` | Maps physical/IOVA pages into the session's GPU virtual address space |
+| `VM_UNMAP` | `0x10111` | `[u32 session_id][u32 flags][u32 rsvd][u64 gpu_va][u64 size_bytes]` | Unmaps virtual address range from session and invalidates TLB entries |
+
+**Mapping Flags (`flags`):**
+- `GHCI_VM_FLAG_READ` (`0x1`): Read permission granted to GPU execution units.
+- `GHCI_VM_FLAG_WRITE` (`0x2`): Write permission granted (render targets, UAV buffers).
+- `GHCI_VM_FLAG_EXEC` (`0x4`): Instruction fetch permitted (shader code).
+- `GHCI_VM_FLAG_COHERENT` (`0x8`): Hardware-enforced cache coherency with CPU host.
+- `GHCI_VM_FLAG_WC` (`0x10`): Write-combining memory attribute.
+
+#### Two-Level Page Table Structure
+The CP autonomously allocates and manages a 2-level page table structure within its internal firmware heap:
+- **Page Size:** Standard 4 KiB (`12` offset bits).
+- **GPU Virtual Address (32 bits):**
+  - Bits `[31:22]` (10 bits): Page Directory Index (PDI / Level 1, 1024 entries).
+  - Bits `[21:12]` (10 bits): Page Table Index (PTI / Level 2, 1024 entries).
+  - Bits `[11:0]` (12 bits): Byte offset within 4 KiB page.
+- **Page Directory Entry (PDE, 32 bits):**
+  - Bits `[31:12]`: 4 KiB-aligned physical address of Level 2 Page Table.
+  - Bit `[0]`: Valid (`1` = table allocated).
+- **Page Table Entry (PTE, 32 bits):**
+  - Bits `[31:12]`: 4 KiB-aligned physical address / IOVA of mapped page.
+  - Bit `[0]`: Valid (`V`).
+  - Bit `[1]`: Read (`R`).
+  - Bit `[2]`: Write (`W`).
+  - Bit `[3]`: Exec (`X`).
+  - Bit `[4]`: Coherent (`C`).
+  - Bit `[5]`: Write-Combining (`WC`).
+  - Bits `[11:6]`: Session ID tag.
+
+#### In-Flight Memory Drain & Race-Free TLB Invalidation
+When `VM_UNMAP` is executed:
+1. The CP updates the relevant Level 2 Page Table Entries to Invalid (`V = 0`).
+2. The CP polls the hardware MMU in-flight transaction counters until all outstanding memory read and write requests from GPU execution units (VF, SU, TU, ROP, BLT) have completely drained.
+3. Once all transactions are quiescent, the CP triggers an internal MMU TLB flush (by session ID and address range, or full session invalidation).
+4. Only after TLB invalidation completes does the CP advance its ring read pointer (`RING_RPTR`) and retire subsequent workload commands, guaranteeing zero race conditions between memory unmapping and shader execution.
 
 ### 11.3 Unified and discrete
 

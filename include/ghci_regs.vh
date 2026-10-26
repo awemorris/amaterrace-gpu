@@ -161,6 +161,9 @@ localparam [3:0] GHCI_FAULT_WATCHDOG = 4'd4;
 localparam [3:0] GHCI_FAULT_AXI = 4'd5;
 localparam [3:0] GHCI_FAULT_KICK = 4'd6;
 localparam [3:0] GHCI_FAULT_LOCKED = 4'd7;
+localparam [3:0] GHCI_FAULT_ISA = 4'd8;
+localparam [3:0] GHCI_FAULT_GPU_PAGE_FAULT = 4'd9;
+localparam [3:0] GHCI_FAULT_GPU_PERM_VIOLATION = 4'd10;
 
 /* KICK bits. */
 localparam GHCI_KICK_BLIT = 0;

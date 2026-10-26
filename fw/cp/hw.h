@@ -53,6 +53,14 @@
 #define HW_UOP_SELF 0x32u	/* W: [0] the next µop packet is the firmware's own wait */
 #define HW_PROT_INV_N 0x33u	/* W: granules of the invalidation (0: all); starts it */
 
+/* MMU registers (0x38-0x3D). */
+#define HW_MMU_SESSION 0x38u	/* W: session_id for MMU config */
+#define HW_MMU_ROOT_PT 0x39u	/* W: [19:0] root PT base [31:12] */
+#define HW_MMU_FLUSH 0x3Au	/* W: [0] trigger, [1] all, [7:4] session */
+#define HW_MMU_INFLIGHT 0x3Bu	/* R: [15:0] in-flight transaction count */
+#define HW_MMU_STATUS 0x3Cu	/* R: [0] fault_valid, [4:1] fault_kind, [8:5] session, [11:9] client */
+#define HW_MMU_FAULT_VA 0x3Du	/* R: [31:0] faulting GPU VA */
+
 #define HW_PKT_INFO_WAITING 0x80000000u
 #define HW_IRQ_HALT 0x4u
 #define HW_DMA_GO_WRITE 0x10000u

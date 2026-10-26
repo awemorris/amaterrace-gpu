@@ -40,6 +40,15 @@
 #define GHCI_GPU_OP_FRAME 0x10105u
 #define GHCI_GPU_OP_BUFFER_GRANT 0x10106u
 #define GHCI_GPU_OP_BUFFER_REVOKE 0x10107u
+#define GHCI_GPU_OP_VM_MAP 0x10110u
+#define GHCI_GPU_OP_VM_UNMAP 0x10111u
+
+/* VM_MAP / VM_UNMAP flags (docs/ghci.md section 11.2). */
+#define GHCI_VM_FLAG_READ       (1u << 0)
+#define GHCI_VM_FLAG_WRITE      (1u << 1)
+#define GHCI_VM_FLAG_EXEC       (1u << 2)
+#define GHCI_VM_FLAG_COHERENT   (1u << 3)
+#define GHCI_VM_FLAG_WC         (1u << 4)
 
 /* SESSION_OPEN flags and BUFFER_GRANT access (docs/ghci.md section 11.6). */
 #define GHCI_SESSION_PROTECTED 0x1u
