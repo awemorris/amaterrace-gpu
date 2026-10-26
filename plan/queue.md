@@ -35,7 +35,7 @@
 | `q001-i21` | **P2** | [ws001-p026](ws001/phase026/phase.md) | atg_fmt_pack 2段パイプライン化（LAT=2、200 MHz クリティカルパス解消） | queued | `q001-i01` | P2 待機。論理深さ 50% 削減。 |
 | `q001-i22` | **P1** | [ws001-p027](ws001/phase027/phase.md) | MC AXI バースト結合キュー（Burst Coalescer: ARLEN=3/7 自動マージ） | queued | `q001-i06` | P1 次期タスク候補。DDR 稼働率 85% 以上へ引き上げ。 |
 | `q001-i23` | **P1** | [ws001-p028](ws001/phase028/phase.md) | MC フラットクロスバー & QoS アービタ（遅延 8clk -> 2clk、DC 優先帯域保証） | queued | `q001-i22` | P1 待機。往復遅延 75% 削減。 |
-| `q001-i24` | **P3** | [ws001-p029](ws001/phase029/phase.md) | CP 64ワード循環コマンドプリフェッチ FIFO（ノーウェイトパケット供給） | cleared | `q001-i03` | 実装完了（commit fdead8a）。64ワード循環キャッシュ・FW全14件PASS。T1/R1 検証中。 |
+| `q001-i24` | **P3** | [ws001-p029](ws001/phase029/phase.md) | CP 64ワード循環コマンドプリフェッチ FIFO（ノーウェイトパケット供給） | cleared | `q001-i03` | 実装完了（commit fdead8a）。FW全14件PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i25` | **P3** | [ws001-p030](ws001/phase030/phase.md) | BLT ストリーミングバースト DMA エンジン（FSM 撤廃、1.0+ GB/s 転送） | in-progress | `q001-i22`, `q001-i30` | 非同期フローに基づき P3 着手。1KiB ピングポンバッファ・先行バースト DMA。 |
 | `q001-i26` | **P3** | [ws001-p031](ws001/phase031/phase.md) | BLT 1サイクル並列 MSAA 4x Resolve（クアッド並列平均化） | queued | `q001-i25` | P3 待機。1 quad/cycle 達成。 |
 | `q001-i27` | **P3** | [ws001-p032](ws001/phase032/phase.md) | VF 4ストリーム並列属性 DMA & ラインバッファ拡張 | queued | `q001-i22`, `q001-i30` | P3 待機。頂点供給レート 4 倍向上。 |
