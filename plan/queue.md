@@ -24,8 +24,8 @@
 | `q001-i10` | **P2** | [ws001-p015](ws001/phase015/phase.md) | fp32 / sRGB ブレンド完全ストリームパイプライン化（FSM 撤廃・1 beat/cycle 100倍高速化） | cleared | `q001-i09` | 実装完了（commit 16d2a8c）。5段ストリーム化・3.8万サイクル短縮。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i11` | **P2** | [ws001-p016](ws001/phase016/phase.md) | Hazard Tracker（Pixel Lock）導入 & ROP 完全パイプライン化（Stop-and-Wait 根絶） | cleared | `q001-i10` | 実装完了（commit a739ed2）。16エントリ CAM・Stop-and-Wait 撤廃。R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i12` | **P2** | [ws001-p017](ws001/phase017/phase.md) | ROP L1 タイルキャッシュ導入 & 外部メモリスラッシング解消（8KB Color/Depth） | cleared | `q001-i11`, `q001-i06` | 実装完了（commit 92bc3ee）。RAMB36E1 4-way 8KB タイルキャッシュ・Tree-PLRU。R1 敵対的レビュー APPROVE 承認完了。 |
-| `q001-i13` | **P2** | [ws001-p018](ws001/phase018/phase.md) | TU 4 レーン並列ストリームアドレス生成（atg_tu_addr 逐次 FSM 撤廃・1 cycle/quad 化） | in-progress | `q001-i01` | 非同期フローに基づき P2 着手。LA/LB 逐次 FSM 解体・2段並列ストリーム化。 |
-| `q001-i14` | **P2** | [ws001-p019](ws001/phase019/phase.md) | TU フィルタリングパイプライン統合 & 相互排他ウェイト撤廃（u_idle/f_idle 撤廃） | queued | `q001-i13` | P2 待機。完全ストリーム化。 |
+| `q001-i13` | **P2** | [ws001-p018](ws001/phase018/phase.md) | TU 4 レーン並列ストリームアドレス生成（atg_tu_addr 逐次 FSM 撤廃・1 cycle/quad 化） | cleared | `q001-i01` | 実装完了（commit 562a280）。4レーン並列2段ストリーム・1 cycle/quad。T1/R1 検証中。 |
+| `q001-i14` | **P2** | [ws001-p019](ws001/phase019/phase.md) | TU フィルタリングパイプライン統合 & 相互排他ウェイト撤廃（u_idle/f_idle 撤廃） | in-progress | `q001-i13` | 非同期フローに基づき P2 着手。u_idle/f_idle 撤廃・固定遅延統合ストリーム化。 |
 | `q001-i15` | **P2** | [ws001-p020](ws001/phase020/phase.md) | TU マルチバンク・4-way L1 テクスチャキャッシュ（4 バンク同時読み出し） | queued | `q001-i13` | P2 待機。16テクセル逐次ルックアップ撤廃。 |
 | `q001-i16` | **P2** | [ws001-p021](ws001/phase021/phase.md) | TU MSHR ノンブロッキングフェッチ & メモリ統合（Hit-Under-Miss、実効スループット 30〜50倍） | queued | `q001-i15`, `q001-i06` | P2 待機。1 Outstanding 完全停止解消。 |
 | `q001-i17` | **P3** | [ws001-p022](ws001/phase022/phase.md) | Stream Setup Engine 実装（atg_rx_setup マイクロコード撤廃と固定遅延パイプライン化） | queued | `q001-i01` | P3 待機。スループット 1〜2 cyc/tri。 |
@@ -52,7 +52,7 @@
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
 | **P1** | 実装（メモリ・相互結合） | Claude Opus 5.5 Medium | active | `q001-i06`: `ws001-p003` 共有 L2 キャッシュ（LLC）設計・実装 | `q001-i22`: `ws001-p027`（MC バースト結合） |
-| **P2** | 実装（ROP・ピクセル・テクスチャ） | Claude Opus 5.5 Medium | active | `q001-i13`: `ws001-p018` TU 4レーン並列アドレス生成 | `q001-i14`: `ws001-p019`（TU ストリームフィルタ） |
+| **P2** | 実装（ROP・ピクセル・テクスチャ） | Claude Opus 5.5 Medium | active | `q001-i14`: `ws001-p019` TU フィルタリング統合 & 排他ウェイト撤廃 | `q001-i15`: `ws001-p020`（TU マルチバンク L1 T$） |
 | **P3** | 実装（インフラ・ジオメトリ・SU） | Claude Opus 5.5 Medium | active | `q001-i25`: `ws001-p030` BLT ストリーミングバースト DMA | `q001-i26`: `ws001-p031`（MSAA Resolve） |
 | **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | WS001（31件）& WS002（10件）全 41 Phase 実装設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
