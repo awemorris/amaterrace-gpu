@@ -120,17 +120,15 @@
 
     <!-- Header Block -->
     <g transform="translate(30, 24)">
-        <text class="title" x="0" y="20">GHCI Discrete System Architecture (PCIe Binding)</text>
-        <text class="subtitle" x="0" y="40">BAR0 Slim MMIO • PCIe IOMMU • Bus Master DMA • Dedicated High-Bandwidth VRAM</text>
+        <text class="title" x="0" y="20">GHCI System Architecture</text>
         <rect x="730" y="4" width="220" height="28" rx="14" fill="#2563eb" opacity="0.12"/>
-        <text x="840" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">DISCRETE PCIe MODEL</text>
     </g>
 
     <!-- Host Side (Left) -->
     <g transform="translate(30, 80)">
         <rect width="360" height="520" rx="10" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow-sm)"/>
         <path d="M 0 10 Q 0 0 10 0 L 350 0 Q 360 0 360 10 L 360 36 L 0 36 Z" fill="#eff6ff"/>
-        <text class="group-label" x="16" y="24" fill="#1d4ed8">Host Subsystem (Motherboard)</text>
+        <text class="group-label" x="16" y="24" fill="#1d4ed8">Host Subsystem</text>
 
         <!-- Host CPU & Driver -->
         <g transform="translate(16, 50)">
@@ -151,31 +149,29 @@
             <text class="card-body" x="12" y="78">• Host-cached Descriptors &amp; Shaders</text>
             <text class="card-body" x="12" y="96">• Readback buffers for fence status / query</text>
             <rect x="10" y="115" width="308" height="26" rx="4" fill="#e2e8f0"/>
-            <text x="164" y="132" text-anchor="middle" font-size="10.5" font-weight="600" fill="#334155">Directly readable by GPU via PCIe Bus Master</text>
+            <text x="164" y="132" text-anchor="middle" font-size="10.5" font-weight="600" fill="#334155">Directly readable by GPU via DMA</text>
         </g>
 
-        <!-- Root Complex & PCIe IOMMU -->
+        <!-- Root Complex & IOMMU -->
         <g transform="translate(16, 345)">
             <rect width="328" height="145" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
-            <text class="card-title" x="12" y="22" fill="#15803d">PCIe Root Complex &amp; IOMMU</text>
+            <text class="card-title" x="12" y="22" fill="#15803d">(Optional) PCIe Root Complex &amp; IOMMU</text>
             <text class="card-body" x="12" y="42">• Translates GPU Bus Master DMA requests</text>
             <text class="card-body" x="12" y="60">• Provides hardware isolation &amp; memory protection</text>
-            <text class="card-body" x="12" y="78">• Manages BAR apertures (BAR0: MMIO, BAR1: VRAM)</text>
-            <text class="card-subtitle" x="12" y="112" fill="#166534">PCIe Gen3 / Gen4 x8 / x16 Interface</text>
+            <text class="card-body" x="12" y="78">• Manages BAR apertures (BAR0: MMIO, BAR1: GOP)</text>
         </g>
     </g>
 
-    <!-- Center Bus (PCIe) -->
+    <!-- Center Bus -->
     <g transform="translate(415, 80)">
         <rect width="130" height="520" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
-        <text class="group-label" x="65" y="24" text-anchor="middle" fill="#475569">PCIe Bus</text>
+        <text class="group-label" x="65" y="24" text-anchor="middle" fill="#475569">Bus</text>
 
-        <!-- PCIe Channels -->
+        <!-- Channels -->
         <g transform="translate(12, 50)">
             <rect width="106" height="65" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
             <text class="conn-label" x="53" y="24" text-anchor="middle">BAR0 MMIO</text>
             <text class="conn-sub" x="53" y="40" text-anchor="middle">Host -> GPU</text>
-            <text class="conn-sub" x="53" y="54" text-anchor="middle">76B Regs</text>
         </g>
 
         <g transform="translate(12, 130)">
@@ -183,38 +179,37 @@
             <text class="conn-label" x="53" y="24" text-anchor="middle">Bus Master DMA</text>
             <text class="conn-sub" x="53" y="40" text-anchor="middle">GPU -> Host</text>
             <text class="conn-sub" x="53" y="54" text-anchor="middle">Ring &amp; Data Fetch</text>
-            <text class="conn-sub" x="53" y="68" text-anchor="middle">(High Bandwidth)</text>
         </g>
 
         <g transform="translate(12, 220)">
             <rect width="106" height="65" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
             <text class="conn-label" x="53" y="24" text-anchor="middle">BAR1 Aperture</text>
             <text class="conn-sub" x="53" y="40" text-anchor="middle">Host -> VRAM</text>
-            <text class="conn-sub" x="53" y="54" text-anchor="middle">(Resizable BAR)</text>
+            <text class="conn-sub" x="53" y="54" text-anchor="middle">GOP Framebuffer</text>
         </g>
 
         <g transform="translate(12, 300)">
             <rect width="106" height="65" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
-            <text class="conn-label" x="53" y="24" text-anchor="middle">MSI-X / IRQ</text>
+            <text class="conn-label" x="53" y="24" text-anchor="middle">IRQ / MSI / MSI-X</text>
             <text class="conn-sub" x="53" y="40" text-anchor="middle">GPU -> Host</text>
             <text class="conn-sub" x="53" y="54" text-anchor="middle">Fence Wakeup</text>
         </g>
 
         <!-- Bidirectional Flow Arrows -->
         <path fill="none" d="M 65 390 L 65 470" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
-        <text class="conn-sub" x="65" y="495" text-anchor="middle" font-weight="700">PCIe Link</text>
+        <text class="conn-sub" x="65" y="495" text-anchor="middle" font-weight="700">Bus Link</text>
     </g>
 
-    <!-- Discrete GPU Card (Right) -->
+    <!-- GPU Device (Right) -->
     <g transform="translate(570, 80)">
         <rect width="380" height="520" rx="10" fill="#ffffff" stroke="#c4b5fd" stroke-width="1.5" filter="url(#shadow-sm)"/>
         <path d="M 0 10 Q 0 0 10 0 L 370 0 Q 380 0 380 10 L 380 36 L 0 36 Z" fill="#f5f3ff"/>
-        <text class="group-label" x="16" y="24" fill="#6d28d9">Discrete GPU Card (Amaterrace Hardware)</text>
+        <text class="group-label" x="16" y="24" fill="#6d28d9">GPU Device (Amaterrace Hardware)</text>
 
-        <!-- PCIe Endpoint & DMA Engine -->
+        <!-- Endpoint & DMA Engine -->
         <g transform="translate(16, 50)">
             <rect width="348" height="68" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
-            <text class="card-title" x="12" y="20">PCIe Endpoint &amp; DMA Controller</text>
+            <text class="card-title" x="12" y="20">Bus Endpoint &amp; DMA Controller</text>
             <text class="card-body" x="12" y="38">• BAR0 MMIO Window &amp; Doorbell register latch</text>
             <text class="card-body" x="12" y="54">• Asynchronous DMA Engine: Host DRAM &lt;--&gt; Local VRAM</text>
         </g>
@@ -226,7 +221,7 @@
             <text class="card-body" x="12" y="38">• Autonomous Ring DMA Engine (Fetches from Host)</text>
             <text class="card-body" x="12" y="54">• GPU Page Table Walker: Handles Local VRAM &amp; Host Pages</text>
             <text class="card-body" x="12" y="70">• Dispatches commands to 3D Pipeline &amp; BLT Engine</text>
-            <text class="card-subtitle" x="12" y="86" fill="#7c3aed">Decoupled execution from Host PCIe Latency</text>
+            <text class="card-subtitle" x="12" y="86" fill="#7c3aed">Decoupled execution from Bus Latency</text>
         </g>
 
         <!-- GPU Core Pipeline -->
@@ -247,11 +242,11 @@
         <!-- Local Dedicated VRAM -->
         <g transform="translate(16, 385)">
             <rect width="348" height="115" rx="8" fill="#1e293b" stroke="#0f172a" stroke-width="1.5"/>
-            <text class="card-title" x="14" y="24" fill="#f8fafc">Local Dedicated VRAM (GDDR / DDR)</text>
-            <text class="card-subtitle" x="14" y="42" fill="#38bdf8">High Bandwidth Dedicated Physical Memory (2GB - 16GB)</text>
+            <text class="card-title" x="14" y="24" fill="#f8fafc">Optional VRAM (GDDR / DDR)</text>
+            <text class="card-subtitle" x="14" y="42" fill="#38bdf8">High Bandwidth Dedicated Physical Memory</text>
             <text class="card-body" x="14" y="65" fill="#e2e8f0">• Render Targets, Depth/Stencil, G-Buffers</text>
             <text class="card-body" x="14" y="82" fill="#e2e8f0">• Textures, Geometry Buffers, Pipeline States</text>
-            <text class="card-body" x="14" y="99" fill="#94a3b8">• Display Scanout (DC reads without crossing PCIe)</text>
+            <text class="card-body" x="14" y="99" fill="#94a3b8">• Display Scanout</text>
         </g>
     </g>
 </svg>
