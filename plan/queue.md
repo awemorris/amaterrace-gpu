@@ -15,13 +15,14 @@
 | `q001-i01` | **P1 / T1** | [ws001-p001](ws001/phase001/phase.md) | Step A: 階層移動（`rtl/library/{arith,bus,fp}`・`rtl/bsp/`）＋FP 統合＋`arith-lint 0` | cleared | なし | 実装・マージ・テスト（確かめ 1・3）全 109 本 PASS で完了。 |
 | `q001-i02` | **P1 / T1** | [ws001-p001](ws001/phase001/phase.md) | Step B: `am_mul.v` の全幅 `DSP48E1` カスケード実装（`SYNTH_KINTEX7`）＋等価検証（確かめ 2） | cleared | `q001-i01` | 実装・マージ完了。76 インスタンス対等価検証（確かめ 2）PASS。残るは板ビルド（確かめ 4）。 |
 
-## サブエージェント実行状態（N=1）
+## サブエージェント実行状態（N=2）
 
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :---: | :---: | :--- | :--- |
-| **P1** | 実装 | Claude Opus 5.5 Medium | active | `q001-i02` Step B（`am_mul` DSP48E1 カスケード）実装中 | 完了報告・T1 へ確かめ 2 依頼 |
-| **P2〜P8** | 実装 | Claude Opus 5.5 Medium | unassigned | — | $N$ 増加時に割り当て |
-| **T1** | テスト | 標準 / Flash | active | `q001-i01` Step A の確かめ 1（FP試験）・確かめ 3（回帰試験）実行中 | `q001-i02` の確かめ 2 |
+| **P1** | 実装 | Claude Opus 5.5 Medium | idle | Step B 完了（待機中） | 板ビルド対応 / 後続 Phase |
+| **P2** | 設計・ドキュメント | Claude Opus 5.5 Medium | idle | `ghci.md`・`README.md` への SVG ブロック図追加完了（コミット `a494cff`） | ドキュメント保守 / 後続設計 |
+| **P3〜P8** | 実装 | Claude Opus 5.5 Medium | unassigned | — | $N$ 増加時に割り当て |
+| **T1** | テスト | 標準 / Flash | idle | Step A 回帰試験完了（待機中） | `q001-i02` 板ビルド / 確かめ 4 |
 | **T2〜T8** | テスト | （標準 / Flash） | idle | — | テスト並列度増加時に使用 |
 
 ## Upcoming Work Outlook（見通し）
