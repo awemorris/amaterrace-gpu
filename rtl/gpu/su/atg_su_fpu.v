@@ -101,27 +101,6 @@ module atg_su_fpu #(
 	reg k_sat;
 	reg [NPHYS*16-1:0] k_a, k_b, k_c;
 
-	/* The operands of a lane's one 33 x 33 signed multiply (am_mul): the
-	 * significands of the fused datapath's x * y (atg_su_fsig, zero
-	 * extended), or for mul, mulh, mulhsu and mulhu the operands extended
-	 * by sign or zero. */
-	function [65:0] mulops;
-		input [4:0] o;
-		input [31:0] a, b;
-		reg [47:0] sg;
-		begin
-			case (o)
-			ATG_FPU_FMUL[4:0], ATG_FPU_FMADD[4:0], ATG_FPU_FMSUB[4:0], ATG_FPU_FNMSUB[4:0],
-			ATG_FPU_FNMADD[4:0]: sg = atg_su_fsig(a[30:0], b[30:0]);
-			default: sg = atg_su_fsig(a[30:0], 31'h3F800000);
-			endcase
-			if (o <= ATG_FPU_FNMADD[4:0] || o == ATG_FPU_FRACT[4:0])
-				mulops = {9'd0, sg[23:0], 9'd0, sg[47:24]};
-			else
-				mulops = {(o == ATG_FPU_MUL[4:0] || o == ATG_FPU_MULH[4:0]) && b[31], b,
-					o != ATG_FPU_MULHU[4:0] && a[31], a};
-		end
-	endfunction
 
 	/* A packed fp16 operation o (atg_su_pk's half): the FPU operation that
 	 * does it on the fp32 operands (fcmpge2: le with them swapped). */
@@ -164,14 +143,19 @@ module atg_su_fpu #(
 		wire [31:0] lb = pk ? fb : x_b[gl*32 +: 32];
 		wire [31:0] lc = pk ? fc : x_c[gl*32 +: 32];
 		wire [2:0] lr = pk ? ((busy ? k_rm : rm) == 3'd2 ? 3'd6 : 3'd5) : rm;
-		wire [65:0] mo = mulops(lo, la, lb);
-		wire [65:0] pr;
-		am_mul #(.AW(33), .BW(33), .SIGNED(1)) mul (
-			.clk(clk), .en(1'b1), .a(mo[32:0]), .b(mo[65:33]), .p(pr)
-		);
 		wire [31:0] res;
-		atg_su_fpu_op u_op (.o(lo), .ia(la), .ib(lb), .ic(lc), .irm(lr), .ist(!pk && sat), .pr(pr[63:0]),
-			.res(res));
+		am_fpu_core #(.LAT(0)) u_core (
+			.clk(clk),
+			.rst_n(rst_n),
+			.en(1'b1),
+			.op(lo),
+			.rm(lr),
+			.sat(!pk && sat),
+			.a(la),
+			.b(lb),
+			.c(lc),
+			.res(res)
+		);
 		/* the fp16 result (fp32 to fp16 under rm, flushed; compares as
 		 * they are) and sat */
 		wire [2:0] hr = busy ? k_rm : rm;
@@ -185,7 +169,7 @@ module atg_su_fpu #(
 			res[30:23] == 8'd0 ? {res[31], 15'd0} : hn;
 		wire [15:0] ph = po >= ATG_PK_FCMPLT2[3:0] ? res[15:0] : f2h;
 		wire [15:0] pko = (busy ? k_sat : sat) && po < ATG_PK_FCMPLT2[3:0] ? atg_su_hsat(ph) : ph;
-		wire unused_pr = &{1'b0, pr[65:64], he_bo};
+		wire unused_pr = &{1'b0, he_bo};
 		assign y[gl*32 +: 32] = SH && busy ? {16'd0, k_hs == 2'd1 ? k_a[gl*16 +: 16] : pko} :
 			mine_pk ? {16'd0, hsel == 2'd2 ? x_a[gl*32 +: 16] : pko} :
 			mine ? res : 32'd0;	/* (only for this unit's groups: fast simulation) */
