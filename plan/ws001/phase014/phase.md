@@ -3,7 +3,7 @@
 # Phase 014: 8-bit unorm 高速ブレンド & div255 1段化（Lerp 変形・乗算器半減）
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・全数網羅PASS)
 - **依存**: [ws001-p001](../phase001/phase.md)
 - **優先度**: Critical (ROP クリティカルパス遅延 75% 削減 & 乗算器 50% 削減)
 - **出典**: ユーザー諮問（ROP ブレンド高速化）および R1 敵対的アーキテクチャ分析レポート
@@ -34,3 +34,19 @@
 
 - `atg_rop_div255` が加算器 1 段で構成され、全値域でビット完全一致すること。
 - `atg_rop_blend` の乗算器数が半減し、既存シミュレーション画像と 1 bit の狂いもなく一致すること。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **RTL 最適化実装**:
+   - `rtl/gpu/rop/atg_rop_div255.v`: 5 段キャリーチェイン縦列を単一の 17 ビット加算器 `am_add #(.W(17))` 1 個のみに集約（遅延 75% 削減、~0.6ns）。
+   - `rtl/gpu/rop/atg_rop_blend.v`: Lerp 変形（$D \pm \text{div255}(|S - D| \cdot \alpha)$）により、乗算器数を 32 個から 16 個へ半減（LUT6 合成、DSP 0 個）。パイプラインレジスタ Stage 2 を 512 bit から 256 bit へ半減。LAT=3 不変。
+   - `spec/gpu/rop/atg_rop_div255.md`, `spec/gpu/rop/atg_rop_blend.md`: 仕様書更新。
+   - `sim/tb/atg_rop_div255_tb.v`: $0 \le x \le 65025$ 全 65,026 値の全数網羅テストベンチ新設。
+2. **検証結果**:
+   - `sim/run.sh atg_rop_div255`: **PASS** (1 s、全 65,026 値 100% 一致)
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+   - `sim/verilator/run.sh`: 全 7 スイート（`basic`, `raster`, `shade`, `tex`, `msaa`, `compute`, `core`）すべて **PASS**（画像 1 bit の狂いもなく完全一致）。
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p014_rop_blend.md`）。恒等式に基づく 1 段加算器化、全数網羅テスト、Lerp による乗算器半減、LAT=3 遅延不変性、Guardrails 完全準拠を承認。
