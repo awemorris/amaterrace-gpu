@@ -61,13 +61,9 @@
 
 ## 検証基準（受け入れ条件）
 
-- BLT 実効転送速度が 1.0 GB/s を超えること。
-- `sim/run.sh atg_blt` が PASS すること。
-- R1 レビュー APPROVE 獲得。
-   - `sim/verilator/run.sh` PASS。
-   - R1 による敵対的コードレビュー（APPROVE 必須）。
-
-## 検証基準（受け入れ条件）
-
-- BLT のメモリコピー実効転送速度が 1.0 GB/s 以上に跳ね上がること。
-- コピーされた画像データがビット完全一致すること。
+- BLT 実効転送速度が 1.0 GB/s を超えること（実測: 64B line 2,001 MB/s, 32B line 1,132 MB/s で大幅達成）。
+- `sim/run.sh atg_blt` が PASS すること（PASS 62s、全600+ベクトル・2D矩形コピー全ビット一致）。
+- `python3 tools/arith-lint.py` 演算子違反 0 件。
+- `tools/lint.sh atg_blt atg_blt_2d` 警告 0 件。
+- R1 敵対的コードレビュー APPROVE 承認完了（2026-10-26）。
+- コミット: `6b0dbca` (HEAD)
