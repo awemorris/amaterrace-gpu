@@ -48,12 +48,31 @@ set args [list -top $top -part $part -mode out_of_context \
 if {[llength $generics] > 0} {
 	lappend args -generic $generics
 }
+proc report_dsp_cells {file_path label} {
+	set dsps [get_cells -hierarchical -filter {REF_NAME == DSP48E1 || PRIMITIVE_TYPE =~ ADVANCED.MULT.*}]
+	set f [open $file_path a]
+	puts $f "=== DSP48E1 Cells ($label) ==="
+	puts $f "Total count: [llength $dsps]"
+	foreach d [lsort $dsps] {
+		set areg [get_property -quiet AREG $d]
+		set breg [get_property -quiet BREG $d]
+		set mreg [get_property -quiet MREG $d]
+		set preg [get_property -quiet PREG $d]
+		set use_mult [get_property -quiet USE_MULT $d]
+		puts $f [format "%-60s AREG=%s BREG=%s MREG=%s PREG=%s USE_MULT=%s" $d $areg $breg $mreg $preg $use_mult]
+	}
+	puts $f ""
+	close $f
+}
+
 # OOC_FLATTEN: synth_design's -flatten_hierarchy (default rebuilt; none
 # keeps each module's logic in its own row of the hierarchy report).
 if {[info exists ::env(OOC_FLATTEN)]} {
 	lappend args -flatten_hierarchy $::env(OOC_FLATTEN)
 }
 synth_design {*}$args
+
+report_dsp_cells [file join $out dsp_cells.rpt] "Post-Synthesis"
 
 report_utilization -file [file join $out utilization.rpt]
 report_utilization -hierarchical -hierarchical_depth 8 -file [file join $out utilization_hier.rpt]
