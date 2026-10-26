@@ -49,7 +49,7 @@ module atg_rop_div255_tb;
 
 	initial begin
 		#1;
-		for (val = 0; val <= 65025; val = val + 1) begin
+		for (val = 0; val <= 130050; val = val + 1) begin
 			x = val[17:0];
 			#1;
 			if (q !== ref_math(x)) begin

@@ -183,67 +183,28 @@ module atg_rop_blend #(
 		d1 <= d1_n;
 	end
 
-	/* Stage 2: 16 multipliers (1 per channel).
-	 * Standard alpha blend (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) is transformed to Lerp:
-	 *   D + (S - D) * alpha = D +/- round(|S - D| * alpha / 255)
-	 * using only a single multiplication |S - D| * alpha per channel.
-	 * For other factor modes (ZERO, ONE, single-factor modulate), u_m computes the required product.
-	 */
-	wire [255:0] m_n;
-	wire [15:0] is_lerp_w, s_ge_d_w, is_one_one_w, fs_one_w, fd_one_w, fs_zero_w, fd_zero_w;
+	/* Stage 2: p = s x Fs, q = d x Fd per channel (16 bits each, channel 4l + c). */
+	wire [255:0] p_n, q_n;
 	generate
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_l2
 		for (gc = 0; gc < 4; gc = gc + 1) begin : g_c2
-			localparam integer IDX = 4 * gl + gc;
 			wire [7:0] sc = s1[32 * gl + 8 * gc +: 8];
 			wire [7:0] dc = d1[32 * gl + 8 * gc +: 8];
-			wire [3:0] f_s_code = gc == 3 ? bl1[15:12] : bl1[4:1];
-			wire [3:0] f_d_code = gc == 3 ? bl1[19:16] : bl1[8:5];
-			wire [2:0] op_code = gc == 3 ? bl1[22:20] : bl1[11:9];
-
-			wire [7:0] fs = factor(f_s_code, sc, dc, kc1[8 * gc +: 8],
+			wire [7:0] fs = factor(gc == 3 ? bl1[15:12] : bl1[4:1], sc, dc, kc1[8 * gc +: 8],
 				s1[32 * gl + 24 +: 8], d1[32 * gl + 24 +: 8], kc1[31:24], gc == 3);
-			wire [7:0] fd = factor(f_d_code, sc, dc, kc1[8 * gc +: 8],
+			wire [7:0] fd = factor(gc == 3 ? bl1[19:16] : bl1[8:5], sc, dc, kc1[8 * gc +: 8],
 				s1[32 * gl + 24 +: 8], d1[32 * gl + 24 +: 8], kc1[31:24], gc == 3);
-
-			assign is_lerp_w[IDX] = (op_code == 3'd0) && (
-				(f_s_code == 4'd6 && f_d_code == 4'd7) ||
-				(f_s_code == 4'd8 && f_d_code == 4'd9) ||
-				(f_s_code == 4'd12 && f_d_code == 4'd13)
-			);
-			wire [7:0] alpha_val = (f_s_code == 4'd6) ? s1[32 * gl + 24 +: 8] :
-			                       (f_s_code == 4'd8) ? d1[32 * gl + 24 +: 8] : kc1[31:24];
-
-			assign s_ge_d_w[IDX] = (sc >= dc);
-			wire [7:0] s_sub_d, d_sub_s;
-			wire s_sub_bo_unused, d_sub_bo_unused;
-			am_sub #(.W(8)) u_s_sub_d (.a(sc), .b(dc), .bi(1'b0), .d(s_sub_d), .bo(s_sub_bo_unused));
-			am_sub #(.W(8)) u_d_sub_s (.a(dc), .b(sc), .bi(1'b0), .d(d_sub_s), .bo(d_sub_bo_unused));
-			wire [7:0] diff = s_ge_d_w[IDX] ? s_sub_d : d_sub_s;
-
-			assign is_one_one_w[IDX] = (f_s_code == 4'd1 && f_d_code == 4'd1);
-			assign fs_one_w[IDX] = (f_s_code == 4'd1);
-			assign fd_one_w[IDX] = (f_d_code == 4'd1);
-			assign fs_zero_w[IDX] = (f_s_code == 4'd0);
-			assign fd_zero_w[IDX] = (f_d_code == 4'd0);
-
-			wire use_fd_w = (fs_one_w[IDX] && !fd_one_w[IDX]) || fs_zero_w[IDX];
-
-			wire [7:0] ma = is_lerp_w[IDX] ? diff : (use_fd_w ? dc : sc);
-			wire [7:0] mb = is_lerp_w[IDX] ? alpha_val : (use_fd_w ? fd : fs);
-
-			am_mul #(.AW(8), .BW(8)) u_m (.clk(clk), .en(1'b1), .a(ma), .b(mb),
-				.p(m_n[16 * IDX +: 16]));
-
-			wire unused_l2 = &{1'b0, s_sub_bo_unused, d_sub_bo_unused};
+			am_mul #(.AW(8), .BW(8)) u_p (.clk(clk), .en(1'b1), .a(sc), .b(fs),
+				.p(p_n[16 * (4 * gl + gc) +: 16]));
+			am_mul #(.AW(8), .BW(8)) u_q (.clk(clk), .en(1'b1), .a(dc), .b(fd),
+				.p(q_n[16 * (4 * gl + gc) +: 16]));
 		end
 	end
 	endgenerate
 	reg v2;
 	reg [3:0] m2;
 	reg [127:0] s2, d2, o2;
-	reg [255:0] m2_reg;
-	reg [15:0] is_lerp2, s_ge_d2, is_one_one2, fs_one2, fd_one2, fs_zero2, fd_zero2;
+	reg [255:0] p2, q2;
 	always @(posedge clk) begin
 		v2 <= rst_n && v1;
 		m2 <= m1;
@@ -253,14 +214,8 @@ module atg_rop_blend #(
 		s2 <= s1;
 		d2 <= d1;
 		o2 <= o1;
-		m2_reg <= m_n;
-		is_lerp2 <= is_lerp_w;
-		s_ge_d2 <= s_ge_d_w;
-		is_one_one2 <= is_one_one_w;
-		fs_one2 <= fs_one_w;
-		fd_one2 <= fd_one_w;
-		fs_zero2 <= fs_zero_w;
-		fd_zero2 <= fd_zero_w;
+		p2 <= p_n;
+		q2 <= q_n;
 	end
 
 	/* Stage 3: the operation, the mask, the format. */
@@ -269,65 +224,33 @@ module atg_rop_blend #(
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_l3
 		wire [31:0] r8;
 		for (gc = 0; gc < 4; gc = gc + 1) begin : g_c3
-			localparam integer IDX = 4 * gl + gc;
 			wire [2:0] op = gc == 3 ? bl2[22:20] : bl2[11:9];
 			wire [7:0] sv = s2[32 * gl + 8 * gc +: 8];
 			wire [7:0] dv = d2[32 * gl + 8 * gc +: 8];
-			wire [15:0] mm = m2_reg[16 * IDX +: 16];
-
-			wire [8:0] dqm;
-			atg_rop_div255 u_dqm (.x({2'd0, mm}), .q(dqm));
-
-			wire [8:0] d_add, d_sub, s_add, s_sub, one_one_add, dq_sub_d, dq_sub_s;
-			wire d_add_co, d_sub_bo, s_add_co, s_sub_bo, one_one_co, dq_sub_d_bo, dq_sub_s_bo;
-
-			am_add #(.W(9)) u_d_add (.a({1'b0, dv}), .b({1'b0, dqm[7:0]}), .ci(1'b0), .s(d_add), .co(d_add_co));
-			am_sub #(.W(9)) u_d_sub (.a({1'b0, dv}), .b({1'b0, dqm[7:0]}), .bi(1'b0), .d(d_sub), .bo(d_sub_bo));
-			am_sub #(.W(9)) u_dq_sub_d (.a({1'b0, dqm[7:0]}), .b({1'b0, dv}), .bi(1'b0), .d(dq_sub_d), .bo(dq_sub_d_bo));
-
-			am_add #(.W(9)) u_s_add (.a({1'b0, sv}), .b({1'b0, dqm[7:0]}), .ci(1'b0), .s(s_add), .co(s_add_co));
-			am_sub #(.W(9)) u_s_sub (.a({1'b0, sv}), .b({1'b0, dqm[7:0]}), .bi(1'b0), .d(s_sub), .bo(s_sub_bo));
-			am_sub #(.W(9)) u_dq_sub_s (.a({1'b0, dqm[7:0]}), .b({1'b0, sv}), .bi(1'b0), .d(dq_sub_s), .bo(dq_sub_s_bo));
-
-			am_add #(.W(9)) u_one_one (.a({1'b0, sv}), .b({1'b0, dv}), .ci(1'b0), .s(one_one_add), .co(one_one_co));
-
+			wire [15:0] pp = p2[16 * (4 * gl + gc) +: 16];
+			wire [15:0] qq = q2[16 * (4 * gl + gc) +: 16];
+			/* p - q (op 1), q - p (op 2), else p + q: one adder, then round(/ 255) */
+			wire [16:0] pq;
+			wire [8:0] dq;
+			wire pq_co_unused;
+			am_addsub #(.W(17)) u_pq (.a({1'b0, op == 3'd2 ? qq : pp}), .b({1'b0, op == 3'd2 ? pp : qq}),
+				.sub(op == 3'd1 || op == 3'd2), .s(pq), .co(pq_co_unused));
+			atg_rop_div255 u_dq (.x(op == 3'd1 || op == 3'd2 ? {2'd0, pq[15:0]} : {1'b0, pq}), .q(dq));
 			reg [8:0] v;
 			always @(*) begin
-				if (op == 3'd3) begin
-					v = {1'b0, sv < dv ? sv : dv};
-				end else if (op == 3'd4) begin
-					v = {1'b0, sv > dv ? sv : dv};
-				end else if (is_lerp2[IDX]) begin
-					v = s_ge_d2[IDX] ? (d_add[8] ? 9'd255 : d_add) :
-					                   (d_sub_bo ? 9'd0 : d_sub);
-				end else if (is_one_one2[IDX]) begin
-					v = one_one_add[8] ? 9'd255 : one_one_add;
-				end else if (fs_one2[IDX] && fd_zero2[IDX]) begin
-					v = {1'b0, sv};
-				end else if (fs_zero2[IDX] && fd_one2[IDX]) begin
-					v = {1'b0, dv};
-				end else if (fs_zero2[IDX] && fd_zero2[IDX]) begin
-					v = 9'd0;
-				end else if (fs_one2[IDX]) begin
-					v = (op == 3'd1) ? (s_sub_bo ? 9'd0 : s_sub) :
-					    (op == 3'd2) ? (dq_sub_s_bo ? 9'd0 : dq_sub_s) :
-					                   (s_add[8] ? 9'd255 : s_add);
-				end else if (fd_one2[IDX]) begin
-					v = (op == 3'd1) ? (dq_sub_d_bo ? 9'd0 : dq_sub_d) :
-					    (op == 3'd2) ? (d_sub_bo ? 9'd0 : d_sub) :
-					                   (d_add[8] ? 9'd255 : d_add);
-				end else begin
-					v = dqm;
-				end
-
+				case (op)
+				3'd1: v = pp > qq ? dq : 9'd0;
+				3'd2: v = qq > pp ? dq : 9'd0;
+				3'd3: v = {1'b0, sv < dv ? sv : dv};
+				3'd4: v = {1'b0, sv > dv ? sv : dv};
+				default: v = dq;
+				endcase
 				if (!bl2[0])
 					v = {1'b0, sv};
 				if (v[8])
 					v = 9'd255;
 			end
 			assign r8[8 * gc +: 8] = wm2[gc] ? v[7:0] : dv;
-
-			wire unused_chan = &{1'b0, dqm[8], d_add_co, s_add_co, one_one_co};
 		end
 		/* 8 bits to 5 and 6: round(v x 31 / 255), round(v x 63 / 255) */
 		wire [17:0] x5r, x6g, x5g, x5b;

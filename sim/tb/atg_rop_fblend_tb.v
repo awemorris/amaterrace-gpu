@@ -123,6 +123,46 @@ module atg_rop_fblend_tb;
 		end
 		$fclose(fd);
 		$display("atg_rop_fblend: %0d beats, at most %0d cycles each", nb, maxc);
+
+		/* Drain pipeline before burst check */
+		o_ready = 1'b1;
+		i_valid <= 1'b0;
+		repeat (10) @(posedge clk);
+
+		/* Continuous streaming burst throughput check (1 beat/cycle, 100% throughput) */
+		i_fmt = 8'd43;
+		i_blend = 23'h000001;
+		i_wm = 4'hF;
+		i_lanes = 4'hF;
+		i_const = 128'd0;
+		i_dst = 256'd0;
+		i_src = 512'd0;
+
+		got = 0;
+		cyc = 0;
+		fork
+			begin : send_burst
+				for (j = 0; j < 16; j = j + 1) begin
+					i_valid <= 1'b1;
+					@(posedge clk);
+				end
+				i_valid <= 1'b0;
+			end
+			begin : recv_burst
+				while (got < 16 && cyc < 50) begin
+					@(posedge clk);
+					cyc = cyc + 1;
+					if (o_valid && o_ready)
+						got = got + 1;
+				end
+			end
+		join
+
+		if (got != 16 || cyc > 22) begin
+			$display("FAIL atg_rop_fblend: burst throughput failed, got %0d beats in %0d cycles (expected 16 beats in <= 21 cycles)", got, cyc);
+			e_s[0] = e_s[0] + 1;
+		end
+
 		if (e_s[0] == 0 && nb > 0)
 			$display("PASS atg_rop_fblend.ops");
 		if (e_s[1] == 0 && nb > 0)

@@ -12,18 +12,12 @@
  * formats (VkFormat 43, 50, 57), A2B10G10R10_UNORM (64) and R16, R16G16,
  * R16G16B16A16_SFLOAT (76, 83, 97).
  *
- * For each lane of i_lanes: d = the stored pixel unpacked (atg_fmt_comp; sRGB
- * decoded to linear, a missing alpha 1); for the fixed-point targets the
- * source and the constant are clamped to [0, 1] (NaN and negative to +0).
- * With i_blend[0], per channel: the ops 0 ADD s Fs + d Fd, 1 SUBTRACT,
- * 2 REVERSE_SUBTRACT (5-7 as ADD) with the factors of VkBlendFactor 0-14
- * (15 as ZERO; "one minus x" is 1 - x on the fadd; SRC_ALPHA_SATURATE
- * min(A_s, 1 - A_d), 1 for alpha), 3 MIN and 4 MAX (fp32 order, NaN gives
- * 0x7FC00000); without it the source.  The arithmetic is one am_fp_mul
- * and one am_fp_add, one operation at a time.  sRGB R, G, B go through
- * one atg_fmt_srgbenc, then atg_fmt_pack (the write mask) gives o_raw and
- * o_keep (all ones for lanes outside i_lanes and for other formats).  See
- * spec/gpu/rop/atg_rop_fblend.md.
+ * 5-stage stream pipeline (throughput: 1 beat per cycle, latency: 5 cycles):
+ *   Stage 1 (DEC): Unpack destination (atg_fmt_comp) and clamp inputs to [0, 1]
+ *   Stage 2 (FAC): Factor generation (fval, 1.0 - x via am_fp_add)
+ *   Stage 3A (MUL): Parallel fp32 multiplications P = s * Fs, Q = d * Fd
+ *   Stage 3B (ALU): Parallel fp32 combine (P +/- Q, fmin, fmax)
+ *   Stage 4 (ENC): sRGB encode (unrolled decision tree) & pack (atg_fmt_pack)
  */
 
 `timescale 1ns / 1ps
@@ -41,45 +35,33 @@ module atg_rop_fblend (
 	input wire [22:0] i_blend,
 	input wire [127:0] i_const,
 	input wire [3:0] i_wm,
-	output wire o_valid,
+	output reg o_valid,
 	input wire o_ready,
 	output reg [255:0] o_raw,
 	output reg [255:0] o_keep
 );
 	`include "atg_fmt_info.vh"
+	`include "atg_srgb.vh"
+
 	localparam [31:0] ONE = 32'h3F800000;
+	localparam [55:0] PFF = {8'd97, 8'd83, 8'd76, 8'd64, 8'd57, 8'd50, 8'd43};
 
-	localparam [3:0] S_IDLE = 4'd0, S_CH = 4'd1, S_FS = 4'd2, S_FD = 4'd3, S_P = 4'd4,
-		S_Q = 4'd5, S_R = 4'd6, S_W = 4'd7, S_ENC = 4'd8, S_EW = 4'd9, S_PACK = 4'd10,
-		S_OUT = 4'd11;
-	reg [3:0] st;
+	/* Pipeline control: stall when output valid and downstream not ready */
+	wire pipe_stall = o_valid && !o_ready;
+	wire pipe_en = !pipe_stall;
+	assign i_ready = pipe_en;
 
-	reg [3:0] lanes, wm;
-	reg [511:0] src;
-	reg [255:0] dst;
-	reg [7:0] fmt;
-	reg [22:0] bl;
-	reg [127:0] kc;
-	reg [1:0] l, c;	/* lane, channel */
-	reg [127:0] rr [0:3];	/* the results */
-	reg [31:0] fs_v, fd_v, p_v, q_v;
-	reg [2:0] dsel;	/* S_W: 0 Fs, 1 Fd, 2 p, 3 q, 4 the result */
-
-	wire is_srgb = fmt == 8'd43 || fmt == 8'd50 || fmt == 8'd57;
-	wire fixed = is_srgb || fmt == 8'd64;
-	wire known = fixed || fmt == 8'd76 || fmt == 8'd83 || fmt == 8'd97;
-
-	/* clamp to [0, 1]: NaN and negative (-0 included) to +0 */
+	/* Functions for fp32 classification and clamping */
 	function [31:0] c01;
 		input [31:0] x;
 		c01 = (x[30:23] == 8'hFF && x[22:0] != 23'd0) || x[31] ? 32'd0 :
 			x > ONE ? ONE : x;
 	endfunction
+
 	function fle;	/* a <= b, -0 = +0; 0 with a NaN */
 		input [31:0] a, b;
 		reg [32:0] ka, kb;
 		begin
-			/* the signed keys ka <= kb, from the signs and the magnitudes */
 			ka = {2'd0, a[30:0]};
 			kb = {2'd0, b[30:0]};
 			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
@@ -87,29 +69,22 @@ module atg_rop_fblend (
 				(a[31] ? (b[31] ? ka >= kb : 1'b1) : (b[31] ? ka == 0 && kb == 0 : ka <= kb));
 		end
 	endfunction
+
 	function isnan;
 		input [30:0] a;
 		isnan = a[30:23] == 8'hFF && a[22:0] != 23'd0;
 	endfunction
+
 	function [31:0] fmin;
 		input [31:0] a, b;
 		fmin = isnan(a[30:0]) || isnan(b[30:0]) ? 32'h7FC00000 : fle(a, b) ? a : b;
 	endfunction
+
 	function [31:0] fmax;
 		input [31:0] a, b;
 		fmax = isnan(a[30:0]) || isnan(b[30:0]) ? 32'h7FC00000 : fle(b, a) ? a : b;
 	endfunction
 
-	/* The lane's values: source, destination, constant (clamped for fixed). */
-	wire [127:0] s_raw = src[128 * l +: 128];
-	/* The formats of this path (the destination is unpacked and the result
-	 * packed for these only; the value for other formats is not used: their
-	 * lanes are skipped and give o_raw 0, o_keep all ones); the format's
-	 * info word. */
-	localparam [55:0] PFF = {8'd97, 8'd83, 8'd76, 8'd64, 8'd57, 8'd50, 8'd43};
-	wire [67:0] pinf = atg_fmt_info(fmt);
-	genvar gf;
-	/* The places of component k of format i of PFF, at 7 (4 i + k). */
 	function [7*28-1:0] ppos;
 		input integer unused_n;
 		integer pi, pk;
@@ -124,47 +99,7 @@ module atg_rop_fblend (
 		end
 	endfunction
 	localparam [7*28-1:0] PPOS = ppos(0);
-	/* The destination unpacked: components c and A (the two that a step
-	 * reads), each by one atg_fmt_comp from its field moved to bit 0 (a
-	 * constant place for each format and component) with the format's info
-	 * word, its places 0. */
-	wire [127:0] d_raw = {64'd0, dst[64 * l +: 64]};
-	wire [67:0] uinf = pinf & ~{6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 16'd0};
-	reg [31:0] craw, araw;
-	reg [6:0] up;
-	reg d_known;
-	integer uf, uk;
-	always @(*) begin
-		craw = 32'd0;
-		araw = 32'd0;
-		up = 7'd0;
-		d_known = 1'b0;
-		for (uf = 0; uf < 7; uf = uf + 1)
-			if (fmt == PFF[8 * uf +: 8]) begin
-				d_known = 1'b1;
-				for (uk = 0; uk < 4; uk = uk + 1) begin
-					up = PPOS[7 * (4 * uf + uk) +: 7];
-					if (c == uk[1:0])
-						craw = d_raw[up +: 32];
-					if (uk == 3)
-						araw = d_raw[up +: 32];
-				end
-			end
-	end
-	wire [31:0] d_cv, d_av;
-	atg_fmt_comp u_dc (.raw({96'd0, craw}), .inf(uinf), .k(c), .sten(1'b0), .v(d_cv));
-	atg_fmt_comp u_da (.raw({96'd0, araw}), .inf(uinf), .k(2'd3), .sten(1'b0), .v(d_av));
-	wire [31:0] s_c = fixed ? c01(s_raw[32 * c +: 32]) : s_raw[32 * c +: 32];
-	wire [31:0] s_a = fixed ? c01(s_raw[127:96]) : s_raw[127:96];
-	wire [31:0] d_c = d_known ? d_cv : 32'd0;
-	wire [31:0] d_a = d_known ? d_av : 32'd0;
-	wire [31:0] k_c = fixed ? c01(kc[32 * c +: 32]) : kc[32 * c +: 32];
-	wire [31:0] k_a = fixed ? c01(kc[127:96]) : kc[127:96];
-	wire [3:0] f_s = c == 2'd3 ? bl[15:12] : bl[4:1];
-	wire [3:0] f_d = c == 2'd3 ? bl[19:16] : bl[8:5];
-	wire [2:0] op = c == 2'd3 ? bl[22:20] : bl[11:9];
 
-	/* A factor's value x (the "one minus" ones are 1 - x); sat: SATURATE. */
 	function [31:0] fval;
 		input [3:0] f;
 		input alpha;
@@ -180,215 +115,366 @@ module atg_rop_fblend (
 		default: fval = 32'd0;
 		endcase
 	endfunction
-	function needs_sub;	/* the factor is 1 - x */
+
+	function needs_sub;
 		input [3:0] f;
 		input alpha;
 		needs_sub = (f[0] && f >= 4'd3 && f <= 4'd13) || (f == 4'd14 && !alpha);
 	endfunction
-	wire alpha = c == 2'd3;
-	wire [31:0] xs = fval(f_s, alpha, s_c, d_c, s_a, d_a, k_c, k_a);
-	wire [31:0] xd = fval(f_d, alpha, s_c, d_c, s_a, d_a, k_c, k_a);
 
-	/* The fp units, one operation at a time. */
-	reg fa_v, fm_v, fa_sub;
-	reg [31:0] opa, opb;
-	wire fa_o, fm_o;
-	wire [31:0] fa_r, fm_r;
-	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(opa), .i_b(opb),
-		.i_sub(fa_sub), .o_valid(fa_o), .o_r(fa_r));
-	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(opa), .i_b(opb),
-		.o_valid(fm_o), .o_r(fm_r));
-	wire [31:0] res = fa_o ? fa_r : fm_r;
+	function [7:0] srgb_encode_comb;
+		input [31:0] b;
+		reg [7:0] lo;
+		begin
+			if ((b[30:23] == 8'hFF && b[22:0] != 23'd0) || b[31]) begin
+				srgb_encode_comb = 8'd0;
+			end else begin
+				lo = 8'd0;
+				if (b >= atg_srgb_thr(8'd127)) lo = lo | 8'd128;
+				if (b >= atg_srgb_thr(lo | 8'd63)) lo = lo | 8'd64;
+				if (b >= atg_srgb_thr(lo | 8'd31)) lo = lo | 8'd32;
+				if (b >= atg_srgb_thr(lo | 8'd15)) lo = lo | 8'd16;
+				if (b >= atg_srgb_thr(lo | 8'd7)) lo = lo | 8'd8;
+				if (b >= atg_srgb_thr(lo | 8'd3)) lo = lo | 8'd4;
+				if (b >= atg_srgb_thr(lo | 8'd1)) lo = lo | 8'd2;
+				if (b >= atg_srgb_thr(lo)) lo = lo | 8'd1;
+				srgb_encode_comb = lo;
+			end
+		end
+	endfunction
 
-	/* The sRGB encoder. */
-	reg e_v;
-	wire e_ready, e_ov;
-	wire [7:0] e_code;
-	wire [127:0] rr_l = rr[l];
-	atg_fmt_srgbenc enc (.clk(clk), .rst_n(rst_n), .i_valid(e_v), .i_ready(e_ready),
-		.i_x(rr_l[32 * c +: 32]), .o_valid(e_ov), .o_ready(1'b1), .o_code(e_code));
+	/* =========================================================================
+	 * STAGE 1: Unpack Destination & Clamp Inputs (Latency: 1 cycle)
+	 * ========================================================================= */
+	wire is_srgb0 = i_fmt == 8'd43 || i_fmt == 8'd50 || i_fmt == 8'd57;
+	wire fixed0 = is_srgb0 || i_fmt == 8'd64;
+	wire [67:0] pinf0 = atg_fmt_info(i_fmt);
+	wire [67:0] uinf0 = pinf0 & ~{6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 6'd0, 7'h7F, 16'd0};
 
-	/* The pack of lane l. */
-	/* one converter a component for the format of the moment: UNORM of the
-	 * component's width (8 for an sRGB alpha), fp16 */
-	wire [63:0] p_un, p_hf;
+	wire [127:0] d_unpacked0 [0:3];
+	reg d_known0;
+	genvar gl, gc;
+
 	generate
-	for (gf = 0; gf < 4; gf = gf + 1) begin : g_cv
-		atg_fmt_f2unorm u_un (.f(rr_l[32 * gf +: 32]), .w(pinf[11:9] == ATG_FMT_SRGB ? 6'd8 :
-			pinf[23 + 13 * gf +: 6]), .u(p_un[16 * gf +: 16]));
-		am_fp_f2h #(.LAT(0)) u_hf (.f(rr_l[32 * gf +: 32]), .h(p_hf[16 * gf +: 16]));
+	for (gl = 0; gl < 4; gl = gl + 1) begin : g_dec_l
+		wire [127:0] d_raw_l = {64'd0, i_dst[64 * gl +: 64]};
+		for (gc = 0; gc < 4; gc = gc + 1) begin : g_dec_c
+			reg [31:0] craw_lc;
+			reg [6:0] up_lc;
+			integer uf_i;
+			always @(*) begin
+				craw_lc = 32'd0;
+				up_lc = 7'd0;
+				for (uf_i = 0; uf_i < 7; uf_i = uf_i + 1)
+					if (i_fmt == PFF[8 * uf_i +: 8]) begin
+						up_lc = PPOS[7 * (4 * uf_i + gc) +: 7];
+						craw_lc = d_raw_l[up_lc +: 32];
+					end
+			end
+			wire [31:0] comp_v;
+			atg_fmt_comp u_comp (.raw({96'd0, craw_lc}), .inf(uinf0), .k(gc[1:0]), .sten(1'b0), .v(comp_v));
+			assign d_unpacked0[gl][32 * gc +: 32] = comp_v;
+		end
 	end
 	endgenerate
-	wire [255:0] pk;
-	atg_fmt_pack #(.N(7), .FMTS(PFF)) u_pk (.c(rr_l), .un(p_un), .hf(p_hf), .fmt(fmt), .wm(wm), .o(pk));
 
-	assign i_ready = st == S_IDLE;
-	assign o_valid = st == S_OUT;
-	wire last_ch = c == 2'd3;
-
-	/* the next channel and lane numbers */
-	wire [1:0] c1, l1;
-	wire c1_co_unused, l1_co_unused;
-	am_add #(.W(2)) u_c1 (.a(c), .b(2'd0), .ci(1'b1), .s(c1), .co(c1_co_unused));
-	am_add #(.W(2)) u_l1 (.a(l), .b(2'd0), .ci(1'b1), .s(l1), .co(l1_co_unused));
-
-	/* next channel, lane, or the end of the arithmetic */
-	task next;
-		begin
-			c <= c1;
-			st <= S_CH;
-			if (last_ch) begin
-				l <= l1;
-				if (l == 2'd3) begin
-					l <= 2'd0;
-					c <= 2'd0;
-					st <= is_srgb ? S_ENC : S_PACK;
-				end
-			end
-		end
-	endtask
-
-	always @(posedge clk) begin
-		fa_v <= 1'b0;
-		fm_v <= 1'b0;
-		e_v <= 1'b0;
-		if (!rst_n) begin
-			st <= S_IDLE;
-		end else case (st)
-		S_IDLE:
-			if (i_valid) begin
-				lanes <= i_lanes;
-				src <= i_src;
-				dst <= i_dst;
-				fmt <= i_fmt;
-				bl <= i_blend;
-				kc <= i_const;
-				wm <= i_wm;
-				l <= 2'd0;
-				c <= 2'd0;
-				st <= S_CH;
-			end
-		S_CH:
-			if (!lanes[l] || !known) begin
-				/* skip the lane */
-				c <= 2'd0;
-				l <= l1;
-				if (l == 2'd3)
-					st <= is_srgb ? S_ENC : S_PACK;
-			end else if (!bl[0]) begin
-				rr[l][32 * c +: 32] <= s_c;
-				next;
-			end else if (op == 3'd3) begin
-				rr[l][32 * c +: 32] <= fmin(s_c, d_c);
-				next;
-			end else if (op == 3'd4) begin
-				rr[l][32 * c +: 32] <= fmax(s_c, d_c);
-				next;
-			end else
-				st <= S_FS;
-		S_FS:
-			if (needs_sub(f_s, alpha)) begin
-				fa_v <= 1'b1;
-				fa_sub <= 1'b1;
-				opa <= ONE;
-				opb <= xs;
-				dsel <= 3'd0;
-				st <= S_W;
-			end else begin
-				fs_v <= xs;
-				st <= S_FD;
-			end
-		S_FD:
-			if (needs_sub(f_d, alpha)) begin
-				fa_v <= 1'b1;
-				fa_sub <= 1'b1;
-				opa <= ONE;
-				opb <= xd;
-				dsel <= 3'd1;
-				st <= S_W;
-			end else begin
-				fd_v <= xd;
-				st <= S_P;
-			end
-		S_P: begin
-			fm_v <= 1'b1;
-			opa <= s_c;
-			opb <= fs_v;
-			dsel <= 3'd2;
-			st <= S_W;
-		end
-		S_Q: begin
-			fm_v <= 1'b1;
-			opa <= d_c;
-			opb <= fd_v;
-			dsel <= 3'd3;
-			st <= S_W;
-		end
-		S_R: begin
-			fa_v <= 1'b1;
-			fa_sub <= op == 3'd1 || op == 3'd2;
-			opa <= op == 3'd2 ? q_v : p_v;
-			opb <= op == 3'd2 ? p_v : q_v;
-			dsel <= 3'd4;
-			st <= S_W;
-		end
-		S_W:
-			if (fa_o || fm_o)
-				case (dsel)
-				3'd0: begin
-					fs_v <= f_s == 4'd14 ? fmin(s_a, res) : res;
-					st <= S_FD;
-				end
-				3'd1: begin
-					fd_v <= f_d == 4'd14 ? fmin(s_a, res) : res;
-					st <= S_P;
-				end
-				3'd2: begin
-					p_v <= res;
-					st <= S_Q;
-				end
-				3'd3: begin
-					q_v <= res;
-					st <= S_R;
-				end
-				default: begin
-					rr[l][32 * c +: 32] <= res;
-					next;
-				end
-				endcase
-		S_ENC:
-			/* R, G, B of each lane through the encoder */
-			if (!lanes[l] || c == 2'd3) begin
-				c <= 2'd0;
-				l <= l1;
-				if (l == 2'd3) begin
-					l <= 2'd0;
-					st <= S_PACK;
-				end
-			end else if (e_ready) begin
-				e_v <= 1'b1;
-				st <= S_EW;
-			end
-		S_EW:
-			if (e_ov) begin
-				rr[l][32 * c +: 32] <= {24'd0, e_code};
-				c <= c1;
-				st <= S_ENC;
-			end
-		S_PACK: begin
-			o_raw[64 * l +: 64] <= known && lanes[l] ? pk[63:0] : 64'd0;
-			o_keep[64 * l +: 64] <= known && lanes[l] ? pk[191:128] : {64{1'b1}};
-			l <= l1;
-			if (l == 2'd3)
-				st <= S_OUT;
-		end
-		default:	/* S_OUT */
-			if (o_ready)
-				st <= S_IDLE;
-		endcase
+	integer uf_k;
+	always @(*) begin
+		d_known0 = 1'b0;
+		for (uf_k = 0; uf_k < 7; uf_k = uf_k + 1)
+			if (i_fmt == PFF[8 * uf_k +: 8])
+				d_known0 = 1'b1;
 	end
 
-	wire unused_ok = &{1'b0, pk[127:64], pk[255:192]};
+	reg [127:0] s1 [0:3];
+	reg [127:0] d1 [0:3];
+	reg [127:0] kc1;
+	reg [22:0] bl1;
+	reg [7:0] fmt1;
+	reg [3:0] wm1, lanes1;
+	reg v1, known1;
+
+	integer i_l, i_c;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			v1 <= 1'b0;
+			known1 <= 1'b0;
+			bl1 <= 23'd0;
+			fmt1 <= 8'd0;
+			wm1 <= 4'd0;
+			lanes1 <= 4'd0;
+			kc1 <= 128'd0;
+			for (i_l = 0; i_l < 4; i_l = i_l + 1) begin
+				s1[i_l] <= 128'd0;
+				d1[i_l] <= 128'd0;
+			end
+		end else if (pipe_en) begin
+			v1 <= i_valid;
+			known1 <= d_known0;
+			bl1 <= i_blend;
+			fmt1 <= i_fmt;
+			wm1 <= i_wm;
+			lanes1 <= i_lanes;
+			for (i_c = 0; i_c < 4; i_c = i_c + 1)
+				kc1[32 * i_c +: 32] <= fixed0 ? c01(i_const[32 * i_c +: 32]) : i_const[32 * i_c +: 32];
+			for (i_l = 0; i_l < 4; i_l = i_l + 1) begin
+				for (i_c = 0; i_c < 4; i_c = i_c + 1) begin
+					s1[i_l][32 * i_c +: 32] <= fixed0 ? c01(i_src[128 * i_l + 32 * i_c +: 32]) :
+					                                    i_src[128 * i_l + 32 * i_c +: 32];
+					d1[i_l][32 * i_c +: 32] <= d_known0 ? d_unpacked0[i_l][32 * i_c +: 32] : 32'd0;
+				end
+			end
+		end
+	end
+
+	/* =========================================================================
+	 * STAGE 2: Factor Generation (Latency: 1 cycle)
+	 * ========================================================================= */
+	wire [127:0] fs_w [0:3];
+	wire [127:0] fd_w [0:3];
+	wire [11:0] op2_w = {bl1[22:20], bl1[11:9], bl1[11:9], bl1[11:9]};
+
+	generate
+	for (gl = 0; gl < 4; gl = gl + 1) begin : g_fac_l
+		for (gc = 0; gc < 4; gc = gc + 1) begin : g_fac_c
+			wire is_alpha = (gc == 3);
+			wire [3:0] f_s = is_alpha ? bl1[15:12] : bl1[4:1];
+			wire [3:0] f_d = is_alpha ? bl1[19:16] : bl1[8:5];
+
+			wire [31:0] sc = s1[gl][32 * gc +: 32];
+			wire [31:0] dc = d1[gl][32 * gc +: 32];
+			wire [31:0] sa = s1[gl][127:96];
+			wire [31:0] da = d1[gl][127:96];
+			wire [31:0] kcc = kc1[32 * gc +: 32];
+			wire [31:0] ka = kc1[127:96];
+
+			wire [31:0] xs = fval(f_s, is_alpha, sc, dc, sa, da, kcc, ka);
+			wire [31:0] xd = fval(f_d, is_alpha, sc, dc, sa, da, kcc, ka);
+
+			wire [31:0] sub_s_res, sub_d_res;
+			wire sub_s_ov_unused, sub_d_ov_unused;
+			am_fp_add #(.LAT(0)) u_sub_s (.clk(clk), .rst_n(rst_n), .i_valid(1'b1), .i_a(ONE), .i_b(xs),
+				.i_sub(1'b1), .o_valid(sub_s_ov_unused), .o_r(sub_s_res));
+			am_fp_add #(.LAT(0)) u_sub_d (.clk(clk), .rst_n(rst_n), .i_valid(1'b1), .i_a(ONE), .i_b(xd),
+				.i_sub(1'b1), .o_valid(sub_d_ov_unused), .o_r(sub_d_res));
+
+			assign fs_w[gl][32 * gc +: 32] = needs_sub(f_s, is_alpha) ?
+				(f_s == 4'd14 ? fmin(sa, sub_s_res) : sub_s_res) : xs;
+			assign fd_w[gl][32 * gc +: 32] = needs_sub(f_d, is_alpha) ?
+				(f_d == 4'd14 ? fmin(sa, sub_d_res) : sub_d_res) : xd;
+		end
+	end
+	endgenerate
+
+	reg [127:0] s2 [0:3];
+	reg [127:0] d2 [0:3];
+	reg [127:0] fs2 [0:3];
+	reg [127:0] fd2 [0:3];
+	reg [11:0] op2;
+	reg blen2;
+	reg [7:0] fmt2;
+	reg [3:0] wm2, lanes2;
+	reg v2, known2;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			v2 <= 1'b0;
+			known2 <= 1'b0;
+			blen2 <= 1'b0;
+			fmt2 <= 8'd0;
+			wm2 <= 4'd0;
+			lanes2 <= 4'd0;
+			op2 <= 12'd0;
+			for (i_l = 0; i_l < 4; i_l = i_l + 1) begin
+				s2[i_l] <= 128'd0;
+				d2[i_l] <= 128'd0;
+				fs2[i_l] <= 128'd0;
+				fd2[i_l] <= 128'd0;
+			end
+		end else if (pipe_en) begin
+			v2 <= v1;
+			known2 <= known1;
+			blen2 <= bl1[0];
+			fmt2 <= fmt1;
+			wm2 <= wm1;
+			lanes2 <= lanes1;
+			op2 <= op2_w;
+			for (i_l = 0; i_l < 4; i_l = i_l + 1) begin
+				s2[i_l] <= s1[i_l];
+				d2[i_l] <= d1[i_l];
+				fs2[i_l] <= fs_w[i_l];
+				fd2[i_l] <= fd_w[i_l];
+			end
+		end
+	end
+
+	/* =========================================================================
+	 * STAGE 3A: fp32 Multiplications P = s * Fs, Q = d * Fd (Latency: 1 cycle)
+	 * ========================================================================= */
+	wire [127:0] p_w [0:3];
+	wire [127:0] q_w [0:3];
+
+	generate
+	for (gl = 0; gl < 4; gl = gl + 1) begin : g_mul_l
+		for (gc = 0; gc < 4; gc = gc + 1) begin : g_mul_c
+			wire [31:0] p_res, q_res;
+			wire mul_p_ov_unused, mul_q_ov_unused;
+			am_fp_mul #(.LAT(0)) u_mul_p (.clk(clk), .rst_n(rst_n), .i_valid(1'b1),
+				.i_a(s2[gl][32 * gc +: 32]), .i_b(fs2[gl][32 * gc +: 32]),
+				.o_valid(mul_p_ov_unused), .o_r(p_res));
+			am_fp_mul #(.LAT(0)) u_mul_q (.clk(clk), .rst_n(rst_n), .i_valid(1'b1),
+				.i_a(d2[gl][32 * gc +: 32]), .i_b(fd2[gl][32 * gc +: 32]),
+				.o_valid(mul_q_ov_unused), .o_r(q_res));
+			assign p_w[gl][32 * gc +: 32] = p_res;
+			assign q_w[gl][32 * gc +: 32] = q_res;
+		end
+	end
+	endgenerate
+
+	reg [127:0] p3 [0:3];
+	reg [127:0] q3 [0:3];
+	reg [127:0] s3 [0:3];
+	reg [127:0] d3 [0:3];
+	reg [11:0] op3;
+	reg blen3;
+	reg [7:0] fmt3;
+	reg [3:0] wm3, lanes3;
+	reg v3, known3;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			v3 <= 1'b0;
+			known3 <= 1'b0;
+			blen3 <= 1'b0;
+			fmt3 <= 8'd0;
+			wm3 <= 4'd0;
+			lanes3 <= 4'd0;
+			op3 <= 12'd0;
+			for (i_l = 0; i_l < 4; i_l = i_l + 1) begin
+				p3[i_l] <= 128'd0;
+				q3[i_l] <= 128'd0;
+				s3[i_l] <= 128'd0;
+				d3[i_l] <= 128'd0;
+			end
+		end else if (pipe_en) begin
+			v3 <= v2;
+			known3 <= known2;
+			blen3 <= blen2;
+			fmt3 <= fmt2;
+			wm3 <= wm2;
+			lanes3 <= lanes2;
+			op3 <= op2;
+			for (i_l = 0; i_l < 4; i_l = i_l + 1) begin
+				p3[i_l] <= p_w[i_l];
+				q3[i_l] <= q_w[i_l];
+				s3[i_l] <= s2[i_l];
+				d3[i_l] <= d2[i_l];
+			end
+		end
+	end
+
+	/* =========================================================================
+	 * STAGE 3B: fp32 Combine P +/- Q, Min/Max (Latency: 1 cycle)
+	 * ========================================================================= */
+	wire [127:0] res_w [0:3];
+
+	generate
+	for (gl = 0; gl < 4; gl = gl + 1) begin : g_alu_l
+		for (gc = 0; gc < 4; gc = gc + 1) begin : g_alu_c
+			wire [2:0] op = op3[3 * gc +: 3];
+			wire [31:0] pv = p3[gl][32 * gc +: 32];
+			wire [31:0] qv = q3[gl][32 * gc +: 32];
+			wire [31:0] sv = s3[gl][32 * gc +: 32];
+			wire [31:0] dv = d3[gl][32 * gc +: 32];
+
+			wire sub_sel = (op == 3'd1 || op == 3'd2);
+			wire [31:0] add_a = (op == 3'd2) ? qv : pv;
+			wire [31:0] add_b = (op == 3'd2) ? pv : qv;
+			wire [31:0] pq_res;
+			wire add_ov_unused;
+			am_fp_add #(.LAT(0)) u_add_pq (.clk(clk), .rst_n(rst_n), .i_valid(1'b1),
+				.i_a(add_a), .i_b(add_b), .i_sub(sub_sel),
+				.o_valid(add_ov_unused), .o_r(pq_res));
+
+			assign res_w[gl][32 * gc +: 32] = (!blen3) ? sv :
+				(op == 3'd3) ? fmin(sv, dv) :
+				(op == 3'd4) ? fmax(sv, dv) : pq_res;
+		end
+	end
+	endgenerate
+
+	reg [127:0] res4 [0:3];
+	reg [7:0] fmt4;
+	reg [3:0] wm4, lanes4;
+	reg v4, known4;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			v4 <= 1'b0;
+			known4 <= 1'b0;
+			fmt4 <= 8'd0;
+			wm4 <= 4'd0;
+			lanes4 <= 4'd0;
+			for (i_l = 0; i_l < 4; i_l = i_l + 1)
+				res4[i_l] <= 128'd0;
+		end else if (pipe_en) begin
+			v4 <= v3;
+			known4 <= known3;
+			fmt4 <= fmt3;
+			wm4 <= wm3;
+			lanes4 <= lanes3;
+			for (i_l = 0; i_l < 4; i_l = i_l + 1)
+				res4[i_l] <= res_w[i_l];
+		end
+	end
+
+	/* =========================================================================
+	 * STAGE 4: sRGB Encode & Pack (Latency: 1 cycle)
+	 * ========================================================================= */
+	wire is_srgb4 = (fmt4 == 8'd43 || fmt4 == 8'd50 || fmt4 == 8'd57);
+	wire [67:0] pinf4 = atg_fmt_info(fmt4);
+	wire [255:0] raw_out_w, keep_out_w;
+
+	generate
+	for (gl = 0; gl < 4; gl = gl + 1) begin : g_pack_l
+		wire [31:0] cv0 = is_srgb4 ? {24'd0, srgb_encode_comb(res4[gl][31:0])} : res4[gl][31:0];
+		wire [31:0] cv1 = is_srgb4 ? {24'd0, srgb_encode_comb(res4[gl][63:32])} : res4[gl][63:32];
+		wire [31:0] cv2 = is_srgb4 ? {24'd0, srgb_encode_comb(res4[gl][95:64])} : res4[gl][95:64];
+		wire [31:0] cv3 = res4[gl][127:96];
+		wire [127:0] comp_vec = {cv3, cv2, cv1, cv0};
+
+		wire [63:0] p_un, p_hf;
+		genvar g_c;
+		for (g_c = 0; g_c < 4; g_c = g_c + 1) begin : g_pack_c
+			wire [31:0] cv_f = comp_vec[32 * g_c +: 32];
+			atg_fmt_f2unorm u_un (.f(cv_f), .w(pinf4[11:9] == ATG_FMT_SRGB ? 6'd8 :
+				pinf4[23 + 13 * g_c +: 6]), .u(p_un[16 * g_c +: 16]));
+			am_fp_f2h #(.LAT(0)) u_hf (.f(cv_f), .h(p_hf[16 * g_c +: 16]));
+		end
+
+		wire [255:0] pk;
+		atg_fmt_pack #(.N(7), .FMTS(PFF)) u_pk (.c(comp_vec), .un(p_un), .hf(p_hf),
+			.fmt(fmt4), .wm(wm4), .o(pk));
+
+		assign raw_out_w[64 * gl +: 64] = (known4 && lanes4[gl]) ? pk[63:0] : 64'd0;
+		assign keep_out_w[64 * gl +: 64] = (known4 && lanes4[gl]) ? pk[191:128] : {64{1'b1}};
+
+		wire unused_pk_l = &{1'b0, pk[127:64], pk[255:192], pinf4};
+	end
+	endgenerate
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			o_valid <= 1'b0;
+			o_raw <= 256'd0;
+			o_keep <= {256{1'b1}};
+		end else if (pipe_en) begin
+			o_valid <= v4;
+			o_raw <= raw_out_w;
+			o_keep <= keep_out_w;
+		end
+	end
+
 endmodule
 
 `default_nettype wire
