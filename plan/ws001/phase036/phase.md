@@ -3,7 +3,7 @@
 # Phase 036: BRAM 推論可能非同期 FIFO（am_afifo_bram.v）実装
 
 - **親**: [WS001](../ws.md)
-- **状態**: `planned`
+- **状態**: `completed` (2026-10-26 R1敵対的レビューAPPROVE・単体PASS)
 - **依存**: [ws001-p035](../phase035/phase.md)
 - **優先度**: Critical (1,000+ LUT の浪費完全排除 & 大容量 CDC FIFO の BRAM 推論化)
 - **出典**: ユーザー諮問（DC & BUS 最適化）および R1 敵対的アーキテクチャ分析レポート
@@ -139,3 +139,18 @@ BRAM（RAMB18E1 / RAMB36E1）を Vivado に確実に推論させるための黄�
 - `sim/run.sh am_afifo_bram` が PASS すること。
 - `tools/arith-lint.py` で違反 0 件。
 - R1 レビュー APPROVE 獲得。
+
+---
+
+## 完了記録（2026-10-26）
+
+1. **RTL 実装**:
+   - `rtl/library/bus/am_afifo_bram.v`: `(* ram_style = "block" *)` 同期リード構造による BRAM 推論（RAMB18E1/RAMB36E1）、出力 Skid Buffer（`am_skid`）統合による 0 サイクル FWFT、グレイコード 2 段 CDC、正確な `r_count` ウォーターマーク出力を実装。
+   - `spec/library/bus/am_afifo_bram.md`: 仕様書作成。
+   - `sim/tb/am_afifo_bram_tb.v`: 単体テストベンチ作成（10,000 ワード超クロック比スイープ検証）。
+2. **検証結果**:
+   - `sim/run.sh am_afifo_bram`: **PASS** (1 s)
+   - `python3 tools/arith-lint.py`: **0 operators outside rtl/library/arith (PASS)**
+   - `verilator --lint-only -Wall`: 警告 0 件。
+3. **敵対的レビュー（R1 判定）**:
+   - **APPROVE**（`adversarial_review_ws001_p036_afifo_bram.md`）。BRAM 推論適合性（非同期リード完全排除による 1,200+ LUTRAM 削減）、0 サイクル FWFT 動作、CDC 安全性、Guardrails 完全準拠を承認。
