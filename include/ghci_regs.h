@@ -16,7 +16,7 @@
 
 #define GHCI_MAGIC_VALUE 0x47484349u /* "GHCI" */
 #define GHCI_VERSION_MAJOR 1u
-#define GHCI_VERSION_MINOR 0u
+#define GHCI_VERSION_MINOR 1u
 
 /* FourCCs as read from the ID registers (the first letter in bits 31:24). */
 #define GHCI_FOURCC(a, b, c, d) \
@@ -53,6 +53,9 @@
 #define GHCI_FAULT_ADDR 0x068u
 #define GHCI_FAULT_INFO 0x06Cu
 #define GHCI_FENCE_LAST 0x070u
+#define GHCI_CP_PC 0x074u
+#define GHCI_CP_STATUS 0x078u
+#define GHCI_PIPE_FSM 0x07Cu
 #define GHCI_PERF(n) (0x080u + 4u * (n))
 #define GHCI_PERF_CTRL 0x090u
 #define GHCI_DBG_ADDR 0x0A0u

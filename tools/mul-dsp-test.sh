@@ -9,8 +9,13 @@ out="$root/build/sim"
 mkdir -p "$out"
 
 VIVADO_DIR="${XILINX_VIVADO:-/home/awe/opt/amd/2026.1/Vivado}"
-GLBL="$VIVADO_DIR/data/verilog/src/glbl.v"
-DSP48="$VIVADO_DIR/data/verilog/src/unisims/DSP48E1.v"
+GLBL="$root/sim/unisims/glbl.v"
+DSP48="$root/sim/unisims/DSP48E1.v"
+
+if [ ! -f "$GLBL" ] || [ ! -f "$DSP48" ]; then
+	GLBL="$VIVADO_DIR/data/verilog/src/glbl.v"
+	DSP48="$VIVADO_DIR/data/verilog/src/unisims/DSP48E1.v"
+fi
 
 if [ ! -f "$GLBL" ] || [ ! -f "$DSP48" ]; then
 	echo "mul-dsp-test: Xilinx Unisims not found at $VIVADO_DIR" >&2

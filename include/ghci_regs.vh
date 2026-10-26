@@ -18,7 +18,7 @@
 /* Identification. */
 localparam [31:0] GHCI_MAGIC_VALUE = 32'h47484349;	/* "GHCI" */
 localparam [15:0] GHCI_VERSION_MAJOR = 16'd1;
-localparam [15:0] GHCI_VERSION_MINOR = 16'd0;
+localparam [15:0] GHCI_VERSION_MINOR = 16'd1;
 
 /* Host control register offsets (bytes in the 128 KiB decode). */
 localparam [16:0] GHCI_MAGIC = 17'h00000;
@@ -49,6 +49,9 @@ localparam [16:0] GHCI_APERTURE_LIMIT = 17'h00064;
 localparam [16:0] GHCI_FAULT_ADDR = 17'h00068;
 localparam [16:0] GHCI_FAULT_INFO = 17'h0006C;
 localparam [16:0] GHCI_FENCE_LAST = 17'h00070;
+localparam [16:0] GHCI_CP_PC = 17'h00074;
+localparam [16:0] GHCI_CP_STATUS = 17'h00078;
+localparam [16:0] GHCI_PIPE_FSM = 17'h0007C;
 localparam [16:0] GHCI_PERF0 = 17'h00080;
 localparam [16:0] GHCI_PERF_CTRL = 17'h00090;
 localparam [16:0] GHCI_DBG_ADDR = 17'h000A0;

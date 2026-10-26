@@ -171,7 +171,7 @@ earlier work has completed.
 | Offset | Name | Access | Contents |
 | --- | --- | --- | --- |
 | 0x000 | GHCI_MAGIC | R | `0x47484349` ("GHCI") |
-| 0x004 | GHCI_VERSION | R | [31:16] major (1), [15:0] minor (0) |
+| 0x004 | GHCI_VERSION | R | [31:16] major (1), [15:0] minor (1) |
 | 0x008 | VENDOR_ID | R | FourCC of the vendor |
 | 0x00C | DEVICE_ID | R | FourCC of the device |
 | 0x010 | ISA_ID | R | FourCC of the native shader ISA ("GSI1" when the GPU runs GSI1 natively); 0 = no shader unit (section 12) |
@@ -198,6 +198,9 @@ earlier work has completed.
 | 0x068 | FAULT_ADDR | R | Address of the first fault since the last reset (0 when there is none) |
 | 0x06C | FAULT_INFO | R | The first fault (section 3.4) |
 | 0x070 | FENCE_LAST | RW | Last fence value written; the driver restores it after a reset (section 9) |
+| 0x074 | GHCI_CP_PC | R | (GHCI 1.1) Current PC of the CP firmware processor (atg_cpu); 0 if no CPU |
+| 0x078 | GHCI_CP_STATUS | R | (GHCI 1.1) Status of CP firmware: [7:0] fw_state, [15:8] mcause, [16] in_irq, [17] faulted; 0 if no CPU |
+| 0x07C | GHCI_PIPE_FSM | R | (GHCI 1.1) Pipeline FSM states: [3:0] VF, [7:4] RX, [11:8] ROP, [15:12] SU0, [19:16] MC, [23:20] BLT, [31:24] unit busy flags |
 | 0x080..0x08C | PERF0..PERF3 | R | Busy-cycle counters (what each counts is listed in the PERF capability) |
 | 0x090 | PERF_CTRL | RW | [0] clears PERF0..3 (W1S) |
 | 0x0A0 | DBG_ADDR | RW | Debug port address (section 14); writing it starts a read |
@@ -466,9 +469,10 @@ firmware:
 - A GPU without firmware (CAPS[17] = 0) faults with kind 2.
 - While the firmware works on a class 2 packet, the CP takes no other
   packet.
-- The GHCI gpu-ops (0x10100-0x10108, draft numbers): SESSION_OPEN,
+- The GHCI gpu-ops (0x10100-0x1010C, draft numbers): SESSION_OPEN,
   SESSION_CLOSE, MEMORY, PROGRAM, NATIVE, FRAME, BUFFER_GRANT and
-  BUFFER_REVOKE (section 11.6), and HEAP.
+  BUFFER_REVOKE (section 11.6), HEAP, and INIT and the diagnostics
+  DIAG_ECHO, DIAG_WRITE and DIAG_SUM (below).
 - **HEAP** (0x10108) `[u64 GPU address][u64 bytes][u32 warps]`: the range
   of GPU memory the driver lends the firmware for its objects and the
   recordings of the command buffers (line aligned, inside the aperture,
@@ -486,10 +490,55 @@ firmware:
   [1] IMPORTED (memory that another session owns, imported by this one;
   section 11.6), [2] READ_ONLY (the session's work only reads it; section
   11.6); the other bits are 0.
-- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT, BUFFER_REVOKE and HEAP are
-  taken only as packets in the ring, never as staged commands inside a
-  frame: inside a frame they end the frame with
+- SESSION_OPEN, SESSION_CLOSE, BUFFER_GRANT, BUFFER_REVOKE, HEAP, INIT
+  and the diagnostics are taken only as packets in the ring, never as
+  staged commands inside a frame: inside a frame they end the frame with
   VK_ERROR_FEATURE_NOT_PRESENT.
+
+**INIT and the diagnostics (draft).** INIT is the driver's handshake with
+the firmware; the diagnostics check the paths a packet uses one at a
+time: the CP's reads of the ring in host memory, the firmware's reads and
+writes of host memory, and its reads and writes of local memory.
+
+- They answer with a **reply** of 16 words at dword3 (8-byte aligned,
+  inside the aperture), written only when dword2 has RESULT: word 0 the
+  VkResult, word 1 the aux, words 2-15 as the gpu-op says; a word the
+  gpu-op does not name is written 0. As with every packet, the reply is
+  written and answered, then IRQ_STATUS.RESULT is raised, then RING_RPTR
+  passes the packet (section 7.2, GHCI_FRAME).
+- They change nothing in the firmware's state (its heap, sessions and
+  objects), and their memory accesses are the driver's (session 0,
+  section 11.6). An address outside the aperture or a bus error refuses
+  the access: the reply is VK_ERROR_DEVICE_LOST.
+- A firmware that predates them answers them as any gpu-op it does not
+  know: VK_ERROR_FEATURE_NOT_PRESENT with aux 0.
+
+| Gpu-op | Arguments | Reply |
+| --- | --- | --- |
+| **INIT** (0x10109) | `[u32 token][u32 protocol]` | 1: the token; 2: NOT token; 3: the firmware's version (CPFW_VERSION); 4: the protocol the firmware speaks (0x0001_0001); 5: the features: [0] the diagnostics, [1] the Vulkan objects (HEAP, sessions), [2] session protection (section 11.6), [3] a heap is lent; 6: the memory line in bytes; 7: the sessions it holds at once; 8: the GPU address the firmware read the packet's dword1 from; 9: the build commit hash (32-bit prefix of git commit) |
+| **DIAG_ECHO** (0x1010A) | `[u32 count][count words]`, count <= 14 | 1: the count; 2 to count + 1: the words |
+| **DIAG_WRITE** (0x1010B) | `[u64 address][u32 bytes][u32 pattern][u32 step]` | 1: the bytes written |
+| **DIAG_SUM** (0x1010C) | `[u64 address][u32 bytes]` | 1: the bytes read; 2: the sum of the words w(i); 3: the sum of (i + 1) x w(i); 4-7: w(0) to w(3); 8: the last word |
+
+- **INIT.** protocol is the version of this table the driver speaks,
+  [31:16] major, [15:0] minor (0x0001_0001). The driver sends INIT after
+  every start of the firmware (RUN, a RESET, a reload of its image),
+  before HEAP, with a new token each time, and takes the firmware as
+  running only when the reply is VK_SUCCESS with its token and NOT token.
+  A major the firmware does not speak answers VK_ERROR_INCOMPATIBLE_DRIVER,
+  with the rest of the reply written.
+- **DIAG_WRITE** writes `bytes` from `address`, word i (0, 1, ...) being
+  pattern + i x step (32-bit arithmetic; step 0 fills). **DIAG_SUM**
+  reads them and adds them up, in 32-bit arithmetic. For both, address is
+  aligned to the memory line (CAPS[23:20]) and bytes is a whole number of
+  lines from one line to 1 MiB; otherwise the reply is
+  VK_ERROR_INITIALIZATION_FAILED with aux 0 and nothing is accessed. A
+  refused line ends the gpu-op with VK_ERROR_DEVICE_LOST, aux the bytes
+  done before it. DIAG_WRITE's writes are answered before its reply is
+  written, so the reply, or the fence after the packet, means the words
+  are in memory.
+- DIAG_ECHO with count > 14 answers VK_ERROR_INITIALIZATION_FAILED with
+  aux 0.
 
 **GHCI_FRAME.** A driver normally sends one class 2 packet per submission,
 GHCI_FRAME (gpu-op 0x10105, draft;
@@ -2173,6 +2222,10 @@ Nothing else changes.
   commands.
 - A driver checks GHCI_MAGIC and the major version before anything else,
   and accepts only the major versions it knows.
+- **1.1**: Added host diagnostic MMIO registers (`GHCI_CP_PC` at 0x074,
+  `GHCI_CP_STATUS` at 0x078, `GHCI_PIPE_FSM` at 0x07C), standardized the
+  bidirectional INIT handshake with commit hash in reply word 9 (`ghci_init_ack.commit_hash`),
+  and enhanced diagnostic dumps.
 
 Appendix A. Driver initialization (informative)
 -----------------------------------------------
@@ -2180,7 +2233,8 @@ Appendix A. Driver initialization (informative)
 A typical start, following the rules above:
 
 1. Read GHCI_MAGIC and GHCI_VERSION; stop unless the major version is
-   known (section 16).
+   known (section 16). For minor >= 1, the driver may read diagnostic
+   registers (CP_PC, CP_STATUS, PIPE_FSM).
 2. Read VENDOR_ID, DEVICE_ID, ISA_ID, CAPS, CAPS2, GCLK_HZ, and walk the
    extended capability list (section 4). Without a MEM capability, the
    GPU is unified.
@@ -2194,8 +2248,15 @@ A typical start, following the rules above:
    use (WINDOW_CTRL, sections 11.1 and 13).
 6. Clear IRQ_STATUS, set IRQ_ENABLE (at least FENCE and FAULT), then set
    CTRL.RUN.
-7. Submit: write packets, make them visible (section 6.3), write
-   RING_WPTR. End each submission with a FENCE.
+7. Perform the mandatory bidirectional INIT handshake (section 7.2) before
+   submitting any workload commands. The driver sends an INIT packet with a
+   unique non-zero token, waits for completion (or timeout), and validates
+   that reply word 0 is VK_SUCCESS, word 1 matches token, word 2 matches
+   ~token, and word 9 matches the expected firmware commit hash.
+8. Submit: write packets (e.g. HEAP setup), make them visible (section 6.3),
+   write RING_WPTR. End each submission with a FENCE.
 
-On a fault: log FAULT_INFO, reset, rebuild the ring and the fence memory,
-and complete the outstanding fences with an error (section 10).
+On a fault or timeout: read and log STATUS, FAULT_INFO, FAULT_ADDR, and
+the diagnostic dump registers (CP_PC at 0x074, CP_STATUS at 0x078, and
+PIPE_FSM at 0x07C). Reset via CTRL.RESET, rebuild the ring and the fence
+memory, and complete outstanding fences with an error (section 10).

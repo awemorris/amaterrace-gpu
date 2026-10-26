@@ -29,6 +29,7 @@ module atg_vf #(
 	input wire [31:0] st_wdata,
 	input wire draw_kick,
 	output wire busy,
+	output wire [3:0] fsm,
 	/* Vertex warps to the SU (atg_su vl_*) */
 	output wire vl_req,
 	input wire vl_gnt,
@@ -135,6 +136,7 @@ module atg_vf #(
 	);
 
 	assign busy = index_busy || asm_busy || fetch_busy;
+	assign fsm = {prim_valid, fetch_busy, asm_busy, index_busy};
 endmodule
 
 `default_nettype wire

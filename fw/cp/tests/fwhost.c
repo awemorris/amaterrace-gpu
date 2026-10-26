@@ -643,6 +643,19 @@ host_trace_results(void)
 		return;
 	result = host_peek(host_pkt_addr + 8u);
 	fprintf(host_trace, "E %x %x\nE %x %x\n", result, host_peek(result), result + 4u, host_peek(result + 4u));
+
+	/* INIT's and the diagnostics' reply; not where INIT's packet was, which the harness's ring decides. */
+	if (number == GHCI_GPU_OP_INIT ||
+	    number == GHCI_GPU_OP_DIAG_ECHO ||
+	    number == GHCI_GPU_OP_DIAG_WRITE ||
+	    number == GHCI_GPU_OP_DIAG_SUM) {
+		for (index = 2u; index < GHCI_REPLY_WORDS; index++) {
+			if (number == GHCI_GPU_OP_INIT && index == GHCI_INIT_PACKET)
+				continue;
+			fprintf(host_trace, "E %x %x\n", result + index * 4u, host_peek(result + index * 4u));
+		}
+		return;
+	}
 	if (number != GHCI_GPU_OP_FRAME)
 		return;
 	base = host_peek(host_pkt_addr + 24u);

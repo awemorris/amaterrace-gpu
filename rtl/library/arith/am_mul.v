@@ -173,39 +173,38 @@ module am_mul #(
 		end
 	endfunction
 
+	/* verilator lint_off UNUSEDSIGNAL */
 	function integer d_areg;
 		input integer d_idx;
 		begin
-			if (LAT < 3)
+			if (LAT == 0)
 				d_areg = 0;
-			else if (NUM_DSP == 1)
-				d_areg = 1;
-			else if (NUM_DSP == 2)
-				d_areg = (d_idx == 1) ? 1 : 0;
+			else if (LAT == 1 || LAT == 2)
+				d_areg = (d_idx == 0) ? 0 : 1;
 			else
-				d_areg = 0;
+				d_areg = (d_idx == 0) ? 1 : 2;
 		end
 	endfunction
 
 	function integer d_breg;
 		input integer d_idx;
 		begin
-			if (LAT < 3)
+			if (LAT == 0)
 				d_breg = 0;
-			else if (NUM_DSP == 1)
-				d_breg = 1;
-			else if (NUM_DSP == 2)
-				d_breg = (d_idx == 1) ? 1 : 0;
+			else if (LAT == 1 || LAT == 2)
+				d_breg = (d_idx == 0) ? 0 : 1;
 			else
-				d_breg = 0;
+				d_breg = (d_idx == 0) ? 1 : 2;
 		end
 	endfunction
 
-	/* verilator lint_off UNUSEDSIGNAL */
 	function integer d_mreg;
 		input integer d_idx;
 		begin
-			d_mreg = (LAT < 2) ? 0 : 1;
+			if (LAT == 0 || LAT == 1)
+				d_mreg = 0;
+			else
+				d_mreg = 1;
 		end
 	endfunction
 
@@ -214,12 +213,8 @@ module am_mul #(
 		begin
 			if (LAT == 0)
 				d_preg = 0;
-			else if (LAT == 1 || LAT == 2)
-				d_preg = (NUM_DSP == 1) ? 1 : 0;
-			else if (NUM_DSP <= 2)
-				d_preg = 1;
 			else
-				d_preg = 0;
+				d_preg = (d_idx == 0) ? 1 : 0;
 		end
 	endfunction
 	/* verilator lint_on UNUSEDSIGNAL */
@@ -278,8 +273,10 @@ module am_mul #(
 		localparam integer PREG_VAL = d_preg(gd);
 		localparam [6:0] OPMODE_VAL = get_opmode(gd);
 
-		wire ce_a = (AREG_VAL > 0) ? en : 1'b0;
-		wire ce_b = (BREG_VAL > 0) ? en : 1'b0;
+		wire ce_a1 = (AREG_VAL > 1) ? en : 1'b0;
+		wire ce_a2 = (AREG_VAL > 0) ? en : 1'b0;
+		wire ce_b1 = (BREG_VAL > 1) ? en : 1'b0;
+		wire ce_b2 = (BREG_VAL > 0) ? en : 1'b0;
 		wire ce_m = (MREG_VAL > 0) ? en : 1'b0;
 		wire ce_p = (PREG_VAL > 0) ? en : 1'b0;
 
@@ -334,12 +331,12 @@ module am_mul #(
 			.CARRYCASCIN(1'b0),
 			.CARRYIN(1'b0),
 			.CARRYINSEL(3'b000),
-			.CEA1(ce_a),
-			.CEA2(ce_a),
+			.CEA1(ce_a1),
+			.CEA2(ce_a2),
 			.CEAD(1'b0),
 			.CEALUMODE(1'b0),
-			.CEB1(ce_b),
-			.CEB2(ce_b),
+			.CEB1(ce_b1),
+			.CEB2(ce_b2),
 			.CEC(1'b0),
 			.CECARRYIN(1'b0),
 			.CECTRL(1'b0),
@@ -383,76 +380,20 @@ module am_mul #(
 	end
 	endgenerate
 
-	/* Latency pipeline and output assignment */
+	/* Latency pipeline and output assignment: 0 fabric registers for LAT <= 3 */
 	generate
-	if (NUM_DSP == 1) begin : g_lat_1dsp
-		if (LAT <= 3) begin : g_direct
-			assign p = p_comb;
-		end else begin : g_extra
-			reg [AW+BW-1:0] r [0:LAT-4];
-			integer idx;
-			always @(posedge clk)
-				if (en) begin
-					r[0] <= p_comb;
-					for (idx = 1; idx <= LAT-4; idx = idx + 1)
-						r[idx] <= r[idx-1];
-				end
-			assign p = r[LAT-4];
-		end
-	end else if (NUM_DSP == 2) begin : g_lat_2dsp
-		if (LAT == 0) begin : g_l0
-			assign p = p_comb;
-		end else if (LAT == 1 || LAT == 2) begin : g_l12
-			/* LAT == 1: MREG=0, 1 cycle in fabric.
-			 * LAT == 2: MREG=1 (1 cycle in DSP), 1 cycle in fabric -> total 2 cycles. */
-			reg [AW+BW-1:0] r;
-			always @(posedge clk)
-				if (en)
-					r <= p_comb;
-			assign p = r;
-		end else if (LAT == 3) begin : g_l3
-			reg [16:0] p_lo_r;
-			always @(posedge clk)
-				if (en)
-					p_lo_r <= dsp_p[0][16:0];
-			assign p = { dsp_p[1][AW+BW-1-17 : 0], p_lo_r };
-		end else begin : g_l_gt3
-			reg [16:0] p_lo_r;
-			always @(posedge clk)
-				if (en)
-					p_lo_r <= dsp_p[0][16:0];
-			wire [AW+BW-1:0] p_l3 = { dsp_p[1][AW+BW-1-17 : 0], p_lo_r };
-			reg [AW+BW-1:0] r [0:LAT-4];
-			integer idx;
-			always @(posedge clk)
-				if (en) begin
-					r[0] <= p_l3;
-					for (idx = 1; idx <= LAT-4; idx = idx + 1)
-						r[idx] <= r[idx-1];
-				end
-			assign p = r[LAT-4];
-		end
-	end else begin : g_lat_ndsp
-		if (LAT == 0) begin : g_l0
-			assign p = p_comb;
-		end else if (LAT == 1) begin : g_l1
-			reg [AW+BW-1:0] r;
-			always @(posedge clk)
-				if (en)
-					r <= p_comb;
-			assign p = r;
-		end else begin : g_l2plus
-			/* LAT >= 2: MREG gives 1 cycle delay, extra LAT-1 registers give remaining */
-			reg [AW+BW-1:0] r [0:LAT-2];
-			integer idx;
-			always @(posedge clk)
-				if (en) begin
-					r[0] <= p_comb;
-					for (idx = 1; idx <= LAT-2; idx = idx + 1)
-						r[idx] <= r[idx-1];
-				end
-			assign p = r[LAT-2];
-		end
+	if (LAT <= 3) begin : g_direct
+		assign p = p_comb;
+	end else begin : g_extra
+		reg [AW+BW-1:0] r [0:LAT-4];
+		integer idx;
+		always @(posedge clk)
+			if (en) begin
+				r[0] <= p_comb;
+				for (idx = 1; idx <= LAT-4; idx = idx + 1)
+					r[idx] <= r[idx-1];
+			end
+		assign p = r[LAT-4];
 	end
 	endgenerate
 `endif

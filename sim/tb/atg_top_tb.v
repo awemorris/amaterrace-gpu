@@ -500,7 +500,7 @@ module atg_top_harness #(
 
 		/* Identification. */
 		expect_reg(GHCI_MAGIC, 32'h47484349, 32'hFFFFFFFF);
-		expect_reg(GHCI_VERSION, 32'h00010000, 32'hFFFFFFFF);
+		expect_reg(GHCI_VERSION, 32'h00010001, 32'hFFFFFFFF);
 		expect_reg(GHCI_VENDOR_ID, 32'h414D4154, 32'hFFFFFFFF);
 		expect_reg(GHCI_DEVICE_ID, 32'h41544731, 32'hFFFFFFFF);
 		expect_reg(GHCI_ISA_ID, 32'd0, 32'hFFFFFFFF);

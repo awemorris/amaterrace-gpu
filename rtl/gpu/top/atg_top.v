@@ -382,6 +382,8 @@ module atg_top #(
 	wire [31:0] fw_data;
 	wire [9:0] cpu_st_ridx;
 	wire [31:0] cpu_st_rdata, cp_fence_last, cpu_hcr_rdata, cpu_fault_addr;
+	wire [31:0] diag_cp_pc, diag_cp_status, diag_pipe_fsm;
+	wire [3:0] blt_fsm, mc_fsm, vf_fsm, rx_fsm, rop_fsm;
 	wire cp_fence_ev, cp_halt, cp_open, cpu_fault, cpu_stall, cpu_result;
 	wire [39:0] occ_count;	/* atg_rop's occlusion counter, for QUERY */
 	wire occ_clear, cp_occ_clear;
@@ -524,7 +526,10 @@ module atg_top #(
 		.flip_plane(dc_flip_plane), .flip_base(dc_flip_base), .taken(dc_taken),
 		.taken_cancel(dc_taken_cancel), .dc_pending(dc_pending), .dc_idle(dc_idle),
 		.frame_count(dc_frame_count), .dc_err(dc_err),
-		.dc_ev({dc_ev_hotplug, dc_ev_error, dc_vsync})
+		.dc_ev({dc_ev_hotplug, dc_ev_error, dc_vsync}),
+		.diag_cp_pc(diag_cp_pc),
+		.diag_cp_status(diag_cp_status),
+		.diag_pipe_fsm(diag_pipe_fsm)
 	);
 
 	atg_blt #(
@@ -554,7 +559,8 @@ module atg_top #(
 		.rsp_write(rsp_write_v[1]),
 		.rsp_tag(rsp_tag_v[1*8 +: 8]),
 		.rsp_rdata(rsp_rdata_v[1*LINE_BITS +: LINE_BITS]),
-		.rsp_error(rsp_error_v[1])
+		.rsp_error(rsp_error_v[1]),
+		.fsm(blt_fsm)
 	);
 
 	atg_mc #(
@@ -652,7 +658,8 @@ module atg_top #(
 		.m_rresp(m_rresp),
 		.m_rlast(m_rlast),
 		.m_rvalid(m_rvalid),
-		.m_rready(m_rready)
+		.m_rready(m_rready),
+		.fsm(mc_fsm)
 	);
 
 	/* The CP's firmware processor. */
@@ -674,6 +681,7 @@ module atg_top #(
 			.prot_rdata(prot_sb_rdata), .v_slot(v_slot),
 			.st_ridx(cpu_st_ridx), .st_rdata(cpu_st_rdata), .fence_last(cp_fence_last),
 			.fence_ev(cp_fence_ev), .halt_req(cp_halt), .open(cp_open),
+			.diag_cp_pc(diag_cp_pc), .diag_cp_status(diag_cp_status),
 			.ev_result(cpu_result), .stall(cpu_stall), .fault(cpu_fault),
 			.fault_addr(cpu_fault_addr),
 			.req_valid(c_req_valid[C_CPU]), .req_ready(c_req_ready[C_CPU]),
@@ -705,6 +713,8 @@ module atg_top #(
 		assign cpu_stall = 1'b0;
 		assign cpu_fault = 1'b0;
 		assign cpu_fault_addr = 32'd0;
+		assign diag_cp_pc = 32'd0;
+		assign diag_cp_status = 32'd0;
 		wire unused_cpu = &{1'b0, hcr_we, hcr_widx, hcr_wdata, hcr_wmask, hcr_ridx, v_valid,
 			v_addr, v_dwords, v_tag, fw_ready, cpu_st_rdata, cp_fence_last, cp_fence_ev,
 			cp_halt, cp_open};
@@ -882,12 +892,17 @@ module atg_top #(
 	wire [(NSU > 0 ? NSU : 1)-1:0] su_busy_v, su_fault_v, su_scrub_v;
 	assign su_scrub_any = NSU > 0 && |su_scrub_v;
 	wire [(NSU > 0 ? NSU : 1)*32-1:0] su_fault_addr_v;	/* each SU's fault PC */
+	wire [(NSU > 0 ? NSU : 1)*4-1:0] su_fsm_v;
+	wire [3:0] su_fsm = NSU > 0 ? su_fsm_v[3:0] : 4'd0;
+	wire [7:0] pipe_busy_mask = {blt_busy, sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, !mc_unit_idle};
+	assign diag_pipe_fsm = {pipe_busy_mask, blt_fsm, mc_fsm, su_fsm, rop_fsm, rx_fsm, vf_fsm};
+	wire unused_su_fsm = &{1'b0, su_fsm_v};
 
 	generate
 	if (HAS_VF != 0) begin : g_vf
 		atg_vf #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) vf (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
-			.draw_kick(draw_kick), .busy(vf_busy),
+			.draw_kick(draw_kick), .busy(vf_busy), .fsm(vf_fsm),
 			.vl_req(vl_req), .vl_gnt(vl_gnt), .vl_ptbase(vl_ptbase), .vl_go(vl_go),
 			.vl_mask(vl_mask), .vl_we(vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane),
 			.vl_data(vl_data),
@@ -903,6 +918,7 @@ module atg_top #(
 		);
 	end else begin : g_no_vf
 		assign vf_busy = 1'b0;
+		assign vf_fsm = 4'd0;
 		assign vl_req = 1'b0;
 		assign vl_go = 1'b0;
 		assign vl_mask = 32'd0;
@@ -920,7 +936,7 @@ module atg_top #(
 	if (HAS_RX != 0) begin : g_rx
 		atg_rx #(.HAS_SU(NSU > 0 ? 1 : 0)) rx (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
-			.raw_kick(raw_kick), .busy(rx_busy),
+			.raw_kick(raw_kick), .busy(rx_busy), .fsm(rx_fsm),
 			.prim_valid(prim_valid && prim_ok), .prim_ready(rx_prim_ready),
 			.prim_vtx(prim_vtx), .prim_free(prim_free), .prim_last(prim_last),
 			.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
@@ -935,6 +951,7 @@ module atg_top #(
 		assign prim_ready = rx_prim_ready && prim_ok;
 	end else begin : g_no_rx
 		assign rx_busy = 1'b0;
+		assign rx_fsm = 4'd0;
 		assign prim_ready = 1'b0;
 		assign rx_prim_ready = 1'b0;
 		assign pt_rd = 1'b0;
@@ -999,7 +1016,7 @@ module atg_top #(
 			.STENCIL(ROP_STENCIL)
 		) rop (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
-			.busy(rop_busy),
+			.busy(rop_busy), .fsm(rop_fsm),
 			.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 			.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
 			.ex_next(ex_next), .ex_aux(ex_aux),
@@ -1017,6 +1034,7 @@ module atg_top #(
 		);
 	end else begin : g_no_rop
 		assign rop_busy = 1'b0;
+		assign rop_fsm = 4'd0;
 		assign occ_count = 40'd0;
 		assign ex_ready = 1'b0;
 		assign ex_next = 16'd0;
@@ -1209,7 +1227,8 @@ module atg_top #(
 			.sa_qstat(sa_qstat), .sa_stat(sa_stat), .sa_qtag(sa_qtag),
 			.busy(su_busy_v[k]), .fault(su_fault_v[k]),
 			.scrub(prot_scrub), .scrub_busy(su_scrub_v[k]),
-			.fault_addr(su_fault_addr_v[k*32 +: 32])
+			.fault_addr(su_fault_addr_v[k*32 +: 32]),
+			.fsm(su_fsm_v[k*4 +: 4])
 		);
 
 		if (k == 0) begin : g_su0
@@ -1330,6 +1349,7 @@ module atg_top #(
 		assign su_fault_v = 1'b0;
 		assign su_scrub_v = 1'b0;
 		assign su_fault_addr_v = 32'd0;
+		assign su_fsm_v = 4'd0;
 		wire unused_su = &{1'b0, cs_kick, lc_kick, inv, vl_req, vl_we, vl_reg, vl_lane, vl_data,
 			vl_go, vl_mask, fl_req, fl_we, fl_reg, fl_lane, fl_data, fl_pw_we, fl_pw_addr,
 			fl_pw_data, fl_go, fl_mask, fl_info, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx,

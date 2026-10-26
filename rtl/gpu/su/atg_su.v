@@ -164,6 +164,7 @@ module atg_su #(
 	input wire [31:0] sa_qtag,
 	/* Status */
 	output wire busy,
+	output wire [3:0] fsm,
 	/* Session protection: clear the RF, LDS, primitive tables, constants and export buffer */
 	input wire scrub,
 	output wire scrub_busy,
@@ -693,6 +694,7 @@ module atg_su #(
 	assign cb_m_rsp_error = im_rsp_error;
 
 	assign busy = sched_busy || sb_busy || cbank_busy;
+	assign fsm = {scrub_busy, cbank_busy, sb_busy, sched_busy};
 	assign scrub_busy = scb_rf || scb_lda || scb_lds || scb_cbank || scb_exp || scb_pt;
 	assign fault = sb_fault;
 	assign fault_addr = {16'd0, sb_fault_pc};
