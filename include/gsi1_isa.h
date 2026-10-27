@@ -379,7 +379,7 @@
 #define GSI1_TEXSZ_SIZE 0u		/* {height, width} of level rs1 */
 #define GSI1_TEXSZ_LEVELS 1u		/* texsz.l */
 #define GSI1_TEXSZ_DEPTH 2u		/* texsz.d: depth or layers of level rs1 */
-#define GSI1_TEXSZ_SAMPLES 3u		/* texsz.s (CAPS[29]) */
+#define GSI1_TEXSZ_SAMPLES 3u		/* texsz.s (CAP_MSAA_4X, DEVICE_CAPS[31]) */
 #define GSI1_QD_DX 0u			/* fine, lane ^ 1 */
 #define GSI1_QD_DY 1u			/* fine, lane ^ 2 */
 #define GSI1_QD_SWAP1 2u
