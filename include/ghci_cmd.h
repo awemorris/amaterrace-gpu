@@ -179,11 +179,11 @@ typedef struct GhciPipelineState {
 	uint64_t ms_code_va;            /* dw6-7: Mesh/task Shader instruction base */
 
 	/* 0x20: Pipeline Creation Flags & Rasterizer State */
-	uint32_t flags;                 /* dw8: [2:0] topology, [3] prim restart, [4] depth clamp, [5] logic op enable, [9:6] logic op opcode, [10] alpha to coverage, [15:12] sample mask (N14) */
+	uint32_t flags;                 /* dw8: [2:0] topology, [3] prim restart, [4] depth clamp, [5] logic op enable, [9:6] logic op opcode, [10] alpha to coverage, [11] sample shading, [15:12] sample mask (N14, N32) */
 	uint32_t raster_state;          /* dw9: [1:0] cull mode, [2] front face CW, [4:3] polygon mode, [5] depth bias enable, [13:6] line width (N14) */
 	uint32_t depth_stencil_state;   /* dw10: [0] depth test, [1] depth write, [4:2] depth op, [5] stencil test, [8:6] front fail op, [11:9] front pass op, [14:12] front depth fail op, [17:15] front compare op, [20:18] back fail op, [23:21] back pass op, [26:24] back depth fail op, [29:27] back compare op, [30] separate back stencil enable (N14) */
 	uint32_t blend_state;           /* dw11: Color blend factors & ops */
-	uint32_t vertex_strides;        /* dw12: Default packed strides for bindings 0..3 (used when CMD_BIND_VERTEX_BUFFERS stride is 0) (N14) */
+	uint32_t vertex_strides;        /* dw12: Default packed strides for bindings 0..3 (used when CMD_BIND_VERTEX_BUFFERS stride is GHCI_STRIDE_FROM_PSO) (N14) */
 	uint32_t shader_resource_limits;/* dw13: [7:0] used_regs_vs (1..63), [15:8] used_regs_fs (1..63), [23:16] used_regs_cs/ms (1..63), [31:24] varying_count (0..16) (N01) */
 	uint32_t compute_local_size;    /* dw14: [9:0] local_size_x, [19:10] local_size_y, [29:20] local_size_z (N01) */
 	uint32_t compute_lds_and_flags; /* dw15: [15:0] lds_bytes (0..16384), [16] fs_centroid, [17] fs_depth_export, [18] fs_discard (N01, N24) */
@@ -292,6 +292,51 @@ typedef struct GhciCmdSetScissor {
 	uint32_t width;
 	uint32_t height;
 } GhciCmdSetScissor;
+
+/* CMD_SET_DYNAMIC_STATE (0x26): 6 dwords (N14, N23) */
+#define GHCI_DYNAMIC_STATE_DEPTH_BIAS        0x01u
+#define GHCI_DYNAMIC_STATE_BLEND_CONSTANTS   0x02u
+#define GHCI_DYNAMIC_STATE_STENCIL_PARAMS    0x03u
+#define GHCI_DYNAMIC_STATE_LINE_WIDTH        0x04u
+#define GHCI_DYNAMIC_STATE_BLEND_ATTACHMENT_0 0x07u
+#define GHCI_DYNAMIC_STATE_BORDER_COLOR_TABLE 0x10u
+
+#define GHCI_STRIDE_FROM_PSO                 0xFFFFFFFFu
+
+typedef struct GhciCmdSetDynamicState {
+	uint32_t header;                /* GHCI_CMD_SET_DYNAMIC_STATE, size = 6 */
+	uint32_t state_id;              /* GHCI_DYNAMIC_STATE_* */
+	union {
+		struct {
+			float    constant_factor;
+			float    slope_factor;
+			float    clamp;
+			uint32_t reserved;
+		} depth_bias;
+		struct {
+			float    rgba[4];
+		} blend_constants;
+		struct {
+			uint32_t front;         /* [7:0] compare_mask, [15:8] write_mask, [23:16] ref */
+			uint32_t back;          /* [7:0] compare_mask, [15:8] write_mask, [23:16] ref */
+			uint32_t reserved[2];
+		} stencil_params;
+		struct {
+			float    line_width;
+			uint32_t reserved[3];
+		} line_width;
+		struct {
+			uint32_t blend_state;   /* Matches PSO dw11 format */
+			uint32_t reserved[3];
+		} blend_attachment;
+		struct {
+			uint32_t table_va_lo;   /* 64-bit GPU virtual address [31:0] */
+			uint32_t table_va_hi;   /* 64-bit GPU virtual address [63:32] */
+			uint32_t reserved[2];
+		} border_color_table;
+		uint32_t raw_payload[4];
+	} data;
+} GhciCmdSetDynamicState;
 
 /* CMD_DRAW (0x27): 5 dwords */
 typedef struct GhciCmdDraw {
@@ -404,34 +449,6 @@ typedef struct GhciCmdQuery {
 	uint32_t query_pool_va_hi;      /* 64-bit session GPU VA [63:32] */
 	uint32_t query_index_and_flags; /* [23:0] query_index, [24] PRECISE, [25] AVAILABILITY */
 } GhciCmdQuery;
-
-
-
-/* CMD_COPY_IMAGE (0x41): 8 dwords (J18) */
-typedef struct GhciCmdCopyImage {
-	uint32_t header;                /* GHCI_CMD_COPY_IMAGE, size = 8 */
-	uint32_t src_va_lo;
-	uint32_t src_va_hi;
-	uint32_t dst_va_lo;
-	uint32_t dst_va_hi;
-	uint32_t src_xy;
-	uint32_t dst_xy;
-	uint32_t extent;
-} GhciCmdCopyImage;
-
-/* CMD_BLIT (0x42): 10 dwords (J18) */
-typedef struct GhciCmdBlit {
-	uint32_t header;                /* GHCI_CMD_BLIT, size = 10 */
-	uint32_t src_va_lo;
-	uint32_t src_va_hi;
-	uint32_t dst_va_lo;
-	uint32_t dst_va_hi;
-	uint32_t src_min_xy;
-	uint32_t src_max_xy;
-	uint32_t dst_min_xy;
-	uint32_t dst_max_xy;
-	uint32_t filter;
-} GhciCmdBlit;
 
 /*
  * ============================================================================
@@ -570,7 +587,7 @@ typedef struct GhciCmdBeginRenderPass {
 	uint32_t color_clear_rgba;      /* Packed RGBA8 or float clear color for attachment 0 */
 	uint32_t depth_clear_value;     /* 32-bit float or 24-bit depth clear */
 	uint32_t stencil_clear_value;   /* [7:0] Stencil clear value */
-	uint32_t flags;                 /* [0] Inline secondary buffers */
+	uint32_t flags;                 /* dw8: [7:0] clear_color (attachments 0..7), [8] clear_depth, [9] clear_stencil, [16] inline_secondary (N03, N32) */
 	uint32_t reserved;              /* Reserved padding to 10 dwords */
 } GhciCmdBeginRenderPass;
 
@@ -621,6 +638,37 @@ typedef struct GhciCmdCopyBuffer {
 	uint32_t fill_data;             /* 32-bit fill pattern (used when flags[1] == 1) */
 } GhciCmdCopyBuffer;
 
+/* CMD_COPY_IMAGE (0x41): 11 dwords (J18, N13) */
+typedef struct GhciCmdCopyImage {
+	uint32_t header;                /* opcode: GHCI_CMD_COPY_IMAGE, dwords: 11 */
+	uint32_t src_va_lo;             /* Source slice GPU VA [31:0] */
+	uint32_t src_va_hi;             /* Source slice GPU VA [63:32] */
+	uint32_t dst_va_lo;             /* Destination slice GPU VA [31:0] */
+	uint32_t dst_va_hi;             /* Destination slice GPU VA [63:32] */
+	uint32_t src_pitch;             /* Source surface row pitch in bytes */
+	uint32_t dst_pitch;             /* Destination surface row pitch in bytes */
+	uint32_t src_xy;                /* [15:0] src_x, [31:16] src_y */
+	uint32_t dst_xy;                /* [15:0] dst_x, [31:16] dst_y */
+	uint32_t extent;                /* [15:0] width, [31:16] height */
+	uint32_t format_and_flags;      /* [7:0] format (VkFormat), [8] src_tiled, [9] dst_tiled */
+} GhciCmdCopyImage;
+
+/* CMD_BLIT (0x42): 12 dwords (J18, N13) */
+typedef struct GhciCmdBlit {
+	uint32_t header;                /* opcode: GHCI_CMD_BLIT, dwords: 12 */
+	uint32_t src_va_lo;             /* Source slice GPU VA [31:0] */
+	uint32_t src_va_hi;             /* Source slice GPU VA [63:32] */
+	uint32_t dst_va_lo;             /* Destination slice GPU VA [31:0] */
+	uint32_t dst_va_hi;             /* Destination slice GPU VA [63:32] */
+	uint32_t src_pitch;             /* Source surface row pitch in bytes */
+	uint32_t dst_pitch;             /* Destination surface row pitch in bytes */
+	uint32_t src_min_xy;            /* [15:0] x0, [31:16] y0 */
+	uint32_t src_max_xy;            /* [15:0] x1, [31:16] y1 */
+	uint32_t dst_min_xy;            /* [15:0] x0, [31:16] y0 */
+	uint32_t dst_max_xy;            /* [15:0] x1, [31:16] y1 */
+	uint32_t formats_and_filter;    /* [7:0] src_format, [15:8] dst_format, [16] filter, [17] src_tiled, [18] dst_tiled */
+} GhciCmdBlit;
+
 /* CMD_FILL_BUFFER (0x43): 5 dwords */
 typedef struct GhciCmdFillBuffer {
 	uint32_t header;                /* opcode: GHCI_CMD_FILL_BUFFER, dwords: 5 */
@@ -630,42 +678,56 @@ typedef struct GhciCmdFillBuffer {
 	uint32_t pattern_data;          /* 32-bit fill pattern */
 } GhciCmdFillBuffer;
 
-/* CMD_RESOLVE_IMAGE (0x44): 9 dwords (N13) */
+/* CMD_RESOLVE_IMAGE (0x44): 11 dwords (N13) */
 typedef struct GhciCmdResolveImage {
-	uint32_t header;                /* opcode: GHCI_CMD_RESOLVE_IMAGE, dwords: 9 */
-	uint32_t src_va_lo;             /* Source multisample image GPU VA [31:0] */
-	uint32_t src_va_hi;             /* Source multisample image GPU VA [63:32] */
-	uint32_t dst_va_lo;             /* Destination 1x resolve image GPU VA [31:0] */
-	uint32_t dst_va_hi;             /* Destination 1x resolve image GPU VA [63:32] */
+	uint32_t header;                /* opcode: GHCI_CMD_RESOLVE_IMAGE, dwords: 11 */
+	uint32_t src_va_lo;             /* Source multisample slice GPU VA [31:0] */
+	uint32_t src_va_hi;             /* Source multisample slice GPU VA [63:32] */
+	uint32_t dst_va_lo;             /* Destination 1x resolve slice GPU VA [31:0] */
+	uint32_t dst_va_hi;             /* Destination 1x resolve slice GPU VA [63:32] */
+	uint32_t src_pitch;             /* Source surface row pitch in bytes */
+	uint32_t dst_pitch;             /* Destination surface row pitch in bytes */
 	uint32_t src_offset_xy;         /* [15:0] src_x, [31:16] src_y */
 	uint32_t dst_offset_xy;         /* [15:0] dst_x, [31:16] dst_y */
 	uint32_t extent_xy;             /* [15:0] width, [31:16] height */
-	uint32_t resolve_mode;          /* [1:0] mode (0: Average, 1: Min, 2: Max, 3: Sample Zero) */
+	uint32_t params;                /* [7:0] format, [9:8] resolve_mode, [11:10] samples */
 } GhciCmdResolveImage;
 
-/* CMD_COPY_BUFFER_TO_IMAGE (0x45): 8 dwords (N13) */
+/* CMD_COPY_BUFFER_TO_IMAGE (0x45): 10 dwords (N13) */
 typedef struct GhciCmdCopyBufferToImage {
-	uint32_t header;                /* opcode: GHCI_CMD_COPY_BUFFER_TO_IMAGE, dwords: 8 */
+	uint32_t header;                /* opcode: GHCI_CMD_COPY_BUFFER_TO_IMAGE, dwords: 10 */
 	uint32_t src_buffer_va_lo;      /* Source linear buffer GPU VA [31:0] */
 	uint32_t src_buffer_va_hi;      /* Source linear buffer GPU VA [63:32] */
-	uint32_t dst_image_va_lo;       /* Destination tiled image GPU VA [31:0] */
-	uint32_t dst_image_va_hi;       /* Destination tiled image GPU VA [63:32] */
+	uint32_t dst_image_va_lo;       /* Destination tiled image slice GPU VA [31:0] */
+	uint32_t dst_image_va_hi;       /* Destination tiled image slice GPU VA [63:32] */
 	uint32_t buffer_row_pitch;      /* Buffer row pitch in bytes */
+	uint32_t image_row_pitch;       /* Destination image row pitch in bytes */
 	uint32_t image_offset_xy;       /* [15:0] dst_x, [31:16] dst_y */
 	uint32_t image_extent_xy;       /* [15:0] width, [31:16] height */
+	uint32_t format_and_flags;      /* [7:0] format (VkFormat), [8] tiled */
 } GhciCmdCopyBufferToImage;
 
-/* CMD_COPY_IMAGE_TO_BUFFER (0x46): 8 dwords (N13) */
+/* CMD_COPY_IMAGE_TO_BUFFER (0x46): 10 dwords (N13) */
 typedef struct GhciCmdCopyImageToBuffer {
-	uint32_t header;                /* opcode: GHCI_CMD_COPY_IMAGE_TO_BUFFER, dwords: 8 */
-	uint32_t src_image_va_lo;       /* Source tiled image GPU VA [31:0] */
-	uint32_t src_image_va_hi;       /* Source tiled image GPU VA [63:32] */
+	uint32_t header;                /* opcode: GHCI_CMD_COPY_IMAGE_TO_BUFFER, dwords: 10 */
+	uint32_t src_image_va_lo;       /* Source tiled image slice GPU VA [31:0] */
+	uint32_t src_image_va_hi;       /* Source tiled image slice GPU VA [63:32] */
 	uint32_t dst_buffer_va_lo;      /* Destination linear buffer GPU VA [31:0] */
 	uint32_t dst_buffer_va_hi;      /* Destination linear buffer GPU VA [63:32] */
+	uint32_t image_row_pitch;       /* Source image row pitch in bytes */
 	uint32_t buffer_row_pitch;      /* Buffer row pitch in bytes */
 	uint32_t image_offset_xy;       /* [15:0] src_x, [31:16] src_y */
 	uint32_t image_extent_xy;       /* [15:0] width, [31:16] height */
+	uint32_t format_and_flags;      /* [7:0] format (VkFormat), [8] tiled */
 } GhciCmdCopyImageToBuffer;
+
+/* DISP2 Interrupt Status / Enable Flags (0x218 / 0x21C, N21) */
+#define GHCI_DISP_IRQ_BIT_VSYNC         (1u << 0)
+#define GHCI_DISP_IRQ_BIT_FLIP_DONE     (1u << 1)
+#define GHCI_DISP_IRQ_BIT_CURSOR_DONE   (1u << 2)
+#define GHCI_DISP_IRQ_BIT_HOTPLUG       (1u << 3)
+#define GHCI_DISP_IRQ_BIT_UNDERFLOW     (1u << 4)
+#define GHCI_DISP_IRQ_BIT_ERROR         (1u << 5) /* Controller error: read error, record error, bad write */
 
 /* CMD_FLIP (0x51): 8 dwords (N25) */
 #define GHCI_FLIP_FLAG_VSYNC_WAIT       (1u << 0)

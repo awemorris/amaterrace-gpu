@@ -481,7 +481,7 @@ All extended capability structures and registers reside entirely within the firs
   - `0x160`..`0x17F`: `PERF` (ID 3, `PERF_SRC0..3` at `+0x0..+0xC`), `CPFW` (ID 6).
   - `0x180`..`0x19F`: `VEND` (ID 4, `VENDOR_ID` at `+0x0`, `DEVICE_ID` at `+0x4`, `SUBSYSTEM_VENDOR` at `+0x8`, `SUBSYSTEM_DEVICE` at `+0xC`, `GCLK_HZ` at `+0x10`).
   - `0x1D0`..`0x1DF`: `PROT` (ID 9, session protection registers).
-  - `0x1E0`..`0x1F4`: `MEM` (ID 8, `LOCAL_BASE` at `+0x0`, `LOCAL_SIZE` at `+0x4`, `WINDOW_SIZE` at `+0x8`, `HOST_LIMIT` at `+0xC`, `WINDOW_CTRL` at `+0x10`).
+  - `0x1E0`..`0x1F7`: `MEM` (ID 8, `LOCAL_BASE` at `+0x0`, `LOCAL_SIZE` at `+0x4`, `WINDOW_SIZE` at `+0x8`, `HOST_LIMIT` at `+0xC`, `WINDOW_CTRL` at `+0x10`, `MEM_CACHE_CFG` at `+0x14`).
   - `0x200`..`0x2BC`: `DISP2` (ID 11, display controller timing, framebuffer, mode, and cursor registers).
 
 **FMT (version 1, Approved).** Registers at the capability's register
@@ -723,7 +723,7 @@ The canonical GHCI 1.0 structured command set is defined authoritatively by this
 | `0x23` | `CMD_BIND_DESCRIPTOR_TABLE` | 4 | `NUM_SU > 0` | Binds descriptor table slot $0..3$ (`table_va`, `count`) |
 | `0x24` | `CMD_SET_VIEWPORT` | 7 | Mandatory (Raster) | Dynamic viewport rectangle ($X, Y, W, H, \min Z, \max Z$) |
 | `0x25` | `CMD_SET_SCISSOR` | 5 | Mandatory (Raster) | Dynamic scissor rectangle ($X, Y, W, H$) |
-| `0x26` | `CMD_SET_DYNAMIC_STATE` | 6 | Mandatory (Raster) | Dynamic depth bias, blend constants, and stencil ref |
+| `0x26` | `CMD_SET_DYNAMIC_STATE` | 6 | Mandatory (Raster) | Dynamic pipeline state override by `state_id` (depth bias, blend, stencil, line width, border table) (N14, N23) |
 | `0x27` | `CMD_DRAW` | 5 | `NUM_SU > 0` | Direct non-indexed primitive draw |
 | `0x28` | `CMD_DRAW_INDEXED` | 6 | `NUM_SU > 0` | Indexed primitive draw |
 | `0x29` | `CMD_DRAW_INDIRECT` | 7 or 8 | `CAP_INDIRECT_DRAW` | MultiDrawIndirect (7 dw normal, 8 dw with flags / count buffer, K10, N17) |
@@ -741,12 +741,12 @@ The canonical GHCI 1.0 structured command set is defined authoritatively by this
 | `0x36` | `CMD_BEGIN_QUERY` | 4 | Mandatory (Raster) | Begins occlusion query sample counting (64-bit pool VA, N17, N32) |
 | `0x37` | `CMD_END_QUERY` | 4 | Mandatory (Raster) | Ends occlusion query sample counting (64-bit pool VA, N17, N32) |
 | `0x40` | `CMD_COPY_BUFFER` | 8 | `CAP_BLT` | 2D DMA buffer-to-buffer transfer (flags & burst align, N13) |
-| `0x41` | `CMD_COPY_IMAGE` | 8 | `CAP_BLT` | 2D/3D image-to-image transfer (J18, N13) |
-| `0x42` | `CMD_BLIT` | 10 | `CAP_BLT` | Image blit with scaling and format conversion (J18, N13) |
+| `0x41` | `CMD_COPY_IMAGE` | 11 | `CAP_BLT` | 2D/3D image-to-image subresource slice transfer (J18, N13) |
+| `0x42` | `CMD_BLIT` | 12 | `CAP_BLT` | Image blit with scaling and format conversion (J18, N13) |
 | `0x43` | `CMD_FILL_BUFFER` | 5 | `CAP_BLT` | Fills buffer range with 32-bit pattern (Clear) |
-| `0x44` | `CMD_RESOLVE_IMAGE` | 9 | `CAP_BLT` | Resolves multisample (MSAA) attachment to 1x image (N13) |
-| `0x45` | `CMD_COPY_BUFFER_TO_IMAGE`| 8 | `CAP_BLT` | Transfers linear buffer data to optimal tiled image (N13) |
-| `0x46` | `CMD_COPY_IMAGE_TO_BUFFER`| 8 | `CAP_BLT` | Transfers optimal tiled image data to linear buffer (N13) |
+| `0x44` | `CMD_RESOLVE_IMAGE` | 11 | `CAP_BLT` | Resolves multisample (MSAA) attachment to 1x image (N13) |
+| `0x45` | `CMD_COPY_BUFFER_TO_IMAGE`| 10 | `CAP_BLT` | Transfers linear buffer data to optimal tiled image (N13) |
+| `0x46` | `CMD_COPY_IMAGE_TO_BUFFER`| 10 | `CAP_BLT` | Transfers optimal tiled image data to linear buffer (N13) |
 | `0x50` | `CMD_DISP_SET` | 2+2N | `CAP_DISP` | Sets display controller registers (`flags[0]`: wait idle) (M54) |
 | `0x51` | `CMD_FLIP` | 8 | `CAP_DISP` | Queues scanout framebuffer flip on next VSYNC (8 dw, N25) |
 
@@ -766,7 +766,7 @@ hardware pipeline in 1–2 cycles.
   - When `CMD_BIND_PIPELINE` references a compute PSO (`cs_code_va != 0`), it configures `ACTIVE_COMPUTE_PSO`.
   - Binding a compute pipeline does NOT disturb, overwrite, or invalidate active graphics pipeline state, and vice versa. Subsequent `CMD_DRAW*` packets use `ACTIVE_GRAPHICS_PSO`, and `CMD_DISPATCH` packets use `ACTIVE_COMPUTE_PSO`.
 
-#### `CMD_BIND_VERTEX_BUFFERS` (0x21)
+#### `CMD_BIND_VERTEX_BUFFERS` (0x21, N14)
 Binds one or more contiguous vertex attribute stream buffers.
 
 - `dword 0`: Header (`opcode = 0x21`, `dwords = 2 + 4 * binding_count`)
@@ -775,7 +775,7 @@ Binds one or more contiguous vertex attribute stream buffers.
   - `dword 2 + 4*i`: `buffer_va[31:0]`
   - `dword 3 + 4*i`: `buffer_va[63:32]`
   - `dword 4 + 4*i`: `size_bytes`
-  - `dword 5 + 4*i`: `stride_bytes`
+  - `dword 5 + 4*i`: `stride_bytes` (32-bit dynamic stride in bytes, $0..4095$). Stride $0$ is explicitly valid per Vulkan specification (all vertices read the same attribute element). Setting `stride_bytes = 0xFFFFFFFF` (`GHCI_STRIDE_FROM_PSO`) instructs the vertex fetcher to take the static default stride from `GhciPipelineState.vertex_strides` for bindings $0..3$ (N14).
 
 #### `CMD_BIND_INDEX_BUFFER` (0x22)
 Binds the index buffer for indexed draw calls.
@@ -813,15 +813,33 @@ Dynamic state updates without pipeline recompilation, exactly matching `GhciCmdS
   - `dword 4`: `height` (uint32, scissor box height)
   - *Note*: GHCI 1.0 supports single-scissor rasterization (`maxScissors = 1`, scissor index 0).
 
-#### `CMD_SET_DYNAMIC_STATE` (0x26)
-Overrides fine-grained dynamic pipeline parameters.
+#### `CMD_SET_DYNAMIC_STATE` (0x26, N14, N23)
+Overrides fine-grained dynamic pipeline parameters using tagged state IDs (6 dwords, 24 bytes) ([`include/ghci_cmd.h`](../include/ghci_cmd.h)):
 
 - `dword 0`: Header (`opcode = 0x26`, `dwords = 6`)
-- `dword 1`: `state_mask` (`[0]` depth bias, `[1]` blend constants, `[2]` stencil ref)
-- `dword 2`: `depth_bias_constant` (float / 24.8 fixed point)
-- `dword 3`: `depth_bias_slope`
-- `dword 4`: `blend_constant_rgba` (packed 4×UNORM8)
-- `dword 5`: `[7:0] stencil_ref_front`, `[15:8] stencil_ref_back`
+- `dword 1`: `state_id` (`GHCI_DYNAMIC_STATE_*`)
+- `dword 2..5`: Payload words according to `state_id`:
+  - `0x01` (`GHCI_DYNAMIC_STATE_DEPTH_BIAS`):
+    - `dword 2`: `depth_bias_constant` (float)
+    - `dword 3`: `depth_bias_slope` (float)
+    - `dword 4`: `depth_bias_clamp` (float)
+    - `dword 5`: `reserved` (0)
+  - `0x02` (`GHCI_DYNAMIC_STATE_BLEND_CONSTANTS`):
+    - `dword 2..5`: `float blend_constants[4]` (R, G, B, A in IEEE fp32)
+  - `0x03` (`GHCI_DYNAMIC_STATE_STENCIL_PARAMS`):
+    - `dword 2`: `[7:0] front_compare_mask`, `[15:8] front_write_mask`, `[23:16] front_reference`, `[31:24] reserved`
+    - `dword 3`: `[7:0] back_compare_mask`, `[15:8] back_write_mask`, `[23:16] back_reference`, `[31:24] reserved`
+    - `dword 4..5`: `reserved` (0)
+  - `0x04` (`GHCI_DYNAMIC_STATE_LINE_WIDTH`):
+    - `dword 2`: `float line_width` (IEEE fp32)
+    - `dword 3..5`: `reserved` (0)
+  - `0x07` .. `0x0E` (`GHCI_DYNAMIC_STATE_BLEND_ATTACHMENT_0` .. `_7`):
+    - `dword 2`: `uint32_t blend_state` (exact format matching `GhciPipelineState.blend_state` (dw11), applied independently to color attachment `state_id - 7` when `CAP_MRT_BLEND == 1`)
+    - `dword 3..5`: `reserved` (0)
+  - `0x10` (`GHCI_DYNAMIC_STATE_BORDER_COLOR_TABLE`):
+    - `dword 2`: `table_va_lo` (64-bit session GPU virtual address [31:0] of 16-entry × 16-byte = 256-byte border color table, 16-byte aligned)
+    - `dword 3`: `table_va_hi` (64-bit session GPU virtual address [63:32])
+    - `dword 4..5`: `reserved` (0)
 
 #### `CMD_DRAW` (0x27) & `CMD_DRAW_INDEXED` (0x28)
 Issues draw calls to the graphics pipeline.
@@ -974,28 +992,34 @@ Latches the 64-bit core cycle counter (`TIMESTAMP_LO/HI`) to memory at a designa
 - *Address Space (N12)*: Both `src_va` and `dst_va` are session GPU virtual addresses. To transfer data between host system memory and local VRAM, the driver maps host memory pages and local VRAM pages into the session's address space via `CMD_VM_MAP`, and performs the copy between the corresponding virtual addresses.
 
 #### `CMD_COPY_IMAGE` (0x41, J18, N13)
-2D/3D image subresource transfer between surfaces of identical format (8 dwords, 32 bytes):
-- `dword 0`: Header (`opcode = 0x41`, `dwords = 8`)
-- `dword 1`: `src_va[31:0]` (64-bit session GPU virtual address of source image)
+2D/3D image subresource slice transfer between surfaces of identical format (11 dwords, 44 bytes):
+- `dword 0`: Header (`opcode = 0x41`, `dwords = 11`)
+- `dword 1`: `src_va[31:0]` (64-bit session GPU VA pointing directly to source subresource slice base)
 - `dword 2`: `src_va[63:32]`
-- `dword 3`: `dst_va[31:0]` (64-bit session GPU virtual address of destination image)
+- `dword 3`: `dst_va[31:0]` (64-bit session GPU VA pointing directly to destination subresource slice base)
 - `dword 4`: `dst_va[63:32]`
-- `dword 5`: `src_xy` (`[15:0] src_x`, `[31:16] src_y`)
-- `dword 6`: `dst_xy` (`[15:0] dst_x`, `[31:16] dst_y`)
-- `dword 7`: `extent` (`[15:0] width`, `[31:16] height`)
+- `dword 5`: `src_pitch` (Source surface row pitch in bytes)
+- `dword 6`: `dst_pitch` (Destination surface row pitch in bytes)
+- `dword 7`: `src_xy` (`[15:0] src_x`, `[31:16] src_y`)
+- `dword 8`: `dst_xy` (`[15:0] dst_x`, `[31:16] dst_y`)
+- `dword 9`: `extent` (`[15:0] width`, `[31:16] height`)
+- `dword 10`: `format_and_flags` (`[7:0] format` (`VkFormat`), `[8] src_tiled`, `[9] dst_tiled`)
+- *Subresource Addressing (N13)*: The driver computes `slice_va = image_base_va + mip_offset + (layer * slice_pitch_bytes)` and submits `slice_va` directly; `src_xy` and `dst_xy` are 2D offsets on that slice.
 
 #### `CMD_BLIT` (0x42, J18, N13)
-Image copy with scaling and format conversion via hardware Blitter (10 dwords, 40 bytes):
-- `dword 0`: Header (`opcode = 0x42`, `dwords = 10`)
-- `dword 1`: `src_va[31:0]` (64-bit session GPU virtual address of source image)
+Image copy with scaling and format conversion via hardware Blitter (12 dwords, 48 bytes):
+- `dword 0`: Header (`opcode = 0x42`, `dwords = 12`)
+- `dword 1`: `src_va[31:0]` (64-bit session GPU VA pointing directly to source subresource slice base)
 - `dword 2`: `src_va[63:32]`
-- `dword 3`: `dst_va[31:0]` (64-bit session GPU virtual address of destination image)
+- `dword 3`: `dst_va[31:0]` (64-bit session GPU VA pointing directly to destination subresource slice base)
 - `dword 4`: `dst_va[63:32]`
-- `dword 5`: `src_min_xy` (`[15:0] x0`, `[31:16] y0`)
-- `dword 6`: `src_max_xy` (`[15:0] x1`, `[31:16] y1`)
-- `dword 7`: `dst_min_xy` (`[15:0] x0`, `[31:16] y0`)
-- `dword 8`: `dst_max_xy` (`[15:0] x1`, `[31:16] y1`)
-- `dword 9`: `filter` (`0`: Nearest, `1`: Linear)
+- `dword 5`: `src_pitch` (Source surface row pitch in bytes)
+- `dword 6`: `dst_pitch` (Destination surface row pitch in bytes)
+- `dword 7`: `src_min_xy` (`[15:0] x0`, `[31:16] y0`)
+- `dword 8`: `src_max_xy` (`[15:0] x1`, `[31:16] y1`)
+- `dword 9`: `dst_min_xy` (`[15:0] x0`, `[31:16] y0`)
+- `dword 10`: `dst_max_xy` (`[15:0] x1`, `[31:16] y1`)
+- `dword 11`: `formats_and_filter` (`[7:0] src_format` (`VkFormat`), `[15:8] dst_format` (`VkFormat`), `[16] filter` (0: Nearest, 1: Linear), `[17] src_tiled`, `[18] dst_tiled`)
 
 #### `CMD_FILL_BUFFER` (0x43)
 Fills buffer range with 32-bit pattern (5 dwords, 20 bytes):
@@ -1006,38 +1030,44 @@ Fills buffer range with 32-bit pattern (5 dwords, 20 bytes):
 - `dword 4`: `pattern_data`
 
 #### `CMD_RESOLVE_IMAGE` (0x44, N13)
-Resolves a multisample (2x or 4x MSAA) image attachment to a single-sample (1x) destination image (9 dwords, 36 bytes):
-- `dword 0`: Header (`opcode = 0x44`, `dwords = 9`)
-- `dword 1`: `src_va[31:0]` (64-bit session GPU virtual address of source MSAA image)
+Resolves a multisample (2x or 4x MSAA) image attachment slice to a single-sample (1x) destination image slice (11 dwords, 44 bytes):
+- `dword 0`: Header (`opcode = 0x44`, `dwords = 11`)
+- `dword 1`: `src_va[31:0]` (64-bit session GPU VA of source MSAA slice)
 - `dword 2`: `src_va[63:32]`
-- `dword 3`: `dst_va[31:0]` (64-bit session GPU virtual address of destination 1x image)
+- `dword 3`: `dst_va[31:0]` (64-bit session GPU VA of destination 1x slice)
 - `dword 4`: `dst_va[63:32]`
-- `dword 5`: `src_offset_xy` (`[15:0] src_x`, `[31:16] src_y`)
-- `dword 6`: `dst_offset_xy` (`[15:0] dst_x`, `[31:16] dst_y`)
-- `dword 7`: `extent_xy` (`[15:0] width`, `[31:16] height`)
-- `dword 8`: `resolve_mode` (`[1:0]` 0: Average, 1: Min, 2: Max, 3: Sample Zero)
+- `dword 5`: `src_pitch` (Source MSAA surface row pitch in bytes)
+- `dword 6`: `dst_pitch` (Destination 1x surface row pitch in bytes)
+- `dword 7`: `src_offset_xy` (`[15:0] src_x`, `[31:16] src_y`)
+- `dword 8`: `dst_offset_xy` (`[15:0] dst_x`, `[31:16] dst_y`)
+- `dword 9`: `extent_xy` (`[15:0] width`, `[31:16] height`)
+- `dword 10`: `params` (`[7:0] format` (`VkFormat`), `[9:8] resolve_mode` (0: Average, 1: Min, 2: Max, 3: Sample Zero), `[11:10] samples` (0: 1x, 1: 2x, 2: 4x))
 
 #### `CMD_COPY_BUFFER_TO_IMAGE` (0x45, N13)
-Transfers linear buffer data to an optimal tiled image surface (8 dwords, 32 bytes):
-- `dword 0`: Header (`opcode = 0x45`, `dwords = 8`)
-- `dword 1`: `src_buffer_va[31:0]` (64-bit session GPU virtual address of linear buffer)
+Transfers linear buffer data to an optimal tiled image surface slice (10 dwords, 40 bytes):
+- `dword 0`: Header (`opcode = 0x45`, `dwords = 10`)
+- `dword 1`: `src_buffer_va[31:0]` (64-bit session GPU VA of linear buffer)
 - `dword 2`: `src_buffer_va[63:32]`
-- `dword 3`: `dst_image_va[31:0]` (64-bit session GPU virtual address of destination tiled image)
+- `dword 3`: `dst_image_va[31:0]` (64-bit session GPU VA of destination tiled image slice)
 - `dword 4`: `dst_image_va[63:32]`
 - `dword 5`: `buffer_row_pitch` (Linear buffer row pitch in bytes)
-- `dword 6`: `image_offset_xy` (`[15:0] dst_x`, `[31:16] dst_y`)
-- `dword 7`: `image_extent_xy` (`[15:0] width`, `[31:16] height`)
+- `dword 6`: `image_row_pitch` (Destination image row pitch in bytes)
+- `dword 7`: `image_offset_xy` (`[15:0] dst_x`, `[31:16] dst_y`)
+- `dword 8`: `image_extent_xy` (`[15:0] width`, `[31:16] height`)
+- `dword 9`: `format_and_flags` (`[7:0] format` (`VkFormat`), `[8] tiled` (1 = optimal tiled, 0 = linear))
 
 #### `CMD_COPY_IMAGE_TO_BUFFER` (0x46, N13)
-Transfers an optimal tiled image surface to a linear buffer (8 dwords, 32 bytes):
-- `dword 0`: Header (`opcode = 0x46`, `dwords = 8`)
-- `dword 1`: `src_image_va[31:0]` (64-bit session GPU virtual address of source tiled image)
+Transfers an optimal tiled image surface slice to a linear buffer (10 dwords, 40 bytes):
+- `dword 0`: Header (`opcode = 0x46`, `dwords = 10`)
+- `dword 1`: `src_image_va[31:0]` (64-bit session GPU VA of source tiled image slice)
 - `dword 2`: `src_image_va[63:32]`
-- `dword 3`: `dst_buffer_va[31:0]` (64-bit session GPU virtual address of destination linear buffer)
+- `dword 3`: `dst_buffer_va[31:0]` (64-bit session GPU VA of destination linear buffer)
 - `dword 4`: `dst_buffer_va[63:32]`
-- `dword 5`: `buffer_row_pitch` (Linear buffer row pitch in bytes)
-- `dword 6`: `image_offset_xy` (`[15:0] src_x`, `[31:16] src_y`)
-- `dword 7`: `image_extent_xy` (`[15:0] width`, `[31:16] height`)
+- `dword 5`: `image_row_pitch` (Source image row pitch in bytes)
+- `dword 6`: `buffer_row_pitch` (Linear buffer row pitch in bytes)
+- `dword 7`: `image_offset_xy` (`[15:0] src_x`, `[31:16] src_y`)
+- `dword 8`: `image_extent_xy` (`[15:0] width`, `[31:16] height`)
+- `dword 9`: `format_and_flags` (`[7:0] format` (`VkFormat`), `[8] tiled` (1 = optimal tiled, 0 = linear))
 
 #### `CMD_VM_MAP` (0x10, K07)
 Maps host physical memory or IOVA pages into a session's GPU virtual address space (10 dwords, 40 bytes) ([`include/ghci_cmd.h`](../include/ghci_cmd.h)):
@@ -1112,17 +1142,22 @@ Directly configures display controller registers in ring order (2 + 2*N dwords):
 #### `CMD_FLIP` (0x51, M54, N25)
 Queues an atomic scanout framebuffer swap synchronized to the next VSYNC or immediate (8 dwords, 32 bytes):
 - `dword 0`: Header (`opcode = 0x51`, `dwords = 8`)
-- `dword 1`: `display_id` (0 = primary display, 1 = secondary display)
-- `dword 2`: `base_lo` (64-bit physical scanout address `[31:0]`, aligned to memory line size)
-- `dword 3`: `base_hi` (64-bit physical scanout address `[63:32]`)
+- `dword 1`: `display_id` (0 = primary display controller at `DISP2` MMIO `0x200`; `display_id = 1` reserved for dual-display configs, raises `GHCI_FAULT_KIND_INVALID_ARG` if absent)
+- `dword 2`: `base_lo` (32-bit physical scanout address `[31:0]`, aligned to memory line size, residing in local VRAM $\ge \text{LOCAL\_BASE}$ or host aperture $< \text{HOST\_LIMIT}$)
+- `dword 3`: `base_hi` (Must be 0; hardware verifies `base_hi == 0` and writes `base_lo` to `FB_BASE` / `FB_NEXT` / `CURSOR_BASE`)
 - `dword 4`: `flags`:
   - `[0]`: `GHCI_FLIP_FLAG_VSYNC_WAIT` (0x1) — Flip synchronously at next vertical blank (VSYNC)
   - `[1]`: `GHCI_FLIP_FLAG_IMMEDIATE` (0x2) — Flip immediately without waiting for VSYNC
   - `[2]`: `GHCI_FLIP_FLAG_PLANE_CURSOR` (0x4) — 0 = Plane 0 (primary scanout `FB_BASE`), 1 = Plane 1 (hardware cursor `CURSOR_BASE`)
   - `[3]`: `GHCI_FLIP_FLAG_RECORD_ENABLE` (0x8) — Write 16-byte flip completion record to `record_pa`
 - `dword 5`: `value` (32-bit presentation sequence tag; latched into DISP2 `TAKEN0` for Plane 0, or `TAKEN1` for Plane 1)
-- `dword 6`: `record_pa_lo` (64-bit GPU physical address [31:0] of 16-byte flip record; 8-byte aligned)
-- `dword 7`: `record_pa_hi` (64-bit GPU physical address [63:32])
+- `dword 6`: `record_pa_lo` (32-bit GPU physical address [31:0] of 16-byte flip record; 8-byte aligned, residing in host aperture $< \text{HOST\_LIMIT}$ for host notification, or local VRAM)
+- `dword 7`: `record_pa_hi` (Must be 0)
+- *Synchronization Precedence (N25)*:
+  - `VSYNC_WAIT=1, IMMEDIATE=0`: Standard VSYNC-synchronized presentation (takes effect at next VSYNC).
+  - `IMMEDIATE=1, VSYNC_WAIT=0`: Unblanked immediate presentation (takes effect immediately in current frame, or at once if controller `ENABLE == 0`).
+  - Both 0: Defaults to `VSYNC_WAIT = 1`.
+  - Both 1: `IMMEDIATE` takes precedence.
 - *Completion Behavior*:
   When the flip takes effect (at VSYNC or immediately), hardware updates the scanout base register, latches `value` into `TAKEN0/1`, raises `DISP_IRQ_STATUS.FLIP_DONE` (or `CURSOR_FLIP_DONE`), and if `RECORD_ENABLE` is set and `record_pa != 0`, writes a 16-byte record:
   `{ uint32_t value, uint32_t frame_count, uint32_t timestamp_lo, uint32_t timestamp_hi }`.
@@ -1176,7 +1211,7 @@ bytes) ([`include/ghci_cmd.h`](../include/ghci_cmd.h)):
 | `0x24` | dw9 | `raster_state` | uint32_t | `[1:0]` cull mode, `[2]` front face CW, `[4:3]` polygon mode, `[5]` depth bias enable, `[13:6]` line width (8-bit fixed-point: 16 = 1.0) (N14) |
 | `0x28` | dw10 | `depth_stencil_state` | uint32_t | `[0]` depth test, `[1]` depth write, `[4:2]` depth op, `[5]` stencil test, `[8:6]` front fail op, `[11:9]` front pass op, `[14:12]` front depth fail op, `[17:15]` front compare op, `[20:18]` back fail op, `[23:21]` back pass op, `[26:24]` back depth fail op, `[29:27]` back compare op, `[30]` separate back stencil enable (N14) |
 | `0x2C` | dw11 | `blend_state` | uint32_t | `[0]` blend enable, `[5:1]` src color factor, `[10:6]` dst color factor, `[13:11]` color op, `[18:14]` src alpha, `[23:19]` dst alpha, `[26:24]` alpha op, `[30:27]` write mask |
-| `0x30` | dw12 | `vertex_strides` | uint32_t | Default 8-bit strides for bindings 0..3 (`[7:0]`, `[15:8]`, `[23:16]`, `[31:24]`). Overridden if `CMD_BIND_VERTEX_BUFFERS` provides dynamic 32-bit strides > 0; used as fallback when dynamic stride is 0 (N14) |
+| `0x30` | dw12 | `vertex_strides` | uint32_t | Default 8-bit strides for bindings 0..3 (`[7:0]`, `[15:8]`, `[23:16]`, `[31:24]`). Used as static fallback when `CMD_BIND_VERTEX_BUFFERS` specifies `stride_bytes == 0xFFFFFFFF` (`GHCI_STRIDE_FROM_PSO`). Dynamic strides 0..4095 in `CMD_BIND_VERTEX_BUFFERS` are authoritative, with stride 0 valid for reading a single element (N14) |
 | `0x34` | dw13 | `shader_resource_limits` | uint32_t | `[7:0] used_regs_vs` (1..63, allocating `r0..r62`), `[15:8] used_regs_fs` (1..63), `[23:16] used_regs_cs` (1..63, also applies to `ms_code_va`), `[31:24] varying_count` (0..16) (N01) |
 | `0x38` | dw14 | `compute_local_size` | uint32_t | `[9:0] local_size_x` (1..1024), `[19:10] local_size_y` (1..1024), `[29:20] local_size_z` (1..64). Encodings up to 1024; hardware limits are {256, 256, 64} and max 256 invocations (N01) |
 | `0x3C` | dw15 | `compute_lds_and_flags` | uint32_t | `[15:0] lds_bytes` (0..16384), `[16] fs_centroid`, `[17] fs_depth_export`, `[18] fs_discard`, `[31:19] reserved` (N01, N24) |
@@ -1192,7 +1227,7 @@ bytes) ([`include/ghci_cmd.h`](../include/ghci_cmd.h)):
 - **Front Face (`raster_state[2]`)**: `0`: `CCW`, `1`: `CW`.
 - **Polygon Mode (`raster_state[4:3]`)**: `0`: `FILL`, `1`: `LINE`, `2`: `POINT`.
 - **Compare Ops (`depth_stencil_state[4:2]`, `[17:15]`, `[29:27]`, `VkCompareOp`)**: `0`: `NEVER`, `1`: `LESS`, `2`: `EQUAL`, `3`: `LEQUAL`, `4`: `GREATER`, `5`: `NEQUAL`, `6`: `GEQUAL`, `7`: `ALWAYS`.
-- **Stencil Operations (`depth_stencil_state[8:6]`, `[11:9]`, `[14:12]`, `[20:18]`, `[23:21]`, `[26:24]`, `VkStencilOp`)**: `0`: `KEEP`, `1`: `ZERO`, `2`: `REPLACE`, `3`: `INCR_CLAMP`, `4`: `DECR_CLAMP`, `5`: `INVERT`, `6`: `INCR_WRAP`, `7`: `DECR_WRAP` (N14). Dynamic stencil compare/write masks and references are configured via `CMD_SET_DYNAMIC_STATE` (0x26).
+- **Stencil Operations (`depth_stencil_state[8:6]`, `[11:9]`, `[14:12]`, `[20:18]`, `[23:21]`, `[26:24]`, `VkStencilOp`)**: `0`: `KEEP`, `1`: `ZERO`, `2`: `REPLACE`, `3`: `INCR_CLAMP`, `4`: `DECR_CLAMP`, `5`: `INVERT`, `6`: `INCR_WRAP`, `7`: `DECR_WRAP` (N14). Dynamic stencil compare/write masks and references are configured via `CMD_SET_DYNAMIC_STATE` (0x26, `state_id = 0x03`).
 - **Blend Operations (`blend_state[13:11]`, `[26:24]`)**: `0`: `ADD`, `1`: `SUBTRACT`, `2`: `REVERSE_SUBTRACT`, `3`: `MIN`, `4`: `MAX`.
 - **Blend Factors (`blend_state[5:1]`, `[10:6]`, `[18:14]`, `[23:19]`)**:
   `0`: `ZERO`, `1`: `ONE`, `2`: `SRC_COLOR`, `3`: `ONE_MINUS_SRC_COLOR`, `4`: `DST_COLOR`, `5`: `ONE_MINUS_DST_COLOR`,
@@ -1200,7 +1235,7 @@ bytes) ([`include/ghci_cmd.h`](../include/ghci_cmd.h)):
   `10`: `CONSTANT_COLOR`, `11`: `ONE_MINUS_CONSTANT_COLOR`, `12`: `CONSTANT_ALPHA`, `13`: `ONE_MINUS_CONSTANT_ALPHA`,
   `14`: `SRC_ALPHA_SATURATE`, `15`: `SRC1_COLOR`, `16`: `ONE_MINUS_SRC1_COLOR`, `17`: `SRC1_ALPHA`, `18`: `ONE_MINUS_SRC1_ALPHA`.
 - **Color Write Mask (`blend_state[30:27]`)**: `bit 27`: R, `bit 28`: G, `bit 29`: B, `bit 30`: A.
-- **Independent Attachment Blending (`CAP_MRT_BLEND`, N14)**: When `EXT_CAP_FEATURE[15] == 1`, the driver can dynamically configure per-attachment blend states for color attachments 0..7 via `CMD_SET_DYNAMIC_STATE` (0x26, state_id 7..14). When `CAP_MRT_BLEND == 0`, `blend_state` (dw11) applies globally across all active color attachments.
+- **Independent Attachment Blending (`CAP_MRT_BLEND`, N14)**: When `EXT_CAP_FEATURE[15] == 1`, the driver can dynamically configure per-attachment blend states for color attachments 0..7 via `CMD_SET_DYNAMIC_STATE` (0x26, `state_id = 0x07..0x0E`). When `CAP_MRT_BLEND == 0`, `blend_state` (dw11) applies globally across all active color attachments.
 
 Each attribute entry (`GhciVertexAttribute`, 4 bytes / 32 bits, K11) is packed as follows:
 - `[7:0] format`: Vertex format code (`VkFormat` enum value).
@@ -1230,7 +1265,7 @@ A compact 32-byte structure describing a texture resource:
 | `0x0C` | `depth` | uint16_t | 3D depth or 2D array layer count |
 | `0x0E` | `format` | uint8_t | Format code directly using standard `VkFormat` enum (e.g. `VK_FORMAT_R8G8B8A8_UNORM = 37`, `VK_FORMAT_B8G8R8A8_UNORM = 44`, `VK_FORMAT_R5G6B5_UNORM_PACK16 = 84`, `VK_FORMAT_D24_UNORM_S8_UINT = 129`, `VK_FORMAT_D32_SFLOAT = 126`, BC1..7 = 131..144, ETC2 = 147..156) (N23) |
 | `0x0F` | `mip_levels` | uint8_t | Number of mipmap levels (1..15) |
-| `0x10` | `row_pitch_bytes` | uint32_t | Pitch in bytes between texel rows |
+| `0x10` | `row_pitch_bytes` | uint32_t | Level 0 texel row pitch in bytes. For linear textures, subsequent mip pitches are computed by hardware as $\max(64, \lceil \text{width}_l \times \text{bpp} \rceil)$ aligned to 64 bytes. For tiled textures, specifies level 0 tile row pitch ($\text{tile\_row\_pitch\_bytes} = \lceil \text{width} / 8 \rceil \times \text{tile\_size\_bytes}$ aligned to 256 bytes) (N13) |
 | `0x14` | `slice_pitch_bytes`| uint32_t | Pitch in bytes between 2D slices or array layers |
 | `0x18` | `sample_count` | uint8_t | MSAA sample count (1, 2, 4) |
 | `0x19` | `dimension` | uint8_t | 0=1D, 1=2D, 2=3D, 3=CubeMap |
@@ -1255,7 +1290,7 @@ A compact 16-byte structure describing texture sampling parameters:
 | `0x0B` | `max_lod_fx4` | uint8_t | Unsigned 4.4 fixed-point maximum LOD clamp |
 | `0x0C` | `max_anisotropy` | uint8_t | Maximum anisotropy ratio (1..16) (N23) |
 | `0x0D` | `border_color_type` | uint8_t | 0=TransparentBlack, 1=OpaqueBlack, 2=OpaqueWhite, 3=CustomTable (N23) |
-| `0x0E` | `border_color_idx` | uint8_t | Index (0..15) into 16-entry table of 128-bit border colors (`VkClearColorValue`), bound via `CMD_SET_DYNAMIC_STATE` with `state_id = 0x10` (N23) |
+| `0x0E` | `border_color_idx` | uint8_t | Index (0..15) into 16-entry table of 128-bit border colors (`VkClearColorValue`), bound via `CMD_SET_DYNAMIC_STATE` with `state_id = 0x10` taking 64-bit session GPU VA in `table_va` (N23) |
 | `0x0F` | `reserved` | uint8_t | Reserved (must be 0) |
 
 #### Buffer Descriptor (`GhciBufferDescriptor`, 16 Bytes)
@@ -1290,8 +1325,8 @@ Resource binding follows a flat, table-based descriptor architecture:
     - Set 3: `c[30..31]`
     This provides direct 1-cycle operand access to descriptor set base addresses without memory traffic (N02).
   - Shaders load buffer base GPU VAs via `ld.64` and read/write buffer data via `ld.64`, `lw`, `sw`.
-  - Dynamic offsets (`VK_DESCRIPTOR_TYPE_*_DYNAMIC`): The **shader adds the dynamic offset** to the buffer base address loaded from the descriptor; dynamic offsets are supplied via push constants ($c0..c31$) (N02).
-  - Texture slot index `sub[3:0]` (0..15) in GSI1 texture instructions (`texl`, `texb`, `texf`) maps directly to Descriptor Set 0's bindings 0..15 (paired with matching samplers 0..15 in Set 1) (N02).
+  - Dynamic offsets (`VK_DESCRIPTOR_TYPE_*_DYNAMIC`): The **shader adds the dynamic offset** to the buffer base address loaded from the descriptor; dynamic offsets are supplied via push constants ($c0..c23$) (N02).
+  - Texture slot index `sub[3:0]` (0..15) in GSI1 texture instructions (`texl`, `texb`, `texf`) maps directly to Descriptor Set 0's slot $k$ (texture descriptor at $\text{set0\_va} + k \times 32$) paired with sampler slot $k$ in Set 1 (sampler descriptor at $\text{set1\_va} + k \times 16$). `binding_offset_bytes` is NOT used by hardware texture units; it is applied exclusively by shaders for buffer descriptors (N02).
 
 #### In-Memory Render Pass Descriptor (`GhciRenderPassDesc`, 192 Bytes, K12, M47, N03)
 
@@ -1346,9 +1381,11 @@ typedef struct GhciRenderPassDesc {
 
 **Attachment Clear & Resolve Semantics (N03)**:
 - **Priority**: If an attachment's `ops` field specifies `LoadOp == 1 (CLEAR)` OR the corresponding clear flag is asserted in `CMD_BEGIN_RENDER_PASS.flags`, clear execution is mandatory.
-- **Clear Value Resolution**:
+- **Clear Value Resolution (N03)**:
   - If `clear_color_table_va` is non-zero, attachments $0..7$ read their 128-bit clear colors directly from `clear_color_table_va[i]` (`VkClearColorValue`: float32[4], int32[4], or uint32[4]), providing complete support for floating-point and integer formats.
-  - If `clear_color_table_va` is zero, attachments are cleared to **all zeros (0.0f / integer 0 / transparent black)** according to the attachment's `format`. Attachment 0 can alternatively take `CMD_BEGIN_RENDER_PASS.color_clear_rgba` when `clear_color_table_va == 0`.
+  - If `clear_color_table_va` is zero:
+    - **Color Attachment 0**: Always cleared using `CMD_BEGIN_RENDER_PASS.color_clear_rgba`. Interpretation is determined strictly by Attachment 0's `format`: packed 4×8-bit (`[7:0] R, [15:8] G, [23:16] B, [31:24] A`) for 8-bit unorm/snorm/srgb formats; single-channel 32-bit float or integer clear value for `R32_*` formats.
+    - **Color Attachments 1..7**: Automatically cleared to all zeros (0.0f / integer 0 / transparent black) according to their respective format.
   - Depth buffer: Cleared with `CMD_BEGIN_RENDER_PASS.depth_clear_value`.
   - Stencil buffer: Cleared with `CMD_BEGIN_RENDER_PASS.stencil_clear_value`.
 - **Multisample Resolve (N03)**: `GhciRenderPassDesc.resolve` specifies the fast automatic hardware resolve destination for color attachment 0 (`COLOR_ATTACHMENT_0`, standard display swapchain target) executed at render pass end. For multi-target MRT resolve (attachments 1..7), the driver issues explicit `CMD_RESOLVE_IMAGE` (0x44) commands.
@@ -1362,25 +1399,17 @@ typedef struct GhciRenderPassDesc {
   - Array descriptors (`descriptorCount > 1`): Indexed by multiplying array index by descriptor structure size (`16` or `32` bytes).
   - Dynamic offsets: In Vulkan dynamic uniform/storage buffers, the dynamic offset is added by the shader to the descriptor base GPU VA before memory instructions.
 
-#### Combined Image Sampler (Option A, K13, M44, N02)
-GHCI 1.0 standardizes on **Option A: 32-Bit Index Pair** for Combined Image Samplers:
-```c
-typedef struct GhciCombinedImageSampler {
-    uint16_t texture_index; // Index into texture descriptor table (Set 0, 0..65535)
-    uint16_t sampler_index; // Index into sampler descriptor table (Set 1, 0..65535)
-} GhciCombinedImageSampler;
-
-#define GHCI_MAKE_COMBINED_SAMPLER(tex_idx, smp_idx) \
-    (((uint32_t)(tex_idx) & 0xFFFFu) | (((uint32_t)(smp_idx) & 0xFFFFu) << 16))
-```
-Shader instructions load the 32-bit index pair into a scalar or vector register and issue sampling commands (`texl`, `texb`, `texf`). Hardware Texture Units fetch texture metadata from Set 0 and sampler configurations from Set 1 independently and in parallel, avoiding all descriptor memory duplication.
-
 #### Push Constants & Constant Register Bank (`CMD_LOAD_CONST`, M45, N02)
-Push constants (up to 128 bytes / 32 dwords) and uniform values are written directly into the
-on-chip Shader Unit constant bank using `CMD_LOAD_CONST(offset_dw, count_dw, data...)`:
-- **Direct Operand Access ($c0..c31$)**: The first 32 words of the constant bank map directly to GSI1 7-bit operand numbers 64..95 ($c0..c31$), providing immediate 1-cycle latency operands for arithmetic without register pressure or cache lookups.
+The on-chip Shader Unit constant bank provides 512 32-bit words ($c[0..511]$):
+- **Direct Operand Access ($c0..c31$)**: The first 32 words map directly to GSI1 7-bit operand numbers 64..95 ($c0..c31$), providing immediate 1-cycle latency operands for arithmetic without register pressure or cache lookups.
 - **Extended Constant Access ($c[32..511]$)**: Constant words beyond $c31$ are loaded using the GSI1 `lwc rd, imm(rs1)` instruction.
-- **Push Constant Allocation**: By convention, push constants are loaded starting at constant bank offset 0, enabling shaders to read push constants directly from operands $c0..c31$. Loading constants via `CMD_LOAD_CONST` completely replaces the obsolete pre-1.0 interface table.
+- **Push Constant Allocation & Register Overlap Semantics (N02)**:
+  - Standard Vulkan convention: Push constants (up to 96 bytes / 24 dwords) are loaded at offset 0 ($c[0..23]$), leaving $c[24..31]$ intact for CP-mirrored Set 0..3 base addresses.
+  - Overwrite Rule (Last Writer Wins): `CMD_LOAD_CONST` writes directly to physical constant RAM. If `CMD_LOAD_CONST` writes into words 24..31 (e.g. when an application utilizes the full 128 bytes of push constants $c[0..31]$), the push constant values overwrite the mirrored Set 0..3 base VAs. In this configuration, shaders access descriptor set base addresses from extended constants ($c[32..511]$ via `lwc`) or uniform buffers. If `CMD_BIND_DESCRIPTOR_TABLE` is subsequently executed, it re-mirrors the bound set base VA into its designated words `c[24 + 2*set .. 25 + 2*set]`.
+- **Combined Image Sampler Slot Mapping (N02)**:
+  - In GSI1 1.0, texture instructions (`texl`, `texb`, `texf`) statically encode the combined slot index in instruction immediate `sub[3:0]` (0..15).
+  - The hardware Texture Unit fetches texture metadata from Descriptor Set 0 ($\text{set0\_base\_va} + \text{slot} \times 32$) and sampler parameters from Descriptor Set 1 ($\text{set1\_base\_va} + \text{slot} \times 16$) in parallel.
+  - 16 static slots ($0..15$) fully satisfy Vulkan 1.0 core mandatory requirements (`maxPerStageDescriptorSamplers = 16`).
 
 #### Dual-Source Blending & State Encodings (N14)
 - **Dual-Source Blending Export**: In dual-source blending pipelines (`CAP_DUAL_SOURCE = 1`), the fragment shader exports primary color (`SRC0`) to export target `0x100` and secondary blend color (`SRC1`) to export target `0x101` using the `exp` instruction (§12.5).
@@ -1519,13 +1548,12 @@ to the following architectural parameters:
 - Fence memory resides in host system memory (`fence_addr`, 64-bit host DMA address / IOVA) or local DRAM ($\ge \text{LOCAL\_BASE}$, N11).
 - `CMD_FENCE` flags: `[0]` `GHCI_FENCE_FLAG_IRQ` (raise `IRQ_STATUS[0]`), `[1]` `GHCI_FENCE_FLAG_MEM_WRITE` (write 64-bit sequence to memory; if 0, memory write is omitted), `[2]` `GHCI_FENCE_FLAG_HOST_FLUSH` (flush GPU dirty caches to memory) (N11, N32).
 - **Ordering:** the fence write reaches the host only after every earlier GPU write is visible there (section 11.5).
-- **Ordering:** the fence write reaches the host only after every earlier GPU write is visible there (section 11.5).
 
-### 9.2 Interrupts (M11, M19)
+### 9.2 Interrupts (M11, M19, N21)
 
 - The interrupt line is asserted by: $\text{CTRL.IRQ\_GLOBAL} \ \&\& \ ((\text{IRQ\_STATUS} \ \& \ \text{IRQ\_ENABLE}) \ne 0)$.
 - The handler reads `IRQ_STATUS`, clears handled bits by writing them back (W1C), and unmasks.
-- Display interrupts (`IRQ_DISP`, bit 3) summarize display controller events and are cleared by writing 1 to `IRQ_STATUS[3]`. Detailed per-event status is in DISP2 `STATUS` (`0x214`).
+- Display interrupts (`IRQ_DISP`, bit 3) summarize display controller events (`GHCI_IRQ_DISPLAY`). Detailed per-event status is queried via DISP2 `DISP_IRQ_STATUS` (`0x218`) and `STATUS` (`0x214`). The handler acknowledges display events by writing 1s to the handled bits in `DISP_IRQ_STATUS` (W1C), and then clears `IRQ_STATUS[3]` (N21).
 - IRQ_SET.SOFT raises the SOFT bit, for tests.
 
 10. Faults, watchdog, quiesce and reset
@@ -1636,7 +1664,7 @@ The host submits virtual memory management operations as structured packets on t
 - `GHCI_VM_FLAG_EXEC` (`0x4`): Instruction fetch permitted (shader code).
 - `GHCI_VM_FLAG_COHERENT` (`0x8`): Hardware-enforced cache coherency with CPU host.
 - `GHCI_VM_FLAG_WC` (`0x10`): Write-combining memory attribute.
-- `GHCI_VM_FLAG_LOCAL` (`0x20`): 1 = Physical address is in local device VRAM (`LOCAL_BASE + offset`); 0 = Host PCIe bus address or IOVA.
+- `GHCI_VM_FLAG_LOCAL` (`0x20`): 1 = Physical address is an absolute GPU physical address in local device VRAM (`phys >= LOCAL_BASE`); 0 = Host PCIe bus address or IOVA.
 
 #### Firmware Heap and Page Table Allocation (`CP_HEAP_BASE`, `CP_HEAP_LIMIT`, K02, K08, N07, N09, N12)
 Page tables are dynamically allocated and managed by the CP autonomous MMU walker
@@ -1747,8 +1775,9 @@ offset:
 | +0x0 | LOCAL_BASE | R | GPU address of the first byte of local memory |
 | +0x4 | LOCAL_SIZE | R | Bytes of local memory; 0 = none (unified) |
 | +0x8 | WINDOW_SIZE | R | Bytes of local memory, from LOCAL_BASE, that the local window shows; 0 = no window. Where the window is on the host is defined by the binding (section 15) |
-| +0xC | HOST_LIMIT | R | 32-bit physical bus address aperture threshold (4 KiB aligned). Physical addresses below HOST_LIMIT route to host PCIe AXI DMA memory; addresses at or above LOCAL_BASE route to local VRAM (N12). In `CMD_VM_MAP`, when `VM_FLAG_LOCAL` is 1, `phys` is strictly an absolute physical address in local VRAM (`phys >= LOCAL_BASE`) (N12). |
+| +0xC | HOST_LIMIT | R | 32-bit physical bus address aperture threshold (4 KiB aligned). Physical addresses below HOST_LIMIT route to host PCIe AXI DMA memory; addresses at or above LOCAL_BASE route to local VRAM (N12). In `CMD_VM_MAP`, when `VM_FLAG_LOCAL` is 1, `phys` is strictly an absolute physical address in local VRAM (`phys >= LOCAL_BASE`). When `VM_FLAG_LOCAL` is 0 (host memory), `phys` is a 64-bit host physical address (or IOVA), valid up to `PA_BITS` ($40..48$ bits, `EXT_CAP_FEATURE[11:8]`). On systems without IOMMU and with a 32-bit PCIe DMA controller, host memory addresses are confined below `HOST_LIMIT` (32-bit) (N12). |
 | +0x10 | WINDOW_CTRL | RW | [0] ENABLE: the local window is open (section 11.1). 1 after a power-on reset and a function-level reset; CTRL.RESET does not change it. Reads 0 without a window |
+| +0x14 | MEM_CACHE_CFG | R | Cache hierarchy status: `[7:0]` L2 cache size in KiB (0, 16, 64, 128, 256), `[15:8]` L2 cache associativity ways (0, 4, 8, 16), `[23:16]` Texture L1 cache size in KiB (4, 8, 16), `[31:24]` Vertex Fetch line buffers (2, 4, 8) (N16) |
 
 A GPU without the MEM capability is unified.
 
@@ -1872,7 +1901,7 @@ Under GHCI 1.0, memory protection is enforced hardware-wide through **per-sessio
   Instruction subsets are governed by host-visible registers:
   - Subgroup operations (`shfl`, `vote`, `ballot`): governed by `EXT_CAP_FEATURE[29]` (`CAP_SUBGROUP`, legacy GSI1 CAPS[24]).
   - Packed FP16 arithmetic (custom-2): governed by `DEVICE_CAPS[6]` / `EXT_CAP_FEATURE[28]` (`CAP_FP16`, legacy GSI1 CAPS[28]).
-  - Advanced texture operations (.3 forms, depth compare, gather): governed by `DEVICE_CAPS[25]` (`CAP_TEX_FFILT`, legacy GSI1 CAPS[26]).
+  - Advanced texture addressing (.3 forms for 2D array, 3D, cube, depth compare `.c`, and gather `texg`): standard GSI1 ISA operations supported by the Texture Unit on all configurations (`GHCI_CAP_GSI1 == 1`). `DEVICE_CAPS[25]` (`CAP_TEX_FFILT`) specifically indicates whether floating-point linear filtering (`atg_tu_ffilt`) is synthesized in hardware; when `CAP_TEX_FFILT == 0`, UNORM8 bilinear filtering is performed, while FP16/FP32 textures fall back to nearest point-sampling, without restricting 2D array, 3D, or cube sampling (N16).
   - Multisampling queries (`texsz.s`): governed by `DEVICE_CAPS[31]` (`CAP_MSAA_4X`, legacy GSI1 CAPS[29]).
   - ROP format packing: governed by `DEVICE_CAPS[26]` (`CAP_ROP_PACK`, legacy GSI1 CAPS[30]).
 - Reference implementation: `tools/gsi1asm.py` (the assembler and the
@@ -2226,33 +2255,31 @@ GHCI 1.0 standardizes on a direct hardware descriptor indexing architecture:
   - `binding_offset_bytes`: Statically determined at pipeline layout creation by UMD according to `VkDescriptorSetLayout` and embedded as immediate instruction offsets in the GSI1 binary (N02).
   - Texture descriptors are 32 bytes; sampler and buffer descriptors are 16 bytes.
   - Shaders fetch 64-bit buffer base GPU VA using `ld.64` and read data via `lw` / `ld.64`.
-  - Dynamic offsets (`VK_DESCRIPTOR_TYPE_*_DYNAMIC`): The driver injects dynamic offsets via push constants (`c0..c31`), and the **shader adds the dynamic offset** to the descriptor base GPU VA before memory instructions (N02).
-  - Texture instructions use GSI1 native `texl rd, rCoord, slot` where `slot = sub[3:0]` maps to Set 0 bindings 0..15 (paired with samplers 0..15 in Set 1), or combined image-sampler index pairs (`GHCI_MAKE_COMBINED_SAMPLER`, §8.4).
-- **Constant Bank & Push Constants (`c0..c31`, `CMD_LOAD_CONST`)**:
+  - Dynamic offsets (`VK_DESCRIPTOR_TYPE_*_DYNAMIC`): The driver injects dynamic offsets via push constants (`c0..c23`), and the **shader adds the dynamic offset** to the descriptor base GPU VA before memory instructions (N02).
+  - Texture instructions use GSI1 native `texl rd, rCoord, slot` where `slot = sub[3:0]` (0..15) statically indexes combined texture/sampler slot $k$ (texture descriptor at $\text{set0\_va} + k \times 32$, sampler descriptor at $\text{set1\_va} + k \times 16$) (N02).
+- **Constant Bank & Push Constants (`c0..c31`, `CMD_LOAD_CONST`, N02)**:
   - The Shader Unit constant register bank provides immediate 1-cycle access to uniforms:
     - Operands 64–95 map directly to constant words $c0..c31$ as source operands in any GSI1 instruction.
     - Extended constant bank words ($c[0..511]$) are readable using the `lwc rd, imm(rs1)` instruction.
   - Constant data is loaded directly into the constant bank by the command processor using `CMD_LOAD_CONST` (0x2D, `offset_dwords`, `count_dwords`, `data...`) prior to draw or dispatch.
-  - Push constants (up to 128 bytes / 32 dwords) are loaded via `CMD_LOAD_CONST` with `offset = 0`, allowing shaders to read push constants directly from operands $c0..c31$ without memory dereference or TLB lookups.
+  - Push constants (up to 96 bytes / 24 dwords standard) are loaded via `CMD_LOAD_CONST` at `offset = 0` ($c[0..23]$), preserving $c[24..31]$ for CP-mirrored Set 0..3 base addresses. If `CMD_LOAD_CONST` targets words 24..31 (e.g. 128-byte push constants), it overwrites the mirrored values; shaders then access set base addresses from extended constants ($c[32..511]$) or uniform buffers (N02).
 - **Scratch Memory Allocation**:
   - For shaders requiring register spilling, scratch memory base address is mapped into session GPU VA via `CMD_VM_MAP`. Shaders calculate per-warp scratch offsets using the `warp` operand ($w \times \text{bytes\_per\_warp}$) and access spill storage via `sw.x` and `lw`.
 
-### 12.11 Multisampling (Approved Architecture, N24, N28)
+### 12.11 Multisampling (Approved Architecture, N24, N28, N33)
 
-With CAPS[29] (and `DEVICE_CAPS[31]`), the GPU rasterizes with 1, 2, or 4 samples per pixel (N24) and runs the
-fragment program once per pixel (no sample shading). This section
-extends section 12.9 (multisampled images) and section 12.6 (`texsz`
-immediate 3 below).
-
-**State words** (in the rasterizer's range; the rasterizer and the render
-output read them, and a SET_REG into the range waits until the earlier
-draws have left the vertex fetcher, the shader units, the rasterizer and
-the render output, so a change never reaches a draw already issued):
-
-| Index | Name | Contents |
-| --- | --- | --- |
-| 0x05E | MS_CTRL | [3:0] log2 of the samples per pixel: 0 = 1, 2 = 4 (other values read as 0); [4] CENTROID: write the centroid barycentrics r7-r9; [8] alpha to coverage; [9] alpha to one |
-| 0x05F | SAMPLE_KILL | [3:0] samples removed by the sample mask test (the complement of the pipeline's sample mask; 0 keeps all, the reset value) |
+With CAPS[29] (and `DEVICE_CAPS[31]`), the GPU rasterizes with 1, 2, or 4 samples per pixel (N24).
+- **Sample Shading (N33)**: When `GhciPipelineState.flags[11]` (`sample_shading`) is 1, the rasterizer runs fragment shader invocations per covered sample location (with `FragCoord` and barycentrics computed at each sample). When `sample_shading` is 0, the fragment program executes once per pixel at pixel center (or centroid if `flags[16]` `fs_centroid` is set).
+- **Autonomous State Programming (N33)**: In GHCI 1.0, the immutable Pipeline State Object (`GhciPipelineState`, §8.2) and Render Pass Descriptor (`GhciRenderPassDesc`, §8.4) are authoritative. Internal rasterizer state registers (`MS_CTRL` 0x05E, `SAMPLE_KILL` 0x05F) are configured autonomously by the Command Processor upon `CMD_BEGIN_RENDER_PASS` and `CMD_BIND_PIPELINE`; drivers never submit `SET_REG` directly.
+- **Hardware Register Mapping (N33)**:
+  - `MS_CTRL` (0x05E): Configured by CP from `GhciRenderPassDesc.samples` (`[3:0]` log2 S), `PSO.compute_lds_and_flags[16]` (`[4]` CENTROID), and `PSO.flags[10]` (`[8]` alpha to coverage).
+  - `SAMPLE_KILL` (0x05F): Configured by CP from `PSO.flags[15:12]` (`sample_mask`).
+- **Resource Descriptor Mapping (N33)**: Legacy ISA references to `TEX_IMAGE` and `TEX_SAMPLER` map directly to standard GHCI 1.0 descriptor structures (§8.3):
+  - `TEX_IMAGE[3:0]` (mip levels) maps to `GhciTextureDescriptor.mip_levels` (1..15).
+  - `TEX_IMAGE[15:12]` (samples) maps to `GhciTextureDescriptor.sample_count` (1, 2, 4).
+  - `TEX_IMAGE format 4` maps to `GhciTextureDescriptor.format = VK_FORMAT_B5G6R5_UNORM_PACK16` (or `R5G6B5_UNORM_PACK16`).
+  - `TEX_SAMPLER[9]` (compare enable) maps to `GhciSamplerDescriptor.compare_enable`.
+  - `TEX_SAMPLER[12:10]` (compare op) maps to `GhciSamplerDescriptor.compare_op` (`VkCompareOp`).
 
 **Sample locations.** The standard locations: with 1 sample (0.5, 0.5);
 with 4, sample 0 (0.375, 0.125), 1 (0.875, 0.375), 2 (0.125, 0.625), 3
@@ -2265,11 +2292,11 @@ registers before the warp starts):
 
 | Register | Contents |
 | --- | --- |
-| r0, r1, r2 | Barycentrics b0, b1, b2 at the pixel centre, perspective-correct, relative to the original vertices |
+| r0, r1, r2 | Barycentrics b0, b1, b2 at the pixel centre (or sample location if sample shading active), perspective-correct, relative to the original vertices |
 | r3 | Depth at the pixel centre (with 1 sample clamped to [0, 1]; with 4 samples not clamped) |
 | r4, r5 | x + 0.5, y + 0.5 (FragCoord) |
 | r6 | The sample mask in: bit s = sample s covered, after the sample mask test (bit 0 with 1 sample); 0 in helper lanes. Undefined without CAPS[29] (a compiler then takes the mask as 1; Amaterrace always writes it) |
-| r7, r8, r9 | With MS_CTRL[4]: b0, b1, b2 at the centroid: the pixel centre when it is inside the primitive, otherwise the covered sample of the lowest index |
+| r7, r8, r9 | With `fs_centroid` (`PSO dw15 [16]`): b0, b1, b2 at the centroid: the pixel centre when it is inside the primitive, otherwise the covered sample of the lowest index |
 
 Export targets of a fragment warp: 0x100 + c COLOR0 component c, 0x104
 DEPTH (the same depth for every sample), **0x105 SAMPLE_MASK** (the last
@@ -2284,8 +2311,8 @@ gets a program of these two instructions.
 
 **Per-sample operations** (in this order, after the fragment program):
 coverage = the sample mask the rasterizer wrote to r6 (not a later value
-of r6) AND the exported SAMPLE_MASK AND, with MS_CTRL[8], an alpha
-to coverage mask; then alpha to one (MS_CTRL[9]); then the depth (and
+of r6) AND the exported SAMPLE_MASK AND, with alpha to coverage (`PSO flags[10]`), an alpha
+to coverage mask; then alpha to one; then the depth (and
 stencil) test and the colour write per covered sample. A sample's depth
 is the plane of the primitive at the sample, or the exported depth.
 Alpha to coverage is implementation-defined; Amaterrace takes n = the
@@ -2298,14 +2325,13 @@ one level, in linear rows (not tiled). Sample s of pixel (x, y) is at
 `base + layer x layer stride + y x P + (x x S + s) x ps`, where S is the
 sample count, ps the pixel size and P = roundup(width, 2) x S x ps; the
 base is aligned to 64 bytes. The render target and depth strides of a
-multisampled draw are P. Texture slots name the sample count in the image
-word (TEX_IMAGE[15:12] = log2 S, section 8.4). `texf rd,
+multisampled draw are P. Texture slots name the sample count in `GhciTextureDescriptor.sample_count`. `texf rd,
 rs1, rs2` of a multisampled slot reads sample rs2 (modulo S) of texel
 (rs1, rs1+1), with the layer in rs1+2 for an array (the `.3` form);
 `texsz.s rd` (immediate 3, no rs1) writes S. Without CAPS[29], `texsz.s`
 is an ISA fault (an optional instruction without its CAPS bit).
 `texf` also reads RGB565 (UNORM, a 16-bit texel; R and B divided by 31,
-G by 63, rounded to nearest even; (R, G, B, 1)) as TEX_IMAGE format 4,
+G by 63, rounded to nearest even; (R, G, B, 1)) as `VK_FORMAT_B5G6R5_UNORM_PACK16`,
 so that a multisampled RGB565 colour attachment can be fetched. SPIR-V's ImageFetch with Sample maps to `texf`, QuerySamples to
 `texsz.s`.
 
@@ -2442,8 +2468,8 @@ Registers, at offsets from the capability's register offset (a window of
 | 0x08 | DC_CAPS | R | [0] VGA, [1] TMDS, [2] external transmitter on the I2C registers (its parallel input format is the board's), [7:4] formats ([4] BGRA8, [5] RGBA8, [6] RGB565), [8] the cursor plane (plane 1), [11:9] the number of modes, [12] the controller senses the connection itself |
 | 0x10 | CTRL | S | [0] ENABLE, [1] RESET (W1S), [2] TEST_PATTERN, [5:4] FORMAT (0 BGRA8, 1 RGBA8, 2 RGB565), [6] OUTPUT (0 VGA, 1 HDMI). Written as a whole word |
 | 0x14 | STATUS | R, W | [0] running, [1] underflow, [2] idle (ENABLE is 0 and no memory read is outstanding, the cursor's included), [3] read error, [4] record error, [5] BAD_WRITE ([1] and [3]-[5] are sticky and W1C), [15:6] 0, [27:16] the current line, [28] CONNECTED, [29] plane 0 has a pending flip, [30] plane 1 has a pending flip, [31] a taken flip's record is not written yet |
-| 0x18 | DISP_IRQ_STATUS | R, W | Display event status flags: [0] VSYNC, [1] FLIP_DONE (Plane 0), [2] CURSOR_FLIP_DONE (Plane 1), [3] HOTPLUG, [4] UNDERFLOW. W1C (N21) |
-| 0x1C | DISP_IRQ_ENABLE | RW | Display event interrupt delivery mask (asserts primary IRQ_STATUS[3] when non-zero) (N21) |
+| 0x18 | DISP_IRQ_STATUS | R, W | Display event status flags: [0] VSYNC, [1] FLIP_DONE (Plane 0), [2] CURSOR_FLIP_DONE (Plane 1), [3] HOTPLUG, [4] UNDERFLOW, [5] DISP_ERROR (read error, record error, bad write). W1C (N21) |
+| 0x1C | DISP_IRQ_ENABLE | RW | Display event interrupt delivery mask ([5:0], asserts primary IRQ_STATUS[3] when non-zero) (N21) |
 | 0x20 | FB_BASE | R | 32-bit physical address of plane 0 image being scanned out (N12) |
 | 0x24 | FB_NEXT | S | 32-bit physical address of plane 0 pending image. A host write replaces a pending flip, which is taken as cancelled; taken at next vsync (N12) |
 | 0x28 | FB_STRIDE | S | Bytes per row, a multiple of the memory line |
@@ -2495,20 +2521,23 @@ be taken, section 7.3).
 - A pending flip of either plane is taken as cancelled when ENABLE falls
   and at the controller's reset; a cancelled flip changes no image.
 - At the take, TAKENn gets the flip's value (bit 31 set when cancelled)
-  and the GPU writes the record: {value, FRAME_COUNT}, two words, value
-  first, at the flip's record address (no write when it is 0). The
-  driver's values use 31 bits; bit 31 of the written value says
-  cancelled. IRQ_STATUS.FLIP is raised after the write's response (at the
-  take when record is 0). A write that fails is not repeated: it sets
-  STATUS.record error and still raises FLIP.
+  and the GPU writes the 16-byte record: `{uint32_t value, uint32_t frame_count, uint32_t timestamp_lo, uint32_t timestamp_hi}`
+  at the flip's 32-bit physical address `record_pa` when `GHCI_FLIP_FLAG_RECORD_ENABLE` is set (`flags[3] == 1` and `record_pa != 0`, N25). The
+  driver's values use 31 bits; bit 31 of the written value indicates
+  cancellation. `DISP_IRQ_STATUS.FLIP_DONE` (or `CURSOR_FLIP_DONE`) is raised after the record write completes (or immediately at the
+  take if `RECORD_ENABLE` is 0). A record write failure sets
+  `STATUS.record error`, asserts `DISP_IRQ_STATUS.DISP_ERROR` (bit 5), and still raises `FLIP_DONE`.
 - STATUS[29], [30] and [31] say what is still pending; after a GPU reset
   the driver waits for STATUS[31] to fall (in IDLE) and reads TAKEN0 and
-  TAKEN1 to learn which of its flips were taken (a FLIP still in the ring
-  at the reset was lost with the ring).
+  TAKEN1 to learn which flips were completed.
 
-**Events.** VBLANK at each vsync while ENABLE is 1. DISP_ERROR when one
-of STATUS[1] and [3]-[5] is set, at most once a frame while ENABLE is 1.
-HOTPLUG when CONNECTED changes. FLIP as above.
+**Events (N21).** All display events are surfaced in `DISP_IRQ_STATUS` (+0x18) and maskable via `DISP_IRQ_ENABLE` (+0x1C):
+- `VSYNC` (`bit 0`): asserted at each vertical blanking interval while `ENABLE` is 1.
+- `FLIP_DONE` (`bit 1`): asserted when a Plane 0 flip completes and is visible.
+- `CURSOR_FLIP_DONE` (`bit 2`): asserted when a Plane 1 cursor flip completes.
+- `HOTPLUG` (`bit 3`): asserted when display sink connection status changes (`STATUS[28]` `CONNECTED`).
+- `UNDERFLOW` (`bit 4`): asserted when display scanout FIFO underflows (`STATUS[1]`).
+- `DISP_ERROR` (`bit 5`): asserted on scanout read error (`STATUS[3]`), record write error (`STATUS[4]`), or invalid register write (`STATUS[5]`).
 
 **Starting and stopping.**
 
