@@ -28,6 +28,14 @@ extern "C" {
  * ============================================================================
  */
 #define GHCI_CMD_NOP                    0x00u
+/* Structured Virtual Memory & Session Commands (0x10..0x1F) */
+#define GHCI_CMD_VM_MAP                 0x10u
+#define GHCI_CMD_VM_UNMAP               0x11u
+#define GHCI_CMD_SESSION_OPEN           0x12u
+#define GHCI_CMD_SESSION_CLOSE          0x13u
+#define GHCI_CMD_BIND_SESSION           0x14u
+
+/* Pipeline State & Execution Commands (0x20..0x33) */
 #define GHCI_CMD_BIND_PIPELINE          0x20u
 #define GHCI_CMD_BIND_VERTEX_BUFFERS    0x21u
 #define GHCI_CMD_BIND_INDEX_BUFFER      0x22u
@@ -43,8 +51,10 @@ extern "C" {
 #define GHCI_CMD_BARRIER                0x31u
 #define GHCI_CMD_EXECUTE_COMMANDS       0x32u
 #define GHCI_CMD_FENCE                  0x33u
-#define GHCI_CMD_VM_MAP                 0x10110u
-#define GHCI_CMD_VM_UNMAP               0x10111u
+
+/* Legacy/compatibility aliases */
+#define GHCI_GPU_OP_VM_MAP              0x10110u
+#define GHCI_GPU_OP_VM_UNMAP            0x10111u
 
 /* Packet header helper */
 #define GHCI_MAKE_HEADER(opcode, dwords, flags) \
@@ -359,7 +369,7 @@ typedef struct GhciCmdVmMap {
 	uint32_t size_hi;               /* mapping size in bytes [63:32] */
 } GhciCmdVmMap;
 
-/* CMD_VM_UNMAP (0x10111): 8 dwords (32 bytes) */
+/* CMD_VM_UNMAP (0x11): 8 dwords (32 bytes) */
 typedef struct GhciCmdVmUnmap {
 	uint32_t header;                /* opcode: GHCI_CMD_VM_UNMAP, dwords: 8 */
 	uint32_t session_id;            /* client session identifier */
@@ -370,6 +380,26 @@ typedef struct GhciCmdVmUnmap {
 	uint32_t size_lo;               /* unmap size in bytes [31:0] */
 	uint32_t size_hi;               /* unmap size in bytes [63:32] */
 } GhciCmdVmUnmap;
+
+/* CMD_SESSION_OPEN (0x12): 4 dwords (16 bytes) */
+typedef struct GhciCmdSessionOpen {
+	uint32_t header;                /* opcode: GHCI_CMD_SESSION_OPEN, dwords: 4 */
+	uint32_t session_id;            /* client session identifier (0..15) */
+	uint32_t flags;                 /* session flags (e.g. protected, priority) */
+	uint32_t root_pt_phys;          /* 4KB-aligned physical address of Page Directory root (0=CP allocates) */
+} GhciCmdSessionOpen;
+
+/* CMD_SESSION_CLOSE (0x13): 2 dwords (8 bytes) */
+typedef struct GhciCmdSessionClose {
+	uint32_t header;                /* opcode: GHCI_CMD_SESSION_CLOSE, dwords: 2 */
+	uint32_t session_id;            /* client session identifier to destroy and flush */
+} GhciCmdSessionClose;
+
+/* CMD_BIND_SESSION (0x14): 2 dwords (8 bytes) */
+typedef struct GhciCmdBindSession {
+	uint32_t header;                /* opcode: GHCI_CMD_BIND_SESSION, dwords: 2 */
+	uint32_t session_id;            /* client session identifier for subsequent draws/dispatches */
+} GhciCmdBindSession;
 
 #ifdef __cplusplus
 }

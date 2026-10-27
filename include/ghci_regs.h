@@ -51,8 +51,8 @@ extern "C" {
 #define GHCI_REG_RING_BASE_LO    0x020u  /* RW: Command ring 64-bit base address [31:0] */
 #define GHCI_REG_RING_BASE_HI    0x024u  /* RW: Command ring 64-bit base address [63:32] */
 #define GHCI_REG_RING_SIZE       0x028u  /* RW: Ring size in bytes (power of 2) */
-#define GHCI_REG_RING_RPTR       0x02Cu  /* RO: GPU read pointer (byte offset from BASE) */
-#define GHCI_REG_RING_WPTR       0x030u  /* RW: Host write pointer (Doorbell, byte offset) */
+#define GHCI_REG_RING_RPTR       0x02Cu  /* RO: GPU read pointer (dword index from BASE) */
+#define GHCI_REG_RING_WPTR       0x030u  /* RW: Host write pointer (Doorbell, dword index from BASE) */
 
 /* Fault Diagnostics & Reporting */
 #define GHCI_REG_FAULT_INFO      0x034u  /* RO: Fault syndrome, kind, source unit */
@@ -104,11 +104,32 @@ extern "C" {
 #define GHCI_CTRL_TLB_FLUSH      (1u << 4)  /* Invalidate CP L1/L2 TLBs */
 
 /* STATUS bits (0x014) */
-#define GHCI_STATUS_READY        (1u << 0)  /* Hardware ready for commands */
-#define GHCI_STATUS_BUSY         (1u << 1)  /* GPU is executing commands or shaders */
-#define GHCI_STATUS_HALTED       (1u << 2)  /* CP halted */
-#define GHCI_STATUS_FAULT        (1u << 3)  /* Unrecoverable fault occurred */
-#define GHCI_STATUS_RESETTING    (1u << 4)  /* Reset sequence in progress */
+#define GHCI_STATUS_BUSY_CP      (1u << 0)  /* CP busy or reset sequence in progress */
+#define GHCI_STATUS_BUSY_BLT     (1u << 1)  /* BLT 2D engine busy */
+#define GHCI_STATUS_BUSY_VF      (1u << 2)  /* Vertex fetcher busy */
+#define GHCI_STATUS_BUSY_RX      (1u << 3)  /* Rasterizer busy */
+#define GHCI_STATUS_BUSY_SU      (1u << 4)  /* Shader Unit busy */
+#define GHCI_STATUS_BUSY_TU      (1u << 5)  /* Texture Unit busy */
+#define GHCI_STATUS_BUSY_ROP     (1u << 6)  /* ROP / pixel packer busy */
+#define GHCI_STATUS_MC_IDLE      (1u << 8)  /* Memory controller idle */
+#define GHCI_STATUS_FAULTED      (1u << 9)  /* Hardware / MMU fault active */
+#define GHCI_STATUS_HALTED       (1u << 10) /* CP halted */
+#define GHCI_STATUS_RING_EMPTY   (1u << 11) /* Ring buffer empty */
+#define GHCI_STATUS_MEM_READY    (1u << 12) /* DRAM / memory calibration complete */
+#define GHCI_STATUS_AXI_STUCK    (1u << 13) /* AXI bus transaction timeout / stuck */
+#define GHCI_STATUS_QUIESCE      (1u << 14) /* GPU memory access quiesced */
+#define GHCI_STATUS_CP_STATE(s)  (((s) >> 16) & 0x0Fu) /* [19:16] CP FSM state */
+#define GHCI_CP_STATE_IDLE       0u
+#define GHCI_CP_STATE_RUN        1u
+#define GHCI_CP_STATE_HALTING    2u
+#define GHCI_CP_STATE_HALTED     3u
+#define GHCI_CP_STATE_FAULTED    4u
+#define GHCI_CP_STATE_RESET_WAIT 5u
+
+/* Legacy/simplified aliases */
+#define GHCI_STATUS_READY        GHCI_STATUS_MEM_READY
+#define GHCI_STATUS_BUSY         (1u << 0)
+#define GHCI_STATUS_FAULT        GHCI_STATUS_FAULTED
 
 /* IRQ_STATUS & IRQ_ENABLE bits (0x018, 0x01C) */
 #define GHCI_IRQ_FENCE           (1u << 0)  /* Fence completed */
