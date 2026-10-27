@@ -143,34 +143,32 @@ extern "C" {
 #define GHCI_IRQ_WATCHDOG        (1u << 2)  /* Execution timeout / hang */
 #define GHCI_IRQ_DISPLAY         (1u << 3)  /* Display scanout / VSYNC event */
 #define GHCI_IRQ_SOFT            (1u << 5)  /* Software interrupt (triggered via IRQ_SET) */
+#define GHCI_IRQ_HALTED          (1u << 6)  /* Core execution halted following CTRL.HALT (N69) */
 
-/* FAULT_INFO decoding (0x018, K04, N50) */
-#define GHCI_FAULT_KIND(info)      ((info) & 0x0Fu)        /* [3:0] Fault kind */
+/* FAULT_INFO decoding (0x018, K04, N50, N63) */
+#define GHCI_FAULT_KIND(info)      ((info) & 0x0Fu)        /* [3:0] Fault kind (1:1 mapped) */
 #define GHCI_FAULT_UNIT(info)      (((info) >> 4) & 0x0Fu) /* [7:4] Source unit */
 #define GHCI_FAULT_SESSION(info)   (((info) >> 8) & 0xFFu) /* [15:8] Session ID (0..15) */
-#define GHCI_FAULT_STAGE(info)     (((info) >> 16) & 0x0Fu) /* [19:16] Active shader stage (N50) */
-#define GHCI_FAULT_SYNDROME(info)  (((info) >> 20) & 0x0FFFu) /* [31:20] 12-bit subunit syndrome (N50) */
+#define GHCI_FAULT_STAGE(info)     (((info) >> 16) & 0x0Fu) /* [19:16] Active shader stage */
+#define GHCI_FAULT_SYNDROME(info)  (((info) >> 20) & 0x0FFFu) /* [31:20] 12-bit subunit syndrome (bit 20: 0=Read, 1=Write) */
 
-/* Fault Kinds [3:0] (K04, N50) */
+/* Fault Kinds [3:0] (Strict 1:1 Semantics, N63) */
 #define GHCI_FAULT_KIND_NONE            0u
-#define GHCI_FAULT_KIND_INVALID_OP      1u /* Unrecognized packet opcode or illegal operation */
+#define GHCI_FAULT_KIND_INVALID_OP      1u /* Unrecognized packet opcode, illegal operation, or shader ISA fault */
 #define GHCI_FAULT_KIND_INVALID_ARG     1u /* Alias: invalid argument */
-#define GHCI_FAULT_KIND_KICK_ABSENT     2u /* Kick directed to absent hardware unit */
-#define GHCI_FAULT_KIND_RING_OOB        2u /* Alias: command ring address out-of-bounds */
+#define GHCI_FAULT_KIND_KICK_ABSENT     2u /* Kick directed to absent hardware unit, or ring out-of-bounds */
+#define GHCI_FAULT_KIND_RING_OOB        2u /* Alias: ring out-of-bounds */
 #define GHCI_FAULT_KIND_BAD_REG         3u /* Malformed packet header, length mismatch, or bad register */
-#define GHCI_FAULT_KIND_PAGE_READ       3u /* Alias: page read translation fault */
-#define GHCI_FAULT_KIND_TIMEOUT         4u /* Watchdog execution timeout / hang */
-#define GHCI_FAULT_KIND_WATCHDOG        4u /* Alias: watchdog timer expired */
-#define GHCI_FAULT_KIND_FENCE_ERROR     5u /* Memory / fence response error */
-#define GHCI_FAULT_KIND_AXI_ERROR       5u /* Alias: interconnect / bus DECERR/SLVERR */
-#define GHCI_FAULT_KIND_PAGE_WRITE      6u /* MMU page write fault */
-#define GHCI_FAULT_KIND_PROT_FAULT      6u /* Session protection violation */
-#define GHCI_FAULT_KIND_TLB_ERROR       7u /* TLB translation fault */
-#define GHCI_FAULT_KIND_LOCKED_REG      7u /* Write to locked register */
+#define GHCI_FAULT_KIND_PRIVILEGED_OP   3u /* Alias: privileged command in secondary buffer */
+#define GHCI_FAULT_KIND_WATCHDOG        4u /* Watchdog execution timeout / hang */
+#define GHCI_FAULT_KIND_TIMEOUT         4u /* Alias: watchdog timeout */
+#define GHCI_FAULT_KIND_AXI_ERROR       5u /* Interconnect / AXI bus DECERR/SLVERR, or fence response error */
+#define GHCI_FAULT_KIND_FENCE_ERROR     5u /* Alias: fence response error */
+#define GHCI_FAULT_KIND_PROT_FAULT      6u /* Session isolation violation, or secondary privilege violation */
+#define GHCI_FAULT_KIND_LOCKED_REG      7u /* Write to locked register while running */
 #define GHCI_FAULT_KIND_MMU_OOM         8u /* Dynamic page table allocation heap exhausted */
-#define GHCI_FAULT_KIND_ISA_FAULT       8u /* Shader ISA execution fault */
-#define GHCI_FAULT_KIND_PAGE_FAULT      9u /* Unmapped virtual page address */
-#define GHCI_FAULT_KIND_PERM_FAULT      10u /* Memory access permission violation */
+#define GHCI_FAULT_KIND_PAGE_FAULT      9u /* Unmapped virtual page address (SYNDROME[20] differentiates read vs write) */
+#define GHCI_FAULT_KIND_PERM_FAULT      10u /* Memory access permission violation, LDS bounds, or misaligned access */
 #define GHCI_FAULT_KIND_MEMORY_FAULT    10u /* Alias: memory protection / alignment fault */
 
 /* Source Units [7:4] (K04) */
