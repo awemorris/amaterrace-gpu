@@ -364,7 +364,8 @@ module atg_cp_regs #(
 			ridx_q <= SLIM_MMIO ? slim_ridx(reg_raddr) : reg_raddr[11:2];
 			rd_hcr_q <= SLIM_MMIO ? (reg_raddr <= GHCI_REG_SCRATCH ||
 			                         reg_raddr == GHCI_REG_EXT_CAP_FMT0 ||
-			                         reg_raddr == GHCI_REG_EXT_CAP_FEATURE) : (reg_raddr[16:12] == 5'd0);
+			                         reg_raddr == GHCI_REG_EXT_CAP_FEATURE ||
+			                         (reg_raddr >= 17'h00100 && reg_raddr <= 17'h003FF)) : (reg_raddr[16:12] == 5'd0);
 			rd_state_q <= !SLIM_MMIO && (reg_raddr[16:12] == 5'b00001 && reg_raddr[11:10] != 2'b11);
 		end
 	end
@@ -436,7 +437,7 @@ module atg_cp_regs #(
 			GHCI_REG_MAGIC: own = GHCI_MAGIC_VALUE;
 			GHCI_REG_VERSION: own = 32'h00010000;
 			GHCI_REG_DEVICE_CAPS: own = eff_dev_caps;
-			GHCI_REG_EXTCAP_PTR: own = 32'd0;
+			GHCI_REG_EXTCAP_PTR: own = (XCAP_MASK != 11'd0) ? 32'h00000100 : 32'd0;
 			GHCI_REG_RING_BASE_HI: own = 32'd0;
 			GHCI_REG_FAULT_ADDR_HI: own = 32'd0;
 			GHCI_REG_DIAG_CP_PC: own = diag_cp_pc;
@@ -444,7 +445,7 @@ module atg_cp_regs #(
 			GHCI_REG_SCRATCH: own = scratch;
 			GHCI_REG_EXT_CAP_FMT0: own = EXT_CAP_FMT0;
 			GHCI_REG_EXT_CAP_FEATURE: own = EXT_CAP_FEATURE;
-			default: ;
+			default: own = (raddr_q >= 17'h00100) ? xcap_word(roff) : 32'd0;
 			endcase
 		end else begin
 			own = xcap_word(roff);

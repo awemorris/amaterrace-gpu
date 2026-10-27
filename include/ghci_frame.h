@@ -49,6 +49,7 @@
 #define GHCI_VM_FLAG_EXEC       (1u << 2)
 #define GHCI_VM_FLAG_COHERENT   (1u << 3)
 #define GHCI_VM_FLAG_WC         (1u << 4)
+#define GHCI_VM_FLAG_LOCAL      (1u << 5)
 
 /* SESSION_OPEN flags and BUFFER_GRANT access (docs/ghci.md section 11.6). */
 #define GHCI_SESSION_PROTECTED 0x1u

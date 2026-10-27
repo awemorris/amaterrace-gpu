@@ -89,6 +89,9 @@ extern "C" {
 #define GHCI_CAP_PROT            (1u << 24) /* 1 = Session protection hardware present */
 #define GHCI_CAP_TEX_FFILT       (1u << 25) /* 1 = Hardware floating-point texture filter present */
 #define GHCI_CAP_ROP_PACK        (1u << 26) /* 1 = ROP Path 2 integer/float RT packer present */
+#define GHCI_CAP_BLT             (1u << 27) /* 1 = Blitter 2D engine present */
+#define GHCI_CAP_DISP            (1u << 28) /* 1 = Display controller present */
+#define GHCI_CAP_MSAA            (1u << 29) /* 1 = MSAA 4x multisampling supported */
 #define GHCI_CAP_TASK_SHADER     (1u << 30) /* 1 = VK_EXT Task Shader supported */
 #define GHCI_CAP_MESH_SHADER     (1u << 31) /* 1 = VK_EXT Mesh Shader supported */
 
@@ -138,18 +141,27 @@ extern "C" {
 #define GHCI_IRQ_DISPLAY         (1u << 3)  /* Display scanout / VSYNC event */
 
 /* FAULT_INFO decoding (0x034) */
-#define GHCI_FAULT_KIND(info)    ((info) & 0xFFu)
-#define GHCI_FAULT_UNIT(info)    (((info) >> 8) & 0xFFu)
-#define GHCI_FAULT_SYNDROME(info)(((info) >> 16) & 0xFFFFu)
+#define GHCI_FAULT_CLIENT(info)    ((info) & 0xFFu)
+#define GHCI_FAULT_FLAGS(info)     (((info) >> 8) & 0x0Fu)
+#define GHCI_FAULT_KIND(info)      (((info) >> 12) & 0x0Fu)
+#define GHCI_FAULT_BLOCK(info)     (((info) >> 16) & 0xFFu)
+#define GHCI_FAULT_SESSION(info)   (((info) >> 24) & 0xFFu)
 
-#define GHCI_FAULT_KIND_NONE        0u
-#define GHCI_FAULT_KIND_INVALID_OP  1u /* Unrecognized packet opcode */
-#define GHCI_FAULT_KIND_RING_OOB    2u /* Ring buffer overrun / bad pointer */
-#define GHCI_FAULT_KIND_PAGE_READ   3u /* MMU page fault on read */
-#define GHCI_FAULT_KIND_PAGE_WRITE  4u /* MMU page fault on write */
-#define GHCI_FAULT_KIND_TLB_ERROR   5u /* TLB translation / descriptor error */
-#define GHCI_FAULT_KIND_ISA_FAULT   6u /* Illegal instruction or shader exception */
-#define GHCI_FAULT_KIND_PROT_FAULT  7u /* Memory access violation */
+#define GHCI_FAULT_KIND_NONE            0u
+#define GHCI_FAULT_KIND_INVALID_OP      1u /* Unrecognized packet opcode or absent unit */
+#define GHCI_FAULT_KIND_KICK_ABSENT     2u /* Absent block KICK */
+#define GHCI_FAULT_KIND_BAD_REG         3u /* Illegal register offset */
+#define GHCI_FAULT_KIND_WATCHDOG        4u /* Watchdog timeout */
+#define GHCI_FAULT_KIND_FENCE_ERROR     5u /* Fence or result write error */
+#define GHCI_FAULT_KIND_PROT_FAULT      6u /* Session collision or memory protection violation */
+#define GHCI_FAULT_KIND_LOCKED_REG      7u /* Attempt to write locked register while running */
+#define GHCI_FAULT_KIND_MMU_OOM         8u /* CP heap out of memory for page table */
+#define GHCI_FAULT_KIND_PAGE_FAULT      9u /* MMU unmapped page fault */
+#define GHCI_FAULT_KIND_PERM_FAULT      10u /* MMU access permission violation */
+
+/* Legacy aliases */
+#define GHCI_FAULT_UNIT(info)      GHCI_FAULT_BLOCK(info)
+#define GHCI_FAULT_SYNDROME(info)  (((info) >> 16) & 0xFFFFu)
 
 #define GHCI_UNIT_CP             0u
 #define GHCI_UNIT_VF             1u

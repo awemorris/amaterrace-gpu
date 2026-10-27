@@ -35,7 +35,7 @@ extern "C" {
 #define GHCI_CMD_SESSION_CLOSE          0x13u
 #define GHCI_CMD_BIND_SESSION           0x14u
 
-/* Pipeline State & Execution Commands (0x20..0x33) */
+/* Pipeline State & Execution Commands (0x20..0x2F) */
 #define GHCI_CMD_BIND_PIPELINE          0x20u
 #define GHCI_CMD_BIND_VERTEX_BUFFERS    0x21u
 #define GHCI_CMD_BIND_INDEX_BUFFER      0x22u
@@ -47,10 +47,30 @@ extern "C" {
 #define GHCI_CMD_DRAW_INDEXED           0x28u
 #define GHCI_CMD_DRAW_INDIRECT          0x29u
 #define GHCI_CMD_DRAW_MESH_TASKS        0x2Au
+#define GHCI_CMD_BEGIN_RENDER_PASS      0x2Bu
+#define GHCI_CMD_END_RENDER_PASS        0x2Cu
+#define GHCI_CMD_LOAD_CONST             0x2Du
+
+/* Compute & Synchronization Commands (0x30..0x3F) */
 #define GHCI_CMD_DISPATCH               0x30u
 #define GHCI_CMD_BARRIER                0x31u
 #define GHCI_CMD_EXECUTE_COMMANDS       0x32u
 #define GHCI_CMD_FENCE                  0x33u
+#define GHCI_CMD_WAIT_FENCE             0x34u
+#define GHCI_CMD_WRITE_TIMESTAMP        0x35u
+#define GHCI_CMD_BEGIN_QUERY            0x36u
+#define GHCI_CMD_END_QUERY              0x37u
+
+/* Memory Transfer & Blit Commands (0x40..0x4F, Guarded by CAP_BLT) */
+#define GHCI_CMD_COPY_BUFFER            0x40u
+#define GHCI_CMD_COPY_IMAGE             0x41u
+#define GHCI_CMD_BLIT                   0x42u
+#define GHCI_CMD_FILL_BUFFER            0x43u
+#define GHCI_CMD_RESOLVE_IMAGE          0x44u
+
+/* Display Controller Commands (0x50..0x5F, Guarded by CAP_DISP) */
+#define GHCI_CMD_DISP_SET               0x50u
+#define GHCI_CMD_FLIP                   0x51u
 
 /* Legacy/compatibility aliases */
 #define GHCI_GPU_OP_VM_MAP              0x10110u
@@ -102,18 +122,25 @@ extern "C" {
 #define GHCI_BLEND_OP_MIN               3u
 #define GHCI_BLEND_OP_MAX               4u
 
-#define GHCI_BLEND_FACTOR_ZERO          0u
-#define GHCI_BLEND_FACTOR_ONE           1u
-#define GHCI_BLEND_FACTOR_SRC_COLOR     2u
-#define GHCI_BLEND_FACTOR_ONE_MINUS_SRC_COLOR 3u
-#define GHCI_BLEND_FACTOR_DST_COLOR     4u
-#define GHCI_BLEND_FACTOR_ONE_MINUS_DST_COLOR 5u
-#define GHCI_BLEND_FACTOR_SRC_ALPHA     6u
-#define GHCI_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA 7u
-#define GHCI_BLEND_FACTOR_DST_ALPHA     8u
-#define GHCI_BLEND_FACTOR_ONE_MINUS_DST_ALPHA 9u
-#define GHCI_BLEND_FACTOR_SRC1_COLOR    10u
-#define GHCI_BLEND_FACTOR_SRC1_ALPHA    11u
+#define GHCI_BLEND_FACTOR_ZERO                     0u
+#define GHCI_BLEND_FACTOR_ONE                      1u
+#define GHCI_BLEND_FACTOR_SRC_COLOR                2u
+#define GHCI_BLEND_FACTOR_ONE_MINUS_SRC_COLOR      3u
+#define GHCI_BLEND_FACTOR_DST_COLOR                4u
+#define GHCI_BLEND_FACTOR_ONE_MINUS_DST_COLOR      5u
+#define GHCI_BLEND_FACTOR_SRC_ALPHA                6u
+#define GHCI_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA      7u
+#define GHCI_BLEND_FACTOR_DST_ALPHA                8u
+#define GHCI_BLEND_FACTOR_ONE_MINUS_DST_ALPHA      9u
+#define GHCI_BLEND_FACTOR_CONSTANT_COLOR           10u
+#define GHCI_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR 11u
+#define GHCI_BLEND_FACTOR_CONSTANT_ALPHA           12u
+#define GHCI_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA 13u
+#define GHCI_BLEND_FACTOR_SRC_ALPHA_SATURATE       14u
+#define GHCI_BLEND_FACTOR_SRC1_COLOR               15u
+#define GHCI_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR     16u
+#define GHCI_BLEND_FACTOR_SRC1_ALPHA               17u
+#define GHCI_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA     18u
 
 typedef struct GhciPipelineState {
 	/* 0x00: Shader Stages (64-bit GPU virtual addresses) */
@@ -354,6 +381,7 @@ typedef struct GhciCmdFence {
 #define GHCI_VM_FLAG_EXEC       (1u << 2)
 #define GHCI_VM_FLAG_COHERENT   (1u << 3)
 #define GHCI_VM_FLAG_WC         (1u << 4)
+#define GHCI_VM_FLAG_LOCAL      (1u << 5) /* 1 = Local VRAM, 0 = Host PCIe / IOVA */
 
 /* CMD_VM_MAP (0x10110): 10 dwords (40 bytes) */
 typedef struct GhciCmdVmMap {
@@ -400,6 +428,89 @@ typedef struct GhciCmdBindSession {
 	uint32_t header;                /* opcode: GHCI_CMD_BIND_SESSION, dwords: 2 */
 	uint32_t session_id;            /* client session identifier for subsequent draws/dispatches */
 } GhciCmdBindSession;
+
+/*
+ * ============================================================================
+ * Buffer Descriptor (16 Bytes)
+ * ============================================================================
+ */
+typedef struct GhciBufferDescriptor {
+	uint32_t base_address_lo;       /* 64-bit GPU VA base [31:0] */
+	uint32_t base_address_hi;       /* 64-bit GPU VA base [63:32] */
+	uint32_t size_bytes;            /* Buffer size in bytes */
+	uint16_t stride_bytes;          /* Element stride for texel buffer; 0 for raw/uniform */
+	uint8_t  format;                /* VkFormat for texel buffer; 0 for storage/uniform */
+	uint8_t  flags;                 /* [0] ReadOnly, [1] Coherent */
+} GhciBufferDescriptor;
+
+/*
+ * ============================================================================
+ * Additional Command Packet Definitions
+ * ============================================================================
+ */
+
+/* CMD_BEGIN_RENDER_PASS (0x2B): 10 dwords */
+typedef struct GhciCmdBeginRenderPass {
+	uint32_t header;                /* opcode: GHCI_CMD_BEGIN_RENDER_PASS, dwords: 10 */
+	uint32_t color_attachment_mask; /* Active color attachments bitmask (0..7) */
+	uint32_t color_clear_rgba;      /* Packed RGBA8 or float clear value */
+	uint32_t depth_clear_value;     /* 32-bit float or 24-bit depth clear */
+	uint32_t stencil_clear_value;   /* [7:0] Stencil clear value */
+	uint32_t load_op_mask;          /* [1:0] Color0 LoadOp, [3:2] Color1, ..., [17:16] Depth, [19:18] Stencil */
+	uint32_t store_op_mask;         /* StoreOp bits matching LoadOp layout */
+	uint32_t render_area_offset;    /* [15:0] X, [31:16] Y */
+	uint32_t render_area_extent;    /* [15:0] Width, [31:16] Height */
+	uint32_t flags;                 /* [0] Inline secondary buffers */
+} GhciCmdBeginRenderPass;
+
+/* CMD_END_RENDER_PASS (0x2C): 1 dword */
+typedef struct GhciCmdEndRenderPass {
+	uint32_t header;                /* opcode: GHCI_CMD_END_RENDER_PASS, dwords: 1 */
+} GhciCmdEndRenderPass;
+
+/* CMD_LOAD_CONST (0x2D): 3 + N dwords */
+typedef struct GhciCmdLoadConst {
+	uint32_t header;                /* opcode: GHCI_CMD_LOAD_CONST, dwords: 3 + count */
+	uint32_t offset_dwords;         /* Start offset in constant bank (0..511) */
+	uint32_t count_dwords;          /* Number of constant dwords to load (1..32) */
+	/* Followed by uint32_t data[count_dwords] */
+} GhciCmdLoadConst;
+
+/* CMD_WAIT_FENCE (0x34): 4 dwords */
+typedef struct GhciCmdWaitFence {
+	uint32_t header;                /* opcode: GHCI_CMD_WAIT_FENCE, dwords: 4 */
+	uint32_t fence_addr_lo;         /* Host memory address [31:0] */
+	uint32_t fence_addr_hi;         /* Host memory address [63:32] */
+	uint32_t wait_value;            /* Value to compare (passes when (int32)(mem - value) >= 0) */
+} GhciCmdWaitFence;
+
+/* CMD_WRITE_TIMESTAMP (0x35): 4 dwords */
+typedef struct GhciCmdWriteTimestamp {
+	uint32_t header;                /* opcode: GHCI_CMD_WRITE_TIMESTAMP, dwords: 4 */
+	uint32_t dst_addr_lo;           /* 64-bit GPU VA or host memory address [31:0] */
+	uint32_t dst_addr_hi;           /* 64-bit address [63:32] */
+	uint32_t pipeline_stage;        /* Stage at which timestamp is latched (Top, Bottom, etc.) */
+} GhciCmdWriteTimestamp;
+
+/* CMD_COPY_BUFFER (0x40): 7 dwords */
+typedef struct GhciCmdCopyBuffer {
+	uint32_t header;                /* opcode: GHCI_CMD_COPY_BUFFER, dwords: 7 */
+	uint32_t src_va_lo;             /* Source GPU VA [31:0] */
+	uint32_t src_va_hi;             /* Source GPU VA [63:32] */
+	uint32_t dst_va_lo;             /* Destination GPU VA [31:0] */
+	uint32_t dst_va_hi;             /* Destination GPU VA [63:32] */
+	uint32_t size_bytes;            /* Transfer size in bytes */
+	uint32_t flags;                 /* Transfer options */
+} GhciCmdCopyBuffer;
+
+/* CMD_FILL_BUFFER (0x43): 5 dwords */
+typedef struct GhciCmdFillBuffer {
+	uint32_t header;                /* opcode: GHCI_CMD_FILL_BUFFER, dwords: 5 */
+	uint32_t dst_va_lo;             /* Destination GPU VA [31:0] */
+	uint32_t dst_va_hi;             /* Destination GPU VA [63:32] */
+	uint32_t size_bytes;            /* Buffer size to fill in bytes (4-byte multiple) */
+	uint32_t pattern_data;          /* 32-bit fill pattern */
+} GhciCmdFillBuffer;
 
 #ifdef __cplusplus
 }

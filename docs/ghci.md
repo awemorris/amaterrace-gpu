@@ -252,7 +252,10 @@ For current hardware bring-up and legacy firmware compatibility, the physical ha
 
 ### 3.2 Hardware Capabilities and Architecture Sizes
 
-GHCI provides structured hardware capability discovery and on-chip resource sizing through three registers: `DEVICE_CAPS` (0x008), `CAPS` (0x020), and `CAPS2` (0x024).
+GHCI provides structured hardware capability discovery and resource sizing through
+`DEVICE_CAPS` (offset `0x008`) and the Extended Capabilities list (`EXTCAP_PTR` at
+`0x00C`, section 4). Offsets `0x020` and `0x024` are strictly reserved for the
+64-bit command ring base address (`RING_BASE_LO` and `RING_BASE_HI`).
 
 #### 3.2.1 DEVICE_CAPS (0x008)
 
@@ -269,45 +272,25 @@ GHCI provides structured hardware capability discovery and on-chip resource sizi
 | [6] | CAP_FP16 | `CONFIG_SU_ENABLE_FP16` | 1 = Packed 16-bit float/integer arithmetic supported |
 | [7] | CAP_GSI1 | Fixed (1) | 1 = Native GSI1 standard shader ISA execution |
 | [15:8] | PHYS_LANES | `CONFIG_SU_NPHYS` | Number of physical execution lanes per Shader Unit (NPHYS = 4, 8, 16, 32; default 8) |
-| [23:16] | NUM_SU | Board config | Number of Shader Units present (e.g. 1, 2, 4) |
+| [23:16] | NUM_SU | Board config | Number of Shader Units present (0 = blit/display only, >=1 = compute/graphics shaders) |
 | [24] | CAP_PROT | `CONFIG_MC_ENABLE_PROT` | 1 = Session protection hardware (`atg_mc_prot`) present; 0 = Bare-metal / single-process mode |
 | [25] | CAP_TEX_FFILT | `CONFIG_TU_ENABLE_FFILT` | 1 = Floating-point texture filter present; 0 = UNORM8 bilinear filter only |
 | [26] | CAP_ROP_PACK | `CONFIG_ROP_ENABLE_PACK` | 1 = ROP Path 2 integer/float RT packer present; 0 = Path 0 UNORM formats only |
-| [29:27] | RESERVED | - | Reserved (reads 0) |
+| [27] | CAP_BLT | `CONFIG_HAS_BLT` | 1 = Hardware 2D blitter engine present (`CMD_COPY_*`, `CMD_BLIT`) |
+| [28] | CAP_DISP | `CONFIG_HAS_DISP` | 1 = Display controller present (DISP2 capability at `0x200`) |
+| [29] | CAP_MSAA | `CONFIG_RX_ENABLE_MSAA` | 1 = Hardware multisample anti-aliasing (2x/4x) supported |
 | [30] | CAP_TASK_SHADER | `CONFIG_SU_ENABLE_MESH` | 1 = VK_EXT Task Shader capability supported |
 | [31] | CAP_MESH_SHADER | `CONFIG_SU_ENABLE_MESH` | 1 = VK_EXT Mesh Shader capability supported |
 
-#### 3.2.2 CAPS (0x020)
+#### 3.2.2 EXT_CAP_FEATURE (0x084) - Pipeline Features
 
-`CAPS` reports fine-grained execution and pipeline features:
-
-| Bits | Name | Meaning |
-| --- | --- | --- |
-| [0] | CAP_CP | A command processor and ring buffer are present |
-| [1] | CAP_BLT | A 2D blitter engine (`atg_blt`) is present |
-| [2] | CAP_SU | A shader unit is present (`ISA_ID` is not 0) |
-| [3] | CAP_DISP | A display controller is in this window (with a DISP or DISP2 capability) |
-| [7:4] | LANES_LOG2 | log2 of physical execution lanes: 2 (4 lanes), 3 (8 lanes), 4 (16 lanes), 5 (32 lanes) |
-| [8] | CAP_FILTER_BILINEAR | Standard UNORM8 bilinear texture filtering is supported |
-| [9] | CAP_STENCIL | Hardware stencil operations and stencil attachment supported |
-| [10] | CAP_WAIT_VSYNC | CP can wait for display VSYNC events |
-| [11] | CAP_TILED_TEXTURE | Texture layout: 0 = linear only, 1 = 4x4 micro-tiled layouts supported |
-| [15:12] | STATE_VERSION | Version of the standard state layout (1) |
-| [16] | CAP_MMU | Autonomous 2-level hardware page table walker and TLB active |
-| [17] | CAP_CP_FW | Command processor firmware processor (RV32IM) active (class 2 packets decoded) |
-| [18] | CAP_CP_RELOAD | CP firmware can be reloaded dynamically (`CPFW` capability) |
-| [19] | CAP_NATIVE_ISA | Native shader ISA (`ISA_ID`) differs from standard GSI1 |
-| [23:20] | LINE_SHIFT | log2 of memory line size in bytes (5 = 32 bytes, 6 = 64 bytes) |
-| [24] | CAP_SUBGROUP | Subgroup operations supported: `shfl`, `vote`, `ballot` (`CONFIG_SU_ENABLE_SUBGROUP`) |
-| [25] | CAP_SA | Systolic array matrix accelerator attached (`CONFIG_SU_ENABLE_SA`) |
-| [26] | CAP_TEX_EXT | Extended texture features: 3D/Cube views, depth compare, gather, and floating-point filtering (`CONFIG_TU_ENABLE_FFILT`) |
-| [27] | CAP_GRAPHICS | Graphics pipeline present (vertex fetcher, rasterizer, render output) |
-| [28] | CAP_PACKED_FP16 | Packed FP16/INT16 arithmetic supported (`CONFIG_SU_ENABLE_FP16`) |
-| [29] | CAP_MSAA | Multisample anti-aliasing (2x/4x) supported (`CONFIG_RX_ENABLE_MSAA`) |
-| [30] | CAP_CORE_RENDERING | Core rendering pipeline features and extended render target formats (`CONFIG_ROP_ENABLE_PACK`) |
-| [31] | RESERVED | Reserved (reads 0) |
-
-#### 3.2.3 CAPS2 (0x024) - Memory & Cache Architecture Sizes
+When extended capabilities are read, `EXT_CAP_FEATURE` (0x084) exposes detailed execution flags:
+- `[0] CAP_SUBGROUP`: Subgroup shuffle, vote, and ballot operations supported.
+- `[1] CAP_SA`: Systolic array matrix accelerator attached.
+- `[2] CAP_TILED_TEXTURE`: Optimal 4x4 micro-tiled layouts supported.
+- `[3] CAP_STENCIL`: Hardware stencil operations and separate stencil attachment supported.
+- `[7:4] MAX_SESSIONS`: Maximum concurrent hardware client sessions (default 16).
+- `[31:8]`: Reserved.
 
 `CAPS2` dynamically reports on-chip buffer sizes, cache hierarchy capacities, and line buffer depths configured at hardware synthesis time:
 
@@ -427,14 +410,28 @@ EXTCAP points to a list of entries of two words each:
 | 1 | DISP | A display controller without a command processor (section 13.1) |
 | 2 | DBG | A debug bridge outside the host bus (for example JTAG) is present |
 | 3 | PERF | What PERF0..3 count (below) |
-| 4 | VEND | Vendor registers |
-| 5 | MMU | A GPU MMU (reserved for a later version) |
+| 4 | VEND | Vendor registers and clock frequency (section 4.1) |
+| 5 | MMU | A GPU MMU (reserved / core integrated) |
 | 6 | CPFW | The command processor's firmware images (vendor-defined in version 1.0) |
 | 7 | SA | A systolic array (reserved) |
 | 8 | MEM | The memory configuration: local memory and the local window (section 11.3) |
 | 9 | PROT | Session protection (section 11.6) |
-| 10 | FMT | The formats the GPU supports (draft, below) |
-| 11 | DISP2 | A display controller that is a unit of the GPU (draft, section 13.2) |
+| 10 | FMT | The formats the GPU supports (section 8.5) |
+| 11 | DISP2 | A display controller that is a unit of the GPU (section 13.2) |
+
+### 4.1 Extended Capability Register Window Map
+
+All extended capability structures and registers reside entirely within the first 1 KiB
+(`0x000`..`0x3FF`), fully accessible via a single 4 KiB host physical page mapping:
+- `EXTCAP_PTR` (0x00C) = `0x100` (points to the head of the capability list).
+- Capability list header entries: `0x100`..`0x10F` and `0x180`..`0x1BF`.
+- Capability register blocks:
+  - `0x110`..`0x13F`: `PERF` (ID 3, `PERF_SRC0..3` at `+0x0..+0xC`), `CPFW` (ID 6).
+  - `0x140`..`0x15F`: `FMT` (ID 10, `FMT_INDEX` at `+0x0`, `FMT_OPTIMAL` at `+0x4`, `FMT_LINEAR` at `+0x8`, `FMT_BUFFER` at `+0xC`, `FMT_LIMITS` at `+0x10`).
+  - `0x180`..`0x19F`: `VEND` (ID 4, `VENDOR_ID` at `+0x0`, `DEVICE_ID` at `+0x4`, `SUBSYSTEM_VENDOR` at `+0x8`, `SUBSYSTEM_DEVICE` at `+0xC`, `GCLK_HZ` at `+0x10`).
+  - `0x1D0`..`0x1DF`: `PROT` (ID 9, session protection registers).
+  - `0x1E0`..`0x1F4`: `MEM` (ID 8, `LOCAL_BASE` at `+0x0`, `LOCAL_SIZE` at `+0x4`, `WINDOW_SIZE` at `+0x8`, `HOST_LIMIT` at `+0xC`, `WINDOW_CTRL` at `+0x10`).
+  - `0x200`..`0x2BC`: `DISP2` (ID 11, display controller timing, framebuffer, mode, and cursor registers).
 
 **FMT (version 1, draft).** Registers at the capability's register
 offset (a window of 32 bytes): +0x0 FMT_INDEX (RW, a VkFormat value),
@@ -593,29 +590,43 @@ packet). Packets are processed in strict in-order sequence by the Command Proces
 
 ### 7.2 Structured Command Opcodes
 
-| Opcode | Name | Size (dw) | Description |
-| --- | --- | --- | --- |
-| `0x00` | `CMD_NOP` | variable | Padding / no-operation |
-| `0x10` | `CMD_VM_MAP` | 10 | Maps physical/IOVA pages into session GPU virtual address space |
-| `0x11` | `CMD_VM_UNMAP` | 8 | Unmaps virtual address range from session and invalidates TLB |
-| `0x12` | `CMD_SESSION_OPEN` | 4 | Creates a client session context and initializes root page directory |
-| `0x13` | `CMD_SESSION_CLOSE`| 2 | Destroys client session context and flushes associated TLB entries |
-| `0x14` | `CMD_BIND_SESSION` | 2 | Sets active session ID for subsequent ring draw/dispatch commands |
-| `0x20` | `CMD_BIND_PIPELINE` | 3 | Binds immutable PSO via 64-bit GPU virtual address |
-| `0x21` | `CMD_BIND_VERTEX_BUFFERS` | 2 + 4×N | Binds vertex buffer arrays (VA, size, stride) |
-| `0x22` | `CMD_BIND_INDEX_BUFFER` | 4 | Binds index buffer (VA, index type, size) |
-| `0x23` | `CMD_BIND_DESCRIPTOR_TABLE` | 4 | Binds resource descriptor table (set slot, table VA, count) |
-| `0x24` | `CMD_SET_VIEWPORT` | 7 | Dynamic viewport bounds (X, Y, W, H, MinZ, MaxZ) |
-| `0x25` | `CMD_SET_SCISSOR` | 5 | Dynamic scissor rectangle (X, Y, W, H) |
-| `0x26` | `CMD_SET_DYNAMIC_STATE` | 6 | Dynamic depth bias, blend constants, stencil reference |
-| `0x27` | `CMD_DRAW` | 5 | Direct non-indexed primitive draw |
-| `0x28` | `CMD_DRAW_INDEXED` | 6 | Indexed primitive draw |
-| `0x29` | `CMD_DRAW_INDIRECT` | 6 | MultiDrawIndirect from GPU buffer |
-| `0x2A` | `CMD_DRAW_MESH_TASKS`| 5 | Dispatches task/mesh shader workgroups |
-| `0x30` | `CMD_DISPATCH` | 4 | Compute shader workgroup dispatch (X, Y, Z) |
-| `0x31` | `CMD_BARRIER` | 4 | Pipeline synchronization & cache/TLB invalidation |
-| `0x32` | `CMD_EXECUTE_COMMANDS` | 4 | Direct execution of secondary command buffers (UMA zero-copy) |
-| `0x33` | `CMD_FENCE` | 5 | Complete memory fence writeback & optional host IRQ |
+| Opcode | Name | Size (dw) | Guard / Capability | Description |
+| --- | --- | --- | --- | --- |
+| `0x00` | `CMD_NOP` | variable | Mandatory | Padding / no-operation |
+| `0x10` | `CMD_VM_MAP` | 10 | `CAP_HW_WALKER` | Maps physical/IOVA pages into session GPU virtual address space |
+| `0x11` | `CMD_VM_UNMAP` | 8 | `CAP_HW_WALKER` | Unmaps virtual address range from session and invalidates TLB |
+| `0x12` | `CMD_SESSION_OPEN` | 4 | `CAP_HW_WALKER` / `PROT` | Creates client session context and initializes root page directory |
+| `0x13` | `CMD_SESSION_CLOSE`| 2 | `CAP_HW_WALKER` / `PROT` | Destroys client session context and flushes associated TLB entries |
+| `0x14` | `CMD_BIND_SESSION` | 2 | Mandatory | Sets active session ID for subsequent ring draw/dispatch commands |
+| `0x20` | `CMD_BIND_PIPELINE` | 3 | `NUM_SU > 0` | Binds immutable PSO via 64-bit GPU virtual address |
+| `0x21` | `CMD_BIND_VERTEX_BUFFERS` | 2 + 4×N | `NUM_SU > 0` | Binds vertex buffer arrays (VA, size, stride) |
+| `0x22` | `CMD_BIND_INDEX_BUFFER` | 4 | `NUM_SU > 0` | Binds index buffer (VA, index type, size) |
+| `0x23` | `CMD_BIND_DESCRIPTOR_TABLE` | 4 | `NUM_SU > 0` | Binds resource descriptor table (set slot, table VA, count) |
+| `0x24` | `CMD_SET_VIEWPORT` | 7 | Mandatory (Raster) | Dynamic viewport bounds (X, Y, W, H, MinZ, MaxZ) |
+| `0x25` | `CMD_SET_SCISSOR` | 5 | Mandatory (Raster) | Dynamic scissor rectangle (X, Y, W, H) |
+| `0x26` | `CMD_SET_DYNAMIC_STATE` | 6 | Mandatory (Raster) | Dynamic depth bias, blend constants, stencil reference |
+| `0x27` | `CMD_DRAW` | 5 | `NUM_SU > 0` | Direct non-indexed primitive draw |
+| `0x28` | `CMD_DRAW_INDEXED` | 6 | `NUM_SU > 0` | Indexed primitive draw |
+| `0x29` | `CMD_DRAW_INDIRECT` | 6 | `CAP_INDIRECT_DRAW` | MultiDrawIndirect from GPU buffer (indexed/non-indexed) |
+| `0x2A` | `CMD_DRAW_MESH_TASKS`| 5 | `CAP_MESH_SHADER` | Dispatches task/mesh shader workgroups |
+| `0x2B` | `CMD_BEGIN_RENDER_PASS`| 10 | Mandatory (Raster) | Binds color/depth attachments, clear values, LoadOps |
+| `0x2C` | `CMD_END_RENDER_PASS` | 1 | Mandatory (Raster) | Ends active render pass and executes attachment StoreOps |
+| `0x2D` | `CMD_LOAD_CONST` | 3 + N | `NUM_SU > 0` | Loads push constants / uniforms directly into on-chip constant bank |
+| `0x30` | `CMD_DISPATCH` | 4 | `NUM_SU > 0` | Compute shader workgroup dispatch (X, Y, Z) |
+| `0x31` | `CMD_BARRIER` | 4 | Mandatory | Pipeline synchronization & cache/TLB invalidation |
+| `0x32` | `CMD_EXECUTE_COMMANDS` | 4 | `CAP_SECONDARY_RING`| Direct execution of secondary command buffers (UMA zero-copy) |
+| `0x33` | `CMD_FENCE` | 5 | Mandatory | Complete memory fence writeback (64-bit) & optional host IRQ |
+| `0x34` | `CMD_WAIT_FENCE` | 4 | Mandatory | CP pauses ring execution until memory fence value satisfies condition |
+| `0x35` | `CMD_WRITE_TIMESTAMP` | 4 | Mandatory | Latches 64-bit core cycle counter to GPU VA or host memory |
+| `0x36` | `CMD_BEGIN_QUERY` | 3 | Mandatory (Raster) | Begins occlusion query sample counting |
+| `0x37` | `CMD_END_QUERY` | 2 | Mandatory (Raster) | Ends occlusion query and emits result |
+| `0x40` | `CMD_COPY_BUFFER` | 7 | `CAP_BLT` | 2D DMA buffer-to-buffer transfer |
+| `0x41` | `CMD_COPY_IMAGE` | 9 | `CAP_BLT` | 2D/3D image-to-image transfer |
+| `0x42` | `CMD_BLIT` | 10 | `CAP_BLT` | Image blit with scaling and format conversion |
+| `0x43` | `CMD_FILL_BUFFER` | 5 | `CAP_BLT` | Fills buffer range with 32-bit pattern (Clear) |
+| `0x44` | `CMD_RESOLVE_IMAGE` | 9 | `CAP_BLT` | Resolves multisample (MSAA) attachment to 1x image |
+| `0x50` | `CMD_DISP_SET` | 2 + 2×N | `CAP_DISP` | Sets display controller mode, timing, and format registers |
+| `0x51` | `CMD_FLIP` | 4 | `CAP_DISP` | Queues scanout framebuffer flip on next VSYNC |
 
 ### 7.3 Detailed Command Binary Specifications
 
@@ -867,51 +878,95 @@ A compact 16-byte structure describing texture sampling parameters:
 | `0x0B` | `max_lod_fx4` | uint8_t | Unsigned 4.4 fixed-point maximum LOD clamp |
 | `0x0C` | `border_color` | uint32_t | Packed RGBA8 border color (or transparent black) |
 
-### 8.4 Descriptor Tables & Shader Resource Binding
+#### Buffer Descriptor (`GhciBufferDescriptor`, 16 Bytes)
+A compact 16-byte structure describing raw, uniform, storage, or texel buffers:
+
+| Byte Offset | Field Name | Type | Description |
+| --- | --- | --- | --- |
+| `0x00` | `base_address` | uint64_t | 64-bit GPU virtual address of buffer base |
+| `0x08` | `size_bytes` | uint32_t | Buffer range in bytes |
+| `0x0C` | `stride_bytes` | uint16_t | Element stride in bytes for texel buffers; 0 for raw/uniform |
+| `0x0E` | `format` | uint8_t | Format code (`VkFormat`) for typed texel buffers; 0 for uniform/storage |
+| `0x0F` | `flags` | uint8_t | `[0]` ReadOnly, `[1]` Coherent |
+
+### 8.4 Descriptor Tables, Push Constants & Shader Resource Binding
 
 Resource binding follows a flat, table-based descriptor architecture:
-- The driver allocates arrays of `GhciTextureDescriptor` and `GhciSamplerDescriptor`
-  structures in shared memory.
+- The driver allocates arrays of `GhciTextureDescriptor`, `GhciSamplerDescriptor`,
+  or `GhciBufferDescriptor` structures in shared memory.
 - The `CMD_BIND_DESCRIPTOR_TABLE(set_index, table_va, count)` packet binds a
   table to one of 4 hardware descriptor set slots (`set 0` .. `set 3`).
+- Inside each descriptor set table, descriptors are indexed directly by their
+  Vulkan `binding` index:
+  $$\text{Descriptor VA} = \text{table\_va} + (\text{binding} \times \text{descriptor\_size\_bytes})$$
 - Shader instructions (`tex ld`, `tex f`, `gsi1_load`) index descriptors
   directly using immediate offsets or register operands, resolving addresses
-  through the Texture Unit's descriptor cache without generating ring or MMIO traffic.
+  through the Texture Unit and Load/Store Unit descriptor caches.
+
+#### Push Constants (`CMD_LOAD_CONST`)
+Push constants (up to 128 bytes / 32 dwords) are written directly into the
+on-chip Shader Unit constant bank using `CMD_LOAD_CONST(offset_dw, count_dw, data...)`.
+This eliminates descriptor indirection and allows shaders to access uniform
+parameters with 1-cycle latency from constant register bank `c[0..511]`.
 
 ### 8.5 Supported Image Formats, Texture Compression & Dimensions
 
-GHCI 1.0 defines native hardware texture and render target format support, fully
-compliant with Vulkan 1.0 core mandatory requirements.
+GHCI 1.0 defines native hardware texture, buffer, and render target format support,
+fully compliant with Vulkan 1.0 core mandatory requirements.
 
-#### 8.5.1 Texture Compression Formats (ETC2 / EAC)
-The Texture Unit (TU) integrates an autonomous hardware 4×4 block decompressor
-(`atg_tu_etc.v`) supporting all 10 Vulkan 1.0 mandatory ETC2 and EAC formats:
+#### 8.5.1 Comprehensive Vulkan Format Features Table
 
-| VkFormat Enum | ID | Block Size | Components & Modes | Filtering Support |
-| :--- | :---: | :---: | :--- | :--- |
-| `VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK` | 147 | 8 bytes | RGB8 (Individual, Diff, T, H, Planar) | Nearest, Bilinear (`atg_tu_ffilt`) |
-| `VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK` | 148 | 8 bytes | sRGB nonlinear gamma correction | Nearest, Bilinear |
-| `VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK` | 149 | 8 bytes | RGB8 with 1-bit punch-through alpha | Nearest, Bilinear |
-| `VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK` | 150 | 8 bytes | RGB8 punch-through alpha + sRGB | Nearest, Bilinear |
-| `VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK` | 151 | 16 bytes | 8-byte EAC Alpha + 8-byte ETC2 RGB | Nearest, Bilinear |
-| `VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK` | 152 | 16 bytes | 8-byte EAC Alpha + 8-byte ETC2 RGB + sRGB | Nearest, Bilinear |
-| `VK_FORMAT_EAC_R11_UNORM_BLOCK` | 153 | 8 bytes | 11-bit unsigned normalized single channel | Nearest, Bilinear |
-| `VK_FORMAT_EAC_R11_SNORM_BLOCK` | 154 | 8 bytes | 11-bit signed normalized single channel | Nearest, Bilinear |
-| `VK_FORMAT_EAC_R11G11_UNORM_BLOCK` | 155 | 16 bytes | 11-bit unsigned normalized two-channel | Nearest, Bilinear |
-| `VK_FORMAT_EAC_R11G11_SNORM_BLOCK` | 156 | 16 bytes | 11-bit signed normalized two-channel | Nearest, Bilinear |
+| Format | VkFormat | Block / Bytes | Sampled (Point/Linear) | Color Attach (Blend) | Depth/Stencil Attach | Vertex Buffer | Storage Image | Guard / Capability |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| `R8_UNORM` | 9 | 1 B | Point + Linear | Yes (Blend) | No | Yes | No | Mandatory |
+| `R8_SNORM` | 10 | 1 B | Point + Linear | No | No | Yes | No | Mandatory |
+| `R8_UINT` | 13 | 1 B | Point | Yes (No Blend) | No | Yes | No | `CAP_ROP_PACK` |
+| `R8_SINT` | 14 | 1 B | Point | Yes (No Blend) | No | Yes | No | `CAP_ROP_PACK` |
+| `R8G8_UNORM` | 16 | 2 B | Point + Linear | Yes (Blend) | No | Yes | No | Mandatory |
+| `R8G8_SNORM` | 17 | 2 B | Point + Linear | No | No | Yes | No | Mandatory |
+| `R8G8_UINT` | 20 | 2 B | Point | Yes (No Blend) | No | Yes | No | `CAP_ROP_PACK` |
+| `R8G8_SINT` | 21 | 2 B | Point | Yes (No Blend) | No | Yes | No | `CAP_ROP_PACK` |
+| `R8G8B8A8_UNORM` | 37 | 4 B | Point + Linear | Yes (Blend) | No | Yes | Yes | Mandatory |
+| `R8G8B8A8_SNORM` | 38 | 4 B | Point + Linear | No | No | Yes | No | Mandatory |
+| `R8G8B8A8_UINT` | 41 | 4 B | Point | Yes (No Blend) | No | Yes | Yes | `CAP_ROP_PACK` |
+| `R8G8B8A8_SINT` | 42 | 4 B | Point | Yes (No Blend) | No | Yes | Yes | `CAP_ROP_PACK` |
+| `R8G8B8A8_SRGB` | 43 | 4 B | Point + Linear | Yes (Blend) | No | No | No | Mandatory |
+| `B8G8R8A8_UNORM` | 44 | 4 B | Point + Linear | Yes (Blend) | No | Yes | No | Mandatory |
+| `B8G8R8A8_SRGB` | 50 | 4 B | Point + Linear | Yes (Blend) | No | No | No | Mandatory |
+| `R5G6B5_UNORM_PACK16` | 84 | 2 B | Point + Linear | Yes (Blend) | No | Yes | No | Mandatory |
+| `A1R5G5B5_UNORM_PACK16`| 86 | 2 B | Point + Linear | Yes (Blend) | No | Yes | No | Mandatory |
+| `R16_SFLOAT` | 76 | 2 B | Point + Linear | Yes (Blend) | No | Yes | Yes | `CAP_FP16` / `FFILT` |
+| `R16G16_SFLOAT` | 83 | 4 B | Point + Linear | Yes (Blend) | No | Yes | Yes | `CAP_FP16` / `FFILT` |
+| `R16G16B16A16_SFLOAT` | 97 | 8 B | Point + Linear | Yes (Blend) | No | Yes | Yes | `CAP_FP16` / `FFILT` |
+| `R32_UINT` | 98 | 4 B | Point | Yes (No Blend) | No | Yes | Yes | `CAP_ROP_PACK` |
+| `R32_SINT` | 99 | 4 B | Point | Yes (No Blend) | No | Yes | Yes | `CAP_ROP_PACK` |
+| `R32_SFLOAT` | 100 | 4 B | Point + Linear | Yes (Blend) | No | Yes | Yes | `CAP_TEX_FFILT` |
+| `R32G32_SFLOAT` | 103 | 8 B | Point + Linear | No | No | Yes | No | `CAP_TEX_FFILT` |
+| `R32G32B32A32_UINT` | 107 | 16 B | Point | Yes (No Blend) | No | Yes | Yes | `CAP_ROP_PACK` |
+| `R32G32B32A32_SFLOAT`| 109 | 16 B | Point + Linear | Yes (Blend) | No | Yes | Yes | `CAP_TEX_FFILT` |
+| `D16_UNORM` | 124 | 2 B | Point | No | Yes | No | No | Mandatory |
+| `D32_SFLOAT` | 126 | 4 B | Point | No | Yes | No | No | Mandatory |
+| `D24_UNORM_S8_UINT` | 129 | 4 B | Point | No | Yes | No | No | Mandatory |
+| `D32_SFLOAT_S8_UINT` | 130 | 8 B | Point | No | Yes | No | No | Mandatory |
+| `BC1_RGB_UNORM_BLOCK`| 131 | 8 B | Point + Linear | No | No | No | No | `CAP_BC` |
+| `BC1_RGBA_UNORM_BLOCK`| 133 | 8 B | Point + Linear | No | No | No | No | `CAP_BC` |
+| `BC2_UNORM_BLOCK` | 135 | 16 B | Point + Linear | No | No | No | No | `CAP_BC` |
+| `BC3_UNORM_BLOCK` | 137 | 16 B | Point + Linear | No | No | No | No | `CAP_BC` |
+| `BC4_UNORM_BLOCK` | 139 | 8 B | Point + Linear | No | No | No | No | `CAP_BC` |
+| `BC5_UNORM_BLOCK` | 141 | 16 B | Point + Linear | No | No | No | No | `CAP_BC` |
+| `BC7_UNORM_BLOCK` | 145 | 16 B | Point + Linear | No | No | No | No | `CAP_BC` |
+| `ETC2_R8G8B8_UNORM_BLOCK` | 147 | 8 B | Point + Linear | No | No | No | No | Mandatory |
+| `ETC2_R8G8B8_SRGB_BLOCK` | 148 | 8 B | Point + Linear | No | No | No | No | Mandatory |
+| `ETC2_R8G8B8A1_UNORM_BLOCK` | 149 | 8 B | Point + Linear | No | No | No | No | Mandatory |
+| `ETC2_R8G8B8A1_SRGB_BLOCK` | 150 | 8 B | Point + Linear | No | No | No | No | Mandatory |
+| `ETC2_R8G8B8A8_UNORM_BLOCK` | 151 | 16 B | Point + Linear | No | No | No | No | Mandatory |
+| `ETC2_R8G8B8A8_SRGB_BLOCK` | 152 | 16 B | Point + Linear | No | No | No | No | Mandatory |
+| `EAC_R11_UNORM_BLOCK` | 153 | 8 B | Point + Linear | No | No | No | No | Mandatory |
+| `EAC_R11_SNORM_BLOCK` | 154 | 8 B | Point + Linear | No | No | No | No | Mandatory |
+| `EAC_R11G11_UNORM_BLOCK` | 155 | 16 B | Point + Linear | No | No | No | No | Mandatory |
+| `EAC_R11G11_SNORM_BLOCK` | 156 | 16 B | Point + Linear | No | No | No | No | Mandatory |
 
-#### 8.5.2 Color and Depth/Stencil Formats
-The fixed-function Texture Unit, Rasterizer, and Render Output (ROP) support:
-
-| Format Category | VkFormat Values | Hardware Datapath | Capabilities |
-| :--- | :--- | :--- | :--- |
-| **8-bit Normalized** | `R8_UNORM` (9), `R8G8_UNORM` (16), `R8G8B8A8_UNORM` (37), `B8G8R8A8_UNORM` (44), `R8G8B8A8_SRGB` (43), `B8G8R8A8_SRGB` (50) | Path 0 (8-bit fixed) | Sample, Linear, Color Attachment, Blend, Blit |
-| **16-bit Packed** | `R5G6B5_UNORM_PACK16` (84), `A1R5G5B5_UNORM_PACK16` (86) | Path 0 | Sample, Linear, Color Attachment, Blend, Blit |
-| **Floating-Point** | `R16_SFLOAT` (76), `R16G16B16A16_SFLOAT` (97), `R32_SFLOAT` (100), `R32G32B32A32_SFLOAT` (109) | Path 2 (`atg_fmt_pack`, `atg_tu_ffilt`) | Sample, Linear (FP16/FP32), Color Attachment |
-| **Integer / SINT** | `R8_UINT` (13), `R8G8B8A8_UINT` (41), `R32_UINT` (98), `R32G32B32A32_UINT` (107) | Path 2 | Sample, Nearest, Color Attachment |
-| **Depth / Stencil** | `D16_UNORM` (124), `D24_UNORM_S8_UINT` (129), `D32_SFLOAT` (126), `D32_SFLOAT_S8_UINT` (130) | RX / ROP Tile Depth Unit | Depth/Stencil Attachment, Early-Z, Late-Z |
-
-#### 8.5.3 Texture Dimensions and Image Layouts
+#### 8.5.2 Texture Dimensions and Image Layouts
 Textures are configured through `GhciTextureDescriptor.dimension` (`0x19`) and layout parameters:
 
 | Dimension Code | Vulkan Image Type | Description & Dimensions |
@@ -925,6 +980,42 @@ Textures are configured through `GhciTextureDescriptor.dimension` (`0x19`) and l
 - **Mipmaps:** Supports 1 to 15 mip levels (`mip_levels`). Each level $l$ extent is $\max(1, \text{size} \gg l)$.
 - **Multisampling (MSAA):** Supports 1, 2, and 4 samples per texel (`sample_count`).
 - **Memory Alignment:** Image subresource rows are aligned to 64 bytes (`GHCI_LAYOUT_ALIGN`), and slices/layers are aligned to 64 bytes.
+
+### 8.6 Vulkan Hardware Limits and Standard Architectural Constants
+
+Drivers populating `VkPhysicalDeviceLimits` should configure properties according
+to the following architectural parameters:
+
+| Vulkan Limit Property | Value | Hardware Source / Explanation |
+| :--- | :---: | :--- |
+| `maxImageDimension1D` | 16,384 | 14-bit texel coordinate addressing |
+| `maxImageDimension2D` | 16,384 | 14-bit texel coordinate addressing |
+| `maxImageDimension3D` | 2,048 | 11-bit volumetric coordinate addressing |
+| `maxImageDimensionCube` | 16,384 | Cube face extent limit |
+| `maxImageArrayLayers` | 2,048 | 11-bit array layer addressing |
+| `maxTexelBufferElements` | 67,108,864 | 256 MiB maximum texel buffer size |
+| `maxUniformBufferRange` | 65,536 | 64 KiB uniform buffer window (8 KiB on-chip constant cache) |
+| `maxStorageBufferRange` | 2,147,483,648 | 2 GiB addressable range in 32-bit GPU VA space |
+| `maxPushConstantsSize` | 128 bytes | Loaded via `CMD_LOAD_CONST` into on-chip constant bank |
+| `maxMemoryAllocationCount` | 4,096 | Supported concurrent OS DMA mappings |
+| `maxSamplerAllocationCount` | 4,000 | In-memory descriptor limit |
+| `maxBoundDescriptorSets` | 4 | 4 hardware descriptor set pointer registers |
+| `maxPerStageDescriptorSamplers` | 16 | 16 sampler slots per pipeline stage |
+| `maxPerStageDescriptorUniformBuffers` | 16 | 16 uniform buffer descriptor slots |
+| `maxPerStageDescriptorStorageBuffers` | 16 | 16 storage buffer descriptor slots |
+| `maxPerStageDescriptorSampledImages` | 16 | 16 texture descriptor slots |
+| `maxPerStageDescriptorStorageImages` | 8 | 8 storage image slots |
+| `maxVertexInputAttributes` | 16 | Hardware vertex fetcher attribute channels (0..15) |
+| `maxVertexInputBindings` | 16 | Hardware vertex stream buffer slots (0..15) |
+| `maxVertexInputAttributeOffset` | 65,535 | 16-bit attribute offset field in `GhciPipelineState` |
+| `maxVertexInputBindingStride` | 4,095 | 12-bit vertex stride field in `GhciPipelineState` |
+| `maxColorAttachments` | 4 or 8 | Reported dynamically via `FMT_LIMITS[3:0]` |
+| `maxComputeWorkGroupCount[3]` | {65535, 65535, 65535} | 16-bit workgroup dispatch counters |
+| `maxComputeWorkGroupInvocations` | 256 | 8 warps × 32 lanes per Shader Unit |
+| `maxComputeWorkGroupSize[3]` | {256, 256, 64} | Max workgroup dimensions |
+| `maxComputeSharedMemorySize` | 4,096 bytes | On-chip Local Data Share (LDS) RAM per SU |
+| `subGroupSize` | 32 | Native SIMD warp width |
+| `timestampPeriod` | 10.0 ns | Core clock 100 MHz (`1.0e9 / GCLK_HZ`) |
 
 9. Fences and interrupts
 ------------------------
@@ -957,15 +1048,19 @@ Textures are configured through `GhciTextureDescriptor.dimension` (`0x19`) and l
 10. Faults, watchdog, quiesce and reset
 ---------------------------------------
 
-- **Faults.** A fault (section 3.4, kinds 1-8) sets STATUS.FAULT,
-  IRQ_STATUS.FAULT and FAULT_ADDR/INFO; the CP goes to FAULTED and
+- **Faults.** A fault (section 3.5, kinds 1-10) sets STATUS.FAULTED,
+  IRQ_STATUS.IRQ_FAULT and FAULT_ADDR/INFO; the CP goes to FAULTED and
   quiesces. Blocks that are working stop at their next memory access.
-- **Recovery.** In version 1, recovery is for the whole device: the driver
-  logs FAULT_INFO (block and job tag), writes CTRL.RESET, rebuilds the ring
-  and the fence memory, and completes every outstanding fence with an
-  error. Only an error that the CP finds while parsing (kinds 2, 3, 7),
-  before it has handed anything to a unit, may be skipped with STEP so
-  that other work continues.
+- **Recovery.**
+  - With session protection (`CAP_PROT` / `CONFIG_MC_ENABLE_PROT`): Faults tied to a
+    specific client session (`SESSION_ID != 0`) do not halt the entire GPU. The CP
+    remains in `S_RUN`, raises `IRQ_FAULT`, and drops only the offending session. The
+    driver reads `FAULT_INFO[31:24]` to identify the failed session, issues
+    `CMD_SESSION_CLOSE` to reclaim its resources, and clears the IRQ. Other sessions
+    continue executing.
+  - Without session protection or upon unrecoverable system faults: The driver writes
+    `CTRL.RESET` (core reset), restores `CP_HEAP` and `RING_BASE`, and restarts ring
+    processing via `CTRL.RUN = 1`.
 - **Watchdog** (CTRL.WDT_EN): a command running longer than WDT_CYCLES is a
   fault of kind 4. The hardware never resets itself.
 - **Quiesce.** The GPU stops issuing new memory accesses for its blocks,
@@ -1035,6 +1130,17 @@ The host submits virtual memory management operations as structured packets on t
 - `GHCI_VM_FLAG_EXEC` (`0x4`): Instruction fetch permitted (shader code).
 - `GHCI_VM_FLAG_COHERENT` (`0x8`): Hardware-enforced cache coherency with CPU host.
 - `GHCI_VM_FLAG_WC` (`0x10`): Write-combining memory attribute.
+- `GHCI_VM_FLAG_LOCAL` (`0x20`): 1 = Physical address is in local device VRAM (`LOCAL_BASE + offset`); 0 = Host PCIe bus address or IOVA.
+
+#### Firmware Heap and Page Table Allocation (`CP_HEAP_BASE`, `CP_HEAP_LIMIT`)
+Level 2 page tables (4 KiB each, mapping 4 MiB of GPU VA) are dynamically allocated
+and freed by the CP firmware from a dedicated carveout defined by:
+- `CP_HEAP_BASE` (0x0B0): 32-bit GPU physical address of heap start (4 KiB aligned).
+- `CP_HEAP_LIMIT` (0x0B4): 32-bit GPU physical address of heap end.
+The driver programs these registers during initialization in `IDLE` state before
+setting `CTRL.RUN = 1`. A minimum heap size of 2 MiB is recommended (supporting up to
+512 Level 2 page tables = 2 GiB addressable space per heap). If the heap is exhausted
+during `CMD_VM_MAP`, the CP traps with `FAULT_KIND = 8` (`FAULT_MMU_OOM`).
 
 #### Two-Level Page Table Structure
 The CP autonomously allocates and manages a 2-level page table structure within its internal firmware heap:
