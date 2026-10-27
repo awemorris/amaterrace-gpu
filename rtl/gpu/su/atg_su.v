@@ -44,7 +44,7 @@ module atg_su #(
 `endif
 	parameter SB_ENTRIES = 4,	/* Scoreboard entries per warp (KC705 8) */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
-	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
+	parameter UOP_W = 108,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
 	parameter SHORT_LAT = 6,	/* Cycles from x_valid to the short result (one fixed pipeline for classes a and f, design §3.1.1) */
 	parameter NSU = 1,	/* SUs in the GPU */
 	parameter SU_INDEX = 0,	/* This SU's number */
@@ -130,6 +130,7 @@ module atg_su #(
 	input wire tx_ready,
 	output wire [7:0] tx_op,
 	output wire [3:0] tx_slot,
+	output wire [3:0] tx_samp_slot,
 	output wire tx_vs,
 	output wire [3:0] tx_mask,
 	output wire [639:0] tx_coord,
@@ -661,7 +662,9 @@ module atg_su #(
 		.l_valid(tex_l_valid), .l_ready(tex_l_ready), .l_warp(tex_l_warp),
 		.l_grp(tex_l_grp), .l_rd(tex_l_rd), .l_data(tex_l_data), .l_lanes(tex_l_lanes),
 		.l_wr(tex_l_wr), .l_last(tex_l_last), .l_sbe(tex_l_sbe), .l_cls(tex_l_cls),
-		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot), .tx_vs(tx_vs),
+		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
+		.tx_samp_slot(tx_samp_slot),
+		.tx_vs(tx_vs),
 		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
 		.tx_last(tx_last),
 		.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),

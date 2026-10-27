@@ -48,6 +48,7 @@ module atg_tu_desc (
 	output wire busy,
 	/* Read port (combinational) */
 	input wire [4:0] rd_slot,	/* [4]: the vertex stage's */
+	input wire [4:0] rd_samp_slot,	/* [4]: the vertex stage's, independent sampler slot (N62, N77) */
 	input wire [3:0] rd_level,
 	input wire [3:0] rd_level1,
 	input wire [3:0] rd_level2,
@@ -211,7 +212,7 @@ module atg_tu_desc (
 	assign rd_size = d_size[rd_slot];
 	assign rd_image = d_img[rd_slot];
 	assign rd_stride = d_stride[rd_slot];
-	assign rd_samp = d_samp[rd_slot];
+	assign rd_samp = d_samp[rd_samp_slot];
 	assign rd_lod = d_lod[rd_slot];
 	assign rd_loff = rd_level == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level}], 6'd0};
 	assign rd_loff1 = rd_level1 == 4'd0 ? 32'd0 : {d_off[{rd_slot, rd_level1}], 6'd0};

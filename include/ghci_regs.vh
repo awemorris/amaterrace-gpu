@@ -264,18 +264,24 @@ localparam GHCI_IRQ_HALTED     = 6;
 localparam GHCI_IRQ_RESULT     = 7;
 localparam GHCI_IRQ_RETIRE     = 8;
 
-/* FAULT_INFO fields (J03). */
-localparam [3:0] GHCI_FAULT_KIND_NONE        = 4'd0;
-localparam [3:0] GHCI_FAULT_KIND_INVALID_OP  = 4'd1;
-localparam [3:0] GHCI_FAULT_KIND_KICK_ABSENT = 4'd2;
-localparam [3:0] GHCI_FAULT_KIND_BAD_REG     = 4'd3;
-localparam [3:0] GHCI_FAULT_KIND_TIMEOUT     = 4'd4;
-localparam [3:0] GHCI_FAULT_KIND_FENCE_ERROR = 4'd5;
-localparam [3:0] GHCI_FAULT_KIND_PROT_FAULT  = 4'd6;
-localparam [3:0] GHCI_FAULT_KIND_LOCKED_REG  = 4'd7;
-localparam [3:0] GHCI_FAULT_KIND_MMU_OOM     = 4'd8;
-localparam [3:0] GHCI_FAULT_KIND_PAGE_FAULT  = 4'd9;
-localparam [3:0] GHCI_FAULT_KIND_PERM_FAULT  = 4'd10;
+/* FAULT_INFO fields (J03, N50, N63, N73). */
+localparam [3:0] GHCI_FAULT_KIND_NONE          = 4'd0;
+localparam [3:0] GHCI_FAULT_KIND_INVALID_OP    = 4'd1;
+localparam [3:0] GHCI_FAULT_KIND_INVALID_ARG   = 4'd1;
+localparam [3:0] GHCI_FAULT_KIND_KICK_ABSENT   = 4'd2;
+localparam [3:0] GHCI_FAULT_KIND_RING_OOB      = 4'd2;
+localparam [3:0] GHCI_FAULT_KIND_BAD_REG       = 4'd3;
+localparam [3:0] GHCI_FAULT_KIND_WATCHDOG      = 4'd4;
+localparam [3:0] GHCI_FAULT_KIND_TIMEOUT       = 4'd4;
+localparam [3:0] GHCI_FAULT_KIND_AXI_ERROR     = 4'd5;
+localparam [3:0] GHCI_FAULT_KIND_FENCE_ERROR   = 4'd5;
+localparam [3:0] GHCI_FAULT_KIND_PROT_FAULT    = 4'd6;
+localparam [3:0] GHCI_FAULT_KIND_PRIVILEGED_OP = 4'd6;
+localparam [3:0] GHCI_FAULT_KIND_LOCKED_REG    = 4'd7;
+localparam [3:0] GHCI_FAULT_KIND_MMU_OOM       = 4'd8;
+localparam [3:0] GHCI_FAULT_KIND_PAGE_FAULT    = 4'd9;
+localparam [3:0] GHCI_FAULT_KIND_PERM_FAULT    = 4'd10;
+localparam [3:0] GHCI_FAULT_KIND_MEMORY_FAULT  = 4'd10;
 
 localparam [3:0] GHCI_FAULT_UNIT_CP  = 4'd0;
 localparam [3:0] GHCI_FAULT_UNIT_VF  = 4'd1;
@@ -284,6 +290,12 @@ localparam [3:0] GHCI_FAULT_UNIT_RX  = 4'd3;
 localparam [3:0] GHCI_FAULT_UNIT_TU  = 4'd4;
 localparam [3:0] GHCI_FAULT_UNIT_ROP = 4'd5;
 localparam [3:0] GHCI_FAULT_UNIT_BLT = 4'd6;
+
+/* Shader Stages for FAULT_INFO[19:16] (N20, N50) */
+localparam [3:0] GHCI_STAGE_VS       = 4'd0;
+localparam [3:0] GHCI_STAGE_FS       = 4'd1;
+localparam [3:0] GHCI_STAGE_CS       = 4'd2;
+localparam [3:0] GHCI_STAGE_MS       = 4'd3;
 
 /* Legacy FAULT_INFO kinds for backward compatibility */
 localparam [3:0] GHCI_FAULT_APERTURE = 4'd1;

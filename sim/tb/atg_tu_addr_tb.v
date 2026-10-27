@@ -53,7 +53,7 @@ module atg_tu_addr_tb;
 	reg [31:0] st_wdata = 0;
 	reg tx_valid = 1'b0;
 	reg [7:0] tx_op = 0;
-	reg [3:0] tx_slot = 0, tx_mask = 0;
+	reg [3:0] tx_slot = 0, tx_samp_slot = 0, tx_mask = 0;
 	reg tx_vs = 1'b0;
 	reg [639:0] tx_coord = 0;
 	reg [11:0] tx_off = 0;
@@ -71,7 +71,7 @@ module atg_tu_addr_tb;
 
 	atg_tu_addr dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .desc_busy(desc_busy), .tx_valid(tx_valid), .tx_ready(tx_ready),
-		.tx_op(tx_op), .tx_slot(tx_slot), .tx_vs(tx_vs), .tx_mask(tx_mask), .tx_coord(tx_coord),
+		.tx_op(tx_op), .tx_slot(tx_slot), .tx_samp_slot(tx_samp_slot), .tx_vs(tx_vs), .tx_mask(tx_mask), .tx_coord(tx_coord),
 		.tx_off(tx_off), .tx_tag(tx_tag),
 		.tx_last(tx_last), .ta_valid(ta_valid), .ta_ready(ta_ready), .ta_addr(ta_addr),
 		.ta_bord(ta_bord), .ta_wts(ta_wts), .ta_tag(ta_tag), .ta_mask(ta_mask), .ta_ctl(ta_ctl),
@@ -179,6 +179,7 @@ module atg_tu_addr_tb;
 				tx_valid <= 1'b1;
 				tx_op <= op;
 				tx_slot <= slot[3:0];
+				tx_samp_slot <= slot[3:0];
 				tx_vs <= slot[4];
 				tx_mask <= mask;
 				tx_coord <= crd;
@@ -193,6 +194,7 @@ module atg_tu_addr_tb;
 				tx_coord <= {20{$random(seed)}};
 				tx_off <= $random(seed);
 				tx_slot <= $random(seed);
+				tx_samp_slot <= $random(seed);
 				for (ip = 0; ip < np; ip = ip + 1) begin
 					code = $fscanf(fd, "%s %h %h %h %h %h\n", kind, x_addr, x_bord, x_wts, x_ctl,
 						x_value);

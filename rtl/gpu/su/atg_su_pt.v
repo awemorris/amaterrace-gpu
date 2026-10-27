@@ -31,7 +31,7 @@ module atg_su_pt #(
 	parameter NWARPS = 4,	/* Resident warps (slots): 2, 4 or 8 */
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS) (1 for NPHYS 32) */
-	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W) */
+	parameter UOP_W = 108,	/* Width of the decoded instruction (= ATG_UOP_W) */
 	parameter PT_ENTRIES = 64,	/* PT vertices: a multiple of 32, at most 256 */
 	parameter VARY_WORDS = 16	/* Varying words per vertex, at most 64 (KC705 64) */
 ) (

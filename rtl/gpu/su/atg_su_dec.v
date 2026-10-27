@@ -24,7 +24,7 @@
 
 module atg_su_dec #(
 	parameter WARP_W = 2,	/* log2(NWARPS) */
-	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
+	parameter UOP_W = 108,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
 	parameter NREGS = 32,	/* GPRs per thread: 32 or 64 (r0..r62 at most; 63 is rq) */
 	parameter PACKED = 0,	/* 16-bit packed arithmetic present (else those opcodes are ISA faults; packh/unpackh always present) */
 	parameter SUBGROUP = 0,	/* shfl/vote/ballot present (CAPS[24]) */
@@ -175,6 +175,7 @@ module atg_su_dec #(
 				uop[ATG_UOP_HSEL +: 2] = w1[16:15];
 				uop[ATG_UOP_SUB +: 5] = {sub[4] | tthree, sub[3:0]};
 				uop[ATG_UOP_RM +: 3] = f3;
+				uop[ATG_UOP_SAMP_SLOT +: 4] = tex ? w1[9:6] : 4'd0;
 			end
 		end
 	end

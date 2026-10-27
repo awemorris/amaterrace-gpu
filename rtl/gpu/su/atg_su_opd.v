@@ -33,7 +33,7 @@ module atg_su_opd #(
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit) */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
-	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
+	parameter UOP_W = 108,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
 	parameter WARP_BASE = 0	/* The warp operand of slot 0: SU_INDEX x NWARPS, so warp numbers the GPU's resident warps */
 ) (
 	input wire clk,
@@ -303,6 +303,8 @@ module atg_su_opd #(
 				7'd117: opc = {16'd0, qi[ATG_WI_NWGX + 32 +: 16]};
 				7'd118: opc = 32'h3C003C00;
 				7'd119: opc = qi[ATG_WI_MASK +: 32];
+				7'd120: opc = (qi[ATG_WI_KIND +: 2] == 2'd0) ? {24'd0, qi[ATG_WI_LID +: 8]} : 32'd0;
+				7'd121: opc = 32'd0;
 				default: opc = 32'd0;
 				endcase
 			end
@@ -314,6 +316,7 @@ module atg_su_opd #(
 	 * (the local index). */
 	function [2:0] opk;
 		input [6:0] n;
+		input [1:0] kind;
 		begin
 			if (n < 7'd63)
 				opk = 3'd1;
@@ -323,7 +326,7 @@ module atg_su_opd #(
 				opk = 3'd3;
 			else if (n == 7'd105)
 				opk = 3'd4;
-			else if (n == 7'd109 || n == 7'd112)
+			else if (n == 7'd109 || n == 7'd112 || (n == 7'd120 && kind == 2'd0))
 				opk = 3'd5;
 			else
 				opk = 3'd0;
@@ -406,9 +409,9 @@ module atg_su_opd #(
 	wire [31:0] com1 = opc(b_n1, cr_data[31:0], b_warp, q_info, q_exec);
 	wire [31:0] com2 = opc(b_n2, cr_data[63:32], b_warp, q_info, q_exec);
 	wire [31:0] com3 = opc(b_n3, cr_data[95:64], b_warp, q_info, q_exec);
-	wire [2:0] k1 = opk(b_n1);
-	wire [2:0] k2 = opk(b_n2);
-	wire [2:0] k3 = opk(b_n3);
+	wire [2:0] k1 = opk(b_n1, q_info[ATG_WI_KIND +: 2]);
+	wire [2:0] k2 = opk(b_n2, q_info[ATG_WI_KIND +: 2]);
+	wire [2:0] k3 = opk(b_n3, q_info[ATG_WI_KIND +: 2]);
 
 	/* Operand forwarding comparison for GPRs:
 	 * - ALU EX4 is registered (s4_data is flip-flop output), safe to forward back-to-back.

@@ -889,7 +889,7 @@ module atg_top #(
 	/* SU 0 ↔ TU. */
 	wire tx_valid, tx_ready, tx_last, tr_valid, tr_ready, tr_last;
 	wire [7:0] tx_op;
-	wire [3:0] tx_slot, tx_mask;
+	wire [3:0] tx_slot, tx_samp_slot, tx_mask;
 	wire tx_vs;
 	wire [639:0] tx_coord;
 	wire [11:0] tx_off;
@@ -1016,7 +1016,8 @@ module atg_top #(
 		atg_tu #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) tu (
 			.clk(clk), .rst_n(core_rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 			.inv(inv[1]), .busy(tu_busy),
-			.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot), .tx_vs(tx_vs),
+			.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
+			.tx_samp_slot(tx_samp_slot), .tx_vs(tx_vs),
 			.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
 			.tx_last(tx_last),
 			.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
@@ -1036,7 +1037,7 @@ module atg_top #(
 		assign tr_tag = 16'd0;
 		assign tr_data = 512'd0;
 		assign tr_last = 1'b0;
-		wire unused_tu = &{1'b0, tx_valid, tx_op, tx_slot, tx_vs, tx_mask, tx_coord, tx_off, tx_tag, tx_last,
+		wire unused_tu = &{1'b0, tx_valid, tx_op, tx_slot, tx_samp_slot, tx_vs, tx_mask, tx_coord, tx_off, tx_tag, tx_last,
 			tr_ready};
 	end
 
@@ -1204,7 +1205,7 @@ module atg_top #(
 		wire [7:0] s_vl_ptbase, s_pt_done;
 		wire [31:0] s_pt_rdata, s_ex_xy, s_sa_ctl_data;
 		wire [7:0] s_tx_op;
-		wire [3:0] s_tx_slot, s_tx_mask, s_ex_mask;
+		wire [3:0] s_tx_slot, s_tx_samp_slot, s_tx_mask, s_ex_mask;
 		wire s_tx_vs;
 		wire [639:0] s_tx_coord;
 		wire [11:0] s_tx_off;
@@ -1236,7 +1237,8 @@ module atg_top #(
 			.pt_rd(g0 && pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(s_pt_rdata),
 			.pt_free(g0 && pt_free), .pt_free_idx(pt_free_idx), .pt_done(s_pt_done),
 			.tx_valid(s_tx_valid), .tx_ready(g0 && tx_ready), .tx_op(s_tx_op),
-			.tx_slot(s_tx_slot), .tx_vs(s_tx_vs), .tx_mask(s_tx_mask), .tx_coord(s_tx_coord), .tx_off(s_tx_off),
+			.tx_slot(s_tx_slot), .tx_samp_slot(s_tx_samp_slot), .tx_vs(s_tx_vs),
+			.tx_mask(s_tx_mask), .tx_coord(s_tx_coord), .tx_off(s_tx_off),
 			.tx_tag(s_tx_tag),
 			.tx_last(s_tx_last),
 			.tr_valid(g0 && tr_valid), .tr_ready(s_tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
@@ -1283,6 +1285,7 @@ module atg_top #(
 			assign tx_valid = s_tx_valid;
 			assign tx_op = s_tx_op;
 			assign tx_slot = s_tx_slot;
+			assign tx_samp_slot = s_tx_samp_slot;
 			assign tx_vs = s_tx_vs;
 			assign tx_mask = s_tx_mask;
 			assign tx_coord = s_tx_coord;
@@ -1311,7 +1314,7 @@ module atg_top #(
 			assign su_mesh_id = s_mesh_id;
 		end else begin : g_sun
 			wire unused_sun = &{1'b0, s_vl_gnt, s_vl_ptbase, s_pt_done, s_fl_gnt, s_pt_rdata, s_tx_valid,
-				s_tx_op, s_tx_slot, s_tx_vs, s_tx_mask, s_tx_coord, s_tx_off, s_tx_tag, s_tx_last, s_tr_ready,
+				s_tx_op, s_tx_slot, s_tx_samp_slot, s_tx_vs, s_tx_mask, s_tx_coord, s_tx_off, s_tx_tag, s_tx_last, s_tr_ready,
 				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_color1, s_ex_has_src1, s_ex_depth, s_ex_last, s_ex_aux,
 				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data,
 				s_mesh_valid, s_mesh_last, s_mesh_tri, s_mesh_id};
@@ -1366,6 +1369,7 @@ module atg_top #(
 		assign tx_valid = 1'b0;
 		assign tx_op = 8'd0;
 		assign tx_slot = 4'd0;
+		assign tx_samp_slot = 4'd0;
 		assign tx_vs = 1'b0;
 		assign tx_mask = 4'd0;
 		assign tx_coord = 640'd0;

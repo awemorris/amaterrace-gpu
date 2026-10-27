@@ -50,7 +50,7 @@ module atg_tu_tb_run #(
 	reg [31:0] st_wdata = 0;
 	reg tx_valid = 1'b0;
 	reg [7:0] tx_op = 0;
-	reg [3:0] tx_slot = 0, tx_mask = 0;
+	reg [3:0] tx_slot = 0, tx_samp_slot = 0, tx_mask = 0;
 	reg tx_vs = 1'b0;
 	reg [639:0] tx_coord = 0;
 	reg [11:0] tx_off = 0;
@@ -73,7 +73,8 @@ module atg_tu_tb_run #(
 	atg_tu #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.inv(1'b0), .busy(busy),
-		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot), .tx_vs(tx_vs),
+		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
+		.tx_samp_slot(tx_samp_slot), .tx_vs(tx_vs),
 		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
 		.tx_last(tx_last),
 		.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
@@ -207,6 +208,7 @@ module atg_tu_tb_run #(
 				tx_valid <= 1'b1;
 				tx_op <= op;
 				tx_slot <= slot[3:0];
+				tx_samp_slot <= slot[3:0];
 				tx_vs <= slot[4];
 				tx_mask <= mask;
 				tx_coord <= crd;

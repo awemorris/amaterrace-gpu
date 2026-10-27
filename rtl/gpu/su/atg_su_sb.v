@@ -38,7 +38,7 @@ module atg_su_sb #(
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter SB_ENTRIES = 4,	/* Scoreboard entries per warp (KC705 8) */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
-	parameter UOP_W = 104,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
+	parameter UOP_W = 108,	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
 	parameter SHORT_LAT = 6,	/* Cycles from x_valid to the short result */
 	parameter BYPASS = 1	/* Short interlock bypass support (0: stall until RF write, 1: bypass) */
 ) (

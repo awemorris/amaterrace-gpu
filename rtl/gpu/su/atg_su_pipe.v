@@ -32,7 +32,7 @@ module atg_su_pipe #(
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS): the lane-group number of a warp */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES) */
-	parameter UOP_W = 104,	/* Width of decoded instruction (= ATG_UOP_W) */
+	parameter UOP_W = 108,	/* Width of decoded instruction (= ATG_UOP_W) */
 	parameter SHORT_LAT = 6,	/* Fixed execution latency */
 	parameter PACKED = 0,	/* Packed fp16 arithmetic present */
 	parameter PK_SHARED = 0	/* Packed fp16 arithmetic on fp32 datapath */

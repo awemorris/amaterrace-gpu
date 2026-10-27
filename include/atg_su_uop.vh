@@ -15,7 +15,7 @@
 
 /* verilator lint_off UNUSEDPARAM */
 
-localparam ATG_UOP_W = 104;
+localparam ATG_UOP_W = 108;
 
 /* Field positions (LSB) and widths. */
 localparam ATG_UOP_UNIT = 0;	/* [3:0] the unit, below */
@@ -40,6 +40,7 @@ localparam ATG_UOP_ILL = 100;	/* ISA fault (FAULT kind 8) */
 localparam ATG_UOP_RQS = 101;	/* a source is rq (pop) */
 localparam ATG_UOP_RQD = 102;	/* rd is rq (push) */
 localparam ATG_UOP_SIDE = 103;	/* has side effects: use the side-effect lane mask */
+localparam ATG_UOP_SAMP_SLOT = 104; /* [107:104] sampler slot (w1[9:6]) for texture instructions (N62, N77) */
 
 /* Units (ATG_UOP_UNIT). */
 localparam [3:0] ATG_UNIT_NONE = 4'd0;	/* nop */

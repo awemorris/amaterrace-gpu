@@ -33,6 +33,7 @@ module atg_tu_addr (
 	output wire tx_ready,
 	input wire [7:0] tx_op,
 	input wire [3:0] tx_slot,
+	input wire [3:0] tx_samp_slot,
 	input wire tx_vs,	/* a vertex warp's: the vertex stage's slots */
 	input wire [3:0] tx_mask,
 	input wire [639:0] tx_coord,
@@ -69,6 +70,7 @@ module atg_tu_addr (
 	reg [3:0] pas;	/* {column, row, level, slice} */
 	reg [7:0] opr;
 	reg [4:0] slot;
+	reg [4:0] samp_slot;
 	reg [639:0] crd;
 	reg [11:0] offs;
 	reg linq, depf, mipf;
@@ -105,6 +107,7 @@ module atg_tu_addr (
 	atg_tu_desc desc (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.busy(desc_busy), .rd_slot(st == IDLE ? {tx_vs, tx_slot} : slot),
+		.rd_samp_slot(st == IDLE ? {tx_vs, tx_samp_slot} : samp_slot),
 		.rd_level(r_lvl[0]), .rd_level1(r_lvl[1]), .rd_level2(r_lvl[2]), .rd_level3(r_lvl[3]),
 		.rd_base(base), .rd_size(dsize), .rd_image(image), .rd_stride(stride), .rd_samp(samp),
 		.rd_lod(dlod), .rd_fmt(tfmt), .rd_row(rowa),
@@ -338,6 +341,7 @@ module atg_tu_addr (
 			st <= IDLE;
 			opr <= 8'd0;
 			slot <= 5'd0;
+			samp_slot <= 5'd0;
 			crd <= 640'd0;
 			offs <= 12'd0;
 			ta_mask <= 4'd0;
@@ -385,6 +389,7 @@ module atg_tu_addr (
 			IDLE: if (tx_valid && !desc_busy) begin
 				opr <= tx_op;
 				slot <= {tx_vs, tx_slot};
+				samp_slot <= {tx_vs, tx_samp_slot};
 				crd <= tx_coord;
 				offs <= tx_off;
 				ta_mask <= tx_mask;

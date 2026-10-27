@@ -43,8 +43,8 @@ ALU_IMMB = 0x80
 F = dict(UNIT=(0, 4), OP=(4, 8), RD=(12, 7), RS1=(19, 7), RS2=(26, 7), RS3=(33, 7),
          IMM=(40, 32), MOD=(72, 7), HSEL=(79, 2), SUB=(81, 5), RM=(86, 3), CLS=(89, 3),
          NDST=(92, 3), USE1=(95, 1), USE2=(96, 1), USE3=(97, 1), WRD=(98, 1), PAIR=(99, 1),
-         ILL=(100, 1), RQS=(101, 1), RQD=(102, 1), SIDE=(103, 1))
-UOP_W = 104
+         ILL=(100, 1), RQS=(101, 1), RQD=(102, 1), SIDE=(103, 1), SAMP_SLOT=(104, 4))
+UOP_W = 108
 
 OPC = dict(OP=0x33, OPIMM=0x13, LUI=0x37, LOAD=0x03, STORE=0x23, BRANCH=0x63, OPFP=0x53,
            MADD=0x43, MSUB=0x47, NMSUB=0x4B, NMADD=0x4F, C0=0x0B, C1=0x2B, C2=0x5B, C3=0x7B)
@@ -327,7 +327,8 @@ def decode(w, cfg):
              SUB=d["sub"] | (16 if e.get("three") else 0),
              RM=d["f3"] if e["fmt"] != "U" else 0, CLS=e["cls"], NDST=ndst, USE1=int(u1),
              USE2=int(u2), USE3=int(u3), WRD=int(wrd), PAIR=int(pair), ILL=0, RQS=int(rqs),
-             RQD=int(rqd), SIDE=int(bool(e.get("side"))))
+             RQD=int(rqd), SIDE=int(bool(e.get("side"))),
+             SAMP_SLOT=((d["w1"] >> 6) & 15) if e["unit"] == U_TEX else 0)
     if e["fmt"] == "U":
         v["RS1"] = v["RS2"] = v["RS3"] = 0
         v["MOD"] = v["HSEL"] = v["SUB"] = 0
@@ -618,7 +619,7 @@ def dec_table(path, seed=1):
         vec.append(rnd.getrandbits(64))
     with open(path, "w") as f:
         for w in vec:
-            f.write("%016x%026x%026x\n" % (w, decode(w, CFGS[0]), decode(w, CFGS[1])))
+            f.write("%016x%027x%027x\n" % (w, decode(w, CFGS[0]), decode(w, CFGS[1])))
     return len(vec)
 
 

@@ -18,7 +18,7 @@
 
 module atg_su_dec_tb;
 `include "atg_su_uop.vh"
-	localparam NV = 5480;
+	localparam NV = 5528;
 
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
@@ -31,7 +31,7 @@ module atg_su_dec_tb;
 	wire [1:0] u_warp_a, u_warp_b;
 	wire [15:0] u_pc_a, u_pc_b;
 	wire [ATG_UOP_W-1:0] u_uop_a, u_uop_b;
-	reg [271:0] vec [0:NV-1];
+	reg [279:0] vec [0:NV-1];
 	integer errors = 0, e0 = 0;
 	integer i, n_op, n_fault, n_legal;
 	integer seed = 1;
@@ -84,9 +84,9 @@ module atg_su_dec_tb;
 		/* The table: every entry of gsi1asm.py's table with random fields. */
 		n_op = 0;
 		for (i = 0; i < NV - 2000; i = i + 1) begin
-			one(vec[i][271:208], vec[i][207:104], vec[i][103:0], 0);
+			one(vec[i][279:216], vec[i][215:108], vec[i][107:0], 0);
 			n_op = n_op + 1;
-			if (vec[i][104 + ATG_UOP_ILL])
+			if (vec[i][108 + ATG_UOP_ILL])
 				n_fault = n_fault + 1;
 			else
 				n_legal = n_legal + 1;
@@ -95,11 +95,11 @@ module atg_su_dec_tb;
 			$display("PASS atg_su_dec.table");
 		/* Random 64-bit words (7-bit operands, immediates, word1 fields). */
 		for (i = NV - 2000; i < NV; i = i + 1)
-			one(vec[i][271:208], vec[i][207:104], vec[i][103:0], 1);
+			one(vec[i][279:216], vec[i][215:108], vec[i][107:0], 1);
 		if (errors == 0)
 			$display("PASS atg_su_dec.operands");
 		/* Faults: compressed forms, registers >= NREGS, the optional sets. */
-		one({32'd0, 32'h00000010}, 104'd1 << ATG_UOP_ILL, 104'd1 << ATG_UOP_ILL, 2);
+		one({32'd0, 32'h00000010}, 108'd1 << ATG_UOP_ILL, 108'd1 << ATG_UOP_ILL, 2);
 		/* add r1, r40, r2: rs1 = 40 is beyond NREGS 32 only. */
 		if (1) begin
 			@(negedge clk);

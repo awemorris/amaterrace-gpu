@@ -141,6 +141,8 @@ module atg_su_opd_chk #(
 				117: ref_op = info[w][95:80];
 				118: ref_op = 32'h3C003C00;
 				119: ref_op = info[w][159:128];
+				120: ref_op = (info[w][105:104] == 2'd0) ? info[w][103:96] + lane : 0;
+				121: ref_op = 0;
 				default: ref_op = 0;
 				endcase
 			end

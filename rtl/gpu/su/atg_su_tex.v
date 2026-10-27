@@ -43,7 +43,7 @@ module atg_su_tex #(
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit) */
 	parameter SBE_W = 2,	/* log2(SB_ENTRIES); the value of all ones above the entries is "no entry" (an entry index is SBE_W+1 bits) */
-	parameter UOP_W = 104	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
+	parameter UOP_W = 108	/* Width of the decoded instruction (= ATG_UOP_W of include/atg_su_uop.vh) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -78,6 +78,7 @@ module atg_su_tex #(
 	input wire tx_ready,
 	output reg [7:0] tx_op,
 	output reg [3:0] tx_slot,
+	output reg [3:0] tx_samp_slot,
 	output reg tx_vs,	/* a vertex warp's request (the vertex stage's slots) */
 	output wire [3:0] tx_mask,
 	output wire [639:0] tx_coord,
@@ -173,6 +174,7 @@ module atg_su_tex #(
 				last <= x_last;
 				tx_op <= {1'b0, x_uop[ATG_UOP_OP +: 7]};
 				tx_slot <= x_uop[ATG_UOP_SUB +: 4];
+				tx_samp_slot <= x_uop[ATG_UOP_SAMP_SLOT +: 4];
 				tx_vs <= x_info[17:16] == 2'd0;
 				tx_off <= x_uop[ATG_UOP_IMM +: 12];
 				q <= {QW{1'b0}};
