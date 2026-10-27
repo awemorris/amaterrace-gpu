@@ -52,6 +52,9 @@ CONFIG_ROP_MRT_COUNT     = 8
 CONFIG_ROP_FAST_CLEAR    = 1
 
 # 5. Command Processor (CP) & Memory Hierarchy
+# High-Performance Profile Address Configuration (Workstation / Server / Future ASIC):
+#   GPU_VA_BITS  = 40 (1 TiB internal VA, large-scale unified virtual memory space)
+#   HOST_PA_BITS = 48 (256 TiB PCIe PA, full 48-bit server physical memory space)
 CONFIG_GPU_VA_BITS       = 40
 CONFIG_HOST_PA_BITS      = 48
 CONFIG_CP_AUTONOMOUS_MMU = 1

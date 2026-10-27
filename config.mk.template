@@ -161,10 +161,21 @@ CONFIG_ROP_MRT_COUNT     ?= 1
 # ------------------------------------------------------------------------------
 # 5. Command Processor (CP) & Memory Hierarchy
 # ------------------------------------------------------------------------------
-# CONFIG_GPU_VA_BITS: GPU Virtual Address Width in bits: 30 (1 GiB), 32 (4 GiB), 36 (64 GiB), 40 (1 TiB).
+# Address Width Configuration by Profile:
+#   - Minimal Profile (minimal_sim, basys3, arty_a7):
+#       CONFIG_GPU_VA_BITS  = 30 (1 GiB VA, 18-bit VPN, minimal TLB CAM area & latency)
+#       CONFIG_HOST_PA_BITS = 40 (1 TiB PA, baseline 40-bit PCIe host address)
+#   - Balanced Profile (kc705 standard default):
+#       CONFIG_GPU_VA_BITS  = 32 (4 GiB VA, standard 32-bit GPU virtual address)
+#       CONFIG_HOST_PA_BITS = 40 (1 TiB PA, standard PCIe root complex)
+#   - High-Performance Profile (workstation / server / large FPGA / future ASIC):
+#       CONFIG_GPU_VA_BITS  = 40 (1 TiB VA, large-scale unified virtual space)
+#       CONFIG_HOST_PA_BITS = 48 (256 TiB PA, full 48-bit server physical space)
+#
+# CONFIG_GPU_VA_BITS: GPU Virtual Address Width in bits: 30 (1 GiB), 32 (4 GiB), 36 (64 GiB), 40 (1 TiB). Default: 32.
 CONFIG_GPU_VA_BITS       ?= 32
 
-# CONFIG_HOST_PA_BITS: Host Physical Address Width for PCIe DMA in bits: 40 (1 TiB), 44 (16 TiB), 48 (256 TiB).
+# CONFIG_HOST_PA_BITS: Host Physical Address Width for PCIe DMA in bits: 40 (1 TiB), 44 (16 TiB), 48 (256 TiB). Default: 40.
 CONFIG_HOST_PA_BITS      ?= 40
 
 # CONFIG_CP_AUTONOMOUS_MMU: Two-level hardware page table walker.

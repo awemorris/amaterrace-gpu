@@ -52,6 +52,9 @@ CONFIG_ROP_MRT_COUNT     = 4
 CONFIG_ROP_FAST_CLEAR    = 1
 
 # 5. Command Processor (CP) & Memory Hierarchy
+# Balanced Profile Address Configuration (KC705 default):
+#   GPU_VA_BITS  = 32 (4 GiB internal VA, standard 32-bit GPU virtual address space)
+#   HOST_PA_BITS = 40 (1 TiB PCIe PA, standard PCIe root complex host memory)
 CONFIG_GPU_VA_BITS       = 32
 CONFIG_HOST_PA_BITS      = 40
 CONFIG_CP_AUTONOMOUS_MMU = 1

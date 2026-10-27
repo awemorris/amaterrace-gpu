@@ -81,11 +81,13 @@
 | `q001-i67` | **R1** | [ws001-p007](ws001/phase007/phase.md) | K01〜K19 回答内容および docs/ghci.md 全体の敵対的仕様レビュー | cleared | `q001-i66` | 敵対的レビュー実施。FAULT_INFO RTL不整合およびMMUドライバ透過性の是正指摘を提示（ユーザー承認受領）。 |
 | `q001-i68` | **P4** | [ws001-p007](ws001/phase007/phase.md) | R1 指摘是正（FAULT_INFO RTL復元、MMU ドライバ完全透過性徹底、ヘッダ・仕様書同期） | cleared | `q001-i67` | 実装完了。GhciPte64削除、BARRIER_INVAL_TLB削除、root_pt_phys削除、FAULT_INFO復元、arith-lint 0件、全テストPASS。 |
 | `q001-i69` | **R1** | [ws001-p007](ws001/phase007/phase.md) | P4 成果物の最終敵対的仕様レビュー | cleared | `q001-i68` | 敵対的レビュー完了。【APPROVE】承認確定。直前GHCI仕様整合・MMUドライバ完全透過性・FAULT_INFO RTL整合・K01-K19完全回答・NGG完全排除・全テストPASS確認。 |
+| `q001-i70` | **D1** | [ws001-p007](ws001/phase007/phase.md) | ドライバレビュー指摘 58 件（M01〜M58）対応 & docs/ghci.md 明確化・同期 | active | なし | ユーザー指示により着手。仕様変更なし・ヘッダ完全整合・MMU透過性徹底・欠落情報補完。 |
 
 ## サブエージェント実行状態（N=3）
 
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
+| **D1** | 仕様策定・ドキュメント（Docs） | Gemini 4 Argon Medium | active | q001-i70: ドライバ指摘 M01〜M58 対応 & ghci.md 明確化 | 次期タスク |
 | **P1** | 実装（メモリ・相互結合・コア・CP・VF） | Claude Opus 5.5 Medium | idle | q001-i64 完了 | 次期タスク |
 | **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC・CP） | Claude Opus 5.5 Medium | idle | q001-i65 完了 | 次期タスク |
 | **P3** | 実装（インフラ・ジオメトリ・SU・ROP・BLT・TU） | Claude Opus 5.5 Medium | idle | q001-i66 完了 | 次期タスク |

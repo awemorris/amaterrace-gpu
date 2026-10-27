@@ -52,7 +52,10 @@ CONFIG_ROP_MRT_COUNT     = 1
 CONFIG_ROP_FAST_CLEAR    = 0
 
 # 5. Command Processor (CP) & Memory Hierarchy
-CONFIG_GPU_VA_BITS       = 32
+# Minimal Profile Address Configuration:
+#   GPU_VA_BITS  = 30 (1 GiB internal VA, 18-bit VPN for minimum TLB CAM footprint & routing congestion)
+#   HOST_PA_BITS = 40 (1 TiB PCIe PA, baseline DMA address width for host memory)
+CONFIG_GPU_VA_BITS       = 30
 CONFIG_HOST_PA_BITS      = 40
 CONFIG_CP_AUTONOMOUS_MMU = 0
 CONFIG_CP_USE_RV32_CORE  = 0
