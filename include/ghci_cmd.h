@@ -194,7 +194,7 @@ extern "C" {
 #define GHCI_FS_REG_POINT_T             1u
 
 /* Fragment Shader Export Targets (exp rs2, target) */
-#define GHCI_EXP_COLOR(k, c)            (0x100u + 16u * ((uint32_t)(k) & 3u) + ((uint32_t)(c) & 3u))
+#define GHCI_EXP_COLOR(k, c)            (0x100u + 16u * ((uint32_t)(k) & 7u) + ((uint32_t)(c) & 3u))
 #define GHCI_EXP_DEPTH                  0x104u
 #define GHCI_EXP_SAMPLE_MASK            0x105u
 #define GHCI_EXP_COLOR0_SRC1(c)         (0x108u + ((uint32_t)(c) & 3u))

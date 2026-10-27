@@ -132,9 +132,12 @@
 /* Texel buffers through a texture slot are 2D images this wide. */
 #define GSI1_TEXEL_BUFFER_WIDTH 256u
 
-/* The system inputs (kind 13, the binding word). */
+/* The system inputs (section 12.10.3). */
 #define GSI1_SYSTEM_VERTEX_INDEX 0u	/* index + vertexOffset, or firstVertex + n */
 #define GSI1_SYSTEM_INSTANCE_INDEX 1u	/* firstInstance + i */
+#define GSI1_VS_REG_VERTEX_INDEX 60u	/* gl_VertexIndex */
+#define GSI1_VS_REG_INSTANCE_INDEX 61u	/* gl_InstanceIndex */
+#define GSI1_VS_REG_SCRATCH 62u		/* compiler scratchpad */
 
 /* Operand numbers (section 12.3). */
 #define GSI1_R(n) (n)			/* r0-r62 */
@@ -183,14 +186,15 @@
 #define GSI1_EXP_POS(c) (0x000u + (c))
 #define GSI1_EXP_POINT_SIZE 0x004u
 #define GSI1_EXP_VARYING(w) (0x010u + (w))
-#define GSI1_EXP_COLOR(k, c) (0x100u + 16u * (k) + (c))
+#define GSI1_EXP_COLOR(k, c) (0x100u + 16u * ((k) & 7u) + (c))
 #define GSI1_EXP_DEPTH 0x104u
 #define GSI1_EXP_SAMPLE_MASK 0x105u
-#define GSI1_COLOR_ATTACHMENTS 4u
+#define GSI1_EXP_COLOR0_SRC1(c) (0x108u + (c))
+#define GSI1_COLOR_ATTACHMENTS 8u
 
 /*
- * lda's immediate (section 12.10): the PT word in [8:2] (varying w at
- * 4 + w; words 0-3 read 0) and the vertex in [1:0].  A GPU with CAPS[30]
+ * lda's immediate (section 12.10.3): the PT word in [8:2] (varying w at
+ * 4 + w; words 0-3 read clip-space POS.x..w) and the vertex in [1:0].  A GPU with CAPS[30]
  * has the varying words 0-63 (Vulkan's 64 output and input components).
  */
 #define GSI1_LDA(word, vertex) ((((word) & 0x7Fu) << 2) | ((vertex) & 3u))
