@@ -73,12 +73,13 @@
 | `q001-i59` | **D1** | [ws004-p001](../ws004/phase001/phase.md) | SU support for task/mesh shader（vk_ext_mesh_shader, vk_ext_task_shader）内蔵アーキテクチャ方式検討資料作成 | cleared | なし | 検討完了。全主要論点で推奨案（64頂点/126プリミティブ、L2Cペイロード、LDS直結DMA、静的MUX）採用でユーザー承認完了。 |
 | `q001-i60` | **P3 / R1** | [ws004-p002](../ws004/phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート（atg_su_exp_mesh）& LDS インターフェース設計・実装 | cleared | `q001-i59` | P3 実装完了。NGG完全撤廃確認、単体・atg_su:+quick PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i61` | **P3 / P2 / P1** | [ws004-p003](../ws004/phase003/phase.md) | CP タスクディスパッチ & メッシュパイプライン統合・検証 | cleared | `q001-i60` | RX静的MUX・CP ringパケット長・ゼロ拡張ガード是正完了。全8テストPASS（atg_top_mesh 10s）、Verilator-Wall警告0件、arith-lint 0逸脱。 |
+| `q001-i62` | **P1** | [ws001-p007](ws001/phase007/phase.md) | ホスト接続 AXI（BAR0 / s_*）64ビット固定化 & レジスタバス整合 | active | `q001-i61` | ユーザー指示により着手。am_axi_regs 64bit AXI化、atg_top s_* 64bit化、CDC/PCIeブリッジ整合。 |
 
 ## サブエージェント実行状態（N=3）
 
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
-| **P1** | 実装（メモリ・相互結合・コア・CP・VF） | Claude Opus 5.5 Medium | idle | ws004-p003 完了（次期タスク待機） | 次期タスク |
+| **P1** | 実装（メモリ・相互結合・コア・CP・VF） | Claude Opus 5.5 Medium | active | q001-i62: ホスト接続 AXI 64ビット固定化 | 次期タスク |
 | **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC・CP） | Claude Opus 5.5 Medium | idle | ws004-p003 完了（次期タスク待機） | 次期タスク |
 | **P3** | 実装（インフラ・ジオメトリ・SU・ROP・BLT・TU） | Claude Opus 5.5 Medium | idle | ws004-p003 完了（次期タスク待機） | 次期タスク |
 | **P4** | FPGA ビルド & Vivado 解析 | Claude Opus 5.5 Medium | active | KC705 ミニマムコンフィグ Vivado P&R / Fit / Fmax 調査 | ビルド最適化 |
