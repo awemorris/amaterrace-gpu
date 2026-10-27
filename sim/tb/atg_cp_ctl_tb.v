@@ -144,7 +144,7 @@ module atg_cp_ctl_tb;
 		rst_n = 1;
 		/* states */
 		expect_state("states", GHCI_ST_IDLE);
-		ctrl(32'd1);
+		ctrl(32'd1 << GHCI_CTRL_RUN);
 		expect_state("states", GHCI_ST_RUNNING);
 		/* RUN = 0 with the CP busy: RUNNING until it is idle. */
 		busy_in[0] = 1;
@@ -152,11 +152,11 @@ module atg_cp_ctl_tb;
 		expect_state("states", GHCI_ST_RUNNING);
 		busy_in[0] = 0;
 		expect_state("states", GHCI_ST_IDLE);
-		ctrl(32'd1);
+		ctrl(32'd1 << GHCI_CTRL_RUN);
 		/* HALT: HALTING until mc_idle and the ring between packets. */
 		mc_idle = 0;
 		ring_busy = 1;
-		ctrl(32'd5);
+		ctrl((32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT));
 		expect_state("states", GHCI_ST_HALTING);
 		mc_idle = 1;
 		expect_state("states", GHCI_ST_HALTING);
@@ -166,14 +166,14 @@ module atg_cp_ctl_tb;
 		mc_idle = 0;
 		expect_state("states", GHCI_ST_HALTED);
 		mc_idle = 1;
-		ctrl(32'd5 | (32'd1 << GHCI_CTRL_STEP));
-		ctrl(32'd1);
+		ctrl((32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT) | (32'd1 << GHCI_CTRL_STEP));
+		ctrl(32'd1 << GHCI_CTRL_RUN);
 		expect_state("states", GHCI_ST_RUNNING);
-		ctrl(32'd4);
+		ctrl(32'd1 << GHCI_CTRL_HALT);
 		expect_state("states", GHCI_ST_HALTED);
 		ctrl(32'd0);
 		expect_state("states", GHCI_ST_IDLE);
-		ctrl(32'd4);
+		ctrl(32'd1 << GHCI_CTRL_HALT);
 		expect_state("states", GHCI_ST_HALTED);
 		ctrl(32'd0);
 		if (halteds != 3 || steps != 1) begin
@@ -191,7 +191,7 @@ module atg_cp_ctl_tb;
 		e0 = errors;
 
 		/* reset: from RUNNING with memory busy; the replay holds RESETTING. */
-		ctrl(32'd1);
+		ctrl(32'd1 << GHCI_CTRL_RUN);
 		mc_idle = 0;
 		pulses = 0;
 		flushes = 0;
@@ -199,7 +199,7 @@ module atg_cp_ctl_tb;
 		repeat (20) @(negedge clk);
 		expect_state("reset", GHCI_ST_RESETTING);
 		hcr_read(GHCI_CTRL[11:0], v);
-		if (v[1] !== 1'b1 || pulses != 0) begin
+		if (v[GHCI_CTRL_RESET] !== 1'b1 || pulses != 0) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ctl.reset: CTRL %h, %0d pulses before mc_idle", v, pulses);
 		end
@@ -226,7 +226,7 @@ module atg_cp_ctl_tb;
 		/* stuck: quiesced without mc_idle for 4 * WDT_CYCLES. */
 		hcr_write(GHCI_WDT_CYCLES[11:0], 32'd10);
 		mc_idle = 0;
-		ctrl(32'd4);
+		ctrl(32'd1 << GHCI_CTRL_HALT);
 		repeat (35) @(negedge clk);
 		hcr_read(GHCI_STATUS[11:0], v);
 		if (v[13]) begin
@@ -252,7 +252,7 @@ module atg_cp_ctl_tb;
 
 		/* fault: an MC fault of client 0 or of the DC is ignored; two sources at once:
 		 * the MC's wins; later faults are not recorded; RESET clears. */
-		ctrl(32'd1);
+		ctrl(32'd1 << GHCI_CTRL_RUN);
 		@(negedge clk);
 		mc_fault = 1;
 		mc_fault_client = 0;
@@ -328,11 +328,11 @@ module atg_cp_ctl_tb;
 
 		/* wdt: counts only with WDT_EN and cmd_active. */
 		hcr_write(GHCI_WDT_CYCLES[11:0], 32'd50);
-		ctrl(32'd1);
+		ctrl(32'd1 << GHCI_CTRL_RUN);
 		cmd_active = 1;
 		repeat (100) @(negedge clk);
 		expect_state("wdt", GHCI_ST_RUNNING);
-		ctrl(32'd1 | (32'd1 << GHCI_CTRL_WDT_EN));
+		ctrl((32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_WDT_EN));
 		repeat (30) @(negedge clk);
 		cmd_active = 0;	/* restart the count */
 		@(negedge clk);
@@ -395,7 +395,7 @@ module atg_cp_ctl_tb;
 		hcr_write(GHCI_KICK[11:0], 32'd2);
 		expect_info("locked", {16'd0, GHCI_FAULT_OPCODE, 12'd0}, 32'd0);
 		do_reset();
-		ctrl(32'd1);
+		ctrl(32'd1 << GHCI_CTRL_RUN);
 		hcr_write(GHCI_KICK[11:0], 32'd1);
 		expect_info("locked", {16'd0, GHCI_FAULT_KICK, 12'd0}, 32'd0);
 		if (kicks != 1) begin
@@ -403,7 +403,7 @@ module atg_cp_ctl_tb;
 			$display("FAIL atg_cp_ctl.locked: KICK passed outside IDLE/HALTED");
 		end
 		do_reset();
-		ctrl(32'd1);
+		ctrl(32'd1 << GHCI_CTRL_RUN);
 		hcr_write(GHCI_APERTURE_BASE[11:0], 32'h0);
 		expect_info("locked", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
 		if (ap_base !== 32'h00100020) begin
@@ -411,7 +411,7 @@ module atg_cp_ctl_tb;
 			$display("FAIL atg_cp_ctl.locked: aperture written in RUNNING");
 		end
 		do_reset();
-		ctrl(32'd1);
+		ctrl(32'd1 << GHCI_CTRL_RUN);
 		hcr_write(GHCI_RING_SIZE[11:0], 32'd12);
 		expect_info("locked", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
 		do_reset();

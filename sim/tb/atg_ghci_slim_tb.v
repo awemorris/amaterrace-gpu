@@ -54,6 +54,7 @@ module atg_ghci_slim_tb;
 	atg_cp_regs #(
 		.DEVICE_CAPS(32'h00500002),
 		.CAPS(32'h00500002),
+		.XCAP_MASK(11'd0),
 		.SLIM_MMIO(1)
 	) u_slim_regs (
 		.clk(clk),
@@ -271,7 +272,7 @@ module atg_ghci_slim_tb;
 			$display("FAIL: SCRATCH = %h (expected CAFEBABE)", rdata);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: GHCI 1.0 SCRATCH write/read at 0x048 successful");
+			$display("PASS: GHCI 1.0 SCRATCH write/read at 0x044 successful");
 		end
 
 		/* ---------------------------------------------------------
@@ -326,10 +327,10 @@ module atg_ghci_slim_tb;
 			errors = errors + 1;
 		end
 
-		/* Host reads outside 0x000..0x048 must return 0 */
-		mmio_read(17'h00050, rdata);
+		/* Host reads outside Page 0 defined registers must return 0 */
+		mmio_read(17'h00090, rdata);
 		if (rdata !== 32'h00000000) begin
-			$display("FAIL: Read from 0x050 returned %h (expected 0)", rdata);
+			$display("FAIL: Read from 0x090 returned %h (expected 0)", rdata);
 			errors = errors + 1;
 		end
 
@@ -435,12 +436,13 @@ module atg_ghci_slim_tb;
 			$display("PASS: CMD_DISPATCH executed and triggered CS kick");
 		end
 
-		/* Execute CMD_FENCE (0x33, 5 dwords: hdr, addr_lo, addr_hi, seq_lo, seq_hi/flags) */
-		seq_feed_dword({16'd0, 8'd5, 8'h33}); /* Header */
+		/* Execute CMD_FENCE (0x33, 6 dwords: hdr, addr_lo, addr_hi, seq_lo, seq_hi, flags) */
+		seq_feed_dword({16'd0, 8'd6, 8'h33}); /* Header */
 		seq_feed_dword(32'h00004000);         /* addr_lo */
 		seq_feed_dword(32'h00000000);         /* addr_hi */
 		seq_feed_dword(32'h00000042);         /* seq_lo */
 		seq_feed_dword(32'h00000000);         /* seq_hi */
+		seq_feed_dword(32'h00000001);         /* flags */
 
 		for (k = 0; k < 10; k = k + 1) begin
 			@(posedge clk);

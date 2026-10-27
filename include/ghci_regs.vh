@@ -22,28 +22,36 @@ localparam [15:0] GHCI_VERSION_MINOR = 16'd0;
 
 /*
  * ============================================================================
- * GHCI 1.0 Slim Host MMIO Registers (19 registers, 76 bytes: 17'h00 - 17'h48)
+ * GHCI 1.0 Canonical Host MMIO Registers (0x000 - 0x0FC, J04)
  * ============================================================================
  */
 localparam [16:0] GHCI_REG_MAGIC          = 17'h00000;
 localparam [16:0] GHCI_REG_VERSION        = 17'h00004;
 localparam [16:0] GHCI_REG_DEVICE_CAPS    = 17'h00008;
 localparam [16:0] GHCI_REG_EXTCAP_PTR     = 17'h0000C;
-localparam [16:0] GHCI_REG_CTRL           = 17'h00010;
-localparam [16:0] GHCI_REG_STATUS         = 17'h00014;
-localparam [16:0] GHCI_REG_IRQ_STATUS     = 17'h00018;
-localparam [16:0] GHCI_REG_IRQ_ENABLE     = 17'h0001C;
-localparam [16:0] GHCI_REG_RING_BASE_LO   = 17'h00020;
-localparam [16:0] GHCI_REG_RING_BASE_HI   = 17'h00024;
-localparam [16:0] GHCI_REG_RING_SIZE      = 17'h00028;
-localparam [16:0] GHCI_REG_RING_RPTR      = 17'h0002C;
+localparam [16:0] GHCI_REG_STATUS         = 17'h00010;
+localparam [16:0] GHCI_REG_CTRL           = 17'h00014;
+localparam [16:0] GHCI_REG_FAULT_INFO     = 17'h00018;
+localparam [16:0] GHCI_REG_FAULT_ADDR_LO  = 17'h0001C;
+localparam [16:0] GHCI_REG_FAULT_ADDR_HI  = 17'h00020;
+localparam [16:0] GHCI_REG_RING_BASE_LO   = 17'h00024;
+localparam [16:0] GHCI_REG_RING_BASE_HI   = 17'h00028;
+localparam [16:0] GHCI_REG_RING_SIZE      = 17'h0002C;
 localparam [16:0] GHCI_REG_RING_WPTR      = 17'h00030;
-localparam [16:0] GHCI_REG_FAULT_INFO     = 17'h00034;
-localparam [16:0] GHCI_REG_FAULT_ADDR_LO  = 17'h00038;
-localparam [16:0] GHCI_REG_FAULT_ADDR_HI  = 17'h0003C;
-localparam [16:0] GHCI_REG_DIAG_CP_PC     = 17'h00040;
-localparam [16:0] GHCI_REG_DIAG_CP_STATUS = 17'h00044;
-localparam [16:0] GHCI_REG_SCRATCH        = 17'h00048;
+localparam [16:0] GHCI_REG_RING_RPTR      = 17'h00034;
+localparam [16:0] GHCI_REG_IRQ_STATUS     = 17'h00038;
+localparam [16:0] GHCI_REG_IRQ_ENABLE     = 17'h0003C;
+localparam [16:0] GHCI_REG_IRQ_SET        = 17'h00040;
+localparam [16:0] GHCI_REG_SCRATCH        = 17'h00044;
+localparam [16:0] GHCI_REG_WDT_CYCLES     = 17'h00048;
+localparam [16:0] GHCI_REG_RESIDENT_WARPS = 17'h0004C;
+localparam [16:0] GHCI_REG_CP_HEAP_BASE   = 17'h00050;
+localparam [16:0] GHCI_REG_CP_HEAP_LIMIT  = 17'h00054;
+localparam [16:0] GHCI_REG_SESSION_ACTIVE = 17'h00058;
+localparam [16:0] GHCI_REG_TIMESTAMP_LO   = 17'h0005C;
+localparam [16:0] GHCI_REG_TIMESTAMP_HI   = 17'h00060;
+localparam [16:0] GHCI_REG_DIAG_CP_PC     = 17'h00074;
+localparam [16:0] GHCI_REG_DIAG_CP_STATUS = 17'h00078;
 localparam [16:0] GHCI_REG_EXT_CAP_FMT0   = 17'h00080;
 localparam [16:0] GHCI_REG_EXT_CAP_FEATURE= 17'h00084;
 
@@ -70,7 +78,7 @@ localparam [16:0] GHCI_2_REG_SCRATCH        = GHCI_REG_SCRATCH;
 localparam [16:0] GHCI_2_REG_EXT_CAP_FMT0   = GHCI_REG_EXT_CAP_FMT0;
 localparam [16:0] GHCI_2_REG_EXT_CAP_FEATURE= GHCI_REG_EXT_CAP_FEATURE;
 
-/* DEVICE_CAPS bits (0x008) */
+/* DEVICE_CAPS bits (0x008, J08) */
 localparam GHCI_DEV_CAP_UMA            = 0;
 localparam GHCI_DEV_CAP_IOMMU          = 1;
 localparam GHCI_DEV_CAP_HW_WALKER      = 2;
@@ -79,8 +87,14 @@ localparam GHCI_DEV_CAP_SECONDARY_RING = 4;
 localparam GHCI_DEV_CAP_DUAL_SOURCE    = 5;
 localparam GHCI_DEV_CAP_FP16           = 6;
 localparam GHCI_DEV_CAP_GSI1           = 7;
-localparam GHCI_DEV_CAP_TASK_SHADER    = 30;
-localparam GHCI_DEV_CAP_MESH_SHADER    = 31;
+localparam GHCI_DEV_CAP_PROT           = 24;
+localparam GHCI_DEV_CAP_TEX_FFILT      = 25;
+localparam GHCI_DEV_CAP_ROP_PACK       = 26;
+localparam GHCI_DEV_CAP_TASK_SHADER    = 27;
+localparam GHCI_DEV_CAP_MESH_SHADER    = 28;
+localparam GHCI_DEV_CAP_BLT            = 29;
+localparam GHCI_DEV_CAP_DISP           = 30;
+localparam GHCI_DEV_CAP_MSAA           = 31;
 
 /* CAPS bit aliases */
 localparam GHCI_CAPS_TEX_ADV_BIT       = 26;
@@ -191,14 +205,25 @@ localparam GHCI_CPFW_STATUS_ALIVE = 2;
 localparam GHCI_CPFW_STATUS_STOPPED = 3;	/* the core is stopped or held in reset */
 localparam GHCI_CPFW_STATUS_LOADING = 4;
 
-/* CTRL bits. */
-localparam GHCI_CTRL_RUN = 0;
-localparam GHCI_CTRL_RESET = 1;
-localparam GHCI_CTRL_HALT = 2;
-localparam GHCI_CTRL_STEP = 3;
-localparam GHCI_CTRL_WDT_EN = 4;
+/* CTRL bits (J02). */
+localparam GHCI_CTRL_RESET      = 0;
+localparam GHCI_CTRL_RUN        = 1;
+localparam GHCI_CTRL_HALT       = 2;
+localparam GHCI_CTRL_STEP       = 3;
+localparam GHCI_CTRL_TLB_FLUSH  = 4;
+localparam GHCI_CTRL_WDT_EN     = 5;
+localparam GHCI_CTRL_IRQ_GLOBAL = 6;
 
-/* STATUS bits. */
+/* STATUS bits (J02). */
+localparam GHCI_STATUS_RUNNING_BIT    = 0;
+localparam GHCI_STATUS_HALTED_BIT     = 1;
+localparam GHCI_STATUS_FAULTED_BIT    = 2;
+localparam GHCI_STATUS_MC_IDLE_BIT    = 8;
+localparam GHCI_STATUS_RING_EMPTY_BIT = 11;
+localparam GHCI_STATUS_MEM_READY_BIT  = 12;
+localparam GHCI_STATUS_AXI_STUCK_BIT  = 13;
+localparam GHCI_STATUS_QUIESCE_BIT    = 14;
+
 localparam GHCI_STATUS_CP_BUSY = 0;
 localparam GHCI_STATUS_BLT_BUSY = 1;
 localparam GHCI_STATUS_VF_BUSY = 2;
@@ -215,30 +240,58 @@ localparam GHCI_STATUS_AXI_STUCK = 13;
 localparam GHCI_STATUS_QUIESCED = 14;
 localparam GHCI_STATUS_STATE = 16;	/* [19:16] */
 
-/* CP states (STATUS[19:16]). */
-localparam [3:0] GHCI_ST_IDLE = 4'd0;
-localparam [3:0] GHCI_ST_RUNNING = 4'd1;
-localparam [3:0] GHCI_ST_HALTING = 4'd2;
-localparam [3:0] GHCI_ST_HALTED = 4'd3;
-localparam [3:0] GHCI_ST_FAULTED = 4'd4;
-localparam [3:0] GHCI_ST_RESETTING = 4'd5;
+/* CP states (STATUS[19:16], J02). */
+localparam [3:0] GHCI_ST_IDLE       = 4'd0;
+localparam [3:0] GHCI_ST_RUNNING    = 4'd1;
+localparam [3:0] GHCI_ST_HALTING    = 4'd2;
+localparam [3:0] GHCI_ST_HALTED     = 4'd3;
+localparam [3:0] GHCI_ST_FAULTED    = 4'd4;
+localparam [3:0] GHCI_ST_RESETTING  = 4'd5;
+localparam [3:0] GHCI_ST_BLIT       = 4'd6;
+localparam [3:0] GHCI_ST_WAIT_FENCE = 4'd7;
 
-/* IRQ_STATUS / IRQ_ENABLE bits. */
-localparam GHCI_IRQ_FENCE = 0;
-localparam GHCI_IRQ_FAULT = 1;
+/* IRQ_STATUS / IRQ_ENABLE bits (J02). */
+localparam GHCI_IRQ_FENCE      = 0;
+localparam GHCI_IRQ_ERROR      = 1;
+localparam GHCI_IRQ_FAULT      = 1;
+localparam GHCI_IRQ_WATCHDOG   = 2;
+localparam GHCI_IRQ_DISP       = 3;
+localparam GHCI_IRQ_DISPLAY    = 3;
 localparam GHCI_IRQ_RING_EMPTY = 2;
-localparam GHCI_IRQ_WATCHDOG = 3;
-localparam GHCI_IRQ_DBG_DONE = 4;
-localparam GHCI_IRQ_SOFT = 5;
-localparam GHCI_IRQ_HALTED = 6;
-localparam GHCI_IRQ_RESULT = 7;
-localparam GHCI_IRQ_RETIRE = 8;
-localparam GHCI_IRQ_VBLANK = 9;	/* DISP2 (draft) */
-localparam GHCI_IRQ_FLIP = 10;
+localparam GHCI_IRQ_DBG_DONE   = 4;
+localparam GHCI_IRQ_SOFT       = 5;
+localparam GHCI_IRQ_HALTED     = 6;
+localparam GHCI_IRQ_RESULT     = 7;
+localparam GHCI_IRQ_RETIRE     = 8;
+localparam GHCI_IRQ_VBLANK     = 9;
+localparam GHCI_IRQ_FLIP       = 10;
 localparam GHCI_IRQ_DISP_ERROR = 11;
-localparam GHCI_IRQ_HOTPLUG = 12;
+localparam GHCI_IRQ_HOTPLUG    = 12;
 
-/* FAULT_INFO[15:12] kinds. */
+/* FAULT_INFO fields (J03). */
+localparam [3:0] GHCI_FAULT_KIND_NONE            = 4'd0;
+localparam [3:0] GHCI_FAULT_KIND_BAD_OPCODE      = 4'd1;
+localparam [3:0] GHCI_FAULT_KIND_BAD_HEADER      = 4'd2;
+localparam [3:0] GHCI_FAULT_KIND_MMU_PAGE_FAULT  = 4'd3;
+localparam [3:0] GHCI_FAULT_KIND_MMU_TABLE_WALK  = 4'd4;
+localparam [3:0] GHCI_FAULT_KIND_CP_TIMEOUT      = 4'd5;
+localparam [3:0] GHCI_FAULT_KIND_BAD_ALIGNMENT   = 4'd6;
+localparam [3:0] GHCI_FAULT_KIND_BAD_PROGRAM     = 4'd7;
+localparam [3:0] GHCI_FAULT_KIND_MMU_OOM         = 4'd8;
+localparam [3:0] GHCI_FAULT_KIND_AXI_SLAVE_ERROR = 4'd9;
+localparam [3:0] GHCI_FAULT_KIND_SECURITY_FAULT  = 4'd10;
+
+localparam [3:0] GHCI_FAULT_UNIT_CP  = 4'd0;
+localparam [3:0] GHCI_FAULT_UNIT_MMU = 4'd1;
+localparam [3:0] GHCI_FAULT_UNIT_VF  = 4'd2;
+localparam [3:0] GHCI_FAULT_UNIT_SU  = 4'd3;
+localparam [3:0] GHCI_FAULT_UNIT_TU  = 4'd4;
+localparam [3:0] GHCI_FAULT_UNIT_RX  = 4'd5;
+localparam [3:0] GHCI_FAULT_UNIT_ROP = 4'd6;
+localparam [3:0] GHCI_FAULT_UNIT_BLT = 4'd7;
+localparam [3:0] GHCI_FAULT_UNIT_DC  = 4'd8;
+
+/* Legacy FAULT_INFO kinds for backward compatibility */
 localparam [3:0] GHCI_FAULT_APERTURE = 4'd1;
 localparam [3:0] GHCI_FAULT_OPCODE = 4'd2;
 localparam [3:0] GHCI_FAULT_RING = 4'd3;
@@ -249,6 +302,12 @@ localparam [3:0] GHCI_FAULT_LOCKED = 4'd7;
 localparam [3:0] GHCI_FAULT_ISA = 4'd8;
 localparam [3:0] GHCI_FAULT_GPU_PAGE_FAULT = 4'd9;
 localparam [3:0] GHCI_FAULT_GPU_PERM_VIOLATION = 4'd10;
+
+/* Page Table Entry (PTE) bits (J11). */
+localparam GHCI_PTE_VALID_BIT      = 0;
+localparam GHCI_PTE_LOCAL_BIT      = 1;
+localparam GHCI_PTE_WRITABLE_BIT   = 2;
+localparam GHCI_PTE_EXECUTABLE_BIT = 3;
 
 /* KICK bits. */
 localparam GHCI_KICK_BLIT = 0;

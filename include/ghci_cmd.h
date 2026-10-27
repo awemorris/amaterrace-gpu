@@ -142,60 +142,28 @@ extern "C" {
 #define GHCI_BLEND_FACTOR_SRC1_ALPHA               17u
 #define GHCI_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA     18u
 
+typedef struct GhciVertexAttribute {
+	uint32_t binding_offset;   /* [3:0] binding slot, [27:4] byte offset */
+	uint32_t format_location;  /* [15:0] VkFormat, [23:16] shader location */
+} GhciVertexAttribute;
+
 typedef struct GhciPipelineState {
 	/* 0x00: Shader Stages (64-bit GPU virtual addresses) */
-	uint64_t vs_code_va;            /* Vertex Shader instruction base */
-	uint64_t fs_code_va;            /* Fragment Shader instruction base */
-	uint64_t cs_code_va;            /* Compute Shader instruction base */
+	uint64_t vs_code_va;            /* dw0-1: Vertex Shader instruction base */
+	uint64_t fs_code_va;            /* dw2-3: Fragment Shader instruction base */
+	uint64_t cs_code_va;            /* dw4-5: Compute Shader instruction base */
+	uint64_t ms_code_va;            /* dw6-7: Mesh/task Shader instruction base */
 
-	/* 0x18: Vertex Input & Assembly */
-	uint16_t vertex_stride;         /* Stride in bytes */
-	uint8_t  topology;              /* GHCI_TOPOLOGY_* */
-	uint8_t  primitive_restart;     /* 1 = enable restart index */
-	uint32_t attribute_mask;        /* Active attributes bitmask (0..15) */
+	/* 0x20: Pipeline Creation Flags & Rasterizer State */
+	uint32_t flags;                 /* dw8: Pipeline flags & topology */
+	uint32_t raster_state;          /* dw9: Cull mode, front face, polygon mode */
+	uint32_t depth_stencil_state;   /* dw10: Depth & stencil test / write / compare */
+	uint32_t blend_state;           /* dw11: Color blend factors & ops */
+	uint32_t vertex_strides;        /* dw12: Packed strides for bindings 0..3 */
+	uint32_t reserved[3];           /* dw13-15: Alignment padding */
 
-	/* 0x20: Vertex Attribute Formats & Offsets */
-	uint32_t attr_formats_lo;       /* Formats for attrs 0..7 */
-	uint32_t attr_formats_hi;       /* Formats for attrs 8..15 */
-	uint32_t attr_offsets_0_3;      /* Packed 8-bit offsets for attrs 0..3 */
-	uint32_t attr_offsets_4_7;      /* Packed 8-bit offsets for attrs 4..7 */
-
-	/* 0x30: Rasterization State */
-	uint8_t  cull_mode;             /* GHCI_CULL_* */
-	uint8_t  front_face;            /* GHCI_FRONT_* */
-	uint8_t  polygon_mode;          /* GHCI_POLYGON_* */
-	uint8_t  depth_clamp_enable;    /* 1 = clamp depth */
-	uint32_t depth_bias_constant;   /* Constant depth bias (fixed-point/float) */
-	uint32_t depth_bias_slope;      /* Slope-scaled depth bias */
-	uint32_t depth_bias_clamp;      /* Depth bias clamp */
-
-	/* 0x40: Depth & Stencil State */
-	uint8_t  depth_test_enable;     /* 1 = depth test active */
-	uint8_t  depth_write_enable;    /* 1 = depth writes enabled */
-	uint8_t  depth_compare_op;      /* GHCI_COMPARE_* */
-	uint8_t  stencil_test_enable;   /* 1 = stencil test active */
-	uint32_t stencil_front;         /* [7:0] fail, [15:8] pass, [23:16] zfail, [31:24] func */
-	uint32_t stencil_back;          /* Back-face stencil ops */
-	uint16_t stencil_compare_mask;  /* Stencil comparison mask */
-	uint16_t stencil_write_mask;    /* Stencil buffer write mask */
-
-	/* 0x50: Color Blend State */
-	uint8_t  blend_enable;          /* 1 = blending active */
-	uint8_t  src_color_factor;      /* GHCI_BLEND_FACTOR_* */
-	uint8_t  dst_color_factor;      /* GHCI_BLEND_FACTOR_* */
-	uint8_t  color_blend_op;        /* GHCI_BLEND_OP_* */
-	uint8_t  src_alpha_factor;      /* GHCI_BLEND_FACTOR_* */
-	uint8_t  dst_alpha_factor;      /* GHCI_BLEND_FACTOR_* */
-	uint8_t  alpha_blend_op;        /* GHCI_BLEND_OP_* */
-	uint8_t  color_write_mask;      /* [0]=R, [1]=G, [2]=B, [3]=A */
-	uint8_t  dual_source_blend;     /* 1 = Dual-source blend active */
-	uint8_t  logic_op_enable;       /* 1 = Logic op enabled */
-	uint8_t  logic_op;              /* 0..15 Vulkan LogicOp */
-	uint8_t  sample_count;          /* 1, 2, 4, 8 MSAA samples */
-
-	/* 0x5C: Dynamic State Override Mask & Reserved */
-	uint32_t dynamic_state_mask;    /* States overridden by dynamic commands */
-	uint32_t reserved[8];           /* Padding out to exactly 128 bytes */
+	/* 0x40: Vertex Attributes Descriptor (64 bytes) */
+	GhciVertexAttribute attributes[8]; /* dw16-31: 8 vertex attribute entries */
 } GhciPipelineState;
 
 /*
@@ -306,14 +274,15 @@ typedef struct GhciCmdDrawIndexed {
 	uint32_t first_instance;
 } GhciCmdDrawIndexed;
 
-/* CMD_DRAW_INDIRECT (0x29): 6 dwords */
+/* CMD_DRAW_INDIRECT (0x29): 7 dwords (28 bytes, J14) */
 typedef struct GhciCmdDrawIndirect {
-	uint32_t header;                /* GHCI_CMD_DRAW_INDIRECT, size = 6 */
-	uint32_t args_buffer_va_lo;
-	uint32_t args_buffer_va_hi;
-	uint32_t draw_count;
-	uint32_t stride_bytes;
-	uint32_t flags;                 /* [0] = 0 (direct count), 1 (count from buffer) */
+	uint32_t header;                /* GHCI_CMD_DRAW_INDIRECT, size = 7 */
+	uint32_t buffer_va_lo;          /* GPU virtual address of draw args [31:0] */
+	uint32_t buffer_va_hi;          /* GPU virtual address of draw args [63:32] */
+	uint32_t offset_bytes;          /* Byte offset inside buffer */
+	uint32_t draw_count;            /* Direct draw count or maxDrawCount */
+	uint32_t stride_bytes;          /* Stride in bytes between draw arguments */
+	uint32_t flags;                 /* [0] = count from buffer */
 } GhciCmdDrawIndirect;
 
 /* CMD_DRAW_MESH_TASKS (0x2A): 4 dwords */
@@ -323,6 +292,12 @@ typedef struct GhciCmdDrawMeshTasks {
 	uint32_t group_count_y;
 	uint32_t group_count_z;
 } GhciCmdDrawMeshTasks;
+
+/* CMD_BIND_SESSION (0x14): 2 dwords (J18) */
+typedef struct GhciCmdBindSession {
+	uint32_t header;                /* GHCI_CMD_BIND_SESSION, size = 2 */
+	uint32_t session_id;            /* Client session identifier (0..15) */
+} GhciCmdBindSession;
 
 /* CMD_DISPATCH (0x30): 4 dwords */
 typedef struct GhciCmdDispatch {
@@ -359,17 +334,70 @@ typedef struct GhciCmdExecuteCommands {
 	uint32_t command_dwords;
 } GhciCmdExecuteCommands;
 
-/* CMD_FENCE (0x33): 5 dwords */
+/* CMD_FENCE (0x33): 6 dwords (24 bytes, J13) */
 #define GHCI_FENCE_FLAG_IRQ             (1u << 0)
+#define GHCI_FENCE_FLAG_MEM_WRITE       (1u << 1)
+#define GHCI_FENCE_FLAG_HOST_FLUSH      (1u << 2)
 
 typedef struct GhciCmdFence {
-	uint32_t header;                /* GHCI_CMD_FENCE, size = 5 */
-	uint32_t fence_addr_lo;
-	uint32_t fence_addr_hi;
-	uint32_t fence_seq_lo;
-	uint16_t fence_seq_hi;
-	uint16_t flags;                 /* GHCI_FENCE_FLAG_* */
+	uint32_t header;                /* GHCI_CMD_FENCE, size = 6 */
+	uint32_t fence_addr_lo;         /* 64-bit host DMA address [31:0] */
+	uint32_t fence_addr_hi;         /* 64-bit host DMA address [63:32] */
+	uint32_t fence_seq_lo;          /* 64-bit fence sequence value [31:0] */
+	uint32_t fence_seq_hi;          /* 64-bit fence sequence value [63:32] */
+	uint32_t flags;                 /* GHCI_FENCE_FLAG_* */
 } GhciCmdFence;
+
+/* CMD_WRITE_TIMESTAMP (0x35): 4 dwords (J18) */
+typedef struct GhciCmdWriteTimestamp {
+	uint32_t header;                /* GHCI_CMD_WRITE_TIMESTAMP, size = 4 */
+	uint32_t dst_va_lo;
+	uint32_t dst_va_hi;
+	uint32_t pipeline_stage;
+} GhciCmdWriteTimestamp;
+
+/* CMD_BEGIN_QUERY (0x36) / CMD_END_QUERY (0x37): 3 dwords (J18) */
+typedef struct GhciCmdQuery {
+	uint32_t header;                /* GHCI_CMD_BEGIN_QUERY / END_QUERY, size = 3 */
+	uint32_t query_pool_va_lo;
+	uint32_t query_index;
+} GhciCmdQuery;
+
+/* CMD_COPY_BUFFER (0x40): 6 dwords (J18) */
+typedef struct GhciCmdCopyBuffer {
+	uint32_t header;                /* GHCI_CMD_COPY_BUFFER, size = 6 */
+	uint32_t src_va_lo;
+	uint32_t src_va_hi;
+	uint32_t dst_va_lo;
+	uint32_t dst_va_hi;
+	uint32_t size_bytes;
+} GhciCmdCopyBuffer;
+
+/* CMD_COPY_IMAGE (0x41): 8 dwords (J18) */
+typedef struct GhciCmdCopyImage {
+	uint32_t header;                /* GHCI_CMD_COPY_IMAGE, size = 8 */
+	uint32_t src_va_lo;
+	uint32_t src_va_hi;
+	uint32_t dst_va_lo;
+	uint32_t dst_va_hi;
+	uint32_t src_xy;
+	uint32_t dst_xy;
+	uint32_t extent;
+} GhciCmdCopyImage;
+
+/* CMD_BLIT (0x42): 10 dwords (J18) */
+typedef struct GhciCmdBlit {
+	uint32_t header;                /* GHCI_CMD_BLIT, size = 10 */
+	uint32_t src_va_lo;
+	uint32_t src_va_hi;
+	uint32_t dst_va_lo;
+	uint32_t dst_va_hi;
+	uint32_t src_min_xy;
+	uint32_t src_max_xy;
+	uint32_t dst_min_xy;
+	uint32_t dst_max_xy;
+	uint32_t filter;
+} GhciCmdBlit;
 
 /*
  * ============================================================================

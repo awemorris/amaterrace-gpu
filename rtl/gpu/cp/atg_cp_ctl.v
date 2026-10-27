@@ -337,7 +337,7 @@ module atg_cp_ctl #(
 
 	always @(*) begin
 		case (hcr_ridx)
-		I_CTRL: rd = {27'd0, ctrl_wdt_en, 1'b0, ctrl_halt, resetting, ctrl_run};
+		I_CTRL: rd = {25'd0, 1'b0, ctrl_wdt_en, 1'b0, 1'b0, ctrl_halt, ctrl_run, resetting};
 		I_STATUS: rd = status;
 		I_WDT: rd = wdt_cycles;
 		I_AP_BASE: rd = ap_base;

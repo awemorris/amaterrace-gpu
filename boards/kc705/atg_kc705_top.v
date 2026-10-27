@@ -115,8 +115,8 @@ module atg_kc705_top #(
 	wire [3:0] s_awid;
 	wire s_awvalid;
 	wire s_awready;
-	wire [31:0] s_wdata;
-	wire [3:0] s_wstrb;
+	wire [63:0] s_wdata;
+	wire [7:0] s_wstrb;
 	wire s_wlast;
 	wire s_wvalid;
 	wire s_wready;
@@ -129,7 +129,7 @@ module atg_kc705_top #(
 	wire [7:0] s_arlen;
 	wire s_arvalid;
 	wire s_arready;
-	wire [31:0] s_rdata;
+	wire [63:0] s_rdata;
 	wire [3:0] s_rid;
 	wire [1:0] s_rresp;
 	wire s_rlast;
@@ -179,11 +179,12 @@ module atg_kc705_top #(
 	/* ---- PCIe (atg_kc705_pcie: the bridge IP) ---- */
 	wire user_clk, user_rst_n, link_up;
 	wire [16:0] p0_awaddr, p0_araddr;
-	wire [3:0] p0_awid, p0_bid, p0_arid, p0_rid, p0_wstrb;
+	wire [3:0] p0_awid, p0_bid, p0_arid, p0_rid;
+	wire [7:0] p0_wstrb;
 	wire [7:0] p0_arlen;
 	wire p0_awvalid, p0_awready, p0_wlast, p0_wvalid, p0_wready, p0_bvalid, p0_bready;
 	wire p0_arvalid, p0_arready, p0_rlast, p0_rvalid, p0_rready;
-	wire [31:0] p0_wdata, p0_rdata;
+	wire [63:0] p0_wdata, p0_rdata;
 	wire [1:0] p0_bresp, p0_rresp;
 	wire [25:0] p2_awaddr, p2_araddr;
 	wire [3:0] p2_awid, p2_bid, p2_arid, p2_rid;
@@ -254,7 +255,7 @@ module atg_kc705_top #(
 	);
 
 	/* BAR0 into gclk: atg_top's register port. */
-	am_axi_cdc #(.A_W(17), .ID_W(4), .LEN_W(8), .D_W(32), .DEPTH_LOG2(2)) bar0 (
+	am_axi_cdc #(.A_W(17), .ID_W(4), .LEN_W(8), .D_W(64), .DEPTH_LOG2(2)) bar0 (
 		.s_clk(user_clk), .s_rst_n(user_rst_n),
 		.s_awaddr(p0_awaddr), .s_awid(p0_awid), .s_awvalid(p0_awvalid), .s_awready(p0_awready),
 		.s_wdata(p0_wdata), .s_wstrb(p0_wstrb), .s_wlast(p0_wlast), .s_wvalid(p0_wvalid),

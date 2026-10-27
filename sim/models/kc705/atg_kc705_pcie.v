@@ -55,8 +55,8 @@ module atg_kc705_pcie #(
 	output wire [3:0] m0_awid,
 	output reg m0_awvalid = 1'b0,
 	input wire m0_awready,
-	output reg [31:0] m0_wdata = 32'd0,
-	output reg [3:0] m0_wstrb = 4'd0,
+	output reg [63:0] m0_wdata = 64'd0,
+	output reg [7:0] m0_wstrb = 8'd0,
 	output wire m0_wlast,
 	output reg m0_wvalid = 1'b0,
 	input wire m0_wready,
@@ -69,7 +69,7 @@ module atg_kc705_pcie #(
 	output wire [7:0] m0_arlen,
 	output reg m0_arvalid = 1'b0,
 	input wire m0_arready,
-	input wire [31:0] m0_rdata,
+	input wire [63:0] m0_rdata,
 	input wire [3:0] m0_rid,
 	input wire [1:0] m0_rresp,
 	input wire m0_rlast,
@@ -173,7 +173,7 @@ module atg_kc705_pcie #(
 
 	/* The responses (every ready is 1): counted and kept here. */
 	integer b0_n = 0, r0_n = 0, b2_n = 0, r2_n = 0;
-	reg [31:0] r0_data = 32'd0;
+	reg [63:0] r0_data = 64'd0;
 	reg [1:0] r0_resp = 2'b00, b0_resp = 2'b00, b2_resp = 2'b00, r2_resp = 2'b00;
 	reg [511:0] r2_data = 512'd0;
 	reg r2_last = 1'b0;
@@ -211,8 +211,13 @@ module atg_kc705_pcie #(
 			@(posedge user_clk);
 			m0_awaddr <= off;
 			m0_awvalid <= 1'b1;
-			m0_wdata <= data;
-			m0_wstrb <= 4'hF;
+			if (off[2]) begin
+				m0_wdata <= {data, 32'd0};
+				m0_wstrb <= 8'hF0;
+			end else begin
+				m0_wdata <= {32'd0, data};
+				m0_wstrb <= 8'h0F;
+			end
 			m0_wvalid <= 1'b1;
 			@(posedge user_clk);
 			while (m0_awvalid || m0_wvalid) begin
@@ -241,7 +246,7 @@ module atg_kc705_pcie #(
 			m0_arvalid <= 1'b0;
 			while (r0_n == n0)
 				@(posedge user_clk);
-			data = r0_data;
+			data = off[2] ? r0_data[63:32] : r0_data[31:0];
 			bar0_resp = r0_resp;
 		end
 	endtask

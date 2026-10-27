@@ -29,8 +29,8 @@ module am_axi_regs_tb;
 	reg [11:0] h_awid = 0;
 	reg h_awvalid = 1'b0;
 	wire h_awready;
-	reg [31:0] h_wdata = 0;
-	reg [3:0] h_wstrb = 0;
+	reg [63:0] h_wdata = 0;
+	reg [7:0] h_wstrb = 0;
 	reg h_wlast = 1'b0;
 	reg h_wvalid = 1'b0;
 	wire h_wready;
@@ -43,7 +43,7 @@ module am_axi_regs_tb;
 	reg [3:0] h_arlen = 0;
 	reg h_arvalid = 1'b0;
 	wire h_arready;
-	wire [31:0] h_rdata;
+	wire [63:0] h_rdata;
 	wire [11:0] h_rid;
 	wire [1:0] h_rresp;
 	wire h_rlast;
@@ -111,6 +111,19 @@ module am_axi_regs_tb;
 		end
 	endtask
 
+	task expect64;
+		input [31:0] addr;
+		input [63:0] want;
+		reg [63:0] got;
+		begin
+			host_read64(addr, got);
+			if (got !== want) begin
+				errors = errors + 1;
+				$display("FAIL am_axi_regs: 64-bit %h read %h, expected %h", addr, got, want);
+			end
+		end
+	endtask
+
 	integer beats;
 	reg [31:0] v;
 
@@ -132,6 +145,12 @@ module am_axi_regs_tb;
 		expect(32'h10008, 32'h22BB00DD);
 		expect(32'h00008, 32'd0);
 
+		/* 64-bit access: writes r[0] and r[1] in 2 cycles, reads back 64 bits. */
+		host_write64(32'h10000, 64'hFEDCBA98_76543210);
+		expect64(32'h10000, 64'hFEDCBA98_76543210);
+		expect(32'h10000, 32'h76543210);
+		expect(32'h10004, 32'hFEDCBA98);
+
 		/* A 4-beat burst read of register 3. */
 		@(posedge clk);
 		h_araddr <= 17'h1000C;
@@ -146,7 +165,7 @@ module am_axi_regs_tb;
 		while (beats < 4) begin
 			@(posedge clk);
 			if (h_rvalid && h_rready) begin
-				if (h_rdata !== 32'h33330003 || h_rid !== 12'h5A5 ||
+				if (h_rdata[63:32] !== 32'h33330003 || h_rid !== 12'h5A5 ||
 				    h_rlast !== (beats == 3)) begin
 					errors = errors + 1;
 					$display("FAIL am_axi_regs: burst beat %0d data %h last %b",
@@ -171,14 +190,15 @@ module am_axi_regs_tb;
 		while (!h_awready)
 			@(posedge clk);
 		h_awvalid <= 1'b0;
-		h_wdata <= 32'h01010101;
-		h_wstrb <= 4'hF;
+		h_wdata <= {32'h01010101, 32'd0};
+		h_wstrb <= 8'hF0;
 		h_wlast <= 1'b0;
 		h_wvalid <= 1'b1;
 		@(posedge clk);
 		while (!h_wready)
 			@(posedge clk);
-		h_wdata <= 32'h02020202;
+		h_wdata <= {32'h02020202, 32'd0};
+		h_wstrb <= 8'hF0;
 		h_wlast <= 1'b1;
 		@(posedge clk);
 		while (!h_wready)

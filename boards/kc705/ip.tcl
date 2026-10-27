@@ -24,7 +24,7 @@
 #   atg_kc705_bar_xbar  AXI Crossbar, the bridge's master (128 bit) to two:
 #                       M00 0x0000_0000 + 128 KiB (BAR0), M01
 #                       0x8000_0000 + 64 MiB (BAR2); DECERR elsewhere.
-#   atg_kc705_bar0_dn   AXI Data Width Converter, 128 -> 32 bit (BAR0's
+#   atg_kc705_bar0_dn   AXI Data Width Converter, 128 -> 64 bit (BAR0's
 #                       registers).
 #   atg_kc705_bar2_cc   AXI Clock Converter, 128 bit, ID 4, asynchronous:
 #                       axi_aclk_out -> gclk (BAR2), and a second instance
@@ -125,7 +125,7 @@ make atg_kc705_bar_xbar xilinx.com:ip:axi_crossbar:2.1 [list \
 	CONFIG.M01_A00_BASE_ADDR 0x0000000080000000 CONFIG.M01_A00_ADDR_WIDTH 26]
 
 make atg_kc705_bar0_dn xilinx.com:ip:axi_dwidth_converter:2.1 [list \
-	CONFIG.PROTOCOL AXI4 CONFIG.SI_DATA_WIDTH 128 CONFIG.MI_DATA_WIDTH 32 \
+	CONFIG.PROTOCOL AXI4 CONFIG.SI_DATA_WIDTH 128 CONFIG.MI_DATA_WIDTH 64 \
 	CONFIG.ADDR_WIDTH 32 CONFIG.SI_ID_WIDTH 1]
 
 make atg_kc705_bar2_cc xilinx.com:ip:axi_clock_converter:2.1 [list \

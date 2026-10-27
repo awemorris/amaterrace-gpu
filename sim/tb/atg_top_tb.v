@@ -48,8 +48,8 @@ module atg_top_harness #(
 	reg [11:0] h_awid = 0;
 	reg h_awvalid = 1'b0;
 	wire h_awready;
-	reg [31:0] h_wdata = 0;
-	reg [3:0] h_wstrb = 0;
+	reg [63:0] h_wdata = 0;
+	reg [7:0] h_wstrb = 0;
 	reg h_wlast = 1'b0;
 	reg h_wvalid = 1'b0;
 	wire h_wready;
@@ -62,7 +62,7 @@ module atg_top_harness #(
 	reg [3:0] h_arlen = 0;
 	reg h_arvalid = 1'b0;
 	wire h_arready;
-	wire [31:0] h_rdata;
+	wire [63:0] h_rdata;
 	wire [11:0] h_rid;
 	wire [1:0] h_rresp;
 	wire h_rlast;
@@ -500,7 +500,7 @@ module atg_top_harness #(
 
 		/* Identification. */
 		expect_reg(GHCI_MAGIC, 32'h47484349, 32'hFFFFFFFF);
-		expect_reg(GHCI_VERSION, 32'h00010001, 32'hFFFFFFFF);
+		expect_reg(GHCI_VERSION, {GHCI_VERSION_MAJOR, GHCI_VERSION_MINOR}, 32'hFFFFFFFF);
 		expect_reg(GHCI_VENDOR_ID, 32'h414D4154, 32'hFFFFFFFF);
 		expect_reg(GHCI_DEVICE_ID, 32'h41544731, 32'hFFFFFFFF);
 		expect_reg(GHCI_ISA_ID, 32'd0, 32'hFFFFFFFF);

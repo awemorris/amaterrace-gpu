@@ -16,12 +16,12 @@
  *                       vector); S_AXI the AXI -> PCIe side.
  *   atg_kc705_bar_xbar  the bridge's master to M00 (BAR0) and M01 (BAR2),
  *                       DECERR elsewhere.
- *   atg_kc705_bar0_dn   M00 128 -> 32 bit.
+ *   atg_kc705_bar0_dn   M00 128 -> 64 bit.
  *   atg_kc705_host_dn   the GPU's host accesses 512 -> 128 bit (s_clk).
  *   atg_kc705_bar2_cc   (a second instance) s_clk -> user_clk, 128 bit, to
  *                       the bridge's S_AXI (ws288 p039).
  *
- * Ports for the board top: m0_* the register window (32-bit, offsets
+ * Ports for the board top: m0_* the register window (64-bit, offsets
  * 16:0, ID 0), m2_* the local window (128-bit, offsets 25:0), s_* the
  * GPU's host accesses (AXI -> PCIe; 512-bit, ID 4, in s_clk = gclk, with
  * s_rst_n; GPU addresses 0x0000_0000-0x7FFF_FFFF to the same bus
@@ -56,8 +56,8 @@ module atg_kc705_pcie (
 	output wire [3:0] m0_awid,
 	output wire m0_awvalid,
 	input wire m0_awready,
-	output wire [31:0] m0_wdata,
-	output wire [3:0] m0_wstrb,
+	output wire [63:0] m0_wdata,
+	output wire [7:0] m0_wstrb,
 	output wire m0_wlast,
 	output wire m0_wvalid,
 	input wire m0_wready,
@@ -70,7 +70,7 @@ module atg_kc705_pcie (
 	output wire [7:0] m0_arlen,
 	output wire m0_arvalid,
 	input wire m0_arready,
-	input wire [31:0] m0_rdata,
+	input wire [63:0] m0_rdata,
 	input wire [3:0] m0_rid,
 	input wire [1:0] m0_rresp,
 	input wire m0_rlast,

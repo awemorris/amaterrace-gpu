@@ -168,8 +168,13 @@ void host_write(uint32_t off, uint32_t value)
 			break;
 	}
 	top->s_awvalid = 0;
-	top->s_wdata = value;
-	top->s_wstrb = 0xF;
+	if (off & 4) {
+		top->s_wdata = (uint64_t)value << 32;
+		top->s_wstrb = 0xF0;
+	} else {
+		top->s_wdata = (uint64_t)value;
+		top->s_wstrb = 0x0F;
+	}
 	top->s_wlast = 1;
 	top->s_wvalid = 1;
 	while (true) {
@@ -209,7 +214,7 @@ uint32_t host_read(uint32_t off)
 	}
 	top->s_arvalid = 0;
 	top->s_rready = 1;
-	uint32_t data;
+	uint64_t data;
 	while (true) {
 		top->clk = 0;
 		top->eval();
@@ -220,7 +225,7 @@ uint32_t host_read(uint32_t off)
 			break;
 	}
 	top->s_rready = 0;
-	return data;
+	return (off & 4) ? (uint32_t)(data >> 32) : (uint32_t)data;
 }
 
 void expect(const char *what, uint32_t got, uint32_t want)

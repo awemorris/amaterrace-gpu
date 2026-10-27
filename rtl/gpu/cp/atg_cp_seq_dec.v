@@ -164,7 +164,7 @@ module atg_cp_seq_dec #(
 				h_absent = !UNITS[2];
 			end
 			CMD_DRAW_INDIRECT: begin
-				h_need = 8'd5;
+				h_need = 8'd6;
 				h_absent = !UNITS[2];
 			end
 			CMD_DRAW_MESH_TASKS: begin
@@ -177,7 +177,7 @@ module atg_cp_seq_dec #(
 			end
 			CMD_BARRIER: h_need = 8'd3;
 			CMD_EXECUTE_COMMANDS: h_need = 8'd3;
-			CMD_FENCE: h_need = 8'd4;
+			CMD_FENCE: h_need = 8'd5;
 			default: h_known = 1'b0;
 			endcase
 		end

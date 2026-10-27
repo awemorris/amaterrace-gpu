@@ -311,7 +311,7 @@ extern "C" uint32_t atg_link_read(uint32_t offset)
 	tick_until([] { return top->s_arready != 0; });
 	top->s_arvalid = 0;
 	top->s_rready = 1;
-	uint32_t data = 0;
+	uint64_t data = 0;
 	tick_until([&data] {
 		data = top->s_rdata;
 		return top->s_rvalid != 0;
@@ -319,7 +319,7 @@ extern "C" uint32_t atg_link_read(uint32_t offset)
 	top->s_rready = 0;
 	for (uint64_t i = 0; i < read_cycles; i++)
 		tick();
-	return data;
+	return (offset & 4) ? (uint32_t)(data >> 32) : (uint32_t)data;
 }
 
 extern "C" void atg_link_write(uint32_t offset, uint32_t value)
@@ -330,8 +330,13 @@ extern "C" void atg_link_write(uint32_t offset, uint32_t value)
 	top->s_awvalid = 1;
 	tick_until([] { return top->s_awready != 0; });
 	top->s_awvalid = 0;
-	top->s_wdata = value;
-	top->s_wstrb = 0xF;
+	if (offset & 4) {
+		top->s_wdata = (uint64_t)value << 32;
+		top->s_wstrb = 0xF0;
+	} else {
+		top->s_wdata = (uint64_t)value;
+		top->s_wstrb = 0x0F;
+	}
 	top->s_wlast = 1;
 	top->s_wvalid = 1;
 	tick_until([] { return top->s_wready != 0; });
