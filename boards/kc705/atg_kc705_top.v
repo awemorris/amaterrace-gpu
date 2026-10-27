@@ -42,6 +42,24 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
+`ifndef CFG_SU_NPHYS
+`define CFG_SU_NPHYS 4
+`endif
+`ifndef CFG_SU_NWARPS
+`define CFG_SU_NWARPS 2
+`endif
+`ifndef CFG_SU_GRP_W
+`define CFG_SU_GRP_W 3
+`endif
+`ifndef CFG_SU_NREGS
+`define CFG_SU_NREGS 32
+`endif
+`ifndef CFG_SU_LDS_KB
+`define CFG_SU_LDS_KB 1
+`endif
+
 module atg_kc705_top #(
 	parameter NSU = 1,	/* Shader units (1 for now; 4 to 6 later) */
 	parameter CPU_IMEM_INIT = "atg1-cp-kc705.imem.hex",	/* CP firmware (Vivado finds it among the sources) */
@@ -298,27 +316,38 @@ module atg_kc705_top #(
 		.DC_FIFO_LOG2(11),
 		.DC_PX_FMT(1),
 		.ROP_STENCIL(1),
-		/* NPHYS 4 (GRP_W 3): the SU's area for the board (ws288 p025 U106, 2026-10-26). */
-		.SU_NPHYS(4),
-		.SU_NWARPS(4),
-		.SU_WARP_W(2),
-		.SU_GRP_W(3),
-		.SU_NREGS(64),
-		.SU_SB_ENTRIES(8),
-		.SU_SBE_W(3),
+		/* Parameters linked to atg_config.vh */
+		.SU_NPHYS(`CFG_SU_NPHYS),
+		.SU_NWARPS(`CFG_SU_NWARPS),
+		.SU_WARP_W($clog2(`CFG_SU_NWARPS)),
+		.SU_GRP_W(`CFG_SU_GRP_W),
+		.SU_NREGS(`CFG_SU_NREGS),
+		.SU_SB_ENTRIES(4),
+		.SU_SBE_W(2),
+`ifdef CFG_ENABLE_FP16
 		.SU_PACKED(1),
+`else
+		.SU_PACKED(0),
+`endif
+`ifdef CFG_ENABLE_SUBGROUP
 		.SU_SUBGROUP(1),
-		.SU_FRAG_RESERVE(2),
-		.SU_LDS_BYTES(16384),
-		.SU_VARY_WORDS(64),
+`else
+		.SU_SUBGROUP(0),
+`endif
+		.SU_FRAG_RESERVE(1),
+		.SU_LDS_BYTES(`CFG_SU_LDS_KB * 1024),
+		.SU_VARY_WORDS(16),
 		/* Session protection (docs/ghci.md section 11.6): 31 protected sessions, 64 grants,
 		 * a 16-line PLB. */
-		.HAS_PROT(1),
+		.HAS_PROT(`CFG_MC_ENABLE_PROT),
 		.PROT_SLOTS(31),
 		.PROT_GRANTS(64),
 		.PROT_GIDX_W(6),
 		.PROT_PLB(16),
-		.PROT_PLB_W(4)
+		.PROT_PLB_W(4),
+		.HAS_L2(`CFG_MC_L2_CACHE_KB != 0 ? 1 : 0),
+		.L2_WAYS(`CFG_MC_L2_WAYS),
+		.L2_SET_W(`CFG_MC_L2_CACHE_KB != 0 ? $clog2(((`CFG_MC_L2_CACHE_KB != 0 ? `CFG_MC_L2_CACHE_KB : 16) * 1024) / (64 * `CFG_MC_L2_WAYS)) : 8)
 	) gpu (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(mem_ready), .win_en(win_en),
 		.s_awaddr(s_awaddr), .s_awid(s_awid), .s_awvalid(s_awvalid), .s_awready(s_awready), .s_wdata(s_wdata), .s_wstrb(s_wstrb), .s_wlast(s_wlast), .s_wvalid(s_wvalid), .s_wready(s_wready), .s_bid(s_bid), .s_bresp(s_bresp), .s_bvalid(s_bvalid),

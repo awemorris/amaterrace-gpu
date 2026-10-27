@@ -18,34 +18,57 @@
 /* Identification. */
 localparam [31:0] GHCI_MAGIC_VALUE = 32'h47484349;	/* "GHCI" */
 localparam [15:0] GHCI_VERSION_MAJOR = 16'd1;
-localparam [15:0] GHCI_VERSION_MINOR = 16'd1;
+localparam [15:0] GHCI_VERSION_MINOR = 16'd0;
 
 /*
  * ============================================================================
- * GHCI 2.0 Slim Host MMIO Registers (19 registers, 76 bytes: 17'h00 - 17'h48)
+ * GHCI 1.0 Slim Host MMIO Registers (19 registers, 76 bytes: 17'h00 - 17'h48)
  * ============================================================================
  */
-localparam [16:0] GHCI_2_REG_MAGIC          = 17'h00000;
-localparam [16:0] GHCI_2_REG_VERSION        = 17'h00004;
-localparam [16:0] GHCI_2_REG_DEVICE_CAPS    = 17'h00008;
-localparam [16:0] GHCI_2_REG_EXTCAP_PTR     = 17'h0000C;
-localparam [16:0] GHCI_2_REG_CTRL           = 17'h00010;
-localparam [16:0] GHCI_2_REG_STATUS         = 17'h00014;
-localparam [16:0] GHCI_2_REG_IRQ_STATUS     = 17'h00018;
-localparam [16:0] GHCI_2_REG_IRQ_ENABLE     = 17'h0001C;
-localparam [16:0] GHCI_2_REG_RING_BASE_LO   = 17'h00020;
-localparam [16:0] GHCI_2_REG_RING_BASE_HI   = 17'h00024;
-localparam [16:0] GHCI_2_REG_RING_SIZE      = 17'h00028;
-localparam [16:0] GHCI_2_REG_RING_RPTR      = 17'h0002C;
-localparam [16:0] GHCI_2_REG_RING_WPTR      = 17'h00030;
-localparam [16:0] GHCI_2_REG_FAULT_INFO     = 17'h00034;
-localparam [16:0] GHCI_2_REG_FAULT_ADDR_LO  = 17'h00038;
-localparam [16:0] GHCI_2_REG_FAULT_ADDR_HI  = 17'h0003C;
-localparam [16:0] GHCI_2_REG_DIAG_CP_PC     = 17'h00040;
-localparam [16:0] GHCI_2_REG_DIAG_CP_STATUS = 17'h00044;
-localparam [16:0] GHCI_2_REG_SCRATCH        = 17'h00048;
-localparam [16:0] GHCI_2_REG_EXT_CAP_FMT0   = 17'h00080;
-localparam [16:0] GHCI_2_REG_EXT_CAP_FEATURE= 17'h00084;
+localparam [16:0] GHCI_REG_MAGIC          = 17'h00000;
+localparam [16:0] GHCI_REG_VERSION        = 17'h00004;
+localparam [16:0] GHCI_REG_DEVICE_CAPS    = 17'h00008;
+localparam [16:0] GHCI_REG_EXTCAP_PTR     = 17'h0000C;
+localparam [16:0] GHCI_REG_CTRL           = 17'h00010;
+localparam [16:0] GHCI_REG_STATUS         = 17'h00014;
+localparam [16:0] GHCI_REG_IRQ_STATUS     = 17'h00018;
+localparam [16:0] GHCI_REG_IRQ_ENABLE     = 17'h0001C;
+localparam [16:0] GHCI_REG_RING_BASE_LO   = 17'h00020;
+localparam [16:0] GHCI_REG_RING_BASE_HI   = 17'h00024;
+localparam [16:0] GHCI_REG_RING_SIZE      = 17'h00028;
+localparam [16:0] GHCI_REG_RING_RPTR      = 17'h0002C;
+localparam [16:0] GHCI_REG_RING_WPTR      = 17'h00030;
+localparam [16:0] GHCI_REG_FAULT_INFO     = 17'h00034;
+localparam [16:0] GHCI_REG_FAULT_ADDR_LO  = 17'h00038;
+localparam [16:0] GHCI_REG_FAULT_ADDR_HI  = 17'h0003C;
+localparam [16:0] GHCI_REG_DIAG_CP_PC     = 17'h00040;
+localparam [16:0] GHCI_REG_DIAG_CP_STATUS = 17'h00044;
+localparam [16:0] GHCI_REG_SCRATCH        = 17'h00048;
+localparam [16:0] GHCI_REG_EXT_CAP_FMT0   = 17'h00080;
+localparam [16:0] GHCI_REG_EXT_CAP_FEATURE= 17'h00084;
+
+/* Backward compatibility aliases */
+localparam [16:0] GHCI_2_REG_MAGIC          = GHCI_REG_MAGIC;
+localparam [16:0] GHCI_2_REG_VERSION        = GHCI_REG_VERSION;
+localparam [16:0] GHCI_2_REG_DEVICE_CAPS    = GHCI_REG_DEVICE_CAPS;
+localparam [16:0] GHCI_2_REG_EXTCAP_PTR     = GHCI_REG_EXTCAP_PTR;
+localparam [16:0] GHCI_2_REG_CTRL           = GHCI_REG_CTRL;
+localparam [16:0] GHCI_2_REG_STATUS         = GHCI_REG_STATUS;
+localparam [16:0] GHCI_2_REG_IRQ_STATUS     = GHCI_REG_IRQ_STATUS;
+localparam [16:0] GHCI_2_REG_IRQ_ENABLE     = GHCI_REG_IRQ_ENABLE;
+localparam [16:0] GHCI_2_REG_RING_BASE_LO   = GHCI_REG_RING_BASE_LO;
+localparam [16:0] GHCI_2_REG_RING_BASE_HI   = GHCI_REG_RING_BASE_HI;
+localparam [16:0] GHCI_2_REG_RING_SIZE      = GHCI_REG_RING_SIZE;
+localparam [16:0] GHCI_2_REG_RING_RPTR      = GHCI_REG_RING_RPTR;
+localparam [16:0] GHCI_2_REG_RING_WPTR      = GHCI_REG_RING_WPTR;
+localparam [16:0] GHCI_2_REG_FAULT_INFO     = GHCI_REG_FAULT_INFO;
+localparam [16:0] GHCI_2_REG_FAULT_ADDR_LO  = GHCI_REG_FAULT_ADDR_LO;
+localparam [16:0] GHCI_2_REG_FAULT_ADDR_HI  = GHCI_REG_FAULT_ADDR_HI;
+localparam [16:0] GHCI_2_REG_DIAG_CP_PC     = GHCI_REG_DIAG_CP_PC;
+localparam [16:0] GHCI_2_REG_DIAG_CP_STATUS = GHCI_REG_DIAG_CP_STATUS;
+localparam [16:0] GHCI_2_REG_SCRATCH        = GHCI_REG_SCRATCH;
+localparam [16:0] GHCI_2_REG_EXT_CAP_FMT0   = GHCI_REG_EXT_CAP_FMT0;
+localparam [16:0] GHCI_2_REG_EXT_CAP_FEATURE= GHCI_REG_EXT_CAP_FEATURE;
 
 /* DEVICE_CAPS bits (0x008) */
 localparam GHCI_DEV_CAP_UMA            = 0;

@@ -10,12 +10,11 @@ Gonna illuminate the world!
 
 ---
 
-`Amaterrace GPU` (device `ATG1`) is an open-source, Vulkan-compatible graphics and compute GPU implemented in synthesizable Verilog-2005.
-
-Designed for high-efficiency graphics and parallel compute with clean architectural decoupling:
-
-- **Host Interface:** [GHCI 1.0](docs/ghci.md) (GPU Host Controller Interface) — a slim, register-free in-memory command architecture.
-- **Shader ISA:** [GSI1](docs/ghci.md#12-the-standard-shader-isa-gsi1) — standard 64-bit shader instruction set architecture with scalar PEs and packed FP16×2 support.
+`Amaterrace GPU` (`ATG1`) is a scalable modern GPU delivering
+Vulkan-class graphics and parallel compute, architected to fulfill the
+core paradigms and feature sets of Vulkan, DirectX 12, and Metal.  It
+proposes [GHCI 1.0](docs/ghci.md), a standardized set of `GPU Host
+Controller Interface` and `Shader ISA`.
 
 ---
 

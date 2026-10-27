@@ -103,6 +103,14 @@ if {$from_synth ne ""} {
 	write_checkpoint -force [file join $out ${top}_synth.dcp]
 }
 report_dsp_cells [file join $out dsp_cells.rpt] "Post-Synthesis"
+
+if {[env_or VIVADO_SYNTH_ONLY 0]} {
+	report_utilization -file [file join $out utilization.rpt]
+	report_utilization -hierarchical -hierarchical_depth 4 -file [file join $out utilization_hier.rpt]
+	report_timing_summary -max_paths 10 -file [file join $out timing_summary.rpt]
+	puts "vivado-build: synthesis completed (VIVADO_SYNTH_ONLY=1)"
+	return
+}
 opt_design -directive $d_opt
 place_design -directive $d_place
 phys_opt_design -directive $d_phys

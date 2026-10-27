@@ -83,7 +83,7 @@ module atg_cp_seq_wait (
 	localparam [5:0] OP_SEMAPHORE_SIGNAL = 6'd21;
 	localparam [5:0] OP_SEMAPHORE_WAIT = 6'd22;
 
-	/* GHCI 2.0 Structured Command Opcodes */
+	/* GHCI 1.0 Structured Command Opcodes */
 	localparam [5:0] CMD_BIND_PIPELINE         = 6'h20;
 	localparam [5:0] CMD_BIND_VERTEX_BUFFERS   = 6'h21;
 	localparam [5:0] CMD_BIND_INDEX_BUFFER     = 6'h22;
@@ -218,7 +218,7 @@ module atg_cp_seq_wait (
 			`else
 			OP_FLIP: pre = {1'b0, flags[0] ? B_ALL : 8'd0} | B_DISP;
 			`endif
-			/* GHCI 2.0 Structured Commands */
+			/* GHCI 1.0 Structured Commands */
 			CMD_BIND_PIPELINE: pre = {1'b0, B_PROGW};
 			CMD_BIND_VERTEX_BUFFERS, CMD_BIND_INDEX_BUFFER: pre = {1'b0, B_VF};
 			CMD_BIND_DESCRIPTOR_TABLE: pre = {1'b0, B_TUW};

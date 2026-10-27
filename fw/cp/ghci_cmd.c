@@ -6,7 +6,7 @@
  */
 
 /*
- * ghci2_cmd.c: GHCI 2.0 Structured Command Parser and Immutable PSO Dispatcher.
+ * ghci_cmd.c: GHCI 1.0 Structured Command Parser and Immutable PSO Dispatcher.
  */
 
 #include "fw.h"

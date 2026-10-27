@@ -126,7 +126,7 @@ module atg_cp_seq #(
 	localparam [5:0] OP_DISP_SET = 6'd15;
 	localparam [5:0] OP_FLIP = 6'd16;
 
-	/* GHCI 2.0 Structured Command Opcodes */
+	/* GHCI 1.0 Structured Command Opcodes */
 	/* verilator lint_off UNUSEDPARAM */
 	localparam [5:0] CMD_BIND_PIPELINE         = 6'h20;
 	localparam [5:0] CMD_BIND_VERTEX_BUFFERS   = 6'h21;

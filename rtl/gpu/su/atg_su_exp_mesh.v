@@ -348,7 +348,8 @@ module atg_su_exp_mesh #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, kick_vert_count, prim_flags[7:4], co_prim, co_req_w, co_cap_w, co_paddr, co_bpv, co_vwa};
+	wire unused_ok = &{1'b0, kick_vert_count, prim_flags[7:4], co_prim, co_req_w, co_cap_w, co_paddr, co_bpv, co_vwa,
+		v_scaled_10};
 endmodule
 
 `default_nettype wire

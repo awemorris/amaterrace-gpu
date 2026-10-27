@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_ghci2_slim_tb: verification testbench for GHCI 2.0 Slim MMIO architecture,
+ * atg_ghci_slim_tb: verification testbench for GHCI 1.0 Slim MMIO architecture,
  * host STATE MMIO elimination, and structured command packets
  * (Phase 007 / ws001-p007).
  */
@@ -14,7 +14,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_ghci2_slim_tb;
+module atg_ghci_slim_tb;
 	`include "ghci_regs.vh"
 
 	reg clk = 1'b0;
@@ -24,7 +24,7 @@ module atg_ghci2_slim_tb;
 	integer errors = 0;
 
 	/* -------------------------------------------------------------
-	 * 1. GHCI 2.0 Slim MMIO Register Bus Signals
+	 * 1. GHCI 1.0 Slim MMIO Register Bus Signals
 	 * ------------------------------------------------------------- */
 	reg reg_wr = 1'b0;
 	reg [16:0] reg_waddr = 17'd0;
@@ -213,94 +213,94 @@ module atg_ghci2_slim_tb;
 		rst_n = 1'b1;
 		#20;
 
-		$display("=== atg_ghci2_slim_tb: Starting Verification ===");
+		$display("=== atg_ghci_slim_tb: Starting Verification ===");
 
 		/* ---------------------------------------------------------
-		 * Step 1: Verify GHCI 2.0 Slim Identification & Capability Regs
+		 * Step 1: Verify GHCI 1.0 Slim Identification & Capability Regs
 		 * --------------------------------------------------------- */
-		mmio_read(GHCI_2_REG_MAGIC, rdata);
+		mmio_read(GHCI_REG_MAGIC, rdata);
 		if (rdata !== GHCI_MAGIC_VALUE) begin
 			$display("FAIL: MAGIC = %h (expected %h)", rdata, GHCI_MAGIC_VALUE);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: GHCI 2.0 MAGIC = 'GHCI'");
+			$display("PASS: GHCI 1.0 MAGIC = 'GHCI'");
 		end
 
-		mmio_read(GHCI_2_REG_VERSION, rdata);
-		if (rdata !== 32'h00020000) begin
-			$display("FAIL: VERSION = %h (expected 00020000)", rdata);
+		mmio_read(GHCI_REG_VERSION, rdata);
+		if (rdata !== 32'h00010000) begin
+			$display("FAIL: VERSION = %h (expected 00010000)", rdata);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: GHCI 2.0 VERSION = 2.0 (0x00020000)");
+			$display("PASS: GHCI 1.0 VERSION = 1.0 (0x00010000)");
 		end
 
-		mmio_read(GHCI_2_REG_DEVICE_CAPS, rdata);
+		mmio_read(GHCI_REG_DEVICE_CAPS, rdata);
 		if (rdata !== 32'h00500002) begin
 			$display("FAIL: DEVICE_CAPS = %h (expected 00500002)", rdata);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: GHCI 2.0 DEVICE_CAPS = %h", rdata);
+			$display("PASS: GHCI 1.0 DEVICE_CAPS = %h", rdata);
 		end
 
-		mmio_read(GHCI_2_REG_EXTCAP_PTR, rdata);
+		mmio_read(GHCI_REG_EXTCAP_PTR, rdata);
 		if (rdata !== 32'h00000000) begin
 			$display("FAIL: EXTCAP_PTR = %h (expected 00000000)", rdata);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: GHCI 2.0 EXTCAP_PTR = 0 (no extended caps list)");
+			$display("PASS: GHCI 1.0 EXTCAP_PTR = 0 (no extended caps list)");
 		end
 
 		/* ---------------------------------------------------------
 		 * Step 2: Verify Diagnostics & Scratchpad in Slim MMIO
 		 * --------------------------------------------------------- */
-		mmio_read(GHCI_2_REG_DIAG_CP_PC, rdata);
+		mmio_read(GHCI_REG_DIAG_CP_PC, rdata);
 		if (rdata !== 32'h00000100) begin
 			$display("FAIL: DIAG_CP_PC = %h (expected 00000100)", rdata);
 			errors = errors + 1;
 		end
 
-		mmio_read(GHCI_2_REG_DIAG_CP_STATUS, rdata);
+		mmio_read(GHCI_REG_DIAG_CP_STATUS, rdata);
 		if (rdata !== 32'h00000002) begin
 			$display("FAIL: DIAG_CP_STATUS = %h (expected 00000002)", rdata);
 			errors = errors + 1;
 		end
 
-		mmio_write(GHCI_2_REG_SCRATCH, 32'hCAFEBABE);
-		mmio_read(GHCI_2_REG_SCRATCH, rdata);
+		mmio_write(GHCI_REG_SCRATCH, 32'hCAFEBABE);
+		mmio_read(GHCI_REG_SCRATCH, rdata);
 		if (rdata !== 32'hCAFEBABE) begin
 			$display("FAIL: SCRATCH = %h (expected CAFEBABE)", rdata);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: GHCI 2.0 SCRATCH write/read at 0x048 successful");
+			$display("PASS: GHCI 1.0 SCRATCH write/read at 0x048 successful");
 		end
 
 		/* ---------------------------------------------------------
 		 * Step 3: Verify Control, Status, IRQ, Ring Registers Translation
 		 * --------------------------------------------------------- */
-		mmio_write(GHCI_2_REG_CTRL, 32'h00000001);
+		mmio_write(GHCI_REG_CTRL, 32'h00000001);
 		if (hcr_widx !== GHCI_CTRL[11:2]) begin
 			$display("FAIL: CTRL write translated to widx %d (expected %d)", hcr_widx, GHCI_CTRL[11:2]);
 			errors = errors + 1;
 		end
 
-		mmio_write(GHCI_2_REG_RING_BASE_LO, 32'h10000000);
+		mmio_write(GHCI_REG_RING_BASE_LO, 32'h10000000);
 		if (hcr_widx !== GHCI_RING_BASE[11:2]) begin
 			$display("FAIL: RING_BASE write translated to widx %d (expected %d)", hcr_widx, GHCI_RING_BASE[11:2]);
 			errors = errors + 1;
 		end
 
-		mmio_write(GHCI_2_REG_RING_SIZE, 32'h00001000);
+		mmio_write(GHCI_REG_RING_SIZE, 32'h00001000);
 		if (hcr_widx !== GHCI_RING_SIZE[11:2]) begin
 			$display("FAIL: RING_SIZE write translated to widx %d (expected %d)", hcr_widx, GHCI_RING_SIZE[11:2]);
 			errors = errors + 1;
 		end
 
-		mmio_write(GHCI_2_REG_RING_WPTR, 32'h00000020);
+		mmio_write(GHCI_REG_RING_WPTR, 32'h00000020);
 		if (hcr_widx !== GHCI_RING_WPTR[11:2]) begin
 			$display("FAIL: RING_WPTR (doorbell) write translated to widx %d (expected %d)", hcr_widx, GHCI_RING_WPTR[11:2]);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: GHCI 2.0 Doorbell (RING_WPTR) write to 0x030 verified");
+			$display("PASS: GHCI 1.0 Doorbell (RING_WPTR) write to 0x030 verified");
 		end
 
 		/* ---------------------------------------------------------
@@ -391,7 +391,7 @@ module atg_ghci2_slim_tb;
 			$display("FAIL: CMD_EXECUTE_COMMANDS decode failed: known=%b need=%d", h_known, h_need);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: All GHCI 2.0 Structured Command Opcodes decoded correctly");
+			$display("PASS: All GHCI 1.0 Structured Command Opcodes decoded correctly");
 		end
 
 		/* ---------------------------------------------------------
@@ -459,9 +459,9 @@ module atg_ghci2_slim_tb;
 		 * --------------------------------------------------------- */
 		#20;
 		if (errors == 0) begin
-			$display("PASS atg_ghci2_slim");
+			$display("PASS atg_ghci_slim");
 		end else begin
-			$display("FAIL atg_ghci2_slim: %0d errors", errors);
+			$display("FAIL atg_ghci_slim: %0d errors", errors);
 		end
 		$finish;
 	end

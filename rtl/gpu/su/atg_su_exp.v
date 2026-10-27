@@ -376,7 +376,8 @@ module atg_su_exp #(
 	);
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_a, x_c, x_mask[NPHYS-1:0], x_info,
-		x_uop, fl_info[63:49], fl_data[7:0], tgt, xrow, lane0, zrow, drow, fq, dqs, mesh_done_unused};
+		x_uop, fl_info[63:49], fl_data[7:0], tgt, xrow, lane0, zrow, drow, fq, dqs, mesh_done_unused,
+		mesh_pb_10, mesh_vb_10};
 endmodule
 
 `default_nettype wire

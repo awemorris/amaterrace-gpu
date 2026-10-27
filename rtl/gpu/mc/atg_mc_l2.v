@@ -117,6 +117,7 @@ module atg_mc_l2 #(
 	localparam S_FLUSH_STEP  = 4'd8;
 	localparam S_FLUSH_EVICT = 4'd9;
 	localparam S_FLUSH_WAIT  = 4'd10;
+	localparam S_FLUSH_READ  = 4'd11;
 
 	reg [3:0] state;
 	reg [3:0] saved_state;
@@ -130,8 +131,6 @@ module atg_mc_l2 #(
 	/* Tree-PLRU replacement metadata: 15 bits per set */
 	reg [14:0] plru_mem [0:NSETS-1];
 
-	/* Data Block RAM: 16 ways x 256 sets x LINE_BITS */
-	reg [LINE_BITS-1:0] data_mem [0:WAYS-1][0:NSETS-1];
 
 	/* Registered incoming request */
 	reg req_write;
@@ -180,95 +179,116 @@ module atg_mc_l2 #(
 	endgenerate
 
 	wire hit = |way_hit;
+	localparam WAY_W = WAYS > 8 ? 4 : (WAYS > 4 ? 3 : (WAYS > 2 ? 2 : 1));
 
 	/* Priority encoder for hit way */
-	reg [3:0] hit_way_idx;
+	reg [WAY_W-1:0] hit_way_idx;
 	integer hit_i;
 	always @(*) begin
-		hit_way_idx = 4'd0;
+		hit_way_idx = {WAY_W{1'b0}};
 		for (hit_i = 0; hit_i < WAYS; hit_i = hit_i + 1) begin
 			if (way_hit[hit_i])
-				hit_way_idx = hit_i[3:0];
+				hit_way_idx = hit_i[WAY_W-1:0];
 		end
 	end
 
-	/* Tree-PLRU victim selection for 16 ways */
+	/* Tree-PLRU victim selection for 16 or 4 ways */
 	wire [14:0] cur_plru = plru_mem[req_set];
-	reg [3:0] victim_way_idx;
+	reg [WAY_W-1:0] victim_way_idx;
+	/* verilator lint_off WIDTHTRUNC */
+	/* verilator lint_off WIDTHEXPAND */
 	always @(*) begin
-		if (!cur_plru[0]) begin
-			/* Go left (0..7) */
-			if (!cur_plru[1]) begin
-				/* Go left-left (0..3) */
-				if (!cur_plru[3])
-					victim_way_idx = cur_plru[7] ? 4'd0 : 4'd1;
-				else
-					victim_way_idx = cur_plru[8] ? 4'd2 : 4'd3;
-			end else begin
-				/* Go left-right (4..7) */
-				if (!cur_plru[4])
-					victim_way_idx = cur_plru[9] ? 4'd4 : 4'd5;
-				else
-					victim_way_idx = cur_plru[10] ? 4'd6 : 4'd7;
-			end
+		if (WAYS == 4) begin
+			if (!cur_plru[0])
+				victim_way_idx = cur_plru[1] ? 2'd0 : 2'd1;
+			else
+				victim_way_idx = cur_plru[2] ? 2'd2 : 2'd3;
 		end else begin
-			/* Go right (8..15) */
-			if (!cur_plru[2]) begin
-				/* Go right-left (8..11) */
-				if (!cur_plru[5])
-					victim_way_idx = cur_plru[11] ? 4'd8 : 4'd9;
-				else
-					victim_way_idx = cur_plru[12] ? 4'd10 : 4'd11;
+			if (!cur_plru[0]) begin
+				/* Go left (0..7) */
+				if (!cur_plru[1]) begin
+					/* Go left-left (0..3) */
+					if (!cur_plru[3])
+						victim_way_idx = cur_plru[7] ? 4'd0 : 4'd1;
+					else
+						victim_way_idx = cur_plru[8] ? 4'd2 : 4'd3;
+				end else begin
+					/* Go left-right (4..7) */
+					if (!cur_plru[4])
+						victim_way_idx = cur_plru[9] ? 4'd4 : 4'd5;
+					else
+						victim_way_idx = cur_plru[10] ? 4'd6 : 4'd7;
+				end
 			end else begin
-				/* Go right-right (12..15) */
-				if (!cur_plru[6])
-					victim_way_idx = cur_plru[13] ? 4'd12 : 4'd13;
-				else
-					victim_way_idx = cur_plru[14] ? 4'd14 : 4'd15;
+				/* Go right (8..15) */
+				if (!cur_plru[2]) begin
+					/* Go right-left (8..11) */
+					if (!cur_plru[5])
+						victim_way_idx = cur_plru[11] ? 4'd8 : 4'd9;
+					else
+						victim_way_idx = cur_plru[12] ? 4'd10 : 4'd11;
+				end else begin
+					/* Go right-right (12..15) */
+					if (!cur_plru[6])
+						victim_way_idx = cur_plru[13] ? 4'd12 : 4'd13;
+					else
+						victim_way_idx = cur_plru[14] ? 4'd14 : 4'd15;
+				end
 			end
 		end
 	end
+	/* verilator lint_on WIDTHTRUNC */
+	/* verilator lint_on WIDTHEXPAND */
 
 	/* Active victim information */
-	reg [3:0] active_victim_way;
+	reg [WAY_W-1:0] active_victim_way;
 
 	/* Combinational Tree-PLRU update */
-	wire [3:0] plru_access_way = (state == S_LOOKUP) ? hit_way_idx : active_victim_way;
+	wire [WAY_W-1:0] cur_access_way = (state == S_LOOKUP) ? hit_way_idx : active_victim_way;
+	wire [3:0] plru_access_way = {{ (4-WAY_W){1'b0} }, cur_access_way};
 	wire [14:0] plru_in_tree = plru_mem[req_set];
 	reg [14:0] plru_out_tree;
 
 	always @(*) begin
 		plru_out_tree = plru_in_tree;
-		plru_out_tree[0] = !plru_access_way[3];
-		if (!plru_access_way[3]) begin
-			plru_out_tree[1] = !plru_access_way[2];
-			if (!plru_access_way[2]) begin
-				plru_out_tree[3] = !plru_access_way[1];
-				if (!plru_access_way[1])
-					plru_out_tree[7] = !plru_access_way[0];
-				else
-					plru_out_tree[8] = !plru_access_way[0];
-			end else begin
-				plru_out_tree[4] = !plru_access_way[1];
-				if (!plru_access_way[1])
-					plru_out_tree[9] = !plru_access_way[0];
-				else
-					plru_out_tree[10] = !plru_access_way[0];
-			end
+		if (WAYS == 4) begin
+			plru_out_tree[0] = !plru_access_way[1];
+			if (!plru_access_way[1])
+				plru_out_tree[1] = !plru_access_way[0];
+			else
+				plru_out_tree[2] = !plru_access_way[0];
 		end else begin
-			plru_out_tree[2] = !plru_access_way[2];
-			if (!plru_access_way[2]) begin
-				plru_out_tree[5] = !plru_access_way[1];
-				if (!plru_access_way[1])
-					plru_out_tree[11] = !plru_access_way[0];
-				else
-					plru_out_tree[12] = !plru_access_way[0];
+			plru_out_tree[0] = !plru_access_way[3];
+			if (!plru_access_way[3]) begin
+				plru_out_tree[1] = !plru_access_way[2];
+				if (!plru_access_way[2]) begin
+					plru_out_tree[3] = !plru_access_way[1];
+					if (!plru_access_way[1])
+						plru_out_tree[7] = !plru_access_way[0];
+					else
+						plru_out_tree[8] = !plru_access_way[0];
+				end else begin
+					plru_out_tree[4] = !plru_access_way[1];
+					if (!plru_access_way[1])
+						plru_out_tree[9] = !plru_access_way[0];
+					else
+						plru_out_tree[10] = !plru_access_way[0];
+				end
 			end else begin
-				plru_out_tree[6] = !plru_access_way[1];
-				if (!plru_access_way[1])
-					plru_out_tree[13] = !plru_access_way[0];
-				else
-					plru_out_tree[14] = !plru_access_way[0];
+				plru_out_tree[2] = !plru_access_way[2];
+				if (!plru_access_way[2]) begin
+					plru_out_tree[5] = !plru_access_way[1];
+					if (!plru_access_way[1])
+						plru_out_tree[11] = !plru_access_way[0];
+					else
+						plru_out_tree[12] = !plru_access_way[0];
+				end else begin
+					plru_out_tree[6] = !plru_access_way[1];
+					if (!plru_access_way[1])
+						plru_out_tree[13] = !plru_access_way[0];
+					else
+						plru_out_tree[14] = !plru_access_way[0];
+				end
 			end
 		end
 	end
@@ -289,12 +309,28 @@ module atg_mc_l2 #(
 	end
 
 	/* BRAM Read memory read registers */
-	wire [SET_W-1:0] read_set = (s_req_valid && s_req_ready) ? s_req_line[SET_W-1:0] : req_set;
+	wire [SET_W-1:0] read_set = (state == S_FLUSH_STEP || state == S_FLUSH_READ || state == S_FLUSH_WAIT) ? flush_set :
+	                            ((s_req_valid && s_req_ready) ? s_req_line[SET_W-1:0] : req_set);
+
+	/* Data Block RAMs inferred per way */
+	wire [WAYS-1:0] bram_we;
+	wire [LINE_BITS-1:0] bram_wdata = (state == S_LOOKUP) ? merged_line_out :
+	                                 ((!req_write) ? m_rsp_rdata : merged_line_out);
 
 	generate
-		for (w = 0; w < WAYS; w = w + 1) begin : g_bram_rd
+		for (w = 0; w < WAYS; w = w + 1) begin : g_bram
+			assign bram_we[w] = (state == S_LOOKUP && hit && req_write && (hit_way_idx == w[WAY_W-1:0])) ||
+			                    (state == S_REFILL_WAIT && m_rsp_valid && !m_rsp_write && (active_victim_way == w[WAY_W-1:0]));
+
+			(* ram_style = "block" *) reg [LINE_BITS-1:0] data_mem [0:NSETS-1];
+
 			always @(posedge clk) begin
-				way_rdata[w] <= data_mem[w][read_set];
+				if (bram_we[w])
+					data_mem[req_set] <= bram_wdata;
+			end
+
+			always @(posedge clk) begin
+				way_rdata[w] <= data_mem[read_set];
 			end
 		end
 	endgenerate
@@ -309,17 +345,17 @@ module atg_mc_l2 #(
 
 	wire set_has_dirty = |set_dirty;
 
-	reg [3:0] first_dirty_way;
+	reg [WAY_W-1:0] first_dirty_way;
 	integer fdw_i;
 	always @(*) begin
-		first_dirty_way = 4'd0;
+		first_dirty_way = {WAY_W{1'b0}};
 		for (fdw_i = WAYS - 1; fdw_i >= 0; fdw_i = fdw_i - 1) begin
 			if (set_dirty[fdw_i])
-				first_dirty_way = fdw_i[3:0];
+				first_dirty_way = fdw_i[WAY_W-1:0];
 		end
 	end
 
-	wire [TAG_W-1:0] flush_line_tag = tag_mem[first_dirty_way][flush_set];
+	wire [TAG_W-1:0] flush_line_tag = tag_mem[active_victim_way][flush_set];
 	wire [LA_W-1:0] flush_line_addr = {flush_line_tag, flush_set};
 
 	/* Range check for Range Invalidation */
@@ -354,7 +390,7 @@ module atg_mc_l2 #(
 			inv_range_r <= 1'b0;
 			inv_base_r <= {LA_W{1'b0}};
 			inv_limit_r <= {LA_W{1'b0}};
-			active_victim_way <= 4'd0;
+			active_victim_way <= {WAY_W{1'b0}};
 			req_write <= 1'b0;
 			req_line <= {LA_W{1'b0}};
 			req_be <= {LINE_BYTES{1'b0}};
@@ -367,8 +403,6 @@ module atg_mc_l2 #(
 				for (init_s = 0; init_s < NSETS; init_s = init_s + 1) begin
 					valid_mem[init_w][init_s] <= 1'b0;
 					dirty_mem[init_w][init_s] <= 1'b0;
-					tag_mem[init_w][init_s] <= {TAG_W{1'b0}};
-					data_mem[init_w][init_s] <= {LINE_BITS{1'b0}};
 				end
 			end
 			for (init_s = 0; init_s < NSETS; init_s = init_s + 1) begin
@@ -436,7 +470,6 @@ module atg_mc_l2 #(
 							saved_state <= S_IDLE;
 						end else begin
 							/* Write hit */
-							data_mem[hit_way_idx][req_set] <= merged_line_out;
 							dirty_mem[hit_way_idx][req_set] <= 1'b1;
 							s_rsp_valid <= 1'b1;
 							s_rsp_write <= 1'b1;
@@ -512,7 +545,6 @@ module atg_mc_l2 #(
 
 						if (!req_write) begin
 							/* Read miss complete */
-							data_mem[active_victim_way][req_set] <= m_rsp_rdata;
 							dirty_mem[active_victim_way][req_set] <= 1'b0;
 							s_rsp_valid <= 1'b1;
 							s_rsp_write <= 1'b0;
@@ -523,7 +555,6 @@ module atg_mc_l2 #(
 							saved_state <= S_IDLE;
 						end else begin
 							/* Write-allocate complete */
-							data_mem[active_victim_way][req_set] <= merged_line_out;
 							dirty_mem[active_victim_way][req_set] <= 1'b1;
 							s_rsp_valid <= 1'b1;
 							s_rsp_write <= 1'b1;
@@ -568,23 +599,13 @@ module atg_mc_l2 #(
 						req_high  <= s_req_high;
 						saved_state <= S_FLUSH_STEP;
 						state     <= S_LOOKUP;
-					end else if (in_range && set_has_dirty && inv_clean_r) begin
-						m_req_valid <= 1'b1;
-						m_req_write <= 1'b1;
-						m_req_line  <= flush_line_addr;
-						m_req_be    <= {LINE_BYTES{1'b1}};
-						m_req_wdata <= data_mem[first_dirty_way][flush_set];
-						m_req_user  <= {UW{1'b0}};
-						m_req_id    <= 1'b0; /* Local VRAM */
-						m_req_key   <= 8'hFE;
+					end else if (set_has_dirty) begin
 						active_victim_way <= first_dirty_way;
-						state       <= S_FLUSH_EVICT;
+						state       <= S_FLUSH_READ;
 					end else begin
-						if (in_range) begin
-							for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
-								valid_mem[init_w][flush_set] <= 1'b0;
-								dirty_mem[init_w][flush_set] <= 1'b0;
-							end
+						for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
+							valid_mem[init_w][flush_set] <= 1'b0;
+							dirty_mem[init_w][flush_set] <= 1'b0;
 						end
 						if (flush_set == MAX_SET) begin
 							ctrl_inv_done <= 1'b1;
@@ -606,6 +627,26 @@ module atg_mc_l2 #(
 					if (m_rsp_valid && m_rsp_write) begin
 						dirty_mem[active_victim_way][flush_set] <= 1'b0;
 						valid_mem[active_victim_way][flush_set] <= 1'b0;
+						state <= S_FLUSH_STEP;
+					end
+				end
+
+				S_FLUSH_READ: begin
+					if (in_range && inv_clean_r) begin
+						m_req_valid <= 1'b1;
+						m_req_write <= 1'b1;
+						m_req_line  <= flush_line_addr;
+						m_req_be    <= {LINE_BYTES{1'b1}};
+						m_req_wdata <= way_rdata[active_victim_way];
+						m_req_user  <= {UW{1'b0}};
+						m_req_id    <= 1'b0; /* Local VRAM */
+						m_req_key   <= 8'hFE;
+						state       <= S_FLUSH_EVICT;
+					end else begin
+						if (in_range) begin
+							valid_mem[active_victim_way][flush_set] <= 1'b0;
+							dirty_mem[active_victim_way][flush_set] <= 1'b0;
+						end
 						state <= S_FLUSH_STEP;
 					end
 				end

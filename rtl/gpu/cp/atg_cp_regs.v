@@ -195,7 +195,7 @@ module atg_cp_regs #(
 	parameter [10:0] XCAP_MASK = 11'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, PROT 9, FMT 10, DISP2 11) */
 	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
 	parameter PERF_SRC = 32'hFFFFFFFF,	/* PERF_SRC0..3 (byte n = PERF_SRCn) */
-	parameter SLIM_MMIO = 0		/* 1: GHCI 2.0 Slim 19 MMIO registers (0x00..0x48), eliminating STATE from host MMIO */
+	parameter SLIM_MMIO = 0		/* 1: GHCI 1.0 Slim 19 MMIO registers (0x00..0x48), eliminating STATE from host MMIO */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -251,22 +251,22 @@ module atg_cp_regs #(
 	function [9:0] slim_widx;
 		input [16:0] addr;
 		case (addr)
-		GHCI_2_REG_CTRL: slim_widx = GHCI_CTRL[11:2];
-		GHCI_2_REG_IRQ_STATUS: slim_widx = GHCI_IRQ_STATUS[11:2];
-		GHCI_2_REG_IRQ_ENABLE: slim_widx = GHCI_IRQ_ENABLE[11:2];
-		GHCI_2_REG_RING_BASE_LO: slim_widx = GHCI_RING_BASE[11:2];
-		GHCI_2_REG_RING_SIZE: slim_widx = GHCI_RING_SIZE[11:2];
-		GHCI_2_REG_RING_WPTR: slim_widx = GHCI_RING_WPTR[11:2];
+		GHCI_REG_CTRL: slim_widx = GHCI_CTRL[11:2];
+		GHCI_REG_IRQ_STATUS: slim_widx = GHCI_IRQ_STATUS[11:2];
+		GHCI_REG_IRQ_ENABLE: slim_widx = GHCI_IRQ_ENABLE[11:2];
+		GHCI_REG_RING_BASE_LO: slim_widx = GHCI_RING_BASE[11:2];
+		GHCI_REG_RING_SIZE: slim_widx = GHCI_RING_SIZE[11:2];
+		GHCI_REG_RING_WPTR: slim_widx = GHCI_RING_WPTR[11:2];
 		default: slim_widx = addr[11:2];
 		endcase
 	endfunction
 
-	wire slim_we_ok = (reg_waddr == GHCI_2_REG_CTRL) ||
-	                  (reg_waddr == GHCI_2_REG_IRQ_STATUS) ||
-	                  (reg_waddr == GHCI_2_REG_IRQ_ENABLE) ||
-	                  (reg_waddr == GHCI_2_REG_RING_BASE_LO) ||
-	                  (reg_waddr == GHCI_2_REG_RING_SIZE) ||
-	                  (reg_waddr == GHCI_2_REG_RING_WPTR);
+	wire slim_we_ok = (reg_waddr == GHCI_REG_CTRL) ||
+	                  (reg_waddr == GHCI_REG_IRQ_STATUS) ||
+	                  (reg_waddr == GHCI_REG_IRQ_ENABLE) ||
+	                  (reg_waddr == GHCI_REG_RING_BASE_LO) ||
+	                  (reg_waddr == GHCI_REG_RING_SIZE) ||
+	                  (reg_waddr == GHCI_REG_RING_WPTR);
 
 	/* Writes. */
 	assign hcr_we = SLIM_MMIO ? (reg_wr && slim_we_ok) :
@@ -281,7 +281,7 @@ module atg_cp_regs #(
 	assign alias_ridx = reg_raddr[11:2];
 
 	wire is_scratch_wr = SLIM_MMIO ?
-		(reg_wr && reg_waddr == GHCI_2_REG_SCRATCH) :
+		(reg_wr && reg_waddr == GHCI_REG_SCRATCH) :
 		(hcr_we && hcr_widx == I_SCRATCH);
 
 	reg [31:0] scratch;
@@ -333,16 +333,16 @@ module atg_cp_regs #(
 	function [9:0] slim_ridx;
 		input [16:0] addr;
 		case (addr)
-		GHCI_2_REG_CTRL: slim_ridx = GHCI_CTRL[11:2];
-		GHCI_2_REG_STATUS: slim_ridx = GHCI_STATUS[11:2];
-		GHCI_2_REG_IRQ_STATUS: slim_ridx = GHCI_IRQ_STATUS[11:2];
-		GHCI_2_REG_IRQ_ENABLE: slim_ridx = GHCI_IRQ_ENABLE[11:2];
-		GHCI_2_REG_RING_BASE_LO: slim_ridx = GHCI_RING_BASE[11:2];
-		GHCI_2_REG_RING_SIZE: slim_ridx = GHCI_RING_SIZE[11:2];
-		GHCI_2_REG_RING_RPTR: slim_ridx = GHCI_RING_RPTR[11:2];
-		GHCI_2_REG_RING_WPTR: slim_ridx = GHCI_RING_WPTR[11:2];
-		GHCI_2_REG_FAULT_INFO: slim_ridx = GHCI_FAULT_INFO[11:2];
-		GHCI_2_REG_FAULT_ADDR_LO: slim_ridx = GHCI_FAULT_ADDR[11:2];
+		GHCI_REG_CTRL: slim_ridx = GHCI_CTRL[11:2];
+		GHCI_REG_STATUS: slim_ridx = GHCI_STATUS[11:2];
+		GHCI_REG_IRQ_STATUS: slim_ridx = GHCI_IRQ_STATUS[11:2];
+		GHCI_REG_IRQ_ENABLE: slim_ridx = GHCI_IRQ_ENABLE[11:2];
+		GHCI_REG_RING_BASE_LO: slim_ridx = GHCI_RING_BASE[11:2];
+		GHCI_REG_RING_SIZE: slim_ridx = GHCI_RING_SIZE[11:2];
+		GHCI_REG_RING_RPTR: slim_ridx = GHCI_RING_RPTR[11:2];
+		GHCI_REG_RING_WPTR: slim_ridx = GHCI_RING_WPTR[11:2];
+		GHCI_REG_FAULT_INFO: slim_ridx = GHCI_FAULT_INFO[11:2];
+		GHCI_REG_FAULT_ADDR_LO: slim_ridx = GHCI_FAULT_ADDR[11:2];
 		default: slim_ridx = addr[11:2];
 		endcase
 	endfunction
@@ -362,9 +362,9 @@ module atg_cp_regs #(
 		end else if (reg_rd) begin
 			raddr_q <= reg_raddr;
 			ridx_q <= SLIM_MMIO ? slim_ridx(reg_raddr) : reg_raddr[11:2];
-			rd_hcr_q <= SLIM_MMIO ? (reg_raddr <= GHCI_2_REG_SCRATCH ||
-			                         reg_raddr == GHCI_2_REG_EXT_CAP_FMT0 ||
-			                         reg_raddr == GHCI_2_REG_EXT_CAP_FEATURE) : (reg_raddr[16:12] == 5'd0);
+			rd_hcr_q <= SLIM_MMIO ? (reg_raddr <= GHCI_REG_SCRATCH ||
+			                         reg_raddr == GHCI_REG_EXT_CAP_FMT0 ||
+			                         reg_raddr == GHCI_REG_EXT_CAP_FEATURE) : (reg_raddr[16:12] == 5'd0);
 			rd_state_q <= !SLIM_MMIO && (reg_raddr[16:12] == 5'b00001 && reg_raddr[11:10] != 2'b11);
 		end
 	end
@@ -433,17 +433,17 @@ module atg_cp_regs #(
 		if (SLIM_MMIO) begin
 			own = 32'd0;
 			case (raddr_q)
-			GHCI_2_REG_MAGIC: own = GHCI_MAGIC_VALUE;
-			GHCI_2_REG_VERSION: own = 32'h00020000;
-			GHCI_2_REG_DEVICE_CAPS: own = eff_dev_caps;
-			GHCI_2_REG_EXTCAP_PTR: own = 32'd0;
-			GHCI_2_REG_RING_BASE_HI: own = 32'd0;
-			GHCI_2_REG_FAULT_ADDR_HI: own = 32'd0;
-			GHCI_2_REG_DIAG_CP_PC: own = diag_cp_pc;
-			GHCI_2_REG_DIAG_CP_STATUS: own = diag_cp_status;
-			GHCI_2_REG_SCRATCH: own = scratch;
-			GHCI_2_REG_EXT_CAP_FMT0: own = EXT_CAP_FMT0;
-			GHCI_2_REG_EXT_CAP_FEATURE: own = EXT_CAP_FEATURE;
+			GHCI_REG_MAGIC: own = GHCI_MAGIC_VALUE;
+			GHCI_REG_VERSION: own = 32'h00010000;
+			GHCI_REG_DEVICE_CAPS: own = eff_dev_caps;
+			GHCI_REG_EXTCAP_PTR: own = 32'd0;
+			GHCI_REG_RING_BASE_HI: own = 32'd0;
+			GHCI_REG_FAULT_ADDR_HI: own = 32'd0;
+			GHCI_REG_DIAG_CP_PC: own = diag_cp_pc;
+			GHCI_REG_DIAG_CP_STATUS: own = diag_cp_status;
+			GHCI_REG_SCRATCH: own = scratch;
+			GHCI_REG_EXT_CAP_FMT0: own = EXT_CAP_FMT0;
+			GHCI_REG_EXT_CAP_FEATURE: own = EXT_CAP_FEATURE;
 			default: ;
 			endcase
 		end else begin

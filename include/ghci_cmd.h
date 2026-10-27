@@ -6,7 +6,7 @@
  */
 
 /*
- * ghci_cmd.h: GHCI 2.0 Structured Command Packets, Immutable Pipeline State
+ * ghci_cmd.h: GHCI 1.0 Structured Command Packets, Immutable Pipeline State
  * Objects (PSO), and In-Memory Resource Descriptors (docs/ghci.md).
  *
  * All structures are defined with explicit sizing and fixed alignments
@@ -24,7 +24,7 @@ extern "C" {
 
 /*
  * ============================================================================
- * GHCI 2.0 Command Opcodes
+ * GHCI 1.0 Command Opcodes
  * ============================================================================
  */
 #define GHCI_CMD_NOP                    0x00u

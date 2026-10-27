@@ -43,6 +43,16 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
+`ifndef CFG_ROP_ENABLE_FBLEND
+`define CFG_ROP_ENABLE_FBLEND 1
+`endif
+
+`ifndef CFG_ROP_ENABLE_PACK
+`define CFG_ROP_ENABLE_PACK 1
+`endif
+
 module atg_rop_wpix #(
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
@@ -207,8 +217,9 @@ module atg_rop_wpix #(
 	wire [22:0] bl = bls[i_rt];
 	wire p_u8 = vk == 8'd44 || vk == 8'd37 || vk == 8'd51 || vk == 8'd4 || vk == 8'd9 ||
 		vk == 8'd16 || vk == 8'd8;
-	wire p_f32 = vk == 8'd43 || vk == 8'd50 || vk == 8'd57 || vk == 8'd64 || vk == 8'd76 ||
-		vk == 8'd83 || vk == 8'd97;
+	wire p_f32 = (`CFG_ROP_ENABLE_FBLEND != 0) &&
+		(vk == 8'd43 || vk == 8'd50 || vk == 8'd57 || vk == 8'd64 || vk == 8'd76 ||
+		vk == 8'd83 || vk == 8'd97);
 	assign o_path = p_u8 ? 2'd0 : p_f32 ? 2'd1 : 2'd2;
 	assign o_drop = !feat[7] || (wm & cmask) == 4'd0;	/* COLOR_ATTACHMENT */
 	assign o_read = (bl[0] && (p_u8 || p_f32)) || (wm & cmask) != cmask;
@@ -303,9 +314,18 @@ module atg_rop_wpix #(
 	assign o_bdst = {dst[384 +: 32], dst[256 +: 32], dst[128 +: 32], dst[0 +: 32]};
 	assign f_dst = {dst[384 +: 64], dst[256 +: 64], dst[128 +: 64], dst[0 +: 64]};
 
-	atg_rop_fblend fblend (.clk(clk), .rst_n(rst_n), .i_valid(f_go), .i_ready(f_idle),
-		.i_lanes(mk), .i_src(src), .i_dst(f_dst), .i_fmt(vk), .i_blend(bl), .i_const(kcv),
-		.i_wm(wm), .o_valid(f_done), .o_ready(f_take), .o_raw(f_raw), .o_keep(f_keep));
+	generate
+	if (`CFG_ROP_ENABLE_FBLEND != 0) begin : g_fblend
+		atg_rop_fblend fblend (.clk(clk), .rst_n(rst_n), .i_valid(f_go), .i_ready(f_idle),
+			.i_lanes(mk), .i_src(src), .i_dst(f_dst), .i_fmt(vk), .i_blend(bl), .i_const(kcv),
+			.i_wm(wm), .o_valid(f_done), .o_ready(f_take), .o_raw(f_raw), .o_keep(f_keep));
+	end else begin : g_no_fblend
+		assign f_idle = 1'b1;
+		assign f_done = f_go;
+		assign f_raw = 256'd0;
+		assign f_keep = 256'd0;
+	end
+	endgenerate
 
 	/* atg_fmt_pack for the formats of path 2 (the colour-attachment formats
 	 * that are neither path 0 nor 1: integer and 32-bit float formats, no
@@ -320,24 +340,30 @@ module atg_rop_wpix #(
 	generate
 	for (k = 0; k < 4; k = k + 1) begin : g_res
 		wire [255:0] pk;
-		atg_fmt_pack #(.N(24), .FMTS(P2F), .LAT(0)) u_pk (
-			.clk(clk), .rst_n(rst_n), .en(1'b1),
-			.c(src[128 * k +: 128]), .un(64'd0), .hf(64'd0),
-			.fmt(vk), .wm(wm), .o(pk)
-		);
+		if (`CFG_ROP_ENABLE_PACK != 0) begin : g_pk
+			atg_fmt_pack #(.N(24), .FMTS(P2F), .LAT(0)) u_pk (
+				.clk(clk), .rst_n(rst_n), .en(1'b1),
+				.c(src[128 * k +: 128]), .un(64'd0), .hf(64'd0),
+				.fmt(vk), .wm(wm), .o(pk)
+			);
+		end else begin : g_no_pk
+			assign pk = 256'd0;
+		end
 		wire [63:0] fr = (f_raw[64 * k +: 64] & ~f_keep[64 * k +: 64]) |
 			(dst[128 * k +: 64] & f_keep[64 * k +: 64]);
 		assign o_res[128 * k +: 128] = p_u8 ? {96'd0, b_pix[32 * k +: 32]} :
 `ifdef MUT_WPIX_KEEP
 			p_f32 ? {64'd0, fr} : pk[127:0];
 `else
-			p_f32 ? {64'd0, fr} : (pk[127:0] & ~pk[255:128]) | (dst[128 * k +: 128] & pk[255:128]);
+			p_f32 ? {64'd0, fr} : (`CFG_ROP_ENABLE_PACK != 0 ?
+				((pk[127:0] & ~pk[255:128]) | (dst[128 * k +: 128] & pk[255:128])) :
+				{96'd0, b_pix[32 * k +: 32]});
 `endif
 	end
 	endgenerate
 
 	wire unused_ok = &{1'b0, f_idle, yrs[48:32], LS32[31:4], inf[67:9], inf[0], feat[25:8], feat[6:0], s_rt[8:3], s_bl[8:2],
-		s_kc[8:2], nll[3:2], s_ext[8:3], s_ext_bo_unused};
+		s_kc[8:2], nll[3:2], s_ext[8:3], s_ext_bo_unused, kcv, f_dst, bl[22:1], f_take};
 endmodule
 
 `default_nettype wire

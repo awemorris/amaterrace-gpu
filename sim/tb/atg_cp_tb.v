@@ -226,7 +226,7 @@ module atg_cp_tb;
 		$display("=== atg_cp_tb: Starting Capability Verification ===");
 
 		/* Test 1: Verify Default DEVICE_CAPS from config macros */
-		mmio_read(GHCI_2_REG_DEVICE_CAPS, rdata);
+		mmio_read(GHCI_REG_DEVICE_CAPS, rdata);
 		$display("Default DEVICE_CAPS = 0x%08h", rdata);
 		if (rdata[15:8] !== 8'd`CFG_SU_NPHYS) begin
 			$display("FAIL: PHYS_LANES = %0d (expected %0d)", rdata[15:8], `CFG_SU_NPHYS);
@@ -243,7 +243,7 @@ module atg_cp_tb;
 		end
 
 		/* Test 2: Verify Default EXT_CAP_FMT0 (0x080) */
-		mmio_read(GHCI_2_REG_EXT_CAP_FMT0, rdata);
+		mmio_read(GHCI_REG_EXT_CAP_FMT0, rdata);
 		$display("Default EXT_CAP_FMT0 = 0x%08h", rdata);
 `ifdef CFG_ENABLE_BC
 		if (rdata[0] !== 1'b1 || rdata[6] !== 1'b1) begin
@@ -262,7 +262,7 @@ module atg_cp_tb;
 `endif
 
 		/* Test 3: Verify Default EXT_CAP_FEATURE (0x084) */
-		mmio_read(GHCI_2_REG_EXT_CAP_FEATURE, rdata);
+		mmio_read(GHCI_REG_EXT_CAP_FEATURE, rdata);
 		$display("Default EXT_CAP_FEATURE = 0x%08h", rdata);
 		if (rdata[1] !== `EXP_CFG_EARLY_Z) begin
 			$display("FAIL: EARLY_Z feature bit mismatch");
@@ -279,7 +279,7 @@ module atg_cp_tb;
 		end
 
 		/* Test 4: Verify Custom Instance Overrides */
-		custom_read(GHCI_2_REG_DEVICE_CAPS, rdata);
+		custom_read(GHCI_REG_DEVICE_CAPS, rdata);
 		if (rdata !== CUSTOM_DEV_CAPS) begin
 			$display("FAIL: Custom DEVICE_CAPS = %h (expected %h)", rdata, CUSTOM_DEV_CAPS);
 			errors = errors + 1;
@@ -287,7 +287,7 @@ module atg_cp_tb;
 			$display("PASS: Custom DEVICE_CAPS (PHYS_LANES=16, TASK=1, MESH=1) verified");
 		end
 
-		custom_read(GHCI_2_REG_EXT_CAP_FMT0, rdata);
+		custom_read(GHCI_REG_EXT_CAP_FMT0, rdata);
 		if (rdata !== CUSTOM_FMT0) begin
 			$display("FAIL: Custom EXT_CAP_FMT0 = %h (expected %h)", rdata, CUSTOM_FMT0);
 			errors = errors + 1;
@@ -295,7 +295,7 @@ module atg_cp_tb;
 			$display("PASS: Custom EXT_CAP_FMT0 verified");
 		end
 
-		custom_read(GHCI_2_REG_EXT_CAP_FEATURE, rdata);
+		custom_read(GHCI_REG_EXT_CAP_FEATURE, rdata);
 		if (rdata !== CUSTOM_FEAT) begin
 			$display("FAIL: Custom EXT_CAP_FEATURE = %h (expected %h)", rdata, CUSTOM_FEAT);
 			errors = errors + 1;

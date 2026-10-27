@@ -33,6 +33,14 @@
 `define CFG_TU_L1_BANKS 4
 `endif
 
+`ifndef CFG_TU_L1_CACHE_KB
+`define CFG_TU_L1_CACHE_KB 8
+`endif
+
+`ifndef CFG_TU_ENABLE_FFILT
+`define CFG_TU_ENABLE_FFILT 1
+`endif
+
 module atg_tu #(
 	parameter ADDR_W = 32,	/* GPU address width */
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
@@ -110,6 +118,7 @@ module atg_tu #(
 		.ADDR_W(ADDR_W),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
+		.TC_BYTES(`CFG_TU_L1_CACHE_KB * 1024),
 		.NBANKS(`CFG_TU_L1_BANKS)
 	) cache (
 		.clk(clk), .rst_n(rst_n), .inv(inv),
@@ -158,7 +167,7 @@ module atg_tu #(
 	assign f_tr_last = f_fifo_out[528];
 
 	/* Order FIFO: records the path (0: filter, 1: ffilt) of each committed quad */
-	wire f32 = tc_ctl[20];
+	wire f32 = (`CFG_TU_ENABLE_FFILT != 0) && tc_ctl[20];
 	wire order_in_valid = tc_valid && tc_ready && !tc_ctl[4];
 	wire order_in_ready;
 	wire order_out_valid, order_out_ready;
@@ -188,14 +197,25 @@ module atg_tu #(
 		.tr_last(u_tr_last)
 	);
 
-	atg_tu_ffilt ffilt (
-		.clk(clk), .rst_n(rst_n),
-		.tc_valid(tc_valid && f32 && order_can_take), .tc_ready(f_ready), .tc_texels(tc_texels),
-		.tc_bord(tc_bord), .tc_lo(tc_lo), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask),
-		.tc_ctl(tc_ctl), .tc_last(tc_last), .idle(f_idle),
-		.tr_valid(f_tr_valid_raw), .tr_ready(f_tr_ready_raw), .tr_tag(f_tr_tag_raw), .tr_data(f_tr_data_raw),
-		.tr_last(f_tr_last_raw)
-	);
+	generate
+	if (`CFG_TU_ENABLE_FFILT != 0) begin : g_ffilt
+		atg_tu_ffilt ffilt (
+			.clk(clk), .rst_n(rst_n),
+			.tc_valid(tc_valid && f32 && order_can_take), .tc_ready(f_ready), .tc_texels(tc_texels),
+			.tc_bord(tc_bord), .tc_lo(tc_lo), .tc_wts(tc_wts), .tc_tag(tc_tag), .tc_mask(tc_mask),
+			.tc_ctl(tc_ctl), .tc_last(tc_last), .idle(f_idle),
+			.tr_valid(f_tr_valid_raw), .tr_ready(f_tr_ready_raw), .tr_tag(f_tr_tag_raw), .tr_data(f_tr_data_raw),
+			.tr_last(f_tr_last_raw)
+		);
+	end else begin : g_no_ffilt
+		assign f_ready = 1'b1;
+		assign f_idle = 1'b1;
+		assign f_tr_valid_raw = 1'b0;
+		assign f_tr_tag_raw = 16'd0;
+		assign f_tr_data_raw = 512'd0;
+		assign f_tr_last_raw = 1'b0;
+	end
+	endgenerate
 
 	/* In-order return based on order_fifo */
 	wire cur_is_f32 = order_path;
@@ -242,7 +262,8 @@ module atg_tu #(
 	);
 
 	wire unused_tu_ok = &{1'b0, f_fifo_count, order_count, aniso_req_ready, aniso_samp_valid,
-		aniso_samp_u, aniso_samp_v, aniso_samp_weight, aniso_res_valid, aniso_res_texel};
+		aniso_samp_u, aniso_samp_v, aniso_samp_weight, aniso_res_valid, aniso_res_texel,
+		tc_bord, tc_lo, f_tr_ready_raw};
 endmodule
 
 `default_nettype wire

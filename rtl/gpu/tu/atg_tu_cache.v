@@ -81,11 +81,13 @@ module atg_tu_cache #(
 	                 LANE_READ  = 3'd4,
 	                 OUT        = 3'd5;
 
-	/* 4 Banks of RAM arrays (Simple Dual Port BRAM inference) */
-	reg [LB-1:0] data_b0 [0:NSETS-1][0:WAYS-1];
-	reg [LB-1:0] data_b1 [0:NSETS-1][0:WAYS-1];
-	reg [LB-1:0] data_b2 [0:NSETS-1][0:WAYS-1];
-	reg [LB-1:0] data_b3 [0:NSETS-1][0:WAYS-1];
+	localparam RAW_AW = IW + 2;
+
+	/* 4 Banks of Block RAMs via library module am_bram_sdp */
+	wire [LB-1:0] bank_q0;
+	wire [LB-1:0] bank_q1;
+	wire [LB-1:0] bank_q2;
+	wire [LB-1:0] bank_q3;
 
 	reg [TW-1:0] tags [0:NSETS-1][0:WAYS-1];
 	reg [WAYS-1:0] vld [0:NSETS-1];
@@ -99,11 +101,6 @@ module atg_tu_cache #(
 	reg [3:0] slot_err;
 	reg [511:0] ta_addr_q;
 
-	/* Registered BRAM outputs for the 4 banks */
-	reg [LB-1:0] bank_q0;
-	reg [LB-1:0] bank_q1;
-	reg [LB-1:0] bank_q2;
-	reg [LB-1:0] bank_q3;
 
 	/* Quad controls */
 	wire bil = tc_ctl[0];
@@ -213,13 +210,11 @@ module atg_tu_cache #(
 	wire [IW-1:0] b3_set = s3_set;
 	wire [1:0]    b3_way = s3_way;
 
-	/* BRAM Read */
-	always @(posedge clk) begin
-		bank_q0 <= data_b0[b0_set][b0_way];
-		bank_q1 <= data_b1[b1_set][b1_way];
-		bank_q2 <= data_b2[b2_set][b2_way];
-		bank_q3 <= data_b3[b3_set][b3_way];
-	end
+	/* 4 Banks read addresses */
+	wire [RAW_AW-1:0] b0_raddr = {b0_set, b0_way};
+	wire [RAW_AW-1:0] b1_raddr = {b1_set, b1_way};
+	wire [RAW_AW-1:0] b2_raddr = {b2_set, b2_way};
+	wire [RAW_AW-1:0] b3_raddr = {b3_set, b3_way};
 
 	/* Crossbar output to slots */
 	wire [LB-1:0] slot_line0 = bank_q0;
@@ -307,6 +302,38 @@ module atg_tu_cache #(
 
 	wire [IW-1:0] mline_set = mline[IW-1:0];
 	wire [1:0] fill_way = get_victim(vld[mline_set], plru[mline_set]);
+	wire b_we = rsp_valid && !rsp_error && (st == MWAIT);
+	wire [RAW_AW-1:0] b_waddr = {mline_set, fill_way};
+
+	/* 4 Banks instantiated via am_bram_sdp */
+	am_bram_sdp #(.W(LB), .ADDR_W(RAW_AW)) u_bram_b0 (
+		.clk(clk), .we(b_we), .waddr(b_waddr), .wdata(rsp_rdata),
+		.re(1'b1), .raddr(b0_raddr), .rdata(bank_q0)
+	);
+
+	generate
+		if (NBANKS > 1) begin : g_b1
+			am_bram_sdp #(.W(LB), .ADDR_W(RAW_AW)) u_bram_b1 (
+				.clk(clk), .we(b_we), .waddr(b_waddr), .wdata(rsp_rdata),
+				.re(1'b1), .raddr(b1_raddr), .rdata(bank_q1)
+			);
+		end else begin : g_b1_shared
+			assign bank_q1 = bank_q0;
+		end
+		if (NBANKS > 2) begin : g_b23
+			am_bram_sdp #(.W(LB), .ADDR_W(RAW_AW)) u_bram_b2 (
+				.clk(clk), .we(b_we), .waddr(b_waddr), .wdata(rsp_rdata),
+				.re(1'b1), .raddr(b2_raddr), .rdata(bank_q2)
+			);
+			am_bram_sdp #(.W(LB), .ADDR_W(RAW_AW)) u_bram_b3 (
+				.clk(clk), .we(b_we), .waddr(b_waddr), .wdata(rsp_rdata),
+				.re(1'b1), .raddr(b3_raddr), .rdata(bank_q3)
+			);
+		end else begin : g_b23_shared
+			assign bank_q2 = bank_q0;
+			assign bank_q3 = bank_q1;
+		end
+	endgenerate
 
 	integer j, s_init;
 	always @(posedge clk) begin
@@ -370,10 +397,6 @@ module atg_tu_cache #(
 					if (a3[ADDR_W-1:LINE_SHIFT] == mline) slot_err[3] <= 1'b1;
 					st <= LANE_CHECK;
 				end else begin
-					data_b0[mline_set][fill_way] <= rsp_rdata;
-					data_b1[mline_set][fill_way] <= rsp_rdata;
-					data_b2[mline_set][fill_way] <= rsp_rdata;
-					data_b3[mline_set][fill_way] <= rsp_rdata;
 					tags[mline_set][fill_way] <= mline[ADDR_W-LINE_SHIFT-1 -: TW];
 					vld[mline_set][fill_way] <= !drop && !inv;
 					plru[mline_set] <= update_plru(plru[mline_set], fill_way);

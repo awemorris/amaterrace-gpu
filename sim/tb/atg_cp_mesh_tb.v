@@ -99,7 +99,7 @@ module atg_cp_mesh_tb;
 		#20;
 
 		$display("--- Test 1: Send CMD_DRAW_MESH_TASKS (0x2A, count 12x4x1) ---");
-		/* Header: size 4 dwords, opcode 0x2A (GHCI2 Structured Command) */
+		/* Header: size 4 dwords, opcode 0x2A (GHCI 1.0 Structured Command) */
 		push_word(32'h0000_042a);
 		push_word(32'd12);	/* groupCountX */
 		push_word(32'd4);	/* groupCountY */

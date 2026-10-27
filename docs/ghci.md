@@ -1,7 +1,7 @@
 GHCI — GPU Host Controller Interface
 ====================================
 
-**Version 0.1 — Draft, 2026-10-24**
+**Version 1.0 — Draft 0.2, 2026-10-27**
 License: Zlib (the same as the rest of this repository)
 
 GHCI is a public, versioned host interface for Vulkan-class GPUs, in the
@@ -178,7 +178,7 @@ commands.
 | Offset | Name | Access | Contents |
 | --- | --- | --- | --- |
 | 0x000 | GHCI_MAGIC | R | `0x47484349` ("GHCI") |
-| 0x004 | GHCI_VERSION | R | [31:16] major (2), [15:0] minor (0) |
+| 0x004 | GHCI_VERSION | R | [31:16] major (1), [15:0] minor (0) |
 | 0x008 | DEVICE_CAPS | R | Device capabilities bitfield (section 3.2) |
 | 0x00C | EXTCAP_PTR | R | Byte offset of the first extended capability; 0 = none (section 4) |
 | 0x010 | CTRL | RW | Core execution and reset control (section 3.3) |
@@ -242,21 +242,75 @@ For current hardware bring-up and legacy firmware compatibility, the physical ha
 | 0x0F00 | KICK | W | [0] BLIT, [1] DRAW, [2] DISPATCH |
 | 0x1000..0x17FC | STATE[0..511] | RW | Legacy state register file (section 8) |
 
-### 3.2 DEVICE_CAPS (0x008)
+### 3.2 Hardware Capabilities and Architecture Sizes
+
+GHCI provides structured hardware capability discovery and on-chip resource sizing through three registers: `DEVICE_CAPS` (0x008), `CAPS` (0x020), and `CAPS2` (0x024).
+
+#### 3.2.1 DEVICE_CAPS (0x008)
+
+`DEVICE_CAPS` exposes high-level architectural configurations and unit topologies:
+
+| Bits | Name | Config Parameter | Meaning |
+| --- | --- | --- | --- |
+| [0] | CAP_UMA | Board / Platform | 1 = Unified Memory Architecture (Shared DRAM), 0 = Discrete VRAM |
+| [1] | CAP_IOMMU | Platform | 1 = System / Platform IOMMU translation supported and active |
+| [2] | CAP_HW_WALKER | `CONFIG_CP_AUTONOMOUS_MMU` | 1 = CP contains autonomous 2-level hardware page table walker |
+| [3] | CAP_INDIRECT_DRAW | `CONFIG_CP_USE_RV32_CORE` | 1 = Native MultiDrawIndirect and indirect dispatch supported |
+| [4] | CAP_SECONDARY_RING | `CONFIG_CP_USE_RV32_CORE` | 1 = Secondary command buffer direct execution supported (`CMD_EXECUTE_COMMANDS`) |
+| [5] | CAP_DUAL_SOURCE | `CONFIG_ROP_DUAL_SOURCE` | 1 = Dual-source color blending supported (`Src1Color` / `Src1Alpha`) |
+| [6] | CAP_FP16 | `CONFIG_SU_ENABLE_FP16` | 1 = Packed 16-bit float/integer arithmetic supported |
+| [7] | CAP_GSI1 | Fixed (1) | 1 = Native GSI1 standard shader ISA execution |
+| [15:8] | PHYS_LANES | `CONFIG_SU_NPHYS` | Number of physical execution lanes per Shader Unit (NPHYS = 4, 8, 16, 32; default 8) |
+| [23:16] | NUM_SU | Board config | Number of Shader Units present (e.g. 1, 2, 4) |
+| [24] | CAP_PROT | `CONFIG_MC_ENABLE_PROT` | 1 = Session protection hardware (`atg_mc_prot`) present; 0 = Bare-metal / single-process mode |
+| [25] | CAP_TEX_FFILT | `CONFIG_TU_ENABLE_FFILT` | 1 = Floating-point texture filter present; 0 = UNORM8 bilinear filter only |
+| [26] | CAP_ROP_PACK | `CONFIG_ROP_ENABLE_PACK` | 1 = ROP Path 2 integer/float RT packer present; 0 = Path 0 UNORM formats only |
+| [29:27] | RESERVED | - | Reserved (reads 0) |
+| [30] | CAP_TASK_SHADER | `CONFIG_SU_ENABLE_MESH` | 1 = VK_EXT Task Shader capability supported |
+| [31] | CAP_MESH_SHADER | `CONFIG_SU_ENABLE_MESH` | 1 = VK_EXT Mesh Shader capability supported |
+
+#### 3.2.2 CAPS (0x020)
+
+`CAPS` reports fine-grained execution and pipeline features:
 
 | Bits | Name | Meaning |
 | --- | --- | --- |
-| [0] | CAP_UMA | 1 = Unified Memory Architecture (Shared DRAM), 0 = Discrete VRAM |
-| [1] | CAP_IOMMU | 1 = System / Platform IOMMU translation supported and active |
-| [2] | CAP_HW_WALKER | 1 = CP contains autonomous 2-level hardware page table walker |
-| [3] | CAP_INDIRECT_DRAW | 1 = Native MultiDrawIndirect and indirect dispatch supported |
-| [4] | CAP_SECONDARY_RING | 1 = Secondary command buffer direct execution supported (`CMD_EXECUTE_COMMANDS`) |
-| [5] | CAP_DUAL_SOURCE | 1 = Dual-source color blending supported (`Src1Color` / `Src1Alpha`) |
-| [6] | CAP_FP16 | 1 = Packed 16-bit float/integer arithmetic supported |
-| [7] | CAP_GSI1 | 1 = Native GSI1 standard shader ISA execution |
-| [15:8] | PHYS_LANES | Number of physical execution lanes per Shader Unit (NPHYS = 1, 2, 4, 8, 16, 32) |
-| [23:16] | NUM_SU | Number of Shader Units present (e.g. 1, 2, 4) |
-| [31:24] | RESERVED | Reserved (reads 0) |
+| [0] | CAP_CP | A command processor and ring buffer are present |
+| [1] | CAP_BLT | A 2D blitter engine (`atg_blt`) is present |
+| [2] | CAP_SU | A shader unit is present (`ISA_ID` is not 0) |
+| [3] | CAP_DISP | A display controller is in this window (with a DISP or DISP2 capability) |
+| [7:4] | LANES_LOG2 | log2 of physical execution lanes: 2 (4 lanes), 3 (8 lanes), 4 (16 lanes), 5 (32 lanes) |
+| [8] | CAP_FILTER_BILINEAR | Standard UNORM8 bilinear texture filtering is supported |
+| [9] | CAP_STENCIL | Hardware stencil operations and stencil attachment supported |
+| [10] | CAP_WAIT_VSYNC | CP can wait for display VSYNC events |
+| [11] | CAP_TILED_TEXTURE | Texture layout: 0 = linear only, 1 = 4x4 micro-tiled layouts supported |
+| [15:12] | STATE_VERSION | Version of the standard state layout (1) |
+| [16] | CAP_MMU | Autonomous 2-level hardware page table walker and TLB active |
+| [17] | CAP_CP_FW | Command processor firmware processor (RV32IM) active (class 2 packets decoded) |
+| [18] | CAP_CP_RELOAD | CP firmware can be reloaded dynamically (`CPFW` capability) |
+| [19] | CAP_NATIVE_ISA | Native shader ISA (`ISA_ID`) differs from standard GSI1 |
+| [23:20] | LINE_SHIFT | log2 of memory line size in bytes (5 = 32 bytes, 6 = 64 bytes) |
+| [24] | CAP_SUBGROUP | Subgroup operations supported: `shfl`, `vote`, `ballot` (`CONFIG_SU_ENABLE_SUBGROUP`) |
+| [25] | CAP_SA | Systolic array matrix accelerator attached (`CONFIG_SU_ENABLE_SA`) |
+| [26] | CAP_TEX_EXT | Extended texture features: 3D/Cube views, depth compare, gather, and floating-point filtering (`CONFIG_TU_ENABLE_FFILT`) |
+| [27] | CAP_GRAPHICS | Graphics pipeline present (vertex fetcher, rasterizer, render output) |
+| [28] | CAP_PACKED_FP16 | Packed FP16/INT16 arithmetic supported (`CONFIG_SU_ENABLE_FP16`) |
+| [29] | CAP_MSAA | Multisample anti-aliasing (2x/4x) supported (`CONFIG_RX_ENABLE_MSAA`) |
+| [30] | CAP_CORE_RENDERING | Core rendering pipeline features and extended render target formats (`CONFIG_ROP_ENABLE_PACK`) |
+| [31] | RESERVED | Reserved (reads 0) |
+
+#### 3.2.3 CAPS2 (0x024) - Memory & Cache Architecture Sizes
+
+`CAPS2` dynamically reports on-chip buffer sizes, cache hierarchy capacities, and line buffer depths configured at hardware synthesis time:
+
+| Bits | Name | Config Parameter | Meaning |
+| --- | --- | --- | --- |
+| [7:0] | NUM_QUEUES | Hardware config | Number of independent hardware command queues/rings (1, 2, or 3) |
+| [15:8] | L2_CACHE_KB | `CONFIG_MC_L2_CACHE_KB` | Shared L2 Cache (LLC) capacity in KiB: 0 (No L2 / direct bypass), 16, 64, 128, 256 KiB |
+| [19:16] | L2_WAYS | `CONFIG_MC_L2_WAYS` | Shared L2 Cache associativity / number of ways: 0 (Direct/None), 4 (4-way), 8 (8-way), 16 (16-way) |
+| [23:20] | TU_L1_KB | `CONFIG_TU_L1_CACHE_KB` | Texture Unit (TU) L1 cache capacity in KiB: 4, 8, 16 KiB |
+| [27:24] | VF_LINES | `CONFIG_VF_CACHE_LINES` | Vertex Fetcher (VF) fully associative attribute line buffer count: 2, 4, 8 lines |
+| [31:28] | LDS_KB | `CONFIG_SU_LDS_KB` | Shader Unit Local Data Share (LDS) workgroup memory in KiB: 0, 1, 2, 4, 16 KiB |
 
 ### 3.3 CTRL and STATUS (0x010, 0x014)
 
@@ -349,6 +403,26 @@ not reported), +0x8 FMT_LINEAR (the same for linear tiling), +0xC FMT_BUFFER
 (the buffer features), +0x10 FMT_LIMITS (R: [3:0] colour attachments,
 [11:4] 0). A driver reports its format properties from these. Writing
 FMT_INDEX is taken in every CP state; reads have no side effects.
+
+- **Floating-point texture filtering (`CONFIG_TU_ENABLE_FFILT`):**
+  When `CONFIG_TU_ENABLE_FFILT = 0`, the floating-point filter unit (`atg_tu_ffilt`)
+  is omitted from hardware synthesis. For 16-bit and 32-bit floating-point image
+  formats (e.g., `VK_FORMAT_R16G16B16A16_SFLOAT`, `VK_FORMAT_R32_SFLOAT`),
+  `FMT_OPTIMAL` and `FMT_LINEAR` do not set `VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT`
+  (bit 1). Nearest (point) sampling remains supported via `VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT` (bit 0).
+- **ROP Path 2 integer/float render target formats (`CONFIG_ROP_ENABLE_PACK`):**
+  When `CONFIG_ROP_ENABLE_PACK = 0`, the non-blended integer/float pixel packer
+  (`atg_fmt_pack`) is excluded from hardware synthesis. For integer formats
+  (`VK_FORMAT_*_UINT`, `VK_FORMAT_*_SINT`) and 32-bit floating-point attachment formats,
+  `FMT_OPTIMAL` reports 0 for `VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT` (bit 7). Standard
+  normalized formats (Path 0: RGBA8, BGRA8, RGB565) remain fully supported.
+
+**PROT (version 1).** Session protection registers at the capability's register offset
+(section 11.6). When session protection is excluded at build time (`CONFIG_MC_ENABLE_PROT = 0`),
+entry 9 (`PROT`) is omitted from the EXTCAP list. If accessed directly, `PROT_CAPS` (+0x0)
+reads `0x00000000` (indicating 0 protected sessions and 0 grants), and any attempt to execute
+`SESSION_OPEN` with `PROTECTED` or `BUFFER_GRANT`/`BUFFER_REVOKE` returns
+`VK_ERROR_FEATURE_NOT_PRESENT`.
 
 **PERF (version 1).** Four registers at the capability's register offset,
 PERF_SRC0..PERF_SRC3 (+0x0, +0x4, +0x8, +0xC; R), say what PERF0..PERF3
@@ -984,6 +1058,24 @@ need to know it.
   are not reordered ahead of those writes (on PCIe: no Relaxed Ordering on
   the fence write and the interrupt message).
 
+### 11.5.1 Cache Hierarchy and Internal Buffer Configuration
+
+GHCI incorporates a configurable multi-level memory hierarchy designed for FPGA resource scaling:
+
+- **Shared Last-Level Cache (L2 Cache / LLC):**
+  - **Capacity (`CONFIG_MC_L2_CACHE_KB`):** Configurable to 0 (No L2 / direct MC bypass), 16, 64, 128, or 256 KiB.
+  - **Associativity (`CONFIG_MC_L2_WAYS`):** Configurable to 4, 8, or 16 ways (multi-way set-associative write-back cache).
+  - When `CONFIG_MC_L2_CACHE_KB = 0`, the L2 cache logic is completely omitted from synthesis; requests from execution units (VF, SU, TU, ROP, BLT, CP) connect directly to the memory controller arbiter.
+  - The active L2 capacity and associativity are dynamically reported to the host in `CAPS2[15:8]` and `CAPS2[19:16]`.
+- **Texture Unit L1 Cache (`CONFIG_TU_L1_CACHE_KB`):**
+  - Configurable to 4, 8, or 16 KiB (reported in `CAPS2[23:20]`).
+  - Provides low-latency texel caching for bilinear and trilinear filtering operations.
+- **Vertex Fetcher Attribute Line Buffers (`CONFIG_VF_CACHE_LINES`):**
+  - Configurable to 2, 4, or 8 lines (reported in `CAPS2[27:24]`).
+  - Fully associative line buffers in `atg_vf_fetch` buffering vertex attribute streams across warps without redundant memory transactions.
+- **Shader Unit Workgroup Shared Memory (`CONFIG_SU_LDS_KB`):**
+  - Configurable to 0, 1, 2, 4, or 16 KiB per Shader Unit (reported in `CAPS2[31:28]`).
+
 ### 11.6 Session protection (optional)
 
 A GPU with the PROT capability can keep the sessions of different clients
@@ -996,6 +1088,16 @@ one flat GPU address space. A GPU without the PROT capability conforms to
 this specification; the operating system then knows that clients are not
 isolated from each other and chooses its policy (for example, refusing
 untrusted clients).
+
+**Build-Time Configuration (`CONFIG_MC_ENABLE_PROT`):**
+- Hardware implementations may optionally include or omit the session protection module (`atg_mc_prot`, CAM, PLB, and aperture checking logic) via `CONFIG_MC_ENABLE_PROT` (0 or 1).
+- When `CONFIG_MC_ENABLE_PROT = 0`, the protection CAM, permission lookaside buffers, and scrub state machines are physically excluded from synthesis, optimizing FPGA resources for bare-metal, real-time, or single-process embedded applications.
+- In bare-metal mode (`CONFIG_MC_ENABLE_PROT = 0`):
+  - The `PROT` extended capability (ID 9) is omitted from `EXTCAP`.
+  - `DEVICE_CAPS[24]` reads 0 (`CAP_PROT = 0`).
+  - Reading `PROT_CAPS` returns `0x00000000` (indicating 0 supported protected sessions and 0 grants).
+  - Calling `SESSION_OPEN` with `flags[0] = PROTECTED` fails immediately with `VK_ERROR_FEATURE_NOT_PRESENT`.
+  - Calling `BUFFER_GRANT` or `BUFFER_REVOKE` fails immediately with `VK_ERROR_FEATURE_NOT_PRESENT`.
 
 **Sessions.**
 
@@ -1452,6 +1554,12 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
     arrays (optional, imageCubeArray), MinLod (optional,
     shaderResourceMinLod), anisotropic filtering (optional,
     samplerAnisotropy), sparse residency (optional).
+- **Floating-point texture filtering (`CONFIG_TU_ENABLE_FFILT`):**
+  Hardware implementations may optionally omit the floating-point filter unit (`atg_tu_ffilt`).
+  When `CONFIG_TU_ENABLE_FFILT = 0`, only UNORM8 bilinear filtering is performed by `atg_tu_filter`.
+  Texture sampling from FP16 and FP32 image formats bypasses linear interpolation, falling back to
+  point (nearest) sampling. Hardware reports this feature via `DEVICE_CAPS[25]` (`CAP_TEX_FFILT`),
+  `CAPS[26]`, and `FMT_OPTIMAL`.
 
 ### 12.10 Program binary
 
@@ -1667,6 +1775,12 @@ CAPS[30].
   program reaches with `lw`, `sw` and `atom` (the compiler computes the
   addresses): the command processor's firmware writes the constant-bank
   words of the kind-specific word.
+- **Render target format paths and integer/float packing (`CONFIG_ROP_ENABLE_PACK`):**
+  The ROP backend supports three format processing paths:
+  - Path 0: UNORM formats (RGBA8, BGRA8, RGB565, etc.) with hardware blending (`atg_rop_blend`). Core feature.
+  - Path 1: sRGB formats and floating-point blending (`atg_rop_fblend`).
+  - Path 2: Non-blended integer formats (UINT, SINT) and 32-bit float attachments (`atg_fmt_pack`).
+  When `CONFIG_ROP_ENABLE_PACK = 0`, Path 2 format packing logic is omitted from synthesis to minimize FPGA LUT utilization. In this configuration, integer render targets are unsupported (`FMT_OPTIMAL` clears `COLOR_ATTACHMENT_BIT` for integer formats), and `DEVICE_CAPS[26]` (`CAP_ROP_PACK`) reads 0.
 
 13. The display controller capabilities (DISP, DISP2)
 -----------------------------------------------------
@@ -1869,7 +1983,7 @@ In GHCI 1.0, board bring-up and driver development rely on the MMIO
 diagnostics registers rather than complex debug memory ports:
 
 - **Liveness & MMIO Verification:** The host reads `GHCI_MAGIC` (`0x47484349`)
-  and `GHCI_VERSION` (`0x00020000`) to confirm bus connectivity and BAR mapping.
+  and `GHCI_VERSION` (`0x00010000`) to confirm bus connectivity and BAR mapping.
   The driver then writes test bit patterns to `SCRATCH` (0x048) and reads them
   back to verify 32-bit read/write bus timing.
 - **Hardware Capability Audit:** Reading `DEVICE_CAPS` (0x008) reports whether

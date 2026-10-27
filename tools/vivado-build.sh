@@ -49,6 +49,9 @@ if ! /sbin/ldconfig -p | grep -q 'libncurses\.so\.5 '; then
 	LD_LIBRARY_PATH=$XILINX_VIVADO/lib/lnx64.o/Ubuntu/24${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 	export LD_LIBRARY_PATH
 fi
+if [ -z "${VIVADO_IP:-}" ] && [ -d "$root/build/vivado/${board}_ip" ]; then
+	VIVADO_IP=$root/build/vivado/${board}_ip
+fi
 out=${VIVADO_OUT:-$root/build/vivado/$top}
 mkdir -p "$out"
 start=$(date +%s)

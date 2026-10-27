@@ -63,7 +63,7 @@ module atg_cp_seq_dec #(
 	localparam [5:0] OP_SEMAPHORE_SIGNAL = 6'd21;
 	localparam [5:0] OP_SEMAPHORE_WAIT = 6'd22;
 
-	/* GHCI 2.0 Structured Command Opcodes */
+	/* GHCI 1.0 Structured Command Opcodes */
 	localparam [5:0] CMD_BIND_PIPELINE         = 6'h20;
 	localparam [5:0] CMD_BIND_VERTEX_BUFFERS   = 6'h21;
 	localparam [5:0] CMD_BIND_INDEX_BUFFER     = 6'h22;
@@ -147,7 +147,7 @@ module atg_cp_seq_dec #(
 			OP_SEMAPHORE_SIGNAL, OP_SEMAPHORE_WAIT: begin
 				h_need = 8'd4;	/* payload: addr[63:0], val[63:0] */
 			end
-			/* GHCI 2.0 Structured Commands */
+			/* GHCI 1.0 Structured Commands */
 			CMD_BIND_PIPELINE: h_need = 8'd2;
 			CMD_BIND_VERTEX_BUFFERS: h_need = 8'd1;
 			CMD_BIND_INDEX_BUFFER: h_need = 8'd3;

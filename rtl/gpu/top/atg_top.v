@@ -80,7 +80,10 @@ module atg_top #(
 	parameter PROT_GRANTS = 8,
 	parameter PROT_GIDX_W = 3,
 	parameter PROT_PLB = 4,
-	parameter PROT_PLB_W = 2
+	parameter PROT_PLB_W = 2,
+	parameter HAS_L2 = 0,
+	parameter L2_WAYS = 16,
+	parameter L2_SET_W = 8
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -585,7 +588,10 @@ module atg_top #(
 		.PROT_PLB(PROT_PLB),
 		.PROT_PLB_W(PROT_PLB_W),
 		.PROT_GRANTS(PROT_GRANTS),
-		.PROT_GIDX_W(PROT_GIDX_W)
+		.PROT_GIDX_W(PROT_GIDX_W),
+		.HAS_L2(HAS_L2),
+		.L2_WAYS(L2_WAYS),
+		.L2_SET_W(L2_SET_W)
 	) mc (
 		.clk(clk),
 		.rst_n(rst_n),

@@ -78,15 +78,15 @@ menuconfig:
 	python3 tools/menuconfig.py
 
 preset-minimal:
-	python3 tools/menuconfig.py --preset minimal
+	cp config/minimal.mk config.mk
 	@$(MAKE) include/atg_config.vh
 
 preset-balanced:
-	python3 tools/menuconfig.py --preset balanced
+	cp config/balanced.mk config.mk
 	@$(MAKE) include/atg_config.vh
 
 preset-high-perf:
-	python3 tools/menuconfig.py --preset high-perf
+	cp config/high-perf.mk config.mk
 	@$(MAKE) include/atg_config.vh
 
 # ---------------------------------------------------------------- configuration header
@@ -150,11 +150,27 @@ ifeq ($(CONFIG_TU_ENABLE_3D_CUBE),1)
 	@echo "\`define CFG_ENABLE_3D_CUBE 1" >> $@
 endif
 	@echo "\`define CFG_TU_L1_BANKS $(CONFIG_TU_L1_BANKS)" >> $@
+	@echo "\`define CFG_TU_L1_CACHE_KB $(CONFIG_TU_L1_CACHE_KB)" >> $@
+ifeq ($(CONFIG_TU_ENABLE_FFILT),1)
+	@echo "\`define CFG_TU_ENABLE_FFILT 1" >> $@
+else
+	@echo "\`define CFG_TU_ENABLE_FFILT 0" >> $@
+endif
 ifeq ($(CONFIG_TU_ENABLE_MSHR),1)
 	@echo "\`define CFG_ENABLE_MSHR 1" >> $@
 endif
 	@echo "" >> $@
 	@echo "/* 4. Render Output Backend (ROP) */" >> $@
+ifeq ($(CONFIG_ROP_ENABLE_FBLEND),1)
+	@echo "\`define CFG_ROP_ENABLE_FBLEND 1" >> $@
+else
+	@echo "\`define CFG_ROP_ENABLE_FBLEND 0" >> $@
+endif
+ifeq ($(CONFIG_ROP_ENABLE_PACK),1)
+	@echo "\`define CFG_ROP_ENABLE_PACK 1" >> $@
+else
+	@echo "\`define CFG_ROP_ENABLE_PACK 0" >> $@
+endif
 ifeq ($(CONFIG_ROP_DUAL_SOURCE),1)
 	@echo "\`define CFG_ROP_DUAL_SOURCE 1" >> $@
 endif
@@ -173,7 +189,14 @@ endif
 ifeq ($(CONFIG_CP_USE_RV32_CORE),1)
 	@echo "\`define CFG_CP_USE_RV32_CORE 1" >> $@
 endif
+ifeq ($(CONFIG_MC_ENABLE_PROT),1)
+	@echo "\`define CFG_MC_ENABLE_PROT 1" >> $@
+else
+	@echo "\`define CFG_MC_ENABLE_PROT 0" >> $@
+endif
 	@echo "\`define CFG_MC_L2_CACHE_KB $(CONFIG_MC_L2_CACHE_KB)" >> $@
+	@echo "\`define CFG_MC_L2_WAYS $(CONFIG_MC_L2_WAYS)" >> $@
+	@echo "\`define CFG_VF_CACHE_LINES $(CONFIG_VF_CACHE_LINES)" >> $@
 ifeq ($(CONFIG_DC_ENABLE_CURSOR),1)
 	@echo "\`define CFG_DC_ENABLE_CURSOR 1" >> $@
 endif

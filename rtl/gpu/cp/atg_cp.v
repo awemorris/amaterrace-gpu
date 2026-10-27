@@ -73,7 +73,7 @@ module atg_cp #(
 	parameter [31:0] WINDOW_BYTES = 32'd0,
 	parameter [31:0] HOST_LIMIT = 32'd0,
 	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
-	parameter SLIM_MMIO = 0	/* 1: GHCI 2.0 Slim 19 MMIO registers (0x00..0x48) */
+	parameter SLIM_MMIO = 0	/* 1: GHCI 1.0 Slim 19 MMIO registers (0x00..0x48) */
 ) (
 	input wire clk,
 	input wire rst_n,
