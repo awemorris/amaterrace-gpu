@@ -604,11 +604,11 @@ typedef struct GhciCmdLoadConst {
 	/* Followed by uint32_t data[count_dwords] */
 } GhciCmdLoadConst;
 
-/* CMD_WAIT_FENCE (0x34): 5 dwords (64-bit wait value, K09) */
+/* CMD_WAIT_FENCE (0x34): 5 dwords (64-bit wait value, K09, N11, N12) */
 typedef struct GhciCmdWaitFence {
 	uint32_t header;                /* opcode: GHCI_CMD_WAIT_FENCE, dwords: 5 */
-	uint32_t fence_addr_lo;         /* Host memory address [31:0] */
-	uint32_t fence_addr_hi;         /* Host memory address [63:32] */
+	uint32_t fence_addr_lo;         /* 64-bit host DMA address or local DRAM PA [31:0] (N12) */
+	uint32_t fence_addr_hi;         /* 64-bit host DMA address or local DRAM PA [63:32] (N12) */
 	uint32_t wait_value_lo;         /* 64-bit value to compare [31:0] */
 	uint32_t wait_value_hi;         /* 64-bit value to compare [63:32] ((int64_t)(mem - val) >= 0) */
 } GhciCmdWaitFence;

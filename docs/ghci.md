@@ -841,7 +841,8 @@ Overrides fine-grained dynamic pipeline parameters using tagged state IDs (6 dwo
     - `dword 3`: `table_va_hi` (64-bit session GPU virtual address [63:32])
     - `dword 4..5`: `reserved` (0)
 - *Dynamic State Persistence & Precedence (N14)*:
-  - **Initial / Reset Defaults**: Prior to the first `CMD_SET_DYNAMIC_STATE`, default states are: `stencil_compare_mask = 0xFF`, `stencil_write_mask = 0xFF`, `stencil_reference = 0x00`, `depth_bias = {0.0f, 0.0f, 0.0f}`, `blend_constants = {1.0f, 1.0f, 1.0f, 1.0f}`.
+  - **Initial / Reset Defaults**: Default state values (`stencil_compare_mask = 0xFF`, `stencil_write_mask = 0xFF`, `stencil_reference = 0x00`, `depth_bias = {0.0f, 0.0f, 0.0f}`, `blend_constants = {1.0f, 1.0f, 1.0f, 1.0f}`) are initialized upon hardware power-on reset, software reset (`CTRL.RESET`), and session creation (`CMD_SESSION_OPEN`, 0x01).
+  - **Session Isolation (Per-Session Context)**: Dynamic states are maintained on a per-session basis in hardware context state storage. Switching active sessions via `CMD_BIND_SESSION` restores the target session's private dynamic states, ensuring zero cross-session state leakage into subsequent draws. Within a session, dynamic states persist across ring buffer submissions and command buffers until overridden.
   - **PSO Interaction (Last Writer Wins)**: `CMD_BIND_PIPELINE` sets baseline states from PSO (dw9 line width, dw11 blend). Dynamic states set via `CMD_SET_DYNAMIC_STATE` override PSO baseline parameters. Submitting a new `CMD_BIND_PIPELINE` re-establishes the baseline states baked into the new PSO.
   - **Capability Protection**: Submitting `state_id = 0x07..0x0E` on hardware where `CAP_MRT_BLEND == 0` raises `GHCI_FAULT_KIND_KICK_ABSENT` (Kind 2).
 
@@ -956,16 +957,17 @@ Emits a 64-bit sequence counter to memory upon completion of all earlier work (6
   - `[0]`: `GHCI_FENCE_FLAG_IRQ` (0x1) — Raise `GHCI_IRQ_FENCE` (`IRQ_STATUS[0]`) upon completion
   - `[1]`: `GHCI_FENCE_FLAG_MEM_WRITE` (0x2) — Write 64-bit sequence counter `fence_seq` to memory at `fence_addr`. If bit 1 is 0, memory write is omitted (interrupt-only fence)
   - `[2]`: `GHCI_FENCE_FLAG_HOST_FLUSH` (0x4) — Flush GPU dirty caches before signaling fence
-- *Address Routing (N12)*: If `fence_addr` resides within $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$, it routes to local VRAM. Otherwise, `fence_addr` is a 64-bit host physical DMA address / IOVA routed to the host PCIe AXI bus across full `PA_BITS` ($40..48$ bits) without being restricted by `HOST_LIMIT`.
+- *Address Routing (N12)*: If `fence_addr` resides within $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$, it routes to local VRAM. Otherwise, `fence_addr` is a 64-bit host physical DMA address / IOVA routed to the host PCIe AXI bus across full `PA_BITS` ($40..48$ bits) (or constrained below `HOST_LIMIT` on platforms without IOMMU and with a 32-bit DMA controller, N12).
 
-#### `CMD_WAIT_FENCE` (0x34, K09, N11, N28)
+#### `CMD_WAIT_FENCE` (0x34, K09, N11, N12, N28)
 CP pauses ring execution until memory fence value satisfies condition (5 dwords, 20 bytes).
 
 - `dword 0`: Header (`opcode = 0x34`, `dwords = 5`)
-- `dword 1`: `fence_addr[31:0]` (64-bit host memory PA or local DRAM PA)
+- `dword 1`: `fence_addr[31:0]` (64-bit host DMA PA or local DRAM PA, N12)
 - `dword 2`: `fence_addr[63:32]`
 - `dword 3`: `wait_value[31:0]` (64-bit comparison threshold)
 - `dword 4`: `wait_value[63:32]`
+- *Address Routing (N12)*: `fence_addr` physical routing strictly follows the identical rules as `CMD_FENCE`: addresses within $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$ route to local VRAM, while addresses outside this range route to host PCIe DMA memory (constrained below `HOST_LIMIT` on 32-bit DMA platforms without IOMMU).
 - **Signed 64-Bit Comparison Condition (K09)**:
   $$\text{(int64\_t)}(\text{current\_seq} - \text{wait\_seq}) \ge 0$$
   This protects against 64-bit sequence number wrap-around and guarantees proper monotonically increasing synchronization ordering.
@@ -1784,7 +1786,7 @@ offset:
 | +0x0 | LOCAL_BASE | R | GPU address of the first byte of local memory |
 | +0x4 | LOCAL_SIZE | R | Bytes of local memory; 0 = none (unified) |
 | +0x8 | WINDOW_SIZE | R | Bytes of local memory, from LOCAL_BASE, that the local window shows; 0 = no window. Where the window is on the host is defined by the binding (section 15) |
-| +0xC | HOST_LIMIT | R | 32-bit physical bus address aperture threshold (4 KiB aligned). Physical addresses below HOST_LIMIT route to host PCIe AXI DMA memory; addresses at or above LOCAL_BASE route to local VRAM (N12). In `CMD_VM_MAP`, when `VM_FLAG_LOCAL` is 1, `phys` is strictly an absolute physical address in local VRAM (`phys >= LOCAL_BASE`). When `VM_FLAG_LOCAL` is 0 (host memory), `phys` is a 64-bit host physical address (or IOVA), valid up to `PA_BITS` ($40..48$ bits, `EXT_CAP_FEATURE[11:8]`). On systems without IOMMU and with a 32-bit PCIe DMA controller, host memory addresses are confined below `HOST_LIMIT` (32-bit) (N12). |
+| +0xC | HOST_LIMIT | R | 32-bit physical bus address aperture threshold (4 KiB aligned). Physical addresses in $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$ route to local VRAM; addresses outside $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$ route to host PCIe AXI DMA memory (up to `PA_BITS`). Addresses $\ge LOCAL\_BASE + LOCAL\_SIZE$ within the local DRAM aperture are invalid/unmapped (fault Kind 4). In `CMD_VM_MAP`, when `VM_FLAG_LOCAL` is 1, `phys` is strictly an absolute physical address in local VRAM ($phys \in [LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$). When `VM_FLAG_LOCAL` is 0 (host memory), `phys` is a 64-bit host physical address (or IOVA), valid up to `PA_BITS` ($40..48$ bits, `EXT_CAP_FEATURE[11:8]`). On systems without IOMMU and with a 32-bit PCIe DMA controller, host memory addresses (including `fence_addr`) are physically confined below `HOST_LIMIT` (< 4 GiB) (N12). |
 | +0x10 | WINDOW_CTRL | RW | [0] ENABLE: the local window is open (section 11.1). 1 after a power-on reset and a function-level reset; CTRL.RESET does not change it. Reads 0 without a window |
 | +0x14 | MEM_CACHE_CFG | R | Cache hierarchy status: `[15:0]` L2 cache size in KiB (0, 16, 64, 128, 256), `[23:16]` L2 cache associativity ways (0, 4, 8, 16), `[27:24]` Texture L1 cache size in KiB (4, 8, 16), `[31:28]` Vertex Fetch line buffers (2, 4, 8) (N16) |
 
@@ -2150,7 +2152,7 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 ### 12.9 Texture instructions (Approved Architecture, N16, N33)
 
 - `texl`, `texb` and `texf` write R, G, B, A of the texel to rd..rd+3
-  (fp32). The coordinates are rs1 (u or x) and rs1+1 (v or y); the texture
+  (fp32 for float/unorm/snorm formats, raw 32-bit uint/sint bit patterns for integer formats; N34). The coordinates are rs1 (u or x) and rs1+1 (v or y); the texture
   slot is sub[3:0].
 - **The .3 forms** (funct7 [5], N16): `texl.3`, `texb.3`,
   `texf.3`, `texg.3.*` and `texqlod.3` take a third coordinate in rs1+2:
@@ -2181,7 +2183,13 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   7), added to the integer texel coordinates before the address modes
   (section 8.4).  Offsets on a cube map are ignored (Vulkan does not allow
   them).  Assembly: a last operand `off(du, dv[, dw])`.
-- **Supported Formats (N33)**: Sampled formats are authoritatively governed by §8.5.1 (Comprehensive Vulkan Format Features Table). UNORM RGBA8, BGRA8, RGB565, and floating-point formats return [0, 1] normalized values; depth formats return (D, 0, 0, 1). `texf` returns raw texel values and bypasses sampler filtering and depth comparison.
+- **Supported Formats & Return Values (N33, N34)**: Sampled formats are authoritatively governed by §8.5.1 (Comprehensive Vulkan Format Features Table). Return values written to `rd..rd+3` depend on format data type:
+  - **UNORM formats** (RGBA8, BGRA8, RGB565, etc.): return normalized values in $[0.0, 1.0]$ as IEEE-754 fp32.
+  - **SNORM formats** (R8_SNORM, R8G8_SNORM, R8G8B8A8_SNORM, R16_SNORM, etc.): return normalized signed values in $[-1.0, 1.0]$ as IEEE-754 fp32.
+  - **Floating-point formats** (R16_SFLOAT, R32_SFLOAT, R16G16_SFLOAT, R16G16B16A16_SFLOAT, R32G32B32A32_SFLOAT, etc.): return unconstrained IEEE-754 single-precision float values as stored in memory (without clamping or normalization to [0, 1]).
+  - **UINT / SINT integer formats** (R8_UINT, R8_SINT, R16_UINT, R16_SINT, R32_UINT, R32_SINT, RGBA integer formats, etc.): return raw 32-bit unsigned or sign-extended integer bit patterns in `rd..rd+3` (`uint32_t` / `int32_t`), bypassing fp32 conversion.
+  - **Missing component expansion**: formats with fewer than 4 components expand missing channels as follows: R-only returns `(R, 0, 0, 1)`, RG returns `(R, G, 0, 1)`, RGB returns `(R, G, B, 1)` (with 0.0f/1.0f for float/unorm/snorm, 0/1 for uint/sint). Depth formats without compare return `(D, 0, 0, 1.0f)`.
+  - `texf` returns raw texel values and bypasses sampler filtering and depth comparison.
 - **Depth compare** (N16): `texl.c rd, rs1, rs2` and
   `texb.c rd, rs1, rs2` (funct7 [0]) are `texl` and `texb` with the
   reference Dref after the coordinates: rs1+2, or rs1+3 for the .3 forms
@@ -2275,7 +2283,7 @@ GHCI 1.0 standardizes on a direct hardware descriptor indexing architecture:
 ### 12.11 Multisampling (Approved Architecture, N24, N28, N33)
 
 With CAPS[29] (and `DEVICE_CAPS[31]`), the GPU rasterizes with 1, 2, or 4 samples per pixel (N24).
-- **Sample Shading (N33)**: When `GhciPipelineState.flags[11]` (`sample_shading`) is 1, the rasterizer runs fragment shader invocations per covered sample location (with `FragCoord` and barycentrics computed at each sample). When `sample_shading` is 0, the fragment program executes once per pixel at pixel center (or centroid if `flags[16]` `fs_centroid` is set).
+- **Sample Shading (N33)**: When `GhciPipelineState.flags[11]` (`sample_shading`) is 1, the rasterizer runs fragment shader invocations per covered sample location (with `FragCoord` and barycentrics computed at each sample). When `sample_shading` is 0, the fragment program executes once per pixel at pixel center (or centroid if `compute_lds_and_flags[16]` `fs_centroid` (PSO dw15 [16]) is set).
 - **Autonomous State Programming (N33)**: In GHCI 1.0, the immutable Pipeline State Object (`GhciPipelineState`, §8.2) and Render Pass Descriptor (`GhciRenderPassDesc`, §8.4) are authoritative. Internal rasterizer state registers (`MS_CTRL` 0x05E, `SAMPLE_KILL` 0x05F) are configured autonomously by the Command Processor upon `CMD_BEGIN_RENDER_PASS` and `CMD_BIND_PIPELINE`; drivers never submit `SET_REG` directly.
 - **Hardware Register Mapping (N33)**:
   - `MS_CTRL` (0x05E): Configured by CP from `GhciRenderPassDesc.samples` (`[3:0]` log2 S), `PSO.compute_lds_and_flags[16]` (`[4]` CENTROID), and `PSO.flags[10]` (`[8]` alpha to coverage).
