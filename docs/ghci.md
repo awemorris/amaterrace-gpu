@@ -404,25 +404,25 @@ Writing to `IRQ_SET` (0x040) with bit 5 sets `IRQ_STATUS.SOFT` for driver testin
 **Display Interrupt Hierarchy (N21)**:
 - Top-level interrupt line reports `IRQ_DISPLAY` (bit 3) as a consolidated summary.
 - Detailed display subsystem events (`VSYNC`, `FLIP_DONE`, `CURSOR_FLIP_DONE`, `HOTPLUG`, `UNDERFLOW`, `DISP_ERROR`) are queried and cleared independently in the `DISP2` extended capability register block (`DISP_IRQ_STATUS` 0x218, offset `0x200..0x2BC`).
-- Packet framing errors and invalid headers trigger `IRQ_FAULT` (bit 1) with `FAULT_INFO.KIND = 3` (`GHCI_FAULT_KIND_BAD_REG` / `GHCI_FAULT_PRIVILEGED_OP`).
+- Packet framing errors and invalid headers trigger `IRQ_FAULT` (bit 1) with `FAULT_INFO.KIND = 3` (`GHCI_FAULT_KIND_BAD_REG`).
 
 ### 3.5 FAULT_INFO, FAULT_ADDR and DIAG (0x018, 0x01C/0x020, J03, K04, N05, N20)
 
 `FAULT_INFO` latches the error classification of the first fault. Subsequent faults while `FAULT_INFO` is uncleared are dropped. Writing back the read value (W1C) clears `FAULT_INFO` and re-arms the latch (N05):
 
-**FAULT_INFO (0x018, J03, K04, N20, N50, N63)**:
-- `[3:0] KIND` (Strict 1:1 Architectural Classification, N63):
+**FAULT_INFO (0x018, J03, K04, N20, N50, N63, N73)**:
+- `[3:0] KIND` (Strict 1:1 Architectural Classification, N63, N73):
   - `0`: `GHCI_FAULT_KIND_NONE` (No fault)
-  - `1`: `GHCI_FAULT_KIND_INVALID_OP` / `GHCI_FAULT_KIND_INVALID_ARG` (Unrecognized packet opcode, illegal operation, invalid argument, or shader ISA illegal instruction / undefined funct)
+  - `1`: `GHCI_FAULT_KIND_INVALID_OP` / `GHCI_FAULT_KIND_INVALID_ARG` (Unrecognized packet opcode, illegal operation, invalid argument, nested secondary buffer call, or shader ISA illegal instruction / undefined funct)
   - `2`: `GHCI_FAULT_KIND_KICK_ABSENT` / `GHCI_FAULT_KIND_RING_OOB` (Command dispatched to absent hardware block, or command ring out-of-bounds)
-  - `3`: `GHCI_FAULT_KIND_BAD_REG` / `GHCI_FAULT_PRIVILEGED_OP` (Malformed packet header, packet length mismatch, framing error, nested secondary buffer call, or forbidden privileged command executed inside secondary command buffer)
+  - `3`: `GHCI_FAULT_KIND_BAD_REG` (Malformed packet header, packet length mismatch, framing error, or unknown CP command structure)
   - `4`: `GHCI_FAULT_KIND_WATCHDOG` / `GHCI_FAULT_KIND_TIMEOUT` (Command execution watchdog timer expired)
   - `5`: `GHCI_FAULT_KIND_AXI_ERROR` / `GHCI_FAULT_KIND_FENCE_ERROR` (Physical interconnect / bus error, AXI DECERR/SLVERR, or fence memory write failure)
-  - `6`: `GHCI_FAULT_KIND_PROT_FAULT` (Session isolation / permission violation, or secondary buffer privilege violation)
+  - `6`: `GHCI_FAULT_KIND_PROT_FAULT` / `GHCI_FAULT_KIND_PRIVILEGED_OP` (Session isolation / security violation, or forbidden privileged command executed inside secondary command buffer, N73)
   - `7`: `GHCI_FAULT_KIND_LOCKED_REG` (Attempt to write protected MMIO register while running)
   - `8`: `GHCI_FAULT_KIND_MMU_OOM` (Dynamic page table heap `CP_HEAP` exhausted during `CMD_VM_MAP` or `CMD_SESSION_OPEN`)
-  - `9`: `GHCI_FAULT_KIND_PAGE_FAULT` (Unmapped GPU virtual address in shader or DMA; read vs write indicated by `SYNDROME[20]`)
-  - `10`: `GHCI_FAULT_KIND_PERM_FAULT` / `GHCI_FAULT_KIND_MEMORY_FAULT` (Memory protection violation, LDS out-of-bounds, or misaligned access)
+  - `9`: `GHCI_FAULT_KIND_PAGE_FAULT` (Unmapped GPU virtual address in shader or DMA; read vs write indicated by `FAULT_INFO[20]` / `SYNDROME[0]`, N73)
+  - `10`: `GHCI_FAULT_KIND_PERM_FAULT` / `GHCI_FAULT_KIND_MEMORY_FAULT` (Virtual memory page protection violation [READ/WRITE/EXEC flags, with read vs write indicated by `FAULT_INFO[20]` / `SYNDROME[0]`], LDS out-of-bounds, or misaligned 64-bit access, N73)
 - `[7:4] UNIT`:
   - `0`: `GHCI_UNIT_CP` (Command Processor)
   - `1`: `GHCI_UNIT_VF` (Vertex Fetcher)
@@ -437,7 +437,7 @@ Writing to `IRQ_SET` (0x040) with bit 5 sets `IRQ_STATUS.SOFT` for driver testin
   - `1`: Fragment Shader (`FS`)
   - `2`: Compute Shader (`CS`)
   - `3`: Task / Mesh Shader (`MS`)
-- `[31:20] SYNDROME`: Unit-specific 12-bit syndrome details (N50, N63) (e.g. `0x001`: invalid argument / bounds error, `0x010`: permission fault, `0x020`: unmapped session, `0x021`: session closed; bit 20 = 1 for Write fault, 0 for Read fault on MMU page faults; or specific bad packet word offset).
+- `[31:20] SYNDROME`: Unit-specific 12-bit syndrome details (N50, N63, N73) (e.g. `0x001`: invalid argument / bounds error / nested secondary, `0x010`: permission fault, `0x020`: unmapped session, `0x021`: session closed; `FAULT_INFO[20]` (`SYNDROME[0]`) = 1 for Write fault, 0 for Read fault on MMU page and perm faults; or specific bad packet word offset).
 
 **SESSION_ACTIVE (0x058)**:
 32-bit read-only bitmap where bit $i$ ($i \in [0, 15]$) is 1 when session $i$ is open and valid, 0 when inactive or halted due to fault (M22).
@@ -1336,10 +1336,10 @@ Resource binding follows a flat, table-based descriptor architecture:
     This provides direct 1-cycle operand access to descriptor set base addresses without memory traffic (N02).
   - Shaders load buffer base GPU VAs via `ld.64` and read/write buffer data via `ld.64`, `lw`, `sw`.
   - Dynamic offsets (`VK_DESCRIPTOR_TYPE_*_DYNAMIC`): The **shader adds the dynamic offset** to the buffer base address loaded from the descriptor; dynamic offsets are supplied via push constants ($c0..c23$) (N02).
-  - **Decoupled Combined Image / Sampler Indexing (N61, N62, N65)**:
+  - **Decoupled Combined Image / Sampler Indexing (N61, N62, N65, N74)**:
     In GSI1 texture instructions (`texl`, `texb`, `texf`, §12.9, §12.10), the texture slot index $k_{\text{tex}} = \text{sub}[3:0] \in [0, 15]$ (`w1[20:17]`) indexes Descriptor Set 0 (texture descriptor at $\text{set0\_va} + k_{\text{tex}} \times 32$), while the sampler slot index $k_{\text{samp}} = w1[9:6] \in [0, 15]$ independently indexes Descriptor Set 1 (sampler descriptor at $\text{set1\_va} + k_{\text{samp}} \times 16$).
     This enables up to $16 \times 16 = 256$ distinct combinations of textures and samplers, directly satisfying Vulkan 1.0 decoupled `VkSampler` and `VkImageView` binding requirements. If a combined image-sampler is used, shaders encode $w1[9:6] = k_{\text{tex}}$.
-    *Pipeline Slot Capacity (N65)*: In GHCI 1.0, Descriptor Set 0 (textures 0..15) and Set 1 (samplers 0..15) are configured per draw/dispatch pipeline. The total number of unique texture descriptors across all active shader stages in a single pipeline (Vertex + Fragment combined) is at most 16, and unique samplers at most 16 (`maxPerStageDescriptorSamplers = 16`, subject to pipeline limit of 16). `binding_offset_bytes` is NOT used by hardware texture units; it is applied exclusively by shaders for buffer descriptors (N02).
+    *Pipeline Slot Capacity (N65, N74)*: In GHCI 1.0, Descriptor Set 0 (textures 0..15) and Set 1 (samplers 0..15) are configured per draw/dispatch pipeline. The total number of unique texture descriptors across all active shader stages in a single pipeline (Vertex + Fragment combined) is at most 16, and unique samplers at most 16. Drivers report `maxPerStageDescriptorSamplers = 16` and `maxPerStageDescriptorSampledImages = 16` (subject to the total pipeline limit of 16); pipelines whose combined stages exceed 16 unique textures or samplers are rejected with diagnostic logging during pipeline creation (N74). `binding_offset_bytes` is NOT used by hardware texture units; it is applied exclusively by shaders for buffer descriptors (N02).
 
 #### In-Memory Render Pass Descriptor (`GhciRenderPassDesc`, 192 Bytes, K12, M47, N03)
 
@@ -1430,10 +1430,10 @@ The on-chip Shader Unit constant bank provides 512 32-bit words ($c[0..511]$):
 - **Descriptor Sets Mapping (N02)**:
   - Buffer descriptors (uniform/storage) map directly 1:1 to hardware descriptor slots 0..3.
   - For texture and sampler operations (`texl`, `texb`, `texf`), the hardware Texture Unit fetches texture descriptors from Set 0 and samplers from Set 1. The UMD organizes texture descriptors into Set 0 and sampler descriptors into Set 1 (e.g. for combined image samplers), while buffer descriptors can reside in any set $0..3$.
-- **Combined Image Sampler Slot Mapping (N02)**:
-  - In GSI1 1.0, texture instructions (`texl`, `texb`, `texf`) statically encode the combined slot index in instruction immediate `sub[3:0]` (0..15).
-  - The hardware Texture Unit fetches texture metadata from Descriptor Set 0 ($\text{set0\_base\_va} + \text{slot} \times 32$) and sampler parameters from Descriptor Set 1 ($\text{set1\_base\_va} + \text{slot} \times 16$) in parallel.
-  - 16 static slots ($0..15$) fully satisfy Vulkan 1.0 core mandatory requirements (`maxPerStageDescriptorSamplers = 16`).
+- **Decoupled Image & Sampler Slot Mapping (N02, N61, N62, N74, N77)**:
+  - In GSI1 1.0, texture instructions (`texl`, `texb`, `texf`) statically encode the texture slot index in instruction immediate `sub[3:0]` ($k_{\text{tex}} \in [0, 15]$) and the sampler slot index in $w1[9:6]$ ($k_{\text{samp}} \in [0, 15]$).
+  - The hardware Texture Unit fetches texture metadata from Descriptor Set 0 ($\text{set0\_base\_va} + k_{\text{tex}} \times 32$) and sampler parameters from Descriptor Set 1 ($\text{set1\_base\_va} + k_{\text{samp}} \times 16$) in parallel.
+  - 16 static slots ($0..15$) are shared across the active pipeline stages (VS + FS sum of unique textures $\le 16$, sum of unique samplers $\le 16$). Vulkan 1.0 drivers advertise `maxPerStageDescriptorSamplers = 16` and `maxPerStageDescriptorSampledImages = 16`; pipelines whose combined stages exceed 16 unique textures or samplers are rejected at pipeline creation time (N74).
 
 #### Dual-Source Blending & State Encodings (N14, N44)
 - **Dual-Source Blending Export**: In dual-source blending pipelines (`CAP_DUAL_SOURCE = 1`), the fragment shader exports primary color (`SRC0`) to export targets `0x100..0x103` (`GHCI_EXP_COLOR(0, c)`) and secondary blend color (`SRC1`) to export targets `0x108..0x10B` (`GHCI_EXP_COLOR0_SRC1(c)`) using the `exp` instruction (§12.5, §12.10.3).
@@ -1442,7 +1442,7 @@ The on-chip Shader Unit constant bank provides 512 32-bit words ($c[0..511]$):
 ### 8.5 Supported Image Formats, Texture Compression & Dimensions
 
 GHCI 1.0 defines native hardware texture, buffer, and render target format support,
-fully compliant with Vulkan 1.0 core mandatory requirements.
+covering Vulkan 1.0 core mandatory requirements (with pipeline limits noted in §8.6 and N74/N75).
 
 #### 8.5.1 Comprehensive Vulkan Format Features Table
 
@@ -1505,19 +1505,21 @@ fully compliant with Vulkan 1.0 core mandatory requirements.
 | `BC4_UNORM_BLOCK` | 139 | 8 B | Point + Linear | No | No | No | No | `CAP_BC` |
 | `BC5_UNORM_BLOCK` | 141 | 16 B | Point + Linear | No | No | No | No | `CAP_BC` |
 | `BC7_UNORM_BLOCK` | 145 | 16 B | Point + Linear | No | No | No | No | `CAP_BC` |
-| `ETC2_R8G8B8_UNORM_BLOCK` | 147 | 8 B | Point + Linear | No | No | No | No | Mandatory |
-| `ETC2_R8G8B8_SRGB_BLOCK` | 148 | 8 B | Point + Linear | No | No | No | No | Mandatory |
-| `ETC2_R8G8B8A1_UNORM_BLOCK` | 149 | 8 B | Point + Linear | No | No | No | No | Mandatory |
-| `ETC2_R8G8B8A1_SRGB_BLOCK` | 150 | 8 B | Point + Linear | No | No | No | No | Mandatory |
-| `ETC2_R8G8B8A8_UNORM_BLOCK` | 151 | 16 B | Point + Linear | No | No | No | No | Mandatory |
-| `ETC2_R8G8B8A8_SRGB_BLOCK` | 152 | 16 B | Point + Linear | No | No | No | No | Mandatory |
-| `EAC_R11_UNORM_BLOCK` | 153 | 8 B | Point + Linear | No | No | No | No | Mandatory |
-| `EAC_R11_SNORM_BLOCK` | 154 | 8 B | Point + Linear | No | No | No | No | Mandatory |
-| `EAC_R11G11_UNORM_BLOCK` | 155 | 16 B | Point + Linear | No | No | No | No | Mandatory |
-| `EAC_R11G11_SNORM_BLOCK` | 156 | 16 B | Point + Linear | No | No | No | No | Mandatory |
+| `ETC2_R8G8B8_UNORM_BLOCK` | 147 | 8 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
+| `ETC2_R8G8B8_SRGB_BLOCK` | 148 | 8 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
+| `ETC2_R8G8B8A1_UNORM_BLOCK` | 149 | 8 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
+| `ETC2_R8G8B8A1_SRGB_BLOCK` | 150 | 8 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
+| `ETC2_R8G8B8A8_UNORM_BLOCK` | 151 | 16 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
+| `ETC2_R8G8B8A8_SRGB_BLOCK` | 152 | 16 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
+| `EAC_R11_UNORM_BLOCK` | 153 | 8 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
+| `EAC_R11_SNORM_BLOCK` | 154 | 8 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
+| `EAC_R11G11_UNORM_BLOCK` | 155 | 16 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
+| `EAC_R11G11_SNORM_BLOCK` | 156 | 16 B | Point + Linear | No | No | No | No | Optional (`CAP_ETC2`, N72, N77) |
 
-- **Optional Formats (N67)**: Formats not listed above (e.g. `B4G4R4A4_UNORM_PACK16`, `A8B8G8R8_*_PACK32`, `A2B10G10R10_UINT_PACK32`, `E5B9G9R9_UFLOAT_PACK32`) are optional under Vulkan 1.0; drivers report them as unsupported or emulate them via shader conversion.
-- **ETC2/EAC Texture Support (N72)**: Hardware ETC2 and EAC decompression is active when `EXT_CAP_FMT0[7]` (`CAP_ETC2`) is 1 (standard hardware feature in Amaterrace GPU).
+- **Packed 32-bit & Sub-Byte Formats (N75)**:
+  - `A8B8G8R8_{UNORM,SNORM,UINT,SINT,SRGB}_PACK32` (VkFormat 51..57): In little-endian system architectures, the physical byte layout of `A8B8G8R8_*_PACK32` in memory is byte-for-byte identical to `R8G8B8A8_*` (bytes: R at +0, G at +1, B at +2, A at +3). The hardware texture descriptor (format code `0x0E`) and render pass color attachment accept format codes 51..57 and process them natively with identical hardware packing/unpacking pipelines as codes 37..43 (N75).
+  - `B4G4R4A4_UNORM_PACK16` (80), `A2B10G10R10_UINT_PACK32` (68), and `E5B9G9R9_UFLOAT_PACK32` (123): Vulkan 1.0 requires feature support for sampled image linear filtering or color attachment; implementations lacking hardware unpacking pipelines for these specific packed formats emulate them via software shader unpacking or reject unsupported pipeline creations with diagnostic logging (N75).
+- **ETC2/EAC Texture Support (N72, N77)**: Hardware ETC2 and EAC decompression is active when `EXT_CAP_FMT0[7]` (`CAP_ETC2`) is 1 (standard hardware feature in Amaterrace GPU).
 
 #### 8.5.2 Texture Dimensions and Image Layouts
 Textures are configured through `GhciTextureDescriptor.dimension` (`0x19`) and layout parameters:
@@ -1562,11 +1564,13 @@ to the following architectural parameters:
 | `maxMemoryAllocationCount` | 4,096 | Supported concurrent OS DMA mappings |
 | `maxSamplerAllocationCount` | 4,000 | In-memory descriptor limit |
 | `maxBoundDescriptorSets` | 4 | 4 hardware descriptor set pointer registers |
-| `maxPerStageDescriptorSamplers` | 16 | 16 sampler slots per pipeline stage |
+| `maxPerStageDescriptorSamplers` | 16 | 16 sampler slots per pipeline stage (pipeline sum limit $\le 16$, N74) |
 | `maxPerStageDescriptorUniformBuffers` | 16 | 16 uniform buffer descriptor slots |
 | `maxPerStageDescriptorStorageBuffers` | 16 | 16 storage buffer descriptor slots |
-| `maxPerStageDescriptorSampledImages` | 16 | 16 texture descriptor slots |
+| `maxPerStageDescriptorSampledImages` | 16 | 16 texture descriptor slots (pipeline sum limit $\le 16$, N74) |
 | `maxPerStageDescriptorStorageImages` | 8 | 8 storage image slots |
+| `maxDescriptorSetSamplers` | 96 | 96 per descriptor set (pipeline sum limit $\le 16$ checked at pipeline creation, N74) |
+| `maxDescriptorSetSampledImages` | 96 | 96 per descriptor set (pipeline sum limit $\le 16$ checked at pipeline creation, N74) |
 | `maxVertexInputAttributes` | 16 | Hardware vertex fetcher attribute channels (0..15, K11) |
 | `maxVertexInputBindings` | 16 | Hardware vertex stream buffer slots (0..15) |
 | `maxVertexInputAttributeOffset` | 524,287 | 19-bit packed attribute offset field in `GhciPipelineState` (512 KiB range, K11) |
@@ -1904,7 +1908,7 @@ Under GHCI 1.0, memory protection is enforced hardware-wide through **per-sessio
   - **Session 0 Faults**: Faults occurring during Session 0's own execution (e.g. Session 0 memory unmapped access, or `CMD_VM_MAP` targeting Session 0 itself encountering collision/OOM) transition the device to `STATUS.FAULTED`. Faults targeting client sessions ($S \ge 1$) NEVER assert `STATUS.FAULTED` (N06, N10).
 - Each client session ($i \in [1, 15]$) possesses an independent root page directory allocated autonomously from `CP_HEAP` by the Command Processor upon `CMD_SESSION_OPEN`.
 - Work submitted for session $i$ can address only the virtual memory pages explicitly mapped into session $i$'s address space via `CMD_VM_MAP`.
-- Hardware MMU checks ensure that any unmapped access or permission violation immediately traps as a session fault (`kind 9 PAGE_FAULT` or `kind 10 PERM_FAULT`), isolating the offending context and preserving whole-device operation.
+- Hardware MMU checks ensure that any unmapped access traps as `kind 9 PAGE_FAULT`, and VM page protection flag (`GHCI_VM_FLAG_READ`/`WRITE`/`EXEC`) violation traps as `kind 10 PERM_FAULT` (read vs write indicated by `FAULT_INFO[20]`), isolating the offending context and preserving whole-device operation (N73).
 
 **Build-Time Configuration (`CONFIG_MC_ENABLE_PROT`):**
 - Hardware implementations may optionally include or omit session protection via `CONFIG_MC_ENABLE_PROT` (0 or 1).
@@ -1961,7 +1965,7 @@ Under GHCI 1.0, memory protection is enforced hardware-wide through **per-sessio
   - Advanced texture addressing (.3 forms for 2D array, 3D, cube, depth compare `.c`, and gather `texg`): standard GSI1 ISA operations supported by the Texture Unit on all configurations (`GHCI_CAP_GSI1 == 1`). `DEVICE_CAPS[25]` (`CAP_TEX_FFILT`) specifically indicates whether floating-point linear filtering (`atg_tu_ffilt`) is synthesized in hardware; when `CAP_TEX_FFILT == 0`, UNORM8 bilinear filtering is performed, while FP16/FP32 textures fall back to nearest point-sampling, without restricting 2D array, 3D, or cube sampling (N16).
   - Multisampling queries (`texsz.s`): governed by `DEVICE_CAPS[31]` (`CAP_MSAA_4X`, legacy GSI1 CAPS[29]).
   - ROP format packing: governed by `DEVICE_CAPS[26]` (`CAP_ROP_PACK`, legacy GSI1 CAPS[30]).
-  - Systolic-array operations (`rq`, `qstat`, `sastat`, `qtag`, `sactl`): legacy GSI1 CAPS[25] reserved (reads 0 in GHCI 1.0; executing these instructions raises `GHCI_FAULT_KIND_INVALID_OP`).
+  - Systolic-array instructions (legacy `rq`, `sactl`): legacy GSI1 CAPS[25] reserved (reads 0 in GHCI 1.0; executing these instructions raises `GHCI_FAULT_KIND_INVALID_OP`). Special operands 122..127 are reserved (read 0) (N77).
 - Reference implementation: `tools/gsi1asm.py` (the assembler and the
   decode table), `tools/gsi1dis.py` (the disassembler),
   `tools/gsi1model.py` (the execution model) and
@@ -2021,9 +2025,9 @@ Operand numbers have 7 bits:
 | 115-117 | `nwgx` `nwgy` `nwgz` (workgroup counts) |
 | 118 | `oneh2` (packed 1.0h, 1.0h: `0x3C003C00`) |
 | 119 | `mask` (coverage; for compute and vertex warps, the initial EXEC) |
-| 120 | `vtx_idx` (`gl_VertexIndex`, uint32, N61, N66) |
-| 121 | `inst_idx` (`gl_InstanceIndex`, uint32, N61, N66) |
-| 122-127 | reserved (read 0) |
+| 120 | `vtx_idx` (`gl_VertexIndex`, uint32, Vertex Shader only; reads 0 in other stages, N61, N66, N77) |
+| 121 | `inst_idx` (`gl_InstanceIndex`, uint32, Vertex Shader only; reads 0 in other stages, N61, N66, N77) |
+| 122-127 | reserved (read 0; systolic operands removed, N77) |
 
 ### 12.4 Instruction format
 
@@ -2044,12 +2048,13 @@ word0 (bits 31:0), the RISC-V 32-bit layouts:
 
 word1 (bits 63:32):
   [1:0] rd[6:5]  [3:2] rs1[6:5]  [5:4] rs2[6:5]  [7:6] rs3[6:5]
-  [8] n1 [9] a1 [10] n2 [11] a2 [12] n3 [13] a3   (float sources: negate, absolute)
+  [8] n1 [9] a1 [10] n2 [11] a2 [12] n3 [13] a3   (float sources: negate, absolute;
+                 texture R forms: [9:6] samp_slot, [13:10] tex_dw, N62, N77)
   [14] sat      (float results clamped to [0, 1])
   [16:15] hsel  (packed: 00 both halves, 01 low only, 10 high only, 11 rs2 swapped)
-  [21:17] sub   (sub-operation)
+  [21:17] sub   (sub-operation; texture R forms: [20:17] tex_slot, N62, N77)
   [31:22] imm_hi (I/S/B: the offset is sext(imm12) + (sext(imm_hi) << 12);
-                 texture R forms: texel offsets, section 12.9)
+                 texture R forms: [25:22] tex_du, [29:26] tex_dv, section 12.9)
   U form only: [1:0] rd[6:5] [13:2] imm[11:0] (movi) [31:14] 0
 ```
 
@@ -2074,7 +2079,7 @@ word1 (bits 63:32):
 | 1010011 OP-FP (single) | `fadd.s fsub.s fmul.s` (funct7 0000000/0000100/0001000), `fsgnj.s` (0010000, funct3 000), `fmin.s fmax.s` (0010100, funct3 000/001), `fsqrt.s` (0101100, rs2 0), `fcvt.w.s fcvt.wu.s` (1100000, rs2 0/1), `fcvt.s.w fcvt.s.wu` (1101000, rs2 0/1), `feq.s flt.s fle.s fne.s` (1010000, funct3 010/001/000/011), `fround.s` (0100000, rs2 00100) |
 | 1000011 1000111 1001011 1001111 | `fmadd.s fmsub.s fnmsub.s fnmadd.s` (R4) |
 | 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4; with sub[4] `atoms.<op>`, the same on shared memory), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
-| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; slot = sub[3:0]; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22], [29:26], [13:10] texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`, 3: `texsz.s`), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
+| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; tex_slot = sub[3:0], samp_slot = word1[9:6], N62, N77; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22] du, [29:26] dv, [13:10] dw texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`, 3: `texsz.s`), 100 `exp rs2, target` (S), 101 `lda rd, imm` (I), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
 | 1011011 custom-2 (packed) | funct3 000 `fadd2`, 001 `fsub2`, 010 `fmul2`, 011 `ffma2` (R4), 100 `fmin2`/`fmax2` (funct7 0/1), 101 `iadd2`/`isub2`/`imul2` (funct7 0/1/2), 110 `fcmp2.lt/ge/eq/ne` (funct7 0-3), 111: funct7 0000000 `packh rd, rs1, rs2`, 0000001 `unpackh rd, rs1` (sub 0 low, 1 high), 0000010 `swaph rd, rs1` |
 | 1111011 custom-3 | funct3 000 `sel rd, rs1, rs2, rs3` (R4, bitwise: (rs1 & rs2) \| (~rs1 & rs3)), 001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd` (sub 0-3), 010 `kill rs1`, 011 transcendental (sub 0 `rcp`, 1 `rsq`, 2 `exp2`, 3 `log2`, 4 `sin`, 5 `cos`, 6 `fract`), 100 `vote.any/all rd, rs1` (sub 0/1), 101 `ballot rd, rs1`, 110 `sactl rs1` (reserved), 111 `nop` |
 | 0000111 0100111 0001111 1110011 1010111 1110111 | Vendor extensions (not GSI1) |
@@ -2098,8 +2103,8 @@ word1 (bits 63:32):
   - `vote` and `ballot` write the same value to every lane.
 - **Optional instructions:** the packed arithmetic (everything of custom-2
   except `packh` and `unpackh`) needs `DEVICE_CAPS[6]` / `EXT_CAP_FEATURE[28]` (`CAP_FP16`); `shfl`, `vote` and
-  `ballot` need `EXT_CAP_FEATURE[29]` (`CAP_SUBGROUP`); `rq`, `qstat`, `sastat`, `qtag` and `sactl` need
-  CAPS[25] (reserved, raises `GHCI_FAULT_KIND_INVALID_OP`).
+  `ballot` need `EXT_CAP_FEATURE[29]` (`CAP_SUBGROUP`); systolic instructions
+  (`rq`, `sactl`) are reserved under legacy CAPS[25] and raise `GHCI_FAULT_KIND_INVALID_OP` (N77).
 
 ### 12.6 ISA faults (N20)
 
@@ -2107,7 +2112,7 @@ The warp stops, and the GPU reports an ISA execution fault (N20):
 - **Fault Classification**:
   - `kind 1` (`GHCI_FAULT_KIND_INVALID_OP`): Reported for illegal opcodes, undefined funct3/funct7, unsupported sub-operations, or invalid rounding modes.
   - `kind 9` (`GHCI_FAULT_KIND_PAGE_FAULT`): Reported when a global memory load/store references an unmapped virtual address.
-  - `kind 10` (`GHCI_FAULT_KIND_PERM_FAULT` / `GHCI_FAULT_KIND_MEMORY_FAULT`): Reported for misaligned memory accesses crossing 4-byte boundaries (when strict alignment is enabled), LDS out-of-bounds access, or memory permission violations (N72).
+  - `kind 10` (`GHCI_FAULT_KIND_PERM_FAULT` / `GHCI_FAULT_KIND_MEMORY_FAULT`): Reported for VM page permission violations (`GHCI_VM_FLAG_READ`/`WRITE`/`EXEC`), LDS out-of-bounds access, or misaligned 64-bit access crossing 8-byte boundaries (N73, N76).
 - **Diagnostic Information**:
   - `FAULT_ADDR` latches the faulting instruction Program Counter (PC) relative to the stage instruction base (`vs_code_va`, `fs_code_va`, `cs_code_va`, `ms_code_va`).
   - `FAULT_INFO[7:4]` (`UNIT = 2`, Shader Unit) and `FAULT_INFO[19:16]` identifies the active shader stage (0: VS, 1: FS, 2: CS, 3: MS) (N50).
@@ -2165,8 +2170,8 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 ### 12.8 Memory (M53)
 
 - **Global memory:** GPU virtual addresses in the session's address space (section 11.2).
-  - Standard 32-bit addressing: word accesses (`lw`, `sw`; bits 1:0 of the address are ignored for naturally aligned words; unaligned accesses crossing 4-byte boundaries raise `kind 10 PERM_FAULT` when strict alignment checking is enabled via `CTRL`), and atomics on words (N72).
-  - **Extended 64-bit Addressing (M53, J24)**: When `VA_BITS > 32` (up to 40-bit virtual addresses, 1 TiB space), shaders access memory above 4 GiB using even-odd register pairs $\{r[2k+1], r[2k]\}$ via 64-bit instructions (`LOAD64`, `STORE64`), where $r[2k]$ holds low 32 bits and $r[2k+1]$ holds high bits `[VA_BITS-1:32]`.
+  - Standard 32-bit addressing: word accesses (`lw`, `sw`; bits 1:0 of the address are ignored, naturally aligning to 4-byte boundaries without faulting), and atomics on words (N72, N76).
+  - **Extended 64-bit Addressing (M53, J24)**: When `VA_BITS > 32` (up to 40-bit virtual addresses, 1 TiB space), shaders access memory above 4 GiB using even-odd register pairs $\{r[2k+1], r[2k]\}$ via 64-bit instructions (`LOAD64`, `STORE64`), where $r[2k]$ holds low 32 bits and $r[2k+1]$ holds high bits `[VA_BITS-1:32]`. Unaligned 64-bit accesses crossing 8-byte boundaries raise `kind 10 PERM_FAULT` (N76).
   - The data cache is not coherent with other agents: use `fence 4`
     (acquire) before reading data that another agent wrote, and `fence 1`
     and `wait` before a result is read by another agent. `end` completes

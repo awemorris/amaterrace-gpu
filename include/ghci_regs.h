@@ -150,26 +150,26 @@ extern "C" {
 #define GHCI_FAULT_UNIT(info)      (((info) >> 4) & 0x0Fu) /* [7:4] Source unit */
 #define GHCI_FAULT_SESSION(info)   (((info) >> 8) & 0xFFu) /* [15:8] Session ID (0..15) */
 #define GHCI_FAULT_STAGE(info)     (((info) >> 16) & 0x0Fu) /* [19:16] Active shader stage */
-#define GHCI_FAULT_SYNDROME(info)  (((info) >> 20) & 0x0FFFu) /* [31:20] 12-bit subunit syndrome (bit 20: 0=Read, 1=Write) */
+#define GHCI_FAULT_SYNDROME(info)  (((info) >> 20) & 0x0FFFu) /* [31:20] 12-bit subunit syndrome (FAULT_INFO[20] / SYNDROME[0]: 0=Read, 1=Write) */
 
-/* Fault Kinds [3:0] (Strict 1:1 Semantics, N63) */
+/* Fault Kinds [3:0] (Strict 1:1 Semantics, N63, N73) */
 #define GHCI_FAULT_KIND_NONE            0u
-#define GHCI_FAULT_KIND_INVALID_OP      1u /* Unrecognized packet opcode, illegal operation, or shader ISA fault */
+#define GHCI_FAULT_KIND_INVALID_OP      1u /* Unrecognized packet opcode, illegal argument, nested secondary, or shader ISA fault */
 #define GHCI_FAULT_KIND_INVALID_ARG     1u /* Alias: invalid argument */
 #define GHCI_FAULT_KIND_KICK_ABSENT     2u /* Kick directed to absent hardware unit, or ring out-of-bounds */
 #define GHCI_FAULT_KIND_RING_OOB        2u /* Alias: ring out-of-bounds */
 #define GHCI_FAULT_KIND_BAD_REG         3u /* Malformed packet header, length mismatch, or bad register */
-#define GHCI_FAULT_KIND_PRIVILEGED_OP   3u /* Alias: privileged command in secondary buffer */
 #define GHCI_FAULT_KIND_WATCHDOG        4u /* Watchdog execution timeout / hang */
 #define GHCI_FAULT_KIND_TIMEOUT         4u /* Alias: watchdog timeout */
 #define GHCI_FAULT_KIND_AXI_ERROR       5u /* Interconnect / AXI bus DECERR/SLVERR, or fence response error */
 #define GHCI_FAULT_KIND_FENCE_ERROR     5u /* Alias: fence response error */
 #define GHCI_FAULT_KIND_PROT_FAULT      6u /* Session isolation violation, or secondary privilege violation */
+#define GHCI_FAULT_KIND_PRIVILEGED_OP   6u /* Alias: privileged command in secondary buffer (N73) */
 #define GHCI_FAULT_KIND_LOCKED_REG      7u /* Write to locked register while running */
 #define GHCI_FAULT_KIND_MMU_OOM         8u /* Dynamic page table allocation heap exhausted */
-#define GHCI_FAULT_KIND_PAGE_FAULT      9u /* Unmapped virtual page address (SYNDROME[20] differentiates read vs write) */
-#define GHCI_FAULT_KIND_PERM_FAULT      10u /* Memory access permission violation, LDS bounds, or misaligned access */
-#define GHCI_FAULT_KIND_MEMORY_FAULT    10u /* Alias: memory protection / alignment fault */
+#define GHCI_FAULT_KIND_PAGE_FAULT      9u /* Unmapped virtual page address (FAULT_INFO[20] differentiates read vs write) */
+#define GHCI_FAULT_KIND_PERM_FAULT      10u /* VM page access permission violation (read/write/exec flags; FAULT_INFO[20] differentiates read vs write) */
+#define GHCI_FAULT_KIND_MEMORY_FAULT    10u /* Alias: memory protection fault */
 
 /* Source Units [7:4] (K04) */
 #define GHCI_UNIT_CP             0u
