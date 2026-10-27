@@ -293,12 +293,6 @@ typedef struct GhciCmdDrawMeshTasks {
 	uint32_t group_count_z;
 } GhciCmdDrawMeshTasks;
 
-/* CMD_BIND_SESSION (0x14): 2 dwords (J18) */
-typedef struct GhciCmdBindSession {
-	uint32_t header;                /* GHCI_CMD_BIND_SESSION, size = 2 */
-	uint32_t session_id;            /* Client session identifier (0..15) */
-} GhciCmdBindSession;
-
 /* CMD_DISPATCH (0x30): 4 dwords */
 typedef struct GhciCmdDispatch {
 	uint32_t header;                /* GHCI_CMD_DISPATCH, size = 4 */
@@ -348,13 +342,7 @@ typedef struct GhciCmdFence {
 	uint32_t flags;                 /* GHCI_FENCE_FLAG_* */
 } GhciCmdFence;
 
-/* CMD_WRITE_TIMESTAMP (0x35): 4 dwords (J18) */
-typedef struct GhciCmdWriteTimestamp {
-	uint32_t header;                /* GHCI_CMD_WRITE_TIMESTAMP, size = 4 */
-	uint32_t dst_va_lo;
-	uint32_t dst_va_hi;
-	uint32_t pipeline_stage;
-} GhciCmdWriteTimestamp;
+
 
 /* CMD_BEGIN_QUERY (0x36) / CMD_END_QUERY (0x37): 3 dwords (J18) */
 typedef struct GhciCmdQuery {
@@ -363,15 +351,7 @@ typedef struct GhciCmdQuery {
 	uint32_t query_index;
 } GhciCmdQuery;
 
-/* CMD_COPY_BUFFER (0x40): 6 dwords (J18) */
-typedef struct GhciCmdCopyBuffer {
-	uint32_t header;                /* GHCI_CMD_COPY_BUFFER, size = 6 */
-	uint32_t src_va_lo;
-	uint32_t src_va_hi;
-	uint32_t dst_va_lo;
-	uint32_t dst_va_hi;
-	uint32_t size_bytes;
-} GhciCmdCopyBuffer;
+
 
 /* CMD_COPY_IMAGE (0x41): 8 dwords (J18) */
 typedef struct GhciCmdCopyImage {

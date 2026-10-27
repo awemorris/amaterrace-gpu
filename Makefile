@@ -143,6 +143,21 @@ endif
 ifeq ($(CONFIG_TU_ENABLE_BC),1)
 	@echo "\`define CFG_ENABLE_BC 1" >> $@
 endif
+ifeq ($(CONFIG_TU_ENABLE_ETC2),1)
+	@echo "\`define CFG_ENABLE_ETC2 1" >> $@
+endif
+ifeq ($(CONFIG_TU_ENABLE_ANISO),1)
+	@echo "\`define CFG_ENABLE_ANISO 1" >> $@
+endif
+ifeq ($(CONFIG_TU_ENABLE_SEAMLESS_CUBE),1)
+	@echo "\`define CFG_ENABLE_SEAMLESS_CUBE 1" >> $@
+endif
+ifeq ($(CONFIG_TU_ENABLE_FP_FILTER),1)
+	@echo "\`define CFG_ENABLE_FP_FILTER 1" >> $@
+endif
+ifeq ($(CONFIG_TU_ENABLE_ARRAY),1)
+	@echo "\`define CFG_ENABLE_ARRAY 1" >> $@
+endif
 ifeq ($(CONFIG_TU_ENABLE_TRILINEAR),1)
 	@echo "\`define CFG_ENABLE_TRILINEAR 1" >> $@
 endif
@@ -160,7 +175,28 @@ ifeq ($(CONFIG_TU_ENABLE_MSHR),1)
 	@echo "\`define CFG_ENABLE_MSHR 1" >> $@
 endif
 	@echo "" >> $@
-	@echo "/* 4. Render Output Backend (ROP) */" >> $@
+	@echo "/* 4. Render Output Backend (ROP) & Formats */" >> $@
+ifeq ($(CONFIG_FMT_ENABLE_FP16),1)
+	@echo "\`define CFG_FMT_ENABLE_FP16 1" >> $@
+endif
+ifeq ($(CONFIG_FMT_ENABLE_FP32),1)
+	@echo "\`define CFG_FMT_ENABLE_FP32 1" >> $@
+endif
+ifeq ($(CONFIG_FMT_ENABLE_SRGB),1)
+	@echo "\`define CFG_FMT_ENABLE_SRGB 1" >> $@
+endif
+ifeq ($(CONFIG_FMT_ENABLE_RGB565),1)
+	@echo "\`define CFG_FMT_ENABLE_RGB565 1" >> $@
+endif
+ifeq ($(CONFIG_FMT_ENABLE_DEPTH24_S8),1)
+	@echo "\`define CFG_FMT_ENABLE_DEPTH24_S8 1" >> $@
+endif
+ifeq ($(CONFIG_FMT_ENABLE_DEPTH32F),1)
+	@echo "\`define CFG_FMT_ENABLE_DEPTH32F 1" >> $@
+endif
+ifeq ($(CONFIG_FMT_ENABLE_DEPTH16),1)
+	@echo "\`define CFG_FMT_ENABLE_DEPTH16 1" >> $@
+endif
 ifeq ($(CONFIG_ROP_ENABLE_FBLEND),1)
 	@echo "\`define CFG_ROP_ENABLE_FBLEND 1" >> $@
 else
@@ -183,6 +219,12 @@ endif
 	@echo "\`define CFG_ROP_MRT_COUNT $(CONFIG_ROP_MRT_COUNT)" >> $@
 	@echo "" >> $@
 	@echo "/* 5. Command Processor (CP) & Memory Hierarchy */" >> $@
+ifdef CONFIG_GPU_VA_BITS
+	@echo "\`define CFG_GPU_VA_BITS $(CONFIG_GPU_VA_BITS)" >> $@
+endif
+ifdef CONFIG_HOST_PA_BITS
+	@echo "\`define CFG_HOST_PA_BITS $(CONFIG_HOST_PA_BITS)" >> $@
+endif
 ifeq ($(CONFIG_CP_AUTONOMOUS_MMU),1)
 	@echo "\`define CFG_CP_AUTONOMOUS_MMU 1" >> $@
 endif

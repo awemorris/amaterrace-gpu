@@ -74,8 +74,28 @@ CONFIG_RX_COARSE_SCAN    ?= 1
 # 3. Texture Unit (TU) Configuration
 # ------------------------------------------------------------------------------
 # CONFIG_TU_ENABLE_BC: Block Compression hardware decompressors (BC1 - BC7).
-#   1: Enabled (decompresses compressed textures in HW), 0: Uncompressed only (saves LUTs).
+#   1: Enabled (decompresses desktop compressed textures in HW), 0: Uncompressed only.
 CONFIG_TU_ENABLE_BC      ?= 0
+
+# CONFIG_TU_ENABLE_ETC2: Mobile standard ETC2 / EAC texture format decompressors.
+#   1: Enabled (formats 147..156 supported in HW), 0: Disabled.
+CONFIG_TU_ENABLE_ETC2    ?= 0
+
+# CONFIG_TU_ENABLE_ANISO: Elliptical Weighted Average (EWA) anisotropic filtering up to 16x.
+#   1: Enabled, 0: Isotropic (trilinear/bilinear) only.
+CONFIG_TU_ENABLE_ANISO   ?= 0
+
+# CONFIG_TU_ENABLE_SEAMLESS_CUBE: Seamless Cube Map edge interpolation.
+#   1: Enabled, 0: Standard face-clamped cube mapping.
+CONFIG_TU_ENABLE_SEAMLESS_CUBE ?= 0
+
+# CONFIG_TU_ENABLE_FP_FILTER: Hardware floating-point texture filtering (FP16/FP32).
+#   1: Enabled (DEVICE_CAPS[25] set), 0: Nearest-only float sampling.
+CONFIG_TU_ENABLE_FP_FILTER ?= 0
+
+# CONFIG_TU_ENABLE_ARRAY: 1D/2D Texture Array layer addressing and coordinate calculation.
+#   1: Enabled, 0: Standard 2D/3D only.
+CONFIG_TU_ENABLE_ARRAY   ?= 0
 
 # CONFIG_TU_ENABLE_TRILINEAR: Mipmap level filtering and trilinear interpolation.
 #   1: Trilinear filtering enabled, 0: Bilinear / Nearest only.
@@ -93,8 +113,36 @@ CONFIG_TU_L1_BANKS       ?= 4
 CONFIG_TU_ENABLE_MSHR    ?= 1
 
 # ------------------------------------------------------------------------------
-# 4. Render Output Backend (ROP) Configuration
+# 4. Render Output Backend (ROP) & Formats
 # ------------------------------------------------------------------------------
+# CONFIG_FMT_ENABLE_FP16: Half-precision 16-bit float color formats (R16F, RGBA16F).
+#   1: Enabled, 0: Integer only.
+CONFIG_FMT_ENABLE_FP16   ?= 0
+
+# CONFIG_FMT_ENABLE_FP32: Single-precision 32-bit float color formats (R32F, RGBA32F).
+#   1: Enabled, 0: Integer only.
+CONFIG_FMT_ENABLE_FP32   ?= 0
+
+# CONFIG_FMT_ENABLE_SRGB: Hardware sRGB gamma conversion and sRGB framebuffers.
+#   1: Enabled, 0: Linear RGB only.
+CONFIG_FMT_ENABLE_SRGB   ?= 1
+
+# CONFIG_FMT_ENABLE_RGB565: 16-bit packed integer color formats (RGB565, RGBA4, ARGB1555).
+#   1: Enabled, 0: 32-bit RGBA only.
+CONFIG_FMT_ENABLE_RGB565 ?= 1
+
+# CONFIG_FMT_ENABLE_DEPTH24_S8: Standard 24-bit fixed depth with 8-bit stencil (D24_UNORM_S8_UINT).
+#   1: Enabled, 0: Disabled.
+CONFIG_FMT_ENABLE_DEPTH24_S8 ?= 1
+
+# CONFIG_FMT_ENABLE_DEPTH32F: High-precision 32-bit float depth (D32_SFLOAT).
+#   1: Enabled, 0: Disabled.
+CONFIG_FMT_ENABLE_DEPTH32F ?= 0
+
+# CONFIG_FMT_ENABLE_DEPTH16: Compact 16-bit depth (D16_UNORM).
+#   1: Enabled, 0: Disabled.
+CONFIG_FMT_ENABLE_DEPTH16 ?= 1
+
 # CONFIG_ROP_DUAL_SOURCE: Vulkan Dual-Source Blending (Src1Color / Src1Alpha).
 #   1: Enabled (required for complex font/subpixel blending), 0: Disabled.
 CONFIG_ROP_DUAL_SOURCE   ?= 0
@@ -113,6 +161,12 @@ CONFIG_ROP_MRT_COUNT     ?= 1
 # ------------------------------------------------------------------------------
 # 5. Command Processor (CP) & Memory Hierarchy
 # ------------------------------------------------------------------------------
+# CONFIG_GPU_VA_BITS: GPU Virtual Address Width in bits: 30 (1 GiB), 32 (4 GiB), 36 (64 GiB), 40 (1 TiB).
+CONFIG_GPU_VA_BITS       ?= 32
+
+# CONFIG_HOST_PA_BITS: Host Physical Address Width for PCIe DMA in bits: 40 (1 TiB), 44 (16 TiB), 48 (256 TiB).
+CONFIG_HOST_PA_BITS      ?= 40
+
 # CONFIG_CP_AUTONOMOUS_MMU: Two-level hardware page table walker.
 #   1: Autonomous hardware page walking, 0: Static address mapping or software walk.
 CONFIG_CP_AUTONOMOUS_MMU ?= 1

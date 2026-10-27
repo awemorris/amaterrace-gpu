@@ -180,17 +180,33 @@ $$\text{Address}[63:0] = \{ r[2k+1][31:0],\; r[2k][31:0] \}$$
 TUI / CLI コンフィグレーションツール `tools/menuconfig.py`、プロジェクト設定テンプレート `config.mk.template`、およびビルドシステム `Makefile` に以下の項目を追加し、対話的設定および自動ヘッダ生成を行う。
 
 #### 1. `tools/menuconfig.py` 項目定義
-セクション「5. Command Processor (CP) & Memory Hierarchy」に以下を追加：
+
+**A. アドレス空間設定 (Section 5: CP & Memory)**:
 - **`CONFIG_GPU_VA_BITS`**:
-  - **Type**: `choice` (`["30", "32", "36", "40"]`)
-  - **Default**: `"32"`
+  - **Type**: `choice` (`["30", "32", "36", "40"]`), **Default**: `"32"`
   - **Label**: `"GPU Virtual Address Width (VA_BITS)"`
   - **Help**: `"Internal GPU virtual address representation width in bits (30..40, 1 GiB to 1 TiB). 32 bits = 4 GiB."`
 - **`CONFIG_HOST_PA_BITS`**:
-  - **Type**: `choice` (`["40", "44", "48"]`)
-  - **Default**: `"40"`
+  - **Type**: `choice` (`["40", "44", "48"]`), **Default**: `"40"`
   - **Label**: `"Host Physical Address Width (PA_BITS)"`
   - **Help**: `"Host physical address width for PCIe DMA in bits (40..48, 1 TiB to 256 TiB). 40 bits = 1 TiB."`
+
+**B. テクスチャ圧縮 & 高度サンプリング (Section 3: Texture Unit)**:
+- **`CONFIG_TU_ENABLE_BC`**: `bool` (既定: 0) — Block Compression (BC1-BC7) デコンプレッサ
+- **`CONFIG_TU_ENABLE_ETC2`**: `bool` (既定: 0) — ETC2 / EAC テクスチャデコンプレッサ (フォーマット 147..156)
+- **`CONFIG_TU_ENABLE_ANISO`**: `bool` (既定: 0) — 異方性フィルタリング (最大 16x EWA)
+- **`CONFIG_TU_ENABLE_SEAMLESS_CUBE`**: `bool` (既定: 0) — シームレスキューブマップ境界補間
+- **`CONFIG_TU_ENABLE_FP_FILTER`**: `bool` (既定: 0) — 浮動小数点テクスチャフィルタリング (FP16/FP32, `DEVICE_CAPS[25]`)
+- **`CONFIG_TU_ENABLE_ARRAY`**: `bool` (既定: 0) — 1D/2D テクスチャ配列レイヤアドレッシング
+
+**C. イメージ・フォーマット & レンダーターゲット形式 (Section 4: ROP & Formats)**:
+- **`CONFIG_FMT_ENABLE_FP16`**: `bool` (既定: 0) — 16-bit 浮動小数点カラー形式 (R16F, RGBA16F)
+- **`CONFIG_FMT_ENABLE_FP32`**: `bool` (既定: 0) — 32-bit 浮動小数点カラー形式 (R32F, RGBA32F)
+- **`CONFIG_FMT_ENABLE_SRGB`**: `bool` (既定: 1) — sRGB ハードウェアガンマ変換 & フレームバッファ
+- **`CONFIG_FMT_ENABLE_RGB565`**: `bool` (既定: 1) — 16-bit パックドカラー形式 (RGB565, RGBA4, ARGB1555)
+- **`CONFIG_FMT_ENABLE_DEPTH24_S8`**: `bool` (既定: 1) — 24-bit 深度 / 8-bit ステンシル (D24_UNORM_S8_UINT)
+- **`CONFIG_FMT_ENABLE_DEPTH32F`**: `bool` (既定: 0) — 32-bit 浮動小数点高精度深度 (D32_SFLOAT)
+- **`CONFIG_FMT_ENABLE_DEPTH16`**: `bool` (既定: 1) — 16-bit 深度 (D16_UNORM)
 
 #### 2. `config.mk.template` への追加
 ```makefile
@@ -202,6 +218,23 @@ CONFIG_GPU_VA_BITS ?= 32
 
 # Host Physical Address Width for PCIe DMA in bits: 40 (1 TiB), 44 (16 TiB), 48 (256 TiB)
 CONFIG_HOST_PA_BITS ?= 40
+
+# Texture Compression & Advanced Features
+CONFIG_TU_ENABLE_BC            ?= 0
+CONFIG_TU_ENABLE_ETC2          ?= 0
+CONFIG_TU_ENABLE_ANISO         ?= 0
+CONFIG_TU_ENABLE_SEAMLESS_CUBE ?= 0
+CONFIG_TU_ENABLE_FP_FILTER     ?= 0
+CONFIG_TU_ENABLE_ARRAY         ?= 0
+
+# Image Formats & Attachments
+CONFIG_FMT_ENABLE_FP16         ?= 0
+CONFIG_FMT_ENABLE_FP32         ?= 0
+CONFIG_FMT_ENABLE_SRGB         ?= 1
+CONFIG_FMT_ENABLE_RGB565       ?= 1
+CONFIG_FMT_ENABLE_DEPTH24_S8   ?= 1
+CONFIG_FMT_ENABLE_DEPTH32F     ?= 0
+CONFIG_FMT_ENABLE_DEPTH16      ?= 1
 ```
 
 #### 3. `Makefile` による自動ヘッダ生成連携
@@ -210,6 +243,7 @@ CONFIG_HOST_PA_BITS ?= 40
 # include/atg_config.vh 生成ルールへの反映
 echo "\`define CFG_GPU_VA_BITS $(CONFIG_GPU_VA_BITS)" >> $@
 echo "\`define CFG_HOST_PA_BITS $(CONFIG_HOST_PA_BITS)" >> $@
+# TU & FMT マクロ出力連携
 ```
 
 ### 5.3 トップモジュール (`atg_top.v`) パラメータシグネチャ
@@ -343,7 +377,7 @@ module atg_top #(
 
 | フェーズ | 対象領域 | 主要タスク | 検証・ゲート基準 |
 |:---|:---|:---|:---|
-| **Phase A**<br>(基盤・設定) | コンフィグ & 定義層 | - `tools/menuconfig.py` に `CONFIG_GPU_VA_BITS`, `CONFIG_HOST_PA_BITS` 選択肢追加<br>- `config.mk.template` および `Makefile` への自動生成ルール追加<br>- `include/atg_config.vh` にアドレス幅マクロ追加<br>- `docs/ghci.md` およびヘッダの PTE 定義同期 | - `python3 tools/menuconfig.py --show` 正当性確認<br>- `tools/arith-lint.py` 0 違反<br>- `tools/lint.sh` 全通過 |
+| **Phase A**<br>(基盤・設定) | コンフィグ & 定義層 | - `tools/menuconfig.py` に `CONFIG_GPU_VA_BITS`, `CONFIG_HOST_PA_BITS` および各種テクスチャ圧縮・イメージ形式選択肢追加<br>- `config.mk.template` および `Makefile` への自動生成ルール追加<br>- `include/atg_config.vh` にアドレス幅・フォーマットマクロ追加<br>- `docs/ghci.md` およびヘッダの PTE 定義同期 | - `python3 tools/menuconfig.py --show` 正当性確認<br>- `tools/arith-lint.py` 0 違反<br>- `tools/lint.sh` 全通過 |
 | **Phase B**<br>(CP & ホスト DMA) | コマンドプロセッサ & PCIe | - `atg_cp_ring.v` の 64-bit PA フェッチ実装<br>- `atg_cp_fence.v` の 64-bit 書戻し対応<br>- `atg_kc705_pcie.v` の 64-bit AXI 接続拡張<br>- `ip.tcl` の 64-bit アドレス設定 | - `atg_kc705_pcie_tb` PASS<br>- 4 GiB 超高位アドレス DMA テスト PASS |
 | **Phase C**<br>(MMU & 内部 LSB 削減) | 仮想記憶 & バス層 | - `atg_mmu` 64-bit PTE 展開<br>- TLB CAM の VPN 幅（`VA_BITS-12`）最適化<br>- ワードバス（-2bit）/ ラインバス（-6bit）配線適用 | - `atg_mmu_tb`, `atg_top_tb` PASS<br>- 配線 LUT 使用量削減の確認 |
 | **Phase D**<br>(SU & パイプライン) | シェーダ & 固定機能 | - `atg_su_rf.v` 偶数レジスタペア読出し論理の検証<br>- LSU 64-bit ポインタ処理<br>- `atg_tu` / `atg_vf` アドレス幅追従 | - 全ユニットテスト・シーンテスト PASS<br>- Vivado 合成・インプリタイミング検証 |

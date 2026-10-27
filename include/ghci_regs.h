@@ -99,12 +99,14 @@ extern "C" {
 #define GHCI_REG_EXT_CAP_FMT0    0x080u  /* Texture compression format bitmap (BC1-BC7) */
 #define GHCI_REG_EXT_CAP_FEATURE 0x084u  /* Rendering feature detail bitmap */
 
-/* CTRL bits (0x010) */
-#define GHCI_CTRL_RUN            (1u << 0)  /* Enable ring processing */
-#define GHCI_CTRL_HALT           (1u << 1)  /* Request CP to halt after current packet */
-#define GHCI_CTRL_RESET          (1u << 2)  /* Soft reset GPU (self-clearing) */
-#define GHCI_CTRL_IRQ_GLOBAL     (1u << 3)  /* Master interrupt enable */
+/* CTRL bits (0x014, J02) */
+#define GHCI_CTRL_RESET          (1u << 0)  /* Soft reset GPU (self-clearing) */
+#define GHCI_CTRL_RUN            (1u << 1)  /* Enable ring processing */
+#define GHCI_CTRL_HALT           (1u << 2)  /* Request CP to halt after current packet */
+#define GHCI_CTRL_STEP           (1u << 3)  /* Single step */
 #define GHCI_CTRL_TLB_FLUSH      (1u << 4)  /* Invalidate CP L1/L2 TLBs */
+#define GHCI_CTRL_WDT_EN         (1u << 5)  /* Enable watchdog timer */
+#define GHCI_CTRL_IRQ_GLOBAL     (1u << 6)  /* Master interrupt enable */
 
 /* STATUS bits (0x014) */
 #define GHCI_STATUS_BUSY_CP      (1u << 0)  /* CP busy or reset sequence in progress */
@@ -307,70 +309,7 @@ extern "C" {
 #define GHCI_CAPS2_TEX_SLOTS(c) ((((c) >> 24) & 0xFu) * 4u)
 #define GHCI_CAPS2_ATTRS(c) ((((c) >> 28) & 0xFu) * 4u)
 
-/* CTRL. */
-#define GHCI_CTRL_RUN (1u << 0)
-#define GHCI_CTRL_RESET (1u << 1)
-#define GHCI_CTRL_HALT (1u << 2)
-#define GHCI_CTRL_STEP (1u << 3)
-#define GHCI_CTRL_WDT_EN (1u << 4)
 
-/* STATUS. */
-#define GHCI_STATUS_CP_BUSY (1u << 0)
-#define GHCI_STATUS_BLT_BUSY (1u << 1)
-#define GHCI_STATUS_VF_BUSY (1u << 2)
-#define GHCI_STATUS_RX_BUSY (1u << 3)
-#define GHCI_STATUS_ROP_BUSY (1u << 4)
-#define GHCI_STATUS_TU_BUSY (1u << 5)
-#define GHCI_STATUS_SU_BUSY (1u << 6)
-#define GHCI_STATUS_AXI_IDLE (1u << 8)
-#define GHCI_STATUS_FAULT (1u << 9)
-#define GHCI_STATUS_HALTED (1u << 10)
-#define GHCI_STATUS_RING_EMPTY (1u << 11)
-#define GHCI_STATUS_MEM_READY (1u << 12)
-#define GHCI_STATUS_AXI_STUCK (1u << 13)
-#define GHCI_STATUS_QUIESCED (1u << 14)
-#define GHCI_STATUS_STATE(s) (((s) >> 16) & 0xFu)
-
-/* CP states (STATUS[19:16]). */
-#define GHCI_ST_IDLE 0u
-#define GHCI_ST_RUNNING 1u
-#define GHCI_ST_HALTING 2u
-#define GHCI_ST_HALTED 3u
-#define GHCI_ST_FAULTED 4u
-#define GHCI_ST_RESETTING 5u
-
-/* IRQ_STATUS, IRQ_ENABLE, IRQ_SET. */
-#define GHCI_IRQ_FENCE (1u << 0)
-#define GHCI_IRQ_FAULT (1u << 1)
-#define GHCI_IRQ_RING_EMPTY (1u << 2)
-#define GHCI_IRQ_WATCHDOG (1u << 3)
-#define GHCI_IRQ_DBG_DONE (1u << 4)
-#define GHCI_IRQ_SOFT (1u << 5)
-#define GHCI_IRQ_HALTED (1u << 6)
-#define GHCI_IRQ_RESULT (1u << 7)
-#define GHCI_IRQ_RETIRE (1u << 8)
-#define GHCI_IRQ_VBLANK (1u << 9) /* DISP2 (draft) */
-#define GHCI_IRQ_FLIP (1u << 10)
-#define GHCI_IRQ_DISP_ERROR (1u << 11)
-#define GHCI_IRQ_HOTPLUG (1u << 12)
-
-/* FAULT_INFO. */
-#define GHCI_FAULT_CLIENT(f) ((f) & 0xFFu)
-#define GHCI_FAULT_WRITE (1u << 8)
-#define GHCI_FAULT_PROT (1u << 9) /* kind 1: refused by session protection */
-#define GHCI_FAULT_KIND(f) (((f) >> 12) & 0xFu)
-#define GHCI_FAULT_BLOCK(f) (((f) >> 16) & 0xFFu)
-#define GHCI_FAULT_JOB_TAG(f) (((f) >> 24) & 0xFFu)
-#define GHCI_FAULT_APERTURE 1u
-#define GHCI_FAULT_OPCODE 2u
-#define GHCI_FAULT_RING 3u
-#define GHCI_FAULT_WATCHDOG 4u
-#define GHCI_FAULT_AXI 5u
-#define GHCI_FAULT_KICK 6u
-#define GHCI_FAULT_LOCKED 7u
-#define GHCI_FAULT_ISA 8u
-#define GHCI_FAULT_GPU_PAGE_FAULT 9u      /* GPU VA unmapped / page fault */
-#define GHCI_FAULT_GPU_PERM_VIOLATION 10u /* Permission violation (read/write/exec) */
 
 /* DBG_STATUS. */
 #define GHCI_DBG_BUSY (1u << 0)
