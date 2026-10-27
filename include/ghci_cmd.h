@@ -179,14 +179,14 @@ typedef struct GhciPipelineState {
 	uint64_t ms_code_va;            /* dw6-7: Mesh/task Shader instruction base */
 
 	/* 0x20: Pipeline Creation Flags & Rasterizer State */
-	uint32_t flags;                 /* dw8: Pipeline flags & topology */
-	uint32_t raster_state;          /* dw9: Cull mode, front face, polygon mode */
-	uint32_t depth_stencil_state;   /* dw10: Depth & stencil test / write / compare */
+	uint32_t flags;                 /* dw8: [2:0] topology, [3] prim restart, [4] depth clamp, [5] logic op enable, [9:6] logic op opcode, [10] alpha to coverage, [15:12] sample mask (N14) */
+	uint32_t raster_state;          /* dw9: [1:0] cull mode, [2] front face CW, [4:3] polygon mode, [5] depth bias enable, [13:6] line width (N14) */
+	uint32_t depth_stencil_state;   /* dw10: [0] depth test, [1] depth write, [4:2] depth op, [5] stencil test, [8:6] front fail op, [11:9] front pass op, [14:12] front depth fail op, [17:15] front compare op, [20:18] back fail op, [23:21] back pass op, [26:24] back depth fail op, [29:27] back compare op, [30] separate back stencil enable (N14) */
 	uint32_t blend_state;           /* dw11: Color blend factors & ops */
-	uint32_t vertex_strides;        /* dw12: Packed strides for bindings 0..3 */
-	uint32_t shader_resource_limits;/* dw13: [7:0] used_regs_vs, [15:8] used_regs_fs, [23:16] used_regs_cs, [31:24] varying_count */
-	uint32_t compute_local_size;    /* dw14: [9:0] local_size_x, [19:10] local_size_y, [29:20] local_size_z */
-	uint32_t compute_lds_and_flags; /* dw15: [15:0] lds_bytes, [16] fs_centroid, [17] fs_depth_export, [18] fs_discard */
+	uint32_t vertex_strides;        /* dw12: Default packed strides for bindings 0..3 (used when CMD_BIND_VERTEX_BUFFERS stride is 0) (N14) */
+	uint32_t shader_resource_limits;/* dw13: [7:0] used_regs_vs (1..63), [15:8] used_regs_fs (1..63), [23:16] used_regs_cs/ms (1..63), [31:24] varying_count (0..16) (N01) */
+	uint32_t compute_local_size;    /* dw14: [9:0] local_size_x, [19:10] local_size_y, [29:20] local_size_z (N01) */
+	uint32_t compute_lds_and_flags; /* dw15: [15:0] lds_bytes (0..16384), [16] fs_centroid, [17] fs_depth_export, [18] fs_discard (N01, N24) */
 
 	/* 0x40: Vertex Attributes Descriptor (64 bytes: 16 attributes x 4 bytes, K11) */
 	uint32_t attributes[16];        /* dw16-31: 16 packed vertex attributes */
@@ -200,36 +200,36 @@ typedef struct GhciPipelineState {
 
 /* Texture Descriptor (32 Bytes) */
 typedef struct GhciTextureDescriptor {
-	uint64_t base_address;          /* 0x00: GPU virtual address of texels */
-	uint16_t width;                 /* 0x08: Texel width */
-	uint16_t height;                /* 0x0A: Texel height */
+	uint64_t base_address;          /* 0x00: GPU virtual address of texels (64-bit GPU VA) */
+	uint16_t width;                 /* 0x08: Texel width (1..16384) */
+	uint16_t height;                /* 0x0A: Texel height (1..16384) */
 	uint16_t depth;                 /* 0x0C: 3D depth or array layers */
-	uint8_t  format;                /* 0x0E: Texture format */
-	uint8_t  mip_levels;            /* 0x0F: Number of mip levels */
+	uint8_t  format;                /* 0x0E: VkFormat enum (e.g. VK_FORMAT_R8G8B8A8_UNORM = 37, N23) */
+	uint8_t  mip_levels;            /* 0x0F: Number of mip levels (1..15) */
 	uint32_t row_pitch_bytes;       /* 0x10: Row pitch in bytes */
 	uint32_t slice_pitch_bytes;     /* 0x14: 2D array / 3D slice pitch */
-	uint8_t  sample_count;          /* 0x18: MSAA sample count */
+	uint8_t  sample_count;          /* 0x18: MSAA sample count (1, 2, 4) */
 	uint8_t  dimension;             /* 0x19: 0=1D, 1=2D, 2=3D, 3=Cube */
 	uint16_t flags;                 /* 0x1A: [0]=Tiled, [1]=sRGB */
 	uint32_t reserved;              /* 0x1C: Padding to 32 bytes */
 } GhciTextureDescriptor;
 
-/* Sampler Descriptor (16 Bytes) */
+/* Sampler Descriptor (16 Bytes, N23) */
 typedef struct GhciSamplerDescriptor {
 	uint8_t  min_filter;            /* 0x00: 0=Nearest, 1=Linear */
 	uint8_t  mag_filter;            /* 0x01: 0=Nearest, 1=Linear */
 	uint8_t  mipmap_mode;           /* 0x02: 0=Nearest, 1=Linear */
-	uint8_t  address_mode_u;        /* 0x03: 0=Repeat, 1=Mirrored, 2=ClampToEdge, 3=ClampBorder */
+	uint8_t  address_mode_u;        /* 0x03: 0=Repeat, 1=Mirrored, 2=ClampToEdge, 3=ClampBorder, 4=MirrorClampToEdge */
 	uint8_t  address_mode_v;        /* 0x04: Address mode V */
 	uint8_t  address_mode_w;        /* 0x05: Address mode W */
 	uint8_t  compare_enable;        /* 0x06: 1=Depth compare active */
-	uint8_t  compare_op;            /* 0x07: Compare op */
+	uint8_t  compare_op;            /* 0x07: VkCompareOp: 0=NEVER, 1=LESS, 2=EQUAL, 3=LEQUAL, 4=GREATER, 5=NOTEQUAL, 6=GEQUAL, 7=ALWAYS (N23) */
 	int16_t  lod_bias_fx8;          /* 0x08: Fixed-point 8.8 LOD bias */
 	uint8_t  min_lod_fx4;           /* 0x0A: Fixed-point 4.4 min LOD */
 	uint8_t  max_lod_fx4;           /* 0x0B: Fixed-point 4.4 max LOD */
-	uint8_t  max_anisotropy;        /* 0x0C: Max anisotropy (1..16) */
-	uint8_t  border_color_type;     /* 0x0D: 0=TransBlack, 1=OpaqueBlack, 2=OpaqueWhite, 3=Custom */
-	uint8_t  border_color_idx;      /* 0x0E: Custom 128-bit border color table index (0..15) */
+	uint8_t  max_anisotropy;        /* 0x0C: Max anisotropy (1..16) (N23) */
+	uint8_t  border_color_type;     /* 0x0D: 0=TransBlack, 1=OpaqueBlack, 2=OpaqueWhite, 3=Custom (N23) */
+	uint8_t  border_color_idx;      /* 0x0E: Custom 128-bit border color table index (0..15) (N23) */
 	uint8_t  reserved;              /* 0x0F: Padding to 16 bytes */
 } GhciSamplerDescriptor;
 
@@ -360,15 +360,19 @@ typedef struct GhciCmdDispatch {
 #define GHCI_STAGE_ROP                  (1u << 4)
 #define GHCI_STAGE_BLT                  (1u << 5)
 
-#define GHCI_BARRIER_FLUSH_L2C          (1u << 0)
-#define GHCI_BARRIER_INVAL_L1           (1u << 1)
-#define GHCI_BARRIER_DRAIN              (1u << 3) /* Drain all pipeline stages to idle (K17) */
+#define GHCI_BARRIER_FLAG_WAIT_IDLE        (1u << 0)
+#define GHCI_BARRIER_FLAG_INVAL_ICACHE     (1u << 1)
+#define GHCI_BARRIER_FLAG_INVAL_TEX        (1u << 2)
+#define GHCI_BARRIER_FLAG_FLUSH_L1_DATA    (1u << 3)
+#define GHCI_BARRIER_FLAG_INVAL_L1_DATA    (1u << 4)
+#define GHCI_BARRIER_FLAG_INVAL_DESCRIPTOR (1u << 5)
+#define GHCI_BARRIER_FLAG_FLUSH_L2         (1u << 6)
 
 typedef struct GhciCmdBarrier {
 	uint32_t header;                /* GHCI_CMD_BARRIER, size = 4 */
 	uint32_t src_stage_mask;
 	uint32_t dst_stage_mask;
-	uint32_t flags;                 /* GHCI_BARRIER_* */
+	uint32_t flags;                 /* GHCI_BARRIER_FLAG_* */
 } GhciCmdBarrier;
 
 /* CMD_EXECUTE_COMMANDS (0x32): 4 dwords (UMA Secondary Buffer Fetch) */
@@ -379,27 +383,26 @@ typedef struct GhciCmdExecuteCommands {
 	uint32_t command_dwords;
 } GhciCmdExecuteCommands;
 
-/* CMD_FENCE (0x33): 6 dwords (24 bytes, J13) */
+/* CMD_FENCE (0x33): 6 dwords (24 bytes, J13, N11, N32) */
 #define GHCI_FENCE_FLAG_IRQ             (1u << 0)
 #define GHCI_FENCE_FLAG_MEM_WRITE       (1u << 1)
 #define GHCI_FENCE_FLAG_HOST_FLUSH      (1u << 2)
 
 typedef struct GhciCmdFence {
 	uint32_t header;                /* GHCI_CMD_FENCE, size = 6 */
-	uint32_t fence_addr_lo;         /* 64-bit host DMA address [31:0] */
-	uint32_t fence_addr_hi;         /* 64-bit host DMA address [63:32] */
+	uint32_t fence_addr_lo;         /* 64-bit host DMA address or local DRAM PA [31:0] */
+	uint32_t fence_addr_hi;         /* 64-bit host DMA address or local DRAM PA [63:32] */
 	uint32_t fence_seq_lo;          /* 64-bit fence sequence value [31:0] */
 	uint32_t fence_seq_hi;          /* 64-bit fence sequence value [63:32] */
 	uint32_t flags;                 /* GHCI_FENCE_FLAG_* */
 } GhciCmdFence;
 
-
-
-/* CMD_BEGIN_QUERY (0x36) / CMD_END_QUERY (0x37): 3 dwords (J18) */
+/* CMD_BEGIN_QUERY (0x36) / CMD_END_QUERY (0x37): 4 dwords (J18, N17, N32) */
 typedef struct GhciCmdQuery {
-	uint32_t header;                /* GHCI_CMD_BEGIN_QUERY / END_QUERY, size = 3 */
-	uint32_t query_pool_va_lo;
-	uint32_t query_index;
+	uint32_t header;                /* GHCI_CMD_BEGIN_QUERY / END_QUERY, size = 4 */
+	uint32_t query_pool_va_lo;      /* 64-bit session GPU VA [31:0] */
+	uint32_t query_pool_va_hi;      /* 64-bit session GPU VA [63:32] */
+	uint32_t query_index_and_flags; /* [23:0] query_index, [24] PRECISE, [25] AVAILABILITY */
 } GhciCmdQuery;
 
 
@@ -518,7 +521,7 @@ typedef struct GhciColorAttachmentDesc {
 	uint8_t  format;                /* 0x0C: VkFormat enum (e.g. VK_FORMAT_R8G8B8A8_UNORM = 37) */
 	uint8_t  ops;                   /* 0x0D: [1:0] LoadOp (0: Load, 1: Clear, 2: DontCare), [3:2] StoreOp (0: Store, 1: DontCare) */
 	uint8_t  mip_level;             /* 0x0E: Target subresource mip level */
-	uint8_t  reserved;              /* 0x0F: Padding */
+	uint8_t  base_array_layer;      /* 0x0F: Base array layer (0..255, N03) */
 } GhciColorAttachmentDesc;
 
 typedef struct GhciDepthStencilAttachmentDesc {
@@ -527,7 +530,7 @@ typedef struct GhciDepthStencilAttachmentDesc {
 	uint8_t  format;                /* 0x0C: Depth/stencil VkFormat (D16_UNORM, D32_SFLOAT, D24S8) */
 	uint8_t  ops;                   /* 0x0D: [1:0] DepthLoad, [3:2] DepthStore, [5:4] StencilLoad, [7:6] StencilStore */
 	uint8_t  mip_level;             /* 0x0E: Target subresource mip level */
-	uint8_t  reserved;              /* 0x0F: Padding */
+	uint8_t  base_array_layer;      /* 0x0F: Base array layer (0..255, N03) */
 } GhciDepthStencilAttachmentDesc;
 
 typedef struct GhciResolveAttachmentDesc {
@@ -536,7 +539,7 @@ typedef struct GhciResolveAttachmentDesc {
 	uint8_t  format;                /* 0x0C: Resolve destination format (VkFormat) */
 	uint8_t  mode;                  /* 0x0D: [1:0] ResolveMode (0: Average, 1: Min, 2: Max, 3: Sample Zero) */
 	uint8_t  mip_level;             /* 0x0E: Target subresource mip level */
-	uint8_t  reserved;              /* 0x0F: Padding */
+	uint8_t  base_array_layer;      /* 0x0F: Base array layer (0..255, N03) */
 } GhciResolveAttachmentDesc;
 
 typedef struct GhciRenderPassDesc {
@@ -601,15 +604,21 @@ typedef struct GhciCmdWriteTimestamp {
 	uint32_t pipeline_stage;        /* Stage at which timestamp is latched (Top, Bottom, etc.) */
 } GhciCmdWriteTimestamp;
 
-/* CMD_COPY_BUFFER (0x40): 7 dwords */
+/* CMD_COPY_BUFFER (0x40): 8 dwords (N13) */
+#define GHCI_COPY_BUFFER_FLAG_ASYNC        (1u << 0)
+#define GHCI_COPY_BUFFER_FLAG_FILL_PATTERN (1u << 1)
+#define GHCI_COPY_BUFFER_FLAG_FLUSH_SRC    (1u << 2)
+#define GHCI_COPY_BUFFER_FLAG_FLUSH_DST    (1u << 3)
+
 typedef struct GhciCmdCopyBuffer {
-	uint32_t header;                /* opcode: GHCI_CMD_COPY_BUFFER, dwords: 7 */
+	uint32_t header;                /* opcode: GHCI_CMD_COPY_BUFFER, dwords: 8 */
 	uint32_t src_va_lo;             /* Source GPU VA [31:0] */
 	uint32_t src_va_hi;             /* Source GPU VA [63:32] */
 	uint32_t dst_va_lo;             /* Destination GPU VA [31:0] */
 	uint32_t dst_va_hi;             /* Destination GPU VA [63:32] */
-	uint32_t size_bytes;            /* Transfer size in bytes */
-	uint32_t flags;                 /* Transfer options */
+	uint32_t size_bytes;            /* Transfer size in bytes (4-byte aligned) */
+	uint32_t flags;                 /* GHCI_COPY_BUFFER_FLAG_* */
+	uint32_t fill_data;             /* 32-bit fill pattern (used when flags[1] == 1) */
 } GhciCmdCopyBuffer;
 
 /* CMD_FILL_BUFFER (0x43): 5 dwords */
@@ -620,6 +629,60 @@ typedef struct GhciCmdFillBuffer {
 	uint32_t size_bytes;            /* Buffer size to fill in bytes (4-byte multiple) */
 	uint32_t pattern_data;          /* 32-bit fill pattern */
 } GhciCmdFillBuffer;
+
+/* CMD_RESOLVE_IMAGE (0x44): 9 dwords (N13) */
+typedef struct GhciCmdResolveImage {
+	uint32_t header;                /* opcode: GHCI_CMD_RESOLVE_IMAGE, dwords: 9 */
+	uint32_t src_va_lo;             /* Source multisample image GPU VA [31:0] */
+	uint32_t src_va_hi;             /* Source multisample image GPU VA [63:32] */
+	uint32_t dst_va_lo;             /* Destination 1x resolve image GPU VA [31:0] */
+	uint32_t dst_va_hi;             /* Destination 1x resolve image GPU VA [63:32] */
+	uint32_t src_offset_xy;         /* [15:0] src_x, [31:16] src_y */
+	uint32_t dst_offset_xy;         /* [15:0] dst_x, [31:16] dst_y */
+	uint32_t extent_xy;             /* [15:0] width, [31:16] height */
+	uint32_t resolve_mode;          /* [1:0] mode (0: Average, 1: Min, 2: Max, 3: Sample Zero) */
+} GhciCmdResolveImage;
+
+/* CMD_COPY_BUFFER_TO_IMAGE (0x45): 8 dwords (N13) */
+typedef struct GhciCmdCopyBufferToImage {
+	uint32_t header;                /* opcode: GHCI_CMD_COPY_BUFFER_TO_IMAGE, dwords: 8 */
+	uint32_t src_buffer_va_lo;      /* Source linear buffer GPU VA [31:0] */
+	uint32_t src_buffer_va_hi;      /* Source linear buffer GPU VA [63:32] */
+	uint32_t dst_image_va_lo;       /* Destination tiled image GPU VA [31:0] */
+	uint32_t dst_image_va_hi;       /* Destination tiled image GPU VA [63:32] */
+	uint32_t buffer_row_pitch;      /* Buffer row pitch in bytes */
+	uint32_t image_offset_xy;       /* [15:0] dst_x, [31:16] dst_y */
+	uint32_t image_extent_xy;       /* [15:0] width, [31:16] height */
+} GhciCmdCopyBufferToImage;
+
+/* CMD_COPY_IMAGE_TO_BUFFER (0x46): 8 dwords (N13) */
+typedef struct GhciCmdCopyImageToBuffer {
+	uint32_t header;                /* opcode: GHCI_CMD_COPY_IMAGE_TO_BUFFER, dwords: 8 */
+	uint32_t src_image_va_lo;       /* Source tiled image GPU VA [31:0] */
+	uint32_t src_image_va_hi;       /* Source tiled image GPU VA [63:32] */
+	uint32_t dst_buffer_va_lo;      /* Destination linear buffer GPU VA [31:0] */
+	uint32_t dst_buffer_va_hi;      /* Destination linear buffer GPU VA [63:32] */
+	uint32_t buffer_row_pitch;      /* Buffer row pitch in bytes */
+	uint32_t image_offset_xy;       /* [15:0] src_x, [31:16] src_y */
+	uint32_t image_extent_xy;       /* [15:0] width, [31:16] height */
+} GhciCmdCopyImageToBuffer;
+
+/* CMD_FLIP (0x51): 8 dwords (N25) */
+#define GHCI_FLIP_FLAG_VSYNC_WAIT       (1u << 0)
+#define GHCI_FLIP_FLAG_IMMEDIATE        (1u << 1)
+#define GHCI_FLIP_FLAG_PLANE_CURSOR     (1u << 2) /* 0 = Plane 0 (FB), 1 = Plane 1 (Cursor) */
+#define GHCI_FLIP_FLAG_RECORD_ENABLE    (1u << 3)
+
+typedef struct GhciCmdFlip {
+	uint32_t header;                /* opcode: GHCI_CMD_FLIP, dwords: 8 */
+	uint32_t display_id;            /* 0 = primary display, 1 = secondary display */
+	uint32_t base_lo;               /* 64-bit physical scanout address [31:0] */
+	uint32_t base_hi;               /* 64-bit physical scanout address [63:32] */
+	uint32_t flags;                 /* GHCI_FLIP_FLAG_* */
+	uint32_t value;                 /* Presentation sequence tag (latched to TAKEN0/TAKEN1) */
+	uint32_t record_pa_lo;          /* 64-bit PA of 16-byte flip completion record [31:0] */
+	uint32_t record_pa_hi;          /* 64-bit PA of 16-byte flip completion record [63:32] */
+} GhciCmdFlip;
 
 
 #ifdef __cplusplus
