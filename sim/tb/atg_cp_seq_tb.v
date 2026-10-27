@@ -67,7 +67,8 @@ module atg_cp_seq_tb;
 	wire f_valid, f_irq, busy, cmd_active, fault;
 	reg f_ready = 0, f_busy = 0;
 	wire [1:0] f_op;
-	wire [31:0] f_addr, f_value, f_aux, fault_addr;
+	wire [63:0] f_addr;
+	wire [31:0] f_value, f_aux, fault_addr;
 	wire [3:0] fault_kind;
 	wire [7:0] fault_tag;
 	reg [39:0] occ_count = 40'h0;
@@ -250,7 +251,7 @@ module atg_cp_seq_tb;
 		if (idle_kick)
 			log({8'h0C, 56'd0});
 		if (f_valid && f_ready) begin
-			log({8'h09, 6'd0, f_op, f_irq, 15'd0, f_addr ^ f_value ^ (f_op == 2'd1 ? f_aux : 32'd0)});
+			log({8'h09, 6'd0, f_op, f_irq, 15'd0, f_addr[31:0] ^ f_value ^ (f_op == 2'd1 ? f_aux : 32'd0)});
 			if (f_op != 2'd2 && busy_in[7:0] != 8'd0) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_seq.fence: request while a block is busy (%b)", busy_in);

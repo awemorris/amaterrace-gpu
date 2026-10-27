@@ -218,9 +218,10 @@ module atg_mc #(
 	wire [LINE_BITS-1:0] s_req_data;
 	wire [RFW-1:0] s_rsp_data;
 
-	/* DC preemption: when dc_urgent or dc_panic is asserted, hold all other clients */
-	wire [NCLIENT-1:0] dc_preempt = (HAS_DC != 0 && (dc_urgent || dc_panic)) ?
-		~({{(NCLIENT-1){1'b0}}, 1'b1} << RC) : {NCLIENT{1'b0}};
+	/* DC preemption: when dc_urgent or dc_panic is asserted AND DC is requesting,
+	 * hold other rendering clients (exempting Client 0: CP). */
+	wire [NCLIENT-1:0] dc_preempt = (HAS_DC != 0 && (dc_urgent || dc_panic) && c_req_valid[RC]) ?
+		(~({{(NCLIENT-1){1'b0}}, 1'b1} << RC) & ~{{(NCLIENT-1){1'b0}}, 1'b1}) : {NCLIENT{1'b0}};
 	wire [NCLIENT-1:0] tree_hold = ({NCLIENT{quiesce}} & ~QUIESCE_EXEMPT) | dc_preempt;
 
 	atg_mc_tree #(
@@ -295,7 +296,7 @@ module atg_mc #(
 		.NGRANT(PROT_GRANTS), .GIDX_W(PROT_GIDX_W)
 	) grant (
 		.clk(clk), .rst_n(rst_n), .flush(flush),
-		.a_valid(a_full && !(HAS_DC != 0 && dc_panic)), .a_head(a_head), .a_data(a_data), .a_take(a_take),
+		.a_valid(a_full && !(HAS_DC != 0 && dc_panic && d_full)), .a_head(a_head), .a_data(a_data), .a_take(a_take),
 		.d_valid(d_full), .d_head(d_head), .d_data(d_data), .d_take(d_take),
 		.aperture_base(aperture_base), .aperture_limit(aperture_limit),
 		.g_valid(g_valid), .g_ready(g_ready), .g_write(g_write), .g_line(g_line), .g_be(g_be),

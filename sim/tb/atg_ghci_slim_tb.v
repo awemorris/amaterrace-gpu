@@ -116,7 +116,7 @@ module atg_ghci_slim_tb;
 	wire kick;
 	wire [2:0] kick_code;
 	wire f_valid;
-	wire [31:0] f_addr;
+	wire [63:0] f_addr;
 	wire [31:0] f_value;
 
 	atg_cp_seq #(.UNITS(8'hFF)) u_seq (
@@ -446,7 +446,7 @@ module atg_ghci_slim_tb;
 
 		for (k = 0; k < 10; k = k + 1) begin
 			@(posedge clk);
-			if (f_valid && f_addr === 32'h00004000 && f_value === 32'h00000042)
+			if (f_valid && f_addr === 64'h00004000 && f_value === 32'h00000042)
 				k = 20;
 		end
 		if (k < 20) begin

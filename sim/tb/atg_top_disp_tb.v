@@ -95,7 +95,7 @@ module atg_top_disp_tb;
 	wire h_rvalid;
 	reg h_rready = 1'b0;
 	wire irq;
-	wire [31:0] awaddr, araddr;
+	wire [63:0] awaddr, araddr;
 	wire [7:0] awlen, arlen;
 	wire [2:0] awsize, arsize, awprot, arprot;
 	wire [1:0] awburst, arburst, bresp, rresp;
@@ -141,10 +141,10 @@ module atg_top_disp_tb;
 
 	axi_mem #(.DATA_W(512), .MEM_BYTES(1 << 20), .READ_EARLY(1), .SEED(7)) mem (
 		.clk(clk), .rst_n(rst_n),
-		.awaddr(awaddr), .awlen(awlen), .awsize(awsize), .awburst(awburst),
+		.awaddr(awaddr[31:0]), .awlen(awlen), .awsize(awsize), .awburst(awburst),
 		.awvalid(awvalid), .awready(awready), .wdata(wdata), .wstrb(wstrb),
 		.wlast(wlast), .wvalid(wvalid), .wready(wready), .bresp(bresp),
-		.bvalid(bvalid), .bready(bready), .araddr(araddr), .arlen(arlen),
+		.bvalid(bvalid), .bready(bready), .araddr(araddr[31:0]), .arlen(arlen),
 		.arsize(arsize), .arburst(arburst), .arvalid(arvalid), .arready(arready),
 		.rdata(rdata), .rresp(rresp), .rlast(rlast), .rvalid(rvalid), .rready(rready)
 	);
