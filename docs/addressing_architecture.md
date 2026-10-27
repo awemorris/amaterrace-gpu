@@ -175,7 +175,44 @@ $$\text{Address}[63:0] = \{ r[2k+1][31:0],\; r[2k][31:0] \}$$
 `define CFG_PPN_BITS         (`CFG_HOST_PA_BITS - 12) /* Physical Page Number width (28-bit) */
 ```
 
-### 5.2 トップモジュール (`atg_top.v`) パラメータシグネチャ
+### 5.2 `menuconfig` / ビルドシステム連携 (`tools/menuconfig.py`, `config.mk.template`, `Makefile`)
+
+TUI / CLI コンフィグレーションツール `tools/menuconfig.py`、プロジェクト設定テンプレート `config.mk.template`、およびビルドシステム `Makefile` に以下の項目を追加し、対話的設定および自動ヘッダ生成を行う。
+
+#### 1. `tools/menuconfig.py` 項目定義
+セクション「5. Command Processor (CP) & Memory Hierarchy」に以下を追加：
+- **`CONFIG_GPU_VA_BITS`**:
+  - **Type**: `choice` (`["30", "32", "36", "40"]`)
+  - **Default**: `"32"`
+  - **Label**: `"GPU Virtual Address Width (VA_BITS)"`
+  - **Help**: `"Internal GPU virtual address representation width in bits (30..40, 1 GiB to 1 TiB). 32 bits = 4 GiB."`
+- **`CONFIG_HOST_PA_BITS`**:
+  - **Type**: `choice` (`["40", "44", "48"]`)
+  - **Default**: `"40"`
+  - **Label**: `"Host Physical Address Width (PA_BITS)"`
+  - **Help**: `"Host physical address width for PCIe DMA in bits (40..48, 1 TiB to 256 TiB). 40 bits = 1 TiB."`
+
+#### 2. `config.mk.template` への追加
+```makefile
+# ==============================================================================
+# Address Space & Interconnect Configuration
+# ==============================================================================
+# GPU Virtual Address Width in bits: 30 (1 GiB), 32 (4 GiB), 36 (64 GiB), 40 (1 TiB)
+CONFIG_GPU_VA_BITS ?= 32
+
+# Host Physical Address Width for PCIe DMA in bits: 40 (1 TiB), 44 (16 TiB), 48 (256 TiB)
+CONFIG_HOST_PA_BITS ?= 40
+```
+
+#### 3. `Makefile` による自動ヘッダ生成連携
+`Makefile` の `include/atg_config.vh` 生成ルールにおいて、以下のコンパイルフラグおよびマクロ定義を出力：
+```makefile
+# include/atg_config.vh 生成ルールへの反映
+echo "\`define CFG_GPU_VA_BITS $(CONFIG_GPU_VA_BITS)" >> $@
+echo "\`define CFG_HOST_PA_BITS $(CONFIG_HOST_PA_BITS)" >> $@
+```
+
+### 5.3 トップモジュール (`atg_top.v`) パラメータシグネチャ
 ```verilog
 module atg_top #(
     parameter [31:0] GCLK_HZ      = 32'd100000000,
@@ -306,7 +343,7 @@ module atg_top #(
 
 | フェーズ | 対象領域 | 主要タスク | 検証・ゲート基準 |
 |:---|:---|:---|:---|
-| **Phase A**<br>(基盤・設定) | コンフィグ & 定義層 | - `include/atg_config.vh` にアドレス幅マクロ追加<br>- `docs/ghci.md` およびヘッダの PTE 定義同期<br>- `config.mk.template` への変数追加 | - `tools/arith-lint.py` 0 違反<br>- `tools/lint.sh` 全通過 |
+| **Phase A**<br>(基盤・設定) | コンフィグ & 定義層 | - `tools/menuconfig.py` に `CONFIG_GPU_VA_BITS`, `CONFIG_HOST_PA_BITS` 選択肢追加<br>- `config.mk.template` および `Makefile` への自動生成ルール追加<br>- `include/atg_config.vh` にアドレス幅マクロ追加<br>- `docs/ghci.md` およびヘッダの PTE 定義同期 | - `python3 tools/menuconfig.py --show` 正当性確認<br>- `tools/arith-lint.py` 0 違反<br>- `tools/lint.sh` 全通過 |
 | **Phase B**<br>(CP & ホスト DMA) | コマンドプロセッサ & PCIe | - `atg_cp_ring.v` の 64-bit PA フェッチ実装<br>- `atg_cp_fence.v` の 64-bit 書戻し対応<br>- `atg_kc705_pcie.v` の 64-bit AXI 接続拡張<br>- `ip.tcl` の 64-bit アドレス設定 | - `atg_kc705_pcie_tb` PASS<br>- 4 GiB 超高位アドレス DMA テスト PASS |
 | **Phase C**<br>(MMU & 内部 LSB 削減) | 仮想記憶 & バス層 | - `atg_mmu` 64-bit PTE 展開<br>- TLB CAM の VPN 幅（`VA_BITS-12`）最適化<br>- ワードバス（-2bit）/ ラインバス（-6bit）配線適用 | - `atg_mmu_tb`, `atg_top_tb` PASS<br>- 配線 LUT 使用量削減の確認 |
 | **Phase D**<br>(SU & パイプライン) | シェーダ & 固定機能 | - `atg_su_rf.v` 偶数レジスタペア読出し論理の検証<br>- LSU 64-bit ポインタ処理<br>- `atg_tu` / `atg_vf` アドレス幅追従 | - 全ユニットテスト・シーンテスト PASS<br>- Vivado 合成・インプリタイミング検証 |
