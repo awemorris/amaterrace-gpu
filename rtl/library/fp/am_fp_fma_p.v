@@ -10,7 +10,10 @@
  * modes; 6: RDN's sign of an exact zero sum), denormals flushed, NaN
  * 0x7FC00000; noc: no addend (fmul).  p is the product of the
  * significands (am_fp_fma has its own multiplier; atg_su_fpu shares one).
- * Supports LAT = 0 (combinational) and LAT = 1 (1 pipeline register stage).
+ * Supports:
+ *   LAT = 0: combinational (0 cycles)
+ *   LAT = 1: 2-stage pipelined (Stage 0+1 combinational, Stage 2 registered)
+ *   LAT = 2: 3-stage pipelined (Stage 0: align, Stage 1: add, Stage 2: LOD+norm+round)
  * See spec/library/fp/am_fp_fma_p.md.
  */
 
@@ -79,9 +82,6 @@ module am_fp_fma_p #(
 	/* the sum: pw + cw, pw - cw or cw - pw (the larger first) */
 	wire same = zc || sp == sc;
 	wire pge = pw >= cw;
-	wire [76:0] sum;
-	am_addsub #(.W(77)) u_sum (.a(same || pge ? pw : cw), .b(same || pge ? cw : pw), .sub(!same), .s(sum),
-		.co(carry_unused[6]));
 	wire sr = same || pge ? sp : sc;
 
 	/* Special cases determined in Stage 0 */
@@ -96,7 +96,61 @@ module am_fp_fma_p #(
 		spec_inf_c ? c :
 		(!zc ? c : noc ? {sp, 31'd0} : {rdn ? (sp | sc) : (sp & sc), 31'd0});
 
-	/* Optional Pipeline Stage (LAT = 1) */
+	/* --- Stage 0 -> Stage 1 Pipeline Register (LAT >= 2) --- */
+	reg [76:0] r0_op_a;
+	reg [76:0] r0_op_b;
+	reg        r0_op_sub;
+	reg        r0_sr;
+	reg [11:0] r0_ab;
+	reg [11:0] r0_adj;
+	reg [2:0]  r0_rm;
+	reg        r0_rdn;
+	reg        r0_spec_hit;
+	reg [31:0] r0_spec_res;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r0_op_a     <= 77'd0;
+			r0_op_b     <= 77'd0;
+			r0_op_sub   <= 1'b0;
+			r0_sr       <= 1'b0;
+			r0_ab       <= 12'd0;
+			r0_adj      <= 12'd0;
+			r0_rm       <= 3'd0;
+			r0_rdn      <= 1'b0;
+			r0_spec_hit <= 1'b0;
+			r0_spec_res <= 32'd0;
+		end else if (en) begin
+			r0_op_a     <= same || pge ? pw : cw;
+			r0_op_b     <= same || pge ? cw : pw;
+			r0_op_sub   <= !same;
+			r0_sr       <= sr;
+			r0_ab       <= ab;
+			r0_adj      <= adj;
+			r0_rm       <= rm;
+			r0_rdn      <= rdn;
+			r0_spec_hit <= spec_hit;
+			r0_spec_res <= spec_res;
+		end
+	end
+
+	/* --- Stage 1: 77-bit add/sub --- */
+	wire [76:0] s0_op_a     = (LAT >= 2) ? r0_op_a     : (same || pge ? pw : cw);
+	wire [76:0] s0_op_b     = (LAT >= 2) ? r0_op_b     : (same || pge ? cw : pw);
+	wire        s0_op_sub   = (LAT >= 2) ? r0_op_sub   : !same;
+	wire        s0_sr       = (LAT >= 2) ? r0_sr       : sr;
+	wire [11:0] s0_ab       = (LAT >= 2) ? r0_ab       : ab;
+	wire [11:0] s0_adj      = (LAT >= 2) ? r0_adj      : adj;
+	wire [2:0]  s0_rm       = (LAT >= 2) ? r0_rm       : rm;
+	wire        s0_rdn      = (LAT >= 2) ? r0_rdn      : rdn;
+	wire        s0_spec_hit = (LAT >= 2) ? r0_spec_hit : spec_hit;
+	wire [31:0] s0_spec_res = (LAT >= 2) ? r0_spec_res : spec_res;
+
+	wire [76:0] sum;
+	am_addsub #(.W(77)) u_sum (.a(s0_op_a), .b(s0_op_b), .sub(s0_op_sub), .s(sum),
+		.co(carry_unused[6]));
+
+	/* --- Stage 1 -> Stage 2 Pipeline Register (LAT >= 1) --- */
 	reg [76:0] r1_sum;
 	reg        r1_sr;
 	reg [11:0] r1_ab;
@@ -118,24 +172,25 @@ module am_fp_fma_p #(
 			r1_spec_res <= 32'd0;
 		end else if (en) begin
 			r1_sum      <= sum;
-			r1_sr       <= sr;
-			r1_ab       <= ab;
-			r1_adj      <= adj;
-			r1_rm       <= rm;
-			r1_rdn      <= rdn;
-			r1_spec_hit <= spec_hit;
-			r1_spec_res <= spec_res;
+			r1_sr       <= s0_sr;
+			r1_ab       <= s0_ab;
+			r1_adj      <= s0_adj;
+			r1_rm       <= s0_rm;
+			r1_rdn      <= s0_rdn;
+			r1_spec_hit <= s0_spec_hit;
+			r1_spec_res <= s0_spec_res;
 		end
 	end
 
-	wire [76:0] s1_sum      = (LAT != 0) ? r1_sum      : sum;
-	wire        s1_sr       = (LAT != 0) ? r1_sr       : sr;
-	wire [11:0] s1_ab       = (LAT != 0) ? r1_ab       : ab;
-	wire [11:0] s1_adj      = (LAT != 0) ? r1_adj      : adj;
-	wire [2:0]  s1_rm       = (LAT != 0) ? r1_rm       : rm;
-	wire        s1_rdn      = (LAT != 0) ? r1_rdn      : rdn;
-	wire        s1_spec_hit = (LAT != 0) ? r1_spec_hit : spec_hit;
-	wire [31:0] s1_spec_res = (LAT != 0) ? r1_spec_res : spec_res;
+	/* --- Stage 2: LOD, Normalization, Rounding --- */
+	wire [76:0] s1_sum      = (LAT >= 1) ? r1_sum      : sum;
+	wire        s1_sr       = (LAT >= 1) ? r1_sr       : s0_sr;
+	wire [11:0] s1_ab       = (LAT >= 1) ? r1_ab       : s0_ab;
+	wire [11:0] s1_adj      = (LAT >= 1) ? r1_adj      : s0_adj;
+	wire [2:0]  s1_rm       = (LAT >= 1) ? r1_rm       : s0_rm;
+	wire        s1_rdn      = (LAT >= 1) ? r1_rdn      : s0_rdn;
+	wire        s1_spec_hit = (LAT >= 1) ? r1_spec_hit : s0_spec_hit;
+	wire [31:0] s1_spec_res = (LAT >= 1) ? r1_spec_res : s0_spec_res;
 
 	/* normalised to bit 76; the exponent msb + ea + eb + adj - 175 */
 	wire [6:0] msb;

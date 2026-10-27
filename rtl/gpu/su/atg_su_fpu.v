@@ -159,7 +159,7 @@ module atg_su_fpu #(
 		wire [31:0] lc = pk ? fc : x_c[gl*32 +: 32];
 		wire [2:0] lr = pk ? ((busy ? k_rm : rm) == 3'd2 ? 3'd6 : 3'd5) : rm;
 		wire [31:0] res;
-		am_fpu_core #(.LAT(5)) u_core (
+		am_fpu_core #(.LAT(6)) u_core (
 			.clk(clk),
 			.rst_n(rst_n),
 			.en(en),
@@ -295,6 +295,7 @@ module atg_su_fpu #(
 	reg [GRP_W-1:0]  s6_grp;
 	reg [6:0]        s6_rd;
 	reg [NPHYS-1:0]  s6_lanes;
+	reg              s6_pk;
 	reg [DW-1:0]     s6_data;
 
 	integer i5;
@@ -315,6 +316,7 @@ module atg_su_fpu #(
 			s6_grp   <= 0;
 			s6_rd    <= 0;
 			s6_lanes <= 0;
+			s6_pk    <= 1'b0;
 			s6_data  <= 0;
 		end else if (en) begin
 			/* Stage 5 captures Stage 4 output */
@@ -332,19 +334,20 @@ module atg_su_fpu #(
 					32'd0;
 			end
 
-			/* Stage 6 captures Stage 5 output (FPU result is valid in Stage 5, captured at Stage 6) */
+			/* Stage 6 captures Stage 5 output */
 			s6_valid <= s5_valid;
 			s6_warp  <= s5_warp;
 			s6_grp   <= s5_grp;
 			s6_rd    <= s5_rd;
 			s6_lanes <= s5_mask;
+			s6_pk    <= s5_pk;
 			for (i5 = 0; i5 < NPHYS; i5 = i5 + 1) begin
 				if (s5_pk) begin
 					s6_data[i5*32 +: 16]      <= s5_data[i5*32 +: 16];
 					s6_data[i5*32 + 16 +: 16] <= (s5_k_hs == 2'd1) ?
 						s5_k_a[i5*16 +: 16] : pko_comb[i5*16 +: 16];
 				end else begin
-					s6_data[i5*32 +: 32] <= fpu_res[i5*32 +: 32];
+					s6_data[i5*32 +: 32] <= 32'd0;
 				end
 			end
 		end
@@ -374,7 +377,16 @@ module atg_su_fpu #(
 	assign s_grp   = s6_grp;
 	assign s_rd    = s6_rd;
 	assign s_lanes = s6_lanes;
-	assign s_data  = s6_data;
+
+	wire [DW-1:0] s_data_mux;
+	genvar g_sd;
+	generate
+	for (g_sd = 0; g_sd < NPHYS; g_sd = g_sd + 1) begin : g_sd_mux
+		assign s_data_mux[g_sd*32 +: 32] = s6_pk ? s6_data[g_sd*32 +: 32] : fpu_res[g_sd*32 +: 32];
+	end
+	endgenerate
+	assign s_data = s_data_mux;
+
 	assign x_ready = !busy;
 
 	wire [DW-1:0] fpu_s4_data;

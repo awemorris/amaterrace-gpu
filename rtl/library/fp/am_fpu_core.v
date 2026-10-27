@@ -496,8 +496,8 @@ module am_fpu_core #(
 			endcase
 		end
 
-		wire [31:0] s5_fr, s4_ri;
-		am_fp_fma_p #(.LAT(LAT >= 5 ? 1 : 0)) u_fma4 (
+		wire [31:0] fma_r, s4_ri;
+		am_fp_fma_p #(.LAT(LAT >= 6 ? 2 : LAT >= 5 ? 1 : 0)) u_fma4 (
 			.clk(clk),
 			.rst_n(rst_n),
 			.en(en),
@@ -507,7 +507,7 @@ module am_fpu_core #(
 			.rm(s4_rr),
 			.noc(s4_noc),
 			.p(pr_s4[47:0]),
-			.r(s5_fr)
+			.r(fma_r)
 		);
 
 		am_fp_f2i #(.LAT(0)) u_f2i4 (
@@ -565,12 +565,38 @@ module am_fpu_core #(
 			end
 		end
 
-		wire [31:0] s5_rs = (LAT >= 5) ? (s5_fma ? s5_fr : s5_rs_other) :
-		                                 (s4_fma ? s5_fr : s4_other);
-		wire s5_sat_mux = (LAT >= 5) ? s5_sat : s4_sat;
-		wire s5_flt_mux = (LAT >= 5) ? s5_flt : s4_is_flt;
+		/* --- Stage 6: Pipeline match (LAT >= 6) --- */
+		reg [31:0] s6_rs_other;
+		reg        s6_fma;
+		reg        s6_sat;
+		reg        s6_flt;
 
-		assign res = (s5_sat_mux && s5_flt_mux) ? f_sat(s5_rs) : s5_rs;
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				s6_rs_other <= 32'd0;
+				s6_fma      <= 1'b0;
+				s6_sat      <= 1'b0;
+				s6_flt      <= 1'b0;
+			end else if (en) begin
+				s6_rs_other <= s5_rs_other;
+				s6_fma      <= s5_fma;
+				s6_sat      <= s5_sat;
+				s6_flt      <= s5_flt;
+			end
+		end
+
+		wire [31:0] cur_rs_other = (LAT >= 6) ? s6_rs_other :
+		                           (LAT >= 5) ? s5_rs_other : s4_other;
+		wire        cur_fma      = (LAT >= 6) ? s6_fma :
+		                           (LAT >= 5) ? s5_fma : s4_fma;
+		wire        cur_sat      = (LAT >= 6) ? s6_sat :
+		                           (LAT >= 5) ? s5_sat : s4_sat;
+		wire        cur_flt      = (LAT >= 6) ? s6_flt :
+		                           (LAT >= 5) ? s5_flt : s4_is_flt;
+
+		wire [31:0] cur_rs = cur_fma ? fma_r : cur_rs_other;
+
+		assign res = (cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs;
 		wire unused_c4 = &{1'b0, carry_unused4, pr_s4[65:64]};
 	end
 	endgenerate
