@@ -1,69 +1,84 @@
-# GHCI Review Reply - Version 9.0 (2026-10-28) - Commit: 89529de (Final Signoff: N01〜N36 Fully Resolved)
+# GHCI Review Reply - Version 10.0 (2026-10-28) - Commit: 1a1fa85 (N37〜N45 Fully Resolved)
 
-zedBSD ドライバ開発チーム（`amaterrace.ko`）による GHCI レビュー第 9 版（`ghci-review.md` 2026-10-28 02:50）を受理しました。
+GHCI ドライバ開発チーム（`amaterrace.ko`）による GHCI レビュー第 10 版（`ghci-review.md` 2026-10-28 03:38）を受理しました。
 
-レビュー第 9 版において、すべての疑問点（N01〜N36）の解決が確認され、残存疑問 0 件（Critical: 0, High: 0, Medium: 0, Low: 0）および新矛盾 0 件であることが確定しました。これをもって GHCI 1.0 アーキテクチャ仕様書（`docs/ghci.md`）および C ヘッダ（`include/ghci_cmd.h`）のドライバ開発チームとの合意形成が 100% 完了（Final Signoff）したことを記録します。
-
-なお、全版を通じて禁止略語は一切使用されておりません。
+レビュー第 10 版で提示された残存疑問（N38〜N45）の全件について、ドライバ担当チームの提示された推し案を全面的に受け入れ、仕様書 `docs/ghci.md`、C ヘッダ `include/ghci_cmd.h`、および ISA 定義 `include/gsi1_isa.h` を改訂・コミット（`1a1fa85`）しました。
 
 ---
 
-## 1. 最終合意概要
+## 1. 疑問点への回答および確定仕様詳細 (N38〜N45)
 
-- **対象仕様書**: `docs/ghci.md` (Commit `89529de`, 2677 行)
-- **対象ヘッダ**: `include/ghci_cmd.h` (Commit `35b89af`, 754 行)
-- **解決総数**: N01〜N36 全 36 件完全解決（未解決 0 件）
-- **ドライバ・コンパイラ影響**: 文書疑問によるドライバ実装およびシェーダコンパイラ開発の待ちは一切解消。
+### N38 (H): 頂点属性スロットとレジスタの割り当て規則
+- **(1)(2) 属性スロットとレジスタ配置 (Compact Consecutive ABI)**:
+  - PSO の `attributes[16]`（dw16–31）で定義される 16 個の属性スロット（$i = 0..15$、Vulkan の `maxVertexInputAttributes = 16` に完全合致）のうち、有効なスロット（`format != 0`）について、先行する有効スロットの成分数の累積和 $base_i$ から順に、レジスタ $r[base_i \dots base_i + C_i - 1]$ に連続して割り当てられます：
+    $$base_0 = 0, \quad base_{i+1} = base_i + C_i \quad (\text{有効スロット } i \text{ ごとに加算})$$
+  - 各スロットの有効成分数 $C_i \in [1, 4]$ は `format`（`VkFormat`）から一意に定まります。不足成分（例えば float や vec2/vec3 から vec4 への自動パディング $(0, 0, 0, 1.0)$）はコンパイラ側が補い、ハードウェア VF は有効成分 $C_i$ 個のみをレジスタへ書き込みます。
+  - 全属性の合計成分数が 60 本を超えるパイプライン構成（$r0..r59$ に収まらない構成）は、ドライバが作成時に拒絶（`VK_ERROR_INITIALIZATION_FAILED`）します。
+- **(3) 未使用スロットの判定**:
+  - `format == 0` (`VK_FORMAT_UNDEFINED`) のスロットは無効（disabled）として扱われ、メモリ読み出しおよびレジスタ書き込みは一切行われません。
+- **(4) ハードウェア設定の自律化**:
+  - Command Processor (CP) は `CMD_BIND_PIPELINE` 実行時に、PSO の `attributes[0..15]` を走査して $base_i$ と $C_i$ を計算し、ハードウェア内部ステート `ATTR_DST[i]` (`0x1C0 + i`) を自律的に構成します。ドライバが直接 `SET_REG` を発行する必要はありません。
+
+### N39 (M): VertexIndex / InstanceIndex の配送条件と r60〜r62
+- **配送ゲーティング**:
+  - Hardware VF は、`PSO.shader_resource_limits[7:0]` (`used_regs_vs`) $\ge 62$ の場合のみ、$r60$ に `gl_VertexIndex`、$r61$ に `gl_InstanceIndex` を書き込みます。
+  - `used_regs_vs < 62` の場合、VF はシステム入力の配送をスキップし、余分なサイクルを消費しません。コンパイラは `gl_VertexIndex` または `gl_InstanceIndex` を参照する頂点シェーダに対して、必ず `used_regs_vs \ge 62` を設定します。
+- **r62 の役割**:
+  - $r62$ はハードウェアは一切書き込まず、コンパイラ専用の一時計算 / スクラッチレジスタ（`GHCI_VS_REG_SCRATCH`）として予約されます。
+  - $r63$ は `rq`（Systolic Array Queue オペランド / ハードウェア予約）です。
+
+### N40 (M): PT バッファのワード割り当てとクリップ座標の直接読み出し
+- **クリップ座標の直接読み出し (Direct POS Access)**:
+  - PT Word 0..3 には頂点のクリップ座標 $POS.x..w$ が格納されます。フラグメントシェーダの `lda rd, imm` 命令は、PT Word 0..3（特に Word 3 で $POS.w$）を直接読み出すことができます。
+  - したがって、noperspective 補間や `FragCoord.w` のために $POS.w$ を Varying スロットに重複エクスポートする必要はなく、全 64 個の Varying ワード（$w = 0..63$、PT Word $4 + w$）をすべてユーザー定義 Varying に割り当て可能です（Vulkan 1.0 の `maxVertexOutputComponents = 64` および `maxFragmentInputComponents = 64` を完全に満たします）。
+- **POINT_SIZE**:
+  - POINT_SIZE (`0x004`) は PT には格納されません。GHCI 1.0 ではポイントサイズは 1.0 固定（`largePoints = false`, `pointSizeRange = [1.0, 1.0]`）として扱われます。
+- **ヘッダ修正**:
+  - `include/gsi1_isa.h` の `lda` コメントの記述を「words 0-3 read clip-space POS.x..w」に修正しました。
+
+### N41 (M): `lda` 命令の頂点インデックスと Primitive 規則
+- **頂点と重心座標の対応**:
+  - `lda` 命令の頂点インデックス $k \in \{0, 1, 2\}$ は、重心座標 $b_k$（$r0, r1, r2$）に対応する頂点を指します。
+- **Provoking Vertex 規約**:
+  - Vulkan の Primitive Topologies 順に従い、vertex 0 が常に Provoking Vertex（First Vertex convention）となります。フラット補間時は vertex 0 を読み出します。
+- **Line / Point プリミティブ時の未定義頂点**:
+  - Line 描画時（vertex 0, 1）の vertex 2、および Point 描画時（vertex 0）の vertex 1, 2 は未定義（コンパイラは読み出さない）となります。
+
+### N42 (M): Clip から Window への変換式
+- **クリップ体積**: Vulkan 標準規格（$-w \le x, y \le w$、および $0 \le z \le w$）。
+- **透視除算**: $x_d = x/w, y_d = y/w, z_d = z/w$。
+- **Viewport 写像**: `CMD_SET_VIEWPORT` (§7.3) に従う式を明記：
+  $$x_w = \frac{\text{width}}{2} x_d + \left(x + \frac{\text{width}}{2}\right)$$
+  $$y_w = \frac{\text{height}}{2} y_d + \left(y + \frac{\text{height}}{2}\right) \quad (\text{または反転指定に従う})$$
+  $$z_w = \text{minDepth} + z_d \times (\text{maxDepth} - \text{minDepth})$$
+- **Depth Clamp (`PSO.flags[4] = 1`)**:
+  - Near/Far 平面でのクリッピングを無効化し、ラスタライザで深度値を $[\text{minDepth}, \text{maxDepth}]$ にクランプします。
+- **POINT_SIZE**: GHCI 1.0 では無視されサイズ 1.0 固定。
+
+### N43 (M): カラーアタッチメント数と MRT エクスポート
+- **8 アタッチメント MRT エクスポート**:
+  - カラーアタッチメント $k \in [0, 7]$、コンポーネント $c \in [0, 3]$ に対するエクスポートターゲットは `0x100 + 16k + c`（ターゲット番号 `0x100`〜`0x173`、12-bit に収まる）と規定しました。
+  - `include/ghci_cmd.h` および `include/gsi1_isa.h` の `GHCI_EXP_COLOR(k, c)` を `0x100u + 16u * ((k) & 7u) + (c)` に更新し、`GSI1_COLOR_ATTACHMENTS` を 8 に更新しました。
+- **CAP_ROP_PACK との独立性**:
+  - MRT エクスポートはハードウェアのコア機能であり、`DEVICE_CAPS[26]` (`CAP_ROP_PACK`) に依存しません（`CAP_ROP_PACK` は非ブレンド整数および 32-bit float アタッチメントの Path 2 パッカーのみを制御します）。
+
+### N44 (L): Dual-Source Blending の SRC1 エクスポートターゲット
+- §8.4 1426 行の `export target 0x101` を、§12.10.3 および §12.12 と一致する `0x108..0x10B` (`GHCI_EXP_COLOR0_SRC1(c)`) に修正しました。
+
+### N45 (L): 旧仕様参照の整理とヘッダ同期
+- (1) §12.8 2133 行の scratch 参照先を §12.10.2 に更新。
+- (2) §12.12 の旧 interface kinds 9-11 に関する段落を削除（§12.10.2 に一元化）。
+- (3) §12.10.1 2259 行の参照先を §12.10.3 に更新。
+- (4) 旧 GSI1 の CAPS[24]..[30] を `DEVICE_CAPS` / `EXT_CAP_FEATURE` の正式名称に置き換え、CAPS[25]（systolic array: 予約、常に 0、実行時は `GHCI_FAULT_KIND_INVALID_OP`）の対応を §12.1 に明記。
+- (5) `include/gsi1_isa.h` を §12.10.3 と完全に整合・同期。
 
 ---
 
-## 2. 解決項目一覧（N01〜N36）
+## 2. 検証ステータス
 
-| ID | 種別 | 概要 | 確定仕様・条文反映 |
-| --- | --- | --- | --- |
-| N01 | 完了 | 64-bit GPU VA 空間・Canonical 符号拡張 | §11.1 (PA_BITS 40..48, Canonical 符号拡張) |
-| N02 | 完了 | 128B Push Constant 上書き時の TU 動作 | TU は SET_TABLE_ADDR[0..1] レジスタ参照、c[24..31] 上書き耐性 |
-| N03 | 完了 | `CMD_BEGIN_RENDER_PASS` の 192B 構造体 VA 渡し | `GhciRenderPassDesc` GPU VA 渡し (opcode 0x2B, 10 dwords) |
-| N04 | 完了 | `CMD_WRITE_TIMESTAMP` の session GPU VA 書込 | flags[0]=0: Session GPU VA, flags[0]=1: Host PCIe DMA |
-| N05 | 完了 | `FAULT_INFO` (0x018) レジスタの W1C | 最初のフォールトをラッチ、W1C で再アーム |
-| N06 | 完了 | 4 KiB 境界跨ぎパケット分割 | 境界跨ぎ禁止、CP による Kind 3 フォールト |
-| N07 | 完了 | Session 0 の root L1 ページテーブル自動確保 | RUN=1 遷移時に CP_HEAP_BASE に自動確保・永続アクティブ |
-| N08 | 完了 | Session フォールト時の Driver 通知・フェンス完了 | ホストドライバが期待シーケンス値を代行書込して待機スレッド解除 |
-| N09 | 完了 | Primary Ring Buffer の 4 KiB 境界配置 | 4 KiB 境界配置、WRAP パケットによるラップアラウンド |
-| N10 | 完了 | Secondary Buffer の呼出深さ制限 | 最大ネスト 1 段、二重呼出は Kind 3 フォールト |
-| N11 | 完了 | `CMD_FENCE` の 64-bit シーケンス値・フラグ | opcode 0x33, 6 dwords, flags[0]=IRQ, [1]=MEM_WRITE, [2]=HOST_FLUSH |
-| N12 | 完了 | 物理アドレスの二値判定・HOST_LIMIT 制約・Kind 5 | [LOCAL_BASE, LOCAL_BASE+LOCAL_SIZE) はローカル、外はホスト、Kind 5 AXI_ERROR |
-| N13 | 完了 | `CMD_COPY_BUFFER` (0x40, 8 dwords) | 64-bit src/dst VA, 32-bit size, flags[0]=FLUSH |
-| N14 | 完了 | Dynamic State 初期値・PSO 優先度・セッション分離 | 電源投入/RESET/SESSION_OPEN(0x12) で初期化、セッション完全分離 |
-| N15 | 完了 | `CMD_BARRIER` (0x31) キャッシュ制御 | flags で I-Cache / T-Cache / D-Cache / L2 選択的無効化 |
-| N16 | 完了 | `MEM_CACHE_CFG` (0x14) L2 KiB 表現 | [15:0] 16-bit 整数で直接 KiB 表記 (256 KiB) |
-| N17 | 完了 | `CMD_BEGIN_QUERY` / `CMD_END_QUERY` | opcode 0x36/0x37, 4 dwords, Occlusion/Pipeline Statistics |
-| N18 | 完了 | `CMD_SET_VIEWPORT` / `CMD_SET_SCISSOR` | 単一ビューポート・単一シザー (Viewport: 7 dw, Scissor: 5 dw) |
-| N19 | 完了 | Index Buffer 形式 (16-bit / 32-bit) | `CMD_BIND_INDEX_BUFFER` (0x22, 4 dwords, index_type 0=U16, 1=U32) |
-| N20 | 完了 | `FAULT_INFO` フォールトコード体系 | Kind 0..10, Unit 0..4 の確定 |
-| N21 | 完了 | `DISP_IRQ_STATUS` (0x028) レジスタ名統一 | 表示割込ステータス名の統一 |
-| N22 | 完了 | `CMD_EXECUTE_COMMANDS` (0x30, 4 dwords) | セカンダリコマンドバッファ実行 (64-bit buffer VA, 32-bit dwords) |
-| N23 | 完了 | Custom Border Color Table | `CMD_SET_DYNAMIC_STATE` (0x10) による 16 エントリ VA 指定 |
-| N24 | 完了 | Multisampling サンプル数 | 1, 2, 4 samples/pixel (`sample_count`) |
-| N25 | 完了 | `CMD_FLIP` (0x51) の IMMEDIATE フラグ | flags[0]: 0=VBLANK同期, 1=即時フリップ |
-| N26 | 完了 | Ring Doorbell Register (0x008) | 32-bit 書き込みで CP へ新規パケット通知 |
-| N27 | 完了 | Secondary Buffer 実行権限保護 | 管理系・特権命令実行時は Kind 6 PROT_FAULT |
-| N28 | 完了 | `CMD_WAIT_FENCE` 符号付き 64-bit 比較 | (int64_t)(current - wait) >= 0 による単調増加比較 |
-| N29 | 完了 | AXI DECERR / SLVERR 応答時の回復手順 | CTRL.RESET によるソフトリセットおよび Session 復旧 |
-| N30 | 完了 | Compute Workgroup サイズ上限 | 1024 スレッド/Workgroup (`maxComputeWorkGroupInvocations`) |
-| N31 | 完了 | LDS (Local Data Share) 容量 | 最大 64 KiB / SU |
-| N32 | 完了 | `CMD_BARRIER` パイプラインステージフラグ | TopOfPipe, Vertex, Fragment, Compute, BottomOfPipe |
-| N33 | 完了 | Centroid フラグのビット定義 | `PSO.compute_lds_and_flags[16]` (PSO dw15 [16]) への統一 |
-| N34 | 完了 | テクスチャ形式別 `texl`/`texf` 戻り値仕様 | UNORM [0,1], SNORM [-1,1], float はそのまま, 整数は生ビット列 |
-| N35 | 完了 | `CMD_SESSION_OPEN` opcode 表記 | 0x12 に完全統一 |
-| N36 | 完了 | `texf` の形式デコードとサンプラバイパス | 形式別デコード適用、サンプラフィルタ・デプス比較のみバイパス |
-
----
-
-## 3. 検証ステータス
-
-- C ヘッダ構文検証: `gcc -fsyntax-only -Iinclude include/ghci_cmd.h` $\rightarrow$ **PASS**
+- C ヘッダ構文検証: `gcc -fsyntax-only -Iinclude include/ghci_cmd.h include/gsi1_isa.h` $\rightarrow$ **PASS**
 - 回帰シミュレーション: `./sim/run.sh atg_cp atg_ghci_slim` $\rightarrow$ **PASS** (100%)
-- 禁止略語監査: リポジトリ全域 $\rightarrow$ **0 件**
+- 禁止略語監査: リポジトリ全域 $\rightarrow$ **0 件完全維持**
+- セッション分離・MMU 透過性要件: 完全遵守
 
 DONE
