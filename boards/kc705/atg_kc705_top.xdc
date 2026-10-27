@@ -36,7 +36,7 @@ create_clock -name tck -period 33.333 [get_pins -hier -filter {NAME =~ *jtag/bsc
 ## bridge's handshake-protected words, am_jtag_regs; the DC's quasi-static
 ## configuration, atg_dc_regs §7; the MIG side and BAR2 through the AXI
 ## clock converters; BAR0 through am_axi_cdc; MSI through am_sync).  gclk
-## is 20 MHz for the board's bring-up (atg_kc705_clk, ws288 p024).  The
+## is 200 MHz matching the KC705 system clock (atg_kc705_clk, GCLK_DIVIDE=5).  The
 ## groups: gclk; the two pixel clocks (behind one BUFGMUX); the MIG's
 ## ui_clk (200 MHz, from its own MMCM on ref_clk); the PCIe bridge's
 ## axi_aclk_out (user_clk, 125 MHz from pcie_refclk); TCK.  Vivado would

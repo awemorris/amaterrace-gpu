@@ -44,7 +44,7 @@
 `default_nettype none
 
 module atg_kc705_clk #(
-	parameter integer GCLK_DIVIDE = 50	/* gclk = 1000 MHz / GCLK_DIVIDE */
+	parameter integer GCLK_DIVIDE = 5	/* gclk = 1000 MHz / GCLK_DIVIDE (5 = 200 MHz) */
 ) (
 	input wire sys_clk_p,
 	input wire sys_clk_n,

@@ -104,9 +104,9 @@ module atg_kc705_top #(
 	localparam [31:0] LOCAL_BASE = 32'h80000000;	/* the MIG's 1 GiB (address bits 29:0) */
 	localparam [31:0] LOCAL_BYTES = 32'h40000000;
 	localparam [31:0] HOST_LIMIT = 32'h80000000;	/* the bridge's AXI BAR, 1:1 (ip.tcl) */
-	/* gclk = 1000 MHz / GCLK_DIVIDE (atg_kc705_clk's MMCM).  50 (20 MHz) is a placeholder,
-	 * not the target: the clock is chosen in the timing work (ws288 p025). */
-	localparam integer GCLK_DIVIDE = 50;
+	/* gclk = 1000 MHz / GCLK_DIVIDE (atg_kc705_clk's MMCM).
+	 * Set to 5 for 200 MHz core clock matching KC705 system clock. */
+	localparam integer GCLK_DIVIDE = 5;
 	localparam [31:0] GCLK_HZ = 32'd1000000000 / GCLK_DIVIDE;
 
 	wire clk, rst_n, sys_cc, ref_clk, ref_rst_n, pclk, prst_n, pclk_sel, mem_ready, irq;

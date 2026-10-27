@@ -22,7 +22,7 @@
 
 module atg_kc705_clk #(
 	parameter integer LOCK_CYCLES = 16,
-	parameter integer GCLK_DIVIDE = 50	/* the board's MMCM setting; the model's gclk is sys_clk / 2 */
+	parameter integer GCLK_DIVIDE = 5	/* the board's MMCM setting (5 = 200 MHz); the model's gclk is sys_clk */
 ) (
 	input wire sys_clk_p,
 	input wire sys_clk_n,
