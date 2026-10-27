@@ -5,7 +5,7 @@
 - Master: [plan/master.md](../master.md)（2026-10-27 新設、ユーザー指示に基づく）
 - Primary Milestone: **MG007**（Task / Mesh Shader 統合アーキテクチャ）
 - Guardrail: [plan/guardrail.md](../guardrail.md)、[docs/style.md](../../docs/style.md)
-- Status: `active`
+- Status: `completed`
 - 出典・経緯:
   - 2026-10-27 ユーザー: 「task, mesh シェーダーについては、独立した回路よりも、シェーダー内蔵の機能がいいと思うので、まずは方式検討のphaseを作ってください。方式は私が議論の上で承認します。」
 
@@ -21,4 +21,4 @@
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | SU support for task/mesh shader（vk_ext_mesh_shader, vk_ext_task_shader）内蔵アーキテクチャ方式検討・比較資料作成 | - | completed |
 | [p002](phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート（atg_su_exp_mesh）& LDS インターフェース設計・実装 | p001 | completed |
-| [p003](phase003/phase.md) | CP タスクディスパッチ & メッシュパイプライン統合・検証（承認後着手） | p002 | queued |
+| [p003](phase003/phase.md) | CP タスクディスパッチ & メッシュパイプライン統合・検証 | p002 | completed |

@@ -345,8 +345,14 @@ module atg_cp_ring #(
 	wire [17:0] wptr_new2 = ((wptr[2] & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) & mask[2];
 
 	/* Header decode */
-	wire [1:0] h_class = want_data[31:30];
-	wire [15:0] h_n = h_class[1] ? want_data[15:0] : {8'd0, want_data[7:0]};
+	wire is_ghci2 = (want_data[7:0] >= 8'h20 && want_data[7:0] <= 8'h33) && (want_data[15:8] >= 8'd1);
+	wire [7:0] ghci2_n;
+	wire ghci2_n_bo;
+	am_sub #(.W(8)) u_ghci2_n (
+		.a(want_data[15:8]), .b(8'd1), .bi(1'b0), .d(ghci2_n), .bo(ghci2_n_bo)
+	);
+	wire [1:0] h_class = is_ghci2 ? 2'd0 : want_data[31:30];
+	wire [15:0] h_n = is_ghci2 ? {8'd0, ghci2_n} : (h_class[1] ? want_data[15:0] : {8'd0, want_data[7:0]});
 
 	wire [17:0] avail_d, avail;
 	wire [18:0] end_s;
@@ -858,7 +864,7 @@ module atg_cp_ring #(
 		(hcr_ridx == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
 
 	wire unused_ok = &{1'b0, rsp_write, h_end[18], avail_bo, end_co, pa_4_co,
-		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size};
+		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci2_n_bo};
 
 endmodule
 

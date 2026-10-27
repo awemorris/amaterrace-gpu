@@ -38,6 +38,7 @@ extern "C" {
 #define GHCI_CMD_DRAW                   0x27u
 #define GHCI_CMD_DRAW_INDEXED           0x28u
 #define GHCI_CMD_DRAW_INDIRECT          0x29u
+#define GHCI_CMD_DRAW_MESH_TASKS        0x2Au
 #define GHCI_CMD_DISPATCH               0x30u
 #define GHCI_CMD_BARRIER                0x31u
 #define GHCI_CMD_EXECUTE_COMMANDS       0x32u
@@ -277,6 +278,14 @@ typedef struct GhciCmdDrawIndirect {
 	uint32_t stride_bytes;
 	uint32_t flags;                 /* [0] = 0 (direct count), 1 (count from buffer) */
 } GhciCmdDrawIndirect;
+
+/* CMD_DRAW_MESH_TASKS (0x2A): 4 dwords */
+typedef struct GhciCmdDrawMeshTasks {
+	uint32_t header;                /* GHCI_CMD_DRAW_MESH_TASKS, size = 4 */
+	uint32_t group_count_x;
+	uint32_t group_count_y;
+	uint32_t group_count_z;
+} GhciCmdDrawMeshTasks;
 
 /* CMD_DISPATCH (0x30): 4 dwords */
 typedef struct GhciCmdDispatch {

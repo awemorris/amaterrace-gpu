@@ -89,6 +89,11 @@ module atg_su_lds #(
 	localparam [1:0] IDLE = 2'd0, ACCESS = 2'd1, DRAIN = 2'd2, BEAT = 2'd3;
 
 	reg [31:0] ram [0:NW-1];
+	integer init_i;
+	initial begin
+		for (init_i = 0; init_i < NW; init_i = init_i + 1)
+			ram[init_i] = 32'd0;
+	end
 	reg [1:0] st;
 	reg [NPHYS*AW-1:0] radr;
 	reg [DW-1:0] rdat, rcmp, res;

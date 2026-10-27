@@ -121,7 +121,12 @@ module atg_rx_pipeline_tb;
 		.dx_depth(dx_depth),
 		.dx_last(dx_last),
 		.ord_valid(ord_valid),
-		.ord_seq(ord_seq)
+		.ord_seq(ord_seq),
+		.mesh_valid(1'b0),
+		.mesh_ready(),
+		.mesh_tri(702'd0),
+		.mesh_last(1'b0),
+		.mesh_id(16'd0)
 	);
 
 	/* PT memory: 256 entries x 16 words */

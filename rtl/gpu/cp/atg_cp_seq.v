@@ -138,6 +138,7 @@ module atg_cp_seq #(
 	localparam [5:0] CMD_DRAW                  = 6'h27;
 	localparam [5:0] CMD_DRAW_INDEXED          = 6'h28;
 	localparam [5:0] CMD_DRAW_INDIRECT         = 6'h29;
+	localparam [5:0] CMD_DRAW_MESH_TASKS       = 6'h2a;
 	localparam [5:0] CMD_DISPATCH              = 6'h30;
 	localparam [5:0] CMD_BARRIER               = 6'h31;
 	localparam [5:0] CMD_EXECUTE_COMMANDS      = 6'h32;
@@ -246,7 +247,7 @@ module atg_cp_seq #(
 	/* A µop that starts a unit: BLIT, DRAW, DISPATCH, LOAD_CONST and class 1. */
 	wire unit_op = vendor || op == OP_BLIT || op == OP_DRAW || op == OP_DISPATCH ||
 		op == OP_LOAD_CONST || op == CMD_DRAW || op == CMD_DRAW_INDEXED ||
-		op == CMD_DRAW_INDIRECT || op == CMD_DISPATCH;
+		op == CMD_DRAW_INDIRECT || op == CMD_DRAW_MESH_TASKS || op == CMD_DISPATCH;
 	assign u_req = {st == Q_EXEC && unit_op && (vendor || op != OP_BLIT), st == Q_EXEC && unit_op};
 	assign u_fw = use_fw;
 	assign u_side = side;
@@ -266,7 +267,7 @@ module atg_cp_seq #(
 		else case (op)
 		OP_BLIT: k_code = K_BLT;
 		OP_DRAW, CMD_DRAW, CMD_DRAW_INDEXED, CMD_DRAW_INDIRECT: k_code = K_DRAW;
-		OP_DISPATCH, CMD_DISPATCH: k_code = K_CS;
+		OP_DISPATCH, CMD_DISPATCH, CMD_DRAW_MESH_TASKS: k_code = K_CS;
 		OP_LOAD_CONST: k_code = K_LC;
 		OP_PERF_RESET: k_code = K_PERF;
 		OP_FLIP: k_code = K_FLIP;
@@ -277,7 +278,7 @@ module atg_cp_seq #(
 
 	assign kick = k_on;
 	assign kick_code = k_code;
-	assign inv = !is_op_std ? 4'd0 : (op == OP_DRAW || op == CMD_DRAW || op == CMD_DRAW_INDEXED || op == CMD_DRAW_INDIRECT) ? 4'b0011 :
+	assign inv = !is_op_std ? 4'd0 : (op == OP_DRAW || op == CMD_DRAW || op == CMD_DRAW_INDEXED || op == CMD_DRAW_INDIRECT || op == CMD_DRAW_MESH_TASKS) ? 4'b0011 :
 		op == OP_LOAD_PROGRAM ? 4'b1000 : op == OP_INVALIDATE ? flags[3:0] : 4'd0;
 
 	wire is_query = !vendor && op == OP_QUERY;

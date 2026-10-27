@@ -72,15 +72,16 @@
 | `q001-i58` | **P2 / T1 / R1** | [ws003-p007](../ws003/phase007/phase.md) | プロファイル別プリセットビルド検証 & 全体回帰テスト | cleared | `q001-i57` | P2 実装・検証完了。minimal/balanced/high-perf 3プリセット切替、全215モジュールLint 0警告、arith-lint 0件。 |
 | `q001-i59` | **D1** | [ws004-p001](../ws004/phase001/phase.md) | SU support for task/mesh shader（vk_ext_mesh_shader, vk_ext_task_shader）内蔵アーキテクチャ方式検討資料作成 | cleared | なし | 検討完了。全主要論点で推奨案（64頂点/126プリミティブ、L2Cペイロード、LDS直結DMA、静的MUX）採用でユーザー承認完了。 |
 | `q001-i60` | **P3 / R1** | [ws004-p002](../ws004/phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート（atg_su_exp_mesh）& LDS インターフェース設計・実装 | cleared | `q001-i59` | P3 実装完了。NGG完全撤廃確認、単体・atg_su:+quick PASS、R1 敵対的レビュー APPROVE 承認完了。 |
-| `q001-i61` | **P3** | [ws004-p003](../ws004/phase003/phase.md) | CP タスクディスパッチ & メッシュパイプライン統合・検証 | queued | `q001-i60` | 承認後着手。 |
+| `q001-i61` | **P3 / P2 / P1** | [ws004-p003](../ws004/phase003/phase.md) | CP タスクディスパッチ & メッシュパイプライン統合・検証 | cleared | `q001-i60` | RX静的MUX・CP ringパケット長・ゼロ拡張ガード是正完了。全8テストPASS（atg_top_mesh 10s）、Verilator-Wall警告0件、arith-lint 0逸脱。 |
 
 ## サブエージェント実行状態（N=3）
 
 | レーン | 担当エージェント | モデル | 状態 | 現在のタスク | 次の候補 |
 | :---: | :---: | :--- | :--- | :--- | :--- |
-| **P1** | 実装（メモリ・相互結合・コア・CP・VF） | Claude Opus 5.5 Medium | idle | 待機中（ws003-p002 完了） | 次期タスク |
-| **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC・CP） | Claude Opus 5.5 Medium | idle | 待機中（ws003-p007 完了） | 次期タスク |
-| **P3** | 実装（インフラ・ジオメトリ・SU・ROP・BLT・TU） | Claude Opus 5.5 Medium | idle | 待機中（ws004-p002 完了） | ws004-p003 |
+| **P1** | 実装（メモリ・相互結合・コア・CP・VF） | Claude Opus 5.5 Medium | idle | ws004-p003 完了（次期タスク待機） | 次期タスク |
+| **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC・CP） | Claude Opus 5.5 Medium | idle | ws004-p003 完了（次期タスク待機） | 次期タスク |
+| **P3** | 実装（インフラ・ジオメトリ・SU・ROP・BLT・TU） | Claude Opus 5.5 Medium | idle | ws004-p003 完了（次期タスク待機） | 次期タスク |
+| **P4** | FPGA ビルド & Vivado 解析 | Claude Opus 5.5 Medium | active | KC705 ミニマムコンフィグ Vivado P&R / Fit / Fmax 調査 | ビルド最適化 |
 | **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | 全設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
 | **R1** | レビュー | Gemini 4 Argon Medium | active | 敵対的レビュー待機中 | 各レーン成果物レビュー |

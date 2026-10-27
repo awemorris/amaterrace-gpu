@@ -28,6 +28,12 @@ module atg_rx_setup (
 	output wire cl_ready,
 	input wire [701:0] cl_tri,
 	input wire cl_last,
+	/* From Mesh Shader (atg_su_exp_mesh) */
+	input wire mesh_valid,
+	output wire mesh_ready,
+	input wire [701:0] mesh_tri,
+	input wire mesh_last,
+	input wire [15:0] mesh_id,
 	/* To atg_rx_scan */
 	output reg sp_valid,
 	input wire sp_ready,
@@ -317,7 +323,14 @@ module atg_rx_setup (
 	wire [31:0] max_z01 = max_mag({1'b0, R[33][30:0]}, {1'b0, R[36][30:0]});
 	wire [31:0] max_z   = max_mag(max_z01, {1'b0, R[39][30:0]});
 
+	/* Stream Selection: cl_* vs mesh_* (Option 4 Static MUX with cl_* priority) */
+	wire in_mesh = mesh_valid && !cl_valid;
+	wire in_valid = cl_valid || mesh_valid;
+	wire [701:0] in_tri = in_mesh ? mesh_tri : cl_tri;
+	wire in_last = in_mesh ? mesh_last : cl_last;
+
 	assign cl_ready = (st == S_IDLE);
+	assign mesh_ready = (st == S_IDLE) && !cl_valid;
 	assign busy = (st != S_IDLE);
 	assign sp_last = lastq && !more;
 
@@ -358,11 +371,11 @@ module atg_rx_setup (
 				pl[i] <= 32'd0;
 		end else case (st)
 		S_IDLE:
-			if (cl_valid) begin
-				raw <= cl_tri[699];
-				kind <= cl_tri[699] || cl_tri[701:700] == 2'd3 ? 2'd2 : cl_tri[701:700];
-				keep <= cl_tri[698:672];
-				lastq <= cl_last;
+			if (in_valid) begin
+				raw <= in_tri[699];
+				kind <= in_tri[699] || in_tri[701:700] == 2'd3 ? 2'd2 : in_tri[701:700];
+				keep <= in_tri[698:672];
+				lastq <= in_last;
 				sub <= 1'b0;
 				more <= 1'b0;
 				for (i = 0; i < 12; i = i + 1)
@@ -370,23 +383,23 @@ module atg_rx_setup (
 
 				/* 1-cycle parallel load */
 				for (i = 0; i < 21; i = i + 1)
-					R[i] <= cl_tri[i * 32 +: 32];
+					R[i] <= in_tri[i * 32 +: 32];
 				R[21] <= vp_array[vp_idx][0]; R[22] <= vp_array[vp_idx][1]; R[23] <= vp_array[vp_idx][2];
 				R[24] <= vp_array[vp_idx][3]; R[25] <= vp_array[vp_idx][4]; R[26] <= vp_array[vp_idx][5];
 				R[27] <= ONE;
 
-				if (cl_tri[699]) begin
+				if (in_tri[699]) begin
 					/* RAW screen space: load X, Y, Z directly */
-					R[31] <= cl_tri[31:0];   R[32] <= cl_tri[63:32];   R[33] <= cl_tri[95:64];
-					R[34] <= cl_tri[159:128]; R[35] <= cl_tri[191:160]; R[36] <= cl_tri[223:192];
-					R[37] <= cl_tri[287:256]; R[38] <= cl_tri[319:288]; R[39] <= cl_tri[351:320];
+					R[31] <= in_tri[31:0];   R[32] <= in_tri[63:32];   R[33] <= in_tri[95:64];
+					R[34] <= in_tri[159:128]; R[35] <= in_tri[191:160]; R[36] <= in_tri[223:192];
+					R[37] <= in_tri[287:256]; R[38] <= in_tri[319:288]; R[39] <= in_tri[351:320];
 					st <= S_EDGE;
 					e_start <= 1'b1;
 				end else begin
 					/* Clip space: start 1/w0 divide */
 					fd_v <= 1'b1;
 					fd_a <= ONE;
-					fd_b <= cl_tri[127:96];
+					fd_b <= in_tri[127:96];
 					seq_step <= 5'd0;
 					st <= S_PERSP_W;
 				end
@@ -857,7 +870,7 @@ module atg_rx_setup (
 	assign sp_tri[767:736] = {1'b0, kind, raw, e_front, more ? 3'd0 : keep[26:24], keep[23:0]};
 
 	wire unused_ok = &{1'b0, fd_busy, rm[2:1], su_bo_unused, max_z[31], max_z[22:0],
-		lw_fix[23:16], ps_fix[23:16], div_busy};
+		lw_fix[23:16], ps_fix[23:16], div_busy, mesh_id};
 endmodule
 
 `default_nettype wire

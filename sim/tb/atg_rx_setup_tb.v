@@ -32,12 +32,18 @@ module atg_rx_setup_tb;
 	reg [31:0] st_wdata = 0;
 	reg cl_valid = 1'b0, cl_last = 1'b0, sp_ready = 1'b0;
 	reg [701:0] cl_tri = 0;
-	wire cl_ready, sp_valid, sp_last, busy;
+	reg mesh_valid = 1'b0, mesh_last = 1'b0;
+	reg [701:0] mesh_tri = 0;
+	reg [15:0] mesh_id = 0;
+	wire cl_ready, mesh_ready, sp_valid, sp_last, busy;
 	wire [767:0] sp_tri;
 
 	atg_rx_setup dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .cl_valid(cl_valid), .cl_ready(cl_ready), .cl_tri(cl_tri),
-		.cl_last(cl_last), .sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri),
+		.cl_last(cl_last),
+		.mesh_valid(mesh_valid), .mesh_ready(mesh_ready), .mesh_tri(mesh_tri),
+		.mesh_last(mesh_last), .mesh_id(mesh_id),
+		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri),
 		.sp_last(sp_last), .busy(busy));
 
 	integer fd, code, n, i, seed, cycles, maxc;
@@ -208,6 +214,39 @@ module atg_rx_setup_tb;
 				code = 0;
 		end
 		$fclose(fd);
+
+		/* Direct Mesh Stream test: Option 4 Static MUX */
+		repeat (5) @(posedge clk);
+		if (!mesh_ready) begin
+			$display("FAIL: mesh_ready should be 1 when IDLE and cl_valid=0");
+			$finish;
+		end
+		/* Feed a raw screen-space triangle via mesh stream */
+		mesh_valid <= 1'b1;
+		mesh_last <= 1'b1;
+		mesh_id <= 16'h1234;
+		mesh_tri <= {2'd0, 1'b1, 27'h0, {21{32'h3F800000}}};
+		@(posedge clk);
+		mesh_valid <= 1'b0;
+		mesh_last <= 1'b0;
+		cycles = 0;
+		while (!sp_valid && cycles < 1000) begin
+			@(posedge clk);
+			cycles = cycles + 1;
+		end
+		if (!sp_valid) begin
+			$display("FAIL: mesh stream did not produce sp_valid");
+			$finish;
+		end
+		if (!sp_last) begin
+			$display("FAIL: mesh stream did not preserve sp_last");
+			$finish;
+		end
+		sp_ready <= 1'b1;
+		@(posedge clk);
+		sp_ready <= 1'b0;
+		$display("PASS atg_rx_setup.mesh_stream");
+
 		$display("atg_rx_setup: %0d CAPS[30] primitives", nprim);
 		if (e_s[0] == 0)
 			$display("PASS atg_rx_setup.line");

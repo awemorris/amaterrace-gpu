@@ -94,6 +94,7 @@ module atg_cp_seq_wait (
 	localparam [5:0] CMD_DRAW                  = 6'h27;
 	localparam [5:0] CMD_DRAW_INDEXED          = 6'h28;
 	localparam [5:0] CMD_DRAW_INDIRECT         = 6'h29;
+	localparam [5:0] CMD_DRAW_MESH_TASKS       = 6'h2a;
 	localparam [5:0] CMD_DISPATCH              = 6'h30;
 	localparam [5:0] CMD_BARRIER               = 6'h31;
 	localparam [5:0] CMD_EXECUTE_COMMANDS      = 6'h32;
@@ -158,7 +159,7 @@ module atg_cp_seq_wait (
 		end else if (vendor && op == VOP_DBG_MARK && p == 8'd0) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, GHCI_S_DBG_MARK};
-		end else if (!vendor && op == OP_DISPATCH && p < 8'd3) begin
+		end else if (!vendor && (op == OP_DISPATCH || op == CMD_DISPATCH || op == CMD_DRAW_MESH_TASKS) && p < 8'd3) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, p[1:0] == 2'd0 ? GHCI_S_GRID_X : p[1:0] == 2'd1 ? S_GRID_Y : S_GRID_Z};
 			pay_wait = {1'b0, B_SU};
@@ -223,7 +224,7 @@ module atg_cp_seq_wait (
 			CMD_BIND_DESCRIPTOR_TABLE: pre = {1'b0, B_TUW};
 			CMD_SET_VIEWPORT, CMD_SET_SCISSOR, CMD_SET_DYNAMIC_STATE: pre = {1'b0, B_RXROP};
 			CMD_DRAW, CMD_DRAW_INDEXED, CMD_DRAW_INDIRECT: pre = {1'b0, B_VF};
-			CMD_DISPATCH: pre = {1'b0, B_SU};
+			CMD_DISPATCH, CMD_DRAW_MESH_TASKS: pre = {1'b0, B_SU};
 			CMD_BARRIER: pre = {1'b0, flags == 8'd0 ? B_ALL : flags | B_MEM};
 			CMD_EXECUTE_COMMANDS: pre = 9'd0;
 			CMD_FENCE: begin

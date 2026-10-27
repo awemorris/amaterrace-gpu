@@ -105,7 +105,8 @@ module atg_su_exp_mesh #(
 	/* Primitive Index Address Calculation: base_prim + cur_prim_idx */
 	wire [AW-1:0] prim_addr_calc;
 	wire co_paddr;
-	am_add #(.W(AW)) u_prim_addr (.a(base_prim), .b({{(AW-8){1'b0}}, cur_prim_idx}), .ci(1'b0),
+	wire [AW-1:0] prim_off = {{(AW > 8 ? AW - 8 : 0){1'b0}}, cur_prim_idx[AW > 8 ? 7 : AW-1 : 0]};
+	am_add #(.W(AW)) u_prim_addr (.a(base_prim), .b(prim_off), .ci(1'b0),
 		.s(prim_addr_calc), .co(co_paddr));
 
 	/* Vertex Word Address Generation for req_w (0..20) */
@@ -128,7 +129,8 @@ module atg_su_exp_mesh #(
 	end
 
 	wire [AW-1:0] cur_base = is_var ? base_var : base_pos;
-	wire [AW-1:0] v_scaled = {{(AW-10){1'b0}}, cur_v, 2'b00};	/* v * 4 words */
+	wire [9:0] v_scaled_10 = {cur_v, 2'b00};
+	wire [AW-1:0] v_scaled = {{(AW > 10 ? AW - 10 : 0){1'b0}}, v_scaled_10[AW > 10 ? 9 : AW-1 : 0]};
 
 	wire [AW-1:0] base_plus_v;
 	wire co_bpv;
@@ -136,7 +138,8 @@ module atg_su_exp_mesh #(
 
 	wire [AW-1:0] vert_word_addr;
 	wire co_vwa;
-	am_add #(.W(AW)) u_vwa (.a(base_plus_v), .b({{(AW-2){1'b0}}, comp_off}), .ci(1'b0),
+	wire [AW-1:0] comp_off_w = {{(AW > 2 ? AW - 2 : 0){1'b0}}, comp_off[AW > 2 ? 1 : AW-1 : 0]};
+	am_add #(.W(AW)) u_vwa (.a(base_plus_v), .b(comp_off_w), .ci(1'b0),
 		.s(vert_word_addr), .co(co_vwa));
 
 	/* Skid Buffer Signals */

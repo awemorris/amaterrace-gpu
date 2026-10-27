@@ -231,6 +231,7 @@ struct ghci_init_ack {
 #define GHCI_VK_CMD_NEXT_SUBPASS 134u
 #define GHCI_VK_CMD_END_RENDER_PASS 135u
 #define GHCI_VK_CMD_EXECUTE_COMMANDS 136u
+#define GHCI_VK_CMD_DRAW_MESH_TASKS 137u
 
 /* The VkResult values of the result records. */
 #define GHCI_VK_SUCCESS 0

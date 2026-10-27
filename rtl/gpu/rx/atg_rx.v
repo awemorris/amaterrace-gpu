@@ -92,7 +92,13 @@ module atg_rx #(
 	output wire dx_last,
 	/* Sequence numbers to the ROP */
 	output wire ord_valid,
-	output wire [15:0] ord_seq
+	output wire [15:0] ord_seq,
+	/* Mesh Stream (from atg_su_exp_mesh) */
+	input wire mesh_valid,
+	output wire mesh_ready,
+	input wire [701:0] mesh_tri,
+	input wire mesh_last,
+	input wire [15:0] mesh_id
 );
 	wire cl_valid, cl_ready, cl_last;
 	wire [701:0] cl_tri;
@@ -134,6 +140,8 @@ module atg_rx #(
 	atg_rx_setup setup (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.cl_valid(cl_valid), .cl_ready(cl_ready), .cl_tri(cl_tri), .cl_last(cl_last),
+		.mesh_valid(mesh_valid), .mesh_ready(mesh_ready), .mesh_tri(mesh_tri),
+		.mesh_last(mesh_last), .mesh_id(mesh_id),
 		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
 		.busy(setup_busy),
 		.prim_type(rx_prim_type),

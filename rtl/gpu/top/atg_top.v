@@ -857,6 +857,10 @@ module atg_top #(
 	wire [31:0] fl_data, fl_pw_data, fl_mask;
 	wire [11:0] fl_pw_addr;
 	wire [63:0] fl_info;
+	/* Mesh Stream: SU 0 → RX */
+	wire su_mesh_valid, su_mesh_ready, su_mesh_last;
+	wire [701:0] su_mesh_tri;
+	wire [15:0] su_mesh_id;
 	/* RX → ROP. */
 	wire dx_valid, dx_ready, dx_last, ord_valid;
 	wire [15:0] dx_seq, ord_seq;
@@ -948,7 +952,9 @@ module atg_top #(
 			.fl_pw_data(fl_pw_data), .fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
 			.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 			.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
-			.ord_valid(ord_valid), .ord_seq(ord_seq)
+			.ord_valid(ord_valid), .ord_seq(ord_seq),
+			.mesh_valid(su_mesh_valid), .mesh_ready(su_mesh_ready),
+			.mesh_tri(su_mesh_tri), .mesh_last(su_mesh_last), .mesh_id(su_mesh_id)
 		);
 		assign prim_ready = rx_prim_ready && prim_ok;
 	end else begin : g_no_rx
@@ -956,6 +962,7 @@ module atg_top #(
 		assign rx_fsm = 4'd0;
 		assign prim_ready = 1'b0;
 		assign rx_prim_ready = 1'b0;
+		assign su_mesh_ready = 1'b0;
 		assign pt_rd = 1'b0;
 		assign pt_idx = 8'd0;
 		assign pt_word = 7'd0;
@@ -981,7 +988,8 @@ module atg_top #(
 		assign ord_valid = 1'b0;
 		assign ord_seq = 16'd0;
 		wire unused_rx = &{1'b0, raw_kick, prim_valid, prim_vtx, prim_free, prim_last,
-			pt_rdata, fl_gnt, dx_ready, prim_ok, rx_prim_ready};
+			pt_rdata, fl_gnt, dx_ready, prim_ok, rx_prim_ready,
+			su_mesh_valid, su_mesh_last, su_mesh_tri, su_mesh_id};
 	end
 
 	if (HAS_TU != 0) begin : g_tu
@@ -1213,7 +1221,7 @@ module atg_top #(
 			.ex_valid(s_ex_valid), .ex_ready(g0 && ex_ready), .ex_seq(s_ex_seq), .ex_xy(s_ex_xy),
 			.ex_mask(s_ex_mask), .ex_color(s_ex_color), .ex_depth(s_ex_depth),
 			.ex_last(s_ex_last), .ex_next(ex_next), .ex_aux(s_ex_aux),
-			.mesh_valid(s_mesh_valid), .mesh_ready(1'b1), .mesh_tri(s_mesh_tri),
+			.mesh_valid(s_mesh_valid), .mesh_ready(g0 ? su_mesh_ready : 1'b1), .mesh_tri(s_mesh_tri),
 			.mesh_last(s_mesh_last), .mesh_id(s_mesh_id),
 			.d_req_valid(c_req_valid[CD]), .d_req_ready(c_req_ready[CD]),
 			.d_req_write(c_req_write[CD]), .d_req_line(c_req_line[CD*LA_W +: LA_W]),
@@ -1272,13 +1280,18 @@ module atg_top #(
 			assign sa_pop_ready = s_sa_pop_ready;
 			assign sa_ctl_valid = s_sa_ctl_valid;
 			assign sa_ctl_data = s_sa_ctl_data;
+			assign su_mesh_valid = s_mesh_valid;
+			assign su_mesh_tri = s_mesh_tri;
+			assign su_mesh_last = s_mesh_last;
+			assign su_mesh_id = s_mesh_id;
 		end else begin : g_sun
 			wire unused_sun = &{1'b0, s_vl_gnt, s_vl_ptbase, s_pt_done, s_fl_gnt, s_pt_rdata, s_tx_valid,
 				s_tx_op, s_tx_slot, s_tx_vs, s_tx_mask, s_tx_coord, s_tx_off, s_tx_tag, s_tx_last, s_tr_ready,
 				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last, s_ex_aux,
-				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data};
+				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data,
+				s_mesh_valid, s_mesh_last, s_mesh_tri, s_mesh_id};
 		end
-		wire unused_slots = &{1'b0, s_vl_slot, s_fl_slot, s_mesh_valid, s_mesh_last, s_mesh_tri, s_mesh_id};
+		wire unused_slots = &{1'b0, s_vl_slot, s_fl_slot};
 	end
 
 	if (NSU > 0) begin : g_atom
@@ -1362,13 +1375,17 @@ module atg_top #(
 		assign su_scrub_v = 1'b0;
 		assign su_fault_addr_v = 32'd0;
 		assign su_fsm_v = 4'd0;
+		assign su_mesh_valid = 1'b0;
+		assign su_mesh_tri = 702'd0;
+		assign su_mesh_last = 1'b0;
+		assign su_mesh_id = 16'd0;
 		wire unused_su = &{1'b0, cs_kick, lc_kick, inv, vl_req, vl_we, vl_reg, vl_lane, vl_data,
 			vl_go, vl_mask, fl_req, fl_we, fl_reg, fl_lane, fl_data, fl_pw_we, fl_pw_addr,
 			fl_pw_data, fl_go, fl_mask, fl_info, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx,
 			tx_ready, tr_valid, tr_tag, tr_data, tr_last, ex_ready, ex_next, sa_push_ready,
 			sa_pop_valid, sa_pop_data, sa_qstat, sa_stat, sa_qtag, at_ready, at_rsp_valid,
 			at_old, at_error, su_busy_v, su_fault_v, su_fault_addr_v, at_valid, at_op, at_addr,
-			at_a, at_b};
+			at_a, at_b, su_mesh_ready};
 	end
 	endgenerate
 

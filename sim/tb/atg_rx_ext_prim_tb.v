@@ -54,6 +54,11 @@ module atg_rx_ext_prim_tb;
 		.cl_ready(cl_ready),
 		.cl_tri(cl_tri),
 		.cl_last(cl_last),
+		.mesh_valid(1'b0),
+		.mesh_ready(),
+		.mesh_tri(702'd0),
+		.mesh_last(1'b0),
+		.mesh_id(16'd0),
 		.sp_valid(sp_valid),
 		.sp_ready(sp_ready),
 		.sp_tri(sp_tri),
@@ -117,7 +122,12 @@ module atg_rx_ext_prim_tb;
 		.dx_mask(dx_mask),
 		.dx_depth(dx_depth),
 		.dx_last(dx_last),
-		.ord_valid(), .ord_seq()
+		.ord_valid(), .ord_seq(),
+		.mesh_valid(1'b0),
+		.mesh_ready(),
+		.mesh_tri(702'd0),
+		.mesh_last(1'b0),
+		.mesh_id(16'd0)
 	);
 
 	/* Mock Page Table for u_rx */

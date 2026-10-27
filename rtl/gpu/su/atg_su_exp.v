@@ -344,11 +344,15 @@ module atg_su_exp #(
 
 	/* ---- Unified Meshlet Primitive Export Sequencer */
 	wire ex_mesh = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && tgt == 32'h200;
-	wire [7:0] mesh_k_prim = (x_b[7:0] != 8'd0) ? x_b[7:0] : x_a[23:16];
-	wire [7:0] mesh_k_vert = (x_b[15:8] != 8'd0) ? x_b[15:8] : x_a[31:24];
-	wire [LDS_AW-1:0] mesh_k_pbase = (x_c[LDS_AW-1:0] != {LDS_AW{1'b0}}) ? x_c[LDS_AW-1:0] : {{(LDS_AW-10){1'b0}}, 10'd512};
+	wire [7:0] mesh_k_prim = x_b[7:0];
+	wire [7:0] mesh_k_vert = x_b[15:8];
+	wire [9:0] mesh_pb_10 = 10'd512;
+	wire [LDS_AW-1:0] mesh_k_pbase = {{(LDS_AW > 10 ? LDS_AW - 10 : 0){1'b0}}, mesh_pb_10[LDS_AW > 10 ? 9 : LDS_AW-1 : 0]};
 
 	wire mesh_done_unused;
+
+	wire [9:0] mesh_vb_10 = 10'd256;
+	wire [LDS_AW-1:0] mesh_k_vbase = {{(LDS_AW > 10 ? LDS_AW - 10 : 0){1'b0}}, mesh_vb_10[LDS_AW > 10 ? 9 : LDS_AW-1 : 0]};
 
 	atg_su_exp_mesh #(.AW(LDS_AW), .DATA_W(32)) u_mesh (
 		.clk(clk), .rst_n(rst_n),
@@ -358,7 +362,7 @@ module atg_su_exp #(
 		.kick_vert_count(mesh_k_vert),
 		.kick_prim_base(mesh_k_pbase),
 		.kick_pos_base({LDS_AW{1'b0}}),
-		.kick_var_base({{(LDS_AW-10){1'b0}}, 10'd256}),
+		.kick_var_base(mesh_k_vbase),
 		.busy(mesh_busy),
 		.done(mesh_done_unused),
 		.lds_rd_en(mesh_lds_rd_en),

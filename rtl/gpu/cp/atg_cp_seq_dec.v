@@ -74,6 +74,7 @@ module atg_cp_seq_dec #(
 	localparam [5:0] CMD_DRAW                  = 6'h27;
 	localparam [5:0] CMD_DRAW_INDEXED          = 6'h28;
 	localparam [5:0] CMD_DRAW_INDIRECT         = 6'h29;
+	localparam [5:0] CMD_DRAW_MESH_TASKS       = 6'h2a;
 	localparam [5:0] CMD_DISPATCH              = 6'h30;
 	localparam [5:0] CMD_BARRIER               = 6'h31;
 	localparam [5:0] CMD_EXECUTE_COMMANDS      = 6'h32;
@@ -165,6 +166,10 @@ module atg_cp_seq_dec #(
 			CMD_DRAW_INDIRECT: begin
 				h_need = 8'd5;
 				h_absent = !UNITS[2];
+			end
+			CMD_DRAW_MESH_TASKS: begin
+				h_need = 8'd3;
+				h_absent = !UNITS[6];
 			end
 			CMD_DISPATCH: begin
 				h_need = 8'd3;

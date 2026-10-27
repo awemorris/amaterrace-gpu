@@ -760,7 +760,7 @@ module atg_rx_scan #(
 		sp_tri[767:765], sp_tri[735:448], lij[16], qx1[16], qy1[16], qx2[16], qy2[16],
 		HAS_SU != 0, coarse_tri_ready, cur_last_tile, eb_cov_unused,
 		esamp_carry_unused, esamp_unused, lve_carry_unused, qstep_carry_unused, tend_carry_unused,
-		hiz_cull, hiz_rd_zmax};
+		hiz_cull, hiz_rd_zmax, coarse_tri_valid, coarse_tile_ready, cur_ty, cov_op, cov_oq};
 endmodule
 
 `default_nettype wire
