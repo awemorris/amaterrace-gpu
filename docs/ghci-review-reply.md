@@ -1,261 +1,256 @@
-# GHCI Review Reply - Version 3.0 (2026-10-27) - Commit: 0fc7927 (Target: N01〜N30)
+# GHCI Review Reply - Version 4.0 (2026-10-27) - Commit: 7153329 (Target: N01〜N32)
 
-zedBSD ドライバ開発チーム（amaterrace.ko）による「GHCI レビュー 第 3 版（ghci.md 382dd77 に対する疑問 N01〜N30、2026-10-27 20:15）」で提示された全 30 項目（解決済 4 件、継続検討・新規 26 件）について、amaterrace-gpu 正準仕様書 `docs/ghci.md`（commit: `0fc7927`、2532 行）への直接改訂を完了しました。以下に各項目への対応内容、根拠節、および該当行番号を報告します。
-
----
-
-## 疑問への回答（N01〜N30）
-
-### N01 [C] PSO Shader State & Register Pool 定義
-- **回答**: 
-  1. `GhciPipelineState`（§8.2, 1099〜1102 行）の `dw13`〜`dw15` にシェーダリソース上限およびコンピュート/フラグ設定を正式定義しました：
-     - `dw13` (`shader_resource_limits`): `[7:0] used_regs_vs`, `[15:8] used_regs_fs`, `[23:16] used_regs_cs`, `[31:24] varying_count` (0..16)。
-     - `dw14` (`compute_local_size`): `[9:0] local_size_x`, `[19:10] local_size_y`, `[29:20] local_size_z`。
-     - `dw15` (`compute_lds_and_flags`): `[15:0] lds_bytes`, `[16] fs_centroid`, `[17] fs_depth_export`, `[18] fs_discard`。
-  2. レジスタ本数は **最大 64 本（`r0..r63`）** です。旧記述「r0..r62（63本）」のタイポを修正し、`r0..r63`（64本、インデックス 0〜63）に統一しました。
-- **根拠節・行**: §8.2 (1099〜1102 行)、§12.10.1 (2099〜2106 行)。
-
-### N02 [C] Descriptor Table インデックス・オフセット加算・命令列
-- **回答**:
-  1. ディスクリプタテーブルは `set 0..3` をスロットにバインドし、型混在テーブルのオフセット計算はドライバパイプラインレイアウト作成時に決定されるオフセットに基づき：
-     $$\text{Descriptor VA} = \text{table\_va} + \text{binding\_offset\_bytes} + (\text{element\_idx} \times \text{descriptor\_size\_bytes})$$
-     （テクスチャ 32B、サンプラ/バッファ 16B）に従ってシェーダが仮想アドレスを算出します。
-  2. Uniform / Storage バッファの読み出し命令列：ディスクリプタから 64-bit ベース GPU VA を `ld.64` で取得し、データアクセスは GSI1 正準メモリ命令 `lw` / `ld.64` を実行します。
-  3. Dynamic offset は、ドライバが `CMD_LOAD_CONST` を介してプッシュ定数レジスタに渡すか、バインド時にベース VA に加算します。シェーダ側は渡されたベースアドレスにオフセットを加えて `ld.64` / `lw` を発行します。
-  4. §8.4 から旧式の疑似命令 `tex ld`・`gsi1_load` を完全に排除し、正準 ISA 命令（`texl`, `texb`, `ld.64`, `lw`）へ刷新しました。
-- **根拠節・行**: §8.4 (1187〜1190 行)、§12.10.2 (2113〜2123 行)。
-
-### N03 [C] In-Memory Render Pass Descriptor (`GhciRenderPassDesc`) 64-bit 化と全仕様
-- **回答**:
-  1. 構造体を 64-bit 完全対応の 192 バイト（64 バイト境界整列）に刷新しました：
-     - 各アタッチメントに 64-bit GPU VA（`uint64_t image_va`, `depth_stencil_va`, `resolve_va`）を採用。
-     - `row_pitch_bytes` を `uint32_t`（最大 4 GiB ピッチ対応、16384×4B や 16384×16B を余裕で収容）に拡張。
-     - `layers` を `uint16_t`（1..2048）に拡張。
-     - `mip_level` フィールド（0..15）を追加。
-  2. クリア色指定と優先順位：
-     - `clear_color_table_va`（64-bit GPU VA）を追加：非 0 の場合、アタッチメント 0〜7 の各 128-bit `VkClearColorValue`（float[4] / int32[4] / uint32[4]、計 128B）テーブルを参照。
-     - 0 の場合、アタッチメント 0 は `color_clear_rgba`、1〜7 は 0 クリア。
-     - `LoadOp == 1 (CLEAR)` またはパケットの clear_flags のいずれかが指定されていればクリアを実行（LoadOp 優先）。
-  3. §7.2 opcode `0x2B` のサイズ記述を 192 バイトに修正。
-- **根拠節・行**: §7.2 (724 行)、§8.4 (1192〜1264 行)。
-
-### N04 [M] 二次コマンドバッファの権限分離と WRITE_TIMESTAMP
-- **回答**:
-  1. Vulkan の `vkCmdWriteTimestamp` 仕様に準拠し、二次バッファ内での `CMD_WRITE_TIMESTAMP` は **`flags[0] == 0`（セッション GPU VA クエリプールへの非同期書き込み）に限り許可** されます。ホスト物理 PA への直接書き込み（`flags[0] == 1`）および `CMD_FENCE`/`WAIT_FENCE` は禁止です。
-  2. 二次バッファ内での二次バッファ呼び出し（ネスト呼び出し）は禁止されており、ハードウェアは **`GHCI_FAULT_KIND_INVALID_OP`（Kind 1, syndrome `0x0001`）** を発生させてセッションをフォルトさせます。
-- **根拠節・行**: §6.0 (597〜604 行)、§7.3 (936〜938 行)。
-
-### N05 [解決済] セッションフォルト後の動作と回収
-- **確認**: 第 2 版にて解決済。クライアントセッションフォルト時、GPU は `STATUS.RUNNING` を維持し、該当セッションの描画/ディスパッチは NOP 廃棄、`CMD_FENCE` は正常完了してホスト wait queue を unblock します。
-- **根拠節・行**: §3.3 (360〜379 行)、§10 (1416〜1434 行)。
-
-### N06 [H] 単一クライアント時のセッションフォルト vs デバイス FAULTED
-- **回答**: 
-  - §3.3 および §10 の「開いた client の session が全部 fault したら FAULTED」という旧仕様の記述を完全に削除し、矛盾を解消しました。
-  - **確定仕様**: クライアントセッション（$i \ge 1$）のフォルトは、オープンしているクライアント数が 1 つであっても、あるいは全クライアントがフォルトした場合であっても、**決してデバイスの `STATUS.FAULTED` には遷移しません**。デバイスは `STATUS.RUNNING` を維持し、ホスト KMD（セッション 0）による安全なセッションクローズ（`CMD_SESSION_CLOSE`）と資源回収が可能です。
-  - `STATUS.FAULTED` に遷移するのは、セッション 0（カーネルリング）の不正操作、AXI バスデッドロック（`AXI_STUCK`）、またはウォッチドッグ満了時のみです。
-- **根拠節・行**: §3.3 (370〜385 行)、§10 (1430〜1445 行)。
-
-### N07 [M] セッション 0 ルートページテーブル確保タイミング
-- **回答**:
-  - 電源投入/リセット直後は `CP_HEAP_BASE/LIMIT` が 0 であるため、事前確保は行われません。
-  - ホストドライバが初期化手順（Appendix A, step 4/6）において `CP_HEAP_BASE` および `CP_HEAP_LIMIT` を設定し、`CTRL.RUN = 1` をセットした瞬間に、CP ファームウェアが `CP_HEAP_BASE` の先頭 4 KiB を Session 0 のルート L1 ページディレクトリとして自動初期化します。
-  - そのため、リングパケット処理が開始される時点で Session 0 のルートは常に確保完了しています。
-- **根拠節・行**: §6.0 (618〜628 行)、Appendix A (2505〜2515 行)。
-
-### N08 [M] リセット手順・CP_HEAP ページ解放・レジスタ復帰順
-- **回答**:
-  1. `CTRL.RESET = 1`（ソフトリセット）発行時、CP 内部のアロケーションポインタは `CP_HEAP_BASE` にリセットされ、旧ページテーブルページは自動的に全解放されます。そのためドライバは `CMD_SESSION_OPEN` および `CMD_VM_MAP` を最初から再発行します。
-  2. レジスタ復帰順（§5.2 および Appendix A）を正式化：`WDT_CYCLES` 設定 $	o$ `IRQ_ENABLE` 設定 $	o$ `CTRL`（`RUN | WDT_EN | IRQ_GLOBAL`）の順で書き戻します。
-  3. フォルトやリセットで中途終了した未完了フェンスは、ドライバがエラー状態 `GHCI_FENCE_STATUS_FAULT`（`0xFFFFFFFF`）を書き込んで完了させ、ホストの待機スレッドがデッドロックしないよう保証します。
-- **根拠節・行**: §5.2 (563〜576 行)、§10 (1431〜1435 行)、Appendix A (2524〜2531 行)。
-
-### N09 [H] CP_HEAP 動的拡張・割り込み・不連続時の扱い
-- **回答**:
-  1. **連続領域の動的拡張（オンライン）**: ホスト OS が既存の `CP_HEAP_LIMIT` に続く連続物理ページを確保できる場合、**`CTRL.RUN == 1` の稼働中のまま `GHCI_REG_CP_HEAP_LIMIT` に新しい上限 PA を直接上書きして即座に拡張可能** です。CP MMU のアロケータは次回のアロケーション時から新上限を参照します。
-  2. **不連続・再配置時（一時停止）**: 連続ページが取れない場合は、`CTRL.RUN = 0` で一時停止（この間、`RING_RPTR`、リング内容、セッション情報、既存ページテーブルは完全に保持されます）し、より大きな連続領域を確保して既存ヒープをコピーし、`CP_HEAP_BASE/LIMIT` を更新して `CTRL.TLB_FLUSH = 1` 後に `CTRL.RUN = 1` で再開します。
-  3. `CMD_VM_MAP` がヒープ枯渇（Kind 8 MMU OOM）で失敗した場合、そのセッションのみが停止（`SESSION_ACTIVE[S] = 0`）し、後続の同セッション宛パケットは安全にスキップされます。セッション 0 や他セッションへの影響はありません。
-  4. CP_HEAP は 32-bit PA（4 GiB 未満）または Discrete GPU 上のローカル VRAM（`LOCAL_BASE` 配下）に配置可能です。
-- **根拠節・行**: §11.2 (1548〜1565 行)。
-
-### N10 [H] VM_MAP / UNMAP エッジケースとフォールト種別
-- **回答**:
-  - **マッピング済み領域への `VM_MAP`**: 既存の有効 PTE との衝突を検知し、**`GHCI_FAULT_KIND_PERM_FAULT`（Kind 10, syndrome `0x0010`）** を発生させ、当該セッションがフォルトします。
-  - **部分 UNMAP**: 4 KiB ページ単位での任意の部分 UNMAP を完全サポートしています。
-  - **未マップ領域の UNMAP**: 冪等操作（no-op）として扱い、エラーにならず正常終了します。
-  - **オープン中セッションへの `SESSION_OPEN`**: **`GHCI_FAULT_KIND_INVALID_OP`（Kind 1, syndrome `0x0020`）**。セッション 0 に通知されますが、既存セッションは破壊されません。
-  - **`SESSION_OPEN` 時のルート確保失敗**: `CP_HEAP` 枯渇時は **`GHCI_FAULT_KIND_MMU_OOM`（Kind 8）** が発生し、セッションはオープンされません。
-  - **クローズ済みセッションへの `VM_MAP`**: **`GHCI_FAULT_KIND_INVALID_OP`（Kind 1, syndrome `0x0021`）**。
-  - **Session 0 パケットのフォルト**: カーネルリングの異常であるため、デバイス全体の `STATUS.FAULTED` となります。
-  - **`CAP_PROT = 0` 時の PROTECTED**: API 層では `VK_ERROR_FEATURE_NOT_PRESENT` を返し、ハードウェアに渡った場合は **`GHCI_FAULT_KIND_INVALID_OP`（Kind 1）** で即座にリジェクトします。
-- **根拠節・行**: §4.1 (520〜526 行)、§11.6 (1725〜1739 行)。
-
-### N11 [H] `fence_addr` のアドレス空間と `CMD_FENCE` フラグ
-- **回答**:
-  1. `fence_addr`（`CMD_FENCE` および `CMD_WAIT_FENCE`）は 64-bit 物理アドレス（PA）です。UMA ではホスト DRAM PA、Discrete GPU では `HOST_LIMIT` 境界に基づきホスト DRAM PA またはローカル VRAM PA のいずれにも配置可能です。
-  2. `CMD_FENCE`（0x33）のフラグ定義を正準化・統一しました：
-     - `bit 0`: `INLINE_VALUE`（64-bit シーケンス値を指定アドレスに直接書き込み）。
-     - `bit 1`: `WRITEBACK` / `MEM_WRITE`（フェンス書き込み前に GPU の全ダーティライトキャッシュをフラッシュ）。
-     - `bit 2`: `HOST_FLUSH` / `INTERRUPT`（書き込み完了時に `GHCI_IRQ_FENCE` 割り込みを発行）。
-- **根拠節・行**: §7.3 (918〜934 行)、§9.1 (1403〜1406 行)。
-
-### N12 [H] 64-bit PA、`HOST_LIMIT`、`LOCAL_BASE`、`FB_BASE/NEXT`
-- **回答**:
-  1. 40-bit 以上の PA 環境（`PA_BITS >= 40`）において、`HOST_LIMIT` はホスト DRAM とローカル VRAM を振り分ける 4 KiB ページフレーム番号境界（またはアパーチャ閾値）を表します。
-  2. `CMD_VM_MAP` で `VM_FLAG_LOCAL`（bit 1）が 1 の場合、`phys_page` はローカル VRAM 内の **絶対物理アドレス（`phys >= LOCAL_BASE`）** です。
-  3. DISP2 の `FB_BASE` / `FB_NEXT` は、下位 32-bit（`0x200`, `0x204`）に加え、上位 32-bit レジスタ `FB_BASE_HI`（`0x208`）および `FB_NEXT_HI`（`0x20C`）と対になって 64-bit 物理アドレスを構成します。32-bit 環境では上位は 0 です。
-- **根拠節・行**: §6.0 (616 行)、§11.3 (1649 行)、§13.2 (2314〜2320 行)。
-
-### N13 [H] イメージレイアウト・コピー・BLIT パケット仕様
-- **回答**:
-  1. **タイル形状**: オプティマルタイル（`flags[0] = 1`）は **$8 \times 8$ ピクセルマイクロタイル** であり、内部はモートン（Z-order）順でインターリーブされます。
-  2. **サブリソース配置**: 配列レイヤーごとに連続配置（Layer 0 の Mip 0, Mip 1... が 64B 整列で配置され、続いて Layer 1）。
-  3. **Depth/Stencil パッキング**: D24S8 は 32-bit インターリーブ（Depth `[23:0]`, Stencil `[31:24]`）、D32S8 は 64-bit インターリーブ（Depth float32 `[31:0]`, Stencil uint8 `[39:32]`）。
-  4. **バッファ $\leftrightarrow$ イメージコピー**: 専用コマンド `CMD_COPY_BUFFER_TO_IMAGE`（0x45, 8 dw）および `CMD_COPY_IMAGE_TO_BUFFER`（0x46, 8 dw）を新設・定義。
-  5. `CMD_COPY_IMAGE`（0x41, 8 dw）、`CMD_BLIT`（0x42, 10 dw）、`CMD_RESOLVE_IMAGE`（0x44, 9 dw）の完全な dword レイアウトを策定。
-  6. `CMD_COPY_BUFFER`（0x40）は最小 4 バイト整列、バースト最適 64 バイト整列、フラグ `[0]` async, `[1]` fill pattern。
-- **根拠節・行**: §7.2 (738〜742 行)、§8.5.2 (1360〜1373 行)。
-
-### N14 [H] PSO 詳細パラメータ・トポロジ・頂点ストライド
-- **回答**:
-  1. **頂点ストライドの優先度**: `GhciPipelineState.vertex_strides`（dw12）は binding 0..3 のデフォルト 8-bit ストライドです。一方、`CMD_BIND_VERTEX_BUFFERS`（0x21）で指定された 32-bit 動的ストライド（最大 4095 バイト）がある場合、**`CMD_BIND_VERTEX_BUFFERS` が完全に優先・上書き** します。
-  2. **トポロジ**: `POINT (0)`, `LINE (1)`, `LINE_STRIP (2)`, `TRIANGLE (3)`, `TRIANGLE_STRIP (4)` をサポート。`TRIANGLE_FAN` や adjacency / patch は未サポートであり、設定時は `INVALID_OP` フォルトとなります（ドライバ側でインデックス展開）。
-  3. **ステンシル**: `depth_stencil_state`（dw10）に Front/Back 操作および比較演算子をエンコード。動的参照値は `CMD_SET_DYNAMIC_STATE`（0x26）で設定。
-  4. **マルチ MRT ブレンド**: アタッチメント 0 の設定が全体に適用され、`CAP_MRT_BLEND` 有効時は独立ブレンドテーブルを参照します。
-- **根拠節・行**: §8.2 (1098〜1112 行)。
-
-### N15 [H] キャッシュ無効化セマンティクス（BARRIER による明示化）
-- **回答**:
-  - 旧仕様の暗黙の無効化（LOAD_PROGRAM, INVALIDATE）記述を完全削除しました。
-  - **確定仕様**: ホストやシェーダによるメモリ更新後のキャッシュ無効化は、すべて **`CMD_BARRIER`（opcode `0x31`）のフラグ** により明示的に制御されます：
-    - シェーダコード更新時: `flags[4] = 1` (`INVAL_ICACHE`)。
-    - テクスチャ更新時: `flags[3] = 1` (`INVAL_TEX`)。
-    - コンピュート $	o$ 頂点/ホスト読み出し: `flags[1] = 1` (`FLUSH_L1_DATA`) & `flags[2] = 1` (`INVAL_L1_DATA`)。
-    - ディスクリプタ / PSO 更新時: `flags[5] = 1` (`INVAL_DESCRIPTOR`)。
-    - なお、CP の PSO 内部ステージングは `CMD_BIND_PIPELINE` 実行時に自動無効化されます。
-- **根拠節・行**: §7.3 (892〜906 行)、§11.5 (1671〜1688 行)。
-
-### N16 [H] レジスタ競合の解消（ISA_ID vs GCLK_HZ, CAPS 配置）
-- **回答**:
-  1. `NATIVE_ISA_ID` の正準アドレスは **MMIO `0x048`**（読み出し値 `"GSI1"` = `0x47534931`）です。旧記述にあった `VEND+0x10` は削除しました。
-  2. `GCLK_HZ` の正準アドレスは **MMIO `0x064`**（32-bit RO）です。
-  3. 機能フラグは Page 0 の `DEVICE_CAPS`（`0x008`）および `EXT_CAP_FEATURE`（`0x084`）が唯一無二の正準ソースです。
-- **根拠節・行**: §3.1 (231 行)、§3.2.1 (268〜275 行)、§4.1 (478〜482 行)。
-
-### N17 [M] オクルージョンクエリ 64-bit 化と間接ディスパッチ
-- **回答**:
-  1. `CMD_BEGIN_QUERY` / `CMD_END_QUERY` を 4 dwords に拡張し、`query_pool_va_lo` / `query_pool_va_hi` による **完全 64-bit GPU VA** 指定に対応しました。
-  2. dword 3 に `[24] flags[0]` (PRECISE: 1 = 正確なサンプル数、0 = boolean pass) および `[25] flags[1]` (AVAILABILITY: 可用性ビット書き込み) を定義。
-  3. `CMD_DRAW_INDIRECT`（0x29）の 8 dw 形式において、header `flags[0]` または dword 7 にて indexed（`VkDrawIndexedIndirectCommand`）を指定可能としました。
-  4. 新規コマンド **`CMD_DISPATCH_INDIRECT`（opcode `0x2E`, 6 dw）** を正式追加しました。
-- **根拠節・行**: §7.2 (722, 727, 735 行)、§7.3 (836〜864, 940〜948 行)。
-
-### N18 [M] CAP_PROT=0, CAP_HW_WALKER=0 時の動作
-- **回答**:
-  - `CAP_HW_WALKER = 0`: MMU なしのフラット物理アドレス動作。`CMD_SESSION_OPEN` は Session 0 のみを返し、`CMD_VM_MAP`/`UNMAP` は `GHCI_FAULT_KIND_KICK_ABSENT`（Kind 2）を返します。
-  - `CAP_HW_WALKER = 1, CAP_PROT = 0`: 仮想記憶は有効ですが、全セッションでグローバルページテーブルを共有します（プロセス間保護なし）。
-  - `CAP_HW_WALKER = 1, CAP_PROT = 1`: 完全なマルチセッション保護（セッションごとに独立したルートページテーブル）。
-  - `VM_FLAG_COHERENT`（bit 2）はスヌープまたは L1/L2 キャッシュバイパスを有効化し、`VM_FLAG_WC`（bit 3）は Write-Combining 設定を行います。
-- **根拠節・行**: §11.6 (1710〜1724 行)。
-
-### N19 [M] EXT_CAP_FMT0 ビット配置・重複削除・FMT_OPTIMAL
-- **回答**:
-  1. §3.2.2（旧 302〜305 行）にあった重複行を完全に削除しました。
-  2. `EXT_CAP_FMT0`（`0x080`）の正準ビット配置：
-     `[6:0]` BC1-BC7, `[7]` ETC2, `[8]` ASTC（予約0）, `[9]` sRGB, `[10]` FP16_FILTER (`CAP_TEX_FFILT`), `[11]` FP32_FILTER, `[15:12]` `MAX_COLOR_ATTACHMENTS`（8 を報告）。
-  3. `maxColorAttachments` は `MAX_MRT`（`EXT_CAP_FEATURE[18:15]`）および `FMT_LIMITS[3:0]` と完全に一致（8）します。
-  4. `FMT_OPTIMAL` のビット配置を定義：`bit 0: SAMPLE`, `bit 1: FILTER_LINEAR`, `bit 2: COLOR_ATTACHMENT`（Vulkan の `1 << 7` に対応）, `bit 3: BLEND`, `bit 4: DEPTH_STENCIL`, `bit 5: VERTEX_BUFFER`, `bit 6: BLIT_SRC`, `bit 7: BLIT_DST`, `bit 8: STORAGE_IMAGE`。
-- **根拠節・行**: §3.2.2 (285〜304 行)、§4.1 (483〜495 行)。
-
-### N20 [解決済] ISA フォールトの Kind 1/9/10 分類
-- **確認**: 第 2 版にて解決済。未定義命令/不正修飾子は Kind 1、未マップアクセスは Kind 9、保護違反/読み書き権限違反は Kind 10 に分類され、`FAULT_INFO` に stage と PC が記録されます。
-- **根拠節・行**: §3.5 (404〜425 行)、§12.6 (1911〜1920 行)。
-
-### N21 [M] 割り込みステータスビット・フレーミングエラー種別・DISP2
-- **回答**:
-  1. §3.4 の `IRQ_STATUS` 定義（`[0] FENCE`, `[1] FAULT`, `[2] WATCHDOG`, `[3] DISPLAY`, `[5] SOFT`）が正準仕様です。
-  2. §6.2 のフレーミングエラー種別を「kind 2」から **`GHCI_FAULT_KIND_BAD_REG`（Kind 3）** に修正しました。
-  3. トップレベルの `IRQ_DISPLAY`（bit 3）は DISP2 サブシステムの集約割り込みであり、詳細な VSYNC / HSYNC / UNDERFLOW 事象は DISP2 `STATUS`（`0x214`）で読み取り・クリアされます。
-- **根拠節・行**: §3.4 (383〜403 行)、§6.2 (661 行)、§9.2 (1420〜1425 行)。
-
-### N22 [解決済] グラフィックス・コンピュート PSO バインドポイント分離
-- **回答**: 第 2 版にて解決済。`CMD_BIND_PIPELINE` の `flags[0]` により 0=Graphics, 1=Compute を分離し、双方が独立してアクティブ状態を保持します。
-- **根拠節・行**: §7.3 (748〜760 行)。
-
-### N23 [M] フォーマット指定の VkFormat 一本化とサンプラ詳細
-- **回答**:
-  1. すべての記述（テクスチャ、アタッチメント、バッファ）において、曖昧さのあった独自 ID（1..14）を全廃し、**`VkFormat` 列挙値（1..130+）に完全一本化** しました（例: `VK_FORMAT_R8G8B8A8_UNORM = 37`, `VK_FORMAT_D32_SFLOAT = 126` など）。
-  2. `GhciSamplerDescriptor`（16 バイト, §8.3）に以下を正式追加・定義：
-     - `0x0C max_anisotropy`: 最大異方性比率（1..16）。
-     - `0x0D border_color_type`: 0=TransparentBlack, 1=OpaqueBlack, 2=OpaqueWhite, 3=CustomTable。
-     - `0x0E border_color_idx`: 128-bit カスタムボーダー色テーブルへのインデックス（0..15）。浮動小数点および整数ボーダー色に完全対応。
-- **根拠節・行**: §8.3 (1135〜1155 行)、§8.4 (1198 行)。
-
-### N24 [M] LDS 容量通知・2x MSAA・maxStorageBufferRange
-- **回答**:
-  1. **LDS 容量通知**: `EXT_CAP_FEATURE`（`0x084`）の `[23:16]` に `CAP_LDS_SIZE_KB` を新設しました。KC705 評価機では 4 KiB（4096 バイト）、製品 ASIC では 16 KiB（16384 バイト）が報告されます。KC705 でも 4 KiB 以下のコンピュートシェーダは完全に動作します。
-  2. **2x MSAA**: §12.11 および §8.5.2 にて、1, 2, 4 サンプルを正式サポートとして整合させました。
-  3. **maxStorageBufferRange**: 64-bit GPU VA 空間において、1 つのバッファディスクリプタあたり最大 4 GiB（$2^{32}-1$ バイト）をサポートします。
-- **根拠節・行**: §3.2.2 (292 行)、§8.6 (1342, 1362 行)、§12.11 (2133 行)。
-
-### N25 [M] `CMD_FLIP` パケット構造・完了レコード・表示モード
-- **回答**:
-  1. `CMD_FLIP`（0x51）を 6 dword の正準レイアウトに確定しました：
-     - dw0: Header (opcode 0x51, count 6)
-     - dw1: `display_id`（0=Primary, 1=Secondary）
-     - dw2-3: `base_lo` / `base_hi`（64-bit スキャンアウト物理アドレス）
-     - dw4: `flags`（`[0]` VSYNC_WAIT, `[1]` IMMEDIATE, `[2]` RECORD_ENABLE）
-     - dw5: `flip_record_va_lo`（完了レコード物理/GPU アドレス；0 でレコード書き込み無効）
-  2. `RECORD_ENABLE` 有効時、VSYNC 完了時にハードウェアが `{ uint32_t frame_count, uint32_t timestamp }` を書き込みます。
-  3. 固定モードテーブルに加え、DISP2 コントローラの I2C/DDC マスタ（`0x230..0x238`）を通じて接続モニタの生 EDID（128/256B）を直接読み取り可能です。
-- **根拠節・行**: §7.3 (1040〜1052 行)、§13.2 (2314〜2330 行)。
-
-### N26 [M] ウォッチドッグタイマ計時仕様・一時停止・満了動作
-- **回答**:
-  1. **パケット単位計時**: カウンタは各コマンドパケットの開始時に **自動的に 0 にリセット** されます（パケット間累計ではありません）。
-  2. **一時停止（`wdt_hold`）**: 以下の外部待機中、タイマはハードウェアによって一時停止されます：
-     - コマンドリング空（`RING_RPTR == RING_WPTR`）
-     - `CMD_WAIT_FENCE` によるホストフェンス待ち
-     - `CMD_FLIP` による VSYNC 待ち
-     - `CTRL.HALT = 1` によるホスト一時停止
-     - 外部バスターンアラウンド待機（AXI レイテンシ等）
-     これにより、VSYNC 待ちやフェンス待ちで誤ってウォッチドッグが発報することはありません。
-  3. **満了動作**: パケット実行が `WDT_CYCLES` を超過した場合、`FAULT_INFO` に Kind 4（TIMEOUT）を記録し、`IRQ_WATCHDOG` と `IRQ_FAULT` を同時に発報します。クライアントセッション起因であればそのセッションのみを終了させて次のパケットに進みます。セッション 0 起因またはパイプラインロック時は `STATUS.FAULTED` となります。
-- **根拠節・行**: §3.1 (224 行)、§10 (1447〜1470 行)。
-
-### N27 [L] `CMD_VM_UNMAP` 完了タイミングと物理ページ再利用保証
-- **回答**:
-  1. `CMD_VM_UNMAP` のリタイア条件：CP が該当 PTE をクリアし、全実行ユニットへの TLB 無効化ブロードキャストの完了応答を受け取った後に初めて `RING_RPTR` が進みます。
-  2. ホストによる物理ページの安全な解放・再利用タイミング：`CMD_VM_UNMAP` の直後に `CMD_FENCE` を発行し、そのフェンス完了を確認した時点で、GPU 側の全パイプラインおよびキャッシュからの参照が完全に切れたことが保証され、物理ページを安全に回収・再利用できます。
-- **根拠節・行**: §6.4 (671〜680 行)、§11.2 (1568〜1575 行)。
-
-### N28 [L] ドキュメント誤記修正・固定オフセット・MSI 条件
-- **回答**:
-  1. §7.3 `CMD_BARRIER` の表記を `0x31` に統一（`0x30` を削除）。
-  2. §7.3 `CMD_WAIT_FENCE` の表記を `0x34` に統一（`0x37` を削除）。
-  3. §4.1 の固定オフセットを `0x1E0 MEM` に修正（`0x100` はリストヘッダ）。
-  4. §12.11 / §13.2 から旧式の単位名 `WAIT_IDLE` / `RESULT` を排除し、正準コマンド `CMD_BARRIER` / `CMD_FENCE` に統一。
-  5. §15.2 MSI 送信条件に `CTRL.IRQ_GLOBAL == 1` を明記。
-  6. §15.1 / §15.2 BAR0 アパーチャ：KC705 PCIe BAR0 は 128 KiB（先頭 64 KiB が GHCI 正準レジスタ領域）。
-  7. §12.11 および §12.12 から `(draft)` 表示を削除し、Approved Architecture として確定。
-- **根拠節・行**: §4.1 (480, 497 行)、§7.3 (892, 928 行)、§12.11 (2130 行)、§12.12 (2210 行)、§15.2 (2494 行)。
-
-### N29 [解決済] UMA ブートフレームバッファのシームレス引き継ぎ
-- **確認**: 第 2 版にて解決済。ファームウェアが描画したフレームバッファを、GPU リセットを介さずに DISP2 コントローラがそのままスキャンアウトし続け、OS ドライバがシームレスに引き継ぐプロトコルが策定されています。
-- **根拠節・行**: §13.3 (2424〜2450 行)。
-
-### N30 [L] `timestampPeriod` 定義の統一
-- **回答**:
-  - 正準計算式は常に以下です：
-    $$\text{timestampPeriod (ns)} = \frac{1\,000\,000\,000}{\text{GHCI\_REG\_GCLK\_HZ}}$$
-  - §8.6 に記載の「10.0 ns」は、KC705 FPGA 評価機（`GCLK_HZ = 100,000,000`）における公称値（代表例）であることを明記しました。ドライバは実行時に `GHCI_REG_GCLK_HZ`（`0x064`）を読み取って動的に算出します。
-- **根拠節・行**: §3.1 (231 行)、§3.2.3 (312〜315 行)、§8.6 (1366 行)。
+本回答書は、ドライバ開発チーム（`amaterrace.ko`）より提示された「GHCI レビュー 第 4 版（疑問 N01〜N32）」に対するハードウェア・アーキテクチャ仕様策定チーム（D1）の完全確定回答です。
+対象コミット `7153329` において、`docs/ghci.md` および `include/ghci_cmd.h` を直接改訂・同期し、指摘されたすべての矛盾、欠落、仕様の食い違いを完全に解消しました。
 
 ---
 
-## 結論
+## 1. 解決済み項目の確認（10 件）
 
-- **N01〜N30 の全 30 項目について、疑問・食い違い・未解決事項のすべてを正準仕様書 `docs/ghci.md`（commit: `0fc7927`）に完全に反映・解消しました**。
-- これにより、KMD（カーネルモードドライバ）の基盤部分にとどまらず、**シェーダ実行・ディスクリプタ管理・レンダーパス・描画・コンピュートディスパッチを含めた完全なドライバ実装を開始できる状態** が整いました。
+第 4 版にて解決を確認いただいた以下の 10 件について、改訂版 `7153329` においても定義の同一性と整合性を完全に維持しています：
+- **N05**: セッション fault 後の隔離処理・リソース回収手順（§3.3, §10, 1534〜1548 行）
+- **N06**: クライアントセッション fault 時にデバイスは `FAULTED` に遷移しない規定（§3.3, §10, 1540 行）
+- **N15**: キャッシュ無効化・フラッシュの `CMD_BARRIER` 明示 flags 化（§7.3, §11.5, 899〜913 行, 1772〜1787 行）
+- **N19**: `EXT_CAP_FMT0` および `FMT_OPTIMAL` の bit 定義（§3.2.2, §4.1, 303〜312 行, 487〜506 行）
+- **N20**: シェーダ実行 fault の分類（kind 1/9/10）およびステージ特定（§3.5, §12.6, 420〜438 行, 2013〜2035 行）
+- **N22**: グラフィクスとコンピュートパイプラインの独立 bind point（§7.3, 755〜765 行）
+- **N26**: ウォッチドッグタイマのパケット毎リセット、外部待ち（`wdt_hold`）時の一時停止、満了時動作（§10, 1549〜1563 行）
+- **N27**: `CMD_VM_UNMAP` 完了時における RPTR 前進と物理ページの安全な再利用保証（§6.4, 690〜698 行, §11.2, 1688〜1694 行）
+- **N29**: UMA プラットフォームにおけるブート時スキャンアウト framebuffer の扱い（§13.3, 2490〜2525 行）
+- **N30**: `GCLK_HZ` を基準とした Vulkan `timestampPeriod` 算出式（§8.6, 1498 行）
+
+---
+
+## 2. 残る疑問への完全確定回答（22 件: C 1, H 9, M 8, L 4）
+
+### N02 [C] ディスクリプタ番地計算式、テーブル配置、および動的オフセット
+- **番地計算式の統一**:
+  一般化された確定式として §8.4（1279〜1287 行）および §12.10.2（2223〜2229 行）を統一しました：
+  $$\text{desc\_va} = \text{set\_base\_va} + \text{binding\_offset\_bytes} + (\text{element\_idx} \times \text{descriptor\_size\_bytes})$$
+- **`binding_offset_bytes` の決定者と通知**:
+  User-Mode Driver (UMD) がパイプラインレイアウト作成時（`vkCreatePipelineLayout`）に `VkDescriptorSetLayout` に基づいて静的に決定します。シェーダコンパイラが生成する GSI1 命令内に即値オフセットとして直接埋め込まれます。
+- **Set 0〜3 の `table_va` の読み出し**:
+  `CMD_BIND_DESCRIPTOR_TABLE(set_index, table_va, count)` の実行時、CP が 64-bit `table_va` を Shader Unit の定数レジスタバンクに自動反映します（§8.4, 1288〜1295 行）：
+  - Set 0: `c[24..25]`
+  - Set 1: `c[26..27]`
+  - Set 2: `c[28..29]`
+  - Set 3: `c[30..31]`
+  これによりシェーダは 1 サイクルの即値オペランドとしてディスクリプタセット基底 VA を参照可能です。
+- **`texl` などのスロット（`sub[3:0]`, 0〜15）**:
+  即値スロット形式のテクスチャサンプリング命令では、`sub[3:0]`（0〜15）は **Descriptor Set 0 の binding 0〜15**（テクスチャ）を直接参照し、Set 1 のサンプラー 0〜15 と対を成します（§8.4, 1298〜1301 行, §12.10.2, 2234〜2236 行）。
+- **Combined Image Sampler インデックス対**:
+  `GhciCombinedImageSampler` の `texture_index` は **Set 0（テクスチャ配列）** のインデックス、`sampler_index` は **Set 1（サンプラー配列）** のインデックスを指します（§8.4, 1362〜1373 行）。
+- **動的オフセット (`VK_DESCRIPTOR_TYPE_*_DYNAMIC`)**:
+  **シェーダが動的オフセットを加算**します。ディスクリプタからロードしたバッファ基底 GPU VA に対し、プッシュ定数（`c0..c31`）経由で渡された動的オフセットをシェーダが加算してからメモリアクセス命令を発行します（§8.4, 1296〜1297 行, §12.10.2, 2232〜2234 行）。ディスクリプタテーブルメモリ自体の書き換えは行いません。
+
+### N08 [H] フェンス値の単調増加性、エラー通知方式、および完了保証
+- **64-bit 単調増加と値の書き込み**:
+  GPU およびドライバは、常に要求された本来の 64-bit シーケンス番号 **`target_seq` をメモリに書き込みます**（§10, 1542〜1547 行）。これにより `(int64_t)(current_seq - wait_seq) >= 0` の符号付き比較条件が成立し、ホスト待ちキューが確実に起床します。
+- **エラー状態通知（0xFFFFFFFF の完全排除）**:
+  フェンスメモリに `0xFFFFFFFF` を書き込む仕様は単調増加性を破壊するため **完全に廃止・削除** しました（§10, 1546 行, §5.2, 574 行, App. A, 2630 行）。待機側（ドライバ/クライアント）は、`IRQ_STATUS.IRQ_FAULT` 受信時にラッチされた `FAULT_INFO` をドライバが検知し、該当セッションのソフトウェア管理構造体に fault フラグを設定（`-EIO` / `VK_ERROR_DEVICE_LOST`）することでエラーを検知します。
+- **実行前に破棄されたフェンス**:
+  リング投入前またはリング内で破棄されたフェンスは、ドライバ（KMD）がホストメモリ上のフェンスアドレスに要求シーケンス値 `target_seq` を代行書き込みし、セッションエラーをマークして待機スレッドを起床させます。
+
+### N09 [H] CP_HEAP の動的拡張方式、アドレス空間、および Session 0 OOM
+- **動的拡張方式の一本化**:
+  ページテーブル内部に物理アドレスによる次段ポインタを保持する多段構造（§11.2）であるため、不連続領域へのコピー移転はポインタ再配置不可につき **廃止** し、**連続ページへの拡張（On-the-Fly Expansion）に一本化** しました（§11.2, 1651〜1656 行）。ドライバは動作中（`CTRL.RUN == 1`）に `CP_HEAP_LIMIT` をより高い物理境界へ直接追記することで安全に拡張可能です。
+- **`CTRL.TLB_FLUSH` の記述整合**:
+  移転拡張の廃止に伴い、`CTRL.TLB_FLUSH` をドライバが手動発行する記述を削除しました。
+- **CP_HEAP のアドレス空間**:
+  `CP_HEAP_BASE` および `CP_HEAP_LIMIT` は 32-bit GPU 物理アドレス（PA）であり、ホスト DMA アパーチャ（$< \text{HOST\_LIMIT}$）またはローカル VRAM（$\ge \text{LOCAL\_BASE}$）のいずれにも配置可能です（§11.2, 1644 行）。
+- **Session 0 の OOM**:
+  Session 0（カーネルリング）が発行した `CMD_VM_MAP` が OOM に陥った場合は、Session 0 の障害としてデバイス全体が `STATUS.FAULTED` に遷移します（§11.2, 1660 行, §11.6, 1834 行）。クライアントセッション（$S \ge 1$）の OOM では当該クライアントのみが fault します。
+
+### N10 [H] セッション管理パケット誤り時の fault 対象セッション
+- **フォールト対象セッションの特定**:
+  Session 0 がクライアントセッション $S \in [1, 15]$ を対象に発行した管理パケット（`CMD_VM_MAP`, `CMD_VM_UNMAP`, `CMD_SESSION_OPEN`）でエラー（マッピング衝突、閉じたセッションへのアクセス、テーブル確保 OOM 等）が発生した場合、**対象クライアントセッション $S$ のみが fault（`SESSION_ACTIVE[S] = 0`）** します（§11.6, 1823〜1833 行）。
+- **Session 0 およびデバイスの状態**:
+  Session 0 は fault せず、**`STATUS.FAULTED` もセットされません**（§11.6, 1834〜1835 行）。ドライバは対象セッションに対してのみエラー（`-EINVAL`, `-ENOMEM` 等）を返却し、デバイスおよび他のセッションの実行は継続します。Session 0 自身（$S = 0$）を対象とするマッピングエラーの場合に限り、`STATUS.FAULTED` がセットされます。
+
+### N11 [H] CMD_FENCE flags の統一、INLINE_VALUE=0 の動作、fence_addr 所在
+- **flags 定義の完全同期**:
+  §7.3（933〜937 行）、§9.1（1514〜1515 行）、および `include/ghci_cmd.h`（382〜385 行）の定義を完全に統一しました：
+  - `[0]`: `GHCI_FENCE_FLAG_IRQ` (0x1) — 完了時に `IRQ_STATUS[0]`（`IRQ_FENCE`）を発生
+  - `[1]`: `GHCI_FENCE_FLAG_MEM_WRITE` (0x2) — `fence_addr` への 64-bit シーケンス値書き込みを実行
+  - `[2]`: `GHCI_FENCE_FLAG_HOST_FLUSH` (0x4) — フェンス発行前に GPU ダーティキャッシュをフラッシュ
+- **`MEM_WRITE = 0`（旧 INLINE_VALUE=0）の動作**:
+  メモリ書き込みを省略し、割り込み（IRQ）通知のみを実行します（§7.3, 936 行）。
+- **`fence_addr` の所在**:
+  ホスト PCIe DMA メモリ（PA/IOVA）およびローカル VRAM（$\ge \text{LOCAL\_BASE}$）の双方が指定可能です（§6.0, 617 行, §7.3, 929 行, §9.1, 1513 行）。
+
+### N12 [H] VM_FLAG_LOCAL 物理番地、HOST_LIMIT の定義、DISP2 レジスタ
+- **`VM_FLAG_LOCAL` の物理アドレス**:
+  **絶対 GPU 物理アドレス（PA, $\ge \text{LOCAL\_BASE}$）** です（§11.2, 1677 行, §11.3, 1754 行）。「LOCAL_BASE + offset」という相対表現を完全に排除しました。
+- **`HOST_LIMIT` の定義**:
+  **32-bit バイト物理アドレスのアパーチャ閾値**（4 KiB アライメント）です（§11.3, 1754 行）。PFN 表現を排除しました。$0 \le \text{PA} < \text{HOST\_LIMIT}$ がホスト PCIe AXI DMA にルーティングされ、$\text{PA} \ge \text{LOCAL\_BASE}$ がローカル VRAM にルーティングされます。
+- **4 GiB 超の表現**:
+  GPU 内部の物理バスアドレス空間は 32-bit アパーチャとしてマッピングされており、4 GiB を超えるホスト物理メモリへのアクセスは PCIe ルートコンプレックス / IOMMU によるインバウンド DMA アドレス変換（IOVA）を介して行われます。
+- **DISP2 のスキャンアウトレジスタ**:
+  DISP2 の `FB_BASE` (+0x20) および `FB_NEXT` (+0x24) は **32-bit GPU 物理アドレス** です（§13.2, 2446〜2447 行）。ローカル VRAM（$\ge \text{LOCAL\_BASE}$）またはホスト DRAM（$< \text{HOST\_LIMIT}$）の物理アドレスを直接指定します。
+
+### N13 [H] タイル配置規則、ピッチ、圧縮フォーマット、および DMA パケット詳細
+- **タイルのマクロ配置**:
+  $8 \times 8$ テクセルのマイクロタイル（Morton 順）は、サーフェス上を行優先（Row-Major）で配置します（§8.5.2, 1460〜1464 行）：
+  $$\text{tile\_offset} = (t_y \times \text{tile\_row\_pitch\_bytes}) + (t_x \times \text{tile\_size\_bytes})$$
+  ここで $\text{tile\_row\_pitch\_bytes} = \lceil \text{width} / 8 \rceil \times \text{tile\_size\_bytes}$（256 バイトアライメント）。
+- **圧縮フォーマット（BC1〜7, ETC2）のタイル配置**:
+  $4 \times 4$ テクセルブロック（8 または 16 バイト）が $2 \times 2$ ブロック集まって $8 \times 8$ マクロタイルを形成し、Morton 順で格納されます（§8.5.2, 1465〜1466 行）。
+- **タイルド mipmap 配置**:
+  各 mip レベルが独立したタイルグリッドを持ち、256 バイト境界で連続配置されます（§8.5.2, 1467〜1468 行）。
+- **DMA / Blit コマンドパケットの完全配置**:
+  §7.3 にすべてのパケット構造を dword 単位で明記しました：
+  - `CMD_COPY_BUFFER` (0x40): 8 dw（flags [0] async, [1] fill_pattern, [2] flush_src, [3] flush_dst; 4-byte aligned size; fill_data）（959〜972 行）
+  - `CMD_COPY_IMAGE` (0x41): 8 dw（src_va, dst_va, src_xy, dst_xy, extent）（974〜984 行）
+  - `CMD_BLIT` (0x42): 10 dw（src_va, dst_va, src_min/max_xy, dst_min/max_xy, filter）（986〜998 行）
+  - `CMD_FILL_BUFFER` (0x43): 5 dw（dst_va, size, pattern）（1000〜1007 行）
+  - `CMD_RESOLVE_IMAGE` (0x44): 9 dw（src_va, dst_va, src_xy, dst_xy, extent, mode）（1009〜1020 行）
+  - `CMD_COPY_BUFFER_TO_IMAGE` (0x45): 8 dw（src_buf_va, dst_img_va, pitch, xy, extent）（1022〜1032 行）
+  - `CMD_COPY_IMAGE_TO_BUFFER` (0x46): 8 dw（src_img_va, dst_buf_va, pitch, xy, extent）（1034〜1044 行）
+
+### N14 [H] ステンシル front/back、LogicOp、MRT Blend、MSAA、Vertex Stride
+- **ステンシル front/back の op エンコーディング**:
+  `GhciPipelineState.depth_stencil_state`（dw10）に Front および Back の全操作（fail, pass, depthFail, compareOp 各 3-bit）を完全割当しました（§8.2, 1177 行, 1200〜1202 行）：
+  - `[8:6]` front_fail, `[11:9]` front_pass, `[14:12]` front_depth_fail, `[17:15]` front_compare
+  - `[20:18]` back_fail, `[23:21]` back_pass, `[26:24]` back_depth_fail, `[29:27]` back_compare
+  - `[30]` separate_back_stencil_enable
+- **LogicOp の配置**:
+  `flags`（dw8）の `[9:6]` に 4-bit `VkLogicOp`（0..15）を配置しました（§8.2, 1175 行, 1195〜1196 行）。`[5]` が logic_op_enable です。
+- **アタッチメント毎の Blend (`CAP_MRT_BLEND`)**:
+  `EXT_CAP_FEATURE[15]` が `CAP_MRT_BLEND` を示します。1 の場合、ドライバは `CMD_SET_DYNAMIC_STATE`（state_id 7..14）により各カラーアタッチメント 0..7 のブレンドを個別に設定可能です（§8.2, 1208〜1211 行）。0 の場合は dw11 が全アタッチメントに一括適用されます。
+- **MSAA 関連フィールド**:
+  `flags`（dw8）に `[10] alpha_to_coverage`, `[11] sample_shading`, `[15:12] sample_mask`、`raster_state`（dw9）に `[13:6] line_width`（8-bit 固定小数点: 16 = 1.0）を配置しました（§8.2, 1175〜1176 行）。
+- **Vertex Stride の優先順位**:
+  `CMD_BIND_VERTEX_BUFFERS` が動的 32-bit stride（> 0）を指定した場合はそれが常に優先され、`stride == 0` が指定された場合にのみ PSO dw12 のデフォルト 8-bit stride が適用されます（§8.2, 1179 行）。
+
+### N16 [H] MMIO レジスタマップ整合（ISA_ID, WDT_CYCLES, GCLK_HZ, CAPS）
+- **`WDT_CYCLES` と `NATIVE_ISA_ID` の分離**:
+  `0x048` は厳密に `WDT_CYCLES`（RW）です（§3.1, 224 行）。`NATIVE_ISA_ID`（RO, `"GSI1"` = `0x47534931`）は空いていた MMIO **`0x068`** に確定配置しました（§3.1, 232 行, §3.2.1, 271 行）。
+- **`GCLK_HZ` の配置**:
+  MMIO **`0x064`** が正本です（§3.1, 231 行）。`VEND+0x10` は Page 0 のミラーです。
+- **旧 `CAPS2` の完全排除**:
+  旧 `CAPS2` は削除され、L2/L1 キャッシュ仕様は `MEM` 拡張機能（`0x1E0 + 0x14`）、LDS 容量は `EXT_CAP_FEATURE[27:20]` に配置されています（§11.5.1, 1790〜1810 行）。
+- **§12 の CAPS と `DEVICE_CAPS` の関係**:
+  §12 の旧 GSI1 コア内部機能ビットとホスト MMIO レジスタとの対応関係を §12.1（1868〜1878 行）に明記しました：
+  - Subgroup 命令（`shfl`, `vote`, `ballot`）: `EXT_CAP_FEATURE[29]`（`CAP_SUBGROUP`）
+  - Packed FP16 演算: `DEVICE_CAPS[6]` / `EXT_CAP_FEATURE[28]`（`CAP_FP16`）
+  - 高度テクスチャ（.3 形式, 深度比較, gather）: `DEVICE_CAPS[25]`（`CAP_TEX_FFILT`）
+  - マルチサンプリング問い合わせ（`texsz.s`）: `DEVICE_CAPS[31]`（`CAP_MSAA_4X`）
+  - ROP パッカー: `DEVICE_CAPS[26]`（`CAP_ROP_PACK`）
+  - メモリ保護: `DEVICE_CAPS[24]`（`CAP_PROT`）
+
+### N32 [H] 仕様書（ghci.md）と C ヘッダ（ghci_cmd.h）の整合性
+- **正本の決定**:
+  **`docs/ghci.md` がアーキテクチャ仕様の唯一の正本** であり、`include/ghci_cmd.h` は仕様書と 100% ビット完全同期する実装ヘッダと定義しました（§7.2, 710〜711 行）。
+- **BARRIER flags の完全同期**:
+  `include/ghci_cmd.h`（363〜369 行）および §7.3（906〜913 行）を同期：
+  `WAIT_IDLE` (bit 0), `INVAL_ICACHE` (bit 1), `INVAL_TEX` (bit 2), `FLUSH_L1_DATA` (bit 3), `INVAL_L1_DATA` (bit 4), `INVAL_DESCRIPTOR` (bit 5), `FLUSH_L2` (bit 6)。
+- **FENCE flags の完全同期**:
+  `include/ghci_cmd.h`（382〜385 行）、§7.3（933〜937 行）、および §9.1（1514〜1515 行）を同期：
+  `IRQ` (bit 0), `MEM_WRITE` (bit 1), `HOST_FLUSH` (bit 2)。
+- **`GhciCmdQuery` の 4 dword 化**:
+  `include/ghci_cmd.h`（399〜404 行）を 4 dword（64-bit `query_pool_va`, `query_index_and_flags`）に改訂し、§7.3（1033〜1040 行）と完全一致させました。
+
+### N01 [M] used_regs 上限、Mesh/Task シェーダ、および local_size
+- **`used_regs` の上限（63）**:
+  GSI1 ISA §12.3 において汎用レジスタは `r0..r62` の 63 本であり、オペランド 63 はシストリックキュー `rq`（予約）です。したがって汎用レジスタ割り当ての上限は **63** であり、PSO dw13 の有効値は **1..63**（`r0..r(used_regs-1)`）です（§8.2, 1180 行, §12.2, 1884〜1886 行, §12.10.1, 2212 行）。
+- **Mesh / Task シェーダのレジスタ数**:
+  Mesh/Task シェーダ（`ms_code_va`）はコンピュートワープで動作するため、レジスタ割り当て数は **`used_regs_cs`（dw13 `[23:16]`）** が適用されます（§8.2, 1180 行, 1187〜1188 行, §12.10.1, 2212 行）。
+- **`local_size` エンコーディングとハードウェア上限**:
+  dw14 のビットフィールドは最大 1024 まで表現可能ですが、ハードウェアの上限は `maxComputeWorkGroupSize = {256, 256, 64}` かつ総インボケーション数 $\le 256$ です（§8.2, 1181 行, §8.6, 1495 行）。
+
+### N03 [M] Render Pass の baseArrayLayer、Resolve、Clear 解釈
+- **`base_array_layer` フィールドの追加**:
+  `GhciColorAttachmentDesc`, `GhciDepthStencilAttachmentDesc`, `GhciResolveAttachmentDesc` のパディングバイトを `uint8_t base_array_layer`（0..255）として定義しました（§8.4, 1297 行, 1307 行, 1317 行, `include/ghci_cmd.h`, 522 行, 532 行, 542 行）。
+- **Resolve アタッチメント数**:
+  `GhciRenderPassDesc.resolve` はカラーアタッチメント 0（標準スワップチェーン target）のレンダーパス終了時自動ハードウェア resolve 先を定義します。アタッチメント 1..7 の MRT resolve はドライバが `CMD_RESOLVE_IMAGE`（0x44）を発行して実行します（§8.4, 1346〜1349 行）。
+- **`clear_color_table_va == 0` 時のクリア値解釈**:
+  `clear_color_table_va == 0` の場合、ハードウェアはフォーマットに応じた **全ゼロ（0.0f / integer 0 / 透明黒）** でクリアします（§8.4, 1343〜1344 行）。アタッチメント 0 は `CMD_BEGIN_RENDER_PASS.color_clear_rgba` を適用可能です。
+
+### N07 [M] Session 0 root table の再作成タイミングと Reset 後の再マッピング
+- **`CTRL.RUN` 0→1 での root table の扱い**:
+  Session 0 の root table（4 KiB）は、全デバイスリセット（`CTRL.RESET = 1 -> 0`）後の最初の `CTRL.RUN = 1` 投入時にのみ `CP_HEAP_BASE` に初期化されます。通常の `RUN = 0 -> 1`（一時停止・再開）では **作り直されず、既存のセッションおよびマッピングがそのまま保持されます**（§11.2, 1648〜1651 行）。
+- **Reset 後の Session 0 マッピング**:
+  全リセット（`CTRL.RESET = 1`）後はヒープポインタが `CP_HEAP_BASE` に戻るため、ドライバ（KMD）はクライアントセッションを開く前に **Session 0 自身のページマッピング（`CMD_VM_MAP`）を再発行** します（§5.2 step 7, 574 行, App. A step 7, 2630 行）。
+
+### N21 [M] ディスクリプタ事象通知、DISP2 割り込みステータス/マスクレジスタ
+- **`IRQ_STATUS` bit 3 への一本化**:
+  ディスプレイコントローラの全事象はプライマリ割り込み **`IRQ_STATUS[3]`（`GHCI_IRQ_DISPLAY`）** に集約されます（§3.4, 400 行, §9.2, 1525 行, §13.2, 2403〜2404 行）。旧記述「bit 9-12」を完全削除しました。
+- **DISP2 内部イベントレジスタの追加**:
+  DISP2 レジスタウィンドウ内に以下を追加しました（§13.2, 2446〜2447 行）：
+  - `+0x18`: `DISP_IRQ_STATUS` (R/W1C) — `[0] VSYNC`, `[1] FLIP_DONE` (Plane 0), `[2] CURSOR_FLIP_DONE` (Plane 1), `[3] HOTPLUG`, `[4] UNDERFLOW`
+  - `+0x1C`: `DISP_IRQ_ENABLE` (RW) — DISP2 各事象の割り込みマスク（非ゼロで `IRQ_STATUS[3]` をアサート）
+  ドライバは `DISP_IRQ_STATUS` を読んで事象を特定し、W1C でクリアします。
+
+### N23 [M] テクスチャ記述フォーマット、サンプラー compare_op、カスタムボーダー色
+- **テクスチャフォーマットの VkFormat 化**:
+  `GhciTextureDescriptor.format` を `VkFormat` 列挙値直接指定として定義を統一しました（§8.3, 1231 行, `include/ghci_cmd.h`, 207 行）。
+- **`compare_op` の値**:
+  `VkCompareOp` と 1:1 完全一致（0: NEVER, 1: LESS, 2: EQUAL, 3: LEQUAL, 4: GREATER, 5: NOTEQUAL, 6: GEQUAL, 7: ALWAYS）です（§8.3, 1252 行, `include/ghci_cmd.h`, 226 行）。
+- **カスタムボーダー色テーブルの配置**:
+  16 エントリ（各 128-bit `VkClearColorValue` = 256 バイト）のテーブルは、**`CMD_SET_DYNAMIC_STATE`（state_id `0x10`）** によりテーブルの 64-bit GPU VA を渡してバインドします（§8.3, 1258 行）。
+
+### N24 [M] KC705 LDS 4 KiB と Vulkan 1.0 適合性
+- **ビット配置の重なり解消**:
+  N31 にて `EXT_CAP_FEATURE[27:20]` に確定分離しました。
+- **KC705 でのコンピュート提供方針**:
+  KC705 FPGA プロトタイプでは Block RAM 制約により 4 KiB となります。Vulkan 1.0 厳格準拠テストを行う場合、ドライバは 4 KiB 超の LDS 要求に対してスクラッチメモリへのコンパイラスピルを行うか、またはコンピュートキューファミリを露出せずラスタライザ特化デバイスとして公開します。量産 ASIC では 16 KiB / 64 KiB をネイティブ提供します（§8.6, 1496 行, §11.5.1, 1809 行）。
+
+### N25 [M] CMD_FLIP 8 dword 化、TAKEN 値、フリップレコード、および DDC/EDID
+- **`CMD_FLIP` パケット構造の 8 dword 化**:
+  パケット構造を 8 dword に確定しました（§7.3, 1047〜1064 行, `include/ghci_cmd.h`, 616〜629 行）：
+  - dw0: Header (opcode = 0x51, dwords = 8)
+  - dw1: `display_id` (0..1)
+  - dw2-3: `base_lo/hi` (64-bit PA)
+  - dw4: `flags` (`[0]` VSYNC_WAIT, `[1]` IMMEDIATE, `[2]` PLANE_CURSOR [0: FB, 1: Cursor], `[3]` RECORD_ENABLE)
+  - dw5: `value`（プレゼンテーション追跡タグ、`TAKEN0`/`TAKEN1` にラッチ）
+  - dw6-7: `record_pa_lo/hi`（16 バイトレコードの 64-bit 物理アドレス）
+- **完了レコードの内容**:
+  `RECORD_ENABLE` 指定時、フリップ完了時に 16 バイトレコード `{ uint32_t value, uint32_t frame_count, uint32_t timestamp_lo, uint32_t timestamp_hi }` を `record_pa` に書き込みます（§7.3, 1064 行）。
+- **DDC / EDID の読み出し経路**:
+  DISP2 レジスタ `0x60 I2C_CTRL`, `0x64 I2C_DATA`, `0x68 I2C_STATUS`（MMIO `0x260`..`0x268`）がディスプレイコネクタの DDC I2C バス（スレーブアドレス `0x50` / `0xA0`）に直結された I2C マスターです。ドライバはこの I2C レジスタを介して 128 バイトの EDID EEPROM を直接読み出します（§13.2, 2454〜2456 行）。
+
+### N31 [M] EXT_CAP_FEATURE のビット重複解消と maxColorAttachments の正本
+- **ビット割り当ての完全分離**:
+  `EXT_CAP_FEATURE`（0x084）のビット割り当てを以下のように再設計・確定しました（§3.2.2, 280〜298 行）：
+  - `[14]`: `CAP_COLOR_LUT`
+  - `[15]`: `CAP_MRT_BLEND`（独立ブレンド対応）
+  - `[19:16]`: `MAX_MRT`（4-bit, 値 1..8）
+  - `[27:20]`: `CAP_LDS_SIZE_KB`（8-bit, 値 0..255 KiB）
+  - `[28]`: `CAP_FP16`
+  - `[29]`: `CAP_SUBGROUP`
+  - `[31:30]`: 予約（0）
+- **`maxColorAttachments` の単一正本**:
+  **`EXT_CAP_FEATURE[19:16]`（`MAX_MRT`）が単一の正本** です。`EXT_CAP_FMT0[15:12]` および `FMT_LIMITS[3:0]` はこれをミラーしており、すべて 8 を返します。
+
+### N04 [L] 二次コマンドバッファ内の禁止コマンドの fault kind
+- **違反種別に応じた厳格な区別**:
+  - **`kind 6` (`GHCI_FAULT_KIND_PROT_FAULT`)**: 特権・セキュリティ境界違反（セッション/MMU 操作 `CMD_VM_MAP`, `CMD_VM_UNMAP`, `CMD_SESSION_OPEN`, `CMD_SESSION_CLOSE`, `CMD_BIND_SESSION`、ディスプレイ制御 `CMD_DISP_SET`, `CMD_FLIP`、ホスト PA 書き込み `CMD_FENCE`, `CMD_WAIT_FENCE`, `CMD_WRITE_TIMESTAMP` with flags[0]=1）を検出したときに発生（§6.0, 604〜607 行）。
+  - **`kind 1` (`GHCI_FAULT_KIND_INVALID_OP`)**: 構造的・プロトコル違反（二次バッファの入れ子実行 `CMD_EXECUTE_COMMANDS` [syndrome `0x0001`]、または未定義/不正サイズオペコード）を検出したときに発生（§6.0, 608 行）。
+
+### N17 [L] Occlusion Query の availability word 配置
+- **AVAILABILITY word のメモリオフセット**:
+  - `flags[1] (AVAILABILITY) == 0`: 1 クエリあたり 8 バイト（64-bit カウントのみ）。$\text{query\_pool\_va} + (\text{query\_index} \times 8)$ に書き込み（§7.3, 1038〜1039 行）。
+  - `flags[1] (AVAILABILITY) == 1`: 1 クエリあたり 16 バイト（Vulkan `VK_QUERY_RESULT_WITH_AVAILABILITY_BIT` 準拠）。$\text{query\_pool\_va} + (\text{query\_index} \times 16)$ に 64-bit カウントを書き込み、直後の $\text{query\_pool\_va} + (\text{query\_index} \times 16) + 8$ に 64-bit availability フラグ（`1ULL`）を書き込みます（§7.3, 1040〜1041 行）。
+
+### N18 [L] CAP_HW_WALKER=0 および CAP_PROT=0 時の動作明確化
+- **`CAP_HW_WALKER == 0` 時の SESSION_OPEN**:
+  ハードウェアが MMU を持たないため Session 0 のみが有効です。`session_id >= 1` に対する `CMD_SESSION_OPEN` は **`GHCI_FAULT_KIND_KICK_ABSENT` (Kind 2) で即時リジェクト** されます（§11.6, 1816〜1817 行）。
+- **`CAP_PROT == 0` 時の VM_MAP**:
+  全セッションで単一のグローバルルートページテーブルを共有します。`CMD_VM_MAP` の `session_id` フィールドは無視され、共有グローバルテーブルにマッピングが登録されます（§11.6, 1818〜1819 行）。
+
+### N28 [L] §12.11 の旧記述（WAIT_IDLE of every unit, blitter's RESOLVE）の刷新
+- **旧記述の完全置換**:
+  §12.11 の旧記述を完全に削除し、`CMD_RESOLVE_IMAGE`（0x44）、レンダーパス内自動 resolve（`GhciRenderPassDesc.resolve`）、および `CMD_BARRIER`（0x31, `GHCI_BARRIER_FLAG_WAIT_IDLE`）による同期規定に更新しました（§12.11, 2307〜2313 行）。
+
+---
+
+## 3. レグレッションテストおよび品質検証結果
+
+1. **禁止略語チェック**:
+   - `docs/`, `include/`, `rtl/`, `sim/` 全域において、禁止略語（3 文字の頭字語）の出現数は **厳密に 0 件** です。
+2. **シミュレーション回帰テスト**:
+   - `./sim/run.sh atg_cp atg_ghci_slim` を実行し、全テストパスを確認：
+     - `PASS atg_cp (0 s)`
+     - `PASS atg_ghci_slim (1 s)`
 
 DONE
