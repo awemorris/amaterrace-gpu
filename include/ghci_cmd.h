@@ -738,12 +738,12 @@ typedef struct GhciCmdCopyImageToBuffer {
 typedef struct GhciCmdFlip {
 	uint32_t header;                /* opcode: GHCI_CMD_FLIP, dwords: 8 */
 	uint32_t display_id;            /* 0 = primary display, 1 = secondary display */
-	uint32_t base_lo;               /* 64-bit physical scanout address [31:0] */
-	uint32_t base_hi;               /* 64-bit physical scanout address [63:32] */
+	uint32_t base_lo;               /* 32-bit GPU physical scanout address (< HOST_LIMIT or >= LOCAL_BASE) (N12, N25) */
+	uint32_t base_hi;               /* Must be 0 (N12, N25) */
 	uint32_t flags;                 /* GHCI_FLIP_FLAG_* */
 	uint32_t value;                 /* Presentation sequence tag (latched to TAKEN0/TAKEN1) */
-	uint32_t record_pa_lo;          /* 64-bit PA of 16-byte flip completion record [31:0] */
-	uint32_t record_pa_hi;          /* 64-bit PA of 16-byte flip completion record [63:32] */
+	uint32_t record_pa_lo;          /* 32-bit GPU physical address of 16-byte flip completion record (N12, N25) */
+	uint32_t record_pa_hi;          /* Must be 0 (N12, N25) */
 } GhciCmdFlip;
 
 

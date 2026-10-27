@@ -396,13 +396,13 @@ Writing to `IRQ_SET` (0x040) with bit 5 sets `IRQ_STATUS.SOFT` for driver testin
 | [0] | IRQ_FENCE | A `CMD_FENCE` packet completed and wrote 64-bit sequence value to memory (J13, K09) |
 | [1] | IRQ_FAULT | Hardware, translation, framing, or execution fault latched into `FAULT_INFO` (N05, N20, N21) |
 | [2] | IRQ_WATCHDOG | Command execution exceeded watchdog cycle limit (`WDT_CYCLES`) (N26) |
-| [3] | IRQ_DISPLAY | Display Controller top-level interrupt summary event (VSYNC, scanout flip take, or hotplug) (N21) |
+| [3] | IRQ_DISPLAY | Display Controller top-level interrupt summary event (`GHCI_IRQ_DISPLAY`, N21) |
 | [5] | IRQ_SOFT | Software-triggered interrupt test (via `IRQ_SET[5]`) |
 | Others | RESERVED | Reserved (reads 0) |
 
 **Display Interrupt Hierarchy (N21)**:
 - Top-level interrupt line reports `IRQ_DISPLAY` (bit 3) as a consolidated summary.
-- Detailed display subsystem events (VBLANK, scanout flip take completed, FIFO underflow error, hotplug status change) are queried and cleared independently in the `DISP2` extended capability register block (offset `0x200..0x2BC`).
+- Detailed display subsystem events (`VSYNC`, `FLIP_DONE`, `CURSOR_FLIP_DONE`, `HOTPLUG`, `UNDERFLOW`, `DISP_ERROR`) are queried and cleared independently in the `DISP2` extended capability register block (`DISP_IRQ_STATUS` 0x218, offset `0x200..0x2BC`).
 - Packet framing errors and invalid headers trigger `IRQ_FAULT` (bit 1) with `FAULT_INFO.KIND = 3` (`GHCI_FAULT_KIND_BAD_REG` / `GHCI_FAULT_PRIVILEGED_OP`).
 
 ### 3.5 FAULT_INFO, FAULT_ADDR and DIAG (0x018, 0x01C/0x020, J03, K04, N05, N20)
@@ -840,6 +840,10 @@ Overrides fine-grained dynamic pipeline parameters using tagged state IDs (6 dwo
     - `dword 2`: `table_va_lo` (64-bit session GPU virtual address [31:0] of 16-entry × 16-byte = 256-byte border color table, 16-byte aligned)
     - `dword 3`: `table_va_hi` (64-bit session GPU virtual address [63:32])
     - `dword 4..5`: `reserved` (0)
+- *Dynamic State Persistence & Precedence (N14)*:
+  - **Initial / Reset Defaults**: Prior to the first `CMD_SET_DYNAMIC_STATE`, default states are: `stencil_compare_mask = 0xFF`, `stencil_write_mask = 0xFF`, `stencil_reference = 0x00`, `depth_bias = {0.0f, 0.0f, 0.0f}`, `blend_constants = {1.0f, 1.0f, 1.0f, 1.0f}`.
+  - **PSO Interaction (Last Writer Wins)**: `CMD_BIND_PIPELINE` sets baseline states from PSO (dw9 line width, dw11 blend). Dynamic states set via `CMD_SET_DYNAMIC_STATE` override PSO baseline parameters. Submitting a new `CMD_BIND_PIPELINE` re-establishes the baseline states baked into the new PSO.
+  - **Capability Protection**: Submitting `state_id = 0x07..0x0E` on hardware where `CAP_MRT_BLEND == 0` raises `GHCI_FAULT_KIND_KICK_ABSENT` (Kind 2).
 
 #### `CMD_DRAW` (0x27) & `CMD_DRAW_INDEXED` (0x28)
 Issues draw calls to the graphics pipeline.
@@ -952,6 +956,7 @@ Emits a 64-bit sequence counter to memory upon completion of all earlier work (6
   - `[0]`: `GHCI_FENCE_FLAG_IRQ` (0x1) — Raise `GHCI_IRQ_FENCE` (`IRQ_STATUS[0]`) upon completion
   - `[1]`: `GHCI_FENCE_FLAG_MEM_WRITE` (0x2) — Write 64-bit sequence counter `fence_seq` to memory at `fence_addr`. If bit 1 is 0, memory write is omitted (interrupt-only fence)
   - `[2]`: `GHCI_FENCE_FLAG_HOST_FLUSH` (0x4) — Flush GPU dirty caches before signaling fence
+- *Address Routing (N12)*: If `fence_addr` resides within $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$, it routes to local VRAM. Otherwise, `fence_addr` is a 64-bit host physical DMA address / IOVA routed to the host PCIe AXI bus across full `PA_BITS` ($40..48$ bits) without being restricted by `HOST_LIMIT`.
 
 #### `CMD_WAIT_FENCE` (0x34, K09, N11, N28)
 CP pauses ring execution until memory fence value satisfies condition (5 dwords, 20 bytes).
@@ -1405,7 +1410,11 @@ The on-chip Shader Unit constant bank provides 512 32-bit words ($c[0..511]$):
 - **Extended Constant Access ($c[32..511]$)**: Constant words beyond $c31$ are loaded using the GSI1 `lwc rd, imm(rs1)` instruction.
 - **Push Constant Allocation & Register Overlap Semantics (N02)**:
   - Standard Vulkan convention: Push constants (up to 96 bytes / 24 dwords) are loaded at offset 0 ($c[0..23]$), leaving $c[24..31]$ intact for CP-mirrored Set 0..3 base addresses.
-  - Overwrite Rule (Last Writer Wins): `CMD_LOAD_CONST` writes directly to physical constant RAM. If `CMD_LOAD_CONST` writes into words 24..31 (e.g. when an application utilizes the full 128 bytes of push constants $c[0..31]$), the push constant values overwrite the mirrored Set 0..3 base VAs. In this configuration, shaders access descriptor set base addresses from extended constants ($c[32..511]$ via `lwc`) or uniform buffers. If `CMD_BIND_DESCRIPTOR_TABLE` is subsequently executed, it re-mirrors the bound set base VA into its designated words `c[24 + 2*set .. 25 + 2*set]`.
+  - Dedicated Hardware TU Registers vs SU Mirroring: When `CMD_BIND_DESCRIPTOR_TABLE` executes, CP latches `table_va` into dedicated 64-bit hardware registers `SET_TABLE_ADDR[0..3]`. The Texture Unit (TU) strictly fetches descriptors using `SET_TABLE_ADDR[0]` (textures) and `SET_TABLE_ADDR[1]` (samplers). Mirroring into $c[24..31]$ is performed exclusively for Shader Unit ALU operand convenience. Therefore, even if 128-byte push constants overwrite $c[24..31]$, `SET_TABLE_ADDR[0..1]` are completely unaffected and subsequent `texl` instructions execute correctly.
+  - Extended Constant Loading: Any region of $c[0..511]$ can be loaded via `CMD_LOAD_CONST(offset_dwords, count_dwords, data...)` prior to draw/dispatch; shaders read $c[32..511]$ via `lwc rd, imm(rs1)`.
+- **Descriptor Sets Mapping (N02)**:
+  - Buffer descriptors (uniform/storage) map directly 1:1 to hardware descriptor slots 0..3.
+  - For texture and sampler operations (`texl`, `texb`, `texf`), the hardware Texture Unit fetches texture descriptors from Set 0 and samplers from Set 1. The UMD organizes texture descriptors into Set 0 and sampler descriptors into Set 1 (e.g. for combined image samplers), while buffer descriptors can reside in any set $0..3$.
 - **Combined Image Sampler Slot Mapping (N02)**:
   - In GSI1 1.0, texture instructions (`texl`, `texb`, `texf`) statically encode the combined slot index in instruction immediate `sub[3:0]` (0..15).
   - The hardware Texture Unit fetches texture metadata from Descriptor Set 0 ($\text{set0\_base\_va} + \text{slot} \times 32$) and sampler parameters from Descriptor Set 1 ($\text{set1\_base\_va} + \text{slot} \times 16$) in parallel.
@@ -1777,7 +1786,7 @@ offset:
 | +0x8 | WINDOW_SIZE | R | Bytes of local memory, from LOCAL_BASE, that the local window shows; 0 = no window. Where the window is on the host is defined by the binding (section 15) |
 | +0xC | HOST_LIMIT | R | 32-bit physical bus address aperture threshold (4 KiB aligned). Physical addresses below HOST_LIMIT route to host PCIe AXI DMA memory; addresses at or above LOCAL_BASE route to local VRAM (N12). In `CMD_VM_MAP`, when `VM_FLAG_LOCAL` is 1, `phys` is strictly an absolute physical address in local VRAM (`phys >= LOCAL_BASE`). When `VM_FLAG_LOCAL` is 0 (host memory), `phys` is a 64-bit host physical address (or IOVA), valid up to `PA_BITS` ($40..48$ bits, `EXT_CAP_FEATURE[11:8]`). On systems without IOMMU and with a 32-bit PCIe DMA controller, host memory addresses are confined below `HOST_LIMIT` (32-bit) (N12). |
 | +0x10 | WINDOW_CTRL | RW | [0] ENABLE: the local window is open (section 11.1). 1 after a power-on reset and a function-level reset; CTRL.RESET does not change it. Reads 0 without a window |
-| +0x14 | MEM_CACHE_CFG | R | Cache hierarchy status: `[7:0]` L2 cache size in KiB (0, 16, 64, 128, 256), `[15:8]` L2 cache associativity ways (0, 4, 8, 16), `[23:16]` Texture L1 cache size in KiB (4, 8, 16), `[31:24]` Vertex Fetch line buffers (2, 4, 8) (N16) |
+| +0x14 | MEM_CACHE_CFG | R | Cache hierarchy status: `[15:0]` L2 cache size in KiB (0, 16, 64, 128, 256), `[23:16]` L2 cache associativity ways (0, 4, 8, 16), `[27:24]` Texture L1 cache size in KiB (4, 8, 16), `[31:28]` Vertex Fetch line buffers (2, 4, 8) (N16) |
 
 A GPU without the MEM capability is unified.
 
@@ -2138,12 +2147,12 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   bank size; c0-c31 are its first 32 words as operands. LOAD_CONST
   (section 7.3) loads the bank.
 
-### 12.9 Texture instructions
+### 12.9 Texture instructions (Approved Architecture, N16, N33)
 
 - `texl`, `texb` and `texf` write R, G, B, A of the texel to rd..rd+3
   (fp32). The coordinates are rs1 (u or x) and rs1+1 (v or y); the texture
   slot is sub[3:0].
-- **The .3 forms** (funct7 [5], draft, CAPS[26]): `texl.3`, `texb.3`,
+- **The .3 forms** (funct7 [5], N16): `texl.3`, `texb.3`,
   `texf.3`, `texg.3.*` and `texqlod.3` take a third coordinate in rs1+2:
   the layer of a 2D array, w (or z) of a 3D image, z of a cube map's
   direction (rs1, rs1+1, rs1+2).  Without it the third coordinate is 0.
@@ -2159,38 +2168,35 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   implementation-defined (Amaterrace clamps them).
 - `texsz rd, rs1`: writes {height[31:16], width[15:0]} of level rs1 to rd
   only. `texsz.l rd` (immediate 1, no rs1): writes the level count
-  (TEX_IMAGE[3:0] as read) to rd. `texsz.d rd, rs1` (immediate 2): writes
+  (`GhciTextureDescriptor.mip_levels`) to rd (N33). `texsz.d rd, rs1` (immediate 2): writes
   the depth of level rs1 of a 3D image, the layer count of a 2D array, 1
-  otherwise (draft, CAPS[26]; QuerySizeLod's third component).
-  `texsz.s rd` (immediate 3, no rs1; draft, CAPS[29]): writes the sample
-  count (4 for TEX_IMAGE[15:12] = 2, else 1; section 12.11); without
-  CAPS[29] an ISA fault.  Other immediates are ISA faults.
-- **Texel offsets** (ConstOffset, draft, CAPS[26]): word1 [25:22], [29:26]
+  otherwise (QuerySizeLod's third component).
+  `texsz.s rd` (immediate 3, no rs1): writes the sample
+  count (`GhciTextureDescriptor.sample_count`: 1, 2, or 4; section 12.11) (N33); without
+  multisampling (`DEVICE_CAPS[31]`) an ISA fault. Other immediates are ISA faults.
+- **Texel offsets** (ConstOffset, N16): word1 [25:22], [29:26]
   and [13:10] of `texl`, `texb`, `texf` and `texg` (the R forms, whose
   imm_hi and float source modifiers are otherwise unused) are the signed
   offsets du, dv, dw in -8..7 (Vulkan: minTexelOffset -8, maxTexelOffset
   7), added to the integer texel coordinates before the address modes
   (section 8.4).  Offsets on a cube map are ignored (Vulkan does not allow
   them).  Assembly: a last operand `off(du, dv[, dw])`.
-- The formats are those of TEX_IMAGE (section 8.4): UNORM RGBA8 and
-  BGRA8 return values in [0, 1]; the depth formats return (D, 0, 0, 1).
-  `texf` returns the same values and ignores the sampler's filters and
-  compare.
-- **Depth compare** (draft, CAPS[26]): `texl.c rd, rs1, rs2` and
+- **Supported Formats (N33)**: Sampled formats are authoritatively governed by §8.5.1 (Comprehensive Vulkan Format Features Table). UNORM RGBA8, BGRA8, RGB565, and floating-point formats return [0, 1] normalized values; depth formats return (D, 0, 0, 1). `texf` returns raw texel values and bypasses sampler filtering and depth comparison.
+- **Depth compare** (N16): `texl.c rd, rs1, rs2` and
   `texb.c rd, rs1, rs2` (funct7 [0]) are `texl` and `texb` with the
   reference Dref after the coordinates: rs1+2, or rs1+3 for the .3 forms
   (`texl.3.c`: a 2D array or a cube map). On a depth format whose
-  TEX_SAMPLER[9] is set, each texel's result is 1.0 when `Dref op D` holds
-  (op = TEX_SAMPLER[12:10]) and 0.0 otherwise, and the results are
+  `GhciSamplerDescriptor.compare_enable` is set, each texel's result is 1.0 when `Dref op D` holds
+  (op = `GhciSamplerDescriptor.compare_op`, §8.3) and 0.0 otherwise, and the results are
   filtered; rd is the result (0.0 to 1.0), rd+1 and rd+2 are 0, rd+3 is
-  1.0. A `.c` form on a sampler without compare returns the sample without
+  1.0 (N33). A `.c` form on a sampler without compare returns the sample without
   compare, a plain form on a compare sampler compares with Dref = 0
   (Vulkan leaves both undefined). The coordinate registers must be
   registers like rs1+1 (an operand past r62, or past the constant words or
   the specials, is an ISA fault). Implementation note: the four or five
   sources take two operand reads per lane group (rs1, rs1+1, rs2; then
   rs1+2, rs1+3).
-- **Gather** (draft, CAPS[26]): `texg.r`, `texg.g`, `texg.b`, `texg.a rd,
+- **Gather** (N16): `texg.r`, `texg.g`, `texg.b`, `texg.a rd,
   rs1` (`texl` with funct7 [1] set and the component in funct7 [3:2]; no
   rs2) write component C of the four texels of the bilinear footprint of
   level 0 to rd..rd+3 in Vulkan's order: (i0, j1), (i1, j1), (i1, j0),
@@ -2198,14 +2204,14 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   writes the four compare results (1.0 or 0.0) of a compare sampler
   (DrefGather). A depth format without compare gives D for component 0,
   1.0 for 3 and 0 for 1 and 2.  On a 2D array or a cube map the .3 forms.
-- **Level of detail query** (draft, CAPS[26]): `texqlod rd, rs1` (`texb`
+- **Level of detail query** (N16): `texqlod rd, rs1` (`texb`
   with funct7 0010000; no rs2, no bias) writes to rd the level that would
   be accessed, clamp(lambda, 0, LEVELS - 1), and to rd+1 lambda' (before
   minLod / maxLod), both as fp32 multiples of 1/256; rd+2 and rd+3 are 0.
   Vulkan-Docs issue 2383 discusses the order and the base level; this
-  draft follows GLSL's textureQueryLod (the level first, relative to the
+  conforms to GLSL's textureQueryLod (the level first, relative to the
   base level).  `texqlod.3` for 3D images and cube maps.
-- The SPIR-V image instructions map as follows (draft): ImplicitLod
+- The SPIR-V image instructions map as follows: ImplicitLod
   `texb` (bias rs2, `zero` without); ExplicitLod with Lod `texl`;
   Dref*ImplicitLod `texb.c`; Dref*ExplicitLod `texl.c`; Gather `texg.*`;
   DrefGather `texg.c`; Fetch `texf`; QuerySizeLod / QuerySize `texsz` and
@@ -2213,10 +2219,10 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   Proj forms divide first; 1D images are 2D images of height 1; Arrayed,
   3D and Cube take the .3 forms; ConstOffset the offset field. Grad
   (ExplicitLod with gradients) is compiled to `texsz`, the level of detail
-  of section 8.4 from the gradients, and `texl`.
+  from the gradients, and `texl`.
 - **Not in version 1** (a compiler rejects them):
-  - Multisampled images without CAPS[29] (QuerySamples,
-    sampledImageColorSampleCounts 4); with CAPS[29] section 12.11.
+  - Multisampled images without `DEVICE_CAPS[31]` (QuerySamples,
+    sampledImageColorSampleCounts 4); with `DEVICE_CAPS[31]` section 12.11.
   - Offset and ConstOffsets (optional, shaderImageGatherExtended), cube
     arrays (optional, imageCubeArray), MinLod (optional,
     shaderResourceMinLod), anisotropic filtering (optional,
@@ -2225,8 +2231,8 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   Hardware implementations may optionally omit the floating-point filter unit (`atg_tu_ffilt`).
   When `CONFIG_TU_ENABLE_FFILT = 0`, only UNORM8 bilinear filtering is performed by `atg_tu_filter`.
   Texture sampling from FP16 and FP32 image formats bypasses linear interpolation, falling back to
-  point (nearest) sampling. Hardware reports this feature via `DEVICE_CAPS[25]` (`CAP_TEX_FFILT`),
-  `CAPS[26]`, and `FMT_OPTIMAL`.
+  point (nearest) sampling. Hardware reports this feature via `DEVICE_CAPS[25]` (`CAP_TEX_FFILT`)
+  and `FMT_OPTIMAL` (N16).
 
 ### 12.10 Program Binary Structure & Resource Binding Architecture (N01, N02)
 
@@ -2312,7 +2318,7 @@ gets a program of these two instructions.
 **Per-sample operations** (in this order, after the fragment program):
 coverage = the sample mask the rasterizer wrote to r6 (not a later value
 of r6) AND the exported SAMPLE_MASK AND, with alpha to coverage (`PSO flags[10]`), an alpha
-to coverage mask; then alpha to one; then the depth (and
+to coverage mask; then the depth (and
 stencil) test and the colour write per covered sample. A sample's depth
 is the plane of the primitive at the sample, or the exported depth.
 Alpha to coverage is implementation-defined; Amaterrace takes n = the
@@ -2511,8 +2517,7 @@ cursor.
 **Flips.** Each plane has one pending flip at most (FLIP waits for it to
 be taken, section 7.3).
 
-- Plane 0 takes its pending image at the next vsync, or at once while
-  ENABLE is 0; FB_BASE then shows it.
+- Plane 0 takes its pending image at the next vsync (when `VSYNC_WAIT` is set, the default), or immediately upon packet processing (when `IMMEDIATE` is set, or while `ENABLE` is 0); `FB_BASE` then shows it (N25).
 - Plane 1 takes its pending image once the controller has read it into
   itself, between the end of a frame's reads and the start of the next
   frame, whether the cursor is shown or not; the cursor shows it from that
