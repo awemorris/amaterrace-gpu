@@ -442,12 +442,21 @@ module atg_su_sb #(
 	assign busy = any_c;
 
 	/* Warp readiness feedback to scheduler (Phase 012) */
+	reg [NWARPS-1:0] r_warp_ready;
 	genvar gw_r;
 	generate
 		for (gw_r = 0; gw_r < NWARPS; gw_r = gw_r + 1) begin : g_wr
 			wire [SB_ENTRIES-1:0] w_ev = ev[gw_r * SB_ENTRIES +: SB_ENTRIES];
 			wire w_u_hold = u_valid && (u_warp == gw_r[WARP_W-1:0]) && !i_valid;
-			assign warp_ready[gw_r] = !(|w_ev) && !w_u_hold;
+			wire w_rdy = !(|w_ev) && !w_u_hold;
+
+			always @(posedge clk) begin
+				if (!rst_n)
+					r_warp_ready[gw_r] <= 1'b0;
+				else
+					r_warp_ready[gw_r] <= w_rdy;
+			end
+			assign warp_ready[gw_r] = r_warp_ready[gw_r];
 		end
 	endgenerate
 

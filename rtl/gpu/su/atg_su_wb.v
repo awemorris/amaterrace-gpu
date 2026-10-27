@@ -234,11 +234,6 @@ module atg_su_wb #(
 	assign rq_push = s_rq || l_rq;
 	assign rq_data = sv ? sd : l_s_data;
 
-	assign rel_valid = lsel_v && l_last[lsel];
-	assign rel_warp = l_s_warp;
-	assign rel_sbe = l_s_sbe;
-	assign rel_cls = l_s_cls;
-
 	/* A long beat that has waited more than 4 cycles, or a pending input,
 	 * stops the issue so that a free write cycle comes. */
 	reg [2:0] wait_n;
@@ -260,7 +255,35 @@ module atg_su_wb #(
 				wait_n <= 3'd0;
 		end
 	end
-	assign wb_stall = wait_n > 3'd4 || (|fi_valid);
+
+	/* Register release and stall outputs to break long combinational path to SB and Sched */
+	reg r_rel_valid;
+	reg [WARP_W-1:0] r_rel_warp;
+	reg [SBE_W:0] r_rel_sbe;
+	reg [2:0] r_rel_cls;
+	reg r_wb_stall;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r_rel_valid <= 1'b0;
+			r_rel_warp  <= {WARP_W{1'b0}};
+			r_rel_sbe   <= {(SBE_W+1){1'b0}};
+			r_rel_cls   <= 3'd0;
+			r_wb_stall  <= 1'b0;
+		end else begin
+			r_rel_valid <= lsel_v && l_last[lsel];
+			r_rel_warp  <= l_s_warp;
+			r_rel_sbe   <= l_s_sbe;
+			r_rel_cls   <= l_s_cls;
+			r_wb_stall  <= wait_n > 3'd4 || (|fi_valid);
+		end
+	end
+
+	assign rel_valid = r_rel_valid;
+	assign rel_warp = r_rel_warp;
+	assign rel_sbe = r_rel_sbe;
+	assign rel_cls = r_rel_cls;
+	assign wb_stall = r_wb_stall;
 
 `ifndef SYNTHESIS
 	/* Two short results in one cycle cannot happen (fixed latency, one issue). */
