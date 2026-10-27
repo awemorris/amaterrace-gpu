@@ -56,8 +56,14 @@ module atg_tu_addr (
 	`include "atg_fmt_info.vh"
 	`include "atg_tu_fmt.vh"
 	localparam [1:0] OP_TEXL = 2'd0, OP_TEXB = 2'd1, OP_TEXF = 2'd2, OP_TEXSZ = 2'd3;
-	localparam [2:0] IDLE = 3'd0, CUBE = 3'd1, CWAIT = 3'd2, LA = 3'd4, LB = 3'd5,
-		OUT = 3'd6;
+	localparam [2:0] IDLE  = 3'd0,
+	                 CUBE  = 3'd1,
+	                 CWAIT = 3'd2,
+	                 LA0   = 3'd3,
+	                 LA1   = 3'd4,
+	                 LA2   = 3'd5,
+	                 LB    = 3'd6,
+	                 OUT   = 3'd7;
 
 	reg [2:0] st;
 	reg [3:0] pas;	/* {column, row, level, slice} */
@@ -72,6 +78,14 @@ module atg_tu_addr (
 	reg signed [26:0] cs [0:3];
 	reg signed [26:0] ct [0:3];
 	reg signed [26:0] ls1, lt1, ls2, lt2;	/* lanes 1, 2 on lane 0's face (LOD) */
+
+	/* Intermediate registers for pipelined Stage A */
+	reg signed [16:0] r_lam_quad;
+	reg [3:0] r_lvl [0:3];
+	reg r_lin_a [0:3];
+	reg [7:0] r_fl_a [0:3];
+	reg signed [16:0] r_lamp [0:3];
+	reg [15:0] r_dq [0:3];
 
 	/* Lane stages A -> B registers (4 lanes parallel) */
 	reg r_lin [0:3];
@@ -91,7 +105,7 @@ module atg_tu_addr (
 	atg_tu_desc desc (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.busy(desc_busy), .rd_slot(st == IDLE ? {tx_vs, tx_slot} : slot),
-		.rd_level(lvl_l[0]), .rd_level1(lvl_l[1]), .rd_level2(lvl_l[2]), .rd_level3(lvl_l[3]),
+		.rd_level(r_lvl[0]), .rd_level1(r_lvl[1]), .rd_level2(r_lvl[2]), .rd_level3(r_lvl[3]),
 		.rd_base(base), .rd_size(dsize), .rd_image(image), .rd_stride(stride), .rd_samp(samp),
 		.rd_lod(dlod), .rd_fmt(tfmt), .rd_row(rowa),
 		.rd_loff(loff_l[0]), .rd_plane(plane_l[0]),
@@ -239,15 +253,15 @@ module atg_tu_addr (
 		atg_tu_lsel u_lsel (
 			.op(op), .qlod(qlod), .unn(unn), .gather(gather), .ms(ms), .filt(filt),
 			.miplin(miplin), .mag_lin(samp[GHCI_SAMP_MAG_LINEAR]), .min_lin(samp[GHCI_SAMP_MIN_LINEAR]),
-			.pas1(pas[1]), .cw0(cw0), .cw2(cw2), .lam_q(lam_quad), .sbias(sbias), .minlod(minlod),
+			.pas1(pas[1]), .cw0(cw0), .cw2(cw2), .lam_q(r_lam_quad), .sbias(sbias), .minlod(minlod),
 			.maxlod(maxlod), .maxl(maxl), .lvl(lvl_l[gl]), .lin(lin_l[gl]), .fl(fl_l[gl]),
 			.lamp(lamp_l[gl]), .dq(dq_l[gl])
 		);
 
 		wire [15:0] wl_s, hl_s, dl_s;
-		am_shift #(.W(16), .SW(4)) u_wl_s (.a(w0), .amt(lvl_l[gl]), .left(1'b0), .arith(1'b0), .y(wl_s));
-		am_shift #(.W(16), .SW(4)) u_hl_s (.a(h0), .amt(lvl_l[gl]), .left(1'b0), .arith(1'b0), .y(hl_s));
-		am_shift #(.W(16), .SW(4)) u_dl_s (.a(cnt), .amt(lvl_l[gl]), .left(1'b0), .arith(1'b0), .y(dl_s));
+		am_shift #(.W(16), .SW(4)) u_wl_s (.a(w0), .amt(r_lvl[gl]), .left(1'b0), .arith(1'b0), .y(wl_s));
+		am_shift #(.W(16), .SW(4)) u_hl_s (.a(h0), .amt(r_lvl[gl]), .left(1'b0), .arith(1'b0), .y(hl_s));
+		am_shift #(.W(16), .SW(4)) u_dl_s (.a(cnt), .amt(r_lvl[gl]), .left(1'b0), .arith(1'b0), .y(dl_s));
 
 		wire [15:0] wl = wl_s == 16'd0 ? 16'd1 : wl_s;
 		wire [15:0] hl1 = hl_s == 16'd0 ? 16'd1 : hl_s;
@@ -280,7 +294,7 @@ module atg_tu_addr (
 
 		wire [15:0] dsz = arr ? cnt : is3d ? dl : 16'd1;
 		assign val_l[gl] = smpq ? (ms ? 32'd4 : 32'd1) : nlevq ? {28'd0, nlev} : dszq ? {16'd0, dsz} :
-			op == OP_TEXSZ ? {hl1, wl} : qlod ? {lamp_l[gl][15:0], dq_l[gl]} :
+			op == OP_TEXSZ ? {hl1, wl} : qlod ? {r_lamp[gl][15:0], r_dq[gl]} :
 			cmp ? cw3 : 32'd0;
 
 		/* Stage B: Footprint and address expansion */
@@ -340,10 +354,16 @@ module atg_tu_addr (
 			ta_bord <= 16'd0;
 			ta_wts <= 128'd0;
 			ta_value <= 128'd0;
+			r_lam_quad <= 17'sd0;
 			for (k = 0; k < 4; k = k + 1) begin
 				cf[k] <= 3'd0;
 				cs[k] <= 27'sd0;
 				ct[k] <= 27'sd0;
+				r_lvl[k] <= 4'd0;
+				r_lin_a[k] <= 1'b0;
+				r_fl_a[k] <= 8'd0;
+				r_lamp[k] <= 17'sd0;
+				r_dq[k] <= 16'd0;
 				r_lin[k] <= 1'b0;
 				r_fl[k] <= 8'd0;
 				r_wl[k] <= 16'd0;
@@ -377,7 +397,7 @@ module atg_tu_addr (
 				cb_lod <= n_lod;
 				cb_lane <= n_lane;
 				job <= 3'd0;
-				st <= n_lod || n_lane ? CUBE : LA;
+				st <= n_lod || n_lane ? CUBE : LA0;
 			end
 			CUBE: st <= CWAIT;
 			CWAIT: if (!c_bsy) begin
@@ -393,12 +413,26 @@ module atg_tu_addr (
 					ct[jlane] <= c_t;
 				end
 				job <= jnext;
-				st <= jnext != 3'd6 ? CUBE : LA;
+				st <= jnext != 3'd6 ? CUBE : LA0;
 			end
-			LA: begin
+			LA0: begin
+				r_lam_quad <= lam_quad;
+				st <= LA1;
+			end
+			LA1: begin
 				for (k = 0; k < 4; k = k + 1) begin
-					r_lin[k]   <= lin_l[k];
-					r_fl[k]    <= op[1] || qlod ? 8'd0 : fl_l[k];
+					r_lvl[k]   <= lvl_l[k];
+					r_lin_a[k] <= lin_l[k];
+					r_fl_a[k]  <= op[1] || qlod ? 8'd0 : fl_l[k];
+					r_lamp[k]  <= lamp_l[k];
+					r_dq[k]    <= dq_l[k];
+				end
+				st <= LA2;
+			end
+			LA2: begin
+				for (k = 0; k < 4; k = k + 1) begin
+					r_lin[k]   <= r_lin_a[k];
+					r_fl[k]    <= r_fl_a[k];
 					r_wl[k]    <= wl_l[k];
 					r_hl[k]    <= hl_l[k];
 					r_dl[k]    <= dl_l[k];
@@ -432,7 +466,7 @@ module atg_tu_addr (
 				mipf <= 1'b0;
 				if (!nxt[4]) begin
 					pas <= nxt[3:0];
-					st <= LA;
+					st <= LA1;
 				end else
 					st <= IDLE;
 			end
@@ -471,6 +505,7 @@ module atg_tu_addr (
 		dlod[31:24], OP_TEXL,
 		cnt1_bo_unused, lb1_co_unused, lbase_co_unused,
 		lamp_l[0][16], lamp_l[1][16], lamp_l[2][16], lamp_l[3][16],
+		r_lamp[0][16], r_lamp[1][16], r_lamp[2][16], r_lamp[3][16],
 		lstr_l[0][47:32], lstr_l[1][47:32], lstr_l[2][47:32], lstr_l[3][47:32],
 		cube_edge_fout, cube_edge_uout, cube_edge_vout, unused_cube_signals};
 endmodule
