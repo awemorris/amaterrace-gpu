@@ -11,14 +11,14 @@ read_verilog [list \
     [file join $root rtl gpu mc atg_mc_l2.v] \
 ]
 
-# Synthesize with 16KB KC705 configuration (WAYS=4, SET_W=6)
+# Synthesize with 8KB KC705 configuration (WAYS=4, SET_W=5)
 synth_design -top atg_mc_l2 -part $part -mode out_of_context \
-    -generic WAYS=4 -generic SET_W=6 -verilog_define SYNTH_KINTEX7
+    -generic WAYS=4 -generic SET_W=5 -verilog_define SYNTH_KINTEX7
 
-report_utilization -file [file join $out l2_16k_utilization.rpt]
+report_utilization -file [file join $out l2_8k_utilization.rpt]
 
 # Create a 200 MHz clock constraint for timing evaluation
 create_clock -period 5.000 -name clk [get_ports clk]
-report_timing_summary -max_paths 10 -file [file join $out l2_16k_timing_summary.rpt]
+report_timing_summary -max_paths 10 -file [file join $out l2_8k_timing_summary.rpt]
 
-puts "vivado-synth-l2: standalone L2 16KB synthesis finished successfully"
+puts "vivado-synth-l2: standalone L2 8KB synthesis finished successfully"
