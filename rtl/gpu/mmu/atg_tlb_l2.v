@@ -16,25 +16,31 @@
 
 module atg_tlb_l2 #(
 	parameter SETS = 64,
-	parameter TAG_W = 18		/* {session_id[3:0], vpn[19:6]} */
+	parameter VA_BITS = 32,
+	parameter PA_BITS = 32,
+	parameter VPN_BITS = VA_BITS - 12,
+	parameter PPN_BITS = PA_BITS - 12,
+	parameter SET_W = 6,
+	parameter REM_VPN = VPN_BITS - SET_W,
+	parameter TAG_W = 4 + REM_VPN		/* {session_id[3:0], vpn[VPN_BITS-1:6]} */
 ) (
 	input wire clk,
 	input wire rst_n,
 
 	/* Lookup Request (from L1 miss) */
-	input  wire        lookup_valid,
-	input  wire [3:0]  lookup_session,
-	input  wire [19:0] lookup_vpn,
-	output reg         hit,
-	output reg  [19:0] hit_pfn,
-	output reg  [5:0]  hit_flags,
+	input  wire                lookup_valid,
+	input  wire [3:0]          lookup_session,
+	input  wire [VPN_BITS-1:0] lookup_vpn,
+	output reg                 hit,
+	output reg  [PPN_BITS-1:0] hit_pfn,
+	output reg  [5:0]          hit_flags,
 
 	/* Refill Interface (from Hardware Page Table Walker) */
-	input wire        refill_we,
-	input wire [3:0]  refill_session,
-	input wire [19:0] refill_vpn,
-	input wire [19:0] refill_pfn,
-	input wire [5:0]  refill_flags,
+	input wire                refill_we,
+	input wire [3:0]          refill_session,
+	input wire [VPN_BITS-1:0] refill_vpn,
+	input wire [PPN_BITS-1:0] refill_pfn,
+	input wire [5:0]          refill_flags,
 
 	/* Invalidation Interface */
 	input wire        flush_trigger,
@@ -42,16 +48,16 @@ module atg_tlb_l2 #(
 	input wire [3:0]  flush_session
 );
 	wire [5:0]       lookup_set = lookup_vpn[5:0];
-	wire [TAG_W-1:0] lookup_tag = {lookup_session, lookup_vpn[19:6]};
+	wire [TAG_W-1:0] lookup_tag = {lookup_session, lookup_vpn[VPN_BITS-1:6]};
 
 	wire [5:0]       refill_set = refill_vpn[5:0];
-	wire [TAG_W-1:0] refill_tag = {refill_session, refill_vpn[19:6]};
+	wire [TAG_W-1:0] refill_tag = {refill_session, refill_vpn[VPN_BITS-1:6]};
 
 	/* 4 ways packed registers: 32 bits per tag, 32 bits per pfn, 8 bits per flag */
-	reg [SETS-1:0]    way0_valid, way1_valid, way2_valid, way3_valid;
-	reg [SETS*32-1:0] way0_tag,   way1_tag,   way2_tag,   way3_tag;
-	reg [SETS*32-1:0] way0_pfn,   way1_pfn,   way2_pfn,   way3_pfn;
-	reg [SETS*8-1:0]  way0_flags, way1_flags, way2_flags, way3_flags;
+	reg [SETS-1:0]               way0_valid, way1_valid, way2_valid, way3_valid;
+	reg [SETS*32-1:0]            way0_tag,   way1_tag,   way2_tag,   way3_tag;
+	reg [SETS*32-1:0]            way0_pfn,   way1_pfn,   way2_pfn,   way3_pfn;
+	reg [SETS*8-1:0]             way0_flags, way1_flags, way2_flags, way3_flags;
 
 	/* 2-bit cyclic replacement pointer per set */
 	reg [SETS*2-1:0] set_alloc_ptr;
@@ -79,24 +85,24 @@ module atg_tlb_l2 #(
 
 	always @(*) begin
 		hit       = 1'b0;
-		hit_pfn   = 20'd0;
+		hit_pfn   = {PPN_BITS{1'b0}};
 		hit_flags = 6'd0;
 		if (lookup_valid) begin
 			if (match0) begin
 				hit       = 1'b1;
-				hit_pfn   = way0_pfn[set_pfn_idx +: 20];
+				hit_pfn   = way0_pfn[set_pfn_idx +: PPN_BITS];
 				hit_flags = way0_flags[set_flags_idx +: 6];
 			end else if (match1) begin
 				hit       = 1'b1;
-				hit_pfn   = way1_pfn[set_pfn_idx +: 20];
+				hit_pfn   = way1_pfn[set_pfn_idx +: PPN_BITS];
 				hit_flags = way1_flags[set_flags_idx +: 6];
 			end else if (match2) begin
 				hit       = 1'b1;
-				hit_pfn   = way2_pfn[set_pfn_idx +: 20];
+				hit_pfn   = way2_pfn[set_pfn_idx +: PPN_BITS];
 				hit_flags = way2_flags[set_flags_idx +: 6];
 			end else if (match3) begin
 				hit       = 1'b1;
-				hit_pfn   = way3_pfn[set_pfn_idx +: 20];
+				hit_pfn   = way3_pfn[set_pfn_idx +: PPN_BITS];
 				hit_flags = way3_flags[set_flags_idx +: 6];
 			end
 		end
@@ -135,10 +141,10 @@ module atg_tlb_l2 #(
 				way3_valid <= {SETS{1'b0}};
 			end else if (flush_trigger) begin
 				for (s_flush = 0; s_flush < SETS; s_flush = s_flush + 1) begin
-					if (way0_tag[s_flush*32 + 14 +: 4] == flush_session) way0_valid[s_flush] <= 1'b0;
-					if (way1_tag[s_flush*32 + 14 +: 4] == flush_session) way1_valid[s_flush] <= 1'b0;
-					if (way2_tag[s_flush*32 + 14 +: 4] == flush_session) way2_valid[s_flush] <= 1'b0;
-					if (way3_tag[s_flush*32 + 14 +: 4] == flush_session) way3_valid[s_flush] <= 1'b0;
+					if (way0_tag[s_flush*32 + REM_VPN +: 4] == flush_session) way0_valid[s_flush] <= 1'b0;
+					if (way1_tag[s_flush*32 + REM_VPN +: 4] == flush_session) way1_valid[s_flush] <= 1'b0;
+					if (way2_tag[s_flush*32 + REM_VPN +: 4] == flush_session) way2_valid[s_flush] <= 1'b0;
+					if (way3_tag[s_flush*32 + REM_VPN +: 4] == flush_session) way3_valid[s_flush] <= 1'b0;
 				end
 			end
 
@@ -148,25 +154,25 @@ module atg_tlb_l2 #(
 				2'd0: begin
 					way0_valid[refill_set]             <= 1'b1;
 					way0_tag[ref_tag_idx +: TAG_W]     <= refill_tag;
-					way0_pfn[ref_pfn_idx +: 20]        <= refill_pfn;
+					way0_pfn[ref_pfn_idx +: PPN_BITS]  <= refill_pfn;
 					way0_flags[ref_flags_idx +: 6]     <= refill_flags;
 				end
 				2'd1: begin
 					way1_valid[refill_set]             <= 1'b1;
 					way1_tag[ref_tag_idx +: TAG_W]     <= refill_tag;
-					way1_pfn[ref_pfn_idx +: 20]        <= refill_pfn;
+					way1_pfn[ref_pfn_idx +: PPN_BITS]  <= refill_pfn;
 					way1_flags[ref_flags_idx +: 6]     <= refill_flags;
 				end
 				2'd2: begin
 					way2_valid[refill_set]             <= 1'b1;
 					way2_tag[ref_tag_idx +: TAG_W]     <= refill_tag;
-					way2_pfn[ref_pfn_idx +: 20]        <= refill_pfn;
+					way2_pfn[ref_pfn_idx +: PPN_BITS]  <= refill_pfn;
 					way2_flags[ref_flags_idx +: 6]     <= refill_flags;
 				end
 				2'd3: begin
 					way3_valid[refill_set]             <= 1'b1;
 					way3_tag[ref_tag_idx +: TAG_W]     <= refill_tag;
-					way3_pfn[ref_pfn_idx +: 20]        <= refill_pfn;
+					way3_pfn[ref_pfn_idx +: PPN_BITS]  <= refill_pfn;
 					way3_flags[ref_flags_idx +: 6]     <= refill_flags;
 				end
 				endcase

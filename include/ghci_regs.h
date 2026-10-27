@@ -31,43 +31,56 @@ extern "C" {
 
 /*
  * ============================================================================
- * GHCI 1.0 Slim Host MMIO Registers (19 registers, 76 bytes: 0x00 - 0x48)
+ * GHCI 1.0 Canonical Host MMIO Registers (Page 0: 0x000 - 0x0FC)
  * ============================================================================
  */
 
 /* Identification & Capabilities */
-#define GHCI_REG_MAGIC           0x000u  /* RO: Magic identification ("GHCI") */
-#define GHCI_REG_VERSION         0x004u  /* RO: Major [31:16], Minor [15:0] */
-#define GHCI_REG_DEVICE_CAPS     0x008u  /* RO: Device capabilities bitfield */
-#define GHCI_REG_EXTCAP_PTR      0x00Cu  /* RO: Extended capabilities list pointer (0 = none) */
+#define GHCI_REG_MAGIC           0x000u  /* RO: Magic identification ("GHCI", 0x47484349) */
+#define GHCI_REG_VERSION         0x004u  /* RO: Major [31:16], Minor [15:0] -> 0x00010000 */
+#define GHCI_REG_DEVICE_CAPS     0x008u  /* RO: Device capabilities bitfield (K05) */
+#define GHCI_REG_EXTCAP_PTR      0x00Cu  /* RO: Extended capabilities list pointer (0x00000100) */
 
-/* Control & Status */
-#define GHCI_REG_CTRL            0x010u  /* RW: Core control bits (RUN, HALT, RESET, etc.) */
-#define GHCI_REG_STATUS          0x014u  /* RO: Hardware execution status */
-#define GHCI_REG_IRQ_STATUS      0x018u  /* RW1C: Interrupt status (write-1-to-clear) */
-#define GHCI_REG_IRQ_ENABLE      0x01Cu  /* RW: Interrupt enable mask */
+/* Control, Status & Faults */
+#define GHCI_REG_STATUS          0x010u  /* RO: Hardware execution status (K03) */
+#define GHCI_REG_CTRL            0x014u  /* RW: Core control bits (RUN, HALT, RESET, etc., K03) */
+#define GHCI_REG_FAULT_INFO      0x018u  /* RO/W1C: Fault syndrome, kind, source unit, session ID (K04) */
+#define GHCI_REG_FAULT_ADDR_LO   0x01Cu  /* RO: Faulting virtual/physical address [31:0] */
+#define GHCI_REG_FAULT_ADDR_HI   0x020u  /* RO: Faulting virtual/physical address [63:32] */
 
 /* Command Ring Buffer & Doorbell */
-#define GHCI_REG_RING_BASE_LO    0x020u  /* RW: Command ring 64-bit base address [31:0] */
-#define GHCI_REG_RING_BASE_HI    0x024u  /* RW: Command ring 64-bit base address [63:32] */
-#define GHCI_REG_RING_SIZE       0x028u  /* RW: Ring size in bytes (power of 2) */
-#define GHCI_REG_RING_RPTR       0x02Cu  /* RO: GPU read pointer (dword index from BASE) */
+#define GHCI_REG_RING_BASE_LO    0x024u  /* RW: Command ring 64-bit base host DMA address [31:0] */
+#define GHCI_REG_RING_BASE_HI    0x028u  /* RW: Command ring 64-bit base host DMA address [63:32] */
+#define GHCI_REG_RING_SIZE       0x02Cu  /* RW: Command ring size in bytes (power of 2, e.g. 4 KiB..16 MiB) */
 #define GHCI_REG_RING_WPTR       0x030u  /* RW: Host write pointer (Doorbell, dword index from BASE) */
+#define GHCI_REG_RING_RPTR       0x034u  /* RO: GPU read pointer (dword index from BASE) */
 
-/* Fault Diagnostics & Reporting */
-#define GHCI_REG_FAULT_INFO      0x034u  /* RO: Fault syndrome, kind, source unit */
-#define GHCI_REG_FAULT_ADDR_LO   0x038u  /* RO: Faulting virtual/physical address [31:0] */
-#define GHCI_REG_FAULT_ADDR_HI   0x03Cu  /* RO: Faulting virtual/physical address [63:32] */
+/* Interrupt Management */
+#define GHCI_REG_IRQ_STATUS      0x038u  /* RW1C: Interrupt status flags (write-1-to-clear) */
+#define GHCI_REG_IRQ_ENABLE      0x03Cu  /* RW: Interrupt enable mask */
+#define GHCI_REG_IRQ_SET         0x040u  /* W1S: Software interrupt trigger */
+
+/* Diagnostics & Hardware Sizing */
+#define GHCI_REG_SCRATCH0        0x044u  /* RW: 32-bit test/scratchpad register */
+#define GHCI_REG_SCRATCH         GHCI_REG_SCRATCH0
+#define GHCI_REG_WDT_CYCLES      0x048u  /* RW: Watchdog timeout limit in core clock cycles */
+#define GHCI_REG_RESIDENT_WARPS  0x04Cu  /* RO: [15:0] Active warps, [23:16] registers per lane */
+#define GHCI_REG_CP_HEAP_BASE    0x050u  /* RW: Autonomous MMU heap base PA [31:0] */
+#define GHCI_REG_CP_HEAP_LIMIT   0x054u  /* RW: Autonomous MMU heap limit PA (exclusive) */
+#define GHCI_REG_SESSION_ACTIVE  0x058u  /* RO: Active session identifier bitmap */
+#define GHCI_REG_TIMESTAMP_LO    0x05Cu  /* RO: 64-bit GPU cycle timestamp [31:0] */
+#define GHCI_REG_TIMESTAMP_HI    0x060u  /* RO: 64-bit GPU cycle timestamp [63:32] */
+#define GHCI_REG_GCLK_HZ         0x064u  /* RO: Core clock frequency in Hz (timestampPeriod = 1e9 / GCLK_HZ, K06) */
 
 /* Command Processor Diagnostics */
-#define GHCI_REG_DIAG_CP_PC      0x040u  /* RO: Current RV32IM Program Counter */
-#define GHCI_REG_DIAG_CP_STATUS  0x044u  /* RO: CP FSM state & in-flight draw counter */
+#define GHCI_REG_DIAG_CP_PC      0x074u  /* RO: Current RV32IM Program Counter of CP firmware */
+#define GHCI_REG_DIAG_CP_STATUS  0x078u  /* RO: CP internal FSM state & in-flight draw counter */
 
-/* Scratchpad */
-#define GHCI_REG_SCRATCH         0x048u  /* RW: 32-bit test/scratchpad register */
+/* Fast Extended Capability Mirrors */
+#define GHCI_REG_EXT_CAP_FMT0    0x080u  /* RO: Fast texture compression format bitmap shortcut */
+#define GHCI_REG_EXT_CAP_FEATURE 0x084u  /* RO: Fast rendering feature detail bitmap shortcut */
 
-#define GHCI_SLIM_MMIO_COUNT     19u
-#define GHCI_SLIM_MMIO_BYTES     (GHCI_SLIM_MMIO_COUNT * 4u) /* 76 bytes */
+#define GHCI_CANONICAL_MMIO_BYTES 0x100u /* 256 bytes active MMIO in Page 0 */
 
 /*
  * ============================================================================
@@ -75,7 +88,7 @@ extern "C" {
  * ============================================================================
  */
 
-/* DEVICE_CAPS bits (0x008) */
+/* DEVICE_CAPS bits (0x008, K05) */
 #define GHCI_CAP_UMA             (1u << 0)  /* 1 = Unified Memory (Shared DRAM), 0 = Discrete */
 #define GHCI_CAP_IOMMU           (1u << 1)  /* 1 = Platform / System IOMMU active */
 #define GHCI_CAP_HW_WALKER       (1u << 2)  /* 1 = Autonomous HW Page Table Walker present */
@@ -84,22 +97,18 @@ extern "C" {
 #define GHCI_CAP_DUAL_SOURCE     (1u << 5)  /* 1 = Dual-source color blending supported */
 #define GHCI_CAP_FP16            (1u << 6)  /* 1 = Packed FP16 arithmetic supported */
 #define GHCI_CAP_GSI1            (1u << 7)  /* 1 = GSI1 standard shader ISA native */
-#define GHCI_CAP_SIMD_LANES(caps)(((caps) >> 8) & 0xFFu)  /* Physical lanes (4, 8, 16, 32) */
-#define GHCI_CAP_NUM_SU(caps)    (((caps) >> 16) & 0xFFu) /* Number of Shader Units */
+#define GHCI_CAP_PHYS_LANES(caps)(((caps) >> 8) & 0xFFu)  /* Physical execution lanes (default 8) */
+#define GHCI_CAP_NUM_SU(caps)    (((caps) >> 16) & 0xFFu) /* Number of Shader Units (1..4) */
 #define GHCI_CAP_PROT            (1u << 24) /* 1 = Session protection hardware present */
 #define GHCI_CAP_TEX_FFILT       (1u << 25) /* 1 = Hardware floating-point texture filter present */
 #define GHCI_CAP_ROP_PACK        (1u << 26) /* 1 = ROP Path 2 integer/float RT packer present */
-#define GHCI_CAP_BLT             (1u << 27) /* 1 = Blitter 2D engine present */
-#define GHCI_CAP_DISP            (1u << 28) /* 1 = Display controller present */
-#define GHCI_CAP_MSAA            (1u << 29) /* 1 = MSAA 4x multisampling supported */
-#define GHCI_CAP_TASK_SHADER     (1u << 30) /* 1 = VK_EXT Task Shader supported */
-#define GHCI_CAP_MESH_SHADER     (1u << 31) /* 1 = VK_EXT Mesh Shader supported */
+#define GHCI_CAP_TASK_SHADER     (1u << 27) /* 1 = VK_EXT Task Shader supported (K05) */
+#define GHCI_CAP_MESH_SHADER     (1u << 28) /* 1 = VK_EXT Mesh Shader supported (K05) */
+#define GHCI_CAP_BLT             (1u << 29) /* 1 = Blitter 2D engine present (K05) */
+#define GHCI_CAP_DISP            (1u << 30) /* 1 = Display controller present (K05) */
+#define GHCI_CAP_MSAA            (1u << 31) /* 1 = MSAA 4x multisampling supported (K05) */
 
-/* Extended Capability Registers (0x080+) */
-#define GHCI_REG_EXT_CAP_FMT0    0x080u  /* Texture compression format bitmap (BC1-BC7) */
-#define GHCI_REG_EXT_CAP_FEATURE 0x084u  /* Rendering feature detail bitmap */
-
-/* CTRL bits (0x014, J02) */
+/* CTRL bits (0x014, K03) */
 #define GHCI_CTRL_RESET          (1u << 0)  /* Soft reset GPU (self-clearing) */
 #define GHCI_CTRL_RUN            (1u << 1)  /* Enable ring processing */
 #define GHCI_CTRL_HALT           (1u << 2)  /* Request CP to halt after current packet */
@@ -108,63 +117,53 @@ extern "C" {
 #define GHCI_CTRL_WDT_EN         (1u << 5)  /* Enable watchdog timer */
 #define GHCI_CTRL_IRQ_GLOBAL     (1u << 6)  /* Master interrupt enable */
 
-/* STATUS bits (0x014) */
-#define GHCI_STATUS_BUSY_CP      (1u << 0)  /* CP busy or reset sequence in progress */
-#define GHCI_STATUS_BUSY_BLT     (1u << 1)  /* BLT 2D engine busy */
-#define GHCI_STATUS_BUSY_VF      (1u << 2)  /* Vertex fetcher busy */
-#define GHCI_STATUS_BUSY_RX      (1u << 3)  /* Rasterizer busy */
-#define GHCI_STATUS_BUSY_SU      (1u << 4)  /* Shader Unit busy */
-#define GHCI_STATUS_BUSY_TU      (1u << 5)  /* Texture Unit busy */
-#define GHCI_STATUS_BUSY_ROP     (1u << 6)  /* ROP / pixel packer busy */
-#define GHCI_STATUS_MC_IDLE      (1u << 8)  /* Memory controller idle */
-#define GHCI_STATUS_FAULTED      (1u << 9)  /* Hardware / MMU fault active */
-#define GHCI_STATUS_HALTED       (1u << 10) /* CP halted */
-#define GHCI_STATUS_RING_EMPTY   (1u << 11) /* Ring buffer empty */
-#define GHCI_STATUS_MEM_READY    (1u << 12) /* DRAM / memory calibration complete */
-#define GHCI_STATUS_AXI_STUCK    (1u << 13) /* AXI bus transaction timeout / stuck */
-#define GHCI_STATUS_QUIESCE      (1u << 14) /* GPU memory access quiesced */
-#define GHCI_STATUS_CP_STATE(s)  (((s) >> 16) & 0x0Fu) /* [19:16] CP FSM state */
+/* STATUS bits (0x010, K03) */
+#define GHCI_STATUS_RUNNING      (1u << 0)  /* 1 = GPU command processor running */
+#define GHCI_STATUS_HALTED       (1u << 1)  /* 1 = GPU halted */
+#define GHCI_STATUS_FAULTED      (1u << 2)  /* 1 = Hardware / MMU fault active (device-wide) */
+#define GHCI_STATUS_MC_IDLE      (1u << 8)  /* 1 = Memory controller idle */
+#define GHCI_STATUS_RING_EMPTY   (1u << 11) /* 1 = Ring buffer empty */
+#define GHCI_STATUS_MEM_READY    (1u << 12) /* 1 = DRAM / memory calibration complete */
+#define GHCI_STATUS_AXI_STUCK    (1u << 13) /* 1 = AXI bus transaction timeout / stuck */
+#define GHCI_STATUS_QUIESCE      (1u << 14) /* 1 = GPU memory access quiesced */
+#define GHCI_STATUS_CP_STATE(s)  (((s) >> 16) & 0x0Fu) /* [19:16] CP FSM state (K03) */
+
 #define GHCI_CP_STATE_IDLE       0u
-#define GHCI_CP_STATE_RUN        1u
-#define GHCI_CP_STATE_HALTING    2u
-#define GHCI_CP_STATE_HALTED     3u
-#define GHCI_CP_STATE_FAULTED    4u
-#define GHCI_CP_STATE_RESET_WAIT 5u
+#define GHCI_CP_STATE_FETCH      1u
+#define GHCI_CP_STATE_DECODE     2u
+#define GHCI_CP_STATE_EXEC       3u
+#define GHCI_CP_STATE_WAIT_FENCE 4u
+#define GHCI_CP_STATE_WAIT_MEM   5u
+#define GHCI_CP_STATE_BLIT       6u
+#define GHCI_CP_STATE_FAULT      7u
 
-/* Legacy/simplified aliases */
-#define GHCI_STATUS_READY        GHCI_STATUS_MEM_READY
-#define GHCI_STATUS_BUSY         (1u << 0)
-#define GHCI_STATUS_FAULT        GHCI_STATUS_FAULTED
-
-/* IRQ_STATUS & IRQ_ENABLE bits (0x018, 0x01C) */
+/* IRQ_STATUS & IRQ_ENABLE bits (0x038, 0x03C) */
 #define GHCI_IRQ_FENCE           (1u << 0)  /* Fence completed */
 #define GHCI_IRQ_FAULT           (1u << 1)  /* Hardware / memory translation fault */
 #define GHCI_IRQ_WATCHDOG        (1u << 2)  /* Execution timeout / hang */
 #define GHCI_IRQ_DISPLAY         (1u << 3)  /* Display scanout / VSYNC event */
+#define GHCI_IRQ_SOFT            (1u << 5)  /* Software interrupt (triggered via IRQ_SET) */
 
-/* FAULT_INFO decoding (0x034) */
-#define GHCI_FAULT_CLIENT(info)    ((info) & 0xFFu)
-#define GHCI_FAULT_FLAGS(info)     (((info) >> 8) & 0x0Fu)
-#define GHCI_FAULT_KIND(info)      (((info) >> 12) & 0x0Fu)
-#define GHCI_FAULT_BLOCK(info)     (((info) >> 16) & 0xFFu)
-#define GHCI_FAULT_SESSION(info)   (((info) >> 24) & 0xFFu)
+/* FAULT_INFO decoding (0x018, K04) */
+#define GHCI_FAULT_KIND(info)      ((info) & 0x0Fu)        /* [3:0] Fault kind */
+#define GHCI_FAULT_UNIT(info)      (((info) >> 4) & 0x0Fu) /* [7:4] Source unit */
+#define GHCI_FAULT_SESSION(info)   (((info) >> 8) & 0xFFu) /* [15:8] Session ID (0..15) */
+#define GHCI_FAULT_SYNDROME(info)  (((info) >> 16) & 0xFFFFu) /* [31:16] Subunit syndrome */
 
+/* Fault Kinds [3:0] (K04) */
 #define GHCI_FAULT_KIND_NONE            0u
-#define GHCI_FAULT_KIND_INVALID_OP      1u /* Unrecognized packet opcode or absent unit */
-#define GHCI_FAULT_KIND_KICK_ABSENT     2u /* Absent block KICK */
-#define GHCI_FAULT_KIND_BAD_REG         3u /* Illegal register offset */
-#define GHCI_FAULT_KIND_WATCHDOG        4u /* Watchdog timeout */
-#define GHCI_FAULT_KIND_FENCE_ERROR     5u /* Fence or result write error */
-#define GHCI_FAULT_KIND_PROT_FAULT      6u /* Session collision or memory protection violation */
-#define GHCI_FAULT_KIND_LOCKED_REG      7u /* Attempt to write locked register while running */
-#define GHCI_FAULT_KIND_MMU_OOM         8u /* CP heap out of memory for page table */
-#define GHCI_FAULT_KIND_PAGE_FAULT      9u /* MMU unmapped page fault */
-#define GHCI_FAULT_KIND_PERM_FAULT      10u /* MMU access permission violation */
+#define GHCI_FAULT_KIND_INVALID_OP      1u /* Unrecognized packet opcode or illegal operation */
+#define GHCI_FAULT_KIND_KICK_ABSENT     2u /* Kick directed to absent hardware unit */
+#define GHCI_FAULT_KIND_BAD_REG         3u /* Malformed packet header, length mismatch, or bad register */
+#define GHCI_FAULT_KIND_TIMEOUT         4u /* Watchdog execution timeout / hang */
+#define GHCI_FAULT_KIND_FENCE_ERROR     5u /* Memory / fence response error */
+#define GHCI_FAULT_KIND_PROT_FAULT      6u /* Session protection violation */
+#define GHCI_FAULT_KIND_LOCKED_REG      7u /* Write to locked register */
+#define GHCI_FAULT_KIND_MMU_OOM         8u /* Dynamic page table allocation heap exhausted */
+#define GHCI_FAULT_KIND_PAGE_FAULT      9u /* Unmapped virtual page address */
+#define GHCI_FAULT_KIND_PERM_FAULT      10u /* Memory access permission violation */
 
-/* Legacy aliases */
-#define GHCI_FAULT_UNIT(info)      GHCI_FAULT_BLOCK(info)
-#define GHCI_FAULT_SYNDROME(info)  (((info) >> 16) & 0xFFFFu)
-
+/* Source Units [7:4] (K04) */
 #define GHCI_UNIT_CP             0u
 #define GHCI_UNIT_VF             1u
 #define GHCI_UNIT_SU             2u
@@ -172,6 +171,16 @@ extern "C" {
 #define GHCI_UNIT_TU             4u
 #define GHCI_UNIT_ROP            5u
 #define GHCI_UNIT_BLT            6u
+
+/* Extended Capability Registers (0x080+) & Feature Field Decoding (K07) */
+#define GHCI_FEATURE_VA_BITS(f)   ((f) & 0x0Fu)        /* [3:0] Virtual Address bits (32..40) */
+#define GHCI_FEATURE_PA_BITS(f)   (((f) >> 4) & 0x0Fu) /* [7:4] Physical Address bits (40..48) */
+
+/* PCI Identification Constants (K06) */
+#define GHCI_PCI_VENDOR_ID_XILINX 0x10EEu
+#define GHCI_PCI_DEVICE_ID_KC705  0x7024u
+#define GHCI_PCI_VENDOR_ID_ATG    0x5441u /* "AT" */
+#define GHCI_PCI_DEVICE_ID_ATG    0x4748u /* "GH" */
 
 /*
  * ============================================================================
@@ -646,6 +655,7 @@ extern "C" {
 #define GHCI_DC_ST_RECORD (1u << 31)
 #define GHCI_DC_MODE_PCLK_SEL(f) (((f) >> 4) & 0xFu)
 #define GHCI_DC_CURSOR_SIZE 64u /* plane 1: 64 x 64 BGRA8, rows 256 bytes apart */
+
 
 #ifdef __cplusplus
 }

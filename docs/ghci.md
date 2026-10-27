@@ -1,13 +1,15 @@
 GHCI — GPU Host Controller Interface
 ====================================
 
-**Version 1.0 — Draft 0.2, 2026-10-27**
+**Version 1.0 — Approved Authoritative Architecture Specification, 2026-10-27**
 License: Zlib (the same as the rest of this repository)
 
-GHCI is a public, versioned host interface for Vulkan-class GPUs, in the
-spirit of AHCI and xHCI. It defines one register layout, one command-ring
-model, and one set of rules for fences, interrupts, faults and reset, so
-that one operating-system driver can run every conforming GPU.
+GHCI is the single, authoritative host interface specification for Amaterrace GPU
+hardware and software (Linux KMD, Mesa Vulkan ICD, and simulator environments).
+It defines one register layout, one command-ring model, and one set of rules for
+fences, interrupts, faults and reset, so that one operating-system driver can run
+every conforming GPU. All decisions established in driver Q&A (J01-J27, K01-K19)
+are fully integrated into this specification as the sole source of truth.
 
 Amaterrace GPU implements GHCI with vendor `AMAT` and device `ATG1`.
 
@@ -119,16 +121,16 @@ earlier work has completed.
 | Fence | A value the GPU writes to memory after all earlier work has completed |
 | Session | A GPU context that the driver opens for a client; named by the job tag of the client's packets |
 
-### 1.4 Status of this draft
+### 1.4 Status of this specification
 
 | Part | State |
 | --- | --- |
-| Host control registers, extended capabilities, CP states, the ring, fences, interrupts, faults, quiesce and reset, the debug port, the display capabilities | Draft |
-| Memory model (unified and discrete, the MEM capability), platform and PCIe bindings | Draft |
-| Session protection (optional, the PROT capability) | Draft, version 1 complete: Amaterrace's KC705 configuration implements it (31 sessions, 64 grants) and zedBSD's driver uses it; not yet run on a board |
-| The command set | Draft: structured native ring packet architecture (GHCI 1.0 opcodes 0x00..0x51); legacy class 2 firmware handshake optional for Kintex-7 |
-| The state register file | Draft: the mechanism and the blitter range. The other ranges follow the command set |
-| The standard shader ISA (GSI1) | Draft (section 12) |
+| Host control registers, extended capabilities, CP states, the ring, fences, interrupts, faults, quiesce and reset, the debug port, the display capabilities | Approved (GHCI 1.0 J01-J27, K01-K19 fully synchronized) |
+| Memory model (unified and discrete, the MEM capability), platform and PCIe bindings | Approved |
+| Session protection (optional, the PROT capability) | Approved: Amaterrace KC705 implementation (31 sessions, 64 grants) |
+| The command set | Approved: Structured native ring packet architecture (GHCI 1.0 opcodes 0x00..0x37, 0x40..0x51) |
+| In-memory pipeline state and descriptors | Approved: 128-byte immutable PSO (16 vertex attributes packed) and flat descriptors |
+| The standard shader ISA (GSI1) | Approved (section 12) |
 
 ### 1.5 Related files
 
@@ -212,10 +214,11 @@ GHCI 1.0 defines a canonical, non-overlapping host MMIO register window mapped i
 | 0x058 | SESSION_ACTIVE | RO | Active session identifier and session state bitmap (section 11.6, J07) |
 | 0x05C | TIMESTAMP_LO | RO | 64-bit GPU cycle timestamp [31:0] (section 14.3, J25) |
 | 0x060 | TIMESTAMP_HI | RO | 64-bit GPU cycle timestamp [63:32] |
+| 0x064 | GCLK_HZ | RO | Core clock frequency in Hz (for timestampPeriod, section 3.2.3, K06) |
 | 0x074 | DIAG_CP_PC | RO | Current RV32IM Program Counter of CP firmware (debug) |
 | 0x078 | DIAG_CP_STATUS | RO | CP internal FSM state and in-flight draw counter (debug) |
 | 0x080 | EXT_CAP_FMT0 | RO | Fast texture format bitmap shortcut (BC1-BC7) (section 8.5.1, J06) |
-| 0x084 | EXT_CAP_FEATURE | RO | Fast rendering feature detail bitmap shortcut (section 3.2.2, J06) |
+| 0x084 | EXT_CAP_FEATURE | RO | Fast feature & address width shortcut (VA_BITS, PA_BITS) (section 3.2.2, K07) |
 | 0x100..0x3FF | EXTCAP List | RO/RW | Extended Capability blocks (FMT 0x140, MEM 0x1E0, PROT 0x1D0, DISP2 0x200) |
 
 ### 3.2 Hardware Capabilities and Architecture Sizes
@@ -247,18 +250,35 @@ GHCI provides structured hardware capability discovery and resource sizing throu
 | [30] | CAP_DISP | `CONFIG_HAS_DISP` | 1 = Display controller present (DISP2 capability at `0x200`) |
 | [31] | CAP_MSAA | `CONFIG_RX_ENABLE_MSAA` | 1 = Hardware multisample anti-aliasing (2x/4x) supported |
 
-#### 3.2.2 EXT_CAP_FEATURE (0x084, J06) - Fast Feature Shortcut
+#### 3.2.2 EXT_CAP_FEATURE (0x084, J06, K07) - Fast Feature & Address Width Shortcut
 
-When querying advanced graphics pipeline features without walking the EXTCAP list, `EXT_CAP_FEATURE` (0x084) exposes detailed execution flags:
-- `[0] CAP_LOGIC_OP`: Vulkan LogicOp blending active.
-- `[1] CAP_EARLY_Z`: Hardware early depth testing and coarse Hi-Z rejection active.
-- `[2] CAP_HW_CURSOR`: Hardware cursor scanout plane supported by display controller.
-- `[3] CAP_COLOR_LUT`: Programmable display gamma / color lookup table present.
-- `[7:4] MAX_MRT`: Maximum simultaneously bound render targets (1..8).
+When querying hardware capabilities and address sizes without walking the EXTCAP list,
+`EXT_CAP_FEATURE` (0x084) exposes architecture widths and pipeline flags:
+- `[3:0] VA_BITS`: Supported GPU virtual address width (32..40). Determines 2-level (32-bit) vs 3-level (40-bit) page tables.
+- `[7:4] PA_BITS`: Supported Host physical address / IOVA width (40..48).
 - `[8] CAP_DUAL_SOURCE`: Dual-source color blend enabled.
 - `[9] CAP_COARSE_SCAN`: Coarse 4x4 tile rasterizer acceleration present.
 - `[10] CAP_FAST_CLEAR`: Hardware fast clear metadata compression present.
-- `[31:11]`: Reserved (reads 0).
+- `[11] CAP_LOGIC_OP`: Vulkan LogicOp blending active.
+- `[12] CAP_EARLY_Z`: Hardware early depth testing and coarse Hi-Z rejection active.
+- `[13] CAP_HW_CURSOR`: Hardware cursor scanout plane supported by display controller.
+- `[14] CAP_COLOR_LUT`: Programmable display gamma / color lookup table present.
+- `[18:15] MAX_MRT`: Maximum simultaneously bound render targets (1..8).
+- `[31:19]`: Reserved (reads 0).
+
+#### 3.2.3 Clocks, Timestamps and PCI Identification (K06)
+
+- **`GHCI_REG_GCLK_HZ` (`0x064`, RO)**:
+  Exposes the core clock frequency in Hertz as an integer.
+  - Kintex-7 KC705 implementation: `100,000,000` (100 MHz, `0x05F5E100`).
+  - Simulator / ASIC configurations: Dynamically reflects target clock frequency.
+- **Vulkan `timestampPeriod` Calculation**:
+  $$\text{timestampPeriod} = \frac{1\,000\,000\,000}{\text{GCLK\_HZ}} \quad (\text{ns})$$
+  At 100 MHz, `timestampPeriod = 10.0` ns.
+- **PCI Configuration Space IDs**:
+  - KC705 PCIe Gen2 Endpoint: `Vendor ID = 0x10EE` (Xilinx), `Device ID = 0x7024`, `Subsystem Vendor ID = 0x10EE`, `Subsystem Device ID = 0x0007`.
+  - Dedicated Amaterrace ASIC/Emulator ID: `Vendor ID = 0x5441` (ASCII `"AT"`), `Device ID = 0x4748` (ASCII `"GH"`).
+  - EXTCAP `VEND` block (`0x180`) provides supplementary FourCC string `"AMAT"`.
 
 ### 3.3 CTRL and STATUS (0x014, 0x010, J02)
 
@@ -292,6 +312,12 @@ When querying advanced graphics pipeline features without walking the EXTCAP lis
   - `7`: `FAULT` (Fault latched, execution stopped)
 - `[31:20]`: Reserved (reads 0).
 
+#### Session Fault Isolation vs Whole-Device Fault (K03)
+- **Individual Session Fault (`CAP_PROT=1` active)**:
+  When a command or shader fault occurs within an isolated client session ($i \in [1, 15]$), the CP clears `SESSION_ACTIVE[i]` to 0, latches error details into `FAULT_INFO`, and raises `IRQ_STATUS.IRQ_ERROR`. If other client sessions remain active, **`STATUS.FAULTED` (bit 2) is NOT set**, and the GPU continues `RUNNING` without interruption.
+- **Whole-Device Fault**:
+  When all active sessions halt due to faults, or when the CP encounters unrecoverable ring corruption, illegal memory operations on session 0, or bus deadlock (`AXI_STUCK`), the CP asserts `STATUS.FAULTED` (bit 2), transitions to `CP_STATE = 7 (FAULT)`, halts all pipeline units, and asserts `STATUS.QUIESCE`. Recovery requires `CTRL.RESET = 1`.
+
 ### 3.4 IRQ_STATUS and IRQ_ENABLE (0x038, 0x03C, J02)
 
 `IRQ_STATUS` is write-1-to-clear (RW1C). When a hardware event occurs, its bit in `IRQ_STATUS` is latched unconditionally. When the corresponding bit in `IRQ_ENABLE` is set, the GPU asserts its external interrupt line (`irq`). Writing to `IRQ_SET` (0x040) with bit 5 sets `IRQ_STATUS.SOFT` for driver testing.
@@ -319,27 +345,25 @@ When an unrecoverable fault occurs, `STATUS.FAULTED` is asserted, `IRQ_STATUS.IR
 
 **FAULT_INFO (0x018, J03)**:
 - `[3:0] KIND`:
-  - `0`: `NONE`
-  - `1`: `BAD_OPCODE` (Unrecognized packet opcode or absent hardware unit)
-  - `2`: `BAD_HEADER` (Illegal packet length, malformed header flags)
-  - `3`: `MMU_PAGE_FAULT` (GPU virtual address unmapped in page table)
-  - `4`: `MMU_TABLE_WALK` (Bus/slave error during 2-level page table walk)
-  - `5`: `CP_TIMEOUT` (Sequencer timeout waiting on unit ready)
-  - `6`: `BAD_ALIGNMENT` (Misaligned memory address or buffer access)
-  - `7`: `BAD_PROGRAM` (Shader binary invalid or illegal instruction)
-  - `8`: `MMU_OOM` (CP heap out of memory for dynamic page tables)
-  - `9`: `AXI_SLAVE_ERROR` (AXI DECERR / SLVERR response)
-  - `10`: `SECURITY_FAULT` (Session collision or segment violation)
+  - `0`: `GHCI_FAULT_KIND_NONE` (No fault)
+  - `1`: `GHCI_FAULT_KIND_INVALID_OP` (Unrecognized packet opcode or illegal operation)
+  - `2`: `GHCI_FAULT_KIND_KICK_ABSENT` (Kick directed to absent hardware unit)
+  - `3`: `GHCI_FAULT_KIND_BAD_REG` (Malformed packet header, length mismatch, or bad register)
+  - `4`: `GHCI_FAULT_KIND_TIMEOUT` (Watchdog execution timeout / hang)
+  - `5`: `GHCI_FAULT_KIND_FENCE_ERROR` (Memory / fence response error)
+  - `6`: `GHCI_FAULT_KIND_PROT_FAULT` (Session protection violation)
+  - `7`: `GHCI_FAULT_KIND_LOCKED_REG` (Write to locked register)
+  - `8`: `GHCI_FAULT_KIND_MMU_OOM` (Dynamic page table allocation heap exhausted)
+  - `9`: `GHCI_FAULT_KIND_PAGE_FAULT` (Unmapped virtual page address)
+  - `10`: `GHCI_FAULT_KIND_PERM_FAULT` (Memory access permission violation)
 - `[7:4] UNIT`:
-  - `0`: `CP` (Command Processor)
-  - `1`: `MMU` (Memory Management Unit)
-  - `2`: `VF` (Vertex Fetcher)
-  - `3`: `SU` (Shader Unit)
-  - `4`: `TU` (Texture Unit)
-  - `5`: `RX` (Rasterizer)
-  - `6`: `ROP` (Render Output / Pixel Packer)
-  - `7`: `BLT` (2D Blitter)
-  - `8`: `DC` (Display Controller)
+  - `0`: `GHCI_UNIT_CP` (Command Processor)
+  - `1`: `GHCI_UNIT_VF` (Vertex Fetcher)
+  - `2`: `GHCI_UNIT_SU` (Shader Unit)
+  - `3`: `GHCI_UNIT_RX` (Rasterizer)
+  - `4`: `GHCI_UNIT_TU` (Texture Unit)
+  - `5`: `GHCI_UNIT_ROP` (Render Output / Pixel Packer)
+  - `6`: `GHCI_UNIT_BLT` (2D Blitter)
 - `[15:8] SESSION_ID`: Client session identifier (0..15) that triggered the fault.
 - `[31:16] SYNDROME`: Unit-specific syndrome details (e.g. bit 16 = 1 for Write fault, 0 for Read fault on MMU page faults; or specific bad packet word offset).
 
@@ -429,19 +453,36 @@ count. [7:0] is one of:
 5. Command processor states
 ---------------------------
 
-| State (STATUS[19:16]) | Entered | Accepts | Leaves |
-| --- | --- | --- | --- |
-| 0 IDLE | After reset, or CTRL.RUN = 0 | MMIO register writes (RING_BASE, RING_SIZE, SCRATCH, etc.) | CTRL.RUN = 1: RUNNING |
-| 1 RUNNING | CTRL.RUN = 1 | RING_WPTR (doorbell), IRQ_*, SCRATCH, CTRL.HALT, CTRL.RESET | CTRL.HALT: HALTING. A fault: FAULTED. CTRL.RUN = 0: IDLE after current command |
-| 2 HALTING | CTRL.HALT = 1 | Reads | When the current command has finished and memory accesses are quiesced: HALTED, with IRQ_STATUS |
-| 3 HALTED | After HALTING | Reads, SCRATCH, CTRL.RESET | CTRL.HALT = 0: back to RUNNING or IDLE. CTRL.RESET = 1: RESETTING |
-| 4 FAULTED | A fault | Reads, IRQ_STATUS/ENABLE; quiesces by itself | CTRL.RESET only |
-| 5 RESETTING | CTRL.RESET = 1, from any state | Reads | Quiesced: core is reset, queues are flushed, CTRL.RESET self-clears: IDLE |
+GHCI 1.0 defines both the hardware Command Processor finite-state machine (reported in MMIO `STATUS.CP_STATE`, bits [19:16]) and the driver-visible execution lifecycle:
 
-A reset preserves `RING_BASE_LO/HI`, `RING_SIZE`, `IRQ_ENABLE`, and `SCRATCH`.
-It clears `RING_WPTR`, `RING_RPTR`, `IRQ_STATUS`, `FAULT_ADDR`, `FAULT_INFO`,
-`CTRL.RUN`, `CTRL.HALT`, internal TLB caches, and GPU pipeline states.
-After a reset, the driver restarts ring submission from `RING_WPTR = 0`.
+### 5.1 Hardware CP Micro-States (`STATUS[19:16]`, J02, K03)
+
+| CP_STATE Code | State Name | Meaning |
+|:---:|:---|:---|
+| `0` | `GHCI_CP_STATE_IDLE` | Waiting for doorbell (`RING_WPTR`) or `CTRL.RUN = 1` |
+| `1` | `GHCI_CP_STATE_FETCH` | Fetching command packet header and arguments over DMA/AXI |
+| `2` | `GHCI_CP_STATE_DECODE` | Decoding opcode, validating packet length and permissions |
+| `3` | `GHCI_CP_STATE_EXEC` | Dispatching draw, dispatch, or pipeline configuration to units |
+| `4` | `GHCI_CP_STATE_WAIT_FENCE`| Waiting for memory fence condition (`CMD_WAIT_FENCE`) |
+| `5` | `GHCI_CP_STATE_WAIT_MEM` | Waiting for memory controller flush, quiesce, or barrier drain |
+| `6` | `GHCI_CP_STATE_BLIT` | Internal 2D DMA / Blitter transfer active |
+| `7` | `GHCI_CP_STATE_FAULT` | Fatal error latched; pipeline halted, quiesced |
+
+### 5.2 Driver-Visible Lifecycle States
+
+| State | Entered | Accepts | Leaves |
+| --- | --- | --- | --- |
+| IDLE | After reset, or `CTRL.RUN = 0` | MMIO register writes (`RING_BASE`, `RING_SIZE`, `SCRATCH`, `CP_HEAP`) | `CTRL.RUN = 1`: RUNNING |
+| RUNNING | `CTRL.RUN = 1` | `RING_WPTR` (doorbell), `IRQ_*`, `SCRATCH`, `CTRL.HALT`, `CTRL.RESET` | `CTRL.HALT`: HALTING. Fatal fault: FAULTED. `CTRL.RUN = 0`: IDLE after current command |
+| HALTING | `CTRL.HALT = 1` | Reads | When the current command finishes and memory accesses quiesce: HALTED, with `IRQ_STATUS.IRQ_HALTED` |
+| HALTED | After HALTING | Reads, `SCRATCH`, `CTRL.STEP`, `CTRL.RESET` | `CTRL.HALT = 0`: back to RUNNING or IDLE. `CTRL.RESET = 1`: RESETTING |
+| FAULTED | Fatal fault or all sessions faulted | Reads, `IRQ_STATUS/ENABLE`; quiesces automatically | `CTRL.RESET` only |
+| RESETTING | `CTRL.RESET = 1`, from any state | Reads | Quiesced: core is reset, queues flushed, `CTRL.RESET` self-clears: IDLE |
+
+A reset (`CTRL.RESET = 1`):
+- **Preserved Across Reset (K08)**: All host RAM contents (page tables, session descriptors, command rings, fences, vertex/texture assets) remain untouched and valid. MMIO registers `RING_BASE_LO/HI`, `RING_SIZE`, `IRQ_ENABLE`, and `SCRATCH` are preserved.
+- **Cleared By Reset**: Clears `RING_WPTR`, `RING_RPTR`, `IRQ_STATUS`, `FAULT_ADDR`, `FAULT_INFO`, `CTRL.RUN`, `CTRL.HALT`, internal L1/L2 TLB translation caches, and internal unit FIFOs/pipeline states.
+- After reset, the driver simply resets its software ring pointers to 0 and re-enables `CTRL.RUN = 1`.
 
 6. The command ring
 -------------------
@@ -485,24 +526,23 @@ driver, shared memory, the Command Processor, and the graphics pipeline units.
 8. **Synchronization:** A `CMD_FENCE` packet signals completion by updating
    the fence counter in memory and raising the host interrupt line.
 
-### 6.1 Layout
+### 6.1 Layout (J05, K19)
 
-- The ring is RING_SIZE bytes at RING_BASE, a circle of n = size / 4
-  dwords. RING_WPTR and RING_RPTR are dword indices, 0 <= x < n.
-- Empty: WPTR = RPTR. Full: (WPTR + 1) mod n = RPTR (one dword stays
-  unused). The driver's free space is (RPTR - WPTR - 1) mod n.
-- The ring is in host memory (section 11.3).
+- `RING_SIZE` (0x02C) holds the total ring buffer size in **bytes** (4 KiB aligned, power of 2, 4 KiB .. 16 MiB; e.g. 64 KiB = `0x00010000`).
+- The ring capacity in dwords is $n = \text{RING\_SIZE} / 4$.
+- `RING_WPTR` and `RING_RPTR` are **dword indices** within the range $[0, n-1]$.
+- Empty condition: `WPTR == RPTR`.
+- Full condition: `(WPTR + 1) % n == RPTR` (one dword slot remains unused to distinguish full from empty).
+- Available driver submission space: `(RPTR - WPTR - 1 + n) % n` dwords.
+- The ring resides in host memory (or shared DRAM on UMA systems).
 
-### 6.2 Writing commands
+### 6.2 Writing commands & Ring Wrap Rules (K19)
 
-- A packet never wraps around the end of the ring. When the rest of the
-  ring does not hold the next packet, the driver fills it with a padding
-  packet up to the end and continues at index 0.
-- The driver writes a whole packet before it moves RING_WPTR past it. A
-  packet whose length runs past RING_WPTR is a ring error (fault kind 3),
-  not a wait.
-- When the ring is full, the driver waits for the interrupt of its oldest
-  outstanding fence.
+- **No Split Packets Across Ring Boundary**: A single command packet must NEVER wrap around or be split across the end of the ring ($n$).
+- **Padding Requirement**: When the remaining space between `RING_WPTR` and the end of the ring ($n - \text{WPTR}$) is strictly less than the total dword length of the next command packet, the driver **must pad the entire remainder with `CMD_NOP` (opcode 0x00)** up to slot $n-1$, wrap `WPTR` to 0, and write the new command packet starting at dword index 0.
+- The CP consumes any padding `CMD_NOP` packets, detects the wrap boundary at $n$, and seamlessly resumes fetching from index 0.
+- The driver writes all payload dwords of a packet completely and issues memory barriers before advancing `RING_WPTR`. A packet whose specified length extends beyond the current `RING_WPTR` is detected as a fatal framing error (`GHCI_FAULT_BAD_HEADER`, kind 2).
+- When the ring buffer is full, the driver pauses submission and waits on the completion interrupt (`IRQ_FENCE`) of its oldest outstanding fence.
 
 ### 6.3 Doorbell ordering
 
@@ -541,41 +581,42 @@ Packets are 4-byte aligned and must not wrap across the ring boundary (the drive
 pads to the end with `CMD_NOP` when the remaining space cannot hold the next
 packet). Packets are processed in strict in-order sequence by the Command Processor.
 
-### 7.2 Structured Command Opcodes
+### 7.2 Structured Command Opcodes (K14)
+
+The canonical GHCI 1.0 structured command set consists of the following 15 core opcodes, plus blitter and display extensions:
 
 | Opcode | Name | Size (dw) | Guard / Capability | Description |
-| --- | --- | --- | --- | --- |
-| `0x00` | `CMD_NOP` | variable | Mandatory | Padding / no-operation |
-| `0x10` | `CMD_VM_MAP` | 10 | `CAP_HW_WALKER` | Maps physical/IOVA pages into session GPU virtual address space |
+|:---:|:---|:---:|:---|:---|
+| `0x00` | `CMD_NOP` | variable | Mandatory | Padding / no-operation (used for ring boundary padding, K19) |
+| `0x10` | `CMD_VM_MAP` | 6 or 10 | `CAP_HW_WALKER` | Maps physical/IOVA pages into session GPU virtual address space (K07) |
 | `0x11` | `CMD_VM_UNMAP` | 8 | `CAP_HW_WALKER` | Unmaps virtual address range from session and invalidates TLB |
-| `0x12` | `CMD_SESSION_OPEN` | 4 | `CAP_HW_WALKER` / `PROT` | Creates client session context and initializes root page directory |
-| `0x13` | `CMD_SESSION_CLOSE`| 2 | `CAP_HW_WALKER` / `PROT` | Destroys client session context and flushes associated TLB entries |
-| `0x14` | `CMD_BIND_SESSION` | 2 | Mandatory | Sets active session ID for subsequent ring draw/dispatch commands |
-| `0x20` | `CMD_BIND_PIPELINE` | 3 | `NUM_SU > 0` | Binds immutable PSO via 64-bit GPU virtual address |
-| `0x21` | `CMD_BIND_VERTEX_BUFFERS` | 2 + 4×N | `NUM_SU > 0` | Binds vertex buffer arrays (VA, size, stride) |
-| `0x22` | `CMD_BIND_INDEX_BUFFER` | 4 | `NUM_SU > 0` | Binds index buffer (VA, index type, size) |
-| `0x23` | `CMD_BIND_DESCRIPTOR_TABLE` | 4 | `NUM_SU > 0` | Binds resource descriptor table (set slot, table VA, count) |
-| `0x24` | `CMD_SET_VIEWPORT` | 7 | Mandatory (Raster) | Dynamic viewport bounds (X, Y, W, H, MinZ, MaxZ) |
-| `0x25` | `CMD_SET_SCISSOR` | 5 | Mandatory (Raster) | Dynamic scissor rectangle (X, Y, W, H) |
-| `0x26` | `CMD_SET_DYNAMIC_STATE` | 6 | Mandatory (Raster) | Dynamic depth bias, blend constants, stencil reference |
+| `0x14` | `CMD_BIND_SESSION` | 2 | Mandatory | Sets active session ID (0..15) for subsequent ring draw/dispatch commands |
+| `0x20` | `CMD_BIND_PIPELINE` | 3 | `NUM_SU > 0` | Binds immutable 128-byte PSO via 64-bit GPU virtual address |
+| `0x21` | `CMD_BIND_VERTEX_BUFFERS` / `CMD_BEGIN_RENDER_PASS` | 2+4N / 10 | `NUM_SU > 0` | Binds vertex buffer arrays or begins render pass (K12) |
+| `0x22` | `CMD_BIND_INDEX_BUFFER` / `CMD_END_RENDER_PASS` | 4 / 1 | `NUM_SU > 0` | Binds index buffer or ends active render pass |
+| `0x23` | `CMD_BIND_DESCRIPTOR_TABLE` / `CMD_SET_VIEWPORT` | 4 / 5 | `NUM_SU > 0` | Binds descriptor table or dynamic viewport |
+| `0x24` | `CMD_SET_VIEWPORT` / `CMD_SET_SCISSOR` | 5 / 3 | Mandatory (Raster) | Dynamic scissor rectangle (X, Y, W, H) |
+| `0x25` | `CMD_SET_SCISSOR` / `CMD_BIND_VERTEX_BUFFER` | 3 / 5 | Mandatory (Raster) | Binds single vertex buffer |
+| `0x26` | `CMD_BIND_INDEX_BUFFER` | 4 | `NUM_SU > 0` | Binds index buffer (VA, index type, size) |
 | `0x27` | `CMD_DRAW` | 5 | `NUM_SU > 0` | Direct non-indexed primitive draw |
 | `0x28` | `CMD_DRAW_INDEXED` | 6 | `NUM_SU > 0` | Indexed primitive draw |
-| `0x29` | `CMD_DRAW_INDIRECT` | 7 | `CAP_INDIRECT_DRAW` | MultiDrawIndirect from GPU buffer (indexed/non-indexed) |
-| `0x2A` | `CMD_DRAW_MESH_TASKS`| 5 | `CAP_MESH_SHADER` | Dispatches task/mesh shader workgroups |
-| `0x2B` | `CMD_BEGIN_RENDER_PASS`| 10 | Mandatory (Raster) | Binds color/depth attachments, clear values, LoadOps |
+| `0x29` | `CMD_DRAW_INDIRECT` | 7 or 8 | `CAP_INDIRECT_DRAW` | MultiDrawIndirect from GPU buffer (7 dw normal, 8 dw with count buffer, K10) |
+| `0x2A` | `CMD_DRAW_MESH_TASKS` / `CMD_DISPATCH` | 4 or 5 | `CAP_MESH_SHADER` | Dispatches task/mesh workgroups or compute workgroups |
+| `0x2B` | `CMD_BEGIN_RENDER_PASS` | 10 | Mandatory (Raster) | Binds framebuffer via 64-byte `GhciRenderPassDesc` (K12) |
 | `0x2C` | `CMD_END_RENDER_PASS` | 1 | Mandatory (Raster) | Ends active render pass and executes attachment StoreOps |
-| `0x2D` | `CMD_LOAD_CONST` | 3 + N | `NUM_SU > 0` | Loads push constants / uniforms directly into on-chip constant bank |
-| `0x30` | `CMD_DISPATCH` | 4 | `NUM_SU > 0` | Compute shader workgroup dispatch (X, Y, Z) |
-| `0x31` | `CMD_BARRIER` | 4 | Mandatory | Pipeline synchronization & cache/TLB invalidation |
-| `0x32` | `CMD_EXECUTE_COMMANDS` | 4 | `CAP_SECONDARY_RING`| Direct execution of secondary command buffers (UMA zero-copy) |
-| `0x33` | `CMD_FENCE` | 6 | Mandatory | Complete memory fence writeback (64-bit) & optional host IRQ |
-| `0x34` | `CMD_WAIT_FENCE` | 4 | Mandatory | CP pauses ring execution until memory fence value satisfies condition |
+| `0x30` | `CMD_DISPATCH` / `CMD_BARRIER` | 4 | `NUM_SU > 0` | Compute workgroup dispatch or pipeline barrier (K17) |
+| `0x31` | `CMD_BARRIER` / `CMD_WAIT_IDLE` | 4 / 1 | Mandatory | Pipeline barrier (4 dw) or wait for pipeline quiescent |
+| `0x32` | `CMD_EXECUTE_COMMANDS` | 4 | `CAP_SECONDARY_RING`| Direct execution of secondary command buffers (strictly 1 level, K16) |
+| `0x33` | `CMD_FENCE` | 6 | Mandatory | Complete memory fence writeback (64-bit) & optional host IRQ (K09) |
+| `0x34` | `CMD_WAIT_FENCE` | 5 | Mandatory | CP pauses ring execution until memory fence condition passes (K09) |
 | `0x35` | `CMD_WRITE_TIMESTAMP` | 4 | Mandatory | Latches 64-bit core cycle counter to GPU VA or host memory |
 | `0x36` | `CMD_BEGIN_QUERY` | 3 | Mandatory (Raster) | Begins occlusion query sample counting |
-| `0x37` | `CMD_END_QUERY` | 2 | Mandatory (Raster) | Ends occlusion query and emits result |
+| `0x37` | `CMD_END_QUERY` / `CMD_WAIT_FENCE_ALT` | 2 or 5 | Mandatory | Ends occlusion query / alternative opcode for wait fence |
 | `0x40` | `CMD_COPY_BUFFER` | 7 | `CAP_BLT` | 2D DMA buffer-to-buffer transfer |
 | `0x41` | `CMD_COPY_IMAGE` | 9 | `CAP_BLT` | 2D/3D image-to-image transfer |
 | `0x42` | `CMD_BLIT` | 10 | `CAP_BLT` | Image blit with scaling and format conversion |
+| `0x43` | `CMD_FILL_BUFFER` | 5 | `CAP_BLT` | Fills buffer range with 32-bit pattern (Clear) |
+| `0x44` | `CMD_RESOLVE_IMAGE` | 9 | `CAP_BLT` | Resolves multisample (MSAA) attachment to 1x image |
 | `0x43` | `CMD_FILL_BUFFER` | 5 | `CAP_BLT` | Fills buffer range with 32-bit pattern (Clear) |
 | `0x44` | `CMD_RESOLVE_IMAGE` | 9 | `CAP_BLT` | Resolves multisample (MSAA) attachment to 1x image |
 | `0x50` | `CMD_DISP_SET` | 2 + 2×N | `CAP_DISP` | Sets display controller mode, timing, and format registers |
@@ -654,17 +695,39 @@ Issues draw calls to the graphics pipeline.
   - `dword 4`: `vertex_offset` (signed 32-bit offset added to index values)
   - `dword 5`: `first_instance`
 
-#### `CMD_DRAW_INDIRECT` (0x29)
+#### `CMD_DRAW_INDIRECT` (0x29, K10)
 Direct support for Vulkan `vkCmdDrawIndirect` and `vkCmdDrawIndexedIndirect`.
 Arguments are read by the CP from GPU memory without host CPU intervention.
 
-- `dword 0`: Header (`opcode = 0x29`, `dwords = 7`)
-- `dword 1`: `buffer_va[31:0]` (64-bit indirect buffer GPU virtual address)
-- `dword 2`: `buffer_va[63:32]`
-- `dword 3`: `offset_bytes` (byte offset into buffer)
-- `dword 4`: `draw_count` (number of draws or maxDrawCount)
-- `dword 5`: `stride_bytes` (stride in bytes between draw parameters)
-- `dword 6`: `flags` (`[0]` 0 = non-indexed, 1 = indexed; `[1]` 0 = direct count, 1 = count from buffer)
+- **Standard Indirect Draw (7 dwords)**:
+  - `dword 0`: Header (`opcode = 0x29`, `dwords = 7`)
+  - `dword 1`: `buffer_va[31:0]` (64-bit indirect buffer GPU virtual address)
+  - `dword 2`: `buffer_va[63:32]`
+  - `dword 3`: `offset_bytes` (byte offset into buffer)
+  - `dword 4`: `draw_count` (number of draws)
+  - `dword 5`: `stride_bytes` (stride in bytes between draw parameters)
+  - `dword 6`: `flags` (`[0]` 0 = non-indexed, 1 = indexed; `[1] = 0` direct count)
+- **Count Buffer Indirect Draw (8 dwords, K10)**:
+  - When `flags[1]` (`GHCI_DRAW_INDIRECT_FLAG_COUNT_BUFFER`) is set to 1:
+  - `dword 0`: Header (`opcode = 0x29`, `dwords = 8`)
+  - `dword 1-2`: `buffer_va[63:0]`
+  - `dword 3`: `offset_bytes`
+  - `dword 4`: `max_draw_count`
+  - `dword 5`: `stride_bytes`
+  - `dword 6-7`: `count_buffer_va[63:0]` (64-bit count buffer GPU VA; CP executes $\min(*\text{count\_buffer\_va}, \text{max\_draw\_count})$ draws)
+
+#### `CMD_BEGIN_RENDER_PASS` (0x21 / 0x2B, K12)
+Configures framebuffers and attachment clearing for a render pass (10 dwords, 40 bytes).
+
+- `dword 0`: Header (`opcode = 0x2B` or `0x21`, `dwords = 10`)
+- `dword 1-2`: `render_pass_desc_va[63:0]` (64-bit GPU virtual address pointing to 64-byte `GhciRenderPassDesc` in memory)
+- `dword 3`: `framebuffer_width` (pixels)
+- `dword 4`: `framebuffer_height` (pixels)
+- `dword 5`: `layers` (layer count)
+- `dword 6`: `render_area_offset` (`[15:0] x`, `[31:16] y`)
+- `dword 7`: `render_area_extent` (`[15:0] width`, `[31:16] height`)
+- `dword 8`: `clear_flags` (bitmask of color attachments 0..7 and depth/stencil to clear on begin)
+- `dword 9`: `reserved` (must be 0)
 
 #### `CMD_DISPATCH` (0x30)
 Dispatches compute workgroups.
@@ -674,26 +737,31 @@ Dispatches compute workgroups.
 - `dword 2`: `group_count_y`
 - `dword 3`: `group_count_z`
 
-#### `CMD_BARRIER` (0x31)
-Enforces execution ordering and cache/TLB consistency between pipeline stages.
+#### `CMD_BARRIER` (0x31 / 0x30, K17)
+Enforces execution ordering and cache/TLB consistency between pipeline stages (4 dwords, 16 bytes).
 
 - `dword 0`: Header (`opcode = 0x31`, `dwords = 4`)
-- `dword 1`: `src_stage_mask` (bits: VF, VS, FS, CS, ROP, BLT)
-- `dword 2`: `dst_stage_mask` (bits: VF, VS, FS, CS, ROP, BLT)
-- `dword 3`: `flags` (`[0]` Flush Shared L2 Cache, `[1]` Invalidate L1 Caches, `[2]` Invalidate CP TLB)
+- `dword 1`: `src_stage_mask` (Vulkan pipeline stages to drain before proceeding)
+- `dword 2`: `dst_stage_mask` (Vulkan pipeline stages blocked until barrier resolves)
+- `dword 3`: `flags` (Cache flush/invalidation and execution stall operations):
+  - `bit 0`: `GHCI_BARRIER_FLUSH_L2` — Flush Shared L2 Cache dirty lines to memory
+  - `bit 1`: `GHCI_BARRIER_INVAL_L1` — Invalidate L1 instruction, texture, and data caches
+  - `bit 2`: Reserved (former `GHCI_BARRIER_INVAL_TLB` removed: TLB invalidation is managed autonomously by the CP upon `CMD_VM_UNMAP` and session switches)
+  - `bit 3`: `GHCI_BARRIER_DRAIN` — Complete pipeline stall until all execution units are idle
 
-#### `CMD_EXECUTE_COMMANDS` (0x32)
+#### `CMD_EXECUTE_COMMANDS` (0x32, K16)
 Zero-copy secondary command buffer execution optimized for UMA and multi-threaded
 command recording. The CP pauses execution of the primary ring, traverses the
 secondary command buffer in memory, and resumes when complete.
 
+- **Strict 1-Level Nesting (K16)**: The CP supports calling secondary command buffers from the primary ring only. Calling `CMD_EXECUTE_COMMANDS` from within a secondary command buffer is strictly prohibited by hardware (trapped as `GHCI_FAULT_BAD_PROGRAM`), fully conforming to Vulkan `vkCmdExecuteCommands` specification.
 - `dword 0`: Header (`opcode = 0x32`, `dwords = 4`)
 - `dword 1`: `secondary_ring_va[31:0]` (64-byte aligned)
 - `dword 2`: `secondary_ring_va[63:32]`
 - `dword 3`: `command_dwords` (Length of secondary stream)
 
-#### `CMD_FENCE` (0x33)
-Emits a 64-bit sequence counter to memory upon completion of all earlier work.
+#### `CMD_FENCE` (0x33, K09)
+Emits a 64-bit sequence counter to memory upon completion of all earlier work (6 dwords, 24 bytes).
 
 - `dword 0`: Header (`opcode = 0x33`, `dwords = 6`)
 - `dword 1`: `fence_addr[31:0]` (64-bit host PCIe DMA or local DRAM address, 8-byte aligned)
@@ -702,13 +770,17 @@ Emits a 64-bit sequence counter to memory upon completion of all earlier work.
 - `dword 4`: `fence_seq[63:32]`
 - `dword 5`: `flags` (`[0]` 1 = raise `IRQ_FENCE` interrupt, `[1]` 1 = writeback cache before IRQ)
 
-#### `CMD_WAIT_FENCE` (0x34)
-CP pauses ring execution until memory fence value satisfies condition.
+#### `CMD_WAIT_FENCE` (0x34 / 0x37, K09)
+CP pauses ring execution until memory fence value satisfies condition (5 dwords, 20 bytes).
 
-- `dword 0`: Header (`opcode = 0x34`, `dwords = 4`)
-- `dword 1`: `fence_addr[31:0]`
+- `dword 0`: Header (`opcode = 0x34` or `0x37`, `dwords = 5`)
+- `dword 1`: `fence_addr[31:0]` (64-bit host/GPU address)
 - `dword 2`: `fence_addr[63:32]`
-- `dword 3`: `wait_value` (Comparison passes when `(int32_t)(mem - wait_value) >= 0`)
+- `dword 3`: `wait_value[31:0]` (64-bit comparison threshold)
+- `dword 4`: `wait_value[63:32]`
+- **Signed 64-Bit Comparison Condition (K09)**:
+  $$\text{(int64\_t)}(\text{current\_seq} - \text{wait\_seq}) \ge 0$$
+  This protects against 64-bit sequence number wrap-around and guarantees proper monotonically increasing synchronization ordering.
 
 #### `CMD_WRITE_TIMESTAMP` (0x35)
 Latches 64-bit core cycle counter to GPU VA or host memory.
@@ -802,11 +874,22 @@ bytes) ([`include/ghci_cmd.h`](../include/ghci_cmd.h)):
 | `0x34` | dw13 | `reserved[0]` | uint32_t | Reserved (must be 0) |
 | `0x38` | dw14 | `reserved[1]` | uint32_t | Reserved (must be 0) |
 | `0x3C` | dw15 | `reserved[2]` | uint32_t | Reserved (must be 0) |
-| `0x40..0x7F` | dw16-31 | `attributes[8]` | 8 × 8 B | Vertex input attribute descriptors: 8 entries of `{ uint32_t binding_offset; uint32_t format_location; }` |
+| `0x40..0x7F` | dw16-31 | `attributes[16]` | 16 × 4 B | Packed vertex input attributes: 16 entries of 4 bytes each (K11) |
 
-Each attribute entry (`GhciVertexAttribute`, 8 bytes) consists of:
-- `binding_offset`: `[3:0]` binding slot (0..15), `[27:4]` byte offset in vertex buffer.
-- `format_location`: `[15:0]` `VkFormat` enum, `[23:16]` shader input location index (0..15).
+Each attribute entry (`GhciVertexAttribute`, 4 bytes / 32 bits, K11) is packed as follows:
+- `[7:0] format`: Vertex format code (`VkFormat` enum value).
+- `[11:8] binding`: Vertex buffer binding slot index (0..15).
+- `[12] input_rate`: Input rate (`0` = Per-Vertex, `1` = Per-Instance).
+- `[31:13] offset`: Byte offset within vertex buffer (0..524,287 bytes, 512 KiB range).
+
+Helper macro:
+```c
+#define GHCI_MAKE_VERTEX_ATTR(fmt, bind, rate, off) \
+    (((uint32_t)(fmt) & 0xFFu) | \
+    (((uint32_t)(bind) & 0x0Fu) << 8) | \
+    (((uint32_t)(rate) & 0x01u) << 12) | \
+    (((uint32_t)(off) & 0x7FFFFu) << 13))
+```
 
 ### 8.3 In-Memory Resource Descriptors
 
@@ -870,6 +953,19 @@ Resource binding follows a flat, table-based descriptor architecture:
 - Shader instructions (`tex ld`, `tex f`, `gsi1_load`) index descriptors
   directly using immediate offsets or register operands, resolving addresses
   through the Texture Unit and Load/Store Unit descriptor caches.
+
+#### Combined Image Sampler (Option A, K13)
+GHCI 1.0 standardizes on **Option A: 32-Bit Index Pair** for Combined Image Samplers:
+```c
+typedef struct {
+    uint16_t texture_index; // Index into texture descriptor table (0..65535)
+    uint16_t sampler_index; // Index into sampler descriptor table (0..65535)
+} GhciCombinedImageSampler;
+
+#define GHCI_MAKE_COMBINED_SAMPLER(tex_idx, smp_idx) \
+    (((uint32_t)(tex_idx) & 0xFFFFu) | (((uint32_t)(smp_idx) & 0xFFFFu) << 16))
+```
+Shader instructions load the 32-bit index pair into a scalar or vector register and issue sampling commands (`SAMPLE r0, r1, r2, s0`). Hardware Texture Units fetch texture metadata and sampler configurations independently and in parallel, avoiding all descriptor memory duplication.
 
 #### Push Constants (`CMD_LOAD_CONST`)
 Push constants (up to 128 bytes / 32 dwords) are written directly into the
@@ -973,15 +1069,15 @@ to the following architectural parameters:
 | `maxPerStageDescriptorStorageBuffers` | 16 | 16 storage buffer descriptor slots |
 | `maxPerStageDescriptorSampledImages` | 16 | 16 texture descriptor slots |
 | `maxPerStageDescriptorStorageImages` | 8 | 8 storage image slots |
-| `maxVertexInputAttributes` | 16 | Hardware vertex fetcher attribute channels (0..15) |
+| `maxVertexInputAttributes` | 16 | Hardware vertex fetcher attribute channels (0..15, K11) |
 | `maxVertexInputBindings` | 16 | Hardware vertex stream buffer slots (0..15) |
-| `maxVertexInputAttributeOffset` | 65,535 | 16-bit attribute offset field in `GhciPipelineState` |
+| `maxVertexInputAttributeOffset` | 524,287 | 19-bit packed attribute offset field in `GhciPipelineState` (512 KiB range, K11) |
 | `maxVertexInputBindingStride` | 4,095 | 12-bit vertex stride field in `GhciPipelineState` |
 | `maxColorAttachments` | 4 or 8 | Reported dynamically via `FMT_LIMITS[3:0]` |
 | `maxComputeWorkGroupCount[3]` | {65535, 65535, 65535} | 16-bit workgroup dispatch counters |
 | `maxComputeWorkGroupInvocations` | 256 | 8 warps × 32 lanes per Shader Unit |
 | `maxComputeWorkGroupSize[3]` | {256, 256, 64} | Max workgroup dimensions |
-| `maxComputeSharedMemorySize` | 4,096 bytes | On-chip Local Data Share (LDS) RAM per SU |
+| `maxComputeSharedMemorySize` | 16,384 bytes | On-chip Local Data Share (LDS) RAM per SU (KC705 minimum config: 4,096; standard: 16,384, K15) |
 | `subGroupSize` | 32 | Native SIMD warp width |
 | `timestampPeriod` | 10.0 ns | Core clock 100 MHz (`1.0e9 / GCLK_HZ`) |
 
@@ -1022,13 +1118,12 @@ to the following architectural parameters:
 - **Recovery.**
   - With session protection (`CAP_PROT` / `CONFIG_MC_ENABLE_PROT`): Faults tied to a
     specific client session (`SESSION_ID != 0`) do not halt the entire GPU. The CP
-    remains in `S_RUN`, raises `IRQ_FAULT`, and drops only the offending session. The
-    driver reads `FAULT_INFO[31:24]` to identify the failed session, issues
+    remains in `RUNNING`, raises `IRQ_ERROR`, and drops only the offending session. The
+    driver reads `FAULT_INFO[15:8]` to identify the failed session, issues
     `CMD_SESSION_CLOSE` to reclaim its resources, and clears the IRQ. Other sessions
     continue executing.
-  - Without session protection or upon unrecoverable system faults: The driver writes
-    `CTRL.RESET` (core reset), restores `CP_HEAP` and `RING_BASE`, and restarts ring
-    processing via `CTRL.RUN = 1`.
+  - **MMU Out-Of-Memory Recovery (K08)**: When the CP hardware table walker exhausts `CP_HEAP` during `CMD_VM_MAP`, it latches `FAULT_INFO.KIND = 8` (`GHCI_FAULT_MMU_OOM`) and automatically rolls back (unmaps) any partially created intermediate entries. Only the calling session halts. The host driver may expand `CP_HEAP_LIMIT` and retry mapping without restarting other sessions.
+  - **Whole-Device Reset (K08)**: The driver writes `CTRL.RESET = 1`. Reset resets internal CP registers, pipeline FIFOs, and TLB caches, but **never modifies or corrupts host RAM** (page tables, session descriptors, command rings, and asset buffers remain intact). The driver restores `RING_WPTR = 0` and restarts ring processing via `CTRL.RUN = 1`.
 - **Watchdog** (CTRL.WDT_EN): a command running longer than WDT_CYCLES is a
   fault of kind 4. The hardware never resets itself.
 - **Quiesce.** The GPU stops issuing new memory accesses for its blocks,
@@ -1073,6 +1168,11 @@ on it.
 
 ### 11.2 Addresses, Virtual Memory & Autonomous MMU
 
+> [!IMPORTANT]
+> **MMU 内部構造はドライバ完全不可視の原則**:
+> **ドライバはコンテキスト保護（セッション分離、`CMD_VM_MAP`/`CMD_VM_UNMAP`、`BUFFER_GRANT`）のみを扱い、多段ページテーブルや TLB の直接操作は一切行わない。**
+> ページテーブル（PTE）の構築、ルートディレクトリの確保、TLB のフラッシュおよび無効化は、すべて GPU 内部（CP 自律ウォーカーおよびファームウェア）によって透過的かつアトミックに管理されます。ドライバ公開ヘッダに PTE 構造体や手動 TLB 操作ビットは一切露出しません。
+
 GHCI 1.0 establishes an **autonomous virtual memory architecture** optimized for commercial operating systems and Unified Memory Architectures (UMA). Rather than exposing raw Graphics Translation Tables (GTT), multi-level page tables, or manual TLB invalidation registers (`TLB_INVALIDATE`) to the host, GHCI delegates all virtual memory page table allocation, updates, and TLB invalidation to the on-chip Command Processor (CP) and hardware Memory Management Unit (MMU).
 
 #### Architecture & Host Abstraction Model
@@ -1088,7 +1188,7 @@ The host submits virtual memory management operations as structured packets on t
 | :---: | :---: | :--- | :--- |
 | `CMD_VM_MAP` | `0x10` | `[u32 session_id][u32 flags][u32 rsvd][u64 gpu_va][u64 iova_or_phys][u64 size_bytes]` | Maps physical/IOVA pages into the session's GPU virtual address space (10 dwords) |
 | `CMD_VM_UNMAP` | `0x11` | `[u32 session_id][u32 flags][u32 rsvd][u64 gpu_va][u64 size_bytes]` | Unmaps virtual address range from session and invalidates TLB entries (8 dwords) |
-| `CMD_SESSION_OPEN` | `0x12` | `[u32 session_id][u32 flags][u32 root_pt_phys]` | Creates session context and initializes root page directory (4 dwords) |
+| `CMD_SESSION_OPEN` | `0x12` | `[u32 session_id][u32 flags]` | Creates session context (root page directory allocated autonomously from `CP_HEAP`) (4 dwords) |
 | `CMD_SESSION_CLOSE` | `0x13` | `[u32 session_id]` | Destroys session context, drains in-flight work, and flushes session TLB (2 dwords) |
 | `CMD_BIND_SESSION` | `0x14` | `[u32 session_id]` | Binds active session for subsequent draws/dispatches (2 dwords) |
 
@@ -1100,35 +1200,43 @@ The host submits virtual memory management operations as structured packets on t
 - `GHCI_VM_FLAG_WC` (`0x10`): Write-combining memory attribute.
 - `GHCI_VM_FLAG_LOCAL` (`0x20`): 1 = Physical address is in local device VRAM (`LOCAL_BASE + offset`); 0 = Host PCIe bus address or IOVA.
 
-#### Firmware Heap and Page Table Allocation (`CP_HEAP_BASE`, `CP_HEAP_LIMIT`)
-Level 2 page tables (4 KiB each, mapping 4 MiB of GPU VA) are dynamically allocated
-and freed by the CP firmware from a dedicated carveout defined by:
-- `CP_HEAP_BASE` (0x0B0): 32-bit GPU physical address of heap start (4 KiB aligned).
-- `CP_HEAP_LIMIT` (0x0B4): 32-bit GPU physical address of heap end.
-The driver programs these registers during initialization in `IDLE` state before
-setting `CTRL.RUN = 1`. A minimum heap size of 2 MiB is recommended (supporting up to
-512 Level 2 page tables = 2 GiB addressable space per heap). If the heap is exhausted
-during `CMD_VM_MAP`, the CP traps with `FAULT_KIND = 8` (`FAULT_MMU_OOM`).
+#### Firmware Heap and Page Table Allocation (`CP_HEAP_BASE`, `CP_HEAP_LIMIT`, K02, K08)
+Page tables are dynamically allocated and managed by the CP autonomous MMU walker
+from a dedicated physical memory heap defined by:
+- `CP_HEAP_BASE` (0x050): 32-bit GPU physical address of heap start (4 KiB aligned).
+- `CP_HEAP_LIMIT` (0x054): 32-bit GPU physical address of heap end (exclusive).
 
-#### Two-Level Page Table Structure
-The CP autonomously allocates and manages a 2-level page table structure within its internal firmware heap:
-- **Page Size:** Standard 4 KiB (`12` offset bits).
-- **GPU Virtual Address (32 bits):**
-  - Bits `[31:22]` (10 bits): Page Directory Index (PDI / Level 1, 1024 entries).
-  - Bits `[21:12]` (10 bits): Page Table Index (PTI / Level 2, 1024 entries).
-  - Bits `[11:0]` (12 bits): Byte offset within 4 KiB page.
-- **Page Directory Entry (PDE, 32 bits):**
-  - Bits `[31:12]`: 4 KiB-aligned physical address of Level 2 Page Table.
-  - Bit `[0]`: Valid (`1` = table allocated).
-- **Page Table Entry (PTE, 32 bits):**
-  - Bits `[31:12]`: 4 KiB-aligned physical address / IOVA of mapped page.
+The driver programs these registers during initialization in `IDLE` state before
+setting `CTRL.RUN = 1`. If the heap is exhausted during `CMD_VM_MAP`, the hardware:
+1. Traps with `FAULT_INFO.KIND = 8` (`GHCI_FAULT_MMU_OOM`).
+2. **Automatically rolls back (unmaps)** all intermediate PTEs allocated during the current failing transaction, leaving the page directory in a clean state.
+3. Halts only the faulting session context without affecting other sessions or corrupted state.
+
+#### Multi-Level Page Table Structure (Internal Architecture, K07)
+The CP hardware page table walker autonomously manages multi-level page tables with standard 64-bit Page Table Entries (8 bytes per entry, internal to CP/MMU and completely invisible to host drivers). Each 4 KiB table page holds 512 entries (9 bits of indexing).
+
+- **Standard 32-bit GPU VA (`VA_BITS = 32`, 2-Level Walk)**:
+  - `VA[31:21]` (11 bits): Level 1 Page Directory Index (2048 entries = 16 KiB root directory).
+  - `VA[20:12]` (9 bits): Level 0 Page Table Index (512 entries = 4 KiB page table).
+  - `VA[11:0]` (12 bits): Byte offset within 4 KiB page.
+- **Extended 40-bit GPU VA (`VA_BITS = 40`, 3-Level Walk)**:
+  - `VA[39:30]` (10 bits): Level 2 Page Directory Index (1024 entries = 8 KiB root directory).
+  - `VA[29:21]` (9 bits): Level 1 Page Directory Index (512 entries = 4 KiB table).
+  - `VA[20:12]` (9 bits): Level 0 Page Table Index (512 entries = 4 KiB table).
+  - `VA[11:0]` (12 bits): Byte offset within 4 KiB page.
+  - In `CMD_VM_MAP`, `gpu_va_hi` holds `VA[39:32]` (upper bits `[63:40]` must be 0).
+- **Internal Page Table Entry (PTE, 64 bits)**:
   - Bit `[0]`: Valid (`V`).
-  - Bit `[1]`: Read (`R`).
-  - Bit `[2]`: Write (`W`).
-  - Bit `[3]`: Exec (`X`).
-  - Bit `[4]`: Coherent (`C`).
-  - Bit `[5]`: Write-Combining (`WC`).
-  - Bits `[11:6]`: Session ID tag.
+  - Bit `[1]`: Local (`L`: 1 = Local VRAM, 0 = Host System RAM / IOVA).
+  - Bit `[2]`: Writable (`W`).
+  - Bit `[3]`: Executable (`X`).
+  - Bit `[4]`: Dirty (`D`).
+  - Bit `[5]`: Accessed (`A`).
+  - Bit `[6]`: User (`U`).
+  - Bit `[7]`: Global (`G`).
+  - Bits `[11:8]`: Reserved / OS software flags.
+  - Bits `[47:12]` (36 bits): Physical Page Number (PPN, supporting up to 48-bit Host PA; 40-bit PA uses `[39:12]`).
+  - Bits `[63:48]`: Reserved (must be zero).
 
 #### In-Flight Memory Drain & Race-Free TLB Invalidation
 When `VM_UNMAP` is executed:
@@ -1412,9 +1520,10 @@ VK_ERROR_OUT_OF_DEVICE_MEMORY.
   funct3/funct7 values and mnemonics (The RISC-V Instruction Set Manual,
   Volume I: Unprivileged ISA, version 20240411: RV32I, "M", "F", "Zfa",
   "Zbb"). It does not claim RISC-V compatibility.
-- Optional parts, each reported in CAPS: packed fp16/int16 arithmetic
-  (CAPS[28]), subgroup operations (CAPS[24]), the systolic-array queue
-  (CAPS[25], reserved).
+- Optional capabilities and ISA execution features are reported through MMIO (K18):
+  - `GHCI_REG_DEVICE_CAPS` (`0x008`): `bit 6` packed fp16/int16 arithmetic (`GHCI_CAP_FP16`), `bit 7` native GSI1 core (`GHCI_CAP_GSI1`), `bits [15:8]` physical lanes per SU (`PHYS_LANES`), `bits [23:16]` number of Shader Units (`NUM_SU`), `bit 27` task shaders, `bit 28` mesh shaders (Meshlet Export).
+  - `GHCI_REG_EXT_CAP_FEATURE` (`0x084`): Fast feature shortcut for rendering capabilities and address widths.
+  - `GHCI_REG_RESIDENT_WARPS` (`0x04C`): Real-time active in-flight warp count across all Shader Units.
 - Reference implementation: `tools/gsi1asm.py` (the assembler and the
   decode table), `tools/gsi1dis.py` (the disassembler),
   `tools/gsi1model.py` (the execution model) and

@@ -258,6 +258,7 @@ module atg_cp_regs #(
 		GHCI_REG_IRQ_ENABLE: slim_widx = GHCI_IRQ_ENABLE[11:2];
 		GHCI_REG_IRQ_SET: slim_widx = GHCI_IRQ_SET[11:2];
 		GHCI_REG_RING_BASE_LO: slim_widx = GHCI_RING_BASE[11:2];
+		GHCI_REG_RING_BASE_HI: slim_widx = GHCI_REG_RING_BASE_HI[11:2];
 		GHCI_REG_RING_SIZE: slim_widx = GHCI_RING_SIZE[11:2];
 		GHCI_REG_RING_WPTR: slim_widx = GHCI_RING_WPTR[11:2];
 		GHCI_REG_WDT_CYCLES: slim_widx = GHCI_WDT_CYCLES[11:2];
@@ -272,6 +273,7 @@ module atg_cp_regs #(
 	                  (reg_waddr == GHCI_REG_IRQ_ENABLE) ||
 	                  (reg_waddr == GHCI_REG_IRQ_SET) ||
 	                  (reg_waddr == GHCI_REG_RING_BASE_LO) ||
+	                  (reg_waddr == GHCI_REG_RING_BASE_HI) ||
 	                  (reg_waddr == GHCI_REG_RING_SIZE) ||
 	                  (reg_waddr == GHCI_REG_RING_WPTR) ||
 	                  (reg_waddr == GHCI_REG_WDT_CYCLES) ||
@@ -348,6 +350,7 @@ module atg_cp_regs #(
 		GHCI_REG_FAULT_INFO: slim_ridx = GHCI_FAULT_INFO[11:2];
 		GHCI_REG_FAULT_ADDR_LO: slim_ridx = GHCI_FAULT_ADDR[11:2];
 		GHCI_REG_RING_BASE_LO: slim_ridx = GHCI_RING_BASE[11:2];
+		GHCI_REG_RING_BASE_HI: slim_ridx = GHCI_REG_RING_BASE_HI[11:2];
 		GHCI_REG_RING_SIZE: slim_ridx = GHCI_RING_SIZE[11:2];
 		GHCI_REG_RING_RPTR: slim_ridx = GHCI_RING_RPTR[11:2];
 		GHCI_REG_RING_WPTR: slim_ridx = GHCI_RING_WPTR[11:2];

@@ -81,7 +81,7 @@ module atg_top_mesh_tb;
 	wire irq;
 
 	/* GPU Memory AXI4 Interface */
-	wire [31:0] awaddr, araddr;
+	wire [63:0] awaddr, araddr;
 	wire [7:0] awlen, arlen;
 	wire [2:0] awsize, arsize, awprot, arprot;
 	wire [1:0] awburst, arburst, bresp, rresp;
@@ -195,7 +195,7 @@ module atg_top_mesh_tb;
 	) mem (
 		.clk(clk),
 		.rst_n(rst_n),
-		.awaddr(awaddr),
+		.awaddr(awaddr[31:0]),
 		.awlen(awlen),
 		.awsize(awsize),
 		.awburst(awburst),
@@ -209,7 +209,7 @@ module atg_top_mesh_tb;
 		.bresp(bresp),
 		.bvalid(bvalid),
 		.bready(bready),
-		.araddr(araddr),
+		.araddr(araddr[31:0]),
 		.arlen(arlen),
 		.arsize(arsize),
 		.arburst(arburst),

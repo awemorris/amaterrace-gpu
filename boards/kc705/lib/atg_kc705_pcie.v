@@ -109,7 +109,7 @@ module atg_kc705_pcie (
 	/* GPU -> host memory (s_clk) */
 	input wire s_clk,
 	input wire s_rst_n,
-	input wire [31:0] s_awaddr,
+	input wire [63:0] s_awaddr,
 	input wire [3:0] s_awid,
 	input wire [7:0] s_awlen,
 	input wire [2:0] s_awsize,
@@ -125,7 +125,7 @@ module atg_kc705_pcie (
 	output wire [1:0] s_bresp,
 	output wire s_bvalid,
 	input wire s_bready,
-	input wire [31:0] s_araddr,
+	input wire [63:0] s_araddr,
 	input wire [3:0] s_arid,
 	input wire [7:0] s_arlen,
 	input wire [2:0] s_arsize,
@@ -171,7 +171,7 @@ module atg_kc705_pcie (
 
 	/* The GPU's host accesses: 512 -> 128 bit in s_clk (h_*), then into
 	 * user_clk (k_*) to the bridge's S_AXI. */
-	wire [31:0] h_awaddr, h_araddr, k_awaddr, k_araddr;
+	wire [63:0] h_awaddr, h_araddr, k_awaddr, k_araddr;
 	wire [7:0] h_awlen, h_arlen, k_awlen, k_arlen;
 	wire [2:0] h_awsize, h_arsize, h_awprot, h_arprot, k_awsize, k_arsize, k_awprot, k_arprot;
 	wire [1:0] h_awburst, h_arburst, h_bresp, h_rresp, k_awburst, k_arburst, k_bresp, k_rresp;
@@ -215,7 +215,7 @@ module atg_kc705_pcie (
 		.m_axi_rvalid(h_rvalid), .m_axi_rready(h_rready)
 	);
 
-	atg_kc705_bar2_cc host_cc (
+	atg_kc705_host_cc host_cc (
 		.s_axi_aclk(s_clk), .s_axi_aresetn(s_rst_n),
 		.s_axi_awid(4'd0), .s_axi_awaddr(h_awaddr), .s_axi_awlen(h_awlen),
 		.s_axi_awsize(h_awsize), .s_axi_awburst(h_awburst), .s_axi_awlock(h_awlock),

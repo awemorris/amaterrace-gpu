@@ -221,9 +221,13 @@ endif
 	@echo "/* 5. Command Processor (CP) & Memory Hierarchy */" >> $@
 ifdef CONFIG_GPU_VA_BITS
 	@echo "\`define CFG_GPU_VA_BITS $(CONFIG_GPU_VA_BITS)" >> $@
+	@echo "\`define CFG_DWORD_ADDR_BITS ($$(($(CONFIG_GPU_VA_BITS) - 2)))" >> $@
+	@echo "\`define CFG_LINE_ADDR_BITS ($$(($(CONFIG_GPU_VA_BITS) - 6)))" >> $@
+	@echo "\`define CFG_VPN_BITS ($$(($(CONFIG_GPU_VA_BITS) - 12)))" >> $@
 endif
 ifdef CONFIG_HOST_PA_BITS
 	@echo "\`define CFG_HOST_PA_BITS $(CONFIG_HOST_PA_BITS)" >> $@
+	@echo "\`define CFG_PPN_BITS ($$(($(CONFIG_HOST_PA_BITS) - 12)))" >> $@
 endif
 ifeq ($(CONFIG_CP_AUTONOMOUS_MMU),1)
 	@echo "\`define CFG_CP_AUTONOMOUS_MMU 1" >> $@

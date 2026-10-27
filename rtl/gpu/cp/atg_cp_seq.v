@@ -84,7 +84,7 @@ module atg_cp_seq #(
 	output wire f_valid,
 	input wire f_ready,
 	output wire [1:0] f_op,
-	output wire [31:0] f_addr,
+	output wire [63:0] f_addr,
 	output wire [31:0] f_value,
 	output wire [31:0] f_aux,
 	output wire f_irq,
@@ -179,7 +179,7 @@ module atg_cp_seq #(
 
 	am_add #(.W(8)) p_add (.a(p), .b(8'd0), .ci(1'b1), .s(p_n), .co(p_co));
 	reg [9:0] sidx;	/* SET_REG: the index of the pair */
-	reg [31:0] a0, a1, a2;	/* fence payload */
+	reg [31:0] a0, a0_hi, a1, a2;	/* fence payload */
 	reg settle;
 
 	wire in_valid = use_fw ? fw_valid : n_valid;
@@ -288,7 +288,7 @@ module atg_cp_seq #(
 		(st == Q_FREQ && f_ready && is_query && flags[1]);
 	assign f_valid = st == Q_FREQ;
 	assign f_op = (op == OP_FENCE || op == CMD_FENCE) ? 2'd0 : op == OP_RESULT || op == OP_QUERY ? 2'd1 : 2'd2;
-	assign f_addr = a0;
+	assign f_addr = (op == CMD_FENCE) ? {a0_hi, a0} : {32'd0, a0};
 	assign f_value = a1;
 	assign f_aux = a2;
 	assign f_irq = flags[0];
@@ -317,6 +317,7 @@ module atg_cp_seq #(
 			p <= 8'd0;
 			sidx <= 10'd0;
 			a0 <= 32'd0;
+			a0_hi <= 32'd0;
 			a1 <= 32'd0;
 			a2 <= 32'd0;
 			settle <= 1'b0;
@@ -363,6 +364,8 @@ module atg_cp_seq #(
 						sidx <= {4'b1111, in_data[7:2]};	/* 0x3C0 + offset / 4 */
 					if (p == 8'd0)
 						a0 <= in_data;
+					if (op == CMD_FENCE && p == 8'd1)
+						a0_hi <= in_data;
 					if ((op == CMD_FENCE && p == 8'd2) || (op != CMD_FENCE && p == 8'd1))
 						a1 <= in_data;
 					if ((op == CMD_FENCE && p == 8'd3) || (op != CMD_FENCE && p == 8'd2))

@@ -20,6 +20,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+
 module atg_top #(
 	parameter [31:0] GCLK_HZ = 32'd100000000,
 	parameter S_ID_W = 12,
@@ -27,6 +29,9 @@ module atg_top #(
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter DATA_W = 64,
+	/* Address space parameters (docs/addressing_architecture.md) */
+	parameter VA_BITS = `ifdef CFG_GPU_VA_BITS `CFG_GPU_VA_BITS `else 32 `endif,
+	parameter PA_BITS = `ifdef CFG_HOST_PA_BITS `CFG_HOST_PA_BITS `else 40 `endif,
 	/* The MEM capability (GHCI §11.3): local memory and the window onto it
 	 * (KC705: 1 GiB of DDR3 at 0x8000_0000, a 64 MiB BAR2); 0 bytes = unified. */
 	parameter [31:0] LOCAL_BASE = 32'd0,
@@ -119,7 +124,7 @@ module atg_top #(
 	input wire s_rready,
 
 	output wire m_awid,
-	output wire [31:0] m_awaddr,
+	output wire [63:0] m_awaddr,
 	output wire [7:0] m_awlen,
 	output wire [2:0] m_awsize,
 	output wire [1:0] m_awburst,
@@ -137,7 +142,7 @@ module atg_top #(
 	input wire m_bvalid,
 	output wire m_bready,
 	output wire m_arid,
-	output wire [31:0] m_araddr,
+	output wire [63:0] m_araddr,
 	output wire [7:0] m_arlen,
 	output wire [2:0] m_arsize,
 	output wire [1:0] m_arburst,
@@ -231,6 +236,7 @@ module atg_top #(
 		({{(NCLIENT-1){1'b0}}, HAS_EXT} << C_EXT);
 	localparam LA_W = 32 - LINE_SHIFT;
 	localparam LINE_BITS = LINE_BYTES * 8;
+	wire unused_addr_params = &{1'b0, VA_BITS[15:0], PA_BITS[15:0]};
 
 	/* The register bus. */
 	wire reg_wr;
@@ -566,6 +572,10 @@ module atg_top #(
 		.fsm(blt_fsm)
 	);
 
+	wire [31:0] mc_awaddr, mc_araddr;
+	assign m_awaddr = { 32'd0, mc_awaddr };
+	assign m_araddr = { 32'd0, mc_araddr };
+
 	atg_mc #(
 		.NCLIENT(NCLIENT),
 		.HIGH_MASK(HIGH),
@@ -635,7 +645,7 @@ module atg_top #(
 		.prot_gw_idx(prot_gw_idx),
 		.prot_gw_data(prot_gw_data),
 		.m_awid(m_awid),
-		.m_awaddr(m_awaddr),
+		.m_awaddr(mc_awaddr),
 		.m_awlen(m_awlen),
 		.m_awsize(m_awsize),
 		.m_awburst(m_awburst),
@@ -653,7 +663,7 @@ module atg_top #(
 		.m_bvalid(m_bvalid),
 		.m_bready(m_bready),
 		.m_arid(m_arid),
-		.m_araddr(m_araddr),
+		.m_araddr(mc_araddr),
 		.m_arlen(m_arlen),
 		.m_arsize(m_arsize),
 		.m_arburst(m_arburst),

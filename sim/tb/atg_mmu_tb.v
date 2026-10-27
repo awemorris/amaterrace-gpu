@@ -64,7 +64,7 @@ module atg_mmu_tb;
 	wire [31:0] walker_mem_req_addr;
 	reg         walker_mem_req_ready;
 	reg         walker_mem_rsp_valid;
-	reg [31:0]  walker_mem_rsp_data;
+	reg [63:0]  walker_mem_rsp_data;
 
 	atg_mmu #(
 		.NUM_CLIENTS(NUM_CLIENTS),
@@ -109,10 +109,10 @@ module atg_mmu_tb;
 		walker_mem_rsp_valid <= 1'b0;
 		if (!rst_n) begin
 			walker_mem_rsp_valid <= 1'b0;
-			walker_mem_rsp_data  <= 32'd0;
+			walker_mem_rsp_data  <= 64'd0;
 		end else if (walker_mem_req_valid && walker_mem_req_ready) begin
 			walker_mem_rsp_valid <= 1'b1;
-			walker_mem_rsp_data  <= sim_mem[walker_mem_req_addr[17:2]];
+			walker_mem_rsp_data  <= {32'd0, sim_mem[walker_mem_req_addr[17:2]]};
 		end
 	end
 

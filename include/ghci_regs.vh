@@ -50,6 +50,7 @@ localparam [16:0] GHCI_REG_CP_HEAP_LIMIT  = 17'h00054;
 localparam [16:0] GHCI_REG_SESSION_ACTIVE = 17'h00058;
 localparam [16:0] GHCI_REG_TIMESTAMP_LO   = 17'h0005C;
 localparam [16:0] GHCI_REG_TIMESTAMP_HI   = 17'h00060;
+localparam [16:0] GHCI_REG_GCLK_HZ         = 17'h00064;
 localparam [16:0] GHCI_REG_DIAG_CP_PC     = 17'h00074;
 localparam [16:0] GHCI_REG_DIAG_CP_STATUS = 17'h00078;
 localparam [16:0] GHCI_REG_EXT_CAP_FMT0   = 17'h00080;
@@ -269,27 +270,25 @@ localparam GHCI_IRQ_DISP_ERROR = 11;
 localparam GHCI_IRQ_HOTPLUG    = 12;
 
 /* FAULT_INFO fields (J03). */
-localparam [3:0] GHCI_FAULT_KIND_NONE            = 4'd0;
-localparam [3:0] GHCI_FAULT_KIND_BAD_OPCODE      = 4'd1;
-localparam [3:0] GHCI_FAULT_KIND_BAD_HEADER      = 4'd2;
-localparam [3:0] GHCI_FAULT_KIND_MMU_PAGE_FAULT  = 4'd3;
-localparam [3:0] GHCI_FAULT_KIND_MMU_TABLE_WALK  = 4'd4;
-localparam [3:0] GHCI_FAULT_KIND_CP_TIMEOUT      = 4'd5;
-localparam [3:0] GHCI_FAULT_KIND_BAD_ALIGNMENT   = 4'd6;
-localparam [3:0] GHCI_FAULT_KIND_BAD_PROGRAM     = 4'd7;
-localparam [3:0] GHCI_FAULT_KIND_MMU_OOM         = 4'd8;
-localparam [3:0] GHCI_FAULT_KIND_AXI_SLAVE_ERROR = 4'd9;
-localparam [3:0] GHCI_FAULT_KIND_SECURITY_FAULT  = 4'd10;
+localparam [3:0] GHCI_FAULT_KIND_NONE        = 4'd0;
+localparam [3:0] GHCI_FAULT_KIND_INVALID_OP  = 4'd1;
+localparam [3:0] GHCI_FAULT_KIND_KICK_ABSENT = 4'd2;
+localparam [3:0] GHCI_FAULT_KIND_BAD_REG     = 4'd3;
+localparam [3:0] GHCI_FAULT_KIND_TIMEOUT     = 4'd4;
+localparam [3:0] GHCI_FAULT_KIND_FENCE_ERROR = 4'd5;
+localparam [3:0] GHCI_FAULT_KIND_PROT_FAULT  = 4'd6;
+localparam [3:0] GHCI_FAULT_KIND_LOCKED_REG  = 4'd7;
+localparam [3:0] GHCI_FAULT_KIND_MMU_OOM     = 4'd8;
+localparam [3:0] GHCI_FAULT_KIND_PAGE_FAULT  = 4'd9;
+localparam [3:0] GHCI_FAULT_KIND_PERM_FAULT  = 4'd10;
 
 localparam [3:0] GHCI_FAULT_UNIT_CP  = 4'd0;
-localparam [3:0] GHCI_FAULT_UNIT_MMU = 4'd1;
-localparam [3:0] GHCI_FAULT_UNIT_VF  = 4'd2;
-localparam [3:0] GHCI_FAULT_UNIT_SU  = 4'd3;
+localparam [3:0] GHCI_FAULT_UNIT_VF  = 4'd1;
+localparam [3:0] GHCI_FAULT_UNIT_SU  = 4'd2;
+localparam [3:0] GHCI_FAULT_UNIT_RX  = 4'd3;
 localparam [3:0] GHCI_FAULT_UNIT_TU  = 4'd4;
-localparam [3:0] GHCI_FAULT_UNIT_RX  = 4'd5;
-localparam [3:0] GHCI_FAULT_UNIT_ROP = 4'd6;
-localparam [3:0] GHCI_FAULT_UNIT_BLT = 4'd7;
-localparam [3:0] GHCI_FAULT_UNIT_DC  = 4'd8;
+localparam [3:0] GHCI_FAULT_UNIT_ROP = 4'd5;
+localparam [3:0] GHCI_FAULT_UNIT_BLT = 4'd6;
 
 /* Legacy FAULT_INFO kinds for backward compatibility */
 localparam [3:0] GHCI_FAULT_APERTURE = 4'd1;

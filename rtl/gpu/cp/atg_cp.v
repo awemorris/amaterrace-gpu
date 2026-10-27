@@ -455,7 +455,8 @@ module atg_cp #(
 	wire [2:0] s_kick_code;
 	wire s_f_valid, s_f_ready, s_f_irq, s_f_busy;
 	wire [1:0] s_f_op;
-	wire [31:0] s_f_addr, s_f_value, s_f_aux;
+	wire [63:0] s_f_addr;
+	wire [31:0] s_f_value, s_f_aux;
 	wire s_seq_halt = s_cp_state == GHCI_ST_FAULTED || s_cp_state == GHCI_ST_RESETTING;
 
 	atg_cp_seq #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) u_seq (
@@ -491,7 +492,7 @@ module atg_cp #(
 		.clk(clk), .rst_n(s_core_rst_n),
 		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_fence_rdata),
-		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
+		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr[ADDR_W-1:0]),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_chk(f_chk),
 		.f_slot(f_slot), .f_busy(s_f_busy),
 		.ev_fence(cp_fence_ev), .fence_last(cp_fence_last),
@@ -639,6 +640,7 @@ module atg_cp #(
 		ind_first_instance, ind_first_index, ind_vertex_offset};
 
 	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev, unused_indirect,
+		s_f_addr[63:32],
 		s_dma_req_valid, s_dma_empty, s_dma_busy,
 		s_dma_src_base, s_dma_dst_base, s_dma_src_row_stride, s_dma_dst_row_stride,
 		s_dma_src_slice_stride, s_dma_dst_slice_stride,

@@ -96,8 +96,10 @@ module atg_cp_ring #(
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam WS = LINE_SHIFT - 2;
 
-	localparam [9:0] I_BASE0 = GHCI_RING_BASE[11:2];
-	localparam [9:0] I_SIZE0 = GHCI_RING_SIZE[11:2];
+	localparam [9:0] I_BASE0_LO = GHCI_REG_RING_BASE_LO[11:2];
+	localparam [9:0] I_BASE0_HI = GHCI_REG_RING_BASE_HI[11:2];
+	localparam [9:0] I_BASE0    = GHCI_RING_BASE[11:2];
+	localparam [9:0] I_SIZE0    = GHCI_RING_SIZE[11:2];
 	localparam [9:0] I_WPTR0 = GHCI_RING_WPTR[11:2];
 	localparam [9:0] I_RPTR0 = GHCI_RING_RPTR[11:2];
 
@@ -145,7 +147,7 @@ module atg_cp_ring #(
 	/*
 	 * 3 Independent Hardware Queues
 	 */
-	reg [31:0] base [0:2];
+	reg [63:0] base [0:2];
 	reg [4:0] size [0:2];
 	reg [17:0] wptr [0:2];
 	reg [17:0] rptr [0:2];
@@ -268,7 +270,7 @@ module atg_cp_ring #(
 
 	wire [17:0] wptr_act   = wptr[active_qid];
 	wire [17:0] rptr_act   = rptr[active_qid];
-	wire [31:0] base_act   = base[active_qid];
+	wire [63:0] base_act   = base[active_qid];
 	wire [17:0] mask_act   = mask[active_qid];
 	wire [18:0] nwords_act = nwords[active_qid];
 
@@ -323,8 +325,8 @@ module atg_cp_ring #(
 	/*
 	 * The dword wanted as byte address in memory
 	 */
-	reg [31:0] pa;
-	wire [31:0] want_addr = pa;
+	reg [ADDR_W-1:0] pa;
+	wire [ADDR_W-1:0] want_addr = pa;
 	wire [LA_W-1:0] want_line = want_addr[ADDR_W-1:LINE_SHIFT];
 	wire [WS-1:0] want_word = want_addr[LINE_SHIFT-1:2];
 	wire [2:0] want_idx = want_line[2:0];
@@ -368,13 +370,13 @@ module atg_cp_ring #(
 	wire h_novf = (h_class == 2'd2) && (CLASS_V == 0);
 	wire [17:0] p_end = end_s[17:0] & mask_act;
 
-	wire [31:0] pa_4, pa_hdr;
+	wire [ADDR_W-1:0] pa_4, pa_hdr;
 	wire [15:0] k_n;
 	wire pa_4_co, pa_hdr_co, k_co;
 
-	am_add #(.W(32)) pa_4_add (.a(pa), .b(32'd4), .ci(1'b0), .s(pa_4), .co(pa_4_co));
-	am_add #(.W(32)) pa_hdr_add (
-		.a(base_act), .b({12'd0, rptr_act, 2'b00}), .ci(1'b0), .s(pa_hdr), .co(pa_hdr_co)
+	am_add #(.W(ADDR_W)) pa_4_add (.a(pa), .b({{(ADDR_W-3){1'b0}}, 3'd4}), .ci(1'b0), .s(pa_4), .co(pa_4_co));
+	am_add #(.W(ADDR_W)) pa_hdr_add (
+		.a(base_act[ADDR_W-1:0]), .b({{(ADDR_W-20){1'b0}}, rptr_act, 2'b00}), .ci(1'b0), .s(pa_hdr), .co(pa_hdr_co)
 	);
 	am_add #(.W(16)) k_add (.a(k), .b(16'd0), .ci(1'b1), .s(k_n), .co(k_co));
 
@@ -422,15 +424,15 @@ module atg_cp_ring #(
 	assign n_last = (k == n);
 
 	assign v_valid = (st == R_V);
-	assign v_addr = pa_4;
+	assign v_addr = pa_4[31:0];
 	assign v_dwords = n;
 	assign v_tag = tag;
 
 	// AMB port multiplexing
 	wire demand_req = (st == R_REQ);
-	wire [LA_W-1:0] ctx_line = ctx_base[ADDR_W-1:LINE_SHIFT];
+	wire [LA_W-1:0] ctx_line = ctx_base[31:LINE_SHIFT];
 	wire [LINE_BYTES*8-1:0] ctx_save_wdata =
-		{{(LINE_BYTES*8 - 80){1'b0}}, 14'd0, saved_rptr, 14'd0, interrupted_qid, 32'h43545853};
+		{{(LINE_BYTES*8 > 80 ? LINE_BYTES*8 - 80 : 1){1'b0}}, 14'd0, saved_rptr, 14'd0, interrupted_qid, 32'h43545853};
 
 	assign req_valid = ctx_req || demand_req || (pf_st == PF_REQ);
 	assign req_write = ctx_save_req;
@@ -444,7 +446,7 @@ module atg_cp_ring #(
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			for (bi = 0; bi < 3; bi = bi + 1) begin
-				base[bi] <= 32'd0;
+				base[bi] <= 64'd0;
 				size[bi] <= 5'd12;
 			end
 			dma_base <= 32'd0;
@@ -462,20 +464,22 @@ module atg_cp_ring #(
 			preempt_auto <= 1'b0;
 		end else if (hcr_we) begin
 			if (open) begin
-				if (hcr_widx == I_BASE0)
-					base[0] <= ((base[0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
+				if (hcr_widx == I_BASE0_LO || hcr_widx == I_BASE0)
+					base[0][31:0] <= ((base[0][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
+				if (hcr_widx == I_BASE0_HI)
+					base[0][63:32] <= (base[0][63:32] & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 				if (hcr_widx == I_SIZE0 && hcr_wmask[0])
 					size[0] <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
 						hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
 
 				if (hcr_widx == I_BASE1)
-					base[1] <= ((base[1] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
+					base[1][31:0] <= ((base[1][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
 				if (hcr_widx == I_SIZE1 && hcr_wmask[0])
 					size[1] <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
 						hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
 
 				if (hcr_widx == I_BASE2)
-					base[2] <= ((base[2] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
+					base[2][31:0] <= ((base[2][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
 				if (hcr_widx == I_SIZE2 && hcr_wmask[0])
 					size[2] <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
 						hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
@@ -540,7 +544,7 @@ module atg_cp_ring #(
 
 			st        <= R_IDLE;
 			ret_n     <= 1'b0;
-			pa        <= 32'd0;
+			pa        <= {ADDR_W{1'b0}};
 			cur       <= 18'd0;
 			n         <= 16'd0;
 			k         <= 16'd0;
@@ -721,7 +725,7 @@ module atg_cp_ring #(
 					if (h_bad || h_novf) begin
 						f_pulse <= 1'b1;
 						f_kind  <= h_bad ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
-						f_addr  <= want_addr;
+						f_addr  <= want_addr[31:0];
 						st      <= R_FAULT;
 					end else begin
 						case (h_class)
@@ -786,7 +790,7 @@ module atg_cp_ring #(
 					if (rsp_error) begin
 						f_pulse <= 1'b1;
 						f_kind  <= GHCI_FAULT_APERTURE;
-						f_addr  <= {want_line, {LINE_SHIFT{1'b0}}};
+						f_addr  <= want_addr[31:0];
 						st      <= R_FAULT;
 					end else begin
 						buf_valid[want_idx] <= 1'b1;
@@ -837,15 +841,16 @@ module atg_cp_ring #(
 	end
 
 	assign hcr_rdata =
-		(hcr_ridx == I_BASE0) ? base[0] :
+		(hcr_ridx == I_BASE0_LO || hcr_ridx == I_BASE0) ? base[0][31:0] :
+		(hcr_ridx == I_BASE0_HI) ? base[0][63:32] :
 		(hcr_ridx == I_SIZE0) ? {27'd0, size[0]} :
 		(hcr_ridx == I_WPTR0) ? {14'd0, wptr[0]} :
 		(hcr_ridx == I_RPTR0) ? {14'd0, rptr[0]} :
-		(hcr_ridx == I_BASE1) ? base[1] :
+		(hcr_ridx == I_BASE1) ? base[1][31:0] :
 		(hcr_ridx == I_SIZE1) ? {27'd0, size[1]} :
 		(hcr_ridx == I_WPTR1) ? {14'd0, wptr[1]} :
 		(hcr_ridx == I_RPTR1) ? {14'd0, rptr[1]} :
-		(hcr_ridx == I_BASE2) ? base[2] :
+		(hcr_ridx == I_BASE2) ? base[2][31:0] :
 		(hcr_ridx == I_SIZE2) ? {27'd0, size[2]} :
 		(hcr_ridx == I_WPTR2) ? {14'd0, wptr[2]} :
 		(hcr_ridx == I_RPTR2) ? {14'd0, rptr[2]} :
@@ -864,7 +869,8 @@ module atg_cp_ring #(
 		(hcr_ridx == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
 
 	wire unused_ok = &{1'b0, rsp_write, h_end[18], avail_bo, end_co, pa_4_co,
-		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci2_n_bo};
+		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci2_n_bo,
+		base_act};
 
 endmodule
 

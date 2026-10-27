@@ -77,8 +77,10 @@
 | `q001-i63` | **P2** | [ws001-p007](ws001/phase007/phase.md) | GHCI 1.0 仕様整合化 & ドライバ質問回答書 (J01-J27) 策定・出力 | cleared | なし | docs/driver_qa_j01_j27.md作成完了。全27問の完全回答・定数・構造体・ビットマップ完全整合。 |
 | `q001-i64` | **P1** | [ws001-p007](ws001/phase007/phase.md) | 可変アドレス空間 Phase A & B 実装（基盤定義・CP 64bit PA・ホスト DMA・PCIe 64bit AXI） | active | `q001-i62` | 承認仕様の実装。atg_config.vhマクロ、CP Ring/Fence 64-bit PA、KC705 PCIe 64-bit AXI接続。 |
 | `q001-i65` | **P2** | [ws001-p007](ws001/phase007/phase.md) | 可変アドレス空間 Phase C & D 実装（64bit PTE MMU・TLB CAM 最適化・LSB 削減バス・SU 偶数ペア） | active | `q001-i63` | 承認仕様の実装。64-bit PTE パース、TLB CAM VPN 最適化、Dword/Line LSB 削減配線、SU 偶数レジスタペア。 |
-| `q001-i66` | **P3** | [ws001-p007](ws001/phase007/phase.md) | ドライバ再質問 K01〜K19 決定回答策定 & docs/ghci.md・ヘッダ完全同期 | active | なし | ユーザー指示により着手。K01-K19全19問の確定回答作成、docs/ghci.mdおよびinclude/ghci_*.hを完全同期。 |
-| `q001-i67` | **R1** | [ws001-p007](ws001/phase007/phase.md) | K01〜K19 回答内容および docs/ghci.md 全体の敵対的仕様レビュー | active | `q001-i66` | ユーザー指示により着手。K01-K19回答およびghci.md全体の敵対的仕様検証・整合性レビュー。 |
+| `q001-i66` | **P3** | [ws001-p007](ws001/phase007/phase.md) | ドライバ再質問 K01〜K19 決定回答策定 & docs/ghci.md・ヘッダ完全同期 | cleared | なし | 全19問確定回答作成・docs/ghci.md同期完了。atg_top_mesh/atg_top PASS。 |
+| `q001-i67` | **R1** | [ws001-p007](ws001/phase007/phase.md) | K01〜K19 回答内容および docs/ghci.md 全体の敵対的仕様レビュー | cleared | `q001-i66` | 敵対的レビュー実施。FAULT_INFO RTL不整合およびMMUドライバ透過性の是正指摘を提示（ユーザー承認受領）。 |
+| `q001-i68` | **P4** | [ws001-p007](ws001/phase007/phase.md) | R1 指摘是正（FAULT_INFO RTL復元、MMU ドライバ完全透過性徹底、ヘッダ・仕様書同期） | active | `q001-i67` | ユーザー指示により着手。GhciPte64削除、BARRIER_INVAL_TLB削除、root_pt_phys削除、FAULT_INFO復元。 |
+| `q001-i69` | **R1** | [ws001-p007](ws001/phase007/phase.md) | P4 成果物の最終敵対的仕様レビュー | queued | `q001-i68` | ユーザー指示により待機中。P4完了後に最終APPROVE確認レビューを実施。 |
 
 ## サブエージェント実行状態（N=3）
 
@@ -86,8 +88,8 @@
 | :---: | :---: | :--- | :--- | :--- | :--- |
 | **P1** | 実装（メモリ・相互結合・コア・CP・VF） | Claude Opus 5.5 Medium | active | q001-i64: 可変アドレス空間 Phase A & B 実装 | 次期タスク |
 | **P2** | 実装（ROP・ピクセル・テクスチャ・バス・DC・CP） | Claude Opus 5.5 Medium | active | q001-i65: 可変アドレス空間 Phase C & D 実装 | 次期タスク |
-| **P3** | 実装（インフラ・ジオメトリ・SU・ROP・BLT・TU） | Claude Opus 5.5 Medium | active | q001-i66: K01〜K19 回答策定 & docs/ghci.md 完全同期 | 次期タスク |
-| **P4** | FPGA ビルド & Vivado 解析 | Claude Opus 5.5 Medium | active | KC705 ミニマムコンフィグ Vivado P&R / Fit / Fmax 調査 | ビルド最適化 |
+| **P3** | 実装（インフラ・ジオメトリ・SU・ROP・BLT・TU） | Claude Opus 5.5 Medium | idle | q001-i66 完了 | 次期タスク |
+| **P4** | 実装・ビルド・解析 | Claude Opus 5.5 Medium | active | q001-i68: R1指摘是正・MMU透過性徹底実装 | 次期タスク |
 | **H1** | 実装設計補助（Helper） | Gemini 4 Argon Medium | completed | 全設計書作成完了（終了済） | 任務完了 |
 | **T1** | テスト | 標準 / Flash | active | 回帰テストスイート常時待機 | 各レーン検証ディスパッチ |
 | **R1** | レビュー | Gemini 4 Argon Medium | active | q001-i67: K01〜K19 回答 & ghci.md 全体レビュー | 各レーン成果物レビュー |

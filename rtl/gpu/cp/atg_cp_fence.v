@@ -50,7 +50,7 @@ module atg_cp_fence #(
 	input wire f_valid,
 	output wire f_ready,
 	input wire [1:0] f_op,
-	input wire [31:0] f_addr,
+	input wire [ADDR_W-1:0] f_addr,
 	input wire [31:0] f_value,
 	input wire [31:0] f_aux,
 	input wire f_irq,
@@ -94,7 +94,7 @@ module atg_cp_fence #(
 
 	reg [2:0] st;
 	reg [1:0] op;
-	reg [31:0] addr;
+	reg [ADDR_W-1:0] addr;
 	reg [31:0] value;
 	reg [31:0] aux;
 	reg irq_on;
@@ -136,7 +136,7 @@ module atg_cp_fence #(
 
 	assign fault = st == F_RSP && rsp_valid && rsp_error;
 	assign fault_kind = GHCI_FAULT_APERTURE;
-	assign fault_addr = addr;
+	assign fault_addr = addr[31:0];
 	assign fault_tag = 8'd0;
 	assign ev_fence = st == F_RSP && rsp_valid && !rsp_error && op == 2'd0 && irq_on;
 	assign fence_last = last;
@@ -145,7 +145,7 @@ module atg_cp_fence #(
 		if (!rst_n) begin
 			st <= F_IDLE;
 			op <= 2'd0;
-			addr <= 32'd0;
+			addr <= {ADDR_W{1'b0}};
 			value <= 32'd0;
 			aux <= 32'd0;
 			irq_on <= 1'b0;
@@ -160,7 +160,7 @@ module atg_cp_fence #(
 			F_IDLE:
 				if (f_valid) begin
 					op <= f_op;
-					addr <= f_op == 2'd1 ? f_addr & 32'hFFFFFFF8 : f_addr & 32'hFFFFFFFC;
+					addr <= f_op == 2'd1 ? {f_addr[ADDR_W-1:3], 3'b000} : {f_addr[ADDR_W-1:2], 2'b00};
 					value <= f_value;
 					aux <= f_aux;
 					irq_on <= f_irq;
@@ -201,7 +201,7 @@ module atg_cp_fence #(
 
 	assign hcr_rdata = hcr_ridx == I_LAST ? last : 32'd0;
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo, f_addr[2:0]};
 endmodule
 
 `default_nettype wire

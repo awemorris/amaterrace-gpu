@@ -142,9 +142,30 @@ extern "C" {
 #define GHCI_BLEND_FACTOR_SRC1_ALPHA               17u
 #define GHCI_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA     18u
 
+/*
+ * Vertex Attribute High-Density Packing (K11):
+ * 128-byte PSO allocates 64 bytes (0x40 - 0x7F) for 16 vertex attributes (4 bytes each):
+ *   [7:0]   format:       VkFormat / Amaterrace internal format ID (0..255)
+ *   [11:8]  binding_index: Vertex buffer binding slot (0..15)
+ *   [12]    input_rate:   0 = PER_VERTEX, 1 = PER_INSTANCE
+ *   [31:13] offset:       Byte offset within vertex buffer (0..524287 bytes, up to 512 KiB)
+ */
+#define GHCI_VERTEX_INPUT_RATE_VERTEX   0u
+#define GHCI_VERTEX_INPUT_RATE_INSTANCE 1u
+
+#define GHCI_VERTEX_ATTR_PACK(fmt, binding, rate, offset) \
+	(((uint32_t)(fmt) & 0xFFu) | \
+	 (((uint32_t)(binding) & 0x0Fu) << 8) | \
+	 (((uint32_t)(rate) & 0x01u) << 12) | \
+	 (((uint32_t)(offset) & 0x7FFFFu) << 13))
+
+#define GHCI_VERTEX_ATTR_FORMAT(a)     ((a) & 0xFFu)
+#define GHCI_VERTEX_ATTR_BINDING(a)    (((a) >> 8) & 0x0Fu)
+#define GHCI_VERTEX_ATTR_RATE(a)       (((a) >> 12) & 0x01u)
+#define GHCI_VERTEX_ATTR_OFFSET(a)     (((a) >> 13) & 0x7FFFFu)
+
 typedef struct GhciVertexAttribute {
-	uint32_t binding_offset;   /* [3:0] binding slot, [27:4] byte offset */
-	uint32_t format_location;  /* [15:0] VkFormat, [23:16] shader location */
+	uint32_t packed_attr; /* [7:0] format, [11:8] binding, [12] input_rate, [31:13] offset (K11) */
 } GhciVertexAttribute;
 
 typedef struct GhciPipelineState {
@@ -162,8 +183,8 @@ typedef struct GhciPipelineState {
 	uint32_t vertex_strides;        /* dw12: Packed strides for bindings 0..3 */
 	uint32_t reserved[3];           /* dw13-15: Alignment padding */
 
-	/* 0x40: Vertex Attributes Descriptor (64 bytes) */
-	GhciVertexAttribute attributes[8]; /* dw16-31: 8 vertex attribute entries */
+	/* 0x40: Vertex Attributes Descriptor (64 bytes: 16 attributes x 4 bytes, K11) */
+	uint32_t attributes[16];        /* dw16-31: 16 packed vertex attributes */
 } GhciPipelineState;
 
 /*
@@ -203,6 +224,15 @@ typedef struct GhciSamplerDescriptor {
 	uint8_t  max_lod_fx4;           /* 0x0B: Fixed-point 4.4 max LOD */
 	uint32_t border_color;          /* 0x0C: Packed RGBA8 border color */
 } GhciSamplerDescriptor;
+
+/* Combined Image Sampler Descriptor (Option A: 32-bit Index Pair, K13) */
+typedef struct GhciCombinedImageSampler {
+	uint16_t texture_index;         /* Index into Texture Descriptor Table */
+	uint16_t sampler_index;         /* Index into Sampler Descriptor Table */
+} GhciCombinedImageSampler;
+
+#define GHCI_MAKE_COMBINED_SAMPLER(tex, smp) \
+	(((uint32_t)(smp) << 16) | ((uint32_t)(tex) & 0xFFFFu))
 
 /*
  * ============================================================================
@@ -274,7 +304,9 @@ typedef struct GhciCmdDrawIndexed {
 	uint32_t first_instance;
 } GhciCmdDrawIndexed;
 
-/* CMD_DRAW_INDIRECT (0x29): 7 dwords (28 bytes, J14) */
+/* CMD_DRAW_INDIRECT (0x29): 7 dwords (normal) or 8 dwords (count buffer, K10) */
+#define GHCI_DRAW_INDIRECT_FLAG_COUNT_BUFFER (1u << 1) /* 1 = Read draw count from count_buffer_va */
+
 typedef struct GhciCmdDrawIndirect {
 	uint32_t header;                /* GHCI_CMD_DRAW_INDIRECT, size = 7 */
 	uint32_t buffer_va_lo;          /* GPU virtual address of draw args [31:0] */
@@ -282,8 +314,19 @@ typedef struct GhciCmdDrawIndirect {
 	uint32_t offset_bytes;          /* Byte offset inside buffer */
 	uint32_t draw_count;            /* Direct draw count or maxDrawCount */
 	uint32_t stride_bytes;          /* Stride in bytes between draw arguments */
-	uint32_t flags;                 /* [0] = count from buffer */
+	uint32_t flags;                 /* GHCI_DRAW_INDIRECT_FLAG_* */
 } GhciCmdDrawIndirect;
+
+typedef struct GhciCmdDrawIndirectCount {
+	uint32_t header;                /* GHCI_CMD_DRAW_INDIRECT, size = 8 (K10) */
+	uint32_t buffer_va_lo;          /* GPU virtual address of draw args [31:0] */
+	uint32_t buffer_va_hi;          /* GPU virtual address of draw args [63:32] */
+	uint32_t offset_bytes;          /* Byte offset inside buffer */
+	uint32_t max_draw_count;        /* Maximum draw count cap */
+	uint32_t stride_bytes;          /* Stride in bytes between draw arguments */
+	uint32_t count_buffer_va_lo;    /* GPU virtual address of draw count uint32 [31:0] */
+	uint32_t count_buffer_va_hi;    /* GPU virtual address of draw count uint32 [63:32] */
+} GhciCmdDrawIndirectCount;
 
 /* CMD_DRAW_MESH_TASKS (0x2A): 4 dwords */
 typedef struct GhciCmdDrawMeshTasks {
@@ -311,7 +354,7 @@ typedef struct GhciCmdDispatch {
 
 #define GHCI_BARRIER_FLUSH_L2C          (1u << 0)
 #define GHCI_BARRIER_INVAL_L1           (1u << 1)
-#define GHCI_BARRIER_INVAL_TLB          (1u << 2)
+#define GHCI_BARRIER_DRAIN              (1u << 3) /* Drain all pipeline stages to idle (K17) */
 
 typedef struct GhciCmdBarrier {
 	uint32_t header;                /* GHCI_CMD_BARRIER, size = 4 */
@@ -417,12 +460,12 @@ typedef struct GhciCmdVmUnmap {
 	uint32_t size_hi;               /* unmap size in bytes [63:32] */
 } GhciCmdVmUnmap;
 
-/* CMD_SESSION_OPEN (0x12): 4 dwords (16 bytes) */
+/* CMD_SESSION_OPEN (0x12): 4 dwords (16 bytes, root page directory allocated autonomously by CP) */
 typedef struct GhciCmdSessionOpen {
 	uint32_t header;                /* opcode: GHCI_CMD_SESSION_OPEN, dwords: 4 */
 	uint32_t session_id;            /* client session identifier (0..15) */
 	uint32_t flags;                 /* session flags (e.g. protected, priority) */
-	uint32_t root_pt_phys;          /* 4KB-aligned physical address of Page Directory root (0=CP allocates) */
+	uint32_t reserved;              /* reserved (must be zero) */
 } GhciCmdSessionOpen;
 
 /* CMD_SESSION_CLOSE (0x13): 2 dwords (8 bytes) */
@@ -457,18 +500,34 @@ typedef struct GhciBufferDescriptor {
  * ============================================================================
  */
 
-/* CMD_BEGIN_RENDER_PASS (0x2B): 10 dwords */
+/*
+ * In-Memory Render Pass Descriptor (GhciRenderPassDesc) - 64 Bytes (K12)
+ * Pointed to by CMD_BEGIN_RENDER_PASS via render_pass_desc_va.
+ */
+typedef struct GhciColorAttachmentDesc {
+	uint32_t image_va_lo;           /* Color attachment GPU virtual address [31:0] */
+	uint16_t row_pitch_bytes;       /* Row pitch in bytes */
+	uint8_t  format;                /* VkFormat / Amaterrace internal format ID */
+	uint8_t  ops;                   /* [1:0] LoadOp, [3:2] StoreOp */
+} GhciColorAttachmentDesc;
+
+typedef struct GhciRenderPassDesc {
+	/* 0x00 - 0x3F: 8 Color Attachments (8 bytes each = 64 bytes total) */
+	GhciColorAttachmentDesc colors[8];
+} GhciRenderPassDesc;
+
+/* CMD_BEGIN_RENDER_PASS (0x2B): 10 dwords (K12) */
 typedef struct GhciCmdBeginRenderPass {
 	uint32_t header;                /* opcode: GHCI_CMD_BEGIN_RENDER_PASS, dwords: 10 */
-	uint32_t color_attachment_mask; /* Active color attachments bitmask (0..7) */
-	uint32_t color_clear_rgba;      /* Packed RGBA8 or float clear value */
-	uint32_t depth_clear_value;     /* 32-bit float or 24-bit depth clear */
-	uint32_t stencil_clear_value;   /* [7:0] Stencil clear value */
-	uint32_t load_op_mask;          /* [1:0] Color0 LoadOp, [3:2] Color1, ..., [17:16] Depth, [19:18] Stencil */
-	uint32_t store_op_mask;         /* StoreOp bits matching LoadOp layout */
+	uint32_t render_pass_desc_va_lo;/* 64-bit GPU virtual address of GhciRenderPassDesc [31:0] */
+	uint32_t render_pass_desc_va_hi;/* 64-bit GPU virtual address of GhciRenderPassDesc [63:32] */
 	uint32_t render_area_offset;    /* [15:0] X, [31:16] Y */
 	uint32_t render_area_extent;    /* [15:0] Width, [31:16] Height */
+	uint32_t color_clear_rgba;      /* Packed RGBA8 or float clear color for attachment 0 */
+	uint32_t depth_clear_value;     /* 32-bit float or 24-bit depth clear */
+	uint32_t stencil_clear_value;   /* [7:0] Stencil clear value */
 	uint32_t flags;                 /* [0] Inline secondary buffers */
+	uint32_t reserved;              /* Reserved padding to 10 dwords */
 } GhciCmdBeginRenderPass;
 
 /* CMD_END_RENDER_PASS (0x2C): 1 dword */
@@ -484,12 +543,13 @@ typedef struct GhciCmdLoadConst {
 	/* Followed by uint32_t data[count_dwords] */
 } GhciCmdLoadConst;
 
-/* CMD_WAIT_FENCE (0x34): 4 dwords */
+/* CMD_WAIT_FENCE (0x34): 5 dwords (64-bit wait value, K09) */
 typedef struct GhciCmdWaitFence {
-	uint32_t header;                /* opcode: GHCI_CMD_WAIT_FENCE, dwords: 4 */
+	uint32_t header;                /* opcode: GHCI_CMD_WAIT_FENCE, dwords: 5 */
 	uint32_t fence_addr_lo;         /* Host memory address [31:0] */
 	uint32_t fence_addr_hi;         /* Host memory address [63:32] */
-	uint32_t wait_value;            /* Value to compare (passes when (int32)(mem - value) >= 0) */
+	uint32_t wait_value_lo;         /* 64-bit value to compare [31:0] */
+	uint32_t wait_value_hi;         /* 64-bit value to compare [63:32] ((int64_t)(mem - val) >= 0) */
 } GhciCmdWaitFence;
 
 /* CMD_WRITE_TIMESTAMP (0x35): 4 dwords */
@@ -519,6 +579,7 @@ typedef struct GhciCmdFillBuffer {
 	uint32_t size_bytes;            /* Buffer size to fill in bytes (4-byte multiple) */
 	uint32_t pattern_data;          /* 32-bit fill pattern */
 } GhciCmdFillBuffer;
+
 
 #ifdef __cplusplus
 }

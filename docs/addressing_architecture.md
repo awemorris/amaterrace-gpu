@@ -352,7 +352,7 @@ module atg_top #(
 
 ### 6.7 ソフトウェア・ドライバ・ヘッダ互換性 (`include/ghci_*.h`, `docs/ghci.md`)
 - `include/ghci_regs.h` において、`RING_BASE`、`FAULT_ADDR` は既に `_LO` (0x020) と `_HI` (0x024) に分割定義されており、レジスタレイアウトの破壊的変更は不要（**完全な下位バイナリ互換を維持**）。
-- 64 ビット PTE 構造体定義（C 言語ヘッダ）:
+- 64 ビット PTE 構造体定義（GPU 内部自律 MMU / ファームウェア用、ドライバ完全不可視）:
   ```c
   typedef struct {
       uint64_t v        : 1;   /* Valid */
@@ -366,7 +366,7 @@ module atg_top #(
       uint64_t rsvd_soft: 4;   /* OS Software bits */
       uint64_t ppn      : 36;  /* Physical Page Number (up to 48-bit PA) */
       uint64_t reserved : 16;  /* Reserved (must be zero) */
-  } __attribute__((packed)) GhciPte64;
+  } __attribute__((packed)) GhciInternalPte64;
   ```
 
 ---

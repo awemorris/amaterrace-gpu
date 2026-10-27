@@ -108,7 +108,7 @@ module atg_kc705_pcie #(
 	/* GPU -> host memory (s_clk) */
 	input wire s_clk,
 	input wire s_rst_n,
-	input wire [31:0] s_awaddr,
+	input wire [63:0] s_awaddr,
 	input wire [3:0] s_awid,
 	input wire [7:0] s_awlen,
 	input wire [2:0] s_awsize,
@@ -124,7 +124,7 @@ module atg_kc705_pcie #(
 	output reg [1:0] s_bresp = 2'b00,
 	output reg s_bvalid = 1'b0,
 	input wire s_bready,
-	input wire [31:0] s_araddr,
+	input wire [63:0] s_araddr,
 	input wire [3:0] s_arid,
 	input wire [7:0] s_arlen,
 	input wire [2:0] s_arsize,
@@ -354,7 +354,7 @@ module atg_kc705_pcie #(
 	reg [7:0] host_mem [0:HOST_BYTES-1];
 	integer host_wr_n = 0, host_rd_n = 0, host_err_n = 0, hs = SEED, hi;
 	reg aw_busy = 1'b0, ar_busy = 1'b0, w_err = 1'b0, r_err = 1'b0;
-	reg [31:0] w_addr = 32'd0, r_addr = 32'd0;
+	reg [63:0] w_addr = 64'd0, r_addr = 64'd0;
 	reg [7:0] r_left = 8'd0;
 	reg aw_rdy = 1'b0, w_rdy = 1'b0, ar_rdy = 1'b0;
 
@@ -363,20 +363,20 @@ module atg_kc705_pcie #(
 			host_mem[hi] = 8'd0;
 
 	task host_write;
-		input [31:0] addr;
+		input [63:0] addr;
 		input [31:0] data;
 		for (hi = 0; hi < 4; hi = hi + 1)
 			host_mem[(addr + hi) % HOST_BYTES] = data[hi*8 +: 8];
 	endtask
 	task host_read;
-		input [31:0] addr;
+		input [63:0] addr;
 		output [31:0] data;
 		for (hi = 0; hi < 4; hi = hi + 1)
 			data[hi*8 +: 8] = host_mem[(addr + hi) % HOST_BYTES];
 	endtask
 
 	function [511:0] host_line;
-		input [31:0] a;
+		input [63:0] a;
 		integer j;
 		for (j = 0; j < 64; j = j + 1)
 			host_line[j*8 +: 8] = host_mem[(a + j) % HOST_BYTES];
@@ -394,14 +394,14 @@ module atg_kc705_pcie #(
 			aw_busy <= 1'b1;
 			s_bid <= s_awid;
 			w_addr <= s_awaddr;
-			w_err <= s_awaddr >= 32'h80000000;
+			w_err <= (s_awaddr >= 64'h80000000) && (s_awaddr[63:32] == 32'd0);
 		end
 		if (s_wvalid && s_wready) begin
 			if (!w_err)
 				for (hi = 0; hi < 64; hi = hi + 1)
 					if (s_wstrb[hi])
 						host_mem[(w_addr + hi) % HOST_BYTES] = s_wdata[hi*8 +: 8];
-			w_addr <= w_addr + 32'd64;
+			w_addr <= w_addr + 64'd64;
 			if (s_wlast) begin
 				s_bvalid <= 1'b1;
 				s_bresp <= w_err ? 2'b11 : 2'b00;
@@ -417,8 +417,8 @@ module atg_kc705_pcie #(
 		if (s_arvalid && s_arready) begin
 			ar_busy <= 1'b1;
 			s_rid <= s_arid;
-			r_err = s_araddr >= 32'h80000000;
-			r_addr <= s_araddr + 32'd64;
+			r_err = (s_araddr >= 64'h80000000) && (s_araddr[63:32] == 32'd0);
+			r_addr <= s_araddr + 64'd64;
 			r_left <= s_arlen;
 			s_rvalid <= 1'b1;
 			s_rlast <= s_arlen == 8'd0;
@@ -435,7 +435,7 @@ module atg_kc705_pcie #(
 				r_left <= r_left - 8'd1;
 				s_rlast <= r_left == 8'd1;
 				s_rdata <= r_err ? 512'd0 : host_line(r_addr);
-				r_addr <= r_addr + 32'd64;
+				r_addr <= r_addr + 64'd64;
 			end
 		end
 	end
