@@ -159,7 +159,7 @@ module atg_su_fpu #(
 		wire [31:0] lc = pk ? fc : x_c[gl*32 +: 32];
 		wire [2:0] lr = pk ? ((busy ? k_rm : rm) == 3'd2 ? 3'd6 : 3'd5) : rm;
 		wire [31:0] res;
-		am_fpu_core #(.LAT(4)) u_core (
+		am_fpu_core #(.LAT(5)) u_core (
 			.clk(clk),
 			.rst_n(rst_n),
 			.en(en),
@@ -329,10 +329,10 @@ module atg_su_fpu #(
 			for (i5 = 0; i5 < NPHYS; i5 = i5 + 1) begin
 				s5_data[i5*32 +: 32] <= s4_pk ?
 					{16'd0, (s4_hsel == 2'd2) ? s4_xa[i5*16 +: 16] : pko_comb[i5*16 +: 16]} :
-					fpu_res[i5*32 +: 32];
+					32'd0;
 			end
 
-			/* Stage 6 captures Stage 5 output (and high half joins here) */
+			/* Stage 6 captures Stage 5 output (FPU result is valid in Stage 5, captured at Stage 6) */
 			s6_valid <= s5_valid;
 			s6_warp  <= s5_warp;
 			s6_grp   <= s5_grp;
@@ -344,7 +344,7 @@ module atg_su_fpu #(
 					s6_data[i5*32 + 16 +: 16] <= (s5_k_hs == 2'd1) ?
 						s5_k_a[i5*16 +: 16] : pko_comb[i5*16 +: 16];
 				end else begin
-					s6_data[i5*32 +: 32] <= s5_data[i5*32 +: 32];
+					s6_data[i5*32 +: 32] <= fpu_res[i5*32 +: 32];
 				end
 			end
 		end
@@ -394,15 +394,16 @@ module atg_su_fpu #(
 	assign fwd_ex4_data  = {DW{1'b0}};
 	assign fwd_ex4_lanes = {NPHYS{1'b0}};
 
-	assign fwd_ex5_valid = s5_valid;
-	assign fwd_ex5_warp  = s5_warp;
-	assign fwd_ex5_grp   = s5_grp;
-	assign fwd_ex5_rd    = s5_rd;
-	assign fwd_ex5_data  = s5_data;
-	assign fwd_ex5_lanes = s5_mask;
+	assign fwd_ex5_valid = 1'b0;
+	assign fwd_ex5_warp  = {WARP_W{1'b0}};
+	assign fwd_ex5_grp   = {GRP_W{1'b0}};
+	assign fwd_ex5_rd    = 7'd0;
+	assign fwd_ex5_data  = {DW{1'b0}};
+	assign fwd_ex5_lanes = {NPHYS{1'b0}};
 
+	wire unused_s5 = &{1'b0, s5_valid, s5_warp, s5_grp, s5_rd, s5_mask, s5_data};
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
-		k_hs, k_sat, (SHORT_LAT != 0), (NWARPS != 0), fpu_s4_data};
+		k_hs, k_sat, (SHORT_LAT != 0), (NWARPS != 0), fpu_s4_data, unused_s5};
 endmodule
 
 `default_nettype wire

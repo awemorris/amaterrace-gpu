@@ -43,7 +43,7 @@ module am_fp_fma #(
 			wire [47:0] pp0;
 			am_mul #(.AW(24), .BW(24), .LAT(0)) u_pp0 (.clk(clk), .en(1'b1), .a(ma0), .b(mb0), .p(pp0));
 			wire [31:0] r0;
-			am_fp_fma_p #(.LAT(0)) u_f0 (.a0(i_a), .b0(i_b), .c0(c_val), .rm(rm), .noc(noc), .p(pp0), .r(r0));
+			am_fp_fma_p #(.LAT(0)) u_f0 (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(i_a), .b0(i_b), .c0(c_val), .rm(rm), .noc(noc), .p(pp0), .r(r0));
 
 			assign c_vld = i_vld;
 			assign c_tag = i_tag;

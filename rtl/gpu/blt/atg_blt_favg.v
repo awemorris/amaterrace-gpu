@@ -139,7 +139,7 @@ module atg_blt_favg (
 	/* The fma: fb is 1.0 or 0.25 (a significand of 2^23), so the product of
 	 * the significands is fa's shifted (no multiplier). */
 	wire [31:0] fr;
-	am_fp_fma_p #(.LAT(0)) u_fma (.a0(fa), .b0(fb), .c0(fc), .rm(3'd0), .noc(1'b0),
+	am_fp_fma_p #(.LAT(0)) u_fma (.clk(1'b0), .rst_n(1'b1), .en(1'b1), .a0(fa), .b0(fb), .c0(fc), .rm(3'd0), .noc(1'b0),
 		.p({1'b0, fa[30:23] != 8'd0 ? {1'b1, fa[22:0]} : 24'd0, 23'd0}), .r(fr));
 	wire [15:0] fh;
 	am_fp_f2h #(.LAT(0)) u_fh (.f(fr), .h(fh));

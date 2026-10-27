@@ -249,6 +249,9 @@ module am_fpu_core #(
 
 		wire [31:0] fr, ri;
 		am_fp_fma_p #(.LAT(0)) u_fma (
+			.clk(1'b0),
+			.rst_n(1'b1),
+			.en(1'b1),
 			.a0(fx),
 			.b0(fy),
 			.c0(fz),
@@ -493,15 +496,18 @@ module am_fpu_core #(
 			endcase
 		end
 
-		wire [31:0] s4_fr, s4_ri;
-		am_fp_fma_p #(.LAT(0)) u_fma4 (
+		wire [31:0] s5_fr, s4_ri;
+		am_fp_fma_p #(.LAT(LAT >= 5 ? 1 : 0)) u_fma4 (
+			.clk(clk),
+			.rst_n(rst_n),
+			.en(en),
 			.a0(s4_fx),
 			.b0(s4_fy),
 			.c0(s4_fz),
 			.rm(s4_rr),
 			.noc(s4_noc),
 			.p(pr_s4[47:0]),
-			.r(s4_fr)
+			.r(s5_fr)
 		);
 
 		am_fp_f2i #(.LAT(0)) u_f2i4 (
@@ -512,38 +518,59 @@ module am_fpu_core #(
 		);
 
 		wire s4_fma = (s4_op <= OP_FNMADD) || (s4_op == OP_FRACT);
-		reg [31:0] s4_rs;
-		reg s4_flt;
+		reg [31:0] s4_other;
+		reg s4_is_flt;
 		always @(*) begin
-			s4_flt = 1'b1;
-			s4_rs = 32'd0;
-			if (s4_fma)
-				s4_rs = s4_fr;
-			else begin
-				case (s4_op)
-				OP_FSGNJ:   s4_rs = {s4_b[31], s4_a[30:0]};
-				OP_FMIN:    s4_rs = f_minmax(s4_a, s4_b, 1'b0);
-				OP_FMAX:    s4_rs = f_minmax(s4_a, s4_b, 1'b1);
-				OP_FCVTWS, OP_FCVTWUS: s4_rs = s4_ri;
-				OP_FCVTSW, OP_FCVTSWU: s4_rs = s4_iv;
-				OP_FEQ:     s4_rs = {32{f_cmp(s4_a, s4_b, 2'd0)}};
-				OP_FLT:     s4_rs = {32{f_cmp(s4_a, s4_b, 2'd1)}};
-				OP_FLE:     s4_rs = {32{f_cmp(s4_a, s4_b, 2'd2)}};
-				OP_FNE:     s4_rs = {32{f_cmp(s4_a, s4_b, 2'd3)}};
-				OP_FROUND:  s4_rs = s4_fl;
-				OP_MUL:     s4_rs = pr_s4[31:0];
-				OP_MULH, OP_MULHSU, OP_MULHU: s4_rs = pr_s4[63:32];
-				default: ;
-				endcase
-			end
+			s4_is_flt = 1'b1;
+			s4_other = 32'd0;
+			case (s4_op)
+			OP_FSGNJ:   s4_other = {s4_b[31], s4_a[30:0]};
+			OP_FMIN:    s4_other = f_minmax(s4_a, s4_b, 1'b0);
+			OP_FMAX:    s4_other = f_minmax(s4_a, s4_b, 1'b1);
+			OP_FCVTWS, OP_FCVTWUS: s4_other = s4_ri;
+			OP_FCVTSW, OP_FCVTSWU: s4_other = s4_iv;
+			OP_FEQ:     s4_other = {32{f_cmp(s4_a, s4_b, 2'd0)}};
+			OP_FLT:     s4_other = {32{f_cmp(s4_a, s4_b, 2'd1)}};
+			OP_FLE:     s4_other = {32{f_cmp(s4_a, s4_b, 2'd2)}};
+			OP_FNE:     s4_other = {32{f_cmp(s4_a, s4_b, 2'd3)}};
+			OP_FROUND:  s4_other = s4_fl;
+			OP_MUL:     s4_other = pr_s4[31:0];
+			OP_MULH, OP_MULHSU, OP_MULHU: s4_other = pr_s4[63:32];
+			default: ;
+			endcase
 			case (s4_op)
 			OP_FCVTWS, OP_FCVTWUS, OP_FEQ, OP_FLT, OP_FLE, OP_FNE,
-			OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU: s4_flt = 1'b0;
+			OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU: s4_is_flt = 1'b0;
 			default: ;
 			endcase
 		end
 
-		assign res = (s4_sat && s4_flt) ? f_sat(s4_rs) : s4_rs;
+		/* --- Stage 5: Pipeline match (LAT >= 5) --- */
+		reg [31:0] s5_rs_other;
+		reg        s5_fma;
+		reg        s5_sat;
+		reg        s5_flt;
+
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				s5_rs_other <= 32'd0;
+				s5_fma      <= 1'b0;
+				s5_sat      <= 1'b0;
+				s5_flt      <= 1'b0;
+			end else if (en) begin
+				s5_rs_other <= s4_other;
+				s5_fma      <= s4_fma;
+				s5_sat      <= s4_sat;
+				s5_flt      <= s4_is_flt;
+			end
+		end
+
+		wire [31:0] s5_rs = (LAT >= 5) ? (s5_fma ? s5_fr : s5_rs_other) :
+		                                 (s4_fma ? s5_fr : s4_other);
+		wire s5_sat_mux = (LAT >= 5) ? s5_sat : s4_sat;
+		wire s5_flt_mux = (LAT >= 5) ? s5_flt : s4_is_flt;
+
+		assign res = (s5_sat_mux && s5_flt_mux) ? f_sat(s5_rs) : s5_rs;
 		wire unused_c4 = &{1'b0, carry_unused4, pr_s4[65:64]};
 	end
 	endgenerate

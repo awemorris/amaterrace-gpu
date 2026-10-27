@@ -10,6 +10,7 @@
  * modes; 6: RDN's sign of an exact zero sum), denormals flushed, NaN
  * 0x7FC00000; noc: no addend (fmul).  p is the product of the
  * significands (am_fp_fma has its own multiplier; atg_su_fpu shares one).
+ * Supports LAT = 0 (combinational) and LAT = 1 (1 pipeline register stage).
  * See spec/library/fp/am_fp_fma_p.md.
  */
 
@@ -17,10 +18,11 @@
 `default_nettype none
 
 module am_fp_fma_p #(
-	/* verilator lint_off UNUSEDPARAM */
 	parameter LAT = 0
-	/* verilator lint_on UNUSEDPARAM */
 ) (
+	input wire clk,
+	input wire rst_n,
+	input wire en,
 	input wire [31:0] a0,
 	input wire [31:0] b0,
 	input wire [31:0] c0,
@@ -81,28 +83,80 @@ module am_fp_fma_p #(
 	am_addsub #(.W(77)) u_sum (.a(same || pge ? pw : cw), .b(same || pge ? cw : pw), .sub(!same), .s(sum),
 		.co(carry_unused[6]));
 	wire sr = same || pge ? sp : sc;
+
+	/* Special cases determined in Stage 0 */
+	wire spec_nan = nan_a || nan_b || nan_c || (inf_a && zb) || (inf_b && za);
+	wire spec_inf_ab = (inf_a || inf_b) && !spec_nan;
+	wire spec_inf_c = inf_c && !spec_nan && !spec_inf_ab;
+	wire spec_zero = (za || zb) && !spec_nan && !spec_inf_ab && !spec_inf_c;
+	wire spec_hit = spec_nan || spec_inf_ab || spec_inf_c || spec_zero;
+	wire [31:0] spec_res =
+		spec_nan ? 32'h7FC00000 :
+		spec_inf_ab ? (inf_c && sc != sp ? 32'h7FC00000 : {sp, 8'hFF, 23'd0}) :
+		spec_inf_c ? c :
+		(!zc ? c : noc ? {sp, 31'd0} : {rdn ? (sp | sc) : (sp & sc), 31'd0});
+
+	/* Optional Pipeline Stage (LAT = 1) */
+	reg [76:0] r1_sum;
+	reg        r1_sr;
+	reg [11:0] r1_ab;
+	reg [11:0] r1_adj;
+	reg [2:0]  r1_rm;
+	reg        r1_rdn;
+	reg        r1_spec_hit;
+	reg [31:0] r1_spec_res;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r1_sum      <= 77'd0;
+			r1_sr       <= 1'b0;
+			r1_ab       <= 12'd0;
+			r1_adj      <= 12'd0;
+			r1_rm       <= 3'd0;
+			r1_rdn      <= 1'b0;
+			r1_spec_hit <= 1'b0;
+			r1_spec_res <= 32'd0;
+		end else if (en) begin
+			r1_sum      <= sum;
+			r1_sr       <= sr;
+			r1_ab       <= ab;
+			r1_adj      <= adj;
+			r1_rm       <= rm;
+			r1_rdn      <= rdn;
+			r1_spec_hit <= spec_hit;
+			r1_spec_res <= spec_res;
+		end
+	end
+
+	wire [76:0] s1_sum      = (LAT != 0) ? r1_sum      : sum;
+	wire        s1_sr       = (LAT != 0) ? r1_sr       : sr;
+	wire [11:0] s1_ab       = (LAT != 0) ? r1_ab       : ab;
+	wire [11:0] s1_adj      = (LAT != 0) ? r1_adj      : adj;
+	wire [2:0]  s1_rm       = (LAT != 0) ? r1_rm       : rm;
+	wire        s1_rdn      = (LAT != 0) ? r1_rdn      : rdn;
+	wire        s1_spec_hit = (LAT != 0) ? r1_spec_hit : spec_hit;
+	wire [31:0] s1_spec_res = (LAT != 0) ? r1_spec_res : spec_res;
+
 	/* normalised to bit 76; the exponent msb + ea + eb + adj - 175 */
 	wire [6:0] msb;
 	wire sum_nz;
-	am_msb #(.W(77), .SW(7)) u_msb (.a(sum), .n(msb), .nz(sum_nz));
+	am_msb #(.W(77), .SW(7)) u_msb (.a(s1_sum), .n(msb), .nz(sum_nz));
 	wire [6:0] nsh;
 	wire [76:0] nrm;
 	wire [11:0] t1, t2, er;
 	am_sub #(.W(7)) u_nsh (.a(7'd76), .b(msb), .bi(1'b0), .d(nsh), .bo(carry_unused[7]));
-	am_shift #(.W(77), .SW(7)) u_nrm (.a(sum), .amt(nsh), .left(1'b1), .arith(1'b0), .y(nrm));
-	am_add #(.W(12)) u_t1 (.a(ab), .b(adj), .ci(1'b0), .s(t1), .co(carry_unused[8]));
+	am_shift #(.W(77), .SW(7)) u_nrm (.a(s1_sum), .amt(nsh), .left(1'b1), .arith(1'b0), .y(nrm));
+	am_add #(.W(12)) u_t1 (.a(s1_ab), .b(s1_adj), .ci(1'b0), .s(t1), .co(carry_unused[8]));
 	am_add #(.W(12)) u_t2 (.a(t1), .b({5'd0, msb}), .ci(1'b0), .s(t2), .co(carry_unused[9]));
 	am_sub #(.W(12)) u_er (.a(t2), .b(12'd175), .bi(1'b0), .d(er), .bo(carry_unused[10]));
 	wire [31:0] rnd;
-	am_fp_rnd #(.LAT(0)) u_rnd (.s(sr), .e(er), .m(nrm[76:53]), .g(nrm[52]), .st(|nrm[51:0]), .rm(rm), .r(rnd));
+	am_fp_rnd #(.LAT(0)) u_rnd (.s(s1_sr), .e(er), .m(nrm[76:53]), .g(nrm[52]), .st(|nrm[51:0]), .rm(s1_rm), .r(rnd));
 
-	assign r = nan_a || nan_b || nan_c || (inf_a && zb) || (inf_b && za) ? 32'h7FC00000 :
-		inf_a || inf_b ? (inf_c && sc != sp ? 32'h7FC00000 : {sp, 8'hFF, 23'd0}) :
-		inf_c ? c :
-		za || zb ? (!zc ? c : noc ? {sp, 31'd0} : {rdn ? (sp | sc) : (sp & sc), 31'd0}) :
-		!sum_nz ? {rdn, 31'd0} : rnd;
+	assign r = s1_spec_hit ? s1_spec_res :
+		!sum_nz ? {s1_rdn, 31'd0} : rnd;
 
-	wire unused_ok = &{1'b0, kp2[11:7], carry_unused};
+	wire unused_lat0 = (LAT == 0) ? &{1'b0, clk, rst_n, en} : 1'b0;
+	wire unused_ok = &{1'b0, kp2[11:7], carry_unused, unused_lat0};
 endmodule
 
 `default_nettype wire
