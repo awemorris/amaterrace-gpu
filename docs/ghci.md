@@ -2280,6 +2280,101 @@ GHCI 1.0 standardizes on a direct hardware descriptor indexing architecture:
 - **Scratch Memory Allocation**:
   - For shaders requiring register spilling, scratch memory base address is mapped into session GPU VA via `CMD_VM_MAP`. Shaders calculate per-warp scratch offsets using the `warp` operand ($w \times \text{bytes\_per\_warp}$) and access spill storage via `sw.x` and `lw`.
 
+#### 12.10.3 Shader Stage Register & Export Conventions (N37)
+In GHCI 1.0, shader programs execute as pure binaries without container reflection headers. Hardware execution units (Vertex Fetcher, Shader Unit, Rasterizer, ROP) and shader compilers communicate across stages using the standard calling conventions, hardware register allocations, and export target mappings defined below.
+
+##### 1. Vertex Shader Input Conventions
+The Vertex Fetcher (VF, `atg_vf_conv`, `atg_vf_fetch`) automatically fetches enabled vertex attributes and delivers system built-in values directly into the Shader Unit general-purpose register file (`r0..r62`) prior to launching vertex warps:
+
+- **Vertex Attributes (`location = 0..14`)**:
+  - The Pipeline State Object (`GhciPipelineState.attributes[16]`, §8.2 dw16–31) configures up to 16 attribute slots.
+  - **Standard Register Allocation ABI**:
+    Attribute Location $L \in [0, 14]$ is allocated to 4 consecutive registers $r[4L \dots 4L+3]$:
+    $$\text{Register}(L, c) = r[4L + c], \quad c \in [0, 3]$$
+    - Location 0 (Position): `r0..r3` (`r0`=X, `r1`=Y, `r2`=Z, `r3`=W)
+    - Location 1 (Normal): `r4..r7`
+    - Location 2 (TexCoord0): `r8..r11`
+    - Location 3 (Color0): `r12..r15`
+    - Location $L$ (Component $c$): $r[4L + c]$
+  - When an attribute provides fewer than 4 components (e.g. `vec2`, `vec3`, `float`), the hardware VF automatically pads remaining components with default values $(0, 0, 0, 1.0)$ for floating-point formats, or $(0, 0, 0, 1)$ for integer formats.
+  - The driver programs hardware state `ATTR_DST[L]` with destination base register $4L$ and component count when assembling the PSO.
+
+- **System Built-in Inputs (`gl_VertexIndex`, `gl_InstanceIndex`)**:
+  - To support independent compilation without pipeline linking, SPIR-V system built-in inputs are mapped to fixed reserved registers at the top of the general register file:
+    - **`gl_VertexIndex`**: **`r60`** (`uint32`)
+      - Non-indexed draw (`CMD_DRAW`): $\text{first\_vertex} + n$
+      - Indexed draw (`CMD_DRAW_INDEXED`): $\text{index} + \text{vertex\_offset}$
+    - **`gl_InstanceIndex`**: **`r61`** (`uint32`)
+      - Instance sequence value: $\text{first\_instance} + i$
+    - **`r62`**: Scratch / temporary calculation register (reserved for compiler spill/dynamic addressing).
+    - **`r63`**: `rq` (Systolic Array Queue operand / reserved).
+  - The Command Processor and Vertex Fetcher deliver these values via an internal identity stream (`FW_PIPE_SYSTEM_BINDING`) into registers $r60$ and $r61$ when referenced by the vertex program.
+
+##### 2. Vertex Shader Output / Export Interface
+Vertex shaders write output values to the Post-Transform Buffer (PT, `atg_su_pt`) using the `exp rs2, target` instruction. The target operand specifies the 12-bit destination slot in the PT:
+
+| Export Target (`target`) | Mnemonic | Description | Destination PT Word |
+| :---: | :--- | :--- | :---: |
+| `0x000` | `POS.x` | Clip-space Position X (`gl_Position.x`, fp32) | PT Word 0 |
+| `0x001` | `POS.y` | Clip-space Position Y (`gl_Position.y`, fp32) | PT Word 1 |
+| `0x002` | `POS.z` | Clip-space Position Z (`gl_Position.z`, fp32) | PT Word 2 |
+| `0x003` | `POS.w` | Clip-space Position W (`gl_Position.w`, fp32) | PT Word 3 |
+| `0x004` | `POINT_SIZE` | Point Size (`gl_PointSize`, fp32, for point primitives) | PT Word 4 (special) |
+| `0x005 .. 0x00F` | *Reserved* | Reserved by hardware | - |
+| `0x010 + w` ($w = 0..63$) | `VARYING(w)` | Varying output word $w$ | PT Word $4 + w$ |
+
+- **Varying Slot Mapping**:
+  - User-defined vertex output Location $L \in [0, 15]$, component $c \in [0, 3]$ maps to varying word index $w = 4L + c$:
+    $$\text{Target}(L, c) = 0\text{x}010 + 4L + c$$
+  - `GhciPipelineState.shader_resource_limits[31:24]` (`varying_count`) specifies the total number of varying 4-component vectors allocated ($0..16$, covering words $0..63$).
+  - For perspective-correct interpolation of screen-linear attributes or `FragCoord.w`, the vertex program also exports Position.w to a varying slot (e.g. `VARYING(w)`).
+
+##### 3. Fragment Shader Input Interface
+Before a fragment warp commences execution, the hardware rasterizer initializes general-purpose registers:
+
+| Register | Contents | Description |
+| :--- | :--- | :--- |
+| `r0, r1, r2` | Barycentrics $b_0, b_1, b_2$ | Perspective-correct barycentric coordinates at pixel center (or sample location if `sample_shading` is enabled). For point primitives, `r0, r1` contain `PointCoord` ($s, t$), and `r2` is undefined. |
+| `r3` | Depth ($Z$) | Depth value at pixel center (clamped to $[0, 1]$ for 1 sample, unclamped for multisample). |
+| `r4, r5` | `FragCoord` ($X, Y$) | Window coordinates $(x + 0.5, y + 0.5)$. |
+| `r6` | Sample Mask In | Coverage bitmask ($[3:0]$ for MSAA samples $0..3$). 0 for helper lanes. |
+| `r7, r8, r9` | Centroid Barycentrics | Barycentrics evaluated at primitive centroid (valid only when `PSO.compute_lds_and_flags[16]` `fs_centroid` is 1). |
+
+- **Varying Interpolation**:
+  - Fragment shaders read vertex varying outputs from the PT buffer using the `lda rd, imm` instruction:
+    - `imm[8:2]`: PT word index ($4 + w$, where $w = 4L + c$).
+    - `imm[1:0]`: Vertex index ($0, 1, 2$).
+  - The shader computes the interpolated attribute value as:
+    $$V = b_0 \times \text{lda}(w, 0) + b_1 \times \text{lda}(w, 1) + b_2 \times \text{lda}(w, 2)$$
+
+##### 4. Fragment Shader Output / Export Interface
+Fragment shaders export final pixel results to the ROP backend using the `exp rs2, target` instruction:
+
+| Export Target (`target`) | Mnemonic | Description |
+| :---: | :--- | :--- |
+| `0x100 + 16k + c` | `COLOR(k, c)` | Color Attachment $k$ ($0 \le k \le 3$), component $c$ ($0: R, 1: G, 2: B, 3: A$). |
+| `0x104` | `DEPTH` | Exported fragment depth (`gl_FragDepth`, fp32, requires `PSO dw15 [17] fs_depth_export`). |
+| `0x105` | `SAMPLE_MASK` | Exported sample mask (`gl_SampleMask`, uint32). Must be exported by every fragment shader prior to termination. |
+| `0x108 .. 0x10B` | `COLOR0_SRC1(c)` | Dual-source blending second color output for Attachment 0. |
+
+##### 5. Compute Shader Built-in Operand Interface
+Compute shaders access workgroup, invocation, and grid coordinates directly via native GSI1 ISA operands (§12.3) in 1 cycle, without register consumption:
+
+| Operand Index | Mnemonic | Corresponding SPIR-V Built-in |
+| :---: | :--- | :--- |
+| `102` | `lane` | Subgroup / Warp Lane Index ($0..31$) |
+| `103` | `warp` | Subgroup / Warp Slot Index |
+| `106` | `wgx` | `gl_WorkGroupID.x` |
+| `107` | `wgy` | `gl_WorkGroupID.y` |
+| `108` | `wgz` | `gl_WorkGroupID.z` |
+| `109` | `lidx` | `gl_LocalInvocationID.x` |
+| `110` | `lidy` | `gl_LocalInvocationID.y` |
+| `111` | `lidz` | `gl_LocalInvocationID.z` |
+| `112` | `lidn` | `gl_LocalInvocationIndex` (Linearized invocation index within workgroup) |
+| `115` | `nwgx` | `gl_NumWorkGroups.x` |
+| `116` | `nwgy` | `gl_NumWorkGroups.y` |
+| `117` | `nwgz` | `gl_NumWorkGroups.z` |
+
 ### 12.11 Multisampling (Approved Architecture, N24, N28, N33)
 
 With CAPS[29] (and `DEVICE_CAPS[31]`), the GPU rasterizes with 1, 2, or 4 samples per pixel (N24).

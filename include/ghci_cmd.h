@@ -162,6 +162,43 @@ extern "C" {
 	 (((uint32_t)(rate) & 0x01u) << 12) | \
 	 (((uint32_t)(offset) & 0x7FFFFu) << 13))
 
+/*
+ * ============================================================================
+ * Shader Stage Interface & Register Conventions (N37)
+ * ============================================================================
+ */
+
+/* Vertex Shader General Register Allocation ABI */
+#define GHCI_VS_REG_ATTR(loc, comp)     (((uint32_t)(loc) * 4u) + ((uint32_t)(comp) & 3u))
+#define GHCI_VS_REG_VERTEX_INDEX        60u     /* gl_VertexIndex (uint32) */
+#define GHCI_VS_REG_INSTANCE_INDEX      61u     /* gl_InstanceIndex (uint32) */
+#define GHCI_VS_REG_SCRATCH             62u     /* Compiler scratchpad */
+
+/* Vertex Shader Export Targets (exp rs2, target) */
+#define GHCI_EXP_POS(c)                 (0x000u + ((uint32_t)(c) & 3u))
+#define GHCI_EXP_POINT_SIZE             0x004u
+#define GHCI_EXP_VARYING(w)             (0x010u + ((uint32_t)(w) & 0x3Fu))
+
+/* Fragment Shader Input Registers */
+#define GHCI_FS_REG_BARY_B0             0u
+#define GHCI_FS_REG_BARY_B1             1u
+#define GHCI_FS_REG_BARY_B2             2u
+#define GHCI_FS_REG_DEPTH               3u
+#define GHCI_FS_REG_FRAGCOORD_X         4u
+#define GHCI_FS_REG_FRAGCOORD_Y         5u
+#define GHCI_FS_REG_SAMPLE_MASK_IN      6u
+#define GHCI_FS_REG_CENTROID_B0         7u
+#define GHCI_FS_REG_CENTROID_B1         8u
+#define GHCI_FS_REG_CENTROID_B2         9u
+#define GHCI_FS_REG_POINT_S             0u
+#define GHCI_FS_REG_POINT_T             1u
+
+/* Fragment Shader Export Targets (exp rs2, target) */
+#define GHCI_EXP_COLOR(k, c)            (0x100u + 16u * ((uint32_t)(k) & 3u) + ((uint32_t)(c) & 3u))
+#define GHCI_EXP_DEPTH                  0x104u
+#define GHCI_EXP_SAMPLE_MASK            0x105u
+#define GHCI_EXP_COLOR0_SRC1(c)         (0x108u + ((uint32_t)(c) & 3u))
+
 #define GHCI_VERTEX_ATTR_FORMAT(a)     ((a) & 0xFFu)
 #define GHCI_VERTEX_ATTR_BINDING(a)    (((a) >> 8) & 0x0Fu)
 #define GHCI_VERTEX_ATTR_RATE(a)       (((a) >> 12) & 0x01u)
