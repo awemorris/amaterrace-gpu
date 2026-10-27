@@ -76,6 +76,35 @@ module atg_su_lane #(
 	wire sg = SUBGROUP != 0 && x_valid && unit == ATG_UNIT_LANE &&
 		(op == ATG_LANE_SHFL || op == ATG_LANE_VOTE || op == ATG_LANE_BALLOT);
 
+	/* Stage 0 registered input for QD instructions (cuts long path from OPD) */
+	reg r0_valid;
+	reg [WARP_W-1:0] r0_warp;
+	reg [GRP_W-1:0]  r0_grp;
+	reg [6:0]        r0_rd;
+	reg [NPHYS-1:0]  r0_mask;
+	reg [2:0]        r0_sub;
+	reg [DW-1:0]     r0_xa;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r0_valid <= 1'b0;
+			r0_warp  <= {WARP_W{1'b0}};
+			r0_grp   <= {GRP_W{1'b0}};
+			r0_rd    <= 7'd0;
+			r0_mask  <= {NPHYS{1'b0}};
+			r0_sub   <= 3'd0;
+			r0_xa    <= {DW{1'b0}};
+		end else begin
+			r0_valid <= mine;
+			r0_warp  <= x_warp;
+			r0_grp   <= x_grp;
+			r0_rd    <= x_uop[ATG_UOP_RD +: 7];
+			r0_mask  <= x_mask[NPHYS-1:0];
+			r0_sub   <= sub[2:0];
+			r0_xa    <= x_a;
+		end
+	end
+
 	/* qd: quads inside the group: lane l's partners l^1, l^2, l^3 and l&~3.
 	 * The differences x[l|1] - x[l&~1] (sub 0) and x[l|2] - x[l&~2] (sub 1)
 	 * take two values per quad, so a quad has two adders: A for lanes 0
@@ -88,22 +117,22 @@ module atg_su_lane #(
 			wire unused_qa_v, unused_qb_v;
 			am_fp_add #(.LAT(0)) u_qa (
 				.clk(1'b0), .rst_n(1'b1), .i_valid(1'b1),
-				.i_a(sub[0] ? x_a[(4*gq + 2)*32 +: 32] : x_a[(4*gq + 1)*32 +: 32]),
-				.i_b(x_a[(4*gq)*32 +: 32]), .i_sub(1'b1),
+				.i_a(r0_sub[0] ? r0_xa[(4*gq + 2)*32 +: 32] : r0_xa[(4*gq + 1)*32 +: 32]),
+				.i_b(r0_xa[(4*gq)*32 +: 32]), .i_sub(1'b1),
 				.o_valid(unused_qa_v), .o_r(qa)
 			);
 			am_fp_add #(.LAT(0)) u_qb (
 				.clk(1'b0), .rst_n(1'b1), .i_valid(1'b1),
-				.i_a(x_a[(4*gq + 3)*32 +: 32]),
-				.i_b(sub[0] ? x_a[(4*gq + 1)*32 +: 32] : x_a[(4*gq + 2)*32 +: 32]), .i_sub(1'b1),
+				.i_a(r0_xa[(4*gq + 3)*32 +: 32]),
+				.i_b(r0_sub[0] ? r0_xa[(4*gq + 1)*32 +: 32] : r0_xa[(4*gq + 2)*32 +: 32]), .i_sub(1'b1),
 				.o_valid(unused_qb_v), .o_r(qb)
 			);
 			for (gm = 4*gq; gm < 4*gq + 4; gm = gm + 1) begin : g_l
-				assign y[gm*32 +: 32] = sub[2:0] == 3'd0 ? ((gm & 2) != 0 ? qb : qa) :
-					sub[2:0] == 3'd1 ? ((gm & 1) != 0 ? qb : qa) :
-					sub[2:0] == 3'd2 ? x_a[(gm ^ 1)*32 +: 32] :
-					sub[2:0] == 3'd3 ? x_a[(gm ^ 2)*32 +: 32] :
-					sub[2:0] == 3'd4 ? x_a[(gm ^ 3)*32 +: 32] : x_a[(gm & ~3)*32 +: 32];
+				assign y[gm*32 +: 32] = r0_sub[2:0] == 3'd0 ? ((gm & 2) != 0 ? qb : qa) :
+					r0_sub[2:0] == 3'd1 ? ((gm & 1) != 0 ? qb : qa) :
+					r0_sub[2:0] == 3'd2 ? r0_xa[(gm ^ 1)*32 +: 32] :
+					r0_sub[2:0] == 3'd3 ? r0_xa[(gm ^ 2)*32 +: 32] :
+					r0_sub[2:0] == 3'd4 ? r0_xa[(gm ^ 3)*32 +: 32] : r0_xa[(gm & ~3)*32 +: 32];
 			end
 		end
 	endgenerate
@@ -224,9 +253,14 @@ module atg_su_lane #(
 			if (emit)
 				pipe[0] <= {wrd, x_warp, e_cnt, x_uop[ATG_UOP_RD +: 7], z_lanes, z};
 			else
-				pipe[0] <= {mine, x_warp, x_grp, x_uop[ATG_UOP_RD +: 7],
-					x_mask[NPHYS-1:0], y};
-			for (k = 1; k < SHORT_LAT; k = k + 1)
+				pipe[0] <= {EW{1'b0}};
+
+			if (r0_valid)
+				pipe[1] <= {1'b1, r0_warp, r0_grp, r0_rd, r0_mask, y};
+			else
+				pipe[1] <= pipe[0];
+
+			for (k = 2; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= pipe[k-1];
 			if (stage && x_last) begin
 				st <= S_EMIT;

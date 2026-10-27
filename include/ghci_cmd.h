@@ -52,6 +52,7 @@ extern "C" {
 #define GHCI_CMD_LOAD_CONST             0x2Du
 
 /* Compute & Synchronization Commands (0x30..0x3F) */
+#define GHCI_CMD_DISPATCH_INDIRECT      0x2Eu
 #define GHCI_CMD_DISPATCH               0x30u
 #define GHCI_CMD_BARRIER                0x31u
 #define GHCI_CMD_EXECUTE_COMMANDS       0x32u
@@ -67,6 +68,8 @@ extern "C" {
 #define GHCI_CMD_BLIT                   0x42u
 #define GHCI_CMD_FILL_BUFFER            0x43u
 #define GHCI_CMD_RESOLVE_IMAGE          0x44u
+#define GHCI_CMD_COPY_BUFFER_TO_IMAGE   0x45u
+#define GHCI_CMD_COPY_IMAGE_TO_BUFFER   0x46u
 
 /* Display Controller Commands (0x50..0x5F, Guarded by CAP_DISP) */
 #define GHCI_CMD_DISP_SET               0x50u
@@ -181,7 +184,9 @@ typedef struct GhciPipelineState {
 	uint32_t depth_stencil_state;   /* dw10: Depth & stencil test / write / compare */
 	uint32_t blend_state;           /* dw11: Color blend factors & ops */
 	uint32_t vertex_strides;        /* dw12: Packed strides for bindings 0..3 */
-	uint32_t reserved[3];           /* dw13-15: Alignment padding */
+	uint32_t shader_resource_limits;/* dw13: [7:0] used_regs_vs, [15:8] used_regs_fs, [23:16] used_regs_cs, [31:24] varying_count */
+	uint32_t compute_local_size;    /* dw14: [9:0] local_size_x, [19:10] local_size_y, [29:20] local_size_z */
+	uint32_t compute_lds_and_flags; /* dw15: [15:0] lds_bytes, [16] fs_centroid, [17] fs_depth_export, [18] fs_discard */
 
 	/* 0x40: Vertex Attributes Descriptor (64 bytes: 16 attributes x 4 bytes, K11) */
 	uint32_t attributes[16];        /* dw16-31: 16 packed vertex attributes */
@@ -222,7 +227,10 @@ typedef struct GhciSamplerDescriptor {
 	int16_t  lod_bias_fx8;          /* 0x08: Fixed-point 8.8 LOD bias */
 	uint8_t  min_lod_fx4;           /* 0x0A: Fixed-point 4.4 min LOD */
 	uint8_t  max_lod_fx4;           /* 0x0B: Fixed-point 4.4 max LOD */
-	uint32_t border_color;          /* 0x0C: Packed RGBA8 border color */
+	uint8_t  max_anisotropy;        /* 0x0C: Max anisotropy (1..16) */
+	uint8_t  border_color_type;     /* 0x0D: 0=TransBlack, 1=OpaqueBlack, 2=OpaqueWhite, 3=Custom */
+	uint8_t  border_color_idx;      /* 0x0E: Custom 128-bit border color table index (0..15) */
+	uint8_t  reserved;              /* 0x0F: Padding to 16 bytes */
 } GhciSamplerDescriptor;
 
 /* Combined Image Sampler Descriptor (Option A: 32-bit Index Pair, K13) */
@@ -501,19 +509,52 @@ typedef struct GhciBufferDescriptor {
  */
 
 /*
- * In-Memory Render Pass Descriptor (GhciRenderPassDesc) - 64 Bytes (K12)
+ * In-Memory Render Pass Descriptor (GhciRenderPassDesc) - 192 Bytes (64-byte aligned, K12, N03)
  * Pointed to by CMD_BEGIN_RENDER_PASS via render_pass_desc_va.
  */
 typedef struct GhciColorAttachmentDesc {
-	uint32_t image_va_lo;           /* Color attachment GPU virtual address [31:0] */
-	uint16_t row_pitch_bytes;       /* Row pitch in bytes */
-	uint8_t  format;                /* VkFormat / Amaterrace internal format ID */
-	uint8_t  ops;                   /* [1:0] LoadOp, [3:2] StoreOp */
+	uint64_t image_va;              /* 0x00: Color attachment GPU virtual address (64-bit GPU VA) */
+	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes (supports up to 4 GiB pitch) */
+	uint8_t  format;                /* 0x0C: VkFormat enum (e.g. VK_FORMAT_R8G8B8A8_UNORM = 37) */
+	uint8_t  ops;                   /* 0x0D: [1:0] LoadOp (0: Load, 1: Clear, 2: DontCare), [3:2] StoreOp (0: Store, 1: DontCare) */
+	uint8_t  mip_level;             /* 0x0E: Target subresource mip level */
+	uint8_t  reserved;              /* 0x0F: Padding */
 } GhciColorAttachmentDesc;
 
+typedef struct GhciDepthStencilAttachmentDesc {
+	uint64_t depth_stencil_va;      /* 0x00: Depth/stencil GPU virtual address */
+	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes */
+	uint8_t  format;                /* 0x0C: Depth/stencil VkFormat (D16_UNORM, D32_SFLOAT, D24S8) */
+	uint8_t  ops;                   /* 0x0D: [1:0] DepthLoad, [3:2] DepthStore, [5:4] StencilLoad, [7:6] StencilStore */
+	uint8_t  mip_level;             /* 0x0E: Target subresource mip level */
+	uint8_t  reserved;              /* 0x0F: Padding */
+} GhciDepthStencilAttachmentDesc;
+
+typedef struct GhciResolveAttachmentDesc {
+	uint64_t resolve_va;            /* 0x00: Multisample resolve target GPU virtual address */
+	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes */
+	uint8_t  format;                /* 0x0C: Resolve destination format (VkFormat) */
+	uint8_t  mode;                  /* 0x0D: [1:0] ResolveMode (0: Average, 1: Min, 2: Max, 3: Sample Zero) */
+	uint8_t  mip_level;             /* 0x0E: Target subresource mip level */
+	uint8_t  reserved;              /* 0x0F: Padding */
+} GhciResolveAttachmentDesc;
+
 typedef struct GhciRenderPassDesc {
-	/* 0x00 - 0x3F: 8 Color Attachments (8 bytes each = 64 bytes total) */
+	/* 0x00 - 0x7F: 8 Color Attachments (16 bytes each = 128 bytes total) */
 	GhciColorAttachmentDesc colors[8];
+	/* 0x80 - 0x8F: Depth/Stencil Attachment (16 bytes) */
+	GhciDepthStencilAttachmentDesc depth_stencil;
+	/* 0x90 - 0x9F: Multisample Resolve Attachment (16 bytes) */
+	GhciResolveAttachmentDesc resolve;
+	/* 0xA0 - 0xBF: Framebuffer Dimensions & Sample/Clear Config (32 bytes) */
+	uint16_t width;                 /* 0xA0: Framebuffer width in pixels (1..16384) */
+	uint16_t height;                /* 0xA2: Framebuffer height in pixels (1..16384) */
+	uint16_t layers;                /* 0xA4: Array layer count (1..2048) */
+	uint8_t  samples;               /* 0xA6: Sample count: 1, 2, or 4 (MSAA) */
+	uint8_t  reserved0;             /* 0xA7: Reserved */
+	uint64_t clear_color_table_va;  /* 0xA8: 64-bit GPU VA to 8 x 16-byte VkClearColorValue table (128 bytes total); 0 = default */
+	uint64_t reserved1;             /* 0xB0: Reserved */
+	uint64_t reserved2;             /* 0xB8: Reserved (total struct size = 192 bytes, 64-byte aligned) */
 } GhciRenderPassDesc;
 
 /* CMD_BEGIN_RENDER_PASS (0x2B): 10 dwords (K12) */

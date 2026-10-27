@@ -387,12 +387,12 @@ module atg_su_fpu #(
 	end
 	endgenerate
 
-	assign fwd_ex4_valid = s4_valid;
-	assign fwd_ex4_warp  = s4_warp;
-	assign fwd_ex4_grp   = s4_grp;
-	assign fwd_ex4_rd    = s4_rd;
-	assign fwd_ex4_data  = fpu_s4_data;
-	assign fwd_ex4_lanes = s4_mask;
+	assign fwd_ex4_valid = 1'b0;
+	assign fwd_ex4_warp  = {WARP_W{1'b0}};
+	assign fwd_ex4_grp   = {GRP_W{1'b0}};
+	assign fwd_ex4_rd    = 7'd0;
+	assign fwd_ex4_data  = {DW{1'b0}};
+	assign fwd_ex4_lanes = {NPHYS{1'b0}};
 
 	assign fwd_ex5_valid = s5_valid;
 	assign fwd_ex5_warp  = s5_warp;
@@ -402,7 +402,7 @@ module atg_su_fpu #(
 	assign fwd_ex5_lanes = s5_mask;
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
-		k_hs, k_sat, (SHORT_LAT != 0), (NWARPS != 0)};
+		k_hs, k_sat, (SHORT_LAT != 0), (NWARPS != 0), fpu_s4_data};
 endmodule
 
 `default_nettype wire
