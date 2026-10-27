@@ -1,127 +1,95 @@
-# GHCI Review Reply - Version 6.0 (2026-10-28) - Commit: bc3b4e6 (Target: N01〜N33)
+# GHCI Review Reply - Version 7.0 (2026-10-28) - Commit: 35b89af (Target: N01〜N34)
 
-zedBSD ドライバ開発チーム（`amaterrace.ko`）による GHCI レビュー第 6 版（`ghci-review.md` 2026-10-28 02:29）にて提示された残存疑問 7 件（N02, N14, N12, N16, N25, N21, N33：C 0件、H 0件、M 4件、L 3件）に対する確定回答および仕様書（`docs/ghci.md`）・C ヘッダ（`include/ghci_cmd.h`）の同期改訂内容を報告します。
+zedBSD ドライバ開発チーム（`amaterrace.ko`）による GHCI レビュー第 7 版（`ghci-review.md` 2026-10-28 02:38）にて提示された残存疑問 4 件（N34, N12, N14, N33：C 0件、H 0件、M 1件、L 3件）に対する確定回答および仕様書（`docs/ghci.md`）・C ヘッダ（`include/ghci_cmd.h`）の同期改訂内容を報告します。
 
 なお、すべての回答において禁止略語は一切使用しておりません。
 
 ---
 
-## 1. 残存疑問 7 件への確定回答および条文反映
+## 1. 残存疑問 4 件への確定回答および条文反映
 
-### N02 [M]: 128B Push Constant 上書き時の TU 動作、c[32..511] 書込元、Vulkan Set と Hardware Set の対応
+### N34 [M]: テクスチャフォーマット別 `texl` / `texf` の戻り値仕様（浮動小数点、SNORM、整数、欠損チャンネル補完）
 - **回答**:
-  1. **TU 専用ポインタレジスタと Constant Bank の関係**:
-     - `CMD_BIND_DESCRIPTOR_TABLE(set_index, table_va, count)` 実行時、CP は Memory Controller / Texture Unit（TU）内の**専用 64-bit ハードウェアレジスタ `SET_TABLE_ADDR[0..3]`** に `table_va` をラッチします。
-     - Texture Unit はテクスチャフェッチ（`texl` 等）において常に `SET_TABLE_ADDR[0]`（テクスチャ）および `SET_TABLE_ADDR[1]`（サンプラ）を参照します。
-     - Constant Bank $c[24..31]$ へのミラーリングは、Shader Unit（SU）の ALU 命令から 1 サイクルで Set 基底アドレスを参照できるようにするためのオペランド利便機能に過ぎません。
-     - したがって、128 バイトのプッシュ定数が `CMD_LOAD_CONST` によって $c[24..31]$ を上書きした場合でも、TU の `SET_TABLE_ADDR[0..1]` レジスタは**一切影響を受けず有効のまま保持**され、その後の `texl` は正常にテクスチャ・サンプラを読み出します。
-  2. **$c[32..511]$ の書込**:
-     - $c[32..511]$ は、ドライバが `CMD_LOAD_CONST(offset_dwords, count_dwords, data...)` で `offset >= 32` を指定して直接書き込みます。シェーダは `lwc rd, imm(rs1)` 命令を用いて 1 サイクルでロードします。
-  3. **Vulkan Descriptor Set（0〜3）とハードウェアスロット（0〜3）の対応**:
-     - ドライバチームのご認識の通りです。バッファディスクリプタ（UBO/SSBO）は Vulkan Set 0〜3 がハードウェアスロット 0〜3 に 1 対 1 に対応します。
-     - ハードウェア TU のテクスチャ命令は常に Set 0 をテクスチャ、Set 1 をサンプラとして参照するため、UMD はテクスチャディスクリプタをハードウェア Set 0、サンプラディスクリプタをハードウェア Set 1 に束ねて配置・バインドします（Combined Image Sampler も同様に Set 0/1 に分離して束ねます）。
+  1. **浮動小数点フォーマット（`R16_SFLOAT`, `R32_SFLOAT`, `R16G16_SFLOAT`, `R16G16B16A16_SFLOAT`, `R32G32B32A32_SFLOAT` 等）**:
+     - **[0, 1] に丸めず、格納された IEEE-754 単精度浮動小数点数の値をそのまま返します**。
+     - HDR 値や負値、1.0 を超える値は完全に保持されます（旧 §12.9 の「and floating-point formats return [0, 1] normalized values」という記述は推敲時の誤記載であり、直ちに訂正しました）。
+  2. **SNORM フォーマット（`R8_SNORM`, `R8G8_SNORM`, `R8G8B8A8_SNORM`, `R16_SNORM` 等）**:
+     - ご認識の通り、正規化符号付き浮動小数点数値として **$[-1.0, 1.0]$** の範囲を fp32 で `rd..rd+3` に返します。
+  3. **UINT / SINT フォーマット（`R8_UINT`, `R8_SINT`, `R16_UINT`, `R16_SINT`, `R32_UINT`, `R32_SINT`, RGBA 整数等）**:
+     - `texl` および `texf` 実行時、`rd..rd+3` には fp32 変換を行わず、**生の 32-bit 整数ビット列（`uint32_t` / `int32_t`、8-bit/16-bit 整数は符号拡張またはゼロ拡張）** をそのまま格納します。
+     - SPIR-V / Vulkan の仕様に準拠し、シェーダプログラムは `rd..rd+3` を整数レジスタとして直接演算命令で使用できます。
+  4. **R / RG 等のチャンネル欠損フォーマットにおける未定義成分（G, B, A）の戻り値**:
+     - Vulkan / GHCI 1.0 の標準フォーマット拡張規則に準拠します：
+       - 欠損した **G 成分・B 成分は `0`（浮動小数点/UNORM/SNORM は `0.0f`、整数は `0`）** を返します。
+       - 欠損した **A（Alpha）成分は `1`（浮動小数点/UNORM/SNORM は `1.0f`、整数は `1`）** を返します。
+       - 具体的には：
+         - R フォーマット（例: `R8_UNORM`, `R32_SFLOAT`, `R32_UINT`）: `(R, 0, 0, 1)`（float は `(R, 0.0f, 0.0f, 1.0f)`）
+         - RG フォーマット（例: `R8G8_UNORM`, `R16G16_SFLOAT`）: `(R, G, 0, 1)`（float は `(R, G, 0.0f, 1.0f)`）
+         - RGB フォーマット（例: `R8G8B8_UNORM`）: `(R, G, B, 1)`（float は `(R, G, B, 1.0f)`）
+         - 比較なしデプスフォーマット: `(D, 0.0f, 0.0f, 1.0f)`
 - **条文反映**:
-  - `docs/ghci.md`: §8.4（1411〜1425 行）
+  - `docs/ghci.md`: §12.9（2154〜2156 行、2186〜2194 行）
 
 ---
 
-### N14 [M]: Dynamic State の初期値、PSO との優先度、CAP_MRT_BLEND=0 時の動作
+### N12 [L]: アドレスルーティングの記述統一、32-bit DMA 時の HOST_LIMIT 制約、CMD_WAIT_FENCE の適用
 - **回答**:
-  1. **Dynamic State の初期値 / リセット時定数**:
-     - 最初の `CMD_SET_DYNAMIC_STATE` 発行前（リセット直後）の既定値は以下の通り定義されます：
-       - `stencil_compare_mask = 0xFF`（全ビット比較）
-       - `stencil_write_mask = 0xFF`（全ビット書込許可）
-       - `stencil_reference = 0x00`
-       - `depth_bias = {constant: 0.0f, slope: 0.0f, clamp: 0.0f}`
-       - `blend_constants = {1.0f, 1.0f, 1.0f, 1.0f}`
-  2. **PSO と `CMD_SET_DYNAMIC_STATE` の優先順位（Last Writer Wins）**:
-     - `CMD_BIND_PIPELINE` は PSO にベイクされた静的ベースライン値（dw9 line width, dw11 blend state）を設定します。
-     - `CMD_BIND_PIPELINE` の後に `CMD_SET_DYNAMIC_STATE` が発行された場合、動的ステートが PSO のベースライン値を上書きします（`state_id = 0x04` が dw9 line width を上書き、`state_id = 0x07..0x0E` がアタッチメント $i$ の dw11 blend を上書き）。
-     - その後に別な `CMD_BIND_PIPELINE` が発行された場合、新パイプラインの静的ベースライン値が再設定されます（**後勝ち・Last Writer Wins**）。
-  3. **`CAP_MRT_BLEND == 0` のハードウェアに `state_id = 0x07..0x0E` を送信した場合**:
-     - 独立アタッチメントブレンド回路が存在しないため、ハードウェアは `GHCI_FAULT_KIND_KICK_ABSENT`（Kind 2、syndrome `0x0007`）のフォールトを発生させます。
-- **条文反映**:
-  - `docs/ghci.md`: §7.3（842〜850 行）
+  1. **ローカル VRAM 範囲記述の統一（§11.3 と §7.3）**:
+     - §7.3（960 行）の定義が正です。ローカル VRAM は厳密に **$[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$** の範囲です。
+     - $LOCAL\_BASE + LOCAL\_SIZE$ 以上の番地（ローカル DRAM アパーチャ内の未マッピング領域）へのアクセスは無効（未マッピング）であり、ホストへルーティングされることはなく、ハードウェア AXI デコードエラー（フォールト Kind 4 `GHCI_FAULT_KIND_AXI_ERROR`）を発生させます。
+     - §11.3（1788 行）の記述を §7.3 に完全統一し修正しました。
+  2. **IOMMU 無し・32-bit DMA コントローラ環境における `fence_addr` の HOST_LIMIT 制約**:
+     - ご認識の通りです。IOMMU を持たず 32-bit PCIe DMA コントローラを使用するシステムでは、物理バス幅が 32-bit であるため、ホストメモリ番地（`CMD_FENCE` および `CMD_WAIT_FENCE` の `fence_addr` を含む）は物理的に **`HOST_LIMIT` 未満（< 4 GiB）に制約** されます。
+     - 64-bit DMA コントローラ（または IOMMU）を持つシステムでは、フル `PA_BITS`（40〜48 bit）がサポートされ、`HOST_LIMIT` の制限を受けません。
+  3. **`CMD_WAIT_FENCE` へのルーティング規則の適用**:
+     - `CMD_WAIT_FENCE`（opcode 0x34）の `fence_addr` にも、`CMD_FENCE` と**全く同一の物理アドレスルーティング規則が適用** されます。
+     - $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$ 内の番地はローカル VRAM をポーリング参照し、それ以外の番地はホスト PCIe DMA メモリを参照します。
+- **条文・ヘッダ反映**:
+  - `docs/ghci.md`: §7.3（960 行, 968 行）, §11.3（1788 行）
+  - `include/ghci_cmd.h`: `GhciCmdWaitFence` コメント（607〜614 行）
 
 ---
 
-### N12 [M]: 非 MMU 64-bit 番地（fence_addr）のルーティングと header の GhciCmdFlip
+### N14 [L]: Dynamic State の初期値リセット契機とセッション分離（Session Lifetime）
 - **回答**:
-  1. **非 MMU 64-bit アドレス（`CMD_FENCE` の `fence_addr`）のルーティング**:
-     - `CMD_FENCE` の `fence_addr[63:0]` は、32-bit ローカル VRAM 窓 $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$ に含まれる場合のみローカル DRAM へ書き込まれます。
-     - それ以外（アドレスの上位 32-bit が非ゼロ、または $LOCAL\_BASE$ 未満）の場合は、すべてホスト PCIe AXI DMA マスターへルーティングされ、`HOST_LIMIT` に制限されることなく、システムの `PA_BITS`（40〜48 bit）までの 64-bit ホスト物理アドレス（または IOVA）へ直接書き込まれます。
-  2. **ディスプレイスキャンアウトアドレス**:
-     - ディスプレイスキャンアウトコントローラ（DISP2）は 32-bit DMA アドレス生成器を備えているため、スキャンアウトアドレスは 32-bit GPU 物理アドレス空間内（ローカル VRAM $\ge LOCAL\_BASE$、または 32-bit ホスト UMA アパーチャ $< HOST\_LIMIT$）に限定されます。
-  3. **`include/ghci_cmd.h` の `GhciCmdFlip` コメント修正**:
-     - `GhciCmdFlip` のコメントを本文に合わせて修正しました：
-       - `base_lo`: 32-bit GPU physical scanout address (`< HOST_LIMIT` or `>= LOCAL_BASE`)
-       - `base_hi`: Must be 0
-       - `record_pa_lo`: 32-bit GPU physical address of 16-byte record (`< HOST_LIMIT` or `>= LOCAL_BASE`)
-       - `record_pa_hi`: Must be 0
+  1. **初期値への復帰契機**:
+     - 「Initial / Reset Defaults」（`stencil_compare_mask = 0xFF`, `stencil_write_mask = 0xFF`, `stencil_reference = 0x00`, `depth_bias = {0,0,0}`, `blend_constants = {1,1,1,1}`）に戻る契機は以下の 3 つです：
+       1. ハードウェア電源投入時（Power-On Reset）
+       2. ソフトウェアリセット実行時（`CTRL.RESET`）
+       3. 新規セッションオープン時（`CMD_SESSION_OPEN`, opcode 0x01）
+     - リングバッファの submission 境界や単なるコマンドバッファの切り替えではリセットされません。
+  2. **セッション間分離とステートの残存**:
+     - Dynamic State はハードウェア内部のコンテキストステートメモリにおいて **セッション単位（Per-Session）** で保持・管理されます。
+     - `CMD_BIND_SESSION` によってアクティブセッションが切り替えられる際、切り替え先セッションの専用 Dynamic State が復元されます。
+     - したがって、**あるセッションで設定された動的ステートが別なセッションの draw に漏洩・波及することは一切ありません（完全なセッション分離）**。
 - **条文反映**:
-  - `docs/ghci.md`: §7.3（959 行）
-  - `include/ghci_cmd.h`: `GhciCmdFlip`（738〜746 行）
+  - `docs/ghci.md`: §7.3（843〜848 行）
 
 ---
 
-### N16 [M]: MEM_CACHE_CFG の 256 KiB 表現と §12.9 のドラフト注記撤廃
+### N33 [L]: §12.11 2286 行の Centroid 参照記述（PSO dw15 [16] への修正）
 - **回答**:
-  1. **`MEM_CACHE_CFG` のビット配置修正**:
-     - 8-bit では 256 が表現できないため、32-bit レジスタ `MEM_CACHE_CFG` のビット割当を以下のように改訂しました：
-       - `[15:0] L2_CACHE_KB`: 16-bit 整数値（0, 16, 64, 128, 256 KiB を直接格納可能）
-       - `[23:16] L2_WAYS`: L2 連想度（0, 4, 8, 16 way）
-       - `[27:24] L1_TEX_CACHE_KB`: テクスチャ L1 容量（4, 8, 16 KiB）
-       - `[31:28] VF_CACHE_LINES`: 頂点フェッチャラインバッファ数（2, 4, 8 line）
-  2. **§12.9 の「draft, CAPS[26]」注記の完全撤廃**:
-     - §12.9 に残存していた「(draft, CAPS[26])」の注記（.3 形式、texel offset、`texsz.d`、depth compare、gather、`texqlod`）を**完全に削除**しました。
-     - これらはドラフトではなく、GSI1 コア（`GHCI_CAP_GSI1 == 1`）を持つすべての Amaterrace GPU における**公式・確定の GHCI 1.0 標準命令**です。また、旧 `CAPS[26]` レジスタへの言及もすべて削除しました。
+  - ご指摘の通りです。§12.11（旧 2278 行、現 2286 行）における centroid の記述 `flags[16] fs_centroid` を、PSO dw15 [16] である **`compute_lds_and_flags[16] fs_centroid`（PSO dw15 [16]）** に修正しました。
+  - これにより、§8.2（1222 行）、§12.10（2250 行）、§12.11（2286 行、2289 行、2313 行）の全記述が 100% 整合しました。
 - **条文反映**:
-  - `docs/ghci.md`: §11.3（1789 行）、§12.9（2150〜2240 行）
+  - `docs/ghci.md`: §12.11（2286 行）
 
 ---
 
-### N25 [L]: §13.2 の Plane 0 取り込みにおける IMMEDIATE 対応
-- **回答**:
-  - §13.2 2520 行目の記述を §7.3 に合わせて改訂しました：
-    「Plane 0 takes its pending image at the next vsync (when `VSYNC_WAIT` is set, the default), or immediately upon packet processing (when `IMMEDIATE` is set, or while `ENABLE` is 0); `FB_BASE` then shows it (N25).」
-- **条文反映**:
-  - `docs/ghci.md`: §13.2（2520 行）
+## 2. 全疑問（N01〜N34）のステータス総括
 
----
+本改訂（Version 7.0 / Commit `35b89af`）をもって、提示されたすべての疑問事項（N01〜N34）の解決が完了しました：
 
-### N21 [L]: §3.4 の事象名称の DISP_IRQ_STATUS 統一
-- **回答**:
-  - §3.4 405 行目の旧事象名称を、`DISP_IRQ_STATUS` の公式ビット名称（`VSYNC`, `FLIP_DONE`, `CURSOR_FLIP_DONE`, `HOTPLUG`, `UNDERFLOW`, `DISP_ERROR`）に完全統一しました。
-- **条文反映**:
-  - `docs/ghci.md`: §3.4（399 行、405 行）
+| カテゴリ | 該当 ID | ステータス |
+| --- | --- | --- |
+| Critical (C) | なし | 全件解決済（0 件） |
+| High (H) | なし | 全件解決済（0 件） |
+| Medium (M) | N34（今回解決） | 全件解決済（0 件） |
+| Low (L) | N12, N14, N33（今回解決） | 全件解決済（0 件） |
+| 以前の解決 | N01〜N11, N13, N15〜N32 | 全件解決済（30 件） |
 
----
-
-### N33 [L]: alpha to one 削除、centroid ビット位置、テクスチャフォーマット対応
-- **回答**:
-  1. **alpha to one の扱い**:
-     - Amaterrace GPU はオプショナル機能である `alphaToOne` をサポートしません（回路未実装）。§12.11 の per-sample 処理手順から「then alpha to one」を完全に削除しました。
-  2. **Centroid のビット位置**:
-     - `fs_centroid` は PSO dw15 `compute_lds_and_flags[16]` に配置されており、dw8 の `flags` ではないことを条文内で明確化しました。
-  3. **`texl` / `texf` が読み出せるフォーマットと sample count**:
-     - 旧ドラフトの `TEX_IMAGE` 記述を撤廃し、テクスチャ命令が読み出せるフォーマットは **§8.5.1 の包括フォーマット対応表（Sampled 列）によって正本定義**されることを明記しました。
-     - `texsz.s rd` は `GhciTextureDescriptor.sample_count` の値（1, 2, 4）を直接返します。
-- **条文反映**:
-  - `docs/ghci.md`: §12.9（2168〜2185 行）、§12.11（2281 行、2305 行、2321 行）
-
----
-
-## 2. 成果物一覧および検証状況
-
-1. **仕様改訂コミット**:
-   - `bc3b4e6` (`bc3b4e67f2e51921356f91cb97e5ea46a8caee97`)
-   - `docs/ghci.md`: 77 行修正（残存 7 件の疑問を 100% 解決）
-   - `include/ghci_cmd.h`: 8 行修正（GhciCmdFlip コメント同期）
-2. **C ヘッダ構文チェック**:
-   - `gcc -fsyntax-only -Iinclude include/ghci_cmd.h` $\to$ **PASS**（エラー 0 件）
-3. **シミュレーション回帰テスト**:
-   - `./sim/run.sh atg_cp atg_ghci_slim` $\to$ **PASS**（全テスト完全通過）
-4. **禁止語句チェック**:
-   - リポジトリ内全ファイルおよび本返答において 0 件であることを確認済。
+- **CI / 検証ステータス**:
+  - C ヘッダ構文検証: `gcc -fsyntax-only -Iinclude include/ghci_cmd.h` (PASS)
+  - RTL 回帰シミュレーション: `./sim/run.sh atg_cp atg_ghci_slim` (PASS atg_cp, PASS atg_ghci_slim)
 
 DONE
