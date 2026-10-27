@@ -42,10 +42,10 @@ module atg_su_exp_drain #(
 	input wire [WARP_W-1:0] wc_warp,
 	/* The draining warp (atg_su_exp's buffer, selected by d_warp) */
 	input wire [31:0] d_cov,
-	input wire [3:0] d_rtw,
+	input wire [7:0] d_rtw,
 	output reg [WARP_W-1:0] d_warp,
 	output reg [2:0] d_q,
-	output reg [1:0] d_rt,
+	output reg [2:0] d_rt,
 	output wire d_first,
 	output wire d_lastb,
 	output wire d_nocol,
@@ -62,9 +62,10 @@ module atg_su_exp_drain #(
 	localparam [1:0] S_IDLE = 2'd0, S_FIRST = 2'd1, S_DRAIN = 2'd2, S_RET = 2'd3;
 
 	/* the lowest attachment of m (0 when none) */
-	function [1:0] low;
-		input [3:0] m;
-		low = m[0] ? 2'd0 : m[1] ? 2'd1 : m[2] ? 2'd2 : m[3] ? 2'd3 : 2'd0;
+	function [2:0] low;
+		input [7:0] m;
+		low = m[0] ? 3'd0 : m[1] ? 3'd1 : m[2] ? 3'd2 : m[3] ? 3'd3 :
+		      m[4] ? 3'd4 : m[5] ? 3'd5 : m[6] ? 3'd6 : m[7] ? 3'd7 : 3'd0;
 	endfunction
 
 	reg [NWARPS-1:0] frag, ended;
@@ -74,23 +75,23 @@ module atg_su_exp_drain #(
 	reg [WARP_W-1:0] vx_w;
 
 	/* the attachments above and below the beat's */
-	reg [3:0] above_m, below_m;
+	reg [7:0] above_m, below_m;
 	integer ab;
 	always @(*)
-		for (ab = 0; ab < 4; ab = ab + 1) begin
+		for (ab = 0; ab < 8; ab = ab + 1) begin
 			above_m[ab] = ab > d_rt;
 			below_m[ab] = ab < d_rt;
 		end
-	wire [3:0] above = d_rtw & above_m;
-	wire [3:0] below = d_rtw & below_m;
+	wire [7:0] above = d_rtw & above_m;
+	wire [7:0] below = d_rtw & below_m;
 	wire [2:0] dq1;
 	wire dq_co_unused;
 	am_add #(.W(3)) u_dq1 (.a(d_q), .b(3'd0), .ci(1'b1), .s(dq1), .co(dq_co_unused));
 	wire qlast = d_q == 3'd7 || d_cov[{dq1, 2'b00} +: 4] == 4'd0;
 
-	assign d_nocol = d_rtw == 4'd0;
-	assign d_first = below == 4'd0;
-	assign d_lastb = above == 4'd0;
+	assign d_nocol = d_rtw == 8'd0;
+	assign d_first = below == 8'd0;
+	assign d_lastb = above == 8'd0;
 
 	/* An ended fragment warp whose sequence number is the ROP's next one. */
 	reg [WARP_W-1:0] cand;
@@ -121,7 +122,7 @@ module atg_su_exp_drain #(
 			vx_w <= {WARP_W{1'b0}};
 			d_warp <= {WARP_W{1'b0}};
 			d_q <= 3'd0;
-			d_rt <= 2'd0;
+			d_rt <= 3'd0;
 		end else begin
 			vx_v <= wc_end && !frag[wc_warp];
 			vx_w <= wc_warp;

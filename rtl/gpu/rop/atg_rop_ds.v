@@ -53,17 +53,19 @@ module atg_rop_ds #(
 	input wire [31:0] q_xy,
 	input wire [15:0] q_smask,	/* bit 4 l + s: sample s of lane l */
 	input wire [511:0] q_color,
+	input wire [511:0] q_color1,
 	input wire [511:0] q_sdepth,	/* sample s of lane l at 32 (4 l + s) */
 	input wire q_dbg,
 	input wire q_front,	/* front facing (CAPS[30]; the direct path: 1) */
-	input wire [3:0] q_beat,	/* {rt, nocol, first} */
+	input wire [4:0] q_beat,	/* {rt[2:0], nocol, first} */
 	/* To atg_rop_wb */
 	output reg d_valid,
 	input wire d_ready,
 	output reg [31:0] d_xy,
 	output reg [15:0] d_smask,
 	output reg [511:0] d_color,
-	output reg [3:0] d_beat,
+	output reg [511:0] d_color1,
+	output reg [4:0] d_beat,
 	output wire busy,
 	/* AMB client port (design §4.1) */
 	output reg req_valid,
@@ -195,6 +197,8 @@ module atg_rop_ds #(
 		if (!rst_n) begin
 			st <= S_IDLE;
 			d_valid <= 1'b0;
+			d_color1 <= 512'd0;
+			d_beat <= 5'd0;
 			req_valid <= 1'b0;
 			wait_rsp <= 1'b0;
 			pm <= 16'd0;
@@ -203,6 +207,7 @@ module atg_rop_ds #(
 			if (q_valid) begin
 				d_xy <= q_xy;
 				d_color <= q_dbg ? {4{dbgf[3], dbgf[2], dbgf[1], dbgf[0]}} : q_color;
+				d_color1 <= q_color1;
 				d_beat <= q_beat;
 `ifdef MUT_DS_BEAT
 				if (1'b0)

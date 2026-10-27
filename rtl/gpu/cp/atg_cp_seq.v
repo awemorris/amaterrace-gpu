@@ -110,42 +110,42 @@ module atg_cp_seq #(
 
 	/* Standard µops (class 0) and Amaterrace's vendor µops (class 1); the header's
 	 * rules are atg_cp_seq_dec's. */
-	localparam [5:0] OP_SET_REG = 6'd1;
-	localparam [5:0] OP_BLIT = 6'd2;
-	localparam [5:0] OP_DRAW = 6'd3;
-	localparam [5:0] OP_DISPATCH = 6'd4;
-	localparam [5:0] OP_FENCE = 6'd5;
-	localparam [5:0] OP_LOAD_CONST = 6'd7;
-	localparam [5:0] OP_LOAD_PROGRAM = 6'd8;
-	localparam [5:0] OP_WAIT_FENCE = 6'd9;
-	localparam [5:0] OP_PERF_RESET = 6'd10;
-	localparam [5:0] OP_WAIT_VSYNC = 6'd11;
-	localparam [5:0] OP_INVALIDATE = 6'd12;
-	localparam [5:0] OP_RESULT = 6'd13;
-	localparam [5:0] OP_QUERY = 6'd14;
-	localparam [5:0] OP_DISP_SET = 6'd15;
-	localparam [5:0] OP_FLIP = 6'd16;
+	localparam [7:0] OP_SET_REG = 8'd1;
+	localparam [7:0] OP_BLIT = 8'd2;
+	localparam [7:0] OP_DRAW = 8'd3;
+	localparam [7:0] OP_DISPATCH = 8'd4;
+	localparam [7:0] OP_FENCE = 8'd5;
+	localparam [7:0] OP_LOAD_CONST = 8'd7;
+	localparam [7:0] OP_LOAD_PROGRAM = 8'd8;
+	localparam [7:0] OP_WAIT_FENCE = 8'd9;
+	localparam [7:0] OP_PERF_RESET = 8'd10;
+	localparam [7:0] OP_WAIT_VSYNC = 8'd11;
+	localparam [7:0] OP_INVALIDATE = 8'd12;
+	localparam [7:0] OP_RESULT = 8'd13;
+	localparam [7:0] OP_QUERY = 8'd14;
+	localparam [7:0] OP_DISP_SET = 8'd15;
+	localparam [7:0] OP_FLIP = 8'd16;
 
 	/* GHCI 1.0 Structured Command Opcodes */
 	/* verilator lint_off UNUSEDPARAM */
-	localparam [5:0] CMD_BIND_PIPELINE         = 6'h20;
-	localparam [5:0] CMD_BIND_VERTEX_BUFFERS   = 6'h21;
-	localparam [5:0] CMD_BIND_INDEX_BUFFER     = 6'h22;
-	localparam [5:0] CMD_BIND_DESCRIPTOR_TABLE = 6'h23;
-	localparam [5:0] CMD_SET_VIEWPORT          = 6'h24;
-	localparam [5:0] CMD_SET_SCISSOR           = 6'h25;
-	localparam [5:0] CMD_SET_DYNAMIC_STATE     = 6'h26;
-	localparam [5:0] CMD_DRAW                  = 6'h27;
-	localparam [5:0] CMD_DRAW_INDEXED          = 6'h28;
-	localparam [5:0] CMD_DRAW_INDIRECT         = 6'h29;
-	localparam [5:0] CMD_DRAW_MESH_TASKS       = 6'h2a;
-	localparam [5:0] CMD_DISPATCH              = 6'h30;
-	localparam [5:0] CMD_BARRIER               = 6'h31;
-	localparam [5:0] CMD_EXECUTE_COMMANDS      = 6'h32;
-	localparam [5:0] CMD_FENCE                 = 6'h33;
+	localparam [7:0] CMD_BIND_PIPELINE         = 8'h20;
+	localparam [7:0] CMD_BIND_VERTEX_BUFFERS   = 8'h21;
+	localparam [7:0] CMD_BIND_INDEX_BUFFER     = 8'h22;
+	localparam [7:0] CMD_BIND_DESCRIPTOR_TABLE = 8'h23;
+	localparam [7:0] CMD_SET_VIEWPORT          = 8'h24;
+	localparam [7:0] CMD_SET_SCISSOR           = 8'h25;
+	localparam [7:0] CMD_SET_DYNAMIC_STATE     = 8'h26;
+	localparam [7:0] CMD_DRAW                  = 8'h27;
+	localparam [7:0] CMD_DRAW_INDEXED          = 8'h28;
+	localparam [7:0] CMD_DRAW_INDIRECT         = 8'h29;
+	localparam [7:0] CMD_DRAW_MESH_TASKS       = 8'h2a;
+	localparam [7:0] CMD_DISPATCH              = 8'h30;
+	localparam [7:0] CMD_BARRIER               = 8'h31;
+	localparam [7:0] CMD_EXECUTE_COMMANDS      = 8'h32;
+	localparam [7:0] CMD_FENCE                 = 8'h33;
 	/* verilator lint_on UNUSEDPARAM */
 
-	localparam [5:0] VOP_DRAW_RAW = 6'd0;
+	localparam [7:0] VOP_DRAW_RAW = 8'd0;
 
 	localparam [2:0] K_BLT = 3'd0;
 	localparam [2:0] K_DRAW = 3'd1;
@@ -168,7 +168,7 @@ module atg_cp_seq #(
 	reg [2:0] st;
 	reg use_fw;
 	reg vendor;
-	reg [5:0] op;
+	reg [7:0] op;
 	reg [7:0] flags;
 	reg [7:0] tag;
 	reg [6:0] side;
@@ -188,16 +188,21 @@ module atg_cp_seq #(
 	wire hdr_valid = fw_active ? fw_valid : n_valid;
 
 	/* Header and payload decode (combinational). */
-	wire is_ghci2_hdr = (hdr[7:0] >= 8'h20 && hdr[7:0] <= 8'h33) && (hdr[15:8] >= 8'd1);
-	wire [7:0] ghci2_n;
-	wire ghci2_sub_bo;
-	am_sub #(.W(8)) sub_ghci2_n (
-		.a(hdr[15:8]), .b(8'd1), .bi(1'b0), .d(ghci2_n), .bo(ghci2_sub_bo)
+	wire is_ghci_hdr = (
+		(hdr[7:0] >= 8'h10 && hdr[7:0] <= 8'h14) ||
+		(hdr[7:0] >= 8'h20 && hdr[7:0] <= 8'h37) ||
+		(hdr[7:0] >= 8'h40 && hdr[7:0] <= 8'h46) ||
+		(hdr[7:0] >= 8'h50 && hdr[7:0] <= 8'h51)
+	) && (hdr[15:8] >= 8'd1);
+	wire [7:0] ghci_n;
+	wire ghci_sub_bo;
+	am_sub #(.W(8)) sub_ghci_n (
+		.a(hdr[15:8]), .b(8'd1), .bi(1'b0), .d(ghci_n), .bo(ghci_sub_bo)
 	);
 
-	wire h_vendor = is_ghci2_hdr ? 1'b0 : hdr[30];
-	wire [5:0] h_op = is_ghci2_hdr ? hdr[5:0] : hdr[29:24];
-	wire [7:0] h_n = is_ghci2_hdr ? ghci2_n : hdr[7:0];
+	wire h_vendor = is_ghci_hdr ? 1'b0 : hdr[30];
+	wire [7:0] h_op = is_ghci_hdr ? hdr[7:0] : {2'b00, hdr[29:24]};
+	wire [7:0] h_n = is_ghci_hdr ? ghci_n : hdr[7:0];
 	wire h_known, h_absent, pay_bad;
 	wire [7:0] h_need;
 
@@ -309,7 +314,7 @@ module atg_cp_seq #(
 			st <= Q_IDLE;
 			use_fw <= 1'b0;
 			vendor <= 1'b0;
-			op <= 6'd0;
+			op <= 8'd0;
 			flags <= 8'd0;
 			tag <= 8'd0;
 			side <= 7'd0;
@@ -333,7 +338,7 @@ module atg_cp_seq #(
 					use_fw <= fw_active;
 					vendor <= h_vendor;
 					op <= h_op;
-					flags <= is_ghci2_hdr ? hdr[31:24] : hdr[15:8];
+					flags <= is_ghci_hdr ? hdr[31:24] : hdr[15:8];
 					tag <= hdr[23:16];
 					side <= fw_active ? fw_side : 7'd0;
 					n <= h_n;
@@ -413,7 +418,7 @@ module atg_cp_seq #(
 		end
 	end
 
-	wire unused_p = &{1'b0, p_co, ghci2_sub_bo};
+	wire unused_p = &{1'b0, p_co, ghci_sub_bo};
 endmodule
 
 `default_nettype wire

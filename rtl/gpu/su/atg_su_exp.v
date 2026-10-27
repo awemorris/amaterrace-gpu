@@ -96,7 +96,7 @@ module atg_su_exp #(
 	input wire [11:0] fl_pw_addr,
 	input wire [31:0] fl_pw_data,
 	/* The beat's attachment and multisampling to the ROP */
-	output wire [153:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} */
+	output wire [154:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} */
 	/* Slot release (atg_su_sched) */
 	output wire xr_valid,
 	output wire [WARP_W-1:0] xr_warp,
@@ -141,7 +141,7 @@ module atg_su_exp #(
 
 	/* ---- Per warp. */
 	reg [NWARPS-1:0] fr;	/* the warp's facing (fl_info[48]) */
-	reg [NWARPS*4-1:0] rtw;	/* the attachments exported */
+	reg [NWARPS*8-1:0] rtw;	/* the attachments exported (8 attachments) */
 	reg [NWARPS-1:0] has_src1;	/* whether the warp exported src1 (COLOR1) */
 	reg [NWARPS*32-1:0] cov, xp, dw;	/* coverage, exported lanes, depth written */
 	reg [NWARPS*32-1:0] smw, r6w;	/* SAMPLE_MASK exported, r6 written by the RX */
@@ -152,12 +152,12 @@ module atg_su_exp #(
 	 * 0x108 + c is the second colour (src1) of attachment 0 for dual-source blending. */
 	wire [31:0] tgt = x_uop[ATG_UOP_IMM +: 32];
 	wire ex_frag = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && x_info[17:16] == 2'd1;
-	wire ex_col = ex_frag && tgt[31:6] == 26'd4 && tgt[3:2] == 2'd0;
-	wire ex_col1 = ex_frag && tgt[31:6] == 26'd4 && tgt[5:4] == 2'd0 && tgt[3:2] == 2'b10;
+	wire ex_col = ex_frag && tgt[31:7] == 25'd2 && tgt[3:2] == 2'd0;
+	wire ex_col1 = ex_frag && tgt[31:4] == 28'h010 && tgt[3:2] == 2'b10;
 	wire ex_dep = ex_frag && tgt == 32'h104;
 	wire ex_sm = ex_frag && tgt == 32'h105;
 	wire ex_op = ex_col || ex_dep || ex_sm;
-	wire [1:0] tk = tgt[5:4];
+	wire [2:0] tk = tgt[6:4];
 	wire [1:0] comp = tgt[1:0];
 	wire [31:0] xrow = ({{(32-WARP_W){1'b0}}, x_warp} << G_W) | ({{(32-GRP_W){1'b0}}, x_grp} % G);
 	wire [NPHYS-1:0] side = x_mask[2*NPHYS-1:NPHYS];
@@ -173,12 +173,12 @@ module atg_su_exp #(
 	/* ---- The drain (atg_su_exp_drain): the beat of warp dwarp, quad dq, attachment drt. */
 	wire [WARP_W-1:0] dwarp;
 	wire [2:0] dq;
-	wire [1:0] drt;
+	wire [2:0] drt;
 	wire dfirst, dlastb, dnocol;
 	wire [31:0] dcov = cov[dwarp*32 +: 32];
 	atg_su_exp_drain #(.NWARPS(NWARPS), .WARP_W(WARP_W)) drain (
 		.clk(clk), .rst_n(rst_n), .fl_go(fl_go), .fl_slot(fl_slot), .fl_seq(fl_info[47:32]),
-		.wc_end(wc_end), .wc_warp(wc_warp), .d_cov(dcov), .d_rtw(rtw[dwarp*4 +: 4]),
+		.wc_end(wc_end), .wc_warp(wc_warp), .d_cov(dcov), .d_rtw(rtw[dwarp*8 +: 8]),
 		.d_warp(dwarp), .d_q(dq), .d_rt(drt), .d_first(dfirst), .d_lastb(dlastb),
 		.d_nocol(dnocol), .ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq),
 		.ex_last(ex_last), .ex_next(ex_next), .xr_valid(xr_valid), .xr_warp(xr_warp)
@@ -186,8 +186,8 @@ module atg_su_exp #(
 
 	wire [4:0] dl0 = {dq, 2'b00};
 	wire [31:0] drow = {{(32-WARP_W){1'b0}}, dwarp} * G + {27'd0, dl0} / NPHYS;
-	wire [RW+1:0] dcrow = {drow[RW-1:0], drt};
-	wire [RW+1:0] xcrow = {xrow[RW-1:0], tk};
+	wire [RW+2:0] dcrow = {drow[RW-1:0], drt};
+	wire [RW+2:0] xcrow = {xrow[RW-1:0], tk};
 	wire [31:0] dqs = ({{(32-WARP_W){1'b0}}, dwarp} * 8 + {29'd0, dq}) * 16;
 	wire [31:0] dxp = xp[dwarp*32 +: 32] & dcov;
 	wire [31:0] ddw = dw[dwarp*32 +: 32];
@@ -196,28 +196,28 @@ module atg_su_exp #(
 
 	/* The scrub: rows of the attachments' arrays; the others take its row / 4. */
 	wire sc_on;
-	wire [RW+1:0] sc_a;
+	wire [RW+2:0] sc_a;
 
-	atg_su_scrub #(.DEPTH(ROWS * 4), .AW(RW + 2)) sc (
+	atg_su_scrub #(.DEPTH(ROWS * 8), .AW(RW + 3)) sc (
 		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
 	);
 
 	assign scrub_busy = sc_on;
-	wire [RW+1:0] c_wa = sc_on ? sc_a : xcrow;
-	wire [RW-1:0] r_wa = sc_on ? sc_a[RW+1:2] : xrow[RW-1:0];
-	wire [RW-1:0] z_wa = sc_on ? sc_a[RW+1:2] : zrow[RW-1:0];
+	wire [RW+2:0] c_wa = sc_on ? sc_a : xcrow;
+	wire [RW-1:0] r_wa = sc_on ? sc_a[RW+2:3] : xrow[RW-1:0];
+	wire [RW-1:0] z_wa = sc_on ? sc_a[RW+2:3] : zrow[RW-1:0];
 
-	/* NPHYS lane banks × {R, G, B, A of 4 attachments, depth, z} and {SAMPLE_MASK, r6}. */
+	/* NPHYS lane banks × {R, G, B, A of 8 attachments, depth, z} and {SAMPLE_MASK, r6}. */
 	wire [NPHYS*192-1:0] rdat;
 	wire [NPHYS*128-1:0] rdat1;
 	wire [NPHYS*8-1:0] rsm;
 	genvar b;
 	generate
 	for (b = 0; b < NPHYS; b = b + 1) begin : g_bank
-		reg [31:0] m0 [0:ROWS*4-1];
-		reg [31:0] m1 [0:ROWS*4-1];
-		reg [31:0] m2 [0:ROWS*4-1];
-		reg [31:0] m3 [0:ROWS*4-1];
+		reg [31:0] m0 [0:ROWS*8-1];
+		reg [31:0] m1 [0:ROWS*8-1];
+		reg [31:0] m2 [0:ROWS*8-1];
+		reg [31:0] m3 [0:ROWS*8-1];
 		reg [31:0] ms1_0 [0:ROWS-1];
 		reg [31:0] ms1_1 [0:ROWS-1];
 		reg [31:0] ms1_2 [0:ROWS-1];
@@ -318,7 +318,7 @@ module atg_su_exp #(
 		end
 		if (fl_go) begin
 			fr[fl_slot] <= fl_info[48];
-			rtw[fl_slot*4 +: 4] <= 4'd0;
+			rtw[fl_slot*8 +: 8] <= 8'd0;
 			has_src1[fl_slot] <= 1'b0;
 			cov[fl_slot*32 +: 32] <= fl_info[31:0];
 			xp[fl_slot*32 +: 32] <= 32'd0;

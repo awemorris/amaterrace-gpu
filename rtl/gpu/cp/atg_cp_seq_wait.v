@@ -48,7 +48,7 @@
 
 module atg_cp_seq_wait (
 	input wire vendor,
-	input wire [5:0] op,
+	input wire [7:0] op,
 	input wire [7:0] flags,
 	input wire [7:0] p,
 	input wire set_val,
@@ -69,39 +69,39 @@ module atg_cp_seq_wait (
 	 */
 	localparam [8:0] S_GRID_Y = GHCI_S_GRID_X + 9'd1;
 	localparam [8:0] S_GRID_Z = GHCI_S_GRID_X + 9'd2;
-	localparam [5:0] OP_BLIT = 6'd2;
-	localparam [5:0] OP_DRAW = 6'd3;
-	localparam [5:0] OP_DISPATCH = 6'd4;
-	localparam [5:0] OP_FENCE = 6'd5;
-	localparam [5:0] OP_WAIT_IDLE = 6'd6;
-	localparam [5:0] OP_LOAD_CONST = 6'd7;
-	localparam [5:0] OP_RESULT = 6'd13;
-	localparam [5:0] OP_QUERY = 6'd14;
-	localparam [5:0] OP_DISP_SET = 6'd15;
-	localparam [5:0] OP_FLIP = 6'd16;
-	localparam [5:0] OP_BARRIER = 6'd20;
-	localparam [5:0] OP_SEMAPHORE_SIGNAL = 6'd21;
-	localparam [5:0] OP_SEMAPHORE_WAIT = 6'd22;
+	localparam [7:0] OP_BLIT = 8'd2;
+	localparam [7:0] OP_DRAW = 8'd3;
+	localparam [7:0] OP_DISPATCH = 8'd4;
+	localparam [7:0] OP_FENCE = 8'd5;
+	localparam [7:0] OP_WAIT_IDLE = 8'd6;
+	localparam [7:0] OP_LOAD_CONST = 8'd7;
+	localparam [7:0] OP_RESULT = 8'd13;
+	localparam [7:0] OP_QUERY = 8'd14;
+	localparam [7:0] OP_DISP_SET = 8'd15;
+	localparam [7:0] OP_FLIP = 8'd16;
+	localparam [7:0] OP_BARRIER = 8'd20;
+	localparam [7:0] OP_SEMAPHORE_SIGNAL = 8'd21;
+	localparam [7:0] OP_SEMAPHORE_WAIT = 8'd22;
 
 	/* GHCI 1.0 Structured Command Opcodes */
-	localparam [5:0] CMD_BIND_PIPELINE         = 6'h20;
-	localparam [5:0] CMD_BIND_VERTEX_BUFFERS   = 6'h21;
-	localparam [5:0] CMD_BIND_INDEX_BUFFER     = 6'h22;
-	localparam [5:0] CMD_BIND_DESCRIPTOR_TABLE = 6'h23;
-	localparam [5:0] CMD_SET_VIEWPORT          = 6'h24;
-	localparam [5:0] CMD_SET_SCISSOR           = 6'h25;
-	localparam [5:0] CMD_SET_DYNAMIC_STATE     = 6'h26;
-	localparam [5:0] CMD_DRAW                  = 6'h27;
-	localparam [5:0] CMD_DRAW_INDEXED          = 6'h28;
-	localparam [5:0] CMD_DRAW_INDIRECT         = 6'h29;
-	localparam [5:0] CMD_DRAW_MESH_TASKS       = 6'h2a;
-	localparam [5:0] CMD_DISPATCH              = 6'h30;
-	localparam [5:0] CMD_BARRIER               = 6'h31;
-	localparam [5:0] CMD_EXECUTE_COMMANDS      = 6'h32;
-	localparam [5:0] CMD_FENCE                 = 6'h33;
+	localparam [7:0] CMD_BIND_PIPELINE         = 8'h20;
+	localparam [7:0] CMD_BIND_VERTEX_BUFFERS   = 8'h21;
+	localparam [7:0] CMD_BIND_INDEX_BUFFER     = 8'h22;
+	localparam [7:0] CMD_BIND_DESCRIPTOR_TABLE = 8'h23;
+	localparam [7:0] CMD_SET_VIEWPORT          = 8'h24;
+	localparam [7:0] CMD_SET_SCISSOR           = 8'h25;
+	localparam [7:0] CMD_SET_DYNAMIC_STATE     = 8'h26;
+	localparam [7:0] CMD_DRAW                  = 8'h27;
+	localparam [7:0] CMD_DRAW_INDEXED          = 8'h28;
+	localparam [7:0] CMD_DRAW_INDIRECT         = 8'h29;
+	localparam [7:0] CMD_DRAW_MESH_TASKS       = 8'h2a;
+	localparam [7:0] CMD_DISPATCH              = 8'h30;
+	localparam [7:0] CMD_BARRIER               = 8'h31;
+	localparam [7:0] CMD_EXECUTE_COMMANDS      = 8'h32;
+	localparam [7:0] CMD_FENCE                 = 8'h33;
 
-	localparam [5:0] VOP_DRAW_RAW = 6'd0;
-	localparam [5:0] VOP_DBG_MARK = 6'd1;
+	localparam [7:0] VOP_DRAW_RAW = 8'd0;
+	localparam [7:0] VOP_DBG_MARK = 8'd1;
 
 	localparam [7:0] B_BLT = 8'h02;
 	localparam [7:0] B_VF = 8'h04;

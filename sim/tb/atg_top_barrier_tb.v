@@ -14,6 +14,13 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifndef CFG_ROP_ENABLE_LOGICOP
+`define CFG_ROP_ENABLE_LOGICOP 1
+`endif
+`ifndef CFG_ROP_DUAL_SOURCE
+`define CFG_ROP_DUAL_SOURCE 1
+`endif
+
 module atg_top_barrier_tb;
 	`include "ghci_regs.vh"
 
@@ -38,7 +45,7 @@ module atg_top_barrier_tb;
 		.h_absent(h_absent),
 		.h_need(h_need),
 		.vendor(1'b0),
-		.op(test_hdr[29:24]),
+		.op({2'b00, test_hdr[29:24]}),
 		.p(8'd0),
 		.in_data(32'd0),
 		.pay_bad()
@@ -54,7 +61,7 @@ module atg_top_barrier_tb;
 	reg [511:0] r_b_src = 0;
 	reg [127:0] r_b_dst = 0;
 	reg [3:0] r_b_mask = 4'hF;
-	reg [1:0] r_b_rt = 2'd0;
+	reg [2:0] r_b_rt = 3'd0;
 	wire r_b_rvalid;
 	wire [127:0] r_b_pix;
 
@@ -66,6 +73,8 @@ module atg_top_barrier_tb;
 		.st_wdata(r_st_wdata),
 		.b_valid(r_b_valid),
 		.b_src(r_b_src),
+		.b_src1(512'd0),
+		.b_has_src1(1'b0),
 		.b_dst(r_b_dst),
 		.b_mask(r_b_mask),
 		.b_rt(r_b_rt),

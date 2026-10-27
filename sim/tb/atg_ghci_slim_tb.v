@@ -104,7 +104,7 @@ module atg_ghci_slim_tb;
 		.h_absent(h_absent),
 		.h_need(h_need),
 		.vendor(1'b0),
-		.op(test_hdr[5:0]),
+		.op(test_hdr[7:0]),
 		.p(8'd0),
 		.in_data(32'd0),
 		.pay_bad()

@@ -44,8 +44,9 @@ module atg_vf_conv_tb;
 
 	atg_vf_conv dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .af_valid(af_valid), .af_ready(af_ready), .af_attr(af_attr),
-		.af_lane(af_lane), .af_raw(af_raw), .af_oob(af_oob), .af_last(af_last), .vl_we(vl_we),
-		.vl_reg(vl_reg), .vl_lane(vl_lane), .vl_data(vl_data), .conv_done(conv_done));
+		.af_lane(af_lane), .af_raw(af_raw), .af_oob(af_oob), .af_last(af_last),
+		.vb_valid(1'b0), .vb_ready(1'b0), .vb_index(32'd0), .vb_inst(32'd0), .vb_lane(5'd0),
+		.vl_we(vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane), .vl_data(vl_data), .conv_done(conv_done));
 
 	integer fd, code, seed, n, j, c, nw, xn, xg, ndone, tmo, oob;
 	integer e_k [0:3];	/* errors of formats, fill, vkformats, oob */

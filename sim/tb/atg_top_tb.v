@@ -946,7 +946,7 @@ module atg_top_harness #(
 		host_write(GHCI_RING_WPTR, wp);
 		wait_reg(GHCI_STATUS, 32'd4 << GHCI_STATUS_STATE, 32'hF << GHCI_STATUS_STATE);
 		expect_reg(GHCI_FAULT_INFO, {16'd0, GHCI_FAULT_WATCHDOG, 12'd0}, 32'hFFFFFFFF);
-		expect_reg(GHCI_IRQ_STATUS, 32'h0A, 32'h0A);
+		expect_reg(GHCI_IRQ_STATUS, (32'd1 << GHCI_IRQ_FAULT) | (32'd1 << GHCI_IRQ_WATCHDOG), (32'd1 << GHCI_IRQ_FAULT) | (32'd1 << GHCI_IRQ_WATCHDOG));
 		if (!irq)
 			fail_msg("no interrupt for the watchdog");
 		reset_gpu();

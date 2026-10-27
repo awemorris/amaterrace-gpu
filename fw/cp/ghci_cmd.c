@@ -40,7 +40,7 @@ fw_cmd_bind_pipeline_pso(
 
 	fw_emit_begin(NULL, command->tag);
 
-	/* Dispatch shader programs */
+	/* Dispatch shader programs & resource limits */
 	if (pso.vs_code_va != 0)
 		fw_emit_set(GHCI_S_VS_BASE, (uint32_t)pso.vs_code_va);
 	if (pso.fs_code_va != 0)
@@ -48,31 +48,30 @@ fw_cmd_bind_pipeline_pso(
 	if (pso.cs_code_va != 0)
 		fw_emit_set(GHCI_S_CS_BASE, (uint32_t)pso.cs_code_va);
 
+	fw_emit_set(GHCI_S_VS_WORDS, pso.shader_resource_limits);
+	fw_emit_set(GHCI_S_VARYING_COUNT, (pso.shader_resource_limits >> 24) & 0x1Fu);
+
 	/* Dispatch rasterizer & cull state */
-	fw_emit_set(GHCI_S_CULL, (uint32_t)pso.cull_mode | ((uint32_t)pso.front_face << 2));
-	fw_emit_set(GHCI_S_RAST_MODE, (uint32_t)pso.topology | ((uint32_t)pso.polygon_mode << 4));
+	fw_emit_set(GHCI_S_CULL, (pso.raster_state & 3u) | (((pso.raster_state >> 2) & 1u) << 2));
+	fw_emit_set(GHCI_S_RAST_MODE, (pso.flags & 7u) | (((pso.raster_state >> 3) & 3u) << 4));
+	fw_emit_set(GHCI_S_LINE_WIDTH, (pso.raster_state >> 6) & 0xFFu);
 
 	/* Dispatch depth & stencil state */
-	fw_emit_set(GHCI_S_DEPTH,
-		(pso.depth_test_enable ? 1u : 0u) |
-		(pso.depth_write_enable ? 2u : 0u) |
-		((uint32_t)(pso.depth_compare_op & 7u) << 2));
-	fw_emit_set(GHCI_S_DEPTH_BIAS_CONST, pso.depth_bias_constant);
+	fw_emit_set(GHCI_S_DEPTH, (pso.depth_stencil_state & 3u) | (((pso.depth_stencil_state >> 2) & 7u) << 2));
+	fw_emit_set(GHCI_S_DEPTH_CLAMP, (pso.flags >> 4) & 1u);
 
 	/* Dispatch blend state */
-	fw_emit_set(GHCI_S_BLEND,
-		(pso.blend_enable ? 1u : 0u) |
-		((uint32_t)(pso.src_color_factor & 0x1Fu) << 1) |
-		((uint32_t)(pso.dst_color_factor & 0x1Fu) << 6) |
-		((uint32_t)(pso.color_blend_op & 7u) << 11) |
-		((uint32_t)(pso.src_alpha_factor & 0x1Fu) << 14) |
-		((uint32_t)(pso.dst_alpha_factor & 0x1Fu) << 19) |
-		((uint32_t)(pso.alpha_blend_op & 7u) << 24));
-	fw_emit_set(GHCI_S_WRITE_MASK, (uint32_t)(pso.color_write_mask & 0x0Fu));
+	fw_emit_set(GHCI_S_BLEND, pso.blend_state & 0x07FFFFFFu);
+	fw_emit_set(GHCI_S_WRITE_MASK, (pso.blend_state >> 27) & 0x0Fu);
+	fw_emit_set(GHCI_S_LOGIC_OP, ((pso.flags >> 5) & 1u) | (((pso.flags >> 6) & 0xFu) << 1));
 
 	/* Dispatch topology & vertex input */
-	fw_emit_set(GHCI_S_TOPOLOGY, (uint32_t)pso.topology);
-	fw_emit_set(GHCI_S_PRIM_RESTART, (uint32_t)pso.primitive_restart);
+	fw_emit_set(GHCI_S_TOPOLOGY, pso.flags & 7u);
+	fw_emit_set(GHCI_S_PRIM_RESTART, (pso.flags >> 3) & 1u);
+
+	/* Compute stage configuration */
+	fw_emit_set(GHCI_S_WG_SIZE, pso.compute_local_size);
+	fw_emit_set(GHCI_S_LDS_BYTES, pso.compute_lds_and_flags & 0xFFFFu);
 
 	(void)fw_emit_end();
 }

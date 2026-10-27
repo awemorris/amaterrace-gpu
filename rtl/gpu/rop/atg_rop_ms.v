@@ -56,19 +56,21 @@ module atg_rop_ms (
 	input wire [31:0] i_xy,
 	input wire [3:0] i_mask,
 	input wire [511:0] i_color,
+	input wire [511:0] i_color1,
 	input wire [127:0] i_depth,
 	input wire i_dbg,
-	input wire [153:0] i_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} */
+	input wire [154:0] i_aux,	/* {rt[2:0], qlast, qfirst, nocol, front, d_s, zexp, smask} */
 	/* To atg_rop_ds */
 	output reg o_valid,
 	input wire o_ready,
 	output reg [31:0] o_xy,
 	output reg [15:0] o_smask,
 	output reg [511:0] o_color,
+	output reg [511:0] o_color1,
 	output reg [511:0] o_sdepth,
 	output reg o_dbg,
 	output reg o_front,
-	output reg [3:0] o_beat,	/* {rt, nocol, first} */
+	output reg [4:0] o_beat,	/* {rt[2:0], nocol, first} */
 	output wire busy
 );
 	`include "ghci_regs.vh"
@@ -210,6 +212,8 @@ module atg_rop_ms (
 		if (!rst_n) begin
 			st <= S_IDLE;
 			o_valid <= 1'b0;
+			o_color1 <= 512'd0;
+			o_beat <= 5'd0;
 			c <= 5'd0;
 			drop <= 1'b0;
 		end else case (st)
@@ -218,8 +222,9 @@ module atg_rop_ms (
 				/* a later beat: the quad's coverage and depths stay */
 				o_xy <= i_xy;
 				o_dbg <= i_dbg;
-				o_beat <= {i_aux[153:152], i_aux[149], 1'b0};
+				o_beat <= {i_aux[154:152], i_aux[149], 1'b0};
 				o_color <= i_color;
+				o_color1 <= i_color1;
 				if (a2one && !i_dbg)
 					for (l = 0; l < 4; l = l + 1)
 						o_color[128 * l + 96 +: 32] <= ONE;
@@ -233,8 +238,9 @@ module atg_rop_ms (
 				o_smask <= sm;
 				o_dbg <= i_dbg;
 				o_front <= i_aux[148];
-				o_beat <= {i_aux[153:152], i_aux[149], 1'b1};
+				o_beat <= {i_aux[154:152], i_aux[149], 1'b1};
 				o_color <= i_color;
+				o_color1 <= i_color1;
 				if (a2one && !i_dbg)
 					for (l = 0; l < 4; l = l + 1)
 						o_color[128 * l + 96 +: 32] <= ONE;

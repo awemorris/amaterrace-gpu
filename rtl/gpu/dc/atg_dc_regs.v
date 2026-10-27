@@ -83,6 +83,7 @@ module atg_dc_regs #(
 	output wire ev_vblank,
 	output reg ev_error,
 	output wire [31:0] frame_count,
+	output wire irq_display,
 	/* I2C window (to atg_dc_i2c) */
 	output wire i2c_we,
 	output wire [1:0] i2c_idx,
@@ -114,6 +115,8 @@ module atg_dc_regs #(
 	localparam [5:0] RESET_CYCLES = 6'd32;
 	localparam [5:0] I_CTRL = GHCI_DC_CTRL[7:2];
 	localparam [5:0] I_STATUS = GHCI_DC_STATUS[7:2];
+	localparam [5:0] I_DC_IRQ_STATUS = GHCI_DC_IRQ_STATUS[7:2];
+	localparam [5:0] I_DC_IRQ_ENABLE = GHCI_DC_IRQ_ENABLE[7:2];
 	localparam [5:0] I_FB_BASE = GHCI_DC_FB_BASE[7:2];
 	localparam [5:0] I_FB_NEXT = GHCI_DC_FB_NEXT[7:2];
 	localparam [5:0] I_FB_STRIDE = GHCI_DC_FB_STRIDE[7:2];
@@ -149,6 +152,11 @@ module atg_dc_regs #(
 	reg [31:0] r_plane2_base, r_plane2_pos, r_plane2_size, r_plane2_ctrl, r_plane2_colorkey;
 	reg [31:0] r_vrr_ctrl, r_hdr_ctrl;
 	reg r_flip_ready;
+
+	reg [5:0] disp_irq_status;
+	reg [5:0] disp_irq_enable;
+	reg connected_q;
+	assign irq_display = |(disp_irq_status & disp_irq_enable);
 
 	assign enable = r_enable;
 	assign test_pattern = r_test;
@@ -216,6 +224,15 @@ module atg_dc_regs #(
 		wbits[GHCI_DC_ST_READ_ERROR], wbits[GHCI_DC_ST_UNDERFLOW]} : 4'd0;
 	wire bad_now = dc_err[1] || fmt_bad || quasi_bad;
 	wire err_now = ev_underflow || rd_err || dc_err[0] || bad_now;
+	wire ev_hotplug_pulse = connected ^ connected_q;
+	wire [5:0] disp_ev = {
+		err_now,
+		ev_underflow,
+		ev_hotplug_pulse,
+		1'b0,
+		taken && !taken_cancel,
+		ev_vsync && r_enable
+	};
 
 	integer k;
 
@@ -255,6 +272,9 @@ module atg_dc_regs #(
 			r_vrr_ctrl <= 32'd0;
 			r_hdr_ctrl <= 32'd0;
 			r_flip_ready <= 1'b0;
+			disp_irq_status <= 6'd0;
+			disp_irq_enable <= 6'd0;
+			connected_q <= 1'b0;
 		end else if (do_reset) begin
 			r_enable <= 1'b0;
 			st_underflow <= 1'b0;
@@ -265,6 +285,7 @@ module atg_dc_regs #(
 			r_frame_count <= 32'd0;
 			reset_left <= RESET_CYCLES;
 			pend <= 1'b0;
+			disp_irq_status <= 6'd0;
 			if (pend && pend_cp) begin
 				taken <= 1'b1;
 				taken_cancel <= 1'b1;
@@ -285,6 +306,10 @@ module atg_dc_regs #(
 			end
 			if (ev_vsync)
 				r_frame_count <= frame_inc;
+			connected_q <= connected;
+			disp_irq_status <= (disp_irq_status & ~(d_we && d_idx == I_DC_IRQ_STATUS ? wbits[5:0] : 6'd0)) | disp_ev;
+			if (d_we && d_idx == I_DC_IRQ_ENABLE)
+				disp_irq_enable <= (disp_irq_enable & ~d_wmask[5:0]) | wbits[5:0];
 			/* Plane 0. */
 			if (en_fall && pend) begin
 				pend <= 1'b0;
@@ -381,6 +406,8 @@ module atg_dc_regs #(
 		I_CTRL: d_rdata = ctrl_old;
 		I_STATUS: d_rdata = {1'b0, pending1, pend, connected, line, 10'd0, st_bad,
 			st_rec_err, st_rd_err, !r_enable && idle_in, st_underflow, r_enable};
+		I_DC_IRQ_STATUS: d_rdata = {26'd0, disp_irq_status};
+		I_DC_IRQ_ENABLE: d_rdata = {26'd0, disp_irq_enable};
 		I_FB_BASE: d_rdata = r_fb_base;
 		I_FB_NEXT: d_rdata = r_fb_next;
 		I_FB_STRIDE: d_rdata = r_stride;

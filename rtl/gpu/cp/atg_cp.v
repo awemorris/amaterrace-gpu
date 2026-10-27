@@ -73,7 +73,7 @@ module atg_cp #(
 	parameter [31:0] WINDOW_BYTES = 32'd0,
 	parameter [31:0] HOST_LIMIT = 32'd0,
 	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
-	parameter SLIM_MMIO = 0	/* 1: GHCI 1.0 Slim 19 MMIO registers (0x00..0x48) */
+	parameter SLIM_MMIO = 1	/* 1: GHCI 1.0 Slim 19 MMIO registers (0x00..0x48) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -203,7 +203,8 @@ module atg_cp #(
 	input wire dc_idle,
 	input wire [31:0] frame_count,
 	output wire [1:0] dc_err,
-	input wire [2:0] dc_ev	/* one-cycle pulses: [0] VBLANK, [1] DISP_ERROR, [2] HOTPLUG */
+	input wire [2:0] dc_ev,	/* one-cycle pulses: [0] VBLANK, [1] DISP_ERROR, [2] HOTPLUG */
+	input wire dc_irq_display
 );
 	`include "ghci_regs.vh"
 
@@ -513,8 +514,8 @@ module atg_cp #(
 		.clk(clk), .rst_n(rst_n), .core_rst_n(s_core_rst_n),
 		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_irq_rdata),
-		.ev({dc_ev[2], dc_ev[1], s_ev_flip, dc_ev[0], s_retire, cpu_result, s_ev_halted, 1'b0,
-			s_dbg_done, s_ev_wdt, s_ring_empty, s_ev_fault, cp_fence_ev}),
+		.ev({4'd0, s_retire, cpu_result, s_ev_halted, 1'b0,
+			s_dbg_done, dc_irq_display, s_ev_wdt, s_ev_fault, cp_fence_ev}),
 		.irq(irq)
 	);
 
@@ -639,7 +640,7 @@ module atg_cp #(
 		ind_draw_valid, ind_vertex_count, ind_instance_count, ind_first_vertex,
 		ind_first_instance, ind_first_index, ind_vertex_offset};
 
-	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev, unused_indirect,
+	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev, unused_indirect, dc_ev, s_ev_flip,
 		s_f_addr[63:32],
 		s_dma_req_valid, s_dma_empty, s_dma_busy,
 		s_dma_src_base, s_dma_dst_base, s_dma_src_row_stride, s_dma_dst_row_stride,

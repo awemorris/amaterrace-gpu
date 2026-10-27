@@ -37,55 +37,91 @@ module atg_cp_seq_dec #(
 	output reg h_absent,
 	output reg [7:0] h_need,
 	input wire vendor,
-	input wire [5:0] op,
+	input wire [7:0] op,
 	input wire [7:0] p,
 	input wire [31:0] in_data,
 	output wire pay_bad
 );
-	localparam [5:0] OP_NOP = 6'd0;
-	localparam [5:0] OP_SET_REG = 6'd1;
-	localparam [5:0] OP_BLIT = 6'd2;
-	localparam [5:0] OP_DRAW = 6'd3;
-	localparam [5:0] OP_DISPATCH = 6'd4;
-	localparam [5:0] OP_FENCE = 6'd5;
-	localparam [5:0] OP_WAIT_IDLE = 6'd6;
-	localparam [5:0] OP_LOAD_CONST = 6'd7;
-	localparam [5:0] OP_LOAD_PROGRAM = 6'd8;
-	localparam [5:0] OP_WAIT_FENCE = 6'd9;
-	localparam [5:0] OP_PERF_RESET = 6'd10;
-	localparam [5:0] OP_WAIT_VSYNC = 6'd11;
-	localparam [5:0] OP_INVALIDATE = 6'd12;
-	localparam [5:0] OP_RESULT = 6'd13;
-	localparam [5:0] OP_QUERY = 6'd14;
-	localparam [5:0] OP_DISP_SET = 6'd15;
-	localparam [5:0] OP_FLIP = 6'd16;
-	localparam [5:0] OP_BARRIER = 6'd20;
-	localparam [5:0] OP_SEMAPHORE_SIGNAL = 6'd21;
-	localparam [5:0] OP_SEMAPHORE_WAIT = 6'd22;
+	localparam [7:0] OP_NOP = 8'd0;
+	localparam [7:0] OP_SET_REG = 8'd1;
+	localparam [7:0] OP_BLIT = 8'd2;
+	localparam [7:0] OP_DRAW = 8'd3;
+	localparam [7:0] OP_DISPATCH = 8'd4;
+	localparam [7:0] OP_FENCE = 8'd5;
+	localparam [7:0] OP_WAIT_IDLE = 8'd6;
+	localparam [7:0] OP_LOAD_CONST = 8'd7;
+	localparam [7:0] OP_LOAD_PROGRAM = 8'd8;
+	localparam [7:0] OP_WAIT_FENCE = 8'd9;
+	localparam [7:0] OP_PERF_RESET = 8'd10;
+	localparam [7:0] OP_WAIT_VSYNC = 8'd11;
+	localparam [7:0] OP_INVALIDATE = 8'd12;
+	localparam [7:0] OP_RESULT = 8'd13;
+	localparam [7:0] OP_QUERY = 8'd14;
+	localparam [7:0] OP_DISP_SET = 8'd15;
+	localparam [7:0] OP_FLIP = 8'd16;
+	localparam [7:0] OP_BARRIER = 8'd20;
+	localparam [7:0] OP_SEMAPHORE_SIGNAL = 8'd21;
+	localparam [7:0] OP_SEMAPHORE_WAIT = 8'd22;
 
 	/* GHCI 1.0 Structured Command Opcodes */
-	localparam [5:0] CMD_BIND_PIPELINE         = 6'h20;
-	localparam [5:0] CMD_BIND_VERTEX_BUFFERS   = 6'h21;
-	localparam [5:0] CMD_BIND_INDEX_BUFFER     = 6'h22;
-	localparam [5:0] CMD_BIND_DESCRIPTOR_TABLE = 6'h23;
-	localparam [5:0] CMD_SET_VIEWPORT          = 6'h24;
-	localparam [5:0] CMD_SET_SCISSOR           = 6'h25;
-	localparam [5:0] CMD_SET_DYNAMIC_STATE     = 6'h26;
-	localparam [5:0] CMD_DRAW                  = 6'h27;
-	localparam [5:0] CMD_DRAW_INDEXED          = 6'h28;
-	localparam [5:0] CMD_DRAW_INDIRECT         = 6'h29;
-	localparam [5:0] CMD_DRAW_MESH_TASKS       = 6'h2a;
-	localparam [5:0] CMD_DISPATCH              = 6'h30;
-	localparam [5:0] CMD_BARRIER               = 6'h31;
-	localparam [5:0] CMD_EXECUTE_COMMANDS      = 6'h32;
-	localparam [5:0] CMD_FENCE                 = 6'h33;
+	localparam [7:0] CMD_VM_MAP                = 8'h10;
+	localparam [7:0] CMD_VM_UNMAP              = 8'h11;
+	localparam [7:0] CMD_SESSION_OPEN          = 8'h12;
+	localparam [7:0] CMD_SESSION_CLOSE         = 8'h13;
+	localparam [7:0] CMD_BIND_SESSION          = 8'h14;
 
-	localparam [5:0] VOP_DRAW_RAW = 6'd0;
-	localparam [5:0] VOP_DBG_MARK = 6'd1;
+	localparam [7:0] CMD_BIND_PIPELINE         = 8'h20;
+	localparam [7:0] CMD_BIND_VERTEX_BUFFERS   = 8'h21;
+	localparam [7:0] CMD_BIND_INDEX_BUFFER     = 8'h22;
+	localparam [7:0] CMD_BIND_DESCRIPTOR_TABLE = 8'h23;
+	localparam [7:0] CMD_SET_VIEWPORT          = 8'h24;
+	localparam [7:0] CMD_SET_SCISSOR           = 8'h25;
+	localparam [7:0] CMD_SET_DYNAMIC_STATE     = 8'h26;
+	localparam [7:0] CMD_DRAW                  = 8'h27;
+	localparam [7:0] CMD_DRAW_INDEXED          = 8'h28;
+	localparam [7:0] CMD_DRAW_INDIRECT         = 8'h29;
+	localparam [7:0] CMD_DRAW_MESH_TASKS       = 8'h2a;
+	localparam [7:0] CMD_BEGIN_RENDER_PASS     = 8'h2b;
+	localparam [7:0] CMD_END_RENDER_PASS       = 8'h2c;
+	localparam [7:0] CMD_LOAD_CONST            = 8'h2d;
+	localparam [7:0] CMD_DISPATCH_INDIRECT     = 8'h2e;
 
-	wire is_ghci2 = (hdr[7:0] >= 8'h20 && hdr[7:0] <= 8'h33) && (hdr[15:8] >= 8'd1);
-	wire h_vendor = is_ghci2 ? 1'b0 : hdr[30];
-	wire [5:0] h_op = is_ghci2 ? hdr[5:0] : hdr[29:24];
+	localparam [7:0] CMD_DISPATCH              = 8'h30;
+	localparam [7:0] CMD_BARRIER               = 8'h31;
+	localparam [7:0] CMD_EXECUTE_COMMANDS      = 8'h32;
+	localparam [7:0] CMD_FENCE                 = 8'h33;
+	localparam [7:0] CMD_WAIT_FENCE            = 8'h34;
+	localparam [7:0] CMD_WRITE_TIMESTAMP       = 8'h35;
+	localparam [7:0] CMD_BEGIN_QUERY           = 8'h36;
+	localparam [7:0] CMD_END_QUERY             = 8'h37;
+
+	localparam [7:0] CMD_COPY_BUFFER           = 8'h40;
+	localparam [7:0] CMD_COPY_IMAGE            = 8'h41;
+	localparam [7:0] CMD_BLIT                  = 8'h42;
+	localparam [7:0] CMD_FILL_BUFFER           = 8'h43;
+	localparam [7:0] CMD_RESOLVE_IMAGE         = 8'h44;
+	localparam [7:0] CMD_COPY_BUFFER_TO_IMAGE  = 8'h45;
+	localparam [7:0] CMD_COPY_IMAGE_TO_BUFFER  = 8'h46;
+
+	localparam [7:0] CMD_DISP_SET              = 8'h50;
+	localparam [7:0] CMD_FLIP                  = 8'h51;
+
+	localparam [7:0] VOP_DRAW_RAW = 8'd0;
+	localparam [7:0] VOP_DBG_MARK = 8'd1;
+
+	wire is_ghci = (
+		(hdr[7:0] >= 8'h10 && hdr[7:0] <= 8'h14) ||
+		(hdr[7:0] >= 8'h20 && hdr[7:0] <= 8'h37) ||
+		(hdr[7:0] >= 8'h40 && hdr[7:0] <= 8'h46) ||
+		(hdr[7:0] >= 8'h50 && hdr[7:0] <= 8'h51)
+	) && (hdr[15:8] >= 8'd1);
+	wire [7:0] ghci_n;
+	wire ghci_n_bo;
+	am_sub #(.W(8)) u_ghci_n (
+		.a(hdr[15:8]), .b(8'd1), .bi(1'b0), .d(ghci_n), .bo(ghci_n_bo)
+	);
+	wire h_vendor = is_ghci ? 1'b0 : hdr[30];
+	wire [7:0] h_op = is_ghci ? hdr[7:0] : {2'b00, hdr[29:24]};
 	wire [7:0] h_n = hdr[7:0];
 
 	/* n rounded up to even (the pairs of SET_REG and DISP_SET). */
@@ -100,7 +136,7 @@ module atg_cp_seq_dec #(
 		h_known = 1'b1;
 		h_absent = 1'b0;
 		h_need = 8'd0;
-		if (hdr[31] && !is_ghci2) begin
+		if (hdr[31] && !is_ghci) begin
 			h_known = 1'b0;
 		end else if (h_vendor) begin
 			case (h_op)
@@ -109,6 +145,102 @@ module atg_cp_seq_dec #(
 				h_absent = !UNITS[3];
 			end
 			VOP_DBG_MARK: h_need = 8'd1;
+			default: h_known = 1'b0;
+			endcase
+		end else if (is_ghci) begin
+			case (h_op)
+			/* GHCI 1.0 Structured Commands */
+			CMD_VM_MAP:                h_need = 8'd9;
+			CMD_VM_UNMAP:              h_need = 8'd7;
+			CMD_SESSION_OPEN:          h_need = 8'd3;
+			CMD_SESSION_CLOSE:         h_need = 8'd1;
+			CMD_BIND_SESSION:          h_need = 8'd1;
+			CMD_BIND_PIPELINE:         h_need = 8'd2;
+			CMD_BIND_VERTEX_BUFFERS:   h_need = ghci_n;
+			CMD_BIND_INDEX_BUFFER:     h_need = 8'd3;
+			CMD_BIND_DESCRIPTOR_TABLE: h_need = 8'd3;
+			CMD_SET_VIEWPORT:          h_need = 8'd6;
+			CMD_SET_SCISSOR:           h_need = 8'd4;
+			CMD_SET_DYNAMIC_STATE:     h_need = 8'd5;
+			CMD_DRAW: begin
+				h_need = 8'd4;
+				h_absent = !UNITS[2];
+			end
+			CMD_DRAW_INDEXED: begin
+				h_need = 8'd5;
+				h_absent = !UNITS[2];
+			end
+			CMD_DRAW_INDIRECT: begin
+				h_need = ghci_n;
+				h_absent = !UNITS[2];
+			end
+			CMD_DRAW_MESH_TASKS: begin
+				h_need = 8'd3;
+				h_absent = !UNITS[6];
+			end
+			CMD_BEGIN_RENDER_PASS:     h_need = 8'd9;
+			CMD_END_RENDER_PASS:       h_need = 8'd0;
+			CMD_LOAD_CONST: begin
+				h_need = ghci_n;
+				h_absent = !UNITS[6];
+			end
+			CMD_DISPATCH_INDIRECT: begin
+				h_need = 8'd5;
+				h_absent = !UNITS[6];
+			end
+			CMD_DISPATCH: begin
+				h_need = 8'd3;
+				h_absent = !UNITS[6];
+			end
+			CMD_BARRIER:               h_need = 8'd3;
+			CMD_EXECUTE_COMMANDS:      h_need = 8'd3;
+			CMD_FENCE:                 h_need = 8'd5;
+			CMD_WAIT_FENCE:            h_need = 8'd4;
+			CMD_WRITE_TIMESTAMP:       h_need = 8'd3;
+			CMD_BEGIN_QUERY: begin
+				h_need = 8'd3;
+				h_absent = !UNITS[4];
+			end
+			CMD_END_QUERY: begin
+				h_need = 8'd3;
+				h_absent = !UNITS[4];
+			end
+			CMD_COPY_BUFFER: begin
+				h_need = 8'd7;
+				h_absent = !UNITS[1];
+			end
+			CMD_COPY_IMAGE: begin
+				h_need = 8'd10;
+				h_absent = !UNITS[1];
+			end
+			CMD_BLIT: begin
+				h_need = 8'd11;
+				h_absent = !UNITS[1];
+			end
+			CMD_FILL_BUFFER: begin
+				h_need = 8'd4;
+				h_absent = !UNITS[1];
+			end
+			CMD_RESOLVE_IMAGE: begin
+				h_need = 8'd10;
+				h_absent = !UNITS[1];
+			end
+			CMD_COPY_BUFFER_TO_IMAGE: begin
+				h_need = 8'd9;
+				h_absent = !UNITS[1];
+			end
+			CMD_COPY_IMAGE_TO_BUFFER: begin
+				h_need = 8'd9;
+				h_absent = !UNITS[1];
+			end
+			CMD_DISP_SET: begin
+				h_need = ghci_n;
+				h_absent = HAS_DISP == 0 || hdr_fw;
+			end
+			CMD_FLIP: begin
+				h_need = 8'd7;
+				h_absent = HAS_DISP == 0 || hdr_fw;
+			end
 			default: h_known = 1'b0;
 			endcase
 		end else begin
@@ -147,37 +279,6 @@ module atg_cp_seq_dec #(
 			OP_SEMAPHORE_SIGNAL, OP_SEMAPHORE_WAIT: begin
 				h_need = 8'd4;	/* payload: addr[63:0], val[63:0] */
 			end
-			/* GHCI 1.0 Structured Commands */
-			CMD_BIND_PIPELINE: h_need = 8'd2;
-			CMD_BIND_VERTEX_BUFFERS: h_need = 8'd1;
-			CMD_BIND_INDEX_BUFFER: h_need = 8'd3;
-			CMD_BIND_DESCRIPTOR_TABLE: h_need = 8'd3;
-			CMD_SET_VIEWPORT: h_need = 8'd6;
-			CMD_SET_SCISSOR: h_need = 8'd4;
-			CMD_SET_DYNAMIC_STATE: h_need = 8'd5;
-			CMD_DRAW: begin
-				h_need = 8'd4;
-				h_absent = !UNITS[2];
-			end
-			CMD_DRAW_INDEXED: begin
-				h_need = 8'd5;
-				h_absent = !UNITS[2];
-			end
-			CMD_DRAW_INDIRECT: begin
-				h_need = 8'd6;
-				h_absent = !UNITS[2];
-			end
-			CMD_DRAW_MESH_TASKS: begin
-				h_need = 8'd3;
-				h_absent = !UNITS[6];
-			end
-			CMD_DISPATCH: begin
-				h_need = 8'd3;
-				h_absent = !UNITS[6];
-			end
-			CMD_BARRIER: h_need = 8'd3;
-			CMD_EXECUTE_COMMANDS: h_need = 8'd3;
-			CMD_FENCE: h_need = 8'd5;
 			default: h_known = 1'b0;
 			endcase
 		end
@@ -194,7 +295,7 @@ module atg_cp_seq_dec #(
 	assign pay_bad = !p[0] && (is_set && (in_data[31:10] != 22'd0 || in_data[9:8] == 2'b11) ||
 		is_dset && !off_ok);
 
-	wire unused_ok = &{1'b0, h_n_co_unused, hdr[23:8], p[7:1]};
+	wire unused_ok = &{1'b0, h_n_co_unused, hdr[23:8], p[7:1], ghci_n_bo};
 endmodule
 
 `default_nettype wire

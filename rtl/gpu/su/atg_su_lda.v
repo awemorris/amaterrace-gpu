@@ -193,10 +193,11 @@ module atg_su_lda #(
 
 	wire [31:0] rvtx = {30'd0, c_imm[1:0]};
 	wire [31:0] rword = {25'd0, c_imm[8:2]};
-	wire rok = rvtx < 3 && rword >= 4 && rword < 4 + VARY_WORDS;
-	wire [6:0] rvary;
+	wire rok = rvtx < 3 && rword < 4 + VARY_WORDS;
+	wire [6:0] rvary_sub;
 	wire rv_bo_unused;
-	am_sub #(.W(7)) u_rvary (.a(rword[6:0]), .b(7'd4), .bi(1'b0), .d(rvary), .bo(rv_bo_unused));
+	am_sub #(.W(7)) u_rvary (.a(rword[6:0]), .b(7'd4), .bi(1'b0), .d(rvary_sub), .bo(rv_bo_unused));
+	wire [6:0] rvary = (rword[6:0] >= 7'd4) ? rvary_sub : 7'd0;
 	/* the quad copy 0 reads: group NQ + ph NC (disjoint bits) */
 	wire [31:0] qbase = ({{(32-GRP_W){1'b0}}, c_grp} * NQ) | ({{(32-PW){1'b0}}, ph} * NC);
 

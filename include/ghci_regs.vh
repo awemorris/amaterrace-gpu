@@ -251,23 +251,18 @@ localparam [3:0] GHCI_ST_RESETTING  = 4'd5;
 localparam [3:0] GHCI_ST_BLIT       = 4'd6;
 localparam [3:0] GHCI_ST_WAIT_FENCE = 4'd7;
 
-/* IRQ_STATUS / IRQ_ENABLE bits (J02). */
+/* IRQ_STATUS / IRQ_ENABLE bits (J02, N21). */
 localparam GHCI_IRQ_FENCE      = 0;
 localparam GHCI_IRQ_ERROR      = 1;
 localparam GHCI_IRQ_FAULT      = 1;
 localparam GHCI_IRQ_WATCHDOG   = 2;
 localparam GHCI_IRQ_DISP       = 3;
 localparam GHCI_IRQ_DISPLAY    = 3;
-localparam GHCI_IRQ_RING_EMPTY = 2;
 localparam GHCI_IRQ_DBG_DONE   = 4;
 localparam GHCI_IRQ_SOFT       = 5;
 localparam GHCI_IRQ_HALTED     = 6;
 localparam GHCI_IRQ_RESULT     = 7;
 localparam GHCI_IRQ_RETIRE     = 8;
-localparam GHCI_IRQ_VBLANK     = 9;
-localparam GHCI_IRQ_FLIP       = 10;
-localparam GHCI_IRQ_DISP_ERROR = 11;
-localparam GHCI_IRQ_HOTPLUG    = 12;
 
 /* FAULT_INFO fields (J03). */
 localparam [3:0] GHCI_FAULT_KIND_NONE        = 4'd0;
@@ -529,6 +524,7 @@ localparam [16:0] GHCI_MEM_LOCAL_SIZE = 17'h00004;	/* 0 = no local memory (unifi
 localparam [16:0] GHCI_MEM_WINDOW_SIZE = 17'h00008;	/* 0 = no local window */
 localparam [16:0] GHCI_MEM_HOST_LIMIT = 17'h0000C;	/* host addresses below it, outside local memory; 0 = all */
 localparam [16:0] GHCI_MEM_WINDOW_CTRL = 17'h00010;	/* [0] ENABLE: the local window is open (reset 1) */
+localparam [16:0] GHCI_MEM_CACHE_CFG = 17'h00014;	/* R: Cache hierarchy status (MMIO 0x1F4) */
 /* The PROT capability's registers (from its register offset, section 11.6). */
 localparam [16:0] GHCI_PROT_CAPS = 17'h00000;
 localparam [16:0] GHCI_PROT_TABLE = 17'h00004;	/* RW: the table's address, 4 KiB aligned */
@@ -568,8 +564,11 @@ localparam [1:0] GHCI_DC_FMT_RGBA8 = 2'd1;
 localparam [1:0] GHCI_DC_FMT_RGB565 = 2'd2;
 localparam [1:0] GHCI_DC_FMT_A2B10G10R10 = 2'd3;
 localparam GHCI_DC_IRQ_VSYNC = 0;
-localparam GHCI_DC_IRQ_UNDERFLOW = 1;
-localparam GHCI_DC_IRQ_FLIP_DONE = 2;
+localparam GHCI_DC_IRQ_FLIP_DONE = 1;
+localparam GHCI_DC_IRQ_CURSOR_FLIP = 2;
+localparam GHCI_DC_IRQ_HOTPLUG = 3;
+localparam GHCI_DC_IRQ_UNDERFLOW = 4;
+localparam GHCI_DC_IRQ_DISP_ERROR = 5;
 
 /* DISP2 (docs/ghci.md section 13.2, draft): the same offsets up to 0x68
  * (IRQ_STATUS/IRQ_ENABLE are DISP's only), and these.  The window is

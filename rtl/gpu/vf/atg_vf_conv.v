@@ -47,6 +47,12 @@ module atg_vf_conv (
 	input wire [127:0] af_raw,
 	input wire af_oob,
 	input wire af_last,
+	/* Vertex indices for gl_VertexIndex / gl_InstanceIndex delivery */
+	input wire vb_valid,
+	input wire vb_ready,
+	input wire [31:0] vb_index,
+	input wire [31:0] vb_inst,
+	input wire [4:0] vb_lane,
 	/* Register writes to the SU (atg_su vl_*) */
 	output reg vl_we,
 	output reg [5:0] vl_reg,
@@ -84,6 +90,40 @@ module atg_vf_conv (
 				s_vk[st_idx[3:0]] <= st_wdata[31:24];
 			end
 		end
+
+	/* STATE: used_regs_vs (from GHCI_S_VS_WORDS or 0x029) */
+	reg [7:0] s_used_regs_vs;
+	always @(posedge clk) begin
+		if (!rst_n)
+			s_used_regs_vs <= 8'd0;
+		else if (st_we && (st_idx == GHCI_S_VS_WORDS || st_idx == 9'h029))
+			s_used_regs_vs <= st_wdata[7:0];
+	end
+
+	/* Vertex/Instance indices captured from vb stream */
+	reg [31:0] v_idx_mem [0:31];
+	reg [31:0] v_inst_mem [0:31];
+	integer vi;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			for (vi = 0; vi < 32; vi = vi + 1) begin
+				v_idx_mem[vi] <= 32'd0;
+				v_inst_mem[vi] <= 32'd0;
+			end
+		end else if (vb_valid && vb_ready) begin
+			v_idx_mem[vb_lane] <= vb_index;
+			v_inst_mem[vb_lane] <= vb_inst;
+		end
+	end
+
+	/* System input delivery FSM */
+	reg [5:0] sys_cnt;
+	reg sys_active;
+	wire [4:0] sys_lane = sys_cnt[5:1];
+	wire sys_is_inst = sys_cnt[0];
+	wire [5:0] sys_cnt_next;
+	wire sc_co_unused;
+	am_add #(.W(6)) u_sys_cnt (.a(sys_cnt), .b(6'd0), .ci(1'b1), .s(sys_cnt_next), .co(sc_co_unused));
 
 	/* The attribute being written. */
 	reg c_v, c_last;
@@ -157,35 +197,60 @@ module atg_vf_conv (
 		if (!rst_n) begin
 			c_v <= 1'b0;
 			vl_we <= 1'b0;
+			vl_reg <= 6'd0;
+			vl_lane <= 5'd0;
+			vl_data <= 32'd0;
 			fin <= 1'b0;
 			conv_done <= 1'b0;
+			sys_cnt <= 6'd0;
+			sys_active <= 1'b0;
 		end else begin
-			vl_we <= c_v;
-			vl_reg <= reg_c;
-			vl_lane <= c_lane;
-			vl_data <= word;
-			fin <= (c_end && c_last) || (take && !t_en && af_last);
-			conv_done <= fin;
-			if (c_v)
-				c_i <= c_i_next;
-			if (c_end)
-				c_v <= 1'b0;
-			if (take && t_en) begin
-				c_v <= 1'b1;
-				c_i <= 2'd0;
-				c_raw <= af_raw;
-				c_lane <= af_lane;
-				c_fmt <= s_fmt[af_attr];
-				c_dst <= t_dst;
-				c_vk <= s_vk[af_attr];
-				c_oob <= af_oob;
-				c_last <= af_last;
+			conv_done <= 1'b0;
+			if (sys_active) begin
+				vl_we <= 1'b1;
+				vl_reg <= sys_is_inst ? 6'd61 : 6'd60;
+				vl_lane <= sys_lane;
+				vl_data <= sys_is_inst ? v_inst_mem[sys_lane] : v_idx_mem[sys_lane];
+				sys_cnt <= sys_cnt_next;
+				if (sys_cnt == 6'd63) begin
+					sys_active <= 1'b0;
+					conv_done <= 1'b1;
+				end
+			end else begin
+				vl_we <= c_v;
+				vl_reg <= reg_c;
+				vl_lane <= c_lane;
+				vl_data <= word;
+				fin <= (c_end && c_last) || (take && !t_en && af_last);
+				if (fin) begin
+					if (s_used_regs_vs >= 8'd62) begin
+						sys_active <= 1'b1;
+						sys_cnt <= 6'd0;
+					end else begin
+						conv_done <= 1'b1;
+					end
+				end
+				if (c_v)
+					c_i <= c_i_next;
+				if (c_end)
+					c_v <= 1'b0;
+				if (take && t_en) begin
+					c_v <= 1'b1;
+					c_i <= 2'd0;
+					c_raw <= af_raw;
+					c_lane <= af_lane;
+					c_fmt <= s_fmt[af_attr];
+					c_dst <= t_dst;
+					c_vk <= s_vk[af_attr];
+					c_oob <= af_oob;
+					c_last <= af_last;
+				end
 			end
 		end
 	end
 
 	wire unused_ok = &{1'b0, st_wdata[23:20], st_wdata[15:8], s_off[8:5], vk_inf[67:12],
-		vk_inf[8:0], vk_feat[25:20], vk_feat[18:0]};
+		vk_inf[8:0], vk_feat[25:20], vk_feat[18:0], sc_co_unused};
 endmodule
 
 `default_nettype wire

@@ -131,6 +131,8 @@ module atg_vf #(
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.af_valid(af_valid), .af_ready(af_ready), .af_attr(af_attr), .af_lane(af_lane),
 		.af_raw(af_raw), .af_oob(af_oob), .af_last(af_last),
+		.vb_valid(vb_valid), .vb_ready(vb_ready), .vb_index(vb_index), .vb_inst(vb_inst),
+		.vb_lane(vb_lane),
 		.vl_we(vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane), .vl_data(vl_data),
 		.conv_done(conv_done)
 	);

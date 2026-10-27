@@ -197,7 +197,7 @@ module atg_cp_regs #(
 	parameter [10:0] XCAP_MASK = 11'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, PROT 9, FMT 10, DISP2 11) */
 	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
 	parameter PERF_SRC = 32'hFFFFFFFF,	/* PERF_SRC0..3 (byte n = PERF_SRCn) */
-	parameter SLIM_MMIO = 0		/* 1: GHCI 1.0 Slim 19 MMIO registers (0x00..0x48), eliminating STATE from host MMIO */
+	parameter SLIM_MMIO = 1		/* 1: GHCI 1.0 Slim 19 MMIO registers (0x00..0x48), eliminating STATE from host MMIO */
 ) (
 	input wire clk,
 	input wire rst_n,

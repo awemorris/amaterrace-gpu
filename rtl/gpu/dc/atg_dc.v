@@ -60,6 +60,7 @@ module atg_dc #(
 	output wire ev_vblank,
 	output wire ev_error,
 	output wire ev_hotplug,
+	output wire irq_display,
 	output wire pclk_sel,
 	/* Watermark preemption signals to MC (ws001-p039) */
 	output wire dc_urgent,
@@ -172,6 +173,7 @@ module atg_dc #(
 		.dc_err(dc_err),
 		.connected(connected), .pending1(pending[1]),
 		.ev_vblank(ev_vblank), .ev_error(ev_error), .frame_count(frame_count),
+		.irq_display(irq_display),
 		.i2c_we(i2c_we), .i2c_idx(i2c_idx), .i2c_wdata(i2c_wdata), .i2c_rdata(i2c_rdata),
 		.hdr_en(hdr_en), .vrr_en(vrr_en), .vrr_vmax(vrr_vmax), .flip_ready(flip_ready),
 		.plane2_en(plane2_en), .plane2_pos_x(plane2_pos_x), .plane2_pos_y(plane2_pos_y),

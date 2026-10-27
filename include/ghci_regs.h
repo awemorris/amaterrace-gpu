@@ -359,6 +359,11 @@ extern "C" {
 #define GHCI_MEM_HOST_LIMIT 0xCu /* host addresses below it, outside local memory; 0 = all */
 #define GHCI_MEM_WINDOW_CTRL 0x10u /* RW: [0] ENABLE, the local window is open (reset 1) */
 #define GHCI_MEM_WINDOW_ENABLE (1u << 0)
+#define GHCI_MEM_CACHE_CFG 0x14u /* R: Cache hierarchy status (MMIO 0x1F4) */
+#define GHCI_MEM_CACHE_L2_SIZE_KB(cfg) ((cfg) & 0xFFFFu)
+#define GHCI_MEM_CACHE_L2_WAYS(cfg) (((cfg) >> 16) & 0xFFu)
+#define GHCI_MEM_CACHE_TEX_L1_KB(cfg) (((cfg) >> 24) & 0x0Fu)
+#define GHCI_MEM_CACHE_VF_LINES(cfg) (((cfg) >> 28) & 0x0Fu)
 
 /* The PROT capability's registers (from its register offset, section 11.6). */
 #define GHCI_PROT_CAPS 0x0u
@@ -620,8 +625,11 @@ extern "C" {
 #define GHCI_DC_FMT_RGBA8 1u
 #define GHCI_DC_FMT_RGB565 2u
 #define GHCI_DC_IRQ_VSYNC (1u << 0)
-#define GHCI_DC_IRQ_UNDERFLOW (1u << 1)
-#define GHCI_DC_IRQ_FLIP_DONE (1u << 2)
+#define GHCI_DC_IRQ_FLIP_DONE (1u << 1)
+#define GHCI_DC_IRQ_CURSOR_FLIP (1u << 2)
+#define GHCI_DC_IRQ_HOTPLUG (1u << 3)
+#define GHCI_DC_IRQ_UNDERFLOW (1u << 4)
+#define GHCI_DC_IRQ_DISP_ERROR (1u << 5)
 
 /* DISP2 (docs/ghci.md section 13.2, draft): the same offsets up to 0x68
  * (IRQ_STATUS/IRQ_ENABLE are DISP's only), and these. */

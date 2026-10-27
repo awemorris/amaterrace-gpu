@@ -28,10 +28,11 @@ module atg_rop_order (
 	input wire [31:0] ex_xy,
 	input wire [3:0] ex_mask,
 	input wire [511:0] ex_color,
+	input wire [511:0] ex_color1,
 	input wire [127:0] ex_depth,
 	input wire ex_last,
 	output wire [15:0] ex_next,
-	input wire [153:0] ex_aux,	/* {rt, qlast, qfirst, nocol, front, d_s, zexp, smask} */
+	input wire [154:0] ex_aux,	/* {rt[2:0], qlast, qfirst, nocol, front, d_s, zexp, smask} */
 	/* Direct fragments to the ROP (no SU: DEBUG_COLOR) */
 	input wire dx_valid,
 	output wire dx_ready,
@@ -49,9 +50,10 @@ module atg_rop_order (
 	output wire [31:0] q_xy,
 	output wire [3:0] q_mask,
 	output wire [511:0] q_color,
+	output wire [511:0] q_color1,
 	output wire [127:0] q_depth,
 	output wire q_dbg,
-	output wire [153:0] q_aux,
+	output wire [154:0] q_aux,
 	output wire busy
 );
 	/* spec/gpu/rop/atg_rop_order.md */
@@ -67,11 +69,12 @@ module atg_rop_order (
 	assign q_xy = ex_ok ? ex_xy : dx_xy;
 	assign q_mask = ex_ok ? ex_mask : dx_mask;
 	assign q_color = ex_ok ? ex_color : 512'd0;
+	assign q_color1 = ex_ok ? ex_color1 : 512'd0;
 	assign q_depth = ex_ok ? ex_depth : dx_depth;
 	assign q_dbg = !ex_ok;
 	/* the SU's beat (ex_aux); the direct path: one beat of attachment 0,
 	 * front, every sample of a covered lane, with the lane's depth (zexp) */
-	assign q_aux = ex_ok ? ex_aux : {2'd0, 1'b1, 1'b1, 1'b0, 1'b1, 128'd0, 4'hF, {4{dx_mask[3]}},
+	assign q_aux = ex_ok ? ex_aux : {3'd0, 1'b1, 1'b1, 1'b0, 1'b1, 128'd0, 4'hF, {4{dx_mask[3]}},
 		{4{dx_mask[2]}}, {4{dx_mask[1]}}, {4{dx_mask[0]}}};
 	assign busy = issued != next;
 

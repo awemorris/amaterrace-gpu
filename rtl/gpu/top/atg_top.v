@@ -88,7 +88,8 @@ module atg_top #(
 	parameter PROT_PLB_W = 2,
 	parameter HAS_L2 = 0,
 	parameter L2_WAYS = 16,
-	parameter L2_SET_W = 8
+	parameter L2_SET_W = 8,
+	parameter SLIM_MMIO = 0
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -266,7 +267,7 @@ module atg_top #(
 	assign j_busy = a_busy;
 
 	/* The DC (HAS_DISP) and the CP's atg_cp_disp: its register bus, flips and events. */
-	wire dc_vsync, dc_ev_error, dc_ev_hotplug, dc_idle;
+	wire dc_vsync, dc_ev_error, dc_ev_hotplug, dc_idle, dc_irq_display;
 	wire dc_d_we, dc_flip_valid, dc_flip_plane;
 	wire [5:0] dc_d_idx, dc_d_ridx;
 	wire [31:0] dc_d_wdata, dc_d_wmask, dc_d_rdata, dc_flip_base, dc_frame_count;
@@ -434,7 +435,8 @@ module atg_top #(
 		.CORE1(CORE1),
 		.HAS_FMT(CORE1),
 		.HAS_ETC(HAS_TU != 0),	/* the TU decodes ETC2 and EAC */
-		.HAS_PROT(PROT)
+		.HAS_PROT(PROT),
+		.SLIM_MMIO(SLIM_MMIO)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -536,6 +538,7 @@ module atg_top #(
 		.taken_cancel(dc_taken_cancel), .dc_pending(dc_pending), .dc_idle(dc_idle),
 		.frame_count(dc_frame_count), .dc_err(dc_err),
 		.dc_ev({dc_ev_hotplug, dc_ev_error, dc_vsync}),
+		.dc_irq_display(dc_irq_display),
 		.diag_cp_pc(diag_cp_pc),
 		.diag_cp_status(diag_cp_status),
 		.diag_pipe_fsm(diag_pipe_fsm)
@@ -897,8 +900,9 @@ module atg_top #(
 	wire [15:0] ex_seq, ex_next;
 	wire [31:0] ex_xy;
 	wire [3:0] ex_mask;
-	wire [511:0] ex_color;
-	wire [153:0] ex_aux;
+	wire [511:0] ex_color, ex_color1;
+	wire ex_has_src1;
+	wire [154:0] ex_aux;
 	wire [127:0] ex_depth;
 	/* SU 0 ↔ SA. */
 	wire sa_push_valid, sa_push_ready, sa_pop_valid, sa_pop_ready, sa_ctl_valid;
@@ -1044,7 +1048,7 @@ module atg_top #(
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.busy(rop_busy), .fsm(rop_fsm),
 			.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
-			.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
+			.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(ex_color1), .ex_has_src1(ex_has_src1), .ex_depth(ex_depth), .ex_last(ex_last),
 			.ex_next(ex_next), .ex_aux(ex_aux),
 			.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 			.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
@@ -1065,7 +1069,7 @@ module atg_top #(
 		assign ex_ready = 1'b0;
 		assign ex_next = 16'd0;
 		assign dx_ready = 1'b0;
-		wire unused_rop = &{1'b0, ex_valid, ex_seq, ex_xy, ex_mask, ex_color, ex_depth, ex_last, ex_aux,
+		wire unused_rop = &{1'b0, ex_valid, ex_seq, ex_xy, ex_mask, ex_color, ex_color1, ex_has_src1, ex_depth, ex_last, ex_aux,
 			dx_valid, dx_seq, dx_xy, dx_mask, dx_depth, dx_last, ord_valid, ord_seq, occ_clear};
 	end
 
@@ -1119,6 +1123,7 @@ module atg_top #(
 			.taken(dc_taken), .taken_cancel(dc_taken_cancel), .pending(dc_pending),
 			.dc_err(dc_err), .idle(dc_idle), .frame_count(dc_frame_count),
 			.ev_vblank(dc_vsync), .ev_error(dc_ev_error), .ev_hotplug(dc_ev_hotplug),
+			.irq_display(dc_irq_display),
 			.pclk_sel(pclk_sel),
 			.dc_urgent(dc_urgent), .dc_panic(dc_panic),
 			.req_valid(c_req_valid[C_DC]), .req_ready(c_req_ready[C_DC]),
@@ -1139,6 +1144,7 @@ module atg_top #(
 		assign dc_vsync = 1'b0;
 		assign dc_ev_error = 1'b0;
 		assign dc_ev_hotplug = 1'b0;
+		assign dc_irq_display = 1'b0;
 		assign dc_idle = 1'b1;
 		assign dc_d_rdata = 32'd0;
 		assign dc_frame_count = 32'd0;
@@ -1203,9 +1209,10 @@ module atg_top #(
 		wire [639:0] s_tx_coord;
 		wire [11:0] s_tx_off;
 		wire [15:0] s_tx_tag, s_ex_seq;
-		wire [511:0] s_ex_color;
+		wire [511:0] s_ex_color, s_ex_color1;
+		wire s_ex_has_src1;
 		wire [127:0] s_ex_depth;
-		wire [153:0] s_ex_aux;
+		wire [154:0] s_ex_aux;
 		wire [DW-1:0] s_sa_push_data;
 		wire g0 = k == 0;
 
@@ -1235,7 +1242,7 @@ module atg_top #(
 			.tr_valid(g0 && tr_valid), .tr_ready(s_tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
 			.tr_last(tr_last),
 			.ex_valid(s_ex_valid), .ex_ready(g0 && ex_ready), .ex_seq(s_ex_seq), .ex_xy(s_ex_xy),
-			.ex_mask(s_ex_mask), .ex_color(s_ex_color), .ex_depth(s_ex_depth),
+			.ex_mask(s_ex_mask), .ex_color(s_ex_color), .ex_color1(s_ex_color1), .ex_has_src1(s_ex_has_src1), .ex_depth(s_ex_depth),
 			.ex_last(s_ex_last), .ex_next(ex_next), .ex_aux(s_ex_aux),
 			.mesh_valid(s_mesh_valid), .mesh_ready(g0 ? su_mesh_ready : 1'b1), .mesh_tri(s_mesh_tri),
 			.mesh_last(s_mesh_last), .mesh_id(s_mesh_id),
@@ -1288,6 +1295,8 @@ module atg_top #(
 			assign ex_xy = s_ex_xy;
 			assign ex_mask = s_ex_mask;
 			assign ex_color = s_ex_color;
+			assign ex_color1 = s_ex_color1;
+			assign ex_has_src1 = s_ex_has_src1;
 			assign ex_depth = s_ex_depth;
 			assign ex_last = s_ex_last;
 			assign ex_aux = s_ex_aux;
@@ -1303,7 +1312,7 @@ module atg_top #(
 		end else begin : g_sun
 			wire unused_sun = &{1'b0, s_vl_gnt, s_vl_ptbase, s_pt_done, s_fl_gnt, s_pt_rdata, s_tx_valid,
 				s_tx_op, s_tx_slot, s_tx_vs, s_tx_mask, s_tx_coord, s_tx_off, s_tx_tag, s_tx_last, s_tr_ready,
-				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_depth, s_ex_last, s_ex_aux,
+				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_color1, s_ex_has_src1, s_ex_depth, s_ex_last, s_ex_aux,
 				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data,
 				s_mesh_valid, s_mesh_last, s_mesh_tri, s_mesh_id};
 		end
@@ -1369,9 +1378,11 @@ module atg_top #(
 		assign ex_xy = 32'd0;
 		assign ex_mask = 4'd0;
 		assign ex_color = 512'd0;
+		assign ex_color1 = 512'd0;
+		assign ex_has_src1 = 1'b0;
 		assign ex_depth = 128'd0;
 		assign ex_last = 1'b0;
-		assign ex_aux = 154'd0;
+		assign ex_aux = 155'd0;
 		assign sa_push_valid = 1'b0;
 		assign sa_push_data = {DW{1'b0}};
 		assign sa_pop_ready = 1'b0;
