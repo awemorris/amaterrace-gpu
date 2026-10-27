@@ -73,7 +73,7 @@
 | `q001-i59` | **D1** | [ws004-p001](../ws004/phase001/phase.md) | SU support for task/mesh shader（vk_ext_mesh_shader, vk_ext_task_shader）内蔵アーキテクチャ方式検討資料作成 | cleared | なし | 検討完了。全主要論点で推奨案（64頂点/126プリミティブ、L2Cペイロード、LDS直結DMA、静的MUX）採用でユーザー承認完了。 |
 | `q001-i60` | **P3 / R1** | [ws004-p002](../ws004/phase002/phase.md) | SU 内部 Meshlet プリミティブエクスポート（atg_su_exp_mesh）& LDS インターフェース設計・実装 | cleared | `q001-i59` | P3 実装完了。NGG完全撤廃確認、単体・atg_su:+quick PASS、R1 敵対的レビュー APPROVE 承認完了。 |
 | `q001-i61` | **P3 / P2 / P1** | [ws004-p003](../ws004/phase003/phase.md) | CP タスクディスパッチ & メッシュパイプライン統合・検証 | cleared | `q001-i60` | RX静的MUX・CP ringパケット長・ゼロ拡張ガード是正完了。全8テストPASS（atg_top_mesh 10s）、Verilator-Wall警告0件、arith-lint 0逸脱。 |
-| `q001-i62` | **P1** | [ws001-p007](ws001/phase007/phase.md) | ホスト接続 AXI（BAR0 / s_*）64ビット固定化 & レジスタバス整合 | active | `q001-i61` | ユーザー指示により着手。am_axi_regs 64bit AXI化、atg_top s_* 64bit化、CDC/PCIeブリッジ整合。 |
+| `q001-i62` | **P1** | [ws001-p007](ws001/phase007/phase.md) | 可変アドレス空間（内部30-40bit/外部40-48bit/偶数レジスタペア）仕様書作成 & 実装設計 | active | `q001-i61` | ユーザー承認方針に基づき、仕様変更・パラメータ・各ブロック変更点を包括的にまとめた仕様書を作成。 |
 | `q001-i63` | **P2** | [ws001-p007](ws001/phase007/phase.md) | GHCI 1.0 仕様整合化 & ドライバ質問回答作成 (J01-J27) & ヘッダ/RTL是正 | active | なし | ユーザー指示により着手。J01-J27回答作成、ghci.md古い1.1記述撤廃、ヘッダ競合解消、RTL是正。 |
 
 ## サブエージェント実行状態（N=3）
