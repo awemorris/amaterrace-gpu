@@ -7,20 +7,21 @@
 
 /*
  * gsi1_isa.h: the GHCI standard shader ISA GSI1 for C (docs/ghci.md
- * section 12): the program binary's header and interface table (12.10),
- * the operand numbers (12.3), the instruction fields (12.4), the opcodes
- * (12.5) and the export targets and fragment inputs (12.11, 12.12).  The
- * CP's firmware checks programs with it and an OS driver's compiler
- * writes them with it; both copy this file.  It has no dependency but
- * the C integer constants.  tools/gsi1asm.py holds the same encoding.
+ * section 12): operand numbers (12.3), instruction fields (12.4),
+ * opcodes (12.5), export targets and register ABI conventions (12.10.3).
+ * In GHCI 1.0, shaders execute as pure binaries without container headers
+ * or reflection tables (§12.10.1); legacy pre-1.0 container header and
+ * interface kinds are retained below for backward compatibility only.
+ * tools/gsi1asm.py holds the same encoding.
  */
 
 #ifndef GSI1_ISA_H
 #define GSI1_ISA_H
 
 /*
- * The program binary (section 12.10): a 16-word header, the interface
- * table and the code.  Word numbers of the header.
+ * Legacy pre-1.0 container header & interface table (deprecated in GHCI 1.0).
+ * GHCI 1.0 pipelines submit pure binaries via GhciPipelineState (§8.2, §12.10.1).
+ * Word numbers of the legacy header.
  */
 #define GSI1_MAGIC 0x47534931u		/* "GSI1", word 0 */
 #define GSI1_VERSION 1u
@@ -48,18 +49,18 @@
 #define GSI1_STAGE_COMPUTE 2u
 
 /*
- * Flags (word 3).  [0]-[4] say what the program needs of the GPU (CAPS);
- * [5]-[9] are what a fragment program asks of the pipeline's state.
+ * Flags (word 3, legacy container header). Feature gating in GHCI 1.0
+ * is governed by DEVICE_CAPS and EXT_CAP_FEATURE registers (§3.2).
  */
-#define GSI1_FLAG_PACKED (1u << 0)	/* packed fp16/int16 (CAPS[28]) */
-#define GSI1_FLAG_SUBGROUP (1u << 1)	/* shfl, vote, ballot (CAPS[24]) */
+#define GSI1_FLAG_PACKED (1u << 0)	/* packed fp16/int16 (CAP_FP16, DEVICE_CAPS[6]) */
+#define GSI1_FLAG_SUBGROUP (1u << 1)	/* shfl, vote, ballot (CAP_SUBGROUP, EXT_CAP_FEATURE[29]) */
 #define GSI1_FLAG_LDS (1u << 2)		/* lds, sts, bar */
 #define GSI1_FLAG_ATOMIC (1u << 3)	/* atom */
-#define GSI1_FLAG_SYSTOLIC (1u << 4)	/* rq, sactl (CAPS[25], reserved) */
-#define GSI1_FLAG_CENTROID (1u << 5)	/* reads r7-r9: set MS_CTRL[4] */
-#define GSI1_FLAG_DEPTH (1u << 6)	/* exports DEPTH (0x104) */
+#define GSI1_FLAG_SYSTOLIC (1u << 4)	/* rq, sactl (reserved in GHCI 1.0) */
+#define GSI1_FLAG_CENTROID (1u << 5)	/* reads r7-r9: fs_centroid (PSO dw15 [16]) */
+#define GSI1_FLAG_DEPTH (1u << 6)	/* exports DEPTH (0x104): fs_depth_export (PSO dw15 [17]) */
 #define GSI1_FLAG_SAMPLE_MASK (1u << 7)	/* exports a SAMPLE_MASK of its own */
-#define GSI1_FLAG_KILL (1u << 8)	/* may discard (kill) */
+#define GSI1_FLAG_KILL (1u << 8)	/* may discard (kill): fs_discard (PSO dw15 [18]) */
 #define GSI1_FLAG_POINTS (1u << 9)	/* built for points: r0, r1 = PointCoord */
 #define GSI1_FLAG_SAMPLE_IN (1u << 10)	/* reads r6 (the sample mask in) */
 
@@ -194,8 +195,8 @@
 
 /*
  * lda's immediate (section 12.10.3): the PT word in [8:2] (varying w at
- * 4 + w; words 0-3 read clip-space POS.x..w) and the vertex in [1:0].  A GPU with CAPS[30]
- * has the varying words 0-63 (Vulkan's 64 output and input components).
+ * 4 + w; words 0-3 read clip-space POS.x..w) and the vertex in [1:0].
+ * GHCI 1.0 supports 64 varying words (0-63, Vulkan's 64 output and input components).
  */
 #define GSI1_LDA(word, vertex) ((((word) & 0x7Fu) << 2) | ((vertex) & 3u))
 #define GSI1_PT_VARYING(w) (4u + (w))

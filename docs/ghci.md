@@ -2295,7 +2295,7 @@ The Vertex Fetcher (VF, `atg_vf_conv`, `atg_vf_fetch`) automatically fetches ena
       $$base_0 = 0, \quad base_{i+1} = base_i + C_i \quad (\text{for enabled slots } i)$$
       - The valid components of slot $i$ occupy registers $r[base_i \dots base_i + C_i - 1]$.
       - Unused components for vector types (e.g. padding to `vec4` with default $1.0$ or $0.0$) are synthesized by the shader compiler if required; the hardware VF writes only the $C_i$ valid format components into the register file.
-      - Total register allocation for attributes must satisfy $\sum C_i \le 60$ ($r0..r59$). If total required attribute registers exceed 60, the driver must reject pipeline creation (`VK_ERROR_INITIALIZATION_FAILED`).
+      - Total register allocation for attributes must satisfy $\sum C_i \le 60$ ($r0..r59$). If total required attribute registers exceed 60, the driver must reject pipeline creation.
   - **Autonomous Hardware Configuration**:
     - When executing `CMD_BIND_PIPELINE`, the Command Processor (CP) scans `PSO.attributes[0..15]`, calculates $base_i$ and $C_i$ for each enabled slot, and autonomously configures internal hardware state `ATTR_DST[i]` (`0x1C0 + i`) with destination register $base_i$ and component count $C_i$. Drivers never emit `SET_REG` directly.
 
