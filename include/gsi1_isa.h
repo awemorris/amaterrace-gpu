@@ -169,6 +169,8 @@
 #define GSI1_NWGZ 117u
 #define GSI1_ONEH2 118u
 #define GSI1_MASK 119u
+#define GSI1_VTX_INDEX 120u		/* gl_VertexIndex (system operand, N61) */
+#define GSI1_INST_INDEX 121u		/* gl_InstanceIndex (system operand, N61) */
 #define GSI1_REGISTERS_MAX 63u		/* r0-r62 */
 
 /* The fragment warp's inputs (section 12.11). */
@@ -234,6 +236,8 @@
 #define GSI1_W1_SAT (1u << 14)
 #define GSI1_W1_HSEL_SHIFT 15u
 #define GSI1_W1_SUB_SHIFT 17u
+#define GSI1_W1_TEX_SLOT_SHIFT 17u	/* sub[3:0]: texture descriptor slot 0..15 */
+#define GSI1_W1_SAMP_SLOT_SHIFT 11u	/* w1[14:11]: sampler descriptor slot 0..15 (N61) */
 #define GSI1_W1_IMM_HI_SHIFT 22u	/* I/S/B: + sext(imm_hi) << 12 */
 #define GSI1_W1_MOVI_SHIFT 2u		/* U: movi's imm[11:0] */
 #define GSI1_W1_TEX_DU_SHIFT 22u	/* texture R forms: texel offsets */

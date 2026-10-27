@@ -248,10 +248,10 @@ typedef struct GhciTextureDescriptor {
 	uint8_t  sample_count;          /* 0x18: MSAA sample count (1, 2, 4) */
 	uint8_t  dimension;             /* 0x19: 0=1D, 1=2D, 2=3D, 3=Cube */
 	uint16_t flags;                 /* 0x1A: [0]=Tiled, [1]=sRGB */
-	uint32_t reserved;              /* 0x1C: Padding to 32 bytes */
+	uint32_t component_swizzle;     /* 0x1C: [2:0] R, [5:3] G, [8:6] B, [11:9] A (VkComponentSwizzle), [31:12] reserved (N61) */
 } GhciTextureDescriptor;
 
-/* Sampler Descriptor (16 Bytes, N23) */
+/* Sampler Descriptor (16 Bytes, N23, N61) */
 typedef struct GhciSamplerDescriptor {
 	uint8_t  min_filter;            /* 0x00: 0=Nearest, 1=Linear */
 	uint8_t  mag_filter;            /* 0x01: 0=Nearest, 1=Linear */
@@ -267,7 +267,7 @@ typedef struct GhciSamplerDescriptor {
 	uint8_t  max_anisotropy;        /* 0x0C: Max anisotropy (1..16) (N23) */
 	uint8_t  border_color_type;     /* 0x0D: 0=TransBlack, 1=OpaqueBlack, 2=OpaqueWhite, 3=Custom (N23) */
 	uint8_t  border_color_idx;      /* 0x0E: Custom 128-bit border color table index (0..15) (N23) */
-	uint8_t  reserved;              /* 0x0F: Padding to 16 bytes */
+	uint8_t  unnormalized_coords;   /* 0x0F: [0] unnormalized_coordinates (0: norm [0,1], 1: unnorm [0,dim]), [7:1] res (N61) */
 } GhciSamplerDescriptor;
 
 /* Combined Image Sampler Descriptor (Option A: 32-bit Index Pair, K13) */
@@ -566,34 +566,37 @@ typedef struct GhciBufferDescriptor {
  */
 
 /*
- * In-Memory Render Pass Descriptor (GhciRenderPassDesc) - 192 Bytes (64-byte aligned, K12, N03)
+ * In-Memory Render Pass Descriptor (GhciRenderPassDesc) - 192 Bytes (64-byte aligned, K12, N03, N47)
  * Pointed to by CMD_BEGIN_RENDER_PASS via render_pass_desc_va.
+ * Attachments are strictly linear row layout (64-byte aligned row_pitch_bytes).
+ * image_va points directly to the subresource slice base. mip_level and base_array_layer
+ * must be 0 (reserved). layers must be 1.
  */
 typedef struct GhciColorAttachmentDesc {
-	uint64_t image_va;              /* 0x00: Color attachment GPU virtual address (64-bit GPU VA) */
-	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes (supports up to 4 GiB pitch) */
+	uint64_t image_va;              /* 0x00: Color attachment GPU virtual address of subresource slice (64-bit GPU VA) */
+	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes (64-byte aligned, linear layout) */
 	uint8_t  format;                /* 0x0C: VkFormat enum (e.g. VK_FORMAT_R8G8B8A8_UNORM = 37) */
 	uint8_t  ops;                   /* 0x0D: [1:0] LoadOp (0: Load, 1: Clear, 2: DontCare), [3:2] StoreOp (0: Store, 1: DontCare) */
-	uint8_t  mip_level;             /* 0x0E: Target subresource mip level */
-	uint8_t  base_array_layer;      /* 0x0F: Base array layer (0..255, N03) */
+	uint8_t  mip_level;             /* 0x0E: Reserved (must be 0, N47) */
+	uint8_t  base_array_layer;      /* 0x0F: Reserved (must be 0, N47) */
 } GhciColorAttachmentDesc;
 
 typedef struct GhciDepthStencilAttachmentDesc {
-	uint64_t depth_stencil_va;      /* 0x00: Depth/stencil GPU virtual address */
-	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes */
+	uint64_t depth_stencil_va;      /* 0x00: Depth/stencil GPU virtual address of subresource slice */
+	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes (64-byte aligned, linear layout) */
 	uint8_t  format;                /* 0x0C: Depth/stencil VkFormat (D16_UNORM, D32_SFLOAT, D24S8) */
 	uint8_t  ops;                   /* 0x0D: [1:0] DepthLoad, [3:2] DepthStore, [5:4] StencilLoad, [7:6] StencilStore */
-	uint8_t  mip_level;             /* 0x0E: Target subresource mip level */
-	uint8_t  base_array_layer;      /* 0x0F: Base array layer (0..255, N03) */
+	uint8_t  mip_level;             /* 0x0E: Reserved (must be 0, N47) */
+	uint8_t  base_array_layer;      /* 0x0F: Reserved (must be 0, N47) */
 } GhciDepthStencilAttachmentDesc;
 
 typedef struct GhciResolveAttachmentDesc {
-	uint64_t resolve_va;            /* 0x00: Multisample resolve target GPU virtual address */
-	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes */
+	uint64_t resolve_va;            /* 0x00: Multisample resolve target GPU virtual address of subresource slice */
+	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes (64-byte aligned, linear layout) */
 	uint8_t  format;                /* 0x0C: Resolve destination format (VkFormat) */
 	uint8_t  mode;                  /* 0x0D: [1:0] ResolveMode (0: Average, 1: Min, 2: Max, 3: Sample Zero) */
-	uint8_t  mip_level;             /* 0x0E: Target subresource mip level */
-	uint8_t  base_array_layer;      /* 0x0F: Base array layer (0..255, N03) */
+	uint8_t  mip_level;             /* 0x0E: Reserved (must be 0, N47) */
+	uint8_t  base_array_layer;      /* 0x0F: Reserved (must be 0, N47) */
 } GhciResolveAttachmentDesc;
 
 typedef struct GhciRenderPassDesc {
@@ -606,7 +609,7 @@ typedef struct GhciRenderPassDesc {
 	/* 0xA0 - 0xBF: Framebuffer Dimensions & Sample/Clear Config (32 bytes) */
 	uint16_t width;                 /* 0xA0: Framebuffer width in pixels (1..16384) */
 	uint16_t height;                /* 0xA2: Framebuffer height in pixels (1..16384) */
-	uint16_t layers;                /* 0xA4: Array layer count (1..2048) */
+	uint16_t layers;                /* 0xA4: Array layer count (must be 1 in GHCI 1.0, N47) */
 	uint8_t  samples;               /* 0xA6: Sample count: 1, 2, or 4 (MSAA) */
 	uint8_t  reserved0;             /* 0xA7: Reserved */
 	uint64_t clear_color_table_va;  /* 0xA8: 64-bit GPU VA to 8 x 16-byte VkClearColorValue table (128 bytes total); 0 = default */

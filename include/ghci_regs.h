@@ -144,24 +144,34 @@ extern "C" {
 #define GHCI_IRQ_DISPLAY         (1u << 3)  /* Display scanout / VSYNC event */
 #define GHCI_IRQ_SOFT            (1u << 5)  /* Software interrupt (triggered via IRQ_SET) */
 
-/* FAULT_INFO decoding (0x018, K04) */
+/* FAULT_INFO decoding (0x018, K04, N50) */
 #define GHCI_FAULT_KIND(info)      ((info) & 0x0Fu)        /* [3:0] Fault kind */
 #define GHCI_FAULT_UNIT(info)      (((info) >> 4) & 0x0Fu) /* [7:4] Source unit */
 #define GHCI_FAULT_SESSION(info)   (((info) >> 8) & 0xFFu) /* [15:8] Session ID (0..15) */
-#define GHCI_FAULT_SYNDROME(info)  (((info) >> 16) & 0xFFFFu) /* [31:16] Subunit syndrome */
+#define GHCI_FAULT_STAGE(info)     (((info) >> 16) & 0x0Fu) /* [19:16] Active shader stage (N50) */
+#define GHCI_FAULT_SYNDROME(info)  (((info) >> 20) & 0x0FFFu) /* [31:20] 12-bit subunit syndrome (N50) */
 
-/* Fault Kinds [3:0] (K04) */
+/* Fault Kinds [3:0] (K04, N50) */
 #define GHCI_FAULT_KIND_NONE            0u
 #define GHCI_FAULT_KIND_INVALID_OP      1u /* Unrecognized packet opcode or illegal operation */
+#define GHCI_FAULT_KIND_INVALID_ARG     1u /* Alias: invalid argument */
 #define GHCI_FAULT_KIND_KICK_ABSENT     2u /* Kick directed to absent hardware unit */
+#define GHCI_FAULT_KIND_RING_OOB        2u /* Alias: command ring address out-of-bounds */
 #define GHCI_FAULT_KIND_BAD_REG         3u /* Malformed packet header, length mismatch, or bad register */
+#define GHCI_FAULT_KIND_PAGE_READ       3u /* Alias: page read translation fault */
 #define GHCI_FAULT_KIND_TIMEOUT         4u /* Watchdog execution timeout / hang */
+#define GHCI_FAULT_KIND_WATCHDOG        4u /* Alias: watchdog timer expired */
 #define GHCI_FAULT_KIND_FENCE_ERROR     5u /* Memory / fence response error */
+#define GHCI_FAULT_KIND_AXI_ERROR       5u /* Alias: interconnect / bus DECERR/SLVERR */
+#define GHCI_FAULT_KIND_PAGE_WRITE      6u /* MMU page write fault */
 #define GHCI_FAULT_KIND_PROT_FAULT      6u /* Session protection violation */
+#define GHCI_FAULT_KIND_TLB_ERROR       7u /* TLB translation fault */
 #define GHCI_FAULT_KIND_LOCKED_REG      7u /* Write to locked register */
 #define GHCI_FAULT_KIND_MMU_OOM         8u /* Dynamic page table allocation heap exhausted */
+#define GHCI_FAULT_KIND_ISA_FAULT       8u /* Shader ISA execution fault */
 #define GHCI_FAULT_KIND_PAGE_FAULT      9u /* Unmapped virtual page address */
 #define GHCI_FAULT_KIND_PERM_FAULT      10u /* Memory access permission violation */
+#define GHCI_FAULT_KIND_MEMORY_FAULT    10u /* Alias: memory protection / alignment fault */
 
 /* Source Units [7:4] (K04) */
 #define GHCI_UNIT_CP             0u
@@ -208,14 +218,16 @@ extern "C" {
 #define GHCI_RESIDENT_WARPS 0x04Cu	/* R: [15:0] the warps the GPU runs at once (NSU x NWARPS), [23:16] registers per lane */
 #define GHCI_RESIDENT_WARPS_COUNT(v) ((v) & 0xFFFFu)
 #define GHCI_RESIDENT_WARPS_NREGS(v) (((v) >> 16) & 0xFFu) /* general registers per lane (32 or 64) */
-#define GHCI_RING_BASE 0x050u
-#define GHCI_RING_SIZE 0x054u
-#define GHCI_RING_WPTR 0x058u
-#define GHCI_RING_RPTR 0x05Cu
-#define GHCI_APERTURE_BASE 0x060u
-#define GHCI_APERTURE_LIMIT 0x064u
-#define GHCI_FAULT_ADDR 0x068u
-#define GHCI_FAULT_INFO 0x06Cu
+
+/* Pre-1.0 legacy prototype offsets; abolished in GHCI 1.0 Slim MMIO (N60). Do not use in 1.0 drivers. */
+#define GHCI_LEGACY_RING_BASE 0x050u
+#define GHCI_LEGACY_RING_SIZE 0x054u
+#define GHCI_LEGACY_RING_WPTR 0x058u
+#define GHCI_LEGACY_RING_RPTR 0x05Cu
+#define GHCI_LEGACY_APERTURE_BASE 0x060u
+#define GHCI_LEGACY_APERTURE_LIMIT 0x064u
+#define GHCI_LEGACY_FAULT_ADDR 0x068u
+#define GHCI_LEGACY_FAULT_INFO 0x06Cu
 #define GHCI_FENCE_LAST 0x070u
 #define GHCI_CP_PC 0x074u
 #define GHCI_CP_STATUS 0x078u
