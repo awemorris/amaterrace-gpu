@@ -339,7 +339,8 @@ module atg_su_sb #(
 	wire alloc = issued && need_e;
 	wire [NE_W-1:0] alloc_idx = {u_warp, free_e[SBE_W-1:0]};	/* free_e < SB_ENTRIES at an alloc */
 
-	/* Each warp's counters: + 1 at an issue of the class, - 1 at its release. */
+	/* Each warp's counters: + 1 at an issue of the class, - 1 at its release.
+	 * Speculatively precompute +1 and -1 from register outputs to eliminate CARRY4 from critical path. */
 	wire [NWARPS*CNT_W-1:0] cm_next, ct_next, cx_next;
 	genvar gq;
 	generate
@@ -349,13 +350,30 @@ module atg_su_sb #(
 			wire im = iw && cls == ATG_CLS_M, rm = rw && rel_cls == ATG_CLS_M;
 			wire it = iw && cls == ATG_CLS_T, rt = rw && rel_cls == ATG_CLS_T;
 			wire ix = iw && cls == ATG_CLS_X, rx = rw && rel_cls == ATG_CLS_X;
-			wire m_co_unused, t_co_unused, x_co_unused;
-			am_add #(.W(CNT_W)) u_cm (.a(cm[gq*CNT_W +: CNT_W]),
-				.b({{(CNT_W-1){rm && !im}}, im ^ rm}), .ci(1'b0), .s(cm_next[gq*CNT_W +: CNT_W]), .co(m_co_unused));
-			am_add #(.W(CNT_W)) u_ct (.a(ct[gq*CNT_W +: CNT_W]),
-				.b({{(CNT_W-1){rt && !it}}, it ^ rt}), .ci(1'b0), .s(ct_next[gq*CNT_W +: CNT_W]), .co(t_co_unused));
-			am_add #(.W(CNT_W)) u_cx (.a(cx[gq*CNT_W +: CNT_W]),
-				.b({{(CNT_W-1){rx && !ix}}, ix ^ rx}), .ci(1'b0), .s(cx_next[gq*CNT_W +: CNT_W]), .co(x_co_unused));
+
+			wire [CNT_W-1:0] w_cm = cm[gq*CNT_W +: CNT_W];
+			wire [CNT_W-1:0] w_ct = ct[gq*CNT_W +: CNT_W];
+			wire [CNT_W-1:0] w_cx = cx[gq*CNT_W +: CNT_W];
+
+			wire [CNT_W-1:0] w_cm_p1, w_cm_m1;
+			wire [CNT_W-1:0] w_ct_p1, w_ct_m1;
+			wire [CNT_W-1:0] w_cx_p1, w_cx_m1;
+			wire cm_p1_co, cm_m1_bo, ct_p1_co, ct_m1_bo, cx_p1_co, cx_m1_bo;
+
+			am_add #(.W(CNT_W)) u_cm_p1 (.a(w_cm), .b(6'd1), .ci(1'b0), .s(w_cm_p1), .co(cm_p1_co));
+			am_sub #(.W(CNT_W)) u_cm_m1 (.a(w_cm), .b(6'd1), .bi(1'b0), .d(w_cm_m1), .bo(cm_m1_bo));
+
+			am_add #(.W(CNT_W)) u_ct_p1 (.a(w_ct), .b(6'd1), .ci(1'b0), .s(w_ct_p1), .co(ct_p1_co));
+			am_sub #(.W(CNT_W)) u_ct_m1 (.a(w_ct), .b(6'd1), .bi(1'b0), .d(w_ct_m1), .bo(ct_m1_bo));
+
+			am_add #(.W(CNT_W)) u_cx_p1 (.a(w_cx), .b(6'd1), .ci(1'b0), .s(w_cx_p1), .co(cx_p1_co));
+			am_sub #(.W(CNT_W)) u_cx_m1 (.a(w_cx), .b(6'd1), .bi(1'b0), .d(w_cx_m1), .bo(cx_m1_bo));
+
+			assign cm_next[gq*CNT_W +: CNT_W] = (im && !rm) ? w_cm_p1 : (rm && !im) ? w_cm_m1 : w_cm;
+			assign ct_next[gq*CNT_W +: CNT_W] = (it && !rt) ? w_ct_p1 : (rt && !it) ? w_ct_m1 : w_ct;
+			assign cx_next[gq*CNT_W +: CNT_W] = (ix && !rx) ? w_cx_p1 : (rx && !ix) ? w_cx_m1 : w_cx;
+
+			wire unused_cnt_co = &{1'b0, cm_p1_co, cm_m1_bo, ct_p1_co, ct_m1_bo, cx_p1_co, cx_m1_bo};
 		end
 	endgenerate
 
