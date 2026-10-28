@@ -32,9 +32,9 @@ module am_skid #(
 
 	output reg out_valid,
 	input wire out_ready,
-	output reg [WIDTH-1:0] out_data
+	(* max_fanout = 24 *) output reg [WIDTH-1:0] out_data
 );
-	reg [WIDTH-1:0] skid_data;
+	(* max_fanout = 24 *) reg [WIDTH-1:0] skid_data;
 	reg skid_valid;
 
 	always @(posedge clk) begin

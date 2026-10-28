@@ -89,13 +89,13 @@ module atg_su_sb #(
 	localparam NE_W = $clog2(NE);	/* issued, not yet past atg_su_opd */
 
 	/* The uop's fields. */
-	wire [3:0] unit = u_uop[ATG_UOP_UNIT +: 4];
-	wire [7:0] op = u_uop[ATG_UOP_OP +: 8];
-	wire [2:0] cls = u_uop[ATG_UOP_CLS +: 3];
-	wire [6:0] rd = u_uop[ATG_UOP_RD +: 7];
-	wire [6:0] rs1 = u_uop[ATG_UOP_RS1 +: 7];
-	wire [6:0] rs2 = u_uop[ATG_UOP_RS2 +: 7];
-	wire [6:0] rs3 = u_uop[ATG_UOP_RS3 +: 7];
+	(* max_fanout = 24 *) wire [3:0] unit = u_uop[ATG_UOP_UNIT +: 4];
+	(* max_fanout = 24 *) wire [7:0] op = u_uop[ATG_UOP_OP +: 8];
+	(* max_fanout = 24 *) wire [2:0] cls = u_uop[ATG_UOP_CLS +: 3];
+	(* max_fanout = 24 *) wire [6:0] rd = u_uop[ATG_UOP_RD +: 7];
+	(* max_fanout = 24 *) wire [6:0] rs1 = u_uop[ATG_UOP_RS1 +: 7];
+	(* max_fanout = 24 *) wire [6:0] rs2 = u_uop[ATG_UOP_RS2 +: 7];
+	(* max_fanout = 24 *) wire [6:0] rs3 = u_uop[ATG_UOP_RS3 +: 7];
 	wire [6:0] rs1p;
 	wire r1p_co_unused, r3p_co_unused, rw_co_unused;
 	am_add #(.W(7)) u_rs1p (.a(rs1), .b(7'd0), .ci(1'b1), .s(rs1p), .co(r1p_co_unused));
