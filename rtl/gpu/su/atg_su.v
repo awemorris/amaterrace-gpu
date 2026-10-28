@@ -245,9 +245,23 @@ module atg_su #(
 	wire [15:0] i_pc;
 	wire [UOP_W-1:0] i_uop;
 	wire [SBE_W:0] i_sbe;
-	wire fb_valid;
-	wire [WARP_W-1:0] fb_warp;
-	wire [1:0] fb_kind;
+	wire sb_fb_valid;
+	wire [WARP_W-1:0] sb_fb_warp;
+	wire [1:0] sb_fb_kind;
+	reg r_fb_valid;
+	reg [WARP_W-1:0] r_fb_warp;
+	reg [1:0] r_fb_kind;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r_fb_valid <= 1'b0;
+			r_fb_warp <= {WARP_W{1'b0}};
+			r_fb_kind <= 2'd0;
+		end else begin
+			r_fb_valid <= sb_fb_valid;
+			r_fb_warp <= sb_fb_warp;
+			r_fb_kind <= sb_fb_kind;
+		end
+	end
 	wire [NWARPS-1:0] wake;
 	wire wc_valid;
 	wire [WARP_W-1:0] wc_warp;
@@ -437,7 +451,7 @@ module atg_su #(
 		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_slot(fl_slot), .fl_go(fl_go), .fl_mask(fl_mask),
 		.fl_info(fl_info),
 		.f_valid(sch_f_valid), .f_ready(sch_f_ready), .f_warp(sch_f_warp), .f_pc(sch_f_pc), .f_addr(sch_f_addr),
-		.fb_valid(fb_valid), .fb_warp(fb_warp), .fb_kind(fb_kind), .wake(wake),
+		.fb_valid(r_fb_valid), .fb_warp(r_fb_warp), .fb_kind(r_fb_kind), .wake(wake),
 		.warp_ready(warp_ready),
 		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
 		.q_warp(q_warp), .q_info(q_info),
@@ -497,7 +511,7 @@ module atg_su #(
 		.u_valid(u_valid), .u_ready(u_ready), .u_warp(u_warp), .u_pc(u_pc), .u_uop(u_uop),
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
 		.i_sbe(i_sbe), .x_end(x_end),
-		.fb_valid(fb_valid), .fb_warp(fb_warp), .fb_kind(fb_kind), .wake(wake),
+		.fb_valid(sb_fb_valid), .fb_warp(sb_fb_warp), .fb_kind(sb_fb_kind), .wake(wake),
 		.warp_ready(warp_ready),
 		.rel_valid(rel_valid), .rel_warp(rel_warp), .rel_sbe(rel_sbe), .rel_cls(rel_cls),
 		.wb_stall(wb_stall), .rq_empty(rq_empty), .rq_full(rq_full),
