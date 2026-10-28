@@ -344,8 +344,7 @@ module atg_su_sb #(
 	assign i_valid = go && !no_issue;
 	(* max_fanout = 24 *) wire issued = i_valid && i_ready;
 	(* max_fanout = 24 *) wire issued_long = go && !ill && !replay_long && i_ready;
-	wire fast_ready = i_ready || ill || is_nop || is_wait || replay_long;
-	assign u_ready = go && (fast_ready || (is_cnt_dep && cnt_wait));
+	assign u_ready = go && (i_ready || no_issue);
 	assign i_warp = u_warp;
 	assign i_pc = u_pc;
 	assign i_uop = u_uop;
