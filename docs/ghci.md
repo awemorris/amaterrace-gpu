@@ -1141,6 +1141,11 @@ Controls hardware occlusion query sample counting (4 dwords, 16 bytes), matching
   Between BEGIN and END, hardware ROP tile units count samples that pass depth and stencil tests. On `CMD_END_QUERY`:
   - When `flags[1] (AVAILABILITY) == 0`: Query result slot stride is 8 bytes. Hardware writes the 64-bit sample pass count to session GPU VA at $\text{query\_pool\_va} + (\text{query\_index} \times 8)$.
   - When `flags[1] (AVAILABILITY) == 1`: Query result slot stride is 16 bytes (matching Vulkan `VK_QUERY_RESULT_WITH_AVAILABILITY_BIT`). Hardware writes the 64-bit sample pass count to session GPU VA at $\text{query\_pool\_va} + (\text{query\_index} \times 16)$, and writes the 64-bit availability flag (`1ULL`) immediately following at $\text{query\_pool\_va} + (\text{query\_index} \times 16) + 8$.
+- *Hardware Counter Architecture & Session Atomicity (N81)*:
+  1. **Single Global Hardware Counter**: The occlusion query logic employs a single 40-bit hardware accumulator (`occ_count`) across the ROP tile units, rather than per-session duplicate register files.
+  2. **Hardware Security Invalidation**: On a session context switch (`prot_sw_inv` triggered by `CMD_BIND_SESSION`), the hardware automatically issues an internal `occ_clear` reset pulse to the accumulator, preventing cross-session data leakage and timing/side-channel attacks.
+  3. **No Cross-Contamination, Count Invalidation**: While samples from another session can never be counted into a different session's query, any intervening session switch while a query is active clears the accumulator to 0, invalidating the in-flight query count.
+  4. **Driver Submission Requirement**: The driver must ensure that `CMD_BEGIN_QUERY` and its corresponding `CMD_END_QUERY` are submitted indivisibly/atomically within the same session packet stream on the command ring (without intervening context switches or split submissions that permit other session packets to interleave).
 
 #### `CMD_DISP_SET` (0x50, M54, N70)
 Directly configures display controller registers in ring order (1 + 2*N dwords):

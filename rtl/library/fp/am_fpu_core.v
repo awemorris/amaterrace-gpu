@@ -821,19 +821,11 @@ module am_fpu_core #(
 		am_add #(.W(12)) u_fma_t2 (.a(s5_t1), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_t2), .co(fma_carry_unused5[2]));
 		am_sub #(.W(12)) u_fma_er (.a(s5_t2), .b(12'd175), .bi(1'b0), .d(s5_er), .bo(fma_carry_unused5[3]));
 
-		/* Precompute guard and 6-bit sticky chunks in Stage 5 (1-LUT level) */
+		/* Precompute guard and 2-bit sticky halves in Stage 5 (fast 2-LUT levels) */
 		wire [23:0] s5_m = s5_nrm[76:53];
 		wire s5_g = s5_nrm[52];
-		wire [8:0] s5_st_chunks;
-		assign s5_st_chunks[0] = |s5_nrm[5:0];
-		assign s5_st_chunks[1] = |s5_nrm[11:6];
-		assign s5_st_chunks[2] = |s5_nrm[17:12];
-		assign s5_st_chunks[3] = |s5_nrm[23:18];
-		assign s5_st_chunks[4] = |s5_nrm[29:24];
-		assign s5_st_chunks[5] = |s5_nrm[35:30];
-		assign s5_st_chunks[6] = |s5_nrm[41:36];
-		assign s5_st_chunks[7] = |s5_nrm[47:42];
-		assign s5_st_chunks[8] = |s5_nrm[51:48];
+		wire s5_st_lo = |s5_nrm[25:0];
+		wire s5_st_hi = |s5_nrm[51:26];
 
 		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
 		reg [31:0] s6_rs_other;
@@ -845,7 +837,8 @@ module am_fpu_core #(
 		reg [11:0] s6_er;
 		reg        s6_sr;
 		reg        s6_g;
-		reg [8:0]  s6_st_chunks;
+		reg        s6_st_lo;
+		reg        s6_st_hi;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -862,7 +855,8 @@ module am_fpu_core #(
 				s6_er         <= 12'd0;
 				s6_sr         <= 1'b0;
 				s6_g          <= 1'b0;
-				s6_st_chunks  <= 9'd0;
+				s6_st_lo      <= 1'b0;
+				s6_st_hi      <= 1'b0;
 				s6_sum_nz     <= 1'b0;
 				s6_rm         <= 3'd0;
 				s6_rdn        <= 1'b0;
@@ -877,7 +871,8 @@ module am_fpu_core #(
 				s6_er         <= s5_er;
 				s6_sr         <= s5_sr;
 				s6_g          <= s5_g;
-				s6_st_chunks  <= s5_st_chunks;
+				s6_st_lo      <= s5_st_lo;
+				s6_st_hi      <= s5_st_hi;
 				s6_sum_nz     <= s5_sum_nz;
 				s6_rm         <= s5_rm;
 				s6_rdn        <= s5_rdn;
@@ -912,7 +907,7 @@ module am_fpu_core #(
 		wire s6_udf_0 = (s6_ers <= 12'sd0);
 		wire s6_udf_1 = (s6_ers <= -12'sd1);
 
-		wire s6_st = |s6_st_chunks;
+		wire s6_st = s6_st_lo || s6_st_hi;
 		reg s6_up;
 		always @(*)
 			case (s6_rm)
@@ -942,17 +937,11 @@ module am_fpu_core #(
 		wire [31:0] fma_r_lat6 = s6_spec_hit ? s6_spec_res :
 			!s6_sum_nz ? {s6_rdn, 31'd0} : s6_rnd;
 
-		wire [31:0] cur_rs_other = (LAT >= 6) ? s6_rs_other :
-		                           (LAT >= 5) ? s5_rs_other : s4_other;
-		wire        cur_fma      = (LAT >= 6) ? s6_fma :
-		                           (LAT >= 5) ? s5_fma : s4_fma;
-		wire        cur_sat      = (LAT >= 6) ? s6_sat :
-		                           (LAT >= 5) ? s5_sat : s4_sat;
-		wire        cur_flt      = (LAT >= 6) ? s6_flt :
-		                           (LAT >= 5) ? s5_flt : s4_is_flt;
-
-		wire [31:0] cur_fma_r = (LAT >= 6) ? fma_r_lat6 : fma_r;
-		wire [31:0] cur_rs = cur_fma ? cur_fma_r : cur_rs_other;
+		wire [31:0] cur_rs = (LAT >= 6) ? (s6_fma ? fma_r_lat6 : s6_rs_other) :
+		                     (LAT >= 5) ? (s5_fma ? fma_r : s5_rs_other) :
+		                     s4_fma ? fma_r : s4_other;
+		wire        cur_sat = (LAT >= 6) ? s6_sat : (LAT >= 5) ? s5_sat : s4_sat;
+		wire        cur_flt = (LAT >= 6) ? s6_flt : (LAT >= 5) ? s5_flt : s4_is_flt;
 
 		assign res = (cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs;
 		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused3_mr, carry_unused3_ep,
