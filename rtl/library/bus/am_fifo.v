@@ -56,9 +56,11 @@ module am_fifo #(
 		.a(rp), .b({(DEPTH_LOG2 + 1){1'b0}}), .ci(1'b1), .s(rp_next), .co(unused_rp_co)
 	);
 
+	reg r_valid;
+	wire will_empty = (rp_next == wp);
 	assign count = used;
 	assign in_ready = (wp[DEPTH_LOG2-1:0] != rp[DEPTH_LOG2-1:0]) || (wp[DEPTH_LOG2] == rp[DEPTH_LOG2]);
-	assign out_valid = (wp != rp);
+	assign out_valid = r_valid;
 	assign out_data = mem[rp[DEPTH_LOG2-1:0]];
 
 	always @(posedge clk) begin
@@ -70,11 +72,17 @@ module am_fifo #(
 		if (!rst_n) begin
 			wp <= {(DEPTH_LOG2 + 1){1'b0}};
 			rp <= {(DEPTH_LOG2 + 1){1'b0}};
+			r_valid <= 1'b0;
 		end else begin
 			if (push)
 				wp <= wp_next;
 			if (pop)
 				rp <= rp_next;
+			case ({push, pop})
+			2'b10: r_valid <= 1'b1;
+			2'b01: r_valid <= !will_empty;
+			default: ;
+			endcase
 		end
 	end
 endmodule

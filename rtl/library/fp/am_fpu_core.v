@@ -761,11 +761,18 @@ module am_fpu_core #(
 			endcase
 		end
 
-		/* Precompute exponent base (ab + adj - 175) in Stage 4 for LAT >= 6 */
+		/* Precompute exponent base (ab + adj - 175) and 16-bit block non-zero in Stage 4 for LAT >= 6 */
 		wire [11:0] s4_t1, s4_exp_base;
 		wire [1:0] fma_carry_unused4_exp;
 		am_add #(.W(12)) u_fma_s4_t1 (.a(s4_ab), .b(s4_adj), .ci(1'b0), .s(s4_t1), .co(fma_carry_unused4_exp[0]));
 		am_sub #(.W(12)) u_fma_s4_base (.a(s4_t1), .b(12'd175), .bi(1'b0), .d(s4_exp_base), .bo(fma_carry_unused4_exp[1]));
+
+		wire [4:0] s4_blk_nz;
+		assign s4_blk_nz[4] = |s4_sum[76:64];
+		assign s4_blk_nz[3] = |s4_sum[63:48];
+		assign s4_blk_nz[2] = |s4_sum[47:32];
+		assign s4_blk_nz[1] = |s4_sum[31:16];
+		assign s4_blk_nz[0] = |s4_sum[15:0];
 
 		/* --- Stage 5: Pipeline match & LOD/Norm for LAT >= 6 --- */
 		reg [31:0] s5_rs_other;
@@ -774,6 +781,7 @@ module am_fpu_core #(
 		reg        s5_flt;
 
 		reg [76:0] s5_sum;
+		reg [4:0]  s5_blk_nz;
 		reg        s5_sr;
 		reg [11:0] s5_exp_base;
 		reg [2:0]  s5_rm;
@@ -788,6 +796,7 @@ module am_fpu_core #(
 				s5_sat      <= 1'b0;
 				s5_flt      <= 1'b0;
 				s5_sum      <= 77'd0;
+				s5_blk_nz   <= 5'd0;
 				s5_sr       <= 1'b0;
 				s5_exp_base <= 12'd0;
 				s5_rm       <= 3'd0;
@@ -800,6 +809,7 @@ module am_fpu_core #(
 				s5_sat      <= s4_sat;
 				s5_flt      <= s4_is_flt;
 				s5_sum      <= s4_sum;
+				s5_blk_nz   <= s4_blk_nz;
 				s5_sr       <= s4_sr;
 				s5_exp_base <= s4_exp_base;
 				s5_rm       <= s4_rr;
@@ -809,10 +819,23 @@ module am_fpu_core #(
 			end
 		end
 
-		/* Stage 5: LOD, Normalization, Exponent for LAT >= 6 */
-		wire [6:0] s5_msb;
-		wire s5_sum_nz;
-		am_msb #(.W(77), .SW(7)) u_fma_msb (.a(s5_sum), .n(s5_msb), .nz(s5_sum_nz));
+		/* Stage 5: Hierarchical LOD, Normalization, Exponent for LAT >= 6 */
+		wire [2:0] s5_top_blk = s5_blk_nz[4] ? 3'd4 :
+		                        s5_blk_nz[3] ? 3'd3 :
+		                        s5_blk_nz[2] ? 3'd2 :
+		                        s5_blk_nz[1] ? 3'd1 : 3'd0;
+		wire s5_sum_nz = |s5_blk_nz;
+
+		wire [15:0] s5_sub_vec = (s5_top_blk == 3'd4) ? {3'd0, s5_sum[76:64]} :
+		                         (s5_top_blk == 3'd3) ? s5_sum[63:48] :
+		                         (s5_top_blk == 3'd2) ? s5_sum[47:32] :
+		                         (s5_top_blk == 3'd1) ? s5_sum[31:16] : s5_sum[15:0];
+
+		wire [3:0] s5_sub_msb;
+		wire s5_sub_nz;
+		am_msb #(.W(16), .SW(4)) u_fma_sub_msb (.a(s5_sub_vec), .n(s5_sub_msb), .nz(s5_sub_nz));
+
+		wire [6:0] s5_msb = {s5_top_blk, s5_sub_msb};
 
 		wire [6:0] s5_nsh;
 		wire [76:0] s5_nrm;
@@ -822,18 +845,23 @@ module am_fpu_core #(
 		am_shift #(.W(77), .SW(7)) u_fma_nrm (.a(s5_sum), .amt(s5_nsh), .left(1'b1), .arith(1'b0), .y(s5_nrm));
 		am_add #(.W(12)) u_fma_er (.a(s5_exp_base), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_er), .co(fma_carry_unused5[1]));
 
-		/* Precompute guard and sticky chunks in Stage 5 (6-7 bit chunks registered to Stage 6) */
+		/* Precompute guard and sticky chunks in Stage 5 (13 chunks of 4 bits registered to Stage 6) */
 		wire [23:0] s5_m = s5_nrm[76:53];
 		wire s5_g = s5_nrm[52];
-		wire [7:0] s5_st_c;
-		assign s5_st_c[0] = |s5_nrm[6:0];
-		assign s5_st_c[1] = |s5_nrm[12:7];
-		assign s5_st_c[2] = |s5_nrm[19:13];
-		assign s5_st_c[3] = |s5_nrm[25:20];
-		assign s5_st_c[4] = |s5_nrm[32:26];
-		assign s5_st_c[5] = |s5_nrm[38:33];
-		assign s5_st_c[6] = |s5_nrm[45:39];
-		assign s5_st_c[7] = |s5_nrm[51:46];
+		wire [12:0] s5_st_c;
+		assign s5_st_c[0]  = |s5_nrm[3:0];
+		assign s5_st_c[1]  = |s5_nrm[7:4];
+		assign s5_st_c[2]  = |s5_nrm[11:8];
+		assign s5_st_c[3]  = |s5_nrm[15:12];
+		assign s5_st_c[4]  = |s5_nrm[19:16];
+		assign s5_st_c[5]  = |s5_nrm[23:20];
+		assign s5_st_c[6]  = |s5_nrm[27:24];
+		assign s5_st_c[7]  = |s5_nrm[31:28];
+		assign s5_st_c[8]  = |s5_nrm[35:32];
+		assign s5_st_c[9]  = |s5_nrm[39:36];
+		assign s5_st_c[10] = |s5_nrm[43:40];
+		assign s5_st_c[11] = |s5_nrm[47:44];
+		assign s5_st_c[12] = |s5_nrm[51:48];
 
 		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
 		reg [31:0] s6_rs_other;
@@ -845,7 +873,7 @@ module am_fpu_core #(
 		reg [11:0] s6_er;
 		reg        s6_sr;
 		reg        s6_g;
-		reg [7:0]  s6_st_c;
+		reg [12:0] s6_st_c;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -862,7 +890,7 @@ module am_fpu_core #(
 				s6_er         <= 12'd0;
 				s6_sr         <= 1'b0;
 				s6_g          <= 1'b0;
-				s6_st_c       <= 8'd0;
+				s6_st_c       <= 13'd0;
 				s6_sum_nz     <= 1'b0;
 				s6_rm         <= 3'd0;
 				s6_rdn        <= 1'b0;
@@ -962,7 +990,7 @@ module am_fpu_core #(
 		assign res = (LAT >= 6) ? cur_rs : ((cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs);
 		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused3_mr, carry_unused3_ep,
 			fma3_carry_unused, carry_unused4_sum, fma_carry_unused5, s3_e_p1[11:8], pr_s4[65:64],
-			s6_rnd_carry_unused, s6_mr[24:23]};
+			s6_rnd_carry_unused, s6_mr[24:23], s5_sub_nz};
 	end
 	endgenerate
 
