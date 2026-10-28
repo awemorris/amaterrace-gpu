@@ -863,14 +863,19 @@ module am_fpu_core #(
 		                        s5_blk_nz[1] ? 3'd1 : 3'd0;
 		wire s5_sum_nz = |s5_blk_nz;
 
-		wire [15:0] s5_sub_vec = (s5_top_blk == 3'd4) ? {3'd0, s5_sum[76:64]} :
-		                         (s5_top_blk == 3'd3) ? s5_sum[63:48] :
-		                         (s5_top_blk == 3'd2) ? s5_sum[47:32] :
-		                         (s5_top_blk == 3'd1) ? s5_sum[31:16] : s5_sum[15:0];
+		/* Parallel per-block MSB encoders (avoids serial 5:1 MUX before LOD) */
+		wire [3:0] msb_b4, msb_b3, msb_b2, msb_b1, msb_b0;
+		wire nz_b4, nz_b3, nz_b2, nz_b1, nz_b0;
+		am_msb #(.W(16), .SW(4)) u_msb_b4 (.a({3'd0, s5_sum[76:64]}), .n(msb_b4), .nz(nz_b4));
+		am_msb #(.W(16), .SW(4)) u_msb_b3 (.a(s5_sum[63:48]),         .n(msb_b3), .nz(nz_b3));
+		am_msb #(.W(16), .SW(4)) u_msb_b2 (.a(s5_sum[47:32]),         .n(msb_b2), .nz(nz_b2));
+		am_msb #(.W(16), .SW(4)) u_msb_b1 (.a(s5_sum[31:16]),         .n(msb_b1), .nz(nz_b1));
+		am_msb #(.W(16), .SW(4)) u_msb_b0 (.a(s5_sum[15:0]),          .n(msb_b0), .nz(nz_b0));
 
-		wire [3:0] s5_sub_msb;
-		wire s5_sub_nz;
-		am_msb #(.W(16), .SW(4)) u_fma_sub_msb (.a(s5_sub_vec), .n(s5_sub_msb), .nz(s5_sub_nz));
+		wire [3:0] s5_sub_msb = (s5_top_blk == 3'd4) ? msb_b4 :
+		                        (s5_top_blk == 3'd3) ? msb_b3 :
+		                        (s5_top_blk == 3'd2) ? msb_b2 :
+		                        (s5_top_blk == 3'd1) ? msb_b1 : msb_b0;
 
 		wire [6:0] s5_msb = {s5_top_blk, s5_sub_msb};
 
@@ -882,9 +887,23 @@ module am_fpu_core #(
 		am_shift #(.W(77), .SW(7)) u_fma_nrm (.a(s5_sum), .amt(s5_nsh), .left(1'b1), .arith(1'b0), .y(s5_nrm));
 		am_add #(.W(12)) u_fma_er (.a(s5_exp_base), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_er), .co(fma_carry_unused5[1]));
 
-		/* Precompute guard in Stage 5, latch sticky bits directly to Stage 6 */
+		/* Precompute guard and sticky chunks in Stage 5 (13 chunks of 4 bits registered to Stage 6) */
 		wire [23:0] s5_m = s5_nrm[76:53];
 		wire s5_g = s5_nrm[52];
+		wire [12:0] s5_st_c;
+		assign s5_st_c[0]  = |s5_nrm[3:0];
+		assign s5_st_c[1]  = |s5_nrm[7:4];
+		assign s5_st_c[2]  = |s5_nrm[11:8];
+		assign s5_st_c[3]  = |s5_nrm[15:12];
+		assign s5_st_c[4]  = |s5_nrm[19:16];
+		assign s5_st_c[5]  = |s5_nrm[23:20];
+		assign s5_st_c[6]  = |s5_nrm[27:24];
+		assign s5_st_c[7]  = |s5_nrm[31:28];
+		assign s5_st_c[8]  = |s5_nrm[35:32];
+		assign s5_st_c[9]  = |s5_nrm[39:36];
+		assign s5_st_c[10] = |s5_nrm[43:40];
+		assign s5_st_c[11] = |s5_nrm[47:44];
+		assign s5_st_c[12] = |s5_nrm[51:48];
 
 		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
 		reg [31:0] s6_rs_other;
@@ -896,7 +915,7 @@ module am_fpu_core #(
 		reg [11:0] s6_er;
 		reg        s6_sr;
 		reg        s6_g;
-		reg [51:0] s6_st_bits;
+		reg [12:0] s6_st_c;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -918,7 +937,7 @@ module am_fpu_core #(
 				s6_er         <= 12'd0;
 				s6_sr         <= 1'b0;
 				s6_g          <= 1'b0;
-				s6_st_bits    <= 52'd0;
+				s6_st_c       <= 13'd0;
 				s6_sum_nz     <= 1'b0;
 				s6_rm         <= 3'd0;
 				s6_rdn        <= 1'b0;
@@ -939,7 +958,7 @@ module am_fpu_core #(
 				s6_er         <= s5_er;
 				s6_sr         <= s5_sr;
 				s6_g          <= s5_g;
-				s6_st_bits    <= s5_nrm[51:0];
+				s6_st_c       <= s5_st_c;
 				s6_sum_nz     <= s5_sum_nz;
 				s6_rm         <= s5_rm;
 				s6_rdn        <= s5_rdn;
@@ -955,7 +974,7 @@ module am_fpu_core #(
 		end
 
 		/* Stage 6: Speculative Parallel Rounding for LAT >= 6 */
-		wire s6_st = |s6_st_bits;
+		wire s6_st = |s6_st_c;
 		wire s6_m_all1 = &s6_m;
 		wire [24:0] s6_m_p1;
 		wire signed [11:0] s6_er_p1;
@@ -1023,7 +1042,7 @@ module am_fpu_core #(
 		assign res = (LAT >= 6) ? cur_rs : ((cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs);
 		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused3_mr, carry_unused3_ep,
 			fma3_carry_unused, carry_unused4_sum, fma_carry_unused5, s3_e_p1[11:8], pr_s4[65:64],
-			s6_rnd_carry_unused, s6_mr[24:23], s5_sub_nz, s6_m_p1[24]};
+			s6_rnd_carry_unused, s6_mr[24:23], nz_b4, nz_b3, nz_b2, nz_b1, nz_b0, s6_m_p1[24]};
 	end
 	endgenerate
 
