@@ -128,9 +128,9 @@ module atg_su_sb #(
 	reg [NE*6-1:0] e_r2;
 	reg [NE*6-1:0] e_r3;
 	reg [NE-1:0] e_wide;
-	reg [NWARPS*CNT_W-1:0] cm;
-	reg [NWARPS*CNT_W-1:0] ct;
-	reg [NWARPS*CNT_W-1:0] cx;
+	(* extract_enable = "no" *) reg [NWARPS*CNT_W-1:0] cm;
+	(* extract_enable = "no" *) reg [NWARPS*CNT_W-1:0] ct;
+	(* extract_enable = "no" *) reg [NWARPS*CNT_W-1:0] cx;
 
 	/* The release of this cycle, applied before the checks. */
 	wire rel_e = rel_valid && rel_sbe != {(SBE_W+1){1'b1}};
@@ -313,7 +313,7 @@ module atg_su_sb #(
 	wire hold = wb_stall || hz_short || !(|(~f_valid));
 	wire go = u_valid && !hold;
 	assign i_valid = go && !ill && !replay && !quiet;
-	wire issued = i_valid && i_ready;
+	(* max_fanout = 24 *) wire issued = i_valid && i_ready;
 	assign u_ready = go && (ill || replay || quiet || i_ready);
 	assign i_warp = u_warp;
 	assign i_pc = u_pc;
@@ -369,9 +369,17 @@ module atg_su_sb #(
 			am_add #(.W(CNT_W)) u_cx_p1 (.a(w_cx), .b(6'd1), .ci(1'b0), .s(w_cx_p1), .co(cx_p1_co));
 			am_sub #(.W(CNT_W)) u_cx_m1 (.a(w_cx), .b(6'd1), .bi(1'b0), .d(w_cx_m1), .bo(cx_m1_bo));
 
-			assign cm_next[gq*CNT_W +: CNT_W] = (im && !rm) ? w_cm_p1 : (rm && !im) ? w_cm_m1 : w_cm;
-			assign ct_next[gq*CNT_W +: CNT_W] = (it && !rt) ? w_ct_p1 : (rt && !it) ? w_ct_m1 : w_ct;
-			assign cx_next[gq*CNT_W +: CNT_W] = (ix && !rx) ? w_cx_p1 : (rx && !ix) ? w_cx_m1 : w_cx;
+			wire [CNT_W-1:0] cm_base = rm ? w_cm_m1 : w_cm;
+			wire [CNT_W-1:0] cm_inc  = rm ? w_cm    : w_cm_p1;
+			assign cm_next[gq*CNT_W +: CNT_W] = im ? cm_inc : cm_base;
+
+			wire [CNT_W-1:0] ct_base = rt ? w_ct_m1 : w_ct;
+			wire [CNT_W-1:0] ct_inc  = rt ? w_ct    : w_ct_p1;
+			assign ct_next[gq*CNT_W +: CNT_W] = it ? ct_inc : ct_base;
+
+			wire [CNT_W-1:0] cx_base = rx ? w_cx_m1 : w_cx;
+			wire [CNT_W-1:0] cx_inc  = rx ? w_cx    : w_cx_p1;
+			assign cx_next[gq*CNT_W +: CNT_W] = ix ? cx_inc : cx_base;
 
 			wire unused_cnt_co = &{1'b0, cm_p1_co, cm_m1_bo, ct_p1_co, ct_m1_bo, cx_p1_co, cx_m1_bo};
 		end
