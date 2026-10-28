@@ -905,6 +905,13 @@ module am_fpu_core #(
 			.co(s6_rnd_carry_unused[1])
 		);
 
+		/* Fast early overflow/underflow detection from s6_er alone */
+		wire signed [11:0] s6_ers = s6_er;
+		wire s6_ovf_0 = (s6_ers >= 12'sd255);
+		wire s6_ovf_1 = (s6_ers >= 12'sd254);
+		wire s6_udf_0 = (s6_ers <= 12'sd0);
+		wire s6_udf_1 = (s6_ers <= -12'sd1);
+
 		wire s6_st = |s6_st_chunks;
 		reg s6_up;
 		always @(*)
@@ -921,13 +928,16 @@ module am_fpu_core #(
 		wire s6_m_all1 = &s6_m;
 		wire s6_m_carry = s6_m_all1 && s6_up;
 
+		wire s6_ovf = s6_m_carry ? s6_ovf_1 : s6_ovf_0;
+		wire s6_udf = s6_m_carry ? s6_udf_1 : s6_udf_0;
+		wire [7:0] s6_exp = s6_m_carry ? s6_er_p1[7:0] : s6_er[7:0];
+
 		wire [24:0] s6_mr0 = s6_odd ? {1'b0, s6_m_odd} : s6_up ? s6_m_p1 : {1'b0, s6_m};
-		wire signed [11:0] s6_mr_er = s6_m_carry ? s6_er_p1 : s6_er;
 		wire [24:0] s6_mr = s6_m_carry ? {1'b0, 1'b1, 23'd0} : s6_mr0;
-		wire [31:0] s6_rnd = s6_mr_er >= 12'sd255 ?
+		wire [31:0] s6_rnd = s6_ovf ?
 			((s6_rm == 3'd1 || s6_rm == 3'd5 || s6_rm == 3'd6 || (s6_rm == 3'd2 && !s6_sr) || (s6_rm == 3'd3 && s6_sr)) ?
 				{s6_sr, 8'hFE, 23'h7FFFFF} : {s6_sr, 8'hFF, 23'd0}) :
-			(s6_mr_er <= 12'sd0 ? {s6_sr, 31'd0} : {s6_sr, s6_mr_er[7:0], s6_mr[22:0]});
+			s6_udf ? {s6_sr, 31'd0} : {s6_sr, s6_exp, s6_mr[22:0]};
 
 		wire [31:0] fma_r_lat6 = s6_spec_hit ? s6_spec_res :
 			!s6_sum_nz ? {s6_rdn, 31'd0} : s6_rnd;
