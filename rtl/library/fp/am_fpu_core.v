@@ -319,7 +319,7 @@ module am_fpu_core #(
 		(* keep = "true", equivalent_register_removal = "no" *) reg [4:0]  s1_op;
 		(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  s1_rm;
 		reg        s1_sat;
-		reg [65:0] s1_mo;
+		(* keep = "true" *) reg [65:0] s1_mo;
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
