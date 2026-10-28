@@ -137,7 +137,7 @@ module atg_su_opd #(
 	reg [GRP_W-1:0] b_grp;
 	reg b_pass;
 	reg b_step1;
-	reg [6:0] b_n1, b_n2, b_n3;
+	(* max_fanout = 24 *) reg [6:0] b_n1, b_n2, b_n3;
 	reg b_is_gpr1, b_is_gpr2, b_is_gpr3;
 	reg [DW-1:0] hold_r1;
 	reg [DW-1:0] hold_r2;

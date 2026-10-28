@@ -154,8 +154,6 @@ module atg_su_exec #(
 				default: ;
 				endcase
 				if (x_last) begin
-					acc_any <= 1'b0;
-					acc_all <= 1'b1;
 					if (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR) begin
 						wc_v <= 1'b1;
 						wc_w <= x_warp;
@@ -165,15 +163,22 @@ module atg_su_exec #(
 						wc_pc_tgt <= pc_tgt;
 						wc_pc_p1 <= pc_p1;
 					end
-				end else begin
-					acc_any <= any_now;
-					acc_all <= all_now;
 				end
 			end
 			if (init_valid) begin
 				exec_r[init_warp*32 +: 32] <= init_mask;
 				kill_r[init_warp*32 +: 32] <= 32'd0;
 			end
+		end
+	end
+
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			acc_any <= 1'b0;
+			acc_all <= 1'b1;
+		end else if (mine) begin
+			acc_any <= x_last ? 1'b0 : any_now;
+			acc_all <= x_last ? 1'b1 : all_now;
 		end
 	end
 
