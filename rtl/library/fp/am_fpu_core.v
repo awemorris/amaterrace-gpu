@@ -791,7 +791,7 @@ module am_fpu_core #(
 				s5_spec_hit <= 1'b0;
 				s5_spec_res <= 32'd0;
 			end else if (en) begin
-				s5_rs_other <= s4_other;
+				s5_rs_other <= (s4_sat && s4_is_flt) ? f_sat(s4_other) : s4_other;
 				s5_fma      <= s4_fma;
 				s5_sat      <= s4_sat;
 				s5_flt      <= s4_is_flt;
@@ -802,7 +802,7 @@ module am_fpu_core #(
 				s5_rm       <= s4_rr;
 				s5_rdn      <= s4_rdn;
 				s5_spec_hit <= s4_spec_hit;
-				s5_spec_res <= s4_spec_res;
+				s5_spec_res <= s4_sat ? f_sat(s4_spec_res) : s4_spec_res;
 			end
 		end
 
@@ -908,18 +908,19 @@ module am_fpu_core #(
 		wire s6_udf_1 = (s6_ers <= -12'sd1);
 
 		wire s6_st = s6_st_lo || s6_st_hi;
+		wire s6_gst = s6_g || s6_st;
 		reg s6_up;
 		always @(*)
 			case (s6_rm)
 			3'd1, 3'd5, 3'd6: s6_up = 1'b0;
-			3'd2: s6_up = s6_sr && (s6_g || s6_st);
-			3'd3: s6_up = !s6_sr && (s6_g || s6_st);
+			3'd2: s6_up = s6_sr && s6_gst;
+			3'd3: s6_up = !s6_sr && s6_gst;
 			3'd4: s6_up = s6_g;
 			default: s6_up = s6_g && (s6_st || s6_m[0]);
 			endcase
 
 		wire s6_odd = (s6_rm == 3'd5 || s6_rm == 3'd6);
-		wire [23:0] s6_m_odd = {s6_m[23:1], s6_m[0] | (s6_g || s6_st)};
+		wire [23:0] s6_m_odd = {s6_m[23:1], s6_m[0] | s6_gst};
 		wire s6_m_all1 = &s6_m;
 		wire s6_m_carry = s6_m_all1 && s6_up;
 
@@ -929,21 +930,32 @@ module am_fpu_core #(
 
 		wire [24:0] s6_mr0 = s6_odd ? {1'b0, s6_m_odd} : s6_up ? s6_m_p1 : {1'b0, s6_m};
 		wire [24:0] s6_mr = s6_m_carry ? {1'b0, 1'b1, 23'd0} : s6_mr0;
-		wire [31:0] s6_rnd = s6_ovf ?
+
+		/* Inlined early saturation logic without post-addition comparator */
+		wire signed [11:0] s6_ef_s = s6_m_carry ? s6_er_p1 : s6_er;
+		wire s6_gt_1 = (s6_ef_s >= 12'sd128) || (s6_ef_s == 12'sd127 && (|s6_mr[22:0]));
+		wire [31:0] s6_rnd_sat = s6_sr ? 32'd0 :
+		                         s6_udf ? 32'd0 :
+		                         (s6_ovf || s6_gt_1) ? 32'h3F800000 :
+		                         {1'b0, s6_exp, s6_mr[22:0]};
+
+		wire [31:0] s6_rnd_norm = s6_ovf ?
 			((s6_rm == 3'd1 || s6_rm == 3'd5 || s6_rm == 3'd6 || (s6_rm == 3'd2 && !s6_sr) || (s6_rm == 3'd3 && s6_sr)) ?
 				{s6_sr, 8'hFE, 23'h7FFFFF} : {s6_sr, 8'hFF, 23'd0}) :
 			s6_udf ? {s6_sr, 31'd0} : {s6_sr, s6_exp, s6_mr[22:0]};
 
+		wire [31:0] s6_rnd = s6_sat ? s6_rnd_sat : s6_rnd_norm;
+
 		wire [31:0] fma_r_lat6 = s6_spec_hit ? s6_spec_res :
-			!s6_sum_nz ? {s6_rdn, 31'd0} : s6_rnd;
+			!s6_sum_nz ? (s6_sat ? 32'd0 : {s6_rdn, 31'd0}) : s6_rnd;
 
 		wire [31:0] cur_rs = (LAT >= 6) ? (s6_fma ? fma_r_lat6 : s6_rs_other) :
 		                     (LAT >= 5) ? (s5_fma ? fma_r : s5_rs_other) :
 		                     s4_fma ? fma_r : s4_other;
-		wire        cur_sat = (LAT >= 6) ? s6_sat : (LAT >= 5) ? s5_sat : s4_sat;
-		wire        cur_flt = (LAT >= 6) ? s6_flt : (LAT >= 5) ? s5_flt : s4_is_flt;
+		wire        cur_sat = (LAT >= 5) ? s5_sat : s4_sat;
+		wire        cur_flt = (LAT >= 5) ? s5_flt : s4_is_flt;
 
-		assign res = (cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs;
+		assign res = (LAT >= 6) ? cur_rs : ((cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs);
 		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused3_mr, carry_unused3_ep,
 			fma3_carry_unused, carry_unused4_sum, fma_carry_unused5, s3_e_p1[11:8], pr_s4[65:64],
 			s6_rnd_carry_unused, s6_mr[24:23]};
