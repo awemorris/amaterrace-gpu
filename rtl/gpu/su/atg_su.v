@@ -328,13 +328,13 @@ module atg_su #(
 	/* The last group of an instruction leaves atg_su_opd (atg_su_sb's interlock). */
 	wire x_end = x_valid && x_last && unit_ready[x_uop[3:0]];
 	/* Short results. */
-	wire alu_s_valid;
+	(* max_fanout = 24 *) wire alu_s_valid;
 	wire [WARP_W-1:0] alu_s_warp;
 	wire [GRP_W-1:0] alu_s_grp;
 	wire [6:0] alu_s_rd;
 	wire [DW-1:0] alu_s_data;
 	wire [NPHYS-1:0] alu_s_lanes;
-	wire fpu_s_valid;
+	(* max_fanout = 24 *) wire fpu_s_valid;
 	wire [WARP_W-1:0] fpu_s_warp;
 	wire [GRP_W-1:0] fpu_s_grp;
 	wire [6:0] fpu_s_rd;

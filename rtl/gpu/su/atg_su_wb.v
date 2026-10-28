@@ -231,10 +231,10 @@ module atg_su_wb #(
 	wire s_rq = sv && (srd == 7'd63);
 	wire l_rq = lw && (lrd == 7'd63);
 
-	/* Clean 2:1 priority multiplexer structure to break the false long-arbitration loop */
-	wire s_we = sv && !s_rq;
-	wire non_s_we = in_go ? 1'b1 : (lw && !l_rq);
-	assign w_en = sv ? s_we : non_s_we;
+	/* Clean priority OR structure to break the false long-arbitration loop */
+	(* keep = "true", max_fanout = 24 *) wire s_we = sv && !s_rq;
+	(* keep = "true", max_fanout = 24 *) wire non_s_we = in_go ? 1'b1 : (lw && !l_rq);
+	assign w_en = s_we || non_s_we;
 
 	assign w_warp = sv ? sw : (in_go ? fe[IW-1 -: WARP_W] : l_s_warp);
 	assign w_grp  = sv ? sg : (in_go ? fe_grp[GRP_W-1:0] : l_s_grp);

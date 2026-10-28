@@ -116,7 +116,7 @@ module atg_su_cbank #(
 		DRAIN = 3'd5, BEAT = 3'd6;
 
 	reg [31:0] bank [0:CONST_WORDS-1];
-	reg [31:0] cw [0:31];
+	(* ram_style = "distributed" *) reg [31:0] cw [0:31];
 	reg [2:0] st;
 	reg valid, lc_pend;
 	reg [31:0] s_region, s_addr, s_words;
