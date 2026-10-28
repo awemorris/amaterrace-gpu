@@ -88,6 +88,12 @@ module atg_su_lds #(
 	localparam LW = NPHYS > 1 ? $clog2(NPHYS) : 1;
 	localparam [1:0] IDLE = 2'd0, ACCESS = 2'd1, DRAIN = 2'd2, BEAT = 2'd3;
 
+`ifdef SYNTH_KINTEX7
+	(* ram_style = "block" *)
+	/* synthesis syn_ramstyle = "block" */
+`else
+	(* ram_style = "block" *)
+`endif
 	reg [31:0] ram [0:NW-1];
 	integer init_i;
 	initial begin
@@ -98,6 +104,7 @@ module atg_su_lds #(
 	reg [NPHYS*AW-1:0] radr;
 	reg [DW-1:0] rdat, rcmp, res;
 	reg [NPHYS-1:0] lanes;
+	reg [31:0] atom_b, atom_c;
 	reg rsts, ratom, rwrd, aph;
 	reg [3:0] rsub;
 	reg [6:0] rrd;
@@ -145,15 +152,23 @@ module atg_su_lds #(
 	end
 	wire lane_on = lanes[li];
 	/* An atom lane's second cycle: q holds the word read in the first. */
+	wire [31:0] cur_rdat = rdat[li*32 +: 32];
+	wire [31:0] op_b = aph ? atom_b : cur_rdat;
+	wire [31:0] op_c = aph ? atom_c : rcmp[li*32 +: 32];
 	wire [31:0] asum;
 	wire as_co_unused;
-	am_addsub #(.W(32)) u_asum (.a(q), .b(rdat[li*32 +: 32]), .sub(rsub == 4'd5), .s(asum),
+	am_addsub #(.W(32)) u_asum (.a(q), .b(op_b), .sub(rsub == 4'd5), .s(asum),
 		.co(as_co_unused));
+
+	wire [31:0] anew_other;
 `ifdef MUT_LDS_ATOM_NOCMP
-	wire [31:0] anew = atom_op(rsub, q, rdat[li*32 +: 32], rdat[li*32 +: 32], asum);
+	assign anew_other = atom_op(rsub, q, op_b, op_b, asum);
 `else
-	wire [31:0] anew = atom_op(rsub, q, rdat[li*32 +: 32], rcmp[li*32 +: 32], asum);
+	assign anew_other = atom_op(rsub, q, op_b, op_c, asum);
 `endif
+
+	wire is_addsub = (rsub == 4'd4 || rsub == 4'd5);
+	wire [31:0] anew = is_addsub ? asum : anew_other;
 `ifdef MUT_LDS_ATOM_RAW
 	wire aread = 1'b0;
 `else
@@ -186,6 +201,8 @@ module atg_su_lds #(
 			li <= {LW{1'b0}};
 			pval <= 1'b0;
 			aph <= 1'b0;
+			atom_b <= 32'd0;
+			atom_c <= 32'd0;
 		end else begin
 			pval <= 1'b0;
 			case (st)
@@ -211,6 +228,8 @@ module atg_su_lds #(
 			ACCESS: if (aread) begin
 				/* The read of an atom lane; the write is the next cycle. */
 				aph <= 1'b1;
+				atom_b <= cur_rdat;
+				atom_c <= rcmp[li*32 +: 32];
 			end else begin
 				if (lane_on && ratom)
 					res[li*32 +: 32] <= q;
