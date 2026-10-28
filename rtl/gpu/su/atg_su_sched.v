@@ -240,10 +240,25 @@ module atg_su_sched #(
 	integer w_idx, ga_i;
 	reg active_st_ok;
 	reg active_warp_ready;
-	reg t_sel01, t_sel23, t_sel_top;
-	reg [1:0] t_w01, t_w23;
-	reg [15:0] t_a01, t_a23;
-	reg t_c01, t_c23;
+
+	/* Fully parallel pair comparisons for NWARPS=4 GTO policy.
+	 * Eliminates serial cascade of 16-bit CARRY4 comparison chains. */
+	wire [15:0] w_age0 = wait_age[0*16 +: 16];
+	wire [15:0] w_age1 = wait_age[1*16 +: 16];
+	wire [15:0] w_age2 = wait_age[2*16 +: 16];
+	wire [15:0] w_age3 = wait_age[3*16 +: 16];
+
+	wire cmp01 = w_age1 > w_age0;
+	wire cmp02 = w_age2 > w_age0;
+	wire cmp03 = w_age3 > w_age0;
+	wire cmp12 = w_age2 > w_age1;
+	wire cmp13 = w_age3 > w_age1;
+	wire cmp23 = w_age3 > w_age2;
+
+	wire win0 = cand[0] && (!cand[1] || !cmp01) && (!cand[2] || !cmp02) && (!cand[3] || !cmp03);
+	wire win1 = cand[1] && (!cand[0] ||  cmp01) && (!cand[2] || !cmp12) && (!cand[3] || !cmp13);
+	wire win2 = cand[2] && (!cand[0] ||  cmp02) && (!cand[1] ||  cmp12) && (!cand[3] || !cmp23);
+	wire win3 = cand[3] && (!cand[0] ||  cmp03) && (!cand[1] ||  cmp13) && (!cand[2] ||  cmp23);
 
 	always @(*) begin
 		active_st_ok = 1'b0;
@@ -271,19 +286,8 @@ module atg_su_sched #(
 				end
 			end else begin
 				if (NWARPS == 4) begin
-					t_sel01 = !cand[0] || (cand[1] && (wait_age[1*16 +: 16] > wait_age[0*16 +: 16]));
-					t_w01 = t_sel01 ? 2'd1 : 2'd0;
-					t_a01 = t_sel01 ? wait_age[1*16 +: 16] : wait_age[0*16 +: 16];
-					t_c01 = cand[0] || cand[1];
-
-					t_sel23 = !cand[2] || (cand[3] && (wait_age[3*16 +: 16] > wait_age[2*16 +: 16]));
-					t_w23 = t_sel23 ? 2'd3 : 2'd2;
-					t_a23 = t_sel23 ? wait_age[3*16 +: 16] : wait_age[2*16 +: 16];
-					t_c23 = cand[2] || cand[3];
-
-					t_sel_top = !t_c01 || (t_c23 && (t_a23 > t_a01));
-					sel = t_sel_top ? t_w23[WARP_W-1:0] : t_w01[WARP_W-1:0];
-					sel_v = t_c01 || t_c23;
+					sel = win0 ? 2'd0 : win1 ? 2'd1 : win2 ? 2'd2 : 2'd3;
+					sel_v = cand[0] || cand[1] || cand[2] || cand[3];
 				end else begin
 					for (w_idx = 0; w_idx < NWARPS; w_idx = w_idx + 1) begin
 						if (cand[w_idx]) begin
