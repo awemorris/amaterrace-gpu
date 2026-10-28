@@ -97,18 +97,13 @@ module atg_su_exec #(
 	reg acc_any, acc_all;
 	wire any_now = acc_any || |(bt & em);
 	wire all_now = acc_all && &(bt | ~em);
-	reg take;
-	always @(*) begin
-		case (op)
-		ATG_EXEC_BANY: take = any_now;
-		ATG_EXEC_BNONE: take = !any_now;
-		ATG_EXEC_BALL: take = all_now;
-		ATG_EXEC_J: take = 1'b1;
-		ATG_EXEC_BEXNZ: take = wexec != 32'd0;
-		default: take = wexec == 32'd0;	/* BEXZ */
-		endcase
-	end
 	wire is_br = op <= ATG_EXEC_BEXZ;
+	wire br_uses_any = op == ATG_EXEC_BANY || op == ATG_EXEC_BNONE;
+	wire br_uses_all = op == ATG_EXEC_BALL;
+	wire br_static_take = (op == ATG_EXEC_J) ||
+	                      (op == ATG_EXEC_BEXNZ && wexec != 32'd0) ||
+	                      (op == ATG_EXEC_BEXZ && wexec == 32'd0);
+	wire take = br_static_take || (br_uses_all ? all_now : (op == ATG_EXEC_BANY ? any_now : (br_uses_any ? !any_now : 1'b0)));
 
 	/* exec.save: each lane's EXEC bit as a Boolean, written to every lane. */
 	reg [DW-1:0] save_d;
@@ -122,13 +117,13 @@ module atg_su_exec #(
 	wire [1:0] pc_co_unused;
 	am_add #(.W(16)) u_pc_p1 (.a(x_pc), .b(16'd1), .ci(1'b0), .s(pc_p1), .co(pc_co_unused[0]));
 	am_add #(.W(16)) u_pc_tgt (.a(x_pc), .b(imm[15:0]), .ci(1'b0), .s(pc_tgt), .co(pc_co_unused[1]));
-	wire [15:0] pc_next = (is_br && take) ? pc_tgt : pc_p1;
 
 	reg [EW-1:0] pipe [0:SHORT_LAT-1];
 	reg wc_v;
 	reg [WARP_W-1:0] wc_w;
 	reg [1:0] wc_o;
-	reg [15:0] wc_p;
+	reg wc_take;
+	reg [15:0] wc_pc_tgt, wc_pc_p1;
 	integer k;
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -139,7 +134,9 @@ module atg_su_exec #(
 			wc_v <= 1'b0;
 			wc_w <= {WARP_W{1'b0}};
 			wc_o <= 2'd0;
-			wc_p <= 16'd0;
+			wc_take <= 1'b0;
+			wc_pc_tgt <= 16'd0;
+			wc_pc_p1 <= 16'd0;
 			for (k = 0; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= {EW{1'b0}};
 		end else begin
@@ -164,7 +161,9 @@ module atg_su_exec #(
 						wc_w <= x_warp;
 						wc_o <= op == ATG_EXEC_END ? 2'd1 : op == ATG_EXEC_BAR ? 2'd2 :
 							2'd0;
-						wc_p <= pc_next;
+						wc_take <= is_br && take;
+						wc_pc_tgt <= pc_tgt;
+						wc_pc_p1 <= pc_p1;
 					end
 				end else begin
 					acc_any <= any_now;
@@ -181,7 +180,7 @@ module atg_su_exec #(
 	assign wc_valid = wc_v;
 	assign wc_warp = wc_w;
 	assign wc_op = wc_o;
-	assign wc_pc = wc_p;
+	assign wc_pc = wc_take ? wc_pc_tgt : wc_pc_p1;
 	assign q_exec = exec_r[q_warp*32 +: 32];
 	assign q_killed = kill_r[q_warp*32 +: 32];
 
