@@ -813,6 +813,11 @@ module am_fpu_core #(
 		assign s4_blk_nz[2] = |s4_sum[47:32];
 		assign s4_blk_nz[1] = |s4_sum[31:16];
 		assign s4_blk_nz[0] = |s4_sum[15:0];
+		wire [2:0] s4_top_blk = s4_blk_nz[4] ? 3'd4 :
+		                        s4_blk_nz[3] ? 3'd3 :
+		                        s4_blk_nz[2] ? 3'd2 :
+		                        s4_blk_nz[1] ? 3'd1 : 3'd0;
+		wire s4_sum_nz = |s4_blk_nz;
 
 		/* --- Stage 5: Pipeline match & LOD/Norm for LAT >= 6 --- */
 		reg [31:0] s5_rs_other;
@@ -822,6 +827,8 @@ module am_fpu_core #(
 
 		reg [76:0] s5_sum;
 		reg [4:0]  s5_blk_nz;
+		reg [2:0]  s5_top_blk;
+		reg        s5_sum_nz;
 		reg        s5_sr;
 		reg [11:0] s5_exp_base;
 		reg [2:0]  s5_rm;
@@ -837,6 +844,8 @@ module am_fpu_core #(
 				s5_flt      <= 1'b0;
 				s5_sum      <= 77'd0;
 				s5_blk_nz   <= 5'd0;
+				s5_top_blk  <= 3'd0;
+				s5_sum_nz   <= 1'b0;
 				s5_sr       <= 1'b0;
 				s5_exp_base <= 12'd0;
 				s5_rm       <= 3'd0;
@@ -850,6 +859,8 @@ module am_fpu_core #(
 				s5_flt      <= s4_is_flt;
 				s5_sum      <= s4_sum;
 				s5_blk_nz   <= s4_blk_nz;
+				s5_top_blk  <= s4_top_blk;
+				s5_sum_nz   <= s4_sum_nz;
 				s5_sr       <= s4_sr;
 				s5_exp_base <= s4_exp_base;
 				s5_rm       <= s4_rr;
@@ -860,11 +871,6 @@ module am_fpu_core #(
 		end
 
 		/* Stage 5: Hierarchical LOD, Normalization, Exponent for LAT >= 6 */
-		wire [2:0] s5_top_blk = s5_blk_nz[4] ? 3'd4 :
-		                        s5_blk_nz[3] ? 3'd3 :
-		                        s5_blk_nz[2] ? 3'd2 :
-		                        s5_blk_nz[1] ? 3'd1 : 3'd0;
-		wire s5_sum_nz = |s5_blk_nz;
 
 		/* Parallel per-block MSB encoders (avoids serial 5:1 MUX before LOD) */
 		wire [3:0] msb_b4, msb_b3, msb_b2, msb_b1, msb_b0;
