@@ -830,8 +830,6 @@ module am_fpu_core #(
 		assign s5_st_c[2] = |s5_nrm[38:26];
 		assign s5_st_c[3] = |s5_nrm[51:39];
 		wire s5_st = |s5_st_c;
-		wire s5_m_nz = |s5_m[22:0];
-		wire s5_m_all1 = &s5_m;
 
 		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
 		reg [31:0] s6_rs_other;
@@ -844,8 +842,6 @@ module am_fpu_core #(
 		reg        s6_sr;
 		reg        s6_g;
 		reg        s6_st;
-		reg        s6_m_nz;
-		reg        s6_m_all1;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -863,8 +859,6 @@ module am_fpu_core #(
 				s6_sr         <= 1'b0;
 				s6_g          <= 1'b0;
 				s6_st         <= 1'b0;
-				s6_m_nz       <= 1'b0;
-				s6_m_all1     <= 1'b0;
 				s6_sum_nz     <= 1'b0;
 				s6_rm         <= 3'd0;
 				s6_rdn        <= 1'b0;
@@ -880,8 +874,6 @@ module am_fpu_core #(
 				s6_sr         <= s5_sr;
 				s6_g          <= s5_g;
 				s6_st         <= s5_st;
-				s6_m_nz       <= s5_m_nz;
-				s6_m_all1     <= s5_m_all1;
 				s6_sum_nz     <= s5_sum_nz;
 				s6_rm         <= s5_rm;
 				s6_rdn        <= s5_rdn;
@@ -929,7 +921,7 @@ module am_fpu_core #(
 
 		wire s6_odd = (s6_rm == 3'd5 || s6_rm == 3'd6);
 		wire [23:0] s6_m_odd = {s6_m[23:1], s6_m[0] | s6_gst};
-		wire s6_m_carry = s6_m_all1 && s6_up;
+		wire s6_m_carry = s6_m_p1[24] && s6_up;
 
 		wire s6_ovf = s6_m_carry ? s6_ovf_1 : s6_ovf_0;
 		wire s6_udf = s6_m_carry ? s6_udf_1 : s6_udf_0;
@@ -938,13 +930,12 @@ module am_fpu_core #(
 		wire [24:0] s6_mr0 = s6_odd ? {1'b0, s6_m_odd} : s6_up ? s6_m_p1 : {1'b0, s6_m};
 		wire [24:0] s6_mr = s6_m_carry ? {1'b0, 1'b1, 23'd0} : s6_mr0;
 
-		/* Inlined early saturation logic without 23-bit post-addition OR tree */
+		/* Inlined early saturation logic without post-addition comparator or OR tree */
 		wire signed [11:0] s6_ef_s = s6_m_carry ? s6_er_p1 : s6_er;
-		wire s6_mr_nz = s6_up ? !s6_m_carry : s6_m_nz;
-		wire s6_gt_1 = (s6_ef_s >= 12'sd128) || (s6_ef_s == 12'sd127 && s6_mr_nz);
+		wire s6_ge_1 = (s6_ef_s >= 12'sd127);
 		wire [31:0] s6_rnd_sat = s6_sr ? 32'd0 :
 		                         s6_udf ? 32'd0 :
-		                         (s6_ovf || s6_gt_1) ? 32'h3F800000 :
+		                         (s6_ovf || s6_ge_1) ? 32'h3F800000 :
 		                         {1'b0, s6_exp, s6_mr[22:0]};
 
 		wire [31:0] s6_rnd_norm = s6_ovf ?
