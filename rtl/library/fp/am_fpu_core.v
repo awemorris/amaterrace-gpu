@@ -873,12 +873,17 @@ module am_fpu_core #(
 		reg [11:0] s6_er;
 		reg        s6_sr;
 		reg        s6_g;
-		reg [12:0] s6_st_c;
+		reg        s6_st;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
 		reg        s6_spec_hit;
 		reg [31:0] s6_spec_res;
+		reg        s6_ge1_0, s6_ge1_1;
+		reg        s6_ovf_0, s6_ovf_1;
+		reg        s6_udf_0, s6_udf_1;
+
+		wire signed [11:0] s5_ers = s5_er;
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
@@ -890,12 +895,18 @@ module am_fpu_core #(
 				s6_er         <= 12'd0;
 				s6_sr         <= 1'b0;
 				s6_g          <= 1'b0;
-				s6_st_c       <= 13'd0;
+				s6_st         <= 1'b0;
 				s6_sum_nz     <= 1'b0;
 				s6_rm         <= 3'd0;
 				s6_rdn        <= 1'b0;
 				s6_spec_hit   <= 1'b0;
 				s6_spec_res   <= 32'd0;
+				s6_ge1_0      <= 1'b0;
+				s6_ge1_1      <= 1'b0;
+				s6_ovf_0      <= 1'b0;
+				s6_ovf_1      <= 1'b0;
+				s6_udf_0      <= 1'b0;
+				s6_udf_1      <= 1'b0;
 			end else if (en) begin
 				s6_rs_other   <= s5_rs_other;
 				s6_fma        <= s5_fma;
@@ -905,17 +916,22 @@ module am_fpu_core #(
 				s6_er         <= s5_er;
 				s6_sr         <= s5_sr;
 				s6_g          <= s5_g;
-				s6_st_c       <= s5_st_c;
+				s6_st         <= |s5_st_c;
 				s6_sum_nz     <= s5_sum_nz;
 				s6_rm         <= s5_rm;
 				s6_rdn        <= s5_rdn;
 				s6_spec_hit   <= s5_spec_hit;
 				s6_spec_res   <= s5_spec_res;
+				s6_ge1_0      <= (s5_ers >= 12'sd127);
+				s6_ge1_1      <= (s5_ers >= 12'sd126);
+				s6_ovf_0      <= (s5_ers >= 12'sd255);
+				s6_ovf_1      <= (s5_ers >= 12'sd254);
+				s6_udf_0      <= (s5_ers <= 12'sd0);
+				s6_udf_1      <= (s5_ers <= -12'sd1);
 			end
 		end
 
 		/* Stage 6: Speculative Parallel Rounding for LAT >= 6 */
-		wire s6_st = |s6_st_c;
 		wire [24:0] s6_m_p1;
 		wire signed [11:0] s6_er_p1;
 		wire [1:0] s6_rnd_carry_unused;
@@ -933,13 +949,6 @@ module am_fpu_core #(
 			.s(s6_er_p1),
 			.co(s6_rnd_carry_unused[1])
 		);
-
-		/* Fast early overflow/underflow detection from s6_er alone */
-		wire signed [11:0] s6_ers = s6_er;
-		wire s6_ovf_0 = (s6_ers >= 12'sd255);
-		wire s6_ovf_1 = (s6_ers >= 12'sd254);
-		wire s6_udf_0 = (s6_ers <= 12'sd0);
-		wire s6_udf_1 = (s6_ers <= -12'sd1);
 
 		wire s6_gst = s6_g || s6_st;
 		reg s6_up;
@@ -964,8 +973,7 @@ module am_fpu_core #(
 		wire [24:0] s6_mr = s6_m_carry ? {1'b0, 1'b1, 23'd0} : s6_mr0;
 
 		/* Inlined early saturation logic without post-addition comparator or OR tree */
-		wire signed [11:0] s6_ef_s = s6_m_carry ? s6_er_p1 : s6_er;
-		wire s6_ge_1 = (s6_ef_s >= 12'sd127);
+		wire s6_ge_1 = s6_m_carry ? s6_ge1_1 : s6_ge1_0;
 		wire [31:0] s6_rnd_sat = s6_sr ? 32'd0 :
 		                         s6_udf ? 32'd0 :
 		                         (s6_ovf || s6_ge_1) ? 32'h3F800000 :

@@ -142,7 +142,8 @@ module atg_su_wb #(
 
 	/* Long beats: round-robin from the pointer.  A beat that writes (the RF or
 	 * rq) needs the port; one without (a store's completion) does not. */
-	wire port_free = !sv && !(|fi_valid);
+	(* keep = "true", max_fanout = 16 *) wire sv_arb = sv;
+	wire port_free = !sv_arb && !(|fi_valid);
 	/* (The first eligible source at or after rr, else the first one.) */
 	reg [LP_W-1:0] rr;
 	reg lsel_v;
@@ -223,15 +224,20 @@ module atg_su_wb #(
 	end
 	wire [31:0] fe_grp = {27'd0, fe_lane} / NPHYS;
 
-	wire s_rq = sv && srd == 7'd63;
-	wire l_rq = !sv && !in_go && lw && lrd == 7'd63;
-	assign w_en = (sv && !s_rq) || in_go || (lw && !l_rq && !sv && !in_go);
-	assign w_warp = sv ? sw : in_go ? fe[IW-1 -: WARP_W] : l_s_warp;
-	assign w_grp = sv ? sg : in_go ? fe_grp[GRP_W-1:0] : l_s_grp;
-	assign w_reg = sv ? srd[5:0] : in_go ? fe[42:37] : lrd[5:0];
-	assign w_data = sv ? sd : in_go ? fe_data : l_s_data;
-	assign w_lanes = sv ? sl : in_go ? fe_lanes : l_s_lanes;
-	assign rq_push = s_rq || l_rq;
+	wire s_rq = sv && (srd == 7'd63);
+	wire l_rq = lw && (lrd == 7'd63);
+
+	/* Clean 2:1 priority multiplexer structure to break the false long-arbitration loop */
+	wire s_we = sv && !s_rq;
+	wire non_s_we = in_go ? 1'b1 : (lw && !l_rq);
+	assign w_en = sv ? s_we : non_s_we;
+
+	assign w_warp = sv ? sw : (in_go ? fe[IW-1 -: WARP_W] : l_s_warp);
+	assign w_grp  = sv ? sg : (in_go ? fe_grp[GRP_W-1:0] : l_s_grp);
+	assign w_reg  = sv ? srd[5:0] : (in_go ? fe[42:37] : lrd[5:0]);
+	assign w_data = sv ? sd : (in_go ? fe_data : l_s_data);
+	assign w_lanes = sv ? sl : (in_go ? fe_lanes : l_s_lanes);
+	assign rq_push = sv ? s_rq : (!in_go && l_rq);
 	assign rq_data = sv ? sd : l_s_data;
 
 	/* A long beat that has waited more than 4 cycles, or a pending input,

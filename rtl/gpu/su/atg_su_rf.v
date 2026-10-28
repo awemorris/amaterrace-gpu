@@ -87,23 +87,39 @@ module atg_su_rf #(
 	/* The write port: the scrub's zeros or the write-back's data. */
 	wire [A_W-1:0] wam = sc_on ? sc_a : wa;
 
+	/* Buffered write clock enable for fanout mitigation */
+	(* keep = "true", max_fanout = 8 *) wire rf_w_ena = sc_on || w_en;
+
 	/* Two copies per lane: m1 for read port 1, m2 for read port 2. Both written on write-back. */
 	genvar l;
 	generate
 		for (l = 0; l < NPHYS; l = l + 1) begin : lane
-			(* ram_style = "block" *) reg [31:0] m1 [0:DEPTH-1];
-			(* ram_style = "block" *) reg [31:0] m2 [0:DEPTH-1];
-			reg [31:0] q1, q2;
-			always @(posedge clk) begin
-				if (sc_on || (w_en && w_lanes[l])) begin
-					m1[wam] <= sc_on ? 32'd0 : w_data[l*32 +: 32];
-					m2[wam] <= sc_on ? 32'd0 : w_data[l*32 +: 32];
-				end
-				if (r_en) begin
-					q1 <= m1[ra1];
-					q2 <= m2[ra2];
-				end
-			end
+			wire [31:0] din = sc_on ? 32'd0 : w_data[l*32 +: 32];
+			wire rf_wea = sc_on || w_lanes[l];
+			wire [31:0] q1, q2;
+
+			am_ram_block #(.W(32), .ADDR_W(A_W), .DEPTH(DEPTH)) m1 (
+				.clk(clk),
+				.ena(rf_w_ena),
+				.wea(rf_wea),
+				.addra(wam),
+				.dina(din),
+				.enb(r_en),
+				.addrb(ra1),
+				.doutb(q1)
+			);
+
+			am_ram_block #(.W(32), .ADDR_W(A_W), .DEPTH(DEPTH)) m2 (
+				.clk(clk),
+				.ena(rf_w_ena),
+				.wea(rf_wea),
+				.addra(wam),
+				.dina(din),
+				.enb(r_en),
+				.addrb(ra2),
+				.doutb(q2)
+			);
+
 			assign r_data1[l*32 +: 32] = q1;
 			assign r_data2[l*32 +: 32] = q2;
 		end
