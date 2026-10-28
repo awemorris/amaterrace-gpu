@@ -158,7 +158,6 @@ module atg_su_exec #(
 						wc_w <= x_warp;
 						wc_o <= op == ATG_EXEC_END ? 2'd1 : op == ATG_EXEC_BAR ? 2'd2 :
 							2'd0;
-						wc_take <= is_br && take;
 						wc_pc_tgt <= pc_tgt;
 						wc_pc_p1 <= pc_p1;
 					end
@@ -206,11 +205,20 @@ module atg_su_exec #(
 		end
 	endgenerate
 
+	wire wc_take_ce = mine && x_last;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			wc_take <= 1'b0;
+		else if (wc_take_ce)
+			wc_take <= is_br && take;
+	end
+
+	wire acc_ce = mine && is_br;
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			acc_any <= 1'b0;
 			acc_all <= 1'b1;
-		end else if (mine) begin
+		end else if (acc_ce) begin
 			acc_any <= x_last ? 1'b0 : any_now;
 			acc_all <= x_last ? 1'b1 : all_now;
 		end

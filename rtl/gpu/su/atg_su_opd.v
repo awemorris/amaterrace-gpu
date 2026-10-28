@@ -142,6 +142,7 @@ module atg_su_opd #(
 	reg b_hit_rf_1, b_hit_rf_2, b_hit_rf_3;
 	reg b_hit_alu_ex5_1, b_hit_alu_ex5_2, b_hit_alu_ex5_3;
 	reg b_hit_fpu_ex5_1, b_hit_fpu_ex5_2, b_hit_fpu_ex5_3;
+	reg [159:0] b_info;
 	reg [DW-1:0] hold_r1;
 	reg [DW-1:0] hold_r2;
 
@@ -235,6 +236,7 @@ module atg_su_opd #(
 			b_hit_fpu_ex5_1 <= 1'b0;
 			b_hit_fpu_ex5_2 <= 1'b0;
 			b_hit_fpu_ex5_3 <= 1'b0;
+			b_info <= 160'd0;
 			b_last <= 1'b0;
 			b_warp <= {WARP_W{1'b0}};
 			b_pc <= 16'd0;
@@ -271,6 +273,7 @@ module atg_su_opd #(
 						b_hit_fpu_ex5_1 <= a_match_fpu_ex5_1;
 						b_hit_fpu_ex5_2 <= a_match_fpu_ex5_2;
 						b_hit_fpu_ex5_3 <= a_match_fpu_ex5_3;
+						b_info <= q_info;
 					end
 				end else begin
 					b_valid <= 1'b0;
