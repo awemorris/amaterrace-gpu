@@ -306,6 +306,19 @@ module atg_su_sb #(
 			end
 	end
 
+	/* Selected warp's current registered counters (eliminates wb->sub->cnt_wait critical path) */
+	reg [CNT_W-1:0] cur_cm, cur_ct, cur_cx;
+	integer ucw;
+	always @(*) begin
+		{cur_cm, cur_ct, cur_cx} = {(3*CNT_W){1'b0}};
+		for (ucw = 0; ucw < NWARPS; ucw = ucw + 1)
+			if (u_warp == ucw[WARP_W-1:0]) begin
+				cur_cm = cm[ucw*CNT_W +: CNT_W];
+				cur_ct = ct[ucw*CNT_W +: CNT_W];
+				cur_cx = cx[ucw*CNT_W +: CNT_W];
+			end
+	end
+
 	/* Instructions that wait for counters. */
 	wire is_wait = unit == ATG_UNIT_CTL;
 	wire is_fence = unit == ATG_UNIT_LSU && op == ATG_LSU_FENCE;
@@ -313,8 +326,8 @@ module atg_su_sb #(
 	wire is_nop = unit == ATG_UNIT_NONE;
 	wire wait_ok = rcm <= {2'b00, imm[3:0]} && rct <= {2'b00, imm[7:4]} &&
 		rcx <= {2'b00, imm[11:8]};
-	wire cnt_wait = (is_wait && !wait_ok) || (is_fence && imm[0] && rcm != 0) ||
-		(is_end && (rcm != 0 || rct != 0 || rcx != 0));
+	wire cnt_wait = (is_wait && !wait_ok) || (is_fence && imm[0] && cur_cm != 0) ||
+		(is_end && (cur_cm != 0 || cur_ct != 0 || cur_cx != 0));
 	wire [CNT_W-1:0] rcc = cls == ATG_CLS_M ? rcm : cls == ATG_CLS_T ? rct : rcx;
 	wire cnt_full = is_long && rcc == {CNT_W{1'b1}};
 	wire need_e = is_long && wrd;
