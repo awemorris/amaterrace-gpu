@@ -47,9 +47,9 @@ set_property include_dirs [list "$root/include"] [current_fileset]
 
 puts "Starting OOC synthesis for $module with period $period ns..."
 if {$module == "am_fpu_core"} {
-	synth_design -top $module -part $part -mode out_of_context -generic LAT=6 -verilog_define SYNTH_KINTEX7
+	synth_design -top $module -part $part -mode out_of_context -generic LAT=6
 } else {
-	synth_design -top $module -part $part -mode out_of_context -verilog_define SYNTH_KINTEX7
+	synth_design -top $module -part $part -mode out_of_context
 }
 
 create_clock -period $period -name clk [get_ports clk]
