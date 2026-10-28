@@ -464,13 +464,15 @@ module atg_su_sb #(
 					f_pipe_fpu[q] <= f_pipe_fpu[q+1];
 				end
 			f_valid <= f_shift;
-			if (issued) begin
-				f_valid[f_slot] <= 1'b1;
+			if (u_valid && |(~f_shift)) begin
 				f_warp[(f_slot)*WARP_W +: WARP_W] <= u_warp;
 				f_rd[(f_slot)*7 +: 7] <= rd;
 				f_short[f_slot] <= short_w;
 				f_pipe_alu[f_slot] <= (unit == ATG_UNIT_ALU);
 				f_pipe_fpu[f_slot] <= (unit == ATG_UNIT_FPU);
+			end
+			if (issued) begin
+				f_valid[f_slot] <= 1'b1;
 			end
 		end
 	end
