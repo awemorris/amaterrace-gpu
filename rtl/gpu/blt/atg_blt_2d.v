@@ -267,7 +267,7 @@ module atg_blt_2d #(
 		.psl(psl), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
 		.da(da[US-1:0]), .px(px[1:0]), .spx(spx[1:0]), .rem(rem),
 		.sn(sn), .snu(snu), .dlo(dlo[US-1:0]), .slo(slo),
-		.p0(seg_p0), .seg_n(seg_n), .back(back), .src_base(src_base_u),
+		.p0(seg_p0), .seg_n(seg_n), .seg_last(), .back(back), .src_base(src_base_u),
 		.last_line(last_line), .be(seg_be)
 	);
 	wire [LA_W-1:0] src_lo = src_base_u[ADDR_W-1:US];
@@ -288,14 +288,14 @@ module atg_blt_2d #(
 	am_add #(.W(US)) a_da_w (.a(dst_row_b[US-1:0]), .b(d_xb_w[US-1:0]), .ci(1'b0), .s(cur_da_w), .co(w_da_co));
 
 	wire [US:0] bst_seg_n;
+	wire bst_seg_last;
 	atg_blt_seg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) bst_seg (
 		.psl(psl), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
 		.da(cur_da_w), .px(px_b[1:0]), .spx(spx_b[1:0]), .rem(rem_b),
 		.sn({(US+1){1'b0}}), .snu({(US+1){1'b0}}), .dlo({US{1'b0}}), .slo({ADDR_W{1'b0}}),
-		.p0({US{1'b0}}), .seg_n(bst_seg_n), .back(), .src_base(),
+		.p0({US{1'b0}}), .seg_n(bst_seg_n), .seg_last(bst_seg_last), .back(), .src_base(),
 		.last_line(), .be()
 	);
-	wire bst_seg_last = (rem_b == {{(16-US){1'b0}}, bst_seg_n});
 	wire [16:0] bst_sn17 = {{(16-US){1'b0}}, bst_seg_n};
 	wire [16:0] bst_px_next, bst_spx_next, bst_rem_next;
 	wire [2:0] bst_step_co;

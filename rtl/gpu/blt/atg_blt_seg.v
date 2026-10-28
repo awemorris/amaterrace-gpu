@@ -38,6 +38,7 @@ module atg_blt_seg #(
 	input wire [1:0] spx,
 	input wire [16:0] rem,
 	output wire [LINE_SHIFT:0] seg_n,
+	output wire seg_last,
 	/* S_SC: back from the rightmost pixel (reversed) */
 	input wire [LINE_SHIFT:0] sn,
 	output wire [ADDR_W-1:0] back,
@@ -77,12 +78,17 @@ module atg_blt_seg #(
 	am_sub #(.W(3)) s_td (.a(3'd4), .b({1'b0, px}), .bi(1'b0), .d(tile_room_d), .bo(seg_co_unused[2]));
 	am_sub #(.W(3)) s_ts (.a(3'd4), .b({1'b0, spx}), .bi(1'b0), .d(tile_room_s), .bo(seg_co_unused[3]));
 	wire [US:0] room_t = {{(US - 2){1'b0}}, tile_room_d};
-	wire [US:0] room_d = rev ? room_r : (dtile && room_t < room_f) ? room_t : room_f;
 	wire [US:0] room_s = {{(US - 2){1'b0}}, tile_room_s};
-	wire [US:0] room = (stile && room_s < room_d) ? room_s : room_d;
+	wire [US:0] room_line = rev ? room_r : room_f;
+	wire [US:0] room_tile = (dtile && stile) ? (room_t < room_s ? room_t : room_s) :
+	                        dtile ? room_t :
+	                        stile ? room_s : room_line;
+	wire [US:0] room = ((dtile || stile) && room_tile < room_line) ? room_tile : room_line;
+
 	wire rem_large = |rem[16:US];
 	wire rem_less = !rem_large && ({1'b0, rem[US-1:0]} < room);
 	assign seg_n = rem_less ? {1'b0, rem[US-1:0]} : room;
+	assign seg_last = !rem_large && ({1'b0, rem[US-1:0]} <= room);
 
 	/* The bytes back from the rightmost pixel, and the source window. */
 	am_sub #(.W(US + 1)) s_bn (.a(sn), .b({(US + 1){1'b0}}), .bi(1'b1), .d(back_n), .bo(seg_co_unused[4]));
