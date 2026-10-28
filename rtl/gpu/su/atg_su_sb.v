@@ -97,7 +97,7 @@ module atg_su_sb #(
 	wire [6:0] rs2 = u_uop[ATG_UOP_RS2 +: 7];
 	wire [6:0] rs3 = u_uop[ATG_UOP_RS3 +: 7];
 	wire [6:0] rs1p;
-	wire r1p_co_unused, r3p_co_unused, rk_co_unused, r4_co_unused, rw_co_unused;
+	wire r1p_co_unused, r3p_co_unused, rw_co_unused;
 	am_add #(.W(7)) u_rs1p (.a(rs1), .b(7'd0), .ci(1'b1), .s(rs1p), .co(r1p_co_unused));
 	wire wrd = u_uop[ATG_UOP_WRD];
 	wire pair = u_uop[ATG_UOP_PAIR];
@@ -112,19 +112,21 @@ module atg_su_sb #(
 	/* A texture .3 form with Dref also reads rs1+3 (rs3 + 1). */
 	wire [6:0] rs3p;
 	am_add #(.W(7)) u_rs3p (.a(rs3), .b(7'd0), .ci(1'b1), .s(rs3p), .co(r3p_co_unused));
-	/* The destination's end: rd + 4 (wide) or rd + 1; and rd + 4 (an entry inside a wide rd). */
-	wire [7:0] rd_k, rd_4;
-	am_add #(.W(8)) u_rd_k (.a({2'b00, rd[5:0]}), .b(wide ? 8'd4 : 8'd1), .ci(1'b0), .s(rd_k),
-		.co(rk_co_unused));
-	am_add #(.W(8)) u_rd_4 (.a({2'b00, rd[5:0]}), .b(8'd4), .ci(1'b0), .s(rd_4), .co(r4_co_unused));
+	wire [5:0] rd_p1, rd_p2, rd_p3;
+	wire r1_co_unused, r2_co_unused, r3_co_unused;
+	am_add #(.W(6)) u_rd_p1 (.a(rd[5:0]), .b(6'd1), .ci(1'b0), .s(rd_p1), .co(r1_co_unused));
+	am_add #(.W(6)) u_rd_p2 (.a(rd[5:0]), .b(6'd2), .ci(1'b0), .s(rd_p2), .co(r2_co_unused));
+	am_add #(.W(6)) u_rd_p3 (.a(rd[5:0]), .b(6'd3), .ci(1'b0), .s(rd_p3), .co(r3_co_unused));
 	wire src5 = unit == ATG_UNIT_TEX && u_uop[ATG_UOP_SUB + 4] && op[ATG_TEX_CFORM] &&
 		rs3p < 7'd63;
 	wire dst = wrd && rd < 7'd63;
 
-	/* Scoreboard entries, warp-major: {base, wide, cls}. */
+	/* Scoreboard entries, warp-major: {r0, r1, r2, r3, wide, cls}. */
 	reg [NE-1:0] e_valid;
-	reg [NE*6-1:0] e_base;
-	reg [NE*8-1:0] e_end;
+	reg [NE*6-1:0] e_r0;
+	reg [NE*6-1:0] e_r1;
+	reg [NE*6-1:0] e_r2;
+	reg [NE*6-1:0] e_r3;
 	reg [NE-1:0] e_wide;
 	reg [NWARPS*CNT_W-1:0] cm;
 	reg [NWARPS*CNT_W-1:0] ct;
@@ -145,39 +147,41 @@ module atg_su_sb #(
 			ev[rel_idx] = 1'b0;
 	end
 
-	/* x in [base, base_end): base_end is base + 4 (wide) or + 1, precomputed at allocation. */
-	function in_range;
-		input [6:0] x;
-		input [5:0] base;
-		input [7:0] base_end;
+	/* Check if register x matches entry (single register or wide 4-register window). */
+	function hit_entry;
+		input [5:0] x;
+		input [5:0] r0, r1, r2, r3;
 		input is_wide;
 		begin
-			if (!is_wide)
-				in_range = (x[5:0] == base) && !x[6];
-			else
-				in_range = {1'b0, x} >= {2'b00, base} && {1'b0, x} < base_end;
+			hit_entry = (x == r0) || (is_wide && ((x == r1) || (x == r2) || (x == r3)));
 		end
 	endfunction
 
-	/* The warp's entries (valid, base, wide, the base's end) and counters. */
+	/* The warp's entries (valid, r0..r3, wide) and counters. */
 	reg [SB_ENTRIES-1:0] uw_v;
-	reg [SB_ENTRIES*6-1:0] uw_base;
+	reg [SB_ENTRIES*6-1:0] uw_r0;
+	reg [SB_ENTRIES*6-1:0] uw_r1;
+	reg [SB_ENTRIES*6-1:0] uw_r2;
+	reg [SB_ENTRIES*6-1:0] uw_r3;
 	reg [SB_ENTRIES-1:0] uw_wide;
-	reg [SB_ENTRIES*8-1:0] uw_end;
 	reg [CNT_W-1:0] ucm, uct, ucx;
 	integer uj, uw;
 	always @(*) begin
 		uw_v = {SB_ENTRIES{1'b0}};
-		uw_base = {(SB_ENTRIES*6){1'b0}};
+		uw_r0 = {(SB_ENTRIES*6){1'b0}};
+		uw_r1 = {(SB_ENTRIES*6){1'b0}};
+		uw_r2 = {(SB_ENTRIES*6){1'b0}};
+		uw_r3 = {(SB_ENTRIES*6){1'b0}};
 		uw_wide = {SB_ENTRIES{1'b0}};
-		uw_end = {(SB_ENTRIES*8){1'b0}};
 		{ucm, uct, ucx} = {(3*CNT_W){1'b0}};
 		for (uw = 0; uw < NWARPS; uw = uw + 1)
 			if (u_warp == uw[WARP_W-1:0]) begin
 				for (uj = 0; uj < SB_ENTRIES; uj = uj + 1) begin
 					uw_v[uj] = ev[uw * SB_ENTRIES + uj];
-					uw_base[uj*6 +: 6] = e_base[(uw * SB_ENTRIES + uj)*6 +: 6];
-					uw_end[uj*8 +: 8] = e_end[(uw * SB_ENTRIES + uj)*8 +: 8];
+					uw_r0[uj*6 +: 6] = e_r0[(uw * SB_ENTRIES + uj)*6 +: 6];
+					uw_r1[uj*6 +: 6] = e_r1[(uw * SB_ENTRIES + uj)*6 +: 6];
+					uw_r2[uj*6 +: 6] = e_r2[(uw * SB_ENTRIES + uj)*6 +: 6];
+					uw_r3[uj*6 +: 6] = e_r3[(uw * SB_ENTRIES + uj)*6 +: 6];
 					uw_wide[uj] = e_wide[uw * SB_ENTRIES + uj];
 				end
 				{ucm, uct, ucx} = {cm[uw*CNT_W +: CNT_W], ct[uw*CNT_W +: CNT_W],
@@ -190,25 +194,28 @@ module atg_su_sb #(
 	reg [SBE_W:0] free_e;
 	reg have_free;
 	integer j;
-	reg [5:0] jb;
-	reg [7:0] je;
+	reg [5:0] j_r0, j_r1, j_r2, j_r3;
 	reg jw;
 	always @(*) begin
 		hz_long = 1'b0;
 		have_free = 1'b0;
 		free_e = {(SBE_W+1){1'b1}};
 		for (j = SB_ENTRIES - 1; j >= 0; j = j - 1) begin
-			jb = uw_base[j*6 +: 6];
-			je = uw_end[j*8 +: 8];
+			j_r0 = uw_r0[j*6 +: 6];
+			j_r1 = uw_r1[j*6 +: 6];
+			j_r2 = uw_r2[j*6 +: 6];
+			j_r3 = uw_r3[j*6 +: 6];
 			jw = uw_wide[j];
 			if (uw_v[j]) begin
-				if ((src1 && in_range(rs1, jb, je, jw)) ||
-				    (src2 && in_range(rs2, jb, je, jw)) ||
-				    (src3 && in_range(rs3, jb, je, jw)) ||
-				    (src4 && in_range(rs1p, jb, je, jw)) ||
-				    (src5 && in_range(rs3p, jb, je, jw)) ||
-				    (dst && (in_range(rd, jb, je, jw) ||
-				    (wide && in_range({1'b0, jb}, rd[5:0], rd_4, 1'b1)))))
+				if ((src1 && hit_entry(rs1[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
+				    (src2 && hit_entry(rs2[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
+				    (src3 && hit_entry(rs3[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
+				    (src4 && hit_entry(rs1p[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
+				    (src5 && hit_entry(rs3p[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
+				    (dst && (hit_entry(rd[5:0], j_r0, j_r1, j_r2, j_r3, jw) ||
+				             (wide && (hit_entry(rd_p1, j_r0, j_r1, j_r2, j_r3, jw) ||
+				                       hit_entry(rd_p2, j_r0, j_r1, j_r2, j_r3, jw) ||
+				                       hit_entry(rd_p3, j_r0, j_r1, j_r2, j_r3, jw))))))
 					hz_long = 1'b1;
 			end else begin
 				have_free = 1'b1;
@@ -248,8 +255,11 @@ module atg_su_sb #(
 				    (src3 && hit(rs3, f_rd[(m)*7 +: 7])) || (src4 && hit(rs1p, f_rd[(m)*7 +: 7])) ||
 				    (src5 && hit(rs3p, f_rd[(m)*7 +: 7]))))
 					hz_short = 1'b1;
-				if (dst && is_long && (f_rd[(m)*7 +: 7] >= {1'b0, rd[5:0]}) &&
-				    (f_rd[(m)*7 +: 7] < rd_k[6:0]))
+				if (dst && is_long && (f_rd[(m)*7 +: 7] < 7'd63) &&
+				    (hit(f_rd[(m)*7 +: 7], {1'b0, rd[5:0]}) ||
+				     (wide && (hit(f_rd[(m)*7 +: 7], {1'b0, rd_p1}) ||
+				               hit(f_rd[(m)*7 +: 7], {1'b0, rd_p2}) ||
+				               hit(f_rd[(m)*7 +: 7], {1'b0, rd_p3})))))
 					hz_short = 1'b1;
 			end
 		for (m = 0; m < NSH; m = m + 1)
@@ -264,7 +274,11 @@ module atg_su_sb #(
 				    (src4 && hit(rs1p, {1'b0, c_rd[(m)*6 +: 6]})) ||
 				    (src5 && hit(rs3p, {1'b0, c_rd[(m)*6 +: 6]}))))
 					hz_short = 1'b1;
-				if (dst && is_long && in_range({1'b0, c_rd[(m)*6 +: 6]}, rd[5:0], rd_k, wide))
+				if (dst && is_long &&
+				    (c_rd[(m)*6 +: 6] == rd[5:0] ||
+				     (wide && (c_rd[(m)*6 +: 6] == rd_p1 ||
+				               c_rd[(m)*6 +: 6] == rd_p2 ||
+				               c_rd[(m)*6 +: 6] == rd_p3))))
 					hz_short = 1'b1;
 			end
 	end
@@ -322,10 +336,6 @@ module atg_su_sb #(
 	/* State updates. */
 	wire alloc = issued && need_e;
 	wire [NE_W-1:0] alloc_idx = {u_warp, free_e[SBE_W-1:0]};	/* free_e < SB_ENTRIES at an alloc */
-	wire [7:0] alloc_end;
-	wire alloc_end_co;
-	am_add #(.W(8)) u_alloc_end (.a({2'b00, rd[5:0]}), .b(wide ? 8'd4 : 8'd1), .ci(1'b0), .s(alloc_end),
-		.co(alloc_end_co));
 
 	/* Each warp's counters: + 1 at an issue of the class, - 1 at its release. */
 	wire [NWARPS*CNT_W-1:0] cm_next, ct_next, cx_next;
@@ -397,8 +407,10 @@ module atg_su_sb #(
 				e_valid[alloc_idx] <= 1'b1;
 				for (q = 0; q < NE; q = q + 1)
 					if (alloc_idx == q[NE_W-1:0]) begin
-						e_base[q*6 +: 6] <= rd[5:0];
-						e_end[q*8 +: 8] <= alloc_end;
+						e_r0[q*6 +: 6] <= rd[5:0];
+						e_r1[q*6 +: 6] <= rd_p1;
+						e_r2[q*6 +: 6] <= rd_p2;
+						e_r3[q*6 +: 6] <= rd_p3;
 					end
 				e_wide[alloc_idx] <= wide;
 			end
@@ -469,7 +481,7 @@ module atg_su_sb #(
 		end
 	endgenerate
 
-	wire unused_ok = &{1'b0, imm[31:12], u_uop, f_slot, c_slot, rd_k[7], alloc_end_co};
+	wire unused_ok = &{1'b0, imm[31:12], u_uop, f_slot, c_slot, r1_co_unused, r2_co_unused, r3_co_unused};
 endmodule
 
 `default_nettype wire
