@@ -107,12 +107,14 @@ module atg_su_exec #(
 	wire any_now = acc_any || |(bt & em);
 	wire all_now = acc_all && &(bt | ~em);
 	wire is_br = op <= ATG_EXEC_BEXZ;
-	wire br_uses_any = op == ATG_EXEC_BANY || op == ATG_EXEC_BNONE;
 	wire br_uses_all = op == ATG_EXEC_BALL;
 	wire br_static_take = (op == ATG_EXEC_J) ||
 	                      (op == ATG_EXEC_BEXNZ && wexec != 32'd0) ||
 	                      (op == ATG_EXEC_BEXZ && wexec == 32'd0);
-	wire take = br_static_take || (br_uses_all ? all_now : (op == ATG_EXEC_BANY ? any_now : (br_uses_any ? !any_now : 1'b0)));
+	wire take_cond = (br_uses_all && all_now) ||
+	                 (op == ATG_EXEC_BANY && any_now) ||
+	                 (op == ATG_EXEC_BNONE && !any_now);
+	wire take = br_static_take || take_cond;
 
 	/* exec.save: each lane's EXEC bit as a Boolean, written to every lane. */
 	reg [DW-1:0] save_d;

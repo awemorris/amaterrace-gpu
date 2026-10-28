@@ -283,16 +283,22 @@ module atg_su_opd #(
 	wire [6:0] mods = b_uop[ATG_UOP_MOD +: 7];
 	wire fp_unit = b_unit == ATG_UNIT_FPU || b_unit == ATG_UNIT_XU;
 	wire pk_unit = b_unit == ATG_UNIT_PK;
-	wire [31:0] grp_base = {{(32-GRP_W){1'b0}}, b_grp} * NPHYS;
-	wire [31:0] exec_g;
-	wire [31:0] kill_g;
-	wire [31:0] cov_g;
-	am_shift #(.W(32), .SW(6)) u_exec_g (.a(q_exec), .amt(grp_base[5:0]), .left(1'b0), .arith(1'b0),
-		.y(exec_g));
-	am_shift #(.W(32), .SW(6)) u_kill_g (.a(q_killed), .amt(grp_base[5:0]), .left(1'b0),
-		.arith(1'b0), .y(kill_g));
-	am_shift #(.W(32), .SW(6)) u_cov_g (.a(q_info[ATG_WI_MASK +: 32]), .amt(grp_base[5:0]),
-		.left(1'b0), .arith(1'b0), .y(cov_g));
+	wire [4:0] grp_base = (G > 1) ? {b_grp, {($clog2(NPHYS)){1'b0}}} : 5'd0;
+
+	reg [NPHYS-1:0] exec_g, kill_g, cov_g;
+	integer gi;
+	always @(*) begin
+		exec_g = {NPHYS{1'b0}};
+		kill_g = {NPHYS{1'b0}};
+		cov_g  = {NPHYS{1'b0}};
+		for (gi = 0; gi < 32/NPHYS; gi = gi + 1) begin
+			if (b_grp == gi[GRP_W-1:0]) begin
+				exec_g = q_exec[gi*NPHYS +: NPHYS];
+				kill_g = q_killed[gi*NPHYS +: NPHYS];
+				cov_g  = q_info[ATG_WI_MASK + gi*NPHYS +: NPHYS];
+			end
+		end
+	end
 	assign q_warp = b_warp;
 
 	/* The value of operand n, split in two: the part that is the same in every
@@ -317,7 +323,7 @@ module atg_su_opd #(
 				7'd99: opc = 32'h3F000000;
 				7'd100: opc = 32'h40000000;
 				7'd101: opc = 32'hBF800000;
-				7'd103: opc = WARP_BASE + {{(32-WARP_W){1'b0}}, wn};
+				7'd103: opc = WARP_BASE[31:0] | {{(32-WARP_W){1'b0}}, wn};
 				7'd104: opc = qe;
 				7'd106: opc = {16'd0, qi[ATG_WI_WGX +: 16]};
 				7'd107: opc = {16'd0, qi[ATG_WI_WGX + 16 +: 16]};
