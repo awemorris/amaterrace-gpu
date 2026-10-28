@@ -431,6 +431,60 @@ module am_fpu_core #(
 		wire [31:0] s2_rint_iv = !s2_nz ? {s2_s, 31'd0} : s2_rint_rnd;
 		wire [31:0] s2_rint_fl = s2_fl_nan ? 32'h7FC00000 : s2_fl_pass ? s2_xf : s2_rint_iv;
 
+		/* Precompute FMA operands & exponents in Stage 2 -> latched into Stage 3 */
+		reg [31:0] s2_fx, s2_fy, s2_fz;
+		reg [2:0]  s2_rr;
+		reg        s2_noc;
+		always @(*) begin
+			s2_fx = s2_a;
+			s2_fy = 32'h3F800000;
+			s2_fz = s2_b;
+			s2_noc = 1'b0;
+			s2_rr = s2_rm;
+			case (s2_op)
+			OP_FADD:   ;
+			OP_FSUB:   s2_fz = {!s2_b[31], s2_b[30:0]};
+			OP_FMUL:   begin
+				s2_fy = s2_b;
+				s2_noc = 1'b1;
+			end
+			OP_FMADD:  begin
+				s2_fy = s2_b;
+				s2_fz = s2_c;
+			end
+			OP_FMSUB:  begin
+				s2_fy = s2_b;
+				s2_fz = {!s2_c[31], s2_c[30:0]};
+			end
+			OP_FNMSUB: begin
+				s2_fx = {!s2_a[31], s2_a[30:0]};
+				s2_fy = s2_b;
+				s2_fz = s2_c;
+			end
+			OP_FNMADD: begin
+				s2_fx = {!s2_a[31], s2_a[30:0]};
+				s2_fy = s2_b;
+				s2_fz = {!s2_c[31], s2_c[30:0]};
+			end
+			OP_FRACT:  begin
+				s2_fz = {!s2_rint_fl[31], s2_rint_fl[30:0]};
+				s2_rr = 3'd0;
+			end
+			default: ;
+			endcase
+		end
+
+		wire [31:0] s2_fma_a = s2_fx[30:23] == 8'd0 ? {s2_fx[31], 31'd0} : s2_fx;
+		wire [31:0] s2_fma_b = s2_fy[30:23] == 8'd0 ? {s2_fy[31], 31'd0} : s2_fy;
+		wire [31:0] s2_fma_c = s2_fz[30:23] == 8'd0 ? {s2_fz[31], 31'd0} : s2_fz;
+
+		wire [11:0] s2_fma_ab, s2_fma_c150, s2_fma_c152, s2_fma_c101;
+		wire [3:0]  s2_fma_carry_unused;
+		am_add #(.W(12)) u_fma2_ab   (.a({4'd0, s2_fma_a[30:23]}), .b({4'd0, s2_fma_b[30:23]}), .ci(1'b0), .s(s2_fma_ab),   .co(s2_fma_carry_unused[0]));
+		am_add #(.W(12)) u_fma2_c150 (.a({4'd0, s2_fma_c[30:23]}), .b(12'd150),                 .ci(1'b0), .s(s2_fma_c150), .co(s2_fma_carry_unused[1]));
+		am_add #(.W(12)) u_fma2_c152 (.a({4'd0, s2_fma_c[30:23]}), .b(12'd152),                 .ci(1'b0), .s(s2_fma_c152), .co(s2_fma_carry_unused[2]));
+		am_add #(.W(12)) u_fma2_c101 (.a({4'd0, s2_fma_c[30:23]}), .b(12'd101),                 .ci(1'b0), .s(s2_fma_c101), .co(s2_fma_carry_unused[3]));
+
 		/* --- Stage 3: Rounding, operand & other formation (Register 3) --- */
 		reg [31:0] s3_a, s3_b, s3_c;
 		(* keep = "true", equivalent_register_removal = "no" *) reg [4:0]  s3_op;
@@ -446,39 +500,70 @@ module am_fpu_core #(
 		reg [31:0] s3_xf_val;
 		reg [31:0] s3_rint_fl;
 
+		/* Precomputed FMA operands latched into Stage 3 */
+		reg [31:0] s3_fx, s3_fy, s3_fz;
+		reg [2:0]  s3_rr;
+		reg        s3_noc;
+		reg [31:0] s3_fma_a, s3_fma_b, s3_fma_c;
+		reg [11:0] s3_fma_ab, s3_fma_c150, s3_fma_c152, s3_fma_c101;
+
 		always @(posedge clk) begin
 			if (!rst_n) begin
-				s3_a       <= 32'd0;
-				s3_b       <= 32'd0;
-				s3_c       <= 32'd0;
-				s3_op      <= 5'd0;
-				s3_rm      <= 3'd0;
-				s3_sat     <= 1'b0;
-				s3_s       <= 1'b0;
-				s3_e       <= 12'd0;
-				s3_w       <= 32'd0;
-				s3_nz      <= 1'b0;
-				s3_ri      <= 32'd0;
-				s3_fl_nan  <= 1'b0;
-				s3_fl_pass <= 1'b0;
-				s3_xf_val  <= 32'd0;
-				s3_rint_fl <= 32'd0;
+				s3_a          <= 32'd0;
+				s3_b          <= 32'd0;
+				s3_c          <= 32'd0;
+				s3_op         <= 5'd0;
+				s3_rm         <= 3'd0;
+				s3_sat        <= 1'b0;
+				s3_s          <= 1'b0;
+				s3_e          <= 12'd0;
+				s3_w          <= 32'd0;
+				s3_nz         <= 1'b0;
+				s3_ri         <= 32'd0;
+				s3_fl_nan     <= 1'b0;
+				s3_fl_pass    <= 1'b0;
+				s3_xf_val     <= 32'd0;
+				s3_rint_fl    <= 32'd0;
+				s3_fx         <= 32'd0;
+				s3_fy         <= 32'd0;
+				s3_fz         <= 32'd0;
+				s3_rr         <= 3'd0;
+				s3_noc        <= 1'b0;
+				s3_fma_a      <= 32'd0;
+				s3_fma_b      <= 32'd0;
+				s3_fma_c      <= 32'd0;
+				s3_fma_ab     <= 12'd0;
+				s3_fma_c150   <= 12'd0;
+				s3_fma_c152   <= 12'd0;
+				s3_fma_c101   <= 12'd0;
 			end else if (en) begin
-				s3_a       <= s2_a;
-				s3_b       <= s2_b;
-				s3_c       <= s2_c;
-				s3_op      <= s2_op;
-				s3_rm      <= s2_rm;
-				s3_sat     <= s2_sat;
-				s3_s       <= s2_s;
-				s3_e       <= s2_e;
-				s3_w       <= s2_w;
-				s3_nz      <= s2_nz;
-				s3_ri      <= s2_ri;
-				s3_fl_nan  <= s2_fl_nan;
-				s3_fl_pass <= s2_fl_pass;
-				s3_xf_val  <= s2_xf;
-				s3_rint_fl <= s2_rint_fl;
+				s3_a          <= s2_a;
+				s3_b          <= s2_b;
+				s3_c          <= s2_c;
+				s3_op         <= s2_op;
+				s3_rm         <= s2_rm;
+				s3_sat        <= s2_sat;
+				s3_s          <= s2_s;
+				s3_e          <= s2_e;
+				s3_w          <= s2_w;
+				s3_nz         <= s2_nz;
+				s3_ri         <= s2_ri;
+				s3_fl_nan     <= s2_fl_nan;
+				s3_fl_pass    <= s2_fl_pass;
+				s3_xf_val     <= s2_xf;
+				s3_rint_fl    <= s2_rint_fl;
+				s3_fx         <= s2_fx;
+				s3_fy         <= s2_fy;
+				s3_fz         <= s2_fz;
+				s3_rr         <= s2_rr;
+				s3_noc        <= s2_noc;
+				s3_fma_a      <= s2_fma_a;
+				s3_fma_b      <= s2_fma_b;
+				s3_fma_c      <= s2_fma_c;
+				s3_fma_ab     <= s2_fma_ab;
+				s3_fma_c150   <= s2_fma_c150;
+				s3_fma_c152   <= s2_fma_c152;
+				s3_fma_c101   <= s2_fma_c101;
 			end
 		end
 
@@ -519,53 +604,10 @@ module am_fpu_core #(
 		wire [31:0] s3_iv = !s3_nz ? {s3_s, 31'd0} : s3_rnd;
 		wire [31:0] s3_fl = s3_fl_nan ? 32'h7FC00000 : s3_fl_pass ? s3_xf_val : s3_iv;
 
-		/* Precompute FMA operands & other results in Stage 3 -> latched into Stage 4 */
-		reg [31:0] s3_fx, s3_fy, s3_fz;
-		reg [2:0]  s3_rr;
-		reg        s3_noc;
-		always @(*) begin
-			s3_fx = s3_a;
-			s3_fy = 32'h3F800000;
-			s3_fz = s3_b;
-			s3_noc = 1'b0;
-			s3_rr = s3_rm;
-			case (s3_op)
-			OP_FADD:   ;
-			OP_FSUB:   s3_fz = {!s3_b[31], s3_b[30:0]};
-			OP_FMUL:   begin
-				s3_fy = s3_b;
-				s3_noc = 1'b1;
-			end
-			OP_FMADD:  begin
-				s3_fy = s3_b;
-				s3_fz = s3_c;
-			end
-			OP_FMSUB:  begin
-				s3_fy = s3_b;
-				s3_fz = {!s3_c[31], s3_c[30:0]};
-			end
-			OP_FNMSUB: begin
-				s3_fx = {!s3_a[31], s3_a[30:0]};
-				s3_fy = s3_b;
-				s3_fz = s3_c;
-			end
-			OP_FNMADD: begin
-				s3_fx = {!s3_a[31], s3_a[30:0]};
-				s3_fy = s3_b;
-				s3_fz = {!s3_c[31], s3_c[30:0]};
-			end
-			OP_FRACT:  begin
-				s3_fz = {!s3_rint_fl[31], s3_rint_fl[30:0]};
-				s3_rr = 3'd0;
-			end
-			default: ;
-			endcase
-		end
-
 		/* --- Stage 3: FMA Alignment Precomputation for LAT >= 6 --- */
-		wire [31:0] fma3_a = s3_fx[30:23] == 8'd0 ? {s3_fx[31], 31'd0} : s3_fx;
-		wire [31:0] fma3_b = s3_fy[30:23] == 8'd0 ? {s3_fy[31], 31'd0} : s3_fy;
-		wire [31:0] fma3_c = s3_fz[30:23] == 8'd0 ? {s3_fz[31], 31'd0} : s3_fz;
+		wire [31:0] fma3_a = s3_fma_a;
+		wire [31:0] fma3_b = s3_fma_b;
+		wire [31:0] fma3_c = s3_fma_c;
 		wire fma3_sp = fma3_a[31] ^ fma3_b[31];
 		wire fma3_sc = fma3_c[31];
 		wire fma3_rdn = s3_rr == 3'd2 || s3_rr == 3'd6;
@@ -579,23 +621,18 @@ module am_fpu_core #(
 		wire fma3_zb = fma3_b[30:23] == 8'd0;
 		wire fma3_zc = s3_noc || fma3_c[30:23] == 8'd0;
 		wire [23:0] fma3_mc = fma3_zc ? 24'd0 : {1'b1, fma3_c[22:0]};
-		wire [7:0] fma3_carry_unused;
+		wire [3:0] fma3_carry_unused;
 
-		wire [11:0] fma3_ab, fma3_c150, fma3_c152, fma3_c101, fma3_k, fma3_kadj, fma3_kp2;
+		wire [11:0] fma3_ab = s3_fma_ab;
+		wire [11:0] fma3_c150 = s3_fma_c150;
+		wire [11:0] fma3_c152 = s3_fma_c152;
+		wire [11:0] fma3_c101 = s3_fma_c101;
+		wire [11:0] fma3_k, fma3_kadj, fma3_kp2;
 		wire [4:0] fma3_rs;
-		am_add #(.W(12)) u_fma3_ab (.a({4'd0, fma3_a[30:23]}), .b({4'd0, fma3_b[30:23]}), .ci(1'b0), .s(fma3_ab),
-			.co(fma3_carry_unused[0]));
-		am_add #(.W(12)) u_fma3_c150 (.a({4'd0, fma3_c[30:23]}), .b(12'd150), .ci(1'b0), .s(fma3_c150),
-			.co(fma3_carry_unused[1]));
-		am_sub #(.W(12)) u_fma3_k (.a(fma3_c150), .b(fma3_ab), .bi(1'b0), .d(fma3_k), .bo(fma3_carry_unused[2]));
-		am_add #(.W(12)) u_fma3_c101 (.a({4'd0, fma3_c[30:23]}), .b(12'd101), .ci(1'b0), .s(fma3_c101),
-			.co(fma3_carry_unused[3]));
-		am_sub #(.W(12)) u_fma3_kadj (.a(fma3_c101), .b(fma3_ab), .bi(1'b0), .d(fma3_kadj), .bo(fma3_carry_unused[4]));
-		am_add #(.W(12)) u_fma3_c152 (.a({4'd0, fma3_c[30:23]}), .b(12'd152), .ci(1'b0), .s(fma3_c152),
-			.co(fma3_carry_unused[5]));
-		am_sub #(.W(12)) u_fma3_kp2 (.a(fma3_c152), .b(fma3_ab), .bi(1'b0), .d(fma3_kp2), .bo(fma3_carry_unused[6]));
-		am_sub #(.W(5)) u_fma3_rs (.a(5'd0), .b(fma3_kp2[4:0]), .bi(1'b0), .d(fma3_rs),
-			.bo(fma3_carry_unused[7]));
+		am_sub #(.W(12)) u_fma3_k    (.a(fma3_c150), .b(fma3_ab), .bi(1'b0), .d(fma3_k),    .bo(fma3_carry_unused[0]));
+		am_sub #(.W(12)) u_fma3_kadj (.a(fma3_c101), .b(fma3_ab), .bi(1'b0), .d(fma3_kadj), .bo(fma3_carry_unused[1]));
+		am_sub #(.W(12)) u_fma3_kp2  (.a(fma3_c152), .b(fma3_ab), .bi(1'b0), .d(fma3_kp2),  .bo(fma3_carry_unused[2]));
+		am_sub #(.W(5))  u_fma3_rs   (.a(5'd0), .b(fma3_kp2[4:0]), .bi(1'b0), .d(fma3_rs),   .bo(fma3_carry_unused[3]));
 		wire signed [11:0] fma3_ks = fma3_k;
 		wire fma3_kbig = fma3_ks > 12'sd49;
 		wire fma3_kleft = !fma3_kp2[11];
@@ -845,23 +882,9 @@ module am_fpu_core #(
 		am_shift #(.W(77), .SW(7)) u_fma_nrm (.a(s5_sum), .amt(s5_nsh), .left(1'b1), .arith(1'b0), .y(s5_nrm));
 		am_add #(.W(12)) u_fma_er (.a(s5_exp_base), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_er), .co(fma_carry_unused5[1]));
 
-		/* Precompute guard and sticky chunks in Stage 5 (13 chunks of 4 bits registered to Stage 6) */
+		/* Precompute guard in Stage 5, latch sticky bits directly to Stage 6 */
 		wire [23:0] s5_m = s5_nrm[76:53];
 		wire s5_g = s5_nrm[52];
-		wire [12:0] s5_st_c;
-		assign s5_st_c[0]  = |s5_nrm[3:0];
-		assign s5_st_c[1]  = |s5_nrm[7:4];
-		assign s5_st_c[2]  = |s5_nrm[11:8];
-		assign s5_st_c[3]  = |s5_nrm[15:12];
-		assign s5_st_c[4]  = |s5_nrm[19:16];
-		assign s5_st_c[5]  = |s5_nrm[23:20];
-		assign s5_st_c[6]  = |s5_nrm[27:24];
-		assign s5_st_c[7]  = |s5_nrm[31:28];
-		assign s5_st_c[8]  = |s5_nrm[35:32];
-		assign s5_st_c[9]  = |s5_nrm[39:36];
-		assign s5_st_c[10] = |s5_nrm[43:40];
-		assign s5_st_c[11] = |s5_nrm[47:44];
-		assign s5_st_c[12] = |s5_nrm[51:48];
 
 		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
 		reg [31:0] s6_rs_other;
@@ -873,7 +896,7 @@ module am_fpu_core #(
 		reg [11:0] s6_er;
 		reg        s6_sr;
 		reg        s6_g;
-		reg [12:0] s6_st_c;
+		reg [51:0] s6_st_bits;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -895,7 +918,7 @@ module am_fpu_core #(
 				s6_er         <= 12'd0;
 				s6_sr         <= 1'b0;
 				s6_g          <= 1'b0;
-				s6_st_c       <= 13'd0;
+				s6_st_bits    <= 52'd0;
 				s6_sum_nz     <= 1'b0;
 				s6_rm         <= 3'd0;
 				s6_rdn        <= 1'b0;
@@ -916,7 +939,7 @@ module am_fpu_core #(
 				s6_er         <= s5_er;
 				s6_sr         <= s5_sr;
 				s6_g          <= s5_g;
-				s6_st_c       <= s5_st_c;
+				s6_st_bits    <= s5_nrm[51:0];
 				s6_sum_nz     <= s5_sum_nz;
 				s6_rm         <= s5_rm;
 				s6_rdn        <= s5_rdn;
@@ -932,7 +955,7 @@ module am_fpu_core #(
 		end
 
 		/* Stage 6: Speculative Parallel Rounding for LAT >= 6 */
-		wire s6_st = |s6_st_c;
+		wire s6_st = |s6_st_bits;
 		wire s6_m_all1 = &s6_m;
 		wire [24:0] s6_m_p1;
 		wire signed [11:0] s6_er_p1;
