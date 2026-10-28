@@ -324,7 +324,7 @@ Provides immediate hardware texture format support flags without MMIO register w
 ### 3.3 CTRL and STATUS (0x014, 0x010, J02)
 
 **CTRL (0x014)**:
-- `[0] RESET`: 1 = Issue GPU software reset. Self-clearing; hardware resets core logic, pipeline blocks, and ring pointers. Preserves host configuration (`IRQ_ENABLE`, `WDT_CYCLES`, `CP_HEAP_BASE/LIMIT`) per G34 (M11). Clears `CTRL` execution bits (`RUN`, `HALT`, `STEP`, `WDT_EN`, `IRQ_GLOBAL`) to 0 (IDLE).
+- `[0] RESET`: 1 = Issue GPU software reset. Self-clearing; hardware resets core logic, pipeline blocks, and ring pointers. Preserves host configuration (`IRQ_ENABLE`, `WDT_CYCLES`, `CP_HEAP_BASE/LIMIT`) per G34 (M11). Clears `CTRL` execution bits (`RUN`, `HALT`, `STEP`, `WDT_EN`, `IRQ_GLOBAL`) to 0 (IDLE). After issuing RESET, the host driver MUST wait for `CTRL.RESET` to self-clear and subsequently poll `STATUS.MEM_READY == 1` before reconfiguring registers or setting `CTRL.RUN = 1` (N80).
 - `[1] RUN`: 1 = Enable ring processing; 0 = CP pauses command fetch.
 - `[2] HALT`: 1 = Request CP to halt execution gracefully after current packet. Clearing `HALT = 0` returns to RUNNING if `CTRL.RUN == 1`, else IDLE (M11).
 - `[3] STEP`: 1 = Step one packet when halted (hardware debug).
@@ -1655,12 +1655,13 @@ to the following architectural parameters:
   has not ended after 4 x WDT_CYCLES, STATUS.AXI_STUCK is set, and only a
   reset of the platform's link (reloading the FPGA, a PCIe reset) can
   recover.
-- **Reset order** (CTRL.RESET): quiesce, wait for AXI_IDLE, reset the core
+- **Reset order** (CTRL.RESET, N80): quiesce, wait for AXI_IDLE, reset the core
   for one cycle, flush the memory clients' queues, clear CTRL.RESET. No
   reset happens in the middle of a bus transaction. The memory
   controller's bus side and a display controller are not reset by
   CTRL.RESET; a DISP2 controller's scan-out reads go on through a quiesce
   and a reset (section 13.2).
+  **Driver Recovery Requirement (N80)**: In addition to polling for `CTRL.RESET == 0` (self-cleared), the host recovery sequence MUST explicitly wait for `STATUS.MEM_READY == 1` (DRAM PHY and memory calibration stable, §3.3) before restoring state, writing `CTRL.RUN = 1`, or submitting liveness probes. Bypassing `STATUS.MEM_READY` check risks initiating memory accesses while arbitration / calibration is settling, causing `AXI_STUCK` / `AXI_ERROR` and resulting in unrecoverable `RECOVERY_LOST`.
 
 11. Memory model
 ----------------
