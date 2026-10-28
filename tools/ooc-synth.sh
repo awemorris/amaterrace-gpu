@@ -38,6 +38,7 @@ set v_files [concat \
 	[glob -nocomplain $root/rtl/gpu/fmt/*.v] \
 	[glob -nocomplain $root/rtl/gpu/dc/*.v] \
 	[glob -nocomplain $root/rtl/gpu/mc/*.v] \
+	[glob -nocomplain $root/rtl/gpu/blt/*.v] \
 ]
 foreach f $v_files {
 	read_verilog $f

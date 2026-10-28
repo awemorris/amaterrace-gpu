@@ -178,19 +178,25 @@ module atg_blt_2d #(
 	/* 1 KiB RAM (32 slots) */
 	reg [LINE_BITS-1:0] pp_ram [0:31];
 
-	/* Bank Metadata (2 Banks, up to 8 segments each) */
-	reg [LA_W-1:0] meta_dline [0:1][0:7];
-	reg [LINE_BYTES-1:0] meta_be [0:1][0:7];
-	reg [US-1:0] meta_off [0:1][0:7];
-	reg [3:0] meta_slot0 [0:1][0:7];
-	reg [3:0] meta_slot1 [0:1][0:7];
-	reg [7:0] meta_n0slot [0:1];
-	reg [3:0] bank_num_segs [0:1];
+	/* Bank Metadata (2 Banks, up to 8 segments each, full D-FF registers) */
+	(* ram_style = "registers" *) reg [LA_W-1:0] meta_dline_0 [0:7];
+	(* ram_style = "registers" *) reg [LA_W-1:0] meta_dline_1 [0:7];
+	(* ram_style = "registers" *) reg [LINE_BYTES-1:0] meta_be_0 [0:7];
+	(* ram_style = "registers" *) reg [LINE_BYTES-1:0] meta_be_1 [0:7];
+	(* ram_style = "registers" *) reg [US-1:0] meta_off_0 [0:7];
+	(* ram_style = "registers" *) reg [US-1:0] meta_off_1 [0:7];
+	(* ram_style = "registers" *) reg [3:0] meta_slot0_0 [0:7];
+	(* ram_style = "registers" *) reg [3:0] meta_slot0_1 [0:7];
+	(* ram_style = "registers" *) reg [3:0] meta_slot1_0 [0:7];
+	(* ram_style = "registers" *) reg [3:0] meta_slot1_1 [0:7];
+	reg [7:0] meta_n0slot_0, meta_n0slot_1;
+	reg [3:0] bank_num_segs_0, bank_num_segs_1;
 	reg [1:0] bank_is_last;
 	reg [1:0] bank_active;
 	reg [1:0] bank_closed;
 	reg [1:0] bank_ready;
-	reg [4:0] bank_rd_pending [0:1];
+	reg [4:0] bank_rd_pending_0, bank_rd_pending_1;
+	reg rows_b_zero;
 
 	/* Burst Walk & Prefetch registers */
 	reg bw_bank;
@@ -312,12 +318,12 @@ module atg_blt_2d #(
 	 * =========================================================================
 	 */
 	/* Read-out from ping-pong RAM */
-	wire [3:0] r_slot0 = meta_slot0[br_bank][br_seg_idx];
-	wire [3:0] r_slot1 = meta_slot1[br_bank][br_seg_idx];
+	wire [3:0] r_slot0 = br_bank ? meta_slot0_1[br_seg_idx] : meta_slot0_0[br_seg_idx];
+	wire [3:0] r_slot1 = br_bank ? meta_slot1_1[br_seg_idx] : meta_slot1_0[br_seg_idx];
 	wire [LINE_BITS-1:0] pp_sdata0 = pp_ram[{br_bank, r_slot0}];
 	wire [LINE_BITS-1:0] pp_sdata1 = pp_ram[{br_bank, r_slot1}];
-	wire r_n0slot = meta_n0slot[br_bank][br_seg_idx];
-	wire [US-1:0] r_off = meta_off[br_bank][br_seg_idx];
+	wire r_n0slot = br_bank ? meta_n0slot_1[br_seg_idx] : meta_n0slot_0[br_seg_idx];
+	wire [US-1:0] r_off = br_bank ? meta_off_1[br_seg_idx] : meta_off_0[br_seg_idx];
 	wire [2*LINE_BITS-1:0] pp_both = r_n0slot ? {pp_sdata0, pp_sdata1} : {pp_sdata1, pp_sdata0};
 	wire [2*LINE_BITS-1:0] pp_shifted;
 
@@ -351,8 +357,8 @@ module atg_blt_2d #(
 	end
 
 	wire bst_wr_valid = (state == S_BURST) && br_active && !fail;
-	wire [LA_W-1:0] bst_wr_line = meta_dline[br_bank][br_seg_idx];
-	wire [LINE_BYTES-1:0] bst_wr_be = meta_be[br_bank][br_seg_idx];
+	wire [LA_W-1:0] bst_wr_line = br_bank ? meta_dline_1[br_seg_idx] : meta_dline_0[br_seg_idx];
+	wire [LINE_BYTES-1:0] bst_wr_be = br_bank ? meta_be_1[br_seg_idx] : meta_be_0[br_seg_idx];
 	wire [LINE_BITS-1:0] bst_wr_wdata = m_copy ? pp_copy_line : fill_line;
 	wire [7:0] bst_wr_tag = 8'h80;
 
@@ -499,9 +505,9 @@ module atg_blt_2d #(
 	am_add #(.W(ADDR_W)) a_srb (.a(src_row_b), .b(m_rev ? src_neg : b_src_step), .ci(1'b0), .s(src_row_b_next), .co(bst_co_unused[8]));
 
 	wire rsp_rd_bst = rsp_valid && !rsp_write && m_burst && (rsp_tag[7] == 1'b0);
-	am_add #(.W(5)) a_brdp0 (.a(bank_rd_pending[0]), .b(5'd0), .ci(bst_rd_fire && (bw_bank == 1'b0)), .s(brdp0_up), .co(bst_co_unused[9]));
+	am_add #(.W(5)) a_brdp0 (.a(bank_rd_pending_0), .b(5'd0), .ci(bst_rd_fire && (bw_bank == 1'b0)), .s(brdp0_up), .co(bst_co_unused[9]));
 	am_sub #(.W(5)) s_brdp0 (.a(brdp0_up), .b(5'd0), .bi(rsp_rd_bst && (rsp_tag[4] == 1'b0)), .d(brdp0_next), .bo(bst_co_unused[10]));
-	am_add #(.W(5)) a_brdp1 (.a(bank_rd_pending[1]), .b(5'd0), .ci(bst_rd_fire && (bw_bank == 1'b1)), .s(brdp1_up), .co(bst_co_unused[11]));
+	am_add #(.W(5)) a_brdp1 (.a(bank_rd_pending_1), .b(5'd0), .ci(bst_rd_fire && (bw_bank == 1'b1)), .s(brdp1_up), .co(bst_co_unused[11]));
 	am_sub #(.W(5)) s_brdp1 (.a(brdp1_up), .b(5'd0), .bi(rsp_rd_bst && (rsp_tag[4] == 1'b1)), .d(brdp1_next), .bo(bst_co_unused[12]));
 
 	wire rsp_wr_bst = rsp_valid && rsp_write && m_burst;
@@ -541,8 +547,13 @@ module atg_blt_2d #(
 			bank_active <= 2'b00;
 			bank_closed <= 2'b00;
 			bank_ready <= 2'b00;
-			bank_rd_pending[0] <= 5'd0;
-			bank_rd_pending[1] <= 5'd0;
+			bank_rd_pending_0 <= 5'd0;
+			bank_rd_pending_1 <= 5'd0;
+			bank_num_segs_0 <= 4'd0;
+			bank_num_segs_1 <= 4'd0;
+			meta_n0slot_0 <= 8'd0;
+			meta_n0slot_1 <= 8'd0;
+			rows_b_zero <= 1'b0;
 			burst_wr_out <= 5'd0;
 			px_b <= 17'd0;
 			spx_b <= 17'd0;
@@ -559,12 +570,12 @@ module atg_blt_2d #(
 
 			/* Track pending read responses in ping-pong RAM */
 			if (state == S_BURST) begin
-				bank_rd_pending[0] <= brdp0_next;
-				bank_rd_pending[1] <= brdp1_next;
+				bank_rd_pending_0 <= brdp0_next;
+				bank_rd_pending_1 <= brdp1_next;
 				burst_wr_out <= bwr_next;
 			end else begin
-				bank_rd_pending[0] <= 5'd0;
-				bank_rd_pending[1] <= 5'd0;
+				bank_rd_pending_0 <= 5'd0;
+				bank_rd_pending_1 <= 5'd0;
 				burst_wr_out <= 5'd0;
 			end
 
@@ -621,6 +632,7 @@ module atg_blt_2d #(
 						spx_b <= spx_row;
 						rem_b <= width;
 						rows_b <= rows;
+						rows_b_zero <= (rows == 17'd0);
 						ydl_b <= yd_start[1:0];
 						ysl_b <= ys_start[1:0];
 						dst_row_b <= dst_row;
@@ -672,12 +684,21 @@ module atg_blt_2d #(
 						/* Check if current segment transfer step is complete */
 						if (!m_copy || (bst_two_lines ? (bw_sub && bst_rd_fire) : bst_rd_fire)) begin
 							/* Segment complete: save metadata */
-							meta_dline[bw_bank][bw_seg_idx] <= bst_seg_line;
-							meta_be[bw_bank][bw_seg_idx] <= seg_be;
-							meta_off[bw_bank][bw_seg_idx] <= bst_src_off;
-							meta_slot0[bw_bank][bw_seg_idx] <= bw_slot_cnt;
-							meta_slot1[bw_bank][bw_seg_idx] <= bst_two_lines ? bw_slot_p1 : bw_slot_cnt;
-							meta_n0slot[bw_bank][bw_seg_idx] <= bst_n0_slot;
+							if (!bw_bank) begin
+								meta_dline_0[bw_seg_idx] <= bst_seg_line;
+								meta_be_0[bw_seg_idx] <= seg_be;
+								meta_off_0[bw_seg_idx] <= bst_src_off;
+								meta_slot0_0[bw_seg_idx] <= bw_slot_cnt;
+								meta_slot1_0[bw_seg_idx] <= bst_two_lines ? bw_slot_p1 : bw_slot_cnt;
+								meta_n0slot_0[bw_seg_idx] <= bst_n0_slot;
+							end else begin
+								meta_dline_1[bw_seg_idx] <= bst_seg_line;
+								meta_be_1[bw_seg_idx] <= seg_be;
+								meta_off_1[bw_seg_idx] <= bst_src_off;
+								meta_slot0_1[bw_seg_idx] <= bw_slot_cnt;
+								meta_slot1_1[bw_seg_idx] <= bst_two_lines ? bw_slot_p1 : bw_slot_cnt;
+								meta_n0slot_1[bw_seg_idx] <= bst_n0_slot;
+							end
 							bw_sub <= 1'b0;
 
 							/* Advance walk coordinates */
@@ -686,6 +707,7 @@ module atg_blt_2d #(
 								spx_b <= spx_row;
 								rem_b <= width;
 								rows_b <= rows_b_dec;
+								rows_b_zero <= (rows_b_dec == 17'd0);
 								ydl_b <= ydl_b_inc;
 								ysl_b <= ysl_b_inc;
 								dst_row_b <= dst_row_b_next;
@@ -701,16 +723,19 @@ module atg_blt_2d #(
 							bw_slot_cnt <= bst_two_lines ? bw_slot_p2 : bw_slot_p1;
 
 							/* Check bank close condition */
-							if ((seg_last && rows_b == 17'd0) ||
+							if ((seg_last && rows_b_zero) ||
 							    (bw_seg_idx == MAX_SEGS_M1) ||
 							    bw_slot_full) begin
 								bank_closed[bw_bank] <= 1'b1;
-								bank_num_segs[bw_bank] <= bw_seg_cnt_next;
-								bank_is_last[bw_bank] <= (seg_last && rows_b == 17'd0);
+								if (!bw_bank)
+									bank_num_segs_0 <= bw_seg_cnt_next;
+								else
+									bank_num_segs_1 <= bw_seg_cnt_next;
+								bank_is_last[bw_bank] <= (seg_last && rows_b_zero);
 								bw_bank <= ~bw_bank;
 								bw_seg_idx <= 3'd0;
 								bw_slot_cnt <= 4'd0;
-								if (seg_last && rows_b == 17'd0)
+								if (seg_last && rows_b_zero)
 									bw_done_all <= 1'b1;
 							end
 						end else if (m_copy && bst_two_lines && !bw_sub && bst_rd_fire) begin
@@ -729,7 +754,7 @@ module atg_blt_2d #(
 						end
 					end else begin
 						if (bst_wr_fire) begin
-							if (br_seg_cnt_next == bank_num_segs[br_bank]) begin
+							if (br_seg_cnt_next == (br_bank ? bank_num_segs_1 : bank_num_segs_0)) begin
 								/* Bank write complete: release bank */
 								bank_active[br_bank] <= 1'b0;
 								bank_closed[br_bank] <= 1'b0;
