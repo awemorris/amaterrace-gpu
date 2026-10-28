@@ -172,34 +172,35 @@ module atg_su_exec #(
 			wire w_match = mine && (x_warp == gw[WARP_W-1:0]);
 			wire w_init = init_valid && (init_warp == gw[WARP_W-1:0]);
 
-			wire kill_ce = w_init || (w_match && op == ATG_EXEC_KILL);
-			wire [31:0] kill_d = w_init ? 32'd0 : (kill_r[gw*32 +: 32] | (bt_w & wexec));
+			wire kill_match = w_match && (op == ATG_EXEC_KILL);
+			wire [31:0] kill_d = kill_r[gw*32 +: 32] | (bt_w & wexec);
 
 			always @(posedge clk or negedge rst_n) begin
 				if (!rst_n)
 					kill_r[gw*32 +: 32] <= 32'd0;
-				else if (kill_ce)
+				else if (w_init)
+					kill_r[gw*32 +: 32] <= 32'd0;
+				else if (kill_match)
 					kill_r[gw*32 +: 32] <= kill_d;
 			end
 
-			wire exec_op_match = (op == ATG_EXEC_SET || op == ATG_EXEC_AND || op == ATG_EXEC_OR);
-			wire exec_ce = w_init || (w_match && exec_op_match);
+			wire exec_match = w_match && (op == ATG_EXEC_SET || op == ATG_EXEC_AND || op == ATG_EXEC_OR);
 			reg [31:0] exec_d;
 			always @(*) begin
-				if (w_init)
-					exec_d = init_mask;
-				else case (op)
-					ATG_EXEC_SET: exec_d = (wexec & ~gmask) | bt_w;
-					ATG_EXEC_AND: exec_d = wexec & (~gmask | bt_w);
-					ATG_EXEC_OR:  exec_d = wexec | bt_w;
-					default:      exec_d = wexec;
+				case (op)
+				ATG_EXEC_SET: exec_d = (wexec & ~gmask) | bt_w;
+				ATG_EXEC_AND: exec_d = wexec & (~gmask | bt_w);
+				ATG_EXEC_OR:  exec_d = wexec | bt_w;
+				default:      exec_d = wexec;
 				endcase
 			end
 
 			always @(posedge clk or negedge rst_n) begin
 				if (!rst_n)
 					exec_r[gw*32 +: 32] <= 32'd0;
-				else if (exec_ce)
+				else if (w_init)
+					exec_r[gw*32 +: 32] <= init_mask;
+				else if (exec_match)
 					exec_r[gw*32 +: 32] <= exec_d;
 			end
 		end
