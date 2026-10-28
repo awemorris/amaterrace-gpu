@@ -300,10 +300,11 @@ module atg_su_opd #(
 			end
 			if (take) begin
 				a_act <= 1'b1;
-				a_grp <= {GRP_W{1'b0}};
-				a_step <= 1'b0;
-				a_pass <= 1'b0;
-			end else if (a_adv) begin
+			end else if (a_adv && a_last) begin
+				a_act <= 1'b0;
+			end
+
+			if (a_adv) begin
 				if (a_needs_step1 && !a_step) begin
 					a_step <= 1'b1;
 				end else begin
@@ -313,7 +314,7 @@ module atg_su_opd #(
 					end else begin
 						a_pass <= 1'b0;
 						if (a_last)
-							a_act <= 1'b0;
+							a_grp <= {GRP_W{1'b0}};
 						else
 							a_grp <= a_grp_next;
 					end
