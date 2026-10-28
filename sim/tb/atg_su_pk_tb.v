@@ -49,7 +49,7 @@ module atg_su_pk_tb;
 	always #5 clk = !clk;
 
 	reg x_valid = 1'b0;
-	reg [103:0] x_uop = 0;
+	reg [ATG_UOP_W-1:0] x_uop = 0;
 	reg [DW-1:0] x_a = 0, x_b = 0, x_c = 0;
 	reg [2*NPHYS-1:0] x_mask = 0;
 	wire r1, r0, v1, v0;
@@ -73,7 +73,7 @@ module atg_su_pk_tb;
 
 	/* The PK_SHARED pair. */
 	reg xs_valid = 1'b0;
-	reg [103:0] xs_uop = 0;
+	reg [ATG_UOP_W-1:0] xs_uop = 0;
 	reg [DW-1:0] xs_a = 0, xs_b = 0, xs_c = 0;
 	reg [2*NPHYS-1:0] xs_mask = 0;
 	wire rs_p, rs_f, vs_p, vs_f;
@@ -88,7 +88,7 @@ module atg_su_pk_tb;
 		.s_valid(vs_p), .s_warp(ws_p), .s_grp(gs_p), .s_rd(rds_p), .s_data(ds_p), .s_lanes(ms_p)
 	);
 	atg_su_fpu #(.NPHYS(NPHYS), .SHORT_LAT(LAT), .PACKED(1), .PK_SHARED(1)) fpus (
-		.clk(clk), .rst_n(rst_n), .x_valid(xs_valid), .x_warp(2'd2), .x_grp(2'd1),
+		.clk(clk), .rst_n(rst_n), .en(1'b1), .x_valid(xs_valid), .x_warp(2'd2), .x_grp(2'd1),
 		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(xs_uop), .x_a(xs_a), .x_b(xs_b),
 		.x_c(xs_c), .x_mask(xs_mask), .x_info(32'd0), .x_ready(rs_f),
 		.s_valid(vs_f), .s_warp(ws_f), .s_grp(gs_f), .s_rd(rds_f), .s_data(ds_f), .s_lanes(ms_f)
@@ -125,7 +125,7 @@ module atg_su_pk_tb;
 		.s_lanes(ms_p4)
 	);
 	atg_su_fpu #(.NPHYS(4), .GRP_W(3), .SHORT_LAT(LAT), .PACKED(1), .PK_SHARED(1)) fpus_4 (
-		.clk(clk), .rst_n(rst_n), .x_valid(xs_valid), .x_warp(2'd2), .x_grp(3'd5),
+		.clk(clk), .rst_n(rst_n), .en(1'b1), .x_valid(xs_valid), .x_warp(2'd2), .x_grp(3'd5),
 		.x_last(1'b1), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(xs_uop), .x_a(xs_a[DW4-1:0]),
 		.x_b(xs_b[DW4-1:0]), .x_c(xs_c[DW4-1:0]), .x_mask({xs_mask[NPHYS +: 4], xs_mask[3:0]}),
 		.x_info(32'd0), .x_ready(rs_f4),

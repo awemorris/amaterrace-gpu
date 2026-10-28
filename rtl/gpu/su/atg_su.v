@@ -466,7 +466,7 @@ module atg_su #(
 	);
 
 	atg_su_sb #(
-		.NPHYS(NPHYS), .SHORT_LAT(SHORT_LAT), .BYPASS(1), .NWARPS(NWARPS), .WARP_W(WARP_W), .SB_ENTRIES(SB_ENTRIES), .SBE_W(SBE_W), .UOP_W(UOP_W)
+		.NPHYS(NPHYS), .SHORT_LAT(SHORT_LAT), .BYPASS(0), .NWARPS(NWARPS), .WARP_W(WARP_W), .SB_ENTRIES(SB_ENTRIES), .SBE_W(SBE_W), .UOP_W(UOP_W)
 	) sb (
 		.clk(clk), .rst_n(rst_n),
 		.u_valid(u_valid), .u_ready(u_ready), .u_warp(u_warp), .u_pc(u_pc), .u_uop(u_uop),

@@ -422,21 +422,21 @@ module atg_su_opd #(
 	wire hit_fpu_ex4_1 = 1'b0;
 	wire hit_alu_ex5_1 = fwd_alu_ex5_valid && (k1 == 3'd1) && (fwd_alu_ex5_rd < 7'd63) && (fwd_alu_ex5_warp == b_warp) && (fwd_alu_ex5_grp == b_grp) && (fwd_alu_ex5_rd[5:0] == b_n1[5:0]);
 	wire hit_fpu_ex5_1 = fwd_fpu_ex5_valid && (k1 == 3'd1) && (fwd_fpu_ex5_rd < 7'd63) && (fwd_fpu_ex5_warp == b_warp) && (fwd_fpu_ex5_grp == b_grp) && (fwd_fpu_ex5_rd[5:0] == b_n1[5:0]);
-	wire hit_wb_1      = fwd_wb_valid      && (k1 == 3'd1) && (fwd_wb_rd < 7'd63)      && (fwd_wb_warp      == b_warp) && (fwd_wb_grp      == b_grp) && (fwd_wb_rd[5:0]      == b_n1[5:0]);
+	wire hit_wb_1      = 1'b0;
 	wire hit_rf_1      = fwd_rf_valid      && (k1 == 3'd1) && (fwd_rf_rd < 7'd63)      && (fwd_rf_warp      == b_warp) && (fwd_rf_grp      == b_grp) && (fwd_rf_rd[5:0]      == b_n1[5:0]);
 
 	wire hit_alu_ex4_2 = fwd_alu_ex4_valid && (k2 == 3'd1) && (fwd_alu_ex4_rd < 7'd63) && (fwd_alu_ex4_warp == b_warp) && (fwd_alu_ex4_grp == b_grp) && (fwd_alu_ex4_rd[5:0] == b_n2[5:0]);
 	wire hit_fpu_ex4_2 = 1'b0;
 	wire hit_alu_ex5_2 = fwd_alu_ex5_valid && (k2 == 3'd1) && (fwd_alu_ex5_rd < 7'd63) && (fwd_alu_ex5_warp == b_warp) && (fwd_alu_ex5_grp == b_grp) && (fwd_alu_ex5_rd[5:0] == b_n2[5:0]);
 	wire hit_fpu_ex5_2 = fwd_fpu_ex5_valid && (k2 == 3'd1) && (fwd_fpu_ex5_rd < 7'd63) && (fwd_fpu_ex5_warp == b_warp) && (fwd_fpu_ex5_grp == b_grp) && (fwd_fpu_ex5_rd[5:0] == b_n2[5:0]);
-	wire hit_wb_2      = fwd_wb_valid      && (k2 == 3'd1) && (fwd_wb_rd < 7'd63)      && (fwd_wb_warp      == b_warp) && (fwd_wb_grp      == b_grp) && (fwd_wb_rd[5:0]      == b_n2[5:0]);
+	wire hit_wb_2      = 1'b0;
 	wire hit_rf_2      = fwd_rf_valid      && (k2 == 3'd1) && (fwd_rf_rd < 7'd63)      && (fwd_rf_warp      == b_warp) && (fwd_rf_grp      == b_grp) && (fwd_rf_rd[5:0]      == b_n2[5:0]);
 
 	wire hit_alu_ex4_3 = fwd_alu_ex4_valid && (k3 == 3'd1) && (fwd_alu_ex4_rd < 7'd63) && (fwd_alu_ex4_warp == b_warp) && (fwd_alu_ex4_grp == b_grp) && (fwd_alu_ex4_rd[5:0] == b_n3[5:0]);
 	wire hit_fpu_ex4_3 = 1'b0;
 	wire hit_alu_ex5_3 = fwd_alu_ex5_valid && (k3 == 3'd1) && (fwd_alu_ex5_rd < 7'd63) && (fwd_alu_ex5_warp == b_warp) && (fwd_alu_ex5_grp == b_grp) && (fwd_alu_ex5_rd[5:0] == b_n3[5:0]);
 	wire hit_fpu_ex5_3 = fwd_fpu_ex5_valid && (k3 == 3'd1) && (fwd_fpu_ex5_rd < 7'd63) && (fwd_fpu_ex5_warp == b_warp) && (fwd_fpu_ex5_grp == b_grp) && (fwd_fpu_ex5_rd[5:0] == b_n3[5:0]);
-	wire hit_wb_3      = fwd_wb_valid      && (k3 == 3'd1) && (fwd_wb_rd < 7'd63)      && (fwd_wb_warp      == b_warp) && (fwd_wb_grp      == b_grp) && (fwd_wb_rd[5:0]      == b_n3[5:0]);
+	wire hit_wb_3      = 1'b0;
 	wire hit_rf_3      = fwd_rf_valid      && (k3 == 3'd1) && (fwd_rf_rd < 7'd63)      && (fwd_rf_warp      == b_warp) && (fwd_rf_grp      == b_grp) && (fwd_rf_rd[5:0]      == b_n3[5:0]);
 
 	wire [DW-1:0] rf_src1 = b_step1 ? hold_r1 : r_data[0 +: DW];

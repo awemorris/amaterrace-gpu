@@ -41,7 +41,7 @@ module atg_su_fpu_tb;
 	wire [6:0] s_rd;
 	wire [DW-1:0] s_data;
 	wire [NPHYS-1:0] s_lanes;
-	localparam UOP_W = 104;
+	localparam UOP_W = ATG_UOP_W;
 
 	atg_su_fpu #(.NPHYS(NPHYS), .SHORT_LAT(LAT)) dut (
 		.clk(clk), .rst_n(rst_n), .en(1'b1), .x_valid(x_valid), .x_warp(2'd1), .x_grp(2'd2),
