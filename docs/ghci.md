@@ -1392,8 +1392,10 @@ typedef struct GhciRenderPassDesc {
 } GhciRenderPassDesc;
 ```
 
-**Attachment Memory Layout & Subresource Rules (N47)**:
-- **Strict Linear Layout**: In GHCI 1.0, color, depth/stencil, and resolve attachments are strictly **linear row layouts** with 64-byte aligned `row_pitch_bytes`. Tiled attachments are not supported in GHCI 1.0 (reserved for future capability extensions).
+**Attachment Memory Layout & Subresource Rules (N47, N79)**:
+- **Strict Linear Layout & Row Pitch**: In GHCI 1.0, color, depth/stencil, and resolve attachments are strictly **linear row layouts**. The hardware ROP directly uses the driver-provided `row_pitch_bytes` (dispatched to `GHCI_S_RT_STRIDE` and `GHCI_S_DS_STRIDE`) as the row stride ($y \times \text{row\_pitch\_bytes}$).
+  - For single-sample attachments ($S = 1$): minimum packed line width is $P_{\text{min}} = \lceil \text{width} / 2 \rceil \times 2 \times ps$. Drivers must set `row_pitch_bytes` to at least $P_{\text{min}}$, and should align to 64 bytes (`roundup(P_min, 64)`) for optimal memory burst efficiency.
+  - For multisample attachments ($S \in \{2, 4\}$, §12.11): minimum packed line width is $P_{\text{min}} = \lceil \text{width} / 2 \rceil \times 2 \times S \times ps$. The hardware ROP does NOT synthesize a hidden stride; it strictly multiplies $y \times \text{row\_pitch\_bytes}$. Drivers should configure `row_pitch_bytes = roundup(P_min, 64)` in `GhciColorAttachmentDesc` and `GhciDepthStencilAttachmentDesc` to ensure 64-byte cache line alignment. Setting packed $P_{\text{min}}$ directly is also supported by hardware logic.
 - **Direct Subresource Base Addressing**: The attachment pointers (`image_va`, `depth_stencil_va`, `resolve_va`) must point directly to the 64-byte aligned base GPU virtual address of the specific subresource slice (mip level, array layer) being rendered to.
 - **Reserved Subresource Fields**: `mip_level` and `base_array_layer` must be programmed to 0 by drivers (reserved for future hardware-tiled attachment address calculation).
 - **Framebuffer Layers**: `layers` must be 1 in GHCI 1.0. Layered framebuffer rendering is an optional future capability.
@@ -2345,7 +2347,7 @@ The Vertex Fetcher (VF, `atg_vf_conv`, `atg_vf_fetch`) automatically fetches ena
   - **Consecutive Register Allocation ABI**:
     - For each enabled attribute slot $i$, vertex attribute data is loaded into $C_i$ consecutive registers starting at base register $base_i$, where $C_i \in [1, 4]$ is the component count defined by the format, and $base_i$ is the cumulative component count of preceding enabled slots:
       $$base_0 = 0, \quad base_{i+1} = base_i + C_i \quad (\text{for enabled slots } i)$$
-      - The valid components of slot $i$ occupy registers $r[base_i \dots base_i + C_i - 1]$.
+      - The valid components of slot $i$ occupy registers $r[base_i \dots base_i + C_i - 1]$ (mapped via `GHCI_VS_REG_ATTR_COMP(base_i, comp)` / `GHCI_VS_REG_ATTR(base_i, comp)` in `include/ghci_cmd.h`).
       - Unused components for vector types (e.g. padding to `vec4` with default $1.0$ or $0.0$) are synthesized by the shader compiler if required; the hardware VF writes only the $C_i$ valid format components into the register file.
       - Total register allocation for attributes must satisfy $\sum C_i \le 60$ ($r0..r59$). If total required attribute registers exceed 60, the driver must reject pipeline creation.
   - **Autonomous Hardware Configuration**:
@@ -2498,12 +2500,17 @@ number of the thresholds 0.125, 0.375, 0.625, 0.875 that alpha (of
 COLOR0) reaches and covers the samples {}, {0}, {0, 3}, {0, 1, 3}, {0, 1,
 2, 3} (with 1 sample: alpha >= 0.5).
 
-**Multisampled images.** A multisampled image is 2D (or a 2D array) with
+**Multisampled images (N79).** A multisampled image is 2D (or a 2D array) with
 one level, in linear rows (not tiled). Sample s of pixel (x, y) is at
-`base + layer x layer stride + y x P + (x x S + s) x ps`, where S is the
-sample count, ps the pixel size and P = roundup(width, 2) x S x ps; the
-base is aligned to 64 bytes. The render target and depth strides of a
-multisampled draw are P. Texture slots name the sample count in `GhciTextureDescriptor.sample_count`. `texf rd,
+`base + layer x layer stride + y x row_pitch_bytes + (x x S + s) x ps`, where S is the
+sample count, ps the pixel size; the base address is aligned to 64 bytes.
+The minimum required byte width of a multisampled row is
+$P_{\text{min}} = \text{roundup}(\text{width}, 2) \times S \times ps$.
+The hardware ROP and Texture Unit directly use the driver-provided `row_pitch_bytes`
+(from attachment descriptors or `GhciTextureDescriptor.row_pitch_bytes`) as the row stride.
+Drivers should specify `row_pitch_bytes = roundup(P_min, 64)` in attachment and texture descriptors
+for optimal 64-byte burst memory efficiency (specifying packed $P_{\text{min}}$ is also supported by hardware).
+Texture slots name the sample count in `GhciTextureDescriptor.sample_count`. `texf rd,
 rs1, rs2` of a multisampled slot reads sample rs2 (modulo S) of texel
 (rs1, rs1+1), with the layer in rs1+2 for an array (the `.3` form);
 `texsz.s rd` (immediate 3, no rs1) writes S. Without `DEVICE_CAPS[31]` (`CAP_MSAA_4X`), `texsz.s`

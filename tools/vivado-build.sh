@@ -70,4 +70,8 @@ grep -E '^\| (Slice LUTs|Slice Registers|Block RAM Tile|DSPs|Bonded IOB|BUFGCTRL
 	"$out/utilization.rpt" | head -8
 grep -E '^vivado-build:' "$out/vivado.log" | tail -1
 echo "vivado-build: $(grep -c '^WARNING' "$out/vivado.log") warnings, $(grep -c '^CRITICAL WARNING' "$out/vivado.log") critical, $(( $(date +%s) - start )) s"
-echo "vivado-build: $out/$top.bit $(wc -c < "$out/$top.bit") bytes, sha256 $(sha256sum "$out/$top.bit" | cut -c1-16)"
+if [ -f "$out/$top.bit" ]; then
+	echo "vivado-build: $out/$top.bit $(wc -c < "$out/$top.bit") bytes, sha256 $(sha256sum "$out/$top.bit" | cut -c1-16)"
+elif [ -f "$out/timing_summary.rpt" ]; then
+	grep -A 2 'Design Timing Summary' "$out/timing_summary.rpt" || true
+fi

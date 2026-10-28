@@ -69,6 +69,24 @@ fw_cmd_bind_pipeline_pso(
 	fw_emit_set(GHCI_S_TOPOLOGY, pso.flags & 7u);
 	fw_emit_set(GHCI_S_PRIM_RESTART, (pso.flags >> 3) & 1u);
 
+	/* Scan vertex attributes and autonomously configure ATTR_DST (§12.10.3) */
+	{
+		uint32_t i, base_i = 0;
+		for (i = 0; i < 16; i++) {
+			uint32_t raw_attr = pso.attributes[i];
+			uint32_t fmt_id = raw_attr & 0xFFu;
+			if (fmt_id != 0) {
+				const struct fw_format *fmt = fw_format_find(fmt_id);
+				uint32_t comps = (fmt != NULL && fmt->components >= 1 && fmt->components <= 4) ? fmt->components : 4;
+				uint32_t attr_dst = (base_i & 0x3Fu) | (((comps - 1u) & 3u) << 6) | (fmt_id << 24);
+				fw_emit_set(GHCI_S_ATTR_DST + i, attr_dst);
+				base_i += comps;
+			} else {
+				fw_emit_set(GHCI_S_ATTR_DST + i, 0);
+			}
+		}
+	}
+
 	/* Compute stage configuration */
 	fw_emit_set(GHCI_S_WG_SIZE, pso.compute_local_size);
 	fw_emit_set(GHCI_S_LDS_BYTES, pso.compute_lds_and_flags & 0xFFFFu);

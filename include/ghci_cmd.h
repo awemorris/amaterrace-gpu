@@ -168,8 +168,11 @@ extern "C" {
  * ============================================================================
  */
 
-/* Vertex Shader General Register Allocation ABI */
-#define GHCI_VS_REG_ATTR(loc, comp)     (((uint32_t)(loc) * 4u) + ((uint32_t)(comp) & 3u))
+/* Vertex Shader General Register Allocation ABI (§12.10.3 Consecutive Register Allocation) */
+#define GHCI_VS_REG_ATTR_COMP(base, comp)   (((uint32_t)(base)) + ((uint32_t)(comp) & 3u))
+#define GHCI_VS_REG_ATTR(base, comp)        GHCI_VS_REG_ATTR_COMP(base, comp)
+/* Legacy fixed 4-component slot mapping (deprecated, provided for backward compatibility) */
+#define GHCI_VS_REG_ATTR_LEGACY(loc, comp)  (((uint32_t)(loc) * 4u) + ((uint32_t)(comp) & 3u))
 #define GHCI_VS_REG_VERTEX_INDEX        60u     /* gl_VertexIndex (uint32) */
 #define GHCI_VS_REG_INSTANCE_INDEX      61u     /* gl_InstanceIndex (uint32) */
 #define GHCI_VS_REG_SCRATCH             62u     /* Compiler scratchpad */
