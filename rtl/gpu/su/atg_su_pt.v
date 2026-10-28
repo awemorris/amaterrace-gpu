@@ -101,25 +101,35 @@ module atg_su_pt #(
 	wire [31:0] rrow = {24'd0, pt_idx} / NPHYS;
 
 	/*
-	 * The word addresses row WPV + word, modulo 2^AW (the bank's): a
-	 * multiplier by the constant WPV each.
+	 * The word addresses row WPV + word, modulo 2^AW (the bank's):
+	 * Since WPV = 4 + VARY_WORDS is a compile-time constant where VARY_WORDS is a power of 2
+	 * (e.g. 16 or 64), WPV has only two bits set: (4) and (VARY_WORDS).
+	 * We implement this using shift-add (am_add) instead of combinational DSP48E1 (am_mul LAT=0),
+	 * eliminating 2.74ns of DSP propagation delay on the BRAM address path.
 	 */
-	wire [AW+7:0] wrow_w;
-	wire [AW+7:0] rrow_w;
+	localparam VW_W = $clog2(VARY_WORDS);
+	wire [AW-1:0] wrow_sh_vary = {wrow[AW-1-VW_W:0], {VW_W{1'b0}}};
+	wire [AW-1:0] wrow_sh_4    = {wrow[AW-3:0], 2'b00};
+	wire [AW-1:0] rrow_sh_vary = {rrow[AW-1-VW_W:0], {VW_W{1'b0}}};
+	wire [AW-1:0] rrow_sh_4    = {rrow[AW-3:0], 2'b00};
+
+	wire [AW-1:0] wrow_w_aw, rrow_w_aw;
+	wire wrow_co_unused, rrow_co_unused;
+	am_add #(.W(AW)) u_wrow_mul (.a(wrow_sh_vary), .b(wrow_sh_4), .ci(1'b0), .s(wrow_w_aw), .co(wrow_co_unused));
+	am_add #(.W(AW)) u_rrow_mul (.a(rrow_sh_vary), .b(rrow_sh_4), .ci(1'b0), .s(rrow_w_aw), .co(rrow_co_unused));
+
 	wire [AW-1:0] waddr_a;
 	wire [AW-1:0] raddr_a;
 	wire [31:0] pt_word32 = {25'd0, pt_word};
 	wire wa_co_unused, ra_co_unused;
-	am_mul #(.AW(AW), .BW(8)) u_wrow (.clk(clk), .en(1'b1), .a(wrow[AW-1:0]), .b(WPV_V), .p(wrow_w));
-	am_mul #(.AW(AW), .BW(8)) u_rrow (.clk(clk), .en(1'b1), .a(rrow[AW-1:0]), .b(WPV_V), .p(rrow_w));
-	am_add #(.W(AW)) u_waddr (.a(wrow_w[AW-1:0]), .b(wword[AW-1:0]), .ci(1'b0), .s(waddr_a),
+	am_add #(.W(AW)) u_waddr (.a(wrow_w_aw), .b(wword[AW-1:0]), .ci(1'b0), .s(waddr_a),
 		.co(wa_co_unused));
-	am_add #(.W(AW)) u_raddr (.a(rrow_w[AW-1:0]), .b(pt_word32[AW-1:0]), .ci(1'b0), .s(raddr_a),
+	am_add #(.W(AW)) u_raddr (.a(rrow_w_aw), .b(pt_word32[AW-1:0]), .ci(1'b0), .s(raddr_a),
 		.co(ra_co_unused));
 	wire [31:0] waddr = {{(32-AW){1'b0}}, waddr_a};
 	wire [31:0] raddr = {{(32-AW){1'b0}}, raddr_a};
-	wire unused_addr = &{1'b0, wword[31:AW], wrow[31:AW], rrow[31:AW], wrow_w[AW+7:AW],
-		rrow_w[AW+7:AW], pt_word32[31:AW]};
+	wire unused_addr = &{1'b0, wword[31:AW], wrow[31:AW], rrow[31:AW], pt_word32[31:AW],
+		wrow_co_unused, rrow_co_unused, WPV_V};
 	wire [31:0] rbank = {24'd0, pt_idx} % NPHYS;
 	reg [31:0] rb_q;
 	reg [NPHYS*32-1:0] rd_q;

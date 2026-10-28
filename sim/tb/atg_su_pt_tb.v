@@ -32,7 +32,7 @@ module atg_su_pt_tb;
 	reg x_valid = 1'b0;
 	reg [1:0] x_warp = 0;
 	reg [1:0] x_grp = 0;
-	reg [103:0] x_uop = 0;
+	reg [107:0] x_uop = 0;
 	reg [NPHYS*32-1:0] x_b = 0;
 	reg [2*NPHYS-1:0] x_mask = 0;
 	reg [31:0] x_info = 0;
