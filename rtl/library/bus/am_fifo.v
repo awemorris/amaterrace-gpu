@@ -57,8 +57,8 @@ module am_fifo #(
 	);
 
 	assign count = used;
-	assign in_ready = used != DEPTH;
-	assign out_valid = used != {(DEPTH_LOG2 + 1){1'b0}};
+	assign in_ready = (wp[DEPTH_LOG2-1:0] != rp[DEPTH_LOG2-1:0]) || (wp[DEPTH_LOG2] == rp[DEPTH_LOG2]);
+	assign out_valid = (wp != rp);
 	assign out_data = mem[rp[DEPTH_LOG2-1:0]];
 
 	always @(posedge clk) begin
