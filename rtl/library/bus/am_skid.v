@@ -60,9 +60,11 @@ module am_skid #(
 					end
 				end else if (in_valid && in_ready) begin
 					skid_valid <= 1'b1;
-					skid_data  <= in_data;
 					in_ready   <= 1'b0;
 				end
+			end
+			if (in_valid && in_ready) begin
+				skid_data <= in_data;
 			end
 		end
 	end
