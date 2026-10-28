@@ -297,12 +297,46 @@ module atg_blt_2d #(
 		.p0({US{1'b0}}), .seg_n(bst_seg_n), .seg_last(bst_seg_last), .back(), .src_base(),
 		.last_line(), .be()
 	);
-	wire [16:0] bst_sn17 = {{(16-US){1'b0}}, bst_seg_n};
-	wire [16:0] bst_px_next, bst_spx_next, bst_rem_next;
-	wire [2:0] bst_step_co;
-	am_addsub #(.W(17)) as_bst_px (.a(px_b), .b(bst_sn17), .sub(m_rev), .s(bst_px_next), .co(bst_step_co[0]));
-	am_addsub #(.W(17)) as_bst_spx (.a(spx_b), .b(bst_sn17), .sub(m_rev), .s(bst_spx_next), .co(bst_step_co[1]));
-	am_sub #(.W(17)) s_bst_rem (.a(rem_b), .b(bst_sn17), .bi(1'b0), .d(bst_rem_next), .bo(bst_step_co[2]));
+	/* Carry-Select Parallel Split Addsub for Coordinates (reduces CARRY4 chain from 4 to 1) */
+	/* 1. px_next */
+	wire [US:0] px_lo_next;
+	wire px_lo_co;
+	am_addsub #(.W(US + 1)) as_px_lo (.a(px_b[US:0]), .b(bst_seg_n), .sub(m_rev), .s(px_lo_next), .co(px_lo_co));
+	wire px_cout = m_rev ? !px_lo_co : px_lo_co;
+
+	wire [16-US-1:0] px_hi = px_b[16:US+1];
+	wire [16-US-1:0] px_hi_p1, px_hi_m1;
+	wire [1:0] px_hi_co;
+	am_add #(.W(16 - US)) a_px_p1 (.a(px_hi), .b({(16-US){1'b0}}), .ci(1'b1), .s(px_hi_p1), .co(px_hi_co[0]));
+	am_sub #(.W(16 - US)) s_px_m1 (.a(px_hi), .b({(16-US){1'b0}}), .bi(1'b1), .d(px_hi_m1), .bo(px_hi_co[1]));
+	wire [16-US-1:0] px_hi_next = m_rev ? (px_cout ? px_hi_m1 : px_hi) : (px_cout ? px_hi_p1 : px_hi);
+	wire [16:0] bst_px_next = {px_hi_next, px_lo_next};
+
+	/* 2. spx_next */
+	wire [US:0] spx_lo_next;
+	wire spx_lo_co;
+	am_addsub #(.W(US + 1)) as_spx_lo (.a(spx_b[US:0]), .b(bst_seg_n), .sub(m_rev), .s(spx_lo_next), .co(spx_lo_co));
+	wire spx_cout = m_rev ? !spx_lo_co : spx_lo_co;
+
+	wire [16-US-1:0] spx_hi = spx_b[16:US+1];
+	wire [16-US-1:0] spx_hi_p1, spx_hi_m1;
+	wire [1:0] spx_hi_co;
+	am_add #(.W(16 - US)) a_spx_p1 (.a(spx_hi), .b({(16-US){1'b0}}), .ci(1'b1), .s(spx_hi_p1), .co(spx_hi_co[0]));
+	am_sub #(.W(16 - US)) s_spx_m1 (.a(spx_hi), .b({(16-US){1'b0}}), .bi(1'b1), .d(spx_hi_m1), .bo(spx_hi_co[1]));
+	wire [16-US-1:0] spx_hi_next = m_rev ? (spx_cout ? spx_hi_m1 : spx_hi) : (spx_cout ? spx_hi_p1 : spx_hi);
+	wire [16:0] bst_spx_next = {spx_hi_next, spx_lo_next};
+
+	/* 3. rem_next */
+	wire [US:0] rem_lo_next;
+	wire rem_lo_bo;
+	am_sub #(.W(US + 1)) s_rem_lo (.a(rem_b[US:0]), .b(bst_seg_n), .bi(1'b0), .d(rem_lo_next), .bo(rem_lo_bo));
+
+	wire [16-US-1:0] rem_hi = rem_b[16:US+1];
+	wire [16-US-1:0] rem_hi_m1;
+	wire rem_hi_bo;
+	am_sub #(.W(16 - US)) s_rem_m1 (.a(rem_hi), .b({(16-US){1'b0}}), .bi(1'b1), .d(rem_hi_m1), .bo(rem_hi_bo));
+	wire [16-US-1:0] rem_hi_next = rem_lo_bo ? rem_hi_m1 : rem_hi;
+	wire [16:0] bst_rem_next = {rem_hi_next, rem_lo_next};
 
 	/* Stage 2: Geom / Address Engine (Computed from g_* registers in next cycle) */
 	wire [ADDR_W-1:0] d_px_g = x_pixels(g_px, m_dtile);
