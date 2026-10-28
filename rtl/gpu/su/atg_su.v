@@ -236,7 +236,8 @@ module atg_su #(
 	wire [WARP_W-1:0] d_warp;
 	wire [15:0] d_pc;
 	wire [63:0] d_instr;
-	wire u_valid, u_ready;
+	wire u_valid;
+	(* max_fanout = 24 *) wire u_ready;
 	wire [WARP_W-1:0] u_warp;
 	wire [15:0] u_pc;
 	wire [UOP_W-1:0] u_uop;

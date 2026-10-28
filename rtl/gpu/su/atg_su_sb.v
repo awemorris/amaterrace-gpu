@@ -318,7 +318,10 @@ module atg_su_sb #(
 	assign i_valid = go && !ill && !replay && !quiet;
 	(* max_fanout = 24 *) wire issued = i_valid && i_ready;
 	(* max_fanout = 24 *) wire issued_long = go && !ill && !replay_long && i_ready;
-	assign u_ready = go && (ill || replay || quiet || i_ready);
+	wire is_cnt_dep = is_fence || is_end;
+	wire fast_ready = i_ready || ill || is_nop || is_wait || replay_long;
+	(* max_fanout = 24 *) wire u_rdy = go && (fast_ready || (is_cnt_dep && cnt_wait));
+	assign u_ready = u_rdy;
 	assign i_warp = u_warp;
 	assign i_pc = u_pc;
 	assign i_uop = u_uop;
@@ -329,7 +332,7 @@ module atg_su_sb #(
 	assign fb_valid = u_valid && u_ready;
 	assign fb_warp = u_warp;
 	assign fb_kind = ill ? 2'd1 : replay ? 2'd2 : (issued && wc_kind) ? 2'd1 : 2'd0;
-	assign fault = u_valid && u_ready && ill;
+	assign fault = go && ill;
 	assign fault_pc = u_pc;
 
 	genvar w;
