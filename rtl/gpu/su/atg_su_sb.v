@@ -311,14 +311,17 @@ module atg_su_sb #(
 	wire rq_wait = (u_uop[ATG_UOP_RQS] && rq_empty) || (u_uop[ATG_UOP_RQD] && rq_full);
 
 	wire replay_long = !ill && (hz_long || cnt_full || (need_e && !have_free) || rq_wait);
+	wire is_cnt_dep = is_fence || is_end;
+	wire replay_eff = replay_long || (is_cnt_dep && cnt_wait);
 	wire replay = replay_long || (!is_long && cnt_wait);
 	wire quiet = !ill && !replay && (is_nop || is_wait);	/* consumed without issue */
 	wire hold = wb_stall || hz_short || !(|(~f_valid));
 	wire go = u_valid && !hold;
-	assign i_valid = go && !ill && !replay && !quiet;
+	wire no_issue = ill || is_nop || is_wait || replay_eff;
+	(* max_fanout = 24 *) wire i_val = go && !no_issue;
+	assign i_valid = i_val;
 	(* max_fanout = 24 *) wire issued = i_valid && i_ready;
 	(* max_fanout = 24 *) wire issued_long = go && !ill && !replay_long && i_ready;
-	wire is_cnt_dep = is_fence || is_end;
 	wire fast_ready = i_ready || ill || is_nop || is_wait || replay_long;
 	(* max_fanout = 24 *) wire u_rdy = go && (fast_ready || (is_cnt_dep && cnt_wait));
 	assign u_ready = u_rdy;
@@ -511,7 +514,7 @@ module atg_su_sb #(
 	assign busy = any_c;
 
 	/* Warp readiness feedback to scheduler (Phase 012) */
-	reg [NWARPS-1:0] r_warp_ready;
+	(* max_fanout = 24 *) reg [NWARPS-1:0] r_warp_ready;
 	genvar gw_r;
 	generate
 		for (gw_r = 0; gw_r < NWARPS; gw_r = gw_r + 1) begin : g_wr
