@@ -351,152 +351,274 @@ module am_fpu_core #(
 			.p(pr_s4)
 		);
 
-		/* --- Stage 2: Pipeline match (Register 2) --- */
+		/* Early rounding & negation in Stage 1 -> latched into Stage 2 */
+		wire [31:0] s1_xf = f_flush(s1_a);
+		wire [24:0] s1_n;
+		am_fp_rint #(.LAT(0)) u_rint1 (
+			.x(s1_xf),
+			.rm(s1_op == OP_FRACT ? 3'd2 : s1_rm),
+			.n(s1_n)
+		);
+
+		wire [31:0] s1_nega;
+		wire carry_unused1_neg;
+		am_sub #(.W(32)) u_neg1 (
+			.a(32'd0),
+			.b(s1_a),
+			.bi(1'b0),
+			.d(s1_nega),
+			.bo(carry_unused1_neg)
+		);
+
+		/* --- Stage 2: Pipeline match & LOD/Shift (Register 2) --- */
 		reg [31:0] s2_a, s2_b, s2_c;
 		reg [4:0]  s2_op;
 		reg [2:0]  s2_rm;
 		reg        s2_sat;
+		reg [24:0] s2_n;
+		reg [31:0] s2_nega;
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
-				s2_a   <= 32'd0;
-				s2_b   <= 32'd0;
-				s2_c   <= 32'd0;
-				s2_op  <= 5'd0;
-				s2_rm  <= 3'd0;
-				s2_sat <= 1'b0;
+				s2_a    <= 32'd0;
+				s2_b    <= 32'd0;
+				s2_c    <= 32'd0;
+				s2_op   <= 5'd0;
+				s2_rm   <= 3'd0;
+				s2_sat  <= 1'b0;
+				s2_n    <= 25'd0;
+				s2_nega <= 32'd0;
 			end else if (en) begin
-				s2_a   <= s1_a;
-				s2_b   <= s1_b;
-				s2_c   <= s1_c;
-				s2_op  <= s1_op;
-				s2_rm  <= s1_rm;
-				s2_sat <= s1_sat;
+				s2_a    <= s1_a;
+				s2_b    <= s1_b;
+				s2_c    <= s1_c;
+				s2_op   <= s1_op;
+				s2_rm   <= s1_rm;
+				s2_sat  <= s1_sat;
+				s2_n    <= s1_n;
+				s2_nega <= s1_nega;
 			end
 		end
 
-		/* --- Stage 3: Pipeline match (Register 3) --- */
+		/* Stage 2: i2f LOD and shift, f2i -> latched into Stage 3 */
+		wire [31:0] s2_xf = f_flush(s2_a);
+		wire cvsw2 = (s2_op == OP_FCVTSW);
+		wire cvswu2 = (s2_op == OP_FCVTSWU);
+		wire s2_s = cvsw2 ? s2_a[31] : cvswu2 ? 1'b0 : s2_xf[31];
+		wire [31:0] s2_in_n = cvsw2 ? (s2_a[31] ? s2_nega : s2_a) : cvswu2 ? s2_a : {7'd0, s2_n};
+
+		wire [4:0] s2_msb;
+		wire s2_nz;
+		am_msb #(.W(32), .SW(5)) u_msb2 (.a(s2_in_n), .n(s2_msb), .nz(s2_nz));
+
+		wire [31:0] s2_w;
+		wire [11:0] s2_e;
+		wire carry_unused2_e;
+		am_shift #(.W(32), .SW(5)) u_w2 (.a(s2_in_n), .amt(~s2_msb), .left(1'b1), .arith(1'b0), .y(s2_w));
+		am_add #(.W(12)) u_e2 (.a({7'd0, s2_msb}), .b(12'd127), .ci(1'b0), .s(s2_e), .co(carry_unused2_e));
+
+		wire [31:0] s2_ri;
+		am_fp_f2i #(.LAT(0)) u_f2i2 (
+			.x(s2_xf),
+			.n(s2_n),
+			.uns(s2_op == OP_FCVTWUS),
+			.r(s2_ri)
+		);
+
+		wire s2_fl_nan = (s2_xf[30:23] == 8'hFF && s2_xf[22:0] != 23'd0);
+		wire s2_fl_pass = (s2_xf[30:23] >= 8'd150 || s2_xf[30:23] == 8'd0);
+
+		/* --- Stage 3: Rounding, operand & other formation (Register 3) --- */
 		reg [31:0] s3_a, s3_b, s3_c;
 		reg [4:0]  s3_op;
 		reg [2:0]  s3_rm;
 		reg        s3_sat;
+		reg        s3_s;
+		reg [11:0] s3_e;
+		reg [31:0] s3_w;
+		reg        s3_nz;
+		reg [31:0] s3_ri;
+		reg        s3_fl_nan;
+		reg        s3_fl_pass;
+		reg [31:0] s3_xf_val;
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
-				s3_a   <= 32'd0;
-				s3_b   <= 32'd0;
-				s3_c   <= 32'd0;
-				s3_op  <= 5'd0;
-				s3_rm  <= 3'd0;
-				s3_sat <= 1'b0;
+				s3_a       <= 32'd0;
+				s3_b       <= 32'd0;
+				s3_c       <= 32'd0;
+				s3_op      <= 5'd0;
+				s3_rm      <= 3'd0;
+				s3_sat     <= 1'b0;
+				s3_s       <= 1'b0;
+				s3_e       <= 12'd0;
+				s3_w       <= 32'd0;
+				s3_nz      <= 1'b0;
+				s3_ri      <= 32'd0;
+				s3_fl_nan  <= 1'b0;
+				s3_fl_pass <= 1'b0;
+				s3_xf_val  <= 32'd0;
 			end else if (en) begin
-				s3_a   <= s2_a;
-				s3_b   <= s2_b;
-				s3_c   <= s2_c;
-				s3_op  <= s2_op;
-				s3_rm  <= s2_rm;
-				s3_sat <= s2_sat;
+				s3_a       <= s2_a;
+				s3_b       <= s2_b;
+				s3_c       <= s2_c;
+				s3_op      <= s2_op;
+				s3_rm      <= s2_rm;
+				s3_sat     <= s2_sat;
+				s3_s       <= s2_s;
+				s3_e       <= s2_e;
+				s3_w       <= s2_w;
+				s3_nz      <= s2_nz;
+				s3_ri      <= s2_ri;
+				s3_fl_nan  <= s2_fl_nan;
+				s3_fl_pass <= s2_fl_pass;
+				s3_xf_val  <= s2_xf;
 			end
 		end
 
-		/* --- Stage 4: Multiplier PREG Output arrives in sync with Register 4 --- */
-		reg [31:0] s4_a, s4_b, s4_c;
-		reg [4:0]  s4_op;
-		reg [2:0]  s4_rm;
-		reg        s4_sat;
-
-		always @(posedge clk) begin
-			if (!rst_n) begin
-				s4_a   <= 32'd0;
-				s4_b   <= 32'd0;
-				s4_c   <= 32'd0;
-				s4_op  <= 5'd0;
-				s4_rm  <= 3'd0;
-				s4_sat <= 1'b0;
-			end else if (en) begin
-				s4_a   <= s3_a;
-				s4_b   <= s3_b;
-				s4_c   <= s3_c;
-				s4_op  <= s3_op;
-				s4_rm  <= s3_rm;
-				s4_sat <= s3_sat;
-			end
-		end
-
-		wire [31:0] s4_xf = f_flush(s4_a);
-		wire [24:0] s4_n;
-		am_fp_rint #(.LAT(0)) u_rint4 (
-			.x(s4_xf),
-			.rm(s4_op == OP_FRACT ? 3'd2 : s4_rm),
-			.n(s4_n)
-		);
-
-		wire [31:0] s4_nega;
-		wire carry_unused4;
-		am_sub #(.W(32)) u_neg4 (
-			.a(32'd0),
-			.b(s4_a),
-			.bi(1'b0),
-			.d(s4_nega),
-			.bo(carry_unused4)
-		);
-
-		wire cvsw4 = (s4_op == OP_FCVTSW);
-		wire cvswu4 = (s4_op == OP_FCVTSWU);
-		wire [31:0] s4_iv;
-		am_fp_i2f #(.LAT(0)) u_i2f4 (
-			.s(cvsw4 ? s4_a[31] : cvswu4 ? 1'b0 : s4_xf[31]),
-			.n(cvsw4 ? (s4_a[31] ? s4_nega : s4_a) : cvswu4 ? s4_a : {7'd0, s4_n}),
-			.rm((cvsw4 || cvswu4) ? s4_rm : 3'd0),
-			.r(s4_iv)
-		);
-
-		wire [31:0] s4_fl = (s4_xf[30:23] == 8'hFF && s4_xf[22:0] != 23'd0) ? 32'h7FC00000 :
-			(s4_xf[30:23] >= 8'd150 || s4_xf[30:23] == 8'd0) ? s4_xf : s4_iv;
-
-		reg [31:0] s4_fx, s4_fy, s4_fz;
-		reg [2:0]  s4_rr;
-		reg        s4_noc;
+		/* Stage 3: Rounding for i2f */
+		wire cvsw3 = (s3_op == OP_FCVTSW);
+		wire cvswu3 = (s3_op == OP_FCVTSWU);
+		wire s3_g = s3_w[7];
+		wire s3_st = |s3_w[6:0];
+		reg s3_up;
 		always @(*) begin
-			s4_fx = s4_a;
-			s4_fy = 32'h3F800000;
-			s4_fz = s4_b;
-			s4_noc = 1'b0;
-			s4_rr = s4_rm;
-			case (s4_op)
+			case ((cvsw3 || cvswu3) ? s3_rm : 3'd0)
+			3'd1, 3'd5, 3'd6: s3_up = 1'b0;
+			3'd2: s3_up = s3_s && (s3_g || s3_st);
+			3'd3: s3_up = !s3_s && (s3_g || s3_st);
+			3'd4: s3_up = s3_g;
+			default: s3_up = s3_g && (s3_st || s3_w[8]);
+			endcase
+		end
+
+		wire [24:0] s3_mr0;
+		wire carry_unused3_mr;
+		am_add #(.W(25)) u_mr3 (
+			.a({1'b0, s3_w[31:9], s3_w[8] | (((s3_rm == 3'd5 || s3_rm == 3'd6) && (cvsw3 || cvswu3)) && (s3_g || s3_st))}),
+			.b(25'd0),
+			.ci(s3_up),
+			.s(s3_mr0),
+			.co(carry_unused3_mr)
+		);
+
+		wire [11:0] s3_e_p1;
+		wire carry_unused3_ep;
+		am_add #(.W(12)) u_ep3 (.a(s3_e), .b(12'd1), .ci(1'b0), .s(s3_e_p1), .co(carry_unused3_ep));
+
+		wire [7:0] s3_er = s3_mr0[24] ? s3_e_p1[7:0] : s3_e[7:0];
+		wire [22:0] s3_mr = s3_mr0[24] ? s3_mr0[23:1] : s3_mr0[22:0];
+		wire [31:0] s3_rnd = {s3_s, s3_er, s3_mr};
+
+		wire [31:0] s3_iv = !s3_nz ? {s3_s, 31'd0} : s3_rnd;
+		wire [31:0] s3_fl = s3_fl_nan ? 32'h7FC00000 : s3_fl_pass ? s3_xf_val : s3_iv;
+
+		/* Precompute FMA operands & other results in Stage 3 -> latched into Stage 4 */
+		reg [31:0] s3_fx, s3_fy, s3_fz;
+		reg [2:0]  s3_rr;
+		reg        s3_noc;
+		always @(*) begin
+			s3_fx = s3_a;
+			s3_fy = 32'h3F800000;
+			s3_fz = s3_b;
+			s3_noc = 1'b0;
+			s3_rr = s3_rm;
+			case (s3_op)
 			OP_FADD:   ;
-			OP_FSUB:   s4_fz = {!s4_b[31], s4_b[30:0]};
+			OP_FSUB:   s3_fz = {!s3_b[31], s3_b[30:0]};
 			OP_FMUL:   begin
-				s4_fy = s4_b;
-				s4_noc = 1'b1;
+				s3_fy = s3_b;
+				s3_noc = 1'b1;
 			end
 			OP_FMADD:  begin
-				s4_fy = s4_b;
-				s4_fz = s4_c;
+				s3_fy = s3_b;
+				s3_fz = s3_c;
 			end
 			OP_FMSUB:  begin
-				s4_fy = s4_b;
-				s4_fz = {!s4_c[31], s4_c[30:0]};
+				s3_fy = s3_b;
+				s3_fz = {!s3_c[31], s3_c[30:0]};
 			end
 			OP_FNMSUB: begin
-				s4_fx = {!s4_a[31], s4_a[30:0]};
-				s4_fy = s4_b;
-				s4_fz = s4_c;
+				s3_fx = {!s3_a[31], s3_a[30:0]};
+				s3_fy = s3_b;
+				s3_fz = s3_c;
 			end
 			OP_FNMADD: begin
-				s4_fx = {!s4_a[31], s4_a[30:0]};
-				s4_fy = s4_b;
-				s4_fz = {!s4_c[31], s4_c[30:0]};
+				s3_fx = {!s3_a[31], s3_a[30:0]};
+				s3_fy = s3_b;
+				s3_fz = {!s3_c[31], s3_c[30:0]};
 			end
 			OP_FRACT:  begin
-				s4_fz = {!s4_fl[31], s4_fl[30:0]};
-				s4_rr = 3'd0;
+				s3_fz = {!s3_fl[31], s3_fl[30:0]};
+				s3_rr = 3'd0;
 			end
 			default: ;
 			endcase
 		end
 
-		wire [31:0] fma_r, s4_ri;
+		reg [31:0] s3_other;
+		reg s3_is_flt;
+		always @(*) begin
+			s3_is_flt = 1'b1;
+			s3_other = 32'd0;
+			case (s3_op)
+			OP_FSGNJ:   s3_other = {s3_b[31], s3_a[30:0]};
+			OP_FMIN:    s3_other = f_minmax(s3_a, s3_b, 1'b0);
+			OP_FMAX:    s3_other = f_minmax(s3_a, s3_b, 1'b1);
+			OP_FCVTWS, OP_FCVTWUS: s3_other = s3_ri;
+			OP_FEQ:     s3_other = {32{f_cmp(s3_a, s3_b, 2'd0)}};
+			OP_FLT:     s3_other = {32{f_cmp(s3_a, s3_b, 2'd1)}};
+			OP_FLE:     s3_other = {32{f_cmp(s3_a, s3_b, 2'd2)}};
+			OP_FNE:     s3_other = {32{f_cmp(s3_a, s3_b, 2'd3)}};
+			default: ;
+			endcase
+			case (s3_op)
+			OP_FCVTWS, OP_FCVTWUS, OP_FEQ, OP_FLT, OP_FLE, OP_FNE,
+			OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU: s3_is_flt = 1'b0;
+			default: ;
+			endcase
+		end
+
+		/* --- Stage 4: Multiplier PREG Output arrives in sync with Register 4 --- */
+		reg [4:0]  s4_op;
+		reg        s4_sat;
+		reg [31:0] s4_fx, s4_fy, s4_fz;
+		reg [2:0]  s4_rr;
+		reg        s4_noc;
+		reg [31:0] s4_other_pre;
+		reg        s4_is_flt;
+		reg [31:0] s4_iv;
+		reg [31:0] s4_fl;
+
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				s4_op        <= 5'd0;
+				s4_sat       <= 1'b0;
+				s4_fx        <= 32'd0;
+				s4_fy        <= 32'd0;
+				s4_fz        <= 32'd0;
+				s4_rr        <= 3'd0;
+				s4_noc       <= 1'b0;
+				s4_other_pre <= 32'd0;
+				s4_is_flt    <= 1'b0;
+				s4_iv        <= 32'd0;
+				s4_fl        <= 32'd0;
+			end else if (en) begin
+				s4_op        <= s3_op;
+				s4_sat       <= s3_sat;
+				s4_fx        <= s3_fx;
+				s4_fy        <= s3_fy;
+				s4_fz        <= s3_fz;
+				s4_rr        <= s3_rr;
+				s4_noc       <= s3_noc;
+				s4_other_pre <= s3_other;
+				s4_is_flt    <= s3_is_flt;
+				s4_iv        <= s3_iv;
+				s4_fl        <= s3_fl;
+			end
+		end
+
+		wire [31:0] fma_r;
 		am_fp_fma_p #(.LAT(LAT >= 6 ? 2 : LAT >= 5 ? 1 : 0)) u_fma4 (
 			.clk(clk),
 			.rst_n(rst_n),
@@ -510,37 +632,15 @@ module am_fpu_core #(
 			.r(fma_r)
 		);
 
-		am_fp_f2i #(.LAT(0)) u_f2i4 (
-			.x(s4_xf),
-			.n(s4_n),
-			.uns(s4_op == OP_FCVTWUS),
-			.r(s4_ri)
-		);
-
 		wire s4_fma = (s4_op <= OP_FNMADD) || (s4_op == OP_FRACT);
 		reg [31:0] s4_other;
-		reg s4_is_flt;
 		always @(*) begin
-			s4_is_flt = 1'b1;
-			s4_other = 32'd0;
+			s4_other = s4_other_pre;
 			case (s4_op)
-			OP_FSGNJ:   s4_other = {s4_b[31], s4_a[30:0]};
-			OP_FMIN:    s4_other = f_minmax(s4_a, s4_b, 1'b0);
-			OP_FMAX:    s4_other = f_minmax(s4_a, s4_b, 1'b1);
-			OP_FCVTWS, OP_FCVTWUS: s4_other = s4_ri;
 			OP_FCVTSW, OP_FCVTSWU: s4_other = s4_iv;
-			OP_FEQ:     s4_other = {32{f_cmp(s4_a, s4_b, 2'd0)}};
-			OP_FLT:     s4_other = {32{f_cmp(s4_a, s4_b, 2'd1)}};
-			OP_FLE:     s4_other = {32{f_cmp(s4_a, s4_b, 2'd2)}};
-			OP_FNE:     s4_other = {32{f_cmp(s4_a, s4_b, 2'd3)}};
 			OP_FROUND:  s4_other = s4_fl;
 			OP_MUL:     s4_other = pr_s4[31:0];
 			OP_MULH, OP_MULHSU, OP_MULHU: s4_other = pr_s4[63:32];
-			default: ;
-			endcase
-			case (s4_op)
-			OP_FCVTWS, OP_FCVTWUS, OP_FEQ, OP_FLT, OP_FLE, OP_FNE,
-			OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU: s4_is_flt = 1'b0;
 			default: ;
 			endcase
 		end
@@ -597,7 +697,7 @@ module am_fpu_core #(
 		wire [31:0] cur_rs = cur_fma ? fma_r : cur_rs_other;
 
 		assign res = (cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs;
-		wire unused_c4 = &{1'b0, carry_unused4, pr_s4[65:64]};
+		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused3_mr, carry_unused3_ep, s3_e_p1[11:8], pr_s4[65:64]};
 	end
 	endgenerate
 

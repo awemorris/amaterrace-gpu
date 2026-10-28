@@ -50,24 +50,28 @@ module am_fp_fma_p #(
 	wire zb = b[30:23] == 8'd0;
 	wire zc = noc || c[30:23] == 8'd0;
 	wire [23:0] mc = zc ? 24'd0 : {1'b1, c[22:0]};
-	wire [10:0] carry_unused;
+	wire [12:0] carry_unused;
 
 	/* k: C's LSB relative to P's (units of P's LSB), the window has two bits
 	 * below P's LSB: k = ec - ea - eb + 150 */
-	wire [11:0] ab, c150, k, kadj, kp2;
+	wire [11:0] ab, c150, c152, c101, k, kadj, kp2;
 	wire [4:0] rs;
 	am_add #(.W(12)) u_ab (.a({4'd0, a[30:23]}), .b({4'd0, b[30:23]}), .ci(1'b0), .s(ab),
 		.co(carry_unused[0]));
 	am_add #(.W(12)) u_c150 (.a({4'd0, c[30:23]}), .b(12'd150), .ci(1'b0), .s(c150),
 		.co(carry_unused[1]));
 	am_sub #(.W(12)) u_k (.a(c150), .b(ab), .bi(1'b0), .d(k), .bo(carry_unused[2]));
-	am_sub #(.W(12)) u_kadj (.a(k), .b(12'd49), .bi(1'b0), .d(kadj), .bo(carry_unused[3]));
-	am_add #(.W(12)) u_kp2 (.a(k), .b(12'd2), .ci(1'b0), .s(kp2), .co(carry_unused[4]));
+	am_add #(.W(12)) u_c101 (.a({4'd0, c[30:23]}), .b(12'd101), .ci(1'b0), .s(c101),
+		.co(carry_unused[3]));
+	am_sub #(.W(12)) u_kadj (.a(c101), .b(ab), .bi(1'b0), .d(kadj), .bo(carry_unused[4]));
+	am_add #(.W(12)) u_c152 (.a({4'd0, c[30:23]}), .b(12'd152), .ci(1'b0), .s(c152),
+		.co(carry_unused[5]));
+	am_sub #(.W(12)) u_kp2 (.a(c152), .b(ab), .bi(1'b0), .d(kp2), .bo(carry_unused[6]));
 	am_sub #(.W(5)) u_rs (.a(5'd0), .b(kp2[4:0]), .bi(1'b0), .d(rs),
-		.bo(carry_unused[5]));	/* 1..23 */
+		.bo(carry_unused[7]));	/* 1..23 */
 	wire signed [11:0] ks = k;
 	wire kbig = ks > 12'sd49;
-	wire kleft = ks >= -12'sd2;
+	wire kleft = !kp2[11];
 	wire kright = ks > -12'sd26;
 	wire [76:0] cs;
 	am_shift #(.W(77), .SW(7)) u_cs (.a({53'd0, mc}), .amt(kleft ? kp2[6:0] : {2'd0, rs}), .left(kleft),
@@ -81,8 +85,6 @@ module am_fp_fma_p #(
 	wire [76:0] cw = zc ? 77'd0 : kbig ? {2'b00, mc, 51'd0} : kleft ? cs : kright ? {cs[76:1], cs[0] | cst} : 77'd1;
 	/* the sum: pw + cw, pw - cw or cw - pw (the larger first) */
 	wire same = zc || sp == sc;
-	wire pge = pw >= cw;
-	wire sr = same || pge ? sp : sc;
 
 	/* Special cases determined in Stage 0 */
 	wire spec_nan = nan_a || nan_b || nan_c || (inf_a && zb) || (inf_b && za);
@@ -97,10 +99,11 @@ module am_fp_fma_p #(
 		(!zc ? c : noc ? {sp, 31'd0} : {rdn ? (sp | sc) : (sp & sc), 31'd0});
 
 	/* --- Stage 0 -> Stage 1 Pipeline Register (LAT >= 2) --- */
-	reg [76:0] r0_op_a;
-	reg [76:0] r0_op_b;
-	reg        r0_op_sub;
-	reg        r0_sr;
+	reg [76:0] r0_pw;
+	reg [76:0] r0_cw;
+	reg        r0_same;
+	reg        r0_sp;
+	reg        r0_sc;
 	reg [11:0] r0_ab;
 	reg [11:0] r0_adj;
 	reg [2:0]  r0_rm;
@@ -110,10 +113,11 @@ module am_fp_fma_p #(
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			r0_op_a     <= 77'd0;
-			r0_op_b     <= 77'd0;
-			r0_op_sub   <= 1'b0;
-			r0_sr       <= 1'b0;
+			r0_pw       <= 77'd0;
+			r0_cw       <= 77'd0;
+			r0_same     <= 1'b0;
+			r0_sp       <= 1'b0;
+			r0_sc       <= 1'b0;
 			r0_ab       <= 12'd0;
 			r0_adj      <= 12'd0;
 			r0_rm       <= 3'd0;
@@ -121,10 +125,11 @@ module am_fp_fma_p #(
 			r0_spec_hit <= 1'b0;
 			r0_spec_res <= 32'd0;
 		end else if (en) begin
-			r0_op_a     <= same || pge ? pw : cw;
-			r0_op_b     <= same || pge ? cw : pw;
-			r0_op_sub   <= !same;
-			r0_sr       <= sr;
+			r0_pw       <= pw;
+			r0_cw       <= cw;
+			r0_same     <= same;
+			r0_sp       <= sp;
+			r0_sc       <= sc;
 			r0_ab       <= ab;
 			r0_adj      <= adj;
 			r0_rm       <= rm;
@@ -134,11 +139,12 @@ module am_fp_fma_p #(
 		end
 	end
 
-	/* --- Stage 1: 77-bit add/sub --- */
-	wire [76:0] s0_op_a     = (LAT >= 2) ? r0_op_a     : (same || pge ? pw : cw);
-	wire [76:0] s0_op_b     = (LAT >= 2) ? r0_op_b     : (same || pge ? cw : pw);
-	wire        s0_op_sub   = (LAT >= 2) ? r0_op_sub   : !same;
-	wire        s0_sr       = (LAT >= 2) ? r0_sr       : sr;
+	/* --- Stage 1: 77-bit compare and add/sub --- */
+	wire [76:0] s0_pw       = (LAT >= 2) ? r0_pw       : pw;
+	wire [76:0] s0_cw       = (LAT >= 2) ? r0_cw       : cw;
+	wire        s0_same     = (LAT >= 2) ? r0_same     : same;
+	wire        s0_sp       = (LAT >= 2) ? r0_sp       : sp;
+	wire        s0_sc       = (LAT >= 2) ? r0_sc       : sc;
 	wire [11:0] s0_ab       = (LAT >= 2) ? r0_ab       : ab;
 	wire [11:0] s0_adj      = (LAT >= 2) ? r0_adj      : adj;
 	wire [2:0]  s0_rm       = (LAT >= 2) ? r0_rm       : rm;
@@ -146,9 +152,15 @@ module am_fp_fma_p #(
 	wire        s0_spec_hit = (LAT >= 2) ? r0_spec_hit : spec_hit;
 	wire [31:0] s0_spec_res = (LAT >= 2) ? r0_spec_res : spec_res;
 
+	wire        s0_pge      = s0_pw >= s0_cw;
+	wire [76:0] s0_op_a     = s0_same || s0_pge ? s0_pw : s0_cw;
+	wire [76:0] s0_op_b     = s0_same || s0_pge ? s0_cw : s0_pw;
+	wire        s0_op_sub   = !s0_same;
+	wire        s0_sr       = s0_same || s0_pge ? s0_sp : s0_sc;
+
 	wire [76:0] sum;
 	am_addsub #(.W(77)) u_sum (.a(s0_op_a), .b(s0_op_b), .sub(s0_op_sub), .s(sum),
-		.co(carry_unused[6]));
+		.co(carry_unused[8]));
 
 	/* --- Stage 1 -> Stage 2 Pipeline Register (LAT >= 1) --- */
 	reg [76:0] r1_sum;
@@ -199,11 +211,11 @@ module am_fp_fma_p #(
 	wire [6:0] nsh;
 	wire [76:0] nrm;
 	wire [11:0] t1, t2, er;
-	am_sub #(.W(7)) u_nsh (.a(7'd76), .b(msb), .bi(1'b0), .d(nsh), .bo(carry_unused[7]));
+	am_sub #(.W(7)) u_nsh (.a(7'd76), .b(msb), .bi(1'b0), .d(nsh), .bo(carry_unused[9]));
 	am_shift #(.W(77), .SW(7)) u_nrm (.a(s1_sum), .amt(nsh), .left(1'b1), .arith(1'b0), .y(nrm));
-	am_add #(.W(12)) u_t1 (.a(s1_ab), .b(s1_adj), .ci(1'b0), .s(t1), .co(carry_unused[8]));
-	am_add #(.W(12)) u_t2 (.a(t1), .b({5'd0, msb}), .ci(1'b0), .s(t2), .co(carry_unused[9]));
-	am_sub #(.W(12)) u_er (.a(t2), .b(12'd175), .bi(1'b0), .d(er), .bo(carry_unused[10]));
+	am_add #(.W(12)) u_t1 (.a(s1_ab), .b(s1_adj), .ci(1'b0), .s(t1), .co(carry_unused[10]));
+	am_add #(.W(12)) u_t2 (.a(t1), .b({5'd0, msb}), .ci(1'b0), .s(t2), .co(carry_unused[11]));
+	am_sub #(.W(12)) u_er (.a(t2), .b(12'd175), .bi(1'b0), .d(er), .bo(carry_unused[12]));
 	wire [31:0] rnd;
 	am_fp_rnd #(.LAT(0)) u_rnd (.s(s1_sr), .e(er), .m(nrm[76:53]), .g(nrm[52]), .st(|nrm[51:0]), .rm(s1_rm), .r(rnd));
 
@@ -211,7 +223,7 @@ module am_fp_fma_p #(
 		!sum_nz ? {s1_rdn, 31'd0} : rnd;
 
 	wire unused_lat0 = (LAT == 0) ? &{1'b0, clk, rst_n, en} : 1'b0;
-	wire unused_ok = &{1'b0, kp2[11:7], carry_unused, unused_lat0};
+	wire unused_ok = &{1'b0, kp2[10:7], carry_unused, unused_lat0};
 endmodule
 
 `default_nettype wire
