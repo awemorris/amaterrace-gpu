@@ -117,11 +117,12 @@ module atg_su_exec #(
 			save_d[l*32 +: 32] = {32{wexec_g[l]}};
 	wire s_in = mine && op == ATG_EXEC_SAVE && x_uop[ATG_UOP_WRD];
 
-	/* The next PC: the branch target or PC + 1. */
-	wire [15:0] pc_next;
-	wire pc_co_unused;
-	am_add #(.W(16)) u_pc (.a(x_pc), .b(is_br && take ? imm[15:0] : 16'd1), .ci(1'b0), .s(pc_next),
-		.co(pc_co_unused));
+	/* The next PC: parallel precomputation of branch target and PC + 1 */
+	wire [15:0] pc_p1, pc_tgt;
+	wire [1:0] pc_co_unused;
+	am_add #(.W(16)) u_pc_p1 (.a(x_pc), .b(16'd1), .ci(1'b0), .s(pc_p1), .co(pc_co_unused[0]));
+	am_add #(.W(16)) u_pc_tgt (.a(x_pc), .b(imm[15:0]), .ci(1'b0), .s(pc_tgt), .co(pc_co_unused[1]));
+	wire [15:0] pc_next = (is_br && take) ? pc_tgt : pc_p1;
 
 	reg [EW-1:0] pipe [0:SHORT_LAT-1];
 	reg wc_v;
@@ -194,7 +195,7 @@ module atg_su_exec #(
 	assign x_ready = 1'b1;
 
 	wire unused_ok = &{1'b0, x_sbe, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
-		imm[31:16], lane0};
+		imm[31:16], lane0, pc_co_unused};
 endmodule
 
 `default_nettype wire

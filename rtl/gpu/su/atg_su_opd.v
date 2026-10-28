@@ -445,19 +445,17 @@ module atg_su_opd #(
 
 	/*
 	 * Per lane: its number in the warp (the group's base and l: disjoint
-	 * bits), each operand's common part + the lane (one adder each).
+	 * bits), local index (LID + ln, 9-bit adder independent of opc).
 	 */
+	wire [NPHYS-1:0] cl_co_unused;
 	genvar l;
 	generate
 		for (l = 0; l < NPHYS; l = l + 1) begin : g_lane
 			wire [4:0] ln = grp_base[4:0] | l[4:0];
-			wire [31:0] cl1;
-			wire [31:0] cl2;
-			wire [31:0] cl3;
-			wire c1_co_unused, c2_co_unused, c3_co_unused;
-			am_add #(.W(32)) u_cl1 (.a(com1), .b({27'd0, ln}), .ci(1'b0), .s(cl1), .co(c1_co_unused));
-			am_add #(.W(32)) u_cl2 (.a(com2), .b({27'd0, ln}), .ci(1'b0), .s(cl2), .co(c2_co_unused));
-			am_add #(.W(32)) u_cl3 (.a(com3), .b({27'd0, ln}), .ci(1'b0), .s(cl3), .co(c3_co_unused));
+			wire [8:0] cl_s;
+			am_add #(.W(9)) u_cl (.a({1'b0, q_info[ATG_WI_LID +: 8]}), .b({4'd0, ln}), .ci(1'b0),
+				.s(cl_s), .co(cl_co_unused[l]));
+			wire [31:0] cl = {23'd0, cl_s};
 
 			wire [31:0] gpr1 = (hit_alu_ex4_1 && fwd_alu_ex4_lanes[l]) ? fwd_alu_ex4_data[l*32 +: 32] :
 			                   (hit_alu_ex5_1 && fwd_alu_ex5_lanes[l]) ? fwd_alu_ex5_data[l*32 +: 32] :
@@ -479,11 +477,11 @@ module atg_su_opd #(
 			                   rf_src3[l*32 +: 32];
 
 			assign va[l*32 +: 32] = fmod(opl(k1, com1, gpr1, rq_data[l*32 +: 32],
-				ln, kill_g[l], cl1), mods[0], mods[1], fp_unit, pk_unit);
+				ln, kill_g[l], cl), mods[0], mods[1], fp_unit, pk_unit);
 			assign vb[l*32 +: 32] = fmod(opl(k2, com2, gpr2, rq_data[l*32 +: 32],
-				ln, kill_g[l], cl2), mods[2], mods[3], fp_unit, pk_unit);
+				ln, kill_g[l], cl), mods[2], mods[3], fp_unit, pk_unit);
 			assign vc[l*32 +: 32] = fmod(opl(k3, com3, gpr3, rq_data[l*32 +: 32],
-				ln, kill_g[l], cl3), mods[4], mods[5], fp_unit, pk_unit);
+				ln, kill_g[l], cl), mods[4], mods[5], fp_unit, pk_unit);
 		end
 	endgenerate
 
@@ -505,7 +503,7 @@ module atg_su_opd #(
 	wire unused_fwd_ex4 = &{1'b0,
 		fwd_fpu_ex4_valid, fwd_fpu_ex4_warp, fwd_fpu_ex4_grp, fwd_fpu_ex4_rd, fwd_fpu_ex4_data, fwd_fpu_ex4_lanes,
 		hit_fpu_ex4_1, hit_fpu_ex4_2, hit_fpu_ex4_3};
-	wire unused_ok = &{1'b0, a_n1, a_n2[6], a_n3[6], a_rf_r1[6], a_rf_r2[6], mods[6], exec_g, kill_g, cov_g, grp_base, q_info, unused_fwd_ex4};
+	wire unused_ok = &{1'b0, a_n1, a_n2[6], a_n3[6], a_rf_r1[6], a_rf_r2[6], mods[6], exec_g, kill_g, cov_g, grp_base, q_info, unused_fwd_ex4, cl_co_unused};
 endmodule
 
 `default_nettype wire
