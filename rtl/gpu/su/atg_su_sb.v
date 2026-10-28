@@ -193,11 +193,15 @@ module atg_su_sb #(
 
 			wire [SB_ENTRIES-1:0] wev = ev[gw*SB_ENTRIES +: SB_ENTRIES];
 			assign warp_have_free[gw] = ~(&wev);
-			assign warp_free_e[gw*(SBE_W+1) +: (SBE_W+1)] =
-				!wev[0] ? 3'd0 :
-				!wev[1] ? 3'd1 :
-				!wev[2] ? 3'd2 :
-				!wev[3] ? 3'd3 : 3'd7;
+			reg [SBE_W:0] w_free;
+			integer ej;
+			always @(*) begin
+				w_free = {(SBE_W+1){1'b1}};
+				for (ej = SB_ENTRIES - 1; ej >= 0; ej = ej - 1)
+					if (!wev[ej])
+						w_free = ej[SBE_W:0];
+			end
+			assign warp_free_e[gw*(SBE_W+1) +: (SBE_W+1)] = w_free;
 		end
 	endgenerate
 
@@ -244,44 +248,55 @@ module atg_su_sb #(
 		hit = x == r;
 	endfunction
 
-	reg hz_short;
-	integer m;
-	always @(*) begin
-		hz_short = 1'b0;
-		for (m = 0; m < NIF; m = m + 1)
-			if (f_valid[m] && f_short[m] && f_warp[(m)*WARP_W +: WARP_W] == u_warp) begin
-				if ((!BYPASS || is_long || !(f_pipe_alu[m] || f_pipe_fpu[m]) || (G < 4)) &&
-				    ((src1 && hit(rs1, f_rd[(m)*7 +: 7])) || (src2 && hit(rs2, f_rd[(m)*7 +: 7])) ||
-				    (src3 && hit(rs3, f_rd[(m)*7 +: 7])) || (src4 && hit(rs1p, f_rd[(m)*7 +: 7])) ||
-				    (src5 && hit(rs3p, f_rd[(m)*7 +: 7]))))
-					hz_short = 1'b1;
-				if (dst && is_long && (f_rd[(m)*7 +: 7] < 7'd63) &&
-				    (hit(f_rd[(m)*7 +: 7], {1'b0, rd[5:0]}) ||
-				     (wide && (hit(f_rd[(m)*7 +: 7], {1'b0, rd_p1}) ||
-				               hit(f_rd[(m)*7 +: 7], {1'b0, rd_p2}) ||
-				               hit(f_rd[(m)*7 +: 7], {1'b0, rd_p3})))))
-					hz_short = 1'b1;
+	/* Per-warp parallel short hazard checks.
+	 * Eliminates u_warp comparison from the 10-entry serial OR tree. */
+	wire [NWARPS-1:0] warp_hz_short;
+	genvar gws;
+	generate
+		for (gws = 0; gws < NWARPS; gws = gws + 1) begin : g_wshz
+			wire [NIF-1:0] f_hit;
+			genvar fm;
+			for (fm = 0; fm < NIF; fm = fm + 1) begin : g_fhit
+				wire f_match_warp = f_valid[fm] && f_short[fm] && (f_warp[(fm)*WARP_W +: WARP_W] == gws[WARP_W-1:0]);
+				wire f_raw = (!BYPASS || is_long || !(f_pipe_alu[fm] || f_pipe_fpu[fm]) || (G < 4)) &&
+				    ((src1 && hit(rs1, f_rd[(fm)*7 +: 7])) || (src2 && hit(rs2, f_rd[(fm)*7 +: 7])) ||
+				    (src3 && hit(rs3, f_rd[(fm)*7 +: 7])) || (src4 && hit(rs1p, f_rd[(fm)*7 +: 7])) ||
+				    (src5 && hit(rs3p, f_rd[(fm)*7 +: 7])));
+				wire f_waw = dst && is_long && (f_rd[(fm)*7 +: 7] < 7'd63) &&
+				    (hit(f_rd[(fm)*7 +: 7], {1'b0, rd[5:0]}) ||
+				     (wide && (hit(f_rd[(fm)*7 +: 7], {1'b0, rd_p1}) ||
+				               hit(f_rd[(fm)*7 +: 7], {1'b0, rd_p2}) ||
+				               hit(f_rd[(fm)*7 +: 7], {1'b0, rd_p3}))));
+				assign f_hit[fm] = f_match_warp && (f_raw || f_waw);
 			end
-		for (m = 0; m < NSH; m = m + 1)
-			if (c_valid[m] && c_warp[(m)*WARP_W +: WARP_W] == u_warp) begin
-				if (((!BYPASS && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > G + 1) ||
-				     (BYPASS && is_long && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > 1) ||
-				     (BYPASS && !is_long && !c_pipe_alu[m] && !c_pipe_fpu[m] && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > G + 1) ||
-				     (BYPASS && !is_long && c_pipe_alu[m] && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > SHORT_BP_WAIT_ALU) ||
-				     (BYPASS && !is_long && c_pipe_fpu[m] && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > SHORT_BP_WAIT_FPU)) &&
-				    ((src1 && hit(rs1, {1'b0, c_rd[(m)*6 +: 6]})) ||
-				    (src2 && hit(rs2, {1'b0, c_rd[(m)*6 +: 6]})) || (src3 && hit(rs3, {1'b0, c_rd[(m)*6 +: 6]})) ||
-				    (src4 && hit(rs1p, {1'b0, c_rd[(m)*6 +: 6]})) ||
-				    (src5 && hit(rs3p, {1'b0, c_rd[(m)*6 +: 6]}))))
-					hz_short = 1'b1;
-				if (dst && is_long &&
-				    (c_rd[(m)*6 +: 6] == rd[5:0] ||
-				     (wide && (c_rd[(m)*6 +: 6] == rd_p1 ||
-				               c_rd[(m)*6 +: 6] == rd_p2 ||
-				               c_rd[(m)*6 +: 6] == rd_p3))))
-					hz_short = 1'b1;
+
+			wire [NSH-1:0] c_hit;
+			genvar cm_idx;
+			for (cm_idx = 0; cm_idx < NSH; cm_idx = cm_idx + 1) begin : g_chit
+				wire c_match_warp = c_valid[cm_idx] && (c_warp[(cm_idx)*WARP_W +: WARP_W] == gws[WARP_W-1:0]);
+				wire c_wait_cond = ((!BYPASS && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > G + 1) ||
+				     (BYPASS && is_long && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > 1) ||
+				     (BYPASS && !is_long && !c_pipe_alu[cm_idx] && !c_pipe_fpu[cm_idx] && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > G + 1) ||
+				     (BYPASS && !is_long && c_pipe_alu[cm_idx] && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > SHORT_BP_WAIT_ALU) ||
+				     (BYPASS && !is_long && c_pipe_fpu[cm_idx] && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > SHORT_BP_WAIT_FPU));
+				wire c_raw = c_wait_cond &&
+				    ((src1 && hit(rs1, {1'b0, c_rd[(cm_idx)*6 +: 6]})) ||
+				    (src2 && hit(rs2, {1'b0, c_rd[(cm_idx)*6 +: 6]})) || (src3 && hit(rs3, {1'b0, c_rd[(cm_idx)*6 +: 6]})) ||
+				    (src4 && hit(rs1p, {1'b0, c_rd[(cm_idx)*6 +: 6]})) ||
+				    (src5 && hit(rs3p, {1'b0, c_rd[(cm_idx)*6 +: 6]})));
+				wire c_waw = dst && is_long &&
+				    (c_rd[(cm_idx)*6 +: 6] == rd[5:0] ||
+				     (wide && (c_rd[(cm_idx)*6 +: 6] == rd_p1 ||
+				               c_rd[(cm_idx)*6 +: 6] == rd_p2 ||
+				               c_rd[(cm_idx)*6 +: 6] == rd_p3)));
+				assign c_hit[cm_idx] = c_match_warp && (c_raw || c_waw);
 			end
-	end
+
+			assign warp_hz_short[gws] = (|f_hit) || (|c_hit);
+		end
+	endgenerate
+
+	wire hz_short = warp_hz_short[u_warp];
 
 	/* Counters (the warp's, less this cycle's release) and the instructions that wait for them. */
 	wire rel_u = rel_valid && rel_warp == u_warp;
