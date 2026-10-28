@@ -425,6 +425,8 @@ module atg_su_sb #(
 			e_valid <= ev;
 			if (alloc) begin
 				e_valid[alloc_idx] <= 1'b1;
+			end
+			if (u_valid && need_e && have_free) begin
 				for (q = 0; q < NE; q = q + 1)
 					if (alloc_idx == q[NE_W-1:0]) begin
 						e_r0[q*6 +: 6] <= rd[5:0];
