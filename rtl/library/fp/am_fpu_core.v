@@ -886,7 +886,25 @@ module am_fpu_core #(
 			end
 		end
 
-		/* Stage 6: Fast Inline Parallel Rounding for LAT >= 6 */
+		/* Stage 6: Speculative Parallel Rounding for LAT >= 6 */
+		wire [24:0] s6_m_p1;
+		wire signed [11:0] s6_er_p1;
+		wire [1:0] s6_rnd_carry_unused;
+		am_add #(.W(25)) u_fma_m_p1 (
+			.a({1'b0, s6_m}),
+			.b(25'd1),
+			.ci(1'b0),
+			.s(s6_m_p1),
+			.co(s6_rnd_carry_unused[0])
+		);
+		am_add #(.W(12)) u_fma_er_p1 (
+			.a(s6_er),
+			.b(12'd1),
+			.ci(1'b0),
+			.s(s6_er_p1),
+			.co(s6_rnd_carry_unused[1])
+		);
+
 		wire s6_st = |s6_st_chunks;
 		reg s6_up;
 		always @(*)
@@ -898,26 +916,13 @@ module am_fpu_core #(
 			default: s6_up = s6_g && (s6_st || s6_m[0]);
 			endcase
 
+		wire s6_odd = (s6_rm == 3'd5 || s6_rm == 3'd6);
+		wire [23:0] s6_m_odd = {s6_m[23:1], s6_m[0] | (s6_g || s6_st)};
 		wire s6_m_all1 = &s6_m;
 		wire s6_m_carry = s6_m_all1 && s6_up;
 
-		wire [24:0] s6_mr0;
-		wire signed [11:0] s6_mr_er;
-		wire [1:0] s6_rnd_carry_unused;
-		am_add #(.W(25)) u_fma_mr (
-			.a({1'b0, s6_m[23:1], s6_m[0] | ((s6_rm == 3'd5 || s6_rm == 3'd6) && (s6_g || s6_st))}),
-			.b(25'd0),
-			.ci(s6_up),
-			.s(s6_mr0),
-			.co(s6_rnd_carry_unused[0])
-		);
-		am_add #(.W(12)) u_fma_mr_er (
-			.a(s6_er),
-			.b(12'd0),
-			.ci(s6_m_carry),
-			.s(s6_mr_er),
-			.co(s6_rnd_carry_unused[1])
-		);
+		wire [24:0] s6_mr0 = s6_odd ? {1'b0, s6_m_odd} : s6_up ? s6_m_p1 : {1'b0, s6_m};
+		wire signed [11:0] s6_mr_er = s6_m_carry ? s6_er_p1 : s6_er;
 		wire [24:0] s6_mr = s6_m_carry ? {1'b0, 1'b1, 23'd0} : s6_mr0;
 		wire [31:0] s6_rnd = s6_mr_er >= 12'sd255 ?
 			((s6_rm == 3'd1 || s6_rm == 3'd5 || s6_rm == 3'd6 || (s6_rm == 3'd2 && !s6_sr) || (s6_rm == 3'd3 && s6_sr)) ?
