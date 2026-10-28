@@ -148,33 +148,57 @@ module atg_su_wb #(
 	 * rq) needs the port; one without (a store's completion) does not. */
 	(* keep = "true", max_fanout = 16 *) wire sv_arb = sv;
 	wire port_free = !sv_arb && !(|fi_valid);
-	/* (The first eligible source at or after rr, else the first one.) */
 	reg [LP_W-1:0] rr;
-	reg lsel_v;
-	reg [LP_W-1:0] lsel;
-	reg [LP_W-1:0] lsel_lo;
-	reg lsel_hv;
-	reg [NL-1:0] l_elig;
+
+	/* Precomputed parallel round-robin arbiters:
+	 * arb_free: assumes port_free == 1 (all l_valid are eligible)
+	 * arb_busy: assumes port_free == 0 (only l_valid && !l_wr are eligible)
+	 * This cuts the long path from sv/fi_valid into the 8-source priority tree.
+	 */
+	reg lsel_free_v, lsel_free_hv;
+	reg [LP_W-1:0] lsel_free, lsel_free_lo;
+	reg lsel_busy_v, lsel_busy_hv;
+	reg [LP_W-1:0] lsel_busy, lsel_busy_lo;
 	integer k;
 	always @(*) begin
-		lsel_v = 1'b0;
-		lsel_hv = 1'b0;
-		lsel = {LP_W{1'b0}};
-		lsel_lo = {LP_W{1'b0}};
+		lsel_free_v = 1'b0;
+		lsel_free_hv = 1'b0;
+		lsel_free = {LP_W{1'b0}};
+		lsel_free_lo = {LP_W{1'b0}};
+
+		lsel_busy_v = 1'b0;
+		lsel_busy_hv = 1'b0;
+		lsel_busy = {LP_W{1'b0}};
+		lsel_busy_lo = {LP_W{1'b0}};
+
 		for (k = NL - 1; k >= 0; k = k - 1) begin
-			l_elig[k] = l_valid[k] && (port_free || !l_wr[k]);
-			if (l_elig[k]) begin
-				lsel_v = 1'b1;
-				lsel_lo = k[LP_W-1:0];
+			/* Free arbiter */
+			if (l_valid[k]) begin
+				lsel_free_v = 1'b1;
+				lsel_free_lo = k[LP_W-1:0];
 				if (k[LP_W-1:0] >= rr) begin
-					lsel_hv = 1'b1;
-					lsel = k[LP_W-1:0];
+					lsel_free_hv = 1'b1;
+					lsel_free = k[LP_W-1:0];
+				end
+			end
+			/* Busy arbiter (only non-writing beats can proceed) */
+			if (l_valid[k] && !l_wr[k]) begin
+				lsel_busy_v = 1'b1;
+				lsel_busy_lo = k[LP_W-1:0];
+				if (k[LP_W-1:0] >= rr) begin
+					lsel_busy_hv = 1'b1;
+					lsel_busy = k[LP_W-1:0];
 				end
 			end
 		end
-		if (!lsel_hv)
-			lsel = lsel_lo;
+		if (!lsel_free_hv)
+			lsel_free = lsel_free_lo;
+		if (!lsel_busy_hv)
+			lsel_busy = lsel_busy_lo;
 	end
+
+	wire lsel_v = port_free ? lsel_free_v : lsel_busy_v;
+	wire [LP_W-1:0] lsel = port_free ? lsel_free : lsel_busy;
 
 	/* The selected source's fields (a selection by lsel). */
 	reg [6:0] lrd;
