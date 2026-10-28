@@ -480,14 +480,6 @@ module atg_su #(
 		.d_valid(fet_d_valid), .d_ready(fet_d_ready), .d_warp(fet_d_warp), .d_pc(fet_d_pc), .d_instr(fet_d_instr)
 	);
 
-	am_skid #(.W(WARP_W + 16 + 64)) u_dec_skid (
-		.clk(clk), .rst_n(rst_n),
-		.in_valid(fet_d_valid), .in_ready(fet_d_ready),
-		.in_data({fet_d_warp, fet_d_pc, fet_d_instr}),
-		.out_valid(d_valid), .out_ready(d_ready),
-		.out_data({d_warp, d_pc, d_instr})
-	);
-
 	atg_su_icache #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) icache (
 		.clk(clk), .rst_n(rst_n),
 		.ic_req(ic_req), .ic_ready(ic_ready), .ic_addr(ic_addr), .ic_rvalid(ic_rvalid),
@@ -495,13 +487,27 @@ module atg_su #(
 		.req_valid(ic_m_req_valid), .req_ready(ic_m_req_ready), .req_write(ic_m_req_write), .req_line(ic_m_req_line), .req_be(ic_m_req_be), .req_wdata(ic_m_req_wdata), .req_tag(ic_m_req_tag), .rsp_valid(ic_m_rsp_valid), .rsp_write(ic_m_rsp_write), .rsp_tag(ic_m_rsp_tag), .rsp_rdata(ic_m_rsp_rdata), .rsp_error(ic_m_rsp_error)
 	);
 
+	wire dec_u_valid, dec_u_ready;
+	wire [WARP_W-1:0] dec_u_warp;
+	wire [15:0] dec_u_pc;
+	wire [UOP_W-1:0] dec_u_uop;
+
 	atg_su_dec #(
 		.WARP_W(WARP_W), .UOP_W(UOP_W), .NREGS(NREGS), .PACKED(PACKED), .SUBGROUP(SUBGROUP),
 		.HAS_SA(HAS_SA), .MS4(MS4)
 	) dec (
 		.clk(clk), .rst_n(rst_n),
-		.d_valid(d_valid), .d_ready(d_ready), .d_warp(d_warp), .d_pc(d_pc), .d_instr(d_instr),
-		.u_valid(u_valid), .u_ready(u_ready), .u_warp(u_warp), .u_pc(u_pc), .u_uop(u_uop)
+		.d_valid(fet_d_valid), .d_ready(fet_d_ready), .d_warp(fet_d_warp), .d_pc(fet_d_pc), .d_instr(fet_d_instr),
+		.u_valid(dec_u_valid), .u_ready(dec_u_ready), .u_warp(dec_u_warp), .u_pc(dec_u_pc), .u_uop(dec_u_uop)
+	);
+
+	/* Registered skid buffer on dec-to-sb interface to break the 5.2ns hazard-check feedback loop */
+	am_skid #(.W(WARP_W + 16 + UOP_W)) u_dec_skid (
+		.clk(clk), .rst_n(rst_n),
+		.in_valid(dec_u_valid), .in_ready(dec_u_ready),
+		.in_data({dec_u_warp, dec_u_pc, dec_u_uop}),
+		.out_valid(u_valid), .out_ready(u_ready),
+		.out_data({u_warp, u_pc, u_uop})
 	);
 
 	atg_su_sb #(
