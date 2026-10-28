@@ -353,9 +353,10 @@ module atg_su_sb #(
 
 	wire wc_kind = unit == ATG_UNIT_EXEC && (op <= ATG_EXEC_BEXZ || op == ATG_EXEC_END ||
 		op == ATG_EXEC_BAR);
+	wire issued_cand = !no_issue && i_ready;
 	assign fb_valid = u_valid && u_ready;
 	assign fb_warp = u_warp;
-	assign fb_kind = ill ? 2'd1 : replay ? 2'd2 : (issued && wc_kind) ? 2'd1 : 2'd0;
+	assign fb_kind = ill ? 2'd1 : replay ? 2'd2 : (issued_cand && wc_kind) ? 2'd1 : 2'd0;
 	assign fault = go && ill;
 	assign fault_pc = u_pc;
 
