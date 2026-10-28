@@ -27,8 +27,8 @@ module atg_tu_cube_texel (
 
 	atg_tu_cube_edge u_cube_edge (
 		.face_in(tface),
-		.u_in(i[15:0]),
-		.v_in(j[15:0]),
+		.u_in(i[16:0]),
+		.v_in(j[16:0]),
 		.size(n),
 		.face_out(face_out),
 		.u_out(u_out),
@@ -37,7 +37,7 @@ module atg_tu_cube_texel (
 
 	assign t = {face_out, u_out, v_out};
 
-	wire unused_ok = &{1'b0, i[23:16], j[23:16]};
+	wire unused_ok = &{1'b0, i[23:17], j[23:17]};
 
 endmodule
 

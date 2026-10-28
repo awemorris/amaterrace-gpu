@@ -23,8 +23,8 @@
 
 module atg_tu_cube_edge (
 	input  wire [2:0]         face_in,      /* 0:+X, 1:-X, 2:+Y, 3:-Y, 4:+Z, 5:-Z */
-	input  wire signed [15:0] u_in,
-	input  wire signed [15:0] v_in,         /* Texel coordinates (signed) */
+	input  wire signed [16:0] u_in,
+	input  wire signed [16:0] v_in,         /* Texel coordinates (signed, bit 16 is sign) */
 	input  wire [15:0]        size,         /* Face size (n) */
 
 	output reg  [2:0]         face_out,     /* Transformed face index */
@@ -35,17 +35,17 @@ module atg_tu_cube_edge (
 `ifdef CFG_ENABLE_3D_CUBE
 
 	/* Out-of-bounds detection */
-	wire oi_lo = u_in[15];
-	wire oi_hi = !u_in[15] && (u_in >= size);
+	wire oi_lo = u_in[16];
+	wire oi_hi = !u_in[16] && (u_in[15:0] >= size);
 	wire oi = oi_lo || oi_hi;
 
-	wire oj_lo = v_in[15];
-	wire oj_hi = !v_in[15] && (v_in >= size);
+	wire oj_lo = v_in[16];
+	wire oj_hi = !v_in[16] && (v_in[15:0] >= size);
 	wire oj = oj_lo || oj_hi;
 
 	/* Edge index: 0: u < 0, 1: u >= size, 2: v < 0, 3: v >= size */
 	wire [1:0] e = oi ? {1'b0, oi_hi} : {1'b1, oj_hi};
-	wire [15:0] a = oi ? v_in : u_in;
+	wire [15:0] a = oi ? v_in[15:0] : u_in[15:0];
 
 	/* Boundary coordinate calculations: n1 = size - 1, n1a = size - 1 - a */
 	wire [15:0] n1, n1a;
@@ -114,8 +114,8 @@ module atg_tu_cube_edge (
 			v_out = cj;
 		end else if (!oi && !oj) begin
 			face_out = face_in;
-			u_out = u_in;
-			v_out = v_in;
+			u_out = u_in[15:0];
+			v_out = v_in[15:0];
 		end else begin
 			face_out = g;
 			u_out = ri;

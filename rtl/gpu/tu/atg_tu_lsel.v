@@ -47,7 +47,7 @@ module atg_tu_lsel (
 	localparam [1:0] OP_TEXB = 2'd1, OP_TEXF = 2'd2, OP_TEXSZ = 2'd3;
 
 	wire [31:0] lfx;
-	atg_tu_fx32 u_lfx (.f(cw2), .sh(5'd8), .q(lfx));
+	atg_tu_fx32 u_lfx (.clk(1'b0), .rst_n(1'b1), .en(1'b1), .f(cw2), .sh(5'd8), .q(lfx));
 	wire signed [16:0] lam1 = tu_sat16({lfx[31], lfx});
 	wire [32:0] lsum, bsum;
 	wire [16:0] lrnd;

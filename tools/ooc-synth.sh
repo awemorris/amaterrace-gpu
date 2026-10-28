@@ -30,6 +30,14 @@ set v_files [concat \
 	[glob -nocomplain $root/rtl/library/fp/*.v] \
 	[glob -nocomplain $root/rtl/library/mem/*.v] \
 	[glob -nocomplain $root/rtl/library/bus/*.v] \
+	[glob -nocomplain $root/rtl/gpu/tu/*.v] \
+	[glob -nocomplain $root/rtl/gpu/cp/*.v] \
+	[glob -nocomplain $root/rtl/gpu/su/*.v] \
+	[glob -nocomplain $root/rtl/gpu/rop/*.v] \
+	[glob -nocomplain $root/rtl/gpu/rx/*.v] \
+	[glob -nocomplain $root/rtl/gpu/fmt/*.v] \
+	[glob -nocomplain $root/rtl/gpu/dc/*.v] \
+	[glob -nocomplain $root/rtl/gpu/mc/*.v] \
 ]
 foreach f $v_files {
 	read_verilog $f
@@ -38,7 +46,11 @@ foreach f $v_files {
 set_property include_dirs [list "$root/include"] [current_fileset]
 
 puts "Starting OOC synthesis for $module with period $period ns..."
-synth_design -top $module -part $part -mode out_of_context -generic LAT=6
+if {$module == "am_fpu_core"} {
+	synth_design -top $module -part $part -mode out_of_context -generic LAT=6
+} else {
+	synth_design -top $module -part $part -mode out_of_context
+}
 
 create_clock -period $period -name clk [get_ports clk]
 
