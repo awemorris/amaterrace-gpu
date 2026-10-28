@@ -88,6 +88,8 @@ module atg_rx_edge (
 	wire signed [23:0] ax = sv[0], ay = sv[1], bx = sv[2], by = sv[3];
 	wire signed [23:0] ddx, ddy;
 	wire [23:0] adx, ady;
+	reg signed [23:0] r_ddx, r_ddy;
+	reg r_xmaj;
 	am_sub #(.W(24)) u_ddx (.a(bx), .b(ax), .bi(1'b0), .d(ddx), .bo(carry_unused[3]));
 	am_sub #(.W(24)) u_ddy (.a(by), .b(ay), .bi(1'b0), .d(ddy), .bo(carry_unused[4]));
 	am_addsub #(.W(24)) u_adx (.a(24'd0), .b(ddx), .sub(ddx[23]), .s(adx), .co(carry_unused[5]));
@@ -101,8 +103,8 @@ module atg_rx_edge (
 	wire [15:0] eff_point_s = point_size == 16'd0 ? 16'h0100 : point_size;
 	wire signed [23:0] half_line_w = {9'd0, eff_line_w[15:1]};
 	wire signed [23:0] half_point_s = {9'd0, eff_point_s[15:1]};
-	wire signed [23:0] ox = xmaj ? 24'sd0 : half_line_w;
-	wire signed [23:0] oy = xmaj ? half_line_w : 24'sd0;
+	wire signed [23:0] ox = r_xmaj ? 24'sd0 : half_line_w;
+	wire signed [23:0] oy = r_xmaj ? half_line_w : 24'sd0;
 
 	/* The corners: a triangle's vertices (and v0 again); a line's a-, a+,
 	 * b-, b+; a point's p--, p+-, p++, p-+.  The walked triangle is corners
@@ -129,6 +131,7 @@ module atg_rx_edge (
 	wire signed [23:0] c2y = is_tri ? vy2 : is_line ? bym : ayp;
 	wire signed [23:0] c3x = is_tri ? ax : is_line ? bxp : axm;
 	wire signed [23:0] c3y = is_tri ? ay : is_line ? byp : ayp;
+	reg signed [23:0] r_c0x, r_c0y, r_c1x, r_c1y, r_c2x, r_c2y, r_c3x, r_c3y;
 	wire [1:0] w1 = is_tri ? 2'd1 : is_line ? (md[2] ? 2'd3 : 2'd2) : (md[2] ? 2'd2 : 2'd1);
 	wire [1:0] w2 = is_tri ? 2'd2 : is_line ? (md[2] ? 2'd1 : 2'd3) : (md[2] ? 2'd3 : 2'd2);
 
@@ -159,12 +162,15 @@ module atg_rx_edge (
 		input [15:0] v;	/* a 15.8 value's integer bits */
 		pix = {{2{v[15]}}, v};
 	endfunction
-	wire signed [23:0] q0x = c0x, q1x = c1x, q2x = c2x, q3x = c3x;
-	wire signed [23:0] q0y = c0y, q1y = c1y, q2y = c2y, q3y = c3y;
+	wire signed [23:0] q0x = r_c0x, q1x = r_c1x, q2x = r_c2x, q3x = r_c3x;
+	wire signed [23:0] q0y = r_c0y, q1y = r_c1y, q2y = r_c2y, q3y = r_c3y;
 	wire signed [23:0] s6 = sv[6], s7 = sv[7], s8 = sv[8], s9 = sv[9];
 	wire signed [17:0] rx0 = pix(s6[23:8]), rx1 = pix(s7[23:8]);
 	wire signed [17:0] ry0 = pix(s8[23:8]), ry1 = pix(s9[23:8]);
-	reg signed [17:0] lo_x, lo_y, hi_x, hi_y, t_x, t_y, l_x, l_y, m_x, m_y;
+	reg signed [17:0] t_x, t_y, l_x, l_y, m_x, m_y;
+	reg signed [17:0] r_lx, r_ly, r_mx, r_my;
+	reg signed [17:0] r_mx1, r_my1;
+	reg signed [17:0] r_clx, r_cly, r_cmx, r_cmy;
 	reg signed [17:0] bx0, by0, bx1, by1;
 	always @(*) begin
 		l_x = pix(q0x[23:8]);
@@ -184,42 +190,54 @@ module atg_rx_edge (
 				m_y = t_y;
 		end
 	end
-	wire [17:0] m_x1, m_y1;	/* the largest pixel + 1 */
-	am_add #(.W(18)) u_m_x1 (.a(m_x), .b(18'd0), .ci(1'b1), .s(m_x1), .co(carry_unused[19]));
-	am_add #(.W(18)) u_m_y1 (.a(m_y), .b(18'd0), .ci(1'b1), .s(m_y1), .co(carry_unused[20]));
+	wire [17:0] m_x1, m_y1;	/* the largest pixel + 1 (calculated in Stage 2) */
+	am_add #(.W(18)) u_m_x1 (.a(r_mx), .b(18'd0), .ci(1'b1), .s(m_x1), .co(carry_unused[19]));
+	am_add #(.W(18)) u_m_y1 (.a(r_my), .b(18'd0), .ci(1'b1), .s(m_y1), .co(carry_unused[20]));
+
+	/* Stage 3 of bbox: scissor and viewport clamping */
+	reg signed [17:0] lo_scis_vp_x, lo_scis_vp_y, hi_scis_vp_x, hi_scis_vp_y;
 	always @(*) begin
-		lo_x = l_x;
-		lo_y = l_y;
-		hi_x = m_x1;
-		hi_y = m_y1;
+		lo_scis_vp_x = r_lx;
+		lo_scis_vp_y = r_ly;
+		hi_scis_vp_x = r_mx1;
+		hi_scis_vp_y = r_my1;
 		if (smax != 32'd0) begin
-			if (lo_x < $signed({2'b00, smin[15:0]}))
-				lo_x = {2'b00, smin[15:0]};
-			if (lo_y < $signed({2'b00, smin[31:16]}))
-				lo_y = {2'b00, smin[31:16]};
-			if (hi_x > $signed({2'b00, smax[15:0]}))
-				hi_x = {2'b00, smax[15:0]};
-			if (hi_y > $signed({2'b00, smax[31:16]}))
-				hi_y = {2'b00, smax[31:16]};
+			if (lo_scis_vp_x < $signed({2'b00, smin[15:0]}))
+				lo_scis_vp_x = {2'b00, smin[15:0]};
+			if (lo_scis_vp_y < $signed({2'b00, smin[31:16]}))
+				lo_scis_vp_y = {2'b00, smin[31:16]};
+			if (hi_scis_vp_x > $signed({2'b00, smax[15:0]}))
+				hi_scis_vp_x = {2'b00, smax[15:0]};
+			if (hi_scis_vp_y > $signed({2'b00, smax[31:16]}))
+				hi_scis_vp_y = {2'b00, smax[31:16]};
 		end
 		if (vprect && !md[3]) begin
-			if (lo_x < rx0)
-				lo_x = rx0;
-			if (hi_x > rx1)
-				hi_x = rx1;
-			if (lo_y < ry0)
-				lo_y = ry0;
-			if (hi_y > ry1)
-				hi_y = ry1;
+			if (lo_scis_vp_x < rx0)
+				lo_scis_vp_x = rx0;
+			if (hi_scis_vp_x > rx1)
+				hi_scis_vp_x = rx1;
+			if (lo_scis_vp_y < ry0)
+				lo_scis_vp_y = ry0;
+			if (hi_scis_vp_y > ry1)
+				hi_scis_vp_y = ry1;
 		end
-		if (lo_x < 18'sd0)
-			lo_x = 18'sd0;
-		if (lo_y < 18'sd0)
-			lo_y = 18'sd0;
-		if (hi_x > $signed({2'b00, rts[15:0]}))
-			hi_x = {2'b00, rts[15:0]};
-		if (hi_y > $signed({2'b00, rts[31:16]}))
-			hi_y = {2'b00, rts[31:16]};
+	end
+
+	/* Stage 4 of bbox: render target clamping */
+	reg signed [17:0] lo_rt_x, lo_rt_y, hi_rt_x, hi_rt_y;
+	always @(*) begin
+		lo_rt_x = r_clx;
+		lo_rt_y = r_cly;
+		hi_rt_x = r_cmx;
+		hi_rt_y = r_cmy;
+		if (lo_rt_x < 18'sd0)
+			lo_rt_x = 18'sd0;
+		if (lo_rt_y < 18'sd0)
+			lo_rt_y = 18'sd0;
+		if (hi_rt_x > $signed({2'b00, rts[15:0]}))
+			hi_rt_x = {2'b00, rts[15:0]};
+		if (hi_rt_y > $signed({2'b00, rts[31:16]}))
+			hi_rt_y = {2'b00, rts[31:16]};
 	end
 
 	/* The sample at the bbox origin, in subpixels. */
@@ -243,12 +261,15 @@ module atg_rx_edge (
 		vtx = c ? i : (i == 2'd0 ? 2'd0 : 2'd3 - i);
 	endfunction
 
-	/* int2f: a 48-bit signed integer times 2^-sh to fp32, two stages. */
+	/* int2f: a 48-bit signed integer times 2^-sh to fp32, three stages. */
+	reg [47:0] r_cabs;
+	reg r_cs;
+	reg [4:0] r_csh;
 	reg [47:0] ca;
 	reg cs;
 	reg [5:0] clz;
 	reg [4:0] csh;
-	reg [47:0] ci;	/* the input of stage A */
+	reg [47:0] ci;	/* the input of stage A1 */
 	reg [4:0] ci_sh;
 	wire [47:0] cabs;
 	reg [5:0] cl;
@@ -256,7 +277,7 @@ module atg_rx_edge (
 	always @(*) begin
 		cl = 6'd48;
 		for (k = 0; k < 48; k = k + 1)
-			if (cabs[k])
+			if (r_cabs[k])
 				cl = 6'd47 - k[5:0];
 	end
 	/* normalised, RNE; the exponent 174 - clz - csh (+ 1 when the rounding carries) */
@@ -272,19 +293,19 @@ module atg_rx_edge (
 		.bo(carry_unused[24]));
 	wire [31:0] c_out = ca == 48'd0 ? 32'd0 : {cs, ce[7:0], cm[24] ? cm[23:1] : cm[22:0]};
 
-	/* Steps 25-31 convert DX1 DY1 DX2 DY2 DF OX OY of the plane triangle (OX, OY:
+	/* Steps 24-30 select DX1 DY1 DX2 DY2 DF OX OY of the plane triangle (OX, OY:
 	 * one subtracter). */
 	wire [47:0] co_d;
-	am_sub #(.W(48)) u_co_d (.a(cnt == 6'd30 ? {{23{sx[24]}}, sx} : {{23{sy[24]}}, sy}),
-		.b(cnt == 6'd30 ? {{24{p0x[23]}}, p0x} : {{24{p0y[23]}}, p0y}), .bi(1'b0), .d(co_d),
+	am_sub #(.W(48)) u_co_d (.a(cnt == 6'd29 ? {{23{sx[24]}}, sx} : {{23{sy[24]}}, sy}),
+		.b(cnt == 6'd29 ? {{24{p0x[23]}}, p0x} : {{24{p0y[23]}}, p0y}), .bi(1'b0), .d(co_d),
 		.bo(carry_unused[25]));
 	always @(*) begin
 		case (cnt)
-		6'd25: begin ci = {{24{pdx1[23]}}, pdx1}; ci_sh = 5'd8; end
-		6'd26: begin ci = {{24{pdy1[23]}}, pdy1}; ci_sh = 5'd8; end
-		6'd27: begin ci = {{24{pdx2[23]}}, pdx2}; ci_sh = 5'd8; end
-		6'd28: begin ci = {{24{pdy2[23]}}, pdy2}; ci_sh = 5'd8; end
-		6'd29: begin ci = pdd; ci_sh = 5'd16; end
+		6'd24: begin ci = {{24{pdx1[23]}}, pdx1}; ci_sh = 5'd8; end
+		6'd25: begin ci = {{24{pdy1[23]}}, pdy1}; ci_sh = 5'd8; end
+		6'd26: begin ci = {{24{pdx2[23]}}, pdx2}; ci_sh = 5'd8; end
+		6'd27: begin ci = {{24{pdy2[23]}}, pdy2}; ci_sh = 5'd8; end
+		6'd28: begin ci = pdd; ci_sh = 5'd16; end
 		default: begin ci = co_d; ci_sh = 5'd8; end
 		endcase
 	end
@@ -358,37 +379,63 @@ module atg_rx_edge (
 				r_ra <= rrv;
 			if (cnt >= 6'd1 && cnt <= 6'd10)
 				sv[tsn] <= snap;
+			if (cnt == 6'd7) begin
+				r_xmaj <= xmaj;
+				r_ddx <= ddx;
+				r_ddy <= ddy;
+			end
+			if (cnt == 6'd9) begin
+				r_c0x <= c0x;
+				r_c0y <= c0y;
+				r_c1x <= c1x;
+				r_c1y <= c1y;
+				r_c2x <= c2x;
+				r_c2y <= c2y;
+				r_c3x <= c3x;
+				r_c3y <= c3y;
+			end
 			/* 11: the walked triangle, the corners, the plane triangle */
 			if (cnt == 6'd11) begin
-				fx[0] <= c0x;
-				fy[0] <= c0y;
-				fx[1] <= w1[1] ? (w1[0] ? c3x : c2x) : c1x;
-				fy[1] <= w1[1] ? (w1[0] ? c3y : c2y) : c1y;
-				fx[2] <= w2[1] ? (w2[0] ? c3x : c2x) : c1x;
-				fy[2] <= w2[1] ? (w2[0] ? c3y : c2y) : c1y;
-				pdx1 <= is_tri || is_line ? ddx : 24'sd256;
-				pdy1 <= is_tri || is_line ? ddy : 24'sd0;
-				pdx2 <= is_tri ? vdx2 : is_line && xmaj ? 24'sd0 : is_line ? 24'sd256 : 24'sd0;
-				pdy2 <= is_tri ? vdy2 : is_line && !xmaj ? 24'sd0 : 24'sd256;
-				pdd <= !is_line ? 48'sd65536 : xmaj ? {{16{ddx[23]}}, ddx, 8'd0} : ndy;
+				fx[0] <= r_c0x;
+				fy[0] <= r_c0y;
+				fx[1] <= w1[1] ? (w1[0] ? r_c3x : r_c2x) : r_c1x;
+				fy[1] <= w1[1] ? (w1[0] ? r_c3y : r_c2y) : r_c1y;
+				fx[2] <= w2[1] ? (w2[0] ? r_c3x : r_c2x) : r_c1x;
+				fy[2] <= w2[1] ? (w2[0] ? r_c3y : r_c2y) : r_c1y;
+				pdx1 <= is_tri || is_line ? r_ddx : 24'sd256;
+				pdy1 <= is_tri || is_line ? r_ddy : 24'sd0;
+				pdx2 <= is_tri ? vdx2 : is_line && r_xmaj ? 24'sd0 : is_line ? 24'sd256 : 24'sd0;
+				pdy2 <= is_tri ? vdy2 : is_line && !r_xmaj ? 24'sd0 : 24'sd256;
+				pdd <= !is_line ? 48'sd65536 : r_xmaj ? {{16{r_ddx[23]}}, r_ddx, 8'd0} : ndy;
 				p0x <= ax;
 				p0y <= ay;
+				r_lx <= l_x;
+				r_ly <= l_y;
+				r_mx <= m_x;
+				r_my <= m_y;
 			end
-			/* 12: bbox; 12-15: D */
+			/* 12-14: bbox pipelined; 12-15: D */
 			if (cnt == 6'd12) begin
-				bx0 <= lo_x;
-				by0 <= lo_y;
-				bx1 <= hi_x;
-				by1 <= hi_y;
+				r_mx1 <= m_x1;
+				r_my1 <= m_y1;
 				ma <= {dx1[23], dx1};
 				mb <= {dy2[23], dy2};
 			end
 			if (cnt == 6'd13) begin
+				r_clx <= lo_scis_vp_x;
+				r_cly <= lo_scis_vp_y;
+				r_cmx <= hi_scis_vp_x;
+				r_cmy <= hi_scis_vp_y;
 				ma <= {dx2[23], dx2};
 				mb <= {dy1[23], dy1};
 			end
-			if (cnt == 6'd14)
+			if (cnt == 6'd14) begin
+				bx0 <= lo_rt_x;
+				by0 <= lo_rt_y;
+				bx1 <= hi_rt_x;
+				by1 <= hi_rt_y;
 				dd <= mp[47:0];
+			end
 			if (cnt == 6'd15) begin
 				dd <= dd_n;
 				ccw <= dd_n[47];
@@ -434,12 +481,17 @@ module atg_rx_edge (
 				else
 					eE[ek] <= eE_n;
 			end
-			/* 25-31: int2f stage A; 26-32: stage B into fp registers 40-46 */
+			/* 24-30: int2f stage A1; 25-31: stage A2; 26-32: stage B into fp registers 40-46 */
+			if (cnt >= 6'd24 && cnt <= 6'd30) begin
+				r_cabs <= cabs;
+				r_cs <= ci[47];
+				r_csh <= ci_sh;
+			end
 			if (cnt >= 6'd25 && cnt <= 6'd31) begin
-				ca <= cabs;
-				cs <= ci[47];
+				ca <= r_cabs;
+				cs <= r_cs;
 				clz <= cl;
-				csh <= ci_sh;
+				csh <= r_csh;
 			end
 			if (cnt >= 6'd26 && cnt <= 6'd32) begin
 				r_we <= 1'b1;
