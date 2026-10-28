@@ -87,32 +87,36 @@ module atg_su_wb #(
 	 */
 	localparam IN_LOG2 = $clog2(2 * (SHORT_LAT + 2 * G + 2));
 
-	/* The short result of this cycle (at most one source is valid). */
-	reg sv;
-	reg [WARP_W-1:0] sw;
-	reg [GRP_W-1:0] sg;
-	reg [6:0] srd;
-	reg [DW-1:0] sd;
-	reg [NPHYS-1:0] sl;
-	integer i;
-	always @(*) begin
-		sv = 1'b0;
-		sw = {WARP_W{1'b0}};
-		sg = {GRP_W{1'b0}};
-		srd = 7'd0;
-		sd = {DW{1'b0}};
-		sl = {NPHYS{1'b0}};
-		for (i = 0; i < NS; i = i + 1) begin
-			if (s_valid[i]) begin
-				sv = 1'b1;
-				sw = sw | s_warp[i*WARP_W +: WARP_W];
-				sg = sg | s_grp[i*GRP_W +: GRP_W];
-				srd = srd | s_rd[i*7 +: 7];
-				sd = sd | s_data[i*DW +: DW];
-				sl = sl | s_lanes[i*NPHYS +: NPHYS];
-			end
-		end
-	end
+	/* The short result of this cycle: structured balanced 2-level MUX tree (at most one valid per cycle) */
+	wire v_01 = s_valid[0] || s_valid[1];
+	wire v_23 = s_valid[2] || s_valid[3];
+
+	wire [DW-1:0] sd_01 = s_valid[0] ? s_data[0*DW +: DW] : s_data[1*DW +: DW];
+	wire [DW-1:0] sd_23 = s_valid[2] ? s_data[2*DW +: DW] : s_data[3*DW +: DW];
+	wire [DW-1:0] sd_45 = s_valid[4] ? s_data[4*DW +: DW] : s_data[5*DW +: DW];
+	wire [DW-1:0] sd = v_01 ? sd_01 : (v_23 ? sd_23 : sd_45);
+
+	wire [6:0] srd_01 = s_valid[0] ? s_rd[0*7 +: 7] : s_rd[1*7 +: 7];
+	wire [6:0] srd_23 = s_valid[2] ? s_rd[2*7 +: 7] : s_rd[3*7 +: 7];
+	wire [6:0] srd_45 = s_valid[4] ? s_rd[4*7 +: 7] : s_rd[5*7 +: 7];
+	wire [6:0] srd = v_01 ? srd_01 : (v_23 ? srd_23 : srd_45);
+
+	wire [WARP_W-1:0] sw_01 = s_valid[0] ? s_warp[0*WARP_W +: WARP_W] : s_warp[1*WARP_W +: WARP_W];
+	wire [WARP_W-1:0] sw_23 = s_valid[2] ? s_warp[2*WARP_W +: WARP_W] : s_warp[3*WARP_W +: WARP_W];
+	wire [WARP_W-1:0] sw_45 = s_valid[4] ? s_warp[4*WARP_W +: WARP_W] : s_warp[5*WARP_W +: WARP_W];
+	wire [WARP_W-1:0] sw = v_01 ? sw_01 : (v_23 ? sw_23 : sw_45);
+
+	wire [GRP_W-1:0] sg_01 = s_valid[0] ? s_grp[0*GRP_W +: GRP_W] : s_grp[1*GRP_W +: GRP_W];
+	wire [GRP_W-1:0] sg_23 = s_valid[2] ? s_grp[2*GRP_W +: GRP_W] : s_grp[3*GRP_W +: GRP_W];
+	wire [GRP_W-1:0] sg_45 = s_valid[4] ? s_grp[4*GRP_W +: GRP_W] : s_grp[5*GRP_W +: GRP_W];
+	wire [GRP_W-1:0] sg = v_01 ? sg_01 : (v_23 ? sg_23 : sg_45);
+
+	wire [NPHYS-1:0] sl_01 = s_valid[0] ? s_lanes[0*NPHYS +: NPHYS] : s_lanes[1*NPHYS +: NPHYS];
+	wire [NPHYS-1:0] sl_23 = s_valid[2] ? s_lanes[2*NPHYS +: NPHYS] : s_lanes[3*NPHYS +: NPHYS];
+	wire [NPHYS-1:0] sl_45 = s_valid[4] ? s_lanes[4*NPHYS +: NPHYS] : s_lanes[5*NPHYS +: NPHYS];
+	wire [NPHYS-1:0] sl = v_01 ? sl_01 : (v_23 ? sl_23 : sl_45);
+
+	wire sv = |s_valid;
 
 	/* Input writes: one FIFO per source (VF, RX), since they cannot wait. */
 	wire [1:0] fi_valid;
