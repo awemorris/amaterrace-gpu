@@ -128,9 +128,9 @@ module atg_su_sb #(
 	reg [NE*6-1:0] e_r2;
 	reg [NE*6-1:0] e_r3;
 	reg [NE-1:0] e_wide;
-	(* extract_enable = "no" *) reg [NWARPS*CNT_W-1:0] cm;
-	(* extract_enable = "no" *) reg [NWARPS*CNT_W-1:0] ct;
-	(* extract_enable = "no" *) reg [NWARPS*CNT_W-1:0] cx;
+	reg [NWARPS*CNT_W-1:0] cm;
+	reg [NWARPS*CNT_W-1:0] ct;
+	reg [NWARPS*CNT_W-1:0] cx;
 
 	/* The release of this cycle, applied before the checks. */
 	wire rel_e = rel_valid && rel_sbe != {(SBE_W+1){1'b1}};
@@ -157,73 +157,71 @@ module atg_su_sb #(
 		end
 	endfunction
 
-	/* The warp's entries (valid, r0..r3, wide) and counters. */
-	reg [SB_ENTRIES-1:0] uw_v;
-	reg [SB_ENTRIES*6-1:0] uw_r0;
-	reg [SB_ENTRIES*6-1:0] uw_r1;
-	reg [SB_ENTRIES*6-1:0] uw_r2;
-	reg [SB_ENTRIES*6-1:0] uw_r3;
-	reg [SB_ENTRIES-1:0] uw_wide;
-	reg [CNT_W-1:0] ucm, uct, ucx;
-	integer uj, uw;
+	/* Per-warp parallel long hazard checks and free entry search.
+	 * Eliminates u_warp MUX from the long hazard critical path. */
+	wire [NWARPS-1:0] warp_hz_long;
+	wire [NWARPS-1:0] warp_have_free;
+	wire [NWARPS*(SBE_W+1)-1:0] warp_free_e;
+
+	genvar gw, gj;
+	generate
+		for (gw = 0; gw < NWARPS; gw = gw + 1) begin : g_whz
+			wire [SB_ENTRIES-1:0] entry_hit;
+			for (gj = 0; gj < SB_ENTRIES; gj = gj + 1) begin : g_ehit
+				localparam EIDX = gw * SB_ENTRIES + gj;
+				wire ev_val = ev[EIDX];
+				wire [5:0] er0 = e_r0[EIDX*6 +: 6];
+				wire [5:0] er1 = e_r1[EIDX*6 +: 6];
+				wire [5:0] er2 = e_r2[EIDX*6 +: 6];
+				wire [5:0] er3 = e_r3[EIDX*6 +: 6];
+				wire ewd = e_wide[EIDX];
+
+				wire rhit = (src1 && hit_entry(rs1[5:0], er0, er1, er2, er3, ewd)) ||
+				            (src2 && hit_entry(rs2[5:0], er0, er1, er2, er3, ewd)) ||
+				            (src3 && hit_entry(rs3[5:0], er0, er1, er2, er3, ewd)) ||
+				            (src4 && hit_entry(rs1p[5:0], er0, er1, er2, er3, ewd)) ||
+				            (src5 && hit_entry(rs3p[5:0], er0, er1, er2, er3, ewd));
+				wire whit = dst && (
+				            (er0 == rd[5:0]) ||
+				            (wide && (er0 == rd_p1 || er0 == rd_p2 || er0 == rd_p3)) ||
+				            (ewd && (rd[5:0] == er1 || rd[5:0] == er2 || rd[5:0] == er3)));
+
+				assign entry_hit[gj] = ev_val && (rhit || whit);
+			end
+
+			assign warp_hz_long[gw] = |entry_hit;
+
+			wire [SB_ENTRIES-1:0] wev = ev[gw*SB_ENTRIES +: SB_ENTRIES];
+			assign warp_have_free[gw] = ~(&wev);
+			assign warp_free_e[gw*(SBE_W+1) +: (SBE_W+1)] =
+				!wev[0] ? 3'd0 :
+				!wev[1] ? 3'd1 :
+				!wev[2] ? 3'd2 :
+				!wev[3] ? 3'd3 : 3'd7;
+		end
+	endgenerate
+
+	wire hz_long = warp_hz_long[u_warp];
+	wire have_free = warp_have_free[u_warp];
+	reg [SBE_W:0] free_e;
+	integer mfe;
 	always @(*) begin
-		uw_v = {SB_ENTRIES{1'b0}};
-		uw_r0 = {(SB_ENTRIES*6){1'b0}};
-		uw_r1 = {(SB_ENTRIES*6){1'b0}};
-		uw_r2 = {(SB_ENTRIES*6){1'b0}};
-		uw_r3 = {(SB_ENTRIES*6){1'b0}};
-		uw_wide = {SB_ENTRIES{1'b0}};
+		free_e = {(SBE_W+1){1'b1}};
+		for (mfe = 0; mfe < NWARPS; mfe = mfe + 1)
+			if (u_warp == mfe[WARP_W-1:0])
+				free_e = warp_free_e[mfe*(SBE_W+1) +: (SBE_W+1)];
+	end
+
+	/* Selected warp's counters for wait/fence/end instructions. */
+	reg [CNT_W-1:0] ucm, uct, ucx;
+	integer uw;
+	always @(*) begin
 		{ucm, uct, ucx} = {(3*CNT_W){1'b0}};
 		for (uw = 0; uw < NWARPS; uw = uw + 1)
 			if (u_warp == uw[WARP_W-1:0]) begin
-				for (uj = 0; uj < SB_ENTRIES; uj = uj + 1) begin
-					uw_v[uj] = ev[uw * SB_ENTRIES + uj];
-					uw_r0[uj*6 +: 6] = e_r0[(uw * SB_ENTRIES + uj)*6 +: 6];
-					uw_r1[uj*6 +: 6] = e_r1[(uw * SB_ENTRIES + uj)*6 +: 6];
-					uw_r2[uj*6 +: 6] = e_r2[(uw * SB_ENTRIES + uj)*6 +: 6];
-					uw_r3[uj*6 +: 6] = e_r3[(uw * SB_ENTRIES + uj)*6 +: 6];
-					uw_wide[uj] = e_wide[uw * SB_ENTRIES + uj];
-				end
 				{ucm, uct, ucx} = {cm[uw*CNT_W +: CNT_W], ct[uw*CNT_W +: CNT_W],
 					cx[uw*CNT_W +: CNT_W]};
 			end
-	end
-
-	/* Long hazards: a used source or the destination range meets an entry. */
-	reg hz_long;
-	reg [SBE_W:0] free_e;
-	reg have_free;
-	integer j;
-	reg [5:0] j_r0, j_r1, j_r2, j_r3;
-	reg jw;
-	reg raw_hit, waw_hit;
-	always @(*) begin
-		hz_long = 1'b0;
-		have_free = 1'b0;
-		free_e = {(SBE_W+1){1'b1}};
-		for (j = SB_ENTRIES - 1; j >= 0; j = j - 1) begin
-			j_r0 = uw_r0[j*6 +: 6];
-			j_r1 = uw_r1[j*6 +: 6];
-			j_r2 = uw_r2[j*6 +: 6];
-			j_r3 = uw_r3[j*6 +: 6];
-			jw = uw_wide[j];
-			if (uw_v[j]) begin
-				raw_hit = (src1 && hit_entry(rs1[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
-				          (src2 && hit_entry(rs2[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
-				          (src3 && hit_entry(rs3[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
-				          (src4 && hit_entry(rs1p[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
-				          (src5 && hit_entry(rs3p[5:0], j_r0, j_r1, j_r2, j_r3, jw));
-				waw_hit = dst && (
-				          (j_r0 == rd[5:0]) ||
-				          (wide && (j_r0 == rd_p1 || j_r0 == rd_p2 || j_r0 == rd_p3)) ||
-				          (jw && (rd[5:0] == j_r1 || rd[5:0] == j_r2 || rd[5:0] == j_r3)));
-				if (raw_hit || waw_hit)
-					hz_long = 1'b1;
-			end else begin
-				have_free = 1'b1;
-				free_e = j[SBE_W:0];
-			end
-		end
 	end
 
 	/* Short writers: issued and not past atg_su_opd (in order), then counting. */
@@ -371,17 +369,9 @@ module atg_su_sb #(
 			am_add #(.W(CNT_W)) u_cx_p1 (.a(w_cx), .b(6'd1), .ci(1'b0), .s(w_cx_p1), .co(cx_p1_co));
 			am_sub #(.W(CNT_W)) u_cx_m1 (.a(w_cx), .b(6'd1), .bi(1'b0), .d(w_cx_m1), .bo(cx_m1_bo));
 
-			wire [CNT_W-1:0] cm_base = rm ? w_cm_m1 : w_cm;
-			wire [CNT_W-1:0] cm_inc  = rm ? w_cm    : w_cm_p1;
-			assign cm_next[gq*CNT_W +: CNT_W] = im ? cm_inc : cm_base;
-
-			wire [CNT_W-1:0] ct_base = rt ? w_ct_m1 : w_ct;
-			wire [CNT_W-1:0] ct_inc  = rt ? w_ct    : w_ct_p1;
-			assign ct_next[gq*CNT_W +: CNT_W] = it ? ct_inc : ct_base;
-
-			wire [CNT_W-1:0] cx_base = rx ? w_cx_m1 : w_cx;
-			wire [CNT_W-1:0] cx_inc  = rx ? w_cx    : w_cx_p1;
-			assign cx_next[gq*CNT_W +: CNT_W] = ix ? cx_inc : cx_base;
+			assign cm_next[gq*CNT_W +: CNT_W] = (im && !rm) ? w_cm_p1 : (rm && !im) ? w_cm_m1 : w_cm;
+			assign ct_next[gq*CNT_W +: CNT_W] = (it && !rt) ? w_ct_p1 : (rt && !it) ? w_ct_m1 : w_ct;
+			assign cx_next[gq*CNT_W +: CNT_W] = (ix && !rx) ? w_cx_p1 : (rx && !ix) ? w_cx_m1 : w_cx;
 
 			wire unused_cnt_co = &{1'b0, cm_p1_co, cm_m1_bo, ct_p1_co, ct_m1_bo, cx_p1_co, cx_m1_bo};
 		end
