@@ -821,20 +821,19 @@ module am_fpu_core #(
 		am_add #(.W(12)) u_fma_t2 (.a(s5_t1), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_t2), .co(fma_carry_unused5[2]));
 		am_sub #(.W(12)) u_fma_er (.a(s5_t2), .b(12'd175), .bi(1'b0), .d(s5_er), .bo(fma_carry_unused5[3]));
 
-		/* Precompute sticky, guard, rounding up, and all-ones in Stage 5 */
+		/* Precompute guard and 6-bit sticky chunks in Stage 5 (1-LUT level) */
 		wire [23:0] s5_m = s5_nrm[76:53];
 		wire s5_g = s5_nrm[52];
-		wire s5_st = |s5_nrm[51:0];
-		wire s5_m_all1 = &s5_m;
-		reg s5_up;
-		always @(*)
-			case (s5_rm)
-			3'd1, 3'd5, 3'd6: s5_up = 1'b0;
-			3'd2: s5_up = s5_sr && (s5_g || s5_st);
-			3'd3: s5_up = !s5_sr && (s5_g || s5_st);
-			3'd4: s5_up = s5_g;
-			default: s5_up = s5_g && (s5_st || s5_m[0]);
-			endcase
+		wire [8:0] s5_st_chunks;
+		assign s5_st_chunks[0] = |s5_nrm[5:0];
+		assign s5_st_chunks[1] = |s5_nrm[11:6];
+		assign s5_st_chunks[2] = |s5_nrm[17:12];
+		assign s5_st_chunks[3] = |s5_nrm[23:18];
+		assign s5_st_chunks[4] = |s5_nrm[29:24];
+		assign s5_st_chunks[5] = |s5_nrm[35:30];
+		assign s5_st_chunks[6] = |s5_nrm[41:36];
+		assign s5_st_chunks[7] = |s5_nrm[47:42];
+		assign s5_st_chunks[8] = |s5_nrm[51:48];
 
 		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
 		reg [31:0] s6_rs_other;
@@ -845,10 +844,8 @@ module am_fpu_core #(
 		reg [23:0] s6_m;
 		reg [11:0] s6_er;
 		reg        s6_sr;
-		reg        s6_up;
 		reg        s6_g;
-		reg        s6_st;
-		reg        s6_m_all1;
+		reg [8:0]  s6_st_chunks;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -857,43 +854,51 @@ module am_fpu_core #(
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
-				s6_rs_other <= 32'd0;
-				s6_fma      <= 1'b0;
-				s6_sat      <= 1'b0;
-				s6_flt      <= 1'b0;
-				s6_m        <= 24'd0;
-				s6_er       <= 12'd0;
-				s6_sr       <= 1'b0;
-				s6_up       <= 1'b0;
-				s6_g        <= 1'b0;
-				s6_st       <= 1'b0;
-				s6_m_all1   <= 1'b0;
-				s6_sum_nz   <= 1'b0;
-				s6_rm       <= 3'd0;
-				s6_rdn      <= 1'b0;
-				s6_spec_hit <= 1'b0;
-				s6_spec_res <= 32'd0;
+				s6_rs_other   <= 32'd0;
+				s6_fma        <= 1'b0;
+				s6_sat        <= 1'b0;
+				s6_flt        <= 1'b0;
+				s6_m          <= 24'd0;
+				s6_er         <= 12'd0;
+				s6_sr         <= 1'b0;
+				s6_g          <= 1'b0;
+				s6_st_chunks  <= 9'd0;
+				s6_sum_nz     <= 1'b0;
+				s6_rm         <= 3'd0;
+				s6_rdn        <= 1'b0;
+				s6_spec_hit   <= 1'b0;
+				s6_spec_res   <= 32'd0;
 			end else if (en) begin
-				s6_rs_other <= s5_rs_other;
-				s6_fma      <= s5_fma;
-				s6_sat      <= s5_sat;
-				s6_flt      <= s5_flt;
-				s6_m        <= s5_m;
-				s6_er       <= s5_er;
-				s6_sr       <= s5_sr;
-				s6_up       <= s5_up;
-				s6_g        <= s5_g;
-				s6_st       <= s5_st;
-				s6_m_all1   <= s5_m_all1;
-				s6_sum_nz   <= s5_sum_nz;
-				s6_rm       <= s5_rm;
-				s6_rdn      <= s5_rdn;
-				s6_spec_hit <= s5_spec_hit;
-				s6_spec_res <= s5_spec_res;
+				s6_rs_other   <= s5_rs_other;
+				s6_fma        <= s5_fma;
+				s6_sat        <= s5_sat;
+				s6_flt        <= s5_flt;
+				s6_m          <= s5_m;
+				s6_er         <= s5_er;
+				s6_sr         <= s5_sr;
+				s6_g          <= s5_g;
+				s6_st_chunks  <= s5_st_chunks;
+				s6_sum_nz     <= s5_sum_nz;
+				s6_rm         <= s5_rm;
+				s6_rdn        <= s5_rdn;
+				s6_spec_hit   <= s5_spec_hit;
+				s6_spec_res   <= s5_spec_res;
 			end
 		end
 
 		/* Stage 6: Fast Inline Parallel Rounding for LAT >= 6 */
+		wire s6_st = |s6_st_chunks;
+		reg s6_up;
+		always @(*)
+			case (s6_rm)
+			3'd1, 3'd5, 3'd6: s6_up = 1'b0;
+			3'd2: s6_up = s6_sr && (s6_g || s6_st);
+			3'd3: s6_up = !s6_sr && (s6_g || s6_st);
+			3'd4: s6_up = s6_g;
+			default: s6_up = s6_g && (s6_st || s6_m[0]);
+			endcase
+
+		wire s6_m_all1 = &s6_m;
 		wire s6_m_carry = s6_m_all1 && s6_up;
 
 		wire [24:0] s6_mr0;
