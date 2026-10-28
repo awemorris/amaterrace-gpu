@@ -208,6 +208,7 @@ module atg_blt_2d #(
 	reg [16:0] px_b, spx_b, rem_b, rows_b;
 	reg [1:0] ydl_b, ysl_b;
 	reg [ADDR_W-1:0] dst_row_b, src_row_b;
+	reg [2:0] psl_w;
 
 	/* Burst segment pipeline registers: 3-stage pipeline */
 	/* Stage 1 -> Stage 2 (Geom pipeline registers) */
@@ -279,18 +280,18 @@ module atg_blt_2d #(
 	 */
 	/* Stage 1: Walk Stage (Computes only bst_seg_n for coordinate walking) */
 	wire [ADDR_W-1:0] d_px_w = x_pixels(px_b, m_dtile);
-	wire [ADDR_W-1:0] d_xb_w = (psl == 3'd4) ? {d_px_w[ADDR_W-5:0], 4'b0000} :
-	                           (psl == 3'd3) ? {d_px_w[ADDR_W-4:0], 3'b000}  :
-	                           (psl == 3'd2) ? {d_px_w[ADDR_W-3:0], 2'b00}   :
-	                           (psl == 3'd1) ? {d_px_w[ADDR_W-2:0], 1'b0}    : d_px_w;
+	wire [US-1:0] d_xb_w = (psl_w == 3'd4) ? {d_px_w[US-5:0], 4'b0000} :
+	                       (psl_w == 3'd3) ? {d_px_w[US-4:0], 3'b000}  :
+	                       (psl_w == 3'd2) ? {d_px_w[US-3:0], 2'b00}   :
+	                       (psl_w == 3'd1) ? {d_px_w[US-2:0], 1'b0}    : d_px_w[US-1:0];
 	wire [US-1:0] cur_da_w;
 	wire w_da_co;
-	am_add #(.W(US)) a_da_w (.a(dst_row_b[US-1:0]), .b(d_xb_w[US-1:0]), .ci(1'b0), .s(cur_da_w), .co(w_da_co));
+	am_add #(.W(US)) a_da_w (.a(dst_row_b[US-1:0]), .b(d_xb_w), .ci(1'b0), .s(cur_da_w), .co(w_da_co));
 
 	wire [US:0] bst_seg_n;
 	wire bst_seg_last;
 	atg_blt_seg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) bst_seg (
-		.psl(psl), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
+		.psl(psl_w), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
 		.da(cur_da_w), .px(px_b[1:0]), .spx(spx_b[1:0]), .rem(rem_b),
 		.sn({(US+1){1'b0}}), .snu({(US+1){1'b0}}), .dlo({US{1'b0}}), .slo({ADDR_W{1'b0}}),
 		.p0({US{1'b0}}), .seg_n(bst_seg_n), .seg_last(bst_seg_last), .back(), .src_base(),
@@ -306,33 +307,33 @@ module atg_blt_2d #(
 	/* Stage 2: Geom / Address Engine (Computed from g_* registers in next cycle) */
 	wire [ADDR_W-1:0] d_px_g = x_pixels(g_px, m_dtile);
 	wire [ADDR_W-1:0] s_px_g = x_pixels(g_spx, m_stile);
-	wire [ADDR_W-1:0] d_xb_g = (psl == 3'd4) ? {d_px_g[ADDR_W-5:0], 4'b0000} :
-	                           (psl == 3'd3) ? {d_px_g[ADDR_W-4:0], 3'b000}  :
-	                           (psl == 3'd2) ? {d_px_g[ADDR_W-3:0], 2'b00}   :
-	                           (psl == 3'd1) ? {d_px_g[ADDR_W-2:0], 1'b0}    : d_px_g;
-	wire [ADDR_W-1:0] s_xb_g = (psl == 3'd4) ? {s_px_g[ADDR_W-5:0], 4'b0000} :
-	                           (psl == 3'd3) ? {s_px_g[ADDR_W-4:0], 3'b000}  :
-	                           (psl == 3'd2) ? {s_px_g[ADDR_W-3:0], 2'b00}   :
-	                           (psl == 3'd1) ? {s_px_g[ADDR_W-2:0], 1'b0}    : s_px_g;
+	wire [ADDR_W-1:0] d_xb_g = (psl_w == 3'd4) ? {d_px_g[ADDR_W-5:0], 4'b0000} :
+	                           (psl_w == 3'd3) ? {d_px_g[ADDR_W-4:0], 3'b000}  :
+	                           (psl_w == 3'd2) ? {d_px_g[ADDR_W-3:0], 2'b00}   :
+	                           (psl_w == 3'd1) ? {d_px_g[ADDR_W-2:0], 1'b0}    : d_px_g;
+	wire [ADDR_W-1:0] s_xb_g = (psl_w == 3'd4) ? {s_px_g[ADDR_W-5:0], 4'b0000} :
+	                           (psl_w == 3'd3) ? {s_px_g[ADDR_W-4:0], 3'b000}  :
+	                           (psl_w == 3'd2) ? {s_px_g[ADDR_W-3:0], 2'b00}   :
+	                           (psl_w == 3'd1) ? {s_px_g[ADDR_W-2:0], 1'b0}    : s_px_g;
 
 	wire [US-1:0] g_da_lo, g_sa_lo;
 	wire [1:0] g_dsa_co;
 	am_add #(.W(US)) a_da_lo (.a(g_dst_row[US-1:0]), .b(d_xb_g[US-1:0]), .ci(1'b0), .s(g_da_lo), .co(g_dsa_co[0]));
 	am_add #(.W(US)) a_sa_lo (.a(g_src_row[US-1:0]), .b(s_xb_g[US-1:0]), .ci(1'b0), .s(g_sa_lo), .co(g_dsa_co[1]));
 
-	wire [US:0] g_seg_bytes = (psl == 3'd4) ? {g_seg_n[US-4:0], 4'b0000} :
-	                          (psl == 3'd3) ? {g_seg_n[US-3:0], 3'b000}  :
-	                          (psl == 3'd2) ? {g_seg_n[US-2:0], 2'b00}   :
-	                          (psl == 3'd1) ? {g_seg_n[US-1:0], 1'b0}    : g_seg_n;
+	wire [US:0] g_seg_bytes = (psl_w == 3'd4) ? {g_seg_n[US-4:0], 4'b0000} :
+	                          (psl_w == 3'd3) ? {g_seg_n[US-3:0], 3'b000}  :
+	                          (psl_w == 3'd2) ? {g_seg_n[US-2:0], 2'b00}   :
+	                          (psl_w == 3'd1) ? {g_seg_n[US-1:0], 1'b0}    : g_seg_n;
 
 	wire [US:0] g_back_n;
 	wire [1:0] g_back_co;
 	am_sub #(.W(US + 1)) s_bn_b (.a(g_seg_n), .b({(US + 1){1'b0}}), .bi(1'b1), .d(g_back_n), .bo(g_back_co[0]));
-	wire [ADDR_W-1:0] g_back = (psl == 3'd4) ? {{(ADDR_W - US - 5){1'b0}}, g_back_n, 4'b0000} :
-	                           (psl == 3'd3) ? {{(ADDR_W - US - 4){1'b0}}, g_back_n, 3'b000}  :
-	                           (psl == 3'd2) ? {{(ADDR_W - US - 3){1'b0}}, g_back_n, 2'b00}   :
-	                           (psl == 3'd1) ? {{(ADDR_W - US - 2){1'b0}}, g_back_n, 1'b0}    :
-	                                           {{(ADDR_W - US - 1){1'b0}}, g_back_n};
+	wire [ADDR_W-1:0] g_back = (psl_w == 3'd4) ? {{(ADDR_W - US - 5){1'b0}}, g_back_n, 4'b0000} :
+	                           (psl_w == 3'd3) ? {{(ADDR_W - US - 4){1'b0}}, g_back_n, 3'b000}  :
+	                           (psl_w == 3'd2) ? {{(ADDR_W - US - 3){1'b0}}, g_back_n, 2'b00}   :
+	                           (psl_w == 3'd1) ? {{(ADDR_W - US - 2){1'b0}}, g_back_n, 1'b0}    :
+	                                             {{(ADDR_W - US - 1){1'b0}}, g_back_n};
 
 	wire [US-1:0] g_dlo_lo_rev;
 	wire g_dlo_lo_bo;
@@ -658,6 +659,7 @@ module atg_blt_2d #(
 			m_dtile <= 1'b0;
 			m_stile <= 1'b0;
 			psl <= 3'd2;
+			psl_w <= 3'd2;
 			m_keep <= 4'd0;
 			m_burst <= 1'b0;
 			rd_first <= 1'b0;
@@ -768,6 +770,7 @@ module atg_blt_2d #(
 						ysl_b <= ys_start[1:0];
 						dst_row_b <= dst_row;
 						src_row_b <= src_row;
+						psl_w <= psl;
 						bw_bank <= 1'b0;
 						bw_seg_idx <= 3'd0;
 						bw_slot_cnt <= 4'd0;
