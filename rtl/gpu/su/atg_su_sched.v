@@ -131,15 +131,26 @@ module atg_su_sched #(
 	reg [3:0] wg_tag;
 	reg [3:0] wk;	/* next warp of the workgroup being launched */
 	reg launching;
+	/* Compute workgroup size pipelined over 3 cycles */
+	reg [7:0] wg_z_r1;
 	wire [15:0] lanes_xy;
 	wire [23:0] lanes;
-	am_mul #(.AW(8), .BW(8)) u_lxy (.clk(clk), .en(1'b1), .a(wg_x), .b(wg_y), .p(lanes_xy));
-	am_mul #(.AW(16), .BW(8)) u_lanes (.clk(clk), .en(1'b1), .a(lanes_xy), .b(wg_z), .p(lanes));
+	am_mul #(.AW(8), .BW(8), .LAT(1)) u_lxy (.clk(clk), .en(1'b1), .a(wg_x), .b(wg_y), .p(lanes_xy));
+	am_mul #(.AW(16), .BW(8), .LAT(1)) u_lanes (.clk(clk), .en(1'b1), .a(lanes_xy), .b(wg_z_r1), .p(lanes));
 	wire [23:0] lanes31;
 	wire l31_co_unused, ix_co_unused, iy_co_unused, iz_co_unused;
 	am_add #(.W(24)) u_l31 (.a(lanes), .b(24'd31), .ci(1'b0), .s(lanes31), .co(l31_co_unused));
 	wire [23:0] nw_full = lanes31 >> 5;
-	wire [3:0] nw = nw_full > NWARPS ? NWARPS[3:0] : nw_full[3:0];
+	reg [3:0] nw;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			wg_z_r1 <= 8'd1;
+			nw      <= 4'd1;
+		end else begin
+			wg_z_r1 <= wg_z;
+			nw      <= nw_full > NWARPS ? NWARPS[3:0] : nw_full[3:0];
+		end
+	end
 	wire mine_wg = {24'd0, rot} == SU_INDEX;
 	wire [15:0] id_x1, id_y1, id_z1;	/* the ids + 1 */
 	am_add #(.W(16)) u_idx1 (.a(id_x), .b(16'd0), .ci(1'b1), .s(id_x1), .co(ix_co_unused));
