@@ -124,6 +124,7 @@ module atg_su_sb #(
 	/* Scoreboard entries, warp-major: {base, wide, cls}. */
 	reg [NE-1:0] e_valid;
 	reg [NE*6-1:0] e_base;
+	reg [NE*8-1:0] e_end;
 	reg [NE-1:0] e_wide;
 	reg [NWARPS*CNT_W-1:0] cm;
 	reg [NWARPS*CNT_W-1:0] ct;
@@ -144,45 +145,45 @@ module atg_su_sb #(
 			ev[rel_idx] = 1'b0;
 	end
 
-	/* x in [base, base_end): base_end is base + 4 (wide) or + 1, computed by the caller. */
+	/* x in [base, base_end): base_end is base + 4 (wide) or + 1, precomputed at allocation. */
 	function in_range;
 		input [6:0] x;
 		input [5:0] base;
 		input [7:0] base_end;
-		in_range = {1'b0, x} >= {2'b00, base} && {1'b0, x} < base_end;
+		input is_wide;
+		begin
+			if (!is_wide)
+				in_range = (x[5:0] == base) && !x[6];
+			else
+				in_range = {1'b0, x} >= {2'b00, base} && {1'b0, x} < base_end;
+		end
 	endfunction
 
 	/* The warp's entries (valid, base, wide, the base's end) and counters. */
 	reg [SB_ENTRIES-1:0] uw_v;
 	reg [SB_ENTRIES*6-1:0] uw_base;
 	reg [SB_ENTRIES-1:0] uw_wide;
-	wire [SB_ENTRIES*8-1:0] uw_end;
+	reg [SB_ENTRIES*8-1:0] uw_end;
 	reg [CNT_W-1:0] ucm, uct, ucx;
 	integer uj, uw;
 	always @(*) begin
 		uw_v = {SB_ENTRIES{1'b0}};
 		uw_base = {(SB_ENTRIES*6){1'b0}};
 		uw_wide = {SB_ENTRIES{1'b0}};
+		uw_end = {(SB_ENTRIES*8){1'b0}};
 		{ucm, uct, ucx} = {(3*CNT_W){1'b0}};
 		for (uw = 0; uw < NWARPS; uw = uw + 1)
 			if (u_warp == uw[WARP_W-1:0]) begin
 				for (uj = 0; uj < SB_ENTRIES; uj = uj + 1) begin
 					uw_v[uj] = ev[uw * SB_ENTRIES + uj];
 					uw_base[uj*6 +: 6] = e_base[(uw * SB_ENTRIES + uj)*6 +: 6];
+					uw_end[uj*8 +: 8] = e_end[(uw * SB_ENTRIES + uj)*8 +: 8];
 					uw_wide[uj] = e_wide[uw * SB_ENTRIES + uj];
 				end
 				{ucm, uct, ucx} = {cm[uw*CNT_W +: CNT_W], ct[uw*CNT_W +: CNT_W],
 					cx[uw*CNT_W +: CNT_W]};
 			end
 	end
-	genvar ge;
-	generate
-		for (ge = 0; ge < SB_ENTRIES; ge = ge + 1) begin : g_end
-			wire co_unused;
-			am_add #(.W(8)) u_end (.a({2'b00, uw_base[ge*6 +: 6]}), .b(uw_wide[ge] ? 8'd4 : 8'd1),
-				.ci(1'b0), .s(uw_end[ge*8 +: 8]), .co(co_unused));
-		end
-	endgenerate
 
 	/* Long hazards: a used source or the destination range meets an entry. */
 	reg hz_long;
@@ -191,6 +192,7 @@ module atg_su_sb #(
 	integer j;
 	reg [5:0] jb;
 	reg [7:0] je;
+	reg jw;
 	always @(*) begin
 		hz_long = 1'b0;
 		have_free = 1'b0;
@@ -198,14 +200,15 @@ module atg_su_sb #(
 		for (j = SB_ENTRIES - 1; j >= 0; j = j - 1) begin
 			jb = uw_base[j*6 +: 6];
 			je = uw_end[j*8 +: 8];
+			jw = uw_wide[j];
 			if (uw_v[j]) begin
-				if ((src1 && in_range(rs1, jb, je)) ||
-				    (src2 && in_range(rs2, jb, je)) ||
-				    (src3 && in_range(rs3, jb, je)) ||
-				    (src4 && in_range(rs1p, jb, je)) ||
-				    (src5 && in_range(rs3p, jb, je)) ||
-				    (dst && (in_range(rd, jb, je) ||
-				    (wide && in_range({1'b0, jb}, rd[5:0], rd_4)))))
+				if ((src1 && in_range(rs1, jb, je, jw)) ||
+				    (src2 && in_range(rs2, jb, je, jw)) ||
+				    (src3 && in_range(rs3, jb, je, jw)) ||
+				    (src4 && in_range(rs1p, jb, je, jw)) ||
+				    (src5 && in_range(rs3p, jb, je, jw)) ||
+				    (dst && (in_range(rd, jb, je, jw) ||
+				    (wide && in_range({1'b0, jb}, rd[5:0], rd_4, 1'b1)))))
 					hz_long = 1'b1;
 			end else begin
 				have_free = 1'b1;
@@ -261,7 +264,7 @@ module atg_su_sb #(
 				    (src4 && hit(rs1p, {1'b0, c_rd[(m)*6 +: 6]})) ||
 				    (src5 && hit(rs3p, {1'b0, c_rd[(m)*6 +: 6]}))))
 					hz_short = 1'b1;
-				if (dst && is_long && in_range({1'b0, c_rd[(m)*6 +: 6]}, rd[5:0], rd_k))
+				if (dst && is_long && in_range({1'b0, c_rd[(m)*6 +: 6]}, rd[5:0], rd_k, wide))
 					hz_short = 1'b1;
 			end
 	end
@@ -319,6 +322,10 @@ module atg_su_sb #(
 	/* State updates. */
 	wire alloc = issued && need_e;
 	wire [NE_W-1:0] alloc_idx = {u_warp, free_e[SBE_W-1:0]};	/* free_e < SB_ENTRIES at an alloc */
+	wire [7:0] alloc_end;
+	wire alloc_end_co;
+	am_add #(.W(8)) u_alloc_end (.a({2'b00, rd[5:0]}), .b(wide ? 8'd4 : 8'd1), .ci(1'b0), .s(alloc_end),
+		.co(alloc_end_co));
 
 	/* Each warp's counters: + 1 at an issue of the class, - 1 at its release. */
 	wire [NWARPS*CNT_W-1:0] cm_next, ct_next, cx_next;
@@ -389,8 +396,10 @@ module atg_su_sb #(
 			if (alloc) begin
 				e_valid[alloc_idx] <= 1'b1;
 				for (q = 0; q < NE; q = q + 1)
-					if (alloc_idx == q[NE_W-1:0])
+					if (alloc_idx == q[NE_W-1:0]) begin
 						e_base[q*6 +: 6] <= rd[5:0];
+						e_end[q*8 +: 8] <= alloc_end;
+					end
 				e_wide[alloc_idx] <= wide;
 			end
 			cm <= cm_next;
@@ -460,7 +469,7 @@ module atg_su_sb #(
 		end
 	endgenerate
 
-	wire unused_ok = &{1'b0, imm[31:12], u_uop, f_slot, c_slot, rd_k[7]};
+	wire unused_ok = &{1'b0, imm[31:12], u_uop, f_slot, c_slot, rd_k[7], alloc_end_co};
 endmodule
 
 `default_nettype wire
