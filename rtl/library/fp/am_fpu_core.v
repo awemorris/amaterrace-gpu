@@ -815,15 +815,32 @@ module am_fpu_core #(
 		am_add #(.W(12)) u_fma_t2 (.a(s5_t1), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_t2), .co(fma_carry_unused5[2]));
 		am_sub #(.W(12)) u_fma_er (.a(s5_t2), .b(12'd175), .bi(1'b0), .d(s5_er), .bo(fma_carry_unused5[3]));
 
+		/* Precompute sticky, guard, and rounding up in Stage 5 to break timing path */
+		wire [23:0] s5_m = s5_nrm[76:53];
+		wire s5_g = s5_nrm[52];
+		wire s5_st = |s5_nrm[51:0];
+		reg s5_up;
+		always @(*)
+			case (s5_rm)
+			3'd1, 3'd5, 3'd6: s5_up = 1'b0;
+			3'd2: s5_up = s5_sr && (s5_g || s5_st);
+			3'd3: s5_up = !s5_sr && (s5_g || s5_st);
+			3'd4: s5_up = s5_g;
+			default: s5_up = s5_g && (s5_st || s5_m[0]);
+			endcase
+
 		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
 		reg [31:0] s6_rs_other;
 		reg        s6_fma;
 		reg        s6_sat;
 		reg        s6_flt;
 
-		reg [76:0] s6_nrm;
+		reg [23:0] s6_m;
 		reg [11:0] s6_er;
 		reg        s6_sr;
+		reg        s6_up;
+		reg        s6_g;
+		reg        s6_st;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -836,9 +853,12 @@ module am_fpu_core #(
 				s6_fma      <= 1'b0;
 				s6_sat      <= 1'b0;
 				s6_flt      <= 1'b0;
-				s6_nrm      <= 77'd0;
+				s6_m        <= 24'd0;
 				s6_er       <= 12'd0;
 				s6_sr       <= 1'b0;
+				s6_up       <= 1'b0;
+				s6_g        <= 1'b0;
+				s6_st       <= 1'b0;
 				s6_sum_nz   <= 1'b0;
 				s6_rm       <= 3'd0;
 				s6_rdn      <= 1'b0;
@@ -849,9 +869,12 @@ module am_fpu_core #(
 				s6_fma      <= s5_fma;
 				s6_sat      <= s5_sat;
 				s6_flt      <= s5_flt;
-				s6_nrm      <= s5_nrm;
+				s6_m        <= s5_m;
 				s6_er       <= s5_er;
 				s6_sr       <= s5_sr;
+				s6_up       <= s5_up;
+				s6_g        <= s5_g;
+				s6_st       <= s5_st;
 				s6_sum_nz   <= s5_sum_nz;
 				s6_rm       <= s5_rm;
 				s6_rdn      <= s5_rdn;
@@ -860,17 +883,32 @@ module am_fpu_core #(
 			end
 		end
 
-		/* Stage 6: Rounding for LAT >= 6 */
-		wire [31:0] s6_rnd;
-		am_fp_rnd #(.LAT(0)) u_fma_rnd (
-			.s(s6_sr),
-			.e(s6_er),
-			.m(s6_nrm[76:53]),
-			.g(s6_nrm[52]),
-			.st(|s6_nrm[51:0]),
-			.rm(s6_rm),
-			.r(s6_rnd)
+		/* Stage 6: Fast Inline Parallel Rounding for LAT >= 6 */
+		wire s6_m_all1 = &s6_m;
+		wire s6_m_carry = s6_m_all1 && s6_up;
+
+		wire [24:0] s6_mr0;
+		wire signed [11:0] s6_mr_er;
+		wire [1:0] s6_rnd_carry_unused;
+		am_add #(.W(25)) u_fma_mr (
+			.a({1'b0, s6_m[23:1], s6_m[0] | ((s6_rm == 3'd5 || s6_rm == 3'd6) && (s6_g || s6_st))}),
+			.b(25'd0),
+			.ci(s6_up),
+			.s(s6_mr0),
+			.co(s6_rnd_carry_unused[0])
 		);
+		am_add #(.W(12)) u_fma_mr_er (
+			.a(s6_er),
+			.b(12'd0),
+			.ci(s6_m_carry),
+			.s(s6_mr_er),
+			.co(s6_rnd_carry_unused[1])
+		);
+		wire [24:0] s6_mr = s6_m_carry ? {1'b0, 1'b1, 23'd0} : s6_mr0;
+		wire [31:0] s6_rnd = s6_mr_er >= 12'sd255 ?
+			((s6_rm == 3'd1 || s6_rm == 3'd5 || s6_rm == 3'd6 || (s6_rm == 3'd2 && !s6_sr) || (s6_rm == 3'd3 && s6_sr)) ?
+				{s6_sr, 8'hFE, 23'h7FFFFF} : {s6_sr, 8'hFF, 23'd0}) :
+			(s6_mr_er <= 12'sd0 ? {s6_sr, 31'd0} : {s6_sr, s6_mr_er[7:0], s6_mr[22:0]});
 
 		wire [31:0] fma_r_lat6 = s6_spec_hit ? s6_spec_res :
 			!s6_sum_nz ? {s6_rdn, 31'd0} : s6_rnd;
@@ -889,7 +927,8 @@ module am_fpu_core #(
 
 		assign res = (cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs;
 		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused3_mr, carry_unused3_ep,
-			fma3_carry_unused, carry_unused4_sum, fma_carry_unused5, s3_e_p1[11:8], pr_s4[65:64]};
+			fma3_carry_unused, carry_unused4_sum, fma_carry_unused5, s3_e_p1[11:8], pr_s4[65:64],
+			s6_rnd_carry_unused, s6_mr[24:23]};
 	end
 	endgenerate
 
