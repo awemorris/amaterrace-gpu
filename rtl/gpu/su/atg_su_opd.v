@@ -130,9 +130,9 @@ module atg_su_opd #(
 	reg a_pass;	/* the second operand pass of a four-operand uop */
 	/* Stage B: the group on x_*. */
 	reg b_valid, b_last;
-	reg [WARP_W-1:0] b_warp;
+	(* max_fanout = 24 *) reg [WARP_W-1:0] b_warp;
 	reg [15:0] b_pc;
-	reg [UOP_W-1:0] b_uop;
+	(* max_fanout = 24 *) reg [UOP_W-1:0] b_uop;
 	reg [SBE_W:0] b_sbe;
 	reg [GRP_W-1:0] b_grp;
 	reg b_pass;
@@ -232,12 +232,14 @@ module atg_su_opd #(
 				hold_r1 <= r_data[0 +: DW];
 				hold_r2 <= r_data[DW +: DW];
 			end
-			if (take) begin
-				a_act <= 1'b1;
+			if (i_ready) begin
 				a_warp <= i_warp;
 				a_pc <= i_pc;
 				a_uop <= i_uop;
 				a_sbe <= i_sbe;
+			end
+			if (take) begin
+				a_act <= 1'b1;
 				a_grp <= {GRP_W{1'b0}};
 				a_step <= 1'b0;
 				a_pass <= 1'b0;
