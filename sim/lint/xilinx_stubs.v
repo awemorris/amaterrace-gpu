@@ -72,6 +72,71 @@ module MMCME2_BASE #(
 	assign LOCKED = 1'b0;
 endmodule
 
+module MMCME4_BASE #(
+	parameter BANDWIDTH = "OPTIMIZED",
+	parameter real CLKFBOUT_MULT_F = 5.000,
+	parameter real CLKFBOUT_PHASE = 0.000,
+	parameter real CLKIN1_PERIOD = 0.000,
+	parameter real CLKOUT0_DIVIDE_F = 1.000,
+	parameter real CLKOUT0_DUTY_CYCLE = 0.500,
+	parameter real CLKOUT0_PHASE = 0.000,
+	parameter integer CLKOUT1_DIVIDE = 1,
+	parameter real CLKOUT1_DUTY_CYCLE = 0.500,
+	parameter real CLKOUT1_PHASE = 0.000,
+	parameter integer CLKOUT2_DIVIDE = 1,
+	parameter real CLKOUT2_DUTY_CYCLE = 0.500,
+	parameter real CLKOUT2_PHASE = 0.000,
+	parameter integer CLKOUT3_DIVIDE = 1,
+	parameter real CLKOUT3_DUTY_CYCLE = 0.500,
+	parameter real CLKOUT3_PHASE = 0.000,
+	parameter integer CLKOUT4_DIVIDE = 1,
+	parameter real CLKOUT4_DUTY_CYCLE = 0.500,
+	parameter real CLKOUT4_PHASE = 0.000,
+	parameter integer CLKOUT5_DIVIDE = 1,
+	parameter real CLKOUT5_DUTY_CYCLE = 0.500,
+	parameter real CLKOUT5_PHASE = 0.000,
+	parameter integer CLKOUT6_DIVIDE = 1,
+	parameter real CLKOUT6_DUTY_CYCLE = 0.500,
+	parameter real CLKOUT6_PHASE = 0.000,
+	parameter integer DIVCLK_DIVIDE = 1,
+	parameter real REF_JITTER1 = 0.010,
+	parameter STARTUP_WAIT = "FALSE"
+) (
+	input wire CLKIN1,
+	input wire CLKFBIN,
+	input wire RST,
+	input wire PWRDWN,
+	output wire CLKFBOUT,
+	output wire CLKFBOUTB,
+	output wire CLKOUT0,
+	output wire CLKOUT0B,
+	output wire CLKOUT1,
+	output wire CLKOUT1B,
+	output wire CLKOUT2,
+	output wire CLKOUT2B,
+	output wire CLKOUT3,
+	output wire CLKOUT3B,
+	output wire CLKOUT4,
+	output wire CLKOUT5,
+	output wire CLKOUT6,
+	output wire LOCKED
+);
+	assign CLKFBOUT = CLKIN1;
+	assign CLKFBOUTB = 1'b0;
+	assign CLKOUT0 = CLKIN1;
+	assign CLKOUT0B = 1'b0;
+	assign CLKOUT1 = CLKIN1;
+	assign CLKOUT1B = 1'b0;
+	assign CLKOUT2 = 1'b0;
+	assign CLKOUT2B = 1'b0;
+	assign CLKOUT3 = 1'b0;
+	assign CLKOUT3B = 1'b0;
+	assign CLKOUT4 = 1'b0;
+	assign CLKOUT5 = 1'b0;
+	assign CLKOUT6 = 1'b0;
+	assign LOCKED = 1'b0;
+endmodule
+
 module PLLE2_BASE #(
 	parameter real CLKIN1_PERIOD = 0.000,
 	parameter integer DIVCLK_DIVIDE = 1,
