@@ -120,13 +120,12 @@ module atg_su_lds #(
 	function [31:0] atom_op;
 		input [3:0] op;
 		input [31:0] old, a, b;
-		input [31:0] sum;	/* old + a, or old - a for op 5 */
 		case (op)
 		4'd0: atom_op = old & a;
 		4'd1: atom_op = old | a;
 		4'd2: atom_op = old ^ a;
 		4'd3: atom_op = a;
-		4'd4, 4'd5: atom_op = sum;
+		4'd4, 4'd5: atom_op = old; /* Direct-pathed via asum */
 		4'd6: atom_op = $signed(old) > $signed(a) ? old : a;
 		4'd7: atom_op = $signed(old) < $signed(a) ? old : a;
 		4'd8: atom_op = old > a ? old : a;
@@ -153,22 +152,19 @@ module atg_su_lds #(
 	wire lane_on = lanes[li];
 	/* An atom lane's second cycle: q holds the word read in the first. */
 	wire [31:0] cur_rdat = rdat[li*32 +: 32];
-	wire [31:0] op_b = aph ? atom_b : cur_rdat;
-	wire [31:0] op_c = aph ? atom_c : rcmp[li*32 +: 32];
 	wire [31:0] asum;
 	wire as_co_unused;
-	am_addsub #(.W(32)) u_asum (.a(q), .b(op_b), .sub(rsub == 4'd5), .s(asum),
+	am_addsub #(.W(32)) u_asum (.a(q), .b(atom_b), .sub(rsub == 4'd5), .s(asum),
 		.co(as_co_unused));
 
 	wire [31:0] anew_other;
 `ifdef MUT_LDS_ATOM_NOCMP
-	assign anew_other = atom_op(rsub, q, op_b, op_b, asum);
+	assign anew_other = atom_op(rsub, q, atom_b, atom_b);
 `else
-	assign anew_other = atom_op(rsub, q, op_b, op_c, asum);
+	assign anew_other = atom_op(rsub, q, atom_b, atom_c);
 `endif
 
 	wire is_addsub = (rsub == 4'd4 || rsub == 4'd5);
-	wire [31:0] anew = is_addsub ? asum : anew_other;
 `ifdef MUT_LDS_ATOM_RAW
 	wire aread = 1'b0;
 `else
@@ -260,7 +256,9 @@ module atg_su_lds #(
 	assign scrub_busy = sc_on;
 	wire ram_we = sc_on || st == ACCESS && !aread && lane_on && (rsts || ratom);
 	wire [AW-1:0] ram_wa = sc_on ? sc_a : a;
-	wire [31:0] ram_wd = sc_on ? 32'd0 : ratom ? anew : rdat[li*32 +: 32];
+	wire sel_asum = ratom && is_addsub && !sc_on;
+	wire [31:0] other_wd = sc_on ? 32'd0 : (!ratom) ? cur_rdat : anew_other;
+	wire [31:0] ram_wd = sel_asum ? asum : other_wd;
 
 	always @(posedge clk)
 		if (ram_we)
