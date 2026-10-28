@@ -216,15 +216,34 @@ module atg_su_sb #(
 				free_e = warp_free_e[mfe*(SBE_W+1) +: (SBE_W+1)];
 	end
 
-	/* Selected warp's counters for wait/fence/end instructions. */
-	reg [CNT_W-1:0] ucm, uct, ucx;
-	integer uw;
+	/* Per-warp parallel remaining counters (the warp's, less this cycle's release).
+	 * Eliminates u_warp MUX from counter subtraction critical path. */
+	wire [NWARPS*CNT_W-1:0] warp_rcm, warp_rct, warp_rcx;
+	genvar gcw;
+	generate
+		for (gcw = 0; gcw < NWARPS; gcw = gcw + 1) begin : g_rcnt
+			wire rel_w = rel_valid && (rel_warp == gcw[WARP_W-1:0]);
+			wire [CNT_W-1:0] cur_cm = cm[gcw*CNT_W +: CNT_W];
+			wire [CNT_W-1:0] cur_ct = ct[gcw*CNT_W +: CNT_W];
+			wire [CNT_W-1:0] cur_cx = cx[gcw*CNT_W +: CNT_W];
+
+			wire cur_rcm_bo, cur_rct_bo, cur_rcx_bo;
+			am_sub #(.W(CNT_W)) u_w_rcm (.a(cur_cm), .b({CNT_W{1'b0}}), .bi(rel_w && rel_cls == ATG_CLS_M), .d(warp_rcm[gcw*CNT_W +: CNT_W]), .bo(cur_rcm_bo));
+			am_sub #(.W(CNT_W)) u_w_rct (.a(cur_ct), .b({CNT_W{1'b0}}), .bi(rel_w && rel_cls == ATG_CLS_T), .d(warp_rct[gcw*CNT_W +: CNT_W]), .bo(cur_rct_bo));
+			am_sub #(.W(CNT_W)) u_w_rcx (.a(cur_cx), .b({CNT_W{1'b0}}), .bi(rel_w && rel_cls == ATG_CLS_X), .d(warp_rcx[gcw*CNT_W +: CNT_W]), .bo(cur_rcx_bo));
+
+			wire unused_rcnt_bo = &{1'b0, cur_rcm_bo, cur_rct_bo, cur_rcx_bo};
+		end
+	endgenerate
+
+	reg [CNT_W-1:0] rcm, rct, rcx;
+	integer urw;
 	always @(*) begin
-		{ucm, uct, ucx} = {(3*CNT_W){1'b0}};
-		for (uw = 0; uw < NWARPS; uw = uw + 1)
-			if (u_warp == uw[WARP_W-1:0]) begin
-				{ucm, uct, ucx} = {cm[uw*CNT_W +: CNT_W], ct[uw*CNT_W +: CNT_W],
-					cx[uw*CNT_W +: CNT_W]};
+		{rcm, rct, rcx} = {(3*CNT_W){1'b0}};
+		for (urw = 0; urw < NWARPS; urw = urw + 1)
+			if (u_warp == urw[WARP_W-1:0]) begin
+				{rcm, rct, rcx} = {warp_rcm[urw*CNT_W +: CNT_W], warp_rct[urw*CNT_W +: CNT_W],
+					warp_rcx[urw*CNT_W +: CNT_W]};
 			end
 	end
 
@@ -287,16 +306,7 @@ module atg_su_sb #(
 			end
 	end
 
-	/* Counters (the warp's, less this cycle's release) and the instructions that wait for them. */
-	wire rel_u = rel_valid && rel_warp == u_warp;
-	wire [CNT_W-1:0] rcm, rct, rcx;
-	wire rcm_bo_unused, rct_bo_unused, rcx_bo_unused;
-	am_sub #(.W(CNT_W)) u_rcm (.a(ucm), .b({CNT_W{1'b0}}), .bi(rel_u && rel_cls == ATG_CLS_M), .d(rcm),
-		.bo(rcm_bo_unused));
-	am_sub #(.W(CNT_W)) u_rct (.a(uct), .b({CNT_W{1'b0}}), .bi(rel_u && rel_cls == ATG_CLS_T), .d(rct),
-		.bo(rct_bo_unused));
-	am_sub #(.W(CNT_W)) u_rcx (.a(ucx), .b({CNT_W{1'b0}}), .bi(rel_u && rel_cls == ATG_CLS_X), .d(rcx),
-		.bo(rcx_bo_unused));
+	/* Instructions that wait for counters. */
 	wire is_wait = unit == ATG_UNIT_CTL;
 	wire is_fence = unit == ATG_UNIT_LSU && op == ATG_LSU_FENCE;
 	wire is_end = unit == ATG_UNIT_EXEC && op == ATG_EXEC_END;
@@ -318,13 +328,11 @@ module atg_su_sb #(
 	wire hold = wb_stall || hz_short || !(|(~f_valid));
 	wire go = u_valid && !hold;
 	wire no_issue = ill || is_nop || is_wait || replay_eff;
-	(* max_fanout = 24 *) wire i_val = go && !no_issue;
-	assign i_valid = i_val;
+	assign i_valid = go && !no_issue;
 	(* max_fanout = 24 *) wire issued = i_valid && i_ready;
 	(* max_fanout = 24 *) wire issued_long = go && !ill && !replay_long && i_ready;
 	wire fast_ready = i_ready || ill || is_nop || is_wait || replay_long;
-	(* max_fanout = 24 *) wire u_rdy = go && (fast_ready || (is_cnt_dep && cnt_wait));
-	assign u_ready = u_rdy;
+	assign u_ready = go && (fast_ready || (is_cnt_dep && cnt_wait));
 	assign i_warp = u_warp;
 	assign i_pc = u_pc;
 	assign i_uop = u_uop;
@@ -514,7 +522,7 @@ module atg_su_sb #(
 	assign busy = any_c;
 
 	/* Warp readiness feedback to scheduler (Phase 012) */
-	(* max_fanout = 24 *) reg [NWARPS-1:0] r_warp_ready;
+	reg [NWARPS-1:0] r_warp_ready;
 	genvar gw_r;
 	generate
 		for (gw_r = 0; gw_r < NWARPS; gw_r = gw_r + 1) begin : g_wr
