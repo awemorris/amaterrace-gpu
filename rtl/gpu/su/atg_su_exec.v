@@ -72,9 +72,28 @@ module atg_su_exec #(
 	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXEC;
 	wire [7:0] op = x_uop[ATG_UOP_OP +: 8];
 	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
-	wire [NPHYS-1:0] em = x_mask[NPHYS-1:0];
-	wire [31:0] lane0 = {{(32-GRP_W){1'b0}}, x_grp} * NPHYS;
 	wire [31:0] wexec = exec_r[x_warp*32 +: 32];
+
+	/* Direct group demux/mux for NPHYS-aligned operations (eliminates 3 generic barrel shifters) */
+	reg [31:0] bt_w;
+	reg [31:0] gmask;
+	reg [NPHYS-1:0] wexec_g;
+	integer gi;
+	always @(*) begin
+		bt_w = 32'd0;
+		gmask = 32'd0;
+		wexec_g = {NPHYS{1'b0}};
+		for (gi = 0; gi < 32/NPHYS; gi = gi + 1) begin
+			if (x_grp == gi[GRP_W-1:0]) begin
+				bt_w[gi*NPHYS +: NPHYS] = bt;
+				gmask[gi*NPHYS +: NPHYS] = {NPHYS{1'b1}};
+				wexec_g = wexec[gi*NPHYS +: NPHYS];
+			end
+		end
+	end
+
+	/* Use local wexec_g directly, eliminating exec -> opd -> exec loop */
+	wire [NPHYS-1:0] em = wexec_g;
 
 	/* Per lane: the Boolean of rs1. */
 	reg [NPHYS-1:0] bt;
@@ -82,16 +101,6 @@ module atg_su_exec #(
 	always @(*)
 		for (l = 0; l < NPHYS; l = l + 1)
 			bt[l] = x_a[l*32 +: 32] != 32'd0;
-	/* The group's bits in the warp's 32: the Booleans, the group's mask, and EXEC's bits of the group. */
-	wire [31:0] bt_w;
-	wire [31:0] gmask;
-	wire [31:0] wexec_g;
-	am_shift #(.W(32), .SW(6)) u_bt_w (.a({{(32-NPHYS){1'b0}}, bt}), .amt(lane0[5:0]), .left(1'b1),
-		.arith(1'b0), .y(bt_w));
-	am_shift #(.W(32), .SW(6)) u_gmask (.a({{(32-NPHYS){1'b0}}, {NPHYS{1'b1}}}), .amt(lane0[5:0]),
-		.left(1'b1), .arith(1'b0), .y(gmask));
-	am_shift #(.W(32), .SW(5)) u_wexec_g (.a(wexec), .amt(lane0[4:0]), .left(1'b0), .arith(1'b0),
-		.y(wexec_g));
 
 	/* Branch conditions over the groups of one instruction. */
 	reg acc_any, acc_all;
@@ -221,8 +230,8 @@ module atg_su_exec #(
 	assign s_data = o[DW-1:0];
 	assign x_ready = 1'b1;
 
-	wire unused_ok = &{1'b0, x_sbe, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
-		imm[31:16], lane0, pc_co_unused};
+	wire unused_ok = &{1'b0, x_sbe, x_b, x_c, x_mask, x_info, x_uop,
+		imm[31:16], pc_co_unused};
 endmodule
 
 `default_nettype wire
