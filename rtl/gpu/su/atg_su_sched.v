@@ -229,6 +229,10 @@ module atg_su_sched #(
 	integer w_idx, ga_i;
 	reg active_st_ok;
 	reg active_warp_ready;
+	reg t_sel01, t_sel23, t_sel_top;
+	reg [1:0] t_w01, t_w23;
+	reg [15:0] t_a01, t_a23;
+	reg t_c01, t_c23;
 
 	always @(*) begin
 		active_st_ok = 1'b0;
@@ -255,16 +259,32 @@ module atg_su_sched #(
 					sel = last_warp;
 				end
 			end else begin
-				for (w_idx = 0; w_idx < NWARPS; w_idx = w_idx + 1) begin
-					if (cand[w_idx]) begin
-						if (!found_cand || wait_age[w_idx*16 +: 16] > max_age) begin
-							found_cand = 1'b1;
-							max_age = wait_age[w_idx*16 +: 16];
-							sel = w_idx[WARP_W-1:0];
+				if (NWARPS == 4) begin
+					t_sel01 = !cand[0] || (cand[1] && (wait_age[1*16 +: 16] > wait_age[0*16 +: 16]));
+					t_w01 = t_sel01 ? 2'd1 : 2'd0;
+					t_a01 = t_sel01 ? wait_age[1*16 +: 16] : wait_age[0*16 +: 16];
+					t_c01 = cand[0] || cand[1];
+
+					t_sel23 = !cand[2] || (cand[3] && (wait_age[3*16 +: 16] > wait_age[2*16 +: 16]));
+					t_w23 = t_sel23 ? 2'd3 : 2'd2;
+					t_a23 = t_sel23 ? wait_age[3*16 +: 16] : wait_age[2*16 +: 16];
+					t_c23 = cand[2] || cand[3];
+
+					t_sel_top = !t_c01 || (t_c23 && (t_a23 > t_a01));
+					sel = t_sel_top ? t_w23[WARP_W-1:0] : t_w01[WARP_W-1:0];
+					sel_v = t_c01 || t_c23;
+				end else begin
+					for (w_idx = 0; w_idx < NWARPS; w_idx = w_idx + 1) begin
+						if (cand[w_idx]) begin
+							if (!found_cand || wait_age[w_idx*16 +: 16] > max_age) begin
+								found_cand = 1'b1;
+								max_age = wait_age[w_idx*16 +: 16];
+								sel = w_idx[WARP_W-1:0];
+							end
 						end
 					end
+					sel_v = found_cand;
 				end
-				sel_v = found_cand;
 			end
 		end else begin
 			for (r = 0; r < NWARPS; r = r + 1)
@@ -414,9 +434,7 @@ module atg_su_sched #(
 			end
 			for (w = 0; w < NWARPS; w = w + 1) begin
 				if (cand[w]) begin
-					if (fsel_v && f_ready && fsel == w[WARP_W-1:0])
-						wait_age[w*16 +: 16] <= 16'd0;
-					else if (wait_age[w*16 +: 16] != 16'hFFFF)
+					if (wait_age[w*16 +: 16] != 16'hFFFF)
 						wait_age[w*16 +: 16] <= age_p1[w*16 +: 16];
 				end else begin
 					wait_age[w*16 +: 16] <= 16'd0;
