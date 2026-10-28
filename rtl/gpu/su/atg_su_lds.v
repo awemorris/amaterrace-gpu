@@ -116,6 +116,25 @@ module atg_su_lds #(
 	reg pval;
 	reg [31:0] q;
 
+	/* The new value of an atomic's word (the order of docs/ghci.md section 12.5). */
+	function [31:0] atom_op;
+		input [3:0] op;
+		input [31:0] old, a, b;
+		case (op)
+		4'd0: atom_op = old & a;
+		4'd1: atom_op = old | a;
+		4'd2: atom_op = old ^ a;
+		4'd3: atom_op = a;
+		4'd4, 4'd5: atom_op = old; /* Direct-pathed via asum */
+		4'd6: atom_op = $signed(old) > $signed(a) ? old : a;
+		4'd7: atom_op = $signed(old) < $signed(a) ? old : a;
+		4'd8: atom_op = old > a ? old : a;
+		4'd9: atom_op = old < a ? old : a;
+		4'd10: atom_op = old == b ? a : old;
+		default: atom_op = old;
+		endcase
+	endfunction
+
 	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_LDS;
 	wire is_sts = x_uop[ATG_UOP_OP +: 8] == ATG_LDS_STS;
 	wire is_atom = x_uop[ATG_UOP_OP +: 8] == ATG_LDS_ATOM;
@@ -138,45 +157,12 @@ module atg_su_lds #(
 	am_addsub #(.W(32)) u_asum (.a(q), .b(atom_b), .sub(rsub == 4'd5), .s(asum),
 		.co(as_co_unused));
 
-	/* Shared 32-bit comparator to eliminate redundant CARRY4 chains across comparison ops */
-	wire [31:0] cmp_diff;
-	wire cmp_bo;
-	am_sub #(.W(32)) u_atom_cmp (.a(q), .b(atom_b), .bi(1'b0), .d(cmp_diff), .bo(cmp_bo));
-
-	wire cmp_eq = (cmp_diff == 32'd0);
-	wire cmp_ltu = cmp_bo;
-	wire cmp_gtu = !cmp_bo && !cmp_eq;
-	wire cmp_ovf = (q[31] != atom_b[31]) && (cmp_diff[31] != q[31]);
-	wire cmp_lts = cmp_diff[31] ^ cmp_ovf;
-	wire cmp_gts = !cmp_lts && !cmp_eq;
-	wire cmp_cas = (q == atom_c);
-
-	reg take_old;
-	always @(*) begin
-		case (rsub)
-		4'd6: take_old = cmp_gts;
-		4'd7: take_old = cmp_lts;
-		4'd8: take_old = cmp_gtu;
-		4'd9: take_old = cmp_ltu;
-		4'd10: take_old = !cmp_cas;
-		default: take_old = 1'b1;
-		endcase
-	end
-	wire [31:0] cmp_res = take_old ? q : atom_b;
-
-	reg [31:0] logic_res;
-	always @(*) begin
-		case (rsub)
-		4'd0: logic_res = q & atom_b;
-		4'd1: logic_res = q | atom_b;
-		4'd2: logic_res = q ^ atom_b;
-		4'd3: logic_res = atom_b;
-		default: logic_res = q;
-		endcase
-	end
-
-	wire is_logic = (rsub <= 4'd3);
-	wire [31:0] anew_other = is_logic ? logic_res : cmp_res;
+	wire [31:0] anew_other;
+`ifdef MUT_LDS_ATOM_NOCMP
+	assign anew_other = atom_op(rsub, q, atom_b, atom_b);
+`else
+	assign anew_other = atom_op(rsub, q, atom_b, atom_c);
+`endif
 
 	wire is_addsub = (rsub == 4'd4 || rsub == 4'd5);
 `ifdef MUT_LDS_ATOM_RAW
@@ -270,11 +256,10 @@ module atg_su_lds #(
 	assign scrub_busy = sc_on;
 	wire ram_we = sc_on || st == ACCESS && !aread && lane_on && (rsts || ratom);
 	wire [AW-1:0] ram_wa = sc_on ? sc_a : a;
-	wire sel_asum = ratom && is_addsub && !sc_on;
-	wire [31:0] other_wd = sc_on ? 32'd0 : (!ratom) ? cur_rdat : anew_other;
 	(* keep = "true" *) wire [31:0] w_asum = asum;
-	(* keep = "true" *) wire [31:0] w_other = other_wd;
-	wire [31:0] ram_wd = sel_asum ? w_asum : w_other;
+	(* keep = "true" *) wire [31:0] w_other = anew_other;
+	wire [31:0] w_atom = is_addsub ? w_asum : w_other;
+	wire [31:0] ram_wd = sc_on ? 32'd0 : (ratom ? w_atom : cur_rdat);
 
 	always @(posedge clk)
 		if (ram_we)
