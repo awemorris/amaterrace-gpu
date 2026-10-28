@@ -42,12 +42,14 @@ module atg_su_fetch #(
 	output wire [63:0] d_instr
 );
 	/* Two in-flight fetches in order: {warp, pc} at request, the
-	 * instruction on ic_rvalid; the head leaves when it has its data. */
-	reg [WARP_W-1:0] q_warp [0:1];
-	reg [15:0] q_pc [0:1];
-	reg [63:0] q_ins [0:1];
+	 * instruction on ic_rvalid; the head leaves when it has its data.
+	 * Force slice registers to prevent Distributed RAM inference and cut 1.5ns decode delay. */
+	(* ram_style = "registers" *) reg [WARP_W-1:0] q_warp [0:1];
+	(* ram_style = "registers" *) reg [15:0] q_pc [0:1];
+	(* ram_style = "registers" *) reg [63:0] q_ins [0:1];
 	reg [1:0] q_have;
-	reg [1:0] wp, rp, fp;	/* request, read and fill pointers (mod 4, index bit 0) */
+	(* keep = "true", max_fanout = 16 *) reg [1:0] rp;
+	reg [1:0] wp, fp;	/* request, read and fill pointers (mod 4, index bit 0) */
 	wire [1:0] used;
 	wire [1:0] wp_next;
 	wire [1:0] fp_next;
