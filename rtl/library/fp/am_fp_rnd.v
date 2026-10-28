@@ -39,14 +39,18 @@ module am_fp_rnd #(
 		3'd4: up = g;
 		default: up = g && (st || m[0]);
 		endcase
-	/* the rounded magnitude, the exponent + 1 when it carries */
+	/* The rounded magnitude, the exponent + 1 when it carries */
+	/* m overflows to 25 bits if and only if all 24 bits are 1 and up is asserted. */
+	wire m_all1 = &m;
+	wire m_carry = m_all1 && up;
+
 	wire [24:0] mr0;
 	wire signed [11:0] er;
 	wire [1:0] carry_unused;
 	am_add #(.W(25)) u_mr (.a({1'b0, m[23:1], m[0] | ((rm == 3'd5 || rm == 3'd6) && (g || st))}), .b(25'd0),
 		.ci(up), .s(mr0), .co(carry_unused[0]));
-	am_add #(.W(12)) u_er (.a(e), .b(12'd0), .ci(mr0[24]), .s(er), .co(carry_unused[1]));
-	wire [24:0] mr = mr0[24] ? {1'b0, mr0[24:1]} : mr0;
+	am_add #(.W(12)) u_er (.a(e), .b(12'd0), .ci(m_carry), .s(er), .co(carry_unused[1]));
+	wire [24:0] mr = m_carry ? {1'b0, 1'b1, 23'd0} : mr0;
 	assign r = er >= 12'sd255 ? (rm == 3'd1 || rm == 3'd5 || rm == 3'd6 || (rm == 3'd2 && !s) || (rm == 3'd3 && s) ?
 		{s, 8'hFE, 23'h7FFFFF} : {s, 8'hFF, 23'd0}) : er <= 12'sd0 ? {s, 31'd0} : {s, er[7:0], mr[22:0]};
 

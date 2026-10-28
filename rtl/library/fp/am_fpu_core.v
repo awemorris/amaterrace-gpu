@@ -742,11 +742,6 @@ module am_fpu_core #(
 			.co(carry_unused4_sum)
 		);
 
-		/* Stage 4: LOD in Stage 4 for balanced latency */
-		wire [6:0] s4_msb;
-		wire s4_sum_nz;
-		am_msb #(.W(77), .SW(7)) u_fma_msb (.a(s4_sum), .n(s4_msb), .nz(s4_sum_nz));
-
 		wire s4_fma = (s4_op <= OP_FNMADD) || (s4_op == OP_FRACT);
 		reg [31:0] s4_other;
 		always @(*) begin
@@ -760,15 +755,13 @@ module am_fpu_core #(
 			endcase
 		end
 
-		/* --- Stage 5: Pipeline match & Rounding for LAT >= 5 --- */
+		/* --- Stage 5: Pipeline match & LOD/Norm for LAT >= 6 --- */
 		reg [31:0] s5_rs_other;
 		reg        s5_fma;
 		reg        s5_sat;
 		reg        s5_flt;
 
 		reg [76:0] s5_sum;
-		reg [6:0]  s5_msb;
-		reg        s5_sum_nz;
 		reg        s5_sr;
 		reg [11:0] s5_ab;
 		reg [11:0] s5_adj;
@@ -784,8 +777,6 @@ module am_fpu_core #(
 				s5_sat      <= 1'b0;
 				s5_flt      <= 1'b0;
 				s5_sum      <= 77'd0;
-				s5_msb      <= 7'd0;
-				s5_sum_nz   <= 1'b0;
 				s5_sr       <= 1'b0;
 				s5_ab       <= 12'd0;
 				s5_adj      <= 12'd0;
@@ -799,8 +790,6 @@ module am_fpu_core #(
 				s5_sat      <= s4_sat;
 				s5_flt      <= s4_is_flt;
 				s5_sum      <= s4_sum;
-				s5_msb      <= s4_msb;
-				s5_sum_nz   <= s4_sum_nz;
 				s5_sr       <= s4_sr;
 				s5_ab       <= s4_ab;
 				s5_adj      <= s4_adj;
@@ -811,7 +800,11 @@ module am_fpu_core #(
 			end
 		end
 
-		/* Stage 5: Normalization, Exponent & Rounding */
+		/* Stage 5: LOD, Normalization, Exponent for LAT >= 6 */
+		wire [6:0] s5_msb;
+		wire s5_sum_nz;
+		am_msb #(.W(77), .SW(7)) u_fma_msb (.a(s5_sum), .n(s5_msb), .nz(s5_sum_nz));
+
 		wire [6:0] s5_nsh;
 		wire [76:0] s5_nrm;
 		wire [11:0] s5_t1, s5_t2, s5_er;
@@ -822,26 +815,76 @@ module am_fpu_core #(
 		am_add #(.W(12)) u_fma_t2 (.a(s5_t1), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_t2), .co(fma_carry_unused5[2]));
 		am_sub #(.W(12)) u_fma_er (.a(s5_t2), .b(12'd175), .bi(1'b0), .d(s5_er), .bo(fma_carry_unused5[3]));
 
-		wire [31:0] s5_rnd;
+		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
+		reg [31:0] s6_rs_other;
+		reg        s6_fma;
+		reg        s6_sat;
+		reg        s6_flt;
+
+		reg [76:0] s6_nrm;
+		reg [11:0] s6_er;
+		reg        s6_sr;
+		reg        s6_sum_nz;
+		reg [2:0]  s6_rm;
+		reg        s6_rdn;
+		reg        s6_spec_hit;
+		reg [31:0] s6_spec_res;
+
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				s6_rs_other <= 32'd0;
+				s6_fma      <= 1'b0;
+				s6_sat      <= 1'b0;
+				s6_flt      <= 1'b0;
+				s6_nrm      <= 77'd0;
+				s6_er       <= 12'd0;
+				s6_sr       <= 1'b0;
+				s6_sum_nz   <= 1'b0;
+				s6_rm       <= 3'd0;
+				s6_rdn      <= 1'b0;
+				s6_spec_hit <= 1'b0;
+				s6_spec_res <= 32'd0;
+			end else if (en) begin
+				s6_rs_other <= s5_rs_other;
+				s6_fma      <= s5_fma;
+				s6_sat      <= s5_sat;
+				s6_flt      <= s5_flt;
+				s6_nrm      <= s5_nrm;
+				s6_er       <= s5_er;
+				s6_sr       <= s5_sr;
+				s6_sum_nz   <= s5_sum_nz;
+				s6_rm       <= s5_rm;
+				s6_rdn      <= s5_rdn;
+				s6_spec_hit <= s5_spec_hit;
+				s6_spec_res <= s5_spec_res;
+			end
+		end
+
+		/* Stage 6: Rounding for LAT >= 6 */
+		wire [31:0] s6_rnd;
 		am_fp_rnd #(.LAT(0)) u_fma_rnd (
-			.s(s5_sr),
-			.e(s5_er),
-			.m(s5_nrm[76:53]),
-			.g(s5_nrm[52]),
-			.st(|s5_nrm[51:0]),
-			.rm(s5_rm),
-			.r(s5_rnd)
+			.s(s6_sr),
+			.e(s6_er),
+			.m(s6_nrm[76:53]),
+			.g(s6_nrm[52]),
+			.st(|s6_nrm[51:0]),
+			.rm(s6_rm),
+			.r(s6_rnd)
 		);
 
-		wire [31:0] fma_r_lat5 = s5_spec_hit ? s5_spec_res :
-			!s5_sum_nz ? {s5_rdn, 31'd0} : s5_rnd;
+		wire [31:0] fma_r_lat6 = s6_spec_hit ? s6_spec_res :
+			!s6_sum_nz ? {s6_rdn, 31'd0} : s6_rnd;
 
-		wire [31:0] cur_rs_other = (LAT >= 5) ? s5_rs_other : s4_other;
-		wire        cur_fma      = (LAT >= 5) ? s5_fma : s4_fma;
-		wire        cur_sat      = (LAT >= 5) ? s5_sat : s4_sat;
-		wire        cur_flt      = (LAT >= 5) ? s5_flt : s4_is_flt;
+		wire [31:0] cur_rs_other = (LAT >= 6) ? s6_rs_other :
+		                           (LAT >= 5) ? s5_rs_other : s4_other;
+		wire        cur_fma      = (LAT >= 6) ? s6_fma :
+		                           (LAT >= 5) ? s5_fma : s4_fma;
+		wire        cur_sat      = (LAT >= 6) ? s6_sat :
+		                           (LAT >= 5) ? s5_sat : s4_sat;
+		wire        cur_flt      = (LAT >= 6) ? s6_flt :
+		                           (LAT >= 5) ? s5_flt : s4_is_flt;
 
-		wire [31:0] cur_fma_r = (LAT >= 5) ? fma_r_lat5 : fma_r;
+		wire [31:0] cur_fma_r = (LAT >= 6) ? fma_r_lat6 : fma_r;
 		wire [31:0] cur_rs = cur_fma ? cur_fma_r : cur_rs_other;
 
 		assign res = (cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs;
