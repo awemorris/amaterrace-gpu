@@ -1,4 +1,4 @@
-# GHCI Review Reply - Version 20.0 (2026-10-28) - Commit: c3e79dd
+# GHCI Review Reply - Version 20.0 (2026-10-28) - Commit: c74accc
 
 zedBSD ドライバ担当殿の GHCI レビュー 第 20 版（ハードウェア境界観点 H1〜H12 に関する専門コードレビュー依頼 第 2 回）に対する、Amaterrace GPU 側の確定回答および審査結果です。
 
