@@ -46,11 +46,18 @@ foreach f $v_files {
 
 set_property include_dirs [list "$root/include"] [current_fileset]
 
-puts "Starting OOC synthesis for $module with period $period ns..."
+set synth_define "SYNTH_GENERIC"
+if {[string match "*7k*" $part]} {
+	set synth_define "SYNTH_KINTEX7"
+} elseif {[string match "*zu*" $part]} {
+	set synth_define "SYNTH_ZYNQ_ULTRASCALE"
+}
+
+puts "Starting OOC synthesis for $module with period $period ns ($synth_define)..."
 if {$module == "am_fpu_core"} {
-	synth_design -top $module -part $part -mode out_of_context -generic LAT=6
+	synth_design -top $module -part $part -mode out_of_context -verilog_define $synth_define -generic LAT=6
 } else {
-	synth_design -top $module -part $part -mode out_of_context
+	synth_design -top $module -part $part -mode out_of_context -verilog_define $synth_define
 }
 
 create_clock -period $period -name clk [get_ports clk]

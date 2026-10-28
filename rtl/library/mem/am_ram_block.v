@@ -17,6 +17,13 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifdef SYNTH_KINTEX7
+	`define _AM_XILINX_SYNTH
+`endif
+`ifdef SYNTH_ZYNQ_ULTRASCALE
+	`define _AM_XILINX_SYNTH
+`endif
+
 module am_ram_block #(
 	parameter W = 32,
 	parameter ADDR_W = 8,
@@ -33,11 +40,9 @@ module am_ram_block #(
 	input wire [ADDR_W-1:0] addrb,
 	output reg [W-1:0] doutb
 );
-`ifdef SYNTH_KINTEX7
+`ifdef _AM_XILINX_SYNTH
 	(* ram_style = "block" *)
 	/* synthesis syn_ramstyle = "block" */
-`else
-	(* ram_style = "block" *)
 `endif
 	reg [W-1:0] mem [0:DEPTH-1];
 
@@ -54,4 +59,5 @@ module am_ram_block #(
 	end
 endmodule
 
+`undef _AM_XILINX_SYNTH
 `default_nettype wire

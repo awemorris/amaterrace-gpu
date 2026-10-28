@@ -32,6 +32,7 @@ topdir=$root/boards/$board
 }
 case $board in
 kc705) part=${PART:-xc7k325tffg900-2} ;;
+zcu106) part=${PART:-xczu7ev-ffvc1156-2-e} ;;
 *) part=${PART:?PART is needed for board $board} ;;
 esac
 # A vivado on PATH is used as it is; otherwise VIVADO names settings64.sh.

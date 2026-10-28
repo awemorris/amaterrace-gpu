@@ -40,6 +40,7 @@ module am_div #(
 	output wire [W-1:0] q,
 	output wire [W-1:0] r
 );
+	/* synthesis syn_ramstyle = "registers", syn_srl_style = "registers" */
 	reg [W+1:0] rem;	/* W+2 bits signed partial remainder */
 	reg [W-1:0] quo;	/* the dividend's bits not yet used, then the quotient */
 	reg [W-1:0] div;

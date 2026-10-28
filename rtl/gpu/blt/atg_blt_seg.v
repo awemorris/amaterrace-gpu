@@ -74,7 +74,9 @@ module atg_blt_seg #(
 	wire [US:0] room_d = rev ? room_r : (dtile && room_t < room_f) ? room_t : room_f;
 	wire [US:0] room_s = {{(US - 2){1'b0}}, tile_room_s};
 	wire [US:0] room = (stile && room_s < room_d) ? room_s : room_d;
-	assign seg_n = rem < {{(16 - US){1'b0}}, room} ? rem[US:0] : room;
+	wire rem_large = |rem[16:US];
+	wire rem_less = !rem_large && ({1'b0, rem[US-1:0]} < room);
+	assign seg_n = rem_less ? {1'b0, rem[US-1:0]} : room;
 
 	/* The bytes back from the rightmost pixel, and the source window. */
 	am_sub #(.W(US + 1)) s_bn (.a(sn), .b({(US + 1){1'b0}}), .bi(1'b1), .d(back_n), .bo(seg_co_unused[4]));

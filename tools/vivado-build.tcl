@@ -99,7 +99,13 @@ if {$from_synth ne ""} {
 	close_project -quiet
 	open_checkpoint $from_synth
 } else {
-	synth_design -top $top -part $part -verilog_define SYNTH_KINTEX7 -include_dirs [list [file join $root include]]
+	set synth_define "SYNTH_GENERIC"
+	if {[string match "*7k*" $part] || [string match "*kc705*" $topdir]} {
+		set synth_define "SYNTH_KINTEX7"
+	} elseif {[string match "*zu*" $part] || [string match "*zcu106*" $topdir]} {
+		set synth_define "SYNTH_ZYNQ_ULTRASCALE"
+	}
+	synth_design -top $top -part $part -verilog_define $synth_define -include_dirs [list [file join $root include]]
 	write_checkpoint -force [file join $out ${top}_synth.dcp]
 }
 report_dsp_cells [file join $out dsp_cells.rpt] "Post-Synthesis"
