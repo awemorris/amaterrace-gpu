@@ -105,6 +105,35 @@ module atg_su_lane #(
 		end
 	end
 
+	/* Stage 1 to 4 pipeline match for QD control & operands */
+	reg r1_valid, r2_valid, r3_valid, r4_valid;
+	reg [WARP_W-1:0] r1_warp, r2_warp, r3_warp, r4_warp;
+	reg [GRP_W-1:0]  r1_grp,  r2_grp,  r3_grp,  r4_grp;
+	reg [6:0]        r1_rd,   r2_rd,   r3_rd,   r4_rd;
+	reg [NPHYS-1:0]  r1_mask, r2_mask, r3_mask, r4_mask;
+	reg [2:0]        r1_sub,  r2_sub,  r3_sub,  r4_sub;
+	reg [DW-1:0]     r1_xa,   r2_xa,   r3_xa,   r4_xa;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r1_valid <= 1'b0; r2_valid <= 1'b0; r3_valid <= 1'b0; r4_valid <= 1'b0;
+			r1_warp  <= {WARP_W{1'b0}}; r2_warp <= {WARP_W{1'b0}}; r3_warp <= {WARP_W{1'b0}}; r4_warp <= {WARP_W{1'b0}};
+			r1_grp   <= {GRP_W{1'b0}};  r2_grp  <= {GRP_W{1'b0}};  r3_grp  <= {GRP_W{1'b0}};  r4_grp  <= {GRP_W{1'b0}};
+			r1_rd    <= 7'd0;           r2_rd   <= 7'd0;           r3_rd   <= 7'd0;           r4_rd   <= 7'd0;
+			r1_mask  <= {NPHYS{1'b0}};  r2_mask <= {NPHYS{1'b0}};  r3_mask <= {NPHYS{1'b0}};  r4_mask <= {NPHYS{1'b0}};
+			r1_sub   <= 3'd0;           r2_sub  <= 3'd0;           r3_sub  <= 3'd0;           r4_sub  <= 3'd0;
+			r1_xa    <= {DW{1'b0}};     r2_xa   <= {DW{1'b0}};     r3_xa   <= {DW{1'b0}};     r4_xa   <= {DW{1'b0}};
+		end else begin
+			r1_valid <= r0_valid; r2_valid <= r1_valid; r3_valid <= r2_valid; r4_valid <= r3_valid;
+			r1_warp  <= r0_warp;  r2_warp  <= r1_warp;  r3_warp  <= r2_warp;  r4_warp  <= r3_warp;
+			r1_grp   <= r0_grp;   r2_grp   <= r1_grp;   r3_grp   <= r2_grp;   r4_grp   <= r3_grp;
+			r1_rd    <= r0_rd;    r2_rd    <= r1_rd;    r3_rd    <= r2_rd;    r4_rd    <= r3_rd;
+			r1_mask  <= r0_mask;  r2_mask  <= r1_mask;  r3_mask  <= r2_mask;  r4_mask  <= r3_mask;
+			r1_sub   <= r0_sub;   r2_sub   <= r1_sub;   r3_sub   <= r2_sub;   r4_sub   <= r3_sub;
+			r1_xa    <= r0_xa;    r2_xa    <= r1_xa;    r3_xa    <= r2_xa;    r4_xa    <= r3_xa;
+		end
+	end
+
 	/* qd: quads inside the group: lane l's partners l^1, l^2, l^3 and l&~3.
 	 * The differences x[l|1] - x[l&~1] (sub 0) and x[l|2] - x[l&~2] (sub 1)
 	 * take two values per quad, so a quad has two adders: A for lanes 0
@@ -115,24 +144,24 @@ module atg_su_lane #(
 		for (gq = 0; gq < NPHYS / 4; gq = gq + 1) begin : g_qd
 			wire [31:0] qa, qb;
 			wire unused_qa_v, unused_qb_v;
-			am_fp_add #(.LAT(0)) u_qa (
-				.clk(1'b0), .rst_n(1'b1), .i_valid(1'b1),
+			am_fp_add #(.LAT(4)) u_qa (
+				.clk(clk), .rst_n(rst_n), .i_valid(r0_valid),
 				.i_a(r0_sub[0] ? r0_xa[(4*gq + 2)*32 +: 32] : r0_xa[(4*gq + 1)*32 +: 32]),
 				.i_b(r0_xa[(4*gq)*32 +: 32]), .i_sub(1'b1),
 				.o_valid(unused_qa_v), .o_r(qa)
 			);
-			am_fp_add #(.LAT(0)) u_qb (
-				.clk(1'b0), .rst_n(1'b1), .i_valid(1'b1),
+			am_fp_add #(.LAT(4)) u_qb (
+				.clk(clk), .rst_n(rst_n), .i_valid(r0_valid),
 				.i_a(r0_xa[(4*gq + 3)*32 +: 32]),
 				.i_b(r0_sub[0] ? r0_xa[(4*gq + 1)*32 +: 32] : r0_xa[(4*gq + 2)*32 +: 32]), .i_sub(1'b1),
 				.o_valid(unused_qb_v), .o_r(qb)
 			);
 			for (gm = 4*gq; gm < 4*gq + 4; gm = gm + 1) begin : g_l
-				assign y[gm*32 +: 32] = r0_sub[2:0] == 3'd0 ? ((gm & 2) != 0 ? qb : qa) :
-					r0_sub[2:0] == 3'd1 ? ((gm & 1) != 0 ? qb : qa) :
-					r0_sub[2:0] == 3'd2 ? r0_xa[(gm ^ 1)*32 +: 32] :
-					r0_sub[2:0] == 3'd3 ? r0_xa[(gm ^ 2)*32 +: 32] :
-					r0_sub[2:0] == 3'd4 ? r0_xa[(gm ^ 3)*32 +: 32] : r0_xa[(gm & ~3)*32 +: 32];
+				assign y[gm*32 +: 32] = r4_sub[2:0] == 3'd0 ? ((gm & 2) != 0 ? qb : qa) :
+					r4_sub[2:0] == 3'd1 ? ((gm & 1) != 0 ? qb : qa) :
+					r4_sub[2:0] == 3'd2 ? r4_xa[(gm ^ 1)*32 +: 32] :
+					r4_sub[2:0] == 3'd3 ? r4_xa[(gm ^ 2)*32 +: 32] :
+					r4_sub[2:0] == 3'd4 ? r4_xa[(gm ^ 3)*32 +: 32] : r4_xa[(gm & ~3)*32 +: 32];
 			end
 		end
 	endgenerate
@@ -255,13 +284,13 @@ module atg_su_lane #(
 			else
 				pipe[0] <= {EW{1'b0}};
 
-			if (r0_valid)
-				pipe[1] <= {1'b1, r0_warp, r0_grp, r0_rd, r0_mask, y};
-			else
-				pipe[1] <= pipe[0];
-
-			for (k = 2; k < SHORT_LAT; k = k + 1)
+			for (k = 1; k < SHORT_LAT - 1; k = k + 1)
 				pipe[k] <= pipe[k-1];
+
+			if (r4_valid)
+				pipe[SHORT_LAT-1] <= {1'b1, r4_warp, r4_grp, r4_rd, r4_mask, y};
+			else
+				pipe[SHORT_LAT-1] <= pipe[SHORT_LAT-2];
 			if (stage && x_last) begin
 				st <= S_EMIT;
 				e_cnt <= {GRP_W{1'b0}};
