@@ -196,6 +196,7 @@ module atg_su_sb #(
 	integer j;
 	reg [5:0] j_r0, j_r1, j_r2, j_r3;
 	reg jw;
+	reg raw_hit, waw_hit;
 	always @(*) begin
 		hz_long = 1'b0;
 		have_free = 1'b0;
@@ -207,15 +208,16 @@ module atg_su_sb #(
 			j_r3 = uw_r3[j*6 +: 6];
 			jw = uw_wide[j];
 			if (uw_v[j]) begin
-				if ((src1 && hit_entry(rs1[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
-				    (src2 && hit_entry(rs2[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
-				    (src3 && hit_entry(rs3[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
-				    (src4 && hit_entry(rs1p[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
-				    (src5 && hit_entry(rs3p[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
-				    (dst && (hit_entry(rd[5:0], j_r0, j_r1, j_r2, j_r3, jw) ||
-				             (wide && (hit_entry(rd_p1, j_r0, j_r1, j_r2, j_r3, jw) ||
-				                       hit_entry(rd_p2, j_r0, j_r1, j_r2, j_r3, jw) ||
-				                       hit_entry(rd_p3, j_r0, j_r1, j_r2, j_r3, jw))))))
+				raw_hit = (src1 && hit_entry(rs1[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
+				          (src2 && hit_entry(rs2[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
+				          (src3 && hit_entry(rs3[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
+				          (src4 && hit_entry(rs1p[5:0], j_r0, j_r1, j_r2, j_r3, jw)) ||
+				          (src5 && hit_entry(rs3p[5:0], j_r0, j_r1, j_r2, j_r3, jw));
+				waw_hit = dst && (
+				          (j_r0 == rd[5:0]) ||
+				          (wide && (j_r0 == rd_p1 || j_r0 == rd_p2 || j_r0 == rd_p3)) ||
+				          (jw && (rd[5:0] == j_r1 || rd[5:0] == j_r2 || rd[5:0] == j_r3)));
+				if (raw_hit || waw_hit)
 					hz_long = 1'b1;
 			end else begin
 				have_free = 1'b1;
