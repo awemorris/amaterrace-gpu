@@ -453,12 +453,25 @@ module atg_su #(
 		.out_data({f_warp, f_pc, f_addr})
 	);
 
+	wire fet_d_valid, fet_d_ready;
+	wire [WARP_W-1:0] fet_d_warp;
+	wire [15:0] fet_d_pc;
+	wire [63:0] fet_d_instr;
+
 	atg_su_fetch #(.WARP_W(WARP_W)) fetch (
 		.clk(clk), .rst_n(rst_n),
 		.f_valid(f_valid), .f_ready(f_ready), .f_warp(f_warp), .f_pc(f_pc), .f_addr(f_addr),
 		.ic_req(ic_req), .ic_ready(ic_ready), .ic_addr(ic_addr), .ic_rvalid(ic_rvalid),
 		.ic_rdata(ic_rdata),
-		.d_valid(d_valid), .d_ready(d_ready), .d_warp(d_warp), .d_pc(d_pc), .d_instr(d_instr)
+		.d_valid(fet_d_valid), .d_ready(fet_d_ready), .d_warp(fet_d_warp), .d_pc(fet_d_pc), .d_instr(fet_d_instr)
+	);
+
+	am_skid #(.W(WARP_W + 16 + 64)) u_dec_skid (
+		.clk(clk), .rst_n(rst_n),
+		.in_valid(fet_d_valid), .in_ready(fet_d_ready),
+		.in_data({fet_d_warp, fet_d_pc, fet_d_instr}),
+		.out_valid(d_valid), .out_ready(d_ready),
+		.out_data({d_warp, d_pc, d_instr})
 	);
 
 	atg_su_icache #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) icache (
