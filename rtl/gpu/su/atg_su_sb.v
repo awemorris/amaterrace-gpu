@@ -248,55 +248,44 @@ module atg_su_sb #(
 		hit = x == r;
 	endfunction
 
-	/* Per-warp parallel short hazard checks.
-	 * Eliminates u_warp comparison from the 10-entry serial OR tree. */
-	wire [NWARPS-1:0] warp_hz_short;
-	genvar gws;
-	generate
-		for (gws = 0; gws < NWARPS; gws = gws + 1) begin : g_wshz
-			wire [NIF-1:0] f_hit;
-			genvar fm;
-			for (fm = 0; fm < NIF; fm = fm + 1) begin : g_fhit
-				wire f_match_warp = f_valid[fm] && f_short[fm] && (f_warp[(fm)*WARP_W +: WARP_W] == gws[WARP_W-1:0]);
-				wire f_raw = (!BYPASS || is_long || !(f_pipe_alu[fm] || f_pipe_fpu[fm]) || (G < 4)) &&
-				    ((src1 && hit(rs1, f_rd[(fm)*7 +: 7])) || (src2 && hit(rs2, f_rd[(fm)*7 +: 7])) ||
-				    (src3 && hit(rs3, f_rd[(fm)*7 +: 7])) || (src4 && hit(rs1p, f_rd[(fm)*7 +: 7])) ||
-				    (src5 && hit(rs3p, f_rd[(fm)*7 +: 7])));
-				wire f_waw = dst && is_long && (f_rd[(fm)*7 +: 7] < 7'd63) &&
-				    (hit(f_rd[(fm)*7 +: 7], {1'b0, rd[5:0]}) ||
-				     (wide && (hit(f_rd[(fm)*7 +: 7], {1'b0, rd_p1}) ||
-				               hit(f_rd[(fm)*7 +: 7], {1'b0, rd_p2}) ||
-				               hit(f_rd[(fm)*7 +: 7], {1'b0, rd_p3}))));
-				assign f_hit[fm] = f_match_warp && (f_raw || f_waw);
+	reg hz_short;
+	integer m;
+	always @(*) begin
+		hz_short = 1'b0;
+		for (m = 0; m < NIF; m = m + 1)
+			if (f_valid[m] && f_short[m] && f_warp[(m)*WARP_W +: WARP_W] == u_warp) begin
+				if ((!BYPASS || is_long || !(f_pipe_alu[m] || f_pipe_fpu[m]) || (G < 4)) &&
+				    ((src1 && hit(rs1, f_rd[(m)*7 +: 7])) || (src2 && hit(rs2, f_rd[(m)*7 +: 7])) ||
+				    (src3 && hit(rs3, f_rd[(m)*7 +: 7])) || (src4 && hit(rs1p, f_rd[(m)*7 +: 7])) ||
+				    (src5 && hit(rs3p, f_rd[(m)*7 +: 7]))))
+					hz_short = 1'b1;
+				if (dst && is_long && (f_rd[(m)*7 +: 7] < 7'd63) &&
+				    (hit(f_rd[(m)*7 +: 7], {1'b0, rd[5:0]}) ||
+				     (wide && (hit(f_rd[(m)*7 +: 7], {1'b0, rd_p1}) ||
+				               hit(f_rd[(m)*7 +: 7], {1'b0, rd_p2}) ||
+				               hit(f_rd[(m)*7 +: 7], {1'b0, rd_p3})))))
+					hz_short = 1'b1;
 			end
-
-			wire [NSH-1:0] c_hit;
-			genvar cm_idx;
-			for (cm_idx = 0; cm_idx < NSH; cm_idx = cm_idx + 1) begin : g_chit
-				wire c_match_warp = c_valid[cm_idx] && (c_warp[(cm_idx)*WARP_W +: WARP_W] == gws[WARP_W-1:0]);
-				wire c_wait_cond = ((!BYPASS && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > G + 1) ||
-				     (BYPASS && is_long && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > 1) ||
-				     (BYPASS && !is_long && !c_pipe_alu[cm_idx] && !c_pipe_fpu[cm_idx] && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > G + 1) ||
-				     (BYPASS && !is_long && c_pipe_alu[cm_idx] && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > SHORT_BP_WAIT_ALU) ||
-				     (BYPASS && !is_long && c_pipe_fpu[cm_idx] && {28'd0, c_cnt[(cm_idx)*CD_W +: CD_W]} > SHORT_BP_WAIT_FPU));
-				wire c_raw = c_wait_cond &&
-				    ((src1 && hit(rs1, {1'b0, c_rd[(cm_idx)*6 +: 6]})) ||
-				    (src2 && hit(rs2, {1'b0, c_rd[(cm_idx)*6 +: 6]})) || (src3 && hit(rs3, {1'b0, c_rd[(cm_idx)*6 +: 6]})) ||
-				    (src4 && hit(rs1p, {1'b0, c_rd[(cm_idx)*6 +: 6]})) ||
-				    (src5 && hit(rs3p, {1'b0, c_rd[(cm_idx)*6 +: 6]})));
-				wire c_waw = dst && is_long &&
-				    (c_rd[(cm_idx)*6 +: 6] == rd[5:0] ||
-				     (wide && (c_rd[(cm_idx)*6 +: 6] == rd_p1 ||
-				               c_rd[(cm_idx)*6 +: 6] == rd_p2 ||
-				               c_rd[(cm_idx)*6 +: 6] == rd_p3)));
-				assign c_hit[cm_idx] = c_match_warp && (c_raw || c_waw);
+		for (m = 0; m < NSH; m = m + 1)
+			if (c_valid[m] && c_warp[(m)*WARP_W +: WARP_W] == u_warp) begin
+				if (((!BYPASS && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > G + 1) ||
+				     (BYPASS && is_long && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > 1) ||
+				     (BYPASS && !is_long && !c_pipe_alu[m] && !c_pipe_fpu[m] && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > G + 1) ||
+				     (BYPASS && !is_long && c_pipe_alu[m] && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > SHORT_BP_WAIT_ALU) ||
+				     (BYPASS && !is_long && c_pipe_fpu[m] && {28'd0, c_cnt[(m)*CD_W +: CD_W]} > SHORT_BP_WAIT_FPU)) &&
+				    ((src1 && hit(rs1, {1'b0, c_rd[(m)*6 +: 6]})) ||
+				    (src2 && hit(rs2, {1'b0, c_rd[(m)*6 +: 6]})) || (src3 && hit(rs3, {1'b0, c_rd[(m)*6 +: 6]})) ||
+				    (src4 && hit(rs1p, {1'b0, c_rd[(m)*6 +: 6]})) ||
+				    (src5 && hit(rs3p, {1'b0, c_rd[(m)*6 +: 6]}))))
+					hz_short = 1'b1;
+				if (dst && is_long &&
+				    (c_rd[(m)*6 +: 6] == rd[5:0] ||
+				     (wide && (c_rd[(m)*6 +: 6] == rd_p1 ||
+				               c_rd[(m)*6 +: 6] == rd_p2 ||
+				               c_rd[(m)*6 +: 6] == rd_p3))))
+					hz_short = 1'b1;
 			end
-
-			assign warp_hz_short[gws] = (|f_hit) || (|c_hit);
-		end
-	endgenerate
-
-	wire hz_short = warp_hz_short[u_warp];
+	end
 
 	/* Counters (the warp's, less this cycle's release) and the instructions that wait for them. */
 	wire rel_u = rel_valid && rel_warp == u_warp;
@@ -354,17 +343,34 @@ module atg_su_sb #(
 	wire alloc = issued_long && need_e;
 	wire [NE_W-1:0] alloc_idx = {u_warp, free_e[SBE_W-1:0]};	/* free_e < SB_ENTRIES at an alloc */
 
+	/* Delay counter increment by 1 cycle to completely decouple counter updates
+	 * from the 5ns hazard checking critical path. */
+	reg [NWARPS-1:0] inc_m, inc_t, inc_x;
+	integer gi;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			inc_m <= {NWARPS{1'b0}};
+			inc_t <= {NWARPS{1'b0}};
+			inc_x <= {NWARPS{1'b0}};
+		end else begin
+			for (gi = 0; gi < NWARPS; gi = gi + 1) begin
+				inc_m[gi] <= issued_long && (u_warp == gi[WARP_W-1:0]) && (cls == ATG_CLS_M);
+				inc_t[gi] <= issued_long && (u_warp == gi[WARP_W-1:0]) && (cls == ATG_CLS_T);
+				inc_x[gi] <= issued_long && (u_warp == gi[WARP_W-1:0]) && (cls == ATG_CLS_X);
+			end
+		end
+	end
+
 	/* Each warp's counters: + 1 at an issue of the class, - 1 at its release.
 	 * Speculatively precompute +1 and -1 from register outputs to eliminate CARRY4 from critical path. */
 	wire [NWARPS*CNT_W-1:0] cm_next, ct_next, cx_next;
 	genvar gq;
 	generate
 		for (gq = 0; gq < NWARPS; gq = gq + 1) begin : g_cnt
-			wire iw = issued_long && u_warp == gq;
 			wire rw = rel_valid && rel_warp == gq;
-			wire im = iw && cls == ATG_CLS_M, rm = rw && rel_cls == ATG_CLS_M;
-			wire it = iw && cls == ATG_CLS_T, rt = rw && rel_cls == ATG_CLS_T;
-			wire ix = iw && cls == ATG_CLS_X, rx = rw && rel_cls == ATG_CLS_X;
+			wire im = inc_m[gq], rm = rw && rel_cls == ATG_CLS_M;
+			wire it = inc_t[gq], rt = rw && rel_cls == ATG_CLS_T;
+			wire ix = inc_x[gq], rx = rw && rel_cls == ATG_CLS_X;
 
 			wire [CNT_W-1:0] w_cm = cm[gq*CNT_W +: CNT_W];
 			wire [CNT_W-1:0] w_ct = ct[gq*CNT_W +: CNT_W];
