@@ -252,11 +252,23 @@ module atg_su_wb #(
 	end
 	wire [31:0] fe_grp = {27'd0, fe_lane} / NPHYS;
 
+	/* Direct precomputed RF write-enable for the free arbiter, completely breaking
+	 * the critical path from sv into the priority arbiter tree. */
+	reg [6:0] lrd_free;
+	integer mf;
+	always @(*) begin
+		lrd_free = l_rd[6:0];
+		for (mf = 1; mf < NL; mf = mf + 1)
+			if (lsel_free == mf[LP_W-1:0])
+				lrd_free = l_rd[mf*7 +: 7];
+	end
+	wire free_we = lsel_free_v && l_wr[lsel_free] && (lrd_free != 7'd63);
+
 	wire s_rq = sv && (srd == 7'd63);
 	wire l_rq = lw && (lrd == 7'd63);
 
 	(* keep = "true" *) wire s_we = (srd != 7'd63);
-	(* keep = "true" *) wire non_s_we = in_go ? 1'b1 : (lw && (lrd != 7'd63));
+	(* keep = "true" *) wire non_s_we = in_go ? 1'b1 : free_we;
 	assign w_en = sv ? s_we : non_s_we;
 
 	assign w_warp = sv ? sw : (in_go ? fe[IW-1 -: WARP_W] : l_s_warp);
