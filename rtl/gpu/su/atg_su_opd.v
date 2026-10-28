@@ -389,7 +389,7 @@ module atg_su_opd #(
 	wire [DW-1:0] va, vb, vc;
 
 	/* Register to catch RF write-read collision (1-cycle delay from fwd_wb) */
-	reg fwd_rf_valid;
+	(* max_fanout = 16 *) reg fwd_rf_valid;
 	reg [WARP_W-1:0] fwd_rf_warp;
 	reg [GRP_W-1:0]  fwd_rf_grp;
 	reg [6:0]        fwd_rf_rd;

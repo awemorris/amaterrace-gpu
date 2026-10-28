@@ -127,10 +127,6 @@ module atg_su_exec #(
 	integer k;
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			exec_r <= {(NWARPS*32){1'b0}};
-			kill_r <= {(NWARPS*32){1'b0}};
-			acc_any <= 1'b0;
-			acc_all <= 1'b1;
 			wc_v <= 1'b0;
 			wc_w <= {WARP_W{1'b0}};
 			wc_o <= 2'd0;
@@ -145,14 +141,6 @@ module atg_su_exec #(
 				pipe[k] <= pipe[k-1];
 			wc_v <= 1'b0;
 			if (mine) begin
-				case (op)
-				ATG_EXEC_SET: exec_r[x_warp*32 +: 32] <= (wexec & ~gmask) | bt_w;
-				ATG_EXEC_AND: exec_r[x_warp*32 +: 32] <= wexec & (~gmask | bt_w);
-				ATG_EXEC_OR: exec_r[x_warp*32 +: 32] <= wexec | bt_w;
-				ATG_EXEC_KILL: kill_r[x_warp*32 +: 32] <= kill_r[x_warp*32 +: 32] |
-					(bt_w & wexec);
-				default: ;
-				endcase
 				if (x_last) begin
 					if (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR) begin
 						wc_v <= 1'b1;
@@ -165,12 +153,47 @@ module atg_su_exec #(
 					end
 				end
 			end
-			if (init_valid) begin
-				exec_r[init_warp*32 +: 32] <= init_mask;
-				kill_r[init_warp*32 +: 32] <= 32'd0;
-			end
 		end
 	end
+
+	genvar gw;
+	generate
+		for (gw = 0; gw < NWARPS; gw = gw + 1) begin : g_warp_state
+			wire w_match = mine && (x_warp == gw[WARP_W-1:0]);
+			wire w_init = init_valid && (init_warp == gw[WARP_W-1:0]);
+
+			wire kill_ce = w_init || (w_match && op == ATG_EXEC_KILL);
+			wire [31:0] kill_d = w_init ? 32'd0 : (kill_r[gw*32 +: 32] | (bt_w & wexec));
+
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n)
+					kill_r[gw*32 +: 32] <= 32'd0;
+				else if (kill_ce)
+					kill_r[gw*32 +: 32] <= kill_d;
+			end
+
+			wire exec_op_match = (op == ATG_EXEC_SET || op == ATG_EXEC_AND || op == ATG_EXEC_OR);
+			wire exec_ce = w_init || (w_match && exec_op_match);
+			reg [31:0] exec_d;
+			always @(*) begin
+				if (w_init)
+					exec_d = init_mask;
+				else case (op)
+					ATG_EXEC_SET: exec_d = (wexec & ~gmask) | bt_w;
+					ATG_EXEC_AND: exec_d = wexec & (~gmask | bt_w);
+					ATG_EXEC_OR:  exec_d = wexec | bt_w;
+					default:      exec_d = wexec;
+				endcase
+			end
+
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n)
+					exec_r[gw*32 +: 32] <= 32'd0;
+				else if (exec_ce)
+					exec_r[gw*32 +: 32] <= exec_d;
+			end
+		end
+	endgenerate
 
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
