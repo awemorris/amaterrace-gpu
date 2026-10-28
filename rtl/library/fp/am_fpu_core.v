@@ -770,20 +770,23 @@ module am_fpu_core #(
 			.r(fma_r)
 		);
 
-		/* Stage 4: FMA 77-bit add/sub */
+		/* Stage 4: Speculative Parallel 77-bit add/sub (eliminates serial 77-bit comparator) */
 		wire [76:0] s4_pw = !s4_zc && s4_kbig ? {76'd0, 1'b1} : {27'd0, pr_s4[47:0], 2'b00};
-		wire        s4_pge = s4_pw >= s4_cw;
-		wire [76:0] s4_op_a = s4_same || s4_pge ? s4_pw : s4_cw;
-		wire [76:0] s4_op_b = s4_same || s4_pge ? s4_cw : s4_pw;
-		wire        s4_op_sub = !s4_same;
-		wire        s4_sr = s4_same || s4_pge ? s4_sp : s4_sc;
+		wire [76:0] s4_sum_p_c, s4_sum_c_p;
+		wire s4_co_p_c, carry_unused_c_p;
 
-		wire [76:0] s4_sum;
-		wire carry_unused4_sum;
-		am_addsub #(.W(77)) u_fma_sum (
-			.a(s4_op_a), .b(s4_op_b), .sub(s4_op_sub), .s(s4_sum),
-			.co(carry_unused4_sum)
+		am_addsub #(.W(77)) u_fma_p_c (
+			.a(s4_pw), .b(s4_cw), .sub(!s4_same), .s(s4_sum_p_c),
+			.co(s4_co_p_c)
 		);
+		am_sub #(.W(77)) u_fma_c_p (
+			.a(s4_cw), .b(s4_pw), .bi(1'b0), .d(s4_sum_c_p),
+			.bo(carry_unused_c_p)
+		);
+
+		wire s4_pick_p_c = s4_same || s4_co_p_c;
+		wire [76:0] s4_sum = s4_pick_p_c ? s4_sum_p_c : s4_sum_c_p;
+		wire        s4_sr  = s4_pick_p_c ? s4_sp : s4_sc;
 
 		wire s4_fma = (s4_op <= OP_FNMADD) || (s4_op == OP_FRACT);
 		reg [31:0] s4_other;
@@ -1041,7 +1044,7 @@ module am_fpu_core #(
 
 		assign res = (LAT >= 6) ? cur_rs : ((cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs);
 		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused3_mr, carry_unused3_ep,
-			fma3_carry_unused, carry_unused4_sum, fma_carry_unused5, s3_e_p1[11:8], pr_s4[65:64],
+			fma3_carry_unused, carry_unused_c_p, fma_carry_unused5, s3_e_p1[11:8], pr_s4[65:64],
 			s6_rnd_carry_unused, s6_mr[24:23], nz_b4, nz_b3, nz_b2, nz_b1, nz_b0, s6_m_p1[24]};
 	end
 	endgenerate
