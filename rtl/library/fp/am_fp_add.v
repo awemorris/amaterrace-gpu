@@ -101,7 +101,7 @@ module am_fp_add #(
 	wire [7:0] ex2;
 	wire [26:0] px2, py2;
 
-	/* Stage 3: add or subtract, count the leading zeros. */
+	/* Stage 3: add or subtract, count leading zeros, normalise shift & exponent. */
 	wire [27:0] sum;
 	wire sum_co_unused;
 	am_addsub #(.W(28)) u_sum (.a({1'b0, px2}), .b({1'b0, py2}), .sub(sub2), .s(sum), .co(sum_co_unused));
@@ -114,39 +114,43 @@ module am_fp_add #(
 				lz = 5'd26 - k[4:0];
 	end
 
+	wire [26:0] nl;
+	am_shift #(.W(27), .SW(5)) u_nl (.a(sum[26:0]), .amt(lz), .left(1'b1), .arith(1'b0), .y(nl));
+	wire [26:0] n_comb = sum[27] ? {sum[27:2], sum[1] | sum[0]} : nl;
+	wire [9:0] e0_comb;
+	wire e0_co_unused;
+	am_addsub #(.W(10)) u_e0 (.a({2'b00, ex2}), .b(sum[27] ? 10'd1 : {5'd0, lz}), .sub(!sum[27]),
+		.s(e0_comb), .co(e0_co_unused));
+	wire sz_comb = (sum == 28'd0);
+
 	wire v3_w = rst_n && v2;
 	wire sp3_w = sp2;
 	wire [31:0] spv3_w = spv2;
 	wire sx3_w = sx2;
-	wire [7:0] ex3_w = ex2;
-	wire [27:0] sum3_w = sum;
-	wire [4:0] lz3_w = lz;
+	wire [26:0] n3_w = n_comb;
+	wire [9:0] e0_3_w = e0_comb;
+	wire sz3_w = sz_comb;
 
 	wire v3;
-	wire sp3, sx3;
+	wire sp3, sx3, sz3;
 	wire [31:0] spv3;
-	wire [7:0] ex3;
-	wire [27:0] sum3;
-	wire [4:0] lz3;
+	wire [26:0] n3;
+	wire [9:0] e0_3;
 
-	/* Stage 4: normalise, round to nearest even, pack. */
-	wire [26:0] nl;
-	wire [9:0] e0, e;
+	/* Stage 4: round to nearest even, pack. */
+	wire inc = n3[2] && (n3[1] || n3[0] || n3[3]);
 	wire [24:0] m0;
-	wire e0_co_unused, e_co_unused, m_co_unused;
-	am_shift #(.W(27), .SW(5)) u_nl (.a(sum3[26:0]), .amt(lz3), .left(1'b1), .arith(1'b0), .y(nl));
-	wire [26:0] n = sum3[27] ? {sum3[27:2], sum3[1] | sum3[0]} : nl;
-	am_addsub #(.W(10)) u_e0 (.a({2'b00, ex3}), .b(sum3[27] ? 10'd1 : {5'd0, lz3}), .sub(!sum3[27]),
-		.s(e0), .co(e0_co_unused));
-	wire inc = n[2] && (n[1] || n[0] || n[3]);
-	am_add #(.W(25)) u_m0 (.a({1'b0, n[26:3]}), .b(25'd0), .ci(inc), .s(m0), .co(m_co_unused));
+	wire m_co_unused;
+	am_add #(.W(25)) u_m0 (.a({1'b0, n3[26:3]}), .b(25'd0), .ci(inc), .s(m0), .co(m_co_unused));
 	wire [24:0] m = m0[24] ? {1'b0, m0[24:1]} : m0;
-	am_add #(.W(10)) u_e (.a(e0), .b(10'd0), .ci(m0[24]), .s(e), .co(e_co_unused));
+	wire [9:0] e;
+	wire e_co_unused;
+	am_add #(.W(10)) u_e (.a(e0_3), .b(10'd0), .ci(m0[24]), .s(e), .co(e_co_unused));
 	wire unused_m = &{1'b0, m[24:23], e0_co_unused, e_co_unused, m_co_unused, dab_bo_unused, sum_co_unused};
 
 	wire o_valid_comb = rst_n && v3;
 	wire [31:0] o_r_comb = sp3 ? spv3 :
-		(sum3 == 28'd0) ? 32'd0 :
+		sz3 ? 32'd0 :
 		(!e[9] && e >= 10'd255) ? {sx3, 8'hFF, 23'd0} :
 		(e[9] || e == 10'd0) ? {sx3, 31'd0} :
 		{sx3, e[7:0], m[22:0]};
@@ -176,9 +180,9 @@ module am_fp_add #(
 			assign sp3 = sp3_w;
 			assign spv3 = spv3_w;
 			assign sx3 = sx3_w;
-			assign ex3 = ex3_w;
-			assign sum3 = sum3_w;
-			assign lz3 = lz3_w;
+			assign n3 = n3_w;
+			assign e0_3 = e0_3_w;
+			assign sz3 = sz3_w;
 
 			assign o_valid = o_valid_comb;
 			assign o_r = o_r_comb;
@@ -237,40 +241,39 @@ module am_fp_add #(
 			assign px2 = r_px2;
 			assign py2 = r_py2;
 
-			reg r_v3, r_sp3, r_sx3;
+			reg r_v3, r_sp3, r_sx3, r_sz3;
 			reg [31:0] r_spv3;
-			reg [7:0] r_ex3;
-			reg [27:0] r_sum3;
-			reg [4:0] r_lz3;
+			reg [26:0] r_n3;
+			reg [9:0] r_e0_3;
 
 			always @(posedge clk) begin
-				r_v3 <= v3_w;
-				r_sp3 <= sp3_w;
+				r_v3   <= v3_w;
+				r_sp3  <= sp3_w;
 				r_spv3 <= spv3_w;
-				r_sx3 <= sx3_w;
-				r_ex3 <= ex3_w;
-				r_sum3 <= sum3_w;
-				r_lz3 <= lz3_w;
+				r_sx3  <= sx3_w;
+				r_n3   <= n3_w;
+				r_e0_3 <= e0_3_w;
+				r_sz3  <= sz3_w;
 			end
 
-			assign v3 = r_v3;
-			assign sp3 = r_sp3;
+			assign v3   = r_v3;
+			assign sp3  = r_sp3;
 			assign spv3 = r_spv3;
-			assign sx3 = r_sx3;
-			assign ex3 = r_ex3;
-			assign sum3 = r_sum3;
-			assign lz3 = r_lz3;
+			assign sx3  = r_sx3;
+			assign n3   = r_n3;
+			assign e0_3 = r_e0_3;
+			assign sz3  = r_sz3;
 
 			reg r_ovalid;
-			reg [31:0] r_or;
+			(* extract_reset = "no" *) reg [31:0] r_or;
 
 			always @(posedge clk) begin
 				r_ovalid <= o_valid_comb;
-				r_or <= o_r_comb;
+				r_or     <= o_r_comb;
 			end
 
 			assign o_valid = r_ovalid;
-			assign o_r = r_or;
+			assign o_r     = r_or;
 		end
 	endgenerate
 endmodule
