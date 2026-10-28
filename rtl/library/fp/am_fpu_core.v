@@ -815,10 +815,11 @@ module am_fpu_core #(
 		am_add #(.W(12)) u_fma_t2 (.a(s5_t1), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_t2), .co(fma_carry_unused5[2]));
 		am_sub #(.W(12)) u_fma_er (.a(s5_t2), .b(12'd175), .bi(1'b0), .d(s5_er), .bo(fma_carry_unused5[3]));
 
-		/* Precompute sticky, guard, and rounding up in Stage 5 to break timing path */
+		/* Precompute sticky, guard, rounding up, and all-ones in Stage 5 */
 		wire [23:0] s5_m = s5_nrm[76:53];
 		wire s5_g = s5_nrm[52];
 		wire s5_st = |s5_nrm[51:0];
+		wire s5_m_all1 = &s5_m;
 		reg s5_up;
 		always @(*)
 			case (s5_rm)
@@ -841,6 +842,7 @@ module am_fpu_core #(
 		reg        s6_up;
 		reg        s6_g;
 		reg        s6_st;
+		reg        s6_m_all1;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -859,6 +861,7 @@ module am_fpu_core #(
 				s6_up       <= 1'b0;
 				s6_g        <= 1'b0;
 				s6_st       <= 1'b0;
+				s6_m_all1   <= 1'b0;
 				s6_sum_nz   <= 1'b0;
 				s6_rm       <= 3'd0;
 				s6_rdn      <= 1'b0;
@@ -875,6 +878,7 @@ module am_fpu_core #(
 				s6_up       <= s5_up;
 				s6_g        <= s5_g;
 				s6_st       <= s5_st;
+				s6_m_all1   <= s5_m_all1;
 				s6_sum_nz   <= s5_sum_nz;
 				s6_rm       <= s5_rm;
 				s6_rdn      <= s5_rdn;
@@ -884,7 +888,6 @@ module am_fpu_core #(
 		end
 
 		/* Stage 6: Fast Inline Parallel Rounding for LAT >= 6 */
-		wire s6_m_all1 = &s6_m;
 		wire s6_m_carry = s6_m_all1 && s6_up;
 
 		wire [24:0] s6_mr0;
