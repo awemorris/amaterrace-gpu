@@ -316,8 +316,8 @@ module am_fpu_core #(
 		wire [65:0] mo_s0 = mulops(op, a, b);
 
 		reg [31:0] s1_a, s1_b, s1_c;
-		reg [4:0]  s1_op;
-		reg [2:0]  s1_rm;
+		(* keep = "true", equivalent_register_removal = "no" *) reg [4:0]  s1_op;
+		(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  s1_rm;
 		reg        s1_sat;
 		reg [65:0] s1_mo;
 
@@ -372,8 +372,8 @@ module am_fpu_core #(
 
 		/* --- Stage 2: Pipeline match & LOD/Shift (Register 2) --- */
 		reg [31:0] s2_a, s2_b, s2_c;
-		reg [4:0]  s2_op;
-		reg [2:0]  s2_rm;
+		(* keep = "true", equivalent_register_removal = "no" *) reg [4:0]  s2_op;
+		(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  s2_rm;
 		reg        s2_sat;
 		reg [24:0] s2_n;
 		reg [31:0] s2_nega;
@@ -433,8 +433,8 @@ module am_fpu_core #(
 
 		/* --- Stage 3: Rounding, operand & other formation (Register 3) --- */
 		reg [31:0] s3_a, s3_b, s3_c;
-		reg [4:0]  s3_op;
-		reg [2:0]  s3_rm;
+		(* keep = "true", equivalent_register_removal = "no" *) reg [4:0]  s3_op;
+		(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  s3_rm;
 		reg        s3_sat;
 		reg        s3_s;
 		reg [11:0] s3_e;
@@ -645,10 +645,10 @@ module am_fpu_core #(
 		end
 
 		/* --- Stage 4: Multiplier PREG Output arrives in sync with Register 4 --- */
-		reg [4:0]  s4_op;
+		(* keep = "true", equivalent_register_removal = "no" *) reg [4:0]  s4_op;
+		(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  s4_rr;
 		reg        s4_sat;
 		reg [31:0] s4_fx, s4_fy, s4_fz;
-		reg [2:0]  s4_rr;
 		reg        s4_noc;
 		reg [31:0] s4_other_pre;
 		reg        s4_is_flt;
@@ -873,7 +873,7 @@ module am_fpu_core #(
 		reg [11:0] s6_er;
 		reg        s6_sr;
 		reg        s6_g;
-		reg        s6_st;
+		reg [12:0] s6_st_c;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -895,7 +895,7 @@ module am_fpu_core #(
 				s6_er         <= 12'd0;
 				s6_sr         <= 1'b0;
 				s6_g          <= 1'b0;
-				s6_st         <= 1'b0;
+				s6_st_c       <= 13'd0;
 				s6_sum_nz     <= 1'b0;
 				s6_rm         <= 3'd0;
 				s6_rdn        <= 1'b0;
@@ -916,7 +916,7 @@ module am_fpu_core #(
 				s6_er         <= s5_er;
 				s6_sr         <= s5_sr;
 				s6_g          <= s5_g;
-				s6_st         <= |s5_st_c;
+				s6_st_c       <= s5_st_c;
 				s6_sum_nz     <= s5_sum_nz;
 				s6_rm         <= s5_rm;
 				s6_rdn        <= s5_rdn;
@@ -932,6 +932,7 @@ module am_fpu_core #(
 		end
 
 		/* Stage 6: Speculative Parallel Rounding for LAT >= 6 */
+		wire s6_st = |s6_st_c;
 		wire [24:0] s6_m_p1;
 		wire signed [11:0] s6_er_p1;
 		wire [1:0] s6_rnd_carry_unused;
