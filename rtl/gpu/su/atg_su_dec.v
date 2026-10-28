@@ -123,7 +123,7 @@ module atg_su_dec #(
 		({24'd0, rd_end} > NREGS || rd_end > 8'd63)));
 	/* texsz.s (texsz with op[6] and op[3]) needs MS4. */
 	wire need_ms = unit == ATG_UNIT_TEX && op[1:0] == 2'd3 && op[6] && op[3];
-	wire ill = w0[1:0] != 2'b11 || !def || (need_pk && PACKED == 0) || (need_ms && MS4 == 0) ||
+	(* keep = "true", max_fanout = 16 *) wire ill = w0[1:0] != 2'b11 || !def || (need_pk && PACKED == 0) || (need_ms && MS4 == 0) ||
 		(need_sg && SUBGROUP == 0) || (need_sa && HAS_SA == 0) ||
 		(use1 && src_bad(rs1)) || (use2 && src_bad(rs2)) || (use3 && src_bad(rs3)) ||
 		pair_bad || cmp_bad || dst_bad;

@@ -470,7 +470,7 @@ module atg_su #(
 	wire fet_d_valid, fet_d_ready;
 	wire [WARP_W-1:0] fet_d_warp;
 	wire [15:0] fet_d_pc;
-	wire [63:0] fet_d_instr;
+	(* keep = "true", max_fanout = 16 *) wire [63:0] fet_d_instr;
 
 	atg_su_fetch #(.WARP_W(WARP_W)) fetch (
 		.clk(clk), .rst_n(rst_n),

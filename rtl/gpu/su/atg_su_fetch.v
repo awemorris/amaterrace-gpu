@@ -70,7 +70,8 @@ module atg_su_fetch #(
 	assign d_valid = used != 2'd0 && q_have[h];
 	assign d_warp = q_warp[h];
 	assign d_pc = q_pc[h];
-	assign d_instr = q_ins[h];
+	(* keep = "true", max_fanout = 16 *) wire [63:0] w_d_instr = q_ins[h];
+	assign d_instr = w_d_instr;
 	wire pop = d_valid && d_ready;
 
 	always @(posedge clk) begin
