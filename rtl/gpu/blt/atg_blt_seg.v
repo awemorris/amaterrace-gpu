@@ -65,8 +65,14 @@ module atg_blt_seg #(
 
 	/* The pixels to the line's end (forward) or back to its start (reversed), and to the tile row's end. */
 	am_sub #(.W(US + 1)) s_fb (.a(LB_V), .b({1'b0, p_da}), .bi(1'b0), .d(room_fb), .bo(seg_co_unused[0]));
-	am_shift #(.W(US + 1), .SW(3)) h_f (.a(room_fb), .amt(psl), .left(1'b0), .arith(1'b0), .y(room_f));
-	am_shift #(.W(US + 1), .SW(3)) h_r (.a({1'b0, p_da}), .amt(psl), .left(1'b0), .arith(1'b0), .y(da_px));
+	assign room_f = (psl == 3'd4) ? {4'b0000, room_fb[US:4]} :
+	                (psl == 3'd3) ? {3'b000, room_fb[US:3]}  :
+	                (psl == 3'd2) ? {2'b00, room_fb[US:2]}   :
+	                (psl == 3'd1) ? {1'b0, room_fb[US:1]}    : room_fb;
+	assign da_px  = (psl == 3'd4) ? {5'b00000, p_da[US-1:4]} :
+	                (psl == 3'd3) ? {4'b0000, p_da[US-1:3]}  :
+	                (psl == 3'd2) ? {3'b000, p_da[US-1:2]}   :
+	                (psl == 3'd1) ? {2'b00, p_da[US-1:1]}    : {1'b0, p_da};
 	am_add #(.W(US + 1)) a_r (.a(da_px), .b({(US + 1){1'b0}}), .ci(1'b1), .s(room_r), .co(seg_co_unused[1]));
 	am_sub #(.W(3)) s_td (.a(3'd4), .b({1'b0, px}), .bi(1'b0), .d(tile_room_d), .bo(seg_co_unused[2]));
 	am_sub #(.W(3)) s_ts (.a(3'd4), .b({1'b0, spx}), .bi(1'b0), .d(tile_room_s), .bo(seg_co_unused[3]));
@@ -80,8 +86,11 @@ module atg_blt_seg #(
 
 	/* The bytes back from the rightmost pixel, and the source window. */
 	am_sub #(.W(US + 1)) s_bn (.a(sn), .b({(US + 1){1'b0}}), .bi(1'b1), .d(back_n), .bo(seg_co_unused[4]));
-	am_shift #(.W(ADDR_W), .SW(3)) h_b (.a({{(ADDR_W - US - 1){1'b0}}, back_n}), .amt(psl), .left(1'b1),
-		.arith(1'b0), .y(back));
+	assign back = (psl == 3'd4) ? {{(ADDR_W - US - 5){1'b0}}, back_n, 4'b0000} :
+	              (psl == 3'd3) ? {{(ADDR_W - US - 4){1'b0}}, back_n, 3'b000}  :
+	              (psl == 3'd2) ? {{(ADDR_W - US - 3){1'b0}}, back_n, 2'b00}   :
+	              (psl == 3'd1) ? {{(ADDR_W - US - 2){1'b0}}, back_n, 1'b0}    :
+	                              {{(ADDR_W - US - 1){1'b0}}, back_n};
 	am_sub #(.W(ADDR_W)) s_sb (.a(slo), .b({{(ADDR_W - US){1'b0}}, dlo}), .bi(1'b0), .d(src_base),
 		.bo(seg_co_unused[5]));
 	am_add #(.W(ADDR_W)) a_sn (.a(slo), .b({{(ADDR_W - US - 1){1'b0}}, snu}), .ci(1'b0), .s(src_next),
