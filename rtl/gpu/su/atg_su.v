@@ -470,7 +470,7 @@ module atg_su #(
 	wire fet_d_valid, fet_d_ready;
 	wire [WARP_W-1:0] fet_d_warp;
 	wire [15:0] fet_d_pc;
-	(* keep = "true", max_fanout = 16 *) wire [63:0] fet_d_instr;
+	wire [63:0] fet_d_instr;
 
 	atg_su_fetch #(.WARP_W(WARP_W)) fetch (
 		.clk(clk), .rst_n(rst_n),
@@ -487,6 +487,20 @@ module atg_su #(
 		.req_valid(ic_m_req_valid), .req_ready(ic_m_req_ready), .req_write(ic_m_req_write), .req_line(ic_m_req_line), .req_be(ic_m_req_be), .req_wdata(ic_m_req_wdata), .req_tag(ic_m_req_tag), .rsp_valid(ic_m_rsp_valid), .rsp_write(ic_m_rsp_write), .rsp_tag(ic_m_rsp_tag), .rsp_rdata(ic_m_rsp_rdata), .rsp_error(ic_m_rsp_error)
 	);
 
+	wire skid_d_valid, skid_d_ready;
+	wire [WARP_W-1:0] skid_d_warp;
+	wire [15:0] skid_d_pc;
+	wire [63:0] skid_d_instr;
+
+	/* Registered skid buffer between fetch and dec to break the 4.9ns decode path */
+	am_skid #(.W(WARP_W + 16 + 64)) u_fet_skid (
+		.clk(clk), .rst_n(rst_n),
+		.in_valid(fet_d_valid), .in_ready(fet_d_ready),
+		.in_data({fet_d_warp, fet_d_pc, fet_d_instr}),
+		.out_valid(skid_d_valid), .out_ready(skid_d_ready),
+		.out_data({skid_d_warp, skid_d_pc, skid_d_instr})
+	);
+
 	wire dec_u_valid, dec_u_ready;
 	wire [WARP_W-1:0] dec_u_warp;
 	wire [15:0] dec_u_pc;
@@ -497,7 +511,7 @@ module atg_su #(
 		.HAS_SA(HAS_SA), .MS4(MS4)
 	) dec (
 		.clk(clk), .rst_n(rst_n),
-		.d_valid(fet_d_valid), .d_ready(fet_d_ready), .d_warp(fet_d_warp), .d_pc(fet_d_pc), .d_instr(fet_d_instr),
+		.d_valid(skid_d_valid), .d_ready(skid_d_ready), .d_warp(skid_d_warp), .d_pc(skid_d_pc), .d_instr(skid_d_instr),
 		.u_valid(dec_u_valid), .u_ready(dec_u_ready), .u_warp(dec_u_warp), .u_pc(dec_u_pc), .u_uop(dec_u_uop)
 	);
 
