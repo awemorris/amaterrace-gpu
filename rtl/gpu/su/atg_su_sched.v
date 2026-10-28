@@ -314,27 +314,39 @@ module atg_su_sched #(
 	reg [WARP_W-1:0] hold_w;
 	wire [WARP_W-1:0] fsel = hold_v ? hold_w : sel;
 	wire fsel_v = hold_v || sel_v;
-	reg [1:0] sk;
 	reg [159:0] q_i;
 	integer y;
 	always @(*) begin
-		sk = 2'd0;
 		q_i = 160'd0;
 		for (y = 0; y < NWARPS; y = y + 1) begin
-			if (fsel == y[WARP_W-1:0])
-				sk = info[y*160 + ATG_WI_KIND +: 2];
 			if (q_warp == y[WARP_W-1:0])
 				q_i = info[y*160 +: 160];
 		end
 	end
-	wire [31:0] base = sk == K_VERT ? vs_base : sk == K_FRAG ? fs_base : cs_base;
-	wire fa_co_unused;
+	assign q_info = q_i;
+
+	/* Precompute fetch address per warp independently from selection tournament */
+	wire [NWARPS-1:0] w_fa_co_unused;
+	wire [NWARPS*32-1:0] w_f_addr;
+	genvar g_fa;
+	generate
+		for (g_fa = 0; g_fa < NWARPS; g_fa = g_fa + 1) begin : g_faddr
+			wire [1:0] w_sk = info[g_fa*160 + ATG_WI_KIND +: 2];
+			wire [31:0] w_base = w_sk == K_VERT ? vs_base : w_sk == K_FRAG ? fs_base : cs_base;
+			am_add #(.W(32)) u_fa_w (
+				.a(w_base),
+				.b({13'd0, pc[g_fa*16 +: 16], 3'd0}),
+				.ci(1'b0),
+				.s(w_f_addr[g_fa*32 +: 32]),
+				.co(w_fa_co_unused[g_fa])
+			);
+		end
+	endgenerate
+
 	assign f_valid = fsel_v;
 	assign f_warp = fsel;
 	assign f_pc = pc[(fsel)*16 +: 16];
-	am_add #(.W(32)) u_fa (.a(base), .b({13'd0, pc[(fsel)*16 +: 16], 3'd0}), .ci(1'b0), .s(f_addr),
-		.co(fa_co_unused));
-	assign q_info = q_i;
+	assign f_addr = w_f_addr[fsel*32 +: 32];
 
 	/* Per slot: the gap and pc counted down / up; rr, rot, wk and the tag + 1. */
 	wire [NWARPS*GAP_W-1:0] gap_m1;
@@ -526,7 +538,7 @@ module atg_su_sched #(
 	end
 
 	wire unused_ok = &{1'b0, fl_info[63:49], wk[3], lanes[23:16], nw_full, wlanes[31:5], c, rot1[8],
-		(NSU != 0)};
+		w_fa_co_unused, (NSU != 0)};
 endmodule
 
 `default_nettype wire
