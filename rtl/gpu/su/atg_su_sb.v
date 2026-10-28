@@ -308,12 +308,14 @@ module atg_su_sb #(
 	wire need_e = is_long && wrd;
 	wire rq_wait = (u_uop[ATG_UOP_RQS] && rq_empty) || (u_uop[ATG_UOP_RQD] && rq_full);
 
-	wire replay = !ill && (hz_long || cnt_wait || cnt_full || (need_e && !have_free) || rq_wait);
+	wire replay_long = !ill && (hz_long || cnt_full || (need_e && !have_free) || rq_wait);
+	wire replay = replay_long || (!is_long && cnt_wait);
 	wire quiet = !ill && !replay && (is_nop || is_wait);	/* consumed without issue */
 	wire hold = wb_stall || hz_short || !(|(~f_valid));
 	wire go = u_valid && !hold;
 	assign i_valid = go && !ill && !replay && !quiet;
 	(* max_fanout = 24 *) wire issued = i_valid && i_ready;
+	(* max_fanout = 24 *) wire issued_long = go && !ill && !replay_long && i_ready;
 	assign u_ready = go && (ill || replay || quiet || i_ready);
 	assign i_warp = u_warp;
 	assign i_pc = u_pc;
@@ -336,7 +338,7 @@ module atg_su_sb #(
 	endgenerate
 
 	/* State updates. */
-	wire alloc = issued && need_e;
+	wire alloc = issued_long && need_e;
 	wire [NE_W-1:0] alloc_idx = {u_warp, free_e[SBE_W-1:0]};	/* free_e < SB_ENTRIES at an alloc */
 
 	/* Each warp's counters: + 1 at an issue of the class, - 1 at its release.
@@ -345,7 +347,7 @@ module atg_su_sb #(
 	genvar gq;
 	generate
 		for (gq = 0; gq < NWARPS; gq = gq + 1) begin : g_cnt
-			wire iw = issued && u_warp == gq;
+			wire iw = issued_long && u_warp == gq;
 			wire rw = rel_valid && rel_warp == gq;
 			wire im = iw && cls == ATG_CLS_M, rm = rw && rel_cls == ATG_CLS_M;
 			wire it = iw && cls == ATG_CLS_T, rt = rw && rel_cls == ATG_CLS_T;
