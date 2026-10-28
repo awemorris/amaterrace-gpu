@@ -422,6 +422,10 @@ module atg_su #(
 	wire [LB-1:0] im_rsp_rdata;
 
 	wire [NWARPS-1:0] warp_ready;
+	wire sch_f_valid, sch_f_ready;
+	wire [WARP_W-1:0] sch_f_warp;
+	wire [15:0] sch_f_pc;
+	wire [31:0] sch_f_addr;
 
 	atg_su_sched #(
 		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .NSU(NSU), .SU_INDEX(SU_INDEX),
@@ -432,13 +436,21 @@ module atg_su #(
 		.vl_req(vl_req), .vl_gnt(vl_gnt), .vl_slot(vl_slot), .vl_go(vl_go), .vl_mask(vl_mask),
 		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_slot(fl_slot), .fl_go(fl_go), .fl_mask(fl_mask),
 		.fl_info(fl_info),
-		.f_valid(f_valid), .f_ready(f_ready), .f_warp(f_warp), .f_pc(f_pc), .f_addr(f_addr),
+		.f_valid(sch_f_valid), .f_ready(sch_f_ready), .f_warp(sch_f_warp), .f_pc(sch_f_pc), .f_addr(sch_f_addr),
 		.fb_valid(fb_valid), .fb_warp(fb_warp), .fb_kind(fb_kind), .wake(wake),
 		.warp_ready(warp_ready),
 		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
 		.q_warp(q_warp), .q_info(q_info),
 		.init_valid(init_valid), .init_warp(init_warp), .init_mask(init_mask),
 		.pt_ok(pt_ok), .xr_valid(xr_valid), .xr_warp(xr_warp), .busy(sched_busy)
+	);
+
+	am_skid #(.W(WARP_W + 16 + 32)) u_fetch_skid (
+		.clk(clk), .rst_n(rst_n),
+		.in_valid(sch_f_valid), .in_ready(sch_f_ready),
+		.in_data({sch_f_warp, sch_f_pc, sch_f_addr}),
+		.out_valid(f_valid), .out_ready(f_ready),
+		.out_data({f_warp, f_pc, f_addr})
 	);
 
 	atg_su_fetch #(.WARP_W(WARP_W)) fetch (
