@@ -427,6 +427,9 @@ module am_fpu_core #(
 
 		wire s2_fl_nan = (s2_xf[30:23] == 8'hFF && s2_xf[22:0] != 23'd0);
 		wire s2_fl_pass = (s2_xf[30:23] >= 8'd150 || s2_xf[30:23] == 8'd0);
+		wire [31:0] s2_rint_rnd = {s2_s, s2_e[7:0], s2_w[30:8]};
+		wire [31:0] s2_rint_iv = !s2_nz ? {s2_s, 31'd0} : s2_rint_rnd;
+		wire [31:0] s2_rint_fl = s2_fl_nan ? 32'h7FC00000 : s2_fl_pass ? s2_xf : s2_rint_iv;
 
 		/* --- Stage 3: Rounding, operand & other formation (Register 3) --- */
 		reg [31:0] s3_a, s3_b, s3_c;
@@ -441,6 +444,7 @@ module am_fpu_core #(
 		reg        s3_fl_nan;
 		reg        s3_fl_pass;
 		reg [31:0] s3_xf_val;
+		reg [31:0] s3_rint_fl;
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
@@ -458,6 +462,7 @@ module am_fpu_core #(
 				s3_fl_nan  <= 1'b0;
 				s3_fl_pass <= 1'b0;
 				s3_xf_val  <= 32'd0;
+				s3_rint_fl <= 32'd0;
 			end else if (en) begin
 				s3_a       <= s2_a;
 				s3_b       <= s2_b;
@@ -473,6 +478,7 @@ module am_fpu_core #(
 				s3_fl_nan  <= s2_fl_nan;
 				s3_fl_pass <= s2_fl_pass;
 				s3_xf_val  <= s2_xf;
+				s3_rint_fl <= s2_rint_fl;
 			end
 		end
 
@@ -549,7 +555,7 @@ module am_fpu_core #(
 				s3_fz = {!s3_c[31], s3_c[30:0]};
 			end
 			OP_FRACT:  begin
-				s3_fz = {!s3_fl[31], s3_fl[30:0]};
+				s3_fz = {!s3_rint_fl[31], s3_rint_fl[30:0]};
 				s3_rr = 3'd0;
 			end
 			default: ;
