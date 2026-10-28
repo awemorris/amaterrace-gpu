@@ -91,6 +91,53 @@ module atg_su_pk #(
 	wire sat = x_uop[ATG_UOP_MOD + 6];
 
 	/*
+	 * Stage 1 (EX1): Latch inputs directly to break the critical path from opd forwarding MUXes.
+	 */
+	reg s1_valid;
+	reg [WARP_W-1:0] s1_warp;
+	reg [GRP_W-1:0] s1_grp;
+	reg [6:0] s1_rd;
+	reg [NPHYS-1:0] s1_mask;
+	reg [3:0] s1_op;
+	reg [2:0] s1_rm;
+	reg [1:0] s1_hsel;
+	reg s1_sub;
+	reg s1_sat;
+	reg [DW-1:0] s1_a, s1_b, s1_c;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			s1_valid <= 1'b0;
+			s1_warp  <= {WARP_W{1'b0}};
+			s1_grp   <= {GRP_W{1'b0}};
+			s1_rd    <= 7'd0;
+			s1_mask  <= {NPHYS{1'b0}};
+			s1_op    <= 4'd0;
+			s1_rm    <= 3'd0;
+			s1_hsel  <= 2'd0;
+			s1_sub   <= 1'b0;
+			s1_sat   <= 1'b0;
+			s1_a     <= {DW{1'b0}};
+			s1_b     <= {DW{1'b0}};
+			s1_c     <= {DW{1'b0}};
+		end else begin
+			s1_valid <= mine;
+			s1_warp  <= x_warp;
+			s1_grp   <= x_grp;
+			s1_rd    <= x_uop[ATG_UOP_RD +: 7];
+			s1_mask  <= x_mask[NPHYS-1:0];
+			s1_op    <= op;
+			s1_rm    <= rm;
+			s1_hsel  <= hsel;
+			s1_sub   <= sub;
+			s1_sat   <= sat;
+			s1_a     <= x_a;
+			s1_b     <= x_b;
+			s1_c     <= x_c;
+		end
+	end
+
+	/*
 	 * One lane: two atg_su_pk_half (each with its fused fp16 datapath,
 	 * compares and 16-bit integer arithmetic, and packh's fp32 -> fp16 of
 	 * one source: rs1 low, rs2 high) and unpackh's fp16 -> fp32
@@ -100,44 +147,44 @@ module atg_su_pk #(
 	genvar l;
 	generate
 	for (l = 0; l < NPHYS; l = l + 1) begin : g_lane
-		wire [31:0] la = x_a[l*32 +: 32];
-		wire [31:0] lb0 = x_b[l*32 +: 32];
-		wire [31:0] lc = x_c[l*32 +: 32];
-		wire [31:0] lb = hsel == 2'd3 ? {lb0[15:0], lb0[31:16]} : lb0;
+		wire [31:0] la = s1_a[l*32 +: 32];
+		wire [31:0] lb0 = s1_b[l*32 +: 32];
+		wire [31:0] lc = s1_c[l*32 +: 32];
+		wire [31:0] lb = s1_hsel == 2'd3 ? {lb0[15:0], lb0[31:16]} : lb0;
 		wire [15:0] lo, hi;
 		wire [31:0] un;
 		atg_su_pk_half #(.ARITH(PACKED), .FP(!SH)) u_lo (
-			.o(op), .ha(la[15:0]), .hb(lb[15:0]), .hc(lc[15:0]), .r(rm), .sat(sat), .xw(la),
+			.o(s1_op), .ha(la[15:0]), .hb(lb[15:0]), .hc(lc[15:0]), .r(s1_rm), .sat(s1_sat), .xw(la),
 			.y(lo)
 		);
 		atg_su_pk_half #(.ARITH(PACKED), .FP(!SH)) u_hi (
-			.o(op), .ha(la[31:16]), .hb(lb[31:16]), .hc(lc[31:16]), .r(rm), .sat(sat), .xw(lb0),
+			.o(s1_op), .ha(la[31:16]), .hb(lb[31:16]), .hc(lc[31:16]), .r(s1_rm), .sat(s1_sat), .xw(lb0),
 			.y(hi)
 		);
-		am_fp_h2f #(.DENORM(0), .LAT(0)) u_un (.h(sub ? la[31:16] : la[15:0]), .f(un));
-		wire [31:0] v = op == ATG_PK_PACKH[3:0] ? {hi, lo} : op == ATG_PK_UNPACKH[3:0] ? un :
-			op == ATG_PK_SWAPH[3:0] ? {la[15:0], la[31:16]} :
-			PACKED != 0 ? {hsel == 2'd1 ? la[31:16] : hi, hsel == 2'd2 ? la[15:0] : lo} :
+		am_fp_h2f #(.DENORM(0), .LAT(0)) u_un (.h(s1_sub ? la[31:16] : la[15:0]), .f(un));
+		wire [31:0] v = s1_op == ATG_PK_PACKH[3:0] ? {hi, lo} : s1_op == ATG_PK_UNPACKH[3:0] ? un :
+			s1_op == ATG_PK_SWAPH[3:0] ? {la[15:0], la[31:16]} :
+			PACKED != 0 ? {s1_hsel == 2'd1 ? la[31:16] : hi, s1_hsel == 2'd2 ? la[15:0] : lo} :
 			32'd0;
-		assign y[l*32 +: 32] = mine ? v : 32'd0;
+		assign y[l*32 +: 32] = s1_valid ? v : 32'd0;
 	end
 	endgenerate
 
-	/* SHORT_LAT stages; stage 0 is registered from x_*. */
-	reg [EW-1:0] pipe [0:SHORT_LAT-1];
+	/* SHORT_LAT - 1 stages; stage 0 is registered from s1_* and y. */
+	reg [EW-1:0] pipe [0:SHORT_LAT-2];
 	integer k;
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			for (k = 0; k < SHORT_LAT; k = k + 1)
+			for (k = 0; k < SHORT_LAT - 1; k = k + 1)
 				pipe[k] <= {EW{1'b0}};
 		end else begin
-			pipe[0] <= {mine, x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0], y};
-			for (k = 1; k < SHORT_LAT; k = k + 1)
+			pipe[0] <= {s1_valid, s1_warp, s1_grp, s1_rd, s1_mask, y};
+			for (k = 1; k < SHORT_LAT - 1; k = k + 1)
 				pipe[k] <= pipe[k-1];
 		end
 	end
 
-	wire [EW-1:0] o = pipe[SHORT_LAT-1];
+	wire [EW-1:0] o = pipe[SHORT_LAT-2];
 	assign s_valid = o[EW-1];
 	assign s_warp = o[EW-2 -: WARP_W];
 	assign s_grp = o[EW-2-WARP_W -: GRP_W];
