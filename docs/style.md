@@ -79,6 +79,78 @@ a carry chain) where it can be checked once.
   A file that must keep its arithmetic is listed in the script's exception
   table with the reason, and here.
 
+High-Frequency ASIC Scaling (Target: 5nm 1.5 GHz)
+------------------------------------------------
+
+Goal:
+Design all RTL modules with microarchitectural disciplines such that the codebase
+naturally synthesizes and closes timing at 1.5 GHz on modern 5nm ASIC standard-cell
+libraries (with base 2.0 GHz / boost 2.4 GHz headroom), while using Xilinx 7-series
+FPGA (Kintex-7 -2 / KC705) as the primary emulation and verification target.
+
+Background:
+- In FPGA prototyping, a single 6-input LUT (LUT6) implements an arbitrary 6-input
+  Boolean function, and dedicated hard macros (e.g. CARRY4, DSP48E1, wide multiplexers)
+  provide fast dedicated silicon routes that mask deep combinational logic trees.
+- In contrast, in modern advanced ASIC nodes (5nm class), interconnect wire RC delay
+  dominates timing, accounting for 40% to 50%+ of the total clock period.
+- At 1.5 GHz (period T = 667 ps), after deducting clock uncertainty, jitter, setup/hold
+  margins, and clock-tree skew (~150-180 ps) plus wire RC delay (~200-250 ps), the net
+  usable standard-cell delay budget is only ~250-310 ps.
+- In a 5nm standard-cell library, a FO4 (fanout-of-4) inverter delay is approximately
+  10-12 ps, meaning each clock stage can afford at most 20-25 FO4 delays (roughly 15-20
+  logic stages of NAND/NOR/AOI gates).
+- Consequently, simply restricting FPGA synthesis to "<= 5 LUT levels" is insufficient:
+  FPGA carry chains and high-fanout nets can silently hide logic that expands to 30-40+
+  standard cells and severe wire congestion in an ASIC flow.
+
+Design Rules:
+
+1. Primitive & Logic Level Budget
+   - Pure random logic paths must not exceed 4 LUT6 levels (target <= 3 LUT6 levels).
+   - Arithmetic addition/subtraction: A 32-bit adder (`am_add`/`am_sub`) must have at
+     most 1 LUT6 stage before it (operand selection/muxing) and at most 1 LUT6 stage
+     after it before being registered. 64-bit additions must be split across 2 pipeline
+     cycles.
+   - Multipliers: Multiplier instances (`am_mul` / DSP) must have latency `LAT >= 2`,
+     with at most 1 LUT stage after the multiplier output before a register stage.
+
+2. Fanout Limitation & Tree Buffering
+   - High fanout degrades transition time and wire RC exponentially in deep submicron ASIC.
+   - Any register driving wide datapaths or distributed control must adhere to a target
+     fanout limit of <= 16 (hard limit 24).
+   - Global control nets (`valid`, `ready`, `stall`, `flush`, decoded opcodes) spanning
+     multiple SIMD lanes or ALUs must use explicit pipeline tree buffering or register
+     replication (or synthesis directive `(* max_fanout = 16 *)`).
+
+3. Flop-to-Flop Inter-Module Boundary
+   - Zero combinational feedthrough paths between submodules.
+   - Every inter-module interface (requests, grants, data buses, handshakes) must be
+     registered at either the transmitting module (output register) or receiving
+     module (input register). Combinational logic must never cross module hierarchy
+     boundaries.
+
+4. Clean Single-Cycle Memory Pipeline
+   - Embedded memories (SRAM macros, register files, LDS, cache tag/data arrays) must
+     have clean 1-cycle latency boundaries.
+   - Zero combinational logic on the memory address input: address registers must drive
+     memory inputs directly.
+   - Zero combinational logic on memory data output before the first pipeline register.
+     Any format conversion, byte extraction, or multiplexing must execute in the
+     subsequent pipeline stage.
+
+5. Backpressure Decoupling (Skid Buffer Isolation)
+   - Handshake interfaces (`valid` / `ready`) must never allow backward `ready` signals
+     to ripple combinationally across multiple pipeline stages.
+   - Whenever an elastic pipeline stage, FIFO, or processing block exerts backpressure
+     (`ready = 0`), an `am_skid` buffer must be used to decouple downstream `ready`
+     from upstream `valid` generation.
+
+FPGA Surrogate Verification Metric:
+On Kintex-7 speedgrade -2 (`xc7k325tffg900-2`), achieving out-of-context (OOC) timing
+closure at 250 MHz (period 4.000 ns, WNS >= 0.000 ns) while strictly adhering to these
+five structural rules serves as the verified gate to ensure 1.5 GHz timing closure at 5nm ASIC.
+
 Board clocking
 --------------
 
