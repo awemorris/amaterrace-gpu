@@ -522,10 +522,10 @@ tools/synth-module.sh atg_tu 5.000
 | `SA-F-MAX` | `atg_sa` | `FULL` | `MAX` | **N/A** | 0 | 0 | 0 | 0 | 0 | **PASS (予約枠)** |
 | `DC-F-MAX` | `atg_dc` (改善後) | `FULL` | `MAX` | **+0.817** | 10 | 7,120 | 2,348 | 4 | 2 | **PASS** |
 | `CP-F-MAX` | `atg_cp` (改善後) | `FULL` | `MAX` | **+0.192** | 9 | 8,738 | 3,906 | 1 | 0 | **PASS** |
-| `TU-F-MAX` | `atg_tu` | `FULL` | `MAX` | **-1.235** | 22 | 18,245 | 8,920 | 12 | 16 | FAIL |
+| `TU-F-MAX` | `atg_tu` (改善後) | `FULL` | `MAX` | **+0.184** | 18 | 18,112 | 9,140 | 12 | 16 | **PASS** |
 | `SU-F-MAX` | `atg_su` | `FULL` | `MAX` | **-2.416** | 24 | 22,410 | 12,850 | 16 | 8 | FAIL |
 | `RX-F-MAX` | `atg_rx` | `FULL` | `MAX` | **-4.744** | 28 | 19,530 | 11,240 | 0 | 18 | FAIL |
-| `ROP-F-MAX` | `atg_rop` | `FULL` | `MAX` | **-8.820** | 36 | 21,340 | 8,920 | 4 | 2 | FAIL |
+| `ROP-F-MAX` | `atg_rop` (改善中) | `FULL` | `MAX` | **-4.172** | 24 | 19,840 | 8,920 | 4 | 2 | FAIL (-8.820から改善) |
 
 ### (2) SU SIMT 物理レーン数 (NPHYS) 別 200 MHz 検証ログ
 | テスト ID | モジュール | レーン構成 | 機能性 | WNS (ns) | 論理段数 | LUT 数 | DSP | 判定 |
@@ -542,13 +542,31 @@ tools/synth-module.sh atg_tu 5.000
 | `SU-L32-BARE`| `atg_su` | NPHYS=32 | `BARE` | TBD | TBD | TBD | TBD | 未実行 |
 
 ### (3) PAIR / TRIO / QUAD 組み合わせ OOC 実行ログ (記録用)
-各モジュールの機能組み合わせパターン（2-Hot, 3-Hot, 4-Hot）の単体 OOC 合成結果を順次追記する。
+各モジュールの機能組み合わせパターン（2-Hot, 3-Hot, 4-Hot, BARE, ISO, QUAD, FULL）の単体 OOC 合成結果を順次追記する。
+
+#### (FMT) `fmt` (`atg_fmt_cvt`) 組み合わせ OOC 測定結果
+| テスト ID | モジュール | 機能性 | サイズ | WNS (ns) | 論理段数 | LUT 数 | FF 数 | BRAM | DSP | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `FMT-F-MAX` | `atg_fmt_cvt` | `FULL` | `MAX` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-B-MIN` | `atg_fmt_cvt` | `BARE` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-I-FP16` | `atg_fmt_cvt` | `ISO-FP16` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-I-SRGB` | `atg_fmt_cvt` | `ISO-sRGB` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-I-SNRM` | `atg_fmt_cvt` | `ISO-SNORM` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-I-DEP` | `atg_fmt_cvt` | `ISO-Depth` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-P-FS` | `atg_fmt_cvt` | `PAIR-FP16+sRGB` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-P-PD` | `atg_fmt_cvt` | `PAIR-Pack+Depth` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-P-SS` | `atg_fmt_cvt` | `PAIR-FP32+SNORM` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-T-FSP` | `atg_fmt_cvt` | `TRIO-FP16+sRGB+Pk` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-T-SPD` | `atg_fmt_cvt` | `TRIO-sRGB+Pk+Dep` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-Q-FPSD` | `atg_fmt_cvt` | `QUAD-All4` | `MIN` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-S-HALF` | `atg_fmt_cvt` | `FULL` | `HALF` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
+| `FMT-S-QTR` | `atg_fmt_cvt` | `FULL` | `QUARTER` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
 
 ---
 
 ## 6. ベースライン測定結果サマリと改善ロードマップ
 
-主要 13 モジュールについて、単体 OOC 論理合成（周期 5.000 ns = 200 MHz）を実行した結果、**8 モジュールが 200 MHz を達成（MET）**、**4 モジュールが違反（VIOLATED）**となった。
+主要 13 モジュールについて、単体 OOC 論理合成（周期 5.000 ns = 200 MHz）を実行した結果、**9 モジュールが 200 MHz を達成（MET）**、**3 モジュールが改善進行中**となった。
 
 ### 200 MHz 達成済みモジュール (MET)
 1. **`atg_blt_2d`**: WNS **+0.035 ns** (200 MHz 達成)
@@ -558,18 +576,10 @@ tools/synth-module.sh atg_tu 5.000
 5. **`atg_mc`**: WNS **+1.445 ns** (200 MHz 達成)
 6. **`atg_mmu`**: WNS **+0.831 ns** (200 MHz 達成)
 7. **`atg_sa`**: 予約プレースホルダ（ロジック 0、タイミング問題なし）
-8. **`atg_vf_conv`**: WNS **+1.729 ns** (7段 `atg_fmt_cvt` 接続により -7.449 ns から改善達成)
+8. **`atg_tu`**: WNS **+0.184 ns** (キャッシュヒット/リードパイプライン化・加算ツリー平坦化・乗算器 LAT=1 化により -1.235 ns から改善達成)
+9. **`atg_vf_conv`**: WNS **+1.729 ns** (7段 `atg_fmt_cvt` 接続により -7.449 ns から改善達成)
 
-### 改善対象モジュール (VIOLATED: 違反度の大きい順)
-1. **`rop` (`atg_rop`)**: WNS **-8.820 ns** (P4 サブエージェント担当中)
-   - 原因: `atg_rop_ds` (-7.847 ns: `atg_rop_dtest` 内の bounds/stencil/depth 判定直結) および `atg_rop_wb` (-8.223 ns: `wpix` カラー展開・ブレンド直結)
-   - 対策: `atg_rop_dtest` / `atg_rop_ds` の S_TEST 2段分割、`wpix` 書込パスのレジスタ分割
-2. **`rx` (`atg_rx`)**: WNS **-4.744 ns** (P3 サブエージェント担当中)
-   - 原因: トライアングルセットアップ（浮動小数点除算・乗算）およびエッジ走査変換パス
-   - 対策: セットアップ FSM 段間レジスタおよび走査座標インクリメント段の分割
-3. **`su` (`atg_su`)**: WNS **-2.416 ns** (P2 サブエージェント担当中)
-   - 原因: レジスタファイル BRAM 出力 $\to$ ALU 演算 $\to$ スケジューラ/テクスチャ/ライトバック直結
-   - 対策: 実行段・ライトバック段のパイプライン段挿入
-4. **`tu` (`atg_tu`)**: WNS **-1.235 ns** (P1 サブエージェント担当中)
-   - 原因: テクスチャサンプラ座標丸め (`atg_tu_frnd`) / フィルタリング演算パス
-   - 対策: サンプラ座標計算段の 1 段パイプライン挿入
+### 改善進行中モジュール (残る 3 モジュール)
+1. **`rop` (`atg_rop`)**: 初期 WNS -8.820 ns $\to$ 現在 **-4.172 ns (遅延半減)** (P4 サブエージェント推進中)
+2. **`rx` (`atg_rx`)**: 初期 WNS -4.744 ns $\to$ 改善版 OOC 合成実行中 (P3 サブエージェント推進中)
+3. **`su` (`atg_su`)**: 初期 WNS -2.416 ns (FPU Stage 4/5 リタイミング適用中)
