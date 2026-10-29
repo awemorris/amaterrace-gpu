@@ -36,6 +36,8 @@ module atg_cp_seq_dec #(
 	output reg h_known,
 	output reg h_absent,
 	output reg [7:0] h_need,
+	output reg h_short,
+	output wire h_zero,
 	input wire vendor,
 	input wire [7:0] op,
 	input wire [7:0] p,
@@ -132,113 +134,138 @@ module atg_cp_seq_dec #(
 		.a(h_n), .b(8'd0), .ci(h_n[0]), .s(h_n_even), .co(h_n_co_unused)
 	);
 
+	assign h_zero = is_ghci ? (hdr[15:8] == 8'd1) : (hdr[7:0] == 8'd0);
+
 	always @(*) begin
 		h_known = 1'b1;
 		h_absent = 1'b0;
 		h_need = 8'd0;
+		h_short = 1'b0;
 		if (hdr[31] && !is_ghci) begin
 			h_known = 1'b0;
 		end else if (h_vendor) begin
 			case (h_op)
 			VOP_DRAW_RAW: begin
 				h_need = 8'd9;
+				h_short = hdr[7:0] < 8'd9;
 				h_absent = !UNITS[3];
 			end
-			VOP_DBG_MARK: h_need = 8'd1;
+			VOP_DBG_MARK: begin
+				h_need = 8'd1;
+				h_short = hdr[7:0] < 8'd1;
+			end
 			default: h_known = 1'b0;
 			endcase
 		end else if (is_ghci) begin
 			case (h_op)
 			/* GHCI 1.0 Structured Commands */
-			CMD_VM_MAP:                h_need = 8'd9;
-			CMD_VM_UNMAP:              h_need = 8'd7;
-			CMD_SESSION_OPEN:          h_need = 8'd3;
-			CMD_SESSION_CLOSE:         h_need = 8'd1;
-			CMD_BIND_SESSION:          h_need = 8'd1;
-			CMD_BIND_PIPELINE:         h_need = 8'd2;
-			CMD_BIND_VERTEX_BUFFERS:   h_need = ghci_n;
-			CMD_BIND_INDEX_BUFFER:     h_need = 8'd3;
-			CMD_BIND_DESCRIPTOR_TABLE: h_need = 8'd3;
-			CMD_SET_VIEWPORT:          h_need = 8'd6;
-			CMD_SET_SCISSOR:           h_need = 8'd4;
-			CMD_SET_DYNAMIC_STATE:     h_need = 8'd5;
+			CMD_VM_MAP:                begin h_need = 8'd9;  h_short = hdr[15:8] <= 8'd9; end
+			CMD_VM_UNMAP:              begin h_need = 8'd7;  h_short = hdr[15:8] <= 8'd7; end
+			CMD_SESSION_OPEN:          begin h_need = 8'd3;  h_short = hdr[15:8] <= 8'd3; end
+			CMD_SESSION_CLOSE:         begin h_need = 8'd1;  h_short = hdr[15:8] <= 8'd1; end
+			CMD_BIND_SESSION:          begin h_need = 8'd1;  h_short = hdr[15:8] <= 8'd1; end
+			CMD_BIND_PIPELINE:         begin h_need = 8'd2;  h_short = hdr[15:8] <= 8'd2; end
+			CMD_BIND_VERTEX_BUFFERS:   begin h_need = ghci_n; h_short = 1'b0; end
+			CMD_BIND_INDEX_BUFFER:     begin h_need = 8'd3;  h_short = hdr[15:8] <= 8'd3; end
+			CMD_BIND_DESCRIPTOR_TABLE: begin h_need = 8'd3;  h_short = hdr[15:8] <= 8'd3; end
+			CMD_SET_VIEWPORT:          begin h_need = 8'd6;  h_short = hdr[15:8] <= 8'd6; end
+			CMD_SET_SCISSOR:           begin h_need = 8'd4;  h_short = hdr[15:8] <= 8'd4; end
+			CMD_SET_DYNAMIC_STATE:     begin h_need = 8'd5;  h_short = hdr[15:8] <= 8'd5; end
 			CMD_DRAW: begin
 				h_need = 8'd4;
+				h_short = hdr[15:8] <= 8'd4;
 				h_absent = !UNITS[2];
 			end
 			CMD_DRAW_INDEXED: begin
 				h_need = 8'd5;
+				h_short = hdr[15:8] <= 8'd5;
 				h_absent = !UNITS[2];
 			end
 			CMD_DRAW_INDIRECT: begin
 				h_need = ghci_n;
+				h_short = 1'b0;
 				h_absent = !UNITS[2];
 			end
 			CMD_DRAW_MESH_TASKS: begin
 				h_need = 8'd3;
+				h_short = hdr[15:8] <= 8'd3;
 				h_absent = !UNITS[6];
 			end
-			CMD_BEGIN_RENDER_PASS:     h_need = 8'd9;
-			CMD_END_RENDER_PASS:       h_need = 8'd0;
+			CMD_BEGIN_RENDER_PASS:     begin h_need = 8'd9;  h_short = hdr[15:8] <= 8'd9; end
+			CMD_END_RENDER_PASS:       begin h_need = 8'd0;  h_short = 1'b0; end
 			CMD_LOAD_CONST: begin
 				h_need = ghci_n;
+				h_short = 1'b0;
 				h_absent = !UNITS[6];
 			end
 			CMD_DISPATCH_INDIRECT: begin
 				h_need = 8'd5;
+				h_short = hdr[15:8] <= 8'd5;
 				h_absent = !UNITS[6];
 			end
 			CMD_DISPATCH: begin
 				h_need = 8'd3;
+				h_short = hdr[15:8] <= 8'd3;
 				h_absent = !UNITS[6];
 			end
-			CMD_BARRIER:               h_need = 8'd3;
-			CMD_EXECUTE_COMMANDS:      h_need = 8'd3;
-			CMD_FENCE:                 h_need = 8'd5;
-			CMD_WAIT_FENCE:            h_need = 8'd4;
-			CMD_WRITE_TIMESTAMP:       h_need = 8'd3;
+			CMD_BARRIER:               begin h_need = 8'd3;  h_short = hdr[15:8] <= 8'd3; end
+			CMD_EXECUTE_COMMANDS:      begin h_need = 8'd3;  h_short = hdr[15:8] <= 8'd3; end
+			CMD_FENCE:                 begin h_need = 8'd5;  h_short = hdr[15:8] <= 8'd5; end
+			CMD_WAIT_FENCE:            begin h_need = 8'd4;  h_short = hdr[15:8] <= 8'd4; end
+			CMD_WRITE_TIMESTAMP:       begin h_need = 8'd3;  h_short = hdr[15:8] <= 8'd3; end
 			CMD_BEGIN_QUERY: begin
 				h_need = 8'd3;
+				h_short = hdr[15:8] <= 8'd3;
 				h_absent = !UNITS[4];
 			end
 			CMD_END_QUERY: begin
 				h_need = 8'd3;
+				h_short = hdr[15:8] <= 8'd3;
 				h_absent = !UNITS[4];
 			end
 			CMD_COPY_BUFFER: begin
 				h_need = 8'd7;
+				h_short = hdr[15:8] <= 8'd7;
 				h_absent = !UNITS[1];
 			end
 			CMD_COPY_IMAGE: begin
 				h_need = 8'd10;
+				h_short = hdr[15:8] <= 8'd10;
 				h_absent = !UNITS[1];
 			end
 			CMD_BLIT: begin
 				h_need = 8'd11;
+				h_short = hdr[15:8] <= 8'd11;
 				h_absent = !UNITS[1];
 			end
 			CMD_FILL_BUFFER: begin
 				h_need = 8'd4;
+				h_short = hdr[15:8] <= 8'd4;
 				h_absent = !UNITS[1];
 			end
 			CMD_RESOLVE_IMAGE: begin
 				h_need = 8'd10;
+				h_short = hdr[15:8] <= 8'd10;
 				h_absent = !UNITS[1];
 			end
 			CMD_COPY_BUFFER_TO_IMAGE: begin
 				h_need = 8'd9;
+				h_short = hdr[15:8] <= 8'd9;
 				h_absent = !UNITS[1];
 			end
 			CMD_COPY_IMAGE_TO_BUFFER: begin
 				h_need = 8'd9;
+				h_short = hdr[15:8] <= 8'd9;
 				h_absent = !UNITS[1];
 			end
 			CMD_DISP_SET: begin
 				h_need = ghci_n;
+				h_short = 1'b0;
 				h_absent = HAS_DISP == 0 || hdr_fw;
 			end
 			CMD_FLIP: begin
 				h_need = 8'd7;
+				h_short = hdr[15:8] <= 8'd7;
 				h_absent = HAS_DISP == 0 || hdr_fw;
 			end
 			default: h_known = 1'b0;
@@ -247,37 +274,56 @@ module atg_cp_seq_dec #(
 			case (h_op)
 			OP_NOP, OP_WAIT_IDLE, OP_PERF_RESET, OP_INVALIDATE: ;
 			OP_BLIT: h_absent = !UNITS[1];
-			OP_SET_REG: h_need = h_n_even;	/* pairs: odd n is short */
+			OP_SET_REG: begin
+				h_need = h_n_even;	/* pairs: odd n is short */
+				h_short = hdr[0];
+			end
 			OP_DRAW: h_absent = !UNITS[2];
 			OP_DISPATCH: begin
 				h_need = 8'd3;
+				h_short = hdr[7:0] < 8'd3;
 				h_absent = !UNITS[6];
 			end
-			OP_FENCE, OP_WAIT_FENCE: h_need = 8'd2;
+			OP_FENCE, OP_WAIT_FENCE: begin
+				h_need = 8'd2;
+				h_short = hdr[7:0] < 8'd2;
+			end
 			OP_LOAD_CONST: begin
 				h_need = 8'd3;
+				h_short = hdr[7:0] < 8'd3;
 				h_absent = !UNITS[6];
 			end
-			OP_LOAD_PROGRAM: h_need = 8'd1;
+			OP_LOAD_PROGRAM: begin
+				h_need = 8'd1;
+				h_short = hdr[7:0] < 8'd1;
+			end
 			OP_WAIT_VSYNC: h_absent = HAS_VSYNC == 0;
-			OP_RESULT: h_need = 8'd3;
+			OP_RESULT: begin
+				h_need = 8'd3;
+				h_short = hdr[7:0] < 8'd3;
+			end
 			OP_QUERY: begin
 				h_need = 8'd1;
+				h_short = hdr[7:0] < 8'd1;
 				h_absent = !UNITS[4];
 			end
 			OP_DISP_SET: begin
 				h_need = h_n_even;
+				h_short = hdr[0];
 				h_absent = HAS_DISP == 0 || hdr_fw;
 			end
 			OP_FLIP: begin
 				h_need = 8'd4;
+				h_short = hdr[7:0] < 8'd4;
 				h_absent = HAS_DISP == 0 || hdr_fw;
 			end
 			OP_BARRIER: begin
 				h_need = 8'd1;	/* payload: {accessMask[15:0], 8'd0, dstStageMask[7:0]} */
+				h_short = hdr[7:0] < 8'd1;
 			end
 			OP_SEMAPHORE_SIGNAL, OP_SEMAPHORE_WAIT: begin
 				h_need = 8'd4;	/* payload: addr[63:0], val[63:0] */
+				h_short = hdr[7:0] < 8'd4;
 			end
 			default: h_known = 1'b0;
 			endcase

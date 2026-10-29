@@ -203,12 +203,12 @@ module atg_cp_seq #(
 	wire h_vendor = is_ghci_hdr ? 1'b0 : hdr[30];
 	wire [7:0] h_op = is_ghci_hdr ? hdr[7:0] : {2'b00, hdr[29:24]};
 	wire [7:0] h_n = is_ghci_hdr ? ghci_n : hdr[7:0];
-	wire h_known, h_absent, pay_bad;
+	wire h_known, h_absent, pay_bad, h_short, h_zero;
 	wire [7:0] h_need;
 
 	atg_cp_seq_dec #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) dec (
 		.hdr(hdr), .hdr_fw(fw_active), .h_known(h_known), .h_absent(h_absent),
-		.h_need(h_need), .vendor(vendor), .op(op), .p(p), .in_data(in_data),
+		.h_need(h_need), .h_short(h_short), .h_zero(h_zero), .vendor(vendor), .op(op), .p(p), .in_data(in_data),
 		.pay_bad(pay_bad)
 	);
 
@@ -348,12 +348,12 @@ module atg_cp_seq #(
 						f_pulse <= 1'b1;
 						f_kind <= GHCI_FAULT_OPCODE;
 						st <= Q_DEAD;
-					end else if (h_n < h_need) begin
+					end else if (h_short) begin
 						f_pulse <= 1'b1;
 						f_kind <= GHCI_FAULT_RING;
 						st <= Q_DEAD;
 					end else begin
-						st <= h_n == 8'd0 ? Q_EXEC : Q_PAY;
+						st <= h_zero ? Q_EXEC : Q_PAY;
 					end
 				end
 			Q_PAY:
