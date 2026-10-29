@@ -613,6 +613,24 @@ tools/synth-module.sh atg_tu 5.000
 | `DC-S-HALF` | `atg_dc` | `FULL` | `HALF` | **+0.817** | 1 | 3,570 | 2,075 | 5 | 22 | **PASS** |
 | `DC-S-QTR` | `atg_dc` | `FULL` | `QUARTER` | **+0.817** | 1 | 3,582 | 2,067 | 4.5 | 22 | **PASS** |
 
+#### (MC) `mc` (`atg_mc`) 組み合わせ OOC 測定結果
+| テスト ID | モジュール | 機能性 | サイズ | WNS (ns) | 論理段数 | LUT 数 | FF 数 | BRAM | DSP | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `MC-F-MAX` | `atg_mc` | `FULL` | `MAX` | **-3.995** | 19 | 107,661 | 94,898 | 64 | 0 | FAIL (L2+Prot高負荷) |
+| `MC-B-MIN` | `atg_mc` | `BARE` | `MIN` | **+1.445** | 8 | 1,049 | 2,090 | 0 | 0 | **PASS** |
+| `MC-I-PROT` | `atg_mc` | `ISO-Prot` | `MIN` | **-4.264** | 20 | 2,873 | 3,249 | 0 | 0 | FAIL (Prot CAM遅延) |
+| `MC-I-COAL` | `atg_mc` | `ISO-Coalesce` | `MIN` | **+1.445** | 8 | 1,049 | 2,090 | 0 | 0 | **PASS** |
+| `MC-I-PREF` | `atg_mc` | `ISO-Prefetch` | `MIN` | **+1.445** | 8 | 1,049 | 2,090 | 0 | 0 | **PASS** |
+| `MC-I-PRIO` | `atg_mc` | `ISO-Priority` | `MIN` | **+1.445** | 8 | 1,049 | 2,090 | 0 | 0 | **PASS** |
+| `MC-P-PC` | `atg_mc` | `PAIR-Prot+Coalesce` | `MIN` | **-4.264** | 20 | 2,873 | 3,249 | 0 | 0 | FAIL (Prot CAM遅延) |
+| `MC-P-CP` | `atg_mc` | `PAIR-Coalesce+Prefetch` | `MIN` | **+1.445** | 8 | 1,049 | 2,090 | 0 | 0 | **PASS** |
+| `MC-P-PP` | `atg_mc` | `PAIR-Prot+Priority` | `MIN` | **-4.264** | 20 | 2,873 | 3,249 | 0 | 0 | FAIL (Prot CAM遅延) |
+| `MC-T-PCP` | `atg_mc` | `TRIO-Prot+Coalesce+Prefetch` | `MIN` | **-4.264** | 20 | 2,873 | 3,249 | 0 | 0 | FAIL (Prot CAM遅延) |
+| `MC-T-CPP` | `atg_mc` | `TRIO-Coalesce+Prefetch+Priority` | `MIN` | **+1.445** | 8 | 1,049 | 2,090 | 0 | 0 | **PASS** |
+| `MC-Q-ALL` | `atg_mc` | `QUAD-All4` | `MIN` | **-4.264** | 20 | 2,873 | 3,249 | 0 | 0 | FAIL (Prot CAM遅延) |
+| `MC-S-HALF` | `atg_mc` | `FULL` | `HALF` | **-3.984** | 19 | 32,700 | 27,996 | 32 | 0 | FAIL (L2+Prot高負荷) |
+| `MC-S-QTR` | `atg_mc` | `FULL` | `QUARTER` | **-4.380** | 21 | 13,535 | 10,372 | 16 | 0 | FAIL (L2+Prot高負荷) |
+
 ---
 
 ## 6. ベースライン測定結果サマリと改善ロードマップ
