@@ -72,7 +72,14 @@ module atg_rx_clip (
 	reg [31:0] rw [0:8];
 	reg [127:0] vp_array [0:15];
 	reg [3:0] vp_idx;
-	wire [127:0] vp = vp_array[vp_idx];
+	reg [127:0] r_vp;
+	wire [127:0] vp = r_vp;
+	always @(posedge clk) begin
+		if (!rst_n)
+			r_vp <= 128'd0;
+		else
+			r_vp <= vp_array[vp_idx];
+	end
 	reg [1:0] dc;
 	reg discard;
 	integer vpi;
@@ -197,6 +204,9 @@ module atg_rx_clip (
 	wire [2:0] ta = t0 & (nv == 2'd1 ? 3'b111 : t1) & (nv == 2'd3 ? t2 : 3'b111);
 	wire accept = &ta;
 	wire guard = !ta[2];
+	reg triv_step;
+	reg [2:0] r_t0;
+	reg r_accept, r_guard;
 
 	/* The polygon. */
 	reg ld_we;
@@ -252,6 +262,10 @@ module atg_rx_clip (
 			st <= S_IDLE;
 			cl_valid <= 1'b0;
 			cmd_valid <= 1'b0;
+			triv_step <= 1'b0;
+			r_t0 <= 3'd0;
+			r_accept <= 1'b0;
+			r_guard <= 1'b0;
 		end else case (st)
 		S_IDLE:
 			if (raw_kick) begin
@@ -290,31 +304,42 @@ module atg_rx_clip (
 				rd_n <= rd_n1;
 			if (rd_v)
 				vv[rd_k[3:2]][32 * rd_k[1:0] +: 32] <= pt_rdata;
-			if (rd_v && rd_k == rd_lim_m1)
+			if (rd_v && rd_k == rd_lim_m1) begin
+				triv_step <= 1'b0;
 				st <= S_TRIV;
-		end
-		S_TRIV:
-			if (kind == 2'd0) begin
-				/* a point: planes 0-2 only */
-				o0 <= t0[1:0] == 2'b11 ? vv0 : EMPTY;
-				o1 <= t0[1:0] == 2'b11 ? vv0 : EMPTY;
-				o2 <= t0[1:0] == 2'b11 ? vv0 : EMPTY;
-				if (t0[1:0] != 2'b11)
-					kind <= 2'd2;
-				st <= S_OUT;
-			end else if (accept) begin
-				o0 <= vv0;
-				o1 <= vv1;
-				o2 <= kind == 2'd1 ? vv1 : vv2;
-				st <= S_OUT;
-			end else begin
-				pl <= {{4{guard}}, p_far, p_near, 1'b1} & PL_MUT;
-				first <= 1'b1;
-				ld_we <= 1'b1;
-				ld_idx <= 4'd0;
-				ld_data <= vv0;
-				st <= S_LOAD;
 			end
+		end
+		S_TRIV: begin
+			if (!triv_step) begin
+				r_t0 <= t0;
+				r_accept <= accept;
+				r_guard <= guard;
+				triv_step <= 1'b1;
+			end else begin
+				triv_step <= 1'b0;
+				if (kind == 2'd0) begin
+					/* a point: planes 0-2 only */
+					o0 <= r_t0[1:0] == 2'b11 ? vv0 : EMPTY;
+					o1 <= r_t0[1:0] == 2'b11 ? vv0 : EMPTY;
+					o2 <= r_t0[1:0] == 2'b11 ? vv0 : EMPTY;
+					if (r_t0[1:0] != 2'b11)
+						kind <= 2'd2;
+					st <= S_OUT;
+				end else if (r_accept) begin
+					o0 <= vv0;
+					o1 <= vv1;
+					o2 <= kind == 2'd1 ? vv1 : vv2;
+					st <= S_OUT;
+				end else begin
+					pl <= {{4{r_guard}}, p_far, p_near, 1'b1} & PL_MUT;
+					first <= 1'b1;
+					ld_we <= 1'b1;
+					ld_idx <= 4'd0;
+					ld_data <= vv0;
+					st <= S_LOAD;
+				end
+			end
+		end
 		S_LOAD:
 			/* vertex 1 and (a triangle) vertex 2 */
 			if (ld1 < {2'd0, nv}) begin

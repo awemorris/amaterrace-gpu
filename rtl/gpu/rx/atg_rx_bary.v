@@ -37,7 +37,8 @@ module atg_rx_bary (
 	output wire [127:0] o_z,
 	output wire [127:0] o_ds
 );
-	localparam [2:0] S_IDLE = 3'd0, S_PL = 3'd1, S_DIV = 3'd2, S_BC = 3'd3, S_DZ = 3'd4;
+	localparam [2:0] S_IDLE = 3'd0, S_PREP1 = 3'd1, S_PREP2 = 3'd2,
+		S_PL = 3'd3, S_DIV = 3'd4, S_BC = 3'd5, S_DZ = 3'd6;
 	localparam [31:0] ONE = 32'h3F800000;
 	reg [2:0] st;
 	reg [5:0] c;
@@ -45,16 +46,29 @@ module atg_rx_bary (
 	wire c1_co_unused;
 	am_add #(.W(6)) u_c1 (.a(c), .b(6'd0), .ci(1'b1), .s(c1), .co(c1_co_unused));
 
-	/* Lane coordinates (i, j) in eighths with offset, converted to fp32 */
-	wire [31:0] fi [0:3];
-	wire [31:0] fj [0:3];
+	/* Registered inputs to isolate RX/Frag logic from Bary arithmetic */
+	reg [383:0] r_pl;
+	reg [15:0] r_qx, r_qy, r_bx0, r_by0;
+	reg [11:0] r_osel;
+
+	/* Stage 1: Lane coordinates (i, j) in eighths with offset */
+	reg [20:0] r_i8 [0:3];
+	reg [20:0] r_j8 [0:3];
+	wire [20:0] i8_comb [0:3];
+	wire [20:0] j8_comb [0:3];
 	wire [23:0] ij_carry_unused;
+
+	/* Stage 2: Converted to fp32 */
+	reg [31:0] r_fi [0:3];
+	reg [31:0] r_fj [0:3];
+	wire [31:0] fi_comb [0:3];
+	wire [31:0] fj_comb [0:3];
 
 	genvar gl;
 	generate
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_coord
-		wire [2:0] os = (gl == 3) ? i_osel[11:9] : (gl == 2) ? i_osel[8:6] :
-			(gl == 1) ? i_osel[5:3] : i_osel[2:0];
+		wire [2:0] os = (gl == 3) ? r_osel[11:9] : (gl == 2) ? r_osel[8:6] :
+			(gl == 1) ? r_osel[5:3] : r_osel[2:0];
 		reg signed [3:0] ox8, oy8;
 		always @(*) begin
 			case (os)
@@ -67,17 +81,16 @@ module atg_rx_bary (
 		end
 
 		wire [16:0] qi, qj, di, dj;
-		wire [20:0] i8, j8;
-		am_add #(.W(17)) u_qi (.a({1'b0, i_qx}), .b(17'd0), .ci(gl[0]), .s(qi), .co(ij_carry_unused[6 * gl + 0]));
-		am_add #(.W(17)) u_qj (.a({1'b0, i_qy}), .b(17'd0), .ci(gl[1]), .s(qj), .co(ij_carry_unused[6 * gl + 1]));
-		am_sub #(.W(17)) u_di (.a(qi), .b({1'b0, i_bx0}), .bi(1'b0), .d(di), .bo(ij_carry_unused[6 * gl + 2]));
-		am_sub #(.W(17)) u_dj (.a(qj), .b({1'b0, i_by0}), .bi(1'b0), .d(dj), .bo(ij_carry_unused[6 * gl + 3]));
-		am_add #(.W(21)) u_i8 (.a({{1{di[16]}}, di, 3'd0}), .b({{17{ox8[3]}}, ox8}), .ci(1'b0), .s(i8),
+		am_add #(.W(17)) u_qi (.a({1'b0, r_qx}), .b(17'd0), .ci(gl[0]), .s(qi), .co(ij_carry_unused[6 * gl + 0]));
+		am_add #(.W(17)) u_qj (.a({1'b0, r_qy}), .b(17'd0), .ci(gl[1]), .s(qj), .co(ij_carry_unused[6 * gl + 1]));
+		am_sub #(.W(17)) u_di (.a(qi), .b({1'b0, r_bx0}), .bi(1'b0), .d(di), .bo(ij_carry_unused[6 * gl + 2]));
+		am_sub #(.W(17)) u_dj (.a(qj), .b({1'b0, r_by0}), .bi(1'b0), .d(dj), .bo(ij_carry_unused[6 * gl + 3]));
+		am_add #(.W(21)) u_i8 (.a({{1{di[16]}}, di, 3'd0}), .b({{17{ox8[3]}}, ox8}), .ci(1'b0), .s(i8_comb[gl]),
 			.co(ij_carry_unused[6 * gl + 4]));
-		am_add #(.W(21)) u_j8 (.a({{1{dj[16]}}, dj, 3'd0}), .b({{17{oy8[3]}}, oy8}), .ci(1'b0), .s(j8),
+		am_add #(.W(21)) u_j8 (.a({{1{dj[16]}}, dj, 3'd0}), .b({{17{oy8[3]}}, oy8}), .ci(1'b0), .s(j8_comb[gl]),
 			.co(ij_carry_unused[6 * gl + 5]));
-		am_fp_fix2f #(.W(21), .F(3), .SIGNED(1)) u_fi (.v(i8), .f(fi[gl]));
-		am_fp_fix2f #(.W(21), .F(3), .SIGNED(1)) u_fj (.v(j8), .f(fj[gl]));
+		am_fp_fix2f #(.W(21), .F(3), .SIGNED(1)) u_fi (.v(r_i8[gl]), .f(fi_comb[gl]));
+		am_fp_fix2f #(.W(21), .F(3), .SIGNED(1)) u_fj (.v(r_j8[gl]), .f(fj_comb[gl]));
 	end
 	endgenerate
 
@@ -95,12 +108,13 @@ module atg_rx_bary (
 
 	/* Storage registers */
 	reg [31:0] v [0:3][0:3];	/* plane [0..3], lane [0..3] */
-	reg [31:0] t1 [0:3][0:3];	/* temp multiply results */
 	reg [31:0] rw [0:3];		/* reciprocal of 1/w */
 	reg [31:0] b0 [0:3];
 	reg [31:0] b1 [0:3];
 	reg [31:0] b2 [0:3];
 	reg [31:0] ds [0:3];
+	reg [31:0] r_t1_curr [0:3];
+	reg [31:0] r_fa2_b [0:3];
 
 	/* Plane coefficients */
 	wire [31:0] pl_a [0:3];
@@ -108,15 +122,14 @@ module atg_rx_bary (
 	wire [31:0] pl_c [0:3];
 	generate
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_pl_coeff
-		assign pl_a[gl] = i_pl[32 * (3 * gl + 0) +: 32];
-		assign pl_b[gl] = i_pl[32 * (3 * gl + 1) +: 32];
-		assign pl_c[gl] = i_pl[32 * (3 * gl + 2) +: 32];
+		assign pl_a[gl] = r_pl[32 * (3 * gl + 0) +: 32];
+		assign pl_b[gl] = r_pl[32 * (3 * gl + 1) +: 32];
+		assign pl_c[gl] = r_pl[32 * (3 * gl + 2) +: 32];
 	end
 	endgenerate
 
 	wire [31:0] cur_pl_a = (c[2:1] == 2'd0) ? pl_a[0] : (c[2:1] == 2'd1) ? pl_a[1] : (c[2:1] == 2'd2) ? pl_a[2] : pl_a[3];
 	wire [31:0] cur_pl_b = (c[2:1] == 2'd0) ? pl_b[0] : (c[2:1] == 2'd1) ? pl_b[1] : (c[2:1] == 2'd2) ? pl_b[2] : pl_b[3];
-	wire [31:0] cur_pl_c = (c == 6'd9) ? pl_c[0] : (c == 6'd11) ? pl_c[1] : (c == 6'd13) ? pl_c[2] : pl_c[3];
 
 	/* 4-Lane Parallel Multipliers, Stage 1 Adders, and Stage 2 Adders */
 	wire [31:0] fm_a [0:3];
@@ -150,34 +163,28 @@ module atg_rx_bary (
 		                  (st == S_BC) ? (c[0] ? v[3][gl] : v[2][gl]) :
 		                  (st == S_DZ) ? (c[0] ? pl_b[0] : pl_a[0]) : 32'd0;
 
-		assign fm_b[gl] = (st == S_PL) ? (c[0] ? fj[gl] : fi[gl]) :
+		assign fm_b[gl] = (st == S_PL) ? (c[0] ? r_fj[gl] : r_fi[gl]) :
 		                  (st == S_BC) ? rw[gl] :
 		                  (st == S_DZ) ? (c[0] ? sdy(gl[1:0]) : sdx(gl[1:0])) : 32'd0;
 
-		am_fp_mul #(.LAT(4)) u_fmul (
+		atg_rx_fmul #(.LAT(4)) u_fmul (
 			.clk(clk), .rst_n(rst_n),
 			.i_valid(fm_v[gl]), .i_a(fm_a[gl]), .i_b(fm_b[gl]),
 			.o_valid(fm_o[gl]), .o_r(fm_r[gl])
 		);
 
 		/* Stage 1 FP Adder */
-		wire [31:0] cur_t1_val = (c == 6'd5) ? t1[0][gl] :
-		                         (c == 6'd7) ? t1[1][gl] :
-		                         (c == 6'd9) ? t1[2][gl] : t1[3][gl];
-
 		assign fa1_v[gl] = (st == S_PL && (c == 6'd5 || c == 6'd7 || c == 6'd9 || c == 6'd11)) ||
 		                   (st == S_BC && c == 6'd4) ||
 		                   (st == S_DZ && c == 6'd5);
 
 		assign fa1_sub[gl] = (st == S_BC);
 
-		assign fa1_a[gl] = (st == S_PL) ? cur_t1_val :
-		                   (st == S_BC) ? ONE :
-		                   (st == S_DZ) ? t1[0][gl] : 32'd0;
+		assign fa1_a[gl] = (st == S_BC) ? ONE : r_t1_curr[gl];
 
 		assign fa1_b[gl] = fm_r[gl];
 
-		am_fp_add #(.LAT(4)) u_fadd1 (
+		atg_rx_fadd #(.LAT(4)) u_fadd1 (
 			.clk(clk), .rst_n(rst_n),
 			.i_valid(fa1_v[gl]), .i_a(fa1_a[gl]), .i_b(fa1_b[gl]),
 			.i_sub(fa1_sub[gl]), .o_valid(fa1_o[gl]), .o_r(fa1_r[gl])
@@ -191,10 +198,9 @@ module atg_rx_bary (
 
 		assign fa2_a[gl] = fa1_r[gl];
 
-		assign fa2_b[gl] = (st == S_PL) ? cur_pl_c :
-		                   (st == S_BC) ? b1[gl] : 32'd0;
+		assign fa2_b[gl] = r_fa2_b[gl];
 
-		am_fp_add #(.LAT(4)) u_fadd2 (
+		atg_rx_fadd #(.LAT(4)) u_fadd2 (
 			.clk(clk), .rst_n(rst_n),
 			.i_valid(fa2_v[gl]), .i_a(fa2_a[gl]), .i_b(fa2_b[gl]),
 			.i_sub(fa2_sub[gl]), .o_valid(fa2_o[gl]), .o_r(fa2_r[gl])
@@ -208,7 +214,7 @@ module atg_rx_bary (
 	wire [31:0] fd_r [0:3];
 	generate
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_fdiv
-		am_fp_div u_fdiv (
+		atg_rx_fdiv u_fdiv (
 			.clk(clk), .rst_n(rst_n),
 			.i_start(div_start), .i_a(ONE), .i_b(v[1][gl]),
 			.busy(fd_busy[gl]), .o_done(fd_done[gl]), .o_r(fd_r[gl])
@@ -236,12 +242,25 @@ module atg_rx_bary (
 		if (!rst_n) begin
 			st <= S_IDLE;
 			c <= 6'd0;
+			r_pl <= 384'd0;
+			r_qx <= 16'd0;
+			r_qy <= 16'd0;
+			r_bx0 <= 16'd0;
+			r_by0 <= 16'd0;
+			r_osel <= 12'd0;
+			for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
+				r_i8[lane_idx] <= 21'd0;
+				r_j8[lane_idx] <= 21'd0;
+				r_fi[lane_idx] <= 32'd0;
+				r_fj[lane_idx] <= 32'd0;
+			end
 			for (p = 0; p < 4; p = p + 1)
 				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
 					v[p][lane_idx] <= 32'd0;
-					t1[p][lane_idx] <= 32'd0;
 				end
 			for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
+				r_t1_curr[lane_idx] <= 32'd0;
+				r_fa2_b[lane_idx] <= 32'd0;
 				rw[lane_idx] <= 32'd0;
 				b0[lane_idx] <= 32'd0;
 				b1[lane_idx] <= 32'd0;
@@ -251,30 +270,60 @@ module atg_rx_bary (
 		end else case (st)
 		S_IDLE: begin
 			c <= 6'd0;
-			if (i_start)
-				st <= S_PL;
-			else if (i_dz)
+			if (i_start) begin
+				r_pl <= i_pl;
+				r_qx <= i_qx;
+				r_qy <= i_qy;
+				r_bx0 <= i_bx0;
+				r_by0 <= i_by0;
+				r_osel <= i_osel;
+				st <= S_PREP1;
+			end else if (i_dz) begin
+				r_pl <= i_pl;
 				st <= S_DZ;
+			end
+		end
+
+		S_PREP1: begin
+			for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
+				r_i8[lane_idx] <= i8_comb[lane_idx];
+				r_j8[lane_idx] <= j8_comb[lane_idx];
+			end
+			st <= S_PREP2;
+		end
+
+		S_PREP2: begin
+			for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
+				r_fi[lane_idx] <= fi_comb[lane_idx];
+				r_fj[lane_idx] <= fj_comb[lane_idx];
+			end
+			c <= 6'd0;
+			st <= S_PL;
 		end
 
 		S_PL: begin
 			c <= c1;
 			/* Capture T0 = A*fi at c = 4, 6, 8, 10 */
-			if (c == 6'd4) begin
+			if (c == 6'd4 || c == 6'd6 || c == 6'd8 || c == 6'd10) begin
 				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					t1[0][lane_idx] <= fm_r[lane_idx];
+					r_t1_curr[lane_idx] <= fm_r[lane_idx];
 			end
-			if (c == 6'd6) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					t1[1][lane_idx] <= fm_r[lane_idx];
-			end
+			/* Pre-load fa2_b with plane C values at c = 8, 10, 12, 14 */
 			if (c == 6'd8) begin
 				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					t1[2][lane_idx] <= fm_r[lane_idx];
+					r_fa2_b[lane_idx] <= pl_c[0];
 			end
 			if (c == 6'd10) begin
 				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					t1[3][lane_idx] <= fm_r[lane_idx];
+					r_fa2_b[lane_idx] <= pl_c[1];
+			end
+			if (c == 6'd12) begin
+				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
+					r_fa2_b[lane_idx] <= pl_c[2];
+			end
+			if (c == 6'd14) begin
+				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
+					r_fa2_b[lane_idx] <= pl_c[3];
 			end
 			/* Capture final plane values at c = 13, 15, 17, 19 from fa2_r */
 			if (c == 6'd13) begin
@@ -318,6 +367,10 @@ module atg_rx_bary (
 				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
 					b1[lane_idx] <= fm_r[lane_idx];
 			end
+			if (c == 6'd7) begin
+				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
+					r_fa2_b[lane_idx] <= b1[lane_idx];
+			end
 			if (c == 6'd12) begin
 				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
 					b2[lane_idx] <= fa2_r[lane_idx];
@@ -330,7 +383,7 @@ module atg_rx_bary (
 			c <= c1;
 			if (c == 6'd4) begin
 				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					t1[0][lane_idx] <= fm_r[lane_idx];
+					r_t1_curr[lane_idx] <= fm_r[lane_idx];
 			end
 			if (c == 6'd9) begin
 				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin

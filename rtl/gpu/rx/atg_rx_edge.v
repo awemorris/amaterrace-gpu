@@ -63,16 +63,64 @@ module atg_rx_edge (
 	wire is_tri = kind[1] || md[3];
 	integer k;
 
-	wire [23:0] snap;
-	wire [48:0] carry_unused;	/* the adders' carries */
-	am_fp_f2fix #(
-		.W(24),
-		.F(8),
-		.SIGNED(1),
-		.ROUND(1),
-		.SATURATE(1),
-		.SAT_BITS(22)
-	) u_snap (.f(r_rd), .q(snap));
+	wire [51:0] carry_unused;	/* the adders' carries */
+
+	/* Pipelined f2fix stage 1: exponent and shift */
+	localparam [23:0] SAT_POS = 24'h3FFFFF;
+	localparam [23:0] SAT_NEG = 24'hC00001;
+
+	wire [7:0] snap_exp = r_rd[30:23];
+	wire [22:0] snap_mant = r_rd[22:0];
+	wire [7:0] snap_shift_amt;
+	am_sub #(.W(8)) u_snap_s (.a(8'd142), .b(snap_exp), .bi(1'b0), .d(snap_shift_amt), .bo(carry_unused[49]));
+
+	wire [47:0] snap_shifted;
+	am_shift #(.W(48), .SW(8)) u_snap_sh (
+		.a({1'b1, snap_mant, 24'd0}),
+		.amt(snap_shift_amt),
+		.left(1'b0),
+		.arith(1'b0),
+		.y(snap_shifted)
+	);
+
+	reg [47:0] r_snap_shifted;
+	reg r_snap_sign;
+	reg [7:0] r_snap_exp;
+	reg r_snap_nan;
+	reg r_snap_zero;
+	reg [3:0] r_snap_tsn;
+	reg r_snap_v;
+
+	/* Pipelined f2fix stage 2: round and saturate */
+	wire [23:0] s2_unrounded = r_snap_shifted[47:24];
+	wire s2_guard = r_snap_shifted[23];
+	wire s2_sticky = (r_snap_shifted[22:0] != 23'd0);
+	wire s2_lsb = s2_unrounded[0];
+	wire s2_round_up = s2_guard && (s2_sticky || s2_lsb);
+
+	wire [23:0] s2_rounded;
+	am_add #(.W(24)) u_s2_rnd (
+		.a(s2_unrounded),
+		.b(24'd0),
+		.ci(s2_round_up),
+		.s(s2_rounded),
+		.co(carry_unused[50])
+	);
+
+	wire [23:0] s2_signed_res;
+	am_addsub #(.W(24)) u_s2_rs (
+		.a(24'd0),
+		.b(s2_rounded),
+		.sub(r_snap_sign),
+		.s(s2_signed_res),
+		.co(carry_unused[51])
+	);
+
+	wire s2_is_overflow = (r_snap_exp >= 8'd142) || (s2_rounded > SAT_POS);
+	wire s2_is_underflow = (r_snap_exp < 8'd118) || r_snap_zero;
+	wire [23:0] s2_sat_res = r_snap_sign ? SAT_NEG : SAT_POS;
+	wire [23:0] snap_out = (r_snap_nan || s2_is_underflow) ? 24'd0 :
+		s2_is_overflow ? s2_sat_res : s2_signed_res;
 
 	/* The registers read, in order: 31 32 34 35 37 38, then 76-79: register i + 1 is
 	 * 31 + i + i / 2 below 6, else 70 + i. */
@@ -148,13 +196,10 @@ module atg_rx_edge (
 	am_sub #(.W(24)) u_dx2 (.a(fx2), .b(fx0), .bi(1'b0), .d(dx2), .bo(carry_unused[17]));
 	am_sub #(.W(24)) u_dy2 (.a(fy2), .b(fy0), .bi(1'b0), .d(dy2), .bo(carry_unused[18]));
 
-	/* The multiplier: operands registered, product one cycle later. */
+	/* The multiplier: operands registered, product one cycle later (DSP48E1 internal PREG). */
 	reg signed [24:0] ma, mb;
-	reg signed [49:0] mp;
-	wire [49:0] mpn;
-	am_mul #(.AW(25), .BW(25), .SIGNED(1)) u_mp (.clk(clk), .en(1'b1), .a(ma), .b(mb), .p(mpn));
-	always @(posedge clk)
-		mp <= mpn;
+	wire signed [49:0] mp;
+	am_mul #(.AW(25), .BW(25), .SIGNED(1), .LAT(1)) u_mp (.clk(clk), .en(1'b1), .a(ma), .b(mb), .p(mp));
 
 	/* bbox: the corners' pixels, max exclusive, ∩ scissor (when SCISSOR_MAX
 	 * != 0) ∩ the viewport's rectangle (vprect, not raw) ∩ RT. */
@@ -167,29 +212,12 @@ module atg_rx_edge (
 	wire signed [23:0] s6 = sv[6], s7 = sv[7], s8 = sv[8], s9 = sv[9];
 	wire signed [17:0] rx0 = pix(s6[23:8]), rx1 = pix(s7[23:8]);
 	wire signed [17:0] ry0 = pix(s8[23:8]), ry1 = pix(s9[23:8]);
-	reg signed [17:0] t_x, t_y, l_x, l_y, m_x, m_y;
+	reg signed [17:0] r_min01_x, r_max01_x, r_min23_x, r_max23_x;
+	reg signed [17:0] r_min01_y, r_max01_y, r_min23_y, r_max23_y;
 	reg signed [17:0] r_lx, r_ly, r_mx, r_my;
 	reg signed [17:0] r_mx1, r_my1;
 	reg signed [17:0] r_clx, r_cly, r_cmx, r_cmy;
 	reg signed [17:0] bx0, by0, bx1, by1;
-	always @(*) begin
-		l_x = pix(q0x[23:8]);
-		m_x = l_x;
-		l_y = pix(q0y[23:8]);
-		m_y = l_y;
-		for (k = 1; k < 4; k = k + 1) begin
-			t_x = pix(k == 1 ? q1x[23:8] : k == 2 ? q2x[23:8] : q3x[23:8]);
-			t_y = pix(k == 1 ? q1y[23:8] : k == 2 ? q2y[23:8] : q3y[23:8]);
-			if (t_x < l_x)
-				l_x = t_x;
-			if (t_x > m_x)
-				m_x = t_x;
-			if (t_y < l_y)
-				l_y = t_y;
-			if (t_y > m_y)
-				m_y = t_y;
-		end
-	end
 	wire [17:0] m_x1, m_y1;	/* the largest pixel + 1 (calculated in Stage 2) */
 	am_add #(.W(18)) u_m_x1 (.a(r_mx), .b(18'd0), .ci(1'b1), .s(m_x1), .co(carry_unused[19]));
 	am_add #(.W(18)) u_m_y1 (.a(r_my), .b(18'd0), .ci(1'b1), .s(m_y1), .co(carry_unused[20]));
@@ -353,11 +381,11 @@ module atg_rx_edge (
 			.bo(carry_unused[38 + 4 * ge]));
 	end
 	endgenerate
-	/* E_k = A_k oX_k + B_k oY_k - !tl_k */
-	wire [47:0] eE_s;
-	am_add #(.W(48)) u_eE_s (.a(acc[47:0]), .b(mp[47:0]), .ci(1'b0), .s(eE_s),
+	/* E_k = (A_k oX_k - !tl_k) + B_k oY_k */
+	wire [47:0] acc_n;
+	am_sub #(.W(48)) u_acc_n (.a(mp[47:0]), .b(48'd0), .bi(!tl[ek]), .d(acc_n), .bo(carry_unused[48]));
+	am_add #(.W(48)) u_eE_n (.a(acc[47:0]), .b(mp[47:0]), .ci(1'b0), .s(eE_n),
 		.co(carry_unused[47]));
-	am_sub #(.W(48)) u_eE_n (.a(eE_s), .b(48'd0), .bi(!tl[ek]), .d(eE_n), .bo(carry_unused[48]));
 
 	always @(posedge clk) begin
 		r_we <= 1'b0;
@@ -365,20 +393,31 @@ module atg_rx_edge (
 		if (!rst_n) begin
 			run <= 1'b0;
 			cnt <= 6'd0;
+			r_snap_v <= 1'b0;
 		end else if (start) begin
 			run <= 1'b1;
 			cnt <= 6'd0;
+			r_snap_v <= 1'b0;
 			md <= mode;
 			r_ra <= 7'd31;
 			for (k = 0; k < 3; k = k + 1)
 				eE[k] <= 48'd0;
 		end else if (run) begin
 			cnt <= cnt1;
-			/* 0-9 read, 1-10 snap */
+			/* 0-9 read, 1-10 snap stage 1, 2-11 snap stage 2 */
 			if (cnt < 6'd9)
 				r_ra <= rrv;
-			if (cnt >= 6'd1 && cnt <= 6'd10)
-				sv[tsn] <= snap;
+			r_snap_v <= (cnt >= 6'd1 && cnt <= 6'd10);
+			if (cnt >= 6'd1 && cnt <= 6'd10) begin
+				r_snap_shifted <= snap_shifted;
+				r_snap_sign <= r_rd[31];
+				r_snap_exp <= snap_exp;
+				r_snap_nan <= (snap_exp == 8'hFF) && (snap_mant != 23'd0);
+				r_snap_zero <= (snap_exp == 8'd0);
+				r_snap_tsn <= tsn;
+			end
+			if (r_snap_v)
+				sv[r_snap_tsn] <= snap_out;
 			if (cnt == 6'd7) begin
 				r_xmaj <= xmaj;
 				r_ddx <= ddx;
@@ -393,6 +432,16 @@ module atg_rx_edge (
 				r_c2y <= c2y;
 				r_c3x <= c3x;
 				r_c3y <= c3y;
+			end
+			if (cnt == 6'd10) begin
+				r_min01_x <= pix(q0x[23:8]) < pix(q1x[23:8]) ? pix(q0x[23:8]) : pix(q1x[23:8]);
+				r_max01_x <= pix(q0x[23:8]) > pix(q1x[23:8]) ? pix(q0x[23:8]) : pix(q1x[23:8]);
+				r_min23_x <= pix(q2x[23:8]) < pix(q3x[23:8]) ? pix(q2x[23:8]) : pix(q3x[23:8]);
+				r_max23_x <= pix(q2x[23:8]) > pix(q3x[23:8]) ? pix(q2x[23:8]) : pix(q3x[23:8]);
+				r_min01_y <= pix(q0y[23:8]) < pix(q1y[23:8]) ? pix(q0y[23:8]) : pix(q1y[23:8]);
+				r_max01_y <= pix(q0y[23:8]) > pix(q1y[23:8]) ? pix(q0y[23:8]) : pix(q1y[23:8]);
+				r_min23_y <= pix(q2y[23:8]) < pix(q3y[23:8]) ? pix(q2y[23:8]) : pix(q3y[23:8]);
+				r_max23_y <= pix(q2y[23:8]) > pix(q3y[23:8]) ? pix(q2y[23:8]) : pix(q3y[23:8]);
 			end
 			/* 11: the walked triangle, the corners, the plane triangle */
 			if (cnt == 6'd11) begin
@@ -409,10 +458,10 @@ module atg_rx_edge (
 				pdd <= !is_line ? 48'sd65536 : r_xmaj ? {{16{r_ddx[23]}}, r_ddx, 8'd0} : ndy;
 				p0x <= ax;
 				p0y <= ay;
-				r_lx <= l_x;
-				r_ly <= l_y;
-				r_mx <= m_x;
-				r_my <= m_y;
+				r_lx <= r_min01_x < r_min23_x ? r_min01_x : r_min23_x;
+				r_ly <= r_min01_y < r_min23_y ? r_min01_y : r_min23_y;
+				r_mx <= r_max01_x > r_max23_x ? r_max01_x : r_max23_x;
+				r_my <= r_max01_y > r_max23_y ? r_max01_y : r_max23_y;
 			end
 			/* 12-14: bbox pipelined; 12-15: D */
 			if (cnt == 6'd12) begin
@@ -477,7 +526,7 @@ module atg_rx_edge (
 			end
 			if (cnt >= 6'd19 && cnt <= 6'd24) begin
 				if (!ce_p[0])
-					acc <= mp;
+					acc <= {2'b00, acc_n};
 				else
 					eE[ek] <= eE_n;
 			end

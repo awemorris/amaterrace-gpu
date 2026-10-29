@@ -66,7 +66,8 @@ module atg_rx_cpoly (
 	reg [2:0] ph;	/* operation of a sequence */
 	reg [31:0] t0, t1;
 	reg [3:0] j, k, m;	/* CUT: start, edge, vertices written */
-	reg cdone;	/* CUT: edge k's vertex handled */
+	reg [1:0] cdone;	/* CUT: edge k's vertex handled */
+	reg [223:0] r_pbp;
 	reg [3:0] ia, ib;	/* the edge's inside and outside vertices */
 	reg [2:0] c;	/* ISECT: word */
 	reg [223:0] xi;
@@ -137,14 +138,14 @@ module atg_rx_cpoly (
 
 	/* The operands of the sequences. */
 	wire [223:0] vd = pb[a_vd];
-	wire [223:0] va = pb[a_va];
-	wire [223:0] vb = pb[a_vb];
+	/* Buffered edge vertices for intersection */
+	reg [223:0] r_va, r_vb;
 	wire gy = plane == 3'd5 || plane == 3'd6;
 	wire [31:0] g_c = gy ? vd[63:32] : vd[31:0];
 	wire [31:0] g_sc = gy ? vp[63:32] : vp[31:0];
 	wire [31:0] g_of = gy ? vp[127:96] : vp[95:64];
-	wire [31:0] a_c = va[32 * c +: 32];
-	wire [31:0] b_c = vb[32 * c +: 32];
+	wire [31:0] a_c = r_va[32 * c +: 32];
+	wire [31:0] b_c = r_vb[32 * c +: 32];
 	wire [31:0] d_a = dd[ia];
 	wire [31:0] d_b = dd[ib];
 	reg [1:0] op;	/* 0 fadd, 1 fmul, 2 fdiv */
@@ -224,7 +225,6 @@ module atg_rx_cpoly (
 			endcase
 	end
 
-	wire issue = st == S_DOP || st == S_IOP;
 	wire [4:0] a_ld, a_new, a_p, a_rd;
 	am_add #(.W(5)) u_a_ld (.a({1'b0, ld_idx}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_ld),
 		.co(adr_carry_unused[3]));
@@ -236,12 +236,15 @@ module atg_rx_cpoly (
 		.co(adr_carry_unused[6]));
 	wire fa_o, fm_o, fd_o, fd_busy;
 	wire [31:0] fa_r, fm_r, fd_r;
-	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(issue && op == 2'd0), .i_a(op_a),
-		.i_b(op_b), .i_sub(op_sub), .o_valid(fa_o), .o_r(fa_r));
-	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(issue && op == 2'd1), .i_a(op_a),
-		.i_b(op_b), .o_valid(fm_o), .o_r(fm_r));
-	am_fp_div fdiv (.clk(clk), .rst_n(rst_n), .i_start(issue && op == 2'd2), .i_a(op_a),
-		.i_b(op_b), .busy(fd_busy), .o_done(fd_o), .o_r(fd_r));
+	reg r_fa_v, r_fm_v, r_fd_v;
+	reg [31:0] r_op_a, r_op_b;
+	reg r_op_sub;
+	atg_rx_fadd #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(r_fa_v), .i_a(r_op_a),
+		.i_b(r_op_b), .i_sub(r_op_sub), .o_valid(fa_o), .o_r(fa_r));
+	atg_rx_fmul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(r_fm_v), .i_a(r_op_a),
+		.i_b(r_op_b), .o_valid(fm_o), .o_r(fm_r));
+	atg_rx_fdiv fdiv (.clk(clk), .rst_n(rst_n), .i_start(r_fd_v), .i_a(r_op_a),
+		.i_b(r_op_b), .busy(fd_busy), .o_done(fd_o), .o_r(fd_r));
 	wire res_v = fa_o || fm_o || fd_o;
 	wire [31:0] res = fa_o ? fa_r : fm_o ? fm_r : fd_r;
 	/* the last operation of a distance: planes 0 and 2 have one, 3-6 five */
@@ -252,12 +255,22 @@ module atg_rx_cpoly (
 	always @(posedge clk) begin
 		rd_data <= pb[a_rd];
 		done <= 1'b0;
+		r_fa_v <= 1'b0;
+		r_fm_v <= 1'b0;
+		r_fd_v <= 1'b0;
 		if (!rst_n) begin
 			st <= S_IDLE;
 			half <= 1'b0;
 			n <= 4'd0;
 			line <= 1'b0;
 			n_out <= 4'd0;
+			cdone <= 2'd0;
+			r_pbp <= 224'd0;
+			r_va <= 224'd0;
+			r_vb <= 224'd0;
+			r_op_a <= 32'd0;
+			r_op_b <= 32'd0;
+			r_op_sub <= 1'b0;
 		end else case (st)
 		S_IDLE: begin
 			if (ld_we)
@@ -279,8 +292,15 @@ module atg_rx_cpoly (
 				i <= i1;
 				if (i1 == n)
 					st <= S_DEC;
-			end else
+			end else begin
+				r_op_a <= op_a;
+				r_op_b <= op_b;
+				r_op_sub <= op_sub;
+				r_fa_v <= op == 2'd0;
+				r_fm_v <= op == 2'd1;
+				r_fd_v <= op == 2'd2;
 				st <= S_DW;
+			end
 		S_DW:
 			if (res_v) begin
 				if (d_last) begin
@@ -308,7 +328,7 @@ module atg_rx_cpoly (
 				j <= line ? 4'd0 : jsel;
 				k <= 4'd0;
 				m <= 4'd0;
-				cdone <= 1'b0;
+				cdone <= 2'd0;
 				st <= S_CUT;
 			end
 		S_CUT:
@@ -318,12 +338,17 @@ module atg_rx_cpoly (
 				n_out <= m;
 				done <= 1'b1;
 				st <= S_IDLE;
-			end else if (!cdone) begin
+			end else if (cdone == 2'd0) begin
 				if (ins[pi]) begin
-					pb[a_new] <= pb[a_p];
-					m <= m1;
+					r_pbp <= pb[a_p];
+					cdone <= 2'd1;
+				end else begin
+					cdone <= 2'd2;
 				end
-				cdone <= 1'b1;
+			end else if (cdone == 2'd1) begin
+				pb[a_new] <= r_pbp;
+				m <= m1;
+				cdone <= 2'd2;
 			end else if (xing) begin
 				ia <= ins[pi] ? pi : qi;
 				ib <= ins[pi] ? qi : pi;
@@ -332,10 +357,21 @@ module atg_rx_cpoly (
 				st <= S_IOP;
 			end else begin
 				k <= k1;
-				cdone <= 1'b0;
+				cdone <= 2'd0;
 			end
-		S_IOP:
+		S_IOP: begin
+			if (ph == 3'd0) begin
+				r_va <= pb[a_va];
+				r_vb <= pb[a_vb];
+			end
+			r_op_a <= op_a;
+			r_op_b <= op_b;
+			r_op_sub <= op_sub;
+			r_fa_v <= op == 2'd0;
+			r_fm_v <= op == 2'd1;
+			r_fd_v <= op == 2'd2;
 			st <= S_IW;
+		end
 		default:	/* S_IW */
 			if (res_v) begin
 				st <= S_IOP;
@@ -352,7 +388,7 @@ module atg_rx_cpoly (
 						pb[a_new] <= {res, xi[191:0]};
 						m <= m1;
 						k <= k1;
-						cdone <= 1'b0;
+						cdone <= 2'd0;
 						st <= S_CUT;
 					end
 				end

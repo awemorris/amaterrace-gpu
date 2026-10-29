@@ -419,31 +419,52 @@ module atg_rx_scan #(
 	wire tile_row_end = (qx2 >= {1'b0, cur_tx_end}) || (qx2 >= {1'b0, bx1});
 	wire tile_quads_end = tile_row_end && ((qy2 >= {1'b0, cur_ty_end}) || (qy2 >= {1'b0, by1}));
 
-	/* Depth: z = (Az i + Bz j) + Cz, i = x - bx0, j = y - by0, clamped to [0, 1]. */
+	/* Depth: z = (Az i + Bz j) + Cz, i = x - bx0, j = y - by0, clamped to [0, 1].
+	 * Stage 0 (zc == 0): latch dx0, dx1, dy0, dy1 (17-bit sub).
+	 * Stage 1 (zc == 1): convert to fp32 (fix2f).
+	 * Stage 2..9: fmul.
+	 * Stage 10..17: fadd (two phases: Az*i + Bz*j, then + Cz).
+	 * Stage 18..21: write zv, transition to S_EMIT at zc == 21.
+	 */
 	reg [4:0] zc;
+	reg [1:0] r_zl;
 	reg [3:0] zmask;
-	reg [31:0] t1 [0:3];
+	reg [31:0] t1_0, t1_1, t1_2, t1_3;
 	reg [127:0] zv;
-	wire [1:0] zl = zc[1:0];
-	wire zi = zc < 5'd4;
-	wire [16:0] lq, lij;
-	wire [31:0] fm_b;
-	wire [1:0] lij_carry_unused;
-	am_add #(.W(17)) u_lq (.a({1'b0, zi ? qx : qy}), .b(17'd0), .ci(zi ? zl[0] : zl[1]), .s(lq),
-		.co(lij_carry_unused[0]));
-	am_sub #(.W(17)) u_lij (.a(lq), .b({1'b0, zi ? bx0 : by0}), .bi(1'b0), .d(lij),
-		.bo(lij_carry_unused[1]));
-	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fm_b (.v(lij), .f(fm_b));
-	wire fm_v = (st == S_Z) && (zc < 5'd8);
-	wire [31:0] fm_a = zi ? az : bz;
-	wire fa_v = (st == S_Z) && (zc >= 5'd8) && (zc < 5'd16);
+
+	wire [16:0] dx0_comb, dy0_comb, dx1_comb, dy1_comb;
+	wire [3:0] dxy_carry_unused;
+	am_sub #(.W(17)) u_dx0 (.a({1'b0, qx}), .b({1'b0, bx0}), .bi(1'b0), .d(dx0_comb), .bo(dxy_carry_unused[0]));
+	am_sub #(.W(17)) u_dy0 (.a({1'b0, qy}), .b({1'b0, by0}), .bi(1'b0), .d(dy0_comb), .bo(dxy_carry_unused[1]));
+	am_sub #(.W(17)) u_dx1 (.a(qx1), .b({1'b0, bx0}), .bi(1'b0), .d(dx1_comb), .bo(dxy_carry_unused[2]));
+	am_sub #(.W(17)) u_dy1 (.a(qy1), .b({1'b0, by0}), .bi(1'b0), .d(dy1_comb), .bo(dxy_carry_unused[3]));
+
+	reg [16:0] r_dx0, r_dy0, r_dx1, r_dy1;
+
+	wire [31:0] f_dx0_comb, f_dy0_comb, f_dx1_comb, f_dy1_comb;
+	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fdx0 (.v(r_dx0), .f(f_dx0_comb));
+	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fdy0 (.v(r_dy0), .f(f_dy0_comb));
+	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fdx1 (.v(r_dx1), .f(f_dx1_comb));
+	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fdy1 (.v(r_dy1), .f(f_dy1_comb));
+
+	reg [31:0] r_fdx0, r_fdy0, r_fdx1, r_fdy1;
+
+	wire [1:0] r_zl_next;
+	wire r_zl_co_unused;
+	am_add #(.W(2)) u_zl_inc (.a(r_zl), .b(2'd0), .ci(1'b1), .s(r_zl_next), .co(r_zl_co_unused));
+
+	wire fm_v = (st == S_Z) && (zc >= 5'd2) && (zc < 5'd10);
+	wire [31:0] fm_a = (zc < 5'd6) ? az : bz;
+	wire [31:0] fm_b = (zc < 5'd6) ? (r_zl[0] ? r_fdx1 : r_fdx0) : (r_zl[1] ? r_fdy1 : r_fdy0);
+
+	reg r_fa_v;
+	reg [31:0] r_fa_a, r_fa_b;
 	wire fm_o, fa_o;
 	wire [31:0] fm_r, fa_r;
-	wire [31:0] fa_a = (zc < 5'd12) ? t1[zl] : fa_r;
-	wire [31:0] fa_b = (zc < 5'd12) ? fm_r : cz;
-	am_fp_mul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(fm_a), .i_b(fm_b),
+
+	atg_rx_fmul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(fm_a), .i_b(fm_b),
 		.o_valid(fm_o), .o_r(fm_r));
-	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(fa_a), .i_b(fa_b),
+	atg_rx_fadd #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(r_fa_v), .i_a(r_fa_a), .i_b(r_fa_b),
 		.i_sub(1'b0), .o_valid(fa_o), .o_r(fa_r));
 	wire [31:0] zcl = fa_r[31] || (fa_r[30:23] == 8'hFF && fa_r[22:0] != 23'd0) ? 32'd0 :
 		fa_r > 32'h3F800000 ? 32'h3F800000 : fa_r;
@@ -489,6 +510,22 @@ module atg_rx_scan #(
 			pend <= 1'b0;
 			fi <= 2'd0;
 			zc <= 5'd0;
+			r_zl <= 2'd0;
+			r_dx0 <= 17'd0;
+			r_dy0 <= 17'd0;
+			r_dx1 <= 17'd0;
+			r_dy1 <= 17'd0;
+			r_fdx0 <= 32'd0;
+			r_fdy0 <= 32'd0;
+			r_fdx1 <= 32'd0;
+			r_fdy1 <= 32'd0;
+			r_fa_v <= 1'b0;
+			r_fa_a <= 32'd0;
+			r_fa_b <= 32'd0;
+			t1_0 <= 32'd0;
+			t1_1 <= 32'd0;
+			t1_2 <= 32'd0;
+			t1_3 <= 32'd0;
 			zmask <= 4'd0;
 			zv <= 128'd0;
 			p_xy <= 32'd0;
@@ -671,11 +708,43 @@ module atg_rx_scan #(
 
 		S_Z: begin
 			zc <= zc1;
-			if (zc >= 5'd4 && zc < 5'd8)
-				t1[zl] <= fm_r;
-			if (zc >= 5'd16 && zmask[zl])
-				zv[32 * zl +: 32] <= zcl;
-			if (zc == 5'd19)
+			if (zc == 5'd0) begin
+				r_dx0 <= dx0_comb;
+				r_dy0 <= dy0_comb;
+				r_dx1 <= dx1_comb;
+				r_dy1 <= dy1_comb;
+			end
+			if (zc == 5'd1) begin
+				r_fdx0 <= f_dx0_comb;
+				r_fdy0 <= f_dy0_comb;
+				r_fdx1 <= f_dx1_comb;
+				r_fdy1 <= f_dy1_comb;
+				r_zl <= 2'd0;
+			end else if (zc >= 5'd2) begin
+				r_zl <= r_zl_next;
+			end
+			if (zc == 5'd6) t1_0 <= fm_r;
+			if (zc == 5'd7) t1_1 <= fm_r;
+			if (zc == 5'd8) t1_2 <= fm_r;
+			if (zc == 5'd9) t1_3 <= fm_r;
+
+			if (zc == 5'd10) begin r_fa_v <= 1'b1; r_fa_a <= t1_0; r_fa_b <= fm_r; end
+			if (zc == 5'd11) begin r_fa_v <= 1'b1; r_fa_a <= t1_1; r_fa_b <= fm_r; end
+			if (zc == 5'd12) begin r_fa_v <= 1'b1; r_fa_a <= t1_2; r_fa_b <= fm_r; end
+			if (zc == 5'd13) begin r_fa_v <= 1'b1; r_fa_a <= t1_3; r_fa_b <= fm_r; end
+			if (zc == 5'd14) begin r_fa_v <= 1'b0; end
+
+			if (zc == 5'd15) begin r_fa_v <= 1'b1; r_fa_a <= fa_r; r_fa_b <= cz; end
+			if (zc == 5'd16) begin r_fa_v <= 1'b1; r_fa_a <= fa_r; r_fa_b <= cz; end
+			if (zc == 5'd17) begin r_fa_v <= 1'b1; r_fa_a <= fa_r; r_fa_b <= cz; end
+			if (zc == 5'd18) begin r_fa_v <= 1'b1; r_fa_a <= fa_r; r_fa_b <= cz; end
+			if (zc == 5'd19) begin r_fa_v <= 1'b0; end
+
+			if (zc == 5'd20 && zmask[0]) zv[31:0] <= zcl;
+			if (zc == 5'd21 && zmask[1]) zv[63:32] <= zcl;
+			if (zc == 5'd22 && zmask[2]) zv[95:64] <= zcl;
+			if (zc == 5'd23 && zmask[3]) zv[127:96] <= zcl;
+			if (zc == 5'd23)
 				st <= S_EMIT;
 		end
 
@@ -757,9 +826,10 @@ module atg_rx_scan #(
 	end
 
 	wire unused_ok = &{1'b0, st_wdata[31:4], sp_last, fm_o, fa_o,
-		sp_tri[767:765], sp_tri[735:448], lij[16], qx1[16], qy1[16], qx2[16], qy2[16],
+		sp_tri[767:765], sp_tri[735:448], qx1[16], qy1[16], qx2[16], qy2[16],
 		HAS_SU != 0, coarse_tri_ready, cur_last_tile, eb_cov_unused,
 		esamp_carry_unused, esamp_unused, lve_carry_unused, qstep_carry_unused, tend_carry_unused,
+		dxy_carry_unused, r_zl_co_unused,
 		hiz_cull, hiz_rd_zmax, coarse_tri_valid, coarse_tile_ready, cur_ty, cov_op, cov_oq};
 endmodule
 

@@ -76,7 +76,7 @@ module atg_rx_setup (
 	wire [31:0] div_inv_ps;
 	wire div_inv_done, div_busy;
 	reg div_inv_start;
-	am_fp_div u_ps_div (
+	atg_rx_fdiv u_ps_div (
 		.clk(clk), .rst_n(rst_n),
 		.i_start(div_inv_start),
 		.i_a(32'h3F800000), .i_b(div_b),
@@ -279,15 +279,15 @@ module atg_rx_setup (
 	wire fa_o, fm_o, fd_o, fd_busy;
 	wire [31:0] fa_r, fm_r, fd_r;
 
-	am_fp_add #(.LAT(4)) fadd (
+	atg_rx_fadd #(.LAT(4)) fadd (
 		.clk(clk), .rst_n(rst_n), .i_valid(fa_v), .i_a(fa_a), .i_b(fa_b),
 		.i_sub(fa_sub), .o_valid(fa_o), .o_r(fa_r)
 	);
-	am_fp_mul #(.LAT(4)) fmul (
+	atg_rx_fmul #(.LAT(4)) fmul (
 		.clk(clk), .rst_n(rst_n), .i_valid(fm_v), .i_a(fm_a), .i_b(fm_b),
 		.o_valid(fm_o), .o_r(fm_r)
 	);
-	am_fp_div fdiv (
+	atg_rx_fdiv fdiv (
 		.clk(clk), .rst_n(rst_n), .i_start(fd_v), .i_a(fd_a), .i_b(fd_b),
 		.busy(fd_busy), .o_done(fd_o), .o_r(fd_r)
 	);
