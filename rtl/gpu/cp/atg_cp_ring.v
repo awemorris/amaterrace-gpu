@@ -128,7 +128,8 @@ module atg_cp_ring #(
 	localparam [9:0] I_DMA_EXTENT       = GHCI_DMA_EXTENT[11:2];
 
 	localparam [3:0] R_IDLE         = 4'd0;
-	localparam [3:0] R_HDR          = 4'd1;	/* decode the header at cur */
+	localparam [3:0] R_HDR          = 4'd1;	/* fetch the header at cur */
+	localparam [3:0] R_DEC          = 4'd12;	/* decode the header */
 	localparam [3:0] R_N            = 4'd2;	/* stream a class N packet */
 	localparam [3:0] R_V            = 4'd3;	/* a class V packet waits for v_done */
 	localparam [3:0] R_ADV          = 4'd4;	/* move RPTR past the packet */
@@ -312,6 +313,7 @@ module atg_cp_ring #(
 	reg [15:0] n;	/* dwords after the header */
 	reg [15:0] k;	/* R_N: dword of the packet on n_data (0 = header) */
 	reg [7:0] tag;
+	reg [31:0] hdr_data;
 	reg step_pend;
 	reg stale;
 
@@ -346,20 +348,20 @@ module atg_cp_ring #(
 	wire [17:0] wptr_new1 = ((wptr[1] & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) & mask[1];
 	wire [17:0] wptr_new2 = ((wptr[2] & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) & mask[2];
 
-	/* Header decode */
+	/* Header decode (from registered hdr_data) */
 	wire is_ghci = (
-		(want_data[7:0] >= 8'h10 && want_data[7:0] <= 8'h14) ||
-		(want_data[7:0] >= 8'h20 && want_data[7:0] <= 8'h37) ||
-		(want_data[7:0] >= 8'h40 && want_data[7:0] <= 8'h46) ||
-		(want_data[7:0] >= 8'h50 && want_data[7:0] <= 8'h51)
-	) && (want_data[15:8] >= 8'd1);
+		(hdr_data[7:0] >= 8'h10 && hdr_data[7:0] <= 8'h14) ||
+		(hdr_data[7:0] >= 8'h20 && hdr_data[7:0] <= 8'h37) ||
+		(hdr_data[7:0] >= 8'h40 && hdr_data[7:0] <= 8'h46) ||
+		(hdr_data[7:0] >= 8'h50 && hdr_data[7:0] <= 8'h51)
+	) && (hdr_data[15:8] >= 8'd1);
 	wire [7:0] ghci_n;
 	wire ghci_n_bo;
 	am_sub #(.W(8)) u_ghci_n (
-		.a(want_data[15:8]), .b(8'd1), .bi(1'b0), .d(ghci_n), .bo(ghci_n_bo)
+		.a(hdr_data[15:8]), .b(8'd1), .bi(1'b0), .d(ghci_n), .bo(ghci_n_bo)
 	);
-	wire [1:0] h_class = is_ghci ? 2'd0 : want_data[31:30];
-	wire [15:0] h_n = is_ghci ? {8'd0, ghci_n} : (h_class[1] ? want_data[15:0] : {8'd0, want_data[7:0]});
+	wire [1:0] h_class = is_ghci ? 2'd0 : hdr_data[31:30];
+	wire [15:0] h_n = is_ghci ? {8'd0, ghci_n} : (h_class[1] ? hdr_data[15:0] : {8'd0, hdr_data[7:0]});
 
 	wire [17:0] avail_d, avail;
 	wire [18:0] end_s;
@@ -554,6 +556,7 @@ module atg_cp_ring #(
 			n         <= 16'd0;
 			k         <= 16'd0;
 			tag       <= 8'd0;
+			hdr_data  <= 32'd0;
 			step_pend <= 1'b0;
 			stale     <= 1'b0;
 			buf_valid <= 8'd0;
@@ -724,21 +727,26 @@ module atg_cp_ring #(
 					stale <= doorbell[active_qid];
 					st    <= R_REQ;
 				end else begin
-					tag <= want_data[23:16];
-					n   <= h_n;
-					k   <= 16'd0;
-					if (h_bad || h_novf) begin
-						f_pulse <= 1'b1;
-						f_kind  <= h_bad ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
-						f_addr  <= want_addr[31:0];
-						st      <= R_FAULT;
-					end else begin
-						case (h_class)
-						2'd2:    st <= R_V;
-						2'd3:    st <= R_ADV;
-						default: st <= R_N;
-						endcase
-					end
+					hdr_data <= want_data;
+					k        <= 16'd0;
+					st       <= R_DEC;
+				end
+			end
+
+			R_DEC: begin
+				tag <= hdr_data[23:16];
+				n   <= h_n;
+				if (h_bad || h_novf) begin
+					f_pulse <= 1'b1;
+					f_kind  <= h_bad ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+					f_addr  <= want_addr[31:0];
+					st      <= R_FAULT;
+				end else begin
+					case (h_class)
+					2'd2:    st <= R_V;
+					2'd3:    st <= R_ADV;
+					default: st <= R_N;
+					endcase
 				end
 			end
 
