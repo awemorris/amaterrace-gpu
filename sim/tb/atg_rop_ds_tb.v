@@ -40,6 +40,7 @@ module atg_rop_ds_tb;
 	wire [15:0] d_smask;
 	wire [3:0] d_mask = {d_smask[12], d_smask[8], d_smask[4], d_smask[0]};
 	wire [511:0] d_color;
+	wire [4:0] d_beat;
 	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
 	wire [26:0] req_line;
 	wire [31:0] req_be;
@@ -50,11 +51,11 @@ module atg_rop_ds_tb;
 	atg_rop_ds dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .q_valid(q_valid), .q_ready(q_ready), .q_xy(q_xy),
 		.q_smask({3'd0, q_mask[3], 3'd0, q_mask[2], 3'd0, q_mask[1], 3'd0, q_mask[0]}),
-		.q_color(q_color),
+		.q_color(q_color), .q_color1(512'd0),
 		.q_sdepth({96'd0, q_depth[127:96], 96'd0, q_depth[95:64], 96'd0, q_depth[63:32], 96'd0,
-			q_depth[31:0]}), .q_dbg(q_dbg), .q_front(q_front), .q_beat(4'b0001),
+			q_depth[31:0]}), .q_dbg(q_dbg), .q_front(q_front), .q_beat(5'b00001),
 		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_smask(d_smask),
-		.d_color(d_color), .d_beat(), .busy(busy),
+		.d_color(d_color), .d_beat(d_beat), .busy(busy),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
 		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
