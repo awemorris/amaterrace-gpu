@@ -151,6 +151,7 @@ module atg_tu_desc (
 	                 S_MULP  = 3'd3,
 	                 S_PLANE = 3'd4,
 	                 S_MULD  = 3'd5,
+	                 S_MULD1 = 3'd7,
 	                 S_ACC   = 3'd6;
 
 	reg [2:0] st;
@@ -229,7 +230,7 @@ module atg_tu_desc (
 
 	/* Stage S_MULD: plane x depth */
 	wire [47:0] pd_w;
-	am_mul #(.AW(32), .BW(16)) u_pd (.clk(1'b0), .en(1'b1), .a(r_cp), .b(r_dl), .p(pd_w));
+	am_mul #(.AW(32), .BW(16), .LAT(1)) u_pd (.clk(clk), .en(1'b1), .a(r_cp), .b(r_dl), .p(pd_w));
 
 	/* Stage S_ACC: accumulation and level step */
 	wire [31:0] nacc;
@@ -302,6 +303,9 @@ module atg_tu_desc (
 				st <= S_MULD;
 			end
 			S_MULD: begin
+				st <= S_MULD1;
+			end
+			S_MULD1: begin
 				r_pd <= pd_w[31:0];
 				st <= S_ACC;
 			end

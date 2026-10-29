@@ -378,7 +378,7 @@ module atg_tu_addr (
 		wire [15:0] lay = op == OP_TEXF ? (r_arr ? (sfl >= {16'd0, r_cnt} ? cnt1 : sfl[15:0]) :
 			r_cube ? (sfl > 32'd5 ? 16'd5 : sfl[15:0]) : 16'd0) : r_arr ? lyr : 16'd0;
 		assign lay_w[gl] = lay;
-		am_mul #(.AW(32), .BW(16)) u_lstr (.clk(1'b0), .en(1'b1), .a(r_stride), .b(r_lay[gl]), .p(lstr_l[gl]));
+		am_mul #(.AW(32), .BW(16), .LAT(1)) u_lstr (.clk(clk), .en(1'b1), .a(r_stride), .b(r_lay[gl]), .p(lstr_l[gl]));
 
 		wire [31:0] lb1_w;
 		am_add #(.W(32)) u_lb1 (.a(r_base), .b(r_lstr[gl]), .ci(1'b0), .s(lb1_w), .co(lb1_co_unused[gl]));
@@ -596,18 +596,18 @@ module atg_tu_addr (
 				st <= LA0BB;
 			end
 			LA0BB: begin
-				for (k = 0; k < 4; k = k + 1) begin
-					r_lstr[k] <= lstr_l[k][31:0];
-				end
 				st <= LA0BC;
 			end
 			LA0BC: begin
 				for (k = 0; k < 4; k = k + 1) begin
-					r_lb1[k] <= lb1_w_l[k];
+					r_lstr[k] <= lstr_l[k][31:0];
 				end
 				st <= LA0C;
 			end
 			LA0C: begin
+				for (k = 0; k < 4; k = k + 1) begin
+					r_lb1[k] <= lb1_w_l[k];
+				end
 				r_lam_quad <= lam_quad;
 				st <= LA0D;
 			end

@@ -101,6 +101,26 @@ module atg_tu_cache #(
 	reg [3:0] slot_err;
 	reg [511:0] ta_addr_q;
 
+	/* Current lane slot registers to decouple lane index fanout */
+	reg [ADDR_W-1:0] cur_a0;
+	reg [ADDR_W-1:0] cur_a1;
+	reg [ADDR_W-1:0] cur_a2;
+	reg [ADDR_W-1:0] cur_a3;
+	reg cur_bord0;
+	reg cur_bord1;
+	reg cur_bord2;
+	reg cur_bord3;
+	reg cur_mask;
+
+	/* Pipeline registers from LANE_CHECK to LANE_READ */
+	reg [IW-1:0] rd_set0, rd_set1, rd_set2, rd_set3;
+	reg [1:0]    rd_way0, rd_way1, rd_way2, rd_way3;
+	reg          rd_hit0, rd_hit1, rd_hit2, rd_hit3;
+	reg [WW-1:0] rd_pw0, rd_pw1, rd_pw2, rd_pw3;
+	reg [1:0]    rd_pby0, rd_pby1, rd_pby2, rd_pby3;
+	reg          rd_border0, rd_border1, rd_border2, rd_border3;
+	reg          rd_use0, rd_use1, rd_use2, rd_use3;
+	reg [1:0]    rd_lane;
 
 	/* Quad controls */
 	wire bil = tc_ctl[0];
@@ -117,15 +137,15 @@ module atg_tu_cache #(
 	                   (tc_ctl[7:6] == 2'd1 && !tc_ctl[8] && !h565) ? 32'hFF000000 : 32'd0;
 
 	/* 4 slot addresses for current lane */
-	wire [ADDR_W-1:0] a0 = ta_addr_q[{lane, 2'b00, 5'b00000} +: 32];
-	wire [ADDR_W-1:0] a1 = ta_addr_q[{lane, 2'b01, 5'b00000} +: 32];
-	wire [ADDR_W-1:0] a2 = ta_addr_q[{lane, 2'b10, 5'b00000} +: 32];
-	wire [ADDR_W-1:0] a3 = ta_addr_q[{lane, 2'b11, 5'b00000} +: 32];
+	wire [ADDR_W-1:0] a0 = cur_a0;
+	wire [ADDR_W-1:0] a1 = cur_a1;
+	wire [ADDR_W-1:0] a2 = cur_a2;
+	wire [ADDR_W-1:0] a3 = cur_a3;
 
-	wire border0 = tc_bord[{lane, 2'b00}];
-	wire border1 = tc_bord[{lane, 2'b01}];
-	wire border2 = tc_bord[{lane, 2'b10}];
-	wire border3 = tc_bord[{lane, 2'b11}];
+	wire border0 = cur_bord0;
+	wire border1 = cur_bord1;
+	wire border2 = cur_bord2;
+	wire border3 = cur_bord3;
 
 	wire [WW-1:0] pw0 = a0[2 +: WW];
 	wire [WW-1:0] pw1 = a1[2 +: WW];
@@ -138,10 +158,10 @@ module atg_tu_cache #(
 	wire [1:0] pby3 = a3[1:0];
 
 	wire [3:0] use_slot;
-	assign use_slot[0] = tc_mask[lane];
-	assign use_slot[1] = tc_mask[lane] && (bil || (tc_ctl[26:25] != 2'd0));
-	assign use_slot[2] = tc_mask[lane] && (bil || (tc_ctl[26:25] == 2'd2));
-	assign use_slot[3] = tc_mask[lane] && (bil || (tc_ctl[26:25] == 2'd2));
+	assign use_slot[0] = cur_mask;
+	assign use_slot[1] = cur_mask && (bil || (tc_ctl[26:25] != 2'd0));
+	assign use_slot[2] = cur_mask && (bil || (tc_ctl[26:25] == 2'd2));
+	assign use_slot[3] = cur_mask && (bil || (tc_ctl[26:25] == 2'd2));
 
 	/* Set indices and tags for the 4 slots */
 	wire [IW-1:0] s0_set = a0[LINE_SHIFT +: IW];
@@ -254,10 +274,10 @@ module atg_tu_cache #(
 		end
 	endfunction
 
-	wire [31:0] tex0 = extract_tex(slot_line0, pw0, pby0, border0, braw, tsz, h565);
-	wire [31:0] tex1 = extract_tex(slot_line1, pw1, pby1, border1, braw, tsz, h565);
-	wire [31:0] tex2 = extract_tex(slot_line2, pw2, pby2, border2, braw, tsz, h565);
-	wire [31:0] tex3 = extract_tex(slot_line3, pw3, pby3, border3, braw, tsz, h565);
+	wire [31:0] tex0 = extract_tex(slot_line0, rd_pw0, rd_pby0, rd_border0, braw, tsz, h565);
+	wire [31:0] tex1 = extract_tex(slot_line1, rd_pw1, rd_pby1, rd_border1, braw, tsz, h565);
+	wire [31:0] tex2 = extract_tex(slot_line2, rd_pw2, rd_pby2, rd_border2, braw, tsz, h565);
+	wire [31:0] tex3 = extract_tex(slot_line3, rd_pw3, rd_pby3, rd_border3, braw, tsz, h565);
 
 	/* Tree-PLRU helper functions */
 	function [1:0] get_victim;
@@ -344,6 +364,44 @@ module atg_tu_cache #(
 			mline <= {(ADDR_W-LINE_SHIFT){1'b0}};
 			miss_slot <= 2'd0;
 			slot_err <= 4'd0;
+			cur_a0 <= {ADDR_W{1'b0}};
+			cur_a1 <= {ADDR_W{1'b0}};
+			cur_a2 <= {ADDR_W{1'b0}};
+			cur_a3 <= {ADDR_W{1'b0}};
+			cur_bord0 <= 1'b0;
+			cur_bord1 <= 1'b0;
+			cur_bord2 <= 1'b0;
+			cur_bord3 <= 1'b0;
+			cur_mask <= 1'b0;
+			rd_set0 <= {IW{1'b0}};
+			rd_set1 <= {IW{1'b0}};
+			rd_set2 <= {IW{1'b0}};
+			rd_set3 <= {IW{1'b0}};
+			rd_way0 <= 2'd0;
+			rd_way1 <= 2'd0;
+			rd_way2 <= 2'd0;
+			rd_way3 <= 2'd0;
+			rd_hit0 <= 1'b0;
+			rd_hit1 <= 1'b0;
+			rd_hit2 <= 1'b0;
+			rd_hit3 <= 1'b0;
+			rd_pw0 <= {WW{1'b0}};
+			rd_pw1 <= {WW{1'b0}};
+			rd_pw2 <= {WW{1'b0}};
+			rd_pw3 <= {WW{1'b0}};
+			rd_pby0 <= 2'd0;
+			rd_pby1 <= 2'd0;
+			rd_pby2 <= 2'd0;
+			rd_pby3 <= 2'd0;
+			rd_border0 <= 1'b0;
+			rd_border1 <= 1'b0;
+			rd_border2 <= 1'b0;
+			rd_border3 <= 1'b0;
+			rd_use0 <= 1'b0;
+			rd_use1 <= 1'b0;
+			rd_use2 <= 1'b0;
+			rd_use3 <= 1'b0;
+			rd_lane <= 2'd0;
 			for (s_init = 0; s_init < NSETS; s_init = s_init + 1) begin
 				vld[s_init] <= {WAYS{1'b0}};
 				plru[s_init] <= 3'd0;
@@ -364,25 +422,74 @@ module atg_tu_cache #(
 				tc_texels <= 512'd0;
 				lane <= 2'd0;
 				slot_err <= 4'd0;
+				cur_a0 <= ta_addr[0 +: 32];
+				cur_a1 <= ta_addr[32 +: 32];
+				cur_a2 <= ta_addr[64 +: 32];
+				cur_a3 <= ta_addr[96 +: 32];
+				cur_bord0 <= ta_bord[0];
+				cur_bord1 <= ta_bord[1];
+				cur_bord2 <= ta_bord[2];
+				cur_bord3 <= ta_bord[3];
+				cur_mask <= ta_mask[0];
 				st <= ta_ctl[2] ? OUT : LANE_CHECK;
 			end
 			LANE_CHECK: begin
-				if (!tc_mask[lane]) begin
+				if (cur_mask) begin
+					mline <= miss_line_next;
+					miss_slot <= miss_slot_next;
+				end
+				if (!cur_mask) begin
 					/* Lane masked out */
 					if (lane == 2'd3)
 						st <= OUT;
 					else begin
 						lane <= nxt_lane;
+						cur_a0 <= ta_addr_q[{nxt_lane, 2'b00, 5'b00000} +: 32];
+						cur_a1 <= ta_addr_q[{nxt_lane, 2'b01, 5'b00000} +: 32];
+						cur_a2 <= ta_addr_q[{nxt_lane, 2'b10, 5'b00000} +: 32];
+						cur_a3 <= ta_addr_q[{nxt_lane, 2'b11, 5'b00000} +: 32];
+						cur_bord0 <= tc_bord[{nxt_lane, 2'b00}];
+						cur_bord1 <= tc_bord[{nxt_lane, 2'b01}];
+						cur_bord2 <= tc_bord[{nxt_lane, 2'b10}];
+						cur_bord3 <= tc_bord[{nxt_lane, 2'b11}];
+						cur_mask <= tc_mask[nxt_lane];
 						slot_err <= 4'd0;
 					end
 				end else if (any_miss) begin
-					mline <= miss_line_next;
-					miss_slot <= miss_slot_next;
 					drop <= 1'b0;
 					st <= MREQ;
 				end else begin
 					/* All active non-border slots HIT: read from 4 banks */
 					st <= LANE_READ;
+					rd_set0 <= s0_set;
+					rd_set1 <= s1_set;
+					rd_set2 <= s2_set;
+					rd_set3 <= s3_set;
+					rd_way0 <= s0_way;
+					rd_way1 <= s1_way;
+					rd_way2 <= s2_way;
+					rd_way3 <= s3_way;
+					rd_hit0 <= use_slot[0] && !border0 && s0_hit;
+					rd_hit1 <= use_slot[1] && !border1 && s1_hit;
+					rd_hit2 <= use_slot[2] && !border2 && s2_hit;
+					rd_hit3 <= use_slot[3] && !border3 && s3_hit;
+					rd_pw0 <= pw0;
+					rd_pw1 <= pw1;
+					rd_pw2 <= pw2;
+					rd_pw3 <= pw3;
+					rd_pby0 <= pby0;
+					rd_pby1 <= pby1;
+					rd_pby2 <= pby2;
+					rd_pby3 <= pby3;
+					rd_border0 <= border0;
+					rd_border1 <= border1;
+					rd_border2 <= border2;
+					rd_border3 <= border3;
+					rd_use0 <= use_slot[0] && !slot_err[0];
+					rd_use1 <= use_slot[1] && !slot_err[1];
+					rd_use2 <= use_slot[2] && !slot_err[2];
+					rd_use3 <= use_slot[3] && !slot_err[3];
+					rd_lane <= lane;
 				end
 			end
 			MREQ: if (req_ready) begin
@@ -405,31 +512,40 @@ module atg_tu_cache #(
 			end
 			LANE_READ: begin
 				/* Extract 4 texels from BRAM outputs */
-				tc_texels[{lane, 2'b00, 5'b00000} +: 32] <= (use_slot[0] && !slot_err[0]) ? tex0 : 32'd0;
-				tc_texels[{lane, 2'b01, 5'b00000} +: 32] <= (use_slot[1] && !slot_err[1]) ? tex1 : 32'd0;
-				tc_texels[{lane, 2'b10, 5'b00000} +: 32] <= (use_slot[2] && !slot_err[2]) ? tex2 : 32'd0;
-				tc_texels[{lane, 2'b11, 5'b00000} +: 32] <= (use_slot[3] && !slot_err[3]) ? tex3 : 32'd0;
+				tc_texels[{rd_lane, 2'b00, 5'b00000} +: 32] <= rd_use0 ? tex0 : 32'd0;
+				tc_texels[{rd_lane, 2'b01, 5'b00000} +: 32] <= rd_use1 ? tex1 : 32'd0;
+				tc_texels[{rd_lane, 2'b10, 5'b00000} +: 32] <= rd_use2 ? tex2 : 32'd0;
+				tc_texels[{rd_lane, 2'b11, 5'b00000} +: 32] <= rd_use3 ? tex3 : 32'd0;
 
 				/* Update Tree-PLRU */
-				if (use_slot[0] && !border0 && s0_hit)
-					plru[s0_set] <= update_plru(plru[s0_set], s0_way);
-				if (use_slot[1] && !border1 && s1_hit && (s1_set != s0_set || !use_slot[0] || border0 || !s0_hit))
-					plru[s1_set] <= update_plru(plru[s1_set], s1_way);
-				if (use_slot[2] && !border2 && s2_hit &&
-				    (s2_set != s0_set || !use_slot[0] || border0 || !s0_hit) &&
-				    (s2_set != s1_set || !use_slot[1] || border1 || !s1_hit))
-					plru[s2_set] <= update_plru(plru[s2_set], s2_way);
-				if (use_slot[3] && !border3 && s3_hit &&
-				    (s3_set != s0_set || !use_slot[0] || border0 || !s0_hit) &&
-				    (s3_set != s1_set || !use_slot[1] || border1 || !s1_hit) &&
-				    (s3_set != s2_set || !use_slot[2] || border2 || !s2_hit))
-					plru[s3_set] <= update_plru(plru[s3_set], s3_way);
+				if (rd_hit0)
+					plru[rd_set0] <= update_plru(plru[rd_set0], rd_way0);
+				if (rd_hit1 && (rd_set1 != rd_set0 || !rd_hit0))
+					plru[rd_set1] <= update_plru(plru[rd_set1], rd_way1);
+				if (rd_hit2 &&
+				    (rd_set2 != rd_set0 || !rd_hit0) &&
+				    (rd_set2 != rd_set1 || !rd_hit1))
+					plru[rd_set2] <= update_plru(plru[rd_set2], rd_way2);
+				if (rd_hit3 &&
+				    (rd_set3 != rd_set0 || !rd_hit0) &&
+				    (rd_set3 != rd_set1 || !rd_hit1) &&
+				    (rd_set3 != rd_set2 || !rd_hit2))
+					plru[rd_set3] <= update_plru(plru[rd_set3], rd_way3);
 
 				slot_err <= 4'd0;
 				if (lane == 2'd3)
 					st <= OUT;
 				else begin
 					lane <= nxt_lane;
+					cur_a0 <= ta_addr_q[{nxt_lane, 2'b00, 5'b00000} +: 32];
+					cur_a1 <= ta_addr_q[{nxt_lane, 2'b01, 5'b00000} +: 32];
+					cur_a2 <= ta_addr_q[{nxt_lane, 2'b10, 5'b00000} +: 32];
+					cur_a3 <= ta_addr_q[{nxt_lane, 2'b11, 5'b00000} +: 32];
+					cur_bord0 <= tc_bord[{nxt_lane, 2'b00}];
+					cur_bord1 <= tc_bord[{nxt_lane, 2'b01}];
+					cur_bord2 <= tc_bord[{nxt_lane, 2'b10}];
+					cur_bord3 <= tc_bord[{nxt_lane, 2'b11}];
+					cur_mask <= tc_mask[nxt_lane];
 					st <= LANE_CHECK;
 				end
 			end

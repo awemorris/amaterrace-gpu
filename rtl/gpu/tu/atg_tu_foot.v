@@ -75,31 +75,43 @@ module atg_tu_foot #(
 	/* The slice. */
 	wire dlin = is3d && lin && !gather;
 	wire [13:0] carry_unused;	/* the adders' carries */
-	wire signed [30:0] cwm;
 	wire signed [23:0] ki;
 	wire signed [32:0] zd, xd, yd;
-	am_sub #(.W(31)) u_cwm (.a(cw), .b(dlin ? 31'd128 : 31'd0), .bi(1'b0), .d(cwm),
-		.bo(carry_unused[0]));
-	am_add #(.W(24)) u_ki (.a({cwm[30], cwm[30:8]}), .b(dw), .ci(dlin && p0), .s(ki),
+
+	wire signed [23:0] dw_m1;
+	am_sub #(.W(24)) u_dw_m1 (.a(dw), .b(24'd1), .bi(1'b0), .d(dw_m1), .bo(carry_unused[0]));
+	wire signed [23:0] dw_adj = (dlin && !cw[7]) ? dw_m1 : dw;
+
+	wire signed [23:0] cw_int = {cw[30], cw[30:8]};
+	am_add #(.W(24)) u_ki (.a(cw_int), .b(dw_adj), .ci(dlin && p0), .s(ki),
 		.co(carry_unused[1]));
 	am_add #(.W(33)) u_zd (.a({z[31], z}), .b({{9{dw[23]}}, dw}), .ci(1'b0), .s(zd),
 		.co(carry_unused[2]));
-	wire [7:0] s0_fw = dlin ? cwm[7:0] : 8'd0;
+	wire [7:0] s0_fw = dlin ? {cw[7] ^ 1'b1, cw[6:0]} : 8'd0;
 
 	/* The footprint coordinates. */
-	wire signed [30:0] cu2, cv2;
+	wire signed [23:0] cu_int = {cu[30], cu[30:8]};
+	wire signed [23:0] cv_int = {cv[30], cv[30:8]};
+	wire signed [23:0] du_m1, dv_m1;
+	am_sub #(.W(24)) u_du_m1 (.a(du), .b(24'd1), .bi(1'b0), .d(du_m1), .bo(carry_unused[3]));
+	am_sub #(.W(24)) u_dv_m1 (.a(dv), .b(24'd1), .bi(1'b0), .d(dv_m1), .bo(carry_unused[4]));
+
+	wire signed [23:0] du_adj = (lin && !cu[7]) ? du_m1 : du;
+	wire signed [23:0] dv_adj = (lin && !cv[7]) ? dv_m1 : dv;
+
 	wire signed [23:0] i0, j0, i1, j1;
-	am_sub #(.W(31)) u_cu2 (.a(cu), .b(lin ? 31'd128 : 31'd0), .bi(1'b0), .d(cu2),
-		.bo(carry_unused[3]));
-	am_sub #(.W(31)) u_cv2 (.a(cv), .b(lin ? 31'd128 : 31'd0), .bi(1'b0), .d(cv2),
-		.bo(carry_unused[4]));
-	am_add #(.W(24)) u_i0 (.a({cu2[30], cu2[30:8]}), .b(du), .ci(1'b0), .s(i0),
+	am_add #(.W(24)) u_i0 (.a(cu_int), .b(du_adj), .ci(1'b0), .s(i0),
 		.co(carry_unused[5]));
-	am_add #(.W(24)) u_j0 (.a({cv2[30], cv2[30:8]}), .b(dv), .ci(1'b0), .s(j0),
+	am_add #(.W(24)) u_j0 (.a(cv_int), .b(dv_adj), .ci(1'b0), .s(j0),
 		.co(carry_unused[6]));
-	am_add #(.W(24)) u_i1 (.a(i0), .b(24'd0), .ci(lin), .s(i1), .co(carry_unused[7]));
-	am_add #(.W(24)) u_j1 (.a(j0), .b(24'd0), .ci(lin), .s(j1), .co(carry_unused[8]));
-	wire [15:0] s0_fuv = {cv2[7:0], cu2[7:0]};
+	am_add #(.W(24)) u_i1 (.a(cu_int), .b(du), .ci(lin && cu[7]), .s(i1),
+		.co(carry_unused[7]));
+	am_add #(.W(24)) u_j1 (.a(cv_int), .b(dv), .ci(lin && cv[7]), .s(j1),
+		.co(carry_unused[8]));
+
+	wire [7:0] cu2_lo = {cu[7] ^ lin, cu[6:0]};
+	wire [7:0] cv2_lo = {cv[7] ^ lin, cv[6:0]};
+	wire [15:0] s0_fuv = {cv2_lo, cu2_lo};
 
 	am_add #(.W(33)) u_xd (.a({x[31], x}), .b({{9{du[23]}}, du}), .ci(1'b0), .s(xd),
 		.co(carry_unused[9]));
@@ -380,7 +392,9 @@ module atg_tu_foot #(
 
 	/* Stage 1A: Multipliers */
 	wire [47:0] kp;
-	am_mul #(.AW(32), .BW(16)) u_kp (.clk(1'b0), .en(1'b1), .a(s1_plane), .b(s1_k), .p(kp));
+	localparam KP_LAT = (LAT >= 3) ? 1 : 0;
+	wire kp_clk = (LAT >= 3) ? clk : 1'b0;
+	am_mul #(.AW(32), .BW(16), .LAT(KP_LAT)) u_kp (.clk(kp_clk), .en(en), .a(s1_plane), .b(s1_k), .p(kp));
 
 	wire [34:0] fs_comb [0:3];
 	wire [32:0] m_comb [0:3];
@@ -399,7 +413,6 @@ module atg_tu_foot #(
 	endgenerate
 
 	/* Stage 1A -> Stage 1B Pipeline Registers (when LAT >= 3) */
-	reg [31:0] r1_kp;
 	reg [31:0] r1_lbase;
 	reg [34:0] r1_fs [0:3];
 	reg [32:0] r1_m [0:3];
@@ -415,7 +428,6 @@ module atg_tu_foot #(
 	integer ki1;
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			r1_kp    <= 32'd0;
 			r1_lbase <= 32'd0;
 			r1_tiled <= 1'b0;
 			r1_blk   <= 1'b0;
@@ -433,7 +445,6 @@ module atg_tu_foot #(
 				r1_tb[ki1]   <= 1'b0;
 			end
 		end else if (en) begin
-			r1_kp    <= kp[31:0];
 			r1_lbase <= s1_lbase;
 			r1_tiled <= s1_tiled;
 			r1_blk   <= s1_blk;
@@ -453,7 +464,7 @@ module atg_tu_foot #(
 		end
 	end
 
-	wire [31:0] s1b_kp    = (LAT >= 3) ? r1_kp    : kp[31:0];
+	wire [31:0] s1b_kp    = kp[31:0];
 	wire [31:0] s1b_lbase = (LAT >= 3) ? r1_lbase : s1_lbase;
 	wire [31:0] s1b_lbk;
 	am_add #(.W(32)) u_lbk (.a(s1b_lbase), .b(s1b_kp), .ci(1'b0), .s(s1b_lbk), .co(carry_unused[13]));
