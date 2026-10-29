@@ -15,7 +15,7 @@ Vulkan-class graphics and parallel compute, architected to fulfill the
 core paradigms and feature sets of Vulkan, DirectX 12, and Metal.  It
 proposes [GHCI 1.0](docs/ghci.md), a standardized set of `GPU Host
 Controller Interface` and `Shader ISA`.  The target clocks are 1.7GHz
-on 5nm ASIC and 450MHz on FPGA.
+on 5nm ASIC and 450MHz on 16nm FPGA.
 
 ---
 
