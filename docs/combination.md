@@ -663,6 +663,24 @@ tools/synth-module.sh atg_tu 5.000
 | `MMU-S-HALF` | `atg_mmu` | `FULL` | `HALF` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
 | `MMU-S-QTR` | `atg_mmu` | `FULL` | `QUARTER` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
 
+#### (TU) `tu` (`atg_tu`) 組み合わせ OOC 測定結果
+| テスト ID | モジュール | 機能性 | サイズ | WNS (ns) | 論理段数 | LUT 数 | FF 数 | BRAM | DSP | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `TU-F-MAX` | `atg_tu` | `FULL` | `MAX` | **-7.512** | 36 | 60,291 | 36,196 | 17 | 139 | FAIL (Cube/3D未最適化パス) |
+| `TU-B-MIN` | `atg_tu` | `BARE` | `MIN` | **-7.512** | 36 | 41,045 | 21,938 | 16.5 | 133 | FAIL (ベースライン未同期パス) |
+| `TU-I-BC` | `atg_tu` | `ISO-BC` | `MIN` | **-7.512** | 36 | 41,027 | 21,748 | 16.5 | 133 | FAIL (ベースライン未同期パス) |
+| `TU-I-ANIS` | `atg_tu` | `ISO-Aniso` | `MIN` | **+0.184** | 6 | 31,912 | 18,906 | 16.5 | 77 | **PASS (リタイミング有効)** |
+| `TU-I-CUBE` | `atg_tu` | `ISO-Cube` | `MIN` | **-7.512** | 36 | 41,027 | 21,748 | 16.5 | 133 | FAIL (Cube/3D未最適化パス) |
+| `TU-I-FPF` | `atg_tu` | `ISO-FPFilt` | `MIN` | **-7.512** | 36 | 46,944 | 26,163 | 17 | 139 | FAIL (Cube/3D未最適化パス) |
+| `TU-P-BA` | `atg_tu` | `PAIR-BC+Aniso` | `MIN` | **+0.184** | 6 | 31,912 | 18,906 | 16.5 | 77 | **PASS (リタイミング有効)** |
+| `TU-P-CF` | `atg_tu` | `PAIR-Cube+FPFilt` | `MIN` | **-7.512** | 36 | 46,944 | 26,163 | 17 | 139 | FAIL (Cube/3D未最適化パス) |
+| `TU-P-BM` | `atg_tu` | `PAIR-BC+MSHR` | `MIN` | **+0.184** | 6 | 31,912 | 18,906 | 16.5 | 77 | **PASS (リタイミング有効)** |
+| `TU-T-BAF` | `atg_tu` | `TRIO-BC+Anis+FP` | `MIN` | **-0.644** | 12 | 37,802 | 23,275 | 17 | 83 | FAIL (FPフィルタ12段微小違反) |
+| `TU-T-CAF` | `atg_tu` | `TRIO-Cube+Anis+FP` | `MIN` | **-7.512** | 36 | 46,944 | 26,163 | 17 | 139 | FAIL (Cube/3D未最適化パス) |
+| `TU-Q-BACF` | `atg_tu` | `QUAD-All4` | `MIN` | **-7.512** | 36 | 46,944 | 26,163 | 17 | 139 | FAIL (Cube/3D未最適化パス) |
+| `TU-S-HALF` | `atg_tu` | `FULL` | `HALF` | **-7.512** | 36 | 53,631 | 30,529 | 17 | 139 | FAIL (Cube/3D未最適化パス) |
+| `TU-S-QTR` | `atg_tu` | `FULL` | `QUARTER` | **-7.512** | 36 | 48,671 | 27,587 | 17 | 139 | FAIL (Cube/3D未最適化パス) |
+
 ---
 
 ## 6. ベースライン測定結果サマリと改善ロードマップ
