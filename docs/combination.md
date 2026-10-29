@@ -562,6 +562,23 @@ tools/synth-module.sh atg_tu 5.000
 | `FMT-S-HALF` | `atg_fmt_cvt` | `FULL` | `HALF` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
 | `FMT-S-QTR` | `atg_fmt_cvt` | `FULL` | `QUARTER` | **+1.729** | 5 | 929 | 612 | 0.5 | 0 | **PASS** |
 
+#### (VF) `vf` (`atg_vf_conv`) 組み合わせ OOC 測定結果
+| テスト ID | モジュール | 機能性 | サイズ | WNS (ns) | 論理段数 | LUT 数 | FF 数 | BRAM | DSP | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `VF-F-MAX` | `atg_vf_conv` | `FULL` | `MAX` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-B-MIN` | `atg_vf_conv` | `BARE` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-I-VK` | `atg_vf_conv` | `ISO-VkFormat` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-I-INST` | `atg_vf_conv` | `ISO-Inst` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-I-OOB` | `atg_vf_conv` | `ISO-OOB` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-P-VI` | `atg_vf_conv` | `PAIR-VkFmt+Inst` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-P-VO` | `atg_vf_conv` | `PAIR-VkFmt+OOB` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-P-IB` | `atg_vf_conv` | `PAIR-Inst+IBCache` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-T-VIO` | `atg_vf_conv` | `TRIO-Vk+Inst+OOB` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-T-VIB` | `atg_vf_conv` | `TRIO-Vk+Inst+IB` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-Q-ALL` | `atg_vf_conv` | `QUAD-All4` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-S-HALF` | `atg_vf_conv` | `FULL` | `HALF` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+| `VF-S-QTR` | `atg_vf_conv` | `FULL` | `QUARTER` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+
 ---
 
 ## 6. ベースライン測定結果サマリと改善ロードマップ
