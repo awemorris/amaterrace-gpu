@@ -242,18 +242,27 @@ module atg_dc_cursor #(
 		end
 	end
 
-	/* The blend pipeline (3 stages: Fetch/BRAM -> Mix -> Narrow/Output). */
+	/* Lockstep Blend Pipeline:
+	 * Stage 0: BRAM read
+	 * Stage 1: Mul (am_mul LAT=1)
+	 * Stage 2: Add (a_t, a_u, a_s)
+	 * Stage 3: Narrow & Output
+	 */
+	wire pipe_en;
+	reg st3_valid;
+	reg [31:0] st3_data;
+	assign o_valid = st3_valid;
+	assign o_data = st3_data;
+	assign pipe_en = !st3_valid || o_ready;
+	assign i_ready = pipe_en;
+	wire accept = i_valid && pipe_en;
+
 	reg st0_valid, s_in;
 	reg [1:0] s_fmt;
 	reg [31:0] s_px, q;
 	reg [15:0] x, y;
 	reg [15:0] pos_x, pos_y;
 	reg vis;
-
-	wire st1_ready;
-	wire st0_ready = !st0_valid || st1_ready;
-	wire accept = i_valid && st0_ready;
-	assign i_ready = st0_ready;
 
 	wire [16:0] dx, dy;
 	wire [15:0] x_inc, y_inc, x_last;
@@ -289,7 +298,7 @@ module atg_dc_cursor #(
 			pos_x <= pos[15:0];
 			pos_y <= pos[31:16];
 			vis <= show;
-		end else if (st0_ready) begin
+		end else if (pipe_en) begin
 			st0_valid <= i_valid;
 			if (i_valid) begin
 				s_px <= i_data;
@@ -305,66 +314,12 @@ module atg_dc_cursor #(
 		end
 	end
 
-	/* Stage 1: Mix computation */
+	/* Testbench identity check wires (combinational from q and s_px) */
 	wire [7:0] cb = q[7:0], cg = q[15:8], cr = q[23:16], ca = q[31:24];
 	wire [7:0] r8 = {s_px[15:11], s_px[15:13]};
 	wire [7:0] g8 = {s_px[10:5], s_px[10:9]};
 	wire [7:0] b8 = {s_px[4:0], s_px[4:2]};
 
-	wire [23:0] mix_c = (s_fmt == 2'd1) ? {cb, cg, cr} : {cr, cg, cb};
-	wire [23:0] mix_p = (s_fmt == 2'd2) ? {r8, g8, b8} : s_px[23:0];
-	wire [7:0] st0_v [0:2];
-	wire [2:0] t_co_unused, u_co_unused;
-
-	genvar k;
-	generate
-	for (k = 0; k < 3; k = k + 1) begin : g_mix
-		wire [7:0] c = mix_c[8*(2-k) +: 8];
-		wire [7:0] p = mix_p[8*(2-k) +: 8];
-		wire [15:0] pa, t, u;
-		wire [8:0] sum;
-
-		am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(0)) m_pa (.clk(clk), .en(1'b1), .a(p), .b(~ca), .p(pa));
-		am_add #(.W(16)) a_t (.a(pa), .b(16'd128), .ci(1'b0), .s(t), .co(t_co_unused[k]));
-		am_add #(.W(16)) a_u (.a(t), .b({8'd0, t[15:8]}), .ci(1'b0), .s(u), .co(u_co_unused[k]));
-		am_add #(.W(8)) a_s (.a(c), .b(u[15:8]), .ci(1'b0), .s(sum[7:0]), .co(sum[8]));
-		assign st0_v[k] = sum[8] ? 8'hFF : sum[7:0];
-	end
-	endgenerate
-
-	wire st2_ready;
-	assign st1_ready = !st1_valid || st2_ready;
-	reg st1_valid;
-	reg [7:0] st1_v0, st1_v1, st1_v2;
-	reg [31:0] st1_px;
-	reg st1_in;
-	reg [1:0] st1_fmt;
-
-	always @(posedge clk) begin
-		if (!rst_n) begin
-			st1_valid <= 1'b0;
-			st1_v0 <= 8'd0;
-			st1_v1 <= 8'd0;
-			st1_v2 <= 8'd0;
-			st1_px <= 32'd0;
-			st1_in <= 1'b0;
-			st1_fmt <= 2'd0;
-		end else if (frame_start || !enable) begin
-			st1_valid <= 1'b0;
-		end else if (st1_ready) begin
-			st1_valid <= st0_valid;
-			if (st0_valid) begin
-				st1_v0 <= st0_v[0];
-				st1_v1 <= st0_v[1];
-				st1_v2 <= st0_v[2];
-				st1_px <= s_px;
-				st1_in <= s_in;
-				st1_fmt <= s_fmt;
-			end
-		end
-	end
-
-	/* Testbench identity check wires (combinational from q and s_px) */
 	wire [23:0] tb_mix_c = (format == 2'd1) ? {cb, cg, cr} : {cr, cg, cb};
 	wire [23:0] tb_mix_p = (format == 2'd2) ? {r8, g8, b8} : s_px[23:0];
 	wire [5:0] tb_narrowed [0:2];
@@ -397,12 +352,97 @@ module atg_dc_cursor #(
 	wire [5:0] g6 = tb_narrowed[1];
 	wire [5:0] b5 = tb_narrowed[2];
 
-	/* Stage 2: Narrow computation & output */
+	/* Stage 1: Mul (am_mul LAT=1) */
+	wire [23:0] mix_c = (s_fmt == 2'd1) ? {cb, cg, cr} : {cr, cg, cb};
+	wire [23:0] mix_p = (s_fmt == 2'd2) ? {r8, g8, b8} : s_px[23:0];
+
+	reg st1_valid;
+	reg [23:0] st1_c;
+	reg [31:0] st1_px;
+	reg st1_in;
+	reg [1:0] st1_fmt;
+
+	wire [15:0] st1_pa [0:2];
+	genvar k;
+	generate
+	for (k = 0; k < 3; k = k + 1) begin : g_mul
+		wire [7:0] p = mix_p[8*(2-k) +: 8];
+		am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(1)) m_pa (.clk(clk), .en(pipe_en), .a(p), .b(~ca), .p(st1_pa[k]));
+	end
+	endgenerate
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st1_valid <= 1'b0;
+			st1_c <= 24'd0;
+			st1_px <= 32'd0;
+			st1_in <= 1'b0;
+			st1_fmt <= 2'd0;
+		end else if (frame_start || !enable) begin
+			st1_valid <= 1'b0;
+		end else if (pipe_en) begin
+			st1_valid <= st0_valid;
+			if (st0_valid) begin
+				st1_c <= mix_c;
+				st1_px <= s_px;
+				st1_in <= s_in;
+				st1_fmt <= s_fmt;
+			end
+		end
+	end
+
+	/* Stage 2: Add (a_t, a_u, a_s) */
+	wire [7:0] st2_sum_v [0:2];
+	wire [2:0] t_co_unused, u_co_unused;
+	generate
+	for (k = 0; k < 3; k = k + 1) begin : g_add
+		wire [7:0] c = st1_c[8*(2-k) +: 8];
+		wire [15:0] t, u;
+		wire [8:0] sum;
+
+		am_add #(.W(16)) a_t (.a(st1_pa[k]), .b(16'd128), .ci(1'b0), .s(t), .co(t_co_unused[k]));
+		am_add #(.W(16)) a_u (.a(t), .b({8'd0, t[15:8]}), .ci(1'b0), .s(u), .co(u_co_unused[k]));
+		am_add #(.W(8)) a_s (.a(c), .b(u[15:8]), .ci(1'b0), .s(sum[7:0]), .co(sum[8]));
+		assign st2_sum_v[k] = sum[8] ? 8'hFF : sum[7:0];
+	end
+	endgenerate
+
+	reg st2_valid;
+	reg [7:0] st2_v0, st2_v1, st2_v2;
+	reg [31:0] st2_px;
+	reg st2_in;
+	reg [1:0] st2_fmt;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st2_valid <= 1'b0;
+			st2_v0 <= 8'd0;
+			st2_v1 <= 8'd0;
+			st2_v2 <= 8'd0;
+			st2_px <= 32'd0;
+			st2_in <= 1'b0;
+			st2_fmt <= 2'd0;
+		end else if (frame_start || !enable) begin
+			st2_valid <= 1'b0;
+		end else if (pipe_en) begin
+			st2_valid <= st1_valid;
+			if (st1_valid) begin
+				st2_v0 <= st2_sum_v[0];
+				st2_v1 <= st2_sum_v[1];
+				st2_v2 <= st2_sum_v[2];
+				st2_px <= st1_px;
+				st2_in <= st1_in;
+				st2_fmt <= st1_fmt;
+			end
+		end
+	end
+
+	/* Stage 3: Narrow computation & output */
 	wire [5:0] narrowed [0:2];
 	wire [2:0] vm_bo_unused, nt_co_unused, nu_co_unused;
 	generate
 	for (k = 0; k < 3; k = k + 1) begin : g_narrow
-		wire [7:0] v = (k == 0) ? st1_v0 : (k == 1) ? st1_v1 : st1_v2;
+		wire [7:0] v = (k == 0) ? st2_v0 : (k == 1) ? st2_v1 : st2_v2;
 		wire [15:0] vm, nt, nu;
 
 		if (k == 1) begin : g_63
@@ -416,44 +456,37 @@ module atg_dc_cursor #(
 	end
 	endgenerate
 
-	wire [5:0] st2_r5 = narrowed[0];
-	wire [5:0] st2_g6 = narrowed[1];
-	wire [5:0] st2_b5 = narrowed[2];
-	wire [23:0] mixed = {st1_v0, st1_v1, st1_v2};
+	wire [5:0] st3_r5 = narrowed[0];
+	wire [5:0] st3_g6 = narrowed[1];
+	wire [5:0] st3_b5 = narrowed[2];
+	wire [23:0] mixed = {st2_v0, st2_v1, st2_v2};
 	reg [31:0] blended;
 
 	always @(*) begin
-		case (st1_fmt)
+		case (st2_fmt)
 		2'd2:
-			blended = {st1_px[31:16], st2_r5[4:0], st2_g6, st2_b5[4:0]};
+			blended = {st2_px[31:16], st3_r5[4:0], st3_g6, st3_b5[4:0]};
 		default:	/* BGRA8, RGBA8 */
-			blended = {st1_px[31:24], mixed};
+			blended = {st2_px[31:24], mixed};
 		endcase
 	end
 
-	wire [31:0] nxt_out_data = st1_in ? blended : st1_px;
-
-	assign st2_ready = !st2_valid || o_ready;
-	reg st2_valid;
-	reg [31:0] st2_data;
+	wire [31:0] nxt_out_data = st2_in ? blended : st2_px;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			st2_valid <= 1'b0;
-			st2_data <= 32'd0;
+			st3_valid <= 1'b0;
+			st3_data <= 32'd0;
 		end else if (frame_start || !enable) begin
-			st2_valid <= 1'b0;
-		end else if (st2_ready) begin
-			st2_valid <= st1_valid;
-			if (st1_valid)
-				st2_data <= nxt_out_data;
+			st3_valid <= 1'b0;
+		end else if (pipe_en) begin
+			st3_valid <= st2_valid;
+			if (st2_valid)
+				st3_data <= nxt_out_data;
 		end
 	end
 
-	assign o_valid = st2_valid;
-	assign o_data = st2_data;
-
-	wire unused_ok = &{1'b0, rsp_tag, l_in_ready, r5[5], b5[5], st2_r5[5], st2_b5[5], flip_base[5:0], ld_co_unused, bl_co_unused,
+	wire unused_ok = &{1'b0, rsp_tag, l_in_ready, r5[5], b5[5], st3_r5[5], st3_b5[5], flip_base[5:0], ld_co_unused, bl_co_unused,
 		t_co_unused, u_co_unused, vm_bo_unused, nt_co_unused, nu_co_unused,
 		tb_t_unused, tb_u_unused, tb_vm_unused, tb_nt_unused, tb_nu_unused};
 endmodule
