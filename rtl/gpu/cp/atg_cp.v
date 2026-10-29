@@ -422,6 +422,9 @@ module atg_cp #(
 	wire [31:0] s_dma_src_slice_stride, s_dma_dst_slice_stride;
 	wire [15:0] s_dma_copy_w, s_dma_copy_h, s_dma_copy_d;
 
+	wire s_n_valid_raw, s_n_ready_raw;
+	wire [31:0] s_n_data_raw;
+
 	atg_cp_ring #(
 		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 		.CLASS_V(HAS_CPU != 0)
@@ -430,7 +433,7 @@ module atg_cp #(
 		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_ring_rdata),
 		.run(s_run), .halt(s_halt), .step(s_step), .open(s_open),
-		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data), .n_last(s_n_last),
+		.n_valid(s_n_valid_raw), .n_ready(s_n_ready_raw), .n_data(s_n_data_raw), .n_last(s_n_last),
 		.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag),
 		.v_done(v_done),
 		.dma_req_valid(s_dma_req_valid), .dma_req_ready(1'b1),
@@ -449,6 +452,17 @@ module atg_cp #(
 		.req_wdata(s_i_req_wdata[0*SLB +: SLB]), .req_tag(s_i_req_tag[0*8 +: 8]),
 		.rsp_valid(s_i_rsp_valid[0]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
 		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
+	);
+
+	am_skid #(.W(32)) u_skid_ring_seq (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.in_valid(s_n_valid_raw),
+		.in_ready(s_n_ready_raw),
+		.in_data(s_n_data_raw),
+		.out_valid(s_n_valid),
+		.out_ready(s_n_ready),
+		.out_data(s_n_data)
 	);
 
 	/* The sequencer; it stops only in FAULTED and RESETTING. */
