@@ -98,29 +98,43 @@ module atg_rop_dtest (
 	wire [7:0] s_a = stored[31:24];
 	wire [7:0] cm = ss[15:8];
 	wire s_cmp = atg_depth_pass(ss[26:24], {25'd0, ss[7:0] & cm}, {25'd0, s_a & cm}, 1'b0);
-	wire [2:0] sop = !s_cmp ? so[2:0] : d_ok ? so[5:3] : so[8:6];
-	/* s_a + 1 (ops 3, 6) or - 1 (ops 4, 7) */
-	wire [7:0] s_pm;
-	wire s_pm_co_unused;
-	am_addsub #(.W(8)) u_s_pm (.a(s_a), .b(8'd1), .sub(sop == 3'd4 || sop == 3'd7), .s(s_pm),
-		.co(s_pm_co_unused));
-	reg [7:0] s_new;
-	always @(*)
-		case (sop)
-		3'd0: s_new = s_a;
-		3'd1: s_new = 8'd0;
-		3'd2: s_new = ss[7:0];
-		3'd3: s_new = s_a == 8'hFF ? 8'hFF : s_pm;
-		3'd4: s_new = s_a == 8'd0 ? 8'd0 : s_pm;
-		3'd5: s_new = ~s_a;
+
+	/* Pre-calculate increment and decrement in parallel with compare */
+	wire [7:0] s_inc, s_dec;
+	wire inc_co_unused, dec_co_unused;
+	am_add #(.W(8)) u_s_inc (.a(s_a), .b(8'd1), .ci(1'b0), .s(s_inc), .co(inc_co_unused));
+	am_sub #(.W(8)) u_s_dec (.a(s_a), .b(8'd1), .bi(1'b0), .d(s_dec), .bo(dec_co_unused));
+
+	function [7:0] get_snew;
+		input [2:0] op;
+		input [7:0] sa;
+		input [7:0] sref;
+		input [7:0] sinc;
+		input [7:0] sdec;
+		begin
+			case (op)
+			3'd0: get_snew = sa;
+			3'd1: get_snew = 8'd0;
+			3'd2: get_snew = sref;
+			3'd3: get_snew = (sa == 8'hFF) ? 8'hFF : sinc;
+			3'd4: get_snew = (sa == 8'd0) ? 8'd0 : sdec;
+			3'd5: get_snew = ~sa;
 `ifdef MUT_STENCIL_WRAP
-		3'd6: s_new = s_a == 8'hFF ? 8'hFF : s_pm;	/* wrap as clamp */
-		default: s_new = s_a == 8'd0 ? 8'd0 : s_pm;
+			3'd6: get_snew = (sa == 8'hFF) ? 8'hFF : sinc;	/* wrap as clamp */
+			default: get_snew = (sa == 8'd0) ? 8'd0 : sdec;
 `else
-		3'd6: s_new = s_pm;
-		default: s_new = s_pm;
+			3'd6: get_snew = sinc;
+			default: get_snew = sdec;
 `endif
-		endcase
+			endcase
+		end
+	endfunction
+
+	wire [7:0] s_new_fail  = get_snew(so[2:0], s_a, ss[7:0], s_inc, s_dec);
+	wire [7:0] s_new_dpass = get_snew(so[5:3], s_a, ss[7:0], s_inc, s_dec);
+	wire [7:0] s_new_dfail = get_snew(so[8:6], s_a, ss[7:0], s_inc, s_dec);
+
+	wire [7:0] s_new = !s_cmp ? s_new_fail : (d_ok ? s_new_dpass : s_new_dfail);
 	wire [7:0] wm = ss[23:16];
 	wire [7:0] s_wr = (s_a & ~wm) | (s_new & wm);
 	wire s_ok = !s_on || s_cmp;
