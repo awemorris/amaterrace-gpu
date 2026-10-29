@@ -205,10 +205,13 @@ module atg_blt_2d #(
 	reg bw_sub;
 	reg bw_done_all;
 	reg bw_walk_done;
-	reg [16:0] px_b, spx_b, rem_b, rows_b;
+	(* extract_enable = "no" *) reg [16:0] px_b, spx_b, rem_b;
+	reg [16:0] rows_b;
+	(* extract_enable = "no" *) reg [US-1:0] cur_da_b, cur_da_row;
 	reg [1:0] ydl_b, ysl_b;
 	reg [ADDR_W-1:0] dst_row_b, src_row_b;
-	reg [2:0] psl_w;
+	(* max_fanout = 8 *) reg [2:0] psl_w;
+	reg [US:0] line_pixels_b;
 
 	/* Burst segment pipeline registers: 3-stage pipeline */
 	/* Stage 1 -> Stage 2 (Geom pipeline registers) */
@@ -263,9 +266,18 @@ module atg_blt_2d #(
 	wire [LINE_BYTES-1:0] seg_be;
 
 
+	/* verilator lint_off WIDTHTRUNC */
+	localparam [US:0] LB_V = LINE_BYTES;
+	/* verilator lint_on WIDTHTRUNC */
+
+	wire [US:0] calc_line_pixels = (psl == 3'd4) ? {4'b0000, LB_V[US:4]} :
+	                               (psl == 3'd3) ? {3'b000, LB_V[US:3]}  :
+	                               (psl == 3'd2) ? {2'b00, LB_V[US:2]}   :
+	                               (psl == 3'd1) ? {1'b0, LB_V[US:1]}    : LB_V;
+
 	/* Legacy FSM Segment Engine (completely isolated from burst) */
 	atg_blt_seg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) seg (
-		.psl(psl), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
+		.psl(psl), .line_pix(calc_line_pixels), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
 		.da(da[US-1:0]), .px(px[1:0]), .spx(spx[1:0]), .rem(rem),
 		.sn(sn), .snu(snu), .dlo(dlo[US-1:0]), .slo(slo),
 		.p0(seg_p0), .seg_n(seg_n), .seg_last(), .back(back), .src_base(src_base_u),
@@ -279,59 +291,88 @@ module atg_blt_2d #(
 	 * =================================================================
 	 */
 	/* Stage 1: Walk Stage (Computes only bst_seg_n for coordinate walking) */
-	wire [ADDR_W-1:0] d_px_w = x_pixels(px_b, m_dtile);
-	wire [US-1:0] d_xb_w = (psl_w == 3'd4) ? {d_px_w[US-5:0], 4'b0000} :
-	                       (psl_w == 3'd3) ? {d_px_w[US-4:0], 3'b000}  :
-	                       (psl_w == 3'd2) ? {d_px_w[US-3:0], 2'b00}   :
-	                       (psl_w == 3'd1) ? {d_px_w[US-2:0], 1'b0}    : d_px_w[US-1:0];
-	wire [US-1:0] cur_da_w;
-	wire w_da_co;
-	am_add #(.W(US)) a_da_w (.a(dst_row_b[US-1:0]), .b(d_xb_w), .ci(1'b0), .s(cur_da_w), .co(w_da_co));
+	wire [ADDR_W-1:0] d_px_row = x_pixels(px_row, m_dtile);
+	wire [US-1:0] d_xb_row = (psl == 3'd4) ? {d_px_row[US-5:0], 4'b0000} :
+	                         (psl == 3'd3) ? {d_px_row[US-4:0], 3'b000}  :
+	                         (psl == 3'd2) ? {d_px_row[US-3:0], 2'b00}   :
+	                         (psl == 3'd1) ? {d_px_row[US-2:0], 1'b0}    : d_px_row[US-1:0];
+	wire [US-1:0] cur_da_init;
+	wire co_da_init;
+	am_add #(.W(US)) a_da_init (.a(dst_row[US-1:0]), .b(d_xb_row), .ci(1'b0), .s(cur_da_init), .co(co_da_init));
+
+	wire [US-1:0] cur_da_row_next;
+	wire co_da_row;
+	am_add #(.W(US)) a_da_row (.a(dst_row_b_next[US-1:0]), .b(d_xb_row), .ci(1'b0), .s(cur_da_row_next), .co(co_da_row));
 
 	wire [US:0] bst_seg_n;
 	wire bst_seg_last;
 	atg_blt_seg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) bst_seg (
-		.psl(psl_w), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
-		.da(cur_da_w), .px(px_b[1:0]), .spx(spx_b[1:0]), .rem(rem_b),
+		.psl(psl_w), .line_pix(line_pixels_b), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
+		.da(cur_da_b), .px(px_b[1:0]), .spx(spx_b[1:0]), .rem(rem_b),
 		.sn({(US+1){1'b0}}), .snu({(US+1){1'b0}}), .dlo({US{1'b0}}), .slo({ADDR_W{1'b0}}),
 		.p0({US{1'b0}}), .seg_n(bst_seg_n), .seg_last(bst_seg_last), .back(), .src_base(),
 		.last_line(), .be()
 	);
-	/* Explicit adder-subtractor for coordinates (strictly forces mapping to D-input carry logic, prevents bad CE inference) */
+
+	wire [US-1:0] bst_seg_bytes = (psl_w == 3'd4) ? {bst_seg_n[US-5:0], 4'b0000} :
+	                              (psl_w == 3'd3) ? {bst_seg_n[US-4:0], 3'b000}  :
+	                              (psl_w == 3'd2) ? {bst_seg_n[US-3:0], 2'b00}   :
+	                              (psl_w == 3'd1) ? {bst_seg_n[US-2:0], 1'b0}    : bst_seg_n[US-1:0];
+	wire [US-1:0] cur_da_seg_next;
+	wire co_da_seg;
+	am_addsub #(.W(US)) as_da_seg (.a(cur_da_b), .b(bst_seg_bytes), .sub(m_rev), .s(cur_da_seg_next), .co(co_da_seg));
+	wire [US-1:0] cur_da_b_d = bst_seg_last ? cur_da_row_next : cur_da_seg_next;
+	/* Carry-Select Parallel Split Addsub for Coordinates */
 	/* 1. px_next */
 	wire [US:0] px_lo_next;
 	wire px_lo_co;
 	am_addsub #(.W(US + 1)) as_px_lo (.a(px_b[US:0]), .b(bst_seg_n), .sub(m_rev), .s(px_lo_next), .co(px_lo_co));
-	wire px_cout = m_rev ? !px_lo_co : px_lo_co;
 
-	wire [16-US-1:0] px_hi_delta = {{(16-US-1){1'b0}}, px_cout};
-	wire [16-US-1:0] px_hi_next;
-	wire px_hi_co_unused;
-	am_addsub #(.W(16 - US)) as_px_hi (.a(px_b[16:US+1]), .b(px_hi_delta), .sub(m_rev), .s(px_hi_next), .co(px_hi_co_unused));
-	wire [16:0] bst_px_next = {px_hi_next, px_lo_next};
+	wire [16-US-1:0] px_hi = px_b[16:US+1];
+	wire [16-US-1:0] px_hi_p1, px_hi_m1;
+	wire [1:0] px_hi_co;
+	am_add #(.W(16 - US)) a_px_p1 (.a(px_hi), .b({(16-US){1'b0}}), .ci(1'b1), .s(px_hi_p1), .co(px_hi_co[0]));
+	am_sub #(.W(16 - US)) s_px_m1 (.a(px_hi), .b({(16-US){1'b0}}), .bi(1'b1), .d(px_hi_m1), .bo(px_hi_co[1]));
+	wire [16-US-1:0] px_hi_delta = m_rev ? px_hi_m1 : px_hi_p1;
+	wire [16-US-1:0] px_hi_w0 = walk_step ? (bst_seg_last ? px_row[16:US+1] : px_hi)       : px_hi;
+	wire [16-US-1:0] px_hi_w1 = walk_step ? (bst_seg_last ? px_row[16:US+1] : px_hi_delta) : px_hi;
+	wire [16-US-1:0] px_hi_final = m_rev ? (px_lo_co ? px_hi_w0 : px_hi_w1) : (px_lo_co ? px_hi_w1 : px_hi_w0);
+	wire [US:0] px_lo_w = walk_step ? (bst_seg_last ? px_row[US:0] : px_lo_next) : px_b[US:0];
+	wire [16:0] px_b_next = {px_hi_final, px_lo_w};
 
 	/* 2. spx_next */
 	wire [US:0] spx_lo_next;
 	wire spx_lo_co;
 	am_addsub #(.W(US + 1)) as_spx_lo (.a(spx_b[US:0]), .b(bst_seg_n), .sub(m_rev), .s(spx_lo_next), .co(spx_lo_co));
-	wire spx_cout = m_rev ? !spx_lo_co : spx_lo_co;
 
-	wire [16-US-1:0] spx_hi_delta = {{(16-US-1){1'b0}}, spx_cout};
-	wire [16-US-1:0] spx_hi_next;
-	wire spx_hi_co_unused;
-	am_addsub #(.W(16 - US)) as_spx_hi (.a(spx_b[16:US+1]), .b(spx_hi_delta), .sub(m_rev), .s(spx_hi_next), .co(spx_hi_co_unused));
-	wire [16:0] bst_spx_next = {spx_hi_next, spx_lo_next};
+	wire [16-US-1:0] spx_hi = spx_b[16:US+1];
+	wire [16-US-1:0] spx_hi_p1, spx_hi_m1;
+	wire [1:0] spx_hi_co;
+	am_add #(.W(16 - US)) a_spx_p1 (.a(spx_hi), .b({(16-US){1'b0}}), .ci(1'b1), .s(spx_hi_p1), .co(spx_hi_co[0]));
+	am_sub #(.W(16 - US)) s_spx_m1 (.a(spx_hi), .b({(16-US){1'b0}}), .bi(1'b1), .d(spx_hi_m1), .bo(spx_hi_co[1]));
+	wire [16-US-1:0] spx_hi_delta = m_rev ? spx_hi_m1 : spx_hi_p1;
+	wire [16-US-1:0] spx_hi_w0 = walk_step ? (bst_seg_last ? spx_row[16:US+1] : spx_hi)       : spx_hi;
+	wire [16-US-1:0] spx_hi_w1 = walk_step ? (bst_seg_last ? spx_row[16:US+1] : spx_hi_delta) : spx_hi;
+	wire [16-US-1:0] spx_hi_final = m_rev ? (spx_lo_co ? spx_hi_w0 : spx_hi_w1) : (spx_lo_co ? spx_hi_w1 : spx_hi_w0);
+	wire [US:0] spx_lo_w = walk_step ? (bst_seg_last ? spx_row[US:0] : spx_lo_next) : spx_b[US:0];
+	wire [16:0] spx_b_next = {spx_hi_final, spx_lo_w};
 
 	/* 3. rem_next */
 	wire [US:0] rem_lo_next;
 	wire rem_lo_bo;
 	am_sub #(.W(US + 1)) s_rem_lo (.a(rem_b[US:0]), .b(bst_seg_n), .bi(1'b0), .d(rem_lo_next), .bo(rem_lo_bo));
 
-	wire [16-US-1:0] rem_hi_delta = {{(16-US-1){1'b0}}, rem_lo_bo};
-	wire [16-US-1:0] rem_hi_next;
-	wire rem_hi_bo_unused;
-	am_sub #(.W(16 - US)) s_rem_hi (.a(rem_b[16:US+1]), .b(rem_hi_delta), .bi(1'b0), .d(rem_hi_next), .bo(rem_hi_bo_unused));
-	wire [16:0] bst_rem_next = {rem_hi_next, rem_lo_next};
+	wire [16-US-1:0] rem_hi = rem_b[16:US+1];
+	wire [16-US-1:0] rem_hi_m1;
+	wire rem_hi_bo;
+	am_sub #(.W(16 - US)) s_rem_m1 (.a(rem_hi), .b({(16-US){1'b0}}), .bi(1'b1), .d(rem_hi_m1), .bo(rem_hi_bo));
+	wire [16-US-1:0] rem_hi_w0 = walk_step ? (bst_seg_last ? width[16:US+1] : rem_hi)    : rem_hi;
+	wire [16-US-1:0] rem_hi_w1 = walk_step ? (bst_seg_last ? width[16:US+1] : rem_hi_m1) : rem_hi;
+	wire [16-US-1:0] rem_hi_final = rem_lo_bo ? rem_hi_w1 : rem_hi_w0;
+	wire [US:0] rem_lo_w = walk_step ? (bst_seg_last ? width[US:0] : rem_lo_next) : rem_b[US:0];
+	wire [16:0] rem_b_next = {rem_hi_final, rem_lo_w};
+
+	wire [US-1:0] cur_da_b_next = walk_step ? cur_da_b_d : cur_da_b;
 
 	/* Stage 2: Geom / Address Engine (Computed from g_* registers in next cycle) */
 	wire [ADDR_W-1:0] d_px_g = x_pixels(g_px, m_dtile);
@@ -530,7 +571,7 @@ module atg_blt_2d #(
 	wire issue_fire = (state == S_BURST) && bst_can_fill_p && (!m_copy || (p_two_lines ? (bw_sub && bst_rd_fire) : bst_rd_fire));
 	wire step_p = !p_valid || issue_fire;
 	wire step_g = !g_valid || step_p;
-	wire walk_step = (state == S_BURST) && !bw_walk_done && step_g;
+	(* direct_enable = "yes" *) wire walk_step = (state == S_BURST) && !bw_walk_done && step_g;
 
 	/* Mux external AMB outputs between burst and legacy port */
 	assign req_valid = m_burst ? bst_req_valid : leg_req_valid;
@@ -544,7 +585,7 @@ module atg_blt_2d #(
 	assign fsm = state;
 
 	/* The segment's end: the next pixel, or the next row. */
-	wire [16:0] sn17 = {{(16 - US){1'b0}}, seg_n};
+	wire [16:0] sn17 = {{(16 - US){1'b0}}, sn};
 	wire seg_last = cur_rem == sn17;
 	wire [ADDR_W-1:0] tile_step = tile_bytes(psl, 1'b0);
 	wire [ADDR_W-1:0] tile_back = tile_bytes(psl, 1'b1);
@@ -721,6 +762,9 @@ module atg_blt_2d #(
 			spx_b <= 17'd0;
 			rem_b <= 17'd0;
 			rows_b <= 17'd0;
+			cur_da_b <= {US{1'b0}};
+			cur_da_row <= {US{1'b0}};
+			line_pixels_b <= {1'b1, {US{1'b0}}};
 			ydl_b <= 2'd0;
 			ysl_b <= 2'd0;
 			dst_row_b <= {ADDR_W{1'b0}};
@@ -795,11 +839,14 @@ module atg_blt_2d #(
 						rem_b <= width;
 						rows_b <= rows;
 						rows_b_zero <= (rows == 17'd0);
+						cur_da_b <= cur_da_init;
+						cur_da_row <= cur_da_init;
 						ydl_b <= yd_start[1:0];
 						ysl_b <= ys_start[1:0];
 						dst_row_b <= dst_row;
 						src_row_b <= src_row;
 						psl_w <= psl;
+						line_pixels_b <= calc_line_pixels;
 						bw_bank <= 1'b0;
 						bw_seg_idx <= 3'd0;
 						bw_slot_cnt <= 4'd0;
@@ -856,22 +903,20 @@ module atg_blt_2d #(
 						g_rows_b_zero <= rows_b_zero;
 
 						/* Advance walk coordinates */
+						px_b <= px_b_next;
+						spx_b <= spx_b_next;
+						rem_b <= rem_b_next;
+						cur_da_b <= cur_da_b_next;
 						if (bst_seg_last) begin
-							px_b <= px_row;
-							spx_b <= spx_row;
-							rem_b <= width;
 							rows_b <= rows_b_dec;
 							rows_b_zero <= (rows_b_dec == 17'd0);
 							ydl_b <= ydl_b_inc;
 							ysl_b <= ysl_b_inc;
 							dst_row_b <= dst_row_b_next;
 							src_row_b <= src_row_b_next;
+							cur_da_row <= cur_da_row_next;
 							if (rows_b_zero)
 								bw_walk_done <= 1'b1;
-						end else begin
-							px_b <= bst_px_next;
-							spx_b <= bst_spx_next;
-							rem_b <= bst_rem_next;
 						end
 					end else if (step_g) begin
 						g_valid <= 1'b0;
