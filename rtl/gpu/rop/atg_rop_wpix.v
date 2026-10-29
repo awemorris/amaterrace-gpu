@@ -76,6 +76,10 @@ module atg_rop_wpix #(
 	input wire [LINE_BYTES*8-1:0] i_line1,
 	input wire [LINE_SHIFT-1:0] i_off0,
 	input wire [LINE_SHIFT-1:0] i_off1,
+	input wire [LINE_SHIFT-1:0] i_off0_p1,
+	input wire [LINE_SHIFT-1:0] i_off1_p1,
+	input wire [LINE_SHIFT-1:0] i_reg_off0,
+	input wire [LINE_SHIFT-1:0] i_reg_off1,
 	/* The paths' results */
 	input wire [127:0] b_pix,
 	input wire f_go,
@@ -121,7 +125,8 @@ module atg_rop_wpix #(
 	reg [63:0] fmts;
 	reg [31:0] kc8;
 	reg [31:0] wms;
-	reg kc_sel, ms4;
+	reg kc_sel;
+	(* max_fanout = 8 *) reg ms4;
 	/* The index within RT1-3_BASE/_STRIDE (2 (k - 1) + stride), BLEND1-3 or
 	 * BLEND_CONST_R-A: the three ranges follow each other, one subtracter. */
 	wire [8:0] s_off;
@@ -423,6 +428,7 @@ module atg_rop_wpix #(
 	(* max_fanout = 4 *) reg [2:0] psl_k [0:3];
 	(* max_fanout = 4 *) reg [2:0] el_k [0:3];
 	(* max_fanout = 4 *) reg multi_k [0:3];
+	(* max_fanout = 2 *) reg ms4_k [0:3];
 	integer ik;
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -430,12 +436,14 @@ module atg_rop_wpix #(
 				psl_k[ik] <= 3'd0;
 				el_k[ik] <= 3'd0;
 				multi_k[ik] <= 1'b0;
+				ms4_k[ik] <= 1'b0;
 			end
 		end else begin
 			for (ik = 0; ik < 4; ik = ik + 1) begin
 				psl_k[ik] <= psl;
 				el_k[ik] <= el;
 				multi_k[ik] <= multi;
+				ms4_k[ik] <= ms4;
 			end
 		end
 	end
@@ -454,21 +462,26 @@ module atg_rop_wpix #(
 		localparam [3:0] K4 = k;
 		am_add #(.W(4)) u_n (.a(nj), .b(K4), .ci(1'b0), .s(n), .co(n_co_unused));
 		wire [1:0] ln = multi_slot ? {i_r, n[2]} : k;
-		wire [LINE_SHIFT-1:0] o1s = shift_left_psl(ms4 ? {k[0], i_g} : {2'b00, k[0]}, psl_slot);
 		wire [LINE_SHIFT-1:0] o1;
 		if (k == 0 || k == 2) begin : g_k02
-			wire has_o1s = ms4 && (i_g != 2'd0);
 			wire [LINE_SHIFT-1:0] off_base = (k >= 2) ? i_off1 : i_off0;
+			wire [LINE_SHIFT-1:0] reg_off_base = (k >= 2) ? i_reg_off1 : i_reg_off0;
+			wire [LINE_SHIFT-1:0] o1s = shift_left_psl({1'b0, i_g}, psl_slot);
 			wire [LINE_SHIFT-1:0] o1_add;
 			wire o1_co_unused;
-			am_add #(.W(LINE_SHIFT)) u_o1 (.a(off_base), .b(o1s), .ci(1'b0), .s(o1_add),
+			am_add #(.W(LINE_SHIFT)) u_o1 (.a(reg_off_base), .b(o1s), .ci(1'b0), .s(o1_add),
 				.co(o1_co_unused));
-			assign o1 = has_o1s ? o1_add : off_base;
+			wire [LINE_SHIFT-1:0] o1_ms4 = (|i_g) ? o1_add : reg_off_base;
+			assign o1 = ms4_k[k] ? o1_ms4 : off_base;
 		end else begin : g_k13
-			wire [LINE_SHIFT-1:0] off_base = (k >= 2) ? i_off1 : i_off0;
-			wire o1_co_unused;
-			am_add #(.W(LINE_SHIFT)) u_o1 (.a(off_base), .b(o1s), .ci(1'b0), .s(o1),
-				.co(o1_co_unused));
+			wire [LINE_SHIFT-1:0] off_base_p1 = (k >= 2) ? i_off1_p1 : i_off0_p1;
+			wire [LINE_SHIFT-1:0] reg_off_base = (k >= 2) ? i_reg_off1 : i_reg_off0;
+			wire [LINE_SHIFT-1:0] o1s_ms4 = shift_left_psl({1'b1, i_g}, psl_slot);
+			wire [LINE_SHIFT-1:0] o1_nom = off_base_p1;
+			wire [LINE_SHIFT-1:0] o1_ms4;
+			wire o1_ms4_co;
+			am_add #(.W(LINE_SHIFT)) u_o1_ms4 (.a(reg_off_base), .b(o1s_ms4), .ci(1'b0), .s(o1_ms4), .co(o1_ms4_co));
+			assign o1 = ms4_k[k] ? o1_ms4 : o1_nom;
 		end
 		assign om = shift_left_psl({1'b0, k[1:0]}, psl_slot);
 		(* max_fanout = 16 *) wire [LINE_SHIFT-1:0] o = multi_slot ? om : o1;

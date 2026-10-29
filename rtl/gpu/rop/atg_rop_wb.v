@@ -117,6 +117,7 @@ module atg_rop_wb #(
 	reg [2:0] rt;
 	reg [31:0] addr;
 	reg [LINE_SHIFT-1:0] off [0:1];	/* the quad's first byte in each row's line */
+	reg [LINE_SHIFT-1:0] off_p1 [0:1];
 	reg f_go;
 	reg fsm_b_valid;
 
@@ -142,17 +143,25 @@ module atg_rop_wb #(
 	wire wb_addr_co;
 	am_add #(.W(32)) u_wb_addr (.a(cur_row_base), .b(p_xoff_j), .ci(1'b0), .s(wb_addr_comb), .co(wb_addr_co));
 
+	wire [31:0] p_ps_32 = {27'd0, p_ps};
+	wire [LINE_SHIFT-1:0] ext_ps = p_ps_32[LINE_SHIFT-1:0];
+	wire [LINE_SHIFT-1:0] off_p1_comb;
+	wire off_p1_co;
+	am_add #(.W(LINE_SHIFT)) u_off_p1 (.a(addr[LINE_SHIFT-1:0]), .b(ext_ps), .ci(1'b0), .s(off_p1_comb), .co(off_p1_co));
+
 	wire [31:0] eff_xy = (st == S_IDLE) ? d_xy : xy;
 	wire [15:0] eff_mask = (st == S_IDLE) ? d_smask : mask;
 	wire [511:0] eff_color = (st == S_IDLE) ? d_color : color;
-	wire eff_r = (st == S_IDLE) ? 1'b0 : r;
-	wire [1:0] eff_j = (st == S_IDLE) ? 2'd0 : j;
-	wire [1:0] eff_g = (st == S_IDLE) ? 2'd0 : g;
+	wire eff_r = r;
+	wire [1:0] eff_j = j;
+	wire [1:0] eff_g = g;
 
 	/* Line Tracking and Cached Row Base */
 	reg line_match_valid;
 	reg [2:0] line_rt;
 	reg [15:0] line_y;
+	reg [LA_W-1:0] cached_tag_x0;
+	reg [LA_W-1:0] cached_tag_x1;
 	reg [31:0] cached_row_base0;
 	reg [31:0] cached_row_base1;
 	reg [2:0] cached_xsh;
@@ -164,6 +173,11 @@ module atg_rop_wb #(
 	reg cached_read;
 	reg [4:0] cached_ps;
 
+	wire [LA_W-1:0] tag_x0_comb, tag_x1_comb;
+	wire tag_x0_co, tag_x1_co;
+	am_sub #(.W(LA_W)) u_tag_x0 (.a(etag[0]), .b(wb_row_base0[ADDR_W-1:LINE_SHIFT]), .bi(1'b0), .d(tag_x0_comb), .bo(tag_x0_co));
+	am_sub #(.W(LA_W)) u_tag_x1 (.a(etag[1]), .b(wb_row_base1[ADDR_W-1:LINE_SHIFT]), .bi(1'b0), .d(tag_x1_comb), .bo(tag_x1_co));
+
 	/* Streaming address and offset calculation */
 	wire [31:0] str_xoff;
 	am_shift #(.W(32), .SW(3)) u_str_xoff (
@@ -173,11 +187,6 @@ module atg_rop_wb #(
 		.arith(1'b0),
 		.y(str_xoff)
 	);
-
-	wire [LA_W-1:0] str_tag0, str_tag1;
-	wire str_a0_co, str_a1_co;
-	am_add #(.W(LA_W)) u_str_a0 (.a(cached_row_base0[ADDR_W-1:LINE_SHIFT]), .b(str_xoff[ADDR_W-1:LINE_SHIFT]), .ci(1'b0), .s(str_tag0), .co(str_a0_co));
-	am_add #(.W(LA_W)) u_str_a1 (.a(cached_row_base1[ADDR_W-1:LINE_SHIFT]), .b(str_xoff[ADDR_W-1:LINE_SHIFT]), .ci(1'b0), .s(str_tag1), .co(str_a1_co));
 
 	/* Fast line-offset calculation for streaming */
 	wire [LINE_SHIFT-1:0] str_line_off;
@@ -189,11 +198,27 @@ module atg_rop_wb #(
 		.y(str_line_off)
 	);
 
+	/* Quads are 2x2 aligned, so d_xy[0] is 0; +1 is simply bit 0 = 1 */
+	wire [LINE_SHIFT-1:0] str_x_p1 = {d_xy[LINE_SHIFT-1:1], 1'b1};
+
+	wire [LINE_SHIFT-1:0] str_line_off_p1;
+	am_shift #(.W(LINE_SHIFT), .SW(3)) u_str_loff_p1 (
+		.a(str_x_p1),
+		.amt(cached_xsh_off),
+		.left(1'b1),
+		.arith(1'b0),
+		.y(str_line_off_p1)
+	);
+
 	wire [LINE_SHIFT-1:0] cur_off0 = str_line_off;
 	wire [LINE_SHIFT-1:0] cur_off1 = str_line_off;
+	wire [LINE_SHIFT-1:0] cur_off0_p1 = str_line_off_p1;
+	wire [LINE_SHIFT-1:0] cur_off1_p1 = str_line_off_p1;
 
 	wire [LINE_SHIFT-1:0] eff_off0 = (st == S_IDLE) ? cur_off0 : off[0];
 	wire [LINE_SHIFT-1:0] eff_off1 = (st == S_IDLE) ? cur_off1 : off[1];
+	wire [LINE_SHIFT-1:0] eff_off0_p1 = (st == S_IDLE) ? cur_off0_p1 : off_p1[0];
+	wire [LINE_SHIFT-1:0] eff_off1_p1 = (st == S_IDLE) ? cur_off1_p1 : off_p1[1];
 
 
 
@@ -212,7 +237,10 @@ module atg_rop_wb #(
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.i_xy(eff_xy), .i_rt(rt), .i_smask(eff_mask), .i_color(eff_color),
 		.i_r(eff_r), .i_j(eff_j), .i_g(eff_g),
-		.i_line0(edat0), .i_line1(edat1), .i_off0(eff_off0), .i_off1(eff_off1),
+		.i_line0(edat0), .i_line1(edat1),
+		.i_off0(eff_off0), .i_off1(eff_off1),
+		.i_off0_p1(eff_off0_p1), .i_off1_p1(eff_off1_p1),
+		.i_reg_off0(off[0]), .i_reg_off1(off[1]),
 		.b_pix(b_pix), .f_go(f_go), .f_done(f_done), .f_take(f_take),
 		.o_addr(p_addr), .o_addr1(p_addr1), .o_nl(p_nl), .o_np(p_np), .o_multi(p_multi), .o_drop(p_drop),
 		.o_read(p_read), .o_path(p_path), .o_lw(p_lw), .o_mask(p_mask), .o_bsrc(p_bsrc),
@@ -231,8 +259,10 @@ module atg_rop_wb #(
 	/* Cache Hit Detection and Streaming Qualification */
 	wire hit_rt = (d_rt == line_rt);
 	wire hit_y = (d_xy[31:16] == line_y);
-	wire hit0 = ev[0] && (etag[0] == str_tag0) && (erd[0] || !cached_read);
-	wire hit1 = ev[1] && (etag[1] == str_tag1) && (erd[1] || !cached_read);
+	wire hit_tag0 = (str_xoff[ADDR_W-1:LINE_SHIFT] == cached_tag_x0);
+	wire hit_tag1 = (str_xoff[ADDR_W-1:LINE_SHIFT] == cached_tag_x1);
+	wire hit0 = ev[0] && hit_tag0 && (erd[0] || !cached_read);
+	wire hit1 = ev[1] && hit_tag1 && (erd[1] || !cached_read);
 	wire stream_hit = line_match_valid && hit_rt && hit_y && hit0 && hit1;
 	wire stream_drop = (hit_rt && cached_drop) || d_nocol || (d_smask == 16'd0);
 	wire stream_ok = stream_hit && !cached_multi && (cached_np == 2'd0) && (cached_path == 2'd0) && alloc_ready;
@@ -271,9 +301,8 @@ module atg_rop_wb #(
 
 	assign d_ready = (st == S_IDLE) &&
 		(stream_drop ? 1'b1 :
-		 stream_ok   ? 1'b1 :
-		 pipe_busy   ? 1'b0 :
-		 alloc_ready);
+		 !pipe_busy  ? 1'b1 :
+		 stream_ok);
 	assign busy = (st != S_IDLE) || ev[0] || ev[1] || pipe_busy;
 	assign req_tag = 8'd0;
 
@@ -300,9 +329,12 @@ module atg_rop_wb #(
 			else if (!r) begin
 				r <= 1'b1;
 				j <= 2'd0;
-			end else if (p_multi)
+			end else if (p_multi) begin
+				r <= 1'b0;
+				j <= 2'd0;
+				g <= 2'd0;
 				st <= S_IDLE;
-			else begin
+			end else begin
 				g <= 2'd0;
 				st <= S_BLEND;
 			end
@@ -322,6 +354,8 @@ module atg_rop_wb #(
 					line_match_valid <= 1'b1;
 					line_rt <= rt;
 					line_y <= xy[31:16];
+					cached_tag_x0 <= tag_x0_comb;
+					cached_tag_x1 <= tag_x1_comb;
 					cached_row_base0 <= wb_row_base0;
 					cached_row_base1 <= wb_row_base1;
 					cached_xsh <= p_xsh;
@@ -342,9 +376,12 @@ module atg_rop_wb #(
 			if (!p_multi && g != p_np) begin
 				g <= g1;
 				st <= S_BLEND;
-			end else if (!p_multi)
+			end else if (!p_multi) begin
+				r <= 1'b0;
+				j <= 2'd0;
+				g <= 2'd0;
 				st <= S_IDLE;
-			else begin
+			end else begin
 				st <= S_ROW;
 				next_row;
 			end
@@ -414,6 +451,9 @@ module atg_rop_wb #(
 			wait_rsp <= 1'b0;
 		if (!rst_n) begin
 			st <= S_IDLE;
+			r <= 1'b0;
+			j <= 2'd0;
+			g <= 2'd0;
 			req_valid <= 1'b0;
 			wait_rsp <= 1'b0;
 			ev[0] <= 1'b0;
@@ -425,6 +465,12 @@ module atg_rop_wb #(
 			line_match_valid <= 1'b0;
 			line_rt <= 3'd0;
 			line_y <= 16'd0;
+			cached_tag_x0 <= {LA_W{1'b0}};
+			cached_tag_x1 <= {LA_W{1'b0}};
+			off[0] <= {LINE_SHIFT{1'b0}};
+			off[1] <= {LINE_SHIFT{1'b0}};
+			off_p1[0] <= {LINE_SHIFT{1'b0}};
+			off_p1[1] <= {LINE_SHIFT{1'b0}};
 			wb_row_base0 <= 32'd0;
 			wb_row_base1 <= 32'd0;
 			r_bsrc <= 512'd0;
@@ -522,9 +568,12 @@ module atg_rop_wb #(
 				st <= S_ROW;
 			end
 			S_ROW:
-				if (p_drop)
+				if (p_drop) begin
+					r <= 1'b0;
+					j <= 2'd0;
+					g <= 2'd0;
 					st <= S_IDLE;
-				else if (p_lw) begin
+				end else if (p_lw) begin
 					addr <= wb_addr_comb;
 					wb_row_base1 <= wb_row_base1_comb;
 					st <= S_LOOK;
@@ -534,6 +583,7 @@ module atg_rop_wb #(
 				end
 			S_LOOK: begin
 				off[r] <= addr[LINE_SHIFT-1:0];
+				off_p1[r] <= off_p1_comb;
 				if (hit)
 					line_in;
 				else if (ev[r] && edirty[r] != {LINE_BYTES{1'b0}}) begin
@@ -598,6 +648,9 @@ module atg_rop_wb #(
 					r <= 1'b1;
 					if (r) begin
 						idle <= 5'd0;
+						r <= 1'b0;
+						j <= 2'd0;
+						g <= 2'd0;
 						st <= S_IDLE;
 					end
 				end
@@ -622,7 +675,7 @@ module atg_rop_wb #(
 `endif
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, c_ps[0], (MRT_COUNT != 0),
-		wb_rb1_co, wb_addr_co};
+		wb_rb1_co, wb_addr_co, off_p1_co, tag_x0_co, tag_x1_co};
 endmodule
 
 `default_nettype wire

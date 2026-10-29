@@ -211,34 +211,33 @@ module atg_rop_blend #(
 	wire [3:0] lop_op_n = 4'd0;
 `endif
 
-	function [7:0] factor;
+	function [7:0] factor_nosat;
 		input [4:0] f;
-		input [7:0] sc, dc, kcc, sa, da, ka, s1c, s1a, sat_a;
-		input is_a;
+		input [7:0] sc, dc, kcc, sa, da, ka, s1c, s1a;
 		case (f)
-		5'd1: factor = 8'd255;
-		5'd2: factor = sc;
-		5'd3: factor = ~sc;
-		5'd4: factor = dc;
-		5'd5: factor = ~dc;
-		5'd6: factor = sa;
-		5'd7: factor = ~sa;
-		5'd8: factor = da;
-		5'd9: factor = ~da;
-		5'd10: factor = kcc;
-		5'd11: factor = ~kcc;
-		5'd12: factor = ka;
-		5'd13: factor = ~ka;
-		5'd14: factor = is_a ? 8'd255 : sat_a;
+		5'd1: factor_nosat = 8'd255;
+		5'd2: factor_nosat = sc;
+		5'd3: factor_nosat = ~sc;
+		5'd4: factor_nosat = dc;
+		5'd5: factor_nosat = ~dc;
+		5'd6: factor_nosat = sa;
+		5'd7: factor_nosat = ~sa;
+		5'd8: factor_nosat = da;
+		5'd9: factor_nosat = ~da;
+		5'd10: factor_nosat = kcc;
+		5'd11: factor_nosat = ~kcc;
+		5'd12: factor_nosat = ka;
+		5'd13: factor_nosat = ~ka;
+		5'd14: factor_nosat = 8'd255;
 `ifdef CFG_ROP_DUAL_SOURCE
-		5'd15: factor = s1c;
-		5'd16: factor = ~s1c;
-		5'd17: factor = s1a;
-		5'd18: factor = ~s1a;
+		5'd15: factor_nosat = s1c;
+		5'd16: factor_nosat = ~s1c;
+		5'd17: factor_nosat = s1a;
+		5'd18: factor_nosat = ~s1a;
 `else
-		5'd15, 5'd16, 5'd17, 5'd18: factor = (s1c ^ s1a) & 8'd0;
+		5'd15, 5'd16, 5'd17, 5'd18: factor_nosat = (s1c ^ s1a) & 8'd0;
 `endif
-		default: factor = 8'd0;
+		default: factor_nosat = 8'd0;
 		endcase
 	endfunction
 
@@ -355,7 +354,8 @@ module atg_rop_blend #(
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_l2
 		wire [7:0] sa_cur = s1[32 * gl + 24 +: 8];
 		wire [7:0] da_cur = d1[32 * gl + 24 +: 8];
-		wire [7:0] sat_a = (sa_cur < ~da_cur) ? sa_cur : ~da_cur;
+		(* max_fanout = 8 *) wire sat_cond = (sa_cur < ~da_cur);
+		wire [7:0] sat_a = sat_cond ? sa_cur : ~da_cur;
 		for (gc = 0; gc < 4; gc = gc + 1) begin : g_c2
 			wire [7:0] sc = s1[32 * gl + 8 * gc +: 8];
 			wire [7:0] dc = d1[32 * gl + 8 * gc +: 8];
@@ -370,8 +370,12 @@ module atg_rop_blend #(
 			wire [7:0] da = da_cur;
 			wire [4:0] f_s = gc == 3 ? {bl1[25], bl1[15:12]} : {bl1[23], bl1[4:1]};
 			wire [4:0] f_d = gc == 3 ? {bl1[26], bl1[19:16]} : {bl1[24], bl1[8:5]};
-			wire [7:0] fs = factor(f_s, sc, dc, kc1[8 * gc +: 8], sa, da, kc1[31:24], s1c, s1a, sat_a, gc == 3);
-			wire [7:0] fd = factor(f_d, sc, dc, kc1[8 * gc +: 8], sa, da, kc1[31:24], s1c, s1a, sat_a, gc == 3);
+			wire [7:0] fs_base = factor_nosat(f_s, sc, dc, kc1[8 * gc +: 8], sa, da, kc1[31:24], s1c, s1a);
+			wire [7:0] fd_base = factor_nosat(f_d, sc, dc, kc1[8 * gc +: 8], sa, da, kc1[31:24], s1c, s1a);
+			wire is_sat_s = (gc < 3) && (f_s == 5'd14);
+			wire is_sat_d = (gc < 3) && (f_d == 5'd14);
+			wire [7:0] fs = is_sat_s ? sat_a : fs_base;
+			wire [7:0] fd = is_sat_d ? sat_a : fd_base;
 			wire [15:0] pp2, qq2;
 			am_mul #(.AW(8), .BW(8), .LAT(1)) u_p (.clk(clk), .en(1'b1), .a(sc), .b(fs),
 				.p(pp2));
@@ -383,14 +387,15 @@ module atg_rop_blend #(
 
 	reg v2;
 	reg [127:0] s2, d2, o2;
-	(* max_fanout = 4 *) reg [2:0] op2 [0:3][0:3];
-	(* max_fanout = 4 *) reg op_sub2 [0:3][0:3];
-	(* max_fanout = 4 *) reg op_rsub2 [0:3][0:3];
-	(* max_fanout = 4 *) reg op_dq2 [0:3][0:3];
-	(* max_fanout = 4 *) reg bl_en2 [0:3][0:3];
-	(* max_fanout = 4 *) reg [3:0] wm2_arr [0:3];
-	(* max_fanout = 4 *) reg [2:0] fmt2_arr [0:3];
-	(* max_fanout = 4 *) reg [3:0] m2_arr [0:3];
+	(* EQUIVALENT_REGISTER_REMOVAL = "NO" *) reg [2:0] op2 [0:3][0:3];
+	(* EQUIVALENT_REGISTER_REMOVAL = "NO" *) reg op_sub2 [0:3][0:3];
+	(* EQUIVALENT_REGISTER_REMOVAL = "NO" *) reg op_rsub2_a [0:3][0:3];
+	(* EQUIVALENT_REGISTER_REMOVAL = "NO" *) reg op_rsub2_b [0:3][0:3];
+	(* EQUIVALENT_REGISTER_REMOVAL = "NO" *) reg op_dq2 [0:3][0:3];
+	(* EQUIVALENT_REGISTER_REMOVAL = "NO" *) reg bl_en2 [0:3][0:3];
+	reg [3:0] wm2_arr [0:3];
+	reg [2:0] fmt2_arr [0:3];
+	reg [3:0] m2_arr [0:3];
 `ifdef CFG_ROP_ENABLE_LOGICOP
 	reg lop_en2;
 	reg [3:0] lop_op2;
@@ -411,7 +416,8 @@ module atg_rop_blend #(
 			for (ic = 0; ic < 4; ic = ic + 1) begin
 				op2[il][ic] <= op1_vec[3 * ic +: 3];
 				op_sub2[il][ic] <= (op1_vec[3 * ic +: 3] == 3'd1) || (op1_vec[3 * ic +: 3] == 3'd2);
-				op_rsub2[il][ic] <= (op1_vec[3 * ic +: 3] == 3'd2);
+				op_rsub2_a[il][ic] <= (op1_vec[3 * ic +: 3] == 3'd2);
+				op_rsub2_b[il][ic] <= (op1_vec[3 * ic +: 3] == 3'd2);
 				op_dq2[il][ic] <= (op1_vec[3 * ic +: 3] != 3'd1) && (op1_vec[3 * ic +: 3] != 3'd2)
 				               && (op1_vec[3 * ic +: 3] != 3'd3) && (op1_vec[3 * ic +: 3] != 3'd4);
 				bl_en2[il][ic] <= bl_en1_vec[ic];
@@ -443,10 +449,11 @@ module atg_rop_blend #(
 			wire [15:0] qq = g_l2[gl].g_c2[gc].qq2;
 
 			wire op_sub = op_sub2[gl][gc];
-			wire is_rsub = op_rsub2[gl][gc];
+			wire is_rsub_a = op_rsub2_a[gl][gc];
+			wire is_rsub_b = op_rsub2_b[gl][gc];
 			wire op_dq = op_dq2[gl][gc];
-			wire [15:0] op_a = is_rsub ? qq : pp;
-			wire [15:0] op_b = is_rsub ? pp : qq;
+			wire [15:0] op_a = is_rsub_a ? qq : pp;
+			wire [15:0] op_b = is_rsub_b ? pp : qq;
 			wire [15:0] pq;
 			wire pq_co;
 			am_addsub #(.W(16)) u_pq (.a(op_a), .b(op_b), .sub(op_sub), .s(pq), .co(pq_co));
@@ -506,7 +513,7 @@ module atg_rop_blend #(
 			F_565: px_raw_bp = {o2[32 * gl + 16 +: 16], px16_bp};
 			default: px_raw_bp = o2[32 * gl +: 32];
 			endcase
-		wire [31:0] px_bp = m2 ? px_raw_bp : o2[32 * gl +: 32];
+		wire [31:0] bp_or_o2 = m2 ? px_raw_bp : o2[32 * gl +: 32];
 
 		wire [4:0] t5r_dq = g_c3[0].t5_dq;
 		wire [5:0] t6g_dq = g_c3[1].t6_dq;
@@ -540,10 +547,10 @@ module atg_rop_blend #(
 			default: sel_dq = 32'd0;
 			endcase
 		end
-		wire [31:0] eff_sel_dq = m2 ? sel_dq : 32'd0;
+		wire [31:0] px_sel = m2 ? sel_dq : 32'd0;
 		genvar gb;
 		for (gb = 0; gb < 32; gb = gb + 1) begin : g_mux
-			assign pix_n[32 * gl + gb] = eff_sel_dq[gb] ? px_dq[gb] : px_bp[gb];
+			assign pix_n[32 * gl + gb] = px_sel[gb] ? px_dq[gb] : bp_or_o2[gb];
 		end
 	end
 	endgenerate

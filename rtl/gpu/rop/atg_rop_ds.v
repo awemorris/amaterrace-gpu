@@ -198,6 +198,60 @@ module atg_rop_ds #(
 	wire [23:0] u24_final = u24_stage0_zero ? 24'd0 :
 	                        u24_stage0_max ? 24'hFFFFFF : u24_r;
 
+	/* Pipelined zun depth conversion */
+	wire [23:0] zun_c = depth_d24 ? test_stored[23:0] : {8'd0, test_stored[15:0]};
+	wire [79:0] zun_r = depth_d24 ? {zun_c, zun_c, zun_c, zun_c[23:16]} : {5{zun_c[15:0]}};
+	reg [4:0] zun_lz;
+	reg zun_found;
+	always @(*) begin
+		zun_found = 1'b1;
+		casez (zun_r[79:56])
+		24'b1???????????????????????: zun_lz = 5'd0;
+		24'b01??????????????????????: zun_lz = 5'd1;
+		24'b001?????????????????????: zun_lz = 5'd2;
+		24'b0001????????????????????: zun_lz = 5'd3;
+		24'b00001???????????????????: zun_lz = 5'd4;
+		24'b000001??????????????????: zun_lz = 5'd5;
+		24'b0000001?????????????????: zun_lz = 5'd6;
+		24'b00000001????????????????: zun_lz = 5'd7;
+		24'b000000001???????????????: zun_lz = 5'd8;
+		24'b0000000001??????????????: zun_lz = 5'd9;
+		24'b00000000001?????????????: zun_lz = 5'd10;
+		24'b000000000001????????????: zun_lz = 5'd11;
+		24'b0000000000001???????????: zun_lz = 5'd12;
+		24'b00000000000001??????????: zun_lz = 5'd13;
+		24'b000000000000001?????????: zun_lz = 5'd14;
+		24'b0000000000000001????????: zun_lz = 5'd15;
+		24'b00000000000000001???????: zun_lz = 5'd16;
+		24'b000000000000000001??????: zun_lz = 5'd17;
+		24'b0000000000000000001?????: zun_lz = 5'd18;
+		24'b00000000000000000001????: zun_lz = 5'd19;
+		24'b000000000000000000001???: zun_lz = 5'd20;
+		24'b0000000000000000000001??: zun_lz = 5'd21;
+		24'b00000000000000000000001?: zun_lz = 5'd22;
+		24'b000000000000000000000001: zun_lz = 5'd23;
+		default: begin
+			zun_lz = 5'd0;
+			zun_found = 1'b0;
+		end
+		endcase
+	end
+
+	wire [71:0] zun_mn;
+	am_shift #(.W(72), .SW(5)) u_zun_mn (.a(zun_r[79:8]), .amt(zun_lz), .left(1'b1), .arith(1'b0), .y(zun_mn));
+
+	reg [22:0] zun_s0_mn_hi;
+	reg zun_s0_round;
+	reg [4:0] zun_s0_lz;
+	reg zun_s0_found;
+
+	wire [23:0] zun_q;
+	wire [7:0] zun_e;
+	wire [1:0] zun_carry_unused;
+	am_add #(.W(24)) u_zun_q (.a({1'b0, zun_s0_mn_hi}), .b(24'd0), .ci(zun_s0_round), .s(zun_q), .co(zun_carry_unused[0]));
+	am_sub #(.W(8)) u_zun_e (.a(zun_q[23] ? 8'd127 : 8'd126), .b({3'd0, zun_s0_lz}), .bi(1'b0), .d(zun_e), .bo(zun_carry_unused[1]));
+	wire [31:0] zun_final = !zun_s0_found ? 32'd0 : {1'b0, zun_e, zun_q[23] ? 23'd0 : zun_q[22:0]};
+
 	/* the entry's byte in the line: (S x + s) ps from the row's address */
 	wire [2:0] ent = ms4 ? e : {2'b00, e[2]};
 	wire [LINE_SHIFT-1:0] bo;
@@ -299,6 +353,10 @@ module atg_rop_ds #(
 			u24_stage0_round <= 1'b0;
 			u24_stage0_zero <= 1'b0;
 			u24_stage0_max <= 1'b0;
+			zun_s0_mn_hi <= 23'd0;
+			zun_s0_round <= 1'b0;
+			zun_s0_lz <= 5'd0;
+			zun_s0_found <= 1'b0;
 			test_zun <= 32'd0;
 			test_zu24 <= 24'd0;
 			test_zu16 <= 16'd0;
@@ -381,10 +439,14 @@ module atg_rop_ds #(
 			                   (test_zl[30:23] == 8'hFF && test_zl[22:0] != 23'd0) ||
 			                   (test_zl[30:23] < 8'd102);
 			u24_stage0_max <= (test_zl[30:23] >= 8'd127);
+			zun_s0_mn_hi <= zun_mn[70:48];
+			zun_s0_round <= zun_mn[47] && (zun_mn[46:0] != 47'd0 || zun_mn[48]);
+			zun_s0_lz <= zun_lz;
+			zun_s0_found <= zun_found;
 			st <= S_TEST1;
 		end
 		S_TEST1: begin
-			test_zun <= conv_zun;
+			test_zun <= zun_final;
 			test_zu24 <= u24_final;
 			test_zu16 <= conv_zu16;
 			test_zkey <= conv_zkey;

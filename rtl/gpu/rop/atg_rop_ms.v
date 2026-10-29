@@ -128,9 +128,17 @@ module atg_rop_ms (
 			end
 		end
 	/* f is added the cycle after a write of either word */
+	reg zf_prep;
 	reg zf_go;
-	always @(posedge clk)
-		zf_go <= rst_n && vz_we;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			zf_prep <= 1'b0;
+			zf_go <= 1'b0;
+		end else begin
+			zf_prep <= vz_we;
+			zf_go <= zf_prep;
+		end
+	end
 
 	/* depth clamp: NaN to zmin */
 	function [31:0] zclamp;
@@ -183,7 +191,11 @@ module atg_rop_ms (
 	reg [127:0] z;
 	reg [127:0] ds;
 	reg [3:0] zexp;
-	wire [3:0] ci = c[3:0];	/* the add issued: lane ci[3:2], sample ci[1:0] */
+	reg [31:0] zs_pipe;
+	reg [3:0] co_pipe;
+	reg zs_pipe_en;
+	reg [31:0] fa_in_a;
+	reg [31:0] fa_in_b;
 	wire [3:0] co;	/* the result arriving: c - 4 */
 	wire [4:0] c1;	/* c + 1 */
 	wire co_bo_unused, c1_co_unused;
@@ -191,8 +203,8 @@ module atg_rop_ms (
 	am_add #(.W(5)) u_c1 (.a(c), .b(5'd0), .ci(1'b1), .s(c1), .co(c1_co_unused));
 	wire fa_o;
 	wire [31:0] fa_r;
-	am_fp_add #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid((st == S_Z && c < 5'd16) || zf_go),
-		.i_a(zf_go ? vzo : z[32 * ci[3:2] +: 32]), .i_b(zf_go ? vzs : ds[32 * ci[1:0] +: 32]),
+	atg_rop_fadd #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid((st == S_Z && c < 5'd16) || zf_go),
+		.i_a(fa_in_a), .i_b(fa_in_b),
 		.i_sub(1'b0), .o_valid(fa_o), .o_r(fa_r));
 	/* earlier: clamp01; DEPTH_CLAMP[1]: as added */
 	wire [31:0] zcl = !dc[1] ? (fa_r[31] || (fa_r[30:23] == 8'hFF && fa_r[22:0] != 23'd0) ? 32'd0 :
@@ -222,65 +234,84 @@ module atg_rop_ms (
 			o_beat <= 5'd0;
 			c <= 5'd0;
 			drop <= 1'b0;
-		end else case (st)
-		S_IDLE:
-			if (i_valid && !first) begin
-				/* a later beat: the quad's coverage and depths stay */
-				o_xy <= i_xy;
-				o_dbg <= i_dbg;
-				o_beat <= {i_aux[154:152], i_aux[149], 1'b0};
-				o_color <= i_color;
-				o_color1 <= i_color1;
-				if (a2one && !i_dbg)
-					for (l = 0; l < 4; l = l + 1)
-						o_color[128 * l + 96 +: 32] <= ONE;
-				if (!drop) begin
+			zs_pipe <= 32'd0;
+			co_pipe <= 4'd0;
+			zs_pipe_en <= 1'b0;
+			fa_in_a <= 32'd0;
+			fa_in_b <= 32'd0;
+		end else begin
+			if (zf_prep) begin
+				fa_in_a <= vzo;
+				fa_in_b <= vzs;
+			end
+			case (st)
+			S_IDLE:
+				if (i_valid && !first) begin
+					/* a later beat: the quad's coverage and depths stay */
+					o_xy <= i_xy;
+					o_dbg <= i_dbg;
+					o_beat <= {i_aux[154:152], i_aux[149], 1'b0};
+					o_color <= i_color;
+					o_color1 <= i_color1;
+					if (a2one && !i_dbg)
+						for (l = 0; l < 4; l = l + 1)
+							o_color[128 * l + 96 +: 32] <= ONE;
+					if (!drop) begin
+						o_valid <= 1'b1;
+						st <= S_OUT;
+					end
+				end else if (i_valid) begin
+					drop <= sm == 16'd0;
+					o_xy <= i_xy;
+					o_smask <= sm;
+					o_dbg <= i_dbg;
+					o_front <= i_aux[148];
+					o_beat <= {i_aux[154:152], i_aux[149], 1'b1};
+					o_color <= i_color;
+					o_color1 <= i_color1;
+					if (a2one && !i_dbg)
+						for (l = 0; l < 4; l = l + 1)
+							o_color[128 * l + 96 +: 32] <= ONE;
+					z <= i_depth;
+					ds <= i_aux[147:20];
+					fa_in_a <= i_depth[31:0];
+					fa_in_b <= i_aux[20 +: 32];
+					zexp <= i_aux[19:16];
+					c <= 5'd0;
+					o_sdepth <= 512'd0;
+					zs_pipe_en <= 1'b0;
+					if (sm == 16'd0)
+						st <= S_IDLE;
+					else if (ms4)
+						st <= S_Z;
+					else begin
+						for (l = 0; l < 4; l = l + 1)
+							o_sdepth[128 * l +: 32] <= d1c[32 * l +: 32];
+						o_valid <= 1'b1;
+						st <= S_OUT;
+					end
+				end
+			S_Z: begin
+				c <= c1;
+				fa_in_a <= z[32 * c1[3:2] +: 32];
+				fa_in_b <= ds[32 * c1[1:0] +: 32];
+				zs_pipe <= zs4c;
+				co_pipe <= co;
+				zs_pipe_en <= (c >= 5'd4);
+				if (zs_pipe_en)
+					o_sdepth[32 * co_pipe +: 32] <= zs_pipe;
+				if (c == 5'd20) begin
 					o_valid <= 1'b1;
 					st <= S_OUT;
 				end
-			end else if (i_valid) begin
-				drop <= sm == 16'd0;
-				o_xy <= i_xy;
-				o_smask <= sm;
-				o_dbg <= i_dbg;
-				o_front <= i_aux[148];
-				o_beat <= {i_aux[154:152], i_aux[149], 1'b1};
-				o_color <= i_color;
-				o_color1 <= i_color1;
-				if (a2one && !i_dbg)
-					for (l = 0; l < 4; l = l + 1)
-						o_color[128 * l + 96 +: 32] <= ONE;
-				z <= i_depth;
-				ds <= i_aux[147:20];
-				zexp <= i_aux[19:16];
-				c <= 5'd0;
-				o_sdepth <= 512'd0;
-				if (sm == 16'd0)
+			end
+			default:	/* S_OUT */
+				if (o_ready) begin
+					o_valid <= 1'b0;
 					st <= S_IDLE;
-				else if (ms4)
-					st <= S_Z;
-				else begin
-					for (l = 0; l < 4; l = l + 1)
-						o_sdepth[128 * l +: 32] <= d1c[32 * l +: 32];
-					o_valid <= 1'b1;
-					st <= S_OUT;
 				end
-			end
-		S_Z: begin
-			c <= c1;
-			if (c >= 5'd4)
-				o_sdepth[32 * co +: 32] <= zs4c;
-			if (c == 5'd19) begin
-				o_valid <= 1'b1;
-				st <= S_OUT;
-			end
+			endcase
 		end
-		default:	/* S_OUT */
-			if (o_ready) begin
-				o_valid <= 1'b0;
-				st <= S_IDLE;
-			end
-		endcase
 	end
 
 	wire unused_ok = &{1'b0, st_wdata[31:10], st_wdata[7:4], fa_o};
