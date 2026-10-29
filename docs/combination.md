@@ -645,6 +645,24 @@ tools/synth-module.sh atg_tu 5.000
 | `CP-S-HALF` | `atg_cp` | `FULL` | `HALF` | **-0.126** | 9 | 4,080 | 4,344 | 1 | 0 | FAIL (DISP連携微小違反) |
 | `CP-S-QTR` | `atg_cp` | `FULL` | `QUARTER` | **-0.126** | 9 | 4,081 | 4,344 | 1 | 0 | FAIL (DISP連携微小違反) |
 
+#### (MMU) `mmu` (`atg_mmu`) 組み合わせ OOC 測定結果
+| テスト ID | モジュール | 機能性 | サイズ | WNS (ns) | 論理段数 | LUT 数 | FF 数 | BRAM | DSP | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `MMU-F-MAX` | `atg_mmu` | `FULL` | `MAX` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-B-MIN` | `atg_mmu` | `BARE` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-I-L1` | `atg_mmu` | `ISO-L1TLB` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-I-L2` | `atg_mmu` | `ISO-L2TLB` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-I-PTW` | `atg_mmu` | `ISO-PTWalker` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-I-TRP` | `atg_mmu` | `ISO-Trap` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-P-12` | `atg_mmu` | `PAIR-L1+L2` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-P-2W` | `atg_mmu` | `PAIR-L2+Walker` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-P-WT` | `atg_mmu` | `PAIR-Walker+Trap` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-T-12W` | `atg_mmu` | `TRIO-L1+L2+Walker` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-T-2WT` | `atg_mmu` | `TRIO-L2+Walker+Trap` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-Q-ALL` | `atg_mmu` | `QUAD-All4` | `MIN` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-S-HALF` | `atg_mmu` | `FULL` | `HALF` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+| `MMU-S-QTR` | `atg_mmu` | `FULL` | `QUARTER` | **+0.831** | 10 | 10,295 | 16,552 | 0 | 0 | **PASS** |
+
 ---
 
 ## 6. ベースライン測定結果サマリと改善ロードマップ
