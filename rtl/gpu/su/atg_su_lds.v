@@ -256,11 +256,10 @@ module atg_su_lds #(
 	assign scrub_busy = sc_on;
 	wire ram_we = sc_on || st == ACCESS && !aread && lane_on && (rsts || ratom);
 	wire [AW-1:0] ram_wa = sc_on ? sc_a : a;
-	wire sel_asum = ratom && is_addsub && !sc_on;
-	wire [31:0] other_wd = sc_on ? 32'd0 : (!ratom) ? cur_rdat : anew_other;
 	(* keep = "true" *) wire [31:0] w_asum = asum;
-	(* keep = "true" *) wire [31:0] w_other = other_wd;
-	wire [31:0] ram_wd = sel_asum ? w_asum : w_other;
+	(* keep = "true" *) wire [31:0] w_other = anew_other;
+	wire [31:0] w_atom = is_addsub ? w_asum : w_other;
+	wire [31:0] ram_wd = sc_on ? 32'd0 : (ratom ? w_atom : cur_rdat);
 
 	always @(posedge clk)
 		if (ram_we)

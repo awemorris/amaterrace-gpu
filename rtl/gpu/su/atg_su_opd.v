@@ -158,7 +158,6 @@ module atg_su_opd #(
 	wire a_pass_done = (!a_wide || a_pass) && a_step_done;
 	wire a_last = ({{(32-GRP_W){1'b0}}, a_grp} == G - 1) && a_pass_done;
 	assign i_ready = !a_act || (a_adv && a_last);
-	wire take = i_valid && i_ready;
 
 	/* Operand numbers; operand 3 is rs1+1 for the PAIR instructions;
 	 * operands 1 and 3 are rs3 and rs3+1 on a second pass. */
@@ -306,12 +305,10 @@ module atg_su_opd #(
 				a_uop <= i_uop;
 				a_sbe <= i_sbe;
 			end
-			if (take) begin
-				a_act <= 1'b1;
-				a_grp <= {GRP_W{1'b0}};
-				a_step <= 1'b0;
-				a_pass <= 1'b0;
-			end else if (a_adv) begin
+			if (i_ready) begin
+				a_act <= i_valid;
+			end
+			if (a_adv) begin
 				if (a_needs_step1 && !a_step) begin
 					a_step <= 1'b1;
 				end else begin
@@ -321,7 +318,7 @@ module atg_su_opd #(
 					end else begin
 						a_pass <= 1'b0;
 						if (a_last)
-							a_act <= 1'b0;
+							a_grp <= {GRP_W{1'b0}};
 						else
 							a_grp <= a_grp_next;
 					end

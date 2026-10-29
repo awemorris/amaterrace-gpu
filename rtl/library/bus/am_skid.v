@@ -37,6 +37,9 @@ module am_skid #(
 	(* max_fanout = 24 *) reg [WIDTH-1:0] skid_data;
 	reg skid_valid;
 
+	wire load_out = skid_valid ? out_ready : (in_valid && (out_ready || !out_valid));
+	wire [WIDTH-1:0] next_out = skid_valid ? skid_data : in_data;
+
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			in_ready   <= 1'b1;
@@ -48,20 +51,19 @@ module am_skid #(
 			if (skid_valid) begin
 				if (out_ready) begin
 					out_valid  <= 1'b1;
-					out_data   <= skid_data;
 					skid_valid <= 1'b0;
 					in_ready   <= 1'b1;
 				end
 			end else begin
 				if (out_ready || !out_valid) begin
 					out_valid <= in_valid;
-					if (in_valid) begin
-						out_data <= in_data;
-					end
 				end else if (in_valid && in_ready) begin
 					skid_valid <= 1'b1;
 					in_ready   <= 1'b0;
 				end
+			end
+			if (load_out) begin
+				out_data <= next_out;
 			end
 			if (in_valid && in_ready) begin
 				skid_data <= in_data;
