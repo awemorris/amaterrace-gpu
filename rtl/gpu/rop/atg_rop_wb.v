@@ -98,7 +98,7 @@ module atg_rop_wb #(
 	wire [LINE_BYTES-1:0] edirty0 = edirty[0], edirty1 = edirty[1];
 
 	localparam [3:0] S_IDLE = 4'd0, S_ROW = 4'd1, S_LOOK = 4'd2, S_EVW = 4'd3, S_FILL = 4'd4,
-		S_BLEND = 4'd5, S_BWAIT = 4'd6, S_FLUSH = 4'd7, S_FLW = 4'd8;
+		S_BLEND = 4'd5, S_BWAIT = 4'd6, S_FLUSH = 4'd7, S_FLW = 4'd8, S_ROW_WAIT = 4'd9;
 	reg [3:0] st;
 	reg r;	/* row / entry */
 	reg [1:0] j;	/* line of the row (several lines) */
@@ -122,35 +122,104 @@ module atg_rop_wb #(
 
 	/* The pixels (atg_rop_wpix). */
 	wire [31:0] p_addr, p_addr1;
+	wire [31:0] p_row_base0, p_row_base1, p_stride, p_xoff_j;
 	wire [1:0] p_nl, p_np, p_path;
 	wire p_multi, p_drop, p_read, p_lw, f_done;
 	wire [3:0] p_mask, p_ent;
 	wire [511:0] p_res;
 	wire [4*LINE_SHIFT-1:0] p_soff;
 	wire [4:0] p_ps;
+	wire [31:0] p_xoff;
+	wire [2:0] p_xsh;
 	wire f_take = st == S_BWAIT && p_path == 2'd1 && f_done;
 
+	reg [31:0] wb_row_base0, wb_row_base1;
+	wire [31:0] wb_row_base1_comb;
+	wire wb_rb1_co;
+	am_add #(.W(32)) u_wb_rb1 (.a(wb_row_base0), .b(p_stride), .ci(1'b0), .s(wb_row_base1_comb), .co(wb_rb1_co));
+	wire [31:0] cur_row_base = r ? wb_row_base1 : wb_row_base0;
+	wire [31:0] wb_addr_comb;
+	wire wb_addr_co;
+	am_add #(.W(32)) u_wb_addr (.a(cur_row_base), .b(p_xoff_j), .ci(1'b0), .s(wb_addr_comb), .co(wb_addr_co));
+
 	wire [31:0] eff_xy = (st == S_IDLE) ? d_xy : xy;
-	wire [2:0] eff_rt = (st == S_IDLE) ? d_rt : rt;
 	wire [15:0] eff_mask = (st == S_IDLE) ? d_smask : mask;
 	wire [511:0] eff_color = (st == S_IDLE) ? d_color : color;
 	wire eff_r = (st == S_IDLE) ? 1'b0 : r;
 	wire [1:0] eff_j = (st == S_IDLE) ? 2'd0 : j;
 	wire [1:0] eff_g = (st == S_IDLE) ? 2'd0 : g;
-	wire [LINE_SHIFT-1:0] cur_off0 = p_addr[LINE_SHIFT-1:0];
-	wire [LINE_SHIFT-1:0] cur_off1 = p_addr1[LINE_SHIFT-1:0];
+
+	/* Line Tracking and Cached Row Base */
+	reg line_match_valid;
+	reg [2:0] line_rt;
+	reg [15:0] line_y;
+	reg [31:0] cached_row_base0;
+	reg [31:0] cached_row_base1;
+	reg [2:0] cached_xsh;
+	(* max_fanout = 4 *) reg [2:0] cached_xsh_off;
+	reg cached_drop;
+	reg cached_multi;
+	reg [1:0] cached_np;
+	reg [1:0] cached_path;
+	reg cached_read;
+	reg [4:0] cached_ps;
+
+	/* Streaming address and offset calculation */
+	wire [31:0] str_xoff;
+	am_shift #(.W(32), .SW(3)) u_str_xoff (
+		.a({16'd0, d_xy[15:0]}),
+		.amt(cached_xsh),
+		.left(1'b1),
+		.arith(1'b0),
+		.y(str_xoff)
+	);
+
+	wire [LA_W-1:0] str_tag0, str_tag1;
+	wire str_a0_co, str_a1_co;
+	am_add #(.W(LA_W)) u_str_a0 (.a(cached_row_base0[ADDR_W-1:LINE_SHIFT]), .b(str_xoff[ADDR_W-1:LINE_SHIFT]), .ci(1'b0), .s(str_tag0), .co(str_a0_co));
+	am_add #(.W(LA_W)) u_str_a1 (.a(cached_row_base1[ADDR_W-1:LINE_SHIFT]), .b(str_xoff[ADDR_W-1:LINE_SHIFT]), .ci(1'b0), .s(str_tag1), .co(str_a1_co));
+
+	/* Fast line-offset calculation for streaming */
+	wire [LINE_SHIFT-1:0] str_line_off;
+	am_shift #(.W(LINE_SHIFT), .SW(3)) u_str_loff (
+		.a(d_xy[LINE_SHIFT-1:0]),
+		.amt(cached_xsh_off),
+		.left(1'b1),
+		.arith(1'b0),
+		.y(str_line_off)
+	);
+
+	wire [LINE_SHIFT-1:0] cur_off0 = str_line_off;
+	wire [LINE_SHIFT-1:0] cur_off1 = str_line_off;
+
 	wire [LINE_SHIFT-1:0] eff_off0 = (st == S_IDLE) ? cur_off0 : off[0];
 	wire [LINE_SHIFT-1:0] eff_off1 = (st == S_IDLE) ? cur_off1 : off[1];
 
+
+
+	wire [511:0] p_bsrc;
+	wire [127:0] p_bdst;
+	reg [511:0] r_bsrc;
+	reg [127:0] r_bdst;
+	reg [3:0] r_bmask;
+	reg [4*LINE_SHIFT-1:0] r_bsoff;
+	reg [3:0] r_bent;
+	reg [4:0] r_bps;
+	assign b_src = (st == S_IDLE) ? d_color : r_bsrc;
+	assign b_dst = (st == S_IDLE) ? p_bdst : r_bdst;
+
 	atg_rop_wpix #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) wpix (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-		.i_xy(eff_xy), .i_rt(eff_rt), .i_smask(eff_mask), .i_color(eff_color),
+		.i_xy(eff_xy), .i_rt(rt), .i_smask(eff_mask), .i_color(eff_color),
 		.i_r(eff_r), .i_j(eff_j), .i_g(eff_g),
 		.i_line0(edat0), .i_line1(edat1), .i_off0(eff_off0), .i_off1(eff_off1),
 		.b_pix(b_pix), .f_go(f_go), .f_done(f_done), .f_take(f_take),
 		.o_addr(p_addr), .o_addr1(p_addr1), .o_nl(p_nl), .o_np(p_np), .o_multi(p_multi), .o_drop(p_drop),
-		.o_read(p_read), .o_path(p_path), .o_lw(p_lw), .o_mask(p_mask), .o_bsrc(b_src),
-		.o_bdst(b_dst), .o_res(p_res), .o_ent(p_ent), .o_soff(p_soff), .o_ps(p_ps)
+		.o_read(p_read), .o_path(p_path), .o_lw(p_lw), .o_mask(p_mask), .o_bsrc(p_bsrc),
+		.o_bdst(p_bdst), .o_res(p_res), .o_ent(p_ent), .o_soff(p_soff), .o_ps(p_ps),
+		.o_row_base0(p_row_base0), .o_row_base1(p_row_base1),
+		.o_xoff(p_xoff), .o_xsh(p_xsh),
+		.o_stride(p_stride), .o_xoff_j(p_xoff_j)
 	);
 
 	/* Hazard Tracker and Pixel Lock CAM */
@@ -160,13 +229,13 @@ module atg_rop_wb #(
 	reg [3:0] release_id;
 
 	/* Cache Hit Detection and Streaming Qualification */
-	wire [LA_W-1:0] tag0 = p_addr[ADDR_W-1:LINE_SHIFT];
-	wire [LA_W-1:0] tag1 = p_addr1[ADDR_W-1:LINE_SHIFT];
-	wire hit0 = ev[0] && (etag[0] == tag0) && (erd[0] || !p_read);
-	wire hit1 = ev[1] && (etag[1] == tag1) && (erd[1] || !p_read);
-	wire stream_hit = hit0 && hit1;
-	wire stream_drop = p_drop || d_nocol || (d_smask == 16'd0);
-	wire stream_ok = stream_hit && !p_multi && (p_np == 2'd0) && (p_path == 2'd0) && alloc_ready;
+	wire hit_rt = (d_rt == line_rt);
+	wire hit_y = (d_xy[31:16] == line_y);
+	wire hit0 = ev[0] && (etag[0] == str_tag0) && (erd[0] || !cached_read);
+	wire hit1 = ev[1] && (etag[1] == str_tag1) && (erd[1] || !cached_read);
+	wire stream_hit = line_match_valid && hit_rt && hit_y && hit0 && hit1;
+	wire stream_drop = (hit_rt && cached_drop) || d_nocol || (d_smask == 16'd0);
+	wire stream_ok = stream_hit && !cached_multi && (cached_np == 2'd0) && (cached_path == 2'd0) && alloc_ready;
 	wire do_stream = (st == S_IDLE) && d_valid && stream_ok && !stream_drop;
 
 	/* Pipeline shift register (3 stages for atg_rop_blend LAT=3) */
@@ -192,9 +261,10 @@ module atg_rop_wb #(
 		.release_id(release_id)
 	);
 
-	assign b_valid = (st == S_IDLE) ? (do_stream && (p_mask != 4'd0)) : fsm_b_valid;
-	assign b_mask = p_mask;
-	assign b_rt = eff_rt;
+	wire [3:0] s0_mask = {d_smask[12], d_smask[8], d_smask[4], d_smask[0]};
+	assign b_valid = (st == S_IDLE) ? do_stream : fsm_b_valid;
+	assign b_mask = (st == S_IDLE) ? s0_mask : r_bmask;
+	assign b_rt = rt;
 	wire p_ready = p_path == 2'd2 || (p_path == 2'd0 && b_rvalid) || f_done;
 	wire hit = ev[r] && etag[r] == addr[ADDR_W-1:LINE_SHIFT] && (erd[r] || !p_read);
 	integer l, b;
@@ -248,6 +318,21 @@ module atg_rop_wb #(
 				st <= r ? S_BLEND : S_ROW;
 				r <= 1'b1;
 				g <= 2'd0;
+				if (r && !p_multi) begin
+					line_match_valid <= 1'b1;
+					line_rt <= rt;
+					line_y <= xy[31:16];
+					cached_row_base0 <= wb_row_base0;
+					cached_row_base1 <= wb_row_base1;
+					cached_xsh <= p_xsh;
+					cached_xsh_off <= p_xsh;
+					cached_drop <= p_drop;
+					cached_multi <= p_multi;
+					cached_np <= p_np;
+					cached_path <= p_path;
+					cached_read <= p_read;
+					cached_ps <= p_ps;
+				end
 			end
 		end
 	endtask
@@ -275,10 +360,10 @@ module atg_rop_wb #(
 	 * its byte (byte b: b mod 16), and each byte of an entry chooses among
 	 * the four slots only. */
 	wire stream_commit = pipe_v[2] && b_rvalid;
-	wire [3:0] c_mask = stream_commit ? pipe_mask[2] : p_mask;
-	wire [4*LINE_SHIFT-1:0] c_soff = stream_commit ? pipe_soff[2] : p_soff;
-	wire [3:0] c_ent = stream_commit ? pipe_ent[2] : p_ent;
-	wire [4:0] c_ps = stream_commit ? pipe_ps[2] : p_ps;
+	wire [3:0] c_mask = stream_commit ? pipe_mask[2] : r_bmask;
+	wire [4*LINE_SHIFT-1:0] c_soff = stream_commit ? pipe_soff[2] : r_bsoff;
+	wire [3:0] c_ent = stream_commit ? pipe_ent[2] : r_bent;
+	wire [4:0] c_ps = stream_commit ? pipe_ps[2] : r_bps;
 	wire [511:0] c_res = stream_commit ?
 		{96'd0, b_pix[96 +: 32], 96'd0, b_pix[64 +: 32], 96'd0, b_pix[32 +: 32], 96'd0, b_pix[0 +: 32]} : p_res;
 
@@ -337,6 +422,27 @@ module atg_rop_wb #(
 			erd[1] <= 1'b0;
 			edirty[0] <= {LINE_BYTES{1'b0}};
 			edirty[1] <= {LINE_BYTES{1'b0}};
+			line_match_valid <= 1'b0;
+			line_rt <= 3'd0;
+			line_y <= 16'd0;
+			wb_row_base0 <= 32'd0;
+			wb_row_base1 <= 32'd0;
+			r_bsrc <= 512'd0;
+			r_bdst <= 128'd0;
+			r_bmask <= 4'd0;
+			r_bsoff <= {4*LINE_SHIFT{1'b0}};
+			r_bent <= 4'd0;
+			r_bps <= 5'd0;
+			cached_row_base0 <= 32'd0;
+			cached_row_base1 <= 32'd0;
+			cached_xsh <= 3'd0;
+			cached_xsh_off <= 3'd0;
+			cached_drop <= 1'b0;
+			cached_multi <= 1'b0;
+			cached_np <= 2'd0;
+			cached_path <= 2'd0;
+			cached_read <= 1'b0;
+			cached_ps <= 5'd0;
 			idle <= 5'd0;
 			rt <= 3'd0;
 			pipe_v <= 3'd0;
@@ -344,6 +450,8 @@ module atg_rop_wb #(
 			release_id <= 4'd0;
 		end else begin
 			release_valid <= 1'b0;
+			if (st_we)
+				line_match_valid <= 1'b0;
 			pipe_v[0] <= do_stream;
 			pipe_v[1] <= pipe_v[0];
 			pipe_v[2] <= pipe_v[1];
@@ -351,9 +459,9 @@ module atg_rop_wb #(
 			if (do_stream) begin
 				pipe_id[0] <= alloc_id;
 				pipe_soff[0] <= p_soff;
-				pipe_mask[0] <= p_mask;
-				pipe_ent[0] <= p_ent;
-				pipe_ps[0] <= p_ps;
+				pipe_mask[0] <= s0_mask;
+				pipe_ent[0] <= 4'b1100;
+				pipe_ps[0] <= cached_ps;
 			end
 			if (pipe_v[0]) begin
 				pipe_id[1] <= pipe_id[0];
@@ -380,7 +488,8 @@ module atg_rop_wb #(
 			end
 
 			case (st)
-			S_IDLE:
+			S_IDLE: begin
+				rt <= line_rt;
 				if (d_valid && d_ready) begin
 					idle <= 5'd0;
 					if (stream_drop) begin
@@ -395,8 +504,9 @@ module atg_rop_wb #(
 						r <= 1'b0;
 						j <= 2'd0;
 						g <= 2'd0;
+						line_match_valid <= 1'b0;
 						if (!d_nocol)
-							st <= S_ROW;
+							st <= S_ROW_WAIT;
 					end
 				end else if (!pipe_busy) begin
 					if (idle != 5'd16)
@@ -406,14 +516,22 @@ module atg_rop_wb #(
 						st <= S_FLUSH;
 					end
 				end
+			end
+			S_ROW_WAIT: begin
+				wb_row_base0 <= p_row_base0;
+				st <= S_ROW;
+			end
 			S_ROW:
 				if (p_drop)
 					st <= S_IDLE;
 				else if (p_lw) begin
-					addr <= p_addr;
+					addr <= wb_addr_comb;
+					wb_row_base1 <= wb_row_base1_comb;
 					st <= S_LOOK;
-				end else
+				end else begin
+					wb_row_base1 <= wb_row_base1_comb;
 					next_row;
+				end
 			S_LOOK: begin
 				off[r] <= addr[LINE_SHIFT-1:0];
 				if (hit)
@@ -427,13 +545,15 @@ module atg_rop_wb #(
 					st <= S_FILL;
 				end
 			end
-			S_EVW:
+			S_EVW: begin
+				line_match_valid <= 1'b0;
 				if (!req_valid && !wait_rsp) begin
 					edirty[r] <= {LINE_BYTES{1'b0}};
 					if (p_read)
 						rq(1'b0, addr[ADDR_W-1:LINE_SHIFT], {LINE_BYTES{1'b0}}, edat[r]);
 					st <= S_FILL;
 				end
+			end
 			S_FILL:
 				/* the line (read when needed; its response arrives with rsp_valid) */
 				if (!p_read || (!req_valid && wait_rsp && rsp_valid)) begin
@@ -449,6 +569,12 @@ module atg_rop_wb #(
 				if (p_mask == 4'd0)
 					pass_done;
 				else begin
+					r_bsrc <= p_bsrc;
+					r_bdst <= p_bdst;
+					r_bmask <= p_mask;
+					r_bsoff <= p_soff;
+					r_bent <= p_ent;
+					r_bps <= p_ps;
 					fsm_b_valid <= p_path == 2'd0;
 					f_go <= p_path == 2'd1;
 					st <= S_BWAIT;
@@ -461,7 +587,8 @@ module atg_rop_wb #(
 					edirty[1] <= m_dirty1;
 					pass_done;
 				end
-			S_FLUSH:
+			S_FLUSH: begin
+				line_match_valid <= 1'b0;
 				/* entry r: write its dirty bytes, then empty it */
 				if (ev[r] && edirty[r] != {LINE_BYTES{1'b0}}) begin
 					rq(1'b1, etag[r], edirty[r], edat[r]);
@@ -474,6 +601,7 @@ module atg_rop_wb #(
 						st <= S_IDLE;
 					end
 				end
+			end
 			default:	/* S_FLW */
 				if (!req_valid && !wait_rsp) begin
 					edirty[r] <= {LINE_BYTES{1'b0}};
@@ -493,7 +621,8 @@ module atg_rop_wb #(
 			$display("FAIL atg_rop_wb: attachment %0d row at %h crosses a line", rt, p_addr);
 `endif
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, c_ps[0], (MRT_COUNT != 0)};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, c_ps[0], (MRT_COUNT != 0),
+		wb_rb1_co, wb_addr_co};
 endmodule
 
 `default_nettype wire

@@ -268,6 +268,7 @@ module atg_su #(
 	wire [1:0] wc_op;
 	wire [15:0] wc_pc;
 	wire [WARP_W-1:0] q_warp;
+	wire [WARP_W-1:0] a_q_warp;
 	wire [159:0] q_info;
 	wire [31:0] q_exec, q_killed;
 	wire init_valid;
@@ -454,7 +455,7 @@ module atg_su #(
 		.fb_valid(r_fb_valid), .fb_warp(r_fb_warp), .fb_kind(r_fb_kind), .wake(wake),
 		.warp_ready(warp_ready),
 		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
-		.q_warp(q_warp), .q_info(q_info),
+		.q_warp(a_q_warp), .q_info(q_info),
 		.init_valid(init_valid), .init_warp(init_warp), .init_mask(init_mask),
 		.pt_ok(pt_ok), .xr_valid(xr_valid), .xr_warp(xr_warp), .busy(sched_busy)
 	);
@@ -570,6 +571,11 @@ module atg_su #(
 	wire [DW-1:0] fwd_wb_data = w_data;
 	wire [NPHYS-1:0] fwd_wb_lanes = w_lanes;
 
+	wire alu_fwd_ex3_valid;
+	wire [WARP_W-1:0] alu_fwd_ex3_warp;
+	wire [GRP_W-1:0] alu_fwd_ex3_grp;
+	wire [6:0] alu_fwd_ex3_rd;
+
 	atg_su_opd #(
 		.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
 		.WARP_BASE(SU_INDEX * NWARPS)
@@ -580,12 +586,14 @@ module atg_su #(
 		.r_en(r_en), .r_warp(r_warp), .r_grp(r_grp), .r_regs(r_regs),
 		.r_data({r_data2, r_data1}),
 		.cr_en(cr_en), .cr_idx(cr_idx), .cr_data(cr_data),
-		.q_warp(q_warp), .q_info(q_info), .q_exec(q_exec), .q_killed(q_killed),
+		.a_q_warp(a_q_warp), .q_warp(q_warp), .q_info(q_info), .q_exec(q_exec), .q_killed(q_killed),
 		.rq_pop(rq_pop), .rq_data(rq_pop_data),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
 		.x_info(x_info),
 		.unit_ready(unit_ready),
+		.fwd_alu_ex3_valid(alu_fwd_ex3_valid), .fwd_alu_ex3_warp(alu_fwd_ex3_warp), .fwd_alu_ex3_grp(alu_fwd_ex3_grp),
+		.fwd_alu_ex3_rd(alu_fwd_ex3_rd),
 		.fwd_alu_ex4_valid(alu_fwd_ex4_valid), .fwd_alu_ex4_warp(alu_fwd_ex4_warp), .fwd_alu_ex4_grp(alu_fwd_ex4_grp),
 		.fwd_alu_ex4_rd(alu_fwd_ex4_rd), .fwd_alu_ex4_data(alu_fwd_ex4_data), .fwd_alu_ex4_lanes(alu_fwd_ex4_lanes),
 		.fwd_alu_ex5_valid(alu_fwd_ex5_valid), .fwd_alu_ex5_warp(alu_fwd_ex5_warp), .fwd_alu_ex5_grp(alu_fwd_ex5_grp),
@@ -605,6 +613,8 @@ module atg_su #(
 		.x_info(x_info), .x_ready(alu_ready),
 		.s_valid(alu_s_valid), .s_warp(alu_s_warp), .s_grp(alu_s_grp), .s_rd(alu_s_rd),
 		.s_data(alu_s_data), .s_lanes(alu_s_lanes),
+		.fwd_ex3_valid(alu_fwd_ex3_valid), .fwd_ex3_warp(alu_fwd_ex3_warp), .fwd_ex3_grp(alu_fwd_ex3_grp),
+		.fwd_ex3_rd(alu_fwd_ex3_rd),
 		.fwd_ex4_valid(alu_fwd_ex4_valid), .fwd_ex4_warp(alu_fwd_ex4_warp), .fwd_ex4_grp(alu_fwd_ex4_grp),
 		.fwd_ex4_rd(alu_fwd_ex4_rd), .fwd_ex4_data(alu_fwd_ex4_data), .fwd_ex4_lanes(alu_fwd_ex4_lanes),
 		.fwd_ex5_valid(alu_fwd_ex5_valid), .fwd_ex5_warp(alu_fwd_ex5_warp), .fwd_ex5_grp(alu_fwd_ex5_grp),

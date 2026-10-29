@@ -87,6 +87,10 @@ module atg_su_pipe #(
 	wire [6:0] alu_s_rd;
 	wire [NPHYS*32-1:0] alu_s_data;
 	wire [NPHYS-1:0] alu_s_lanes;
+	wire alu_fwd_ex3_valid;
+	wire [WARP_W-1:0] alu_fwd_ex3_warp;
+	wire [GRP_W-1:0] alu_fwd_ex3_grp;
+	wire [6:0] alu_fwd_ex3_rd;
 	wire alu_fwd_ex4_valid, alu_fwd_ex5_valid;
 	wire [WARP_W-1:0] alu_fwd_ex4_warp, alu_fwd_ex5_warp;
 	wire [GRP_W-1:0] alu_fwd_ex4_grp, alu_fwd_ex5_grp;
@@ -125,6 +129,10 @@ module atg_su_pipe #(
 		.s_rd(alu_s_rd),
 		.s_data(alu_s_data),
 		.s_lanes(alu_s_lanes),
+		.fwd_ex3_valid(alu_fwd_ex3_valid),
+		.fwd_ex3_warp(alu_fwd_ex3_warp),
+		.fwd_ex3_grp(alu_fwd_ex3_grp),
+		.fwd_ex3_rd(alu_fwd_ex3_rd),
 		.fwd_ex4_valid(alu_fwd_ex4_valid),
 		.fwd_ex4_warp(alu_fwd_ex4_warp),
 		.fwd_ex4_grp(alu_fwd_ex4_grp),

@@ -200,39 +200,50 @@ module atg_su_wb #(
 	wire lsel_v = port_free ? lsel_free_v : lsel_busy_v;
 	wire [LP_W-1:0] lsel = port_free ? lsel_free : lsel_busy;
 
-	/* The selected source's fields (a selection by lsel). */
-	reg [6:0] lrd;
+	/* The selected source's fields for release and ready (a selection by lsel). */
 	reg [WARP_W-1:0] l_s_warp;
-	reg [GRP_W-1:0] l_s_grp;
-	reg [DW-1:0] l_s_data;
-	reg [NPHYS-1:0] l_s_lanes;
 	reg [SBE_W:0] l_s_sbe;
 	reg [2:0] l_s_cls;
 	reg [NL-1:0] l_s_one;
 	integer m;
 	always @(*) begin
-		lrd = l_rd[6:0];
 		l_s_warp = l_warp[WARP_W-1:0];
-		l_s_grp = l_grp[GRP_W-1:0];
-		l_s_data = l_data[DW-1:0];
-		l_s_lanes = l_lanes[NPHYS-1:0];
 		l_s_sbe = l_sbe[SBE_W:0];
 		l_s_cls = l_cls[2:0];
 		for (m = 0; m < NL; m = m + 1) begin
 			l_s_one[m] = lsel == m[LP_W-1:0];
 			if (m > 0 && l_s_one[m]) begin
-				lrd = l_rd[m*7 +: 7];
 				l_s_warp = l_warp[m*WARP_W +: WARP_W];
-				l_s_grp = l_grp[m*GRP_W +: GRP_W];
-				l_s_data = l_data[m*DW +: DW];
-				l_s_lanes = l_lanes[m*NPHYS +: NPHYS];
 				l_s_sbe = l_sbe[m*(SBE_W+1) +: SBE_W+1];
 				l_s_cls = l_cls[m*3 +: 3];
 			end
 		end
 	end
-	wire lw = lsel_v && l_wr[lsel];
 	assign l_ready = lsel_v ? l_s_one : {NL{1'b0}};
+
+	/* Long result fields for the free arbiter (independent of sv) for writeback */
+	reg [6:0] lrd_free;
+	reg [WARP_W-1:0] l_s_warp_free;
+	reg [GRP_W-1:0]  l_s_grp_free;
+	reg [DW-1:0]     l_s_data_free;
+	reg [NPHYS-1:0]  l_s_lanes_free;
+	integer mf;
+	always @(*) begin
+		lrd_free = l_rd[6:0];
+		l_s_warp_free = l_warp[WARP_W-1:0];
+		l_s_grp_free = l_grp[GRP_W-1:0];
+		l_s_data_free = l_data[DW-1:0];
+		l_s_lanes_free = l_lanes[NPHYS-1:0];
+		for (mf = 1; mf < NL; mf = mf + 1) begin
+			if (lsel_free == mf[LP_W-1:0]) begin
+				lrd_free = l_rd[mf*7 +: 7];
+				l_s_warp_free = l_warp[mf*WARP_W +: WARP_W];
+				l_s_grp_free = l_grp[mf*GRP_W +: GRP_W];
+				l_s_data_free = l_data[mf*DW +: DW];
+				l_s_lanes_free = l_lanes[mf*NPHYS +: NPHYS];
+			end
+		end
+	end
 
 	/* Inputs take cycles without a short result, source 0 first. */
 	wire in_go = !sv && (|fi_valid);
@@ -252,20 +263,22 @@ module atg_su_wb #(
 	end
 	wire [31:0] fe_grp = {27'd0, fe_lane} / NPHYS;
 
+	wire fi_has = |fi_valid;
+	wire lw_free = lsel_free_v && l_wr[lsel_free];
 	wire s_rq = sv && (srd == 7'd63);
-	wire l_rq = lw && (lrd == 7'd63);
+	wire l_rq_free = lw_free && (lrd_free == 7'd63);
 
 	(* keep = "true" *) wire s_we = (srd != 7'd63);
-	(* keep = "true" *) wire non_s_we = in_go ? 1'b1 : (lw && (lrd != 7'd63));
+	(* keep = "true" *) wire non_s_we = fi_has ? 1'b1 : (lw_free && (lrd_free != 7'd63));
 	assign w_en = sv ? s_we : non_s_we;
 
-	assign w_warp = sv ? sw : (in_go ? fe[IW-1 -: WARP_W] : l_s_warp);
-	assign w_grp  = sv ? sg : (in_go ? fe_grp[GRP_W-1:0] : l_s_grp);
-	assign w_reg  = sv ? srd[5:0] : (in_go ? fe[42:37] : lrd[5:0]);
-	assign w_data = sv ? sd : (in_go ? fe_data : l_s_data);
-	assign w_lanes = sv ? sl : (in_go ? fe_lanes : l_s_lanes);
-	assign rq_push = sv ? s_rq : (!in_go && l_rq);
-	assign rq_data = sv ? sd : l_s_data;
+	assign w_warp  = sv ? sw       : (fi_has ? fe[IW-1 -: WARP_W] : l_s_warp_free);
+	assign w_grp   = sv ? sg       : (fi_has ? fe_grp[GRP_W-1:0]  : l_s_grp_free);
+	assign w_reg   = sv ? srd[5:0] : (fi_has ? fe[42:37]          : lrd_free[5:0]);
+	assign w_data  = sv ? sd       : (fi_has ? fe_data            : l_s_data_free);
+	assign w_lanes = sv ? sl       : (fi_has ? fe_lanes           : l_s_lanes_free);
+	assign rq_push = sv ? s_rq     : (!fi_has && l_rq_free);
+	assign rq_data = sv ? sd       : l_s_data_free;
 
 	/* A long beat that has waited more than 4 cycles, or a pending input,
 	 * stops the issue so that a free write cycle comes. */

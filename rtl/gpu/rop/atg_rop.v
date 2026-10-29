@@ -173,13 +173,27 @@ module atg_rop #(
 		for (pk = 0; pk < 16; pk = pk + 1)
 			d_pop = d_pop + {4'd0, d_smask[pk]};
 	end
+
+	reg occ_inc_v;
+	reg [4:0] occ_inc_n;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			occ_inc_v <= 1'b0;
+			occ_inc_n <= 5'd0;
+		end else begin
+`ifdef MUT_OCC_BEAT
+			occ_inc_v <= d_valid && d_ready;
+`else
+			occ_inc_v <= d_valid && d_ready && d_beat[0];
+`endif
+			occ_inc_n <= d_pop;
+		end
+	end
+
 	atg_rop_occ occ (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-`ifdef MUT_OCC_BEAT
-		.inc_valid(d_valid && d_ready), .inc_n(d_pop),
-`else
-		.inc_valid(d_valid && d_ready && d_beat[0]), .inc_n(d_pop),
-`endif .clear(occ_clear), .count(occ_count)
+		.inc_valid(occ_inc_v), .inc_n(occ_inc_n),
+		.clear(occ_clear), .count(occ_count)
 	);
 
 	atg_rop_blend #(.MRT_COUNT(MRT_COUNT)) blend (

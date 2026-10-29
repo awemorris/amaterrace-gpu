@@ -68,8 +68,8 @@ module atg_rop_order (
 	assign dx_ready = !ex_ok && dx_ok && q_ready;
 	assign q_xy = ex_ok ? ex_xy : dx_xy;
 	assign q_mask = ex_ok ? ex_mask : dx_mask;
-	assign q_color = ex_ok ? ex_color : 512'd0;
-	assign q_color1 = ex_ok ? ex_color1 : 512'd0;
+	assign q_color = ex_valid ? ex_color : 512'd0;
+	assign q_color1 = ex_valid ? ex_color1 : 512'd0;
 	assign q_depth = ex_ok ? ex_depth : dx_depth;
 	assign q_dbg = !ex_ok;
 	/* the SU's beat (ex_aux); the direct path: one beat of attachment 0,

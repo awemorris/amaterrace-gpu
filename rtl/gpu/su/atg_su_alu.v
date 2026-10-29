@@ -59,6 +59,11 @@ module atg_su_alu #(
 	output wire [NPHYS-1:0] s_lanes,
 
 	/* Forwarding buses (to atg_su_opd) */
+	output wire fwd_ex3_valid,
+	output wire [WARP_W-1:0] fwd_ex3_warp,
+	output wire [GRP_W-1:0] fwd_ex3_grp,
+	output wire [6:0] fwd_ex3_rd,
+
 	output wire fwd_ex4_valid,
 	output wire [WARP_W-1:0] fwd_ex4_warp,
 	output wire [GRP_W-1:0] fwd_ex4_grp,
@@ -440,6 +445,11 @@ module atg_su_alu #(
 	assign s_lanes = s6_lanes;
 	assign s_data  = s6_data;
 	assign x_ready = 1'b1;
+
+	assign fwd_ex3_valid = s3_valid;
+	assign fwd_ex3_warp  = s3_warp;
+	assign fwd_ex3_grp   = s3_grp;
+	assign fwd_ex3_rd    = s3_rd;
 
 	assign fwd_ex4_valid = s4_valid;
 	assign fwd_ex4_warp  = s4_warp;

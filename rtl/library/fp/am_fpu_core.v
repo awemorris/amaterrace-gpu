@@ -341,15 +341,24 @@ module am_fpu_core #(
 			end
 		end
 
-		/* 33x33 multiplier with LAT=3: exactly 3 internal DSP48E1 pipeline registers */
-		wire [65:0] pr_s4;
-		am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(3)) u_mul4 (
+		/* 33x33 multiplier with LAT=2: 2 internal DSP48E1 pipeline registers */
+		wire [65:0] pr_mul;
+		am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(2)) u_mul4 (
 			.clk(clk),
 			.en(en),
 			.a(s1_mo[32:0]),
 			.b(s1_mo[65:33]),
-			.p(pr_s4)
+			.p(pr_mul)
 		);
+
+		/* Multiplier pipeline register (Stage 4) */
+		reg [65:0] pr_s4;
+		always @(posedge clk) begin
+			if (!rst_n)
+				pr_s4 <= 66'd0;
+			else if (en)
+				pr_s4 <= pr_mul;
+		end
 
 		/* Early rounding & negation in Stage 1 -> latched into Stage 2 */
 		wire [31:0] s1_xf = f_flush(s1_a);
@@ -467,7 +476,7 @@ module am_fpu_core #(
 				s2_fz = {!s2_c[31], s2_c[30:0]};
 			end
 			OP_FRACT:  begin
-				s2_fz = {!s2_rint_fl[31], s2_rint_fl[30:0]};
+				s2_fz = 32'd0;
 				s2_rr = 3'd0;
 			end
 			default: ;
@@ -484,6 +493,12 @@ module am_fpu_core #(
 		am_add #(.W(12)) u_fma2_c150 (.a({4'd0, s2_fma_c[30:23]}), .b(12'd150),                 .ci(1'b0), .s(s2_fma_c150), .co(s2_fma_carry_unused[1]));
 		am_add #(.W(12)) u_fma2_c152 (.a({4'd0, s2_fma_c[30:23]}), .b(12'd152),                 .ci(1'b0), .s(s2_fma_c152), .co(s2_fma_carry_unused[2]));
 		am_add #(.W(12)) u_fma2_c101 (.a({4'd0, s2_fma_c[30:23]}), .b(12'd101),                 .ci(1'b0), .s(s2_fma_c101), .co(s2_fma_carry_unused[3]));
+
+		wire [11:0] s2_fma_k, s2_fma_kadj, s2_fma_kp2;
+		wire [2:0]  s2_fma_sub_carry_unused;
+		am_sub #(.W(12)) u_fma2_k    (.a(s2_fma_c150), .b(s2_fma_ab), .bi(1'b0), .d(s2_fma_k),    .bo(s2_fma_sub_carry_unused[0]));
+		am_sub #(.W(12)) u_fma2_kadj (.a(s2_fma_c101), .b(s2_fma_ab), .bi(1'b0), .d(s2_fma_kadj), .bo(s2_fma_sub_carry_unused[1]));
+		am_sub #(.W(12)) u_fma2_kp2  (.a(s2_fma_c152), .b(s2_fma_ab), .bi(1'b0), .d(s2_fma_kp2),  .bo(s2_fma_sub_carry_unused[2]));
 
 		/* --- Stage 3: Rounding, operand & other formation (Register 3) --- */
 		reg [31:0] s3_a, s3_b, s3_c;
@@ -506,6 +521,7 @@ module am_fpu_core #(
 		reg        s3_noc;
 		reg [31:0] s3_fma_a, s3_fma_b, s3_fma_c;
 		reg [11:0] s3_fma_ab, s3_fma_c150, s3_fma_c152, s3_fma_c101;
+		reg [11:0] s3_fma_k, s3_fma_kadj, s3_fma_kp2;
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
@@ -536,6 +552,9 @@ module am_fpu_core #(
 				s3_fma_c150   <= 12'd0;
 				s3_fma_c152   <= 12'd0;
 				s3_fma_c101   <= 12'd0;
+				s3_fma_k      <= 12'd0;
+				s3_fma_kadj   <= 12'd0;
+				s3_fma_kp2    <= 12'd0;
 			end else if (en) begin
 				s3_a          <= s2_a;
 				s3_b          <= s2_b;
@@ -564,6 +583,9 @@ module am_fpu_core #(
 				s3_fma_c150   <= s2_fma_c150;
 				s3_fma_c152   <= s2_fma_c152;
 				s3_fma_c101   <= s2_fma_c101;
+				s3_fma_k      <= s2_fma_k;
+				s3_fma_kadj   <= s2_fma_kadj;
+				s3_fma_kp2    <= s2_fma_kp2;
 			end
 		end
 
@@ -605,9 +627,13 @@ module am_fpu_core #(
 		wire [31:0] s3_fl = s3_fl_nan ? 32'h7FC00000 : s3_fl_pass ? s3_xf_val : s3_iv;
 
 		/* --- Stage 3: FMA Alignment Precomputation for LAT >= 6 --- */
+		wire fract3 = (s3_op == OP_FRACT);
+		wire [31:0] s3_fract_c = {!s3_rint_fl[31], s3_rint_fl[30:0]};
+		wire [31:0] s3_fract_fma_c = s3_fract_c[30:23] == 8'd0 ? {s3_fract_c[31], 31'd0} : s3_fract_c;
+
 		wire [31:0] fma3_a = s3_fma_a;
 		wire [31:0] fma3_b = s3_fma_b;
-		wire [31:0] fma3_c = s3_fma_c;
+		wire [31:0] fma3_c = fract3 ? s3_fract_fma_c : s3_fma_c;
 		wire fma3_sp = fma3_a[31] ^ fma3_b[31];
 		wire fma3_sc = fma3_c[31];
 		wire fma3_rdn = s3_rr == 3'd2 || s3_rr == 3'd6;
@@ -621,18 +647,25 @@ module am_fpu_core #(
 		wire fma3_zb = fma3_b[30:23] == 8'd0;
 		wire fma3_zc = s3_noc || fma3_c[30:23] == 8'd0;
 		wire [23:0] fma3_mc = fma3_zc ? 24'd0 : {1'b1, fma3_c[22:0]};
-		wire [3:0] fma3_carry_unused;
+		wire [0:0] fma3_carry_unused;
+		wire [5:0] fract_carry_unused;
+
+		wire [11:0] fract_c150, fract_c152, fract_c101;
+		am_add #(.W(12)) u_fract_c150 (.a({4'd0, s3_fract_fma_c[30:23]}), .b(12'd150), .ci(1'b0), .s(fract_c150), .co(fract_carry_unused[0]));
+		am_add #(.W(12)) u_fract_c152 (.a({4'd0, s3_fract_fma_c[30:23]}), .b(12'd152), .ci(1'b0), .s(fract_c152), .co(fract_carry_unused[1]));
+		am_add #(.W(12)) u_fract_c101 (.a({4'd0, s3_fract_fma_c[30:23]}), .b(12'd101), .ci(1'b0), .s(fract_c101), .co(fract_carry_unused[2]));
 
 		wire [11:0] fma3_ab = s3_fma_ab;
-		wire [11:0] fma3_c150 = s3_fma_c150;
-		wire [11:0] fma3_c152 = s3_fma_c152;
-		wire [11:0] fma3_c101 = s3_fma_c101;
-		wire [11:0] fma3_k, fma3_kadj, fma3_kp2;
+		wire [11:0] fract_k, fract_kadj, fract_kp2;
+		am_sub #(.W(12)) u_fract_k    (.a(fract_c150), .b(fma3_ab), .bi(1'b0), .d(fract_k),    .bo(fract_carry_unused[3]));
+		am_sub #(.W(12)) u_fract_kadj (.a(fract_c101), .b(fma3_ab), .bi(1'b0), .d(fract_kadj), .bo(fract_carry_unused[4]));
+		am_sub #(.W(12)) u_fract_kp2  (.a(fract_c152), .b(fma3_ab), .bi(1'b0), .d(fract_kp2),  .bo(fract_carry_unused[5]));
+
+		wire [11:0] fma3_k    = fract3 ? fract_k    : s3_fma_k;
+		wire [11:0] fma3_kadj = fract3 ? fract_kadj : s3_fma_kadj;
+		wire [11:0] fma3_kp2  = fract3 ? fract_kp2  : s3_fma_kp2;
 		wire [4:0] fma3_rs;
-		am_sub #(.W(12)) u_fma3_k    (.a(fma3_c150), .b(fma3_ab), .bi(1'b0), .d(fma3_k),    .bo(fma3_carry_unused[0]));
-		am_sub #(.W(12)) u_fma3_kadj (.a(fma3_c101), .b(fma3_ab), .bi(1'b0), .d(fma3_kadj), .bo(fma3_carry_unused[1]));
-		am_sub #(.W(12)) u_fma3_kp2  (.a(fma3_c152), .b(fma3_ab), .bi(1'b0), .d(fma3_kp2),  .bo(fma3_carry_unused[2]));
-		am_sub #(.W(5))  u_fma3_rs   (.a(5'd0), .b(fma3_kp2[4:0]), .bi(1'b0), .d(fma3_rs),   .bo(fma3_carry_unused[3]));
+		am_sub #(.W(5))  u_fma3_rs   (.a(5'd0), .b(fma3_kp2[4:0]), .bi(1'b0), .d(fma3_rs),   .bo(fma3_carry_unused[0]));
 		wire signed [11:0] fma3_ks = fma3_k;
 		wire fma3_kbig = fma3_ks > 12'sd49;
 		wire fma3_kleft = !fma3_kp2[11];
@@ -734,7 +767,7 @@ module am_fpu_core #(
 				s4_sat       <= s3_sat;
 				s4_fx        <= s3_fx;
 				s4_fy        <= s3_fy;
-				s4_fz        <= s3_fz;
+				s4_fz        <= fract3 ? s3_fract_c : s3_fz;
 				s4_rr        <= s3_rr;
 				s4_noc       <= s3_noc;
 				s4_other_pre <= s3_other;
@@ -807,28 +840,18 @@ module am_fpu_core #(
 		am_add #(.W(12)) u_fma_s4_t1 (.a(s4_ab), .b(s4_adj), .ci(1'b0), .s(s4_t1), .co(fma_carry_unused4_exp[0]));
 		am_sub #(.W(12)) u_fma_s4_base (.a(s4_t1), .b(12'd175), .bi(1'b0), .d(s4_exp_base), .bo(fma_carry_unused4_exp[1]));
 
-		wire [4:0] s4_blk_nz;
-		assign s4_blk_nz[4] = |s4_sum[76:64];
-		assign s4_blk_nz[3] = |s4_sum[63:48];
-		assign s4_blk_nz[2] = |s4_sum[47:32];
-		assign s4_blk_nz[1] = |s4_sum[31:16];
-		assign s4_blk_nz[0] = |s4_sum[15:0];
-		wire [2:0] s4_top_blk = s4_blk_nz[4] ? 3'd4 :
-		                        s4_blk_nz[3] ? 3'd3 :
-		                        s4_blk_nz[2] ? 3'd2 :
-		                        s4_blk_nz[1] ? 3'd1 : 3'd0;
-		wire s4_sum_nz = |s4_blk_nz;
-
 		/* --- Stage 5: Pipeline match & LOD/Norm for LAT >= 6 --- */
 		reg [31:0] s5_rs_other;
+		reg [63:0] s5_pr;
+		reg [31:0] s5_other_pre;
+		reg [31:0] s5_iv;
+		reg [31:0] s5_fl;
+		reg [4:0]  s5_op;
 		reg        s5_fma;
 		reg        s5_sat;
 		reg        s5_flt;
 
 		reg [76:0] s5_sum;
-		reg [4:0]  s5_blk_nz;
-		reg [2:0]  s5_top_blk;
-		reg        s5_sum_nz;
 		reg        s5_sr;
 		reg [11:0] s5_exp_base;
 		reg [2:0]  s5_rm;
@@ -838,35 +861,39 @@ module am_fpu_core #(
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
-				s5_rs_other <= 32'd0;
-				s5_fma      <= 1'b0;
-				s5_sat      <= 1'b0;
-				s5_flt      <= 1'b0;
-				s5_sum      <= 77'd0;
-				s5_blk_nz   <= 5'd0;
-				s5_top_blk  <= 3'd0;
-				s5_sum_nz   <= 1'b0;
-				s5_sr       <= 1'b0;
-				s5_exp_base <= 12'd0;
-				s5_rm       <= 3'd0;
-				s5_rdn      <= 1'b0;
-				s5_spec_hit <= 1'b0;
-				s5_spec_res <= 32'd0;
+				s5_rs_other  <= 32'd0;
+				s5_pr        <= 64'd0;
+				s5_other_pre <= 32'd0;
+				s5_iv        <= 32'd0;
+				s5_fl        <= 32'd0;
+				s5_op        <= 5'd0;
+				s5_fma       <= 1'b0;
+				s5_sat       <= 1'b0;
+				s5_flt       <= 1'b0;
+				s5_sum       <= 77'd0;
+				s5_sr        <= 1'b0;
+				s5_exp_base  <= 12'd0;
+				s5_rm        <= 3'd0;
+				s5_rdn       <= 1'b0;
+				s5_spec_hit  <= 1'b0;
+				s5_spec_res  <= 32'd0;
 			end else if (en) begin
-				s5_rs_other <= (s4_sat && s4_is_flt) ? f_sat(s4_other) : s4_other;
-				s5_fma      <= s4_fma;
-				s5_sat      <= s4_sat;
-				s5_flt      <= s4_is_flt;
-				s5_sum      <= s4_sum;
-				s5_blk_nz   <= s4_blk_nz;
-				s5_top_blk  <= s4_top_blk;
-				s5_sum_nz   <= s4_sum_nz;
-				s5_sr       <= s4_sr;
-				s5_exp_base <= s4_exp_base;
-				s5_rm       <= s4_rr;
-				s5_rdn      <= s4_rdn;
-				s5_spec_hit <= s4_spec_hit;
-				s5_spec_res <= s4_sat ? f_sat(s4_spec_res) : s4_spec_res;
+				s5_rs_other  <= (s4_sat && s4_is_flt) ? f_sat(s4_other) : s4_other;
+				s5_pr        <= pr_s4[63:0];
+				s5_other_pre <= s4_other_pre;
+				s5_iv        <= s4_iv;
+				s5_fl        <= s4_fl;
+				s5_op        <= s4_op;
+				s5_fma       <= s4_fma;
+				s5_sat       <= s4_sat;
+				s5_flt       <= s4_is_flt;
+				s5_sum       <= s4_sum;
+				s5_sr        <= s4_sr;
+				s5_exp_base  <= s4_exp_base;
+				s5_rm        <= s4_rr;
+				s5_rdn       <= s4_rdn;
+				s5_spec_hit  <= s4_spec_hit;
+				s5_spec_res  <= s4_sat ? f_sat(s4_spec_res) : s4_spec_res;
 			end
 		end
 
@@ -881,6 +908,13 @@ module am_fpu_core #(
 		am_msb #(.W(16), .SW(4)) u_msb_b1 (.a(s5_sum[31:16]),         .n(msb_b1), .nz(nz_b1));
 		am_msb #(.W(16), .SW(4)) u_msb_b0 (.a(s5_sum[15:0]),          .n(msb_b0), .nz(nz_b0));
 
+		wire [4:0] s5_blk_nz = {nz_b4, nz_b3, nz_b2, nz_b1, nz_b0};
+		wire [2:0] s5_top_blk = s5_blk_nz[4] ? 3'd4 :
+		                        s5_blk_nz[3] ? 3'd3 :
+		                        s5_blk_nz[2] ? 3'd2 :
+		                        s5_blk_nz[1] ? 3'd1 : 3'd0;
+		wire s5_sum_nz = |s5_blk_nz;
+
 		wire [3:0] s5_sub_msb = (s5_top_blk == 3'd4) ? msb_b4 :
 		                        (s5_top_blk == 3'd3) ? msb_b3 :
 		                        (s5_top_blk == 3'd2) ? msb_b2 :
@@ -888,31 +922,78 @@ module am_fpu_core #(
 
 		wire [6:0] s5_msb = {s5_top_blk, s5_sub_msb};
 
-		wire [6:0] s5_nsh;
-		wire [76:0] s5_nrm;
-		wire [11:0] s5_er;
-		wire [1:0] fma_carry_unused5;
-		am_sub #(.W(7)) u_fma_nsh (.a(7'd76), .b(s5_msb), .bi(1'b0), .d(s5_nsh), .bo(fma_carry_unused5[0]));
-		am_shift #(.W(77), .SW(7)) u_fma_nrm (.a(s5_sum), .amt(s5_nsh), .left(1'b1), .arith(1'b0), .y(s5_nrm));
-		am_add #(.W(12)) u_fma_er (.a(s5_exp_base), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_er), .co(fma_carry_unused5[1]));
+		/* High-speed coarse-fine normalization window:
+		 * Since s5_msb is within block s5_top_blk at offset s5_sub_msb,
+		 * the 25 bits needed (s5_m and s5_g) are always within a 40-bit window
+		 * aligned to that block, and right-shifted by s5_sub_msb!
+		 * No subtraction, no 77-bit shifter!
+		 */
+		wire [39:0] win4 = {3'b000, s5_sum[76:40]};
+		wire [39:0] win3 = s5_sum[63:24];
+		wire [39:0] win2 = s5_sum[47:8];
+		wire [39:0] win1 = {s5_sum[31:0], 8'd0};
+		wire [39:0] win0 = {s5_sum[15:0], 24'd0};
 
-		/* Precompute guard and sticky chunks in Stage 5 (13 chunks of 4 bits registered to Stage 6) */
-		wire [23:0] s5_m = s5_nrm[76:53];
-		wire s5_g = s5_nrm[52];
-		wire [12:0] s5_st_c;
-		assign s5_st_c[0]  = |s5_nrm[3:0];
-		assign s5_st_c[1]  = |s5_nrm[7:4];
-		assign s5_st_c[2]  = |s5_nrm[11:8];
-		assign s5_st_c[3]  = |s5_nrm[15:12];
-		assign s5_st_c[4]  = |s5_nrm[19:16];
-		assign s5_st_c[5]  = |s5_nrm[23:20];
-		assign s5_st_c[6]  = |s5_nrm[27:24];
-		assign s5_st_c[7]  = |s5_nrm[31:28];
-		assign s5_st_c[8]  = |s5_nrm[35:32];
-		assign s5_st_c[9]  = |s5_nrm[39:36];
-		assign s5_st_c[10] = |s5_nrm[43:40];
-		assign s5_st_c[11] = |s5_nrm[47:44];
-		assign s5_st_c[12] = |s5_nrm[51:48];
+		wire [39:0] s5_win = (s5_top_blk == 3'd4) ? win4 :
+		                     (s5_top_blk == 3'd3) ? win3 :
+		                     (s5_top_blk == 3'd2) ? win2 :
+		                     (s5_top_blk == 3'd1) ? win1 : win0;
+
+		wire [39:0] s5_win_shifted;
+		am_shift #(.W(40), .SW(4)) u_fma_nrm (
+			.a(s5_win),
+			.amt(s5_sub_msb),
+			.left(1'b0),
+			.arith(1'b0),
+			.y(s5_win_shifted)
+		);
+
+		wire [23:0] s5_m = s5_win_shifted[24:1];
+		wire s5_g = s5_win_shifted[0];
+		wire [11:0] s5_er;
+		wire [0:0] fma_carry_unused5;
+		am_add #(.W(12)) u_fma_er (.a(s5_exp_base), .b({5'd0, s5_msb}), .ci(1'b0), .s(s5_er), .co(fma_carry_unused5[0]));
+
+		/* Independent Parallel Sticky Bit Computation:
+		 * Mathematically, the sticky bit is 1 iff s5_msb - s5_lsb >= 25,
+		 * or equivalently s5_msb + s5_rev_msb >= 101, where s5_rev_msb
+		 * is the MSB of the bit-reversed sum.
+		 * This completely eliminates the 77-bit barrel shifter from the sticky bit path!
+		 */
+		wire [76:0] s5_sum_rev;
+		genvar gr;
+		for (gr = 0; gr < 77; gr = gr + 1) begin : g_sum_rev
+			assign s5_sum_rev[gr] = s5_sum[76 - gr];
+		end
+
+		wire [3:0] rev_msb_b4, rev_msb_b3, rev_msb_b2, rev_msb_b1, rev_msb_b0;
+		wire rev_nz_b4, rev_nz_b3, rev_nz_b2, rev_nz_b1, rev_nz_b0;
+		am_msb #(.W(16), .SW(4)) u_rev_msb_b4 (.a({3'd0, s5_sum_rev[76:64]}), .n(rev_msb_b4), .nz(rev_nz_b4));
+		am_msb #(.W(16), .SW(4)) u_rev_msb_b3 (.a(s5_sum_rev[63:48]),         .n(rev_msb_b3), .nz(rev_nz_b3));
+		am_msb #(.W(16), .SW(4)) u_rev_msb_b2 (.a(s5_sum_rev[47:32]),         .n(rev_msb_b2), .nz(rev_nz_b2));
+		am_msb #(.W(16), .SW(4)) u_rev_msb_b1 (.a(s5_sum_rev[31:16]),         .n(rev_msb_b1), .nz(rev_nz_b1));
+		am_msb #(.W(16), .SW(4)) u_rev_msb_b0 (.a(s5_sum_rev[15:0]),          .n(rev_msb_b0), .nz(rev_nz_b0));
+
+		wire [4:0] s5_rev_blk_nz = {rev_nz_b4, rev_nz_b3, rev_nz_b2, rev_nz_b1, rev_nz_b0};
+		wire [2:0] s5_rev_top_blk = s5_rev_blk_nz[4] ? 3'd4 :
+		                            s5_rev_blk_nz[3] ? 3'd3 :
+		                            s5_rev_blk_nz[2] ? 3'd2 :
+		                            s5_rev_blk_nz[1] ? 3'd1 : 3'd0;
+
+		wire [3:0] s5_rev_sub_msb = (s5_rev_top_blk == 3'd4) ? rev_msb_b4 :
+		                            (s5_rev_top_blk == 3'd3) ? rev_msb_b3 :
+		                            (s5_rev_top_blk == 3'd2) ? rev_msb_b2 :
+		                            (s5_rev_top_blk == 3'd1) ? rev_msb_b1 : rev_msb_b0;
+
+		wire [6:0] s5_rev_msb = {s5_rev_top_blk, s5_rev_sub_msb};
+		wire [7:0] s5_need;
+		wire need_bo_unused;
+		am_sub #(.W(8)) u_b101 (.a(8'd101), .b({1'b0, s5_rev_msb}), .bi(1'b0), .d(s5_need), .bo(need_bo_unused));
+
+		wire [7:0] span_diff_unused;
+		wire s5_span_bo;
+		am_sub #(.W(8)) u_span (.a({1'b0, s5_msb}), .b(s5_need), .bi(1'b0), .d(span_diff_unused), .bo(s5_span_bo));
+		wire s5_st = s5_sum_nz && !s5_span_bo;
 
 		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
 		reg [31:0] s6_rs_other;
@@ -924,7 +1005,7 @@ module am_fpu_core #(
 		reg [11:0] s6_er;
 		reg        s6_sr;
 		reg        s6_g;
-		reg [12:0] s6_st_c;
+		reg        s6_st;
 		reg        s6_sum_nz;
 		reg [2:0]  s6_rm;
 		reg        s6_rdn;
@@ -936,6 +1017,18 @@ module am_fpu_core #(
 
 		wire signed [11:0] s5_ers = s5_er;
 
+		reg [31:0] s5_other_lat6;
+		always @(*) begin
+			s5_other_lat6 = s5_other_pre;
+			case (s5_op)
+			OP_FCVTSW, OP_FCVTSWU: s5_other_lat6 = s5_iv;
+			OP_FROUND:             s5_other_lat6 = s5_fl;
+			OP_MUL:                s5_other_lat6 = s5_pr[31:0];
+			OP_MULH, OP_MULHSU, OP_MULHU: s5_other_lat6 = s5_pr[63:32];
+			default: ;
+			endcase
+		end
+
 		always @(posedge clk) begin
 			if (!rst_n) begin
 				s6_rs_other   <= 32'd0;
@@ -946,7 +1039,7 @@ module am_fpu_core #(
 				s6_er         <= 12'd0;
 				s6_sr         <= 1'b0;
 				s6_g          <= 1'b0;
-				s6_st_c       <= 13'd0;
+				s6_st         <= 1'b0;
 				s6_sum_nz     <= 1'b0;
 				s6_rm         <= 3'd0;
 				s6_rdn        <= 1'b0;
@@ -959,7 +1052,7 @@ module am_fpu_core #(
 				s6_udf_0      <= 1'b0;
 				s6_udf_1      <= 1'b0;
 			end else if (en) begin
-				s6_rs_other   <= s5_rs_other;
+				s6_rs_other   <= (s5_sat && s5_flt) ? f_sat(s5_other_lat6) : s5_other_lat6;
 				s6_fma        <= s5_fma;
 				s6_sat        <= s5_sat;
 				s6_flt        <= s5_flt;
@@ -967,7 +1060,7 @@ module am_fpu_core #(
 				s6_er         <= s5_er;
 				s6_sr         <= s5_sr;
 				s6_g          <= s5_g;
-				s6_st_c       <= s5_st_c;
+				s6_st         <= s5_st;
 				s6_sum_nz     <= s5_sum_nz;
 				s6_rm         <= s5_rm;
 				s6_rdn        <= s5_rdn;
@@ -983,7 +1076,6 @@ module am_fpu_core #(
 		end
 
 		/* Stage 6: Speculative Parallel Rounding for LAT >= 6 */
-		wire s6_st = |s6_st_c;
 		wire s6_m_all1 = &s6_m;
 		wire [24:0] s6_m_p1;
 		wire signed [11:0] s6_er_p1;
@@ -1050,8 +1142,9 @@ module am_fpu_core #(
 
 		assign res = (LAT >= 6) ? cur_rs : ((cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs);
 		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused3_mr, carry_unused3_ep,
-			fma3_carry_unused, carry_unused_c_p, fma_carry_unused5, s3_e_p1[11:8], pr_s4[65:64],
-			s6_rnd_carry_unused, s6_mr[24:23], nz_b4, nz_b3, nz_b2, nz_b1, nz_b0, s6_m_p1[24]};
+			fma3_carry_unused, fract_carry_unused, carry_unused_c_p, fma_carry_unused5, need_bo_unused, span_diff_unused,
+			s2_fma_sub_carry_unused,
+			s3_e_p1[11:8], pr_s4[65:64], s6_rnd_carry_unused, s6_mr[24:23], s6_m_p1[24], s5_win_shifted[39:25]};
 	end
 	endgenerate
 

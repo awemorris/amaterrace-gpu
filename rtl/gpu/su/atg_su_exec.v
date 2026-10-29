@@ -95,12 +95,16 @@ module atg_su_exec #(
 	/* Use local wexec_g directly, eliminating exec -> opd -> exec loop */
 	wire [NPHYS-1:0] em = wexec_g;
 
-	/* Per lane: the Boolean of rs1. */
-	reg [NPHYS-1:0] bt;
-	integer l;
-	always @(*)
-		for (l = 0; l < NPHYS; l = l + 1)
-			bt[l] = x_a[l*32 +: 32] != 32'd0;
+	/* Per lane: the Boolean of rs1 (balanced 16-bit reduction). */
+	wire [NPHYS-1:0] bt;
+	genvar gl;
+	generate
+		for (gl = 0; gl < NPHYS; gl = gl + 1) begin : g_bt
+			wire bt_hi = |x_a[gl*32 + 16 +: 16];
+			wire bt_lo = |x_a[gl*32 +: 16];
+			assign bt[gl] = bt_hi | bt_lo;
+		end
+	endgenerate
 
 	/* Branch conditions over the groups of one instruction. */
 	reg acc_any, acc_all;
@@ -118,6 +122,7 @@ module atg_su_exec #(
 
 	/* exec.save: each lane's EXEC bit as a Boolean, written to every lane. */
 	reg [DW-1:0] save_d;
+	integer l;
 	always @(*)
 		for (l = 0; l < NPHYS; l = l + 1)
 			save_d[l*32 +: 32] = {32{wexec_g[l]}};

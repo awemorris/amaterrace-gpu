@@ -97,7 +97,13 @@ module atg_rop_wpix #(
 	output wire [511:0] o_res,
 	output wire [3:0] o_ent,
 	output wire [4*LINE_SHIFT-1:0] o_soff,
-	output wire [4:0] o_ps
+	output wire [4:0] o_ps,
+	output wire [31:0] o_row_base0,
+	output wire [31:0] o_row_base1,
+	output wire [31:0] o_xoff,
+	output wire [2:0] o_xsh,
+	output wire [31:0] o_stride,
+	output wire [31:0] o_xoff_j
 );
 	`include "ghci_regs.vh"
 	`include "atg_rop_unorm8.vh"
@@ -203,65 +209,183 @@ module atg_rop_wpix #(
 				ms4 <= st_wdata[3:0] == 4'd2;
 		end
 
-	/* The attachment's format, pixel size, channels and path. */
-	wire [7:0] fsel = fmts[8 * i_rt +: 8];
-	wire [7:0] vk = i_rt == 3'd0 && fsel == 8'd0 ? (fmt0 == 2'd0 ? 8'd44 : fmt0 == 2'd1 ? 8'd37 :
-		8'd4) : fsel;
-	wire [67:0] inf = atg_fmt_info(vk);
-	wire [25:0] feat = atg_fmt_feat(vk, 1'b0);
-	wire [4:0] ps = inf[5:1];
-	wire [2:0] psl = ps[4] ? 3'd4 : ps[3] ? 3'd3 : ps[2] ? 3'd2 : ps[1] ? 3'd1 : 3'd0;
-	wire [3:0] cmask = inf[8:6] >= 3'd4 ? 4'hF : inf[8:6] == 3'd3 ? 4'h7 :
-		inf[8:6] == 3'd2 ? 4'h3 : 4'h1;
-	wire [3:0] wm = wms[4 * i_rt +: 4];
-	wire [22:0] bl = bls[i_rt];
-	wire p_u8 = vk == 8'd44 || vk == 8'd37 || vk == 8'd51 || vk == 8'd4 || vk == 8'd9 ||
-		vk == 8'd16 || vk == 8'd8;
-	wire p_f32 = (`CFG_ROP_ENABLE_FBLEND != 0) &&
-		(vk == 8'd43 || vk == 8'd50 || vk == 8'd57 || vk == 8'd64 || vk == 8'd76 ||
-		vk == 8'd83 || vk == 8'd97);
-	assign o_path = p_u8 ? 2'd0 : p_f32 ? 2'd1 : 2'd2;
-	assign o_drop = !feat[7] || (wm & cmask) == 4'd0;	/* COLOR_ATTACHMENT */
-	assign o_read = (bl[0] && (p_u8 || p_f32)) || (wm & cmask) != cmask;
-	assign o_ps = ps;
+	/* Registered RT format properties to eliminate combinational format decode in ROP paths */
+	genvar grt;
+	generate
+	for (grt = 0; grt < 8; grt = grt + 1) begin : g_cfg
+		wire [7:0] fsel_k = fmts[8 * grt +: 8];
+		wire [7:0] vk_k = (grt == 0 && fsel_k == 8'd0) ?
+			(fmt0 == 2'd0 ? 8'd44 : fmt0 == 2'd1 ? 8'd37 : 8'd4) : fsel_k;
+		wire [67:0] inf_k = atg_fmt_info(vk_k);
+		wire [25:0] feat_k = atg_fmt_feat(vk_k, 1'b0);
+		wire [4:0] ps_k = inf_k[5:1];
+		wire [2:0] psl_k = ps_k[4] ? 3'd4 : ps_k[3] ? 3'd3 : ps_k[2] ? 3'd2 : ps_k[1] ? 3'd1 : 3'd0;
+		wire [3:0] cmask_k = inf_k[8:6] >= 3'd4 ? 4'hF : inf_k[8:6] == 3'd3 ? 4'h7 :
+			inf_k[8:6] == 3'd2 ? 4'h3 : 4'h1;
+		wire [3:0] wm_k = wms[4 * grt +: 4];
+		wire [22:0] bl_k = bls[grt];
+		wire p_u8_k = vk_k == 8'd44 || vk_k == 8'd37 || vk_k == 8'd51 || vk_k == 8'd4 || vk_k == 8'd9 ||
+			vk_k == 8'd16 || vk_k == 8'd8;
+		wire p_f32_k = (`CFG_ROP_ENABLE_FBLEND != 0) &&
+			(vk_k == 8'd43 || vk_k == 8'd50 || vk_k == 8'd57 || vk_k == 8'd64 || vk_k == 8'd76 ||
+			vk_k == 8'd83 || vk_k == 8'd97);
+		wire [1:0] path_k = p_u8_k ? 2'd0 : p_f32_k ? 2'd1 : 2'd2;
+		wire drop_k = !feat_k[7] || (wm_k & cmask_k) == 4'd0;
+		wire read_k = (bl_k[0] && (p_u8_k || p_f32_k)) || (wm_k & cmask_k) != cmask_k;
+		wire [3:0] segl_k = ms4 ?
+			(psl_k == 3'd4 ? 4'd7 : psl_k == 3'd3 ? 4'd6 : psl_k == 3'd2 ? 4'd5 : psl_k == 3'd1 ? 4'd4 : 4'd3) :
+			(psl_k == 3'd4 ? 4'd5 : psl_k == 3'd3 ? 4'd4 : psl_k == 3'd2 ? 4'd3 : psl_k == 3'd1 ? 4'd2 : 4'd1);
+		localparam [31:0] LS32 = LINE_SHIFT;
+		wire multi_k = segl_k > LS32[3:0];
+		wire [3:0] nll_k = (LINE_SHIFT == 5) ?
+			(segl_k == 4'd7 ? 4'd2 : segl_k == 4'd6 ? 4'd1 : 4'd0) :
+			(segl_k == 4'd7 ? 4'd1 : 4'd0);
+		wire [2:0] xsh_k = ms4 ?
+			(psl_k == 3'd4 ? 3'd6 : psl_k == 3'd3 ? 3'd5 : psl_k == 3'd2 ? 3'd4 : psl_k == 3'd1 ? 3'd3 : 3'd2) :
+			psl_k;
+		wire [2:0] el_k = (LINE_SHIFT == 5) ?
+			(psl_k == 3'd4 ? 3'd1 : psl_k == 3'd3 ? 3'd2 : psl_k == 3'd2 ? 3'd3 : psl_k == 3'd1 ? 3'd4 : 3'd5) :
+			(psl_k == 3'd4 ? 3'd2 : psl_k == 3'd3 ? 3'd3 : psl_k == 3'd2 ? 3'd4 : psl_k == 3'd1 ? 3'd5 : 3'd6);
 
-	/* The row's bytes: 2 S ps = 2^segl; several lines when above a line. */
-	wire [3:0] segl;
-	localparam [31:0] LS32 = LINE_SHIFT;
-	wire [3:0] ls4 = LS32[3:0];
-	wire multi = segl > ls4;
-	wire [3:0] nll;	/* log2 of the lines (several) */
-	wire [2:0] xsh, el;	/* log2 S ps; log2 E (several lines) */
+		reg [7:0] r_vk;
+		reg [4:0] r_ps;
+		reg [2:0] r_psl;
+		reg [1:0] r_path;
+		reg r_drop, r_read, r_multi;
+		reg [3:0] r_nll;
+		reg [2:0] r_xsh, r_el;
+		reg [3:0] r_wm;
+		reg [22:0] r_bl;
+
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				r_vk <= 8'd44;
+				r_ps <= 5'd4;
+				r_psl <= 3'd2;
+				r_path <= 2'd0;
+				r_drop <= 1'b0;
+				r_read <= 1'b0;
+				r_multi <= 1'b0;
+				r_nll <= 4'd0;
+				r_xsh <= 3'd2;
+				r_el <= 3'd3;
+				r_wm <= 4'hF;
+				r_bl <= 23'd0;
+			end else begin
+				r_vk <= vk_k;
+				r_ps <= ps_k;
+				r_psl <= psl_k;
+				r_path <= path_k;
+				r_drop <= drop_k;
+				r_read <= read_k;
+				r_multi <= multi_k;
+				r_nll <= nll_k;
+				r_xsh <= xsh_k;
+				r_el <= el_k;
+				r_wm <= wm_k;
+				r_bl <= bl_k;
+			end
+		end
+	end
+	endgenerate
+
+	reg [7:0] vk;
+	reg [4:0] ps;
+	(* max_fanout = 8 *) reg [2:0] psl;
+	reg [1:0] path;
+	reg drop, read, multi;
+	reg [3:0] nll;
+	(* max_fanout = 8 *) reg [2:0] xsh, el;
+	reg [3:0] wm;
+	reg [22:0] bl;
+
+	always @(*) begin
+		case (i_rt)
+		3'd0: begin
+			vk = g_cfg[0].r_vk; ps = g_cfg[0].r_ps; psl = g_cfg[0].r_psl; path = g_cfg[0].r_path;
+			drop = g_cfg[0].r_drop; read = g_cfg[0].r_read; multi = g_cfg[0].r_multi;
+			nll = g_cfg[0].r_nll; xsh = g_cfg[0].r_xsh; el = g_cfg[0].r_el; wm = g_cfg[0].r_wm; bl = g_cfg[0].r_bl;
+		end
+		3'd1: begin
+			vk = g_cfg[1].r_vk; ps = g_cfg[1].r_ps; psl = g_cfg[1].r_psl; path = g_cfg[1].r_path;
+			drop = g_cfg[1].r_drop; read = g_cfg[1].r_read; multi = g_cfg[1].r_multi;
+			nll = g_cfg[1].r_nll; xsh = g_cfg[1].r_xsh; el = g_cfg[1].r_el; wm = g_cfg[1].r_wm; bl = g_cfg[1].r_bl;
+		end
+		3'd2: begin
+			vk = g_cfg[2].r_vk; ps = g_cfg[2].r_ps; psl = g_cfg[2].r_psl; path = g_cfg[2].r_path;
+			drop = g_cfg[2].r_drop; read = g_cfg[2].r_read; multi = g_cfg[2].r_multi;
+			nll = g_cfg[2].r_nll; xsh = g_cfg[2].r_xsh; el = g_cfg[2].r_el; wm = g_cfg[2].r_wm; bl = g_cfg[2].r_bl;
+		end
+		3'd3: begin
+			vk = g_cfg[3].r_vk; ps = g_cfg[3].r_ps; psl = g_cfg[3].r_psl; path = g_cfg[3].r_path;
+			drop = g_cfg[3].r_drop; read = g_cfg[3].r_read; multi = g_cfg[3].r_multi;
+			nll = g_cfg[3].r_nll; xsh = g_cfg[3].r_xsh; el = g_cfg[3].r_el; wm = g_cfg[3].r_wm; bl = g_cfg[3].r_bl;
+		end
+		3'd4: begin
+			vk = g_cfg[4].r_vk; ps = g_cfg[4].r_ps; psl = g_cfg[4].r_psl; path = g_cfg[4].r_path;
+			drop = g_cfg[4].r_drop; read = g_cfg[4].r_read; multi = g_cfg[4].r_multi;
+			nll = g_cfg[4].r_nll; xsh = g_cfg[4].r_xsh; el = g_cfg[4].r_el; wm = g_cfg[4].r_wm; bl = g_cfg[4].r_bl;
+		end
+		3'd5: begin
+			vk = g_cfg[5].r_vk; ps = g_cfg[5].r_ps; psl = g_cfg[5].r_psl; path = g_cfg[5].r_path;
+			drop = g_cfg[5].r_drop; read = g_cfg[5].r_read; multi = g_cfg[5].r_multi;
+			nll = g_cfg[5].r_nll; xsh = g_cfg[5].r_xsh; el = g_cfg[5].r_el; wm = g_cfg[5].r_wm; bl = g_cfg[5].r_bl;
+		end
+		3'd6: begin
+			vk = g_cfg[6].r_vk; ps = g_cfg[6].r_ps; psl = g_cfg[6].r_psl; path = g_cfg[6].r_path;
+			drop = g_cfg[6].r_drop; read = g_cfg[6].r_read; multi = g_cfg[6].r_multi;
+			nll = g_cfg[6].r_nll; xsh = g_cfg[6].r_xsh; el = g_cfg[6].r_el; wm = g_cfg[6].r_wm; bl = g_cfg[6].r_bl;
+		end
+		default: begin
+			vk = g_cfg[7].r_vk; ps = g_cfg[7].r_ps; psl = g_cfg[7].r_psl; path = g_cfg[7].r_path;
+			drop = g_cfg[7].r_drop; read = g_cfg[7].r_read; multi = g_cfg[7].r_multi;
+			nll = g_cfg[7].r_nll; xsh = g_cfg[7].r_xsh; el = g_cfg[7].r_el; wm = g_cfg[7].r_wm; bl = g_cfg[7].r_bl;
+		end
+		endcase
+	end
+
+	assign o_path = path;
+	assign o_drop = drop;
+	assign o_read = read;
+	assign o_ps = ps;
+	wire p_u8 = path == 2'd0;
+	wire p_f32 = path == 2'd1;
 	wire [16:0] yr;
 	wire [48:0] yrs;
-	wire [31:0] xoff, a1, a2;
-	wire segl_co_unused, nll_bo_unused, xsh_co_unused, el_bo_unused, yr_co_unused,
-		a1_co_unused, a2_co_unused, a3_co_unused;
-	am_add #(.W(4)) u_segl (.a({1'b0, psl}), .b(ms4 ? 4'd3 : 4'd1), .ci(1'b0), .s(segl),
-		.co(segl_co_unused));
-	am_sub #(.W(4)) u_nll (.a(segl), .b(ls4), .bi(1'b0), .d(nll), .bo(nll_bo_unused));
-	am_add #(.W(3)) u_xsh (.a(psl), .b(ms4 ? 3'd2 : 3'd0), .ci(1'b0), .s(xsh), .co(xsh_co_unused));
-	am_sub #(.W(3)) u_el (.a(ls4[2:0]), .b(psl), .bi(1'b0), .d(el), .bo(el_bo_unused));
+	wire [31:0] xoff, a1;
+	wire yr_co_unused, a1_co_unused, a3_co_unused;
 	/* base + (y + r) stride + x S ps + (several lines) the line j */
 	am_shift #(.W(32), .SW(3)) u_xoff (.a({16'd0, i_xy[15:0]}), .amt(xsh), .left(1'b1), .arith(1'b0),
 		.y(xoff));
-	am_add #(.W(17)) u_yr (.a({1'b0, i_xy[31:16]}), .b(17'd0), .ci(i_r), .s(yr), .co(yr_co_unused));
-	am_mul #(.AW(17), .BW(32)) u_yrs (.clk(clk), .en(1'b1), .a(yr), .b(stride[i_rt]), .p(yrs));
+	assign o_xoff = xoff;
+	assign o_xsh = xsh;
+	am_add #(.W(17)) u_yr (.a({1'b0, i_xy[31:16]}), .b(17'd0), .ci(1'b0), .s(yr), .co(yr_co_unused));
+	am_mul #(.AW(17), .BW(32), .LAT(1)) u_yrs (.clk(clk), .en(1'b1), .a(yr), .b(stride[i_rt]), .p(yrs));
 	am_add #(.W(32)) u_a1 (.a(base[i_rt]), .b(yrs[31:0]), .ci(1'b0), .s(a1), .co(a1_co_unused));
-	am_add #(.W(32)) u_a2 (.a(a1), .b(xoff), .ci(1'b0), .s(a2), .co(a2_co_unused));
+	assign o_row_base0 = a1;
+	assign o_stride = stride[i_rt];
+
+	wire rb1_co_unused;
+	am_add #(.W(32)) u_rb1 (.a(a1), .b(stride[i_rt]), .ci(1'b0), .s(o_row_base1), .co(rb1_co_unused));
+
 	assign o_multi = multi;
 	assign o_nl = multi ? (nll == 4'd1 ? 2'd1 : 2'd3) : 2'd0;
 	assign o_np = !multi && ms4 ? 2'd3 : 2'd0;
-	am_add #(.W(32)) u_a3 (.a(a2),
+
+	wire [31:0] xoff_j;
+	wire xj_co_unused;
+	am_add #(.W(32)) u_xj (.a(xoff),
 `ifdef MUT_WPIX_LINE
 		.b(32'd0),
 `else
 		.b(multi ? {{(30-LINE_SHIFT){1'b0}}, i_j, {LINE_SHIFT{1'b0}}} : 32'd0),
 `endif
-		.ci(1'b0), .s(o_addr), .co(a3_co_unused));
+		.ci(1'b0), .s(xoff_j), .co(xj_co_unused));
+	assign o_xoff_j = xoff_j;
 
+	am_add #(.W(32)) u_a3 (.a(a1), .b(xoff_j), .ci(1'b0), .s(o_addr), .co(a3_co_unused));
 	wire a3_1_co_unused;
-	am_add #(.W(32)) u_a3_1 (.a(o_addr), .b(stride[i_rt]), .ci(1'b0), .s(o_addr1), .co(a3_1_co_unused));
+	am_add #(.W(32)) u_a3_1 (.a(o_row_base1), .b(xoff_j), .ci(1'b0), .s(o_addr1), .co(a3_1_co_unused));
 
 	/* The slots. */
 	wire [127:0] kcv = kc_sel ? {kcf[3], kcf[2], kcf[1], kcf[0]} :
@@ -273,35 +397,95 @@ module atg_rop_wpix #(
 	wire [4*LINE_SHIFT-1:0] so;
 	wire [511:0] src, dst;
 	genvar k;
+	function [LINE_SHIFT-1:0] shift_left_psl;
+		input [2:0] val;
+		input [2:0] sh;
+		case (sh)
+		3'd0: shift_left_psl = {{(LINE_SHIFT-3){1'b0}}, val};
+		3'd1: shift_left_psl = {{(LINE_SHIFT-4){1'b0}}, val, 1'b0};
+		3'd2: shift_left_psl = {{(LINE_SHIFT-5){1'b0}}, val, 2'b00};
+		3'd3: shift_left_psl = {val[LINE_SHIFT-4:0], 3'b000};
+		default: shift_left_psl = {val[LINE_SHIFT-5:0], 4'b0000};
+		endcase
+	endfunction
+
+	function [3:0] shift_left_el;
+		input [1:0] val;
+		input [2:0] sh;
+		case (sh)
+		3'd0: shift_left_el = {2'b00, val};
+		3'd1: shift_left_el = {1'b0, val, 1'b0};
+		default: shift_left_el = {val, 2'b00};
+		endcase
+	endfunction
+
+	/* Registered slot configuration: stable across beats, zero mux delay from i_rt */
+	(* max_fanout = 4 *) reg [2:0] psl_k [0:3];
+	(* max_fanout = 4 *) reg [2:0] el_k [0:3];
+	(* max_fanout = 4 *) reg multi_k [0:3];
+	integer ik;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			for (ik = 0; ik < 4; ik = ik + 1) begin
+				psl_k[ik] <= 3'd0;
+				el_k[ik] <= 3'd0;
+				multi_k[ik] <= 1'b0;
+			end
+		end else begin
+			for (ik = 0; ik < 4; ik = ik + 1) begin
+				psl_k[ik] <= psl;
+				el_k[ik] <= el;
+				multi_k[ik] <= multi;
+			end
+		end
+	end
+
 	generate
 	for (k = 0; k < 4; k = k + 1) begin : g_slot
+		wire [2:0] psl_slot = psl_k[k];
+		wire [2:0] el_slot = el_k[k];
+		wire multi_slot = multi_k[k];
+
 		/* one line: lane k, sample i_g; several: n = E i_j + k */
-		wire [3:0] nj;
+		wire [3:0] nj = shift_left_el(i_j, el_slot);
 		wire [3:0] n;
-		wire [LINE_SHIFT-1:0] o1s, o1, om;
-		wire n_co_unused, o1_co_unused;
-		am_shift #(.W(4), .SW(3)) u_nj (.a({2'd0, i_j}), .amt(el), .left(1'b1), .arith(1'b0), .y(nj));
+		wire [LINE_SHIFT-1:0] om;
+		wire n_co_unused;
 		localparam [3:0] K4 = k;
 		am_add #(.W(4)) u_n (.a(nj), .b(K4), .ci(1'b0), .s(n), .co(n_co_unused));
-		wire [1:0] ln = multi ? {i_r, n[2]} : k;
-		am_shift #(.W(LINE_SHIFT), .SW(3)) u_o1s (.a({{(LINE_SHIFT-3){1'b0}}, ms4 ? {k[0], i_g} :
-			{2'b00, k[0]}}), .amt(psl), .left(1'b1), .arith(1'b0), .y(o1s));
-		am_add #(.W(LINE_SHIFT)) u_o1 (.a(k >= 2 ? i_off1 : i_off0), .b(o1s), .ci(1'b0), .s(o1),
-			.co(o1_co_unused));
-		am_shift #(.W(LINE_SHIFT), .SW(3)) u_om (.a({{(LINE_SHIFT-2){1'b0}}, k[1:0]}), .amt(psl),
-			.left(1'b1), .arith(1'b0), .y(om));
-		wire [LINE_SHIFT-1:0] o = multi ? om : o1;
+		wire [1:0] ln = multi_slot ? {i_r, n[2]} : k;
+		wire [LINE_SHIFT-1:0] o1s = shift_left_psl(ms4 ? {k[0], i_g} : {2'b00, k[0]}, psl_slot);
+		wire [LINE_SHIFT-1:0] o1;
+		if (k == 0 || k == 2) begin : g_k02
+			wire has_o1s = ms4 && (i_g != 2'd0);
+			wire [LINE_SHIFT-1:0] off_base = (k >= 2) ? i_off1 : i_off0;
+			wire [LINE_SHIFT-1:0] o1_add;
+			wire o1_co_unused;
+			am_add #(.W(LINE_SHIFT)) u_o1 (.a(off_base), .b(o1s), .ci(1'b0), .s(o1_add),
+				.co(o1_co_unused));
+			assign o1 = has_o1s ? o1_add : off_base;
+		end else begin : g_k13
+			wire [LINE_SHIFT-1:0] off_base = (k >= 2) ? i_off1 : i_off0;
+			wire o1_co_unused;
+			am_add #(.W(LINE_SHIFT)) u_o1 (.a(off_base), .b(o1s), .ci(1'b0), .s(o1),
+				.co(o1_co_unused));
+		end
+		assign om = shift_left_psl({1'b0, k[1:0]}, psl_slot);
+		(* max_fanout = 16 *) wire [LINE_SHIFT-1:0] o = multi_slot ? om : o1;
 		assign so[LINE_SHIFT * k +: LINE_SHIFT] = o;
-		assign en[k] = multi ? i_r : k >= 2;
-		assign mk[k] = multi ? (el == 3'd2 || k < 2) && i_smask[{ln, n[1:0]}] : i_smask[{ln, i_g}];
+		assign en[k] = multi_slot ? i_r : k >= 2;
+		assign mk[k] = multi_slot ? (el_slot == 3'd2 || k < 2) && i_smask[{ln, n[1:0]}] : i_smask[{ln, i_g}];
 		/* the old pixel: its 16-byte block, then its ps bytes there (the
 		 * offset is a multiple of ps, as in atg_rop_wb; the bytes above ps
 		 * are 0) */
 		wire [127:0] blk = en[k] ? i_line1[128 * o[LINE_SHIFT-1:4] +: 128] :
 			i_line0[128 * o[LINE_SHIFT-1:4] +: 128];
-		assign dst[128 * k +: 128] = psl[2] ? blk : psl == 3'd3 ? {64'd0, blk[64 * o[3] +: 64]} :
-			psl == 3'd2 ? {96'd0, blk[32 * o[3:2] +: 32]} :
-			psl == 3'd1 ? {112'd0, blk[16 * o[3:1] +: 16]} : {120'd0, blk[8 * o[3:0] +: 8]};
+		assign dst[128 * k +: 128] = psl_slot[2] ? blk : psl_slot == 3'd3 ? {64'd0, blk[64 * o[3] +: 64]} :
+			psl_slot == 3'd2 ? {96'd0, blk[32 * o[3:2] +: 32]} :
+			psl_slot == 3'd1 ? {112'd0, blk[16 * o[3:1] +: 16]} : {120'd0, blk[8 * o[3:0] +: 8]};
+		wire [31:0] bdst_k = (psl_slot == 3'd0) ? {24'd0, blk[8 * o[3:0] +: 8]} :
+		                     (psl_slot == 3'd1) ? {16'd0, blk[16 * o[3:1] +: 16]} :
+		                     blk[32 * o[3:2] +: 32];
 		assign src[128 * k +: 128] = i_color[128 * ln +: 128];
 		wire unused_n = &{1'b0, n[3]};
 	end
@@ -311,7 +495,7 @@ module atg_rop_wpix #(
 	assign o_ent = en;
 	assign o_soff = so;
 	assign o_bsrc = src;
-	assign o_bdst = {dst[384 +: 32], dst[256 +: 32], dst[128 +: 32], dst[0 +: 32]};
+	assign o_bdst = {g_slot[3].bdst_k, g_slot[2].bdst_k, g_slot[1].bdst_k, g_slot[0].bdst_k};
 	assign f_dst = {dst[384 +: 64], dst[256 +: 64], dst[128 +: 64], dst[0 +: 64]};
 
 	generate
@@ -362,8 +546,10 @@ module atg_rop_wpix #(
 	end
 	endgenerate
 
-	wire unused_ok = &{1'b0, f_idle, yrs[48:32], LS32[31:4], inf[67:9], inf[0], feat[25:8], feat[6:0], s_rt[8:3], s_bl[8:2],
-		s_kc[8:2], nll[3:2], s_ext[8:3], s_ext_bo_unused, kcv, f_dst, bl[22:1], f_take};
+	localparam [31:0] LS32 = LINE_SHIFT;
+	wire unused_ok = &{1'b0, f_idle, yrs[48:32], LS32[31:4], s_rt[8:3], s_bl[8:2],
+		s_kc[8:2], nll[3:2], s_ext[8:3], s_ext_bo_unused, kcv, f_dst, bl[22:1], f_take,
+		xj_co_unused, a3_1_co_unused};
 endmodule
 
 `default_nettype wire

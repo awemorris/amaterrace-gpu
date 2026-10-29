@@ -93,7 +93,7 @@ module atg_su_chk #(
 	wire [7:0] m_req_tag, x_rsp_tag;
 	wire x_rsp_write, x_rsp_error;
 
-	atg_su #(.NPHYS(NPHYS), .GRP_W(GRP_W), .SUBGROUP(SUBGROUP)) dut (
+	atg_su #(.NPHYS(NPHYS), .GRP_W(GRP_W), .SUBGROUP(SUBGROUP), .LDS_BYTES(4096)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.scrub(1'b0), .scrub_busy(),
 		.cs_kick(cs_kick), .lc_kick(lc_kick), .inv(4'd0),
@@ -205,11 +205,11 @@ module atg_su_chk #(
 						for (g = 0; g < G; g = g + 1) begin
 							a = (s * NREGS + r) * G + g;
 							e = (s * NREGS + r) * 32 + g * NPHYS + gl;
-							if (exp[e][32] && dut.rf.lane[gl].m1[a] !== exp[e][31:0]) begin
+							if (exp[e][32] && dut.rf.lane[gl].m1.mem[a] !== exp[e][31:0]) begin
 								if (lane_err[gl] < 3)
 									$display("FAIL atg_su NPHYS %0d slot %0d r%0d lane %0d: %h want %h",
 										NPHYS, s, r, g * NPHYS + gl,
-										dut.rf.lane[gl].m1[a], exp[e][31:0]);
+										dut.rf.lane[gl].m1.mem[a], exp[e][31:0]);
 								lane_err[gl] = lane_err[gl] + 1;
 							end
 						end

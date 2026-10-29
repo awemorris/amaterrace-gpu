@@ -76,9 +76,24 @@ module atg_rop_ms (
 	`include "ghci_regs.vh"
 	localparam [31:0] ONE = 32'h3F800000;
 
+	/* a <= b (fp32 order, -0 = +0); 0 with a NaN */
+	function fle;
+		input [31:0] a, b;
+		reg [32:0] ka, kb;
+		begin
+			/* the signed keys ka <= kb, from the signs and the magnitudes */
+			ka = {2'd0, a[30:0]};
+			kb = {2'd0, b[30:0]};
+			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
+				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) &&
+				(a[31] ? (b[31] ? ka >= kb : 1'b1) : (b[31] ? ka == 0 && kb == 0 : ka <= kb));
+		end
+	endfunction
+
 	reg ms4, a2c, a2one;
 	reg [1:0] dc;	/* DEPTH_CLAMP */
 	reg [31:0] vzs, vzo, vzf;	/* VIEWPORT z scale, z offset; f = z offset + z scale */
+	reg [31:0] zmin, zmax;
 	reg [3:0] zt;	/* the fadd's issues of f, by age */
 	wire vz_we = st_we && (st_idx == GHCI_S_VIEWPORT + 9'd4 || st_idx == GHCI_S_VIEWPORT + 9'd5);
 	always @(posedge clk)
@@ -89,6 +104,9 @@ module atg_rop_ms (
 			dc <= 2'd0;
 			vzs <= 32'd0;
 			vzo <= 32'd0;
+			vzf <= 32'd0;
+			zmin <= 32'd0;
+			zmax <= ONE;
 			zt <= 4'd0;
 		end else begin
 			zt <= {zt[2:0], zf_go};
@@ -103,29 +121,17 @@ module atg_rop_ms (
 				vzs <= st_wdata;
 			if (st_we && st_idx == GHCI_S_VIEWPORT + 9'd5)
 				vzo <= st_wdata;
-			if (zt[3])
+			if (zt[3]) begin
 				vzf <= fa_r;
+				zmin <= fle(vzo, fa_r) ? vzo : fa_r;
+				zmax <= fle(vzo, fa_r) ? fa_r : vzo;
+			end
 		end
 	/* f is added the cycle after a write of either word */
 	reg zf_go;
 	always @(posedge clk)
 		zf_go <= rst_n && vz_we;
 
-	/* a <= b (fp32 order, -0 = +0); 0 with a NaN */
-	function fle;
-		input [31:0] a, b;
-		reg [32:0] ka, kb;
-		begin
-			/* the signed keys ka <= kb, from the signs and the magnitudes */
-			ka = {2'd0, a[30:0]};
-			kb = {2'd0, b[30:0]};
-			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
-				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) &&
-				(a[31] ? (b[31] ? ka >= kb : 1'b1) : (b[31] ? ka == 0 && kb == 0 : ka <= kb));
-		end
-	endfunction
-	wire [31:0] zmin = fle(vzo, vzf) ? vzo : vzf;
-	wire [31:0] zmax = fle(vzo, vzf) ? vzf : vzo;
 	/* depth clamp: NaN to zmin */
 	function [31:0] zclamp;
 		input [31:0] x, lo, hi;
@@ -248,13 +254,12 @@ module atg_rop_ms (
 				ds <= i_aux[147:20];
 				zexp <= i_aux[19:16];
 				c <= 5'd0;
+				o_sdepth <= 512'd0;
 				if (sm == 16'd0)
 					st <= S_IDLE;
-				else if (ms4) begin
-					o_sdepth <= 512'd0;
+				else if (ms4)
 					st <= S_Z;
-				end else begin
-					o_sdepth <= 512'd0;
+				else begin
 					for (l = 0; l < 4; l = l + 1)
 						o_sdepth[128 * l +: 32] <= d1c[32 * l +: 32];
 					o_valid <= 1'b1;
