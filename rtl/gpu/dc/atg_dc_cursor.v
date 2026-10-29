@@ -242,13 +242,19 @@ module atg_dc_cursor #(
 		end
 	end
 
-	/* The blend stage. */
-	reg sv, s_in;
+	/* The blend pipeline (3 stages: Fetch/BRAM -> Mix -> Narrow/Output). */
+	reg st0_valid, s_in;
+	reg [1:0] s_fmt;
 	reg [31:0] s_px, q;
 	reg [15:0] x, y;
 	reg [15:0] pos_x, pos_y;
 	reg vis;
-	wire accept = i_valid && i_ready;
+
+	wire st1_ready;
+	wire st0_ready = !st0_valid || st1_ready;
+	wire accept = i_valid && st0_ready;
+	assign i_ready = st0_ready;
+
 	wire [16:0] dx, dy;
 	wire [15:0] x_inc, y_inc, x_last;
 	wire [4:0] bl_co_unused;
@@ -261,17 +267,15 @@ module atg_dc_cursor #(
 	am_sub #(.W(16)) s_w (.a(fb_width), .b(16'd1), .bi(1'b0), .d(x_last), .bo(bl_co_unused[4]));
 	wire in_cur = dx[16:6] == 11'd0 && dy[16:6] == 11'd0;
 
-	assign i_ready = !sv || o_ready;
-	assign o_valid = sv;
-
 	always @(posedge clk)
 		if (accept)
 			q <= mem[{dy[5:0], dx[5:0]}];
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			sv <= 1'b0;
+			st0_valid <= 1'b0;
 			s_in <= 1'b0;
+			s_fmt <= 2'd0;
 			s_px <= 32'd0;
 			x <= 16'd0;
 			y <= 16'd0;
@@ -279,18 +283,17 @@ module atg_dc_cursor #(
 			pos_y <= 16'd0;
 			vis <= 1'b0;
 		end else if (frame_start || !enable) begin
-			sv <= 1'b0;
+			st0_valid <= 1'b0;
 			x <= 16'd0;
 			y <= 16'd0;
 			pos_x <= pos[15:0];
 			pos_y <= pos[31:16];
 			vis <= show;
-		end else begin
-			if (o_ready)
-				sv <= 1'b0;
-			if (accept) begin
-				sv <= 1'b1;
+		end else if (st0_ready) begin
+			st0_valid <= i_valid;
+			if (i_valid) begin
 				s_px <= i_data;
+				s_fmt <= format;
 				s_in <= in_cur && vis && img_ok && st == S_IDLE;
 				if (x == x_last) begin
 					x <= 16'd0;
@@ -302,28 +305,16 @@ module atg_dc_cursor #(
 		end
 	end
 
+	/* Stage 1: Mix computation */
 	wire [7:0] cb = q[7:0], cg = q[15:8], cr = q[23:16], ca = q[31:24];
 	wire [7:0] r8 = {s_px[15:11], s_px[15:13]};
 	wire [7:0] g8 = {s_px[10:5], s_px[10:9]};
 	wire [7:0] b8 = {s_px[4:0], s_px[4:2]};
 
-	/*
-	 * Three blenders, one per channel of the output (a pixel has one
-	 * format): c + round(p x (255 - a) / 255), saturated, where round(t /
-	 * 255) of t + 128 is (t + 128 + ((t + 128) >> 8)) >> 8 for every t up
-	 * to 255 x 255.  Channel 0 is the byte 23:16 (BGRA8: R; RGBA8: B, the
-	 * cursor's R and B swapped; RGB565: R), 1 the byte 15:8 (G), 2 the
-	 * byte 7:0.
-	 */
-	wire [23:0] mix_c = format == 2'd1 ? {cb, cg, cr} : {cr, cg, cb};
-	wire [23:0] mix_p = format == 2'd2 ? {r8, g8, b8} : s_px[23:0];
-	wire [23:0] mixed;
-
-	/*
-	 * RGB565 narrows the blended channels again: round(v x m / 255) for m =
-	 * 31 (red, blue) or 63 (green), v x m being v x 32 - v or v x 64 - v.
-	 */
-	wire [5:0] narrowed [0:2];
+	wire [23:0] mix_c = (s_fmt == 2'd1) ? {cb, cg, cr} : {cr, cg, cb};
+	wire [23:0] mix_p = (s_fmt == 2'd2) ? {r8, g8, b8} : s_px[23:0];
+	wire [7:0] st0_v [0:2];
+	wire [2:0] t_co_unused, u_co_unused;
 
 	genvar k;
 	generate
@@ -332,49 +323,139 @@ module atg_dc_cursor #(
 		wire [7:0] p = mix_p[8*(2-k) +: 8];
 		wire [15:0] pa, t, u;
 		wire [8:0] sum;
-		wire t_co_unused, u_co_unused;
 
 		am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(0)) m_pa (.clk(clk), .en(1'b1), .a(p), .b(~ca), .p(pa));
-		am_add #(.W(16)) a_t (.a(pa), .b(16'd128), .ci(1'b0), .s(t), .co(t_co_unused));
-		am_add #(.W(16)) a_u (.a(t), .b({8'd0, t[15:8]}), .ci(1'b0), .s(u), .co(u_co_unused));	/* u[15:8] < 256 */
+		am_add #(.W(16)) a_t (.a(pa), .b(16'd128), .ci(1'b0), .s(t), .co(t_co_unused[k]));
+		am_add #(.W(16)) a_u (.a(t), .b({8'd0, t[15:8]}), .ci(1'b0), .s(u), .co(u_co_unused[k]));
 		am_add #(.W(8)) a_s (.a(c), .b(u[15:8]), .ci(1'b0), .s(sum[7:0]), .co(sum[8]));
-		assign mixed[8*(2-k) +: 8] = sum[8] ? 8'hFF : sum[7:0];
-
-		wire [7:0] v = sum[8] ? 8'hFF : sum[7:0];
-		wire [15:0] vm, nt, nu;
-		wire vm_bo_unused, nt_co_unused, nu_co_unused;
-
-		if (k == 1) begin : g_63
-			am_sub #(.W(16)) s_vm (.a({2'd0, v, 6'd0}), .b({8'd0, v}), .bi(1'b0), .d(vm), .bo(vm_bo_unused));
-		end else begin : g_31
-			am_sub #(.W(16)) s_vm (.a({3'd0, v, 5'd0}), .b({8'd0, v}), .bi(1'b0), .d(vm), .bo(vm_bo_unused));
-		end
-		am_add #(.W(16)) a_nt (.a(vm), .b(16'd128), .ci(1'b0), .s(nt), .co(nt_co_unused));
-		am_add #(.W(16)) a_nu (.a(nt), .b({8'd0, nt[15:8]}), .ci(1'b0), .s(nu), .co(nu_co_unused));	/* nu[15:8] < 64 */
-		assign narrowed[k] = nu[13:8];
-
-		wire unused_ok = &{1'b0, t_co_unused, u_co_unused, vm_bo_unused, nt_co_unused, nu_co_unused,
-			u[7:0], nu[7:0], nu[15:14]};
+		assign st0_v[k] = sum[8] ? 8'hFF : sum[7:0];
 	end
 	endgenerate
 
-	wire [5:0] r5 = narrowed[0];
-	wire [5:0] g6 = narrowed[1];
-	wire [5:0] b5 = narrowed[2];
+	wire st2_ready;
+	assign st1_ready = !st1_valid || st2_ready;
+	reg st1_valid;
+	reg [7:0] st1_v0, st1_v1, st1_v2;
+	reg [31:0] st1_px;
+	reg st1_in;
+	reg [1:0] st1_fmt;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st1_valid <= 1'b0;
+			st1_v0 <= 8'd0;
+			st1_v1 <= 8'd0;
+			st1_v2 <= 8'd0;
+			st1_px <= 32'd0;
+			st1_in <= 1'b0;
+			st1_fmt <= 2'd0;
+		end else if (frame_start || !enable) begin
+			st1_valid <= 1'b0;
+		end else if (st1_ready) begin
+			st1_valid <= st0_valid;
+			if (st0_valid) begin
+				st1_v0 <= st0_v[0];
+				st1_v1 <= st0_v[1];
+				st1_v2 <= st0_v[2];
+				st1_px <= s_px;
+				st1_in <= s_in;
+				st1_fmt <= s_fmt;
+			end
+		end
+	end
+
+	/* Testbench identity check wires (combinational from q and s_px) */
+	wire [23:0] tb_mix_c = (format == 2'd1) ? {cb, cg, cr} : {cr, cg, cb};
+	wire [23:0] tb_mix_p = (format == 2'd2) ? {r8, g8, b8} : s_px[23:0];
+	wire [5:0] tb_narrowed [0:2];
+	wire [2:0] tb_t_unused, tb_u_unused, tb_vm_unused, tb_nt_unused, tb_nu_unused;
+
+	genvar m;
+	generate
+	for (m = 0; m < 3; m = m + 1) begin : g_tb
+		wire [7:0] c = tb_mix_c[8*(2-m) +: 8];
+		wire [7:0] p = tb_mix_p[8*(2-m) +: 8];
+		wire [15:0] pa, t, u;
+		wire [8:0] sum;
+		am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(0)) m_pa (.clk(clk), .en(1'b1), .a(p), .b(~ca), .p(pa));
+		am_add #(.W(16)) a_t (.a(pa), .b(16'd128), .ci(1'b0), .s(t), .co(tb_t_unused[m]));
+		am_add #(.W(16)) a_u (.a(t), .b({8'd0, t[15:8]}), .ci(1'b0), .s(u), .co(tb_u_unused[m]));
+		am_add #(.W(8)) a_s (.a(c), .b(u[15:8]), .ci(1'b0), .s(sum[7:0]), .co(sum[8]));
+		wire [7:0] v = sum[8] ? 8'hFF : sum[7:0];
+		wire [15:0] vm, nt, nu;
+		if (m == 1) begin : g_63
+			am_sub #(.W(16)) s_vm (.a({2'd0, v, 6'd0}), .b({8'd0, v}), .bi(1'b0), .d(vm), .bo(tb_vm_unused[m]));
+		end else begin : g_31
+			am_sub #(.W(16)) s_vm (.a({3'd0, v, 5'd0}), .b({8'd0, v}), .bi(1'b0), .d(vm), .bo(tb_vm_unused[m]));
+		end
+		am_add #(.W(16)) a_nt (.a(vm), .b(16'd128), .ci(1'b0), .s(nt), .co(tb_nt_unused[m]));
+		am_add #(.W(16)) a_nu (.a(nt), .b({8'd0, nt[15:8]}), .ci(1'b0), .s(nu), .co(tb_nu_unused[m]));
+		assign tb_narrowed[m] = nu[13:8];
+	end
+	endgenerate
+	wire [5:0] r5 = tb_narrowed[0];
+	wire [5:0] g6 = tb_narrowed[1];
+	wire [5:0] b5 = tb_narrowed[2];
+
+	/* Stage 2: Narrow computation & output */
+	wire [5:0] narrowed [0:2];
+	wire [2:0] vm_bo_unused, nt_co_unused, nu_co_unused;
+	generate
+	for (k = 0; k < 3; k = k + 1) begin : g_narrow
+		wire [7:0] v = (k == 0) ? st1_v0 : (k == 1) ? st1_v1 : st1_v2;
+		wire [15:0] vm, nt, nu;
+
+		if (k == 1) begin : g_63
+			am_sub #(.W(16)) s_vm (.a({2'd0, v, 6'd0}), .b({8'd0, v}), .bi(1'b0), .d(vm), .bo(vm_bo_unused[k]));
+		end else begin : g_31
+			am_sub #(.W(16)) s_vm (.a({3'd0, v, 5'd0}), .b({8'd0, v}), .bi(1'b0), .d(vm), .bo(vm_bo_unused[k]));
+		end
+		am_add #(.W(16)) a_nt (.a(vm), .b(16'd128), .ci(1'b0), .s(nt), .co(nt_co_unused[k]));
+		am_add #(.W(16)) a_nu (.a(nt), .b({8'd0, nt[15:8]}), .ci(1'b0), .s(nu), .co(nu_co_unused[k]));
+		assign narrowed[k] = nu[13:8];
+	end
+	endgenerate
+
+	wire [5:0] st2_r5 = narrowed[0];
+	wire [5:0] st2_g6 = narrowed[1];
+	wire [5:0] st2_b5 = narrowed[2];
+	wire [23:0] mixed = {st1_v0, st1_v1, st1_v2};
 	reg [31:0] blended;
 
 	always @(*) begin
-		case (format)
+		case (st1_fmt)
 		2'd2:
-			blended = {s_px[31:16], r5[4:0], g6, b5[4:0]};
+			blended = {st1_px[31:16], st2_r5[4:0], st2_g6, st2_b5[4:0]};
 		default:	/* BGRA8, RGBA8 */
-			blended = {s_px[31:24], mixed};
+			blended = {st1_px[31:24], mixed};
 		endcase
 	end
 
-	assign o_data = s_in ? blended : s_px;
+	wire [31:0] nxt_out_data = st1_in ? blended : st1_px;
 
-	wire unused_ok = &{1'b0, rsp_tag, l_in_ready, r5[5], b5[5], flip_base[5:0], ld_co_unused, bl_co_unused};
+	assign st2_ready = !st2_valid || o_ready;
+	reg st2_valid;
+	reg [31:0] st2_data;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st2_valid <= 1'b0;
+			st2_data <= 32'd0;
+		end else if (frame_start || !enable) begin
+			st2_valid <= 1'b0;
+		end else if (st2_ready) begin
+			st2_valid <= st1_valid;
+			if (st1_valid)
+				st2_data <= nxt_out_data;
+		end
+	end
+
+	assign o_valid = st2_valid;
+	assign o_data = st2_data;
+
+	wire unused_ok = &{1'b0, rsp_tag, l_in_ready, r5[5], b5[5], st2_r5[5], st2_b5[5], flip_base[5:0], ld_co_unused, bl_co_unused,
+		t_co_unused, u_co_unused, vm_bo_unused, nt_co_unused, nu_co_unused,
+		tb_t_unused, tb_u_unused, tb_vm_unused, tb_nt_unused, tb_nu_unused};
 endmodule
 
 `default_nettype wire
