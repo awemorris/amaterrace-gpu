@@ -26,18 +26,29 @@
 
 ## 2. 組み合わせの軸 (Matrix Axes)
 
-各モジュールについて、以下の 2 軸（直交組み合わせ）を交差させてテストケースを定義する。
+各モジュールについて、以下の 3 軸（直交組み合わせ）を交差させてテストケースを網羅的に定義する。
 
 ### 軸 A: 機能性 (Functionality)
 1. **`FULL`**: コンフィグで**すべての機能を有効**
 2. **`BARE`**: コンフィグで**すべての拡張機能を無効**（ベースライン動作のみ）
-3. **`ISO-<Feature>`**: コンフィグで**1つずつの機能を単独有効化**（機能単位のクリティカルパスおよび面積インパクトを単離）
+3. **`ISO-<Feature>`**: コンフィグで**1つずつの機能を単独有効化**（1-Hot: 単体機能遅延を単離）
+4. **`PAIR-<F1>+<F2>`**: コンフィグで**任意の2つのオプション機能を有効化**（2-Hot: 相互干渉・MUX段数評価）
+5. **`TRIO-<F1>+<F2>+<F3>`**: コンフィグで**任意の3つのオプション機能を有効化**（3-Hot: 複合データパス遅延評価）
+6. **`QUAD-<F1>+<F2>+<F3>+<F4>`**: コンフィグで**任意の4つのオプション機能を有効化**（4-Hot: 高負荷機能統合評価）
 
 ### 軸 B: サイズ / キャッシュ容量 (Size & Capacity)
 1. **`MAX`**: 最大構成（High-Performance Preset 相当）
 2. **`HALF`**: 1/2 構成（Balanced Preset 相当）
 3. **`QUARTER`**: 1/4 構成（Mid-Low 構成）
 4. **`MIN`**: 最小構成（Minimal Preset 相当）
+
+### 軸 C: SU SIMT 物理レーン数 (SU SIMT Lane Configuration)
+*Shader Unit (`su`) 専用の直交マトリックス次元*
+1. **`LANE-2`** (`NPHYS=2`): 2-lane 物理 SIMD（組込み・極小フットプリント構成）
+2. **`LANE-4`** (`NPHYS=4`): 4-lane 物理 SIMD（Minimal Preset 基準構成）
+3. **`LANE-8`** (`NPHYS=8`): 8-lane 物理 SIMD（Kintex-7 325T 推奨・Balanced 構成）
+4. **`LANE-16`** (`NPHYS=16`): 16-lane 物理 SIMD（ミッドレンジ GPU 構成）
+5. **`LANE-32`** (`NPHYS=32`): 32-lane 物理 SIMD（フルワープ単一サイクル実行・High-End 構成）
 
 ---
 
@@ -65,6 +76,12 @@
 | `BLT-I-ROP` | `ISO-ROP3` | `MIN` | ROP3 単独有効, FIFO=4 | 論理演算回路のタイミング影響 |
 | `BLT-I-SCL` | `ISO-Scaling` | `MIN` | Scaling 単独有効, FIFO=4 | 乗算器・補間パスの 200MHz 適合性 |
 | `BLT-I-FMT` | `ISO-FmtCvt` | `MIN` | FmtCvt 単独有効, FIFO=4 | フォーマット展開段の遅延 |
+| `BLT-P-RS` | `PAIR-ROP3+Scl` | `MIN` | ROP3 + Scaling 有効, FIFO=4 | 拡大縮小と論理演算の複合遅延 |
+| `BLT-P-SF` | `PAIR-Scl+Fmt` | `MIN` | Scaling + FmtCvt 有効, FIFO=4 | 補間乗算とフォーマット変換の直結遅延 |
+| `BLT-P-FC` | `PAIR-Fmt+Clip` | `MIN` | FmtCvt + Clip 有効, FIFO=4 | 境界判定とカラー展開の複合パス |
+| `BLT-T-RSF` | `TRIO-ROP+Scl+Fmt` | `MIN` | ROP3 + Scaling + FmtCvt, FIFO=4 | 3機能有効時の MUX カスケード遅延 |
+| `BLT-T-SFC` | `TRIO-Scl+Fmt+Clp` | `MIN` | Scaling + FmtCvt + Clip, FIFO=4 | 演算・変換・クリップ統合パス |
+| `BLT-Q-ALL` | `QUAD-All4` | `MIN` | ROP3 + Scaling + FmtCvt + Clip, FIFO=4 | 4機能全有効 (最小バッファ) での 200MHz 検証 |
 | `BLT-S-HALF` | `FULL` | `HALF` | 全機能有効, FIFO=32 | 中間バッファサイズでの P&R 余裕度 |
 | `BLT-S-QTR` | `FULL` | `QUARTER` | 全機能有効, FIFO=16 | エリア/タイミングのバランス評価 |
 
@@ -90,6 +107,12 @@
 | `CP-I-MMU` | `ISO-AutoMMU` | `MIN` | AutoMMU 単独有効 | ページフォールト/ウォーカー連携パス |
 | `CP-I-RV32` | `ISO-RV32` | `MIN` | RV32 コア単独有効 | RISC-V パイプライン段の 200MHz 適合性 |
 | `CP-I-IND` | `ISO-Indirect` | `MIN` | Indirect 実行単独有効 | DMAフェッチから実行へのレイテンシ |
+| `CP-P-MR` | `PAIR-MMU+RV32` | `MIN` | AutoMMU + RV32 有効 | MMU 連携命令と RISC-V 制御の結合パス |
+| `CP-P-RI` | `PAIR-RV32+Ind` | `MIN` | RV32 + Indirect 有効 | FW によるインダイレクトパケット生成遅延 |
+| `CP-P-IS` | `PAIR-Ind+State`| `MIN` | Indirect + StateBC 有効 | インダイレクト実行時の状態同期パス |
+| `CP-T-MRI` | `TRIO-MMU+RV+Ind`| `MIN` | AutoMMU + RV32 + Indirect | 高機能制御 3 要素統合時の FSM 遅延 |
+| `CP-T-RIS` | `TRIO-RV+Ind+St`| `MIN` | RV32 + Indirect + StateBC | コントローラ・ディスパッチ・状態同期間の相互遅延 |
+| `CP-Q-ALL` | `QUAD-All4` | `MIN` | AutoMMU + RV32 + Ind + StateBC | 4機能全有効 (最小メモリ) での 200MHz 検証 |
 | `CP-S-HALF` | `FULL` | `HALF` | 全機能有効, IMEM=16K/8K | バランス型メモリフットプリント |
 | `CP-S-QTR` | `FULL` | `QUARTER` | 全機能有効, IMEM=8K/4K | 軽量 RV32 構成でのタイミング確認 |
 
@@ -115,6 +138,12 @@
 | `DC-I-CUR` | `ISO-Cursor` | `MIN` | Cursor 単独有効 | カーソルブレンディング位置計算パス |
 | `DC-I-PL2` | `ISO-Plane2` | `MIN` | Plane2 単独有効 | 複数ピクセルストリームの多重化遅延 |
 | `DC-I-TMD` | `ISO-TMDS` | `MIN` | TMDS 単独有効 | 10b8b エンコードの論理段数 |
+| `DC-P-CP` | `PAIR-Cur+Plane2`| `MIN` | Cursor + Plane2 有効 | カーソルと第2プレーン重畳の加算・MUX段 |
+| `DC-P-PT` | `PAIR-Pl2+TMDS` | `MIN` | Plane2 + TMDS 有効 | 複数プレーン合成から TMDS 直接出力 |
+| `DC-P-CG` | `PAIR-Cur+Gamma` | `MIN` | Cursor + Gamma 有効 | カーソルブレンド後のガンマ補正遅延 |
+| `DC-T-CPT` | `TRIO-Cur+Pl2+TMD`| `MIN` | Cursor + Plane2 + TMDS | 重畳・合成・シリアライズ 3段パイプライン |
+| `DC-T-CPG` | `TRIO-Cur+Pl2+Gam`| `MIN` | Cursor + Plane2 + Gamma | 複合ブレンド＋ガンマ変換の論理段数 |
+| `DC-Q-ALL` | `QUAD-All4` | `MIN` | Cursor + Plane2 + TMDS + Gamma | 4機能全有効 (最小FIFO) での 200MHz 検証 |
 | `DC-S-HALF` | `FULL` | `HALF` | 全機能有効, FIFO=1024 | 実用構成での BRAM/LUT バランス |
 | `DC-S-QTR` | `FULL` | `QUARTER` | 全機能有効, FIFO=512 | リソース逼迫時のスキャンアウト安定性 |
 
@@ -143,6 +172,12 @@
 | `FMT-I-SRGB` | `ISO-sRGB` | `MAX` | sRGB テーブルのみ単独有効 | ROM LUT (256x28) 読出パス |
 | `FMT-I-SNRM` | `ISO-SNORM` | `MAX` | SNORM のみ単独有効 | 符号反転・最大値クランプ演算パス |
 | `FMT-I-DEP` | `ISO-Depth` | `MAX` | D24S8 / D32F のみ単独有効 | デプスビット抽出・浮動小数点変換パス |
+| `FMT-P-FS` | `PAIR-FP16+sRGB` | `MAX` | FP16 + sRGB 有効 | 半精度変換とガンマテーブルの複合 |
+| `FMT-P-PD` | `PAIR-Pack+Depth`| `MAX` | Packed + Depth 有効 | パック展開とデプス変換の並行パス |
+| `FMT-P-SS` | `PAIR-FP32+SNORM`| `MAX` | FP32 + SNORM 有効 | フル精度浮動小数点と符号付き正規化 |
+| `FMT-T-FSP` | `TRIO-FP16+sRGB+Pk`| `MAX`| FP16 + sRGB + Packed | 3種の主力カラー形式の統合遅延 |
+| `FMT-T-SPD` | `TRIO-sRGB+Pk+Dep`| `MAX`| sRGB + Packed + Depth | 多形式同時デコード時の MUX ツリー遅延 |
+| `FMT-Q-FPSD`| `QUAD-FP16+sR+Pk+Dp`| `MAX`| FP16 + sRGB + Packed + Depth | 代表 4 形式統合時の 200MHz 検証 |
 | `FMT-S-HALF` | `FULL` | `HALF` | 全機能有効, 5段パイプライン | レイテンシ削減時の周波数限界 |
 | `FMT-S-QTR` | `FULL` | `QUARTER` | 全機能有効, 3段パイプライン | 論理段数と動作周波数のトレードオフ |
 
@@ -168,6 +203,12 @@
 | `MC-I-PROT` | `ISO-Prot` | `MIN` | メモリ保護単独有効, L2=4KB | アドレス境界チェック加算器の遅延 |
 | `MC-I-COAL` | `ISO-Coalesce` | `MIN` | リクエスト結合単独有効, L2=4KB | コアレス判定回路のタイミング影響 |
 | `MC-I-PRIO` | `ISO-Priority` | `MIN` | QoS調停単独有効, L2=4KB | 多入力グラント回路のクリティカルパス |
+| `MC-P-PC` | `PAIR-Prot+Coalesce`| `MIN` | Prot + Coalesce 有効, L2=4KB | 保護判定と結合バッファの直列遅延 |
+| `MC-P-CP` | `PAIR-Coal+Prefetch`| `MIN` | Coalesce + Prefetch 有効, L2=4KB | 結合とプリフェッチのアドレス生成競合 |
+| `MC-P-PR` | `PAIR-Prot+Priority`| `MIN` | Prot + Priority 有効, L2=4KB | セキュリティとQoS調停の複合パス |
+| `MC-T-PCP` | `TRIO-Prot+Col+Pre` | `MIN` | Prot + Coalesce + Prefetch | 要求解析・結合・先読みの 3段複合 |
+| `MC-T-CPR` | `TRIO-Col+Pre+Prio` | `MIN` | Coalesce + Prefetch + Priority | 高負荷帯域制御回路のタイミング |
+| `MC-Q-ALL` | `QUAD-All4` | `MIN` | Prot + Coalesce + Pref + Prio | 4機能全有効 (最小L2) での 200MHz 検証 |
 | `MC-S-HALF` | `FULL` | `HALF` | 全機能有効, L2=32KB, 8-way | バランス構成でのタイミングと配線混雑 |
 | `MC-S-QTR` | `FULL` | `QUARTER` | 全機能有効, L2=16KB, 4-way | KC705 推奨構成での BRAM・LUT 最適化 |
 
@@ -193,6 +234,12 @@
 | `MMU-I-WLK` | `ISO-Walker` | `MIN` | 自律ウォーカー単独有効 | メモリアクセス生成ステートマシンの遅延 |
 | `MMU-I-PAR` | `ISO-Parallel` | `MIN` | 複数クライアント並列ルックアップ | 多重ポート調停回路のタイミング |
 | `MMU-I-SUP` | `ISO-SuperPage`| `MIN` | 巨大ページ単独有効 | 可変マスク長比較ロジックの遅延 |
+| `MMU-P-WP` | `PAIR-Walk+Parallel`| `MIN` | Walker + Parallel 有効 | 並列探索ミス時のウォーカー調停パス |
+| `MMU-P-WS` | `PAIR-Walk+SuperPg` | `MIN` | Walker + SuperPage 有効 | ウォーカーでの2MB/1GBページ判定遅延 |
+| `MMU-P-PF` | `PAIR-Parallel+Fault`| `MIN` | Parallel + Fault 有効 | 複数ポート並列フォールト検出・エンコード |
+| `MMU-T-WPS` | `TRIO-Walk+Par+Sup` | `MIN` | Walker + Parallel + SuperPage | 高度仮想記憶 3 機能の複合データパス |
+| `MMU-T-WPF` | `TRIO-Walk+Par+Fault`| `MIN` | Walker + Parallel + Fault | 例外・並列ミス処理の統合遅延 |
+| `MMU-Q-ALL` | `QUAD-All4` | `MIN` | Walker + Par + Sup + Fault | 4機能全有効 (最小TLB) での 200MHz 検証 |
 | `MMU-S-HALF` | `FULL` | `HALF` | 全機能有効, L1=32, L2=256 | 中規模 CAM の LUT 消費と周波数の両立 |
 | `MMU-S-QTR` | `FULL` | `QUARTER` | 全機能有効, L1=16, L2=128 | タイミング・エリアのバランス点 |
 
@@ -220,6 +267,12 @@
 | `ROP-I-DS` | `ISO-DualSrc` | `MIN` | デュアルソースブレンド単独有効 | 2入力カラー合成パスのタイミング |
 | `ROP-I-LOG` | `ISO-LogicOp` | `MIN` | 論理演算単独有効 | ビット演算 MUX パスの遅延 |
 | `ROP-I-MRT` | `ISO-MRT4` | `MIN` | MRT=4 単独有効 | 複数レンダーターゲット展開パスの遅延 |
+| `ROP-P-FP` | `PAIR-FBlend+Pack` | `MIN` | FBlend + Pack 有効 | 浮動小数点ブレンドとパック書込の直列遅延 |
+| `ROP-P-FD` | `PAIR-FBlend+Dual` | `MIN` | FBlend + DualSrc 有効 | 2ソース入力の浮動小数点ブレンドパイプライン |
+| `ROP-P-PL` | `PAIR-Pack+LogicOp`| `MIN` | Pack + LogicOp 有効 | 論理演算とフォーマット変換の結合 |
+| `ROP-T-FPD` | `TRIO-FBl+Pack+Dual`| `MIN` | FBlend + Pack + DualSrc | 高度ブレンディング 3 系統の統合遅延 |
+| `ROP-T-FPL` | `TRIO-FBl+Pack+Log` | `MIN` | FBlend + Pack + LogicOp | 浮動小数点・論理・パックの選択 MUX 遅延 |
+| `ROP-Q-FPDL`| `QUAD-FBl+Pk+Du+Log`| `MIN` | FBlend + Pack + Dual + Logic | 代表 4 機能有効 (最小MRT) での 200MHz 検証 |
 | `ROP-S-HALF` | `FULL` | `HALF` | 全機能有効, MRT=4, Cache=16K | 中規模レンダーターゲットの 200MHz 適合性 |
 | `ROP-S-QTR` | `FULL` | `QUARTER` | 全機能有効, MRT=2, Cache=8K | バランス構成でのタイミングとエリア |
 
@@ -245,6 +298,12 @@
 | `RX-I-MSAA` | `ISO-MSAA` | `MIN` | MSAA 4x 単独有効 | サンプル位置オフセット生成パス |
 | `RX-I-EZ` | `ISO-EarlyZ` | `MIN` | Early-Z 単独有効 | Hi-Z 比較およびデプス判定遅延 |
 | `RX-I-CRS` | `ISO-Coarse` | `MIN` | Coarse Scan 単独有効 | 8x8 タイル内外判定ロジックのタイミング |
+| `RX-P-ME` | `PAIR-MSAA+EarlyZ` | `MIN` | MSAA 4x + Early-Z 有効 | マルチサンプルでのデプス比較・カリング遅延 |
+| `RX-P-MC` | `PAIR-MSAA+Coarse` | `MIN` | MSAA 4x + Coarse 有効 | タイルスキャンとサンプルマスク生成の直結 |
+| `RX-P-ES` | `PAIR-EarlyZ+Sciss`| `MIN` | Early-Z + Scissor 有効 | 境界クリッピングとデプステストの複合 |
+| `RX-T-MEC` | `TRIO-MSAA+EZ+Coarse`| `MIN`| MSAA 4x + Early-Z + Coarse | 粗走査・高精度判定・カリング 3 段結合 |
+| `RX-T-MES` | `TRIO-MSAA+EZ+Sciss` | `MIN`| MSAA 4x + Early-Z + Scissor | マルチサンプルクリッピング＋カリング |
+| `RX-Q-ALL` | `QUAD-All4` | `MIN` | MSAA + Early-Z + Coarse + Sciss | 4機能全有効 (最小FIFO) での 200MHz 検証 |
 | `RX-S-HALF` | `FULL` | `HALF` | 全機能有効, MSAA=2x, FIFO=32 | 実用的な MSAA 構成でのタイミング |
 | `RX-S-QTR` | `FULL` | `QUARTER` | 全機能有効, MSAA=1x, FIFO=16 | エッジバッファ縮小時のスループット維持 |
 
@@ -270,6 +329,12 @@
 | `SA-I-FP16` | `ISO-FP16` | `MIN` | FP16 積和演算単独有効 | 浮動小数点乗算・加算のパイプライン段 |
 | `SA-I-ACT` | `ISO-Activation` | `MIN` | 活性化関数単独有効 | 非線形関数近似回路の論理段数 |
 | `SA-I-ACC` | `ISO-Accum` | `MIN` | 32-bit 累算単独有効 | アキュムレータフィードバックループのタイミング |
+| `SA-P-FA` | `PAIR-FP16+Accum` | `MIN` | FP16 + Accum 有効 | 浮動小数点積和と 32-bit 累算の直結 |
+| `SA-P-IA` | `PAIR-INT8+Activ` | `MIN` | INT8 + Activation 有効 | 整数積和から活性化関数へのパイプライン |
+| `SA-P-AA` | `PAIR-Activ+Accum`| `MIN` | Activation + Accum 有効 | 累算出力からの活性化変換パス |
+| `SA-T-FAA` | `TRIO-FP16+Act+Acc`| `MIN` | FP16 + Activation + Accum | 浮動小数点フル推論パイプライン |
+| `SA-T-IAA` | `TRIO-INT8+Act+Acc`| `MIN` | INT8 + Activation + Accum | 整数フル量子化推論パイプライン |
+| `SA-Q-ALL` | `QUAD-All4` | `MIN` | INT8 + FP16 + Act + Accum | 4機能全有効 (最小アレイ) での 200MHz 検証 |
 | `SA-S-HALF` | `FULL` | `HALF` | 全機能有効, 8x8 PE, 16KB | FPGA 中規模実装での DSP 使用率と周波数 |
 | `SA-S-QTR` | `FULL` | `QUARTER` | 全機能有効, 4x4 PE, 8KB | 軽量エッジ AI 向け構成での検証 |
 
@@ -297,8 +362,32 @@
 | `SU-I-SGRP` | `ISO-Subgroup` | `MIN` | Subgroup シャッフル単独有効 | レーン間バレルシフタ・クロスバー遅延 |
 | `SU-I-SFU` | `ISO-SFU` | `MIN` | 超越関数 SFU 単独有効 | CORDIC / 多項式近似回路の段数 |
 | `SU-I-MSH` | `ISO-Mesh` | `MIN` | メッシュシェーダ単独有効 | プリミティブ・頂点出力バッファリング |
+| `SU-P-FS` | `PAIR-FP16+Subgrp`| `MIN` | FP16 + Subgroup 有効 | パックド FP16 でのシャッフル演算遅延 |
+| `SU-P-SS` | `PAIR-Subgrp+SFU` | `MIN` | Subgroup + SFU 有効 | 特殊関数とレーン間通信の複合パス |
+| `SU-P-FM` | `PAIR-FP16+Mesh`  | `MIN` | FP16 + Mesh 有効 | メッシュ頂点生成と FP 演算の統合 |
+| `SU-T-FSS` | `TRIO-FP16+Sub+SFU`| `MIN` | FP16 + Subgroup + SFU | 高度コンピュート 3 機能統合時の ALU 遅延 |
+| `SU-T-SSM` | `TRIO-Sub+SFU+Mesh`| `MIN` | Subgroup + SFU + Mesh | ジオメトリ・特殊演算の複合ディスパッチ |
+| `SU-Q-FSSM`| `QUAD-FP16+Sub+SFU+Msh`| `MIN`| FP16 + Sub + SFU + Mesh | 代表 4 機能有効 (NPHYS=4) での 200MHz 検証 |
 | `SU-S-HALF` | `FULL` | `HALF` | 全機能有効, NPHYS=16, NWARPS=4, LDS=8K | バランス構成でのタイミングと配線混雑 |
 | `SU-S-QTR` | `FULL` | `QUARTER` | 全機能有効, NPHYS=8, NWARPS=4, LDS=4K | Kintex-7 325T 推奨構成でのタイミング検証 |
+
+#### SU SIMT 物理レーン数 (NPHYS) 直交検証マトリックス
+
+SU は SIMD レーン幅の物理スケーリングに伴い、ALU 分配ツリー、スコアボード、レジスタファイル BRAM ポート、LDS クロスバーの配線混雑とファンアウトが指数関数的に増大する。
+そのため、以下の全 5 レーン構成において、200 MHz 単体 OOC 動作の達成を保証する。
+
+| テスト ID | 物理レーン数 (NPHYS) | 機能性 | 主なパラメータ設定 | 評価・クリティカルパス観点 |
+| :--- | :--- | :--- | :--- | :--- |
+| `SU-L2-FULL` | **2 lanes** (`NPHYS=2`) | `FULL` | NPHYS=2, NWARPS=4, LDS=4K | 超小型 SIMD でのファンイン/アウト最小基準遅延 |
+| `SU-L2-BARE` | **2 lanes** (`NPHYS=2`) | `BARE` | NPHYS=2, NWARPS=2, LDS=1K | 極小フットプリント・基本命令パス |
+| `SU-L4-FULL` | **4 lanes** (`NPHYS=4`) | `FULL` | NPHYS=4, NWARPS=4, LDS=8K | Minimal Preset 基準（KC705 最小実装） |
+| `SU-L4-BARE` | **4 lanes** (`NPHYS=4`) | `BARE` | NPHYS=4, NWARPS=2, LDS=1K | Minimal ベースライン |
+| `SU-L8-FULL` | **8 lanes** (`NPHYS=8`) | `FULL` | NPHYS=8, NWARPS=4, LDS=8K | **Kintex-7 325T 標準推奨構成 (Balanced)** |
+| `SU-L8-BARE` | **8 lanes** (`NPHYS=8`) | `BARE` | NPHYS=8, NWARPS=4, LDS=4K | 標準構成ベースライン |
+| `SU-L16-FULL`| **16 lanes** (`NPHYS=16`) | `FULL` | NPHYS=16, NWARPS=8, LDS=16K | ミッドレンジ GPU 構成・クロスバー遅延検証 |
+| `SU-L16-BARE`| **16 lanes** (`NPHYS=16`) | `BARE` | NPHYS=16, NWARPS=4, LDS=8K | 16レーン基本実行パイプライン |
+| `SU-L32-FULL`| **32 lanes** (`NPHYS=32`) | `FULL` | NPHYS=32, NWARPS=8, LDS=16K | **フルワープ 32 レーン単一サイクル・High-End** |
+| `SU-L32-BARE`| **32 lanes** (`NPHYS=32`) | `BARE` | NPHYS=32, NWARPS=4, LDS=8K | 32 レーン基本パス・巨大 RF BRAM ファンアウト |
 
 ---
 
@@ -326,6 +415,12 @@
 | `TU-I-ANIS` | `ISO-Aniso` | `MIN` | 異方性フィルタ単独有効 | 多重サンプル重み付け加算器の遅延 |
 | `TU-I-CUBE` | `ISO-Cube` | `MIN` | キューブマップ単独有効 | 面境界交差座標補正のタイミング |
 | `TU-I-FPF` | `ISO-FPFilt` | `MIN` | FP フィルタ単独有効 | 浮動小数点バイリニア積和のパイプライン段 |
+| `TU-P-BA` | `PAIR-BC+Aniso`   | `MIN` | BC 展開 + 異方性フィルタ有効 | 圧縮展開と多重サンプリングの直列パス |
+| `TU-P-CF` | `PAIR-Cube+FPFilt`| `MIN` | Cube + FP フィルタ有効 | キューブ面変換と高精度フィルタリング |
+| `TU-P-BM` | `PAIR-BC+MSHR`    | `MIN` | BC 展開 + MSHR 有効 | ノンブロッキングミスバッファと展開の連携 |
+| `TU-T-BAF` | `TRIO-BC+Anis+FP` | `MIN` | BC + Aniso + FP フィルタ | テクスチャパイプライン主力 3 機能複合 |
+| `TU-T-CAF` | `TRIO-Cube+Anis+FP`| `MIN`| Cube + Aniso + FP フィルタ | 複雑アドレス計算と浮動小数点補間 |
+| `TU-Q-BACF`| `QUAD-BC+An+Cu+FP`| `MIN` | BC + Aniso + Cube + FP フィルタ | 代表 4 大機能統合時の 200MHz 検証 |
 | `TU-S-HALF` | `FULL` | `HALF` | 全機能有効, L1=8KB, 4 banks | Balanced Preset でのタイミング検証 |
 | `TU-S-QTR` | `FULL` | `QUARTER` | 全機能有効, L1=4KB, 4 banks | キャッシュ半減時のリソース削減効果 |
 
@@ -351,6 +446,12 @@
 | `VF-I-VK` | `ISO-VkFormat`| `MIN` | VkFormat 単独有効 | `atg_fmt_cvt` 接続時のデータパス遅延 |
 | `VF-I-INST` | `ISO-Inst` | `MIN` | インスタンシング単独有効 | インデックス加算・分配パスの遅延 |
 | `VF-I-OOB` | `ISO-OOB` | `MIN` | OOB判定単独有効 | 境界比較とデフォルト値MUXの遅延 |
+| `VF-P-VI` | `PAIR-VkFmt+Inst` | `MIN` | VkFormat + Instancing 有効 | インスタンス展開とフォーマット変換の直結 |
+| `VF-P-VO` | `PAIR-VkFmt+OOB`  | `MIN` | VkFormat + OOB 有効 | 境界判定と任意フォーマット展開の直列遅延 |
+| `VF-P-IB` | `PAIR-Inst+IBCache`| `MIN` | Instancing + IB Cache 有効 | インデックスフェッチとインスタンス加算 |
+| `VF-T-VIO` | `TRIO-Vk+Inst+OOB` | `MIN` | VkFormat + Inst + OOB | 頂点属性前処理 3 機能の複合パス |
+| `VF-T-VIB` | `TRIO-Vk+Inst+IB`  | `MIN` | VkFormat + Inst + IB Cache | キャッシュ読出しからフォーマット変換まで |
+| `VF-Q-ALL` | `QUAD-All4`       | `MIN` | VkFormat + Inst + OOB + IBCache | 4機能全有効 (最小キャッシュ) での 200MHz 検証 |
 | `VF-S-HALF` | `FULL` | `HALF` | 全機能有効, Cache=4 lines | 中規模頂点キャッシュでのタイミング |
 | `VF-S-QTR` | `FULL` | `QUARTER` | 全機能有効, Cache=2 lines | KC705 Minimal 構成での推奨設定 |
 
@@ -372,6 +473,8 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `TOP-F-MAX` | `FULL` (全有効) | `MAX` | High-Perf プリセット相当 | 大規模 FPGA / ASIC 向けフルスペック検証 |
 | `TOP-B-MIN` | `BARE` (全無効) | `MIN` | Minimal プリセット相当 (拡張全OFF) | **KC705 200 MHz クローズの基準ターゲット** |
+| `TOP-P-UI` | `PAIR-Units+Interconn` | `MIN` | 全ユニット + 内部バス (最小構成) | ユニット間通信とクロスバーの 200MHz 検証 |
+| `TOP-P-UC` | `PAIR-Units+ClkGate`   | `MIN` | 全ユニット + クロック制御 | クロックゲーティング挿入時のスキューとセットアップ |
 | `TOP-S-HALF` | `FULL` | `HALF` | Balanced プリセット相当 | 配線混雑度と 200MHz タイミングの限界検証 |
 | `TOP-S-QTR` | `FULL` | `QUARTER` | Mid-Low プリセット相当 | スライス使用率 80% 前後での最適解検証 |
 
@@ -403,10 +506,12 @@ tools/synth-module.sh atg_tu 5.000
 
 ---
 
-## 5. 測定結果ログフォーマット (記録用テンプレート)
+## 5. 測定結果ログフォーマット (全組み合わせ記録用追跡表)
 
-各モジュール・各テストケースの実行結果は、以下の表形式で記録・追跡する。
+各モジュール・各テストケース（FULL, BARE, ISO, PAIR, TRIO, QUAD, および SU レーン別）の実行結果は、以下の表形式で記録・追跡する。
+**最終ゴール**: 本マトリックスに記載されたすべての組み合わせにおいて、単体 OOC 合成で **WNS >= 0.000 ns (200 MHz MET)** を達成すること。
 
+### (1) ベースライン FULL 構成 測定結果
 | テスト ID | モジュール | 機能性 | サイズ | WNS (ns) | 論理段数 | LUT 数 | FF 数 | BRAM | DSP | 判定 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `FMT-F-MAX` | `atg_fmt_cvt` | `FULL` | `MAX` | **+1.729** | 12 | 1,689 | 612 | 1 | 0 | **PASS** |
@@ -421,6 +526,23 @@ tools/synth-module.sh atg_tu 5.000
 | `SU-F-MAX` | `atg_su` | `FULL` | `MAX` | **-2.416** | 24 | 22,410 | 12,850 | 16 | 8 | FAIL |
 | `RX-F-MAX` | `atg_rx` | `FULL` | `MAX` | **-4.744** | 28 | 19,530 | 11,240 | 0 | 18 | FAIL |
 | `ROP-F-MAX` | `atg_rop` | `FULL` | `MAX` | **-8.820** | 36 | 21,340 | 8,920 | 4 | 2 | FAIL |
+
+### (2) SU SIMT 物理レーン数 (NPHYS) 別 200 MHz 検証ログ
+| テスト ID | モジュール | レーン構成 | 機能性 | WNS (ns) | 論理段数 | LUT 数 | DSP | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `SU-L2-FULL` | `atg_su` | NPHYS=2 | `FULL` | TBD | TBD | TBD | TBD | 未実行 |
+| `SU-L2-BARE` | `atg_su` | NPHYS=2 | `BARE` | TBD | TBD | TBD | TBD | 未実行 |
+| `SU-L4-FULL` | `atg_su` | NPHYS=4 | `FULL` | TBD | TBD | TBD | TBD | 未実行 |
+| `SU-L4-BARE` | `atg_su` | NPHYS=4 | `BARE` | TBD | TBD | TBD | TBD | 未実行 |
+| `SU-L8-FULL` | `atg_su` | NPHYS=8 | `FULL` | TBD | TBD | TBD | TBD | 未実行 |
+| `SU-L8-BARE` | `atg_su` | NPHYS=8 | `BARE` | TBD | TBD | TBD | TBD | 未実行 |
+| `SU-L16-FULL`| `atg_su` | NPHYS=16 | `FULL` | TBD | TBD | TBD | TBD | 未実行 |
+| `SU-L16-BARE`| `atg_su` | NPHYS=16 | `BARE` | TBD | TBD | TBD | TBD | 未実行 |
+| `SU-L32-FULL`| `atg_su` | NPHYS=32 | `FULL` | TBD | TBD | TBD | TBD | 未実行 |
+| `SU-L32-BARE`| `atg_su` | NPHYS=32 | `BARE` | TBD | TBD | TBD | TBD | 未実行 |
+
+### (3) PAIR / TRIO / QUAD 組み合わせ OOC 実行ログ (記録用)
+各モジュールの機能組み合わせパターン（2-Hot, 3-Hot, 4-Hot）の単体 OOC 合成結果を順次追記する。
 
 ---
 
