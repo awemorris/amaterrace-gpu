@@ -54,6 +54,8 @@ if {$synth} {
 
 array set strategies {
 	Default {Default Default Default Default}
+	Area_Explore {ExploreArea AltSpreadLogic_high AggressiveExplore AlternateCLBRouting}
+	Area_Default {ExploreArea Default Default Default}
 	Performance_Explore {Explore Explore Explore Explore}
 	Performance_ExtraTimingOpt {Default ExtraTimingOpt Explore NoTimingRelaxation}
 	Performance_NetDelay_high {Default ExtraNetDelay_high AggressiveExplore NoTimingRelaxation}
@@ -105,7 +107,14 @@ if {$from_synth ne ""} {
 	} elseif {[string match "*zu*" $part] || [string match "*zcu106*" $topdir]} {
 		set synth_define "SYNTH_ZYNQ_ULTRASCALE"
 	}
-	synth_design -top $top -part $part -verilog_define $synth_define -include_dirs [list [file join $root include]]
+	set synth_cmd [list synth_design -top $top -part $part -verilog_define $synth_define -include_dirs [list [file join $root include]]]
+	if {[info exists ::env(VIVADO_SYNTH_DIRECTIVE)] && $::env(VIVADO_SYNTH_DIRECTIVE) ne ""} {
+		lappend synth_cmd -directive $::env(VIVADO_SYNTH_DIRECTIVE)
+	}
+	if {[info exists ::env(VIVADO_CONTROL_SET_OPT_THRESHOLD)] && $::env(VIVADO_CONTROL_SET_OPT_THRESHOLD) ne ""} {
+		lappend synth_cmd -control_set_opt_threshold $::env(VIVADO_CONTROL_SET_OPT_THRESHOLD)
+	}
+	eval $synth_cmd
 	write_checkpoint -force [file join $out ${top}_synth.dcp]
 }
 report_dsp_cells [file join $out dsp_cells.rpt] "Post-Synthesis"
@@ -117,7 +126,8 @@ if {[env_or VIVADO_SYNTH_ONLY 0]} {
 	puts "vivado-build: synthesis completed (VIVADO_SYNTH_ONLY=1)"
 	return
 }
-opt_design -directive $d_opt
+set opt_cmd [list opt_design -directive $d_opt]
+eval $opt_cmd
 place_design -directive $d_place
 phys_opt_design -directive $d_phys
 route_design -directive $d_route
