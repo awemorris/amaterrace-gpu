@@ -16,4 +16,7 @@ if ! /sbin/ldconfig -p | grep -q 'libncurses\.so\.5 '; then
 	export LD_LIBRARY_PATH
 fi
 
+export VIVADO_THREADS=${VIVADO_THREADS:-2}
+export VIVADO_MAX_THREADS=${VIVADO_MAX_THREADS:-2}
+
 exec vivado -mode batch "$@"

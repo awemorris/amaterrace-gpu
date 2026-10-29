@@ -1,4 +1,12 @@
 # synth-module.tcl: Quick out-of-context synthesis and timing analysis for a single module
+if {[info exists ::env(VIVADO_THREADS)]} {
+    set_param general.maxThreads $::env(VIVADO_THREADS)
+} elseif {[info exists ::env(VIVADO_MAX_THREADS)]} {
+    set_param general.maxThreads $::env(VIVADO_MAX_THREADS)
+} else {
+    set_param general.maxThreads 2
+}
+
 if {$argc < 2} {
     puts "Usage: vivado -mode batch -source synth-module.tcl -tclargs <top_module> <file_list_or_pattern> ?clock_period_ns?"
     exit 1
