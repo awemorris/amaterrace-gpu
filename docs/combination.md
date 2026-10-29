@@ -631,6 +631,20 @@ tools/synth-module.sh atg_tu 5.000
 | `MC-S-HALF` | `atg_mc` | `FULL` | `HALF` | **-3.984** | 19 | 32,700 | 27,996 | 32 | 0 | FAIL (L2+Prot高負荷) |
 | `MC-S-QTR` | `atg_mc` | `FULL` | `QUARTER` | **-4.380** | 21 | 13,535 | 10,372 | 16 | 0 | FAIL (L2+Prot高負荷) |
 
+#### (CP) `cp` (`atg_cp`) 組み合わせ OOC 測定結果
+| テスト ID | モジュール | 機能性 | サイズ | WNS (ns) | 論理段数 | LUT 数 | FF 数 | BRAM | DSP | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `CP-F-MAX` | `atg_cp` | `FULL` | `MAX` | **-0.126** | 9 | 4,080 | 4,344 | 1 | 0 | FAIL (DISP連携微小違反) |
+| `CP-B-MIN` | `atg_cp` | `BARE` | `MIN` | **+0.192** | 13 | 3,655 | 3,906 | 1 | 0 | **PASS** |
+| `CP-I-MMU` | `atg_cp` | `ISO-AutoMMU` | `MIN` | **+0.192** | 13 | 3,655 | 3,906 | 1 | 0 | **PASS** |
+| `CP-I-RV32` | `atg_cp` | `ISO-RV32` | `MIN` | **+0.418** | 8 | 3,673 | 3,908 | 1 | 0 | **PASS** |
+| `CP-I-IND` | `atg_cp` | `ISO-Indirect` | `MIN` | **+0.192** | 13 | 3,655 | 3,906 | 1 | 0 | **PASS** |
+| `CP-T-MRI` | `atg_cp` | `TRIO-MMU+RV+Ind` | `MIN` | **+0.418** | 8 | 3,672 | 3,908 | 1 | 0 | **PASS** |
+| `CP-T-RIS` | `atg_cp` | `TRIO-RV+Ind+St` | `MIN` | **+0.418** | 8 | 3,673 | 3,908 | 1 | 0 | **PASS** |
+| `CP-Q-ALL` | `atg_cp` | `QUAD-All4` | `MIN` | **-0.126** | 9 | 4,079 | 4,344 | 1 | 0 | FAIL (DISP連携微小違反) |
+| `CP-S-HALF` | `atg_cp` | `FULL` | `HALF` | **-0.126** | 9 | 4,080 | 4,344 | 1 | 0 | FAIL (DISP連携微小違反) |
+| `CP-S-QTR` | `atg_cp` | `FULL` | `QUARTER` | **-0.126** | 9 | 4,081 | 4,344 | 1 | 0 | FAIL (DISP連携微小違反) |
+
 ---
 
 ## 6. ベースライン測定結果サマリと改善ロードマップ
