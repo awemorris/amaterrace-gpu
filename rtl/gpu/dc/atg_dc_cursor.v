@@ -243,10 +243,11 @@ module atg_dc_cursor #(
 	end
 
 	/* Lockstep Blend Pipeline:
-	 * Stage 0: BRAM read
-	 * Stage 1: Mul (am_mul LAT=1)
-	 * Stage 2: Add (a_t, a_u, a_s)
-	 * Stage 3: Narrow & Output
+	 * Stage 0a: BRAM read
+	 * Stage 0b: FF register (breaks BRAM to DSP path)
+	 * Stage 1:  Mul (am_mul LAT=1)
+	 * Stage 2:  Add (a_t, a_u, a_s)
+	 * Stage 3:  Narrow & Output
 	 */
 	wire pipe_en;
 	reg st3_valid;
@@ -257,9 +258,9 @@ module atg_dc_cursor #(
 	assign i_ready = pipe_en;
 	wire accept = i_valid && pipe_en;
 
-	reg st0_valid, s_in;
-	reg [1:0] s_fmt;
-	reg [31:0] s_px, q;
+	reg st0a_valid, s0_in;
+	reg [1:0] s0_fmt;
+	reg [31:0] s0_px, mem_q;
 	reg [15:0] x, y;
 	reg [15:0] pos_x, pos_y;
 	reg vis;
@@ -278,7 +279,46 @@ module atg_dc_cursor #(
 
 	always @(posedge clk)
 		if (accept)
-			q <= mem[{dy[5:0], dx[5:0]}];
+			mem_q <= mem[{dy[5:0], dx[5:0]}];
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			st0a_valid <= 1'b0;
+			s0_in <= 1'b0;
+			s0_fmt <= 2'd0;
+			s0_px <= 32'd0;
+			x <= 16'd0;
+			y <= 16'd0;
+			pos_x <= 16'd0;
+			pos_y <= 16'd0;
+			vis <= 1'b0;
+		end else if (frame_start || !enable) begin
+			st0a_valid <= 1'b0;
+			x <= 16'd0;
+			y <= 16'd0;
+			pos_x <= pos[15:0];
+			pos_y <= pos[31:16];
+			vis <= show;
+		end else if (pipe_en) begin
+			st0a_valid <= i_valid;
+			if (i_valid) begin
+				s0_px <= i_data;
+				s0_fmt <= format;
+				s0_in <= in_cur && vis && img_ok && st == S_IDLE;
+				if (x == x_last) begin
+					x <= 16'd0;
+					y <= y_inc;
+				end else begin
+					x <= x_inc;
+				end
+			end
+		end
+	end
+
+	/* Stage 0b: Slice FF register */
+	reg st0_valid, s_in;
+	reg [1:0] s_fmt;
+	reg [31:0] s_px, q;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -286,30 +326,16 @@ module atg_dc_cursor #(
 			s_in <= 1'b0;
 			s_fmt <= 2'd0;
 			s_px <= 32'd0;
-			x <= 16'd0;
-			y <= 16'd0;
-			pos_x <= 16'd0;
-			pos_y <= 16'd0;
-			vis <= 1'b0;
+			q <= 32'd0;
 		end else if (frame_start || !enable) begin
 			st0_valid <= 1'b0;
-			x <= 16'd0;
-			y <= 16'd0;
-			pos_x <= pos[15:0];
-			pos_y <= pos[31:16];
-			vis <= show;
 		end else if (pipe_en) begin
-			st0_valid <= i_valid;
-			if (i_valid) begin
-				s_px <= i_data;
-				s_fmt <= format;
-				s_in <= in_cur && vis && img_ok && st == S_IDLE;
-				if (x == x_last) begin
-					x <= 16'd0;
-					y <= y_inc;
-				end else begin
-					x <= x_inc;
-				end
+			st0_valid <= st0a_valid;
+			if (st0a_valid) begin
+				q <= mem_q;
+				s_px <= s0_px;
+				s_fmt <= s0_fmt;
+				s_in <= s0_in;
 			end
 		end
 	end
