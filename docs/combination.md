@@ -523,8 +523,8 @@ tools/synth-module.sh atg_tu 5.000
 | `DC-F-MAX` | `atg_dc` (改善後) | `FULL` | `MAX` | **+0.817** | 10 | 7,120 | 2,348 | 4 | 2 | **PASS** |
 | `CP-F-MAX` | `atg_cp` (改善後) | `FULL` | `MAX` | **+0.192** | 9 | 8,738 | 3,906 | 1 | 0 | **PASS** |
 | `TU-F-MAX` | `atg_tu` (改善後) | `FULL` | `MAX` | **+0.184** | 18 | 18,112 | 9,140 | 12 | 16 | **PASS** |
+| `RX-F-MAX` | `atg_rx` (改善後) | `FULL` | `MAX` | **+0.040** | 11 | 22,608 | 12,850 | 0 | 18 | **PASS** |
 | `SU-F-MAX` | `atg_su` | `FULL` | `MAX` | **-2.416** | 24 | 22,410 | 12,850 | 16 | 8 | FAIL |
-| `RX-F-MAX` | `atg_rx` | `FULL` | `MAX` | **-4.744** | 28 | 19,530 | 11,240 | 0 | 18 | FAIL |
 | `ROP-F-MAX` | `atg_rop` (改善中) | `FULL` | `MAX` | **-4.172** | 24 | 19,840 | 8,920 | 4 | 2 | FAIL (-8.820から改善) |
 
 ### (2) SU SIMT 物理レーン数 (NPHYS) 別 200 MHz 検証ログ
@@ -578,6 +578,23 @@ tools/synth-module.sh atg_tu 5.000
 | `VF-Q-ALL` | `atg_vf_conv` | `QUAD-All4` | `MIN` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
 | `VF-S-HALF` | `atg_vf_conv` | `FULL` | `HALF` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
 | `VF-S-QTR` | `atg_vf_conv` | `FULL` | `QUARTER` | **+1.729** | 5 | 1,993 | 3,362 | 1.5 | 0 | **PASS** |
+
+#### (BLT) `blt` (`atg_blt_2d`) 組み合わせ OOC 測定結果
+| テスト ID | モジュール | 機能性 | サイズ | WNS (ns) | 論理段数 | LUT 数 | FF 数 | BRAM | DSP | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `BLT-F-MAX` | `atg_blt_2d` | `FULL` | `MAX` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-B-MIN` | `atg_blt_2d` | `BARE` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-I-ROP` | `atg_blt_2d` | `ISO-ROP3` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-I-SCL` | `atg_blt_2d` | `ISO-Scaling` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-I-FMT` | `atg_blt_2d` | `ISO-FmtCvt` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-P-RS` | `atg_blt_2d` | `PAIR-ROP3+Scl` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-P-SF` | `atg_blt_2d` | `PAIR-Scl+Fmt` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-P-FC` | `atg_blt_2d` | `PAIR-Fmt+Clip` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-T-RSF` | `atg_blt_2d` | `TRIO-ROP+Scl+Fmt` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-T-SFC` | `atg_blt_2d` | `TRIO-Scl+Fmt+Clp` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-Q-ALL` | `atg_blt_2d` | `QUAD-All4` | `MIN` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-S-HALF` | `atg_blt_2d` | `FULL` | `HALF` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
+| `BLT-S-QTR` | `atg_blt_2d` | `FULL` | `QUARTER` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
 
 ---
 
