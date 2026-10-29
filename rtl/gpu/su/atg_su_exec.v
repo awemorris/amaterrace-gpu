@@ -74,14 +74,21 @@ module atg_su_exec #(
 	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
 	wire [31:0] wexec = exec_r[x_warp*32 +: 32];
 
-	/* Direct group extraction of EXEC bits for the current group */
+	/* Direct group demux/mux for NPHYS-aligned operations (eliminates 3 generic barrel shifters) */
+	reg [31:0] bt_w;
+	reg [31:0] gmask;
 	reg [NPHYS-1:0] wexec_g;
 	integer gi;
 	always @(*) begin
+		bt_w = 32'd0;
+		gmask = 32'd0;
 		wexec_g = {NPHYS{1'b0}};
 		for (gi = 0; gi < 32/NPHYS; gi = gi + 1) begin
-			if (x_grp == gi[GRP_W-1:0])
+			if (x_grp == gi[GRP_W-1:0]) begin
+				bt_w[gi*NPHYS +: NPHYS] = bt;
+				gmask[gi*NPHYS +: NPHYS] = {NPHYS{1'b1}};
 				wexec_g = wexec[gi*NPHYS +: NPHYS];
+			end
 		end
 	end
 
@@ -89,7 +96,7 @@ module atg_su_exec #(
 	wire [NPHYS-1:0] em = wexec_g;
 
 	/* Per lane: the Boolean of rs1. */
-	(* max_fanout = 4 *) reg [NPHYS-1:0] bt;
+	reg [NPHYS-1:0] bt;
 	integer l;
 	always @(*)
 		for (l = 0; l < NPHYS; l = l + 1)
@@ -151,6 +158,7 @@ module atg_su_exec #(
 						wc_w <= x_warp;
 						wc_o <= op == ATG_EXEC_END ? 2'd1 : op == ATG_EXEC_BAR ? 2'd2 :
 							2'd0;
+						wc_take <= is_br && take;
 						wc_pc_tgt <= pc_tgt;
 						wc_pc_p1 <= pc_p1;
 					end
@@ -159,64 +167,50 @@ module atg_su_exec #(
 		end
 	end
 
-	genvar gw, gg;
+	genvar gw;
 	generate
 		for (gw = 0; gw < NWARPS; gw = gw + 1) begin : g_warp_state
-			for (gg = 0; gg < 32/NPHYS; gg = gg + 1) begin : g_grp_state
-				wire grp_match = mine && (x_warp == gw[WARP_W-1:0]) && (x_grp == gg[GRP_W-1:0]);
-				wire w_init = init_valid && (init_warp == gw[WARP_W-1:0]);
+			wire w_match = mine && (x_warp == gw[WARP_W-1:0]);
+			wire w_init = init_valid && (init_warp == gw[WARP_W-1:0]);
 
-				wire kill_match = grp_match && (op == ATG_EXEC_KILL);
-				wire [NPHYS-1:0] cur_kill = kill_r[(gw*32 + gg*NPHYS) +: NPHYS];
-				wire [NPHYS-1:0] cur_exec = exec_r[(gw*32 + gg*NPHYS) +: NPHYS];
-				wire [NPHYS-1:0] kill_d = cur_kill | (bt & cur_exec);
+			wire kill_ce = w_init || (w_match && op == ATG_EXEC_KILL);
+			wire [31:0] kill_d = w_init ? 32'd0 : (kill_r[gw*32 +: 32] | (bt_w & wexec));
 
-				always @(posedge clk or negedge rst_n) begin
-					if (!rst_n)
-						kill_r[(gw*32 + gg*NPHYS) +: NPHYS] <= {NPHYS{1'b0}};
-					else if (w_init)
-						kill_r[(gw*32 + gg*NPHYS) +: NPHYS] <= {NPHYS{1'b0}};
-					else if (kill_match)
-						kill_r[(gw*32 + gg*NPHYS) +: NPHYS] <= kill_d;
-				end
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n)
+					kill_r[gw*32 +: 32] <= 32'd0;
+				else if (kill_ce)
+					kill_r[gw*32 +: 32] <= kill_d;
+			end
 
-				wire exec_match = grp_match && (op == ATG_EXEC_SET || op == ATG_EXEC_AND || op == ATG_EXEC_OR);
-				reg [NPHYS-1:0] exec_d;
-				always @(*) begin
-					case (op)
-					ATG_EXEC_SET: exec_d = bt;
-					ATG_EXEC_AND: exec_d = cur_exec & bt;
-					ATG_EXEC_OR:  exec_d = cur_exec | bt;
-					default:      exec_d = cur_exec;
-					endcase
-				end
+			wire exec_op_match = (op == ATG_EXEC_SET || op == ATG_EXEC_AND || op == ATG_EXEC_OR);
+			wire exec_ce = w_init || (w_match && exec_op_match);
+			reg [31:0] exec_d;
+			always @(*) begin
+				if (w_init)
+					exec_d = init_mask;
+				else case (op)
+					ATG_EXEC_SET: exec_d = (wexec & ~gmask) | bt_w;
+					ATG_EXEC_AND: exec_d = wexec & (~gmask | bt_w);
+					ATG_EXEC_OR:  exec_d = wexec | bt_w;
+					default:      exec_d = wexec;
+				endcase
+			end
 
-				always @(posedge clk or negedge rst_n) begin
-					if (!rst_n)
-						exec_r[(gw*32 + gg*NPHYS) +: NPHYS] <= {NPHYS{1'b0}};
-					else if (w_init)
-						exec_r[(gw*32 + gg*NPHYS) +: NPHYS] <= init_mask[gg*NPHYS +: NPHYS];
-					else if (exec_match)
-						exec_r[(gw*32 + gg*NPHYS) +: NPHYS] <= exec_d;
-				end
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n)
+					exec_r[gw*32 +: 32] <= 32'd0;
+				else if (exec_ce)
+					exec_r[gw*32 +: 32] <= exec_d;
 			end
 		end
 	endgenerate
 
-	wire wc_take_ce = mine && x_last;
-	always @(posedge clk or negedge rst_n) begin
-		if (!rst_n)
-			wc_take <= 1'b0;
-		else if (wc_take_ce)
-			wc_take <= is_br && take;
-	end
-
-	wire acc_ce = mine && is_br;
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			acc_any <= 1'b0;
 			acc_all <= 1'b1;
-		end else if (acc_ce) begin
+		end else if (mine) begin
 			acc_any <= x_last ? 1'b0 : any_now;
 			acc_all <= x_last ? 1'b1 : all_now;
 		end

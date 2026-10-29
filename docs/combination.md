@@ -596,6 +596,23 @@ tools/synth-module.sh atg_tu 5.000
 | `BLT-S-HALF` | `atg_blt_2d` | `FULL` | `HALF` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
 | `BLT-S-QTR` | `atg_blt_2d` | `FULL` | `QUARTER` | **+0.035** | 12 | 5,751 | 4,211 | 0 | 4 | **PASS** |
 
+#### (DC) `dc` (`atg_dc`) 組み合わせ OOC 測定結果
+| テスト ID | モジュール | 機能性 | サイズ | WNS (ns) | 論理段数 | LUT 数 | FF 数 | BRAM | DSP | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `DC-F-MAX` | `atg_dc` | `FULL` | `MAX` | **+0.817** | 1 | 3,576 | 2,083 | 6 | 22 | **PASS** |
+| `DC-B-MIN` | `atg_dc` | `BARE` | `MIN` | **+0.902** | 7 | 2,946 | 1,626 | 0.5 | 19 | **PASS** |
+| `DC-I-CUR` | `atg_dc` | `ISO-Cursor` | `MIN` | **+0.817** | 1 | 3,574 | 2,051 | 4.5 | 22 | **PASS** |
+| `DC-I-PL2` | `atg_dc` | `ISO-Plane2` | `MIN` | **+0.902** | 7 | 2,946 | 1,626 | 0.5 | 19 | **PASS** |
+| `DC-I-TMD` | `atg_dc` | `ISO-TMDS` | `MIN` | **+0.902** | 7 | 2,946 | 1,626 | 0.5 | 19 | **PASS** |
+| `DC-P-CP` | `atg_dc` | `PAIR-Cur+Plane2` | `MIN` | **+0.817** | 1 | 3,574 | 2,051 | 4.5 | 22 | **PASS** |
+| `DC-P-PT` | `atg_dc` | `PAIR-Pl2+TMDS` | `MIN` | **+0.902** | 7 | 2,946 | 1,626 | 0.5 | 19 | **PASS** |
+| `DC-P-CG` | `atg_dc` | `PAIR-Cur+Gamma` | `MIN` | **+0.817** | 1 | 3,574 | 2,051 | 4.5 | 22 | **PASS** |
+| `DC-T-CPT` | `atg_dc` | `TRIO-Cur+Pl2+TMD` | `MIN` | **+0.817** | 1 | 3,574 | 2,051 | 4.5 | 22 | **PASS** |
+| `DC-T-CPG` | `atg_dc` | `TRIO-Cur+Pl2+Gam` | `MIN` | **+0.817** | 1 | 3,574 | 2,051 | 4.5 | 22 | **PASS** |
+| `DC-Q-ALL` | `atg_dc` | `QUAD-All4` | `MIN` | **+0.817** | 1 | 3,574 | 2,051 | 4.5 | 22 | **PASS** |
+| `DC-S-HALF` | `atg_dc` | `FULL` | `HALF` | **+0.817** | 1 | 3,570 | 2,075 | 5 | 22 | **PASS** |
+| `DC-S-QTR` | `atg_dc` | `FULL` | `QUARTER` | **+0.817** | 1 | 3,582 | 2,067 | 4.5 | 22 | **PASS** |
+
 ---
 
 ## 6. ベースライン測定結果サマリと改善ロードマップ
