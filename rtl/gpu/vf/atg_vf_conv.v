@@ -24,7 +24,7 @@
  * pulses the cycle after the last word of the af with af_last (two cycles
  * after taking it when it writes nothing).  With ATTR_DST[k][31:24] (a
  * VkFormat, CAPS[30]) the format is that one instead, through
- * atg_fmt_comp (a format without the vertex-buffer feature reads 0, 0,
+ * atg_fmt_cvt (pipelined) (a format without the vertex-buffer feature reads 0, 0,
  * 0, 1.0); an af with af_oob (outside ATTR_LIMIT) writes (0, 0, 0, 1) in
  * the format's kind.  See spec/gpu/vf/atg_vf_conv.md.
  */
@@ -134,7 +134,6 @@ module atg_vf_conv (
 	reg [7:0] c_vk;
 	reg c_oob;
 	reg [1:0] c_i;
-	reg fin;
 
 	reg [2:0] ncomp;
 	always @(*)
@@ -146,39 +145,25 @@ module atg_vf_conv (
 		default: ncomp = 3'd0;
 		endcase
 	wire isint_l = c_fmt == 4'd5 || c_fmt == 4'd8 || c_fmt == 4'd9;
-	/* The VkFormat path: every component at once (the af is held). */
 	wire [67:0] vk_inf = atg_fmt_info(c_vk);
 	wire [25:0] vk_feat = atg_fmt_feat(c_vk, 1'b0);
 	wire vk_ok = vk_feat[19];	/* VERTEX_BUFFER */
 	wire vk_int = vk_ok && (vk_inf[11:9] == ATG_FMT_UINT || vk_inf[11:9] == ATG_FMT_SINT);
-	/* Component c_i (one a cycle) through one atg_fmt_comp: of the VkFormat,
-	 * or for the fp16 formats 6 and 7 of R16G16B16A16_SFLOAT (component c
-	 * at bit 16 c, fp16 to fp32 exactly: denormals normalised, NaN
-	 * 0x7FC00000); the two are never needed in the same cycle. */
 	localparam [67:0] INF_H4 = atg_fmt_info(8'd97);
-	wire [31:0] vk_c;
-	atg_fmt_comp u_comp (.raw(c_raw), .inf(c_vk != 8'd0 ? vk_inf : INF_H4), .k(c_i), .sten(1'b0),
-		.v(vk_c));
-	wire isint = c_vk != 8'd0 ? vk_int : isint_l;
-	wire [31:0] w32 = c_raw[32 * c_i +: 32];
-	wire [7:0] w8 = c_raw[8 * c_i +: 8];
-	reg [31:0] word;
-	always @(*) begin
-		if (c_oob || (c_vk != 8'd0 && !vk_ok))
-			word = c_i != 2'd3 ? 32'd0 : isint ? 32'd1 : 32'h3F800000;
-		else if (c_vk != 8'd0)
-			word = vk_c;
-		else if ({1'b0, c_i} >= ncomp)
-			word = c_i != 2'd3 ? 32'd0 : isint ? 32'd1 : 32'h3F800000;
-		else
-			case (c_fmt)
-			4'd4: word = atg_rop_unorm8(w8);
-			4'd5: word = {24'd0, w8};
-			4'd6, 4'd7: word = vk_c;
-			default: word = w32;
-			endcase
-	end
 
+	/* Pipelined format converter: atg_fmt_cvt (7 stages) */
+	wire [31:0] cvt_out;
+	wire [67:0] cvt_inf = c_vk != 8'd0 ? vk_inf : INF_H4;
+	atg_fmt_cvt u_cvt (
+		.clk(clk),
+		.i_raw(c_raw),
+		.i_inf(cvt_inf),
+		.i_k(c_i),
+		.i_sten(1'b0),
+		.o_val(cvt_out)
+	);
+
+	wire isint = c_vk != 8'd0 ? vk_int : isint_l;
 	wire c_end = c_v && c_i == c_dst[7:6];
 
 	/* The register of component c_i, and the next component. */
@@ -193,6 +178,98 @@ module atg_vf_conv (
 	wire [7:0] t_dst = s_dst[af_attr];
 	wire t_en = {s_vk[af_attr], t_dst} != 16'd0;
 
+	/* 7-stage pipeline shift registers without raw array declarations */
+	reg [6:0] p_v;
+	reg [41:0] p_reg;
+	reg [34:0] p_lane;
+	reg [13:0] p_i;
+	reg [27:0] p_fmt;
+	reg [55:0] p_vk;
+	reg [6:0] p_vk_ok;
+	reg [6:0] p_isint;
+	reg [6:0] p_oob;
+	reg [6:0] p_fill;
+	reg [223:0] p_w32;
+	reg [55:0] p_w8;
+	reg [6:0] p_fin;
+
+	wire in_v = c_v;
+	wire [5:0] in_reg = reg_c;
+	wire [4:0] in_lane = c_lane;
+	wire [1:0] in_i = c_i;
+	wire [3:0] in_fmt = c_fmt;
+	wire [7:0] in_vk = c_vk;
+	wire in_vk_ok = vk_ok;
+	wire in_isint = isint;
+	wire in_oob = c_oob;
+	wire in_fill = (c_vk == 8'd0) && ({1'b0, c_i} >= ncomp);
+	wire [31:0] in_w32 = c_raw[32 * c_i +: 32];
+	wire [7:0] in_w8 = c_raw[8 * c_i +: 8];
+	wire in_fin = (c_end && c_last) || (take && !t_en && af_last);
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			p_v <= 7'd0;
+			p_reg <= 42'd0;
+			p_lane <= 35'd0;
+			p_i <= 14'd0;
+			p_fmt <= 28'd0;
+			p_vk <= 56'd0;
+			p_vk_ok <= 7'd0;
+			p_isint <= 7'd0;
+			p_oob <= 7'd0;
+			p_fill <= 7'd0;
+			p_w32 <= 224'd0;
+			p_w8 <= 56'd0;
+			p_fin <= 7'd0;
+		end else begin
+			p_v <= {p_v[5:0], in_v};
+			p_fin <= {p_fin[5:0], in_fin};
+			p_vk_ok <= {p_vk_ok[5:0], in_vk_ok};
+			p_isint <= {p_isint[5:0], in_isint};
+			p_oob <= {p_oob[5:0], in_oob};
+			p_fill <= {p_fill[5:0], in_fill};
+
+			p_reg <= {p_reg[35:0], in_reg};
+			p_lane <= {p_lane[29:0], in_lane};
+			p_i <= {p_i[11:0], in_i};
+			p_fmt <= {p_fmt[23:0], in_fmt};
+			p_vk <= {p_vk[47:0], in_vk};
+			p_w32 <= {p_w32[191:0], in_w32};
+			p_w8 <= {p_w8[47:0], in_w8};
+		end
+	end
+
+	wire [5:0] out_reg = p_reg[41:36];
+	wire [4:0] out_lane = p_lane[34:30];
+	wire [1:0] out_i = p_i[13:12];
+	wire [3:0] out_fmt = p_fmt[27:24];
+	wire [7:0] out_vk = p_vk[55:48];
+	wire out_vk_ok = p_vk_ok[6];
+	wire out_isint = p_isint[6];
+	wire out_oob = p_oob[6];
+	wire out_fill = p_fill[6];
+	wire [31:0] out_w32 = p_w32[223:192];
+	wire [7:0] out_w8 = p_w8[55:48];
+
+	/* Output multiplexer after atg_fmt_cvt */
+	reg [31:0] p_word;
+	always @(*) begin
+		if (out_oob || (out_vk != 8'd0 && !out_vk_ok))
+			p_word = out_i != 2'd3 ? 32'd0 : out_isint ? 32'd1 : 32'h3F800000;
+		else if (out_vk != 8'd0)
+			p_word = cvt_out;
+		else if (out_fill)
+			p_word = out_i != 2'd3 ? 32'd0 : out_isint ? 32'd1 : 32'h3F800000;
+		else
+			case (out_fmt)
+			4'd4: p_word = atg_rop_unorm8(out_w8);
+			4'd5: p_word = {24'd0, out_w8};
+			4'd6, 4'd7: p_word = cvt_out;
+			default: p_word = out_w32;
+			endcase
+	end
+
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			c_v <= 1'b0;
@@ -200,7 +277,6 @@ module atg_vf_conv (
 			vl_reg <= 6'd0;
 			vl_lane <= 5'd0;
 			vl_data <= 32'd0;
-			fin <= 1'b0;
 			conv_done <= 1'b0;
 			sys_cnt <= 6'd0;
 			sys_active <= 1'b0;
@@ -217,12 +293,12 @@ module atg_vf_conv (
 					conv_done <= 1'b1;
 				end
 			end else begin
-				vl_we <= c_v;
-				vl_reg <= reg_c;
-				vl_lane <= c_lane;
-				vl_data <= word;
-				fin <= (c_end && c_last) || (take && !t_en && af_last);
-				if (fin) begin
+				vl_we <= p_v[6];
+				vl_reg <= out_reg;
+				vl_lane <= out_lane;
+				vl_data <= p_word;
+
+				if (p_fin[6]) begin
 					if (s_used_regs_vs >= 8'd62) begin
 						sys_active <= 1'b1;
 						sys_cnt <= 6'd0;
@@ -230,6 +306,7 @@ module atg_vf_conv (
 						conv_done <= 1'b1;
 					end
 				end
+
 				if (c_v)
 					c_i <= c_i_next;
 				if (c_end)
