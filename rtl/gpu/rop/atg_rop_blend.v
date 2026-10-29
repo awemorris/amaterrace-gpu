@@ -494,64 +494,36 @@ module atg_rop_blend #(
 			wire [4:0] t5_bp = rom_u5[r8_bp];
 			wire [5:0] t6_bp = rom_u6[r8_bp];
 		end
-		/* 8 bits to 5 and 6: round(v x 31 / 255), round(v x 63 / 255) via LUT */
-		wire [4:0] t5r_bp = g_c3[0].t5_bp;
-		wire [5:0] t6g_bp = g_c3[1].t6_bp;
-		wire [4:0] t5g_bp = g_c3[1].t5_bp;
-		wire [4:0] t5b_bp = g_c3[2].t5_bp;
-		wire [31:0] r8_bp_lane = {g_c3[3].r8_bp, g_c3[2].r8_bp, g_c3[1].r8_bp, g_c3[0].r8_bp};
-		wire [15:0] px16_bp = {t5r_bp, t6g_bp, t5b_bp};
-		wire [15:0] px15_bp = {r8_bp_lane[31], t5r_bp, t5g_bp, t5b_bp};
-		reg [31:0] px_raw_bp;
-		always @(*)
-			case (fmt2)
-			F_BGRA8: px_raw_bp = {r8_bp_lane[31:24], r8_bp_lane[7:0], r8_bp_lane[15:8], r8_bp_lane[23:16]};
-			F_RGBA8: px_raw_bp = r8_bp_lane;
-			F_R8: px_raw_bp = {o2[32 * gl + 8 +: 24], r8_bp_lane[7:0]};
-			F_RG8: px_raw_bp = {o2[32 * gl + 16 +: 16], r8_bp_lane[15:0]};
-			F_1555: px_raw_bp = {o2[32 * gl + 16 +: 16], px15_bp};
-			F_565: px_raw_bp = {o2[32 * gl + 16 +: 16], px16_bp};
-			default: px_raw_bp = o2[32 * gl +: 32];
-			endcase
-		wire [31:0] bp_or_o2 = m2 ? px_raw_bp : o2[32 * gl +: 32];
-
-		wire [4:0] t5r_dq = g_c3[0].t5_dq;
-		wire [5:0] t6g_dq = g_c3[1].t6_dq;
-		wire [4:0] t5g_dq = g_c3[1].t5_dq;
-		wire [4:0] t5b_dq = g_c3[2].t5_dq;
-		wire [31:0] dq_sat_lane = {g_c3[3].dq_sat, g_c3[2].dq_sat, g_c3[1].dq_sat, g_c3[0].dq_sat};
-		wire [15:0] px16_dq = {t5r_dq, t6g_dq, t5b_dq};
-		wire [15:0] px15_dq = {dq_sat_lane[31], t5r_dq, t5g_dq, t5b_dq};
-		reg [31:0] px_dq;
-		always @(*)
-			case (fmt2)
-			F_BGRA8: px_dq = {dq_sat_lane[31:24], dq_sat_lane[7:0], dq_sat_lane[15:8], dq_sat_lane[23:16]};
-			F_RGBA8: px_dq = dq_sat_lane;
-			F_R8: px_dq = {o2[32 * gl + 8 +: 24], dq_sat_lane[7:0]};
-			F_RG8: px_dq = {o2[32 * gl + 16 +: 16], dq_sat_lane[15:0]};
-			F_1555: px_dq = {o2[32 * gl + 16 +: 16], px15_dq};
-			F_565: px_dq = {o2[32 * gl + 16 +: 16], px16_dq};
-			default: px_dq = o2[32 * gl +: 32];
-			endcase
-
 		wire [3:0] use_dq_ch = {g_c3[3].use_dq, g_c3[2].use_dq, g_c3[1].use_dq, g_c3[0].use_dq};
-		reg [31:0] sel_dq;
+		wire [31:0] o2_lane = o2[32 * gl +: 32];
+
+		/* Per-channel blended results (8-bit) */
+		wire [7:0] ch0 = use_dq_ch[0] ? g_c3[0].dq_sat : g_c3[0].r8_bp;
+		wire [7:0] ch1 = use_dq_ch[1] ? g_c3[1].dq_sat : g_c3[1].r8_bp;
+		wire [7:0] ch2 = use_dq_ch[2] ? g_c3[2].dq_sat : g_c3[2].r8_bp;
+		wire [7:0] ch3 = use_dq_ch[3] ? g_c3[3].dq_sat : g_c3[3].r8_bp;
+
+		/* 16-bit format converted components */
+		wire [4:0] r5 = use_dq_ch[0] ? g_c3[0].t5_dq : g_c3[0].t5_bp;
+		wire [5:0] g6 = use_dq_ch[1] ? g_c3[1].t6_dq : g_c3[1].t6_bp;
+		wire [4:0] g5 = use_dq_ch[1] ? g_c3[1].t5_dq : g_c3[1].t5_bp;
+		wire [4:0] b5 = use_dq_ch[2] ? g_c3[2].t5_dq : g_c3[2].t5_bp;
+		wire a1 = use_dq_ch[3] ? g_c3[3].dq_sat[7] : g_c3[3].r8_bp[7];
+
+		reg [31:0] px_out;
 		always @(*) begin
 			case (fmt2)
-			F_BGRA8: sel_dq = {{8{use_dq_ch[3]}}, {8{use_dq_ch[0]}}, {8{use_dq_ch[1]}}, {8{use_dq_ch[2]}}};
-			F_RGBA8: sel_dq = {{8{use_dq_ch[3]}}, {8{use_dq_ch[2]}}, {8{use_dq_ch[1]}}, {8{use_dq_ch[0]}}};
-			F_R8: sel_dq = {24'd0, {8{use_dq_ch[0]}}};
-			F_RG8: sel_dq = {16'd0, {8{use_dq_ch[1]}}, {8{use_dq_ch[0]}}};
-			F_1555: sel_dq = {16'd0, use_dq_ch[3], {5{use_dq_ch[0]}}, {5{use_dq_ch[1]}}, {5{use_dq_ch[2]}}};
-			F_565: sel_dq = {16'd0, {5{use_dq_ch[0]}}, {6{use_dq_ch[1]}}, {5{use_dq_ch[2]}}};
-			default: sel_dq = 32'd0;
+			F_BGRA8: px_out = {ch3, ch0, ch1, ch2};
+			F_RGBA8: px_out = {ch3, ch2, ch1, ch0};
+			F_R8:    px_out = {o2_lane[31:8], ch0};
+			F_RG8:   px_out = {o2_lane[31:16], ch1, ch0};
+			F_565:   px_out = {o2_lane[31:16], r5, g6, b5};
+			F_1555:  px_out = {o2_lane[31:16], a1, r5, g5, b5};
+			default: px_out = o2_lane;
 			endcase
 		end
-		wire [31:0] px_sel = m2 ? sel_dq : 32'd0;
-		genvar gb;
-		for (gb = 0; gb < 32; gb = gb + 1) begin : g_mux
-			assign pix_n[32 * gl + gb] = px_sel[gb] ? px_dq[gb] : bp_or_o2[gb];
-		end
+
+		assign pix_n[32 * gl +: 32] = m2 ? px_out : o2_lane;
 	end
 	endgenerate
 	always @(posedge clk) begin
