@@ -21,10 +21,12 @@ puts "==> Synthesizing module $top (OOC, period: ${clk_period} ns)"
 set incdirs [list [file join $root include]]
 
 # Collect all verilog sources
-set v_files [glob -nocomplain [file join $root rtl library arith *.v]]
+set v_files [glob -nocomplain [file join $root rtl library * *.v]]
 lappend v_files {*}[glob -nocomplain [file join $root rtl library *.v]]
 lappend v_files {*}[glob -nocomplain [file join $root rtl gpu * *.v]]
 lappend v_files {*}[glob -nocomplain [file join $root rtl gpu *.v]]
+lappend v_files {*}[glob -nocomplain [file join $root rtl bsp * *.v]]
+lappend v_files {*}[glob -nocomplain [file join $root rtl bsp *.v]]
 lappend v_files {*}[glob -nocomplain [file join $root rtl *.v]]
 
 # Filter unique files
