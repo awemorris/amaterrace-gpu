@@ -75,6 +75,19 @@ module atg_cp_dbg #(
 	wire [31:0] wmerge_d = (data & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 	wire [WS-1:0] word = addr[LINE_SHIFT-1:2];
 
+`ifdef SYNTH_KINTEX7
+	wire addr_we = !busy && wr_addr;
+	wire [1:0] addr_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_awe0 (.I0(addr_we), .O(addr_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_awe1 (.I0(addr_we), .O(addr_we_b[1]));
+
+	wire data_we_host = !busy && wr_data;
+	wire data_we_rsp = rsp_valid && busy && !rsp_write && !rsp_error;
+	wire [1:0] data_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_dwe0 (.I0(data_we_host), .I1(data_we_rsp), .O(data_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_dwe1 (.I0(data_we_host), .I1(data_we_rsp), .O(data_we_b[1]));
+`endif
+
 	assign req_valid = q_valid;
 	assign req_write = q_write;
 	assign req_line = addr[ADDR_W-1:LINE_SHIFT];
@@ -105,6 +118,29 @@ module atg_cp_dbg #(
 		end else begin
 			if (q_valid && req_ready)
 				q_valid <= 1'b0;
+`ifdef SYNTH_KINTEX7
+			if (addr_we_b[0]) addr[15:0] <= wmerge_a[15:0] & 16'hFFFC;
+			if (addr_we_b[1]) addr[31:16] <= wmerge_a[31:16];
+			if (!busy && wr_addr) begin
+				busy <= 1'b1;
+				err <= 1'b0;
+				q_valid <= 1'b1;
+				q_write <= 1'b0;
+			end else if (!busy && wr_data) begin
+				busy <= 1'b1;
+				err <= 1'b0;
+				q_valid <= 1'b1;
+				q_write <= 1'b1;
+				q_word <= hcr_wdata;
+				q_strb <= {hcr_wmask[24], hcr_wmask[16], hcr_wmask[8], hcr_wmask[0]};
+			end
+			if (data_we_b[0]) data[15:0] <= data_we_rsp ? rsp_word[15:0] : wmerge_d[15:0];
+			if (data_we_b[1]) data[31:16] <= data_we_rsp ? rsp_word[31:16] : wmerge_d[31:16];
+			if (rsp_valid && busy) begin
+				busy <= 1'b0;
+				err <= rsp_error;
+			end
+`else
 			if (!busy && wr_addr) begin
 				addr <= wmerge_a & 32'hFFFFFFFC;
 				busy <= 1'b1;
@@ -126,6 +162,7 @@ module atg_cp_dbg #(
 				if (!rsp_write && !rsp_error)
 					data <= rsp_word;
 			end
+`endif
 		end
 	end
 
