@@ -91,7 +91,7 @@ module atg_rx_scan #(
 );
 	`include "ghci_regs.vh"
 	localparam [3:0] S_IDLE = 4'd0, S_SEQ = 4'd1, S_TILE_WAIT = 4'd2, S_WALK = 4'd3,
-		S_Z = 4'd4, S_EMIT = 4'd5, S_LAST = 4'd6, S_FREE = 4'd7, S_FQ = 4'd8;
+		S_Z = 4'd4, S_EMIT = 4'd5, S_LAST = 4'd6, S_FREE = 4'd7, S_FQ = 4'd8, S_STEP = 4'd9;
 	reg [3:0] st;
 	reg wm;		/* warp mode: a non-raw triangle with an SU */
 	reg fend;	/* S_FQ: the end marker (no quad) */
@@ -263,11 +263,12 @@ module atg_rx_scan #(
 	end
 	endgenerate
 
-	/* Quad lane coordinate stepping */
-	wire [16:0] qx1, qy1, qx2, qy2;
+	/* Quad lane coordinate stepping: qx and qy are always even, so +1 is bit 0 set */
+	wire [16:0] qx1 = {1'b0, qx[15:1], 1'b1};
+	wire [16:0] qy1 = {1'b0, qy[15:1], 1'b1};
+	wire [16:0] qx2, qy2;
 	wire [3:0] qstep_carry_unused;
-	am_add #(.W(17)) u_qx1 (.a({1'b0, qx}), .b(17'd0), .ci(1'b1), .s(qx1), .co(qstep_carry_unused[0]));
-	am_add #(.W(17)) u_qy1 (.a({1'b0, qy}), .b(17'd0), .ci(1'b1), .s(qy1), .co(qstep_carry_unused[1]));
+	assign qstep_carry_unused[1:0] = 2'b00;
 	am_add #(.W(17)) u_qx2 (.a({1'b0, qx}), .b(17'd2), .ci(1'b0), .s(qx2), .co(qstep_carry_unused[2]));
 	am_add #(.W(17)) u_qy2 (.a({1'b0, qy}), .b(17'd2), .ci(1'b0), .s(qy2), .co(qstep_carry_unused[3]));
 
@@ -623,9 +624,14 @@ module atg_rx_scan #(
 			end else if (!w_empty) begin
 				zmask <= cur_cov;
 				zc <= 5'd0;
-				zv <= 128'd0;
 				st <= S_Z;
-			end else if (tile_quads_end) begin
+			end else begin
+				st <= S_STEP;
+			end
+		end
+
+		S_STEP: begin
+			if (tile_quads_end) begin
 				/* End of quads in this coarse tile */
 				if (cur_last_tile) begin
 					fend <= wm;
@@ -660,6 +666,7 @@ module atg_rx_scan #(
 					for (k = 0; k < 3; k = k + 1)
 						ec[k] <= ec_n[k];
 				end
+				st <= S_WALK;
 			end
 		end
 
@@ -668,40 +675,8 @@ module atg_rx_scan #(
 			if (fq_ready) begin
 				if (fend) begin
 					st <= S_FREE;
-				end else if (tile_quads_end) begin
-					if (cur_last_tile) begin
-						fend <= wm;
-						st <= S_FQ;
-					end else if (coarse_tile_valid) begin
-						coarse_tile_ready <= 1'b1;
-						cur_tx <= coarse_tile_x;
-						cur_ty <= coarse_tile_y;
-						cur_trivial <= coarse_tile_trivial;
-						cur_last_tile <= coarse_tile_last;
-						qx <= coarse_tile_x;
-						qy <= coarse_tile_y;
-						er[0] <= coarse_tile_e0; ec[0] <= coarse_tile_e0;
-						er[1] <= coarse_tile_e1; ec[1] <= coarse_tile_e1;
-						er[2] <= coarse_tile_e2; ec[2] <= coarse_tile_e2;
-						st <= S_WALK;
-					end else begin
-						st <= S_TILE_WAIT;
-					end
 				end else begin
-					/* Step to next quad */
-					if (tile_row_end) begin
-						qx <= cur_tx;
-						qy <= qy2[15:0];
-						for (k = 0; k < 3; k = k + 1) begin
-							er[k] <= er_n[k];
-							ec[k] <= er_n[k];
-						end
-					end else begin
-						qx <= qx2[15:0];
-						for (k = 0; k < 3; k = k + 1)
-							ec[k] <= ec_n[k];
-					end
-					st <= S_WALK;
+					st <= S_STEP;
 				end
 			end
 		end
@@ -709,6 +684,7 @@ module atg_rx_scan #(
 		S_Z: begin
 			zc <= zc1;
 			if (zc == 5'd0) begin
+				zv <= 128'd0;
 				r_dx0 <= dx0_comb;
 				r_dy0 <= dy0_comb;
 				r_dx1 <= dx1_comb;
@@ -762,40 +738,7 @@ module atg_rx_scan #(
 				p_xy <= {qy, qx};
 				p_mask <= zmask;
 				p_z <= zv;
-				if (tile_quads_end) begin
-					if (cur_last_tile) begin
-						st <= S_LAST;
-					end else if (coarse_tile_valid) begin
-						coarse_tile_ready <= 1'b1;
-						cur_tx <= coarse_tile_x;
-						cur_ty <= coarse_tile_y;
-						cur_trivial <= coarse_tile_trivial;
-						cur_last_tile <= coarse_tile_last;
-						qx <= coarse_tile_x;
-						qy <= coarse_tile_y;
-						er[0] <= coarse_tile_e0; ec[0] <= coarse_tile_e0;
-						er[1] <= coarse_tile_e1; ec[1] <= coarse_tile_e1;
-						er[2] <= coarse_tile_e2; ec[2] <= coarse_tile_e2;
-						st <= S_WALK;
-					end else begin
-						st <= S_TILE_WAIT;
-					end
-				end else begin
-					/* Step to next quad */
-					if (tile_row_end) begin
-						qx <= cur_tx;
-						qy <= qy2[15:0];
-						for (k = 0; k < 3; k = k + 1) begin
-							er[k] <= er_n[k];
-							ec[k] <= er_n[k];
-						end
-					end else begin
-						qx <= qx2[15:0];
-						for (k = 0; k < 3; k = k + 1)
-							ec[k] <= ec_n[k];
-					end
-					st <= S_WALK;
-				end
+				st <= S_STEP;
 			end
 		end
 
