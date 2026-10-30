@@ -51,8 +51,19 @@ module atg_cp_irq (
 	wire [12:0] set = {ev[12:3], ev[2] && !empty_q, ev[1:0]} |
 		((hcr_we && hcr_widx == I_SET) ? (wd & (13'd1 << GHCI_IRQ_SOFT)) : 13'd0);
 
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire irq_rst_high;
+	(* keep = "true", dont_touch = "true" *) wire irq_crst_high;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_irq_rst  (.I0(rst_n),      .O(irq_rst_high));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_irq_crst (.I0(core_rst_n), .O(irq_crst_high));
+`endif
+
 	always @(posedge clk) begin
+`ifdef SYNTH_KINTEX7
+		if (irq_rst_high) begin
+`else
 		if (!rst_n) begin
+`endif
 			enable <= 13'd0;
 			irq_q <= 1'b0;
 		end else begin
@@ -60,7 +71,11 @@ module atg_cp_irq (
 				enable <= (enable & ~hcr_wmask[12:0]) | wd;
 			irq_q <= |(status & enable);
 		end
+`ifdef SYNTH_KINTEX7
+		if (irq_crst_high) begin
+`else
 		if (!core_rst_n) begin
+`endif
 			status <= 13'd0;
 			empty_q <= 1'b1;
 		end else begin
@@ -70,10 +85,19 @@ module atg_cp_irq (
 	end
 
 	assign irq = irq_q;
+`ifdef SYNTH_KINTEX7
+	wire irq_rd_en_b;
+	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000080)) u_ird (
+		.I0(hcr_ridx[1]), .I1(hcr_ridx[2]), .I2(hcr_ridx[3]), .I3(hcr_ridx[4]), .I4(hcr_ridx[5]),
+		.O(irq_rd_en_b)
+	);
+	assign hcr_rdata = {19'd0, irq_rd_en_b ? (hcr_ridx[0] ? enable : status) : 13'd0};
+`else
 	assign hcr_rdata = hcr_ridx == I_STATUS ? {19'd0, status} :
 		hcr_ridx == I_ENABLE ? {19'd0, enable} : 32'd0;
+`endif
 
-	wire unused_ok = &{1'b0, hcr_wdata[31:13], hcr_wmask[31:13]};
+	wire unused_ok = &{1'b0, hcr_wdata[31:13], hcr_wmask[31:13], hcr_ridx[9:6]};
 endmodule
 
 `default_nettype wire

@@ -103,34 +103,91 @@ module atg_cp_fence #(
 	(* extract_enable = "no" *) reg [7:0] gap;
 
 `ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire fence_rst_high;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_fence_rst (.I0(rst_n), .O(fence_rst_high));
+
 	wire last_we_host = hcr_we && (hcr_widx == I_LAST);
 	wire last_we_rsp = (st == F_RSP) && rsp_valid && !rsp_error && (op == 2'd0);
 	wire [1:0] last_we_b;
+	wire [1:0] last_we_rsp_b;
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_lwe0 (.I0(last_we_host), .I1(last_we_rsp), .O(last_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_lwe1 (.I0(last_we_host), .I1(last_we_rsp), .O(last_we_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_lwr0 (.I0(last_we_rsp), .O(last_we_rsp_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_lwr1 (.I0(last_we_rsp), .O(last_we_rsp_b[1]));
+
+	wire [1:0] f_op1_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fop0 (.I0(f_op == 2'd1), .O(f_op1_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fop1 (.I0(f_op == 2'd1), .O(f_op1_b[1]));
+
+	wire [1:0] rd_last_b;
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000010000000)) u_rdl0 (
+		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
+		.O(rd_last_b[0])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000010000000)) u_rdl1 (
+		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
+		.O(rd_last_b[1])
+	);
+
+	wire mem_word_we = (st == F_RSP) && rsp_valid && !rsp_error && (op == 2'd2);
+	wire [1:0] mem_word_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_mw0 (.I0(mem_word_we), .O(mem_word_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_mw1 (.I0(mem_word_we), .O(mem_word_we_b[1]));
 `endif
 
 	wire [WS-1:0] word = addr[LINE_SHIFT-1:2];
 	wire is_read = op == 2'd2;
+
+`ifdef SYNTH_KINTEX7
+	wire [WS-1:0] fword_be, fword_b0, fword_b1, fword_b2, fword_b3;
+	genvar g_fw;
+	generate
+		for (g_fw = 0; g_fw < WS; g_fw = g_fw + 1) begin : g_fword_buf
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwbe (.I0(word[g_fw]), .O(fword_be[g_fw]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwb0 (.I0(word[g_fw]), .O(fword_b0[g_fw]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwb1 (.I0(word[g_fw]), .O(fword_b1[g_fw]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwb2 (.I0(word[g_fw]), .O(fword_b2[g_fw]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwb3 (.I0(word[g_fw]), .O(fword_b3[g_fw]));
+		end
+	endgenerate
+`endif
 
 	assign f_ready = st == F_IDLE;
 	assign f_busy = st != F_IDLE && st != F_DEAD;
 	assign req_valid = st == F_REQ;
 	assign req_write = !is_read;
 	assign req_line = addr[ADDR_W-1:LINE_SHIFT];
+`ifdef SYNTH_KINTEX7
+	assign req_wdata = {(LINE_BYTES / 8){aux, value}};
+`else
 	assign req_wdata = op == 2'd1 ? {(LINE_BYTES / 8){aux, value}} : {(LINE_BYTES / 4){value}};
+`endif
 	/* FENCE: the word; RESULT: the 8-byte pair (8-byte aligned). */
 	reg [LINE_BYTES-1:0] be_word, be_pair;
 	integer bw;
 	always @(*)
 		for (bw = 0; bw < LINE_BYTES / 4; bw = bw + 1) begin
+`ifdef SYNTH_KINTEX7
+			be_word[bw*4 +: 4] = {{(32 - WS){1'b0}}, fword_be} == bw ? 4'hF : 4'h0;
+			be_pair[bw*4 +: 4] = {{(33 - WS){1'b0}}, fword_be[WS-1:1]} == bw / 2 ? 4'hF : 4'h0;
+`else
 			be_word[bw*4 +: 4] = {{(32 - WS){1'b0}}, word} == bw ? 4'hF : 4'h0;
 			be_pair[bw*4 +: 4] = {{(33 - WS){1'b0}}, word[WS-1:1]} == bw / 2 ? 4'hF : 4'h0;
+`endif
 		end
 	assign req_be = is_read ? {LINE_BYTES{1'b0}} : op == 2'd1 ? be_pair : be_word;
 	assign req_tag = 8'd0;
 
+`ifdef SYNTH_KINTEX7
+	wire [31:0] mem_word = {
+		rsp_rdata[{fword_b3, 5'd0} + 24 +: 8],
+		rsp_rdata[{fword_b2, 5'd0} + 16 +: 8],
+		rsp_rdata[{fword_b1, 5'd0} + 8 +: 8],
+		rsp_rdata[{fword_b0, 5'd0} +: 8]
+	};
+`else
 	wire [31:0] mem_word = rsp_rdata[{word, 5'd0} +: 32];
+`endif
 	wire [31:0] diff;
 	wire diff_bo;
 
@@ -152,11 +209,25 @@ module atg_cp_fence #(
 	assign fault_kind = GHCI_FAULT_APERTURE;
 	assign fault_addr = addr[31:0];
 	assign fault_tag = 8'd0;
+`ifdef SYNTH_KINTEX7
+	wire [5:0] f_val_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fv0 (.I0(f_valid && (st == F_IDLE)), .O(f_val_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fv1 (.I0(f_valid && (st == F_IDLE)), .O(f_val_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fv2 (.I0(f_valid && (st == F_IDLE)), .O(f_val_b[2]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fv3 (.I0(f_valid && (st == F_IDLE)), .O(f_val_b[3]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fv4 (.I0(f_valid && (st == F_IDLE)), .O(f_val_b[4]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fv5 (.I0(f_valid && (st == F_IDLE)), .O(f_val_b[5]));
+`endif
+
 	assign ev_fence = st == F_RSP && rsp_valid && !rsp_error && op == 2'd0 && irq_on;
 	assign fence_last = last;
 
 	always @(posedge clk) begin
+`ifdef SYNTH_KINTEX7
+		if (fence_rst_high) begin
+`else
 		if (!rst_n) begin
+`endif
 			st <= F_IDLE;
 			op <= 2'd0;
 			addr <= {ADDR_W{1'b0}};
@@ -167,20 +238,19 @@ module atg_cp_fence #(
 			req_slot <= 6'd0;
 			last <= 32'd0;
 			gap <= 8'd0;
+`ifdef SYNTH_KINTEX7
+			mem_word_r <= 32'd0;
+`endif
 		end else begin
 `ifdef SYNTH_KINTEX7
-			if (last_we_b[0]) begin
-				if (last_we_rsp)
-					last[15:0] <= value[15:0];
-				else if (last_we_host)
-					last[15:0] <= (last[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]);
-			end
-			if (last_we_b[1]) begin
-				if (last_we_rsp)
-					last[31:16] <= value[31:16];
-				else if (last_we_host)
-					last[31:16] <= (last[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]);
-			end
+			if (last_we_b[0])
+				last[15:0] <= last_we_rsp_b[0] ? value[15:0] : ((last[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]));
+			if (last_we_b[1])
+				last[31:16] <= last_we_rsp_b[1] ? value[31:16] : ((last[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]));
+			if (mem_word_we_b[0])
+				mem_word_r[15:0] <= mem_word[15:0];
+			if (mem_word_we_b[1])
+				mem_word_r[31:16] <= mem_word[31:16];
 `else
 			if (hcr_we && hcr_widx == I_LAST)
 				last <= (last & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
@@ -189,9 +259,18 @@ module atg_cp_fence #(
 			F_IDLE:
 				if (f_valid) begin
 					op <= f_op;
+`ifdef SYNTH_KINTEX7
+					if (f_val_b[0]) addr[15:0] <= f_op == 2'd1 ? {f_addr[15:3], 3'b000} : {f_addr[15:2], 2'b00};
+					if (f_val_b[1]) addr[31:16] <= f_addr[31:16];
+					if (f_val_b[2]) value[15:0] <= f_value[15:0];
+					if (f_val_b[3]) value[31:16] <= f_value[31:16];
+					if (f_val_b[4]) aux[15:0] <= f_op1_b[0] ? f_aux[15:0] : f_value[15:0];
+					if (f_val_b[5]) aux[31:16] <= f_op1_b[1] ? f_aux[31:16] : f_value[31:16];
+`else
 					addr <= f_op == 2'd1 ? {f_addr[ADDR_W-1:3], 3'b000} : {f_addr[ADDR_W-1:2], 2'b00};
 					value <= f_value;
 					aux <= f_aux;
+`endif
 					irq_on <= f_irq;
 					req_chk <= f_chk;
 					req_slot <= f_slot;
@@ -206,7 +285,6 @@ module atg_cp_fence #(
 						st <= F_DEAD;
 					end else if (is_read) begin
 `ifdef SYNTH_KINTEX7
-						mem_word_r <= mem_word;
 						st <= F_CHECK;
 `else
 						if (passed) begin
@@ -244,9 +322,16 @@ module atg_cp_fence #(
 		end
 	end
 
+`ifdef SYNTH_KINTEX7
+	assign hcr_rdata = {
+		rd_last_b[1] ? last[31:16] : 16'd0,
+		rd_last_b[0] ? last[15:0]  : 16'd0
+	};
+`else
 	assign hcr_rdata = hcr_ridx == I_LAST ? last : 32'd0;
+`endif
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo, f_addr[2:0]};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo, f_addr[2:0], hcr_ridx[9:6]};
 endmodule
 
 `default_nettype wire

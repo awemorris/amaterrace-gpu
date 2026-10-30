@@ -76,16 +76,67 @@ module atg_cp_dbg #(
 	wire [WS-1:0] word = addr[LINE_SHIFT-1:2];
 
 `ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire dbg_rst_high;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_dbg_rst (.I0(rst_n), .O(dbg_rst_high));
+
 	wire addr_we = !busy && wr_addr;
 	wire [1:0] addr_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_awe0 (.I0(addr_we), .O(addr_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_awe1 (.I0(addr_we), .O(addr_we_b[1]));
 
 	wire data_we_host = !busy && wr_data;
+	wire [1:0] q_word_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_qw0 (.I0(data_we_host), .O(q_word_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_qw1 (.I0(data_we_host), .O(q_word_we_b[1]));
+
 	wire data_we_rsp = rsp_valid && busy && !rsp_write && !rsp_error;
-	wire [1:0] data_we_b;
+	wire [3:0] data_we_rsp_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dwr0 (.I0(data_we_rsp), .O(data_we_rsp_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dwr1 (.I0(data_we_rsp), .O(data_we_rsp_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dwr2 (.I0(data_we_rsp), .O(data_we_rsp_b[2]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dwr3 (.I0(data_we_rsp), .O(data_we_rsp_b[3]));
+
+	wire [3:0] data_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_dwe0 (.I0(data_we_host), .I1(data_we_rsp), .O(data_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_dwe1 (.I0(data_we_host), .I1(data_we_rsp), .O(data_we_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_dwe2 (.I0(data_we_host), .I1(data_we_rsp), .O(data_we_b[2]));
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_dwe3 (.I0(data_we_host), .I1(data_we_rsp), .O(data_we_b[3]));
+
+	wire [1:0] rd_addr_b, rd_data_b;
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000010000000000)) u_rda0 (
+		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
+		.O(rd_addr_b[0])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000010000000000)) u_rda1 (
+		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
+		.O(rd_addr_b[1])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000020000000000)) u_rdd0 (
+		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
+		.O(rd_data_b[0])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000020000000000)) u_rdd1 (
+		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
+		.O(rd_data_b[1])
+	);
+	wire rd_stat_dbg;
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000040000000000)) u_rds (
+		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
+		.O(rd_stat_dbg)
+	);
+
+	wire [WS-1:0] word_be;
+	wire [WS-1:0] word_b0, word_b1, word_b2, word_b3;
+	genvar g_wb;
+	generate
+		for (g_wb = 0; g_wb < WS; g_wb = g_wb + 1) begin : g_word_buf
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wbe (.I0(word[g_wb]), .O(word_be[g_wb]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb0 (.I0(word[g_wb]), .O(word_b0[g_wb]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb1 (.I0(word[g_wb]), .O(word_b1[g_wb]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb2 (.I0(word[g_wb]), .O(word_b2[g_wb]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb3 (.I0(word[g_wb]), .O(word_b3[g_wb]));
+		end
+	endgenerate
 `endif
 
 	assign req_valid = q_valid;
@@ -97,16 +148,33 @@ module atg_cp_dbg #(
 	integer bw;
 	always @(*)
 		for (bw = 0; bw < LINE_BYTES / 4; bw = bw + 1)
+`ifdef SYNTH_KINTEX7
+			be_w[bw*4 +: 4] = {{(32 - WS){1'b0}}, word_be} == bw ? q_strb : 4'h0;
+`else
 			be_w[bw*4 +: 4] = {{(32 - WS){1'b0}}, word} == bw ? q_strb : 4'h0;
+`endif
 	assign req_be = be_w;
 	assign req_tag = 8'd0;
 
+`ifdef SYNTH_KINTEX7
+	wire [31:0] rsp_word = {
+		rsp_rdata[{word_b3, 5'd0} + 24 +: 8],
+		rsp_rdata[{word_b2, 5'd0} + 16 +: 8],
+		rsp_rdata[{word_b1, 5'd0} + 8 +: 8],
+		rsp_rdata[{word_b0, 5'd0} +: 8]
+	};
+`else
 	wire [31:0] rsp_word = rsp_rdata[{word, 5'd0} +: 32];
+`endif
 	assign ev_done = rsp_valid && busy;
 	assign dbg_busy = busy;
 
 	always @(posedge clk) begin
+`ifdef SYNTH_KINTEX7
+		if (dbg_rst_high) begin
+`else
 		if (!rst_n) begin
+`endif
 			busy <= 1'b0;
 			err <= 1'b0;
 			addr <= 32'd0;
@@ -121,6 +189,8 @@ module atg_cp_dbg #(
 `ifdef SYNTH_KINTEX7
 			if (addr_we_b[0]) addr[15:0] <= wmerge_a[15:0] & 16'hFFFC;
 			if (addr_we_b[1]) addr[31:16] <= wmerge_a[31:16];
+			if (q_word_we_b[0]) q_word[15:0] <= hcr_wdata[15:0];
+			if (q_word_we_b[1]) q_word[31:16] <= hcr_wdata[31:16];
 			if (!busy && wr_addr) begin
 				busy <= 1'b1;
 				err <= 1'b0;
@@ -131,11 +201,12 @@ module atg_cp_dbg #(
 				err <= 1'b0;
 				q_valid <= 1'b1;
 				q_write <= 1'b1;
-				q_word <= hcr_wdata;
 				q_strb <= {hcr_wmask[24], hcr_wmask[16], hcr_wmask[8], hcr_wmask[0]};
 			end
-			if (data_we_b[0]) data[15:0] <= data_we_rsp ? rsp_word[15:0] : wmerge_d[15:0];
-			if (data_we_b[1]) data[31:16] <= data_we_rsp ? rsp_word[31:16] : wmerge_d[31:16];
+			if (data_we_b[0]) data[7:0] <= data_we_rsp_b[0] ? rsp_word[7:0] : wmerge_d[7:0];
+			if (data_we_b[1]) data[15:8] <= data_we_rsp_b[1] ? rsp_word[15:8] : wmerge_d[15:8];
+			if (data_we_b[2]) data[23:16] <= data_we_rsp_b[2] ? rsp_word[23:16] : wmerge_d[23:16];
+			if (data_we_b[3]) data[31:24] <= data_we_rsp_b[3] ? rsp_word[31:24] : wmerge_d[31:24];
 			if (rsp_valid && busy) begin
 				busy <= 1'b0;
 				err <= rsp_error;
@@ -166,10 +237,17 @@ module atg_cp_dbg #(
 		end
 	end
 
+`ifdef SYNTH_KINTEX7
+	assign hcr_rdata = {
+		rd_addr_b[1] ? addr[31:16] : rd_data_b[1] ? data[31:16] : 16'd0,
+		rd_addr_b[0] ? addr[15:0]  : rd_data_b[0] ? data[15:0]  : (rd_stat_dbg ? {14'd0, err, busy} : 16'd0)
+	};
+`else
 	assign hcr_rdata = hcr_ridx == I_ADDR ? addr : hcr_ridx == I_DATA ? data :
 		hcr_ridx == I_STATUS ? {30'd0, err, busy} : 32'd0;
+`endif
 
-	wire unused_ok = &{1'b0, rsp_tag};
+	wire unused_ok = &{1'b0, rsp_tag, hcr_ridx[9:6]};
 endmodule
 
 `default_nettype wire

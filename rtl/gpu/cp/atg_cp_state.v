@@ -69,9 +69,26 @@ module atg_cp_state (
 	wire host_take = alias_we && !host_locked && !uop_we;
 	assign lock_fault = alias_we && !host_take;
 
+`ifdef SYNTH_KINTEX7
+	wire [4:0] uop_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_uwb0 (.I0(uop_we), .O(uop_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_uwb1 (.I0(uop_we), .O(uop_we_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_uwb2 (.I0(uop_we), .O(uop_we_b[2]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_uwb3 (.I0(uop_we), .O(uop_we_b[3]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_uwb4 (.I0(uop_we), .O(uop_we_b[4]));
+	wire w = uop_we_b[0] || host_take;
+	(* keep = "true" *) wire [9:0] widx = uop_we_b[0] ? uop_idx : alias_idx;
+	(* keep = "true" *) wire [31:0] wdata = {
+		uop_we_b[4] ? uop_wdata[31:24] : alias_wdata[31:24],
+		uop_we_b[3] ? uop_wdata[23:16] : alias_wdata[23:16],
+		uop_we_b[2] ? uop_wdata[15:8]  : alias_wdata[15:8],
+		uop_we_b[1] ? uop_wdata[7:0]   : alias_wdata[7:0]
+	};
+`else
 	wire w = uop_we || host_take;
 	wire [9:0] widx = uop_we ? uop_idx : alias_idx;
 	wire [31:0] wdata = uop_we ? uop_wdata : alias_wdata;
+`endif
 
 	/* The replay: rp_rd reads word rp_idx, the next cycle broadcasts it. */
 	reg rp_rd;
@@ -83,8 +100,20 @@ module atg_cp_state (
 	am_add #(.W(10)) rp_add (.a(rp_idx), .b(10'd0), .ci(1'b1), .s(rp_idx_n), .co(rp_co));
 	reg [9:0] rp_oidx;
 
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire state_rst_high;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_st_rst (.I0(rst_n), .O(state_rst_high));
+	wire [1:0] rp_rd_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rpr0 (.I0(rp_rd), .O(rp_rd_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rpr1 (.I0(rp_rd), .O(rp_rd_b[1]));
+`endif
+
 	always @(posedge clk) begin
+`ifdef SYNTH_KINTEX7
+		if (state_rst_high) begin
+`else
 		if (!rst_n) begin
+`endif
 			rp_rd <= 1'b0;
 			rp_out <= 1'b0;
 			rp_idx <= 10'd0;
@@ -95,7 +124,11 @@ module atg_cp_state (
 			if (replay) begin
 				rp_rd <= 1'b1;
 				rp_idx <= 10'd0;
+`ifdef SYNTH_KINTEX7
+			end else if (rp_rd_b[0]) begin
+`else
 			end else if (rp_rd) begin
+`endif
 				if (rp_idx == 10'h2FF)
 					rp_rd <= 1'b0;
 				rp_idx <= rp_idx_n;
@@ -111,9 +144,13 @@ module atg_cp_state (
 	reg [31:0] wdata_r;
 	reg w_r;
 	reg [31:0] b_q_pipe;
+	wire [2:0] w_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb0 (.I0(w), .O(w_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb1 (.I0(w), .O(w_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb2 (.I0(w), .O(w_b[2]));
 
 	always @(posedge clk) begin
-		b_ridx_r <= rp_rd ? rp_idx : cpu_ridx;
+		b_ridx_r <= rp_rd_b[1] ? rp_idx : cpu_ridx;
 		w_r <= w;
 		widx_r <= widx;
 		wdata_r <= wdata;
@@ -134,6 +171,12 @@ module atg_cp_state (
 
 	assign alias_rdata = a_q;
 	assign cpu_rdata = b_q_pipe;
+	assign st_we = w || rp_out;
+	assign st_idx = w_b[0] ? widx : rp_oidx;
+	assign st_wdata = {
+		w_b[2] ? wdata[31:16] : b_q[31:16],
+		w_b[1] ? wdata[15:0]  : b_q[15:0]
+	};
 `else
 	always @(posedge clk) begin
 		if (w) begin
@@ -146,11 +189,10 @@ module atg_cp_state (
 
 	assign alias_rdata = a_q;
 	assign cpu_rdata = b_q;
-`endif
-
 	assign st_we = w || rp_out;
 	assign st_idx = w ? widx : rp_oidx;
 	assign st_wdata = w ? wdata : b_q;
+`endif
 	wire unused_rp = &{1'b0, rp_co};
 endmodule
 
