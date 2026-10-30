@@ -875,8 +875,6 @@ module atg_cp_ring #(
 `ifdef SYNTH_KINTEX7
 					if (hw_sel[active_qid]) begin
 						cur       <= rptr_act;
-						if (pa_we_b[0]) pa[15:0] <= pa_hdr[15:0];
-						if (pa_we_b[1]) pa[ADDR_W-1:16] <= pa_hdr[ADDR_W-1:16];
 						step_pend <= 1'b0;
 						st        <= R_HDR;
 					end else if (|hw_sel) begin
@@ -946,10 +944,7 @@ module atg_cp_ring #(
 						st <= R_ADV;
 					end else begin
 						k  <= k_n;
-`ifdef SYNTH_KINTEX7
-						if (pa_we_b[0]) pa[15:0] <= pa_4[15:0];
-						if (pa_we_b[1]) pa[ADDR_W-1:16] <= pa_4[ADDR_W-1:16];
-`else
+`ifndef SYNTH_KINTEX7
 						pa <= pa_4;
 `endif
 					end
@@ -1053,6 +1048,11 @@ module atg_cp_ring #(
 
 			default: ;
 			endcase
+
+`ifdef SYNTH_KINTEX7
+			if (pa_we_b[0]) pa[15:0] <= (st == R_IDLE) ? pa_hdr[15:0] : pa_4[15:0];
+			if (pa_we_b[1]) pa[ADDR_W-1:16] <= (st == R_IDLE) ? pa_hdr[ADDR_W-1:16] : pa_4[ADDR_W-1:16];
+`endif
 		end
 	end
 

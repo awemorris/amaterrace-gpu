@@ -724,6 +724,39 @@ module atg_cp #(
 	wire s_fw_valid, s_fw_ready;
 	wire [31:0] s_fw_data;
 
+`ifdef SYNTH_KINTEX7
+	wire [1:0] s_fw_ready_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwr0 (.I0(s_fw_ready), .O(s_fw_ready_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwr1 (.I0(s_fw_ready), .O(s_fw_ready_b[1]));
+
+	wire fw_ready_lo, fw_ready_hi;
+	assign fw_ready = fw_ready_lo;
+
+	wire s_fw_valid_lo, s_fw_valid_hi;
+	assign s_fw_valid = s_fw_valid_lo;
+
+	am_skid #(.W(16)) u_skid_fw_lo (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.in_valid(fw_valid),
+		.in_ready(fw_ready_lo),
+		.in_data(fw_data[15:0]),
+		.out_valid(s_fw_valid_lo),
+		.out_ready(s_fw_ready_b[0]),
+		.out_data(s_fw_data[15:0])
+	);
+
+	am_skid #(.W(16)) u_skid_fw_hi (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.in_valid(fw_valid),
+		.in_ready(fw_ready_hi),
+		.in_data(fw_data[31:16]),
+		.out_valid(s_fw_valid_hi),
+		.out_ready(s_fw_ready_b[1]),
+		.out_data(s_fw_data[31:16])
+	);
+`else
 	am_skid #(.W(32)) u_skid_fw (
 		.clk(clk),
 		.rst_n(s_core_rst_n),
@@ -734,6 +767,7 @@ module atg_cp #(
 		.out_ready(s_fw_ready),
 		.out_data(s_fw_data)
 	);
+`endif
 
 	atg_cp_seq #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) u_seq (
 		.clk(clk), .rst_n(s_core_rst_n),

@@ -165,18 +165,20 @@ module atg_cp_seq #(
 	localparam [3:0] Q_VSYNC = 4'd6;
 	localparam [3:0] Q_DEAD = 4'd7;
 	localparam [3:0] Q_DEC = 4'd8;
+	localparam [3:0] Q_DEC2 = 4'd9;
 
 	(* max_fanout = 16 *) reg [3:0] st;
 	(* max_fanout = 16 *) reg use_fw;
 	reg [31:0] hdr_r;
-	reg is_ghci_hdr_r;
+	(* max_fanout = 16 *) reg is_ghci_hdr_r;
 	reg [7:0] ghci_n_r;
+	reg dec_fault_r, dec_short_r, h_zero_r;
 	(* max_fanout = 16 *) reg vendor;
 	(* max_fanout = 16 *) reg [7:0] op;
 	(* max_fanout = 16 *) reg [7:0] flags;
 	reg [7:0] tag;
-	reg [6:0] side;
-	reg [7:0] n;
+	(* max_fanout = 16 *) reg [6:0] side;
+	(* max_fanout = 16 *) reg [7:0] n;
 	(* max_fanout = 16 *) reg [7:0] p;	/* payload dwords taken */
 	wire [7:0] p_n;	/* p + 1 */
 	wire p_co;
@@ -184,6 +186,7 @@ module atg_cp_seq #(
 	am_add #(.W(8)) p_add (.a(p), .b(8'd0), .ci(1'b1), .s(p_n), .co(p_co));
 	reg [9:0] sidx;	/* SET_REG: the index of the pair */
 	reg [31:0] a0, a0_hi, a1, a2;	/* fence payload */
+	reg [39:0] occ_q;
 	reg settle;
 
 	wire in_valid = use_fw ? fw_valid : n_valid;
@@ -324,8 +327,8 @@ module atg_cp_seq #(
 	assign f_valid = st == Q_FREQ;
 	assign f_op = (op == OP_FENCE || op == CMD_FENCE) ? 2'd0 : op == OP_RESULT || op == OP_QUERY ? 2'd1 : 2'd2;
 	assign f_addr = (op == CMD_FENCE) ? {a0_hi, a0} : {32'd0, a0};
-	assign f_value = a1;
-	assign f_aux = a2;
+	assign f_value = (op == OP_QUERY) ? occ_q[31:0] : a1;
+	assign f_aux = (op == OP_QUERY) ? {24'd0, occ_q[39:32]} : a2;
 	assign f_irq = flags[0];
 
 	reg f_pulse;
@@ -396,6 +399,10 @@ module atg_cp_seq #(
 			f_pulse <= 1'b0;
 			f_kind <= 4'd0;
 			f_faddr <= 32'd0;
+			dec_fault_r <= 1'b0;
+			dec_short_r <= 1'b0;
+			h_zero_r <= 1'b0;
+			occ_q <= 40'd0;
 		end else begin
 			f_pulse <= 1'b0;
 			settle <= 1'b0;
@@ -422,12 +429,18 @@ module atg_cp_seq #(
 `ifndef SYNTH_KINTEX7
 				f_faddr <= 32'd0;
 `endif
-				if (dec_hdr_fault) begin
+				dec_fault_r <= dec_hdr_fault;
+				dec_short_r <= dec_hdr_short;
+				h_zero_r <= h_zero;
+				st <= Q_DEC2;
+			end
+			Q_DEC2: begin
+				if (dec_fault_r) begin
 					f_pulse <= 1'b1;
-					f_kind <= dec_hdr_short ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+					f_kind <= dec_short_r ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
 					st <= Q_DEAD;
 				end else begin
-					st <= h_zero ? Q_EXEC : Q_PAY;
+					st <= h_zero_r ? Q_EXEC : Q_PAY;
 				end
 			end
 			Q_PAY:
@@ -481,8 +494,7 @@ module atg_cp_seq #(
 			Q_EXEC:
 				if (exec_go) begin
 					if (is_query) begin
-						a1 <= occ_count[31:0];
-						a2 <= {24'd0, occ_count[39:32]};
+						occ_q <= occ_count;
 					end
 					if (fence_op)
 						st <= Q_FREQ;

@@ -515,8 +515,14 @@ module atg_cp_regs #(
 			GHCI_COUNTER[11:0]: own = counter;
 			12'h048: own = NATIVE_ISA_ID;
 			GHCI_RESIDENT_WARPS[11:0]: own = {8'd0, NREGS, RESIDENT_WARPS};
-			12'h080: own = (XCAP_MASK[2]) ? perf[0 +: 32] : EXT_CAP_FMT0;
-			12'h084: own = (XCAP_MASK[2]) ? perf[32 +: 32] : EXT_CAP_FEATURE;
+			12'h080, 12'h084, 12'h088, 12'h08c:
+				own = (roff == 12'h080 && !XCAP_MASK[2]) ? EXT_CAP_FMT0 :
+				      (roff == 12'h084 && !XCAP_MASK[2]) ? EXT_CAP_FEATURE :
+				      perf[roff[3:2] * 32 +: 32];
+			12'h090, 12'h094, 12'h098, 12'h09c:
+				if (XCAP_MASK[2]) own = {24'd0, PERF_SRC[roff[3:2] * 8 +: 8]};
+			12'h0c0, 12'h0c4, 12'h0c8, 12'h0cc, 12'h0d0, 12'h0d4, 12'h0d8, 12'h0dc:
+				own = VEND[roff[4:2] * 32 +: 32];
 			A_LOCAL_BASE: if (XCAP_MASK[7]) own = LOCAL_BASE;
 			A_LOCAL_SIZE: if (XCAP_MASK[7]) own = LOCAL_BYTES;
 			A_WINDOW_SIZE: if (XCAP_MASK[7]) own = WINDOW_BYTES;
@@ -527,12 +533,6 @@ module atg_cp_regs #(
 			GHCI_PIPE_FSM[11:0]: own = diag_pipe_fsm;
 			default: ;
 			endcase
-			if (roff[11:5] == 7'h06)	/* VEND 0x0C0-0x0DF */
-				own = VEND[roff[4:2] * 32 +: 32];
-			if (roff[11:4] == GHCI_PERF0[11:4])	/* PERF0..3 0x080-0x08C */
-				own = perf[roff[3:2] * 32 +: 32];
-			if (XCAP_MASK[2] && roff[11:4] == GHCI_PERF_SRC0[11:4])	/* PERF_SRC0..3 */
-				own = {24'd0, PERF_SRC[roff[3:2] * 8 +: 8]};
 		end
 	end
 
