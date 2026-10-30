@@ -105,6 +105,21 @@ module atg_cp_state (
 
 	assign replay_busy = rp_rd || rp_out;
 
+`ifdef SYNTH_KINTEX7
+	reg [9:0] b_ridx_r;
+	always @(posedge clk) begin
+		b_ridx_r <= rp_rd ? rp_idx : cpu_ridx;
+	end
+
+	always @(posedge clk) begin
+		if (w) begin
+			mem_a[widx] <= wdata;
+			mem_b[widx] <= wdata;
+		end
+		a_q <= mem_a[alias_ridx];
+		b_q <= mem_b[b_ridx_r];
+	end
+`else
 	always @(posedge clk) begin
 		if (w) begin
 			mem_a[widx] <= wdata;
@@ -113,6 +128,7 @@ module atg_cp_state (
 		a_q <= mem_a[alias_ridx];
 		b_q <= mem_b[rp_rd ? rp_idx : cpu_ridx];
 	end
+`endif
 
 	assign alias_rdata = a_q;
 	assign cpu_rdata = b_q;
