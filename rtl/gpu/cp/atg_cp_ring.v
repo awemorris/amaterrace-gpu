@@ -408,11 +408,24 @@ module atg_cp_ring #(
 
 	wire go = (run && !halt) || step_pend;
 
+`ifdef SYNTH_KINTEX7
+	wire hcr_we_cfg, hcr_we_db, hcr_we_dma, hcr_we_sync;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_cfg  (.I0(hcr_we), .O(hcr_we_cfg));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_db   (.I0(hcr_we), .O(hcr_we_db));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_dma  (.I0(hcr_we), .O(hcr_we_dma));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_sync (.I0(hcr_we), .O(hcr_we_sync));
+`else
+	wire hcr_we_cfg  = hcr_we;
+	wire hcr_we_db   = hcr_we;
+	wire hcr_we_dma  = hcr_we;
+	wire hcr_we_sync = hcr_we;
+`endif
+
 	/* Doorbells for the 3 queues */
 	wire [2:0] doorbell;
-	assign doorbell[0] = hcr_we && (hcr_widx == I_WPTR0);
-	assign doorbell[1] = hcr_we && (hcr_widx == I_WPTR1);
-	assign doorbell[2] = hcr_we && (hcr_widx == I_WPTR2);
+	assign doorbell[0] = hcr_we_db && (hcr_widx == I_WPTR0);
+	assign doorbell[1] = hcr_we_db && (hcr_widx == I_WPTR1);
+	assign doorbell[2] = hcr_we_db && (hcr_widx == I_WPTR2);
 
 	wire [17:0] wptr_new0 = ((wptr[0] & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) & mask[0];
 	wire [17:0] wptr_new1 = ((wptr[1] & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0])) & mask[1];
@@ -568,7 +581,7 @@ module atg_cp_ring #(
 			ctx_base <= 32'd0;
 			prio_mode <= 4'd0;
 			preempt_auto <= 1'b0;
-		end else if (hcr_we) begin
+		end else if (hcr_we_cfg) begin
 			if (open) begin
 				if (hcr_widx == I_BASE0_LO || hcr_widx == I_BASE0)
 					base[0][31:0] <= ((base[0][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
@@ -705,9 +718,9 @@ module atg_cp_ring #(
 				end
 			end
 
-			if (hcr_we && hcr_widx == I_DMA_WPTR)
+			if (hcr_we_dma && hcr_widx == I_DMA_WPTR)
 				dma_wptr <= (dma_wptr & ~hcr_wmask[17:0]) | (hcr_wdata[17:0] & hcr_wmask[17:0]);
-			if (hcr_we && hcr_widx == I_DMA_SEM)
+			if (hcr_we_dma && hcr_widx == I_DMA_SEM)
 				dma_sem <= (dma_sem & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 
 			if (!dma_active && (dma_wptr != dma_rptr) && go) begin
@@ -724,7 +737,7 @@ module atg_cp_ring #(
 			end
 
 			/* Preemption request from host */
-			if (hcr_we && (hcr_widx == I_PREEMPT)) begin
+			if (hcr_we_sync && (hcr_widx == I_PREEMPT)) begin
 				if (hcr_wdata[0] && !preempt_active)
 					preempt_pending <= 1'b1;
 			end
@@ -734,7 +747,7 @@ module atg_cp_ring #(
 				preempt_pending <= 1'b1;
 
 			/* Semaphore update from host or ring */
-			if (hcr_we && (hcr_widx == I_SEMA)) begin
+			if (hcr_we_sync && (hcr_widx == I_SEMA)) begin
 				if (sema_set_q_wait && (sema_w_qid < 2'd3)) begin
 					queue_sema_wait[sema_w_qid] <= 1'b1;
 					queue_sema_id[sema_w_qid]   <= sema_w_id;

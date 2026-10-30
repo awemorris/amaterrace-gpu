@@ -287,6 +287,19 @@ module atg_cp #(
 		end
 	endgenerate
 
+	wire [9:0] hcr_widx_ctl, hcr_widx_ring, hcr_widx_fence, hcr_widx_dbg, hcr_widx_disp, hcr_widx_irq;
+	genvar g_widx;
+	generate
+		for (g_widx = 0; g_widx < 10; g_widx = g_widx + 1) begin : g_widx_buf
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wc (.I0(s_hcr_widx[g_widx]), .O(hcr_widx_ctl[g_widx]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wr (.I0(s_hcr_widx[g_widx]), .O(hcr_widx_ring[g_widx]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wf (.I0(s_hcr_widx[g_widx]), .O(hcr_widx_fence[g_widx]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wd (.I0(s_hcr_widx[g_widx]), .O(hcr_widx_dbg[g_widx]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wp (.I0(s_hcr_widx[g_widx]), .O(hcr_widx_disp[g_widx]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wi (.I0(s_hcr_widx[g_widx]), .O(hcr_widx_irq[g_widx]));
+		end
+	endgenerate
+
 	wire [31:0] hcr_wmask_ctl, hcr_wmask_fence, hcr_wmask_dbg;
 	genvar g_wm;
 	generate
@@ -329,13 +342,15 @@ module atg_cp #(
 		end
 	endgenerate
 
-	wire [1:0] blt_err_b, cpu_fault_b, rsp_err_b;
+	wire [1:0] blt_err_b, cpu_fault_b;
+	wire [2:0] rsp_err_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_be0 (.I0(blt_error), .O(blt_err_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_be1 (.I0(blt_error), .O(blt_err_b[1]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cf0 (.I0(cpu_fault), .O(cpu_fault_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cf1 (.I0(cpu_fault), .O(cpu_fault_b[1]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_re0 (.I0(s_i_rsp_error), .O(rsp_err_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_re1 (.I0(s_i_rsp_error), .O(rsp_err_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_re2 (.I0(s_i_rsp_error), .O(rsp_err_b[2]));
 
 	wire [1:0] x_fault_b0, x_fault_b1;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_xf0_0 (.I0(x_fault[0]), .O(x_fault_b0[0]));
@@ -377,7 +392,7 @@ module atg_cp #(
 	wire [11:0] reg_waddr_sub = reg_waddr[11:0];
 	wire [1:0] blt_err_b = {2{blt_error}};
 	wire [1:0] cpu_fault_b = {2{cpu_fault}};
-	wire [1:0] rsp_err_b = {2{s_i_rsp_error}};
+	wire [2:0] rsp_err_b = {3{s_i_rsp_error}};
 	wire [1:0] x_fault_b0 = {2{x_fault[0]}};
 	wire [1:0] x_fault_b1 = {2{x_fault[1]}};
 	wire [1:0] fw_act_b = {2{fw_active}};
@@ -397,6 +412,12 @@ module atg_cp #(
 	wire [9:0] hcr_ridx_dbg = s_hcr_ridx;
 	wire [9:0] hcr_ridx_disp = s_hcr_ridx;
 	wire [9:0] hcr_ridx_irq = s_hcr_ridx;
+	wire [9:0] hcr_widx_ctl = s_hcr_widx;
+	wire [9:0] hcr_widx_ring = s_hcr_widx;
+	wire [9:0] hcr_widx_fence = s_hcr_widx;
+	wire [9:0] hcr_widx_dbg = s_hcr_widx;
+	wire [9:0] hcr_widx_disp = s_hcr_widx;
+	wire [9:0] hcr_widx_irq = s_hcr_widx;
 	wire [31:0] hcr_wmask_ctl = s_hcr_wmask;
 	wire [31:0] hcr_wmask_fence = s_hcr_wmask;
 	wire [31:0] hcr_wmask_dbg = s_hcr_wmask;
@@ -518,7 +539,7 @@ module atg_cp #(
 		.DC_CLIENT(HAS_DISP != 0 ? DC_CLIENT : 8'hFF)
 	) u_ctl (
 		.clk(clk), .rst_n(rst_n),
-		.hcr_we(hcr_we_ctl), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_we(hcr_we_ctl), .hcr_widx(hcr_widx_ctl), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(hcr_wmask_ctl), .hcr_ridx(hcr_ridx_ctl), .hcr_rdata(s_ctl_rdata),
 		.mc_idle(mc_idle), .mem_ready(mem_ready),
 		.busy_in({busy_ext[7:2], blt_busy, cp_busy0_ctl}),
@@ -620,7 +641,7 @@ module atg_cp #(
 		.CLASS_V(HAS_CPU != 0)
 	) u_ring (
 		.clk(clk), .rst_n(rst_n), .core_rst_n(s_core_rst_n),
-		.hcr_we(hcr_we_ring), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_we(hcr_we_ring), .hcr_widx(hcr_widx_ring), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(hcr_ridx_ring), .hcr_rdata(s_ring_rdata),
 		.run(s_run), .halt(s_halt), .step(s_step), .open(s_open),
 		.n_valid(s_n_valid_raw), .n_ready(s_n_ready_raw), .n_data(s_n_data_raw), .n_last(s_n_last),
@@ -745,7 +766,7 @@ module atg_cp #(
 
 	atg_cp_fence #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) u_fence (
 		.clk(clk), .rst_n(s_core_rst_n),
-		.hcr_we(hcr_we_fence), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_we(hcr_we_fence), .hcr_widx(hcr_widx_fence), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(hcr_wmask_fence), .hcr_ridx(hcr_ridx_fence), .hcr_rdata(s_fence_rdata),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr[ADDR_W-1:0]),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_chk(f_chk),
@@ -766,7 +787,7 @@ module atg_cp #(
 
 	atg_cp_irq u_irq (
 		.clk(clk), .rst_n(rst_n), .core_rst_n(s_core_rst_n),
-		.hcr_we(hcr_we_irq), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_we(hcr_we_irq), .hcr_widx(hcr_widx_irq), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(hcr_ridx_irq), .hcr_rdata(s_irq_rdata),
 		.ev({4'd0, s_retire, cpu_result, s_ev_halted, 1'b0,
 			s_dbg_done, dc_irq_display, s_ev_wdt, s_ev_fault, cp_fence_ev}),
@@ -775,7 +796,7 @@ module atg_cp #(
 
 	atg_cp_dbg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) u_dbg (
 		.clk(clk), .rst_n(s_core_rst_n),
-		.hcr_we(hcr_we_dbg), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_we(hcr_we_dbg), .hcr_widx(hcr_widx_dbg), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(hcr_wmask_dbg), .hcr_ridx(hcr_ridx_dbg), .hcr_rdata(s_dbg_rdata),
 		.ev_done(s_dbg_done), .dbg_busy(s_dbg_busy),
 		.req_valid(s_i_req_valid[2]), .req_ready(s_i_req_ready[2]),
@@ -783,7 +804,7 @@ module atg_cp #(
 		.req_be(s_i_req_be[2*LINE_BYTES +: LINE_BYTES]),
 		.req_wdata(s_i_req_wdata[2*SLB +: SLB]), .req_tag(s_i_req_tag[2*8 +: 8]),
 		.rsp_valid(s_i_rsp_valid[2]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
-		.rsp_rdata(s_i_rsp_rdata), .rsp_error(rsp_err_b[0])
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(rsp_err_b[2])
 	);
 
 	/* The DISP2 display controller's side (board reset). */
@@ -795,7 +816,7 @@ module atg_cp #(
 			.BASE_IDX(GHCI_DISP2_BASE[11:2])
 		) u_disp (
 			.clk(clk), .rst_n(rst_n),
-			.hcr_we(hcr_we_disp), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+			.hcr_we(hcr_we_disp), .hcr_widx(hcr_widx_disp), .hcr_wdata(s_hcr_wdata),
 			.hcr_wmask(s_hcr_wmask), .hcr_ridx(hcr_ridx_disp), .hcr_rdata(s_disp_rdata),
 			.cp_state(s_cp_state),
 			.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
