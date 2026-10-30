@@ -248,9 +248,30 @@ module atg_cp_seq #(
 
 	assign n_ready = (hdr_take && !fw_active) || (pay_take && !use_fw);
 	assign fw_ready = (hdr_take && fw_active) || (pay_take && use_fw);
+
+`ifdef SYNTH_KINTEX7
+	reg uop_we_r;
+	reg [9:0] uop_idx_r;
+	reg [31:0] uop_wdata_r;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			uop_we_r <= 1'b0;
+			uop_idx_r <= 10'd0;
+			uop_wdata_r <= 32'd0;
+		end else begin
+			uop_we_r <= pay_take && pay_we;
+			uop_idx_r <= pay_idx;
+			uop_wdata_r <= in_data;
+		end
+	end
+	assign uop_we = uop_we_r;
+	assign uop_idx = uop_idx_r;
+	assign uop_wdata = uop_wdata_r;
+`else
 	assign uop_we = pay_take && pay_we;
 	assign uop_idx = pay_idx;
 	assign uop_wdata = in_data;
+`endif
 
 	/* A µop that starts a unit: BLIT, DRAW, DISPATCH, LOAD_CONST and class 1. */
 	wire unit_op = vendor || op == OP_BLIT || op == OP_DRAW || op == OP_DISPATCH ||
