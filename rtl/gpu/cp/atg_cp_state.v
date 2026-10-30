@@ -107,18 +107,33 @@ module atg_cp_state (
 
 `ifdef SYNTH_KINTEX7
 	reg [9:0] b_ridx_r;
+	reg [9:0] widx_r;
+	reg [31:0] wdata_r;
+	reg w_r;
+	reg [31:0] b_q_pipe;
+
 	always @(posedge clk) begin
 		b_ridx_r <= rp_rd ? rp_idx : cpu_ridx;
+		w_r <= w;
+		widx_r <= widx;
+		wdata_r <= wdata;
 	end
 
 	always @(posedge clk) begin
-		if (w) begin
-			mem_a[widx] <= wdata;
-			mem_b[widx] <= wdata;
+		if (w_r) begin
+			mem_a[widx_r] <= wdata_r;
+			mem_b[widx_r] <= wdata_r;
 		end
 		a_q <= mem_a[alias_ridx];
 		b_q <= mem_b[b_ridx_r];
 	end
+
+	always @(posedge clk) begin
+		b_q_pipe <= b_q;
+	end
+
+	assign alias_rdata = a_q;
+	assign cpu_rdata = b_q_pipe;
 `else
 	always @(posedge clk) begin
 		if (w) begin
@@ -128,10 +143,10 @@ module atg_cp_state (
 		a_q <= mem_a[alias_ridx];
 		b_q <= mem_b[rp_rd ? rp_idx : cpu_ridx];
 	end
-`endif
 
 	assign alias_rdata = a_q;
 	assign cpu_rdata = b_q;
+`endif
 
 	assign st_we = w || rp_out;
 	assign st_idx = w ? widx : rp_oidx;
