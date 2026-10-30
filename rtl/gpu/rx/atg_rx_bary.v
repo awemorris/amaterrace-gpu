@@ -152,6 +152,14 @@ module atg_rx_bary (
 	wire fa2_o [0:3];
 	wire [31:0] fa2_r [0:3];
 
+	reg is_bc;
+	always @(posedge clk) begin
+		if (!rst_n)
+			is_bc <= 1'b0;
+		else
+			is_bc <= (st == S_BC);
+	end
+
 	generate
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_fp_units
 		/* FP Multiplier */
@@ -178,9 +186,9 @@ module atg_rx_bary (
 		                   (st == S_BC && c == 6'd4) ||
 		                   (st == S_DZ && c == 6'd5);
 
-		assign fa1_sub[gl] = (st == S_BC);
+		assign fa1_sub[gl] = is_bc;
 
-		assign fa1_a[gl] = (st == S_BC) ? ONE : r_t1_curr[gl];
+		assign fa1_a[gl] = is_bc ? ONE : r_t1_curr[gl];
 
 		assign fa1_b[gl] = fm_r[gl];
 
@@ -194,7 +202,7 @@ module atg_rx_bary (
 		assign fa2_v[gl] = (st == S_PL && (c == 6'd9 || c == 6'd11 || c == 6'd13 || c == 6'd15)) ||
 		                   (st == S_BC && c == 6'd8);
 
-		assign fa2_sub[gl] = (st == S_BC);
+		assign fa2_sub[gl] = is_bc;
 
 		assign fa2_a[gl] = fa1_r[gl];
 
