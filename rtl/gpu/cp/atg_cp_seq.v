@@ -411,20 +411,43 @@ module atg_cp_seq #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe0 (.I0(f_fa_we_raw), .O(f_fa_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe1 (.I0(f_fa_we_raw), .O(f_fa_we_b[1]));
 
-	wire a0_we_raw = (st == Q_PAY) && in_valid && (p == 8'd0);
+	wire a0_we_raw = (st == Q_PAY) && in_valid && !pay_hold && (p == 8'd0);
 	wire [1:0] a0_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0we0 (.I0(a0_we_raw), .O(a0_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0we1 (.I0(a0_we_raw), .O(a0_we_b[1]));
 
-	wire a1_we_raw = (st == Q_PAY) && in_valid && ((is_fence_cmd_r && p == 8'd2) || (!is_fence_cmd_r && p == 8'd1));
+	wire a0_hi_we_raw = (st == Q_PAY) && in_valid && !pay_hold && is_fence_cmd_r && (p == 8'd1);
+	wire [1:0] a0_hi_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0hwe0 (.I0(a0_hi_we_raw), .O(a0_hi_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0hwe1 (.I0(a0_hi_we_raw), .O(a0_hi_we_b[1]));
+
+	wire a1_we_raw = (st == Q_PAY) && in_valid && !pay_hold && ((is_fence_cmd_r && p == 8'd2) || (!is_fence_cmd_r && p == 8'd1));
 	wire [1:0] a1_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a1we0 (.I0(a1_we_raw), .O(a1_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a1we1 (.I0(a1_we_raw), .O(a1_we_b[1]));
 
-	wire a2_we_raw = (st == Q_PAY) && in_valid && ((is_fence_cmd_r && p == 8'd3) || (!is_fence_cmd_r && p == 8'd2));
+	wire a2_we_raw = (st == Q_PAY) && in_valid && !pay_hold && ((is_fence_cmd_r && p == 8'd3) || (!is_fence_cmd_r && p == 8'd2));
 	wire [1:0] a2_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a2we0 (.I0(a2_we_raw), .O(a2_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a2we1 (.I0(a2_we_raw), .O(a2_we_b[1]));
+
+	always @(posedge clk) begin
+		if (rst_high) begin
+			a0 <= 32'd0;
+			a0_hi <= 32'd0;
+			a1 <= 32'd0;
+			a2 <= 32'd0;
+		end else begin
+			if (a0_we_b[0]) a0[15:0] <= in_data[15:0];
+			if (a0_we_b[1]) a0[31:16] <= in_data[31:16];
+			if (a0_hi_we_b[0]) a0_hi[15:0] <= in_data[15:0];
+			if (a0_hi_we_b[1]) a0_hi[31:16] <= in_data[31:16];
+			if (a1_we_b[0]) a1[15:0] <= in_data[15:0];
+			if (a1_we_b[1]) a1[31:16] <= in_data[31:16];
+			if (a2_we_b[0]) a2[15:0] <= in_data[15:0];
+			if (a2_we_b[1]) a2[31:16] <= in_data[31:16];
+		end
+	end
 
 	wire occ_we_raw = (st == Q_EXEC) && is_query_r;
 	wire [1:0] occ_we_b;
@@ -461,10 +484,12 @@ module atg_cp_seq #(
 			n <= 8'd0;
 			p <= 8'd0;
 			sidx <= 10'd0;
+`ifndef SYNTH_KINTEX7
 			a0 <= 32'd0;
 			a0_hi <= 32'd0;
 			a1 <= 32'd0;
 			a2 <= 32'd0;
+`endif
 			settle <= 1'b0;
 			f_pulse <= 1'b0;
 			f_kind <= 4'd0;
@@ -556,14 +581,6 @@ module atg_cp_seq #(
 					if (sidx_we_b[1]) sidx[9:5] <= (is_dset_r ? in_data[7:3] : in_data[9:5]);
 					if (f_fa_we_b[0]) f_faddr[15:0] <= in_data[15:0];
 					if (f_fa_we_b[1]) f_faddr[31:16] <= in_data[31:16];
-					if (a0_we_b[0]) a0[15:0] <= in_data[15:0];
-					if (a0_we_b[1]) a0[31:16] <= in_data[31:16];
-					if (is_fence_cmd_r && p == 8'd1)
-						a0_hi <= in_data;
-					if (a1_we_b[0]) a1[15:0] <= in_data[15:0];
-					if (a1_we_b[1]) a1[31:16] <= in_data[31:16];
-					if (a2_we_b[0]) a2[15:0] <= in_data[15:0];
-					if (a2_we_b[1]) a2[31:16] <= in_data[31:16];
 `else
 					if (is_set && !p[0])
 						sidx <= in_data[9:0];

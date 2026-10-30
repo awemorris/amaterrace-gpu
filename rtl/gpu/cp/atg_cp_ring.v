@@ -394,6 +394,13 @@ module atg_cp_ring #(
 						buf_data[g_bi][g_sl*16 +: 16] <= rsp_rdata[g_sl*16 +: 16];
 				end
 			end
+			wire [1:0] tag_sl_we;
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_tl_we0 (.I0(buf_wr_en[g_bi]), .O(tag_sl_we[0]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_tl_we1 (.I0(buf_wr_en[g_bi]), .O(tag_sl_we[1]));
+			always @(posedge clk) begin
+				if (tag_sl_we[0]) buf_tag[g_bi][13:0] <= dm_wr ? want_line[13:0] : pf_line[13:0];
+				if (tag_sl_we[1]) buf_tag[g_bi][LA_W-1:14] <= dm_wr ? want_line[LA_W-1:14] : pf_line[LA_W-1:14];
+			end
 		end
 	endgenerate
 `endif
@@ -905,8 +912,8 @@ module atg_cp_ring #(
 					if (!rsp_error) begin
 `ifndef SYNTH_KINTEX7
 						buf_data[pf_idx]  <= rsp_rdata;
-`endif
 						buf_tag[pf_idx]   <= pf_line;
+`endif
 						buf_valid[pf_idx] <= 1'b1;
 					end
 					pf_st <= PF_IDLE;
@@ -1111,8 +1118,8 @@ module atg_cp_ring #(
 						st      <= R_FAULT;
 					end else begin
 						buf_valid[want_idx] <= 1'b1;
-						buf_tag[want_idx]   <= want_line;
 `ifndef SYNTH_KINTEX7
+						buf_tag[want_idx]   <= want_line;
 						buf_data[want_idx]  <= rsp_rdata;
 `else
 						hdr_wait <= 1'b0;
