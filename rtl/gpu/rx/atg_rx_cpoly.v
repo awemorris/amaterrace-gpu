@@ -67,6 +67,7 @@ module atg_rx_cpoly (
 	reg [31:0] t0, t1;
 	reg [3:0] j, k, m;	/* CUT: start, edge, vertices written */
 	reg [1:0] cdone;	/* CUT: edge k's vertex handled */
+	reg [9:0] r_ins;
 	reg [223:0] r_pbp;
 	reg [3:0] ia, ib;	/* the edge's inside and outside vertices */
 	reg [2:0] c;	/* ISECT: word */
@@ -184,7 +185,7 @@ module atg_rx_cpoly (
 
 	/* CUT: edge k from vertex pi to its successor qi */
 	wire cut_end = line ? k == 4'd2 : k == n;
-	wire xing = ins[pi] != ins[qi] && (!line || k == 4'd0);
+	wire xing = r_ins[pi] != r_ins[qi] && (!line || k == 4'd0);
 
 	/* The operands of the sequences. */
 	wire [223:0] vd;
@@ -314,6 +315,7 @@ module atg_rx_cpoly (
 			pi <= 4'd0;
 			qi <= 4'd0;
 			cdone <= 2'd0;
+			r_ins <= 10'd0;
 			r_pbp <= 224'd0;
 			r_va <= 224'd0;
 			r_vb <= 224'd0;
@@ -367,7 +369,8 @@ module atg_rx_cpoly (
 					st <= S_DOP;
 				end
 			end
-		S_DEC:
+		S_DEC: begin
+			r_ins <= ins;
 			if (all_in || none_in) begin
 				done <= 1'b1;
 				n_out <= none_in ? 4'd0 : n;
@@ -383,6 +386,7 @@ module atg_rx_cpoly (
 				cdone <= 2'd0;
 				st <= S_CUT;
 			end
+		end
 		S_CUT:
 			if (cut_end) begin
 				half <= !half;
@@ -391,7 +395,7 @@ module atg_rx_cpoly (
 				done <= 1'b1;
 				st <= S_IDLE;
 			end else if (cdone == 2'd0) begin
-				if (ins[pi]) begin
+				if (r_ins[pi]) begin
 					for (gs_idx = 0; gs_idx < 7; gs_idx = gs_idx + 1)
 						r_pbp[32 * gs_idx +: 32] <= pb[gs_idx][a_p_b[gs_idx]];
 					cdone <= 2'd1;
@@ -404,8 +408,8 @@ module atg_rx_cpoly (
 				m <= m1;
 				cdone <= 2'd2;
 			end else if (xing) begin
-				ia <= ins[pi] ? pi : qi;
-				ib <= ins[pi] ? qi : pi;
+				ia <= r_ins[pi] ? pi : qi;
+				ib <= r_ins[pi] ? qi : pi;
 				ph <= 3'd0;
 				c <= 3'd0;
 				st <= S_IOP;
