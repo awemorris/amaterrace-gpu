@@ -400,13 +400,25 @@ module atg_cp_ring #(
 	/*
 	 * The dword wanted as byte address in memory
 	 */
-	(* max_fanout = 16 *) reg [ADDR_W-1:0] pa;
+	(* max_fanout = 16, extract_enable = "no" *) reg [ADDR_W-1:0] pa;
 	wire [ADDR_W-1:0] want_addr = pa;
 	wire [LA_W-1:0] want_line = want_addr[ADDR_W-1:LINE_SHIFT];
 	wire [WS-1:0] want_word = want_addr[LINE_SHIFT-1:2];
 	wire [2:0] want_idx = want_line[2:0];
 
+`ifdef SYNTH_KINTEX7
+	wire [LA_W-1:0] cur_tag = buf_tag[want_idx];
+	wire tm0 = (cur_tag[4:0]   == want_line[4:0]);
+	wire tm1 = (cur_tag[9:5]   == want_line[9:5]);
+	wire tm2 = (cur_tag[14:10] == want_line[14:10]);
+	wire tm3 = (cur_tag[19:15] == want_line[19:15]);
+	wire tm4 = (cur_tag[24:20] == want_line[24:20]);
+	wire tm5 = (cur_tag[LA_W-1:25] == want_line[LA_W-1:25]);
+	wire tag_match = tm0 && tm1 && tm2 && tm3 && tm4 && tm5;
+	wire hit = buf_valid[want_idx] && tag_match;
+`else
 	wire hit = buf_valid[want_idx] && (buf_tag[want_idx] == want_line);
+`endif
 	wire [31:0] want_data = buf_data[want_idx][{want_word, 5'd0} +: 32];
 
 	wire go = (run && !halt) || step_pend;
