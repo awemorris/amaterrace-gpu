@@ -665,6 +665,39 @@ module atg_cp #(
 		.rsp_rdata(s_i_rsp_rdata), .rsp_error(rsp_err_b[0])
 	);
 
+`ifdef SYNTH_KINTEX7
+	wire [1:0] s_n_ready_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_nr0 (.I0(s_n_ready), .O(s_n_ready_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_nr1 (.I0(s_n_ready), .O(s_n_ready_b[1]));
+
+	wire s_n_ready_raw_lo, s_n_ready_raw_hi;
+	assign s_n_ready_raw = s_n_ready_raw_lo;
+
+	wire s_n_valid_lo, s_n_valid_hi;
+	assign s_n_valid = s_n_valid_lo;
+
+	am_skid #(.W(16)) u_skid_ring_seq_lo (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.in_valid(s_n_valid_raw),
+		.in_ready(s_n_ready_raw_lo),
+		.in_data(s_n_data_raw[15:0]),
+		.out_valid(s_n_valid_lo),
+		.out_ready(s_n_ready_b[0]),
+		.out_data(s_n_data[15:0])
+	);
+
+	am_skid #(.W(16)) u_skid_ring_seq_hi (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.in_valid(s_n_valid_raw),
+		.in_ready(s_n_ready_raw_hi),
+		.in_data(s_n_data_raw[31:16]),
+		.out_valid(s_n_valid_hi),
+		.out_ready(s_n_ready_b[1]),
+		.out_data(s_n_data[31:16])
+	);
+`else
 	am_skid #(.W(32)) u_skid_ring_seq (
 		.clk(clk),
 		.rst_n(s_core_rst_n),
@@ -675,6 +708,7 @@ module atg_cp #(
 		.out_ready(s_n_ready),
 		.out_data(s_n_data)
 	);
+`endif
 
 	/* The sequencer; it stops only in FAULTED and RESETTING. */
 	wire s_kick, s_disp_wait, s_ev_flip;

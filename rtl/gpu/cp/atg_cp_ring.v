@@ -447,18 +447,37 @@ module atg_cp_ring #(
 	wire [15:0] h_n = is_ghci ? {8'd0, ghci_n} : (h_class[1] ? hdr_data[15:0] : {8'd0, hdr_data[7:0]});
 
 	wire [17:0] avail_d, avail;
-	wire [18:0] end_s;
-	wire avail_bo, end_co;
+	wire avail_bo;
 
 	am_sub #(.W(18)) avail_sub (.a(wptr_act), .b(cur), .bi(1'b0), .d(avail_d), .bo(avail_bo));
 	assign avail = avail_d & mask_act;
-	am_add #(.W(19)) end_add (
-		.a({1'b0, cur}), .b({3'd0, st == R_ADV ? n : h_n}), .ci(1'b1), .s(end_s), .co(end_co)
+
+	(* max_fanout = 16 *) reg [17:0] avail_r;
+	always @(posedge clk) begin
+		if (!rst_n)
+			avail_r <= 18'd0;
+		else
+			avail_r <= avail;
+	end
+
+`ifdef SYNTH_KINTEX7
+	wire [17:0] avail_check = avail_r;
+`else
+	wire [17:0] avail_check = avail;
+`endif
+
+	wire [18:0] h_end_s, p_end_s;
+	wire h_end_co, p_end_co;
+	am_add #(.W(19)) u_h_end_add (
+		.a({1'b0, cur}), .b({3'd0, h_n}), .ci(1'b1), .s(h_end_s), .co(h_end_co)
 	);
-	wire [18:0] h_end = end_s;
-	wire h_bad = h_end > nwords_act || {3'd0, h_n} >= {1'b0, avail};
+	am_add #(.W(19)) u_p_end_add (
+		.a({1'b0, cur}), .b({3'd0, n}), .ci(1'b1), .s(p_end_s), .co(p_end_co)
+	);
+	wire [18:0] h_end = h_end_s;
+	wire h_bad = h_end > nwords_act || {3'd0, h_n} >= {1'b0, avail_check};
 	wire h_novf = (h_class == 2'd2) && (CLASS_V == 0);
-	wire [17:0] p_end = end_s[17:0] & mask_act;
+	wire [17:0] p_end = p_end_s[17:0] & mask_act;
 
 	wire [ADDR_W-1:0] pa_4, pa_hdr;
 	wire [15:0] k_n;
@@ -876,15 +895,15 @@ module atg_cp_ring #(
 			R_DEC: begin
 				tag <= hdr_data[23:16];
 				n   <= h_n;
+`ifdef SYNTH_KINTEX7
+				if (fa_we_b[0]) f_addr[15:0] <= want_addr[15:0];
+				if (fa_we_b[1]) f_addr[31:16] <= want_addr[31:16];
+`else
+				f_addr  <= want_addr[31:0];
+`endif
 				if (h_bad || h_novf) begin
 					f_pulse <= 1'b1;
 					f_kind  <= h_bad ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
-`ifdef SYNTH_KINTEX7
-					if (fa_we_b[0]) f_addr[15:0] <= want_addr[15:0];
-					if (fa_we_b[1]) f_addr[31:16] <= want_addr[31:16];
-`else
-					f_addr  <= want_addr[31:0];
-`endif
 					st      <= R_FAULT;
 				end else begin
 					case (h_class)
@@ -1085,7 +1104,7 @@ module atg_cp_ring #(
 		(hcr_ridx == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
 `endif
 
-	wire unused_ok = &{1'b0, rsp_write, h_end[18], avail_bo, end_co, pa_4_co,
+	wire unused_ok = &{1'b0, rsp_write, h_end[18], avail_bo, h_end_co, p_end_co, pa_4_co,
 		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci_n_bo,
 		base_act};
 
