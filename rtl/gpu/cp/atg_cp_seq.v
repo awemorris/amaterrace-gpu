@@ -186,7 +186,7 @@ module atg_cp_seq #(
 	wire p_co;
 
 	am_add #(.W(8)) p_add (.a(p), .b(8'd0), .ci(1'b1), .s(p_n), .co(p_co));
-	reg [9:0] sidx;	/* SET_REG: the index of the pair */
+	(* extract_enable = "no" *) reg [9:0] sidx;	/* SET_REG: the index of the pair */
 	(* extract_enable = "no" *) reg [31:0] a0, a0_hi, a1, a2;	/* fence payload */
 	reg [39:0] occ_q;
 	reg settle;

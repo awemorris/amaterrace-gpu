@@ -99,7 +99,7 @@ module atg_cp_fence #(
 	reg [31:0] aux;
 	reg irq_on;
 	(* max_fanout = 16 *) reg [31:0] last;
-	reg [7:0] gap;
+	(* extract_enable = "no" *) reg [7:0] gap;
 
 `ifdef SYNTH_KINTEX7
 	wire last_we_host = hcr_we && (hcr_widx == I_LAST);

@@ -408,15 +408,22 @@ module atg_cp_ring #(
 	wire [2:0] want_idx = want_line[2:0];
 
 `ifdef SYNTH_KINTEX7
-	wire [LA_W-1:0] cur_tag = buf_tag[want_idx];
-	wire tm0 = (cur_tag[4:0]   == want_line[4:0]);
-	wire tm1 = (cur_tag[9:5]   == want_line[9:5]);
-	wire tm2 = (cur_tag[14:10] == want_line[14:10]);
-	wire tm3 = (cur_tag[19:15] == want_line[19:15]);
-	wire tm4 = (cur_tag[24:20] == want_line[24:20]);
-	wire tm5 = (cur_tag[LA_W-1:25] == want_line[LA_W-1:25]);
-	wire tag_match = tm0 && tm1 && tm2 && tm3 && tm4 && tm5;
-	wire hit_comb = buf_valid[want_idx] && tag_match;
+	wire [7:0] slot_match;
+	genvar g_sm;
+	generate
+		for (g_sm = 0; g_sm < 8; g_sm = g_sm + 1) begin : g_sm_gen
+			wire [LA_W-1:0] tag_i = buf_tag[g_sm];
+			wire m0 = (tag_i[4:0]   == want_line[4:0]);
+			wire m1 = (tag_i[9:5]   == want_line[9:5]);
+			wire m2 = (tag_i[14:10] == want_line[14:10]);
+			wire m3 = (tag_i[19:15] == want_line[19:15]);
+			wire m4 = (tag_i[24:20] == want_line[24:20]);
+			wire m5 = (tag_i[LA_W-1:25] == want_line[LA_W-1:25]);
+			assign slot_match[g_sm] = buf_valid[g_sm] && m0 && m1 && m2 && m3 && m4 && m5;
+		end
+	endgenerate
+	wire hit_comb = slot_match[want_idx];
+	wire tag_match = slot_match[want_idx];
 
 	(* max_fanout = 16 *) reg tag_match_r;
 	wire hit_n = buf_valid[want_idx] && tag_match_r;
@@ -991,13 +998,7 @@ module atg_cp_ring #(
 				if (fa_we_b[1]) f_addr[31:16] <= want_addr[31:16];
 `else
 				f_addr  <= want_addr[31:0];
-`endif
-`ifdef SYNTH_KINTEX7
-				h_bad_words_r <= h_bad_words;
-				h_bad_avail_r <= h_bad_avail;
-				h_bad_r       <= h_bad;
-`else
-				h_bad_r   <= h_bad;
+				h_bad_r <= h_bad;
 `endif
 				h_novf_r  <= h_novf;
 				h_class_r <= h_class;
@@ -1006,9 +1007,9 @@ module atg_cp_ring #(
 
 			R_DEC2: begin
 `ifdef SYNTH_KINTEX7
-				if (h_bad_words_r || h_bad_avail_r || h_novf_r) begin
+				if (rem_words_bo_r || ({3'd0, n} > rem_words_r) || ({3'd0, n} >= {1'b0, avail_check}) || h_novf_r) begin
 					f_pulse <= 1'b1;
-					f_kind  <= (h_bad_words_r || h_bad_avail_r) ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+					f_kind  <= (h_novf_r) ? GHCI_FAULT_OPCODE : GHCI_FAULT_RING;
 					st      <= R_FAULT;
 				end else begin
 `else
@@ -1158,54 +1159,39 @@ module atg_cp_ring #(
 	end
 
 `ifdef SYNTH_KINTEX7
-	wire [9:0] hcr_ridx_b [0:7];
-	genvar g_hb, g_hr;
-	generate
-		for (g_hb = 0; g_hb < 8; g_hb = g_hb + 1) begin : g_hridx_buf
-			for (g_hr = 0; g_hr < 10; g_hr = g_hr + 1) begin : g_hridx_bit
-				(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hb (
-					.I0(hcr_ridx[g_hr]),
-					.O(hcr_ridx_b[g_hb][g_hr])
-				);
-			end
-		end
-	endgenerate
-
-	wire [31:0] rdata_grp0 =
-		(hcr_ridx_b[0] == I_BASE0_LO || hcr_ridx_b[0] == I_BASE0) ? base[0][31:0] :
-		(hcr_ridx_b[0] == I_BASE0_HI) ? base[0][63:32] :
-		(hcr_ridx_b[1] == I_SIZE0) ? {27'd0, size[0]} :
-		(hcr_ridx_b[1] == I_WPTR0) ? {14'd0, wptr[0]} :
-		(hcr_ridx_b[1] == I_RPTR0) ? {14'd0, rptr[0]} :
-		(hcr_ridx_b[2] == I_BASE1) ? base[1][31:0] : 32'd0;
-
-	wire [31:0] rdata_grp1 =
-		(hcr_ridx_b[2] == I_SIZE1) ? {27'd0, size[1]} :
-		(hcr_ridx_b[2] == I_WPTR1) ? {14'd0, wptr[1]} :
-		(hcr_ridx_b[3] == I_RPTR1) ? {14'd0, rptr[1]} :
-		(hcr_ridx_b[3] == I_BASE2) ? base[2][31:0] :
-		(hcr_ridx_b[3] == I_SIZE2) ? {27'd0, size[2]} :
-		(hcr_ridx_b[4] == I_WPTR2) ? {14'd0, wptr[2]} : 32'd0;
-
-	wire [31:0] rdata_grp2 =
-		(hcr_ridx_b[4] == I_RPTR2) ? {14'd0, rptr[2]} :
-		(hcr_ridx_b[4] == I_DMA_BASE)         ? dma_base :
-		(hcr_ridx_b[5] == I_DMA_SIZE)         ? {27'd0, dma_size} :
-		(hcr_ridx_b[5] == I_DMA_WPTR)         ? {14'd0, dma_wptr} :
-		(hcr_ridx_b[5] == I_DMA_RPTR)         ? {14'd0, dma_rptr} :
-		(hcr_ridx_b[6] == I_DMA_SEM)          ? dma_sem : 32'd0;
-
-	wire [31:0] rdata_grp3 =
-		(hcr_ridx_b[6] == I_DMA_DST_BASE)     ? dma_dst_base_r :
-		(hcr_ridx_b[6] == I_DMA_ROW_STRIDE)   ? dma_src_row_stride_r :
-		(hcr_ridx_b[7] == I_DMA_SLICE_STRIDE) ? dma_src_slice_stride_r :
-		(hcr_ridx_b[7] == I_DMA_EXTENT)       ? {dma_copy_d_r[7:0], dma_copy_h_r[7:0], dma_copy_w_r} :
-		(hcr_ridx_b[7] == I_PREEMPT) ? {24'd0, interrupted_qid, 2'd0, preempt_saved, preempt_pending, preempt_active, 1'b0} :
-		(hcr_ridx_b[7] == I_PREEMPT_STATUS) ? {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid} :
-		(hcr_ridx_b[7] == I_CTX_BASE) ? ctx_base :
-		(hcr_ridx_b[7] == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
-
-	assign hcr_rdata = rdata_grp0 | rdata_grp1 | rdata_grp2 | rdata_grp3;
+	reg [31:0] ring_rdata_comb;
+	always @(*) begin
+		case (hcr_ridx[7:0])
+		I_BASE0_LO[7:0]: ring_rdata_comb = base[0][31:0];
+		I_BASE0_HI[7:0]: ring_rdata_comb = base[0][63:32];
+		I_SIZE0[7:0]:    ring_rdata_comb = {27'd0, size[0]};
+		I_WPTR0[7:0]:    ring_rdata_comb = {14'd0, wptr[0]};
+		I_RPTR0[7:0]:    ring_rdata_comb = {14'd0, rptr[0]};
+		I_BASE1[7:0]:    ring_rdata_comb = base[1][31:0];
+		I_SIZE1[7:0]:    ring_rdata_comb = {27'd0, size[1]};
+		I_WPTR1[7:0]:    ring_rdata_comb = {14'd0, wptr[1]};
+		I_RPTR1[7:0]:    ring_rdata_comb = {14'd0, rptr[1]};
+		I_BASE2[7:0]:    ring_rdata_comb = base[2][31:0];
+		I_SIZE2[7:0]:    ring_rdata_comb = {27'd0, size[2]};
+		I_WPTR2[7:0]:    ring_rdata_comb = {14'd0, wptr[2]};
+		I_RPTR2[7:0]:    ring_rdata_comb = {14'd0, rptr[2]};
+		I_DMA_BASE[7:0]:         ring_rdata_comb = dma_base;
+		I_DMA_SIZE[7:0]:         ring_rdata_comb = {27'd0, dma_size};
+		I_DMA_WPTR[7:0]:         ring_rdata_comb = {14'd0, dma_wptr};
+		I_DMA_RPTR[7:0]:         ring_rdata_comb = {14'd0, dma_rptr};
+		I_DMA_SEM[7:0]:          ring_rdata_comb = dma_sem;
+		I_DMA_DST_BASE[7:0]:     ring_rdata_comb = dma_dst_base_r;
+		I_DMA_ROW_STRIDE[7:0]:   ring_rdata_comb = dma_src_row_stride_r;
+		I_DMA_SLICE_STRIDE[7:0]: ring_rdata_comb = dma_src_slice_stride_r;
+		I_DMA_EXTENT[7:0]:       ring_rdata_comb = {dma_copy_d_r[7:0], dma_copy_h_r[7:0], dma_copy_w_r};
+		I_PREEMPT[7:0]:          ring_rdata_comb = {24'd0, interrupted_qid, 2'd0, preempt_saved, preempt_pending, preempt_active, 1'b0};
+		I_PREEMPT_STATUS[7:0]:   ring_rdata_comb = {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid};
+		I_CTX_BASE[7:0]:         ring_rdata_comb = ctx_base;
+		I_SEMA[7:0]:             ring_rdata_comb = {13'd0, queue_sema_wait, sema[1], sema[0]};
+		default:                 ring_rdata_comb = 32'd0;
+		endcase
+	end
+	assign hcr_rdata = (hcr_ridx[9:8] == 2'b00) ? ring_rdata_comb : 32'd0;
 `else
 	assign hcr_rdata =
 		(hcr_ridx == I_BASE0_LO || hcr_ridx == I_BASE0) ? base[0][31:0] :

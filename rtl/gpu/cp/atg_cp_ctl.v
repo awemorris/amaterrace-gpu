@@ -135,7 +135,7 @@ module atg_cp_ctl #(
 	reg [31:0] wdt_cycles;
 	reg [31:0] ap_base;
 	reg [31:0] ap_limit;
-	reg [31:0] fault_addr;
+	(* extract_enable = "no" *) reg [31:0] fault_addr;
 	reg [31:0] fault_info;
 	reg [31:0] wdt_count;
 	reg [33:0] stuck_count;
