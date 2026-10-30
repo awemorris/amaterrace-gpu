@@ -553,18 +553,27 @@ module atg_cp_ring #(
 	am_add #(.W(LA_W)) u_next_line (
 		.a(want_line), .b({{(LA_W-1){1'b0}}, 1'b1}), .ci(1'b0), .s(next_line), .co(unused_nl_co)
 	);
-	wire [2:0] next_idx = next_line[2:0];
 `ifdef SYNTH_KINTEX7
+	(* max_fanout = 16 *) reg [LA_W-1:0] next_line_r;
+	always @(posedge clk) begin
+		if (!core_rst_n)
+			next_line_r <= {LA_W{1'b0}};
+		else
+			next_line_r <= next_line;
+	end
+
+	wire [2:0] next_idx = next_line_r[2:0];
 	wire [LA_W-1:0] nxt_tag = buf_tag[next_idx];
-	wire ntm0 = (nxt_tag[4:0]   == next_line[4:0]);
-	wire ntm1 = (nxt_tag[9:5]   == next_line[9:5]);
-	wire ntm2 = (nxt_tag[14:10] == next_line[14:10]);
-	wire ntm3 = (nxt_tag[19:15] == next_line[19:15]);
-	wire ntm4 = (nxt_tag[24:20] == next_line[24:20]);
-	wire ntm5 = (nxt_tag[LA_W-1:25] == next_line[LA_W-1:25]);
+	wire ntm0 = (nxt_tag[4:0]   == next_line_r[4:0]);
+	wire ntm1 = (nxt_tag[9:5]   == next_line_r[9:5]);
+	wire ntm2 = (nxt_tag[14:10] == next_line_r[14:10]);
+	wire ntm3 = (nxt_tag[19:15] == next_line_r[19:15]);
+	wire ntm4 = (nxt_tag[24:20] == next_line_r[24:20]);
+	wire ntm5 = (nxt_tag[LA_W-1:25] == next_line_r[LA_W-1:25]);
 	wire next_tag_match = ntm0 && ntm1 && ntm2 && ntm3 && ntm4 && ntm5;
 	wire next_hit = buf_valid[next_idx] && next_tag_match;
 `else
+	wire [2:0] next_idx = next_line[2:0];
 	wire next_hit = buf_valid[next_idx] && (buf_tag[next_idx] == next_line);
 `endif
 
@@ -580,14 +589,7 @@ module atg_cp_ring #(
 	wire pf_trigger = (st == R_N) && (k != n) && !next_hit && (pf_st == PF_IDLE) &&
 		(st != R_REQ) && (st != R_RSP) && !ctx_req && go;
 `ifdef SYNTH_KINTEX7
-	reg pf_trigger_r;
-	always @(posedge clk) begin
-		if (!core_rst_n)
-			pf_trigger_r <= 1'b0;
-		else
-			pf_trigger_r <= pf_trigger;
-	end
-	wire pf_start = pf_trigger_r;
+	wire pf_start = pf_trigger;
 	wire [1:0] pf_line_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pfl0 (.I0(pf_st == PF_IDLE && pf_start), .O(pf_line_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pfl1 (.I0(pf_st == PF_IDLE && pf_start), .O(pf_line_we_b[1]));
@@ -1142,8 +1144,8 @@ module atg_cp_ring #(
 
 			if (pa_we_b[0]) pa[15:0] <= (st == R_IDLE) ? pa_hdr[15:0] : pa_4[15:0];
 			if (pa_we_b[1]) pa[ADDR_W-1:16] <= (st == R_IDLE) ? pa_hdr[ADDR_W-1:16] : pa_4[ADDR_W-1:16];
-			if (pf_line_we_b[0]) pf_line[13:0] <= next_line[13:0];
-			if (pf_line_we_b[1]) pf_line[LA_W-1:14] <= next_line[LA_W-1:14];
+			if (pf_line_we_b[0]) pf_line[13:0] <= next_line_r[13:0];
+			if (pf_line_we_b[1]) pf_line[LA_W-1:14] <= next_line_r[LA_W-1:14];
 `endif
 		end
 	end

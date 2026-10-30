@@ -187,7 +187,7 @@ module atg_cp_seq #(
 
 	am_add #(.W(8)) p_add (.a(p), .b(8'd0), .ci(1'b1), .s(p_n), .co(p_co));
 	reg [9:0] sidx;	/* SET_REG: the index of the pair */
-	reg [31:0] a0, a0_hi, a1, a2;	/* fence payload */
+	(* extract_enable = "no" *) reg [31:0] a0, a0_hi, a1, a2;	/* fence payload */
 	reg [39:0] occ_q;
 	reg settle;
 
@@ -285,7 +285,7 @@ module atg_cp_seq #(
 			pay_wait_r <= next_pay_wait;
 		end
 	end
-	wire [8:0] pay_wait_act = (st == Q_PAY) ? pay_wait_r : pay_wait;
+	wire [8:0] pay_wait_act = pay_wait_r;
 `else
 	wire [8:0] pay_wait_act = pay_wait;
 `endif

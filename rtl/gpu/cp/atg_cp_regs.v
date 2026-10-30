@@ -536,9 +536,63 @@ module atg_cp_regs #(
 		end
 	end
 
+`ifdef SYNTH_KINTEX7
+	wire [11:0] roff_pre = {reg_raddr[11:2], 2'b00};
+	reg [31:0] own_pre;
+	always @(*) begin
+		own_pre = xcap_word(roff_pre);
+		case (roff_pre)
+		GHCI_MAGIC[11:0]: own_pre = GHCI_MAGIC_VALUE;
+		GHCI_VERSION[11:0]: own_pre = {GHCI_VERSION_MAJOR, GHCI_VERSION_MINOR};
+		GHCI_VENDOR_ID[11:0]: own_pre = VENDOR_ID;
+		GHCI_DEVICE_ID[11:0]: own_pre = DEVICE_ID;
+		GHCI_ISA_ID[11:0]: own_pre = ISA_ID;
+		GHCI_DEVICE_VERSION[11:0]: own_pre = DEVICE_VERSION;
+		GHCI_EXTCAP[11:0]: own_pre = XCAP_MASK != 11'd0 ? {15'd0, GHCI_EXTCAP_LIST} : 32'd0;
+		GHCI_GCLK_HZ[11:0]: own_pre = GCLK_HZ;
+		GHCI_CAPS[11:0]: own_pre = eff_caps;
+		GHCI_CAPS2[11:0]: own_pre = CAPS2;
+		GHCI_SCRATCH[11:0]: own_pre = scratch;
+		GHCI_COUNTER[11:0]: own_pre = counter;
+		12'h048: own_pre = NATIVE_ISA_ID;
+		GHCI_RESIDENT_WARPS[11:0]: own_pre = {8'd0, NREGS, RESIDENT_WARPS};
+		12'h080, 12'h084, 12'h088, 12'h08c:
+			own_pre = (roff_pre == 12'h080 && !XCAP_MASK[2]) ? EXT_CAP_FMT0 :
+			          (roff_pre == 12'h084 && !XCAP_MASK[2]) ? EXT_CAP_FEATURE :
+			          perf[roff_pre[3:2] * 32 +: 32];
+		12'h090, 12'h094, 12'h098, 12'h09c:
+			if (XCAP_MASK[2]) own_pre = {24'd0, PERF_SRC[roff_pre[3:2] * 8 +: 8]};
+		12'h0c0, 12'h0c4, 12'h0c8, 12'h0cc, 12'h0d0, 12'h0d4, 12'h0d8, 12'h0dc:
+			own_pre = VEND[roff_pre[4:2] * 32 +: 32];
+		A_LOCAL_BASE: if (XCAP_MASK[7]) own_pre = LOCAL_BASE;
+		A_LOCAL_SIZE: if (XCAP_MASK[7]) own_pre = LOCAL_BYTES;
+		A_WINDOW_SIZE: if (XCAP_MASK[7]) own_pre = WINDOW_BYTES;
+		A_HOST_LIMIT: if (XCAP_MASK[7]) own_pre = HOST_LIMIT;
+		A_WINDOW_CTRL: if (XCAP_MASK[7]) own_pre = {31'd0, win_q};
+		GHCI_CP_PC[11:0]: own_pre = diag_cp_pc;
+		GHCI_CP_STATUS[11:0]: own_pre = diag_cp_status;
+		GHCI_PIPE_FSM[11:0]: own_pre = diag_pipe_fsm;
+		default: ;
+		endcase
+	end
+
+	(* max_fanout = 16 *) reg [31:0] own_q;
+	always @(posedge clk) begin
+		if (!rst_n)
+			own_q <= 32'd0;
+		else
+			own_q <= own_pre;
+	end
+
+	wire [31:0] hcr_sub = ctl_rdata | irq_rdata | ring_rdata | fence_rdata | dbg_rdata | x_rdata;
+	assign reg_rdata = rd_state_q ? state_rdata :
+		rd_hcr_q ? (own_q | hcr_sub) :
+		32'd0;
+`else
 	assign reg_rdata = rd_state_q ? state_rdata :
 		rd_hcr_q ? (own | ctl_rdata | irq_rdata | ring_rdata | fence_rdata | dbg_rdata | x_rdata) :
 		32'd0;
+`endif
 
 	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0], inc_co, raddr_q[1:0]};
 
