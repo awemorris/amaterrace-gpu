@@ -136,7 +136,7 @@ module atg_cp_ctl #(
 	reg [31:0] ap_base;
 	reg [31:0] ap_limit;
 	(* extract_enable = "no" *) reg [31:0] fault_addr;
-	reg [31:0] fault_info;
+	(* extract_enable = "no" *) reg [31:0] fault_info;
 	reg [31:0] wdt_count;
 	reg [33:0] stuck_count;
 	/* The watchdog's and AXI_STUCK's counts + 1. */

@@ -91,6 +91,7 @@ module atg_cp_fence #(
 	localparam [2:0] F_RSP = 3'd2;	/* wait for the response */
 	localparam [2:0] F_GAP = 3'd3;	/* WAIT_FENCE: before the next read */
 	localparam [2:0] F_DEAD = 3'd4;	/* after an error, until reset */
+	localparam [2:0] F_CHECK = 3'd5;	/* WAIT_FENCE: pipeline comparison */
 
 	(* max_fanout = 16 *) reg [2:0] st;
 	(* max_fanout = 16 *) reg [1:0] op;
@@ -133,7 +134,12 @@ module atg_cp_fence #(
 	wire [31:0] diff;
 	wire diff_bo;
 
+`ifdef SYNTH_KINTEX7
+	reg [31:0] mem_word_r;
+	am_sub #(.W(32)) diff_sub (.a(mem_word_r), .b(value), .bi(1'b0), .d(diff), .bo(diff_bo));
+`else
 	am_sub #(.W(32)) diff_sub (.a(mem_word), .b(value), .bi(1'b0), .d(diff), .bo(diff_bo));
+`endif
 
 	/* The gap's count - 1. */
 	wire [7:0] gap_n;
@@ -199,12 +205,17 @@ module atg_cp_fence #(
 					if (rsp_error) begin
 						st <= F_DEAD;
 					end else if (is_read) begin
+`ifdef SYNTH_KINTEX7
+						mem_word_r <= mem_word;
+						st <= F_CHECK;
+`else
 						if (passed) begin
 							st <= F_IDLE;
 						end else begin
 							gap <= POLL[7:0];
 							st <= F_GAP;
 						end
+`endif
 					end else begin
 `ifndef SYNTH_KINTEX7
 						if (op == 2'd0)
@@ -213,6 +224,15 @@ module atg_cp_fence #(
 						st <= F_IDLE;
 					end
 				end
+`ifdef SYNTH_KINTEX7
+			F_CHECK:
+				if (passed) begin
+					st <= F_IDLE;
+				end else begin
+					gap <= POLL[7:0];
+					st <= F_GAP;
+				end
+`endif
 			F_GAP:
 				if (gap <= 8'd1)
 					st <= F_REQ;

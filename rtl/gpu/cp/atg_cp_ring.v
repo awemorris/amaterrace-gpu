@@ -426,6 +426,7 @@ module atg_cp_ring #(
 	wire tag_match = slot_match[want_idx];
 
 	(* max_fanout = 16 *) reg tag_match_r;
+	reg hdr_wait;
 	wire hit_n = buf_valid[want_idx] && tag_match_r;
 	wire hit = (st == R_N) ? hit_n : hit_comb;
 `else
@@ -806,6 +807,7 @@ module atg_cp_ring #(
 			ret_pulse <= 1'b0;
 `ifdef SYNTH_KINTEX7
 			tag_match_r <= 1'b0;
+			hdr_wait    <= 1'b1;
 `endif
 		end else begin
 			f_pulse       <= 1'b0;
@@ -953,6 +955,7 @@ module atg_cp_ring #(
 					if (hw_sel[active_qid]) begin
 						cur       <= rptr_act;
 						step_pend <= 1'b0;
+						hdr_wait  <= 1'b1;
 						st        <= R_HDR;
 					end else if (|hw_sel) begin
 						/* Arbiter switches to next active queue */
@@ -979,6 +982,22 @@ module atg_cp_ring #(
 			end
 
 			R_HDR: begin
+`ifdef SYNTH_KINTEX7
+				hdr_data <= want_data;
+				k        <= 16'd0;
+				if (hdr_wait) begin
+					hdr_wait <= 1'b0;
+				end else begin
+					hdr_wait <= 1'b1;
+					if (!hit_n || stale) begin
+						ret_n <= 1'b0;
+						stale <= doorbell[active_qid];
+						st    <= R_REQ;
+					end else begin
+						st    <= R_DEC;
+					end
+				end
+`else
 				if (!hit_comb || stale) begin
 					ret_n <= 1'b0;
 					stale <= doorbell[active_qid];
@@ -988,6 +1007,7 @@ module atg_cp_ring #(
 					k        <= 16'd0;
 					st       <= R_DEC;
 				end
+`endif
 			end
 
 			R_DEC: begin
@@ -1096,6 +1116,8 @@ module atg_cp_ring #(
 						buf_tag[want_idx]   <= want_line;
 `ifndef SYNTH_KINTEX7
 						buf_data[want_idx]  <= rsp_rdata;
+`else
+						hdr_wait <= 1'b0;
 `endif
 						st <= ret_n ? R_N : R_HDR;
 					end
