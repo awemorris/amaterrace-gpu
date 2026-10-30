@@ -83,13 +83,6 @@ module atg_rx_cpoly (
 		cin = !(d[30:23] == 8'hFF && d[22:0] != 23'd0) && !(d[31] && d[30:23] != 8'd0);
 	endfunction
 
-	wire [9:0] ins;
-	genvar g;
-	generate
-	for (g = 0; g < 10; g = g + 1) begin : g_in
-		assign ins[g] = cin(dd[g]);
-	end
-	endgenerate
 	reg [9:0] vmask;	/* (1 << n) - 1: the vertices below n */
 	integer vq;
 	always @(*)
@@ -168,16 +161,16 @@ module atg_rx_cpoly (
 	am_add #(.W(4)) u_k1 (.a(k), .b(4'd0), .ci(1'b1), .s(k1), .co(cp_carry_unused[6]));
 	am_add #(.W(3)) u_ph1 (.a(ph), .b(3'd0), .ci(1'b1), .s(ph1), .co(cp_carry_unused[7]));
 	am_add #(.W(3)) u_c1 (.a(c), .b(3'd0), .ci(1'b1), .s(c1), .co(cp_carry_unused[8]));
-	wire all_in = (ins & vmask) == vmask;
-	wire none_in = (ins & vmask) == 10'd0;
+	wire all_in = (r_ins & vmask) == vmask;
+	wire none_in = (r_ins & vmask) == 10'd0;
 	/* The first inside vertex after an outside one (a triangle). */
-	wire [15:0] ins16 = {6'd0, ins};
-	wire [9:0] prv = {ins[8:0], ins16[nm1]};	/* the vertex before is inside */
+	wire [15:0] ins16 = {6'd0, r_ins};
+	wire [9:0] prv = {r_ins[8:0], ins16[nm1]};	/* the vertex before is inside */
 	reg [3:0] jsel;
 	always @(*) begin
 		jsel = 4'd0;
 		for (q = 9; q >= 0; q = q - 1)
-			if (q < n && ins[q] && !prv[q])
+			if (q < n && r_ins[q] && !prv[q])
 				/* verilator lint_off WIDTHTRUNC */
 				jsel = q;
 				/* verilator lint_on WIDTHTRUNC */
@@ -341,6 +334,7 @@ module atg_rx_cpoly (
 		S_DOP:
 			if (plane == 3'd1) begin
 				dd[i] <= vd[95:64];
+				r_ins[i] <= cin(vd[95:64]);
 				i <= i1;
 				if (i1 == n)
 					st <= S_DEC;
@@ -357,6 +351,7 @@ module atg_rx_cpoly (
 			if (res_v) begin
 				if (d_last) begin
 					dd[i] <= res;
+					r_ins[i] <= cin(res);
 					ph <= 3'd0;
 					i <= i1;
 					st <= i1 == n ? S_DEC : S_DOP;
@@ -370,7 +365,6 @@ module atg_rx_cpoly (
 				end
 			end
 		S_DEC: begin
-			r_ins <= ins;
 			if (all_in || none_in) begin
 				done <= 1'b1;
 				n_out <= none_in ? 4'd0 : n;

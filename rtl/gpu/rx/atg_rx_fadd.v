@@ -30,8 +30,10 @@ module atg_rx_fadd #(
 	wire [31:0] b_in = {i_b[31] ^ i_sub, i_b[30:0]};
 	wire [7:0] ea = i_a[30:23];
 	wire [7:0] eb = b_in[30:23];
-	wire [23:0] ma = ea == 8'd0 ? 24'd0 : {1'b1, i_a[22:0]};
-	wire [23:0] mb = eb == 8'd0 ? 24'd0 : {1'b1, b_in[22:0]};
+	wire za = ea == 8'd0;
+	wire zb = eb == 8'd0;
+	wire [23:0] ma = za ? 24'd0 : {1'b1, i_a[22:0]};
+	wire [23:0] mb = zb ? 24'd0 : {1'b1, b_in[22:0]};
 	wire nan_a = ea == 8'hFF && i_a[22:0] != 23'd0;
 	wire nan_b = eb == 8'hFF && b_in[22:0] != 23'd0;
 	wire inf_a = ea == 8'hFF && i_a[22:0] == 23'd0;
@@ -55,7 +57,7 @@ module atg_rx_fadd #(
 	wire [7:0] ex1_w = a_big ? ea : eb;
 	wire [23:0] mx1_w = a_big ? ma : mb;
 	wire [23:0] my1_w = a_big ? mb : ma;
-	wire [7:0] d1_w = a_big ? (mb == 24'd0 ? 8'd255 : exp_diff) : (ma == 24'd0 ? 8'd255 : exp_diff);
+	wire [7:0] d1_w = (za || zb) ? 8'd255 : exp_diff;
 
 	wire v1;
 	wire sp1, sx1, sub1;
