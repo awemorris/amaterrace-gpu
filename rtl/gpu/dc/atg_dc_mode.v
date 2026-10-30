@@ -39,10 +39,10 @@ module atg_dc_mode #(
 	input wire [31:0] d_wdata,
 	input wire [31:0] d_wmask,
 	input wire [5:0] d_ridx,
-	output reg [31:0] d_rdata,
+	output wire [31:0] d_rdata,
 	/* CONNECTED and its event */
 	output wire connected,
-	output reg ev_hotplug,
+	(* keep = "true" *) output reg ev_hotplug,
 	/* The cursor's registers (to and from atg_dc_cursor) */
 	output wire [31:0] cur_pos,
 	output wire cur_show,
@@ -56,24 +56,61 @@ module atg_dc_mode #(
 	localparam [5:0] I_CURSOR_POS = GHCI_DC_CURSOR_POS[7:2];
 	localparam [5:0] I_CURSOR_CTRL = GHCI_DC_CURSOR_CTRL[7:2];
 
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", DONT_TOUCH = "TRUE" *) wire mode_rst_lo;
+	(* keep = "true", DONT_TOUCH = "TRUE" *) wire mode_rst_hi;
+	LUT1 #(.INIT(2'b01)) u_mode_rst_lo (.I0(rst_n), .O(mode_rst_lo));
+	LUT1 #(.INIT(2'b01)) u_mode_rst_hi (.I0(rst_n), .O(mode_rst_hi));
+	wire rst_high = mode_rst_lo;
+`else
+	wire rst_high = !rst_n;
+	wire mode_rst_lo = rst_high;
+	wire mode_rst_hi = rst_high;
+`endif
+	(* max_fanout = 16 *) wire [5:0] idx = d_idx;
+`ifdef SYNTH_KINTEX7
+	wire [5:0] ridx_l, ridx_h;
+	genvar grm;
+	generate
+		for (grm = 0; grm < 6; grm = grm + 1) begin : g_ridx_buf
+			LUT1 #(.INIT(2'b10)) u_buf_rl (.I0(d_ridx[grm]), .O(ridx_l[grm]));
+			LUT1 #(.INIT(2'b10)) u_buf_rh (.I0(d_ridx[grm]), .O(ridx_h[grm]));
+		end
+	endgenerate
+`else
+	wire [5:0] ridx_l = d_ridx;
+	wire [5:0] ridx_h = d_ridx;
+`endif
+	wire [5:0] ridx = ridx_l;
+
 	reg r_connected;
 	reg [2:0] r_mode;
-	reg [31:0] r_pos;
+	reg [15:0] r_pos_lo;
+	reg [15:0] r_pos_hi;
 	reg r_show;
 
 	assign connected = r_connected;
-	assign cur_pos = r_pos;
+	assign cur_pos = {r_pos_hi, r_pos_lo};
 	assign cur_show = r_show;
 
 	wire [31:0] wbits = d_wdata & d_wmask;
-	wire w_conn = d_we && d_idx == I_CONNECTED && d_wmask[0];
+	wire w_conn = d_we && idx == I_CONNECTED && d_wmask[0];
+	wire w_pos = d_we && (idx == I_CURSOR_POS);
+
+`ifdef SYNTH_KINTEX7
+	wire w_pos_lo, w_pos_hi;
+	LUT1 #(.INIT(2'b10)) u_buf_wp0 (.I0(w_pos), .O(w_pos_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_wp1 (.I0(w_pos), .O(w_pos_hi));
+`else
+	wire w_pos_lo = w_pos;
+	wire w_pos_hi = w_pos;
+`endif
 
 	always @(posedge clk) begin
 		ev_hotplug <= 1'b0;
-		if (!rst_n) begin
+		if (mode_rst_lo) begin
 			r_connected <= 1'b1;
 			r_mode <= 3'd0;
-			r_pos <= 32'd0;
 			r_show <= 1'b0;
 		end else begin
 			if (dc_reset) begin
@@ -82,13 +119,25 @@ module atg_dc_mode #(
 				r_connected <= d_wdata[0];
 				ev_hotplug <= d_wdata[0] != r_connected;
 			end
-			if (d_we && d_idx == I_MODE_INDEX)
+			if (d_we && idx == I_MODE_INDEX)
 				r_mode <= (r_mode & ~d_wmask[2:0]) | wbits[2:0];
-			if (d_we && d_idx == I_CURSOR_POS)
-				r_pos <= (r_pos & ~d_wmask) | wbits;
-			if (d_we && d_idx == I_CURSOR_CTRL && d_wmask[0])
+			if (d_we && idx == I_CURSOR_CTRL && d_wmask[0])
 				r_show <= d_wdata[0];
 		end
+	end
+
+	always @(posedge clk) begin
+		if (mode_rst_lo)
+			r_pos_lo <= 16'd0;
+		else if (w_pos_lo)
+			r_pos_lo <= (r_pos_lo & ~d_wmask[15:0]) | wbits[15:0];
+	end
+
+	always @(posedge clk) begin
+		if (mode_rst_hi)
+			r_pos_hi <= 16'd0;
+		else if (w_pos_hi)
+			r_pos_hi <= (r_pos_hi & ~d_wmask[31:16]) | wbits[31:16];
 	end
 
 	/* The mode table: H0, H1, V0, V1, CLOCK (kHz), FLAGS. */
@@ -135,20 +184,40 @@ module atg_dc_mode #(
 		endcase
 	end
 
+	reg [15:0] d_rdata_lo, d_rdata_hi;
+	assign d_rdata = {d_rdata_hi, d_rdata_lo};
+
 	always @(*) begin
-		case (d_ridx)
-		I_CONNECTED: d_rdata = {31'd0, r_connected};
-		I_MODE_INDEX: d_rdata = {29'd0, r_mode};
-		GHCI_DC_MODE_H0[7:2]: d_rdata = m_h0;
-		GHCI_DC_MODE_H1[7:2]: d_rdata = m_h1;
-		GHCI_DC_MODE_V0[7:2]: d_rdata = m_v0;
-		GHCI_DC_MODE_V1[7:2]: d_rdata = m_v1;
-		GHCI_DC_MODE_CLOCK[7:2]: d_rdata = m_clock;
-		GHCI_DC_MODE_FLAGS[7:2]: d_rdata = m_flags;
-		I_CURSOR_BASE: d_rdata = cursor_base;
-		I_CURSOR_POS: d_rdata = r_pos;
-		I_CURSOR_CTRL: d_rdata = {31'd0, r_show};
-		default: d_rdata = 32'd0;
+		case (ridx_l)
+		I_CONNECTED: d_rdata_lo = {15'd0, r_connected};
+		I_MODE_INDEX: d_rdata_lo = {13'd0, r_mode};
+		GHCI_DC_MODE_H0[7:2]: d_rdata_lo = m_h0[15:0];
+		GHCI_DC_MODE_H1[7:2]: d_rdata_lo = m_h1[15:0];
+		GHCI_DC_MODE_V0[7:2]: d_rdata_lo = m_v0[15:0];
+		GHCI_DC_MODE_V1[7:2]: d_rdata_lo = m_v1[15:0];
+		GHCI_DC_MODE_CLOCK[7:2]: d_rdata_lo = m_clock[15:0];
+		GHCI_DC_MODE_FLAGS[7:2]: d_rdata_lo = m_flags[15:0];
+		I_CURSOR_BASE: d_rdata_lo = cursor_base[15:0];
+		I_CURSOR_POS: d_rdata_lo = r_pos_lo;
+		I_CURSOR_CTRL: d_rdata_lo = {15'd0, r_show};
+		default: d_rdata_lo = 16'd0;
+		endcase
+	end
+
+	always @(*) begin
+		case (ridx_h)
+		I_CONNECTED: d_rdata_hi = 16'd0;
+		I_MODE_INDEX: d_rdata_hi = 16'd0;
+		GHCI_DC_MODE_H0[7:2]: d_rdata_hi = m_h0[31:16];
+		GHCI_DC_MODE_H1[7:2]: d_rdata_hi = m_h1[31:16];
+		GHCI_DC_MODE_V0[7:2]: d_rdata_hi = m_v0[31:16];
+		GHCI_DC_MODE_V1[7:2]: d_rdata_hi = m_v1[31:16];
+		GHCI_DC_MODE_CLOCK[7:2]: d_rdata_hi = m_clock[31:16];
+		GHCI_DC_MODE_FLAGS[7:2]: d_rdata_hi = m_flags[31:16];
+		I_CURSOR_BASE: d_rdata_hi = cursor_base[31:16];
+		I_CURSOR_POS: d_rdata_hi = r_pos_hi;
+		I_CURSOR_CTRL: d_rdata_hi = 16'd0;
+		default: d_rdata_hi = 16'd0;
 		endcase
 	end
 endmodule

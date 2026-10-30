@@ -40,6 +40,8 @@ module atg_dc_ycc (
 	output reg ycc_hs,
 	output reg ycc_vs
 );
+	wire rst_high = !rst_n;
+
 	wire [15:0] r = {8'd0, rgb[23:16]};
 	wire [15:0] g = {8'd0, rgb[15:8]};
 	wire [15:0] b = {8'd0, rgb[7:0]};
@@ -93,7 +95,7 @@ module atg_dc_ycc (
 	reg [7:0] cr_held;
 
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_high) begin
 			y1 <= 8'd16;
 			cb1 <= 8'd128;
 			cr1 <= 8'd128;
