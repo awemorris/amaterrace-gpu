@@ -127,12 +127,11 @@ module atg_rx_fmul #(
 			wire unused_clk = &{1'b0, clk, v1_w};
 		end else begin : g_lat4
 			wire [47:0] p1;
-			am_mul #(.AW(24), .BW(24), .LAT(1)) u_p1 (.clk(clk), .en(1'b1), .a(ma1), .b(mb1), .p(p1));
+			am_mul #(.AW(24), .BW(24), .LAT(2)) u_p1 (.clk(clk), .en(1'b1), .a(ma1_w), .b(mb1_w), .p(p1));
 
 			reg r_v1, r_sp1, r_s1;
 			reg [31:0] r_spv1;
 			reg [9:0] r_e1;
-			reg [23:0] r_ma1, r_mb1;
 
 			always @(posedge clk) begin
 				r_v1 <= v1_w;
@@ -140,8 +139,6 @@ module atg_rx_fmul #(
 				r_sp1 <= sp1_w;
 				r_spv1 <= spv1_w;
 				r_e1 <= e1_w;
-				r_ma1 <= ma1_w;
-				r_mb1 <= mb1_w;
 			end
 
 			assign v1 = r_v1;
@@ -149,8 +146,8 @@ module atg_rx_fmul #(
 			assign spv1 = r_spv1;
 			assign s1 = r_s1;
 			assign e1 = r_e1;
-			assign ma1 = r_ma1;
-			assign mb1 = r_mb1;
+			assign ma1 = ma1_w;
+			assign mb1 = mb1_w;
 
 			reg r_v2, r_sp2, r_s2;
 			reg [31:0] r_spv2;
