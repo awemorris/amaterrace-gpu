@@ -400,7 +400,7 @@ module atg_cp_ring #(
 	/*
 	 * The dword wanted as byte address in memory
 	 */
-	(* max_fanout = 16 *) reg [ADDR_W-1:0] pa;
+	(* max_fanout = 16, extract_enable = "no" *) reg [ADDR_W-1:0] pa;
 	wire [ADDR_W-1:0] want_addr = pa;
 	wire [LA_W-1:0] want_line = want_addr[ADDR_W-1:LINE_SHIFT];
 	wire [WS-1:0] want_word = want_addr[LINE_SHIFT-1:2];
@@ -421,7 +421,9 @@ module atg_cp_ring #(
 	wire hit_n = buf_valid[want_idx] && tag_match_r;
 	wire hit = (st == R_N) ? hit_n : hit_comb;
 `else
-	wire hit = buf_valid[want_idx] && (buf_tag[want_idx] == want_line);
+	wire hit_comb = buf_valid[want_idx] && (buf_tag[want_idx] == want_line);
+	wire hit_n    = hit_comb;
+	wire hit      = hit_comb;
 `endif
 	wire [31:0] want_data = buf_data[want_idx][{want_word, 5'd0} +: 32];
 
@@ -598,7 +600,7 @@ module atg_cp_ring #(
 
 `ifdef SYNTH_KINTEX7
 	wire pa_we_hdr = (st == R_IDLE) && go && hw_sel[active_qid];
-	wire pa_we_adv = (st == R_N) && hit && n_ready && !k_eq_n;
+	wire pa_we_adv = (st == R_N) && hit_n && n_ready && !k_eq_n;
 	wire [1:0] pa_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_pawe0 (.I0(pa_we_hdr), .I1(pa_we_adv), .O(pa_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_pawe1 (.I0(pa_we_hdr), .I1(pa_we_adv), .O(pa_we_b[1]));
@@ -621,7 +623,7 @@ module atg_cp_ring #(
 	assign queue_id = active_qid;
 	assign preempt_ev = preempt_pulse;
 
-	assign n_valid = (st == R_N) && hit;
+	assign n_valid = (st == R_N) && hit_n;
 	assign n_data = want_data;
 	assign n_last = (k == n);
 
@@ -955,7 +957,7 @@ module atg_cp_ring #(
 			end
 
 			R_HDR: begin
-				if (!hit || stale) begin
+				if (!hit_comb || stale) begin
 					ret_n <= 1'b0;
 					stale <= doorbell[active_qid];
 					st    <= R_REQ;
@@ -996,7 +998,7 @@ module atg_cp_ring #(
 			end
 
 			R_N: begin
-				if (!hit) begin
+				if (!hit_n) begin
 					ret_n <= 1'b1;
 					st    <= R_REQ;
 				end else if (n_ready) begin
