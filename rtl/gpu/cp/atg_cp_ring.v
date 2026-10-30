@@ -359,7 +359,7 @@ module atg_cp_ring #(
 	reg ret_n;	/* the read is for R_N (else R_HDR) */
 	reg [17:0] cur;	/* the header's dword index */
 	reg [15:0] n;	/* dwords after the header */
-	(* max_fanout = 16, extract_enable = "no" *) reg [15:0] k;	/* R_N: dword of the packet on n_data (0 = header) */
+	(* max_fanout = 16 *) reg [15:0] k;	/* R_N: dword of the packet on n_data (0 = header) */
 	reg [7:0] tag;
 	(* max_fanout = 16, extract_enable = "no" *) reg [31:0] hdr_data;
 	(* max_fanout = 16 *) reg step_pend;
@@ -551,7 +551,12 @@ module atg_cp_ring #(
 	am_add #(.W(ADDR_W)) pa_hdr_add (
 		.a(base_act[ADDR_W-1:0]), .b({{(ADDR_W-20){1'b0}}, rptr_act, 2'b00}), .ci(1'b0), .s(pa_hdr), .co(pa_hdr_co)
 	);
+`ifdef SYNTH_KINTEX7
+	(* keep = "true" *) wire [15:0] k_add_in = k;
+	am_add #(.W(16)) k_add (.a(k_add_in), .b(16'd0), .ci(1'b1), .s(k_n), .co(k_co));
+`else
 	am_add #(.W(16)) k_add (.a(k), .b(16'd0), .ci(1'b1), .s(k_n), .co(k_co));
+`endif
 
 	/*
 	 * Background Prefetch Engine

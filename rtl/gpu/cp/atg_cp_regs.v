@@ -600,7 +600,9 @@ module atg_cp_regs #(
 			own_q <= own_pre;
 	end
 
-	wire [31:0] hcr_sub = ctl_rdata | irq_rdata | ring_rdata | fence_rdata | dbg_rdata | x_rdata;
+	wire [31:0] sub_grp0 = (ridx_q[9:7] == 3'b000) ? (ctl_rdata | irq_rdata) : ring_rdata;
+	wire [31:0] sub_grp1 = (ridx_q[8] == 1'b1) ? x_rdata : (fence_rdata | dbg_rdata);
+	wire [31:0] hcr_sub  = (ridx_q[9] || ridx_q[8]) ? sub_grp1 : sub_grp0;
 	assign reg_rdata = rd_state_q ? state_rdata :
 		rd_hcr_q ? (own_q | hcr_sub) :
 		32'd0;

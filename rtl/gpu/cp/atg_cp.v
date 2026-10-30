@@ -274,18 +274,12 @@ module atg_cp #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_we_disp  (.I0(s_hcr_we), .O(hcr_we_disp));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_we_irq   (.I0(s_hcr_we), .O(hcr_we_irq));
 
-	wire [9:0] hcr_ridx_ctl, hcr_ridx_ring, hcr_ridx_fence, hcr_ridx_dbg, hcr_ridx_disp, hcr_ridx_irq;
-	genvar g_idx;
-	generate
-		for (g_idx = 0; g_idx < 10; g_idx = g_idx + 1) begin : g_idx_buf
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rc (.I0(s_hcr_ridx[g_idx]), .O(hcr_ridx_ctl[g_idx]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rr (.I0(s_hcr_ridx[g_idx]), .O(hcr_ridx_ring[g_idx]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rf (.I0(s_hcr_ridx[g_idx]), .O(hcr_ridx_fence[g_idx]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rd (.I0(s_hcr_ridx[g_idx]), .O(hcr_ridx_dbg[g_idx]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rp (.I0(s_hcr_ridx[g_idx]), .O(hcr_ridx_disp[g_idx]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ri (.I0(s_hcr_ridx[g_idx]), .O(hcr_ridx_irq[g_idx]));
-		end
-	endgenerate
+	wire [9:0] hcr_ridx_ctl   = s_hcr_ridx;
+	wire [9:0] hcr_ridx_ring  = s_hcr_ridx;
+	wire [9:0] hcr_ridx_fence = s_hcr_ridx;
+	wire [9:0] hcr_ridx_dbg   = s_hcr_ridx;
+	wire [9:0] hcr_ridx_disp  = s_hcr_ridx;
+	wire [9:0] hcr_ridx_irq   = s_hcr_ridx;
 
 	wire [9:0] hcr_widx_ctl, hcr_widx_ring, hcr_widx_fence, hcr_widx_dbg, hcr_widx_disp, hcr_widx_irq;
 	genvar g_widx;
