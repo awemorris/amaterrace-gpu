@@ -56,7 +56,7 @@ module atg_rx_cpoly (
 		S_IOP = 3'd5, S_IW = 3'd6;
 	reg [2:0] st;
 
-	reg [223:0] pb [0:19];	/* two halves of 10 vertices */
+	reg [31:0] pb [0:6][0:19];	/* seven 32-bit slices of two halves of 10 vertices */
 	reg [31:0] dd [0:9];	/* the distances */
 	reg half;	/* the current polygon's half */
 	reg [3:0] n;	/* its vertex count */
@@ -71,10 +71,10 @@ module atg_rx_cpoly (
 	reg [3:0] ia, ib;	/* the edge's inside and outside vertices */
 	reg [2:0] c;	/* ISECT: word */
 	reg [223:0] xi;
-	integer q;
+	integer q, gs_idx;
 
 	/* The entry of vertex x of half h: x + 10 h (one adder an address). */
-	wire [4:0] a_vd, a_va, a_vb;
+	wire [4:0] a_vd, a_va, a_vb, a_ld, a_new, a_p, a_rd;
 
 	/* Inside: dist >= 0, -0 and denormals included, NaN outside. */
 	function cin;
@@ -106,6 +106,53 @@ module atg_rx_cpoly (
 		.co(adr_carry_unused[1]));
 	am_add #(.W(5)) u_a_vb (.a({1'b0, ib}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_vb),
 		.co(adr_carry_unused[2]));
+	am_add #(.W(5)) u_a_ld (.a({1'b0, ld_idx}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_ld),
+		.co(adr_carry_unused[3]));
+	am_add #(.W(5)) u_a_new (.a({1'b0, m}), .b(half ? 5'd0 : 5'd10), .ci(1'b0), .s(a_new),
+		.co(adr_carry_unused[4]));
+	am_add #(.W(5)) u_a_p (.a({1'b0, pi}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_p),
+		.co(adr_carry_unused[5]));
+	am_add #(.W(5)) u_a_rd (.a({1'b0, rd_idx}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_rd),
+		.co(adr_carry_unused[6]));
+
+	/* Address tree buffers for the 7 word slices of pb to limit fanout to 16 */
+	(* keep = "true" *) wire [4:0] a_vd_b [0:6];
+	(* keep = "true" *) wire [4:0] a_rd_b [0:6];
+	(* keep = "true" *) wire [4:0] a_ld_b [0:6];
+	(* keep = "true" *) wire [4:0] a_p_b  [0:6];
+	(* keep = "true" *) wire [4:0] a_new_b[0:6];
+	(* keep = "true" *) wire [4:0] a_va_b [0:6];
+	(* keep = "true" *) wire [4:0] a_vb_b [0:6];
+
+`ifdef SYNTH_KINTEX7
+	genvar gi_s, gi_b;
+	generate
+	for (gi_s = 0; gi_s < 7; gi_s = gi_s + 1) begin : g_addr_buf
+		for (gi_b = 0; gi_b < 5; gi_b = gi_b + 1) begin : g_bits
+			LUT1 #(.INIT(2'h2)) u_b_vd (.I0(a_vd[gi_b]),  .O(a_vd_b[gi_s][gi_b]));
+			LUT1 #(.INIT(2'h2)) u_b_rd (.I0(a_rd[gi_b]),  .O(a_rd_b[gi_s][gi_b]));
+			LUT1 #(.INIT(2'h2)) u_b_ld (.I0(a_ld[gi_b]),  .O(a_ld_b[gi_s][gi_b]));
+			LUT1 #(.INIT(2'h2)) u_b_p  (.I0(a_p[gi_b]),   .O(a_p_b[gi_s][gi_b]));
+			LUT1 #(.INIT(2'h2)) u_b_nw (.I0(a_new[gi_b]), .O(a_new_b[gi_s][gi_b]));
+			LUT1 #(.INIT(2'h2)) u_b_va (.I0(a_va[gi_b]),  .O(a_va_b[gi_s][gi_b]));
+			LUT1 #(.INIT(2'h2)) u_b_vb (.I0(a_vb[gi_b]),  .O(a_vb_b[gi_s][gi_b]));
+		end
+	end
+	endgenerate
+`else
+	genvar gi_s;
+	generate
+	for (gi_s = 0; gi_s < 7; gi_s = gi_s + 1) begin : g_addr_direct
+		assign a_vd_b[gi_s]  = a_vd;
+		assign a_rd_b[gi_s]  = a_rd;
+		assign a_ld_b[gi_s]  = a_ld;
+		assign a_p_b[gi_s]   = a_p;
+		assign a_new_b[gi_s] = a_new;
+		assign a_va_b[gi_s]  = a_va;
+		assign a_vb_b[gi_s]  = a_vb;
+	end
+	endgenerate
+`endif
 	am_sub #(.W(4)) u_nm1 (.a(n), .b(4'd0), .bi(1'b1), .d(nm1), .bo(cp_carry_unused[0]));
 	wire [3:0] j_init = line ? 4'd0 : jsel;
 	wire [3:0] j1;
@@ -140,7 +187,12 @@ module atg_rx_cpoly (
 	wire xing = ins[pi] != ins[qi] && (!line || k == 4'd0);
 
 	/* The operands of the sequences. */
-	wire [223:0] vd = pb[a_vd];
+	wire [223:0] vd;
+	generate
+	for (gi_s = 0; gi_s < 7; gi_s = gi_s + 1) begin : g_vd_slice
+		assign vd[32 * gi_s +: 32] = pb[gi_s][a_vd_b[gi_s]];
+	end
+	endgenerate
 	/* Buffered edge vertices for intersection */
 	reg [223:0] r_va, r_vb;
 	wire gy = plane == 3'd5 || plane == 3'd6;
@@ -228,15 +280,6 @@ module atg_rx_cpoly (
 			endcase
 	end
 
-	wire [4:0] a_ld, a_new, a_p, a_rd;
-	am_add #(.W(5)) u_a_ld (.a({1'b0, ld_idx}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_ld),
-		.co(adr_carry_unused[3]));
-	am_add #(.W(5)) u_a_new (.a({1'b0, m}), .b(half ? 5'd0 : 5'd10), .ci(1'b0), .s(a_new),
-		.co(adr_carry_unused[4]));
-	am_add #(.W(5)) u_a_p (.a({1'b0, pi}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_p),
-		.co(adr_carry_unused[5]));
-	am_add #(.W(5)) u_a_rd (.a({1'b0, rd_idx}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_rd),
-		.co(adr_carry_unused[6]));
 	wire fa_o, fm_o, fd_o, fd_busy;
 	wire [31:0] fa_r, fm_r, fd_r;
 	reg r_fa_v, r_fm_v, r_fd_v;
@@ -256,7 +299,8 @@ module atg_rx_cpoly (
 	assign cmd_ready = st == S_IDLE;
 
 	always @(posedge clk) begin
-		rd_data <= pb[a_rd];
+		for (gs_idx = 0; gs_idx < 7; gs_idx = gs_idx + 1)
+			rd_data[32 * gs_idx +: 32] <= pb[gs_idx][a_rd_b[gs_idx]];
 		done <= 1'b0;
 		r_fa_v <= 1'b0;
 		r_fm_v <= 1'b0;
@@ -279,7 +323,8 @@ module atg_rx_cpoly (
 		end else case (st)
 		S_IDLE: begin
 			if (ld_we)
-				pb[a_ld] <= ld_data;
+				for (gs_idx = 0; gs_idx < 7; gs_idx = gs_idx + 1)
+					pb[gs_idx][a_ld_b[gs_idx]] <= ld_data[32 * gs_idx +: 32];
 			if (cmd_valid) begin
 				plane <= cmd_plane;
 				if (cmd_first) begin
@@ -347,13 +392,15 @@ module atg_rx_cpoly (
 				st <= S_IDLE;
 			end else if (cdone == 2'd0) begin
 				if (ins[pi]) begin
-					r_pbp <= pb[a_p];
+					for (gs_idx = 0; gs_idx < 7; gs_idx = gs_idx + 1)
+						r_pbp[32 * gs_idx +: 32] <= pb[gs_idx][a_p_b[gs_idx]];
 					cdone <= 2'd1;
 				end else begin
 					cdone <= 2'd2;
 				end
 			end else if (cdone == 2'd1) begin
-				pb[a_new] <= r_pbp;
+				for (gs_idx = 0; gs_idx < 7; gs_idx = gs_idx + 1)
+					pb[gs_idx][a_new_b[gs_idx]] <= r_pbp[32 * gs_idx +: 32];
 				m <= m1;
 				cdone <= 2'd2;
 			end else if (xing) begin
@@ -370,8 +417,10 @@ module atg_rx_cpoly (
 			end
 		S_IOP: begin
 			if (ph == 3'd0) begin
-				r_va <= pb[a_va];
-				r_vb <= pb[a_vb];
+				for (gs_idx = 0; gs_idx < 7; gs_idx = gs_idx + 1) begin
+					r_va[32 * gs_idx +: 32] <= pb[gs_idx][a_va_b[gs_idx]];
+					r_vb[32 * gs_idx +: 32] <= pb[gs_idx][a_vb_b[gs_idx]];
+				end
 			end
 			r_op_a <= op_a;
 			r_op_b <= op_b;
@@ -394,7 +443,8 @@ module atg_rx_cpoly (
 				if (ph == 3'd4) begin
 					c <= c1;
 					if (c == 3'd6) begin
-						pb[a_new] <= {res, xi[191:0]};
+						for (gs_idx = 0; gs_idx < 7; gs_idx = gs_idx + 1)
+							pb[gs_idx][a_new_b[gs_idx]] <= (gs_idx == 6) ? res : xi[32 * gs_idx +: 32];
 						m <= m1;
 						k <= k1;
 						pi <= qi;
