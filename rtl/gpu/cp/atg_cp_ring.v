@@ -153,6 +153,35 @@ module atg_cp_ring #(
 	reg [17:0] wptr [0:2];
 	reg [17:0] rptr [0:2];
 
+`ifdef SYNTH_KINTEX7
+	wire rptr_adv_q0 = (st == R_ADV) && (active_qid == 2'd0);
+	wire rptr_adv_q1 = (st == R_ADV) && (active_qid == 2'd1);
+	wire rptr_adv_q2 = (st == R_ADV) && (active_qid == 2'd2);
+	wire rptr_rst_q0 = (st == R_CTX_REST_RSP) && rsp_valid && (rsp_tag == 8'd3) && (interrupted_qid == 2'd0);
+	wire rptr_rst_q1 = (st == R_CTX_REST_RSP) && rsp_valid && (rsp_tag == 8'd3) && (interrupted_qid == 2'd1);
+	wire rptr_rst_q2 = (st == R_CTX_REST_RSP) && rsp_valid && (rsp_tag == 8'd3) && (interrupted_qid == 2'd2);
+	wire rptr_imm_q0 = (st == R_IDLE) && preempt_active && q_empty[0] && (ctx_base == 32'd0) && (interrupted_qid == 2'd0);
+	wire rptr_imm_q1 = (st == R_IDLE) && preempt_active && q_empty[0] && (ctx_base == 32'd0) && (interrupted_qid == 2'd1);
+	wire rptr_imm_q2 = (st == R_IDLE) && preempt_active && q_empty[0] && (ctx_base == 32'd0) && (interrupted_qid == 2'd2);
+
+	always @(posedge clk) begin
+		if (!core_rst_n) begin
+			rptr[0] <= 18'd0;
+			rptr[1] <= 18'd0;
+			rptr[2] <= 18'd0;
+		end else begin
+			if (rptr_adv_q0) rptr[0] <= p_end;
+			else if (rptr_rst_q0 || rptr_imm_q0) rptr[0] <= saved_rptr;
+
+			if (rptr_adv_q1) rptr[1] <= p_end;
+			else if (rptr_rst_q1 || rptr_imm_q1) rptr[1] <= saved_rptr;
+
+			if (rptr_adv_q2) rptr[2] <= p_end;
+			else if (rptr_rst_q2 || rptr_imm_q2) rptr[2] <= saved_rptr;
+		end
+	end
+`endif
+
 	/* Dedicated DMA Transfer Queue registers */
 	reg [31:0] dma_base;
 	reg [4:0]  dma_size;
@@ -218,7 +247,7 @@ module atg_cp_ring #(
 	assign nwords[1] = nwords1;
 	assign nwords[2] = nwords2;
 
-	reg [1:0] active_qid;
+	(* max_fanout = 16 *) reg [1:0] active_qid;
 	reg [1:0] interrupted_qid;
 	reg [17:0] saved_rptr;
 	reg [31:0] ctx_base;
@@ -282,40 +311,52 @@ module atg_cp_ring #(
 	wire [1:0] rr_next2 = (active_qid == 2'd0) ? 2'd2 : ((active_qid == 2'd1) ? 2'd0 : 2'd1);
 
 	reg [1:0] next_qid;
+`ifdef SYNTH_KINTEX7
+	reg [2:0] has_work_r;
+	always @(posedge clk) begin
+		if (!core_rst_n)
+			has_work_r <= 3'd0;
+		else
+			has_work_r <= has_work;
+	end
+	wire [2:0] hw_sel = has_work_r;
+`else
+	wire [2:0] hw_sel = has_work;
+`endif
 	always @(*) begin
 		if (preempt_active) begin
 			next_qid = 2'd0;
 		end else case (prio_mode)
 		4'd1: begin
 			/* Strict Priority: Q0 > Q1 > Q2 */
-			next_qid = has_work[0] ? 2'd0 :
-				has_work[1] ? 2'd1 :
-				has_work[2] ? 2'd2 : active_qid;
+			next_qid = hw_sel[0] ? 2'd0 :
+				hw_sel[1] ? 2'd1 :
+				hw_sel[2] ? 2'd2 : active_qid;
 		end
 		4'd2: begin
 			/* Pure Round Robin */
-			next_qid = has_work[rr_next1] ? rr_next1 :
-				has_work[rr_next2] ? rr_next2 :
-				has_work[active_qid] ? active_qid : active_qid;
+			next_qid = hw_sel[rr_next1] ? rr_next1 :
+				hw_sel[rr_next2] ? rr_next2 :
+				hw_sel[active_qid] ? active_qid : active_qid;
 		end
 		default: begin
 			/* Balanced: Graphics prioritized, Compute & Copy interleaved */
-			next_qid = has_work[0] ? 2'd0 :
-				(last_non_q0 == 2'd1) ? (has_work[2] ? 2'd2 : (has_work[1] ? 2'd1 : 2'd0)) :
-				(has_work[1] ? 2'd1 : (has_work[2] ? 2'd2 : 2'd0));
+			next_qid = hw_sel[0] ? 2'd0 :
+				(last_non_q0 == 2'd1) ? (hw_sel[2] ? 2'd2 : (hw_sel[1] ? 2'd1 : 2'd0)) :
+				(hw_sel[1] ? 2'd1 : (hw_sel[2] ? 2'd2 : 2'd0));
 		end
 		endcase
 	end
 
-	reg [3:0] st;
+	(* max_fanout = 16 *) reg [3:0] st;
 	reg ret_n;	/* the read is for R_N (else R_HDR) */
 	reg [17:0] cur;	/* the header's dword index */
 	reg [15:0] n;	/* dwords after the header */
 	reg [15:0] k;	/* R_N: dword of the packet on n_data (0 = header) */
 	reg [7:0] tag;
 	reg [31:0] hdr_data;
-	reg step_pend;
-	reg stale;
+	(* max_fanout = 16 *) reg step_pend;
+	(* max_fanout = 16 *) reg stale;
 
 	/*
 	 * 8-entry circular prefetch line buffer (256 bytes = 64 words for 32B lines)
@@ -409,11 +450,40 @@ module atg_cp_ring #(
 	// Prefetch next line while executing Class N packet before boundary hit
 	wire pf_trigger = (st == R_N) && (k != n) && !next_hit && (pf_st == PF_IDLE) &&
 		(st != R_REQ) && (st != R_RSP) && !ctx_req && go;
+`ifdef SYNTH_KINTEX7
+	reg pf_trigger_r;
+	always @(posedge clk) begin
+		if (!core_rst_n)
+			pf_trigger_r <= 1'b0;
+		else
+			pf_trigger_r <= pf_trigger;
+	end
+	wire pf_start = pf_trigger_r;
+	wire [1:0] pf_line_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pfl0 (.I0(pf_st == PF_IDLE && pf_start), .O(pf_line_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pfl1 (.I0(pf_st == PF_IDLE && pf_start), .O(pf_line_we_b[1]));
+`else
+	wire pf_start = pf_trigger;
+`endif
 
 	reg f_pulse;
 	reg [3:0] f_kind;
 	reg [31:0] f_addr;
 	reg ret_pulse;
+
+`ifdef SYNTH_KINTEX7
+	wire pa_we_hdr = (st == R_IDLE) && go && hw_sel[active_qid];
+	wire pa_we_adv = (st == R_N) && hit && n_ready && (k != n);
+	wire [1:0] pa_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_pawe0 (.I0(pa_we_hdr), .I1(pa_we_adv), .O(pa_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_pawe1 (.I0(pa_we_hdr), .I1(pa_we_adv), .O(pa_we_b[1]));
+
+	wire f_addr_we_bad = (st == R_DEC) && (h_bad || h_novf);
+	wire f_addr_we_rsp = (st == R_RSP) && rsp_valid && (rsp_tag == 8'd0) && rsp_error;
+	wire [1:0] fa_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_fawe0 (.I0(f_addr_we_bad), .I1(f_addr_we_rsp), .O(fa_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_fawe1 (.I0(f_addr_we_bad), .I1(f_addr_we_rsp), .O(fa_we_b[1]));
+`endif
 
 	assign fault = f_pulse;
 	assign fault_kind = f_kind;
@@ -527,7 +597,9 @@ module atg_cp_ring #(
 		if (!core_rst_n) begin
 			for (bi = 0; bi < 3; bi = bi + 1) begin
 				wptr[bi] <= 18'd0;
+`ifndef SYNTH_KINTEX7
 				rptr[bi] <= 18'd0;
+`endif
 				queue_sema_id[bi] <= 3'd0;
 			end
 			queue_sema_wait <= 3'd0;
@@ -700,12 +772,29 @@ module atg_cp_ring #(
 						preempt_saved   <= 1'b0;
 						preempt_pulse   <= 1'b1;
 						active_qid      <= interrupted_qid;
+`ifndef SYNTH_KINTEX7
 						rptr[interrupted_qid] <= saved_rptr;
+`endif
 						buf_valid       <= 8'd0;
 					end else begin
 						st <= R_CTX_REST_REQ;
 					end
 				end else if (go) begin
+`ifdef SYNTH_KINTEX7
+					if (hw_sel[active_qid]) begin
+						cur       <= rptr_act;
+						if (pa_we_b[0]) pa[15:0] <= pa_hdr[15:0];
+						if (pa_we_b[1]) pa[ADDR_W-1:16] <= pa_hdr[ADDR_W-1:16];
+						step_pend <= 1'b0;
+						st        <= R_HDR;
+					end else if (|hw_sel) begin
+						/* Arbiter switches to next active queue */
+						active_qid <= next_qid;
+						if (next_qid != 2'd0)
+							last_non_q0 <= next_qid;
+						buf_valid  <= 8'd0;
+					end
+`else
 					if (has_work[active_qid]) begin
 						cur       <= rptr_act;
 						pa        <= pa_hdr;
@@ -718,6 +807,7 @@ module atg_cp_ring #(
 							last_non_q0 <= next_qid;
 						buf_valid  <= 8'd0;
 					end
+`endif
 				end
 			end
 
@@ -739,7 +829,12 @@ module atg_cp_ring #(
 				if (h_bad || h_novf) begin
 					f_pulse <= 1'b1;
 					f_kind  <= h_bad ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+`ifdef SYNTH_KINTEX7
+					if (fa_we_b[0]) f_addr[15:0] <= want_addr[15:0];
+					if (fa_we_b[1]) f_addr[31:16] <= want_addr[31:16];
+`else
 					f_addr  <= want_addr[31:0];
+`endif
 					st      <= R_FAULT;
 				end else begin
 					case (h_class)
@@ -759,7 +854,12 @@ module atg_cp_ring #(
 						st <= R_ADV;
 					end else begin
 						k  <= k_n;
+`ifdef SYNTH_KINTEX7
+						if (pa_we_b[0]) pa[15:0] <= pa_4[15:0];
+						if (pa_we_b[1]) pa[ADDR_W-1:16] <= pa_4[ADDR_W-1:16];
+`else
 						pa <= pa_4;
+`endif
 					end
 				end
 			end
@@ -770,7 +870,9 @@ module atg_cp_ring #(
 			end
 
 			R_ADV: begin
+`ifndef SYNTH_KINTEX7
 				rptr[active_qid] <= p_end;
+`endif
 				ret_pulse        <= 1'b1;
 				if (queue_sema_wait[active_qid])
 					queue_sema_wait[active_qid] <= 1'b0;
@@ -803,7 +905,12 @@ module atg_cp_ring #(
 					if (rsp_error) begin
 						f_pulse <= 1'b1;
 						f_kind  <= GHCI_FAULT_APERTURE;
+`ifdef SYNTH_KINTEX7
+						if (fa_we_b[0]) f_addr[15:0] <= want_addr[15:0];
+						if (fa_we_b[1]) f_addr[31:16] <= want_addr[31:16];
+`else
 						f_addr  <= want_addr[31:0];
+`endif
 						st      <= R_FAULT;
 					end else begin
 						buf_valid[want_idx] <= 1'b1;
@@ -842,7 +949,9 @@ module atg_cp_ring #(
 					preempt_saved         <= 1'b0;
 					preempt_pulse         <= 1'b1;
 					active_qid            <= interrupted_qid;
+`ifndef SYNTH_KINTEX7
 					rptr[interrupted_qid] <= saved_rptr;
+`endif
 					buf_valid             <= 8'd0;
 					st                    <= R_IDLE;
 				end
