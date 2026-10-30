@@ -122,11 +122,57 @@ module atg_rx #(
 	/* Sequence numbers: the scan's (direct quads) and the warps' never overlap. */
 	assign sq_req = s_sq_req || f_sq_req;
 
+	wire [29:0] prim_in_data = {prim_last, prim_free, prim_vtx};
+	wire prim_pipe_valid, prim_pipe_ready;
+	wire [29:0] prim_pipe_data;
+
+	am_skid #(.W(30)) u_prim_skid (
+		.clk(clk),
+		.rst_n(rst_n),
+		.in_valid(prim_valid),
+		.in_ready(prim_ready),
+		.in_data(prim_in_data),
+		.out_valid(prim_pipe_valid),
+		.out_ready(prim_pipe_ready),
+		.out_data(prim_pipe_data)
+	);
+
+	wire prim_c_valid = prim_pipe_valid;
+	wire prim_c_ready;
+	assign prim_pipe_ready = prim_c_ready;
+	wire [25:0] prim_c_vtx = prim_pipe_data[25:0];
+	wire [2:0]  prim_c_free = prim_pipe_data[28:26];
+	wire        prim_c_last = prim_pipe_data[29];
+
+	reg r_fl_pw_we;
+	reg [11:0] r_fl_pw_addr;
+	reg [31:0] r_fl_pw_data;
+
+	wire w_fl_pw_we;
+	wire [11:0] w_fl_pw_addr;
+	wire [31:0] w_fl_pw_data;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r_fl_pw_we <= 1'b0;
+			r_fl_pw_addr <= 12'd0;
+			r_fl_pw_data <= 32'd0;
+		end else begin
+			r_fl_pw_we <= w_fl_pw_we;
+			r_fl_pw_addr <= w_fl_pw_addr;
+			r_fl_pw_data <= w_fl_pw_data;
+		end
+	end
+
+	assign fl_pw_we = r_fl_pw_we;
+	assign fl_pw_addr = r_fl_pw_addr;
+	assign fl_pw_data = r_fl_pw_data;
+
 	atg_rx_clip clip (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.raw_kick(raw_kick),
-		.prim_valid(prim_valid), .prim_ready(prim_ready), .prim_vtx(prim_vtx),
-		.prim_free(prim_free), .prim_last(prim_last),
+		.prim_valid(prim_c_valid), .prim_ready(prim_c_ready), .prim_vtx(prim_c_vtx),
+		.prim_free(prim_c_free), .prim_last(prim_c_last),
 		.pt_rd(c_pt_rd), .pt_idx(c_pt_idx), .pt_word(c_pt_word), .pt_rdata(pt_rdata),
 		.pt_busy(f_pt_busy),
 		.cl_valid(cl_valid), .cl_ready(cl_ready), .cl_tri(cl_tri), .cl_last(cl_last),
@@ -175,7 +221,7 @@ module atg_rx #(
 		.pt_rd(f_pt_rd), .pt_idx(f_pt_idx), .pt_word(f_pt_word), .pt_rdata(pt_rdata),
 		.pt_busy(f_pt_busy),
 		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_we(fl_we), .fl_reg(fl_reg), .fl_lane(fl_lane),
-		.fl_data(fl_data), .fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data),
+		.fl_data(fl_data), .fl_pw_we(w_fl_pw_we), .fl_pw_addr(w_fl_pw_addr), .fl_pw_data(w_fl_pw_data),
 		.fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
 		.sq_req(f_sq_req), .sq_seq(sq_seq)
 	);
