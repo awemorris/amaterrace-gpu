@@ -756,7 +756,7 @@ module atg_cp #(
 	/* The kick codes (atg_cp_seq's K_*). */
 `ifdef SYNTH_KINTEX7
 	reg blt_kick_r, draw_kick_r, cs_kick_r, lc_kick_r, raw_kick_r, occ_clear_r;
-	reg [3:0] inv_r;
+	(* extract_reset = "no" *) reg [3:0] inv_r;
 	always @(posedge clk) begin
 		blt_kick_r <= s_host_kick[0] || s_kick && s_kick_code == 3'd0;
 		draw_kick_r <= s_host_kick[1] || s_kick && s_kick_code == 3'd1;

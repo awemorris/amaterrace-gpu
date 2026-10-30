@@ -209,34 +209,16 @@ module atg_cp_seq #(
 	wire [7:0] h_op = is_ghci_hdr_r ? hdr_r[7:0] : {2'b00, hdr_r[29:24]};
 	wire [7:0] h_n = is_ghci_hdr_r ? ghci_n_r : hdr_r[7:0];
 
-	wire dec_hdr_fault_comb, dec_hdr_short_comb, h_zero_comb;
-	wire [7:0] h_need_comb;
-	wire h_known_comb, h_absent_comb, h_short_comb;
-	atg_cp_seq_dec #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) u_dec_comb (
-		.hdr(hdr), .hdr_fw(fw_active), .h_known(h_known_comb), .h_absent(h_absent_comb),
-		.h_need(h_need_comb), .h_short(h_short_comb), .h_zero(h_zero_comb),
-		.hdr_fault(dec_hdr_fault_comb), .hdr_short(dec_hdr_short_comb),
-		.vendor(1'b0), .op(8'd0), .p(8'd0), .in_data(32'd0),
-		.pay_bad()
-	);
-
-	reg dec_hdr_fault_r, dec_hdr_short_r, h_zero_r;
-	reg [7:0] h_need_r;
-	reg is_set_r, is_dset_r, is_fence_cmd_r;
-
-	wire dec_hdr_fault = (st == Q_DEC) ? dec_hdr_fault_r : dec_hdr_fault_comb;
-	wire dec_hdr_short = (st == Q_DEC) ? dec_hdr_short_r : dec_hdr_short_comb;
-	wire h_zero = (st == Q_DEC) ? h_zero_r : h_zero_comb;
-	wire [7:0] h_need = (st == Q_DEC) ? h_need_r : h_need_comb;
-	wire pay_bad;
-
+	wire dec_hdr_fault, dec_hdr_short, h_zero, pay_bad;
 	atg_cp_seq_dec #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) dec (
 		.hdr(hdr_r), .hdr_fw(use_fw), .h_known(), .h_absent(),
-		.h_need(), .h_short(), .h_zero(),
-		.hdr_fault(), .hdr_short(),
+		.h_need(), .h_short(), .h_zero(h_zero),
+		.hdr_fault(dec_hdr_fault), .hdr_short(dec_hdr_short),
 		.vendor(vendor), .op(op), .p(p), .in_data(in_data),
 		.pay_bad(pay_bad)
 	);
+
+	reg is_set_r, is_dset_r, is_fence_cmd_r;
 
 	/* Payload: what this dword does; the waits (atg_cp_seq_wait). */
 	wire is_set = !vendor && op == OP_SET_REG;
@@ -351,12 +333,12 @@ module atg_cp_seq #(
 	reg [31:0] f_faddr;
 
 `ifdef SYNTH_KINTEX7
-	wire sidx_we_raw = pay_take && !set_bad && (is_set_r || is_dset_r) && !p[0];
+	wire sidx_we_raw = (st == Q_PAY) && pay_take && (is_set_r || is_dset_r) && !p[0];
 	wire [1:0] sidx_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe0 (.I0(sidx_we_raw), .O(sidx_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe1 (.I0(sidx_we_raw), .O(sidx_we_b[1]));
 
-	wire f_fa_we_raw = pay_take && set_bad;
+	wire f_fa_we_raw = (st == Q_PAY) && pay_take;
 	wire [1:0] f_fa_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe0 (.I0(f_fa_we_raw), .O(f_fa_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe1 (.I0(f_fa_we_raw), .O(f_fa_we_b[1]));
@@ -365,6 +347,11 @@ module atg_cp_seq #(
 	wire [1:0] a0_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0we0 (.I0(a0_we_raw), .O(a0_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0we1 (.I0(a0_we_raw), .O(a0_we_b[1]));
+
+	wire a1_we_raw = (st == Q_PAY) && pay_take && ((is_fence_cmd_r && p == 8'd2) || (!is_fence_cmd_r && p == 8'd1));
+	wire [1:0] a1_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a1we0 (.I0(a1_we_raw), .O(a1_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a1we1 (.I0(a1_we_raw), .O(a1_we_b[1]));
 
 	wire a2_we_raw = (st == Q_PAY) && pay_take && ((is_fence_cmd_r && p == 8'd3) || (!is_fence_cmd_r && p == 8'd2));
 	wire [1:0] a2_we_b;
@@ -390,10 +377,6 @@ module atg_cp_seq #(
 			hdr_r <= 32'd0;
 			is_ghci_hdr_r <= 1'b0;
 			ghci_n_r <= 8'd0;
-			dec_hdr_fault_r <= 1'b0;
-			dec_hdr_short_r <= 1'b0;
-			h_zero_r <= 1'b0;
-			h_need_r <= 8'd0;
 			is_set_r <= 1'b0;
 			is_dset_r <= 1'b0;
 			is_fence_cmd_r <= 1'b0;
@@ -424,10 +407,6 @@ module atg_cp_seq #(
 					hdr_r <= hdr;
 					is_ghci_hdr_r <= is_ghci_hdr_comb;
 					ghci_n_r <= ghci_n_comb;
-					dec_hdr_fault_r <= dec_hdr_fault_comb;
-					dec_hdr_short_r <= dec_hdr_short_comb;
-					h_zero_r <= h_zero_comb;
-					h_need_r <= h_need_comb;
 					st <= Q_DEC;
 				end
 			Q_DEC: begin
@@ -466,12 +445,14 @@ module atg_cp_seq #(
 `ifdef SYNTH_KINTEX7
 					if (sidx_we_b[0]) sidx[4:0] <= (is_dset_r ? {4'b1111, in_data[2]} : in_data[4:0]);
 					if (sidx_we_b[1]) sidx[9:5] <= (is_dset_r ? in_data[7:3] : in_data[9:5]);
+					if (f_fa_we_b[0]) f_faddr[15:0] <= in_data[15:0];
+					if (f_fa_we_b[1]) f_faddr[31:16] <= in_data[31:16];
 					if (a0_we_b[0]) a0[15:0] <= in_data[15:0];
 					if (a0_we_b[1]) a0[31:16] <= in_data[31:16];
 					if (is_fence_cmd_r && p == 8'd1)
 						a0_hi <= in_data;
-					if ((is_fence_cmd_r && p == 8'd2) || (!is_fence_cmd_r && p == 8'd1))
-						a1 <= in_data;
+					if (a1_we_b[0]) a1[15:0] <= in_data[15:0];
+					if (a1_we_b[1]) a1[31:16] <= in_data[31:16];
 					if (a2_we_b[0]) a2[15:0] <= in_data[15:0];
 					if (a2_we_b[1]) a2[31:16] <= in_data[31:16];
 `else

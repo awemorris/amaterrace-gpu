@@ -466,6 +466,24 @@ module atg_cp_ring #(
 	wire [17:0] avail_check = avail;
 `endif
 
+	wire [18:0] rem_words_s;
+	wire rem_words_bo;
+	am_sub #(.W(19)) u_rem_sub (
+		.a(nwords_act), .b({1'b0, cur}), .bi(1'b1), .d(rem_words_s), .bo(rem_words_bo)
+	);
+
+	(* max_fanout = 16 *) reg [18:0] rem_words_r;
+	(* max_fanout = 16 *) reg rem_words_bo_r;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			rem_words_r    <= 19'd0;
+			rem_words_bo_r <= 1'b0;
+		end else begin
+			rem_words_r    <= rem_words_s;
+			rem_words_bo_r <= rem_words_bo;
+		end
+	end
+
 	wire [18:0] h_end_s, p_end_s;
 	wire h_end_co, p_end_co;
 	am_add #(.W(19)) u_h_end_add (
@@ -475,7 +493,12 @@ module atg_cp_ring #(
 		.a({1'b0, cur}), .b({3'd0, n}), .ci(1'b1), .s(p_end_s), .co(p_end_co)
 	);
 	wire [18:0] h_end = h_end_s;
-	wire h_bad = h_end > nwords_act || {3'd0, h_n} >= {1'b0, avail_check};
+`ifdef SYNTH_KINTEX7
+	wire h_novf_words = rem_words_bo_r || ({3'd0, h_n} > rem_words_r);
+`else
+	wire h_novf_words = h_end > nwords_act;
+`endif
+	wire h_bad = h_novf_words || ({3'd0, h_n} >= {1'b0, avail_check});
 	wire h_novf = (h_class == 2'd2) && (CLASS_V == 0);
 	wire [17:0] p_end = p_end_s[17:0] & mask_act;
 
@@ -1106,7 +1129,7 @@ module atg_cp_ring #(
 
 	wire unused_ok = &{1'b0, rsp_write, h_end[18], avail_bo, h_end_co, p_end_co, pa_4_co,
 		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci_n_bo,
-		base_act};
+		base_act, rem_words_bo, rem_words_bo_r, rem_words_s[18]};
 
 endmodule
 

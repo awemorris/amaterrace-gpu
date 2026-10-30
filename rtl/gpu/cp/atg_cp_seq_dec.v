@@ -129,12 +129,7 @@ module atg_cp_seq_dec #(
 	wire [7:0] h_n = hdr[7:0];
 
 	/* n rounded up to even (the pairs of SET_REG and DISP_SET). */
-	wire [7:0] h_n_even;
-	wire h_n_co_unused;
-
-	am_add #(.W(8)) a_even (
-		.a(h_n), .b(8'd0), .ci(h_n[0]), .s(h_n_even), .co(h_n_co_unused)
-	);
+	wire [7:0] h_n_even = {h_n[7:1], 1'b0};
 
 	assign h_zero = is_ghci ? (hdr[15:8] == 8'd1) : (hdr[7:0] == 8'd0);
 
@@ -346,7 +341,7 @@ module atg_cp_seq_dec #(
 	assign pay_bad = !p[0] && (is_set && (in_data[31:10] != 22'd0 || in_data[9:8] == 2'b11) ||
 		is_dset && !off_ok);
 
-	wire unused_ok = &{1'b0, h_n_co_unused, hdr[23:8], p[7:1], ghci_n_bo};
+	wire unused_ok = &{1'b0, hdr[23:8], p[7:1], ghci_n_bo};
 endmodule
 
 `default_nettype wire
