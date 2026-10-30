@@ -323,10 +323,11 @@ module atg_rx_edge (
 	wire [31:0] c_out = ca == 48'd0 ? 32'd0 : {cs, ce[7:0], cm[24] ? cm[23:1] : cm[22:0]};
 
 	/* Steps 24-30 select DX1 DY1 DX2 DY2 DF OX OY of the plane triangle (OX, OY:
-	 * one subtracter). */
+	 * one subtracter precalculated at cnt 16-17). */
+	reg [47:0] r_cox_d, r_coy_d;
 	wire [47:0] co_d;
-	am_sub #(.W(48)) u_co_d (.a(cnt == 6'd29 ? {{23{sx[24]}}, sx} : {{23{sy[24]}}, sy}),
-		.b(cnt == 6'd29 ? {{24{p0x[23]}}, p0x} : {{24{p0y[23]}}, p0y}), .bi(1'b0), .d(co_d),
+	am_sub #(.W(48)) u_co_d (.a(cnt == 6'd16 ? {{23{sx[24]}}, sx} : {{23{sy[24]}}, sy}),
+		.b(cnt == 6'd16 ? {{24{p0x[23]}}, p0x} : {{24{p0y[23]}}, p0y}), .bi(1'b0), .d(co_d),
 		.bo(carry_unused[25]));
 	always @(*) begin
 		case (cnt)
@@ -335,7 +336,8 @@ module atg_rx_edge (
 		6'd26: begin ci = {{24{pdx2[23]}}, pdx2}; ci_sh = 5'd8; end
 		6'd27: begin ci = {{24{pdy2[23]}}, pdy2}; ci_sh = 5'd8; end
 		6'd28: begin ci = pdd; ci_sh = 5'd16; end
-		default: begin ci = co_d; ci_sh = 5'd8; end
+		6'd29: begin ci = r_cox_d; ci_sh = 5'd8; end
+		default: begin ci = r_coy_d; ci_sh = 5'd8; end
 		endcase
 	end
 
@@ -406,6 +408,8 @@ module atg_rx_edge (
 			run <= 1'b0;
 			cnt <= 6'd0;
 			r_snap_v <= 1'b0;
+			r_cox_d <= 48'd0;
+			r_coy_d <= 48'd0;
 		end else if (start) begin
 			run <= 1'b1;
 			cnt <= 6'd0;
@@ -501,6 +505,7 @@ module atg_rx_edge (
 			end
 			/* 16: facing, cull, empty; the edges of the ordered triangle */
 			if (cnt == 6'd16) begin
+				r_cox_d <= co_d;
 				front <= !is_tri || (cull[2] ? ccw : !ccw);
 				empty <= dd == 48'sd0 || (is_tri && cull[0] && (cull[2] ? ccw : !ccw)) ||
 					(is_tri && cull[1] && !(cull[2] ? ccw : !ccw)) || bx1 <= bx0 || by1 <= by0;
@@ -512,6 +517,7 @@ module atg_rx_edge (
 				end
 			end
 			if (cnt == 6'd17) begin
+				r_coy_d <= co_d;
 				for (k = 0; k < 3; k = k + 1)
 					tl[k] <= eA[k] > 24'sd0 || (eA[k] == 24'sd0 && eB[k] > 24'sd0);
 				if (empty) begin
