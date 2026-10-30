@@ -171,8 +171,10 @@ module atg_cp_seq #(
 	(* max_fanout = 16 *) reg use_fw;
 	reg [31:0] hdr_r;
 	(* max_fanout = 16 *) reg is_ghci_hdr_r;
-	reg [7:0] ghci_n_r;
-	reg dec_fault_r, dec_short_r, h_zero_r;
+	(* max_fanout = 16 *) reg [7:0] ghci_n_r;
+	reg dec_fault_r, dec_short_r;
+	(* max_fanout = 16 *) reg h_zero_r;
+	(* max_fanout = 16 *) reg is_query_r;
 	(* max_fanout = 16 *) reg vendor;
 	(* max_fanout = 16 *) reg [7:0] op;
 	(* max_fanout = 16 *) reg [7:0] flags;
@@ -251,11 +253,11 @@ module atg_cp_seq #(
 	);
 
 	wire pay_hold = |(pay_wait & busy_in);
-	wire pay_take = st == Q_PAY && in_valid && !pay_hold;
-	wire hdr_take = st == Q_IDLE && !halt && hdr_valid;
+	wire pay_take = (st == Q_PAY) && in_valid && !pay_hold;
+	wire hdr_take = (st == Q_IDLE) && !halt && hdr_valid;
 
-	assign n_ready = (hdr_take && !fw_active) || (pay_take && !use_fw);
-	assign fw_ready = (hdr_take && fw_active) || (pay_take && use_fw);
+	assign n_ready = !halt && ((st == Q_IDLE && !fw_active) || (st == Q_PAY && !use_fw && !pay_hold));
+	assign fw_ready = !halt && ((st == Q_IDLE && fw_active) || (st == Q_PAY && use_fw && !pay_hold));
 
 `ifdef SYNTH_KINTEX7
 	(* max_fanout = 16 *) reg uop_we_r;
@@ -351,15 +353,20 @@ module atg_cp_seq #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0we0 (.I0(a0_we_raw), .O(a0_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0we1 (.I0(a0_we_raw), .O(a0_we_b[1]));
 
-	wire a1_we_raw = (st == Q_PAY) && pay_take && ((is_fence_cmd_r && p == 8'd2) || (!is_fence_cmd_r && p == 8'd1));
+	wire a1_we_raw = (st == Q_PAY) && in_valid && ((is_fence_cmd_r && p == 8'd2) || (!is_fence_cmd_r && p == 8'd1));
 	wire [1:0] a1_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a1we0 (.I0(a1_we_raw), .O(a1_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a1we1 (.I0(a1_we_raw), .O(a1_we_b[1]));
 
-	wire a2_we_raw = (st == Q_PAY) && pay_take && ((is_fence_cmd_r && p == 8'd3) || (!is_fence_cmd_r && p == 8'd2));
+	wire a2_we_raw = (st == Q_PAY) && in_valid && ((is_fence_cmd_r && p == 8'd3) || (!is_fence_cmd_r && p == 8'd2));
 	wire [1:0] a2_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a2we0 (.I0(a2_we_raw), .O(a2_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a2we1 (.I0(a2_we_raw), .O(a2_we_b[1]));
+
+	wire occ_we_raw = (st == Q_EXEC) && is_query_r;
+	wire [1:0] occ_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_occwe0 (.I0(occ_we_raw), .O(occ_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_occwe1 (.I0(occ_we_raw), .O(occ_we_b[1]));
 `endif
 
 	assign fault = f_pulse;
@@ -402,6 +409,7 @@ module atg_cp_seq #(
 			dec_fault_r <= 1'b0;
 			dec_short_r <= 1'b0;
 			h_zero_r <= 1'b0;
+			is_query_r <= 1'b0;
 			occ_q <= 40'd0;
 		end else begin
 			f_pulse <= 1'b0;
@@ -422,6 +430,7 @@ module atg_cp_seq #(
 				is_set_r <= !h_vendor && (h_op == OP_SET_REG);
 				is_dset_r <= !h_vendor && (h_op == OP_DISP_SET);
 				is_fence_cmd_r <= (h_op == CMD_FENCE);
+				is_query_r <= !h_vendor && (h_op == OP_QUERY);
 				flags <= is_ghci_hdr ? hdr_r[31:24] : hdr_r[15:8];
 				tag <= hdr_r[23:16];
 				n <= h_n;
@@ -493,9 +502,6 @@ module atg_cp_seq #(
 				end
 			Q_EXEC:
 				if (exec_go) begin
-					if (is_query) begin
-						occ_q <= occ_count;
-					end
 					if (fence_op)
 						st <= Q_FREQ;
 					else if (!vendor && op == OP_WAIT_VSYNC)
@@ -521,6 +527,14 @@ module atg_cp_seq #(
 			default:
 				;
 			endcase
+
+`ifdef SYNTH_KINTEX7
+			if (occ_we_b[0]) occ_q[19:0] <= occ_count[19:0];
+			if (occ_we_b[1]) occ_q[39:20] <= occ_count[39:20];
+`else
+			if (st == Q_EXEC && exec_go && is_query)
+				occ_q <= occ_count;
+`endif
 		end
 	end
 
