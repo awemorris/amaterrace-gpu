@@ -94,9 +94,9 @@ module atg_rx_cpoly (
 	always @(*)
 		for (vq = 0; vq < 10; vq = vq + 1)
 			vmask[vq] = vq < {28'd0, n};
-	/* n - 1; CUT's p = (j + k) mod n and its successor q; the counters + 1 */
-	wire [3:0] nm1, pmn, pi, pi1, i1, m1, k1;
-	wire [4:0] psum;
+	/* n - 1; CUT's p and its successor q; the counters + 1 */
+	wire [3:0] nm1, i1, m1, k1;
+	reg [3:0] pi, qi;
 	wire [2:0] ph1, c1;
 	wire [8:0] cp_carry_unused;
 	wire [6:0] adr_carry_unused;
@@ -107,10 +107,14 @@ module atg_rx_cpoly (
 	am_add #(.W(5)) u_a_vb (.a({1'b0, ib}), .b(half ? 5'd10 : 5'd0), .ci(1'b0), .s(a_vb),
 		.co(adr_carry_unused[2]));
 	am_sub #(.W(4)) u_nm1 (.a(n), .b(4'd0), .bi(1'b1), .d(nm1), .bo(cp_carry_unused[0]));
-	am_add #(.W(5)) u_psum (.a({1'b0, j}), .b({1'b0, k}), .ci(1'b0), .s(psum), .co(cp_carry_unused[1]));
-	am_sub #(.W(4)) u_pmn (.a(psum[3:0]), .b(n), .bi(1'b0), .d(pmn), .bo(cp_carry_unused[2]));
-	assign pi = psum >= {1'b0, n} ? pmn : psum[3:0];
-	am_add #(.W(4)) u_pi1 (.a(pi), .b(4'd0), .ci(1'b1), .s(pi1), .co(cp_carry_unused[3]));
+	wire [3:0] j_init = line ? 4'd0 : jsel;
+	wire [3:0] j1;
+	am_add #(.W(4)) u_j1 (.a(j_init), .b(4'd0), .ci(1'b1), .s(j1), .co(cp_carry_unused[1]));
+	wire [3:0] q_init = (j1 == n) ? 4'd0 : j1;
+	wire [3:0] qi1;
+	am_add #(.W(4)) u_qi1 (.a(qi), .b(4'd0), .ci(1'b1), .s(qi1), .co(cp_carry_unused[2]));
+	wire [3:0] next_qi = (qi1 == n) ? 4'd0 : qi1;
+	assign cp_carry_unused[3] = 1'b0;
 	am_add #(.W(4)) u_i1 (.a(i), .b(4'd0), .ci(1'b1), .s(i1), .co(cp_carry_unused[4]));
 	am_add #(.W(4)) u_m1 (.a(m), .b(4'd0), .ci(1'b1), .s(m1), .co(cp_carry_unused[5]));
 	am_add #(.W(4)) u_k1 (.a(k), .b(4'd0), .ci(1'b1), .s(k1), .co(cp_carry_unused[6]));
@@ -131,8 +135,7 @@ module atg_rx_cpoly (
 				/* verilator lint_on WIDTHTRUNC */
 	end
 
-	/* CUT: edge k from p = (j + k) mod n to its successor. */
-	wire [3:0] qi = pi1 == n ? 4'd0 : pi1;
+	/* CUT: edge k from vertex pi to its successor qi */
 	wire cut_end = line ? k == 4'd2 : k == n;
 	wire xing = ins[pi] != ins[qi] && (!line || k == 4'd0);
 
@@ -264,6 +267,8 @@ module atg_rx_cpoly (
 			n <= 4'd0;
 			line <= 1'b0;
 			n_out <= 4'd0;
+			pi <= 4'd0;
+			qi <= 4'd0;
 			cdone <= 2'd0;
 			r_pbp <= 224'd0;
 			r_va <= 224'd0;
@@ -326,6 +331,8 @@ module atg_rx_cpoly (
 				st <= S_IDLE;
 			end else begin
 				j <= line ? 4'd0 : jsel;
+				pi <= line ? 4'd0 : jsel;
+				qi <= q_init;
 				k <= 4'd0;
 				m <= 4'd0;
 				cdone <= 2'd0;
@@ -357,6 +364,8 @@ module atg_rx_cpoly (
 				st <= S_IOP;
 			end else begin
 				k <= k1;
+				pi <= qi;
+				qi <= next_qi;
 				cdone <= 2'd0;
 			end
 		S_IOP: begin
@@ -388,6 +397,8 @@ module atg_rx_cpoly (
 						pb[a_new] <= {res, xi[191:0]};
 						m <= m1;
 						k <= k1;
+						pi <= qi;
+						qi <= next_qi;
 						cdone <= 2'd0;
 						st <= S_CUT;
 					end
