@@ -196,11 +196,6 @@ module atg_rx_edge (
 	am_sub #(.W(24)) u_dx2 (.a(fx2), .b(fx0), .bi(1'b0), .d(dx2), .bo(carry_unused[17]));
 	am_sub #(.W(24)) u_dy2 (.a(fy2), .b(fy0), .bi(1'b0), .d(dy2), .bo(carry_unused[18]));
 
-	/* The multiplier: operands registered, product one cycle later (DSP48E1 internal PREG). */
-	reg signed [24:0] ma, mb;
-	wire signed [49:0] mp;
-	am_mul #(.AW(25), .BW(25), .SIGNED(1), .LAT(1)) u_mp (.clk(clk), .en(1'b1), .a(ma), .b(mb), .p(mp));
-
 	/* bbox: the corners' pixels, max exclusive, ∩ scissor (when SCISSOR_MAX
 	 * != 0) ∩ the viewport's rectangle (vprect, not raw) ∩ RT. */
 	function signed [17:0] pix;
@@ -365,6 +360,17 @@ module atg_rx_edge (
 	am_sub #(.W(24)) u_vdy2 (.a(vy2), .b(ay), .bi(1'b0), .d(vdy2), .bo(carry_unused[32]));
 	am_sub #(.W(48)) u_ndy (.a(48'd0), .b({{16{ddy[23]}}, ddy, 8'd0}), .bi(1'b0), .d(ndy),
 		.bo(carry_unused[33]));
+
+	/* The multiplier: DSP48E1 internal MREG and PREG (LAT = 2). */
+	wire signed [24:0] ma_comb = (cnt == 6'd12) ? {dx1[23], dx1} :
+	                             (cnt == 6'd13) ? {dx2[23], dx2} :
+	                             ce_e[0] ? {eB[ej][23], eB[ej]} : {eA[ej][23], eA[ej]};
+	wire signed [24:0] mb_comb = (cnt == 6'd12) ? {dy2[23], dy2} :
+	                             (cnt == 6'd13) ? {dy1[23], dy1} :
+	                             ce_e[0] ? oY[ej] : oX[ej];
+	wire signed [49:0] mp;
+	am_mul #(.AW(25), .BW(25), .SIGNED(1), .LAT(2)) u_mp (.clk(clk), .en(1'b1), .a(ma_comb), .b(mb_comb), .p(mp));
+
 	am_sub #(.W(48)) u_dd_n (.a(dd), .b(mp[47:0]), .bi(1'b0), .d(dd_n), .bo(carry_unused[34]));
 	/* the edges of the ordered triangle: A = y1 - y0, B = x0 - x1, oX = sx - x0, oY = sy - y0 */
 	wire [23:0] eA_n [0:2];
@@ -473,16 +479,12 @@ module atg_rx_edge (
 			if (cnt == 6'd12) begin
 				r_mx1 <= m_x1;
 				r_my1 <= m_y1;
-				ma <= {dx1[23], dx1};
-				mb <= {dy2[23], dy2};
 			end
 			if (cnt == 6'd13) begin
 				r_clx <= lo_scis_vp_x;
 				r_cly <= lo_scis_vp_y;
 				r_cmx <= hi_scis_vp_x;
 				r_cmy <= hi_scis_vp_y;
-				ma <= {dx2[23], dx2};
-				mb <= {dy1[23], dy1};
 			end
 			if (cnt == 6'd14) begin
 				bx0 <= lo_rt_x;
@@ -526,10 +528,6 @@ module atg_rx_edge (
 				end
 			end
 			/* 17-22: E_k = A_k oX_k + B_k oY_k - !tl_k (products read at 19-24) */
-			if (cnt >= 6'd17 && cnt <= 6'd22) begin
-				ma <= ce_e[0] ? {eB[ej][23], eB[ej]} : {eA[ej][23], eA[ej]};
-				mb <= ce_e[0] ? oY[ej] : oX[ej];
-			end
 			if (cnt >= 6'd19 && cnt <= 6'd24) begin
 				if (!ce_p[0])
 					acc <= {2'b00, acc_n};
