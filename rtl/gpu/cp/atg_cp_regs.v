@@ -311,8 +311,20 @@ module atg_cp_regs #(
 	reg win_q;
 	reg [31:0] counter;
 	reg [127:0] perf;	/* PERF0..3, PERFn in bits 32n+31:32n */
-	wire perf_clear = perf_reset ||
+	wire perf_clear_raw = perf_reset ||
 		(hcr_we && hcr_widx == I_PERF_CTRL && hcr_wmask[0] && hcr_wdata[0]);
+`ifdef SYNTH_KINTEX7
+	wire [3:0] perf_clear_b;
+	genvar g_pc;
+	generate
+		for (g_pc = 0; g_pc < 4; g_pc = g_pc + 1) begin : g_perf_clr
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pc (.I0(perf_clear_raw), .O(perf_clear_b[g_pc]));
+		end
+	endgenerate
+	wire perf_clear = perf_clear_raw;
+`else
+	wire perf_clear = perf_clear_raw;
+`endif
 	integer i;
 
 	/* COUNTER + 1 and PERFn + busy: one incrementer each. */
@@ -347,7 +359,11 @@ module atg_cp_regs #(
 				win_q <= hcr_wdata[0];
 		end
 		for (i = 0; i < 4; i = i + 1)
+`ifdef SYNTH_KINTEX7
+			if (!rst_n || perf_clear_b[i])
+`else
 			if (!rst_n || perf_clear)
+`endif
 				perf[i * 32 +: 32] <= 32'd0;
 			else
 				perf[i * 32 +: 32] <= perf_n[i * 32 +: 32];

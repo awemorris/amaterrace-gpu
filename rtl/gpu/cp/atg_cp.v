@@ -790,6 +790,7 @@ module atg_cp #(
 	/* The kick codes (atg_cp_seq's K_*). */
 `ifdef SYNTH_KINTEX7
 	reg blt_kick_r, draw_kick_r, cs_kick_r, lc_kick_r, raw_kick_r, occ_clear_r;
+	reg perf_reset_r, kick_flip_r, kick_idle_r;
 	(* extract_reset = "no" *) reg [3:0] inv_r;
 	always @(posedge clk) begin
 		blt_kick_r <= s_host_kick[0] || s_kick && s_kick_code == 3'd0;
@@ -799,6 +800,9 @@ module atg_cp #(
 		raw_kick_r <= s_kick && s_kick_code == 3'd4;
 		inv_r <= s_seq_inv;
 		occ_clear_r <= s_seq_occ_clear;
+		perf_reset_r <= s_kick && s_kick_code == 3'd5;
+		kick_flip_r <= s_kick && s_kick_code == 3'd6;
+		kick_idle_r <= s_kick && s_kick_code == 3'd7;
 	end
 	assign blt_kick = blt_kick_r;
 	assign draw_kick = draw_kick_r;
@@ -807,6 +811,9 @@ module atg_cp #(
 	assign raw_kick = raw_kick_r;
 	assign inv = inv_r;
 	assign occ_clear = occ_clear_r;
+	assign s_perf_reset = perf_reset_r;
+	wire s_kick_flip = kick_flip_r;
+	wire s_kick_idle = kick_idle_r;
 `else
 	assign blt_kick = s_host_kick[0] || s_kick && s_kick_code == 3'd0;
 	assign draw_kick = s_host_kick[1] || s_kick && s_kick_code == 3'd1;
@@ -815,10 +822,10 @@ module atg_cp #(
 	assign raw_kick = s_kick && s_kick_code == 3'd4;
 	assign inv = s_seq_inv;
 	assign occ_clear = s_seq_occ_clear;
-`endif
 	assign s_perf_reset = s_kick && s_kick_code == 3'd5;
 	wire s_kick_flip = s_kick && s_kick_code == 3'd6;
 	wire s_kick_idle = s_kick && s_kick_code == 3'd7;
+`endif
 
 	/* Fences. */
 	wire s_ev_fence;

@@ -578,7 +578,7 @@ module atg_cp_ring #(
 `endif
 
 	reg [1:0] pf_st;
-	(* max_fanout = 16 *) reg [LA_W-1:0] pf_line;
+	(* max_fanout = 16, extract_enable = "no" *) reg [LA_W-1:0] pf_line;
 	wire [2:0] pf_idx = pf_line[2:0];
 
 	wire ctx_save_req = (st == R_CTX_SAVE_REQ);
@@ -589,7 +589,14 @@ module atg_cp_ring #(
 	wire pf_trigger = (st == R_N) && (k != n) && !next_hit && (pf_st == PF_IDLE) &&
 		(st != R_REQ) && (st != R_RSP) && !ctx_req && go;
 `ifdef SYNTH_KINTEX7
-	wire pf_start = pf_trigger;
+	reg pf_trigger_r;
+	always @(posedge clk) begin
+		if (!core_rst_n)
+			pf_trigger_r <= 1'b0;
+		else
+			pf_trigger_r <= pf_trigger;
+	end
+	wire pf_start = pf_trigger_r;
 	wire [1:0] pf_line_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pfl0 (.I0(pf_st == PF_IDLE && pf_start), .O(pf_line_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pfl1 (.I0(pf_st == PF_IDLE && pf_start), .O(pf_line_we_b[1]));
@@ -1164,25 +1171,31 @@ module atg_cp_ring #(
 		end
 	endgenerate
 
-	assign hcr_rdata =
+	wire [31:0] rdata_grp0 =
 		(hcr_ridx_b[0] == I_BASE0_LO || hcr_ridx_b[0] == I_BASE0) ? base[0][31:0] :
 		(hcr_ridx_b[0] == I_BASE0_HI) ? base[0][63:32] :
 		(hcr_ridx_b[1] == I_SIZE0) ? {27'd0, size[0]} :
 		(hcr_ridx_b[1] == I_WPTR0) ? {14'd0, wptr[0]} :
 		(hcr_ridx_b[1] == I_RPTR0) ? {14'd0, rptr[0]} :
-		(hcr_ridx_b[2] == I_BASE1) ? base[1][31:0] :
+		(hcr_ridx_b[2] == I_BASE1) ? base[1][31:0] : 32'd0;
+
+	wire [31:0] rdata_grp1 =
 		(hcr_ridx_b[2] == I_SIZE1) ? {27'd0, size[1]} :
 		(hcr_ridx_b[2] == I_WPTR1) ? {14'd0, wptr[1]} :
 		(hcr_ridx_b[3] == I_RPTR1) ? {14'd0, rptr[1]} :
 		(hcr_ridx_b[3] == I_BASE2) ? base[2][31:0] :
 		(hcr_ridx_b[3] == I_SIZE2) ? {27'd0, size[2]} :
-		(hcr_ridx_b[4] == I_WPTR2) ? {14'd0, wptr[2]} :
+		(hcr_ridx_b[4] == I_WPTR2) ? {14'd0, wptr[2]} : 32'd0;
+
+	wire [31:0] rdata_grp2 =
 		(hcr_ridx_b[4] == I_RPTR2) ? {14'd0, rptr[2]} :
 		(hcr_ridx_b[4] == I_DMA_BASE)         ? dma_base :
 		(hcr_ridx_b[5] == I_DMA_SIZE)         ? {27'd0, dma_size} :
 		(hcr_ridx_b[5] == I_DMA_WPTR)         ? {14'd0, dma_wptr} :
 		(hcr_ridx_b[5] == I_DMA_RPTR)         ? {14'd0, dma_rptr} :
-		(hcr_ridx_b[6] == I_DMA_SEM)          ? dma_sem :
+		(hcr_ridx_b[6] == I_DMA_SEM)          ? dma_sem : 32'd0;
+
+	wire [31:0] rdata_grp3 =
 		(hcr_ridx_b[6] == I_DMA_DST_BASE)     ? dma_dst_base_r :
 		(hcr_ridx_b[6] == I_DMA_ROW_STRIDE)   ? dma_src_row_stride_r :
 		(hcr_ridx_b[7] == I_DMA_SLICE_STRIDE) ? dma_src_slice_stride_r :
@@ -1191,6 +1204,8 @@ module atg_cp_ring #(
 		(hcr_ridx_b[7] == I_PREEMPT_STATUS) ? {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid} :
 		(hcr_ridx_b[7] == I_CTX_BASE) ? ctx_base :
 		(hcr_ridx_b[7] == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
+
+	assign hcr_rdata = rdata_grp0 | rdata_grp1 | rdata_grp2 | rdata_grp3;
 `else
 	assign hcr_rdata =
 		(hcr_ridx == I_BASE0_LO || hcr_ridx == I_BASE0) ? base[0][31:0] :
