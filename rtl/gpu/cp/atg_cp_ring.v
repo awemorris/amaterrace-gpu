@@ -359,12 +359,13 @@ module atg_cp_ring #(
 	reg ret_n;	/* the read is for R_N (else R_HDR) */
 	reg [17:0] cur;	/* the header's dword index */
 	reg [15:0] n;	/* dwords after the header */
-	reg [15:0] k;	/* R_N: dword of the packet on n_data (0 = header) */
+	(* max_fanout = 16, extract_enable = "no" *) reg [15:0] k;	/* R_N: dword of the packet on n_data (0 = header) */
 	reg [7:0] tag;
-	reg [31:0] hdr_data;
+	(* max_fanout = 16, extract_enable = "no" *) reg [31:0] hdr_data;
 	(* max_fanout = 16 *) reg step_pend;
 	(* max_fanout = 16 *) reg stale;
 	reg h_bad_r, h_novf_r;
+	reg h_bad_words_r, h_bad_avail_r;
 	reg [1:0] h_class_r;
 
 	/*
@@ -524,10 +525,13 @@ module atg_cp_ring #(
 	wire [18:0] h_end = h_end_s;
 `ifdef SYNTH_KINTEX7
 	wire h_novf_words = rem_words_bo_r || ({3'd0, h_n} > rem_words_r);
+	wire h_bad_words = h_novf_words;
+	wire h_bad_avail = ({3'd0, h_n} >= {1'b0, avail_check});
+	wire h_bad = h_bad_words || h_bad_avail;
 `else
 	wire h_novf_words = h_end > nwords_act;
-`endif
 	wire h_bad = h_novf_words || ({3'd0, h_n} >= {1'b0, avail_check});
+`endif
 	wire h_novf = (h_class == 2'd2) && (CLASS_V == 0);
 	wire [17:0] p_end = p_end_s[17:0] & mask_act;
 
@@ -767,6 +771,8 @@ module atg_cp_ring #(
 			step_pend <= 1'b0;
 			stale     <= 1'b0;
 			h_bad_r   <= 1'b0;
+			h_bad_words_r <= 1'b0;
+			h_bad_avail_r <= 1'b0;
 			h_novf_r  <= 1'b0;
 			h_class_r <= 2'd0;
 			buf_valid <= 8'd0;
@@ -977,18 +983,32 @@ module atg_cp_ring #(
 `else
 				f_addr  <= want_addr[31:0];
 `endif
+`ifdef SYNTH_KINTEX7
+				h_bad_words_r <= h_bad_words;
+				h_bad_avail_r <= h_bad_avail;
+				h_bad_r       <= h_bad;
+`else
 				h_bad_r   <= h_bad;
+`endif
 				h_novf_r  <= h_novf;
 				h_class_r <= h_class;
 				st        <= R_DEC2;
 			end
 
 			R_DEC2: begin
+`ifdef SYNTH_KINTEX7
+				if (h_bad_words_r || h_bad_avail_r || h_novf_r) begin
+					f_pulse <= 1'b1;
+					f_kind  <= (h_bad_words_r || h_bad_avail_r) ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+					st      <= R_FAULT;
+				end else begin
+`else
 				if (h_bad_r || h_novf_r) begin
 					f_pulse <= 1'b1;
 					f_kind  <= h_bad_r ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
 					st      <= R_FAULT;
 				end else begin
+`endif
 					case (h_class_r)
 					2'd2:    st <= R_V;
 					2'd3:    st <= R_ADV;

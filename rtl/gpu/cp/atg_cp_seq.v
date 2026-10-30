@@ -256,7 +256,41 @@ module atg_cp_seq #(
 		.post(post)
 	);
 
-	wire pay_hold = |(pay_wait & busy_in);
+`ifdef SYNTH_KINTEX7
+	wire [8:0] s9_in = in_data[8:0];
+	wire [7:0] s_wait_in =
+		in_data[9] ? 8'h6C : /* B_TUW */
+		s9_in < 9'h020 ? 8'h02 : /* B_BLT */
+		s9_in < 9'h050 ? 8'h04 : /* B_VF */
+		s9_in < 9'h070 ? 8'h5C : /* B_RXROP */
+		s9_in < 9'h090 ? 8'h5C : /* B_ROPW */
+		s9_in < 9'h190 ? 8'h6C : /* B_TUW */
+		s9_in < 9'h1B0 ? 8'h4C : /* B_PROGW */
+		(s9_in[8:5] == 4'hE) ? 8'h04 : 8'd0; /* B_VF */
+
+	wire [8:0] next_pay_wait =
+		is_draw_raw_r ? ((p < 8'd8) ? 9'h008 : 9'd0) :
+		(is_dispatch_r || is_load_const_r) ? ((p < 8'd2) ? 9'h040 : 9'd0) :
+		is_dset_r ? (!p[0] ? ((in_data[9:8] == 2'b11) ? 9'h100 : {1'b0, s_wait_in}) : 9'd0) :
+		is_set_r  ? (!p[0] ? {1'b0, s_wait_in} : 9'd0) : 9'd0;
+
+	(* max_fanout = 16 *) reg [8:0] pay_wait_r;
+	(* keep = "true" *) wire rst_high = ~rst_n;
+	always @(posedge clk) begin
+		if (rst_high) begin
+			pay_wait_r <= 9'd0;
+		end else if (st == Q_DEC2 || st == Q_EXEC) begin
+			pay_wait_r <= pay_wait;
+		end else if (st == Q_PAY && pay_take) begin
+			pay_wait_r <= next_pay_wait;
+		end
+	end
+	wire [8:0] pay_wait_act = (st == Q_PAY) ? pay_wait_r : pay_wait;
+`else
+	wire [8:0] pay_wait_act = pay_wait;
+`endif
+
+	wire pay_hold = |(pay_wait_act & busy_in);
 	wire pay_take = (st == Q_PAY) && in_valid && !pay_hold;
 	wire hdr_take = (st == Q_IDLE) && !halt && hdr_valid;
 
@@ -267,7 +301,6 @@ module atg_cp_seq #(
 	(* max_fanout = 16 *) reg uop_we_r;
 	(* max_fanout = 16 *) reg [9:0] uop_idx_r;
 	(* max_fanout = 16 *) reg [31:0] uop_wdata_r;
-	(* keep = "true" *) wire rst_high = ~rst_n;
 	always @(posedge clk) begin
 		if (rst_high) begin
 			uop_we_r <= 1'b0;
