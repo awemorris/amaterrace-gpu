@@ -165,15 +165,15 @@ module atg_cp_seq #(
 	localparam [2:0] Q_VSYNC = 3'd6;
 	localparam [2:0] Q_DEAD = 3'd7;
 
-	reg [2:0] st;
+	(* max_fanout = 16 *) reg [2:0] st;
 	reg use_fw;
-	reg vendor;
-	reg [7:0] op;
-	reg [7:0] flags;
+	(* max_fanout = 16 *) reg vendor;
+	(* max_fanout = 16 *) reg [7:0] op;
+	(* max_fanout = 16 *) reg [7:0] flags;
 	reg [7:0] tag;
 	reg [6:0] side;
 	reg [7:0] n;
-	reg [7:0] p;	/* payload dwords taken */
+	(* max_fanout = 16 *) reg [7:0] p;	/* payload dwords taken */
 	wire [7:0] p_n;	/* p + 1 */
 	wire p_co;
 
@@ -204,11 +204,14 @@ module atg_cp_seq #(
 	wire [7:0] h_op = is_ghci_hdr ? hdr[7:0] : {2'b00, hdr[29:24]};
 	wire [7:0] h_n = is_ghci_hdr ? ghci_n : hdr[7:0];
 	wire h_known, h_absent, pay_bad, h_short, h_zero;
+	wire dec_hdr_fault, dec_hdr_short;
 	wire [7:0] h_need;
 
 	atg_cp_seq_dec #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) dec (
 		.hdr(hdr), .hdr_fw(fw_active), .h_known(h_known), .h_absent(h_absent),
-		.h_need(h_need), .h_short(h_short), .h_zero(h_zero), .vendor(vendor), .op(op), .p(p), .in_data(in_data),
+		.h_need(h_need), .h_short(h_short), .h_zero(h_zero),
+		.hdr_fault(dec_hdr_fault), .hdr_short(dec_hdr_short),
+		.vendor(vendor), .op(op), .p(p), .in_data(in_data),
 		.pay_bad(pay_bad)
 	);
 
@@ -302,6 +305,18 @@ module atg_cp_seq #(
 	reg [3:0] f_kind;
 	reg [31:0] f_faddr;
 
+`ifdef SYNTH_KINTEX7
+	wire sidx_we_raw = pay_take && (is_set || is_dset) && !p[0];
+	wire [1:0] sidx_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe0 (.I0(sidx_we_raw), .O(sidx_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe1 (.I0(sidx_we_raw), .O(sidx_we_b[1]));
+
+	wire f_fa_we_raw = st == Q_PAY && in_valid && set_bad;
+	wire [1:0] f_fa_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe0 (.I0(f_fa_we_raw), .O(f_fa_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe1 (.I0(f_fa_we_raw), .O(f_fa_we_b[1]));
+`endif
+
 	assign fault = f_pulse;
 	assign fault_kind = f_kind;
 	assign fault_addr = f_faddr;
@@ -343,14 +358,12 @@ module atg_cp_seq #(
 					side <= fw_active ? fw_side : 7'd0;
 					n <= h_n;
 					p <= 8'd0;
+`ifndef SYNTH_KINTEX7
 					f_faddr <= 32'd0;
-					if (!h_known || h_absent) begin
+`endif
+					if (dec_hdr_fault) begin
 						f_pulse <= 1'b1;
-						f_kind <= GHCI_FAULT_OPCODE;
-						st <= Q_DEAD;
-					end else if (h_short) begin
-						f_pulse <= 1'b1;
-						f_kind <= GHCI_FAULT_RING;
+						f_kind <= dec_hdr_short ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
 						st <= Q_DEAD;
 					end else begin
 						st <= h_zero ? Q_EXEC : Q_PAY;
@@ -360,13 +373,23 @@ module atg_cp_seq #(
 				if (st == Q_PAY && in_valid && set_bad) begin
 					f_pulse <= 1'b1;
 					f_kind <= GHCI_FAULT_RING;
+`ifdef SYNTH_KINTEX7
+					if (f_fa_we_b[0]) f_faddr[15:0] <= in_data[15:0];
+					if (f_fa_we_b[1]) f_faddr[31:16] <= in_data[31:16];
+`else
 					f_faddr <= in_data;
+`endif
 					st <= Q_DEAD;
 				end else if (pay_take) begin
+`ifdef SYNTH_KINTEX7
+					if (sidx_we_b[0]) sidx[4:0] <= (is_dset ? {4'b1111, in_data[2]} : in_data[4:0]);
+					if (sidx_we_b[1]) sidx[9:5] <= (is_dset ? in_data[7:3] : in_data[9:5]);
+`else
 					if (is_set && !p[0])
 						sidx <= in_data[9:0];
 					if (is_dset && !p[0])
 						sidx <= {4'b1111, in_data[7:2]};	/* 0x3C0 + offset / 4 */
+`endif
 					if (p == 8'd0)
 						a0 <= in_data;
 					if (op == CMD_FENCE && p == 8'd1)
