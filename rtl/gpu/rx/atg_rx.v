@@ -126,16 +126,36 @@ module atg_rx #(
 	wire prim_pipe_valid, prim_pipe_ready;
 	wire [29:0] prim_pipe_data;
 
-	am_skid #(.W(30)) u_prim_skid (
+	wire prim_pipe_valid_lo, prim_pipe_valid_hi;
+	wire prim_pipe_ready_lo, prim_pipe_ready_hi;
+	wire [14:0] prim_pipe_data_lo, prim_pipe_data_hi;
+
+	am_skid #(.W(15)) u_prim_skid_lo (
 		.clk(clk),
 		.rst_n(rst_n),
 		.in_valid(prim_valid),
-		.in_ready(prim_ready),
-		.in_data(prim_in_data),
-		.out_valid(prim_pipe_valid),
+		.in_ready(prim_pipe_ready_lo),
+		.in_data(prim_in_data[14:0]),
+		.out_valid(prim_pipe_valid_lo),
 		.out_ready(prim_pipe_ready),
-		.out_data(prim_pipe_data)
+		.out_data(prim_pipe_data_lo)
 	);
+
+	am_skid #(.W(15)) u_prim_skid_hi (
+		.clk(clk),
+		.rst_n(rst_n),
+		.in_valid(prim_valid),
+		.in_ready(prim_pipe_ready_hi),
+		.in_data(prim_in_data[29:15]),
+		.out_valid(prim_pipe_valid_hi),
+		.out_ready(prim_pipe_ready),
+		.out_data(prim_pipe_data_hi)
+	);
+
+	assign prim_ready = prim_pipe_ready_lo;
+	assign prim_pipe_valid = prim_pipe_valid_lo;
+	assign prim_pipe_data = {prim_pipe_data_hi, prim_pipe_data_lo};
+	wire unused_skid = prim_pipe_ready_hi ^ prim_pipe_valid_hi;
 
 	wire prim_c_valid = prim_pipe_valid;
 	wire prim_c_ready;
@@ -168,8 +188,38 @@ module atg_rx #(
 	assign fl_pw_addr = r_fl_pw_addr;
 	assign fl_pw_data = r_fl_pw_data;
 
+`ifdef SYNTH_KINTEX7
+	wire clip_st_we, setup_st_we, scan_st_we, frag_st_we;
+	LUT1 #(.INIT(2'h2)) u_buf_we_c (.I0(st_we), .O(clip_st_we));
+	LUT1 #(.INIT(2'h2)) u_buf_we_u (.I0(st_we), .O(setup_st_we));
+	LUT1 #(.INIT(2'h2)) u_buf_we_s (.I0(st_we), .O(scan_st_we));
+	LUT1 #(.INIT(2'h2)) u_buf_we_f (.I0(st_we), .O(frag_st_we));
+
+	wire [8:0] clip_st_idx, setup_st_idx, scan_st_idx, frag_st_idx;
+	wire [31:0] clip_st_wdata, setup_st_wdata, scan_st_wdata, frag_st_wdata;
+	genvar g_st;
+	generate
+	for (g_st = 0; g_st < 9; g_st = g_st + 1) begin : g_buf_st_idx
+		LUT1 #(.INIT(2'h2)) u_idx_c (.I0(st_idx[g_st]), .O(clip_st_idx[g_st]));
+		LUT1 #(.INIT(2'h2)) u_idx_u (.I0(st_idx[g_st]), .O(setup_st_idx[g_st]));
+		LUT1 #(.INIT(2'h2)) u_idx_s (.I0(st_idx[g_st]), .O(scan_st_idx[g_st]));
+		LUT1 #(.INIT(2'h2)) u_idx_f (.I0(st_idx[g_st]), .O(frag_st_idx[g_st]));
+	end
+	for (g_st = 0; g_st < 32; g_st = g_st + 1) begin : g_buf_st_wdata
+		LUT1 #(.INIT(2'h2)) u_wd_c (.I0(st_wdata[g_st]), .O(clip_st_wdata[g_st]));
+		LUT1 #(.INIT(2'h2)) u_wd_u (.I0(st_wdata[g_st]), .O(setup_st_wdata[g_st]));
+		LUT1 #(.INIT(2'h2)) u_wd_s (.I0(st_wdata[g_st]), .O(scan_st_wdata[g_st]));
+		LUT1 #(.INIT(2'h2)) u_wd_f (.I0(st_wdata[g_st]), .O(frag_st_wdata[g_st]));
+	end
+	endgenerate
+`else
+	wire clip_st_we = st_we, setup_st_we = st_we, scan_st_we = st_we, frag_st_we = st_we;
+	wire [8:0] clip_st_idx = st_idx, setup_st_idx = st_idx, scan_st_idx = st_idx, frag_st_idx = st_idx;
+	wire [31:0] clip_st_wdata = st_wdata, setup_st_wdata = st_wdata, scan_st_wdata = st_wdata, frag_st_wdata = st_wdata;
+`endif
+
 	atg_rx_clip clip (
-		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.clk(clk), .rst_n(rst_n), .st_we(clip_st_we), .st_idx(clip_st_idx), .st_wdata(clip_st_wdata),
 		.raw_kick(raw_kick),
 		.prim_valid(prim_c_valid), .prim_ready(prim_c_ready), .prim_vtx(prim_c_vtx),
 		.prim_free(prim_c_free), .prim_last(prim_c_last),
@@ -184,7 +234,7 @@ module atg_rx #(
 	wire [3:0] rx_viewport_idx;
 
 	atg_rx_setup setup (
-		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.clk(clk), .rst_n(rst_n), .st_we(setup_st_we), .st_idx(setup_st_idx), .st_wdata(setup_st_wdata),
 		.cl_valid(cl_valid), .cl_ready(cl_ready), .cl_tri(cl_tri), .cl_last(cl_last),
 		.mesh_valid(mesh_valid), .mesh_ready(mesh_ready), .mesh_tri(mesh_tri),
 		.mesh_last(mesh_last), .mesh_id(mesh_id),
@@ -203,7 +253,7 @@ module atg_rx #(
 		.ENABLE_EARLY_Z(ENABLE_EARLY_Z),
 		.COARSE_SCAN(COARSE_SCAN)
 	) scan (
-		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.clk(clk), .rst_n(rst_n), .st_we(scan_st_we), .st_idx(scan_st_idx), .st_wdata(scan_st_wdata),
 		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
 		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov),
@@ -214,7 +264,7 @@ module atg_rx #(
 	);
 
 	atg_rx_frag frag (
-		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.clk(clk), .rst_n(rst_n), .st_we(frag_st_we), .st_idx(frag_st_idx), .st_wdata(frag_st_wdata),
 		.t_load(sp_valid && sp_ready), .t_tri(sp_tri),
 		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov),
 		.fq_end(fq_end), .busy(frag_busy),

@@ -58,7 +58,7 @@ module atg_rx_setup (
 	reg [31:0] vp_array [0:15][0:5];
 	reg [31:0] smin_array [0:15];
 	reg [31:0] smax_array [0:15];
-	reg [3:0] vp_idx;
+	(* max_fanout = 16 *) reg [3:0] vp_idx;
 	reg [15:0] line_width;
 	reg [15:0] point_size;
 	reg [31:0] rts, b_const, b_slope, b_clamp;
@@ -159,12 +159,12 @@ module atg_rx_setup (
 		S_BIAS      = 4'd7,
 		S_OUT       = 4'd8;
 
-	reg [3:0] st;
-	reg [4:0] seq_step;
-	reg [1:0] p_plane;	/* 0: Z, 1: RW, 2: B0, 3: B1 */
-	reg [3:0] p_step;
-	reg [1:0] kind;
-	reg [26:0] keep;
+	(* max_fanout = 16 *) reg [3:0] st;
+	(* max_fanout = 16 *) reg [4:0] seq_step;
+	(* max_fanout = 16 *) reg [1:0] p_plane;	/* 0: Z, 1: RW, 2: B0, 3: B1 */
+	(* max_fanout = 16 *) reg [3:0] p_step;
+	(* max_fanout = 16 *) reg [1:0] kind;
+	(* max_fanout = 16 *) reg [26:0] keep;
 	reg lastq;
 	reg raw;
 	reg sub;

@@ -54,7 +54,7 @@ module atg_rx_cpoly (
 
 	localparam [2:0] S_IDLE = 3'd0, S_DOP = 3'd1, S_DW = 3'd2, S_DEC = 3'd3, S_CUT = 3'd4,
 		S_IOP = 3'd5, S_IW = 3'd6;
-	reg [2:0] st;
+	(* max_fanout = 16 *) reg [2:0] st;
 
 	reg [31:0] pb [0:6][0:19];	/* seven 32-bit slices of two halves of 10 vertices */
 	reg [31:0] dd [0:9];	/* the distances */

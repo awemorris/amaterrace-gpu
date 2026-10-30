@@ -71,7 +71,7 @@ module atg_rx_clip (
 	 * VIEWPORT_IDX 0x065, and DRAW_RAW's words 0x1E0-0x1E8 (x, y, z of each vertex). */
 	reg [31:0] rw [0:8];
 	reg [127:0] vp_array [0:15];
-	reg [3:0] vp_idx;
+	(* max_fanout = 16 *) reg [3:0] vp_idx;
 	reg [127:0] r_vp;
 	wire [127:0] vp = r_vp;
 	always @(posedge clk) begin
@@ -83,9 +83,15 @@ module atg_rx_clip (
 	reg [1:0] dc;
 	reg discard;
 	integer vpi;
-	always @(posedge clk)
-		if (st_we && st_idx >= GHCI_S_RAW && st_idx <= GHCI_S_RAW + 9'd8)
-			rw[st_idx[3:0]] <= st_wdata;
+	genvar g_rw;
+	generate
+	for (g_rw = 0; g_rw < 9; g_rw = g_rw + 1) begin : g_rw_word
+		localparam [8:0] WORD_ADDR = GHCI_S_RAW + g_rw;
+		always @(posedge clk)
+			if (st_we && st_idx == WORD_ADDR)
+				rw[g_rw] <= st_wdata;
+	end
+	endgenerate
 	always @(posedge clk)
 		if (!rst_n) begin
 			vp_idx <= 4'd0;
@@ -115,22 +121,22 @@ module atg_rx_clip (
 
 	localparam [2:0] S_IDLE = 3'd0, S_READ = 3'd1, S_TRIV = 3'd2, S_LOAD = 3'd3,
 		S_CMD = 3'd4, S_CWAIT = 3'd5, S_EMIT = 3'd6, S_OUT = 3'd7;
-	reg [2:0] st;
+	(* max_fanout = 16 *) reg [2:0] st;
 	reg [23:0] ent;
-	reg [2:0] fl;
-	reg [1:0] kind;	/* 0 point, 1 line, 2 triangle */
+	(* max_fanout = 16 *) reg [2:0] fl;
+	(* max_fanout = 16 *) reg [1:0] kind;	/* 0 point, 1 line, 2 triangle */
 	reg last, raw;
 	reg [223:0] vv [0:2];	/* the vertices in PT order, word c at [32c +: 32] */
-	reg [3:0] rd_n;	/* PT words requested */
+	(* max_fanout = 16 *) reg [3:0] rd_n;	/* PT words requested */
 	reg rd_v;	/* a word arrives this cycle */
 	reg [3:0] rd_k;	/* which */
 	reg [223:0] o0, o1, o2;	/* the output primitive */
 	reg ofl;	/* it is the primitive's last output (it carries the flags) */
-	reg [6:0] pl;	/* planes still to cut */
+	(* max_fanout = 16 *) reg [6:0] pl;	/* planes still to cut */
 	reg first;
-	reg [3:0] np;	/* the polygon's vertex count */
-	reg [3:0] ti;	/* EMIT: the fan triangle (v0, v_ti, v_ti+1) */
-	reg [2:0] es;	/* EMIT: read step */
+	(* max_fanout = 16 *) reg [3:0] np;	/* the polygon's vertex count */
+	(* max_fanout = 16 *) reg [3:0] ti;	/* EMIT: the fan triangle (v0, v_ti, v_ti+1) */
+	(* max_fanout = 16 *) reg [2:0] es;	/* EMIT: read step */
 	integer k;
 
 	wire [223:0] vv0 = vv[0], vv1 = vv[1], vv2 = vv[2];
