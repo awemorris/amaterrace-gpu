@@ -92,14 +92,22 @@ module atg_cp_fence #(
 	localparam [2:0] F_GAP = 3'd3;	/* WAIT_FENCE: before the next read */
 	localparam [2:0] F_DEAD = 3'd4;	/* after an error, until reset */
 
-	reg [2:0] st;
-	reg [1:0] op;
+	(* max_fanout = 16 *) reg [2:0] st;
+	(* max_fanout = 16 *) reg [1:0] op;
 	reg [ADDR_W-1:0] addr;
 	reg [31:0] value;
 	reg [31:0] aux;
 	reg irq_on;
-	reg [31:0] last;
+	(* max_fanout = 16 *) reg [31:0] last;
 	reg [7:0] gap;
+
+`ifdef SYNTH_KINTEX7
+	wire last_we_host = hcr_we && (hcr_widx == I_LAST);
+	wire last_we_rsp = (st == F_RSP) && rsp_valid && !rsp_error && (op == 2'd0);
+	wire [1:0] last_we_b;
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_lwe0 (.I0(last_we_host), .I1(last_we_rsp), .O(last_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_lwe1 (.I0(last_we_host), .I1(last_we_rsp), .O(last_we_b[1]));
+`endif
 
 	wire [WS-1:0] word = addr[LINE_SHIFT-1:2];
 	wire is_read = op == 2'd2;
@@ -154,8 +162,23 @@ module atg_cp_fence #(
 			last <= 32'd0;
 			gap <= 8'd0;
 		end else begin
+`ifdef SYNTH_KINTEX7
+			if (last_we_b[0]) begin
+				if (last_we_rsp)
+					last[15:0] <= value[15:0];
+				else if (last_we_host)
+					last[15:0] <= (last[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]);
+			end
+			if (last_we_b[1]) begin
+				if (last_we_rsp)
+					last[31:16] <= value[31:16];
+				else if (last_we_host)
+					last[31:16] <= (last[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]);
+			end
+`else
 			if (hcr_we && hcr_widx == I_LAST)
 				last <= (last & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
+`endif
 			case (st)
 			F_IDLE:
 				if (f_valid) begin
@@ -183,8 +206,10 @@ module atg_cp_fence #(
 							st <= F_GAP;
 						end
 					end else begin
+`ifndef SYNTH_KINTEX7
 						if (op == 2'd0)
 							last <= value;
+`endif
 						st <= F_IDLE;
 					end
 				end
