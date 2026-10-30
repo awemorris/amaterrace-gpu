@@ -223,21 +223,27 @@ module atg_rx_edge (
 	am_add #(.W(18)) u_m_y1 (.a(r_my), .b(18'd0), .ci(1'b1), .s(m_y1), .co(carry_unused[20]));
 
 	/* Stage 3 of bbox: scissor and viewport clamping */
+	reg [31:0] r_smin, r_smax;
+	always @(posedge clk) begin
+		r_smin <= smin;
+		r_smax <= smax;
+	end
+
 	reg signed [17:0] lo_scis_vp_x, lo_scis_vp_y, hi_scis_vp_x, hi_scis_vp_y;
 	always @(*) begin
 		lo_scis_vp_x = r_lx;
 		lo_scis_vp_y = r_ly;
 		hi_scis_vp_x = r_mx1;
 		hi_scis_vp_y = r_my1;
-		if (smax != 32'd0) begin
-			if (lo_scis_vp_x < $signed({2'b00, smin[15:0]}))
-				lo_scis_vp_x = {2'b00, smin[15:0]};
-			if (lo_scis_vp_y < $signed({2'b00, smin[31:16]}))
-				lo_scis_vp_y = {2'b00, smin[31:16]};
-			if (hi_scis_vp_x > $signed({2'b00, smax[15:0]}))
-				hi_scis_vp_x = {2'b00, smax[15:0]};
-			if (hi_scis_vp_y > $signed({2'b00, smax[31:16]}))
-				hi_scis_vp_y = {2'b00, smax[31:16]};
+		if (r_smax != 32'd0) begin
+			if (lo_scis_vp_x < $signed({2'b00, r_smin[15:0]}))
+				lo_scis_vp_x = {2'b00, r_smin[15:0]};
+			if (lo_scis_vp_y < $signed({2'b00, r_smin[31:16]}))
+				lo_scis_vp_y = {2'b00, r_smin[31:16]};
+			if (hi_scis_vp_x > $signed({2'b00, r_smax[15:0]}))
+				hi_scis_vp_x = {2'b00, r_smax[15:0]};
+			if (hi_scis_vp_y > $signed({2'b00, r_smax[31:16]}))
+				hi_scis_vp_y = {2'b00, r_smax[31:16]};
 		end
 		if (vprect && !md[3]) begin
 			if (lo_scis_vp_x < rx0)
