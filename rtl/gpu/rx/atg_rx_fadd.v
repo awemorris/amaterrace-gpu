@@ -36,12 +36,13 @@ module atg_rx_fadd #(
 	wire nan_b = eb == 8'hFF && b_in[22:0] != 23'd0;
 	wire inf_a = ea == 8'hFF && i_a[22:0] == 23'd0;
 	wire inf_b = eb == 8'hFF && b_in[22:0] == 23'd0;
-	wire a_big = {ea, ma} >= {eb, mb};
 	/* the exponent difference, larger minus smaller */
-	wire [7:0] dab;
-	wire dab_bo_unused;
-	am_sub #(.W(8)) u_dab (.a(a_big ? ea : eb), .b(a_big ? eb : ea), .bi(1'b0), .d(dab),
-		.bo(dab_bo_unused));
+	wire [7:0] dab, dba;
+	wire ea_lt_eb, dba_bo_unused;
+	am_sub #(.W(8)) u_dab (.a(ea), .b(eb), .bi(1'b0), .d(dab), .bo(ea_lt_eb));
+	am_sub #(.W(8)) u_dba (.a(eb), .b(ea), .bi(1'b0), .d(dba), .bo(dba_bo_unused));
+	wire [7:0] exp_diff = ea_lt_eb ? dba : dab;
+	wire a_big = (ea != eb) ? !ea_lt_eb : ({ea, ma} >= {eb, mb});
 
 	wire v1_w = rst_n && i_valid;
 	wire sp1_w = nan_a || nan_b || (inf_a && inf_b && i_a[31] != b_in[31]) || inf_a || inf_b || (ma == 24'd0 && mb == 24'd0);
@@ -54,7 +55,7 @@ module atg_rx_fadd #(
 	wire [7:0] ex1_w = a_big ? ea : eb;
 	wire [23:0] mx1_w = a_big ? ma : mb;
 	wire [23:0] my1_w = a_big ? mb : ma;
-	wire [7:0] d1_w = a_big ? (mb == 24'd0 ? 8'd255 : dab) : (ma == 24'd0 ? 8'd255 : dab);
+	wire [7:0] d1_w = a_big ? (mb == 24'd0 ? 8'd255 : exp_diff) : (ma == 24'd0 ? 8'd255 : exp_diff);
 
 	wire v1;
 	wire sp1, sx1, sub1;
@@ -120,27 +121,34 @@ module atg_rx_fadd #(
 	wire [26:0] nl;
 	am_shift #(.W(27), .SW(5)) u_nl (.a(sum[26:0]), .amt(lz), .left(1'b1), .arith(1'b0), .y(nl));
 	wire [26:0] n_comb = sum[27] ? {sum[27:2], sum[1] | sum[0]} : nl;
-	wire [9:0] e0_sub;
-	wire e0_sub_bo_unused;
-	am_sub #(.W(10)) u_e0_sub (.a({2'b00, ex2}), .b({5'd0, lz}), .bi(1'b0), .d(e0_sub), .bo(e0_sub_bo_unused));
-	wire [9:0] e0_comb = sum[27] ? ex2_p1 : e0_sub;
 	wire sz_comb = (sum == 28'd0);
+	wire [4:0] lz3_w = lz;
+	wire [7:0] ex2_3_w = ex2;
+	wire sum27_3_w = sum[27];
+	wire [9:0] ex2_p1_3_w = ex2_p1;
 
 	wire v3_w = rst_n && v2;
 	wire sp3_w = sp2;
 	wire [31:0] spv3_w = spv2;
 	wire sx3_w = sx2;
 	wire [26:0] n3_w = n_comb;
-	wire [9:0] e0_3_w = e0_comb;
 	wire sz3_w = sz_comb;
 
 	wire v3;
 	wire sp3, sx3, sz3;
 	wire [31:0] spv3;
 	wire [26:0] n3;
-	wire [9:0] e0_3;
+	wire [4:0] lz3;
+	wire [7:0] ex2_3;
+	wire sum27_3;
+	wire [9:0] ex2_p1_3;
 
 	/* Stage 4: round to nearest even, pack. */
+	wire [9:0] e0_sub;
+	wire e0_sub_bo_unused;
+	am_sub #(.W(10)) u_e0_sub (.a({2'b00, ex2_3}), .b({5'd0, lz3}), .bi(1'b0), .d(e0_sub), .bo(e0_sub_bo_unused));
+	wire [9:0] e0_4 = sum27_3 ? ex2_p1_3 : e0_sub;
+
 	wire inc = n3[2] && (n3[1] || n3[0] || n3[3]);
 	wire [24:0] m0;
 	wire m_co_unused;
@@ -148,8 +156,8 @@ module atg_rx_fadd #(
 	wire [24:0] m = m0[24] ? {1'b0, m0[24:1]} : m0;
 	wire [9:0] e;
 	wire e_co_unused;
-	am_add #(.W(10)) u_e (.a(e0_3), .b(10'd0), .ci(m0[24]), .s(e), .co(e_co_unused));
-	wire unused_m = &{1'b0, m[24:23], e0_sub_bo_unused, ex2_p1_co_unused, e_co_unused, m_co_unused, dab_bo_unused, sum_co_unused};
+	am_add #(.W(10)) u_e (.a(e0_4), .b(10'd0), .ci(m0[24]), .s(e), .co(e_co_unused));
+	wire unused_m = &{1'b0, m[24:23], e0_sub_bo_unused, ex2_p1_co_unused, e_co_unused, m_co_unused, dba_bo_unused, sum_co_unused};
 
 	wire o_valid_comb = rst_n && v3;
 	wire [31:0] o_r_comb = sp3 ? spv3 :
@@ -185,8 +193,11 @@ module atg_rx_fadd #(
 			assign spv3 = spv3_w;
 			assign sx3 = sx3_w;
 			assign n3 = n3_w;
-			assign e0_3 = e0_3_w;
 			assign sz3 = sz3_w;
+			assign lz3 = lz3_w;
+			assign ex2_3 = ex2_3_w;
+			assign sum27_3 = sum27_3_w;
+			assign ex2_p1_3 = ex2_p1_3_w;
 
 			assign o_valid = o_valid_comb;
 			assign o_r = o_r_comb;
@@ -248,28 +259,36 @@ module atg_rx_fadd #(
 			assign px2 = r_px2;
 			assign py2 = r_py2;
 
-			reg r_v3, r_sp3, r_sx3, r_sz3;
+			reg r_v3, r_sp3, r_sx3, r_sz3, r_sum27_3;
 			reg [31:0] r_spv3;
 			reg [26:0] r_n3;
-			reg [9:0] r_e0_3;
+			reg [4:0] r_lz3;
+			reg [7:0] r_ex2_3;
+			reg [9:0] r_ex2_p1_3;
 
 			always @(posedge clk) begin
-				r_v3   <= v3_w;
-				r_sp3  <= sp3_w;
-				r_spv3 <= spv3_w;
-				r_sx3  <= sx3_w;
-				r_n3   <= n3_w;
-				r_e0_3 <= e0_3_w;
-				r_sz3  <= sz3_w;
+				r_v3        <= v3_w;
+				r_sp3       <= sp3_w;
+				r_spv3      <= spv3_w;
+				r_sx3       <= sx3_w;
+				r_n3        <= n3_w;
+				r_sz3       <= sz3_w;
+				r_lz3       <= lz3_w;
+				r_ex2_3     <= ex2_3_w;
+				r_sum27_3   <= sum27_3_w;
+				r_ex2_p1_3  <= ex2_p1_3_w;
 			end
 
-			assign v3   = r_v3;
-			assign sp3  = r_sp3;
-			assign spv3 = r_spv3;
-			assign sx3  = r_sx3;
-			assign n3   = r_n3;
-			assign e0_3 = r_e0_3;
-			assign sz3  = r_sz3;
+			assign v3       = r_v3;
+			assign sp3      = r_sp3;
+			assign spv3     = r_spv3;
+			assign sx3      = r_sx3;
+			assign n3       = r_n3;
+			assign sz3      = r_sz3;
+			assign lz3      = r_lz3;
+			assign ex2_3    = r_ex2_3;
+			assign sum27_3  = r_sum27_3;
+			assign ex2_p1_3 = r_ex2_p1_3;
 
 			reg r_ovalid;
 			(* extract_reset = "no" *) reg [31:0] r_or;
