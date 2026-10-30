@@ -401,29 +401,22 @@ module atg_cp_ring #(
 	/*
 	 * The dword wanted as byte address in memory
 	 */
-	(* max_fanout = 16, extract_enable = "no" *) reg [ADDR_W-1:0] pa;
+	(* max_fanout = 16 *) reg [ADDR_W-1:0] pa;
 	wire [ADDR_W-1:0] want_addr = pa;
 	wire [LA_W-1:0] want_line = want_addr[ADDR_W-1:LINE_SHIFT];
 	wire [WS-1:0] want_word = want_addr[LINE_SHIFT-1:2];
 	wire [2:0] want_idx = want_line[2:0];
 
 `ifdef SYNTH_KINTEX7
-	wire [7:0] slot_match;
-	genvar g_sm;
-	generate
-		for (g_sm = 0; g_sm < 8; g_sm = g_sm + 1) begin : g_sm_gen
-			wire [LA_W-1:0] tag_i = buf_tag[g_sm];
-			wire m0 = (tag_i[4:0]   == want_line[4:0]);
-			wire m1 = (tag_i[9:5]   == want_line[9:5]);
-			wire m2 = (tag_i[14:10] == want_line[14:10]);
-			wire m3 = (tag_i[19:15] == want_line[19:15]);
-			wire m4 = (tag_i[24:20] == want_line[24:20]);
-			wire m5 = (tag_i[LA_W-1:25] == want_line[LA_W-1:25]);
-			assign slot_match[g_sm] = buf_valid[g_sm] && m0 && m1 && m2 && m3 && m4 && m5;
-		end
-	endgenerate
-	wire hit_comb = slot_match[want_idx];
-	wire tag_match = slot_match[want_idx];
+	wire [LA_W-1:0] cur_tag = buf_tag[want_idx];
+	wire m0 = (cur_tag[4:0]   == want_line[4:0]);
+	wire m1 = (cur_tag[9:5]   == want_line[9:5]);
+	wire m2 = (cur_tag[14:10] == want_line[14:10]);
+	wire m3 = (cur_tag[19:15] == want_line[19:15]);
+	wire m4 = (cur_tag[24:20] == want_line[24:20]);
+	wire m5 = (cur_tag[LA_W-1:25] == want_line[LA_W-1:25]);
+	wire tag_match = m0 && m1 && m2 && m3 && m4 && m5;
+	wire hit_comb = buf_valid[want_idx] && tag_match;
 
 	(* max_fanout = 16 *) reg tag_match_r;
 	reg hdr_wait;

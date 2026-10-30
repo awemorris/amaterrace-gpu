@@ -135,8 +135,8 @@ module atg_cp_ctl #(
 	reg [31:0] wdt_cycles;
 	reg [31:0] ap_base;
 	reg [31:0] ap_limit;
-	(* extract_enable = "no" *) reg [31:0] fault_addr;
-	(* extract_enable = "no" *) reg [31:0] fault_info;
+	(* max_fanout = 16 *) reg [31:0] fault_addr;
+	(* max_fanout = 16 *) reg [31:0] fault_info;
 	reg [31:0] wdt_count;
 	reg [33:0] stuck_count;
 	/* The watchdog's and AXI_STUCK's counts + 1. */
@@ -198,7 +198,18 @@ module atg_cp_ctl #(
 		hcr_widx == I_HEAP_LIMIT);
 	wire locked_bad = wr_locked && !open;
 
+`ifdef SYNTH_KINTEX7
+	reg wdt_fire_r;
+	always @(posedge clk) begin
+		if (rst_ctl_int)
+			wdt_fire_r <= 1'b0;
+		else
+			wdt_fire_r <= ctrl_wdt_en && cmd_active && (wdt_count >= wdt_cycles) && (st != S_FAULTED);
+	end
+	wire wdt_fire = wdt_fire_r;
+`else
 	wire wdt_fire = ctrl_wdt_en && cmd_active && wdt_count >= wdt_cycles && st != S_FAULTED;
+`endif
 
 	/* The first fault of this cycle. */
 	/* The MC's refusals of client 0 (the CP) are its own units' faults, except

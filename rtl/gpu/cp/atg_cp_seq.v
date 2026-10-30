@@ -186,8 +186,8 @@ module atg_cp_seq #(
 	wire p_co;
 
 	am_add #(.W(8)) p_add (.a(p), .b(8'd0), .ci(1'b1), .s(p_n), .co(p_co));
-	(* extract_enable = "no" *) reg [9:0] sidx;	/* SET_REG: the index of the pair */
-	(* extract_enable = "no" *) reg [31:0] a0, a0_hi, a1, a2;	/* fence payload */
+	(* max_fanout = 16 *) reg [9:0] sidx;	/* SET_REG: the index of the pair */
+	(* max_fanout = 16 *) reg [31:0] a0, a0_hi, a1, a2;	/* fence payload */
 	reg [39:0] occ_q;
 	reg settle;
 
@@ -307,7 +307,7 @@ module atg_cp_seq #(
 			uop_idx_r <= 10'd0;
 			uop_wdata_r <= 32'd0;
 		end else begin
-			uop_we_r <= pay_take && pay_we && !set_bad;
+			uop_we_r <= pay_take && pay_we;
 			uop_idx_r <= pay_idx;
 			uop_wdata_r <= in_data;
 		end
@@ -329,8 +329,34 @@ module atg_cp_seq #(
 	assign u_fw = use_fw;
 	assign u_side = side;
 
-	wire exec_go = st == Q_EXEC && !settle && !(|(pre & busy_in)) && !(pre_f && f_busy) &&
-		(u_ok || !unit_op);
+`ifdef SYNTH_KINTEX7
+	(* max_fanout = 16 *) reg unit_op_r;
+	(* max_fanout = 16 *) reg fence_op_r;
+	(* max_fanout = 16 *) reg is_wait_vsync_r;
+	(* max_fanout = 16 *) reg [8:0] pre_r;
+	(* max_fanout = 16 *) reg pre_f_r;
+	(* max_fanout = 16 *) reg [8:0] post_r;
+	(* max_fanout = 16 *) reg post_nz_r;
+
+	wire exec_unit_op = unit_op_r;
+	wire exec_fence_op = fence_op_r;
+	wire exec_vsync_op = is_wait_vsync_r;
+	wire [8:0] exec_pre = pre_r;
+	wire exec_pre_f = pre_f_r;
+	wire [8:0] exec_post = post_r;
+	wire exec_post_nz = post_nz_r;
+`else
+	wire exec_unit_op = unit_op;
+	wire exec_fence_op = fence_op;
+	wire exec_vsync_op = !vendor && op == OP_WAIT_VSYNC;
+	wire [8:0] exec_pre = pre;
+	wire exec_pre_f = pre_f;
+	wire [8:0] exec_post = post;
+	wire exec_post_nz = (post != 9'd0);
+`endif
+
+	wire exec_go = st == Q_EXEC && !settle && !(|(exec_pre & busy_in)) && !(exec_pre_f && f_busy) &&
+		(u_ok || !exec_unit_op);
 	wire is_op_std = !vendor && exec_go;
 
 	reg k_on;
@@ -450,6 +476,15 @@ module atg_cp_seq #(
 			is_dispatch_r <= 1'b0;
 			is_load_const_r <= 1'b0;
 			is_draw_raw_r <= 1'b0;
+`ifdef SYNTH_KINTEX7
+			unit_op_r <= 1'b0;
+			fence_op_r <= 1'b0;
+			is_wait_vsync_r <= 1'b0;
+			pre_r <= 9'd0;
+			pre_f_r <= 1'b0;
+			post_r <= 9'd0;
+			post_nz_r <= 1'b0;
+`endif
 			occ_q <= 40'd0;
 		end else begin
 			f_pulse <= 1'b0;
@@ -487,6 +522,15 @@ module atg_cp_seq #(
 				st <= Q_DEC2;
 			end
 			Q_DEC2: begin
+`ifdef SYNTH_KINTEX7
+				unit_op_r <= unit_op;
+				fence_op_r <= fence_op;
+				is_wait_vsync_r <= !vendor && (op == OP_WAIT_VSYNC);
+				pre_r <= pre;
+				pre_f_r <= pre_f;
+				post_r <= post;
+				post_nz_r <= (post != 9'd0);
+`endif
 				if (dec_fault_r) begin
 					f_pulse <= 1'b1;
 					f_kind <= dec_short_r ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
@@ -545,18 +589,18 @@ module atg_cp_seq #(
 				end
 			Q_EXEC:
 				if (exec_go) begin
-					if (fence_op)
+					if (exec_fence_op)
 						st <= Q_FREQ;
-					else if (!vendor && op == OP_WAIT_VSYNC)
+					else if (exec_vsync_op)
 						st <= Q_VSYNC;
-					else if (post != 9'd0) begin
+					else if (exec_post_nz) begin
 						settle <= 1'b1;
 						st <= Q_POST;
 					end else
 						st <= Q_IDLE;
 				end
 			Q_POST:
-				if (!settle && !(|(post & busy_in)))
+				if (!settle && !(|(exec_post & busy_in)))
 					st <= Q_IDLE;
 			Q_FREQ:
 				if (f_ready)
