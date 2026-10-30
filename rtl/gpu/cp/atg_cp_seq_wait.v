@@ -53,6 +53,9 @@ module atg_cp_seq_wait (
 	input wire [7:0] p,
 	input wire set_val,
 	input wire [9:0] sidx,
+	input wire is_draw_raw,
+	input wire is_dispatch,
+	input wire is_load_const,
 	output reg pay_we,
 	output reg [9:0] pay_idx,
 	output reg [8:0] pay_wait,
@@ -152,18 +155,18 @@ module atg_cp_seq_wait (
 				s9 < GHCI_S_ROP ? B_RXROP : s9 < GHCI_S_TU ? B_ROPW :
 				s9 < GHCI_S_PROG ? B_TUW : s9 < GHCI_S_SA ? B_PROGW :
 				(s9[8:5] == GHCI_S_ATTR_DST[8:5] && (VF_1D != 0 || !s9[4])) ? B_VF : 8'd0};
-		end else if (vendor && op == VOP_DRAW_RAW && p < 8'd9) begin
+		end else if (is_draw_raw && p < 8'd9) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, GHCI_S_RAW | {5'd0, p[3:0]}};	/* 0x1E0 + p, p < 9 */
 			pay_wait = {1'b0, B_RX};
 		end else if (vendor && op == VOP_DBG_MARK && p == 8'd0) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, GHCI_S_DBG_MARK};
-		end else if (!vendor && (op == OP_DISPATCH || op == CMD_DISPATCH || op == CMD_DRAW_MESH_TASKS) && p < 8'd3) begin
+		end else if (is_dispatch && p < 8'd3) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, p[1:0] == 2'd0 ? GHCI_S_GRID_X : p[1:0] == 2'd1 ? S_GRID_Y : S_GRID_Z};
 			pay_wait = {1'b0, B_SU};
-		end else if (!vendor && op == OP_LOAD_CONST && p < 8'd3) begin
+		end else if (is_load_const && p < 8'd3) begin
 			pay_we = 1'b1;
 			pay_idx = {1'b0, GHCI_S_LC_REGION | {7'd0, p[1:0]}};	/* 0x1EC + p, p < 3 */
 			pay_wait = {1'b0, B_SU};

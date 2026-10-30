@@ -224,11 +224,12 @@ module atg_cp_seq #(
 	);
 
 	reg is_set_r, is_dset_r, is_fence_cmd_r;
+	(* max_fanout = 16 *) reg is_dispatch_r, is_load_const_r, is_draw_raw_r;
 
 	/* Payload: what this dword does; the waits (atg_cp_seq_wait). */
 	wire is_set = !vendor && op == OP_SET_REG;
 	wire is_dset = !vendor && op == OP_DISP_SET;
-	wire set_val = (is_set || is_dset) && p[0];
+	wire set_val = (is_set_r || is_dset_r) && p[0];
 	wire set_bad = pay_bad;
 	wire pay_we;
 	wire [9:0] pay_idx;
@@ -244,6 +245,9 @@ module atg_cp_seq #(
 		.p(p),
 		.set_val(set_val),
 		.sidx(sidx),
+		.is_draw_raw(is_draw_raw_r),
+		.is_dispatch(is_dispatch_r),
+		.is_load_const(is_load_const_r),
 		.pay_we(pay_we),
 		.pay_idx(pay_idx),
 		.pay_wait(pay_wait),
@@ -338,17 +342,17 @@ module atg_cp_seq #(
 	reg [31:0] f_faddr;
 
 `ifdef SYNTH_KINTEX7
-	wire sidx_we_raw = (st == Q_PAY) && pay_take && (is_set_r || is_dset_r) && !p[0];
+	wire sidx_we_raw = (st == Q_PAY) && in_valid && (is_set_r || is_dset_r) && !p[0];
 	wire [1:0] sidx_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe0 (.I0(sidx_we_raw), .O(sidx_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe1 (.I0(sidx_we_raw), .O(sidx_we_b[1]));
 
-	wire f_fa_we_raw = (st == Q_PAY) && pay_take;
+	wire f_fa_we_raw = (st == Q_PAY) && in_valid && set_bad;
 	wire [1:0] f_fa_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe0 (.I0(f_fa_we_raw), .O(f_fa_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe1 (.I0(f_fa_we_raw), .O(f_fa_we_b[1]));
 
-	wire a0_we_raw = (st == Q_PAY) && pay_take && (p == 8'd0);
+	wire a0_we_raw = (st == Q_PAY) && in_valid && (p == 8'd0);
 	wire [1:0] a0_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0we0 (.I0(a0_we_raw), .O(a0_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_a0we1 (.I0(a0_we_raw), .O(a0_we_b[1]));
@@ -410,6 +414,9 @@ module atg_cp_seq #(
 			dec_short_r <= 1'b0;
 			h_zero_r <= 1'b0;
 			is_query_r <= 1'b0;
+			is_dispatch_r <= 1'b0;
+			is_load_const_r <= 1'b0;
+			is_draw_raw_r <= 1'b0;
 			occ_q <= 40'd0;
 		end else begin
 			f_pulse <= 1'b0;
@@ -431,6 +438,9 @@ module atg_cp_seq #(
 				is_dset_r <= !h_vendor && (h_op == OP_DISP_SET);
 				is_fence_cmd_r <= (h_op == CMD_FENCE);
 				is_query_r <= !h_vendor && (h_op == OP_QUERY);
+				is_dispatch_r <= !h_vendor && (h_op == OP_DISPATCH || h_op == CMD_DISPATCH || h_op == CMD_DRAW_MESH_TASKS);
+				is_load_const_r <= !h_vendor && (h_op == OP_LOAD_CONST);
+				is_draw_raw_r <= h_vendor && (h_op == VOP_DRAW_RAW);
 				flags <= is_ghci_hdr ? hdr_r[31:24] : hdr_r[15:8];
 				tag <= hdr_r[23:16];
 				n <= h_n;
