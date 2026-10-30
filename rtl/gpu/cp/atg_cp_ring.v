@@ -371,7 +371,7 @@ module atg_cp_ring #(
 	 * 8-entry circular prefetch line buffer (256 bytes = 64 words for 32B lines)
 	 */
 	reg [7:0] buf_valid;
-	reg [LA_W-1:0] buf_tag [0:7];
+	(* max_fanout = 16 *) reg [LA_W-1:0] buf_tag [0:7];
 	reg [LINE_BYTES*8-1:0] buf_data [0:7];
 
 `ifdef SYNTH_KINTEX7
@@ -400,7 +400,7 @@ module atg_cp_ring #(
 	/*
 	 * The dword wanted as byte address in memory
 	 */
-	(* max_fanout = 16, extract_enable = "no" *) reg [ADDR_W-1:0] pa;
+	(* max_fanout = 16 *) reg [ADDR_W-1:0] pa;
 	wire [ADDR_W-1:0] want_addr = pa;
 	wire [LA_W-1:0] want_line = want_addr[ADDR_W-1:LINE_SHIFT];
 	wire [WS-1:0] want_word = want_addr[LINE_SHIFT-1:2];
@@ -415,7 +415,11 @@ module atg_cp_ring #(
 	wire tm4 = (cur_tag[24:20] == want_line[24:20]);
 	wire tm5 = (cur_tag[LA_W-1:25] == want_line[LA_W-1:25]);
 	wire tag_match = tm0 && tm1 && tm2 && tm3 && tm4 && tm5;
-	wire hit = buf_valid[want_idx] && tag_match;
+	wire hit_comb = buf_valid[want_idx] && tag_match;
+
+	(* max_fanout = 16 *) reg tag_match_r;
+	wire hit_n = buf_valid[want_idx] && tag_match_r;
+	wire hit = (st == R_N) ? hit_n : hit_comb;
 `else
 	wire hit = buf_valid[want_idx] && (buf_tag[want_idx] == want_line);
 `endif
@@ -458,8 +462,16 @@ module atg_cp_ring #(
 	am_sub #(.W(8)) u_ghci_n (
 		.a(hdr_data[15:8]), .b(8'd1), .bi(1'b0), .d(ghci_n), .bo(ghci_n_bo)
 	);
+`ifdef SYNTH_KINTEX7
+	wire [1:0] is_ghci_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_igh0 (.I0(is_ghci), .O(is_ghci_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_igh1 (.I0(is_ghci), .O(is_ghci_b[1]));
+	wire [1:0] h_class = is_ghci_b[0] ? 2'd0 : hdr_data[31:30];
+	wire [15:0] h_n = is_ghci_b[1] ? {8'd0, ghci_n} : (h_class[1] ? hdr_data[15:0] : {8'd0, hdr_data[7:0]});
+`else
 	wire [1:0] h_class = is_ghci ? 2'd0 : hdr_data[31:30];
 	wire [15:0] h_n = is_ghci ? {8'd0, ghci_n} : (h_class[1] ? hdr_data[15:0] : {8'd0, hdr_data[7:0]});
+`endif
 
 	wire [17:0] avail_d, avail;
 	wire avail_bo;
@@ -536,7 +548,19 @@ module atg_cp_ring #(
 		.a(want_line), .b({{(LA_W-1){1'b0}}, 1'b1}), .ci(1'b0), .s(next_line), .co(unused_nl_co)
 	);
 	wire [2:0] next_idx = next_line[2:0];
+`ifdef SYNTH_KINTEX7
+	wire [LA_W-1:0] nxt_tag = buf_tag[next_idx];
+	wire ntm0 = (nxt_tag[4:0]   == next_line[4:0]);
+	wire ntm1 = (nxt_tag[9:5]   == next_line[9:5]);
+	wire ntm2 = (nxt_tag[14:10] == next_line[14:10]);
+	wire ntm3 = (nxt_tag[19:15] == next_line[19:15]);
+	wire ntm4 = (nxt_tag[24:20] == next_line[24:20]);
+	wire ntm5 = (nxt_tag[LA_W-1:25] == next_line[LA_W-1:25]);
+	wire next_tag_match = ntm0 && ntm1 && ntm2 && ntm3 && ntm4 && ntm5;
+	wire next_hit = buf_valid[next_idx] && next_tag_match;
+`else
 	wire next_hit = buf_valid[next_idx] && (buf_tag[next_idx] == next_line);
+`endif
 
 	reg [1:0] pf_st;
 	(* max_fanout = 16 *) reg [LA_W-1:0] pf_line;
@@ -616,7 +640,11 @@ module atg_cp_ring #(
 	assign req_write = ctx_save_req;
 	assign req_line = ctx_req ? ctx_line : (demand_req ? want_line : pf_line);
 	assign req_be = ctx_save_req ? {LINE_BYTES{1'b1}} : {LINE_BYTES{1'b0}};
+`ifdef SYNTH_KINTEX7
+	assign req_wdata = ctx_save_wdata;
+`else
 	assign req_wdata = ctx_save_req ? ctx_save_wdata : {(LINE_BYTES * 8){1'b0}};
+`endif
 	assign req_tag = ctx_save_req ? 8'd2 : (ctx_rest_req ? 8'd3 : (demand_req ? 8'd0 : 8'd1));
 
 	/* Registers surviving CTRL.RESET */
@@ -740,18 +768,21 @@ module atg_cp_ring #(
 			h_novf_r  <= 1'b0;
 			h_class_r <= 2'd0;
 			buf_valid <= 8'd0;
+`ifndef SYNTH_KINTEX7
 			for (bi = 0; bi < 8; bi = bi + 1) begin
 				buf_tag[bi]  <= {LA_W{1'b0}};
-`ifndef SYNTH_KINTEX7
 				buf_data[bi] <= {(LINE_BYTES * 8){1'b0}};
-`endif
 			end
+`endif
 			pf_st     <= PF_IDLE;
 			pf_line   <= {LA_W{1'b0}};
 			f_pulse   <= 1'b0;
 			f_kind    <= 4'd0;
 			f_addr    <= 32'd0;
 			ret_pulse <= 1'b0;
+`ifdef SYNTH_KINTEX7
+			tag_match_r <= 1'b0;
+`endif
 		end else begin
 			f_pulse       <= 1'b0;
 			ret_pulse     <= 1'b0;
@@ -835,7 +866,9 @@ module atg_cp_ring #(
 			case (pf_st)
 			PF_IDLE: begin
 				if (pf_trigger) begin
+`ifndef SYNTH_KINTEX7
 					pf_line <= next_line;
+`endif
 					pf_st   <= PF_REQ;
 				end
 			end
@@ -1077,17 +1110,27 @@ module atg_cp_ring #(
 			endcase
 
 `ifdef SYNTH_KINTEX7
+			if (st == R_HDR || st == R_DEC || st == R_DEC2) begin
+				tag_match_r <= tag_match;
+			end else if (st == R_RSP && rsp_valid && (rsp_tag == 8'd0) && !rsp_error) begin
+				tag_match_r <= 1'b1;
+			end else if (st == R_N && n_ready && !k_eq_n && (want_word == 3'b111)) begin
+				tag_match_r <= next_tag_match;
+			end
+
 			if (pa_we_b[0]) pa[15:0] <= (st == R_IDLE) ? pa_hdr[15:0] : pa_4[15:0];
 			if (pa_we_b[1]) pa[ADDR_W-1:16] <= (st == R_IDLE) ? pa_hdr[ADDR_W-1:16] : pa_4[ADDR_W-1:16];
+			if (pf_line_we_b[0]) pf_line[13:0] <= next_line[13:0];
+			if (pf_line_we_b[1]) pf_line[LA_W-1:14] <= next_line[LA_W-1:14];
 `endif
 		end
 	end
 
 `ifdef SYNTH_KINTEX7
-	wire [9:0] hcr_ridx_b [0:3];
+	wire [9:0] hcr_ridx_b [0:7];
 	genvar g_hb, g_hr;
 	generate
-		for (g_hb = 0; g_hb < 4; g_hb = g_hb + 1) begin : g_hridx_buf
+		for (g_hb = 0; g_hb < 8; g_hb = g_hb + 1) begin : g_hridx_buf
 			for (g_hr = 0; g_hr < 10; g_hr = g_hr + 1) begin : g_hridx_bit
 				(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hb (
 					.I0(hcr_ridx[g_hr]),
@@ -1100,30 +1143,30 @@ module atg_cp_ring #(
 	assign hcr_rdata =
 		(hcr_ridx_b[0] == I_BASE0_LO || hcr_ridx_b[0] == I_BASE0) ? base[0][31:0] :
 		(hcr_ridx_b[0] == I_BASE0_HI) ? base[0][63:32] :
-		(hcr_ridx_b[0] == I_SIZE0) ? {27'd0, size[0]} :
-		(hcr_ridx_b[0] == I_WPTR0) ? {14'd0, wptr[0]} :
-		(hcr_ridx_b[0] == I_RPTR0) ? {14'd0, rptr[0]} :
-		(hcr_ridx_b[0] == I_BASE1) ? base[1][31:0] :
-		(hcr_ridx_b[0] == I_SIZE1) ? {27'd0, size[1]} :
-		(hcr_ridx_b[1] == I_WPTR1) ? {14'd0, wptr[1]} :
-		(hcr_ridx_b[1] == I_RPTR1) ? {14'd0, rptr[1]} :
-		(hcr_ridx_b[1] == I_BASE2) ? base[2][31:0] :
-		(hcr_ridx_b[1] == I_SIZE2) ? {27'd0, size[2]} :
-		(hcr_ridx_b[1] == I_WPTR2) ? {14'd0, wptr[2]} :
-		(hcr_ridx_b[1] == I_RPTR2) ? {14'd0, rptr[2]} :
-		(hcr_ridx_b[2] == I_DMA_BASE)         ? dma_base :
-		(hcr_ridx_b[2] == I_DMA_SIZE)         ? {27'd0, dma_size} :
-		(hcr_ridx_b[2] == I_DMA_WPTR)         ? {14'd0, dma_wptr} :
-		(hcr_ridx_b[2] == I_DMA_RPTR)         ? {14'd0, dma_rptr} :
-		(hcr_ridx_b[2] == I_DMA_SEM)          ? dma_sem :
-		(hcr_ridx_b[2] == I_DMA_DST_BASE)     ? dma_dst_base_r :
-		(hcr_ridx_b[3] == I_DMA_ROW_STRIDE)   ? dma_src_row_stride_r :
-		(hcr_ridx_b[3] == I_DMA_SLICE_STRIDE) ? dma_src_slice_stride_r :
-		(hcr_ridx_b[3] == I_DMA_EXTENT)       ? {dma_copy_d_r[7:0], dma_copy_h_r[7:0], dma_copy_w_r} :
-		(hcr_ridx_b[3] == I_PREEMPT) ? {24'd0, interrupted_qid, 2'd0, preempt_saved, preempt_pending, preempt_active, 1'b0} :
-		(hcr_ridx_b[3] == I_PREEMPT_STATUS) ? {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid} :
-		(hcr_ridx_b[3] == I_CTX_BASE) ? ctx_base :
-		(hcr_ridx_b[3] == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
+		(hcr_ridx_b[1] == I_SIZE0) ? {27'd0, size[0]} :
+		(hcr_ridx_b[1] == I_WPTR0) ? {14'd0, wptr[0]} :
+		(hcr_ridx_b[1] == I_RPTR0) ? {14'd0, rptr[0]} :
+		(hcr_ridx_b[2] == I_BASE1) ? base[1][31:0] :
+		(hcr_ridx_b[2] == I_SIZE1) ? {27'd0, size[1]} :
+		(hcr_ridx_b[2] == I_WPTR1) ? {14'd0, wptr[1]} :
+		(hcr_ridx_b[3] == I_RPTR1) ? {14'd0, rptr[1]} :
+		(hcr_ridx_b[3] == I_BASE2) ? base[2][31:0] :
+		(hcr_ridx_b[3] == I_SIZE2) ? {27'd0, size[2]} :
+		(hcr_ridx_b[4] == I_WPTR2) ? {14'd0, wptr[2]} :
+		(hcr_ridx_b[4] == I_RPTR2) ? {14'd0, rptr[2]} :
+		(hcr_ridx_b[4] == I_DMA_BASE)         ? dma_base :
+		(hcr_ridx_b[5] == I_DMA_SIZE)         ? {27'd0, dma_size} :
+		(hcr_ridx_b[5] == I_DMA_WPTR)         ? {14'd0, dma_wptr} :
+		(hcr_ridx_b[5] == I_DMA_RPTR)         ? {14'd0, dma_rptr} :
+		(hcr_ridx_b[6] == I_DMA_SEM)          ? dma_sem :
+		(hcr_ridx_b[6] == I_DMA_DST_BASE)     ? dma_dst_base_r :
+		(hcr_ridx_b[6] == I_DMA_ROW_STRIDE)   ? dma_src_row_stride_r :
+		(hcr_ridx_b[7] == I_DMA_SLICE_STRIDE) ? dma_src_slice_stride_r :
+		(hcr_ridx_b[7] == I_DMA_EXTENT)       ? {dma_copy_d_r[7:0], dma_copy_h_r[7:0], dma_copy_w_r} :
+		(hcr_ridx_b[7] == I_PREEMPT) ? {24'd0, interrupted_qid, 2'd0, preempt_saved, preempt_pending, preempt_active, 1'b0} :
+		(hcr_ridx_b[7] == I_PREEMPT_STATUS) ? {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid} :
+		(hcr_ridx_b[7] == I_CTX_BASE) ? ctx_base :
+		(hcr_ridx_b[7] == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
 `else
 	assign hcr_rdata =
 		(hcr_ridx == I_BASE0_LO || hcr_ridx == I_BASE0) ? base[0][31:0] :
