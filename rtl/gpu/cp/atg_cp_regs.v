@@ -370,6 +370,28 @@ module atg_cp_regs #(
 	reg rd_hcr_q;
 	reg rd_state_q;
 
+`ifdef SYNTH_KINTEX7
+	wire [3:0] reg_rd_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rdb0 (.I0(reg_rd), .O(reg_rd_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rdb1 (.I0(reg_rd), .O(reg_rd_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rdb2 (.I0(reg_rd), .O(reg_rd_b[2]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rdb3 (.I0(reg_rd), .O(reg_rd_b[3]));
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			ridx_q <= 10'd0;
+			raddr_q <= 17'd0;
+			rd_hcr_q <= 1'b0;
+			rd_state_q <= 1'b0;
+		end else begin
+			if (reg_rd_b[0]) raddr_q <= reg_raddr;
+			if (reg_rd_b[1]) ridx_q <= SLIM_MMIO ? slim_ridx(reg_raddr) : reg_raddr[11:2];
+			if (reg_rd_b[2]) rd_hcr_q <= SLIM_MMIO ? (reg_raddr <= 17'h00084 ||
+			                         (reg_raddr >= 17'h00100 && reg_raddr <= 17'h003FF)) : (reg_raddr[16:12] == 5'd0);
+			if (reg_rd_b[3]) rd_state_q <= !SLIM_MMIO && (reg_raddr[16:12] == 5'b00001 && reg_raddr[11:10] != 2'b11);
+		end
+	end
+`else
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			ridx_q <= 10'd0;
@@ -384,6 +406,7 @@ module atg_cp_regs #(
 			rd_state_q <= !SLIM_MMIO && (reg_raddr[16:12] == 5'b00001 && reg_raddr[11:10] != 2'b11);
 		end
 	end
+`endif
 
 	assign hcr_ridx = ridx_q;
 	assign win_en = win_q;
