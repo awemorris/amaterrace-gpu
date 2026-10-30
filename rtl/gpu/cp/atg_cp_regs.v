@@ -285,7 +285,18 @@ module atg_cp_regs #(
 	                            (reg_wr && reg_waddr[16:12] == 5'd0);
 	assign hcr_widx = SLIM_MMIO ? slim_widx(reg_waddr) : reg_waddr[11:2];
 	assign hcr_wdata = reg_wdata;
+`ifdef SYNTH_KINTEX7
+	wire [3:0] reg_wstrb_m;
+	genvar g_sb;
+	generate
+		for (g_sb = 0; g_sb < 4; g_sb = g_sb + 1) begin : g_sb_gen
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sb (.I0(reg_wstrb[g_sb]), .O(reg_wstrb_m[g_sb]));
+		end
+	endgenerate
+	assign hcr_wmask = {{8{reg_wstrb_m[3]}}, {8{reg_wstrb_m[2]}}, {8{reg_wstrb_m[1]}}, {8{reg_wstrb_m[0]}}};
+`else
 	assign hcr_wmask = {{8{reg_wstrb[3]}}, {8{reg_wstrb[2]}}, {8{reg_wstrb[1]}}, {8{reg_wstrb[0]}}};
+`endif
 	/* 0x1000-0x1BFC: STATE[0..0x2FF]. Eliminated in SLIM_MMIO mode. */
 	assign alias_we = !SLIM_MMIO && (reg_wr && reg_waddr[16:12] == 5'b00001 && reg_waddr[11:10] != 2'b11 &&
 		reg_wstrb == 4'hF);

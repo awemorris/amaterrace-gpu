@@ -274,6 +274,11 @@ module atg_cp_ctl #(
 	wire [1:0] stuck_en_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stuck0 (.I0(stuck_en), .O(stuck_en_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stuck1 (.I0(stuck_en), .O(stuck_en_b[1]));
+
+	wire wdt_cnt_en = ctrl_wdt_en && cmd_active && !faulted && !wdt_hold;
+	wire [1:0] wdt_cnt_en_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wce0 (.I0(wdt_cnt_en), .O(wdt_cnt_en_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wce1 (.I0(wdt_cnt_en), .O(wdt_cnt_en_b[1]));
 `endif
 
 	always @(posedge clk) begin
@@ -317,8 +322,13 @@ module atg_cp_ctl #(
 
 			/* The watchdog. */
 			if (ctrl_wdt_en && cmd_active && !faulted) begin
+`ifdef SYNTH_KINTEX7
+				if (wdt_cnt_en_b[0]) wdt_count[15:0] <= wdt_count_n[15:0];
+				if (wdt_cnt_en_b[1]) wdt_count[31:16] <= wdt_count_n[31:16];
+`else
 				if (!wdt_hold)
 					wdt_count <= wdt_count_n;
+`endif
 			end else begin
 				wdt_count <= 32'd0;
 			end

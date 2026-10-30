@@ -149,7 +149,13 @@ module atg_cp_ring #(
 	 * 3 Independent Hardware Queues
 	 */
 	reg [63:0] base [0:2];
+`ifdef SYNTH_KINTEX7
+	(* max_fanout = 16 *) reg [4:0] size [0:2];
+	(* keep = "true" *) wire core_rst_sync = ~core_rst_n;
+	(* keep = "true" *) wire rst_sync = ~rst_n;
+`else
 	reg [4:0] size [0:2];
+`endif
 	reg [17:0] wptr [0:2];
 	reg [17:0] rptr [0:2];
 
@@ -184,10 +190,10 @@ module atg_cp_ring #(
 
 	/* Dedicated DMA Transfer Queue registers */
 	reg [31:0] dma_base;
-	reg [4:0]  dma_size;
+	(* max_fanout = 16 *) reg [4:0]  dma_size;
 	reg [17:0] dma_wptr;
 	reg [17:0] dma_rptr;
-	reg [31:0] dma_sem;
+	(* max_fanout = 16 *) reg [31:0] dma_sem;
 	reg [31:0] dma_dst_base_r;
 	reg [31:0] dma_src_row_stride_r, dma_dst_row_stride_r;
 	reg [31:0] dma_src_slice_stride_r, dma_dst_slice_stride_r;
@@ -365,10 +371,33 @@ module atg_cp_ring #(
 	reg [LA_W-1:0] buf_tag [0:7];
 	reg [LINE_BYTES*8-1:0] buf_data [0:7];
 
+`ifdef SYNTH_KINTEX7
+	wire pf_wr = (pf_st == PF_RSP) && rsp_valid && (rsp_tag == 8'd1) && !rsp_error;
+	wire dm_wr = (st == R_RSP) && rsp_valid && (rsp_tag == 8'd0) && !rsp_error;
+	wire [7:0] buf_wr_en;
+	wire [15:0] buf_slice_we [0:7];
+	genvar g_bi, g_sl;
+	generate
+		for (g_bi = 0; g_bi < 8; g_bi = g_bi + 1) begin : g_buf_wr
+			assign buf_wr_en[g_bi] = (pf_wr && pf_idx == g_bi[2:0]) || (dm_wr && want_idx == g_bi[2:0]);
+			for (g_sl = 0; g_sl < 16; g_sl = g_sl + 1) begin : g_sl_gen
+				(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sl_we (
+					.I0(buf_wr_en[g_bi]),
+					.O(buf_slice_we[g_bi][g_sl])
+				);
+				always @(posedge clk) begin
+					if (buf_slice_we[g_bi][g_sl])
+						buf_data[g_bi][g_sl*16 +: 16] <= rsp_rdata[g_sl*16 +: 16];
+				end
+			end
+		end
+	endgenerate
+`endif
+
 	/*
 	 * The dword wanted as byte address in memory
 	 */
-	reg [ADDR_W-1:0] pa;
+	(* max_fanout = 16 *) reg [ADDR_W-1:0] pa;
 	wire [ADDR_W-1:0] want_addr = pa;
 	wire [LA_W-1:0] want_line = want_addr[ADDR_W-1:LINE_SHIFT];
 	wire [WS-1:0] want_word = want_addr[LINE_SHIFT-1:2];
@@ -440,7 +469,7 @@ module atg_cp_ring #(
 	wire next_hit = buf_valid[next_idx] && (buf_tag[next_idx] == next_line);
 
 	reg [1:0] pf_st;
-	reg [LA_W-1:0] pf_line;
+	(* max_fanout = 16 *) reg [LA_W-1:0] pf_line;
 	wire [2:0] pf_idx = pf_line[2:0];
 
 	wire ctx_save_req = (st == R_CTX_SAVE_REQ);
@@ -594,7 +623,11 @@ module atg_cp_ring #(
 
 	/* Main sequential logic */
 	always @(posedge clk) begin
+`ifdef SYNTH_KINTEX7
+		if (core_rst_sync) begin
+`else
 		if (!core_rst_n) begin
+`endif
 			for (bi = 0; bi < 3; bi = bi + 1) begin
 				wptr[bi] <= 18'd0;
 `ifndef SYNTH_KINTEX7
@@ -634,7 +667,9 @@ module atg_cp_ring #(
 			buf_valid <= 8'd0;
 			for (bi = 0; bi < 8; bi = bi + 1) begin
 				buf_tag[bi]  <= {LA_W{1'b0}};
+`ifndef SYNTH_KINTEX7
 				buf_data[bi] <= {(LINE_BYTES * 8){1'b0}};
+`endif
 			end
 			pf_st     <= PF_IDLE;
 			pf_line   <= {LA_W{1'b0}};
@@ -736,7 +771,9 @@ module atg_cp_ring #(
 			PF_RSP: begin
 				if (rsp_valid && (rsp_tag == 8'd1)) begin
 					if (!rsp_error) begin
+`ifndef SYNTH_KINTEX7
 						buf_data[pf_idx]  <= rsp_rdata;
+`endif
 						buf_tag[pf_idx]   <= pf_line;
 						buf_valid[pf_idx] <= 1'b1;
 					end
@@ -915,7 +952,9 @@ module atg_cp_ring #(
 					end else begin
 						buf_valid[want_idx] <= 1'b1;
 						buf_tag[want_idx]   <= want_line;
+`ifndef SYNTH_KINTEX7
 						buf_data[want_idx]  <= rsp_rdata;
+`endif
 						st <= ret_n ? R_N : R_HDR;
 					end
 				end
@@ -962,6 +1001,48 @@ module atg_cp_ring #(
 		end
 	end
 
+`ifdef SYNTH_KINTEX7
+	wire [9:0] hcr_ridx_b [0:3];
+	genvar g_hb, g_hr;
+	generate
+		for (g_hb = 0; g_hb < 4; g_hb = g_hb + 1) begin : g_hridx_buf
+			for (g_hr = 0; g_hr < 10; g_hr = g_hr + 1) begin : g_hridx_bit
+				(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hb (
+					.I0(hcr_ridx[g_hr]),
+					.O(hcr_ridx_b[g_hb][g_hr])
+				);
+			end
+		end
+	endgenerate
+
+	assign hcr_rdata =
+		(hcr_ridx_b[0] == I_BASE0_LO || hcr_ridx_b[0] == I_BASE0) ? base[0][31:0] :
+		(hcr_ridx_b[0] == I_BASE0_HI) ? base[0][63:32] :
+		(hcr_ridx_b[0] == I_SIZE0) ? {27'd0, size[0]} :
+		(hcr_ridx_b[0] == I_WPTR0) ? {14'd0, wptr[0]} :
+		(hcr_ridx_b[0] == I_RPTR0) ? {14'd0, rptr[0]} :
+		(hcr_ridx_b[0] == I_BASE1) ? base[1][31:0] :
+		(hcr_ridx_b[0] == I_SIZE1) ? {27'd0, size[1]} :
+		(hcr_ridx_b[1] == I_WPTR1) ? {14'd0, wptr[1]} :
+		(hcr_ridx_b[1] == I_RPTR1) ? {14'd0, rptr[1]} :
+		(hcr_ridx_b[1] == I_BASE2) ? base[2][31:0] :
+		(hcr_ridx_b[1] == I_SIZE2) ? {27'd0, size[2]} :
+		(hcr_ridx_b[1] == I_WPTR2) ? {14'd0, wptr[2]} :
+		(hcr_ridx_b[1] == I_RPTR2) ? {14'd0, rptr[2]} :
+		(hcr_ridx_b[2] == I_DMA_BASE)         ? dma_base :
+		(hcr_ridx_b[2] == I_DMA_SIZE)         ? {27'd0, dma_size} :
+		(hcr_ridx_b[2] == I_DMA_WPTR)         ? {14'd0, dma_wptr} :
+		(hcr_ridx_b[2] == I_DMA_RPTR)         ? {14'd0, dma_rptr} :
+		(hcr_ridx_b[2] == I_DMA_SEM)          ? dma_sem :
+		(hcr_ridx_b[2] == I_DMA_DST_BASE)     ? dma_dst_base_r :
+		(hcr_ridx_b[3] == I_DMA_ROW_STRIDE)   ? dma_src_row_stride_r :
+		(hcr_ridx_b[3] == I_DMA_SLICE_STRIDE) ? dma_src_slice_stride_r :
+		(hcr_ridx_b[3] == I_DMA_EXTENT)       ? {dma_copy_d_r[7:0], dma_copy_h_r[7:0], dma_copy_w_r} :
+		(hcr_ridx_b[3] == I_PREEMPT) ? {24'd0, interrupted_qid, 2'd0, preempt_saved, preempt_pending, preempt_active, 1'b0} :
+		(hcr_ridx_b[3] == I_PREEMPT_STATUS) ? {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid} :
+		(hcr_ridx_b[3] == I_CTX_BASE) ? ctx_base :
+		(hcr_ridx_b[3] == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
+`else
 	assign hcr_rdata =
 		(hcr_ridx == I_BASE0_LO || hcr_ridx == I_BASE0) ? base[0][31:0] :
 		(hcr_ridx == I_BASE0_HI) ? base[0][63:32] :
@@ -989,6 +1070,7 @@ module atg_cp_ring #(
 		(hcr_ridx == I_PREEMPT_STATUS) ? {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid} :
 		(hcr_ridx == I_CTX_BASE) ? ctx_base :
 		(hcr_ridx == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
+`endif
 
 	wire unused_ok = &{1'b0, rsp_write, h_end[18], avail_bo, end_co, pa_4_co,
 		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci_n_bo,

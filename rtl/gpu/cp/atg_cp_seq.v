@@ -255,11 +255,12 @@ module atg_cp_seq #(
 	assign fw_ready = (hdr_take && fw_active) || (pay_take && use_fw);
 
 `ifdef SYNTH_KINTEX7
-	reg uop_we_r;
-	reg [9:0] uop_idx_r;
-	reg [31:0] uop_wdata_r;
+	(* max_fanout = 16 *) reg uop_we_r;
+	(* max_fanout = 16 *) reg [9:0] uop_idx_r;
+	(* max_fanout = 16 *) reg [31:0] uop_wdata_r;
+	(* keep = "true" *) wire rst_high = ~rst_n;
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_high) begin
 			uop_we_r <= 1'b0;
 			uop_idx_r <= 10'd0;
 			uop_wdata_r <= 32'd0;
@@ -351,7 +352,11 @@ module atg_cp_seq #(
 	assign cmd_active = busy && !(st == Q_PAY && use_fw && !fw_valid);
 
 	always @(posedge clk) begin
+`ifdef SYNTH_KINTEX7
+		if (rst_high) begin
+`else
 		if (!rst_n) begin
+`endif
 			st <= Q_IDLE;
 			use_fw <= 1'b0;
 			vendor <= 1'b0;

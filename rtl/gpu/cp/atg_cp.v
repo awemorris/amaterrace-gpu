@@ -296,7 +296,95 @@ module atg_cp #(
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_md (.I0(s_hcr_wmask[g_wm]), .O(hcr_wmask_dbg[g_wm]));
 		end
 	endgenerate
+
+	wire [31:0] reg_wdata_regs, reg_wdata_ring, reg_wdata_ctl, reg_wdata_fence, reg_wdata_dbg, reg_wdata_irq;
+	genvar g_wd;
+	generate
+		for (g_wd = 0; g_wd < 32; g_wd = g_wd + 1) begin : g_wd_buf
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdr (.I0(reg_wdata[g_wd]), .O(reg_wdata_regs[g_wd]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdg (.I0(reg_wdata[g_wd]), .O(reg_wdata_ring[g_wd]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdc (.I0(reg_wdata[g_wd]), .O(reg_wdata_ctl[g_wd]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdf (.I0(reg_wdata[g_wd]), .O(reg_wdata_fence[g_wd]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdd (.I0(reg_wdata[g_wd]), .O(reg_wdata_dbg[g_wd]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdi (.I0(reg_wdata[g_wd]), .O(reg_wdata_irq[g_wd]));
+		end
+	endgenerate
+
+	wire [3:0] reg_wstrb_regs, reg_wstrb_ring, reg_wstrb_ctl, reg_wstrb_irq;
+	genvar g_ws;
+	generate
+		for (g_ws = 0; g_ws < 4; g_ws = g_ws + 1) begin : g_ws_buf
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsr (.I0(reg_wstrb[g_ws]), .O(reg_wstrb_regs[g_ws]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsg (.I0(reg_wstrb[g_ws]), .O(reg_wstrb_ring[g_ws]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsc (.I0(reg_wstrb[g_ws]), .O(reg_wstrb_ctl[g_ws]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsi (.I0(reg_wstrb[g_ws]), .O(reg_wstrb_irq[g_ws]));
+		end
+	endgenerate
+
+	wire [16:0] reg_waddr_regs;
+	genvar g_wa;
+	generate
+		for (g_wa = 0; g_wa < 17; g_wa = g_wa + 1) begin : g_wa_buf
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_war (.I0(reg_waddr[g_wa]), .O(reg_waddr_regs[g_wa]));
+		end
+	endgenerate
+
+	wire [1:0] blt_err_b, cpu_fault_b, rsp_err_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_be0 (.I0(blt_error), .O(blt_err_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_be1 (.I0(blt_error), .O(blt_err_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cf0 (.I0(cpu_fault), .O(cpu_fault_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cf1 (.I0(cpu_fault), .O(cpu_fault_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_re0 (.I0(s_i_rsp_error), .O(rsp_err_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_re1 (.I0(s_i_rsp_error), .O(rsp_err_b[1]));
+
+	wire [1:0] x_fault_b0, x_fault_b1;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_xf0_0 (.I0(x_fault[0]), .O(x_fault_b0[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_xf0_1 (.I0(x_fault[0]), .O(x_fault_b0[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_xf1_0 (.I0(x_fault[1]), .O(x_fault_b1[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_xf1_1 (.I0(x_fault[1]), .O(x_fault_b1[1]));
+
+	wire [1:0] fw_act_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fa0 (.I0(fw_active), .O(fw_act_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fa1 (.I0(fw_active), .O(fw_act_b[1]));
+
+	wire [1:0] ring_fault_b, seq_fault_b, fence_fault_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rf0 (.I0(s_ring_fault), .O(ring_fault_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rf1 (.I0(s_ring_fault), .O(ring_fault_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sf0 (.I0(s_seq_fault), .O(seq_fault_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sf1 (.I0(s_seq_fault), .O(seq_fault_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ff0 (.I0(s_fence_fault), .O(fence_fault_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ff1 (.I0(s_fence_fault), .O(fence_fault_b[1]));
+
+	wire mc_flush_state;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_mcf (.I0(s_mc_flush), .O(mc_flush_state));
+
+	(* keep = "true" *) wire rst_high = ~rst_n;
+	(* keep = "true" *) wire core_rst_high = ~s_core_rst_n;
 `else
+	wire [31:0] reg_wdata_regs = reg_wdata;
+	wire [31:0] reg_wdata_ring = reg_wdata;
+	wire [31:0] reg_wdata_ctl = reg_wdata;
+	wire [31:0] reg_wdata_fence = reg_wdata;
+	wire [31:0] reg_wdata_dbg = reg_wdata;
+	wire [31:0] reg_wdata_irq = reg_wdata;
+	wire [3:0] reg_wstrb_regs = reg_wstrb;
+	wire [3:0] reg_wstrb_ring = reg_wstrb;
+	wire [3:0] reg_wstrb_ctl = reg_wstrb;
+	wire [3:0] reg_wstrb_irq = reg_wstrb;
+	wire [16:0] reg_waddr_regs = reg_waddr;
+	wire [11:0] reg_waddr_ctl = reg_waddr[11:0];
+	wire [11:0] reg_waddr_ring = reg_waddr[11:0];
+	wire [11:0] reg_waddr_sub = reg_waddr[11:0];
+	wire [1:0] blt_err_b = {2{blt_error}};
+	wire [1:0] cpu_fault_b = {2{cpu_fault}};
+	wire [1:0] rsp_err_b = {2{s_i_rsp_error}};
+	wire [1:0] x_fault_b0 = {2{x_fault[0]}};
+	wire [1:0] x_fault_b1 = {2{x_fault[1]}};
+	wire [1:0] fw_act_b = {2{fw_active}};
+	wire [1:0] ring_fault_b = {2{s_ring_fault}};
+	wire [1:0] seq_fault_b = {2{s_seq_fault}};
+	wire [1:0] fence_fault_b = {2{s_fence_fault}};
+	wire mc_flush_state = s_mc_flush;
 	wire hcr_we_ctl = s_hcr_we;
 	wire hcr_we_ring = s_hcr_we;
 	wire hcr_we_fence = s_hcr_we;
@@ -361,7 +449,7 @@ module atg_cp #(
 		.SLIM_MMIO(SLIM_MMIO)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
-		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
+		.reg_wr(reg_wr), .reg_waddr(reg_waddr_regs), .reg_wdata(reg_wdata_regs), .reg_wstrb(reg_wstrb_regs),
 		.reg_rd(reg_rd), .reg_raddr(reg_raddr), .reg_rdata(reg_rdata_raw),
 		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx),
@@ -441,8 +529,8 @@ module atg_cp #(
 		.mc_fault_write(mc_fault_write), .mc_fault_prot(mc_fault_prot),
 		.mc_fault_mem(mc_fault_mem), .mc_fault_tag(mc_fault_tag),
 		.kick_prot_ok(kick_prot_ok), .wdt_tag(wdt_tag),
-		.src_fault({s_disp_fault, x_fault[1], blt_error, cpu_fault, x_fault[0], s_fence_fault,
-			s_lock_fault, s_seq_fault, s_ring_fault}),
+		.src_fault({s_disp_fault, x_fault_b1[0], blt_err_b[0], cpu_fault_b[0], x_fault_b0[0], fence_fault_b[0],
+			s_lock_fault, seq_fault_b[0], ring_fault_b[0]}),
 		.src_kind({s_disp_fault_kind, x_fault_kind[7:4], blt_error_kind, GHCI_FAULT_WATCHDOG,
 			x_fault_kind[3:0], s_fence_fault_kind, GHCI_FAULT_LOCKED, s_seq_fault_kind,
 			s_ring_fault_kind}),
@@ -475,7 +563,7 @@ module atg_cp #(
 		.uop_wdata(s_uop_wdata), .open(s_open), .blt_busy(blt_busy), .lock_fault(s_lock_fault),
 		.st_we(s_st_we), .st_idx(s_st_idx), .st_wdata(s_st_wdata),
 		.cpu_ridx(cpu_st_ridx), .cpu_rdata(cpu_st_rdata),
-		.replay(s_mc_flush), .replay_busy(s_replay_busy)
+		.replay(mc_flush_state), .replay_busy(s_replay_busy)
 	);
 
 	/* The CP's memory users behind MC client 0: ring, fence, dbg, the records (DISP2). */
@@ -553,7 +641,7 @@ module atg_cp #(
 		.req_be(s_i_req_be[0*LINE_BYTES +: LINE_BYTES]),
 		.req_wdata(s_i_req_wdata[0*SLB +: SLB]), .req_tag(s_i_req_tag[0*8 +: 8]),
 		.rsp_valid(s_i_rsp_valid[0]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
-		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(rsp_err_b[0])
 	);
 
 	am_skid #(.W(32)) u_skid_ring_seq (
@@ -596,7 +684,7 @@ module atg_cp #(
 		.clk(clk), .rst_n(s_core_rst_n),
 		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data),
 		.fw_valid(s_fw_valid), .fw_ready(s_fw_ready), .fw_data(s_fw_data),
-		.fw_active(fw_active), .fw_side(fw_side), .halt(s_seq_halt),
+		.fw_active(fw_act_b[0]), .fw_side(fw_side), .halt(s_seq_halt),
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
 		.kick(s_kick), .kick_code(s_kick_code), .inv(s_seq_inv),
 		.busy_in({s_disp_wait, busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
@@ -671,7 +759,7 @@ module atg_cp #(
 		.req_wdata(s_i_req_wdata[1*SLB +: SLB]), .req_tag(s_i_req_tag[1*8 +: 8]),
 		.req_chk(s_f_req_chk), .req_slot(s_f_req_slot),
 		.rsp_valid(s_i_rsp_valid[1]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
-		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(rsp_err_b[1])
 	);
 
 	/* Interrupts and the debug port. */
@@ -695,7 +783,7 @@ module atg_cp #(
 		.req_be(s_i_req_be[2*LINE_BYTES +: LINE_BYTES]),
 		.req_wdata(s_i_req_wdata[2*SLB +: SLB]), .req_tag(s_i_req_tag[2*8 +: 8]),
 		.rsp_valid(s_i_rsp_valid[2]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
-		.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error)
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(rsp_err_b[0])
 	);
 
 	/* The DISP2 display controller's side (board reset). */
