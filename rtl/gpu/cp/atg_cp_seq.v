@@ -216,7 +216,7 @@ module atg_cp_seq #(
 
 	wire dec_hdr_fault, dec_hdr_short, h_zero, pay_bad;
 	atg_cp_seq_dec #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) dec (
-		.hdr(hdr_r), .hdr_fw(use_fw), .h_known(), .h_absent(),
+		.hdr(hdr_r), .hdr_fw(use_fw), .is_ghci_in(is_ghci_hdr_r), .h_known(), .h_absent(),
 		.h_need(), .h_short(), .h_zero(h_zero),
 		.hdr_fault(dec_hdr_fault), .hdr_short(dec_hdr_short),
 		.vendor(vendor), .op(op), .p(p), .in_data(in_data),
@@ -347,7 +347,7 @@ module atg_cp_seq #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe0 (.I0(sidx_we_raw), .O(sidx_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe1 (.I0(sidx_we_raw), .O(sidx_we_b[1]));
 
-	wire f_fa_we_raw = (st == Q_PAY) && in_valid && set_bad;
+	wire f_fa_we_raw = (st == Q_PAY) && in_valid;
 	wire [1:0] f_fa_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe0 (.I0(f_fa_we_raw), .O(f_fa_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe1 (.I0(f_fa_we_raw), .O(f_fa_we_b[1]));

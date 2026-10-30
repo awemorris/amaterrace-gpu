@@ -33,6 +33,7 @@ module atg_cp_seq_dec #(
 ) (
 	input wire [31:0] hdr,
 	input wire hdr_fw,
+	input wire is_ghci_in,
 	output reg h_known,
 	output reg h_absent,
 	output reg [7:0] h_need,
@@ -113,12 +114,7 @@ module atg_cp_seq_dec #(
 	localparam [7:0] VOP_DRAW_RAW = 8'd0;
 	localparam [7:0] VOP_DBG_MARK = 8'd1;
 
-	wire is_ghci = (
-		(hdr[7:0] >= 8'h10 && hdr[7:0] <= 8'h14) ||
-		(hdr[7:0] >= 8'h20 && hdr[7:0] <= 8'h37) ||
-		(hdr[7:0] >= 8'h40 && hdr[7:0] <= 8'h46) ||
-		(hdr[7:0] >= 8'h50 && hdr[7:0] <= 8'h51)
-	) && (hdr[15:8] >= 8'd1);
+	wire is_ghci = is_ghci_in;
 	wire [7:0] ghci_n;
 	wire ghci_n_bo;
 	am_sub #(.W(8)) u_ghci_n (

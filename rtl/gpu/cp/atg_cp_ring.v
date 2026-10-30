@@ -130,6 +130,7 @@ module atg_cp_ring #(
 	localparam [3:0] R_IDLE         = 4'd0;
 	localparam [3:0] R_HDR          = 4'd1;	/* fetch the header at cur */
 	localparam [3:0] R_DEC          = 4'd12;	/* decode the header */
+	localparam [3:0] R_DEC2         = 4'd13;
 	localparam [3:0] R_N            = 4'd2;	/* stream a class N packet */
 	localparam [3:0] R_V            = 4'd3;	/* a class V packet waits for v_done */
 	localparam [3:0] R_ADV          = 4'd4;	/* move RPTR past the packet */
@@ -363,6 +364,8 @@ module atg_cp_ring #(
 	reg [31:0] hdr_data;
 	(* max_fanout = 16 *) reg step_pend;
 	(* max_fanout = 16 *) reg stale;
+	reg h_bad_r, h_novf_r;
+	reg [1:0] h_class_r;
 
 	/*
 	 * 8-entry circular prefetch line buffer (256 bytes = 64 words for 32B lines)
@@ -555,9 +558,11 @@ module atg_cp_ring #(
 	reg [31:0] f_addr;
 	reg ret_pulse;
 
+	wire k_eq_n = (k[15:8] == n[15:8]) && (k[7:0] == n[7:0]);
+
 `ifdef SYNTH_KINTEX7
 	wire pa_we_hdr = (st == R_IDLE) && go && hw_sel[active_qid];
-	wire pa_we_adv = (st == R_N) && hit && n_ready && (k != n);
+	wire pa_we_adv = (st == R_N) && hit && n_ready && !k_eq_n;
 	wire [1:0] pa_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_pawe0 (.I0(pa_we_hdr), .I1(pa_we_adv), .O(pa_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_pawe1 (.I0(pa_we_hdr), .I1(pa_we_adv), .O(pa_we_b[1]));
@@ -719,6 +724,9 @@ module atg_cp_ring #(
 			hdr_data  <= 32'd0;
 			step_pend <= 1'b0;
 			stale     <= 1'b0;
+			h_bad_r   <= 1'b0;
+			h_novf_r  <= 1'b0;
+			h_class_r <= 2'd0;
 			buf_valid <= 8'd0;
 			for (bi = 0; bi < 8; bi = bi + 1) begin
 				buf_tag[bi]  <= {LA_W{1'b0}};
@@ -922,12 +930,19 @@ module atg_cp_ring #(
 `else
 				f_addr  <= want_addr[31:0];
 `endif
-				if (h_bad || h_novf) begin
+				h_bad_r   <= h_bad;
+				h_novf_r  <= h_novf;
+				h_class_r <= h_class;
+				st        <= R_DEC2;
+			end
+
+			R_DEC2: begin
+				if (h_bad_r || h_novf_r) begin
 					f_pulse <= 1'b1;
-					f_kind  <= h_bad ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+					f_kind  <= h_bad_r ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
 					st      <= R_FAULT;
 				end else begin
-					case (h_class)
+					case (h_class_r)
 					2'd2:    st <= R_V;
 					2'd3:    st <= R_ADV;
 					default: st <= R_N;
@@ -940,7 +955,7 @@ module atg_cp_ring #(
 					ret_n <= 1'b1;
 					st    <= R_REQ;
 				end else if (n_ready) begin
-					if (k == n) begin
+					if (k_eq_n) begin
 						st <= R_ADV;
 					end else begin
 						k  <= k_n;
