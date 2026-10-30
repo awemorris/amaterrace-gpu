@@ -478,7 +478,7 @@ module atg_cp_ring #(
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_pawe0 (.I0(pa_we_hdr), .I1(pa_we_adv), .O(pa_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_pawe1 (.I0(pa_we_hdr), .I1(pa_we_adv), .O(pa_we_b[1]));
 
-	wire f_addr_we_bad = (st == R_DEC) && (h_bad || h_novf);
+	wire f_addr_we_bad = (st == R_DEC);
 	wire f_addr_we_rsp = (st == R_RSP) && rsp_valid && (rsp_tag == 8'd0) && rsp_error;
 	wire [1:0] fa_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_fawe0 (.I0(f_addr_we_bad), .I1(f_addr_we_rsp), .O(fa_we_b[0]));

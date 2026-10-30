@@ -314,11 +314,41 @@ module atg_cp #(
 	wire [31:0] hcr_wmask_dbg = s_hcr_wmask;
 `endif
 
+`ifdef SYNTH_KINTEX7
+	reg [31:0] reg_rdata_r;
+	wire [31:0] reg_rdata_raw;
+	always @(posedge clk) begin
+		reg_rdata_r <= reg_rdata_raw;
+	end
+	assign reg_rdata = reg_rdata_r;
+
+	reg hcr_we_r;
+	reg [9:0] hcr_widx_r;
+	reg [31:0] hcr_wdata_r;
+	reg [31:0] hcr_wmask_r;
+	reg [9:0] hcr_ridx_r;
+	always @(posedge clk) begin
+		hcr_we_r <= s_hcr_we;
+		hcr_widx_r <= s_hcr_widx;
+		hcr_wdata_r <= s_hcr_wdata;
+		hcr_wmask_r <= s_hcr_wmask;
+		hcr_ridx_r <= s_hcr_ridx;
+	end
+	assign hcr_we = hcr_we_r;
+	assign hcr_widx = hcr_widx_r;
+	assign hcr_wdata = hcr_wdata_r;
+	assign hcr_wmask = hcr_wmask_r;
+	assign hcr_ridx = hcr_ridx_r;
+`else
+	wire [31:0] reg_rdata_raw;
+	assign reg_rdata = reg_rdata_raw;
+
 	assign hcr_we = s_hcr_we;
 	assign hcr_widx = s_hcr_widx;
 	assign hcr_wdata = s_hcr_wdata;
 	assign hcr_wmask = s_hcr_wmask;
 	assign hcr_ridx = s_hcr_ridx;
+`endif
 
 	wire [31:0] s_fmt_rdata, s_disp_rdata;
 	atg_cp_regs #(
@@ -332,7 +362,7 @@ module atg_cp #(
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
-		.reg_rd(reg_rd), .reg_raddr(reg_raddr), .reg_rdata(reg_rdata),
+		.reg_rd(reg_rd), .reg_raddr(reg_raddr), .reg_rdata(reg_rdata_raw),
 		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
 		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx),
 		.alias_we(s_alias_we), .alias_idx(s_alias_idx), .alias_ridx(s_alias_ridx),
@@ -540,23 +570,39 @@ module atg_cp #(
 	/* The sequencer; it stops only in FAULTED and RESETTING. */
 	wire s_kick, s_disp_wait, s_ev_flip;
 	wire [2:0] s_kick_code;
+	wire [3:0] s_seq_inv;
+	wire s_seq_occ_clear;
 	wire s_f_valid, s_f_ready, s_f_irq, s_f_busy;
 	wire [1:0] s_f_op;
 	wire [63:0] s_f_addr;
 	wire [31:0] s_f_value, s_f_aux;
 	wire s_seq_halt = s_cp_state == GHCI_ST_FAULTED || s_cp_state == GHCI_ST_RESETTING;
 
+	wire s_fw_valid, s_fw_ready;
+	wire [31:0] s_fw_data;
+
+	am_skid #(.W(32)) u_skid_fw (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.in_valid(fw_valid),
+		.in_ready(fw_ready),
+		.in_data(fw_data),
+		.out_valid(s_fw_valid),
+		.out_ready(s_fw_ready),
+		.out_data(s_fw_data)
+	);
+
 	atg_cp_seq #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) u_seq (
 		.clk(clk), .rst_n(s_core_rst_n),
 		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data),
-		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data),
+		.fw_valid(s_fw_valid), .fw_ready(s_fw_ready), .fw_data(s_fw_data),
 		.fw_active(fw_active), .fw_side(fw_side), .halt(s_seq_halt),
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
-		.kick(s_kick), .kick_code(s_kick_code), .inv(inv),
+		.kick(s_kick), .kick_code(s_kick_code), .inv(s_seq_inv),
 		.busy_in({s_disp_wait, busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
-		.occ_count(occ_count), .occ_clear(occ_clear),
+		.occ_count(occ_count), .occ_clear(s_seq_occ_clear),
 		.busy(s_seq_busy), .cmd_active(s_cmd_active),
 		.fault(s_seq_fault), .fault_kind(s_seq_fault_kind), .fault_addr(s_seq_fault_addr),
 		.fault_tag(s_seq_fault_tag),
@@ -565,16 +611,50 @@ module atg_cp #(
 	assign u_tag = s_seq_fault_tag;
 
 	/* The kick codes (atg_cp_seq's K_*). */
+`ifdef SYNTH_KINTEX7
+	reg blt_kick_r, draw_kick_r, cs_kick_r, lc_kick_r, raw_kick_r, occ_clear_r;
+	reg [3:0] inv_r;
+	always @(posedge clk) begin
+		blt_kick_r <= s_host_kick[0] || s_kick && s_kick_code == 3'd0;
+		draw_kick_r <= s_host_kick[1] || s_kick && s_kick_code == 3'd1;
+		cs_kick_r <= s_host_kick[2] || s_kick && s_kick_code == 3'd2;
+		lc_kick_r <= s_kick && s_kick_code == 3'd3;
+		raw_kick_r <= s_kick && s_kick_code == 3'd4;
+		inv_r <= s_seq_inv;
+		occ_clear_r <= s_seq_occ_clear;
+	end
+	assign blt_kick = blt_kick_r;
+	assign draw_kick = draw_kick_r;
+	assign cs_kick = cs_kick_r;
+	assign lc_kick = lc_kick_r;
+	assign raw_kick = raw_kick_r;
+	assign inv = inv_r;
+	assign occ_clear = occ_clear_r;
+`else
 	assign blt_kick = s_host_kick[0] || s_kick && s_kick_code == 3'd0;
 	assign draw_kick = s_host_kick[1] || s_kick && s_kick_code == 3'd1;
 	assign cs_kick = s_host_kick[2] || s_kick && s_kick_code == 3'd2;
 	assign lc_kick = s_kick && s_kick_code == 3'd3;
 	assign raw_kick = s_kick && s_kick_code == 3'd4;
+	assign inv = s_seq_inv;
+	assign occ_clear = s_seq_occ_clear;
+`endif
 	assign s_perf_reset = s_kick && s_kick_code == 3'd5;
 	wire s_kick_flip = s_kick && s_kick_code == 3'd6;
 	wire s_kick_idle = s_kick && s_kick_code == 3'd7;
 
 	/* Fences. */
+	wire s_ev_fence;
+`ifdef SYNTH_KINTEX7
+	reg cp_fence_ev_r;
+	always @(posedge clk) begin
+		cp_fence_ev_r <= s_ev_fence;
+	end
+	assign cp_fence_ev = cp_fence_ev_r;
+`else
+	assign cp_fence_ev = s_ev_fence;
+`endif
+
 	atg_cp_fence #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) u_fence (
 		.clk(clk), .rst_n(s_core_rst_n),
 		.hcr_we(hcr_we_fence), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
@@ -582,7 +662,7 @@ module atg_cp #(
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr[ADDR_W-1:0]),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_chk(f_chk),
 		.f_slot(f_slot), .f_busy(s_f_busy),
-		.ev_fence(cp_fence_ev), .fence_last(cp_fence_last),
+		.ev_fence(s_ev_fence), .fence_last(cp_fence_last),
 		.fault(s_fence_fault), .fault_kind(s_fence_fault_kind),
 		.fault_addr(s_fence_fault_addr), .fault_tag(s_fence_fault_tag),
 		.req_valid(s_i_req_valid[1]), .req_ready(s_i_req_ready[1]),

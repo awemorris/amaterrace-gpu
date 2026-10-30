@@ -156,17 +156,19 @@ module atg_cp_seq #(
 	localparam [2:0] K_FLIP = 3'd6;
 	localparam [2:0] K_DISP_IDLE = 3'd7;
 
-	localparam [2:0] Q_IDLE = 3'd0;
-	localparam [2:0] Q_PAY = 3'd1;	/* take the payload */
-	localparam [2:0] Q_EXEC = 3'd2;	/* wait for pre, then act */
-	localparam [2:0] Q_POST = 3'd3;	/* after a kick: wait for post */
-	localparam [2:0] Q_FREQ = 3'd4;	/* fence request */
-	localparam [2:0] Q_FWAIT = 3'd5;	/* WAIT_FENCE: wait for !f_busy */
-	localparam [2:0] Q_VSYNC = 3'd6;
-	localparam [2:0] Q_DEAD = 3'd7;
+	localparam [3:0] Q_IDLE = 4'd0;
+	localparam [3:0] Q_PAY = 4'd1;	/* take the payload */
+	localparam [3:0] Q_EXEC = 4'd2;	/* wait for pre, then act */
+	localparam [3:0] Q_POST = 4'd3;	/* after a kick: wait for post */
+	localparam [3:0] Q_FREQ = 4'd4;	/* fence request */
+	localparam [3:0] Q_FWAIT = 4'd5;	/* WAIT_FENCE: wait for !f_busy */
+	localparam [3:0] Q_VSYNC = 4'd6;
+	localparam [3:0] Q_DEAD = 4'd7;
+	localparam [3:0] Q_DEC = 4'd8;
 
-	(* max_fanout = 16 *) reg [2:0] st;
-	reg use_fw;
+	(* max_fanout = 16 *) reg [3:0] st;
+	(* max_fanout = 16 *) reg use_fw;
+	reg [31:0] hdr_r;
 	(* max_fanout = 16 *) reg vendor;
 	(* max_fanout = 16 *) reg [7:0] op;
 	(* max_fanout = 16 *) reg [7:0] flags;
@@ -187,28 +189,31 @@ module atg_cp_seq #(
 	wire [31:0] hdr = fw_active ? fw_data : n_data;
 	wire hdr_valid = fw_active ? fw_valid : n_valid;
 
+	wire [31:0] cur_hdr = (st == Q_DEC) ? hdr_r : hdr;
+	wire cur_hdr_fw = (st == Q_DEC) ? use_fw : fw_active;
+
 	/* Header and payload decode (combinational). */
 	wire is_ghci_hdr = (
-		(hdr[7:0] >= 8'h10 && hdr[7:0] <= 8'h14) ||
-		(hdr[7:0] >= 8'h20 && hdr[7:0] <= 8'h37) ||
-		(hdr[7:0] >= 8'h40 && hdr[7:0] <= 8'h46) ||
-		(hdr[7:0] >= 8'h50 && hdr[7:0] <= 8'h51)
-	) && (hdr[15:8] >= 8'd1);
+		(cur_hdr[7:0] >= 8'h10 && cur_hdr[7:0] <= 8'h14) ||
+		(cur_hdr[7:0] >= 8'h20 && cur_hdr[7:0] <= 8'h37) ||
+		(cur_hdr[7:0] >= 8'h40 && cur_hdr[7:0] <= 8'h46) ||
+		(cur_hdr[7:0] >= 8'h50 && cur_hdr[7:0] <= 8'h51)
+	) && (cur_hdr[15:8] >= 8'd1);
 	wire [7:0] ghci_n;
 	wire ghci_sub_bo;
 	am_sub #(.W(8)) sub_ghci_n (
-		.a(hdr[15:8]), .b(8'd1), .bi(1'b0), .d(ghci_n), .bo(ghci_sub_bo)
+		.a(cur_hdr[15:8]), .b(8'd1), .bi(1'b0), .d(ghci_n), .bo(ghci_sub_bo)
 	);
 
-	wire h_vendor = is_ghci_hdr ? 1'b0 : hdr[30];
-	wire [7:0] h_op = is_ghci_hdr ? hdr[7:0] : {2'b00, hdr[29:24]};
-	wire [7:0] h_n = is_ghci_hdr ? ghci_n : hdr[7:0];
+	wire h_vendor = is_ghci_hdr ? 1'b0 : cur_hdr[30];
+	wire [7:0] h_op = is_ghci_hdr ? cur_hdr[7:0] : {2'b00, cur_hdr[29:24]};
+	wire [7:0] h_n = is_ghci_hdr ? ghci_n : cur_hdr[7:0];
 	wire h_known, h_absent, pay_bad, h_short, h_zero;
 	wire dec_hdr_fault, dec_hdr_short;
 	wire [7:0] h_need;
 
 	atg_cp_seq_dec #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) dec (
-		.hdr(hdr), .hdr_fw(fw_active), .h_known(h_known), .h_absent(h_absent),
+		.hdr(cur_hdr), .hdr_fw(cur_hdr_fw), .h_known(h_known), .h_absent(h_absent),
 		.h_need(h_need), .h_short(h_short), .h_zero(h_zero),
 		.hdr_fault(dec_hdr_fault), .hdr_short(dec_hdr_short),
 		.vendor(vendor), .op(op), .p(p), .in_data(in_data),
@@ -243,7 +248,7 @@ module atg_cp_seq #(
 	);
 
 	wire pay_hold = |(pay_wait & busy_in);
-	wire pay_take = st == Q_PAY && in_valid && !pay_hold && !set_bad;
+	wire pay_take = st == Q_PAY && in_valid && !pay_hold;
 	wire hdr_take = st == Q_IDLE && !halt && hdr_valid;
 
 	assign n_ready = (hdr_take && !fw_active) || (pay_take && !use_fw);
@@ -259,7 +264,7 @@ module atg_cp_seq #(
 			uop_idx_r <= 10'd0;
 			uop_wdata_r <= 32'd0;
 		end else begin
-			uop_we_r <= pay_take && pay_we;
+			uop_we_r <= pay_take && pay_we && !set_bad;
 			uop_idx_r <= pay_idx;
 			uop_wdata_r <= in_data;
 		end
@@ -268,7 +273,7 @@ module atg_cp_seq #(
 	assign uop_idx = uop_idx_r;
 	assign uop_wdata = uop_wdata_r;
 `else
-	assign uop_we = pay_take && pay_we;
+	assign uop_we = pay_take && pay_we && !set_bad;
 	assign uop_idx = pay_idx;
 	assign uop_wdata = in_data;
 `endif
@@ -327,12 +332,12 @@ module atg_cp_seq #(
 	reg [31:0] f_faddr;
 
 `ifdef SYNTH_KINTEX7
-	wire sidx_we_raw = pay_take && (is_set || is_dset) && !p[0];
+	wire sidx_we_raw = pay_take && !set_bad && (is_set || is_dset) && !p[0];
 	wire [1:0] sidx_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe0 (.I0(sidx_we_raw), .O(sidx_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_swe1 (.I0(sidx_we_raw), .O(sidx_we_b[1]));
 
-	wire f_fa_we_raw = st == Q_PAY && in_valid && set_bad;
+	wire f_fa_we_raw = pay_take && set_bad;
 	wire [1:0] f_fa_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe0 (.I0(f_fa_we_raw), .O(f_fa_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fawe1 (.I0(f_fa_we_raw), .O(f_fa_we_b[1]));
@@ -372,26 +377,30 @@ module atg_cp_seq #(
 			Q_IDLE:
 				if (hdr_take) begin
 					use_fw <= fw_active;
-					vendor <= h_vendor;
-					op <= h_op;
-					flags <= is_ghci_hdr ? hdr[31:24] : hdr[15:8];
-					tag <= hdr[23:16];
 					side <= fw_active ? fw_side : 7'd0;
-					n <= h_n;
-					p <= 8'd0;
-`ifndef SYNTH_KINTEX7
-					f_faddr <= 32'd0;
-`endif
-					if (dec_hdr_fault) begin
-						f_pulse <= 1'b1;
-						f_kind <= dec_hdr_short ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
-						st <= Q_DEAD;
-					end else begin
-						st <= h_zero ? Q_EXEC : Q_PAY;
-					end
+					hdr_r <= hdr;
+					st <= Q_DEC;
 				end
+			Q_DEC: begin
+				vendor <= h_vendor;
+				op <= h_op;
+				flags <= is_ghci_hdr ? hdr_r[31:24] : hdr_r[15:8];
+				tag <= hdr_r[23:16];
+				n <= h_n;
+				p <= 8'd0;
+`ifndef SYNTH_KINTEX7
+				f_faddr <= 32'd0;
+`endif
+				if (dec_hdr_fault) begin
+					f_pulse <= 1'b1;
+					f_kind <= dec_hdr_short ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+					st <= Q_DEAD;
+				end else begin
+					st <= h_zero ? Q_EXEC : Q_PAY;
+				end
+			end
 			Q_PAY:
-				if (st == Q_PAY && in_valid && set_bad) begin
+				if (pay_take && set_bad) begin
 					f_pulse <= 1'b1;
 					f_kind <= GHCI_FAULT_RING;
 `ifdef SYNTH_KINTEX7
