@@ -38,6 +38,8 @@ module atg_cp_seq_dec #(
 	output reg [7:0] h_need,
 	output reg h_short,
 	output wire h_zero,
+	output wire hdr_fault,
+	output wire hdr_short,
 	input wire vendor,
 	input wire [7:0] op,
 	input wire [7:0] p,
@@ -329,6 +331,9 @@ module atg_cp_seq_dec #(
 			endcase
 		end
 	end
+
+	assign hdr_fault = !h_known || h_absent || h_short;
+	assign hdr_short = h_short;
 
 	/* The payload's index or offset dwords. */
 	wire is_set = !vendor && op == OP_SET_REG;

@@ -152,12 +152,25 @@ module atg_cp_ctl #(
 
 	wire resetting = st == S_RS_WAIT || st == S_RS_PULSE || st == S_RS_REPLAY;
 	wire faulted = st == S_FAULTED;
-	assign open = st == S_IDLE || st == S_HALTED;
+`ifdef SYNTH_KINTEX7
+	(* keep = "true" *) wire rst_ctl_int;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_rst_ctl_inv (.I0(rst_n), .O(rst_ctl_int));
+
+	(* keep = "true" *) wire core_rst_n_sig;
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'h8)) u_core_rst_n_lut (.I0(rst_n), .I1(st != S_RS_PULSE), .O(core_rst_n_sig));
+	assign core_rst_n = core_rst_n_sig;
+`else
+	wire rst_ctl_int = ~rst_n;
+	assign core_rst_n = rst_n && st != S_RS_PULSE;
+`endif
+
+	(* max_fanout = 16 *) reg [3:0] open_r;
+	(* max_fanout = 16 *) reg [3:0] can_fault_r;
+	assign open = open_r[0];
 	assign run = st == S_RUN && ctrl_run;
 	assign halt = st == S_HALTING || st == S_HALTED || faulted || resetting;
 	assign quiesce = halt;
 	assign mc_flush = st == S_RS_PULSE;
-	assign core_rst_n = rst_n && st != S_RS_PULSE;
 	assign cp_state = resetting ? GHCI_ST_RESETTING : faulted ? GHCI_ST_FAULTED :
 		st == S_HALTED ? GHCI_ST_HALTED : st == S_HALTING ? GHCI_ST_HALTING :
 		st == S_RUN ? GHCI_ST_RUNNING : GHCI_ST_IDLE;
@@ -226,15 +239,48 @@ module atg_cp_ctl #(
 		end
 	end
 
-	wire take_fault = any && !faulted && !resetting;
+	wire take_fault = any && can_fault_r[0];
+	wire take_fault_st = any && can_fault_r[1];
+	wire take_fault_info = any && can_fault_r[2];
+	wire take_fault_addr = any && can_fault_r[3];
 	assign ev_fault = take_fault;
 	assign ev_wdt = wdt_fire && take_fault && !mc_gpu && !kick_bad && !kick_absent && !locked_bad;
 	assign ev_halted = st == S_HALTING && ctrl_halt && mc_idle && !ring_busy && !take_fault &&
 		!wr_reset;
 
+`ifdef SYNTH_KINTEX7
+	wire [3:0] tf_buf;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_tf0 (.I0(take_fault_info), .O(tf_buf[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_tf1 (.I0(take_fault_info), .O(tf_buf[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_tf2 (.I0(take_fault_addr), .O(tf_buf[2]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_tf3 (.I0(take_fault_addr), .O(tf_buf[3]));
+
+	wire wr_wdt = hcr_we && (hcr_widx == I_WDT);
+	wire [1:0] wr_wdt_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ww0 (.I0(wr_wdt), .O(wr_wdt_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ww1 (.I0(wr_wdt), .O(wr_wdt_b[1]));
+
+	wire wr_ap_b = hcr_we && open_r[1] && (hcr_widx == I_AP_BASE);
+	wire [1:0] wr_ap_b_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapb0 (.I0(wr_ap_b), .O(wr_ap_b_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapb1 (.I0(wr_ap_b), .O(wr_ap_b_b[1]));
+
+	wire wr_ap_l = hcr_we && open_r[2] && (hcr_widx == I_AP_LIMIT);
+	wire [1:0] wr_ap_l_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapl0 (.I0(wr_ap_l), .O(wr_ap_l_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapl1 (.I0(wr_ap_l), .O(wr_ap_l_b[1]));
+
+	wire stuck_en = quiesce && !mc_idle;
+	wire [1:0] stuck_en_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stuck0 (.I0(stuck_en), .O(stuck_en_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stuck1 (.I0(stuck_en), .O(stuck_en_b[1]));
+`endif
+
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_ctl_int) begin
 			st <= S_IDLE;
+			open_r <= 4'b1111;
+			can_fault_r <= 4'b1111;
 			ctrl_run <= 1'b0;
 			ctrl_halt <= 1'b0;
 			ctrl_wdt_en <= 1'b0;
@@ -253,12 +299,21 @@ module atg_cp_ctl #(
 				ctrl_halt <= hcr_wdata[GHCI_CTRL_HALT];
 				ctrl_wdt_en <= hcr_wdata[GHCI_CTRL_WDT_EN];
 			end
+`ifdef SYNTH_KINTEX7
+			if (wr_wdt_b[0]) wdt_cycles[15:0] <= (wdt_cycles[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]);
+			if (wr_wdt_b[1]) wdt_cycles[31:16] <= (wdt_cycles[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]);
+			if (wr_ap_b_b[0]) ap_base[15:0] <= ((ap_base[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0])) & AP_MASK[15:0];
+			if (wr_ap_b_b[1]) ap_base[31:16] <= ((ap_base[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16])) & AP_MASK[31:16];
+			if (wr_ap_l_b[0]) ap_limit[15:0] <= ((ap_limit[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0])) & AP_MASK[15:0];
+			if (wr_ap_l_b[1]) ap_limit[31:16] <= ((ap_limit[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16])) & AP_MASK[31:16];
+`else
 			if (hcr_we && hcr_widx == I_WDT)
 				wdt_cycles <= (wdt_cycles & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 			if (hcr_we && open && hcr_widx == I_AP_BASE)
 				ap_base <= ((ap_base & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & AP_MASK;
 			if (hcr_we && open && hcr_widx == I_AP_LIMIT)
 				ap_limit <= ((ap_limit & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & AP_MASK;
+`endif
 
 			/* The watchdog. */
 			if (ctrl_wdt_en && cmd_active && !faulted) begin
@@ -272,46 +327,91 @@ module atg_cp_ctl #(
 			if (quiesce && !mc_idle) begin
 				if (stuck_count >= {wdt_cycles, 2'b00})
 					axi_stuck <= 1'b1;
-				else
+				else begin
+`ifdef SYNTH_KINTEX7
+					if (stuck_en_b[0]) stuck_count[16:0] <= stuck_count_n[16:0];
+					if (stuck_en_b[1]) stuck_count[33:17] <= stuck_count_n[33:17];
+`else
 					stuck_count <= stuck_count_n;
+`endif
+				end
 			end else begin
 				stuck_count <= 34'd0;
 			end
 
+`ifdef SYNTH_KINTEX7
+			if (tf_buf[0]) fault_info[15:0] <= n_info[15:0];
+			if (tf_buf[1]) fault_info[31:16] <= n_info[31:16];
+			if (tf_buf[2]) fault_addr[15:0] <= n_addr[15:0];
+			if (tf_buf[3]) fault_addr[31:16] <= n_addr[31:16];
+`else
 			if (take_fault) begin
 				fault_info <= n_info;
 				fault_addr <= n_addr;
 			end
+`endif
 
 			/* The state. */
 			if (wr_reset && !resetting) begin
 				st <= S_RS_WAIT;
-			end else if (take_fault) begin
+				open_r <= 4'b0000;
+				can_fault_r <= 4'b0000;
+			end else if (take_fault_st) begin
 				st <= S_FAULTED;
+				open_r <= 4'b0000;
+				can_fault_r <= 4'b0000;
 			end else begin
 				case (st)
 				S_IDLE:
-					if (ctrl_halt)
+					if (ctrl_halt) begin
 						st <= S_HALTING;
-					else if (ctrl_run)
+						open_r <= 4'b0000;
+					end else if (ctrl_run) begin
 						st <= S_RUN;
+						open_r <= 4'b0000;
+					end else begin
+						open_r <= 4'b1111;
+						can_fault_r <= 4'b1111;
+					end
 				S_RUN:
-					if (ctrl_halt)
+					if (ctrl_halt) begin
 						st <= S_HALTING;
-					else if (!ctrl_run && !busy_in[0])
+						open_r <= 4'b0000;
+					end else if (!ctrl_run && !busy_in[0]) begin
 						st <= S_IDLE;
+						open_r <= 4'b1111;
+					end else begin
+						open_r <= 4'b0000;
+						can_fault_r <= 4'b1111;
+					end
 				S_HALTING:
-					if (!ctrl_halt)
+					if (!ctrl_halt) begin
 						st <= ctrl_run ? S_RUN : S_IDLE;
-					else if (mc_idle && !ring_busy)
+						open_r <= {4{!ctrl_run}};
+					end else if (mc_idle && !ring_busy) begin
 						st <= S_HALTED;
+						open_r <= 4'b1111;
+					end else begin
+						open_r <= 4'b0000;
+						can_fault_r <= 4'b1111;
+					end
 				S_HALTED:
-					if (!ctrl_halt)
+					if (!ctrl_halt) begin
 						st <= ctrl_run ? S_RUN : S_IDLE;
-				S_RS_WAIT:
+						open_r <= {4{!ctrl_run}};
+					end else begin
+						open_r <= 4'b1111;
+						can_fault_r <= 4'b1111;
+					end
+				S_RS_WAIT: begin
+					open_r <= 4'b0000;
+					can_fault_r <= 4'b0000;
 					if (mc_idle)
 						st <= S_RS_PULSE;
+				end
 				S_RS_PULSE: begin
+					open_r <= 4'b0000;
+					can_fault_r <= 4'b0000;
 					st <= S_RS_REPLAY;
 					ctrl_run <= 1'b0;
 					ctrl_halt <= 1'b0;
@@ -319,11 +419,20 @@ module atg_cp_ctl #(
 					fault_info <= 32'd0;
 					axi_stuck <= 1'b0;
 				end
-				S_RS_REPLAY:
-					if (!replay_busy)
+				S_RS_REPLAY: begin
+					if (!replay_busy) begin
 						st <= S_IDLE;
-				default:
-					;
+						open_r <= 4'b1111;
+						can_fault_r <= 4'b1111;
+					end else begin
+						open_r <= 4'b0000;
+						can_fault_r <= 4'b0000;
+					end
+				end
+				default: begin
+					open_r <= 4'b0000;
+					can_fault_r <= 4'b0000;
+				end
 				endcase
 			end
 		end
