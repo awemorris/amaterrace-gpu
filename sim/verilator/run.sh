@@ -10,6 +10,7 @@
 # Timeout: 900 s for each build, 600 s for each run.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
+trap 'sync' EXIT
 root=$(cd "$(dirname -- "$0")/../.." && pwd)
 cd "$root"
 LC_ALL=C
@@ -35,11 +36,14 @@ build() {
 		-CFLAGS "-I$root/include -O1 $def" \
 		$(find rtl -name '*.v' | grep -v 'rtl/bsp/xilinx7' | sort) "$root/sim/verilator/harness.cpp" \
 		>"$out/build-$name.log" 2>&1 || {
+		sync
 		tail -30 "$out/build-$name.log" >&2
 		echo "FAIL verilator $name (build, log $out/build-$name.log)"
 		exit 1
 	}
+	sync
 	timeout 600 "$out/atg_top_$name"
+	sync
 }
 
 # $SU and $GFX are split on purpose: one word per -G.

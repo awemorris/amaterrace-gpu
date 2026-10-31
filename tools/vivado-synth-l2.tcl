@@ -1,4 +1,6 @@
 # Standalone Out-Of-Context synthesis of atg_mc_l2
+set_param general.maxThreads 2
+catch {set_param synth.maxThreads 1}
 set root [lindex $argv 0]
 set out [lindex $argv 1]
 set part "xc7k325tffg900-2"

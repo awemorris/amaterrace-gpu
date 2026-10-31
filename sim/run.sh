@@ -41,6 +41,7 @@
 # short run.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
+trap 'sync' EXIT
 root=$(cd "$(dirname -- "$0")/.." && pwd)
 cd "$root" || exit 1
 out=$root/build/sim
@@ -72,11 +73,13 @@ for ent in "$@"; do
 	extra=$(sed -n 's/^ \* sim-sources: //p' "$tb")
 	if ! iverilog -g2005 -Wall -Wno-timescale -Iinclude -Isim/tb -s "${name}_tb" \
 		-o "$out/$name.vvp" "$tb" $rtl $extra 2>"$out/$name.build"; then
+		sync
 		cat "$out/$name.build" >&2
 		echo "FAIL $name (build)"
 		fail=1
 		continue
 	fi
+	sync
 	if [ -s "$out/$name.build" ]; then
 		cat "$out/$name.build" >&2
 		echo "FAIL $name (iverilog warnings)"
@@ -86,6 +89,7 @@ for ent in "$@"; do
 	# $args is split on purpose: one word per plusarg.
 	timeout "${SIM_TIMEOUT:-1500}" vvp -n "$out/$name.vvp" +seed="${SEED:-1}" $args \
 		>"$log" 2>&1
+	sync
 	t=$(($(date +%s) - t0))
 	if grep -q "^PASS $name\$" "$log" && ! grep -q 'FAIL\|ERROR' "$log"; then
 		echo "PASS $name${args:+ $args} (${t} s)"

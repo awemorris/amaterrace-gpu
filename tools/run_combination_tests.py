@@ -158,6 +158,7 @@ def run_single(tc):
     if extra:
         cmd.append(extra)
     res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
+    os.sync()
     if res.returncode != 0:
         print(f"ERROR: Return code {res.returncode}")
         print(res.stderr)

@@ -21,9 +21,8 @@ set top [lindex $argv 3]
 set period [lindex $argv 4]
 set generics [lrange $argv 5 end]
 file mkdir $out
-if {[info exists ::env(VIVADO_THREADS)]} {
-	set_param general.maxThreads $::env(VIVADO_THREADS)
-}
+set_param general.maxThreads 2
+catch {set_param synth.maxThreads 1}
 
 proc rtl_files {dir} {
 	set files [glob -nocomplain -directory $dir *.v]

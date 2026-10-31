@@ -21,6 +21,7 @@
 # VIVADO_FROM_SYNTH: tools/vivado-build.tcl.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
+trap 'sync' EXIT
 [ $# -eq 2 ] || { echo "usage: vivado-build.sh BOARD TOP" >&2; exit 2; }
 root=$(cd "$(dirname -- "$0")/.." && pwd)
 board=$1
@@ -58,10 +59,10 @@ mkdir -p "$out"
 start=$(date +%s)
 rc=0
 # Vivado writes its .Xil scratch into the current directory.
-(cd "$out" && flock "${VIVADO_LOCK:-/tmp/zedbsd-vivado.lock}" \
-	timeout "${VIVADO_TIMEOUT:-1800}" vivado -mode batch -nojournal \
+(cd "$out" && timeout "${VIVADO_TIMEOUT:-1800}" "$root/tools/vivado-cmd.sh" -mode batch -nojournal \
 	-log vivado.log -source "$root/tools/vivado-build.tcl" \
 	-tclargs "$root" "$topdir" "$top" "$out" "$part" "${VIVADO_IP:-}" </dev/null >/dev/null) || rc=$?
+sync
 if [ $rc -ne 0 ]; then
 	grep -E '^(ERROR|CRITICAL WARNING)' "$out/vivado.log" | head -20 >&2
 	echo "vivado-build: failed rc $rc (log $out/vivado.log)" >&2

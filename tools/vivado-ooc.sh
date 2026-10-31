@@ -24,6 +24,7 @@
 # writes blocks.txt (and route_blocks.txt): the worst path into each cell.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
+trap 'sync' EXIT
 root=$(cd "$(dirname -- "$0")/.." && pwd)
 part=${PART:-xc7k325tffg900-2}
 top=${TOP:-atg_top}
@@ -77,9 +78,10 @@ start=$(date +%s)
 rc=0
 # Vivado writes its .Xil scratch into the current directory.
 # shellcheck disable=SC2086
-(cd "$out" && timeout "${VIVADO_TIMEOUT:-7200}" flock /tmp/vivado.lock vivado -mode batch -nojournal \
+(cd "$out" && timeout "${VIVADO_TIMEOUT:-7200}" "$root/tools/vivado-cmd.sh" -mode batch -nojournal \
 	-log vivado.log -source "$root/tools/vivado-ooc.tcl" \
 	-tclargs "$root" "$out" "$part" "$top" "$period" $generics </dev/null >/dev/null) || rc=$?
+sync
 if [ $rc -ne 0 ]; then
 	grep -E '^(ERROR|CRITICAL WARNING)' "$out/vivado.log" | head -20 >&2
 	echo "vivado-ooc: failed rc $rc (log $out/vivado.log)" >&2

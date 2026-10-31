@@ -109,6 +109,7 @@ def run_vivado_lint(top, period="4.000", defines="", out_dir=""):
     env["VIVADO_MAX_THREADS"] = "2"
 
     proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    os.sync()
 
     output = proc.stdout
     passed = proc.returncode == 0 and "OVERALL VERDICT: PASSED" in output

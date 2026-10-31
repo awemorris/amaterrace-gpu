@@ -18,6 +18,9 @@
 # version and the directives they were built with (docs/style.md).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
+set_param general.maxThreads 2
+catch {set_param synth.maxThreads 1}
+
 if {[llength $argv] < 5} {
 	puts "usage: vivado-build.tcl ROOT TOP_DIR TOP OUT PART"
 	exit 2

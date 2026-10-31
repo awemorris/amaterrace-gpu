@@ -3,6 +3,7 @@
 # Checks all 19 operand shapes x LAT=0..3 (76 instance pairs).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
+trap 'sync' EXIT
 
 root=$(cd "$(dirname -- "$0")/.." && pwd)
 out="$root/build/sim"
@@ -27,5 +28,7 @@ iverilog -g2005 -DSYNTH_KINTEX7 -I"$root/rtl/library/arith" \
 	"$root/rtl/library/arith/am_mul.v" \
 	"$root/sim/tb/am_mul_dsp_tb.v" \
 	-s am_mul_dsp_tb -s glbl -o "$out/am_mul_dsp_tb.vvp" 2>/dev/null
+sync
 
 vvp "$out/am_mul_dsp_tb.vvp"
+sync

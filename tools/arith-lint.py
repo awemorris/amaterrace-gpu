@@ -87,6 +87,7 @@ def run(top, args, tag):
     env = dict(os.environ, LC_ALL='C')
     p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.DEVNULL,
                        stderr=subprocess.PIPE, timeout=600)
+    os.sync()
     path = os.path.join(mdir, 'V%s.xml' % top)
     if p.returncode != 0 or not os.path.exists(path):
         sys.stderr.write('arith-lint: %s: verilator failed\n%s' % (top, p.stderr.decode()[-2000:]))
@@ -274,6 +275,7 @@ def main():
         for fname in sorted(per):
             print('%5d %s' % (per[fname], fname))
     print('arith-lint: %d operators outside rtl/library/arith' % len(found))
+    os.sync()
     sys.exit(1 if found else 0)
 
 

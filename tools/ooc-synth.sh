@@ -2,6 +2,7 @@
 # High-speed Out-Of-Context (OOC) Vivado synthesis & timing analysis
 # Usage: tools/ooc-synth.sh [MODULE] [PERIOD_NS]
 set -eu
+trap 'sync' EXIT
 
 MODULE=${1:-am_fpu_core}
 PERIOD=${2:-5.000}
@@ -11,13 +12,9 @@ root=$(cd "$(dirname -- "$0")/.." && pwd)
 out=$root/build/vivado/ooc_${MODULE}
 mkdir -p "$out"
 
-settings=/home/awe/opt/amd/2026.1/Vivado/settings64.sh
-[ -f "$settings" ] || { echo "no $settings" >&2; exit 1; }
-. "$settings"
-[ -f "$HOME/Xilinx.lic" ] && export XILINXD_LICENSE_FILE=$HOME/Xilinx.lic
-export LD_LIBRARY_PATH=$XILINX_VIVADO/lib/lnx64.o/Ubuntu/24${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-
 cat << 'EOF' > "$out/synth.tcl"
+set_param general.maxThreads 2
+catch {set_param synth.maxThreads 1}
 set module $env(MODULE)
 set period $env(PERIOD)
 set part $env(PART)
@@ -70,7 +67,8 @@ puts "OOC_RESULT: MODULE=$module PERIOD=${period}ns WNS=${wns}ns"
 EOF
 
 MODULE=$MODULE PERIOD=$PERIOD PART=$PART ROOT=$root OUT=$out \
-vivado -mode batch -nojournal -log "$out/vivado.log" -source "$out/synth.tcl"
+"$root/tools/vivado-cmd.sh" -mode batch -nojournal -log "$out/vivado.log" -source "$out/synth.tcl"
+sync
 
 grep "OOC_RESULT:" "$out/vivado.log" || true
 grep -A 10 "Intra Clock Table" "$out/timing_summary.rpt" || true

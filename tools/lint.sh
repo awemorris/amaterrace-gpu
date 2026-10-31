@@ -6,6 +6,7 @@
 #   tools/lint.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
+trap 'sync' EXIT
 root=$(cd "$(dirname -- "$0")/.." && pwd)
 cd "$root" || exit 1
 LC_ALL=C
@@ -17,8 +18,10 @@ run() {
 	name=$1
 	shift
 	if out=$(verilator --lint-only -Wall -Iinclude $srcs "$@" 2>&1); then
+		sync
 		echo "lint: $name clean"
 	else
+		sync
 		echo "$out" | grep -v '^- ' >&2
 		echo "lint: $name FAILED" >&2
 		fail=1

@@ -66,6 +66,10 @@ Amaterrace GPU プロジェクトの設計・コーディング・検証にお�
   - Vivado 2026.1（build 6511674）、Default ストラテジを使用。
   - Debug OFF での検証を原則とする。
   - 合成・配置配線で発生したすべての Warning はリスト化してユーザーに提示し、勝手に無害と判断しない。
+- **ホストリソース保護と `sync` の義務化（2026-11-01 ユーザー指示）**:
+  - **Vivado 2 スレッド固定**: `general.maxThreads 2`, `synth.maxThreads 1` に限定し、`Vivado_init.tcl`（`set_param` オーバーライド防止フック付き）および全 Tcl スクリプトで破れないように固定する。
+  - **Vivado 同時 1 プロセス固定**: `tools/vivado-cmd.sh` および `~/.local/bin/vivado` で `flock /tmp/vivado.lock` を強制し、ホスト全体で同時に 1 つの Vivado しか起動できないように固定する。
+  - **実行後の強制 `sync`**: Vivado、`vvp`、および各種 Linter（`verilator`, `lint.sh`, `arith-lint.py`, `asic-lint.sh` 等）を呼び出した後は、100 GB 規模の書き込み待ち（dirty pages）によるシステム不安定化を防ぐため、**必ず `sync` コマンドを実行してディスク書き込み完了を待つ**。
 
 ---
 

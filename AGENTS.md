@@ -40,21 +40,27 @@
 
 ホストマシンの負荷急増を防ぐため、以下の自動制約がシステムおよびスクリプトに組み込まれており、エージェントはこれらを遵守・維持しなければなりません。
 
-### Vivado 実行制約: **ホスト全体で最大 1 プロセス、最大 2 スレッド**
-- **スレッド制限**:
-  - `~/.Xilinx/Vivado/Vivado_init.tcl` にて以下を自動設定済み：
+### Vivado 実行制約: **ホスト全体で最大 1 プロセス、最大 2 スレッド（スクリプトで完全固定）**
+- **スレッド制限（破れないように固定）**:
+  - `~/.Xilinx/Vivado/Vivado_init.tcl` および `~/.Xilinx/Vivado/2026.1/Vivado_init.tcl`（および `tools/vivado-cmd.sh` による自動復元）にて以下を強制設定し、さらに `set_param` コマンド自体をフックして `general.maxThreads > 2` や `synth.maxThreads > 1` への引き上げを無効化しています：
     ```tcl
     set_param general.maxThreads 2
     catch {set_param synth.maxThreads 1}
     ```
     ※ `synth.maxThreads 1` により、Vivado 合成時の外部ヘルパープロセス（`task_worker.tcl`, `parallel_synth_helper`）の起動が完全に防止されます。
-- **プロセス数制限**:
-  - `tools/vivado-cmd.sh` および `~/.local/bin/vivado` は `flock /tmp/vivado.lock` を用いて排他ロックを取得します。
-  - すべての Vivado 関連スクリプト（`asic-lint.sh`, `synth-module.sh`, `vivado-ooc.sh`, `vivado-build.sh` 等）はこのロックを共有し、ホスト全体で同時に 1 つの Vivado のみが実行されます。
+- **プロセス数制限（同時に 1 つしか起動できないように固定）**:
+  - `tools/vivado-cmd.sh` および `~/.local/bin/vivado`（`tools/vivado-cmd.sh` へ委譲）は `flock /tmp/vivado.lock` を用いて排他ロックを取得します。
+  - すべての Vivado 関連スクリプト（`asic-lint.sh`, `synth-module.sh`, `vivado-ooc.sh`, `vivado-build.sh`, `vivado-synth-l2.sh`, `ooc-synth.sh`, `build-kc705-ip.sh`）は `tools/vivado-cmd.sh` を経由し、ホスト全体で同時に 1 つの Vivado のみが実行されます。
+
+### ディスク書き込みフラッシュ制約: **Vivado / `vvp` / Linter 実行後は必ず `sync` を実行**
+- **背景**: Vivado やシミュレーション（`vvp`）、Linter（`verilator`, `arith-lint.py`, `asic-lint.sh` 等）を連続実行すると、100 GB 規模のダーティページ（書き込み待ちキャッシュ）が蓄積し、システムが不安定になる事象が発生しました。
+- **自動執行と義務**:
+  - `tools/vivado-cmd.sh`, `~/.local/bin/{vivado,vvp,verilator,python3}`, `sim/run.sh`, `sim/verilator/run.sh`, `tools/lint.sh`, `tools/arith-lint.py`, `tools/asic-lint.sh`, `tools/asic-lint.py`, `tools/py_limit.py` のすべてに `sync`（または `os.sync()` / `trap 'sync' EXIT`）を組み込み済みです。
+  - エージェントがワンライナー等で Vivado、`vvp`、各種 Linter を直接呼び出す際も、**呼び出し直後に必ず `sync` コマンドを実行して書き込み完了を待つこと**を厳守してください。
 
 ### Python3 実行制約: **最大 3 並列まで**
 - **自動制限メカニズム**:
-  - `tools/py_limit.py` およびラッパー `~/.local/bin/python3` により、スロットロック `/tmp/amaterrace_py_locks/slot_{0,1,2}.lock` を介して、Amaterrace GPU ワークスペース内の Python プロセスは自動的に最大 3 プロセスに制限されます。
+  - `tools/py_limit.py` およびラッパー `~/.local/bin/python3` により、スロットロック `/tmp/amaterrace_py_locks/slot_{0,1,2}.lock` を介して、Amaterrace GPU ワークスペース内の Python プロセスは自動的に最大 3 プロセスに制限され、終了時に `sync` を実行します。
   - `tools/arith-lint.py`, `tools/asic-lint.py`, `tools/run_combination_tests.py` には `py_limit.limit_concurrency(3)` が直接インポートされており、多重防御されています。
 
 ---
