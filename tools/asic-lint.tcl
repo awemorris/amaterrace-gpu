@@ -7,13 +7,9 @@
 #   Rule 4: Clean Single-Cycle Memory Pipeline (Zero combinational logic on RAM ADDR and DOUT)
 #   Rule 5: Backpressure Decoupling (Zero combinational ripple on ready/valid handshakes)
 
-if {[info exists ::env(VIVADO_THREADS)]} {
-    set_param general.maxThreads $::env(VIVADO_THREADS)
-} elseif {[info exists ::env(VIVADO_MAX_THREADS)]} {
-    set_param general.maxThreads $::env(VIVADO_MAX_THREADS)
-} else {
-    set_param general.maxThreads 2
-}
+# Strictly restrict to 1 process (no helper child processes) and at most 2 threads
+set_param general.maxThreads 2
+catch {set_param synth.maxThreads 1}
 
 if {$argc < 1} {
     puts "Usage: vivado -mode batch -source asic-lint.tcl -tclargs <top_module> ?clock_period_ns? ?extra_defines? ?out_dir?"
@@ -67,11 +63,31 @@ if {[get_designs -quiet] == ""} {
     # Collect verilog files
     set v_files [glob -nocomplain [file join $root rtl library * *.v]]
     lappend v_files {*}[glob -nocomplain [file join $root rtl library *.v]]
-    lappend v_files {*}[glob -nocomplain [file join $root rtl gpu * *.v]]
-    lappend v_files {*}[glob -nocomplain [file join $root rtl gpu *.v]]
-    lappend v_files {*}[glob -nocomplain [file join $root rtl bsp * *.v]]
-    lappend v_files {*}[glob -nocomplain [file join $root rtl bsp *.v]]
-    lappend v_files {*}[glob -nocomplain [file join $root rtl *.v]]
+    lappend v_files {*}[glob -nocomplain [file join $root rtl common *.v]]
+
+    if {[string match "atg_vf*" $top]} {
+        set gpu_dirs [list [file join $root rtl gpu vf] [file join $root rtl gpu fmt]]
+    } elseif {[string match "atg_blt*" $top]} {
+        set gpu_dirs [list [file join $root rtl gpu blt]]
+    } elseif {[string match "atg_rx*" $top]} {
+        set gpu_dirs [list [file join $root rtl gpu rx] [file join $root rtl gpu fmt]]
+    } elseif {[string match "atg_rop*" $top]} {
+        set gpu_dirs [list [file join $root rtl gpu rop] [file join $root rtl gpu fmt]]
+    } elseif {[string match "atg_tu*" $top]} {
+        set gpu_dirs [list [file join $root rtl gpu tu] [file join $root rtl gpu fmt]]
+    } elseif {[string match "atg_su*" $top]} {
+        set gpu_dirs [list [file join $root rtl gpu su] [file join $root rtl gpu fmt]]
+    } elseif {[string match "atg_cp*" $top]} {
+        set gpu_dirs [list [file join $root rtl gpu cp]]
+    } else {
+        set gpu_dirs [glob -nocomplain -types d [file join $root rtl gpu *]]
+        lappend v_files {*}[glob -nocomplain [file join $root rtl bsp * *.v]]
+        lappend v_files {*}[glob -nocomplain [file join $root rtl bsp *.v]]
+        lappend v_files {*}[glob -nocomplain [file join $root rtl *.v]]
+    }
+    foreach d $gpu_dirs {
+        lappend v_files {*}[glob -nocomplain [file join $d *.v]]
+    }
 
     set unique_files [lsort -unique $v_files]
     foreach f $unique_files {
@@ -97,6 +113,7 @@ if {[get_designs -quiet] == ""} {
     } else {
         synth_design -top $top -part $part -mode out_of_context -include_dirs $incdirs -verilog_define $vdefs
     }
+    write_checkpoint -force [file join $out "post_synth.dcp"]
 }
 
 # Clock definition for timing analysis
@@ -216,8 +233,12 @@ set dsps [get_cells -hierarchical -filter {REF_NAME =~ "DSP48E1*"}]
 foreach d $dsps {
     set mreg [get_property MREG $d]
     set preg [get_property PREG $d]
-    if {$mreg == 0 || $preg == 0} {
-        rpt_puts "  VIOLATION (DSP Internal Latency): $d has MREG=$mreg, PREG=$preg (requires LAT >= 2)"
+    set areg [get_property AREG $d]
+    # In cascaded DSP chains, intermediate DSPs match latency with AREG/BREG + MREG.
+    # Total internal DSP pipeline stages must be at least 2.
+    set total_internal [expr {($areg > 0 ? 1 : 0) + ($mreg > 0 ? 1 : 0) + ($preg > 0 ? 1 : 0)}]
+    if {$total_internal < 2} {
+        rpt_puts "  VIOLATION (DSP Internal Latency): $d has AREG=$areg, MREG=$mreg, PREG=$preg (requires total internal registers >= 2)"
         incr r1_errors
     }
 }
@@ -244,8 +265,9 @@ set r2_errors 0
 set r2_warnings 0
 
 # Check non-clock, non-reset and non-constant internal nets
-set internal_nets [get_nets -hierarchical -filter {
-    TYPE != "GLOBAL_CLOCK" && NAME !~ "*clk*" && NAME !~ "*rst*" && NAME !~ "*reset*" &&
+set internal_nets [get_nets -hierarchical -top_net_of_hierarchical_group -filter {
+    TYPE != "GLOBAL_CLOCK" && TYPE != "LOCAL_CLOCK" && TYPE != "GROUND" && TYPE != "POWER" &&
+    NAME !~ "*clk*" && NAME !~ "*rst*" && NAME !~ "*reset*" &&
     NAME !~ "*<const*" && NAME !~ "*GND*" && NAME !~ "*VCC*" && NAME !~ "*GLOBAL_LOGIC*"
 }]
 

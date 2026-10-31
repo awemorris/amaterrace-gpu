@@ -94,14 +94,14 @@ module atg_tu_desc (
 		end
 	endfunction
 
-	reg [31:0] d_base [0:31];
-	reg [31:0] d_size [0:31];
-	reg [31:0] d_img [0:31];
-	reg [31:0] d_stride [0:31];
-	reg [31:0] d_samp [0:31];
-	reg [31:0] d_lod [0:31];
-	reg [20:0] d_fmt [0:31];
-	reg [1:0] d_row [0:31];
+	(* ram_style = "registers" *) reg [31:0] d_base [0:31];
+	(* ram_style = "registers" *) reg [31:0] d_size [0:31];
+	(* ram_style = "registers" *) reg [31:0] d_img [0:31];
+	(* ram_style = "registers" *) reg [31:0] d_stride [0:31];
+	(* ram_style = "registers" *) reg [31:0] d_samp [0:31];
+	(* ram_style = "registers" *) reg [31:0] d_lod [0:31];
+	(* ram_style = "registers", rom_style = "distributed" *) reg [20:0] d_fmt [0:31];
+	(* ram_style = "registers" *) reg [1:0] d_row [0:31];
 	reg [25:0] d_off [0:511];	/* {slot, level}: levels 1-12 */
 	reg [25:0] d_plane [0:511];	/* {slot, level}: levels 0-12 plane size (multiple of 64) */
 	wire [8:0] s_fs;
@@ -145,27 +145,28 @@ module atg_tu_desc (
 	wire mark = in_tu && (s_off[3:0] == GHCI_TEX_SIZE || s_off[3:0] == GHCI_TEX_IMAGE ||
 		s_off[3:0] == GHCI_TEX_FORMAT || s_off[3:0] == GHCI_TEX_ROW);
 
-	localparam [2:0] S_IDLE  = 3'd0,
-	                 S_LOAD  = 3'd1,
-	                 S_DIM   = 3'd2,
-	                 S_MULP  = 3'd3,
-	                 S_PLANE = 3'd4,
-	                 S_MULD  = 3'd5,
-	                 S_MULD1 = 3'd7,
-	                 S_ACC   = 3'd6;
+	localparam [3:0] S_IDLE   = 4'd0,
+	                 S_LOAD   = 4'd1,
+	                 S_DIM    = 4'd2,
+	                 S_MULP   = 4'd3,
+	                 S_MULP1  = 4'd4,
+	                 S_PLANE  = 4'd5,
+	                 S_MULD   = 4'd6,
+	                 S_MULD1  = 4'd7,
+	                 S_ACC    = 4'd8;
 
-	reg [2:0] st;
+	reg [3:0] st;
 	reg [31:0] dirty;
-	reg [4:0] cs;
-	reg [3:0] cl;
+	(* max_fanout = 16, equivalent_register_removal = "no" *) reg [4:0] cs;
+	(* max_fanout = 16, equivalent_register_removal = "no" *) reg [3:0] cl;
 	reg [31:0] acc;
 
 	/* Registers for pipelined calculation */
 	reg [31:0] r_sz;
 	reg [31:0] r_img;
-	reg [20:0] r_fmt;
+	(* rom_style = "distributed" *) reg [20:0] r_fmt;
 	reg [1:0]  r_row;
-	reg [6:0]  r_clay;
+	(* rom_style = "distributed" *) reg [6:0]  r_clay;
 
 	reg [15:0] r_tw;
 	reg [15:0] r_th;
@@ -173,11 +174,7 @@ module atg_tu_desc (
 	reg [15:0] r_h;
 	reg [15:0] r_dl;
 
-	reg [31:0] r_t;
-	reg [32:0] r_wrh;
-
 	reg [31:0] r_cp;
-	reg [31:0] r_pd;
 
 	/* The lowest marked slot. */
 	reg [4:0] lo;
@@ -217,25 +214,25 @@ module atg_tu_desc (
 	/* Stage S_MULP: am_mul instances */
 	wire [31:0] t_w;
 	wire [32:0] wrh_w;
-	am_mul #(.AW(16), .BW(16)) u_t (.clk(1'b0), .en(1'b1), .a(r_tw), .b(r_th), .p(t_w));
-	am_mul #(.AW(17), .BW(16)) u_wrh (.clk(1'b0), .en(1'b1), .a(r_wr), .b(r_h), .p(wrh_w));
+	am_mul #(.AW(16), .BW(16), .LAT(2)) u_t (.clk(clk), .en(1'b1), .a(r_tw), .b(r_th), .p(t_w));
+	am_mul #(.AW(17), .BW(16), .LAT(2)) u_wrh (.clk(clk), .en(1'b1), .a(r_wr), .b(r_h), .p(wrh_w));
 
 	/* Stage S_PLANE: plane size calculation */
 	wire [33:0] ps, p;
-	am_shift #(.W(34), .SW(3)) u_ps (.a(r_clay[4] ? {2'b00, r_t} : {1'b0, r_wrh}),
+	am_shift #(.W(34), .SW(3)) u_ps (.a(r_clay[4] ? {2'b00, t_w} : {1'b0, wrh_w}),
 		.amt(r_clay[2:0]), .left(1'b1), .arith(1'b0), .y(ps));
-	am_add #(.W(34)) u_p (.a(r_clay[3] ? (r_clay[2:0] == 3'd1 ? {r_t[28:0], 5'd0} : {r_t[27:0], 6'd0}) : ps),
+	am_add #(.W(34)) u_p (.a(r_clay[3] ? (r_clay[2:0] == 3'd1 ? {t_w[28:0], 5'd0} : {t_w[27:0], 6'd0}) : ps),
 		.b(r_clay[3] && r_clay[2:0] != 3'd1 ? 34'd0 : 34'd63), .ci(1'b0), .s(p), .co(carry_unused[4]));
 	wire [31:0] cp_w = {p[31:6], 6'd0};
 
 	/* Stage S_MULD: plane x depth */
 	wire [47:0] pd_w;
-	am_mul #(.AW(32), .BW(16), .LAT(1)) u_pd (.clk(clk), .en(1'b1), .a(r_cp), .b(r_dl), .p(pd_w));
+	am_mul #(.AW(32), .BW(16), .LAT(2)) u_pd (.clk(clk), .en(1'b1), .a(r_cp), .b(r_dl), .p(pd_w));
 
 	/* Stage S_ACC: accumulation and level step */
 	wire [31:0] nacc;
 	wire [3:0] cl1;
-	am_add #(.W(32)) u_nacc (.a(acc), .b(r_pd), .ci(1'b0), .s(nacc), .co(carry_unused[5]));
+	am_add #(.W(32)) u_nacc (.a(acc), .b(pd_w[31:0]), .ci(1'b0), .s(nacc), .co(carry_unused[5]));
 	am_add #(.W(4)) u_cl1 (.a(cl), .b(4'd0), .ci(1'b1), .s(cl1), .co(carry_unused[6]));
 
 	/* the slot taken (lo) and the slot marked (s_off[8:4]), one-hot */
@@ -264,10 +261,7 @@ module atg_tu_desc (
 			r_wr <= 17'd0;
 			r_h <= 16'd0;
 			r_dl <= 16'd0;
-			r_t <= 32'd0;
-			r_wrh <= 33'd0;
 			r_cp <= 32'd0;
-			r_pd <= 32'd0;
 		end else begin
 			dirty <= (dirty & ~clr) | set;
 			case (st)
@@ -294,8 +288,9 @@ module atg_tu_desc (
 				st <= S_MULP;
 			end
 			S_MULP: begin
-				r_t   <= t_w;
-				r_wrh <= wrh_w;
+				st <= S_MULP1;
+			end
+			S_MULP1: begin
 				st <= S_PLANE;
 			end
 			S_PLANE: begin
@@ -306,7 +301,6 @@ module atg_tu_desc (
 				st <= S_MULD1;
 			end
 			S_MULD1: begin
-				r_pd <= pd_w[31:0];
 				st <= S_ACC;
 			end
 			S_ACC: begin
@@ -345,7 +339,7 @@ module atg_tu_desc (
 	assign rd_row = rlay[6:5];
 
 	wire unused_ok = &{1'b0, s_fs[8], pd_w[47:32], nacc[5:0], acc[5:0], rlay[4:0],
-		p[33:32], p[5:0], r_t[31:29]};
+		p[33:32], p[5:0], t_w[31:29]};
 endmodule
 
 `default_nettype wire

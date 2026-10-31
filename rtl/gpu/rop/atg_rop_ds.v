@@ -84,6 +84,14 @@ module atg_rop_ds #(
 	`include "atg_rop_unorm8.vh"
 	`include "ghci_regs.vh"
 
+	/* Distributed ROM for unorm8 conversion to avoid BRAM inference */
+	(* rom_style = "distributed" *) reg [31:0] rom_unorm8 [0:255];
+	integer r_u8_i;
+	initial begin
+		for (r_u8_i = 0; r_u8_i < 256; r_u8_i = r_u8_i + 1)
+			rom_unorm8[r_u8_i] = atg_rop_unorm8(r_u8_i[7:0]);
+	end
+
 	localparam WPL = LINE_BYTES / 4;	/* words per line */
 	localparam WB = LINE_SHIFT - 2;	/* word index bits */
 	integer k;
@@ -141,7 +149,7 @@ module atg_rop_ds #(
 
 	localparam [3:0] S_IDLE = 4'd0, S_ROW_SETUP = 4'd1, S_ROW = 4'd2, S_RD = 4'd3,
 		S_TEST0 = 4'd4, S_TEST0B = 4'd10, S_TEST1 = 4'd5, S_TEST2 = 4'd6, S_TEST3 = 4'd7,
-		S_WR = 4'd8, S_OUT = 4'd9;
+		S_WR = 4'd8, S_OUT = 4'd9, S_ROW_SETUP1 = 4'd11, S_ROW_SETUP2 = 4'd12;
 	reg [3:0] st;
 	reg r;	/* row */
 	reg [2:0] e;	/* entry of the row: {lane of the row, sample} */
@@ -155,10 +163,10 @@ module atg_rop_ds #(
 
 	/* Pipelined per-entry test staging registers */
 	reg [31:0] test_stored;
-	reg [31:0] test_zl;
-	reg [31:0] test_zun;
-	reg [23:0] test_zu24;
-	reg [15:0] test_zu16;
+	(* max_fanout = 16 *) reg [31:0] test_zl;
+	(* max_fanout = 16 *) reg [31:0] test_zun;
+	(* max_fanout = 16 *) reg [23:0] test_zu24;
+	(* max_fanout = 16 *) reg [15:0] test_zu16;
 	reg [32:0] test_zkey;
 	reg [32:0] test_skey;
 	reg [7:0] test_s_inc;
@@ -243,7 +251,7 @@ module atg_rop_ds #(
 	reg [22:0] zun_s0_mn_hi;
 	reg zun_s0_round;
 	reg [4:0] zun_s0_lz;
-	reg zun_s0_found;
+	(* max_fanout = 16 *) reg zun_s0_found;
 
 	wire [23:0] zun_q;
 	wire [7:0] zun_e;
@@ -268,9 +276,9 @@ module atg_rop_ds #(
 	wire [2:0] e_next;
 	wire yr_co_unused, ra_co_unused, rb1_co_unused, rd_co_unused, en_co_unused;
 	am_add #(.W(17)) u_yr (.a({1'b0, (st == S_IDLE) ? q_xy[31:16] : d_xy[31:16]}), .b(17'd0), .ci(1'b0), .s(yr), .co(yr_co_unused));
-	am_mul #(.AW(17), .BW(32), .LAT(1)) u_yrs (.clk(clk), .en(1'b1), .a(yr), .b(ds_stride), .p(yrs));
+	am_mul #(.AW(17), .BW(32), .LAT(2)) u_yrs (.clk(clk), .en(1'b1), .a(yr), .b(ds_stride), .p(yrs));
 	am_add #(.W(32)) u_ra (.a(ds_base), .b(yrs[31:0]), .ci(1'b0), .s(row_a), .co(ra_co_unused));
-	am_add #(.W(32)) u_rb1 (.a(row_a), .b(ds_stride), .ci(1'b0), .s(row_base1_comb), .co(rb1_co_unused));
+	am_add #(.W(32)) u_rb1 (.a(row_base0), .b(ds_stride), .ci(1'b0), .s(row_base1_comb), .co(rb1_co_unused));
 	assign cur_row_base = r ? row_base1 : row_base0;
 	am_add #(.W(32)) u_rd (.a(cur_row_base), .b(xo), .ci(1'b0), .s(row_addr), .co(rd_co_unused));
 	am_add #(.W(3)) u_en (.a(e), .b(ms4 ? 3'd1 : 3'd4), .ci(1'b0), .s(e_next), .co(en_co_unused));
@@ -327,20 +335,54 @@ module atg_rop_ds #(
 		.wbe(eval_wbe)
 	);
 	wire [31:0] dbgf [0:3];
-	assign dbgf[0] = atg_rop_unorm8(dbg_color[7:0]);
-	assign dbgf[1] = atg_rop_unorm8(dbg_color[15:8]);
-	assign dbgf[2] = atg_rop_unorm8(dbg_color[23:16]);
-	assign dbgf[3] = atg_rop_unorm8(dbg_color[31:24]);
+	assign dbgf[0] = rom_unorm8[dbg_color[7:0]];
+	assign dbgf[1] = rom_unorm8[dbg_color[15:8]];
+	assign dbgf[2] = rom_unorm8[dbg_color[23:16]];
+	assign dbgf[3] = rom_unorm8[dbg_color[31:24]];
 
 	assign q_ready = st == S_IDLE;
 	assign busy = st != S_IDLE || d_valid;
 	assign req_tag = 8'd0;
 
+`ifdef SYNTH_KINTEX7
+	wire en_idle_qv = (st == S_IDLE) && q_valid;
+	wire [3:0] en_col_mid;
+	wire [63:0] en_col_leaf;
+	genvar g_cm, g_cl, g_cq;
+	generate
+	for (g_cm = 0; g_cm < 4; g_cm = g_cm + 1) begin : g_mid_col
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_mcol (
+			.I0(en_idle_qv), .O(en_col_mid[g_cm])
+		);
+	end
+	for (g_cl = 0; g_cl < 64; g_cl = g_cl + 1) begin : g_leaf_col
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_lcol (
+			.I0(en_col_mid[g_cl / 16]), .O(en_col_leaf[g_cl])
+		);
+	end
+	wire [511:0] d_color_in = q_dbg ? {4{dbgf[3], dbgf[2], dbgf[1], dbgf[0]}} : q_color;
+	for (g_cq = 0; g_cq < 32; g_cq = g_cq + 1) begin : g_reg_dcol
+		always @(posedge clk) begin
+			if (en_col_leaf[g_cq])
+				d_color[16 * g_cq +: 16] <= d_color_in[16 * g_cq +: 16];
+		end
+		always @(posedge clk) begin
+			if (!rst_n)
+				d_color1[16 * g_cq +: 16] <= 16'd0;
+			else if (en_col_leaf[32 + g_cq])
+				d_color1[16 * g_cq +: 16] <= q_color1[16 * g_cq +: 16];
+		end
+	end
+	endgenerate
+`endif
+
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= S_IDLE;
 			d_valid <= 1'b0;
+`ifndef SYNTH_KINTEX7
 			d_color1 <= 512'd0;
+`endif
 			d_beat <= 5'd0;
 			req_valid <= 1'b0;
 			wait_rsp <= 1'b0;
@@ -374,8 +416,10 @@ module atg_rop_ds #(
 		S_IDLE:
 			if (q_valid) begin
 				d_xy <= q_xy;
+`ifndef SYNTH_KINTEX7
 				d_color <= q_dbg ? {4{dbgf[3], dbgf[2], dbgf[1], dbgf[0]}} : q_color;
 				d_color1 <= q_color1;
+`endif
 				d_beat <= q_beat;
 `ifdef MUT_DS_BEAT
 				if (1'b0)
@@ -393,7 +437,13 @@ module atg_rop_ds #(
 				end
 			end
 		S_ROW_SETUP: begin
+			st <= S_ROW_SETUP1;
+		end
+		S_ROW_SETUP1: begin
 			row_base0 <= row_a;
+			st <= S_ROW_SETUP2;
+		end
+		S_ROW_SETUP2: begin
 			row_base1 <= row_base1_comb;
 			st <= S_ROW;
 		end

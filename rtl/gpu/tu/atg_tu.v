@@ -153,7 +153,7 @@ module atg_tu #(
 	wire [2:0] f_fifo_count;
 	wire f_fifo_in_ready;
 
-	am_fifo #(.W(529), .DEPTH_LOG2(2)) u_ffilt_outq (
+	atg_tu_outq #(.W(529)) u_ffilt_outq (
 		.clk(clk), .rst_n(rst_n),
 		.in_valid(f_tr_valid_raw),
 		.in_ready(f_fifo_in_ready),
@@ -231,7 +231,7 @@ module atg_tu #(
 	assign f_tr_ready = tr_fire && cur_is_f32;
 	assign order_out_ready = tr_fire;
 
-	assign busy = tx_valid || ta_valid || tc_valid || tr_valid || desc_busy ||
+	assign busy = ta_valid || tc_valid || tr_valid || desc_busy ||
 		!u_idle || !f_idle || order_out_valid || f_tr_valid;
 
 	/* Anisotropic filtering engine (Phase 004 / ws002-p004) */

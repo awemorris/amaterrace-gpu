@@ -194,66 +194,66 @@ module atg_tu_ffront (
 			mv[m] <= mv[m - 1];
 	end
 
-	/* The weight: wu wv and wa wb (P3), n = wu wv wa wb (P4), as fp32 n x
-	 * 2^-32 rounded to nearest even (n > 0 for a term): P5 its leading
-	 * zeros, P6 shifted, P7 rounded, then delayed to PV. */
-	wire [17:0] wuv3, wab3;
+	/* The weight: wu wv and wa wb (P4), n = wu wv wa wb (P6), as fp32 n x
+	 * 2^-32 rounded to nearest even (n > 0 for a term): P7 its leading
+	 * zeros, P8 shifted, P9 rounded, then delayed to PV. */
+	wire [17:0] wuv4, wab4;
 
-	am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(1)) u_wuv (
-		.clk(clk), .en(1'b1), .a(wu2), .b(wv2), .p(wuv3)
+	am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(2)) u_wuv (
+		.clk(clk), .en(1'b1), .a(wu2), .b(wv2), .p(wuv4)
 	);
-	am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(1)) u_wab (
-		.clk(clk), .en(1'b1), .a(wa2), .b(wb2), .p(wab3)
-	);
-
-	wire [35:0] n4;
-
-	am_mul #(.AW(18), .BW(18), .SIGNED(0), .LAT(1)) u_n (
-		.clk(clk), .en(1'b1), .a(wuv3), .b(wab3), .p(n4)
+	am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(2)) u_wab (
+		.clk(clk), .en(1'b1), .a(wa2), .b(wb2), .p(wab4)
 	);
 
-	reg [5:0] lz_w4;
+	wire [35:0] n6;
+
+	am_mul #(.AW(18), .BW(18), .SIGNED(0), .LAT(2)) u_n (
+		.clk(clk), .en(1'b1), .a(wuv4), .b(wab4), .p(n6)
+	);
+
+	reg [5:0] lz_w6;
 	always @(*) begin
-		lz_w4 = 6'd0;
+		lz_w6 = 6'd0;
 		for (i = 0; i < 33; i = i + 1)
-			if (n4[i])
-				lz_w4 = 6'd32 - i[5:0];
+			if (n6[i])
+				lz_w6 = 6'd32 - i[5:0];
 	end
 
-	reg [32:0] n5;
-	reg [5:0] lz5;
+	reg [32:0] n7;
+	reg [5:0] lz7;
 	always @(posedge clk) begin
-		n5 <= n4[32:0];
-		lz5 <= lz_w4;
+		n7 <= n6[32:0];
+		lz7 <= lz_w6;
 	end
 
-	wire [56:0] y5;
-	wire [7:0] e0_5, e1_5;
+	wire [56:0] y7;
+	wire [7:0] e0_7, e1_7;
 
-	am_shift #(.W(57), .SW(6)) u_w2f (.a({n5, 24'd0}), .amt(lz5), .left(1'b1), .arith(1'b0),
-		.y(y5));
-	am_sub #(.W(8)) u_e0 (.a(8'd127), .b({2'd0, lz5}), .bi(1'b0), .d(e0_5), .bo(u_e0_nc));
-	am_sub #(.W(8)) u_e1 (.a(8'd128), .b({2'd0, lz5}), .bi(1'b0), .d(e1_5), .bo(u_e1_nc));
+	am_shift #(.W(57), .SW(6)) u_w2f (.a({n7, 24'd0}), .amt(lz7), .left(1'b1), .arith(1'b0),
+		.y(y7));
+	am_sub #(.W(8)) u_e0 (.a(8'd127), .b({2'd0, lz7}), .bi(1'b0), .d(e0_7), .bo(u_e0_nc));
+	am_sub #(.W(8)) u_e1 (.a(8'd128), .b({2'd0, lz7}), .bi(1'b0), .d(e1_7), .bo(u_e1_nc));
 
-	reg [24:0] y6;	/* bits 56:32 */
-	reg yst6;
-	reg [7:0] e0_6, e1_6;
+	reg [24:0] y8;	/* bits 56:32 */
+	reg yst8;
+	reg [7:0] e0_8, e1_8;
 	always @(posedge clk) begin
-		y6 <= y5[56:32];
-		yst6 <= y5[31:0] != 32'd0;
-		e0_6 <= e0_5;
-		e1_6 <= e1_5;
+		y8 <= y7[56:32];
+		yst8 <= y7[31:0] != 32'd0;
+		e0_8 <= e0_7;
+		e1_8 <= e1_7;
 	end
 
-	wire [24:0] q6;
+	wire [24:0] q8;
 
-	am_add #(.W(25)) u_wq (.a({1'b0, y6[24:1]}), .b(25'd0), .ci(y6[0] && (yst6 || y6[1])),
-		.s(q6), .co(u_wq_nc));
+	am_add #(.W(25)) u_wq (.a({1'b0, y8[24:1]}), .b(25'd0), .ci(y8[0] && (yst8 || y8[1])),
+		.s(q8), .co(u_wq_nc));
 
-	reg [31:0] wf [7:PV];
+	reg [31:0] wf [9:PV];
 	always @(posedge clk) begin
-		wf[7] <= {1'b0, q6[24] ? e1_6 : e0_6, q6[24] ? q6[23:1] : q6[22:0]};
-		for (m = 8; m <= PV; m = m + 1)
+		wf[9] <= {1'b0, q8[24] ? e1_8 : e0_8, q8[24] ? q8[23:1] : q8[22:0]};
+		for (m = 10; m <= PV; m = m + 1)
 			wf[m] <= wf[m - 1];
 	end
 

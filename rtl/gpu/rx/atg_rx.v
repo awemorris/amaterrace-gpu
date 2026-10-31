@@ -103,6 +103,14 @@ module atg_rx #(
 	wire cl_valid, cl_ready, cl_last;
 	wire [701:0] cl_tri;
 	wire sp_valid, sp_ready, sp_last;
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire sp_valid_scan, sp_valid_frag;
+	LUT1 #(.INIT(2'b10)) u_spv_scn (.I0(sp_valid), .O(sp_valid_scan));
+	LUT1 #(.INIT(2'b10)) u_spv_frg (.I0(sp_valid), .O(sp_valid_frag));
+`else
+	wire sp_valid_scan = sp_valid;
+	wire sp_valid_frag = sp_valid;
+`endif
 	wire [767:0] sp_tri;
 	wire c_pt_rd, f_pt_rd, f_pt_busy;
 	wire [7:0] c_pt_idx, f_pt_idx;
@@ -111,6 +119,12 @@ module atg_rx #(
 	wire [15:0] sq_seq;
 	wire clip_busy, setup_busy, scan_busy, frag_busy;
 	wire fq_valid, fq_ready, fq_end;
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire fq_ready_scan;
+	LUT1 #(.INIT(2'h2)) u_fqr_scan (.I0(fq_ready), .O(fq_ready_scan));
+`else
+	wire fq_ready_scan = fq_ready;
+`endif
 	wire [31:0] fq_xy;
 	wire [15:0] fq_scov;
 	wire [3:0] fq_ccov;
@@ -130,7 +144,14 @@ module atg_rx #(
 	wire prim_pipe_ready_lo, prim_pipe_ready_hi;
 	wire [14:0] prim_pipe_data_lo, prim_pipe_data_hi;
 
-	am_skid #(.W(15)) u_prim_skid_lo (
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire rst_sync;
+	LUT1 #(.INIT(2'b01)) u_rst_inv (.I0(rst_n), .O(rst_sync));
+`else
+	wire rst_sync = !rst_n;
+`endif
+
+	atg_rx_skid #(.W(15)) u_prim_skid_lo (
 		.clk(clk),
 		.rst_n(rst_n),
 		.in_valid(prim_valid),
@@ -141,7 +162,7 @@ module atg_rx #(
 		.out_data(prim_pipe_data_lo)
 	);
 
-	am_skid #(.W(15)) u_prim_skid_hi (
+	atg_rx_skid #(.W(15)) u_prim_skid_hi (
 		.clk(clk),
 		.rst_n(rst_n),
 		.in_valid(prim_valid),
@@ -173,7 +194,7 @@ module atg_rx #(
 	wire [31:0] w_fl_pw_data;
 
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_sync) begin
 			r_fl_pw_we <= 1'b0;
 			r_fl_pw_addr <= 12'd0;
 			r_fl_pw_data <= 32'd0;
@@ -190,25 +211,50 @@ module atg_rx #(
 
 `ifdef SYNTH_KINTEX7
 	wire clip_st_we, setup_st_we, scan_st_we, frag_st_we;
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_buf_we_c (.I0(st_we), .O(clip_st_we));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_buf_we_u (.I0(st_we), .O(setup_st_we));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_buf_we_s (.I0(st_we), .O(scan_st_we));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_buf_we_f (.I0(st_we), .O(frag_st_we));
+
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+	wire rst_n_clip, rst_n_setup, rst_n_scan, rst_n_frag, rst_n_order;
+	LUT1 #(.INIT(2'h2)) u_rst_c (.I0(rst_n), .O(rst_n_clip));
+	LUT1 #(.INIT(2'h2)) u_rst_u (.I0(rst_n), .O(rst_n_setup));
+	LUT1 #(.INIT(2'h2)) u_rst_s (.I0(rst_n), .O(rst_n_scan));
+	LUT1 #(.INIT(2'h2)) u_rst_f (.I0(rst_n), .O(rst_n_frag));
+	LUT1 #(.INIT(2'h2)) u_rst_o (.I0(rst_n), .O(rst_n_order));
+
+	wire cl_valid_setup = cl_valid;
+
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *) wire dx_ready_scan;
+	LUT1 #(.INIT(2'h2)) u_buf_dxr (.I0(dx_ready), .O(dx_ready_scan));
 
 	wire [8:0] clip_st_idx, setup_st_idx, scan_st_idx, frag_st_idx;
 	wire [31:0] clip_st_wdata, setup_st_wdata, scan_st_wdata, frag_st_wdata;
 	genvar g_st;
 	generate
 	for (g_st = 0; g_st < 9; g_st = g_st + 1) begin : g_buf_st_idx
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 		LUT1 #(.INIT(2'h2)) u_idx_c (.I0(st_idx[g_st]), .O(clip_st_idx[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 		LUT1 #(.INIT(2'h2)) u_idx_u (.I0(st_idx[g_st]), .O(setup_st_idx[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 		LUT1 #(.INIT(2'h2)) u_idx_s (.I0(st_idx[g_st]), .O(scan_st_idx[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 		LUT1 #(.INIT(2'h2)) u_idx_f (.I0(st_idx[g_st]), .O(frag_st_idx[g_st]));
 	end
 	for (g_st = 0; g_st < 32; g_st = g_st + 1) begin : g_buf_st_wdata
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 		LUT1 #(.INIT(2'h2)) u_wd_c (.I0(st_wdata[g_st]), .O(clip_st_wdata[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 		LUT1 #(.INIT(2'h2)) u_wd_u (.I0(st_wdata[g_st]), .O(setup_st_wdata[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 		LUT1 #(.INIT(2'h2)) u_wd_s (.I0(st_wdata[g_st]), .O(scan_st_wdata[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 		LUT1 #(.INIT(2'h2)) u_wd_f (.I0(st_wdata[g_st]), .O(frag_st_wdata[g_st]));
 	end
 	endgenerate
@@ -216,10 +262,13 @@ module atg_rx #(
 	wire clip_st_we = st_we, setup_st_we = st_we, scan_st_we = st_we, frag_st_we = st_we;
 	wire [8:0] clip_st_idx = st_idx, setup_st_idx = st_idx, scan_st_idx = st_idx, frag_st_idx = st_idx;
 	wire [31:0] clip_st_wdata = st_wdata, setup_st_wdata = st_wdata, scan_st_wdata = st_wdata, frag_st_wdata = st_wdata;
+	wire cl_valid_setup = cl_valid;
+	wire dx_ready_scan = dx_ready;
+	wire rst_n_clip = rst_n, rst_n_setup = rst_n, rst_n_scan = rst_n, rst_n_frag = rst_n, rst_n_order = rst_n;
 `endif
 
 	atg_rx_clip clip (
-		.clk(clk), .rst_n(rst_n), .st_we(clip_st_we), .st_idx(clip_st_idx), .st_wdata(clip_st_wdata),
+		.clk(clk), .rst_n(rst_n_clip), .st_we(clip_st_we), .st_idx(clip_st_idx), .st_wdata(clip_st_wdata),
 		.raw_kick(raw_kick),
 		.prim_valid(prim_c_valid), .prim_ready(prim_c_ready), .prim_vtx(prim_c_vtx),
 		.prim_free(prim_c_free), .prim_last(prim_c_last),
@@ -234,8 +283,8 @@ module atg_rx #(
 	wire [3:0] rx_viewport_idx;
 
 	atg_rx_setup setup (
-		.clk(clk), .rst_n(rst_n), .st_we(setup_st_we), .st_idx(setup_st_idx), .st_wdata(setup_st_wdata),
-		.cl_valid(cl_valid), .cl_ready(cl_ready), .cl_tri(cl_tri), .cl_last(cl_last),
+		.clk(clk), .rst_n(rst_n_setup), .st_we(setup_st_we), .st_idx(setup_st_idx), .st_wdata(setup_st_wdata),
+		.cl_valid(cl_valid_setup), .cl_ready(cl_ready), .cl_tri(cl_tri), .cl_last(cl_last),
 		.mesh_valid(mesh_valid), .mesh_ready(mesh_ready), .mesh_tri(mesh_tri),
 		.mesh_last(mesh_last), .mesh_id(mesh_id),
 		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
@@ -253,19 +302,19 @@ module atg_rx #(
 		.ENABLE_EARLY_Z(ENABLE_EARLY_Z),
 		.COARSE_SCAN(COARSE_SCAN)
 	) scan (
-		.clk(clk), .rst_n(rst_n), .st_we(scan_st_we), .st_idx(scan_st_idx), .st_wdata(scan_st_wdata),
-		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
+		.clk(clk), .rst_n(rst_n_scan), .st_we(scan_st_we), .st_idx(scan_st_idx), .st_wdata(scan_st_wdata),
+		.sp_valid(sp_valid_scan), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
-		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov),
+		.fq_valid(fq_valid), .fq_ready(fq_ready_scan), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov),
 		.fq_end(fq_end), .f_busy(frag_busy),
-		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
+		.dx_valid(dx_valid), .dx_ready(dx_ready_scan), .dx_seq(dx_seq), .dx_xy(dx_xy),
 		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 		.sq_req(s_sq_req), .sq_seq(sq_seq), .busy(scan_busy)
 	);
 
 	atg_rx_frag frag (
-		.clk(clk), .rst_n(rst_n), .st_we(frag_st_we), .st_idx(frag_st_idx), .st_wdata(frag_st_wdata),
-		.t_load(sp_valid && sp_ready), .t_tri(sp_tri),
+		.clk(clk), .rst_n(rst_n_frag), .st_we(frag_st_we), .st_idx(frag_st_idx), .st_wdata(frag_st_wdata),
+		.t_load(sp_valid_frag && sp_ready), .t_tri(sp_tri),
 		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov),
 		.fq_end(fq_end), .busy(frag_busy),
 		.pt_rd(f_pt_rd), .pt_idx(f_pt_idx), .pt_word(f_pt_word), .pt_rdata(pt_rdata),
@@ -277,7 +326,7 @@ module atg_rx #(
 	);
 
 	atg_rx_order order (
-		.clk(clk), .rst_n(rst_n), .sq_req(sq_req), .sq_seq(sq_seq),
+		.clk(clk), .rst_n(rst_n_order), .sq_req(sq_req), .sq_seq(sq_seq),
 		.ord_valid(ord_valid), .ord_seq(ord_seq)
 	);
 

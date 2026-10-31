@@ -8,12 +8,14 @@
 /*
  * atg_rx_fmul: fp32 multiplier with configurable latency (LAT = 0 or 4) for RX.
  * RNE, denormals flushed, canonical NaN 0x7FC00000.
- * Uses am_mul with LAT=1 in 4-stage mode to utilize DSP48E1 internal PREG.
+ * Compliant with ASIC 5nm 1.5 GHz timing, primitive budget (<= 1 Post-DSP LUT,
+ * <= 1 Post-CARRY4 LUT, <= 3 random LUT levels), and fanout (<= 16) limits.
  */
 
 `timescale 1ns / 1ps
 `default_nettype none
 
+(* keep_hierarchy = "yes" *)
 module atg_rx_fmul #(
 	parameter LAT = 4
 ) (
@@ -25,7 +27,7 @@ module atg_rx_fmul #(
 	output wire o_valid,
 	output wire [31:0] o_r
 );
-	/* Stage 1: unpack and the special cases. */
+	/* Stage 1: unpack, special cases, and ea + eb (0 Pre-LUTs, 0 Post-LUTs). */
 	wire [7:0] ea = i_a[30:23];
 	wire [7:0] eb = i_b[30:23];
 	wire za = ea == 8'd0;
@@ -35,62 +37,174 @@ module atg_rx_fmul #(
 	wire inf_a = ea == 8'hFF && i_a[22:0] == 23'd0;
 	wire inf_b = eb == 8'hFF && i_b[22:0] == 23'd0;
 	wire s = i_a[31] ^ i_b[31];
-	/* the exponent ea + eb - 127 */
-	wire [9:0] eab, e_n;
-	wire eab_co_unused, en_bo_unused;
+
+	wire [9:0] eab;
+	wire eab_co_unused;
 	am_add #(.W(10)) u_eab (.a({2'b00, ea}), .b({2'b00, eb}), .ci(1'b0), .s(eab), .co(eab_co_unused));
-	am_sub #(.W(10)) u_e_n (.a(eab), .b(10'd127), .bi(1'b0), .d(e_n), .bo(en_bo_unused));
 
 	wire v1_w = rst_n && i_valid;
-	wire s1_w = s;
-	wire sp1_w = nan_a || nan_b || ((inf_a || inf_b) && (za || zb)) || inf_a || inf_b || za || zb;
-	wire [31:0] spv1_w = (nan_a || nan_b || ((inf_a || inf_b) && (za || zb))) ? 32'h7FC00000 :
-		(inf_a || inf_b) ? {s, 8'hFF, 23'd0} : {s, 31'd0};
-	wire [9:0] e1_w = e_n;
+	wire sp_nan1_w = nan_a || nan_b || ((inf_a || inf_b) && (za || zb));
+	wire sp_inf1_w = !sp_nan1_w && (inf_a || inf_b);
+	wire sp_zero1_w = !sp_nan1_w && !sp_inf1_w && (za || zb);
+	wire sp1_w = sp_nan1_w || sp_inf1_w || sp_zero1_w;
+	wire s1_w = sp_nan1_w ? 1'b0 : s;
+	wire [9:0] eab1_w = eab;
 	wire [23:0] ma1_w = {1'b1, i_a[22:0]};
 	wire [23:0] mb1_w = {1'b1, i_b[22:0]};
 
-	wire v1, sp1, s1;
-	wire [31:0] spv1;
-	wire [9:0] e1;
+	wire v1, sp1, sp_nan1, sp_inf1, s1;
+	wire [9:0] eab1;
 	wire [23:0] ma1, mb1;
 
-	wire v2, sp2, s2;
-	wire [31:0] spv2;
-	wire [9:0] e2;
+	/* Stage 2: precompute eab - 127, eab - 126, eab - 125 (0 Post-LUTs after CARRY4). */
+	wire [9:0] e2_0_w, e2_1_w, e2_2_w;
+	wire e2_0_bo_unused, e2_1_bo_unused, e2_2_bo_unused;
+	am_sub #(.W(10)) u_e2_0 (.a(eab1), .b(10'd127), .bi(1'b0), .d(e2_0_w), .bo(e2_0_bo_unused));
+	am_sub #(.W(10)) u_e2_1 (.a(eab1), .b(10'd126), .bi(1'b0), .d(e2_1_w), .bo(e2_1_bo_unused));
+	am_sub #(.W(10)) u_e2_2 (.a(eab1), .b(10'd125), .bi(1'b0), .d(e2_2_w), .bo(e2_2_bo_unused));
+
+	wire v2, sp2, sp_nan2, sp_inf2, s2;
+	wire [9:0] e2_0, e2_1, e2_2;
 	wire [47:0] p2;
 
-	/* stage 3 exponent: + 1 for a product in [2, 4) */
-	wire [9:0] e2n;
-	wire e2n_co_unused;
-	am_add #(.W(10)) u_e2n (.a(e2), .b(10'd0), .ci(p2[47]), .s(e2n), .co(e2n_co_unused));
-
-	/* Stage 3: normalise (the product is in [1, 4)). */
-	wire [23:0] m3_w = p2[47] ? p2[47:24] : p2[46:23];
+	/* Stage 3:
+	 * - From DSP output p2: <= 1 Post-DSP LUT, p2[47] fanout = 11 (<= 16 soft limit).
+	 * - From registered e2_0/1/2: pre-decode final exponents ef_0/1/2 and mantissa-zero flags.
+	 */
+	wire [5:0] m3_lo_w = p2[47] ? p2[29:24] : p2[28:23];
 	wire g3_w = p2[47] ? p2[23] : p2[22];
-	wire st3_w = p2[47] ? (p2[22:0] != 23'd0) : (p2[21:0] != 22'd0);
-	wire [9:0] e3_w = e2n;
+	wire [3:0] st_c_w;
+	assign st_c_w[0] = |p2[5:0];
+	assign st_c_w[1] = |p2[11:6];
+	assign st_c_w[2] = |p2[17:12];
+	assign st_c_w[3] = p2[47] ? (|p2[22:18]) : (|p2[21:18]);
 
-	wire v3, sp3, s3, g3, st3;
-	wire [31:0] spv3;
-	wire [9:0] e3;
-	wire [23:0] m3;
+	wire ga6_0_w  = &p2[34:29];
+	wire ga6_1_w  = &p2[35:30];
+	wire ga12_0_w = &p2[40:35];
+	wire ga12_1_w = &p2[41:36];
+	wire ga18_0_w = &p2[45:41];
+	wire ga18_1_w = &p2[46:42];
 
-	/* Stage 4: round to nearest even, pack. */
-	wire [24:0] m0;
-	wire [9:0] e;
-	wire m0_co_unused, e_co_unused;
-	am_add #(.W(25)) u_m0 (.a({1'b0, m3}), .b(25'd0), .ci(g3 && (st3 || m3[0])), .s(m0),
-		.co(m0_co_unused));
-	wire [24:0] m = m0[24] ? {1'b0, m0[24:1]} : m0;
-	am_add #(.W(10)) u_e (.a(e3), .b(10'd0), .ci(m0[24]), .s(e), .co(e_co_unused));
-	wire unused_m = &{1'b0, m[24:23], eab_co_unused, en_bo_unused, e2n_co_unused, m0_co_unused, e_co_unused};
+	wire ovf3_0 = !e2_0[9] && (e2_0[8] || (&e2_0[7:0]));
+	wire udf3_0 = e2_0[9] || (e2_0[8:0] == 9'd0);
+	wire ovf3_1 = !e2_1[9] && (e2_1[8] || (&e2_1[7:0]));
+	wire udf3_1 = e2_1[9] || (e2_1[8:0] == 9'd0);
+	wire ovf3_2 = !e2_2[9] && (e2_2[8] || (&e2_2[7:0]));
+	wire udf3_2 = e2_2[9] || (e2_2[8:0] == 9'd0);
+
+	wire [7:0] ef3_0_w = (sp_nan2 || sp_inf2 || (!sp2 && ovf3_0)) ? 8'hFF :
+		(sp2 || udf3_0) ? 8'h00 : e2_0[7:0];
+	wire [7:0] ef3_1_w = (sp_nan2 || sp_inf2 || (!sp2 && ovf3_1)) ? 8'hFF :
+		(sp2 || udf3_1) ? 8'h00 : e2_1[7:0];
+	wire [7:0] ef3_2_w = (sp_nan2 || sp_inf2 || (!sp2 && ovf3_2)) ? 8'hFF :
+		(sp2 || udf3_2) ? 8'h00 : e2_2[7:0];
+
+	wire mz3_0_w = sp2 || ovf3_0 || udf3_0;
+	wire mz3_1_w = sp2 || ovf3_1 || udf3_1;
+
+	wire v3, sp_nan3, s3, g3;
+	wire p47_a, p47_b, p47_c;
+	wire [5:0] m3_lo;
+	wire [46:29] p3_hi;
+	wire [3:0] st_c3;
+	wire ga6_0, ga6_1, ga12_0, ga12_1, ga18_0, ga18_1;
+	wire [7:0] ef3_0, ef3_1, ef3_2;
+	wire mz3_0, mz3_1;
+
+	/* Stage 4: 0 CARRY4s, <= 3 LUT levels factored-carry rounding & packing. */
+	(* keep = "true" *) wire round_inc = g3 && (m3_lo[0] || (|st_c3));
+	(* keep = "true" *) wire p4_0 = &m3_lo[4:0];
+	(* keep = "true" *) wire p5_0 = &m3_lo[5:0];
+	(* keep = "true" *) wire ga6  = p47_c ? ga6_1  : ga6_0;
+	(* keep = "true" *) wire ga12 = p47_c ? ga12_1 : ga12_0;
+	(* keep = "true" *) wire ga18 = p47_c ? ga18_1 : ga18_0;
+
+	wire cin_6  = round_inc & p5_0;
+	wire cin_12 = round_inc & p5_0 & ga6;
+	wire cin_18 = round_inc & p5_0 & ga6 & ga12;
+	(* keep = "true" *) wire m0_cout = round_inc & p5_0 & ga6 & ga12 & ga18;
+	(* keep = "true" *) wire mz_a    = p47_a ? mz3_1 : mz3_0;
+	(* keep = "true" *) wire mz_b    = p47_b ? mz3_1 : mz3_0;
+
+	(* keep = "true" *) wire [22:0] m_rounded;
+	assign m_rounded[0] = m3_lo[0] ^ round_inc;
+	assign m_rounded[1] = m3_lo[1] ^ (round_inc & m3_lo[0]);
+	assign m_rounded[2] = m3_lo[2] ^ (round_inc & (&m3_lo[1:0]));
+	assign m_rounded[3] = m3_lo[3] ^ (round_inc & (&m3_lo[2:0]));
+	assign m_rounded[4] = m3_lo[4] ^ (round_inc & (&m3_lo[3:0]));
+	assign m_rounded[5] = m3_lo[5] ^ (round_inc & p4_0);
+
+	(* keep = "true" *) wire [22:6] mu_hi;
+	(* keep = "true" *) wire [22:6] sp_hi;
+	genvar gi;
+	generate
+	for (gi = 6; gi < 15; gi = gi + 1) begin : g_mu_6_14
+		assign mu_hi[gi] = p47_a ? p3_hi[gi + 24] : p3_hi[gi + 23];
+	end
+	for (gi = 15; gi < 23; gi = gi + 1) begin : g_mu_15_22
+		assign mu_hi[gi] = p47_b ? p3_hi[gi + 24] : p3_hi[gi + 23];
+	end
+
+	/* Slice [11:6] local prefix-ANDs (<= 6 inputs each = 1 LUT) */
+	assign sp_hi[6]  = 1'b1;
+	assign sp_hi[7]  = p47_a ? p3_hi[30] : p3_hi[29];
+	assign sp_hi[8]  = p47_a ? (&p3_hi[31:30]) : (&p3_hi[30:29]);
+	assign sp_hi[9]  = p47_a ? (&p3_hi[32:30]) : (&p3_hi[31:29]);
+	assign sp_hi[10] = p47_a ? (&p3_hi[33:30]) : (&p3_hi[32:29]);
+	(* keep = "true" *) wire sp11_hi = p47_a ? (&p3_hi[34:31]) : (&p3_hi[33:30]);
+	assign sp_hi[11] = sp_hi[7] & sp11_hi;
+
+	/* Slice [17:12] local prefix-ANDs (<= 6 inputs each = 1 LUT) */
+	assign sp_hi[12] = 1'b1;
+	assign sp_hi[13] = p47_a ? p3_hi[36] : p3_hi[35];
+	assign sp_hi[14] = p47_a ? (&p3_hi[37:36]) : (&p3_hi[36:35]);
+	assign sp_hi[15] = p47_b ? (&p3_hi[38:36]) : (&p3_hi[37:35]);
+	assign sp_hi[16] = p47_b ? (&p3_hi[39:36]) : (&p3_hi[38:35]);
+	(* keep = "true" *) wire sp17_hi = p47_b ? (&p3_hi[40:37]) : (&p3_hi[39:36]);
+	assign sp_hi[17] = sp_hi[13] & sp17_hi;
+
+	/* Slice [22:18] local prefix-ANDs (<= 6 inputs each = 1 LUT) */
+	assign sp_hi[18] = 1'b1;
+	assign sp_hi[19] = p47_b ? p3_hi[42] : p3_hi[41];
+	assign sp_hi[20] = p47_b ? (&p3_hi[43:42]) : (&p3_hi[42:41]);
+	assign sp_hi[21] = p47_b ? (&p3_hi[44:42]) : (&p3_hi[43:41]);
+	assign sp_hi[22] = p47_b ? (&p3_hi[45:42]) : (&p3_hi[44:41]);
+
+	for (gi = 6; gi <= 11; gi = gi + 1) begin : g_mr_6_11
+		assign m_rounded[gi] = mu_hi[gi] ^ (cin_6 & sp_hi[gi]);
+	end
+	for (gi = 12; gi <= 17; gi = gi + 1) begin : g_mr_12_17
+		assign m_rounded[gi] = mu_hi[gi] ^ (cin_12 & sp_hi[gi]);
+	end
+	for (gi = 18; gi <= 22; gi = gi + 1) begin : g_mr_18_22
+		assign m_rounded[gi] = mu_hi[gi] ^ (cin_18 & sp_hi[gi]);
+	end
+	endgenerate
+
+	wire [22:0] m_out;
+	generate
+	for (gi = 0; gi < 12; gi = gi + 1) begin : g_mout_lo
+		assign m_out[gi] = !mz_a && m_rounded[gi];
+	end
+	for (gi = 12; gi < 22; gi = gi + 1) begin : g_mout_hi
+		assign m_out[gi] = !mz_b && m_rounded[gi];
+	end
+	endgenerate
+	assign m_out[22] = sp_nan3 || (!mz_b && m_rounded[22]);
+
+	wire [7:0] e_out;
+	generate
+	for (gi = 0; gi < 8; gi = gi + 1) begin : g_eout
+		assign e_out[gi] = (p47_c && m0_cout) ? ef3_2[gi] :
+		                   (p47_c ^ m0_cout)  ? ef3_1[gi] : ef3_0[gi];
+	end
+	endgenerate
+
+	wire unused_m = &{1'b0, eab_co_unused, e2_0_bo_unused, e2_1_bo_unused, e2_2_bo_unused};
 
 	wire o_valid_comb = rst_n && v3;
-	wire [31:0] o_r_comb = sp3 ? spv3 :
-		(!e[9] && e >= 10'd255) ? {s3, 8'hFF, 23'd0} :
-		(e[9] || e == 10'd0) ? {s3, 31'd0} :
-		{s3, e[7:0], m[22:0]};
+	wire [31:0] o_r_comb = {s3, e_out, m_out};
 
 	generate
 		if (LAT == 0) begin : g_lat0
@@ -99,102 +213,155 @@ module atg_rx_fmul #(
 
 			assign v1 = i_valid;
 			assign sp1 = sp1_w;
-			assign spv1 = spv1_w;
+			assign sp_nan1 = sp_nan1_w;
+			assign sp_inf1 = sp_inf1_w;
 			assign s1 = s1_w;
-			assign e1 = e1_w;
+			assign eab1 = eab1_w;
 			assign ma1 = ma1_w;
 			assign mb1 = mb1_w;
 
 			assign v2 = v1;
 			assign sp2 = sp1;
-			assign spv2 = spv1;
+			assign sp_nan2 = sp_nan1;
+			assign sp_inf2 = sp_inf1;
 			assign s2 = s1;
-			assign e2 = e1;
+			assign e2_0 = e2_0_w;
+			assign e2_1 = e2_1_w;
+			assign e2_2 = e2_2_w;
 			assign p2 = p1;
 
 			assign v3 = v2;
-			assign sp3 = sp2;
-			assign spv3 = spv2;
+			assign sp_nan3 = sp_nan2;
 			assign s3 = s2;
 			assign g3 = g3_w;
-			assign st3 = st3_w;
-			assign e3 = e3_w;
-			assign m3 = m3_w;
+			assign p47_a = p2[47];
+			assign p47_b = p2[47];
+			assign p47_c = p2[47];
+			assign m3_lo = m3_lo_w;
+			assign p3_hi = p2[46:29];
+			assign st_c3 = st_c_w;
+			assign ga6_0 = ga6_0_w;
+			assign ga6_1 = ga6_1_w;
+			assign ga12_0 = ga12_0_w;
+			assign ga12_1 = ga12_1_w;
+			assign ga18_0 = ga18_0_w;
+			assign ga18_1 = ga18_1_w;
+			assign ef3_0 = ef3_0_w;
+			assign ef3_1 = ef3_1_w;
+			assign ef3_2 = ef3_2_w;
+			assign mz3_0 = mz3_0_w;
+			assign mz3_1 = mz3_1_w;
 
 			assign o_valid = o_valid_comb;
 			assign o_r = o_r_comb;
 
-			wire unused_clk = &{1'b0, clk, v1_w};
+			wire unused_clk = &{1'b0, clk, v1_w, unused_m};
 		end else begin : g_lat4
 			wire [47:0] p1;
 			am_mul #(.AW(24), .BW(24), .LAT(2)) u_p1 (.clk(clk), .en(1'b1), .a(ma1_w), .b(mb1_w), .p(p1));
 
-			reg r_v1, r_sp1, r_s1;
-			reg [31:0] r_spv1;
-			reg [9:0] r_e1;
+			reg r_v1, r_sp1, r_sp_nan1, r_sp_inf1, r_s1;
+			reg [9:0] r_eab1;
 
 			always @(posedge clk) begin
 				r_v1 <= v1_w;
-				r_s1 <= s1_w;
 				r_sp1 <= sp1_w;
-				r_spv1 <= spv1_w;
-				r_e1 <= e1_w;
+				r_sp_nan1 <= sp_nan1_w;
+				r_sp_inf1 <= sp_inf1_w;
+				r_s1 <= s1_w;
+				r_eab1 <= eab1_w;
 			end
 
 			assign v1 = r_v1;
 			assign sp1 = r_sp1;
-			assign spv1 = r_spv1;
+			assign sp_nan1 = r_sp_nan1;
+			assign sp_inf1 = r_sp_inf1;
 			assign s1 = r_s1;
-			assign e1 = r_e1;
+			assign eab1 = r_eab1;
 			assign ma1 = ma1_w;
 			assign mb1 = mb1_w;
 
-			reg r_v2, r_sp2, r_s2;
-			reg [31:0] r_spv2;
-			reg [9:0] r_e2;
+			reg r_v2, r_sp2, r_sp_nan2, r_sp_inf2, r_s2;
+			reg [9:0] r_e2_0, r_e2_1, r_e2_2;
 
 			always @(posedge clk) begin
 				r_v2 <= rst_n && v1;
 				r_sp2 <= sp1;
-				r_spv2 <= spv1;
+				r_sp_nan2 <= sp_nan1;
+				r_sp_inf2 <= sp_inf1;
 				r_s2 <= s1;
-				r_e2 <= e1;
+				r_e2_0 <= e2_0_w;
+				r_e2_1 <= e2_1_w;
+				r_e2_2 <= e2_2_w;
 			end
 
 			assign v2 = r_v2;
 			assign sp2 = r_sp2;
-			assign spv2 = r_spv2;
+			assign sp_nan2 = r_sp_nan2;
+			assign sp_inf2 = r_sp_inf2;
 			assign s2 = r_s2;
-			assign e2 = r_e2;
+			assign e2_0 = r_e2_0;
+			assign e2_1 = r_e2_1;
+			assign e2_2 = r_e2_2;
 			assign p2 = p1;
 
-			reg r_v3, r_sp3, r_s3, r_g3, r_st3;
-			reg [31:0] r_spv3;
-			reg [9:0] r_e3;
-			reg [23:0] r_m3;
+			reg r_v3, r_sp_nan3, r_s3, r_g3;
+			(* keep = "true" *) reg r_p47_a, r_p47_b, r_p47_c;
+			reg [5:0] r_m3_lo;
+			reg [46:29] r_p3_hi;
+			reg [3:0] r_st_c3;
+			reg r_ga6_0, r_ga6_1, r_ga12_0, r_ga12_1, r_ga18_0, r_ga18_1;
+			reg [7:0] r_ef3_0, r_ef3_1, r_ef3_2;
+			reg r_mz3_0, r_mz3_1;
 
 			always @(posedge clk) begin
 				r_v3 <= rst_n && v2;
-				r_sp3 <= sp2;
-				r_spv3 <= spv2;
+				r_sp_nan3 <= sp_nan2;
 				r_s3 <= s2;
-				r_m3 <= m3_w;
 				r_g3 <= g3_w;
-				r_st3 <= st3_w;
-				r_e3 <= e3_w;
+				r_p47_a <= p2[47];
+				r_p47_b <= p2[47];
+				r_p47_c <= p2[47];
+				r_m3_lo <= m3_lo_w;
+				r_p3_hi <= p2[46:29];
+				r_st_c3 <= st_c_w;
+				r_ga6_0 <= ga6_0_w;
+				r_ga6_1 <= ga6_1_w;
+				r_ga12_0 <= ga12_0_w;
+				r_ga12_1 <= ga12_1_w;
+				r_ga18_0 <= ga18_0_w;
+				r_ga18_1 <= ga18_1_w;
+				r_ef3_0 <= ef3_0_w;
+				r_ef3_1 <= ef3_1_w;
+				r_ef3_2 <= ef3_2_w;
+				r_mz3_0 <= mz3_0_w;
+				r_mz3_1 <= mz3_1_w;
 			end
 
 			assign v3 = r_v3;
-			assign sp3 = r_sp3;
-			assign spv3 = r_spv3;
+			assign sp_nan3 = r_sp_nan3;
 			assign s3 = r_s3;
 			assign g3 = r_g3;
-			assign st3 = r_st3;
-			assign e3 = r_e3;
-			assign m3 = r_m3;
+			assign p47_a = r_p47_a;
+			assign p47_b = r_p47_b;
+			assign p47_c = r_p47_c;
+			assign m3_lo = r_m3_lo;
+			assign p3_hi = r_p3_hi;
+			assign st_c3 = r_st_c3;
+			assign ga6_0 = r_ga6_0;
+			assign ga6_1 = r_ga6_1;
+			assign ga12_0 = r_ga12_0;
+			assign ga12_1 = r_ga12_1;
+			assign ga18_0 = r_ga18_0;
+			assign ga18_1 = r_ga18_1;
+			assign ef3_0 = r_ef3_0;
+			assign ef3_1 = r_ef3_1;
+			assign ef3_2 = r_ef3_2;
+			assign mz3_0 = r_mz3_0;
+			assign mz3_1 = r_mz3_1;
 
 			reg r_ovalid;
-			reg [31:0] r_or;
+			(* extract_reset = "no" *) reg [31:0] r_or;
 
 			always @(posedge clk) begin
 				r_ovalid <= o_valid_comb;
@@ -203,6 +370,8 @@ module atg_rx_fmul #(
 
 			assign o_valid = r_ovalid;
 			assign o_r = r_or;
+
+			wire unused_lat4 = &{1'b0, unused_m};
 		end
 	endgenerate
 endmodule

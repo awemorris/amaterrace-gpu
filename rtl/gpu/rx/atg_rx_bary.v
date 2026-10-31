@@ -18,6 +18,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+(* keep_hierarchy = "yes" *)
 module atg_rx_bary (
 	input wire clk,
 	input wire rst_n,
@@ -38,59 +39,171 @@ module atg_rx_bary (
 	output wire [127:0] o_ds
 );
 	localparam [2:0] S_IDLE = 3'd0, S_PREP1 = 3'd1, S_PREP2 = 3'd2,
-		S_PL = 3'd3, S_DIV = 3'd4, S_BC = 3'd5, S_DZ = 3'd6;
+		S_PL = 3'd3, S_DIV = 3'd4, S_BC = 3'd5, S_DZ = 3'd6, S_PREP0 = 3'd7;
 	localparam [31:0] ONE = 32'h3F800000;
-	reg [2:0] st;
-	reg [5:0] c;
+
+	wire rst_sync = !rst_n;
+	(* max_fanout = 16 *) reg [2:0] st;
+	(* max_fanout = 16 *) reg [5:0] c;
 	wire [5:0] c1;
 	wire c1_co_unused;
 	am_add #(.W(6)) u_c1 (.a(c), .b(6'd0), .ci(1'b1), .s(c1), .co(c1_co_unused));
 
 	/* Registered inputs to isolate RX/Frag logic from Bary arithmetic */
-	reg [383:0] r_pl;
-	reg [15:0] r_qx, r_qy, r_bx0, r_by0;
+	(* extract_reset = "no" *) reg [383:0] r_pl;
+	(* dont_touch = "true", extract_reset = "no" *) reg [15:0] r_qx_l [0:3];
+	(* dont_touch = "true", extract_reset = "no" *) reg [15:0] r_qy_l [0:3];
+	(* dont_touch = "true", extract_reset = "no" *) reg [15:0] r_bx0_l [0:3];
+	(* dont_touch = "true", extract_reset = "no" *) reg [15:0] r_by0_l [0:3];
 	reg [11:0] r_osel;
 
-	/* Stage 1: Lane coordinates (i, j) in eighths with offset */
-	reg [20:0] r_i8 [0:3];
-	reg [20:0] r_j8 [0:3];
+	/* Stage 0->1: Lane coordinates (i, j) in eighths with offset */
+	(* extract_reset = "no" *) reg [16:0] r_di [0:3];
+	(* extract_reset = "no" *) reg [16:0] r_dj [0:3];
+	(* extract_reset = "no" *) reg signed [4:0] r_ox8 [0:3];
+	(* extract_reset = "no" *) reg signed [4:0] r_oy8 [0:3];
+	(* extract_reset = "no" *) reg [20:0] r_i8 [0:3];
+	(* extract_reset = "no" *) reg [20:0] r_j8 [0:3];
+	wire [16:0] di_comb [0:3];
+	wire [16:0] dj_comb [0:3];
 	wire [20:0] i8_comb [0:3];
 	wire [20:0] j8_comb [0:3];
 	wire [23:0] ij_carry_unused;
 
-	/* Stage 2: Converted to fp32 */
-	reg [31:0] r_fi [0:3];
-	reg [31:0] r_fj [0:3];
+	/* Stage 2: Converted to fp32 via 5-stage pipeline */
+	(* extract_reset = "no" *) reg [31:0] r_fi [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_fj [0:3];
 	wire [31:0] fi_comb [0:3];
 	wire [31:0] fj_comb [0:3];
 
-	genvar gl;
+	genvar gl, gs, gh, gp;
 	generate
+	for (gs = 0; gs < 24; gs = gs + 1) begin : g_pl_reg
+		wire pl_we_raw = !rst_sync && (st == S_IDLE) && (i_start || i_dz);
+		wire pl_we_s;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_plw (.I0(pl_we_raw), .O(pl_we_s));
+`else
+		assign pl_we_s = pl_we_raw;
+`endif
+		always @(posedge clk) begin
+			if (pl_we_s)
+				r_pl[16 * gs +: 16] <= i_pl[16 * gs +: 16];
+		end
+	end
+
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_coord
+		wire idle_start_raw = !rst_sync && (st == S_IDLE) && i_start;
+		wire we_qx, we_qy, we_bx0, we_by0;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wqx  (.I0(idle_start_raw), .O(we_qx));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wqy  (.I0(idle_start_raw), .O(we_qy));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wbx0 (.I0(idle_start_raw), .O(we_bx0));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wby0 (.I0(idle_start_raw), .O(we_by0));
+`else
+		assign we_qx  = idle_start_raw;
+		assign we_qy  = idle_start_raw;
+		assign we_bx0 = idle_start_raw;
+		assign we_by0 = idle_start_raw;
+`endif
+
+		always @(posedge clk) begin
+			if (we_qx)  r_qx_l[gl]  <= i_qx;
+			if (we_qy)  r_qy_l[gl]  <= i_qy;
+			if (we_bx0) r_bx0_l[gl] <= i_bx0;
+			if (we_by0) r_by0_l[gl] <= i_by0;
+		end
+
 		wire [2:0] os = (gl == 3) ? r_osel[11:9] : (gl == 2) ? r_osel[8:6] :
 			(gl == 1) ? r_osel[5:3] : r_osel[2:0];
-		reg signed [3:0] ox8, oy8;
+		reg signed [4:0] ox8, oy8;
 		always @(*) begin
 			case (os)
-			3'd1: begin ox8 = -4'sd1; oy8 = -4'sd3; end
-			3'd2: begin ox8 = 4'sd3; oy8 = -4'sd1; end
-			3'd3: begin ox8 = -4'sd3; oy8 = 4'sd1; end
-			3'd4: begin ox8 = 4'sd1; oy8 = 4'sd3; end
-			default: begin ox8 = 4'sd0; oy8 = 4'sd0; end
+			3'd1: begin
+				ox8 = gl[0] ? 5'sd7  : -5'sd1;
+				oy8 = gl[1] ? 5'sd5  : -5'sd3;
+			end
+			3'd2: begin
+				ox8 = gl[0] ? 5'sd11 : 5'sd3;
+				oy8 = gl[1] ? 5'sd7  : -5'sd1;
+			end
+			3'd3: begin
+				ox8 = gl[0] ? 5'sd5  : -5'sd3;
+				oy8 = gl[1] ? 5'sd9  : 5'sd1;
+			end
+			3'd4: begin
+				ox8 = gl[0] ? 5'sd9  : 5'sd1;
+				oy8 = gl[1] ? 5'sd11 : 5'sd3;
+			end
+			default: begin
+				ox8 = gl[0] ? 5'sd8  : 5'sd0;
+				oy8 = gl[1] ? 5'sd8  : 5'sd0;
+			end
 			endcase
 		end
 
-		wire [16:0] qi, qj, di, dj;
-		am_add #(.W(17)) u_qi (.a({1'b0, r_qx}), .b(17'd0), .ci(gl[0]), .s(qi), .co(ij_carry_unused[6 * gl + 0]));
-		am_add #(.W(17)) u_qj (.a({1'b0, r_qy}), .b(17'd0), .ci(gl[1]), .s(qj), .co(ij_carry_unused[6 * gl + 1]));
-		am_sub #(.W(17)) u_di (.a(qi), .b({1'b0, r_bx0}), .bi(1'b0), .d(di), .bo(ij_carry_unused[6 * gl + 2]));
-		am_sub #(.W(17)) u_dj (.a(qj), .b({1'b0, r_by0}), .bi(1'b0), .d(dj), .bo(ij_carry_unused[6 * gl + 3]));
-		am_add #(.W(21)) u_i8 (.a({{1{di[16]}}, di, 3'd0}), .b({{17{ox8[3]}}, ox8}), .ci(1'b0), .s(i8_comb[gl]),
+		assign ij_carry_unused[6 * gl + 0] = 1'b0;
+		assign ij_carry_unused[6 * gl + 1] = 1'b0;
+		am_sub #(.W(17)) u_di (.a({1'b0, r_qx_l[gl]}), .b({1'b0, r_bx0_l[gl]}), .bi(1'b0), .d(di_comb[gl]), .bo(ij_carry_unused[6 * gl + 2]));
+		am_sub #(.W(17)) u_dj (.a({1'b0, r_qy_l[gl]}), .b({1'b0, r_by0_l[gl]}), .bi(1'b0), .d(dj_comb[gl]), .bo(ij_carry_unused[6 * gl + 3]));
+		am_add #(.W(21)) u_i8 (.a({{1{r_di[gl][16]}}, r_di[gl], 3'd0}), .b({{16{r_ox8[gl][4]}}, r_ox8[gl]}), .ci(1'b0), .s(i8_comb[gl]),
 			.co(ij_carry_unused[6 * gl + 4]));
-		am_add #(.W(21)) u_j8 (.a({{1{dj[16]}}, dj, 3'd0}), .b({{17{oy8[3]}}, oy8}), .ci(1'b0), .s(j8_comb[gl]),
+		am_add #(.W(21)) u_j8 (.a({{1{r_dj[gl][16]}}, r_dj[gl], 3'd0}), .b({{16{r_oy8[gl][4]}}, r_oy8[gl]}), .ci(1'b0), .s(j8_comb[gl]),
 			.co(ij_carry_unused[6 * gl + 5]));
-		am_fp_fix2f #(.W(21), .F(3), .SIGNED(1)) u_fi (.v(r_i8[gl]), .f(fi_comb[gl]));
-		am_fp_fix2f #(.W(21), .F(3), .SIGNED(1)) u_fj (.v(r_j8[gl]), .f(fj_comb[gl]));
+
+		atg_rx_fix2f_pipe #(.W(21), .F(3), .SIGNED(1)) u_fi (.clk(clk), .i_v(r_i8[gl]), .o_f(fi_comb[gl]));
+		atg_rx_fix2f_pipe #(.W(21), .F(3), .SIGNED(1)) u_fj (.clk(clk), .i_v(r_j8[gl]), .o_f(fj_comb[gl]));
+
+		wire prep0_raw = !rst_sync && (st == S_PREP0);
+		wire prep1_raw = !rst_sync && (st == S_PREP1);
+		wire prep2_raw = !rst_sync && (st == S_PREP2) && (c == 6'd5);
+		wire we_di_lo, we_dj_lo, we_didj_hi;
+		wire we_i8_lo, we_j8_lo, we_i8j8_hi;
+		wire we_fi_lo, we_fi_hi, we_fj_lo, we_fj_hi;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdil (.I0(prep0_raw), .O(we_di_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdjl (.I0(prep0_raw), .O(we_dj_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdih (.I0(prep0_raw), .O(we_didj_hi));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wi8l (.I0(prep1_raw), .O(we_i8_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wj8l (.I0(prep1_raw), .O(we_j8_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wi8h (.I0(prep1_raw), .O(we_i8j8_hi));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wfil (.I0(prep2_raw), .O(we_fi_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wfih (.I0(prep2_raw), .O(we_fi_hi));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wfjl (.I0(prep2_raw), .O(we_fj_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wfjh (.I0(prep2_raw), .O(we_fj_hi));
+`else
+		assign we_di_lo   = prep0_raw;
+		assign we_dj_lo   = prep0_raw;
+		assign we_didj_hi = prep0_raw;
+		assign we_i8_lo   = prep1_raw;
+		assign we_j8_lo   = prep1_raw;
+		assign we_i8j8_hi = prep1_raw;
+		assign we_fi_lo   = prep2_raw;
+		assign we_fi_hi   = prep2_raw;
+		assign we_fj_lo   = prep2_raw;
+		assign we_fj_hi   = prep2_raw;
+`endif
+
+		always @(posedge clk) begin
+			if (we_di_lo) r_di[gl][15:0] <= di_comb[gl][15:0];
+			if (we_dj_lo) r_dj[gl][15:0] <= dj_comb[gl][15:0];
+			if (we_didj_hi) begin
+				r_di[gl][16] <= di_comb[gl][16];
+				r_dj[gl][16] <= dj_comb[gl][16];
+				r_ox8[gl]    <= ox8;
+				r_oy8[gl]    <= oy8;
+			end
+			if (we_i8_lo) r_i8[gl][15:0] <= i8_comb[gl][15:0];
+			if (we_j8_lo) r_j8[gl][15:0] <= j8_comb[gl][15:0];
+			if (we_i8j8_hi) begin
+				r_i8[gl][20:16] <= i8_comb[gl][20:16];
+				r_j8[gl][20:16] <= j8_comb[gl][20:16];
+			end
+			if (we_fi_lo) r_fi[gl][15:0]  <= fi_comb[gl][15:0];
+			if (we_fi_hi) r_fi[gl][31:16] <= fi_comb[gl][31:16];
+			if (we_fj_lo) r_fj[gl][15:0]  <= fj_comb[gl][15:0];
+			if (we_fj_hi) r_fj[gl][31:16] <= fj_comb[gl][31:16];
+		end
 	end
 	endgenerate
 
@@ -107,14 +220,19 @@ module atg_rx_bary (
 	endfunction
 
 	/* Storage registers */
-	reg [31:0] v [0:3][0:3];	/* plane [0..3], lane [0..3] */
-	reg [31:0] rw [0:3];		/* reciprocal of 1/w */
-	reg [31:0] b0 [0:3];
-	reg [31:0] b1 [0:3];
-	reg [31:0] b2 [0:3];
-	reg [31:0] ds [0:3];
-	reg [31:0] r_t1_curr [0:3];
-	reg [31:0] r_fa2_b [0:3];
+	(* extract_reset = "no" *) reg [31:0] v [0:3][0:3];	/* plane [0..3], lane [0..3] */
+	(* extract_reset = "no" *) reg [31:0] rw [0:3];		/* reciprocal of 1/w */
+	(* extract_reset = "no" *) reg [31:0] b0 [0:3];
+	(* extract_reset = "no" *) reg [31:0] b1 [0:3];
+	(* extract_reset = "no" *) reg [31:0] b2 [0:3];
+	(* extract_reset = "no" *) reg [31:0] ds [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_t1_curr [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_fa2_b [0:3];
+
+	/* 4-Lane Parallel FP Dividers */
+	reg div_start;
+	wire [3:0] fd_busy, fd_done;
+	wire [31:0] fd_r [0:3];
 
 	/* Plane coefficients */
 	wire [31:0] pl_a [0:3];
@@ -128,98 +246,195 @@ module atg_rx_bary (
 	end
 	endgenerate
 
-	wire [31:0] cur_pl_a = (c[2:1] == 2'd0) ? pl_a[0] : (c[2:1] == 2'd1) ? pl_a[1] : (c[2:1] == 2'd2) ? pl_a[2] : pl_a[3];
-	wire [31:0] cur_pl_b = (c[2:1] == 2'd0) ? pl_b[0] : (c[2:1] == 2'd1) ? pl_b[1] : (c[2:1] == 2'd2) ? pl_b[2] : pl_b[3];
-
-	/* 4-Lane Parallel Multipliers, Stage 1 Adders, and Stage 2 Adders */
-	wire [31:0] fm_a [0:3];
-	wire [31:0] fm_b [0:3];
-	wire fm_v [0:3];
+	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fm_a [0:3];
+	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fm_b [0:3];
+	(* dont_touch = "true" *) reg [3:0] r_fm_v;
 	wire fm_o [0:3];
 	wire [31:0] fm_r [0:3];
 
-	wire [31:0] fa1_a [0:3];
-	wire [31:0] fa1_b [0:3];
-	wire fa1_sub [0:3];
-	wire fa1_v [0:3];
+	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fa1_a [0:3];
+	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fa1_b [0:3];
+	(* dont_touch = "true" *) reg [3:0] r_fa1_sub;
+	(* dont_touch = "true" *) reg [3:0] r_fa1_v;
 	wire fa1_o [0:3];
 	wire [31:0] fa1_r [0:3];
 
-	wire [31:0] fa2_a [0:3];
-	wire [31:0] fa2_b [0:3];
-	wire fa2_sub [0:3];
-	wire fa2_v [0:3];
+	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fa2_a [0:3];
+	(* dont_touch = "true" *) reg [3:0] r_fa2_sub;
+	(* dont_touch = "true" *) reg [3:0] r_fa2_v;
 	wire fa2_o [0:3];
 	wire [31:0] fa2_r [0:3];
 
-	reg is_bc;
-	always @(posedge clk) begin
-		if (!rst_n)
-			is_bc <= 1'b0;
-		else
-			is_bc <= (st == S_BC);
-	end
+	/* Pre-computed multiplier & adder inputs (registered 1 cycle ahead for 0-LUT input to fmul/fadd) */
+	wire fm_v_nxt = !rst_sync && (
+		(st == S_PL && c < 6'd8) ||
+		(st == S_BC && c < 6'd2) ||
+		(st == S_DZ && c < 6'd2));
+	wire fa1_v_nxt = !rst_sync && (
+		(st == S_PL && (c == 6'd6 || c == 6'd8 || c == 6'd10 || c == 6'd12)) ||
+		(st == S_BC && c == 6'd5) ||
+		(st == S_DZ && c == 6'd6));
+	wire fa2_v_nxt = !rst_sync && (
+		(st == S_PL && (c == 6'd11 || c == 6'd13 || c == 6'd15 || c == 6'd17)) ||
+		(st == S_BC && c == 6'd10));
+	wire is_bc_raw = (st == S_BC);
 
 	generate
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_fp_units
-		/* FP Multiplier */
-		assign fm_v[gl] = (st == S_PL && c < 6'd8) ||
-		                  (st == S_BC && c < 6'd2) ||
-		                  (st == S_DZ && c < 6'd2);
+		wire [31:0] sdx_c = sdx(gl[1:0]);
+		wire [31:0] sdy_c = sdy(gl[1:0]);
+`ifdef MUT_DZ_SIGN
+		wire [31:0] ds_nxt = {~fa1_r[gl][31], fa1_r[gl][30:0]};
+`else
+		wire [31:0] ds_nxt = fa1_r[gl];
+`endif
 
-		assign fm_a[gl] = (st == S_PL) ? (c[0] ? cur_pl_b : cur_pl_a) :
-		                  (st == S_BC) ? (c[0] ? v[3][gl] : v[2][gl]) :
-		                  (st == S_DZ) ? (c[0] ? pl_b[0] : pl_a[0]) : 32'd0;
+		wire is_bc_l, c0_l, c1_l, c2_l;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bcl (.I0(is_bc_raw), .O(is_bc_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c0l (.I0(c[0]),      .O(c0_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c1l (.I0(c[1]),      .O(c1_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c2l (.I0(c[2]),      .O(c2_l));
+`else
+		assign is_bc_l = is_bc_raw;
+		assign c0_l    = c[0];
+		assign c1_l    = c[1];
+		assign c2_l    = c[2];
+`endif
 
-		assign fm_b[gl] = (st == S_PL) ? (c[0] ? r_fj[gl] : r_fi[gl]) :
-		                  (st == S_BC) ? rw[gl] :
-		                  (st == S_DZ) ? (c[0] ? sdy(gl[1:0]) : sdx(gl[1:0])) : 32'd0;
+		for (gh = 0; gh < 2; gh = gh + 1) begin : g_half
+			wire is_pl_raw_h = (st == S_PL);
+			wire pl_c0_raw_h = (st == S_PL) && c[0];
+			wire dz_c0_raw_h = (st != S_PL) && (st != S_BC) && c[0];
+			wire is_pl_fmb, is_bc_fma, is_bc_fmb, is_bc_fa1;
+			wire c0_fma, pl_c0_fmb, dz_c0_fmb;
+			wire c1_a, c2_a, c1_b, c2_b;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_pl_b  (.I0(is_pl_raw_h), .O(is_pl_fmb));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bc_a  (.I0(is_bc_l),     .O(is_bc_fma));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bc_b  (.I0(is_bc_l),     .O(is_bc_fmb));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bc_f1 (.I0(is_bc_l),     .O(is_bc_fa1));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c0_a  (.I0(c0_l),        .O(c0_fma));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c1_a  (.I0(c1_l),        .O(c1_a));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c2_a  (.I0(c2_l),        .O(c2_a));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c1_b  (.I0(c1_l),        .O(c1_b));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c2_b  (.I0(c2_l),        .O(c2_b));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_pc0_b (.I0(pl_c0_raw_h), .O(pl_c0_fmb));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_dc0_b (.I0(dz_c0_raw_h), .O(dz_c0_fmb));
+`else
+			assign is_pl_fmb = is_pl_raw_h;
+			assign is_bc_fma = is_bc_l;
+			assign is_bc_fmb = is_bc_l;
+			assign is_bc_fa1 = is_bc_l;
+			assign c0_fma    = c0_l;
+			assign c1_a      = c1_l;
+			assign c2_a      = c2_l;
+			assign c1_b      = c1_l;
+			assign c2_b      = c2_l;
+			assign pl_c0_fmb = pl_c0_raw_h;
+			assign dz_c0_fmb = dz_c0_raw_h;
+`endif
+
+			(* keep = "true" *) wire [15:0] cur_pl_a_s = c2_a ?
+				(c1_a ? pl_a[3][16 * gh +: 16] : pl_a[2][16 * gh +: 16]) :
+				(c1_a ? pl_a[1][16 * gh +: 16] : pl_a[0][16 * gh +: 16]);
+			(* keep = "true" *) wire [15:0] cur_pl_b_s = c2_b ?
+				(c1_b ? pl_b[3][16 * gh +: 16] : pl_b[2][16 * gh +: 16]) :
+				(c1_b ? pl_b[1][16 * gh +: 16] : pl_b[0][16 * gh +: 16]);
+
+			wire [15:0] fm_a_s = is_bc_fma ? (c0_fma ? v[3][gl][16 * gh +: 16] : v[2][gl][16 * gh +: 16]) :
+				(c0_fma ? cur_pl_b_s : cur_pl_a_s);
+			wire [15:0] fm_b_s = is_pl_fmb ? (pl_c0_fmb ? r_fj[gl][16 * gh +: 16] : r_fi[gl][16 * gh +: 16]) :
+				(is_bc_fmb ? rw[gl][16 * gh +: 16] :
+				(dz_c0_fmb ? sdy_c[16 * gh +: 16] : sdx_c[16 * gh +: 16]));
+			wire [15:0] fa1_a_s = is_bc_fa1 ? ONE[16 * gh +: 16] : r_t1_curr[gl][16 * gh +: 16];
+
+			(* dont_touch = "true" *) wire we_t1_s = !rst_sync && (
+				(st == S_PL && (c == 6'd5 || c == 6'd7 || c == 6'd9 || c == 6'd11)) ||
+				(st == S_DZ && c == 6'd5));
+			(* dont_touch = "true" *) wire we_fa2b_s = !rst_sync && (
+				(st == S_PL && (c == 6'd11 || c == 6'd13 || c == 6'd15 || c == 6'd17)) ||
+				(st == S_BC && c == 6'd9));
+			wire fa2b_c0_raw = (c == 6'd11);
+			wire fa2b_c1_raw = (c == 6'd13);
+			wire fa2b_c2_raw = (c == 6'd15);
+			wire fa2b_bc_s, fa2b_c0_s, fa2b_c1_s, fa2b_c2_s;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fbc (.I0(is_bc_l),     .O(fa2b_bc_s));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fc0 (.I0(fa2b_c0_raw), .O(fa2b_c0_s));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fc1 (.I0(fa2b_c1_raw), .O(fa2b_c1_s));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fc2 (.I0(fa2b_c2_raw), .O(fa2b_c2_s));
+`else
+			assign fa2b_bc_s = is_bc_l;
+			assign fa2b_c0_s = fa2b_c0_raw;
+			assign fa2b_c1_s = fa2b_c1_raw;
+			assign fa2b_c2_s = fa2b_c2_raw;
+`endif
+
+			wire [15:0] fa2b_plc_s = fa2b_c0_s ? pl_c[0][16 * gh +: 16] :
+				fa2b_c1_s ? pl_c[1][16 * gh +: 16] :
+				fa2b_c2_s ? pl_c[2][16 * gh +: 16] : pl_c[3][16 * gh +: 16];
+			wire [15:0] fa2b_nxt_s = fa2b_bc_s ? b1[gl][16 * gh +: 16] : fa2b_plc_s;
+
+			(* dont_touch = "true" *) wire we_rw_s = !rst_sync && (st == S_DIV) && fd_done[0];
+			(* dont_touch = "true" *) wire we_b0_s = !rst_sync && (st == S_BC) && (c == 6'd5);
+			(* dont_touch = "true" *) wire we_b1_s = !rst_sync && (st == S_BC) && (c == 6'd6);
+			(* dont_touch = "true" *) wire we_b2_s = !rst_sync && (st == S_BC) && (c == 6'd15);
+			(* dont_touch = "true" *) wire we_ds_s = !rst_sync && (st == S_DZ) && (c == 6'd11);
+
+			always @(posedge clk) begin
+				r_fm_a[gl][16 * gh +: 16]  <= fm_a_s;
+				r_fm_b[gl][16 * gh +: 16]  <= fm_b_s;
+				r_fa1_a[gl][16 * gh +: 16] <= fa1_a_s;
+				r_fa1_b[gl][16 * gh +: 16] <= fm_r[gl][16 * gh +: 16];
+				r_fa2_a[gl][16 * gh +: 16] <= fa1_r[gl][16 * gh +: 16];
+				if (we_t1_s)   r_t1_curr[gl][16 * gh +: 16] <= fm_r[gl][16 * gh +: 16];
+				if (we_fa2b_s) r_fa2_b[gl][16 * gh +: 16]   <= fa2b_nxt_s;
+				if (we_rw_s)   rw[gl][16 * gh +: 16]        <= fd_r[gl][16 * gh +: 16];
+				if (we_b0_s)   b0[gl][16 * gh +: 16]        <= fm_r[gl][16 * gh +: 16];
+				if (we_b1_s)   b1[gl][16 * gh +: 16]        <= fm_r[gl][16 * gh +: 16];
+				if (we_b2_s)   b2[gl][16 * gh +: 16]        <= fa2_r[gl][16 * gh +: 16];
+				if (we_ds_s)   ds[gl][16 * gh +: 16]        <= ds_nxt[16 * gh +: 16];
+			end
+
+			for (gp = 0; gp < 4; gp = gp + 1) begin : g_v_plane
+				localparam [5:0] V_CYC = 6'd16 + 2 * gp;
+				(* dont_touch = "true" *) wire we_v_s = !rst_sync && (st == S_PL) && (c == V_CYC);
+				always @(posedge clk) begin
+					if (we_v_s)
+						v[gp][gl][16 * gh +: 16] <= fa2_r[gl][16 * gh +: 16];
+				end
+			end
+		end
+
+		always @(posedge clk) begin
+			r_fm_v[gl]    <= fm_v_nxt;
+			r_fa1_v[gl]   <= fa1_v_nxt;
+			r_fa1_sub[gl] <= is_bc_raw;
+			r_fa2_v[gl]   <= fa2_v_nxt;
+			r_fa2_sub[gl] <= is_bc_raw;
+		end
 
 		atg_rx_fmul #(.LAT(4)) u_fmul (
 			.clk(clk), .rst_n(rst_n),
-			.i_valid(fm_v[gl]), .i_a(fm_a[gl]), .i_b(fm_b[gl]),
+			.i_valid(r_fm_v[gl]), .i_a(r_fm_a[gl]), .i_b(r_fm_b[gl]),
 			.o_valid(fm_o[gl]), .o_r(fm_r[gl])
 		);
 
-		/* Stage 1 FP Adder */
-		assign fa1_v[gl] = (st == S_PL && (c == 6'd5 || c == 6'd7 || c == 6'd9 || c == 6'd11)) ||
-		                   (st == S_BC && c == 6'd4) ||
-		                   (st == S_DZ && c == 6'd5);
-
-		assign fa1_sub[gl] = is_bc;
-
-		assign fa1_a[gl] = is_bc ? ONE : r_t1_curr[gl];
-
-		assign fa1_b[gl] = fm_r[gl];
-
 		atg_rx_fadd #(.LAT(4)) u_fadd1 (
 			.clk(clk), .rst_n(rst_n),
-			.i_valid(fa1_v[gl]), .i_a(fa1_a[gl]), .i_b(fa1_b[gl]),
-			.i_sub(fa1_sub[gl]), .o_valid(fa1_o[gl]), .o_r(fa1_r[gl])
+			.i_valid(r_fa1_v[gl]), .i_a(r_fa1_a[gl]), .i_b(r_fa1_b[gl]),
+			.i_sub(r_fa1_sub[gl]), .o_valid(fa1_o[gl]), .o_r(fa1_r[gl])
 		);
-
-		/* Stage 2 FP Adder */
-		assign fa2_v[gl] = (st == S_PL && (c == 6'd9 || c == 6'd11 || c == 6'd13 || c == 6'd15)) ||
-		                   (st == S_BC && c == 6'd8);
-
-		assign fa2_sub[gl] = is_bc;
-
-		assign fa2_a[gl] = fa1_r[gl];
-
-		assign fa2_b[gl] = r_fa2_b[gl];
 
 		atg_rx_fadd #(.LAT(4)) u_fadd2 (
 			.clk(clk), .rst_n(rst_n),
-			.i_valid(fa2_v[gl]), .i_a(fa2_a[gl]), .i_b(fa2_b[gl]),
-			.i_sub(fa2_sub[gl]), .o_valid(fa2_o[gl]), .o_r(fa2_r[gl])
+			.i_valid(r_fa2_v[gl]), .i_a(r_fa2_a[gl]), .i_b(r_fa2_b[gl]),
+			.i_sub(r_fa2_sub[gl]), .o_valid(fa2_o[gl]), .o_r(fa2_r[gl])
 		);
 	end
 	endgenerate
 
-	/* 4-Lane Parallel FP Dividers */
-	reg div_start;
-	wire [3:0] fd_busy, fd_done;
-	wire [31:0] fd_r [0:3];
 	generate
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_fdiv
 		atg_rx_fdiv u_fdiv (
@@ -243,112 +458,45 @@ module atg_rx_bary (
 
 	assign busy = (st != S_IDLE);
 
-	integer p, lane_idx;
 	always @(posedge clk) begin
 		o_done <= 1'b0;
 		div_start <= 1'b0;
-		if (!rst_n) begin
+		if (rst_sync) begin
 			st <= S_IDLE;
 			c <= 6'd0;
-			r_pl <= 384'd0;
-			r_qx <= 16'd0;
-			r_qy <= 16'd0;
-			r_bx0 <= 16'd0;
-			r_by0 <= 16'd0;
 			r_osel <= 12'd0;
-			for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
-				r_i8[lane_idx] <= 21'd0;
-				r_j8[lane_idx] <= 21'd0;
-				r_fi[lane_idx] <= 32'd0;
-				r_fj[lane_idx] <= 32'd0;
-			end
-			for (p = 0; p < 4; p = p + 1)
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
-					v[p][lane_idx] <= 32'd0;
-				end
-			for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
-				r_t1_curr[lane_idx] <= 32'd0;
-				r_fa2_b[lane_idx] <= 32'd0;
-				rw[lane_idx] <= 32'd0;
-				b0[lane_idx] <= 32'd0;
-				b1[lane_idx] <= 32'd0;
-				b2[lane_idx] <= 32'd0;
-				ds[lane_idx] <= 32'd0;
-			end
 		end else case (st)
 		S_IDLE: begin
 			c <= 6'd0;
 			if (i_start) begin
-				r_pl <= i_pl;
-				r_qx <= i_qx;
-				r_qy <= i_qy;
-				r_bx0 <= i_bx0;
-				r_by0 <= i_by0;
 				r_osel <= i_osel;
-				st <= S_PREP1;
+				st <= S_PREP0;
 			end else if (i_dz) begin
-				r_pl <= i_pl;
 				st <= S_DZ;
 			end
 		end
 
+		S_PREP0: begin
+			st <= S_PREP1;
+		end
+
 		S_PREP1: begin
-			for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
-				r_i8[lane_idx] <= i8_comb[lane_idx];
-				r_j8[lane_idx] <= j8_comb[lane_idx];
-			end
+			c <= 6'd0;
 			st <= S_PREP2;
 		end
 
 		S_PREP2: begin
-			for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
-				r_fi[lane_idx] <= fi_comb[lane_idx];
-				r_fj[lane_idx] <= fj_comb[lane_idx];
+			if (c == 6'd5) begin
+				c <= 6'd0;
+				st <= S_PL;
+			end else begin
+				c <= c1;
 			end
-			c <= 6'd0;
-			st <= S_PL;
 		end
 
 		S_PL: begin
 			c <= c1;
-			/* Capture T0 = A*fi at c = 4, 6, 8, 10 */
-			if (c == 6'd4 || c == 6'd6 || c == 6'd8 || c == 6'd10) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					r_t1_curr[lane_idx] <= fm_r[lane_idx];
-			end
-			/* Pre-load fa2_b with plane C values at c = 8, 10, 12, 14 */
-			if (c == 6'd8) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					r_fa2_b[lane_idx] <= pl_c[0];
-			end
-			if (c == 6'd10) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					r_fa2_b[lane_idx] <= pl_c[1];
-			end
-			if (c == 6'd12) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					r_fa2_b[lane_idx] <= pl_c[2];
-			end
-			if (c == 6'd14) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					r_fa2_b[lane_idx] <= pl_c[3];
-			end
-			/* Capture final plane values at c = 13, 15, 17, 19 from fa2_r */
-			if (c == 6'd13) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					v[0][lane_idx] <= fa2_r[lane_idx];
-			end
-			if (c == 6'd15) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					v[1][lane_idx] <= fa2_r[lane_idx];
-			end
-			if (c == 6'd17) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					v[2][lane_idx] <= fa2_r[lane_idx];
-			end
-			if (c == 6'd19) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					v[3][lane_idx] <= fa2_r[lane_idx];
+			if (c == 6'd22) begin
 				div_start <= 1'b1;
 				c <= 6'd0;
 				st <= S_DIV;
@@ -358,8 +506,6 @@ module atg_rx_bary (
 		S_DIV: begin
 			/* 4 Parallel Dividers running */
 			if (fd_done[0]) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					rw[lane_idx] <= fd_r[lane_idx];
 				c <= 6'd0;
 				st <= S_BC;
 			end
@@ -367,21 +513,7 @@ module atg_rx_bary (
 
 		S_BC: begin
 			c <= c1;
-			if (c == 6'd4) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					b0[lane_idx] <= fm_r[lane_idx];
-			end
-			if (c == 6'd5) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					b1[lane_idx] <= fm_r[lane_idx];
-			end
-			if (c == 6'd7) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					r_fa2_b[lane_idx] <= b1[lane_idx];
-			end
-			if (c == 6'd12) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					b2[lane_idx] <= fa2_r[lane_idx];
+			if (c == 6'd15) begin
 				o_done <= 1'b1;
 				st <= S_IDLE;
 			end
@@ -389,18 +521,7 @@ module atg_rx_bary (
 
 		S_DZ: begin
 			c <= c1;
-			if (c == 6'd4) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1)
-					r_t1_curr[lane_idx] <= fm_r[lane_idx];
-			end
-			if (c == 6'd9) begin
-				for (lane_idx = 0; lane_idx < 4; lane_idx = lane_idx + 1) begin
-`ifdef MUT_DZ_SIGN
-					ds[lane_idx] <= {~fa1_r[lane_idx][31], fa1_r[lane_idx][30:0]};
-`else
-					ds[lane_idx] <= fa1_r[lane_idx];
-`endif
-				end
+			if (c == 6'd11) begin
 				o_done <= 1'b1;
 				st <= S_IDLE;
 			end
@@ -412,6 +533,7 @@ module atg_rx_bary (
 	end
 
 	wire unused_ok = &{1'b0,
+		c1_co_unused, ij_carry_unused,
 		fm_o[0], fm_o[1], fm_o[2], fm_o[3],
 		fa1_o[0], fa1_o[1], fa1_o[2], fa1_o[3],
 		fa2_o[0], fa2_o[1], fa2_o[2], fa2_o[3],

@@ -16,7 +16,8 @@ if ! /sbin/ldconfig -p | grep -q 'libncurses\.so\.5 '; then
 	export LD_LIBRARY_PATH
 fi
 
-export VIVADO_THREADS=${VIVADO_THREADS:-2}
-export VIVADO_MAX_THREADS=${VIVADO_MAX_THREADS:-2}
+export VIVADO_THREADS=2
+export VIVADO_MAX_THREADS=2
 
-exec vivado -mode batch "$@"
+# Strictly limit to 1 Vivado process across the host, at most 2 threads
+exec flock /tmp/vivado.lock vivado -mode batch "$@"

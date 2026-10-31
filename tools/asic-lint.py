@@ -21,6 +21,12 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+try:
+    import py_limit
+    py_limit.limit_concurrency(3)
+except ImportError:
+    pass
 
 # Terminal ANSI colors
 GREEN = "\033[92m"

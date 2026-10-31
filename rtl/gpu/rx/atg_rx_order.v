@@ -33,8 +33,10 @@ module atg_rx_order (
 	assign ord_valid = sq_req;
 	assign ord_seq = cnt;
 
+	(* keep = "true" *) wire rst_n_inv = !rst_n;
+
 	always @(posedge clk)
-		if (!rst_n)
+		if (rst_n_inv)
 			cnt <= 16'd0;
 		else if (sq_req)
 			cnt <= cnt1;

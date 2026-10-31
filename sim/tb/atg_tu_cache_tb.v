@@ -409,6 +409,9 @@ module atg_tu_cache_run #(
 		begin : b_assoc
 			reg [31:0] set_stride;
 			reg [31:0] l0, l1, l2, l3, l4;
+			inv <= 1'b1;
+			@(posedge clk);
+			inv <= 1'b0;
 			set_stride = 32'd2048;
 			l0 = 32'h00002000;
 			l1 = 32'h00002000 + set_stride;
@@ -433,10 +436,10 @@ module atg_tu_cache_run #(
 				$display("FAIL atg_tu_cache(%0d): 4-way lines not all cached", LINE_BYTES);
 			end
 
-			// Access l0, l1, l2 so l3 is least recently used
+			// Access l2, l0, l1 so l3 is least recently used in Tree-PLRU
+			a = {16{l2}}; quad(a, 16'd0, 4'h1, 48'h0, e);
 			a = {16{l0}}; quad(a, 16'd0, 4'h1, 48'h0, e);
 			a = {16{l1}}; quad(a, 16'd0, 4'h1, 48'h0, e);
-			a = {16{l2}}; quad(a, 16'd0, 4'h1, 48'h0, e);
 
 			// Now bring in 5th line l4 (must evict l3 via PLRU)
 			n0 = nreq;

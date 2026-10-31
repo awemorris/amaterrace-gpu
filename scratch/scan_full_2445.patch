@@ -1,0 +1,799 @@
+diff --git a/rtl/gpu/rx/atg_rx_scan.v b/rtl/gpu/rx/atg_rx_scan.v
+index ae7e70c..03317dc 100644
+--- a/rtl/gpu/rx/atg_rx_scan.v
++++ b/rtl/gpu/rx/atg_rx_scan.v
+@@ -91,10 +91,14 @@ module atg_rx_scan #(
+ );
+ 	`include "ghci_regs.vh"
+ 	localparam [3:0] S_IDLE = 4'd0, S_SEQ = 4'd1, S_TILE_WAIT = 4'd2, S_WALK = 4'd3,
+-		S_Z = 4'd4, S_EMIT = 4'd5, S_LAST = 4'd6, S_FREE = 4'd7, S_FQ = 4'd8, S_STEP = 4'd9;
+-	reg [3:0] st;
+-	reg wm;		/* warp mode: a non-raw triangle with an SU */
+-	reg fend;	/* S_FQ: the end marker (no quad) */
++		S_Z = 4'd4, S_EMIT = 4'd5, S_LAST = 4'd6, S_FREE = 4'd7, S_FQ = 4'd8, S_STEP = 4'd9,
++		S_SAMP = 4'd10, S_EVAL = 4'd11;
++	(* keep = "true" *) wire rst_n_inv = !rst_n;
++	(* fsm_encoding = "none", extract_enable = "no", max_fanout = 16 *) reg [3:0] st;
++	(* max_fanout = 16 *) reg r_tile_row_end;
++	(* max_fanout = 16 *) reg r_tile_col_end;
++	(* max_fanout = 16 *) reg wm;		/* warp mode: a non-raw triangle with an SU */
++	(* max_fanout = 16 *) reg fend;	/* S_FQ: the end marker (no quad) */
+ 
+ 	/* The triangle. */
+ 	reg signed [47:0] a8 [0:2];	/* A << 8: one pixel in x */
+@@ -114,7 +118,7 @@ module atg_rx_scan #(
+ 	reg [3:0] kill;
+ 
+ 	always @(posedge clk)
+-		if (!rst_n) begin
++		if (rst_n_inv) begin
+ 			ms4 <= 1'b0;
+ 			kill <= 4'd0;
+ 		end else if (st_we && st_idx == GHCI_S_MS_CTRL)
+@@ -144,13 +148,8 @@ module atg_rx_scan #(
+ 	genvar ge;
+ 	generate
+ 	for (ge = 0; ge < 3; ge = ge + 1) begin : g_er
+-		wire [47:0] ta8 = {{16{sp_tri[96 * ge + 23]}}, sp_tri[96 * ge +: 24], 8'd0};
+-		wire [47:0] tb8 = {{16{sp_tri[96 * ge + 47]}}, sp_tri[96 * ge + 24 +: 24], 8'd0};
+-		wire [47:0] er_a;
+-		am_sub #(.W(48)) u_er_a (.a(sp_tri[96 * ge + 48 +: 48]), .b(sp_tri[288] ? ta8 : 48'd0),
+-			.bi(1'b0), .d(er_a), .bo(ed_carry_unused[4 * ge]));
+-		am_sub #(.W(48)) u_er0 (.a(er_a), .b(sp_tri[304] ? tb8 : 48'd0), .bi(1'b0), .d(er0[ge]),
+-			.bo(ed_carry_unused[4 * ge + 1]));
++		assign er0[ge] = sp_tri[96 * ge + 48 +: 48];
++		assign ed_carry_unused[4 * ge +: 2] = 2'b00;
+ 		am_add #(.W(48)) u_ec_n (.a(ec[ge]), .b(a8[ge] <<< 1), .ci(1'b0), .s(ec_n[ge]),
+ 			.co(ed_carry_unused[4 * ge + 2]));
+ 		am_add #(.W(48)) u_er_n (.a(er[ge]), .b(b8[ge] <<< 1), .ci(1'b0), .s(er_n[ge]),
+@@ -186,6 +185,76 @@ module atg_rx_scan #(
+ 	end
+ 	endgenerate
+ 
++	wire s_e0_a_coarse, s_e0_b_coarse;
++	wire s_e1_a_coarse, s_e1_b_coarse;
++	wire s_e2_a_coarse, s_e2_b_coarse;
++	wire s_e0_a_scan, s_e0_b_scan;
++	wire s_e1_a_scan, s_e1_b_scan;
++	wire s_e2_a_scan, s_e2_b_scan;
++
++`ifdef SYNTH_KINTEX7
++	(* keep = "true", dont_touch = "true" *) wire s_e0_a_coarse_eval, s_e0_b_coarse_eval;
++	(* keep = "true", dont_touch = "true" *) wire s_e1_a_coarse_eval, s_e1_b_coarse_eval;
++	(* keep = "true", dont_touch = "true" *) wire s_e2_a_coarse_eval, s_e2_b_coarse_eval;
++	(* keep = "true", dont_touch = "true" *) wire s_e0_a_coarse_reg, s_e0_b_coarse_reg;
++	(* keep = "true", dont_touch = "true" *) wire s_e1_a_coarse_reg, s_e1_b_coarse_reg;
++	(* keep = "true", dont_touch = "true" *) wire s_e2_a_coarse_reg, s_e2_b_coarse_reg;
++	(* keep = "true", dont_touch = "true" *) wire s_e0_a_scan_ext, s_e0_b_scan_ext;
++	(* keep = "true", dont_touch = "true" *) wire s_e1_a_scan_ext, s_e1_b_scan_ext;
++	(* keep = "true", dont_touch = "true" *) wire s_e2_a_scan_ext, s_e2_b_scan_ext;
++
++	LUT1 #(.INIT(2'b10)) u_buf_se0ace (.I0(sp_tri[23]), .O(s_e0_a_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se0bce (.I0(sp_tri[47]), .O(s_e0_b_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se1ace (.I0(sp_tri[119]), .O(s_e1_a_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se1bce (.I0(sp_tri[143]), .O(s_e1_b_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se2ace (.I0(sp_tri[215]), .O(s_e2_a_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se2bce (.I0(sp_tri[239]), .O(s_e2_b_coarse_eval));
++
++	LUT1 #(.INIT(2'b10)) u_buf_se0acr (.I0(sp_tri[23]), .O(s_e0_a_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se0bcr (.I0(sp_tri[47]), .O(s_e0_b_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se1acr (.I0(sp_tri[119]), .O(s_e1_a_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se1bcr (.I0(sp_tri[143]), .O(s_e1_b_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se2acr (.I0(sp_tri[215]), .O(s_e2_a_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se2bcr (.I0(sp_tri[239]), .O(s_e2_b_coarse_reg));
++
++	LUT1 #(.INIT(2'b10)) u_buf_se0as (.I0(sp_tri[23]), .O(s_e0_a_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se0bs (.I0(sp_tri[47]), .O(s_e0_b_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se1as (.I0(sp_tri[119]), .O(s_e1_a_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se1bs (.I0(sp_tri[143]), .O(s_e1_b_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se2as (.I0(sp_tri[215]), .O(s_e2_a_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se2bs (.I0(sp_tri[239]), .O(s_e2_b_scan_ext));
++
++	wire [2:0] ms4_m0, ms4_m1, ms4_m2;
++	wire ms4_misc;
++	wire [47:0] lowm0_muxed, lowm1_muxed, lowm2_muxed;
++	genvar gms;
++	generate
++		for (gms = 0; gms < 3; gms = gms + 1) begin : g_ms4_buf
++			LUT1 #(.INIT(2'h2)) u_m0 (.I0(ms4), .O(ms4_m0[gms]));
++			LUT1 #(.INIT(2'h2)) u_m1 (.I0(ms4), .O(ms4_m1[gms]));
++			LUT1 #(.INIT(2'h2)) u_m2 (.I0(ms4), .O(ms4_m2[gms]));
++			assign lowm0_muxed[gms*16 +: 16] = ms4_m0[gms] ? lowmv[gms*16 +: 16] : 16'd0;
++			assign lowm1_muxed[gms*16 +: 16] = ms4_m1[gms] ? lowmv[48 + gms*16 +: 16] : 16'd0;
++			assign lowm2_muxed[gms*16 +: 16] = ms4_m2[gms] ? lowmv[96 + gms*16 +: 16] : 16'd0;
++		end
++	endgenerate
++	LUT1 #(.INIT(2'h2)) u_ms4_misc (.I0(ms4), .O(ms4_misc));
++`else
++	wire s_e0_a_coarse_eval = sp_tri[23], s_e0_b_coarse_eval = sp_tri[47];
++	wire s_e1_a_coarse_eval = sp_tri[119], s_e1_b_coarse_eval = sp_tri[143];
++	wire s_e2_a_coarse_eval = sp_tri[215], s_e2_b_coarse_eval = sp_tri[239];
++	wire s_e0_a_coarse_reg = sp_tri[23], s_e0_b_coarse_reg = sp_tri[47];
++	wire s_e1_a_coarse_reg = sp_tri[119], s_e1_b_coarse_reg = sp_tri[143];
++	wire s_e2_a_coarse_reg = sp_tri[215], s_e2_b_coarse_reg = sp_tri[239];
++	wire s_e0_a_scan_ext = sp_tri[23], s_e0_b_scan_ext = sp_tri[47];
++	wire s_e1_a_scan_ext = sp_tri[119], s_e1_b_scan_ext = sp_tri[143];
++	wire s_e2_a_scan_ext = sp_tri[215], s_e2_b_scan_ext = sp_tri[239];
++	wire [47:0] lowm0_muxed = ms4 ? lowmv[0 +: 48] : 48'd0;
++	wire [47:0] lowm1_muxed = ms4 ? lowmv[48 +: 48] : 48'd0;
++	wire [47:0] lowm2_muxed = ms4 ? lowmv[96 +: 48] : 48'd0;
++	wire ms4_misc = ms4;
++`endif
++
+ 	generate
+ 	if (COARSE_SCAN != 0) begin : g_coarse
+ 		atg_rx_coarse u_coarse (
+@@ -197,18 +266,18 @@ module atg_rx_scan #(
+ 			.bbox_min_y(sp_tri[319:304]),
+ 			.bbox_max_x(sp_tri[335:320]),
+ 			.bbox_max_y(sp_tri[351:336]),
+-			.e0_a8({{16{sp_tri[23]}}, sp_tri[0 +: 24], 8'd0}),
+-			.e0_b8({{16{sp_tri[47]}}, sp_tri[24 +: 24], 8'd0}),
++			.e0_a8({{16{s_e0_a_coarse_eval}}, sp_tri[0 +: 24], 8'd0}),
++			.e0_b8({{16{s_e0_b_coarse_eval}}, sp_tri[24 +: 24], 8'd0}),
+ 			.e0_er(er0[0]),
+-			.e1_a8({{16{sp_tri[96 + 23]}}, sp_tri[96 +: 24], 8'd0}),
+-			.e1_b8({{16{sp_tri[96 + 47]}}, sp_tri[96 + 24 +: 24], 8'd0}),
++			.e1_a8({{16{s_e1_a_coarse_eval}}, sp_tri[96 +: 24], 8'd0}),
++			.e1_b8({{16{s_e1_b_coarse_eval}}, sp_tri[96 + 24 +: 24], 8'd0}),
+ 			.e1_er(er0[1]),
+-			.e2_a8({{16{sp_tri[192 + 23]}}, sp_tri[192 +: 24], 8'd0}),
+-			.e2_b8({{16{sp_tri[192 + 47]}}, sp_tri[192 + 24 +: 24], 8'd0}),
++			.e2_a8({{16{s_e2_a_coarse_eval}}, sp_tri[192 +: 24], 8'd0}),
++			.e2_b8({{16{s_e2_b_coarse_eval}}, sp_tri[192 + 24 +: 24], 8'd0}),
+ 			.e2_er(er0[2]),
+-			.lowm0(ms4 ? lowmv[0 +: 48] : 48'd0),
+-			.lowm1(ms4 ? lowmv[48 +: 48] : 48'd0),
+-			.lowm2(ms4 ? lowmv[96 +: 48] : 48'd0),
++			.lowm0(lowm0_muxed),
++			.lowm1(lowm1_muxed),
++			.lowm2(lowm2_muxed),
+ 			.tile_valid(coarse_tile_valid),
+ 			.tile_ready(coarse_tile_ready),
+ 			.tile_x(coarse_tile_x),
+@@ -272,22 +341,57 @@ module atg_rx_scan #(
+ 	am_add #(.W(17)) u_qx2 (.a({1'b0, qx}), .b(17'd2), .ci(1'b0), .s(qx2), .co(qstep_carry_unused[2]));
+ 	am_add #(.W(17)) u_qy2 (.a({1'b0, qy}), .b(17'd2), .ci(1'b0), .s(qy2), .co(qstep_carry_unused[3]));
+ 
+-	/* Lane edge values at pixel centre: ec, + A, + B, + A + B */
+-	wire [12*48-1:0] lve;
++	/* Precompute ab8 = a8 + b8 */
++	reg signed [47:0] ab8 [0:2];
++	wire signed [47:0] ab8_comb [0:2];
++	wire [2:0] ab8_carry_unused;
++	generate
++	for (ge = 0; ge < 3; ge = ge + 1) begin : g_ab8
++		am_add #(.W(48)) u_ab8 (.a(a8[ge]), .b(b8[ge]), .ci(1'b0), .s(ab8_comb[ge]), .co(ab8_carry_unused[ge]));
++	end
++	endgenerate
++
++	/* Lane edge values at pixel centre: ec, + A, + B, + (A + B) */
++	wire [12*48-1:0] lve_comb;
+ 	wire [8:0] lve_carry_unused;
+ 	generate
+ 	for (ge = 0; ge < 3; ge = ge + 1) begin : g_lv
+-		assign lve[48 * (4 * ge) +: 48] = ec[ge];
+-		am_add #(.W(48)) u_la (.a(ec[ge]), .b(a8[ge]), .ci(1'b0), .s(lve[48 * (4 * ge + 1) +: 48]),
++		assign lve_comb[48 * (4 * ge) +: 48] = ec[ge];
++		am_add #(.W(48)) u_la (.a(ec[ge]), .b(a8[ge]), .ci(1'b0), .s(lve_comb[48 * (4 * ge + 1) +: 48]),
+ 			.co(lve_carry_unused[3 * ge + 0]));
+-		am_add #(.W(48)) u_lb (.a(ec[ge]), .b(b8[ge]), .ci(1'b0), .s(lve[48 * (4 * ge + 2) +: 48]),
++		am_add #(.W(48)) u_lb (.a(ec[ge]), .b(b8[ge]), .ci(1'b0), .s(lve_comb[48 * (4 * ge + 2) +: 48]),
+ 			.co(lve_carry_unused[3 * ge + 1]));
+-		am_add #(.W(48)) u_lab (.a(lve[48 * (4 * ge + 1) +: 48]), .b(b8[ge]), .ci(1'b0),
+-			.s(lve[48 * (4 * ge + 3) +: 48]),
++		am_add #(.W(48)) u_lab (.a(ec[ge]), .b(ab8[ge]), .ci(1'b0), .s(lve_comb[48 * (4 * ge + 3) +: 48]),
+ 			.co(lve_carry_unused[3 * ge + 2]));
+ 	end
+ 	endgenerate
+ 
++	/* Pipelined lve register to break carry chains between lve and sample adders */
++	(* extract_reset = "no" *) reg [12*48-1:0] r_lve;
++`ifdef SYNTH_KINTEX7
++	wire [2:0] we_lve_mid;
++	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wlm0 (.I0(st == S_WALK), .O(we_lve_mid[0]));
++	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wlm1 (.I0(st == S_WALK), .O(we_lve_mid[1]));
++	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wlm2 (.I0(st == S_WALK), .O(we_lve_mid[2]));
++	wire [35:0] we_lve_leaf;
++	genvar glv;
++	generate
++		for (glv = 0; glv < 36; glv = glv + 1) begin : g_we_lve_tree
++			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wlvl (.I0(we_lve_mid[glv / 12]), .O(we_lve_leaf[glv]));
++			always @(posedge clk) begin
++				if (we_lve_leaf[glv]) begin
++					r_lve[glv * 16 +: 16] <= lve_comb[glv * 16 +: 16];
++				end
++			end
++		end
++	endgenerate
++`else
++	always @(posedge clk) begin
++		if (st == S_WALK)
++			r_lve <= lve_comb;
++	end
++`endif
++
+ 	/* Parallel sample evaluation: 3 edges x 4 lanes x MSAA_SAMPLES */
+ 	wire [47:0] esamp_sign;
+ 	wire [47:0] esamp_carry_unused;
+@@ -299,7 +403,7 @@ module atg_rx_scan #(
+ 			wire signed [47:0] ope = cov_op[48 * ge +: 48];
+ 			wire signed [47:0] oqe = cov_oq[48 * ge +: 48];
+ 			for (gk = 0; gk < 4; gk = gk + 1) begin : g_samp_k
+-				wire signed [47:0] lve_val = lve[48 * (4 * ge + gk) +: 48];
++				wire signed [47:0] lve_val = r_lve[48 * (4 * ge + gk) +: 48];
+ 				for (gs = 0; gs < 4; gs = gs + 1) begin : g_samp_s
+ 					localparam integer idx = 16 * ge + 4 * gk + gs;
+ 					if (gs < MSAA_SAMPLES) begin : g_active_sample
+@@ -334,59 +438,58 @@ module atg_rx_scan #(
+ 	end
+ 	endgenerate
+ 
+-	/* Coverage logic */
+-	reg [3:0] inb;
++	/* Registered sample signs and edge signs to break carry chain before coverage logic */
++	(* dont_touch = "true", extract_reset = "no" *) reg [47:0] r_esamp_sign;
++	(* dont_touch = "true", extract_reset = "no" *) reg [11:0] r_lve_sign;
++	(* dont_touch = "true", extract_reset = "no" *) reg [3:0] r_inb;
++
++	/* Quad lane in-bounds logic: evaluated at S_WALK, registered to r_inb */
++	wire [3:0] inb_comb;
++	assign inb_comb[0] = !(qx < bx0 || qx >= bx1 || qy < by0 || qy >= by1);
++	assign inb_comb[1] = !(qx1 < {1'b0, bx0} || qx1 >= {1'b0, bx1} || qy < by0 || qy >= by1);
++	assign inb_comb[2] = !(qx < bx0 || qx >= bx1 || qy1 < {1'b0, by0} || qy1 >= {1'b0, by1});
++	assign inb_comb[3] = !(qx1 < {1'b0, bx0} || qx1 >= {1'b0, bx1} || qy1 < {1'b0, by0} || qy1 >= {1'b0, by1});
++
++	/* Coverage logic: purely random logic evaluated from flops in S_EVAL */
+ 	reg [3:0] cov_edge;
+ 	reg [3:0] ccov_comb;
+ 	reg [15:0] scov_comb;
+-	reg [2:0] far_edge;
+ 	integer e, ln, sm;
+ 
+ 	always @(*) begin
+-		far_edge = 3'b111;
+ 		for (ln = 0; ln < 4; ln = ln + 1) begin
+-			inb[ln] = !((ln[0] ? qx1 : {1'b0, qx}) < {1'b0, bx0} ||
+-			            (ln[0] ? qx1 : {1'b0, qx}) >= {1'b0, bx1} ||
+-			            (ln[1] ? qy1 : {1'b0, qy}) < {1'b0, by0} ||
+-			            (ln[1] ? qy1 : {1'b0, qy}) >= {1'b0, by1});
+-			cov_edge[ln] = inb[ln];
+-			ccov_comb[ln] = inb[ln];
++			cov_edge[ln] = r_inb[ln];
++			ccov_comb[ln] = r_inb[ln];
+ 			for (e = 0; e < 3; e = e + 1) begin
+-				if (lve[48 * (4 * e + ln) + 47]) begin
++				if (r_lve_sign[4 * e + ln]) begin
+ 					cov_edge[ln] = 1'b0;
+ 					ccov_comb[ln] = 1'b0;
+ 				end
+-				if (inb[ln] && !(lve[48 * (4 * e + ln) + 47] &&
+-				    (lve[48 * (4 * e + ln) +: 48] | lowmv[48 * e +: 48]) != {48{1'b1}}))
+-					far_edge[e] = 1'b0;
+ 			end
+-
+ 			for (sm = 0; sm < 4; sm = sm + 1) begin
+ 				if (ENABLE_MSAA != 0) begin
+-					scov_comb[4 * ln + sm] = inb[ln] && !kill[sm] && (sm < MSAA_SAMPLES) &&
+-						!esamp_sign[16 * 0 + 4 * ln + sm] &&
+-						!esamp_sign[16 * 1 + 4 * ln + sm] &&
+-						!esamp_sign[16 * 2 + 4 * ln + sm];
++					scov_comb[4 * ln + sm] = r_inb[ln] && !kill[sm] && (sm < MSAA_SAMPLES) &&
++						!r_esamp_sign[16 * 0 + 4 * ln + sm] &&
++						!r_esamp_sign[16 * 1 + 4 * ln + sm] &&
++						!r_esamp_sign[16 * 2 + 4 * ln + sm];
+ 				end else begin
+-					scov_comb[4 * ln + sm] = (sm == 0) ? (inb[ln] && !kill[0] && ccov_comb[ln]) : 1'b0;
++					scov_comb[4 * ln + sm] = (sm == 0) ? (r_inb[ln] && !kill[0] && ccov_comb[ln]) : 1'b0;
+ 				end
+ 			end
+ 		end
+ 	end
+ 
+-	wire skip_samp = (far_edge != 3'b000);
+-
+ 	/* Trivial accept quad coverage */
+ 	reg [3:0] cov_triv;
+ 	reg [15:0] scov_triv;
+ 	always @(*) begin
+ 		for (ln = 0; ln < 4; ln = ln + 1) begin
+-			cov_triv[ln] = inb[ln];
++			cov_triv[ln] = r_inb[ln];
+ 			for (sm = 0; sm < 4; sm = sm + 1) begin
+ 				if (ENABLE_MSAA != 0)
+-					scov_triv[4 * ln + sm] = inb[ln] && !kill[sm] && (sm < MSAA_SAMPLES);
++					scov_triv[4 * ln + sm] = r_inb[ln] && !kill[sm] && (sm < MSAA_SAMPLES);
+ 				else
+-					scov_triv[4 * ln + sm] = (sm == 0) ? (inb[ln] && !kill[0]) : 1'b0;
++					scov_triv[4 * ln + sm] = (sm == 0) ? (r_inb[ln] && !kill[0]) : 1'b0;
+ 			end
+ 		end
+ 	end
+@@ -394,14 +497,14 @@ module atg_rx_scan #(
+ 	/* Combined quad evaluation results */
+ 	wire [3:0] cur_cov = cur_trivial ? cov_triv : cov_edge;
+ 	wire [3:0] cur_ccov = cur_trivial ? cov_triv : ccov_comb;
+-	wire [15:0] cur_scov = cur_trivial ? scov_triv : (skip_samp ? 16'd0 : scov_comb);
++	wire [15:0] cur_scov = cur_trivial ? scov_triv : scov_comb;
+ 	wire [3:0] cov1 = cur_cov & ~{4{kill[0]}};
+ 
+ 	reg [15:0] scov_reg;
+ 	reg [3:0] ccov_reg;
+ 	reg [3:0] cov_reg;
+ 
+-	wire w_empty = wm ? (ms4 ? cur_scov == 16'd0 : cov1 == 4'd0) : cur_cov == 4'd0;
++	wire w_empty = wm ? (ms4_misc ? cur_scov == 16'd0 : cov1 == 4'd0) : cur_cov == 4'd0;
+ 
+ 	/* Stepping within 8x8 coarse tile or bounding box */
+ 	wire [15:0] cur_tx_end, cur_ty_end;
+@@ -418,7 +521,7 @@ module atg_rx_scan #(
+ 	endgenerate
+ 
+ 	wire tile_row_end = (qx2 >= {1'b0, cur_tx_end}) || (qx2 >= {1'b0, bx1});
+-	wire tile_quads_end = tile_row_end && ((qy2 >= {1'b0, cur_ty_end}) || (qy2 >= {1'b0, by1}));
++	wire tile_col_end = (qy2 >= {1'b0, cur_ty_end}) || (qy2 >= {1'b0, by1});
+ 
+ 	/* Depth: z = (Az i + Bz j) + Cz, i = x - bx0, j = y - by0, clamped to [0, 1].
+ 	 * Stage 0 (zc == 0): latch dx0, dx1, dy0, dy1 (17-bit sub).
+@@ -443,10 +546,10 @@ module atg_rx_scan #(
+ 	reg [16:0] r_dx0, r_dy0, r_dx1, r_dy1;
+ 
+ 	wire [31:0] f_dx0_comb, f_dy0_comb, f_dx1_comb, f_dy1_comb;
+-	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fdx0 (.v(r_dx0), .f(f_dx0_comb));
+-	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fdy0 (.v(r_dy0), .f(f_dy0_comb));
+-	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fdx1 (.v(r_dx1), .f(f_dx1_comb));
+-	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_fdy1 (.v(r_dy1), .f(f_dy1_comb));
++	am_fp_fix2f #(.W(17), .F(0), .SIGNED(0)) u_fdx0 (.v(r_dx0), .f(f_dx0_comb));
++	am_fp_fix2f #(.W(17), .F(0), .SIGNED(0)) u_fdy0 (.v(r_dy0), .f(f_dy0_comb));
++	am_fp_fix2f #(.W(17), .F(0), .SIGNED(0)) u_fdx1 (.v(r_dx1), .f(f_dx1_comb));
++	am_fp_fix2f #(.W(17), .F(0), .SIGNED(0)) u_fdy1 (.v(r_dy1), .f(f_dy1_comb));
+ 
+ 	reg [31:0] r_fdx0, r_fdy0, r_fdx1, r_fdy1;
+ 
+@@ -454,9 +557,11 @@ module atg_rx_scan #(
+ 	wire r_zl_co_unused;
+ 	am_add #(.W(2)) u_zl_inc (.a(r_zl), .b(2'd0), .ci(1'b1), .s(r_zl_next), .co(r_zl_co_unused));
+ 
+-	wire fm_v = (st == S_Z) && (zc >= 5'd2) && (zc < 5'd10);
+-	wire [31:0] fm_a = (zc < 5'd6) ? az : bz;
+-	wire [31:0] fm_b = (zc < 5'd6) ? (r_zl[0] ? r_fdx1 : r_fdx0) : (r_zl[1] ? r_fdy1 : r_fdy0);
++	reg r_is_bz;
++	reg r_fm_v;
++	wire fm_v = r_fm_v;
++	wire [31:0] fm_a = r_is_bz ? bz : az;
++	wire [31:0] fm_b = r_is_bz ? (r_zl[1] ? r_fdy1 : r_fdy0) : (r_zl[0] ? r_fdx1 : r_fdx0);
+ 
+ 	reg r_fa_v;
+ 	reg [31:0] r_fa_a, r_fa_b;
+@@ -483,19 +588,195 @@ module atg_rx_scan #(
+ 	reg [127:0] p_z;
+ 	reg [15:0] seq;
+ 
++`ifdef SYNTH_KINTEX7
++	wire [7:0] clr_zv_leaf;
++	wire [7:0] we_zv_leaf;
++	wire [7:0] we_pz_leaf;
++	wire [7:0] we_dxd_leaf;
++	wire [1:0] we_dxy_leaf;
++	wire [1:0] we_pxy_leaf;
++
++	wire we_pz_raw = (st == S_EMIT) && (!pend || (dx_valid && dx_ready));
++	wire we_dxd_raw = ((st == S_EMIT) && pend && !(dx_valid && dx_ready)) ||
++	                  ((st == S_LAST) && !(dx_valid && dx_ready));
++	wire we_dxy_raw = we_dxd_raw;
++	wire we_pxy_raw = we_pz_raw;
++
++	genvar gzs;
++	generate
++		for (gzs = 0; gzs < 8; gzs = gzs + 1) begin : g_zv_slices
++			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_czv (.I0(st == S_Z && zc == 5'd0), .O(clr_zv_leaf[gzs]));
++			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wzv (.I0(st == S_Z && zc == (5'd20 + (gzs / 2)) && zmask[gzs / 2]), .O(we_zv_leaf[gzs]));
++			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wpz (.I0(we_pz_raw), .O(we_pz_leaf[gzs]));
++			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdz (.I0(we_dxd_raw), .O(we_dxd_leaf[gzs]));
++
++			always @(posedge clk) begin
++				if (clr_zv_leaf[gzs])
++					zv[gzs * 16 +: 16] <= 16'd0;
++				else if (we_zv_leaf[gzs])
++					zv[gzs * 16 +: 16] <= (gzs % 2 == 0) ? zcl[15:0] : zcl[31:16];
++			end
++
++			always @(posedge clk) begin
++				if (we_pz_leaf[gzs])
++					p_z[gzs * 16 +: 16] <= zv[gzs * 16 +: 16];
++			end
++
++			always @(posedge clk) begin
++				if (we_dxd_leaf[gzs])
++					dx_depth[gzs * 16 +: 16] <= ((st == S_LAST) && !pend) ? 16'd0 : p_z[gzs * 16 +: 16];
++			end
++		end
++		for (gzs = 0; gzs < 2; gzs = gzs + 1) begin : g_xy_slices
++			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdx (.I0(we_dxy_raw), .O(we_dxy_leaf[gzs]));
++			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wpx (.I0(we_pxy_raw), .O(we_pxy_leaf[gzs]));
++
++			always @(posedge clk) begin
++				if (we_pxy_leaf[gzs])
++					p_xy[gzs * 16 +: 16] <= (gzs == 0) ? qx : qy;
++			end
++
++			always @(posedge clk) begin
++				if (we_dxy_leaf[gzs])
++					dx_xy[gzs * 16 +: 16] <= ((st == S_LAST) && !pend) ?
++						((gzs == 0) ? {bx0[15:1], 1'b0} : {by0[15:1], 1'b0}) :
++						p_xy[gzs * 16 +: 16];
++			end
++		end
++	endgenerate
++
++	wire we_sp_idle = (st == S_IDLE) && sp_valid;
++	(* keep = "true", dont_touch = "true" *) wire [2:0] we_sp_branch;
++	LUT1 #(.INIT(2'h2)) u_sp_b0 (.I0(we_sp_idle), .O(we_sp_branch[0]));
++	LUT1 #(.INIT(2'h2)) u_sp_b1 (.I0(we_sp_idle), .O(we_sp_branch[1]));
++	LUT1 #(.INIT(2'h2)) u_sp_b2 (.I0(we_sp_idle), .O(we_sp_branch[2]));
++
++	(* keep = "true", dont_touch = "true" *) wire [8:0] we_a8_l, we_b8_l;
++	(* keep = "true", dont_touch = "true" *) wire [3:0] we_bbox_l;
++	(* keep = "true", dont_touch = "true" *) wire [5:0] we_z_l;
++	genvar gsp;
++	generate
++		for (gsp = 0; gsp < 9; gsp = gsp + 1) begin : g_sp_leaves
++			localparam integer BR = (gsp < 3) ? 0 : (gsp < 6) ? 1 : 2;
++			LUT1 #(.INIT(2'h2)) u_wea (.I0(we_sp_branch[BR]), .O(we_a8_l[gsp]));
++			LUT1 #(.INIT(2'h2)) u_web (.I0(we_sp_branch[BR]), .O(we_b8_l[gsp]));
++		end
++		for (gsp = 0; gsp < 4; gsp = gsp + 1) begin : g_bbox_leaves
++			LUT1 #(.INIT(2'h2)) u_webb (.I0(we_sp_branch[0]), .O(we_bbox_l[gsp]));
++		end
++		for (gsp = 0; gsp < 6; gsp = gsp + 1) begin : g_z_leaves
++			LUT1 #(.INIT(2'h2)) u_wez (.I0(we_sp_branch[1]), .O(we_z_l[gsp]));
++		end
++	endgenerate
++
++	wire [47:0] in_a8_comb [0:2];
++	wire [47:0] in_b8_comb [0:2];
++	assign in_a8_comb[0] = {{16{s_e0_a_scan_ext}}, sp_tri[0 +: 24], 8'd0};
++	assign in_b8_comb[0] = {{16{s_e0_b_scan_ext}}, sp_tri[24 +: 24], 8'd0};
++	assign in_a8_comb[1] = {{16{s_e1_a_scan_ext}}, sp_tri[96 +: 24], 8'd0};
++	assign in_b8_comb[1] = {{16{s_e1_b_scan_ext}}, sp_tri[120 +: 24], 8'd0};
++	assign in_a8_comb[2] = {{16{s_e2_a_scan_ext}}, sp_tri[192 +: 24], 8'd0};
++	assign in_b8_comb[2] = {{16{s_e2_b_scan_ext}}, sp_tri[216 +: 24], 8'd0};
++
++	generate
++		for (gsp = 0; gsp < 9; gsp = gsp + 1) begin : g_a8_b8_reg
++			localparam integer EK = gsp / 3;
++			localparam integer SK = gsp % 3;
++			always @(posedge clk) begin
++				if (we_a8_l[gsp]) a8[EK][SK*16 +: 16] <= in_a8_comb[EK][SK*16 +: 16];
++				if (we_b8_l[gsp]) b8[EK][SK*16 +: 16] <= in_b8_comb[EK][SK*16 +: 16];
++			end
++		end
++	endgenerate
++
++	always @(posedge clk) begin
++		if (we_bbox_l[0]) bx0 <= sp_tri[303:288];
++		if (we_bbox_l[1]) by0 <= sp_tri[319:304];
++		if (we_bbox_l[2]) bx1 <= sp_tri[335:320];
++		if (we_bbox_l[3]) by1 <= sp_tri[351:336];
++	end
++
++	always @(posedge clk) begin
++		if (we_z_l[0]) az[15:0]  <= sp_tri[367:352];
++		if (we_z_l[1]) az[31:16] <= sp_tri[383:368];
++		if (we_z_l[2]) bz[15:0]  <= sp_tri[399:384];
++		if (we_z_l[3]) bz[31:16] <= sp_tri[415:400];
++		if (we_z_l[4]) cz[15:0]  <= sp_tri[431:416];
++		if (we_z_l[5]) cz[31:16] <= sp_tri[447:432];
++	end
++
++	wire we_dx_raw = (st == S_Z) && (zc == 5'd0);
++	(* keep = "true", dont_touch = "true" *) wire [7:0] we_dx_leaf;
++	genvar gdx;
++	generate
++		for (gdx = 0; gdx < 8; gdx = gdx + 1) begin : g_we_dx
++			LUT1 #(.INIT(2'h2)) u_wdx (.I0(we_dx_raw), .O(we_dx_leaf[gdx]));
++		end
++	endgenerate
++	always @(posedge clk) begin
++		if (we_dx_leaf[0]) r_dx0[15:0]  <= dx0_comb[15:0];
++		if (we_dx_leaf[1]) r_dx0[16]    <= dx0_comb[16];
++		if (we_dx_leaf[2]) r_dy0[15:0]  <= dy0_comb[15:0];
++		if (we_dx_leaf[3]) r_dy0[16]    <= dy0_comb[16];
++		if (we_dx_leaf[4]) r_dx1[15:0]  <= dx1_comb[15:0];
++		if (we_dx_leaf[5]) r_dx1[16]    <= dx1_comb[16];
++		if (we_dx_leaf[6]) r_dy1[15:0]  <= dy1_comb[15:0];
++		if (we_dx_leaf[7]) r_dy1[16]    <= dy1_comb[16];
++	end
++
++	wire we_fdx_raw = (st == S_Z) && (zc == 5'd1);
++	(* keep = "true", dont_touch = "true" *) wire [7:0] we_fdx_leaf;
++	generate
++		for (gdx = 0; gdx < 8; gdx = gdx + 1) begin : g_we_fdx
++			LUT1 #(.INIT(2'h2)) u_wfdx (.I0(we_fdx_raw), .O(we_fdx_leaf[gdx]));
++		end
++	endgenerate
++	always @(posedge clk) begin
++		if (we_fdx_leaf[0]) r_fdx0[15:0]  <= f_dx0_comb[15:0];
++		if (we_fdx_leaf[1]) r_fdx0[31:16] <= f_dx0_comb[31:16];
++		if (we_fdx_leaf[2]) r_fdy0[15:0]  <= f_dy0_comb[15:0];
++		if (we_fdx_leaf[3]) r_fdy0[31:16] <= f_dy0_comb[31:16];
++		if (we_fdx_leaf[4]) r_fdx1[15:0]  <= f_dx1_comb[15:0];
++		if (we_fdx_leaf[5]) r_fdx1[31:16] <= f_dx1_comb[31:16];
++		if (we_fdx_leaf[6]) r_fdy1[15:0]  <= f_dy1_comb[15:0];
++		if (we_fdx_leaf[7]) r_fdy1[31:16] <= f_dy1_comb[31:16];
++	end
++
++	(* keep = "true", dont_touch = "true" *) wire [7:0] we_t1_leaf;
++	LUT1 #(.INIT(2'h2)) u_wt0_l (.I0((st == S_Z) && (zc == 5'd6)), .O(we_t1_leaf[0]));
++	LUT1 #(.INIT(2'h2)) u_wt0_h (.I0((st == S_Z) && (zc == 5'd6)), .O(we_t1_leaf[1]));
++	LUT1 #(.INIT(2'h2)) u_wt1_l (.I0((st == S_Z) && (zc == 5'd7)), .O(we_t1_leaf[2]));
++	LUT1 #(.INIT(2'h2)) u_wt1_h (.I0((st == S_Z) && (zc == 5'd7)), .O(we_t1_leaf[3]));
++	LUT1 #(.INIT(2'h2)) u_wt2_l (.I0((st == S_Z) && (zc == 5'd8)), .O(we_t1_leaf[4]));
++	LUT1 #(.INIT(2'h2)) u_wt2_h (.I0((st == S_Z) && (zc == 5'd8)), .O(we_t1_leaf[5]));
++	LUT1 #(.INIT(2'h2)) u_wt3_l (.I0((st == S_Z) && (zc == 5'd9)), .O(we_t1_leaf[6]));
++	LUT1 #(.INIT(2'h2)) u_wt3_h (.I0((st == S_Z) && (zc == 5'd9)), .O(we_t1_leaf[7]));
++
++	always @(posedge clk) begin
++		if (we_t1_leaf[0]) t1_0[15:0]  <= fm_r[15:0];
++		if (we_t1_leaf[1]) t1_0[31:16] <= fm_r[31:16];
++		if (we_t1_leaf[2]) t1_1[15:0]  <= fm_r[15:0];
++		if (we_t1_leaf[3]) t1_1[31:16] <= fm_r[31:16];
++		if (we_t1_leaf[4]) t1_2[15:0]  <= fm_r[15:0];
++		if (we_t1_leaf[5]) t1_2[31:16] <= fm_r[31:16];
++		if (we_t1_leaf[6]) t1_3[15:0]  <= fm_r[15:0];
++		if (we_t1_leaf[7]) t1_3[31:16] <= fm_r[31:16];
++	end
++`endif
++
+ 	assign sp_ready = (st == S_IDLE);
+ 	assign sq_req = (st == S_SEQ && !wm);
+ 	assign fq_valid = (st == S_FQ);
+ 	assign fq_xy = {qy, qx};
+-	assign fq_scov = fend ? 16'd0 : ms4 ? scov_reg :
++	assign fq_scov = fend ? 16'd0 : ms4_misc ? scov_reg :
+ 		{3'd0, cov_reg[3] & ~kill[0], 3'd0, cov_reg[2] & ~kill[0], 3'd0, cov_reg[1] & ~kill[0], 3'd0, cov_reg[0] & ~kill[0]};
+-	assign fq_ccov = fend ? 4'd0 : ms4 ? ccov_reg : cov_reg;
++	assign fq_ccov = fend ? 4'd0 : ms4_misc ? ccov_reg : cov_reg;
+ 	assign fq_end = fend;
+ 	assign busy = (st != S_IDLE);
+ 
+ 	always @(posedge clk) begin
+ 		pt_free <= 1'b0;
+-		if (!rst_n) begin
++		if (rst_n_inv) begin
+ 			st <= S_IDLE;
+ 			dx_valid <= 1'b0;
+ 			coarse_tri_valid <= 1'b0;
+@@ -512,49 +793,55 @@ module atg_rx_scan #(
+ 			fi <= 2'd0;
+ 			zc <= 5'd0;
+ 			r_zl <= 2'd0;
+-			r_dx0 <= 17'd0;
+-			r_dy0 <= 17'd0;
+-			r_dx1 <= 17'd0;
+-			r_dy1 <= 17'd0;
+-			r_fdx0 <= 32'd0;
+-			r_fdy0 <= 32'd0;
+-			r_fdx1 <= 32'd0;
+-			r_fdy1 <= 32'd0;
++			r_is_bz <= 1'b0;
++			r_fm_v <= 1'b0;
+ 			r_fa_v <= 1'b0;
+-			r_fa_a <= 32'd0;
+-			r_fa_b <= 32'd0;
+-			t1_0 <= 32'd0;
+-			t1_1 <= 32'd0;
+-			t1_2 <= 32'd0;
+-			t1_3 <= 32'd0;
+ 			zmask <= 4'd0;
+-			zv <= 128'd0;
+-			p_xy <= 32'd0;
+ 			p_mask <= 4'd0;
+-			p_z <= 128'd0;
+ 			seq <= 16'd0;
+ 			dx_seq <= 16'd0;
+-			dx_xy <= 32'd0;
+ 			dx_mask <= 4'd0;
+-			dx_depth <= 128'd0;
+ 			dx_last <= 1'b0;
++			r_esamp_sign <= 48'd0;
++			r_lve_sign <= 12'd0;
++			r_inb <= 4'd0;
++			r_tile_row_end <= 1'b0;
++			r_tile_col_end <= 1'b0;
+ 		end else case (st)
+ 		S_IDLE: begin
+ 			coarse_tile_ready <= 1'b0;
++			r_fm_v <= 1'b0;
++			r_is_bz <= 1'b0;
+ 			if (sp_valid) begin
+-				for (k = 0; k < 3; k = k + 1) begin
+-					a8[k] <= {{16{sp_tri[96 * k + 23]}}, sp_tri[96 * k +: 24], 8'd0};
+-					b8[k] <= {{16{sp_tri[96 * k + 47]}}, sp_tri[96 * k + 24 +: 24], 8'd0};
+-					er[k] <= er0[k];
+-					ec[k] <= er0[k];
+-				end
++`ifndef SYNTH_KINTEX7
++				a8[0] <= {{16{s_e0_a_scan}}, sp_tri[0 +: 24], 8'd0};
++				b8[0] <= {{16{s_e0_b_scan}}, sp_tri[24 +: 24], 8'd0};
++`endif
++				er[0] <= er0[0];
++				ec[0] <= er0[0];
++`ifndef SYNTH_KINTEX7
++				a8[1] <= {{16{s_e1_a_scan}}, sp_tri[96 +: 24], 8'd0};
++				b8[1] <= {{16{s_e1_b_scan}}, sp_tri[120 +: 24], 8'd0};
++`endif
++				er[1] <= er0[1];
++				ec[1] <= er0[1];
++`ifndef SYNTH_KINTEX7
++				a8[2] <= {{16{s_e2_a_scan}}, sp_tri[192 +: 24], 8'd0};
++				b8[2] <= {{16{s_e2_b_scan}}, sp_tri[216 +: 24], 8'd0};
++`endif
++				er[2] <= er0[2];
++				ec[2] <= er0[2];
++`ifndef SYNTH_KINTEX7
+ 				bx0 <= sp_tri[303:288];
+ 				by0 <= sp_tri[319:304];
+ 				bx1 <= sp_tri[335:320];
+ 				by1 <= sp_tri[351:336];
++`endif
+ 				qx <= {sp_tri[303:289], 1'b0};
+ 				qy <= {sp_tri[319:305], 1'b0};
++`ifndef SYNTH_KINTEX7
+ 				{cz, bz, az} <= sp_tri[447:352];
++`endif
+ 				ent <= sp_tri[759:736];
+ 				fl <= sp_tri[762:760];
+ 				raw <= sp_tri[764];
+@@ -576,6 +863,9 @@ module atg_rx_scan #(
+ 			coarse_tri_valid <= 1'b0;
+ 			coarse_tile_ready <= 1'b0;
+ 			seq <= sq_seq;
++			ab8[0] <= ab8_comb[0];
++			ab8[1] <= ab8_comb[1];
++			ab8[2] <= ab8_comb[2];
+ 			if (COARSE_SCAN != 0) begin
+ 				st <= S_TILE_WAIT;
+ 			end else begin
+@@ -616,9 +906,23 @@ module atg_rx_scan #(
+ 
+ 		S_WALK: begin
+ 			coarse_tile_ready <= 1'b0;
++			r_inb <= inb_comb;
++			r_tile_row_end <= tile_row_end;
++			r_tile_col_end <= tile_col_end;
++			st <= S_SAMP;
++		end
++
++		S_SAMP: begin
++			r_esamp_sign <= esamp_sign;
++			for (k = 0; k < 12; k = k + 1)
++				r_lve_sign[k] <= r_lve[48 * k + 47];
++			st <= S_EVAL;
++		end
++
++		S_EVAL: begin
+ 			scov_reg <= cur_scov;
+ 			ccov_reg <= cur_ccov;
+-			cov_reg <= cur_cov;
++			cov_reg  <= cur_cov;
+ 			if (!w_empty && wm) begin
+ 				st <= S_FQ;
+ 			end else if (!w_empty) begin
+@@ -631,7 +935,7 @@ module atg_rx_scan #(
+ 		end
+ 
+ 		S_STEP: begin
+-			if (tile_quads_end) begin
++			if (r_tile_row_end && r_tile_col_end) begin
+ 				/* End of quads in this coarse tile */
+ 				if (cur_last_tile) begin
+ 					fend <= wm;
+@@ -654,7 +958,7 @@ module atg_rx_scan #(
+ 				end
+ 			end else begin
+ 				/* Step to next quad within tile */
+-				if (tile_row_end) begin
++				if (r_tile_row_end) begin
+ 					qx <= cur_tx;
+ 					qy <= qy2[15:0];
+ 					for (k = 0; k < 3; k = k + 1) begin
+@@ -684,25 +988,35 @@ module atg_rx_scan #(
+ 		S_Z: begin
+ 			zc <= zc1;
+ 			if (zc == 5'd0) begin
++`ifndef SYNTH_KINTEX7
+ 				zv <= 128'd0;
+ 				r_dx0 <= dx0_comb;
+ 				r_dy0 <= dy0_comb;
+ 				r_dx1 <= dx1_comb;
+ 				r_dy1 <= dy1_comb;
++`endif
+ 			end
+ 			if (zc == 5'd1) begin
++`ifndef SYNTH_KINTEX7
+ 				r_fdx0 <= f_dx0_comb;
+ 				r_fdy0 <= f_dy0_comb;
+ 				r_fdx1 <= f_dx1_comb;
+ 				r_fdy1 <= f_dy1_comb;
++`endif
+ 				r_zl <= 2'd0;
++				r_is_bz <= 1'b0;
++				r_fm_v <= 1'b1;
+ 			end else if (zc >= 5'd2) begin
+ 				r_zl <= r_zl_next;
+ 			end
++			if (zc == 5'd5) r_is_bz <= 1'b1;
++			if (zc == 5'd9) r_fm_v <= 1'b0;
++`ifndef SYNTH_KINTEX7
+ 			if (zc == 5'd6) t1_0 <= fm_r;
+ 			if (zc == 5'd7) t1_1 <= fm_r;
+ 			if (zc == 5'd8) t1_2 <= fm_r;
+ 			if (zc == 5'd9) t1_3 <= fm_r;
++`endif
+ 
+ 			if (zc == 5'd10) begin r_fa_v <= 1'b1; r_fa_a <= t1_0; r_fa_b <= fm_r; end
+ 			if (zc == 5'd11) begin r_fa_v <= 1'b1; r_fa_a <= t1_1; r_fa_b <= fm_r; end
+@@ -716,10 +1030,12 @@ module atg_rx_scan #(
+ 			if (zc == 5'd18) begin r_fa_v <= 1'b1; r_fa_a <= fa_r; r_fa_b <= cz; end
+ 			if (zc == 5'd19) begin r_fa_v <= 1'b0; end
+ 
++`ifndef SYNTH_KINTEX7
+ 			if (zc == 5'd20 && zmask[0]) zv[31:0] <= zcl;
+ 			if (zc == 5'd21 && zmask[1]) zv[63:32] <= zcl;
+ 			if (zc == 5'd22 && zmask[2]) zv[95:64] <= zcl;
+ 			if (zc == 5'd23 && zmask[3]) zv[127:96] <= zcl;
++`endif
+ 			if (zc == 5'd23)
+ 				st <= S_EMIT;
+ 		end
+@@ -728,17 +1044,21 @@ module atg_rx_scan #(
+ 			if (pend && !(dx_valid && dx_ready)) begin
+ 				dx_valid <= 1'b1;
+ 				dx_seq <= seq;
+-				dx_xy <= p_xy;
+ 				dx_mask <= p_mask;
+-				dx_depth <= p_z;
+ 				dx_last <= 1'b0;
++`ifndef SYNTH_KINTEX7
++				dx_xy <= p_xy;
++				dx_depth <= p_z;
++`endif
+ 			end else begin
+ 				dx_valid <= 1'b0;
+ 				pend <= 1'b1;
+-				p_xy <= {qy, qx};
+ 				p_mask <= zmask;
+-				p_z <= zv;
+ 				st <= S_STEP;
++`ifndef SYNTH_KINTEX7
++				p_xy <= {qy, qx};
++				p_z <= zv;
++`endif
+ 			end
+ 		end
+ 
+@@ -749,10 +1069,12 @@ module atg_rx_scan #(
+ 			end else begin
+ 				dx_valid <= 1'b1;
+ 				dx_seq <= seq;
+-				dx_xy <= pend ? p_xy : {by0[15:1], 1'b0, bx0[15:1], 1'b0};
+ 				dx_mask <= pend ? p_mask : 4'd0;
+-				dx_depth <= pend ? p_z : 128'd0;
+ 				dx_last <= 1'b1;
++`ifndef SYNTH_KINTEX7
++				dx_xy <= pend ? p_xy : {by0[15:1], 1'b0, bx0[15:1], 1'b0};
++				dx_depth <= pend ? p_z : 128'd0;
++`endif
+ 			end
+ 		end
+ 
+@@ -772,7 +1094,7 @@ module atg_rx_scan #(
+ 		sp_tri[767:765], sp_tri[735:448], qx1[16], qy1[16], qx2[16], qy2[16],
+ 		HAS_SU != 0, coarse_tri_ready, cur_last_tile, eb_cov_unused,
+ 		esamp_carry_unused, esamp_unused, lve_carry_unused, qstep_carry_unused, tend_carry_unused,
+-		dxy_carry_unused, r_zl_co_unused,
++		dxy_carry_unused, r_zl_co_unused, ab8_carry_unused,
+ 		hiz_cull, hiz_rd_zmax, coarse_tri_valid, coarse_tile_ready, cur_ty, cov_op, cov_oq};
+ endmodule
+ 

@@ -65,16 +65,19 @@ module atg_tu_addr (
 	                 LA0B  = 5'd4,
 	                 LA0BB = 5'd5,
 	                 LA0BC = 5'd6,
+	                 LA0BD = 5'd21,
 	                 LA0C  = 5'd7,
 	                 LA0D  = 5'd8,
 	                 LA0E  = 5'd9,
 	                 LA1   = 5'd10,
 	                 LA1B  = 5'd11,
 	                 LA2   = 5'd12,
+	                 LA2B  = 5'd19,
 	                 LB0   = 5'd13,
 	                 LB1   = 5'd14,
 	                 LB2   = 5'd15,
 	                 LB2B  = 5'd16,
+	                 LB2C  = 5'd20,
 	                 LB3   = 5'd17,
 	                 OUT   = 5'd18;
 
@@ -114,19 +117,19 @@ module atg_tu_addr (
 	reg [31:0] r_lbase [0:3], r_plane [0:3], r_val [0:3];
 
 	/* Quad slot descriptor snapshot registers (latched on quad start) */
-	reg [31:0] r_base, r_stride;
-	reg [15:0] r_w0, r_h0, r_cnt;
-	reg [3:0]  r_nlev, r_maxl;
-	reg [12:0] r_fc;
-	reg        r_legacy, r_depth, r_blk, r_f565, r_ms, r_tiled, r_unn, r_is3dr, r_arr, r_is3d, r_cube;
-	reg [2:0]  r_psl;
-	reg signed [16:0] r_minlod, r_maxlod, r_sbias;
-	reg [1:0]  r_mu, r_mv, r_mw;
-	reg        r_samp_cmp, r_samp_mag_lin, r_samp_min_lin, r_samp_miplin;
-	reg [2:0]  r_cmp_op;
-	reg [1:0]  r_bcls;
-	reg [1:0]  r_rowa;
-	reg [20:0] r_tfmt;
+	(* max_fanout = 16 *) reg [31:0] r_base, r_stride;
+	(* max_fanout = 16 *) reg [15:0] r_w0, r_h0, r_cnt;
+	(* max_fanout = 16 *) reg [3:0]  r_nlev, r_maxl;
+	(* max_fanout = 16 *) reg [12:0] r_fc;
+	(* max_fanout = 16 *) reg        r_legacy, r_depth, r_blk, r_f565, r_ms, r_tiled, r_unn, r_is3dr, r_arr, r_is3d, r_cube;
+	(* max_fanout = 16 *) reg [2:0]  r_psl;
+	(* max_fanout = 16 *) reg signed [16:0] r_minlod, r_maxlod, r_sbias;
+	(* max_fanout = 16 *) reg [1:0]  r_mu, r_mv, r_mw;
+	(* max_fanout = 16 *) reg        r_samp_cmp, r_samp_mag_lin, r_samp_min_lin, r_samp_miplin;
+	(* max_fanout = 16 *) reg [2:0]  r_cmp_op;
+	(* max_fanout = 16 *) reg [1:0]  r_bcls;
+	(* max_fanout = 16 *) reg [1:0]  r_rowa;
+	(* max_fanout = 16 *) reg [20:0] r_tfmt;
 
 	/* The descriptor of the quad's slot (4 parallel level read ports). */
 	wire [3:0] lvl_l [0:3];
@@ -378,7 +381,7 @@ module atg_tu_addr (
 		wire [15:0] lay = op == OP_TEXF ? (r_arr ? (sfl >= {16'd0, r_cnt} ? cnt1 : sfl[15:0]) :
 			r_cube ? (sfl > 32'd5 ? 16'd5 : sfl[15:0]) : 16'd0) : r_arr ? lyr : 16'd0;
 		assign lay_w[gl] = lay;
-		am_mul #(.AW(32), .BW(16), .LAT(1)) u_lstr (.clk(clk), .en(1'b1), .a(r_stride), .b(r_lay[gl]), .p(lstr_l[gl]));
+		am_mul #(.AW(32), .BW(16), .LAT(2)) u_lstr (.clk(clk), .en(1'b1), .a(r_stride), .b(r_lay[gl]), .p(lstr_l[gl]));
 
 		wire [31:0] lb1_w;
 		am_add #(.W(32)) u_lb1 (.a(r_base), .b(r_lstr[gl]), .ci(1'b0), .s(lb1_w), .co(lb1_co_unused[gl]));
@@ -599,6 +602,9 @@ module atg_tu_addr (
 				st <= LA0BC;
 			end
 			LA0BC: begin
+				st <= LA0BD;
+			end
+			LA0BD: begin
 				for (k = 0; k < 4; k = k + 1) begin
 					r_lstr[k] <= lstr_l[k][31:0];
 				end
@@ -651,6 +657,9 @@ module atg_tu_addr (
 					r_plane[k] <= plane_l[k];
 					r_val[k]   <= val_l[k];
 				end
+				st <= LA2B;
+			end
+			LA2B: begin
 				st <= LB0;
 			end
 			LB0: begin
@@ -667,6 +676,10 @@ module atg_tu_addr (
 			end
 			LB2B: begin
 				/* u_foot Stage 1B registers at posedge clk */
+				st <= LB2C;
+			end
+			LB2C: begin
+				/* u_foot Stage 1C registers at posedge clk */
 				st <= LB3;
 			end
 			LB3: begin

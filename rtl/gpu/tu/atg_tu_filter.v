@@ -356,7 +356,7 @@ module atg_tu_filter (
 	wire f_in_ready;
 	wire [2:0] f_count;
 
-	am_fifo #(.W(529), .DEPTH_LOG2(2)) outq (
+	atg_tu_outq #(.W(529)) outq (
 		.clk(clk), .rst_n(rst_n), .in_valid(vd[18] && fin18 && k18 == 2'd3),
 		.in_ready(f_in_ready), .in_data({last18, tag18, res, asmb}), .out_valid(tr_valid),
 		.out_ready(tr_ready), .out_data(fo), .count(f_count)

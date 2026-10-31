@@ -191,18 +191,61 @@ module atg_tu_ffilt (
 	end
 
 	/* ---- RUN: the issue ---- */
+	function [3:0] prio16;
+		input [15:0] r;
+		reg [1:0] h, l;
+		reg [3:0] m;
+		begin
+			if (r[3:0] != 4'd0) begin
+				h = 2'd0;
+				m = r[3:0];
+			end else if (r[7:4] != 4'd0) begin
+				h = 2'd1;
+				m = r[7:4];
+			end else if (r[11:8] != 4'd0) begin
+				h = 2'd2;
+				m = r[11:8];
+			end else begin
+				h = 2'd3;
+				m = r[15:12];
+			end
+			if (m[0]) l = 2'd0;
+			else if (m[1]) l = 2'd1;
+			else if (m[2]) l = 2'd2;
+			else l = 2'd3;
+			prio16 = {h, l};
+		end
+	endfunction
+
+	function [15:0] onehot16;
+		input [3:0] idx;
+		begin
+			case (idx)
+			4'd0:  onehot16 = 16'h0001;
+			4'd1:  onehot16 = 16'h0002;
+			4'd2:  onehot16 = 16'h0004;
+			4'd3:  onehot16 = 16'h0008;
+			4'd4:  onehot16 = 16'h0010;
+			4'd5:  onehot16 = 16'h0020;
+			4'd6:  onehot16 = 16'h0040;
+			4'd7:  onehot16 = 16'h0080;
+			4'd8:  onehot16 = 16'h0100;
+			4'd9:  onehot16 = 16'h0200;
+			4'd10: onehot16 = 16'h0400;
+			4'd11: onehot16 = 16'h0800;
+			4'd12: onehot16 = 16'h1000;
+			4'd13: onehot16 = 16'h2000;
+			4'd14: onehot16 = 16'h4000;
+			4'd15: onehot16 = 16'h8000;
+			endcase
+		end
+	endfunction
+
 	reg [15:0] rem;	/* the {texel, lane} still to issue */
 	reg [1:0] c;	/* the component of the current {texel, lane} */
 	reg [3:0] cur;
 	reg [15:0] cur1;
-	always @(*) begin
-		cur = 4'd0;
-		for (i = 15; i >= 0; i = i - 1)
-			if (rem[i])
-				cur = i[3:0];
-		cur1 = 16'd0;
-		cur1[cur] = 1'b1;
-	end
+	reg rem_one_left;
 	wire [1:0] it = cur[3:2], ik = cur[1:0];
 	wire [1:0] iop = gathq ? OP_GATH : byp_l[ik] ? OP_BYP : OP_FMA;
 	wire [1:0] ift = ft_f(it, quad, split, row, col);
@@ -312,6 +355,10 @@ module atg_tu_ffilt (
 			ld <= 1'b1;
 			mid <= 1'b0;
 			hist <= 35'd0;
+			rem <= 16'd0;
+			cur <= 4'd0;
+			cur1 <= 16'd0;
+			rem_one_left <= 1'b0;
 		end else begin
 			hist <= {hist[29:0], issue && iop == OP_FMA, aid};
 			case (st)
@@ -324,14 +371,22 @@ module atg_tu_ffilt (
 				if (!ctl[5])	/* the quad's first pass: the pipeline is empty */
 					acc <= {16{32'h80000000}};
 				rem <= wk;
+				cur <= prio16(wk);
+				cur1 <= onehot16(prio16(wk));
+				rem_one_left <= (wk != 16'd0) && ((wk & ~onehot16(prio16(wk))) == 16'd0);
 				c <= 2'd0;
 				st <= RUN;
 			end
-			RUN: if (rem == 16'd0 || (issue && rem_n == 16'd0)) begin
+			RUN: if (rem == 16'd0 || (issue && rem_one_left && lastc)) begin
 				st <= more ? IDLE : DRAIN;
 				ld <= more;
 			end else if (issue) begin
-				rem <= rem_n;
+				if (lastc) begin
+					rem <= rem_n;
+					cur <= prio16(rem_n);
+					cur1 <= onehot16(prio16(rem_n));
+					rem_one_left <= (rem_n != 16'd0) && ((rem_n & ~onehot16(prio16(rem_n))) == 16'd0);
+				end
 				c <= lastc ? 2'd0 : c_inc;
 			end
 			DRAIN: if (!busy) begin

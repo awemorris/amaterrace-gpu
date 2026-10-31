@@ -26,6 +26,12 @@ import sys
 import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+try:
+    import py_limit
+    py_limit.limit_concurrency(3)
+except ImportError:
+    pass
 OUT = os.path.join(ROOT, 'build', 'arith-lint')
 
 # Files whose arithmetic is allowed, with the reason (docs/style.md).

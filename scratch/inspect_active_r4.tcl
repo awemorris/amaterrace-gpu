@@ -1,0 +1,4 @@
+open_checkpoint build/asic_lint/atg_cp/post_synth.dcp
+set m [get_cells u_state/mem_b_reg]
+set p [get_timing_paths -to [get_pins $m/ADDRARDADDR[5]] -max_paths 1]
+puts "Old DCP startpoint: [get_property STARTPOINT_PIN $p]"

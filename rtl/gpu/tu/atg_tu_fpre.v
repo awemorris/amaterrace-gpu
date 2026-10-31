@@ -142,17 +142,17 @@ module atg_tu_fpre (
 		for (i = 0; i < 48; i = i + 1)
 			m16[i] = i[5:0] < sam1_2;
 
-	wire [17:0] w3 [0:3];
-	wire [17:0] wp3;
+	wire [17:0] w4 [0:3];
+	wire [17:0] wp4;
 	generate
 	for (gt = 0; gt < 4; gt = gt + 1) begin : g_w
-		am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(1)) u_w (
-			.clk(clk), .en(1'b1), .a(wu2[gt]), .b(wv2[gt]), .p(w3[gt])
+		am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(2)) u_w (
+			.clk(clk), .en(1'b1), .a(wu2[gt]), .b(wv2[gt]), .p(w4[gt])
 		);
 	end
 	endgenerate
-	am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(1)) u_wp (
-		.clk(clk), .en(1'b1), .a(wa2), .b(wb2), .p(wp3)
+	am_mul #(.AW(9), .BW(9), .SIGNED(0), .LAT(2)) u_wp (
+		.clk(clk), .en(1'b1), .a(wa2), .b(wb2), .p(wp4)
 	);
 
 	reg [24:0] z3;	/* bits 71:47 */
@@ -189,16 +189,11 @@ module atg_tu_fpre (
 	reg [131:0] kb4;
 	reg [3:0] kn4;
 	reg [31:0] fa4;
-	reg [17:0] w4 [0:3];
-	reg [17:0] wp4;
 	always @(posedge clk) begin
 		ka4 <= d32_3 ? ka32_3 : d16_3 ? {17'd0, dref16} : {9'd0, dref24};
 		kb4 <= kb3;
 		kn4 <= kn3;
 		fa4 <= fa3;
-		for (t = 0; t < 4; t = t + 1)
-			w4[t] <= w3[t];
-		wp4 <= wp3;
 	end
 
 	/* the compare's fields to P4 */

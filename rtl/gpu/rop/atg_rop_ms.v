@@ -93,7 +93,8 @@ module atg_rop_ms (
 	reg ms4, a2c, a2one;
 	reg [1:0] dc;	/* DEPTH_CLAMP */
 	reg [31:0] vzs, vzo, vzf;	/* VIEWPORT z scale, z offset; f = z offset + z scale */
-	reg [31:0] zmin, zmax;
+	(* equivalent_register_removal = "no", max_fanout = 16 *) reg [31:0] zmin, zmax;
+	(* equivalent_register_removal = "no", max_fanout = 16 *) reg [31:0] zmin_d, zmax_d;
 	reg [3:0] zt;	/* the fadd's issues of f, by age */
 	wire vz_we = st_we && (st_idx == GHCI_S_VIEWPORT + 9'd4 || st_idx == GHCI_S_VIEWPORT + 9'd5);
 	always @(posedge clk)
@@ -107,6 +108,8 @@ module atg_rop_ms (
 			vzf <= 32'd0;
 			zmin <= 32'd0;
 			zmax <= ONE;
+			zmin_d <= 32'd0;
+			zmax_d <= ONE;
 			zt <= 4'd0;
 		end else begin
 			zt <= {zt[2:0], zf_go};
@@ -125,6 +128,8 @@ module atg_rop_ms (
 				vzf <= fa_r;
 				zmin <= fle(vzo, fa_r) ? vzo : fa_r;
 				zmax <= fle(vzo, fa_r) ? fa_r : vzo;
+				zmin_d <= fle(vzo, fa_r) ? vzo : fa_r;
+				zmax_d <= fle(vzo, fa_r) ? fa_r : vzo;
 			end
 		end
 	/* f is added the cycle after a write of either word */
@@ -215,7 +220,8 @@ module atg_rop_ms (
 	genvar g;
 	generate
 	for (g = 0; g < 4; g = g + 1) begin : g_d1
-		assign d1c[32 * g +: 32] = dc[0] ? zclamp(i_depth[32 * g +: 32], zmin, zmax) :
+		assign d1c[32 * g +: 32] = dc[0] ? (g < 2 ? zclamp(i_depth[32 * g +: 32], zmin, zmax) :
+			zclamp(i_depth[32 * g +: 32], zmin_d, zmax_d)) :
 			i_depth[32 * g +: 32];
 	end
 	endgenerate
@@ -225,6 +231,31 @@ module atg_rop_ms (
 
 	assign i_ready = st == S_IDLE;
 	assign busy = st != S_IDLE;
+
+`ifdef SYNTH_KINTEX7
+	wire en_idle_first = (st == S_IDLE) && i_valid && first;
+	wire [15:0] en_zds_buf;
+	genvar g_zds;
+	generate
+	for (g_zds = 0; g_zds < 16; g_zds = g_zds + 1) begin : g_buf_zds
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bzds (
+			.I0(en_idle_first), .O(en_zds_buf[g_zds])
+		);
+	end
+	for (g_zds = 0; g_zds < 8; g_zds = g_zds + 1) begin : g_reg_z
+		always @(posedge clk) begin
+			if (en_zds_buf[g_zds])
+				z[16 * g_zds +: 16] <= i_depth[16 * g_zds +: 16];
+		end
+	end
+	for (g_zds = 0; g_zds < 8; g_zds = g_zds + 1) begin : g_reg_ds
+		always @(posedge clk) begin
+			if (en_zds_buf[8 + g_zds])
+				ds[16 * g_zds +: 16] <= i_aux[20 + 16 * g_zds +: 16];
+		end
+	end
+	endgenerate
+`endif
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -272,8 +303,10 @@ module atg_rop_ms (
 					if (a2one && !i_dbg)
 						for (l = 0; l < 4; l = l + 1)
 							o_color[128 * l + 96 +: 32] <= ONE;
+`ifndef SYNTH_KINTEX7
 					z <= i_depth;
 					ds <= i_aux[147:20];
+`endif
 					fa_in_a <= i_depth[31:0];
 					fa_in_b <= i_aux[20 +: 32];
 					zexp <= i_aux[19:16];

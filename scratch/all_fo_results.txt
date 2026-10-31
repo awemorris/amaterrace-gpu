@@ -1,0 +1,145 @@
+INFO: [Common 17-3922] A valid Vivado Design Suite BASIC license has been detected. Your current license is active and will expire on 23-oct-2027.
+
+****** Vivado v2026.1 (64-bit)
+  **** SW Build 6511674 on Tue Jun 16 11:01:26 MDT 2026
+  **** IP Build 6504888 on Tue Jun 09 09:05:25 MDT 2026
+  **** SharedData Build 6501428 on Mon Jun 08 17:34:18 MDT 2026
+  **** Start of session at: Fri Oct 30 16:16:24 2026
+    ** Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+    ** Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+
+Sourcing tcl script '/home/awe/.Xilinx/Vivado/Vivado_init.tcl'
+source scratch/trace_all_fo.tcl
+# open_checkpoint build/asic_lint/atg_cp/post_synth.dcp
+Command: open_checkpoint build/asic_lint/atg_cp/post_synth.dcp
+
+Starting open_checkpoint Task
+
+Time (s): cpu = 00:00:00.04 ; elapsed = 00:00:00.04 . Memory (MB): peak = 1448.352 ; gain = 8.906 ; free physical = 11880 ; free virtual = 325510
+INFO: [Device 21-403] Loading part xc7k325tffg900-2
+Netlist sorting complete. Time (s): cpu = 00:00:00.03 ; elapsed = 00:00:00.03 . Memory (MB): peak = 1892.398 ; gain = 0.000 ; free physical = 11342 ; free virtual = 324986
+INFO: [Netlist 29-17] Analyzing 590 Unisim elements for replacement
+INFO: [Netlist 29-28] Unisim Transformation completed in 0 CPU seconds
+INFO: [Project 1-479] Netlist was created with Vivado 2026.1
+INFO: [Project 1-570] Preparing netlist for logic optimization
+Read ShapeDB Complete: Time (s): cpu = 00:00:00.02 ; elapsed = 00:00:00.01 . Memory (MB): peak = 1978.148 ; gain = 1.000 ; free physical = 11785 ; free virtual = 325342
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 1978.148 ; gain = 0.000 ; free physical = 11496 ; free virtual = 325063
+INFO: [Project 1-111] Unisim Transformation Summary:
+No Unisim elements were transformed.
+
+INFO: [Project 1-604] Checkpoint was created with Vivado v2026.1 (64-bit) build 6511674
+open_checkpoint: Time (s): cpu = 00:00:17 ; elapsed = 00:00:13 . Memory (MB): peak = 1986.184 ; gain = 550.707 ; free physical = 11519 ; free virtual = 325098
+# set internal_nets [get_nets -hierarchical -top_net_of_hierarchical_group -filter {
+#     TYPE != "GLOBAL_CLOCK" && TYPE != "LOCAL_CLOCK" && TYPE != "GROUND" && TYPE != "POWER" &&
+#     NAME !~ "*clk*" && NAME !~ "*rst*" && NAME !~ "*reset*" &&
+#     NAME !~ "*<const*" && NAME !~ "*GND*" && NAME !~ "*VCC*" && NAME !~ "*GLOBAL_LOGIC*"
+# }]
+# set hfo_list [list]
+# foreach n $internal_nets {
+#     set fo [expr {[get_property PIN_COUNT $n] - 1}]
+#     if {$fo > 24} {
+#         lappend hfo_list [list $fo $n [get_pins -quiet -of_objects $n -filter {DIRECTION == "OUT"}]]
+#     }
+# }
+# set hfo_sorted [lsort -integer -decreasing -index 0 $hfo_list]
+# puts "=== ALL HARD FANOUT NETS (COUNT: [llength $hfo_sorted]) ==="
+=== ALL HARD FANOUT NETS (COUNT: 95) ===
+# foreach item $hfo_sorted {
+#     puts "FO=[lindex $item 0] : [lindex $item 1] (driver: [lindex $item 2])"
+# }
+FO=284 : u_ring/buf_data[7][255]_i_1_n_0 (driver: u_ring/buf_data[7][255]_i_1/O)
+FO=284 : u_ring/buf_data[5][255]_i_1_n_0 (driver: u_ring/buf_data[5][255]_i_1/O)
+FO=283 : u_ring/buf_data[6][255]_i_1_n_0 (driver: u_ring/buf_data[6][255]_i_1/O)
+FO=283 : u_ring/buf_data[4][255]_i_1_n_0 (driver: u_ring/buf_data[4][255]_i_1/O)
+FO=283 : u_ring/buf_data[3][255]_i_1_n_0 (driver: u_ring/buf_data[3][255]_i_1/O)
+FO=283 : u_ring/buf_data[2][255]_i_1_n_0 (driver: u_ring/buf_data[2][255]_i_1/O)
+FO=283 : u_ring/buf_data[1][255]_i_1_n_0 (driver: u_ring/buf_data[1][255]_i_1/O)
+FO=283 : u_ring/buf_data[0][255]_i_1_n_0 (driver: u_ring/buf_data[0][255]_i_1/O)
+FO=131 : u_ring/want_word[0] (driver: u_ring/pa_reg[2]/Q)
+FO=123 : u_ring/pa_reg[5]_rep_n_0 (driver: u_ring/pa_reg[5]_rep/Q)
+FO=123 : u_ring/pa_reg[5]_rep__3_n_0 (driver: u_ring/pa_reg[5]_rep__3/Q)
+FO=123 : u_ring/pa_reg[5]_rep__2_n_0 (driver: u_ring/pa_reg[5]_rep__2/Q)
+FO=123 : u_ring/pa_reg[5]_rep__1_n_0 (driver: u_ring/pa_reg[5]_rep__1/Q)
+FO=123 : u_ring/pa_reg[5]_rep__0_n_0 (driver: u_ring/pa_reg[5]_rep__0/Q)
+FO=123 : u_ring/want_idx[0] (driver: u_ring/pa_reg[5]/Q)
+FO=114 : u_ring/pa_reg[6]_rep_n_0 (driver: u_ring/pa_reg[6]_rep/Q)
+FO=114 : u_ring/pa_reg[6]_rep__4_n_0 (driver: u_ring/pa_reg[6]_rep__4/Q)
+FO=114 : u_ring/pa_reg[6]_rep__3_n_0 (driver: u_ring/pa_reg[6]_rep__3/Q)
+FO=114 : u_ring/pa_reg[6]_rep__2_n_0 (driver: u_ring/pa_reg[6]_rep__2/Q)
+FO=114 : u_ring/pa_reg[6]_rep__1_n_0 (driver: u_ring/pa_reg[6]_rep__1/Q)
+FO=113 : u_ring/want_idx[1] (driver: u_ring/pa_reg[6]/Q)
+FO=113 : u_ring/pa_reg[6]_rep__0_n_0 (driver: u_ring/pa_reg[6]_rep__0/Q)
+FO=102 : u_ring/u_fawe0_i_5_n_0 (driver: u_ring/u_fawe0_i_5/O)
+FO=101 : u_ring/pa_reg[7]_rep_n_0 (driver: u_ring/pa_reg[7]_rep/Q)
+FO=101 : u_ring/pa_reg[7]_rep__0_n_0 (driver: u_ring/pa_reg[7]_rep__0/Q)
+FO=101 : u_ring/want_idx[2] (driver: u_ring/pa_reg[7]/Q)
+FO=98 : u_dbg/p_0_in[1] (driver: u_dbg/addr_reg[3]/Q)
+FO=98 : u_dbg/p_0_in[0] (driver: u_dbg/addr_reg[2]/Q)
+FO=98 : u_ring/buf_tag[4][26]_i_2_n_0 (driver: u_ring/buf_tag[4][26]_i_2/O)
+FO=98 : u_ring/buf_tag[0][26]_i_2_n_0 (driver: u_ring/buf_tag[0][26]_i_2/O)
+FO=97 : u_ring/buf_data[7][255]_i_2_n_0 (driver: u_ring/buf_data[7][255]_i_2/O)
+FO=68 : u_fence/last_we_rsp (driver: u_fence/cp_fence_ev_INST_0_i_1/O)
+FO=66 : u_ring/pa_reg[5]_rep__4_n_0 (driver: u_ring/pa_reg[5]_rep__4/Q)
+FO=66 : u_dbg/p_0_in[2] (driver: u_dbg/addr_reg[4]/Q)
+FO=65 : u_regs/reg_rdata[31]_INST_0_i_10_n_0 (driver: u_regs/reg_rdata[31]_INST_0_i_10/O)
+FO=64 : u_ctl/reg_rdata[2]_INST_0_i_11_n_0 (driver: u_ctl/reg_rdata[2]_INST_0_i_11/O)
+FO=64 : u_ctl/reg_rdata[2]_INST_0_i_10_n_0 (driver: u_ctl/reg_rdata[2]_INST_0_i_10/O)
+FO=63 : u_ring/ret_pulse_i_1_n_0 (driver: u_ring/ret_pulse_i_1/O)
+FO=56 : u_ctl/fault_addr[31]_i_4_n_0 (driver: u_ctl/fault_addr[31]_i_4/O)
+FO=46 : u_ctl/s_cp_state[2] (driver: u_ctl/st_reg[2]/Q)
+FO=43 : u_ring/dma_size[4] (driver: u_ring/dma_size_reg[4]/Q)
+FO=43 : u_regs/reg_rdata[29]_INST_0_i_10_n_0 (driver: u_regs/reg_rdata[29]_INST_0_i_10/O)
+FO=41 : u_skid_ring_seq/g0_b0_i_7_n_0 (driver: u_skid_ring_seq/g0_b0_i_7/O)
+FO=40 : u_ring/dma_size__0[3] (driver: u_ring/dma_size_reg[3]/Q)
+FO=40 : u_ctl/st_reg_n_0_[1] (driver: u_ctl/st_reg[1]/Q)
+FO=39 : u_ring/reg_rdata[30]_INST_0_i_8_n_0 (driver: u_ring/reg_rdata[30]_INST_0_i_8/O)
+FO=39 : u_ring/mask[2]_23[13] (driver: u_ring/size_reg[2][4]/Q)
+FO=39 : u_ring/dma_size__0[2] (driver: u_ring/dma_size_reg[2]/Q)
+FO=39 : u_dbg/data_we_host (driver: u_dbg/u_dwe0_i_1/O)
+FO=38 : u_ring/mask[0]_4[13] (driver: u_ring/size_reg[0][4]/Q)
+FO=37 : u_ring/size_reg[2]_24[1] (driver: u_ring/size_reg[2][1]/Q)
+FO=37 : u_ring/size_reg[0]_5[2] (driver: u_ring/size_reg[0][2]/Q)
+FO=36 : u_skid_ring_seq/skid_valid (driver: u_skid_ring_seq/skid_valid_reg/Q)
+FO=36 : u_ring/size_reg[2]_24[2] (driver: u_ring/size_reg[2][2]/Q)
+FO=36 : u_ctl/wdt_count[31]_i_3_n_0 (driver: u_ctl/wdt_count[31]_i_3/O)
+FO=35 : u_ring/size_reg[0]_5[1] (driver: u_ring/size_reg[0][1]/Q)
+FO=34 : u_ring/want_word[2] (driver: u_ring/pa_reg[4]/Q)
+FO=34 : u_ring/want_word[1] (driver: u_ring/pa_reg[3]/Q)
+FO=34 : u_ring/size_reg[2]_24[3] (driver: u_ring/size_reg[2][3]/Q)
+FO=34 : u_ring/dma_size__0[1] (driver: u_ring/dma_size_reg[1]/Q)
+FO=34 : u_fence/last_we_host (driver: u_fence/u_lwe0_i_1/O)
+FO=34 : u_dbg/data_we_rsp (driver: u_dbg/u_dwe0_i_2/O)
+FO=33 : u_ring/size_reg[0]_5[3] (driver: u_ring/size_reg[0][3]/Q)
+FO=33 : u_regs/reg_rdata[16]_INST_0_i_6_n_0 (driver: u_regs/reg_rdata[16]_INST_0_i_6/O)
+FO=33 : u_ctl/st_reg_n_0_[0] (driver: u_ctl/st_reg[0]/Q)
+FO=33 : u_regs/reg_rdata[29]_INST_0_i_2_n_0 (driver: u_regs/reg_rdata[29]_INST_0_i_2/O)
+FO=33 : u_ctl/reg_rdata[18]_INST_0_i_5_n_0 (driver: u_ctl/reg_rdata[18]_INST_0_i_5/O)
+FO=33 : u_regs/rd_hcr_q (driver: u_regs/rd_hcr_q_reg/Q)
+FO=32 : u_skid_ring_seq/load_out (driver: u_skid_ring_seq/out_data[31]_i_1/O)
+FO=32 : u_seq/a2[31]_i_1_n_0 (driver: u_seq/a2[31]_i_1/O)
+FO=32 : u_seq/a1[31]_i_1_n_0 (driver: u_seq/a1[31]_i_1/O)
+FO=32 : u_fence/last_we_b_1 (driver: u_fence/u_lwe1/O)
+FO=32 : u_fence/last_we_b_0 (driver: u_fence/u_lwe0/O)
+FO=32 : u_ctl/wdt_count[31]_i_1_n_0 (driver: u_ctl/wdt_count[31]_i_1/O)
+FO=32 : u_fence/fault_addr[0]_i_5_n_0 (driver: u_fence/fault_addr[0]_i_5/O)
+FO=32 : u_fence/req_wdata[127]_INST_0_i_1_n_0 (driver: u_fence/req_wdata[127]_INST_0_i_1/O)
+FO=32 : u_regs/is_scratch_wr (driver: u_regs/scratch[31]_i_1/O)
+FO=32 : u_ring/dma_sem[31]_i_1_n_0 (driver: u_ring/dma_sem[31]_i_1/O)
+FO=31 : u_ring/size_reg[0]_5[0] (driver: u_ring/size_reg[0][0]/Q)
+FO=30 : u_seq/a0[31]_i_1_n_0 (driver: u_seq/a0[31]_i_1/O)
+FO=30 : u_ring/size_reg[2]_24[0] (driver: u_ring/size_reg[2][0]/Q)
+FO=30 : u_ring/reg_rdata[2]_INST_0_i_18_n_0 (driver: u_ring/reg_rdata[2]_INST_0_i_18/O)
+FO=30 : u_dbg/reg_rdata[18]_INST_0_i_7_n_0 (driver: u_dbg/reg_rdata[18]_INST_0_i_7/O)
+FO=29 : u_ring/pa[15]_i_1_n_0 (driver: u_ring/pa[15]_i_1/O)
+FO=29 : u_ring/dma_size__0[0] (driver: u_ring/dma_size_reg[0]/Q)
+FO=28 : u_ring/s_i_req_tag[1] (driver: u_ring/req_line[26]_INST_0_i_3/O)
+FO=28 : u_ring/pf_line__0[0] (driver: u_ring/u_next_line/E[0])
+FO=27 : u_seq/op[7]_i_1_n_0 (driver: u_seq/op[7]_i_1/O)
+FO=27 : u_ring/tag[0] (driver: u_ring/n[15]_i_2/O)
+FO=27 : u_ring/reg_rdata[31]_INST_0_i_8_n_0 (driver: u_ring/reg_rdata[31]_INST_0_i_8/O)
+FO=27 : u_ring/hdr_data[31]_i_1_n_0 (driver: u_ring/hdr_data[31]_i_1/O)
+FO=27 : reg_wstrb[0] (driver: )
+FO=26 : reg_wstrb[1] (driver: )
+FO=25 : reg_wstrb[2] (driver: )
+FO=25 : reg_wstrb[3] (driver: )
+INFO: [Common 17-206] Exiting Vivado at Fri Oct 30 16:16:40 2026...

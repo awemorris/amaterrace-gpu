@@ -44,7 +44,7 @@ module atg_rop_beat_tb;
 	reg [3:0] ex_mask = 0;
 	reg [511:0] ex_color = 0;
 	reg [127:0] ex_depth = 0;
-	reg [153:0] ex_aux = 0;
+	reg [154:0] ex_aux = 0;
 	wire busy, ex_ready, dx_ready;
 	wire [15:0] ex_next;
 	wire [39:0] occ;
@@ -54,10 +54,10 @@ module atg_rop_beat_tb;
 	wire [255:0] req_wdata, rsp_rdata;
 	wire [7:0] req_tag, rsp_tag;
 
-	atg_rop dut (
+	atg_rop #(.MRT_COUNT(4)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.busy(busy), .ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
-		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
+		.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(512'd0), .ex_has_src1(1'b0), .ex_depth(ex_depth), .ex_last(ex_last),
 		.ex_next(ex_next), .ex_aux(ex_aux),
 		.dx_valid(1'b0), .dx_ready(dx_ready), .dx_seq(16'd0), .dx_xy(32'd0),
 		.dx_mask(4'd0), .dx_depth(128'd0), .dx_last(1'b0),
@@ -104,7 +104,7 @@ module atg_rop_beat_tb;
 			ex_depth <= z;
 			ex_color <= c;
 			ex_last <= last;
-			ex_aux <= {rt, lastb, first, nocol, 1'b1, 128'd0, 4'd0, 16'h1111};
+			ex_aux <= {{1'b0, rt}, lastb, first, nocol, 1'b1, 128'd0, 4'd0, 16'h1111};
 			@(posedge clk);
 			while (!ex_ready)
 				@(posedge clk);

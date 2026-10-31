@@ -54,35 +54,55 @@ module atg_tu_tcrd #(
 	/* LAT >= 1 pipeline registers */
 	reg signed [29:0] r_nu, r_nv, r_nw;
 	reg signed [29:0] r_un0, r_un1;
+	reg signed [29:0] r_un0_d, r_un1_d;
+	reg signed [29:0] r_un0_d2, r_un1_d2;
 	reg signed [26:0] r_fcs, r_fct;
 	reg r_cube, r_unn;
 	reg r_cube_d, r_unn_d;
+	reg r_cube_d2, r_unn_d2;
+	reg r_cube_d3, r_unn_d3;
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			r_nu    <= 30'sd0;
-			r_nv    <= 30'sd0;
-			r_nw    <= 30'sd0;
-			r_un0   <= 30'sd0;
-			r_un1   <= 30'sd0;
-			r_fcs   <= 27'sd0;
-			r_fct   <= 27'sd0;
-			r_cube  <= 1'b0;
-			r_unn   <= 1'b0;
-			r_cube_d <= 1'b0;
-			r_unn_d  <= 1'b0;
+			r_nu      <= 30'sd0;
+			r_nv      <= 30'sd0;
+			r_nw      <= 30'sd0;
+			r_un0     <= 30'sd0;
+			r_un1     <= 30'sd0;
+			r_un0_d   <= 30'sd0;
+			r_un1_d   <= 30'sd0;
+			r_un0_d2  <= 30'sd0;
+			r_un1_d2  <= 30'sd0;
+			r_fcs     <= 27'sd0;
+			r_fct     <= 27'sd0;
+			r_cube    <= 1'b0;
+			r_unn     <= 1'b0;
+			r_cube_d  <= 1'b0;
+			r_unn_d   <= 1'b0;
+			r_cube_d2 <= 1'b0;
+			r_unn_d2  <= 1'b0;
+			r_cube_d3 <= 1'b0;
+			r_unn_d3  <= 1'b0;
 		end else if (en) begin
-			r_nu    <= nu;
-			r_nv    <= nv;
-			r_nw    <= nw;
-			r_un0   <= un0;
-			r_un1   <= un1;
-			r_fcs   <= fcs;
-			r_fct   <= fct;
-			r_cube  <= cube;
-			r_unn   <= unn;
-			r_cube_d <= r_cube;
-			r_unn_d  <= r_unn;
+			r_nu      <= nu;
+			r_nv      <= nv;
+			r_nw      <= nw;
+			r_un0     <= un0;
+			r_un1     <= un1;
+			r_un0_d   <= r_un0;
+			r_un1_d   <= r_un1;
+			r_un0_d2  <= r_un0_d;
+			r_un1_d2  <= r_un1_d;
+			r_fcs     <= fcs;
+			r_fct     <= fct;
+			r_cube    <= cube;
+			r_unn     <= unn;
+			r_cube_d  <= r_cube;
+			r_unn_d   <= r_unn;
+			r_cube_d2 <= r_cube_d;
+			r_unn_d2  <= r_unn_d;
+			r_cube_d3 <= r_cube_d2;
+			r_unn_d3  <= r_unn_d2;
 		end
 	end
 
@@ -91,13 +111,13 @@ module atg_tu_tcrd #(
 	wire signed [29:0] in_nw  = (LAT >= 1) ? r_nw : nw;
 	wire signed [26:0] in_fcs = (LAT >= 1) ? r_fcs : fcs;
 	wire signed [26:0] in_fct = (LAT >= 1) ? r_fct : fct;
-	wire signed [29:0] un0_val = (LAT >= 1) ? r_un0 : un0;
-	wire signed [29:0] un1_val = (LAT >= 1) ? r_un1 : un1;
-	wire final_cube            = (LAT >= 1) ? r_cube_d : cube;
-	wire final_unn             = (LAT >= 1) ? r_unn_d  : unn;
+	wire signed [29:0] un0_val = (LAT >= 1) ? r_un0_d2 : un0;
+	wire signed [29:0] un1_val = (LAT >= 1) ? r_un1_d2 : un1;
+	wire final_cube            = (LAT >= 1) ? r_cube_d3 : cube;
+	wire final_unn             = (LAT >= 1) ? r_unn_d3  : unn;
 
 	wire mclk = (LAT >= 1) ? clk : 1'b0;
-	localparam MLAT = (LAT >= 1) ? 1 : 0;
+	localparam MLAT = (LAT >= 1) ? 2 : 0;
 
 	am_mul #(.AW(30), .BW(17), .SIGNED(1), .LAT(MLAT)) u_pu (.clk(mclk), .en(en), .a(in_nu), .b({1'b0, wl}),
 		.p(pu));

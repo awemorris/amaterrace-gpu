@@ -27,7 +27,7 @@ module atg_rop_msz_tb;
 	reg [31:0] st_wdata = 0;
 	reg [3:0] i_mask = 0;
 	reg [127:0] i_depth = 0;
-	reg [153:0] i_aux = 0;
+	reg [154:0] i_aux = 0;
 	wire i_ready, o_valid, o_dbg, o_front, busy;
 	wire [31:0] o_xy;
 	wire [15:0] o_smask;
@@ -35,9 +35,9 @@ module atg_rop_msz_tb;
 
 	atg_rop_ms dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .i_valid(i_valid), .i_ready(i_ready), .i_xy(32'h00020004),
-		.i_mask(i_mask), .i_color(512'd0), .i_depth(i_depth), .i_dbg(1'b0), .i_aux(i_aux),
+		.i_mask(i_mask), .i_color(512'd0), .i_color1(512'd0), .i_depth(i_depth), .i_dbg(1'b0), .i_aux(i_aux),
 		.o_valid(o_valid), .o_ready(o_ready), .o_xy(o_xy), .o_smask(o_smask),
-		.o_color(o_color), .o_sdepth(o_sdepth), .o_dbg(o_dbg), .o_front(o_front), .o_beat(),
+		.o_color(o_color), .o_color1(), .o_sdepth(o_sdepth), .o_dbg(o_dbg), .o_front(o_front), .o_beat(),
 		.busy(busy));
 
 	task st_put;

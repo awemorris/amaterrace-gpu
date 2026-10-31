@@ -54,7 +54,8 @@ module atg_tu_pipeline_tb;
 	atg_tu #(.ADDR_W(32), .LINE_BYTES(32), .LINE_SHIFT(5)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.inv(1'b0), .busy(busy),
-		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot), .tx_vs(tx_vs),
+		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
+		.tx_samp_slot(tx_slot), .tx_vs(tx_vs),
 		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
 		.tx_last(tx_last),
 		.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),

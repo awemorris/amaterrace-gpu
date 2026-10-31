@@ -1,0 +1,1675 @@
+INFO: [Common 17-3922] A valid Vivado Design Suite BASIC license has been detected. Your current license is active and will expire on 23-oct-2027.
+
+****** Vivado v2026.1 (64-bit)
+  **** SW Build 6511674 on Tue Jun 16 11:01:26 MDT 2026
+  **** IP Build 6504888 on Tue Jun 09 09:05:25 MDT 2026
+  **** SharedData Build 6501428 on Mon Jun 08 17:34:18 MDT 2026
+  **** Start of session at: Fri Oct 30 15:57:10 2026
+    ** Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+    ** Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+
+Sourcing tcl script '/home/awe/.Xilinx/Vivado/Vivado_init.tcl'
+source tools/asic-lint.tcl
+# if {[info exists ::env(VIVADO_THREADS)]} {
+#     set_param general.maxThreads $::env(VIVADO_THREADS)
+# } elseif {[info exists ::env(VIVADO_MAX_THREADS)]} {
+#     set_param general.maxThreads $::env(VIVADO_MAX_THREADS)
+# } else {
+#     set_param general.maxThreads 2
+# }
+# if {$argc < 1} {
+#     puts "Usage: vivado -mode batch -source asic-lint.tcl -tclargs <top_module> ?clock_period_ns? ?extra_defines? ?out_dir?"
+#     exit 1
+# }
+# set top [lindex $argv 0]
+# set clk_period 4.000
+# if {$argc >= 2 && [lindex $argv 1] != ""} {
+#     set clk_period [lindex $argv 1]
+# }
+# set extra_defines ""
+# if {$argc >= 3} {
+#     set extra_defines [lindex $argv 2]
+# }
+# set root [file normalize [file join [file dirname [info script]] ".."]]
+# set out_name $top
+# if {$extra_defines != ""} {
+#     set clean_def [regsub -all {[^a-zA-Z0-9_]} $extra_defines "_"]
+#     set out_name "${top}_${clean_def}"
+# }
+# set out [file join $root "build" "asic_lint" $out_name]
+# if {$argc >= 4 && [lindex $argv 3] != ""} {
+#     set out [lindex $argv 3]
+# }
+# file mkdir $out
+# set rpt_file [file join $out "asic_lint.rpt"]
+# set rpt [open $rpt_file "w"]
+# proc rpt_puts {str} {
+#     global rpt
+#     puts $str
+#     puts $rpt $str
+# }
+# rpt_puts "================================================================================"
+================================================================================
+# rpt_puts "  ASIC 5nm 1.5 GHz High-Frequency Architecture Linter"
+  ASIC 5nm 1.5 GHz High-Frequency Architecture Linter
+# rpt_puts "  Target Module: $top"
+  Target Module: atg_cp
+# rpt_puts "  FPGA Surrogate Target: Kintex-7 -2 @ ${clk_period} ns (250 MHz)"
+  FPGA Surrogate Target: Kintex-7 -2 @ 4.000 ns (250 MHz)
+# rpt_puts "  Report file: $rpt_file"
+  Report file: /home/awe/amaterrace-gpu/build/asic_lint/atg_cp/asic_lint.rpt
+# rpt_puts "================================================================================"
+================================================================================
+# if {[get_designs -quiet] == ""} {
+#     set part xc7k325tffg900-2
+#     set incdirs [list [file join $root include]]
+# 
+#     # Collect verilog files
+#     set v_files [glob -nocomplain [file join $root rtl library * *.v]]
+#     lappend v_files {*}[glob -nocomplain [file join $root rtl library *.v]]
+#     if {$top == "atg_blt"} {
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl gpu blt *.v]]
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl gpu fmt *.v]]
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl gpu atg_blt.v]]
+#     } elseif {$top == "atg_dc"} {
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl gpu dc *.v]]
+#     } elseif {$top == "atg_cp"} {
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl gpu cp *.v]]
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl gpu fmt *.v]]
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl gpu atg_cp.v]]
+#     } else {
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl gpu * *.v]]
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl gpu *.v]]
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl bsp * *.v]]
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl bsp *.v]]
+#         lappend v_files {*}[glob -nocomplain [file join $root rtl *.v]]
+#     }
+# 
+#     set unique_files [lsort -unique $v_files]
+#     foreach f $unique_files {
+#         read_verilog $f
+#     }
+# 
+#     set vdefs [list "SYNTH_KINTEX7"]
+#     set generics [list]
+#     if {$extra_defines != ""} {
+#         foreach d [split $extra_defines " "] {
+#             if {$d != ""} {
+#                 lappend vdefs $d
+#                 if {[string match "*=*" $d]} {
+#                     lappend generics "-generic" $d
+#                 }
+#             }
+#         }
+#     }
+# 
+#     rpt_puts "==> Synthesizing OOC design for $top..."
+#     if {[llength $generics] > 0} {
+#         synth_design -top $top -part $part -mode out_of_context -include_dirs $incdirs -verilog_define $vdefs {*}$generics
+#     } else {
+#         synth_design -top $top -part $part -mode out_of_context -include_dirs $incdirs -verilog_define $vdefs
+#     }
+#     write_checkpoint -force [file join $out "post_synth.dcp"]
+# }
+read_verilog: Time (s): cpu = 00:00:12 ; elapsed = 00:00:06 . Memory (MB): peak = 1662.328 ; gain = 226.844 ; free physical = 2178 ; free virtual = 319119
+==> Synthesizing OOC design for atg_cp...
+Command: synth_design -top atg_cp -part xc7k325tffg900-2 -mode out_of_context -include_dirs /home/awe/amaterrace-gpu/include -verilog_define SYNTH_KINTEX7
+Starting synth_design
+Attempting to get a license for feature 'Vivado_Synthesis' and/or device 'xc7k325t'
+INFO: [Common 17-349] Got license for feature 'Vivado_Synthesis' and/or device 'xc7k325t'
+INFO: [Synth 8-7079] Multithreading enabled for synth_design using a maximum of 2 processes.
+INFO: [Synth 8-7078] Launching helper process for spawning children vivado processes
+INFO: [Synth 8-7075] Helper process launched with PID 2600515
+---------------------------------------------------------------------------------
+Starting Synthesize : Time (s): cpu = 00:00:06 ; elapsed = 00:00:07 . Memory (MB): peak = 2186.273 ; gain = 520.910 ; free physical = 1597 ; free virtual = 318546
+---------------------------------------------------------------------------------
+WARNING: [Synth 8-6901] identifier 'r_gray' is used before its declaration [/home/awe/amaterrace-gpu/rtl/library/bus/am_afifo_bram.v:83]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp.v:48]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_regs' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_regs.v:178]
+	Parameter GCLK_HZ bound to: 100000000 - type: integer 
+	Parameter VENDOR_ID bound to: 1095582036 - type: integer 
+	Parameter DEVICE_ID bound to: 1096042289 - type: integer 
+	Parameter DEVICE_VERSION bound to: 3 - type: integer 
+	Parameter ISA_ID bound to: 0 - type: integer 
+	Parameter NATIVE_ISA_ID bound to: 0 - type: integer 
+	Parameter RESIDENT_WARPS bound to: 16'b0000000000000000 
+	Parameter NREGS bound to: 8'b00000000 
+	Parameter LOCAL_BASE bound to: 0 - type: integer 
+	Parameter LOCAL_BYTES bound to: 0 - type: integer 
+	Parameter WINDOW_BYTES bound to: 0 - type: integer 
+	Parameter HOST_LIMIT bound to: 0 - type: integer 
+	Parameter CAPS bound to: 5249027 - type: integer 
+	Parameter CAPS2 bound to: 3 - type: integer 
+	Parameter XCAP_MASK bound to: 11'b00000000100 
+	Parameter PERF_SRC bound to: -63487 - type: integer 
+	Parameter SLIM_MMIO bound to: 1 - type: integer 
+INFO: [Synth 8-6157] synthesizing module 'am_add' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 32 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_regs' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_regs.v:178]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_ctl' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_ctl.v:50]
+	Parameter NSRC bound to: 9 - type: integer 
+	Parameter LINE_SHIFT bound to: 5 - type: integer 
+	Parameter UNITS bound to: 8'b00000011 
+	Parameter SRC_BLOCK bound to: 72'b000000000000000000000001000000000000011000000000000000000000000000000000 
+	Parameter SRC_CLIENT bound to: 72'b000000000000000000000001000000000000000000000000000000000000000000000000 
+	Parameter DC_CLIENT bound to: 8'b11111111 
+INFO: [Synth 8-6157] synthesizing module 'am_add__parameterized0' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 34 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add__parameterized0' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_ctl' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_ctl.v:50]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_state' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_state.v:34]
+INFO: [Synth 8-6157] synthesizing module 'am_add__parameterized1' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 10 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add__parameterized1' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_state' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_state.v:34]
+INFO: [Synth 8-6157] synthesizing module 'am_amb_mux' [/home/awe/amaterrace-gpu/rtl/library/bus/am_amb_mux.v:23]
+	Parameter ADDR_W bound to: 32 - type: integer 
+	Parameter LINE_BYTES bound to: 32 - type: integer 
+	Parameter LINE_SHIFT bound to: 5 - type: integer 
+	Parameter N bound to: 4 - type: integer 
+	Parameter ID_W bound to: 2 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_amb_mux' (0#1) [/home/awe/amaterrace-gpu/rtl/library/bus/am_amb_mux.v:23]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_ring' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_ring.v:21]
+	Parameter ADDR_W bound to: 32 - type: integer 
+	Parameter LINE_BYTES bound to: 32 - type: integer 
+	Parameter LINE_SHIFT bound to: 5 - type: integer 
+	Parameter CLASS_V bound to: 1'b0 
+INFO: [Synth 8-6157] synthesizing module 'am_add__parameterized2' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 18 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add__parameterized2' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6157] synthesizing module 'am_addsub' [/home/awe/amaterrace-gpu/rtl/library/arith/am_addsub.v:34]
+	Parameter W bound to: 8 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_addsub' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_addsub.v:34]
+INFO: [Synth 8-6157] synthesizing module 'am_sub' [/home/awe/amaterrace-gpu/rtl/library/arith/am_sub.v:33]
+	Parameter W bound to: 8 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_sub' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_sub.v:33]
+INFO: [Synth 8-6157] synthesizing module 'am_sub__parameterized0' [/home/awe/amaterrace-gpu/rtl/library/arith/am_sub.v:33]
+	Parameter W bound to: 18 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_sub__parameterized0' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_sub.v:33]
+INFO: [Synth 8-6157] synthesizing module 'am_add__parameterized3' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 19 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add__parameterized3' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6157] synthesizing module 'am_add__parameterized4' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 16 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add__parameterized4' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6157] synthesizing module 'am_add__parameterized5' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 27 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add__parameterized5' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_ring' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_ring.v:21]
+INFO: [Synth 8-6157] synthesizing module 'am_skid' [/home/awe/amaterrace-gpu/rtl/library/bus/am_skid.v:22]
+	Parameter W bound to: 32 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_skid' (0#1) [/home/awe/amaterrace-gpu/rtl/library/bus/am_skid.v:22]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_seq' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_seq.v:55]
+	Parameter UNITS bound to: 8'b00000011 
+	Parameter HAS_VSYNC bound to: 0 - type: integer 
+	Parameter HAS_DISP bound to: 0 - type: integer 
+INFO: [Synth 8-6157] synthesizing module 'am_add__parameterized6' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 8 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add__parameterized6' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_seq_dec' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_seq_dec.v:29]
+	Parameter UNITS bound to: 8'b00000011 
+	Parameter HAS_VSYNC bound to: 0 - type: integer 
+	Parameter HAS_DISP bound to: 0 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_seq_dec' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_seq_dec.v:29]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_seq_wait' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_seq_wait.v:49]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_seq_wait' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_seq_wait.v:49]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_seq' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_seq.v:55]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_fence' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_fence.v:34]
+	Parameter ADDR_W bound to: 32 - type: integer 
+	Parameter LINE_BYTES bound to: 32 - type: integer 
+	Parameter LINE_SHIFT bound to: 5 - type: integer 
+INFO: [Synth 8-6157] synthesizing module 'am_sub__parameterized1' [/home/awe/amaterrace-gpu/rtl/library/arith/am_sub.v:33]
+	Parameter W bound to: 32 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_sub__parameterized1' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_sub.v:33]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_fence' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_fence.v:34]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_irq' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_irq.v:24]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_irq' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_irq.v:24]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_dbg' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_dbg.v:26]
+	Parameter ADDR_W bound to: 32 - type: integer 
+	Parameter LINE_BYTES bound to: 32 - type: integer 
+	Parameter LINE_SHIFT bound to: 5 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_dbg' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_dbg.v:26]
+INFO: [Synth 8-6157] synthesizing module 'atg_cp_indirect' [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_indirect.v:23]
+INFO: [Synth 8-6157] synthesizing module 'am_add__parameterized7' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 26 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add__parameterized7' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6157] synthesizing module 'am_add__parameterized8' [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+	Parameter W bound to: 6 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'am_add__parameterized8' (0#1) [/home/awe/amaterrace-gpu/rtl/library/arith/am_add.v:34]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp_indirect' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp_indirect.v:23]
+INFO: [Synth 8-6155] done synthesizing module 'atg_cp' (0#1) [/home/awe/amaterrace-gpu/rtl/gpu/cp/atg_cp.v:48]
+WARNING: [Synth 8-3917] design atg_cp has port d_we driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_idx[5] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_idx[4] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_idx[3] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_idx[2] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_idx[1] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_idx[0] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[31] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[30] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[29] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[28] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[27] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[26] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[25] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[24] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[23] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[22] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[21] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[20] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[19] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[18] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[17] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[16] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[15] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[14] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[13] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[12] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[11] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[10] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[9] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[8] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[7] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[6] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[5] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[4] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[3] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[2] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[1] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wdata[0] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[31] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[30] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[29] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[28] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[27] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[26] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[25] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[24] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[23] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[22] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[21] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[20] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[19] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[18] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[17] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[16] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[15] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[14] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[13] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[12] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[11] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[10] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[9] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[8] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[7] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[6] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[5] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[4] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[3] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[2] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[1] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_wmask[0] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_ridx[5] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_ridx[4] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_ridx[3] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_ridx[2] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_ridx[1] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port d_ridx[0] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_valid driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_plane driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[31] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[30] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[29] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[28] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[27] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[26] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[25] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[24] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[23] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[22] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[21] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[20] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[19] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[18] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[17] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[16] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[15] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[14] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[13] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[12] driven by constant 0
+WARNING: [Synth 8-3917] design atg_cp has port flip_base[11] driven by constant 0
+INFO: [Common 17-14] Message 'Synth 8-3917' appears 100 times and further instances of the messages will be disabled. Use the Tcl command set_msg_config to change the current settings.
+WARNING: [Synth 8-7129] Port rsp_tag[7] in module atg_cp_dbg is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[6] in module atg_cp_dbg is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[5] in module atg_cp_dbg is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[4] in module atg_cp_dbg is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[3] in module atg_cp_dbg is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[2] in module atg_cp_dbg is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[1] in module atg_cp_dbg is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[0] in module atg_cp_dbg is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[31] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[30] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[29] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[28] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[27] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[26] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[25] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[24] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[23] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[22] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[21] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[20] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[19] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[18] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[17] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[16] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[15] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[14] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wdata[13] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[31] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[30] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[29] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[28] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[27] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[26] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[25] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[24] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[23] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[22] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[21] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[20] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[19] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[18] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[17] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[16] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[15] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[14] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hcr_wmask[13] in module atg_cp_irq is either unconnected or has no load
+WARNING: [Synth 8-7129] Port f_addr[1] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port f_addr[0] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_write in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[7] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[6] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[5] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[4] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[3] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[2] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[1] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[0] in module atg_cp_fence is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hdr[23] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hdr[22] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hdr[21] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hdr[20] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hdr[19] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hdr[18] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hdr[17] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hdr[16] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port hdr_fw in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port p[7] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port p[6] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port p[5] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port p[4] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port p[3] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port p[2] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port p[1] in module atg_cp_seq_dec is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_valid in module atg_cp_ring is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_write in module atg_cp_ring is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[7] in module atg_cp_ring is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[6] in module atg_cp_ring is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[5] in module atg_cp_ring is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rsp_tag[4] in module atg_cp_ring is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[31] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[30] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[29] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[28] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[27] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[26] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[25] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[24] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[23] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[22] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[21] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[20] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[19] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[18] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[17] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[16] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[15] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[14] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[13] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[12] in module atg_cp_regs is either unconnected or has no load
+WARNING: [Synth 8-7129] Port diag_pipe_fsm[11] in module atg_cp_regs is either unconnected or has no load
+INFO: [Common 17-14] Message 'Synth 8-7129' appears 100 times and further instances of the messages will be disabled. Use the Tcl command set_msg_config to change the current settings.
+---------------------------------------------------------------------------------
+Finished Synthesize : Time (s): cpu = 00:00:10 ; elapsed = 00:00:11 . Memory (MB): peak = 2336.211 ; gain = 670.848 ; free physical = 1545 ; free virtual = 318502
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Constraint Validation : Time (s): cpu = 00:00:11 ; elapsed = 00:00:12 . Memory (MB): peak = 2348.086 ; gain = 682.723 ; free physical = 1391 ; free virtual = 318348
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Loading Part and Timing Information
+---------------------------------------------------------------------------------
+Loading part: xc7k325tffg900-2
+INFO: [Device 21-403] Loading part xc7k325tffg900-2
+---------------------------------------------------------------------------------
+Finished Loading Part and Timing Information : Time (s): cpu = 00:00:11 ; elapsed = 00:00:13 . Memory (MB): peak = 2348.086 ; gain = 682.723 ; free physical = 1051 ; free virtual = 318009
+---------------------------------------------------------------------------------
+INFO: [Synth 8-802] inferred FSM for state register 'st_reg' in module 'atg_cp_ring'
+INFO: [Synth 8-802] inferred FSM for state register 'pf_st_reg' in module 'atg_cp_ring'
+INFO: [Synth 8-802] inferred FSM for state register 'st_reg' in module 'atg_cp_seq'
+INFO: [Synth 8-802] inferred FSM for state register 'st_reg' in module 'atg_cp_fence'
+INFO: [Synth 8-802] inferred FSM for state register 'st_reg' in module 'atg_cp_indirect'
+---------------------------------------------------------------------------------------------------
+                   State |                     New Encoding |                Previous Encoding 
+---------------------------------------------------------------------------------------------------
+                 PF_IDLE |                              001 |                               00
+                  PF_REQ |                              010 |                               01
+                  PF_RSP |                              100 |                               10
+---------------------------------------------------------------------------------------------------
+INFO: [Synth 8-3354] encoded FSM with state register 'pf_st_reg' using encoding 'one-hot' in module 'atg_cp_ring'
+---------------------------------------------------------------------------------------------------
+                   State |                     New Encoding |                Previous Encoding 
+---------------------------------------------------------------------------------------------------
+                  R_IDLE |                             0010 |                             0000
+          R_CTX_REST_REQ |                             1001 |                             1010
+          R_CTX_REST_RSP |                             0110 |                             1011
+                   R_HDR |                             1010 |                             0001
+                   R_DEC |                             0111 |                             1100
+                     R_V |                             0000 |                             0011
+                     R_N |                             0100 |                             0010
+                   R_REQ |                             0101 |                             0101
+                   R_RSP |                             1100 |                             0110
+                  iSTATE |                             1000 |                             0111
+                   R_ADV |                             0001 |                             0100
+          R_CTX_SAVE_REQ |                             0011 |                             1000
+          R_CTX_SAVE_RSP |                             1011 |                             1001
+---------------------------------------------------------------------------------------------------
+INFO: [Synth 8-3354] encoded FSM with state register 'st_reg' using encoding 'sequential' in module 'atg_cp_ring'
+---------------------------------------------------------------------------------------------------
+                   State |                     New Encoding |                Previous Encoding 
+---------------------------------------------------------------------------------------------------
+                  Q_IDLE |                         00000010 |                              000
+                   Q_PAY |                         01000000 |                              001
+                  iSTATE |                         10000000 |                              111
+                  Q_EXEC |                         00100000 |                              010
+                  Q_FREQ |                         00001000 |                              100
+                 Q_FWAIT |                         00000100 |                              101
+                 Q_VSYNC |                         00000001 |                              110
+                  Q_POST |                         00010000 |                              011
+---------------------------------------------------------------------------------------------------
+INFO: [Synth 8-3354] encoded FSM with state register 'st_reg' using encoding 'one-hot' in module 'atg_cp_seq'
+---------------------------------------------------------------------------------------------------
+                   State |                     New Encoding |                Previous Encoding 
+---------------------------------------------------------------------------------------------------
+                  F_IDLE |                              100 |                              000
+                   F_REQ |                              001 |                              001
+                   F_RSP |                              010 |                              010
+                  iSTATE |                              011 |                              100
+                   F_GAP |                              000 |                              011
+---------------------------------------------------------------------------------------------------
+INFO: [Synth 8-3354] encoded FSM with state register 'st_reg' using encoding 'sequential' in module 'atg_cp_fence'
+---------------------------------------------------------------------------------------------------
+                   State |                     New Encoding |                Previous Encoding 
+---------------------------------------------------------------------------------------------------
+                  S_IDLE |                          0000001 |                              000
+                  S_REQ0 |                          0000010 |                              001
+                  S_RSP0 |                          0000100 |                              010
+                  S_REQ1 |                          0001000 |                              011
+                  S_RSP1 |                          0010000 |                              100
+                  S_EMIT |                          0100000 |                              101
+             S_WAIT_DRAW |                          1000000 |                              110
+---------------------------------------------------------------------------------------------------
+INFO: [Synth 8-3354] encoded FSM with state register 'st_reg' using encoding 'one-hot' in module 'atg_cp_indirect'
+---------------------------------------------------------------------------------
+Finished RTL Optimization Phase 2 : Time (s): cpu = 00:00:19 ; elapsed = 00:00:18 . Memory (MB): peak = 2372.109 ; gain = 706.746 ; free physical = 1125 ; free virtual = 317011
+---------------------------------------------------------------------------------
+No constraint files found.
+---------------------------------------------------------------------------------
+Start RTL Component Statistics 
+---------------------------------------------------------------------------------
+Detailed RTL Component Info : 
++---Adders : 
+	   3 Input   35 Bit       Adders := 1     
+	   3 Input   33 Bit       Adders := 11    
+	   4 Input   33 Bit       Adders := 1     
+	   3 Input   28 Bit       Adders := 1     
+	   3 Input   27 Bit       Adders := 1     
+	   3 Input   20 Bit       Adders := 1     
+	   3 Input   19 Bit       Adders := 1     
+	   4 Input   19 Bit       Adders := 1     
+	   3 Input   17 Bit       Adders := 1     
+	   3 Input   11 Bit       Adders := 1     
+	   3 Input    9 Bit       Adders := 3     
+	   4 Input    9 Bit       Adders := 4     
+	   3 Input    7 Bit       Adders := 1     
++---XORs : 
+	   2 Input      8 Bit         XORs := 1     
++---Registers : 
+	              512 Bit    Registers := 1     
+	              256 Bit    Registers := 8     
+	              128 Bit    Registers := 1     
+	               64 Bit    Registers := 3     
+	               34 Bit    Registers := 1     
+	               32 Bit    Registers := 46    
+	               27 Bit    Registers := 9     
+	               18 Bit    Registers := 10    
+	               17 Bit    Registers := 1     
+	               16 Bit    Registers := 3     
+	               13 Bit    Registers := 2     
+	               10 Bit    Registers := 5     
+	                8 Bit    Registers := 18    
+	                7 Bit    Registers := 1     
+	                6 Bit    Registers := 1     
+	                5 Bit    Registers := 3     
+	                4 Bit    Registers := 4     
+	                3 Bit    Registers := 5     
+	                2 Bit    Registers := 5     
+	                1 Bit    Registers := 39    
++---RAMs : 
+	              24K Bit	(768 X 32 bit)          RAMs := 2     
++---Muxes : 
+	   7 Input  512 Bit        Muxes := 2     
+	   4 Input  256 Bit        Muxes := 1     
+	   2 Input  256 Bit        Muxes := 2     
+	   2 Input  128 Bit        Muxes := 1     
+	   2 Input   64 Bit        Muxes := 2     
+	   2 Input   34 Bit        Muxes := 1     
+	   2 Input   32 Bit        Muxes := 32    
+	   8 Input   32 Bit        Muxes := 5     
+	   4 Input   32 Bit        Muxes := 2     
+	  13 Input   32 Bit        Muxes := 1     
+	   3 Input   32 Bit        Muxes := 1     
+	   5 Input   32 Bit        Muxes := 1     
+	   7 Input   32 Bit        Muxes := 2     
+	   4 Input   27 Bit        Muxes := 1     
+	   2 Input   27 Bit        Muxes := 26    
+	  13 Input   27 Bit        Muxes := 8     
+	   2 Input   26 Bit        Muxes := 1     
+	   3 Input   19 Bit        Muxes := 1     
+	   3 Input   18 Bit        Muxes := 3     
+	  13 Input   18 Bit        Muxes := 2     
+	   2 Input   16 Bit        Muxes := 3     
+	  13 Input   16 Bit        Muxes := 1     
+	   2 Input   13 Bit        Muxes := 4     
+	   2 Input   10 Bit        Muxes := 6     
+	   2 Input    9 Bit        Muxes := 7     
+	   2 Input    8 Bit        Muxes := 48    
+	   3 Input    8 Bit        Muxes := 2     
+	  13 Input    8 Bit        Muxes := 2     
+	  16 Input    8 Bit        Muxes := 1     
+	   8 Input    8 Bit        Muxes := 1     
+	   7 Input    8 Bit        Muxes := 1     
+	   5 Input    8 Bit        Muxes := 1     
+	   6 Input    7 Bit        Muxes := 1     
+	   2 Input    7 Bit        Muxes := 10    
+	   7 Input    7 Bit        Muxes := 1     
+	   4 Input    6 Bit        Muxes := 1     
+	   2 Input    6 Bit        Muxes := 1     
+	   2 Input    5 Bit        Muxes := 3     
+	  13 Input    4 Bit        Muxes := 1     
+	  12 Input    4 Bit        Muxes := 1     
+	   2 Input    4 Bit        Muxes := 14    
+	   3 Input    4 Bit        Muxes := 2     
+	   8 Input    4 Bit        Muxes := 1     
+	   2 Input    3 Bit        Muxes := 13    
+	  13 Input    3 Bit        Muxes := 2     
+	   4 Input    3 Bit        Muxes := 1     
+	   2 Input    2 Bit        Muxes := 38    
+	   5 Input    2 Bit        Muxes := 5     
+	   3 Input    2 Bit        Muxes := 5     
+	  13 Input    2 Bit        Muxes := 1     
+	   2 Input    1 Bit        Muxes := 173   
+	   8 Input    1 Bit        Muxes := 19    
+	   5 Input    1 Bit        Muxes := 6     
+	   3 Input    1 Bit        Muxes := 10    
+	  13 Input    1 Bit        Muxes := 33    
+	  16 Input    1 Bit        Muxes := 1     
+	   7 Input    1 Bit        Muxes := 5     
+---------------------------------------------------------------------------------
+Finished RTL Component Statistics 
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Part Resource Summary
+---------------------------------------------------------------------------------
+Part Resources:
+DSPs: 840 (col length:140)
+BRAMs: 890 (col length: RAMB18 140 RAMB36 70)
+---------------------------------------------------------------------------------
+Finished Part Resource Summary
+---------------------------------------------------------------------------------
+No constraint files found.
+---------------------------------------------------------------------------------
+Start Cross Boundary and Area Optimization
+---------------------------------------------------------------------------------
+WARNING: [Synth 8-13374] Removed Unreachable instance u_state/i_0 containing BRAMs/URAMs in constant propagation
+WARNING: [Synth 8-13373] Removed Macro Instance : u_state/i_0/mem_a_reg, of type : RAMB36E1 in constant propagation
+WARNING: [Synth 8-3332] Sequential element (FSM_onehot_st_reg[6]) is unused and will be removed from module atg_cp_indirect.
+WARNING: [Synth 8-3332] Sequential element (FSM_onehot_st_reg[5]) is unused and will be removed from module atg_cp_indirect.
+WARNING: [Synth 8-3332] Sequential element (FSM_onehot_st_reg[4]) is unused and will be removed from module atg_cp_indirect.
+WARNING: [Synth 8-3332] Sequential element (FSM_onehot_st_reg[3]) is unused and will be removed from module atg_cp_indirect.
+WARNING: [Synth 8-3332] Sequential element (FSM_onehot_st_reg[2]) is unused and will be removed from module atg_cp_indirect.
+WARNING: [Synth 8-3332] Sequential element (FSM_onehot_st_reg[1]) is unused and will be removed from module atg_cp_indirect.
+WARNING: [Synth 8-3332] Sequential element (FSM_onehot_st_reg[0]) is unused and will be removed from module atg_cp_indirect.
+---------------------------------------------------------------------------------
+Finished Cross Boundary and Area Optimization : Time (s): cpu = 00:01:00 ; elapsed = 00:00:59 . Memory (MB): peak = 2677.672 ; gain = 1012.309 ; free physical = 1242 ; free virtual = 314166
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start ROM, RAM, DSP, Shift Register and Retiming Reporting
+---------------------------------------------------------------------------------
+
+ROM: Preliminary Mapping Report
++---------------+------------+---------------+----------------+
+|Module Name    | RTL Object | Depth x Width | Implemented As | 
++---------------+------------+---------------+----------------+
+|atg_cp_seq_dec | h_absent   | 128x1         | LUT            | 
+|atg_cp_seq_dec | h_absent   | 128x1         | LUT            | 
++---------------+------------+---------------+----------------+
+
+
+Block RAM: Preliminary Mapping Report (see note below)
++------------+------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|Module Name | RTL Object | PORT A (Depth x Width) | W | R | PORT B (Depth x Width) | W | R | Ports driving FF | RAMB18 | RAMB36 | 
++------------+------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|u_state     | mem_b_reg  | 768 x 32(READ_FIRST)   | W |   | 768 x 32(WRITE_FIRST)  |   | R | Port A and B     | 0      | 1      | 
++------------+------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+
+Note: The table above is a preliminary report that shows the Block RAMs at the current stage of the synthesis flow. Some Block RAMs may be reimplemented as non Block RAM primitives later in the synthesis flow. Multiple instantiated Block RAMs are reported only once. 
+---------------------------------------------------------------------------------
+Finished ROM, RAM, DSP, Shift Register and Retiming Reporting
+---------------------------------------------------------------------------------
+No constraint files found.
+---------------------------------------------------------------------------------
+Start Timing Optimization
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Timing Optimization : Time (s): cpu = 00:01:03 ; elapsed = 00:01:02 . Memory (MB): peak = 2677.672 ; gain = 1012.309 ; free physical = 1073 ; free virtual = 314014
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start ROM, RAM, DSP, Shift Register and Retiming Reporting
+---------------------------------------------------------------------------------
+
+Block RAM: Final Mapping Report
++------------+------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|Module Name | RTL Object | PORT A (Depth x Width) | W | R | PORT B (Depth x Width) | W | R | Ports driving FF | RAMB18 | RAMB36 | 
++------------+------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|u_state     | mem_b_reg  | 768 x 32(READ_FIRST)   | W |   | 768 x 32(WRITE_FIRST)  |   | R | Port A and B     | 0      | 1      | 
++------------+------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+
+---------------------------------------------------------------------------------
+Finished ROM, RAM, DSP, Shift Register and Retiming Reporting
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Technology Mapping
+---------------------------------------------------------------------------------
+INFO: [Synth 8-7052] The timing for the instance u_state/mem_b_reg (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+---------------------------------------------------------------------------------
+Finished Technology Mapping : Time (s): cpu = 00:01:06 ; elapsed = 00:01:05 . Memory (MB): peak = 2677.672 ; gain = 1012.309 ; free physical = 3176 ; free virtual = 316129
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start IO Insertion
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Flattening Before IO Insertion
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Flattening Before IO Insertion
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Final Netlist Cleanup
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Final Netlist Cleanup
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished IO Insertion : Time (s): cpu = 00:01:12 ; elapsed = 00:01:11 . Memory (MB): peak = 2715.484 ; gain = 1050.121 ; free physical = 1798 ; free virtual = 314746
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Renaming Generated Instances
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Renaming Generated Instances : Time (s): cpu = 00:01:12 ; elapsed = 00:01:12 . Memory (MB): peak = 2715.484 ; gain = 1050.121 ; free physical = 1761 ; free virtual = 314716
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Rebuilding User Hierarchy
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Rebuilding User Hierarchy : Time (s): cpu = 00:01:12 ; elapsed = 00:01:12 . Memory (MB): peak = 2715.484 ; gain = 1050.121 ; free physical = 1740 ; free virtual = 314688
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Renaming Generated Ports
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Renaming Generated Ports : Time (s): cpu = 00:01:12 ; elapsed = 00:01:12 . Memory (MB): peak = 2715.484 ; gain = 1050.121 ; free physical = 1738 ; free virtual = 314686
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Handling Custom Attributes
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Handling Custom Attributes : Time (s): cpu = 00:01:13 ; elapsed = 00:01:12 . Memory (MB): peak = 2719.453 ; gain = 1054.090 ; free physical = 1859 ; free virtual = 314808
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Renaming Generated Nets
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Renaming Generated Nets : Time (s): cpu = 00:01:13 ; elapsed = 00:01:12 . Memory (MB): peak = 2719.453 ; gain = 1054.090 ; free physical = 1851 ; free virtual = 314801
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Writing Synthesis Report
+---------------------------------------------------------------------------------
+
+Report BlackBoxes: 
++-+--------------+----------+
+| |BlackBox name |Instances |
++-+--------------+----------+
++-+--------------+----------+
+
+Report Cell Usage: 
++------+---------+------+
+|      |Cell     |Count |
++------+---------+------+
+|1     |CARRY4   |   102|
+|2     |LUT1     |    11|
+|3     |LUT2     |   232|
+|4     |LUT3     |   735|
+|5     |LUT4     |   488|
+|6     |LUT5     |   606|
+|7     |LUT6     |  2213|
+|8     |MUXF7    |   314|
+|9     |MUXF8    |   130|
+|10    |RAMB36E1 |     1|
+|11    |FDRE     |  3890|
+|12    |FDSE     |    16|
++------+---------+------+
+
+Report Instance Areas: 
++------+------------------+-----------------------+------+
+|      |Instance          |Module                 |Cells |
++------+------------------+-----------------------+------+
+|1     |top               |                       |  8738|
+|2     |  u_amb           |am_amb_mux             |    88|
+|3     |  u_ctl           |atg_cp_ctl             |   641|
+|4     |  u_dbg           |atg_cp_dbg             |   319|
+|5     |  u_fence         |atg_cp_fence           |   466|
+|6     |    diff_sub      |am_sub__parameterized1 |   125|
+|7     |  u_irq           |atg_cp_irq             |    51|
+|8     |  u_regs          |atg_cp_regs            |   608|
+|9     |    counter_add   |am_add_1               |     8|
+|10    |  u_ring          |atg_cp_ring            |  5602|
+|11    |    end_add       |am_add__parameterized3 |    16|
+|12    |    k_add         |am_add__parameterized4 |    19|
+|13    |    pa_4_add      |am_add                 |    11|
+|14    |    pa_hdr_add    |am_add_0               |   111|
+|15    |    u_next_line   |am_add__parameterized5 |   107|
+|16    |    u_sema_addsub |am_addsub              |    29|
+|17    |  u_seq           |atg_cp_seq             |   632|
+|18    |  u_skid_ring_seq |am_skid                |   240|
+|19    |  u_state         |atg_cp_state           |    47|
++------+------------------+-----------------------+------+
+---------------------------------------------------------------------------------
+Finished Writing Synthesis Report : Time (s): cpu = 00:01:13 ; elapsed = 00:01:12 . Memory (MB): peak = 2719.453 ; gain = 1054.090 ; free physical = 1845 ; free virtual = 314794
+---------------------------------------------------------------------------------
+Synthesis finished with 0 errors, 0 critical warnings and 603 warnings.
+Synthesis Optimization Runtime : Time (s): cpu = 00:01:13 ; elapsed = 00:01:12 . Memory (MB): peak = 2719.453 ; gain = 1054.090 ; free physical = 1815 ; free virtual = 314765
+Synthesis Optimization Complete : Time (s): cpu = 00:01:13 ; elapsed = 00:01:12 . Memory (MB): peak = 2719.461 ; gain = 1054.090 ; free physical = 1823 ; free virtual = 314773
+INFO: [Project 1-571] Translating synthesized netlist
+Netlist sorting complete. Time (s): cpu = 00:00:00.06 ; elapsed = 00:00:00.06 . Memory (MB): peak = 2734.297 ; gain = 0.000 ; free physical = 2313 ; free virtual = 315269
+INFO: [Netlist 29-17] Analyzing 547 Unisim elements for replacement
+INFO: [Netlist 29-28] Unisim Transformation completed in 0 CPU seconds
+INFO: [Project 1-570] Preparing netlist for logic optimization
+INFO: [Opt 31-138] Pushed 0 inverter(s) to 0 load pin(s).
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.01 . Memory (MB): peak = 2849.801 ; gain = 0.000 ; free physical = 2829 ; free virtual = 315787
+INFO: [Project 1-111] Unisim Transformation Summary:
+No Unisim elements were transformed.
+
+Synth Design complete | Checksum: ee03ac26
+INFO: [Common 17-83] Releasing license: Vivado_Synthesis
+81 Infos, 210 Warnings, 0 Critical Warnings and 0 Errors encountered.
+synth_design completed successfully
+synth_design: Time (s): cpu = 00:01:23 ; elapsed = 00:01:19 . Memory (MB): peak = 2852.770 ; gain = 1190.441 ; free physical = 3153 ; free virtual = 316115
+INFO: [Common 17-2834] synth_design peak Physical Memory [PSS] (MB): overall = 1857.270; main = 1802.922; forked = 224.168
+INFO: [Common 17-2834] synth_design peak Virtual Memory [VSS] (MB): overall = 3707.668; main = 2852.770; forked = 1029.996
+INFO: [Timing 38-35] Done setting XDC timing constraints.
+Write ShapeDB Complete: Time (s): cpu = 00:00:00.06 ; elapsed = 00:00:00.02 . Memory (MB): peak = 2948.816 ; gain = 0.000 ; free physical = 3584 ; free virtual = 316546
+INFO: [Common 17-1381] The checkpoint '/home/awe/amaterrace-gpu/build/asic_lint/atg_cp/post_synth.dcp' has been generated.
+write_checkpoint: Time (s): cpu = 00:00:09 ; elapsed = 00:00:09 . Memory (MB): peak = 2948.816 ; gain = 96.047 ; free physical = 3298 ; free virtual = 316263
+# if {[get_clocks -quiet clk] == ""} {
+#     if {[get_ports -quiet clk] != ""} {
+#         create_clock -period $clk_period -name clk [get_ports clk]
+#     }
+# }
+# set num_errors 0
+# set num_warnings 0
+WARNING: [Timing 38-242] The property HD.CLK_SRC of clock port "clk" is not set. In out-of-context mode, this prevents timing estimation for clock delay/skew
+Resolution: Set the HD.CLK_SRC property of the out-of-context port to the location of the clock buffer instance in the top-level design
+# set timing_paths [get_timing_paths -max_paths 1 -nworst 1 -setup]
+# set wns 0.000
+# if {[llength $timing_paths] > 0} {
+#     set wns [get_property SLACK [lindex $timing_paths 0]]
+# }
+# rpt_puts "\n\[TIMING SUMMARY\]"
+
+[TIMING SUMMARY]
+# rpt_puts "  Clock period: ${clk_period} ns"
+  Clock period: 4.000 ns
+# rpt_puts "  WNS: ${wns} ns"
+  WNS: -0.808 ns
+# if {$wns < 0.000} {
+#     rpt_puts "  Status: TIMING VIOLATED (Slack < 0.000 ns)"
+#     incr num_errors
+# } else {
+#     rpt_puts "  Status: TIMING MET"
+# }
+  Status: TIMING VIOLATED (Slack < 0.000 ns)
+# rpt_puts "\n--------------------------------------------------------------------------------"
+
+--------------------------------------------------------------------------------
+# rpt_puts "\[RULE 1\] Primitive & Logic Level Budget"
+[RULE 1] Primitive & Logic Level Budget
+# rpt_puts "  Constraints:"
+  Constraints:
+# rpt_puts "    - Pure random logic: <= 4 LUT6 levels (target <= 3)"
+    - Pure random logic: <= 4 LUT6 levels (target <= 3)
+# rpt_puts "    - 32-bit Adder/Subtractor: <= 1 LUT before CARRY4, <= 1 LUT after CARRY4"
+    - 32-bit Adder/Subtractor: <= 1 LUT before CARRY4, <= 1 LUT after CARRY4
+# rpt_puts "    - Multiplier: LAT >= 2, <= 1 LUT after DSP output"
+    - Multiplier: LAT >= 2, <= 1 LUT after DSP output
+# rpt_puts "--------------------------------------------------------------------------------"
+--------------------------------------------------------------------------------
+# set r1_errors 0
+# set r1_warnings 0
+# set top_paths [get_timing_paths -max_paths 100 -nworst 1 -setup]
+# foreach p $top_paths {
+#     set p_slack [get_property SLACK $p]
+#     set sp [get_property STARTPOINT_PIN $p]
+#     set ep [get_property ENDPOINT_PIN $p]
+#     set cells [get_cells -of_objects $p]
+# 
+#     set lut_cnt 0
+#     set carry_cnt 0
+#     set dsp_cnt 0
+#     set pre_carry_lut 0
+#     set post_carry_lut 0
+#     set post_dsp_lut 0
+#     set seen_carry 0
+#     set seen_dsp 0
+# 
+#     foreach c $cells {
+#         set ref [get_property REF_NAME $c]
+#         if {[string match "LUT*" $ref]} {
+#             incr lut_cnt
+#             if {!$seen_carry} {
+#                 incr pre_carry_lut
+#             } else {
+#                 incr post_carry_lut
+#             }
+#             if {$seen_dsp} {
+#                 incr post_dsp_lut
+#             }
+#         } elseif {[string match "CARRY*" $ref]} {
+#             incr carry_cnt
+#             set seen_carry 1
+#         } elseif {[string match "DSP*" $ref]} {
+#             incr dsp_cnt
+#             set seen_dsp 1
+#         }
+#     }
+# 
+#     # Evaluate pure random logic path
+#     if {$carry_cnt == 0 && $dsp_cnt == 0} {
+#         if {$lut_cnt > 4} {
+#             rpt_puts "  VIOLATION (Random Logic): $lut_cnt LUTs (> 4 max allowed)"
+#             rpt_puts "    Path: $sp --> $ep (Slack: ${p_slack} ns)"
+#             incr r1_errors
+#         } elseif {$lut_cnt == 4} {
+#             rpt_puts "  WARNING (Random Logic): 4 LUT levels (target is <= 3)"
+#             rpt_puts "    Path: $sp --> $ep (Slack: ${p_slack} ns)"
+#             incr r1_warnings
+#         }
+#     }
+# 
+#     # Evaluate carry chain arithmetic path
+#     if {$carry_cnt > 0} {
+#         if {$pre_carry_lut > 1 || $post_carry_lut > 1} {
+#             rpt_puts "  VIOLATION (Adder/Sub Path): Pre-LUTs: $pre_carry_lut (>1) or Post-LUTs: $post_carry_lut (>1)"
+#             rpt_puts "    CARRY4 count: $carry_cnt | Path: $sp --> $ep (Slack: ${p_slack} ns)"
+#             incr r1_errors
+#         }
+#     }
+# 
+#     # Evaluate multiplier path
+#     if {$dsp_cnt > 0} {
+#         if {$post_dsp_lut > 1} {
+#             rpt_puts "  VIOLATION (Multiplier Path): Post-DSP LUTs: $post_dsp_lut (> 1 max allowed)"
+#             rpt_puts "    Path: $sp --> $ep (Slack: ${p_slack} ns)"
+#             incr r1_errors
+#         }
+#     }
+# }
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[10]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[11]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[12]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[13]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[14]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[15]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[16]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[17]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[18]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[19]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[20]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[21]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[22]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[23]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[24]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[25]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[26]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[27]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[28]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[29]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[2]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[30]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[31]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[3]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[4]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[5]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[6]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[7]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[8]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_addr_reg[9]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_kind_reg[0]/CE (Slack: -0.808 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_kind_reg[1]/CE (Slack: -0.808 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_skid_ring_seq/out_data_reg[2]/C --> u_seq/f_pulse_reg/D (Slack: -0.580 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_skid_ring_seq/out_data_reg[2]/C --> u_seq/FSM_onehot_st_reg[5]/D (Slack: -0.576 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_skid_ring_seq/out_data_reg[2]/C --> u_seq/FSM_onehot_st_reg[6]/D (Slack: -0.576 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_skid_ring_seq/out_data_reg[2]/C --> u_seq/FSM_onehot_st_reg[7]/D (Slack: -0.576 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_skid_ring_seq/out_data_reg[2]/C --> u_seq/f_kind_reg[0]/D (Slack: -0.576 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_skid_ring_seq/out_data_reg[2]/C --> u_seq/f_kind_reg[1]/D (Slack: -0.576 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 4 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/FSM_sequential_st_reg[3]/D (Slack: -0.542 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 4 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/FSM_sequential_st_reg[2]/D (Slack: -0.527 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[10] (Slack: -0.338 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[11] (Slack: -0.338 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[12] (Slack: -0.338 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[13] (Slack: -0.338 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[14] (Slack: -0.338 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[5] (Slack: -0.338 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[6] (Slack: -0.338 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[7] (Slack: -0.338 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[8] (Slack: -0.338 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/ADDRARDADDR[9] (Slack: -0.338 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 5 (>1) or Post-LUTs: 3 (>1)
+    CARRY4 count: 5 | Path: u_ring/hdr_data_reg[10]/C --> u_ring/f_pulse_reg/D (Slack: -0.229 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 2 (>1) or Post-LUTs: 2 (>1)
+    CARRY4 count: 8 | Path: u_fence/addr_reg[4]/C --> u_fence/gap_reg[0]/CE (Slack: -0.131 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 2 (>1) or Post-LUTs: 2 (>1)
+    CARRY4 count: 8 | Path: u_fence/addr_reg[4]/C --> u_fence/gap_reg[1]/CE (Slack: -0.131 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 2 (>1) or Post-LUTs: 2 (>1)
+    CARRY4 count: 8 | Path: u_fence/addr_reg[4]/C --> u_fence/gap_reg[2]/CE (Slack: -0.131 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 2 (>1) or Post-LUTs: 2 (>1)
+    CARRY4 count: 8 | Path: u_fence/addr_reg[4]/C --> u_fence/gap_reg[3]/CE (Slack: -0.131 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 2 (>1) or Post-LUTs: 2 (>1)
+    CARRY4 count: 8 | Path: u_fence/addr_reg[4]/C --> u_fence/gap_reg[4]/CE (Slack: -0.131 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 2 (>1) or Post-LUTs: 2 (>1)
+    CARRY4 count: 8 | Path: u_fence/addr_reg[4]/C --> u_fence/gap_reg[5]/CE (Slack: -0.131 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 2 (>1) or Post-LUTs: 2 (>1)
+    CARRY4 count: 8 | Path: u_fence/addr_reg[4]/C --> u_fence/gap_reg[6]/CE (Slack: -0.131 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 2 (>1) or Post-LUTs: 2 (>1)
+    CARRY4 count: 8 | Path: u_fence/addr_reg[4]/C --> u_fence/gap_reg[7]/CE (Slack: -0.131 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[0] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[10] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[11] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[12] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[13] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[14] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[15] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[16] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[17] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[18] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[19] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[1] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[20] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[21] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[22] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[23] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[24] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[25] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[26] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[27] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[28] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[29] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[2] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[30] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[31] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[3] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[4] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[5] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[6] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[7] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[8] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_state/mem_b_reg/DIADI[9] (Slack: -0.104 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_ring/sema_reg[6][1]/C --> u_ring/FSM_sequential_st_reg[0]/CE (Slack: 0.017 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_ring/sema_reg[6][1]/C --> u_ring/FSM_sequential_st_reg[1]/CE (Slack: 0.017 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_ring/sema_reg[6][1]/C --> u_ring/FSM_sequential_st_reg[2]/CE (Slack: 0.017 ns)
+  VIOLATION (Random Logic): 8 LUTs (> 4 max allowed)
+    Path: u_ring/sema_reg[6][1]/C --> u_ring/FSM_sequential_st_reg[3]/CE (Slack: 0.017 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 0 (>1) or Post-LUTs: 4 (>1)
+    CARRY4 count: 3 | Path: u_ring/pa_reg[6]_rep__0/C --> u_ring/FSM_onehot_pf_st_reg[2]/D (Slack: 0.028 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 0 (>1) or Post-LUTs: 4 (>1)
+    CARRY4 count: 3 | Path: u_ring/pa_reg[6]_rep__0/C --> u_ring/FSM_onehot_pf_st_reg[0]/D (Slack: 0.032 ns)
+  VIOLATION (Adder/Sub Path): Pre-LUTs: 0 (>1) or Post-LUTs: 4 (>1)
+    CARRY4 count: 3 | Path: u_ring/pa_reg[6]_rep__0/C --> u_ring/FSM_onehot_pf_st_reg[1]/D (Slack: 0.032 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_seq/a2_reg[0]/CE (Slack: 0.066 ns)
+  VIOLATION (Random Logic): 6 LUTs (> 4 max allowed)
+    Path: u_seq/use_fw_reg/C --> u_seq/a2_reg[10]/CE (Slack: 0.066 ns)
+WARNING: [Vivado 12-180] No cells matched 'get_cells -hierarchical -filter {REF_NAME =~ "DSP48E1*"}'.
+# set dsps [get_cells -hierarchical -filter {REF_NAME =~ "DSP48E1*"}]
+# foreach d $dsps {
+#     set mreg [get_property MREG $d]
+#     set preg [get_property PREG $d]
+#     if {$mreg == 0 || $preg == 0} {
+#         rpt_puts "  VIOLATION (DSP Internal Latency): $d has MREG=$mreg, PREG=$preg (requires LAT >= 2)"
+#         incr r1_errors
+#     }
+# }
+# if {$r1_errors == 0} {
+#     rpt_puts "  \[PASS\] Rule 1 Check Succeeded (0 violations, $r1_warnings warnings)."
+# } else {
+#     rpt_puts "  \[FAIL\] Rule 1 Check Failed with $r1_errors violation(s)."
+#     set num_errors [expr {$num_errors + $r1_errors}]
+# }
+  [FAIL] Rule 1 Check Failed with 100 violation(s).
+# set num_warnings [expr {$num_warnings + $r1_warnings}]
+# rpt_puts "\n--------------------------------------------------------------------------------"
+
+--------------------------------------------------------------------------------
+# rpt_puts "\[RULE 2\] Fanout Limitation & Tree Buffering"
+[RULE 2] Fanout Limitation & Tree Buffering
+# rpt_puts "  Constraints:"
+  Constraints:
+# rpt_puts "    - Soft Limit: Fanout <= 16 (flagged as WARNING)"
+    - Soft Limit: Fanout <= 16 (flagged as WARNING)
+# rpt_puts "    - Hard Limit: Fanout <= 24 (flagged as VIOLATION)"
+    - Hard Limit: Fanout <= 24 (flagged as VIOLATION)
+# rpt_puts "--------------------------------------------------------------------------------"
+--------------------------------------------------------------------------------
+# set r2_errors 0
+# set r2_warnings 0
+# set internal_nets [get_nets -hierarchical -top_net_of_hierarchical_group -filter {
+#     TYPE != "GLOBAL_CLOCK" && TYPE != "LOCAL_CLOCK" && TYPE != "GROUND" && TYPE != "POWER" &&
+#     NAME !~ "*clk*" && NAME !~ "*rst*" && NAME !~ "*reset*" &&
+#     NAME !~ "*<const*" && NAME !~ "*GND*" && NAME !~ "*VCC*" && NAME !~ "*GLOBAL_LOGIC*"
+# }]
+# set top_high_fo [list]
+# foreach n $internal_nets {
+#     set pin_cnt [get_property FLAT_PIN_COUNT $n]
+#     # Subtract driver pin to get fanout
+#     set fo [expr {$pin_cnt - 1}]
+#     if {$fo > 24} {
+#         set drv [get_pins -quiet -of_objects $n -filter {DIRECTION == "OUT"}]
+#         rpt_puts "  VIOLATION (Hard Fanout): Net '$n' (driver: $drv) has fanout $fo (> 24 hard limit)"
+#         incr r2_errors
+#     } elseif {$fo > 16} {
+#         rpt_puts "  WARNING (Soft Fanout): Net '$n' has fanout $fo (> 16 soft limit)"
+#         incr r2_warnings
+#     }
+# }
+  VIOLATION (Hard Fanout): Net 'u_skid_ring_seq/skid_valid' (driver: u_skid_ring_seq/skid_valid_reg/Q) has fanout 36 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_skid_ring_seq/load_out' (driver: u_skid_ring_seq/out_data[31]_i_1/O) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_skid_ring_seq/g0_b0_i_7_n_0' (driver: u_skid_ring_seq/g0_b0_i_7/O) has fanout 35 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/vendor' (driver: u_seq/vendor_reg/Q) has fanout 27 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_seq/st_idx[9]_i_2_n_0' has fanout 21 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/op_reg_n_0_[3]' (driver: u_seq/op_reg[3]/Q) has fanout 39 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/op[0]' (driver: u_seq/use_fw_i_1/O) has fanout 45 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/want_word[0]' (driver: u_ring/pa_reg[2]/Q) has fanout 132 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/want_idx[2]' (driver: u_ring/pa_reg[7]/Q) has fanout 323 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/want_idx[0]' (driver: u_ring/pa_reg[5]/Q) has fanout 121 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/size_reg[2]_8[3]' (driver: u_ring/size_reg[2][3]/Q) has fanout 37 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/size_reg[2]_8[2]' (driver: u_ring/size_reg[2][2]/Q) has fanout 40 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/size_reg[0]_5[1]' (driver: u_ring/size_reg[0][1]/Q) has fanout 36 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/size_reg[0]_5[0]' (driver: u_ring/size_reg[0][0]/Q) has fanout 31 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_ring/s_i_req_write[0]' has fanout 21 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'u_ring/rptr[1][17]_i_1_n_0' has fanout 18 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'u_ring/rptr[0][17]_i_1_n_0' has fanout 18 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'u_ring/ret_pulse' has fanout 23 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/op_reg_n_0_[1]' (driver: u_seq/op_reg[1]/Q) has fanout 44 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_ring/pf_line_reg_n_0_[2]' has fanout 19 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'u_ring/pf_line_reg_n_0_[0]' has fanout 19 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[6]_rep_n_0' (driver: u_ring/pa_reg[6]_rep/Q) has fanout 113 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[6]_rep__4_n_0' (driver: u_ring/pa_reg[6]_rep__4/Q) has fanout 113 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[6]_rep__3_n_0' (driver: u_ring/pa_reg[6]_rep__3/Q) has fanout 113 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[6]_rep__2_n_0' (driver: u_ring/pa_reg[6]_rep__2/Q) has fanout 113 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[6]_rep__1_n_0' (driver: u_ring/pa_reg[6]_rep__1/Q) has fanout 113 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[6]_rep__0_n_0' (driver: u_ring/pa_reg[6]_rep__0/Q) has fanout 113 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[5]_rep_n_0' (driver: u_ring/pa_reg[5]_rep/Q) has fanout 121 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[5]_rep__4_n_0' (driver: u_ring/pa_reg[5]_rep__4/Q) has fanout 121 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[5]_rep__3_n_0' (driver: u_ring/pa_reg[5]_rep__3/Q) has fanout 121 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[5]_rep__1_n_0' (driver: u_ring/pa_reg[5]_rep__1/Q) has fanout 121 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[5]_rep__0_n_0' (driver: u_ring/pa_reg[5]_rep__0/Q) has fanout 121 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/n[0]' (driver: u_ring/n[15]_i_2/O) has fanout 26 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/mask[2]_7[13]' (driver: u_ring/size_reg[2][4]/Q) has fanout 40 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/mask[0]_4[13]' (driver: u_ring/size_reg[0][4]/Q) has fanout 41 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_ring/pf_line_reg_n_0_[1]' has fanout 19 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/op_reg_n_0_[4]' (driver: u_seq/op_reg[4]/Q) has fanout 26 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_fence/st[1]' has fanout 21 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/rd_hcr_q' (driver: u_regs/rd_hcr_q_reg/Q) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/is_scratch_wr' (driver: u_regs/scratch[31]_i_1/O) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/op[0]' (driver: u_fence/op[1]_i_1/O) has fanout 105 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/req_wdata[127]_INST_0_i_1_n_0' (driver: u_fence/req_wdata[127]_INST_0_i_1/O) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/next_line[1]' (driver: u_ring/u_next_line/next_line[1]) has fanout 57 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/next_line[2]' (driver: u_ring/u_next_line/next_line[2]) has fanout 28 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'cpu_fault' (driver: ) has fanout 37 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/reg_rdata[31]_INST_0_i_9_n_0' (driver: u_regs/reg_rdata[31]_INST_0_i_9/O) has fanout 27 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pf_line[0]' (driver: u_ring/u_next_line/E[0]) has fanout 28 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/s_fence_fault_addr[4]' (driver: u_fence/addr_reg[4]/Q) has fanout 72 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/s_fence_fault_addr[3]' (driver: u_fence/addr_reg[3]/Q) has fanout 72 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/s_fence_fault_addr[2]' (driver: u_fence/addr_reg[2]/Q) has fanout 76 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/last[31]_i_1_n_0' (driver: u_fence/last[31]_i_1/O) has fanout 32 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_regs/reg_rdata[31]_INST_0_i_12_n_0' has fanout 24 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/reg_rdata[29]_INST_0_i_2_n_0' (driver: u_regs/reg_rdata[29]_INST_0_i_2/O) has fanout 33 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/fault_addr[1]_i_4_n_0' (driver: u_fence/fault_addr[1]_i_4/O) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/cp_fence_ev_INST_0_i_1_n_0' (driver: u_fence/cp_fence_ev_INST_0_i_1/O) has fanout 35 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/op_reg_n_0_[2]' (driver: u_seq/op_reg[2]/Q) has fanout 37 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl/wdt_count[31]_i_3_n_0' (driver: u_ctl/wdt_count[31]_i_3/O) has fanout 39 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_state_n_33' has fanout 23 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl/fault_addr[31]_i_6_n_0' (driver: u_ctl/fault_addr[31]_i_6/O) has fanout 57 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl/fault_addr[31]_i_4_n_0' (driver: u_ctl/fault_addr[31]_i_4/O) has fanout 49 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl/ap_limit0' (driver: u_ctl/ap_limit[31]_i_1/O) has fanout 27 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'hcr_widx[0]' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/want_idx[1]' (driver: u_ring/pa_reg[6]/Q) has fanout 113 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_dbg/data[31]_i_1_n_0' (driver: u_dbg/data[31]_i_1/O) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'hcr_widx[2]' (driver: u_ring/reg_waddr[4]_0) has fanout 28 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_ring_n_63' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs_n_6' (driver: u_regs/ridx_q_reg[4]_0) has fanout 65 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'hcr_ridx[4]' (driver: u_regs/ridx_q_reg[4]_1[4]) has fanout 151 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_ring/interrupted_qid[0]' has fanout 21 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'hcr_widx[1]' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'hcr_widx[4]' (driver: u_ring/reg_waddr[6]_1) has fanout 25 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 's_n_data[11]' has fanout 17 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs_n_13' (driver: u_regs/ridx_q_reg[3]_1) has fanout 39 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'in_ready0' (driver: u_ring/FSM_sequential_st_reg[2]_0[0]) has fanout 34 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wstrb[2]' (driver: ) has fanout 134 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wstrb[1]' (driver: ) has fanout 158 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'hcr_ridx[5]' (driver: u_regs/ridx_q_reg[5]_0) has fanout 108 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wstrb[0]' (driver: ) has fanout 134 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[9]' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'hcr_ridx[0]' (driver: u_regs/ridx_q_reg[4]_1[0]) has fanout 81 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[4]' (driver: ) has fanout 51 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'uop_we0' (driver: u_seq/uop_we0) has fanout 86 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/dma_size__0[1]' (driver: u_ring/dma_size_reg[1]/Q) has fanout 34 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[24]' has fanout 19 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'hcr_ridx[1]' (driver: u_regs/ridx_q_reg[4]_1[1]) has fanout 84 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[11]' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs_n_5' (driver: u_regs/ridx_q_reg[1]_0) has fanout 52 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_rd' has fanout 22 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[10]' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl/wdt_cycles[31]_i_1_n_0' (driver: u_ctl/wdt_cycles[31]_i_1/O) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'p_0_in_1[2]' (driver: u_dbg/Q[2]) has fanout 66 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'p_0_in' (driver: u_ring/p_0_in) has fanout 613 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'hcr_ridx[3]' (driver: u_regs/ridx_q_reg[4]_1[3]) has fanout 152 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'mc_flush' (driver: u_ctl/st_reg[2]_0) has fanout 50 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/st[0]' (driver: u_ring/FSM_sequential_st_reg[0]/Q) has fanout 88 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 's_f_irq' has fanout 17 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/FSM_onehot_st_reg_n_0_[6]' (driver: u_seq/FSM_onehot_st_reg[6]/Q) has fanout 86 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/st[1]' (driver: u_ring/FSM_sequential_st_reg[1]/Q) has fanout 98 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_ring/wptr[2][17]_i_1_n_0' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/hdr_data[31]_i_1_n_0' (driver: u_ring/hdr_data[31]_i_1/O) has fanout 26 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_ring/wptr[1][17]_i_1_n_0' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/s_i_req_tag[1]' (driver: u_ring/req_valid_INST_0_i_2/O) has fanout 29 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_waddr[9]' has fanout 17 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/req_valid_INST_0_i_3_n_0' (driver: u_ring/req_valid_INST_0_i_3/O) has fanout 30 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'hcr_widx[3]' has fanout 23 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs_n_7' (driver: u_regs/ridx_q_reg[3]_0) has fanout 64 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wstrb[3]' (driver: ) has fanout 128 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[8]' (driver: ) has fanout 26 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'hcr_ridx[2]' (driver: u_regs/ridx_q_reg[4]_1[2]) has fanout 110 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'fw_active' (driver: ) has fanout 97 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'dec/h_op[4]' has fanout 20 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[17]' (driver: ) has fanout 25 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_ring/rptr[2][17]_i_1_n_0' has fanout 18 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'dec/h_op[2]' has fanout 21 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs_n_21' (driver: u_regs/ridx_q_reg[1]_1) has fanout 30 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[6][255]_i_1_n_0' (driver: u_ring/buf_data[6][255]_i_1/O) has fanout 283 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/st[3]' (driver: u_ring/FSM_sequential_st_reg[3]/Q) has fanout 72 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 's_fence_fault' (driver: u_fence/s_fence_fault) has fanout 41 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'cur[0]' has fanout 19 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[13]' has fanout 21 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/reg_rdata[16]_INST_0_i_5_n_0' (driver: u_regs/reg_rdata[16]_INST_0_i_5/O) has fanout 33 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'p_0_in_1[1]' (driver: u_dbg/Q[1]) has fanout 98 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[4][255]_i_3_n_0' (driver: u_ring/buf_data[4][255]_i_3/O) has fanout 109 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'blt_error' (driver: ) has fanout 39 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fw' (driver: u_seq/use_fw_reg_0) has fanout 188 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_156' (driver: u_ctl/reg_waddr[6]_1[0]) has fanout 27 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_ring/wptr[0][17]_i_1_n_0' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_168' (driver: u_ctl/st_reg[2]_4) has fanout 3242 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/st[2]' (driver: u_ring/FSM_sequential_st_reg[2]/Q) has fanout 53 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'mc_idle' (driver: ) has fanout 39 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/p_0_in34_in' (driver: u_seq/FSM_onehot_st_reg[5]/Q) has fanout 46 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[28]' has fanout 19 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[22]' has fanout 21 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[25]' has fanout 19 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[27]' has fanout 19 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[7][255]_i_1_n_0' (driver: u_ring/buf_data[7][255]_i_1/O) has fanout 284 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/f_faddr[31]_i_1_n_0' (driver: u_seq/f_faddr[31]_i_1/O) has fanout 33 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'rsp_error' (driver: ) has fanout 44 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'size_reg[0]_3[2]' (driver: u_ring/size_reg[0][3]_0[0]) has fanout 37 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'size_reg[0]_3[3]' (driver: u_ring/size_reg[0][3]_0[1]) has fanout 34 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'size_reg[2]_2[1]' (driver: u_ring/size_reg[2][1]_0[1]) has fanout 35 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[5][255]_i_1_n_0' (driver: u_ring/buf_data[5][255]_i_1/O) has fanout 284 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[0][255]_i_1_n_0' (driver: u_ring/buf_data[0][255]_i_1/O) has fanout 283 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[4][255]_i_1_n_0' (driver: u_ring/buf_data[4][255]_i_1/O) has fanout 283 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[2][255]_i_1_n_0' (driver: u_ring/buf_data[2][255]_i_1/O) has fanout 283 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[2][255]_i_3_n_0' (driver: u_ring/buf_data[2][255]_i_3/O) has fanout 103 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[1][255]_i_1_n_0' (driver: u_ring/buf_data[1][255]_i_1/O) has fanout 284 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 's_cp_state[2]' (driver: u_ctl/st_reg[2]_1[0]) has fanout 83 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/want_word[2]' (driver: u_ring/pa_reg[4]/Q) has fanout 35 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/a2[31]_i_1_n_0' (driver: u_seq/a2[31]_i_1/O) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_dbg/busy1' (driver: u_dbg/addr[31]_i_1/O) has fanout 30 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_dbg/busy0' (driver: u_dbg/q_strb[3]_i_1/O) has fanout 36 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'x_fault[0]' (driver: ) has fanout 40 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_seq/p_reg_n_0_[0]' has fanout 23 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/op_reg_n_0_[0]' (driver: u_seq/op_reg[0]/Q) has fanout 43 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/a1[31]_i_1_n_0' (driver: u_seq/a1[31]_i_1/O) has fanout 32 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_seq/p_reg_n_0_[1]' has fanout 18 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/a0[0]' (driver: u_seq/a0[31]_i_1/O) has fanout 30 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'x_fault[1]' (driver: ) has fanout 38 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa[31]_i_1_n_0' (driver: u_ring/pa[31]_i_1/O) has fanout 44 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_regs_n_15' has fanout 17 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs_n_14' (driver: u_regs/ridx_q_reg[2]_0) has fanout 27 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_149' (driver: u_ctl/E[0]) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/want_word[1]' (driver: u_ring/pa_reg[3]/Q) has fanout 35 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 's_ring_fault' (driver: u_ring/s_ring_fault) has fanout 77 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[12]' has fanout 22 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_amb_n_46' (driver: u_amb/q_valid_reg) has fanout 138 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[0]' (driver: ) has fanout 50 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_amb_n_75' (driver: u_amb/q_valid_reg_0) has fanout 50 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'p_0_in_1[0]' (driver: u_dbg/Q[0]) has fanout 98 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 's_seq_fault' (driver: u_seq/s_seq_fault) has fanout 77 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_10' (driver: u_ctl/st_reg[0]_0) has fanout 39 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/diff_sub_n_1' (driver: u_fence/diff_sub/addr_reg[4]) has fanout 31 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_fence/diff_sub_n_2' (driver: u_fence/diff_sub/addr_reg[4]_0) has fanout 31 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_151' (driver: u_ctl/reg_waddr[7][0]) has fanout 27 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_152' (driver: u_ctl/reg_waddr[10][1]) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_153' (driver: u_ctl/reg_waddr[10][0]) has fanout 27 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_154' (driver: u_ctl/reg_waddr[6][0]) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_155' (driver: u_ctl/reg_waddr[6]_0[0]) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_157' (driver: u_ctl/reg_waddr[6]_2[0]) has fanout 27 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_161' (driver: u_ctl/reg_waddr[10]_0[0]) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl_n_9' (driver: u_ctl/st_reg[1]_1) has fanout 76 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 's_n_data[9]' has fanout 17 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/reg_rdata[23]_INST_0_i_4_n_0' (driver: u_regs/reg_rdata[23]_INST_0_i_4/O) has fanout 29 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/reg_rdata[29]_INST_0_i_10_n_0' (driver: u_regs/reg_rdata[29]_INST_0_i_10/O) has fanout 43 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/reg_rdata[2]_INST_0_i_1_n_0' (driver: u_regs/reg_rdata[2]_INST_0_i_1/O) has fanout 27 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/reg_rdata[31]_INST_0_i_11_n_0' (driver: u_regs/reg_rdata[31]_INST_0_i_11/O) has fanout 65 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_regs/reg_rdata[31]_INST_0_i_2_n_0' (driver: u_regs/reg_rdata[31]_INST_0_i_2/O) has fanout 32 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[23]' has fanout 21 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[7]' (driver: ) has fanout 30 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[6]' (driver: ) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[3]' (driver: ) has fanout 48 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[5]' (driver: ) has fanout 33 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[1]' (driver: ) has fanout 45 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[18]' has fanout 21 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[15]' has fanout 21 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[14]' has fanout 21 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[20]' has fanout 22 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[16]' has fanout 24 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[26]' has fanout 19 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_data[3][255]_i_1_n_0' (driver: u_ring/buf_data[3][255]_i_1/O) has fanout 284 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl/stuck_count[33]_i_1_n_0' (driver: u_ctl/stuck_count[33]_i_1/O) has fanout 34 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/active_qid_reg_n_0_[0]' (driver: u_ring/active_qid_reg[0]/Q) has fanout 181 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/active_qid_reg_n_0_[1]' (driver: u_ring/active_qid_reg[1]/Q) has fanout 182 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_waddr[7]' has fanout 22 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[30]' has fanout 18 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[31]' has fanout 19 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_dbg/data[31]_i_3_n_0' (driver: u_dbg/data[31]_i_3/O) has fanout 33 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_tag[0][26]_i_2_n_0' (driver: u_ring/buf_tag[0][26]_i_2/O) has fanout 96 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[19]' has fanout 21 (> 16 soft limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[29]' has fanout 19 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_amb_n_47' (driver: u_amb/lock_k_reg[0]_0) has fanout 114 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/dma_size[4]' (driver: u_ring/dma_size_reg[4]/Q) has fanout 38 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'reg_wdata[2]' (driver: ) has fanout 49 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'reg_wdata[21]' has fanout 21 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/dma_size__0[0]' (driver: u_ring/dma_size_reg[0]/Q) has fanout 29 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl/ap_base0' (driver: u_ctl/ap_base[31]_i_1/O) has fanout 27 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/n[15]_i_4_n_0' (driver: u_ring/n[15]_i_4/O) has fanout 27 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/dma_size__0[2]' (driver: u_ring/dma_size_reg[2]/Q) has fanout 36 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl/fault_info[0]' (driver: u_ctl/fault_addr[31]_i_1/O) has fanout 56 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/pa_reg[5]_rep__2_n_0' (driver: u_ring/pa_reg[5]_rep__2/Q) has fanout 121 (> 24 hard limit)
+  WARNING (Soft Fanout): Net 'u_seq/op_reg_n_0_[6]' has fanout 24 (> 16 soft limit)
+  VIOLATION (Hard Fanout): Net 'u_seq/op_reg_n_0_[5]' (driver: u_seq/op_reg[5]/Q) has fanout 26 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/buf_tag[4][26]_i_2_n_0' (driver: u_ring/buf_tag[4][26]_i_2/O) has fanout 96 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/dma_sem[31]_i_1_n_0' (driver: u_ring/dma_sem[31]_i_1/O) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/dma_size__0[3]' (driver: u_ring/dma_size_reg[3]/Q) has fanout 37 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ring/f_pulse' (driver: u_ring/f_pulse_i_1/O) has fanout 33 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'u_ctl/wdt_count[31]_i_1_n_0' (driver: u_ctl/wdt_count[31]_i_1/O) has fanout 32 (> 24 hard limit)
+  VIOLATION (Hard Fanout): Net 'size_reg[2]_2[0]' (driver: u_ring/size_reg[2][1]_0[0]) has fanout 28 (> 24 hard limit)
+# if {$r2_errors == 0} {
+#     rpt_puts "  \[PASS\] Rule 2 Check Succeeded (0 hard violations, $r2_warnings soft warnings)."
+# } else {
+#     rpt_puts "  \[FAIL\] Rule 2 Check Failed with $r2_errors violation(s)."
+#     set num_errors [expr {$num_errors + $r2_errors}]
+# }
+  [FAIL] Rule 2 Check Failed with 174 violation(s).
+# set num_warnings [expr {$num_warnings + $r2_warnings}]
+# rpt_puts "\n--------------------------------------------------------------------------------"
+
+--------------------------------------------------------------------------------
+# rpt_puts "\[RULE 3\] Flop-to-Flop Boundary Rule (Feedthrough Check)"
+[RULE 3] Flop-to-Flop Boundary Rule (Feedthrough Check)
+# rpt_puts "  Constraints:"
+  Constraints:
+# rpt_puts "    - Inter-module input-to-output combinational feedthrough: strictly 0 paths"
+    - Inter-module input-to-output combinational feedthrough: strictly 0 paths
+# rpt_puts "--------------------------------------------------------------------------------"
+--------------------------------------------------------------------------------
+# set r3_errors 0
+# set in_ports [get_ports -filter {DIRECTION == "IN" && NAME !~ "*clk*" && NAME !~ "*rst*" && NAME !~ "*reset*"}]
+# set out_ports [get_ports -filter {DIRECTION == "OUT"}]
+# if {[llength $in_ports] > 0 && [llength $out_ports] > 0} {
+#     set feedthrough_paths [get_timing_paths -from $in_ports -to $out_ports -max_paths 50]
+#     if {[llength $feedthrough_paths] > 0} {
+#         foreach fp $feedthrough_paths {
+#             set sp [get_property STARTPOINT_PIN $fp]
+#             set ep [get_property ENDPOINT_PIN $fp]
+#             set levels [get_property LOGIC_LEVELS $fp]
+#             rpt_puts "  VIOLATION (Feedthrough): Combinational path from Port '$sp' to Port '$ep' ($levels logic levels)"
+#             incr r3_errors
+#         }
+#     }
+# }
+  VIOLATION (Feedthrough): Combinational path from Port 'reg_waddr[15]' to Port 'blt_kick' (7 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'fw_data[7]' to Port 'fw_ready' (5 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[0]' to Port 'inv[1]' (6 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[0]' to Port 'inv[2]' (6 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[0]' to Port 'inv[0]' (6 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[0]' to Port 'inv[3]' (6 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[0]' to Port 'occ_clear' (6 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[0]' to Port 'lc_kick' (6 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[0]' to Port 'raw_kick' (6 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[0]' to Port 'cs_kick' (6 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[0]' to Port 'draw_kick' (6 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'reg_waddr[15]' to Port 'hcr_we' (4 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'blt_busy' to Port 'reg_rdata[1]' (4 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[4]' to Port 'reg_rdata[4]' (5 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[6]' to Port 'reg_rdata[6]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'mc_idle' to Port 'reg_rdata[8]' (4 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'reg_waddr[15]' to Port 'hcr_widx[0]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'reg_waddr[15]' to Port 'hcr_widx[1]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'reg_waddr[15]' to Port 'hcr_widx[2]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'reg_waddr[15]' to Port 'hcr_widx[3]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'reg_waddr[15]' to Port 'hcr_widx[4]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'mem_ready' to Port 'reg_rdata[12]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[17]' to Port 'reg_rdata[17]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[13]' to Port 'reg_rdata[13]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[19]' to Port 'reg_rdata[19]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[20]' to Port 'reg_rdata[20]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[22]' to Port 'reg_rdata[22]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[24]' to Port 'reg_rdata[24]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[26]' to Port 'reg_rdata[26]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[28]' to Port 'reg_rdata[28]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[7]' to Port 'reg_rdata[7]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'rsp_error' to Port 'cp_fence_ev' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[2]' to Port 'reg_rdata[2]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[3]' to Port 'reg_rdata[3]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'diag_cp_pc[16]' to Port 'reg_rdata[16]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[27]' to Port 'reg_rdata[27]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[30]' to Port 'reg_rdata[30]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[29]' to Port 'reg_rdata[29]' (3 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'diag_cp_pc[0]' to Port 'reg_rdata[0]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[10]' to Port 'reg_rdata[10]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[9]' to Port 'reg_rdata[9]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'x_rdata[11]' to Port 'reg_rdata[11]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'busy_ext[5]' to Port 'reg_rdata[5]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'diag_cp_status[14]' to Port 'reg_rdata[14]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'diag_cp_status[15]' to Port 'reg_rdata[15]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'diag_cp_status[18]' to Port 'reg_rdata[18]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'diag_cp_status[21]' to Port 'reg_rdata[21]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'diag_cp_status[23]' to Port 'reg_rdata[23]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'diag_cp_status[25]' to Port 'reg_rdata[25]' (2 logic levels)
+  VIOLATION (Feedthrough): Combinational path from Port 'diag_cp_status[31]' to Port 'reg_rdata[31]' (2 logic levels)
+# if {$r3_errors == 0} {
+#     rpt_puts "  \[PASS\] Rule 3 Check Succeeded (0 combinational feedthrough paths)."
+# } else {
+#     rpt_puts "  \[FAIL\] Rule 3 Check Failed with $r3_errors feedthrough path(s)."
+#     set num_errors [expr {$num_errors + $r3_errors}]
+# }
+  [FAIL] Rule 3 Check Failed with 50 feedthrough path(s).
+# rpt_puts "\n--------------------------------------------------------------------------------"
+
+--------------------------------------------------------------------------------
+# rpt_puts "\[RULE 4\] Clean Single-Cycle Memory Pipeline"
+[RULE 4] Clean Single-Cycle Memory Pipeline
+# rpt_puts "  Constraints:"
+  Constraints:
+# rpt_puts "    - RAM Address Input: 0 combinational logic levels (direct from register)"
+    - RAM Address Input: 0 combinational logic levels (direct from register)
+# rpt_puts "    - RAM Data Output: 0 combinational logic levels before first register stage"
+    - RAM Data Output: 0 combinational logic levels before first register stage
+# rpt_puts "--------------------------------------------------------------------------------"
+--------------------------------------------------------------------------------
+# set r4_errors 0
+# set mem_cells [get_cells -hierarchical -filter {
+#     REF_NAME =~ "RAMB*" || REF_NAME =~ "RAM32*" || REF_NAME =~ "RAM64*" || REF_NAME =~ "RAM128*"
+# }]
+# if {[llength $mem_cells] > 0} {
+#     foreach m $mem_cells {
+#         # Check Address pins
+#         set addr_pins [get_pins -of_objects $m -filter {REF_PIN_NAME =~ "*ADDR*"}]
+#         if {[llength $addr_pins] > 0} {
+#             set a_paths [get_timing_paths -to $addr_pins -max_paths 10]
+#             foreach ap $a_paths {
+#                 set lev [get_property LOGIC_LEVELS $ap]
+#                 if {$lev > 0} {
+#                     set sp [get_property STARTPOINT_PIN $ap]
+#                     set ep [get_property ENDPOINT_PIN $ap]
+#                     rpt_puts "  VIOLATION (RAM Address Logic): Memory '$m' address pin '$ep' has $lev logic levels from '$sp'"
+#                     incr r4_errors
+#                 }
+#             }
+#         }
+# 
+#         # Check Data Output pins
+#         set dout_pins [get_pins -of_objects $m -filter {REF_PIN_NAME =~ "*DO*" || REF_PIN_NAME =~ "*DOUT*"}]
+#         if {[llength $dout_pins] > 0} {
+#             set d_paths [get_timing_paths -from $dout_pins -max_paths 10]
+#             foreach dp $d_paths {
+#                 set lev [get_property LOGIC_LEVELS $dp]
+#                 if {$lev > 0} {
+#                     set sp [get_property STARTPOINT_PIN $dp]
+#                     set ep [get_property ENDPOINT_PIN $dp]
+#                     rpt_puts "  VIOLATION (RAM DataOut Logic): Memory '$m' data pin '$sp' has $lev logic levels before '$ep'"
+#                     incr r4_errors
+#                 }
+#             }
+#         }
+#     }
+# }
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[10]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[11]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[12]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[13]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[14]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[5]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[6]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[7]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[8]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM Address Logic): Memory 'u_state/mem_b_reg' address pin 'u_state/mem_b_reg/ADDRARDADDR[9]' has 6 logic levels from 'u_seq/use_fw_reg/C'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[10]/D'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[11]/D'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[12]/D'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[13]/D'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[14]/D'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[15]/D'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[16]/D'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[17]/D'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[18]/D'
+  VIOLATION (RAM DataOut Logic): Memory 'u_state/mem_b_reg' data pin 'u_state/mem_b_reg/CLKBWRCLK' has 1 logic levels before 'st_wdata_reg[19]/D'
+# if {$r4_errors == 0} {
+#     rpt_puts "  \[PASS\] Rule 4 Check Succeeded (Clean 1-cycle memory interfaces, [llength $mem_cells] RAM instances checked)."
+# } else {
+#     rpt_puts "  \[FAIL\] Rule 4 Check Failed with $r4_errors violation(s)."
+#     set num_errors [expr {$num_errors + $r4_errors}]
+# }
+  [FAIL] Rule 4 Check Failed with 20 violation(s).
+# rpt_puts "\n--------------------------------------------------------------------------------"
+
+--------------------------------------------------------------------------------
+# rpt_puts "\[RULE 5\] Backpressure Decoupling (Skid Buffer Isolation)"
+[RULE 5] Backpressure Decoupling (Skid Buffer Isolation)
+# rpt_puts "  Constraints:"
+  Constraints:
+# rpt_puts "    - Handshake 'ready' signals must not ripple combinationally across modules"
+    - Handshake 'ready' signals must not ripple combinationally across modules
+# rpt_puts "--------------------------------------------------------------------------------"
+--------------------------------------------------------------------------------
+# set r5_errors 0
+# set ready_ins [get_ports -filter {NAME =~ "*ready*" && DIRECTION == "IN"}]
+# set ready_outs [get_ports -filter {NAME =~ "*ready*" && DIRECTION == "OUT"}]
+# if {[llength $ready_ins] > 0 && [llength $ready_outs] > 0} {
+#     set ready_paths [get_timing_paths -from $ready_ins -to $ready_outs -max_paths 20]
+#     if {[llength $ready_paths] > 0} {
+#         foreach rp $ready_paths {
+#             set sp [get_property STARTPOINT_PIN $rp]
+#             set ep [get_property ENDPOINT_PIN $rp]
+#             set lev [get_property LOGIC_LEVELS $rp]
+#             if {$lev > 0} {
+#                 rpt_puts "  VIOLATION (Ready Ripple): Combinational path from '$sp' to '$ep' ($lev logic levels)"
+#                 incr r5_errors
+#             }
+#         }
+#     }
+# }
+WARNING: [Vivado 12-975] No timing paths matched 'get_timing_paths -from [get_ports -filter {NAME =~ "*ready*" && DIRECTION == "IN"}] -to [get_ports -filter {NAME =~ "*ready*" && DIRECTION == "OUT"}] -max_paths 20'.
+# if {$r5_errors == 0} {
+#     rpt_puts "  \[PASS\] Rule 5 Check Succeeded (Zero combinational ready ripples across module boundaries)."
+# } else {
+#     rpt_puts "  \[FAIL\] Rule 5 Check Failed with $r5_errors violation(s)."
+#     set num_errors [expr {$num_errors + $r5_errors}]
+# }
+  [PASS] Rule 5 Check Succeeded (Zero combinational ready ripples across module boundaries).
+# rpt_puts "\n================================================================================"
+
+================================================================================
+# rpt_puts "  ASIC 5nm 1.5 GHz COMPLIANCE SUMMARY FOR $top"
+  ASIC 5nm 1.5 GHz COMPLIANCE SUMMARY FOR atg_cp
+# rpt_puts "================================================================================"
+================================================================================
+# set s1 [expr {$r1_errors == 0 ? "PASS" : "FAIL"}]
+# set s2 [expr {$r2_errors == 0 ? "PASS" : "FAIL"}]
+# set s3 [expr {$r3_errors == 0 ? "PASS" : "FAIL"}]
+# set s4 [expr {$r4_errors == 0 ? "PASS" : "FAIL"}]
+# set s5 [expr {$r5_errors == 0 ? "PASS" : "FAIL"}]
+# rpt_puts "  Rule 1: Primitive & Logic Level Budget   \[$s1\] ($r1_errors violations, $r1_warnings warnings)"
+  Rule 1: Primitive & Logic Level Budget   [FAIL] (100 violations, 0 warnings)
+# rpt_puts "  Rule 2: Fanout Limitation & Buffering     \[$s2\] ($r2_errors violations, $r2_warnings warnings)"
+  Rule 2: Fanout Limitation & Buffering     [FAIL] (174 violations, 55 warnings)
+# rpt_puts "  Rule 3: Flop-to-Flop Boundary Rule        \[$s3\] ($r3_errors violations)"
+  Rule 3: Flop-to-Flop Boundary Rule        [FAIL] (50 violations)
+# rpt_puts "  Rule 4: Clean Single-Cycle Memory         \[$s4\] ($r4_errors violations)"
+  Rule 4: Clean Single-Cycle Memory         [FAIL] (20 violations)
+# rpt_puts "  Rule 5: Skid Backpressure Decoupling      \[$s5\] ($r5_errors violations)"
+  Rule 5: Skid Backpressure Decoupling      [PASS] (0 violations)
+# rpt_puts "--------------------------------------------------------------------------------"
+--------------------------------------------------------------------------------
+# rpt_puts "  TOTAL VIOLATIONS: $num_errors"
+  TOTAL VIOLATIONS: 345
+# rpt_puts "  TOTAL WARNINGS:   $num_warnings"
+  TOTAL WARNINGS:   55
+# if {$num_errors == 0} {
+#     rpt_puts "  OVERALL VERDICT: PASSED (Fully compliant with ASIC 5nm 1.5 GHz architecture)"
+#     rpt_puts "================================================================================"
+#     close $rpt
+#     exit 0
+# } else {
+#     rpt_puts "  OVERALL VERDICT: FAILED ($num_errors violations need microarchitectural fix)"
+#     rpt_puts "================================================================================"
+#     close $rpt
+#     exit 1
+# }
+  OVERALL VERDICT: FAILED (345 violations need microarchitectural fix)
+================================================================================
+INFO: [Common 17-206] Exiting Vivado at Fri Oct 30 15:58:52 2026...

@@ -28,7 +28,7 @@
 module atg_tu_cube_tb;
 
 	reg [2:0]         face_in;
-	reg signed [15:0] u_in, v_in;
+	reg signed [16:0] u_in, v_in;
 	reg [15:0]        size;
 
 	wire [2:0]  face_out;
@@ -48,8 +48,8 @@ module atg_tu_cube_tb;
 	wire [34:0] texel_t;
 	atg_tu_cube_texel dut_texel (
 		.tface(face_in),
-		.i({{8{u_in[15]}}, u_in}),
-		.j({{8{v_in[15]}}, v_in}),
+		.i({{7{u_in[16]}}, u_in}),
+		.j({{7{v_in[16]}}, v_in}),
 		.n(size),
 		.t(texel_t)
 	);

@@ -74,12 +74,15 @@ module atg_tu_cache #(
 	localparam TW = ADDR_W - LINE_SHIFT - IW;
 	localparam WW = LINE_SHIFT - 2;	/* word in the line */
 
-	localparam [2:0] IDLE       = 3'd0,
-	                 LANE_CHECK = 3'd1,
-	                 MREQ       = 3'd2,
-	                 MWAIT      = 3'd3,
-	                 LANE_READ  = 3'd4,
-	                 OUT        = 3'd5;
+	localparam [3:0] IDLE         = 4'd0,
+	                 LANE_CHECK   = 4'd1,
+	                 MREQ         = 4'd2,
+	                 MWAIT        = 4'd3,
+	                 MW_WRITE     = 4'd4,
+	                 LANE_WAIT    = 4'd5,
+	                 LANE_FETCH   = 4'd6,
+	                 LANE_EXTRACT = 4'd7,
+	                 OUT          = 4'd8;
 
 	localparam RAW_AW = IW + 2;
 
@@ -89,12 +92,26 @@ module atg_tu_cache #(
 	wire [LB-1:0] bank_q2;
 	wire [LB-1:0] bank_q3;
 
-	reg [TW-1:0] tags [0:NSETS-1][0:WAYS-1];
-	reg [WAYS-1:0] vld [0:NSETS-1];
-	reg [2:0] plru [0:NSETS-1];
+	reg [LB-1:0] q0_reg;
+	reg [LB-1:0] q1_reg;
+	reg [LB-1:0] q2_reg;
+	reg [LB-1:0] q3_reg;
 
-	reg [2:0] st;
-	reg [1:0] lane;
+	reg [RAW_AW-1:0] b0_raddr_q, b1_raddr_q, b2_raddr_q, b3_raddr_q;
+	reg b_we_q;
+	reg [RAW_AW-1:0] b_waddr_q;
+	reg [LB-1:0] b_wdata_q;
+	reg [IW-1:0] mline_set_q;
+	reg [1:0] fill_way_q;
+	reg [TW-1:0] mline_tag_q;
+	reg drop_q;
+
+	(* ram_style = "registers" *) reg [TW-1:0] tags [0:NSETS-1][0:WAYS-1];
+	(* ram_style = "registers" *) reg [WAYS-1:0] vld [0:NSETS-1];
+	(* ram_style = "registers" *) reg [2:0] plru [0:NSETS-1];
+
+	(* max_fanout = 16 *) reg [3:0] st;
+	(* max_fanout = 16 *) reg [1:0] lane;
 	reg drop;
 	reg [ADDR_W-LINE_SHIFT-1:0] mline;
 	reg [1:0] miss_slot;
@@ -110,7 +127,7 @@ module atg_tu_cache #(
 	reg cur_bord1;
 	reg cur_bord2;
 	reg cur_bord3;
-	reg cur_mask;
+	(* max_fanout = 16 *) reg cur_mask;
 
 	/* Pipeline registers from LANE_CHECK to LANE_READ */
 	reg [IW-1:0] rd_set0, rd_set1, rd_set2, rd_set3;
@@ -236,11 +253,11 @@ module atg_tu_cache #(
 	wire [RAW_AW-1:0] b2_raddr = {b2_set, b2_way};
 	wire [RAW_AW-1:0] b3_raddr = {b3_set, b3_way};
 
-	/* Crossbar output to slots */
-	wire [LB-1:0] slot_line0 = bank_q0;
-	wire [LB-1:0] slot_line1 = bank_q1;
-	wire [LB-1:0] slot_line2 = bank_q2;
-	wire [LB-1:0] slot_line3 = bank_q3;
+	/* Crossbar output to slots (directly from clean registered BRAM output) */
+	wire [LB-1:0] slot_line0 = q0_reg;
+	wire [LB-1:0] slot_line1 = q1_reg;
+	wire [LB-1:0] slot_line2 = q2_reg;
+	wire [LB-1:0] slot_line3 = q3_reg;
 
 	/* Function for texel word extraction without arithmetic operators */
 	function [31:0] extract_tex;
@@ -311,6 +328,11 @@ module atg_tu_cache #(
 	wire nxt_lane_co_unused;
 	am_add #(.W(2)) u_inc_lane (.a(lane), .b(2'd1), .ci(1'b0), .s(nxt_lane), .co(nxt_lane_co_unused));
 
+	wire no_more_lanes = (lane == 2'd0 && tc_mask[3:1] == 3'b000) ||
+	                     (lane == 2'd1 && tc_mask[3:2] == 2'b00)  ||
+	                     (lane == 2'd2 && !tc_mask[3])            ||
+	                     (lane == 2'd3);
+
 	assign ta_ready = st == IDLE;
 	assign tc_valid = st == OUT;
 	assign req_valid = st == MREQ;
@@ -322,37 +344,49 @@ module atg_tu_cache #(
 
 	wire [IW-1:0] mline_set = mline[IW-1:0];
 	wire [1:0] fill_way = get_victim(vld[mline_set], plru[mline_set]);
-	wire b_we = rsp_valid && !rsp_error && (st == MWAIT);
 	wire [RAW_AW-1:0] b_waddr = {mline_set, fill_way};
 
 	/* 4 Banks instantiated via am_bram_sdp */
 	am_bram_sdp #(.W(LB), .ADDR_W(RAW_AW)) u_bram_b0 (
-		.clk(clk), .we(b_we), .waddr(b_waddr), .wdata(rsp_rdata),
-		.re(1'b1), .raddr(b0_raddr), .rdata(bank_q0)
+		.clk(clk), .we(b_we_q), .waddr(b_waddr_q), .wdata(b_wdata_q),
+		.re(1'b1), .raddr(b0_raddr_q), .rdata(bank_q0)
 	);
 
 	generate
 		if (NBANKS > 1) begin : g_b1
 			am_bram_sdp #(.W(LB), .ADDR_W(RAW_AW)) u_bram_b1 (
-				.clk(clk), .we(b_we), .waddr(b_waddr), .wdata(rsp_rdata),
-				.re(1'b1), .raddr(b1_raddr), .rdata(bank_q1)
+				.clk(clk), .we(b_we_q), .waddr(b_waddr_q), .wdata(b_wdata_q),
+				.re(1'b1), .raddr(b1_raddr_q), .rdata(bank_q1)
 			);
 		end else begin : g_b1_shared
 			assign bank_q1 = bank_q0;
 		end
 		if (NBANKS > 2) begin : g_b23
 			am_bram_sdp #(.W(LB), .ADDR_W(RAW_AW)) u_bram_b2 (
-				.clk(clk), .we(b_we), .waddr(b_waddr), .wdata(rsp_rdata),
-				.re(1'b1), .raddr(b2_raddr), .rdata(bank_q2)
+				.clk(clk), .we(b_we_q), .waddr(b_waddr_q), .wdata(b_wdata_q),
+				.re(1'b1), .raddr(b2_raddr_q), .rdata(bank_q2)
 			);
 			am_bram_sdp #(.W(LB), .ADDR_W(RAW_AW)) u_bram_b3 (
-				.clk(clk), .we(b_we), .waddr(b_waddr), .wdata(rsp_rdata),
-				.re(1'b1), .raddr(b3_raddr), .rdata(bank_q3)
+				.clk(clk), .we(b_we_q), .waddr(b_waddr_q), .wdata(b_wdata_q),
+				.re(1'b1), .raddr(b3_raddr_q), .rdata(bank_q3)
 			);
 		end else begin : g_b23_shared
 			assign bank_q2 = bank_q0;
 			assign bank_q3 = bank_q1;
 		end
+	endgenerate
+
+	wire [15:0] inv_b;
+	genvar gi;
+	generate
+	for (gi = 0; gi < 16; gi = gi + 1) begin : g_inv_buf
+`ifdef SYNTH_KINTEX7
+		(* keep = "true", dont_touch = "true" *)
+		LUT1 #(.INIT(2'b10)) u_ibuf (.I0(inv), .O(inv_b[gi]));
+`else
+		assign inv_b[gi] = inv;
+`endif
+	end
 	endgenerate
 
 	integer j, s_init;
@@ -373,6 +407,21 @@ module atg_tu_cache #(
 			cur_bord2 <= 1'b0;
 			cur_bord3 <= 1'b0;
 			cur_mask <= 1'b0;
+			b0_raddr_q <= {RAW_AW{1'b0}};
+			b1_raddr_q <= {RAW_AW{1'b0}};
+			b2_raddr_q <= {RAW_AW{1'b0}};
+			b3_raddr_q <= {RAW_AW{1'b0}};
+			b_we_q <= 1'b0;
+			b_waddr_q <= {RAW_AW{1'b0}};
+			b_wdata_q <= {LB{1'b0}};
+			mline_set_q <= {IW{1'b0}};
+			fill_way_q <= 2'd0;
+			mline_tag_q <= {TW{1'b0}};
+			drop_q <= 1'b0;
+			q0_reg <= {LB{1'b0}};
+			q1_reg <= {LB{1'b0}};
+			q2_reg <= {LB{1'b0}};
+			q3_reg <= {LB{1'b0}};
 			rd_set0 <= {IW{1'b0}};
 			rd_set1 <= {IW{1'b0}};
 			rd_set2 <= {IW{1'b0}};
@@ -440,7 +489,7 @@ module atg_tu_cache #(
 				end
 				if (!cur_mask) begin
 					/* Lane masked out */
-					if (lane == 2'd3)
+					if (no_more_lanes)
 						st <= OUT;
 					else begin
 						lane <= nxt_lane;
@@ -460,7 +509,11 @@ module atg_tu_cache #(
 					st <= MREQ;
 				end else begin
 					/* All active non-border slots HIT: read from 4 banks */
-					st <= LANE_READ;
+					st <= LANE_WAIT;
+					b0_raddr_q <= b0_raddr;
+					b1_raddr_q <= b1_raddr;
+					b2_raddr_q <= b2_raddr;
+					b3_raddr_q <= b3_raddr;
 					rd_set0 <= s0_set;
 					rd_set1 <= s1_set;
 					rd_set2 <= s2_set;
@@ -492,26 +545,18 @@ module atg_tu_cache #(
 					rd_lane <= lane;
 				end
 			end
-			MREQ: if (req_ready) begin
-				st <= MWAIT;
+			LANE_WAIT: begin
+				st <= LANE_FETCH;
 			end
-			MWAIT: if (rsp_valid) begin
-				if (rsp_error) begin
-					/* Error region: texel stays 0, mark slot */
-					if (a0[ADDR_W-1:LINE_SHIFT] == mline) slot_err[0] <= 1'b1;
-					if (a1[ADDR_W-1:LINE_SHIFT] == mline) slot_err[1] <= 1'b1;
-					if (a2[ADDR_W-1:LINE_SHIFT] == mline) slot_err[2] <= 1'b1;
-					if (a3[ADDR_W-1:LINE_SHIFT] == mline) slot_err[3] <= 1'b1;
-					st <= LANE_CHECK;
-				end else begin
-					tags[mline_set][fill_way] <= mline[ADDR_W-LINE_SHIFT-1 -: TW];
-					vld[mline_set][fill_way] <= !drop && !inv;
-					plru[mline_set] <= update_plru(plru[mline_set], fill_way);
-					st <= LANE_CHECK;
-				end
+			LANE_FETCH: begin
+				q0_reg <= bank_q0;
+				q1_reg <= bank_q1;
+				q2_reg <= bank_q2;
+				q3_reg <= bank_q3;
+				st <= LANE_EXTRACT;
 			end
-			LANE_READ: begin
-				/* Extract 4 texels from BRAM outputs */
+			LANE_EXTRACT: begin
+				/* Extract 4 texels from BRAM outputs (q0_reg..q3_reg) */
 				tc_texels[{rd_lane, 2'b00, 5'b00000} +: 32] <= rd_use0 ? tex0 : 32'd0;
 				tc_texels[{rd_lane, 2'b01, 5'b00000} +: 32] <= rd_use1 ? tex1 : 32'd0;
 				tc_texels[{rd_lane, 2'b10, 5'b00000} +: 32] <= rd_use2 ? tex2 : 32'd0;
@@ -533,7 +578,7 @@ module atg_tu_cache #(
 					plru[rd_set3] <= update_plru(plru[rd_set3], rd_way3);
 
 				slot_err <= 4'd0;
-				if (lane == 2'd3)
+				if (no_more_lanes)
 					st <= OUT;
 				else begin
 					lane <= nxt_lane;
@@ -549,6 +594,35 @@ module atg_tu_cache #(
 					st <= LANE_CHECK;
 				end
 			end
+			MREQ: if (req_ready) begin
+				st <= MWAIT;
+			end
+			MWAIT: if (rsp_valid) begin
+				if (rsp_error) begin
+					/* Error region: texel stays 0, mark slot */
+					if (a0[ADDR_W-1:LINE_SHIFT] == mline) slot_err[0] <= 1'b1;
+					if (a1[ADDR_W-1:LINE_SHIFT] == mline) slot_err[1] <= 1'b1;
+					if (a2[ADDR_W-1:LINE_SHIFT] == mline) slot_err[2] <= 1'b1;
+					if (a3[ADDR_W-1:LINE_SHIFT] == mline) slot_err[3] <= 1'b1;
+					st <= LANE_CHECK;
+				end else begin
+					b_we_q <= 1'b1;
+					b_waddr_q <= b_waddr;
+					b_wdata_q <= rsp_rdata;
+					mline_set_q <= mline_set;
+					fill_way_q <= fill_way;
+					mline_tag_q <= mline[ADDR_W-LINE_SHIFT-1 -: TW];
+					drop_q <= drop || inv;
+					st <= MW_WRITE;
+				end
+			end
+			MW_WRITE: begin
+				b_we_q <= 1'b0;
+				tags[mline_set_q][fill_way_q] <= mline_tag_q;
+				vld[mline_set_q][fill_way_q] <= !drop_q;
+				plru[mline_set_q] <= update_plru(plru[mline_set_q], fill_way_q);
+				st <= LANE_CHECK;
+			end
 			OUT: if (tc_ready) begin
 				st <= IDLE;
 			end
@@ -557,7 +631,8 @@ module atg_tu_cache #(
 
 			if (inv) begin
 				for (s_init = 0; s_init < NSETS; s_init = s_init + 1)
-					vld[s_init] <= {WAYS{1'b0}};
+					if (inv_b[s_init[5:2]])
+						vld[s_init] <= {WAYS{1'b0}};
 				drop <= 1'b1;
 			end
 		end

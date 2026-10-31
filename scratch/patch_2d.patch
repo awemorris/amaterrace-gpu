@@ -1,0 +1,2474 @@
+diff --git a/rtl/gpu/blt/atg_blt_2d.v b/rtl/gpu/blt/atg_blt_2d.v
+index 09876b3..3f80b4d 100644
+--- a/rtl/gpu/blt/atg_blt_2d.v
++++ b/rtl/gpu/blt/atg_blt_2d.v
+@@ -31,6 +31,7 @@
+ `timescale 1ns / 1ps
+ `default_nettype none
+ 
++(* keep_hierarchy = "yes" *)
+ module atg_blt_2d #(
+ 	parameter ADDR_W = 32,
+ 	parameter LINE_BYTES = 32,
+@@ -91,13 +92,57 @@ module atg_blt_2d #(
+ 	);
+ 
+ 	/* The mode of the blit in progress, taken at the kick. */
+-	reg m_copy;		/* reads a source: COPY, TILE, UNTILE */
+-	reg m_blend;
+-	reg m_rev;
+-	reg m_dtile, m_stile;	/* the destination (TILE), the source (UNTILE) is tiled */
+-	reg [2:0] psl;		/* log2 of the pixel's bytes */
+-	reg [3:0] m_keep;
+-	reg m_burst;
++	(* max_fanout = 16 *) reg m_copy;		/* reads a source: COPY, TILE, UNTILE */
++	(* max_fanout = 16 *) reg m_blend;
++	(* max_fanout = 16 *) reg m_rev;
++	(* max_fanout = 16 *) reg m_dtile, m_stile;	/* the destination (TILE), the source (UNTILE) is tiled */
++	(* max_fanout = 16 *) reg m_tiled;
++	(* max_fanout = 10 *) reg [2:0] psl;		/* log2 of the pixel's bytes */
++	(* dont_touch = "true" *) reg [2:0] psl_b0, psl_b1, psl_c0, psl_c1;
++	(* dont_touch = "true" *) reg [2:0] psl_w0, psl_w1, psl_w2;
++	(* max_fanout = 16 *) reg [3:0] m_keep;
++	(* max_fanout = 16 *) reg m_burst;
++	(* extract_reset = "no", max_fanout = 16 *) reg [US-1:0] r_mask_lp, r_mask_lim;
++	(* extract_reset = "no", max_fanout = 16 *) reg [US-1:2] r_mask_thi;
++	(* extract_reset = "no", max_fanout = 16 *) reg r_allow_fast_walk;
++	(* extract_reset = "no", max_fanout = 16 *) reg [3:0] r_mask_gt2lp;
++
++	(* dont_touch = "true" *) wire [2:0] o_psl_b0, o_psl_b1, o_psl_b2;
++`ifdef SYNTH_KINTEX7
++	genvar opsli;
++	generate
++		for (opsli = 0; opsli < 3; opsli = opsli + 1) begin : g_opsl_buf
++			LUT1 #(.INIT(2'b10)) u_op0 (.I0(o_psl[opsli]), .O(o_psl_b0[opsli]));
++			LUT1 #(.INIT(2'b10)) u_op1 (.I0(o_psl[opsli]), .O(o_psl_b1[opsli]));
++			LUT1 #(.INIT(2'b10)) u_op2 (.I0(o_psl[opsli]), .O(o_psl_b2[opsli]));
++		end
++	endgenerate
++`else
++	assign o_psl_b0 = o_psl;
++	assign o_psl_b1 = o_psl;
++	assign o_psl_b2 = o_psl;
++`endif
++
++	/* Physically replicated mode/shift registers for 0-Pre-LUT, <=16-fanout address shift muxes */
++	(* dont_touch = "true" *) reg dtile_l0, dtile_l1, dtile_l2, dtile_l3, dtile_l4;
++	(* dont_touch = "true" *) reg stile_l0, stile_l1, stile_l2, stile_l3, stile_l4;
++	(* dont_touch = "true" *) reg dtile_g0, dtile_g1, dtile_g2, dtile_g3, dtile_g4;
++	(* dont_touch = "true" *) reg stile_g0, stile_g1, stile_g2, stile_g3, stile_g4;
++	(* dont_touch = "true" *) reg [2:0] psl_ld0, psl_ld1, psl_ld2, psl_ld3, psl_ld4;
++	(* dont_touch = "true" *) reg [2:0] psl_ls0, psl_ls1, psl_ls2, psl_ls3, psl_ls4;
++	(* dont_touch = "true" *) reg [2:0] pslw_d0, pslw_d1, pslw_d2, pslw_d3, pslw_d4;
++	(* dont_touch = "true" *) reg [2:0] pslw_s0, pslw_s1, pslw_s2, pslw_s3, pslw_s4;
++
++	/* Pre-registered stride and row-step constants */
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] r_dstride, r_sstride;
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] r_dbase, r_sbase;
++	(* max_fanout = 16 *) reg [15:0] r_src_x0;
++	(* max_fanout = 16 *) reg [16:0] r_src_dx, r_src_dy;
++	(* max_fanout = 16 *) reg r_sbase_eq_dbase, r_sxy_lt_x0;
++	(* extract_reset = "no", max_fanout = 16 *) reg [7:0] r_tile_step, r_tile_back;
++	(* extract_reset = "no", max_fanout = 16 *) reg [7:0] r_d_in_tile, r_s_in_tile;
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] r_dst_back, r_src_back;
++	(* max_fanout = 16 *) reg [31:0] r_dst_neg, r_src_neg;
+ 
+ 	/* The pixel offset of pixel x in a row (linear or in 4x4 tiles); its bytes are this << psl. */
+ 	function [ADDR_W-1:0] x_pixels;
+@@ -107,7 +152,7 @@ module atg_blt_2d #(
+ 			{{(ADDR_W - 17){1'b0}}, x};
+ 	endfunction
+ 
+-	/* A tile row's bytes, 4 << psl, and three of them, 12 << psl, by table. */
++	/* A tile row's bytes, 4 << psl, and three of them, 12 << psl, by table (psl <= 4). */
+ 	function [ADDR_W-1:0] tile_bytes;
+ 		input [2:0] pl;
+ 		input three;
+@@ -118,10 +163,7 @@ module atg_blt_2d #(
+ 			3'd1: t = 8;
+ 			3'd2: t = 16;
+ 			3'd3: t = 32;
+-			3'd4: t = 64;
+-			3'd5: t = 128;
+-			3'd6: t = 256;
+-			default: t = 512;
++			default: t = 64;
+ 			endcase
+ 			tile_bytes = three ? {t[ADDR_W-2:0], 1'b0} | t : t;
+ 		end
+@@ -144,41 +186,46 @@ module atg_blt_2d #(
+ 	localparam [3:0] S_DRAIN = 4'd14;	/* wait for every response */
+ 	localparam [3:0] S_BURST = 4'd15;	/* decoupled streaming burst DMA */
+ 
+-	reg [3:0] state;
++	(* extract_enable = "no", max_fanout = 10 *) reg [3:0] state;
+ 
+ 	/* The rectangle. */
+-	reg [16:0] x0, y0, x1, y1;
++	(* max_fanout = 16 *) reg [16:0] x0, y0, x1, y1;
+ 	wire empty = x1 <= x0 || y1 <= y0;
+-	reg [16:0] width, rows;	/* rows: left after this one */
+-	reg [16:0] sx0, sy0;	/* the source pixel of x0, y0 */
+-	reg [16:0] px_row, spx_row;	/* the first pixel of every row */
++	(* max_fanout = 16 *) reg [16:0] width, width_m1, rows;	/* rows: left after this one */
++	(* max_fanout = 16 *) reg [16:0] sx0, sy0;	/* the source pixel of x0, y0 */
++	(* max_fanout = 16 *) reg [16:0] px_row, spx_row;	/* the first pixel of every row */
++	(* extract_reset = "no", max_fanout = 16 *) reg [US-1:0] r_d_px_row, r_d_xb_row;
++	(* extract_reset = "no", max_fanout = 16 *) reg [1:0] r_row_tile_m1;
+ 
+ 	/* Row walking: the row's y modulo 4 (tiles); the rows' byte addresses
+ 	 * (base + y stride, then + the step a row) in atg_blt_acc. */
+-	reg [1:0] ydl, ysl;
+-	reg [16:0] px, spx;	/* the next pixel (rightmost reversed), its source pixel */
+-	reg [16:0] rem;		/* pixels left in the row */
++	(* max_fanout = 16 *) reg [1:0] ydl, ysl;
++	(* max_fanout = 16 *) reg [16:0] px, spx;	/* the next pixel (rightmost reversed), its source pixel */
++	(* max_fanout = 16 *) reg [16:0] rem;		/* pixels left in the row */
+ 
+ 	/* The segment. */
+-	reg [ADDR_W-1:0] da, sa;	/* byte addresses of px, spx */
+-	reg [US:0] sn, snu;	/* pixels, bytes */
+-	reg [ADDR_W-1:0] dlo, slo;	/* first destination and source bytes */
+-	reg [LA_W-1:0] seg_line;
+-	reg [US-1:0] seg_p0;
+-	reg [US-1:0] src_off;
+-	reg [LA_W-1:0] src_n0, src_n1;
+-	reg n0_slot;
+-	reg rd_first, rd_second;	/* the first, a needed second source read is to go */
++	(* extract_reset = "no", max_fanout = 16 *) reg [ADDR_W-1:0] r_d_xb, r_s_xb;
++	(* extract_reset = "no", max_fanout = 16 *) reg [US:0] leg_da_px;
++	(* extract_reset = "no", max_fanout = 16 *) reg [1:0] leg_tile_m1;
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] da, sa;	/* byte addresses of px, spx */
++	(* max_fanout = 16 *) reg [US:0] sn, snu;	/* pixels, bytes */
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] dlo, slo;	/* first destination and source bytes */
++	(* max_fanout = 16 *) reg [LA_W-1:0] seg_line;
++	(* max_fanout = 16 *) reg [US-1:0] seg_p0;
++	(* max_fanout = 16 *) reg [US-1:0] src_off;
++	(* max_fanout = 16 *) reg [LA_W-1:0] src_n0, src_n1;
++	(* max_fanout = 16 *) reg n0_slot;
++	(* max_fanout = 16 *) reg rd_first, rd_second;	/* the first, a needed second source read is to go */
++	(* max_fanout = 16 *) reg leg_seg_last;
+ 
+ 	/*
+ 	 * =========================================================================
+ 	 * Burst Engine Signals & Registers
+ 	 * =========================================================================
+ 	 */
+-	/* 1 KiB RAM (32 slots) */
+-	reg [LINE_BITS-1:0] pp_ram [0:31];
+ 
+-	/* Bank Metadata (2 Banks, up to 8 segments each, full D-FF registers) */
++
++	/* Bank Metadata (2 Banks, up to 8 segments each, registers) */
+ 	(* ram_style = "registers" *) reg [LA_W-1:0] meta_dline_0 [0:7];
+ 	(* ram_style = "registers" *) reg [LA_W-1:0] meta_dline_1 [0:7];
+ 	(* ram_style = "registers" *) reg [LINE_BYTES-1:0] meta_be_0 [0:7];
+@@ -194,62 +241,97 @@ module atg_blt_2d #(
+ 	reg [1:0] bank_is_last;
+ 	reg [1:0] bank_active;
+ 	reg [1:0] bank_closed;
+-	reg [1:0] bank_ready;
++	(* extract_enable = "no" *) reg [1:0] bank_ready;
+ 	reg [4:0] bank_rd_pending_0, bank_rd_pending_1;
+-	reg rows_b_zero;
++	(* max_fanout = 16 *) reg rows_b_zero;
+ 
+ 	/* Burst Walk & Prefetch registers */
+-	reg bw_bank;
+-	reg [2:0] bw_seg_idx;
+-	reg [3:0] bw_slot_cnt;
+-	reg bw_sub;
+-	reg bw_done_all;
+-	reg bw_walk_done;
+-	(* extract_enable = "no" *) reg [16:0] px_b, spx_b, rem_b;
+-	reg [16:0] rows_b;
+-	(* extract_enable = "no" *) reg [US-1:0] cur_da_b, cur_da_row;
+-	reg [1:0] ydl_b, ysl_b;
+-	reg [ADDR_W-1:0] dst_row_b, src_row_b;
+-	(* max_fanout = 8 *) reg [2:0] psl_w;
+-	reg [US:0] line_pixels_b;
++	(* max_fanout = 16 *) reg bw_bank;
++	(* max_fanout = 16 *) reg [2:0] bw_seg_idx;
++	(* max_fanout = 16 *) reg [3:0] bw_slot_cnt;
++	(* max_fanout = 16 *) reg bw_sub;
++	(* max_fanout = 16 *) reg bw_done_all;
++	(* max_fanout = 16 *) reg bw_walk_done;
++	(* max_fanout = 16 *) reg walk_phase;
++	(* extract_reset = "no", max_fanout = 16 *) reg [US:0] r_bst_seg_n;
++	(* extract_reset = "no", max_fanout = 16 *) reg r_bst_seg_last;
++	(* max_fanout = 16 *) reg [16:0] px_b, spx_b, rem_b;
++	(* max_fanout = 16 *) reg [16:0] rows_b;
++	(* extract_reset = "no", max_fanout = 16 *) reg [US-1:0] cur_da_px_b, cur_da_row;
++	(* extract_reset = "no", max_fanout = 16 *) reg [US:0] bst_da_px;
++	(* extract_reset = "no", max_fanout = 16 *) reg [1:0] bst_tile_m1;
++	(* extract_reset = "no", max_fanout = 16 *) reg [US-1:0] r_next_row_da, r_next_row_da_px_raw;
++	(* extract_reset = "no", max_fanout = 16 *) reg [US:0] r_next_row_da_px;
++	(* max_fanout = 16 *) reg [1:0] ydl_b, ysl_b;
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] dst_row_b, src_row_b;
++	(* max_fanout = 16 *) reg [US:0] line_pixels_b;
+ 
+ 	/* Burst segment pipeline registers: 3-stage pipeline */
+-	/* Stage 1 -> Stage 2 (Geom pipeline registers) */
+-	reg g_valid;
+-	reg [ADDR_W-1:0] g_dst_row, g_src_row;
+-	reg [16:0] g_px, g_spx;
+-	reg [US:0] g_seg_n;
+-	reg g_seg_last;
+-	reg g_rows_b_zero;
+-
+-	/* Stage 2 -> Stage 3 (Issue pipeline registers) */
+-	reg p_valid;
+-	reg [LA_W-1:0] p_dline;
+-	reg [US:0] p_seg_n;
+-	reg [US-1:0] p_dlo_lo;
+-	reg [US-1:0] p_off;
+-	reg [LA_W-1:0] p_src_n0;
+-	reg [LA_W-1:0] p_src_n1;
+-	reg p_two_lines;
+-	reg p_n0_slot;
+-	reg p_seg_last;
+-	reg p_rows_b_zero;
++	/* Stage 1 -> Stage 2A (Geom base pipeline registers) */
++	(* max_fanout = 16 *) reg g_valid;
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] g_dst_row, g_src_row;
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] g_d_xb, g_s_xb;
++	(* max_fanout = 16 *) reg [US-1:0] g_back;
++	(* max_fanout = 16 *) reg [US:0] g_seg_n;
++	(* max_fanout = 16 *) reg [US:0] g_seg_bytes;
++	(* max_fanout = 16 *) reg g_seg_last;
++	(* max_fanout = 16 *) reg g_rows_b_zero;
++
++	/* Stage 2A -> Stage 2B (Geom offset pipeline registers) */
++	(* max_fanout = 16 *) reg g2_valid;
++	(* max_fanout = 16 *) reg [LA_W-1:0] g2_dline, g2_sline;
++	(* max_fanout = 16 *) reg [US-1:0] g2_da_lo, g2_sa_lo;
++	(* max_fanout = 16 *) reg [US-1:0] g2_back;
++	(* max_fanout = 16 *) reg [US:0] g2_seg_n;
++	(* max_fanout = 16 *) reg [US:0] g2_seg_bytes;
++	(* max_fanout = 16 *) reg [US:0] g2_pend_add;
++	(* max_fanout = 16 *) reg g2_seg_last;
++	(* max_fanout = 16 *) reg g2_rows_b_zero;
++
++	/* Pre-registered arithmetic step operands */
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] r_dacc_step, r_sacc_step;
++	(* max_fanout = 16 *) reg [ADDR_W-1:0] r_b_dst_step, r_b_src_step;
++
++	/* Stage 2B -> Stage 3 (Issue pipeline registers) */
++	(* max_fanout = 16 *) reg p_valid;
++	(* max_fanout = 16 *) reg [LA_W-1:0] p_dline;
++	(* max_fanout = 16 *) reg [US:0] p_seg_n;
++	(* max_fanout = 16 *) reg [US-1:0] p_dlo_lo;
++	(* max_fanout = 16 *) reg [US:0] p_pend;
++	(* max_fanout = 16 *) reg [US-1:0] p_off;
++	(* max_fanout = 16 *) reg [LA_W-1:0] p_src_n0;
++	(* max_fanout = 16 *) reg [LA_W-1:0] p_src_n1;
++	(* max_fanout = 16 *) reg p_two_lines;
++	(* max_fanout = 16 *) reg p_n0_slot;
++	(* max_fanout = 16 *) reg p_seg_last;
++	(* max_fanout = 16 *) reg p_rows_b_zero;
+ 
+ 	/* Burst Write & Commit registers */
+-	reg br_bank;
+-	reg [2:0] br_seg_idx;
+-	reg br_active;
+-	reg b_draining;
+-	reg [4:0] burst_wr_out;
++	(* max_fanout = 16 *) reg br_bank;
++	(* max_fanout = 16 *) reg [2:0] br_seg_idx;
++	(* extract_enable = "no", max_fanout = 16 *) reg br_active;
++	(* max_fanout = 16 *) reg b_draining;
++	(* max_fanout = 16 *) reg [4:0] burst_wr_out;
++
++	/* Pure LUT6 decrementer for US <= 6 bits (0 CARRY4 primitives, 1 LUT6 per bit) */
++	function [US-1:0] dec_us_b;
++		input [US-1:0] x;
++		integer di;
++		begin
++			dec_us_b[0] = ~x[0];
++			for (di = 1; di < US; di = di + 1)
++				dec_us_b[di] = x[di] ^ (~(|x[di-1:0]));
++		end
++	endfunction
+ 
+ 	/* Mux inputs to address and segment logic */
+ 	wire bw_slot_full_p = p_two_lines ? (bw_slot_cnt >= SLOT_LIMIT2) : (bw_slot_cnt >= SLOT_LIMIT1);
+ 	wire is_burst_state = (state == S_BURST);
+-	wire [16:0] cur_px = is_burst_state ? px_b : px;
+-	wire [16:0] cur_spx = is_burst_state ? spx_b : spx;
+-	wire [16:0] cur_rem = is_burst_state ? rem_b : rem;
+-	wire [ADDR_W-1:0] cur_dst_row = is_burst_state ? dst_row_b : dst_row;
+-	wire [ADDR_W-1:0] cur_src_row = is_burst_state ? src_row_b : src_row;
++	wire [16:0] cur_px = px;
++	wire [16:0] cur_spx = spx;
++	wire [16:0] cur_rem = rem;
++	wire [ADDR_W-1:0] cur_dst_row = dst_row;
++	wire [ADDR_W-1:0] cur_src_row = src_row;
+ 
+ 	/*
+ 	 * =========================================================================
+@@ -261,7 +343,9 @@ module atg_blt_2d #(
+ 
+ 	/* The segment's geometry (atg_blt_seg, combinational). */
+ 	wire [US:0] seg_n;
+-	wire [ADDR_W-1:0] back, src_base_u;
++	wire seg_last_c;
++	wire [ADDR_W-1:0] back;
++	(* max_fanout = 16 *) wire [ADDR_W-1:0] src_base_u;
+ 	wire [LA_W-1:0] last_line;
+ 	wire [LINE_BYTES-1:0] seg_be;
+ 
+@@ -270,20 +354,36 @@ module atg_blt_2d #(
+ 	localparam [US:0] LB_V = LINE_BYTES;
+ 	/* verilator lint_on WIDTHTRUNC */
+ 
+-	wire [US:0] calc_line_pixels = (psl == 3'd4) ? {4'b0000, LB_V[US:4]} :
+-	                               (psl == 3'd3) ? {3'b000, LB_V[US:3]}  :
+-	                               (psl == 3'd2) ? {2'b00, LB_V[US:2]}   :
+-	                               (psl == 3'd1) ? {1'b0, LB_V[US:1]}    : LB_V;
++	wire [US:0] calc_line_pixels = (psl_b0 == 3'd4) ? {4'b0000, LB_V[US:4]} :
++	                               (psl_b0 == 3'd3) ? {3'b000, LB_V[US:3]}  :
++	                               (psl_b0 == 3'd2) ? {2'b00, LB_V[US:2]}   :
++	                               (psl_b0 == 3'd1) ? {1'b0, LB_V[US:1]}    : LB_V;
+ 
+ 	/* Legacy FSM Segment Engine (completely isolated from burst) */
++	wire [US-1:0] dst_row_px_leg = (psl_b0 == 3'd4) ? {4'b0000, dst_row[US-1:4]} :
++	                               (psl_b0 == 3'd3) ? {3'b000,  dst_row[US-1:3]} :
++	                               (psl_b0 == 3'd2) ? {2'b00,   dst_row[US-1:2]} :
++	                               (psl_b0 == 3'd1) ? {1'b0,    dst_row[US-1:1]} : dst_row[US-1:0];
++	wire [US-1:0] leg_da_px_raw;
++	wire leg_dapx_co;
++	am_add #(.W(US)) a_leg_dapx (.a(dst_row_px_leg), .b(d_px_0[US-1:0]), .ci(1'b0), .s(leg_da_px_raw), .co(leg_dapx_co));
++	(* keep = "true" *) wire [US-1:0] leg_da_px_lo = leg_da_px_raw & r_mask_lp;
++	wire [US:0] leg_da_px_w = {|((m_rev ? leg_da_px_lo[US-1:2] : ~leg_da_px_lo[US-1:2]) & r_mask_thi),
++	                           (m_rev ? leg_da_px_lo : ~leg_da_px_lo) & r_mask_lim};
++	wire [1:0] leg_tm1_d = px[1:0] ^ {2{~m_rev}};
++	wire [1:0] leg_tm1_s = spx[1:0] ^ {2{~m_rev}};
++	wire [1:0] leg_tile_m1_w = !m_tiled ? 2'b11 :
++	                           (m_dtile && m_stile) ? ((leg_tm1_d < leg_tm1_s) ? leg_tm1_d : leg_tm1_s) :
++	                           m_dtile ? leg_tm1_d : leg_tm1_s;
++
+ 	atg_blt_seg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) seg (
+ 		.psl(psl), .line_pix(calc_line_pixels), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
+-		.da(da[US-1:0]), .px(px[1:0]), .spx(spx[1:0]), .rem(rem),
++		.force_line(1'b0),
++		.da(da[US-1:0]), .da_px(leg_da_px), .px(leg_tile_m1), .spx(spx[1:0]), .rem(rem),
+ 		.sn(sn), .snu(snu), .dlo(dlo[US-1:0]), .slo(slo),
+-		.p0(seg_p0), .seg_n(seg_n), .seg_last(), .back(back), .src_base(src_base_u),
++		.p0(seg_p0), .seg_n(seg_n), .seg_last(seg_last_c), .back(back), .src_base(src_base_u),
+ 		.last_line(last_line), .be(seg_be)
+ 	);
+-	wire [LA_W-1:0] src_lo = src_base_u[ADDR_W-1:US];
+ 
+ 	/*
+ 	 * =================================================================
+@@ -292,183 +392,350 @@ module atg_blt_2d #(
+ 	 */
+ 	/* Stage 1: Walk Stage (Computes only bst_seg_n for coordinate walking) */
+ 	wire [ADDR_W-1:0] d_px_row = x_pixels(px_row, m_dtile);
+-	wire [US-1:0] d_xb_row = (psl == 3'd4) ? {d_px_row[US-5:0], 4'b0000} :
+-	                         (psl == 3'd3) ? {d_px_row[US-4:0], 3'b000}  :
+-	                         (psl == 3'd2) ? {d_px_row[US-3:0], 2'b00}   :
+-	                         (psl == 3'd1) ? {d_px_row[US-2:0], 1'b0}    : d_px_row[US-1:0];
++	wire [US-1:0] d_xb_row = (psl_b0 == 3'd4) ? {d_px_row[US-5:0], 4'b0000} :
++	                         (psl_b0 == 3'd3) ? {d_px_row[US-4:0], 3'b000}  :
++	                         (psl_b0 == 3'd2) ? {d_px_row[US-3:0], 2'b00}   :
++	                         (psl_b0 == 3'd1) ? {d_px_row[US-2:0], 1'b0}    : d_px_row[US-1:0];
++	wire [1:0] row_tm1_d = px_row[1:0] ^ {2{~m_rev}};
++	wire [1:0] row_tm1_s = spx_row[1:0] ^ {2{~m_rev}};
++	wire [1:0] w_row_tile_m1 = !m_tiled ? 2'b11 :
++	                           (m_dtile && m_stile) ? ((row_tm1_d < row_tm1_s) ? row_tm1_d : row_tm1_s) :
++	                           m_dtile ? row_tm1_d : row_tm1_s;
++
+ 	wire [US-1:0] cur_da_init;
+ 	wire co_da_init;
+-	am_add #(.W(US)) a_da_init (.a(dst_row[US-1:0]), .b(d_xb_row), .ci(1'b0), .s(cur_da_init), .co(co_da_init));
++	am_add #(.W(US)) a_da_init (.a(dst_row[US-1:0]), .b(r_d_xb_row), .ci(1'b0), .s(cur_da_init), .co(co_da_init));
+ 
++	wire [US-1:0] w_b_dst_step_lo = sel_bstep_rev[0] ? r_dst_neg[US-1:0] : b_dst_step[US-1:0];
+ 	wire [US-1:0] cur_da_row_next;
+ 	wire co_da_row;
+-	am_add #(.W(US)) a_da_row (.a(dst_row_b_next[US-1:0]), .b(d_xb_row), .ci(1'b0), .s(cur_da_row_next), .co(co_da_row));
++	am_add #(.W(US)) a_da_row (.a(cur_da_row), .b(w_b_dst_step_lo), .ci(1'b0), .s(cur_da_row_next), .co(co_da_row));
++	(* keep = "true" *) wire [US-1:0] next_row_da_px_raw =
++		(psl_b0 == 3'd4) ? {4'b0000, cur_da_row_next[US-1:4]} :
++		(psl_b0 == 3'd3) ? {3'b000,  cur_da_row_next[US-1:3]} :
++		(psl_b0 == 3'd2) ? {2'b00,   cur_da_row_next[US-1:2]} :
++		(psl_b0 == 3'd1) ? {1'b0,    cur_da_row_next[US-1:1]} : cur_da_row_next;
++	wire [US:0] next_row_da_px_w = {|((m_rev ? next_row_da_px_raw[US-1:2] : ~next_row_da_px_raw[US-1:2]) & r_mask_thi),
++	                                (m_rev ? next_row_da_px_raw : ~next_row_da_px_raw) & r_mask_lim};
+ 
+ 	wire [US:0] bst_seg_n;
+ 	wire bst_seg_last;
+ 	atg_blt_seg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) bst_seg (
+-		.psl(psl_w), .line_pix(line_pixels_b), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
+-		.da(cur_da_b), .px(px_b[1:0]), .spx(spx_b[1:0]), .rem(rem_b),
++		.psl(psl_w0), .line_pix(line_pixels_b), .rev(m_rev), .dtile(m_dtile), .stile(m_stile), .keep(m_keep),
++		.force_line(walk_phase),
++		.da(cur_da_px_b), .da_px(bst_da_px), .px(bst_tile_m1), .spx(spx_b[1:0]), .rem(rem_b),
+ 		.sn({(US+1){1'b0}}), .snu({(US+1){1'b0}}), .dlo({US{1'b0}}), .slo({ADDR_W{1'b0}}),
+ 		.p0({US{1'b0}}), .seg_n(bst_seg_n), .seg_last(bst_seg_last), .back(), .src_base(),
+ 		.last_line(), .be()
+ 	);
+ 
+-	wire [US-1:0] bst_seg_bytes = (psl_w == 3'd4) ? {bst_seg_n[US-5:0], 4'b0000} :
+-	                              (psl_w == 3'd3) ? {bst_seg_n[US-4:0], 3'b000}  :
+-	                              (psl_w == 3'd2) ? {bst_seg_n[US-3:0], 2'b00}   :
+-	                              (psl_w == 3'd1) ? {bst_seg_n[US-2:0], 1'b0}    : bst_seg_n[US-1:0];
+-	wire [US-1:0] cur_da_seg_next;
+-	wire co_da_seg;
+-	am_addsub #(.W(US)) as_da_seg (.a(cur_da_b), .b(bst_seg_bytes), .sub(m_rev), .s(cur_da_seg_next), .co(co_da_seg));
+-	wire [US-1:0] cur_da_b_d = bst_seg_last ? cur_da_row_next : cur_da_seg_next;
+-	/* Carry-Select Parallel Split Addsub for Coordinates */
+-	/* 1. px_next */
+-	wire [US:0] px_lo_next;
+-	wire px_lo_co;
+-	am_addsub #(.W(US + 1)) as_px_lo (.a(px_b[US:0]), .b(bst_seg_n), .sub(m_rev), .s(px_lo_next), .co(px_lo_co));
+-
+-	wire [16-US-1:0] px_hi = px_b[16:US+1];
+-	wire [16-US-1:0] px_hi_p1, px_hi_m1;
+-	wire [1:0] px_hi_co;
+-	am_add #(.W(16 - US)) a_px_p1 (.a(px_hi), .b({(16-US){1'b0}}), .ci(1'b1), .s(px_hi_p1), .co(px_hi_co[0]));
+-	am_sub #(.W(16 - US)) s_px_m1 (.a(px_hi), .b({(16-US){1'b0}}), .bi(1'b1), .d(px_hi_m1), .bo(px_hi_co[1]));
+-	wire [16-US-1:0] px_hi_delta = m_rev ? px_hi_m1 : px_hi_p1;
+-	wire [16-US-1:0] px_hi_w0 = walk_step ? (bst_seg_last ? px_row[16:US+1] : px_hi)       : px_hi;
+-	wire [16-US-1:0] px_hi_w1 = walk_step ? (bst_seg_last ? px_row[16:US+1] : px_hi_delta) : px_hi;
+-	wire [16-US-1:0] px_hi_final = m_rev ? (px_lo_co ? px_hi_w0 : px_hi_w1) : (px_lo_co ? px_hi_w1 : px_hi_w0);
+-	wire [US:0] px_lo_w = walk_step ? (bst_seg_last ? px_row[US:0] : px_lo_next) : px_b[US:0];
+-	wire [16:0] px_b_next = {px_hi_final, px_lo_w};
+-
+-	/* 2. spx_next */
+-	wire [US:0] spx_lo_next;
+-	wire spx_lo_co;
+-	am_addsub #(.W(US + 1)) as_spx_lo (.a(spx_b[US:0]), .b(bst_seg_n), .sub(m_rev), .s(spx_lo_next), .co(spx_lo_co));
+-
+-	wire [16-US-1:0] spx_hi = spx_b[16:US+1];
+-	wire [16-US-1:0] spx_hi_p1, spx_hi_m1;
+-	wire [1:0] spx_hi_co;
+-	am_add #(.W(16 - US)) a_spx_p1 (.a(spx_hi), .b({(16-US){1'b0}}), .ci(1'b1), .s(spx_hi_p1), .co(spx_hi_co[0]));
+-	am_sub #(.W(16 - US)) s_spx_m1 (.a(spx_hi), .b({(16-US){1'b0}}), .bi(1'b1), .d(spx_hi_m1), .bo(spx_hi_co[1]));
+-	wire [16-US-1:0] spx_hi_delta = m_rev ? spx_hi_m1 : spx_hi_p1;
+-	wire [16-US-1:0] spx_hi_w0 = walk_step ? (bst_seg_last ? spx_row[16:US+1] : spx_hi)       : spx_hi;
+-	wire [16-US-1:0] spx_hi_w1 = walk_step ? (bst_seg_last ? spx_row[16:US+1] : spx_hi_delta) : spx_hi;
+-	wire [16-US-1:0] spx_hi_final = m_rev ? (spx_lo_co ? spx_hi_w0 : spx_hi_w1) : (spx_lo_co ? spx_hi_w1 : spx_hi_w0);
+-	wire [US:0] spx_lo_w = walk_step ? (bst_seg_last ? spx_row[US:0] : spx_lo_next) : spx_b[US:0];
+-	wire [16:0] spx_b_next = {spx_hi_final, spx_lo_w};
+-
+-	/* 3. rem_next */
+-	wire [US:0] rem_lo_next;
+-	wire rem_lo_bo;
+-	am_sub #(.W(US + 1)) s_rem_lo (.a(rem_b[US:0]), .b(bst_seg_n), .bi(1'b0), .d(rem_lo_next), .bo(rem_lo_bo));
+-
+-	wire [16-US-1:0] rem_hi = rem_b[16:US+1];
+-	wire [16-US-1:0] rem_hi_m1;
+-	wire rem_hi_bo;
+-	am_sub #(.W(16 - US)) s_rem_m1 (.a(rem_hi), .b({(16-US){1'b0}}), .bi(1'b1), .d(rem_hi_m1), .bo(rem_hi_bo));
+-	wire [16-US-1:0] rem_hi_w0 = walk_step ? (bst_seg_last ? width[16:US+1] : rem_hi)    : rem_hi;
+-	wire [16-US-1:0] rem_hi_w1 = walk_step ? (bst_seg_last ? width[16:US+1] : rem_hi_m1) : rem_hi;
+-	wire [16-US-1:0] rem_hi_final = rem_lo_bo ? rem_hi_w1 : rem_hi_w0;
+-	wire [US:0] rem_lo_w = walk_step ? (bst_seg_last ? width[US:0] : rem_lo_next) : rem_b[US:0];
+-	wire [16:0] rem_b_next = {rem_hi_final, rem_lo_w};
+-
+-	wire [US-1:0] cur_da_b_next = walk_step ? cur_da_b_d : cur_da_b;
+-
+-	/* Stage 2: Geom / Address Engine (Computed from g_* registers in next cycle) */
+-	wire [ADDR_W-1:0] d_px_g = x_pixels(g_px, m_dtile);
+-	wire [ADDR_W-1:0] s_px_g = x_pixels(g_spx, m_stile);
+-	wire [ADDR_W-1:0] d_xb_g = (psl_w == 3'd4) ? {d_px_g[ADDR_W-5:0], 4'b0000} :
+-	                           (psl_w == 3'd3) ? {d_px_g[ADDR_W-4:0], 3'b000}  :
+-	                           (psl_w == 3'd2) ? {d_px_g[ADDR_W-3:0], 2'b00}   :
+-	                           (psl_w == 3'd1) ? {d_px_g[ADDR_W-2:0], 1'b0}    : d_px_g;
+-	wire [ADDR_W-1:0] s_xb_g = (psl_w == 3'd4) ? {s_px_g[ADDR_W-5:0], 4'b0000} :
+-	                           (psl_w == 3'd3) ? {s_px_g[ADDR_W-4:0], 3'b000}  :
+-	                           (psl_w == 3'd2) ? {s_px_g[ADDR_W-3:0], 2'b00}   :
+-	                           (psl_w == 3'd1) ? {s_px_g[ADDR_W-2:0], 1'b0}    : s_px_g;
+-
+-	wire [US-1:0] g_da_lo, g_sa_lo;
+-	wire [1:0] g_dsa_co;
+-	am_add #(.W(US)) a_da_lo (.a(g_dst_row[US-1:0]), .b(d_xb_g[US-1:0]), .ci(1'b0), .s(g_da_lo), .co(g_dsa_co[0]));
+-	am_add #(.W(US)) a_sa_lo (.a(g_src_row[US-1:0]), .b(s_xb_g[US-1:0]), .ci(1'b0), .s(g_sa_lo), .co(g_dsa_co[1]));
+-
+-	wire [US:0] g_seg_bytes = (psl_w == 3'd4) ? {g_seg_n[US-4:0], 4'b0000} :
+-	                          (psl_w == 3'd3) ? {g_seg_n[US-3:0], 3'b000}  :
+-	                          (psl_w == 3'd2) ? {g_seg_n[US-2:0], 2'b00}   :
+-	                          (psl_w == 3'd1) ? {g_seg_n[US-1:0], 1'b0}    : g_seg_n;
+-
+-	wire [US:0] g_back_n;
+-	wire [1:0] g_back_co;
+-	am_sub #(.W(US + 1)) s_bn_b (.a(g_seg_n), .b({(US + 1){1'b0}}), .bi(1'b1), .d(g_back_n), .bo(g_back_co[0]));
+-	wire [ADDR_W-1:0] g_back = (psl_w == 3'd4) ? {{(ADDR_W - US - 5){1'b0}}, g_back_n, 4'b0000} :
+-	                           (psl_w == 3'd3) ? {{(ADDR_W - US - 4){1'b0}}, g_back_n, 3'b000}  :
+-	                           (psl_w == 3'd2) ? {{(ADDR_W - US - 3){1'b0}}, g_back_n, 2'b00}   :
+-	                           (psl_w == 3'd1) ? {{(ADDR_W - US - 2){1'b0}}, g_back_n, 1'b0}    :
+-	                                             {{(ADDR_W - US - 1){1'b0}}, g_back_n};
+-
+-	wire [US-1:0] g_dlo_lo_rev;
+-	wire g_dlo_lo_bo;
+-	am_sub #(.W(US)) s_dlo_lo (.a(g_da_lo), .b(g_back[US-1:0]), .bi(1'b0), .d(g_dlo_lo_rev), .bo(g_dlo_lo_bo));
+-	wire [US-1:0] g_dlo_lo = m_rev ? g_dlo_lo_rev : g_da_lo;
+-
++	/* Fast registered check for rem_b >= 3 * line_pixels_b (0 CARRY4s, 2 LUTs) */
++	(* keep = "true" *) wire rem_hi_a = |rem_b[16:11];
++	(* keep = "true" *) wire rem_hi_b = |rem_b[10:US+2];
++	(* keep = "true" *) wire rem_hi_c =
++		(r_mask_gt2lp[1:0] == 2'd0) ? (rem_b[US+1] & rem_b[US]) :
++		(r_mask_gt2lp[1:0] == 2'd1) ? (rem_b[US+1] | (rem_b[US] & rem_b[US-1])) :
++		(r_mask_gt2lp[1:0] == 2'd2) ? (rem_b[US+1] | rem_b[US] | (rem_b[US-1] & rem_b[US-2])) :
++		                              (|rem_b[US+1:US-1]);
++	(* keep = "true" *) wire rem_hi_d =
++		(r_mask_gt2lp[3:2] == 2'd1) ? (rem_b[US-2] & rem_b[US-3]) :
++		(r_mask_gt2lp[3:2] == 2'd2) ? (rem_b[US-2] | (rem_b[US-3] & rem_b[US-4])) : 1'b0;
++	(* keep = "true" *) wire rem_b_gt_2lp = r_allow_fast_walk && (rem_hi_a || rem_hi_b || rem_hi_c || rem_hi_d);
++
++	wire [US-1:0] w_da_px_step_raw;
++	wire co_da_px_wc;
++	am_addsub #(.W(US)) as_da_px_wc (
++		.a(sel_mul_wc[4] ? dst_row_px_leg : cur_da_px_b),
++		.b(sel_mul_wc[4] ? r_d_px_row     : r_bst_seg_n[US-1:0]),
++		.sub(!sel_mul_wc[4] && m_rev),
++		.s(w_da_px_step_raw),
++		.co(co_da_px_wc)
++	);
++	(* keep = "true" *) wire [US-1:0] w_da_px_step = w_da_px_step_raw & r_mask_lp;
++	(* keep = "true" *) wire sel_nr_wc = !sel_mul_wc[4] && r_bst_seg_last;
++	wire [US-1:0] cur_da_px_b_next = sel_nr_wc ? r_next_row_da_px_raw : w_da_px_step;
++	wire [US:0] bst_da_px_next = {
++		sel_nr_wc ? r_next_row_da_px[US]     : (|((m_rev ? w_da_px_step[US-1:2] : ~w_da_px_step[US-1:2]) & r_mask_thi)),
++		sel_nr_wc ? r_next_row_da_px[US-1:0] : ((m_rev ? w_da_px_step : ~w_da_px_step) & r_mask_lim)
++	};
++
++	wire [1:0] px_step_10, spx_step_10;
++	wire [1:0] co_step_10;
++	am_addsub #(.W(2)) as_px_10  (.a(px_b[1:0]),  .b(r_bst_seg_n[1:0]), .sub(m_rev), .s(px_step_10),  .co(co_step_10[0]));
++	am_addsub #(.W(2)) as_spx_10 (.a(spx_b[1:0]), .b(r_bst_seg_n[1:0]), .sub(m_rev), .s(spx_step_10), .co(co_step_10[1]));
++	wire [1:0] step_tm1_d = px_step_10 ^ {2{~m_rev}};
++	wire [1:0] step_tm1_s = spx_step_10 ^ {2{~m_rev}};
++	(* keep = "true" *) wire [1:0] w_step_tile_m1 = !m_tiled ? 2'b11 :
++		(m_dtile && m_stile) ? ((step_tm1_d < step_tm1_s) ? step_tm1_d : step_tm1_s) :
++		m_dtile ? step_tm1_d : step_tm1_s;
++	wire [1:0] bst_tile_m1_next = (sel_mul_wc[4] || r_bst_seg_last) ? r_row_tile_m1 : w_step_tile_m1;
++
++	/* Direct 17-bit Coordinate Addsub (1 Pre-LUT, 1 Post-LUT) */
++	wire [16:0] px_b_step, spx_b_step, rem_b_step;
++	wire [2:0] wc_step_co;
++	am_addsub #(.W(17)) as_px_b  (.a(px_b),  .b({{(16-US){1'b0}}, r_bst_seg_n}), .sub(m_rev), .s(px_b_step),  .co(wc_step_co[0]));
++	am_addsub #(.W(17)) as_spx_b (.a(spx_b), .b({{(16-US){1'b0}}, r_bst_seg_n}), .sub(m_rev), .s(spx_b_step), .co(wc_step_co[1]));
++	am_sub    #(.W(17)) s_rem_b  (.a(rem_b), .b({{(16-US){1'b0}}, r_bst_seg_n}), .bi(1'b0),   .d(rem_b_step), .bo(wc_step_co[2]));
++
++	/* Stage 1 -> Stage 2A Pre-Shifted Byte Offsets (0 CARRY4s, <= 3 LUTs) */
++	wire [ADDR_W-1:0] d_px_g0 = x_pixels(px_b, dtile_g0);
++	wire [ADDR_W-1:0] d_px_g1 = x_pixels(px_b, dtile_g1);
++	wire [ADDR_W-1:0] d_px_g2 = x_pixels(px_b, dtile_g2);
++	wire [ADDR_W-1:0] d_px_g3 = x_pixels(px_b, dtile_g3);
++	wire [ADDR_W-1:0] d_px_g4 = x_pixels(px_b, dtile_g4);
++	wire [ADDR_W-1:0] s_px_g0 = x_pixels(spx_b, stile_g0);
++	wire [ADDR_W-1:0] s_px_g1 = x_pixels(spx_b, stile_g1);
++	wire [ADDR_W-1:0] s_px_g2 = x_pixels(spx_b, stile_g2);
++	wire [ADDR_W-1:0] s_px_g3 = x_pixels(spx_b, stile_g3);
++	wire [ADDR_W-1:0] s_px_g4 = x_pixels(spx_b, stile_g4);
++	wire [7:0] d_xb_g_b0 = (pslw_d0 == 3'd4) ? {d_px_g0[3:0], 4'b0000} :
++	                       (pslw_d0 == 3'd3) ? {d_px_g0[4:0], 3'b000}  :
++	                       (pslw_d0 == 3'd2) ? {d_px_g0[5:0], 2'b00}   :
++	                       (pslw_d0 == 3'd1) ? {d_px_g0[6:0], 1'b0}    : d_px_g0[7:0];
++	wire [3:0] d_xb_g_b1 = (pslw_d1 == 3'd4) ? d_px_g1[7:4] :
++	                       (pslw_d1 == 3'd3) ? d_px_g1[8:5] :
++	                       (pslw_d1 == 3'd2) ? d_px_g1[9:6] :
++	                       (pslw_d1 == 3'd1) ? d_px_g1[10:7] : d_px_g1[11:8];
++	wire [3:0] d_xb_g_b2 = (pslw_d2 == 3'd4) ? d_px_g2[11:8] :
++	                       (pslw_d2 == 3'd3) ? d_px_g2[12:9] :
++	                       (pslw_d2 == 3'd2) ? d_px_g2[13:10] :
++	                       (pslw_d2 == 3'd1) ? d_px_g2[14:11] : d_px_g2[15:12];
++	wire [7:0] d_xb_g_b3 = (pslw_d3 == 3'd4) ? d_px_g3[19:12] :
++	                       (pslw_d3 == 3'd3) ? d_px_g3[20:13] :
++	                       (pslw_d3 == 3'd2) ? d_px_g3[21:14] :
++	                       (pslw_d3 == 3'd1) ? d_px_g3[22:15] : d_px_g3[23:16];
++	wire [7:0] d_xb_g_b4 = (pslw_d4 == 3'd4) ? d_px_g4[27:20] :
++	                       (pslw_d4 == 3'd3) ? d_px_g4[28:21] :
++	                       (pslw_d4 == 3'd2) ? d_px_g4[29:22] :
++	                       (pslw_d4 == 3'd1) ? d_px_g4[30:23] : d_px_g4[31:24];
++	wire [7:0] s_xb_g_b0 = (pslw_s0 == 3'd4) ? {s_px_g0[3:0], 4'b0000} :
++	                       (pslw_s0 == 3'd3) ? {s_px_g0[4:0], 3'b000}  :
++	                       (pslw_s0 == 3'd2) ? {s_px_g0[5:0], 2'b00}   :
++	                       (pslw_s0 == 3'd1) ? {s_px_g0[6:0], 1'b0}    : s_px_g0[7:0];
++	wire [3:0] s_xb_g_b1 = (pslw_s1 == 3'd4) ? s_px_g1[7:4] :
++	                       (pslw_s1 == 3'd3) ? s_px_g1[8:5] :
++	                       (pslw_s1 == 3'd2) ? s_px_g1[9:6] :
++	                       (pslw_s1 == 3'd1) ? s_px_g1[10:7] : s_px_g1[11:8];
++	wire [3:0] s_xb_g_b2 = (pslw_s2 == 3'd4) ? s_px_g2[11:8] :
++	                       (pslw_s2 == 3'd3) ? s_px_g2[12:9] :
++	                       (pslw_s2 == 3'd2) ? s_px_g2[13:10] :
++	                       (pslw_s2 == 3'd1) ? s_px_g2[14:11] : s_px_g2[15:12];
++	wire [7:0] s_xb_g_b3 = (pslw_s3 == 3'd4) ? s_px_g3[19:12] :
++	                       (pslw_s3 == 3'd3) ? s_px_g3[20:13] :
++	                       (pslw_s3 == 3'd2) ? s_px_g3[21:14] :
++	                       (pslw_s3 == 3'd1) ? s_px_g3[22:15] : s_px_g3[23:16];
++	wire [7:0] s_xb_g_b4 = (pslw_s4 == 3'd4) ? s_px_g4[27:20] :
++	                       (pslw_s4 == 3'd3) ? s_px_g4[28:21] :
++	                       (pslw_s4 == 3'd2) ? s_px_g4[29:22] :
++	                       (pslw_s4 == 3'd1) ? s_px_g4[30:23] : s_px_g4[31:24];
++	(* keep = "true" *) wire [ADDR_W-1:0] d_xb_g = {d_xb_g_b4, d_xb_g_b3, d_xb_g_b2, d_xb_g_b1, d_xb_g_b0};
++	(* keep = "true" *) wire [ADDR_W-1:0] s_xb_g = {s_xb_g_b4, s_xb_g_b3, s_xb_g_b2, s_xb_g_b1, s_xb_g_b0};
++
++	wire [US:0] w_g_seg_bytes = (psl_w1 == 3'd4) ? {r_bst_seg_n[US-4:0], 4'b0000} :
++	                            (psl_w1 == 3'd3) ? {r_bst_seg_n[US-3:0], 3'b000}  :
++	                            (psl_w1 == 3'd2) ? {r_bst_seg_n[US-2:0], 2'b00}   :
++	                            (psl_w1 == 3'd1) ? {r_bst_seg_n[US-1:0], 1'b0}    : r_bst_seg_n;
++	(* keep = "true" *) wire [US-1:0] w_g_back_n = dec_us_b(r_bst_seg_n[US-1:0]);
++	wire [US-1:0] w_g_back = (psl_w2 == 3'd4) ? {w_g_back_n[US-5:0], 4'b0000} :
++	                         (psl_w2 == 3'd3) ? {w_g_back_n[US-4:0], 3'b000}  :
++	                         (psl_w2 == 3'd2) ? {w_g_back_n[US-3:0], 2'b00}   :
++	                         (psl_w2 == 3'd1) ? {w_g_back_n[US-2:0], 1'b0}    : w_g_back_n;
++
++	/* Stage 2A: Geom Base Adder Engine (Computed from g_* registers: 1 Pre-LUT, 0 Post-LUTs) */
+ 	wire [ADDR_W-1:0] g_da_full, g_sa_full;
+ 	wire [1:0] g_full_co;
+-	am_add #(.W(ADDR_W)) a_bda (.a(g_dst_row), .b(d_xb_g), .ci(1'b0), .s(g_da_full), .co(g_full_co[0]));
+-	am_add #(.W(ADDR_W)) a_bsa (.a(g_src_row), .b(s_xb_g), .ci(1'b0), .s(g_sa_full), .co(g_full_co[1]));
++	am_add #(.W(ADDR_W)) a_bda (.a(g_dst_row), .b(g_d_xb), .ci(1'b0), .s(g_da_full), .co(g_full_co[0]));
++	am_add #(.W(ADDR_W)) a_bsa (.a(g_src_row), .b(g_s_xb), .ci(1'b0), .s(g_sa_full), .co(g_full_co[1]));
++
++	wire [US:0] g_one_px_bytes = (psl_w1 == 3'd4) ? {{(US-4){1'b0}}, 5'b10000} :
++	                             (psl_w1 == 3'd3) ? {{(US-3){1'b0}}, 4'b1000}  :
++	                             (psl_w1 == 3'd2) ? {{(US-2){1'b0}}, 3'b100}   :
++	                             (psl_w1 == 3'd1) ? {{(US-1){1'b0}}, 2'b10}    : {{US{1'b0}}, 1'b1};
+ 
+-	wire [LA_W-1:0] s_line = g_sa_full[ADDR_W-1:US];
++	/* Stage 2B: Geom / Address Offset Engine (Computed from g2_* registers) */
+ 	wire [LA_W-1:0] s_line_p1, s_line_m1;
+ 	wire [1:0] s_line_co;
+-	am_add #(.W(LA_W)) a_s_p1 (.a(s_line), .b({LA_W{1'b0}}), .ci(1'b1), .s(s_line_p1), .co(s_line_co[0]));
+-	am_sub #(.W(LA_W)) s_s_m1 (.a(s_line), .b({LA_W{1'b0}}), .bi(1'b1), .d(s_line_m1), .bo(s_line_co[1]));
+-
+-	wire [LA_W-1:0] d_line = g_da_full[ADDR_W-1:US];
+-	wire [LA_W-1:0] d_line_m1;
+-	wire d_line_bo;
+-	am_sub #(.W(LA_W)) s_d_m1 (.a(d_line), .b({LA_W{1'b0}}), .bi(1'b1), .d(d_line_m1), .bo(d_line_bo));
+-
+-	wire slo_borrow = (g_sa_lo < g_back[US-1:0]);
+-	wire dlo_borrow = (g_da_lo < g_back[US-1:0]);
+-
+-	wire [LA_W-1:0] g_seg_line = m_rev ? (dlo_borrow ? d_line_m1 : d_line) : d_line;
+-	wire [LA_W-1:0] g_src_n0   = m_rev ? (slo_borrow ? s_line_m1 : s_line) : s_line;
+-	wire [LA_W-1:0] g_src_n1   = m_rev ? s_line : s_line_p1;
+-
+-	wire [US-1:0] g_slo_lo_rev;
+-	wire g_slo_lo_bo;
+-	am_sub #(.W(US)) s_slo_lo (.a(g_sa_lo), .b(g_back[US-1:0]), .bi(1'b0), .d(g_slo_lo_rev), .bo(g_slo_lo_bo));
+-	wire [US-1:0] g_slo_lo = m_rev ? g_slo_lo_rev : g_sa_lo;
+-
+-	wire [US:0] g_s_end;
+-	wire g_send_co;
+-	am_add #(.W(US + 1)) a_bst_send (.a({1'b0, g_slo_lo}), .b(g_seg_bytes), .ci(1'b0), .s(g_s_end), .co(g_send_co));
+-	wire        g_two_lines = m_rev ? slo_borrow : (g_s_end > {1'b1, {US{1'b0}}});
++	am_add #(.W(LA_W)) a_s_p1 (.a(g2_sline), .b({LA_W{1'b0}}), .ci(1'b1), .s(s_line_p1), .co(s_line_co[0]));
++	am_sub #(.W(LA_W)) s_s_m1 (.a(g2_sline), .b({LA_W{1'b0}}), .bi(1'b1), .d(s_line_m1), .bo(s_line_co[1]));
++
++	/* Pure 2-LUT comparator for g2_sa_lo < g2_back (0 CARRY4 primitives) */
++	(* keep = "true" *) wire slo_lt_hi = (g2_sa_lo[US-1:3] < g2_back[US-1:3]);
++	(* keep = "true" *) wire slo_eq_hi = (g2_sa_lo[US-1:3] == g2_back[US-1:3]);
++	(* keep = "true" *) wire slo_lt_lo = (g2_sa_lo[2:0] < g2_back[2:0]);
++	(* keep = "true", dont_touch = "true" *) wire sel_sn0_lo = m_rev && (slo_lt_hi || (slo_eq_hi && slo_lt_lo));
++	(* keep = "true", dont_touch = "true" *) wire sel_sn0_hi = m_rev && (slo_lt_hi || (slo_eq_hi && slo_lt_lo));
++
++	(* dont_touch = "true" *) wire sel_sn1_lo, sel_sn1_hi;
++`ifdef SYNTH_KINTEX7
++	LUT1 #(.INIT(2'b10)) u_ssn1l (.I0(m_rev), .O(sel_sn1_lo));
++	LUT1 #(.INIT(2'b10)) u_ssn1h (.I0(m_rev), .O(sel_sn1_hi));
++`else
++	assign sel_sn1_lo   = m_rev;
++	assign sel_sn1_hi   = m_rev;
++`endif
++
++	wire [LA_W-1:0] g_seg_line = g2_dline;
++	wire [LA_W-1:0] g_src_n0   = {sel_sn0_hi   ? s_line_m1[LA_W-1:16] : g2_sline[LA_W-1:16],
++	                              sel_sn0_lo   ? s_line_m1[15:0]      : g2_sline[15:0]};
++	wire [LA_W-1:0] g_src_n1   = {sel_sn1_hi   ? g2_sline[LA_W-1:16]  : s_line_p1[LA_W-1:16],
++	                              sel_sn1_lo   ? g2_sline[15:0]       : s_line_p1[15:0]};
++
++	wire [US-1:0] g_dlo_lo;
++	wire dlo_bo_unused;
++	am_sub #(.W(US)) s_dlo_lo (.a(g2_da_lo), .b(m_rev ? g2_back : {US{1'b0}}), .bi(1'b0), .d(g_dlo_lo), .bo(dlo_bo_unused));
++
++	wire [US-1:0] g_send_unused;
++	wire g_two_lines_fwd;
++	am_sub #(.W(US)) s_bst_two (
++		.a(~g2_seg_bytes[US-1:0]), .b(g2_sa_lo), .bi(g2_seg_bytes[US]),
++		.d(g_send_unused), .bo(g_two_lines_fwd)
++	);
++	wire g_two_lines = m_rev ? sel_sn0_lo : g_two_lines_fwd;
+ 
+ 	wire [US-1:0] g_src_off;
+-	wire          g_n0_slot;
+-	am_sub #(.W(US)) s_bst_off (.a(g_slo_lo), .b(g_dlo_lo), .bi(1'b0), .d(g_src_off), .bo(g_n0_slot));
++	wire          sa_lt_da;
++	am_sub #(.W(US)) s_bst_off (.a(g2_sa_lo), .b(g2_da_lo), .bi(1'b0), .d(g_src_off), .bo(sa_lt_da));
++	wire          g_n0_slot = sa_lt_da && !sel_sn0_lo;
++
++	wire [US:0] g_p_end;
++	wire g_pend_co;
++	am_add #(.W(US + 1)) a_g_pe (.a({1'b0, g2_da_lo}), .b(g2_pend_add), .ci(1'b0), .s(g_p_end), .co(g_pend_co));
++
++	/* Stage 3: Issue Byte-Enable Generator from registered p_dlo_lo and p_pend (0 CARRY4s, 3 LUTs) */
++	wire [LINE_BYTES-1:0] p_be;
++	genvar gbi, gbj;
++	generate
++		for (gbi = 0; gbi < LINE_BYTES / 8; gbi = gbi + 1) begin : g_be_chunk
++			(* dont_touch = "true" *) wire [US-1:0] dlo_c;
++			(* dont_touch = "true" *) wire [US:0] pend_c;
++			(* dont_touch = "true" *) wire [3:0] keep_c;
++`ifdef SYNTH_KINTEX7
++			for (gbj = 0; gbj < US; gbj = gbj + 1) begin : g_bdlo
++				LUT1 #(.INIT(2'b10)) u_dl (.I0(p_dlo_lo[gbj]), .O(dlo_c[gbj]));
++			end
++			for (gbj = 0; gbj <= US; gbj = gbj + 1) begin : g_bpe
++				LUT1 #(.INIT(2'b10)) u_pe (.I0(p_pend[gbj]), .O(pend_c[gbj]));
++			end
++			for (gbj = 0; gbj < 4; gbj = gbj + 1) begin : g_bkp
++				LUT1 #(.INIT(2'b10)) u_kp (.I0(m_keep[gbj]), .O(keep_c[gbj]));
++			end
++`else
++			assign dlo_c = p_dlo_lo;
++			assign pend_c = p_pend;
++			assign keep_c = m_keep;
++`endif
++			for (gbj = 0; gbj < 8; gbj = gbj + 1) begin : g_bit
++				localparam [US:0] IDX = gbi * 8 + gbj;
++				/* verilator lint_off CMPCONST */
++				assign p_be[gbi*8 + gbj] = (IDX >= {1'b0, dlo_c}) && (IDX < pend_c) && !keep_c[gbj % 4];
++				/* verilator lint_on CMPCONST */
++			end
++		end
++	endgenerate
+ 
+ 	/* The port: the request, the outstanding requests, the line buffers. */
+-	wire q_free, rd_idle, wr_idle, fail;
++	(* max_fanout = 16 *) wire q_free, rd_idle, wr_idle, fail;
++	(* dont_touch = "true" *) wire [7:0] fail_b;
++`ifdef SYNTH_KINTEX7
++	generate
++		for (gbi = 0; gbi < 8; gbi = gbi + 1) begin : g_fail_buf
++			LUT1 #(.INIT(2'b10)) u_fb (.I0(fail), .O(fail_b[gbi]));
++		end
++	endgenerate
++`else
++	assign fail_b = {8{fail}};
++`endif
+ 	wire [LINE_BITS-1:0] buf0, buf1, bufd;
+-	wire rd_go = state == S_CRD && q_free && wr_idle && !fail && (rd_first || rd_second);
+-	wire drd_go = state == S_DRD && q_free && wr_idle && !fail;
+-	wire wr_go = state == S_WR && q_free && !fail;
++	(* max_fanout = 16 *) wire rd_go = state == S_CRD && q_free && wr_idle && !fail_b[0] && (rd_first || rd_second);
++	(* max_fanout = 16 *) wire drd_go = state == S_DRD && q_free && wr_idle && !fail_b[0];
++	(* max_fanout = 16 *) wire wr_go = state == S_WR && q_free && !fail_b[0];
+ 
+ 	/* The copied line: the source window shifted by whole bytes. */
+ 	wire [2*LINE_BITS-1:0] both = {buf1, buf0};
++	wire [LINE_BITS-1:0] copy_line;
++
++`ifdef SYNTH_KINTEX7
++	localparam LEG_CHUNKS = LINE_BYTES / 4;
++	localparam LEG_GROUPS = (8 * LEG_CHUNKS) / 16;
++	wire [US-1:0] leg_off_g [0:LEG_GROUPS-1];
++	genvar lgi, lbi, lci, lmi, lsi;
++	generate
++		for (lgi = 0; lgi < LEG_GROUPS; lgi = lgi + 1) begin : g_leg_off_grp
++			for (lsi = 0; lsi < US; lsi = lsi + 1) begin : g_bit
++				LUT1 #(.INIT(2'b10)) u_lg (.I0(src_off[lsi]), .O(leg_off_g[lgi][lsi]));
++			end
++		end
++		for (lbi = 0; lbi < 8; lbi = lbi + 1) begin : g_leg_plane
++			for (lci = 0; lci < LEG_CHUNKS; lci = lci + 1) begin : g_leg_chunk
++				localparam IDX = lbi * LEG_CHUNKS + lci;
++				localparam GRP = IDX / 16;
++				wire [US-1:0] s_off;
++				for (lsi = 0; lsi < US; lsi = lsi + 1) begin : g_sbit
++					LUT1 #(.INIT(2'b10)) u_ls (.I0(leg_off_g[GRP][lsi]), .O(s_off[lsi]));
++				end
++				wire [4+LINE_BYTES-1:0] p_in;
++				wire [4+LINE_BYTES-1:0] p_out;
++				for (lmi = 0; lmi < 4 + LINE_BYTES; lmi = lmi + 1) begin : g_pin
++					assign p_in[lmi] = both[(lci*4 + lmi)*8 + lbi];
++				end
++				am_shift #(.W(4 + LINE_BYTES), .SW(US)) h_cplane (
++					.a(p_in), .amt(s_off), .left(1'b0), .arith(1'b0), .y(p_out)
++				);
++				for (lmi = 0; lmi < 4; lmi = lmi + 1) begin : g_pout
++					assign copy_line[(lci*4 + lmi)*8 + lbi] = p_out[lmi];
++				end
++			end
++		end
++	endgenerate
++	wire [2*LINE_BITS-1:0] shifted = {2*LINE_BITS{1'b0}};
++`else
++	wire [US+2:0] leg_shift_amt = {src_off, 3'd0};
+ 	wire [2*LINE_BITS-1:0] shifted;
+-
+-	am_shift #(.W(2 * LINE_BITS), .SW(US + 3)) h_copy (.a(both), .amt({src_off, 3'd0}), .left(1'b0), .arith(1'b0),
++	am_shift #(.W(2 * LINE_BITS), .SW(US + 3)) h_copy (.a(both), .amt(leg_shift_amt), .left(1'b0), .arith(1'b0),
+ 		.y(shifted));
+-	wire [LINE_BITS-1:0] copy_line = shifted[LINE_BITS-1:0];
++	assign copy_line = shifted[LINE_BITS-1:0];
++`endif
+ 
+ 	/* Blend-over. */
+ 	wire bl_done;
+ 	wire [LINE_BITS-1:0] bl_out;
+ 	reg bl_go;
++	wire [LINE_BITS-1:0] bl_src_mux;
++	(* dont_touch = "true" *) wire [7:0] m_copy_g;
++	(* dont_touch = "true" *) wire [1:0] m_blend_g;
++	(* dont_touch = "true" *) wire [3:0] m_burst_g;
++	genvar bwi;
++`ifdef SYNTH_KINTEX7
++	generate
++		for (bwi = 0; bwi < 8; bwi = bwi + 1) begin : g_mcpy_stg1
++			LUT1 #(.INIT(2'b10)) u_mc (.I0(m_copy), .O(m_copy_g[bwi]));
++		end
++		for (bwi = 0; bwi < 2; bwi = bwi + 1) begin : g_mbld_stg1
++			LUT1 #(.INIT(2'b10)) u_mb (.I0(m_blend), .O(m_blend_g[bwi]));
++		end
++		for (bwi = 0; bwi < 4; bwi = bwi + 1) begin : g_mbst_stg1
++			LUT1 #(.INIT(2'b10)) u_mbs (.I0(m_burst), .O(m_burst_g[bwi]));
++		end
++	endgenerate
++`else
++	assign m_copy_g = {8{m_copy}};
++	assign m_blend_g = {2{m_blend}};
++	assign m_burst_g = {4{m_burst}};
++`endif
++	generate
++		for (bwi = 0; bwi < LINE_BITS / 16; bwi = bwi + 1) begin : g_bl_src
++			wire sel_c;
++`ifdef SYNTH_KINTEX7
++			LUT1 #(.INIT(2'b10)) u_sc (.I0(m_copy_g[bwi / 16]), .O(sel_c));
++`else
++			assign sel_c = m_copy;
++`endif
++			assign bl_src_mux[bwi*16 +: 16] = sel_c ? copy_line[bwi*16 +: 16] : fill_line[bwi*16 +: 16];
++		end
++	endgenerate
+ 
+ 	atg_blt_blend #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) bl (
+-		.clk(clk), .rst_n(rst_n), .go(bl_go), .src(m_copy ? copy_line : fill_line),
++		.clk(clk), .rst_n(rst_n), .go(bl_go), .src(bl_src_mux),
+ 		.dst(bufd), .done(bl_done), .out(bl_out)
+ 	);
+ 
+@@ -479,18 +746,62 @@ module atg_blt_2d #(
+ 	wire [LINE_BITS-1:0] leg_req_wdata;
+ 	wire [7:0] leg_req_tag;
+ 
++	(* dont_touch = "true" *) wire sel_pi_rd0, sel_pi_rd1, sel_pi_f0, sel_pi_f1;
++`ifdef SYNTH_KINTEX7
++	LUT1 #(.INIT(2'b10)) u_prd0 (.I0(rd_go), .O(sel_pi_rd0));
++	LUT1 #(.INIT(2'b10)) u_prd1 (.I0(rd_go), .O(sel_pi_rd1));
++	LUT1 #(.INIT(2'b10)) u_pf0  (.I0(rd_first), .O(sel_pi_f0));
++	LUT1 #(.INIT(2'b10)) u_pf1  (.I0(rd_first), .O(sel_pi_f1));
++`else
++	assign sel_pi_rd0 = rd_go;
++	assign sel_pi_rd1 = rd_go;
++	assign sel_pi_f0  = rd_first;
++	assign sel_pi_f1  = rd_first;
++`endif
++	wire [LA_W-1:0] port_i_line = {sel_pi_rd1 ? (sel_pi_f1 ? src_n0[LA_W-1:16] : src_n1[LA_W-1:16]) : seg_line[LA_W-1:16],
++	                               sel_pi_rd0 ? (sel_pi_f0 ? src_n0[15:0]      : src_n1[15:0])      : seg_line[15:0]};
++
++	wire [LINE_BYTES-1:0] port_i_be;
++	generate
++		for (bwi = 0; bwi < LINE_BYTES / 16; bwi = bwi + 1) begin : g_pbe_mux
++			wire sel_pbe;
++`ifdef SYNTH_KINTEX7
++			LUT1 #(.INIT(2'b10)) u_pbe (.I0(state == S_WR), .O(sel_pbe));
++`else
++			assign sel_pbe = (state == S_WR);
++`endif
++			assign port_i_be[bwi*16 +: 16] = sel_pbe ? seg_be[bwi*16 +: 16] : 16'hFFFF;
++		end
++	endgenerate
++
++	wire [LINE_BITS-1:0] port_i_wdata;
++	generate
++		for (bwi = 0; bwi < LINE_BITS / 16; bwi = bwi + 1) begin : g_pwdata
++			wire sel_b, sel_c;
++`ifdef SYNTH_KINTEX7
++			LUT1 #(.INIT(2'b10)) u_sb (.I0(m_blend_g[bwi / 16]), .O(sel_b));
++			LUT1 #(.INIT(2'b10)) u_sc (.I0(m_copy_g[2 + (bwi / 16)]), .O(sel_c));
++`else
++			assign sel_b = m_blend;
++			assign sel_c = m_copy;
++`endif
++			assign port_i_wdata[bwi*16 +: 16] = sel_b ? bl_out[bwi*16 +: 16] :
++			                                    sel_c ? copy_line[bwi*16 +: 16] : fill_line[bwi*16 +: 16];
++		end
++	endgenerate
++
+ 	atg_blt_port #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) port (
+ 		.clk(clk), .rst_n(rst_n), .clr(state == S_IDLE && kick),
+-		.issue((rd_go || drd_go || wr_go) && !m_burst), .i_write(wr_go),
+-		.i_line(rd_go ? (rd_first ? src_n0 : src_n1) : seg_line),
++		.issue((rd_go || drd_go || wr_go) && !m_burst_g[3]), .i_write(wr_go),
++		.i_line(port_i_line),
+ 		.i_slot(rd_go ? (rd_first ? {1'b0, n0_slot} : 2'd1) : drd_go ? 2'd2 : 2'd0),
+-		.i_be(wr_go ? seg_be : {LINE_BYTES{1'b1}}),
+-		.i_wdata(m_blend ? bl_out : m_copy ? copy_line : fill_line),
++		.i_be(port_i_be),
++		.i_wdata(port_i_wdata),
+ 		.free(q_free), .rd_idle(rd_idle), .wr_idle(wr_idle), .fail(fail),
+ 		.buf0(buf0), .buf1(buf1), .bufd(bufd),
+-		.req_valid(leg_req_valid), .req_ready(req_ready && !m_burst), .req_write(leg_req_write),
++		.req_valid(leg_req_valid), .req_ready(req_ready && !m_burst_g[3]), .req_write(leg_req_write),
+ 		.req_line(leg_req_line), .req_be(leg_req_be), .req_wdata(leg_req_wdata), .req_tag(leg_req_tag),
+-		.rsp_valid(rsp_valid && !m_burst), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
++		.rsp_valid(rsp_valid && !m_burst_g[3]), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
+ 		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
+ 	);
+ 
+@@ -499,120 +810,374 @@ module atg_blt_2d #(
+ 	 * Burst Engine Read/Write Data Path & Barrel Shifter
+ 	 * =========================================================================
+ 	 */
+-	/* Read-out from ping-pong RAM */
+-	wire [3:0] r_slot0 = br_bank ? meta_slot0_1[br_seg_idx] : meta_slot0_0[br_seg_idx];
+-	wire [3:0] r_slot1 = br_bank ? meta_slot1_1[br_seg_idx] : meta_slot1_0[br_seg_idx];
++	/*
++	 * Buffered br_seg_idx[2:0] and br_bank for metadata read muxes (Fanout <= 16)
++	 * Each 4-bit metadata read slice has 16 LUT6 loads on br_seg_idx[2:0].
++	 */
++	localparam META_CHUNKS = 12 + (LINE_BYTES / 4);
++	wire [2:0] br_idx_c [0:META_CHUNKS-1];
++	wire br_bank_c [0:META_CHUNKS-1];
++
++`ifdef SYNTH_KINTEX7
++	wire [2:0] br_idx_g [0:1];
++	wire br_bank_g [0:1];
++	genvar mgi, mbi, mci;
++	generate
++		for (mgi = 0; mgi < 2; mgi = mgi + 1) begin : g_br_stg1
++			for (mbi = 0; mbi < 3; mbi = mbi + 1) begin : g_idx1
++				LUT1 #(.INIT(2'b10)) u_bi1 (.I0(br_seg_idx[mbi]), .O(br_idx_g[mgi][mbi]));
++			end
++			LUT1 #(.INIT(2'b10)) u_bb1 (.I0(br_bank), .O(br_bank_g[mgi]));
++		end
++		for (mci = 0; mci < META_CHUNKS; mci = mci + 1) begin : g_br_stg2
++			localparam MG = (mci >= (META_CHUNKS / 2)) ? 1 : 0;
++			for (mbi = 0; mbi < 3; mbi = mbi + 1) begin : g_idx2
++				LUT1 #(.INIT(2'b10)) u_bi2 (.I0(br_idx_g[MG][mbi]), .O(br_idx_c[mci][mbi]));
++			end
++			LUT1 #(.INIT(2'b10)) u_bb2 (.I0(br_bank_g[MG]), .O(br_bank_c[mci]));
++		end
++	endgenerate
++`else
++	genvar mci;
++	generate
++		for (mci = 0; mci < META_CHUNKS; mci = mci + 1) begin : g_br_sim
++			assign br_idx_c[mci] = br_seg_idx;
++			assign br_bank_c[mci] = br_bank;
++		end
++	endgenerate
++`endif
++
++	(* keep = "true" *) wire [3:0] r_slot0 = br_bank_c[0] ? meta_slot0_1[br_idx_c[0]] : meta_slot0_0[br_idx_c[0]];
++	(* keep = "true" *) wire [3:0] r_slot1 = br_bank_c[1] ? meta_slot1_1[br_idx_c[1]] : meta_slot1_0[br_idx_c[1]];
++	(* keep = "true" *) wire r_n0slot = br_bank_c[2] ? meta_n0slot_1[br_idx_c[2]] : meta_n0slot_0[br_idx_c[2]];
++	wire [US-1:0] r_off;
++	generate
++		for (mci = 0; mci < US; mci = mci + 1) begin : g_roff_mux
++			localparam C = 3 + (mci / 4);
++			assign r_off[mci] = br_bank_c[C] ? meta_off_1[br_idx_c[C]][mci] : meta_off_0[br_idx_c[C]][mci];
++		end
++	endgenerate
++
++	wire [2*LINE_BITS-1:0] pp_both;
++
++`ifdef SYNTH_KINTEX7
++	localparam NUM_PP_SLICES = (LINE_BYTES * 8) / 4;
++	localparam NUM_PP_GROUPS = NUM_PP_SLICES / 16;
++	wire [4:0] pp_waddr_g [0:NUM_PP_GROUPS-1];
++	wire [3:0] pp_slot0_g [0:NUM_PP_GROUPS-1];
++	wire [3:0] pp_slot1_g [0:NUM_PP_GROUPS-1];
++	wire pp_bank0_g [0:NUM_PP_GROUPS-1];
++	wire pp_bank1_g [0:NUM_PP_GROUPS-1];
++	wire pp_n0_g [0:NUM_PP_GROUPS-1];
++	wire pp_we_g [0:NUM_PP_GROUPS-1];
++
++	genvar pgi, psi, abi;
++	generate
++		for (pgi = 0; pgi < NUM_PP_GROUPS; pgi = pgi + 1) begin : g_pp_grp
++			LUT1 #(.INIT(2'b10)) u_gwe (.I0(m_burst_g[3] && rsp_rd_bst), .O(pp_we_g[pgi]));
++			LUT1 #(.INIT(2'b10)) u_gn0 (.I0(r_n0slot), .O(pp_n0_g[pgi]));
++			LUT1 #(.INIT(2'b10)) u_gbk0 (.I0(br_bank), .O(pp_bank0_g[pgi]));
++			LUT1 #(.INIT(2'b10)) u_gbk1 (.I0(br_bank), .O(pp_bank1_g[pgi]));
++			for (abi = 0; abi < 4; abi = abi + 1) begin : g_gabuf
++				LUT1 #(.INIT(2'b10)) u_gwa (.I0(rsp_tag[abi]), .O(pp_waddr_g[pgi][abi]));
++				LUT1 #(.INIT(2'b10)) u_gs0 (.I0(r_slot0[abi]), .O(pp_slot0_g[pgi][abi]));
++				LUT1 #(.INIT(2'b10)) u_gs1 (.I0(r_slot1[abi]), .O(pp_slot1_g[pgi][abi]));
++			end
++			LUT1 #(.INIT(2'b10)) u_gwab (.I0(rsp_tag[4]), .O(pp_waddr_g[pgi][4]));
++		end
++
++		for (psi = 0; psi < NUM_PP_SLICES; psi = psi + 1) begin : g_pp_slice
++			localparam PG = psi / 16;
++			(* ram_style = "distributed" *) reg [3:0] s_ram [0:31];
++			(* keep = "true" *) wire [4:0] s_waddr;
++			(* keep = "true" *) wire [4:0] s_raddr0;
++			(* keep = "true" *) wire [4:0] s_raddr1;
++			(* keep = "true" *) wire s_we;
++			(* keep = "true" *) wire s_n0;
++
++			LUT1 #(.INIT(2'b10)) u_bwe (.I0(pp_we_g[PG]), .O(s_we));
++			LUT1 #(.INIT(2'b10)) u_bn0 (.I0(pp_n0_g[PG]), .O(s_n0));
++
++			for (abi = 0; abi < 4; abi = abi + 1) begin : g_abuf
++				LUT1 #(.INIT(2'b10)) u_bwa (.I0(pp_waddr_g[PG][abi]), .O(s_waddr[abi]));
++				LUT1 #(.INIT(2'b10)) u_bra0 (.I0(pp_slot0_g[PG][abi]), .O(s_raddr0[abi]));
++				LUT1 #(.INIT(2'b10)) u_bra1 (.I0(pp_slot1_g[PG][abi]), .O(s_raddr1[abi]));
++			end
++			LUT1 #(.INIT(2'b10)) u_bwab (.I0(pp_waddr_g[PG][4]), .O(s_waddr[4]));
++			LUT1 #(.INIT(2'b10)) u_bra0b (.I0(pp_bank0_g[PG]), .O(s_raddr0[4]));
++			LUT1 #(.INIT(2'b10)) u_bra1b (.I0(pp_bank1_g[PG]), .O(s_raddr1[4]));
++
++			always @(posedge clk) begin
++				if (s_we)
++					s_ram[s_waddr] <= rsp_rdata[psi*4 +: 4];
++			end
++
++			assign pp_both[psi*4 +: 4] = s_n0 ? s_ram[s_raddr1] : s_ram[s_raddr0];
++			assign pp_both[(NUM_PP_SLICES+psi)*4 +: 4] = s_n0 ? s_ram[s_raddr0] : s_ram[s_raddr1];
++		end
++	endgenerate
++`else
++	reg [LINE_BITS-1:0] pp_ram [0:31];
++	always @(posedge clk) begin
++		if (m_burst && rsp_rd_bst)
++			pp_ram[rsp_tag[4:0]] <= rsp_rdata;
++	end
+ 	wire [LINE_BITS-1:0] pp_sdata0 = pp_ram[{br_bank, r_slot0}];
+ 	wire [LINE_BITS-1:0] pp_sdata1 = pp_ram[{br_bank, r_slot1}];
+-	wire r_n0slot = br_bank ? meta_n0slot_1[br_seg_idx] : meta_n0slot_0[br_seg_idx];
+-	wire [US-1:0] r_off = br_bank ? meta_off_1[br_seg_idx] : meta_off_0[br_seg_idx];
+-	wire [2*LINE_BITS-1:0] pp_both = r_n0slot ? {pp_sdata0, pp_sdata1} : {pp_sdata1, pp_sdata0};
++	assign pp_both = r_n0slot ? {pp_sdata0, pp_sdata1} : {pp_sdata1, pp_sdata0};
++`endif
++
++	wire [LINE_BITS-1:0] pp_copy_line;
++`ifdef SYNTH_KINTEX7
++	localparam PP_CHUNKS = LINE_BYTES / 4;
++	localparam PP_GROUPS = (8 * PP_CHUNKS) / 16;
++	wire [US-1:0] pp_off_g [0:PP_GROUPS-1];
++	genvar ppi, ppb, ppc, ppm, sai;
++	generate
++		for (ppi = 0; ppi < PP_GROUPS; ppi = ppi + 1) begin : g_pp_off_grp
++			for (sai = 0; sai < US; sai = sai + 1) begin : g_bit
++				LUT1 #(.INIT(2'b10)) u_pg (.I0(r_off[sai]), .O(pp_off_g[ppi][sai]));
++			end
++		end
++		for (ppb = 0; ppb < 8; ppb = ppb + 1) begin : g_pp_plane
++			for (ppc = 0; ppc < PP_CHUNKS; ppc = ppc + 1) begin : g_pp_chunk
++				localparam IDX = ppb * PP_CHUNKS + ppc;
++				localparam GRP = IDX / 16;
++				wire [US-1:0] s_off;
++				for (sai = 0; sai < US; sai = sai + 1) begin : g_sbit
++					LUT1 #(.INIT(2'b10)) u_ps (.I0(pp_off_g[GRP][sai]), .O(s_off[sai]));
++				end
++				wire [4+LINE_BYTES-1:0] p_in;
++				wire [4+LINE_BYTES-1:0] p_out;
++				for (ppm = 0; ppm < 4 + LINE_BYTES; ppm = ppm + 1) begin : g_pin
++					assign p_in[ppm] = pp_both[(ppc*4 + ppm)*8 + ppb];
++				end
++				am_shift #(.W(4 + LINE_BYTES), .SW(US)) h_pplane (
++					.a(p_in), .amt(s_off), .left(1'b0), .arith(1'b0), .y(p_out)
++				);
++				for (ppm = 0; ppm < 4; ppm = ppm + 1) begin : g_pout
++					assign pp_copy_line[(ppc*4 + ppm)*8 + ppb] = p_out[ppm];
++				end
++			end
++		end
++	endgenerate
++	wire [2*LINE_BITS-1:0] pp_shifted = {2*LINE_BITS{1'b0}};
++`else
++	wire [US+2:0] pp_shift_amt = {r_off, 3'd0};
+ 	wire [2*LINE_BITS-1:0] pp_shifted;
+-
+ 	am_shift #(.W(2 * LINE_BITS), .SW(US + 3)) h_pp_shift (
+-		.a(pp_both), .amt({r_off, 3'd0}), .left(1'b0), .arith(1'b0), .y(pp_shifted)
++		.a(pp_both), .amt(pp_shift_amt), .left(1'b0), .arith(1'b0), .y(pp_shifted)
+ 	);
+-	wire [LINE_BITS-1:0] pp_copy_line = pp_shifted[LINE_BITS-1:0];
++	assign pp_copy_line = pp_shifted[LINE_BITS-1:0];
++`endif
+ 
+ 	/* Burst requests to AMB */
+-	wire [US:0] issue_seg_bytes;
+-	am_shift #(.W(US + 1), .SW(3)) h_iss_sn (.a(p_seg_n), .amt(psl), .left(1'b1), .arith(1'b0), .y(issue_seg_bytes));
+-
+-	wire [US:0] issue_p_end;
+-	wire issue_pend_co;
+-	am_add #(.W(US + 1)) a_iss_pe (.a({1'b0, p_dlo_lo}), .b(issue_seg_bytes), .ci(1'b0), .s(issue_p_end), .co(issue_pend_co));
+-
+-	reg [LINE_BYTES-1:0] issue_be;
+-	integer ib;
+-	always @(*)
+-		for (ib = 0; ib < LINE_BYTES; ib = ib + 1)
+-			issue_be[ib] = ib[US:0] >= {1'b0, p_dlo_lo} && ib[US:0] < issue_p_end && !m_keep[ib % 4];
++	wire [LINE_BYTES-1:0] issue_be = p_be;
+ 
+ 	wire bst_can_fill_p = p_valid && (!bank_active[bw_bank] || !bank_closed[bw_bank]);
+-	wire bst_rd_need = m_copy;
+-
+-	reg bst_rd_valid;
+-	reg [LA_W-1:0] bst_rd_line;
+-	reg [7:0] bst_rd_tag;
+-
+-	always @(*) begin
+-		bst_rd_valid = 1'b0;
+-		bst_rd_line = p_src_n0;
+-		bst_rd_tag = {1'b0, 2'd0, bw_bank, bw_slot_cnt};
+-		if (state == S_BURST && bst_can_fill_p && bst_rd_need && !fail) begin
+-			bst_rd_valid = 1'b1;
+-			if (bw_sub) begin
+-				bst_rd_line = p_src_n1;
+-				bst_rd_tag = {1'b0, 2'd0, bw_bank, bw_slot_p1};
+-			end else begin
+-				bst_rd_line = p_src_n0;
+-				bst_rd_tag = {1'b0, 2'd0, bw_bank, bw_slot_cnt};
+-			end
++	wire bst_rd_need = m_copy_g[6];
++
++	(* keep = "true" *) wire bst_rd_valid = (state == S_BURST) && bst_can_fill_p && bst_rd_need && !fail_b[0];
++	(* dont_touch = "true" *) wire sel_rd_sub_lo, sel_rd_sub_hi;
++`ifdef SYNTH_KINTEX7
++	LUT1 #(.INIT(2'b10)) u_rsl (.I0(bst_rd_valid && bw_sub), .O(sel_rd_sub_lo));
++	LUT1 #(.INIT(2'b10)) u_rsh (.I0(bst_rd_valid && bw_sub), .O(sel_rd_sub_hi));
++`else
++	assign sel_rd_sub_lo = bst_rd_valid && bw_sub;
++	assign sel_rd_sub_hi = bst_rd_valid && bw_sub;
++`endif
++	wire [LA_W-1:0] bst_rd_line = {sel_rd_sub_hi ? p_src_n1[LA_W-1:16] : p_src_n0[LA_W-1:16],
++	                               sel_rd_sub_lo ? p_src_n1[15:0]      : p_src_n0[15:0]};
++	wire [7:0] bst_rd_tag = {1'b0, 2'd0, bw_bank, sel_rd_sub_lo ? bw_slot_p1 : bw_slot_cnt};
++
++	(* max_fanout = 16 *) wire bst_wr_valid = (state == S_BURST) && br_active && !fail_b[0];
++	wire [LA_W-1:0] bst_wr_line;
++	wire [LINE_BYTES-1:0] bst_wr_be;
++	generate
++		for (mci = 0; mci < LA_W; mci = mci + 1) begin : g_wline_mux
++			localparam C = 5 + (mci / 4);
++			assign bst_wr_line[mci] = br_bank_c[C] ? meta_dline_1[br_idx_c[C]][mci] : meta_dline_0[br_idx_c[C]][mci];
+ 		end
+-	end
+-
+-	wire bst_wr_valid = (state == S_BURST) && br_active && !fail;
+-	wire [LA_W-1:0] bst_wr_line = br_bank ? meta_dline_1[br_seg_idx] : meta_dline_0[br_seg_idx];
+-	wire [LINE_BYTES-1:0] bst_wr_be = br_bank ? meta_be_1[br_seg_idx] : meta_be_0[br_seg_idx];
+-	wire [LINE_BITS-1:0] bst_wr_wdata = m_copy ? pp_copy_line : fill_line;
++		for (mci = 0; mci < LINE_BYTES; mci = mci + 1) begin : g_wbe_mux
++			localparam C = 12 + (mci / 4);
++			assign bst_wr_be[mci] = br_bank_c[C] ? meta_be_1[br_idx_c[C]][mci] : meta_be_0[br_idx_c[C]][mci];
++		end
++	endgenerate
++
++	wire [LINE_BITS-1:0] bst_wr_wdata;
++	generate
++		for (bwi = 0; bwi < LINE_BITS / 16; bwi = bwi + 1) begin : g_bw_wdata
++			wire sel_c;
++`ifdef SYNTH_KINTEX7
++			LUT1 #(.INIT(2'b10)) u_sc (.I0(m_copy_g[4 + (bwi / 16)]), .O(sel_c));
++`else
++			assign sel_c = m_copy;
++`endif
++			assign bst_wr_wdata[bwi*16 +: 16] = sel_c ? pp_copy_line[bwi*16 +: 16] : fill_line[bwi*16 +: 16];
++		end
++	endgenerate
+ 	wire [7:0] bst_wr_tag = 8'h80;
+ 
+ 	/* AMB Arbiter: write takes precedence over read to clear buffer space */
+-	wire bst_wr_fire = bst_wr_valid && req_ready;
+-	wire bst_rd_fire = bst_rd_valid && !bst_wr_valid && req_ready;
++	(* max_fanout = 16 *) wire bst_wr_fire = bst_wr_valid && req_ready;
++	(* max_fanout = 16 *) wire bst_rd_fire = bst_rd_valid && !bst_wr_valid && req_ready;
+ 
+ 	wire bst_req_valid = bst_wr_valid || bst_rd_valid;
+ 	wire bst_req_write = bst_wr_valid;
+-	wire [LA_W-1:0] bst_req_line = bst_wr_valid ? bst_wr_line : bst_rd_line;
+-	wire [LINE_BYTES-1:0] bst_req_be = bst_wr_valid ? bst_wr_be : {LINE_BYTES{1'b1}};
++	(* dont_touch = "true" *) wire sel_bwr_l0, sel_bwr_l1;
++`ifdef SYNTH_KINTEX7
++	LUT1 #(.INIT(2'b10)) u_bwrl0 (.I0(bst_wr_valid), .O(sel_bwr_l0));
++	LUT1 #(.INIT(2'b10)) u_bwrl1 (.I0(bst_wr_valid), .O(sel_bwr_l1));
++`else
++	assign sel_bwr_l0 = bst_wr_valid;
++	assign sel_bwr_l1 = bst_wr_valid;
++`endif
++	wire [LA_W-1:0] bst_req_line = {sel_bwr_l1 ? bst_wr_line[LA_W-1:16] : bst_rd_line[LA_W-1:16],
++	                                sel_bwr_l0 ? bst_wr_line[15:0]      : bst_rd_line[15:0]};
++	wire [LINE_BYTES-1:0] bst_req_be;
++	generate
++		for (bwi = 0; bwi < LINE_BYTES / 16; bwi = bwi + 1) begin : g_bwr_be
++			wire sel_bwr_be;
++`ifdef SYNTH_KINTEX7
++			LUT1 #(.INIT(2'b10)) u_bwrbe (.I0(bst_wr_valid), .O(sel_bwr_be));
++`else
++			assign sel_bwr_be = bst_wr_valid;
++`endif
++			assign bst_req_be[bwi*16 +: 16] = sel_bwr_be ? bst_wr_be[bwi*16 +: 16] : 16'hFFFF;
++		end
++	endgenerate
+ 	wire [LINE_BITS-1:0] bst_req_wdata = bst_wr_wdata;
+ 	wire [7:0] bst_req_tag = bst_wr_valid ? bst_wr_tag : bst_rd_tag;
+ 
+-	wire issue_fire = (state == S_BURST) && bst_can_fill_p && (!m_copy || (p_two_lines ? (bw_sub && bst_rd_fire) : bst_rd_fire));
+-	wire step_p = !p_valid || issue_fire;
+-	wire step_g = !g_valid || step_p;
+-	(* direct_enable = "yes" *) wire walk_step = (state == S_BURST) && !bw_walk_done && step_g;
++	(* keep = "true", max_fanout = 16 *) wire can_issue_when_valid = (state == S_BURST) && !fail_b[2] && (!bank_active[bw_bank] || !bank_closed[bw_bank]) && (!m_copy_g[6] || ((bw_sub || !p_two_lines) && !bst_wr_valid && req_ready));
++	(* keep = "true", max_fanout = 16 *) wire issue_fire = p_valid && can_issue_when_valid;
++	(* keep = "true", max_fanout = 16 *) wire step_p = !p_valid || can_issue_when_valid;
++	(* keep = "true", max_fanout = 16 *) wire step_g2_data = !g2_valid || !p_valid;
++	(* direct_enable = "yes", keep = "true", max_fanout = 16 *) wire walk_step = (state == S_BURST) && !bw_walk_done && (!g_valid || !g2_valid || !p_valid) && walk_phase;
+ 
+ 	/* Mux external AMB outputs between burst and legacy port */
+-	assign req_valid = m_burst ? bst_req_valid : leg_req_valid;
+-	assign req_write = m_burst ? bst_req_write : leg_req_write;
+-	assign req_line = m_burst ? bst_req_line : leg_req_line;
+-	assign req_be = m_burst ? bst_req_be : leg_req_be;
+-	assign req_wdata = m_burst ? bst_req_wdata : leg_req_wdata;
+-	assign req_tag = m_burst ? bst_req_tag : leg_req_tag;
++	(* dont_touch = "true" *) wire sel_mb_l0, sel_mb_l1;
++`ifdef SYNTH_KINTEX7
++	LUT1 #(.INIT(2'b10)) u_mbl0 (.I0(m_burst_g[2]), .O(sel_mb_l0));
++	LUT1 #(.INIT(2'b10)) u_mbl1 (.I0(m_burst_g[2]), .O(sel_mb_l1));
++`else
++	assign sel_mb_l0 = m_burst;
++	assign sel_mb_l1 = m_burst;
++`endif
++	assign req_valid = m_burst_g[3] ? bst_req_valid : leg_req_valid;
++	assign req_write = m_burst_g[3] ? bst_req_write : leg_req_write;
++	assign req_line = {sel_mb_l1 ? bst_req_line[LA_W-1:16] : leg_req_line[LA_W-1:16],
++	                   sel_mb_l0 ? bst_req_line[15:0]      : leg_req_line[15:0]};
++	generate
++		for (bwi = 0; bwi < LINE_BYTES / 16; bwi = bwi + 1) begin : g_req_be_mux
++			wire sel_mb_be;
++`ifdef SYNTH_KINTEX7
++			LUT1 #(.INIT(2'b10)) u_mbbe (.I0(m_burst_g[2]), .O(sel_mb_be));
++`else
++			assign sel_mb_be = m_burst;
++`endif
++			assign req_be[bwi*16 +: 16] = sel_mb_be ? bst_req_be[bwi*16 +: 16] : leg_req_be[bwi*16 +: 16];
++		end
++		for (bwi = 0; bwi < LINE_BITS / 16; bwi = bwi + 1) begin : g_req_wdata
++			wire sel_mb_w;
++`ifdef SYNTH_KINTEX7
++			LUT1 #(.INIT(2'b10)) u_mbw (.I0(m_burst_g[bwi / 16]), .O(sel_mb_w));
++`else
++			assign sel_mb_w = m_burst;
++`endif
++			assign req_wdata[bwi*16 +: 16] = sel_mb_w ? bst_req_wdata[bwi*16 +: 16] : leg_req_wdata[bwi*16 +: 16];
++		end
++	endgenerate
++	assign req_tag = m_burst_g[3] ? bst_req_tag : leg_req_tag;
+ 
+ 	assign busy = state != S_IDLE;
+ 	assign fsm = state;
+ 
+ 	/* The segment's end: the next pixel, or the next row. */
+ 	wire [16:0] sn17 = {{(16 - US){1'b0}}, sn};
+-	wire seg_last = cur_rem == sn17;
+-	wire [ADDR_W-1:0] tile_step = tile_bytes(psl, 1'b0);
+-	wire [ADDR_W-1:0] tile_back = tile_bytes(psl, 1'b1);
+-	wire [ADDR_W-1:0] dst_back, src_back;
+-	wire [31:0] dst_neg, src_neg;
+-	wire [16:0] y1_last, ys_rev;
++	wire seg_last = leg_seg_last;
++	(* max_fanout = 16 *) wire [ADDR_W-1:0] dst_back, src_back;
++	(* max_fanout = 16 *) wire [31:0] dst_neg, src_neg;
++	(* max_fanout = 16 *) wire [16:0] y1_last, ys_rev;
+ 	wire [5:0] step_co_unused;
+ 
+-	am_sub #(.W(ADDR_W)) s_dback (.a(dstride_u), .b(tile_back), .bi(1'b0), .d(dst_back), .bo(step_co_unused[0]));
+-	am_sub #(.W(ADDR_W)) s_sback (.a(sstride_u), .b(tile_back), .bi(1'b0), .d(src_back), .bo(step_co_unused[1]));
+-	am_sub #(.W(32)) s_dneg (.a(32'd0), .b(dstride_u), .bi(1'b0), .d(dst_neg), .bo(step_co_unused[2]));
+-	am_sub #(.W(32)) s_sneg (.a(32'd0), .b(sstride_u), .bi(1'b0), .d(src_neg), .bo(step_co_unused[3]));
+-	wire [ADDR_W-1:0] dst_step = m_dtile ? (ydl == 2'd3 ? dst_back : tile_step) :
+-		dstride_u;
+-	wire [ADDR_W-1:0] src_step = m_stile ? (ysl == 2'd3 ? src_back : tile_step) :
+-		sstride_u;
++	am_sub #(.W(ADDR_W)) s_dback (.a(r_dstride), .b({24'd0, r_tile_back}), .bi(1'b0), .d(dst_back), .bo(step_co_unused[0]));
++	am_sub #(.W(ADDR_W)) s_sback (.a(r_sstride), .b({24'd0, r_tile_back}), .bi(1'b0), .d(src_back), .bo(step_co_unused[1]));
++	am_sub #(.W(32)) s_dneg (.a(32'd0), .b(r_dstride), .bi(1'b0), .d(dst_neg), .bo(step_co_unused[2]));
++	am_sub #(.W(32)) s_sneg (.a(32'd0), .b(r_sstride), .bi(1'b0), .d(src_neg), .bo(step_co_unused[3]));
++
++	(* dont_touch = "true" *) wire sel_lds_t0, sel_lds_t1, sel_lds_y0, sel_lds_y1;
++	(* dont_touch = "true" *) wire sel_lss_t0, sel_lss_t1, sel_lss_y0, sel_lss_y1;
++	(* dont_touch = "true" *) wire sel_mds_t0, sel_mds_t1, sel_mds_y0, sel_mds_y1;
++	(* dont_touch = "true" *) wire sel_mss_t0, sel_mss_t1, sel_mss_y0, sel_mss_y1;
++`ifdef SYNTH_KINTEX7
++	LUT1 #(.INIT(2'b10)) u_ldst0 (.I0(m_dtile),     .O(sel_lds_t0));
++	LUT1 #(.INIT(2'b10)) u_ldst1 (.I0(m_dtile),     .O(sel_lds_t1));
++	LUT1 #(.INIT(2'b10)) u_ldsy0 (.I0(ydl == 2'd3), .O(sel_lds_y0));
++	LUT1 #(.INIT(2'b10)) u_ldsy1 (.I0(ydl == 2'd3), .O(sel_lds_y1));
++	LUT1 #(.INIT(2'b10)) u_lsst0 (.I0(m_stile),     .O(sel_lss_t0));
++	LUT1 #(.INIT(2'b10)) u_lsst1 (.I0(m_stile),     .O(sel_lss_t1));
++	LUT1 #(.INIT(2'b10)) u_lssy0 (.I0(ysl == 2'd3), .O(sel_lss_y0));
++	LUT1 #(.INIT(2'b10)) u_lssy1 (.I0(ysl == 2'd3), .O(sel_lss_y1));
++	LUT1 #(.INIT(2'b10)) u_mdst0 (.I0(m_dtile),     .O(sel_mds_t0));
++	LUT1 #(.INIT(2'b10)) u_mdst1 (.I0(m_dtile),     .O(sel_mds_t1));
++	LUT1 #(.INIT(2'b10)) u_mdsy0 (.I0(ydl == 2'd3), .O(sel_mds_y0));
++	LUT1 #(.INIT(2'b10)) u_mdsy1 (.I0(ydl == 2'd3), .O(sel_mds_y1));
++	LUT1 #(.INIT(2'b10)) u_msst0 (.I0(m_stile),     .O(sel_mss_t0));
++	LUT1 #(.INIT(2'b10)) u_msst1 (.I0(m_stile),     .O(sel_mss_t1));
++	LUT1 #(.INIT(2'b10)) u_mssy0 (.I0(ysl == 2'd3), .O(sel_mss_y0));
++	LUT1 #(.INIT(2'b10)) u_mssy1 (.I0(ysl == 2'd3), .O(sel_mss_y1));
++`else
++	assign sel_lds_t0 = m_dtile;
++	assign sel_lds_t1 = m_dtile;
++	assign sel_lds_y0 = (ydl == 2'd3);
++	assign sel_lds_y1 = (ydl == 2'd3);
++	assign sel_lss_t0 = m_stile;
++	assign sel_lss_t1 = m_stile;
++	assign sel_lss_y0 = (ysl == 2'd3);
++	assign sel_lss_y1 = (ysl == 2'd3);
++	assign sel_mds_t0 = m_dtile;
++	assign sel_mds_t1 = m_dtile;
++	assign sel_mds_y0 = (ydl == 2'd3);
++	assign sel_mds_y1 = (ydl == 2'd3);
++	assign sel_mss_t0 = m_stile;
++	assign sel_mss_t1 = m_stile;
++	assign sel_mss_y0 = (ysl == 2'd3);
++	assign sel_mss_y1 = (ysl == 2'd3);
++`endif
++	(* keep = "true" *) wire [ADDR_W-1:0] dst_step_leg = {sel_lds_t1 ? (sel_lds_y1 ? r_dst_back[31:16] : 16'd0) : r_dstride[31:16],
++	                                                      sel_lds_t0 ? (sel_lds_y0 ? r_dst_back[15:0]  : {8'd0, r_tile_step}) : r_dstride[15:0]};
++	(* keep = "true" *) wire [ADDR_W-1:0] src_step_leg = {sel_lss_t1 ? (sel_lss_y1 ? r_src_back[31:16] : 16'd0) : r_sstride[31:16],
++	                                                      sel_lss_t0 ? (sel_lss_y0 ? r_src_back[15:0]  : {8'd0, r_tile_step}) : r_sstride[15:0]};
++	(* keep = "true" *) wire [ADDR_W-1:0] dst_step_mul = {sel_mds_t1 ? (sel_mds_y1 ? r_dst_back[31:16] : 16'd0) : r_dstride[31:16],
++	                                                      sel_mds_t0 ? (sel_mds_y0 ? r_dst_back[15:0]  : {8'd0, r_tile_step}) : r_dstride[15:0]};
++	(* keep = "true" *) wire [ADDR_W-1:0] src_step_mul = {sel_mss_t1 ? (sel_mss_y1 ? r_src_back[31:16] : 16'd0) : r_sstride[31:16],
++	                                                      sel_mss_t0 ? (sel_mss_y0 ? r_src_back[15:0]  : {8'd0, r_tile_step}) : r_sstride[15:0]};
+ 
+ 	/* S_START: the first row (the last one when reversed). */
+ 	am_sub #(.W(17)) s_y1 (.a(y1), .b(17'd0), .bi(1'b1), .d(y1_last), .bo(step_co_unused[4]));
+ 	am_add #(.W(17)) a_ys (.a(sy0), .b(rows), .ci(1'b0), .s(ys_rev), .co(step_co_unused[5]));
+-	wire [16:0] yd_start = m_rev ? y1_last : y0;
+-	wire [16:0] ys_start = m_rev ? ys_rev : sy0;
++	(* dont_touch = "true" *) wire sel_yd_r0, sel_yd_r1, sel_ys_r0, sel_ys_r1;
++`ifdef SYNTH_KINTEX7
++	LUT1 #(.INIT(2'b10)) u_ydr0 (.I0(m_rev), .O(sel_yd_r0));
++	LUT1 #(.INIT(2'b10)) u_ydr1 (.I0(m_rev), .O(sel_yd_r1));
++	LUT1 #(.INIT(2'b10)) u_ysr0 (.I0(m_rev), .O(sel_ys_r0));
++	LUT1 #(.INIT(2'b10)) u_ysr1 (.I0(m_rev), .O(sel_ys_r1));
++`else
++	assign sel_yd_r0 = m_rev;
++	assign sel_yd_r1 = m_rev;
++	assign sel_ys_r0 = m_rev;
++	assign sel_ys_r1 = m_rev;
++`endif
++	(* max_fanout = 16 *) wire [16:0] yd_start = {sel_yd_r1 ? y1_last[16]   : y0[16],
++	                                              sel_yd_r0 ? y1_last[15:0] : y0[15:0]};
++	(* max_fanout = 16 *) wire [16:0] ys_start = {sel_ys_r1 ? ys_rev[16]    : sy0[16],
++	                                              sel_ys_r0 ? ys_rev[15:0]  : sy0[15:0]};
+ 	wire row_go = state == S_START;
+ 	wire row_add = state == S_WR && wr_go && seg_last;
+ 
+-	wire [ADDR_W-1:0] dst_row, src_row;
+-	wire d_idle, s_idle;
++	(* max_fanout = 16 *) wire [ADDR_W-1:0] dst_row, src_row;
++	(* max_fanout = 16 *) wire d_idle, s_idle;
+ 
+ 	/* The first row's address within its tile row: (y mod 4) x 4 pixels, in bytes. */
+ 	wire [ADDR_W-1:0] d_in_tile, s_in_tile;
+@@ -620,23 +1185,23 @@ module atg_blt_2d #(
+ 	wire [1:0] first_co_unused;
+ 
+ 	am_shift #(.W(ADDR_W), .SW(3)) h_dt (.a(m_dtile ? {{(ADDR_W - 4){1'b0}}, yd_start[1:0], 2'b00} : {ADDR_W{1'b0}}),
+-		.amt(psl), .left(1'b1), .arith(1'b0), .y(d_in_tile));
++		.amt(psl_c0), .left(1'b1), .arith(1'b0), .y(d_in_tile));
+ 	am_shift #(.W(ADDR_W), .SW(3)) h_st (.a(m_stile ? {{(ADDR_W - 4){1'b0}}, ys_start[1:0], 2'b00} : {ADDR_W{1'b0}}),
+-		.amt(psl), .left(1'b1), .arith(1'b0), .y(s_in_tile));
+-	am_add #(.W(32)) a_df (.a(dbase_u), .b(d_in_tile), .ci(1'b0), .s(d_first), .co(first_co_unused[0]));
+-	am_add #(.W(32)) a_sf (.a(sbase_u), .b(s_in_tile), .ci(1'b0), .s(s_first), .co(first_co_unused[1]));
++		.amt(psl_c0), .left(1'b1), .arith(1'b0), .y(s_in_tile));
++	am_add #(.W(32)) a_df (.a(r_dbase), .b(d_in_tile), .ci(1'b0), .s(d_first), .co(first_co_unused[0]));
++	am_add #(.W(32)) a_sf (.a(r_sbase), .b(s_in_tile), .ci(1'b0), .s(s_first), .co(first_co_unused[1]));
+ 
+ 	atg_blt_acc dacc (
+ 		.clk(clk), .rst_n(rst_n), .go(row_go),
+-		.y(m_dtile ? {2'b00, yd_start[16:2]} : yd_start), .s(dstride_u),
++		.y(m_dtile ? {2'b00, yd_start[16:2]} : yd_start), .s(r_dstride),
+ 		.b(d_first),
+-		.add(row_add), .d(m_rev ? dst_neg : dst_step), .r(dst_row), .idle(d_idle)
++		.add(row_add), .d(r_dacc_step), .r(dst_row), .idle(d_idle)
+ 	);
+ 	atg_blt_acc sacc (
+ 		.clk(clk), .rst_n(rst_n), .go(row_go),
+-		.y(m_stile ? {2'b00, ys_start[16:2]} : ys_start), .s(sstride_u),
++		.y(m_stile ? {2'b00, ys_start[16:2]} : ys_start), .s(r_sstride),
+ 		.b(s_first),
+-		.add(row_add), .d(m_rev ? src_neg : src_step), .r(src_row), .idle(s_idle)
++		.add(row_add), .d(r_sacc_step), .r(src_row), .idle(s_idle)
+ 	);
+ 
+ 	/*
+@@ -646,10 +1211,12 @@ module atg_blt_2d #(
+ 	 * bytes (S_SC), and the next pixel, row and the pixels left (S_WR).
+ 	 */
+ 	wire [16:0] c_width, c_rows, c_dx, c_dy, c_sx0, c_sy0, x1_last, s_end, s_last;
+-	wire [ADDR_W-1:0] d_px, s_px, d_xb, s_xb, d_addr, s_addr, d_lo, s_lo;
++	wire [ADDR_W-1:0] d_lo, s_lo;
++	(* max_fanout = 16 *) wire [ADDR_W-1:0] d_addr, s_addr;
+ 	wire [US:0] seg_bytes;
+ 	wire [1:0] ydl_inc, ysl_inc;
+-	wire [16:0] rows_dec, px_next, spx_next, rem_next;
++	wire [16:0] rows_dec, px_next, spx_next;
++	(* max_fanout = 16 *) wire [16:0] rem_next;
+ 	wire [23:0] fsm_co_unused;
+ 
+ 	am_sub #(.W(17)) s_w (.a(x1), .b(x0), .bi(1'b0), .d(c_width), .bo(fsm_co_unused[0]));
+@@ -661,14 +1228,67 @@ module atg_blt_2d #(
+ 	am_sub #(.W(17)) s_x1 (.a(x1), .b(17'd0), .bi(1'b1), .d(x1_last), .bo(fsm_co_unused[6]));
+ 	am_add #(.W(17)) a_send (.a(sx0), .b(width), .ci(1'b0), .s(s_end), .co(fsm_co_unused[7]));
+ 	am_sub #(.W(17)) s_slast (.a(s_end), .b(17'd0), .bi(1'b1), .d(s_last), .bo(fsm_co_unused[8]));
+-	assign d_px = x_pixels(cur_px, m_dtile);
+-	assign s_px = x_pixels(cur_spx, m_stile);
+-	am_shift #(.W(ADDR_W), .SW(3)) h_dx (.a(d_px), .amt(psl), .left(1'b1), .arith(1'b0), .y(d_xb));
+-	am_shift #(.W(ADDR_W), .SW(3)) h_sx (.a(s_px), .amt(psl), .left(1'b1), .arith(1'b0), .y(s_xb));
++
++	wire [ADDR_W-1:0] d_px_0 = x_pixels(cur_px, dtile_l0);
++	wire [ADDR_W-1:0] d_px_1 = x_pixels(cur_px, dtile_l1);
++	wire [ADDR_W-1:0] d_px_2 = x_pixels(cur_px, dtile_l2);
++	wire [ADDR_W-1:0] d_px_3 = x_pixels(cur_px, dtile_l3);
++	wire [ADDR_W-1:0] d_px_4 = x_pixels(cur_px, dtile_l4);
++	wire [ADDR_W-1:0] s_px_0 = x_pixels(cur_spx, stile_l0);
++	wire [ADDR_W-1:0] s_px_1 = x_pixels(cur_spx, stile_l1);
++	wire [ADDR_W-1:0] s_px_2 = x_pixels(cur_spx, stile_l2);
++	wire [ADDR_W-1:0] s_px_3 = x_pixels(cur_spx, stile_l3);
++	wire [ADDR_W-1:0] s_px_4 = x_pixels(cur_spx, stile_l4);
++	wire [7:0] d_xb_b0 = (psl_ld0 == 3'd4) ? {d_px_0[3:0], 4'b0000} :
++	                     (psl_ld0 == 3'd3) ? {d_px_0[4:0], 3'b000}  :
++	                     (psl_ld0 == 3'd2) ? {d_px_0[5:0], 2'b00}   :
++	                     (psl_ld0 == 3'd1) ? {d_px_0[6:0], 1'b0}    : d_px_0[7:0];
++	wire [3:0] d_xb_b1 = (psl_ld1 == 3'd4) ? d_px_1[7:4] :
++	                     (psl_ld1 == 3'd3) ? d_px_1[8:5] :
++	                     (psl_ld1 == 3'd2) ? d_px_1[9:6] :
++	                     (psl_ld1 == 3'd1) ? d_px_1[10:7] : d_px_1[11:8];
++	wire [3:0] d_xb_b2 = (psl_ld2 == 3'd4) ? d_px_2[11:8] :
++	                     (psl_ld2 == 3'd3) ? d_px_2[12:9] :
++	                     (psl_ld2 == 3'd2) ? d_px_2[13:10] :
++	                     (psl_ld2 == 3'd1) ? d_px_2[14:11] : d_px_2[15:12];
++	wire [7:0] d_xb_b3 = (psl_ld3 == 3'd4) ? d_px_3[19:12] :
++	                     (psl_ld3 == 3'd3) ? d_px_3[20:13] :
++	                     (psl_ld3 == 3'd2) ? d_px_3[21:14] :
++	                     (psl_ld3 == 3'd1) ? d_px_3[22:15] : d_px_3[23:16];
++	wire [7:0] d_xb_b4 = (psl_ld4 == 3'd4) ? d_px_4[27:20] :
++	                     (psl_ld4 == 3'd3) ? d_px_4[28:21] :
++	                     (psl_ld4 == 3'd2) ? d_px_4[29:22] :
++	                     (psl_ld4 == 3'd1) ? d_px_4[30:23] : d_px_4[31:24];
++	wire [7:0] s_xb_b0 = (psl_ls0 == 3'd4) ? {s_px_0[3:0], 4'b0000} :
++	                     (psl_ls0 == 3'd3) ? {s_px_0[4:0], 3'b000}  :
++	                     (psl_ls0 == 3'd2) ? {s_px_0[5:0], 2'b00}   :
++	                     (psl_ls0 == 3'd1) ? {s_px_0[6:0], 1'b0}    : s_px_0[7:0];
++	wire [3:0] s_xb_b1 = (psl_ls1 == 3'd4) ? s_px_1[7:4] :
++	                     (psl_ls1 == 3'd3) ? s_px_1[8:5] :
++	                     (psl_ls1 == 3'd2) ? s_px_1[9:6] :
++	                     (psl_ls1 == 3'd1) ? s_px_1[10:7] : s_px_1[11:8];
++	wire [3:0] s_xb_b2 = (psl_ls2 == 3'd4) ? s_px_2[11:8] :
++	                     (psl_ls2 == 3'd3) ? s_px_2[12:9] :
++	                     (psl_ls2 == 3'd2) ? s_px_2[13:10] :
++	                     (psl_ls2 == 3'd1) ? s_px_2[14:11] : s_px_2[15:12];
++	wire [7:0] s_xb_b3 = (psl_ls3 == 3'd4) ? s_px_3[19:12] :
++	                     (psl_ls3 == 3'd3) ? s_px_3[20:13] :
++	                     (psl_ls3 == 3'd2) ? s_px_3[21:14] :
++	                     (psl_ls3 == 3'd1) ? s_px_3[22:15] : s_px_3[23:16];
++	wire [7:0] s_xb_b4 = (psl_ls4 == 3'd4) ? s_px_4[27:20] :
++	                     (psl_ls4 == 3'd3) ? s_px_4[28:21] :
++	                     (psl_ls4 == 3'd2) ? s_px_4[29:22] :
++	                     (psl_ls4 == 3'd1) ? s_px_4[30:23] : s_px_4[31:24];
++	(* keep = "true" *) wire [ADDR_W-1:0] d_xb = {d_xb_b4, d_xb_b3, d_xb_b2, d_xb_b1, d_xb_b0};
++	(* keep = "true" *) wire [ADDR_W-1:0] s_xb = {s_xb_b4, s_xb_b3, s_xb_b2, s_xb_b1, s_xb_b0};
++
+ 	am_add #(.W(ADDR_W)) a_da (.a(cur_dst_row), .b(d_xb), .ci(1'b0), .s(d_addr), .co(fsm_co_unused[9]));
+ 	am_add #(.W(ADDR_W)) a_sa (.a(cur_src_row), .b(s_xb), .ci(1'b0), .s(s_addr), .co(fsm_co_unused[10]));
+ 
+-	am_shift #(.W(US + 1), .SW(3)) h_sn (.a(seg_n), .amt(psl), .left(1'b1), .arith(1'b0), .y(seg_bytes));
++	assign seg_bytes = (psl_b == 3'd4) ? {sn[US-4:0], 4'b0000} :
++	                   (psl_b == 3'd3) ? {sn[US-3:0], 3'b000}  :
++	                   (psl_b == 3'd2) ? {sn[US-2:0], 2'b00}   :
++	                   (psl_b == 3'd1) ? {sn[US-1:0], 1'b0}    : sn;
+ 	am_sub #(.W(ADDR_W)) s_dlo (.a(da), .b(back), .bi(1'b0), .d(d_lo), .bo(fsm_co_unused[11]));
+ 	am_sub #(.W(ADDR_W)) s_slo (.a(sa), .b(back), .bi(1'b0), .d(s_lo), .bo(fsm_co_unused[12]));
+ 	am_add #(.W(2)) a_ydl (.a(ydl), .b(2'd0), .ci(1'b1), .s(ydl_inc), .co(fsm_co_unused[13]));
+@@ -698,27 +1318,528 @@ module atg_blt_2d #(
+ 	am_add #(.W(4)) a_brseg (.a({1'b0, br_seg_idx}), .b(4'd0), .ci(1'b1), .s(br_seg_cnt_next), .co(bst_co_unused[4]));
+ 	am_add #(.W(2)) a_ydlb (.a(ydl_b), .b(2'd0), .ci(1'b1), .s(ydl_b_inc), .co(bst_co_unused[5]));
+ 	am_add #(.W(2)) a_yslb (.a(ysl_b), .b(2'd0), .ci(1'b1), .s(ysl_b_inc), .co(bst_co_unused[6]));
+-	wire [ADDR_W-1:0] b_dst_step = m_dtile ? (ydl_b == 2'd3 ? dst_back : tile_step) : dstride_u;
+-	wire [ADDR_W-1:0] b_src_step = m_stile ? (ysl_b == 2'd3 ? src_back : tile_step) : sstride_u;
+-	am_add #(.W(ADDR_W)) a_drb (.a(dst_row_b), .b(m_rev ? dst_neg : b_dst_step), .ci(1'b0), .s(dst_row_b_next), .co(bst_co_unused[7]));
+-	am_add #(.W(ADDR_W)) a_srb (.a(src_row_b), .b(m_rev ? src_neg : b_src_step), .ci(1'b0), .s(src_row_b_next), .co(bst_co_unused[8]));
+ 
+-	wire rsp_rd_bst = rsp_valid && !rsp_write && m_burst && (rsp_tag[7] == 1'b0);
++	(* dont_touch = "true" *) wire sel_bds_t0, sel_bds_t1, sel_bds_y0, sel_bds_y1;
++	(* dont_touch = "true" *) wire sel_bss_t0, sel_bss_t1, sel_bss_y0, sel_bss_y1;
++`ifdef SYNTH_KINTEX7
++	LUT1 #(.INIT(2'b10)) u_bdst0 (.I0(m_dtile),        .O(sel_bds_t0));
++	LUT1 #(.INIT(2'b10)) u_bdst1 (.I0(m_dtile),        .O(sel_bds_t1));
++	LUT1 #(.INIT(2'b10)) u_bdsy0 (.I0(ydl_b == 2'd3),  .O(sel_bds_y0));
++	LUT1 #(.INIT(2'b10)) u_bdsy1 (.I0(ydl_b == 2'd3),  .O(sel_bds_y1));
++	LUT1 #(.INIT(2'b10)) u_bsst0 (.I0(m_stile),        .O(sel_bss_t0));
++	LUT1 #(.INIT(2'b10)) u_bsst1 (.I0(m_stile),        .O(sel_bss_t1));
++	LUT1 #(.INIT(2'b10)) u_bssy0 (.I0(ysl_b == 2'd3),  .O(sel_bss_y0));
++	LUT1 #(.INIT(2'b10)) u_bssy1 (.I0(ysl_b == 2'd3),  .O(sel_bss_y1));
++`else
++	assign sel_bds_t0 = m_dtile;
++	assign sel_bds_t1 = m_dtile;
++	assign sel_bds_y0 = (ydl_b == 2'd3);
++	assign sel_bds_y1 = (ydl_b == 2'd3);
++	assign sel_bss_t0 = m_stile;
++	assign sel_bss_t1 = m_stile;
++	assign sel_bss_y0 = (ysl_b == 2'd3);
++	assign sel_bss_y1 = (ysl_b == 2'd3);
++`endif
++	(* keep = "true" *) wire [ADDR_W-1:0] b_dst_step = {sel_bds_t1 ? (sel_bds_y1 ? r_dst_back[31:16] : 16'd0) : r_dstride[31:16],
++	                                                    sel_bds_t0 ? (sel_bds_y0 ? r_dst_back[15:0]  : {8'd0, r_tile_step}) : r_dstride[15:0]};
++	(* keep = "true" *) wire [ADDR_W-1:0] b_src_step = {sel_bss_t1 ? (sel_bss_y1 ? r_src_back[31:16] : 16'd0) : r_sstride[31:16],
++	                                                    sel_bss_t0 ? (sel_bss_y0 ? r_src_back[15:0]  : {8'd0, r_tile_step}) : r_sstride[15:0]};
++	am_add #(.W(ADDR_W)) a_drb (.a(dst_row_b), .b(r_b_dst_step), .ci(1'b0), .s(dst_row_b_next), .co(bst_co_unused[7]));
++	am_add #(.W(ADDR_W)) a_srb (.a(src_row_b), .b(r_b_src_step), .ci(1'b0), .s(src_row_b_next), .co(bst_co_unused[8]));
++
++	wire rsp_rd_bst = rsp_valid && !rsp_write && m_burst_g[3] && (rsp_tag[7] == 1'b0);
+ 	am_add #(.W(5)) a_brdp0 (.a(bank_rd_pending_0), .b(5'd0), .ci(bst_rd_fire && (bw_bank == 1'b0)), .s(brdp0_up), .co(bst_co_unused[9]));
+ 	am_sub #(.W(5)) s_brdp0 (.a(brdp0_up), .b(5'd0), .bi(rsp_rd_bst && (rsp_tag[4] == 1'b0)), .d(brdp0_next), .bo(bst_co_unused[10]));
+ 	am_add #(.W(5)) a_brdp1 (.a(bank_rd_pending_1), .b(5'd0), .ci(bst_rd_fire && (bw_bank == 1'b1)), .s(brdp1_up), .co(bst_co_unused[11]));
+ 	am_sub #(.W(5)) s_brdp1 (.a(brdp1_up), .b(5'd0), .bi(rsp_rd_bst && (rsp_tag[4] == 1'b1)), .d(brdp1_next), .bo(bst_co_unused[12]));
+ 
+-	wire rsp_wr_bst = rsp_valid && rsp_write && m_burst;
++	wire b0_rd_done = !m_copy_g[7] || (bank_rd_pending_0 == 5'd0) || (bank_rd_pending_0 == 5'd1 && rsp_rd_bst && (rsp_tag[4] == 1'b0));
++	wire b1_rd_done = !m_copy_g[7] || (bank_rd_pending_1 == 5'd0) || (bank_rd_pending_1 == 5'd1 && rsp_rd_bst && (rsp_tag[4] == 1'b1));
++
++	wire rsp_wr_bst = rsp_valid && rsp_write && m_burst_g[3];
+ 	am_add #(.W(5)) a_bwr (.a(burst_wr_out), .b(5'd0), .ci(bst_wr_fire), .s(bwr_up), .co(bst_co_unused[13]));
+ 	am_sub #(.W(5)) s_bwr (.a(bwr_up), .b(5'd0), .bi(rsp_wr_bst), .d(bwr_next), .bo(bst_co_unused[14]));
+ 
+-	/* Mode determination at kick */
+-	wire is_smear = (sbase_u == dbase_u) && !o_rev && ({1'b0, s_src_xy[15:0]} < clip_x0);
+-	wire op_burst = !o_blend && !is_smear;
++	/* Mode determination in S_START (registered comparisons from S_CLIP: 0 CARRY4s, 1 LUT) */
++	wire is_smear = r_sbase_eq_dbase && !m_rev && r_sxy_lt_x0;
++	wire op_burst = !m_blend && !is_smear;
++
++	/* Sliced Metadata Write Registers (Fanout <= 16 on all write enables and data, 2 LUTs total on CE) */
++	(* keep = "true" *) wire [3:0] slot1_val = p_two_lines ? bw_slot_p1 : bw_slot_cnt;
++
++	genvar mi, mbi_w;
++	generate
++		for (mi = 0; mi < 8; mi = mi + 1) begin : g_meta_wr
++			(* keep = "true" *) wire hit0 = !bw_bank && !bank_closed[0] && !bw_done_all && (bw_seg_idx == mi[2:0]);
++			(* keep = "true" *) wire hit1 =  bw_bank && !bank_closed[1] && !bw_done_all && (bw_seg_idx == mi[2:0]);
++			(* dont_touch = "true" *) wire we0_dlo, we0_dhi, we0_rest;
++			(* dont_touch = "true" *) wire we1_dlo, we1_dhi, we1_rest;
++			(* dont_touch = "true" *) wire [LINE_BYTES/16-1:0] we0_be, we1_be;
++`ifdef SYNTH_KINTEX7
++			LUT1 #(.INIT(2'b10)) u_w0_dl (.I0(hit0), .O(we0_dlo));
++			LUT1 #(.INIT(2'b10)) u_w0_dh (.I0(hit0), .O(we0_dhi));
++			LUT1 #(.INIT(2'b10)) u_w0_re (.I0(hit0), .O(we0_rest));
++			LUT1 #(.INIT(2'b10)) u_w1_dl (.I0(hit1), .O(we1_dlo));
++			LUT1 #(.INIT(2'b10)) u_w1_dh (.I0(hit1), .O(we1_dhi));
++			LUT1 #(.INIT(2'b10)) u_w1_re (.I0(hit1), .O(we1_rest));
++			for (mbi_w = 0; mbi_w < LINE_BYTES / 16; mbi_w = mbi_w + 1) begin : g_wbe
++				LUT1 #(.INIT(2'b10)) u_w0_be (.I0(hit0), .O(we0_be[mbi_w]));
++				LUT1 #(.INIT(2'b10)) u_w1_be (.I0(hit1), .O(we1_be[mbi_w]));
++			end
++`else
++			assign we0_dlo = hit0;
++			assign we0_dhi = hit0;
++			assign we0_rest = hit0;
++			assign we0_be = {(LINE_BYTES/16){hit0}};
++			assign we1_dlo = hit1;
++			assign we1_dhi = hit1;
++			assign we1_rest = hit1;
++			assign we1_be = {(LINE_BYTES/16){hit1}};
++`endif
++			always @(posedge clk) begin
++				if (we0_dlo)
++					meta_dline_0[mi][15:0] <= p_dline[15:0];
++				if (we0_dhi)
++					meta_dline_0[mi][LA_W-1:16] <= p_dline[LA_W-1:16];
++				if (we0_rest) begin
++					meta_off_0[mi] <= p_off;
++					meta_slot0_0[mi] <= bw_slot_cnt;
++					meta_slot1_0[mi] <= slot1_val;
++					meta_n0slot_0[mi] <= p_n0_slot;
++				end
++				if (we1_dlo)
++					meta_dline_1[mi][15:0] <= p_dline[15:0];
++				if (we1_dhi)
++					meta_dline_1[mi][LA_W-1:16] <= p_dline[LA_W-1:16];
++				if (we1_rest) begin
++					meta_off_1[mi] <= p_off;
++					meta_slot0_1[mi] <= bw_slot_cnt;
++					meta_slot1_1[mi] <= slot1_val;
++					meta_n0slot_1[mi] <= p_n0_slot;
++				end
++			end
++			for (mbi_w = 0; mbi_w < LINE_BYTES / 16; mbi_w = mbi_w + 1) begin : g_mbe_ff
++				always @(posedge clk) begin
++					if (we0_be[mbi_w])
++						meta_be_0[mi][mbi_w*16 +: 16] <= issue_be[mbi_w*16 +: 16];
++					if (we1_be[mbi_w])
++						meta_be_1[mi][mbi_w*16 +: 16] <= issue_be[mbi_w*16 +: 16];
++				end
++			end
++		end
++	endgenerate
++
++	/* Physical LUT1-Buffered <= 16-bit Clock Enables and Selects for Datapath Registers */
++	(* keep = "true" *) wire raw_idle_kick   = (state == S_IDLE) && kick;
++	(* keep = "true" *) wire raw_idle_xy     = (state == S_IDLE) && kick;
++	(* keep = "true" *) wire raw_s_clip      = (state == S_CLIP) && !empty;
++	(* keep = "true" *) wire raw_s_start     = (state == S_START);
++	(* keep = "true" *) wire raw_leg_coord   = ((state == S_MUL) && d_idle && s_idle && !m_burst_g[3]) || ((state == S_WR) && !fail_b[1] && wr_go);
++	(* keep = "true" *) wire raw_leg_row_sel = (state == S_MUL) || seg_last;
++	(* keep = "true" *) wire raw_leg_row_en  = (state == S_WR) && !fail_b[1] && wr_go && seg_last;
++	(* keep = "true" *) wire raw_s_sa        = (state == S_SA) && !fail_b[1];
++	(* keep = "true" *) wire en_s_sb         = (state == S_SB);
++	(* keep = "true" *) wire raw_s_sc        = (state == S_SC);
++	(* keep = "true" *) wire raw_s_sd        = (state == S_SD);
++	(* keep = "true" *) wire en_mul_bst_ctrl = (state == S_MUL) && d_idle && s_idle && m_burst_g[3];
++	(* keep = "true" *) wire raw_walk_coord  = ((state == S_MUL) && d_idle && s_idle && m_burst_g[3]) || ((state == S_BURST) && !fail_b[1] && walk_step);
++	(* keep = "true" *) wire raw_is_mul      = (state == S_MUL);
++	(* keep = "true" *) wire raw_walk_row    = ((state == S_MUL) && d_idle && s_idle && m_burst_g[3]) || ((state == S_BURST) && !fail_b[1] && walk_step && r_bst_seg_last);
++	(* keep = "true" *) wire raw_b_step      = ((state == S_MUL) && d_idle && s_idle && m_burst_g[3]) || ((state == S_BURST) && !fail_b[1] && !walk_phase && !bw_walk_done);
++	(* keep = "true", dont_touch = "true" *) wire ce_bst_seg = (state == S_BURST) && !fail_b[2] &&
++		((!walk_phase && !bw_walk_done) || (walk_step && !r_bst_seg_last && !m_dtile && !m_stile && !m_rev && rem_b_gt_2lp));
++	(* keep = "true" *) wire raw_g_data      = (state == S_BURST) && !fail_b[2] && walk_step;
++	(* keep = "true" *) wire raw_g2_data     = (state == S_BURST) && !fail_b[2] && step_g2_data;
++	(* keep = "true" *) wire raw_p_data      = (state == S_BURST) && !fail_b[2] && (!p_valid || can_issue_when_valid);
++
++	(* dont_touch = "true" *) wire [5:0] en_idle_kick;
++	(* dont_touch = "true" *) wire [14:0] en_idle_xy;
++	(* dont_touch = "true" *) wire [12:0] en_s_clip;
++	(* dont_touch = "true" *) wire [3:0] sel_sa_rev;
++	(* dont_touch = "true" *) wire [2:0] en_s_start;
++	(* dont_touch = "true" *) wire [1:0] sel_start_rev;
++	(* dont_touch = "true" *) wire [3:0] ce_leg_coord;
++	(* dont_touch = "true" *) wire [3:0] sel_leg_row;
++	(* dont_touch = "true" *) wire [1:0] en_leg_row;
++	(* dont_touch = "true" *) wire [7:0] en_s_sa;
++	(* dont_touch = "true" *) wire [4:0] en_s_sc;
++	(* dont_touch = "true" *) wire [3:0] sel_sc_rev;
++	(* dont_touch = "true" *) wire [5:0] en_s_sd;
++	(* dont_touch = "true" *) wire [1:0] en_mul_pslw;
++	(* dont_touch = "true" *) wire en_mul_bst_c0, en_mul_bst_c1;
++	(* dont_touch = "true" *) wire [4:0] ce_walk_coord;
++	(* dont_touch = "true" *) wire [4:0] sel_mul_wc;
++	(* dont_touch = "true" *) wire [5:0] ce_walk_row;
++	(* dont_touch = "true" *) wire [5:0] sel_mul_wr;
++	(* dont_touch = "true" *) wire [3:0] ce_b_step;
++	(* dont_touch = "true" *) wire [3:0] sel_bstep_rev;
++	(* dont_touch = "true" *) wire [3:0] sel_bstep_mul;
++	(* dont_touch = "true" *) wire [6:0] ce_g_data;
++	(* dont_touch = "true" *) wire [5:0] ce_g2_data;
++	(* dont_touch = "true" *) wire [7:0] ce_p_data;
++
++	genvar cbi;
++`ifdef SYNTH_KINTEX7
++	LUT1 #(.INIT(2'b10)) u_emb0 (.I0(en_mul_bst_ctrl), .O(en_mul_bst_c0));
++	LUT1 #(.INIT(2'b10)) u_emb1 (.I0(en_mul_bst_ctrl), .O(en_mul_bst_c1));
++	generate
++		for (cbi = 0; cbi < 4; cbi = cbi + 1) begin : g_buf4
++			LUT1 #(.INIT(2'b10)) u_sar (.I0(m_rev),           .O(sel_sa_rev[cbi]));
++			LUT1 #(.INIT(2'b10)) u_lc  (.I0(raw_leg_coord),   .O(ce_leg_coord[cbi]));
++			LUT1 #(.INIT(2'b10)) u_lr  (.I0(raw_leg_row_sel), .O(sel_leg_row[cbi]));
++			LUT1 #(.INIT(2'b10)) u_scr (.I0(m_rev),           .O(sel_sc_rev[cbi]));
++			LUT1 #(.INIT(2'b10)) u_bs  (.I0(raw_b_step),      .O(ce_b_step[cbi]));
++			LUT1 #(.INIT(2'b10)) u_bsr (.I0(m_rev),           .O(sel_bstep_rev[cbi]));
++			LUT1 #(.INIT(2'b10)) u_bsm (.I0(raw_is_mul),      .O(sel_bstep_mul[cbi]));
++		end
++		for (cbi = 0; cbi < 5; cbi = cbi + 1) begin : g_buf5
++			LUT1 #(.INIT(2'b10)) u_ssc (.I0(raw_s_sc),       .O(en_s_sc[cbi]));
++			LUT1 #(.INIT(2'b10)) u_wc  (.I0(raw_walk_coord), .O(ce_walk_coord[cbi]));
++			LUT1 #(.INIT(2'b10)) u_mwc (.I0(raw_is_mul),     .O(sel_mul_wc[cbi]));
++		end
++		for (cbi = 0; cbi < 13; cbi = cbi + 1) begin : g_buf13
++			LUT1 #(.INIT(2'b10)) u_scl (.I0(raw_s_clip),  .O(en_s_clip[cbi]));
++		end
++		for (cbi = 0; cbi < 15; cbi = cbi + 1) begin : g_buf15
++			LUT1 #(.INIT(2'b10)) u_ixy (.I0(raw_idle_xy), .O(en_idle_xy[cbi]));
++		end
++		for (cbi = 0; cbi < 3; cbi = cbi + 1) begin : g_buf3
++			LUT1 #(.INIT(2'b10)) u_sst (.I0(raw_s_start), .O(en_s_start[cbi]));
++		end
++		for (cbi = 0; cbi < 2; cbi = cbi + 1) begin : g_buf2
++			LUT1 #(.INIT(2'b10)) u_sr  (.I0(m_rev),           .O(sel_start_rev[cbi]));
++			LUT1 #(.INIT(2'b10)) u_lre (.I0(raw_leg_row_en),  .O(en_leg_row[cbi]));
++			LUT1 #(.INIT(2'b10)) u_mpw (.I0(en_mul_bst_ctrl), .O(en_mul_pslw[cbi]));
++		end
++		for (cbi = 0; cbi < 6; cbi = cbi + 1) begin : g_buf6
++			LUT1 #(.INIT(2'b10)) u_ik  (.I0(raw_idle_kick), .O(en_idle_kick[cbi]));
++			LUT1 #(.INIT(2'b10)) u_ssd (.I0(raw_s_sd),      .O(en_s_sd[cbi]));
++			LUT1 #(.INIT(2'b10)) u_wr  (.I0(raw_walk_row),  .O(ce_walk_row[cbi]));
++			LUT1 #(.INIT(2'b10)) u_mwr (.I0(raw_is_mul),    .O(sel_mul_wr[cbi]));
++			LUT1 #(.INIT(2'b10)) u_g2d (.I0(raw_g2_data),   .O(ce_g2_data[cbi]));
++		end
++		for (cbi = 0; cbi < 7; cbi = cbi + 1) begin : g_buf7
++			LUT1 #(.INIT(2'b10)) u_gd (.I0(raw_g_data), .O(ce_g_data[cbi]));
++		end
++		for (cbi = 0; cbi < 8; cbi = cbi + 1) begin : g_buf8
++			LUT1 #(.INIT(2'b10)) u_sa (.I0(raw_s_sa),   .O(en_s_sa[cbi]));
++			LUT1 #(.INIT(2'b10)) u_pd (.I0(raw_p_data), .O(ce_p_data[cbi]));
++		end
++	endgenerate
++`else
++	assign en_mul_bst_c0 = en_mul_bst_ctrl;
++	assign en_mul_bst_c1 = en_mul_bst_ctrl;
++	assign en_idle_kick  = {6{raw_idle_kick}};
++	assign en_idle_xy    = {15{raw_idle_xy}};
++	assign en_s_clip     = {13{raw_s_clip}};
++	assign sel_sa_rev    = {4{m_rev}};
++	assign en_s_start    = {3{raw_s_start}};
++	assign sel_start_rev = {2{m_rev}};
++	assign ce_leg_coord  = {4{raw_leg_coord}};
++	assign sel_leg_row   = {4{raw_leg_row_sel}};
++	assign en_leg_row    = {2{raw_leg_row_en}};
++	assign en_s_sa       = {8{raw_s_sa}};
++	assign en_s_sc       = {5{raw_s_sc}};
++	assign sel_sc_rev    = {4{m_rev}};
++	assign en_s_sd       = {6{raw_s_sd}};
++	assign en_mul_pslw   = {2{en_mul_bst_ctrl}};
++	assign ce_walk_coord = {5{raw_walk_coord}};
++	assign sel_mul_wc    = {5{raw_is_mul}};
++	assign ce_walk_row   = {6{raw_walk_row}};
++	assign sel_mul_wr    = {6{raw_is_mul}};
++	assign ce_b_step     = {4{raw_b_step}};
++	assign sel_bstep_rev = {4{m_rev}};
++	assign sel_bstep_mul = {4{raw_is_mul}};
++	assign ce_g_data     = {7{raw_g_data}};
++	assign ce_g2_data    = {6{raw_g2_data}};
++	assign ce_p_data     = {8{raw_p_data}};
++`endif
++
++	genvar pbi;
++	generate
++		for (pbi = 0; pbi < LINE_BYTES / 16; pbi = pbi + 1) begin : g_pbe_reg
++			(* dont_touch = "true" *) wire ce_pbe;
++`ifdef SYNTH_KINTEX7
++			LUT1 #(.INIT(2'b10)) u_cpb (.I0(raw_p_data), .O(ce_pbe));
++`else
++			assign ce_pbe = raw_p_data;
++`endif
++			always @(posedge clk) begin
++				if (ce_pbe)
++					p_be[pbi*16 +: 16] <= g_be[pbi*16 +: 16];
++			end
++		end
++	endgenerate
++
++	wire [ADDR_W-1:0] w_tile_step = tile_bytes(o_psl_b2, 1'b0);
++	wire [ADDR_W-1:0] w_tile_back = tile_bytes(o_psl_b2, 1'b1);
++
++	/*
++	 * Un-reset Datapath Registers (Separate from reset block so !rst_n is never synthesized onto /CE)
++	 */
++	always @(posedge clk) begin
++		/* Replicated mode/shift registers */
++		if (en_idle_kick[1]) begin
++			dtile_l0 <= o_op == GHCI_BLT_TILE;
++			dtile_l1 <= o_op == GHCI_BLT_TILE;
++			dtile_l2 <= o_op == GHCI_BLT_TILE;
++			dtile_l3 <= o_op == GHCI_BLT_TILE;
++			dtile_l4 <= o_op == GHCI_BLT_TILE;
++			stile_l0 <= o_op == GHCI_BLT_UNTILE;
++			stile_l1 <= o_op == GHCI_BLT_UNTILE;
++			stile_l2 <= o_op == GHCI_BLT_UNTILE;
++			stile_l3 <= o_op == GHCI_BLT_UNTILE;
++			stile_l4 <= o_op == GHCI_BLT_UNTILE;
++		end
++		if (en_idle_kick[4]) begin
++			dtile_g0 <= o_op == GHCI_BLT_TILE;
++			dtile_g1 <= o_op == GHCI_BLT_TILE;
++			dtile_g2 <= o_op == GHCI_BLT_TILE;
++			dtile_g3 <= o_op == GHCI_BLT_TILE;
++			dtile_g4 <= o_op == GHCI_BLT_TILE;
++			stile_g0 <= o_op == GHCI_BLT_UNTILE;
++			stile_g1 <= o_op == GHCI_BLT_UNTILE;
++			stile_g2 <= o_op == GHCI_BLT_UNTILE;
++			stile_g3 <= o_op == GHCI_BLT_UNTILE;
++			stile_g4 <= o_op == GHCI_BLT_UNTILE;
++		end
++		if (en_idle_kick[2]) begin
++			psl_ld0 <= o_psl_b0;
++			psl_ld1 <= o_psl_b0;
++			psl_ld2 <= o_psl_b0;
++			psl_ld3 <= o_psl_b0;
++			psl_ld4 <= o_psl_b0;
++		end
++		if (en_idle_kick[3]) begin
++			psl_ls0 <= o_psl_b1;
++			psl_ls1 <= o_psl_b1;
++			psl_ls2 <= o_psl_b1;
++			psl_ls3 <= o_psl_b1;
++			psl_ls4 <= o_psl_b1;
++		end
++		if (en_idle_kick[5]) begin
++			psl_b  <= o_psl_b2;
++			psl_c0 <= o_psl_b2;
++			psl_c1 <= o_psl_b2;
++		end
++		if (en_mul_pslw[0]) begin
++			pslw_d0 <= psl_c1;
++			pslw_d1 <= psl_c1;
++			pslw_d2 <= psl_c1;
++			pslw_d3 <= psl_c1;
++			pslw_d4 <= psl_c1;
++		end
++		if (en_mul_pslw[1]) begin
++			pslw_s0 <= psl_c1;
++			pslw_s1 <= psl_c1;
++			pslw_s2 <= psl_c1;
++			pslw_s3 <= psl_c1;
++			pslw_s4 <= psl_c1;
++		end
++
++		/* S_IDLE clip coordinates & pre-registered strides/tile constants */
++		if (en_idle_xy[0]) x0[15:0] <= clip_x0[15:0];
++		if (en_idle_xy[1]) y0[15:0] <= clip_y0[15:0];
++		if (en_idle_xy[2]) x1[15:0] <= clip_x1[15:0];
++		if (en_idle_xy[3]) y1[15:0] <= clip_y1[15:0];
++		if (en_idle_xy[4]) begin
++			x0[16] <= clip_x0[16];
++			y0[16] <= clip_y0[16];
++			x1[16] <= clip_x1[16];
++			y1[16] <= clip_y1[16];
++		end
++		if (en_idle_xy[5])  r_dstride[15:0]  <= dstride_u[15:0];
++		if (en_idle_xy[6])  r_dstride[31:16] <= dstride_u[31:16];
++		if (en_idle_xy[7])  r_sstride[15:0]  <= sstride_u[15:0];
++		if (en_idle_xy[8])  r_sstride[31:16] <= sstride_u[31:16];
++		if (en_idle_xy[9]) begin
++			r_tile_step <= w_tile_step[7:0];
++			r_tile_back <= w_tile_back[7:0];
++		end
++		if (en_idle_xy[10]) r_dbase[15:0]    <= dbase_u[15:0];
++		if (en_idle_xy[11]) r_dbase[31:16]   <= dbase_u[31:16];
++		if (en_idle_xy[12]) r_sbase[15:0]    <= sbase_u[15:0];
++		if (en_idle_xy[13]) r_sbase[31:16]   <= sbase_u[31:16];
++		if (en_idle_xy[14]) r_src_x0         <= s_src_xy[15:0];
++
++		/* S_CLIP datapath (0 Post-LUTs on s_dback, s_sback, s_dneg, s_sneg) */
++		if (en_s_clip[0])  r_dst_back[15:0]  <= dst_back[15:0];
++		if (en_s_clip[1])  r_dst_back[31:16] <= dst_back[31:16];
++		if (en_s_clip[2])  r_src_back[15:0]  <= src_back[15:0];
++		if (en_s_clip[3])  r_src_back[31:16] <= src_back[31:16];
++		if (en_s_clip[4])  width[15:0] <= c_width[15:0];
++		if (en_s_clip[5])  rows[15:0]  <= c_rows[15:0];
++		if (en_s_clip[6])  sx0[15:0]   <= c_sx0[15:0];
++		if (en_s_clip[7])  sy0[15:0]   <= c_sy0[15:0];
++		if (en_s_clip[8]) begin
++			width[16]        <= c_width[16];
++			rows[16]         <= c_rows[16];
++			sx0[16]          <= c_sx0[16];
++			sy0[16]          <= c_sy0[16];
++			r_sbase_eq_dbase <= (r_sbase == r_dbase);
++			r_sxy_lt_x0      <= ({1'b0, r_src_x0} < x0);
++		end
++		if (en_s_clip[9])  r_dst_neg[15:0]  <= dst_neg[15:0];
++		if (en_s_clip[10]) r_dst_neg[31:16] <= dst_neg[31:16];
++		if (en_s_clip[11]) r_src_neg[15:0]  <= src_neg[15:0];
++		if (en_s_clip[12]) r_src_neg[31:16] <= src_neg[31:16];
++
++		/* S_START datapath */
++		if (en_s_start[0]) px_row[15:0]  <= sel_start_rev[0] ? x1_last[15:0] : x0[15:0];
++		if (en_s_start[1]) spx_row[15:0] <= sel_start_rev[1] ? s_last[15:0]  : sx0[15:0];
++		if (en_s_start[2]) begin
++			px_row[16]  <= sel_start_rev[0] ? x1_last[16] : x0[16];
++			spx_row[16] <= sel_start_rev[1] ? s_last[16]  : sx0[16];
++			ydl <= yd_start[1:0];
++			ysl <= ys_start[1:0];
++		end
++
++		/* Legacy walk coordinates (S_MUL & S_WR) */
++		if (ce_leg_coord[0]) px[15:0]  <= sel_leg_row[0] ? px_row[15:0]  : px_next[15:0];
++		if (ce_leg_coord[1]) spx[15:0] <= sel_leg_row[1] ? spx_row[15:0] : spx_next[15:0];
++		if (ce_leg_coord[2]) rem[15:0] <= sel_leg_row[2] ? width[15:0]   : rem_next[15:0];
++		if (ce_leg_coord[3]) begin
++			px[16]  <= sel_leg_row[3] ? px_row[16]  : px_next[16];
++			spx[16] <= sel_leg_row[3] ? spx_row[16] : spx_next[16];
++			rem[16] <= sel_leg_row[3] ? width[16]   : rem_next[16];
++		end
++		if (en_leg_row[0]) rows[15:0] <= rows_dec[15:0];
++		if (en_leg_row[1]) begin
++			rows[16] <= rows_dec[16];
++			ydl <= ydl_inc;
++			ysl <= ysl_inc;
++		end
++
++		/* Legacy segment pipeline (S_SA, S_SB, S_SC, S_SD) */
++		if (en_s_sa[0]) da[15:0]  <= d_addr[15:0];
++		if (en_s_sa[1]) da[31:16] <= d_addr[31:16];
++		if (en_s_sa[2]) sa[15:0]  <= s_addr[15:0];
++		if (en_s_sa[3]) sa[31:16] <= s_addr[31:16];
++		if (en_s_sa[4]) r_dacc_step[15:0]  <= sel_sa_rev[0] ? r_dst_neg[15:0]  : dst_step_leg[15:0];
++		if (en_s_sa[5]) r_dacc_step[31:16] <= sel_sa_rev[1] ? r_dst_neg[31:16] : dst_step_leg[31:16];
++		if (en_s_sa[6]) r_sacc_step[15:0]  <= sel_sa_rev[2] ? r_src_neg[15:0]  : src_step_leg[15:0];
++		if (en_s_sa[7]) r_sacc_step[31:16] <= sel_sa_rev[3] ? r_src_neg[31:16] : src_step_leg[31:16];
++
++		if (en_s_sb) begin
++			sn <= seg_n;
++			leg_seg_last <= seg_last_c;
++		end
++
++		if (en_s_sc[0]) dlo[15:0]  <= sel_sc_rev[0] ? d_lo[15:0]  : da[15:0];
++		if (en_s_sc[1]) dlo[31:16] <= sel_sc_rev[1] ? d_lo[31:16] : da[31:16];
++		if (en_s_sc[2]) slo[15:0]  <= sel_sc_rev[2] ? s_lo[15:0]  : sa[15:0];
++		if (en_s_sc[3]) slo[31:16] <= sel_sc_rev[3] ? s_lo[31:16] : sa[31:16];
++		if (en_s_sc[4]) snu <= seg_bytes;
++
++		if (en_s_sd[0]) seg_line[15:0] <= dlo[US+15:US];
++		if (en_s_sd[1]) begin
++			seg_line[LA_W-1:16] <= dlo[ADDR_W-1:US+16];
++			seg_p0 <= dlo[US-1:0];
++		end
++		if (en_s_sd[2]) src_n0[15:0] <= slo[US+15:US];
++		if (en_s_sd[3]) begin
++			src_n0[LA_W-1:16] <= slo[ADDR_W-1:US+16];
++			src_off <= src_base_u[US-1:0];
++		end
++		if (en_s_sd[4]) src_n1[15:0] <= last_line[15:0];
++		if (en_s_sd[5]) begin
++			src_n1[LA_W-1:16] <= last_line[LA_W-1:16];
++			n0_slot <= slo[ADDR_W-1:US] != src_lo;
++		end
++
++		/* Burst Walk Coordinates (S_MUL & walk_step) */
++		if (ce_walk_coord[0]) px_b[15:0]  <= sel_mul_wc[0] ? px_row[15:0]  : px_b_next[15:0];
++		if (ce_walk_coord[1]) spx_b[15:0] <= sel_mul_wc[1] ? spx_row[15:0] : spx_b_next[15:0];
++		if (ce_walk_coord[2]) rem_b[15:0] <= sel_mul_wc[2] ? width[15:0]   : rem_b_next[15:0];
++		if (ce_walk_coord[3]) begin
++			px_b[16]  <= sel_mul_wc[3] ? px_row[16]  : px_b_next[16];
++			spx_b[16] <= sel_mul_wc[3] ? spx_row[16] : spx_b_next[16];
++			rem_b[16] <= sel_mul_wc[3] ? width[16]   : rem_b_next[16];
++		end
++		if (ce_walk_coord[4]) cur_da_b <= sel_mul_wc[4] ? cur_da_init : cur_da_b_next;
++
++		if (ce_bst_seg) begin
++			r_bst_seg_n    <= walk_phase ? line_pixels_b : bst_seg_n;
++			r_bst_seg_last <= walk_phase ? 1'b0          : bst_seg_last;
++		end
++
++		/* Burst Walk Row Advance (S_MUL & walk_step at end of row) */
++		if (ce_walk_row[0]) rows_b[15:0] <= sel_mul_wr[0] ? rows[15:0] : rows_b_dec[15:0];
++		if (ce_walk_row[1]) begin
++			rows_b[16] <= sel_mul_wr[1] ? rows[16]      : rows_b_dec[16];
++			ydl_b      <= sel_mul_wr[1] ? yd_start[1:0] : ydl_b_inc;
++			ysl_b      <= sel_mul_wr[1] ? ys_start[1:0] : ysl_b_inc;
++			cur_da_row <= sel_mul_wr[1] ? cur_da_init   : cur_da_row_next;
++		end
++		if (ce_walk_row[2]) dst_row_b[15:0]  <= sel_mul_wr[2] ? dst_row[15:0]  : dst_row_b_next[15:0];
++		if (ce_walk_row[3]) dst_row_b[31:16] <= sel_mul_wr[3] ? dst_row[31:16] : dst_row_b_next[31:16];
++		if (ce_walk_row[4]) src_row_b[15:0]  <= sel_mul_wr[4] ? src_row[15:0]  : src_row_b_next[15:0];
++		if (ce_walk_row[5]) src_row_b[31:16] <= sel_mul_wr[5] ? src_row[31:16] : src_row_b_next[31:16];
++
++		/* Burst Row Step Pre-Registers (S_MUL & !walk_phase: pure reg-to-reg mux, 0 CARRY4s) */
++		if (ce_b_step[0]) r_b_dst_step[15:0]  <= sel_bstep_rev[0] ? r_dst_neg[15:0]  : (sel_bstep_mul[0] ? dst_step_mul[15:0]  : b_dst_step[15:0]);
++		if (ce_b_step[1]) r_b_dst_step[31:16] <= sel_bstep_rev[1] ? r_dst_neg[31:16] : (sel_bstep_mul[1] ? dst_step_mul[31:16] : b_dst_step[31:16]);
++		if (ce_b_step[2]) r_b_src_step[15:0]  <= sel_bstep_rev[2] ? r_src_neg[15:0]  : (sel_bstep_mul[2] ? src_step_mul[15:0]  : b_src_step[15:0]);
++		if (ce_b_step[3]) r_b_src_step[31:16] <= sel_bstep_rev[3] ? r_src_neg[31:16] : (sel_bstep_mul[3] ? src_step_mul[31:16] : b_src_step[31:16]);
++
++		/* Burst Stage 1 -> Stage 2A (g_*) Datapath */
++		if (ce_g_data[0]) g_dst_row[15:0]  <= dst_row_b[15:0];
++		if (ce_g_data[1]) g_dst_row[31:16] <= dst_row_b[31:16];
++		if (ce_g_data[2]) g_src_row[15:0]  <= src_row_b[15:0];
++		if (ce_g_data[3]) g_src_row[31:16] <= src_row_b[31:16];
++		if (ce_g_data[4]) g_px[15:0]       <= px_b[15:0];
++		if (ce_g_data[5]) g_spx[15:0]      <= spx_b[15:0];
++		if (ce_g_data[6]) begin
++			g_px[16]      <= px_b[16];
++			g_spx[16]     <= spx_b[16];
++			g_seg_n       <= r_bst_seg_n;
++			g_seg_last    <= r_bst_seg_last;
++			g_rows_b_zero <= rows_b_zero;
++		end
+ 
++		/* Burst Stage 2A -> Stage 2B (g2_*) Datapath */
++		if (ce_g2_data[0]) g2_dline[15:0]      <= g_da_full[US+15:US];
++		if (ce_g2_data[1]) g2_dline[LA_W-1:16] <= g_da_full[ADDR_W-1:US+16];
++		if (ce_g2_data[2]) g2_sline[15:0]      <= g_sa_full[US+15:US];
++		if (ce_g2_data[3]) g2_sline[LA_W-1:16] <= g_sa_full[ADDR_W-1:US+16];
++		if (ce_g2_data[4]) begin
++			g2_da_lo <= g_da_lo;
++			g2_sa_lo <= g_sa_lo;
++			g2_back  <= g_back[US-1:0];
++		end
++		if (ce_g2_data[5]) begin
++			g2_seg_n       <= g_seg_n;
++			g2_seg_bytes   <= g_seg_bytes;
++			g2_seg_last    <= g_seg_last;
++			g2_rows_b_zero <= g_rows_b_zero;
++		end
++
++		/* Burst Stage 2B -> Stage 3 (p_*) Datapath */
++		if (ce_p_data[0]) p_dline[15:0]      <= g_seg_line[15:0];
++		if (ce_p_data[1]) p_dline[LA_W-1:16] <= g_seg_line[LA_W-1:16];
++		if (ce_p_data[2]) p_src_n0[15:0]      <= g_src_n0[15:0];
++		if (ce_p_data[3]) p_src_n0[LA_W-1:16] <= g_src_n0[LA_W-1:16];
++		if (ce_p_data[4]) p_src_n1[15:0]      <= g_src_n1[15:0];
++		if (ce_p_data[5]) p_src_n1[LA_W-1:16] <= g_src_n1[LA_W-1:16];
++		if (ce_p_data[6]) begin
++			p_seg_n  <= g2_seg_n;
++			p_dlo_lo <= g_dlo_lo;
++		end
++		if (ce_p_data[7]) begin
++			p_off         <= g_src_off;
++			p_two_lines   <= g_two_lines;
++			p_n0_slot     <= g_n0_slot;
++			p_seg_last    <= g2_seg_last;
++			p_rows_b_zero <= g2_rows_b_zero;
++		end
++	end
++
++	/*
++	 * Reset Control Registers (State Machine & Handshake Flags)
++	 */
++	(* keep = "true", dont_touch = "true" *) wire rst_2d_high = !rst_n;
+ 	always @(posedge clk) begin
+-		if (!rst_n) begin
++		if (rst_2d_high) begin
+ 			state <= S_IDLE;
+ 			done <= 1'b0;
+ 			error <= 1'b0;
+@@ -742,6 +1863,7 @@ module atg_blt_2d #(
+ 			bw_done_all <= 1'b0;
+ 			bw_walk_done <= 1'b0;
+ 			g_valid <= 1'b0;
++			g2_valid <= 1'b0;
+ 			p_valid <= 1'b0;
+ 			br_bank <= 1'b0;
+ 			br_seg_idx <= 3'd0;
+@@ -754,21 +1876,11 @@ module atg_blt_2d #(
+ 			bank_rd_pending_1 <= 5'd0;
+ 			bank_num_segs_0 <= 4'd0;
+ 			bank_num_segs_1 <= 4'd0;
+-			meta_n0slot_0 <= 8'd0;
+-			meta_n0slot_1 <= 8'd0;
++			bank_is_last <= 2'b00;
+ 			rows_b_zero <= 1'b0;
+ 			burst_wr_out <= 5'd0;
+-			px_b <= 17'd0;
+-			spx_b <= 17'd0;
+-			rem_b <= 17'd0;
+-			rows_b <= 17'd0;
+-			cur_da_b <= {US{1'b0}};
+-			cur_da_row <= {US{1'b0}};
+ 			line_pixels_b <= {1'b1, {US{1'b0}}};
+-			ydl_b <= 2'd0;
+-			ysl_b <= 2'd0;
+-			dst_row_b <= {ADDR_W{1'b0}};
+-			src_row_b <= {ADDR_W{1'b0}};
++			walk_phase <= 1'b0;
+ 		end else begin
+ 			done <= 1'b0;
+ 			error <= 1'b0;
+@@ -785,31 +1897,28 @@ module atg_blt_2d #(
+ 				burst_wr_out <= 5'd0;
+ 			end
+ 
+-			/* Write into ping-pong RAM from AMB read response */
+-			if (m_burst && rsp_rd_bst) begin
+-				pp_ram[rsp_tag[4:0]] <= rsp_rdata;
++			if (en_idle_kick[0]) begin
++				m_copy  <= o_op != GHCI_BLT_FILL;
++				m_blend <= o_blend;
++				m_rev   <= o_rev;
++				m_dtile <= o_op == GHCI_BLT_TILE;
++				m_stile <= o_op == GHCI_BLT_UNTILE;
++				psl     <= o_psl_b0;
++				m_keep  <= o_keep;
+ 			end
+ 
++			if (ce_walk_row[1])
++				rows_b_zero <= sel_mul_wr[1] ? (rows == 17'd0) : (rows_b_dec == 17'd0);
++
+ 			case (state)
+ 			S_IDLE:
+ 				if (kick) begin
+-					m_copy <= o_op != GHCI_BLT_FILL;
+-					m_blend <= o_blend;
+-					m_rev <= o_rev;
+-					m_dtile <= o_op == GHCI_BLT_TILE;
+-					m_stile <= o_op == GHCI_BLT_UNTILE;
+-					psl <= o_psl;
+-					m_keep <= o_keep;
+-					m_burst <= op_burst && op_ok;
++					m_burst <= 1'b0;
+ 					if (!op_ok) begin
+ 						error <= 1'b1;
+ 						error_kind <= GHCI_FAULT_OPCODE;
+ 					end else begin
+ 						state <= S_CLIP;
+-						x0 <= clip_x0;
+-						y0 <= clip_y0;
+-						x1 <= clip_x1;
+-						y1 <= clip_y1;
+ 					end
+ 				end
+ 			S_CLIP:
+@@ -818,42 +1927,30 @@ module atg_blt_2d #(
+ 					done <= 1'b1;
+ 				end else begin
+ 					state <= S_START;
+-					width <= c_width;
+-					rows <= c_rows;
+-					sx0 <= c_sx0;
+-					sy0 <= c_sy0;
+ 				end
+ 			S_START: begin
++				m_burst <= op_burst;
+ 				state <= S_MUL;
+-				px_row <= m_rev ? x1_last : x0;
+-				spx_row <= m_rev ? s_last : sx0;
+-				ydl <= yd_start[1:0];
+-				ysl <= ys_start[1:0];
+ 			end
+ 			S_MUL:
+ 				if (d_idle && s_idle) begin
+-					if (m_burst) begin
++					if (en_mul_bst_c0) begin
+ 						state <= S_BURST;
+-						px_b <= px_row;
+-						spx_b <= spx_row;
+-						rem_b <= width;
+-						rows_b <= rows;
+-						rows_b_zero <= (rows == 17'd0);
+-						cur_da_b <= cur_da_init;
+-						cur_da_row <= cur_da_init;
+-						ydl_b <= yd_start[1:0];
+-						ysl_b <= ys_start[1:0];
+-						dst_row_b <= dst_row;
+-						src_row_b <= src_row;
+-						psl_w <= psl;
++						psl_w <= psl_c1;
+ 						line_pixels_b <= calc_line_pixels;
+ 						bw_bank <= 1'b0;
+ 						bw_seg_idx <= 3'd0;
+ 						bw_slot_cnt <= 4'd0;
++					end else begin
++						state <= S_SA;
++					end
++					if (en_mul_bst_c1) begin
+ 						bw_sub <= 1'b0;
+ 						bw_done_all <= 1'b0;
+ 						bw_walk_done <= 1'b0;
++						walk_phase <= 1'b0;
+ 						g_valid <= 1'b0;
++						g2_valid <= 1'b0;
+ 						p_valid <= 1'b0;
+ 						br_bank <= 1'b0;
+ 						br_seg_idx <= 3'd0;
+@@ -862,11 +1959,6 @@ module atg_blt_2d #(
+ 						bank_active <= 2'b00;
+ 						bank_closed <= 2'b00;
+ 						bank_ready <= 2'b00;
+-					end else begin
+-						state <= S_SA;
+-						px <= px_row;
+-						spx <= spx_row;
+-						rem <= width;
+ 					end
+ 				end
+ 
+@@ -876,93 +1968,62 @@ module atg_blt_2d #(
+ 			 * =================================================================
+ 			 */
+ 			S_BURST: begin
+-				if (fail) begin
++				if (fail_b[3]) begin
+ 					state <= S_DRAIN;
+-				end else begin
++				end
++				if (!fail_b[4]) begin
+ 					/*
+ 					 * 1. Bank Read Ready detection:
+ 					 * Once bank is closed, when all read responses arrived (or FILL), mark READY.
+ 					 */
+-					if (bank_closed[0] && !bank_ready[0] && (!m_copy || brdp0_next == 5'd0))
++					if (bank_closed[0] && !bank_ready[0] && b0_rd_done)
+ 						bank_ready[0] <= 1'b1;
+-					if (bank_closed[1] && !bank_ready[1] && (!m_copy || brdp1_next == 5'd0))
++					if (bank_closed[1] && !bank_ready[1] && b1_rd_done)
+ 						bank_ready[1] <= 1'b1;
+ 
+ 					/*
+ 					 * 2. Walk & Geom & Issue Pipelines (Concurrent 3-stage pipeline)
+ 					 */
+ 					/* Stage 1 (Walk Stage): advance walk coordinates and latch into g_* */
+-					if (walk_step) begin
++					if (!walk_phase) begin
++						if (!bw_walk_done) begin
++							walk_phase <= 1'b1;
++						end
++						if (step_g2_data) begin
++							g_valid <= 1'b0;
++						end
++					end else if (walk_step) begin
+ 						g_valid <= 1'b1;
+-						g_dst_row <= dst_row_b;
+-						g_src_row <= src_row_b;
+-						g_px <= px_b;
+-						g_spx <= spx_b;
+-						g_seg_n <= bst_seg_n;
+-						g_seg_last <= bst_seg_last;
+-						g_rows_b_zero <= rows_b_zero;
+-
+-						/* Advance walk coordinates */
+-						px_b <= px_b_next;
+-						spx_b <= spx_b_next;
+-						rem_b <= rem_b_next;
+-						cur_da_b <= cur_da_b_next;
+-						if (bst_seg_last) begin
+-							rows_b <= rows_b_dec;
+-							rows_b_zero <= (rows_b_dec == 17'd0);
+-							ydl_b <= ydl_b_inc;
+-							ysl_b <= ysl_b_inc;
+-							dst_row_b <= dst_row_b_next;
+-							src_row_b <= src_row_b_next;
+-							cur_da_row <= cur_da_row_next;
++						if (r_bst_seg_last) begin
+ 							if (rows_b_zero)
+ 								bw_walk_done <= 1'b1;
++							walk_phase <= 1'b0;
++						end else if (!m_dtile && !m_stile && !m_rev && rem_b_gt_2lp) begin
++							walk_phase <= 1'b1;
++						end else begin
++							walk_phase <= 1'b0;
+ 						end
+-					end else if (step_g) begin
++					end else if (step_g2_data) begin
+ 						g_valid <= 1'b0;
+ 					end
+ 
+-					/* Stage 2 (Geom / Address Stage): compute addresses into p_* */
+-					if (step_p) begin
+-						if (g_valid) begin
+-							p_valid <= 1'b1;
+-							p_dline <= g_seg_line;
+-							p_seg_n <= g_seg_n;
+-							p_dlo_lo <= g_dlo_lo;
+-							p_off <= g_src_off;
+-							p_src_n0 <= g_src_n0;
+-							p_src_n1 <= g_src_n1;
+-							p_two_lines <= g_two_lines;
+-							p_n0_slot <= g_n0_slot;
+-							p_seg_last <= g_seg_last;
+-							p_rows_b_zero <= g_rows_b_zero;
+-						end else begin
+-							p_valid <= 1'b0;
+-						end
+-					end
++					/* Stage 2A valid */
++					if (step_g2_data)
++						g2_valid <= g_valid;
++					else if (issue_fire)
++						g2_valid <= 1'b0;
+ 
++					/* Stage 2B valid */
++					if (step_p)
++						p_valid <= g2_valid;
++				end
++				if (!fail_b[5]) begin
+ 					/* Issue & Prefetch Stage: record metadata and issue AMB requests */
+ 					if (bst_can_fill_p) begin
+ 						bank_active[bw_bank] <= 1'b1;
+ 
+ 						/* Check if current segment transfer step is complete */
+ 						if (issue_fire) begin
+-							/* Segment complete: save metadata */
+-							if (!bw_bank) begin
+-								meta_dline_0[bw_seg_idx] <= p_dline;
+-								meta_be_0[bw_seg_idx] <= issue_be;
+-								meta_off_0[bw_seg_idx] <= p_off;
+-								meta_slot0_0[bw_seg_idx] <= bw_slot_cnt;
+-								meta_slot1_0[bw_seg_idx] <= p_two_lines ? bw_slot_p1 : bw_slot_cnt;
+-								meta_n0slot_0[bw_seg_idx] <= p_n0_slot;
+-							end else begin
+-								meta_dline_1[bw_seg_idx] <= p_dline;
+-								meta_be_1[bw_seg_idx] <= issue_be;
+-								meta_off_1[bw_seg_idx] <= p_off;
+-								meta_slot0_1[bw_seg_idx] <= bw_slot_cnt;
+-								meta_slot1_1[bw_seg_idx] <= p_two_lines ? bw_slot_p1 : bw_slot_cnt;
+-								meta_n0slot_1[bw_seg_idx] <= p_n0_slot;
+-							end
+ 							bw_sub <= 1'b0;
+ 
+ 							/* Advance bank segment and slot count */
+@@ -973,29 +2034,38 @@ module atg_blt_2d #(
+ 							if ((p_seg_last && p_rows_b_zero) ||
+ 							    (bw_seg_idx == MAX_SEGS_M1) ||
+ 							    bw_slot_full_p) begin
+-								bank_closed[bw_bank] <= 1'b1;
+-								if (!bw_bank)
+-									bank_num_segs_0 <= bw_seg_cnt_next;
+-								else
+-									bank_num_segs_1 <= bw_seg_cnt_next;
+-								bank_is_last[bw_bank] <= (p_seg_last && p_rows_b_zero);
+-								bw_bank <= ~bw_bank;
+ 								bw_seg_idx <= 3'd0;
+ 								bw_slot_cnt <= 4'd0;
+-								if (p_seg_last && p_rows_b_zero)
+-									bw_done_all <= 1'b1;
+ 							end
+-						end else if (m_copy && p_two_lines && !bw_sub && bst_rd_fire) begin
++						end else if (m_copy_g[7] && p_two_lines && !bw_sub && bst_rd_fire) begin
+ 							/* First of two read beats fired */
+ 							bw_sub <= 1'b1;
+ 						end
+ 					end
+-
++				end
++				if (!fail_b[6]) begin
++					if (bst_can_fill_p && issue_fire) begin
++						if ((p_seg_last && p_rows_b_zero) ||
++						    (bw_seg_idx == MAX_SEGS_M1) ||
++						    bw_slot_full_p) begin
++							bank_closed[bw_bank] <= 1'b1;
++							if (!bw_bank)
++								bank_num_segs_0 <= bw_seg_cnt_next;
++							else
++								bank_num_segs_1 <= bw_seg_cnt_next;
++							bank_is_last[bw_bank] <= (p_seg_last && p_rows_b_zero);
++							bw_bank <= ~bw_bank;
++							if (p_seg_last && p_rows_b_zero)
++								bw_done_all <= 1'b1;
++						end
++					end
++				end
++				if (!fail_b[7]) begin
+ 					/*
+ 					 * 3. Commit & Write Channel
+ 					 */
+ 					if (!br_active) begin
+-						if (bank_ready[br_bank]) begin
++						if (bank_ready[br_bank] || (bank_closed[br_bank] && (br_bank ? b1_rd_done : b0_rd_done))) begin
+ 							br_active <= 1'b1;
+ 							br_seg_idx <= 3'd0;
+ 						end
+@@ -1013,7 +2083,7 @@ module atg_blt_2d #(
+ 									b_draining <= 1'b1;
+ 								end else begin
+ 									/* Switch directly to next bank if already ready */
+-									br_active <= bank_ready[~br_bank];
++									br_active <= bank_ready[~br_bank] || (bank_closed[~br_bank] && (~br_bank ? b1_rd_done : b0_rd_done));
+ 								end
+ 							end else begin
+ 								br_seg_idx <= br_seg_cnt_next[2:0];
+@@ -1024,7 +2094,7 @@ module atg_blt_2d #(
+ 					/*
+ 					 * 4. Drain & Done Completion
+ 					 */
+-					if (b_draining && bwr_next == 5'd0 && !rsp_valid) begin
++					if (b_draining && bwr_next == 5'd0) begin
+ 						state <= S_IDLE;
+ 						done <= 1'b1;
+ 					end
+@@ -1037,35 +2107,20 @@ module atg_blt_2d #(
+ 			 * =================================================================
+ 			 */
+ 			S_SA:
+-				if (fail) begin
++				if (fail_b[3])
+ 					state <= S_DRAIN;
+-				end else begin
++				else
+ 					state <= S_SB;
+-					da <= d_addr;
+-					sa <= s_addr;
+-				end
+-			S_SB: begin
++			S_SB:
+ 				state <= S_SC;
+-				sn <= seg_n;
+-				snu <= seg_bytes;
+-			end
+-			S_SC: begin
++			S_SC:
+ 				state <= S_SD;
+-				dlo <= m_rev ? d_lo : da;
+-				slo <= m_rev ? s_lo : sa;
+-			end
+ 			S_SD: begin
+-				seg_line <= dlo[ADDR_W-1:US];
+-				seg_p0 <= dlo[US-1:0];
+-				src_off <= src_base_u[US-1:0];
+-				src_n0 <= slo[ADDR_W-1:US];
+-				src_n1 <= last_line;
+-				n0_slot <= slo[ADDR_W-1:US] != src_lo;
+ 				rd_first <= 1'b1;
+-				state <= m_copy ? S_CRD : m_blend ? S_DRD : S_WR;
++				state <= m_copy_g[7] ? S_CRD : m_blend ? S_DRD : S_WR;
+ 			end
+ 			S_CRD:
+-				if (fail) begin
++				if (fail_b[3]) begin
+ 					state <= S_DRAIN;
+ 				end else if (q_free && wr_idle) begin
+ 					if (rd_first) begin
+@@ -1078,17 +2133,17 @@ module atg_blt_2d #(
+ 					end
+ 				end
+ 			S_CWAIT:
+-				if (fail)
++				if (fail_b[3])
+ 					state <= S_DRAIN;
+ 				else if (q_free && rd_idle)
+ 					state <= m_blend ? S_DRD : S_WR;
+ 			S_DRD:
+-				if (fail)
++				if (fail_b[3])
+ 					state <= S_DRAIN;
+ 				else if (drd_go)
+ 					state <= S_DWAIT;
+ 			S_DWAIT:
+-				if (fail) begin
++				if (fail_b[3]) begin
+ 					state <= S_DRAIN;
+ 				end else if (q_free && rd_idle) begin
+ 					state <= S_BLEND;
+@@ -1098,28 +2153,18 @@ module atg_blt_2d #(
+ 				if (bl_done)
+ 					state <= S_WR;
+ 			S_WR:
+-				if (fail) begin
++				if (fail_b[3]) begin
+ 					state <= S_DRAIN;
+ 				end else if (wr_go) begin
+-					if (seg_last) begin
+-						ydl <= ydl_inc;
+-						ysl <= ysl_inc;
+-						px <= px_row;
+-						spx <= spx_row;
+-						rem <= width;
+-						rows <= rows_dec;
++					if (seg_last)
+ 						state <= rows == 17'd0 ? S_DRAIN : S_SA;
+-					end else begin
+-						px <= px_next;
+-						spx <= spx_next;
+-						rem <= rem_next;
++					else
+ 						state <= S_SA;
+-					end
+ 				end
+ 			S_DRAIN:
+ 				if (q_free && wr_idle && rd_idle && !rsp_valid) begin
+ 					state <= S_IDLE;
+-					if (fail) begin
++					if (fail_b[3]) begin
+ 						error <= 1'b1;
+ 						error_kind <= GHCI_FAULT_AXI;
+ 					end else begin
+@@ -1134,7 +2179,7 @@ module atg_blt_2d #(
+ 
+ 	wire unused_ok = &{1'b0, shifted[2*LINE_BITS-1:LINE_BITS], pp_shifted[2*LINE_BITS-1:LINE_BITS],
+ 		c_op2, c_resolve, step_co_unused, first_co_unused, fsm_co_unused, bst_co_unused,
+-		src_slice_u, dst_slice_u, depth_u};
++		src_slice_u, dst_slice_u, depth_u, w_tile_step[ADDR_W-1:8], w_tile_back[ADDR_W-1:8]};
+ endmodule
+ 
+ `default_nettype wire

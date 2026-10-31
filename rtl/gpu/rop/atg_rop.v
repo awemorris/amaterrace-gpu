@@ -131,8 +131,44 @@ module atg_rop #(
 	assign wb_rsp_rdata = ds_rsp_rdata;
 	assign wb_rsp_error = ds_rsp_error;
 
+	wire rst_sync = !rst_n;
+	wire rst_n_net = rst_n;
+
+`ifdef SYNTH_KINTEX7
+	wire ms_st_we, ds_st_we, occ_st_we, blend_st_we, wb_st_we;
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_we_ms (.I0(st_we), .O(ms_st_we));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_we_ds (.I0(st_we), .O(ds_st_we));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_we_oc (.I0(st_we), .O(occ_st_we));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_we_bl (.I0(st_we), .O(blend_st_we));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_we_wb (.I0(st_we), .O(wb_st_we));
+
+	wire [8:0] ms_st_idx, ds_st_idx, occ_st_idx, blend_st_idx, wb_st_idx;
+	wire [31:0] ms_st_wdata, ds_st_wdata, occ_st_wdata, blend_st_wdata, wb_st_wdata;
+	genvar g_st;
+	generate
+	for (g_st = 0; g_st < 9; g_st = g_st + 1) begin : g_buf_st_idx
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_idx_ms (.I0(st_idx[g_st]), .O(ms_st_idx[g_st]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_idx_ds (.I0(st_idx[g_st]), .O(ds_st_idx[g_st]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_idx_oc (.I0(st_idx[g_st]), .O(occ_st_idx[g_st]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_idx_bl (.I0(st_idx[g_st]), .O(blend_st_idx[g_st]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_idx_wb (.I0(st_idx[g_st]), .O(wb_st_idx[g_st]));
+	end
+	for (g_st = 0; g_st < 32; g_st = g_st + 1) begin : g_buf_st_wdata
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wd_ms (.I0(st_wdata[g_st]), .O(ms_st_wdata[g_st]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wd_ds (.I0(st_wdata[g_st]), .O(ds_st_wdata[g_st]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wd_oc (.I0(st_wdata[g_st]), .O(occ_st_wdata[g_st]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wd_bl (.I0(st_wdata[g_st]), .O(blend_st_wdata[g_st]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wd_wb (.I0(st_wdata[g_st]), .O(wb_st_wdata[g_st]));
+	end
+	endgenerate
+`else
+	wire ms_st_we = st_we, ds_st_we = st_we, occ_st_we = st_we, blend_st_we = st_we, wb_st_we = st_we;
+	wire [8:0] ms_st_idx = st_idx, ds_st_idx = st_idx, occ_st_idx = st_idx, blend_st_idx = st_idx, wb_st_idx = st_idx;
+	wire [31:0] ms_st_wdata = st_wdata, ds_st_wdata = st_wdata, occ_st_wdata = st_wdata, blend_st_wdata = st_wdata, wb_st_wdata = st_wdata;
+`endif
+
 	atg_rop_order order (
-		.clk(clk), .rst_n(rst_n),
+		.clk(clk), .rst_n(rst_n_net),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(ex_color1), .ex_depth(ex_depth), .ex_last(ex_last),
 		.ex_next(ex_next), .ex_aux(ex_aux),
@@ -145,7 +181,7 @@ module atg_rop #(
 	);
 
 	atg_rop_ms ms (
-		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.clk(clk), .rst_n(rst_n_net), .st_we(ms_st_we), .st_idx(ms_st_idx), .st_wdata(ms_st_wdata),
 		.i_valid(q_valid), .i_ready(q_ready), .i_xy(q_xy), .i_mask(q_mask), .i_color(q_color),
 		.i_color1(q_color1),
 		.i_depth(q_depth), .i_dbg(q_dbg), .i_aux(q_aux),
@@ -155,7 +191,7 @@ module atg_rop #(
 	);
 
 	atg_rop_ds #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .STENCIL(STENCIL)) ds (
-		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.clk(clk), .rst_n(rst_n_net), .st_we(ds_st_we), .st_idx(ds_st_idx), .st_wdata(ds_st_wdata),
 		.q_valid(m_valid), .q_ready(m_ready), .q_xy(m_xy), .q_smask(m_smask), .q_color(m_color),
 		.q_color1(m_color1),
 		.q_sdepth(m_sdepth), .q_dbg(m_dbg), .q_front(m_front), .q_beat(m_beat),
@@ -177,7 +213,7 @@ module atg_rop #(
 	reg occ_inc_v;
 	reg [4:0] occ_inc_n;
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_sync) begin
 			occ_inc_v <= 1'b0;
 			occ_inc_n <= 5'd0;
 		end else begin
@@ -191,13 +227,13 @@ module atg_rop #(
 	end
 
 	atg_rop_occ occ (
-		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.clk(clk), .rst_n(rst_n_net), .st_we(occ_st_we), .st_idx(occ_st_idx), .st_wdata(occ_st_wdata),
 		.inc_valid(occ_inc_v), .inc_n(occ_inc_n),
 		.clear(occ_clear), .count(occ_count)
 	);
 
 	atg_rop_blend #(.MRT_COUNT(MRT_COUNT)) blend (
-		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.clk(clk), .rst_n(rst_n_net), .st_we(blend_st_we), .st_idx(blend_st_idx), .st_wdata(blend_st_wdata),
 		.b_valid(b_valid), .b_src(b_src), .b_src1(d_color1), .b_has_src1(ex_has_src1),
 		.b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),
 		.b_rvalid(b_rvalid), .b_pix(b_pix)
@@ -209,7 +245,7 @@ module atg_rop #(
 		.LINE_SHIFT(LINE_SHIFT),
 		.MRT_COUNT(MRT_COUNT)
 	) wb (
-		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
+		.clk(clk), .rst_n(rst_n_net), .st_we(wb_st_we), .st_idx(wb_st_idx), .st_wdata(wb_st_wdata),
 		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_smask(d_smask), .d_color(d_color),
 		.d_rt(d_beat[4:2]), .d_nocol(d_beat[1]),
 		.b_valid(b_valid), .b_src(b_src),

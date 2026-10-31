@@ -73,7 +73,7 @@ module atg_rop_wb #(
 	input wire [127:0] b_pix,
 	output wire busy,
 	/* AMB client port (design §4.1) */
-	output reg req_valid,
+	(* equivalent_register_removal = "no", max_fanout = 16 *) output reg req_valid,
 	input wire req_ready,
 	output reg req_write,
 	output reg [ADDR_W-LINE_SHIFT-1:0] req_line,
@@ -92,17 +92,18 @@ module atg_rop_wb #(
 	reg ev [0:1];
 	reg erd [0:1];	/* the line was read */
 	reg [LA_W-1:0] etag [0:1];
-	reg [LINE_BYTES*8-1:0] edat [0:1];
+	(* equivalent_register_removal = "no", max_fanout = 16 *) reg [LINE_BYTES*8-1:0] edat [0:1];
 	reg [LINE_BYTES-1:0] edirty [0:1];
 	wire [LINE_BYTES*8-1:0] edat0 = edat[0], edat1 = edat[1];
 	wire [LINE_BYTES-1:0] edirty0 = edirty[0], edirty1 = edirty[1];
 
 	localparam [3:0] S_IDLE = 4'd0, S_ROW = 4'd1, S_LOOK = 4'd2, S_EVW = 4'd3, S_FILL = 4'd4,
-		S_BLEND = 4'd5, S_BWAIT = 4'd6, S_FLUSH = 4'd7, S_FLW = 4'd8, S_ROW_WAIT = 4'd9;
+		S_BLEND = 4'd5, S_BWAIT = 4'd6, S_FLUSH = 4'd7, S_FLW = 4'd8, S_ROW_WAIT1 = 4'd9,
+		S_ROW_WAIT2 = 4'd10;
 	reg [3:0] st;
-	reg r;	/* row / entry */
-	reg [1:0] j;	/* line of the row (several lines) */
-	reg [1:0] g;	/* pass (one line per row: the sample) */
+	(* max_fanout = 16 *) reg r;	/* row / entry */
+	(* max_fanout = 16 *) reg [1:0] j;	/* line of the row (several lines) */
+	(* max_fanout = 16 *) reg [1:0] g;	/* pass (one line per row: the sample) */
 	reg wait_rsp;
 	reg [4:0] idle;
 	wire [1:0] j1, g1;	/* j + 1, g + 1, idle + 1 */
@@ -149,9 +150,11 @@ module atg_rop_wb #(
 	wire off_p1_co;
 	am_add #(.W(LINE_SHIFT)) u_off_p1 (.a(addr[LINE_SHIFT-1:0]), .b(ext_ps), .ci(1'b0), .s(off_p1_comb), .co(off_p1_co));
 
-	wire [31:0] eff_xy = (st == S_IDLE) ? d_xy : xy;
-	wire [15:0] eff_mask = (st == S_IDLE) ? d_smask : mask;
-	wire [511:0] eff_color = (st == S_IDLE) ? d_color : color;
+	(* equivalent_register_removal = "no", max_fanout = 16 *) reg is_idle_reg;
+	wire [31:0] eff_xy = is_idle_reg ? d_xy : xy;
+	wire [2:0] eff_rt = is_idle_reg ? d_rt : rt;
+	wire [15:0] eff_mask = is_idle_reg ? d_smask : mask;
+	wire [511:0] eff_color = is_idle_reg ? d_color : color;
 	wire eff_r = r;
 	wire [1:0] eff_j = j;
 	wire [1:0] eff_g = g;
@@ -179,14 +182,15 @@ module atg_rop_wb #(
 	am_sub #(.W(LA_W)) u_tag_x1 (.a(etag[1]), .b(wb_row_base1[ADDR_W-1:LINE_SHIFT]), .bi(1'b0), .d(tag_x1_comb), .bo(tag_x1_co));
 
 	/* Streaming address and offset calculation */
-	wire [31:0] str_xoff;
-	am_shift #(.W(32), .SW(3)) u_str_xoff (
-		.a({16'd0, d_xy[15:0]}),
+	wire [19:0] str_xoff_20;
+	am_shift #(.W(20), .SW(3)) u_str_xoff (
+		.a({4'd0, d_xy[15:0]}),
 		.amt(cached_xsh),
 		.left(1'b1),
 		.arith(1'b0),
-		.y(str_xoff)
+		.y(str_xoff_20)
 	);
+	wire [31:0] str_xoff = {12'd0, str_xoff_20};
 
 	/* Fast line-offset calculation for streaming */
 	wire [LINE_SHIFT-1:0] str_line_off;
@@ -215,10 +219,10 @@ module atg_rop_wb #(
 	wire [LINE_SHIFT-1:0] cur_off0_p1 = str_line_off_p1;
 	wire [LINE_SHIFT-1:0] cur_off1_p1 = str_line_off_p1;
 
-	wire [LINE_SHIFT-1:0] eff_off0 = (st == S_IDLE) ? cur_off0 : off[0];
-	wire [LINE_SHIFT-1:0] eff_off1 = (st == S_IDLE) ? cur_off1 : off[1];
-	wire [LINE_SHIFT-1:0] eff_off0_p1 = (st == S_IDLE) ? cur_off0_p1 : off_p1[0];
-	wire [LINE_SHIFT-1:0] eff_off1_p1 = (st == S_IDLE) ? cur_off1_p1 : off_p1[1];
+	wire [LINE_SHIFT-1:0] eff_off0 = is_idle_reg ? cur_off0 : off[0];
+	wire [LINE_SHIFT-1:0] eff_off1 = is_idle_reg ? cur_off1 : off[1];
+	wire [LINE_SHIFT-1:0] eff_off0_p1 = is_idle_reg ? cur_off0_p1 : off_p1[0];
+	wire [LINE_SHIFT-1:0] eff_off1_p1 = is_idle_reg ? cur_off1_p1 : off_p1[1];
 
 
 
@@ -230,17 +234,40 @@ module atg_rop_wb #(
 	reg [4*LINE_SHIFT-1:0] r_bsoff;
 	reg [3:0] r_bent;
 	reg [4:0] r_bps;
-	assign b_src = (st == S_IDLE) ? d_color : r_bsrc;
-	assign b_dst = (st == S_IDLE) ? p_bdst : r_bdst;
+`ifdef SYNTH_KINTEX7
+	wire [1:0] idle_grp;
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ig0 (.I0(is_idle_reg), .O(idle_grp[0]));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ig1 (.I0(is_idle_reg), .O(idle_grp[1]));
+
+	wire [31:0] idle_bsrc;
+	genvar g_ib;
+	generate
+	for (g_ib = 0; g_ib < 32; g_ib = g_ib + 1) begin : g_ib_buf
+		localparam G_IDX = g_ib / 16;
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ib (.I0(idle_grp[G_IDX]), .O(idle_bsrc[g_ib]));
+	end
+	endgenerate
+
+	genvar g_bs;
+	generate
+	for (g_bs = 0; g_bs < 32; g_bs = g_bs + 1) begin : g_bs_mux
+		assign b_src[16 * g_bs +: 16] = idle_bsrc[g_bs] ? d_color[16 * g_bs +: 16] : r_bsrc[16 * g_bs +: 16];
+	end
+	endgenerate
+`else
+	assign b_src = is_idle_reg ? d_color : r_bsrc;
+`endif
+	assign b_dst = is_idle_reg ? p_bdst : r_bdst;
 
 	atg_rop_wpix #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) wpix (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-		.i_xy(eff_xy), .i_rt(rt), .i_smask(eff_mask), .i_color(eff_color),
+		.i_xy(eff_xy), .i_rt(eff_rt), .i_smask(eff_mask), .i_color(eff_color),
 		.i_r(eff_r), .i_j(eff_j), .i_g(eff_g),
 		.i_line0(edat0), .i_line1(edat1),
 		.i_off0(eff_off0), .i_off1(eff_off1),
 		.i_off0_p1(eff_off0_p1), .i_off1_p1(eff_off1_p1),
 		.i_reg_off0(off[0]), .i_reg_off1(off[1]),
+		.i_reg_rt(rt), .i_reg_color(color), .i_reg_mask(mask),
 		.b_pix(b_pix), .f_go(f_go), .f_done(f_done), .f_take(f_take),
 		.o_addr(p_addr), .o_addr1(p_addr1), .o_nl(p_nl), .o_np(p_np), .o_multi(p_multi), .o_drop(p_drop),
 		.o_read(p_read), .o_path(p_path), .o_lw(p_lw), .o_mask(p_mask), .o_bsrc(p_bsrc),
@@ -266,7 +293,7 @@ module atg_rop_wb #(
 	wire stream_hit = line_match_valid && hit_rt && hit_y && hit0 && hit1;
 	wire stream_drop = (hit_rt && cached_drop) || d_nocol || (d_smask == 16'd0);
 	wire stream_ok = stream_hit && !cached_multi && (cached_np == 2'd0) && (cached_path == 2'd0) && alloc_ready;
-	wire do_stream = (st == S_IDLE) && d_valid && stream_ok && !stream_drop;
+	wire do_stream = is_idle_reg && d_valid && stream_ok && !stream_drop;
 
 	/* Pipeline shift register (3 stages for atg_rop_blend LAT=3) */
 	reg [2:0] pipe_v;
@@ -292,11 +319,31 @@ module atg_rop_wb #(
 	);
 
 	wire [3:0] s0_mask = {d_smask[12], d_smask[8], d_smask[4], d_smask[0]};
-	assign b_valid = (st == S_IDLE) ? do_stream : fsm_b_valid;
-	assign b_mask = (st == S_IDLE) ? s0_mask : r_bmask;
-	assign b_rt = rt;
+	assign b_valid = is_idle_reg ? do_stream : fsm_b_valid;
+	assign b_mask = is_idle_reg ? s0_mask : r_bmask;
+`ifdef SYNTH_KINTEX7
+	wire [2:0] eff_rt_blend;
+	genvar g_rtb;
+	generate
+	for (g_rtb = 0; g_rtb < 3; g_rtb = g_rtb + 1) begin : g_rt_blend
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rt_b (.I0(eff_rt[g_rtb]), .O(eff_rt_blend[g_rtb]));
+	end
+	endgenerate
+	assign b_rt = eff_rt_blend;
+`else
+	assign b_rt = eff_rt;
+`endif
 	wire p_ready = p_path == 2'd2 || (p_path == 2'd0 && b_rvalid) || f_done;
 	wire hit = ev[r] && etag[r] == addr[ADDR_W-1:LINE_SHIFT] && (erd[r] || !p_read);
+`ifdef SYNTH_KINTEX7
+	wire [15:0] p_read_edat;
+	genvar g_pred;
+	generate
+	for (g_pred = 0; g_pred < 16; g_pred = g_pred + 1) begin : g_pred_buf
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_prd (.I0(p_read), .O(p_read_edat[g_pred]));
+	end
+	endgenerate
+`endif
 	integer l, b;
 
 	assign d_ready = (st == S_IDLE) &&
@@ -334,6 +381,7 @@ module atg_rop_wb #(
 				j <= 2'd0;
 				g <= 2'd0;
 				st <= S_IDLE;
+				is_idle_reg <= 1'b1;
 			end else begin
 				g <= 2'd0;
 				st <= S_BLEND;
@@ -381,6 +429,7 @@ module atg_rop_wb #(
 				j <= 2'd0;
 				g <= 2'd0;
 				st <= S_IDLE;
+				is_idle_reg <= 1'b1;
 			end else begin
 				st <= S_ROW;
 				next_row;
@@ -404,41 +453,60 @@ module atg_rop_wb #(
 	wire [511:0] c_res = stream_commit ?
 		{96'd0, b_pix[96 +: 32], 96'd0, b_pix[64 +: 32], 96'd0, b_pix[32 +: 32], 96'd0, b_pix[0 +: 32]} : p_res;
 
-	reg [LINE_BYTES*8-1:0] m_dat0, m_dat1;
-	reg [LINE_BYTES-1:0] m_dirty0, m_dirty1;
-	reg [127:0] m_rep;	/* slot l's pixel repeated */
-	reg [LINE_SHIFT-1:0] m_bo;
+	wire [LINE_BYTES*8-1:0] m_dat0, m_dat1;
+	wire [LINE_BYTES-1:0] m_dirty0, m_dirty1;
 	/* the low bits of an offset within its unit: p_ps - 1 */
 	wire [3:0] m_lm = {c_ps[4], c_ps[4] | c_ps[3], c_ps[4] | c_ps[3] | c_ps[2],
 		c_ps[4] | c_ps[3] | c_ps[2] | c_ps[1]};
 	wire [LINE_SHIFT-1:0] m_lmw = {{(LINE_SHIFT-4){1'b0}}, m_lm};
-	always @(*) begin
-		m_dat0 = edat0;
-		m_dat1 = edat1;
-		m_dirty0 = edirty0;
-		m_dirty1 = edirty1;
-		m_rep = 128'd0;
-		m_bo = {LINE_SHIFT{1'b0}};
-		for (l = 0; l < 4; l = l + 1) begin
-			m_rep = c_ps[4] ? c_res[128 * l +: 128] : c_ps[3] ? {2{c_res[128 * l +: 64]}} :
-				c_ps[2] ? {4{c_res[128 * l +: 32]}} : c_ps[1] ? {8{c_res[128 * l +: 16]}} :
-				{16{c_res[128 * l +: 8]}};
-			if (c_mask[l])
-				for (b = 0; b < LINE_BYTES; b = b + 1) begin
-					m_bo = b[LINE_SHIFT-1:0];
-					if (((m_bo ^ c_soff[LINE_SHIFT * l +: LINE_SHIFT]) & ~m_lmw) ==
-					    {LINE_SHIFT{1'b0}}) begin
-						if (c_ent[l]) begin
-							m_dat1[8 * b +: 8] = m_rep[8 * (b % 16) +: 8];
-							m_dirty1[b] = 1'b1;
-						end else begin
-							m_dat0[8 * b +: 8] = m_rep[8 * (b % 16) +: 8];
-							m_dirty0[b] = 1'b1;
-						end
-					end
-				end
-		end
+
+	wire [127:0] m_rep_slot [0:3];
+	genvar g_rep;
+	generate
+	for (g_rep = 0; g_rep < 4; g_rep = g_rep + 1) begin : g_rep_gen
+		assign m_rep_slot[g_rep] = c_ps[4] ? c_res[128 * g_rep +: 128] :
+			c_ps[3] ? {2{c_res[128 * g_rep +: 64]}} :
+			c_ps[2] ? {4{c_res[128 * g_rep +: 32]}} :
+			c_ps[1] ? {8{c_res[128 * g_rep +: 16]}} :
+			{16{c_res[128 * g_rep +: 8]}};
 	end
+	endgenerate
+
+	genvar gb;
+	generate
+	for (gb = 0; gb < LINE_BYTES; gb = gb + 1) begin : g_mdat
+		wire [LINE_SHIFT-1:0] b_off = gb[LINE_SHIFT-1:0];
+		wire m0 = c_mask[0] && (((b_off ^ c_soff[0 +: LINE_SHIFT]) & ~m_lmw) == {LINE_SHIFT{1'b0}});
+		wire m1 = c_mask[1] && (((b_off ^ c_soff[LINE_SHIFT +: LINE_SHIFT]) & ~m_lmw) == {LINE_SHIFT{1'b0}});
+		wire m2 = c_mask[2] && (((b_off ^ c_soff[2*LINE_SHIFT +: LINE_SHIFT]) & ~m_lmw) == {LINE_SHIFT{1'b0}});
+		wire m3 = c_mask[3] && (((b_off ^ c_soff[3*LINE_SHIFT +: LINE_SHIFT]) & ~m_lmw) == {LINE_SHIFT{1'b0}});
+
+		wire wr0_0 = m0 && !c_ent[0];
+		wire wr0_1 = m1 && !c_ent[1];
+		wire wr0_2 = m2 && !c_ent[2];
+		wire wr0_3 = m3 && !c_ent[3];
+
+		wire wr1_0 = m0 && c_ent[0];
+		wire wr1_1 = m1 && c_ent[1];
+		wire wr1_2 = m2 && c_ent[2];
+		wire wr1_3 = m3 && c_ent[3];
+
+		assign m_dat0[8 * gb +: 8] = wr0_3 ? m_rep_slot[3][8 * (gb % 16) +: 8] :
+			wr0_2 ? m_rep_slot[2][8 * (gb % 16) +: 8] :
+			wr0_1 ? m_rep_slot[1][8 * (gb % 16) +: 8] :
+			wr0_0 ? m_rep_slot[0][8 * (gb % 16) +: 8] :
+			edat0[8 * gb +: 8];
+
+		assign m_dat1[8 * gb +: 8] = wr1_3 ? m_rep_slot[3][8 * (gb % 16) +: 8] :
+			wr1_2 ? m_rep_slot[2][8 * (gb % 16) +: 8] :
+			wr1_1 ? m_rep_slot[1][8 * (gb % 16) +: 8] :
+			wr1_0 ? m_rep_slot[0][8 * (gb % 16) +: 8] :
+			edat1[8 * gb +: 8];
+
+		assign m_dirty0[gb] = edirty0[gb] | wr0_0 | wr0_1 | wr0_2 | wr0_3;
+		assign m_dirty1[gb] = edirty1[gb] | wr1_0 | wr1_1 | wr1_2 | wr1_3;
+	end
+	endgenerate
 
 	always @(posedge clk) begin
 		fsm_b_valid <= 1'b0;
@@ -451,6 +519,7 @@ module atg_rop_wb #(
 			wait_rsp <= 1'b0;
 		if (!rst_n) begin
 			st <= S_IDLE;
+			is_idle_reg <= 1'b1;
 			r <= 1'b0;
 			j <= 2'd0;
 			g <= 2'd0;
@@ -551,8 +620,10 @@ module atg_rop_wb #(
 						j <= 2'd0;
 						g <= 2'd0;
 						line_match_valid <= 1'b0;
-						if (!d_nocol)
-							st <= S_ROW_WAIT;
+						if (!d_nocol) begin
+							st <= S_ROW_WAIT1;
+							is_idle_reg <= 1'b0;
+						end
 					end
 				end else if (!pipe_busy) begin
 					if (idle != 5'd16)
@@ -560,10 +631,14 @@ module atg_rop_wb #(
 					else if (ev[0] || ev[1]) begin
 						r <= 1'b0;
 						st <= S_FLUSH;
+						is_idle_reg <= 1'b0;
 					end
 				end
 			end
-			S_ROW_WAIT: begin
+			S_ROW_WAIT1: begin
+				st <= S_ROW_WAIT2;
+			end
+			S_ROW_WAIT2: begin
 				wb_row_base0 <= p_row_base0;
 				st <= S_ROW;
 			end
@@ -573,6 +648,7 @@ module atg_rop_wb #(
 					j <= 2'd0;
 					g <= 2'd0;
 					st <= S_IDLE;
+					is_idle_reg <= 1'b1;
 				end else if (p_lw) begin
 					addr <= wb_addr_comb;
 					wb_row_base1 <= wb_row_base1_comb;
@@ -604,10 +680,16 @@ module atg_rop_wb #(
 					st <= S_FILL;
 				end
 			end
+
 			S_FILL:
 				/* the line (read when needed; its response arrives with rsp_valid) */
 				if (!p_read || (!req_valid && wait_rsp && rsp_valid)) begin
+`ifdef SYNTH_KINTEX7
+					for (l = 0; l < 16; l = l + 1)
+						edat[r][16 * l +: 16] <= p_read_edat[l] ? rsp_rdata[16 * l +: 16] : 16'd0;
+`else
 					edat[r] <= p_read ? rsp_rdata : {(LINE_BYTES * 8){1'b0}};
+`endif
 					ev[r] <= 1'b1;
 					erd[r] <= p_read;
 					etag[r] <= addr[ADDR_W-1:LINE_SHIFT];
@@ -652,6 +734,7 @@ module atg_rop_wb #(
 						j <= 2'd0;
 						g <= 2'd0;
 						st <= S_IDLE;
+						is_idle_reg <= 1'b1;
 					end
 				end
 			end

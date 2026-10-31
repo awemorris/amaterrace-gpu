@@ -64,12 +64,49 @@ module atg_rop_order (
 
 	assign ex_next = next;
 	assign q_valid = ex_ok || dx_ok;
+`ifdef SYNTH_KINTEX7
+	reg r_ex_ready, r_dx_ready;
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r_ex_ready <= 1'b0;
+			r_dx_ready <= 1'b0;
+		end else begin
+			r_ex_ready <= ex_ok && q_ready;
+			r_dx_ready <= dx_ok && q_ready;
+		end
+	end
+	assign ex_ready = r_ex_ready;
+	assign dx_ready = r_dx_ready;
+`else
 	assign ex_ready = ex_ok && q_ready;
-	assign dx_ready = !ex_ok && dx_ok && q_ready;
+	assign dx_ready = dx_ok && q_ready;
+`endif
 	assign q_xy = ex_ok ? ex_xy : dx_xy;
 	assign q_mask = ex_ok ? ex_mask : dx_mask;
+`ifdef SYNTH_KINTEX7
+	wire [63:0] ex_v_buf;
+	wire [3:0] ex_v_mid;
+	genvar g_ev_m, g_ev_b, g_qc;
+	generate
+	for (g_ev_m = 0; g_ev_m < 4; g_ev_m = g_ev_m + 1) begin : g_ev_mid
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_mid (
+			.I0(ex_valid), .O(ex_v_mid[g_ev_m])
+		);
+	end
+	for (g_ev_b = 0; g_ev_b < 64; g_ev_b = g_ev_b + 1) begin : g_ev_leaf
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_leaf (
+			.I0(ex_v_mid[g_ev_b / 16]), .O(ex_v_buf[g_ev_b])
+		);
+	end
+	for (g_qc = 0; g_qc < 32; g_qc = g_qc + 1) begin : g_qcol
+		assign q_color[16 * g_qc +: 16] = ex_v_buf[g_qc] ? ex_color[16 * g_qc +: 16] : 16'd0;
+		assign q_color1[16 * g_qc +: 16] = ex_v_buf[32 + g_qc] ? ex_color1[16 * g_qc +: 16] : 16'd0;
+	end
+	endgenerate
+`else
 	assign q_color = ex_valid ? ex_color : 512'd0;
 	assign q_color1 = ex_valid ? ex_color1 : 512'd0;
+`endif
 	assign q_depth = ex_ok ? ex_depth : dx_depth;
 	assign q_dbg = !ex_ok;
 	/* the SU's beat (ex_aux); the direct path: one beat of attachment 0,

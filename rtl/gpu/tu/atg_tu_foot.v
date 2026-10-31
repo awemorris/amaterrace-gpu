@@ -392,12 +392,14 @@ module atg_tu_foot #(
 
 	/* Stage 1A: Multipliers */
 	wire [47:0] kp;
-	localparam KP_LAT = (LAT >= 3) ? 1 : 0;
+	localparam KP_LAT = (LAT >= 3) ? 2 : 0;
 	wire kp_clk = (LAT >= 3) ? clk : 1'b0;
 	am_mul #(.AW(32), .BW(16), .LAT(KP_LAT)) u_kp (.clk(kp_clk), .en(en), .a(s1_plane), .b(s1_k), .p(kp));
 
 	wire [34:0] fs_comb [0:3];
 	wire [32:0] m_comb [0:3];
+	localparam M_LAT = (LAT >= 3) ? 2 : 0;
+	wire m_clk = (LAT >= 3) ? clk : 1'b0;
 	genvar gt1;
 	generate
 	for (gt1 = 0; gt1 < 4; gt1 = gt1 + 1) begin : g_s1a
@@ -406,75 +408,93 @@ module atg_tu_foot #(
 		wire [2:0]  s1_tf_w   = (LAT >= 1) ? r0_tf[gt1]   : tf_s0[gt1];
 		wire tb_w = s1_tiled || s1_blk;
 
-		am_mul #(.AW(32), .BW(3)) u_fs (.clk(1'b0), .en(1'b1), .a(s1_stride), .b(s1_tf_w), .p(fs_comb[gt1]));
-		am_mul #(.AW(16), .BW(17)) u_m (.clk(1'b0), .en(1'b1), .a(tb_w ? {2'b00, s1_tj_w[15:2]} : s1_tj_w),
+		am_mul #(.AW(32), .BW(3), .LAT(M_LAT)) u_fs (.clk(m_clk), .en(en), .a(s1_stride), .b(s1_tf_w), .p(fs_comb[gt1]));
+		am_mul #(.AW(16), .BW(17), .LAT(M_LAT)) u_m (.clk(m_clk), .en(en), .a(tb_w ? {2'b00, s1_tj_w[15:2]} : s1_tj_w),
 			.b(tb_w ? {1'b0, s1_tw} : s1_wr), .p(m_comb[gt1]));
 	end
 	endgenerate
 
 	/* Stage 1A -> Stage 1B Pipeline Registers (when LAT >= 3) */
-	reg [31:0] r1_lbase;
-	reg [34:0] r1_fs [0:3];
-	reg [32:0] r1_m [0:3];
-	reg [15:0] r1_ti [0:3];
-	reg [15:0] r1_tj [0:3];
-	reg [1:0]  r1_part [0:3];
-	reg        r1_tb [0:3];
-	reg        r1_tiled, r1_blk, r1_cube, r1_texf;
-	reg [2:0]  r1_psl;
-	reg [15:0] r1_fuv;
-	reg [7:0]  r1_fw;
+	reg [31:0] r1_lbase, r1b_lbase;
+	reg [15:0] r1_ti [0:3], r1b_ti [0:3];
+	reg [15:0] r1_tj [0:3], r1b_tj [0:3];
+	reg [1:0]  r1_part [0:3], r1b_part [0:3];
+	reg        r1_tb [0:3], r1b_tb [0:3];
+	reg        r1_tiled, r1b_tiled, r1_blk, r1b_blk, r1_cube, r1b_cube, r1_texf, r1b_texf;
+	reg [2:0]  r1_psl, r1b_psl;
+	reg [15:0] r1_fuv, r1b_fuv;
+	reg [7:0]  r1_fw, r1b_fw;
 
 	integer ki1;
 	always @(posedge clk) begin
 		if (!rst_n) begin
-			r1_lbase <= 32'd0;
-			r1_tiled <= 1'b0;
-			r1_blk   <= 1'b0;
-			r1_cube  <= 1'b0;
-			r1_texf  <= 1'b0;
-			r1_psl   <= 3'd0;
-			r1_fuv   <= 16'd0;
-			r1_fw    <= 8'd0;
+			r1_lbase  <= 32'd0;
+			r1b_lbase <= 32'd0;
+			r1_tiled  <= 1'b0;
+			r1b_tiled <= 1'b0;
+			r1_blk    <= 1'b0;
+			r1b_blk   <= 1'b0;
+			r1_cube   <= 1'b0;
+			r1b_cube  <= 1'b0;
+			r1_texf   <= 1'b0;
+			r1b_texf  <= 1'b0;
+			r1_psl    <= 3'd0;
+			r1b_psl   <= 3'd0;
+			r1_fuv    <= 16'd0;
+			r1b_fuv   <= 16'd0;
+			r1_fw     <= 8'd0;
+			r1b_fw    <= 8'd0;
 			for (ki1 = 0; ki1 < 4; ki1 = ki1 + 1) begin
-				r1_fs[ki1]   <= 35'd0;
-				r1_m[ki1]    <= 33'd0;
-				r1_ti[ki1]   <= 16'd0;
-				r1_tj[ki1]   <= 16'd0;
-				r1_part[ki1] <= 2'd0;
-				r1_tb[ki1]   <= 1'b0;
+				r1_ti[ki1]    <= 16'd0;
+				r1b_ti[ki1]   <= 16'd0;
+				r1_tj[ki1]    <= 16'd0;
+				r1b_tj[ki1]   <= 16'd0;
+				r1_part[ki1]  <= 2'd0;
+				r1b_part[ki1] <= 2'd0;
+				r1_tb[ki1]    <= 1'b0;
+				r1b_tb[ki1]   <= 1'b0;
 			end
 		end else if (en) begin
-			r1_lbase <= s1_lbase;
-			r1_tiled <= s1_tiled;
-			r1_blk   <= s1_blk;
-			r1_cube  <= s1_cube;
-			r1_texf  <= s1_texf;
-			r1_psl   <= s1_psl;
-			r1_fuv   <= s1_fuv;
-			r1_fw    <= s1_fw;
+			r1_lbase  <= s1_lbase;
+			r1b_lbase <= r1_lbase;
+			r1_tiled  <= s1_tiled;
+			r1b_tiled <= r1_tiled;
+			r1_blk    <= s1_blk;
+			r1b_blk   <= r1_blk;
+			r1_cube   <= s1_cube;
+			r1b_cube  <= r1_cube;
+			r1_texf   <= s1_texf;
+			r1b_texf  <= r1_texf;
+			r1_psl    <= s1_psl;
+			r1b_psl   <= r1_psl;
+			r1_fuv    <= s1_fuv;
+			r1b_fuv   <= r1_fuv;
+			r1_fw     <= s1_fw;
+			r1b_fw    <= r1_fw;
 			for (ki1 = 0; ki1 < 4; ki1 = ki1 + 1) begin
-				r1_fs[ki1]   <= fs_comb[ki1];
-				r1_m[ki1]    <= m_comb[ki1];
-				r1_ti[ki1]   <= (LAT >= 1) ? r0_ti[ki1]   : ti_s0[ki1];
-				r1_tj[ki1]   <= (LAT >= 1) ? r0_tj[ki1]   : tj_s0[ki1];
-				r1_part[ki1] <= (LAT >= 1) ? r0_part[ki1] : part_s0[ki1];
-				r1_tb[ki1]   <= (LAT >= 1) ? r0_tb[ki1]   : tb_s0[ki1];
+				r1_ti[ki1]    <= (LAT >= 1) ? r0_ti[ki1]   : ti_s0[ki1];
+				r1b_ti[ki1]   <= r1_ti[ki1];
+				r1_tj[ki1]    <= (LAT >= 1) ? r0_tj[ki1]   : tj_s0[ki1];
+				r1b_tj[ki1]   <= r1_tj[ki1];
+				r1_part[ki1]  <= (LAT >= 1) ? r0_part[ki1] : part_s0[ki1];
+				r1b_part[ki1] <= r1_part[ki1];
+				r1_tb[ki1]    <= (LAT >= 1) ? r0_tb[ki1]   : tb_s0[ki1];
+				r1b_tb[ki1]   <= r1_tb[ki1];
 			end
 		end
 	end
 
 	wire [31:0] s1b_kp    = kp[31:0];
-	wire [31:0] s1b_lbase = (LAT >= 3) ? r1_lbase : s1_lbase;
+	wire [31:0] s1b_lbase = (LAT >= 3) ? r1b_lbase : s1_lbase;
 	wire [31:0] s1b_lbk;
 	am_add #(.W(32)) u_lbk (.a(s1b_lbase), .b(s1b_kp), .ci(1'b0), .s(s1b_lbk), .co(carry_unused[13]));
-	wire        s1b_tiled = (LAT >= 3) ? r1_tiled : s1_tiled;
-	wire        s1b_blk   = (LAT >= 3) ? r1_blk   : s1_blk;
-	wire        s1b_cube  = (LAT >= 3) ? r1_cube  : s1_cube;
-	wire        s1b_texf  = (LAT >= 3) ? r1_texf  : s1_texf;
-	wire [2:0]  s1b_psl   = (LAT >= 3) ? r1_psl   : s1_psl;
-	wire [15:0] s1b_fuv   = (LAT >= 3) ? r1_fuv   : s1_fuv;
-	wire [7:0]  s1b_fw    = (LAT >= 3) ? r1_fw    : s1_fw;
+	wire        s1b_tiled = (LAT >= 3) ? r1b_tiled : s1_tiled;
+	wire        s1b_blk   = (LAT >= 3) ? r1b_blk   : s1_blk;
+	wire        s1b_cube  = (LAT >= 3) ? r1b_cube  : s1_cube;
+	wire        s1b_texf  = (LAT >= 3) ? r1b_texf  : s1_texf;
+	wire [2:0]  s1b_psl   = (LAT >= 3) ? r1b_psl   : s1_psl;
+	wire [15:0] s1b_fuv   = (LAT >= 3) ? r1b_fuv   : s1_fuv;
+	wire [7:0]  s1b_fw    = (LAT >= 3) ? r1b_fw    : s1_fw;
 
 	/* Stage 1B: Offset & Base Adders */
 	wire [31:0] to_comb [0:3];
@@ -484,10 +504,10 @@ module atg_tu_foot #(
 	genvar gt;
 	generate
 	for (gt = 0; gt < 4; gt = gt + 1) begin : g_slot_1b
-		wire [34:0] fs   = (LAT >= 3) ? r1_fs[gt]   : fs_comb[gt];
-		wire [32:0] m    = (LAT >= 3) ? r1_m[gt]    : m_comb[gt];
-		wire [15:0] ti   = (LAT >= 3) ? r1_ti[gt]   : (LAT >= 1) ? r0_ti[gt]   : ti_s0[gt];
-		wire [15:0] tj   = (LAT >= 3) ? r1_tj[gt]   : (LAT >= 1) ? r0_tj[gt]   : tj_s0[gt];
+		wire [34:0] fs   = fs_comb[gt];
+		wire [32:0] m    = m_comb[gt];
+		wire [15:0] ti   = (LAT >= 3) ? r1b_ti[gt]   : (LAT >= 1) ? r0_ti[gt]   : ti_s0[gt];
+		wire [15:0] tj   = (LAT >= 3) ? r1b_tj[gt]   : (LAT >= 1) ? r0_tj[gt]   : tj_s0[gt];
 
 		wire [31:0] s1, sh;
 		wire tb_in = s1b_tiled || s1b_blk;
@@ -534,10 +554,10 @@ module atg_tu_foot #(
 			for (ki2 = 0; ki2 < 4; ki2 = ki2 + 1) begin
 				r2_to[ki2]   <= to_comb[ki2];
 				r2_a1[ki2]   <= a1_comb[ki2];
-				r2_part[ki2] <= (LAT >= 3) ? r1_part[ki2] : (LAT >= 1) ? r0_part[ki2] : part_s0[ki2];
-				r2_ti[ki2]   <= (LAT >= 3) ? r1_ti[ki2][1:0] : (LAT >= 1) ? r0_ti[ki2][1:0] : ti_s0[ki2][1:0];
-				r2_tj[ki2]   <= (LAT >= 3) ? r1_tj[ki2][1:0] : (LAT >= 1) ? r0_tj[ki2][1:0] : tj_s0[ki2][1:0];
-				r2_tb[ki2]   <= (LAT >= 3) ? r1_tb[ki2] : (LAT >= 1) ? r0_tb[ki2] : tb_s0[ki2];
+				r2_part[ki2] <= (LAT >= 3) ? r1b_part[ki2] : (LAT >= 1) ? r0_part[ki2] : part_s0[ki2];
+				r2_ti[ki2]   <= (LAT >= 3) ? r1b_ti[ki2][1:0] : (LAT >= 1) ? r0_ti[ki2][1:0] : ti_s0[ki2][1:0];
+				r2_tj[ki2]   <= (LAT >= 3) ? r1b_tj[ki2][1:0] : (LAT >= 1) ? r0_tj[ki2][1:0] : tj_s0[ki2][1:0];
+				r2_tb[ki2]   <= (LAT >= 3) ? r1b_tb[ki2] : (LAT >= 1) ? r0_tb[ki2] : tb_s0[ki2];
 			end
 		end
 	end

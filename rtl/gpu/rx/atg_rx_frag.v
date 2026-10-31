@@ -34,6 +34,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+(* keep_hierarchy = "yes" *)
 module atg_rx_frag (
 	input wire clk,
 	input wire rst_n,
@@ -79,60 +80,143 @@ module atg_rx_frag (
 	localparam [2:0] S_COL = 3'd0, S_ALLOC = 3'd1, S_COPY = 3'd2, S_DZ = 3'd3, S_BARYC = 3'd4,
 		S_BARY = 3'd5, S_WR = 3'd6, S_GO = 3'd7;
 	localparam [31:0] ONE = 32'h3F800000;
-	reg [2:0] st;
+
+	wire rst_sync = !rst_n;
+	(* max_fanout = 16 *) reg [2:0] st;
 
 	reg [6:0] vc;	/* VARYING_COUNT, 0-64 */
 	reg ms4;	/* MS_CTRL[3:0] = 2 */
 	reg cent;	/* MS_CTRL[4] */
 	reg dclip;	/* DEPTH_CLAMP[1] (CAPS[30]): r3 not clamped when depth clip and not clamp */
+
+	/* Zero-CARRY4 saturation check: st_wdata > 64 */
+	(* keep = "true" *) wire vc_hi0 = |st_wdata[12:7];
+	(* keep = "true" *) wire vc_hi1 = |st_wdata[18:13];
+	(* keep = "true" *) wire vc_hi2 = |st_wdata[24:19];
+	(* keep = "true" *) wire vc_hi3 = |st_wdata[31:25];
+	(* keep = "true" *) wire vc_lo_nz = |st_wdata[5:0];
+	wire vc_gt_64 = vc_hi0 || vc_hi1 || vc_hi2 || vc_hi3 || (st_wdata[6] && vc_lo_nz);
+
 	always @(posedge clk)
-		if (!rst_n)
+		if (rst_sync)
 			dclip <= 1'b0;
 		else if (st_we && st_idx == GHCI_S_DEPTH_CLAMP)
 			dclip <= st_wdata[1] && !st_wdata[0];
 	always @(posedge clk)
-		if (!rst_n) begin
+		if (rst_sync) begin
 			vc <= 7'd0;
 			ms4 <= 1'b0;
 			cent <= 1'b0;
 		end else if (st_we && st_idx == GHCI_S_VARYING_COUNT)
-			vc <= st_wdata > 32'd64 ? 7'd64 : st_wdata[6:0];
+			vc <= vc_gt_64 ? 7'd64 : st_wdata[6:0];
 		else if (st_we && st_idx == GHCI_S_MS_CTRL) begin
 			ms4 <= st_wdata[3:0] == 4'd2;
 			cent <= st_wdata[4];
 		end
 
 	/* The triangle: 12 plane words (z, 1/w, b0/w, b1/w × A, B, C), bbox origin, PT entries. */
-	reg [383:0] pl;
-	reg [15:0] bx0, by0;
-	reg [23:0] ent;
+	(* extract_reset = "no" *) reg [383:0] pl;
+	(* extract_reset = "no" *) reg [15:0] bx0, by0;
+	(* extract_reset = "no" *) reg [23:0] ent;
 	reg front;
 	reg dz_done;	/* the samples' depth slopes of this triangle are made */
-	always @(posedge clk)
-		if (t_load) begin
-			pl <= t_tri[735:352];
+	(* dont_touch = "true" *) reg r_fl_we;
+	(* max_fanout = 16 *) reg r_fl_we_int;
+
+	wire [1:0] t_load_r;
+	wire [27:0] t_load_b;
+	genvar gi_t;
+	generate
+	for (gi_t = 0; gi_t < 2; gi_t = gi_t + 1) begin : g_tload_root
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_tlr (.I0(t_load), .O(t_load_r[gi_t]));
+`else
+		assign t_load_r[gi_t] = t_load;
+`endif
+	end
+	for (gi_t = 0; gi_t < 28; gi_t = gi_t + 1) begin : g_tload_buf
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_tl (.I0(t_load_r[gi_t / 14]), .O(t_load_b[gi_t]));
+`else
+		assign t_load_b[gi_t] = t_load_r[gi_t / 14];
+`endif
+	end
+	for (gi_t = 0; gi_t < 24; gi_t = gi_t + 1) begin : g_pl_load
+		always @(posedge clk) begin
+			if (t_load_b[gi_t])
+				pl[16 * gi_t +: 16] <= t_tri[352 + 16 * gi_t +: 16];
+		end
+	end
+	endgenerate
+
+	always @(posedge clk) begin
+		if (t_load_b[24])
 			bx0 <= t_tri[303:288];
+		if (t_load_b[25])
 			by0 <= t_tri[319:304];
-			ent <= t_tri[759:736];
+		if (t_load_b[26])
+			ent[15:0] <= t_tri[751:736];
+		if (t_load_b[27]) begin
+			ent[23:16] <= t_tri[759:752];
 			front <= t_tri[763];
 		end
+	end
 
 	/* The warp's quads: position, samples, centres. */
-	reg [127:0] qbx, qby, qbs;
+	(* extract_reset = "no" *) reg [15:0] qbx_arr [0:7];
+	(* extract_reset = "no" *) reg [15:0] qby_arr [0:7];
+	reg [15:0] qbs_arr [0:7];
 	reg [31:0] qcc;
-	reg [3:0] n;	/* quads collected */
-	reg [2:0] qi;	/* the quad being written */
-	assign fq_ready = st == S_COL && n < 4'd8;
+	(* max_fanout = 16 *) reg [3:0] n;	/* quads collected */
+	(* max_fanout = 16 *) reg [2:0] qi;	/* the quad being written */
+	(* dont_touch = "true", extract_reset = "no" *) reg [2:0] r_qi_rep [0:6];
+	assign fq_ready = (st == S_COL) && !n[3];
 	wire fq_take = fq_valid && fq_ready;
-	reg [31:0] qbc;	/* the lanes with a sample (fl_info's coverage) */
-	integer k;
-	always @(*)
-		for (k = 0; k < 32; k = k + 1)
-			qbc[k] = qbs[4 * k +: 4] != 4'd0;
 
-	wire [15:0] qx = qbx[16 * qi +: 16], qy = qby[16 * qi +: 16];
-	wire [15:0] s4q = qbs[16 * qi +: 16];	/* the quad's samples */
-	wire [3:0] ccq = qcc[4 * qi +: 4];
+	/* Buffered fq_xy for 8 quad array entries (fanout 8) */
+	wire [31:0] fq_xy_b;
+	generate
+	for (gi_t = 0; gi_t < 32; gi_t = gi_t + 1) begin : g_fqxy_buf
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_xy (.I0(fq_xy[gi_t]), .O(fq_xy_b[gi_t]));
+`else
+		assign fq_xy_b[gi_t] = fq_xy[gi_t];
+`endif
+	end
+	for (gi_t = 0; gi_t < 8; gi_t = gi_t + 1) begin : g_quad_arr
+		(* dont_touch = "true" *) wire q_we_x  = (st == S_COL) && fq_valid && !n[3] && !fq_end && (n[2:0] == gi_t[2:0]);
+		(* dont_touch = "true" *) wire q_we_y  = (st == S_COL) && fq_valid && !n[3] && !fq_end && (n[2:0] == gi_t[2:0]);
+		(* dont_touch = "true" *) wire q_we_s  = (st == S_COL) && fq_valid && !n[3] && !fq_end && (n[2:0] == gi_t[2:0]);
+		(* dont_touch = "true" *) wire q_clr_s = rst_sync || (st == S_GO && !r_fl_we_int);
+		always @(posedge clk) begin
+			if (q_we_x)
+				qbx_arr[gi_t] <= fq_xy_b[15:0];
+			if (q_we_y)
+				qby_arr[gi_t] <= fq_xy_b[31:16];
+			if (q_clr_s)
+				qbs_arr[gi_t] <= 16'd0;
+			else if (q_we_s)
+				qbs_arr[gi_t] <= fq_scov;
+		end
+	end
+	endgenerate
+
+	wire [31:0] qbc;	/* the lanes with a sample (fl_info's coverage) */
+	genvar gi_l;
+	generate
+	for (gi_t = 0; gi_t < 8; gi_t = gi_t + 1) begin : g_qbc_q
+		for (gi_l = 0; gi_l < 4; gi_l = gi_l + 1) begin : g_qbc_l
+			assign qbc[4 * gi_t + gi_l] = (qbs_arr[gi_t][4 * gi_l +: 4] != 4'd0);
+		end
+	end
+	endgenerate
+
+	integer k;
+
+	wire [15:0] qx  = {qbx_arr[r_qi_rep[1]][15:8], qbx_arr[r_qi_rep[0]][7:0]};
+	wire [15:0] qy  = {qby_arr[r_qi_rep[3]][15:8], qby_arr[r_qi_rep[2]][7:0]};
+	wire [15:0] s4q = {qbs_arr[r_qi_rep[5]][15:8], qbs_arr[r_qi_rep[4]][7:0]};	/* the quad's samples */
+	wire [3:0]  ccq = qcc[4 * r_qi_rep[6] +: 4];
 
 	/* The centroid offsets of the quad's lanes: 0 the centre, 1 + s sample s. */
 	reg [11:0] osel;
@@ -157,14 +241,93 @@ module atg_rx_frag (
 		.i_dz(bgo && st == S_DZ), .i_pl(pl), .i_qx(qx), .i_qy(qy), .i_bx0(bx0), .i_by0(by0),
 		.i_osel(st == S_BARYC ? osel : 12'd0), .busy(b_busy), .o_done(b_done), .o_b0(ob0),
 		.o_b1(ob1), .o_b2(ob2), .o_z(oz), .o_ds(ods));
-	reg [127:0] cb0, cb1, cb2;	/* the centroid's barycentrics */
-	reg [127:0] dsv;		/* the triangle's d_s */
+	(* extract_reset = "no" *) reg [127:0] cb0, cb1, cb2;	/* the centroid's barycentrics */
+	(* extract_reset = "no" *) reg [127:0] dsv;		/* the triangle's d_s */
+
+	/* Pre-computed lane coordinates x + 0.5, y + 0.5 during S_BARY (LAT = 5 + 1 = 6 cycles, BARY takes > 40 cycles) */
+	wire [31:0] x2_p [0:1];
+	wire [31:0] y2_p [0:1];
+	(* extract_reset = "no" *) reg [31:0] r_xc [0:1];
+	(* extract_reset = "no" *) reg [31:0] r_yc [0:1];
+	wire [3:0] xy_bo_unused;
+	generate
+	for (gi_t = 0; gi_t < 2; gi_t = gi_t + 1) begin : g_xy_pipe
+		wire [15:0] xl_w = {qx[15:1], (gi_t == 1) ? 1'b1 : qx[0]};
+		wire [15:0] yl_w = {qy[15:1], (gi_t == 1) ? 1'b1 : qy[0]};
+		atg_rx_fix2f_pipe #(.W(17), .F(0), .SIGNED(1)) u_x2 (.clk(clk), .i_v({1'b0, xl_w[14:0], 1'b1}), .o_f(x2_p[gi_t]));
+		atg_rx_fix2f_pipe #(.W(17), .F(0), .SIGNED(1)) u_y2 (.clk(clk), .i_v({1'b0, yl_w[14:0], 1'b1}), .o_f(y2_p[gi_t]));
+
+		/* Subtract 1 from exponent (bits [30:23]) via 8-bit am_sub (0 Pre-LUTs, 0 Post-LUTs) */
+		wire [7:0] exp_x_m1, exp_y_m1;
+		am_sub #(.W(8)) u_ex (.a(x2_p[gi_t][30:23]), .b(8'd1), .bi(1'b0), .d(exp_x_m1), .bo(xy_bo_unused[2 * gi_t + 0]));
+		am_sub #(.W(8)) u_ey (.a(y2_p[gi_t][30:23]), .b(8'd1), .bi(1'b0), .d(exp_y_m1), .bo(xy_bo_unused[2 * gi_t + 1]));
+
+		always @(posedge clk) begin
+			r_xc[gi_t] <= {x2_p[gi_t][31], exp_x_m1, x2_p[gi_t][22:0]};
+			r_yc[gi_t] <= {y2_p[gi_t][31], exp_y_m1, y2_p[gi_t][22:0]};
+		end
+	end
+	endgenerate
+
+	/* Pre-computed clamped Z per lane on b_done (0 CARRY4s on fl_data path) */
+	wire [3:0] z_gt_one_bo, z_gt_one_unused;
+	wire [123:0] z_sub_d_unused;
+	(* extract_reset = "no" *) reg [31:0] r_zcl [0:3];
+`ifdef MUT_R3_CLAMP
+	wire zclamp = 1'b1;
+`else
+`ifdef MUT_RX_DCLIP
+	wire zclamp = !ms4;
+`else
+	wire zclamp = !ms4 && !dclip;
+`endif
+`endif
+	generate
+	for (gi_t = 0; gi_t < 4; gi_t = gi_t + 1) begin : g_zcl_lane
+		wire [31:0] z_lane = oz[32 * gi_t +: 32];
+		/* ONE < z_lane <==> borrow of (ONE[30:0] - z_lane[30:0]) */
+		am_sub #(.W(31)) u_zgt1 (
+			.a(ONE[30:0]),
+			.b(z_lane[30:0]),
+			.bi(1'b0),
+			.d(z_sub_d_unused[31 * gi_t +: 31]),
+			.bo(z_gt_one_bo[gi_t])
+		);
+		assign z_gt_one_unused[gi_t] = 1'b0;
+		(* keep = "true" *) wire z_ef = &z_lane[30:23];
+		(* keep = "true" *) wire z_m0 = |z_lane[5:0];
+		(* keep = "true" *) wire z_m1 = |z_lane[11:6];
+		(* keep = "true" *) wire z_m2 = |z_lane[17:12];
+		(* keep = "true" *) wire z_m3 = |z_lane[22:18];
+		(* dont_touch = "true" *) reg r_z_zero_lo, r_z_zero_hi, r_z_gt1_lo, r_z_gt1_hi;
+		wire z_we_raw = (st == S_BARY) && b_done;
+		wire z_we_lo, z_we_hi;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_zwl (.I0(z_we_raw), .O(z_we_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_zwh (.I0(z_we_raw), .O(z_we_hi));
+`else
+		assign z_we_lo = z_we_raw;
+		assign z_we_hi = z_we_raw;
+`endif
+		always @(posedge clk) begin
+			r_z_zero_lo <= zclamp && (z_lane[31] || (z_ef && (z_m0 || z_m1 || z_m2 || z_m3)));
+			r_z_zero_hi <= zclamp && (z_lane[31] || (z_ef && (z_m0 || z_m1 || z_m2 || z_m3)));
+			r_z_gt1_lo  <= zclamp && z_gt_one_bo[gi_t];
+			r_z_gt1_hi  <= zclamp && z_gt_one_bo[gi_t];
+			if (z_we_lo)
+				r_zcl[gi_t][15:0]  <= r_z_zero_lo ? 16'd0 : (r_z_gt1_lo ? ONE[15:0]  : z_lane[15:0]);
+			if (z_we_hi)
+				r_zcl[gi_t][31:16] <= r_z_zero_hi ? 16'd0 : (r_z_gt1_hi ? ONE[31:16] : z_lane[31:16]);
+		end
+	end
+	endgenerate
 
 	/* The copy: reads (cv, cw) → writes the next cycle; then the map, then d_s. */
-	reg [1:0] cv;
-	reg [6:0] cw;
+	(* extract_reset = "no" *) reg [1:0] cv;
+	(* extract_reset = "no" *) reg [6:0] cw;
 	reg rd_done, rv_q, map_done;
-	reg [2:0] dsn;	/* d_s words written */
+	(* max_fanout = 16 *) reg [2:0] dsn;	/* d_s words written */
+	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_dsn_sel [0:1];
 	reg [1:0] rv_v;
 	reg [6:0] rv_w;
 	wire rd_now = st == S_COPY && !rd_done;
@@ -173,17 +336,29 @@ module atg_rx_frag (
 	wire [7:0] fc_carry_unused;
 	am_add #(.W(7)) u_pt_word (.a(cw), .b(7'd4), .ci(1'b0), .s(pt_word), .co(fc_carry_unused[0]));
 	assign pt_busy = st == S_COPY;
-	wire map_we = st == S_COPY && rd_done && !rv_q && !map_done;
-	wire ds_we = st == S_COPY && map_done && ms4 && dsn != 3'd4;
+	(* dont_touch = "true" *) wire map_we    = st == S_COPY && rd_done && !rv_q && !map_done;
+	(* dont_touch = "true" *) wire map_we_ad = st == S_COPY && rd_done && !rv_q && !map_done;
+	(* dont_touch = "true" *) wire map_we_lo = st == S_COPY && rd_done && !rv_q && !map_done;
+	(* dont_touch = "true" *) wire map_we_hi = st == S_COPY && rd_done && !rv_q && !map_done;
+	(* dont_touch = "true" *) wire ds_we     = st == S_COPY && map_done && ms4 && dsn != 3'd4;
+	(* dont_touch = "true" *) wire ds_we_ad  = st == S_COPY && map_done && ms4 && dsn != 3'd4;
+	(* dont_touch = "true" *) wire ds_we_lo  = st == S_COPY && map_done && ms4 && dsn != 3'd4;
+	(* dont_touch = "true" *) wire ds_we_hi  = st == S_COPY && map_done && ms4 && dsn != 3'd4;
 	assign fl_pw_we = rv_q || map_we || ds_we;
-	assign fl_pw_addr = map_we ? 12'hFFF : ds_we ? {10'h3FE, dsn[1:0]} :
+	assign fl_pw_addr = map_we_ad ? 12'hFFF : ds_we_ad ? {10'h3FE, dsn[1:0]} :
 		{1'b0, 3'd0, rv_v, rv_w[5:0]};
-	assign fl_pw_data = map_we ? 32'd0 : ds_we ? dsv[32 * dsn[1:0] +: 32] : pt_rdata;
+	wire [31:0] dsv_mux = {dsv[{r_dsn_sel[1], 1'b1, 4'd0} +: 16], dsv[{r_dsn_sel[0], 5'd0} +: 16]};
+	assign fl_pw_data[15:0]  = map_we_lo ? 16'd0 : ds_we_lo ? dsv_mux[15:0]  : pt_rdata[15:0];
+	assign fl_pw_data[31:16] = map_we_hi ? 16'd0 : ds_we_hi ? dsv_mux[31:16] : pt_rdata[31:16];
 	wire copy_end = map_done && (!ms4 || dsn == 3'd4);
 
-	/* The register writes: lane wl of the quad, register wr. */
-	reg [1:0] wl;
-	reg [3:0] wr;
+	/* The register writes: lane wl of the quad, register wr (pipelined 1 cycle for 0-LUT outputs) */
+	(* max_fanout = 16 *) reg [1:0] wl;
+	(* max_fanout = 16 *) reg [3:0] wr;
+	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_wl_s [0:15];
+	(* dont_touch = "true", extract_reset = "no" *) reg [3:0] r_wr_s [0:15];
+	(* dont_touch = "true", extract_reset = "no" *) reg [15:0] r_needc_s;
+
 	wire [3:0] nreg = cent ? 4'd10 : 4'd7;
 	/* the counters + 1 */
 	wire [3:0] n1, wr1, qi1;
@@ -197,40 +372,62 @@ module atg_rx_frag (
 	am_add #(.W(2)) u_cv1 (.a(cv), .b(2'd0), .ci(1'b1), .s(cv1), .co(fc_carry_unused[5]));
 	am_add #(.W(2)) u_wl1 (.a(wl), .b(2'd0), .ci(1'b1), .s(wl1), .co(fc_carry_unused[6]));
 	am_add #(.W(3)) u_dsn1 (.a(dsn), .b(3'd0), .ci(1'b1), .s(dsn1), .co(fc_carry_unused[7]));
-	/* the lane's x + 0.5, y + 0.5: (2 x + 1) as fp32, the exponent - 1 */
-	wire [15:0] xl, yl;
-	wire [31:0] x2, y2, xc, yc;
-	wire [3:0] xy_carry_unused;
-	am_add #(.W(16)) u_xl (.a(qx), .b(16'd0), .ci(wl[0]), .s(xl), .co(xy_carry_unused[0]));
-	am_add #(.W(16)) u_yl (.a(qy), .b(16'd0), .ci(wl[1]), .s(yl), .co(xy_carry_unused[1]));
-	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_x2 (.v({1'b0, xl[14:0], 1'b1}), .f(x2));
-	am_fp_fix2f #(.W(17), .F(0), .SIGNED(1)) u_y2 (.v({1'b0, yl[14:0], 1'b1}), .f(y2));
-	am_sub #(.W(32)) u_xc (.a(x2), .b(32'h00800000), .bi(1'b0), .d(xc), .bo(xy_carry_unused[2]));
-	am_sub #(.W(32)) u_yc (.a(y2), .b(32'h00800000), .bi(1'b0), .d(yc), .bo(xy_carry_unused[3]));
-	wire [31:0] zr = oz[32 * wl +: 32];
-`ifdef MUT_R3_CLAMP
-	wire zclamp = 1'b1;
-`else
-`ifdef MUT_RX_DCLIP
-	wire zclamp = !ms4;
-`else
-	wire zclamp = !ms4 && !dclip;
-`endif
-`endif
-	wire [31:0] zcl = !zclamp ? zr : zr[31] || (zr[30:23] == 8'hFF && zr[22:0] != 23'd0) ? 32'd0 :
-		zr > ONE ? ONE : zr;
-	wire [127:0] c0 = needc ? cb0 : ob0, c1 = needc ? cb1 : ob1, c2 = needc ? cb2 : ob2;
-	assign fl_we = st == S_WR;
-	assign fl_reg = {2'd0, wr};
-	assign fl_lane = {qi, wl};
-	assign fl_data = wr == 4'd0 ? ob0[32 * wl +: 32] : wr == 4'd1 ? ob1[32 * wl +: 32] :
-		wr == 4'd2 ? ob2[32 * wl +: 32] : wr == 4'd3 ? zcl : wr == 4'd4 ? xc :
-		wr == 4'd5 ? yc : wr == 4'd6 ? {28'd0, s4q[4 * wl +: 4]} :
-		wr == 4'd7 ? c0[32 * wl +: 32] : wr == 4'd8 ? c1[32 * wl +: 32] : c2[32 * wl +: 32];
+
+	/* Sliced fl_data mux (16 slices x 2 bits -> fanout of r_wl_s/r_wr_s <= 16!) and registered output */
+	wire [31:0] fl_data_comb;
+	generate
+	for (gi_t = 0; gi_t < 16; gi_t = gi_t + 1) begin : g_fld_slice
+		wire [1:0] wl_s = r_wl_s[gi_t];
+		wire [3:0] wr_s = r_wr_s[gi_t];
+		wire nc_s       = r_needc_s[gi_t];
+		wire [1:0] b0_s = ob0[{wl_s, gi_t[3:0], 1'b0} +: 2];
+		wire [1:0] b1_s = ob1[{wl_s, gi_t[3:0], 1'b0} +: 2];
+		wire [1:0] b2_s = ob2[{wl_s, gi_t[3:0], 1'b0} +: 2];
+		wire [1:0] c0_s = nc_s ? cb0[{wl_s, gi_t[3:0], 1'b0} +: 2] : b0_s;
+		wire [1:0] c1_s = nc_s ? cb1[{wl_s, gi_t[3:0], 1'b0} +: 2] : b1_s;
+		wire [1:0] c2_s = nc_s ? cb2[{wl_s, gi_t[3:0], 1'b0} +: 2] : b2_s;
+		wire [1:0] zc_s = r_zcl[wl_s][2 * gi_t +: 2];
+		wire [1:0] xc_s = r_xc[wl_s[0]][2 * gi_t +: 2];
+		wire [1:0] yc_s = r_yc[wl_s[1]][2 * gi_t +: 2];
+		wire [1:0] s4_s = (gi_t < 2) ? s4q[{wl_s, gi_t[0], 1'b0} +: 2] : 2'd0;
+
+		(* keep = "true" *) wire [1:0] m_03 = wr_s[1] ?
+			(wr_s[0] ? zc_s : b2_s) :
+			(wr_s[0] ? b1_s : b0_s);
+		(* keep = "true" *) wire [1:0] m_47 = wr_s[1] ?
+			(wr_s[0] ? c0_s : s4_s) :
+			(wr_s[0] ? yc_s : xc_s);
+		(* keep = "true" *) wire [1:0] m_89 = wr_s[0] ? c2_s : c1_s;
+		assign fl_data_comb[2 * gi_t +: 2] = wr_s[3] ? m_89 : (wr_s[2] ? m_47 : m_03);
+	end
+	endgenerate
+
+	reg [5:0] r_fl_reg;
+	reg [4:0] r_fl_lane;
+	(* extract_reset = "no" *) reg [31:0] r_fl_data;
+	always @(posedge clk) begin
+		if (rst_sync) begin
+			r_fl_we     <= 1'b0;
+			r_fl_we_int <= 1'b0;
+			r_fl_reg    <= 6'd0;
+			r_fl_lane   <= 5'd0;
+		end else begin
+			r_fl_we     <= (st == S_WR);
+			r_fl_we_int <= (st == S_WR);
+			r_fl_reg    <= {2'd0, wr};
+			r_fl_lane   <= {qi, wl};
+		end
+		r_fl_data <= fl_data_comb;
+	end
+
+	assign fl_we = r_fl_we;
+	assign fl_reg = r_fl_reg;
+	assign fl_lane = r_fl_lane;
+	assign fl_data = r_fl_data;
 
 	assign fl_req = st == S_ALLOC;
-	assign fl_go = st == S_GO;
-	assign sq_req = st == S_GO;
+	assign fl_go = (st == S_GO) && !r_fl_we_int;
+	assign sq_req = (st == S_GO) && !r_fl_we_int;
 	reg [31:0] qmask;
 	always @(*)
 		for (k = 0; k < 8; k = k + 1)
@@ -239,11 +436,69 @@ module atg_rx_frag (
 	assign fl_info = {15'd0, front, sq_seq, qbc};
 	assign busy = st != S_COL || n != 4'd0;
 
+	/* Next-cycle replicas for qi, wl, wr, needc, dsn */
+	wire [2:0] qi_nxt = (st == S_ALLOC && fl_gnt) ? 3'd0 :
+		((st == S_WR && wr1 == nreg && wl == 2'd3 && qi1 != n) ? qi1[2:0] : qi);
+	wire [1:0] wl_nxt = (st == S_BARY && b_done) ? 2'd0 :
+		((st == S_WR && wr1 == nreg) ? wl1 : wl);
+	wire [3:0] wr_nxt = (st == S_BARY && b_done) ? 4'd0 :
+		((st == S_WR) ? ((wr1 == nreg) ? 4'd0 : wr1) : wr);
+	wire [1:0] dsn_nxt_sel = (st == S_ALLOC && fl_gnt) ? 2'd0 :
+		(ds_we ? dsn1[1:0] : dsn[1:0]);
+
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		r_needc_s <= {16{needc}};
+		r_dsn_sel[0] <= dsn_nxt_sel;
+		r_dsn_sel[1] <= dsn_nxt_sel;
+		for (k = 0; k < 7; k = k + 1)
+			r_qi_rep[k] <= qi_nxt;
+		for (k = 0; k < 16; k = k + 1) begin
+			r_wl_s[k] <= wl_nxt;
+			r_wr_s[k] <= wr_nxt;
+		end
+	end
+
+	wire cb_we_root = (st == S_BARYC) && b_done;
+	wire [1:0] cb_we_mid;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_cbm0 (.I0(cb_we_root), .O(cb_we_mid[0]));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_cbm1 (.I0(cb_we_root), .O(cb_we_mid[1]));
+`else
+	assign cb_we_mid = {2{cb_we_root}};
+`endif
+	generate
+	for (gi_t = 0; gi_t < 8; gi_t = gi_t + 1) begin : g_cbdsv_slice
+		wire cb_we_raw = cb_we_mid[gi_t / 4];
+		wire ds_we_raw = (st == S_DZ) && b_done;
+		wire cb0_we_s, cb1_we_s, cb2_we_s, dsv_we_s;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_cb0 (.I0(cb_we_raw), .O(cb0_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_cb1 (.I0(cb_we_raw), .O(cb1_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_cb2 (.I0(cb_we_raw), .O(cb2_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_dsv (.I0(ds_we_raw), .O(dsv_we_s));
+`else
+		assign cb0_we_s = cb_we_raw;
+		assign cb1_we_s = cb_we_raw;
+		assign cb2_we_s = cb_we_raw;
+		assign dsv_we_s = ds_we_raw;
+`endif
+		always @(posedge clk) begin
+			if (cb0_we_s)
+				cb0[16 * gi_t +: 16] <= ob0[16 * gi_t +: 16];
+			if (cb1_we_s)
+				cb1[16 * gi_t +: 16] <= ob1[16 * gi_t +: 16];
+			if (cb2_we_s)
+				cb2[16 * gi_t +: 16] <= ob2[16 * gi_t +: 16];
+			if (dsv_we_s)
+				dsv[16 * gi_t +: 16] <= ods[16 * gi_t +: 16];
+		end
+	end
+	endgenerate
+
+	always @(posedge clk) begin
+		if (rst_sync) begin
 			st <= S_COL;
 			n <= 4'd0;
-			qbs <= 128'd0;
 			qcc <= 32'd0;
 			rv_q <= 1'b0;
 			bgo <= 1'b0;
@@ -262,9 +517,6 @@ module atg_rx_frag (
 						if (n != 4'd0)
 							st <= S_ALLOC;
 					end else begin
-						qbx[16 * n[2:0] +: 16] <= fq_xy[15:0];
-						qby[16 * n[2:0] +: 16] <= fq_xy[31:16];
-						qbs[16 * n[2:0] +: 16] <= fq_scov;
 						qcc[4 * n[2:0] +: 4] <= fq_ccov;
 						n <= n1;
 						if (n == 4'd7)
@@ -287,7 +539,6 @@ module atg_rx_frag (
 				end
 			S_DZ:
 				if (b_done) begin
-					dsv <= ods;
 					dz_done <= 1'b1;
 					st <= S_COPY;
 				end
@@ -312,9 +563,6 @@ module atg_rx_frag (
 			end
 			S_BARYC:
 				if (b_done) begin
-					cb0 <= ob0;
-					cb1 <= ob1;
-					cb2 <= ob2;
 					bgo <= 1'b1;
 					st <= S_BARY;
 				end
@@ -338,18 +586,19 @@ module atg_rx_frag (
 					end
 				end else
 					wr <= wr1;
-			default: begin	/* S_GO */
-				n <= 4'd0;
-				qbs <= 128'd0;
-				qcc <= 32'd0;
-				st <= S_COL;
+			default: begin	/* S_GO: wait 1 cycle for r_fl_we to drain, then pulse fl_go */
+				if (!r_fl_we_int) begin
+					n <= 4'd0;
+					qcc <= 32'd0;
+					st <= S_COL;
+				end
 			end
 			endcase
 		end
 	end
 
 	wire unused_ok = &{1'b0, rv_w[6], t_tri[767:764], t_tri[762:760], t_tri[351:320],
-		t_tri[287:0], b_busy, xl[15], yl[15]};
+		t_tri[287:0], b_busy, fc_carry_unused, xy_bo_unused, z_gt_one_unused, z_sub_d_unused};
 endmodule
 
 `default_nettype wire

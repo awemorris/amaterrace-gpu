@@ -119,6 +119,17 @@ module atg_rop_blend #(
 
 	wire [7:0] kcf_n;
 	atg_rop_f2u8 u_kcf (.f(st_wdata), .u(kcf_n));
+`ifdef SYNTH_KINTEX7
+	wire [31:0] st_wdata_bl;
+	genvar g_wd;
+	generate
+	for (g_wd = 0; g_wd < 32; g_wd = g_wd + 1) begin : g_wdata_buf
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdbl (.I0(st_wdata[g_wd]), .O(st_wdata_bl[g_wd]));
+	end
+	endgenerate
+`else
+	wire [31:0] st_wdata_bl = st_wdata;
+`endif
 	integer i;
 	always @(posedge clk)
 		if (!rst_n) begin
@@ -146,13 +157,13 @@ module atg_rop_blend #(
 			if (st_idx == GHCI_S_RT_FORMATS1)
 				fmts[63:32] <= st_wdata;
 			if (st_idx == GHCI_S_BLEND)
-				bls[0] <= st_wdata[26:0];
+				bls[0] <= st_wdata_bl[26:0];
 			if (st_idx >= GHCI_S_BLEND1 && st_idx < GHCI_S_BLEND1 + 9'd3)
-				bls[{1'b0, s_k}] <= st_wdata[26:0];
+				bls[{1'b0, s_k}] <= st_wdata_bl[26:0];
 			if (st_idx >= GHCI_S_BLEND4 && st_idx < GHCI_S_BLEND4 + 9'd4)
 				for (i = 0; i < 4; i = i + 1)
 					if (s_ext[1:0] == i[1:0])
-						bls[{1'b1, i[1:0]}] <= st_wdata[26:0];
+						bls[{1'b1, i[1:0]}] <= st_wdata_bl[26:0];
 			if (st_idx == GHCI_S_BLEND_CONST)
 				kc8 <= st_wdata;
 			if (st_idx >= GHCI_S_BLEND_CONST_R && st_idx < GHCI_S_BLEND_CONST_R + 9'd4)
@@ -198,6 +209,39 @@ module atg_rop_blend #(
 		end
 	wire [31:0] kc = kc_sel ? kcf : kc8;
 	/* the beat's attachment */
+`ifdef SYNTH_KINTEX7
+	wire [2:0] b_rt_bl0, b_rt_bl1, b_rt_bl2, b_rt_misc;
+	genvar g_brt;
+	generate
+	for (g_brt = 0; g_brt < 3; g_brt = g_brt + 1) begin : g_brt_buf
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_brt0 (.I0(b_rt[g_brt]), .O(b_rt_bl0[g_brt]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_brt1 (.I0(b_rt[g_brt]), .O(b_rt_bl1[g_brt]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_brt2 (.I0(b_rt[g_brt]), .O(b_rt_bl2[g_brt]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_brtm (.I0(b_rt[g_brt]), .O(b_rt_misc[g_brt]));
+	end
+	endgenerate
+	wire [7:0] fvk = fmts[8 * b_rt_misc +: 8];
+	wire [2:0] fmt_n = b_rt_misc == 3'd0 && fvk == 8'd0 ? (fmt0 == 2'd0 ? F_BGRA8 :
+		fmt0 == 2'd1 ? F_RGBA8 : F_565) : fcode(fvk);
+	wire [8:0] bl_s0, bl_s1, bl_s2;
+	genvar g_bs;
+	generate
+	for (g_bs = 0; g_bs < 9; g_bs = g_bs + 1) begin : g_bl_slice
+		assign bl_s0[g_bs] = bls[b_rt_bl0][g_bs];
+		assign bl_s1[g_bs] = bls[b_rt_bl1][9 + g_bs];
+		assign bl_s2[g_bs] = bls[b_rt_bl2][18 + g_bs];
+	end
+	endgenerate
+	wire [26:0] bl_n = {bl_s2, bl_s1, bl_s0};
+	wire [3:0] wm_n = wms[4 * b_rt_misc +: 4];
+`ifdef CFG_ROP_ENABLE_LOGICOP
+	wire lop_en_n = lop_en[b_rt_misc];
+	wire [3:0] lop_op_n = lop_op[b_rt_misc];
+`else
+	wire lop_en_n = 1'b0;
+	wire [3:0] lop_op_n = 4'd0;
+`endif
+`else
 	wire [7:0] fvk = fmts[8 * b_rt +: 8];
 	wire [2:0] fmt_n = b_rt == 3'd0 && fvk == 8'd0 ? (fmt0 == 2'd0 ? F_BGRA8 :
 		fmt0 == 2'd1 ? F_RGBA8 : F_565) : fcode(fvk);
@@ -209,6 +253,7 @@ module atg_rop_blend #(
 `else
 	wire lop_en_n = 1'b0;
 	wire [3:0] lop_op_n = 4'd0;
+`endif
 `endif
 
 	function [7:0] factor_nosat;
@@ -270,20 +315,22 @@ module atg_rop_blend #(
 	genvar gl, gc;
 
 	/* Stage 1: RGBA8 per lane, channel c of lane l at [32l + 8c]. */
+	(* max_fanout = 8 *) wire [511:0] b_src_buf = b_src;
 	wire [127:0] s1_n;
 	integer l;
 	generate
 	for (gl = 0; gl < 16; gl = gl + 1) begin : g_f2u8
-		atg_rop_f2u8 u_f2u8 (.f(b_src[128 * (gl / 4) + 32 * (gl % 4) +: 32]),
+		atg_rop_f2u8 u_f2u8 (.f(b_src_buf[128 * (gl / 4) + 32 * (gl % 4) +: 32]),
 			.u(s1_n[32 * (gl / 4) + 8 * (gl % 4) +: 8]));
 	end
 	endgenerate
 
 `ifdef CFG_ROP_DUAL_SOURCE
+	(* max_fanout = 8 *) wire [511:0] b_src1_buf = b_src1;
 	wire [127:0] s1_1_n;
 	generate
 	for (gl = 0; gl < 16; gl = gl + 1) begin : g_f2u8_1
-		atg_rop_f2u8 u_f2u8_1 (.f(b_src1[128 * (gl / 4) + 32 * (gl % 4) +: 32]),
+		atg_rop_f2u8 u_f2u8_1 (.f(b_src1_buf[128 * (gl / 4) + 32 * (gl % 4) +: 32]),
 			.u(s1_1_n[32 * (gl / 4) + 8 * (gl % 4) +: 8]));
 	end
 	endgenerate
@@ -292,12 +339,28 @@ module atg_rop_blend #(
 	wire unused_src1 = &{1'b0, b_src1, b_has_src1};
 `endif
 
+`ifdef SYNTH_KINTEX7
+	wire [2:0] fmt_n_l [0:3];
+	genvar g_fnl;
+	generate
+	for (g_fnl = 0; g_fnl < 4; g_fnl = g_fnl + 1) begin : g_fmt_n_buf
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fn0 (.I0(fmt_n[0]), .O(fmt_n_l[g_fnl][0]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fn1 (.I0(fmt_n[1]), .O(fmt_n_l[g_fnl][1]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fn2 (.I0(fmt_n[2]), .O(fmt_n_l[g_fnl][2]));
+	end
+	endgenerate
+`endif
+
 	reg [127:0] d1_n;
 	reg [31:0] dp;
 	always @(*) begin
 		for (l = 0; l < 4; l = l + 1) begin
 			dp = b_dst[32 * l +: 32];
+`ifdef SYNTH_KINTEX7
+			case (fmt_n_l[l])
+`else
 			case (fmt_n)
+`endif
 			F_BGRA8: d1_n[32 * l +: 32] = {dp[31:24], dp[7:0], dp[15:8], dp[23:16]};
 			F_RGBA8: d1_n[32 * l +: 32] = dp;
 			F_R8: d1_n[32 * l +: 32] = {8'd255, 16'd0, dp[7:0]};
@@ -311,22 +374,23 @@ module atg_rop_blend #(
 	end
 
 	reg v1;
-	reg [3:0] m1, wm1;
-	reg [2:0] fmt1;
-	reg [26:0] bl1;
-	reg [11:0] op1_vec;
-	reg [3:0] bl_en1_vec;
+	(* max_fanout = 8 *) reg [3:0] m1, wm1;
+	(* max_fanout = 8 *) reg [2:0] fmt1;
+	(* max_fanout = 8 *) reg [26:0] bl1;
+	(* max_fanout = 8 *) reg [11:0] op1_vec;
+	(* max_fanout = 8 *) reg [3:0] bl_en1_vec;
 `ifdef CFG_ROP_ENABLE_LOGICOP
 	reg lop_en1;
 	reg [3:0] lop_op1;
 `endif
-	reg [31:0] kc1;
+	(* max_fanout = 8 *) reg [31:0] kc1;
 	reg [127:0] s1, o1;
 	(* extract_reset = "no", extract_enable = "no", use_sync_set = "no", use_sync_reset = "no" *) reg [127:0] d1;
 `ifdef CFG_ROP_DUAL_SOURCE
 	reg [127:0] s1_1;
 	reg dual_src_en1;
 `endif
+
 	always @(posedge clk) begin
 		v1 <= rst_n && b_valid;
 		m1 <= b_mask;
@@ -349,13 +413,15 @@ module atg_rop_blend #(
 		d1 <= d1_n;
 	end
 
-	/* Stage 2: p = s x Fs, q = d x Fd, registered in DSP PREG (LAT=1). */
+	/* Stage 2: p = s x Fs, q = d x Fd, registered in DSP PREG (LAT=2). */
 	generate
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_l2
 		wire [7:0] sa_cur = s1[32 * gl + 24 +: 8];
 		wire [7:0] da_cur = d1[32 * gl + 24 +: 8];
-		(* max_fanout = 8 *) wire sat_cond = (sa_cur < ~da_cur);
-		wire [7:0] sat_a = sat_cond ? sa_cur : ~da_cur;
+		wire [7:0] da_inv = ~da_cur;
+		(* max_fanout = 8 *) wire sat_cond = (sa_cur[7:4] < da_inv[7:4]) ||
+			((sa_cur[7:4] == da_inv[7:4]) && (sa_cur[3:0] < da_inv[3:0]));
+		wire [7:0] sat_a = sat_cond ? sa_cur : da_inv;
 		for (gc = 0; gc < 4; gc = gc + 1) begin : g_c2
 			wire [7:0] sc = s1[32 * gl + 8 * gc +: 8];
 			wire [7:0] dc = d1[32 * gl + 8 * gc +: 8];
@@ -374,16 +440,43 @@ module atg_rop_blend #(
 			wire [7:0] fd_base = factor_nosat(f_d, sc, dc, kc1[8 * gc +: 8], sa, da, kc1[31:24], s1c, s1a);
 			wire is_sat_s = (gc < 3) && (f_s == 5'd14);
 			wire is_sat_d = (gc < 3) && (f_d == 5'd14);
+`ifdef SYNTH_KINTEX7
+			(* keep = "true", dont_touch = "true" *) wire is_sat_s_lo, is_sat_s_hi;
+			(* keep = "true", dont_touch = "true" *) wire is_sat_d_lo, is_sat_d_hi;
+			LUT1 #(.INIT(2'h2)) u_sat_s_lo (.I0(is_sat_s), .O(is_sat_s_lo));
+			LUT1 #(.INIT(2'h2)) u_sat_s_hi (.I0(is_sat_s), .O(is_sat_s_hi));
+			LUT1 #(.INIT(2'h2)) u_sat_d_lo (.I0(is_sat_d), .O(is_sat_d_lo));
+			LUT1 #(.INIT(2'h2)) u_sat_d_hi (.I0(is_sat_d), .O(is_sat_d_hi));
+			wire [7:0] fs = {is_sat_s_hi ? sat_a[7:4] : fs_base[7:4], is_sat_s_lo ? sat_a[3:0] : fs_base[3:0]};
+			wire [7:0] fd = {is_sat_d_hi ? sat_a[7:4] : fd_base[7:4], is_sat_d_lo ? sat_a[3:0] : fd_base[3:0]};
+`else
 			wire [7:0] fs = is_sat_s ? sat_a : fs_base;
 			wire [7:0] fd = is_sat_d ? sat_a : fd_base;
+`endif
 			wire [15:0] pp2, qq2;
-			am_mul #(.AW(8), .BW(8), .LAT(1)) u_p (.clk(clk), .en(1'b1), .a(sc), .b(fs),
+			am_mul #(.AW(8), .BW(8), .LAT(2)) u_p (.clk(clk), .en(1'b1), .a(sc), .b(fs),
 				.p(pp2));
-			am_mul #(.AW(8), .BW(8), .LAT(1)) u_q (.clk(clk), .en(1'b1), .a(dc), .b(fd),
+			am_mul #(.AW(8), .BW(8), .LAT(2)) u_q (.clk(clk), .en(1'b1), .a(dc), .b(fd),
 				.p(qq2));
 		end
 	end
 	endgenerate
+
+	/* Intermediate pipeline registers (LAT=2 matching) */
+	reg v1_m;
+	reg [127:0] s1_m, d1_m, o1_m;
+	reg [3:0] wm1_m;
+	reg [2:0] fmt1_m;
+	reg [3:0] m1_m;
+	reg [11:0] op1_vec_m;
+	reg [3:0] bl_en1_vec_m;
+`ifdef CFG_ROP_ENABLE_LOGICOP
+	reg lop_en1_m;
+	reg [3:0] lop_op1_m;
+`endif
+`ifdef CFG_ROP_DUAL_SOURCE
+	reg dual_src_en1_m;
+`endif
 
 	reg v2;
 	reg [127:0] s2, d2, o2;
@@ -405,30 +498,47 @@ module atg_rop_blend #(
 `endif
 	integer il, ic;
 	always @(posedge clk) begin
-		v2 <= rst_n && v1;
-		s2 <= s1;
-		d2 <= d1;
-		o2 <= o1;
+		v1_m <= rst_n && v1;
+		s1_m <= s1;
+		d1_m <= d1;
+		o1_m <= o1;
+		wm1_m <= wm1;
+		fmt1_m <= fmt1;
+		m1_m <= m1;
+		op1_vec_m <= op1_vec;
+		bl_en1_vec_m <= bl_en1_vec;
+`ifdef CFG_ROP_ENABLE_LOGICOP
+		lop_en1_m <= lop_en1;
+		lop_op1_m <= lop_op1;
+`endif
+`ifdef CFG_ROP_DUAL_SOURCE
+		dual_src_en1_m <= rst_n && dual_src_en1;
+`endif
+
+		v2 <= rst_n && v1_m;
+		s2 <= s1_m;
+		d2 <= d1_m;
+		o2 <= o1_m;
 		for (il = 0; il < 4; il = il + 1) begin
-			wm2_arr[il] <= wm1;
-			fmt2_arr[il] <= fmt1;
-			m2_arr[il] <= m1;
+			wm2_arr[il] <= wm1_m;
+			fmt2_arr[il] <= fmt1_m;
+			m2_arr[il] <= m1_m;
 			for (ic = 0; ic < 4; ic = ic + 1) begin
-				op2[il][ic] <= op1_vec[3 * ic +: 3];
-				op_sub2[il][ic] <= (op1_vec[3 * ic +: 3] == 3'd1) || (op1_vec[3 * ic +: 3] == 3'd2);
-				op_rsub2_a[il][ic] <= (op1_vec[3 * ic +: 3] == 3'd2);
-				op_rsub2_b[il][ic] <= (op1_vec[3 * ic +: 3] == 3'd2);
-				op_dq2[il][ic] <= (op1_vec[3 * ic +: 3] != 3'd1) && (op1_vec[3 * ic +: 3] != 3'd2)
-				               && (op1_vec[3 * ic +: 3] != 3'd3) && (op1_vec[3 * ic +: 3] != 3'd4);
-				bl_en2[il][ic] <= bl_en1_vec[ic];
+				op2[il][ic] <= op1_vec_m[3 * ic +: 3];
+				op_sub2[il][ic] <= (op1_vec_m[3 * ic +: 3] == 3'd1) || (op1_vec_m[3 * ic +: 3] == 3'd2);
+				op_rsub2_a[il][ic] <= (op1_vec_m[3 * ic +: 3] == 3'd2);
+				op_rsub2_b[il][ic] <= (op1_vec_m[3 * ic +: 3] == 3'd2);
+				op_dq2[il][ic] <= (op1_vec_m[3 * ic +: 3] != 3'd1) && (op1_vec_m[3 * ic +: 3] != 3'd2)
+				               && (op1_vec_m[3 * ic +: 3] != 3'd3) && (op1_vec_m[3 * ic +: 3] != 3'd4);
+				bl_en2[il][ic] <= bl_en1_vec_m[ic];
 			end
 		end
 `ifdef CFG_ROP_ENABLE_LOGICOP
-		lop_en2 <= lop_en1;
-		lop_op2 <= lop_op1;
+		lop_en2 <= lop_en1_m;
+		lop_op2 <= lop_op1_m;
 `endif
 `ifdef CFG_ROP_DUAL_SOURCE
-		dual_src_en2 <= rst_n && dual_src_en1;
+		dual_src_en2 <= rst_n && dual_src_en1_m;
 `endif
 	end
 
@@ -445,21 +555,21 @@ module atg_rop_blend #(
 			wire bl_en = bl_en2[gl][gc];
 			wire [7:0] sv = s2[32 * gl + 8 * gc +: 8];
 			wire [7:0] dv = d2[32 * gl + 8 * gc +: 8];
-			wire [15:0] pp = g_l2[gl].g_c2[gc].pp2;
-			wire [15:0] qq = g_l2[gl].g_c2[gc].qq2;
+			(* max_fanout = 8 *) wire [15:0] pp = g_l2[gl].g_c2[gc].pp2;
+			(* max_fanout = 8 *) wire [15:0] qq = g_l2[gl].g_c2[gc].qq2;
 
 			wire op_sub = op_sub2[gl][gc];
 			wire is_rsub_a = op_rsub2_a[gl][gc];
 			wire is_rsub_b = op_rsub2_b[gl][gc];
 			wire op_dq = op_dq2[gl][gc];
-			wire [15:0] op_a = is_rsub_a ? qq : pp;
-			wire [15:0] op_b = is_rsub_b ? pp : qq;
+			(* max_fanout = 8 *) wire [15:0] op_a = is_rsub_a ? qq : pp;
+			(* max_fanout = 8 *) wire [15:0] op_b = is_rsub_b ? pp : qq;
 			wire [15:0] pq;
 			wire pq_co;
 			am_addsub #(.W(16)) u_pq (.a(op_a), .b(op_b), .sub(op_sub), .s(pq), .co(pq_co));
 
 			wire [8:0] dq;
-			wire [17:0] x_dq = {1'b0, (op_sub ? 1'b0 : pq_co), pq};
+			(* max_fanout = 8 *) wire [17:0] x_dq = {1'b0, (op_sub ? 1'b0 : pq_co), pq};
 			atg_rop_div255 u_dq (.x(x_dq), .q(dq));
 
 			reg [7:0] r8_bp;
@@ -485,50 +595,63 @@ module atg_rop_blend #(
 			wire use_dq = wm2[gc] && bl_en && (op_sub ? pq_co : op_dq);
 `endif
 			wire [7:0] dq_sat = {8{dq[8]}} | dq[7:0];
-
-			wire [4:0] t5_rom = rom_u5[dq[7:0]];
-			wire [5:0] t6_rom = rom_u6[dq[7:0]];
-			wire [4:0] t5_dq = {5{dq[8]}} | t5_rom;
-			wire [5:0] t6_dq = {6{dq[8]}} | t6_rom;
-
-			wire [4:0] t5_bp = rom_u5[r8_bp];
-			wire [5:0] t6_bp = rom_u6[r8_bp];
+			wire [7:0] ch_out = use_dq ? dq_sat : r8_bp;
 		end
-		wire [3:0] use_dq_ch = {g_c3[3].use_dq, g_c3[2].use_dq, g_c3[1].use_dq, g_c3[0].use_dq};
 		wire [31:0] o2_lane = o2[32 * gl +: 32];
 
 		/* Per-channel blended results (8-bit) */
-		wire [7:0] ch0 = use_dq_ch[0] ? g_c3[0].dq_sat : g_c3[0].r8_bp;
-		wire [7:0] ch1 = use_dq_ch[1] ? g_c3[1].dq_sat : g_c3[1].r8_bp;
-		wire [7:0] ch2 = use_dq_ch[2] ? g_c3[2].dq_sat : g_c3[2].r8_bp;
-		wire [7:0] ch3 = use_dq_ch[3] ? g_c3[3].dq_sat : g_c3[3].r8_bp;
+		wire [7:0] ch0 = g_c3[0].ch_out;
+		wire [7:0] ch1 = g_c3[1].ch_out;
+		wire [7:0] ch2 = g_c3[2].ch_out;
+		wire [7:0] ch3 = g_c3[3].ch_out;
 
 		/* 16-bit format converted components */
-		wire [4:0] r5 = use_dq_ch[0] ? g_c3[0].t5_dq : g_c3[0].t5_bp;
-		wire [5:0] g6 = use_dq_ch[1] ? g_c3[1].t6_dq : g_c3[1].t6_bp;
-		wire [4:0] g5 = use_dq_ch[1] ? g_c3[1].t5_dq : g_c3[1].t5_bp;
-		wire [4:0] b5 = use_dq_ch[2] ? g_c3[2].t5_dq : g_c3[2].t5_bp;
-		wire a1 = use_dq_ch[3] ? g_c3[3].dq_sat[7] : g_c3[3].r8_bp[7];
+		wire [4:0] r5 = rom_u5[ch0];
+		wire [5:0] g6 = rom_u6[ch1];
+		wire [4:0] g5 = rom_u5[ch1];
+		wire [4:0] b5 = rom_u5[ch2];
+		wire a1 = ch3[7];
 
-		reg [31:0] px_out;
+		(* max_fanout = 8 *) wire [2:0] fmt2_lo = fmt2;
+		(* max_fanout = 8 *) wire [2:0] fmt2_hi = fmt2;
+		(* max_fanout = 8 *) wire m2_lo = m2;
+		(* max_fanout = 8 *) wire m2_hi = m2;
+
+		reg [15:0] px_out_lo;
 		always @(*) begin
-			case (fmt2)
-			F_BGRA8: px_out = {ch3, ch0, ch1, ch2};
-			F_RGBA8: px_out = {ch3, ch2, ch1, ch0};
-			F_R8:    px_out = {o2_lane[31:8], ch0};
-			F_RG8:   px_out = {o2_lane[31:16], ch1, ch0};
-			F_565:   px_out = {o2_lane[31:16], r5, g6, b5};
-			F_1555:  px_out = {o2_lane[31:16], a1, r5, g5, b5};
-			default: px_out = o2_lane;
+			case (fmt2_lo)
+			F_BGRA8: px_out_lo = {ch1, ch2};
+			F_RGBA8: px_out_lo = {ch1, ch0};
+			F_R8:    px_out_lo = {o2_lane[15:8], ch0};
+			F_RG8:   px_out_lo = {ch1, ch0};
+			F_565:   px_out_lo = {r5, g6, b5};
+			F_1555:  px_out_lo = {a1, r5, g5, b5};
+			default: px_out_lo = o2_lane[15:0];
 			endcase
 		end
 
-		assign pix_n[32 * gl +: 32] = m2 ? px_out : o2_lane;
+		reg [15:0] px_out_hi;
+		always @(*) begin
+			case (fmt2_hi)
+			F_BGRA8: px_out_hi = {ch3, ch0};
+			F_RGBA8: px_out_hi = {ch3, ch2};
+			F_R8:    px_out_hi = o2_lane[31:16];
+			F_RG8:   px_out_hi = o2_lane[31:16];
+			F_565:   px_out_hi = o2_lane[31:16];
+			F_1555:  px_out_hi = o2_lane[31:16];
+			default: px_out_hi = o2_lane[31:16];
+			endcase
+		end
+
+		assign pix_n[32 * gl +: 16]      = m2_lo ? px_out_lo : o2_lane[15:0];
+		assign pix_n[32 * gl + 16 +: 16] = m2_hi ? px_out_hi : o2_lane[31:16];
 	end
 	endgenerate
 	always @(posedge clk) begin
-		b_rvalid <= rst_n && v2;
-		b_pix <= pix_n;
+		b_rvalid <= rst_n && v1_m;
+	end
+	always @(*) begin
+		b_pix = pix_n;
 	end
 
 `ifdef CFG_ROP_DUAL_SOURCE

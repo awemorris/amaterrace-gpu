@@ -12,6 +12,11 @@ from pathlib import Path
 # Add tools to sys.path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+try:
+    import py_limit
+    py_limit.limit_concurrency(3)
+except ImportError:
+    pass
 import parse_synth_result
 
 MODULE_TESTS = {

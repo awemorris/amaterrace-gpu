@@ -55,7 +55,7 @@ module atg_rop_ms_tbc #(
 	reg [3:0] ex_mask = 0, dx_mask = 0;
 	reg [511:0] ex_color = 0;
 	reg [127:0] ex_depth = 0, dx_depth = 0;
-	reg [153:0] ex_aux = 0;
+	reg [154:0] ex_aux = 0;
 	wire busy, ex_ready, dx_ready;
 	wire [15:0] ex_next;
 	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
@@ -67,7 +67,7 @@ module atg_rop_ms_tbc #(
 	atg_rop #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.busy(busy), .ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
-		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
+		.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(512'd0), .ex_has_src1(1'b0), .ex_depth(ex_depth), .ex_last(ex_last),
 		.ex_next(ex_next), .ex_aux(ex_aux),
 		.dx_valid(dx_valid), .dx_ready(dx_ready), .dx_seq(dx_seq), .dx_xy(dx_xy),
 		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),

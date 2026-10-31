@@ -55,26 +55,317 @@ module atg_rx_setup (
 	 * CULL 0x058, RAST_MODE 0x05A, DEPTH_BIAS_* 0x060-0x062, LINE_WIDTH 0x063,
 	 * POINT_SIZE 0x064, VIEWPORT_IDX 0x065, RT_SIZE 0x073.
 	 * VIEWPORT words: 0 x_scale, 1 y_scale, 2 x_offset, 3 y_offset, 4 z_scale, 5 z_offset. */
-	reg [31:0] vp_array [0:15][0:5];
-	reg [31:0] smin_array [0:15];
-	reg [31:0] smax_array [0:15];
+	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] vp_array_lo [0:15][0:5];
+	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] vp_array_hi [0:15][0:5];
+	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] smin_array_lo [0:15];
+	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] smin_array_hi [0:15];
+	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] smax_array_lo [0:15];
+	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] smax_array_hi [0:15];
 	(* max_fanout = 16 *) reg [3:0] vp_idx;
 	reg [15:0] line_width;
 	reg [15:0] point_size;
-	reg [31:0] rts, b_const, b_slope, b_clamp;
+	reg [15:0] rts_lo, rts_hi;
+	reg [15:0] b_const_lo, b_const_hi;
+	reg [15:0] b_slope_lo, b_slope_hi;
+	reg [15:0] b_clamp_lo, b_clamp_hi;
+	wire [31:0] rts     = {rts_hi, rts_lo};
+	wire [31:0] b_const = {b_const_hi, b_const_lo};
+	wire [31:0] b_slope = {b_slope_hi, b_slope_lo};
+	wire [31:0] b_clamp = {b_clamp_hi, b_clamp_lo};
 	reg [2:0] cull;
 	reg [5:0] rm;	/* RAST_MODE[5:0] */
 
+	wire [31:0] cur_smin = {smin_array_hi[vp_idx_rs_smin_b7][15:12], smin_array_hi[vp_idx_rs_smin_b6][11:8],
+	                        smin_array_hi[vp_idx_rs_smin_b5][7:4],   smin_array_hi[vp_idx_rs_smin_b4][3:0],
+	                        smin_array_lo[vp_idx_rs_smin_b3][15:12], smin_array_lo[vp_idx_rs_smin_b2][11:8],
+	                        smin_array_lo[vp_idx_rs_smin_b1][7:4],   smin_array_lo[vp_idx_rs_smin_b0][3:0]};
+	wire [31:0] cur_smax = {smax_array_hi[vp_idx_rs_smx_b7][15:12],  smax_array_hi[vp_idx_rs_smx_b6][11:8],
+	                        smax_array_hi[vp_idx_rs_smx_b5][7:4],   smax_array_hi[vp_idx_rs_smx_b4][3:0],
+	                        smax_array_lo[vp_idx_rs_smx_b3][15:12],  smax_array_lo[vp_idx_rs_smx_b2][11:8],
+	                        smax_array_lo[vp_idx_rs_smx_b1][7:4],   smax_array_lo[vp_idx_rs_smx_b0][3:0]};
+
+`ifdef SYNTH_KINTEX7
+	wire rst_setup_high;
+	LUT1 #(.INIT(2'b01)) u_rst_setup (.I0(rst_n), .O(rst_setup_high));
+
+	wire [15:0] vp_w_lo [0:5];
+	wire [15:0] vp_w_hi [0:5];
+	wire [15:0] smin_lo_buf, smin_hi_buf;
+	wire [15:0] smax_lo_buf, smax_hi_buf;
+	wire [15:0] misc_lo_buf, misc_hi_buf;
+
+	wire [2:0] st_idx_vp_lo, st_idx_vp_hi;
+	genvar gi;
+	generate
+		for (gi = 0; gi < 3; gi = gi + 1) begin : g_idx_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_id_vpl (.I0(st_idx[gi]), .O(st_idx_vp_lo[gi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_id_vph (.I0(st_idx[gi]), .O(st_idx_vp_hi[gi]));
+		end
+	endgenerate
+
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire st_we_cfg_vp, st_we_cfg_lw, st_we_cfg_ps, st_we_cfg1, st_we_vp;
+	LUT1 #(.INIT(2'b10)) u_we_cfg_vp (.I0(st_we), .O(st_we_cfg_vp));
+	LUT1 #(.INIT(2'b10)) u_we_cfg_lw (.I0(st_we), .O(st_we_cfg_lw));
+	LUT1 #(.INIT(2'b10)) u_we_cfg_ps (.I0(st_we), .O(st_we_cfg_ps));
+	LUT1 #(.INIT(2'b10)) u_we_cfg1   (.I0(st_we), .O(st_we_cfg1));
+	LUT1 #(.INIT(2'b10)) u_we_vpb    (.I0(st_we), .O(st_we_vp));
+
+	wire we_vp = st_we_vp && (st_idx >= GHCI_S_VIEWPORT && st_idx <= GHCI_S_VIEWPORT + 9'd5);
+	wire we_vp_lo, we_vp_hi;
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we_vplo (.I0(we_vp), .O(we_vp_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we_vphi (.I0(we_vp), .O(we_vp_hi));
+
+	wire [5:0] we_vp_w_lo, we_vp_w_hi;
+	genvar gvw;
+	generate
+		for (gvw = 0; gvw < 6; gvw = gvw + 1) begin : g_vp_dec
+			assign we_vp_w_lo[gvw] = we_vp_lo && (st_idx_vp_lo == gvw[2:0]);
+			assign we_vp_w_hi[gvw] = we_vp_hi && (st_idx_vp_hi == gvw[2:0]);
+		end
+	endgenerate
+
+	wire we_smin = st_we_vp && (st_idx == GHCI_S_SCISSOR_MIN);
+	wire we_smin_lo, we_smin_hi;
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we_sminlo (.I0(we_smin), .O(we_smin_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we_sminhi (.I0(we_smin), .O(we_smin_hi));
+
+	wire we_smax = st_we_vp && (st_idx == GHCI_S_SCISSOR_MAX);
+	wire we_smax_lo, we_smax_hi;
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we_smaxlo (.I0(we_smax), .O(we_smax_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we_smaxhi (.I0(we_smax), .O(we_smax_hi));
+
+	wire we_bias = st_we_vp && (st_idx == GHCI_S_DEPTH_BIAS_CONST || st_idx == GHCI_S_DEPTH_BIAS_SLOPE || st_idx == GHCI_S_DEPTH_BIAS_CLAMP || st_idx == GHCI_S_RT_SIZE);
+	wire we_bias_lo, we_bias_hi;
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we_biaslo (.I0(we_bias), .O(we_bias_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we_biashi (.I0(we_bias), .O(we_bias_hi));
+`else
+	wire we_vp = st_we && (st_idx >= GHCI_S_VIEWPORT && st_idx <= GHCI_S_VIEWPORT + 9'd5);
+	wire we_vp_lo, we_vp_hi;
+	assign we_vp_lo = we_vp;
+	assign we_vp_hi = we_vp;
+	wire [5:0] we_vp_w_lo = {6{we_vp}};
+	wire [5:0] we_vp_w_hi = {6{we_vp}};
+	wire we_smin = st_we && (st_idx == GHCI_S_SCISSOR_MIN);
+	wire we_smin_lo = we_smin;
+	wire we_smin_hi = we_smin;
+	wire we_smax = st_we && (st_idx == GHCI_S_SCISSOR_MAX);
+	wire we_smax_lo = we_smax;
+	wire we_smax_hi = we_smax;
+	wire we_bias = st_we && (st_idx == GHCI_S_DEPTH_BIAS_CONST || st_idx == GHCI_S_DEPTH_BIAS_SLOPE || st_idx == GHCI_S_DEPTH_BIAS_CLAMP || st_idx == GHCI_S_RT_SIZE);
+	wire we_bias_lo = we_bias;
+	wire we_bias_hi = we_bias;
+`endif
+
+	wire [31:0] st_wdata_vp_b, st_wdata_sc_b, st_wdata_fpu_lw, st_wdata_fpu_ps, st_wdata_cfg_reg;
+	genvar gwb;
+	generate
+		for (gwb = 0; gwb < 32; gwb = gwb + 1) begin : g_st_wdata_split
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wdata_vp  (.I0(st_wdata[gwb]), .O(st_wdata_vp_b[gwb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wdata_sc  (.I0(st_wdata[gwb]), .O(st_wdata_sc_b[gwb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wdata_lw  (.I0(st_wdata[gwb]), .O(st_wdata_fpu_lw[gwb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wdata_ps  (.I0(st_wdata[gwb]), .O(st_wdata_fpu_ps[gwb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wdata_reg (.I0(st_wdata[gwb]), .O(st_wdata_cfg_reg[gwb]));
+		end
+	endgenerate
+
+	genvar gwd;
+	generate
+		for (gwd = 0; gwd < 16; gwd = gwd + 1) begin : g_wd_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wd_smn_l (.I0(st_wdata_sc_b[gwd]),      .O(smin_lo_buf[gwd]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wd_smn_h (.I0(st_wdata_sc_b[16 + gwd]), .O(smin_hi_buf[gwd]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wd_smx_l (.I0(st_wdata_sc_b[gwd]),      .O(smax_lo_buf[gwd]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wd_smx_h (.I0(st_wdata_sc_b[16 + gwd]), .O(smax_hi_buf[gwd]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wd_msc_l (.I0(st_wdata_sc_b[gwd]),      .O(misc_lo_buf[gwd]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wd_msc_h (.I0(st_wdata_sc_b[16 + gwd]), .O(misc_hi_buf[gwd]));
+			for (gvw = 0; gvw < 6; gvw = gvw + 1) begin : g_vp_wd
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wd_vp_l (.I0(st_wdata_vp_b[gwd]),      .O(vp_w_lo[gvw][gwd]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wd_vp_h (.I0(st_wdata_vp_b[16 + gwd]), .O(vp_w_hi[gvw][gwd]));
+			end
+		end
+	endgenerate
+
+	wire [3:0] vp_idx_w_lo [0:5];
+	wire [3:0] vp_idx_w_hi [0:5];
+	wire [3:0] vp_idx_ws_smin_l, vp_idx_ws_smin_h;
+	wire [3:0] vp_idx_ws_smx_l, vp_idx_ws_smx_h;
+	wire [3:0] vp_idx_r_lo_b0 [0:5], vp_idx_r_lo_b1 [0:5], vp_idx_r_lo_b2 [0:5], vp_idx_r_lo_b3 [0:5];
+	wire [3:0] vp_idx_r_hi_b0 [0:5], vp_idx_r_hi_b1 [0:5], vp_idx_r_hi_b2 [0:5], vp_idx_r_hi_b3 [0:5];
+	wire [3:0] vp_idx_rs_smin_b0, vp_idx_rs_smin_b1, vp_idx_rs_smin_b2, vp_idx_rs_smin_b3;
+	wire [3:0] vp_idx_rs_smin_b4, vp_idx_rs_smin_b5, vp_idx_rs_smin_b6, vp_idx_rs_smin_b7;
+	wire [3:0] vp_idx_rs_smx_b0,  vp_idx_rs_smx_b1,  vp_idx_rs_smx_b2,  vp_idx_rs_smx_b3;
+	wire [3:0] vp_idx_rs_smx_b4,  vp_idx_rs_smx_b5,  vp_idx_rs_smx_b6,  vp_idx_rs_smx_b7;
+
+	genvar gvi;
+	generate
+		for (gvi = 0; gvi < 4; gvi = gvi + 1) begin : g_vpi_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_ws_smnl (.I0(vp_idx[gvi]), .O(vp_idx_ws_smin_l[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_ws_smnh (.I0(vp_idx[gvi]), .O(vp_idx_ws_smin_h[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_ws_smxl (.I0(vp_idx[gvi]), .O(vp_idx_ws_smx_l[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_ws_smxh (.I0(vp_idx[gvi]), .O(vp_idx_ws_smx_h[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smn0 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smin_b0[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smn1 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smin_b1[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smn2 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smin_b2[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smn3 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smin_b3[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smn4 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smin_b4[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smn5 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smin_b5[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smn6 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smin_b6[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smn7 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smin_b7[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smx0 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smx_b0[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smx1 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smx_b1[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smx2 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smx_b2[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smx3 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smx_b3[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smx4 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smx_b4[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smx5 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smx_b5[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smx6 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smx_b6[gvi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rs_smx7 (.I0(vp_idx[gvi]), .O(vp_idx_rs_smx_b7[gvi]));
+			for (gvw = 0; gvw < 6; gvw = gvw + 1) begin : g_vpi_wr
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_wl (.I0(vp_idx[gvi]), .O(vp_idx_w_lo[gvw][gvi]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_wh (.I0(vp_idx[gvi]), .O(vp_idx_w_hi[gvw][gvi]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rl0 (.I0(vp_idx[gvi]), .O(vp_idx_r_lo_b0[gvw][gvi]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rl1 (.I0(vp_idx[gvi]), .O(vp_idx_r_lo_b1[gvw][gvi]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rl2 (.I0(vp_idx[gvi]), .O(vp_idx_r_lo_b2[gvw][gvi]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rl3 (.I0(vp_idx[gvi]), .O(vp_idx_r_lo_b3[gvw][gvi]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rh0 (.I0(vp_idx[gvi]), .O(vp_idx_r_hi_b0[gvw][gvi]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rh1 (.I0(vp_idx[gvi]), .O(vp_idx_r_hi_b1[gvw][gvi]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rh2 (.I0(vp_idx[gvi]), .O(vp_idx_r_hi_b2[gvw][gvi]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_vpi_rh3 (.I0(vp_idx[gvi]), .O(vp_idx_r_hi_b3[gvw][gvi]));
+			end
+		end
+	endgenerate
+`else
+	wire rst_setup_high = !rst_n;
+	wire [31:0] st_wdata_vp_b = st_wdata;
+	wire [31:0] st_wdata_sc_b = st_wdata;
+	wire [31:0] st_wdata_fpu_lw = st_wdata;
+	wire [31:0] st_wdata_fpu_ps = st_wdata;
+	wire [31:0] st_wdata_cfg_reg = st_wdata;
+	wire [15:0] vp_w_lo [0:5];
+	wire [15:0] vp_w_hi [0:5];
+	wire [15:0] smin_lo_buf = st_wdata[15:0];
+	wire [15:0] smin_hi_buf = st_wdata[31:16];
+	wire [15:0] smax_lo_buf = st_wdata[15:0];
+	wire [15:0] smax_hi_buf = st_wdata[31:16];
+	wire [15:0] misc_lo_buf = st_wdata[15:0];
+	wire [15:0] misc_hi_buf = st_wdata[31:16];
+	wire [2:0] st_idx_vp_lo = st_idx[2:0];
+	wire [2:0] st_idx_vp_hi = st_idx[2:0];
+	wire we_vp = st_we && (st_idx >= GHCI_S_VIEWPORT && st_idx <= GHCI_S_VIEWPORT + 9'd5);
+	wire we_vp_lo = we_vp;
+	wire we_vp_hi = we_vp;
+	wire [5:0] we_vp_w_lo, we_vp_w_hi;
+	genvar gvw;
+	generate
+		for (gvw = 0; gvw < 6; gvw = gvw + 1) begin : g_vp_dec_sim
+			assign we_vp_w_lo[gvw] = we_vp_lo && (st_idx_vp_lo == gvw[2:0]);
+			assign we_vp_w_hi[gvw] = we_vp_hi && (st_idx_vp_hi == gvw[2:0]);
+			assign vp_w_lo[gvw] = st_wdata[15:0];
+			assign vp_w_hi[gvw] = st_wdata[31:16];
+		end
+	endgenerate
+	wire we_smin_lo = st_we && (st_idx == GHCI_S_SCISSOR_MIN);
+	wire we_smin_hi = we_smin_lo;
+	wire we_smax_lo = st_we && (st_idx == GHCI_S_SCISSOR_MAX);
+	wire we_smax_hi = we_smax_lo;
+	wire we_bias_lo = st_we && (st_idx == GHCI_S_DEPTH_BIAS_CONST || st_idx == GHCI_S_DEPTH_BIAS_SLOPE || st_idx == GHCI_S_DEPTH_BIAS_CLAMP || st_idx == GHCI_S_RT_SIZE);
+	wire we_bias_hi = we_bias_lo;
+	wire [3:0] vp_idx_w_lo [0:5];
+	wire [3:0] vp_idx_w_hi [0:5];
+	wire [3:0] vp_idx_ws_smin_l = vp_idx;
+	wire [3:0] vp_idx_ws_smin_h = vp_idx;
+	wire [3:0] vp_idx_ws_smx_l  = vp_idx;
+	wire [3:0] vp_idx_ws_smx_h  = vp_idx;
+	wire [3:0] vp_idx_rs_smin_b0 = vp_idx;
+	wire [3:0] vp_idx_rs_smin_b1 = vp_idx;
+	wire [3:0] vp_idx_rs_smin_b2 = vp_idx;
+	wire [3:0] vp_idx_rs_smin_b3 = vp_idx;
+	wire [3:0] vp_idx_rs_smin_b4 = vp_idx;
+	wire [3:0] vp_idx_rs_smin_b5 = vp_idx;
+	wire [3:0] vp_idx_rs_smin_b6 = vp_idx;
+	wire [3:0] vp_idx_rs_smin_b7 = vp_idx;
+	wire [3:0] vp_idx_rs_smx_b0  = vp_idx;
+	wire [3:0] vp_idx_rs_smx_b1  = vp_idx;
+	wire [3:0] vp_idx_rs_smx_b2  = vp_idx;
+	wire [3:0] vp_idx_rs_smx_b3  = vp_idx;
+	wire [3:0] vp_idx_rs_smx_b4  = vp_idx;
+	wire [3:0] vp_idx_rs_smx_b5  = vp_idx;
+	wire [3:0] vp_idx_rs_smx_b6  = vp_idx;
+	wire [3:0] vp_idx_rs_smx_b7  = vp_idx;
+	wire [3:0] vp_idx_r_lo_b0 [0:5];
+	wire [3:0] vp_idx_r_lo_b1 [0:5];
+	wire [3:0] vp_idx_r_lo_b2 [0:5];
+	wire [3:0] vp_idx_r_lo_b3 [0:5];
+	wire [3:0] vp_idx_r_hi_b0 [0:5];
+	wire [3:0] vp_idx_r_hi_b1 [0:5];
+	wire [3:0] vp_idx_r_hi_b2 [0:5];
+	wire [3:0] vp_idx_r_hi_b3 [0:5];
+	generate
+		for (gvw = 0; gvw < 6; gvw = gvw + 1) begin : g_vpi_sim
+			assign vp_idx_w_lo[gvw] = vp_idx;
+			assign vp_idx_w_hi[gvw] = vp_idx;
+			assign vp_idx_r_lo_b0[gvw] = vp_idx;
+			assign vp_idx_r_lo_b1[gvw] = vp_idx;
+			assign vp_idx_r_lo_b2[gvw] = vp_idx;
+			assign vp_idx_r_lo_b3[gvw] = vp_idx;
+			assign vp_idx_r_hi_b0[gvw] = vp_idx;
+			assign vp_idx_r_hi_b1[gvw] = vp_idx;
+			assign vp_idx_r_hi_b2[gvw] = vp_idx;
+			assign vp_idx_r_hi_b3[gvw] = vp_idx;
+		end
+	endgenerate
+`endif
+
 	wire [23:0] lw_fix, ps_fix;
-	atg_rx_f2fix u_lw_fix (.f(st_wdata), .q(lw_fix));
-	atg_rx_f2fix u_ps_fix (.f(st_wdata), .q(ps_fix));
+	atg_rx_f2fix u_lw_fix (.f(st_wdata_fpu_lw), .q(lw_fix));
+	atg_rx_f2fix u_ps_fix (.f(st_wdata_fpu_ps), .q(ps_fix));
 
 	wire [31:0] ps_in_fp32;
-	am_fp_fix2f #(.W(16), .F(8), .SIGNED(0)) u_ps2f (.v(st_wdata[15:0]), .f(ps_in_fp32));
-	wire [31:0] div_b = (st_wdata[31:23] != 9'd0) ? st_wdata : ps_in_fp32;
-	reg [31:0] inv_ps;
+	am_fp_fix2f #(.W(16), .F(8), .SIGNED(0)) u_ps2f (.v(st_wdata_fpu_ps[15:0]), .f(ps_in_fp32));
+	reg [15:0] inv_ps_lo, inv_ps_hi;
+	wire [31:0] inv_ps = {inv_ps_hi, inv_ps_lo};
 	wire [31:0] div_inv_ps;
 	wire div_inv_done, div_busy;
+`ifdef SYNTH_KINTEX7
+	wire [8:0] st_wdata_lw_cmp;
+	wire [8:0] st_wdata_ps_cmp;
+	wire [31:0] st_wdata_ps_div;
+	genvar gcmp;
+	generate
+		for (gcmp = 0; gcmp < 9; gcmp = gcmp + 1) begin : g_cmp_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_lw_c (.I0(st_wdata[23 + gcmp]), .O(st_wdata_lw_cmp[gcmp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_ps_c (.I0(st_wdata[23 + gcmp]), .O(st_wdata_ps_cmp[gcmp]));
+		end
+		for (gcmp = 0; gcmp < 32; gcmp = gcmp + 1) begin : g_ps_d_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_ps_d (.I0(st_wdata[gcmp]), .O(st_wdata_ps_div[gcmp]));
+		end
+	endgenerate
+	wire is_flw = (st_wdata_lw_cmp != 9'd0);
+	wire is_fps = (st_wdata_ps_cmp != 9'd0);
+	(* keep = "true", dont_touch = "true" *) wire is_fps_div0, is_fps_div1;
+	LUT1 #(.INIT(2'b10)) u_fps_d0 (.I0(is_fps), .O(is_fps_div0));
+	LUT1 #(.INIT(2'b10)) u_fps_d1 (.I0(is_fps), .O(is_fps_div1));
+	wire [31:0] div_b = {is_fps_div1 ? st_wdata_ps_div[31:16] : ps_in_fp32[31:16],
+	                     is_fps_div0 ? st_wdata_ps_div[15:0]  : ps_in_fp32[15:0]};
+
+	wire div_inv_done_lo, div_inv_done_hi;
+	LUT1 #(.INIT(2'b10)) u_did_l (.I0(div_inv_done), .O(div_inv_done_lo));
+	LUT1 #(.INIT(2'b10)) u_did_h (.I0(div_inv_done), .O(div_inv_done_hi));
+	(* keep = "true", dont_touch = "true" *) wire [1:0] is_flw_leaf, is_fps_leaf;
+	LUT1 #(.INIT(2'b10)) u_flw0 (.I0(is_flw), .O(is_flw_leaf[0]));
+	LUT1 #(.INIT(2'b10)) u_flw1 (.I0(is_flw), .O(is_flw_leaf[1]));
+	LUT1 #(.INIT(2'b10)) u_fps0 (.I0(is_fps), .O(is_fps_leaf[0]));
+	LUT1 #(.INIT(2'b10)) u_fps1 (.I0(is_fps), .O(is_fps_leaf[1]));
+	wire [15:0] lw_next = {is_flw_leaf[1] ? lw_fix[15:8] : st_wdata_cfg_reg[15:8],
+	                       is_flw_leaf[0] ? lw_fix[7:0]  : st_wdata_cfg_reg[7:0]};
+	wire [15:0] ps_next = {is_fps_leaf[1] ? ps_fix[15:8] : st_wdata_cfg_reg[15:8],
+	                       is_fps_leaf[0] ? ps_fix[7:0]  : st_wdata_cfg_reg[7:0]};
+`else
+	wire is_flw = (st_wdata_fpu_lw[31:23] != 9'd0);
+	wire is_fps = (st_wdata_fpu_ps[31:23] != 9'd0);
+	wire [31:0] div_b = (st_wdata_fpu_ps[31:23] != 9'd0) ? st_wdata_fpu_ps : ps_in_fp32;
+	wire div_inv_done_lo = div_inv_done;
+	wire div_inv_done_hi = div_inv_done;
+`endif
 	reg div_inv_start;
 	atg_rx_fdiv u_ps_div (
 		.clk(clk), .rst_n(rst_n),
@@ -83,66 +374,120 @@ module atg_rx_setup (
 		.busy(div_busy), .o_done(div_inv_done), .o_r(div_inv_ps)
 	);
 
+`ifdef SYNTH_KINTEX7
+	assign prim_type = {1'b0, kind_prim};
+`else
 	assign prim_type = {1'b0, kind};
+`endif
 	assign cur_line_width = line_width;
 	assign cur_point_size = point_size;
 	assign cur_viewport_idx = vp_idx;
 
-	integer vpi_init, vpk_init;
+	integer e;
 	always @(posedge clk)
-		if (!rst_n) begin
-			for (vpk_init = 0; vpk_init < 16; vpk_init = vpk_init + 1) begin
-				smin_array[vpk_init] <= 32'd0;
-				smax_array[vpk_init] <= 32'd0;
-				for (vpi_init = 0; vpi_init < 6; vpi_init = vpi_init + 1)
-					vp_array[vpk_init][vpi_init] <= 32'd0;
-			end
+		if (rst_setup_high) begin
 			vp_idx <= 4'd0;
 			line_width <= 16'h0100;
 			point_size <= 16'h0100;
-			inv_ps <= 32'h3F800000;
+			inv_ps_lo <= 16'h0000;
+			inv_ps_hi <= 16'h3F80;
 			div_inv_start <= 1'b0;
-			rts <= 32'd0;
+			rts_lo <= 16'd0;
+			rts_hi <= 16'd0;
 			cull <= 3'd0;
 			rm <= 6'd0;
-			b_const <= 32'd0;
-			b_slope <= 32'd0;
-			b_clamp <= 32'd0;
+			b_const_lo <= 16'd0;
+			b_const_hi <= 16'd0;
+			b_slope_lo <= 16'd0;
+			b_slope_hi <= 16'd0;
+			b_clamp_lo <= 16'd0;
+			b_clamp_hi <= 16'd0;
 		end else begin
 			div_inv_start <= 1'b0;
+			for (e = 0; e < 16; e = e + 1) begin
+				if (we_vp_w_lo[0] && (vp_idx_w_lo[0] == e[3:0])) vp_array_lo[e][0] <= vp_w_lo[0];
+				if (we_vp_w_hi[0] && (vp_idx_w_hi[0] == e[3:0])) vp_array_hi[e][0] <= vp_w_hi[0];
+				if (we_vp_w_lo[1] && (vp_idx_w_lo[1] == e[3:0])) vp_array_lo[e][1] <= vp_w_lo[1];
+				if (we_vp_w_hi[1] && (vp_idx_w_hi[1] == e[3:0])) vp_array_hi[e][1] <= vp_w_hi[1];
+				if (we_vp_w_lo[2] && (vp_idx_w_lo[2] == e[3:0])) vp_array_lo[e][2] <= vp_w_lo[2];
+				if (we_vp_w_hi[2] && (vp_idx_w_hi[2] == e[3:0])) vp_array_hi[e][2] <= vp_w_hi[2];
+				if (we_vp_w_lo[3] && (vp_idx_w_lo[3] == e[3:0])) vp_array_lo[e][3] <= vp_w_lo[3];
+				if (we_vp_w_hi[3] && (vp_idx_w_hi[3] == e[3:0])) vp_array_hi[e][3] <= vp_w_hi[3];
+				if (we_vp_w_lo[4] && (vp_idx_w_lo[4] == e[3:0])) vp_array_lo[e][4] <= vp_w_lo[4];
+				if (we_vp_w_hi[4] && (vp_idx_w_hi[4] == e[3:0])) vp_array_hi[e][4] <= vp_w_hi[4];
+				if (we_vp_w_lo[5] && (vp_idx_w_lo[5] == e[3:0])) vp_array_lo[e][5] <= vp_w_lo[5];
+				if (we_vp_w_hi[5] && (vp_idx_w_hi[5] == e[3:0])) vp_array_hi[e][5] <= vp_w_hi[5];
+
+				if (we_smin_lo && (vp_idx_ws_smin_l == e[3:0])) smin_array_lo[e] <= smin_lo_buf;
+				if (we_smin_hi && (vp_idx_ws_smin_h == e[3:0])) smin_array_hi[e] <= smin_hi_buf;
+				if (we_smax_lo && (vp_idx_ws_smx_l == e[3:0])) smax_array_lo[e] <= smax_lo_buf;
+				if (we_smax_hi && (vp_idx_ws_smx_h == e[3:0])) smax_array_hi[e] <= smax_hi_buf;
+			end
+`ifdef SYNTH_KINTEX7
+			if (st_we_cfg_vp) begin
+				if (st_idx == GHCI_S_VIEWPORT_IDX)
+					vp_idx <= st_wdata_cfg_reg[3:0];
+			end
+			if (st_we_cfg_lw) begin
+				if (st_idx == GHCI_S_LINE_WIDTH)
+					line_width <= lw_next;
+			end
+			if (st_we_cfg_ps) begin
+				if (st_idx == GHCI_S_POINT_SIZE) begin
+					point_size <= ps_next;
+					if (st_wdata_cfg_reg == 32'h0100 || st_wdata_cfg_reg == 32'h3F800000) begin
+						inv_ps_lo <= 16'h0000;
+						inv_ps_hi <= 16'h3F80;
+					end else
+						div_inv_start <= 1'b1;
+				end
+			end
+			if (st_we_cfg1) begin
+				if (st_idx == GHCI_S_CULL)
+					cull <= st_wdata_cfg_reg[2:0];
+				if (st_idx == GHCI_S_RAST_MODE)
+					rm <= st_wdata_cfg_reg[5:0];
+			end
+`else
 			if (st_we) begin
 				if (st_idx == GHCI_S_VIEWPORT_IDX)
-					vp_idx <= st_wdata[3:0];
-				if (st_idx >= GHCI_S_VIEWPORT && st_idx <= GHCI_S_VIEWPORT + 9'd5)
-					vp_array[vp_idx][st_idx[2:0]] <= st_wdata;
-				if (st_idx == GHCI_S_SCISSOR_MIN)
-					smin_array[vp_idx] <= st_wdata;
-				if (st_idx == GHCI_S_SCISSOR_MAX)
-					smax_array[vp_idx] <= st_wdata;
+					vp_idx <= st_wdata_cfg_reg[3:0];
 				if (st_idx == GHCI_S_LINE_WIDTH)
-					line_width <= (st_wdata[31:23] != 9'd0) ? lw_fix[15:0] : st_wdata[15:0];
+					line_width <= (st_wdata_cfg_reg[31:23] != 9'd0) ? lw_fix[15:0] : st_wdata_cfg_reg[15:0];
 				if (st_idx == GHCI_S_POINT_SIZE) begin
-					point_size <= (st_wdata[31:23] != 9'd0) ? ps_fix[15:0] : st_wdata[15:0];
-					if (st_wdata == 32'h0100 || st_wdata == 32'h3F800000)
-						inv_ps <= 32'h3F800000;
-					else
+					point_size <= (st_wdata_cfg_reg[31:23] != 9'd0) ? ps_fix[15:0] : st_wdata_cfg_reg[15:0];
+					if (st_wdata_cfg_reg == 32'h0100 || st_wdata_cfg_reg == 32'h3F800000) begin
+						inv_ps_lo <= 16'h0000;
+						inv_ps_hi <= 16'h3F80;
+					end else
 						div_inv_start <= 1'b1;
 				end
 				if (st_idx == GHCI_S_CULL)
-					cull <= st_wdata[2:0];
+					cull <= st_wdata_cfg_reg[2:0];
 				if (st_idx == GHCI_S_RAST_MODE)
-					rm <= st_wdata[5:0];
-				if (st_idx == GHCI_S_DEPTH_BIAS_CONST)
-					b_const <= st_wdata;
-				if (st_idx == GHCI_S_DEPTH_BIAS_SLOPE)
-					b_slope <= st_wdata;
-				if (st_idx == GHCI_S_DEPTH_BIAS_CLAMP)
-					b_clamp <= st_wdata;
-				if (st_idx == GHCI_S_RT_SIZE)
-					rts <= st_wdata;
+					rm <= st_wdata_cfg_reg[5:0];
 			end
-			if (div_inv_done)
-				inv_ps <= div_inv_ps;
+`endif
+			if (we_bias_lo && (st_idx == GHCI_S_DEPTH_BIAS_CONST))
+				b_const_lo <= misc_lo_buf;
+			if (we_bias_hi && (st_idx == GHCI_S_DEPTH_BIAS_CONST))
+				b_const_hi <= misc_hi_buf;
+			if (we_bias_lo && (st_idx == GHCI_S_DEPTH_BIAS_SLOPE))
+				b_slope_lo <= misc_lo_buf;
+			if (we_bias_hi && (st_idx == GHCI_S_DEPTH_BIAS_SLOPE))
+				b_slope_hi <= misc_hi_buf;
+			if (we_bias_lo && (st_idx == GHCI_S_DEPTH_BIAS_CLAMP))
+				b_clamp_lo <= misc_lo_buf;
+			if (we_bias_hi && (st_idx == GHCI_S_DEPTH_BIAS_CLAMP))
+				b_clamp_hi <= misc_hi_buf;
+			if (we_bias_lo && (st_idx == GHCI_S_RT_SIZE))
+				rts_lo <= misc_lo_buf;
+			if (we_bias_hi && (st_idx == GHCI_S_RT_SIZE))
+				rts_hi <= misc_hi_buf;
+			if (div_inv_done_lo)
+				inv_ps_lo <= div_inv_ps[15:0];
+			if (div_inv_done_hi)
+				inv_ps_hi <= div_inv_ps[31:16];
 		end
 
 	/*
@@ -159,21 +504,341 @@ module atg_rx_setup (
 		S_BIAS      = 4'd7,
 		S_OUT       = 4'd8;
 
-	(* max_fanout = 16 *) reg [3:0] st;
-	(* max_fanout = 16 *) reg [4:0] seq_step;
-	(* max_fanout = 16 *) reg [1:0] p_plane;	/* 0: Z, 1: RW, 2: B0, 3: B1 */
-	(* max_fanout = 16 *) reg [3:0] p_step;
-	(* max_fanout = 16 *) reg [1:0] kind;
-	(* max_fanout = 16 *) reg [26:0] keep;
+	(* fsm_encoding = "none", extract_reset = "no", max_fanout = 16 *) reg [3:0] st;
+	(* fsm_encoding = "none", extract_reset = "no", max_fanout = 16 *) reg [4:0] seq_step;
+	(* fsm_encoding = "none", extract_reset = "no", max_fanout = 16 *) reg [1:0] p_plane;	/* 0: Z, 1: RW, 2: B0, 3: B1 */
+	(* fsm_encoding = "none", extract_reset = "no", max_fanout = 16 *) reg [3:0] p_step;
+	(* extract_reset = "no" *) reg [1:0] kind;
+	(* keep = "true", dont_touch = "true", extract_reset = "no" *) reg [1:0] kind_prim;
+	reg [26:0] keep;
 	reg lastq;
 	reg raw;
 	reg sub;
 	reg more;
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire [1:0] p_plane_0;
+	(* keep = "true", dont_touch = "true" *) wire [1:0] p_plane_pf0_l, p_plane_pf0_h;
+	(* keep = "true", dont_touch = "true" *) wire [1:0] p_plane_pf1_l, p_plane_pf1_h;
+	(* keep = "true", dont_touch = "true" *) wire [1:0] p_plane_pf2_l, p_plane_pf2_h;
+	(* keep = "true", dont_touch = "true" *) wire [1:0] p_plane_2_l, p_plane_2_h;
+	(* keep = "true", dont_touch = "true" *) wire [1:0] p_plane_3_l, p_plane_3_h;
+	(* keep = "true", dont_touch = "true" *) wire [1:0] p_plane_pl_l, p_plane_pl_h;
+	LUT1 #(.INIT(2'b10)) u_pp_0_0  (.I0(p_plane[0]), .O(p_plane_0[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_0_1  (.I0(p_plane[1]), .O(p_plane_0[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_f0l0 (.I0(p_plane[0]), .O(p_plane_pf0_l[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_f0l1 (.I0(p_plane[1]), .O(p_plane_pf0_l[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_f0h0 (.I0(p_plane[0]), .O(p_plane_pf0_h[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_f0h1 (.I0(p_plane[1]), .O(p_plane_pf0_h[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_f1l0 (.I0(p_plane[0]), .O(p_plane_pf1_l[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_f1l1 (.I0(p_plane[1]), .O(p_plane_pf1_l[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_f1h0 (.I0(p_plane[0]), .O(p_plane_pf1_h[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_f1h1 (.I0(p_plane[1]), .O(p_plane_pf1_h[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_f2l0 (.I0(p_plane[0]), .O(p_plane_pf2_l[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_f2l1 (.I0(p_plane[1]), .O(p_plane_pf2_l[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_f2h0 (.I0(p_plane[0]), .O(p_plane_pf2_h[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_f2h1 (.I0(p_plane[1]), .O(p_plane_pf2_h[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_2l0 (.I0(p_plane[0]), .O(p_plane_2_l[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_2l1 (.I0(p_plane[1]), .O(p_plane_2_l[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_2h0 (.I0(p_plane[0]), .O(p_plane_2_h[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_2h1 (.I0(p_plane[1]), .O(p_plane_2_h[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_3l0 (.I0(p_plane[0]), .O(p_plane_3_l[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_3l1 (.I0(p_plane[1]), .O(p_plane_3_l[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_3h0 (.I0(p_plane[0]), .O(p_plane_3_h[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_3h1 (.I0(p_plane[1]), .O(p_plane_3_h[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_pll0 (.I0(p_plane[0]), .O(p_plane_pl_l[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_pll1 (.I0(p_plane[1]), .O(p_plane_pl_l[1]));
+	LUT1 #(.INIT(2'b10)) u_pp_plh0 (.I0(p_plane[0]), .O(p_plane_pl_h[0]));
+	LUT1 #(.INIT(2'b10)) u_pp_plh1 (.I0(p_plane[1]), .O(p_plane_pl_h[1]));
 
-	reg [31:0] R [0:127];
-	reg [31:0] pl [0:11];
-	reg [31:0] T0, T1, T2;
-	reg [31:0] b_m, b_o;
+	(* keep = "true", max_fanout = 16 *) wire [3:0] p_step_fpu_a, p_step_fpu_b, p_step_ctrl;
+	genvar gps;
+	generate
+		for (gps = 0; gps < 4; gps = gps + 1) begin : g_pstep_bufs
+			LUT1 #(.INIT(2'b10)) u_psa (.I0(p_step[gps]), .O(p_step_fpu_a[gps]));
+			LUT1 #(.INIT(2'b10)) u_psb (.I0(p_step[gps]), .O(p_step_fpu_b[gps]));
+			LUT1 #(.INIT(2'b10)) u_psc (.I0(p_step[gps]), .O(p_step_ctrl[gps]));
+		end
+	endgenerate
+
+	(* keep = "true", max_fanout = 16 *) wire [4:0] seq_step_pw, seq_step_xyz, seq_step_rect, seq_step_pldiv, seq_step_bias;
+	genvar gsq;
+	generate
+		for (gsq = 0; gsq < 5; gsq = gsq + 1) begin : g_seq_bufs
+			LUT1 #(.INIT(2'b10)) u_sq_pw  (.I0(seq_step[gsq]), .O(seq_step_pw[gsq]));
+			LUT1 #(.INIT(2'b10)) u_sq_xyz (.I0(seq_step[gsq]), .O(seq_step_xyz[gsq]));
+			LUT1 #(.INIT(2'b10)) u_sq_rec (.I0(seq_step[gsq]), .O(seq_step_rect[gsq]));
+			LUT1 #(.INIT(2'b10)) u_sq_pld (.I0(seq_step[gsq]), .O(seq_step_pldiv[gsq]));
+			LUT1 #(.INIT(2'b10)) u_sq_bia (.I0(seq_step[gsq]), .O(seq_step_bias[gsq]));
+		end
+	endgenerate
+
+`define SET_PLANE(val) begin p_plane <= (val); end
+`define SET_STEP(val) begin p_step <= (val); end
+`else
+	wire [1:0] p_plane_pf0_l = p_plane;
+	wire [1:0] p_plane_pf0_h = p_plane;
+	wire [1:0] p_plane_pf1_l = p_plane;
+	wire [1:0] p_plane_pf1_h = p_plane;
+	wire [1:0] p_plane_pf2_l = p_plane;
+	wire [1:0] p_plane_pf2_h = p_plane;
+	wire [1:0] p_plane_2_l = p_plane;
+	wire [1:0] p_plane_2_h = p_plane;
+	wire [1:0] p_plane_3_l = p_plane;
+	wire [1:0] p_plane_3_h = p_plane;
+	wire [1:0] p_plane_pl_l = p_plane;
+	wire [1:0] p_plane_pl_h = p_plane;
+	wire [3:0] p_step_fpu_a = p_step;
+	wire [3:0] p_step_fpu_b = p_step;
+	wire [3:0] p_step_ctrl = p_step;
+	wire [4:0] seq_step_pw = seq_step;
+	wire [4:0] seq_step_xyz = seq_step;
+	wire [4:0] seq_step_rect = seq_step;
+	wire [4:0] seq_step_pldiv = seq_step;
+	wire [4:0] seq_step_bias = seq_step;
+`define SET_PLANE(val) begin p_plane <= (val); end
+`define SET_STEP(val) begin p_step <= (val); end
+`endif
+
+	(* extract_reset = "no", extract_enable = "no" *) reg [15:0] R_lo [0:79];
+	(* extract_reset = "no", extract_enable = "no" *) reg [15:0] R_hi [0:79];
+	wire [31:0] R [0:79];
+	genvar gr;
+	generate
+		for (gr = 0; gr < 80; gr = gr + 1) begin : g_R_wire
+			assign R[gr] = {R_hi[gr], R_lo[gr]};
+		end
+	endgenerate
+
+	(* extract_reset = "no", extract_enable = "no" *) reg [15:0] pl_lo [0:11];
+	(* extract_reset = "no", extract_enable = "no" *) reg [15:0] pl_hi [0:11];
+	wire [31:0] pl [0:11];
+	genvar gpl;
+	generate
+		for (gpl = 0; gpl < 12; gpl = gpl + 1) begin : g_pl_wire
+			assign pl[gpl] = {pl_hi[gpl], pl_lo[gpl]};
+		end
+	endgenerate
+
+	(* extract_reset = "no", extract_enable = "no" *) reg [15:0] T0_lo, T0_hi;
+	(* extract_reset = "no", extract_enable = "no" *) reg [15:0] T1_lo, T1_hi;
+	(* extract_reset = "no", extract_enable = "no" *) reg [15:0] T2_lo, T2_hi;
+	wire [31:0] T0 = {T0_hi, T0_lo};
+	wire [31:0] T1 = {T1_hi, T1_lo};
+	wire [31:0] T2 = {T2_hi, T2_lo};
+
+	(* extract_reset = "no", extract_enable = "no" *) reg [15:0] r_bias_fa_lo, r_bias_fa_hi;
+	(* extract_reset = "no", extract_enable = "no" *) reg r_bcl_is_zero_lo, r_bcl_is_zero_hi;
+	(* extract_reset = "no", extract_enable = "no" *) reg r_bcl_sign_lo, r_bcl_sign_hi;
+	(* extract_reset = "no", extract_enable = "no" *) reg r_bcl_mag_lt_lo, r_bcl_mag_lt_hi;
+	(* extract_reset = "no", extract_enable = "no" *) reg r_bcl_mag_eq_lo, r_bcl_mag_eq_hi;
+	(* extract_reset = "no", extract_enable = "no" *) reg r_fa_nan_lo, r_fa_nan_hi;
+	(* extract_reset = "no", extract_enable = "no" *) reg r_fa_sign_lo, r_fa_sign_hi;
+	(* extract_reset = "no", extract_enable = "no" *) reg r_fa_is_zero_lo, r_fa_is_zero_hi;
+	wire [31:0] bm_val = max_mag({1'b0, pl[0][30:0]}, {1'b0, pl[1][30:0]});
+
+`ifdef SYNTH_KINTEX7
+	wire fa_o_xyz_v0, fa_o_xyz_v1, fa_o_xyz_v2;
+	wire fa_o_rect, fa_o_rect_lo, fa_o_rect_hi, fa_o_plane_p01, fa_o_plane_p23;
+	(* keep = "true", dont_touch = "true" *) wire fa_o_bias_s5_lo, fa_o_bias_s5_hi, fa_o_bias_s5_ctrl;
+	(* keep = "true", dont_touch = "true" *) wire fa_o_bias_sdef_lo, fa_o_bias_sdef_hi, fa_o_bias_sdef_ctrl;
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fao_x0 (.I0(fa_o), .O(fa_o_xyz_v0));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fao_x1 (.I0(fa_o), .O(fa_o_xyz_v1));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fao_x2 (.I0(fa_o), .O(fa_o_xyz_v2));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fao_rc (.I0(fa_o), .O(fa_o_rect));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fao_rcl (.I0(fa_o), .O(fa_o_rect_lo));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fao_rch (.I0(fa_o), .O(fa_o_rect_hi));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fao_p0 (.I0(fa_o), .O(fa_o_plane_p01));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fao_p1 (.I0(fa_o), .O(fa_o_plane_p23));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_bs5_l (.I0(fa_o), .O(fa_o_bias_s5_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_bs5_h (.I0(fa_o), .O(fa_o_bias_s5_hi));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_bs5_c (.I0(fa_o), .O(fa_o_bias_s5_ctrl));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_bsd_l (.I0(fa_o), .O(fa_o_bias_sdef_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_bsd_h (.I0(fa_o), .O(fa_o_bias_sdef_hi));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_bsd_c (.I0(fa_o), .O(fa_o_bias_sdef_ctrl));
+
+	(* keep = "true", dont_touch = "true" *) wire fa_o_xyz_v0_lo, fa_o_xyz_v0_hi;
+	(* keep = "true", dont_touch = "true" *) wire fa_o_xyz_v1_lo, fa_o_xyz_v1_hi;
+	(* keep = "true", dont_touch = "true" *) wire fa_o_xyz_v2_lo, fa_o_xyz_v2_hi;
+	(* keep = "true", dont_touch = "true" *) wire fa_o_bias_lo, fa_o_bias_hi;
+	LUT1 #(.INIT(2'b10)) u_buf_fao_x0l (.I0(fa_o), .O(fa_o_xyz_v0_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_x0h (.I0(fa_o), .O(fa_o_xyz_v0_hi));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_x1l (.I0(fa_o), .O(fa_o_xyz_v1_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_x1h (.I0(fa_o), .O(fa_o_xyz_v1_hi));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_x2l (.I0(fa_o), .O(fa_o_xyz_v2_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_x2h (.I0(fa_o), .O(fa_o_xyz_v2_hi));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_blo (.I0(fa_o), .O(fa_o_bias_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fao_bhi (.I0(fa_o), .O(fa_o_bias_hi));
+
+	wire fm_o_xyz_v0, fm_o_xyz_v1, fm_o_xyz_v2;
+	wire fm_o_rect, fm_o_rect_lo, fm_o_rect_hi, fm_o_plane_p01, fm_o_plane_p23, fm_o_bias;
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fmo_x0 (.I0(fm_o), .O(fm_o_xyz_v0));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fmo_x1 (.I0(fm_o), .O(fm_o_xyz_v1));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fmo_x2 (.I0(fm_o), .O(fm_o_xyz_v2));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fmo_rc (.I0(fm_o), .O(fm_o_rect));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fmo_rcl (.I0(fm_o), .O(fm_o_rect_lo));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fmo_rch (.I0(fm_o), .O(fm_o_rect_hi));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fmo_p0 (.I0(fm_o), .O(fm_o_plane_p01));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fmo_p1 (.I0(fm_o), .O(fm_o_plane_p23));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fmo_bs (.I0(fm_o), .O(fm_o_bias));
+
+	(* keep = "true", dont_touch = "true" *) wire fm_o_xyz_v0_lo, fm_o_xyz_v0_hi;
+	(* keep = "true", dont_touch = "true" *) wire fm_o_xyz_v1_lo, fm_o_xyz_v1_hi;
+	(* keep = "true", dont_touch = "true" *) wire fm_o_xyz_v2_lo, fm_o_xyz_v2_hi;
+	(* keep = "true", dont_touch = "true" *) wire fm_o_bias_lo, fm_o_bias_hi;
+	LUT1 #(.INIT(2'b10)) u_buf_fmo_x0l (.I0(fm_o), .O(fm_o_xyz_v0_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fmo_x0h (.I0(fm_o), .O(fm_o_xyz_v0_hi));
+	LUT1 #(.INIT(2'b10)) u_buf_fmo_x1l (.I0(fm_o), .O(fm_o_xyz_v1_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fmo_x1h (.I0(fm_o), .O(fm_o_xyz_v1_hi));
+	LUT1 #(.INIT(2'b10)) u_buf_fmo_x2l (.I0(fm_o), .O(fm_o_xyz_v2_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fmo_x2h (.I0(fm_o), .O(fm_o_xyz_v2_hi));
+	LUT1 #(.INIT(2'b10)) u_buf_fmo_blo (.I0(fm_o), .O(fm_o_bias_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fmo_bhi (.I0(fm_o), .O(fm_o_bias_hi));
+
+	wire fd_o_w, fd_o_plane;
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fdo_w (.I0(fd_o), .O(fd_o_w));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fdo_p (.I0(fd_o), .O(fd_o_plane));
+	(* keep = "true", dont_touch = "true" *) wire fd_o_w_lo, fd_o_w_hi;
+	LUT1 #(.INIT(2'b10)) u_buf_fdo_wl (.I0(fd_o), .O(fd_o_w_lo));
+	LUT1 #(.INIT(2'b10)) u_buf_fdo_wh (.I0(fd_o), .O(fd_o_w_hi));
+
+	wire [31:0] fa_r_R, fa_r_pl;
+	wire [31:0] fm_r_R, fm_r_pl;
+	wire [6:0] e_ra_b [0:7];
+	genvar gbf, gnb;
+	generate
+		for (gbf = 0; gbf < 32; gbf = gbf + 1) begin : g_fpu_res_buf
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_far_r (.I0(fa_r[gbf]), .O(fa_r_R[gbf]));
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_far_p (.I0(fa_r[gbf]), .O(fa_r_pl[gbf]));
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_fmr_r (.I0(fm_r[gbf]), .O(fm_r_R[gbf]));
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_fmr_p (.I0(fm_r[gbf]), .O(fm_r_pl[gbf]));
+		end
+		for (gnb = 0; gnb < 8; gnb = gnb + 1) begin : g_era_nib
+			for (gbf = 0; gbf < 7; gbf = gbf + 1) begin : g_era_bit
+				(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_era (.I0(e_ra[gbf]), .O(e_ra_b[gnb][gbf]));
+			end
+		end
+	endgenerate
+
+	wire e_empty_buf;
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_empty (.I0(e_empty), .O(e_empty_buf));
+`else
+	wire fa_o_xyz_v0 = fa_o;
+	wire fa_o_xyz_v1 = fa_o;
+	wire fa_o_xyz_v2 = fa_o;
+	wire fa_o_xyz_v0_lo = fa_o;
+	wire fa_o_xyz_v0_hi = fa_o;
+	wire fa_o_xyz_v1_lo = fa_o;
+	wire fa_o_xyz_v1_hi = fa_o;
+	wire fa_o_xyz_v2_lo = fa_o;
+	wire fa_o_xyz_v2_hi = fa_o;
+	wire fa_o_rect = fa_o;
+	wire fa_o_rect_lo = fa_o;
+	wire fa_o_rect_hi = fa_o;
+	wire fa_o_plane_p01 = fa_o;
+	wire fa_o_plane_p23 = fa_o;
+	wire fa_o_bias_s5_lo = fa_o;
+	wire fa_o_bias_s5_hi = fa_o;
+	wire fa_o_bias_s5_ctrl = fa_o;
+	wire fa_o_bias_sdef_lo = fa_o;
+	wire fa_o_bias_sdef_hi = fa_o;
+	wire fa_o_bias_sdef_ctrl = fa_o;
+	wire fa_o_bias_lo = fa_o;
+	wire fa_o_bias_hi = fa_o;
+	wire fm_o_xyz_v0 = fm_o;
+	wire fm_o_xyz_v1 = fm_o;
+	wire fm_o_xyz_v2 = fm_o;
+	wire fm_o_xyz_v0_lo = fm_o;
+	wire fm_o_xyz_v0_hi = fm_o;
+	wire fm_o_xyz_v1_lo = fm_o;
+	wire fm_o_xyz_v1_hi = fm_o;
+	wire fm_o_xyz_v2_lo = fm_o;
+	wire fm_o_xyz_v2_hi = fm_o;
+	wire fm_o_rect = fm_o;
+	wire fm_o_rect_lo = fm_o;
+	wire fm_o_rect_hi = fm_o;
+	wire fm_o_plane_p01 = fm_o;
+	wire fm_o_plane_p23 = fm_o;
+	wire fm_o_bias = fm_o;
+	wire fm_o_bias_lo = fm_o;
+	wire fm_o_bias_hi = fm_o;
+	wire fd_o_w = fd_o;
+	wire fd_o_w_lo = fd_o;
+	wire fd_o_w_hi = fd_o;
+	wire fd_o_plane = fd_o;
+	wire pt_plane_lo = 1'b1;
+	wire pt_plane_hi = 1'b1;
+	wire [31:0] fa_r_R = fa_r;
+	wire [31:0] fa_r_pl = fa_r;
+	wire [31:0] fm_r_R = fm_r;
+	wire [31:0] fm_r_pl = fm_r;
+	wire [6:0] e_ra_b [0:7];
+	genvar gen_era;
+	generate
+		for (gen_era = 0; gen_era < 8; gen_era = gen_era + 1) begin : g_era_sim
+			assign e_ra_b[gen_era] = e_ra;
+		end
+	endgenerate
+	wire e_empty_buf = e_empty;
+`endif
+
+`ifdef SYNTH_KINTEX7
+	wire fa_o_plane = p_plane_0[1] ? fa_o_plane_p23 : fa_o_plane_p01;
+	wire fm_o_plane = p_plane_0[1] ? fm_o_plane_p23 : fm_o_plane_p01;
+	(* keep = "true", dont_touch = "true" *) wire fa_o_plane_lo, fa_o_plane_hi;
+	(* keep = "true", dont_touch = "true" *) wire fm_o_plane_lo, fm_o_plane_hi;
+	(* keep = "true", dont_touch = "true" *) wire fd_o_plane_lo, fd_o_plane_hi;
+	LUT1 #(.INIT(2'b10)) u_fao_plo (.I0(fa_o_plane), .O(fa_o_plane_lo));
+	LUT1 #(.INIT(2'b10)) u_fao_phi (.I0(fa_o_plane), .O(fa_o_plane_hi));
+	LUT1 #(.INIT(2'b10)) u_fmo_plo (.I0(fm_o_plane), .O(fm_o_plane_lo));
+	LUT1 #(.INIT(2'b10)) u_fmo_phi (.I0(fm_o_plane), .O(fm_o_plane_hi));
+	LUT1 #(.INIT(2'b10)) u_fdo_plo (.I0(fd_o_plane), .O(fd_o_plane_lo));
+	LUT1 #(.INIT(2'b10)) u_fdo_phi (.I0(fd_o_plane), .O(fd_o_plane_hi));
+	(* keep = "true", dont_touch = "true" *) wire fa_o_plane_s1, fa_o_plane_s2, fa_o_plane_s5, fa_o_plane_s9, fa_o_plane_s13;
+	(* keep = "true", dont_touch = "true" *) wire fa_o_plane_sdef_lo, fa_o_plane_sdef_hi, fa_o_plane_sdef_ctrl;
+	(* keep = "true", dont_touch = "true" *) wire fm_o_plane_s3, fm_o_plane_s4, fm_o_plane_s6, fm_o_plane_s7, fm_o_plane_s8, fm_o_plane_s10, fm_o_plane_s11, fm_o_plane_s12;
+	LUT1 #(.INIT(2'b10)) u_fao_s1   (.I0(fa_o_plane), .O(fa_o_plane_s1));
+	LUT1 #(.INIT(2'b10)) u_fao_s2   (.I0(fa_o_plane), .O(fa_o_plane_s2));
+	LUT1 #(.INIT(2'b10)) u_fao_s5   (.I0(fa_o_plane), .O(fa_o_plane_s5));
+	LUT1 #(.INIT(2'b10)) u_fao_s9   (.I0(fa_o_plane), .O(fa_o_plane_s9));
+	LUT1 #(.INIT(2'b10)) u_fao_s13  (.I0(fa_o_plane), .O(fa_o_plane_s13));
+	LUT1 #(.INIT(2'b10)) u_fao_sdfl (.I0(fa_o_plane), .O(fa_o_plane_sdef_lo));
+	LUT1 #(.INIT(2'b10)) u_fao_sdfh (.I0(fa_o_plane), .O(fa_o_plane_sdef_hi));
+	LUT1 #(.INIT(2'b10)) u_fao_sdfc (.I0(fa_o_plane), .O(fa_o_plane_sdef_ctrl));
+	LUT1 #(.INIT(2'b10)) u_fmo_s3  (.I0(fm_o_plane), .O(fm_o_plane_s3));
+	LUT1 #(.INIT(2'b10)) u_fmo_s4  (.I0(fm_o_plane), .O(fm_o_plane_s4));
+	LUT1 #(.INIT(2'b10)) u_fmo_s6  (.I0(fm_o_plane), .O(fm_o_plane_s6));
+	LUT1 #(.INIT(2'b10)) u_fmo_s7  (.I0(fm_o_plane), .O(fm_o_plane_s7));
+	LUT1 #(.INIT(2'b10)) u_fmo_s8  (.I0(fm_o_plane), .O(fm_o_plane_s8));
+	LUT1 #(.INIT(2'b10)) u_fmo_s10 (.I0(fm_o_plane), .O(fm_o_plane_s10));
+	LUT1 #(.INIT(2'b10)) u_fmo_s11 (.I0(fm_o_plane), .O(fm_o_plane_s11));
+	LUT1 #(.INIT(2'b10)) u_fmo_s12 (.I0(fm_o_plane), .O(fm_o_plane_s12));
+`else
+	wire fa_o_plane = p_plane[1] ? fa_o_plane_p23 : fa_o_plane_p01;
+	wire fm_o_plane = p_plane[1] ? fm_o_plane_p23 : fm_o_plane_p01;
+	wire fa_o_plane_lo = fa_o_plane;
+	wire fa_o_plane_hi = fa_o_plane;
+	wire fm_o_plane_lo = fm_o_plane;
+	wire fm_o_plane_hi = fm_o_plane;
+	wire fd_o_plane_lo = fd_o_plane;
+	wire fd_o_plane_hi = fd_o_plane;
+	wire fa_o_plane_s1 = fa_o_plane;
+	wire fa_o_plane_s2 = fa_o_plane;
+	wire fa_o_plane_s5 = fa_o_plane;
+	wire fa_o_plane_s9 = fa_o_plane;
+	wire fa_o_plane_s13 = fa_o_plane;
+	wire fa_o_plane_sdef = fa_o_plane;
+	wire fa_o_plane_sdef_lo = fa_o_plane;
+	wire fa_o_plane_sdef_hi = fa_o_plane;
+	wire fa_o_plane_sdef_ctrl = fa_o_plane;
+	wire fm_o_plane_s3 = fm_o_plane;
+	wire fm_o_plane_s4 = fm_o_plane;
+	wire fm_o_plane_s6 = fm_o_plane;
+	wire fm_o_plane_s7 = fm_o_plane;
+	wire fm_o_plane_s8 = fm_o_plane;
+	wire fm_o_plane_s10 = fm_o_plane;
+	wire fm_o_plane_s11 = fm_o_plane;
+	wire fm_o_plane_s12 = fm_o_plane;
+`endif
 
 	function [4:0] inc5;
 		input [4:0] v;
@@ -264,18 +929,65 @@ module atg_rx_setup (
 
 	atg_rx_edge edge_u (
 		.clk(clk), .rst_n(rst_n), .start(e_start),
-		.mode({raw, sub, kind}), .smin(smin_array[vp_idx]), .smax(smax_array[vp_idx]), .rts(rts), .cull(cull),
+		.mode({raw, sub, kind}), .smin(cur_smin), .smax(cur_smax), .rts(rts), .cull(cull),
 		.vprect(rm[3]), .line_width(line_width), .point_size(point_size),
 		.r_ra(e_ra), .r_rd(e_rd), .r_we(e_we), .r_wa(e_wa), .r_wd(e_wd),
 		.done(e_done), .edges(e_edges), .bbox(e_bbox), .front(e_front), .empty(e_empty)
 	);
 
+	wire [6:0] we_r40_l, we_r40_h;
+`ifdef SYNTH_KINTEX7
+	genvar gr40;
+	generate
+		for (gr40 = 0; gr40 < 7; gr40 = gr40 + 1) begin : g_we_r40
+			wire we_raw = e_we && (e_wa == (7'd40 + gr40));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wer40_l (.I0(we_raw), .O(we_r40_l[gr40]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wer40_h (.I0(we_raw), .O(we_r40_h[gr40]));
+		end
+	endgenerate
+`else
+	genvar gr40;
+	generate
+		for (gr40 = 0; gr40 < 7; gr40 = gr40 + 1) begin : g_we_r40
+			wire we_raw = e_we && (e_wa == (7'd40 + gr40));
+			assign we_r40_l[gr40] = we_raw;
+			assign we_r40_h[gr40] = we_raw;
+		end
+	endgenerate
+`endif
+
+	always @(posedge clk) begin
+		if (we_r40_l[0]) R_lo[40] <= e_wd[15:0];
+		if (we_r40_h[0]) R_hi[40] <= e_wd[31:16];
+		if (we_r40_l[1]) R_lo[41] <= e_wd[15:0];
+		if (we_r40_h[1]) R_hi[41] <= e_wd[31:16];
+		if (we_r40_l[2]) R_lo[42] <= e_wd[15:0];
+		if (we_r40_h[2]) R_hi[42] <= e_wd[31:16];
+		if (we_r40_l[3]) R_lo[43] <= e_wd[15:0];
+		if (we_r40_h[3]) R_hi[43] <= e_wd[31:16];
+		if (we_r40_l[4]) R_lo[44] <= e_wd[15:0];
+		if (we_r40_h[4]) R_hi[44] <= e_wd[31:16];
+		if (we_r40_l[5]) R_lo[45] <= e_wd[15:0];
+		if (we_r40_h[5]) R_hi[45] <= e_wd[31:16];
+		if (we_r40_l[6]) R_lo[46] <= e_wd[15:0];
+		if (we_r40_h[6]) R_hi[46] <= e_wd[31:16];
+	end
+
 	/* Floating-point arithmetic units */
-	reg fa_v, fm_v, fd_v;
-	reg [31:0] fa_a, fa_b;
-	reg fa_sub;
-	reg [31:0] fm_a, fm_b;
-	reg [31:0] fd_a, fd_b;
+	(* max_fanout = 16 *) reg fa_v, fm_v, fd_v;
+	(* extract_enable = "no", extract_reset = "no" *) reg [15:0] fa_a_lo, fa_a_hi;
+	(* extract_enable = "no", extract_reset = "no" *) reg [15:0] fa_b_lo, fa_b_hi;
+	(* max_fanout = 16, extract_enable = "no", extract_reset = "no" *) reg fa_sub;
+	(* extract_enable = "no", extract_reset = "no" *) reg [15:0] fm_a_lo, fm_a_hi;
+	(* extract_enable = "no", extract_reset = "no" *) reg [15:0] fm_b_lo, fm_b_hi;
+	(* extract_enable = "no", extract_reset = "no" *) reg [15:0] fd_a_lo, fd_a_hi;
+	(* extract_enable = "no", extract_reset = "no" *) reg [15:0] fd_b_lo, fd_b_hi;
+	wire [31:0] fa_a = {fa_a_hi, fa_a_lo};
+	wire [31:0] fa_b = {fa_b_hi, fa_b_lo};
+	wire [31:0] fm_a = {fm_a_hi, fm_a_lo};
+	wire [31:0] fm_b = {fm_b_hi, fm_b_lo};
+	wire [31:0] fd_a = {fd_a_hi, fd_a_lo};
+	wire [31:0] fd_b = {fd_b_hi, fd_b_lo};
 	wire fa_o, fm_o, fd_o, fd_busy;
 	wire [31:0] fa_r, fm_r, fd_r;
 
@@ -292,32 +1004,58 @@ module atg_rx_setup (
 		.busy(fd_busy), .o_done(fd_o), .o_r(fd_r)
 	);
 
-	/* fp32 compare: a <= b */
-	function fle;
-		input [31:0] a, b;
-		reg [32:0] ka, kb;
-		begin
-			ka = {2'd0, a[30:0]};
-			kb = {2'd0, b[30:0]};
-			fle = !(a[30:23] == 8'hFF && a[22:0] != 23'd0) &&
-				!(b[30:23] == 8'hFF && b[22:0] != 23'd0) &&
-				(a[31] ? (b[31] ? ka >= kb : 1'b1) : (b[31] ? ka == 0 && kb == 0 : ka <= kb));
-		end
-	endfunction
-
-	function [31:0] bcl;
-		input [31:0] a, b;
-		bcl = b[30:0] == 31'd0 ? a : !b[31] ? (fle(a, b) ? a : b) : (fle(b, a) ? a : b);
-	endfunction
+	/* Hardware carry-chain float magnitude comparator for depth bias clamp */
+	wire bcl_mag_lt;
+	am_sub #(.W(31)) u_bcl_sub (
+		.a(fa_r[30:0]),
+		.b(b_clamp[30:0]),
+		.bi(1'b0),
+		.d(),
+		.bo(bcl_mag_lt)
+	);
+	wire bcl_lo_zero = (b_clamp_lo == 16'd0);
+	wire bcl_hi_zero = (b_clamp_hi[14:0] == 15'd0);
+	wire bcl_is_zero = bcl_lo_zero && bcl_hi_zero;
+	wire bcl_nan = (b_clamp[30:23] == 8'hFF) && (b_clamp[22:0] != 23'd0);
+	wire bcl_nan_free_lo = !r_fa_nan_lo && !bcl_nan;
+	wire bcl_nan_free_hi = !r_fa_nan_hi && !bcl_nan;
+	wire bcl_fa_le_lo = bcl_nan_free_lo && (
+		r_fa_sign_lo ? (r_bcl_sign_lo ? !r_bcl_mag_lt_lo : 1'b1) :
+		               (r_bcl_sign_lo ? (r_fa_is_zero_lo && r_bcl_is_zero_lo) : (r_bcl_mag_lt_lo || r_bcl_mag_eq_lo))
+	);
+	wire bcl_fa_le_hi = bcl_nan_free_hi && (
+		r_fa_sign_hi ? (r_bcl_sign_hi ? !r_bcl_mag_lt_hi : 1'b1) :
+		               (r_fa_sign_hi ? (r_fa_is_zero_hi && r_bcl_is_zero_hi) : (r_bcl_mag_lt_hi || r_bcl_mag_eq_hi))
+	);
+	wire bcl_ge_lo = bcl_nan_free_lo && (
+		r_bcl_sign_lo ? (r_fa_sign_lo ? (r_bcl_mag_lt_lo || r_bcl_mag_eq_lo) : 1'b1) :
+		                (r_fa_sign_lo ? (r_fa_is_zero_lo && r_bcl_is_zero_lo) : !r_bcl_mag_lt_lo)
+	);
+	wire bcl_ge_hi = bcl_nan_free_hi && (
+		r_bcl_sign_hi ? (r_fa_sign_hi ? (r_bcl_mag_lt_hi || r_bcl_mag_eq_hi) : 1'b1) :
+		                (r_fa_sign_hi ? (r_fa_is_zero_hi && r_bcl_is_zero_hi) : !r_bcl_mag_lt_hi)
+	);
 
 	function [31:0] max_mag;
 		input [31:0] a, b;
 		max_mag = b[30:0] > a[30:0] ? b : a;
 	endfunction
 
+	wire bm_sel = {1'b0, pl[1][30:0]} > {1'b0, pl[0][30:0]};
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire bm_sel_lo, bm_sel_hi;
+	LUT1 #(.INIT(2'b10)) u_bms_l (.I0(bm_sel), .O(bm_sel_lo));
+	LUT1 #(.INIT(2'b10)) u_bms_h (.I0(bm_sel), .O(bm_sel_hi));
+`else
+	wire bm_sel_lo = bm_sel;
+	wire bm_sel_hi = bm_sel;
+`endif
+	wire [15:0] bm_val_lo = bm_sel_lo ? pl_lo[1] : pl_lo[0];
+	wire [15:0] bm_val_hi = bm_sel_hi ? {1'b0, pl_hi[1][14:0]} : {1'b0, pl_hi[0][14:0]};
+
 	wire [7:0] ea23;
 	wire su_bo_unused;
-	reg [7:0] ea_in;
+	(* extract_enable = "no", extract_reset = "no" *) reg [7:0] ea_in;
 	am_sub #(.W(8)) u_ea23 (.a(ea_in), .b(8'd23), .bi(1'b0), .d(ea23), .bo(su_bo_unused));
 
 	wire [31:0] max_z01 = max_mag({1'b0, R[33][30:0]}, {1'b0, R[36][30:0]});
@@ -326,15 +1064,130 @@ module atg_rx_setup (
 	/* Stream Selection: cl_* vs mesh_* (Option 4 Static MUX with cl_* priority) */
 	wire in_mesh = mesh_valid && !cl_valid;
 	wire in_valid = cl_valid || mesh_valid;
-	wire [701:0] in_tri = in_mesh ? mesh_tri : cl_tri;
+	wire [701:0] in_tri;
 	wire in_last = in_mesh ? mesh_last : cl_last;
 
+	wire in_raw = cl_valid ? cl_tri[699] : mesh_tri[699];
+	wire [1:0] in_kind_hdr = cl_valid ? cl_tri[701:700] : mesh_tri[701:700];
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire cl_valid_kp0, cl_valid_kp1;
+	LUT1 #(.INIT(2'b10)) u_clv_kp0 (.I0(cl_valid), .O(cl_valid_kp0));
+	LUT1 #(.INIT(2'b10)) u_clv_kp1 (.I0(cl_valid), .O(cl_valid_kp1));
+	wire [26:0] in_keep_hdr = {
+		cl_valid_kp1 ? cl_tri[698:688] : mesh_tri[698:688],
+		cl_valid_kp0 ? cl_tri[687:672] : mesh_tri[687:672]
+	};
+`else
+	wire [26:0] in_keep_hdr = cl_valid ? cl_tri[698:672] : mesh_tri[698:672];
+`endif
+
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire [3:0] in_mesh_t1;
+	(* keep = "true", dont_touch = "true" *) wire [43:0] in_mesh_leaf;
+	(* keep = "true", dont_touch = "true" *) wire [19:0] in_mesh_leaf_r31;
+	wire [319:0] in_tri_r31;
+	genvar gmt, gml;
+	generate
+		for (gmt = 0; gmt < 4; gmt = gmt + 1) begin : g_im_t1
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_imt (.I0(in_mesh), .O(in_mesh_t1[gmt]));
+			for (gml = 0; gml < 11; gml = gml + 1) begin : g_im_leaf
+				(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_iml (.I0(in_mesh_t1[gmt]), .O(in_mesh_leaf[gmt * 11 + gml]));
+			end
+		end
+		for (gml = 0; gml < 44; gml = gml + 1) begin : g_im_mux
+			localparam integer HI = (gml == 43) ? 701 : (gml * 16 + 15);
+			localparam integer LO = gml * 16;
+			assign in_tri[HI:LO] = in_mesh_leaf[gml] ? mesh_tri[HI:LO] : cl_tri[HI:LO];
+		end
+		for (gml = 0; gml < 20; gml = gml + 1) begin : g_im_r31
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_im_r31 (.I0(in_mesh_t1[gml / 5]), .O(in_mesh_leaf_r31[gml]));
+			assign in_tri_r31[gml * 16 +: 16] = in_mesh_leaf_r31[gml] ? mesh_tri[gml * 16 +: 16] : cl_tri[gml * 16 +: 16];
+		end
+	endgenerate
+
+	wire in_valid_ctrl, in_valid_pl, in_valid_fd, in_valid_raw_r;
+	(* keep = "true", dont_touch = "true" *) wire we_idle_ctrl, we_idle_keep_lo, we_idle_keep_hi;
+	wire [3:0] iv_branch;
+	(* keep = "true", dont_touch = "true" *) wire [20:0] we_in_lo, we_in_hi;
+	(* keep = "true", dont_touch = "true" *) wire [6:0] we_vpr_lo, we_vpr_hi;
+
+	LUT1 #(.INIT(2'b10)) u_iv_ctrl (.I0(in_valid), .O(in_valid_ctrl));
+	LUT1 #(.INIT(2'b10)) u_iv_pl   (.I0(in_valid), .O(in_valid_pl));
+	LUT1 #(.INIT(2'b10)) u_iv_fd   (.I0(in_valid), .O(in_valid_fd));
+	LUT1 #(.INIT(2'b10)) u_iv_raw  (.I0(in_valid), .O(in_valid_raw_r));
+
+	LUT1 #(.INIT(2'b10)) u_wid_c  (.I0(in_valid_ctrl), .O(we_idle_ctrl));
+	LUT1 #(.INIT(2'b10)) u_wid_kl (.I0(in_valid_ctrl), .O(we_idle_keep_lo));
+	LUT1 #(.INIT(2'b10)) u_wid_kh (.I0(in_valid_ctrl), .O(we_idle_keep_hi));
+
+	LUT1 #(.INIT(2'b10)) u_iv_b0 (.I0(in_valid), .O(iv_branch[0]));
+	LUT1 #(.INIT(2'b10)) u_iv_b1 (.I0(in_valid), .O(iv_branch[1]));
+	LUT1 #(.INIT(2'b10)) u_iv_b2 (.I0(in_valid), .O(iv_branch[2]));
+	LUT1 #(.INIT(2'b10)) u_iv_b3 (.I0(in_valid), .O(iv_branch[3]));
+
+	genvar giv;
+	generate
+		for (giv = 0; giv < 21; giv = giv + 1) begin : g_we_in
+			localparam integer BR = (giv < 6) ? 0 : (giv < 12) ? 1 : (giv < 18) ? 2 : 3;
+			LUT1 #(.INIT(2'b10)) u_wel (.I0(iv_branch[BR]), .O(we_in_lo[giv]));
+			LUT1 #(.INIT(2'b10)) u_weh (.I0(iv_branch[BR]), .O(we_in_hi[giv]));
+		end
+		for (giv = 0; giv < 7; giv = giv + 1) begin : g_we_vp
+			LUT1 #(.INIT(2'b10)) u_wvpl (.I0(iv_branch[3]), .O(we_vpr_lo[giv]));
+			LUT1 #(.INIT(2'b10)) u_wvph (.I0(iv_branch[3]), .O(we_vpr_hi[giv]));
+		end
+	endgenerate
+`else
+	assign in_tri = in_mesh ? mesh_tri : cl_tri;
+	wire in_valid_ctrl = in_valid;
+	wire in_valid_pl = in_valid;
+	wire in_valid_fd = in_valid;
+	wire in_valid_raw_r = in_valid;
+	wire we_idle_ctrl = in_valid;
+	wire we_idle_keep_lo = in_valid;
+	wire we_idle_keep_hi = in_valid;
+	wire [20:0] we_in_lo = {21{in_valid}};
+	wire [20:0] we_in_hi = {21{in_valid}};
+	wire [6:0] we_vpr_lo = {7{in_valid}};
+	wire [6:0] we_vpr_hi = {7{in_valid}};
+`endif
+
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire cl_ready_out, mesh_ready_out, busy_out;
+	LUT1 #(.INIT(2'b10)) u_cr_out (.I0(st == S_IDLE), .O(cl_ready_out));
+	LUT1 #(.INIT(2'b10)) u_mr_out (.I0(st == S_IDLE), .O(mesh_ready_out));
+	LUT1 #(.INIT(2'b10)) u_bs_out (.I0(st != S_IDLE), .O(busy_out));
+	assign cl_ready = cl_ready_out;
+	assign mesh_ready = mesh_ready_out;
+	assign busy = busy_out;
+`else
 	assign cl_ready = (st == S_IDLE);
-	assign mesh_ready = (st == S_IDLE) && !cl_valid;
+	assign mesh_ready = (st == S_IDLE);
 	assign busy = (st != S_IDLE);
+`endif
 	assign sp_last = lastq && !more;
 
-	/* Plane source registers */
+`ifdef SYNTH_KINTEX7
+	wire [15:0] cur_A_lo = (p_plane_2_l == 2'd0) ? pl_lo[0] : (p_plane_2_l == 2'd1) ? pl_lo[3] : (p_plane_2_l == 2'd2) ? pl_lo[6] : pl_lo[9];
+	wire [15:0] cur_A_hi = (p_plane_2_h == 2'd0) ? pl_hi[0] : (p_plane_2_h == 2'd1) ? pl_hi[3] : (p_plane_2_h == 2'd2) ? pl_hi[6] : pl_hi[9];
+	wire [31:0] cur_A = {cur_A_hi, cur_A_lo};
+
+	wire [15:0] cur_B_lo = (p_plane_3_l == 2'd0) ? pl_lo[1] : (p_plane_3_l == 2'd1) ? pl_lo[4] : (p_plane_3_l == 2'd2) ? pl_lo[7] : pl_lo[10];
+	wire [15:0] cur_B_hi = (p_plane_3_h == 2'd0) ? pl_hi[1] : (p_plane_3_h == 2'd1) ? pl_hi[4] : (p_plane_3_h == 2'd2) ? pl_hi[7] : pl_hi[10];
+	wire [31:0] cur_B = {cur_B_hi, cur_B_lo};
+
+	wire [15:0] R_pf0_lo = (p_plane_pf0_l == 2'd0) ? R_lo[33] : (p_plane_pf0_l == 2'd1) ? R_lo[28] : (p_plane_pf0_l == 2'd2) ? R_lo[52] : R_lo[55];
+	wire [15:0] R_pf0_hi = (p_plane_pf0_h == 2'd0) ? R_hi[33] : (p_plane_pf0_h == 2'd1) ? R_hi[28] : (p_plane_pf0_h == 2'd2) ? R_hi[52] : R_hi[55];
+	wire [31:0] R_pf0 = {R_pf0_hi, R_pf0_lo};
+
+	wire [15:0] R_pf1_lo = (p_plane_pf1_l == 2'd0) ? R_lo[36] : (p_plane_pf1_l == 2'd1) ? R_lo[29] : (p_plane_pf1_l == 2'd2) ? R_lo[53] : R_lo[56];
+	wire [15:0] R_pf1_hi = (p_plane_pf1_h == 2'd0) ? R_hi[36] : (p_plane_pf1_h == 2'd1) ? R_hi[29] : (p_plane_pf1_h == 2'd2) ? R_hi[53] : R_hi[56];
+	wire [31:0] R_pf1 = {R_pf1_hi, R_pf1_lo};
+
+	wire [15:0] R_pf2_lo = (p_plane_pf2_l == 2'd0) ? R_lo[39] : (p_plane_pf2_l == 2'd1) ? R_lo[30] : (p_plane_pf2_l == 2'd2) ? R_lo[54] : R_lo[57];
+	wire [15:0] R_pf2_hi = (p_plane_pf2_h == 2'd0) ? R_hi[39] : (p_plane_pf2_h == 2'd1) ? R_hi[30] : (p_plane_pf2_h == 2'd2) ? R_hi[54] : R_hi[57];
+	wire [31:0] R_pf2 = {R_pf2_hi, R_pf2_lo};
+`else
 	reg [6:0] pf0, pf1, pf2;
 	always @(*)
 		case (p_plane)
@@ -346,84 +1199,284 @@ module atg_rx_setup (
 
 	wire [31:0] cur_A = (p_plane == 2'd0) ? pl[0] : (p_plane == 2'd1) ? pl[3] : (p_plane == 2'd2) ? pl[6] : pl[9];
 	wire [31:0] cur_B = (p_plane == 2'd0) ? pl[1] : (p_plane == 2'd1) ? pl[4] : (p_plane == 2'd2) ? pl[7] : pl[10];
+	wire [31:0] R_pf0 = R[pf0];
+	wire [31:0] R_pf1 = R[pf1];
+	wire [31:0] R_pf2 = R[pf2];
+	wire [15:0] R_pf0_lo = R_pf0[15:0];
+	wire [15:0] R_pf0_hi = R_pf0[31:16];
+	wire [15:0] R_pf1_lo = R_pf1[15:0];
+	wire [15:0] R_pf1_hi = R_pf1[31:16];
+	wire [15:0] R_pf2_lo = R_pf2[15:0];
+	wire [15:0] R_pf2_hi = R_pf2[31:16];
+	wire [15:0] cur_A_lo = cur_A[15:0];
+	wire [15:0] cur_A_hi = cur_A[31:16];
+	wire [15:0] cur_B_lo = cur_B[15:0];
+	wire [15:0] cur_B_hi = cur_B[31:16];
+`endif
 
 	integer i;
 	always @(posedge clk) begin
-		e_rd <= R[e_ra];
+		case (e_ra_b[0])
+		7'd31: e_rd[3:0] <= R_lo[31][3:0];
+		7'd32: e_rd[3:0] <= R_lo[32][3:0];
+		7'd33: e_rd[3:0] <= R_lo[33][3:0];
+		7'd34: e_rd[3:0] <= R_lo[34][3:0];
+		7'd35: e_rd[3:0] <= R_lo[35][3:0];
+		7'd36: e_rd[3:0] <= R_lo[36][3:0];
+		7'd37: e_rd[3:0] <= R_lo[37][3:0];
+		7'd38: e_rd[3:0] <= R_lo[38][3:0];
+		7'd39: e_rd[3:0] <= R_lo[39][3:0];
+		7'd76: e_rd[3:0] <= R_lo[76][3:0];
+		7'd77: e_rd[3:0] <= R_lo[77][3:0];
+		7'd78: e_rd[3:0] <= R_lo[78][3:0];
+		7'd79: e_rd[3:0] <= R_lo[79][3:0];
+		default: e_rd[3:0] <= 4'd0;
+		endcase
+		case (e_ra_b[1])
+		7'd31: e_rd[7:4] <= R_lo[31][7:4];
+		7'd32: e_rd[7:4] <= R_lo[32][7:4];
+		7'd33: e_rd[7:4] <= R_lo[33][7:4];
+		7'd34: e_rd[7:4] <= R_lo[34][7:4];
+		7'd35: e_rd[7:4] <= R_lo[35][7:4];
+		7'd36: e_rd[7:4] <= R_lo[36][7:4];
+		7'd37: e_rd[7:4] <= R_lo[37][7:4];
+		7'd38: e_rd[7:4] <= R_lo[38][7:4];
+		7'd39: e_rd[7:4] <= R_lo[39][7:4];
+		7'd76: e_rd[7:4] <= R_lo[76][7:4];
+		7'd77: e_rd[7:4] <= R_lo[77][7:4];
+		7'd78: e_rd[7:4] <= R_lo[78][7:4];
+		7'd79: e_rd[7:4] <= R_lo[79][7:4];
+		default: e_rd[7:4] <= 4'd0;
+		endcase
+		case (e_ra_b[2])
+		7'd31: e_rd[11:8] <= R_lo[31][11:8];
+		7'd32: e_rd[11:8] <= R_lo[32][11:8];
+		7'd33: e_rd[11:8] <= R_lo[33][11:8];
+		7'd34: e_rd[11:8] <= R_lo[34][11:8];
+		7'd35: e_rd[11:8] <= R_lo[35][11:8];
+		7'd36: e_rd[11:8] <= R_lo[36][11:8];
+		7'd37: e_rd[11:8] <= R_lo[37][11:8];
+		7'd38: e_rd[11:8] <= R_lo[38][11:8];
+		7'd39: e_rd[11:8] <= R_lo[39][11:8];
+		7'd76: e_rd[11:8] <= R_lo[76][11:8];
+		7'd77: e_rd[11:8] <= R_lo[77][11:8];
+		7'd78: e_rd[11:8] <= R_lo[78][11:8];
+		7'd79: e_rd[11:8] <= R_lo[79][11:8];
+		default: e_rd[11:8] <= 4'd0;
+		endcase
+		case (e_ra_b[3])
+		7'd31: e_rd[15:12] <= R_lo[31][15:12];
+		7'd32: e_rd[15:12] <= R_lo[32][15:12];
+		7'd33: e_rd[15:12] <= R_lo[33][15:12];
+		7'd34: e_rd[15:12] <= R_lo[34][15:12];
+		7'd35: e_rd[15:12] <= R_lo[35][15:12];
+		7'd36: e_rd[15:12] <= R_lo[36][15:12];
+		7'd37: e_rd[15:12] <= R_lo[37][15:12];
+		7'd38: e_rd[15:12] <= R_lo[38][15:12];
+		7'd39: e_rd[15:12] <= R_lo[39][15:12];
+		7'd76: e_rd[15:12] <= R_lo[76][15:12];
+		7'd77: e_rd[15:12] <= R_lo[77][15:12];
+		7'd78: e_rd[15:12] <= R_lo[78][15:12];
+		7'd79: e_rd[15:12] <= R_lo[79][15:12];
+		default: e_rd[15:12] <= 4'd0;
+		endcase
+		case (e_ra_b[4])
+		7'd31: e_rd[19:16] <= R_hi[31][3:0];
+		7'd32: e_rd[19:16] <= R_hi[32][3:0];
+		7'd33: e_rd[19:16] <= R_hi[33][3:0];
+		7'd34: e_rd[19:16] <= R_hi[34][3:0];
+		7'd35: e_rd[19:16] <= R_hi[35][3:0];
+		7'd36: e_rd[19:16] <= R_hi[36][3:0];
+		7'd37: e_rd[19:16] <= R_hi[37][3:0];
+		7'd38: e_rd[19:16] <= R_hi[38][3:0];
+		7'd39: e_rd[19:16] <= R_hi[39][3:0];
+		7'd76: e_rd[19:16] <= R_hi[76][3:0];
+		7'd77: e_rd[19:16] <= R_hi[77][3:0];
+		7'd78: e_rd[19:16] <= R_hi[78][3:0];
+		7'd79: e_rd[19:16] <= R_hi[79][3:0];
+		default: e_rd[19:16] <= 4'd0;
+		endcase
+		case (e_ra_b[5])
+		7'd31: e_rd[23:20] <= R_hi[31][7:4];
+		7'd32: e_rd[23:20] <= R_hi[32][7:4];
+		7'd33: e_rd[23:20] <= R_hi[33][7:4];
+		7'd34: e_rd[23:20] <= R_hi[34][7:4];
+		7'd35: e_rd[23:20] <= R_hi[35][7:4];
+		7'd36: e_rd[23:20] <= R_hi[36][7:4];
+		7'd37: e_rd[23:20] <= R_hi[37][7:4];
+		7'd38: e_rd[23:20] <= R_hi[38][7:4];
+		7'd39: e_rd[23:20] <= R_hi[39][7:4];
+		7'd76: e_rd[23:20] <= R_hi[76][7:4];
+		7'd77: e_rd[23:20] <= R_hi[77][7:4];
+		7'd78: e_rd[23:20] <= R_hi[78][7:4];
+		7'd79: e_rd[23:20] <= R_hi[79][7:4];
+		default: e_rd[23:20] <= 4'd0;
+		endcase
+		case (e_ra_b[6])
+		7'd31: e_rd[27:24] <= R_hi[31][11:8];
+		7'd32: e_rd[27:24] <= R_hi[32][11:8];
+		7'd33: e_rd[27:24] <= R_hi[33][11:8];
+		7'd34: e_rd[27:24] <= R_hi[34][11:8];
+		7'd35: e_rd[27:24] <= R_hi[35][11:8];
+		7'd36: e_rd[27:24] <= R_hi[36][11:8];
+		7'd37: e_rd[27:24] <= R_hi[37][11:8];
+		7'd38: e_rd[27:24] <= R_hi[38][11:8];
+		7'd39: e_rd[27:24] <= R_hi[39][11:8];
+		7'd76: e_rd[27:24] <= R_hi[76][11:8];
+		7'd77: e_rd[27:24] <= R_hi[77][11:8];
+		7'd78: e_rd[27:24] <= R_hi[78][11:8];
+		7'd79: e_rd[27:24] <= R_hi[79][11:8];
+		default: e_rd[27:24] <= 4'd0;
+		endcase
+		case (e_ra_b[7])
+		7'd31: e_rd[31:28] <= R_hi[31][15:12];
+		7'd32: e_rd[31:28] <= R_hi[32][15:12];
+		7'd33: e_rd[31:28] <= R_hi[33][15:12];
+		7'd34: e_rd[31:28] <= R_hi[34][15:12];
+		7'd35: e_rd[31:28] <= R_hi[35][15:12];
+		7'd36: e_rd[31:28] <= R_hi[36][15:12];
+		7'd37: e_rd[31:28] <= R_hi[37][15:12];
+		7'd38: e_rd[31:28] <= R_hi[38][15:12];
+		7'd39: e_rd[31:28] <= R_hi[39][15:12];
+		7'd76: e_rd[31:28] <= R_hi[76][15:12];
+		7'd77: e_rd[31:28] <= R_hi[77][15:12];
+		7'd78: e_rd[31:28] <= R_hi[78][15:12];
+		7'd79: e_rd[31:28] <= R_hi[79][15:12];
+		default: e_rd[31:28] <= 4'd0;
+		endcase
+	end
+
+	always @(posedge clk) begin
 		fa_v <= 1'b0;
 		fm_v <= 1'b0;
 		fd_v <= 1'b0;
 		e_start <= 1'b0;
 
-		if (e_we)
-			R[e_wa] <= e_wd;
-
-		if (!rst_n) begin
+		if (rst_setup_high) begin
 			st <= S_IDLE;
 			sp_valid <= 1'b0;
 			more <= 1'b0;
 			sub <= 1'b0;
 			seq_step <= 5'd0;
-			p_plane <= 2'd0;
-			p_step <= 4'd0;
+			`SET_PLANE(2'd0);
+			`SET_STEP(4'd0);
 			ea_in <= 8'd0;
-			for (i = 0; i < 12; i = i + 1)
-				pl[i] <= 32'd0;
+			for (i = 0; i < 12; i = i + 1) begin
+				pl_lo[i] <= 16'd0;
+				pl_hi[i] <= 16'd0;
+			end
 		end else case (st)
-		S_IDLE:
-			if (in_valid) begin
-				raw <= in_tri[699];
-				kind <= in_tri[699] || in_tri[701:700] == 2'd3 ? 2'd2 : in_tri[701:700];
-				keep <= in_tri[698:672];
+		S_IDLE: begin
+			if (we_idle_ctrl) begin
+				raw <= in_raw;
+				kind <= in_raw || in_kind_hdr == 2'd3 ? 2'd2 : in_kind_hdr;
+				kind_prim <= in_raw || in_kind_hdr == 2'd3 ? 2'd2 : in_kind_hdr;
 				lastq <= in_last;
 				sub <= 1'b0;
 				more <= 1'b0;
-				for (i = 0; i < 12; i = i + 1)
-					pl[i] <= 32'd0;
+			end
+			if (we_idle_keep_lo) begin
+				keep[13:0] <= in_keep_hdr[13:0];
+			end
+			if (we_idle_keep_hi) begin
+				keep[26:14] <= in_keep_hdr[26:14];
+			end
+			if (in_valid_pl) begin
+				for (i = 0; i < 12; i = i + 1) begin
+					pl_lo[i] <= 16'd0;
+					pl_hi[i] <= 16'd0;
+				end
+			end
 
-				/* 1-cycle parallel load */
-				for (i = 0; i < 21; i = i + 1)
-					R[i] <= in_tri[i * 32 +: 32];
-				R[21] <= vp_array[vp_idx][0]; R[22] <= vp_array[vp_idx][1]; R[23] <= vp_array[vp_idx][2];
-				R[24] <= vp_array[vp_idx][3]; R[25] <= vp_array[vp_idx][4]; R[26] <= vp_array[vp_idx][5];
-				R[27] <= ONE;
+			/* 1-cycle parallel load */
+			for (i = 0; i < 21; i = i + 1) begin
+				if (we_in_lo[i]) R_lo[i] <= in_tri[i * 32 +: 16];
+				if (we_in_hi[i]) R_hi[i] <= in_tri[i * 32 + 16 +: 16];
+			end
+			if (we_vpr_lo[0]) R_lo[21] <= {vp_array_lo[vp_idx_r_lo_b3[0]][0][15:12], vp_array_lo[vp_idx_r_lo_b2[0]][0][11:8], vp_array_lo[vp_idx_r_lo_b1[0]][0][7:4], vp_array_lo[vp_idx_r_lo_b0[0]][0][3:0]};
+			if (we_vpr_hi[0]) R_hi[21] <= {vp_array_hi[vp_idx_r_hi_b3[0]][0][15:12], vp_array_hi[vp_idx_r_hi_b2[0]][0][11:8], vp_array_hi[vp_idx_r_hi_b1[0]][0][7:4], vp_array_hi[vp_idx_r_hi_b0[0]][0][3:0]};
+			if (we_vpr_lo[1]) R_lo[22] <= {vp_array_lo[vp_idx_r_lo_b3[1]][1][15:12], vp_array_lo[vp_idx_r_lo_b2[1]][1][11:8], vp_array_lo[vp_idx_r_lo_b1[1]][1][7:4], vp_array_lo[vp_idx_r_lo_b0[1]][1][3:0]};
+			if (we_vpr_hi[1]) R_hi[22] <= {vp_array_hi[vp_idx_r_hi_b3[1]][1][15:12], vp_array_hi[vp_idx_r_hi_b2[1]][1][11:8], vp_array_hi[vp_idx_r_hi_b1[1]][1][7:4], vp_array_hi[vp_idx_r_hi_b0[1]][1][3:0]};
+			if (we_vpr_lo[2]) R_lo[23] <= {vp_array_lo[vp_idx_r_lo_b3[2]][2][15:12], vp_array_lo[vp_idx_r_lo_b2[2]][2][11:8], vp_array_lo[vp_idx_r_lo_b1[2]][2][7:4], vp_array_lo[vp_idx_r_lo_b0[2]][2][3:0]};
+			if (we_vpr_hi[2]) R_hi[23] <= {vp_array_hi[vp_idx_r_hi_b3[2]][2][15:12], vp_array_hi[vp_idx_r_hi_b2[2]][2][11:8], vp_array_hi[vp_idx_r_hi_b1[2]][2][7:4], vp_array_hi[vp_idx_r_hi_b0[2]][2][3:0]};
+			if (we_vpr_lo[3]) R_lo[24] <= {vp_array_lo[vp_idx_r_lo_b3[3]][3][15:12], vp_array_lo[vp_idx_r_lo_b2[3]][3][11:8], vp_array_lo[vp_idx_r_lo_b1[3]][3][7:4], vp_array_lo[vp_idx_r_lo_b0[3]][3][3:0]};
+			if (we_vpr_hi[3]) R_hi[24] <= {vp_array_hi[vp_idx_r_hi_b3[3]][3][15:12], vp_array_hi[vp_idx_r_hi_b2[3]][3][11:8], vp_array_hi[vp_idx_r_hi_b1[3]][3][7:4], vp_array_hi[vp_idx_r_hi_b0[3]][3][3:0]};
+			if (we_vpr_lo[4]) R_lo[25] <= {vp_array_lo[vp_idx_r_lo_b3[4]][4][15:12], vp_array_lo[vp_idx_r_lo_b2[4]][4][11:8], vp_array_lo[vp_idx_r_lo_b1[4]][4][7:4], vp_array_lo[vp_idx_r_lo_b0[4]][4][3:0]};
+			if (we_vpr_hi[4]) R_hi[25] <= {vp_array_hi[vp_idx_r_hi_b3[4]][4][15:12], vp_array_hi[vp_idx_r_hi_b2[4]][4][11:8], vp_array_hi[vp_idx_r_hi_b1[4]][4][7:4], vp_array_hi[vp_idx_r_hi_b0[4]][4][3:0]};
+			if (we_vpr_lo[5]) R_lo[26] <= {vp_array_lo[vp_idx_r_lo_b3[5]][5][15:12], vp_array_lo[vp_idx_r_lo_b2[5]][5][11:8], vp_array_lo[vp_idx_r_lo_b1[5]][5][7:4], vp_array_lo[vp_idx_r_lo_b0[5]][5][3:0]};
+			if (we_vpr_hi[5]) R_hi[26] <= {vp_array_hi[vp_idx_r_hi_b3[5]][5][15:12], vp_array_hi[vp_idx_r_hi_b2[5]][5][11:8], vp_array_hi[vp_idx_r_hi_b1[5]][5][7:4], vp_array_hi[vp_idx_r_hi_b0[5]][5][3:0]};
+			if (we_vpr_lo[6]) R_lo[27] <= ONE[15:0];
+			if (we_vpr_hi[6]) R_hi[27] <= ONE[31:16];
 
-				if (in_tri[699]) begin
-					/* RAW screen space: load X, Y, Z directly */
-					R[31] <= in_tri[31:0];   R[32] <= in_tri[63:32];   R[33] <= in_tri[95:64];
-					R[34] <= in_tri[159:128]; R[35] <= in_tri[191:160]; R[36] <= in_tri[223:192];
-					R[37] <= in_tri[287:256]; R[38] <= in_tri[319:288]; R[39] <= in_tri[351:320];
+			if (in_raw) begin
+				/* RAW screen space: load X, Y, Z directly */
+				if (in_valid_raw_r) begin
+`ifdef SYNTH_KINTEX7
+					R_lo[31] <= in_tri_r31[15:0];   R_hi[31] <= in_tri_r31[31:16];
+					R_lo[32] <= in_tri_r31[47:32];  R_hi[32] <= in_tri_r31[63:48];
+					R_lo[33] <= in_tri_r31[79:64];  R_hi[33] <= in_tri_r31[95:80];
+					R_lo[34] <= in_tri_r31[143:128]; R_hi[34] <= in_tri_r31[159:144];
+					R_lo[35] <= in_tri_r31[175:160]; R_hi[35] <= in_tri_r31[191:176];
+					R_lo[36] <= in_tri_r31[207:192]; R_hi[36] <= in_tri_r31[223:208];
+					R_lo[37] <= in_tri_r31[271:256]; R_hi[37] <= in_tri_r31[287:272];
+					R_lo[38] <= in_tri_r31[303:288]; R_hi[38] <= in_tri_r31[319:304];
+					R_lo[39] <= in_tri[335:320];     R_hi[39] <= in_tri[351:336];
+`else
+					R_lo[31] <= in_tri[15:0];   R_hi[31] <= in_tri[31:16];
+					R_lo[32] <= in_tri[47:32];  R_hi[32] <= in_tri[63:48];
+					R_lo[33] <= in_tri[79:64];  R_hi[33] <= in_tri[95:80];
+					R_lo[34] <= in_tri[143:128]; R_hi[34] <= in_tri[159:144];
+					R_lo[35] <= in_tri[175:160]; R_hi[35] <= in_tri[191:176];
+					R_lo[36] <= in_tri[207:192]; R_hi[36] <= in_tri[223:208];
+					R_lo[37] <= in_tri[271:256]; R_hi[37] <= in_tri[287:272];
+					R_lo[38] <= in_tri[303:288]; R_hi[38] <= in_tri[319:304];
+					R_lo[39] <= in_tri[335:320]; R_hi[39] <= in_tri[351:336];
+`endif
+				end
+				if (we_idle_ctrl) begin
 					st <= S_EDGE;
 					e_start <= 1'b1;
-				end else begin
-					/* Clip space: start 1/w0 divide */
+				end
+			end else begin
+				/* Clip space: start 1/w0 divide */
+				if (in_valid_fd) begin
 					fd_v <= 1'b1;
-					fd_a <= ONE;
-					fd_b <= in_tri[127:96];
+					fd_a_lo <= ONE[15:0];
+					fd_a_hi <= ONE[31:16];
+					fd_b_lo <= in_tri[111:96];
+					fd_b_hi <= in_tri[127:112];
 					seq_step <= 5'd0;
 					st <= S_PERSP_W;
 				end
 			end
+		end
 
 		S_PERSP_W:
-			if (fd_o) begin
-				case (seq_step)
+			if (fd_o_w) begin
+				case (seq_step_pw)
 				5'd0: begin
-					R[28] <= fd_r;	/* RW0 */
+					if (fd_o_w_lo) R_lo[28] <= fd_r[15:0];
+					if (fd_o_w_hi) R_hi[28] <= fd_r[31:16];	/* RW0 */
 					fd_v <= 1'b1;
-					fd_a <= ONE;
-					fd_b <= R[7];	/* V1.w */
+					fd_a_lo <= ONE[15:0];
+					fd_a_hi <= ONE[31:16];
+					fd_b_lo <= R_lo[7];
+					fd_b_hi <= R_hi[7];	/* V1.w */
 					seq_step <= 5'd1;
 				end
 				5'd1: begin
-					R[29] <= fd_r;	/* RW1 */
+					if (fd_o_w_lo) R_lo[29] <= fd_r[15:0];
+					if (fd_o_w_hi) R_hi[29] <= fd_r[31:16];	/* RW1 */
 					fd_v <= 1'b1;
-					fd_a <= ONE;
-					fd_b <= R[11];	/* V2.w */
+					fd_a_lo <= ONE[15:0];
+					fd_a_hi <= ONE[31:16];
+					fd_b_lo <= R_lo[11];
+					fd_b_hi <= R_hi[11];	/* V2.w */
 					seq_step <= 5'd2;
 				end
 				default: begin
-					R[30] <= fd_r;	/* RW2 */
+					if (fd_o_w_lo) R_lo[30] <= fd_r[15:0];
+					if (fd_o_w_hi) R_hi[30] <= fd_r[31:16];	/* RW2 */
 					seq_step <= 5'd0;
 					st <= S_PERSP_XYZ;
 				end
@@ -431,195 +1484,369 @@ module atg_rx_setup (
 			end
 
 		S_PERSP_XYZ:
-			case (seq_step)
+			case (seq_step_xyz)
 			/* Vertex 0: X0, Y0, Z0, B0W0, B1W0 */
 			5'd0: begin
-				fm_v <= 1'b1; fm_a <= R[0]; fm_b <= R[28];	/* V0.x * RW0 */
+				fm_v <= 1'b1;
+				fm_a_lo <= R_lo[0]; fm_a_hi <= R_hi[0];
+				fm_b_lo <= R_lo[28]; fm_b_hi <= R_hi[28];	/* V0.x * RW0 */
 				seq_step <= inc5(seq_step);
 			end
-			5'd1: if (fm_o) begin
-				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[21];	/* * XS */
+			5'd1: begin
+				fm_a_lo <= fm_r[15:0]; fm_a_hi <= fm_r[31:16];
+				fm_b_lo <= R_lo[21]; fm_b_hi <= R_hi[21];	/* * XS */
+				if (fm_o_xyz_v0) begin
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd2: if (fm_o_xyz_v0) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= fm_r[15:0]; fa_a_hi <= fm_r[31:16];
+				fa_b_lo <= R_lo[23]; fa_b_hi <= R_hi[23];
+				fa_sub <= 1'b0;	/* + XO */
 				seq_step <= inc5(seq_step);
 			end
-			5'd2: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[23]; fa_sub <= 1'b0;	/* + XO */
+			5'd3: begin
+				fm_a_lo <= R_lo[1]; fm_a_hi <= R_hi[1];
+				fm_b_lo <= R_lo[28]; fm_b_hi <= R_hi[28];	/* V0.y * RW0 */
+				if (fa_o_xyz_v0) begin
+					if (fa_o_xyz_v0_lo) R_lo[31] <= fa_r_R[15:0];
+					if (fa_o_xyz_v0_hi) R_hi[31] <= fa_r_R[31:16];	/* X0 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd4: begin
+				fm_a_lo <= fm_r[15:0]; fm_a_hi <= fm_r[31:16];
+				fm_b_lo <= R_lo[22]; fm_b_hi <= R_hi[22];	/* * YS */
+				if (fm_o_xyz_v0) begin
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd5: if (fm_o_xyz_v0) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= fm_r[15:0]; fa_a_hi <= fm_r[31:16];
+				fa_b_lo <= R_lo[24]; fa_b_hi <= R_hi[24];
+				fa_sub <= 1'b0;	/* + YO */
 				seq_step <= inc5(seq_step);
 			end
-			5'd3: if (fa_o) begin
-				R[31] <= fa_r;	/* X0 */
-				fm_v <= 1'b1; fm_a <= R[1]; fm_b <= R[28];	/* V0.y * RW0 */
+			5'd6: begin
+				fm_a_lo <= R_lo[2]; fm_a_hi <= R_hi[2];
+				fm_b_lo <= R_lo[28]; fm_b_hi <= R_hi[28];	/* V0.z * RW0 */
+				if (fa_o_xyz_v0) begin
+					if (fa_o_xyz_v0_lo) R_lo[32] <= fa_r_R[15:0];
+					if (fa_o_xyz_v0_hi) R_hi[32] <= fa_r_R[31:16];	/* Y0 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd7: begin
+				fm_a_lo <= fm_r[15:0]; fm_a_hi <= fm_r[31:16];
+				fm_b_lo <= R_lo[25]; fm_b_hi <= R_hi[25];	/* * ZS */
+				if (fm_o_xyz_v0) begin
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd8: if (fm_o_xyz_v0) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= fm_r[15:0]; fa_a_hi <= fm_r[31:16];
+				fa_b_lo <= R_lo[26]; fa_b_hi <= R_hi[26];
+				fa_sub <= 1'b0;	/* + ZO */
 				seq_step <= inc5(seq_step);
 			end
-			5'd4: if (fm_o) begin
-				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[22];	/* * YS */
+			5'd9: begin
+				fm_a_lo <= R_lo[12]; fm_a_hi <= R_hi[12];
+				fm_b_lo <= R_lo[28]; fm_b_hi <= R_hi[28];	/* W0.0 * RW0 */
+				if (fa_o_xyz_v0) begin
+					if (fa_o_xyz_v0_lo) R_lo[33] <= fa_r_R[15:0];
+					if (fa_o_xyz_v0_hi) R_hi[33] <= fa_r_R[31:16];	/* Z0 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd10: begin
+				fm_a_lo <= R_lo[13]; fm_a_hi <= R_hi[13];
+				fm_b_lo <= R_lo[28]; fm_b_hi <= R_hi[28];	/* W0.1 * RW0 */
+				if (fm_o_xyz_v0) begin
+					if (fm_o_xyz_v0_lo) R_lo[52] <= fm_r_R[15:0];
+					if (fm_o_xyz_v0_hi) R_hi[52] <= fm_r_R[31:16];	/* B0W0 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd11: begin
+				fm_a_lo <= R_lo[4]; fm_a_hi <= R_hi[4];
+				fm_b_lo <= R_lo[29]; fm_b_hi <= R_hi[29];	/* V1.x * RW1 */
+				if (fm_o_xyz_v1) begin
+					if (fm_o_xyz_v1_lo) R_lo[55] <= fm_r_R[15:0];
+					if (fm_o_xyz_v1_hi) R_hi[55] <= fm_r_R[31:16];	/* B1W0 */
+					/* Vertex 1: X1, Y1, Z1, B0W1, B1W1 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd12: begin
+				fm_a_lo <= fm_r[15:0]; fm_a_hi <= fm_r[31:16];
+				fm_b_lo <= R_lo[21]; fm_b_hi <= R_hi[21];	/* * XS */
+				if (fm_o_xyz_v1) begin
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd13: if (fm_o_xyz_v1) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= fm_r[15:0]; fa_a_hi <= fm_r[31:16];
+				fa_b_lo <= R_lo[23]; fa_b_hi <= R_hi[23];
+				fa_sub <= 1'b0;	/* + XO */
 				seq_step <= inc5(seq_step);
 			end
-			5'd5: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[24]; fa_sub <= 1'b0;	/* + YO */
+			5'd14: begin
+				fm_a_lo <= R_lo[5]; fm_a_hi <= R_hi[5];
+				fm_b_lo <= R_lo[29]; fm_b_hi <= R_hi[29];	/* V1.y * RW1 */
+				if (fa_o_xyz_v1) begin
+					if (fa_o_xyz_v1_lo) R_lo[34] <= fa_r_R[15:0];
+					if (fa_o_xyz_v1_hi) R_hi[34] <= fa_r_R[31:16];	/* X1 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd15: begin
+				fm_a_lo <= fm_r[15:0]; fm_a_hi <= fm_r[31:16];
+				fm_b_lo <= R_lo[22]; fm_b_hi <= R_hi[22];	/* * YS */
+				if (fm_o_xyz_v1) begin
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd16: if (fm_o_xyz_v1) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= fm_r[15:0]; fa_a_hi <= fm_r[31:16];
+				fa_b_lo <= R_lo[24]; fa_b_hi <= R_hi[24];
+				fa_sub <= 1'b0;	/* + YO */
 				seq_step <= inc5(seq_step);
 			end
-			5'd6: if (fa_o) begin
-				R[32] <= fa_r;	/* Y0 */
-				fm_v <= 1'b1; fm_a <= R[2]; fm_b <= R[28];	/* V0.z * RW0 */
+			5'd17: begin
+				fm_a_lo <= R_lo[6]; fm_a_hi <= R_hi[6];
+				fm_b_lo <= R_lo[29]; fm_b_hi <= R_hi[29];	/* V1.z * RW1 */
+				if (fa_o_xyz_v1) begin
+					if (fa_o_xyz_v1_lo) R_lo[35] <= fa_r_R[15:0];
+					if (fa_o_xyz_v1_hi) R_hi[35] <= fa_r_R[31:16];	/* Y1 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd18: begin
+				fm_a_lo <= fm_r[15:0]; fm_a_hi <= fm_r[31:16];
+				fm_b_lo <= R_lo[25]; fm_b_hi <= R_hi[25];	/* * ZS */
+				if (fm_o_xyz_v1) begin
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd19: if (fm_o_xyz_v1) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= fm_r[15:0]; fa_a_hi <= fm_r[31:16];
+				fa_b_lo <= R_lo[26]; fa_b_hi <= R_hi[26];
+				fa_sub <= 1'b0;	/* + ZO */
 				seq_step <= inc5(seq_step);
 			end
-			5'd7: if (fm_o) begin
-				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[25];	/* * ZS */
+			5'd20: begin
+				fm_a_lo <= R_lo[15]; fm_a_hi <= R_hi[15];
+				fm_b_lo <= R_lo[29]; fm_b_hi <= R_hi[29];	/* W1.0 * RW1 */
+				if (fa_o_xyz_v1) begin
+					if (fa_o_xyz_v1_lo) R_lo[36] <= fa_r_R[15:0];
+					if (fa_o_xyz_v1_hi) R_hi[36] <= fa_r_R[31:16];	/* Z1 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd21: begin
+				fm_a_lo <= R_lo[16]; fm_a_hi <= R_hi[16];
+				fm_b_lo <= R_lo[29]; fm_b_hi <= R_hi[29];	/* W1.1 * RW1 */
+				if (fm_o_xyz_v2) begin
+					if (fm_o_xyz_v2_lo) R_lo[53] <= fm_r_R[15:0];
+					if (fm_o_xyz_v2_hi) R_hi[53] <= fm_r_R[31:16];	/* B0W1 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd22: begin
+				fm_a_lo <= R_lo[8]; fm_a_hi <= R_hi[8];
+				fm_b_lo <= R_lo[30]; fm_b_hi <= R_hi[30];	/* V2.x * RW2 */
+				if (fm_o_xyz_v2) begin
+					if (fm_o_xyz_v2_lo) R_lo[56] <= fm_r_R[15:0];
+					if (fm_o_xyz_v2_hi) R_hi[56] <= fm_r_R[31:16];	/* B1W1 */
+					/* Vertex 2: X2, Y2, Z2, B0W2, B1W2 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd23: begin
+				fm_a_lo <= fm_r[15:0]; fm_a_hi <= fm_r[31:16];
+				fm_b_lo <= R_lo[21]; fm_b_hi <= R_hi[21];	/* * XS */
+				if (fm_o_xyz_v2) begin
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd24: if (fm_o_xyz_v2) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= fm_r[15:0]; fa_a_hi <= fm_r[31:16];
+				fa_b_lo <= R_lo[23]; fa_b_hi <= R_hi[23];
+				fa_sub <= 1'b0;	/* + XO */
 				seq_step <= inc5(seq_step);
 			end
-			5'd8: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[26]; fa_sub <= 1'b0;	/* + ZO */
+			5'd25: begin
+				fm_a_lo <= R_lo[9]; fm_a_hi <= R_hi[9];
+				fm_b_lo <= R_lo[30]; fm_b_hi <= R_hi[30];	/* V2.y * RW2 */
+				if (fa_o_xyz_v2) begin
+					if (fa_o_xyz_v2_lo) R_lo[37] <= fa_r_R[15:0];
+					if (fa_o_xyz_v2_hi) R_hi[37] <= fa_r_R[31:16];	/* X2 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd26: begin
+				fm_a_lo <= fm_r[15:0]; fm_a_hi <= fm_r[31:16];
+				fm_b_lo <= R_lo[22]; fm_b_hi <= R_hi[22];	/* * YS */
+				if (fm_o_xyz_v2) begin
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd27: if (fm_o_xyz_v2) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= fm_r[15:0]; fa_a_hi <= fm_r[31:16];
+				fa_b_lo <= R_lo[24]; fa_b_hi <= R_hi[24];
+				fa_sub <= 1'b0;	/* + YO */
 				seq_step <= inc5(seq_step);
 			end
-			5'd9: if (fa_o) begin
-				R[33] <= fa_r;	/* Z0 */
-				fm_v <= 1'b1; fm_a <= R[12]; fm_b <= R[28];	/* W0.0 * RW0 */
+			5'd28: begin
+				fm_a_lo <= R_lo[10]; fm_a_hi <= R_hi[10];
+				fm_b_lo <= R_lo[30]; fm_b_hi <= R_hi[30];	/* V2.z * RW2 */
+				if (fa_o_xyz_v2) begin
+					if (fa_o_xyz_v2_lo) R_lo[38] <= fa_r_R[15:0];
+					if (fa_o_xyz_v2_hi) R_hi[38] <= fa_r_R[31:16];	/* Y2 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd29: begin
+				fm_a_lo <= fm_r[15:0]; fm_a_hi <= fm_r[31:16];
+				fm_b_lo <= R_lo[25]; fm_b_hi <= R_hi[25];	/* * ZS */
+				if (fm_o_xyz_v2) begin
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
+			end
+			5'd30: if (fm_o_xyz_v2) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= fm_r[15:0]; fa_a_hi <= fm_r[31:16];
+				fa_b_lo <= R_lo[26]; fa_b_hi <= R_hi[26];
+				fa_sub <= 1'b0;	/* + ZO */
 				seq_step <= inc5(seq_step);
 			end
-			5'd10: if (fm_o) begin
-				R[52] <= fm_r;	/* B0W0 */
-				fm_v <= 1'b1; fm_a <= R[13]; fm_b <= R[28];	/* W0.1 * RW0 */
-				seq_step <= inc5(seq_step);
-			end
-			5'd11: if (fm_o) begin
-				R[55] <= fm_r;	/* B1W0 */
-				/* Vertex 1: X1, Y1, Z1, B0W1, B1W1 */
-				fm_v <= 1'b1; fm_a <= R[4]; fm_b <= R[29];	/* V1.x * RW1 */
-				seq_step <= inc5(seq_step);
-			end
-			5'd12: if (fm_o) begin
-				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[21];	/* * XS */
-				seq_step <= inc5(seq_step);
-			end
-			5'd13: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[23]; fa_sub <= 1'b0;	/* + XO */
-				seq_step <= inc5(seq_step);
-			end
-			5'd14: if (fa_o) begin
-				R[34] <= fa_r;	/* X1 */
-				fm_v <= 1'b1; fm_a <= R[5]; fm_b <= R[29];	/* V1.y * RW1 */
-				seq_step <= inc5(seq_step);
-			end
-			5'd15: if (fm_o) begin
-				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[22];	/* * YS */
-				seq_step <= inc5(seq_step);
-			end
-			5'd16: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[24]; fa_sub <= 1'b0;	/* + YO */
-				seq_step <= inc5(seq_step);
-			end
-			5'd17: if (fa_o) begin
-				R[35] <= fa_r;	/* Y1 */
-				fm_v <= 1'b1; fm_a <= R[6]; fm_b <= R[29];	/* V1.z * RW1 */
-				seq_step <= inc5(seq_step);
-			end
-			5'd18: if (fm_o) begin
-				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[25];	/* * ZS */
-				seq_step <= inc5(seq_step);
-			end
-			5'd19: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[26]; fa_sub <= 1'b0;	/* + ZO */
-				seq_step <= inc5(seq_step);
-			end
-			5'd20: if (fa_o) begin
-				R[36] <= fa_r;	/* Z1 */
-				fm_v <= 1'b1; fm_a <= R[15]; fm_b <= R[29];	/* W1.0 * RW1 */
-				seq_step <= inc5(seq_step);
-			end
-			5'd21: if (fm_o) begin
-				R[53] <= fm_r;	/* B0W1 */
-				fm_v <= 1'b1; fm_a <= R[16]; fm_b <= R[29];	/* W1.1 * RW1 */
-				seq_step <= inc5(seq_step);
-			end
-			5'd22: if (fm_o) begin
-				R[56] <= fm_r;	/* B1W1 */
-				/* Vertex 2: X2, Y2, Z2, B0W2, B1W2 */
-				fm_v <= 1'b1; fm_a <= R[8]; fm_b <= R[30];	/* V2.x * RW2 */
-				seq_step <= inc5(seq_step);
-			end
-			5'd23: if (fm_o) begin
-				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[21];	/* * XS */
-				seq_step <= inc5(seq_step);
-			end
-			5'd24: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[23]; fa_sub <= 1'b0;	/* + XO */
-				seq_step <= inc5(seq_step);
-			end
-			5'd25: if (fa_o) begin
-				R[37] <= fa_r;	/* X2 */
-				fm_v <= 1'b1; fm_a <= R[9]; fm_b <= R[30];	/* V2.y * RW2 */
-				seq_step <= inc5(seq_step);
-			end
-			5'd26: if (fm_o) begin
-				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[22];	/* * YS */
-				seq_step <= inc5(seq_step);
-			end
-			5'd27: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[24]; fa_sub <= 1'b0;	/* + YO */
-				seq_step <= inc5(seq_step);
-			end
-			5'd28: if (fa_o) begin
-				R[38] <= fa_r;	/* Y2 */
-				fm_v <= 1'b1; fm_a <= R[10]; fm_b <= R[30];	/* V2.z * RW2 */
-				seq_step <= inc5(seq_step);
-			end
-			5'd29: if (fm_o) begin
-				fm_v <= 1'b1; fm_a <= fm_r; fm_b <= R[25];	/* * ZS */
-				seq_step <= inc5(seq_step);
-			end
-			5'd30: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= fm_r; fa_b <= R[26]; fa_sub <= 1'b0;	/* + ZO */
-				seq_step <= inc5(seq_step);
-			end
-			default: if (fa_o) begin
-				R[39] <= fa_r;	/* Z2 */
-				fm_v <= 1'b1; fm_a <= R[18]; fm_b <= R[30];	/* W2.0 * RW2 */
-				st <= S_RECT;
-				seq_step <= 5'd0;
+			default: begin
+				fm_a_lo <= R_lo[18]; fm_a_hi <= R_hi[18];
+				fm_b_lo <= R_lo[30]; fm_b_hi <= R_hi[30];	/* W2.0 * RW2 */
+				if (fa_o_xyz_v2) begin
+					fm_v <= 1'b1;
+					if (fa_o_xyz_v2_lo) R_lo[39] <= fa_r_R[15:0];
+					if (fa_o_xyz_v2_hi) R_hi[39] <= fa_r_R[31:16];	/* Z2 */
+					st <= S_RECT;
+					seq_step <= 5'd0;
+				end
 			end
 			endcase
 
 		S_RECT:
-			case (seq_step)
-			5'd0: if (fm_o) begin
-				R[54] <= fm_r;	/* B0W2 */
-				fm_v <= 1'b1; fm_a <= R[19]; fm_b <= R[30];	/* W2.1 * RW2 */
-				seq_step <= inc5(seq_step);
+			case (seq_step_rect)
+			5'd0: begin
+				fm_a_lo <= R_lo[19]; fm_a_hi <= R_hi[19];
+				fm_b_lo <= R_lo[30]; fm_b_hi <= R_hi[30];	/* W2.1 * RW2 */
+				if (fm_o_rect) begin
+					if (fm_o_rect_lo) R_lo[54] <= fm_r_R[15:0];
+					if (fm_o_rect_hi) R_hi[54] <= fm_r_R[31:16];	/* B0W2 */
+					fm_v <= 1'b1;
+					seq_step <= inc5(seq_step);
+				end
 			end
-			5'd1: if (fm_o) begin
-				R[57] <= fm_r;	/* B1W2 */
+			5'd1: if (fm_o_rect) begin
+				if (fm_o_rect_lo) R_lo[57] <= fm_r_R[15:0];
+				if (fm_o_rect_hi) R_hi[57] <= fm_r_R[31:16];	/* B1W2 */
 				if (!rm[3]) begin
 					/* No viewport rectangle: dispatch edge directly */
 					if (kind == 2'd1) begin
-						R[39] <= R[33]; R[30] <= R[28]; R[54] <= R[52]; R[57] <= R[55];
+						if (fm_o_rect_lo) begin
+							R_lo[30] <= R_lo[28];
+							R_lo[39] <= R_lo[33];
+							R_lo[54] <= R_lo[52];
+							R_lo[57] <= R_lo[55];
+						end
+						if (fm_o_rect_hi) begin
+							R_hi[30] <= R_hi[28];
+							R_hi[39] <= R_hi[33];
+							R_hi[54] <= R_hi[52];
+							R_hi[57] <= R_hi[55];
+						end
 					end
 					st <= S_EDGE;
 					e_start <= 1'b1;
 				end else begin
 					/* Viewport rectangle: RX0, RX1, RY0, RY1 */
-					fa_v <= 1'b1; fa_a <= R[23]; fa_b <= {1'b0, R[21][30:0]}; fa_sub <= 1'b1;	/* XO - |XS| */
-					seq_step <= inc5(seq_step);
+					fa_v <= 1'b1;
+					fa_a_lo <= R_lo[23]; fa_a_hi <= R_hi[23];
+					fa_b_lo <= R_lo[21]; fa_b_hi <= {1'b0, R_hi[21][14:0]};
+					fa_sub <= 1'b1;	/* XO - |XS| */
+					seq_step <= 5'd2;
 				end
 			end
-			5'd2: if (fa_o) begin
-				R[76] <= fa_r;	/* RX0 */
-				fa_v <= 1'b1; fa_a <= R[23]; fa_b <= {1'b0, R[21][30:0]}; fa_sub <= 1'b0;	/* XO + |XS| */
+			5'd2: if (fa_o_rect) begin
+				if (fa_o_rect_lo) R_lo[76] <= fa_r_R[15:0];
+				if (fa_o_rect_hi) R_hi[76] <= fa_r_R[31:16];	/* RX0 */
+				fa_v <= 1'b1;
+				fa_a_lo <= R_lo[23]; fa_a_hi <= R_hi[23];
+				fa_b_lo <= R_lo[21]; fa_b_hi <= {1'b0, R_hi[21][14:0]};
+				fa_sub <= 1'b0;	/* XO + |XS| */
 				seq_step <= inc5(seq_step);
 			end
-			5'd3: if (fa_o) begin
-				R[77] <= fa_r;	/* RX1 */
-				fa_v <= 1'b1; fa_a <= R[24]; fa_b <= {1'b0, R[22][30:0]}; fa_sub <= 1'b1;	/* YO - |YS| */
+			5'd3: if (fa_o_rect) begin
+				if (fa_o_rect_lo) R_lo[77] <= fa_r_R[15:0];
+				if (fa_o_rect_hi) R_hi[77] <= fa_r_R[31:16];	/* RX1 */
+				fa_v <= 1'b1;
+				fa_a_lo <= R_lo[24]; fa_a_hi <= R_hi[24];
+				fa_b_lo <= R_lo[22]; fa_b_hi <= {1'b0, R_hi[22][14:0]};
+				fa_sub <= 1'b1;	/* YO - |YS| */
 				seq_step <= inc5(seq_step);
 			end
-			5'd4: if (fa_o) begin
-				R[78] <= fa_r;	/* RY0 */
-				fa_v <= 1'b1; fa_a <= R[24]; fa_b <= {1'b0, R[22][30:0]}; fa_sub <= 1'b0;	/* YO + |YS| */
+			5'd4: if (fa_o_rect) begin
+				if (fa_o_rect_lo) R_lo[78] <= fa_r_R[15:0];
+				if (fa_o_rect_hi) R_hi[78] <= fa_r_R[31:16];	/* RY0 */
+				fa_v <= 1'b1;
+				fa_a_lo <= R_lo[24]; fa_a_hi <= R_hi[24];
+				fa_b_lo <= R_lo[22]; fa_b_hi <= {1'b0, R_hi[22][14:0]};
+				fa_sub <= 1'b0;	/* YO + |YS| */
 				seq_step <= inc5(seq_step);
 			end
-			default: if (fa_o) begin
-				R[79] <= fa_r;	/* RY1 */
+			default: if (fa_o_rect) begin
+				if (fa_o_rect_lo) R_lo[79] <= fa_r_R[15:0];
+				if (fa_o_rect_hi) R_hi[79] <= fa_r_R[31:16];	/* RY1 */
 				if (kind == 2'd1) begin
-					R[39] <= R[33]; R[30] <= R[28]; R[54] <= R[52]; R[57] <= R[55];
+					if (fa_o_rect_lo) begin
+						R_lo[30] <= R_lo[28];
+						R_lo[39] <= R_lo[33];
+						R_lo[54] <= R_lo[52];
+						R_lo[57] <= R_lo[55];
+					end
+					if (fa_o_rect_hi) begin
+						R_hi[30] <= R_hi[28];
+						R_hi[39] <= R_hi[33];
+						R_hi[54] <= R_hi[52];
+						R_hi[57] <= R_hi[55];
+					end
 				end
 				st <= S_EDGE;
 				e_start <= 1'b1;
@@ -628,29 +1855,52 @@ module atg_rx_setup (
 
 		S_EDGE:
 			if (e_done) begin
-				if (e_empty) begin
+				if (e_empty_buf) begin
 					/* Early culling / zero-area / out-of-screen: zero-latency drop! */
 					st <= S_OUT;
 				end else if (kind == 2'd0) begin
 					/* Point: direct plane assignment */
-					pl[0] <= 32'd0; pl[1] <= 32'd0; pl[2] <= R[33];
-					pl[3] <= 32'd0; pl[4] <= 32'd0; pl[5] <= ONE;
-					pl[6] <= inv_ps; pl[7] <= 32'd0;
-					pl[9] <= 32'd0; pl[10] <= inv_ps;
+					pl_lo[0] <= 16'd0;
+					pl_lo[1] <= 16'd0;
+					pl_lo[2] <= R_lo[33];
+					pl_lo[3] <= 16'd0;
+					pl_lo[4] <= 16'd0;
+					pl_lo[5] <= ONE[15:0];
+					pl_lo[6] <= inv_ps[15:0];
+					pl_lo[7] <= 16'd0;
+					pl_lo[9] <= 16'd0;
+					pl_lo[10] <= inv_ps[15:0];
+					pl_hi[0] <= 16'd0;
+					pl_hi[1] <= 16'd0;
+					pl_hi[2] <= R_hi[33];
+					pl_hi[3] <= 16'd0;
+					pl_hi[4] <= 16'd0;
+					pl_hi[5] <= ONE[31:16];
+					pl_hi[6] <= inv_ps[31:16];
+					pl_hi[7] <= 16'd0;
+					pl_hi[9] <= 16'd0;
+					pl_hi[10] <= inv_ps[31:16];
 					if (point_size != 16'h0100) begin
-						fm_v <= 1'b1; fm_a <= R[45]; fm_b <= inv_ps;
+						fm_v <= 1'b1;
+						fm_a_lo <= R_lo[45]; fm_a_hi <= R_hi[45];
+						fm_b_lo <= inv_ps_lo; fm_b_hi <= inv_ps_hi;
 						seq_step <= 5'd0;
 						st <= S_PLANE_DIV;
 					end else begin
-						fa_v <= 1'b1; fa_a <= HALF; fa_b <= R[45]; fa_sub <= 1'b0;	/* 0.5 + OX */
+						fa_v <= 1'b1;
+						fa_a_lo <= HALF[15:0]; fa_a_hi <= HALF[31:16];
+						fa_b_lo <= R_lo[45]; fa_b_hi <= R_hi[45];
+						fa_sub <= 1'b0;	/* 0.5 + OX */
 						seq_step <= 5'd2;
 						st <= S_PLANE_DIV;
 					end
 				end else begin
 					/* Triangle or line: start 1/DF */
 					fd_v <= 1'b1;
-					fd_a <= ONE;
-					fd_b <= R[44];	/* DF */
+					fd_a_lo <= ONE[15:0];
+					fd_a_hi <= ONE[31:16];
+					fd_b_lo <= R_lo[44];
+					fd_b_hi <= R_hi[44];	/* DF */
 					st <= S_PLANE_DIV;
 					seq_step <= 5'd0;
 				end
@@ -659,185 +1909,599 @@ module atg_rx_setup (
 		S_PLANE_DIV:
 			if (kind == 2'd0) begin
 				/* Point path: cleanly serialized arithmetic (no missed pulse races) */
-				case (seq_step)
-				5'd0: if (fm_o) begin
-					fa_v <= 1'b1; fa_a <= HALF; fa_b <= fm_r; fa_sub <= 1'b0;	/* 0.5 + OX_scaled */
+				case (seq_step_pldiv)
+				5'd0: if (fm_o_plane) begin
+					fa_v <= 1'b1;
+					fa_a_lo <= HALF[15:0]; fa_a_hi <= HALF[31:16];
+					fa_b_lo <= fm_r[15:0]; fa_b_hi <= fm_r[31:16];
+					fa_sub <= 1'b0;	/* 0.5 + OX_scaled */
 					seq_step <= 5'd1;
 				end
-				5'd1: if (fa_o) begin
-					pl[8] <= fa_r;	/* b0/w C */
-					fm_v <= 1'b1; fm_a <= R[46]; fm_b <= inv_ps;	/* launch OY * inv_ps */
-					seq_step <= 5'd3;
+				5'd1: begin
+					fm_a_lo <= R_lo[46]; fm_a_hi <= R_hi[46];
+					fm_b_lo <= inv_ps_lo; fm_b_hi <= inv_ps_hi;	/* launch OY * inv_ps */
+					if (fa_o_plane) begin
+						if (fa_o_plane_lo) pl_lo[8] <= fa_r_pl[15:0];
+						if (fa_o_plane_hi) pl_hi[8] <= fa_r_pl[31:16];	/* b0/w C */
+						fm_v <= 1'b1;
+						seq_step <= 5'd3;
+					end
 				end
-				5'd3: if (fm_o) begin
-					fa_v <= 1'b1; fa_a <= HALF; fa_b <= fm_r; fa_sub <= 1'b0;	/* 0.5 + OY_scaled */
+				5'd3: if (fm_o_plane) begin
+					fa_v <= 1'b1;
+					fa_a_lo <= HALF[15:0]; fa_a_hi <= HALF[31:16];
+					fa_b_lo <= fm_r[15:0]; fa_b_hi <= fm_r[31:16];
+					fa_sub <= 1'b0;	/* 0.5 + OY_scaled */
 					seq_step <= 5'd4;
 				end
-				5'd2: if (fa_o) begin
-					pl[8] <= fa_r;	/* b0/w C */
-					fa_v <= 1'b1; fa_a <= HALF; fa_b <= R[46]; fa_sub <= 1'b0;	/* 0.5 + OY */
+				5'd2: if (fa_o_plane) begin
+					if (fa_o_plane_lo) pl_lo[8] <= fa_r_pl[15:0];
+					if (fa_o_plane_hi) pl_hi[8] <= fa_r_pl[31:16];	/* b0/w C */
+					fa_v <= 1'b1;
+					fa_a_lo <= HALF[15:0]; fa_a_hi <= HALF[31:16];
+					fa_b_lo <= R_lo[46]; fa_b_hi <= R_hi[46];
+					fa_sub <= 1'b0;	/* 0.5 + OY */
 					seq_step <= 5'd4;
 				end
-				5'd4: if (fa_o) begin
-					pl[11] <= fa_r;	/* b1/w C */
+				5'd4: if (fa_o_plane) begin
+					if (fa_o_plane_lo) pl_lo[11] <= fa_r_pl[15:0];
+					if (fa_o_plane_hi) pl_hi[11] <= fa_r_pl[31:16];	/* b1/w C */
 					more <= !sub;	/* 1st sub-triangle: more=1; 2nd: more=0 */
 					st <= S_OUT;
 				end
 				default: ;
 				endcase
-			end else if (fd_o) begin
-				R[47] <= fd_r;	/* RD = 1/DF */
-				p_plane <= 2'd0;
-				p_step <= 4'd0;
+			end else if (fd_o_plane) begin
+				if (fd_o_plane_lo) R_lo[47] <= fd_r[15:0];
+				if (fd_o_plane_hi) R_hi[47] <= fd_r[31:16];	/* RD = 1/DF */
+				`SET_PLANE(2'd0);
+				`SET_STEP(4'd0);
+				seq_step <= 5'd0;
 				st <= S_PLANE;
 			end
 
-		S_PLANE:
-			case (p_step)
+`ifdef SYNTH_KINTEX7
+		S_PLANE: begin
+			case (p_step_fpu_a)
 			4'd0: begin
-				fa_v <= 1'b1; fa_a <= R[pf1]; fa_b <= R[pf0]; fa_sub <= 1'b1;	/* T0 = f1 - f0 */
-				p_step <= inc4(p_step);
+				fa_v <= 1'b1;
+				fa_a_lo <= R_pf1_lo; fa_a_hi <= R_pf1_hi;
+				fa_sub <= 1'b1;	/* T0 = f1 - f0 */
 			end
-			4'd1: if (fa_o) begin
-				T0 <= fa_r;
-				fa_v <= 1'b1; fa_a <= R[pf2]; fa_b <= R[pf0]; fa_sub <= 1'b1;	/* T1 = f2 - f0 */
-				p_step <= inc4(p_step);
+			4'd1: if (fa_o_plane_s1) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= R_pf2_lo; fa_a_hi <= R_pf2_hi;
+				fa_sub <= 1'b1;	/* T1 = f2 - f0 */
 			end
-			4'd2: if (fa_o) begin
-				T1 <= fa_r;
-				fm_v <= 1'b1; fm_a <= T0; fm_b <= R[43];	/* T2 = T0 * DY2 */
-				p_step <= inc4(p_step);
+			4'd2: begin
+				fm_a_lo <= T0_lo; fm_a_hi <= T0_hi;
 			end
-			4'd3: if (fm_o) begin
-				T2 <= fm_r;
-				fm_v <= 1'b1; fm_a <= T1; fm_b <= R[41];	/* T3 = T1 * DY1 */
-				p_step <= inc4(p_step);
+			4'd3: begin
+				fm_a_lo <= T1_lo; fm_a_hi <= T1_hi;
 			end
-			4'd4: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= T2; fa_b <= fm_r; fa_sub <= 1'b1;	/* T2 = T2 - T3 */
-				p_step <= inc4(p_step);
+			4'd4: if (fm_o_plane_s4) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= T2_lo; fa_a_hi <= T2_hi;
+				fa_sub <= 1'b1;	/* T2 = T2 - T3 */
 			end
-			4'd5: if (fa_o) begin
-				fm_v <= 1'b1; fm_a <= fa_r; fm_b <= R[47];	/* a[0] = T2 * RD (A) */
-				p_step <= inc4(p_step);
+			4'd5: begin
+				fm_a_lo <= fa_r[15:0]; fm_a_hi <= fa_r[31:16];
 			end
-			4'd6: if (fm_o) begin
-				case (p_plane)
-				2'd0: pl[0] <= fm_r;
-				2'd1: pl[3] <= fm_r;
-				2'd2: pl[6] <= fm_r;
-				default: pl[9] <= fm_r;
-				endcase
-				fm_v <= 1'b1; fm_a <= T1; fm_b <= R[40];	/* T2 = T1 * DX1 */
-				p_step <= inc4(p_step);
+			4'd6: begin
+				fm_a_lo <= T1_lo; fm_a_hi <= T1_hi;
 			end
-			4'd7: if (fm_o) begin
-				T2 <= fm_r;
-				fm_v <= 1'b1; fm_a <= T0; fm_b <= R[42];	/* T3 = T0 * DX2 */
-				p_step <= inc4(p_step);
+			4'd7: begin
+				fm_a_lo <= T0_lo; fm_a_hi <= T0_hi;
 			end
-			4'd8: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= T2; fa_b <= fm_r; fa_sub <= 1'b1;	/* T2 = T2 - T3 */
-				p_step <= inc4(p_step);
+			4'd8: if (fm_o_plane_s8) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= T2_lo; fa_a_hi <= T2_hi;
+				fa_sub <= 1'b1;	/* T2 = T2 - T3 */
 			end
-			4'd9: if (fa_o) begin
-				fm_v <= 1'b1; fm_a <= fa_r; fm_b <= R[47];	/* a[1] = T2 * RD (B) */
-				p_step <= inc4(p_step);
+			4'd9: begin
+				fm_a_lo <= fa_r[15:0]; fm_a_hi <= fa_r[31:16];
 			end
-			4'd10: if (fm_o) begin
-				case (p_plane)
-				2'd0: pl[1] <= fm_r;
-				2'd1: pl[4] <= fm_r;
-				2'd2: pl[7] <= fm_r;
-				default: pl[10] <= fm_r;
-				endcase
-				fm_v <= 1'b1; fm_a <= cur_A; fm_b <= R[45];	/* T2 = A * OX */
-				p_step <= inc4(p_step);
+			4'd10: begin
+				fm_a_lo <= cur_A_lo; fm_a_hi <= cur_A_hi;
 			end
-			4'd11: if (fm_o) begin
-				T2 <= fm_r;
-				fm_v <= 1'b1; fm_a <= cur_B; fm_b <= R[46];	/* T3 = B * OY */
-				p_step <= inc4(p_step);
+			4'd11: begin
+				fm_a_lo <= cur_B_lo; fm_a_hi <= cur_B_hi;
 			end
-			4'd12: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= T2; fa_b <= fm_r; fa_sub <= 1'b0;	/* T2 = T2 + T3 */
-				p_step <= inc4(p_step);
+			4'd12: if (fm_o_plane_s12) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= T2_lo; fa_a_hi <= T2_hi;
+				fa_sub <= 1'b0;	/* T2 = T2 + T3 */
 			end
-			4'd13: if (fa_o) begin
-				fa_v <= 1'b1; fa_a <= R[pf0]; fa_b <= fa_r; fa_sub <= 1'b0;	/* C = f0 + T2 */
-				p_step <= inc4(p_step);
+			4'd13: if (fa_o_plane_s13) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= R_pf0_lo; fa_a_hi <= R_pf0_hi;
+				fa_sub <= 1'b0;	/* C = f0 + T2 */
 			end
-			default: if (fa_o) begin
-				case (p_plane)
-				2'd0: pl[2] <= fa_r;
-				2'd1: pl[5] <= fa_r;
-				2'd2: pl[8] <= fa_r;
-				default: pl[11] <= fa_r;
-				endcase
-				p_step <= 4'd0;
+			default: ;
+			endcase
+
+			case (p_step_fpu_b)
+			4'd0: begin
+				fa_b_lo <= R_pf0_lo; fa_b_hi <= R_pf0_hi;
+			end
+			4'd1: if (fa_o_plane_s1) begin
+				fa_b_lo <= R_pf0_lo; fa_b_hi <= R_pf0_hi;
+			end
+			4'd2: begin
+				fm_b_lo <= R_lo[43]; fm_b_hi <= R_hi[43];	/* T2 = T0 * DY2 */
+				if (fa_o_plane_s2) begin
+					fm_v <= 1'b1;
+				end
+			end
+			4'd3: begin
+				fm_b_lo <= R_lo[41]; fm_b_hi <= R_hi[41];	/* T3 = T1 * DY1 */
+				if (fm_o_plane_s3) begin
+					fm_v <= 1'b1;
+				end
+			end
+			4'd4: if (fm_o_plane_s4) begin
+				fa_b_lo <= fm_r[15:0]; fa_b_hi <= fm_r[31:16];
+			end
+			4'd5: begin
+				fm_b_lo <= R_lo[47]; fm_b_hi <= R_hi[47];	/* a[0] = T2 * RD (A) */
+				if (fa_o_plane_s5) begin
+					fm_v <= 1'b1;
+				end
+			end
+			4'd6: begin
+				fm_b_lo <= R_lo[40]; fm_b_hi <= R_hi[40];	/* T2 = T1 * DX1 */
+				if (fm_o_plane_s6) begin
+					fm_v <= 1'b1;
+				end
+			end
+			4'd7: begin
+				fm_b_lo <= R_lo[42]; fm_b_hi <= R_hi[42];	/* T3 = T0 * DX2 */
+				if (fm_o_plane_s7) begin
+					fm_v <= 1'b1;
+				end
+			end
+			4'd8: if (fm_o_plane_s8) begin
+				fa_b_lo <= fm_r[15:0]; fa_b_hi <= fm_r[31:16];
+			end
+			4'd9: begin
+				fm_b_lo <= R_lo[47]; fm_b_hi <= R_hi[47];	/* a[1] = T2 * RD (B) */
+				if (fa_o_plane_s9) begin
+					fm_v <= 1'b1;
+				end
+			end
+			4'd10: begin
+				fm_b_lo <= R_lo[45]; fm_b_hi <= R_hi[45];	/* T2 = A * OX */
+				if (fm_o_plane_s10) begin
+					fm_v <= 1'b1;
+				end
+			end
+			4'd11: begin
+				fm_b_lo <= R_lo[46]; fm_b_hi <= R_hi[46];	/* T3 = B * OY */
+				if (fm_o_plane_s11) begin
+					fm_v <= 1'b1;
+				end
+			end
+			4'd12: if (fm_o_plane_s12) begin
+				fa_b_lo <= fm_r[15:0]; fa_b_hi <= fm_r[31:16];
+			end
+			4'd13: if (fa_o_plane_s13) begin
+				fa_b_lo <= fa_r[15:0]; fa_b_hi <= fa_r[31:16];
+			end
+			default: ;
+			endcase
+
+			case (p_step_ctrl)
+			4'd0: begin
+				`SET_STEP(inc4(p_step_ctrl));
+			end
+			4'd1: if (fa_o_plane_s1) begin
+				if (fa_o_plane_lo) T0_lo <= fa_r[15:0];
+				if (fa_o_plane_hi) T0_hi <= fa_r[31:16];
+				`SET_STEP(inc4(p_step_ctrl));
+			end
+			4'd2: begin
+				if (fa_o_plane_s2) begin
+					if (fa_o_plane_lo) T1_lo <= fa_r[15:0];
+					if (fa_o_plane_hi) T1_hi <= fa_r[31:16];
+					`SET_STEP(inc4(p_step_ctrl));
+				end
+			end
+			4'd3: begin
+				if (fm_o_plane_s3) begin
+					if (fm_o_plane_lo) T2_lo <= fm_r[15:0];
+					if (fm_o_plane_hi) T2_hi <= fm_r[31:16];
+					`SET_STEP(inc4(p_step_ctrl));
+				end
+			end
+			4'd4: if (fm_o_plane_s4) begin
+				`SET_STEP(inc4(p_step_ctrl));
+			end
+			4'd5: begin
+				if (fa_o_plane_s5) begin
+					`SET_STEP(inc4(p_step_ctrl));
+				end
+			end
+			4'd6: begin
+				if (fm_o_plane_s6) begin
+					if (fm_o_plane_lo) begin
+						case (p_plane_pl_l)
+						2'd0: pl_lo[0] <= fm_r_pl[15:0];
+						2'd1: pl_lo[3] <= fm_r_pl[15:0];
+						2'd2: pl_lo[6] <= fm_r_pl[15:0];
+						default: pl_lo[9] <= fm_r_pl[15:0];
+						endcase
+					end
+					if (fm_o_plane_hi) begin
+						case (p_plane_pl_h)
+						2'd0: pl_hi[0] <= fm_r_pl[31:16];
+						2'd1: pl_hi[3] <= fm_r_pl[31:16];
+						2'd2: pl_hi[6] <= fm_r_pl[31:16];
+						default: pl_hi[9] <= fm_r_pl[31:16];
+						endcase
+					end
+					`SET_STEP(inc4(p_step_ctrl));
+				end
+			end
+			4'd7: begin
+				if (fm_o_plane_s7) begin
+					if (fm_o_plane_lo) T2_lo <= fm_r[15:0];
+					if (fm_o_plane_hi) T2_hi <= fm_r[31:16];
+					`SET_STEP(inc4(p_step_ctrl));
+				end
+			end
+			4'd8: if (fm_o_plane_s8) begin
+				`SET_STEP(inc4(p_step_ctrl));
+			end
+			4'd9: begin
+				if (fa_o_plane_s9) begin
+					`SET_STEP(inc4(p_step_ctrl));
+				end
+			end
+			4'd10: begin
+				if (fm_o_plane_s10) begin
+					if (fm_o_plane_lo) begin
+						case (p_plane_pl_l)
+						2'd0: pl_lo[1] <= fm_r_pl[15:0];
+						2'd1: pl_lo[4] <= fm_r_pl[15:0];
+						2'd2: pl_lo[7] <= fm_r_pl[15:0];
+						default: pl_lo[10] <= fm_r_pl[15:0];
+						endcase
+					end
+					if (fm_o_plane_hi) begin
+						case (p_plane_pl_h)
+						2'd0: pl_hi[1] <= fm_r_pl[31:16];
+						2'd1: pl_hi[4] <= fm_r_pl[31:16];
+						2'd2: pl_hi[7] <= fm_r_pl[31:16];
+						default: pl_hi[10] <= fm_r_pl[31:16];
+						endcase
+					end
+					`SET_STEP(inc4(p_step_ctrl));
+				end
+			end
+			4'd11: begin
+				if (fm_o_plane_s11) begin
+					if (fm_o_plane_lo) T2_lo <= fm_r[15:0];
+					if (fm_o_plane_hi) T2_hi <= fm_r[31:16];
+					`SET_STEP(inc4(p_step_ctrl));
+				end
+			end
+			4'd12: if (fm_o_plane_s12) begin
+				`SET_STEP(inc4(p_step_ctrl));
+			end
+			4'd13: if (fa_o_plane_s13) begin
+				`SET_STEP(inc4(p_step_ctrl));
+			end
+			default: if (fa_o_plane_sdef_ctrl) begin
+				if (fa_o_plane_sdef_lo) begin
+					case (p_plane_pl_l)
+					2'd0: pl_lo[2] <= fa_r_pl[15:0];
+					2'd1: pl_lo[5] <= fa_r_pl[15:0];
+					2'd2: pl_lo[8] <= fa_r_pl[15:0];
+					default: pl_lo[11] <= fa_r_pl[15:0];
+					endcase
+				end
+				if (fa_o_plane_sdef_hi) begin
+					case (p_plane_pl_h)
+					2'd0: pl_hi[2] <= fa_r_pl[31:16];
+					2'd1: pl_hi[5] <= fa_r_pl[31:16];
+					2'd2: pl_hi[8] <= fa_r_pl[31:16];
+					default: pl_hi[11] <= fa_r_pl[31:16];
+					endcase
+				end
+				`SET_STEP(4'd0);
 				if (raw) begin
 					/* RAW triangle: Z plane only, done */
 					st <= S_OUT;
 				end else if (p_plane != 2'd3) begin
-					p_plane <= inc2(p_plane);
+					`SET_PLANE(inc2(p_plane));
 				end else if (kind == 2'd1) begin
 					/* Line: sub-triangle 0 done */
 					more <= !sub;
 					st <= S_OUT;
 				end else if (rm[0] && rm[5:4] != 2'd0) begin
 					/* Triangle with depth bias */
-					seq_step <= 5'd0;
 					st <= S_BIAS;
 				end else begin
 					st <= S_OUT;
 				end
 			end
 			endcase
+		end
+`else
+		S_PLANE:
+			case (p_step)
+			4'd0: begin
+				fa_v <= 1'b1;
+				fa_a_lo <= R_pf1_lo; fa_a_hi <= R_pf1_hi;
+				fa_b_lo <= R_pf0_lo; fa_b_hi <= R_pf0_hi;
+				fa_sub <= 1'b1;	/* T0 = f1 - f0 */
+				`SET_STEP(inc4(p_step));
+			end
+			4'd1: if (fa_o_plane_s1) begin
+				if (fa_o_plane_lo) T0_lo <= fa_r[15:0];
+				if (fa_o_plane_hi) T0_hi <= fa_r[31:16];
+				fa_v <= 1'b1;
+				fa_a_lo <= R_pf2_lo; fa_a_hi <= R_pf2_hi;
+				fa_b_lo <= R_pf0_lo; fa_b_hi <= R_pf0_hi;
+				fa_sub <= 1'b1;	/* T1 = f2 - f0 */
+				`SET_STEP(inc4(p_step));
+			end
+			4'd2: begin
+				fm_a_lo <= T0_lo; fm_a_hi <= T0_hi;
+				fm_b_lo <= R_lo[43]; fm_b_hi <= R_hi[43];	/* T2 = T0 * DY2 */
+				if (fa_o_plane_s2) begin
+					if (fa_o_plane_lo) T1_lo <= fa_r[15:0];
+					if (fa_o_plane_hi) T1_hi <= fa_r[31:16];
+					fm_v <= 1'b1;
+					`SET_STEP(inc4(p_step));
+				end
+			end
+			4'd3: begin
+				fm_a_lo <= T1_lo; fm_a_hi <= T1_hi;
+				fm_b_lo <= R_lo[41]; fm_b_hi <= R_hi[41];	/* T3 = T1 * DY1 */
+				if (fm_o_plane_s3) begin
+					if (fm_o_plane_lo) T2_lo <= fm_r[15:0];
+					if (fm_o_plane_hi) T2_hi <= fm_r[31:16];
+					fm_v <= 1'b1;
+					`SET_STEP(inc4(p_step));
+				end
+			end
+			4'd4: if (fm_o_plane_s4) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= T2_lo; fa_a_hi <= T2_hi;
+				fa_b_lo <= fm_r[15:0]; fa_b_hi <= fm_r[31:16];
+				fa_sub <= 1'b1;	/* T2 = T2 - T3 */
+				`SET_STEP(inc4(p_step));
+			end
+			4'd5: begin
+				fm_a_lo <= fa_r[15:0]; fm_a_hi <= fa_r[31:16];
+				fm_b_lo <= R_lo[47]; fm_b_hi <= R_hi[47];	/* a[0] = T2 * RD (A) */
+				if (fa_o_plane_s5) begin
+					fm_v <= 1'b1;
+					`SET_STEP(inc4(p_step));
+				end
+			end
+			4'd6: begin
+				fm_a_lo <= T1_lo; fm_a_hi <= T1_hi;
+				fm_b_lo <= R_lo[40]; fm_b_hi <= R_hi[40];	/* T2 = T1 * DX1 */
+				if (fm_o_plane_s6) begin
+					if (fm_o_plane_lo) begin
+						case (p_plane_pl_l)
+						2'd0: pl_lo[0] <= fm_r_pl[15:0];
+						2'd1: pl_lo[3] <= fm_r_pl[15:0];
+						2'd2: pl_lo[6] <= fm_r_pl[15:0];
+						default: pl_lo[9] <= fm_r_pl[15:0];
+						endcase
+					end
+					if (fm_o_plane_hi) begin
+						case (p_plane_pl_h)
+						2'd0: pl_hi[0] <= fm_r_pl[31:16];
+						2'd1: pl_hi[3] <= fm_r_pl[31:16];
+						2'd2: pl_hi[6] <= fm_r_pl[31:16];
+						default: pl_hi[9] <= fm_r_pl[31:16];
+						endcase
+					end
+					fm_v <= 1'b1;
+					`SET_STEP(inc4(p_step));
+				end
+			end
+			4'd7: begin
+				fm_a_lo <= T0_lo; fm_a_hi <= T0_hi;
+				fm_b_lo <= R_lo[42]; fm_b_hi <= R_hi[42];	/* T3 = T0 * DX2 */
+				if (fm_o_plane_s7) begin
+					if (fm_o_plane_lo) T2_lo <= fm_r[15:0];
+					if (fm_o_plane_hi) T2_hi <= fm_r[31:16];
+					fm_v <= 1'b1;
+					`SET_STEP(inc4(p_step));
+				end
+			end
+			4'd8: if (fm_o_plane_s8) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= T2_lo; fa_a_hi <= T2_hi;
+				fa_b_lo <= fm_r[15:0]; fa_b_hi <= fm_r[31:16];
+				fa_sub <= 1'b1;	/* T2 = T2 - T3 */
+				`SET_STEP(inc4(p_step));
+			end
+			4'd9: begin
+				fm_a_lo <= fa_r[15:0]; fm_a_hi <= fa_r[31:16];
+				fm_b_lo <= R_lo[47]; fm_b_hi <= R_hi[47];	/* a[1] = T2 * RD (B) */
+				if (fa_o_plane_s9) begin
+					fm_v <= 1'b1;
+					`SET_STEP(inc4(p_step));
+				end
+			end
+			4'd10: begin
+				fm_a_lo <= cur_A_lo; fm_a_hi <= cur_A_hi;
+				fm_b_lo <= R_lo[45]; fm_b_hi <= R_hi[45];	/* T2 = A * OX */
+				if (fm_o_plane_s10) begin
+					if (fm_o_plane_lo) begin
+						case (p_plane_pl_l)
+						2'd0: pl_lo[1] <= fm_r_pl[15:0];
+						2'd1: pl_lo[4] <= fm_r_pl[15:0];
+						2'd2: pl_lo[7] <= fm_r_pl[15:0];
+						default: pl_lo[10] <= fm_r_pl[15:0];
+						endcase
+					end
+					if (fm_o_plane_hi) begin
+						case (p_plane_pl_h)
+						2'd0: pl_hi[1] <= fm_r_pl[31:16];
+						2'd1: pl_hi[4] <= fm_r_pl[31:16];
+						2'd2: pl_hi[7] <= fm_r_pl[31:16];
+						default: pl_hi[10] <= fm_r_pl[31:16];
+						endcase
+					end
+					fm_v <= 1'b1;
+					`SET_STEP(inc4(p_step));
+				end
+			end
+			4'd11: begin
+				fm_a_lo <= cur_B_lo; fm_a_hi <= cur_B_hi;
+				fm_b_lo <= R_lo[46]; fm_b_hi <= R_hi[46];	/* T3 = B * OY */
+				if (fm_o_plane_s11) begin
+					if (fm_o_plane_lo) T2_lo <= fm_r[15:0];
+					if (fm_o_plane_hi) T2_hi <= fm_r[31:16];
+					fm_v <= 1'b1;
+					`SET_STEP(inc4(p_step));
+				end
+			end
+			4'd12: if (fm_o_plane_s12) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= T2_lo; fa_a_hi <= T2_hi;
+				fa_b_lo <= fm_r[15:0]; fa_b_hi <= fm_r[31:16];
+				fa_sub <= 1'b0;	/* T2 = T2 + T3 */
+				`SET_STEP(inc4(p_step));
+			end
+			4'd13: if (fa_o_plane_s13) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= R_pf0_lo; fa_a_hi <= R_pf0_hi;
+				fa_b_lo <= fa_r[15:0]; fa_b_hi <= fa_r[31:16];
+				fa_sub <= 1'b0;	/* C = f0 + T2 */
+				`SET_STEP(inc4(p_step));
+			end
+			default: if (fa_o_plane_sdef) begin
+				if (fa_o_plane_lo) begin
+					case (p_plane_pl_l)
+					2'd0: pl_lo[2] <= fa_r_pl[15:0];
+					2'd1: pl_lo[5] <= fa_r_pl[15:0];
+					2'd2: pl_lo[8] <= fa_r_pl[15:0];
+					default: pl_lo[11] <= fa_r_pl[15:0];
+					endcase
+				end
+				if (fa_o_plane_hi) begin
+					case (p_plane_pl_h)
+					2'd0: pl_hi[2] <= fa_r_pl[31:16];
+					2'd1: pl_hi[5] <= fa_r_pl[31:16];
+					2'd2: pl_hi[8] <= fa_r_pl[31:16];
+					default: pl_hi[11] <= fa_r_pl[31:16];
+					endcase
+				end
+				`SET_STEP(4'd0);
+				if (raw) begin
+					/* RAW triangle: Z plane only, done */
+					st <= S_OUT;
+				end else if (p_plane != 2'd3) begin
+					`SET_PLANE(inc2(p_plane));
+				end else if (kind == 2'd1) begin
+					/* Line: sub-triangle 0 done */
+					more <= !sub;
+					st <= S_OUT;
+				end else if (rm[0] && rm[5:4] != 2'd0) begin
+					/* Triangle with depth bias */
+					st <= S_BIAS;
+				end else begin
+					st <= S_OUT;
+				end
+			end
+			endcase
+`endif
 
 		/* S_BIAS */
 		S_BIAS:
-			case (seq_step)
+			case (seq_step_bias)
 			5'd0: begin
-				b_m <= max_mag({1'b0, pl[0][30:0]}, {1'b0, pl[1][30:0]});	/* max(|Az|, |Bz|) */
+				fm_a_lo <= bm_val_lo;
+				fm_a_hi <= bm_val_hi;
 				seq_step <= inc5(seq_step);
 			end
 			5'd1: begin
-				fm_v <= 1'b1; fm_a <= b_m; fm_b <= b_slope;	/* T0 = m * SLOPE */
+				fm_v <= 1'b1;
+				fm_b_lo <= b_slope_lo; fm_b_hi <= b_slope_hi;	/* T0 = m * SLOPE */
 				seq_step <= inc5(seq_step);
 			end
-			5'd2: if (fm_o) begin
-				T0 <= fm_r;
-				if (rm[5:4] == 2'd3) begin
-					/* D32_SFLOAT: ULP(max(|z0|, |z1|, |z2|)) */
-					ea_in <= max_z[30:23];
-					seq_step <= 5'd3;
-				end else begin
-					/* D16 / D24 */
-					fm_v <= 1'b1; fm_a <= rfmt; fm_b <= b_const;	/* T1 = r * CONST */
-					seq_step <= 5'd4;
+			5'd2: begin
+				fm_a_lo <= rfmt[15:0]; fm_a_hi <= rfmt[31:16];
+				fm_b_lo <= b_const_lo; fm_b_hi <= b_const_hi;	/* T1 = r * CONST */
+				if (fm_o_bias) begin
+					if (fm_o_bias_lo) T0_lo <= fm_r[15:0];
+					if (fm_o_bias_hi) T0_hi <= fm_r[31:16];
+					if (rm[5:4] == 2'd3) begin
+						/* D32_SFLOAT: ULP(max(|z0|, |z1|, |z2|)) */
+						ea_in <= max_z[30:23];
+						seq_step <= 5'd3;
+					end else begin
+						/* D16 / D24 */
+						fm_v <= 1'b1;
+						seq_step <= 5'd4;
+					end
 				end
 			end
 			5'd3: begin
 				fm_v <= 1'b1;
-				fm_a <= (ea_in > 8'd23) ? {1'b0, ea23, 23'd0} : 32'd0;
-				fm_b <= b_const;
+				fm_a_lo <= 16'd0;
+				fm_a_hi <= (ea_in > 8'd23) ? {1'b0, ea23, 7'd0} : 16'd0;
+				fm_b_lo <= b_const_lo;
+				fm_b_hi <= b_const_hi;
 				seq_step <= 5'd4;
 			end
-			5'd4: if (fm_o) begin
-				fa_v <= 1'b1; fa_a <= T0; fa_b <= fm_r; fa_sub <= 1'b0;	/* T0 = T0 + T1 */
+			5'd4: if (fm_o_bias) begin
+				fa_v <= 1'b1;
+				fa_a_lo <= T0_lo; fa_a_hi <= T0_hi;
+				fa_b_lo <= fm_r[15:0]; fa_b_hi <= fm_r[31:16];
+				fa_sub <= 1'b0;	/* T0 = T0 + T1 */
 				seq_step <= inc5(seq_step);
 			end
-			5'd5: if (fa_o) begin
-				b_o <= bcl(fa_r, b_clamp);	/* BCL(T0, CLAMP) */
-				seq_step <= inc5(seq_step);
+			5'd5: begin
+				if (fa_o_bias_s5_lo) begin
+					r_bias_fa_lo <= fa_r[15:0];
+					r_bcl_is_zero_lo <= bcl_is_zero;
+					r_bcl_sign_lo <= b_clamp[31];
+					r_bcl_mag_lt_lo <= bcl_mag_lt;
+					r_bcl_mag_eq_lo <= (fa_r[30:0] == b_clamp[30:0]);
+					r_fa_nan_lo <= (fa_r[30:23] == 8'hFF) && (fa_r[22:0] != 23'd0);
+					r_fa_sign_lo <= fa_r[31];
+					r_fa_is_zero_lo <= (fa_r[30:0] == 31'd0);
+				end
+				if (fa_o_bias_s5_hi) begin
+					r_bias_fa_hi <= fa_r[31:16];
+					r_bcl_is_zero_hi <= bcl_is_zero;
+					r_bcl_sign_hi <= b_clamp[31];
+					r_bcl_mag_lt_hi <= bcl_mag_lt;
+					r_bcl_mag_eq_hi <= (fa_r[30:0] == b_clamp[30:0]);
+					r_fa_nan_hi <= (fa_r[30:23] == 8'hFF) && (fa_r[22:0] != 23'd0);
+					r_fa_sign_hi <= fa_r[31];
+					r_fa_is_zero_hi <= (fa_r[30:0] == 31'd0);
+				end
+				if (fa_o_bias_s5_ctrl) seq_step <= inc5(seq_step);
 			end
 			5'd6: begin
-				fa_v <= 1'b1; fa_a <= pl[2]; fa_b <= b_o; fa_sub <= 1'b0;	/* Cz + o */
+				fa_b_lo <= r_bcl_is_zero_lo ? r_bias_fa_lo :
+				           (!r_bcl_sign_lo ? (bcl_fa_le_lo ? r_bias_fa_lo : b_clamp_lo)
+				                           : (bcl_ge_lo    ? r_bias_fa_lo : b_clamp_lo));
+				fa_b_hi <= r_bcl_is_zero_hi ? r_bias_fa_hi :
+				           (!r_bcl_sign_hi ? (bcl_fa_le_hi ? r_bias_fa_hi : b_clamp_hi)
+				                           : (bcl_ge_hi    ? r_bias_fa_hi : b_clamp_hi));
 				seq_step <= inc5(seq_step);
 			end
-			default: if (fa_o) begin
-				pl[2] <= fa_r;	/* Cz biased */
-				st <= S_OUT;
+			5'd7: begin
+				fa_v <= 1'b1;
+				fa_a_lo <= pl_lo[2]; fa_a_hi <= pl_hi[2];
+				fa_sub <= 1'b0;	/* Cz + o */
+				seq_step <= inc5(seq_step);
+			end
+			default: begin
+				if (fa_o_bias_sdef_lo) pl_lo[2] <= fa_r_pl[15:0];
+				if (fa_o_bias_sdef_hi) pl_hi[2] <= fa_r_pl[31:16];	/* Cz biased */
+				if (fa_o_bias_sdef_ctrl) st <= S_OUT;
 			end
 			endcase
 
@@ -859,6 +2523,7 @@ module atg_rx_setup (
 		default: ;
 		endcase
 	end
+
 
 	genvar g;
 	generate

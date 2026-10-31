@@ -71,13 +71,13 @@ fi
 out=$root/build/vivado/ooc-$name
 mkdir -p "$out"
 echo "vivado-ooc: $top$generics" > "$out/params.txt"
-VIVADO_THREADS=${VIVADO_THREADS:-8}
+VIVADO_THREADS=2
 export VIVADO_THREADS
 start=$(date +%s)
 rc=0
 # Vivado writes its .Xil scratch into the current directory.
 # shellcheck disable=SC2086
-(cd "$out" && timeout "${VIVADO_TIMEOUT:-7200}" vivado -mode batch -nojournal \
+(cd "$out" && timeout "${VIVADO_TIMEOUT:-7200}" flock /tmp/vivado.lock vivado -mode batch -nojournal \
 	-log vivado.log -source "$root/tools/vivado-ooc.tcl" \
 	-tclargs "$root" "$out" "$part" "$top" "$period" $generics </dev/null >/dev/null) || rc=$?
 if [ $rc -ne 0 ]; then

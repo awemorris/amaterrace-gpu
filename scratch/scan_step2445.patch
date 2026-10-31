@@ -1,0 +1,273 @@
+diff --git a/rtl/gpu/rx/atg_rx_scan.v b/rtl/gpu/rx/atg_rx_scan.v
+index ae7e70c..03317dc 100644
+--- a/rtl/gpu/rx/atg_rx_scan.v
++++ b/rtl/gpu/rx/atg_rx_scan.v
+@@ -91,10 +91,14 @@ module atg_rx_scan #(
+ );
+ 	`include "ghci_regs.vh"
+ 	localparam [3:0] S_IDLE = 4'd0, S_SEQ = 4'd1, S_TILE_WAIT = 4'd2, S_WALK = 4'd3,
+-		S_Z = 4'd4, S_EMIT = 4'd5, S_LAST = 4'd6, S_FREE = 4'd7, S_FQ = 4'd8, S_STEP = 4'd9;
+-	reg [3:0] st;
+-	reg wm;		/* warp mode: a non-raw triangle with an SU */
+-	reg fend;	/* S_FQ: the end marker (no quad) */
++		S_Z = 4'd4, S_EMIT = 4'd5, S_LAST = 4'd6, S_FREE = 4'd7, S_FQ = 4'd8, S_STEP = 4'd9,
++		S_SAMP = 4'd10, S_EVAL = 4'd11;
++	(* keep = "true" *) wire rst_n_inv = !rst_n;
++	(* fsm_encoding = "none", extract_enable = "no", max_fanout = 16 *) reg [3:0] st;
++	(* max_fanout = 16 *) reg r_tile_row_end;
++	(* max_fanout = 16 *) reg r_tile_col_end;
++	(* max_fanout = 16 *) reg wm;		/* warp mode: a non-raw triangle with an SU */
++	(* max_fanout = 16 *) reg fend;	/* S_FQ: the end marker (no quad) */
+ 
+ 	/* The triangle. */
+ 	reg signed [47:0] a8 [0:2];	/* A << 8: one pixel in x */
+@@ -114,7 +118,7 @@ module atg_rx_scan #(
+ 	reg [3:0] kill;
+ 
+ 	always @(posedge clk)
+-		if (!rst_n) begin
++		if (rst_n_inv) begin
+ 			ms4 <= 1'b0;
+ 			kill <= 4'd0;
+ 		end else if (st_we && st_idx == GHCI_S_MS_CTRL)
+@@ -144,13 +148,8 @@ module atg_rx_scan #(
+ 	genvar ge;
+ 	generate
+ 	for (ge = 0; ge < 3; ge = ge + 1) begin : g_er
+-		wire [47:0] ta8 = {{16{sp_tri[96 * ge + 23]}}, sp_tri[96 * ge +: 24], 8'd0};
+-		wire [47:0] tb8 = {{16{sp_tri[96 * ge + 47]}}, sp_tri[96 * ge + 24 +: 24], 8'd0};
+-		wire [47:0] er_a;
+-		am_sub #(.W(48)) u_er_a (.a(sp_tri[96 * ge + 48 +: 48]), .b(sp_tri[288] ? ta8 : 48'd0),
+-			.bi(1'b0), .d(er_a), .bo(ed_carry_unused[4 * ge]));
+-		am_sub #(.W(48)) u_er0 (.a(er_a), .b(sp_tri[304] ? tb8 : 48'd0), .bi(1'b0), .d(er0[ge]),
+-			.bo(ed_carry_unused[4 * ge + 1]));
++		assign er0[ge] = sp_tri[96 * ge + 48 +: 48];
++		assign ed_carry_unused[4 * ge +: 2] = 2'b00;
+ 		am_add #(.W(48)) u_ec_n (.a(ec[ge]), .b(a8[ge] <<< 1), .ci(1'b0), .s(ec_n[ge]),
+ 			.co(ed_carry_unused[4 * ge + 2]));
+ 		am_add #(.W(48)) u_er_n (.a(er[ge]), .b(b8[ge] <<< 1), .ci(1'b0), .s(er_n[ge]),
+@@ -186,6 +185,76 @@ module atg_rx_scan #(
+ 	end
+ 	endgenerate
+ 
++	wire s_e0_a_coarse, s_e0_b_coarse;
++	wire s_e1_a_coarse, s_e1_b_coarse;
++	wire s_e2_a_coarse, s_e2_b_coarse;
++	wire s_e0_a_scan, s_e0_b_scan;
++	wire s_e1_a_scan, s_e1_b_scan;
++	wire s_e2_a_scan, s_e2_b_scan;
++
++`ifdef SYNTH_KINTEX7
++	(* keep = "true", dont_touch = "true" *) wire s_e0_a_coarse_eval, s_e0_b_coarse_eval;
++	(* keep = "true", dont_touch = "true" *) wire s_e1_a_coarse_eval, s_e1_b_coarse_eval;
++	(* keep = "true", dont_touch = "true" *) wire s_e2_a_coarse_eval, s_e2_b_coarse_eval;
++	(* keep = "true", dont_touch = "true" *) wire s_e0_a_coarse_reg, s_e0_b_coarse_reg;
++	(* keep = "true", dont_touch = "true" *) wire s_e1_a_coarse_reg, s_e1_b_coarse_reg;
++	(* keep = "true", dont_touch = "true" *) wire s_e2_a_coarse_reg, s_e2_b_coarse_reg;
++	(* keep = "true", dont_touch = "true" *) wire s_e0_a_scan_ext, s_e0_b_scan_ext;
++	(* keep = "true", dont_touch = "true" *) wire s_e1_a_scan_ext, s_e1_b_scan_ext;
++	(* keep = "true", dont_touch = "true" *) wire s_e2_a_scan_ext, s_e2_b_scan_ext;
++
++	LUT1 #(.INIT(2'b10)) u_buf_se0ace (.I0(sp_tri[23]), .O(s_e0_a_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se0bce (.I0(sp_tri[47]), .O(s_e0_b_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se1ace (.I0(sp_tri[119]), .O(s_e1_a_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se1bce (.I0(sp_tri[143]), .O(s_e1_b_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se2ace (.I0(sp_tri[215]), .O(s_e2_a_coarse_eval));
++	LUT1 #(.INIT(2'b10)) u_buf_se2bce (.I0(sp_tri[239]), .O(s_e2_b_coarse_eval));
++
++	LUT1 #(.INIT(2'b10)) u_buf_se0acr (.I0(sp_tri[23]), .O(s_e0_a_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se0bcr (.I0(sp_tri[47]), .O(s_e0_b_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se1acr (.I0(sp_tri[119]), .O(s_e1_a_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se1bcr (.I0(sp_tri[143]), .O(s_e1_b_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se2acr (.I0(sp_tri[215]), .O(s_e2_a_coarse_reg));
++	LUT1 #(.INIT(2'b10)) u_buf_se2bcr (.I0(sp_tri[239]), .O(s_e2_b_coarse_reg));
++
++	LUT1 #(.INIT(2'b10)) u_buf_se0as (.I0(sp_tri[23]), .O(s_e0_a_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se0bs (.I0(sp_tri[47]), .O(s_e0_b_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se1as (.I0(sp_tri[119]), .O(s_e1_a_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se1bs (.I0(sp_tri[143]), .O(s_e1_b_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se2as (.I0(sp_tri[215]), .O(s_e2_a_scan_ext));
++	LUT1 #(.INIT(2'b10)) u_buf_se2bs (.I0(sp_tri[239]), .O(s_e2_b_scan_ext));
++
++	wire [2:0] ms4_m0, ms4_m1, ms4_m2;
++	wire ms4_misc;
++	wire [47:0] lowm0_muxed, lowm1_muxed, lowm2_muxed;
++	genvar gms;
++	generate
+<truncated 22076 of 31970 bytes from the middle of the output>
+'d0};
++`endif
++				er[1] <= er0[1];
++				ec[1] <= er0[1];
++`ifndef SYNTH_KINTEX7
++				a8[2] <= {{16{s_e2_a_scan}}, sp_tri[192 +: 24], 8'd0};
++				b8[2] <= {{16{s_e2_b_scan}}, sp_tri[216 +: 24], 8'd0};
++`endif
++				er[2] <= er0[2];
++				ec[2] <= er0[2];
++`ifndef SYNTH_KINTEX7
+ 				bx0 <= sp_tri[303:288];
+ 				by0 <= sp_tri[319:304];
+ 				bx1 <= sp_tri[335:320];
+ 				by1 <= sp_tri[351:336];
++`endif
+ 				qx <= {sp_tri[303:289], 1'b0};
+ 				qy <= {sp_tri[319:305], 1'b0};
++`ifndef SYNTH_KINTEX7
+ 				{cz, bz, az} <= sp_tri[447:352];
++`endif
+ 				ent <= sp_tri[759:736];
+ 				fl <= sp_tri[762:760];
+ 				raw <= sp_tri[764];
+@@ -576,6 +863,9 @@ module atg_rx_scan #(
+ 			coarse_tri_valid <= 1'b0;
+ 			coarse_tile_ready <= 1'b0;
+ 			seq <= sq_seq;
++			ab8[0] <= ab8_comb[0];
++			ab8[1] <= ab8_comb[1];
++			ab8[2] <= ab8_comb[2];
+ 			if (COARSE_SCAN != 0) begin
+ 				st <= S_TILE_WAIT;
+ 			end else begin
+@@ -616,9 +906,23 @@ module atg_rx_scan #(
+ 
+ 		S_WALK: begin
+ 			coarse_tile_ready <= 1'b0;
++			r_inb <= inb_comb;
++			r_tile_row_end <= tile_row_end;
++			r_tile_col_end <= tile_col_end;
++			st <= S_SAMP;
++		end
++
++		S_SAMP: begin
++			r_esamp_sign <= esamp_sign;
++			for (k = 0; k < 12; k = k + 1)
++				r_lve_sign[k] <= r_lve[48 * k + 47];
++			st <= S_EVAL;
++		end
++
++		S_EVAL: begin
+ 			scov_reg <= cur_scov;
+ 			ccov_reg <= cur_ccov;
+-			cov_reg <= cur_cov;
++			cov_reg  <= cur_cov;
+ 			if (!w_empty && wm) begin
+ 				st <= S_FQ;
+ 			end else if (!w_empty) begin
+@@ -631,7 +935,7 @@ module atg_rx_scan #(
+ 		end
+ 
+ 		S_STEP: begin
+-			if (tile_quads_end) begin
++			if (r_tile_row_end && r_tile_col_end) begin
+ 				/* End of quads in this coarse tile */
+ 				if (cur_last_tile) begin
+ 					fend <= wm;
+@@ -654,7 +958,7 @@ module atg_rx_scan #(
+ 				end
+ 			end else begin
+ 				/* Step to next quad within tile */
+-				if (tile_row_end) begin
++				if (r_tile_row_end) begin
+ 					qx <= cur_tx;
+ 					qy <= qy2[15:0];
+ 					for (k = 0; k < 3; k = k + 1) begin
+@@ -684,25 +988,35 @@ module atg_rx_scan #(
+ 		S_Z: begin
+ 			zc <= zc1;
+ 			if (zc == 5'd0) begin
++`ifndef SYNTH_KINTEX7
+ 				zv <= 128'd0;
+ 				r_dx0 <= dx0_comb;
+ 				r_dy0 <= dy0_comb;
+ 				r_dx1 <= dx1_comb;
+ 				r_dy1 <= dy1_comb;
++`endif
+ 			end
+ 			if (zc == 5'd1) begin
++`ifndef SYNTH_KINTEX7
+ 				r_fdx0 <= f_dx0_comb;
+ 				r_fdy0 <= f_dy0_comb;
+ 				r_fdx1 <= f_dx1_comb;
+ 				r_fdy1 <= f_dy1_comb;
++`endif
+ 				r_zl <= 2'd0;
++				r_is_bz <= 1'b0;
++				r_fm_v <= 1'b1;
+ 			end else if (zc >= 5'd2) begin
+ 				r_zl <= r_zl_next;
+ 			end
++			if (zc == 5'd5) r_is_bz <= 1'b1;
++			if (zc == 5'd9) r_fm_v <= 1'b0;
++`ifndef SYNTH_KINTEX7
+ 			if (zc == 5'd6) t1_0 <= fm_r;
+ 			if (zc == 5'd7) t1_1 <= fm_r;
+ 			if (zc == 5'd8) t1_2 <= fm_r;
+ 			if (zc == 5'd9) t1_3 <= fm_r;
++`endif
+ 
+ 			if (zc == 5'd10) begin r_fa_v <= 1'b1; r_fa_a <= t1_0; r_fa_b <= fm_r; end
+ 			if (zc == 5'd11) begin r_fa_v <= 1'b1; r_fa_a <= t1_1; r_fa_b <= fm_r; end
+@@ -716,10 +1030,12 @@ module atg_rx_scan #(
+ 			if (zc == 5'd18) begin r_fa_v <= 1'b1; r_fa_a <= fa_r; r_fa_b <= cz; end
+ 			if (zc == 5'd19) begin r_fa_v <= 1'b0; end
+ 
++`ifndef SYNTH_KINTEX7
+ 			if (zc == 5'd20 && zmask[0]) zv[31:0] <= zcl;
+ 			if (zc == 5'd21 && zmask[1]) zv[63:32] <= zcl;
+ 			if (zc == 5'd22 && zmask[2]) zv[95:64] <= zcl;
+ 			if (zc == 5'd23 && zmask[3]) zv[127:96] <= zcl;
++`endif
+ 			if (zc == 5'd23)
+ 				st <= S_EMIT;
+ 		end
+@@ -728,17 +1044,21 @@ module atg_rx_scan #(
+ 			if (pend && !(dx_valid && dx_ready)) begin
+ 				dx_valid <= 1'b1;
+ 				dx_seq <= seq;
+-				dx_xy <= p_xy;
+ 				dx_mask <= p_mask;
+-				dx_depth <= p_z;
+ 				dx_last <= 1'b0;
++`ifndef SYNTH_KINTEX7
++				dx_xy <= p_xy;
++				dx_depth <= p_z;
++`endif
+ 			end else begin
+ 				dx_valid <= 1'b0;
+ 				pend <= 1'b1;
+-				p_xy <= {qy, qx};
+ 				p_mask <= zmask;
+-				p_z <= zv;
+ 				st <= S_STEP;
++`ifndef SYNTH_KINTEX7
++				p_xy <= {qy, qx};
++				p_z <= zv;
++`endif
+ 			end
+ 		end
+ 
+@@ -749,10 +1069,12 @@ module atg_rx_scan #(
+ 			end else begin
+ 				dx_valid <= 1'b1;
+ 				dx_seq <= seq;
+-				dx_xy <= pend ? p_xy : {by0[15:1], 1'b0, bx0[15:1], 1'b0};
+ 				dx_mask <= pend ? p_mask : 4'd0;
+-				dx_depth <= pend ? p_z : 128'd0;
+ 				dx_last <= 1'b1;
++`ifndef SYNTH_KINTEX7
++				dx_xy <= pend ? p_xy : {by0[15:1], 1'b0, bx0[15:1], 1'b0};
++				dx_depth <= pend ? p_z : 128'd0;
++`endif
+ 			end
+ 		end
+ 
+@@ -772,7 +1094,7 @@ module atg_rx_scan #(
+ 		sp_tri[767:765], sp_tri[735:448], qx1[16], qy1[16], qx2[16], qy2[16],
+ 		HAS_SU != 0, coarse_tri_ready, cur_last_tile, eb_cov_unused,
+ 		esamp_carry_unused, esamp_unused, lve_carry_unused, qstep_carry_unused, tend_carry_unused,
+-		dxy_carry_unused, r_zl_co_unused,
++		dxy_carry_unused, r_zl_co_unused, ab8_carry_unused,
+ 		hiz_cull, hiz_rd_zmax, coarse_tri_valid, coarse_tile_ready, cur_ty, cov_op, cov_oq};
+ endmodule
+ 
