@@ -69,10 +69,15 @@ module atg_blt #(
 
 	/* BLT_OP[2] as written, and the owner taken at the kick. */
 	reg op2;
+`ifdef SYNTH_KINTEX7
+	(* max_fanout = 16 *) reg own;
+`else
 	reg own;
+`endif
+	(* keep = "true", dont_touch = "true" *) wire rst_blt_high = !rst_n;
 
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_blt_high) begin
 			op2 <= 1'b0;
 			own <= 1'b0;
 		end else begin
@@ -96,6 +101,18 @@ module atg_blt #(
 	wire [LBITS-1:0] d_req_wdata;
 	wire [7:0] d_req_tag;
 
+`ifdef SYNTH_KINTEX7
+	(* max_fanout = 16 *) wire rsp_valid_b2d;
+	(* max_fanout = 16 *) wire rsp_write_b2d;
+	LUT1 #(.INIT(2'b10)) u_buf_rv (.I0(rsp_valid && !own), .O(rsp_valid_b2d));
+	LUT1 #(.INIT(2'b10)) u_buf_rw (.I0(rsp_write), .O(rsp_write_b2d));
+`else
+	wire rsp_valid_b2d = rsp_valid && !own;
+	wire rsp_write_b2d = rsp_write;
+`endif
+	wire [7:0] rsp_tag_b2d = rsp_tag;
+	wire [8:0] st_idx_b2d = st_idx;
+
 	atg_blt_2d #(
 		.ADDR_W(ADDR_W),
 		.LINE_BYTES(LINE_BYTES),
@@ -104,7 +121,7 @@ module atg_blt #(
 		.clk(clk),
 		.rst_n(rst_n),
 		.st_we(st_we),
-		.st_idx(st_idx),
+		.st_idx(st_idx_b2d),
 		.st_wdata(st_wdata),
 		.kick(kick && !op2),
 		.busy(d_busy),
@@ -119,9 +136,9 @@ module atg_blt #(
 		.req_be(d_req_be),
 		.req_wdata(d_req_wdata),
 		.req_tag(d_req_tag),
-		.rsp_valid(rsp_valid && !own),
-		.rsp_write(rsp_write),
-		.rsp_tag(rsp_tag),
+		.rsp_valid(rsp_valid_b2d),
+		.rsp_write(rsp_write_b2d),
+		.rsp_tag(rsp_tag_b2d),
 		.rsp_rdata(rsp_rdata),
 		.rsp_error(rsp_error)
 	);
@@ -195,12 +212,57 @@ module atg_blt #(
 	assign error = d_error || r_error;
 	assign error_kind = r_error ? r_kind : d_kind;
 	assign req_valid = d_req_valid || r_req_valid;
+`ifdef SYNTH_KINTEX7
+	localparam NUM_WDATA_SLICES = LBITS / 16;
+	localparam NUM_BE_SLICES = LINE_BYTES / 16;
+	(* dont_touch = "true" *) wire [NUM_WDATA_SLICES-1:0] own_wd;
+	(* dont_touch = "true" *) wire [NUM_BE_SLICES-1:0] own_be;
+	(* dont_touch = "true" *) wire [1:0] own_line;
+	(* dont_touch = "true" *) wire own_wr;
+	(* dont_touch = "true" *) wire own_tg;
+
+	LUT1 #(.INIT(2'b10)) u_ow_wr (.I0(own), .O(own_wr));
+	LUT1 #(.INIT(2'b10)) u_ow_tg (.I0(own), .O(own_tg));
+	LUT1 #(.INIT(2'b10)) u_ow_ln0 (.I0(own), .O(own_line[0]));
+	LUT1 #(.INIT(2'b10)) u_ow_ln1 (.I0(own), .O(own_line[1]));
+
+	genvar owi;
+	generate
+		for (owi = 0; owi < NUM_WDATA_SLICES; owi = owi + 1) begin : g_own_wd
+			LUT1 #(.INIT(2'b10)) u_ow_wd (.I0(own), .O(own_wd[owi]));
+			assign req_wdata[owi*16 +: 16] = own_wd[owi] ? r_req_wdata[owi*16 +: 16] : d_req_wdata[owi*16 +: 16];
+		end
+		for (owi = 0; owi < NUM_BE_SLICES; owi = owi + 1) begin : g_own_be
+			LUT1 #(.INIT(2'b10)) u_ow_be (.I0(own), .O(own_be[owi]));
+			assign req_be[owi*16 +: 16] = own_be[owi] ? r_req_be[owi*16 +: 16] : d_req_be[owi*16 +: 16];
+		end
+	endgenerate
+
+	assign req_write = own_wr ? r_req_write : d_req_write;
+	assign req_line = {
+		own_line[1] ? r_req_line[LA_W-1:14] : d_req_line[LA_W-1:14],
+		own_line[0] ? r_req_line[13:0] : d_req_line[13:0]
+	};
+	assign req_tag = own_tg ? r_req_tag : d_req_tag;
+`else
 	assign req_write = own ? r_req_write : d_req_write;
 	assign req_line = own ? r_req_line : d_req_line;
 	assign req_be = own ? r_req_be : d_req_be;
 	assign req_wdata = own ? r_req_wdata : d_req_wdata;
 	assign req_tag = own ? r_req_tag : d_req_tag;
+`endif
+`ifdef SYNTH_KINTEX7
+	(* keep = "true" *) wire [3:0] fsm_buf;
+	genvar g_fsm;
+	generate
+		for (g_fsm = 0; g_fsm < 4; g_fsm = g_fsm + 1) begin : g_fsm_b
+			LUT1 #(.INIT(2'b10)) u_fsm (.I0(d_fsm[g_fsm]), .O(fsm_buf[g_fsm]));
+		end
+	endgenerate
+	assign fsm = fsm_buf;
+`else
 	assign fsm = d_fsm;
+`endif
 endmodule
 
 `default_nettype wire
