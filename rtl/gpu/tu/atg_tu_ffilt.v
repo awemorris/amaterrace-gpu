@@ -246,6 +246,9 @@ module atg_tu_ffilt (
 	(* extract_reset = "no", max_fanout = 16 *) reg [1:0] c;	/* the component of the current {texel, lane} */
 	(* extract_reset = "no", max_fanout = 16 *) reg [3:0] cur;
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [1:0] cur_it_slw, cur_it_aux;
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [1:0] cur_ik_tx [0:7];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [1:0] cur_ik_wt [0:1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [1:0] cur_ik_aux;
 	(* extract_reset = "no", max_fanout = 16 *) reg [15:0] cur1;
 	(* extract_reset = "no", max_fanout = 16 *) reg rem_one_left;
 	wire [1:0] it = cur[3:2], ik = cur[1:0];
@@ -282,26 +285,22 @@ module atg_tu_ffilt (
 	wire [11:0] meta_pre, metav;
 	wire [31:0] upv, wfv;
 
-	(* dont_touch = "true" *) wire [1:0] ik_tx_s [0:15];
-	(* dont_touch = "true" *) wire [1:0] ik_wt_s [0:1];
 	(* keep = "true" *) wire [127:0] front_sl;
 	(* keep = "true" *) wire [31:0] front_wl;
 	genvar gi;
 	generate
-	for (gi = 0; gi < 16; gi = gi + 1) begin : g_ik_tx
-		assign ik_tx_s[gi] = ik;
-		assign front_sl[gi*8 +: 8] = tx[{ik_tx_s[gi], gi[3:0], 3'd0} +: 8];
+	for (gi = 0; gi < 8; gi = gi + 1) begin : g_ik_tx
+		assign front_sl[gi*16 +: 16] = tx[{cur_ik_tx[gi], gi[2:0], 4'd0} +: 16];
 	end
 	for (gi = 0; gi < 2; gi = gi + 1) begin : g_ik_wt
-		assign ik_wt_s[gi] = ik;
-		assign front_wl[gi*16 +: 16] = wts[{ik_wt_s[gi], gi[0], 4'd0} +: 16];
+		assign front_wl[gi*16 +: 16] = wts[{cur_ik_wt[gi], gi[0], 4'd0} +: 16];
 	end
 	endgenerate
 
 	(* keep_hierarchy = "yes" *) atg_tu_ffront front (
 		.clk(clk), .rst_n(rst_n), .i_vld(issue), .i_op(iop), .i_cs(gathq ? gsrc : c),
-		.i_aid(aid), .i_t_slw(cur_it_slw), .i_t_aux(cur_it_aux), .i_sl(front_sl), .i_bd(bd[ik*4 +: 4]),
-		.i_lo(lo[ik*8 +: 8]), .i_ft(ift), .i_wl(front_wl), .i_bil(bil),
+		.i_aid(aid), .i_t_slw(cur_it_slw), .i_t_aux(cur_it_aux), .i_sl(front_sl), .i_bd(bd[cur_ik_aux*4 +: 4]),
+		.i_lo(lo[cur_ik_aux*8 +: 8]), .i_ft(ift), .i_wl(front_wl), .i_bil(bil),
 		.i_p17(ctl[17]), .i_p18(ctl[18]), .i_wg(wg), .i_gwi(gwi), .i_b8(b8), .i_b16(b16),
 		.i_ifmt(ifmt), .i_blk(blk), .i_inf(inf_q), .i_sten(stq),
 		.o_vld(vldv), .o_meta_pre(meta_pre), .o_meta(metav), .o_up(upv), .o_wf(wfv), .o_busy(f_busy0)
@@ -589,6 +588,21 @@ module atg_tu_ffilt (
 		if (cur_ce_s[1]) begin
 			cur_it_slw <= cur_nxt[3:2];
 			cur_it_aux <= cur_nxt[3:2];
+			cur_ik_tx[0] <= cur_nxt[1:0];
+			cur_ik_tx[1] <= cur_nxt[1:0];
+			cur_ik_tx[2] <= cur_nxt[1:0];
+		end
+		if (cur_ce_s[2]) begin
+			cur_ik_tx[3] <= cur_nxt[1:0];
+			cur_ik_tx[4] <= cur_nxt[1:0];
+			cur_ik_tx[5] <= cur_nxt[1:0];
+			cur_ik_tx[6] <= cur_nxt[1:0];
+		end
+		if (cur_ce_s[3]) begin
+			cur_ik_tx[7] <= cur_nxt[1:0];
+			cur_ik_wt[0] <= cur_nxt[1:0];
+			cur_ik_wt[1] <= cur_nxt[1:0];
+			cur_ik_aux   <= cur_nxt[1:0];
 		end
 		for (i = 0; i < 16; i = i + 1) begin
 			if (drain_ce_s[i] || fin_ce_s[i])

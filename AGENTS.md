@@ -99,20 +99,19 @@ flowchart TD
 6. **`atg_vf`** (commit `1d1b930`): 0 violations, WNS +1.016 ns, 全 5 単体テスト PASS.
 7. **`atg_blt`** (commit `648d5ef`): 0 violations (Rule 1-5 全 PASS, 126 RAMs clean), WNS +2.143 ns, 359 件テスト 100% bit-exact PASS, DMA 帯域 2007 MB/s (64B) / 1132 MB/s (32B) $\ge 1000$ MB/s.
 8. **`atg_rx`** (commit `29867b4`): 0 violations (Rule 1-5 全 PASS), WNS +0.512 ns, 全 10 単体テストベンチ（`scan`, `setup`, `bary`, `clip`, `frag`, `cpoly`, `order`, `pipeline`, `ext_prim`, `fp`）100% PASS, 算術演算子 0 件。
-9. **`atg_mc`**: 0 violations (Rule 1-5 全 PASS), WNS +2.438 ns, 全 7 単体テストベンチ（`atg_mc`, `atg_mc_arb`, `atg_mc_atom`, `atg_mc_coalesce`, `atg_mc_l2`, `atg_mc_prot`, `atg_rt`）100% PASS, 算術演算子 0 件。
+9. **`atg_mc`** (commit `636966e9`): 0 violations (Rule 1-5 全 PASS), WNS +2.438 ns, 全 7 単体テストベンチ（`atg_mc`, `atg_mc_arb`, `atg_mc_atom`, `atg_mc_coalesce`, `atg_mc_l2`, `atg_mc_prot`, `atg_rt`）100% PASS, 算術演算子 0 件。
+10. **`atg_rop`** (commit `e8262a9f`): 0 violations (Rule 1-5 全 PASS), WNS +0.924 ns, 全 17 単体テストベンチ 100% PASS, 算術演算子 0 件。
+11. **`atg_sa`**: 0 violations (Rule 1-5 全 PASS, 0 warnings), 算術演算子 0 件。
+12. **`atg_tu`**: 0 violations (Rule 1-5 全 PASS, 53 RAMs clean), WNS +1.734 ns, 全 12 単体テストベンチ 100% PASS, 算術演算子 0 件。
 
 ### B. 作業中モジュール（進行中）
-1. **`atg_rop` (Render Output Backend, `rtl/gpu/rop/`)**:
-   - 単体テストベンチ 17 本中 10 本が PASS。ルール 3, 4, 5 は 0 違反。算術演算子 0 件。
-   - **残作業**: `atg_rop_fblend.v` の Stage 0 レジスタアンカリングによる論理段数（26 LUTs）削減、残り 7 本のテストベンチ通過、`asic-lint.sh atg_rop 5.000` の 0 違反達成。
-2. **`atg_tu` (Texture Unit, `rtl/gpu/tu/`)**:
-   - 設計ルール適用中。`atg_tu_addr.v`, `atg_tu_cache.v`, `atg_tu_filter.v` 等のパイプライン分割と単体テスト（13本）の確認。完了後 `asic-lint.sh atg_tu 5.000` PASS。
-3. **`atg_su` (Shader Execution Unit, `rtl/gpu/su/`)**:
-   - 設計ルール適用中。
+1. **`atg_top` (Chip Top-Level Integration, `rtl/gpu/top/atg_top.v`)**:
+   - 算術演算子 0 件達成。`asic-lint.sh atg_top 5.000` の違反解消および統合確認中。
+2. **`atg_su` (Shader Execution Unit, `rtl/gpu/su/`)**:
+   - 算術演算子 0 件達成、サブモジュール単体テスト 31 本 PASS。`atg_su` 統合テストおよび `asic-lint.sh atg_su 5.000` 対応中。
 
 ### C. 未着手の残余モジュール（着手順）
-1. **`atg_sa`** (Shader Array)
-2. **`atg_top`** (Chip Top-Level Integration)
+- なし（全モジュール着手済み）
 
 ---
 

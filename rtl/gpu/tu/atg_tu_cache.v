@@ -190,7 +190,7 @@ module atg_tu_cache #(
 	(* keep = "true", extract_reset = "no" *) reg [1:0]    rd_lane;
 
 	/* Registered per-slot controls in LANE_FETCH (1 cycle before LANE_EXTRACT) */
-	(* keep = "true", extract_reset = "no" *) reg          braw_c_lo, braw_c_hi0, braw_c_hi1, braw_c_hi2, braw_c_hi3;
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg braw_c_lo0, braw_c_lo1, braw_c_hi0, braw_c_hi1, braw_c_hi2, braw_c_hi3;
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [WW-1:0] f_pw_b0_q [0:3];
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [WW-1:0] f_pw_b1_q [0:3];
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [WW-1:0] f_pw_b2_q [0:3];
@@ -483,7 +483,7 @@ module atg_tu_cache #(
 	(* keep = "true" *) wire [15:0] cur_step_s;
 	(* keep = "true" *) wire [1:0]  nxt_lane_s [0:15];
 
-	(* dont_touch = "true" *) wire [2:0]  lchk_en  = {3{st == LANE_CMP}};
+	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  lchk_en;
 	(* dont_touch = "true" *) wire [1:0]  lfetch_en = {2{st == LANE_WAIT}};
 	(* keep = "true", equivalent_register_removal = "no" *) reg [28:0] lchk_ce;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [3:0]  lwait_ce;
@@ -535,11 +535,12 @@ module atg_tu_cache #(
 	integer j, g_idx, k_idx, w_idx;
 	always @(posedge clk) begin
 		/* Unconditional pipeline registers for BRAM write data and BRAM read data */
-		b_wdata_q <= rsp_rdata;
-		q0_reg    <= bank_q0;
-		q1_reg    <= bank_q1;
-		q2_reg    <= bank_q2;
-		q3_reg    <= bank_q3;
+		b_wdata_q   <= rsp_rdata;
+		q0_reg      <= bank_q0;
+		q1_reg      <= bank_q1;
+		q2_reg      <= bank_q2;
+		q3_reg      <= bank_q3;
+		f_braw_q[0] <= {{2{braw_c_hi3}}, {6{braw_c_hi2}}, braw_c_hi1, {7{braw_c_hi0}}, {8{braw_c_lo1}}, {8{braw_c_lo0}}};
 		for (j = 0; j < WAYS; j = j + 1) begin
 			s0_tag_w_q[j] <= s0_tag_rdata[j];
 			s1_tag_w_q[j] <= s1_tag_rdata[j];
@@ -860,6 +861,7 @@ module atg_tu_cache #(
 			lane <= 2'd0;
 			drop <= 1'b0;
 			slot_err <= 4'd0;
+			lchk_en <= 3'd0;
 			lchk_ce <= 29'd0;
 			lwait_ce <= 4'd0;
 			lfetch_ce <= 16'd0;
@@ -892,6 +894,7 @@ module atg_tu_cache #(
 				plru[g_idx] <= 3'd0;
 			end
 		end else begin
+			lchk_en   <= {3{st == LANE_TAG_WAIT}};
 			lchk_ce   <= {{9{lchk_en[2]}}, {10{lchk_en[1]}}, {10{lchk_en[0]}}};
 			lwait_ce  <= {4{st == LANE_CHECK && !any_miss}};
 			lfetch_ce <= {{8{lfetch_en[1]}}, {8{lfetch_en[0]}}};
@@ -944,7 +947,8 @@ module atg_tu_cache #(
 					s1_vld_q <= inv_b[16] ? {WAYS{1'b0}} : vld[s1_set];
 					s2_vld_q <= inv_b[16] ? {WAYS{1'b0}} : vld[s2_set];
 					s3_vld_q <= inv_b[16] ? {WAYS{1'b0}} : vld[s3_set];
-					braw_c_lo  <= (tc_ctl[7:6] == 2'd2) && (tc_ctl[19] || !tc_ctl[8] || !tc_ctl[1]);
+					braw_c_lo0 <= (tc_ctl[7:6] == 2'd2) && (tc_ctl[19] || !tc_ctl[8] || !tc_ctl[1]);
+					braw_c_lo1 <= (tc_ctl[7:6] == 2'd2) && (tc_ctl[19] || !tc_ctl[8] || !tc_ctl[1]);
 					braw_c_hi0 <= (tc_ctl[7:6] == 2'd2) && !tc_ctl[19] && (!tc_ctl[8] || !tc_ctl[1]);
 					braw_c_hi1 <= (tc_ctl[7:6] == 2'd2) && !tc_ctl[19];
 					braw_c_hi2 <= ((tc_ctl[7:6] == 2'd2) && !tc_ctl[19] && (!tc_ctl[8] || tc_ctl[1])) ||
@@ -955,7 +959,6 @@ module atg_tu_cache #(
 				end
 			end
 			LANE_TAG_WAIT: begin
-				f_braw_q[0] <= {{2{braw_c_hi3}}, {6{braw_c_hi2}}, braw_c_hi1, {7{braw_c_hi0}}, {16{braw_c_lo}}};
 				st <= LANE_CMP;
 			end
 			LANE_CMP: begin

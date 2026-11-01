@@ -419,7 +419,7 @@ module atg_tu_desc (
 	am_add #(.W(4)) u_cl1 (.a(cl), .b(4'd0), .ci(1'b1), .s(cl1), .co(carry_unused[6]));
 
 	/* the slot taken (cs in S_LOAD) and the slot marked (wslot_v4), one-hot */
-	(* dont_touch = "true" *) wire [4:0] load_clr_s = {5{st == S_LOAD}};
+	(* keep = "true", equivalent_register_removal = "no" *) reg [4:0] load_clr_s;
 	(* keep = "true", equivalent_register_removal = "no" *) reg acc_clr_lo_q, acc_clr_hi_q;
 	(* dont_touch = "true" *) wire done_lo     = (st == S_DONE);
 	(* dont_touch = "true" *) wire done_hi     = (st == S_DONE);
@@ -493,13 +493,15 @@ module atg_tu_desc (
 			v_p9_s     <= 7'd0;
 			acc_clr_lo_q <= 1'b0;
 			acc_clr_hi_q <= 1'b0;
+			load_clr_s <= 5'd0;
 			ce_lw      <= 7'd0;
 			b_we_off_q <= 1'b0;
 			b_we_pl_q  <= 1'b0;
 		end else begin
 			acc_clr_lo_q <= (st == S_LOAD_WAIT);
 			acc_clr_hi_q <= (st == S_LOAD_WAIT);
-			ce_lw        <= {7{st == S_LOAD}};
+			load_clr_s   <= {5{(st == S_IDLE) && dirty_nz && !mark && !mark_q_lo}};
+			ce_lw        <= {7{load_clr_s[2]}};
 			we_base_q <= we_base_d; we_base_vlo <= we_base_d; we_base_vhi <= we_base_d;
 			we_size_q <= we_size_d; we_size_cs_q <= we_size_d; we_size_vlo <= we_size_d; we_size_vhi <= we_size_d;
 			we_img_q  <= we_img_d;  we_img_cs_q  <= we_img_d;  we_img_vlo  <= we_img_d;  we_img_vhi  <= we_img_d;

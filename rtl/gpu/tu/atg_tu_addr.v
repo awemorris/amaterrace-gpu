@@ -180,7 +180,8 @@ module atg_tu_addr (
 
 	/* Quad slot descriptor snapshot registers (latched on quad start) */
 	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [31:0] r_base, r_stride;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [15:0] r_w0, r_h0, r_cnt;
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [15:0] r_w0_a, r_w0_b, r_h0_a, r_h0_b;
+	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [15:0] r_cnt;
 	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [3:0]  r_nlev, r_maxl;
 	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [12:0] r_fc;
 	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg        r_legacy, r_depth, r_blk, r_f565, r_ms, r_tiled, r_unn, r_is3dr, r_arr, r_cube;
@@ -188,7 +189,7 @@ module atg_tu_addr (
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_is3d_foot, r_is3d_dsz;
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_cube_hl, r_cube_tcrd, r_cube_lay, r_cube_foot;
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_qlod_lraw, r_not_texb_lraw;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_val_dsz, r_val_texsz_lo, r_val_texsz_hi, r_val_qlod_lo, r_val_qlod_hi, r_val_cmp_lo, r_val_cmp_hi;
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_val_dsz_b0, r_val_dsz_b1, r_val_texsz_lo_b0, r_val_texsz_lo_b1, r_val_texsz_hi, r_val_qlod_lo, r_val_qlod_hi, r_val_cmp_lo, r_val_cmp_hi;
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [31:0] r_nofetch_a;
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  r_nofetch_bord;
 	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [2:0]  r_psl;
@@ -227,8 +228,14 @@ module atg_tu_addr (
 	);
 
 	/* Pipelined decode of registered descriptor outputs (used in DECODE_DESC & DECODE_DESC2) */
-	wire [15:0] w0 = r_dsize_raw[15:0] == 16'd0 ? 16'd1 : r_dsize_raw[15:0];
-	wire [15:0] h0 = r_dsize_raw[31:16] == 16'd0 ? 16'd1 : r_dsize_raw[31:16];
+	(* dont_touch = "true" *) wire w0_zero_a = (r_dsize_raw[15:0]  == 16'd0);
+	(* dont_touch = "true" *) wire w0_zero_b = (r_dsize_raw[15:0]  == 16'd0);
+	(* dont_touch = "true" *) wire h0_zero_a = (r_dsize_raw[31:16] == 16'd0);
+	(* dont_touch = "true" *) wire h0_zero_b = (r_dsize_raw[31:16] == 16'd0);
+	(* keep = "true" *) wire [15:0] w0_a = w0_zero_a ? 16'd1 : r_dsize_raw[15:0];
+	(* keep = "true" *) wire [15:0] w0_b = w0_zero_b ? 16'd1 : r_dsize_raw[15:0];
+	(* keep = "true" *) wire [15:0] h0_a = h0_zero_a ? 16'd1 : r_dsize_raw[31:16];
+	(* keep = "true" *) wire [15:0] h0_b = h0_zero_b ? 16'd1 : r_dsize_raw[31:16];
 	wire [3:0] nlev = r_image_raw[3:0] == 4'd0 ? 4'd1 : r_image_raw[3:0] > 4'd13 ? 4'd13 : r_image_raw[3:0];
 	wire [3:0] maxl;
 	wire maxl_bo_unused;
@@ -355,7 +362,7 @@ module atg_tu_addr (
 		.v({crd[352 +: 32], crd[192 +: 32], crd[32 +: 32]}),
 		.w({crd[448 +: 32], crd[288 +: 32], crd[128 +: 32]}),
 		.cs({ls2, ls1, cs[0]}), .ct({lt2, lt1, ct[0]}), .is3d(r_is3d_lod[0]), .cube(r_cube_lod[0]),
-		.w0(r_w0), .h0(r_h0), .d0(r_cnt), .ax(2'd0), .lam(lam_u)
+		.w0(r_w0_a), .h0(r_h0_a), .d0(r_cnt), .ax(2'd0), .lam(lam_u)
 	);
 	(* keep_hierarchy = "yes" *)
 	atg_tu_lod #(.LAT(5)) lodu_v (
@@ -364,7 +371,7 @@ module atg_tu_addr (
 		.v({crd[352 +: 32], crd[192 +: 32], crd[32 +: 32]}),
 		.w({crd[448 +: 32], crd[288 +: 32], crd[128 +: 32]}),
 		.cs({ls2, ls1, cs[0]}), .ct({lt2, lt1, ct[0]}), .is3d(r_is3d_lod[1]), .cube(r_cube_lod[1]),
-		.w0(r_w0), .h0(r_h0), .d0(r_cnt), .ax(2'd1), .lam(lam_v)
+		.w0(r_w0_a), .h0(r_h0_a), .d0(r_cnt), .ax(2'd1), .lam(lam_v)
 	);
 	(* keep_hierarchy = "yes" *)
 	atg_tu_lod #(.LAT(5)) lodu_w (
@@ -373,7 +380,7 @@ module atg_tu_addr (
 		.v({crd[352 +: 32], crd[192 +: 32], crd[32 +: 32]}),
 		.w({crd[448 +: 32], crd[288 +: 32], crd[128 +: 32]}),
 		.cs({ls2, ls1, cs[0]}), .ct({lt2, lt1, ct[0]}), .is3d(r_is3d_lod[2]), .cube(r_cube_lod[2]),
-		.w0(r_w0), .h0(r_h0), .d0(r_cnt), .ax(2'd2), .lam(lam_w)
+		.w0(r_w0_a), .h0(r_h0_a), .d0(r_cnt), .ax(2'd2), .lam(lam_w)
 	);
 	wire [16:0] uv_cmp_d, uvw_cmp_d;
 	wire        uv_cmp_bo, uvw_cmp_bo;
@@ -539,8 +546,8 @@ module atg_tu_addr (
 		wire unused_lod_cmp = &{1'b0, maxlod_cmp_d, minlod_cmp_d};
 
 		wire [15:0] wl_s_nxt, hl_s_nxt, dl_s_nxt;
-		am_shift #(.W(16), .SW(4)) u_wl_s (.a(r_w0), .amt(r_lvl[gl]), .left(1'b0), .arith(1'b0), .y(wl_s_nxt));
-		am_shift #(.W(16), .SW(4)) u_hl_s (.a(r_h0), .amt(r_lvl[gl]), .left(1'b0), .arith(1'b0), .y(hl_s_nxt));
+		am_shift #(.W(16), .SW(4)) u_wl_s (.a((gl < 2) ? r_w0_a : r_w0_b), .amt(r_lvl[gl]), .left(1'b0), .arith(1'b0), .y(wl_s_nxt));
+		am_shift #(.W(16), .SW(4)) u_hl_s (.a((gl < 2) ? r_h0_a : r_h0_b), .amt(r_lvl[gl]), .left(1'b0), .arith(1'b0), .y(hl_s_nxt));
 		am_shift #(.W(16), .SW(4)) u_dl_s (.a(r_cnt), .amt(r_lvl[gl]), .left(1'b0), .arith(1'b0), .y(dl_s_nxt));
 		assign wl_s_nxt_l[gl] = wl_s_nxt;
 		assign hl_s_nxt_l[gl] = hl_s_nxt;
@@ -598,10 +605,16 @@ module atg_tu_addr (
 		(* dont_touch = "true" *) wire dsz_is3d = !r_arr && r_is3d_dsz[gl];
 		wire [15:0] dsz = dsz_arr ? r_cnt : dsz_is3d ? r_dl[gl] : 16'd1;
 		wire [15:0] val_lo_s0 = smpq ? (r_ms ? 16'd4 : 16'd1) : nlevq ? {12'd0, r_nlev} : 16'd0;
-		wire [15:0] val_lo = r_val_dsz[gl]      ? dsz :
-		                     r_val_texsz_lo[gl] ? r_wl[gl] :
-		                     r_val_qlod_lo[gl]  ? r_dq[gl] :
-		                     r_val_cmp_lo[gl]   ? cw3[15:0] : val_lo_s0;
+		wire [15:0] val_lo = {
+			r_val_dsz_b1[gl]      ? dsz[15:8]       :
+			r_val_texsz_lo_b1[gl] ? r_wl[gl][15:8]  :
+			r_val_qlod_lo[gl]     ? r_dq[gl][15:8]  :
+			r_val_cmp_lo[gl]      ? cw3[15:8]       : val_lo_s0[15:8],
+			r_val_dsz_b0[gl]      ? dsz[7:0]        :
+			r_val_texsz_lo_b0[gl] ? r_wl[gl][7:0]   :
+			r_val_qlod_lo[gl]     ? r_dq[gl][7:0]   :
+			r_val_cmp_lo[gl]      ? cw3[7:0]        : val_lo_s0[7:0]
+		};
 		wire [15:0] val_hi = r_val_texsz_hi[gl] ? r_hl1[gl] :
 		                     r_val_qlod_hi[gl]  ? r_lamp[gl][15:0] :
 		                     r_val_cmp_hi[gl]   ? cw3[31:16] : 16'd0;
@@ -678,8 +691,8 @@ module atg_tu_addr (
 
 	/* Fanout-decoupled state enables (<= 16 FFs per enable flip-flop) */
 	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] ld_desc_ce;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [20:0] dec_desc_ce;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [8:0]  dec_desc2_ce;
+	(* keep = "true", equivalent_register_removal = "no" *) reg [22:0] dec_desc_ce;
+	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0]  dec_desc2_ce;
 
 	(* dont_touch = "true" *) wire [3:0]  cwait_rdy = {4{(st == CWAIT) && !c_bsy}};
 	(* dont_touch = "true" *) wire [3:0]  cwait_j1_ce = {4{cwait_rdy[0] && (job == 3'd1)}};
@@ -801,9 +814,11 @@ module atg_tu_addr (
 			r_row_raw     <= rowa;
 		end
 
-		if (dec_desc_ce[0]) r_w0  <= w0;
-		if (dec_desc_ce[1]) r_h0  <= h0;
-		if (dec_desc_ce[2]) r_cnt <= cnt;
+		if (dec_desc_ce[0])  r_w0_a <= w0_a;
+		if (dec_desc_ce[22]) r_w0_b <= w0_b;
+		if (dec_desc_ce[1])  r_h0_a <= h0_a;
+		if (dec_desc_ce[21]) r_h0_b <= h0_b;
+		if (dec_desc_ce[2])  r_cnt  <= cnt;
 		if (dec_desc_ce[3]) begin
 			r_nlev <= nlev;
 			r_maxl <= maxl;
@@ -876,9 +891,13 @@ module atg_tu_addr (
 			r_nofetch_bord  <= {4{nofetch_bord}};
 		end
 		if (dec_desc2_ce[7]) begin
-			r_val_dsz      <= {4{!smpq && !nlevq && dszq}};
-			r_val_texsz_lo <= {4{!smpq && !nlevq && !dszq && (op == OP_TEXSZ)}};
-			r_val_texsz_hi <= {4{!smpq && !nlevq && !dszq && (op == OP_TEXSZ)}};
+			r_val_dsz_b0      <= {4{!smpq && !nlevq && dszq}};
+			r_val_dsz_b1      <= {4{!smpq && !nlevq && dszq}};
+		end
+		if (dec_desc2_ce[9]) begin
+			r_val_texsz_lo_b0 <= {4{!smpq && !nlevq && !dszq && (op == OP_TEXSZ)}};
+			r_val_texsz_lo_b1 <= {4{!smpq && !nlevq && !dszq && (op == OP_TEXSZ)}};
+			r_val_texsz_hi    <= {4{!smpq && !nlevq && !dszq && (op == OP_TEXSZ)}};
 		end
 		if (dec_desc2_ce[8]) begin
 			r_val_qlod_lo  <= {4{!smpq && !nlevq && !dszq && (op != OP_TEXSZ) && qlod}};
@@ -1039,8 +1058,8 @@ module atg_tu_addr (
 			wdesc1_ce    <= 33'd0;
 			wdesc2_ce    <= 53'd0;
 			ld_desc_ce   <= 16'd0;
-			dec_desc_ce  <= 21'd0;
-			dec_desc2_ce <= 9'd0;
+			dec_desc_ce  <= 23'd0;
+			dec_desc2_ce <= 10'd0;
 			la1_ce       <= 16'd0;
 			la1b_ce      <= 18'd0;
 			la2d_ce      <= 24'd0;
@@ -1052,8 +1071,8 @@ module atg_tu_addr (
 			wdesc1_ce    <= {{11{wdesc1_en[2]}}, {11{wdesc1_en[1]}}, {11{wdesc1_en[0]}}};
 			wdesc2_ce    <= {{11{wdesc2_en[4]}}, {11{wdesc2_en[3]}}, {10{wdesc2_en[2]}}, {10{wdesc2_en[1]}}, {11{wdesc2_en[0]}}};
 			ld_desc_ce   <= {{8{ld_desc_en[1]}}, {8{ld_desc_en[0]}}};
-			dec_desc_ce  <= {{10{dec_desc_en[1]}}, {11{dec_desc_en[0]}}};
-			dec_desc2_ce <= {9{st == DECODE_DESC}};
+			dec_desc_ce  <= {{12{dec_desc_en[1]}}, {11{dec_desc_en[0]}}};
+			dec_desc2_ce <= {10{st == DECODE_DESC}};
 			la1_ce       <= {{8{la1_en[1]}}, {8{la1_en[0]}}};
 			la1b_ce      <= {{9{la1b_en[1]}}, {9{la1b_en[0]}}};
 			la2d_ce      <= {{12{la2d_en[1]}}, {12{la2d_en[0]}}};
