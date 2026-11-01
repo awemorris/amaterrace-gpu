@@ -128,7 +128,7 @@ module atg_rx_scan #(
 `ifdef SYNTH_KINTEX7
 	(* keep = "true", dont_touch = "true" *) wire [3:0] st_fsm_0, st_fsm_1, st_fsm_2, st_fsm_3;
 	(* keep = "true", dont_touch = "true" *) wire [3:0] st_fsm_4, st_fsm_5, st_fsm_6, st_fsm_7, st_fsm_8;
-	(* keep = "true", max_fanout = 16 *) wire [3:0] st_fsm_main;
+	(* keep = "true", dont_touch = "true" *) wire [3:0] st_fsm_main, st_fsm_m1, st_fsm_m2, st_fsm_m3, st_fsm_m4, st_fsm_m5, st_fsm_m6, st_fsm_m7;
 	genvar gst;
 	generate
 		for (gst = 0; gst < 4; gst = gst + 1) begin : g_st_bufs
@@ -142,6 +142,13 @@ module atg_rx_scan #(
 			LUT1 #(.INIT(2'h2)) u_st7 (.I0(st[gst]), .O(st_fsm_7[gst]));
 			LUT1 #(.INIT(2'h2)) u_st8 (.I0(st[gst]), .O(st_fsm_8[gst]));
 			LUT1 #(.INIT(2'h2)) u_stm (.I0(st[gst]), .O(st_fsm_main[gst]));
+			LUT1 #(.INIT(2'h2)) u_stm1 (.I0(st[gst]), .O(st_fsm_m1[gst]));
+			LUT1 #(.INIT(2'h2)) u_stm2 (.I0(st[gst]), .O(st_fsm_m2[gst]));
+			LUT1 #(.INIT(2'h2)) u_stm3 (.I0(st[gst]), .O(st_fsm_m3[gst]));
+			LUT1 #(.INIT(2'h2)) u_stm4 (.I0(st[gst]), .O(st_fsm_m4[gst]));
+			LUT1 #(.INIT(2'h2)) u_stm5 (.I0(st[gst]), .O(st_fsm_m5[gst]));
+			LUT1 #(.INIT(2'h2)) u_stm6 (.I0(st_fsm_0[gst]), .O(st_fsm_m6[gst]));
+			LUT1 #(.INIT(2'h2)) u_stm7 (.I0(st_fsm_3[gst]), .O(st_fsm_m7[gst]));
 		end
 	endgenerate
 
@@ -160,7 +167,8 @@ module atg_rx_scan #(
 	LUT1 #(.INIT(2'h2)) u_triv_c (.I0(cur_trivial), .O(cur_trivial_cov));
 	LUT1 #(.INIT(2'h2)) u_triv_s (.I0(cur_trivial), .O(cur_trivial_scov));
 
-`define SET_ST(val) begin st <= (val); end
+`define SET_ST(val) begin st[1:0] <= (val); end
+`define SET_ST_HI(val) begin st[3:2] <= ((val) >> 2); end
 `define SET_ZC(val) begin zc <= (val); end
 `define SET_TRIV(val) begin cur_trivial <= (val); end
 `else
@@ -174,6 +182,13 @@ module atg_rx_scan #(
 	wire [3:0] st_fsm_7 = st;
 	wire [3:0] st_fsm_8 = st;
 	wire [3:0] st_fsm_main = st;
+	wire [3:0] st_fsm_m1 = st;
+	wire [3:0] st_fsm_m2 = st;
+	wire [3:0] st_fsm_m3 = st;
+	wire [3:0] st_fsm_m4 = st;
+	wire [3:0] st_fsm_m5 = st;
+	wire [3:0] st_fsm_m6 = st;
+	wire [3:0] st_fsm_m7 = st;
 	wire [4:0] zc_0 = zc;
 	wire [4:0] zc_1 = zc;
 	wire [4:0] zc_2 = zc;
@@ -366,10 +381,10 @@ module atg_rx_scan #(
 	LUT1 #(.INIT(2'h2)) u_wty (.I0(we_tile_x_raw), .O(we_tile_y));
 
 `ifdef SYNTH_KINTEX7
-	wire [15:0] next_tile_tx = (st_fsm_4 == S_SEQ) ? {bx0[15:1], 1'b0} : coarse_tile_x;
-	wire [15:0] next_tile_ty = (st_fsm_8 == S_SEQ) ? {by0[15:1], 1'b0} : coarse_tile_y;
-	wire next_tile_triv = (st_fsm_4 == S_SEQ) ? 1'b0 : coarse_tile_trivial;
-	wire next_tile_last = (st_fsm_4 == S_SEQ) ? 1'b1 : coarse_tile_last;
+	wire [15:0] next_tile_tx = (COARSE_SCAN == 0 && st_fsm_4 == S_SEQ) ? {bx0[15:1], 1'b0} : coarse_tile_x;
+	wire [15:0] next_tile_ty = (COARSE_SCAN == 0 && st_fsm_8 == S_SEQ) ? {by0[15:1], 1'b0} : coarse_tile_y;
+	wire next_tile_triv = (COARSE_SCAN == 0 && st_fsm_4 == S_SEQ) ? 1'b0 : coarse_tile_trivial;
+	wire next_tile_last = (COARSE_SCAN == 0 && st_fsm_4 == S_SEQ) ? 1'b1 : coarse_tile_last;
 `else
 	wire [15:0] next_tile_tx = (st == S_SEQ) ? {bx0[15:1], 1'b0} : coarse_tile_x;
 	wire [15:0] next_tile_ty = (st == S_SEQ) ? {by0[15:1], 1'b0} : coarse_tile_y;
@@ -794,7 +809,7 @@ module atg_rx_scan #(
 	am_sub #(.W(17)) u_dx1 (.a(qx1), .b({1'b0, bx0}), .bi(1'b0), .d(dx1_comb), .bo(dxy_carry_unused[2]));
 	am_sub #(.W(17)) u_dy1 (.a(qy1), .b({1'b0, by0}), .bi(1'b0), .d(dy1_comb), .bo(dxy_carry_unused[3]));
 
-	reg [16:0] r_dx0, r_dy0, r_dx1, r_dy1;
+	(* extract_reset = "no" *) reg [16:0] r_dx0, r_dy0, r_dx1, r_dy1;
 
 	wire [31:0] f_dx0_comb, f_dy0_comb, f_dx1_comb, f_dy1_comb;
 	am_fp_fix2f #(.W(17), .F(0), .SIGNED(0)) u_fdx0 (.v(r_dx0), .f(f_dx0_comb));
@@ -802,7 +817,7 @@ module atg_rx_scan #(
 	am_fp_fix2f #(.W(17), .F(0), .SIGNED(0)) u_fdx1 (.v(r_dx1), .f(f_dx1_comb));
 	am_fp_fix2f #(.W(17), .F(0), .SIGNED(0)) u_fdy1 (.v(r_dy1), .f(f_dy1_comb));
 
-	reg [31:0] r_fdx0, r_fdy0, r_fdx1, r_fdy1;
+	(* extract_reset = "no" *) reg [31:0] r_fdx0, r_fdy0, r_fdx1, r_fdy1;
 
 	wire [1:0] r_zl_next;
 	wire r_zl_co_unused;
@@ -1196,77 +1211,326 @@ module atg_rx_scan #(
 	assign busy = (st != S_IDLE);
 `endif
 
-	/* Dedicated scov_reg process to isolate 16-bit register fanout */
+	/* Dedicated scov_reg and cov_reg processes to isolate fanout and logic depth */
 	always @(posedge clk) begin
 		if (rst_n_inv) begin
 			scov_reg <= 16'd0;
-		end else if (st_fsm_6 == S_EVAL) begin
-			scov_reg <= cur_scov;
-		end
-	end
-
-	always @(posedge clk) begin
-		pt_free <= 1'b0;
-		if (rst_n_inv) begin
-			`SET_ST(S_IDLE);
-			dx_valid <= 1'b0;
-			coarse_tri_valid <= 1'b0;
-			coarse_tile_ready <= 1'b0;
-`ifndef SYNTH_KINTEX7
-			cur_tx <= 16'd0;
-			cur_ty <= 16'd0;
-			cur_trivial <= 1'b0;
-			cur_last_tile <= 1'b0;
-`endif
 			ccov_reg <= 4'd0;
-			cov_reg <= 4'd0;
+			cov_reg  <= 4'd0;
 `ifdef SYNTH_KINTEX7
 			cov_reg_scov <= 4'd0;
 `endif
-			fend <= 1'b0;
+		end else if (st_fsm_6 == S_EVAL) begin
+			scov_reg <= cur_scov;
+			ccov_reg <= cur_ccov;
+			cov_reg  <= cur_cov;
+`ifdef SYNTH_KINTEX7
+			cov_reg_scov <= cur_cov;
+`endif
+		end
+	end
+
+	/* Separate qx, qy, ent processes to reduce st_fsm_main fanout */
+	always @(posedge clk) begin
+		case (st_fsm_m1)
+		S_IDLE: if (sp_val_qx) qx[7:0] <= {sp_tri[295:289], 1'b0};
+		S_SEQ: if (COARSE_SCAN == 0) qx[7:0] <= {bx0[7:1], 1'b0};
+		S_TILE_WAIT: if (ctv_fsm) qx[7:0] <= coarse_tile_x[7:0];
+		S_STEP: if (r_tile_row_end && r_tile_col_end) begin
+			if (!cur_last_tile && ctv_fsm) qx[7:0] <= coarse_tile_x[7:0];
+		end else begin
+			qx[7:0] <= r_tile_row_end ? cur_tx[7:0] : qx2[7:0];
+		end
+		default: ;
+		endcase
+	end
+
+	always @(posedge clk) begin
+		case (st_fsm_m3)
+		S_IDLE: if (sp_val_qx) qx[15:8] <= sp_tri[303:296];
+		S_SEQ: if (COARSE_SCAN == 0) qx[15:8] <= bx0[15:8];
+		S_TILE_WAIT: if (ctv_fsm) qx[15:8] <= coarse_tile_x[15:8];
+		S_STEP: if (r_tile_row_end && r_tile_col_end) begin
+			if (!cur_last_tile && ctv_fsm) qx[15:8] <= coarse_tile_x[15:8];
+		end else begin
+			qx[15:8] <= r_tile_row_end ? cur_tx[15:8] : qx2[15:8];
+		end
+		default: ;
+		endcase
+	end
+
+	always @(posedge clk) begin
+		case (st_fsm_m2)
+		S_IDLE: if (sp_val_qy) qy <= {sp_tri[319:305], 1'b0};
+		S_SEQ: if (COARSE_SCAN == 0) qy <= {by0[15:1], 1'b0};
+		S_TILE_WAIT: if (ctv_fsm) qy <= coarse_tile_y;
+		S_STEP: if (r_tile_row_end && r_tile_col_end) begin
+			if (!cur_last_tile && ctv_fsm) qy <= coarse_tile_y;
+		end else if (r_tile_row_end) begin
+			qy <= qy2[15:0];
+		end
+		default: ;
+		endcase
+	end
+
+`ifdef SYNTH_KINTEX7
+	always @(posedge clk) begin
+		if (st_fsm_m3 == S_IDLE) begin
+			if (we_ent_lo) ent[11:0] <= sp_tri[747:736];
+			if (we_ent_hi) ent[23:12] <= sp_tri[759:748];
+		end
+	end
+`endif
+
+	always @(posedge clk) begin
+		if (rst_n_inv) begin
+			dx_valid <= 1'b0;
+			dx_seq <= 16'd0;
+			dx_mask <= 4'd0;
+			dx_last <= 1'b0;
 			pend <= 1'b0;
-			fi <= 2'd0;
+			p_mask <= 4'd0;
+		end else case (st_fsm_m4)
+		S_IDLE: if (sp_val_ctrl) pend <= 1'b0;
+		S_EMIT: begin
+			if (pend && !(dx_valid && dx_ready)) begin
+				dx_valid <= 1'b1;
+				dx_seq <= seq;
+				dx_mask <= p_mask;
+				dx_last <= 1'b0;
+`ifndef SYNTH_KINTEX7
+				dx_xy <= p_xy;
+				dx_depth <= p_z;
+`endif
+			end else begin
+				dx_valid <= 1'b0;
+				pend <= 1'b1;
+				p_mask <= zmask;
+`ifndef SYNTH_KINTEX7
+				p_xy <= {qy, qx};
+				p_z <= zv;
+`endif
+			end
+		end
+		S_LAST: begin
+			if (dx_valid && dx_ready) begin
+				dx_valid <= 1'b0;
+			end else begin
+				dx_valid <= 1'b1;
+				dx_seq <= seq;
+				dx_mask <= pend ? p_mask : 4'd0;
+				dx_last <= 1'b1;
+`ifndef SYNTH_KINTEX7
+				dx_xy <= pend ? p_xy : {by0[15:1], 1'b0, bx0[15:1], 1'b0};
+				dx_depth <= pend ? p_z : 128'd0;
+`endif
+			end
+		end
+		default: ;
+		endcase
+	end
+
+	always @(posedge clk) begin
+		if (rst_n_inv) begin
 			`SET_ZC(5'd0);
 			`SET_ZL(2'd0);
 			`SET_BZA(1'b0);
 			`SET_BZB(1'b0);
 			r_fm_v <= 1'b0;
 			r_fa_v <= 1'b0;
+		end else case (st_fsm_m5)
+		S_IDLE: begin
+			r_fm_v <= 1'b0;
+			`SET_BZA(1'b0);
+			`SET_BZB(1'b0);
+		end
+		S_EVAL: begin
+			`SET_ZC(5'd0);
+		end
+		S_Z: begin
+			`SET_ZC(zc1);
+			if (zc == 5'd1) begin
+				`SET_ZL(2'd0);
+				`SET_BZA(1'b0);
+				`SET_BZB(1'b0);
+				r_fm_v <= 1'b1;
+			end else if (zc >= 5'd2) begin
+				`SET_ZL(r_zl_next);
+			end
+`ifdef SYNTH_KINTEX7
+			if (zc_1 == 5'd5) begin
+				`SET_BZA(1'b1);
+				`SET_BZB(1'b1);
+			end
+			if (zc_1 == 5'd9) r_fm_v <= 1'b0;
+			if (zc_0 == 5'd10 || zc_0 == 5'd11 || zc_0 == 5'd12 || zc_0 == 5'd13 || (zc_0 >= 5'd15 && zc_0 <= 5'd18))
+				r_fa_v <= 1'b1;
+			if (zc_0 == 5'd14 || zc_0 == 5'd19)
+				r_fa_v <= 1'b0;
+`else
+			if (zc == 5'd5) begin
+				`SET_BZA(1'b1);
+				`SET_BZB(1'b1);
+			end
+			if (zc == 5'd9) r_fm_v <= 1'b0;
+			if (zc == 5'd10) begin r_fa_v <= 1'b1; r_fa_a_lo <= t1_0[15:0]; r_fa_a_hi <= t1_0[31:16]; r_fa_b_lo <= fm_r[15:0]; r_fa_b_hi <= fm_r[31:16]; end
+			if (zc == 5'd11) begin r_fa_v <= 1'b1; r_fa_a_lo <= t1_1[15:0]; r_fa_a_hi <= t1_1[31:16]; r_fa_b_lo <= fm_r[15:0]; r_fa_b_hi <= fm_r[31:16]; end
+			if (zc == 5'd12) begin r_fa_v <= 1'b1; r_fa_a_lo <= t1_2[15:0]; r_fa_a_hi <= t1_2[31:16]; r_fa_b_lo <= fm_r[15:0]; r_fa_b_hi <= fm_r[31:16]; end
+			if (zc == 5'd13) begin r_fa_v <= 1'b1; r_fa_a_lo <= t1_3[15:0]; r_fa_a_hi <= t1_3[31:16]; r_fa_b_lo <= fm_r[15:0]; r_fa_b_hi <= fm_r[31:16]; end
+			if (zc == 5'd14) begin r_fa_v <= 1'b0; end
+			if (zc == 5'd15 || zc == 5'd16 || zc == 5'd17 || zc == 5'd18) begin
+				r_fa_v <= 1'b1;
+				r_fa_a_lo <= fa_r[15:0];
+				r_fa_a_hi <= fa_r[31:16];
+				r_fa_b_lo <= cz[15:0];
+				r_fa_b_hi <= cz[31:16];
+			end
+			if (zc == 5'd19) begin r_fa_v <= 1'b0; end
+`endif
+		end
+		default: ;
+		endcase
+	end
+
+	always @(posedge clk) begin
+		if (rst_n_inv) begin
 			zmask <= 4'd0;
-			p_mask <= 4'd0;
-`ifndef SYNTH_KINTEX7
-			seq <= 16'd0;
-`endif
-			dx_seq <= 16'd0;
-			dx_mask <= 4'd0;
-			dx_last <= 1'b0;
-`ifndef SYNTH_KINTEX7
-			r_esamp_sign <= 48'd0;
-`endif
 			r_lve_sign <= 12'd0;
 			r_inb <= 4'd0;
 			r_tile_row_end <= 1'b0;
 			r_tile_col_end <= 1'b0;
+		end else case (st_fsm_m6)
+		S_IDLE: if (sp_val_ctrl) begin
+			fl <= sp_tri[762:760];
+			raw <= sp_tri[764];
+			wm <= (HAS_SU != 0) && !sp_tri[764];
+		end
+		S_WALK: begin
+			r_inb <= inb_comb;
+			r_tile_row_end <= tile_row_end;
+			r_tile_col_end <= tile_col_end;
+		end
+		S_SAMP: begin
+			for (k = 0; k < 12; k = k + 1)
+				r_lve_sign[k] <= r_lve[48 * k + 47];
+		end
+		S_EVAL: begin
+			if (!w_empty && !wm)
+				zmask <= cur_cov;
+		end
+		default: ;
+		endcase
+	end
+
+	always @(posedge clk) begin
+		pt_free <= 1'b0;
+		if (rst_n_inv) begin
+			coarse_tri_valid <= 1'b0;
+			coarse_tile_ready <= 1'b0;
+			fend <= 1'b0;
+			fi <= 2'd0;
+		end else case (st_fsm_m7)
+		S_IDLE: begin
+			coarse_tile_ready <= 1'b0;
+			if (sp_val_ctrl) begin
+				fend <= 1'b0;
+				fi <= 2'd0;
+				if (sp_tri[335:320] > sp_tri[303:288] && sp_tri[351:336] > sp_tri[319:304])
+					coarse_tri_valid <= (COARSE_SCAN != 0);
+				else
+					coarse_tri_valid <= 1'b0;
+			end
+		end
+		S_SEQ: begin
+			coarse_tri_valid <= 1'b0;
+			coarse_tile_ready <= 1'b0;
+		end
+		S_TILE_WAIT: begin
+			coarse_tile_ready <= 1'b0;
+			if (ctv_fsm) coarse_tile_ready <= 1'b1;
+			else if (!coarse_busy) fend <= wm;
+		end
+		S_WALK: begin
+			coarse_tile_ready <= 1'b0;
+		end
+		S_STEP: begin
+			if (r_tile_row_end && r_tile_col_end) begin
+				if (cur_last_tile) fend <= wm;
+				else if (ctv_fsm) coarse_tile_ready <= 1'b1;
+			end
+		end
+		S_FQ: begin
+			coarse_tile_ready <= 1'b0;
+		end
+		S_FREE: if (!f_busy) begin
+			fi <= fi1;
+			if (fi < 2'd3 && fl[fi] && !raw) begin
+				pt_free <= 1'b1;
+				pt_free_idx <= ent[8 * fi +: 8];
+			end
+		end
+		default: ;
+		endcase
+	end
+
+`ifdef SYNTH_KINTEX7
+	always @(posedge clk) begin
+		if (rst_n_inv) begin
+			`SET_ST_HI(S_IDLE);
+		end else case (st_fsm_8)
+		S_IDLE: if (sp_val_ctrl) begin
+			if (sp_tri[335:320] > sp_tri[303:288] && sp_tri[351:336] > sp_tri[319:304])
+				`SET_ST_HI(S_SEQ)
+			else
+				`SET_ST_HI(S_FREE)
+		end
+		S_SEQ: `SET_ST_HI((COARSE_SCAN != 0) ? S_TILE_WAIT : S_WALK)
+		S_TILE_WAIT: begin
+			if (ctv_fsm) `SET_ST_HI(S_WALK)
+			else if (!coarse_busy) `SET_ST_HI(wm ? S_FQ : S_LAST)
+		end
+		S_WALK: `SET_ST_HI(S_SAMP)
+		S_SAMP: `SET_ST_HI(S_EVAL)
+		S_EVAL: begin
+			if (!w_empty && wm) `SET_ST_HI(S_FQ)
+			else if (!w_empty) `SET_ST_HI(S_Z)
+			else `SET_ST_HI(S_STEP)
+		end
+		S_STEP: begin
+			if (r_tile_row_end && r_tile_col_end) begin
+				if (cur_last_tile) `SET_ST_HI(wm ? S_FQ : S_LAST)
+				else if (ctv_fsm) `SET_ST_HI(S_WALK)
+				else `SET_ST_HI(S_TILE_WAIT)
+			end else begin
+				`SET_ST_HI(S_WALK)
+			end
+		end
+		S_FQ: if (fq_ready) `SET_ST_HI(fend ? S_FREE : S_STEP)
+		S_Z: if (zc_0 == 5'd23) `SET_ST_HI(S_EMIT)
+		S_EMIT: if (!(pend && !(dx_valid && dx_ready))) `SET_ST_HI(S_STEP)
+		S_LAST: if (dx_valid && dx_ready) `SET_ST_HI(S_FREE)
+		default: if (!f_busy && (fi == 2'd3)) `SET_ST_HI(S_IDLE)
+		endcase
+	end
+`endif
+
+	always @(posedge clk) begin
+		if (rst_n_inv) begin
+			`SET_ST(S_IDLE);
+`ifndef SYNTH_KINTEX7
+			cur_tx <= 16'd0;
+			cur_ty <= 16'd0;
+			cur_trivial <= 1'b0;
+			cur_last_tile <= 1'b0;
+			seq <= 16'd0;
+			r_esamp_sign <= 48'd0;
+`endif
 `ifdef SYNTH_KINTEX7
 		end else case (st_fsm_main)
 `else
 		end else case (st)
 `endif
 		S_IDLE: begin
-			coarse_tile_ready <= 1'b0;
-			r_fm_v <= 1'b0;
-			`SET_BZA(1'b0);
-			`SET_BZB(1'b0);
-			if (sp_val_qx) begin
-				qx <= {sp_tri[303:289], 1'b0};
-			end
-			if (sp_val_qy) begin
-				qy <= {sp_tri[319:305], 1'b0};
-			end
-`ifdef SYNTH_KINTEX7
-			if (we_ent_lo) ent[11:0] <= sp_tri[747:736];
-			if (we_ent_hi) ent[23:12] <= sp_tri[759:748];
-`endif
 			if (sp_val_ctrl) begin
 `ifndef SYNTH_KINTEX7
 				a8[0] <= {{16{s_e0_a_scan}}, sp_tri[0 +: 24], 8'd0};
@@ -1285,30 +1549,18 @@ module atg_rx_scan #(
 				by0 <= sp_tri[319:304];
 				bx1 <= sp_tri[335:320];
 				by1 <= sp_tri[351:336];
-				qx <= {sp_tri[303:289], 1'b0};
-				qy <= {sp_tri[319:305], 1'b0};
 				{cz, bz, az} <= sp_tri[447:352];
 				ent <= sp_tri[759:736];
 `endif
-				fl <= sp_tri[762:760];
-				raw <= sp_tri[764];
-				wm <= (HAS_SU != 0) && !sp_tri[764];
-				fend <= 1'b0;
-				pend <= 1'b0;
-				fi <= 2'd0;
-				coarse_tri_valid <= (COARSE_SCAN != 0);
 				if (sp_tri[335:320] > sp_tri[303:288] && sp_tri[351:336] > sp_tri[319:304]) begin
 					`SET_ST(S_SEQ);
 				end else begin
-					coarse_tri_valid <= 1'b0;
 					`SET_ST(S_FREE);
 				end
 			end
 		end
 
 		S_SEQ: begin
-			coarse_tri_valid <= 1'b0;
-			coarse_tile_ready <= 1'b0;
 `ifndef SYNTH_KINTEX7
 			seq <= sq_seq;
 			ab8[0] <= ab8_comb[0];
@@ -1324,10 +1576,6 @@ module atg_rx_scan #(
 				cur_ty <= {by0[15:1], 1'b0};
 				cur_trivial <= 1'b0;
 				cur_last_tile <= 1'b1;
-`endif
-				qx <= {bx0[15:1], 1'b0};
-				qy <= {by0[15:1], 1'b0};
-`ifndef SYNTH_KINTEX7
 				er[0] <= er0[0]; ec[0] <= er0[0];
 				er[1] <= er0[1]; ec[1] <= er0[1];
 				er[2] <= er0[2]; ec[2] <= er0[2];
@@ -1337,18 +1585,12 @@ module atg_rx_scan #(
 		end
 
 		S_TILE_WAIT: begin
-			coarse_tile_ready <= 1'b0;
 			if (ctv_fsm) begin
-				coarse_tile_ready <= 1'b1;
 `ifndef SYNTH_KINTEX7
 				cur_tx <= coarse_tile_x;
 				cur_ty <= coarse_tile_y;
 				cur_trivial <= coarse_tile_trivial;
 				cur_last_tile <= coarse_tile_last;
-`endif
-				qx <= coarse_tile_x;
-				qy <= coarse_tile_y;
-`ifndef SYNTH_KINTEX7
 				er[0] <= coarse_tile_e0; ec[0] <= coarse_tile_e0;
 				er[1] <= coarse_tile_e1; ec[1] <= coarse_tile_e1;
 				er[2] <= coarse_tile_e2; ec[2] <= coarse_tile_e2;
@@ -1356,16 +1598,11 @@ module atg_rx_scan #(
 				`SET_ST(S_WALK);
 			end else if (!coarse_busy) begin
 				/* Traversal of all tiles complete */
-				fend <= wm;
 				`SET_ST(wm ? S_FQ : S_LAST);
 			end
 		end
 
 		S_WALK: begin
-			coarse_tile_ready <= 1'b0;
-			r_inb <= inb_comb;
-			r_tile_row_end <= tile_row_end;
-			r_tile_col_end <= tile_col_end;
 			`SET_ST(S_SAMP);
 		end
 
@@ -1373,22 +1610,13 @@ module atg_rx_scan #(
 `ifndef SYNTH_KINTEX7
 			r_esamp_sign <= esamp_sign;
 `endif
-			for (k = 0; k < 12; k = k + 1)
-				r_lve_sign[k] <= r_lve[48 * k + 47];
 			`SET_ST(S_EVAL);
 		end
 
 		S_EVAL: begin
-			`SET_ZC(5'd0);
-			ccov_reg <= cur_ccov;
-			cov_reg  <= cur_cov;
-`ifdef SYNTH_KINTEX7
-			cov_reg_scov <= cur_cov;
-`endif
 			if (!w_empty && wm) begin
 				`SET_ST(S_FQ);
 			end else if (!w_empty) begin
-				zmask <= cur_cov;
 				`SET_ST(S_Z);
 			end else begin
 				`SET_ST(S_STEP);
@@ -1399,20 +1627,14 @@ module atg_rx_scan #(
 			if (r_tile_row_end && r_tile_col_end) begin
 				/* End of quads in this coarse tile */
 				if (cur_last_tile) begin
-					fend <= wm;
 					`SET_ST(wm ? S_FQ : S_LAST);
 				end else if (ctv_fsm) begin
 					/* Immediate switch to next pre-fetched tile */
-					coarse_tile_ready <= 1'b1;
 `ifndef SYNTH_KINTEX7
 					cur_tx <= coarse_tile_x;
 					cur_ty <= coarse_tile_y;
 					cur_trivial <= coarse_tile_trivial;
 					cur_last_tile <= coarse_tile_last;
-`endif
-					qx <= coarse_tile_x;
-					qy <= coarse_tile_y;
-`ifndef SYNTH_KINTEX7
 					er[0] <= coarse_tile_e0; ec[0] <= coarse_tile_e0;
 					er[1] <= coarse_tile_e1; ec[1] <= coarse_tile_e1;
 					er[2] <= coarse_tile_e2; ec[2] <= coarse_tile_e2;
@@ -1423,28 +1645,22 @@ module atg_rx_scan #(
 				end
 			end else begin
 				/* Step to next quad within tile */
-				if (r_tile_row_end) begin
-					qx <= cur_tx;
-					qy <= qy2[15:0];
 `ifndef SYNTH_KINTEX7
+				if (r_tile_row_end) begin
 					for (k = 0; k < 3; k = k + 1) begin
 						er[k] <= er_n[k];
 						ec[k] <= er_n[k];
 					end
-`endif
 				end else begin
-					qx <= qx2[15:0];
-`ifndef SYNTH_KINTEX7
 					for (k = 0; k < 3; k = k + 1)
 						ec[k] <= ec_n[k];
-`endif
 				end
+`endif
 				`SET_ST(S_WALK);
 			end
 		end
 
 		S_FQ: begin
-			coarse_tile_ready <= 1'b0;
 			if (fq_ready) begin
 				if (fend) begin
 					`SET_ST(S_FREE);
@@ -1455,73 +1671,24 @@ module atg_rx_scan #(
 		end
 
 		S_Z: begin
-			`SET_ZC(zc1);
-			if (zc == 5'd0) begin
 `ifndef SYNTH_KINTEX7
+			if (zc == 5'd0) begin
 				zv <= 128'd0;
 				r_dx0 <= dx0_comb;
 				r_dy0 <= dy0_comb;
 				r_dx1 <= dx1_comb;
 				r_dy1 <= dy1_comb;
-`endif
 			end
 			if (zc == 5'd1) begin
-`ifndef SYNTH_KINTEX7
 				r_fdx0 <= f_dx0_comb;
 				r_fdy0 <= f_dy0_comb;
 				r_fdx1 <= f_dx1_comb;
 				r_fdy1 <= f_dy1_comb;
-`endif
-				`SET_ZL(2'd0);
-				`SET_BZA(1'b0);
-				`SET_BZB(1'b0);
-				r_fm_v <= 1'b1;
-			end else if (zc >= 5'd2) begin
-				`SET_ZL(r_zl_next);
 			end
-`ifdef SYNTH_KINTEX7
-			if (zc_1 == 5'd5) begin
-				`SET_BZA(1'b1);
-				`SET_BZB(1'b1);
-			end
-			if (zc_1 == 5'd9) r_fm_v <= 1'b0;
-`else
-			if (zc == 5'd5) begin
-				`SET_BZA(1'b1);
-				`SET_BZB(1'b1);
-			end
-			if (zc == 5'd9) r_fm_v <= 1'b0;
-`endif
-`ifndef SYNTH_KINTEX7
 			if (zc == 5'd6) t1_0 <= fm_r;
 			if (zc == 5'd7) t1_1 <= fm_r;
 			if (zc == 5'd8) t1_2 <= fm_r;
 			if (zc == 5'd9) t1_3 <= fm_r;
-`endif
-
-`ifdef SYNTH_KINTEX7
-			if (zc_0 == 5'd10 || zc_0 == 5'd11 || zc_0 == 5'd12 || zc_0 == 5'd13 || (zc_0 >= 5'd15 && zc_0 <= 5'd18))
-				r_fa_v <= 1'b1;
-			if (zc_0 == 5'd14 || zc_0 == 5'd19)
-				r_fa_v <= 1'b0;
-`else
-			if (zc == 5'd10) begin r_fa_v <= 1'b1; r_fa_a_lo <= t1_0[15:0]; r_fa_a_hi <= t1_0[31:16]; r_fa_b_lo <= fm_r[15:0]; r_fa_b_hi <= fm_r[31:16]; end
-			if (zc == 5'd11) begin r_fa_v <= 1'b1; r_fa_a_lo <= t1_1[15:0]; r_fa_a_hi <= t1_1[31:16]; r_fa_b_lo <= fm_r[15:0]; r_fa_b_hi <= fm_r[31:16]; end
-			if (zc == 5'd12) begin r_fa_v <= 1'b1; r_fa_a_lo <= t1_2[15:0]; r_fa_a_hi <= t1_2[31:16]; r_fa_b_lo <= fm_r[15:0]; r_fa_b_hi <= fm_r[31:16]; end
-			if (zc == 5'd13) begin r_fa_v <= 1'b1; r_fa_a_lo <= t1_3[15:0]; r_fa_a_hi <= t1_3[31:16]; r_fa_b_lo <= fm_r[15:0]; r_fa_b_hi <= fm_r[31:16]; end
-			if (zc == 5'd14) begin r_fa_v <= 1'b0; end
-
-			if (zc == 5'd15 || zc == 5'd16 || zc == 5'd17 || zc == 5'd18) begin
-				r_fa_v <= 1'b1;
-				r_fa_a_lo <= fa_r[15:0];
-				r_fa_a_hi <= fa_r[31:16];
-				r_fa_b_lo <= cz[15:0];
-				r_fa_b_hi <= cz[31:16];
-			end
-			if (zc == 5'd19) begin r_fa_v <= 1'b0; end
-`endif
-
-`ifndef SYNTH_KINTEX7
 			if (zc == 5'd20 && zmask[0]) zv[31:0] <= zcl;
 			if (zc == 5'd21 && zmask[1]) zv[63:32] <= zcl;
 			if (zc == 5'd22 && zmask[2]) zv[95:64] <= zcl;
@@ -1536,51 +1703,19 @@ module atg_rx_scan #(
 		end
 
 		S_EMIT: begin
-			if (pend && !(dx_valid && dx_ready)) begin
-				dx_valid <= 1'b1;
-				dx_seq <= seq;
-				dx_mask <= p_mask;
-				dx_last <= 1'b0;
-`ifndef SYNTH_KINTEX7
-				dx_xy <= p_xy;
-				dx_depth <= p_z;
-`endif
-			end else begin
-				dx_valid <= 1'b0;
-				pend <= 1'b1;
-				p_mask <= zmask;
+			if (!(pend && !(dx_valid && dx_ready))) begin
 				`SET_ST(S_STEP);
-`ifndef SYNTH_KINTEX7
-				p_xy <= {qy, qx};
-				p_z <= zv;
-`endif
 			end
 		end
 
 		S_LAST: begin
 			if (dx_valid && dx_ready) begin
-				dx_valid <= 1'b0;
 				`SET_ST(S_FREE);
-			end else begin
-				dx_valid <= 1'b1;
-				dx_seq <= seq;
-				dx_mask <= pend ? p_mask : 4'd0;
-				dx_last <= 1'b1;
-`ifndef SYNTH_KINTEX7
-				dx_xy <= pend ? p_xy : {by0[15:1], 1'b0, bx0[15:1], 1'b0};
-				dx_depth <= pend ? p_z : 128'd0;
-`endif
 			end
 		end
 
-		default: if (!f_busy) begin	/* S_FREE */
-			fi <= fi1;
-			if (fi < 2'd3 && fl[fi] && !raw) begin
-				pt_free <= 1'b1;
-				pt_free_idx <= ent[8 * fi +: 8];
-			end
-			if (fi == 2'd3)
-				`SET_ST(S_IDLE);
+		default: if (!f_busy && (fi == 2'd3)) begin	/* S_FREE */
+			`SET_ST(S_IDLE);
 		end
 		endcase
 	end

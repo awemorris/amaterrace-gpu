@@ -222,15 +222,21 @@ module atg_rx #(
 
 	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	wire rst_n_clip, rst_n_setup, rst_n_scan, rst_n_frag, rst_n_order;
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_rst_c (.I0(rst_n), .O(rst_n_clip));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_rst_u (.I0(rst_n), .O(rst_n_setup));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_rst_s (.I0(rst_n), .O(rst_n_scan));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_rst_f (.I0(rst_n), .O(rst_n_frag));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_rst_o (.I0(rst_n), .O(rst_n_order));
 
 	wire cl_valid_setup = cl_valid;
 
 	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *) wire dx_ready_scan;
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'h2)) u_buf_dxr (.I0(dx_ready), .O(dx_ready_scan));
 
 	wire [8:0] clip_st_idx, setup_st_idx, scan_st_idx, frag_st_idx;

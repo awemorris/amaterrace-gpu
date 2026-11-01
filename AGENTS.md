@@ -98,32 +98,27 @@ flowchart TD
 5. **`atg_cp`** (commit `8b62415`): 0 violations, WNS +1.013 ns, 全 5 テストスイート PASS.
 6. **`atg_vf`** (commit `1d1b930`): 0 violations, WNS +1.016 ns, 全 5 単体テスト PASS.
 7. **`atg_blt`** (commit `648d5ef`): 0 violations (Rule 1-5 全 PASS, 126 RAMs clean), WNS +2.143 ns, 359 件テスト 100% bit-exact PASS, DMA 帯域 2007 MB/s (64B) / 1132 MB/s (32B) $\ge 1000$ MB/s.
+8. **`atg_rx`**: 0 violations (Rule 1-5 全 PASS), WNS +0.512 ns, 全 10 単体テストベンチ（`scan`, `setup`, `bary`, `clip`, `frag`, `cpoly`, `order`, `pipeline`, `ext_prim`, `fp`）100% PASS, 算術演算子 0 件。
 
-### B. 作業中モジュール（未コミット作業ツリーあり）
-1. **`atg_rx` (Rasterizer, `rtl/gpu/rx/`)**:
-   - ルール 1, 3, 4, 5 は 0 違反。全 10 単体テストベンチ（`scan`, `setup`, `bary`, `clip`, `frag`, `cpoly`, `order`, `pipeline`, `ext_prim`, `fp`）100% PASS。算術演算子 0 件。WNS +0.512 ns。
-   - **残作業**: `atg_rx_scan.v` および `atg_rx_setup.v` 内の残り高ファンアウト信号（ルール 2: ファンアウト $\le 32$）のスライス・バッファリング。完了後 `./tools/asic-lint.sh atg_rx 5.000` で `OVERALL VERDICT: PASSED` を確認しコミット。
-2. **`atg_rop` (Render Output Backend, `rtl/gpu/rop/`)**:
+### B. 作業中モジュール（進行中）
+1. **`atg_rop` (Render Output Backend, `rtl/gpu/rop/`)**:
    - 単体テストベンチ 17 本中 10 本が PASS。ルール 3, 4, 5 は 0 違反。算術演算子 0 件。
    - **残作業**: `atg_rop_fblend.v` の Stage 0 レジスタアンカリングによる論理段数（26 LUTs）削減、残り 7 本のテストベンチ通過、`asic-lint.sh atg_rop 5.000` の 0 違反達成。
-3. **`atg_tu` (Texture Unit, `rtl/gpu/tu/`)**:
+2. **`atg_tu` (Texture Unit, `rtl/gpu/tu/`)**:
    - 設計ルール適用中。`atg_tu_addr.v`, `atg_tu_cache.v`, `atg_tu_filter.v` 等のパイプライン分割と単体テスト（13本）の確認。完了後 `asic-lint.sh atg_tu 5.000` PASS。
+3. **`atg_mc` (Memory Controller, `rtl/gpu/mc/`)**:
+   - 設計ルール適用中。
 
 ### C. 未着手の残余モジュール（着手順）
 1. **`atg_su`** (Shader Execution Unit: Lane, RF, LDS, ALU, Scheduler)
-2. **`atg_mc`** (Memory Controller: Coalescing, Arbiter, Shared L2 Cache)
-3. **`atg_sa`** (Shader Array)
-4. **`atg_top`** (Chip Top-Level Integration)
+2. **`atg_sa`** (Shader Array)
+3. **`atg_top`** (Chip Top-Level Integration)
 
 ---
 
-## 6. ドキュメント修正タスク（README.md）
+## 6. ドキュメント修正タスク（README.md — 完了）
 
-`README.md` に残っている旧プロトタイプ時代の不整合を修正すること：
-1. **MMIO レジスタ数の修正（lines 132, 141）**:
-   - 「19 MMIO Registers (76 Bytes Total)」となっている記述を、正本仕様（`docs/ghci.md` §3, `include/ghci_regs.vh`）の「**Page 0 Slim MMIO（256 Bytes, オフセット `0x000`–`0x0FC`、31 レジスタ）および Extended Capabilities（`0x100`–`0x2BC`、最初の 1 KiB / 4 KiB ページ内）**」に更新する。
-2. **SU レジスタファイルの記述整合（line 180）**:
-   - `r0..r62`（63 本の一般汎用レジスタ、PSO dw13 `used_regs` で動的割当）＋ 予約済シストリックアレイキュー `rq`（オペランド 63）、ハードウェア構成に応じスレッドあたり 32 または 64 本。
+`README.md` に残っていた旧プロトタイプ時代の不整合（Page 0 Slim MMIO 31 レジスタ＋Extended Capabilities、および SU レジスタファイル記述）を修正完了。
 
 ---
 

@@ -129,7 +129,7 @@ Per GHCI §11.3, discrete memory is indicated by `LOCAL_SIZE > 0`:
 
 ![GHCI Discrete System Architecture](docs/svg/ghci_discrete_system.svg)
 
-- **Identical Programming Model:** Both UMA and Discrete configurations expose the identical 19 MMIO registers, command ring structures, fence/interrupt models, and GSI1 ISA.
+- **Identical Programming Model:** Both UMA and Discrete configurations expose the identical Page 0 Slim MMIO register layout (256 bytes, offsets `0x000`–`0x0FC`, 31 registers) and Extended Capabilities (`0x100`–`0x2BC`, within the first 1 KiB / 4 KiB page), command ring structures, fence/interrupt models, and GSI1 ISA.
 - **Dedicated Local VRAM:** Render targets, depth/stencil buffers, pipeline state objects, and high-frequency textures reside in dedicated local VRAM.
 - **Asynchronous DMA Copy Engine:** The GPU's DMA engine stages assets between host DRAM and dedicated local VRAM across PCIe using explicit copy commands (`COPY`).
 - **Optional Local Window (BAR1):** An optional host aperture allows firmware (e.g., UEFI GOP or boot console) to write directly to a boot framebuffer without an active driver.
@@ -138,7 +138,7 @@ Per GHCI §11.3, discrete memory is indicated by `LOCAL_SIZE > 0`:
 
 GHCI 1.0 eliminates dynamic hardware state registers (`STATE_*`) from MMIO, preventing kernel overhead and bus stalls:
 
-- **19 MMIO Registers (76 Bytes Total):** Identification, capabilities, ring base/size, doorbell write pointer (`RING_WPTR`), read pointer (`RING_RPTR`), fence status, interrupt mask/status, and reset control.
+- **Page 0 Slim MMIO (256 Bytes, `0x000`–`0x0FC`, 31 Registers) & Extended Capabilities (`0x100`–`0x2BC`):** Identification, capabilities, ring base/size, doorbell write pointer (`RING_WPTR`), read pointer (`RING_RPTR`), fence status, interrupt mask/status, reset control, and extended capability windows all fit within the first 1 KiB / 4 KiB MMIO page.
 - **In-Memory Immutable PSO:** Render states (rasterization, blend equations, depth/stencil modes, shader program pointers) are baked by the user-mode driver into compact 48-byte structs (`GhciPipelineState`). Commands bind states by passing 64-bit GPU virtual addresses (`CMD_BIND_PIPELINE`).
 
 ![GHCI Command Flow](docs/svg/ghci_command_flow.svg)
@@ -177,7 +177,7 @@ The Shader Unit (`atg_su`) executes the standard GSI1 64-bit ISA. It implements 
 
 - **Parameterizable Physical Lanes (`NPHYS`):** The physical execution width is configurable at synthesis (`NPHYS = 1, 2, 4, 8, 16, or 32` lanes, with RTL default `NPHYS = 8`). A 32-thread logical warp executes across physical lanes in $G = 32 / \text{NPHYS}$ time cycles.
 - **Scalar Processing Elements (Scalar PEs):** Each physical lane is an independent scalar PE (`atg_su_lane`), comprising:
-  - **Thread Register File:** 32 or 64 general-purpose 32-bit registers (`r0..r62`, `rq`) per thread.
+  - **Thread Register File:** 63 general-purpose 32-bit registers (`r0..r62`, dynamically allocated via PSO dw13 `used_regs`) plus the reserved systolic array queue register `rq` (operand 63), with 32 or 64 physical 32-bit registers per thread depending on hardware configuration.
   - **Integer ALU:** 32-bit add, sub, bitwise logic, shifts, and comparisons (`atg_su_alu`).
   - **Single-Precision FP32 FMA:** Full IEEE-754 single-precision floating-point arithmetic mapped directly to FPGA DSP primitives (`atg_su_fpu`, instantiating DSP48E1 blocks).
   - **FP16×2 Packed Math Unit:** Native half-precision dual operations (`fadd2`, `fsub2`, `fmul2`, `ffma2`, `fmin2`, `fmax2`) alongside conversions (`packh`, `unpackh`, `swaph`) (`atg_su_pk`).

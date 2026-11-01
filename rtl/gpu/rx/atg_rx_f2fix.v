@@ -124,20 +124,25 @@ module atg_rx_f2fix (
 	                         (sh1_c_amt == 2'd2)  ? in_data1[47:32] : {8'd0, in_data1[47:40]};
 
 `ifdef SYNTH_KINTEX7
-	(* keep = "true" *) wire sh_w2_nz_lo, sh_w2_nz_hi;
-	LUT3 #(.INIT(8'hFE)) u_w2nz_l (.I0(sh_w2[5]), .I1(sh_w2[6]), .I2(sh_w2[7]), .O(sh_w2_nz_lo));
-	LUT3 #(.INIT(8'hFE)) u_w2nz_h (.I0(sh_w2[5]), .I1(sh_w2[6]), .I2(sh_w2[7]), .O(sh_w2_nz_hi));
+	(* keep = "true" *) wire sh_w2_nz_lo, sh_w2_nz_hi0, sh_w2_nz_hi1;
+	LUT3 #(.INIT(8'hFE)) u_w2nz_l  (.I0(sh_w2[5]), .I1(sh_w2[6]), .I2(sh_w2[7]), .O(sh_w2_nz_lo));
+	LUT3 #(.INIT(8'hFE)) u_w2nz_h0 (.I0(sh_w2[5]), .I1(sh_w2[6]), .I2(sh_w2[7]), .O(sh_w2_nz_hi0));
+	LUT3 #(.INIT(8'hFE)) u_w2nz_h1 (.I0(sh_w2[5]), .I1(sh_w2[6]), .I2(sh_w2[7]), .O(sh_w2_nz_hi1));
 `else
-	wire sh_w2_nz_lo = (sh_w2[7:5] != 3'd0);
-	wire sh_w2_nz_hi = (sh_w2[7:5] != 3'd0);
+	wire sh_w2_nz_lo  = (sh_w2[7:5] != 3'd0);
+	wire sh_w2_nz_hi0 = (sh_w2[7:5] != 3'd0);
+	wire sh_w2_nz_hi1 = (sh_w2[7:5] != 3'd0);
 `endif
 
 	wire [15:0] s_coarse2_lo = sh_w2_nz_lo ? 16'd0 :
 	                           (sh2_c_lo_amt == 2'd0)  ? in_data2[47:32] :
 	                           (sh2_c_lo_amt == 2'd1)  ? {8'd0, in_data2[47:40]} : 16'd0;
-	wire [15:0] s_coarse2_hi = sh_w2_nz_hi ? 16'd0 :
-	                           (sh2_c_hi_amt == 2'd0)  ? in_data2[47:32] :
-	                           (sh2_c_hi_amt == 2'd1)  ? {8'd0, in_data2[47:40]} : 16'd0;
+	wire [15:0] s_coarse2_hi;
+	assign s_coarse2_hi[7:0]  = sh_w2_nz_hi0 ? 8'd0 :
+	                            (sh2_c_hi_amt == 2'd0)  ? in_data2[39:32] :
+	                            (sh2_c_hi_amt == 2'd1)  ? in_data2[47:40] : 8'd0;
+	assign s_coarse2_hi[15:8] = sh_w2_nz_hi1 ? 8'd0 :
+	                            (sh2_c_hi_amt == 2'd0)  ? in_data2[47:40] : 8'd0;
 
 	wire [38:0] c_pad = {7'd0, s_coarse};
 	wire [22:0] c_pad2_lo = {7'd0, s_coarse2_lo};
