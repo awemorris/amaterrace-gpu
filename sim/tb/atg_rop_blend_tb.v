@@ -39,7 +39,7 @@ module atg_rop_blend_tb;
 	wire b_rvalid;
 	wire [127:0] b_pix;
 
-	atg_rop_blend #(.LAT(3)) dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
+	atg_rop_blend #(.LAT(11)) dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
 		.st_wdata(st_wdata), .b_valid(b_valid), .b_src(b_src), .b_src1(512'd0), .b_has_src1(1'b0),
 		.b_dst(b_dst), .b_mask(b_mask),
 		.b_rt(b_rt), .b_rvalid(b_rvalid), .b_pix(b_pix));
@@ -127,8 +127,7 @@ module atg_rop_blend_tb;
 			@(posedge clk);
 			b_valid <= 1'b0;
 			b_src <= 512'd0;
-			@(posedge clk);
-			@(posedge clk);
+			repeat (10) @(posedge clk);
 			#1;
 			if (!b_rvalid || b_pix !== v_res[n]) begin
 				if (v_bl[n][0] && v_fmt[n] != 4'd2)
@@ -158,7 +157,7 @@ module atg_rop_blend_tb;
 				end
 			end
 		b_valid <= 1'b0;
-		repeat (5) @(posedge clk);
+		repeat (15) @(posedge clk);
 		if (qh != qt) begin
 			e_fac = e_fac + 1;
 			$display("FAIL atg_rop_blend: burst %0d of %0d", qh, qt);
@@ -202,8 +201,7 @@ module atg_rop_blend_tb;
 				@(posedge clk);
 				b_valid <= 1'b0;
 				b_rt <= ~rt;	/* taken with b_valid only */
-				@(posedge clk);
-				@(posedge clk);
+				repeat (10) @(posedge clk);
 				#1;
 				if (!b_rvalid || b_pix !== res2) begin
 					e_s[sect] = e_s[sect] + 1;

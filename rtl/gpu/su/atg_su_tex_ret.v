@@ -26,6 +26,87 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+module atg_su_tex_fifo #(
+	parameter W = 8,
+	parameter DEPTH_LOG2 = 2
+) (
+	input wire clk,
+	input wire rst_n,
+	input wire in_valid,
+	output wire in_ready,
+	input wire [W-1:0] in_data,
+	output wire out_valid,
+	input wire out_ready,
+	output wire [W-1:0] out_data,
+	output wire [DEPTH_LOG2:0] count
+);
+	(* max_fanout = 12 *) reg [DEPTH_LOG2:0] wp;
+	(* max_fanout = 12 *) reg [DEPTH_LOG2:0] rp;
+
+	wire [DEPTH_LOG2:0] used;
+	wire unused_used_bo;
+	am_sub #(.W(DEPTH_LOG2 + 1)) u_used (
+		.a(wp), .b(rp), .bi(1'b0), .d(used), .bo(unused_used_bo)
+	);
+	(* keep = "true", max_fanout = 12 *) wire in_rdy_w = (wp[DEPTH_LOG2-1:0] != rp[DEPTH_LOG2-1:0]) || (wp[DEPTH_LOG2] == rp[DEPTH_LOG2]);
+	(* keep = "true", max_fanout = 12 *) reg r_valid;
+	(* keep = "true", max_fanout = 12 *) wire push = in_valid && in_rdy_w;
+	(* keep = "true", max_fanout = 12 *) wire pop = r_valid && out_ready;
+
+	wire [DEPTH_LOG2:0] wp_next;
+	wire unused_wp_co;
+	am_add #(.W(DEPTH_LOG2 + 1)) u_wp (
+		.a(wp), .b({(DEPTH_LOG2 + 1){1'b0}}), .ci(1'b1), .s(wp_next), .co(unused_wp_co)
+	);
+
+	wire [DEPTH_LOG2:0] rp_next;
+	wire unused_rp_co;
+	am_add #(.W(DEPTH_LOG2 + 1)) u_rp (
+		.a(rp), .b({(DEPTH_LOG2 + 1){1'b0}}), .ci(1'b1), .s(rp_next), .co(unused_rp_co)
+	);
+
+	wire will_empty = (rp_next == wp);
+	assign count = used;
+	assign in_ready = in_rdy_w;
+	assign out_valid = r_valid;
+
+	localparam N_TF_SL = (W + 15) / 16;
+	genvar gtf;
+	generate
+	for (gtf = 0; gtf < N_TF_SL; gtf = gtf + 1) begin : g_tf_sl
+		localparam TF_W = (gtf * 16 + 16 <= W) ? 16 : (W - gtf * 16);
+		(* ram_style = "distributed" *) reg [TF_W-1:0] mem_sl [0:(1 << DEPTH_LOG2) - 1];
+		(* keep = "true" *) wire push_s = push;
+		(* keep = "true" *) wire [DEPTH_LOG2-1:0] wp_s = wp[DEPTH_LOG2-1:0];
+		(* keep = "true" *) wire [DEPTH_LOG2-1:0] rp_s = rp[DEPTH_LOG2-1:0];
+		(* keep = "true" *) wire [TF_W-1:0] wd_s = in_data[gtf*16 +: TF_W];
+		always @(posedge clk)
+			if (push_s)
+				mem_sl[wp_s] <= wd_s;
+		assign out_data[gtf*16 +: TF_W] = mem_sl[rp_s];
+	end
+	endgenerate
+
+	(* keep = "true" *) wire rst_p = !rst_n;
+	always @(posedge clk) begin
+		if (rst_p) begin
+			wp <= {(DEPTH_LOG2 + 1){1'b0}};
+			rp <= {(DEPTH_LOG2 + 1){1'b0}};
+			r_valid <= 1'b0;
+		end else begin
+			if (push)
+				wp <= wp_next;
+			if (pop)
+				rp <= rp_next;
+			case ({push, pop})
+			2'b10: r_valid <= 1'b1;
+			2'b01: r_valid <= !will_empty;
+			default: ;
+			endcase
+		end
+	end
+endmodule
+
 module atg_su_tex_ret #(
 	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 */
 	parameter WARP_W = 2,	/* log2(NWARPS) */
@@ -69,22 +150,21 @@ module atg_su_tex_ret #(
 	localparam RW = WARP_W + GRP_W + 7 + SBE_W + 1 + 2 + NQ + NPHYS;
 	localparam [1:0] HEAD = 2'd0, GATHER = 2'd1, BEAT = 2'd2;
 
-	wire f_valid;
+	(* max_fanout = 12 *) wire f_valid;
 	wire [2:0] f_count;
-	wire [RW-1:0] f_data;
-	reg [1:0] st;
-	reg [QW-1:0] q;
-	reg [1:0] c;
-	reg [NQ*512-1:0] buf_q;
-	reg [WARP_W-1:0] warp;
-	reg [GRP_W-1:0] grp;
-	reg [6:0] rd;
-	reg [SBE_W:0] sbe;
-	reg last, sz;
-	reg [NQ-1:0] qm;
-	reg [NPHYS-1:0] lanes;
+	(* max_fanout = 12 *) wire [RW-1:0] f_data;
+	(* fsm_encoding = "none", max_fanout = 12 *) reg [1:0] st;
+	(* max_fanout = 12 *) reg [QW-1:0] q;
+	(* max_fanout = 12 *) reg [1:0] c;
+	(* max_fanout = 12 *) reg [WARP_W-1:0] warp;
+	(* max_fanout = 12 *) reg [GRP_W-1:0] grp;
+	(* max_fanout = 12 *) reg [6:0] rd;
+	(* max_fanout = 12 *) reg [SBE_W:0] sbe;
+	(* max_fanout = 12 *) reg last, sz;
+	(* max_fanout = 12 *) reg [NQ-1:0] qm;
+	(* max_fanout = 12 *) reg [NPHYS-1:0] lanes;
 
-	am_fifo #(.W(RW), .DEPTH_LOG2(2)) fifo (
+	atg_su_tex_fifo #(.W(RW), .DEPTH_LOG2(2)) fifo (
 		.clk(clk), .rst_n(rst_n),
 		.in_valid(rq_valid), .in_ready(rq_ready),
 		.in_data({rq_warp, rq_grp, rq_rd, rq_sbe, rq_last, rq_sz, rq_qmask, rq_lanes}),
@@ -93,15 +173,39 @@ module atg_su_tex_ret #(
 
 	wire q_end = {{(32 - QW){1'b0}}, q} == NQ - 1;
 	assign tr_ready = st == GATHER && qm[q];
+	(* keep = "true", max_fanout = 12 *) wire gather_we = (st == GATHER) && qm[q] && tr_valid;
 
-	/* Beat c: channel c of each lane (lane 4j + l: quad j, lane l). */
-	integer j;
-	reg [127:0] l_texel;
-	always @(*)
-		for (j = 0; j < NPHYS; j = j + 1) begin
-			l_texel = buf_q[(j / 4) * 512 + (j % 4) * 128 +: 128];
-			l_data[j*32 +: 32] = l_texel[c * 32 +: 32];
+	/* Beat c: channel c of each lane (lane 4*gq + glq: quad gq, lane glq),
+	 * stored in per-lane/half registers so each CE/mux net drives <= 16 bits. */
+	wire [NPHYS*32-1:0] l_data_w;
+	genvar gq, glq, gh;
+	generate
+	for (gq = 0; gq < NQ; gq = gq + 1) begin : g_bufq_quad
+		for (glq = 0; glq < 4; glq = glq + 1) begin : g_bufq_lane
+			for (gh = 0; gh < 2; gh = gh + 1) begin : g_bufq_half
+				localparam L_IDX = gq * 4 + glq;
+				localparam TR_BASE = glq * 128 + gh * 16;
+				(* keep = "true" *) wire bufq_we_0 = gather_we && (q == gq[QW-1:0]);
+				(* keep = "true" *) wire bufq_we_1 = gather_we && (q == gq[QW-1:0]);
+				(* keep = "true" *) wire bufq_we_2 = gather_we && (q == gq[QW-1:0]);
+				(* keep = "true" *) wire bufq_we_3 = gather_we && (q == gq[QW-1:0]);
+				(* keep = "true" *) wire [1:0] c_sl = c;
+				(* shreg_extract = "no" *) reg [15:0] b_c0, b_c1, b_c2, b_c3;
+				always @(posedge clk) begin
+					if (bufq_we_0) b_c0 <= tr_data[TR_BASE + 0*32 +: 16];
+					if (bufq_we_1) b_c1 <= tr_data[TR_BASE + 1*32 +: 16];
+					if (bufq_we_2) b_c2 <= tr_data[TR_BASE + 2*32 +: 16];
+					if (bufq_we_3) b_c3 <= tr_data[TR_BASE + 3*32 +: 16];
+				end
+				assign l_data_w[L_IDX*32 + gh*16 +: 16] =
+					(c_sl == 2'd0) ? b_c0 :
+					(c_sl == 2'd1) ? b_c1 :
+					(c_sl == 2'd2) ? b_c2 : b_c3;
+			end
 		end
+	end
+	endgenerate
+	always @(*) l_data = l_data_w;
 
 	/* The beat's register rd + c, the next beat and the next quad. */
 	wire [6:0] rd_c;
@@ -122,8 +226,9 @@ module atg_su_tex_ret #(
 	assign l_sbe = sbe;
 	assign l_cls = ATG_CLS_T;
 
+	(* keep = "true" *) wire rst_p = !rst_n;
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p) begin
 			st <= HEAD;
 		end else begin
 			case (st)
@@ -134,8 +239,6 @@ module atg_su_tex_ret #(
 				st <= f_data[NPHYS +: NQ] == {NQ{1'b0}} ? BEAT : GATHER;
 			end
 			GATHER: if (!qm[q] || tr_valid) begin
-				if (qm[q])
-					buf_q[q*512 +: 512] <= tr_data;
 				q <= q_next;
 				if (q_end)
 					st <= BEAT;

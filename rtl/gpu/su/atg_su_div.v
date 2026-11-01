@@ -66,23 +66,23 @@ module atg_su_div #(
 	localparam LW = NPHYS > 1 ? $clog2(NPHYS) : 1;
 	localparam [1:0] IDLE = 2'd0, DIV = 2'd1, RET = 2'd2;
 
-	reg [1:0] st;
-	reg [DW-1:0] ra, rb, rq;
-	reg [NPHYS-1:0] rm;
-	reg [1:0] rop;
+	(* max_fanout = 12 *) reg [1:0] st;
+	wire [DW-1:0] ra, rb, rq;
+	(* max_fanout = 12 *) reg [NPHYS-1:0] rm;
+	(* max_fanout = 12 *) reg [1:0] rop;
 	reg [6:0] rrd;
 	reg [WARP_W-1:0] rwarp;
 	reg [GRP_W-1:0] rgrp;
 	reg rlast;
 	reg [SBE_W:0] rsbe;
-	reg [LW-1:0] li;
-	reg [5:0] step;
+	(* max_fanout = 12 *) reg [LW-1:0] li;
+	(* max_fanout = 12 *) reg [5:0] step;
 	/* The divider of the current lane. */
-	reg [31:0] dn, dd, q;
-	reg [32:0] r;
-	reg neg_q, neg_r;
+	(* max_fanout = 12 *) reg [31:0] dn, dd, q;
+	(* max_fanout = 12 *) reg [32:0] r;
+	(* max_fanout = 12 *) reg neg_q, neg_r;
 
-	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_DIV;
+	(* max_fanout = 12 *) wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_DIV;
 	assign x_ready = st == IDLE;
 
 	/* The next lane in the mask at or after lane n (NPHYS when none). */
@@ -113,9 +113,9 @@ module atg_su_div #(
 	 * trial r:dn[31] - d of the steps 1-32, 0 - the result at the end; and
 	 * 0 - b at the load.
 	 */
-	wire s_load = step == 6'd0;
-	wire s_end = step > 6'd32;
-	wire [32:0] d0;
+	(* max_fanout = 12 *) wire s_load = step == 6'd0;
+	(* max_fanout = 12 *) wire s_end = step > 6'd32;
+	(* max_fanout = 12 *) wire [32:0] d0;
 	wire [31:0] neg_b;
 	wire [5:0] step_next;
 	wire d0_bo_unused, nb_bo_unused, sn_co_unused;
@@ -126,16 +126,42 @@ module atg_su_div #(
 	am_add #(.W(6)) u_step (.a(step), .b(6'd0), .ci(1'b1), .s(step_next), .co(sn_co_unused));
 	wire [32:0] trial = d0;
 
+	wire [31:0] div_res = (lb == 32'd0) ? (rop[1] ? la : 32'hFFFFFFFF) :
+		rop[1] ? (neg_r ? d0[31:0] : r[31:0]) :
+		(neg_q ? d0[31:0] : q);
+
+	genvar gdl, gdh;
+	generate
+	for (gdl = 0; gdl < NPHYS; gdl = gdl + 1) begin : g_div_lane
+		for (gdh = 0; gdh < 2; gdh = gdh + 1) begin : g_div_half
+			(* keep = "true" *) wire idle_we_h = (st == IDLE) && mine;
+			(* keep = "true" *) wire rq_we_h = (st == DIV) && s_end && (li == gdl[LW-1:0]);
+			(* shreg_extract = "no" *) reg [15:0] ra_h_r, rb_h_r, rq_h_r;
+			always @(posedge clk) begin
+				if (idle_we_h) begin
+					ra_h_r <= x_a[gdl*32 + gdh*16 +: 16];
+					rb_h_r <= x_b[gdl*32 + gdh*16 +: 16];
+					rq_h_r <= 16'd0;
+				end else if (rq_we_h) begin
+					rq_h_r <= div_res[gdh*16 +: 16];
+				end
+			end
+			assign ra[gdl*32 + gdh*16 +: 16] = ra_h_r;
+			assign rb[gdl*32 + gdh*16 +: 16] = rb_h_r;
+			assign rq[gdl*32 + gdh*16 +: 16] = rq_h_r;
+		end
+	end
+	endgenerate
+
+	(* keep = "true" *) wire rst_p = !rst_n;
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p) begin
 			st <= IDLE;
 			li <= {LW{1'b0}};
 			step <= 6'd0;
 		end else begin
 			case (st)
 			IDLE: if (mine) begin
-				ra <= x_a;
-				rb <= x_b;
 				rm <= x_mask[NPHYS-1:0];
 				rop <= x_uop[ATG_UOP_OP +: 2];
 				rrd <= x_uop[ATG_UOP_RD +: 7];
@@ -143,7 +169,6 @@ module atg_su_div #(
 				rgrp <= x_grp;
 				rlast <= x_last;
 				rsbe <= x_sbe;
-				rq <= {DW{1'b0}};
 				step <= 6'd0;
 				if (first == NPHYS[LW:0])
 					st <= RET;
@@ -173,12 +198,6 @@ module atg_su_div #(
 					dn <= {dn[30:0], 1'b0};
 					step <= step_next;
 				end else begin
-					if (lb == 32'd0)
-						rq[li*32 +: 32] <= rop[1] ? la : 32'hFFFFFFFF;
-					else if (rop[1])
-						rq[li*32 +: 32] <= neg_r ? d0[31:0] : r[31:0];
-					else
-						rq[li*32 +: 32] <= neg_q ? d0[31:0] : q;
 					step <= 6'd0;
 					if (after == NPHYS[LW:0])
 						st <= RET;

@@ -43,9 +43,9 @@ module atg_su_exp_drain #(
 	/* The draining warp (atg_su_exp's buffer, selected by d_warp) */
 	input wire [31:0] d_cov,
 	input wire [7:0] d_rtw,
-	output reg [WARP_W-1:0] d_warp,
-	output reg [2:0] d_q,
-	output reg [2:0] d_rt,
+	(* max_fanout = 12 *) output reg [WARP_W-1:0] d_warp,
+	(* max_fanout = 12 *) output reg [2:0] d_q,
+	(* max_fanout = 12 *) output reg [2:0] d_rt,
 	output wire d_first,
 	output wire d_lastb,
 	output wire d_nocol,
@@ -68,11 +68,13 @@ module atg_su_exp_drain #(
 		      m[4] ? 3'd4 : m[5] ? 3'd5 : m[6] ? 3'd6 : m[7] ? 3'd7 : 3'd0;
 	endfunction
 
-	reg [NWARPS-1:0] frag, ended;
+	(* keep = "true" *) wire rst_p = !rst_n;
+
+	(* max_fanout = 12 *) reg [NWARPS-1:0] frag, ended;
 	reg [NWARPS*16-1:0] seq;
-	reg [1:0] st;
-	reg vx_v;	/* a vertex/compute warp's release, this cycle */
-	reg [WARP_W-1:0] vx_w;
+	(* max_fanout = 12 *) reg [1:0] st;
+	(* max_fanout = 12 *) reg vx_v;	/* a vertex/compute warp's release, this cycle */
+	(* max_fanout = 12 *) reg [WARP_W-1:0] vx_w;
 
 	/* the attachments above and below the beat's */
 	reg [7:0] above_m, below_m;
@@ -84,14 +86,24 @@ module atg_su_exp_drain #(
 		end
 	wire [7:0] above = d_rtw & above_m;
 	wire [7:0] below = d_rtw & below_m;
-	wire [2:0] dq1;
-	wire dq_co_unused;
-	am_add #(.W(3)) u_dq1 (.a(d_q), .b(3'd0), .ci(1'b1), .s(dq1), .co(dq_co_unused));
-	wire qlast = d_q == 3'd7 || d_cov[{dq1, 2'b00} +: 4] == 4'd0;
+	wire [2:0] dq1 = {d_q[2] ^ (&d_q[1:0]), d_q[1] ^ d_q[0], ~d_q[0]};
+
+	(* keep = "true" *) wire [7:1] q_nz = {
+		|d_cov[31:28], |d_cov[27:24], |d_cov[23:20], |d_cov[19:16],
+		|d_cov[15:12], |d_cov[11:8],  |d_cov[7:4]
+	};
+	(* keep = "true" *) wire qlast_lo = (d_q[1:0] == 2'd0) ? !q_nz[1] :
+	                                    (d_q[1:0] == 2'd1) ? !q_nz[2] :
+	                                    (d_q[1:0] == 2'd2) ? !q_nz[3] : !q_nz[4];
+	(* keep = "true" *) wire qlast_hi = (d_q[1:0] == 2'd0) ? !q_nz[5] :
+	                                    (d_q[1:0] == 2'd1) ? !q_nz[6] :
+	                                    (d_q[1:0] == 2'd2) ? !q_nz[7] : 1'b1;
+	wire qlast = d_q[2] ? qlast_hi : qlast_lo;
 
 	assign d_nocol = d_rtw == 8'd0;
 	assign d_first = below == 8'd0;
-	assign d_lastb = above == 8'd0;
+	(* keep = "true" *) wire d_lastb_w = above == 8'd0;
+	assign d_lastb = d_lastb_w;
 
 	/* An ended fragment warp whose sequence number is the ROP's next one. */
 	reg [WARP_W-1:0] cand;
@@ -109,12 +121,12 @@ module atg_su_exp_drain #(
 
 	assign ex_valid = st == S_DRAIN;
 	assign ex_seq = seq[d_warp*16 +: 16];
-	assign ex_last = qlast && d_lastb;
+	assign ex_last = d_lastb_w && (d_q[2] ? qlast_hi : qlast_lo);
 	assign xr_valid = vx_v || st == S_RET;
 	assign xr_warp = vx_v ? vx_w : d_warp;
 
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p) begin
 			frag <= {NWARPS{1'b0}};
 			ended <= {NWARPS{1'b0}};
 			st <= S_IDLE;

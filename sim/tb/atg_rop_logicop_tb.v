@@ -39,7 +39,7 @@ module atg_rop_logicop_tb;
 	wire b_rvalid;
 	wire [127:0] b_pix;
 
-	atg_rop_blend #(.LAT(3)) dut (
+	atg_rop_blend #(.LAT(11)) dut (
 		.clk(clk),
 		.rst_n(rst_n),
 		.st_we(st_we),
@@ -139,9 +139,8 @@ module atg_rop_logicop_tb;
 				@(posedge clk);
 				b_valid <= 1'b0;
 
-				/* Wait for LAT (3) cycles */
-				@(posedge clk);
-				@(posedge clk);
+				/* Wait for LAT (11) cycles */
+				repeat (10) @(posedge clk);
 				#1;
 				if (!b_rvalid || b_pix !== exp_pix) begin
 					$display("FAIL atg_rop_logicop: op %0d iter %0d got %h, exp %h",
@@ -189,8 +188,7 @@ module atg_rop_logicop_tb;
 			@(posedge clk);
 			b_valid <= 1'b0;
 
-			@(posedge clk);
-			@(posedge clk);
+			repeat (10) @(posedge clk);
 			#1;
 			if (!b_rvalid || b_pix !== exp_pix) begin
 				$display("FAIL atg_rop_logicop: masks wm=%h mask=%h got %h, exp %h",
@@ -257,8 +255,7 @@ module atg_rop_logicop_tb;
 				@(posedge clk);
 				b_valid <= 1'b0;
 
-				@(posedge clk);
-				@(posedge clk);
+				repeat (10) @(posedge clk);
 				#1;
 				if (!b_rvalid || b_pix !== exp_pix) begin
 					$display("FAIL atg_rop_logicop: independent RT%0d iter %0d got %h, exp %h",
@@ -303,8 +300,7 @@ module atg_rop_logicop_tb;
 			@(posedge clk);
 			b_valid <= 1'b0;
 
-			@(posedge clk);
-			@(posedge clk);
+			repeat (10) @(posedge clk);
 			#1;
 			if (!b_rvalid || b_pix !== exp_pix) begin
 				$display("FAIL atg_rop_logicop: BGRA8 iter %0d got %h, exp %h",
@@ -333,8 +329,7 @@ module atg_rop_logicop_tb;
 			@(posedge clk);
 			b_valid <= 1'b0;
 
-			@(posedge clk);
-			@(posedge clk);
+			repeat (10) @(posedge clk);
 			#1;
 			if (!b_rvalid || b_pix !== exp_pix) begin
 				$display("FAIL atg_rop_logicop: R8 iter %0d got %h, exp %h",
@@ -370,8 +365,7 @@ module atg_rop_logicop_tb;
 			@(posedge clk);
 			b_valid <= 1'b0;
 
-			@(posedge clk);
-			@(posedge clk);
+			repeat (10) @(posedge clk);
 			#1;
 			if (!b_rvalid || b_pix !== exp_pix) begin
 				$display("FAIL atg_rop_logicop: RG8 iter %0d got %h, exp %h",
@@ -412,8 +406,7 @@ module atg_rop_logicop_tb;
 		@(posedge clk);
 		b_valid <= 1'b0;
 
-		@(posedge clk);
-		@(posedge clk);
+		repeat (10) @(posedge clk);
 		#1;
 		if (!b_rvalid || b_pix !== exp_pix) begin
 			$display("FAIL atg_rop_logicop: ROP_CTRL got %h, exp %h", b_pix, exp_pix);

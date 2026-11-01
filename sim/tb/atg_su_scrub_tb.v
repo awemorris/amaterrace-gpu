@@ -87,11 +87,11 @@ module atg_su_scrub_tb;
 		.fl_go(1'b0), .fl_mask(32'd0), .fl_info(64'd0),
 		.pt_rd(1'b0), .pt_idx(8'd0), .pt_word(7'd0), .pt_rdata(), .pt_free(1'b0),
 		.pt_free_idx(8'd0), .pt_done(),
-		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_mask(), .tx_coord(), .tx_off(),
-		.tx_tag(), .tx_last(), .tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0),
-		.tr_data(512'd0), .tr_last(1'b0),
+		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_samp_slot(), .tx_vs(),
+		.tx_mask(), .tx_coord(), .tx_off(), .tx_tag(), .tx_last(),
+		.tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0), .tr_data(512'd0), .tr_last(1'b0),
 		.ex_valid(), .ex_ready(1'b1), .ex_seq(), .ex_xy(), .ex_mask(), .ex_color(),
-		.ex_depth(), .ex_last(), .ex_next(16'd0), .ex_aux(),
+		.ex_color1(), .ex_has_src1(), .ex_depth(), .ex_last(), .ex_next(16'd0), .ex_aux(),
 		.mesh_valid(), .mesh_ready(1'b1), .mesh_tri(), .mesh_last(), .mesh_id(),
 		.d_req_valid(d_req_valid), .d_req_ready(d_req_ready), .d_req_write(d_req_write),
 		.d_req_line(d_req_line), .d_req_be(d_req_be), .d_req_wdata(d_req_wdata),
@@ -107,7 +107,7 @@ module atg_su_scrub_tb;
 		.sa_push_valid(), .sa_push_ready(1'b1), .sa_push_data(), .sa_pop_valid(1'b0),
 		.sa_pop_ready(), .sa_pop_data({(NPHYS*32){1'b0}}), .sa_ctl_valid(), .sa_ctl_data(),
 		.sa_qstat(32'd0), .sa_stat(32'd0), .sa_qtag(32'd0),
-		.busy(busy), .fault(fault), .fault_addr(fault_addr)
+		.busy(busy), .fault(fault), .fault_addr(fault_addr), .fsm()
 	);
 
 	integer errors = 0, nz = 0;
@@ -122,12 +122,10 @@ module atg_su_scrub_tb;
 				for (k = 0; k < dut.rf.DEPTH; k = k + 1) begin
 					dut.rf.lane[g].m1[k] = 32'hA5A50000 + k;
 					dut.rf.lane[g].m2[k] = 32'h5A5A0000 + k;
-					dut.rf.lane[g].m3[k] = 32'h3C3C0000 + k;
 				end
 			always @(count)
 				for (k = 0; k < dut.rf.DEPTH; k = k + 1)
-					nz = nz + (dut.rf.lane[g].m1[k] != 0) + (dut.rf.lane[g].m2[k] != 0) +
-						(dut.rf.lane[g].m3[k] != 0);
+					nz = nz + (dut.rf.lane[g].m1[k] != 0) + (dut.rf.lane[g].m2[k] != 0);
 		end
 		for (g = 0; g < NPHYS; g = g + 1) begin : g_pt
 			always @(fill)
@@ -139,25 +137,25 @@ module atg_su_scrub_tb;
 		end
 		for (g = 0; g < NPHYS; g = g + 1) begin : g_exp
 			always @(fill) begin
-				for (k = 0; k < dut.exp.ROWS * 4; k = k + 1) begin
-					dut.exp.g_bank[g].m0[k] = 32'h1;
-					dut.exp.g_bank[g].m1[k] = 32'h2;
-					dut.exp.g_bank[g].m2[k] = 32'h3;
-					dut.exp.g_bank[g].m3[k] = 32'h4;
+				for (k = 0; k < dut.exp.ROWS * 8; k = k + 1) begin
+					dut.exp.g_bank[g].g_col_sl[0].m0[k] = 8'h1;
+					dut.exp.g_bank[g].g_col_sl[0].m1[k] = 8'h2;
+					dut.exp.g_bank[g].g_col_sl[0].m2[k] = 8'h3;
+					dut.exp.g_bank[g].g_col_sl[0].m3[k] = 8'h4;
 				end
 				for (k = 0; k < dut.exp.ROWS; k = k + 1) begin
-					dut.exp.g_bank[g].m4[k] = 32'h5;
-					dut.exp.g_bank[g].mz[k] = 32'h6;
+					dut.exp.g_bank[g].g_row_sl[0].m4[k] = 16'h5;
+					dut.exp.g_bank[g].g_row_sl[0].mz[k] = 16'h6;
 					dut.exp.g_bank[g].m5[k] = 4'h7;
 					dut.exp.g_bank[g].mr6[k] = 4'h8;
 				end
 			end
 			always @(count) begin
-				for (k = 0; k < dut.exp.ROWS * 4; k = k + 1)
-					nz = nz + (dut.exp.g_bank[g].m0[k] != 0) + (dut.exp.g_bank[g].m1[k] != 0) +
-						(dut.exp.g_bank[g].m2[k] != 0) + (dut.exp.g_bank[g].m3[k] != 0);
+				for (k = 0; k < dut.exp.ROWS * 8; k = k + 1)
+					nz = nz + (dut.exp.g_bank[g].g_col_sl[0].m0[k] != 0) + (dut.exp.g_bank[g].g_col_sl[0].m1[k] != 0) +
+						(dut.exp.g_bank[g].g_col_sl[0].m2[k] != 0) + (dut.exp.g_bank[g].g_col_sl[0].m3[k] != 0);
 				for (k = 0; k < dut.exp.ROWS; k = k + 1)
-					nz = nz + (dut.exp.g_bank[g].m4[k] != 0) + (dut.exp.g_bank[g].mz[k] != 0) +
+					nz = nz + (dut.exp.g_bank[g].g_row_sl[0].m4[k] != 0) + (dut.exp.g_bank[g].g_row_sl[0].mz[k] != 0) +
 						(dut.exp.g_bank[g].m5[k] != 0) + (dut.exp.g_bank[g].mr6[k] != 0);
 			end
 		end
@@ -177,7 +175,7 @@ module atg_su_scrub_tb;
 		for (k = 0; k < dut.cbank.CONST_WORDS; k = k + 1)
 			dut.cbank.bank[k] = 32'hCC000000 + k;
 		for (k = 0; k < 32; k = k + 1)
-			dut.cbank.cw[k] = 32'hCB000000 + k;
+			dut.cbank.g_cw_sl[0].cw_mem[k] = 8'hCB + k[7:0];
 	end
 	always @(count) begin
 		for (k = 0; k < dut.lds.NW; k = k + 1)
@@ -185,7 +183,7 @@ module atg_su_scrub_tb;
 		for (k = 0; k < dut.cbank.CONST_WORDS; k = k + 1)
 			nz = nz + (dut.cbank.bank[k] != 0);
 		for (k = 0; k < 32; k = k + 1)
-			nz = nz + (dut.cbank.cw[k] != 0);
+			nz = nz + (dut.cbank.g_cw_sl[0].cw_mem[k] != 0);
 	end
 
 	initial begin
@@ -213,6 +211,7 @@ module atg_su_scrub_tb;
 			@(negedge clk);
 			cyc = cyc + 1;
 		end
+		@(negedge clk);
 		longest = dut.lda.DEPTH;
 		if (dut.lds.NW > longest)
 			longest = dut.lds.NW;

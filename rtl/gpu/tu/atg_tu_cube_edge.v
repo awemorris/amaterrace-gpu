@@ -21,7 +21,12 @@
 
 `include "atg_config.vh"
 
-module atg_tu_cube_edge (
+module atg_tu_cube_edge #(
+	parameter LAT = 0
+) (
+	input  wire               clk,
+	input  wire               rst_n,
+	input  wire               en,
 	input  wire [2:0]         face_in,      /* 0:+X, 1:-X, 2:+Y, 3:-Y, 4:+Z, 5:-Z */
 	input  wire signed [16:0] u_in,
 	input  wire signed [16:0] v_in,         /* Texel coordinates (signed, bit 16 is sign) */
@@ -35,35 +40,64 @@ module atg_tu_cube_edge (
 `ifdef CFG_ENABLE_3D_CUBE
 
 	/* Out-of-bounds detection */
-	wire oi_lo = u_in[16];
-	wire oi_hi = !u_in[16] && (u_in[15:0] >= size);
-	wire oi = oi_lo || oi_hi;
+	wire [15:0] u_cmp_d, v_cmp_d, n1, n1u, n1v;
+	wire u_cmp_bo, v_cmp_bo;
+	wire [2:0] sub_bo_unused;
 
-	wire oj_lo = v_in[16];
-	wire oj_hi = !v_in[16] && (v_in[15:0] >= size);
+	am_sub #(.W(16)) u_cmp_u (.a(u_in[15:0]), .b(size), .bi(1'b0), .d(u_cmp_d), .bo(u_cmp_bo));
+	am_sub #(.W(16)) u_cmp_v (.a(v_in[15:0]), .b(size), .bi(1'b0), .d(v_cmp_d), .bo(v_cmp_bo));
+	am_sub #(.W(16)) u_sub_n1 (.a(size), .b(16'd0), .bi(1'b1), .d(n1), .bo(sub_bo_unused[0]));
+	am_sub #(.W(16)) u_sub_n1u (.a(size), .b(u_in[15:0]), .bi(1'b1), .d(n1u), .bo(sub_bo_unused[1]));
+	am_sub #(.W(16)) u_sub_n1v (.a(size), .b(v_in[15:0]), .bi(1'b1), .d(n1v), .bo(sub_bo_unused[2]));
+
+	wire oi_lo_s0 = u_in[16];
+	wire oi_hi_s0 = !u_in[16] && !u_cmp_bo;
+	wire oj_lo_s0 = v_in[16];
+	wire oj_hi_s0 = !v_in[16] && !v_cmp_bo;
+
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg        r_oi_lo, r_oi_hi, r_oj_lo, r_oj_hi;
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [15:0] r_n1, r_n1u, r_n1v, r_u, r_v;
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  r_face;
+	always @(posedge clk) begin
+		if (en) begin
+			r_oi_lo <= oi_lo_s0;
+			r_oi_hi <= oi_hi_s0;
+			r_oj_lo <= oj_lo_s0;
+			r_oj_hi <= oj_hi_s0;
+			r_n1    <= n1;
+			r_n1u   <= n1u;
+			r_n1v   <= n1v;
+			r_u     <= u_in[15:0];
+			r_v     <= v_in[15:0];
+			r_face  <= face_in;
+		end
+	end
+
+	wire        oi_lo = (LAT >= 1) ? r_oi_lo : oi_lo_s0;
+	wire        oi_hi = (LAT >= 1) ? r_oi_hi : oi_hi_s0;
+	wire        oj_lo = (LAT >= 1) ? r_oj_lo : oj_lo_s0;
+	wire        oj_hi = (LAT >= 1) ? r_oj_hi : oj_hi_s0;
+	wire [15:0] s_n1  = (LAT >= 1) ? r_n1    : n1;
+	wire [15:0] s_n1u = (LAT >= 1) ? r_n1u   : n1u;
+	wire [15:0] s_n1v = (LAT >= 1) ? r_n1v   : n1v;
+	wire [15:0] s_u   = (LAT >= 1) ? r_u     : u_in[15:0];
+	wire [15:0] s_v   = (LAT >= 1) ? r_v     : v_in[15:0];
+	wire [2:0]  s_f   = (LAT >= 1) ? r_face  : face_in;
+
+	wire oi = oi_lo || oi_hi;
 	wire oj = oj_lo || oj_hi;
 
 	/* Edge index: 0: u < 0, 1: u >= size, 2: v < 0, 3: v >= size */
 	wire [1:0] e = oi ? {1'b0, oi_hi} : {1'b1, oj_hi};
-	wire [15:0] a = oi ? v_in[15:0] : u_in[15:0];
-
-	/* Boundary coordinate calculations: n1 = size - 1, n1a = size - 1 - a */
-	wire [15:0] n1, n1a;
-	wire [1:0] sub_bo_unused;
-
-	am_sub #(.W(16)) u_sub_n1 (
-		.a(size), .b(16'd0), .bi(1'b1), .d(n1), .bo(sub_bo_unused[0])
-	);
-	am_sub #(.W(16)) u_sub_n1a (
-		.a(n1), .b(a), .bi(1'b0), .d(n1a), .bo(sub_bo_unused[1])
-	);
+	wire [15:0] a = oi ? s_v : s_u;
+	wire [15:0] n1a = oi ? s_n1v : s_n1u;
 
 	/* 12-edge adjacent face and coordinate mapping table */
 	reg [2:0] g;
 	reg [1:0] xi, xj;
 
 	always @(*) begin
-		case ({face_in, e})
+		case ({s_f, e})
 		5'b000_00: {g, xi, xj} = {3'd4, 2'd1, 2'd2};
 		5'b000_01: {g, xi, xj} = {3'd5, 2'd0, 2'd2};
 		5'b000_10: {g, xi, xj} = {3'd2, 2'd1, 2'd3};
@@ -97,25 +131,25 @@ module atg_tu_cube_edge (
 	end
 
 	wire [15:0] ri = (xi == 2'd0) ? 16'd0 :
-	                 (xi == 2'd1) ? n1 :
+	                 (xi == 2'd1) ? s_n1 :
 	                 (xi == 2'd2) ? a : n1a;
 	wire [15:0] rj = (xj == 2'd0) ? 16'd0 :
-	                 (xj == 2'd1) ? n1 :
+	                 (xj == 2'd1) ? s_n1 :
 	                 (xj == 2'd2) ? a : n1a;
 
 	/* Corner clamping fallback */
-	wire [15:0] ci = oi_lo ? 16'd0 : n1;
-	wire [15:0] cj = oj_lo ? 16'd0 : n1;
+	wire [15:0] ci = oi_lo ? 16'd0 : s_n1;
+	wire [15:0] cj = oj_lo ? 16'd0 : s_n1;
 
 	always @(*) begin
 		if (oi && oj) begin
-			face_out = face_in;
+			face_out = s_f;
 			u_out = ci;
 			v_out = cj;
 		end else if (!oi && !oj) begin
-			face_out = face_in;
-			u_out = u_in[15:0];
-			v_out = v_in[15:0];
+			face_out = s_f;
+			u_out = s_u;
+			v_out = s_v;
 		end else begin
 			face_out = g;
 			u_out = ri;
@@ -123,7 +157,8 @@ module atg_tu_cube_edge (
 		end
 	end
 
-	wire unused_ok = &{1'b0, sub_bo_unused};
+	wire unused_lat0 = (LAT == 0) ? &{1'b0, clk, en} : 1'b0;
+	wire unused_ok = &{1'b0, rst_n, sub_bo_unused, u_cmp_d, v_cmp_d, unused_lat0};
 
 `else
 

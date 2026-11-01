@@ -91,7 +91,7 @@ module atg_su_exp_mesh_tb;
 		.x_last(1'b0),
 		.x_sbe(3'd0),
 		.x_pc(16'd0),
-		.x_uop(104'd0),
+		.x_uop(108'd0),
 		.x_a(256'd0),
 		.x_b(256'd0),
 		.x_c(256'd0),

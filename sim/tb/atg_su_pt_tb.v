@@ -81,7 +81,7 @@ module atg_su_pt_tb;
 			x_valid = 1'b1;
 			x_warp = w;
 			x_grp = g;
-			x_uop = 104'd0;
+			x_uop = 108'd0;
 			x_uop[3:0] = 4'd10;
 			x_uop[40 +: 32] = tg;
 			x_info = {14'd0, kd, 16'd0};
@@ -189,6 +189,8 @@ module atg_su_pt_tb;
 						tick;
 						pt_rd = 1'b0;
 						pt_idx = $random(seed);	/* the data must not follow pt_idx */
+						tick;
+						tick;
 						got = pt_rdata;
 						if (got !== mem[e * WPV + wd]) begin
 							errors = errors + 1;
@@ -223,6 +225,7 @@ module atg_su_pt_tb;
 					if (i < 4)
 						exp_grp(k + 1, j, t, 2'd1, 8'hFF);	/* fragment: ignored */
 				end
+		tick;
 		read_all;
 		if (errors == 0)
 			$display("PASS atg_su_pt.pt");

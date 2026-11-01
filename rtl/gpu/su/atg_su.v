@@ -20,6 +20,76 @@
 `default_nettype none
 `include "atg_config.vh"
 
+module atg_su_skid #(
+	parameter W = 32,
+	parameter WIDTH = W
+) (
+	input wire clk,
+	input wire rst_n,
+
+	input wire in_valid,
+	(* keep = "true", max_fanout = 12 *) output reg in_ready,
+	input wire [WIDTH-1:0] in_data,
+
+	(* keep = "true", max_fanout = 12 *) output reg out_valid,
+	input wire out_ready,
+	output wire [WIDTH-1:0] out_data
+);
+	localparam N_SL = (WIDTH + 15) / 16;
+
+	(* keep = "true" *) wire rst_p = !rst_n;
+	(* keep = "true", max_fanout = 12 *) reg skid_valid;
+
+	genvar gs;
+	generate
+		for (gs = 0; gs < N_SL; gs = gs + 1) begin : g_skid_sl
+			localparam SL_B = gs * 16;
+			localparam SL_W = (SL_B + 16 <= WIDTH) ? 16 : (WIDTH - SL_B);
+			(* max_fanout = 12 *) reg [SL_W-1:0] out_d_sl;
+			(* max_fanout = 12 *) reg [SL_W-1:0] skid_d_sl;
+			(* keep = "true" *) wire load_out_s = skid_valid ? out_ready : (in_valid && (out_ready || !out_valid));
+			(* keep = "true" *) wire skid_load_s = in_valid && in_ready;
+			wire [SL_W-1:0] next_out_s = skid_valid ? skid_d_sl : in_data[SL_B +: SL_W];
+
+			always @(posedge clk) begin
+				if (rst_p) begin
+					out_d_sl  <= {SL_W{1'b0}};
+					skid_d_sl <= {SL_W{1'b0}};
+				end else begin
+					if (load_out_s)
+						out_d_sl <= next_out_s;
+					if (skid_load_s)
+						skid_d_sl <= in_data[SL_B +: SL_W];
+				end
+			end
+			assign out_data[SL_B +: SL_W] = out_d_sl;
+		end
+	endgenerate
+
+	always @(posedge clk) begin
+		if (rst_p) begin
+			in_ready   <= 1'b1;
+			out_valid  <= 1'b0;
+			skid_valid <= 1'b0;
+		end else begin
+			if (skid_valid) begin
+				if (out_ready) begin
+					out_valid  <= 1'b1;
+					skid_valid <= 1'b0;
+					in_ready   <= 1'b1;
+				end
+			end else begin
+				if (out_ready || !out_valid) begin
+					out_valid <= in_valid;
+				end else if (in_valid && in_ready) begin
+					skid_valid <= 1'b1;
+					in_ready   <= 1'b0;
+				end
+			end
+		end
+	end
+endmodule
+
 module atg_su #(
 `ifdef CFG_SU_NPHYS
 	parameter NPHYS = `CFG_SU_NPHYS,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
@@ -219,101 +289,106 @@ module atg_su #(
 	output wire [31:0] fault_addr
 );
 	/* The memories' scrubs (session protection). */
+	(* keep = "true" *) wire rst_p = !rst_n;
 	wire scb_rf, scb_lda, scb_lds, scb_cbank, scb_exp, scb_pt;
 	localparam DW = NPHYS * 32;
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam LB = LINE_BYTES * 8;
 
 	/* Front end. */
-	wire f_valid, f_ready;
-	wire [WARP_W-1:0] f_warp;
-	wire [15:0] f_pc;
+	(* max_fanout = 12 *) wire f_valid, f_ready;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] f_warp;
+	(* max_fanout = 12 *) wire [15:0] f_pc;
 	wire [31:0] f_addr;
-	wire ic_req, ic_ready, ic_rvalid;
+	(* max_fanout = 12 *) wire ic_req, ic_ready, ic_rvalid;
 	wire [31:0] ic_addr;
 	wire [63:0] ic_rdata;
 	wire d_valid, d_ready;
 	wire [WARP_W-1:0] d_warp;
 	wire [15:0] d_pc;
 	wire [63:0] d_instr;
-	wire u_valid, u_ready;
-	wire [WARP_W-1:0] u_warp;
-	wire [15:0] u_pc;
-	wire [UOP_W-1:0] u_uop;
-	wire i_valid, i_ready;
-	wire [WARP_W-1:0] i_warp;
-	wire [15:0] i_pc;
-	wire [UOP_W-1:0] i_uop;
-	wire [SBE_W:0] i_sbe;
+	(* max_fanout = 12 *) wire u_valid, u_ready;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] u_warp;
+	(* max_fanout = 12 *) wire [15:0] u_pc;
+	(* max_fanout = 12 *) wire [UOP_W-1:0] u_uop;
+	(* max_fanout = 12 *) wire i_valid, i_ready;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] i_warp;
+	(* max_fanout = 12 *) wire [15:0] i_pc;
+	(* max_fanout = 12 *) wire [UOP_W-1:0] i_uop;
+	(* max_fanout = 12 *) wire [SBE_W:0] i_sbe;
 	wire sb_fb_valid;
 	wire [WARP_W-1:0] sb_fb_warp;
 	wire [1:0] sb_fb_kind;
-	reg r_fb_valid;
-	reg [WARP_W-1:0] r_fb_warp;
-	reg [1:0] r_fb_kind;
+	wire [NWARPS-1:0] wake;
+	(* max_fanout = 12 *) reg r_fb_valid;
+	(* max_fanout = 12 *) reg [WARP_W-1:0] r_fb_warp;
+	(* max_fanout = 12 *) reg [1:0] r_fb_kind;
+	(* max_fanout = 12 *) reg [NWARPS-1:0] r_wake;
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p) begin
 			r_fb_valid <= 1'b0;
 			r_fb_warp <= {WARP_W{1'b0}};
 			r_fb_kind <= 2'd0;
+			r_wake <= {NWARPS{1'b0}};
 		end else begin
 			r_fb_valid <= sb_fb_valid;
 			r_fb_warp <= sb_fb_warp;
 			r_fb_kind <= sb_fb_kind;
+			r_wake <= wake;
 		end
 	end
-	wire [NWARPS-1:0] wake;
-	wire wc_valid;
-	wire [WARP_W-1:0] wc_warp;
-	wire [1:0] wc_op;
-	wire [15:0] wc_pc;
-	wire [WARP_W-1:0] q_warp;
-	wire [WARP_W-1:0] a_q_warp;
+	(* max_fanout = 12 *) wire wc_valid;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] wc_warp;
+	(* max_fanout = 12 *) wire [1:0] wc_op;
+	(* max_fanout = 12 *) wire [15:0] wc_pc;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] q_warp;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] a_q_warp;
 	wire [159:0] q_info;
 	wire [31:0] q_exec, q_killed;
-	wire init_valid;
-	wire [WARP_W-1:0] init_warp;
-	wire [31:0] init_mask;
+	(* max_fanout = 12 *) wire init_valid;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] init_warp;
+	(* max_fanout = 12 *) wire [31:0] init_mask;
 	wire pt_ok, xr_valid;
 	wire [WARP_W-1:0] xr_warp;
 	wire sched_busy, sb_busy, cbank_busy;
 	wire sb_fault;
 	wire [15:0] sb_fault_pc;
 	/* Scoreboard releases, write port, rq. */
-	wire rel_valid, wb_stall;
-	wire [WARP_W-1:0] rel_warp;
-	wire [SBE_W:0] rel_sbe;
-	wire [2:0] rel_cls;
-	wire w_en;
-	wire [WARP_W-1:0] w_warp;
-	wire [GRP_W-1:0] w_grp;
-	wire [5:0] w_reg;
+	(* max_fanout = 12 *) wire rel_valid, wb_stall;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] rel_warp;
+	(* max_fanout = 12 *) wire [SBE_W:0] rel_sbe;
+	(* max_fanout = 12 *) wire [2:0] rel_cls;
+	(* max_fanout = 12 *) wire w_en;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] w_warp;
+	(* max_fanout = 12 *) wire [GRP_W-1:0] w_grp;
+	(* max_fanout = 12 *) wire [5:0] w_reg;
 	wire [DW-1:0] w_data;
-	wire [NPHYS-1:0] w_lanes;
-	wire r_en;
+	(* max_fanout = 12 *) wire [NPHYS-1:0] w_lanes;
+	(* max_fanout = 12 *) wire r_en;
 	wire [WARP_W-1:0] r_warp;
 	wire [GRP_W-1:0] r_grp;
 	wire [11:0] r_regs;
 	wire [DW-1:0] r_data1, r_data2;
-	wire cr_en;
-	wire [14:0] cr_idx;
+	(* max_fanout = 12 *) wire cr_en;
+	(* max_fanout = 12 *) wire [14:0] cr_idx;
 	wire [95:0] cr_data;
 	wire rq_pop, rq_push, rq_empty, rq_full;
 	wire [DW-1:0] rq_pop_data, rq_push_data;
 	/* The execution bus. */
-	wire x_valid, x_last;
-	wire [WARP_W-1:0] x_warp;
-	wire [GRP_W-1:0] x_grp;
-	wire [SBE_W:0] x_sbe;
-	wire [15:0] x_pc;
-	wire [UOP_W-1:0] x_uop;
-	wire [DW-1:0] x_a, x_b, x_c;
-	wire [2*NPHYS-1:0] x_mask;
-	wire [31:0] x_info;
+	(* max_fanout = 12 *) wire x_valid, x_last;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] x_warp;
+	(* max_fanout = 12 *) wire [GRP_W-1:0] x_grp;
+	(* max_fanout = 12 *) wire [SBE_W:0] x_sbe;
+	(* max_fanout = 12 *) wire [15:0] x_pc;
+	(* max_fanout = 12 *) wire [UOP_W-1:0] x_uop;
+	(* max_fanout = 12 *) wire [DW-1:0] x_a, x_b, x_c;
+	(* max_fanout = 12 *) wire [2*NPHYS-1:0] x_mask;
+	(* max_fanout = 12 *) wire [31:0] x_info;
 	wire alu_ready;
 	wire fpu_ready;
 	wire pk_ready;
 	wire lane_ready;
+	wire lane_sg_emit_done;
 	wire lda_ready;
 	wire exec_ready;
 	wire lsu_ready;
@@ -323,43 +398,43 @@ module atg_su #(
 	wire xu_ready;
 	wire div_ready;
 	wire exp_ready;
-	wire [15:0] unit_ready = {1'b1, 1'b1, exec_ready, lane_ready, lda_ready, exp_ready,
+	wire [15:0] unit_ready = {1'b1, 1'b1, exec_ready, lane_sg_emit_done, lda_ready, exp_ready,
 		tex_ready, cbank_ready, lds_ready, lsu_ready, div_ready, xu_ready, pk_ready, fpu_ready,
 		alu_ready, 1'b1};
 	/* The last group of an instruction leaves atg_su_opd (atg_su_sb's interlock). */
-	wire x_end = x_valid && x_last && unit_ready[x_uop[3:0]];
+	(* max_fanout = 12 *) wire x_end;
 	/* Short results. */
-	(* max_fanout = 24 *) wire alu_s_valid;
+	(* max_fanout = 12 *) wire alu_s_valid;
 	wire [WARP_W-1:0] alu_s_warp;
 	wire [GRP_W-1:0] alu_s_grp;
 	wire [6:0] alu_s_rd;
 	wire [DW-1:0] alu_s_data;
 	wire [NPHYS-1:0] alu_s_lanes;
-	(* max_fanout = 24 *) wire fpu_s_valid;
+	(* max_fanout = 12 *) wire fpu_s_valid;
 	wire [WARP_W-1:0] fpu_s_warp;
 	wire [GRP_W-1:0] fpu_s_grp;
 	wire [6:0] fpu_s_rd;
 	wire [DW-1:0] fpu_s_data;
 	wire [NPHYS-1:0] fpu_s_lanes;
-	wire pk_s_valid;
+	(* max_fanout = 12 *) wire pk_s_valid;
 	wire [WARP_W-1:0] pk_s_warp;
 	wire [GRP_W-1:0] pk_s_grp;
 	wire [6:0] pk_s_rd;
 	wire [DW-1:0] pk_s_data;
 	wire [NPHYS-1:0] pk_s_lanes;
-	wire lane_s_valid;
+	(* max_fanout = 12 *) wire lane_s_valid;
 	wire [WARP_W-1:0] lane_s_warp;
 	wire [GRP_W-1:0] lane_s_grp;
 	wire [6:0] lane_s_rd;
 	wire [DW-1:0] lane_s_data;
 	wire [NPHYS-1:0] lane_s_lanes;
-	wire lda_s_valid;
+	(* max_fanout = 12 *) wire lda_s_valid;
 	wire [WARP_W-1:0] lda_s_warp;
 	wire [GRP_W-1:0] lda_s_grp;
 	wire [6:0] lda_s_rd;
 	wire [DW-1:0] lda_s_data;
 	wire [NPHYS-1:0] lda_s_lanes;
-	wire exec_s_valid;
+	(* max_fanout = 12 *) wire exec_s_valid;
 	wire [WARP_W-1:0] exec_s_warp;
 	wire [GRP_W-1:0] exec_s_grp;
 	wire [6:0] exec_s_rd;
@@ -415,32 +490,32 @@ module atg_su #(
 	wire [SBE_W:0] div_l_sbe;
 	wire [2:0] div_l_cls;
 	/* The LSU's D$ port, and the I$ and constant bank behind one MC port. */
-	wire dc_req_valid, dc_req_ready, dc_req_write, dc_rsp_valid, dc_rsp_write, dc_rsp_error;
+	(* max_fanout = 12 *) wire dc_req_valid, dc_req_ready, dc_req_write, dc_rsp_valid, dc_rsp_write, dc_rsp_error;
 	wire [LA_W-1:0] dc_req_line;
-	wire [LINE_BYTES-1:0] dc_req_be;
+	(* max_fanout = 12 *) wire [LINE_BYTES-1:0] dc_req_be;
 	wire [LB-1:0] dc_req_wdata, dc_rsp_rdata;
 	wire [7:0] dc_req_tag, dc_rsp_tag;
-	wire ic_m_req_valid, ic_m_req_ready, ic_m_req_write, ic_m_rsp_valid, ic_m_rsp_write, ic_m_rsp_error;
-	wire [LA_W-1:0] ic_m_req_line;
+	(* max_fanout = 12 *) wire ic_m_req_valid, ic_m_req_ready, ic_m_req_write, ic_m_rsp_valid, ic_m_rsp_write, ic_m_rsp_error;
+	(* max_fanout = 12 *) wire [LA_W-1:0] ic_m_req_line;
 	wire [LINE_BYTES-1:0] ic_m_req_be;
 	wire [LB-1:0] ic_m_req_wdata, ic_m_rsp_rdata;
 	wire [7:0] ic_m_req_tag, ic_m_rsp_tag;
-	wire cb_m_req_valid, cb_m_req_ready, cb_m_req_write, cb_m_rsp_valid, cb_m_rsp_write, cb_m_rsp_error;
-	wire [LA_W-1:0] cb_m_req_line;
+	(* max_fanout = 12 *) wire cb_m_req_valid, cb_m_req_ready, cb_m_req_write, cb_m_rsp_valid, cb_m_rsp_write, cb_m_rsp_error;
+	(* max_fanout = 12 *) wire [LA_W-1:0] cb_m_req_line;
 	wire [LINE_BYTES-1:0] cb_m_req_be;
 	wire [LB-1:0] cb_m_req_wdata, cb_m_rsp_rdata;
 	wire [7:0] cb_m_req_tag, cb_m_rsp_tag;
 	wire dc_inv;
-	wire [1:0] im_rsp_valid_v;
+	(* keep = "true", max_fanout = 12 *) wire [1:0] im_rsp_valid_v;
 	wire im_rsp_write, im_rsp_error;
 	wire [7:0] im_rsp_tag;
 	wire [LB-1:0] im_rsp_rdata;
 
 	wire [NWARPS-1:0] warp_ready;
-	wire sch_f_valid, sch_f_ready;
-	wire [WARP_W-1:0] sch_f_warp;
-	wire [15:0] sch_f_pc;
-	wire [31:0] sch_f_addr;
+	(* max_fanout = 12 *) wire sch_f_valid, sch_f_ready;
+	(* max_fanout = 12 *) wire [WARP_W-1:0] sch_f_warp;
+	(* max_fanout = 12 *) wire [15:0] sch_f_pc;
+	(* max_fanout = 12 *) wire [31:0] sch_f_addr;
 
 	atg_su_sched #(
 		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .NSU(NSU), .SU_INDEX(SU_INDEX),
@@ -452,7 +527,7 @@ module atg_su #(
 		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_slot(fl_slot), .fl_go(fl_go), .fl_mask(fl_mask),
 		.fl_info(fl_info),
 		.f_valid(sch_f_valid), .f_ready(sch_f_ready), .f_warp(sch_f_warp), .f_pc(sch_f_pc), .f_addr(sch_f_addr),
-		.fb_valid(r_fb_valid), .fb_warp(r_fb_warp), .fb_kind(r_fb_kind), .wake(wake),
+		.fb_valid(r_fb_valid), .fb_warp(r_fb_warp), .fb_kind(r_fb_kind), .wake(wake | r_wake),
 		.warp_ready(warp_ready),
 		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
 		.q_warp(a_q_warp), .q_info(q_info),
@@ -460,7 +535,7 @@ module atg_su #(
 		.pt_ok(pt_ok), .xr_valid(xr_valid), .xr_warp(xr_warp), .busy(sched_busy)
 	);
 
-	am_skid #(.W(WARP_W + 16 + 32)) u_fetch_skid (
+	atg_su_skid #(.W(WARP_W + 16 + 32)) u_fetch_skid (
 		.clk(clk), .rst_n(rst_n),
 		.in_valid(sch_f_valid), .in_ready(sch_f_ready),
 		.in_data({sch_f_warp, sch_f_pc, sch_f_addr}),
@@ -494,7 +569,7 @@ module atg_su #(
 	wire [63:0] skid_d_instr;
 
 	/* Registered skid buffer between fetch and dec to break the 4.9ns decode path */
-	am_skid #(.W(WARP_W + 16 + 64)) u_fet_skid (
+	atg_su_skid #(.W(WARP_W + 16 + 64)) u_fet_skid (
 		.clk(clk), .rst_n(rst_n),
 		.in_valid(fet_d_valid), .in_ready(fet_d_ready),
 		.in_data({fet_d_warp, fet_d_pc, fet_d_instr}),
@@ -509,7 +584,7 @@ module atg_su #(
 
 	atg_su_dec #(
 		.WARP_W(WARP_W), .UOP_W(UOP_W), .NREGS(NREGS), .PACKED(PACKED), .SUBGROUP(SUBGROUP),
-		.HAS_SA(HAS_SA), .MS4(MS4)
+		.HAS_SA(HAS_SA), .MS4(MS4), .PIPE_TAB(1)
 	) dec (
 		.clk(clk), .rst_n(rst_n),
 		.d_valid(skid_d_valid), .d_ready(skid_d_ready), .d_warp(skid_d_warp), .d_pc(skid_d_pc), .d_instr(skid_d_instr),
@@ -517,7 +592,7 @@ module atg_su #(
 	);
 
 	/* Registered skid buffer on dec-to-sb interface to break the 5.2ns hazard-check feedback loop */
-	am_skid #(.W(WARP_W + 16 + UOP_W)) u_dec_skid (
+	atg_su_skid #(.W(WARP_W + 16 + UOP_W)) u_dec_skid (
 		.clk(clk), .rst_n(rst_n),
 		.in_valid(dec_u_valid), .in_ready(dec_u_ready),
 		.in_data({dec_u_warp, dec_u_pc, dec_u_uop}),
@@ -526,7 +601,7 @@ module atg_su #(
 	);
 
 	atg_su_sb #(
-		.NPHYS(NPHYS), .SHORT_LAT(SHORT_LAT), .BYPASS(0), .NWARPS(NWARPS), .WARP_W(WARP_W), .SB_ENTRIES(SB_ENTRIES), .SBE_W(SBE_W), .UOP_W(UOP_W)
+		.NPHYS(NPHYS), .SHORT_LAT(SHORT_LAT + (32 / NPHYS) + 1), .BYPASS(0), .NWARPS(NWARPS), .WARP_W(WARP_W), .SB_ENTRIES(SB_ENTRIES), .SBE_W(SBE_W), .UOP_W(UOP_W), .FAST_REL(0)
 	) sb (
 		.clk(clk), .rst_n(rst_n),
 		.u_valid(u_valid), .u_ready(u_ready), .u_warp(u_warp), .u_pc(u_pc), .u_uop(u_uop),
@@ -540,7 +615,7 @@ module atg_su #(
 	);
 
 	atg_su_rf #(
-		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .NREGS(NREGS)
+		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .NREGS(NREGS), .REG_IO(1)
 	) rf (
 		.scrub(scrub), .scrub_busy(scb_rf),
 		.clk(clk), .rst_n(rst_n),
@@ -578,7 +653,7 @@ module atg_su #(
 
 	atg_su_opd #(
 		.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
-		.WARP_BASE(SU_INDEX * NWARPS)
+		.WARP_BASE(SU_INDEX * NWARPS), .REG_IO(1)
 	) opd (
 		.clk(clk), .rst_n(rst_n),
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
@@ -603,7 +678,8 @@ module atg_su #(
 		.fwd_fpu_ex5_valid(fpu_fwd_ex5_valid), .fwd_fpu_ex5_warp(fpu_fwd_ex5_warp), .fwd_fpu_ex5_grp(fpu_fwd_ex5_grp),
 		.fwd_fpu_ex5_rd(fpu_fwd_ex5_rd), .fwd_fpu_ex5_data(fpu_fwd_ex5_data), .fwd_fpu_ex5_lanes(fpu_fwd_ex5_lanes),
 		.fwd_wb_valid(fwd_wb_valid), .fwd_wb_warp(fwd_wb_warp), .fwd_wb_grp(fwd_wb_grp),
-		.fwd_wb_rd(fwd_wb_rd), .fwd_wb_data(fwd_wb_data), .fwd_wb_lanes(fwd_wb_lanes)
+		.fwd_wb_rd(fwd_wb_rd), .fwd_wb_data(fwd_wb_data), .fwd_wb_lanes(fwd_wb_lanes),
+		.x_end_out(x_end)
 	);
 
 	atg_su_alu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT)) alu (
@@ -649,7 +725,7 @@ module atg_su #(
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
-		.x_info(x_info), .x_ready(lane_ready),
+		.x_info(x_info), .x_ready(lane_ready), .sg_emit_done(lane_sg_emit_done),
 		.s_valid(lane_s_valid), .s_warp(lane_s_warp), .s_grp(lane_s_grp), .s_rd(lane_s_rd),
 		.s_data(lane_s_data), .s_lanes(lane_s_lanes)
 	);
@@ -831,7 +907,7 @@ module atg_su #(
 	);
 
 	atg_su_wb #(.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .NS(6), .NL(6),
-		.SHORT_LAT(SHORT_LAT)) wb (
+		.SHORT_LAT(SHORT_LAT), .REG_LONG(1)) wb (
 		.clk(clk), .rst_n(rst_n),
 		.s_valid({exec_s_valid, lda_s_valid, lane_s_valid, pk_s_valid, fpu_s_valid, alu_s_valid}),
 		.s_warp({exec_s_warp, lda_s_warp, lane_s_warp, pk_s_warp, fpu_s_warp, alu_s_warp}),

@@ -41,7 +41,7 @@ module atg_su_lda_tb;
 	reg x_valid = 1'b0;
 	reg [1:0] x_warp = 0;
 	reg [2:0] x_grp = 0;
-	reg [103:0] x_uop = 0;
+	reg [107:0] x_uop = 0;
 	reg [31:0] x_mask = 0;
 	reg [3:0] dsel = 0;	/* which shape gets the group: bit 0 NPHYS 8, 1 NPHYS 16, 2 NPHYS 32, 3 NPHYS 4 */
 
@@ -160,7 +160,7 @@ module atg_su_lda_tb;
 			else
 				imm = $unsigned($random(seed)) % 512;
 			rd = $unsigned($random(seed)) % 32;
-			x_uop = 104'd0;
+			x_uop = 108'd0;
 			x_uop[3:0] = unit;
 			x_uop[12 +: 7] = rd;
 			x_uop[40 +: 32] = imm | ($random(seed) & 32'hFFFFFE00);	/* imm[31:9] ignored */

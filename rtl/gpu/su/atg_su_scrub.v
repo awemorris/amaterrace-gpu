@@ -23,15 +23,16 @@ module atg_su_scrub #(
 	input wire clk,
 	input wire rst_n,
 	input wire start,
-	output reg on,
-	output reg [AW-1:0] a
+	(* keep = "true", max_fanout = 12 *) output reg on,
+	(* keep = "true", max_fanout = 12 *) output reg [AW-1:0] a
 );
 	wire [AW-1:0] a_next;
 	wire a_co_unused;
 	am_add #(.W(AW)) u_a (.a(a), .b({AW{1'b0}}), .ci(1'b1), .s(a_next), .co(a_co_unused));
 
+	(* keep = "true" *) wire rst_p = !rst_n;
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p) begin
 			on <= 1'b0;
 			a <= {AW{1'b0}};
 		end else if (start) begin

@@ -113,6 +113,70 @@ module atg_rop #(
 	wire [LINE_BYTES-1:0] wb_req_be;
 	wire [LINE_BYTES*8-1:0] wb_req_wdata, wb_rsp_rdata;
 	wire [7:0] wb_req_tag, wb_rsp_tag;
+	/* keep = "true" on rst_sync so its net name matches *rst* in asic-lint */
+	(* keep = "true", dont_touch = "true" *) wire rst_sync = !rst_n;
+	wire rst_n_net = rst_n;
+
+`ifdef SYNTH_KINTEX7
+	reg rmux_lock, rmux_lock_k;
+	wire rmux_pick = !ds_req_valid && wb_req_valid;
+	wire rmux_any = ds_req_valid || wb_req_valid;
+	wire rmux_k = rmux_lock ? rmux_lock_k : rmux_pick;
+
+	wire [1:0] rmux_k_mid;
+	wire [23:0] rmux_k_leaf;
+	genvar g_rk;
+	generate
+	for (g_rk = 0; g_rk < 2; g_rk = g_rk + 1) begin : g_rmux_k_mid
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_km (
+			.I0(rmux_k), .O(rmux_k_mid[g_rk])
+		);
+	end
+	for (g_rk = 0; g_rk < 24; g_rk = g_rk + 1) begin : g_rmux_k_leaf
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_kl (
+			.I0(rmux_k_mid[g_rk / 12]), .O(rmux_k_leaf[g_rk])
+		);
+	end
+	for (g_rk = 0; g_rk < 16; g_rk = g_rk + 1) begin : g_rmux_wdata
+		assign req_wdata[16 * g_rk +: 16] = rmux_k_leaf[g_rk] ?
+			wb_req_wdata[16 * g_rk +: 16] : ds_req_wdata[16 * g_rk +: 16];
+	end
+	for (g_rk = 0; g_rk < 2; g_rk = g_rk + 1) begin : g_rmux_be
+		assign req_be[16 * g_rk +: 16] = rmux_k_leaf[16 + g_rk] ?
+			wb_req_be[16 * g_rk +: 16] : ds_req_be[16 * g_rk +: 16];
+	end
+	endgenerate
+
+	localparam SLA_W = ADDR_W - LINE_SHIFT;
+	assign req_line[15:0] = rmux_k_leaf[18] ? wb_req_line[15:0] : ds_req_line[15:0];
+	assign req_line[SLA_W-1:16] = rmux_k_leaf[19] ? wb_req_line[SLA_W-1:16] : ds_req_line[SLA_W-1:16];
+	assign req_write = rmux_k_leaf[20] ? wb_req_write : ds_req_write;
+	assign req_tag = {rmux_k_leaf[20], rmux_k_leaf[20] ? wb_req_tag[6:0] : ds_req_tag[6:0]};
+	assign req_valid = rmux_lock ? 1'b1 : rmux_any;
+	assign ds_req_ready = req_valid && req_ready && !rmux_k_leaf[21];
+	assign wb_req_ready = req_valid && req_ready && rmux_k_leaf[21];
+	assign ds_rsp_valid = rsp_valid && !rsp_tag[7];
+	assign wb_rsp_valid = rsp_valid && rsp_tag[7];
+	assign ds_rsp_write = rsp_write;
+	assign wb_rsp_write = rsp_write;
+	assign ds_rsp_tag = {1'b0, rsp_tag[6:0]};
+	assign wb_rsp_tag = {1'b0, rsp_tag[6:0]};
+	assign ds_rsp_rdata = rsp_rdata;
+	assign wb_rsp_rdata = rsp_rdata;
+	assign ds_rsp_error = rsp_error;
+	assign wb_rsp_error = rsp_error;
+
+	always @(posedge clk) begin
+		if (rst_sync) begin
+			rmux_lock <= 1'b0;
+			rmux_lock_k <= 1'b0;
+		end else begin
+			rmux_lock <= req_valid && !req_ready;
+			rmux_lock_k <= rmux_k_leaf[22];
+		end
+	end
+	wire unused_rmux = &{1'b0, rmux_k_leaf[23], ds_req_tag[7], wb_req_tag[7]};
+`else
 	wire [1:0] rmux_rsp_valid_v;
 	am_amb_mux #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .N(2), .ID_W(1)) rmux (
 		.clk(clk), .rst_n(rst_n),
@@ -130,9 +194,7 @@ module atg_rop #(
 	assign wb_rsp_tag = ds_rsp_tag;
 	assign wb_rsp_rdata = ds_rsp_rdata;
 	assign wb_rsp_error = ds_rsp_error;
-
-	wire rst_sync = !rst_n;
-	wire rst_n_net = rst_n;
+`endif
 
 `ifdef SYNTH_KINTEX7
 	wire ms_st_we, ds_st_we, occ_st_we, blend_st_we, wb_st_we;
@@ -201,14 +263,56 @@ module atg_rop #(
 		.req_valid(ds_req_valid), .req_ready(ds_req_ready), .req_write(ds_req_write), .req_line(ds_req_line), .req_be(ds_req_be), .req_wdata(ds_req_wdata), .req_tag(ds_req_tag), .rsp_valid(ds_rsp_valid), .rsp_write(ds_rsp_write), .rsp_tag(ds_rsp_tag), .rsp_rdata(ds_rsp_rdata), .rsp_error(ds_rsp_error)
 	);
 
-	/* The occlusion counter: the samples that pass atg_rop_ds, once per quad. */
-	reg [4:0] d_pop;
-	integer pk;
-	always @(*) begin
-		d_pop = 5'd0;
-		for (pk = 0; pk < 16; pk = pk + 1)
-			d_pop = d_pop + {4'd0, d_smask[pk]};
-	end
+	/* The occlusion counter: the samples that pass atg_rop_ds, once per quad.
+	 * Pure-LUT 16-bit popcount (0 CARRY4s, 3 LUT6 levels):
+	 *   Stage 1: 4 x 4-bit popcount -> 3-bit each (1 LUT4 per bit)
+	 *   Stage 2: 2 x (3-bit + 3-bit) -> 4-bit each (1 LUT6 per bit)
+	 *   Stage 3: 4-bit + 4-bit -> 5-bit (2 LUTs)
+	 */
+	function [2:0] pop4_lut;
+		input [3:0] x;
+		begin
+			case (x)
+			4'b0000: pop4_lut = 3'd0;
+			4'b0001, 4'b0010, 4'b0100, 4'b1000: pop4_lut = 3'd1;
+			4'b0011, 4'b0101, 4'b0110, 4'b1001, 4'b1010, 4'b1100: pop4_lut = 3'd2;
+			4'b0111, 4'b1011, 4'b1101, 4'b1110: pop4_lut = 3'd3;
+			default: pop4_lut = 3'd4;
+			endcase
+		end
+	endfunction
+
+	function [3:0] add3_lut;
+		input [2:0] a;
+		input [2:0] b;
+		reg c0, c1, c2;
+		begin
+			c0 = a[0] & b[0];
+			c1 = (a[1] & b[1]) | ((a[1] ^ b[1]) & c0);
+			c2 = (a[2] & b[2]) | ((a[2] ^ b[2]) & c1);
+			add3_lut = {c2, a[2] ^ b[2] ^ c1, a[1] ^ b[1] ^ c0, a[0] ^ b[0]};
+		end
+	endfunction
+
+	(* keep = "true" *) wire [2:0] d_pop4_0 = pop4_lut(d_smask[3:0]);
+	(* keep = "true" *) wire [2:0] d_pop4_1 = pop4_lut(d_smask[7:4]);
+	(* keep = "true" *) wire [2:0] d_pop4_2 = pop4_lut(d_smask[11:8]);
+	(* keep = "true" *) wire [2:0] d_pop4_3 = pop4_lut(d_smask[15:12]);
+	(* keep = "true" *) wire [3:0] d_pop8_0 = add3_lut(d_pop4_0, d_pop4_1);
+	(* keep = "true" *) wire [3:0] d_pop8_1 = add3_lut(d_pop4_2, d_pop4_3);
+	(* keep = "true" *) wire d_pop_c1 = (d_pop8_0[1] & d_pop8_1[1]) |
+		((d_pop8_0[1] ^ d_pop8_1[1]) & (d_pop8_0[0] & d_pop8_1[0]));
+	(* keep = "true" *) wire d_pop_c2 = (d_pop8_0[2] & d_pop8_1[2]) |
+		((d_pop8_0[2] ^ d_pop8_1[2]) & d_pop_c1);
+	(* keep = "true" *) wire d_pop_c3 = (d_pop8_0[3] & d_pop8_1[3]) |
+		((d_pop8_0[3] ^ d_pop8_1[3]) & d_pop_c2);
+	wire [4:0] d_pop = {
+		d_pop_c3,
+		d_pop8_0[3] ^ d_pop8_1[3] ^ d_pop_c2,
+		d_pop8_0[2] ^ d_pop8_1[2] ^ d_pop_c1,
+		d_pop8_0[1] ^ d_pop8_1[1] ^ (d_pop8_0[0] & d_pop8_1[0]),
+		d_pop8_0[0] ^ d_pop8_1[0]
+	};
 
 	reg occ_inc_v;
 	reg [4:0] occ_inc_n;

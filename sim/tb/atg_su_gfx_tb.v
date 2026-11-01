@@ -104,7 +104,7 @@ module atg_su_gfx_chk #(
 	wire [3:0] ex_mask;
 	wire [511:0] ex_color;
 	wire [127:0] ex_depth;
-	wire [153:0] ex_aux;
+	wire [154:0] ex_aux;
 	reg [31:0] msexp [0:32];
 	wire i_req_valid, i_req_ready, i_req_write, i_rsp_valid, i_rsp_write, i_rsp_error;
 	wire [26:0] i_req_line;
@@ -150,12 +150,12 @@ module atg_su_gfx_chk #(
 		.fl_pw_data(32'd0), .fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
 		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx), .pt_done(pt_done),
-		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_mask(), .tx_coord(), .tx_off(),
-		.tx_tag(), .tx_last(), .tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0),
-		.tr_data(512'd0), .tr_last(1'b0),
+		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_samp_slot(), .tx_vs(),
+		.tx_mask(), .tx_coord(), .tx_off(), .tx_tag(), .tx_last(),
+		.tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0), .tr_data(512'd0), .tr_last(1'b0),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
-		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
-		.ex_next(ex_next), .ex_aux(ex_aux),
+		.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(), .ex_has_src1(),
+		.ex_depth(ex_depth), .ex_last(ex_last), .ex_next(ex_next), .ex_aux(ex_aux),
 		.mesh_valid(), .mesh_ready(1'b1), .mesh_tri(), .mesh_last(), .mesh_id(),
 		.d_req_valid(d_req_valid), .d_req_ready(d_req_ready), .d_req_write(d_req_write),
 		.d_req_line(d_req_line), .d_req_be(d_req_be), .d_req_wdata(d_req_wdata),
@@ -171,7 +171,7 @@ module atg_su_gfx_chk #(
 		.sa_push_valid(), .sa_push_ready(1'b1), .sa_push_data(), .sa_pop_valid(1'b0),
 		.sa_pop_ready(), .sa_pop_data({(NPHYS*32){1'b0}}), .sa_ctl_valid(), .sa_ctl_data(),
 		.sa_qstat(32'd0), .sa_stat(32'd0), .sa_qtag(32'd0),
-		.busy(busy), .fault(fault), .fault_addr(fault_addr)
+		.busy(busy), .fault(fault), .fault_addr(fault_addr), .fsm()
 	);
 	atg_mc_atom #(.NATOM(1), .AW(1)) atom (
 		.clk(clk), .rst_n(rst_n),
@@ -638,6 +638,7 @@ module atg_su_gfx_chk #(
 				pt_word = w[6:0];
 				@(negedge clk);
 				pt_rd = 1'b0;
+				repeat (2) @(negedge clk);
 				/* A word the model did not write must still be unwritten (X: the
 				 * PT has no reset and this is its first warp since time 0). */
 				if (pexp[l * (4 + VARY) + w][32] ? pt_rdata !== pexp[l * (4 + VARY) + w][31:0] :

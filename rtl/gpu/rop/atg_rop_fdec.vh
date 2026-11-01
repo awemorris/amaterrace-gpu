@@ -1365,62 +1365,57 @@ function [31:0] atg_rop_fblend_unpack_ch;
     input [7:0] fmt;
     input [1:0] gc;
     input [63:0] raw64;
+    reg [7:0] srgb_in;
+    reg [9:0] u10_in;
+    reg [15:0] hf_in;
+    reg [31:0] srgb_val, u10_val, u8_val, u2_val, hf_val;
     begin
+        case (gc)
+        2'd0: begin
+            srgb_in = (fmt == 8'd50) ? raw64[23:16] : raw64[7:0];
+            u10_in  = raw64[9:0];
+            hf_in   = raw64[15:0];
+        end
+        2'd1: begin
+            srgb_in = raw64[15:8];
+            u10_in  = raw64[19:10];
+            hf_in   = raw64[31:16];
+        end
+        2'd2: begin
+            srgb_in = (fmt == 8'd50) ? raw64[7:0] : raw64[23:16];
+            u10_in  = raw64[29:20];
+            hf_in   = raw64[47:32];
+        end
+        default: begin
+            srgb_in = 8'd0;
+            u10_in  = 10'd0;
+            hf_in   = raw64[63:48];
+        end
+        endcase
+
+        srgb_val = atg_srgb_dec(srgb_in);
+        u10_val  = atg_unorm10(u10_in);
+        u8_val   = atg_unorm8(raw64[31:24]);
+        u2_val   = atg_unorm2(raw64[31:30]);
+        hf_val   = atg_half_to_f32(hf_in);
+
         case (fmt)
-        8'd43: begin /* R8G8B8A8_SRGB */
-            case (gc)
-            2'd0: atg_rop_fblend_unpack_ch = atg_srgb_dec(raw64[7:0]);
-            2'd1: atg_rop_fblend_unpack_ch = atg_srgb_dec(raw64[15:8]);
-            2'd2: atg_rop_fblend_unpack_ch = atg_srgb_dec(raw64[23:16]);
-            default: atg_rop_fblend_unpack_ch = atg_unorm8(raw64[31:24]);
-            endcase
+        8'd43, 8'd50, 8'd57: begin
+            atg_rop_fblend_unpack_ch = (gc == 2'd3) ? u8_val : srgb_val;
         end
-        8'd50: begin /* B8G8R8A8_SRGB */
-            case (gc)
-            2'd0: atg_rop_fblend_unpack_ch = atg_srgb_dec(raw64[23:16]);
-            2'd1: atg_rop_fblend_unpack_ch = atg_srgb_dec(raw64[15:8]);
-            2'd2: atg_rop_fblend_unpack_ch = atg_srgb_dec(raw64[7:0]);
-            default: atg_rop_fblend_unpack_ch = atg_unorm8(raw64[31:24]);
-            endcase
+        8'd64: begin
+            atg_rop_fblend_unpack_ch = (gc == 2'd3) ? u2_val : u10_val;
         end
-        8'd57: begin /* A8B8G8R8_SRGB_PACK32 */
-            case (gc)
-            2'd0: atg_rop_fblend_unpack_ch = atg_srgb_dec(raw64[7:0]);
-            2'd1: atg_rop_fblend_unpack_ch = atg_srgb_dec(raw64[15:8]);
-            2'd2: atg_rop_fblend_unpack_ch = atg_srgb_dec(raw64[23:16]);
-            default: atg_rop_fblend_unpack_ch = atg_unorm8(raw64[31:24]);
-            endcase
+        8'd76: begin
+            atg_rop_fblend_unpack_ch = (gc == 2'd0) ? hf_val :
+                                       (gc == 2'd3) ? 32'h3F800000 : 32'd0;
         end
-        8'd64: begin /* A2B10G10R10_UNORM_PACK32 */
-            case (gc)
-            2'd0: atg_rop_fblend_unpack_ch = atg_unorm10(raw64[9:0]);
-            2'd1: atg_rop_fblend_unpack_ch = atg_unorm10(raw64[19:10]);
-            2'd2: atg_rop_fblend_unpack_ch = atg_unorm10(raw64[29:20]);
-            default: atg_rop_fblend_unpack_ch = atg_unorm2(raw64[31:30]);
-            endcase
+        8'd83: begin
+            atg_rop_fblend_unpack_ch = (gc == 2'd0 || gc == 2'd1) ? hf_val :
+                                       (gc == 2'd3) ? 32'h3F800000 : 32'd0;
         end
-        8'd76: begin /* R16_SFLOAT */
-            case (gc)
-            2'd0: atg_rop_fblend_unpack_ch = atg_half_to_f32(raw64[15:0]);
-            2'd1, 2'd2: atg_rop_fblend_unpack_ch = 32'd0;
-            default: atg_rop_fblend_unpack_ch = 32'h3F800000;
-            endcase
-        end
-        8'd83: begin /* R16G16_SFLOAT */
-            case (gc)
-            2'd0: atg_rop_fblend_unpack_ch = atg_half_to_f32(raw64[15:0]);
-            2'd1: atg_rop_fblend_unpack_ch = atg_half_to_f32(raw64[31:16]);
-            2'd2: atg_rop_fblend_unpack_ch = 32'd0;
-            default: atg_rop_fblend_unpack_ch = 32'h3F800000;
-            endcase
-        end
-        8'd97: begin /* R16G16B16A16_SFLOAT */
-            case (gc)
-            2'd0: atg_rop_fblend_unpack_ch = atg_half_to_f32(raw64[15:0]);
-            2'd1: atg_rop_fblend_unpack_ch = atg_half_to_f32(raw64[31:16]);
-            2'd2: atg_rop_fblend_unpack_ch = atg_half_to_f32(raw64[47:32]);
-            default: atg_rop_fblend_unpack_ch = atg_half_to_f32(raw64[63:48]);
-            endcase
+        8'd97: begin
+            atg_rop_fblend_unpack_ch = hf_val;
         end
         default: atg_rop_fblend_unpack_ch = 32'd0;
         endcase

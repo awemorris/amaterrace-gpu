@@ -46,10 +46,9 @@ module atg_su_fetch #(
 	 * Force slice registers to prevent Distributed RAM inference and cut 1.5ns decode delay. */
 	(* ram_style = "registers" *) reg [WARP_W-1:0] q_warp [0:1];
 	(* ram_style = "registers" *) reg [15:0] q_pc [0:1];
-	(* ram_style = "registers" *) reg [63:0] q_ins [0:1];
-	reg [1:0] q_have;
-	(* keep = "true", max_fanout = 16 *) reg [1:0] rp;
-	reg [1:0] wp, fp;	/* request, read and fill pointers (mod 4, index bit 0) */
+	(* max_fanout = 12 *) reg [1:0] q_have;
+	(* keep = "true", max_fanout = 12 *) reg [1:0] rp;
+	(* keep = "true", max_fanout = 12 *) reg [1:0] wp, fp;	/* request, read and fill pointers (mod 4, index bit 0) */
 	wire [1:0] used;
 	wire [1:0] wp_next;
 	wire [1:0] fp_next;
@@ -59,22 +58,39 @@ module atg_su_fetch #(
 	am_add #(.W(2)) u_wp (.a(wp), .b(2'd0), .ci(1'b1), .s(wp_next), .co(wp_co_unused));
 	am_add #(.W(2)) u_fp (.a(fp), .b(2'd0), .ci(1'b1), .s(fp_next), .co(fp_co_unused));
 	am_add #(.W(2)) u_rp (.a(rp), .b(2'd0), .ci(1'b1), .s(rp_next), .co(rp_co_unused));
-	wire room = used != 2'd2;
+	(* max_fanout = 12 *) wire room = used != 2'd2;
 
 	assign ic_req = f_valid && room;
 	assign ic_addr = f_addr;
 	assign f_ready = room && ic_ready;
-	wire push = f_valid && f_ready;
+	(* keep = "true", max_fanout = 12 *) wire push = f_valid && f_ready;
 
 	wire h = rp[0];
 	assign d_valid = used != 2'd0 && q_have[h];
 	assign d_warp = q_warp[h];
 	assign d_pc = q_pc[h];
-	assign d_instr = q_ins[h];
-	wire pop = d_valid && d_ready;
+	(* keep = "true", max_fanout = 12 *) wire pop = d_valid && d_ready;
 
+	genvar gqs;
+	generate
+		for (gqs = 0; gqs < 4; gqs = gqs + 1) begin : g_qins_sl
+			(* keep = "true" *) wire fill0_sl = ic_rvalid && !fp[0];
+			(* keep = "true" *) wire fill1_sl = ic_rvalid && fp[0];
+			(* keep = "true" *) wire h_sl = rp[0];
+			(* shreg_extract = "no" *) reg [15:0] q_ins0_r, q_ins1_r;
+			always @(posedge clk) begin
+				if (fill0_sl)
+					q_ins0_r <= ic_rdata[gqs*16 +: 16];
+				if (fill1_sl)
+					q_ins1_r <= ic_rdata[gqs*16 +: 16];
+			end
+			assign d_instr[gqs*16 +: 16] = h_sl ? q_ins1_r : q_ins0_r;
+		end
+	endgenerate
+
+	(* keep = "true" *) wire rst_p = !rst_n;
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p) begin
 			wp <= 2'd0;
 			rp <= 2'd0;
 			fp <= 2'd0;
@@ -87,7 +103,6 @@ module atg_su_fetch #(
 				wp <= wp_next;
 			end
 			if (ic_rvalid) begin
-				q_ins[fp[0]] <= ic_rdata;
 				q_have[fp[0]] <= 1'b1;
 				fp <= fp_next;
 			end

@@ -297,6 +297,7 @@ module atg_su_sched_tb;
 		/* Ended slots stay taken: three vertex requests cannot get a slot
 		 * beyond FRAG_RESERVE (only slot 3 is free). */
 		vl_req = 1'b1;
+		@(negedge clk);
 		#1;
 		if (vl_gnt)
 			fail("end slot freed early");
@@ -318,15 +319,16 @@ module atg_su_sched_tb;
 		f_ready = 1'b0;
 		pt_ok = 1'b0;
 		vl_req = 1'b1;
+		@(negedge clk);
 		#1;
 		if (vl_gnt)
 			fail("alloc vertex without pt_ok");
 		pt_ok = 1'b1;
 		for (k = 0; k < 3; k = k + 1) begin
+			@(negedge clk);
 			#1;
 			if (!vl_gnt)
 				fail("alloc vertex grant");
-			@(negedge clk);
 			vl_req = 1'b0;
 			vl_go = 1'b1;
 			vl_mask = 32'h0000FFFF;
@@ -337,15 +339,16 @@ module atg_su_sched_tb;
 			vl_go = 1'b0;
 			vl_req = 1'b1;
 		end
+		@(negedge clk);
 		#1;
 		if (vl_gnt)
 			fail("alloc FRAG_RESERVE");
 		vl_req = 1'b0;
 		fl_req = 1'b1;
+		@(negedge clk);
 		#1;
 		if (!fl_gnt)
 			fail("alloc fragment");
-		@(negedge clk);
 		fl_req = 1'b0;
 		fl_go = 1'b1;
 		fl_mask = 32'hF0F0F0F0;

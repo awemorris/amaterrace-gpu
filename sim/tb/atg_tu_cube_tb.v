@@ -35,6 +35,9 @@ module atg_tu_cube_tb;
 	wire [15:0] u_out, v_out;
 
 	atg_tu_cube_edge dut (
+		.clk(1'b0),
+		.rst_n(1'b0),
+		.en(1'b0),
 		.face_in(face_in),
 		.u_in(u_in),
 		.v_in(v_in),
@@ -47,6 +50,9 @@ module atg_tu_cube_tb;
 	/* atg_tu_cube_texel instance for integration verification */
 	wire [34:0] texel_t;
 	atg_tu_cube_texel dut_texel (
+		.clk(1'b0),
+		.rst_n(1'b0),
+		.en(1'b0),
 		.tface(face_in),
 		.i({{7{u_in[16]}}, u_in}),
 		.j({{7{v_in[16]}}, v_in}),

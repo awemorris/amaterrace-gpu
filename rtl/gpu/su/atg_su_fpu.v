@@ -38,6 +38,1250 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+module atg_su_fpu_core (
+	input wire clk,
+	input wire rst_n,
+	input wire en,
+	input wire [4:0] op,
+	input wire [2:0] rm,
+	input wire sat,
+	input wire [31:0] a,
+	input wire [31:0] b,
+	input wire [31:0] c,
+	output wire [31:0] res
+);
+	localparam [4:0] OP_FADD    = 5'd0;
+	localparam [4:0] OP_FSUB    = 5'd1;
+	localparam [4:0] OP_FMUL    = 5'd2;
+	localparam [4:0] OP_FMADD   = 5'd3;
+	localparam [4:0] OP_FMSUB   = 5'd4;
+	localparam [4:0] OP_FNMSUB  = 5'd5;
+	localparam [4:0] OP_FNMADD  = 5'd6;
+	localparam [4:0] OP_FSGNJ   = 5'd7;
+	localparam [4:0] OP_FMIN    = 5'd8;
+	localparam [4:0] OP_FMAX    = 5'd9;
+	localparam [4:0] OP_FCVTWS  = 5'd10;
+	localparam [4:0] OP_FCVTWUS = 5'd11;
+	localparam [4:0] OP_FCVTSW  = 5'd12;
+	localparam [4:0] OP_FCVTSWU = 5'd13;
+	localparam [4:0] OP_FEQ     = 5'd14;
+	localparam [4:0] OP_FLT     = 5'd15;
+	localparam [4:0] OP_FLE     = 5'd16;
+	localparam [4:0] OP_FNE     = 5'd17;
+	localparam [4:0] OP_FROUND  = 5'd18;
+	localparam [4:0] OP_FRACT   = 5'd19;
+	localparam [4:0] OP_MUL     = 5'd20;
+	localparam [4:0] OP_MULH    = 5'd21;
+	localparam [4:0] OP_MULHSU  = 5'd22;
+	localparam [4:0] OP_MULHU   = 5'd23;
+
+	function [31:0] f_flush;
+		input [31:0] x;
+		f_flush = (x[30:23] == 8'd0) ? {x[31], 31'd0} : x;
+	endfunction
+
+	function [47:0] f_sig;
+		input [30:0] a_in, b_in;
+		f_sig = {a_in[30:23] != 8'd0 ? {1'b1, a_in[22:0]} : 24'd0,
+			b_in[30:23] != 8'd0 ? {1'b1, b_in[22:0]} : 24'd0};
+	endfunction
+
+	/* Pure-LUT float saturation to [0, 1] (0 CARRY4) */
+	function [31:0] f_sat;
+		input [31:0] x;
+		reg is_nan, gt_one;
+		begin
+			is_nan = (x[30:23] == 8'hFF) && (x[22:0] != 23'd0);
+			gt_one = x[30] || ((&x[29:23]) && (|x[22:0]));
+			if (is_nan || x[31])
+				f_sat = 32'd0;
+			else if (gt_one)
+				f_sat = 32'h3F800000;
+			else
+				f_sat = x;
+		end
+	endfunction
+
+	function [65:0] mulops;
+		input [4:0] o;
+		input [31:0] a_in, b_in;
+		reg [47:0] sg;
+		begin
+			case (o)
+			OP_FMUL, OP_FMADD, OP_FMSUB, OP_FNMSUB, OP_FNMADD:
+				sg = f_sig(a_in[30:0], b_in[30:0]);
+			default:
+				sg = f_sig(a_in[30:0], 31'h3F800000);
+			endcase
+			if (o <= OP_FNMADD || o == OP_FRACT)
+				mulops = {9'd0, sg[23:0], 9'd0, sg[47:24]};
+			else
+				mulops = {(o == OP_MUL || o == OP_MULH) && b_in[31], b_in,
+					o != OP_MULHU && a_in[31], a_in};
+		end
+	endfunction
+
+	/* Pure-LUT 5-bit functions (0 CARRY4) */
+	function [4:0] f5_150;
+		input [4:0] e5;
+		case (e5)
+		5'd0: f5_150 = 5'd22; 5'd1: f5_150 = 5'd21; 5'd2: f5_150 = 5'd20; 5'd3: f5_150 = 5'd19;
+		5'd4: f5_150 = 5'd18; 5'd5: f5_150 = 5'd17; 5'd6: f5_150 = 5'd16; 5'd7: f5_150 = 5'd15;
+		5'd8: f5_150 = 5'd14; 5'd9: f5_150 = 5'd13; 5'd10: f5_150 = 5'd12; 5'd11: f5_150 = 5'd11;
+		5'd12: f5_150 = 5'd10; 5'd13: f5_150 = 5'd9; 5'd14: f5_150 = 5'd8; 5'd15: f5_150 = 5'd7;
+		5'd16: f5_150 = 5'd6; 5'd17: f5_150 = 5'd5; 5'd18: f5_150 = 5'd4; 5'd19: f5_150 = 5'd3;
+		5'd20: f5_150 = 5'd2; 5'd21: f5_150 = 5'd1; 5'd22: f5_150 = 5'd0; 5'd23: f5_150 = 5'd31;
+		5'd24: f5_150 = 5'd30; 5'd25: f5_150 = 5'd29; 5'd26: f5_150 = 5'd28; 5'd27: f5_150 = 5'd27;
+		5'd28: f5_150 = 5'd26; 5'd29: f5_150 = 5'd25; 5'd30: f5_150 = 5'd24; default: f5_150 = 5'd23;
+		endcase
+	endfunction
+
+	function [4:0] f5_149;
+		input [4:0] e5;
+		case (e5)
+		5'd0: f5_149 = 5'd21; 5'd1: f5_149 = 5'd20; 5'd2: f5_149 = 5'd19; 5'd3: f5_149 = 5'd18;
+		5'd4: f5_149 = 5'd17; 5'd5: f5_149 = 5'd16; 5'd6: f5_149 = 5'd15; 5'd7: f5_149 = 5'd14;
+		5'd8: f5_149 = 5'd13; 5'd9: f5_149 = 5'd12; 5'd10: f5_149 = 5'd11; 5'd11: f5_149 = 5'd10;
+		5'd12: f5_149 = 5'd9; 5'd13: f5_149 = 5'd8; 5'd14: f5_149 = 5'd7; 5'd15: f5_149 = 5'd6;
+		5'd16: f5_149 = 5'd5; 5'd17: f5_149 = 5'd4; 5'd18: f5_149 = 5'd3; 5'd19: f5_149 = 5'd2;
+		5'd20: f5_149 = 5'd1; 5'd21: f5_149 = 5'd0; 5'd22: f5_149 = 5'd31; 5'd23: f5_149 = 5'd30;
+		5'd24: f5_149 = 5'd29; 5'd25: f5_149 = 5'd28; 5'd26: f5_149 = 5'd27; 5'd27: f5_149 = 5'd26;
+		5'd28: f5_149 = 5'd25; 5'd29: f5_149 = 5'd24; 5'd30: f5_149 = 5'd23; default: f5_149 = 5'd22;
+		endcase
+	endfunction
+
+	function [4:0] sh5_22;
+		input [4:0] e5;
+		case (e5)
+		5'd22: sh5_22 = 5'd0; 5'd23: sh5_22 = 5'd1; 5'd24: sh5_22 = 5'd2;
+		5'd25: sh5_22 = 5'd3; 5'd26: sh5_22 = 5'd4; 5'd27: sh5_22 = 5'd5;
+		5'd28: sh5_22 = 5'd6; 5'd29: sh5_22 = 5'd7; 5'd30: sh5_22 = 5'd8;
+		default: sh5_22 = 5'd9;
+		endcase
+	endfunction
+
+	function [4:0] sub5_1;
+		input [4:0] x;
+		begin
+			sub5_1[0] = ~x[0];
+			sub5_1[1] = x[1] ^ ~x[0];
+			sub5_1[2] = x[2] ^ (&(~x[1:0]));
+			sub5_1[3] = x[3] ^ (&(~x[2:0]));
+			sub5_1[4] = x[4] ^ (&(~x[3:0]));
+		end
+	endfunction
+
+	function [4:0] neg5;
+		input [4:0] x;
+		begin
+			neg5[0] = x[0];
+			neg5[1] = x[1] ^ x[0];
+			neg5[2] = x[2] ^ (|x[1:0]);
+			neg5[3] = x[3] ^ (|x[2:0]);
+			neg5[4] = x[4] ^ (|x[3:0]);
+		end
+	endfunction
+
+	function [4:0] add4_co;
+		input [3:0] x;
+		input [3:0] y;
+		input ci;
+		reg c1, c2, c3, c4;
+		begin
+			c1 = (x[0] & y[0]) | ((x[0] ^ y[0]) & ci);
+			c2 = (x[1] & y[1]) | ((x[1] ^ y[1]) & c1);
+			c3 = (x[2] & y[2]) | ((x[2] ^ y[2]) & c2);
+			c4 = (x[3] & y[3]) | ((x[3] ^ y[3]) & c3);
+			add4_co = {c4, x[3] ^ y[3] ^ c3, x[2] ^ y[2] ^ c2, x[1] ^ y[1] ^ c1, x[0] ^ y[0] ^ ci};
+		end
+	endfunction
+
+	function [14:0] mask15_low;
+		input [3:0] amt;
+		case (amt)
+		4'd0:  mask15_low = 15'h0000;
+		4'd1:  mask15_low = 15'h0001;
+		4'd2:  mask15_low = 15'h0003;
+		4'd3:  mask15_low = 15'h0007;
+		4'd4:  mask15_low = 15'h000F;
+		4'd5:  mask15_low = 15'h001F;
+		4'd6:  mask15_low = 15'h003F;
+		4'd7:  mask15_low = 15'h007F;
+		4'd8:  mask15_low = 15'h00FF;
+		4'd9:  mask15_low = 15'h01FF;
+		4'd10: mask15_low = 15'h03FF;
+		4'd11: mask15_low = 15'h07FF;
+		4'd12: mask15_low = 15'h0FFF;
+		4'd13: mask15_low = 15'h1FFF;
+		4'd14: mask15_low = 15'h3FFF;
+		default: mask15_low = 15'h7FFF;
+		endcase
+	endfunction
+
+	(* keep = "true" *) wire rst_p = !rst_n;
+
+	/* --- Stage 0 -> Stage 1 --- */
+	wire [65:0] mo_s0 = mulops(op, a, b);
+	wire [31:0] nega_s0;
+	wire carry_unused0_neg;
+	am_sub #(.W(32)) u_neg0 (.a(32'd0), .b(a), .bi(1'b0), .d(nega_s0), .bo(carry_unused0_neg));
+	wire [31:0] cv_mag_s0 = (op == OP_FCVTSW && a[31]) ? nega_s0 : a;
+	wire is_cv_s0 = (op == OP_FCVTSW) || (op == OP_FCVTSWU);
+
+	wire a_exp_nz_s0 = (a[30:23] != 8'd0);
+	wire [23:0] m_s0 = {a_exp_nz_s0, a[22:0]};
+	(* max_fanout = 16 *) wire [4:0] f5_s0 = f5_150(a[27:23]);
+	(* max_fanout = 16 *) wire [4:0] fm1_s0 = f5_149(a[27:23]);
+	wire [23:0] q0_s0;
+	wire [23:0] smk_s0;
+	am_shift #(.W(24), .SW(5)) u_q0 (.a(m_s0), .amt(f5_s0), .left(1'b0), .arith(1'b0), .y(q0_s0));
+	am_shift #(.W(24), .SW(5)) u_smk0 (.a(24'hFFFFFF), .amt(fm1_s0), .left(1'b1), .arith(1'b0), .y(smk_s0));
+	wire f_ge24_s0 = !a[30] && !(&a[29:23]);
+	wire f_gt24_s0 = !a[30] && !(&a[29:24]);
+	wire f_ne0_s0 = (a[30:23] != 8'd150);
+	wire g_bit_s0 = m_s0[fm1_s0];
+	wire st_raw_s0 = |(m_s0 & ~smk_s0);
+
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s1_a, s1_b, s1_c;
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [4:0] s1_op;
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [2:0] s1_rm;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s1_sat;
+	(* shreg_extract = "no", keep = "true", max_fanout = 12 *) reg [65:0] s1_mo;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s1_cv_mag;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s1_is_cv;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [23:0] s1_q;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s1_g_bit, s1_st_raw, s1_f_ge24, s1_f_gt24, s1_f_ne0, s1_m_nz;
+
+	always @(posedge clk) begin
+		if (rst_p) begin
+			s1_a      <= 32'd0;
+			s1_b      <= 32'd0;
+			s1_c      <= 32'd0;
+			s1_op     <= 5'd0;
+			s1_rm     <= 3'd0;
+			s1_sat    <= 1'b0;
+			s1_mo     <= 66'd0;
+			s1_cv_mag <= 32'd0;
+			s1_is_cv  <= 1'b0;
+			s1_q      <= 24'd0;
+			s1_g_bit  <= 1'b0;
+			s1_st_raw <= 1'b0;
+			s1_f_ge24 <= 1'b0;
+			s1_f_gt24 <= 1'b0;
+			s1_f_ne0  <= 1'b0;
+			s1_m_nz   <= 1'b0;
+		end else if (en) begin
+			s1_a      <= a;
+			s1_b      <= b;
+			s1_c      <= c;
+			s1_op     <= op;
+			s1_rm     <= rm;
+			s1_sat    <= sat;
+			s1_mo     <= mo_s0;
+			s1_cv_mag <= cv_mag_s0;
+			s1_is_cv  <= is_cv_s0;
+			s1_q      <= q0_s0;
+			s1_g_bit  <= g_bit_s0;
+			s1_st_raw <= st_raw_s0;
+			s1_f_ge24 <= f_ge24_s0;
+			s1_f_gt24 <= f_gt24_s0;
+			s1_f_ne0  <= f_ne0_s0;
+			s1_m_nz   <= a_exp_nz_s0;
+		end
+	end
+
+	/* 33x33 multiplier with LAT=2 */
+	wire [65:0] pr_mul;
+	am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(2)) u_mul4 (
+		.clk(clk),
+		.en(en),
+		.a(s1_mo[32:0]),
+		.b(s1_mo[65:33]),
+		.p(pr_mul)
+	);
+
+	reg [65:0] pr_s4;
+	always @(posedge clk) begin
+		if (rst_p)
+			pr_s4 <= 66'd0;
+		else if (en)
+			pr_s4 <= pr_mul;
+	end
+
+	/* --- Stage 1 -> Stage 2 --- */
+	wire [23:0] s1_q_eff = s1_f_ge24 ? 24'd0 : s1_q;
+	wire s1_g = s1_f_gt24 ? 1'b0 : s1_g_bit;
+	wire s1_st = s1_f_gt24 ? s1_m_nz : (s1_f_ne0 && s1_st_raw);
+	wire [2:0] s1_rint_rm = (s1_op == OP_FRACT) ? 3'd2 : s1_rm;
+	reg s1_up;
+	always @(*) begin
+		case (s1_rint_rm)
+		3'd1: s1_up = 1'b0;
+		3'd2: s1_up = s1_a[31] && (s1_g || s1_st);
+		3'd3: s1_up = !s1_a[31] && (s1_g || s1_st);
+		3'd4: s1_up = s1_g;
+		default: s1_up = s1_g && (s1_st || s1_q_eff[0]);
+		endcase
+	end
+
+	wire [24:0] s1_q_p1;
+	wire carry_unused1_qp1;
+	am_add #(.W(25)) u_q1_p1 (.a({1'b0, s1_q_eff}), .b(25'd1), .ci(1'b0), .s(s1_q_p1), .co(carry_unused1_qp1));
+	wire [24:0] s1_n = s1_up ? s1_q_p1 : {1'b0, s1_q_eff};
+	wire [31:0] s1_in_n = s1_is_cv ? s1_cv_mag : (s1_up ? {7'd0, s1_q_p1} : {8'd0, s1_q_eff});
+
+	reg [31:0] s1_fx, s1_fy, s1_fz;
+	reg [2:0]  s1_rr;
+	reg        s1_noc;
+	always @(*) begin
+		s1_fx = s1_a;
+		s1_fy = 32'h3F800000;
+		s1_fz = s1_b;
+		s1_noc = 1'b0;
+		s1_rr = s1_rm;
+		case (s1_op)
+		OP_FADD:   ;
+		OP_FSUB:   s1_fz = {!s1_b[31], s1_b[30:0]};
+		OP_FMUL:   begin
+			s1_fy = s1_b;
+			s1_noc = 1'b1;
+		end
+		OP_FMADD:  begin
+			s1_fy = s1_b;
+			s1_fz = s1_c;
+		end
+		OP_FMSUB:  begin
+			s1_fy = s1_b;
+			s1_fz = {!s1_c[31], s1_c[30:0]};
+		end
+		OP_FNMSUB: begin
+			s1_fx = {!s1_a[31], s1_a[30:0]};
+			s1_fy = s1_b;
+			s1_fz = s1_c;
+		end
+		OP_FNMADD: begin
+			s1_fx = {!s1_a[31], s1_a[30:0]};
+			s1_fy = s1_b;
+			s1_fz = {!s1_c[31], s1_c[30:0]};
+		end
+		OP_FRACT:  begin
+			s1_fz = 32'd0;
+			s1_rr = 3'd0;
+		end
+		default: ;
+		endcase
+	end
+
+	wire [31:0] s1_fma_a = s1_fx[30:23] == 8'd0 ? {s1_fx[31], 31'd0} : s1_fx;
+	wire [31:0] s1_fma_b = s1_fy[30:23] == 8'd0 ? {s1_fy[31], 31'd0} : s1_fy;
+	wire [31:0] s1_fma_c = s1_fz[30:23] == 8'd0 ? {s1_fz[31], 31'd0} : s1_fz;
+	wire [7:0]  s1_c_exp = (s1_op == OP_FRACT) ? 8'd127 : s1_fma_c[30:23];
+
+	wire [11:0] s1_fma_ab, s1_fma_c150, s1_fma_c152, s1_fma_c101;
+	wire [3:0]  s1_fma_carry_unused;
+	am_add #(.W(12)) u_fma1_ab   (.a({4'd0, s1_fma_a[30:23]}), .b({4'd0, s1_fma_b[30:23]}), .ci(1'b0), .s(s1_fma_ab),   .co(s1_fma_carry_unused[0]));
+	am_add #(.W(12)) u_fma1_c150 (.a({4'd0, s1_c_exp}),        .b(12'd150),                 .ci(1'b0), .s(s1_fma_c150), .co(s1_fma_carry_unused[1]));
+	am_add #(.W(12)) u_fma1_c152 (.a({4'd0, s1_c_exp}),        .b(12'd152),                 .ci(1'b0), .s(s1_fma_c152), .co(s1_fma_carry_unused[2]));
+	am_add #(.W(12)) u_fma1_c101 (.a({4'd0, s1_c_exp}),        .b(12'd101),                 .ci(1'b0), .s(s1_fma_c101), .co(s1_fma_carry_unused[3]));
+
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s2_a, s2_b, s2_c;
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [4:0] s2_op;
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [2:0] s2_rm;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s2_sat;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [24:0] s2_n;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s2_in_n;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s2_fx, s2_fy, s2_fz;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s2_rr;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s2_noc;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s2_fma_a, s2_fma_b, s2_fma_c;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [11:0] s2_fma_ab, s2_fma_c150, s2_fma_c152, s2_fma_c101;
+
+	always @(posedge clk) begin
+		if (rst_p) begin
+			s2_a        <= 32'd0;
+			s2_b        <= 32'd0;
+			s2_c        <= 32'd0;
+			s2_op       <= 5'd0;
+			s2_rm       <= 3'd0;
+			s2_sat      <= 1'b0;
+			s2_n        <= 25'd0;
+			s2_in_n     <= 32'd0;
+			s2_fx       <= 32'd0;
+			s2_fy       <= 32'd0;
+			s2_fz       <= 32'd0;
+			s2_rr       <= 3'd0;
+			s2_noc      <= 1'b0;
+			s2_fma_a    <= 32'd0;
+			s2_fma_b    <= 32'd0;
+			s2_fma_c    <= 32'd0;
+			s2_fma_ab   <= 12'd0;
+			s2_fma_c150 <= 12'd0;
+			s2_fma_c152 <= 12'd0;
+			s2_fma_c101 <= 12'd0;
+		end else if (en) begin
+			s2_a        <= s1_a;
+			s2_b        <= s1_b;
+			s2_c        <= s1_c;
+			s2_op       <= s1_op;
+			s2_rm       <= s1_rm;
+			s2_sat      <= s1_sat;
+			s2_n        <= s1_n;
+			s2_in_n     <= s1_in_n;
+			s2_fx       <= s1_fx;
+			s2_fy       <= s1_fy;
+			s2_fz       <= s1_fz;
+			s2_rr       <= s1_rr;
+			s2_noc      <= s1_noc;
+			s2_fma_a    <= s1_fma_a;
+			s2_fma_b    <= s1_fma_b;
+			s2_fma_c    <= s1_fma_c;
+			s2_fma_ab   <= s1_fma_ab;
+			s2_fma_c150 <= s1_fma_c150;
+			s2_fma_c152 <= s1_fma_c152;
+			s2_fma_c101 <= s1_fma_c101;
+		end
+	end
+
+	/* --- Stage 2 -> Stage 3 --- */
+	wire [31:0] s2_xf = f_flush(s2_a);
+	wire [31:0] s2_bf = f_flush(s2_b);
+	wire cvsw2 = (s2_op == OP_FCVTSW);
+	wire cvswu2 = (s2_op == OP_FCVTSWU);
+	wire s2_s = cvsw2 ? s2_a[31] : cvswu2 ? 1'b0 : s2_xf[31];
+
+	/* Level-pinned 32-bit MSB & coarse shift (strictly <= 3 LUTs from s2_in_n) */
+	(* keep = "true" *) wire s2_n_g7 = |s2_in_n[31:28];
+	(* keep = "true" *) wire s2_n_g6 = |s2_in_n[27:24];
+	(* keep = "true" *) wire s2_n_g5 = |s2_in_n[23:20];
+	(* keep = "true" *) wire s2_n_g4 = |s2_in_n[19:16];
+	(* keep = "true" *) wire s2_n_g3 = |s2_in_n[15:12];
+	(* keep = "true" *) wire s2_n_g2 = |s2_in_n[11:8];
+	(* keep = "true" *) wire s2_n_g1 = |s2_in_n[7:4];
+	(* keep = "true" *) wire s2_n_g0 = |s2_in_n[3:0];
+
+	(* keep = "true", max_fanout = 16 *) wire s2_msb4 = s2_n_g7 || s2_n_g6 || s2_n_g5 || s2_n_g4;
+	(* keep = "true", max_fanout = 16 *) wire s2_msb3 = s2_n_g7 || s2_n_g6 || (!s2_n_g5 && !s2_n_g4 && (s2_n_g3 || s2_n_g2));
+	(* keep = "true", max_fanout = 16 *) wire s2_msb2 = s2_n_g7 || (!s2_n_g6 && (s2_n_g5 || (!s2_n_g4 && (s2_n_g3 || (!s2_n_g2 && s2_n_g1)))));
+	(* keep = "true", max_fanout = 16 *) wire s2_nz   = s2_msb4 || s2_n_g3 || s2_n_g2 || s2_n_g1 || s2_n_g0;
+
+	wire [1:0] s2_m10_7 = s2_in_n[31] ? 2'd3 : s2_in_n[30] ? 2'd2 : s2_in_n[29] ? 2'd1 : 2'd0;
+	wire [1:0] s2_m10_6 = s2_in_n[27] ? 2'd3 : s2_in_n[26] ? 2'd2 : s2_in_n[25] ? 2'd1 : 2'd0;
+	wire [1:0] s2_m10_5 = s2_in_n[23] ? 2'd3 : s2_in_n[22] ? 2'd2 : s2_in_n[21] ? 2'd1 : 2'd0;
+	wire [1:0] s2_m10_4 = s2_in_n[19] ? 2'd3 : s2_in_n[18] ? 2'd2 : s2_in_n[17] ? 2'd1 : 2'd0;
+	wire [1:0] s2_m10_3 = s2_in_n[15] ? 2'd3 : s2_in_n[14] ? 2'd2 : s2_in_n[13] ? 2'd1 : 2'd0;
+	wire [1:0] s2_m10_2 = s2_in_n[11] ? 2'd3 : s2_in_n[10] ? 2'd2 : s2_in_n[9]  ? 2'd1 : 2'd0;
+	wire [1:0] s2_m10_1 = s2_in_n[7]  ? 2'd3 : s2_in_n[6]  ? 2'd2 : s2_in_n[5]  ? 2'd1 : 2'd0;
+	wire [1:0] s2_m10_0 = s2_in_n[3]  ? 2'd3 : s2_in_n[2]  ? 2'd2 : s2_in_n[1]  ? 2'd1 : 2'd0;
+
+	(* keep = "true" *) wire [1:0] s2_m10_hi = s2_n_g7 ? s2_m10_7 : s2_n_g6 ? s2_m10_6 : s2_n_g5 ? s2_m10_5 : s2_m10_4;
+	(* keep = "true" *) wire [1:0] s2_m10_lo = s2_n_g3 ? s2_m10_3 : s2_n_g2 ? s2_m10_2 : s2_n_g1 ? s2_m10_1 : s2_m10_0;
+	(* keep = "true", max_fanout = 16 *) wire [1:0] s2_msb10 = s2_msb4 ? s2_m10_hi : s2_m10_lo;
+	wire [4:0] s2_msb = {s2_msb4, s2_msb3, s2_msb2, s2_msb10};
+
+	/* Coarse shift by ~s2_msb[4:2] * 4 in Stage 2 (2 LUT levels from s2_msb4..2 and s2_in_n) */
+	(* keep = "true" *) wire [31:0] s2_w_hi = s2_msb3 ? (s2_msb2 ? s2_in_n : {s2_in_n[27:0], 4'd0}) :
+		(s2_msb2 ? {s2_in_n[23:0], 8'd0} : {s2_in_n[19:0], 12'd0});
+	(* keep = "true" *) wire [31:0] s2_w_lo = s2_msb3 ? (s2_msb2 ? {s2_in_n[15:0], 16'd0} : {s2_in_n[11:0], 20'd0}) :
+		(s2_msb2 ? {s2_in_n[7:0], 24'd0} : {s2_in_n[3:0], 28'd0});
+	wire [31:0] s2_w_pre = s2_msb4 ? s2_w_hi : s2_w_lo;
+
+	wire [11:0] s2_e = {4'd0, (s2_msb != 5'd0), {2{s2_msb == 5'd0}}, sub5_1(s2_msb)};
+	wire [11:0] s2_e_p1 = {4'd0, 3'b100, s2_msb};
+
+	wire s2_fl_nan = (s2_xf[30:23] == 8'hFF && s2_xf[22:0] != 23'd0);
+	wire s2_exp_ge150 = s2_xf[30] && ((|s2_xf[29:28]) || (s2_xf[27] && (s2_xf[26] || (s2_xf[25] && s2_xf[24]))));
+	wire s2_fl_pass = s2_exp_ge150 || (s2_xf[30:23] == 8'd0);
+	wire s2_fract_ge1 = s2_xf[30] || (&s2_xf[29:23]);
+	wire s2_fract_inc = !s2_fl_pass && (~s2_msb10[0] ^ s2_xf[23]);
+
+	/* Stage 2: f2i barrel shift (negation in Stage 3) */
+	(* max_fanout = 16 *) wire [4:0] s2_f2i_sh = sh5_22(s2_xf[27:23]);
+	wire [31:0] s2_f2i_mw;
+	am_shift #(.W(32), .SW(5)) u_f2i_mw2 (.a({8'd0, 1'b1, s2_xf[22:0]}), .amt(s2_f2i_sh), .left(1'b1), .arith(1'b0), .y(s2_f2i_mw));
+	wire [31:0] s2_f2i_mag = s2_exp_ge150 ? s2_f2i_mw : {7'd0, s2_n};
+	wire s2_f2i_s = s2_xf[31] && !s2_fl_nan;
+	wire s2_f2i_big = s2_xf[30] && ((|s2_xf[29:28]) || (&s2_xf[27:23]));
+	wire s2_f2i_gt80 = (s2_xf[30:23] == 8'd158) && (s2_xf[22:0] != 23'd0);
+
+	/* Stage 2: 31-bit magnitude comparators for fmin/fmax/fcmp (pre=1, post=0 around CARRY4) */
+	wire [30:0] unused_ab_d2, unused_ba_d2;
+	wire s2_ab_lt, s2_ba_lt;
+	am_sub #(.W(31)) u_ab_lt2 (.a(s2_xf[30:0]), .b(s2_bf[30:0]), .bi(1'b0), .d(unused_ab_d2), .bo(s2_ab_lt));
+	am_sub #(.W(31)) u_ba_lt2 (.a(s2_bf[30:0]), .b(s2_xf[30:0]), .bi(1'b0), .d(unused_ba_d2), .bo(s2_ba_lt));
+	wire s2_af_nan = s2_fl_nan;
+	wire s2_bf_nan = (s2_bf[30:23] == 8'hFF && s2_bf[22:0] != 23'd0);
+	wire s2_ab_eq = (s2_xf == s2_bf) || (s2_xf[30:0] == 31'd0 && s2_bf[30:0] == 31'd0);
+
+	/* Stage 2: FMA exponent differences & precomputed special flags */
+	wire [11:0] s2_fma_k, s2_fma_kp2;
+	wire [1:0]  s2_fma_sub_carry_unused;
+	am_sub #(.W(12)) u_fma2_k   (.a(s2_fma_c150), .b(s2_fma_ab), .bi(1'b0), .d(s2_fma_k),   .bo(s2_fma_sub_carry_unused[0]));
+	am_sub #(.W(12)) u_fma2_kp2 (.a(s2_fma_c152), .b(s2_fma_ab), .bi(1'b0), .d(s2_fma_kp2), .bo(s2_fma_sub_carry_unused[1]));
+	wire [4:0] s2_fma_rs = neg5(s2_fma_kp2[4:0]);
+	wire s2_cs_left = ((s2_op == OP_FRACT) && s2_fract_ge1) || !s2_fma_kp2[11];
+	wire [6:0] s2_cs_amt = s2_cs_left ? s2_fma_kp2[6:0] : {2'd0, s2_fma_rs};
+	wire [23:0] s2_fma_mc_sh = (s2_op == OP_FRACT) ? 24'h800000 : ((s2_noc || s2_fma_c[30:23] == 8'd0) ? 24'd0 : {1'b1, s2_fma_c[22:0]});
+
+	wire s2_nan_a = s2_fma_a[30:23] == 8'hFF && s2_fma_a[22:0] != 23'd0;
+	wire s2_nan_b = s2_fma_b[30:23] == 8'hFF && s2_fma_b[22:0] != 23'd0;
+	wire s2_nan_c = !s2_noc && ((s2_op == OP_FRACT) ? s2_fl_nan : (s2_fma_c[30:23] == 8'hFF && s2_fma_c[22:0] != 23'd0));
+	wire s2_inf_a = s2_fma_a[30:23] == 8'hFF && s2_fma_a[22:0] == 23'd0;
+	wire s2_inf_b = s2_fma_b[30:23] == 8'hFF && s2_fma_b[22:0] == 23'd0;
+	wire s2_inf_c = !s2_noc && ((s2_op == OP_FRACT) ? (s2_xf[30:23] == 8'hFF && s2_xf[22:0] == 23'd0) : (s2_fma_c[30:23] == 8'hFF && s2_fma_c[22:0] == 23'd0));
+	wire s2_za    = s2_fma_a[30:23] == 8'd0;
+	wire s2_zb    = s2_fma_b[30:23] == 8'd0;
+	wire s2_spec_nan    = s2_nan_a || s2_nan_b || s2_nan_c || (s2_inf_a && s2_zb) || (s2_inf_b && s2_za);
+	wire s2_spec_inf_ab = (s2_inf_a || s2_inf_b) && !s2_spec_nan;
+	wire s2_spec_inf_c  = s2_inf_c && !s2_spec_nan && !s2_spec_inf_ab;
+	wire s2_spec_zero   = (s2_za || s2_zb) && !s2_spec_nan && !s2_spec_inf_ab && !s2_spec_inf_c;
+
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s3_a, s3_b;
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [4:0] s3_op;
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [2:0] s3_rm;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s3_sat;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s3_s;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [11:0] s3_e, s3_e_p1;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s3_w_pre;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [1:0] s3_sh_lo;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s3_nz;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s3_fl_nan;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s3_fl_pass;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s3_xf_val, s3_bf_val;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s3_fract_ge1, s3_fract_inc;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s3_f2i_mag;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s3_f2i_s, s3_f2i_big, s3_f2i_gt80;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s3_ab_lt, s3_ba_lt, s3_af_nan, s3_bf_nan, s3_ab_eq;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s3_rr;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s3_noc;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s3_fma_a, s3_fma_b, s3_fma_c;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [11:0] s3_fma_ab, s3_fma_c101;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [11:0] s3_fma_k;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [4:0]  s3_fma_rs;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s3_cs_left;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [6:0]  s3_cs_amt;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [23:0] s3_fma_mc_sh;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s3_spec_nan, s3_spec_inf_ab, s3_spec_inf_c, s3_spec_zero, s3_inf_c;
+
+	always @(posedge clk) begin
+		if (rst_p) begin
+			s3_a           <= 32'd0;
+			s3_b           <= 32'd0;
+			s3_op          <= 5'd0;
+			s3_rm          <= 3'd0;
+			s3_sat         <= 1'b0;
+			s3_s           <= 1'b0;
+			s3_e           <= 12'd0;
+			s3_e_p1        <= 12'd0;
+			s3_w_pre       <= 32'd0;
+			s3_sh_lo       <= 2'd0;
+			s3_nz          <= 1'b0;
+			s3_fl_nan      <= 1'b0;
+			s3_fl_pass     <= 1'b0;
+			s3_xf_val      <= 32'd0;
+			s3_bf_val      <= 32'd0;
+			s3_fract_ge1   <= 1'b0;
+			s3_fract_inc   <= 1'b0;
+			s3_f2i_mag     <= 32'd0;
+			s3_f2i_s       <= 1'b0;
+			s3_f2i_big     <= 1'b0;
+			s3_f2i_gt80    <= 1'b0;
+			s3_ab_lt       <= 1'b0;
+			s3_ba_lt       <= 1'b0;
+			s3_af_nan      <= 1'b0;
+			s3_bf_nan      <= 1'b0;
+			s3_ab_eq       <= 1'b0;
+			s3_rr          <= 3'd0;
+			s3_noc         <= 1'b0;
+			s3_fma_a       <= 32'd0;
+			s3_fma_b       <= 32'd0;
+			s3_fma_c       <= 32'd0;
+			s3_fma_ab      <= 12'd0;
+			s3_fma_c101    <= 12'd0;
+			s3_fma_k       <= 12'd0;
+			s3_fma_rs      <= 5'd0;
+			s3_cs_left     <= 1'b0;
+			s3_cs_amt      <= 7'd0;
+			s3_fma_mc_sh   <= 24'd0;
+			s3_spec_nan    <= 1'b0;
+			s3_spec_inf_ab <= 1'b0;
+			s3_spec_inf_c  <= 1'b0;
+			s3_spec_zero   <= 1'b0;
+			s3_inf_c       <= 1'b0;
+		end else if (en) begin
+			s3_a           <= s2_a;
+			s3_b           <= s2_b;
+			s3_op          <= s2_op;
+			s3_rm          <= s2_rm;
+			s3_sat         <= s2_sat;
+			s3_s           <= s2_s;
+			s3_e           <= s2_e;
+			s3_e_p1        <= s2_e_p1;
+			s3_w_pre       <= s2_w_pre;
+			s3_sh_lo       <= ~s2_msb10;
+			s3_nz          <= s2_nz;
+			s3_fl_nan      <= s2_fl_nan;
+			s3_fl_pass     <= s2_fl_pass;
+			s3_xf_val      <= s2_xf;
+			s3_bf_val      <= s2_bf;
+			s3_fract_ge1   <= s2_fract_ge1;
+			s3_fract_inc   <= s2_fract_inc;
+			s3_f2i_mag     <= s2_f2i_mag;
+			s3_f2i_s       <= s2_f2i_s;
+			s3_f2i_big     <= s2_f2i_big;
+			s3_f2i_gt80    <= s2_f2i_gt80;
+			s3_ab_lt       <= s2_ab_lt;
+			s3_ba_lt       <= s2_ba_lt;
+			s3_af_nan      <= s2_af_nan;
+			s3_bf_nan      <= s2_bf_nan;
+			s3_ab_eq       <= s2_ab_eq;
+			s3_rr          <= s2_rr;
+			s3_noc         <= s2_noc;
+			s3_fma_a       <= s2_fma_a;
+			s3_fma_b       <= s2_fma_b;
+			s3_fma_c       <= s2_fma_c;
+			s3_fma_ab      <= s2_fma_ab;
+			s3_fma_c101    <= s2_fma_c101;
+			s3_fma_k       <= s2_fma_k;
+			s3_fma_rs      <= s2_fma_rs;
+			s3_cs_left     <= s2_cs_left;
+			s3_cs_amt      <= s2_cs_amt;
+			s3_fma_mc_sh   <= s2_fma_mc_sh;
+			s3_spec_nan    <= s2_spec_nan;
+			s3_spec_inf_ab <= s2_spec_inf_ab;
+			s3_spec_inf_c  <= s2_spec_inf_c;
+			s3_spec_zero   <= s2_spec_zero;
+			s3_inf_c       <= s2_inf_c;
+		end
+	end
+
+	/* --- Stage 3 -> Stage 4 --- */
+	reg [31:0] s3_w;
+	always @(*) begin
+		case (s3_sh_lo)
+		2'd0: s3_w = s3_w_pre;
+		2'd1: s3_w = {s3_w_pre[30:0], 1'b0};
+		2'd2: s3_w = {s3_w_pre[29:0], 2'b00};
+		default: s3_w = {s3_w_pre[28:0], 3'b000};
+		endcase
+	end
+
+	wire [31:0] s3_rint_rnd = {s3_s, s3_e[7:0], s3_w[30:8]};
+	wire [31:0] s3_rint_iv = !s3_nz ? {s3_s, 31'd0} : s3_rint_rnd;
+	wire [31:0] s3_rint_fl = s3_fl_nan ? 32'h7FC00000 : s3_fl_pass ? s3_xf_val : s3_rint_iv;
+
+	wire cvsw3 = (s3_op == OP_FCVTSW);
+	wire cvswu3 = (s3_op == OP_FCVTSWU);
+	wire s3_g = s3_w[7];
+	wire s3_st = |s3_w[6:0];
+	reg s3_up;
+	always @(*) begin
+		case ((cvsw3 || cvswu3) ? s3_rm : 3'd0)
+		3'd1, 3'd5, 3'd6: s3_up = 1'b0;
+		3'd2: s3_up = s3_s && (s3_g || s3_st);
+		3'd3: s3_up = !s3_s && (s3_g || s3_st);
+		3'd4: s3_up = s3_g;
+		default: s3_up = s3_g && (s3_st || s3_w[8]);
+		endcase
+	end
+
+	/* Speculative +1 on s3_w[31:8] (pre=1, post=1 around CARRY4) */
+	wire [24:0] s3_w_p1;
+	wire carry_unused3_mr;
+	am_add #(.W(25)) u_mr3_p1 (.a({1'b0, s3_w[31:8]}), .b(25'd1), .ci(1'b0), .s(s3_w_p1), .co(carry_unused3_mr));
+	wire s3_w_b8 = s3_w[8] | (((s3_rm == 3'd5 || s3_rm == 3'd6) && (cvsw3 || cvswu3)) && (s3_g || s3_st));
+	wire [24:0] s3_mr0 = s3_up ? s3_w_p1 : {1'b0, s3_w[31:9], s3_w_b8};
+	wire [7:0]  s3_er = s3_mr0[24] ? s3_e_p1[7:0] : s3_e[7:0];
+	wire [22:0] s3_mr = s3_mr0[24] ? s3_mr0[23:1] : s3_mr0[22:0];
+	wire [31:0] s3_iv = !s3_nz ? {s3_s, 31'd0} : {s3_s, s3_er, s3_mr};
+	wire [31:0] s3_fl = s3_fl_nan ? 32'h7FC00000 : s3_fl_pass ? s3_xf_val : s3_iv;
+
+	/* Stage 3: f2i negation & saturation (pre=0, post=1 around CARRY4) */
+	wire [31:0] s3_f2i_neg;
+	wire carry_unused3_f2i;
+	am_sub #(.W(32)) u_f2i_neg3 (.a(32'd0), .b(s3_f2i_mag), .bi(1'b0), .d(s3_f2i_neg), .bo(carry_unused3_f2i));
+	wire s3_f2i_uns = (s3_op == OP_FCVTWUS);
+	wire s3_f2i_sat_s = s3_f2i_big || (!s3_f2i_s && s3_f2i_mag[31]) || (s3_f2i_s && s3_f2i_gt80);
+	wire [31:0] s3_ri = s3_f2i_uns ? (s3_f2i_s ? 32'd0 : s3_f2i_big ? 32'hFFFFFFFF : s3_f2i_mag) :
+		s3_f2i_sat_s ? (s3_f2i_s ? 32'h80000000 : 32'h7FFFFFFF) :
+		s3_f2i_s ? s3_f2i_neg : s3_f2i_mag;
+
+	/* Stage 3: FMA Alignment (0 CARRY4 on fma3_cw and fma3_t1 paths) */
+	(* keep = "true", max_fanout = 12 *) wire fract3 = (s3_op == OP_FRACT);
+	wire [31:0] s3_fract_c = {!s3_rint_fl[31], s3_rint_fl[30:0]};
+	wire [31:0] s3_fract_fma_c = s3_fract_c[30:23] == 8'd0 ? {s3_fract_c[31], 31'd0} : s3_fract_c;
+
+	wire [31:0] fma3_a = s3_fma_a;
+	wire [31:0] fma3_b = s3_fma_b;
+	wire [31:0] fma3_c = fract3 ? s3_fract_fma_c : s3_fma_c;
+	wire fma3_sp = fma3_a[31] ^ fma3_b[31];
+	wire fma3_sc = fma3_c[31];
+	wire fma3_rdn = s3_rr == 3'd2 || s3_rr == 3'd6;
+	(* keep = "true", max_fanout = 12 *) wire fma3_zc = s3_noc || (fract3 ? (!s3_fl_nan && (s3_fl_pass ? (s3_xf_val[30:23] == 8'd0) : !s3_nz)) : (s3_fma_c[30:23] == 8'd0));
+
+	wire [23:0] fma3_mc_fr = {1'b1, s3_fl_pass ? s3_xf_val[22:0] : s3_w[30:8]};
+
+	wire signed [11:0] s3_fma_ks = s3_fma_k;
+	(* keep = "true", max_fanout = 12 *) wire fma3_kbig = !(fract3 && s3_fract_ge1) && (s3_fma_ks > 12'sd49);
+	(* keep = "true", max_fanout = 12 *) wire fma3_kleft = s3_cs_left;
+	(* keep = "true", max_fanout = 12 *) wire fma3_kright = (fract3 && s3_fract_ge1) || (s3_fma_ks > -12'sd26);
+
+	wire [76:0] fma3_cs;
+	am_shift #(.W(77), .SW(7)) u_fma3_cs (.a({53'd0, s3_fma_mc_sh}), .amt(s3_cs_amt), .left(s3_cs_left), .arith(1'b0), .y(fma3_cs));
+	wire [23:0] fma3_cmk;
+	am_shift #(.W(24), .SW(5)) u_fma3_cmk (.a(24'hFFFFFF), .amt(s3_fma_rs), .left(1'b1), .arith(1'b0), .y(fma3_cmk));
+	wire fma3_cst = |(s3_fma_mc_sh & ~fma3_cmk);
+	(* keep = "true", max_fanout = 12 *) wire fma3_use_fr = !fma3_zc && fract3 && s3_fract_ge1;
+	wire [76:0] fma3_cw_fract_ge1 = s3_fract_inc ? {27'd0, fma3_mc_fr, 26'd0} : {28'd0, fma3_mc_fr, 25'd0};
+	wire [76:0] fma3_cw;
+	genvar gc3;
+	generate
+	for (gc3 = 0; gc3 < 5; gc3 = gc3 + 1) begin : g_fma3_cw
+		localparam CW_SL = (gc3 == 4) ? 13 : 16;
+		(* keep = "true" *) wire zc_sl = fma3_zc;
+		(* keep = "true" *) wire fr_sl = fma3_use_fr;
+		(* keep = "true" *) wire kb_sl = fma3_kbig;
+		(* keep = "true" *) wire kl_sl = fma3_kleft;
+		(* keep = "true" *) wire kr_sl = fma3_kright;
+		wire [76:0] cw_kb = {2'b00, s3_fma_mc_sh, 51'd0};
+		wire [76:0] cw_kr = {fma3_cs[76:1], fma3_cs[0] | fma3_cst};
+		wire [76:0] cw_one = 77'd1;
+		assign fma3_cw[gc3*16 +: CW_SL] = zc_sl ? {CW_SL{1'b0}} :
+			fr_sl ? fma3_cw_fract_ge1[gc3*16 +: CW_SL] :
+			kb_sl ? cw_kb[gc3*16 +: CW_SL] :
+			kl_sl ? fma3_cs[gc3*16 +: CW_SL] :
+			kr_sl ? cw_kr[gc3*16 +: CW_SL] : cw_one[gc3*16 +: CW_SL];
+	end
+	endgenerate
+	wire fma3_same = fma3_zc || (fma3_sp == fma3_sc);
+
+	/* Exact 0-CARRY4 replacement: ab + (c101 - ab) == c101 */
+	wire [11:0] fma3_t1 = (!fma3_zc && fma3_kbig) ? s3_fma_c101 : s3_fma_ab;
+
+	wire fma3_spec_hit = s3_spec_nan || s3_spec_inf_ab || s3_spec_inf_c || s3_spec_zero;
+	wire [31:0] fma3_spec_res =
+		s3_spec_nan ? 32'h7FC00000 :
+		s3_spec_inf_ab ? (s3_inf_c && fma3_sc != fma3_sp ? 32'h7FC00000 : {fma3_sp, 8'hFF, 23'd0}) :
+		s3_spec_inf_c ? fma3_c :
+		(!fma3_zc ? fma3_c : s3_noc ? {fma3_sp, 31'd0} : {fma3_rdn ? (fma3_sp | fma3_sc) : (fma3_sp & fma3_sc), 31'd0});
+
+	/* Stage 3: Pure-LUT fmin/fmax/fcmp using Stage 2 comparators (0 CARRY4) */
+	(* keep = "true", max_fanout = 12 *) wire s3_flt_ab = (s3_xf_val[31] && !s3_bf_val[31]) || (!s3_xf_val[31] && !s3_bf_val[31] && s3_ab_lt) ||
+		(s3_xf_val[31] && s3_bf_val[31] && s3_ba_lt);
+	(* keep = "true", max_fanout = 12 *) wire s3_flt_ba = (s3_bf_val[31] && !s3_xf_val[31]) || (!s3_bf_val[31] && !s3_xf_val[31] && s3_ba_lt) ||
+		(s3_bf_val[31] && s3_xf_val[31] && s3_ab_lt);
+	wire [31:0] s3_fmin = (s3_af_nan && s3_bf_nan) ? 32'h7FC00000 :
+		s3_af_nan ? s3_bf_val : s3_bf_nan ? s3_xf_val : (s3_flt_ba ? s3_bf_val : s3_xf_val);
+	wire [31:0] s3_fmax = (s3_af_nan && s3_bf_nan) ? 32'h7FC00000 :
+		s3_af_nan ? s3_bf_val : s3_bf_nan ? s3_xf_val : (s3_flt_ab ? s3_bf_val : s3_xf_val);
+	wire s3_un = s3_af_nan || s3_bf_nan;
+	wire s3_lt_cmp = !s3_ab_eq && s3_flt_ab;
+
+	reg [31:0] s3_other;
+	reg s3_is_flt;
+	always @(*) begin
+		s3_is_flt = 1'b1;
+		s3_other = 32'd0;
+		case (s3_op)
+		OP_FSGNJ:   s3_other = {s3_b[31], s3_a[30:0]};
+		OP_FMIN:    s3_other = s3_fmin;
+		OP_FMAX:    s3_other = s3_fmax;
+		OP_FCVTWS, OP_FCVTWUS: s3_other = s3_ri;
+		OP_FEQ:     s3_other = {32{!s3_un && s3_ab_eq}};
+		OP_FLT:     s3_other = {32{!s3_un && s3_lt_cmp}};
+		OP_FLE:     s3_other = {32{!s3_un && (s3_lt_cmp || s3_ab_eq)}};
+		OP_FNE:     s3_other = {32{s3_un || !s3_ab_eq}};
+		default: ;
+		endcase
+		case (s3_op)
+		OP_FCVTWS, OP_FCVTWUS, OP_FEQ, OP_FLT, OP_FLE, OP_FNE,
+		OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU: s3_is_flt = 1'b0;
+		default: ;
+		endcase
+	end
+
+	/* --- Stage 4 -> Stage 5 --- */
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [4:0] s4_op;
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [2:0] s4_rr;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s4_sat;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s4_other_pre;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s4_is_flt;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s4_iv;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s4_fl;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [76:0] s4_cw;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [11:0] s4_t1;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s4_same;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s4_sp;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s4_sc;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s4_rdn;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s4_zc;
+	(* shreg_extract = "no", max_fanout = 12 *) reg s4_kbig;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s4_spec_hit;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s4_spec_res;
+
+	always @(posedge clk) begin
+		if (rst_p) begin
+			s4_op        <= 5'd0;
+			s4_sat       <= 1'b0;
+			s4_rr        <= 3'd0;
+			s4_other_pre <= 32'd0;
+			s4_is_flt    <= 1'b0;
+			s4_iv        <= 32'd0;
+			s4_fl        <= 32'd0;
+			s4_cw        <= 77'd0;
+			s4_t1        <= 12'd0;
+			s4_same      <= 1'b0;
+			s4_sp        <= 1'b0;
+			s4_sc        <= 1'b0;
+			s4_rdn       <= 1'b0;
+			s4_zc        <= 1'b0;
+			s4_kbig      <= 1'b0;
+			s4_spec_hit  <= 1'b0;
+			s4_spec_res  <= 32'd0;
+		end else if (en) begin
+			s4_op        <= s3_op;
+			s4_sat       <= s3_sat;
+			s4_rr        <= s3_rr;
+			s4_other_pre <= s3_other;
+			s4_is_flt    <= s3_is_flt;
+			s4_iv        <= s3_iv;
+			s4_fl        <= s3_fl;
+			s4_cw        <= fma3_cw;
+			s4_t1        <= fma3_t1;
+			s4_same      <= fma3_same;
+			s4_sp        <= fma3_sp;
+			s4_sc        <= fma3_sc;
+			s4_rdn       <= fma3_rdn;
+			s4_zc        <= fma3_zc;
+			s4_kbig      <= fma3_kbig;
+			s4_spec_hit  <= fma3_spec_hit;
+			s4_spec_res  <= fma3_spec_res;
+		end
+	end
+
+	wire [76:0] s4_pw = (!s4_zc && s4_kbig) ? {76'd0, 1'b1} : {27'd0, pr_s4[47:0], 2'b00};
+	wire [76:0] s4_sum_p_c, s4_sum_c_p;
+	(* max_fanout = 16 *) wire s4_co_p_c;
+	wire carry_unused_c_p;
+
+	am_addsub #(.W(77)) u_fma_p_c (.a(s4_pw), .b(s4_cw), .sub(!s4_same), .s(s4_sum_p_c), .co(s4_co_p_c));
+	am_sub #(.W(77))    u_fma_c_p (.a(s4_cw), .b(s4_pw), .bi(1'b0),       .d(s4_sum_c_p), .bo(carry_unused_c_p));
+
+	(* max_fanout = 16 *) wire s4_pick_p_c = s4_same || s4_co_p_c;
+	wire [76:0] s4_sum = s4_pick_p_c ? s4_sum_p_c : s4_sum_c_p;
+	wire        s4_sr  = s4_pick_p_c ? s4_sp : s4_sc;
+	wire        s4_fma = (s4_op <= OP_FNMADD) || (s4_op == OP_FRACT);
+
+	/* Precompute block exponent bases eb0..eb5 in Stage 4 (pre=0, post=0 around CARRY4) */
+	wire [11:0] s4_eb0, s4_eb1, s4_eb2, s4_eb3, s4_eb4, s4_eb5;
+	wire [5:0]  carry_unused4_eb;
+	am_sub #(.W(12)) u_eb0 (.a(s4_t1), .b(12'd175), .bi(1'b0), .d(s4_eb0), .bo(carry_unused4_eb[0]));
+	am_sub #(.W(12)) u_eb1 (.a(s4_t1), .b(12'd159), .bi(1'b0), .d(s4_eb1), .bo(carry_unused4_eb[1]));
+	am_sub #(.W(12)) u_eb2 (.a(s4_t1), .b(12'd143), .bi(1'b0), .d(s4_eb2), .bo(carry_unused4_eb[2]));
+	am_sub #(.W(12)) u_eb3 (.a(s4_t1), .b(12'd127), .bi(1'b0), .d(s4_eb3), .bo(carry_unused4_eb[3]));
+	am_sub #(.W(12)) u_eb4 (.a(s4_t1), .b(12'd111), .bi(1'b0), .d(s4_eb4), .bo(carry_unused4_eb[4]));
+	am_sub #(.W(12)) u_eb5 (.a(s4_t1), .b(12'd95),  .bi(1'b0), .d(s4_eb5), .bo(carry_unused4_eb[5]));
+
+	/* --- Stage 5 -> Stage 6 --- */
+	(* shreg_extract = "no", max_fanout = 12 *) reg [63:0] s5_pr;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s5_other_pre;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s5_iv;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s5_fl;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [4:0] s5_op;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_fma;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_sat;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_flt;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [76:0] s5_sum;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_sr;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [3:0] s5_eb_lo;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [7:0]  s5_eb0_hi, s5_eb1_hi, s5_eb2_hi, s5_eb3_hi, s5_eb4_hi, s5_eb5_hi;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s5_rm;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_rdn;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_spec_hit;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s5_spec_res;
+
+	always @(posedge clk) begin
+		if (rst_p) begin
+			s5_pr        <= 64'd0;
+			s5_other_pre <= 32'd0;
+			s5_iv        <= 32'd0;
+			s5_fl        <= 32'd0;
+			s5_op        <= 5'd0;
+			s5_fma       <= 1'b0;
+			s5_sat       <= 1'b0;
+			s5_flt       <= 1'b0;
+			s5_sum       <= 77'd0;
+			s5_sr        <= 1'b0;
+			s5_eb_lo     <= 4'd0;
+			s5_eb0_hi    <= 8'd0;
+			s5_eb1_hi    <= 8'd0;
+			s5_eb2_hi    <= 8'd0;
+			s5_eb3_hi    <= 8'd0;
+			s5_eb4_hi    <= 8'd0;
+			s5_eb5_hi    <= 8'd0;
+			s5_rm        <= 3'd0;
+			s5_rdn       <= 1'b0;
+			s5_spec_hit  <= 1'b0;
+			s5_spec_res  <= 32'd0;
+		end else if (en) begin
+			s5_pr        <= pr_s4[63:0];
+			s5_other_pre <= s4_other_pre;
+			s5_iv        <= s4_iv;
+			s5_fl        <= s4_fl;
+			s5_op        <= s4_op;
+			s5_fma       <= s4_fma;
+			s5_sat       <= s4_sat;
+			s5_flt       <= s4_is_flt;
+			s5_sum       <= s4_sum;
+			s5_sr        <= s4_sr;
+			s5_eb_lo     <= s4_eb0[3:0];
+			s5_eb0_hi    <= s4_eb0[11:4];
+			s5_eb1_hi    <= s4_eb1[11:4];
+			s5_eb2_hi    <= s4_eb2[11:4];
+			s5_eb3_hi    <= s4_eb3[11:4];
+			s5_eb4_hi    <= s4_eb4[11:4];
+			s5_eb5_hi    <= s4_eb5[11:4];
+			s5_rm        <= s4_rr;
+			s5_rdn       <= s4_rdn;
+			s5_spec_hit  <= s4_spec_hit;
+			s5_spec_res  <= s4_sat ? f_sat(s4_spec_res) : s4_spec_res;
+		end
+	end
+
+	/* Stage 5: Level-pinned parallel per-block LOD + local normalization (0 CARRY4, strictly <= 4 LUTs) */
+	`define FPU_MSB16(B, X) \
+		(* keep = "true" *) wire B``_g3 = |(X[15:12]); \
+		(* keep = "true" *) wire B``_g2 = |(X[11:8]);  \
+		(* keep = "true" *) wire B``_g1 = |(X[7:4]);   \
+		(* keep = "true" *) wire B``_g0 = |(X[3:0]);   \
+		(* keep = "true", max_fanout = 16 *) wire nz_``B = B``_g3 || B``_g2 || B``_g1 || B``_g0; \
+		(* keep = "true", max_fanout = 16 *) wire [3:0] msb_``B; \
+		assign msb_``B[3] = B``_g3 || B``_g2; \
+		assign msb_``B[2] = B``_g3 || (!B``_g2 && B``_g1); \
+		wire [1:0] B``_m3 = X[15] ? 2'd3 : X[14] ? 2'd2 : X[13] ? 2'd1 : 2'd0; \
+		wire [1:0] B``_m2 = X[11] ? 2'd3 : X[10] ? 2'd2 : X[9]  ? 2'd1 : 2'd0; \
+		wire [1:0] B``_m1 = X[7]  ? 2'd3 : X[6]  ? 2'd2 : X[5]  ? 2'd1 : 2'd0; \
+		wire [1:0] B``_m0 = X[3]  ? 2'd3 : X[2]  ? 2'd2 : X[1]  ? 2'd1 : 2'd0; \
+		assign msb_``B[1:0] = B``_g3 ? B``_m3 : B``_g2 ? B``_m2 : B``_g1 ? B``_m1 : B``_m0;
+
+	wire [15:0] blk4_in = {3'd0, s5_sum[76:64]};
+	wire [15:0] blk3_in = s5_sum[63:48];
+	wire [15:0] blk2_in = s5_sum[47:32];
+	wire [15:0] blk1_in = s5_sum[31:16];
+	wire [15:0] blk0_in = s5_sum[15:0];
+
+	`FPU_MSB16(b4, blk4_in)
+	`FPU_MSB16(b3, blk3_in)
+	`FPU_MSB16(b2, blk2_in)
+	`FPU_MSB16(b1, blk1_in)
+	`FPU_MSB16(b0, blk0_in)
+	`undef FPU_MSB16
+
+	(* keep = "true", max_fanout = 16 *) wire b_sel1 = !nz_b4 && !nz_b3;
+	(* keep = "true", max_fanout = 16 *) wire b_sel0 = !nz_b4 && (nz_b3 || !nz_b2);
+	(* keep = "true" *) wire nz_b4321 = nz_b4 || nz_b3 || nz_b2 || nz_b1;
+	wire s5_sum_nz = nz_b4321 || nz_b0;
+
+	wire [39:0] win4 = {3'b000, s5_sum[76:40]};
+	wire [39:0] win3 = s5_sum[63:24];
+	wire [39:0] win2 = s5_sum[47:8];
+	wire [39:0] win1 = {s5_sum[31:0], 8'd0};
+	wire [39:0] win0 = {s5_sum[15:0], 24'd0};
+
+	`define FPU_RSH40(SH, W, AMT) \
+		(* keep = "true" *) wire [39:0] SH``_s1 = AMT[1] ? (AMT[0] ? {3'd0, W[39:3]} : {2'd0, W[39:2]}) : (AMT[0] ? {1'd0, W[39:1]} : W); \
+		(* keep = "true" *) wire [24:0] SH = AMT[3] ? (AMT[2] ? SH``_s1[36:12] : SH``_s1[32:8]) : (AMT[2] ? SH``_s1[28:4] : SH``_s1[24:0]);
+
+	`FPU_RSH40(win4_sh, win4, msb_b4)
+	`FPU_RSH40(win3_sh, win3, msb_b3)
+	`FPU_RSH40(win2_sh, win2, msb_b2)
+	`FPU_RSH40(win1_sh, win1, msb_b1)
+	`FPU_RSH40(win0_sh, win0, msb_b0)
+	`undef FPU_RSH40
+
+	/* 4:1 mux over b4..b1 in Level 4 (1 LUT6 per bit); Block 0 is folded into s6_ovr_res */
+	wire [24:0] s5_mg = b_sel1 ? (b_sel0 ? win1_sh : win2_sh) : (b_sel0 ? win3_sh : win4_sh);
+	wire [23:0] s5_m  = s5_mg[24:1];
+	wire        s5_g  = s5_mg[0];
+
+	/* Parallel per-block sticky bit (0 CARRY4, 4 LUTs total) */
+	(* keep = "true" *) wire st_b4 = (|(win4[14:0] & mask15_low(msb_b4))) || (|s5_sum[39:0]);
+	(* keep = "true" *) wire st_b3 = (|(win3[14:0] & mask15_low(msb_b3))) || (|s5_sum[23:0]);
+	(* keep = "true" *) wire st_b2 = (|(win2[14:0] & mask15_low(msb_b2))) || (|s5_sum[7:0]);
+	(* keep = "true" *) wire st_b1 = |(win1[14:0] & mask15_low(msb_b1));
+	wire s5_st = b_sel1 ? (b_sel0 ? st_b1 : st_b2) : (b_sel0 ? st_b3 : st_b4);
+
+	/* Parallel per-block exponent formation (0 CARRY4, 4 LUTs total) */
+	wire [4:0] lo0_b4 = add4_co(s5_eb_lo, msb_b4, 1'b0);
+	wire [4:0] lo0_b3 = add4_co(s5_eb_lo, msb_b3, 1'b0);
+	wire [4:0] lo0_b2 = add4_co(s5_eb_lo, msb_b2, 1'b0);
+	wire [4:0] lo0_b1 = add4_co(s5_eb_lo, msb_b1, 1'b0);
+	wire [4:0] lo0_b0 = add4_co(s5_eb_lo, msb_b0, 1'b0);
+
+	wire [4:0] lo1_b4 = add4_co(s5_eb_lo, msb_b4, 1'b1);
+	wire [4:0] lo1_b3 = add4_co(s5_eb_lo, msb_b3, 1'b1);
+	wire [4:0] lo1_b2 = add4_co(s5_eb_lo, msb_b2, 1'b1);
+	wire [4:0] lo1_b1 = add4_co(s5_eb_lo, msb_b1, 1'b1);
+
+	(* keep = "true" *) wire [11:0] er0_b4 = {lo0_b4[4] ? s5_eb5_hi : s5_eb4_hi, lo0_b4[3:0]};
+	(* keep = "true" *) wire [11:0] er0_b3 = {lo0_b3[4] ? s5_eb4_hi : s5_eb3_hi, lo0_b3[3:0]};
+	(* keep = "true" *) wire [11:0] er0_b2 = {lo0_b2[4] ? s5_eb3_hi : s5_eb2_hi, lo0_b2[3:0]};
+	(* keep = "true" *) wire [11:0] er0_b1 = {lo0_b1[4] ? s5_eb2_hi : s5_eb1_hi, lo0_b1[3:0]};
+	(* keep = "true" *) wire [11:0] er0_b0 = {lo0_b0[4] ? s5_eb1_hi : s5_eb0_hi, lo0_b0[3:0]};
+
+	(* keep = "true" *) wire [11:0] er1_b4 = {lo1_b4[4] ? s5_eb5_hi : s5_eb4_hi, lo1_b4[3:0]};
+	(* keep = "true" *) wire [11:0] er1_b3 = {lo1_b3[4] ? s5_eb4_hi : s5_eb3_hi, lo1_b3[3:0]};
+	(* keep = "true" *) wire [11:0] er1_b2 = {lo1_b2[4] ? s5_eb3_hi : s5_eb2_hi, lo1_b2[3:0]};
+	(* keep = "true" *) wire [11:0] er1_b1 = {lo1_b1[4] ? s5_eb2_hi : s5_eb1_hi, lo1_b1[3:0]};
+
+	wire [11:0] s5_er    = b_sel1 ? (b_sel0 ? er0_b1 : er0_b2) : (b_sel0 ? er0_b3 : er0_b4);
+	wire [11:0] s5_er_p1 = b_sel1 ? (b_sel0 ? er1_b1 : er1_b2) : (b_sel0 ? er1_b3 : er1_b4);
+
+	/* Block 0 exact result (low 24 bits of win0 are 0, so g=0, st=0, up=0, m_carry=0) */
+	wire b0_udf = er0_b0[11] || !(|er0_b0[10:0]);
+	wire b0_ovf = !er0_b0[11] && ((|er0_b0[10:8]) || (&er0_b0[7:0]));
+	wire b0_ge1 = !er0_b0[11] && ((|er0_b0[10:7]) || (&er0_b0[6:0]));
+	wire b0_ovf_max = (s5_rm == 3'd1 || s5_rm == 3'd5 || s5_rm == 3'd6 || (s5_rm == 3'd2 && !s5_sr) || (s5_rm == 3'd3 && s5_sr));
+	wire [31:0] b0_ovf_val = b0_ovf_max ? {s5_sr, 8'hFE, 23'h7FFFFF} : {s5_sr, 8'hFF, 23'd0};
+	(* keep = "true" *) wire [31:0] b0_res = s5_sat ?
+		((s5_sr || b0_udf) ? 32'd0 : (b0_ovf || b0_ge1) ? 32'h3F800000 : {1'b0, er0_b0[7:0], win0_sh[23:9], 8'd0}) :
+		(b0_ovf ? b0_ovf_val : b0_udf ? {s5_sr, 31'd0} : {s5_sr, er0_b0[7:0], win0_sh[23:9], 8'd0});
+
+	reg [31:0] s5_other_lat6;
+	always @(*) begin
+		s5_other_lat6 = s5_other_pre;
+		case (s5_op)
+		OP_FCVTSW, OP_FCVTSWU: s5_other_lat6 = s5_iv;
+		OP_FROUND:             s5_other_lat6 = s5_fl;
+		OP_MUL:                s5_other_lat6 = s5_pr[31:0];
+		OP_MULH, OP_MULHSU, OP_MULHU: s5_other_lat6 = s5_pr[63:32];
+		default: ;
+		endcase
+	end
+	(* keep = "true" *) wire [31:0] s5_other_final = (s5_sat && s5_flt) ? f_sat(s5_other_lat6) : s5_other_lat6;
+	wire [31:0] s5_zero_res = s5_sat ? 32'd0 : {s5_rdn, 31'd0};
+
+	wire s5_ovr_hit = !s5_fma || s5_spec_hit || !nz_b4321;
+	wire [31:0] s5_ovr_res = !s5_fma ? s5_other_final :
+		s5_spec_hit ? s5_spec_res :
+		nz_b0 ? b0_res : s5_zero_res;
+
+	/* Precompute 4-bit / 6-bit group ANDs in Stage 5 for 2-LUT Stage 6 adder */
+	wire [23:0] w4_m = win4_sh[24:1];
+	wire [23:0] w3_m = win3_sh[24:1];
+	wire [23:0] w2_m = win2_sh[24:1];
+	wire [23:0] w1_m = win1_sh[24:1];
+
+	(* keep = "true" *) wire p0_b4 = &w4_m[5:0],   p0_b3 = &w3_m[5:0],   p0_b2 = &w2_m[5:0],   p0_b1 = &w1_m[5:0];
+	(* keep = "true" *) wire p1_b4 = &w4_m[11:6],  p1_b3 = &w3_m[11:6],  p1_b2 = &w2_m[11:6],  p1_b1 = &w1_m[11:6];
+	(* keep = "true" *) wire p2_b4 = &w4_m[17:12], p2_b3 = &w3_m[17:12], p2_b2 = &w2_m[17:12], p2_b1 = &w1_m[17:12];
+	(* keep = "true" *) wire p3_b4 = &w4_m[23:18], p3_b3 = &w3_m[23:18], p3_b2 = &w2_m[23:18], p3_b1 = &w1_m[23:18];
+
+	(* keep = "true" *) wire q0_b4 = &w4_m[3:0],   q0_b3 = &w3_m[3:0],   q0_b2 = &w2_m[3:0],   q0_b1 = &w1_m[3:0];
+	(* keep = "true" *) wire q2_b4 = &w4_m[9:6],   q2_b3 = &w3_m[9:6],   q2_b2 = &w2_m[9:6],   q2_b1 = &w1_m[9:6];
+	(* keep = "true" *) wire q4_b4 = &w4_m[15:12], q4_b3 = &w3_m[15:12], q4_b2 = &w2_m[15:12], q4_b1 = &w1_m[15:12];
+	(* keep = "true" *) wire q6_b4 = &w4_m[21:18], q6_b3 = &w3_m[21:18], q6_b2 = &w2_m[21:18], q6_b1 = &w1_m[21:18];
+
+	wire s5_p0 = b_sel1 ? (b_sel0 ? p0_b1 : p0_b2) : (b_sel0 ? p0_b3 : p0_b4);
+	wire s5_p1 = b_sel1 ? (b_sel0 ? p1_b1 : p1_b2) : (b_sel0 ? p1_b3 : p1_b4);
+	wire s5_p2 = b_sel1 ? (b_sel0 ? p2_b1 : p2_b2) : (b_sel0 ? p2_b3 : p2_b4);
+	wire s5_p3 = b_sel1 ? (b_sel0 ? p3_b1 : p3_b2) : (b_sel0 ? p3_b3 : p3_b4);
+
+	wire s5_q0 = b_sel1 ? (b_sel0 ? q0_b1 : q0_b2) : (b_sel0 ? q0_b3 : q0_b4);
+	wire s5_q2 = b_sel1 ? (b_sel0 ? q2_b1 : q2_b2) : (b_sel0 ? q2_b3 : q2_b4);
+	wire s5_q4 = b_sel1 ? (b_sel0 ? q4_b1 : q4_b2) : (b_sel0 ? q4_b3 : q4_b4);
+	wire s5_q6 = b_sel1 ? (b_sel0 ? q6_b1 : q6_b2) : (b_sel0 ? q6_b3 : q6_b4);
+
+	(* keep = "true" *) wire g_m0_b4 = win4_sh[0] & win4_sh[1];
+	(* keep = "true" *) wire g_m0_b3 = win3_sh[0] & win3_sh[1];
+	(* keep = "true" *) wire g_m0_b2 = win2_sh[0] & win2_sh[1];
+	(* keep = "true" *) wire g_m0_b1 = win1_sh[0] & win1_sh[1];
+	wire s5_g_m0 = b_sel1 ? (b_sel0 ? g_m0_b1 : g_m0_b2) : (b_sel0 ? g_m0_b3 : g_m0_b4);
+
+	(* keep = "true" *) wire st_m0_b4 = st_b4 & win4_sh[1];
+	(* keep = "true" *) wire st_m0_b3 = st_b3 & win3_sh[1];
+	(* keep = "true" *) wire st_m0_b2 = st_b2 & win2_sh[1];
+	(* keep = "true" *) wire st_m0_b1 = st_b1 & win1_sh[1];
+	wire s5_st_m0 = b_sel1 ? (b_sel0 ? st_m0_b1 : st_m0_b2) : (b_sel0 ? st_m0_b3 : st_m0_b4);
+
+	/* --- Stage 6: 2-LUT Rounding & Final Mux (0 CARRY4) --- */
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s6_ovr_hit;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s6_ovr_res;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s6_sat;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [23:0] s6_m;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [11:0] s6_er, s6_er_p1;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s6_sr;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s6_g;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s6_st;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s6_rm;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s6_p0, s6_p1, s6_p2, s6_p3;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s6_q0, s6_q2, s6_q4, s6_q6;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s6_g_m0, s6_st_m0;
+
+	always @(posedge clk) begin
+		if (rst_p) begin
+			s6_ovr_hit <= 1'b0;
+			s6_ovr_res <= 32'd0;
+			s6_sat     <= 1'b0;
+			s6_m       <= 24'd0;
+			s6_er      <= 12'd0;
+			s6_er_p1   <= 12'd0;
+			s6_sr      <= 1'b0;
+			s6_g       <= 1'b0;
+			s6_st      <= 1'b0;
+			s6_rm      <= 3'd0;
+			s6_p0      <= 1'b0;
+			s6_p1      <= 1'b0;
+			s6_p2      <= 1'b0;
+			s6_p3      <= 1'b0;
+			s6_q0      <= 1'b0;
+			s6_q2      <= 1'b0;
+			s6_q4      <= 1'b0;
+			s6_q6      <= 1'b0;
+			s6_g_m0    <= 1'b0;
+			s6_st_m0   <= 1'b0;
+		end else if (en) begin
+			s6_ovr_hit <= s5_ovr_hit;
+			s6_ovr_res <= s5_ovr_res;
+			s6_sat     <= s5_sat;
+			s6_m       <= s5_m;
+			s6_er      <= s5_er;
+			s6_er_p1   <= s5_er_p1;
+			s6_sr      <= s5_sr;
+			s6_g       <= s5_g;
+			s6_st      <= s5_st;
+			s6_rm      <= s5_rm;
+			s6_p0      <= s5_p0;
+			s6_p1      <= s5_p1;
+			s6_p2      <= s5_p2;
+			s6_p3      <= s5_p3;
+			s6_q0      <= s5_q0;
+			s6_q2      <= s5_q2;
+			s6_q4      <= s5_q4;
+			s6_q6      <= s5_q6;
+			s6_g_m0    <= s5_g_m0;
+			s6_st_m0   <= s5_st_m0;
+		end
+	end
+
+	/* Stage 6 Level 1: all nodes depend on <= 6 FFs (strictly 1 LUT6) */
+	wire s6_gst = s6_g || s6_st;
+	reg s6_up_comb;
+	always @(*) begin
+		case (s6_rm)
+		3'd1, 3'd5, 3'd6: s6_up_comb = 1'b0;
+		3'd2: s6_up_comb = s6_sr && s6_gst;
+		3'd3: s6_up_comb = !s6_sr && s6_gst;
+		3'd4: s6_up_comb = s6_g;
+		default: s6_up_comb = s6_g && (s6_st || s6_m[0]);
+		endcase
+	end
+	(* keep = "true", max_fanout = 16 *) wire s6_up_l1 = s6_up_comb;
+
+	reg s6_c1_comb;
+	always @(*) begin
+		case (s6_rm)
+		3'd1, 3'd5, 3'd6: s6_c1_comb = 1'b0;
+		3'd2: s6_c1_comb = s6_sr && (s6_g_m0 || s6_st_m0);
+		3'd3: s6_c1_comb = !s6_sr && (s6_g_m0 || s6_st_m0);
+		3'd4: s6_c1_comb = s6_g_m0;
+		default: s6_c1_comb = s6_g_m0;
+		endcase
+	end
+	(* keep = "true" *) wire s6_c1_l1 = s6_c1_comb;
+
+	reg s6_m0_comb;
+	always @(*) begin
+		case (s6_rm)
+		3'd1: s6_m0_comb = s6_m[0];
+		3'd5, 3'd6: s6_m0_comb = s6_m[0] | s6_g | s6_st;
+		3'd2: s6_m0_comb = s6_m[0] ^ (s6_sr && (s6_g || s6_st));
+		3'd3: s6_m0_comb = s6_m[0] ^ (!s6_sr && (s6_g || s6_st));
+		3'd4: s6_m0_comb = s6_m[0] ^ s6_g;
+		default: s6_m0_comb = s6_m[0] ^ (s6_g && (s6_st || s6_m[0]));
+		endcase
+	end
+	(* keep = "true" *) wire s6_m0_l1 = s6_m0_comb;
+
+	(* keep = "true" *) wire s6_c4_l1      = s6_up_l1 & s6_q0;
+	(* keep = "true" *) wire s6_c7_l1      = s6_up_l1 & s6_p0 & s6_m[6];
+	(* keep = "true" *) wire s6_c10_l1     = s6_up_l1 & s6_p0 & s6_q2;
+	(* keep = "true" *) wire s6_c13_l1     = s6_up_l1 & s6_p0 & s6_p1 & s6_m[12];
+	(* keep = "true" *) wire s6_c16_l1     = s6_up_l1 & s6_p0 & s6_p1 & s6_q4;
+	(* keep = "true" *) wire s6_c19_l1     = s6_up_l1 & s6_p0 & s6_p1 & s6_p2 & s6_m[18];
+	(* keep = "true" *) wire s6_c22_l1     = s6_up_l1 & s6_p0 & s6_p1 & s6_p2 & s6_q6;
+	(* keep = "true", max_fanout = 16 *) wire s6_m_carry_l1 = s6_up_l1 & s6_p0 & s6_p1 & s6_p2 & s6_p3;
+
+	/* Exponent flags for s6_m_carry_l1 == 0 and s6_m_carry_l1 == 1 in Level 1 */
+	wire s6_ovf_0 = !s6_er[11]    && ((|s6_er[10:8])    || (&s6_er[7:0]));
+	wire s6_ovf_1 = !s6_er_p1[11] && ((|s6_er_p1[10:8]) || (&s6_er_p1[7:0]));
+	wire s6_udf_0 = s6_er[11]     || !(|s6_er[10:0]);
+	wire s6_udf_1 = s6_er_p1[11]  || !(|s6_er_p1[10:0]);
+	wire s6_ge1_0 = !s6_er[11]    && ((|s6_er[10:7])    || (&s6_er[6:0]));
+	wire s6_ge1_1 = !s6_er_p1[11] && ((|s6_er_p1[10:7]) || (&s6_er_p1[6:0]));
+
+	(* keep = "true" *) wire s6_e0_hi_f = s6_er[11]    || (|s6_er[10:7]);
+	(* keep = "true" *) wire s6_e0_lo_f = s6_er[11]    || (|s6_er[10:8])    || (s6_er[6:0] == 7'h7F) || (!s6_er[7] && (s6_er[6:0] == 7'd0));
+	(* keep = "true" *) wire s6_e1_hi_f = s6_er_p1[11] || (|s6_er_p1[10:7]);
+	(* keep = "true" *) wire s6_e1_lo_f = s6_er_p1[11] || (|s6_er_p1[10:8]) || (s6_er_p1[6:0] == 7'h7F) || (!s6_er_p1[7] && (s6_er_p1[6:0] == 7'd0));
+
+	wire s6_ovf_max = (s6_rm == 3'd1 || s6_rm == 3'd5 || s6_rm == 3'd6 || (s6_rm == 3'd2 && !s6_sr) || (s6_rm == 3'd3 && s6_sr));
+	wire [8:0] s6_ovf_hdr0 = s6_ovf_max ? {s6_sr, 8'hFE} : {s6_sr, 8'hFF};
+
+	(* keep = "true" *) wire [8:0] s6_hdr_0_l1 = s6_sat ?
+		((s6_sr || s6_udf_0) ? 9'd0 : (s6_ovf_0 || s6_ge1_0) ? 9'h07F : {1'b0, s6_er[7:0]}) :
+		(s6_ovf_0 ? s6_ovf_hdr0 : s6_udf_0 ? {s6_sr, 8'd0} : {s6_sr, s6_er[7:0]});
+
+	/* Note: when s6_m_carry_l1 == 1, s6_up_l1 == 1 so s6_ovf_max is ALWAYS 0 */
+	(* keep = "true" *) wire [8:0] s6_hdr_1_l1 = s6_sat ?
+		((s6_sr || s6_udf_1) ? 9'd0 : (s6_ovf_1 || s6_ge1_1) ? 9'h07F : {1'b0, s6_er_p1[7:0]}) :
+		(s6_ovf_1 ? {s6_sr, 8'hFF} : s6_udf_1 ? {s6_sr, 8'd0} : {s6_sr, s6_er_p1[7:0]});
+
+	/* Mantissa control decoded into 2 bits: 00 = m_rnd, 01 = 0, 10 = all-1s (ovf_max) */
+	wire s6_zero_m0 = s6_sat ? (s6_sr || s6_udf_0 || s6_ovf_0 || s6_ge1_0) : (s6_udf_0 || (s6_ovf_0 && !s6_ovf_max));
+	wire s6_ones_m0 = !s6_sat && s6_ovf_0 && s6_ovf_max;
+	(* keep = "true", max_fanout = 16 *) wire s6_mc_zero_l1 = !s6_ovr_hit && s6_zero_m0;
+	(* keep = "true", max_fanout = 16 *) wire s6_mc_ovr_l1  = s6_ovr_hit || s6_ones_m0;
+
+	/* Stage 6 Level 2: final 32-bit output (strictly <= 6 Level-1 inputs per bit = 1 LUT6) */
+	wire [22:0] s6_m_rnd;
+	assign s6_m_rnd[0]  = s6_m0_l1;
+	assign s6_m_rnd[1]  = s6_m[1]  ^ s6_c1_l1;
+	assign s6_m_rnd[2]  = s6_m[2]  ^ (s6_c1_l1  & s6_m[1]);
+	assign s6_m_rnd[3]  = s6_m[3]  ^ (s6_c1_l1  & s6_m[1]  & s6_m[2]);
+	assign s6_m_rnd[4]  = s6_m[4]  ^ s6_c4_l1;
+	assign s6_m_rnd[5]  = s6_m[5]  ^ (s6_c4_l1  & s6_m[4]);
+	assign s6_m_rnd[6]  = s6_m[6]  ^ (s6_c4_l1  & s6_m[4]  & s6_m[5]);
+	assign s6_m_rnd[7]  = s6_m[7]  ^ s6_c7_l1;
+	assign s6_m_rnd[8]  = s6_m[8]  ^ (s6_c7_l1  & s6_m[7]);
+	assign s6_m_rnd[9]  = s6_m[9]  ^ (s6_c7_l1  & s6_m[7]  & s6_m[8]);
+	assign s6_m_rnd[10] = s6_m[10] ^ s6_c10_l1;
+	assign s6_m_rnd[11] = s6_m[11] ^ (s6_c10_l1 & s6_m[10]);
+	assign s6_m_rnd[12] = s6_m[12] ^ (s6_c10_l1 & s6_m[10] & s6_m[11]);
+	assign s6_m_rnd[13] = s6_m[13] ^ s6_c13_l1;
+	assign s6_m_rnd[14] = s6_m[14] ^ (s6_c13_l1 & s6_m[13]);
+	assign s6_m_rnd[15] = s6_m[15] ^ (s6_c13_l1 & s6_m[13] & s6_m[14]);
+	assign s6_m_rnd[16] = s6_m[16] ^ s6_c16_l1;
+	assign s6_m_rnd[17] = s6_m[17] ^ (s6_c16_l1 & s6_m[16]);
+	assign s6_m_rnd[18] = s6_m[18] ^ (s6_c16_l1 & s6_m[16] & s6_m[17]);
+	assign s6_m_rnd[19] = s6_m[19] ^ s6_c19_l1;
+	assign s6_m_rnd[20] = s6_m[20] ^ (s6_c19_l1 & s6_m[19]);
+	assign s6_m_rnd[21] = s6_m[21] ^ (s6_c19_l1 & s6_m[19] & s6_m[20]);
+	assign s6_m_rnd[22] = s6_m[22] ^ s6_c22_l1;
+
+	wire [8:0]  res_hdr = s6_ovr_hit ? s6_ovr_res[31:23] : (s6_m_carry_l1 ? s6_hdr_1_l1 : s6_hdr_0_l1);
+	wire [22:0] res_man = s6_mc_zero_l1 ? 23'd0 :
+		(s6_mc_ovr_l1 ? (s6_ovr_hit ? s6_ovr_res[22:0] : 23'h7FFFFF) : s6_m_rnd);
+	assign res = {res_hdr, res_man};
+
+	wire unused_core_ok = &{1'b0, carry_unused0_neg, carry_unused1_qp1, s1_fma_carry_unused,
+		unused_ab_d2, unused_ba_d2, s2_fma_sub_carry_unused,
+		carry_unused3_mr, carry_unused3_f2i,
+		carry_unused_c_p, carry_unused4_eb,
+		s3_e[11:8], s3_e_p1[11:8], pr_s4[65:64],
+		win0_sh[24], win0_sh[8:0],
+		s6_e0_hi_f, s6_e0_lo_f, s6_e1_hi_f, s6_e1_lo_f};
+endmodule
+
 module atg_su_fpu #(
 	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
 	parameter NWARPS = 4,	/* Resident warps (slots): 2, 4 or 8 */
@@ -97,23 +1341,25 @@ module atg_su_fpu #(
 
 	localparam SH = PK_SHARED != 0 && PACKED != 0;
 
+	(* keep = "true" *) wire rst_p = !rst_n;
+
 	/* busy: the cycle of the high halves of a packed group (PK_SHARED). */
-	reg busy;
-	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_FPU && x_uop[ATG_UOP_WRD] && !busy;
-	wire [4:0] op = x_uop[ATG_UOP_OP +: 5];
-	wire [2:0] rm = x_uop[ATG_UOP_RM +: 3];
-	wire sat = x_uop[ATG_UOP_MOD + 6];
+	(* max_fanout = 12 *) reg busy;
+	(* max_fanout = 12 *) wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_FPU && x_uop[ATG_UOP_WRD] && !busy;
+	(* max_fanout = 12 *) wire [4:0] op = x_uop[ATG_UOP_OP +: 5];
+	(* max_fanout = 12 *) wire [2:0] rm = x_uop[ATG_UOP_RM +: 3];
+	(* max_fanout = 12 *) wire sat = x_uop[ATG_UOP_MOD + 6];
 	/* A packed fp16 operation taken (PK_SHARED). */
-	wire [3:0] pop = x_uop[ATG_UOP_OP +: 4];
+	(* max_fanout = 12 *) wire [3:0] pop = x_uop[ATG_UOP_OP +: 4];
 	wire pk_fp = pop <= ATG_PK_FMAX2[3:0] || (pop >= ATG_PK_FCMPLT2[3:0] && pop <= ATG_PK_FCMPNE2[3:0]);
-	wire mine_pk = SH && x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_PK && x_uop[ATG_UOP_WRD] &&
+	(* max_fanout = 12 *) wire mine_pk = SH && x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_PK && x_uop[ATG_UOP_WRD] &&
 		pk_fp && !busy;
-	wire [1:0] hsel = x_uop[ATG_UOP_HSEL +: 2];
+	(* max_fanout = 12 *) wire [1:0] hsel = x_uop[ATG_UOP_HSEL +: 2];
 	/* The high halves' operation and operands, kept for the busy cycle. */
-	reg [3:0] k_op;
-	reg [2:0] k_rm;
-	reg [1:0] k_hs;
-	reg k_sat;
+	(* max_fanout = 12 *) reg [3:0] k_op;
+	(* max_fanout = 12 *) reg [2:0] k_rm;
+	(* max_fanout = 12 *) reg [1:0] k_hs;
+	(* max_fanout = 12 *) reg k_sat;
 	reg [NPHYS*16-1:0] k_a, k_b, k_c;
 
 
@@ -142,229 +1388,202 @@ module atg_su_fpu #(
 	genvar gl;
 	generate
 	for (gl = 0; gl < NPHYS; gl = gl + 1) begin : g_lane
-		/* the packed halves (kept ones in the busy cycle), to fp32 */
-		wire [3:0] po = busy ? k_op : pop;
-		wire [15:0] bsw = hsel == 2'd3 ? x_b[gl*32 + 16 +: 16] : x_b[gl*32 +: 16];
-		wire [15:0] ha = busy ? k_a[gl*16 +: 16] : x_a[gl*32 +: 16];
-		wire [15:0] hb = busy ? k_b[gl*16 +: 16] : bsw;
-		wire [15:0] hc = busy ? k_c[gl*16 +: 16] : x_c[gl*32 +: 16];
-		wire [31:0] fa, fb, fc;
-		am_fp_h2f #(.DENORM(0), .LAT(0)) u_ha (.h(po == ATG_PK_FCMPGE2[3:0] ? hb : ha), .f(fa));
-		am_fp_h2f #(.DENORM(0), .LAT(0)) u_hb (.h(po == ATG_PK_FCMPGE2[3:0] ? ha : hb), .f(fb));
-		am_fp_h2f #(.DENORM(0), .LAT(0)) u_hc (.h(hc), .f(fc));
-		wire pk = SH && (busy || mine_pk);
-		wire [4:0] lo = pk ? pkop(po) : op;
-		wire [31:0] la = pk ? fa : x_a[gl*32 +: 32];
-		wire [31:0] lb = pk ? fb : x_b[gl*32 +: 32];
-		wire [31:0] lc = pk ? fc : x_c[gl*32 +: 32];
-		wire [2:0] lr = pk ? ((busy ? k_rm : rm) == 3'd2 ? 3'd6 : 3'd5) : rm;
 		wire [31:0] res;
-		am_fpu_core #(.LAT(SH ? 4 : 6)) u_core (
-			.clk(clk),
-			.rst_n(rst_n),
-			.en(en),
-			.op(lo),
-			.rm(lr),
-			.sat(!pk && sat),
-			.a(la),
-			.b(lb),
-			.c(lc),
-			.res(res)
-		);
+		if (SH) begin : g_core_sh
+			/* the packed halves (kept ones in the busy cycle), to fp32 */
+			wire [3:0] po = busy ? k_op : pop;
+			wire [15:0] bsw = hsel == 2'd3 ? x_b[gl*32 + 16 +: 16] : x_b[gl*32 +: 16];
+			wire [15:0] ha = busy ? k_a[gl*16 +: 16] : x_a[gl*32 +: 16];
+			wire [15:0] hb = busy ? k_b[gl*16 +: 16] : bsw;
+			wire [15:0] hc = busy ? k_c[gl*16 +: 16] : x_c[gl*32 +: 16];
+			wire [31:0] fa, fb, fc;
+			am_fp_h2f #(.DENORM(0), .LAT(0)) u_ha (.h(po == ATG_PK_FCMPGE2[3:0] ? hb : ha), .f(fa));
+			am_fp_h2f #(.DENORM(0), .LAT(0)) u_hb (.h(po == ATG_PK_FCMPGE2[3:0] ? ha : hb), .f(fb));
+			am_fp_h2f #(.DENORM(0), .LAT(0)) u_hc (.h(hc), .f(fc));
+			wire pk = busy || mine_pk;
+			wire [4:0] lo = pk ? pkop(po) : op;
+			wire [31:0] la = pk ? fa : x_a[gl*32 +: 32];
+			wire [31:0] lb = pk ? fb : x_b[gl*32 +: 32];
+			wire [31:0] lc = pk ? fc : x_c[gl*32 +: 32];
+			wire [2:0] lr = pk ? ((busy ? k_rm : rm) == 3'd2 ? 3'd6 : 3'd5) : rm;
+			am_fpu_core #(.LAT(4)) u_core (
+				.clk(clk),
+				.rst_n(rst_n),
+				.en(en),
+				.op(lo),
+				.rm(lr),
+				.sat(!pk && sat),
+				.a(la),
+				.b(lb),
+				.c(lc),
+				.res(res)
+			);
+		end else begin : g_core_nosh
+			atg_su_fpu_core u_core (
+				.clk(clk),
+				.rst_n(rst_n),
+				.en(en),
+				.op(op),
+				.rm(rm),
+				.sat(sat),
+				.a(x_a[gl*32 +: 32]),
+				.b(x_b[gl*32 +: 32]),
+				.c(x_c[gl*32 +: 32]),
+				.res(res)
+			);
+		end
 		assign fpu_res[gl*32 +: 32] = res;
 	end
 	endgenerate
 
-	/* Pipeline control registers for Stages 1 to 4 */
-	reg s1_valid, s2_valid, s3_valid, s4_valid;
-	reg [WARP_W-1:0] s1_warp, s2_warp, s3_warp, s4_warp;
-	reg [GRP_W-1:0]  s1_grp,  s2_grp,  s3_grp,  s4_grp;
-	reg [6:0]        s1_rd,   s2_rd,   s3_rd,   s4_rd;
-	reg [NPHYS-1:0]  s1_mask, s2_mask, s3_mask, s4_mask;
-	reg s1_pk, s2_pk, s3_pk, s4_pk;
-	reg [1:0] s1_hsel, s2_hsel, s3_hsel, s4_hsel;
-	reg s1_sat, s2_sat, s3_sat, s4_sat;
-	reg [3:0] s1_pop, s2_pop, s3_pop, s4_pop;
-	reg [2:0] s1_rm, s2_rm, s3_rm, s4_rm;
-	reg [NPHYS*16-1:0] s1_xa, s2_xa, s3_xa, s4_xa;
-	reg s1_busy, s2_busy, s3_busy, s4_busy;
-	reg [3:0] s1_k_op, s2_k_op, s3_k_op, s4_k_op;
-	reg [2:0] s1_k_rm, s2_k_rm, s3_k_rm, s4_k_rm;
-	reg [1:0] s1_k_hs, s2_k_hs, s3_k_hs, s4_k_hs;
-	reg s1_k_sat, s2_k_sat, s3_k_sat, s4_k_sat;
-	reg [NPHYS*16-1:0] s1_k_a, s2_k_a, s3_k_a, s4_k_a;
+	/* Pipeline control registers for Stages 1 to 6 */
+	(* shreg_extract = "no", max_fanout = 12 *) reg s1_valid, s2_valid, s3_valid, s4_valid, s5_valid, s6_valid;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [WARP_W-1:0] s1_warp, s2_warp, s3_warp, s4_warp, s5_warp, s6_warp;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [GRP_W-1:0]  s1_grp,  s2_grp,  s3_grp,  s4_grp,  s5_grp,  s6_grp;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [6:0]        s1_rd,   s2_rd,   s3_rd,   s4_rd,   s5_rd,   s6_rd;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [NPHYS-1:0]  s1_mask, s2_mask, s3_mask, s4_mask, s5_mask, s6_lanes;
 
-	integer p;
 	always @(posedge clk) begin
-		if (!rst_n) begin
-			s1_valid <= 1'b0; s2_valid <= 1'b0; s3_valid <= 1'b0; s4_valid <= 1'b0;
-			s1_warp  <= 0;    s2_warp  <= 0;    s3_warp  <= 0;    s4_warp  <= 0;
-			s1_grp   <= 0;    s2_grp   <= 0;    s3_grp   <= 0;    s4_grp   <= 0;
-			s1_rd    <= 0;    s2_rd    <= 0;    s3_rd    <= 0;    s4_rd    <= 0;
-			s1_mask  <= 0;    s2_mask  <= 0;    s3_mask  <= 0;    s4_mask  <= 0;
-			s1_pk    <= 0;    s2_pk    <= 0;    s3_pk    <= 0;    s4_pk    <= 0;
-			s1_hsel  <= 0;    s2_hsel  <= 0;    s3_hsel  <= 0;    s4_hsel  <= 0;
-			s1_sat   <= 0;    s2_sat   <= 0;    s3_sat   <= 0;    s4_sat   <= 0;
-			s1_pop   <= 0;    s2_pop   <= 0;    s3_pop   <= 0;    s4_pop   <= 0;
-			s1_rm    <= 0;    s2_rm    <= 0;    s3_rm    <= 0;    s4_rm    <= 0;
-			s1_xa    <= 0;    s2_xa    <= 0;    s3_xa    <= 0;    s4_xa    <= 0;
-			s1_busy  <= 0;    s2_busy  <= 0;    s3_busy  <= 0;    s4_busy  <= 0;
-			s1_k_op  <= 0;    s2_k_op  <= 0;    s3_k_op  <= 0;    s4_k_op  <= 0;
-			s1_k_rm  <= 0;    s2_k_rm  <= 0;    s3_k_rm  <= 0;    s4_k_rm  <= 0;
-			s1_k_hs  <= 0;    s2_k_hs  <= 0;    s3_k_hs  <= 0;    s4_k_hs  <= 0;
-			s1_k_sat <= 0;    s2_k_sat <= 0;    s3_k_sat <= 0;    s4_k_sat <= 0;
-			s1_k_a   <= 0;    s2_k_a   <= 0;    s3_k_a   <= 0;    s4_k_a   <= 0;
+		if (rst_p) begin
+			s1_valid <= 1'b0; s2_valid <= 1'b0; s3_valid <= 1'b0; s4_valid <= 1'b0; s5_valid <= 1'b0; s6_valid <= 1'b0;
+			s1_warp  <= 0;    s2_warp  <= 0;    s3_warp  <= 0;    s4_warp  <= 0;    s5_warp  <= 0;    s6_warp  <= 0;
+			s1_grp   <= 0;    s2_grp   <= 0;    s3_grp   <= 0;    s4_grp   <= 0;    s5_grp   <= 0;    s6_grp   <= 0;
+			s1_rd    <= 0;    s2_rd    <= 0;    s3_rd    <= 0;    s4_rd    <= 0;    s5_rd    <= 0;    s6_rd    <= 0;
+			s1_mask  <= 0;    s2_mask  <= 0;    s3_mask  <= 0;    s4_mask  <= 0;    s5_mask  <= 0;    s6_lanes <= 0;
 		end else if (en) begin
 			s1_valid <= mine || mine_pk;
 			s1_warp  <= x_warp;
 			s1_grp   <= x_grp;
 			s1_rd    <= x_uop[ATG_UOP_RD +: 7];
 			s1_mask  <= x_mask[NPHYS-1:0];
-			s1_pk    <= SH && mine_pk;
-			s1_hsel  <= hsel;
-			s1_sat   <= sat;
-			s1_pop   <= pop;
-			s1_rm    <= rm;
-			for (p = 0; p < NPHYS; p = p + 1)
-				s1_xa[p*16 +: 16] <= x_a[p*32 +: 16];
-			s1_busy  <= busy;
-			s1_k_op  <= pop;
-			s1_k_rm  <= rm;
-			s1_k_hs  <= hsel;
-			s1_k_sat <= sat;
-			for (p = 0; p < NPHYS; p = p + 1)
-				s1_k_a[p*16 +: 16] <= x_a[p*32 + 16 +: 16];
 
-			s2_valid <= s1_valid; s2_warp <= s1_warp; s2_grp <= s1_grp; s2_rd <= s1_rd;
-			s2_mask  <= s1_mask;  s2_pk   <= s1_pk;   s2_hsel <= s1_hsel; s2_sat <= s1_sat;
-			s2_pop   <= s1_pop;   s2_rm   <= s1_rm;   s2_xa   <= s1_xa;   s2_busy <= s1_busy;
-			s2_k_op  <= s1_k_op;  s2_k_rm <= s1_k_rm; s2_k_hs <= s1_k_hs; s2_k_sat <= s1_k_sat;
-			s2_k_a   <= s1_k_a;
-
-			s3_valid <= s2_valid; s3_warp <= s2_warp; s3_grp <= s2_grp; s3_rd <= s2_rd;
-			s3_mask  <= s2_mask;  s3_pk   <= s2_pk;   s3_hsel <= s2_hsel; s3_sat <= s2_sat;
-			s3_pop   <= s2_pop;   s3_rm   <= s2_rm;   s3_xa   <= s2_xa;   s3_busy <= s2_busy;
-			s3_k_op  <= s2_k_op;  s3_k_rm <= s2_k_rm; s3_k_hs <= s2_k_hs; s3_k_sat <= s2_k_sat;
-			s3_k_a   <= s2_k_a;
-
-			s4_valid <= s3_valid; s4_warp <= s3_warp; s4_grp <= s3_grp; s4_rd <= s3_rd;
-			s4_mask  <= s3_mask;  s4_pk   <= s3_pk;   s4_hsel <= s3_hsel; s4_sat <= s3_sat;
-			s4_pop   <= s3_pop;   s4_rm   <= s3_rm;   s4_xa   <= s3_xa;   s4_busy <= s3_busy;
-			s4_k_op  <= s3_k_op;  s4_k_rm <= s3_k_rm; s4_k_hs <= s3_k_hs; s4_k_sat <= s3_k_sat;
-			s4_k_a   <= s3_k_a;
+			s2_valid <= s1_valid; s2_warp <= s1_warp; s2_grp <= s1_grp; s2_rd <= s1_rd; s2_mask  <= s1_mask;
+			s3_valid <= s2_valid; s3_warp <= s2_warp; s3_grp <= s2_grp; s3_rd <= s2_rd; s3_mask  <= s2_mask;
+			s4_valid <= s3_valid; s4_warp <= s3_warp; s4_grp <= s3_grp; s4_rd <= s3_rd; s4_mask  <= s3_mask;
+			s5_valid <= s4_valid; s5_warp <= s4_warp; s5_grp <= s4_grp; s5_rd <= s4_rd; s5_mask  <= s4_mask;
+			s6_valid <= s5_valid; s6_warp <= s5_warp; s6_grp <= s5_grp; s6_rd <= s5_rd; s6_lanes <= s5_mask;
 		end
 	end
 
-	/* Stage 4: fp16 formatting and rounding */
-	reg s5_pk;
-	reg [3:0] s5_k_op;
-	reg [2:0] s5_k_rm;
-	reg       s5_k_sat;
-	wire [NPHYS*16-1:0] pko_comb;
-	genvar g4;
 	generate
-	for (g4 = 0; g4 < NPHYS; g4 = g4 + 1) begin : g_pko
-		wire [31:0] res4 = fpu_res[g4*32 +: 32];
-		wire [3:0] po4 = s5_pk ? s5_k_op : s4_pop;
-		wire [2:0] hr4 = s5_pk ? s5_k_rm : s4_rm;
-		wire sat4 = s5_pk ? s5_k_sat : s4_sat;
-		wire [9:0] he4;
-		wire he4_bo;
-		wire [15:0] hn4;
-		am_sub #(.W(10)) u_he (.a({2'd0, res4[30:23]}), .b(10'd112), .bi(1'b0), .d(he4), .bo(he4_bo));
-		am_fp_hrnd #(.LAT(0)) u_hn (.s(res4[31]), .e(he4), .m({1'b1, res4[22:13]}), .g(res4[12]), .st(|res4[11:0]),
-			.rm(hr4), .h(hn4));
-		wire [15:0] f2h4 = res4[30:23] == 8'hFF ? (res4[22:0] != 0 ? 16'h7E00 : {res4[31], 5'h1F, 10'd0}) :
-			res4[30:23] == 8'd0 ? {res4[31], 15'd0} : hn4;
-		wire [15:0] ph4 = po4 >= ATG_PK_FCMPLT2[3:0] ? res4[15:0] : f2h4;
-		wire [15:0] pko4 = sat4 && po4 < ATG_PK_FCMPLT2[3:0] ? atg_su_hsat(ph4) : ph4;
-		assign pko_comb[g4*16 +: 16] = pko4;
-		wire unused_he4 = &{1'b0, he4_bo};
-	end
-	endgenerate
+	if (SH) begin : g_sh_pipe
+		(* shreg_extract = "no", max_fanout = 12 *) reg s1_pk, s2_pk, s3_pk, s4_pk, s5_pk, s6_pk;
+		(* shreg_extract = "no", max_fanout = 12 *) reg [1:0] s1_hsel, s2_hsel, s3_hsel, s4_hsel;
+		(* shreg_extract = "no", max_fanout = 12 *) reg s1_sat, s2_sat, s3_sat, s4_sat;
+		(* shreg_extract = "no", max_fanout = 12 *) reg [3:0] s1_pop, s2_pop, s3_pop, s4_pop;
+		(* shreg_extract = "no", max_fanout = 12 *) reg [2:0] s1_rm, s2_rm, s3_rm, s4_rm;
+		(* shreg_extract = "no" *) reg [NPHYS*16-1:0] s1_xa, s2_xa, s3_xa, s4_xa;
+		(* shreg_extract = "no", max_fanout = 12 *) reg s1_busy, s2_busy, s3_busy, s4_busy;
+		(* shreg_extract = "no", max_fanout = 12 *) reg [3:0] s1_k_op, s2_k_op, s3_k_op, s4_k_op, s5_k_op;
+		(* shreg_extract = "no", max_fanout = 12 *) reg [2:0] s1_k_rm, s2_k_rm, s3_k_rm, s4_k_rm, s5_k_rm;
+		(* shreg_extract = "no", max_fanout = 12 *) reg [1:0] s1_k_hs, s2_k_hs, s3_k_hs, s4_k_hs, s5_k_hs;
+		(* shreg_extract = "no", max_fanout = 12 *) reg s1_k_sat, s2_k_sat, s3_k_sat, s4_k_sat, s5_k_sat;
+		(* shreg_extract = "no" *) reg [NPHYS*16-1:0] s1_k_a, s2_k_a, s3_k_a, s4_k_a, s5_k_a;
+		(* shreg_extract = "no" *) reg [DW-1:0] s5_data;
+		(* shreg_extract = "no", max_fanout = 12 *) reg [DW-1:0] s6_data;
 
-	/* Stage 5 & 6 registers */
-	reg s5_valid;
-	reg [WARP_W-1:0] s5_warp;
-	reg [GRP_W-1:0]  s5_grp;
-	reg [6:0]        s5_rd;
-	reg [NPHYS-1:0]  s5_mask;
-	reg [1:0] s5_k_hs;
-	reg [NPHYS*16-1:0] s5_k_a;
-	reg [DW-1:0] s5_data;
+		wire [NPHYS*16-1:0] pko_comb;
+		genvar g4;
+		for (g4 = 0; g4 < NPHYS; g4 = g4 + 1) begin : g_pko
+			wire [31:0] res4 = fpu_res[g4*32 +: 32];
+			wire [3:0] po4 = s5_pk ? s5_k_op : s4_pop;
+			wire [2:0] hr4 = s5_pk ? s5_k_rm : s4_rm;
+			wire sat4 = s5_pk ? s5_k_sat : s4_sat;
+			wire [9:0] he4;
+			wire he4_bo;
+			wire [15:0] hn4;
+			am_sub #(.W(10)) u_he (.a({2'd0, res4[30:23]}), .b(10'd112), .bi(1'b0), .d(he4), .bo(he4_bo));
+			am_fp_hrnd #(.LAT(0)) u_hn (.s(res4[31]), .e(he4), .m({1'b1, res4[22:13]}), .g(res4[12]), .st(|res4[11:0]),
+				.rm(hr4), .h(hn4));
+			wire [15:0] f2h4 = res4[30:23] == 8'hFF ? (res4[22:0] != 0 ? 16'h7E00 : {res4[31], 5'h1F, 10'd0}) :
+				res4[30:23] == 8'd0 ? {res4[31], 15'd0} : hn4;
+			wire [15:0] ph4 = po4 >= ATG_PK_FCMPLT2[3:0] ? res4[15:0] : f2h4;
+			wire [15:0] pko4 = sat4 && po4 < ATG_PK_FCMPLT2[3:0] ? atg_su_hsat(ph4) : ph4;
+			assign pko_comb[g4*16 +: 16] = pko4;
+			wire unused_he4 = &{1'b0, he4_bo, s1_busy, s2_busy, s3_busy, s4_busy, s6_pk};
+		end
 
-	reg s6_valid;
-	reg [WARP_W-1:0] s6_warp;
-	reg [GRP_W-1:0]  s6_grp;
-	reg [6:0]        s6_rd;
-	reg [NPHYS-1:0]  s6_lanes;
-	reg              s6_pk;
-	reg [DW-1:0]     s6_data;
+		integer p, i5;
+		always @(posedge clk) begin
+			if (rst_p) begin
+				s1_pk    <= 0; s2_pk    <= 0; s3_pk    <= 0; s4_pk    <= 0; s5_pk    <= 0; s6_pk <= 0;
+				s1_hsel  <= 0; s2_hsel  <= 0; s3_hsel  <= 0; s4_hsel  <= 0;
+				s1_sat   <= 0; s2_sat   <= 0; s3_sat   <= 0; s4_sat   <= 0;
+				s1_pop   <= 0; s2_pop   <= 0; s3_pop   <= 0; s4_pop   <= 0;
+				s1_rm    <= 0; s2_rm    <= 0; s3_rm    <= 0; s4_rm    <= 0;
+				s1_xa    <= 0; s2_xa    <= 0; s3_xa    <= 0; s4_xa    <= 0;
+				s1_busy  <= 0; s2_busy  <= 0; s3_busy  <= 0; s4_busy  <= 0;
+				s1_k_op  <= 0; s2_k_op  <= 0; s3_k_op  <= 0; s4_k_op  <= 0; s5_k_op  <= 0;
+				s1_k_rm  <= 0; s2_k_rm  <= 0; s3_k_rm  <= 0; s4_k_rm  <= 0; s5_k_rm  <= 0;
+				s1_k_hs  <= 0; s2_k_hs  <= 0; s3_k_hs  <= 0; s4_k_hs  <= 0; s5_k_hs  <= 0;
+				s1_k_sat <= 0; s2_k_sat <= 0; s3_k_sat <= 0; s4_k_sat <= 0; s5_k_sat <= 0;
+				s1_k_a   <= 0; s2_k_a   <= 0; s3_k_a   <= 0; s4_k_a   <= 0; s5_k_a   <= 0;
+				s5_data  <= 0; s6_data  <= 0;
+			end else if (en) begin
+				s1_pk    <= mine_pk;
+				s1_hsel  <= hsel;
+				s1_sat   <= sat;
+				s1_pop   <= pop;
+				s1_rm    <= rm;
+				for (p = 0; p < NPHYS; p = p + 1)
+					s1_xa[p*16 +: 16] <= x_a[p*32 +: 16];
+				s1_busy  <= busy;
+				s1_k_op  <= pop;
+				s1_k_rm  <= rm;
+				s1_k_hs  <= hsel;
+				s1_k_sat <= sat;
+				for (p = 0; p < NPHYS; p = p + 1)
+					s1_k_a[p*16 +: 16] <= x_a[p*32 + 16 +: 16];
 
-	integer i5;
-	always @(posedge clk) begin
-		if (!rst_n) begin
-			s5_valid <= 1'b0;
-			s5_warp  <= 0;
-			s5_grp   <= 0;
-			s5_rd    <= 0;
-			s5_mask  <= 0;
-			s5_pk    <= 0;
-			s5_k_op  <= 0;
-			s5_k_rm  <= 0;
-			s5_k_sat <= 0;
-			s5_k_hs  <= 0;
-			s5_k_a   <= 0;
-			s5_data  <= 0;
+				s2_pk   <= s1_pk;   s2_hsel <= s1_hsel; s2_sat <= s1_sat;
+				s2_pop  <= s1_pop;  s2_rm   <= s1_rm;   s2_xa  <= s1_xa;   s2_busy  <= s1_busy;
+				s2_k_op <= s1_k_op; s2_k_rm <= s1_k_rm; s2_k_hs <= s1_k_hs; s2_k_sat <= s1_k_sat;
+				s2_k_a  <= s1_k_a;
 
-			s6_valid <= 1'b0;
-			s6_warp  <= 0;
-			s6_grp   <= 0;
-			s6_rd    <= 0;
-			s6_lanes <= 0;
-			s6_pk    <= 1'b0;
-			s6_data  <= 0;
-		end else if (en) begin
-			/* Stage 5 captures Stage 4 output */
-			s5_valid <= s4_valid;
-			s5_warp  <= s4_warp;
-			s5_grp   <= s4_grp;
-			s5_rd    <= s4_rd;
-			s5_mask  <= s4_mask;
-			s5_pk    <= s4_pk;
-			s5_k_op  <= s4_k_op;
-			s5_k_rm  <= s4_k_rm;
-			s5_k_sat <= s4_k_sat;
-			s5_k_hs  <= s4_k_hs;
-			s5_k_a   <= s4_k_a;
-			for (i5 = 0; i5 < NPHYS; i5 = i5 + 1) begin
-				s5_data[i5*32 +: 32] <= s4_pk ?
-					{16'd0, (s4_hsel == 2'd2) ? s4_xa[i5*16 +: 16] : pko_comb[i5*16 +: 16]} :
-					fpu_res[i5*32 +: 32];
-			end
+				s3_pk   <= s2_pk;   s3_hsel <= s2_hsel; s3_sat <= s2_sat;
+				s3_pop  <= s2_pop;  s3_rm   <= s2_rm;   s3_xa  <= s2_xa;   s3_busy  <= s2_busy;
+				s3_k_op <= s2_k_op; s3_k_rm <= s2_k_rm; s3_k_hs <= s2_k_hs; s3_k_sat <= s2_k_sat;
+				s3_k_a  <= s2_k_a;
 
-			/* Stage 6 captures Stage 5 output */
-			s6_valid <= s5_valid;
-			s6_warp  <= s5_warp;
-			s6_grp   <= s5_grp;
-			s6_rd    <= s5_rd;
-			s6_lanes <= s5_mask;
-			s6_pk    <= s5_pk;
-			for (i5 = 0; i5 < NPHYS; i5 = i5 + 1) begin
-				if (s5_pk) begin
-					s6_data[i5*32 +: 16]      <= s5_data[i5*32 +: 16];
-					s6_data[i5*32 + 16 +: 16] <= (s5_k_hs == 2'd1) ?
-						s5_k_a[i5*16 +: 16] : pko_comb[i5*16 +: 16];
-				end else begin
-					s6_data[i5*32 +: 32] <= s5_data[i5*32 +: 32];
+				s4_pk   <= s3_pk;   s4_hsel <= s3_hsel; s4_sat <= s3_sat;
+				s4_pop  <= s3_pop;  s4_rm   <= s3_rm;   s4_xa  <= s3_xa;   s4_busy  <= s3_busy;
+				s4_k_op <= s3_k_op; s4_k_rm <= s3_k_rm; s4_k_hs <= s3_k_hs; s4_k_sat <= s3_k_sat;
+				s4_k_a  <= s3_k_a;
+
+				s5_pk    <= s4_pk;
+				s5_k_op  <= s4_k_op;
+				s5_k_rm  <= s4_k_rm;
+				s5_k_sat <= s4_k_sat;
+				s5_k_hs  <= s4_k_hs;
+				s5_k_a   <= s4_k_a;
+				for (i5 = 0; i5 < NPHYS; i5 = i5 + 1) begin
+					s5_data[i5*32 +: 32] <= s4_pk ?
+						{16'd0, (s4_hsel == 2'd2) ? s4_xa[i5*16 +: 16] : pko_comb[i5*16 +: 16]} :
+						fpu_res[i5*32 +: 32];
+				end
+
+				s6_pk <= s5_pk;
+				for (i5 = 0; i5 < NPHYS; i5 = i5 + 1) begin
+					if (s5_pk) begin
+						s6_data[i5*32 +: 16]      <= s5_data[i5*32 +: 16];
+						s6_data[i5*32 + 16 +: 16] <= (s5_k_hs == 2'd1) ?
+							s5_k_a[i5*16 +: 16] : pko_comb[i5*16 +: 16];
+					end else begin
+						s6_data[i5*32 +: 32] <= s5_data[i5*32 +: 32];
+					end
 				end
 			end
 		end
+
+		assign s_data = s6_data;
+	end else begin : g_nosh_pipe
+		assign s_data = fpu_res;
 	end
+	endgenerate
 
 	integer q;
 	always @(posedge clk) begin
-		if (!rst_n)
+		if (rst_p)
 			busy <= 1'b0;
 		else if (en)
 			busy <= mine_pk;
@@ -387,26 +1606,7 @@ module atg_su_fpu #(
 	assign s_rd    = s6_rd;
 	assign s_lanes = s6_lanes;
 
-	wire [DW-1:0] s_data_mux;
-	genvar g_sd;
-	generate
-	for (g_sd = 0; g_sd < NPHYS; g_sd = g_sd + 1) begin : g_sd_mux
-		assign s_data_mux[g_sd*32 +: 32] = SH ? s6_data[g_sd*32 +: 32] : (s6_pk ? s6_data[g_sd*32 +: 32] : fpu_res[g_sd*32 +: 32]);
-	end
-	endgenerate
-	assign s_data = s_data_mux;
-
 	assign x_ready = !busy;
-
-	wire [DW-1:0] fpu_s4_data;
-	genvar gf;
-	generate
-	for (gf = 0; gf < NPHYS; gf = gf + 1) begin : g_fwd4
-		assign fpu_s4_data[gf*32 +: 32] = s4_pk ?
-			{16'd0, (s4_hsel == 2'd2) ? s4_xa[gf*16 +: 16] : pko_comb[gf*16 +: 16]} :
-			fpu_res[gf*32 +: 32];
-	end
-	endgenerate
 
 	assign fwd_ex4_valid = 1'b0;
 	assign fwd_ex4_warp  = {WARP_W{1'b0}};
@@ -422,9 +1622,9 @@ module atg_su_fpu #(
 	assign fwd_ex5_data  = {DW{1'b0}};
 	assign fwd_ex5_lanes = {NPHYS{1'b0}};
 
-	wire unused_s5 = &{1'b0, s5_valid, s5_warp, s5_grp, s5_rd, s5_mask, s5_data};
+	wire unused_s5 = &{1'b0, s5_valid, s5_warp, s5_grp, s5_rd, s5_mask};
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
-		k_hs, k_sat, (SHORT_LAT != 0), (NWARPS != 0), fpu_s4_data, unused_s5};
+		k_op, k_rm, k_hs, k_sat, k_a, k_b, k_c, hsel, (SHORT_LAT != 0), (NWARPS != 0), unused_s5};
 endmodule
 
 `default_nettype wire

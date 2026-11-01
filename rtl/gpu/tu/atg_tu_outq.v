@@ -28,10 +28,14 @@ module atg_tu_outq #(
 	output wire [2:0]   count
 );
 	localparam NUM_SLICES = (W + 15) / 16;
+	localparam NUM_GRPS   = (NUM_SLICES + 3) / 4;
 
-	reg [2:0] wp;
-	reg [2:0] rp;
+	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+
+	(* max_fanout = 16 *) reg [2:0] wp;
+	(* max_fanout = 16 *) reg [2:0] rp;
 	reg r_valid;
+	reg r_ready;
 
 	wire [2:0] used;
 	wire unused_used_bo;
@@ -39,7 +43,7 @@ module atg_tu_outq #(
 		.a(wp), .b(rp), .bi(1'b0), .d(used), .bo(unused_used_bo)
 	);
 
-	wire push = in_valid && in_ready;
+	(* keep = "true" *) wire push = in_valid && in_ready;
 	wire pop  = out_valid && out_ready;
 
 	wire [2:0] wp_next;
@@ -55,61 +59,67 @@ module atg_tu_outq #(
 	);
 
 	wire will_empty = (rp_next == wp);
+	wire will_full  = (used == 3'd3);
 	assign count = used;
-	assign in_ready = (wp[1:0] != rp[1:0]) || (wp[2] == rp[2]);
+	assign in_ready = r_ready;
 	assign out_valid = r_valid;
 
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_inv) begin
 			wp <= 3'd0;
 			rp <= 3'd0;
 			r_valid <= 1'b0;
+			r_ready <= 1'b1;
 		end else begin
 			if (push)
 				wp <= wp_next;
 			if (pop)
 				rp <= rp_next;
 			case ({push, pop})
-			2'b10: r_valid <= 1'b1;
-			2'b01: r_valid <= !will_empty;
+			2'b10: begin
+				r_valid <= 1'b1;
+				r_ready <= !will_full;
+			end
+			2'b01: begin
+				r_valid <= !will_empty;
+				r_ready <= 1'b1;
+			end
 			default: ;
 			endcase
 		end
 	end
 
-	genvar si;
+	(* keep = "true" *) wire [NUM_GRPS-1:0] push_g;
+	(* keep = "true" *) wire [1:0] wp_g [0:NUM_GRPS-1];
+	(* keep = "true" *) wire [1:0] rp_g [0:NUM_GRPS-1];
+
+	genvar gi, si;
 	generate
+	for (gi = 0; gi < NUM_GRPS; gi = gi + 1) begin : g_grp
+		assign push_g[gi] = push;
+		assign wp_g[gi]   = wp[1:0];
+		assign rp_g[gi]   = rp[1:0];
+	end
+
 	for (si = 0; si < NUM_SLICES; si = si + 1) begin : g_slice
 		localparam LO = si * 16;
 		localparam HI = (si == NUM_SLICES - 1) ? (W - 1) : (si * 16 + 15);
 		localparam SW = HI - LO + 1;
+		localparam G  = si / 4;
 
-`ifdef SYNTH_KINTEX7
-		(* keep = "true", dont_touch = "true" *) wire push_b;
-		(* keep = "true", dont_touch = "true" *) wire [1:0] wp_b;
-		(* keep = "true", dont_touch = "true" *) wire [1:0] rp_b;
-		LUT1 #(.INIT(2'b10)) u_psh (.I0(push), .O(push_b));
-		LUT1 #(.INIT(2'b10)) u_wp0 (.I0(wp[0]), .O(wp_b[0]));
-		LUT1 #(.INIT(2'b10)) u_wp1 (.I0(wp[1]), .O(wp_b[1]));
-		LUT1 #(.INIT(2'b10)) u_rp0 (.I0(rp[0]), .O(rp_b[0]));
-		LUT1 #(.INIT(2'b10)) u_rp1 (.I0(rp[1]), .O(rp_b[1]));
-`else
-		wire push_b = push;
-		wire [1:0] wp_b = wp[1:0];
-		wire [1:0] rp_b = rp[1:0];
-`endif
+		(* keep = "true" *) wire we0 = push_g[G] && (wp_g[G] == 2'd0);
+		(* keep = "true" *) wire we1 = push_g[G] && (wp_g[G] == 2'd1);
+		(* keep = "true" *) wire we2 = push_g[G] && (wp_g[G] == 2'd2);
+		(* keep = "true" *) wire we3 = push_g[G] && (wp_g[G] == 2'd3);
+		(* keep = "true" *) wire [1:0] rp_b = rp_g[G];
 
-		(* ram_style = "registers" *) reg [SW-1:0] m0, m1, m2, m3;
+		(* extract_reset = "no", ram_style = "registers" *) reg [SW-1:0] m0, m1, m2, m3;
 
 		always @(posedge clk) begin
-			if (push_b) begin
-				case (wp_b)
-				2'd0: m0 <= in_data[HI:LO];
-				2'd1: m1 <= in_data[HI:LO];
-				2'd2: m2 <= in_data[HI:LO];
-				2'd3: m3 <= in_data[HI:LO];
-				endcase
-			end
+			if (we0) m0 <= in_data[HI:LO];
+			if (we1) m1 <= in_data[HI:LO];
+			if (we2) m2 <= in_data[HI:LO];
+			if (we3) m3 <= in_data[HI:LO];
 		end
 
 		assign out_data[HI:LO] = (rp_b == 2'd0) ? m0 :

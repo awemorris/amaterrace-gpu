@@ -46,7 +46,7 @@ module atg_su_exp_tb;
 
 	reg x_valid = 1'b0;
 	reg [1:0] x_warp = 0, x_grp = 0;
-	reg [103:0] x_uop = 0;
+	reg [107:0] x_uop = 0;
 	reg [NPHYS*32-1:0] x_b = 0;
 	reg [2*NPHYS-1:0] x_mask = 0;
 	reg [31:0] x_info = 0;
@@ -61,7 +61,7 @@ module atg_su_exp_tb;
 	reg fl_pw_we = 1'b0;
 	reg [11:0] fl_pw_addr = 0;
 	reg [31:0] fl_pw_data = 0;
-	wire [153:0] ex_aux;
+	wire [154:0] ex_aux;
 	wire x_ready, ex_valid, ex_last, xr_valid;
 	wire [15:0] ex_seq;
 	wire [31:0] ex_xy;
@@ -76,7 +76,8 @@ module atg_su_exp_tb;
 		.x_last(1'b0), .x_sbe(3'd7), .x_pc(16'd0), .x_uop(x_uop), .x_a({NPHYS{32'd0}}),
 		.x_b(x_b), .x_c({NPHYS{32'd0}}), .x_mask(x_mask), .x_info(x_info), .x_ready(x_ready),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
-		.ex_mask(ex_mask), .ex_color(ex_color), .ex_depth(ex_depth), .ex_last(ex_last),
+		.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(), .ex_has_src1(),
+		.ex_depth(ex_depth), .ex_last(ex_last),
 		.ex_next(ex_next),
 		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane),
 		.fl_data(fl_data), .fl_go(fl_go), .fl_info(fl_info),
@@ -233,7 +234,7 @@ module atg_su_exp_tb;
 			x_valid = 1'b1;
 			x_warp = s;
 			x_grp = g;
-			x_uop = 104'd0;
+			x_uop = 108'd0;
 			x_uop[3:0] = 4'd10;
 			x_uop[40 +: 32] = tg;
 			x_info = {14'd0, kd, sq[s]};

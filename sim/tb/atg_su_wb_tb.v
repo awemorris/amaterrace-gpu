@@ -89,6 +89,9 @@ module atg_su_wb_tb;
 	 * at every accepted beat. */
 	reg [31:0] beat_id [0:NL-1];
 	reg [6:0] want_rd;
+	reg prev_rel;
+	reg [2:0] prev_sbe;
+	reg [1:0] prev_warp;
 	integer src;
 
 	task new_beat;
@@ -129,9 +132,11 @@ module atg_su_wb_tb;
 				fail("prio short");
 			if (l_ready[2])
 				fail("prio long beat during short");
-			if (i == 0 && (l_ready[4] !== 1'b1 || !rel_valid || rel_sbe !== 3'd2))
+			if (i == 0 && l_ready[4] !== 1'b1)
 				fail("prio beat without data");
-			if ((i >= 5) !== wb_stall)
+			if (i == 1 && (!rel_valid || rel_sbe !== 3'd2))
+				fail("prio beat without data");
+			if ((i >= 6) !== wb_stall)
 				fail("prio wb_stall");
 			@(negedge clk);
 			l_valid[4] = 1'b0;
@@ -142,6 +147,7 @@ module atg_su_wb_tb;
 			fail("prio long beat in free cycle");
 		@(negedge clk);
 		l_valid = 0;
+		@(negedge clk);
 		#1;
 		if (wb_stall)
 			fail("prio wb_stall after");
@@ -152,6 +158,9 @@ module atg_su_wb_tb;
 		n_rel = 0;
 		n_acc = 0;
 		n_beats = 0;
+		prev_rel = 1'b0;
+		prev_sbe = 3'd0;
+		prev_warp = 2'd0;
 		for (i = 0; i < NL; i = i + 1) begin
 			beat_id[i] = 0;
 			new_beat(i);
@@ -166,24 +175,28 @@ module atg_su_wb_tb;
 				s_lanes[k*NPHYS +: NPHYS] = $random(seed);
 			end
 			#1;
-			if (rel_valid !== (|(l_ready & l_last)))
+			if (rel_valid !== prev_rel)
 				fail("release pulse");
+			if (rel_valid) begin
+				n_rel = n_rel + 1;
+				if (rel_sbe !== prev_sbe || rel_warp !== prev_warp)
+					fail("release entry");
+			end
 			if (|(l_ready & (l_ready - 1'b1)))
 				fail("release two beats");
+			prev_rel = |(l_ready & l_last);
 			for (src = 0; src < NL; src = src + 1) begin
 				if (l_ready[src]) begin
 					n_acc = n_acc + 1;
 					if (l_last[src]) begin
 						n_last = n_last + 1;
-						if (rel_sbe !== (beat_id[src] & 7) || rel_warp !== (src & 3))
-							fail("release entry");
+						prev_sbe = beat_id[src] & 7;
+						prev_warp = src & 3;
 					end
 					if (l_wr[src] && (|s_valid))
 						fail("release write beat with short");
 				end
 			end
-			if (rel_valid)
-				n_rel = n_rel + 1;
 			@(negedge clk);
 			for (src = 0; src < NL; src = src + 1) begin
 				if (l_ready[src]) begin
@@ -197,6 +210,14 @@ module atg_su_wb_tb;
 					new_beat(src);
 				end
 			end
+		end
+		#1;
+		if (rel_valid !== prev_rel)
+			fail("release pulse");
+		if (rel_valid) begin
+			n_rel = n_rel + 1;
+			if (rel_sbe !== prev_sbe || rel_warp !== prev_warp)
+				fail("release entry");
 		end
 		s_valid = 0;
 		l_valid = 0;
@@ -216,7 +237,7 @@ module atg_su_wb_tb;
 			in_lane = {5'd31 - i[4:0], i[4:0] * 5'd5};
 			in_data = {32'hC0DE0000 | i, 32'hF00D0000 | i};
 			#1;
-			if (!wb_stall && i > 0)
+			if (!wb_stall && i > 1)
 				fail("input wb_stall");
 			@(negedge clk);
 		end

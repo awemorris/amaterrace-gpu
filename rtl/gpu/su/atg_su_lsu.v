@@ -114,29 +114,32 @@ module atg_su_lsu #(
 	localparam WW = WPL > 1 ? $clog2(WPL) : 1;
 	localparam LW = NPHYS > 1 ? $clog2(NPHYS) : 1;
 	localparam [2:0] IDLE = 3'd0, LINE = 3'd1, WAIT = 3'd2, AREQ = 3'd3, AWAIT = 3'd4,
-		BEAT = 3'd5;
+		BEAT = 3'd5, LINE_HIT = 3'd6, LINE_DAT = 3'd7;
 
-	reg [2:0] st;
-	reg [DW-1:0] radr, rdat, rcmp, res;
-	reg [NPHYS-1:0] pend, lanes, cur;
-	reg rwr, rst_w, ratom;
-	reg [3:0] rsub;
+	(* keep = "true" *) wire rst_p = !rst_n;
+	(* max_fanout = 12 *) reg [2:0] st;
+	wire [DW-1:0] radr, rdat, rcmp, res;
+	(* max_fanout = 12 *) reg [NPHYS-1:0] pend, lanes, cur, lhit;
+	(* max_fanout = 12 *) reg rwr, rst_w, ratom;
+	(* max_fanout = 12 *) reg [3:0] rsub;
 	reg [6:0] rrd;
 	reg [WARP_W-1:0] rwarp;
 	reg [GRP_W-1:0] rgrp;
 	reg rlast;
 	reg [SBE_W:0] rsbe;
-	reg [LA_W-1:0] cline;
-	reg [LINE_BYTES-1:0] cbe;
-	reg [LB-1:0] cwd;
-	reg [LW-1:0] ali;
+	(* max_fanout = 12 *) reg [LA_W-1:0] cline;
+	(* dont_touch = "true" *) reg [LA_W-1:0] dc_line_r;
+	wire [LINE_BYTES-1:0] cbe;
+	wire [LB-1:0] cwd;
+	(* max_fanout = 12 *) reg [LW-1:0] ali;
 	reg inv_q;
 
 	wire [3:0] unit = x_uop[ATG_UOP_UNIT +: 4];
-	wire [7:0] op = x_uop[ATG_UOP_OP +: 8];
+	(* max_fanout = 12 *) wire [7:0] op = x_uop[ATG_UOP_OP +: 8];
 	wire mine = x_valid && unit == ATG_UNIT_LSU;
 	wire take = mine && st == IDLE && op != ATG_LSU_FENCE;
-	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
+	(* keep = "true", max_fanout = 16 *) wire take_base = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE);
+	(* max_fanout = 12 *) wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
 	/* The lanes of the access: EXEC for lw and sw.x, the side-effect lanes otherwise. */
 	wire use_exec = op == ATG_LSU_LW || (op == ATG_LSU_SW && x_uop[ATG_UOP_SUB]);
 	wire [NPHYS-1:0] amask = use_exec ? x_mask[NPHYS-1:0] : x_mask[2*NPHYS-1:NPHYS];
@@ -144,8 +147,9 @@ module atg_su_lsu #(
 
 	/* The first pending lane and the lanes in its line, with the write's
 	 * byte enables and data. */
-	reg [LW:0] lead;
+	(* max_fanout = 12 *) reg [LW:0] lead;
 	reg [NPHYS-1:0] inl;
+	wire [NPHYS-1:0] line_eq;
 	reg [LA_W-1:0] lline;
 	reg [LINE_BYTES-1:0] lbe;
 	reg [LB-1:0] lwd;
@@ -162,7 +166,7 @@ module atg_su_lsu #(
 		lwd = {LB{1'b0}};
 		for (l = 0; l < NPHYS; l = l + 1) begin
 			wo = radr[l*32 + 2 +: WW];
-			if (pend[l] && radr[l*32 + LINE_SHIFT +: LA_W] == lline) begin
+			if (pend[l] && lhit[l]) begin
 				inl[l] = 1'b1;
 				lbe[wo*4 +: 4] = 4'hF;
 				lwd[wo*32 +: 32] = rdat[l*32 +: 32];
@@ -171,7 +175,7 @@ module atg_su_lsu #(
 	end
 
 	/* The next atomic lane. */
-	reg [LW:0] anext;
+	(* max_fanout = 12 *) reg [LW:0] anext;
 	integer l2;
 	always @(*) begin
 		anext = NPHYS[LW:0];
@@ -183,16 +187,68 @@ module atg_su_lsu #(
 	/* Each lane's word of the D$ response. */
 	reg [DW-1:0] rsel;
 	reg [WW-1:0] ro;
-	integer l3, l4;
+	integer l3;
 
 	/* The lanes' addresses: rs1 + imm (rs1 alone for an atomic). */
+	localparam N_LEQ = (LA_W + 2) / 3;
 	wire [DW-1:0] x_adr;
-	genvar la;
+	genvar la, gh, gleq;
 	generate
 		for (la = 0; la < NPHYS; la = la + 1) begin : g_adr
 			wire co_unused;
 			am_add #(.W(32)) u_adr (.a(x_a[la*32 +: 32]), .b(op == ATG_LSU_ATOM ? 32'd0 : imm),
 				.ci(1'b0), .s(x_adr[la*32 +: 32]), .co(co_unused));
+			(* keep = "true" *) wire [N_LEQ-1:0] leq_g;
+			for (gleq = 0; gleq < N_LEQ; gleq = gleq + 1) begin : g_leq
+				localparam LB_B = gleq * 3;
+				localparam LW_C = (LB_B + 3 <= LA_W) ? 3 : (LA_W - LB_B);
+				assign leq_g[gleq] = (radr[la*32 + LINE_SHIFT + LB_B +: LW_C] == cline[LB_B +: LW_C]);
+			end
+			(* keep = "true" *) wire leq_lo = &leq_g[N_LEQ/2-1:0];
+			(* keep = "true" *) wire leq_hi = &leq_g[N_LEQ-1:N_LEQ/2];
+			assign line_eq[la] = leq_lo && leq_hi;
+			for (gh = 0; gh < 2; gh = gh + 1) begin : g_lsu_half
+				(* shreg_extract = "no" *) reg [15:0] radr_h, rdat_h, rcmp_h, res_h;
+				(* keep = "true" *) wire take_h = take_base && (op != ATG_LSU_FENCE);
+				(* keep = "true" *) wire dc_we_h = (st == WAIT) && dc_rsp_valid && cur[la];
+				(* keep = "true" *) wire dc_err_h = dc_rsp_error;
+				(* keep = "true" *) wire at_we_h = (st == AWAIT) && at_rsp_valid && (ali == la[LW-1:0]);
+				(* keep = "true" *) wire at_err_h = at_error;
+				always @(posedge clk) begin
+					if (take_h) begin
+						radr_h <= x_adr[la*32 + gh*16 +: 16];
+						rdat_h <= x_b[la*32 + gh*16 +: 16];
+						rcmp_h <= x_c[la*32 + gh*16 +: 16];
+						res_h  <= 16'd0;
+					end else if (dc_we_h) begin
+						res_h <= dc_err_h ? 16'd0 : rsel[la*32 + gh*16 +: 16];
+					end else if (at_we_h) begin
+						res_h <= at_err_h ? 16'd0 : at_old[gh*16 +: 16];
+					end
+				end
+				assign radr[la*32 + gh*16 +: 16] = radr_h;
+				assign rdat[la*32 + gh*16 +: 16] = rdat_h;
+				assign rcmp[la*32 + gh*16 +: 16] = rcmp_h;
+				assign res[la*32 + gh*16 +: 16]  = res_h;
+			end
+		end
+		for (la = 0; la < LB / 16; la = la + 1) begin : g_cwd_sl
+			(* shreg_extract = "no" *) reg [15:0] cwd_sl;
+			(* keep = "true" *) wire cwd_we_sl = (st == LINE_DAT);
+			always @(posedge clk)
+				if (cwd_we_sl)
+					cwd_sl <= lwd[la*16 +: 16];
+			assign cwd[la*16 +: 16] = cwd_sl;
+		end
+		for (la = 0; la < LINE_BYTES / 16; la = la + 1) begin : g_cbe_sl
+			(* shreg_extract = "no" *) reg [15:0] cbe_sl;
+			(* keep = "true" *) wire cbe_we_sl = (st == LINE_DAT);
+			(* keep = "true" *) wire rwr_sl = rwr;
+			always @(posedge clk)
+				if (cbe_we_sl)
+					cbe_sl <= lbe[la*16 +: 16];
+			assign cbe[la*16 +: 16] = cbe_sl;
+			assign dc_req_be[la*16 +: 16] = rwr_sl ? cbe_sl : 16'd0;
 		end
 	endgenerate
 	always @(*)
@@ -202,19 +258,17 @@ module atg_su_lsu #(
 		end
 
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p) begin
 			st <= IDLE;
 			inv_q <= 1'b0;
 			pend <= {NPHYS{1'b0}};
 			ali <= {LW{1'b0}};
+			cline <= {LA_W{1'b0}};
+			dc_line_r <= {LA_W{1'b0}};
 		end else begin
 			inv_q <= mine && st == IDLE && op == ATG_LSU_FENCE && imm[2];
 			case (st)
 			IDLE: if (take) begin
-				radr <= x_adr;
-				rdat <= x_b;
-				rcmp <= x_c;
-				res <= {DW{1'b0}};
 				rwr <= op == ATG_LSU_SW;
 				ratom <= op == ATG_LSU_ATOM;
 				rst_w <= op == ATG_LSU_LW || (op == ATG_LSU_ATOM && x_uop[ATG_UOP_WRD]);
@@ -239,16 +293,19 @@ module atg_su_lsu #(
 					st <= BEAT;
 				else begin
 					cline <= lline;
-					cbe <= lbe;
-					cwd <= lwd;
-					cur <= inl;
-					st <= WAIT;
+					dc_line_r <= lline;
+					st <= LINE_HIT;
 				end
 			end
+			LINE_HIT: begin
+				lhit <= line_eq;
+				st <= LINE_DAT;
+			end
+			LINE_DAT: begin
+				cur <= inl;
+				st <= WAIT;
+			end
 			WAIT: if (dc_rsp_valid) begin
-				for (l4 = 0; l4 < NPHYS; l4 = l4 + 1)
-					if (cur[l4])
-						res[l4*32 +: 32] <= dc_rsp_error ? 32'd0 : rsel[l4*32 +: 32];
 				pend <= pend & ~cur;
 				st <= LINE;
 			end
@@ -260,7 +317,6 @@ module atg_su_lsu #(
 					st <= AWAIT;
 			end
 			AWAIT: if (at_rsp_valid) begin
-				res[ali*32 +: 32] <= at_error ? 32'd0 : at_old;
 				pend[ali] <= 1'b0;
 				st <= AREQ;
 			end
@@ -273,14 +329,13 @@ module atg_su_lsu #(
 	/* The D$ request is valid in WAIT until taken (cline holds). */
 	reg req_taken;
 	always @(posedge clk)
-		if (!rst_n || st != WAIT)
+		if (rst_p || st != WAIT)
 			req_taken <= 1'b0;
 		else if (dc_req_valid && dc_req_ready)
 			req_taken <= 1'b1;
 	assign dc_req_valid = st == WAIT && !req_taken;
 	assign dc_req_write = rwr;
-	assign dc_req_line = cline;
-	assign dc_req_be = rwr ? cbe : {LINE_BYTES{1'b0}};
+	assign dc_req_line = dc_line_r;
 	assign dc_req_wdata = cwd;
 	assign dc_req_tag = 8'd0;
 	assign dc_inv = inv_q;

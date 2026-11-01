@@ -37,9 +37,9 @@ module atg_su_pk_half_tb;
 	reg [31:0] x;
 	wire [15:0] y11, y10, y0;
 
-	atg_su_pk_half #(.ARITH(1), .FP(1)) d11 (.o(o), .ha(a), .hb(b), .hc(c), .r(r), .sat(st), .xw(x), .y(y11));
-	atg_su_pk_half #(.ARITH(1), .FP(0)) d10 (.o(o), .ha(a), .hb(b), .hc(c), .r(r), .sat(st), .xw(x), .y(y10));
-	atg_su_pk_half #(.ARITH(0), .FP(1)) d0 (.o(o), .ha(a), .hb(b), .hc(c), .r(r), .sat(st), .xw(x), .y(y0));
+	atg_su_pk_half #(.ARITH(1), .FP(1)) d11 (.clk(1'b0), .rst_n(1'b1), .valid_in(1'b1), .ovr_en(1'b0), .ovr_val(16'd0), .o(o), .ha(a), .hb(b), .hc(c), .r(r), .sat(st), .xw(x), .y(y11));
+	atg_su_pk_half #(.ARITH(1), .FP(0)) d10 (.clk(1'b0), .rst_n(1'b1), .valid_in(1'b1), .ovr_en(1'b0), .ovr_val(16'd0), .o(o), .ha(a), .hb(b), .hc(c), .r(r), .sat(st), .xw(x), .y(y10));
+	atg_su_pk_half #(.ARITH(0), .FP(1)) d0 (.clk(1'b0), .rst_n(1'b1), .valid_in(1'b1), .ovr_en(1'b0), .ovr_val(16'd0), .o(o), .ha(a), .hb(b), .hc(c), .r(r), .sat(st), .xw(x), .y(y0));
 
 	/* ---- the reference: the former functions */
 	function [15:0] ref_hrnd;

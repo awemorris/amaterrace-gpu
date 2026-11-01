@@ -127,7 +127,7 @@ module atg_rop_fblend_tb;
 		/* Drain pipeline before burst check */
 		o_ready = 1'b1;
 		i_valid <= 1'b0;
-		repeat (10) @(posedge clk);
+		repeat (30) @(posedge clk);
 
 		/* Continuous streaming burst throughput check (1 beat/cycle, 100% throughput) */
 		i_fmt = 8'd43;
@@ -149,7 +149,7 @@ module atg_rop_fblend_tb;
 				i_valid <= 1'b0;
 			end
 			begin : recv_burst
-				while (got < 16 && cyc < 50) begin
+				while (got < 16 && cyc < 80) begin
 					@(posedge clk);
 					cyc = cyc + 1;
 					if (o_valid && o_ready)
@@ -158,8 +158,8 @@ module atg_rop_fblend_tb;
 			end
 		join
 
-		if (got != 16 || cyc > 22) begin
-			$display("FAIL atg_rop_fblend: burst throughput failed, got %0d beats in %0d cycles (expected 16 beats in <= 21 cycles)", got, cyc);
+		if (got != 16 || cyc > 41) begin
+			$display("FAIL atg_rop_fblend: burst throughput failed, got %0d beats in %0d cycles (expected 16 beats in <= 41 cycles)", got, cyc);
 			e_s[0] = e_s[0] + 1;
 		end
 

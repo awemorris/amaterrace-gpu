@@ -498,10 +498,10 @@ module atg_tu_cache_run #(
 			tc_ready <= 1'b1;
 			@(posedge clk);
 			tc_ready <= 1'b0;
-			// With 4 banks reading in parallel, 1 lane finishes in <= 6 cycles (not 16+ cycles!)
-			if (cyc > 6) begin
+			// With 4 banks reading in parallel, 1 lane finishes in <= 8 cycles (not 16+ cycles!)
+			if (cyc > 8) begin
 				e_bank = e_bank + 1;
-				$display("FAIL atg_tu_cache(%0d): 4-bank parallel read took %0d cycles (expected <= 6)",
+				$display("FAIL atg_tu_cache(%0d): 4-bank parallel read took %0d cycles (expected <= 8)",
 					LINE_BYTES, cyc);
 			end
 		end

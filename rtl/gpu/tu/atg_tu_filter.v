@@ -64,13 +64,6 @@ module atg_tu_filter (
 		x565 = {8'hFF, w[4:0], w[4:2], w[10:5], w[10:9], w[15:11], w[15:13]};
 	endfunction
 
-	/* R8 and R8G8 as RGBA8 (the missing bytes 0, alpha 255). */
-	function [31:0] xrg;
-		input [31:0] w;
-		input [7:0] f;
-		xrg = f == 8'd9 ? {8'hFF, 16'd0, w[7:0]} : f == 8'd16 ? {8'hFF, 8'd0, w[15:0]} : w;
-	endfunction
-
 	/* The component that swizzle code 3-6 (R, G, B, A) takes, by its bits
 	 * 1:0. */
 	function [1:0] zsrc;
@@ -89,18 +82,20 @@ module atg_tu_filter (
 		gtx = g == 2'd0 ? 2'd2 : g == 2'd1 ? 2'd3 : g == 2'd2 ? 2'd1 : 2'd0;
 	endfunction
 
-	reg st;
-	reg [1:0] k;
-	reg [511:0] tx;
-	reg [127:0] wts;
-	reg [3:0] mask;
-	reg [49:0] ctl;
-	reg [127:0] val;
-	reg [15:0] tag;
-	reg last;
+	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+
+	(* max_fanout = 16 *) reg st;
+	(* max_fanout = 16 *) reg [1:0] k;
+	(* extract_reset = "no" *) reg [511:0] tx;
+	(* extract_reset = "no" *) reg [127:0] wts;
+	(* extract_reset = "no" *) reg [3:0] mask;
+	(* extract_reset = "no", max_fanout = 16 *) reg [49:0] ctl;
+	(* extract_reset = "no" *) reg [127:0] val;
+	(* extract_reset = "no" *) reg [15:0] tag;
+	(* extract_reset = "no" *) reg last;
 	reg mid;	/* a pass with more to follow taken, its last not yet */
 	reg [2:0] nq;	/* last passes taken, quads not yet returned */
-	reg [639:0] acc;	/* the passes' sums: lane-major, 4 × 40 bits a lane */
+	(* extract_reset = "no", max_fanout = 16 *) reg [639:0] acc;	/* the passes' sums: lane-major, 4 × 40 bits a lane */
 
 	wire fifo_pop = tr_valid && tr_ready;
 	wire take = tc_valid && tc_ready;
@@ -110,9 +105,12 @@ module atg_tu_filter (
 
 	/* tc_ready is a register (replicated: it enables the pass's fields,
 	 * about 900 registers): from the next st, k and nq. */
-	(* max_fanout = 64 *) reg rdy;
+	(* max_fanout = 16 *) reg rdy;
+	(* keep = "true", equivalent_register_removal = "no" *) reg [52:0] rdy_s;
 	wire st_n = take ? RUN : st == RUN && k == 2'd3 ? IDLE : st;
 	wire [1:0] k_n = take ? 2'd0 : st == RUN ? k_inc : k;
+	(* keep = "true" *) wire rdy_d = nq_n != 3'd4 && (st_n == IDLE || k_n == 2'd3);
+	(* keep = "true" *) wire [3:0] rdy_d_g = {4{rdy_d}};
 
 	assign tc_ready = rdy;
 	assign idle = st == IDLE && !mid && nq == 3'd0;
@@ -123,14 +121,17 @@ module atg_tu_filter (
 	am_add #(.W(2)) u_k (.a(k), .b(2'd0), .ci(1'b1), .s(k_inc), .co(k_nc));
 
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_inv) begin
 			st <= IDLE;
 			mid <= 1'b0;
 			nq <= 3'd0;
 			rdy <= 1'b1;
+			rdy_s <= {53{1'b1}};
 		end else begin
 			nq <= nq_n;
-			rdy <= nq_n != 3'd4 && (st_n == IDLE || k_n == 2'd3);
+			rdy <= rdy_d;
+			for (i = 0; i < 53; i = i + 1)
+				rdy_s[i] <= rdy_d_g[i / 14];
 			if (take) begin
 				st <= RUN;
 				mid <= tc_ctl[4];
@@ -141,15 +142,28 @@ module atg_tu_filter (
 	/* The pass's fields are taken in every cycle of tc_ready (the enables
 	 * do not wait for tc_valid; a cycle without one goes to IDLE). */
 	always @(posedge clk) begin
-		if (tc_ready) begin
-			tx <= tc_texels;
-			wts <= tc_wts;
+		for (i = 0; i < 32; i = i + 1)
+			if (rdy_s[i])
+				tx[i*16 +: 16] <= tc_texels[i*16 +: 16];
+		for (i = 0; i < 8; i = i + 1)
+			if (rdy_s[32 + i])
+				wts[i*16 +: 16] <= tc_wts[i*16 +: 16];
+		for (i = 0; i < 8; i = i + 1)
+			if (rdy_s[40 + i])
+				val[i*16 +: 16] <= tc_value[i*16 +: 16];
+		if (rdy_s[48])
+			ctl[15:0] <= tc_ctl[15:0];
+		if (rdy_s[49])
+			ctl[31:16] <= tc_ctl[31:16];
+		if (rdy_s[50])
+			ctl[47:32] <= tc_ctl[47:32];
+		if (rdy_s[51]) begin
+			ctl[49:48] <= tc_ctl[49:48];
 			mask <= tc_mask;
-			ctl <= tc_ctl;
-			val <= tc_value;
-			tag <= tc_tag;
 			last <= tc_last;
 		end
+		if (rdy_s[52])
+			tag <= tc_tag;
 		if (take)
 			k <= 2'd0;
 		else if (st == RUN)
@@ -158,25 +172,48 @@ module atg_tu_filter (
 	wire issue = st == RUN;
 
 	/* ---- P1: lane k (RGB565, R8 and R8G8 as RGBA8) ---- */
-	wire [127:0] lraw = tx[k*128 +: 128];
+	(* keep = "true" *) wire [1:0] k_tx [0:7];
+	(* keep = "true" *) wire [1:0] k_wv [0:3];
+	wire [127:0] lraw;
 	wire [7:0] vkf = ctl[34:27];
-	wire [127:0] lt0 = ctl[19] ? {x565(lraw[111:96]), x565(lraw[79:64]), x565(lraw[47:32]),
-		x565(lraw[15:0])} : {xrg(lraw[127:96], vkf), xrg(lraw[95:64], vkf), xrg(lraw[63:32], vkf),
-		xrg(lraw[31:0], vkf)};
+	(* keep = "true" *) wire is_r8_base = (vkf == 8'd9);
+	(* keep = "true" *) wire is_rg8_base = (vkf == 8'd16);
+	(* keep = "true" *) wire [3:0] ctl19_lo = {4{ctl[19]}};
+	(* keep = "true" *) wire [3:0] ctl19_hi = {4{ctl[19]}};
+	(* keep = "true" *) wire [3:0] is_r8_lo = {4{is_r8_base}};
+	(* keep = "true" *) wire [3:0] is_r8_hi = {4{is_r8_base}};
+	(* keep = "true" *) wire [3:0] is_rg8_hi = {4{is_rg8_base}};
+	wire [127:0] lt0;
+
+	genvar gs;
+	generate
+	for (gs = 0; gs < 8; gs = gs + 1) begin : g_lraw
+		assign k_tx[gs] = k;
+		assign lraw[gs*16 +: 16] = tx[{k_tx[gs], gs[2:0], 4'd0} +: 16];
+	end
+	for (gs = 0; gs < 4; gs = gs + 1) begin : g_lt0
+		assign k_wv[gs] = k;
+		wire [31:0] w565 = x565(lraw[gs*32 +: 16]);
+		assign lt0[gs*32 +: 16] = ctl19_lo[gs] ? w565[15:0] :
+			is_r8_lo[gs] ? {8'd0, lraw[gs*32 +: 8]} : lraw[gs*32 +: 16];
+		assign lt0[gs*32 + 16 +: 16] = ctl19_hi[gs] ? w565[31:16] :
+			(is_r8_hi[gs] || is_rg8_hi[gs]) ? 16'hFF00 : lraw[gs*32 + 16 +: 16];
+	end
+	endgenerate
 
 	reg v1;
-	reg [127:0] lt1;
-	reg [15:0] r565_1;
-	reg [31:0] wl1, vw1;
-	reg [49:0] ctl1;
-	reg mk1, fin1, last1;
-	reg [1:0] k1;
-	reg [15:0] tag1;
+	(* extract_reset = "no", shreg_extract = "no", max_fanout = 16 *) reg [127:0] lt1;
+	(* extract_reset = "no", shreg_extract = "no" *) reg [15:0] r565_1;
+	(* extract_reset = "no", shreg_extract = "no", max_fanout = 16 *) reg [31:0] wl1, vw1;
+	(* extract_reset = "no", shreg_extract = "no", max_fanout = 16 *) reg [49:0] ctl1;
+	(* extract_reset = "no", shreg_extract = "no" *) reg mk1, fin1, last1;
+	(* extract_reset = "no", shreg_extract = "no" *) reg [1:0] k1;
+	(* extract_reset = "no", shreg_extract = "no" *) reg [15:0] tag1;
 	always @(posedge clk) begin
 		lt1 <= lt0;
 		r565_1 <= lraw[15:0];
-		wl1 <= wts[k*32 +: 32];
-		vw1 <= val[k*32 +: 32];
+		wl1 <= {wts[{k_wv[1], 5'd16} +: 16], wts[{k_wv[0], 5'd0} +: 16]};
+		vw1 <= {val[{k_wv[3], 5'd16} +: 16], val[{k_wv[2], 5'd0} +: 16]};
 		ctl1 <= ctl;
 		mk1 <= mask[k];
 		fin1 <= !ctl[4];
@@ -189,15 +226,17 @@ module atg_tu_filter (
 	/* {lt, r565, vw, ctl, mk, fin, last, k, tag}: 128 + 16 + 32 + 50 + 3 + 2 + 16 */
 	localparam DW = 247;
 	wire [DW-1:0] d1 = {lt1, r565_1, vw1, ctl1, mk1, fin1, last1, k1, tag1};
-	reg [DW-1:0] dl [2:18];
-	reg [18:2] vd;
+	(* extract_reset = "no", shreg_extract = "no", max_fanout = 16 *) reg [DW-1:0] dl [2:18];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [7:0] ctl18_c13;
+	(* max_fanout = 16 *) reg [18:2] vd;
 	always @(posedge clk) begin
 		dl[2] <= d1;
 		for (i = 3; i <= 18; i = i + 1)
 			dl[i] <= dl[i - 1];
+		ctl18_c13 <= {8{dl[17][34]}};
 	end
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_inv) begin
 			v1 <= 1'b0;
 			vd <= 17'd0;
 		end else begin
@@ -211,7 +250,7 @@ module atg_tu_filter (
 	wire [15:0] r565_14 = dl[14][118:103];
 	wire [31:0] vw18 = dl[18][102:71];
 	wire [1:0] k10 = dl[10][17:16], k11 = dl[11][17:16];
-	wire v11 = vd[11];
+	wire v10 = vd[10], v11 = vd[11];
 	wire mk18 = dl[18][20], fin18 = dl[18][19], last18 = dl[18][18];
 	wire [1:0] k18 = dl[18][17:16];
 	wire [15:0] tag18 = dl[18][15:0];
@@ -272,14 +311,41 @@ module atg_tu_filter (
 			rr12[gc] <= rr[gc];
 	end
 	endgenerate
-	always @(posedge clk)
-		if (v11)
-			case (k11)
-			2'd0: acc[159:0] <= {rr[3], rr[2], rr[1], rr[0]};
-			2'd1: acc[319:160] <= {rr[3], rr[2], rr[1], rr[0]};
-			2'd2: acc[479:320] <= {rr[3], rr[2], rr[1], rr[0]};
-			default: acc[639:480] <= {rr[3], rr[2], rr[1], rr[0]};
-			endcase
+	wire [159:0] rr_all = {rr[3], rr[2], rr[1], rr[0]};
+	(* keep = "true" *) wire [3:0] acc_lwe10 = {
+		v10 && (k10 == 2'd3),
+		v10 && (k10 == 2'd2),
+		v10 && (k10 == 2'd1),
+		v10 && (k10 == 2'd0)
+	};
+	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0] acc_we0_r, acc_we1_r, acc_we2_r, acc_we3_r;
+	always @(posedge clk) begin
+		if (rst_inv) begin
+			acc_we0_r <= 10'd0;
+			acc_we1_r <= 10'd0;
+			acc_we2_r <= 10'd0;
+			acc_we3_r <= 10'd0;
+		end else begin
+			for (i = 0; i < 10; i = i + 1) begin
+				acc_we0_r[i] <= acc_lwe10[0];
+				acc_we1_r[i] <= acc_lwe10[1];
+				acc_we2_r[i] <= acc_lwe10[2];
+				acc_we3_r[i] <= acc_lwe10[3];
+			end
+		end
+	end
+	always @(posedge clk) begin
+		for (i = 0; i < 10; i = i + 1) begin
+			if (acc_we0_r[i])
+				acc[0 + i*16 +: 16] <= rr_all[i*16 +: 16];
+			if (acc_we1_r[i])
+				acc[160 + i*16 +: 16] <= rr_all[i*16 +: 16];
+			if (acc_we2_r[i])
+				acc[320 + i*16 +: 16] <= rr_all[i*16 +: 16];
+			if (acc_we3_r[i])
+				acc[480 + i*16 +: 16] <= rr_all[i*16 +: 16];
+		end
+	end
 
 	reg [31:0] fa6 [6:14];
 	reg [3:0] ok6 [6:18];
@@ -307,7 +373,7 @@ module atg_tu_filter (
 	wire [49:0] ctl13 = dl[13][70:21];
 	reg [2:0] gsw13;
 	reg [1:0] gsrc13;
-	reg [1:0] gsel14;
+	(* max_fanout = 16 *) reg [1:0] gsel14;
 	always @(*) begin
 		case (ctl13[15:14])
 		2'd0: gsw13 = ctl13[38:36];
@@ -324,13 +390,15 @@ module atg_tu_filter (
 	for (gc = 0; gc < 4; gc = gc + 1) begin : g_cv
 		wire [31:0] gtw = lt14[gtx(gc)*32 +: 32];
 		wire [31:0] rn;
+		(* dont_touch = "true" *) wire [2:0] rnd_sel =
+			ctl13[2] ? 3'd1 : ctl13[13] ? (ctl13[8] ? 3'd2 : 3'd3) :
+			ctl13[8] && !ctl13[9] && gc == 0 ? 3'd4 :
+			ctl13[19] && ctl13[3] && gc == 1 ? 3'd5 :
+			ctl13[19] && ctl13[3] && gc != 3 ? 3'd6 : 3'd0;
 
 		atg_tu_frnd rnd (
 			.clk(clk), .i_rr(rr12[gc]),
-			.i_sel(ctl13[2] ? 3'd1 : ctl13[13] ? (ctl13[8] ? 3'd2 : 3'd3) :
-				ctl13[8] && !ctl13[9] && gc == 0 ? 3'd4 :
-				ctl13[19] && ctl13[3] && gc == 1 ? 3'd5 :
-				ctl13[19] && ctl13[3] && gc != 3 ? 3'd6 : 3'd0),
+			.i_sel(rnd_sel),
 			.i_fx(fa14[(gc % 2)*16 +: 16]), .i_g24(gtw[23:0]), .i_gb(gtw[gsel14*8 +: 8]),
 			.i_d24(lt14[23:0]), .i_c6(r565_14[10:5]),
 			.i_c5(gc == 0 ? r565_14[15:11] : r565_14[4:0]), .o_rn(rn)
@@ -340,25 +408,64 @@ module atg_tu_filter (
 	end
 	endgenerate
 
-	/* ---- P18 → out: the lane's words (atg_tu_fword) ---- */
+	/* ---- P18 → P19: the lane's words (atg_tu_fword) ---- */
 	wire [127:0] res;
 
 	atg_tu_fword word (.i_rn(rn18), .i_lt(lt18), .i_vw(vw18), .i_ok(ok18), .i_ctl(ctl18),
-		.i_mk(mk18), .o_res(res));
+		.i_ctl_c13(ctl18_c13), .i_mk(mk18), .o_res(res));
+
+	(* extract_reset = "no" *) reg [127:0] res19;
+	reg v19;
+	(* extract_reset = "no" *) reg fin19, last19;
+	(* extract_reset = "no" *) reg [1:0] k19;
+	(* extract_reset = "no" *) reg [15:0] tag19;
+	(* keep = "true" *) wire [2:0] asmb_lwe18 = {
+		vd[18] && fin18 && (k18 == 2'd2),
+		vd[18] && fin18 && (k18 == 2'd1),
+		vd[18] && fin18 && (k18 == 2'd0)
+	};
+	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0] asmb_we0_r, asmb_we1_r, asmb_we2_r;
+	always @(posedge clk) begin
+		res19 <= res;
+		fin19 <= fin18;
+		last19 <= last18;
+		k19 <= k18;
+		tag19 <= tag18;
+		if (rst_inv) begin
+			v19 <= 1'b0;
+			asmb_we0_r <= 8'd0;
+			asmb_we1_r <= 8'd0;
+			asmb_we2_r <= 8'd0;
+		end else begin
+			v19 <= vd[18];
+			for (i = 0; i < 8; i = i + 1) begin
+				asmb_we0_r[i] <= asmb_lwe18[0];
+				asmb_we1_r[i] <= asmb_lwe18[1];
+				asmb_we2_r[i] <= asmb_lwe18[2];
+			end
+		end
+	end
 
 	/* ---- The quad's words; the FIFO of returned quads ---- */
-	reg [383:0] asmb;	/* lanes 0-2 */
-	always @(posedge clk)
-		if (vd[18] && fin18 && k18 != 2'd3)
-			asmb[k18*128 +: 128] <= res;
+	(* extract_reset = "no" *) reg [383:0] asmb;	/* lanes 0-2 */
+	always @(posedge clk) begin
+		for (i = 0; i < 8; i = i + 1) begin
+			if (asmb_we0_r[i])
+				asmb[0 + i*16 +: 16] <= res19[i*16 +: 16];
+			if (asmb_we1_r[i])
+				asmb[128 + i*16 +: 16] <= res19[i*16 +: 16];
+			if (asmb_we2_r[i])
+				asmb[256 + i*16 +: 16] <= res19[i*16 +: 16];
+		end
+	end
 
 	wire [528:0] fo;
 	wire f_in_ready;
 	wire [2:0] f_count;
 
 	atg_tu_outq #(.W(529)) outq (
-		.clk(clk), .rst_n(rst_n), .in_valid(vd[18] && fin18 && k18 == 2'd3),
-		.in_ready(f_in_ready), .in_data({last18, tag18, res, asmb}), .out_valid(tr_valid),
+		.clk(clk), .rst_n(rst_n), .in_valid(v19 && fin19 && k19 == 2'd3),
+		.in_ready(f_in_ready), .in_data({last19, tag19, res19, asmb}), .out_valid(tr_valid),
 		.out_ready(tr_ready), .out_data(fo), .count(f_count)
 	);
 	assign tr_data = fo[511:0];
@@ -366,7 +473,7 @@ module atg_tu_filter (
 	assign tr_last = fo[528];
 
 	wire unused_ok = &{1'b0, ctl3, ctl4, ctl11, ctl13, ctl14, ctl18, nq_nc, k_nc,
-		f_in_ready, f_count, last1, vd[17:12], vd[10:2]};
+		f_in_ready, f_count, last1, v11, k11, vd[17:12], vd[9:2]};
 endmodule
 
 `default_nettype wire

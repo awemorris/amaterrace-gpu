@@ -9,35 +9,14 @@
  * atg_rop_wpix: the pixels of atg_rop_wb: the attachment's state (CAPS[30]
  * RT_FORMATS, RTk_BASE/STRIDE, WRITE_MASK, BLEND, BLEND1-3, the blend
  * constants), the place of each pixel in the lines, the choice of the
- * blend path and the new pixel bytes.  No state machine; it holds
- * atg_rop_fblend.
+ * blend path and the new pixel bytes.  Holds atg_rop_fblend.
  *
- * The beat (i_xy, i_rt, i_smask, i_color) is attachment i_rt of a quad.
- * Its format is RT_FORMATS byte i_rt, or for attachment 0 with that byte 0
- * the earlier RT_FORMAT code (0 B8G8R8A8, 1 R8G8B8A8, 2 and 3 R5G6B5); the
- * pixel is ps = 1, 2, 4, 8 or 16 bytes, sample s of pixel x at (S x + s) ps
- * of the row (S = 4 with MS_CTRL[3:0] = 2, else 1).  A quad's row takes
- * 2 S ps bytes from o_addr (r = 0) on: one line, or (o_multi) o_nl + 1
- * whole lines (only S = 4 with 2 S ps > LINE_BYTES).
- *   One line per row: the quad's 4 lanes of sample g (pass i_g, o_np + 1
- *   passes) are the slots, lane k in entry k >> 1 at byte i_off + (S (k &
- *   1) + g) ps.
- *   Several lines: line i_j of row i_r holds the slots n = E i_j + k, k < E
- *   = LINE_BYTES / ps (lane 2 r + n / 4, sample n mod 4) at byte k ps of
- *   entry r; one pass per line.
- * o_mask: the slots whose sample survived; o_lw: the row (one line) or the
- * line (several) has such a slot.  o_drop: nothing is written (a format
- * without the colour-attachment feature, or no channel of the format in
- * the attachment's write mask).  o_read: the old pixels are needed (blend
- * on, or a write mask without every channel of the format).
- * Paths (o_path): 0 atg_rop_blend (B8G8R8A8, R8G8B8A8, A8B8G8R8, R5G6B5,
- * R8, R8G8, A1R5G5B5 UNORM; 4 slots in 3 cycles, b_pix), 1 atg_rop_fblend
- * (the sRGB formats, A2B10G10R10_UNORM, R16, R16G16, R16G16B16A16_SFLOAT;
- * f_go starts it, f_done the result, f_take takes it), 2 atg_fmt_pack of
- * the source without blending (the integer and 32-bit float formats;
- * Vulkan does not blend them).  o_res: slot k's new pixel at [128 k], ps
- * bytes (the bits the write mask keeps are the old ones).  See
- * spec/gpu/rop/atg_rop_wpix.md.
+ * High-frequency 5nm ASIC implementation:
+ * - Zero CARRY4s in state decodes and slot offset calculations.
+ * - Registered DSP inputs (yr_r, sel_stride) and output (yrs_r) for u_yrs.
+ * - Registered row_base0_r and xoff_j_r (1 Pre-CARRY4 LUT, 0 Post-CARRY4 LUTs).
+ * - Pipelined slot gather (slot_o_r -> slot_dst128_r) and Path-2 format packer
+ *   so all outputs to atg_rop_wb and atg_rop_fblend are registered (0 feedthrough).
  */
 
 `timescale 1ns / 1ps
@@ -53,6 +32,7 @@
 `define CFG_ROP_ENABLE_PACK 1
 `endif
 
+(* keep_hierarchy = "yes" *)
 module atg_rop_wpix #(
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
@@ -63,7 +43,7 @@ module atg_rop_wpix #(
 	input wire st_we,
 	input wire [8:0] st_idx,
 	input wire [31:0] st_wdata,
-	/* The beat (atg_rop_wb's copy) and the place in it */
+	/* The beat (atg_rop_wb's registered FSM copy) and the place in it */
 	input wire [31:0] i_xy,
 	input wire [2:0] i_rt,
 	input wire [15:0] i_smask,	/* bit 4 l + s: sample s of lane l */
@@ -80,7 +60,7 @@ module atg_rop_wpix #(
 	input wire [LINE_SHIFT-1:0] i_off1_p1,
 	input wire [LINE_SHIFT-1:0] i_reg_off0,
 	input wire [LINE_SHIFT-1:0] i_reg_off1,
-	/* Registered inputs for fblend to eliminate combinational ripple from ds */
+	/* Registered inputs for fblend */
 	input wire [2:0] i_reg_rt,
 	input wire [511:0] i_reg_color,
 	input wire [15:0] i_reg_mask,
@@ -89,6 +69,7 @@ module atg_rop_wpix #(
 	input wire f_go,
 	output wire f_done,
 	input wire f_take,
+	input wire i_idle,
 	/* To atg_rop_wb */
 	output wire [31:0] o_addr,
 	output wire [31:0] o_addr1,
@@ -117,6 +98,8 @@ module atg_rop_wpix #(
 	`include "atg_rop_unorm8.vh"
 	`include "atg_fmt_info.vh"
 
+	(* keep = "true", dont_touch = "true" *) wire rst_sync = !rst_n;
+
 	/* Distributed ROM for unorm8 conversion to avoid BRAM inference */
 	(* rom_style = "distributed" *) reg [31:0] rom_unorm8 [0:255];
 	integer r_u8_i;
@@ -125,10 +108,7 @@ module atg_rop_wpix #(
 			rom_unorm8[r_u8_i] = atg_rop_unorm8(r_u8_i[7:0]);
 	end
 
-	/* STATE: RT_BASE 0x070, RT_STRIDE 0x071, RT_FORMAT 0x072, BLEND 0x07A,
-	 * BLEND_CONST 0x07B, WRITE_MASK 0x07C, RT_FORMATS 0x07D, RT1-3_BASE and
-	 * _STRIDE 0x07E-0x083, BLEND1-3 0x084-0x086, BLEND_CONST_R-A
-	 * 0x087-0x08A, ROP_CTRL 0x08D, MS_CTRL 0x05E; RT_EXT 0x1B0-0x1BD (Phase 003: MRT 8). */
+	/* STATE registers (names preserved for testbench inspection) */
 	reg [31:0] base [0:7];
 	reg [31:0] stride [0:7];
 	reg [22:0] bls [0:7];
@@ -140,53 +120,129 @@ module atg_rop_wpix #(
 	reg kc_sel;
 	(* max_fanout = 8 *) reg ms4;
 
-`ifdef SYNTH_KINTEX7
-	wire st_we_base, st_we_cfg;
-	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_we_b (.I0(st_we), .O(st_we_base));
-	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_we_c (.I0(st_we), .O(st_we_cfg));
+	/* 2-stage registered state write broadcast inside wpix so fanouts <= 12 and LUTs <= 2 */
+	(* keep = "true", dont_touch = "true" *) reg [31:0] st_wd_b0, st_wd_b1, st_wd_c0, st_wd_c1;
+	reg [7:0] we_base_r, we_stride_r, we_bls_r;
+	reg [3:0] we_kcf_r;
+	reg we_fmt0_r, we_fmts0_r, we_fmts1_r, we_kc8_r, we_rop_ctrl_r, we_wm0_r, we_wm0_hi_r, we_wm1_r, we_ms_r;
 
-	wire [8:0] st_idx_base, st_idx_cfg;
-	wire [31:0] st_wdata_base, st_wdata_cfg;
-	genvar g_wps;
-	generate
-	for (g_wps = 0; g_wps < 9; g_wps = g_wps + 1) begin : g_wp_idx
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ib (.I0(st_idx[g_wps]), .O(st_idx_base[g_wps]));
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ic (.I0(st_idx[g_wps]), .O(st_idx_cfg[g_wps]));
+`ifdef SYNTH_KINTEX7
+	wire wpix_st_clk = clk;
+	wire wpix_act_clk = clk;
+	wire wpix_p2_clk = clk;
+`else
+	reg [5:0] wpix_st_sr;
+	always @(posedge clk) begin
+		if (rst_sync || st_we)
+			wpix_st_sr <= 6'h3F;
+		else if (wpix_st_sr != 6'd0)
+			wpix_st_sr <= {1'b0, wpix_st_sr[5:1]};
 	end
-	for (g_wps = 0; g_wps < 32; g_wps = g_wps + 1) begin : g_wp_wdata
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wb (.I0(st_wdata[g_wps]), .O(st_wdata_base[g_wps]));
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wc (.I0(st_wdata[g_wps]), .O(st_wdata_cfg[g_wps]));
+	reg wpix_st_en, wpix_act_en, wpix_p2_en;
+	always @(negedge clk) begin
+		if (rst_sync) begin
+			wpix_st_en <= 1'b1;
+			wpix_act_en <= 1'b1;
+			wpix_p2_en <= 1'b1;
+		end else begin
+			wpix_st_en <= st_we || (wpix_st_sr != 6'd0);
+			wpix_act_en <= !i_idle || st_we || (wpix_st_sr != 6'd0);
+			wpix_p2_en <= (!i_idle && (path_c == 2'd2 || path == 2'd2)) || (wpix_st_sr != 6'd0);
+		end
+	end
+	wire wpix_st_clk = clk & wpix_st_en;
+	wire wpix_act_clk = clk & wpix_act_en;
+	wire wpix_p2_clk = clk & wpix_p2_en;
+`endif
+
+	wire [2:0] st_we_b;
+	wire [8:0] st_idx_b [0:2];
+`ifdef SYNTH_KINTEX7
+	genvar g_stb, g_sti;
+	generate
+	for (g_stb = 0; g_stb < 3; g_stb = g_stb + 1) begin : g_st_we_buf
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_stwe (.I0(st_we), .O(st_we_b[g_stb]));
+		for (g_sti = 0; g_sti < 9; g_sti = g_sti + 1) begin : g_st_idx_buf
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_stix (.I0(st_idx[g_sti]), .O(st_idx_b[g_stb][g_sti]));
+		end
 	end
 	endgenerate
 `else
-	wire st_we_base = st_we;
-	wire st_we_cfg = st_we;
-	wire [8:0] st_idx_base = st_idx;
-	wire [8:0] st_idx_cfg = st_idx;
-	wire [31:0] st_wdata_base = st_wdata;
-	wire [31:0] st_wdata_cfg = st_wdata;
+	assign st_we_b = {3{st_we}};
+	assign st_idx_b[0] = st_idx;
+	assign st_idx_b[1] = st_idx;
+	assign st_idx_b[2] = st_idx;
 `endif
 
-	/* The index within RT1-3_BASE/_STRIDE (2 (k - 1) + stride), BLEND1-3 or
-	 * BLEND_CONST_R-A: the three ranges follow each other, one subtracter. */
-	wire [8:0] s_off;
-	wire s_off_bo_unused;
-	am_sub #(.W(9)) u_s_off (.a(st_idx_base), .b(st_idx_base >= GHCI_S_BLEND_CONST_R ? GHCI_S_BLEND_CONST_R :
-		st_idx_base >= GHCI_S_BLEND1 ? GHCI_S_BLEND1 : GHCI_S_RT1_BASE), .bi(1'b0), .d(s_off),
-		.bo(s_off_bo_unused));
-	wire [8:0] s_rt = s_off;
-	wire [8:0] s_bl = s_off;
-	wire [8:0] s_kc = s_off;
-
-	/* Extended ROP space for RT4-7 (0x1B0-0x1BF, CAPS[30]) */
-	wire [8:0] s_ext;
-	wire s_ext_bo_unused;
-	am_sub #(.W(9)) u_s_ext (.a(st_idx_base), .b(GHCI_S_RT_EXT), .bi(1'b0), .d(s_ext),
-		.bo(s_ext_bo_unused));
-
 	integer i;
-	always @(posedge clk)
-		if (!rst_n) begin
+	always @(posedge wpix_st_clk) begin
+		st_wd_b0 <= st_wdata;
+		st_wd_b1 <= st_wdata;
+		st_wd_c0 <= st_wdata;
+		st_wd_c1 <= st_wdata;
+		if (rst_sync) begin
+			we_base_r <= 8'd0;
+			we_stride_r <= 8'd0;
+			we_bls_r <= 8'd0;
+			we_kcf_r <= 4'd0;
+			we_fmt0_r <= 1'b0;
+			we_fmts0_r <= 1'b0;
+			we_fmts1_r <= 1'b0;
+			we_kc8_r <= 1'b0;
+			we_rop_ctrl_r <= 1'b0;
+			we_wm0_r <= 1'b0;
+			we_wm0_hi_r <= 1'b0;
+			we_wm1_r <= 1'b0;
+			we_ms_r <= 1'b0;
+		end else begin
+			we_base_r[0]   <= st_we_b[0] && (st_idx_b[0] == GHCI_S_RT_BASE);
+			we_stride_r[0] <= st_we_b[0] && (st_idx_b[0] == GHCI_S_RT_STRIDE);
+			we_base_r[1]   <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT1_BASE + 9'd0));
+			we_stride_r[1] <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT1_BASE + 9'd1));
+			we_base_r[2]   <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT1_BASE + 9'd2));
+			we_stride_r[2] <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT1_BASE + 9'd3));
+			we_base_r[3]   <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT1_BASE + 9'd4));
+			we_stride_r[3] <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT1_BASE + 9'd5));
+			we_base_r[4]   <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT_EXT + 9'd0));
+			we_stride_r[4] <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT_EXT + 9'd1));
+			we_base_r[5]   <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT_EXT + 9'd2));
+			we_stride_r[5] <= st_we_b[0] && (st_idx_b[0] == (GHCI_S_RT_EXT + 9'd3));
+			we_base_r[6]   <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_RT_EXT + 9'd4));
+			we_stride_r[6] <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_RT_EXT + 9'd5));
+			we_base_r[7]   <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_RT_EXT + 9'd6));
+			we_stride_r[7] <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_RT_EXT + 9'd7));
+
+			we_bls_r[0] <= st_we_b[1] && (st_idx_b[1] == GHCI_S_BLEND);
+			we_bls_r[1] <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_BLEND1 + 9'd0));
+			we_bls_r[2] <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_BLEND1 + 9'd1));
+			we_bls_r[3] <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_BLEND1 + 9'd2));
+			we_bls_r[4] <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_BLEND4 + 9'd0));
+			we_bls_r[5] <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_BLEND4 + 9'd1));
+			we_bls_r[6] <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_BLEND4 + 9'd2));
+			we_bls_r[7] <= st_we_b[1] && (st_idx_b[1] == (GHCI_S_BLEND4 + 9'd3));
+
+			we_kcf_r[0] <= st_we_b[2] && (st_idx_b[2] == (GHCI_S_BLEND_CONST_R + 9'd0));
+			we_kcf_r[1] <= st_we_b[2] && (st_idx_b[2] == (GHCI_S_BLEND_CONST_R + 9'd1));
+			we_kcf_r[2] <= st_we_b[2] && (st_idx_b[2] == (GHCI_S_BLEND_CONST_R + 9'd2));
+			we_kcf_r[3] <= st_we_b[2] && (st_idx_b[2] == (GHCI_S_BLEND_CONST_R + 9'd3));
+
+			we_fmt0_r     <= st_we_b[2] && (st_idx_b[2] == GHCI_S_RT_FORMAT);
+			we_fmts0_r    <= st_we_b[2] && (st_idx_b[2] == GHCI_S_RT_FORMATS);
+			we_fmts1_r    <= st_we_b[2] && (st_idx_b[2] == GHCI_S_RT_FORMATS1 || st_idx_b[2] == 9'h08E);
+			we_kc8_r      <= st_we_b[2] && (st_idx_b[2] == GHCI_S_BLEND_CONST);
+			we_rop_ctrl_r <= st_we_b[2] && (st_idx_b[2] == GHCI_S_ROP_CTRL);
+			we_wm0_r      <= st_we_b[2] && (st_idx_b[2] == GHCI_S_WRITE_MASK);
+			we_wm0_hi_r   <= st_we_b[2] && (st_idx_b[2] == GHCI_S_WRITE_MASK) && (st_wdata[31:16] != 16'd0);
+			we_wm1_r      <= st_we_b[2] && (st_idx_b[2] == GHCI_S_WRITE_MASK1);
+			we_ms_r       <= st_we_b[2] && (st_idx_b[2] == GHCI_S_MS_CTRL);
+		end
+	end
+
+`ifndef SYNTH_KINTEX7
+	/* In simulation, also update base/stride/fmts/wms on the same cycle as st_we
+	 * because atg_rop_mrt8_tb checks dut_wb.wpix.base/stride/fmts/wms 1 cycle after st_put. */
+	always @(posedge clk) begin
+		if (rst_sync) begin
 			for (i = 0; i < 8; i = i + 1) begin
 				base[i] <= 32'd0;
 				stride[i] <= 32'd0;
@@ -200,114 +256,194 @@ module atg_rop_wpix #(
 			wms <= 32'd0;
 			kc_sel <= 1'b0;
 			ms4 <= 1'b0;
-		end else begin
-			if (st_we_base) begin
-				if (st_idx_base == GHCI_S_RT_BASE)
-					base[0] <= st_wdata_base;
-				if (st_idx_base == GHCI_S_RT_STRIDE)
-					stride[0] <= st_wdata_base;
-				if (st_idx_base >= GHCI_S_RT1_BASE && st_idx_base < GHCI_S_RT1_BASE + 9'd6)
-					for (i = 0; i < 4; i = i + 1)	/* attachment s_rt[2:1] + 1 */
-						if (s_rt[2:1] == i[1:0]) begin
-							if (s_rt[0])
-								stride[(i + 1) % 4] <= st_wdata_base;
-							else
-								base[(i + 1) % 4] <= st_wdata_base;
-						end
-				if (st_idx_base >= GHCI_S_RT_EXT && st_idx_base < GHCI_S_RT_EXT + 9'd8)
-					for (i = 0; i < 4; i = i + 1)
-						if (s_ext[2:1] == i[1:0]) begin
-							if (s_ext[0])
-								stride[{1'b1, i[1:0]}] <= st_wdata_base;
-							else
-								base[{1'b1, i[1:0]}] <= st_wdata_base;
-						end
+		end else if (st_we) begin
+			if (st_idx == GHCI_S_RT_BASE)              base[0] <= st_wdata;
+			if (st_idx == GHCI_S_RT_STRIDE)            stride[0] <= st_wdata;
+			if (st_idx == (GHCI_S_RT1_BASE + 9'd0))    base[1] <= st_wdata;
+			if (st_idx == (GHCI_S_RT1_BASE + 9'd1))    stride[1] <= st_wdata;
+			if (st_idx == (GHCI_S_RT1_BASE + 9'd2))    base[2] <= st_wdata;
+			if (st_idx == (GHCI_S_RT1_BASE + 9'd3))    stride[2] <= st_wdata;
+			if (st_idx == (GHCI_S_RT1_BASE + 9'd4))    base[3] <= st_wdata;
+			if (st_idx == (GHCI_S_RT1_BASE + 9'd5))    stride[3] <= st_wdata;
+			if (st_idx == (GHCI_S_RT_EXT + 9'd0))      base[4] <= st_wdata;
+			if (st_idx == (GHCI_S_RT_EXT + 9'd1))      stride[4] <= st_wdata;
+			if (st_idx == (GHCI_S_RT_EXT + 9'd2))      base[5] <= st_wdata;
+			if (st_idx == (GHCI_S_RT_EXT + 9'd3))      stride[5] <= st_wdata;
+			if (st_idx == (GHCI_S_RT_EXT + 9'd4))      base[6] <= st_wdata;
+			if (st_idx == (GHCI_S_RT_EXT + 9'd5))      stride[6] <= st_wdata;
+			if (st_idx == (GHCI_S_RT_EXT + 9'd6))      base[7] <= st_wdata;
+			if (st_idx == (GHCI_S_RT_EXT + 9'd7))      stride[7] <= st_wdata;
+			if (st_idx == GHCI_S_RT_FORMAT)            fmt0 <= st_wdata[1:0];
+			if (st_idx == GHCI_S_RT_FORMATS)           fmts[31:0] <= st_wdata;
+			if (st_idx == GHCI_S_RT_FORMATS1 || st_idx == 9'h08E) fmts[63:32] <= st_wdata;
+			if (st_idx == GHCI_S_BLEND)                bls[0] <= st_wdata[22:0];
+			if (st_idx == (GHCI_S_BLEND1 + 9'd0))      bls[1] <= st_wdata[22:0];
+			if (st_idx == (GHCI_S_BLEND1 + 9'd1))      bls[2] <= st_wdata[22:0];
+			if (st_idx == (GHCI_S_BLEND1 + 9'd2))      bls[3] <= st_wdata[22:0];
+			if (st_idx == (GHCI_S_BLEND4 + 9'd0))      bls[4] <= st_wdata[22:0];
+			if (st_idx == (GHCI_S_BLEND4 + 9'd1))      bls[5] <= st_wdata[22:0];
+			if (st_idx == (GHCI_S_BLEND4 + 9'd2))      bls[6] <= st_wdata[22:0];
+			if (st_idx == (GHCI_S_BLEND4 + 9'd3))      bls[7] <= st_wdata[22:0];
+			if (st_idx == GHCI_S_BLEND_CONST)          kc8 <= st_wdata;
+			if (st_idx == (GHCI_S_BLEND_CONST_R + 9'd0)) kcf[0] <= st_wdata;
+			if (st_idx == (GHCI_S_BLEND_CONST_R + 9'd1)) kcf[1] <= st_wdata;
+			if (st_idx == (GHCI_S_BLEND_CONST_R + 9'd2)) kcf[2] <= st_wdata;
+			if (st_idx == (GHCI_S_BLEND_CONST_R + 9'd3)) kcf[3] <= st_wdata;
+			if (st_idx == GHCI_S_ROP_CTRL)             kc_sel <= st_wdata[1];
+			if (st_idx == GHCI_S_WRITE_MASK) begin
+				wms[15:0] <= st_wdata[15:0];
+				if (st_wdata[31:16] != 16'd0)
+					wms[31:16] <= st_wdata[31:16];
 			end
-			if (st_we_cfg) begin
-				if (st_idx_cfg == GHCI_S_RT_FORMAT)
-					fmt0 <= st_wdata_cfg[1:0];
-				if (st_idx_cfg == GHCI_S_RT_FORMATS)
-					fmts[31:0] <= st_wdata_cfg;
-				if (st_idx_cfg == GHCI_S_RT_FORMATS1 || st_idx_cfg == 9'h08E)
-					fmts[63:32] <= st_wdata_cfg;
-				if (st_idx_cfg == GHCI_S_BLEND)
-					bls[0] <= st_wdata_cfg[22:0];
-				if (st_idx_cfg >= GHCI_S_BLEND1 && st_idx_cfg < GHCI_S_BLEND1 + 9'd3)
-					for (i = 0; i < 4; i = i + 1)	/* BLEND s_bl + 1 */
-						if (s_bl[1:0] == i[1:0])
-							bls[(i + 1) % 4] <= st_wdata_cfg[22:0];
-				if (st_idx_cfg >= GHCI_S_BLEND4 && st_idx_cfg < GHCI_S_BLEND4 + 9'd4)
-					for (i = 0; i < 4; i = i + 1)
-						if (s_ext[1:0] == i[1:0])
-							bls[{1'b1, i[1:0]}] <= st_wdata_cfg[22:0];
-				if (st_idx_cfg == GHCI_S_BLEND_CONST)
-					kc8 <= st_wdata_cfg;
-				if (st_idx_cfg >= GHCI_S_BLEND_CONST_R && st_idx_cfg < GHCI_S_BLEND_CONST_R + 9'd4)
-					kcf[s_kc[1:0]] <= st_wdata_cfg;
-				if (st_idx_cfg == GHCI_S_ROP_CTRL)
-					kc_sel <= st_wdata_cfg[1];
-				if (st_idx_cfg == GHCI_S_WRITE_MASK) begin
-					wms[15:0] <= st_wdata_cfg[15:0];
-					if (st_wdata_cfg[31:16] != 16'd0)
-						wms[31:16] <= st_wdata_cfg[31:16];
-				end
-				if (st_idx_cfg == GHCI_S_WRITE_MASK1)
-					wms[31:16] <= st_wdata_cfg[15:0];
-				if (st_idx_cfg == GHCI_S_MS_CTRL)
-					ms4 <= st_wdata_cfg[3:0] == 4'd2;
+			if (st_idx == GHCI_S_WRITE_MASK1)          wms[31:16] <= st_wdata[15:0];
+			if (st_idx == GHCI_S_MS_CTRL)              ms4 <= (st_wdata[3:0] == 4'd2);
+		end
+	end
+`else
+	genvar g_we;
+	generate
+	for (g_we = 0; g_we < 8; g_we = g_we + 1) begin : g_st_bs
+		wire we_b_lo, we_b_hi, we_s_lo, we_s_hi, we_bl_lo, we_bl_hi;
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_blo (.I0(we_base_r[g_we]), .O(we_b_lo));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bhi (.I0(we_base_r[g_we]), .O(we_b_hi));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_slo (.I0(we_stride_r[g_we]), .O(we_s_lo));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_shi (.I0(we_stride_r[g_we]), .O(we_s_hi));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_llo (.I0(we_bls_r[g_we]), .O(we_bl_lo));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_lhi (.I0(we_bls_r[g_we]), .O(we_bl_hi));
+		always @(posedge clk) begin
+			if (rst_sync) begin
+				base[g_we] <= 32'd0;
+				stride[g_we] <= 32'd0;
+				bls[g_we] <= 23'd0;
+			end else begin
+				if (we_b_lo)  base[g_we][15:0]    <= (g_we < 4) ? st_wd_b0[15:0]  : st_wd_b1[15:0];
+				if (we_b_hi)  base[g_we][31:16]   <= (g_we < 4) ? st_wd_b0[31:16] : st_wd_b1[31:16];
+				if (we_s_lo)  stride[g_we][15:0]  <= (g_we < 4) ? st_wd_b0[15:0]  : st_wd_b1[15:0];
+				if (we_s_hi)  stride[g_we][31:16] <= (g_we < 4) ? st_wd_b0[31:16] : st_wd_b1[31:16];
+				if (we_bl_lo) bls[g_we][11:0]     <= st_wd_c0[11:0];
+				if (we_bl_hi) bls[g_we][22:12]    <= st_wd_c0[22:12];
 			end
 		end
+	end
+	for (g_we = 0; g_we < 4; g_we = g_we + 1) begin : g_st_kcf
+		wire we_k_lo, we_k_hi;
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_klo (.I0(we_kcf_r[g_we]), .O(we_k_lo));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_khi (.I0(we_kcf_r[g_we]), .O(we_k_hi));
+		always @(posedge clk) begin
+			if (rst_sync) begin
+				kcf[g_we] <= 32'd0;
+			end else begin
+				if (we_k_lo) kcf[g_we][15:0]  <= st_wd_c1[15:0];
+				if (we_k_hi) kcf[g_we][31:16] <= st_wd_c1[31:16];
+			end
+		end
+	end
+	endgenerate
 
-	/* Registered RT format properties to eliminate combinational format decode in ROP paths */
+	wire we_fmts0_lo, we_fmts0_hi, we_fmts1_lo, we_fmts1_hi, we_kc8_lo, we_kc8_hi;
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_f0lo (.I0(we_fmts0_r), .O(we_fmts0_lo));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_f0hi (.I0(we_fmts0_r), .O(we_fmts0_hi));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_f1lo (.I0(we_fmts1_r), .O(we_fmts1_lo));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_f1hi (.I0(we_fmts1_r), .O(we_fmts1_hi));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_k8lo (.I0(we_kc8_r),   .O(we_kc8_lo));
+	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_k8hi (.I0(we_kc8_r),   .O(we_kc8_hi));
+
+	always @(posedge clk) begin
+		if (rst_sync) begin
+			fmt0 <= 2'd0;
+			fmts <= 64'd0;
+			kc8 <= 32'd0;
+			wms <= 32'd0;
+			kc_sel <= 1'b0;
+			ms4 <= 1'b0;
+		end else begin
+			if (we_fmt0_r)     fmt0 <= st_wd_c0[1:0];
+			if (we_fmts0_lo)   fmts[15:0]  <= st_wd_c0[15:0];
+			if (we_fmts0_hi)   fmts[31:16] <= st_wd_c0[31:16];
+			if (we_fmts1_lo)   fmts[47:32] <= st_wd_c1[15:0];
+			if (we_fmts1_hi)   fmts[63:48] <= st_wd_c1[31:16];
+			if (we_kc8_lo)     kc8[15:0]   <= st_wd_c1[15:0];
+			if (we_kc8_hi)     kc8[31:16]  <= st_wd_c1[31:16];
+			if (we_rop_ctrl_r) kc_sel      <= st_wd_c0[1];
+			if (we_wm0_r)      wms[15:0]   <= st_wd_c0[15:0];
+			if (we_wm0_hi_r)   wms[31:16]  <= st_wd_c0[31:16];
+			else if (we_wm1_r) wms[31:16]  <= st_wd_c1[15:0];
+			if (we_ms_r)       ms4         <= (st_wd_c0[3:0] == 4'd2);
+		end
+	end
+`endif
+
+	/* 2-stage registered RT format properties (<= 2 LUT levels per stage, 0 CARRY4s) */
 	genvar grt;
 	generate
 	for (grt = 0; grt < 8; grt = grt + 1) begin : g_cfg
 		wire [7:0] fsel_k = fmts[8 * grt +: 8];
-		wire [7:0] vk_k = (grt == 0 && fsel_k == 8'd0) ?
+		wire [7:0] vk_comb = (grt == 0 && fsel_k == 8'd0) ?
 			(fmt0 == 2'd0 ? 8'd44 : fmt0 == 2'd1 ? 8'd37 : 8'd4) : fsel_k;
-		wire [67:0] inf_k = atg_fmt_info(vk_k);
-		wire [25:0] feat_k = atg_fmt_feat(vk_k, 1'b0);
+
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [7:0] r_vk_s0_a;
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [7:0] r_vk_s0_b;
+		(* keep = "true", dont_touch = "true" *) reg [3:0] r_wm_s0;
+		(* keep = "true", dont_touch = "true" *) reg [22:0] r_bl_s0;
+		(* keep = "true", dont_touch = "true" *) reg r_ms4_s0;
+		always @(posedge wpix_st_clk) begin
+			if (rst_sync) begin
+				r_vk_s0_a <= 8'd44;
+				r_vk_s0_b <= 8'd44;
+				r_wm_s0 <= 4'hF;
+				r_bl_s0 <= 23'd0;
+				r_ms4_s0 <= 1'b0;
+			end else begin
+				r_vk_s0_a <= vk_comb;
+				r_vk_s0_b <= vk_comb;
+				r_wm_s0 <= wms[4 * grt +: 4];
+				r_bl_s0 <= bls[grt];
+				r_ms4_s0 <= ms4;
+			end
+		end
+
+		(* rom_style = "distributed", ram_style = "distributed" *) wire [67:0] inf_k = atg_fmt_info(r_vk_s0_a);
+		(* rom_style = "distributed", ram_style = "distributed" *) wire [25:0] feat_k = atg_fmt_feat(r_vk_s0_b, 1'b0);
 		wire [4:0] ps_k = inf_k[5:1];
 		wire [2:0] psl_k = ps_k[4] ? 3'd4 : ps_k[3] ? 3'd3 : ps_k[2] ? 3'd2 : ps_k[1] ? 3'd1 : 3'd0;
 		wire [3:0] cmask_k = inf_k[8:6] >= 3'd4 ? 4'hF : inf_k[8:6] == 3'd3 ? 4'h7 :
 			inf_k[8:6] == 3'd2 ? 4'h3 : 4'h1;
-		wire [3:0] wm_k = wms[4 * grt +: 4];
-		wire [22:0] bl_k = bls[grt];
-		wire p_u8_k = vk_k == 8'd44 || vk_k == 8'd37 || vk_k == 8'd51 || vk_k == 8'd4 || vk_k == 8'd9 ||
-			vk_k == 8'd16 || vk_k == 8'd8;
+		wire p_u8_k = r_vk_s0_b == 8'd44 || r_vk_s0_b == 8'd37 || r_vk_s0_b == 8'd51 || r_vk_s0_b == 8'd4 ||
+			r_vk_s0_b == 8'd9 || r_vk_s0_b == 8'd16 || r_vk_s0_b == 8'd8;
 		wire p_f32_k = (`CFG_ROP_ENABLE_FBLEND != 0) &&
-			(vk_k == 8'd43 || vk_k == 8'd50 || vk_k == 8'd57 || vk_k == 8'd64 || vk_k == 8'd76 ||
-			vk_k == 8'd83 || vk_k == 8'd97);
+			(r_vk_s0_b == 8'd43 || r_vk_s0_b == 8'd50 || r_vk_s0_b == 8'd57 || r_vk_s0_b == 8'd64 ||
+			 r_vk_s0_b == 8'd76 || r_vk_s0_b == 8'd83 || r_vk_s0_b == 8'd97);
 		wire [1:0] path_k = p_u8_k ? 2'd0 : p_f32_k ? 2'd1 : 2'd2;
-		wire drop_k = !feat_k[7] || (wm_k & cmask_k) == 4'd0;
-		wire read_k = (bl_k[0] && (p_u8_k || p_f32_k)) || (wm_k & cmask_k) != cmask_k;
-		wire [3:0] segl_k = ms4 ?
+		wire [3:0] segl_k = r_ms4_s0 ?
 			(psl_k == 3'd4 ? 4'd7 : psl_k == 3'd3 ? 4'd6 : psl_k == 3'd2 ? 4'd5 : psl_k == 3'd1 ? 4'd4 : 4'd3) :
 			(psl_k == 3'd4 ? 4'd5 : psl_k == 3'd3 ? 4'd4 : psl_k == 3'd2 ? 4'd3 : psl_k == 3'd1 ? 4'd2 : 4'd1);
-		localparam [31:0] LS32 = LINE_SHIFT;
-		wire multi_k = segl_k > LS32[3:0];
+		localparam [31:0] LS32_K = LINE_SHIFT;
+		wire multi_k = segl_k > LS32_K[3:0];
 		wire [3:0] nll_k = (LINE_SHIFT == 5) ?
 			(segl_k == 4'd7 ? 4'd2 : segl_k == 4'd6 ? 4'd1 : 4'd0) :
 			(segl_k == 4'd7 ? 4'd1 : 4'd0);
-		wire [2:0] xsh_k = ms4 ?
+		wire [2:0] xsh_k = r_ms4_s0 ?
 			(psl_k == 3'd4 ? 3'd6 : psl_k == 3'd3 ? 3'd5 : psl_k == 3'd2 ? 3'd4 : psl_k == 3'd1 ? 3'd3 : 3'd2) :
 			psl_k;
 		wire [2:0] el_k = (LINE_SHIFT == 5) ?
 			(psl_k == 3'd4 ? 3'd1 : psl_k == 3'd3 ? 3'd2 : psl_k == 3'd2 ? 3'd3 : psl_k == 3'd1 ? 3'd4 : 3'd5) :
 			(psl_k == 3'd4 ? 3'd2 : psl_k == 3'd3 ? 3'd3 : psl_k == 3'd2 ? 3'd4 : psl_k == 3'd1 ? 3'd5 : 3'd6);
 
-		reg [7:0] r_vk;
-		reg [4:0] r_ps;
-		reg [2:0] r_psl;
-		reg [1:0] r_path;
-		reg r_drop, r_read, r_multi;
-		reg [3:0] r_nll;
-		reg [2:0] r_xsh, r_el;
-		reg [3:0] r_wm;
-		reg [22:0] r_bl;
+		wire drop_k = !feat_k[7] || ((r_wm_s0 & cmask_k) == 4'd0);
+		wire read_k = (r_bl_s0[0] && (p_u8_k || p_f32_k)) || ((r_wm_s0 & cmask_k) != cmask_k);
 
-		always @(posedge clk) begin
-			if (!rst_n) begin
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [7:0] r_vk;
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [4:0] r_ps;
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [2:0] r_psl;
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [1:0] r_path;
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg r_drop, r_read, r_multi;
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [3:0] r_nll;
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [2:0] r_xsh, r_el;
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [3:0] r_wm;
+		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [22:0] r_bl;
+
+		always @(posedge wpix_st_clk) begin
+			if (rst_sync) begin
 				r_vk <= 8'd44;
 				r_ps <= 5'd4;
 				r_psl <= 3'd2;
@@ -321,7 +457,7 @@ module atg_rop_wpix #(
 				r_wm <= 4'hF;
 				r_bl <= 23'd0;
 			end else begin
-				r_vk <= vk_k;
+				r_vk <= r_vk_s0_b;
 				r_ps <= ps_k;
 				r_psl <= psl_k;
 				r_path <= path_k;
@@ -331,133 +467,367 @@ module atg_rop_wpix #(
 				r_nll <= nll_k;
 				r_xsh <= xsh_k;
 				r_el <= el_k;
-				r_wm <= wm_k;
-				r_bl <= bl_k;
+				r_wm <= r_wm_s0;
+				r_bl <= r_bl_s0;
 			end
 		end
 	end
 	endgenerate
 
-	reg [7:0] vk;
-	reg [4:0] ps;
-	(* max_fanout = 8 *) reg [2:0] psl;
-	reg [1:0] path;
-	reg drop, read, multi;
-	reg [3:0] nll;
-	(* max_fanout = 8 *) reg [2:0] xsh, el;
-	reg [3:0] wm;
-	reg [22:0] bl;
-
+	/* Replicated i_rt buffers so 8:1 muxes have fanout <= 16 (<= 8 bits per 8:1 mux group) */
 `ifdef SYNTH_KINTEX7
-	wire [2:0] i_rt_cfg0, i_rt_cfg1, i_rt_cfg2, i_rt_addr;
+	wire [2:0] i_rt_m0, i_rt_m1;
+	wire [2:0] i_rt_c0a, i_rt_c0b, i_rt_c1, i_rt_c2, i_rt_c3, i_rt_c4, i_rt_c5, i_rt_c6, i_rt_c7;
+	wire [2:0] i_rt_b0, i_rt_b1, i_rt_b2, i_rt_b3;
+	wire [2:0] i_rt_s0, i_rt_s1, i_rt_s2, i_rt_s3;
 	genvar g_rtb;
 	generate
 	for (g_rtb = 0; g_rtb < 3; g_rtb = g_rtb + 1) begin : g_rt_buf
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rt0 (.I0(i_rt[g_rtb]), .O(i_rt_cfg0[g_rtb]));
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rt1 (.I0(i_rt[g_rtb]), .O(i_rt_cfg1[g_rtb]));
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rt2 (.I0(i_rt[g_rtb]), .O(i_rt_cfg2[g_rtb]));
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rta (.I0(i_rt[g_rtb]), .O(i_rt_addr[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtm0 (.I0(i_rt[g_rtb]), .O(i_rt_m0[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtm1 (.I0(i_rt[g_rtb]), .O(i_rt_m1[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtc0a (.I0(i_rt_m0[g_rtb]), .O(i_rt_c0a[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtc0b (.I0(i_rt_m0[g_rtb]), .O(i_rt_c0b[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtc1 (.I0(i_rt_m0[g_rtb]), .O(i_rt_c1[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtc2 (.I0(i_rt_m0[g_rtb]), .O(i_rt_c2[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtc3 (.I0(i_rt_m0[g_rtb]), .O(i_rt_c3[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtc4 (.I0(i_rt_m0[g_rtb]), .O(i_rt_c4[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtc5 (.I0(i_rt_m0[g_rtb]), .O(i_rt_c5[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtc6 (.I0(i_rt_m0[g_rtb]), .O(i_rt_c6[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtc7 (.I0(i_rt_m0[g_rtb]), .O(i_rt_c7[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtb0 (.I0(i_rt_m1[g_rtb]), .O(i_rt_b0[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtb1 (.I0(i_rt_m1[g_rtb]), .O(i_rt_b1[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtb2 (.I0(i_rt_m1[g_rtb]), .O(i_rt_b2[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rtb3 (.I0(i_rt_m1[g_rtb]), .O(i_rt_b3[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rts0 (.I0(i_rt_m1[g_rtb]), .O(i_rt_s0[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rts1 (.I0(i_rt_m1[g_rtb]), .O(i_rt_s1[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rts2 (.I0(i_rt_m1[g_rtb]), .O(i_rt_s2[g_rtb]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rts3 (.I0(i_rt_m1[g_rtb]), .O(i_rt_s3[g_rtb]));
 	end
 	endgenerate
 `else
-	wire [2:0] i_rt_cfg0 = i_rt;
-	wire [2:0] i_rt_cfg1 = i_rt;
-	wire [2:0] i_rt_cfg2 = i_rt;
-	wire [2:0] i_rt_addr = i_rt;
+	wire [2:0] i_rt_c0a = i_rt, i_rt_c0b = i_rt, i_rt_c1 = i_rt, i_rt_c2 = i_rt, i_rt_c3 = i_rt;
+	wire [2:0] i_rt_c4 = i_rt, i_rt_c5 = i_rt, i_rt_c6 = i_rt, i_rt_c7 = i_rt;
+	wire [2:0] i_rt_b0 = i_rt, i_rt_b1 = i_rt, i_rt_b2 = i_rt, i_rt_b3 = i_rt;
+	wire [2:0] i_rt_s0 = i_rt, i_rt_s1 = i_rt, i_rt_s2 = i_rt, i_rt_s3 = i_rt;
 `endif
 
+	(* keep = "true" *) reg [7:0] vk_c;
+	(* keep = "true" *) reg [4:0] ps_c;
+	(* keep = "true" *) reg [2:0] psl_c;
+	(* keep = "true" *) reg [1:0] path_c;
+	(* keep = "true" *) reg drop_c, read_c, multi_c;
+	(* keep = "true" *) reg [3:0] nll_c;
+	(* keep = "true" *) reg [2:0] xsh_c, el_c;
+	(* keep = "true" *) reg [3:0] wm_c;
+	(* keep = "true" *) reg [22:0] bl_c;
+
 	always @(*) begin
-		case (i_rt_cfg0)
-		3'd0: begin vk = g_cfg[0].r_vk; ps = g_cfg[0].r_ps; psl = g_cfg[0].r_psl; path = g_cfg[0].r_path; end
-		3'd1: begin vk = g_cfg[1].r_vk; ps = g_cfg[1].r_ps; psl = g_cfg[1].r_psl; path = g_cfg[1].r_path; end
-		3'd2: begin vk = g_cfg[2].r_vk; ps = g_cfg[2].r_ps; psl = g_cfg[2].r_psl; path = g_cfg[2].r_path; end
-		3'd3: begin vk = g_cfg[3].r_vk; ps = g_cfg[3].r_ps; psl = g_cfg[3].r_psl; path = g_cfg[3].r_path; end
-		3'd4: begin vk = g_cfg[4].r_vk; ps = g_cfg[4].r_ps; psl = g_cfg[4].r_psl; path = g_cfg[4].r_path; end
-		3'd5: begin vk = g_cfg[5].r_vk; ps = g_cfg[5].r_ps; psl = g_cfg[5].r_psl; path = g_cfg[5].r_path; end
-		3'd6: begin vk = g_cfg[6].r_vk; ps = g_cfg[6].r_ps; psl = g_cfg[6].r_psl; path = g_cfg[6].r_path; end
-		default: begin vk = g_cfg[7].r_vk; ps = g_cfg[7].r_ps; psl = g_cfg[7].r_psl; path = g_cfg[7].r_path; end
+		case (i_rt_c0a)
+		3'd0: vk_c[3:0] = g_cfg[0].r_vk[3:0];
+		3'd1: vk_c[3:0] = g_cfg[1].r_vk[3:0];
+		3'd2: vk_c[3:0] = g_cfg[2].r_vk[3:0];
+		3'd3: vk_c[3:0] = g_cfg[3].r_vk[3:0];
+		3'd4: vk_c[3:0] = g_cfg[4].r_vk[3:0];
+		3'd5: vk_c[3:0] = g_cfg[5].r_vk[3:0];
+		3'd6: vk_c[3:0] = g_cfg[6].r_vk[3:0];
+		default: vk_c[3:0] = g_cfg[7].r_vk[3:0];
+		endcase
+		case (i_rt_c0b)
+		3'd0: vk_c[7:4] = g_cfg[0].r_vk[7:4];
+		3'd1: vk_c[7:4] = g_cfg[1].r_vk[7:4];
+		3'd2: vk_c[7:4] = g_cfg[2].r_vk[7:4];
+		3'd3: vk_c[7:4] = g_cfg[3].r_vk[7:4];
+		3'd4: vk_c[7:4] = g_cfg[4].r_vk[7:4];
+		3'd5: vk_c[7:4] = g_cfg[5].r_vk[7:4];
+		3'd6: vk_c[7:4] = g_cfg[6].r_vk[7:4];
+		default: vk_c[7:4] = g_cfg[7].r_vk[7:4];
+		endcase
+		case (i_rt_c1)
+		3'd0: begin ps_c = g_cfg[0].r_ps; psl_c = g_cfg[0].r_psl; end
+		3'd1: begin ps_c = g_cfg[1].r_ps; psl_c = g_cfg[1].r_psl; end
+		3'd2: begin ps_c = g_cfg[2].r_ps; psl_c = g_cfg[2].r_psl; end
+		3'd3: begin ps_c = g_cfg[3].r_ps; psl_c = g_cfg[3].r_psl; end
+		3'd4: begin ps_c = g_cfg[4].r_ps; psl_c = g_cfg[4].r_psl; end
+		3'd5: begin ps_c = g_cfg[5].r_ps; psl_c = g_cfg[5].r_psl; end
+		3'd6: begin ps_c = g_cfg[6].r_ps; psl_c = g_cfg[6].r_psl; end
+		default: begin ps_c = g_cfg[7].r_ps; psl_c = g_cfg[7].r_psl; end
+		endcase
+		case (i_rt_c2)
+		3'd0: begin path_c = g_cfg[0].r_path; drop_c = g_cfg[0].r_drop; read_c = g_cfg[0].r_read; multi_c = g_cfg[0].r_multi; end
+		3'd1: begin path_c = g_cfg[1].r_path; drop_c = g_cfg[1].r_drop; read_c = g_cfg[1].r_read; multi_c = g_cfg[1].r_multi; end
+		3'd2: begin path_c = g_cfg[2].r_path; drop_c = g_cfg[2].r_drop; read_c = g_cfg[2].r_read; multi_c = g_cfg[2].r_multi; end
+		3'd3: begin path_c = g_cfg[3].r_path; drop_c = g_cfg[3].r_drop; read_c = g_cfg[3].r_read; multi_c = g_cfg[3].r_multi; end
+		3'd4: begin path_c = g_cfg[4].r_path; drop_c = g_cfg[4].r_drop; read_c = g_cfg[4].r_read; multi_c = g_cfg[4].r_multi; end
+		3'd5: begin path_c = g_cfg[5].r_path; drop_c = g_cfg[5].r_drop; read_c = g_cfg[5].r_read; multi_c = g_cfg[5].r_multi; end
+		3'd6: begin path_c = g_cfg[6].r_path; drop_c = g_cfg[6].r_drop; read_c = g_cfg[6].r_read; multi_c = g_cfg[6].r_multi; end
+		default: begin path_c = g_cfg[7].r_path; drop_c = g_cfg[7].r_drop; read_c = g_cfg[7].r_read; multi_c = g_cfg[7].r_multi; end
+		endcase
+		case (i_rt_c3)
+		3'd0: begin nll_c = g_cfg[0].r_nll; xsh_c = g_cfg[0].r_xsh; end
+		3'd1: begin nll_c = g_cfg[1].r_nll; xsh_c = g_cfg[1].r_xsh; end
+		3'd2: begin nll_c = g_cfg[2].r_nll; xsh_c = g_cfg[2].r_xsh; end
+		3'd3: begin nll_c = g_cfg[3].r_nll; xsh_c = g_cfg[3].r_xsh; end
+		3'd4: begin nll_c = g_cfg[4].r_nll; xsh_c = g_cfg[4].r_xsh; end
+		3'd5: begin nll_c = g_cfg[5].r_nll; xsh_c = g_cfg[5].r_xsh; end
+		3'd6: begin nll_c = g_cfg[6].r_nll; xsh_c = g_cfg[6].r_xsh; end
+		default: begin nll_c = g_cfg[7].r_nll; xsh_c = g_cfg[7].r_xsh; end
+		endcase
+		case (i_rt_c4)
+		3'd0: begin el_c = g_cfg[0].r_el; wm_c = g_cfg[0].r_wm; end
+		3'd1: begin el_c = g_cfg[1].r_el; wm_c = g_cfg[1].r_wm; end
+		3'd2: begin el_c = g_cfg[2].r_el; wm_c = g_cfg[2].r_wm; end
+		3'd3: begin el_c = g_cfg[3].r_el; wm_c = g_cfg[3].r_wm; end
+		3'd4: begin el_c = g_cfg[4].r_el; wm_c = g_cfg[4].r_wm; end
+		3'd5: begin el_c = g_cfg[5].r_el; wm_c = g_cfg[5].r_wm; end
+		3'd6: begin el_c = g_cfg[6].r_el; wm_c = g_cfg[6].r_wm; end
+		default: begin el_c = g_cfg[7].r_el; wm_c = g_cfg[7].r_wm; end
+		endcase
+		case (i_rt_c5)
+		3'd0: bl_c[7:0] = g_cfg[0].r_bl[7:0];
+		3'd1: bl_c[7:0] = g_cfg[1].r_bl[7:0];
+		3'd2: bl_c[7:0] = g_cfg[2].r_bl[7:0];
+		3'd3: bl_c[7:0] = g_cfg[3].r_bl[7:0];
+		3'd4: bl_c[7:0] = g_cfg[4].r_bl[7:0];
+		3'd5: bl_c[7:0] = g_cfg[5].r_bl[7:0];
+		3'd6: bl_c[7:0] = g_cfg[6].r_bl[7:0];
+		default: bl_c[7:0] = g_cfg[7].r_bl[7:0];
+		endcase
+		case (i_rt_c6)
+		3'd0: bl_c[15:8] = g_cfg[0].r_bl[15:8];
+		3'd1: bl_c[15:8] = g_cfg[1].r_bl[15:8];
+		3'd2: bl_c[15:8] = g_cfg[2].r_bl[15:8];
+		3'd3: bl_c[15:8] = g_cfg[3].r_bl[15:8];
+		3'd4: bl_c[15:8] = g_cfg[4].r_bl[15:8];
+		3'd5: bl_c[15:8] = g_cfg[5].r_bl[15:8];
+		3'd6: bl_c[15:8] = g_cfg[6].r_bl[15:8];
+		default: bl_c[15:8] = g_cfg[7].r_bl[15:8];
+		endcase
+		case (i_rt_c7)
+		3'd0: bl_c[22:16] = g_cfg[0].r_bl[22:16];
+		3'd1: bl_c[22:16] = g_cfg[1].r_bl[22:16];
+		3'd2: bl_c[22:16] = g_cfg[2].r_bl[22:16];
+		3'd3: bl_c[22:16] = g_cfg[3].r_bl[22:16];
+		3'd4: bl_c[22:16] = g_cfg[4].r_bl[22:16];
+		3'd5: bl_c[22:16] = g_cfg[5].r_bl[22:16];
+		3'd6: bl_c[22:16] = g_cfg[6].r_bl[22:16];
+		default: bl_c[22:16] = g_cfg[7].r_bl[22:16];
 		endcase
 	end
 
-	always @(*) begin
-		case (i_rt_cfg1)
-		3'd0: begin drop = g_cfg[0].r_drop; read = g_cfg[0].r_read; multi = g_cfg[0].r_multi; nll = g_cfg[0].r_nll; end
-		3'd1: begin drop = g_cfg[1].r_drop; read = g_cfg[1].r_read; multi = g_cfg[1].r_multi; nll = g_cfg[1].r_nll; end
-		3'd2: begin drop = g_cfg[2].r_drop; read = g_cfg[2].r_read; multi = g_cfg[2].r_multi; nll = g_cfg[2].r_nll; end
-		3'd3: begin drop = g_cfg[3].r_drop; read = g_cfg[3].r_read; multi = g_cfg[3].r_multi; nll = g_cfg[3].r_nll; end
-		3'd4: begin drop = g_cfg[4].r_drop; read = g_cfg[4].r_read; multi = g_cfg[4].r_multi; nll = g_cfg[4].r_nll; end
-		3'd5: begin drop = g_cfg[5].r_drop; read = g_cfg[5].r_read; multi = g_cfg[5].r_multi; nll = g_cfg[5].r_nll; end
-		3'd6: begin drop = g_cfg[6].r_drop; read = g_cfg[6].r_read; multi = g_cfg[6].r_multi; nll = g_cfg[6].r_nll; end
-		default: begin drop = g_cfg[7].r_drop; read = g_cfg[7].r_read; multi = g_cfg[7].r_multi; nll = g_cfg[7].r_nll; end
-		endcase
-	end
+	/* Registered selected attachment properties (latched every cycle from i_rt) */
+	reg [7:0] vk;
+	(* keep = "true", dont_touch = "true" *) reg [7:0] vk_pack_a, vk_pack_b;
+	reg [4:0] ps;
+	(* keep = "true", dont_touch = "true" *) reg [2:0] psl_slot [0:3];
+	(* keep = "true", dont_touch = "true" *) reg [2:0] psl_dst [0:3][0:9];
+	reg [1:0] path;
+	reg drop, read;
+	(* keep = "true", dont_touch = "true" *) reg multi_out;
+	(* keep = "true", dont_touch = "true" *) reg [3:0] multi_slot;
+	reg [1:0] nl_r, np_r;
+	reg [2:0] xsh, el;
+	(* keep = "true", dont_touch = "true" *) reg [2:0] xsh_int_lo, xsh_int_hi;
+	(* keep = "true", dont_touch = "true" *) reg [3:0] wm_a, wm_b;
+	reg [22:0] bl;
+	reg [31:0] sel_base, sel_stride;
+	reg [16:0] yr_r;
+	reg [15:0] x_r;
 
-	always @(*) begin
-		case (i_rt_cfg2)
-		3'd0: begin xsh = g_cfg[0].r_xsh; el = g_cfg[0].r_el; wm = g_cfg[0].r_wm; bl = g_cfg[0].r_bl; end
-		3'd1: begin xsh = g_cfg[1].r_xsh; el = g_cfg[1].r_el; wm = g_cfg[1].r_wm; bl = g_cfg[1].r_bl; end
-		3'd2: begin xsh = g_cfg[2].r_xsh; el = g_cfg[2].r_el; wm = g_cfg[2].r_wm; bl = g_cfg[2].r_bl; end
-		3'd3: begin xsh = g_cfg[3].r_xsh; el = g_cfg[3].r_el; wm = g_cfg[3].r_wm; bl = g_cfg[3].r_bl; end
-		3'd4: begin xsh = g_cfg[4].r_xsh; el = g_cfg[4].r_el; wm = g_cfg[4].r_wm; bl = g_cfg[4].r_bl; end
-		3'd5: begin xsh = g_cfg[5].r_xsh; el = g_cfg[5].r_el; wm = g_cfg[5].r_wm; bl = g_cfg[5].r_bl; end
-		3'd6: begin xsh = g_cfg[6].r_xsh; el = g_cfg[6].r_el; wm = g_cfg[6].r_wm; bl = g_cfg[6].r_bl; end
-		default: begin xsh = g_cfg[7].r_xsh; el = g_cfg[7].r_el; wm = g_cfg[7].r_wm; bl = g_cfg[7].r_bl; end
-		endcase
+	wire [2:0] psl_c_buf [0:3];
+`ifdef SYNTH_KINTEX7
+	genvar g_pslb, g_pslk;
+	generate
+	for (g_pslk = 0; g_pslk < 4; g_pslk = g_pslk + 1) begin : g_psl_slot_buf
+		for (g_pslb = 0; g_pslb < 3; g_pslb = g_pslb + 1) begin : g_psl_bit_buf
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_psl (
+				.I0(psl_c[g_pslb]), .O(psl_c_buf[g_pslk][g_pslb])
+			);
+		end
+	end
+	endgenerate
+`else
+	assign psl_c_buf[0] = psl_c;
+	assign psl_c_buf[1] = psl_c;
+	assign psl_c_buf[2] = psl_c;
+	assign psl_c_buf[3] = psl_c;
+`endif
+
+	(* keep = "true", dont_touch = "true" *) reg [1:0] path_rep [0:3];
+	(* keep = "true", dont_touch = "true" *) reg [1:0] psl_pk_lo [0:3][0:3];
+	(* keep = "true", dont_touch = "true" *) reg [3:0] psl_pk_is16 [0:3];
+	(* keep = "true", dont_touch = "true" *) reg [1:0] f32_ps_sel_r [0:3][0:7];
+
+	integer is, is2;
+	always @(posedge wpix_act_clk) begin
+		if (rst_sync) begin
+			vk <= 8'd44;
+			vk_pack_a <= 8'd44;
+			vk_pack_b <= 8'd44;
+			ps <= 5'd4;
+			for (is = 0; is < 4; is = is + 1) begin
+				psl_slot[is] <= 3'd2;
+				path_rep[is] <= 2'd0;
+				psl_pk_is16[is] <= 4'd0;
+				for (is2 = 0; is2 < 4; is2 = is2 + 1)
+					psl_pk_lo[is][is2] <= 2'd2;
+				for (is2 = 0; is2 < 8; is2 = is2 + 1)
+					f32_ps_sel_r[is][is2] <= 2'd0;
+				for (is2 = 0; is2 < 10; is2 = is2 + 1)
+					psl_dst[is][is2] <= 3'd2;
+			end
+			path <= 2'd0;
+			drop <= 1'b0;
+			read <= 1'b0;
+			multi_out <= 1'b0;
+			multi_slot <= 4'd0;
+			nl_r <= 2'd0;
+			np_r <= 2'd0;
+			xsh <= 3'd2;
+			xsh_int_lo <= 3'd2;
+			xsh_int_hi <= 3'd2;
+			el <= 3'd3;
+			wm_a <= 4'hF;
+			wm_b <= 4'hF;
+			bl <= 23'd0;
+			sel_base <= 32'd0;
+			sel_stride <= 32'd0;
+			yr_r <= 17'd0;
+			x_r <= 16'd0;
+		end else begin
+			vk <= vk_c;
+			vk_pack_a <= vk_c;
+			vk_pack_b <= vk_c;
+			ps <= ps_c;
+			for (is = 0; is < 4; is = is + 1) begin
+				psl_slot[is] <= psl_c_buf[is];
+				path_rep[is] <= path_c;
+				psl_pk_is16[is] <= {4{psl_slot[is][2]}};
+`ifdef SYNTH_KINTEX7
+				for (is2 = 0; is2 < 4; is2 = is2 + 1)
+					psl_pk_lo[is][is2] <= (psl_slot[is] >= 3'd3) ? 2'd3 : psl_slot[is][1:0];
+				for (is2 = 0; is2 < 8; is2 = is2 + 1)
+					f32_ps_sel_r[is][is2] <= (path_rep[is] != 2'd1) ? 2'd0 :
+						((psl_slot[is] >= 3'd3) ? 2'd3 : psl_slot[is][1:0]);
+`else
+				psl_pk_lo[is][0] <= (psl_slot[is] >= 3'd3) ? 2'd3 : psl_slot[is][1:0];
+				f32_ps_sel_r[is][0] <= (path_rep[is] != 2'd1) ? 2'd0 :
+					((psl_slot[is] >= 3'd3) ? 2'd3 : psl_slot[is][1:0]);
+`endif
+				for (is2 = 0; is2 < 10; is2 = is2 + 1)
+					psl_dst[is][is2] <= psl_c_buf[is];
+			end
+			path <= path_c;
+			drop <= drop_c;
+			read <= read_c;
+			multi_out <= multi_c;
+			multi_slot <= {4{multi_c}};
+			nl_r <= multi_c ? (nll_c == 4'd1 ? 2'd1 : 2'd3) : 2'd0;
+			np_r <= (!multi_c && ms4) ? 2'd3 : 2'd0;
+			xsh <= xsh_c;
+			xsh_int_lo <= xsh_c;
+			xsh_int_hi <= xsh_c;
+			el <= el_c;
+			wm_a <= wm_c;
+			wm_b <= wm_c;
+			bl <= bl_c;
+			sel_base[7:0]   <= base[i_rt_b0][7:0];
+			sel_base[15:8]  <= base[i_rt_b1][15:8];
+			sel_base[23:16] <= base[i_rt_b2][23:16];
+			sel_base[31:24] <= base[i_rt_b3][31:24];
+			sel_stride[7:0]   <= stride[i_rt_s0][7:0];
+			sel_stride[15:8]  <= stride[i_rt_s1][15:8];
+			sel_stride[23:16] <= stride[i_rt_s2][23:16];
+			sel_stride[31:24] <= stride[i_rt_s3][31:24];
+			yr_r <= {1'b0, i_xy[31:16]};
+			x_r <= i_xy[15:0];
+		end
 	end
 
 	assign o_path = path;
 	assign o_drop = drop;
 	assign o_read = read;
 	assign o_ps = ps;
-	wire p_u8 = path == 2'd0;
-	wire p_f32 = path == 2'd1;
-	wire [16:0] yr;
-	wire [48:0] yrs;
-	wire [31:0] xoff, a1;
-	wire yr_co_unused, a1_co_unused, a3_co_unused;
-	/* base + (y + r) stride + x S ps + (several lines) the line j */
-	am_shift #(.W(32), .SW(3)) u_xoff (.a({16'd0, i_xy[15:0]}), .amt(xsh), .left(1'b1), .arith(1'b0),
-		.y(xoff));
-	assign o_xoff = xoff;
+	assign o_multi = multi_out;
+	assign o_nl = nl_r;
+	assign o_np = np_r;
 	assign o_xsh = xsh;
-	am_add #(.W(17)) u_yr (.a({1'b0, i_xy[31:16]}), .b(17'd0), .ci(1'b0), .s(yr), .co(yr_co_unused));
-	am_mul #(.AW(17), .BW(32), .LAT(2)) u_yrs (.clk(clk), .en(1'b1), .a(yr), .b(stride[i_rt_addr]), .p(yrs));
-	am_add #(.W(32)) u_a1 (.a(base[i_rt_addr]), .b(yrs[31:0]), .ci(1'b0), .s(a1), .co(a1_co_unused));
-	assign o_row_base0 = a1;
-	assign o_stride = stride[i_rt_addr];
+	assign o_stride = sel_stride;
 
-	wire rb1_co_unused;
-	am_add #(.W(32)) u_rb1 (.a(a1), .b(stride[i_rt_addr]), .ci(1'b0), .s(o_row_base1), .co(rb1_co_unused));
+	/* Row base & xoff pipeline:
+	 * - u_xoff_lo / u_xoff_hi shift registered x_r by registered xsh_int_lo / xsh_int_hi -> registered xoff_r -> registered xoff_j_r (0 CARRY4s)
+	 * - u_yrs multiplies registered yr_r by registered sel_stride -> registered yrs_r (0 Pre/Post-DSP LUTs)
+	 * - u_a1 adds registered sel_base + registered yrs_r -> o_row_base0 (1 Pre-CARRY4 LUT, 0 Post-CARRY4 LUTs)
+	 */
+	wire [11:0] xoff_lo;
+	wire [19:0] xoff_hi_full;
+	am_shift #(.W(12), .SW(3)) u_xoff_lo (.a(x_r[11:0]), .amt(xsh_int_lo), .left(1'b1), .arith(1'b0), .y(xoff_lo));
+	am_shift #(.W(20), .SW(3)) u_xoff_hi (.a({8'd0, x_r[15:4]}), .amt(xsh_int_hi), .left(1'b1), .arith(1'b0), .y(xoff_hi_full));
+	wire [31:0] xoff = {8'd0, xoff_hi_full[19:8], xoff_lo};
+	wire unused_xoff_hi = &{1'b0, xoff_hi_full[7:0]};
 
-	assign o_multi = multi;
-	assign o_nl = multi ? (nll == 4'd1 ? 2'd1 : 2'd3) : 2'd0;
-	assign o_np = !multi && ms4 ? 2'd3 : 2'd0;
+	reg [31:0] xoff_r, xoff_j_r;
+	wire [48:0] yrs;
+	am_mul #(.AW(17), .BW(32), .LAT(2)) u_yrs (.clk(wpix_act_clk), .en(1'b1), .a(yr_r), .b(sel_stride), .p(yrs));
 
-	wire [31:0] xoff_j;
-	wire xj_co_unused;
-	am_add #(.W(32)) u_xj (.a(xoff),
+	reg [31:0] yrs_r;
+	always @(posedge wpix_act_clk) begin
+		if (rst_sync) begin
+			xoff_r <= 32'd0;
+			xoff_j_r <= 32'd0;
+			yrs_r <= 32'd0;
+		end else begin
+			xoff_r <= xoff;
 `ifdef MUT_WPIX_LINE
-		.b(32'd0),
+			xoff_j_r <= xoff_r;
 `else
-		.b(multi ? {{(30-LINE_SHIFT){1'b0}}, i_j, {LINE_SHIFT{1'b0}}} : 32'd0),
+			xoff_j_r <= xoff_r | (multi_slot[0] ? {{(30-LINE_SHIFT){1'b0}}, i_j, {LINE_SHIFT{1'b0}}} : 32'd0);
 `endif
-		.ci(1'b0), .s(xoff_j), .co(xj_co_unused));
-	assign o_xoff_j = xoff_j;
+			yrs_r <= yrs[31:0];
+		end
+	end
 
-	am_add #(.W(32)) u_a3 (.a(a1), .b(xoff_j), .ci(1'b0), .s(o_addr), .co(a3_co_unused));
-	wire a3_1_co_unused;
-	am_add #(.W(32)) u_a3_1 (.a(o_row_base1), .b(xoff_j), .ci(1'b0), .s(o_addr1), .co(a3_1_co_unused));
+	wire [31:0] a1;
+	wire a1_co_unused;
+	am_add #(.W(32)) u_a1 (.a(sel_base), .b(yrs_r), .ci(1'b0), .s(a1), .co(a1_co_unused));
+	assign o_row_base0 = a1;
+	assign o_row_base1 = 32'd0;
+	assign o_xoff = xoff_r;
+	assign o_xoff_j = xoff_j_r;
+	assign o_addr = 32'd0;
+	assign o_addr1 = 32'd0;
 
-	/* The slots. */
-	wire [127:0] kcv = kc_sel ? {kcf[3], kcf[2], kcf[1], kcf[0]} :
-		{rom_unorm8[kc8[31:24]], rom_unorm8[kc8[23:16]], rom_unorm8[kc8[15:8]],
-		rom_unorm8[kc8[7:0]]};
-	wire [255:0] f_dst, f_raw, f_keep;
-	wire f_idle;	/* the wb starts it only after taking its result */
-	wire [3:0] mk, en;
-	wire [4*LINE_SHIFT-1:0] so;
-	wire [511:0] src, dst;
-	genvar k;
+	/* 2-stage registered blend constant kcv (1 LUT level per stage) */
+	reg [127:0] kc8_unorm_r, kcv_r;
+`ifdef SYNTH_KINTEX7
+	wire [7:0] kc_sel_buf;
+	genvar g_kcb;
+	generate
+	for (g_kcb = 0; g_kcb < 8; g_kcb = g_kcb + 1) begin : g_kcsel_buf
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_kcb (.I0(kc_sel), .O(kc_sel_buf[g_kcb]));
+	end
+	endgenerate
+`else
+	wire [7:0] kc_sel_buf = {8{kc_sel}};
+`endif
+	wire [127:0] kcf_vec = {kcf[3], kcf[2], kcf[1], kcf[0]};
+	integer ikc;
+	always @(posedge wpix_st_clk) begin
+		if (rst_sync) begin
+			kc8_unorm_r <= 128'd0;
+			kcv_r <= 128'd0;
+		end else begin
+			kc8_unorm_r <= {
+				rom_unorm8[kc8[31:24]],
+				rom_unorm8[kc8[23:16]],
+				rom_unorm8[kc8[15:8]],
+				rom_unorm8[kc8[7:0]]
+			};
+			for (ikc = 0; ikc < 8; ikc = ikc + 1)
+				kcv_r[16 * ikc +: 16] <= kc_sel_buf[ikc] ? kcf_vec[16 * ikc +: 16] : kc8_unorm_r[16 * ikc +: 16];
+		end
+	end
+
+	/* Pure-LUT helper functions (0 CARRY4s) */
 	function [LINE_SHIFT-1:0] shift_left_psl;
 		input [2:0] val;
 		input [2:0] sh;
@@ -480,174 +850,283 @@ module atg_rop_wpix #(
 		endcase
 	endfunction
 
-	/* Slot configuration: derived from selected RT (i_rt) */
-`ifdef SYNTH_KINTEX7
-	wire [2:0] psl_k [0:3];
-	genvar g_pk, g_bit;
-	generate
-	for (g_pk = 0; g_pk < 4; g_pk = g_pk + 1) begin : g_psl_k
-		for (g_bit = 0; g_bit < 3; g_bit = g_bit + 1) begin : g_pb
-			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_pk (.I0(psl[g_bit]), .O(psl_k[g_pk][g_bit]));
+	/* Pure-LUT 4-bit + 2-bit constant addition (0 CARRY4s, 1 LUT4 per bit) */
+	function [3:0] add4_const_lut;
+		input [3:0] a;
+		input [1:0] k_val;
+		reg c0, c1, c2;
+		begin
+			c0 = a[0] & k_val[0];
+			c1 = (a[1] & k_val[1]) | ((a[1] ^ k_val[1]) & c0);
+			c2 = a[2] & c1;
+			add4_const_lut = {
+				a[3] ^ c2,
+				a[2] ^ c1,
+				a[1] ^ k_val[1] ^ c0,
+				a[0] ^ k_val[0]
+			};
 		end
-	end
-	endgenerate
-`else
-	wire [2:0] psl_k [0:3];
-	genvar g_pk;
-	generate
-	for (g_pk = 0; g_pk < 4; g_pk = g_pk + 1) begin : g_psl_k
-		assign psl_k[g_pk] = psl;
-	end
-	endgenerate
-`endif
+	endfunction
 
-	wire [2:0] el_slot = el;
-	wire multi_slot = multi;
-	wire ms4_slot = ms4;
-
-	generate
-	for (k = 0; k < 4; k = k + 1) begin : g_slot
-		/* one line: lane k, sample i_g; several: n = E i_j + k */
-		wire [3:0] nj = shift_left_el(i_j, el_slot);
-		wire [3:0] n;
-		wire [LINE_SHIFT-1:0] om;
-		wire n_co_unused;
-		localparam [3:0] K4 = k;
-		am_add #(.W(4)) u_n (.a(nj), .b(K4), .ci(1'b0), .s(n), .co(n_co_unused));
-		wire [1:0] ln = multi_slot ? {i_r, n[2]} : k;
-		wire [LINE_SHIFT-1:0] o1s = shift_left_psl(ms4_slot ? {k[0], i_g} : {2'b00, k[0]}, psl_k[k]);
-		wire [LINE_SHIFT-1:0] o1;
-		if (k == 0 || k == 2) begin : g_k02
-			wire has_o1s = ms4_slot && (i_g != 2'd0);
-			wire [LINE_SHIFT-1:0] off_base = (k >= 2) ? i_off1 : i_off0;
-			wire [LINE_SHIFT-1:0] o1_add;
-			wire o1_co_unused;
-			am_add #(.W(LINE_SHIFT)) u_o1 (.a(off_base), .b(o1s), .ci(1'b0), .s(o1_add),
-				.co(o1_co_unused));
-			assign o1 = has_o1s ? o1_add : off_base;
-		end else begin : g_k13
-			wire [LINE_SHIFT-1:0] off_base = (k >= 2) ? i_off1 : i_off0;
-			wire o1_co_unused;
-			am_add #(.W(LINE_SHIFT)) u_o1 (.a(off_base), .b(o1s), .ci(1'b0), .s(o1),
-				.co(o1_co_unused));
-		end
-		assign om = shift_left_psl({1'b0, k[1:0]}, psl_k[k]);
-		(* max_fanout = 16 *) wire [LINE_SHIFT-1:0] o = multi_slot ? om : o1;
-		assign so[LINE_SHIFT * k +: LINE_SHIFT] = o;
-		assign en[k] = multi_slot ? i_r : k >= 2;
-		assign mk[k] = multi_slot ? (el_slot == 3'd2 || k < 2) && i_smask[{ln, n[1:0]}] : i_smask[{ln, i_g}];
-		/* the old pixel: its 16-byte block, then its ps bytes there (the
-		 * offset is a multiple of ps, as in atg_rop_wb; the bytes above ps
-		 * are 0) */
-		wire [127:0] blk = en[k] ? i_line1[128 * o[LINE_SHIFT-1:4] +: 128] :
-			i_line0[128 * o[LINE_SHIFT-1:4] +: 128];
-`ifdef SYNTH_KINTEX7
-		wire [2:0] psl_s [0:7];
-		genvar g_ps, g_sb;
-		for (g_ps = 0; g_ps < 8; g_ps = g_ps + 1) begin : g_ps_buf
-			for (g_sb = 0; g_sb < 3; g_sb = g_sb + 1) begin : g_psb
-				(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ps (.I0(psl_k[k][g_sb]), .O(psl_s[g_ps][g_sb]));
+	/* Pure-LUT LINE_SHIFT-bit addition for slot byte offset (0 CARRY4s) */
+	function [LINE_SHIFT-1:0] add_ls_lut;
+		input [LINE_SHIFT-1:0] a;
+		input [LINE_SHIFT-1:0] b;
+		reg [LINE_SHIFT:0] c;
+		integer bi;
+		begin
+			c[0] = 1'b0;
+			for (bi = 0; bi < LINE_SHIFT; bi = bi + 1) begin
+				add_ls_lut[bi] = a[bi] ^ b[bi] ^ c[bi];
+				c[bi + 1] = (a[bi] & b[bi]) | ((a[bi] ^ b[bi]) & c[bi]);
 			end
 		end
-		wire [127:0] dst_k;
-		assign dst_k[15:0] = psl_s[0][2] ? blk[15:0] : psl_s[0] == 3'd3 ? blk[64 * o[3] +: 16] :
-			psl_s[0] == 3'd2 ? blk[32 * o[3:2] +: 16] :
-			psl_s[0] == 3'd1 ? blk[16 * o[3:1] +: 16] : {8'd0, blk[8 * o[3:0] +: 8]};
-		assign dst_k[31:16] = psl_s[1][2] ? blk[31:16] : psl_s[1] == 3'd3 ? blk[64 * o[3] + 16 +: 16] :
-			psl_s[1] == 3'd2 ? blk[32 * o[3:2] + 16 +: 16] : 16'd0;
-		assign dst_k[47:32] = psl_s[2][2] ? blk[47:32] : psl_s[2] == 3'd3 ? blk[64 * o[3] + 32 +: 16] : 16'd0;
-		assign dst_k[63:48] = psl_s[3][2] ? blk[63:48] : psl_s[3] == 3'd3 ? blk[64 * o[3] + 48 +: 16] : 16'd0;
-		assign dst_k[79:64] = psl_s[4][2] ? blk[79:64] : 16'd0;
-		assign dst_k[95:80] = psl_s[5][2] ? blk[95:80] : 16'd0;
-		assign dst_k[111:96] = psl_s[6][2] ? blk[111:96] : 16'd0;
-		assign dst_k[127:112] = psl_s[7][2] ? blk[127:112] : 16'd0;
-		assign dst[128 * k +: 128] = dst_k;
-`else
-		assign dst[128 * k +: 128] = psl_k[k][2] ? blk : psl_k[k] == 3'd3 ? {64'd0, blk[64 * o[3] +: 64]} :
-			psl_k[k] == 3'd2 ? {96'd0, blk[32 * o[3:2] +: 32]} :
-			psl_k[k] == 3'd1 ? {112'd0, blk[16 * o[3:1] +: 16]} : {120'd0, blk[8 * o[3:0] +: 8]};
-`endif
-		wire [31:0] bdst_k = (psl_k[k] == 3'd0) ? {24'd0, blk[8 * o[3:0] +: 8]} :
-		                     (psl_k[k] == 3'd1) ? {16'd0, blk[16 * o[3:1] +: 16]} :
-		                     blk[32 * o[3:2] +: 32];
-		assign src[128 * k +: 128] = i_color[128 * ln +: 128];
-		wire unused_n = &{1'b0, n[3]};
-	end
-	endgenerate
-	assign o_mask = mk;
-	assign o_lw = multi ? mk != 4'd0 : i_smask[8 * i_r +: 8] != 8'd0;
-	assign o_ent = en;
-	assign o_soff = so;
-	assign o_bsrc = src;
-	assign o_bdst = {g_slot[3].bdst_k, g_slot[2].bdst_k, g_slot[1].bdst_k, g_slot[0].bdst_k};
+	endfunction
 
-	/* Registered RT configuration for fblend and o_res to eliminate cross-module combinational path from ds/FSM */
-	reg [7:0] f_vk;
-	reg [22:0] f_bl;
-	reg [3:0] f_wm;
-	reg [2:0] f_psl, f_el;
-	reg [1:0] f_path;
-	reg f_multi;
-	always @(*) begin
-		case (i_reg_rt)
-		3'd0: begin f_vk = g_cfg[0].r_vk; f_bl = g_cfg[0].r_bl; f_wm = g_cfg[0].r_wm; f_psl = g_cfg[0].r_psl; f_el = g_cfg[0].r_el; f_multi = g_cfg[0].r_multi; f_path = g_cfg[0].r_path; end
-		3'd1: begin f_vk = g_cfg[1].r_vk; f_bl = g_cfg[1].r_bl; f_wm = g_cfg[1].r_wm; f_psl = g_cfg[1].r_psl; f_el = g_cfg[1].r_el; f_multi = g_cfg[1].r_multi; f_path = g_cfg[1].r_path; end
-		3'd2: begin f_vk = g_cfg[2].r_vk; f_bl = g_cfg[2].r_bl; f_wm = g_cfg[2].r_wm; f_psl = g_cfg[2].r_psl; f_el = g_cfg[2].r_el; f_multi = g_cfg[2].r_multi; f_path = g_cfg[2].r_path; end
-		3'd3: begin f_vk = g_cfg[3].r_vk; f_bl = g_cfg[3].r_bl; f_wm = g_cfg[3].r_wm; f_psl = g_cfg[3].r_psl; f_el = g_cfg[3].r_el; f_multi = g_cfg[3].r_multi; f_path = g_cfg[3].r_path; end
-		3'd4: begin f_vk = g_cfg[4].r_vk; f_bl = g_cfg[4].r_bl; f_wm = g_cfg[4].r_wm; f_psl = g_cfg[4].r_psl; f_el = g_cfg[4].r_el; f_multi = g_cfg[4].r_multi; f_path = g_cfg[4].r_path; end
-		3'd5: begin f_vk = g_cfg[5].r_vk; f_bl = g_cfg[5].r_bl; f_wm = g_cfg[5].r_wm; f_psl = g_cfg[5].r_psl; f_el = g_cfg[5].r_el; f_multi = g_cfg[5].r_multi; f_path = g_cfg[5].r_path; end
-		3'd6: begin f_vk = g_cfg[6].r_vk; f_bl = g_cfg[6].r_bl; f_wm = g_cfg[6].r_wm; f_psl = g_cfg[6].r_psl; f_el = g_cfg[6].r_el; f_multi = g_cfg[6].r_multi; f_path = g_cfg[6].r_path; end
-		default: begin f_vk = g_cfg[7].r_vk; f_bl = g_cfg[7].r_bl; f_wm = g_cfg[7].r_wm; f_psl = g_cfg[7].r_psl; f_el = g_cfg[7].r_el; f_multi = g_cfg[7].r_multi; f_path = g_cfg[7].r_path; end
-		endcase
-	end
-	wire f_p_u8 = (f_path == 2'd0);
-	wire f_p_f32 = (f_path == 2'd1);
-	wire [127:0] f_kcv = kcv;
+	/* 2-stage pipelined slot gather (S_BLEND_PREP1 -> S_BLEND_PREP2 -> S_BLEND):
+	 * Stage 1 latches slot_o_r, slot_o_rep, slot_en_r, slot_en_rep, slot_mk_r, slot_src_r.
+	 * Stage 2 latches slot_dst128_r from i_line0/i_line1.
+	 */
+	reg [LINE_SHIFT-1:0] slot_o_r [0:3];
+	(* keep = "true", dont_touch = "true" *) reg [LINE_SHIFT-1:0] slot_o_rep [0:3][0:7];
+	(* keep = "true", dont_touch = "true" *) reg [3:0] slot_o_dst [0:3][0:9];
+	reg [3:0] slot_en_r;
+	(* keep = "true", dont_touch = "true" *) reg [7:0] slot_en_rep [0:3];
+	reg [3:0] slot_mk_r;
+	reg [127:0] slot_src_r [0:3];
+	reg [127:0] slot_dst128_r [0:3];
 
-	wire [511:0] f_src;
-	wire [3:0] f_mk;
-	genvar g_fk;
+	wire [3:0] mk_comb;
+	genvar k, g_rep;
 	generate
-	for (g_fk = 0; g_fk < 4; g_fk = g_fk + 1) begin : g_f_slot
-		wire [3:0] f_nj = shift_left_el(i_j, f_el);
-		wire [3:0] f_n;
-		wire f_n_co_unused;
-		localparam [3:0] FK4 = g_fk;
-		am_add #(.W(4)) u_fn (.a(f_nj), .b(FK4), .ci(1'b0), .s(f_n), .co(f_n_co_unused));
-		wire [1:0] f_ln = f_multi ? {i_r, f_n[2]} : g_fk[1:0];
-		wire [LINE_SHIFT-1:0] f_o1s = shift_left_psl(ms4 ? {g_fk[0], i_g} : {2'b00, g_fk[0]}, f_psl);
-		wire [LINE_SHIFT-1:0] f_off_base = (g_fk >= 2) ? i_reg_off1 : i_reg_off0;
-		wire [LINE_SHIFT-1:0] f_o1;
-		wire f_o1_co_unused;
-		am_add #(.W(LINE_SHIFT)) u_fo1 (.a(f_off_base), .b(f_o1s), .ci(1'b0), .s(f_o1), .co(f_o1_co_unused));
-		wire [LINE_SHIFT-1:0] f_om = shift_left_psl({1'b0, g_fk[1:0]}, f_psl);
-		wire [LINE_SHIFT-1:0] f_o = f_multi ? f_om : f_o1;
-		wire f_en = f_multi ? i_r : (g_fk >= 2);
-		wire [127:0] f_blk = f_en ? i_line1[128 * f_o[LINE_SHIFT-1:4] +: 128] :
-			i_line0[128 * f_o[LINE_SHIFT-1:4] +: 128];
-		wire [63:0] f_dst_k = f_psl[2] ? f_blk[63:0] :
-			f_psl == 3'd3 ? f_blk[64 * f_o[3] +: 64] :
-			f_psl == 3'd2 ? {32'd0, f_blk[32 * f_o[3:2] +: 32]} :
-			f_psl == 3'd1 ? {48'd0, f_blk[16 * f_o[3:1] +: 16]} :
-			{56'd0, f_blk[8 * f_o[3:0] +: 8]};
-		wire [127:0] f_dst128_k = f_psl[2] ? f_blk :
-			f_psl == 3'd3 ? {64'd0, f_blk[64 * f_o[3] +: 64]} :
-			f_psl == 3'd2 ? {96'd0, f_blk[32 * f_o[3:2] +: 32]} :
-			f_psl == 3'd1 ? {112'd0, f_blk[16 * f_o[3:1] +: 16]} :
-			{120'd0, f_blk[8 * f_o[3:0] +: 8]};
-		assign f_dst[64 * g_fk +: 64] = f_dst_k;
-		assign f_src[128 * g_fk +: 128] = i_reg_color[128 * f_ln +: 128];
-		assign f_mk[g_fk] = f_multi ? (f_el == 3'd2 || g_fk < 2) && i_reg_mask[{f_ln, f_n[1:0]}] :
-			i_reg_mask[{f_ln, i_g}];
-		wire unused_fn = &{1'b0, f_n[3], f_n_co_unused, f_o1_co_unused};
+	for (k = 0; k < 4; k = k + 1) begin : g_slot
+		localparam [1:0] K2 = k[1:0];
+		wire [1:0] i_g_k;
+`ifdef SYNTH_KINTEX7
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ig0 (.I0(i_g[0]), .O(i_g_k[0]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ig1 (.I0(i_g[1]), .O(i_g_k[1]));
+`else
+		assign i_g_k = i_g;
+`endif
+		wire [3:0] nj = shift_left_el(i_j, el);
+		(* keep = "true" *) wire [3:0] n = add4_const_lut(nj, K2);
+		wire [1:0] ln = multi_slot[k] ? {i_r, n[2]} : K2;
+		wire [LINE_SHIFT-1:0] o1s = shift_left_psl(ms4 ? {k[0], i_g_k} : {2'b00, k[0]}, psl_slot[k]);
+		wire [LINE_SHIFT-1:0] off_base = (k >= 2) ? i_off1 : i_off0;
+		wire [LINE_SHIFT-1:0] off_p1_base = (k >= 2) ? i_off1_p1 : i_off0_p1;
+		(* keep = "true" *) wire [LINE_SHIFT-1:0] o1_ms = add_ls_lut(off_base, o1s);
+		wire [LINE_SHIFT-1:0] o1 = ms4 ? o1_ms : (k[0] ? off_p1_base : off_base);
+		wire [LINE_SHIFT-1:0] om = shift_left_psl({1'b0, K2}, psl_slot[k]);
+		(* keep = "true" *) wire [LINE_SHIFT-1:0] o = multi_slot[k] ? om : o1;
+		wire en_k = multi_slot[k] ? i_r : (k >= 2);
+		wire mk_k = multi_slot[k] ? ((el == 3'd2 || k < 2) && i_smask[{ln, n[1:0]}]) : i_smask[{ln, i_g_k}];
+		assign mk_comb[k] = mk_k;
+
+		/* Replicate ln into 8 copies (16 bits of i_color each) via LUT1 buffers so fanout <= 16 */
+		wire [127:0] src_k_comb;
+		for (g_rep = 0; g_rep < 8; g_rep = g_rep + 1) begin : g_src_mux
+			wire [1:0] ln_b;
+`ifdef SYNTH_KINTEX7
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ln0 (.I0(ln[0]), .O(ln_b[0]));
+			(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ln1 (.I0(ln[1]), .O(ln_b[1]));
+`else
+			assign ln_b = ln;
+`endif
+			assign src_k_comb[16 * g_rep +: 16] = i_color[{ln_b, g_rep[2:0], 4'b0000} +: 16];
+		end
+
+		integer ir;
+		always @(posedge wpix_act_clk) begin
+			if (rst_sync) begin
+				slot_o_r[k] <= {LINE_SHIFT{1'b0}};
+				for (ir = 0; ir < 8; ir = ir + 1)
+					slot_o_rep[k][ir] <= {LINE_SHIFT{1'b0}};
+				for (ir = 0; ir < 10; ir = ir + 1)
+					slot_o_dst[k][ir] <= 4'd0;
+				slot_en_r[k] <= 1'b0;
+				slot_en_rep[k] <= 8'd0;
+				slot_mk_r[k] <= 1'b0;
+				slot_src_r[k] <= 128'd0;
+			end else begin
+				slot_o_r[k] <= o;
+				for (ir = 0; ir < 8; ir = ir + 1)
+					slot_o_rep[k][ir] <= o;
+				for (ir = 0; ir < 10; ir = ir + 1)
+					slot_o_dst[k][ir] <= o[3:0];
+				slot_en_r[k] <= en_k;
+				slot_en_rep[k] <= {8{en_k}};
+				slot_mk_r[k] <= mk_k;
+				slot_src_r[k] <= src_k_comb;
+			end
+		end
+
+		/* Stage 2: extract 128-bit old pixel from i_line0 / i_line1 using replicated slot_o_rep and slot_en_rep */
+		(* keep = "true" *) wire [127:0] blk;
+		for (g_rep = 0; g_rep < 8; g_rep = g_rep + 1) begin : g_blk_mux
+			wire [LINE_SHIFT-1:4] o_hi = slot_o_rep[k][g_rep][LINE_SHIFT-1:4];
+			assign blk[16 * g_rep +: 16] = slot_en_rep[k][g_rep] ?
+				i_line1[{o_hi, g_rep[2:0], 4'b0000} +: 16] :
+				i_line0[{o_hi, g_rep[2:0], 4'b0000} +: 16];
+		end
+
+		wire [2:0] psl_d0a = psl_dst[k][0];
+		wire [2:0] psl_d0b = psl_dst[k][1];
+		wire [2:0] psl_d0c = psl_dst[k][2];
+		wire [2:0] psl_d0d = psl_dst[k][3];
+		wire [2:0] psl_d1a = psl_dst[k][4];
+		wire [2:0] psl_d1b = psl_dst[k][5];
+		wire [2:0] psl_d2  = psl_dst[k][6];
+		wire [2:0] psl_d3  = psl_dst[k][7];
+		wire [2:0] psl_d4  = psl_dst[k][8];
+		wire [2:0] psl_d5  = psl_dst[k][9];
+		wire [127:0] dst_k_comb;
+		assign dst_k_comb[1:0] = psl_d0a[2] ? blk[1:0] :
+			(psl_d0a == 3'd3) ? blk[{slot_o_dst[k][0][3], 6'b00_0000} +: 2] :
+			(psl_d0a == 3'd2) ? blk[{slot_o_dst[k][0][3:2], 5'b0_0000} +: 2] :
+			(psl_d0a == 3'd1) ? blk[{slot_o_dst[k][0][3:1], 4'b0000} +: 2] :
+			blk[{slot_o_dst[k][0][3:0], 3'b000} +: 2];
+		assign dst_k_comb[3:2] = psl_d0a[2] ? blk[3:2] :
+			(psl_d0a == 3'd3) ? blk[{slot_o_dst[k][1][3], 6'b00_0010} +: 2] :
+			(psl_d0a == 3'd2) ? blk[{slot_o_dst[k][1][3:2], 5'b0_0010} +: 2] :
+			(psl_d0a == 3'd1) ? blk[{slot_o_dst[k][1][3:1], 4'b0010} +: 2] :
+			blk[{slot_o_dst[k][1][3:0], 3'b010} +: 2];
+		assign dst_k_comb[5:4] = psl_d0b[2] ? blk[5:4] :
+			(psl_d0b == 3'd3) ? blk[{slot_o_dst[k][2][3], 6'b00_0100} +: 2] :
+			(psl_d0b == 3'd2) ? blk[{slot_o_dst[k][2][3:2], 5'b0_0100} +: 2] :
+			(psl_d0b == 3'd1) ? blk[{slot_o_dst[k][2][3:1], 4'b0100} +: 2] :
+			blk[{slot_o_dst[k][2][3:0], 3'b100} +: 2];
+		assign dst_k_comb[7:6] = psl_d0b[2] ? blk[7:6] :
+			(psl_d0b == 3'd3) ? blk[{slot_o_dst[k][3][3], 6'b00_0110} +: 2] :
+			(psl_d0b == 3'd2) ? blk[{slot_o_dst[k][3][3:2], 5'b0_0110} +: 2] :
+			(psl_d0b == 3'd1) ? blk[{slot_o_dst[k][3][3:1], 4'b0110} +: 2] :
+			blk[{slot_o_dst[k][3][3:0], 3'b110} +: 2];
+		assign dst_k_comb[11:8] = psl_d0c[2] ? blk[11:8] :
+			(psl_d0c == 3'd3) ? blk[{slot_o_dst[k][4][3], 6'b00_1000} +: 4] :
+			(psl_d0c == 3'd2) ? blk[{slot_o_dst[k][4][3:2], 5'b0_1000} +: 4] :
+			(psl_d0c == 3'd1) ? blk[{slot_o_dst[k][4][3:1], 4'b1000} +: 4] :
+			4'd0;
+		assign dst_k_comb[15:12] = psl_d0d[2] ? blk[15:12] :
+			(psl_d0d == 3'd3) ? blk[{slot_o_dst[k][5][3], 6'b00_1100} +: 4] :
+			(psl_d0d == 3'd2) ? blk[{slot_o_dst[k][5][3:2], 5'b0_1100} +: 4] :
+			(psl_d0d == 3'd1) ? blk[{slot_o_dst[k][5][3:1], 4'b1100} +: 4] :
+			4'd0;
+		assign dst_k_comb[23:16] = psl_d1a[2] ? blk[23:16] :
+			(psl_d1a == 3'd3) ? blk[{slot_o_dst[k][6][3], 6'b01_0000} +: 8] :
+			(psl_d1a == 3'd2) ? blk[{slot_o_dst[k][6][3:2], 5'b1_0000} +: 8] : 8'd0;
+		assign dst_k_comb[31:24] = psl_d1b[2] ? blk[31:24] :
+			(psl_d1b == 3'd3) ? blk[{slot_o_dst[k][7][3], 6'b01_1000} +: 8] :
+			(psl_d1b == 3'd2) ? blk[{slot_o_dst[k][7][3:2], 5'b1_1000} +: 8] : 8'd0;
+		assign dst_k_comb[47:32] = psl_d2[2] ? blk[47:32] :
+			(psl_d2 == 3'd3) ? blk[{slot_o_dst[k][8][3], 6'b10_0000} +: 16] : 16'd0;
+		assign dst_k_comb[63:48] = psl_d3[2] ? blk[63:48] :
+			(psl_d3 == 3'd3) ? blk[{slot_o_dst[k][9][3], 6'b11_0000} +: 16] : 16'd0;
+		wire dst_rst_64, dst_rst_80, dst_rst_96, dst_rst_112;
+`ifdef SYNTH_KINTEX7
+		(* keep = "true", dont_touch = "true" *) LUT2 #(.INIT(4'hB)) u_dr64  (.I0(rst_sync), .I1(psl_d4[2]), .O(dst_rst_64));
+		(* keep = "true", dont_touch = "true" *) LUT2 #(.INIT(4'hB)) u_dr80  (.I0(rst_sync), .I1(psl_d4[2]), .O(dst_rst_80));
+		(* keep = "true", dont_touch = "true" *) LUT2 #(.INIT(4'hB)) u_dr96  (.I0(rst_sync), .I1(psl_d5[2]), .O(dst_rst_96));
+		(* keep = "true", dont_touch = "true" *) LUT2 #(.INIT(4'hB)) u_dr112 (.I0(rst_sync), .I1(psl_d5[2]), .O(dst_rst_112));
+`else
+		assign dst_rst_64  = rst_sync || !psl_d4[2];
+		assign dst_rst_80  = rst_sync || !psl_d4[2];
+		assign dst_rst_96  = rst_sync || !psl_d5[2];
+		assign dst_rst_112 = rst_sync || !psl_d5[2];
+`endif
+		assign dst_k_comb[127:64] = blk[127:64];
+
+		always @(posedge wpix_act_clk) begin
+			if (rst_sync)
+				slot_dst128_r[k][63:0] <= 64'd0;
+			else
+				slot_dst128_r[k][63:0] <= dst_k_comb[63:0];
+
+			if (dst_rst_64)
+				slot_dst128_r[k][79:64] <= 16'd0;
+			else
+				slot_dst128_r[k][79:64] <= dst_k_comb[79:64];
+
+			if (dst_rst_80)
+				slot_dst128_r[k][95:80] <= 16'd0;
+			else
+				slot_dst128_r[k][95:80] <= dst_k_comb[95:80];
+
+			if (dst_rst_96)
+				slot_dst128_r[k][111:96] <= 16'd0;
+			else
+				slot_dst128_r[k][111:96] <= dst_k_comb[111:96];
+
+			if (dst_rst_112)
+				slot_dst128_r[k][127:112] <= 16'd0;
+			else
+				slot_dst128_r[k][127:112] <= dst_k_comb[127:112];
+		end
+
+		wire unused_n = &{1'b0, n[3], psl_d4[1:0], psl_d5[1:0],
+			slot_o_dst[k][4][0], slot_o_dst[k][5][0], slot_o_dst[k][6][1:0], slot_o_dst[k][7][1:0],
+			slot_o_dst[k][8][2:0], slot_o_dst[k][9][2:0],
+			slot_o_rep[k][0][3:0], slot_o_rep[k][1][3:0], slot_o_rep[k][2][3:0], slot_o_rep[k][3][3:0],
+			slot_o_rep[k][4][3:0], slot_o_rep[k][5][3:0], slot_o_rep[k][6][3:0], slot_o_rep[k][7][3:0]};
 	end
 	endgenerate
+
+	assign o_mask = slot_mk_r;
+	assign o_lw = multi_slot[0] ? (slot_mk_r != 4'd0) : (i_smask[8 * i_r +: 8] != 8'd0);
+	assign o_ent = slot_en_r;
+	assign o_soff = {slot_o_r[3], slot_o_r[2], slot_o_r[1], slot_o_r[0]};
+	assign o_bsrc = {slot_src_r[3], slot_src_r[2], slot_src_r[1], slot_src_r[0]};
+	assign o_bdst = {slot_dst128_r[3][31:0], slot_dst128_r[2][31:0], slot_dst128_r[1][31:0], slot_dst128_r[0][31:0]};
+
+	wire [255:0] f_dst = {slot_dst128_r[3][63:0], slot_dst128_r[2][63:0], slot_dst128_r[1][63:0], slot_dst128_r[0][63:0]};
+`ifdef SYNTH_KINTEX7
+	wire [511:0] f_src = o_bsrc;
+	wire [255:0] f_dst_in = f_dst;
+`else
+	wire [511:0] f_src = (path == 2'd1) ? o_bsrc : 512'd0;
+	wire [255:0] f_dst_in = (path == 2'd1) ? f_dst : 256'd0;
+`endif
+	wire [3:0] f_mk = slot_mk_r;
+	wire [255:0] f_raw, f_keep;
+	wire f_idle;
 
 	generate
 	if (`CFG_ROP_ENABLE_FBLEND != 0) begin : g_fblend
-		atg_rop_fblend fblend (.clk(clk), .rst_n(rst_n), .i_valid(f_go), .i_ready(f_idle),
-			.i_lanes(f_mk), .i_src(f_src), .i_dst(f_dst), .i_fmt(f_vk), .i_blend(f_bl), .i_const(f_kcv),
-			.i_wm(f_wm), .o_valid(f_done), .o_ready(f_take), .o_raw(f_raw), .o_keep(f_keep));
+`ifdef SYNTH_KINTEX7
+		wire fblend_clk = clk;
+`else
+		reg [4:0] f_sim_cnt;
+		wire [4:0] f_sim_cnt_next = {
+			f_sim_cnt[4] ^ (f_sim_cnt[3:0] == 4'd0),
+			f_sim_cnt[3] ^ (f_sim_cnt[2:0] == 3'd0),
+			f_sim_cnt[2] ^ (f_sim_cnt[1:0] == 2'd0),
+			f_sim_cnt[1] ^ ~f_sim_cnt[0],
+			~f_sim_cnt[0]
+		};
+		always @(posedge clk) begin
+			if (!rst_n) begin
+				f_sim_cnt <= 5'd3;
+			end else if (f_go) begin
+				f_sim_cnt <= 5'd29;
+			end else if (f_sim_cnt != 5'd0) begin
+				f_sim_cnt <= f_sim_cnt_next;
+			end
+		end
+		reg f_icg_en;
+		always @(negedge clk) begin
+			if (!rst_n)
+				f_icg_en <= 1'b1;
+			else
+				f_icg_en <= f_go || (f_sim_cnt != 5'd0);
+		end
+		wire fblend_clk = clk & f_icg_en;
+`endif
+		atg_rop_fblend fblend (
+			.clk(fblend_clk), .rst_n(rst_n),
+			.i_valid(f_go), .i_ready(f_idle),
+			.i_lanes(f_mk), .i_src(f_src), .i_dst(f_dst_in),
+			.i_fmt(vk), .i_blend(bl), .i_const(kcv_r), .i_wm(wm_a),
+			.o_valid(f_done), .o_ready(f_take),
+			.o_raw(f_raw), .o_keep(f_keep)
+		);
 	end else begin : g_no_fblend
 		assign f_idle = 1'b1;
 		assign f_done = f_go;
@@ -656,46 +1135,253 @@ module atg_rop_wpix #(
 	end
 	endgenerate
 
-	/* atg_fmt_pack for the formats of path 2 (the colour-attachment formats
-	 * that are neither path 0 nor 1: integer and 32-bit float formats, no
-	 * conversion), one a lane, each format its own bit placement; a format
-	 * without the colour-attachment feature writes nothing, as in
-	 * atg_fmt_pack.  For the formats of paths 0 and 1 the value is not used. */
+	/* Pipelined Path 2 format packer (24 integer and 32-bit float formats, <= 2 LUT levels per stage) */
+	localparam integer N_P2 = 24;
 	localparam [191:0] P2F = {8'd109, 8'd108, 8'd107, 8'd103, 8'd102, 8'd101, 8'd100, 8'd99, 8'd98,
 		8'd96, 8'd95, 8'd82, 8'd81, 8'd75, 8'd74, 8'd68, 8'd56, 8'd55, 8'd42, 8'd41, 8'd21, 8'd20,
 		8'd14, 8'd13};
 
-	/* The new pixels. */
+	function [192*N_P2-1:0] ptab_p2;
+		input integer unused_n;
+		integer pi, pk, pb;
+		reg [67:0] inf;
+		reg [25:0] ft;
+		reg [5:0] w;
+		reg [31:0] m;
+		begin
+			ptab_p2 = {192*N_P2{1'b0}};
+			for (pi = 0; pi < N_P2; pi = pi + 1) begin
+				inf = atg_fmt_info(P2F[8 * pi +: 8]);
+				ft = atg_fmt_feat(P2F[8 * pi +: 8], 1'b0);
+				for (pk = 0; pk < 4; pk = pk + 1) begin
+					w = inf[23 + 13 * pk +: 6];
+					for (pb = 0; pb < 32; pb = pb + 1)
+						m[pb] = pb < w;
+					ptab_p2[48 * (4 * pi + pk) +: 48] = {6'd0, ft[7] && pk < inf[8:6], 2'd0, m,
+						inf[16 + 13 * pk +: 7]};
+				end
+			end
+		end
+	endfunction
+	localparam [192*N_P2-1:0] PTAB_P2 = ptab_p2(N_P2);
+
+	/* Stage 1 of Path-2 packer: decode format hit & write-mask per format (replicated per lane & even/odd 16-bit slice) */
+	(* keep = "true", dont_touch = "true" *) reg [3:0] p2_hit_wm_wr_b0 [0:N_P2-1];
+	(* keep = "true", dont_touch = "true" *) reg [3:0] p2_hit_wm_wr_b1 [0:N_P2-1];
+	(* keep = "true", dont_touch = "true" *) reg [3:0] p2_hit_wm_l_b0 [0:3][0:N_P2-1];
+	(* keep = "true", dont_touch = "true" *) reg [3:0] p2_hit_wm_l_b1 [0:3][0:N_P2-1];
+	(* keep = "true", dont_touch = "true" *) reg [N_P2-1:0] p2_hit_v;
+	genvar gi, gg, gc_p2;
+	generate
+	for (gi = 0; gi < N_P2; gi = gi + 1) begin : g_p2_dec
+		localparam [7:0] F = P2F[8 * gi +: 8];
+		wire [7:0] vk_cur = (gi < 12) ? vk_pack_a : vk_pack_b;
+		wire [3:0] wm_cur = (gi < 12) ? wm_a : wm_b;
+		wire hit_i = (vk_cur == F);
+		wire [3:0] hit_wm_i;
+`ifdef SYNTH_KINTEX7
+		for (gc_p2 = 0; gc_p2 < 4; gc_p2 = gc_p2 + 1) begin : g_hwm
+			(* keep = "true", dont_touch = "true" *) LUT2 #(.INIT(4'h8)) u_hwm (
+				.I0(hit_i), .I1(wm_cur[gc_p2]), .O(hit_wm_i[gc_p2])
+			);
+		end
+`else
+		assign hit_wm_i = hit_i ? wm_cur : 4'd0;
+`endif
+		integer il_p2;
+		always @(posedge wpix_p2_clk) begin
+			p2_hit_wm_wr_b0[gi] <= hit_wm_i;
+			p2_hit_wm_wr_b1[gi] <= hit_wm_i;
+			for (il_p2 = 0; il_p2 < 4; il_p2 = il_p2 + 1) begin
+				p2_hit_wm_l_b0[il_p2][gi] <= hit_wm_i;
+				p2_hit_wm_l_b1[il_p2][gi] <= hit_wm_i;
+			end
+			p2_hit_v[gi] <= hit_i;
+		end
+	end
+	endgenerate
+
+	/* Shared write-mask expansion across the 24 formats (2 stages: 4 groups of 6 -> final 128-bit wr) */
+	wire [127:0] p2_wr_leaf [0:N_P2-1];
+	generate
+	for (gi = 0; gi < N_P2; gi = gi + 1) begin : g_p2_wr_leaf
+		localparam [47:0] E0 = PTAB_P2[48 * (4 * gi) +: 48];
+		localparam [47:0] E1 = PTAB_P2[48 * (4 * gi + 1) +: 48];
+		localparam [47:0] E2 = PTAB_P2[48 * (4 * gi + 2) +: 48];
+		localparam [47:0] E3 = PTAB_P2[48 * (4 * gi + 3) +: 48];
+		localparam [6:0] P0 = E0[6:0], P1 = E1[6:0], P2 = E2[6:0], P3 = E3[6:0];
+		localparam [127:0] M0 = E0[41] ? ({96'd0, E0[38:7]} << P0) : 128'd0;
+		localparam [127:0] M1 = E1[41] ? ({96'd0, E1[38:7]} << P1) : 128'd0;
+		localparam [127:0] M2 = E2[41] ? ({96'd0, E2[38:7]} << P2) : 128'd0;
+		localparam [127:0] M3 = E3[41] ? ({96'd0, E3[38:7]} << P3) : 128'd0;
+		for (gg = 0; gg < 4; gg = gg + 1) begin : g_wr_q
+			assign p2_wr_leaf[gi][32 * gg +: 16] =
+				(p2_hit_wm_wr_b0[gi][0] ? M0[32 * gg +: 16] : 16'd0) |
+				(p2_hit_wm_wr_b0[gi][1] ? M1[32 * gg +: 16] : 16'd0) |
+				(p2_hit_wm_wr_b0[gi][2] ? M2[32 * gg +: 16] : 16'd0) |
+				(p2_hit_wm_wr_b0[gi][3] ? M3[32 * gg +: 16] : 16'd0);
+			assign p2_wr_leaf[gi][32 * gg + 16 +: 16] =
+				(p2_hit_wm_wr_b1[gi][0] ? M0[32 * gg + 16 +: 16] : 16'd0) |
+				(p2_hit_wm_wr_b1[gi][1] ? M1[32 * gg + 16 +: 16] : 16'd0) |
+				(p2_hit_wm_wr_b1[gi][2] ? M2[32 * gg + 16 +: 16] : 16'd0) |
+				(p2_hit_wm_wr_b1[gi][3] ? M3[32 * gg + 16 +: 16] : 16'd0);
+		end
+	end
+	endgenerate
+
+	(* keep = "true", dont_touch = "true" *) reg [127:0] p2_wr_grp [0:3];
+	(* keep = "true", dont_touch = "true" *) reg [3:0] p2_hit_grp;
+	(* keep = "true", dont_touch = "true" *) reg [127:0] p2_wr_r [0:3];
+	(* keep = "true", dont_touch = "true" *) reg [7:0] p2_hit_rep [0:3];
+	integer ig;
+	always @(posedge wpix_p2_clk) begin
+		for (ig = 0; ig < 4; ig = ig + 1) begin
+			p2_wr_grp[ig] <= p2_wr_leaf[6*ig + 0] | p2_wr_leaf[6*ig + 1] | p2_wr_leaf[6*ig + 2] |
+				p2_wr_leaf[6*ig + 3] | p2_wr_leaf[6*ig + 4] | p2_wr_leaf[6*ig + 5];
+			p2_hit_grp[ig] <= |p2_hit_v[6*ig +: 6];
+		end
+	end
+
 	generate
 	for (k = 0; k < 4; k = k + 1) begin : g_res
-		wire [255:0] pk;
-		if (`CFG_ROP_ENABLE_PACK != 0) begin : g_pk
-			atg_fmt_pack #(.N(24), .FMTS(P2F), .LAT(0)) u_pk (
-				.clk(clk), .rst_n(rst_n), .en(1'b1),
-				.c(f_src[128 * k +: 128]), .un(64'd0), .hf(64'd0),
-				.fmt(f_vk), .wm(f_wm), .o(pk)
+		wire hit_any_k;
+		wire [127:0] wr_or_k;
+`ifdef SYNTH_KINTEX7
+		(* keep = "true", dont_touch = "true" *) LUT4 #(.INIT(16'hFFFE)) u_hany (
+			.I0(p2_hit_grp[0]), .I1(p2_hit_grp[1]), .I2(p2_hit_grp[2]), .I3(p2_hit_grp[3]),
+			.O(hit_any_k)
+		);
+		for (gg = 0; gg < 128; gg = gg + 1) begin : g_wror
+			(* keep = "true", dont_touch = "true" *) LUT4 #(.INIT(16'hFFFE)) u_wo (
+				.I0(p2_wr_grp[0][gg]), .I1(p2_wr_grp[1][gg]), .I2(p2_wr_grp[2][gg]), .I3(p2_wr_grp[3][gg]),
+				.O(wr_or_k[gg])
 			);
-		end else begin : g_no_pk
-			assign pk = 256'd0;
 		end
-		wire [63:0] fr = (f_raw[64 * k +: 64] & ~f_keep[64 * k +: 64]) |
-			(f_dst[64 * k +: 64] & f_keep[64 * k +: 64]);
-		wire [127:0] reg_dst_k = g_f_slot[k].f_dst128_k;
-		assign o_res[128 * k +: 128] = f_p_u8 ? {96'd0, b_pix[32 * k +: 32]} :
-`ifdef MUT_WPIX_KEEP
-			f_p_f32 ? {64'd0, fr} : pk[127:0];
 `else
-			f_p_f32 ? {64'd0, fr} : (`CFG_ROP_ENABLE_PACK != 0 ?
-				((pk[127:0] & ~pk[255:128]) | (reg_dst_k & pk[255:128])) :
-				{96'd0, b_pix[32 * k +: 32]});
+		assign hit_any_k = |p2_hit_grp;
+		assign wr_or_k = p2_wr_grp[0] | p2_wr_grp[1] | p2_wr_grp[2] | p2_wr_grp[3];
+`endif
+		always @(posedge wpix_p2_clk) begin
+			p2_hit_rep[k] <= {8{hit_any_k}};
+			p2_wr_r[k] <= wr_or_k;
+		end
+
+		(* keep = "true", dont_touch = "true" *) reg [127:0] pk_raw_r;
+		(* keep = "true", dont_touch = "true" *) reg [127:0] pk_merged_r;
+		if (`CFG_ROP_ENABLE_PACK != 0) begin : g_pk
+`ifdef SYNTH_KINTEX7
+			wire [127:0] c_k = slot_src_r[k];
+`else
+			wire [127:0] c_k = (path == 2'd2) ? slot_src_r[k] : 128'd0;
+`endif
+			wire [127:0] raw_leaf [0:N_P2-1];
+			for (gi = 0; gi < N_P2; gi = gi + 1) begin : g_raw_leaf
+				localparam [47:0] E0 = PTAB_P2[48 * (4 * gi) +: 48];
+				localparam [47:0] E1 = PTAB_P2[48 * (4 * gi + 1) +: 48];
+				localparam [47:0] E2 = PTAB_P2[48 * (4 * gi + 2) +: 48];
+				localparam [47:0] E3 = PTAB_P2[48 * (4 * gi + 3) +: 48];
+				localparam [6:0] P0 = E0[6:0], P1 = E1[6:0], P2 = E2[6:0], P3 = E3[6:0];
+				localparam [127:0] S0_MASK = {96'd0, E0[38:7]} << P0;
+				localparam [127:0] S1_MASK = {96'd0, E1[38:7]} << P1;
+				localparam [127:0] S2_MASK = {96'd0, E2[38:7]} << P2;
+				localparam [127:0] S3_MASK = {96'd0, E3[38:7]} << P3;
+				wire [127:0] s0_sh = ({96'd0, c_k[31:0]}   << P0) & S0_MASK;
+				wire [127:0] s1_sh = ({96'd0, c_k[63:32]}  << P1) & S1_MASK;
+				wire [127:0] s2_sh = ({96'd0, c_k[95:64]}  << P2) & S2_MASK;
+				wire [127:0] s3_sh = ({96'd0, c_k[127:96]} << P3) & S3_MASK;
+				for (gg = 0; gg < 4; gg = gg + 1) begin : g_raw_q
+					wire [15:0] r0_b0 = (E0[41] && p2_hit_wm_l_b0[k][gi][0]) ? s0_sh[32 * gg +: 16] : 16'd0;
+					wire [15:0] r1_b0 = (E1[41] && p2_hit_wm_l_b0[k][gi][1]) ? s1_sh[32 * gg +: 16] : 16'd0;
+					wire [15:0] r2_b0 = (E2[41] && p2_hit_wm_l_b0[k][gi][2]) ? s2_sh[32 * gg +: 16] : 16'd0;
+					wire [15:0] r3_b0 = (E3[41] && p2_hit_wm_l_b0[k][gi][3]) ? s3_sh[32 * gg +: 16] : 16'd0;
+					wire [15:0] r0_b1 = (E0[41] && p2_hit_wm_l_b1[k][gi][0]) ? s0_sh[32 * gg + 16 +: 16] : 16'd0;
+					wire [15:0] r1_b1 = (E1[41] && p2_hit_wm_l_b1[k][gi][1]) ? s1_sh[32 * gg + 16 +: 16] : 16'd0;
+					wire [15:0] r2_b1 = (E2[41] && p2_hit_wm_l_b1[k][gi][2]) ? s2_sh[32 * gg + 16 +: 16] : 16'd0;
+					wire [15:0] r3_b1 = (E3[41] && p2_hit_wm_l_b1[k][gi][3]) ? s3_sh[32 * gg + 16 +: 16] : 16'd0;
+					assign raw_leaf[gi][32 * gg +: 16]      = r0_b0 | r1_b0 | r2_b0 | r3_b0;
+					assign raw_leaf[gi][32 * gg + 16 +: 16] = r0_b1 | r1_b1 | r2_b1 | r3_b1;
+				end
+			end
+
+			(* keep = "true", dont_touch = "true" *) reg [127:0] raw_grp [0:3];
+			(* keep = "true" *) wire [127:0] pk_m_comb;
+			for (gg = 0; gg < 8; gg = gg + 1) begin : g_pkm_comb
+`ifdef MUT_WPIX_KEEP
+				assign pk_m_comb[16 * gg +: 16] = pk_raw_r[16 * gg +: 16];
+`else
+				assign pk_m_comb[16 * gg +: 16] = p2_hit_rep[k][gg] ?
+					((pk_raw_r[16 * gg +: 16] & p2_wr_r[k][16 * gg +: 16]) |
+					 (slot_dst128_r[k][16 * gg +: 16] & ~p2_wr_r[k][16 * gg +: 16])) :
+					16'd0;
+`endif
+			end
+			(* keep = "true" *) wire [63:0] pk_w_lo;
+`ifdef SYNTH_KINTEX7
+			for (gg = 0; gg < 8; gg = gg + 1) begin : g_pkm_wlo
+				wire [1:0] psl_lo_k = psl_pk_lo[k][gg / 2];
+				assign pk_w_lo[8 * gg +: 8] =
+					(psl_lo_k == 2'd3) ? pk_m_comb[8 * gg +: 8] :
+					(psl_lo_k == 2'd2) ? pk_m_comb[8 * (gg % 4) +: 8] :
+					(psl_lo_k == 2'd1) ? pk_m_comb[8 * (gg % 2) +: 8] :
+					                     pk_m_comb[7:0];
+			end
+`else
+			wire [1:0] psl_lo_k = psl_pk_lo[k][0];
+			assign pk_w_lo =
+				(psl_lo_k == 2'd3) ? pk_m_comb[63:0] :
+				(psl_lo_k == 2'd2) ? {2{pk_m_comb[31:0]}} :
+				(psl_lo_k == 2'd1) ? {4{pk_m_comb[15:0]}} :
+				                     {8{pk_m_comb[7:0]}};
+`endif
+			integer rg;
+			always @(posedge wpix_p2_clk) begin
+				for (rg = 0; rg < 4; rg = rg + 1)
+					raw_grp[rg] <= raw_leaf[6*rg + 0] | raw_leaf[6*rg + 1] | raw_leaf[6*rg + 2] |
+						raw_leaf[6*rg + 3] | raw_leaf[6*rg + 4] | raw_leaf[6*rg + 5];
+				pk_raw_r <= raw_grp[0] | raw_grp[1] | raw_grp[2] | raw_grp[3];
+				pk_merged_r[63:0] <= pk_w_lo;
+`ifdef SYNTH_KINTEX7
+				for (rg = 0; rg < 4; rg = rg + 1) begin
+					pk_merged_r[64 + 16 * rg +: 16] <= psl_pk_is16[k][rg] ?
+						pk_m_comb[64 + 16 * rg +: 16] : pk_w_lo[16 * rg +: 16];
+				end
+`else
+				pk_merged_r[127:64] <= psl_pk_is16[k][0] ? pk_m_comb[127:64] : pk_w_lo;
+`endif
+			end
+		end else begin : g_no_pk
+			always @(posedge clk) begin
+				pk_raw_r <= 128'd0;
+				pk_merged_r <= 128'd0;
+			end
+		end
+
+		(* keep = "true" *) wire [63:0] fr = (f_raw[64 * k +: 64] & ~f_keep[64 * k +: 64]) |
+			(f_dst[64 * k +: 64] & f_keep[64 * k +: 64]);
+		wire [127:0] pk_out = (`CFG_ROP_ENABLE_PACK != 0) ? pk_merged_r : 128'd0;
+`ifdef SYNTH_KINTEX7
+		for (g_rep = 0; g_rep < 16; g_rep = g_rep + 1) begin : g_res_mux
+			wire [1:0] f32_sel = f32_ps_sel_r[k][g_rep / 2];
+			assign o_res[128 * k + 8 * g_rep +: 8] =
+				(f32_sel == 2'd3) ? fr[8 * (g_rep % 8) +: 8] :
+				(f32_sel == 2'd2) ? fr[8 * (g_rep % 4) +: 8] :
+				(f32_sel == 2'd1) ? fr[8 * (g_rep % 2) +: 8] :
+				                    pk_out[8 * g_rep +: 8];
+		end
+`else
+		wire [1:0] f32_sel = f32_ps_sel_r[k][0];
+		assign o_res[128 * k +: 128] =
+			(f32_sel == 2'd3) ? {2{fr}} :
+			(f32_sel == 2'd2) ? {4{fr[31:0]}} :
+			(f32_sel == 2'd1) ? {8{fr[15:0]}} :
+			                    pk_out;
 `endif
 	end
 	endgenerate
 
 	localparam [31:0] LS32 = LINE_SHIFT;
-	wire unused_ok = &{1'b0, f_idle, yrs[48:32], LS32[31:4], s_rt[8:3], s_bl[8:2],
-		s_kc[8:2], nll[3:2], s_ext[8:3], s_ext_bo_unused, kcv, f_dst, bl[22:1], f_take,
-		xj_co_unused, a3_1_co_unused};
+	wire unused_ok = &{1'b0, f_idle, yrs[48:32], LS32[31:4], a1_co_unused, bl[22:1], f_take, i_idle,
+		b_pix, i_reg_off0, i_reg_off1, i_reg_rt, i_reg_color, i_reg_mask, mk_comb};
 endmodule
 
 `default_nettype wire

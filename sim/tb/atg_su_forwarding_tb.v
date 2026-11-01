@@ -28,7 +28,7 @@ module atg_su_forwarding_tb;
 	localparam WARP_W = 2;
 	localparam GRP_W = 2;
 	localparam SBE_W = 2;
-	localparam UOP_W = 104;
+	localparam UOP_W = 108;
 	localparam SHORT_LAT = 6;
 	localparam DW = NPHYS * 32;
 
@@ -97,7 +97,7 @@ module atg_su_forwarding_tb;
 		.u_valid(u_valid), .u_ready(u_ready), .u_warp(u_warp), .u_pc(u_pc), .u_uop(u_uop),
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
 		.i_sbe(i_sbe), .x_end(x_end),
-		.fb_valid(), .fb_warp(), .fb_kind(), .wake(),
+		.fb_valid(), .fb_warp(), .fb_kind(), .wake(), .warp_ready(),
 		.rel_valid(1'b0), .rel_warp(2'd0), .rel_sbe(3'd0), .rel_cls(3'd0),
 		.wb_stall(1'b0), .rq_empty(1'b1), .rq_full(1'b1),
 		.busy(), .fault(), .fault_pc()
@@ -128,12 +128,14 @@ module atg_su_forwarding_tb;
 		.r_en(r_en), .r_warp(r_warp), .r_grp(r_grp), .r_regs(r_regs),
 		.r_data({r_data2, r_data1}),
 		.cr_en(), .cr_idx(), .cr_data(96'd0),
-		.q_warp(), .q_info(160'd0), .q_exec(32'hFFFFFFFF), .q_killed(32'd0),
+		.a_q_warp(), .q_warp(), .q_info(160'd0), .q_exec(32'hFFFFFFFF), .q_killed(32'd0),
 		.rq_pop(), .rq_data({DW{1'b0}}),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
 		.x_info(x_info),
 		.unit_ready(16'hFFFF),
+		.fwd_alu_ex3_valid(1'b0), .fwd_alu_ex3_warp(2'd0), .fwd_alu_ex3_grp({GRP_W{1'b0}}),
+		.fwd_alu_ex3_rd(7'd0),
 		.fwd_alu_ex4_valid(fwd_ex4_valid), .fwd_alu_ex4_warp(fwd_ex4_warp), .fwd_alu_ex4_grp(fwd_ex4_grp),
 		.fwd_alu_ex4_rd(fwd_ex4_rd), .fwd_alu_ex4_data(fwd_ex4_data), .fwd_alu_ex4_lanes(fwd_ex4_lanes),
 		.fwd_alu_ex5_valid(fwd_ex5_valid), .fwd_alu_ex5_warp(fwd_ex5_warp), .fwd_alu_ex5_grp(fwd_ex5_grp),

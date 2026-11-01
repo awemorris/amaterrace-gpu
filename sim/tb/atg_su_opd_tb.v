@@ -77,15 +77,18 @@ module atg_su_opd_chk #(
 		cv = 32'hC0000000 | {27'd0, c} * 32'h00030007;
 	endfunction
 
+	wire [1:0] a_q_warp;
 	atg_su_opd #(.NPHYS(NPHYS), .GRP_W(GRP_W)) dut (
 		.clk(clk), .rst_n(rst_n), .i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp),
 		.i_pc(i_pc), .i_uop(i_uop), .i_sbe(i_sbe), .r_en(r_en), .r_warp(r_warp),
 		.r_grp(r_grp), .r_regs(r_regs), .r_data(r_data), .cr_en(cr_en), .cr_idx(cr_idx),
-		.cr_data(cr_data), .q_warp(q_warp), .q_info(info[q_warp]), .q_exec(exec[q_warp]),
+		.cr_data(cr_data), .a_q_warp(a_q_warp), .q_warp(q_warp), .q_info(info[a_q_warp]), .q_exec(exec[q_warp]),
 		.q_killed(killed[q_warp]), .rq_pop(rq_pop), .rq_data({DW{1'b0}}),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
 		.x_info(x_info), .unit_ready(unit_ready),
+		.fwd_alu_ex3_valid(1'b0), .fwd_alu_ex3_warp(2'd0), .fwd_alu_ex3_grp({GRP_W{1'b0}}),
+		.fwd_alu_ex3_rd(7'd0),
 		.fwd_alu_ex4_valid(1'b0), .fwd_alu_ex4_warp(2'd0), .fwd_alu_ex4_grp({GRP_W{1'b0}}),
 		.fwd_alu_ex4_rd(7'd0), .fwd_alu_ex4_data({DW{1'b0}}), .fwd_alu_ex4_lanes({NPHYS{1'b0}}),
 		.fwd_alu_ex5_valid(1'b0), .fwd_alu_ex5_warp(2'd0), .fwd_alu_ex5_grp({GRP_W{1'b0}}),

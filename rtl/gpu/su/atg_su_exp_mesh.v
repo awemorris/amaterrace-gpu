@@ -58,20 +58,21 @@ module atg_su_exp_mesh #(
 );
 
 	/* State Machine */
-	localparam [2:0]
-		S_IDLE        = 3'd0,
-		S_PRIM_REQ    = 3'd1,
-		S_PRIM_WAIT   = 3'd2,
-		S_PRIM_LATCH  = 3'd3,
-		S_VERT_REQ    = 3'd4,
-		S_VERT_WAIT   = 3'd5,
-		S_SKID_WAIT   = 3'd6,
-		S_DRAIN_WAIT  = 3'd7;
+	localparam [3:0]
+		S_IDLE        = 4'd0,
+		S_PRIM_REQ    = 4'd1,
+		S_PRIM_WAIT   = 4'd2,
+		S_PRIM_LATCH  = 4'd3,
+		S_VERT_REQ    = 4'd4,
+		S_VERT_WAIT   = 4'd5,
+		S_SKID_WAIT   = 4'd6,
+		S_DRAIN_WAIT  = 4'd7,
+		S_PRIM_WAIT2  = 4'd8;
 
-	reg [2:0] st;
+	(* max_fanout = 12 *) reg [3:0] st;
 
 	/* Latched Meshlet parameters */
-	reg [15:0] mesh_id_reg;
+	(* max_fanout = 12 *) reg [15:0] mesh_id_reg;
 	reg [7:0] prim_count_reg;
 	reg [7:0] cur_prim_idx;
 	reg [AW-1:0] base_prim;
@@ -81,13 +82,14 @@ module atg_su_exp_mesh #(
 	/* Current primitive under assembly */
 	reg [7:0] v0_idx, v1_idx, v2_idx;
 	reg [7:0] prim_flags;
-	reg [4:0] req_w;	/* 0..20: words requested */
-	reg [4:0] cap_w;	/* 0..21: words captured */
+	(* max_fanout = 12 *) reg [4:0] req_w;	/* 0..20: words requested */
+	(* max_fanout = 12 *) reg [4:0] cap_w;	/* 0..21: words captured */
 	reg lds_rd_en_d1;
-	wire lds_data_v = lds_rd_en_d1;
+	(* max_fanout = 12 *) reg lds_rd_en_d2;
+	wire lds_data_v = lds_rd_en_d2;
 
 	/* 21 words of triangle vertex data */
-	reg [31:0] tri_words [0:20];
+	wire [31:0] tri_words [0:20];
 
 	/* Arithmetic helper wires using am_add */
 	wire [7:0] next_prim_idx;
@@ -129,21 +131,16 @@ module atg_su_exp_mesh #(
 	end
 
 	wire [AW-1:0] cur_base = is_var ? base_var : base_pos;
-	wire [9:0] v_scaled_10 = {cur_v, 2'b00};
+	wire [9:0] v_scaled_10 = {cur_v, comp_off};
 	wire [AW-1:0] v_scaled = {{(AW > 10 ? AW - 10 : 0){1'b0}}, v_scaled_10[AW > 10 ? 9 : AW-1 : 0]};
 
-	wire [AW-1:0] base_plus_v;
-	wire co_bpv;
-	am_add #(.W(AW)) u_bpv (.a(cur_base), .b(v_scaled), .ci(1'b0), .s(base_plus_v), .co(co_bpv));
-
 	wire [AW-1:0] vert_word_addr;
-	wire co_vwa;
-	wire [AW-1:0] comp_off_w = {{(AW > 2 ? AW - 2 : 0){1'b0}}, comp_off[AW > 2 ? 1 : AW-1 : 0]};
-	am_add #(.W(AW)) u_vwa (.a(base_plus_v), .b(comp_off_w), .ci(1'b0),
-		.s(vert_word_addr), .co(co_vwa));
+	wire co_bpv;
+	wire co_vwa = 1'b0;
+	am_add #(.W(AW)) u_bpv (.a(cur_base), .b(v_scaled), .ci(1'b0), .s(vert_word_addr), .co(co_bpv));
 
 	/* Skid Buffer Signals */
-	reg skid_push_valid;
+	(* max_fanout = 12 *) reg skid_push_valid;
 	reg skid_push_last;
 	wire [701:0] skid_push_data;
 	wire skid_push_ready;
@@ -165,49 +162,41 @@ module atg_su_exp_mesh #(
 
 	assign busy = (st != S_IDLE);
 
-	integer i;
+	(* keep = "true" *) wire prim_latch_en0 = (st == S_PRIM_LATCH);
+	(* keep = "true" *) wire prim_latch_en1 = (st == S_PRIM_LATCH);
+	(* keep = "true" *) wire rst_p0 = !rst_n;
+	(* keep = "true" *) wire rst_p1 = !rst_n;
+	(* keep = "true" *) wire rst_p2 = !rst_n;
+	(* keep = "true" *) wire rst_p3 = !rst_n;
+	(* keep = "true" *) wire rst_p4 = !rst_n;
+	(* keep = "true" *) wire rst_p5 = !rst_n;
+	genvar gtw;
+	generate
+		for (gtw = 0; gtw < 21; gtw = gtw + 1) begin : g_tw_we
+			(* keep = "true" *) wire tw_we_lo_s = lds_data_v && (cap_w == gtw[4:0]);
+			(* keep = "true" *) wire tw_we_hi_s = lds_data_v && (cap_w == gtw[4:0]);
+			(* shreg_extract = "no" *) reg [15:0] tw_lo_r, tw_hi_r;
+			always @(posedge clk) begin
+				if (tw_we_lo_s)
+					tw_lo_r <= lds_rd_data[15:0];
+				if (tw_we_hi_s)
+					tw_hi_r <= lds_rd_data[31:16];
+			end
+			assign tri_words[gtw] = {tw_hi_r, tw_lo_r};
+		end
+	endgenerate
+
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p0) begin
 			st <= S_IDLE;
 			done <= 1'b0;
 			lds_rd_en <= 1'b0;
 			lds_rd_addr <= {AW{1'b0}};
-			mesh_id_reg <= 16'd0;
-			prim_count_reg <= 8'd0;
-			cur_prim_idx <= 8'd0;
-			base_prim <= {AW{1'b0}};
-			base_pos <= {AW{1'b0}};
-			base_var <= {AW{1'b0}};
-			v0_idx <= 8'd0;
-			v1_idx <= 8'd0;
-			v2_idx <= 8'd0;
-			prim_flags <= 8'd0;
-			req_w <= 5'd0;
-			cap_w <= 5'd0;
-			lds_rd_en_d1 <= 1'b0;
-			skid_push_valid <= 1'b0;
-			skid_push_last <= 1'b0;
-			for (i = 0; i < 21; i = i + 1)
-				tri_words[i] <= 32'd0;
 		end else begin
 			done <= 1'b0;
-			skid_push_valid <= 1'b0;
-			lds_rd_en_d1 <= lds_rd_en && (st == S_VERT_REQ || st == S_VERT_WAIT);
-
-			if (lds_data_v) begin
-				tri_words[cap_w] <= lds_rd_data;
-				cap_w <= next_cap_w;
-			end
-
 			case (st)
 			S_IDLE: begin
 				if (kick_valid) begin
-					mesh_id_reg <= kick_mesh_id;
-					prim_count_reg <= kick_prim_count;
-					cur_prim_idx <= 8'd0;
-					base_prim <= kick_prim_base;
-					base_pos <= kick_pos_base;
-					base_var <= kick_var_base;
 					if (kick_prim_count == 8'd0) begin
 						done <= 1'b1;
 						st <= S_IDLE;
@@ -216,95 +205,145 @@ module atg_su_exp_mesh #(
 					end
 				end
 			end
-
 			S_PRIM_REQ: begin
 				lds_rd_en <= 1'b1;
 				lds_rd_addr <= prim_addr_calc;
 				st <= S_PRIM_WAIT;
 			end
-
 			S_PRIM_WAIT: begin
 				lds_rd_en <= 1'b0;
+				st <= S_PRIM_WAIT2;
+			end
+			S_PRIM_WAIT2: begin
 				st <= S_PRIM_LATCH;
 			end
-
 			S_PRIM_LATCH: begin
-				v0_idx <= lds_rd_data[7:0];
-				v1_idx <= lds_rd_data[15:8];
-				v2_idx <= lds_rd_data[23:16];
-				prim_flags <= lds_rd_data[31:24];
-
-				/* Check hardware backface / frustum cull bit (bit 7) */
 				if (lds_rd_data[31]) begin
-					/* Culled: skip reading vertices */
-					if (next_prim_idx == prim_count_reg) begin
+					if (next_prim_idx == prim_count_reg)
 						st <= S_DRAIN_WAIT;
-					end else begin
-						cur_prim_idx <= next_prim_idx;
+					else
 						st <= S_PRIM_REQ;
-					end
 				end else begin
-					/* Valid triangle: start burst vertex read */
-					req_w <= 5'd0;
-					cap_w <= 5'd0;
 					st <= S_VERT_REQ;
 				end
 			end
-
 			S_VERT_REQ: begin
 				lds_rd_en <= 1'b1;
 				lds_rd_addr <= vert_word_addr;
-				req_w <= next_req_w;
-
-				if (req_w == 5'd20) begin
+				if (req_w == 5'd20)
 					st <= S_VERT_WAIT;
-				end
 			end
-
 			S_VERT_WAIT: begin
 				lds_rd_en <= 1'b0;
-				if (cap_w == 5'd21) begin
+				if (cap_w == 5'd21)
 					st <= S_SKID_WAIT;
-				end
 			end
-
 			S_SKID_WAIT: begin
 				if (skid_push_ready) begin
-					skid_push_valid <= 1'b1;
-					skid_push_last <= (next_prim_idx == prim_count_reg);
-					if (next_prim_idx == prim_count_reg) begin
+					if (next_prim_idx == prim_count_reg)
 						st <= S_DRAIN_WAIT;
-					end else begin
-						cur_prim_idx <= next_prim_idx;
+					else
 						st <= S_PRIM_REQ;
-					end
 				end
 			end
-
 			S_DRAIN_WAIT: begin
 				if (skid_empty) begin
 					done <= 1'b1;
 					st <= S_IDLE;
 				end
 			end
-
 			default: st <= S_IDLE;
 			endcase
+		end
+
+		if (rst_p1) begin
+			mesh_id_reg <= 16'd0;
+			prim_count_reg <= 8'd0;
+		end else if (st == S_IDLE && kick_valid) begin
+			mesh_id_reg <= kick_mesh_id;
+			prim_count_reg <= kick_prim_count;
+		end
+
+		if (rst_p2) begin
+			cur_prim_idx <= 8'd0;
+			base_prim <= {AW{1'b0}};
+		end else begin
+			if (st == S_IDLE && kick_valid) begin
+				cur_prim_idx <= 8'd0;
+				base_prim <= kick_prim_base;
+			end else if ((st == S_PRIM_LATCH && lds_rd_data[31] && next_prim_idx != prim_count_reg) ||
+			             (st == S_SKID_WAIT && skid_push_ready && next_prim_idx != prim_count_reg)) begin
+				cur_prim_idx <= next_prim_idx;
+			end
+		end
+
+		if (rst_p3) begin
+			base_pos <= {AW{1'b0}};
+			base_var <= {AW{1'b0}};
+		end else if (st == S_IDLE && kick_valid) begin
+			base_pos <= kick_pos_base;
+			base_var <= kick_var_base;
+		end
+
+		if (rst_p4) begin
+			v0_idx <= 8'd0;
+			v1_idx <= 8'd0;
+			v2_idx <= 8'd0;
+		end else begin
+			if (prim_latch_en0) begin
+				v0_idx <= lds_rd_data[7:0];
+				v1_idx <= lds_rd_data[15:8];
+			end
+			if (prim_latch_en1)
+				v2_idx <= lds_rd_data[23:16];
+		end
+
+		if (rst_p5) begin
+			prim_flags <= 8'd0;
+			req_w <= 5'd0;
+			cap_w <= 5'd0;
+			lds_rd_en_d1 <= 1'b0;
+			lds_rd_en_d2 <= 1'b0;
+			skid_push_valid <= 1'b0;
+			skid_push_last <= 1'b0;
+		end else begin
+			skid_push_valid <= 1'b0;
+			lds_rd_en_d1 <= lds_rd_en && (st == S_VERT_REQ || st == S_VERT_WAIT);
+			lds_rd_en_d2 <= lds_rd_en_d1;
+
+			if (prim_latch_en1)
+				prim_flags <= lds_rd_data[31:24];
+
+			if (st == S_PRIM_LATCH && !lds_rd_data[31]) begin
+				req_w <= 5'd0;
+				cap_w <= 5'd0;
+			end else begin
+				if (st == S_VERT_REQ)
+					req_w <= next_req_w;
+				if (lds_data_v)
+					cap_w <= next_cap_w;
+			end
+
+			if (st == S_SKID_WAIT && skid_push_ready) begin
+				skid_push_valid <= 1'b1;
+				skid_push_last <= (next_prim_idx == prim_count_reg);
+			end
 		end
 	end
 
 	/* ----------------------------------------------------------------
 	 * 2-Stage Skid Buffer (Full wire-speed output & backpressure)
 	 * ---------------------------------------------------------------- */
-	reg [701:0] s0_tri;
+	wire [701:0] s0_tri;
 	reg s0_last;
-	reg s0_valid;
+	(* max_fanout = 12 *) reg s0_valid;
 
-	reg [701:0] s1_tri;
+	wire [701:0] s1_tri;
 	reg s1_last;
-	reg s1_valid;
+	(* max_fanout = 12 *) reg s1_valid;
 
-	assign skid_push_ready = !s0_valid || mesh_ready;
+	(* max_fanout = 12 *) wire w_mesh_ready = mesh_ready;
+	assign skid_push_ready = !s0_valid || w_mesh_ready;
 	assign skid_empty = !s0_valid && !s1_valid;
 
 	assign mesh_valid = s1_valid;
@@ -312,19 +351,38 @@ module atg_su_exp_mesh #(
 	assign mesh_last = s1_last;
 	assign mesh_id = mesh_id_reg;
 
+	genvar gsl;
+	generate
+		for (gsl = 0; gsl < 44; gsl = gsl + 1) begin : g_skid_sl
+			localparam SL_B = gsl * 16;
+			localparam SL_W = (SL_B + 16 <= 702) ? 16 : (702 - SL_B);
+			(* keep = "true" *) wire s0_we_s = skid_push_valid && s1_valid && !(w_mesh_ready && !s0_valid);
+			(* keep = "true" *) wire s1_we_s = (w_mesh_ready && s1_valid && s0_valid) ||
+				(skid_push_valid && (!s1_valid || (w_mesh_ready && s1_valid && !s0_valid)));
+			(* keep = "true" *) wire s1_from_s0_s = !skid_push_valid;
+			(* shreg_extract = "no" *) reg [SL_W-1:0] s0_sl_r, s1_sl_r;
+			always @(posedge clk) begin
+				if (s0_we_s)
+					s0_sl_r <= skid_push_data[SL_B +: SL_W];
+				if (s1_we_s)
+					s1_sl_r <= s1_from_s0_s ? s0_sl_r : skid_push_data[SL_B +: SL_W];
+			end
+			assign s0_tri[SL_B +: SL_W] = s0_sl_r;
+			assign s1_tri[SL_B +: SL_W] = s1_sl_r;
+		end
+	endgenerate
+
+	(* keep = "true" *) wire rst_skid = !rst_n;
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_skid) begin
 			s0_valid <= 1'b0;
-			s0_tri <= 702'd0;
 			s0_last <= 1'b0;
 			s1_valid <= 1'b0;
-			s1_tri <= 702'd0;
 			s1_last <= 1'b0;
 		end else begin
 			/* Stage 1 drain / advance */
-			if (mesh_ready && s1_valid) begin
+			if (w_mesh_ready && s1_valid) begin
 				if (s0_valid) begin
-					s1_tri <= s0_tri;
 					s1_last <= s0_last;
 					s1_valid <= 1'b1;
 					s0_valid <= 1'b0;
@@ -335,12 +393,10 @@ module atg_su_exp_mesh #(
 
 			/* Stage 0 / Stage 1 load */
 			if (skid_push_valid) begin
-				if (!s1_valid || (mesh_ready && s1_valid && !s0_valid)) begin
-					s1_tri <= skid_push_data;
+				if (!s1_valid || (w_mesh_ready && s1_valid && !s0_valid)) begin
 					s1_last <= skid_push_last;
 					s1_valid <= 1'b1;
 				end else begin
-					s0_tri <= skid_push_data;
 					s0_last <= skid_push_last;
 					s0_valid <= 1'b1;
 				end

@@ -14,7 +14,12 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_tu_cube_texel (
+module atg_tu_cube_texel #(
+	parameter LAT = 0
+) (
+	input  wire               clk,
+	input  wire               rst_n,
+	input  wire               en,
 	input  wire [2:0]         tface,
 	input  wire signed [23:0] i,
 	input  wire signed [23:0] j,
@@ -25,7 +30,10 @@ module atg_tu_cube_texel (
 	wire [2:0] face_out;
 	wire [15:0] u_out, v_out;
 
-	atg_tu_cube_edge u_cube_edge (
+	atg_tu_cube_edge #(.LAT(LAT)) u_cube_edge (
+		.clk(clk),
+		.rst_n(rst_n),
+		.en(en),
 		.face_in(tface),
 		.u_in(i[16:0]),
 		.v_in(j[16:0]),

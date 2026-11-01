@@ -109,54 +109,74 @@ module atg_tu_eac (
 		endcase
 	endfunction
 
-	/* ---- E1 ---- */
+	/* ---- E0 -> E1 ---- */
 	wire [4:0] m = eacm(i_w[51:48], i_w[eacp(i_k) +: 3]);
 	wire [13:0] vb = !i_r11 ? {6'd0, i_w[63:56]} : !i_sg ? {3'd0, i_w[63:56], 3'd4} :
 		i_w[63:56] == 8'h80 ? -14'sd1016 : {{3{i_w[63]}}, i_w[63:56], 3'd0};
 
-	reg [4:0] m1;
-	reg [3:0] mu1;
-	reg [13:0] vb1;
-	reg r11_1, sg1;
+	(* extract_reset = "no", max_fanout = 16 *) reg [4:0] m1;
+	(* extract_reset = "no", max_fanout = 16 *) reg [3:0] mu1;
+	(* extract_reset = "no", max_fanout = 16 *) reg t0_sh0, t0_sh3;
+	(* extract_reset = "no" *) reg [13:0] vb1;
+	(* extract_reset = "no", max_fanout = 16 *) reg r11_1, sg1;
 	always @(posedge clk) begin
 		m1 <= m;
 		mu1 <= i_w[55:52];
+		t0_sh0 <= (!i_r11 && i_w[52]) || (i_r11 && i_w[55:52] == 4'd0);
+		t0_sh3 <= i_r11 && i_w[52];
 		vb1 <= vb;
 		r11_1 <= i_r11;
 		sg1 <= i_sg;
 	end
 
-	/* ---- E1b: m times the multiplier ---- */
+	/* ---- E1 -> E1b: partial products of m times the multiplier ---- */
 	wire [13:0] ms = {{9{m1[4]}}, m1};
-	wire [13:0] s01, s23, mm;
-	wire [3:0] e_nc;
+	wire [13:0] t0 = (t0_sh0 ? ms : 14'd0) | (t0_sh3 ? {ms[10:0], 3'b000} : 14'd0);
+	wire [13:0] t1 = !r11_1 ? (mu1[1] ? {ms[12:0], 1'b0} : 14'd0) :
+		(mu1[1] ? {ms[9:0], 4'b0000} : 14'd0);
+	wire [13:0] t2 = !r11_1 ? (mu1[2] ? {ms[11:0], 2'b00} : 14'd0) :
+		(mu1[2] ? {ms[8:0], 5'b00000} : 14'd0);
+	wire [13:0] t3 = !r11_1 ? (mu1[3] ? {ms[10:0], 3'b000} : 14'd0) :
+		(mu1[3] ? {ms[7:0], 6'b000000} : 14'd0);
+	wire [13:0] s01, s23;
+	wire [2:0] e_nc;
 
-	am_add #(.W(14)) u_s01 (.a(mu1[0] ? ms : 14'd0), .b(mu1[1] ? {ms[12:0], 1'b0} : 14'd0),
-		.ci(1'b0), .s(s01), .co(e_nc[0]));
-	am_add #(.W(14)) u_s23 (.a(mu1[2] ? {ms[11:0], 2'b00} : 14'd0),
-		.b(mu1[3] ? {ms[10:0], 3'b000} : 14'd0), .ci(1'b0), .s(s23), .co(e_nc[1]));
-	am_add #(.W(14)) u_mm (.a(s01), .b(s23), .ci(1'b0), .s(mm), .co(e_nc[2]));
+	am_add #(.W(14)) u_s01 (.a(t0), .b(t1), .ci(1'b0), .s(s01), .co(e_nc[0]));
+	am_add #(.W(14)) u_s23 (.a(t2), .b(t3), .ci(1'b0), .s(s23), .co(e_nc[1]));
 
-	reg [13:0] vb2, va2;
-	reg r11_2, sg2;
+	(* extract_reset = "no" *) reg [13:0] vb2, s01_2, s23_2;
+	(* extract_reset = "no" *) reg r11_2, sg2;
 	always @(posedge clk) begin
 		vb2 <= vb1;
-		va2 <= !r11_1 ? mm : mu1 == 4'd0 ? ms : {mm[10:0], 3'b000};
+		s01_2 <= s01;
+		s23_2 <= s23;
 		r11_2 <= r11_1;
 		sg2 <= sg1;
 	end
 
-	/* ---- E2: the sum and the clamp ---- */
+	/* ---- E1b -> E2: 3:2 carry-save + final adder ---- */
+	wire [13:0] ev_s = vb2 ^ s01_2 ^ s23_2;
+	wire [13:0] ev_c = {(vb2[12:0] & s01_2[12:0]) | (vb2[12:0] & s23_2[12:0]) |
+		(s01_2[12:0] & s23_2[12:0]), 1'b0};
 	wire [13:0] ev;
 
-	am_add #(.W(14)) u_ev (.a(vb2), .b(va2), .ci(1'b0), .s(ev), .co(e_nc[3]));
+	am_add #(.W(14)) u_ev (.a(ev_s), .b(ev_c), .ci(1'b0), .s(ev), .co(e_nc[2]));
 
-	wire signed [13:0] v = ev;
-	assign o_v = !r11_2 ? {3'd0, v < 0 ? 8'd0 : v > 255 ? 8'd255 : v[7:0]} :
-		!sg2 ? (v < 0 ? 11'd0 : v > 2047 ? 11'd2047 : v[10:0]) :
+	(* extract_reset = "no", max_fanout = 16 *) reg [13:0] ev3;
+	(* extract_reset = "no", max_fanout = 16 *) reg r11_3, sg3;
+	always @(posedge clk) begin
+		ev3 <= ev;
+		r11_3 <= r11_2;
+		sg3 <= sg2;
+	end
+
+	/* ---- E2: the clamp ---- */
+	wire signed [13:0] v = ev3;
+	assign o_v = !r11_3 ? {3'd0, v < 0 ? 8'd0 : v > 255 ? 8'd255 : v[7:0]} :
+		!sg3 ? (v < 0 ? 11'd0 : v > 2047 ? 11'd2047 : v[10:0]) :
 		(v < -1023 ? 11'h401 : v > 1023 ? 11'h3FF : v[10:0]);
 
-	wire unused_ok = &{1'b0, e_nc};
+	wire unused_ok = &{1'b0, e_nc, mu1[0]};
 endmodule
 
 `default_nettype wire

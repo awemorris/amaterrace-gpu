@@ -104,6 +104,7 @@ module atg_tu #(
 	wire [49:0] tc_ctl;
 	wire [127:0] tc_value;
 
+	(* keep_hierarchy = "yes" *)
 	atg_tu_addr addr (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.desc_busy(desc_busy),
@@ -116,6 +117,7 @@ module atg_tu #(
 		.ta_last(ta_last)
 	);
 
+	(* keep_hierarchy = "yes" *)
 	atg_tu_cache #(
 		.ADDR_W(ADDR_W),
 		.LINE_BYTES(LINE_BYTES),
@@ -153,6 +155,7 @@ module atg_tu #(
 	wire [2:0] f_fifo_count;
 	wire f_fifo_in_ready;
 
+	(* keep_hierarchy = "yes" *)
 	atg_tu_outq #(.W(529)) u_ffilt_outq (
 		.clk(clk), .rst_n(rst_n),
 		.in_valid(f_tr_valid_raw),
@@ -176,6 +179,7 @@ module atg_tu #(
 	wire order_path;
 	wire [4:0] order_count;
 
+	(* keep_hierarchy = "yes" *)
 	am_fifo #(.W(1), .DEPTH_LOG2(4)) u_order_fifo (
 		.clk(clk), .rst_n(rst_n),
 		.in_valid(order_in_valid),
@@ -190,6 +194,7 @@ module atg_tu #(
 	wire order_can_take = tc_ctl[4] || order_in_ready;
 	assign tc_ready = (f32 ? f_ready : u_ready) && order_can_take;
 
+	(* keep_hierarchy = "yes" *)
 	atg_tu_filter filter (
 		.clk(clk), .rst_n(rst_n),
 		.tc_valid(tc_valid && !f32 && order_can_take), .tc_ready(u_ready), .tc_texels(tc_texels),
@@ -201,6 +206,7 @@ module atg_tu #(
 
 	generate
 	if (`CFG_TU_ENABLE_FFILT != 0) begin : g_ffilt
+		(* keep_hierarchy = "yes" *)
 		atg_tu_ffilt ffilt (
 			.clk(clk), .rst_n(rst_n),
 			.tc_valid(tc_valid && f32 && order_can_take), .tc_ready(f_ready), .tc_texels(tc_texels),
@@ -221,10 +227,20 @@ module atg_tu #(
 
 	/* In-order return based on order_fifo */
 	wire cur_is_f32 = order_path;
+	(* keep = "true" *) wire [3:0] cur_f32_g = {4{cur_is_f32}};
+	(* keep = "true" *) wire [33:0] cur_f32_s;
+	genvar gs;
+	generate
+	for (gs = 0; gs < 32; gs = gs + 1) begin : g_tr_mux
+		assign cur_f32_s[gs] = cur_f32_g[gs / 9];
+		assign tr_data[gs*16 +: 16] = cur_f32_s[gs] ? f_tr_data[gs*16 +: 16] : u_tr_data[gs*16 +: 16];
+	end
+	endgenerate
+	assign cur_f32_s[32] = cur_f32_g[3];
+	assign cur_f32_s[33] = cur_f32_g[3];
 	assign tr_valid = order_out_valid && (cur_is_f32 ? f_tr_valid : u_tr_valid);
-	assign tr_tag   = cur_is_f32 ? f_tr_tag : u_tr_tag;
-	assign tr_data  = cur_is_f32 ? f_tr_data : u_tr_data;
-	assign tr_last  = cur_is_f32 ? f_tr_last : u_tr_last;
+	assign tr_tag   = cur_f32_s[32] ? f_tr_tag : u_tr_tag;
+	assign tr_last  = cur_f32_s[33] ? f_tr_last : u_tr_last;
 
 	wire tr_fire = tr_valid && tr_ready;
 	assign u_tr_ready = tr_fire && !cur_is_f32;

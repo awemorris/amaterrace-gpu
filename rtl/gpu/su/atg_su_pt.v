@@ -82,6 +82,7 @@ module atg_su_pt #(
 	/* verilator lint_on WIDTHTRUNC */
 
 	/* ---- The exp writes of vertex warps. */
+	(* keep = "true" *) wire rst_p = !rst_n;
 	wire [31:0] tgt = x_uop[ATG_UOP_IMM +: 32];
 	wire is_pos = tgt < 32'd4;
 	wire is_var = tgt >= 32'h10 && tgt < 32'h10 + VARY_WORDS;
@@ -102,21 +103,25 @@ module atg_su_pt #(
 
 	/*
 	 * The word addresses row WPV + word, modulo 2^AW (the bank's):
-	 * Since WPV = 4 + VARY_WORDS is a compile-time constant where VARY_WORDS is a power of 2
-	 * (e.g. 16 or 64), WPV has only two bits set: (4) and (VARY_WORDS).
-	 * We implement this using shift-add (am_add) instead of combinational DSP48E1 (am_mul LAT=0),
-	 * eliminating 2.74ns of DSP propagation delay on the BRAM address path.
+	 * ROWS = PT_ENTRIES / NPHYS is small (e.g. 8 or 16), so row * WPV is a pure
+	 * constant-table lookup of row[$clog2(ROWS)-1:0] (1 LUT level, 0 CARRY4s),
+	 * followed by a single am_add with wword / pt_word.
 	 */
-	localparam VW_W = $clog2(VARY_WORDS);
-	wire [AW-1:0] wrow_sh_vary = {wrow[AW-1-VW_W:0], {VW_W{1'b0}}};
-	wire [AW-1:0] wrow_sh_4    = {wrow[AW-3:0], 2'b00};
-	wire [AW-1:0] rrow_sh_vary = {rrow[AW-1-VW_W:0], {VW_W{1'b0}}};
-	wire [AW-1:0] rrow_sh_4    = {rrow[AW-3:0], 2'b00};
-
-	wire [AW-1:0] wrow_w_aw, rrow_w_aw;
-	wire wrow_co_unused, rrow_co_unused;
-	am_add #(.W(AW)) u_wrow_mul (.a(wrow_sh_vary), .b(wrow_sh_4), .ci(1'b0), .s(wrow_w_aw), .co(wrow_co_unused));
-	am_add #(.W(AW)) u_rrow_mul (.a(rrow_sh_vary), .b(rrow_sh_4), .ci(1'b0), .s(rrow_w_aw), .co(rrow_co_unused));
+	localparam RW = ROWS > 1 ? $clog2(ROWS) : 1;
+	reg [31:0] wrow_w32, rrow_w32;
+	integer ri;
+	always @(*) begin
+		wrow_w32 = 32'd0;
+		rrow_w32 = 32'd0;
+		for (ri = 0; ri < ROWS; ri = ri + 1) begin
+			if (wrow[RW-1:0] == ri[RW-1:0])
+				wrow_w32 = ri * WPV;
+			if (rrow[RW-1:0] == ri[RW-1:0])
+				rrow_w32 = ri * WPV;
+		end
+	end
+	wire [AW-1:0] wrow_w_aw = wrow_w32[AW-1:0];
+	wire [AW-1:0] rrow_w_aw = rrow_w32[AW-1:0];
 
 	wire [AW-1:0] waddr_a;
 	wire [AW-1:0] raddr_a;
@@ -128,13 +133,15 @@ module atg_su_pt #(
 		.co(ra_co_unused));
 	wire [31:0] waddr = {{(32-AW){1'b0}}, waddr_a};
 	wire [31:0] raddr = {{(32-AW){1'b0}}, raddr_a};
-	wire unused_addr = &{1'b0, wword[31:AW], wrow[31:AW], rrow[31:AW], pt_word32[31:AW],
-		wrow_co_unused, rrow_co_unused, WPV_V};
+	wire unused_addr = &{1'b0, wword[31:AW], wrow[31:RW], rrow[31:RW], wrow_w32[31:AW], rrow_w32[31:AW], pt_word32[31:AW], WPV_V};
 	wire [31:0] rbank = {24'd0, pt_idx} % NPHYS;
-	reg [31:0] rb_q;
-	reg [NPHYS*32-1:0] rd_q;
+	(* shreg_extract = "no", max_fanout = 12 *) reg pt_rd_r1;
+	(* dont_touch = "true" *) reg [AW-1:0] raddr_r;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [$clog2(NPHYS)-1:0] rb_r1, rb_r2, rb_r3;
+	wire [NPHYS*32-1:0] rd_q;
+	wire [NPHYS*32-1:0] rd_q_pipe;
 
-	/* The banks' write port: the vertex warps' exp, or the scrub's zeros. */
+	/* The banks' write port: the vertex warps' exp, or the scrub's zeros (registered for 0-LUT BRAM ADDR, Rule 4). */
 	wire sc_on;
 	wire [AW-1:0] sc_a;
 
@@ -142,26 +149,87 @@ module atg_su_pt #(
 		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
 	);
 
-	assign scrub_busy = sc_on;
-	wire [AW-1:0] m_wa = sc_on ? sc_a : waddr[AW-1:0];
+	wire [AW-1:0] sc_a_next;
+	wire sc_a_co_unused;
+	am_add #(.W(AW)) u_sc_a_next (.a(sc_a), .b({AW{1'b0}}), .ci(1'b1), .s(sc_a_next), .co(sc_a_co_unused));
 
-	genvar b;
+	assign scrub_busy = sc_on;
+	(* max_fanout = 12 *) reg [NPHYS-1:0] m_we_r;
+	(* dont_touch = "true" *) reg [AW-1:0] m_wa_r;
+	wire [NPHYS*32-1:0] m_wd_r;
+	always @(posedge clk) begin
+		if (rst_p) begin
+			m_we_r <= {NPHYS{1'b0}};
+			m_wa_r <= {AW{1'b0}};
+		end else if (scrub) begin
+			m_we_r <= {NPHYS{1'b1}};
+			m_wa_r <= {AW{1'b0}};
+		end else if (sc_on) begin
+			if ({{(32-AW){1'b0}}, sc_a} == DEPTH - 1)
+				m_we_r <= {NPHYS{1'b0}};
+			else begin
+				m_we_r <= {NPHYS{1'b1}};
+				m_wa_r <= sc_a_next;
+			end
+		end else begin
+			m_we_r <= wr ? x_mask[2*NPHYS-1:NPHYS] : {NPHYS{1'b0}};
+			m_wa_r <= waddr[AW-1:0];
+		end
+	end
+
+	genvar b, gbh;
 	generate
 	for (b = 0; b < NPHYS; b = b + 1) begin : g_bank
-		reg [31:0] m [0:DEPTH-1];
-		always @(posedge clk) begin
-			if (sc_on || wr && x_mask[NPHYS + b])
-				m[m_wa] <= sc_on ? 32'd0 : x_b[32 * b +: 32];
-			if (pt_rd)
-				rd_q[32 * b +: 32] <= m[raddr[AW-1:0]];
+		for (gbh = 0; gbh < 2; gbh = gbh + 1) begin : g_wd_half
+			(* shreg_extract = "no" *) reg [15:0] m_wd_h;
+			(* keep = "true" *) wire wd_zero_h = rst_p || scrub || sc_on;
+			always @(posedge clk) begin
+				if (wd_zero_h)
+					m_wd_h <= 16'd0;
+				else
+					m_wd_h <= x_b[b*32 + gbh*16 +: 16];
+			end
+			assign m_wd_r[b*32 + gbh*16 +: 16] = m_wd_h;
 		end
+		(* ram_style = "block" *) reg [31:0] m [0:DEPTH-1];
+		reg [31:0] rd_q_b;
+		(* dont_touch = "true" *) reg [31:0] rd_q_pipe_b;
+		(* keep = "true" *) wire pt_rd_b = pt_rd_r1;
+		always @(posedge clk) begin
+			if (m_we_r[b])
+				m[m_wa_r] <= m_wd_r[32 * b +: 32];
+			if (pt_rd_b)
+				rd_q_b <= m[raddr_r];
+			rd_q_pipe_b <= rd_q_b;
+		end
+		assign rd_q[32 * b +: 32] = rd_q_b;
+		assign rd_q_pipe[32 * b +: 32] = rd_q_pipe_b;
 	end
 	endgenerate
 
-	always @(posedge clk)
-		if (pt_rd)
-			rb_q <= rbank;
-	assign pt_rdata = rd_q[32 * rb_q[$clog2(NPHYS)-1:0] +: 32];
+	always @(posedge clk) begin
+		if (rst_p) begin
+			pt_rd_r1 <= 1'b0;
+			raddr_r  <= {AW{1'b0}};
+			rb_r1    <= {$clog2(NPHYS){1'b0}};
+			rb_r2    <= {$clog2(NPHYS){1'b0}};
+			rb_r3    <= {$clog2(NPHYS){1'b0}};
+		end else begin
+			pt_rd_r1 <= pt_rd;
+			if (pt_rd) begin
+				raddr_r <= raddr[AW-1:0];
+				rb_r1   <= rbank[$clog2(NPHYS)-1:0];
+			end
+			if (pt_rd_r1)
+				rb_r2 <= rb_r1;
+			rb_r3 <= rb_r2;
+		end
+	end
+	(* keep = "true" *) wire [$clog2(NPHYS)-1:0] rb_r3_lo = rb_r3;
+	(* keep = "true" *) wire [$clog2(NPHYS)-1:0] rb_r3_hi = rb_r3;
+	wire [31:0] rdata_lo_w = rd_q_pipe[32 * rb_r3_lo +: 32];
+	wire [31:0] rdata_hi_w = rd_q_pipe[32 * rb_r3_hi +: 32];
+	assign pt_rdata = {rdata_hi_w[31:16], rdata_lo_w[15:0]};
 
 	/* ---- The allocator. */
 	reg [NB*6-1:0] cnt;	/* entries in use, 0..32 */
@@ -185,70 +253,129 @@ module atg_su_pt #(
 	assign pt_base = {{(3-BW){1'b0}}, fb, 5'd0};
 	assign pt_done = {{(8-NB){1'b0}}, done};
 
-	/* entries returned at vl_go: the lanes outside vl_mask (a tree of adders) */
-	wire [5:0] unused_n;
-	wire [31:0] nm = ~vl_mask;
-	wire [31:0] pc2;	/* 16 sums of 2 bits */
-	wire [23:0] pc4;	/* 8 sums of 3 bits */
-	wire [15:0] pc8;	/* 4 sums of 4 bits */
-	wire [9:0] pc16;	/* 2 sums of 5 bits */
-	genvar pi;
-	generate
-		for (pi = 0; pi < 16; pi = pi + 1) begin : g_pc2
-			wire co_unused;
-			am_add #(.W(2)) u (.a({1'b0, nm[2*pi]}), .b({1'b0, nm[2*pi+1]}), .ci(1'b0),
-				.s(pc2[2*pi +: 2]), .co(co_unused));
-		end
-		for (pi = 0; pi < 8; pi = pi + 1) begin : g_pc4
-			wire co_unused;
-			am_add #(.W(3)) u (.a({1'b0, pc2[4*pi +: 2]}), .b({1'b0, pc2[4*pi+2 +: 2]}), .ci(1'b0),
-				.s(pc4[3*pi +: 3]), .co(co_unused));
-		end
-		for (pi = 0; pi < 4; pi = pi + 1) begin : g_pc8
-			wire co_unused;
-			am_add #(.W(4)) u (.a({1'b0, pc4[6*pi +: 3]}), .b({1'b0, pc4[6*pi+3 +: 3]}), .ci(1'b0),
-				.s(pc8[4*pi +: 4]), .co(co_unused));
-		end
-		for (pi = 0; pi < 2; pi = pi + 1) begin : g_pc16
-			wire co_unused;
-			am_add #(.W(5)) u (.a({1'b0, pc8[8*pi +: 4]}), .b({1'b0, pc8[8*pi+4 +: 4]}), .ci(1'b0),
-				.s(pc16[5*pi +: 5]), .co(co_unused));
-		end
-	endgenerate
-	wire pc_co_unused;
-	am_add #(.W(6)) u_pc32 (.a({1'b0, pc16[4:0]}), .b({1'b0, pc16[9:5]}), .ci(1'b0), .s(unused_n),
-		.co(pc_co_unused));
-	wire [BW-1:0] free_blk = pt_free_idx[5 +: BW];
+	/*
+	 * Pipelined popcount of vl_mask (eliminates 8-deep serial CARRY4 cascade):
+	 * - On vl_go with vl_mask == 0, cnt[last_blk] becomes 0 immediately.
+	 * - On vl_go with vl_mask != 0, two 16-bit popcounts (computed in 3 LUT
+	 *   levels with 0 CARRY4s) are latched into p16_lo_r and p16_hi_r, and on
+	 *   the next cycle u_pop32 (1 am_add with 0 Pre-CARRY LUTs) sets cnt[last_blk_d1].
+	 */
+	function [2:0] pop4;
+		input [3:0] x;
+		case (x)
+		4'b0000: pop4 = 3'd0;
+		4'b0001, 4'b0010, 4'b0100, 4'b1000: pop4 = 3'd1;
+		4'b0011, 4'b0101, 4'b0110, 4'b1001, 4'b1010, 4'b1100: pop4 = 3'd2;
+		4'b0111, 4'b1011, 4'b1101, 4'b1110: pop4 = 3'd3;
+		default: pop4 = 3'd4;
+		endcase
+	endfunction
 
-	/* Each block's count: + 32 at its grant, - the unused lanes at vl_go, - 1 at a free. */
-	wire [NB*6-1:0] cnt_next;
-	genvar cb;
-	generate
-		for (cb = 0; cb < NB; cb = cb + 1) begin : g_cnt
-			wire [5:0] c1;
-			wire [5:0] c2;
-			wire c1_co_unused, c2_bo_unused, c3_bo_unused;
-			am_add #(.W(6)) u_take (.a(cnt[cb*6 +: 6]), .b(pt_take && fb == cb ? 6'd32 : 6'd0), .ci(1'b0),
-				.s(c1), .co(c1_co_unused));
-			am_sub #(.W(6)) u_go (.a(c1), .b(vl_go && last_blk == cb ? unused_n : 6'd0), .bi(1'b0),
-				.d(c2), .bo(c2_bo_unused));
-			am_sub #(.W(6)) u_free (.a(c2), .b(6'd0), .bi(pt_free && free_blk == cb), .d(cnt_next[cb*6 +: 6]),
-				.bo(c3_bo_unused));
+	function [3:0] add_0to4;
+		input [2:0] a;
+		input [2:0] b;
+		reg c0, c1;
+		begin
+			c0 = a[0] & b[0];
+			c1 = (a[1] & b[1]) | ((a[1] ^ b[1]) & c0);
+			add_0to4 = {
+				(a[2] & b[2]) | ((a[2] ^ b[2]) & c1),
+				a[2] ^ b[2] ^ c1,
+				a[1] ^ b[1] ^ c0,
+				a[0] ^ b[0]
+			};
 		end
-	endgenerate
+	endfunction
+
+	function [4:0] add_0to8;
+		input [3:0] a;
+		input [3:0] b;
+		reg c0, c1, c2;
+		begin
+			c0 = a[0] & b[0];
+			c1 = (a[1] & b[1]) | ((a[1] ^ b[1]) & c0);
+			c2 = (a[2] & b[2]) | ((a[2] ^ b[2]) & c1);
+			add_0to8 = {
+				(a[3] & b[3]) | ((a[3] ^ b[3]) & c2),
+				a[3] ^ b[3] ^ c2,
+				a[2] ^ b[2] ^ c1,
+				a[1] ^ b[1] ^ c0,
+				a[0] ^ b[0]
+			};
+		end
+	endfunction
+
+	function [4:0] pop16;
+		input [15:0] x;
+		reg [3:0] s0, s1;
+		begin
+			s0 = add_0to4(pop4(x[3:0]),  pop4(x[7:4]));
+			s1 = add_0to4(pop4(x[11:8]), pop4(x[15:12]));
+			pop16 = add_0to8(s0, s1);
+		end
+	endfunction
+
+	function [5:0] dec6;
+		input [5:0] a;
+		begin
+			dec6[0] = ~a[0];
+			dec6[1] = ~(a[1] ^ a[0]);
+			dec6[2] = a[2] ^ (~(|a[1:0]));
+			dec6[3] = a[3] ^ (~(|a[2:0]));
+			dec6[4] = a[4] ^ (~(|a[3:0]));
+			dec6[5] = a[5] ^ (~(|a[4:0]));
+		end
+	endfunction
+
+	reg vl_go_d1;
+	reg [BW-1:0] last_blk_d1;
+	reg [4:0] p16_lo_r, p16_hi_r;
+	wire [5:0] pop32_s;
+	wire pop32_co_unused;
+	am_add #(.W(6)) u_pop32 (
+		.a({1'b0, p16_lo_r}),
+		.b({1'b0, p16_hi_r}),
+		.ci(1'b0),
+		.s(pop32_s),
+		.co(pop32_co_unused)
+	);
+
+	wire [BW-1:0] free_blk = pt_free_idx[5 +: BW];
+	wire vl_mask_zero = (vl_mask == 32'd0);
+
 	wire [BW-1:0] end_blk = wblk[wc_warp*BW +: BW];
 	wire end_own = wc_end && wv[wc_warp] && own[end_blk*WARP_W +: WARP_W] == wc_warp;
 
+	integer cb_i;
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p) begin
 			cnt <= {(NB*6){1'b0}};
 			own <= {(NB*WARP_W){1'b0}};
 			done <= {NB{1'b0}};
 			last_blk <= {BW{1'b0}};
+			last_blk_d1 <= {BW{1'b0}};
+			vl_go_d1 <= 1'b0;
+			p16_lo_r <= 5'd0;
+			p16_hi_r <= 5'd0;
 			wblk <= {(NWARPS*BW){1'b0}};
 			wv <= {NWARPS{1'b0}};
 		end else begin
-			cnt <= cnt_next;
+			vl_go_d1 <= vl_go && !vl_mask_zero;
+			if (vl_go) begin
+				last_blk_d1 <= last_blk;
+				p16_lo_r <= pop16(vl_mask[15:0]);
+				p16_hi_r <= pop16(vl_mask[31:16]);
+			end
+			for (cb_i = 0; cb_i < NB; cb_i = cb_i + 1) begin
+				if (pt_take && fb == cb_i[BW-1:0])
+					cnt[cb_i*6 +: 6] <= 6'd32;
+				else if (vl_go && vl_mask_zero && last_blk == cb_i[BW-1:0])
+					cnt[cb_i*6 +: 6] <= 6'd0;
+				else if (vl_go_d1 && last_blk_d1 == cb_i[BW-1:0])
+					cnt[cb_i*6 +: 6] <= (pt_free && free_blk == cb_i[BW-1:0]) ? dec6(pop32_s) : pop32_s;
+				else if (pt_free && free_blk == cb_i[BW-1:0])
+					cnt[cb_i*6 +: 6] <= dec6(cnt[cb_i*6 +: 6]);
+			end
 			if (end_own)
 				done[end_blk] <= 1'b1;
 			if (wc_end)
@@ -263,7 +390,8 @@ module atg_su_pt #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, waddr, raddr, rb_q, pt_free_idx, x_info, x_uop};
+	wire unused_ok = &{1'b0, waddr, raddr, rbank, pt_free_idx, x_info, x_uop,
+		sc_a_co_unused, pop32_co_unused};
 endmodule
 
 `default_nettype wire

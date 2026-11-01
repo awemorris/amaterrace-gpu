@@ -25,6 +25,7 @@ module atg_tu_fword (
 	input wire [31:0] i_vw,	/* the lane's tc_value word */
 	input wire [3:0] i_ok,	/* the compares */
 	input wire [49:0] i_ctl,
+	input wire [7:0] i_ctl_c13,
 	input wire i_mk,
 	output reg [127:0] o_res
 );
@@ -63,43 +64,93 @@ module atg_tu_fword (
 		gtx = g == 2'd0 ? 2'd2 : g == 2'd1 ? 2'd3 : g == 2'd2 ? 2'd1 : 2'd0;
 	endfunction
 
-	reg [31:0] gw;
-	reg [2:0] gsw18;
-	reg [1:0] gsrc18;
+	(* dont_touch = "true" *) wire [15:0] mk_h = {16{i_mk}};
+	(* dont_touch = "true" *) wire [15:0] ctl2_h = {16{i_ctl[2]}};
+	(* dont_touch = "true" *) wire [15:0] ctl16_h = {16{i_ctl[16]}};
+	(* dont_touch = "true" *) wire [11:0] swz_z0 = i_ctl[47:36];
+	(* dont_touch = "true" *) wire [11:0] swz_z1 = i_ctl[47:36];
+	(* dont_touch = "true" *) wire [11:0] swz_z2 = i_ctl[47:36];
+	(* dont_touch = "true" *) wire [11:0] swz_z3 = i_ctl[47:36];
+
+	(* keep = "true" *) wire [127:0] o_base;
+	genvar gb;
+	generate
+	for (gb = 0; gb < 8; gb = gb + 1) begin : g_base
+		(* dont_touch = "true" *) wire d_nocomp = i_ctl[8] && !i_ctl[9];
+		(* dont_touch = "true" *) wire d32_sel = i_ctl[1];
+		(* dont_touch = "true" *) wire rgb565_texf = i_ctl[19] && i_ctl[3];
+		if (gb == 0) begin : g_b0
+			assign o_base[15:0] = d_nocomp ? (d32_sel ? i_lt[15:0] : i_rn[15:0]) : i_rn[15:0];
+		end else if (gb == 1) begin : g_b1
+			assign o_base[31:16] = d_nocomp ? (d32_sel ? i_lt[31:16] : i_rn[31:16]) : i_rn[31:16];
+		end else if (gb < 6) begin : g_b2_5
+			assign o_base[gb*16 +: 16] = d_nocomp ? 16'd0 : i_rn[gb*16 +: 16];
+		end else if (gb == 6) begin : g_b6
+			assign o_base[111:96] = (d_nocomp || rgb565_texf) ? 16'h0000 : i_rn[111:96];
+		end else begin : g_b7
+			assign o_base[127:112] = (d_nocomp || rgb565_texf) ? 16'h3F80 : i_rn[127:112];
+		end
+	end
+	endgenerate
+
+	reg [127:0] o_swz_r;
+	reg [2:0] sc0, sc1, sc2, sc3;
 	always @(*) begin
-		case (i_ctl[15:14])
-		2'd0: gsw18 = i_ctl[38:36];
-		2'd1: gsw18 = i_ctl[41:39];
-		2'd2: gsw18 = i_ctl[44:42];
-		default: gsw18 = i_ctl[47:45];
-		endcase
-		gsrc18 = gsw18 >= 3'd3 && gsw18 <= 3'd6 ? zsrc(gsw18[1:0]) : i_ctl[15:14];
-		o_res = i_rn;
-		if (i_ctl[19] && i_ctl[3])	/* texf of RGB565: exact */
-			o_res[127:96] = 32'h3F800000;
-		if (i_ctl[8] && !i_ctl[9])
-			o_res = {32'h3F800000, 64'd0, i_ctl[1] ? i_lt[31:0] : i_rn[31:0]};
-		if (i_ctl[13]) begin
-			/* gather: word g is texel 2, 3, 1, 0 */
-			for (c = 0; c < 4; c = c + 1) begin
-				gw = i_lt[gtx(c[1:0])*32 +: 32];
-				if (i_ctl[9])
-					o_res[c*32 +: 32] = i_ok[gtx(c[1:0])] ? 32'h3F800000 : 32'd0;
-				else if (gsw18 == 3'd1 || gsw18 == 3'd2)
-					o_res[c*32 +: 32] = gsw18 == 3'd2 ? 32'h3F800000 : 32'd0;
-				else if (i_ctl[8])
-					o_res[c*32 +: 32] = gsrc18 == 2'd0 ? (i_ctl[1] ? gw : i_rn[c*32 +: 32]) :
-						gsrc18 == 2'd3 ? 32'h3F800000 : 32'd0;
-				else
-					o_res[c*32 +: 32] = i_rn[c*32 +: 32];
-			end
-		end else
-			o_res = swz4(o_res, i_ctl[47:36]);
-		if (i_ctl[2])
-			o_res = i_ctl[16] ? {64'd0, i_vw[31], i_rn[62:32], i_vw[15], i_rn[30:0]} :
-				{96'd0, i_vw};
-		if (!i_mk)
-			o_res = 128'd0;
+		for (c = 0; c < 4; c = c + 1) begin
+			sc0 = swz_z0[3*c +: 3];
+			sc1 = swz_z1[3*c +: 3];
+			sc2 = swz_z2[3*c +: 3];
+			sc3 = swz_z3[3*c +: 3];
+			o_swz_r[c*32 +: 8] = sc0 == 3'd1 ? 8'd0 : sc0 == 3'd2 ? 8'h00 :
+				sc0 >= 3'd3 && sc0 <= 3'd6 ? o_base[{zsrc(sc0[1:0]), 5'd0} +: 8] : o_base[c*32 +: 8];
+			o_swz_r[c*32 + 8 +: 8] = sc1 == 3'd1 ? 8'd0 : sc1 == 3'd2 ? 8'h00 :
+				sc1 >= 3'd3 && sc1 <= 3'd6 ? o_base[{zsrc(sc1[1:0]), 5'd8} +: 8] : o_base[c*32 + 8 +: 8];
+			o_swz_r[c*32 + 16 +: 8] = sc2 == 3'd1 ? 8'd0 : sc2 == 3'd2 ? 8'h80 :
+				sc2 >= 3'd3 && sc2 <= 3'd6 ? o_base[{zsrc(sc2[1:0]), 5'd16} +: 8] : o_base[c*32 + 16 +: 8];
+			o_swz_r[c*32 + 24 +: 8] = sc3 == 3'd1 ? 8'd0 : sc3 == 3'd2 ? 8'h3F :
+				sc3 >= 3'd3 && sc3 <= 3'd6 ? o_base[{zsrc(sc3[1:0]), 5'd24} +: 8] : o_base[c*32 + 24 +: 8];
+		end
+	end
+	(* keep = "true" *) wire [127:0] o_swz = o_swz_r;
+
+	(* keep = "true" *) wire [127:0] o_mid;
+	generate
+	for (gb = 0; gb < 8; gb = gb + 1) begin : g_mid
+		localparam [1:0] MC = gb[2:1];
+		localparam       HI = gb[0];
+		(* dont_touch = "true" *) wire c13 = i_ctl_c13[gb];
+		(* dont_touch = "true" *) wire c9  = i_ctl[9];
+		(* dont_touch = "true" *) wire c8  = i_ctl[8];
+		(* dont_touch = "true" *) wire c1  = i_ctl[1];
+		(* keep = "true" *) wire [2:0] gsw_m = (i_ctl[15:14] == 2'd0) ? i_ctl[38:36] :
+		                                       (i_ctl[15:14] == 2'd1) ? i_ctl[41:39] :
+		                                       (i_ctl[15:14] == 2'd2) ? i_ctl[44:42] : i_ctl[47:45];
+		(* keep = "true" *) wire [1:0] gsrc_m = (gsw_m >= 3'd3 && gsw_m <= 3'd6) ? zsrc(gsw_m[1:0]) : i_ctl[15:14];
+		wire [31:0] gw_m = i_lt[gtx(MC)*32 +: 32];
+		if (!HI) begin : g_m_lo
+			assign o_mid[gb*16 +: 16] = !c13 ? o_swz[gb*16 +: 16] :
+				(c9 || gsw_m == 3'd1 || gsw_m == 3'd2) ? 16'd0 :
+				c8 ? (gsrc_m == 2'd0 ? (c1 ? gw_m[15:0] : i_rn[gb*16 +: 16]) : 16'd0) :
+				i_rn[gb*16 +: 16];
+		end else begin : g_m_hi
+			assign o_mid[gb*16 +: 16] = !c13 ? o_swz[gb*16 +: 16] :
+				c9 ? (i_ok[gtx(MC)] ? 16'h3F80 : 16'd0) :
+				(gsw_m == 3'd1 || gsw_m == 3'd2) ? (gsw_m == 3'd2 ? 16'h3F80 : 16'd0) :
+				c8 ? (gsrc_m == 2'd0 ? (c1 ? gw_m[31:16] : i_rn[gb*16 +: 16]) :
+				      gsrc_m == 2'd3 ? 16'h3F80 : 16'd0) :
+				i_rn[gb*16 +: 16];
+		end
+	end
+	endgenerate
+	wire [127:0] q_val = {64'd0, i_vw[31], i_rn[62:32], i_vw[15], i_rn[30:0]};
+	wire [127:0] s_val = {96'd0, i_vw};
+	integer h;
+	always @(*) begin
+		for (h = 0; h < 16; h = h + 1) begin
+			o_res[h*8 +: 8] = !mk_h[h] ? 8'd0 :
+				ctl2_h[h] ? (ctl16_h[h] ? q_val[h*8 +: 8] : s_val[h*8 +: 8]) :
+				o_mid[h*8 +: 8];
+		end
 	end
 
 

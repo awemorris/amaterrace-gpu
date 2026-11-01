@@ -82,6 +82,8 @@ module atg_su_icache_tb;
 			@(negedge clk);
 			ic_req = 1'b0;
 			lat = lat + 1;
+			@(negedge clk);
+			lat = lat + 1;
 			if (!ic_rvalid || ic_rdata !== want(a)) begin
 				$display("FAIL atg_su_icache: %h gave %h (%b) want %h", a, ic_rdata, ic_rvalid,
 					want(a));
@@ -106,7 +108,7 @@ module atg_su_icache_tb;
 		end
 		for (i = 0; i < 4; i = i + 1) begin
 			fetch(32'h100 + 8 * i, 0);
-			if (lat != 1 || reads != 1) begin
+			if (lat != 2 || reads != 1) begin
 				$display("FAIL atg_su_icache.hit lat %0d reads %0d", lat, reads);
 				errors = errors + 1;
 			end
@@ -122,12 +124,17 @@ module atg_su_icache_tb;
 				errors = errors + 1;
 			end
 			@(negedge clk);
-			if (!ic_rvalid || ic_rdata !== want(32'h100 + 8 * i)) begin
+			if (i >= 1 && (!ic_rvalid || ic_rdata !== want(32'h100 + 8 * (i - 1)))) begin
 				$display("FAIL atg_su_icache.hit back-to-back data");
 				errors = errors + 1;
 			end
 		end
 		ic_req = 1'b0;
+		@(negedge clk);
+		if (!ic_rvalid || ic_rdata !== want(32'h100 + 8 * 3)) begin
+			$display("FAIL atg_su_icache.hit back-to-back data");
+			errors = errors + 1;
+		end
 		if (errors == ec)
 			$display("PASS atg_su_icache.hit");
 		/* conflict */

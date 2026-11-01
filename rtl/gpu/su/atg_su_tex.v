@@ -98,18 +98,19 @@ module atg_su_tex #(
 	localparam QS = $clog2(NQ);	/* the quad number's bits in a group (0 for NPHYS 4) */
 	localparam [1:0] IDLE = 2'd0, SEND = 2'd1, DREF = 2'd2;
 
-	reg [1:0] st;
-	reg [QW-1:0] q, lastq;
-	reg [NPHYS*160-1:0] crd;
-	reg [NPHYS-1:0] lanes;
-	reg [WARP_W-1:0] warp;
-	reg [GRP_W-1:0] grp;
-	reg [6:0] rd;
-	reg last;
+	(* keep = "true" *) wire rst_p = !rst_n;
 
-	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_TEX;
-	wire cform = x_uop[ATG_UOP_OP + ATG_TEX_CFORM];
-	wire three = x_uop[ATG_UOP_SUB + 4];	/* a .3 form (atg_su_dec) */
+	(* fsm_encoding = "none", max_fanout = 12 *) reg [1:0] st;
+	(* max_fanout = 12 *) reg [QW-1:0] q, lastq;
+	(* max_fanout = 12 *) reg [NPHYS-1:0] lanes;
+	(* max_fanout = 12 *) reg [WARP_W-1:0] warp;
+	(* max_fanout = 12 *) reg [GRP_W-1:0] grp;
+	(* max_fanout = 12 *) reg [6:0] rd;
+	(* max_fanout = 12 *) reg last;
+
+	(* max_fanout = 12 *) wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_TEX;
+	(* max_fanout = 12 *) wire cform = x_uop[ATG_UOP_OP + ATG_TEX_CFORM];
+	(* max_fanout = 12 *) wire three = x_uop[ATG_UOP_SUB + 4];	/* a .3 form (atg_su_dec) */
 	wire wide = cform || three;	/* two operand passes */
 	wire [NPHYS-1:0] exec = x_mask[NPHYS-1:0];
 	wire rq_ready;
@@ -117,7 +118,6 @@ module atg_su_tex #(
 	/* Which quads of the group have EXEC lanes, and the last of them. */
 	reg [NQ-1:0] qm;
 	reg [QW-1:0] ql;
-	reg [NPHYS*160-1:0] xcrd, dcrd;
 	integer i;
 	always @(*) begin
 		ql = {QW{1'b0}};
@@ -126,29 +126,66 @@ module atg_su_tex #(
 			if (qm[i])
 				ql = i[QW-1:0];
 		end
-		for (i = 0; i < NPHYS; i = i + 1) begin
-			xcrd[i*160 +: 160] = {64'd0, x_b[i*32 +: 32], x_c[i*32 +: 32], x_a[i*32 +: 32]};
-			dcrd[i*160 +: 160] = {three ? x_a[i*32 +: 32] : 32'd0,
-				three ? (cform ? x_c[i*32 +: 32] : 32'd0) : x_a[i*32 +: 32], crd[i*160 +: 96]};
-		end
 	end
 	wire take = mine && x_ready;
+	(* max_fanout = 12 *) wire take_idle = (st == IDLE) && rq_ready && mine;
+	(* max_fanout = 12 *) wire take_dref = (st == DREF) && rq_ready && mine;
 	/* The record goes to the return half with the group's last pass. */
-	wire push = take && (st == DREF || !wide);
+	(* max_fanout = 12 *) wire push = take && (st == DREF || !wide);
 
 	assign x_ready = (st == IDLE || st == DREF) && rq_ready;
 	wire [3:0] qmask = lanes[q*4 +: 4];
 	assign tx_valid = st == SEND && qmask != 4'd0;
 	assign tx_mask = qmask;
-	/* Quad q's coordinates (a selection: 640 bits a quad), and the quad's number grp NQ + q. */
-	reg [639:0] q_crd;
-	integer qi;
-	always @(*) begin
-		q_crd = crd[639:0];
-		for (qi = 1; qi < NQ; qi = qi + 1)
-			if (q == qi[QW-1:0])
-				q_crd = crd[qi*640 +: 640];
+
+	/* Quad q's coordinates (640 bits = 4 lanes in quad × 10 16-bit half-words per lane),
+	 * stored in per-slice registers so each CE/mux net drives at most 16 bits. */
+	wire [639:0] q_crd;
+	genvar gq_l, ghw, gqi;
+	generate
+	for (gq_l = 0; gq_l < 4; gq_l = gq_l + 1) begin : g_qlane
+		for (ghw = 0; ghw < 10; ghw = ghw + 1) begin : g_qhw
+			localparam SL_IDX = gq_l * 10 + ghw;
+			localparam H_BIT = (ghw % 2) * 16;
+			localparam W_IDX = ghw / 2;
+			(* keep = "true" *) wire ti_s = take_idle;
+			(* keep = "true" *) wire td_s = take_dref;
+			(* keep = "true" *) wire th_s = three;
+			(* keep = "true" *) wire cf_s = cform;
+			(* keep = "true" *) wire [QW-1:0] q_sl = q;
+			(* shreg_extract = "no" *) reg [NQ*16-1:0] crd_sl;
+
+			for (gqi = 0; gqi < NQ; gqi = gqi + 1) begin : g_qinst
+				localparam L_IDX = gqi * 4 + gq_l;
+				wire [15:0] xa_h = x_a[L_IDX*32 + H_BIT +: 16];
+				wire [15:0] xb_h = x_b[L_IDX*32 + H_BIT +: 16];
+				wire [15:0] xc_h = x_c[L_IDX*32 + H_BIT +: 16];
+				wire [15:0] idle_d = (W_IDX == 0) ? xa_h :
+				                     (W_IDX == 1) ? xc_h :
+				                     (W_IDX == 2) ? xb_h : 16'd0;
+				wire [15:0] dref_d = (W_IDX == 3) ? (th_s ? (cf_s ? xc_h : 16'd0) : xa_h) :
+				                     (W_IDX == 4) ? (th_s ? xa_h : 16'd0) :
+				                     crd_sl[gqi*16 +: 16];
+				always @(posedge clk) begin
+					if (ti_s)
+						crd_sl[gqi*16 +: 16] <= idle_d;
+					else if (td_s && (W_IDX >= 3))
+						crd_sl[gqi*16 +: 16] <= dref_d;
+				end
+			end
+
+			reg [15:0] q_crd_s;
+			integer qsi;
+			always @(*) begin
+				q_crd_s = crd_sl[0 +: 16];
+				for (qsi = 1; qsi < NQ; qsi = qsi + 1)
+					if (q_sl == qsi[QW-1:0])
+						q_crd_s = crd_sl[qsi*16 +: 16];
+			end
+			assign q_crd[SL_IDX*16 +: 16] = q_crd_s;
+		end
 	end
+	endgenerate
 	assign tx_coord = q_crd;
 	wire [31:0] qn = ({{(32 - GRP_W){1'b0}}, grp} << QS) |
 		(NQ > 1 ? {{(32 - QW){1'b0}}, q} : 32'd0);
@@ -161,12 +198,11 @@ module atg_su_tex #(
 	assign tx_last = last && q == lastq;
 
 	always @(posedge clk) begin
-		if (!rst_n) begin
+		if (rst_p) begin
 			st <= IDLE;
 		end else begin
 			case (st)
-			IDLE: if (take) begin
-				crd <= xcrd;
+			IDLE: if (take_idle) begin
 				lanes <= exec;
 				warp <= x_warp;
 				grp <= x_grp;
@@ -184,8 +220,7 @@ module atg_su_tex #(
 				else if (qm != {NQ{1'b0}})
 					st <= SEND;
 			end
-			DREF: if (take) begin
-				crd <= dcrd;
+			DREF: if (take_dref) begin
 				lanes <= exec;
 				last <= x_last;
 				lastq <= ql;

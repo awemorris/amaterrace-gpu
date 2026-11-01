@@ -19,6 +19,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+(* keep_hierarchy = "yes" *)
 module atg_rop_occ (
 	input wire clk,
 	input wire rst_n,

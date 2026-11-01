@@ -104,11 +104,11 @@ module atg_su_chk #(
 		.fl_go(1'b0), .fl_mask(32'd0), .fl_info(64'd0),
 		.pt_rd(1'b0), .pt_idx(8'd0), .pt_word(7'd0), .pt_rdata(), .pt_free(1'b0),
 		.pt_free_idx(8'd0), .pt_done(),
-		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_mask(), .tx_coord(), .tx_off(),
-		.tx_tag(), .tx_last(), .tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0),
-		.tr_data(512'd0), .tr_last(1'b0),
+		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_samp_slot(), .tx_vs(),
+		.tx_mask(), .tx_coord(), .tx_off(), .tx_tag(), .tx_last(),
+		.tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0), .tr_data(512'd0), .tr_last(1'b0),
 		.ex_valid(), .ex_ready(1'b1), .ex_seq(), .ex_xy(), .ex_mask(), .ex_color(),
-		.ex_depth(), .ex_last(), .ex_next(16'd0), .ex_aux(),
+		.ex_color1(), .ex_has_src1(), .ex_depth(), .ex_last(), .ex_next(16'd0), .ex_aux(),
 		.mesh_valid(), .mesh_ready(1'b1), .mesh_tri(), .mesh_last(), .mesh_id(),
 		.d_req_valid(d_req_valid), .d_req_ready(d_req_ready), .d_req_write(d_req_write),
 		.d_req_line(d_req_line), .d_req_be(d_req_be), .d_req_wdata(d_req_wdata),
@@ -124,7 +124,7 @@ module atg_su_chk #(
 		.sa_push_valid(), .sa_push_ready(1'b1), .sa_push_data(), .sa_pop_valid(1'b0),
 		.sa_pop_ready(), .sa_pop_data({(NPHYS*32){1'b0}}), .sa_ctl_valid(), .sa_ctl_data(),
 		.sa_qstat(32'd0), .sa_stat(32'd0), .sa_qtag(32'd0),
-		.busy(busy), .fault(fault), .fault_addr(fault_addr)
+		.busy(busy), .fault(fault), .fault_addr(fault_addr), .fsm()
 	);
 	atg_mc_atom #(.NATOM(1), .AW(1)) atom (
 		.clk(clk), .rst_n(rst_n),
@@ -205,11 +205,11 @@ module atg_su_chk #(
 						for (g = 0; g < G; g = g + 1) begin
 							a = (s * NREGS + r) * G + g;
 							e = (s * NREGS + r) * 32 + g * NPHYS + gl;
-							if (exp[e][32] && dut.rf.lane[gl].m1.mem[a] !== exp[e][31:0]) begin
+							if (exp[e][32] && dut.rf.lane[gl].m1[a] !== exp[e][31:0]) begin
 								if (lane_err[gl] < 3)
 									$display("FAIL atg_su NPHYS %0d slot %0d r%0d lane %0d: %h want %h",
 										NPHYS, s, r, g * NPHYS + gl,
-										dut.rf.lane[gl].m1.mem[a], exp[e][31:0]);
+										dut.rf.lane[gl].m1[a], exp[e][31:0]);
 								lane_err[gl] = lane_err[gl] + 1;
 							end
 						end
@@ -383,21 +383,27 @@ module atg_su_tb;
 	wire [31:0] e0, e1, e2, e3, e4, c0, c1, c2, c3, c4;
 
 	always #5 clk = !clk;
-	/* +quick: NPHYS 16 gets no clock and is not waited for. */
+	/* +quick: NPHYS 16 gets no clock and is not waited for.
+	 * Gate each checker's clock once its done flag asserts so completed
+	 * instances do not consume simulation time while other NPHYS run. */
 	reg quick;
 	initial
 		quick = $test$plusargs("quick");
-	wire clk16 = clk & !quick;
+	wire clk8  = clk & !done[0];
+	wire clk16 = clk & !quick & !done[1];
+	wire clk32 = clk & !done[2];
+	wire clk8f = clk & !done[3];
+	wire clk4  = clk & !done[4];
 
-	atg_su_chk #(.NPHYS(8), .SEED(1)) n8 (.clk(clk), .go(go), .done(done[0]), .errs(e0),
+	atg_su_chk #(.NPHYS(8), .SEED(1)) n8 (.clk(clk8), .go(go), .done(done[0]), .errs(e0),
 		.cycles(c0));
 	atg_su_chk #(.NPHYS(16), .SEED(2)) n16 (.clk(clk16), .go(go), .done(done[1]), .errs(e1),
 		.cycles(c1));
-	atg_su_chk #(.NPHYS(32), .SEED(3)) n32 (.clk(clk), .go(go), .done(done[2]), .errs(e2),
+	atg_su_chk #(.NPHYS(32), .SEED(3)) n32 (.clk(clk32), .go(go), .done(done[2]), .errs(e2),
 		.cycles(c2));
-	atg_su_chk #(.NPHYS(8), .SEED(4), .SUBGROUP(0), .P_FIRST(7), .FAULTS(1)) n8f (.clk(clk),
+	atg_su_chk #(.NPHYS(8), .SEED(4), .SUBGROUP(0), .P_FIRST(7), .FAULTS(1)) n8f (.clk(clk8f),
 		.go(go), .done(done[3]), .errs(e3), .cycles(c3));
-	atg_su_chk #(.NPHYS(4), .SEED(5)) n4 (.clk(clk), .go(go), .done(done[4]), .errs(e4),
+	atg_su_chk #(.NPHYS(4), .SEED(5)) n4 (.clk(clk4), .go(go), .done(done[4]), .errs(e4),
 		.cycles(c4));
 
 	initial begin

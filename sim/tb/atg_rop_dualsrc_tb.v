@@ -42,7 +42,7 @@ module atg_rop_dualsrc_tb;
 	wire b_rvalid;
 	wire [127:0] b_pix;
 
-	atg_rop_blend #(.LAT(3)) dut (
+	atg_rop_blend #(.LAT(11)) dut (
 		.clk(clk),
 		.rst_n(rst_n),
 		.st_we(st_we),
@@ -216,8 +216,7 @@ module atg_rop_dualsrc_tb;
 				@(posedge clk);
 				b_valid <= 1'b0;
 
-				@(posedge clk);
-				@(posedge clk);
+				repeat (10) @(posedge clk);
 				#1;
 				if (!b_rvalid || b_pix !== exp_pix) begin
 					$display("FAIL atg_rop_dualsrc.factors: fs=%0d iter=%0d got=%h exp=%h",
@@ -279,8 +278,7 @@ module atg_rop_dualsrc_tb;
 			@(posedge clk);
 			b_valid <= 1'b0;
 
-			@(posedge clk);
-			@(posedge clk);
+			repeat (10) @(posedge clk);
 			#1;
 			if (!b_rvalid || b_pix !== exp_pix) begin
 				$display("FAIL atg_rop_dualsrc.subpixel_font: iter=%0d got=%h exp=%h",
@@ -342,8 +340,7 @@ module atg_rop_dualsrc_tb;
 			@(posedge clk);
 			b_valid <= 1'b0;
 
-			@(posedge clk);
-			@(posedge clk);
+			repeat (10) @(posedge clk);
 			#1;
 			if (!b_rvalid || b_pix !== exp_pix) begin
 				$display("FAIL atg_rop_dualsrc.masks: wm=%h mask=%h got=%h exp=%h",
@@ -399,8 +396,7 @@ module atg_rop_dualsrc_tb;
 			@(posedge clk);
 			b_valid <= 1'b0;
 
-			@(posedge clk);
-			@(posedge clk);
+			repeat (10) @(posedge clk);
 			#1;
 			if (!b_rvalid || b_pix !== exp_pix) begin
 				$display("FAIL atg_rop_dualsrc.formats: BGRA8 got=%h exp=%h",
