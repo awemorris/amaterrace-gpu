@@ -192,7 +192,11 @@ module atg_cp_ctl #(
 
 	/* Host writes. */
 	wire w0 = hcr_we && hcr_wmask[0];
+`ifdef SYNTH_KINTEX7
+	wire wr_ctrl = w0 && (hcr_widx[5:0] == I_CTRL[5:0]);
+`else
 	wire wr_ctrl = w0 && hcr_widx == I_CTRL;
+`endif
 	wire wr_reset = wr_ctrl && hcr_wdata[GHCI_CTRL_RESET];
 	assign step = wr_ctrl && hcr_wdata[GHCI_CTRL_STEP] && st == S_HALTED;
 
@@ -327,7 +331,7 @@ module atg_cp_ctl #(
 		end
 	end
 
-	(* DONT_TOUCH = "TRUE" *) reg [5:0] f_mc_v_r, f_host_v_r, f_s0_v_r, f_s1_v_r, f_s2_v_r;
+	(* DONT_TOUCH = "TRUE" *) reg [7:0] f_mc_v_r, f_host_v_r, f_s0_v_r, f_s1_v_r, f_s2_v_r;
 	reg f_wdt_only_r;
 	reg [31:0] f_mc_info_r, f_mc_addr_r;
 	reg [3:0] f_host_kind_r;
@@ -337,11 +341,11 @@ module atg_cp_ctl #(
 
 	always @(posedge clk) begin
 		if (rst_ctl_int) begin
-			f_mc_v_r <= 6'd0;
-			f_host_v_r <= 6'd0;
-			f_s0_v_r <= 6'd0;
-			f_s1_v_r <= 6'd0;
-			f_s2_v_r <= 6'd0;
+			f_mc_v_r <= 8'd0;
+			f_host_v_r <= 8'd0;
+			f_s0_v_r <= 8'd0;
+			f_s1_v_r <= 8'd0;
+			f_s2_v_r <= 8'd0;
 			f_wdt_only_r <= 1'b0;
 			f_mc_info_r <= 32'd0;
 			f_mc_addr_r <= 32'd0;
@@ -354,28 +358,28 @@ module atg_cp_ctl #(
 			f_s1_addr_r <= 32'd0;
 			f_s2_addr_r <= 32'd0;
 		end else begin
-			f_mc_v_r <= {6{mc_gpu}};
+			f_mc_v_r <= {8{mc_gpu}};
 			f_mc_info_r <= {mc_fault_tag, mc_fault_client,
 				mc_fault_mem ? GHCI_FAULT_AXI : GHCI_FAULT_APERTURE, 2'd0, mc_fault_prot,
 				mc_fault_write, mc_fault_client};
 			f_mc_addr_r <= mc_fault_addr;
 
-			f_host_v_r <= {6{kick_bad || kick_absent || locked_bad || wdt_fire}};
+			f_host_v_r <= {8{kick_bad || kick_absent || locked_bad || wdt_fire}};
 			f_wdt_only_r <= wdt_fire && !mc_gpu && !kick_bad && !kick_absent && !locked_bad;
 			f_host_kind_r <= kick_bad ? GHCI_FAULT_KICK :
 				kick_absent ? GHCI_FAULT_OPCODE :
 				locked_bad ? GHCI_FAULT_LOCKED : GHCI_FAULT_WATCHDOG;
 			f_host_tag_r <= (kick_bad || kick_absent || locked_bad) ? 8'd0 : wdt_tag;
 
-			f_s0_v_r <= {6{f_s0_v_c}};
+			f_s0_v_r <= {8{f_s0_v_c}};
 			f_s0_info_r <= f_s0_info_c;
 			f_s0_addr_r <= {f_s0_addr_hi_c, f_s0_addr_lo_c};
 
-			f_s1_v_r <= {6{f_s1_v_c}};
+			f_s1_v_r <= {8{f_s1_v_c}};
 			f_s1_info_r <= f_s1_info_c;
 			f_s1_addr_r <= {f_s1_addr_hi_c, f_s1_addr_lo_c};
 
-			f_s2_v_r <= {6{f_s2_v_c}};
+			f_s2_v_r <= {8{f_s2_v_c}};
 			f_s2_info_r <= f_s2_info_c;
 			f_s2_addr_r <= {f_s2_addr_hi_c, f_s2_addr_lo_c};
 		end
@@ -405,16 +409,26 @@ module atg_cp_ctl #(
 			f_host_v_r[3] ? f_host_info_w[31:24] :
 			f_s0_v_r[3]   ? f_s0_info_r[31:24] :
 			f_s1_v_r[3]   ? f_s1_info_r[31:24] : f_s2_info_r[31:24];
-		n_addr[15:0] =
-			f_mc_v_r[4]   ? f_mc_addr_r[15:0] :
-			f_host_v_r[4] ? 16'd0 :
-			f_s0_v_r[4]   ? f_s0_addr_r[15:0] :
-			f_s1_v_r[4]   ? f_s1_addr_r[15:0] : f_s2_addr_r[15:0];
-		n_addr[31:16] =
-			f_mc_v_r[5]   ? f_mc_addr_r[31:16] :
-			f_host_v_r[5] ? 16'd0 :
-			f_s0_v_r[5]   ? f_s0_addr_r[31:16] :
-			f_s1_v_r[5]   ? f_s1_addr_r[31:16] : f_s2_addr_r[31:16];
+		n_addr[7:0] =
+			f_mc_v_r[4]   ? f_mc_addr_r[7:0] :
+			f_host_v_r[4] ? 8'd0 :
+			f_s0_v_r[4]   ? f_s0_addr_r[7:0] :
+			f_s1_v_r[4]   ? f_s1_addr_r[7:0] : f_s2_addr_r[7:0];
+		n_addr[15:8] =
+			f_mc_v_r[5]   ? f_mc_addr_r[15:8] :
+			f_host_v_r[5] ? 8'd0 :
+			f_s0_v_r[5]   ? f_s0_addr_r[15:8] :
+			f_s1_v_r[5]   ? f_s1_addr_r[15:8] : f_s2_addr_r[15:8];
+		n_addr[23:16] =
+			f_mc_v_r[6]   ? f_mc_addr_r[23:16] :
+			f_host_v_r[6] ? 8'd0 :
+			f_s0_v_r[6]   ? f_s0_addr_r[23:16] :
+			f_s1_v_r[6]   ? f_s1_addr_r[23:16] : f_s2_addr_r[23:16];
+		n_addr[31:24] =
+			f_mc_v_r[7]   ? f_mc_addr_r[31:24] :
+			f_host_v_r[7] ? 8'd0 :
+			f_s0_v_r[7]   ? f_s0_addr_r[31:24] :
+			f_s1_v_r[7]   ? f_s1_addr_r[31:24] : f_s2_addr_r[31:24];
 	end
 
 	wire take_fault = any && can_fault_r[0];
@@ -488,9 +502,15 @@ module atg_cp_ctl #(
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_wcr1 (.I0(rst_ctl_int), .I1(wdt_cnt_clr), .O(wdt_cnt_rst_b[1]));
 
 	(* keep = "true", dont_touch = "true" *) wire [1:0] stuck_cnt_rst_b;
-	wire stuck_cnt_clr = !(halt_int && !mc_idle);
-	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_scr0 (.I0(rst_ctl_int), .I1(stuck_cnt_clr), .O(stuck_cnt_rst_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_scr1 (.I0(rst_ctl_int), .I1(stuck_cnt_clr), .O(stuck_cnt_rst_b[1]));
+	reg mc_idle_stuck_r;
+	always @(posedge clk) begin
+		if (rst_ctl_int)
+			mc_idle_stuck_r <= 1'b1;
+		else
+			mc_idle_stuck_r <= mc_idle;
+	end
+	(* DONT_TOUCH = "TRUE" *) LUT3 #(.INIT(8'hFB)) u_scr0 (.I0(rst_ctl_int), .I1(halt_int), .I2(mc_idle_stuck_r), .O(stuck_cnt_rst_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT3 #(.INIT(8'hFB)) u_scr1 (.I0(rst_ctl_int), .I1(halt_int), .I2(mc_idle_stuck_r), .O(stuck_cnt_rst_b[1]));
 
 	wire wr_wdt = hcr_we && (hcr_widx == I_WDT);
 	wire [1:0] wr_wdt_b;
@@ -507,7 +527,7 @@ module atg_cp_ctl #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapl0 (.I0(wr_ap_l), .O(wr_ap_l_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapl1 (.I0(wr_ap_l), .O(wr_ap_l_b[1]));
 
-	wire stuck_en = halt_int && !mc_idle && !(stuck_count >= {wdt_cycles, 2'b00});
+	wire stuck_en = halt_int && !mc_idle_stuck_r && !(stuck_count >= {wdt_cycles, 2'b00});
 	wire [1:0] stuck_en_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stuck0 (.I0(stuck_en), .O(stuck_en_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stuck1 (.I0(stuck_en), .O(stuck_en_b[1]));
@@ -584,7 +604,7 @@ module atg_cp_ctl #(
 			if (wr_ap_b_b[1]) ap_base[31:16] <= ((ap_base[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16])) & AP_MASK[31:16];
 			if (wr_ap_l_b[0]) ap_limit[15:0] <= ((ap_limit[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0])) & AP_MASK[15:0];
 			if (wr_ap_l_b[1]) ap_limit[31:16] <= ((ap_limit[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16])) & AP_MASK[31:16];
-			if (halt_int && !mc_idle && (stuck_count >= {wdt_cycles, 2'b00}))
+			if (halt_int && !mc_idle_stuck_r && (stuck_count >= {wdt_cycles, 2'b00}))
 				axi_stuck <= 1'b1;
 `else
 			if (hcr_we && hcr_widx == I_WDT)

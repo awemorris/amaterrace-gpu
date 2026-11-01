@@ -21,6 +21,9 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifdef SYNTH_KINTEX7
+(* keep_hierarchy = "yes" *)
+`endif
 module atg_blt_port #(
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
@@ -56,6 +59,7 @@ module atg_blt_port #(
 	output reg [LINE_BYTES*8-1:0] req_wdata,
 	output wire [7:0] req_tag,
 	input wire rsp_valid,
+	input wire rsp_inhibit,
 	input wire rsp_write,
 	input wire [7:0] rsp_tag,
 	input wire [LINE_BYTES*8-1:0] rsp_rdata,
@@ -67,8 +71,8 @@ module atg_blt_port #(
 	(* max_fanout = 16 *) reg [1:0] rd_out;
 	(* max_fanout = 16 *) reg rd_idle_q, wr_idle_q;
 	(* max_fanout = 16 *) wire q_fire = req_valid && req_ready;
-	(* keep = "true" *) wire rsp_rd = rsp_valid && !rsp_write;
-	(* keep = "true" *) wire rsp_wr = rsp_valid && rsp_write;
+	(* keep = "true" *) wire rsp_rd = rsp_valid && !rsp_inhibit && !rsp_write;
+	(* keep = "true" *) wire rsp_wr = rsp_valid && !rsp_inhibit && rsp_write;
 `ifdef SYNTH_KINTEX7
 	(* max_fanout = 16 *) wire can_issue_ctrl = issue;
 	(* max_fanout = 16 *) wire can_issue_lo   = issue;
@@ -97,9 +101,9 @@ module atg_blt_port #(
 	localparam NUM_SLICES = (LINE_BYTES * 8) / 16;
 
 	(* keep = "true", dont_touch = "true" *) wire ce_b0_root, ce_b1_root, ce_bd_root;
-	LUT4 #(.INIT(16'h0002)) u_root_b0 (.I0(rsp_valid), .I1(rsp_write), .I2(rsp_tag[0]), .I3(rsp_tag[1]), .O(ce_b0_root));
-	LUT4 #(.INIT(16'h0020)) u_root_b1 (.I0(rsp_valid), .I1(rsp_write), .I2(rsp_tag[0]), .I3(rsp_tag[1]), .O(ce_b1_root));
-	LUT4 #(.INIT(16'h2200)) u_root_bd (.I0(rsp_valid), .I1(rsp_write), .I2(rsp_tag[0]), .I3(rsp_tag[1]), .O(ce_bd_root));
+	LUT5 #(.INIT(32'h00000002)) u_root_b0 (.I0(rsp_valid), .I1(rsp_write), .I2(rsp_tag[0]), .I3(rsp_tag[1]), .I4(rsp_inhibit), .O(ce_b0_root));
+	LUT5 #(.INIT(32'h00000020)) u_root_b1 (.I0(rsp_valid), .I1(rsp_write), .I2(rsp_tag[0]), .I3(rsp_tag[1]), .I4(rsp_inhibit), .O(ce_b1_root));
+	LUT5 #(.INIT(32'h00002200)) u_root_bd (.I0(rsp_valid), .I1(rsp_write), .I2(rsp_tag[0]), .I3(rsp_tag[1]), .I4(rsp_inhibit), .O(ce_bd_root));
 
 	(* keep = "true", dont_touch = "true" *) wire iss_lo_root, iss_hi_root;
 	LUT1 #(.INIT(2'b10)) u_iss_lo (.I0(i_write), .O(iss_lo_root));
@@ -165,7 +169,12 @@ module atg_blt_port #(
 `endif
 	end
 
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire rst_port_high;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'b01)) u_rst_port (.I0(rst_n), .O(rst_port_high));
+`else
 	(* keep = "true", dont_touch = "true" *) wire rst_port_high = !rst_n;
+`endif
 
 	always @(posedge clk) begin
 		if (rst_port_high) begin
@@ -184,7 +193,7 @@ module atg_blt_port #(
 			rd_idle_q <= (rd_next == 2'd0);
 			if (clr)
 				fail <= 1'b0;
-			else if (rsp_valid && rsp_error)
+			else if (rsp_valid && !rsp_inhibit && rsp_error)
 				fail <= 1'b1;
 			if (q_fire) begin
 				req_valid <= 1'b0;

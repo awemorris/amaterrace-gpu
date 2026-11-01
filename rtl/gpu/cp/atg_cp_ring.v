@@ -241,24 +241,19 @@ module atg_cp_ring #(
 	reg [1:0] last_non_q0;
 
 `ifdef SYNTH_KINTEX7
-	wire [31:0] wdata_a, wdata_b, wdata_c, wdata_d;
-	wire [8:0] wdata_d1;
-	wire [31:0] wmask_a, wmask_b, wmask_c;
-	genvar g_wb;
-	generate
-		for (g_wb = 0; g_wb < 32; g_wb = g_wb + 1) begin : g_wdata_buf
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wda (.I0(hcr_wdata[g_wb]), .O(wdata_a[g_wb]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdb (.I0(hcr_wdata[g_wb]), .O(wdata_b[g_wb]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdc (.I0(hcr_wdata[g_wb]), .O(wdata_c[g_wb]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdd (.I0(hcr_wdata[g_wb]), .O(wdata_d[g_wb]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wma (.I0(hcr_wmask[g_wb]), .O(wmask_a[g_wb]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wmb (.I0(hcr_wmask[g_wb]), .O(wmask_b[g_wb]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wmc (.I0(hcr_wmask[g_wb]), .O(wmask_c[g_wb]));
-		end
-		for (g_wb = 0; g_wb < 9; g_wb = g_wb + 1) begin : g_wd1_buf
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdd1 (.I0(hcr_wdata[g_wb]), .O(wdata_d1[g_wb]));
-		end
-	endgenerate
+	(* dont_touch = "true" *) reg [31:0] wdata_a, wdata_b, wdata_c, wdata_d;
+	(* dont_touch = "true" *) reg [8:0] wdata_d1;
+	(* dont_touch = "true" *) reg [31:0] wmask_a, wmask_b, wmask_c;
+	always @(posedge clk) begin
+		wdata_a  <= hcr_wdata;
+		wdata_b  <= hcr_wdata;
+		wdata_c  <= hcr_wdata;
+		wdata_d  <= hcr_wdata;
+		wdata_d1 <= hcr_wdata[8:0];
+		wmask_a  <= hcr_wmask;
+		wmask_b  <= hcr_wmask;
+		wmask_c  <= hcr_wmask;
+	end
 `else
 	wire [31:0] wdata_a = hcr_wdata;
 	wire [31:0] wdata_b = hcr_wdata;
@@ -348,11 +343,27 @@ module atg_cp_ring #(
 	assign has_work[1] = !q_empty[1] && !(queue_sema_wait[1] && (sema[queue_sema_id[1]] == 8'd0));
 	assign has_work[2] = !q_empty[2] && !(queue_sema_wait[2] && (sema[queue_sema_id[2]] == 8'd0));
 
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) wire [1:0] aqid_b [0:11];
+	genvar g_aqb;
+	generate
+		for (g_aqb = 0; g_aqb < 12; g_aqb = g_aqb + 1) begin : g_aqid_buf
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_aq0 (.I0(active_qid[0]), .O(aqid_b[g_aqb][0]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_aq1 (.I0(active_qid[1]), .O(aqid_b[g_aqb][1]));
+		end
+	endgenerate
+	wire [17:0] wptr_act   = {wptr[aqid_b[1]][17:9], wptr[aqid_b[0]][8:0]};
+	wire [17:0] rptr_act   = {rptr[aqid_b[3]][17:9], rptr[aqid_b[2]][8:0]};
+	wire [63:0] base_act   = {32'd0, base[aqid_b[11]][31:24], base[aqid_b[10]][23:16], base[aqid_b[5]][15:8], base[aqid_b[4]][7:0]};
+	wire [17:0] mask_act   = {mask[aqid_b[7]][17:9], mask[aqid_b[6]][8:0]};
+	wire [18:0] nwords_act = {nwords[aqid_b[9]][18:10], nwords[aqid_b[8]][9:0]};
+`else
 	wire [17:0] wptr_act   = wptr[active_qid];
 	wire [17:0] rptr_act   = rptr[active_qid];
 	wire [63:0] base_act   = base[active_qid];
 	wire [17:0] mask_act   = mask[active_qid];
 	wire [18:0] nwords_act = nwords[active_qid];
+`endif
 
 	/*
 	 * Arbiter Selection
@@ -417,8 +428,34 @@ module atg_cp_ring #(
 
 `ifdef SYNTH_KINTEX7
 	(* DONT_TOUCH = "TRUE" *) reg [2:0] pf_idx_r;
-	wire rsp_ok_tag1 = rsp_valid && (rsp_tag == 8'd1) && !rsp_error;
-	wire rsp_ok_tag0 = rsp_valid && (rsp_tag == 8'd0) && !rsp_error;
+	(* DONT_TOUCH = "TRUE" *) reg rsp_ok_tag0_r, rsp_ok_tag1_r;
+	(* DONT_TOUCH = "TRUE" *) reg rsp_is_tag0_r, rsp_is_tag1_r, rsp_is_tag2_r, rsp_is_tag3_r;
+	(* DONT_TOUCH = "TRUE" *) reg rsp_err_tag0_r, rsp_error_r;
+	(* extract_reset = "no" *) reg [LINE_BYTES*8-1:0] rsp_rdata_r;
+	always @(posedge clk) begin
+		if (ring_core_rst_high) begin
+			rsp_ok_tag0_r  <= 1'b0;
+			rsp_ok_tag1_r  <= 1'b0;
+			rsp_is_tag0_r  <= 1'b0;
+			rsp_is_tag1_r  <= 1'b0;
+			rsp_is_tag2_r  <= 1'b0;
+			rsp_is_tag3_r  <= 1'b0;
+			rsp_err_tag0_r <= 1'b0;
+			rsp_error_r    <= 1'b0;
+		end else begin
+			rsp_ok_tag0_r  <= rsp_valid && (rsp_tag[1:0] == 2'd0) && !rsp_error;
+			rsp_ok_tag1_r  <= rsp_valid && (rsp_tag[1:0] == 2'd1) && !rsp_error;
+			rsp_is_tag0_r  <= rsp_valid && (rsp_tag[1:0] == 2'd0);
+			rsp_is_tag1_r  <= rsp_valid && (rsp_tag[1:0] == 2'd1);
+			rsp_is_tag2_r  <= rsp_valid && (rsp_tag[1:0] == 2'd2);
+			rsp_is_tag3_r  <= rsp_valid && (rsp_tag[1:0] == 2'd3);
+			rsp_err_tag0_r <= rsp_valid && (rsp_tag[1:0] == 2'd0) && rsp_error;
+			rsp_error_r    <= rsp_error;
+		end
+		rsp_rdata_r <= rsp_rdata;
+	end
+	wire rsp_ok_tag1 = rsp_ok_tag1_r;
+	wire rsp_ok_tag0 = rsp_ok_tag0_r;
 	wire pf_wr_lo, pf_wr_hi, dm_wr_lo, dm_wr_hi;
 	(* DONT_TOUCH = "TRUE" *) LUT3 #(.INIT(8'h40)) u_pfw_lo (.I0(pf_st[0]), .I1(pf_st[1]), .I2(rsp_ok_tag1), .O(pf_wr_lo));
 	(* DONT_TOUCH = "TRUE" *) LUT3 #(.INIT(8'h40)) u_pfw_hi (.I0(pf_st[0]), .I1(pf_st[1]), .I2(rsp_ok_tag1), .O(pf_wr_hi));
@@ -464,7 +501,7 @@ module atg_cp_ring #(
 				);
 				always @(posedge clk) begin
 					if (buf_slice_we[g_bi][g_sl])
-						buf_data[g_bi][g_sl*16 +: 16] <= rsp_rdata[g_sl*16 +: 16];
+						buf_data[g_bi][g_sl*16 +: 16] <= rsp_rdata_r[g_sl*16 +: 16];
 				end
 			end
 			wire [1:0] tag_sl_we;
@@ -629,24 +666,34 @@ module atg_cp_ring #(
 	wire go = (run && !halt) || step_pend;
 
 `ifdef SYNTH_KINTEX7
-	wire [4:0] hcr_we_cfg_b;
-	wire hcr_we_db, hcr_we_dma, hcr_we_sync;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_cfg0 (.I0(hcr_we), .O(hcr_we_cfg_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_cfg1 (.I0(hcr_we), .O(hcr_we_cfg_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_cfg2 (.I0(hcr_we), .O(hcr_we_cfg_b[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_cfg3 (.I0(hcr_we), .O(hcr_we_cfg_b[3]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_cfg4 (.I0(hcr_we), .O(hcr_we_cfg_b[4]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_db   (.I0(hcr_we), .O(hcr_we_db));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_dma  (.I0(hcr_we), .O(hcr_we_dma));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_hwe_sync (.I0(hcr_we), .O(hcr_we_sync));
-	wire [9:0] widx_a, widx_b;
-	genvar g_wi;
-	generate
-		for (g_wi = 0; g_wi < 10; g_wi = g_wi + 1) begin : g_widx_buf
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wia (.I0(hcr_widx[g_wi]), .O(widx_a[g_wi]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wib (.I0(hcr_widx[g_wi]), .O(widx_b[g_wi]));
+	(* dont_touch = "true" *) reg [4:0] hcr_we_cfg_b;
+	(* dont_touch = "true" *) reg hcr_we_db, hcr_we_dma, hcr_we_sync;
+	(* dont_touch = "true" *) reg [9:0] widx_a, widx_b;
+	(* dont_touch = "true" *) reg [2:0] doorbell_r;
+	wire hcr_we_lo64 = hcr_we && (hcr_widx[9:6] == 4'd0);
+	always @(posedge clk) begin
+		if (ring_rst_high) begin
+			hcr_we_cfg_b <= 5'd0;
+			hcr_we_db    <= 1'b0;
+			hcr_we_dma   <= 1'b0;
+			hcr_we_sync  <= 1'b0;
+			widx_a       <= 10'd0;
+			widx_b       <= 10'd0;
+			doorbell_r   <= 3'd0;
+		end else begin
+			hcr_we_cfg_b[3:0] <= {4{hcr_we_lo64 && open}};
+			hcr_we_cfg_b[4]   <= hcr_we_lo64;
+			hcr_we_db         <= hcr_we_lo64;
+			hcr_we_dma        <= hcr_we_lo64;
+			hcr_we_sync       <= hcr_we_lo64;
+			widx_a            <= hcr_widx;
+			widx_b            <= hcr_widx;
+			doorbell_r[0]     <= hcr_we_lo64 && (hcr_widx[5:0] == I_WPTR0[5:0]);
+			doorbell_r[1]     <= hcr_we_lo64 && (hcr_widx[5:0] == I_WPTR1[5:0]);
+			doorbell_r[2]     <= hcr_we_lo64 && (hcr_widx[5:0] == I_WPTR2[5:0]);
 		end
-	endgenerate
+	end
+	wire [2:0] doorbell = doorbell_r;
 `else
 	wire hcr_we_cfg  = hcr_we;
 	wire hcr_we_db   = hcr_we;
@@ -654,13 +701,13 @@ module atg_cp_ring #(
 	wire hcr_we_sync = hcr_we;
 	wire [9:0] widx_a = hcr_widx;
 	wire [9:0] widx_b = hcr_widx;
-`endif
 
 	/* Doorbells for the 3 queues */
 	wire [2:0] doorbell;
 	assign doorbell[0] = hcr_we_db && (widx_b == I_WPTR0);
 	assign doorbell[1] = hcr_we_db && (widx_b == I_WPTR1);
 	assign doorbell[2] = hcr_we_db && (widx_b == I_WPTR2);
+`endif
 
 	wire [17:0] wptr_new0 = ((wptr[0] & ~wmask_c[17:0]) | (wdata_c[17:0] & wmask_c[17:0])) & mask[0];
 	wire [17:0] wptr_new1 = ((wptr[1] & ~wmask_c[17:0]) | (wdata_c[17:0] & wmask_c[17:0])) & mask[1];
@@ -766,28 +813,36 @@ module atg_cp_ring #(
 	wire [17:0] p_end = p_end_s[17:0] & mask_act;
 
 `ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) wire [3:0] st_b0, st_b1;
+	genvar g_stb;
+	generate
+		for (g_stb = 0; g_stb < 4; g_stb = g_stb + 1) begin : g_st_buf
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stb0 (.I0(st[g_stb]), .O(st_b0[g_stb]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stb1 (.I0(st[g_stb]), .O(st_b1[g_stb]));
+		end
+	endgenerate
 	wire [7:0] st_idle_sel_b;
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis0 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_idle_sel_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis1 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_idle_sel_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis2 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_idle_sel_b[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis3 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_idle_sel_b[3]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis4 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_idle_sel_b[4]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis5 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_idle_sel_b[5]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis0 (.I0(st_b0[0]), .I1(st_b0[1]), .I2(st_b0[2]), .I3(st_b0[3]), .O(st_idle_sel_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis1 (.I0(st_b0[0]), .I1(st_b0[1]), .I2(st_b0[2]), .I3(st_b0[3]), .O(st_idle_sel_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis2 (.I0(st_b0[0]), .I1(st_b0[1]), .I2(st_b0[2]), .I3(st_b0[3]), .O(st_idle_sel_b[2]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis3 (.I0(st_b0[0]), .I1(st_b0[1]), .I2(st_b0[2]), .I3(st_b0[3]), .O(st_idle_sel_b[3]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis4 (.I0(st_b0[0]), .I1(st_b0[1]), .I2(st_b0[2]), .I3(st_b0[3]), .O(st_idle_sel_b[4]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis5 (.I0(st_b0[0]), .I1(st_b0[1]), .I2(st_b0[2]), .I3(st_b0[3]), .O(st_idle_sel_b[5]));
 	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis6 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_idle_sel_b[6]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis7 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_idle_sel_b[7]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0001)) u_sis7 (.I0(st_b0[0]), .I1(st_b0[1]), .I2(st_b0[2]), .I3(st_b0[3]), .O(st_idle_sel_b[7]));
 
 	wire [4:0] st_radv_b;
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0010)) u_sra0 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_radv_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0010)) u_sra1 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_radv_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0010)) u_sra2 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_radv_b[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0010)) u_sra3 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_radv_b[3]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0010)) u_sra0 (.I0(st_b1[0]), .I1(st_b1[1]), .I2(st_b1[2]), .I3(st_b1[3]), .O(st_radv_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0010)) u_sra1 (.I0(st_b1[0]), .I1(st_b1[1]), .I2(st_b1[2]), .I3(st_b1[3]), .O(st_radv_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0010)) u_sra2 (.I0(st_b1[0]), .I1(st_b1[1]), .I2(st_b1[2]), .I3(st_b1[3]), .O(st_radv_b[2]));
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0010)) u_sra3 (.I0(st_b1[0]), .I1(st_b1[1]), .I2(st_b1[2]), .I3(st_b1[3]), .O(st_radv_b[3]));
 	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0010)) u_sra4 (.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_radv_b[4]));
 
 	wire rptr_adv_q0 = st_radv_b[4] && (active_qid == 2'd0);
 	wire rptr_adv_q1 = st_radv_b[4] && (active_qid == 2'd1);
 	wire rptr_adv_q2 = st_radv_b[4] && (active_qid == 2'd2);
-	wire rptr_rst_en = (st == R_CTX_REST_RSP) && rsp_valid && (rsp_tag == 8'd3);
-	wire rptr_save_en = (st == R_CTX_SAVE_RSP) && rsp_valid && (rsp_tag == 8'd2);
+	wire rptr_rst_en = (st == R_CTX_REST_RSP) && rsp_is_tag3_r;
+	wire rptr_save_en = (st == R_CTX_SAVE_RSP) && rsp_is_tag2_r;
 	wire imm_rest_en = (st_idle_sel_b[6]) && preempt_active && ctx_base_z_r;
 	wire st_is_radv_hw = st_radv_b[4];
 	wire hw_rst_all;
@@ -991,12 +1046,16 @@ module atg_cp_ring #(
 	endgenerate
 
 	wire f_addr_we_bad = (st == R_DEC);
-	wire f_addr_we_rsp = (st == R_RSP) && rsp_valid && (rsp_tag == 8'd0) && rsp_error;
+	wire f_addr_we_rsp = (st == R_RSP) && rsp_err_tag0_r;
 	wire [1:0] fa_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_fawe0 (.I0(f_addr_we_bad), .I1(f_addr_we_rsp), .O(fa_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_fawe1 (.I0(f_addr_we_bad), .I1(f_addr_we_rsp), .O(fa_we_b[1]));
 
-	wire save_rptr_raw = (st_idle_sel_b[6] || st_radv_b[4]) && preempt_pending && (active_qid != 2'd0);
+	wire st_idle_or_adv;
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0011)) u_st_ioa (
+		.I0(st[0]), .I1(st[1]), .I2(st[2]), .I3(st[3]), .O(st_idle_or_adv)
+	);
+	wire save_rptr_raw = st_idle_or_adv && preempt_pending && (active_qid != 2'd0);
 	wire bvc_db, bvc_pre_rsp, bvc_arb_en, bvc_arb_hw, bv_clr_fsm;
 	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00F0CCAA)) u_bvc_db (
 		.I0(doorbell[0]), .I1(doorbell[1]), .I2(doorbell[2]),
@@ -1097,41 +1156,59 @@ module atg_cp_ring #(
 	wire [LINE_BYTES*8-1:0] ctx_save_wdata =
 		{{(LINE_BYTES*8 > 80 ? LINE_BYTES*8 - 80 : 1){1'b0}}, 14'd0, saved_rptr, 14'd0, interrupted_qid, 32'h43545853};
 
+`ifdef SYNTH_KINTEX7
+	wire [1:0] ctx_req_b, demand_req_b, ctx_save_req_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_crb0 (.I0(ctx_req),      .O(ctx_req_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_crb1 (.I0(ctx_req),      .O(ctx_req_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_drb0 (.I0(demand_req),   .O(demand_req_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_drb1 (.I0(demand_req),   .O(demand_req_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_csb0 (.I0(ctx_save_req), .O(ctx_save_req_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_csb1 (.I0(ctx_save_req), .O(ctx_save_req_b[1]));
+	(* dont_touch = "true" *) reg r_req_valid;
+	(* dont_touch = "true", extract_reset = "no" *) reg r_req_write;
+	(* dont_touch = "true", extract_reset = "no" *) reg [LA_W-1:0] r_req_line;
+	(* dont_touch = "true", extract_reset = "no" *) reg [LINE_BYTES-1:0] r_req_be;
+	(* dont_touch = "true", extract_reset = "no" *) reg [7:0] r_req_tag;
+	always @(posedge clk) begin
+		if (ring_core_rst_high)
+			r_req_valid <= 1'b0;
+		else
+			r_req_valid <= ctx_req || demand_req || (pf_st == PF_REQ);
+		r_req_write <= ctx_save_req;
+		r_req_line  <= {
+			ctx_req_b[1] ? ctx_line[LA_W-1:14] : (demand_req_b[1] ? want_line[LA_W-1:14] : pf_line[LA_W-1:14]),
+			ctx_req_b[0] ? ctx_line[13:0]      : (demand_req_b[0] ? want_line[13:0]      : pf_line[13:0])
+		};
+		r_req_be    <= {{(LINE_BYTES-16){ctx_save_req_b[1]}}, {16{ctx_save_req_b[0]}}};
+		r_req_tag   <= ctx_save_req ? 8'd2 : (ctx_rest_req ? 8'd3 : (demand_req ? 8'd0 : 8'd1));
+	end
+	assign req_valid = r_req_valid;
+	assign req_write = r_req_write;
+	assign req_line  = r_req_line;
+	assign req_be    = r_req_be;
+	assign req_wdata = ctx_save_wdata;
+	assign req_tag   = r_req_tag;
+`else
 	assign req_valid = ctx_req || demand_req || (pf_st == PF_REQ);
 	assign req_write = ctx_save_req;
-`ifdef SYNTH_KINTEX7
-	wire [1:0] ctx_req_b, demand_req_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_crb0 (.I0(ctx_req),    .O(ctx_req_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_crb1 (.I0(ctx_req),    .O(ctx_req_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_drb0 (.I0(demand_req), .O(demand_req_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_drb1 (.I0(demand_req), .O(demand_req_b[1]));
-	assign req_line = {
-		ctx_req_b[1] ? ctx_line[LA_W-1:14] : (demand_req_b[1] ? want_line[LA_W-1:14] : pf_line[LA_W-1:14]),
-		ctx_req_b[0] ? ctx_line[13:0]      : (demand_req_b[0] ? want_line[13:0]      : pf_line[13:0])
-	};
-`else
 	assign req_line = ctx_req ? ctx_line : (demand_req ? want_line : pf_line);
-`endif
 	assign req_be = ctx_save_req ? {LINE_BYTES{1'b1}} : {LINE_BYTES{1'b0}};
-`ifdef SYNTH_KINTEX7
-	assign req_wdata = ctx_save_wdata;
-`else
 	assign req_wdata = ctx_save_req ? ctx_save_wdata : {(LINE_BYTES * 8){1'b0}};
-`endif
 	assign req_tag = ctx_save_req ? 8'd2 : (ctx_rest_req ? 8'd3 : (demand_req ? 8'd0 : 8'd1));
+`endif
 
 	/* Registers surviving CTRL.RESET */
 `ifdef SYNTH_KINTEX7
-	wire we_b0lo_raw = hcr_we_cfg_b[0] && open && (widx_a == I_BASE0_LO || widx_a == I_BASE0);
-	wire we_b0hi_raw = hcr_we_cfg_b[0] && open && (widx_a == I_BASE0_HI);
-	wire we_b1_raw   = hcr_we_cfg_b[0] && open && (widx_a == I_BASE1);
-	wire we_b2_raw   = hcr_we_cfg_b[0] && open && (widx_a == I_BASE2);
-	wire we_dmab_raw = hcr_we_cfg_b[1] && open && (widx_a == I_DMA_BASE);
-	wire we_dmad_raw = hcr_we_cfg_b[1] && open && (widx_a == I_DMA_DST_BASE);
-	wire we_rs_raw   = hcr_we_cfg_b[1] && open && (widx_a == I_DMA_ROW_STRIDE);
-	wire we_ss_raw   = hcr_we_cfg_b[1] && open && (widx_a == I_DMA_SLICE_STRIDE);
-	wire we_ctxb_raw = hcr_we_cfg_b[2] && open && (widx_a == I_CTX_BASE);
-	wire we_dext_raw = hcr_we_cfg_b[2] && open && (widx_a == I_DMA_EXTENT);
+	wire we_b0lo_raw = hcr_we_cfg_b[0] && (widx_a[5:0] == I_BASE0_LO[5:0] || widx_a[5:0] == I_BASE0[5:0]);
+	wire we_b0hi_raw = hcr_we_cfg_b[0] && (widx_a[5:0] == I_BASE0_HI[5:0]);
+	wire we_b1_raw   = hcr_we_cfg_b[0] && (widx_a[5:0] == I_BASE1[5:0]);
+	wire we_b2_raw   = hcr_we_cfg_b[0] && (widx_a[5:0] == I_BASE2[5:0]);
+	wire we_dmab_raw = hcr_we_cfg_b[1] && (widx_a[5:0] == I_DMA_BASE[5:0]);
+	wire we_dmad_raw = hcr_we_cfg_b[1] && (widx_a[5:0] == I_DMA_DST_BASE[5:0]);
+	wire we_rs_raw   = hcr_we_cfg_b[1] && (widx_a[5:0] == I_DMA_ROW_STRIDE[5:0]);
+	wire we_ss_raw   = hcr_we_cfg_b[1] && (widx_a[5:0] == I_DMA_SLICE_STRIDE[5:0]);
+	wire we_ctxb_raw = hcr_we_cfg_b[2] && (widx_a[5:0] == I_CTX_BASE[5:0]);
+	wire we_dext_raw = hcr_we_cfg_b[2] && (widx_a[5:0] == I_DMA_EXTENT[5:0]);
 
 	wire [1:0] we_b0lo_b, we_b0hi_b, we_b1_b, we_b2_b, we_dmab_b, we_dmad_b, we_ctxb_b, we_dext_b;
 	wire [3:0] we_rs_b, we_ss_b;
@@ -1160,7 +1237,7 @@ module atg_cp_ring #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wde_0 (.I0(we_dext_raw), .O(we_dext_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wde_1 (.I0(we_dext_raw), .O(we_dext_b[1]));
 
-	wire dmasem_hcr_we = hcr_we_dma && (widx_b == I_DMA_SEM);
+	wire dmasem_hcr_we = hcr_we_dma && (widx_b[5:0] == I_DMA_SEM[5:0]);
 	wire dmasem_inc_we = dma_active && dma_done;
 	wire [1:0] dmasem_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_dsm0 (.I0(dmasem_hcr_we), .I1(dmasem_inc_we), .O(dmasem_we_b[0]));
@@ -1187,12 +1264,12 @@ module atg_cp_ring #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srp1 (.I0(save_rptr_raw), .O(save_rptr_we_b[1]));
 
 	wire [1:0] dma_wptr_we_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dww0 (.I0(hcr_we_dma && widx_b == I_DMA_WPTR), .O(dma_wptr_we_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dww1 (.I0(hcr_we_dma && widx_b == I_DMA_WPTR), .O(dma_wptr_we_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dww0 (.I0(hcr_we_dma && widx_b[5:0] == I_DMA_WPTR[5:0]), .O(dma_wptr_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dww1 (.I0(hcr_we_dma && widx_b[5:0] == I_DMA_WPTR[5:0]), .O(dma_wptr_we_b[1]));
 
-	wire we_sz0_raw = hcr_we_cfg_b[3] && open && (widx_b == I_SIZE0) && wmask_c[0];
-	wire we_sz1_raw = hcr_we_cfg_b[3] && open && (widx_b == I_SIZE1) && wmask_c[0];
-	wire we_sz2_raw = hcr_we_cfg_b[4] && open && (widx_b == I_SIZE2) && wmask_c[0];
+	wire we_sz0_raw = hcr_we_cfg_b[3] && (widx_b[5:0] == I_SIZE0[5:0]) && wmask_c[0];
+	wire we_sz1_raw = hcr_we_cfg_b[3] && (widx_b[5:0] == I_SIZE1[5:0]) && wmask_c[0];
+	wire we_sz2_raw = hcr_we_cfg_b[4] && open && (widx_b[5:0] == I_SIZE2[5:0]) && wmask_c[0];
 	wire [1:0] we_sz0_b, we_sz1_b, we_sz2_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsz0_0 (.I0(we_sz0_raw), .O(we_sz0_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsz0_1 (.I0(we_sz0_raw), .O(we_sz0_b[1]));
@@ -1572,16 +1649,20 @@ module atg_cp_ring #(
 					pf_st <= PF_RSP;
 			end
 			PF_RSP: begin
+`ifdef SYNTH_KINTEX7
+				if (rsp_is_tag1_r) begin
+					pf_st <= PF_IDLE;
+				end
+`else
 				if (rsp_valid && (rsp_tag == 8'd1)) begin
-`ifndef SYNTH_KINTEX7
 					if (!rsp_error) begin
 						buf_data[pf_idx]  <= rsp_rdata;
 						buf_tag[pf_idx]   <= pf_line;
 						buf_valid[pf_idx] <= 1'b1;
 					end
-`endif
 					pf_st <= PF_IDLE;
 				end
+`endif
 			end
 			default: pf_st <= PF_IDLE;
 			endcase
@@ -1772,25 +1853,32 @@ module atg_cp_ring #(
 			end
 
 			R_RSP: begin
+`ifdef SYNTH_KINTEX7
+				if (rsp_is_tag0_r) begin
+					if (rsp_error_r) begin
+						f_pulse <= 1'b1;
+						f_kind  <= GHCI_FAULT_APERTURE;
+						st      <= R_FAULT;
+					end else begin
+						hdr_wait <= 2'b00;
+						st <= ret_n ? R_N : R_HDR;
+					end
+				end
+`else
 				if (rsp_valid && (rsp_tag == 8'd0)) begin
 					if (rsp_error) begin
 						f_pulse <= 1'b1;
 						f_kind  <= GHCI_FAULT_APERTURE;
-`ifndef SYNTH_KINTEX7
 						f_addr  <= want_addr[31:0];
-`endif
 						st      <= R_FAULT;
 					end else begin
-`ifndef SYNTH_KINTEX7
 						buf_valid[want_idx] <= 1'b1;
 						buf_tag[want_idx]   <= want_line;
 						buf_data[want_idx]  <= rsp_rdata;
-`else
-						hdr_wait <= 2'b00;
-`endif
 						st <= ret_n ? R_N : R_HDR;
 					end
 				end
+`endif
 			end
 
 			R_CTX_SAVE_REQ: begin
@@ -1799,7 +1887,11 @@ module atg_cp_ring #(
 			end
 
 			R_CTX_SAVE_RSP: begin
+`ifdef SYNTH_KINTEX7
+				if (rsp_is_tag2_r) begin
+`else
 				if (rsp_valid && (rsp_tag == 8'd2)) begin
+`endif
 					preempt_saved   <= 1'b1;
 					preempt_pending <= 1'b0;
 					preempt_active  <= 1'b1;
@@ -1818,7 +1910,11 @@ module atg_cp_ring #(
 			end
 
 			R_CTX_REST_RSP: begin
+`ifdef SYNTH_KINTEX7
+				if (rsp_is_tag3_r) begin
+`else
 				if (rsp_valid && (rsp_tag == 8'd3)) begin
+`endif
 					preempt_active        <= 1'b0;
 					preempt_saved         <= 1'b0;
 					preempt_pulse         <= 1'b1;
@@ -1984,7 +2080,7 @@ module atg_cp_ring #(
 		(hcr_ridx == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
 `endif
 
-	wire unused_ok = &{1'b0, rsp_write, h_end[18], avail_bo, h_end_co, p_end_co, pa_4_co,
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag[7:2], h_end[18], avail_bo, h_end_co, p_end_co, pa_4_co,
 		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci_n_bo,
 		base_act, rem_words_bo, rem_words_bo_r, rem_words_s[18], hit, next_hit,
 		h_bad_r, h_bad_words_r, h_bad_avail_r, h_bad};

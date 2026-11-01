@@ -125,12 +125,13 @@ module atg_cp_dbg #(
 		.O(rd_stat_dbg)
 	);
 
-	wire [WS-1:0] word_be;
+	wire [WS-1:0] word_be_lo, word_be_hi;
 	wire [WS-1:0] word_b0, word_b1, word_b2, word_b3;
 	genvar g_wb;
 	generate
 		for (g_wb = 0; g_wb < WS; g_wb = g_wb + 1) begin : g_word_buf
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wbe (.I0(word[g_wb]), .O(word_be[g_wb]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wbe_lo (.I0(word[g_wb]), .O(word_be_lo[g_wb]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wbe_hi (.I0(word[g_wb]), .O(word_be_hi[g_wb]));
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb0 (.I0(word[g_wb]), .O(word_b0[g_wb]));
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb1 (.I0(word[g_wb]), .O(word_b1[g_wb]));
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb2 (.I0(word[g_wb]), .O(word_b2[g_wb]));
@@ -149,7 +150,7 @@ module atg_cp_dbg #(
 	always @(*)
 		for (bw = 0; bw < LINE_BYTES / 4; bw = bw + 1)
 `ifdef SYNTH_KINTEX7
-			be_w[bw*4 +: 4] = {{(32 - WS){1'b0}}, word_be} == bw ? q_strb : 4'h0;
+			be_w[bw*4 +: 4] = ({{(32 - WS){1'b0}}, (bw < (LINE_BYTES / 8) ? word_be_lo : word_be_hi)} == bw) ? q_strb : 4'h0;
 `else
 			be_w[bw*4 +: 4] = {{(32 - WS){1'b0}}, word} == bw ? q_strb : 4'h0;
 `endif

@@ -174,7 +174,8 @@ module atg_mc_tree #(
 				.I0(rst_n), .I1(flush), .O(leaf_rst_sync)
 			);
 
-			reg data_phase;
+			(* dont_touch = "true" *) reg data_phase;
+			(* dont_touch = "true" *) reg data_phase_d;
 			wire outside_c = (VRAM_AW < ADDR_W) ?
 				(c_req_line[c*LA_W + LAW_C +: (LA_W - LAW_C > 0 ? LA_W - LAW_C : 1)] !=
 				 VRAM_BASE[ADDR_W-1 : (VRAM_AW < ADDR_W ? VRAM_AW : 0)]) : 1'b0;
@@ -191,17 +192,20 @@ module atg_mc_tree #(
 			assign c_req_ready[c]    = leaf_req_ready[J] && leaf_req_last[J] && go_c;
 
 			always @(posedge clk) begin
-				if (leaf_rst_sync)
-					data_phase <= 1'b0;
-				else if (leaf_req_valid[J] && leaf_req_ready[J])
-					data_phase <= !leaf_req_last[J];
+				if (leaf_rst_sync) begin
+					data_phase   <= 1'b0;
+					data_phase_d <= 1'b0;
+				end else if (leaf_req_valid[J] && leaf_req_ready[J]) begin
+					data_phase   <= !leaf_req_last[J];
+					data_phase_d <= !leaf_req_last[J];
+				end
 			end
 
 			wire [15:0] dp_b;
 			genvar gs_c;
 			for (gs_c = 0; gs_c < 16; gs_c = gs_c + 1) begin : g_dp_slice
 				(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dp (
-					.I0(data_phase), .O(dp_b[gs_c])
+					.I0(data_phase_d), .O(dp_b[gs_c])
 				);
 				assign leaf_req_data[J*FW + gs_c*16 +: 16] = dp_b[gs_c] ?
 					c_req_wdata[c*LB + gs_c*16 +: 16] : header_pad[gs_c*16 +: 16];

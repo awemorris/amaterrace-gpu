@@ -254,9 +254,86 @@ module atg_top #(
 	wire [16:0] a_reg_waddr, a_reg_raddr;
 	wire [31:0] a_reg_wdata;
 	wire [3:0] a_reg_wstrb;
-	wire a_busy = a_reg_wr || a_reg_rd;
+
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire rst_top_high;
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b01)) u_rst_top (.I0(rst_n), .O(rst_top_high));
+
+	(* keep = "true", dont_touch = "true" *) wire a_busy;
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'hE)) u_abusy (.I0(a_reg_wr), .I1(a_reg_rd), .O(a_busy));
 	wire j_go = HAS_JTAG != 0 && !a_busy;
 
+	(* keep = "true", dont_touch = "true" *) wire [4:0] a_busy_b;
+	genvar gab;
+	generate
+		for (gab = 0; gab < 5; gab = gab + 1) begin : g_abusy_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_abb (.I0(a_busy), .O(a_busy_b[gab]));
+		end
+	endgenerate
+
+	(* dont_touch = "true" *) reg [4:0] reg_wr_q;
+	(* dont_touch = "true" *) reg [16:0] reg_waddr_cp, reg_waddr_xr;
+	(* dont_touch = "true" *) reg [31:0] reg_wdata_cp, reg_wdata_xr;
+	(* dont_touch = "true" *) reg [3:0] reg_wstrb_cp, reg_wstrb_xr;
+	(* dont_touch = "true" *) reg [3:0] reg_rd_q;
+	(* dont_touch = "true" *) reg [16:0] reg_raddr_cp, reg_raddr_xr;
+	(* dont_touch = "true" *) reg [31:0] xr_rdata_q;
+	(* dont_touch = "true" *) reg [31:0] j_rdata_q;
+	(* dont_touch = "true" *) reg j_busy_q;
+
+	wire reg_wr_d = a_reg_wr || (j_go && j_wr);
+	wire [16:0] reg_waddr_d = a_busy_b[0] ? a_reg_waddr : j_waddr;
+	wire [31:0] reg_wdata_d = {
+		a_busy_b[2] ? a_reg_wdata[31:16] : j_wdata[31:16],
+		a_busy_b[1] ? a_reg_wdata[15:0]  : j_wdata[15:0]
+	};
+	wire [3:0] reg_wstrb_d = a_busy_b[3] ? a_reg_wstrb : j_wstrb;
+	wire reg_rd_d = a_reg_rd || (j_go && j_rd);
+	wire [16:0] reg_raddr_d = a_busy_b[4] ? a_reg_raddr : j_raddr;
+
+	always @(posedge clk) begin
+		if (rst_top_high) begin
+			reg_wr_q <= 5'd0;
+			reg_waddr_cp <= 17'd0;
+			reg_waddr_xr <= 17'd0;
+			reg_wdata_cp <= 32'd0;
+			reg_wdata_xr <= 32'd0;
+			reg_wstrb_cp <= 4'd0;
+			reg_wstrb_xr <= 4'd0;
+			reg_rd_q <= 4'd0;
+			reg_raddr_cp <= 17'd0;
+			reg_raddr_xr <= 17'd0;
+			xr_rdata_q <= 32'd0;
+			j_rdata_q <= 32'd0;
+			j_busy_q <= 1'b0;
+		end else begin
+			reg_wr_q <= {5{reg_wr_d}};
+			reg_waddr_cp <= reg_waddr_d;
+			reg_waddr_xr <= reg_waddr_d;
+			reg_wdata_cp <= reg_wdata_d;
+			reg_wdata_xr <= reg_wdata_d;
+			reg_wstrb_cp <= reg_wstrb_d;
+			reg_wstrb_xr <= reg_wstrb_d;
+			reg_rd_q <= {4{reg_rd_d}};
+			reg_raddr_cp <= reg_raddr_d;
+			reg_raddr_xr <= reg_raddr_d;
+			xr_rdata_q <= xr_rdata;
+			j_rdata_q <= reg_rdata;
+			j_busy_q <= a_busy_b[3];
+		end
+	end
+
+	assign reg_wr = reg_wr_q[0];
+	assign reg_waddr = reg_waddr_cp;
+	assign reg_wdata = reg_wdata_cp;
+	assign reg_wstrb = reg_wstrb_cp;
+	assign reg_rd = reg_rd_q[0];
+	assign reg_raddr = reg_raddr_cp;
+	assign j_rdata = j_rdata_q;
+	assign j_busy = j_busy_q;
+`else
+	wire a_busy = a_reg_wr || a_reg_rd;
+	wire j_go = HAS_JTAG != 0 && !a_busy;
 	assign reg_wr = a_reg_wr || (j_go && j_wr);
 	assign reg_waddr = a_busy ? a_reg_waddr : j_waddr;
 	assign reg_wdata = a_busy ? a_reg_wdata : j_wdata;
@@ -265,6 +342,7 @@ module atg_top #(
 	assign reg_raddr = a_busy ? a_reg_raddr : j_raddr;
 	assign j_rdata = reg_rdata;
 	assign j_busy = a_busy;
+`endif
 
 	/* The DC (HAS_DISP) and the CP's atg_cp_disp: its register bus, flips and events. */
 	wire dc_vsync, dc_ev_error, dc_ev_hotplug, dc_idle, dc_irq_display;
@@ -272,6 +350,15 @@ module atg_top #(
 	wire [5:0] dc_d_idx, dc_d_ridx;
 	wire [31:0] dc_d_wdata, dc_d_wmask, dc_d_rdata, dc_flip_base, dc_frame_count;
 	wire [1:0] dc_taken, dc_taken_cancel, dc_pending, dc_err;
+`ifdef SYNTH_KINTEX7
+	assign reg_rdata = cp_reg_rdata | xr_rdata_q;
+	assign xr_wr = reg_wr_q[1];
+	assign xr_waddr = reg_waddr_xr;
+	assign xr_wdata = reg_wdata_xr;
+	assign xr_wstrb = reg_wstrb_xr;
+	assign xr_rd = reg_rd_q[1];
+	assign xr_raddr = reg_raddr_xr;
+`else
 	assign reg_rdata = cp_reg_rdata | xr_rdata;
 	assign xr_wr = reg_wr;
 	assign xr_waddr = reg_waddr;
@@ -279,6 +366,7 @@ module atg_top #(
 	assign xr_wstrb = reg_wstrb;
 	assign xr_rd = reg_rd;
 	assign xr_raddr = reg_raddr;
+`endif
 
 	am_axi_regs #(.ADDR_BITS(17), .ID_W(S_ID_W), .LEN_W(S_LEN_W)) regs (
 		.clk(clk),

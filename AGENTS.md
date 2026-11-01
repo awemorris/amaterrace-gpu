@@ -102,12 +102,11 @@ flowchart TD
 9. **`atg_mc`** (commit `636966e9`): 0 violations (Rule 1-5 全 PASS), WNS +2.438 ns, 全 7 単体テストベンチ（`atg_mc`, `atg_mc_arb`, `atg_mc_atom`, `atg_mc_coalesce`, `atg_mc_l2`, `atg_mc_prot`, `atg_rt`）100% PASS, 算術演算子 0 件。
 10. **`atg_rop`** (commit `e8262a9f`): 0 violations (Rule 1-5 全 PASS), WNS +0.924 ns, 全 17 単体テストベンチ 100% PASS, 算術演算子 0 件。
 11. **`atg_sa`**: 0 violations (Rule 1-5 全 PASS, 0 warnings), 算術演算子 0 件。
-12. **`atg_tu`**: 0 violations (Rule 1-5 全 PASS, 53 RAMs clean), WNS +1.734 ns, 全 12 単体テストベンチ 100% PASS, 算術演算子 0 件。
+12. **`atg_tu`** (commit `af919caa`): 0 violations (Rule 1-5 全 PASS, 53 RAMs clean), WNS +1.734 ns, 全 12 単体テストベンチ 100% PASS, 算術演算子 0 件。
+13. **`atg_top`**: 0 violations (Rule 1-5 全 PASS, 128 RAMs clean), WNS +2.143 ns, 関連単体テストベンチ全 PASS, 算術演算子 0 件。
 
 ### B. 作業中モジュール（進行中）
-1. **`atg_top` (Chip Top-Level Integration, `rtl/gpu/top/atg_top.v`)**:
-   - 算術演算子 0 件達成。`asic-lint.sh atg_top 5.000` の違反解消および統合確認中。
-2. **`atg_su` (Shader Execution Unit, `rtl/gpu/su/`)**:
+1. **`atg_su` (Shader Execution Unit, `rtl/gpu/su/`)**:
    - 算術演算子 0 件達成、サブモジュール単体テスト 31 本 PASS。`atg_su` 統合テストおよび `asic-lint.sh atg_su 5.000` 対応中。
 
 ### C. 未着手の残余モジュール（着手順）

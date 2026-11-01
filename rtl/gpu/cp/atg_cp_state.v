@@ -139,17 +139,20 @@ module atg_cp_state (
 	assign replay_busy = rp_rd || rp_out;
 
 `ifdef SYNTH_KINTEX7
-	reg [9:0] b_ridx_r;
-	reg [9:0] widx_r;
-	reg [31:0] wdata_r;
-	reg w_r;
-	reg [31:0] b_q_pipe;
+	(* dont_touch = "true" *) reg [9:0] alias_ridx_r;
+	(* dont_touch = "true" *) reg [9:0] b_ridx_r;
+	(* dont_touch = "true" *) reg [9:0] widx_r;
+	(* dont_touch = "true" *) reg [31:0] wdata_r;
+	(* dont_touch = "true" *) reg w_r;
+	(* dont_touch = "true" *) reg [31:0] a_q_pipe;
+	(* dont_touch = "true" *) reg [31:0] b_q_pipe;
 	wire [2:0] w_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb0 (.I0(w), .O(w_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb1 (.I0(w), .O(w_b[1]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb2 (.I0(w), .O(w_b[2]));
 
 	always @(posedge clk) begin
+		alias_ridx_r <= alias_ridx;
 		b_ridx_r <= rp_rd_b[1] ? rp_idx : cpu_ridx;
 		w_r <= w;
 		widx_r <= widx;
@@ -161,21 +164,22 @@ module atg_cp_state (
 			mem_a[widx_r] <= wdata_r;
 			mem_b[widx_r] <= wdata_r;
 		end
-		a_q <= mem_a[alias_ridx];
+		a_q <= mem_a[alias_ridx_r];
 		b_q <= mem_b[b_ridx_r];
 	end
 
 	always @(posedge clk) begin
+		a_q_pipe <= a_q;
 		b_q_pipe <= b_q;
 	end
 
-	assign alias_rdata = a_q;
+	assign alias_rdata = a_q_pipe;
 	assign cpu_rdata = b_q_pipe;
 	assign st_we = w || rp_out;
 	assign st_idx = w_b[0] ? widx : rp_oidx;
 	assign st_wdata = {
-		w_b[2] ? wdata[31:16] : b_q[31:16],
-		w_b[1] ? wdata[15:0]  : b_q[15:0]
+		w_b[2] ? wdata[31:16] : b_q_pipe[31:16],
+		w_b[1] ? wdata[15:0]  : b_q_pipe[15:0]
 	};
 `else
 	always @(posedge clk) begin

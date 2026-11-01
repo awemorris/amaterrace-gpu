@@ -211,7 +211,6 @@ module atg_blt #(
 	assign done = d_done || r_done;
 	assign error = d_error || r_error;
 	assign error_kind = r_error ? r_kind : d_kind;
-	assign req_valid = d_req_valid || r_req_valid;
 `ifdef SYNTH_KINTEX7
 	localparam NUM_WDATA_SLICES = LBITS / 16;
 	localparam NUM_BE_SLICES = LINE_BYTES / 16;
@@ -226,25 +225,52 @@ module atg_blt #(
 	LUT1 #(.INIT(2'b10)) u_ow_ln0 (.I0(own), .O(own_line[0]));
 	LUT1 #(.INIT(2'b10)) u_ow_ln1 (.I0(own), .O(own_line[1]));
 
+	wire [LBITS-1:0] blt_req_wdata;
+	wire [LINE_BYTES-1:0] blt_req_be;
 	genvar owi;
 	generate
 		for (owi = 0; owi < NUM_WDATA_SLICES; owi = owi + 1) begin : g_own_wd
 			LUT1 #(.INIT(2'b10)) u_ow_wd (.I0(own), .O(own_wd[owi]));
-			assign req_wdata[owi*16 +: 16] = own_wd[owi] ? r_req_wdata[owi*16 +: 16] : d_req_wdata[owi*16 +: 16];
+			assign blt_req_wdata[owi*16 +: 16] = own_wd[owi] ? r_req_wdata[owi*16 +: 16] : d_req_wdata[owi*16 +: 16];
 		end
 		for (owi = 0; owi < NUM_BE_SLICES; owi = owi + 1) begin : g_own_be
 			LUT1 #(.INIT(2'b10)) u_ow_be (.I0(own), .O(own_be[owi]));
-			assign req_be[owi*16 +: 16] = own_be[owi] ? r_req_be[owi*16 +: 16] : d_req_be[owi*16 +: 16];
+			assign blt_req_be[owi*16 +: 16] = own_be[owi] ? r_req_be[owi*16 +: 16] : d_req_be[owi*16 +: 16];
 		end
 	endgenerate
 
-	assign req_write = own_wr ? r_req_write : d_req_write;
-	assign req_line = {
+	wire blt_req_write = own_wr ? r_req_write : d_req_write;
+	wire [LA_W-1:0] blt_req_line = {
 		own_line[1] ? r_req_line[LA_W-1:14] : d_req_line[LA_W-1:14],
 		own_line[0] ? r_req_line[13:0] : d_req_line[13:0]
 	};
-	assign req_tag = own_tg ? r_req_tag : d_req_tag;
+	wire [7:0] blt_req_tag = own_tg ? r_req_tag : d_req_tag;
+
+	reg req_valid_r;
+	(* extract_reset = "no" *) reg req_write_r;
+	(* extract_reset = "no" *) reg [LA_W-1:0] req_line_r;
+	(* extract_reset = "no" *) reg [LINE_BYTES-1:0] req_be_r;
+	(* extract_reset = "no" *) reg [LBITS-1:0] req_wdata_r;
+	(* extract_reset = "no" *) reg [7:0] req_tag_r;
+	always @(posedge clk) begin
+		if (rst_blt_high)
+			req_valid_r <= 1'b0;
+		else
+			req_valid_r <= d_req_valid || r_req_valid;
+		req_write_r <= blt_req_write;
+		req_line_r  <= blt_req_line;
+		req_be_r    <= blt_req_be;
+		req_wdata_r <= blt_req_wdata;
+		req_tag_r   <= blt_req_tag;
+	end
+	assign req_valid = req_valid_r;
+	assign req_write = req_write_r;
+	assign req_line  = req_line_r;
+	assign req_be    = req_be_r;
+	assign req_wdata = req_wdata_r;
+	assign req_tag   = req_tag_r;
 `else
+	assign req_valid = d_req_valid || r_req_valid;
 	assign req_write = own ? r_req_write : d_req_write;
 	assign req_line = own ? r_req_line : d_req_line;
 	assign req_be = own ? r_req_be : d_req_be;

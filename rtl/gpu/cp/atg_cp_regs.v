@@ -319,7 +319,7 @@ module atg_cp_regs #(
 	reg [31:0] counter;
 	reg [127:0] perf;	/* PERF0..3, PERFn in bits 32n+31:32n */
 	wire perf_clear_raw = perf_reset ||
-		(hcr_we && hcr_widx == I_PERF_CTRL && hcr_wmask[0] && hcr_wdata[0]);
+		(hcr_we && hcr_widx == I_PERF_CTRL && reg_wstrb[0] && hcr_wdata[0]);
 `ifdef SYNTH_KINTEX7
 	wire [1:0] scratch_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_scwe0 (.I0(is_scratch_wr), .O(scratch_we_b[0]));
@@ -369,7 +369,7 @@ module atg_cp_regs #(
 				scratch[15:0] <= (scratch[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]);
 			if (scratch_we_b[1])
 				scratch[31:16] <= (scratch[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]);
-			if (HAS_WINDOW && hcr_we && hcr_widx == I_WINDOW_CTRL && hcr_wmask[0])
+			if (HAS_WINDOW && hcr_we && hcr_widx == I_WINDOW_CTRL && reg_wstrb[0])
 				win_q <= hcr_wdata[0];
 		end
 		for (i = 0; i < 8; i = i + 1)
@@ -386,7 +386,7 @@ module atg_cp_regs #(
 			counter <= counter_n;
 			if (is_scratch_wr)
 				scratch <= (scratch & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-			if (HAS_WINDOW && hcr_we && hcr_widx == I_WINDOW_CTRL && hcr_wmask[0])
+			if (HAS_WINDOW && hcr_we && hcr_widx == I_WINDOW_CTRL && reg_wstrb[0])
 				win_q <= hcr_wdata[0];
 		end
 		for (i = 0; i < 4; i = i + 1)
@@ -606,18 +606,18 @@ module atg_cp_regs #(
 `ifdef SYNTH_KINTEX7
 	wire [11:0] roff_pre_lo = {raddr_b1_lo[11:2], 2'b00};
 	wire [11:0] roff_pre_hi = {raddr_b1_hi[11:2], 2'b00};
-	wire sel_scr_raw  = SLIM_MMIO ? (roff_pre_lo == GHCI_REG_SCRATCH[11:0]) : (roff_pre_lo == GHCI_SCRATCH[11:0]);
-	wire sel_cnt_raw  = SLIM_MMIO ? (roff_pre_lo == GHCI_REG_TIMESTAMP_LO[11:0]) : (roff_pre_lo == GHCI_COUNTER[11:0]);
-	wire sel_prf_raw  = !SLIM_MMIO && (roff_pre_lo[11:4] == 8'h08) && (XCAP_MASK[2] || roff_pre_lo[3]);
-	wire sel_pc_raw   = SLIM_MMIO ? (roff_pre_lo == GHCI_REG_DIAG_CP_PC[11:0]) : (roff_pre_lo == GHCI_CP_PC[11:0]);
-	wire sel_st_raw   = SLIM_MMIO ? (roff_pre_lo == GHCI_REG_DIAG_CP_STATUS[11:0]) : (roff_pre_lo == GHCI_CP_STATUS[11:0]);
-	wire sel_pf_raw   = !SLIM_MMIO && (roff_pre_lo == GHCI_PIPE_FSM[11:0]);
+	wire [11:0] roff_sel_in = {reg_raddr[11:2], 2'b00};
+	wire sel_scr_raw = SLIM_MMIO ? (roff_sel_in == GHCI_REG_SCRATCH[11:0])        : (roff_sel_in == GHCI_SCRATCH[11:0]);
+	wire sel_cnt_raw = SLIM_MMIO ? (roff_sel_in == GHCI_REG_TIMESTAMP_LO[11:0])   : (roff_sel_in == GHCI_COUNTER[11:0]);
+	wire sel_prf_raw = !SLIM_MMIO && (roff_sel_in[11:4] == 8'h08) && (XCAP_MASK[2] || roff_sel_in[3]);
+	wire sel_pc_raw  = SLIM_MMIO ? (roff_sel_in == GHCI_REG_DIAG_CP_PC[11:0])     : (roff_sel_in == GHCI_CP_PC[11:0]);
+	wire sel_st_raw  = SLIM_MMIO ? (roff_sel_in == GHCI_REG_DIAG_CP_STATUS[11:0]) : (roff_sel_in == GHCI_CP_STATUS[11:0]);
+	wire sel_pf_raw  = !SLIM_MMIO && (roff_sel_in == GHCI_PIPE_FSM[11:0]);
 
-	wire [3:0] sel_scr_b, sel_cnt_b, sel_prf_b, sel_pc_b, sel_st_b, sel_pf_b;
-	wire [1:0] prf_idx_lo, prf_idx_hi;
+	wire [1:0] sel_scr_b, sel_cnt_b, sel_prf_b, sel_pc_b, sel_st_b, sel_pf_b;
 	genvar g_os;
 	generate
-		for (g_os = 0; g_os < 4; g_os = g_os + 1) begin : g_own_sel_buf
+		for (g_os = 0; g_os < 2; g_os = g_os + 1) begin : g_own_sel_buf
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sscr (.I0(sel_scr_raw), .O(sel_scr_b[g_os]));
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_scnt (.I0(sel_cnt_raw), .O(sel_cnt_b[g_os]));
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sprf (.I0(sel_prf_raw), .O(sel_prf_b[g_os]));
@@ -626,10 +626,11 @@ module atg_cp_regs #(
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_spf  (.I0(sel_pf_raw),  .O(sel_pf_b[g_os]));
 		end
 	endgenerate
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pilo0 (.I0(roff_pre_lo[2]), .O(prf_idx_lo[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pilo1 (.I0(roff_pre_lo[3]), .O(prf_idx_lo[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pihi0 (.I0(roff_pre_hi[2]), .O(prf_idx_hi[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pihi1 (.I0(roff_pre_hi[3]), .O(prf_idx_hi[1]));
+	wire [1:0] prf_idx_lo, prf_idx_hi;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pilo0 (.I0(reg_raddr[2]), .O(prf_idx_lo[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pilo1 (.I0(reg_raddr[3]), .O(prf_idx_lo[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pihi0 (.I0(reg_raddr[2]), .O(prf_idx_hi[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pihi1 (.I0(reg_raddr[3]), .O(prf_idx_hi[1]));
 
 	function [31:0] calc_own_const;
 		input [11:0] roff_in;
@@ -683,38 +684,42 @@ module atg_cp_regs #(
 	wire [31:0] own_const_lo_w = calc_own_const(roff_pre_lo, win_q);
 	wire [31:0] own_const_hi_w = calc_own_const(roff_pre_hi, win_q);
 
-	wire [15:0] prf_word_lo = perf[{prf_idx_lo, 5'd0} +: 16];
-	wire [15:0] prf_word_hi = perf[{prf_idx_hi, 5'd0} + 16 +: 16];
+	wire [31:0] prf_word_all = {
+		perf[{prf_idx_hi, 5'd0} + 16 +: 16],
+		perf[{prf_idx_lo, 5'd0} +: 16]
+	};
 
-	wire [31:0] own_pre;
+	wire [31:0] own_a_pre, own_b_pre, own_c_pre;
 	genvar g_ob;
 	generate
-		for (g_ob = 0; g_ob < 2; g_ob = g_ob + 1) begin : g_own_lo_slice
-			assign own_pre[g_ob*8 +: 8] =
-				sel_scr_b[g_ob] ? scratch[g_ob*8 +: 8] :
-				sel_cnt_b[g_ob] ? counter[g_ob*8 +: 8] :
-				sel_prf_b[g_ob] ? prf_word_lo[g_ob*8 +: 8] :
-				sel_pc_b[g_ob]  ? diag_cp_pc[g_ob*8 +: 8] :
-				sel_st_b[g_ob]  ? diag_cp_status[g_ob*8 +: 8] :
-				sel_pf_b[g_ob]  ? diag_pipe_fsm[g_ob*8 +: 8] : own_const_lo_w[g_ob*8 +: 8];
-		end
-		for (g_ob = 2; g_ob < 4; g_ob = g_ob + 1) begin : g_own_hi_slice
-			assign own_pre[g_ob*8 +: 8] =
-				sel_scr_b[g_ob] ? scratch[g_ob*8 +: 8] :
-				sel_cnt_b[g_ob] ? counter[g_ob*8 +: 8] :
-				sel_prf_b[g_ob] ? prf_word_hi[(g_ob-2)*8 +: 8] :
-				sel_pc_b[g_ob]  ? diag_cp_pc[g_ob*8 +: 8] :
-				sel_st_b[g_ob]  ? diag_cp_status[g_ob*8 +: 8] :
-				sel_pf_b[g_ob]  ? diag_pipe_fsm[g_ob*8 +: 8] : own_const_hi_w[g_ob*8 +: 8];
+		for (g_ob = 0; g_ob < 32; g_ob = g_ob + 1) begin : g_own_ab_lut
+			(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'hFFFFF888F888F888)) u_oa (
+				.I0(scratch[g_ob]),       .I1(sel_scr_b[g_ob >> 4]),
+				.I2(counter[g_ob]),       .I3(sel_cnt_b[g_ob >> 4]),
+				.I4(prf_word_all[g_ob]),  .I5(sel_prf_b[g_ob >> 4]),
+				.O(own_a_pre[g_ob])
+			);
+			(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'hFFFFF888F888F888)) u_ob (
+				.I0(diag_cp_pc[g_ob]),     .I1(sel_pc_b[g_ob >> 4]),
+				.I2(diag_cp_status[g_ob]), .I3(sel_st_b[g_ob >> 4]),
+				.I4(diag_pipe_fsm[g_ob]),  .I5(sel_pf_b[g_ob >> 4]),
+				.O(own_b_pre[g_ob])
+			);
 		end
 	endgenerate
+	assign own_c_pre = {own_const_hi_w[31:16], own_const_lo_w[15:0]};
 
-	(* max_fanout = 16 *) reg [31:0] own_q;
+	(* dont_touch = "true" *) reg [31:0] own_a_q, own_b_q, own_c_q;
 	always @(posedge clk) begin
-		if (regs_rst_high)
-			own_q <= 32'd0;
-		else
-			own_q <= own_pre;
+		if (regs_rst_high) begin
+			own_a_q <= 32'd0;
+			own_b_q <= 32'd0;
+			own_c_q <= 32'd0;
+		end else begin
+			own_a_q <= own_a_pre;
+			own_b_q <= own_b_pre;
+			own_c_q <= own_c_pre;
+		end
 	end
 
 	wire [3:0] rd_st_b, rd_hcr_b, rd_hcr_lo_b, rd_hcr_hi_b;
@@ -732,11 +737,13 @@ module atg_cp_regs #(
 	genvar g_rd;
 	generate
 		for (g_rd = 0; g_rd < 32; g_rd = g_rd + 1) begin : g_rdata_mux
-			(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'hF888)) u_ox (
+			(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'hFAAAFAAAFAAAF888)) u_ox (
 				.I0(rd_hcr_b[g_rd >> 3]),
-				.I1(own_q[g_rd]),
+				.I1(own_a_q[g_rd]),
 				.I2(rd_hcr_hi_b[g_rd >> 3]),
 				.I3(x_rdata[g_rd]),
+				.I4(own_b_q[g_rd]),
+				.I5(own_c_q[g_rd]),
 				.O(own_x_hcr[g_rd])
 			);
 			(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'hFFFFFE00)) u_ohcr (

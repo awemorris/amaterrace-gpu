@@ -154,7 +154,18 @@ module atg_cp_fence #(
 
 	assign f_ready = st == F_IDLE;
 	assign f_busy = st != F_IDLE && st != F_DEAD;
+`ifdef SYNTH_KINTEX7
+	reg req_valid_r;
+	always @(posedge clk) begin
+		if (fence_rst_high)
+			req_valid_r <= 1'b0;
+		else
+			req_valid_r <= (st == F_REQ);
+	end
+	assign req_valid = req_valid_r;
+`else
 	assign req_valid = st == F_REQ;
+`endif
 	assign req_write = !is_read;
 	assign req_line = addr[ADDR_W-1:LINE_SHIFT];
 `ifdef SYNTH_KINTEX7

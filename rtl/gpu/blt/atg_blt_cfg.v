@@ -79,28 +79,40 @@ module atg_blt_cfg #(
 	(* keep = "true", dont_touch = "true" *) wire rst_cfg_high = !rst_n;
 
 `ifdef SYNTH_KINTEX7
-	(* keep = "true" *) wire idx_ok_0 = st_we && (st_idx[8:5] == 4'd0);
-	(* keep = "true" *) wire idx_ok_1 = st_we && (st_idx[8:5] == 4'd0);
-	(* keep = "true" *) wire idx_ok_2 = st_we && (st_idx[8:5] == 4'd0);
-	(* keep = "true" *) wire idx_ok_3 = st_we && (st_idx[8:5] == 4'd0);
-	(* keep = "true" *) wire idx_ok_4 = st_we && (st_idx[8:5] == 4'd0);
-	(* keep = "true" *) wire idx_ok_5 = st_we && (st_idx[8:5] == 4'd0);
-	(* keep = "true" *) wire idx_ok_6 = st_we && (st_idx[8:5] == 4'd0);
-	(* keep = "true" *) wire [4:0] st_idx_0, st_idx_1, st_idx_2;
-	(* keep = "true" *) wire [31:0] st_wdata_a;
-	(* keep = "true" *) wire [31:0] st_wdata_b;
-	(* keep = "true" *) wire [31:0] st_wdata_c;
+	(* dont_touch = "true" *) wire [7:0] idx_ok_b;
+	genvar giok;
+	generate
+		for (giok = 0; giok < 8; giok = giok + 1) begin : g_idx_ok
+			(* dont_touch = "true" *) LUT5 #(.INIT(32'h00000002)) u_iok (
+				.I0(st_we), .I1(st_idx[5]), .I2(st_idx[6]), .I3(st_idx[7]), .I4(st_idx[8]),
+				.O(idx_ok_b[giok])
+			);
+		end
+	endgenerate
+	wire idx_ok_0 = idx_ok_b[0];
+	wire idx_ok_1 = idx_ok_b[1];
+	wire idx_ok_2 = idx_ok_b[2];
+	wire idx_ok_3 = idx_ok_b[3];
+	wire idx_ok_4 = idx_ok_b[4];
+	wire idx_ok_5 = idx_ok_b[5];
+	wire idx_ok_6 = idx_ok_b[6];
+	wire idx_ok_7 = idx_ok_b[7];
+	(* dont_touch = "true" *) wire [4:0] st_idx_0, st_idx_1, st_idx_2, st_idx_3;
+	(* dont_touch = "true" *) wire [31:0] st_wdata_a;
+	(* dont_touch = "true" *) wire [31:0] st_wdata_b;
+	(* dont_touch = "true" *) wire [31:0] st_wdata_c;
 	genvar gwi;
 	generate
 		for (gwi = 0; gwi < 5; gwi = gwi + 1) begin : g_idx_buf
-			LUT1 #(.INIT(2'b10)) u_id0 (.I0(st_idx[gwi]), .O(st_idx_0[gwi]));
-			LUT1 #(.INIT(2'b10)) u_id1 (.I0(st_idx[gwi]), .O(st_idx_1[gwi]));
-			LUT1 #(.INIT(2'b10)) u_id2 (.I0(st_idx[gwi]), .O(st_idx_2[gwi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_id0 (.I0(st_idx[gwi]), .O(st_idx_0[gwi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_id1 (.I0(st_idx[gwi]), .O(st_idx_1[gwi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_id2 (.I0(st_idx[gwi]), .O(st_idx_2[gwi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_id3 (.I0(st_idx[gwi]), .O(st_idx_3[gwi]));
 		end
 		for (gwi = 0; gwi < 32; gwi = gwi + 1) begin : g_wdata_buf
-			LUT1 #(.INIT(2'b10)) u_buf_wa (.I0(st_wdata[gwi]), .O(st_wdata_a[gwi]));
-			LUT1 #(.INIT(2'b10)) u_buf_wb (.I0(st_wdata[gwi]), .O(st_wdata_b[gwi]));
-			LUT1 #(.INIT(2'b10)) u_buf_wc (.I0(st_wdata[gwi]), .O(st_wdata_c[gwi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_wa (.I0(st_wdata[gwi]), .O(st_wdata_a[gwi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_wb (.I0(st_wdata[gwi]), .O(st_wdata_b[gwi]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_wc (.I0(st_wdata[gwi]), .O(st_wdata_c[gwi]));
 		end
 	endgenerate
 `else
@@ -111,9 +123,11 @@ module atg_blt_cfg #(
 	wire idx_ok_4 = idx_ok_0;
 	wire idx_ok_5 = idx_ok_0;
 	wire idx_ok_6 = idx_ok_0;
+	wire idx_ok_7 = idx_ok_0;
 	wire [4:0] st_idx_0 = st_idx[4:0];
 	wire [4:0] st_idx_1 = st_idx[4:0];
 	wire [4:0] st_idx_2 = st_idx[4:0];
+	wire [4:0] st_idx_3 = st_idx[4:0];
 	wire [31:0] st_wdata_a = st_wdata;
 	wire [31:0] st_wdata_b = st_wdata;
 	wire [31:0] st_wdata_c = st_wdata;
@@ -157,32 +171,32 @@ module atg_blt_cfg #(
 	(* keep = "true" *) wire we_c0_g = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR[4:0]);
 	(* keep = "true" *) wire we_c0_h = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR[4:0]);
 
-	(* keep = "true" *) wire we_c1_a = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
-	(* keep = "true" *) wire we_c1_b = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
-	(* keep = "true" *) wire we_c1_c = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
-	(* keep = "true" *) wire we_c1_d = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
-	(* keep = "true" *) wire we_c1_e = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
-	(* keep = "true" *) wire we_c1_f = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
-	(* keep = "true" *) wire we_c1_g = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
-	(* keep = "true" *) wire we_c1_h = idx_ok_5 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
+	(* keep = "true" *) wire we_c1_a = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
+	(* keep = "true" *) wire we_c1_b = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
+	(* keep = "true" *) wire we_c1_c = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
+	(* keep = "true" *) wire we_c1_d = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
+	(* keep = "true" *) wire we_c1_e = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
+	(* keep = "true" *) wire we_c1_f = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
+	(* keep = "true" *) wire we_c1_g = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
+	(* keep = "true" *) wire we_c1_h = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR1[4:0]);
 
-	(* keep = "true" *) wire we_c2_a = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR2[4:0]);
-	(* keep = "true" *) wire we_c2_b = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR2[4:0]);
-	(* keep = "true" *) wire we_c2_c = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR2[4:0]);
-	(* keep = "true" *) wire we_c2_d = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR2[4:0]);
-	(* keep = "true" *) wire we_c2_e = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR2[4:0]);
-	(* keep = "true" *) wire we_c2_f = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR2[4:0]);
-	(* keep = "true" *) wire we_c2_g = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR2[4:0]);
-	(* keep = "true" *) wire we_c2_h = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR2[4:0]);
+	(* keep = "true" *) wire we_c2_a = idx_ok_6 && (st_idx_3 == GHCI_S_BLT_COLOR2[4:0]);
+	(* keep = "true" *) wire we_c2_b = idx_ok_6 && (st_idx_3 == GHCI_S_BLT_COLOR2[4:0]);
+	(* keep = "true" *) wire we_c2_c = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR2[4:0]);
+	(* keep = "true" *) wire we_c2_d = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR2[4:0]);
+	(* keep = "true" *) wire we_c2_e = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR2[4:0]);
+	(* keep = "true" *) wire we_c2_f = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR2[4:0]);
+	(* keep = "true" *) wire we_c2_g = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR2[4:0]);
+	(* keep = "true" *) wire we_c2_h = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR2[4:0]);
 
-	(* keep = "true" *) wire we_c3_a = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR3[4:0]);
-	(* keep = "true" *) wire we_c3_b = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR3[4:0]);
-	(* keep = "true" *) wire we_c3_c = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR3[4:0]);
-	(* keep = "true" *) wire we_c3_d = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR3[4:0]);
-	(* keep = "true" *) wire we_c3_e = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR3[4:0]);
-	(* keep = "true" *) wire we_c3_f = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR3[4:0]);
-	(* keep = "true" *) wire we_c3_g = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR3[4:0]);
-	(* keep = "true" *) wire we_c3_h = idx_ok_6 && (st_idx_2 == GHCI_S_BLT_COLOR3[4:0]);
+	(* keep = "true" *) wire we_c3_a = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR3[4:0]);
+	(* keep = "true" *) wire we_c3_b = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR3[4:0]);
+	(* keep = "true" *) wire we_c3_c = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR3[4:0]);
+	(* keep = "true" *) wire we_c3_d = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR3[4:0]);
+	(* keep = "true" *) wire we_c3_e = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR3[4:0]);
+	(* keep = "true" *) wire we_c3_f = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR3[4:0]);
+	(* keep = "true" *) wire we_c3_g = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR3[4:0]);
+	(* keep = "true" *) wire we_c3_h = idx_ok_7 && (st_idx_3 == GHCI_S_BLT_COLOR3[4:0]);
 
 `ifdef SYNTH_KINTEX7
 	(* dont_touch = "true" *) wire we_dst_base_hi_buf;
