@@ -67,8 +67,20 @@ module atg_blt_skid #(
 			(* keep = "true", dont_touch = "true" *) wire ld_out_b;
 			(* keep = "true", dont_touch = "true" *) wire ld_skid_b;
 			(* keep = "true", dont_touch = "true" *) wire sk_valid_b;
-			LUT1 #(.INIT(2'b10)) u_ldo (.I0(load_out_raw), .O(ld_out_b));
-			LUT1 #(.INIT(2'b10)) u_lds (.I0(load_skid_raw), .O(ld_skid_b));
+			LUT4 #(.INIT(16'hF0C4)) u_ldo (
+				.I0(out_valid),
+				.I1(in_valid),
+				.I2(out_ready),
+				.I3(skid_valid),
+				.O(ld_out_b)
+			);
+			LUT4 #(.INIT(16'h0080)) u_lds (
+				.I0(out_valid),
+				.I1(in_valid),
+				.I2(in_ready),
+				.I3(out_ready),
+				.O(ld_skid_b)
+			);
 			LUT1 #(.INIT(2'b10)) u_skv (.I0(skid_valid), .O(sk_valid_b));
 `else
 			wire ld_out_b = load_out_raw;

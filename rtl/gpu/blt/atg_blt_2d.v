@@ -205,7 +205,7 @@ module atg_blt_2d #(
 
 	/* The segment. */
 	reg [ADDR_W-1:0] da, sa;	/* byte addresses of px, spx */
-	reg [US:0] sn, snu;	/* pixels, bytes */
+	(* max_fanout = 16 *) reg [US:0] sn, snu;	/* pixels, bytes */
 	reg [US:0] r_leg_room;
 `ifdef SYNTH_KINTEX7
 	(* max_fanout = 16 *) reg [ADDR_W-1:0] dlo, slo;	/* first destination and source bytes */
@@ -484,20 +484,39 @@ module atg_blt_2d #(
 	                                 (psl == 3'd1) ? {{(ADDR_W - US - 2){1'b0}}, rem_bn, 1'b0}    :
 	                                                 {{(ADDR_W - US - 1){1'b0}}, rem_bn};
 	reg [ADDR_W-1:0] r_rem_back_val;
+	reg r_rem_hi_zero;
 	always @(posedge clk) begin
-		if (state == S_SA || state == S_SB)
+		if (state == S_SA || state == S_SB) begin
 			r_rem_back_val <= rem_back_val;
+			r_rem_hi_zero  <= !(|rem[16:US+1]);
+		end
 	end
+
+	(* keep = "true" *) wire leg_cmp_lo    = (rem[2:0] <= r_leg_room[2:0]);
+	(* keep = "true" *) wire leg_cmp_hi_lt = (rem[US:3] < r_leg_room[US:3]);
+	(* keep = "true" *) wire leg_cmp_hi_eq = (rem[US:3] == r_leg_room[US:3]);
+	(* keep = "true", dont_touch = "true" *) wire leg_rem_done_lo, leg_rem_done_hi;
+	LUT4 #(.INIT(16'hF800)) u_lrd_lo (
+		.I0(leg_cmp_lo), .I1(leg_cmp_hi_eq), .I2(leg_cmp_hi_lt), .I3(r_rem_hi_zero),
+		.O(leg_rem_done_lo)
+	);
+	LUT4 #(.INIT(16'hF800)) u_lrd_hi (
+		.I0(leg_cmp_lo), .I1(leg_cmp_hi_eq), .I2(leg_cmp_hi_lt), .I3(r_rem_hi_zero),
+		.O(leg_rem_done_hi)
+	);
 
 	wire [US:0] room_bn;
 	wire room_bn_co;
 	am_sub #(.W(US + 1)) s_room_bn (.a(r_leg_room), .b({(US + 1){1'b0}}), .bi(1'b1), .d(room_bn), .bo(room_bn_co));
-	wire [ADDR_W-1:0] room_back_val = (psl == 3'd4) ? {{(ADDR_W - US - 5){1'b0}}, room_bn, 4'b0000} :
+	(* keep = "true" *) wire [ADDR_W-1:0] room_back_val = (psl == 3'd4) ? {{(ADDR_W - US - 5){1'b0}}, room_bn, 4'b0000} :
 	                                  (psl == 3'd3) ? {{(ADDR_W - US - 4){1'b0}}, room_bn, 3'b000}  :
 	                                  (psl == 3'd2) ? {{(ADDR_W - US - 3){1'b0}}, room_bn, 2'b00}   :
 	                                  (psl == 3'd1) ? {{(ADDR_W - US - 2){1'b0}}, room_bn, 1'b0}    :
 	                                                  {{(ADDR_W - US - 1){1'b0}}, room_bn};
-	wire [ADDR_W-1:0] leg_back_val = leg_rem_done ? r_rem_back_val : room_back_val;
+	wire [ADDR_W-1:0] leg_back_val = {
+		leg_rem_done_hi ? r_rem_back_val[ADDR_W-1:16] : room_back_val[ADDR_W-1:16],
+		leg_rem_done_lo ? r_rem_back_val[15:0]        : room_back_val[15:0]
+	};
 `else
 	wire [US:0] leg_back_n;
 	wire leg_bn_co_unused;
@@ -516,10 +535,20 @@ module atg_blt_2d #(
 	 */
 	/* Stage 1: Walk Stage (Computes only bst_seg_n for coordinate walking) */
 	wire [ADDR_W-1:0] d_px_row = x_pixels(px_row, mdt_px_row);
-	wire [US-1:0] d_xb_row = (psl_ctl == 3'd4) ? {d_px_row[US-5:0], 4'b0000} :
-	                         (psl_ctl == 3'd3) ? {d_px_row[US-4:0], 3'b000}  :
-	                         (psl_ctl == 3'd2) ? {d_px_row[US-3:0], 2'b00}   :
-	                         (psl_ctl == 3'd1) ? {d_px_row[US-2:0], 1'b0}    : d_px_row[US-1:0];
+	wire [US-1:0] d_xb_row_comb = (psl_ctl == 3'd4) ? {d_px_row[US-5:0], 4'b0000} :
+	                              (psl_ctl == 3'd3) ? {d_px_row[US-4:0], 3'b000}  :
+	                              (psl_ctl == 3'd2) ? {d_px_row[US-3:0], 2'b00}   :
+	                              (psl_ctl == 3'd1) ? {d_px_row[US-2:0], 1'b0}    : d_px_row[US-1:0];
+`ifdef SYNTH_KINTEX7
+	reg [US-1:0] r_d_xb_row;
+	always @(posedge clk) begin
+		if (state == S_START1)
+			r_d_xb_row <= d_xb_row_comb;
+	end
+	wire [US-1:0] d_xb_row = r_d_xb_row;
+`else
+	wire [US-1:0] d_xb_row = d_xb_row_comb;
+`endif
 	wire [US-1:0] cur_da_init;
 	wire co_da_init;
 	am_add #(.W(US)) a_da_init (.a(dst_row[US-1:0]), .b(d_xb_row), .ci(1'b0), .s(cur_da_init), .co(co_da_init));
@@ -838,6 +867,20 @@ module atg_blt_2d #(
 	wire [16:0] spx_b_next = {bsl_spx_hi ? spx_row[16:8] : spx_step[16:8], bsl_spx_lo ? spx_row[7:0] : spx_step[7:0]};
 
 	/* Precomputed tile_room for next segment (using 2-bit LUT addsub, independent of bsl) */
+`ifdef SYNTH_KINTEX7
+	assign unused_2b_co = 4'd0;
+	wire [1:0] px_2b_next = {
+		px_b[1] ^ cur_bst_room[1] ^ ((r_mr_walk_lo ? ~px_b[0] : px_b[0]) & cur_bst_room[0]),
+		px_b[0] ^ cur_bst_room[0]
+	};
+	wire [1:0] spx_2b_next = {
+		spx_b[1] ^ cur_bst_room[1] ^ ((r_mr_walk_lo ? ~spx_b[0] : spx_b[0]) & cur_bst_room[0]),
+		spx_b[0] ^ cur_bst_room[0]
+	};
+	(* keep = "true" *) wire [2:0] td_walk = {px_2b_next == 2'b00, px_2b_next[1] ^ px_2b_next[0], px_2b_next[0]};
+	(* keep = "true" *) wire [2:0] ts_walk = {spx_2b_next == 2'b00, spx_2b_next[1] ^ spx_2b_next[0], spx_2b_next[0]};
+	wire [2:0] tile_room_walk = mdt_ctl ? td_walk : ts_walk;
+`else
 	wire [1:0] px_2b_add, px_2b_sub;
 	am_add #(.W(2)) a_px2 (.a(px_b[1:0]), .b(cur_bst_room[1:0]), .ci(1'b0), .s(px_2b_add), .co(unused_2b_co[0]));
 	am_sub #(.W(2)) s_px2 (.a(px_b[1:0]), .b(cur_bst_room[1:0]), .bi(1'b0), .d(px_2b_sub), .bo(unused_2b_co[1]));
@@ -852,6 +895,7 @@ module atg_blt_2d #(
 	wire [2:0] ts_walk = {spx_2b_next == 2'b00, spx_2b_next[1] ^ spx_2b_next[0], spx_2b_next[0]};
 	wire [2:0] tmin_walk = (td_walk < ts_walk) ? td_walk : ts_walk;
 	wire [2:0] tile_room_walk = (mdt_ctl && mst_ctl) ? tmin_walk : (mdt_ctl ? td_walk : ts_walk);
+`endif
 
 	wire [2:0] td_init = {px_row[1:0] == 2'b00, px_row[1] ^ px_row[0], px_row[0]};
 	wire [2:0] ts_init = {spx_row[1:0] == 2'b00, spx_row[1] ^ spx_row[0], spx_row[0]};
@@ -1852,7 +1896,7 @@ module atg_blt_2d #(
 	wire issue_fire_0 = p_valid_iss0 && issue_rdy_0;
 	wire issue_fire_1 = p_valid_iss0 && issue_rdy_1;
 
-	wire copy_rd_ready = !mc_issue || (bst_rd_can && req_ready && (!p_two_lines || bw_sub));
+	wire copy_rd_ready = !mc_issue || (!s3_valid && req_ready && (!p_two_lines || bw_sub));
 	assign issue_rdy = bst_bank_ready && copy_rd_ready;
 	wire issue_fire = p_valid_iss1 && issue_rdy;
 `ifdef SYNTH_KINTEX7
@@ -2051,16 +2095,35 @@ module atg_blt_2d #(
 	wire [1:0] first_co_unused;
 
 	wire [7:0] dt_base = mdt_h ? {4'b0000, y0[1:0], 2'b00} : 8'd0;
-	wire [7:0] d_in_tile_8 = (psl_leg == 3'd4) ? {dt_base[3:0], 4'b0000} :
-	                         (psl_leg == 3'd3) ? {dt_base[4:0], 3'b000}  :
-	                         (psl_leg == 3'd2) ? {dt_base[5:0], 2'b00}   :
-	                         (psl_leg == 3'd1) ? {dt_base[6:0], 1'b0}    : dt_base;
+	wire [7:0] d_in_tile_8_comb = (psl_leg == 3'd4) ? {dt_base[3:0], 4'b0000} :
+	                              (psl_leg == 3'd3) ? {dt_base[4:0], 3'b000}  :
+	                              (psl_leg == 3'd2) ? {dt_base[5:0], 2'b00}   :
+	                              (psl_leg == 3'd1) ? {dt_base[6:0], 1'b0}    : dt_base;
 
+`ifdef SYNTH_KINTEX7
+	wire [7:0] st_base_clip = mst_h ? {4'b0000, c_sy0[1:0], 2'b00} : 8'd0;
+	wire [7:0] s_in_tile_8_comb = (psl_leg == 3'd4) ? {st_base_clip[3:0], 4'b0000} :
+	                              (psl_leg == 3'd3) ? {st_base_clip[4:0], 3'b000}  :
+	                              (psl_leg == 3'd2) ? {st_base_clip[5:0], 2'b00}   :
+	                              (psl_leg == 3'd1) ? {st_base_clip[6:0], 1'b0}    : st_base_clip;
+	reg [7:0] r_d_in_tile_8, r_s_in_tile_8;
+	always @(posedge clk) begin
+		if (cl_sy) begin
+			r_d_in_tile_8 <= d_in_tile_8_comb;
+			r_s_in_tile_8 <= s_in_tile_8_comb;
+		end
+	end
+	wire [7:0] d_in_tile_8 = r_d_in_tile_8;
+	wire [7:0] s_in_tile_8 = r_s_in_tile_8;
+`else
 	wire [7:0] st_base = mst_h ? {4'b0000, sy0[1:0], 2'b00} : 8'd0;
-	wire [7:0] s_in_tile_8 = (psl_leg == 3'd4) ? {st_base[3:0], 4'b0000} :
-	                         (psl_leg == 3'd3) ? {st_base[4:0], 3'b000}  :
-	                         (psl_leg == 3'd2) ? {st_base[5:0], 2'b00}   :
-	                         (psl_leg == 3'd1) ? {st_base[6:0], 1'b0}    : st_base;
+	wire [7:0] s_in_tile_8_comb = (psl_leg == 3'd4) ? {st_base[3:0], 4'b0000} :
+	                              (psl_leg == 3'd3) ? {st_base[4:0], 3'b000}  :
+	                              (psl_leg == 3'd2) ? {st_base[5:0], 2'b00}   :
+	                              (psl_leg == 3'd1) ? {st_base[6:0], 1'b0}    : st_base;
+	wire [7:0] d_in_tile_8 = d_in_tile_8_comb;
+	wire [7:0] s_in_tile_8 = s_in_tile_8_comb;
+`endif
 
 	wire d_first_co, s_first_co;
 	am_add #(.W(8))  a_df_lo (.a(r_dbase[7:0]), .b(d_in_tile_8), .ci(1'b0), .s(d_first[7:0]), .co(d_first_co));
@@ -2627,11 +2690,11 @@ module atg_blt_2d #(
 	end
 
 `ifdef SYNTH_KINTEX7
-	wire ce_ydl_init_raw = (state == S_MUL) && d_idle && s_idle && m_burst;
-	(* keep = "true", dont_touch = "true" *) wire ce_ydl_init_lo, ce_ydl_init_hi;
-	LUT1 #(.INIT(2'b10)) u_cyi0 (.I0(ce_ydl_init_raw), .O(ce_ydl_init_lo));
-	LUT1 #(.INIT(2'b10)) u_cyi1 (.I0(ce_ydl_init_raw), .O(ce_ydl_init_hi));
-	wire ce_ydl_init = ce_ydl_init_lo;
+	(* keep = "true" *) wire is_s_mul = (state == S_MUL);
+	(* keep = "true" *) wire ce_ydl_init_raw = is_s_mul && d_idle && s_idle && m_burst;
+	wire ce_ydl_init_lo = ce_ydl_init_raw;
+	wire ce_ydl_init_hi = ce_ydl_init_raw;
+	wire ce_ydl_init = !state_b4_0;
 	wire ce_ydl;
 	LUT4 #(.INIT(16'hFF40)) u_ce_ydl (
 		.I0(cmp_last_bo),
@@ -2832,14 +2895,28 @@ module atg_blt_2d #(
 		end
 	end
 
-	wire [US:0] room_last = bst_tiled ? bst_room_t_init : rem_line_row;
-	wire [US:0] room_next = bst_tiled ? {{(US - 2){1'b0}}, tile_room_walk} : line_pixels_b;
-	wire [US:0] next_bst_room;
+	(* keep = "true", dont_touch = "true" *) wire [US:0] room_last = bst_tiled ? bst_room_t_init : rem_line_row;
+	(* keep = "true", dont_touch = "true" *) wire [US:0] room_next = bst_tiled ? {{(US - 2){1'b0}}, tile_room_walk} : line_pixels_b;
+	(* keep = "true", dont_touch = "true" *) wire bsl_room_fast;
+	LUT4 #(.INIT(16'hF800)) u_bsl_room_fast (
+		.I0(cmp_lo_le),
+		.I1(cmp_hi_eq),
+		.I2(cmp_hi_lt),
+		.I3(rem_b_small),
+		.O(bsl_room_fast)
+	);
+	(* keep = "true", dont_touch = "true" *) wire [US:0] next_bst_room;
 	genvar g_nbr;
 	generate
 		for (g_nbr = 0; g_nbr <= US; g_nbr = g_nbr + 1) begin : g_nbr_bits
-			assign next_bst_room[g_nbr] = r_is_init1 ? r_init_bst_room[g_nbr] :
-			                              (bsl_room ? room_last[g_nbr] : room_next[g_nbr]);
+			(* keep = "true", dont_touch = "true" *) LUT5 #(.INIT(32'hFF00_CACA)) u_nbr (
+				.I0(room_next[g_nbr]),
+				.I1(room_last[g_nbr]),
+				.I2(bsl_room_fast),
+				.I3(r_init_bst_room[g_nbr]),
+				.I4(r_is_init1),
+				.O(next_bst_room[g_nbr])
+			);
 		end
 	endgenerate
 `else
@@ -2962,20 +3039,166 @@ module atg_blt_2d #(
 		end
 	end
 
+	(* keep = "true", dont_touch = "true" *) wire ce_sb1_lo, ce_sb1_hi;
+	LUT5 #(.INIT(32'h0000_0040)) u_ce_sb1_lo (
+		.I0(state[0]), .I1(state[1]), .I2(state[2]), .I3(state[3]), .I4(state_b4_0),
+		.O(ce_sb1_lo)
+	);
+	LUT5 #(.INIT(32'h0000_0040)) u_ce_sb1_hi (
+		.I0(state[0]), .I1(state[1]), .I2(state[2]), .I3(state[3]), .I4(state_b4_1),
+		.O(ce_sb1_hi)
+	);
 	always @(posedge clk) begin
 		if (rst_b2d_high) begin
 			r_leg_back <= {ADDR_W{1'b0}};
-		end else if (state == S_SB1) begin
-			r_leg_back <= leg_back_val;
+		end else begin
+			if (ce_sb1_lo) r_leg_back[15:0] <= leg_back_val[15:0];
+			if (ce_sb1_hi) r_leg_back[ADDR_W-1:16] <= leg_back_val[ADDR_W-1:16];
 		end
 	end
+`endif
+
+	reg [4:0] st_g0_r, st_g1_r, st_g2_r, st_g3_r, st_g4_r;
+	always @(*) begin
+		case (state[1:0])
+		2'd0: st_g0_r = (kick && op_ok) ? S_CLIP : S_IDLE;
+		2'd1: st_g0_r = S_IDLE;
+		2'd2: st_g0_r = S_START1;
+		2'd3: st_g0_r = (d_idle && s_idle) ? (m_burst ? S_INIT : S_SA) : S_MUL;
+		endcase
+		case (state[1:0])
+		2'd0: st_g1_r = fail_fsm0 ? S_DRAIN : S_SB;
+		2'd1: st_g1_r = S_SB1;
+		2'd2: st_g1_r = S_SC;
+		2'd3: st_g1_r = S_SD;
+		endcase
+		case (state[1:0])
+		2'd0: st_g2_r = m_copy ? S_CRD : (m_blend ? S_DRD : S_WR);
+		2'd1: st_g2_r = fail_fsm2 ? S_DRAIN : ((q_free && wr_idle && !rd_first && !rd_second) ? S_CWAIT : S_CRD);
+		2'd2: st_g2_r = fail_fsm2 ? S_DRAIN : ((q_free && rd_idle) ? (m_blend ? S_DRD : S_WR) : S_CWAIT);
+		2'd3: st_g2_r = fail_fsm3 ? S_DRAIN : ((q_free && wr_idle) ? S_DWAIT : S_DRD);
+		endcase
+		case (state[1:0])
+		2'd0: st_g3_r = fail_fsm3 ? S_DRAIN : ((q_free && rd_idle) ? S_BLEND : S_DWAIT);
+		2'd1: st_g3_r = bl_done ? S_WR : S_BLEND;
+		2'd2: st_g3_r = fail_fsm3 ? S_DRAIN : (q_free ? ((r_seg_last && rows_is_zero) ? S_DRAIN : S_SA) : S_WR);
+		2'd3: st_g3_r = (q_free && wr_idle && rd_idle && !rsp_valid) ? S_IDLE : S_DRAIN;
+		endcase
+		case (state[1:0])
+		2'd0: st_g4_r = burst_drain_done ? S_IDLE : (fail_burst ? S_DRAIN : S_BURST);
+		2'd1: st_g4_r = S_INIT1;
+		2'd2: st_g4_r = S_MUL;
+		2'd3: st_g4_r = S_BURST;
+		endcase
+	end
+	(* keep = "true" *) wire [4:0] st_g0 = st_g0_r;
+	(* keep = "true" *) wire [4:0] st_g1 = st_g1_r;
+	(* keep = "true" *) wire [4:0] st_g2 = st_g2_r;
+	(* keep = "true" *) wire [4:0] st_g3 = st_g3_r;
+	(* keep = "true" *) wire [4:0] st_g4 = (state[3:2] == 2'b00) ? st_g4_r : S_IDLE;
+	(* keep = "true" *) wire [4:0] st_q01 = (state[3:2] == 2'd0) ? st_g0 :
+	                                        (state[3:2] == 2'd1) ? st_g1 :
+	                                        (state[3:2] == 2'd2) ? st_g2 : st_g3;
+	wire [4:0] state_next_no_clip = state[4] ? st_g4 : st_q01;
+
+	reg busy_next_no_clip;
+	reg done_next_no_clip;
+	always @(*) begin
+		busy_next_no_clip = r_busy_q;
+		done_next_no_clip = 1'b0;
+		case (state)
+		S_IDLE: begin
+			if (kick && op_ok)
+				busy_next_no_clip = 1'b1;
+		end
+		S_CLIP: begin
+			busy_next_no_clip = 1'b0;
+			done_next_no_clip = 1'b0;
+		end
+		S_BURST: begin
+			if (burst_drain_done) begin
+				busy_next_no_clip = 1'b0;
+				done_next_no_clip = 1'b1;
+			end
+		end
+		S_DRAIN: begin
+			if (q_free && wr_idle && rd_idle && !rsp_valid) begin
+				busy_next_no_clip = 1'b0;
+				if (!fail_fsm3)
+					done_next_no_clip = 1'b1;
+			end
+		end
+		default: begin
+			if (state > S_INIT1)
+				busy_next_no_clip = 1'b0;
+		end
+		endcase
+	end
+
+	(* keep = "true" *) wire is_s_clip = (state == S_CLIP);
+	(* keep = "true" *) wire state_d1_nc = state_next_no_clip[1];
+	(* keep = "true" *) wire busy_d_nc   = busy_next_no_clip;
+	(* keep = "true" *) wire done_d_nc   = done_next_no_clip;
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire state_d1;
+	(* keep = "true", dont_touch = "true" *) wire busy_d;
+	(* keep = "true", dont_touch = "true" *) wire done_d;
+	(* keep = "true", dont_touch = "true" *) LUT6 #(.INIT(64'hFFFF_0000_1F10_1F10)) u_state_d1 (
+		.I0(cx_empty),
+		.I1(cy_empty),
+		.I2(is_s_clip),
+		.I3(st_q01[1]),
+		.I4(st_g4[1]),
+		.I5(state[4]),
+		.O(state_d1)
+	);
+	(* keep = "true", dont_touch = "true" *) LUT5 #(.INIT(32'h0000_1F10)) u_busy_d (
+		.I0(cx_empty),
+		.I1(cy_empty),
+		.I2(is_s_clip),
+		.I3(busy_d_nc),
+		.I4(rst_b2d_high),
+		.O(busy_d)
+	);
+	(* keep = "true", dont_touch = "true" *) LUT5 #(.INIT(32'h0000_EFE0)) u_done_d (
+		.I0(cx_empty),
+		.I1(cy_empty),
+		.I2(is_s_clip),
+		.I3(done_d_nc),
+		.I4(rst_b2d_high),
+		.O(done_d)
+	);
+`else
+	wire state_d1 = is_s_clip ? (!cx_empty && !cy_empty) : state_d1_nc;
+	wire busy_d   = rst_b2d_high ? 1'b0 : (is_s_clip ? (!cx_empty && !cy_empty) : busy_d_nc);
+	wire done_d   = rst_b2d_high ? 1'b0 : (is_s_clip ? (cx_empty || cy_empty)   : done_d_nc);
 `endif
 
 	always @(posedge clk) begin
 		if (rst_b2d_high) begin
 			state <= S_IDLE;
-			r_busy_q <= 1'b0;
-			done <= 1'b0;
+		end else begin
+			state[0]   <= state_next_no_clip[0];
+			state[1]   <= state_d1;
+			state[4:2] <= state_next_no_clip[4:2];
+		end
+		r_busy_q <= busy_d;
+		done     <= done_d;
+	end
+
+	(* keep = "true" *) wire ce_ydl_leg = (state == S_START) || (state == S_WR && !fail_fsm3 && q_free && r_seg_last);
+	always @(posedge clk) begin
+		if (rst_b2d_high) begin
+			ydl <= 2'd0;
+			ysl <= 2'd0;
+		end else if (ce_ydl_leg) begin
+			ydl <= state[3] ? ydl_inc : yd_start[1:0];
+			ysl <= state[3] ? ysl_inc : ys_start[1:0];
+		end
+	end
+
+	always @(posedge clk) begin
+		if (rst_b2d_high) begin
 			error <= 1'b0;
 			error_kind <= 4'd0;
 			rd_first <= 1'b0;
@@ -3049,8 +3272,6 @@ module atg_blt_2d #(
 			sy0 <= 17'd0;
 			px_row <= 17'd0;
 			spx_row <= 17'd0;
-			ydl <= 2'd0;
-			ysl <= 2'd0;
 			px <= 17'd0;
 			spx <= 17'd0;
 			rem <= 17'd0;
@@ -3065,7 +3286,6 @@ module atg_blt_2d #(
 			da <= {ADDR_W{1'b0}};
 			sa <= {ADDR_W{1'b0}};
 		end else begin
-			done <= 1'b0;
 			error <= 1'b0;
 			bl_go <= 1'b0;
 
@@ -3093,20 +3313,10 @@ module atg_blt_2d #(
 					if (!op_ok) begin
 						error <= 1'b1;
 						error_kind <= GHCI_FAULT_OPCODE;
-					end else begin
-						state <= S_CLIP;
-						r_busy_q <= 1'b1;
 					end
 				end
 			end
 			S_CLIP: begin
-				if (empty) begin
-					state <= S_IDLE;
-					r_busy_q <= 1'b0;
-					done <= 1'b1;
-				end else begin
-					state <= S_START;
-				end
 				if (cl_w)   width <= c_width;
 				if (cl_wm1) width_m1 <= unused_x_d;
 				if (cl_r) begin
@@ -3125,15 +3335,12 @@ module atg_blt_2d #(
 				if (cl_sb1)  r_sbase[ADDR_W-1:16] <= sbase_u[ADDR_W-1:16];
 			end
 			S_START: begin
-				state <= S_START1;
 				if (st_px)  px_row <= mr_px_row ? x1_last : x0;
 				if (st_spx) spx_row <= mr_spx_row ? s_last : sx0;
 				if (st_yd) begin
-					ydl <= yd_start[1:0];
 					r_yd_start <= mdt_acc ? {2'b00, yd_start[16:2]} : yd_start;
 				end
 				if (st_ys) begin
-					ysl <= ys_start[1:0];
 					r_ys_start <= mst_acc ? {2'b00, ys_start[16:2]} : ys_start;
 				end
 				if (st_df0) r_d_first[15:0] <= d_first[15:0];
@@ -3150,12 +3357,10 @@ module atg_blt_2d #(
 				if (st_sn1) r_src_neg[31:16] <= src_neg[31:16];
 			end
 			S_START1: begin
-				state <= S_MUL;
 			end
 			S_MUL:
 				if (d_idle && s_idle) begin
 					if (m_burst) begin
-						state <= S_INIT;
 `ifndef SYNTH_KINTEX7
 						rem_b_small <= !(|width[16:US+1]);
 `endif
@@ -3178,14 +3383,12 @@ module atg_blt_2d #(
 							line_pixels_b <= calc_line_pixels;
 						end
 					end else begin
-						state <= S_SA;
 						px <= px_row;
 						spx <= spx_row;
 						rem <= width;
 					end
 				end
 			S_INIT: begin
-				state <= S_INIT1;
 				rem_line_b <= rem_line_init;
 				r_rem_line_init <= rem_line_init;
 `ifndef SYNTH_KINTEX7
@@ -3209,7 +3412,6 @@ module atg_blt_2d #(
 				bank_ready <= 2'b00;
 			end
 			S_INIT1: begin
-				state <= S_BURST;
 `ifndef SYNTH_KINTEX7
 				cur_da_row <= cur_da_row_next;
 				rem_line_row <= rem_line_row_next;
@@ -3222,9 +3424,6 @@ module atg_blt_2d #(
 			 * =================================================================
 			 */
 			S_BURST: begin
-				if (fail_burst) begin
-					state <= S_DRAIN;
-				end
 				/*
 				 * 1. Bank Read Ready detection:
 				 * Once bank is closed, when all read responses arrived (or FILL), mark READY.
@@ -3336,15 +3535,6 @@ module atg_blt_2d #(
 							end
 						end
 					end
-
-					/*
-					 * 4. Drain & Done Completion
-					 */
-					if (burst_drain_done) begin
-						state <= S_IDLE;
-						r_busy_q <= 1'b0;
-						done <= 1'b1;
-					end
 				end
 
 			/*
@@ -3353,10 +3543,7 @@ module atg_blt_2d #(
 			 * =================================================================
 			 */
 			S_SA:
-				if (fail_fsm0) begin
-					state <= S_DRAIN;
-				end else begin
-					state <= S_SB;
+				if (!fail_fsm0) begin
 					if (sa_da0) da[15:0] <= d_addr[15:0];
 					if (sa_da1) da[ADDR_W-1:16] <= d_addr[ADDR_W-1:16];
 					if (sa_sa0) sa[15:0] <= s_addr[15:0];
@@ -3369,10 +3556,8 @@ module atg_blt_2d #(
 `endif
 				end
 			S_SB: begin
-				state <= S_SB1;
 			end
 			S_SB1: begin
-				state <= S_SC;
 				sn <= leg_sn;
 `ifndef SYNTH_KINTEX7
 				r_leg_back <= leg_back_val;
@@ -3380,7 +3565,6 @@ module atg_blt_2d #(
 				r_seg_last <= leg_rem_done;
 			end
 			S_SC: begin
-				state <= S_SD;
 				if (sc_snu) snu <= (psl == 3'd4) ? {sn[US-4:0], 4'b0000} :
 				                   (psl == 3'd3) ? {sn[US-3:0], 3'b000}  :
 				                   (psl == 3'd2) ? {sn[US-2:0], 2'b00}   :
@@ -3398,55 +3582,31 @@ module atg_blt_2d #(
 					src_off <= src_base_u[US-1:0];
 					n0_slot <= slo[ADDR_W-1:US] != src_lo;
 					rd_first <= 1'b1;
-					state <= m_copy ? S_CRD : m_blend ? S_DRD : S_WR;
 				end
 			end
 			S_CRD:
-				if (fail_fsm2) begin
-					state <= S_DRAIN;
-				end else if (q_free && wr_idle) begin
+				if (!fail_fsm2 && q_free && wr_idle) begin
 					if (rd_first) begin
 						rd_first <= 1'b0;
 						rd_second <= src_n1 != src_n0;
 					end else if (rd_second) begin
 						rd_second <= 1'b0;
-					end else begin
-						state <= S_CWAIT;
 					end
 				end
-			S_CWAIT:
-				if (fail_fsm2)
-					state <= S_DRAIN;
-				else if (q_free && rd_idle)
-					state <= m_blend ? S_DRD : S_WR;
-			S_DRD:
-				if (fail_fsm3)
-					state <= S_DRAIN;
-				else if (drd_go)
-					state <= S_DWAIT;
+			S_CWAIT: begin
+			end
+			S_DRD: begin
+			end
 			S_DWAIT:
-				if (fail_fsm3) begin
-					state <= S_DRAIN;
-				end else if (q_free && rd_idle) begin
-					state <= S_BLEND;
+				if (!fail_fsm3 && q_free && rd_idle) begin
 					bl_go <= 1'b1;
 				end
-			S_BLEND:
-				if (bl_done)
-					state <= S_WR;
+			S_BLEND: begin
+			end
 			S_WR:
-				if (fail_fsm3) begin
-					state <= S_DRAIN;
-				end else begin
-					if (wg_ctl) begin
-						if (sl_ctl) begin
-							ydl <= ydl_inc;
-							ysl <= ysl_inc;
-							rows_is_zero <= (rows == 17'd1);
-							state <= rows_is_zero ? S_DRAIN : S_SA;
-						end else begin
-							state <= S_SA;
-						end
+				if (!fail_fsm3) begin
+					if (wg_ctl && sl_ctl) begin
+						rows_is_zero <= (rows == 17'd1);
 					end
 					if (wg_px)  px  <= sl_px ? px_row : px_next;
 					if (wg_spx) spx <= sl_spx ? spx_row : spx_next;
@@ -3454,19 +3614,13 @@ module atg_blt_2d #(
 				end
 			S_DRAIN: begin
 				if (q_free && wr_idle && rd_idle && !rsp_valid) begin
-					state <= S_IDLE;
-					r_busy_q <= 1'b0;
 					if (fail_fsm3) begin
 						error <= 1'b1;
 						error_kind <= GHCI_FAULT_AXI;
-					end else begin
-						done <= 1'b1;
 					end
 				end
 			end
 			default: begin
-				state <= S_IDLE;
-				r_busy_q <= 1'b0;
 			end
 			endcase
 		end
