@@ -52,62 +52,66 @@ module atg_mc_cnt #(
 	reg [9:0] unit_n;
 
 	/*
-	 * The counts of this cycle's takes and responses: a chain of one
-	 * adder per client for each (bit k added to the sum of the bits
-	 * before it).
+	 * The net deltas of this cycle's takes and ends/responses: a chain of
+	 * one adder per client for each, folding the decrement into the chain
+	 * so each counter updates through a single final adder.
 	 */
 	wire [8*(NCLIENT+1)-1:0] t_c, tc_c;
-	wire [10*(NCLIENT+1)-1:0] ui_c, uo_c;
-	wire [4*NCLIENT-1:0] chain_co;
+	wire [10*(NCLIENT+1)-1:0] ui_c;
+	wire [3*NCLIENT-1:0] chain_co;
 
-	assign t_c[7:0] = 8'd0;
-	assign tc_c[7:0] = 8'd0;
+	assign t_c[7:0] = {8{done && !done_keep}};
+	assign tc_c[7:0] = {8{done_chk}};
 	assign ui_c[9:0] = 10'd0;
-	assign uo_c[9:0] = 10'd0;
 
 	genvar g;
 	generate
 		for (g = 0; g < NCLIENT; g = g + 1) begin : pc
 			am_add #(.W(8)) t_add (
 				.a(t_c[8*g +: 8]), .b(8'd0), .ci(take[g] && !KEEP_MASK[g]),
-				.s(t_c[8*(g+1) +: 8]), .co(chain_co[4*g])
+				.s(t_c[8*(g+1) +: 8]), .co(chain_co[3*g])
 			);
 			am_add #(.W(8)) tc_add (
 				.a(tc_c[8*g +: 8]), .b(8'd0), .ci(take[g] && take_chk[g]),
-				.s(tc_c[8*(g+1) +: 8]), .co(chain_co[4*g+1])
+				.s(tc_c[8*(g+1) +: 8]), .co(chain_co[3*g+1])
 			);
 			am_add #(.W(10)) ui_add (
-				.a(ui_c[10*g +: 10]), .b(10'd0), .ci(take[g] && UNIT_MASK[g]),
-				.s(ui_c[10*(g+1) +: 10]), .co(chain_co[4*g+2])
-			);
-			am_add #(.W(10)) uo_add (
-				.a(uo_c[10*g +: 10]), .b(10'd0), .ci(rsp[g] && UNIT_MASK[g]),
-				.s(uo_c[10*(g+1) +: 10]), .co(chain_co[4*g+3])
+				.a(ui_c[10*g +: 10]), .b({10{rsp[g] && UNIT_MASK[g]}}),
+				.ci(take[g] && UNIT_MASK[g]),
+				.s(ui_c[10*(g+1) +: 10]), .co(chain_co[3*g+2])
 			);
 		end
 	endgenerate
 
 	wire [7:0] t_n = t_c[8*NCLIENT +: 8];
 	wire [7:0] tc_n = tc_c[8*NCLIENT +: 8];
-	wire [9:0] u_in = ui_c[10*NCLIENT +: 10];
-	wire [9:0] u_out = uo_c[10*NCLIENT +: 10];
+	wire [9:0] u_delta = ui_c[10*NCLIENT +: 10];
 
-	/* Each counter: n + this cycle's takes, less this cycle's ends (an adder and a subtractor). */
-	wire [7:0] pend_s, pend_n, chk_s, chk_nx;
-	wire [9:0] unit_s, unit_nx;
-	wire [5:0] cnt_co;
+	/* Each counter: n + this cycle's net delta in a single adder. */
+	wire [7:0] pend_n, chk_nx;
+	wire [9:0] unit_nx;
+	wire [2:0] cnt_co;
 
-	am_add #(.W(8)) pend_add (.a(pend), .b(t_n), .ci(1'b0), .s(pend_s), .co(cnt_co[0]));
-	am_sub #(.W(8)) pend_sub (
-		.a(pend_s), .b(8'd0), .bi(done && !done_keep), .d(pend_n), .bo(cnt_co[1])
+	am_add #(.W(8)) pend_add (.a(pend), .b(t_n), .ci(1'b0), .s(pend_n), .co(cnt_co[0]));
+	am_add #(.W(8)) chk_add (.a(chk_n), .b(tc_n), .ci(1'b0), .s(chk_nx), .co(cnt_co[1]));
+	am_add #(.W(10)) unit_add (.a(unit_n), .b(u_delta), .ci(1'b0), .s(unit_nx), .co(cnt_co[2]));
+
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire cnt_flush_rst_sync;
+	(* keep = "true", dont_touch = "true" *) wire cnt_rst_sync;
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hD)) u_cnt_frst (
+		.I0(rst_n), .I1(flush), .O(cnt_flush_rst_sync)
 	);
-	am_add #(.W(8)) chk_add (.a(chk_n), .b(tc_n), .ci(1'b0), .s(chk_s), .co(cnt_co[2]));
-	am_sub #(.W(8)) chk_sub (.a(chk_s), .b(8'd0), .bi(done_chk), .d(chk_nx), .bo(cnt_co[3]));
-	am_add #(.W(10)) unit_add (.a(unit_n), .b(u_in), .ci(1'b0), .s(unit_s), .co(cnt_co[4]));
-	am_sub #(.W(10)) unit_sub (.a(unit_s), .b(u_out), .bi(1'b0), .d(unit_nx), .bo(cnt_co[5]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_cnt_rst (
+		.I0(rst_n), .O(cnt_rst_sync)
+	);
+`else
+	wire cnt_flush_rst_sync = !rst_n || flush;
+	wire cnt_rst_sync = !rst_n;
+`endif
 
 	always @(posedge clk) begin
-		if (!rst_n || flush) begin
+		if (cnt_flush_rst_sync) begin
 			pend <= 8'd0;
 			chk_n <= 8'd0;
 			unit_n <= 10'd0;
@@ -132,7 +136,7 @@ module atg_mc_cnt #(
 	);
 
 	always @(posedge clk)
-		if (!rst_n)
+		if (cnt_rst_sync)
 			ax_n <= 8'd0;
 		else
 			ax_n <= ax_next;

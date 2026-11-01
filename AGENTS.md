@@ -98,7 +98,8 @@ flowchart TD
 5. **`atg_cp`** (commit `8b62415`): 0 violations, WNS +1.013 ns, 全 5 テストスイート PASS.
 6. **`atg_vf`** (commit `1d1b930`): 0 violations, WNS +1.016 ns, 全 5 単体テスト PASS.
 7. **`atg_blt`** (commit `648d5ef`): 0 violations (Rule 1-5 全 PASS, 126 RAMs clean), WNS +2.143 ns, 359 件テスト 100% bit-exact PASS, DMA 帯域 2007 MB/s (64B) / 1132 MB/s (32B) $\ge 1000$ MB/s.
-8. **`atg_rx`**: 0 violations (Rule 1-5 全 PASS), WNS +0.512 ns, 全 10 単体テストベンチ（`scan`, `setup`, `bary`, `clip`, `frag`, `cpoly`, `order`, `pipeline`, `ext_prim`, `fp`）100% PASS, 算術演算子 0 件。
+8. **`atg_rx`** (commit `29867b4`): 0 violations (Rule 1-5 全 PASS), WNS +0.512 ns, 全 10 単体テストベンチ（`scan`, `setup`, `bary`, `clip`, `frag`, `cpoly`, `order`, `pipeline`, `ext_prim`, `fp`）100% PASS, 算術演算子 0 件。
+9. **`atg_mc`**: 0 violations (Rule 1-5 全 PASS), WNS +2.438 ns, 全 7 単体テストベンチ（`atg_mc`, `atg_mc_arb`, `atg_mc_atom`, `atg_mc_coalesce`, `atg_mc_l2`, `atg_mc_prot`, `atg_rt`）100% PASS, 算術演算子 0 件。
 
 ### B. 作業中モジュール（進行中）
 1. **`atg_rop` (Render Output Backend, `rtl/gpu/rop/`)**:
@@ -106,13 +107,12 @@ flowchart TD
    - **残作業**: `atg_rop_fblend.v` の Stage 0 レジスタアンカリングによる論理段数（26 LUTs）削減、残り 7 本のテストベンチ通過、`asic-lint.sh atg_rop 5.000` の 0 違反達成。
 2. **`atg_tu` (Texture Unit, `rtl/gpu/tu/`)**:
    - 設計ルール適用中。`atg_tu_addr.v`, `atg_tu_cache.v`, `atg_tu_filter.v` 等のパイプライン分割と単体テスト（13本）の確認。完了後 `asic-lint.sh atg_tu 5.000` PASS。
-3. **`atg_mc` (Memory Controller, `rtl/gpu/mc/`)**:
+3. **`atg_su` (Shader Execution Unit, `rtl/gpu/su/`)**:
    - 設計ルール適用中。
 
 ### C. 未着手の残余モジュール（着手順）
-1. **`atg_su`** (Shader Execution Unit: Lane, RF, LDS, ALU, Scheduler)
-2. **`atg_sa`** (Shader Array)
-3. **`atg_top`** (Chip Top-Level Integration)
+1. **`atg_sa`** (Shader Array)
+2. **`atg_top`** (Chip Top-Level Integration)
 
 ---
 

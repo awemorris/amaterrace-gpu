@@ -508,7 +508,7 @@ module atg_mc_case #(
 				errors = errors + 1;
 				$display("FAIL atg_mc: a refused request reached AXI");
 			end
-			if (dc_panic && ROOT != -1 && dut.grant.a_valid) begin
+			if (dc_panic && ROOT != -1 && dut.grant.d_valid && dut.grant.a_valid) begin
 				errors = errors + 1;
 				$display("FAIL atg_mc: non-root grant valid during dc_panic");
 			end

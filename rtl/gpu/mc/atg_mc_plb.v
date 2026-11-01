@@ -55,7 +55,7 @@ module atg_mc_plb #(
 );
 	reg [PLB-1:0] pl_v;
 	reg [PLB*TAGW-1:0] pl_tag;
-	reg [LINE_BYTES*8-1:0] pl_data [0:PLB-1];
+	(* ram_style = "registers" *) reg [LINE_BYTES*8-1:0] pl_data [0:PLB-1];
 	reg [PLB_W-1:0] pl_rr;
 	reg [PLB_W-1:0] idx;
 	wire [PLB-1:0] pl_inv;

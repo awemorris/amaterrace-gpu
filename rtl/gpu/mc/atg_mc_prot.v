@@ -77,12 +77,14 @@ module atg_mc_prot #(
 	input wire a_valid,
 	input wire [LINE_BYTES*8-1:0] a_head,
 	input wire [LINE_BYTES*8-1:0] a_data,
+	input wire a_ap,
 	output wire a_take,
 
 	/* D: the display controller's request (HAS_DC). */
 	input wire d_valid,
 	input wire [LINE_BYTES*8-1:0] d_head,
 	input wire [LINE_BYTES*8-1:0] d_data,
+	input wire d_ap,
 	output wire d_take,
 
 	input wire [ADDR_W-1:0] aperture_base,
@@ -159,13 +161,32 @@ module atg_mc_prot #(
 	/* -------------------------------------- the table and its range */
 
 	wire [GW-1:0] g0 = aperture_base[ADDR_W-1:12];
-	wire [ADDR_W:0] lim_up = {1'b0, aperture_limit} + 4095;
+	wire [ADDR_W:0] lim_up;
+	wire lim_up_co;
+	am_add #(.W(ADDR_W+1)) lim_up_add (
+		.a({1'b0, aperture_limit}), .b({{(ADDR_W+1-12){1'b0}}, 12'hFFF}), .ci(1'b0),
+		.s(lim_up), .co(lim_up_co)
+	);
 	wire [GW:0] g1 = lim_up[ADDR_W:12];
 	/* The table's bytes: one per granule of [G0, G1), rounded up to 4 KiB. */
-	wire [ADDR_W:0] tgran = {{(ADDR_W-GW){1'b0}}, g1 - {1'b0, g0}} + 4095;
+	wire [GW:0] g_diff;
+	wire g_diff_bo;
+	am_sub #(.W(GW+1)) g_diff_sub (
+		.a(g1), .b({1'b0, g0}), .bi(1'b0), .d(g_diff), .bo(g_diff_bo)
+	);
+	wire [ADDR_W:0] tgran;
+	wire tgran_co;
+	am_add #(.W(ADDR_W+1)) tgran_add (
+		.a({{(ADDR_W-GW){1'b0}}, g_diff}), .b({{(ADDR_W+1-12){1'b0}}, 12'hFFF}), .ci(1'b0),
+		.s(tgran), .co(tgran_co)
+	);
 	wire [ADDR_W:0] tbytes = {tgran[ADDR_W:12], 12'd0};
 	wire tb_on = P && tbase != {ADDR_W{1'b0}};
-	wire [ADDR_W:0] tend = {1'b0, tbase} + tbytes;
+	wire [ADDR_W:0] tend;
+	wire tend_co;
+	am_add #(.W(ADDR_W+1)) tend_add (
+		.a({1'b0, tbase}), .b(tbytes), .ci(1'b0), .s(tend), .co(tend_co)
+	);
 
 	/* A write into the table without tbl (with HAS_PROT and a table). */
 	function tw_bad_of;
@@ -186,14 +207,6 @@ module atg_mc_prot #(
 
 	wire [LA_W-1:0] a_line = line_of(a_head[20+RW +: LAW]);
 	wire [LA_W-1:0] d_line = line_of(d_head[20+RW +: LAW]);
-	wire a_ap, d_ap;
-
-	atg_mc_aper #(.ADDR_W(ADDR_W), .LINE_SHIFT(LINE_SHIFT)) aper_a (
-		.line(a_line), .base(aperture_base), .limit(aperture_limit), .ok(a_ap)
-	);
-	atg_mc_aper #(.ADDR_W(ADDR_W), .LINE_SHIFT(LINE_SHIFT)) aper_d (
-		.line(d_line), .base(aperture_base), .limit(aperture_limit), .ok(d_ap)
-	);
 
 	wire a_inside = a_ap && !a_head[2];
 	wire a_tw = tw_bad_of(a_head, a_line);
@@ -398,7 +411,7 @@ module atg_mc_prot #(
 	end
 
 	wire unused_ok = &{1'b0, a_head, d_head, g_head, b_head, j_head, s_head, lim_up, tgran,
-		p_idx, tend, s_idx_bo, p_idx_bo, w_line_co};
+		p_idx, tend, s_idx_bo, p_idx_bo, w_line_co, lim_up_co, g_diff_bo, tgran_co, tend_co};
 endmodule
 
 `default_nettype wire

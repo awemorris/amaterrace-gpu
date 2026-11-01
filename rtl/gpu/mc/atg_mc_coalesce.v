@@ -88,8 +88,8 @@ module atg_mc_coalesce #(
 	reg [LA_W-1:0] active_line;
 	reg active_write;
 	reg [2:0] active_len;
-	reg [7:0] active_tags [0:MAX_BURST-1];
-	reg [LINE_BITS-1:0] active_wdata [0:MAX_BURST-1];
+	(* ram_style = "registers" *) reg [7:0] active_tags [0:MAX_BURST-1];
+	(* ram_style = "registers" *) reg [LINE_BITS-1:0] active_wdata [0:MAX_BURST-1];
 	reg [3:0] idle_cnt;
 
 	/* Staged Request Buffer (when non-consecutive request arrives) */
@@ -102,7 +102,7 @@ module atg_mc_coalesce #(
 	/* In-flight Burst Tracking */
 	reg [2:0] inflight_len;
 	reg inflight_write;
-	reg [7:0] inflight_tags [0:MAX_BURST-1];
+	(* ram_style = "registers" *) reg [7:0] inflight_tags [0:MAX_BURST-1];
 	reg [2:0] wbeat_cnt;
 	reg [2:0] rbeat_cnt;
 	reg [2:0] wrsp_cnt;
