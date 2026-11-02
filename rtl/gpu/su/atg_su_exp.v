@@ -308,7 +308,16 @@ module atg_su_exp #(
 `else
 			assign b_scon = b_scon_raw;
 `endif
-			wire [RW+2:0] b_sca = (bs < 4) ? b_sc_a_c0 : b_sc_a_c1;
+			wire [RW+2:0] b_sca_raw = (bs < 4) ? b_sc_a_c0 : b_sc_a_c1;
+			wire [RW+2:0] b_sca;
+			genvar gba;
+			for (gba = 0; gba <= RW+2; gba = gba + 1) begin : g_sca_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sca (.I0(b_sca_raw[gba]), .O(b_sca[gba]));
+`else
+				assign b_sca[gba] = b_sca_raw[gba];
+`endif
+			end
 			wire [RW+2:0] b_xcr = (bs < 4) ? b_xcrow_0 : b_xcrow_1;
 			wire [RW+2:0] b_dcr = (bs < 4) ? b_dcrow_0 : b_dcrow_1;
 			wire [RW+2:0] c_wa_raw = b_scon ? b_sca : b_xcr;
@@ -520,23 +529,23 @@ module atg_su_exp #(
 	assign x_ready = 1'b1;
 
 	wire [15:0] qx_out, qy_out;
-	genvar gq_nib;
+	genvar gq_sl;
 	generate
-		for (gq_nib = 0; gq_nib < 4; gq_nib = gq_nib + 1) begin : g_qx_mux
-			wire [WARP_W+2:0] dqs_x_nib;
-			wire [WARP_W+2:0] dqs_y_nib;
+		for (gq_sl = 0; gq_sl < 8; gq_sl = gq_sl + 1) begin : g_qx_mux
+			wire [WARP_W+2:0] dqs_x_sl;
+			wire [WARP_W+2:0] dqs_y_sl;
 			genvar gb;
 			for (gb = 0; gb < WARP_W+3; gb = gb + 1) begin : g_sel_buf
 `ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qx_sel (.I0(dqs_x[gb]), .O(dqs_x_nib[gb]));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qy_sel (.I0(dqs_y[gb]), .O(dqs_y_nib[gb]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qx_sel (.I0(dqs_x[gb]), .O(dqs_x_sl[gb]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qy_sel (.I0(dqs_y[gb]), .O(dqs_y_sl[gb]));
 `else
-				assign dqs_x_nib[gb] = dqs_x[gb];
-				assign dqs_y_nib[gb] = dqs_y[gb];
+				assign dqs_x_sl[gb] = dqs_x[gb];
+				assign dqs_y_sl[gb] = dqs_y[gb];
 `endif
 			end
-			assign qx_out[gq_nib*4 +: 4] = qx[{dqs_x_nib, gq_nib[1:0], 2'b00} +: 4];
-			assign qy_out[gq_nib*4 +: 4] = qy[{dqs_y_nib, gq_nib[1:0], 2'b00} +: 4];
+			assign qx_out[gq_sl*2 +: 2] = qx[{dqs_x_sl, gq_sl[2:0], 1'b0} +: 2];
+			assign qy_out[gq_sl*2 +: 2] = qy[{dqs_y_sl, gq_sl[2:0], 1'b0} +: 2];
 		end
 	endgenerate
 	assign ex_xy = {qy_out, qx_out};
@@ -628,6 +637,15 @@ module atg_su_exp #(
 				(* dont_touch = "true" *) wire w_ex_sm_s  = ex_op && ex_sm && (x_warp == gw[WARP_W-1:0]);
 				(* dont_touch = "true" *) wire w_r6_we_s  = fl_we && (fl_reg == 6'd6) && (fl_slot == gw[WARP_W-1:0]) && (wh_lane[4] == gq[0]);
 				reg [15:0] r6w_sl, cov_sl, xp_sl, dw_sl, smw_sl;
+				wire [15:0] side_w_sl;
+				genvar gsw;
+				for (gsw = 0; gsw < 16; gsw = gsw + 1) begin : g_sw_buf
+`ifdef SYNTH_KINTEX7
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sw (.I0(side_w[gq*16 + gsw]), .O(side_w_sl[gsw]));
+`else
+					assign side_w_sl[gsw] = side_w[gq*16 + gsw];
+`endif
+				end
 				integer ib;
 				always @(posedge clk) begin
 					if (rst_wh) begin
@@ -642,15 +660,15 @@ module atg_su_exp #(
 					if (xp_clr_s)
 						xp_sl <= 16'd0;
 					else if (w_ex_op_s)
-						xp_sl <= xp_sl | side_w[gq*16 +: 16];
+						xp_sl <= xp_sl | side_w_sl;
 					if (dw_clr_s)
 						dw_sl <= 16'd0;
 					else if (w_ex_dep_s)
-						dw_sl <= dw_sl | side_w[gq*16 +: 16];
+						dw_sl <= dw_sl | side_w_sl;
 					if (smw_clr_s)
 						smw_sl <= 16'd0;
 					else if (w_ex_sm_s)
-						smw_sl <= smw_sl | side_w[gq*16 +: 16];
+						smw_sl <= smw_sl | side_w_sl;
 				end
 				assign r6w[gw*32 + gq*16 +: 16] = r6w_sl;
 				assign cov[gw*32 + gq*16 +: 16] = cov_sl;
