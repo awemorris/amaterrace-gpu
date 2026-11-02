@@ -263,22 +263,10 @@ module atg_su_lane #(
 	 * exists and is in EXEC, else the lane's own rs1.  ballot: the EXEC
 	 * lanes whose rs1 is not 0; vote: any/all of them as a Boolean. */
 	reg [31:0] bal;
-	reg [DW-1:0] z;
-	reg [4:0] el, es;
-	integer sl, l;
+	integer bl;
 	always @(*) begin
-		for (l = 0; l < 32; l = l + 1)
-			bal[l] = s_ex[l] && s_d[l*32 +: 32] != 32'd0;
-		for (l = 0; l < NPHYS; l = l + 1) begin
-			/* verilator lint_off WIDTHTRUNC */
-			el = ({{(32-GRP_W){1'b0}}, e_cnt} << $clog2(NPHYS)) | l;
-			/* verilator lint_on WIDTHTRUNC */
-			es = s_src[4:0];
-			for (sl = 1; sl < 32; sl = sl + 1)
-				if (el == sl[4:0])
-					es = s_src[sl*5 +: 5];
-			z[l*32 +: 32] = s_ok[el] && s_ex[es] ? s_d[es*32 +: 32] : s_d[el*32 +: 32];
-		end
+		for (bl = 0; bl < 32; bl = bl + 1)
+			bal[bl] = s_ex[bl] && (s_d[bl*32 +: 32] != 32'd0);
 	end
 	wire is_ballot = (op == ATG_LANE_BALLOT);
 	wire is_vote   = (op == ATG_LANE_VOTE);
@@ -295,27 +283,116 @@ module atg_su_lane #(
 		.co(ec_co_unused));
 	wire [NPHYS-1:0] z_lanes = op == ATG_LANE_SHFL ? ex_g[NPHYS-1:0] : {NPHYS{1'b1}};
 
+	/* Sliced shuffle data multiplexers per lane and per 4-bit quad */
+	wire [15:0] z_h [0:NPHYS*2-1];
+	genvar gzl, gzh, gzq;
+	generate
+		for (gzl = 0; gzl < NPHYS; gzl = gzl + 1) begin: g_shfl_lane
+			/* verilator lint_off WIDTHTRUNC */
+			/* verilator lint_off WIDTHEXPAND */
+			wire [4:0] el_l = ({{(32-GRP_W){1'b0}}, e_cnt} << $clog2(NPHYS)) | {27'd0, gzl[4:0]};
+			/* verilator lint_on WIDTHEXPAND */
+			/* verilator lint_on WIDTHTRUNC */
+			reg [4:0] es_l;
+			integer sl_idx;
+			always @(*) begin
+				es_l = s_src[4:0];
+				for (sl_idx = 1; sl_idx < 32; sl_idx = sl_idx + 1) begin
+					if (el_l == sl_idx[4:0])
+						es_l = s_src[sl_idx*5 +: 5];
+				end
+			end
+			wire s_ok_l = s_ok[el_l];
+			wire s_ex_l = s_ex[es_l];
+			wire sel_shfl_l = s_ok_l && s_ex_l;
+			wire [31:0] s_d_el_l = s_d[{el_l, 5'd0} +: 32];
+
+			for (gzh = 0; gzh < 2; gzh = gzh + 1) begin: g_half
+				wire [3:0] z_q [0:3];
+				for (gzq = 0; gzq < 4; gzq = gzq + 1) begin: g_quad
+					wire [4:0] es_q;
+					wire sel_q;
+`ifdef SYNTH_KINTEX7
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes0 (.I0(es_l[0]), .O(es_q[0]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes1 (.I0(es_l[1]), .O(es_q[1]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes2 (.I0(es_l[2]), .O(es_q[2]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes3 (.I0(es_l[3]), .O(es_q[3]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes4 (.I0(es_l[4]), .O(es_q[4]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsel (.I0(sel_shfl_l), .O(sel_q));
+`else
+					assign es_q  = es_l;
+					assign sel_q = sel_shfl_l;
+`endif
+					genvar gbit;
+					for (gbit = 0; gbit < 4; gbit = gbit + 1) begin: g_bit
+						localparam [4:0] B_IDX = {gzh[0], gzq[1:0], gbit[1:0]};
+						assign z_q[gzq][gbit] = sel_q ? s_d[{es_q, B_IDX}] : s_d_el_l[B_IDX];
+					end
+				end
+				localparam integer H_IDX = gzl*2 + gzh;
+				assign z_h[H_IDX] = {z_q[3], z_q[2], z_q[1], z_q[0]};
+			end
+		end
+	endgenerate
+
+	/* Buffered bal per half-lane */
+	wire [15:0] bal_h [0:NPHYS*2-1];
+	genvar g_kp, g_b16;
+	generate
+		for (g_kp = 0; g_kp < NPHYS*2; g_kp = g_kp + 1) begin: g_bal_h
+			wire [15:0] bal_src = g_kp[0] ? bal[31:16] : bal[15:0];
+`ifdef SYNTH_KINTEX7
+			for (g_b16 = 0; g_b16 < 16; g_b16 = g_b16 + 1) begin: g_bal_b
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bal (.I0(bal_src[g_b16]), .O(bal_h[g_kp][g_b16]));
+			end
+`else
+			assign bal_h[g_kp] = bal_src;
+`endif
+		end
+	endgenerate
+
 	(* shreg_extract = "no" *) reg [EW-1:0] pipe [0:SHORT_LAT-1];
 	(* keep = "true" *) wire [DW-1:0] pipe_fb;
 	(* keep = "true" *) wire [31:0] stg_we_lo, stg_we_hi;
-	(* keep = "true" *) wire [NPHYS*2-1:0] emit_h;
-	wire [NPHYS*2-1:0] is_ballot_h, is_vote_h, vote_val_h;
-	(* keep = "true" *) wire emit_ctrl = emit;
+	wire [NPHYS*2-1:0] emit_h_lo, emit_h_hi;
+	wire [NPHYS*2-1:0] is_ballot_h_lo, is_ballot_h_hi;
+	wire [NPHYS*2-1:0] is_vote_h_lo, is_vote_h_hi;
+	wire [NPHYS*2-1:0] vote_val_h_lo, vote_val_h_hi;
+	wire emit_ctrl;
 	wire emit_h_raw = (st == S_EMIT);
+	wire emit_h_raw_lo, emit_h_raw_hi;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit_ctrl (.I0(emit), .O(emit_ctrl));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_eraw_lo   (.I0(emit_h_raw), .O(emit_h_raw_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_eraw_hi   (.I0(emit_h_raw), .O(emit_h_raw_hi));
+`else
+	assign emit_ctrl = emit;
+	assign emit_h_raw_lo = emit_h_raw;
+	assign emit_h_raw_hi = emit_h_raw;
+`endif
+
 	genvar gp;
 	generate
 		for (gp = 0; gp < NPHYS * 2; gp = gp + 1) begin : g_r4v
 			assign pipe_fb[gp*16 +: 16] = r4_use_xa[gp] ? r4_xa[gp*16 +: 16] : pipe[SHORT_LAT-2][gp*16 +: 16];
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit (.I0(emit_h_raw), .O(emit_h[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bal  (.I0(is_ballot),  .O(is_ballot_h[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vot  (.I0(is_vote),    .O(is_vote_h[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val  (.I0(vote_val),   .O(vote_val_h[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit_lo (.I0(emit_h_raw_lo), .O(emit_h_lo[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit_hi (.I0(emit_h_raw_hi), .O(emit_h_hi[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bal_lo  (.I0(is_ballot),      .O(is_ballot_h_lo[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bal_hi  (.I0(is_ballot),      .O(is_ballot_h_hi[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vot_lo  (.I0(is_vote),        .O(is_vote_h_lo[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vot_hi  (.I0(is_vote),        .O(is_vote_h_hi[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val_lo  (.I0(vote_val),       .O(vote_val_h_lo[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val_hi  (.I0(vote_val),       .O(vote_val_h_hi[gp]));
 `else
-			assign emit_h[gp]      = emit_h_raw;
-			assign is_ballot_h[gp] = is_ballot;
-			assign is_vote_h[gp]   = is_vote;
-			assign vote_val_h[gp]  = vote_val;
+			assign emit_h_lo[gp]      = emit_h_raw_lo;
+			assign emit_h_hi[gp]      = emit_h_raw_hi;
+			assign is_ballot_h_lo[gp] = is_ballot;
+			assign is_ballot_h_hi[gp] = is_ballot;
+			assign is_vote_h_lo[gp]   = is_vote;
+			assign is_vote_h_hi[gp]   = is_vote;
+			assign vote_val_h_lo[gp]  = vote_val;
+			assign vote_val_h_hi[gp]  = vote_val;
 `endif
 		end
 		for (gp = 0; gp < 32; gp = gp + 1) begin : g_stgw
@@ -323,6 +400,7 @@ module atg_su_lane #(
 			assign stg_we_hi[gp] = stage && (gp / NPHYS == {{(32-GRP_W){1'b0}}, x_grp});
 		end
 	endgenerate
+
 	integer k, kp;
 	always @(posedge clk) begin
 		if (rst_p) begin
@@ -335,13 +413,21 @@ module atg_su_lane #(
 				pipe[0][EW-1:DW] <= {wrd, x_warp, e_cnt, x_uop[ATG_UOP_RD +: 7], z_lanes};
 			else
 				pipe[0][EW-1:DW] <= {(EW-DW){1'b0}};
+
 			for (kp = 0; kp < NPHYS * 2; kp = kp + 1) begin
-				if (emit_h[kp])
-					pipe[0][kp*16 +: 16] <= is_ballot_h[kp] ? bal[kp[0]*16 +: 16] :
-					                        is_vote_h[kp]   ? {16{vote_val_h[kp]}} :
-					                        z[kp*16 +: 16];
+				if (emit_h_lo[kp])
+					pipe[0][kp*16 +: 8] <= is_ballot_h_lo[kp] ? bal_h[kp][7:0] :
+					                       is_vote_h_lo[kp]   ? {8{vote_val_h_lo[kp]}} :
+					                       z_h[kp][7:0];
 				else
-					pipe[0][kp*16 +: 16] <= 16'd0;
+					pipe[0][kp*16 +: 8] <= 8'd0;
+
+				if (emit_h_hi[kp])
+					pipe[0][kp*16 + 8 +: 8] <= is_ballot_h_hi[kp] ? bal_h[kp][15:8] :
+					                          is_vote_h_hi[kp]   ? {8{vote_val_h_hi[kp]}} :
+					                          z_h[kp][15:8];
+				else
+					pipe[0][kp*16 + 8 +: 8] <= 8'd0;
 			end
 
 			for (k = 1; k < SHORT_LAT - 1; k = k + 1)
