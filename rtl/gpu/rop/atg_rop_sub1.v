@@ -69,8 +69,13 @@ module atg_rop_sub1 #(
 		is_inf ? (s_x ? 32'h7F800000 : 32'hFF800000) :
 		is_one ? 32'h00000000 : 32'h3F800000;
 
-	/* Pure-LUT magnitude compare |x| <= 1.0 (ea < 127 || (ea == 127 && ma == 0)) */
-	(* keep = "true" *) wire ea_lt_127 = (!ea[7]) && (ea[6:0] != 7'h7F);
+	wire [7:0] dab1, dab2;
+	wire dab1_bo_unused, dab2_bo;
+	am_sub #(.W(8)) u_dab1 (.a(8'd127), .b(ea), .bi(1'b0), .d(dab1), .bo(dab1_bo_unused));
+	am_sub #(.W(8)) u_dab2 (.a(ea), .b(8'd127), .bi(1'b0), .d(dab2), .bo(dab2_bo));
+
+	/* Magnitude compare |x| <= 1.0 (ea < 127 || (ea == 127 && ma == 0)) */
+	(* keep = "true" *) wire ea_lt_127 = dab2_bo;
 	(* keep = "true" *) wire ea_eq_127 = (ea == 8'd127);
 	(* keep = "true", dont_touch = "true" *) wire [7:0] x_le_1_buf;
 	genvar gxl;
@@ -80,58 +85,17 @@ module atg_rop_sub1 #(
 	end
 	endgenerate
 
-	/* Pure-LUT dab1 = 127 - ea = {1'b0, ~ea[6:0]} when ea <= 127;
-	 * Pure-LUT dab2 = ea - 127 = {~ea[7], ea[6:0]} + 1 when ea >= 127 (0 CARRY4s) */
-	wire [7:0] dab1 = {1'b0, ~ea[6:0]};
-	wire [7:0] ea_flip = {~ea[7], ea[6:0]};
-	(* keep = "true" *) wire dab2_c4 = &ea_flip[3:0];
-	wire [7:0] dab2;
-	assign dab2[0] = ~ea_flip[0];
-	assign dab2[1] = ea_flip[1] ^ ea_flip[0];
-	assign dab2[2] = ea_flip[2] ^ (&ea_flip[1:0]);
-	assign dab2[3] = ea_flip[3] ^ (&ea_flip[2:0]);
-	assign dab2[4] = ea_flip[4] ^ dab2_c4;
-	assign dab2[5] = ea_flip[5] ^ (dab2_c4 & ea_flip[4]);
-	assign dab2[6] = ea_flip[6] ^ (dab2_c4 & (&ea_flip[5:4]));
-	assign dab2[7] = ea_flip[7] ^ (dab2_c4 & (&ea_flip[6:4]));
-
 	(* keep = "true" *) wire [7:0] dab_s1a = x_le_1_buf[0] ? dab1 : dab2;
 	(* keep = "true" *) wire dab_ge27_s1a = (dab_s1a[7:5] != 3'd0) ||
 		((dab_s1a[4:3] == 2'b11) && (dab_s1a[2] || (dab_s1a[1] && dab_s1a[0])));
 
 	(* keep = "true", dont_touch = "true" *) wire [7:0] ex_s1a = x_le_1_buf[1] ? 8'd127 : eab;
 
-	/* Pure-LUT ex_m1 = ex - 1, ex_p1 = ex + 1, ex_p2 = ex + 2 (0 CARRY4s) */
-	(* keep = "true" *) wire ea_b4 = ~(|eab[3:0]);
-	(* keep = "true" *) wire ea_c4 = &eab[3:0];
-	(* keep = "true" *) wire ea_c4_p2 = &eab[3:1];
 	wire [7:0] ea_m1, ea_p1, ea_p2;
-	assign ea_m1[0] = ~eab[0];
-	assign ea_m1[1] = eab[1] ^ (~eab[0]);
-	assign ea_m1[2] = eab[2] ^ (~(|eab[1:0]));
-	assign ea_m1[3] = eab[3] ^ (~(|eab[2:0]));
-	assign ea_m1[4] = eab[4] ^ ea_b4;
-	assign ea_m1[5] = eab[5] ^ (ea_b4 & (~eab[4]));
-	assign ea_m1[6] = eab[6] ^ (ea_b4 & (~(|eab[5:4])));
-	assign ea_m1[7] = eab[7] ^ (ea_b4 & (~(|eab[6:4])));
-
-	assign ea_p1[0] = ~eab[0];
-	assign ea_p1[1] = eab[1] ^ eab[0];
-	assign ea_p1[2] = eab[2] ^ (&eab[1:0]);
-	assign ea_p1[3] = eab[3] ^ (&eab[2:0]);
-	assign ea_p1[4] = eab[4] ^ ea_c4;
-	assign ea_p1[5] = eab[5] ^ (ea_c4 & eab[4]);
-	assign ea_p1[6] = eab[6] ^ (ea_c4 & (&eab[5:4]));
-	assign ea_p1[7] = eab[7] ^ (ea_c4 & (&eab[6:4]));
-
-	assign ea_p2[0] = eab[0];
-	assign ea_p2[1] = ~eab[1];
-	assign ea_p2[2] = eab[2] ^ eab[1];
-	assign ea_p2[3] = eab[3] ^ (&eab[2:1]);
-	assign ea_p2[4] = eab[4] ^ ea_c4_p2;
-	assign ea_p2[5] = eab[5] ^ (ea_c4_p2 & eab[4]);
-	assign ea_p2[6] = eab[6] ^ (ea_c4_p2 & (&eab[5:4]));
-	assign ea_p2[7] = eab[7] ^ (ea_c4_p2 & (&eab[6:4]));
+	wire eam1_bo_unused, eap1_co_unused, eap2_co_unused;
+	am_sub #(.W(8)) u_ea_m1 (.a(eab), .b(8'd1), .bi(1'b0), .d(ea_m1), .bo(eam1_bo_unused));
+	am_add #(.W(8)) u_ea_p1 (.a(eab), .b(8'd1), .ci(1'b0), .s(ea_p1), .co(eap1_co_unused));
+	am_add #(.W(8)) u_ea_p2 (.a(eab), .b(8'd2), .ci(1'b0), .s(ea_p2), .co(eap2_co_unused));
 
 	(* keep = "true", dont_touch = "true" *) wire [7:0] ex_m1_s1a = x_le_1_buf[1] ? 8'd126 : ea_m1;
 	(* keep = "true", dont_touch = "true" *) wire [7:0] ex_p1_s1a = x_le_1_buf[2] ? 8'd128 : ea_p1;
@@ -404,53 +368,22 @@ module atg_rop_sub1 #(
 		(grp_exp == 3'd1) ? 3'd5 : 3'd6;
 
 	wire [1:0] w_lo_close = ~active_intra_exp;
-	wire [1:0] w_res_lo = r1_ex0 ? w_lo_close :
-		{~w_lo_close[1] ^ w_lo_close[0], ~w_lo_close[0]};
+	wire [1:0] w_lo_close_m1;
+	wire w_lo_bo_unused;
+	am_sub #(.W(2)) u_w_lo_m1 (.a(w_lo_close), .b(2'd1), .bi(1'b0), .d(w_lo_close_m1), .bo(w_lo_bo_unused));
+	wire [1:0] w_res_lo = r1_ex0 ? w_lo_close : w_lo_close_m1;
 
 	wire borrow = (active_intra_exp == 2'b11) && (!r1_ex0);
 	wire [2:0] w_hi = ~inv_grp;
-	wire [2:0] w_hi_m1 = {
-		w_hi[2] ^ (~w_hi[0] & ~w_hi[1]),
-		w_hi[1] ^ (~w_hi[0]),
-		~w_hi[0]
-	};
+	wire [2:0] w_hi_m1;
+	wire w_hi_bo_unused;
+	am_sub #(.W(3)) u_w_hi_m1 (.a(w_hi), .b(3'd1), .bi(1'b0), .d(w_hi_m1), .bo(w_hi_bo_unused));
 	wire [2:0] w_res_hi = borrow ? w_hi_m1 : w_hi;
 	(* keep = "true", dont_touch = "true" *) wire [7:0] e_close = {3'b011, w_res_hi, w_res_lo};
 
-	/* Pure-LUT 2-level 23-bit increment for FAR path (0 CARRY4s, 2 LUT levels) */
-	(* keep = "true", dont_touch = "true" *) wire mf_c5  = r1_inc_far_a & r1_mf_g0;
-	(* keep = "true", dont_touch = "true" *) wire mf_c10 = r1_inc_far_a & r1_mf_g0 & r1_mf_g1;
-	(* keep = "true", dont_touch = "true" *) wire mf_c15 = r1_inc_far_a & r1_mf_g0 & r1_mf_g1 & r1_mf_g2;
-	(* keep = "true", dont_touch = "true" *) wire mf_c20 = r1_inc_far_a & r1_mf_g0 & r1_mf_g1 & r1_mf_g2 & r1_mf_g3;
-
-	(* keep = "true", dont_touch = "true" *) wire [22:0] m_far;
-	assign m_far[0] = r1_m_far_pre[0] ^ r1_inc_far_a;
-	assign m_far[1] = r1_m_far_pre[1] ^ (r1_inc_far_a & r1_m_far_pre[0]);
-	assign m_far[2] = r1_m_far_pre[2] ^ (r1_inc_far_a & (&r1_m_far_pre[1:0]));
-	assign m_far[3] = r1_m_far_pre[3] ^ (r1_inc_far_a & (&r1_m_far_pre[2:0]));
-	assign m_far[4] = r1_m_far_pre[4] ^ (r1_inc_far_a & (&r1_m_far_pre[3:0]));
-
-	assign m_far[5] = r1_m_far_pre[5] ^ mf_c5;
-	assign m_far[6] = r1_m_far_pre[6] ^ (mf_c5 & r1_m_far_pre[5]);
-	assign m_far[7] = r1_m_far_pre[7] ^ (mf_c5 & (&r1_m_far_pre[6:5]));
-	assign m_far[8] = r1_m_far_pre[8] ^ (mf_c5 & (&r1_m_far_pre[7:5]));
-	assign m_far[9] = r1_m_far_pre[9] ^ (mf_c5 & (&r1_m_far_pre[8:5]));
-
-	assign m_far[10] = r1_m_far_pre[10] ^ mf_c10;
-	assign m_far[11] = r1_m_far_pre[11] ^ (mf_c10 & r1_m_far_pre[10]);
-	assign m_far[12] = r1_m_far_pre[12] ^ (mf_c10 & (&r1_m_far_pre[11:10]));
-	assign m_far[13] = r1_m_far_pre[13] ^ (mf_c10 & (&r1_m_far_pre[12:10]));
-	assign m_far[14] = r1_m_far_pre[14] ^ (mf_c10 & (&r1_m_far_pre[13:10]));
-
-	assign m_far[15] = r1_m_far_pre[15] ^ mf_c15;
-	assign m_far[16] = r1_m_far_pre[16] ^ (mf_c15 & r1_m_far_pre[15]);
-	assign m_far[17] = r1_m_far_pre[17] ^ (mf_c15 & (&r1_m_far_pre[16:15]));
-	assign m_far[18] = r1_m_far_pre[18] ^ (mf_c15 & (&r1_m_far_pre[17:15]));
-	assign m_far[19] = r1_m_far_pre[19] ^ (mf_c15 & (&r1_m_far_pre[18:15]));
-
-	assign m_far[20] = r1_m_far_pre[20] ^ mf_c20;
-	assign m_far[21] = r1_m_far_pre[21] ^ (mf_c20 & r1_m_far_pre[20]);
-	assign m_far[22] = r1_m_far_pre[22] ^ (mf_c20 & (&r1_m_far_pre[21:20]));
+	wire [22:0] m_far;
+	wire mfar_co_unused;
+	am_add #(.W(23)) u_m_far (.a(r1_m_far_pre[22:0]), .b(23'd0), .ci(r1_inc_far_a), .s(m_far), .co(mfar_co_unused));
 
 	(* keep = "true", dont_touch = "true" *) wire [7:0] e_far = r1_m_far_ov_hi ? r1_e_far_ov : r1_e_far_no_ov;
 	(* keep = "true", dont_touch = "true" *) wire is_ov_far_lo = r1_m_far_ov_lo ? r1_ov_with_ov : r1_ov_no_ov;
@@ -630,7 +563,8 @@ module atg_rop_sub1 #(
 
 	assign o_r = r2_out;
 
-	wire unused_ok = &{1'b0, sum_co_unused, r1_m_far_pre[23], r1_sx_lo, en_s1a[11:10], en_s1b[9:9], en_s3[13:10]};
+	wire unused_ok = &{1'b0, sum_co_unused, r1_m_far_pre[23], r1_sx_lo, en_s1a[11:10], en_s1b[9:9], en_s3[13:10],
+		dab1_bo_unused, eam1_bo_unused, eap1_co_unused, eap2_co_unused, w_lo_bo_unused, w_hi_bo_unused, mfar_co_unused};
 endmodule
 
 `default_nettype wire
