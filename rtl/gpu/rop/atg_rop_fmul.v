@@ -103,33 +103,10 @@ module atg_rop_fmul #(
 	wire zero2_w = !nan2_w && !inf2_w && (r1b_ea_zero || r1b_eb_zero);
 	wire sp2_w   = nan2_w || inf2_w || zero2_w;
 
-	/* Pure-LUT 10-bit +1 (2 LUT levels, 0 CARRY4s) */
-	(* keep = "true" *) wire e1_c5 = &r1b_e[4:0];
-	wire [9:0] e_p1_w;
-	assign e_p1_w[0] = ~r1b_e[0];
-	assign e_p1_w[1] = r1b_e[1] ^ r1b_e[0];
-	assign e_p1_w[2] = r1b_e[2] ^ (&r1b_e[1:0]);
-	assign e_p1_w[3] = r1b_e[3] ^ (&r1b_e[2:0]);
-	assign e_p1_w[4] = r1b_e[4] ^ (&r1b_e[3:0]);
-	assign e_p1_w[5] = r1b_e[5] ^ e1_c5;
-	assign e_p1_w[6] = r1b_e[6] ^ (e1_c5 & r1b_e[5]);
-	assign e_p1_w[7] = r1b_e[7] ^ (e1_c5 & (&r1b_e[6:5]));
-	assign e_p1_w[8] = r1b_e[8] ^ (e1_c5 & (&r1b_e[7:5]));
-	assign e_p1_w[9] = r1b_e[9] ^ (e1_c5 & (&r1b_e[8:5]));
-
-	/* Pure-LUT 10-bit +2 (2 LUT levels, 0 CARRY4s) */
-	(* keep = "true" *) wire e2_c5 = &r1b_e[4:1];
-	wire [9:0] e_p2_w;
-	assign e_p2_w[0] = r1b_e[0];
-	assign e_p2_w[1] = ~r1b_e[1];
-	assign e_p2_w[2] = r1b_e[2] ^ r1b_e[1];
-	assign e_p2_w[3] = r1b_e[3] ^ (&r1b_e[2:1]);
-	assign e_p2_w[4] = r1b_e[4] ^ (&r1b_e[3:1]);
-	assign e_p2_w[5] = r1b_e[5] ^ e2_c5;
-	assign e_p2_w[6] = r1b_e[6] ^ (e2_c5 & r1b_e[5]);
-	assign e_p2_w[7] = r1b_e[7] ^ (e2_c5 & (&r1b_e[6:5]));
-	assign e_p2_w[8] = r1b_e[8] ^ (e2_c5 & (&r1b_e[7:5]));
-	assign e_p2_w[9] = r1b_e[9] ^ (e2_c5 & (&r1b_e[8:5]));
+	wire [9:0] e_p1_w, e_p2_w;
+	wire ep1_co_unused, ep2_co_unused;
+	am_add #(.W(10)) u_e_p1 (.a(r1b_e), .b(10'd1), .ci(1'b0), .s(e_p1_w), .co(ep1_co_unused));
+	am_add #(.W(10)) u_e_p2 (.a(r1b_e), .b(10'd2), .ci(1'b0), .s(e_p2_w), .co(ep2_co_unused));
 
 	reg r2_nan, r2_inf, r2_sp, r2_s;
 	reg [9:0] r2_e, r2_e_p1, r2_e_p2;
@@ -192,37 +169,9 @@ module atg_rop_fmul #(
 	 * Stage 4: Pure-LUT 23-bit mantissa increment + pack + output register
 	 * (0 CARRY4s, <= 3 LUT levels).
 	 * ========================================================================= */
-	(* keep = "true" *) wire c6  = r3_rci_a & r3_m3_and0;
-	(* keep = "true" *) wire c12 = r3_rci_a & r3_m3_and0 & r3_m3_and1;
-	(* keep = "true" *) wire c18 = r3_rci_b & r3_m3_and0 & r3_m3_and1 & r3_m3_and2;
-
 	wire [22:0] m_inc;
-	assign m_inc[0]  = r3_m3[0]  ^ r3_rci_a;
-	assign m_inc[1]  = r3_m3[1]  ^ (r3_rci_a & r3_m3[0]);
-	assign m_inc[2]  = r3_m3[2]  ^ (r3_rci_a & (&r3_m3[1:0]));
-	assign m_inc[3]  = r3_m3[3]  ^ (r3_rci_a & (&r3_m3[2:0]));
-	assign m_inc[4]  = r3_m3[4]  ^ (r3_rci_a & (&r3_m3[3:0]));
-	assign m_inc[5]  = r3_m3[5]  ^ (r3_rci_a & (&r3_m3[4:0]));
-
-	assign m_inc[6]  = r3_m3[6]  ^ c6;
-	assign m_inc[7]  = r3_m3[7]  ^ (c6 & r3_m3[6]);
-	assign m_inc[8]  = r3_m3[8]  ^ (c6 & (&r3_m3[7:6]));
-	assign m_inc[9]  = r3_m3[9]  ^ (c6 & (&r3_m3[8:6]));
-	assign m_inc[10] = r3_m3[10] ^ (c6 & (&r3_m3[9:6]));
-	assign m_inc[11] = r3_m3[11] ^ (c6 & (&r3_m3[10:6]));
-
-	assign m_inc[12] = r3_m3[12] ^ c12;
-	assign m_inc[13] = r3_m3[13] ^ (c12 & r3_m3[12]);
-	assign m_inc[14] = r3_m3[14] ^ (c12 & (&r3_m3[13:12]));
-	assign m_inc[15] = r3_m3[15] ^ (c12 & (&r3_m3[14:12]));
-	assign m_inc[16] = r3_m3[16] ^ (c12 & (&r3_m3[15:12]));
-	assign m_inc[17] = r3_m3[17] ^ (c12 & (&r3_m3[16:12]));
-
-	assign m_inc[18] = r3_m3[18] ^ c18;
-	assign m_inc[19] = r3_m3[19] ^ (c18 & r3_m3[18]);
-	assign m_inc[20] = r3_m3[20] ^ (c18 & (&r3_m3[19:18]));
-	assign m_inc[21] = r3_m3[21] ^ (c18 & (&r3_m3[20:18]));
-	assign m_inc[22] = r3_m3[22] ^ (c18 & (&r3_m3[21:18]));
+	wire minc_co_unused;
+	am_add #(.W(23)) u_m_inc (.a(r3_m3), .b(23'd0), .ci(r3_rci_a), .s(m_inc), .co(minc_co_unused));
 
 	(* keep = "true" *) wire m_ovf = r3_m3_all_ones && r3_rci_b;
 	(* keep = "true" *) wire force_mz_a = r3_sp || (m_ovf ? (r3_inc_ovf || r3_inc_udf) : (r3_base_ovf || r3_base_udf));
@@ -339,7 +288,7 @@ module atg_rop_fmul #(
 
 	assign o_r = r4_out;
 
-	wire unused_ok = &{1'b0, en_co_unused, LAT[31:0]};
+	wire unused_ok = &{1'b0, en_co_unused, ep1_co_unused, ep2_co_unused, minc_co_unused, LAT[31:0]};
 endmodule
 
 `default_nettype wire
