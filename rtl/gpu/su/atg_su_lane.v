@@ -129,7 +129,7 @@ module atg_su_lane #(
 	(* shreg_extract = "no" *) reg [2:0]        r1_sub,  r2_sub,  r3_sub;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [2:0] r4_sub;
 	(* shreg_extract = "no" *) reg [DW-1:0]     r1_xa,   r2_xa,   r3_xa,   r4_xa;
-	(* shreg_extract = "no" *) reg [NPHYS*2-1:0] r4_use_qa, r4_use_qb, r4_use_xa;
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 16 *) reg [NPHYS*2-1:0] r4_use_qa, r4_use_qb, r4_use_xa;
 
 	integer qm;
 	always @(posedge clk) begin
@@ -302,11 +302,16 @@ module atg_su_lane #(
 	(* keep = "true" *) wire [31:0] stg_we_lo, stg_we_hi;
 	(* keep = "true" *) wire [NPHYS*2-1:0] emit_h;
 	(* keep = "true" *) wire emit_ctrl = emit;
+	wire emit_h_raw = (st == S_EMIT);
 	genvar gp;
 	generate
 		for (gp = 0; gp < NPHYS * 2; gp = gp + 1) begin : g_r4v
 			assign pipe_fb[gp*16 +: 16] = r4_use_xa[gp] ? r4_xa[gp*16 +: 16] : pipe[SHORT_LAT-2][gp*16 +: 16];
-			assign emit_h[gp] = (st == S_EMIT);
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit (.I0(emit_h_raw), .O(emit_h[gp]));
+`else
+			assign emit_h[gp] = emit_h_raw;
+`endif
 		end
 		for (gp = 0; gp < 32; gp = gp + 1) begin : g_stgw
 			assign stg_we_lo[gp] = stage && (gp / NPHYS == {{(32-GRP_W){1'b0}}, x_grp});
