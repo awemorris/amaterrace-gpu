@@ -98,10 +98,10 @@ module am_shift #(
 				assign fill_nib_01 = fill_br[BR_IDX];
 				assign fill_nib_23 = fill_br[BR_IDX];
 `endif
-				wire [W-1:0] log_rsh_01 = a_br[BR_IDX] >> amt_nib_01;
-				wire [W-1:0] mask_01    = ~({W{1'b1}} >> amt_nib_01);
-				wire [W-1:0] log_rsh_23 = a_br[BR_IDX] >> amt_nib_23;
-				wire [W-1:0] mask_23    = ~({W{1'b1}} >> amt_nib_23);
+				wire [NNIB*4-1:0] log_rsh_01 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_nib_01)};
+				wire [NNIB*4-1:0] mask_01    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_nib_01))};
+				wire [NNIB*4-1:0] log_rsh_23 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_nib_23)};
+				wire [NNIB*4-1:0] mask_23    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_nib_23))};
 
 				wire [3:0] rsh_out;
 				assign rsh_out[0] = fill_nib_01 ? (log_rsh_01[g_nib * 4 + 0] | mask_01[g_nib * 4 + 0]) : log_rsh_01[g_nib * 4 + 0];
@@ -156,8 +156,8 @@ module am_shift #(
 					assign amt_nib_23[gb] = amt_br[BR_IDX][gb];
 `endif
 				end
-				wire [W-1:0] lshifted_01 = a_br[BR_IDX] << amt_nib_01;
-				wire [W-1:0] lshifted_23 = a_br[BR_IDX] << amt_nib_23;
+				wire [NNIB*4-1:0] lshifted_01 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_nib_01)};
+				wire [NNIB*4-1:0] lshifted_23 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_nib_23)};
 				wire [3:0] lsh_out;
 				assign lsh_out[0] = lshifted_01[g_nib * 4 + 0];
 				assign lsh_out[1] = lshifted_01[g_nib * 4 + 1];
