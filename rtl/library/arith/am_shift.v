@@ -106,14 +106,25 @@ module am_shift #(
 				assign fill_nib_2 = fill_br[BR_IDX];
 				assign fill_nib_3 = fill_br[BR_IDX];
 `endif
-				wire [NNIB*4-1:0] log_rsh_0 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_b0)};
-				wire [NNIB*4-1:0] mask_0    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_b0))};
-				wire [NNIB*4-1:0] log_rsh_1 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_b1)};
-				wire [NNIB*4-1:0] mask_1    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_b1))};
-				wire [NNIB*4-1:0] log_rsh_2 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_b2)};
-				wire [NNIB*4-1:0] mask_2    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_b2))};
-				wire [NNIB*4-1:0] log_rsh_3 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_b3)};
-				wire [NNIB*4-1:0] mask_3    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_b3))};
+				wire [W-1:0] rsh_f_0 = a_br[BR_IDX] >> amt_b0[1:0];
+				wire [W-1:0] msk_f_0 = ~({W{1'b1}} >> amt_b0[1:0]);
+				wire [NNIB*4-1:0] log_rsh_0 = {{(NNIB*4-W){1'b0}}, (rsh_f_0 >> {amt_b0[SW-1:2], 2'b00})};
+				wire [NNIB*4-1:0] mask_0    = {{(NNIB*4-W){1'b0}}, ((msk_f_0 >> {amt_b0[SW-1:2], 2'b00}) | ~({W{1'b1}} >> {amt_b0[SW-1:2], 2'b00}))};
+
+				wire [W-1:0] rsh_f_1 = a_br[BR_IDX] >> amt_b1[1:0];
+				wire [W-1:0] msk_f_1 = ~({W{1'b1}} >> amt_b1[1:0]);
+				wire [NNIB*4-1:0] log_rsh_1 = {{(NNIB*4-W){1'b0}}, (rsh_f_1 >> {amt_b1[SW-1:2], 2'b00})};
+				wire [NNIB*4-1:0] mask_1    = {{(NNIB*4-W){1'b0}}, ((msk_f_1 >> {amt_b1[SW-1:2], 2'b00}) | ~({W{1'b1}} >> {amt_b1[SW-1:2], 2'b00}))};
+
+				wire [W-1:0] rsh_f_2 = a_br[BR_IDX] >> amt_b2[1:0];
+				wire [W-1:0] msk_f_2 = ~({W{1'b1}} >> amt_b2[1:0]);
+				wire [NNIB*4-1:0] log_rsh_2 = {{(NNIB*4-W){1'b0}}, (rsh_f_2 >> {amt_b2[SW-1:2], 2'b00})};
+				wire [NNIB*4-1:0] mask_2    = {{(NNIB*4-W){1'b0}}, ((msk_f_2 >> {amt_b2[SW-1:2], 2'b00}) | ~({W{1'b1}} >> {amt_b2[SW-1:2], 2'b00}))};
+
+				wire [W-1:0] rsh_f_3 = a_br[BR_IDX] >> amt_b3[1:0];
+				wire [W-1:0] msk_f_3 = ~({W{1'b1}} >> amt_b3[1:0]);
+				wire [NNIB*4-1:0] log_rsh_3 = {{(NNIB*4-W){1'b0}}, (rsh_f_3 >> {amt_b3[SW-1:2], 2'b00})};
+				wire [NNIB*4-1:0] mask_3    = {{(NNIB*4-W){1'b0}}, ((msk_f_3 >> {amt_b3[SW-1:2], 2'b00}) | ~({W{1'b1}} >> {amt_b3[SW-1:2], 2'b00}))};
 
 				wire [3:0] rsh_out;
 				assign rsh_out[0] = fill_nib_0 ? (log_rsh_0[g_nib * 4 + 0] | mask_0[g_nib * 4 + 0]) : log_rsh_0[g_nib * 4 + 0];
@@ -172,10 +183,17 @@ module am_shift #(
 					assign amt_b3[gb] = amt_br[BR_IDX][gb];
 `endif
 				end
-				wire [NNIB*4-1:0] lshifted_0 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_b0)};
-				wire [NNIB*4-1:0] lshifted_1 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_b1)};
-				wire [NNIB*4-1:0] lshifted_2 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_b2)};
-				wire [NNIB*4-1:0] lshifted_3 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_b3)};
+				wire [W-1:0] lsh_f_0 = a_br[BR_IDX] << amt_b0[1:0];
+				wire [NNIB*4-1:0] lshifted_0 = {{(NNIB*4-W){1'b0}}, (lsh_f_0 << {amt_b0[SW-1:2], 2'b00})};
+
+				wire [W-1:0] lsh_f_1 = a_br[BR_IDX] << amt_b1[1:0];
+				wire [NNIB*4-1:0] lshifted_1 = {{(NNIB*4-W){1'b0}}, (lsh_f_1 << {amt_b1[SW-1:2], 2'b00})};
+
+				wire [W-1:0] lsh_f_2 = a_br[BR_IDX] << amt_b2[1:0];
+				wire [NNIB*4-1:0] lshifted_2 = {{(NNIB*4-W){1'b0}}, (lsh_f_2 << {amt_b2[SW-1:2], 2'b00})};
+
+				wire [W-1:0] lsh_f_3 = a_br[BR_IDX] << amt_b3[1:0];
+				wire [NNIB*4-1:0] lshifted_3 = {{(NNIB*4-W){1'b0}}, (lsh_f_3 << {amt_b3[SW-1:2], 2'b00})};
 				wire [3:0] lsh_out;
 				assign lsh_out[0] = lshifted_0[g_nib * 4 + 0];
 				assign lsh_out[1] = lshifted_1[g_nib * 4 + 1];

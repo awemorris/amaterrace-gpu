@@ -142,7 +142,7 @@ module atg_su_sched #(
 
 	/* Per slot. */
 	reg [NWARPS*3-1:0] st;
-	reg [NWARPS-1:0] st_free_r;
+	reg [NWARPS-1:0] st_free_r, st_free_r_out;
 	reg [NWARPS-1:0] st_rdy_r;
 	reg [NWARPS-1:0] st_rof_r;
 	reg [NWARPS*16-1:0] pc;
@@ -212,7 +212,7 @@ module atg_su_sched #(
 	wire last_id = id_x_last && id_y_last && id_z_last;
 
 	/* Free slots directly from registered 1-bit flags st_free_r (0 LUTs!). */
-	wire [NWARPS-1:0] slot_free = st_free_r;
+	wire [NWARPS-1:0] slot_free = st_free_r_out;
 	wire any_free = |slot_free;
 	wire [WARP_W-1:0] free_slot;
 	wire [4:0] n_free;
@@ -627,7 +627,8 @@ module atg_su_sched #(
 	always @(posedge clk) begin
 		if (rst_p) begin
 			st <= {NWARPS{S_FREE}};
-			st_free_r <= {NWARPS{1'b1}};
+			st_free_r     <= {NWARPS{1'b1}};
+			st_free_r_out <= {NWARPS{1'b1}};
 			st_rdy_r  <= {NWARPS{1'b0}};
 			st_rof_r  <= {NWARPS{1'b0}};
 			gap <= {(NWARPS*GAP_W){1'b0}};
@@ -655,7 +656,8 @@ module atg_su_sched #(
 
 				nxt_st_w = st_free_r[w] ? {1'b0, s_rdy_free[w], s_alloc_free[w]} : nxt_st_nonfree[w*3 +: 3];
 				st[(w)*3 +: 3] <= nxt_st_w;
-				st_free_r[w]   <= (nxt_st_w == S_FREE);
+				st_free_r[w]     <= (nxt_st_w == S_FREE);
+				st_free_r_out[w] <= (nxt_st_w == S_FREE);
 				st_rdy_r[w]    <= (nxt_st_w == S_READY);
 				st_rof_r[w]    <= (nxt_st_w == S_READY) || (nxt_st_w == S_FETCH);
 

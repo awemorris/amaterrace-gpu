@@ -445,7 +445,12 @@ module atg_su #(
 	output wire [31:0] fault_addr
 );
 	/* The memories' scrubs (session protection). */
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	(* keep = "true" *) wire rst_p;
+`ifdef SYNTH_KINTEX7
+	LUT1 #(.INIT(2'b01)) u_b_rst (.I0(rst_n), .O(rst_p));
+`else
+	assign rst_p = !rst_n;
+`endif
 	(* dont_touch = "true" *) wire scrub_rf    = scrub && !rst_p;
 	(* dont_touch = "true" *) wire scrub_lda   = scrub && !rst_p;
 	(* dont_touch = "true" *) wire scrub_lds   = scrub && !rst_p;
