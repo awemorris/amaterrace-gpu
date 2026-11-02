@@ -94,6 +94,17 @@ module atg_su_rf #(
 	/* The write port: the scrub's zeros or the write-back's data. */
 	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	(* dont_touch = "true" *) wire wd_zero_all = rst_p || scrub || sc_on;
+	wire [NPHYS-1:0] wd_zero_lane;
+	genvar lz;
+	generate
+		for (lz = 0; lz < NPHYS; lz = lz + 1) begin : g_wd_z_lane
+`ifdef SYNTH_KINTEX7
+			LUT1 #(.INIT(2'h2)) u_buf_zl (.O(wd_zero_lane[lz]), .I0(wd_zero_all));
+`else
+			assign wd_zero_lane[lz] = wd_zero_all;
+`endif
+		end
+	endgenerate
 	wire [A_W-1:0] wam = sc_on ? sc_a : wa;
 
 	(* max_fanout = 12 *) reg [NPHYS-1:0] we_r;
@@ -131,12 +142,24 @@ module atg_su_rf #(
 		for (l = 0; l < NPHYS; l = l + 1) begin : lane
 			for (glh = 0; glh < 2; glh = glh + 1) begin : g_wd_half
 				(* shreg_extract = "no" *) reg [15:0] wd_h;
-				(* dont_touch = "true" *) wire wd_zero_h = wd_zero_all || rst_p;
+				wire wd_zero_lo, wd_zero_hi;
+`ifdef SYNTH_KINTEX7
+				LUT1 #(.INIT(2'h2)) u_buf_zlo (.O(wd_zero_lo), .I0(wd_zero_lane[l]));
+				LUT1 #(.INIT(2'h2)) u_buf_zhi (.O(wd_zero_hi), .I0(wd_zero_lane[l]));
+`else
+				assign wd_zero_lo = wd_zero_lane[l];
+				assign wd_zero_hi = wd_zero_lane[l];
+`endif
 				always @(posedge clk) begin
-					if (wd_zero_h)
-						wd_h <= 16'd0;
+					if (wd_zero_lo)
+						wd_h[7:0] <= 8'd0;
 					else
-						wd_h <= w_data[l*32 + glh*16 +: 16];
+						wd_h[7:0] <= w_data[l*32 + glh*16 +: 8];
+
+					if (wd_zero_hi)
+						wd_h[15:8] <= 8'd0;
+					else
+						wd_h[15:8] <= w_data[l*32 + glh*16 + 8 +: 8];
 				end
 				assign wd_r[l*32 + glh*16 +: 16] = wd_h;
 			end
