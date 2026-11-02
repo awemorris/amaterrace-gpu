@@ -322,10 +322,10 @@ module atg_su_sb #(
 		(* max_fanout = 12 *) reg [1:0] st_issue;
 
 		/* Stage 0 -> 1 registers */
-		(* max_fanout = 12 *) reg [5:0] r_rs1, r_rs2, r_rs3, r_rs1p, r_rs3p;
-		(* max_fanout = 12 *) reg [5:0] r_rd, r_rd_p1, r_rd_p2, r_rd_p3;
-		(* max_fanout = 12 *) reg       r_src1, r_src2, r_src3, r_src4, r_src5, r_dst;
-		(* max_fanout = 12 *) reg       r_wide, r_is_long, r_need_e;
+		reg [5:0] r_rs1, r_rs2, r_rs3, r_rs1p, r_rs3p;
+		reg [5:0] r_rd, r_rd_p1, r_rd_p2, r_rd_p3;
+		reg       r_src1, r_src2, r_src3, r_src4, r_src5, r_dst;
+		reg       r_wide, r_is_long, r_need_e;
 		reg       r_is_wait, r_is_fence, r_is_end;
 		reg [2:0] r_cls;
 		reg [11:0] r_imm12;
