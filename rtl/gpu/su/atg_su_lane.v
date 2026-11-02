@@ -277,14 +277,12 @@ module atg_su_lane #(
 			for (sl = 1; sl < 32; sl = sl + 1)
 				if (el == sl[4:0])
 					es = s_src[sl*5 +: 5];
-			if (op == ATG_LANE_BALLOT)
-				z[l*32 +: 32] = bal;
-			else if (op == ATG_LANE_VOTE)
-				z[l*32 +: 32] = {32{sub[0] ? (bal == s_ex) : (bal != 32'd0)}};
-			else
-				z[l*32 +: 32] = s_ok[el] && s_ex[es] ? s_d[es*32 +: 32] : s_d[el*32 +: 32];
+			z[l*32 +: 32] = s_ok[el] && s_ex[es] ? s_d[es*32 +: 32] : s_d[el*32 +: 32];
 		end
 	end
+	wire is_ballot = (op == ATG_LANE_BALLOT);
+	wire is_vote   = (op == ATG_LANE_VOTE);
+	wire vote_val  = sub[0] ? (bal == s_ex) : (bal != 32'd0);
 	/* shfl writes the EXEC lanes; vote and ballot every lane. */
 	wire [31:0] e_base = {{(32-GRP_W){1'b0}}, e_cnt} * NPHYS;
 	wire [31:0] ex_g;
@@ -301,6 +299,7 @@ module atg_su_lane #(
 	(* keep = "true" *) wire [DW-1:0] pipe_fb;
 	(* keep = "true" *) wire [31:0] stg_we_lo, stg_we_hi;
 	(* keep = "true" *) wire [NPHYS*2-1:0] emit_h;
+	wire [NPHYS*2-1:0] is_ballot_h, is_vote_h, vote_val_h;
 	(* keep = "true" *) wire emit_ctrl = emit;
 	wire emit_h_raw = (st == S_EMIT);
 	genvar gp;
@@ -309,8 +308,14 @@ module atg_su_lane #(
 			assign pipe_fb[gp*16 +: 16] = r4_use_xa[gp] ? r4_xa[gp*16 +: 16] : pipe[SHORT_LAT-2][gp*16 +: 16];
 `ifdef SYNTH_KINTEX7
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit (.I0(emit_h_raw), .O(emit_h[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bal  (.I0(is_ballot),  .O(is_ballot_h[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vot  (.I0(is_vote),    .O(is_vote_h[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val  (.I0(vote_val),   .O(vote_val_h[gp]));
 `else
-			assign emit_h[gp] = emit_h_raw;
+			assign emit_h[gp]      = emit_h_raw;
+			assign is_ballot_h[gp] = is_ballot;
+			assign is_vote_h[gp]   = is_vote;
+			assign vote_val_h[gp]  = vote_val;
 `endif
 		end
 		for (gp = 0; gp < 32; gp = gp + 1) begin : g_stgw
@@ -332,7 +337,9 @@ module atg_su_lane #(
 				pipe[0][EW-1:DW] <= {(EW-DW){1'b0}};
 			for (kp = 0; kp < NPHYS * 2; kp = kp + 1) begin
 				if (emit_h[kp])
-					pipe[0][kp*16 +: 16] <= z[kp*16 +: 16];
+					pipe[0][kp*16 +: 16] <= is_ballot_h[kp] ? bal[kp[0]*16 +: 16] :
+					                        is_vote_h[kp]   ? {16{vote_val_h[kp]}} :
+					                        z[kp*16 +: 16];
 				else
 					pipe[0][kp*16 +: 16] <= 16'd0;
 			end
