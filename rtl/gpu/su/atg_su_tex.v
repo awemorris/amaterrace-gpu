@@ -145,21 +145,31 @@ module atg_su_tex #(
 	generate
 	for (gq_l = 0; gq_l < 4; gq_l = gq_l + 1) begin : g_qlane
 		wire [QW-1:0] q_lane_0, q_lane_1;
+		wire ti_l, td_l, th_l, cf_l;
 `ifdef SYNTH_KINTEX7
 		genvar gqw_l;
 		for (gqw_l = 0; gqw_l < QW; gqw_l = gqw_l + 1) begin : g_q_l_buf
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ql0 (.I0(q[gqw_l]), .O(q_lane_0[gqw_l]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ql1 (.I0(q[gqw_l]), .O(q_lane_1[gqw_l]));
 		end
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_til (.I0(take_idle), .O(ti_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tdl (.I0(take_dref), .O(td_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_thl (.I0(three), .O(th_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cfl (.I0(cform), .O(cf_l));
 `else
 		assign q_lane_0 = q;
 		assign q_lane_1 = q;
+		assign ti_l = take_idle;
+		assign td_l = take_dref;
+		assign th_l = three;
+		assign cf_l = cform;
 `endif
 		for (ghw = 0; ghw < 10; ghw = ghw + 1) begin : g_qhw
 			localparam SL_IDX = gq_l * 10 + ghw;
 			localparam H_BIT = (ghw % 2) * 16;
 			localparam W_IDX = ghw / 2;
 			wire [QW-1:0] q_sl_lo, q_sl_hi;
+			wire ti_s, td_s, th_s, cf_s;
 `ifdef SYNTH_KINTEX7
 			genvar gqw_s;
 			for (gqw_s = 0; gqw_s < QW; gqw_s = gqw_s + 1) begin : g_q_s_buf
@@ -167,18 +177,22 @@ module atg_su_tex #(
 				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qlo (.I0(q_in), .O(q_sl_lo[gqw_s]));
 				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qhi (.I0(q_in), .O(q_sl_hi[gqw_s]));
 			end
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tis (.I0(ti_l), .O(ti_s));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tds (.I0(td_l), .O(td_s));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ths (.I0(th_l), .O(th_s));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cfs (.I0(cf_l), .O(cf_s));
 `else
 			assign q_sl_lo = (ghw < 5) ? q_lane_0 : q_lane_1;
 			assign q_sl_hi = (ghw < 5) ? q_lane_0 : q_lane_1;
+			assign ti_s = ti_l;
+			assign td_s = td_l;
+			assign th_s = th_l;
+			assign cf_s = cf_l;
 `endif
 			wire [NQ*16-1:0] crd_sl;
 
 			for (gqi = 0; gqi < NQ; gqi = gqi + 1) begin : g_qinst
 				localparam L_IDX = gqi * 4 + gq_l;
-				(* dont_touch = "true" *) wire ti_s = take_idle;
-				(* dont_touch = "true" *) wire td_s = take_dref;
-				(* dont_touch = "true" *) wire th_s = three;
-				(* dont_touch = "true" *) wire cf_s = cform;
 				(* shreg_extract = "no" *) reg [15:0] crd_inst_r;
 				wire [15:0] xa_h = x_a[L_IDX*32 + H_BIT +: 16];
 				wire [15:0] xb_h = x_b[L_IDX*32 + H_BIT +: 16];

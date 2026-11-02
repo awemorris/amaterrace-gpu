@@ -387,7 +387,36 @@ module atg_su_sb #(
 		assign r_wide_e = r_wide; assign r_wide_f = r_wide; assign r_wide_o = r_wide;
 `endif
 
+		wire [WARP_W-1:0] r_warp_e, r_warp_f, r_warp_c, r_warp_w;
+`ifdef SYNTH_KINTEX7
+		genvar gsb_w;
+		for (gsb_w = 0; gsb_w < WARP_W; gsb_w = gsb_w + 1) begin : g_sb_warp_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rw_e (.I0(r_warp[gsb_w]), .O(r_warp_e[gsb_w]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rw_f (.I0(r_warp[gsb_w]), .O(r_warp_f[gsb_w]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rw_c (.I0(r_warp[gsb_w]), .O(r_warp_c[gsb_w]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rw_w (.I0(r_warp[gsb_w]), .O(r_warp_w[gsb_w]));
+		end
+`else
+		assign r_warp_e = r_warp;
+		assign r_warp_f = r_warp;
+		assign r_warp_c = r_warp;
+		assign r_warp_w = r_warp;
+`endif
+
 		reg [SB_ENTRIES-1:0]   w_ev_r;
+		wire [SB_ENTRIES-1:0]  w_ev_r_hit, w_ev_r_free, w_ev_r_alloc;
+`ifdef SYNTH_KINTEX7
+		genvar gsb_ev;
+		for (gsb_ev = 0; gsb_ev < SB_ENTRIES; gsb_ev = gsb_ev + 1) begin : g_sb_ev_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ev_hit   (.I0(w_ev_r[gsb_ev]), .O(w_ev_r_hit[gsb_ev]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ev_free  (.I0(w_ev_r[gsb_ev]), .O(w_ev_r_free[gsb_ev]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ev_alloc (.I0(w_ev_r[gsb_ev]), .O(w_ev_r_alloc[gsb_ev]));
+		end
+`else
+		assign w_ev_r_hit   = w_ev_r;
+		assign w_ev_r_free  = w_ev_r;
+		assign w_ev_r_alloc = w_ev_r;
+`endif
 		reg [SB_ENTRIES*6-1:0] w_er0_r, w_er1_r, w_er2_r, w_er3_r;
 		reg [SB_ENTRIES-1:0]   w_ewd_r;
 		reg [CNT_W-1:0]        w_rcm_r, w_rct_r, w_rcx_r;
@@ -408,7 +437,7 @@ module atg_su_sb #(
 		always @(*) begin
 			w_free_e_s1 = {(SBE_W+1){1'b1}};
 			for (s1j = SB_ENTRIES - 1; s1j >= 0; s1j = s1j - 1)
-				if (!w_ev_r[s1j])
+				if (!w_ev_r_free[s1j])
 					w_free_e_s1 = s1j[SBE_W:0];
 		end
 
@@ -608,18 +637,18 @@ module atg_su_sb #(
 			end
 
 			if (s1_we_0) begin
-				r_rel_s2 <= r_rel_s1 || (rel_valid && (rel_warp == r_warp));
+				r_rel_s2 <= r_rel_s1 || (rel_valid && (rel_warp == r_warp_w));
 				for (sj = 0; sj < SB_ENTRIES; sj = sj + 1) begin
-					r_ehit_r12[sj] <= w_ev_r[sj] && (
+					r_ehit_r12[sj] <= w_ev_r_hit[sj] && (
 						(r_src1 && hit_entry(r_rs1_e, w_er0_r[sj*6 +: 6], w_er1_r[sj*6 +: 6], w_er2_r[sj*6 +: 6], w_er3_r[sj*6 +: 6], w_ewd_r[sj])) ||
 						(r_src2 && hit_entry(r_rs2_e, w_er0_r[sj*6 +: 6], w_er1_r[sj*6 +: 6], w_er2_r[sj*6 +: 6], w_er3_r[sj*6 +: 6], w_ewd_r[sj]))
 					);
-					r_ehit_r345[sj] <= w_ev_r[sj] && (
+					r_ehit_r345[sj] <= w_ev_r_hit[sj] && (
 						(r_src3 && hit_entry(r_rs3_e,  w_er0_r[sj*6 +: 6], w_er1_r[sj*6 +: 6], w_er2_r[sj*6 +: 6], w_er3_r[sj*6 +: 6], w_ewd_r[sj])) ||
 						(r_src4 && hit_entry(r_rs1p_e, w_er0_r[sj*6 +: 6], w_er1_r[sj*6 +: 6], w_er2_r[sj*6 +: 6], w_er3_r[sj*6 +: 6], w_ewd_r[sj])) ||
 						(r_src5 && hit_entry(r_rs3p_e, w_er0_r[sj*6 +: 6], w_er1_r[sj*6 +: 6], w_er2_r[sj*6 +: 6], w_er3_r[sj*6 +: 6], w_ewd_r[sj]))
 					);
-					r_ehit_w[sj] <= w_ev_r[sj] && r_dst && (
+					r_ehit_w[sj] <= w_ev_r_hit[sj] && r_dst && (
 						(w_er0_r[sj*6 +: 6] == r_rd_e) ||
 						(r_wide_e && (w_er0_r[sj*6 +: 6] == r_rd_p1_e || w_er0_r[sj*6 +: 6] == r_rd_p2_e || w_er0_r[sj*6 +: 6] == r_rd_p3_e)) ||
 						(w_ewd_r[sj] && (r_rd_e == w_er1_r[sj*6 +: 6] || r_rd_e == w_er2_r[sj*6 +: 6] || r_rd_e == w_er3_r[sj*6 +: 6]))
@@ -627,7 +656,7 @@ module atg_su_sb #(
 				end
 			end
 			if (s1_we_1) begin
-				r_have_free <= ~(&w_ev_r);
+				r_have_free <= ~(&w_ev_r_free);
 				r_free_e    <= w_free_e_s1;
 				r_cnt_wait <= (r_is_wait && !(le6_u4(w_rcm_r, r_imm12[3:0]) && le6_u4(w_rct_r, r_imm12[7:4]) && le6_u4(w_rcx_r, r_imm12[11:8]))) ||
 					(r_is_fence && r_imm12[0] && (w_rcm_r != 0)) ||
@@ -640,39 +669,39 @@ module atg_su_sb #(
 			end
 			if (s1_we_2a) begin
 				for (sw = 0; sw < NE/2; sw = sw + 1) begin
-					r_alloc_mask[sw] <= r_need_e && !w_ev_r[sw[SBE_W-1:0]] &&
+					r_alloc_mask[sw] <= r_need_e && !w_ev_r_alloc[sw[SBE_W-1:0]] &&
 						(w_free_e_s1[SBE_W-1:0] == sw[SBE_W-1:0]) &&
-						(r_warp == sw[NE_W-1:SBE_W]);
+						(r_warp_e == sw[NE_W-1:SBE_W]);
 				end
 			end
 			if (s1_we_2b) begin
 				for (sw = NE/2; sw < NE; sw = sw + 1) begin
-					r_alloc_mask[sw] <= r_need_e && !w_ev_r[sw[SBE_W-1:0]] &&
+					r_alloc_mask[sw] <= r_need_e && !w_ev_r_alloc[sw[SBE_W-1:0]] &&
 						(w_free_e_s1[SBE_W-1:0] == sw[SBE_W-1:0]) &&
-						(r_warp == sw[NE_W-1:SBE_W]);
+						(r_warp_e == sw[NE_W-1:SBE_W]);
 				end
 			end
 			if (s1_we_3a) begin
 				for (sw = 0; sw < NE/2; sw = sw + 1) begin
-					r_alloc_mask_hi[sw] <= r_need_e && !w_ev_r[sw[SBE_W-1:0]] &&
+					r_alloc_mask_hi[sw] <= r_need_e && !w_ev_r_alloc[sw[SBE_W-1:0]] &&
 						(w_free_e_s1[SBE_W-1:0] == sw[SBE_W-1:0]) &&
-						(r_warp == sw[NE_W-1:SBE_W]);
+						(r_warp_e == sw[NE_W-1:SBE_W]);
 				end
 			end
 			if (s1_we_3b) begin
 				for (sw = NE/2; sw < NE; sw = sw + 1) begin
-					r_alloc_mask_hi[sw] <= r_need_e && !w_ev_r[sw[SBE_W-1:0]] &&
+					r_alloc_mask_hi[sw] <= r_need_e && !w_ev_r_alloc[sw[SBE_W-1:0]] &&
 						(w_free_e_s1[SBE_W-1:0] == sw[SBE_W-1:0]) &&
-						(r_warp == sw[NE_W-1:SBE_W]);
+						(r_warp_e == sw[NE_W-1:SBE_W]);
 				end
 			end
 			if (s1_we_4) begin
 				for (sm = 0; sm < NIF; sm = sm + 1) begin
-					r_f_hit_r12[sm] <= f_valid[sm] && f_short[sm] && (f_warp[sm*WARP_W +: WARP_W] == r_warp) && !f_rd[sm*7 + 6] && (
+					r_f_hit_r12[sm] <= f_valid[sm] && f_short[sm] && (f_warp[sm*WARP_W +: WARP_W] == r_warp_f) && !f_rd[sm*7 + 6] && (
 						(r_src1 && (r_rs1_f == f_rd[sm*7 +: 6])) ||
 						(r_src2 && (r_rs2_f == f_rd[sm*7 +: 6]))
 					);
-					r_f_hit_r345w[sm] <= f_valid[sm] && f_short[sm] && (f_warp[sm*WARP_W +: WARP_W] == r_warp) && !f_rd[sm*7 + 6] && (
+					r_f_hit_r345w[sm] <= f_valid[sm] && f_short[sm] && (f_warp[sm*WARP_W +: WARP_W] == r_warp_f) && !f_rd[sm*7 + 6] && (
 						(r_src3 && (r_rs3_f  == f_rd[sm*7 +: 6])) ||
 						(r_src4 && (r_rs1p_f == f_rd[sm*7 +: 6])) ||
 						(r_src5 && (r_rs3p_f == f_rd[sm*7 +: 6])) ||
@@ -685,7 +714,7 @@ module atg_su_sb #(
 			end
 			if (s1_we_5) begin
 				for (sm = 0; sm < NSC; sm = sm + 1) begin
-					r_c_hit_r12[sm] <= c_valid[sm] && (c_warp[sm*WARP_W +: WARP_W] == r_warp) && ((SHORT_LAT + 1 - sm) > G + 1) && (
+					r_c_hit_r12[sm] <= c_valid[sm] && (c_warp[sm*WARP_W +: WARP_W] == r_warp_c) && ((SHORT_LAT + 1 - sm) > G + 1) && (
 						(r_src1 && (r_rs1_f == c_rd[sm*6 +: 6])) ||
 						(r_src2 && (r_rs2_f == c_rd[sm*6 +: 6]))
 					);
@@ -693,7 +722,7 @@ module atg_su_sb #(
 			end
 			if (s1_we_6) begin
 				for (sm = 0; sm < NSC; sm = sm + 1) begin
-					r_c_hit_r345w[sm] <= c_valid[sm] && (c_warp[sm*WARP_W +: WARP_W] == r_warp) && (
+					r_c_hit_r345w[sm] <= c_valid[sm] && (c_warp[sm*WARP_W +: WARP_W] == r_warp_c) && (
 						(((SHORT_LAT + 1 - sm) > G + 1) && (
 							(r_src3 && (r_rs3_f  == c_rd[sm*6 +: 6])) ||
 							(r_src4 && (r_rs1p_f == c_rd[sm*6 +: 6])) ||
@@ -717,7 +746,7 @@ module atg_su_sb #(
 		assign go_gate   = (st_issue == 2'd2);
 		genvar gpw;
 		for (gpw = 0; gpw < NWARPS; gpw = gpw + 1) begin : g_pw
-			assign pipe_wake[gpw] = (st_issue == 2'd2) && r_rel_s2 && (r_warp == gpw[WARP_W-1:0]);
+			assign pipe_wake[gpw] = (st_issue == 2'd2) && r_rel_s2 && (r_warp_w == gpw[WARP_W-1:0]);
 		end
 	end else begin : g_comb_issue
 		assign pipe_wake = {NWARPS{1'b0}};

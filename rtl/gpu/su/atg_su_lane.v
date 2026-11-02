@@ -197,11 +197,11 @@ module atg_su_lane #(
 	 * e_cnt's result enters the pipeline; x_ready in the last). */
 	localparam S_IDLE = 1'b0;
 	localparam S_EMIT = 1'b1;
-	(* max_fanout = 12 *) reg st;
-	(* max_fanout = 12 *) reg [GRP_W-1:0] e_cnt;
+	reg st;
+	reg [GRP_W-1:0] e_cnt;
 	wire e_last = {{(32-GRP_W){1'b0}}, e_cnt} == G - 1;
-	(* max_fanout = 12 *) wire emit = st == S_EMIT;
-	(* max_fanout = 12 *) wire stage = sg && st == S_IDLE;
+	wire emit = st == S_EMIT;
+	wire stage = sg && st == S_IDLE;
 	assign sg_emit_done = (SUBGROUP == 0) || (emit && e_last);
 	assign x_ready = !(sg && x_last) || (emit && e_last);
 

@@ -41,12 +41,12 @@ module am_shift #(
 	if (DIR != 2) begin : g_rsh_gen
 		wire fill = ((DIR == 1) ? arith : (!left && arith)) ? a[W - 1] : 1'b0;
 		wire signed [W:0] ext_data = {fill, a};
-		if (W <= 16) begin : g_rsh_direct
+		if (W <= 8) begin : g_rsh_direct
 			wire signed [W:0] ext_shift = ext_data >>> amt;
 			assign rsh = ext_shift[W-1:0];
 		end else begin : g_rsh_sliced
-			for (g_chunk = 0; g_chunk < (W + 15) / 16; g_chunk = g_chunk + 1) begin : g_sl
-				localparam CHK_W = ((g_chunk + 1) * 16 <= W) ? 16 : (W - g_chunk * 16);
+			for (g_chunk = 0; g_chunk < (W + 7) / 8; g_chunk = g_chunk + 1) begin : g_sl
+				localparam CHK_W = ((g_chunk + 1) * 8 <= W) ? 8 : (W - g_chunk * 8);
 				wire [SW-1:0] amt_b;
 				genvar gb;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_amt_buf
@@ -58,7 +58,7 @@ module am_shift #(
 				end
 				wire signed [W:0] ext_chunk = ext_data;
 				wire signed [W:0] shifted_chunk = ext_chunk >>> amt_b;
-				assign rsh[g_chunk * 16 +: CHK_W] = shifted_chunk[g_chunk * 16 +: CHK_W];
+				assign rsh[g_chunk * 8 +: CHK_W] = shifted_chunk[g_chunk * 8 +: CHK_W];
 			end
 		end
 	end else begin : g_rsh_stub
@@ -68,11 +68,11 @@ module am_shift #(
 
 	generate
 	if (DIR != 1) begin : g_lsh_gen
-		if (W <= 16) begin : g_lsh_direct
+		if (W <= 8) begin : g_lsh_direct
 			assign lsh = a << amt;
 		end else begin : g_lsh_sliced
-			for (g_chunk = 0; g_chunk < (W + 15) / 16; g_chunk = g_chunk + 1) begin : g_sl
-				localparam CHK_W = ((g_chunk + 1) * 16 <= W) ? 16 : (W - g_chunk * 16);
+			for (g_chunk = 0; g_chunk < (W + 7) / 8; g_chunk = g_chunk + 1) begin : g_sl
+				localparam CHK_W = ((g_chunk + 1) * 8 <= W) ? 8 : (W - g_chunk * 8);
 				wire [SW-1:0] amt_b;
 				genvar gb;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_amt_buf
@@ -83,7 +83,7 @@ module am_shift #(
 `endif
 				end
 				wire [W-1:0] lshifted_chunk = a << amt_b;
-				assign lsh[g_chunk * 16 +: CHK_W] = lshifted_chunk[g_chunk * 16 +: CHK_W];
+				assign lsh[g_chunk * 8 +: CHK_W] = lshifted_chunk[g_chunk * 8 +: CHK_W];
 			end
 		end
 	end else begin : g_lsh_stub
@@ -97,19 +97,19 @@ module am_shift #(
 	end else if (DIR == 2) begin : g_out_l
 		assign y = lsh;
 	end else begin : g_out_dyn
-		if (W <= 16) begin : g_omux_direct
+		if (W <= 8) begin : g_omux_direct
 			assign y = left ? lsh : rsh;
 		end else begin : g_omux_sliced
 			genvar g_om;
-			for (g_om = 0; g_om < (W + 15) / 16; g_om = g_om + 1) begin : g_sl
-				localparam CHK_W = ((g_om + 1) * 16 <= W) ? 16 : (W - g_om * 16);
+			for (g_om = 0; g_om < (W + 7) / 8; g_om = g_om + 1) begin : g_sl
+				localparam CHK_W = ((g_om + 1) * 8 <= W) ? 8 : (W - g_om * 8);
 				wire left_b;
 `ifdef SYNTH_KINTEX7
 				(* keep = "true" *) LUT1 #(.INIT(2'b10)) u_bl (.I0(left), .O(left_b));
 `else
 				assign left_b = left;
 `endif
-				assign y[g_om * 16 +: CHK_W] = left_b ? lsh[g_om * 16 +: CHK_W] : rsh[g_om * 16 +: CHK_W];
+				assign y[g_om * 8 +: CHK_W] = left_b ? lsh[g_om * 8 +: CHK_W] : rsh[g_om * 8 +: CHK_W];
 			end
 		end
 	end

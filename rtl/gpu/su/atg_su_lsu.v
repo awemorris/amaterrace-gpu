@@ -197,11 +197,13 @@ module atg_su_lsu #(
 			assign line_eq[la] = leq_lo && leq_hi;
 
 			(* dont_touch = "true" *) wire take_wo = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
-			(* dont_touch = "true" *) reg [WW-1:0] rwo_rd_lo, rwo_rd_hi, rwo_wr_a, rwo_wr_b, rwo_wr_be;
+			(* dont_touch = "true" *) reg [WW-1:0] rwo_rd_0, rwo_rd_1, rwo_rd_2, rwo_rd_3, rwo_wr_a, rwo_wr_b, rwo_wr_be;
 			always @(posedge clk) begin
 				if (take_wo) begin
-					rwo_rd_lo <= x_adr[la*32 + 2 +: WW];
-					rwo_rd_hi <= x_adr[la*32 + 2 +: WW];
+					rwo_rd_0  <= x_adr[la*32 + 2 +: WW];
+					rwo_rd_1  <= x_adr[la*32 + 2 +: WW];
+					rwo_rd_2  <= x_adr[la*32 + 2 +: WW];
+					rwo_rd_3  <= x_adr[la*32 + 2 +: WW];
 					rwo_wr_a  <= x_adr[la*32 + 2 +: WW];
 					rwo_wr_b  <= x_adr[la*32 + 2 +: WW];
 					rwo_wr_be <= x_adr[la*32 + 2 +: WW];
@@ -211,17 +213,19 @@ module atg_su_lsu #(
 			assign rwo_wr_b_bus[la*WW +: WW]  = rwo_wr_b;
 			assign rwo_wr_be_bus[la*WW +: WW] = rwo_wr_be;
 
-			for (gh = 0; gh < 2; gh = gh + 1) begin : g_lsu_half
-				wire [WW-1:0] rwo_rd_h = (gh == 0) ? rwo_rd_lo : rwo_rd_hi;
-				reg [15:0] rsel_h;
+			for (gh = 0; gh < 4; gh = gh + 1) begin : g_lsu_half
+				wire [WW-1:0] rwo_rd_h = (gh == 0) ? rwo_rd_0 :
+				                         (gh == 1) ? rwo_rd_1 :
+				                         (gh == 2) ? rwo_rd_2 : rwo_rd_3;
+				reg [7:0] rsel_h;
 				integer rwi;
 				always @(*) begin
-					rsel_h = dc_rsp_rdata[gh*16 +: 16];
+					rsel_h = dc_rsp_rdata[gh*8 +: 8];
 					for (rwi = 1; rwi < WPL; rwi = rwi + 1)
 						if (rwo_rd_h == rwi[WW-1:0])
-							rsel_h = dc_rsp_rdata[rwi*32 + gh*16 +: 16];
+							rsel_h = dc_rsp_rdata[rwi*32 + gh*8 +: 8];
 				end
-				(* shreg_extract = "no" *) reg [15:0] radr_h, rdat_h, rcmp_h, res_h;
+				(* shreg_extract = "no" *) reg [7:0] radr_h, rdat_h, rcmp_h, res_h;
 				(* dont_touch = "true" *) wire take_adr_h = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
 				(* dont_touch = "true" *) wire take_dat_h = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
 				(* dont_touch = "true" *) wire take_cmp_h = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
@@ -232,23 +236,23 @@ module atg_su_lsu #(
 				(* dont_touch = "true" *) wire at_err_h = at_error;
 				always @(posedge clk) begin
 					if (take_adr_h)
-						radr_h <= x_adr[la*32 + gh*16 +: 16];
+						radr_h <= x_adr[la*32 + gh*8 +: 8];
 					if (take_dat_h)
-						rdat_h <= x_b[la*32 + gh*16 +: 16];
+						rdat_h <= x_b[la*32 + gh*8 +: 8];
 					if (take_cmp_h)
-						rcmp_h <= x_c[la*32 + gh*16 +: 16];
+						rcmp_h <= x_c[la*32 + gh*8 +: 8];
 					if (take_res_h) begin
-						res_h <= 16'd0;
+						res_h <= 8'd0;
 					end else if (dc_we_h) begin
-						res_h <= dc_err_h ? 16'd0 : rsel_h;
+						res_h <= dc_err_h ? 8'd0 : rsel_h;
 					end else if (at_we_h) begin
-						res_h <= at_err_h ? 16'd0 : at_old[gh*16 +: 16];
+						res_h <= at_err_h ? 8'd0 : at_old[gh*8 +: 8];
 					end
 				end
-				assign radr[la*32 + gh*16 +: 16] = radr_h;
-				assign rdat[la*32 + gh*16 +: 16] = rdat_h;
-				assign rcmp[la*32 + gh*16 +: 16] = rcmp_h;
-				assign res[la*32 + gh*16 +: 16]  = res_h;
+				assign radr[la*32 + gh*8 +: 8] = radr_h;
+				assign rdat[la*32 + gh*8 +: 8] = rdat_h;
+				assign rcmp[la*32 + gh*8 +: 8] = rcmp_h;
+				assign res[la*32 + gh*8 +: 8]  = res_h;
 			end
 		end
 		for (la = 0; la < LB / 16; la = la + 1) begin : g_cwd_sl

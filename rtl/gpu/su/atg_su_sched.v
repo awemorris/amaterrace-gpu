@@ -432,10 +432,33 @@ module atg_su_sched #(
 		end
 	endgenerate
 
-	assign f_valid = fsel_v;
-	assign f_warp = fsel;
-	assign f_pc = pc[(fsel)*16 +: 16];
-	assign f_addr = w_f_addr[fsel*32 +: 32];
+	wire [WARP_W-1:0] fsel_out, fsel_pc, fsel_fa_lo, fsel_fa_hi, fsel_st;
+	wire fsel_v_out, fsel_v_st;
+`ifdef SYNTH_KINTEX7
+	genvar g_fsb;
+	for (g_fsb = 0; g_fsb < WARP_W; g_fsb = g_fsb + 1) begin : g_fsel_buf
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fso (.I0(fsel[g_fsb]), .O(fsel_out[g_fsb]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fsp (.I0(fsel[g_fsb]), .O(fsel_pc[g_fsb]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fsl (.I0(fsel[g_fsb]), .O(fsel_fa_lo[g_fsb]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fsh (.I0(fsel[g_fsb]), .O(fsel_fa_hi[g_fsb]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fss (.I0(fsel[g_fsb]), .O(fsel_st[g_fsb]));
+	end
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fsv_o (.I0(fsel_v), .O(fsel_v_out));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fsv_s (.I0(fsel_v), .O(fsel_v_st));
+`else
+	assign fsel_out   = fsel;
+	assign fsel_pc    = fsel;
+	assign fsel_fa_lo = fsel;
+	assign fsel_fa_hi = fsel;
+	assign fsel_st    = fsel;
+	assign fsel_v_out = fsel_v;
+	assign fsel_v_st  = fsel_v;
+`endif
+
+	assign f_valid = fsel_v_out;
+	assign f_warp = fsel_out;
+	assign f_pc = pc[(fsel_pc)*16 +: 16];
+	assign f_addr = {w_f_addr[{fsel_fa_hi, 5'd16} +: 16], w_f_addr[{fsel_fa_lo, 5'd0} +: 16]};
 
 	/* Per slot: the gap and pc counted down / up; rr, rot, wk and the tag + 1. */
 	/* verilator lint_off WIDTHTRUNC */
@@ -555,7 +578,7 @@ module atg_su_sched #(
 					if ((vl_go && vl_s == gc[WARP_W-1:0]) || (fl_go && fl_s == gc[WARP_W-1:0]))
 						nf_st = S_READY;
 				S_READY:
-					if (fsel_v && f_ready && (fsel == gc[WARP_W-1:0]))
+					if (fsel_v_st && f_ready && (fsel_st == gc[WARP_W-1:0]))
 						nf_st = S_FETCH;
 				S_FETCH:
 					if (fb_valid && fb_warp == gc[WARP_W-1:0]) begin
@@ -622,7 +645,7 @@ module atg_su_sched #(
 			wk <= 4'd0;
 		end else begin
 			for (w = 0; w < NWARPS; w = w + 1) begin
-				if (fsel_v && f_ready && (fsel == w[WARP_W-1:0])) begin
+				if (fsel_v_st && f_ready && (fsel_st == w[WARP_W-1:0])) begin
 					gap[w*GAP_W +: GAP_W] <= GAP_INIT;
 					gap_z_r[w] <= (GAP_INIT == {GAP_W{1'b0}});
 				end else if (!gap_z_r[w]) begin
@@ -639,11 +662,11 @@ module atg_su_sched #(
 				if (st_free_r[w])
 					tag[(w)*4 +: 4] <= wg_tag;
 			end
-			hold_v <= fsel_v && !f_ready;
-			hold_w <= fsel;
-			if (fsel_v && f_ready) begin
+			hold_v <= fsel_v_st && !f_ready;
+			hold_w <= fsel_st;
+			if (fsel_v_st && f_ready) begin
 				rr <= rr_next;
-				last_warp <= fsel;
+				last_warp <= fsel_st;
 				active_valid <= 1'b1;
 			end
 			/* Vertex and fragment slots. */

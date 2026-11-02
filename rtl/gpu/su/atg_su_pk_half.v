@@ -200,7 +200,7 @@ module atg_su_pk_half #(
 			.co(co_unused[2])
 		);
 		wire [46:0] zal;
-		am_shift #(.W(47), .SW(6)) u_al (
+		am_shift #(.W(47), .SW(6), .DIR(2)) u_al (
 			.a({36'd0, mc}), .amt(kx[5:0]), .left(1'b1), .arith(1'b0), .y(zal)
 		);
 		wire [36:0] pw = !zc && big ? 37'd1 : {13'd0, p, 2'b00};
@@ -231,7 +231,7 @@ module atg_su_pk_half #(
 					lz = i[5:0];
 		end
 		wire [36:0] nrm;
-		am_shift #(.W(37), .SW(6)) u_nrm (
+		am_shift #(.W(37), .SW(6), .DIR(2)) u_nrm (
 			.a(sum), .amt(lz), .left(1'b1), .arith(1'b0), .y(nrm)
 		);
 
@@ -774,7 +774,7 @@ module atg_su_pk_half #(
 		(* max_fanout = 16 *) wire s3_big  = $signed(s3_k) > 10'sd23;
 		(* max_fanout = 16 *) wire s3_near = $signed(s3_k) >= -10'sd12;
 		wire [46:0] s3_zal;
-		am_shift #(.W(47), .SW(6)) u_s3_al (
+		am_shift #(.W(47), .SW(6), .DIR(2)) u_s3_al (
 			.a({36'd0, s3_mc}), .amt(s3_dp37[5:0]), .left(1'b1), .arith(1'b0), .y(s3_zal)
 		);
 		wire [36:0] s3_cw = s3_zc ? 37'd0 : s3_big ? {1'b0, s3_mc, 25'd0} :

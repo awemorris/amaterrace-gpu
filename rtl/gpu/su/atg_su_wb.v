@@ -25,15 +25,15 @@ module atg_su_wb_skid #(
 	input wire rst_n,
 
 	input wire in_valid,
-	(* keep = "true", max_fanout = 16 *) output reg in_ready,
+	(* keep = "true" *) output reg in_ready,
 	input wire [WIDTH-1:0] in_data,
 
-	(* keep = "true", max_fanout = 16 *) output reg out_valid,
+	(* keep = "true" *) output reg out_valid,
 	input wire out_ready,
 	output wire [WIDTH-1:0] out_data
 );
 	(* dont_touch = "true" *) wire rst_p = !rst_n;
-	(* keep = "true", max_fanout = 12 *) reg skid_valid;
+	(* keep = "true" *) reg skid_valid;
 
 	wire skid_load = in_valid && in_ready;
 
@@ -83,10 +83,16 @@ module atg_su_wb_skid #(
 				end
 			end
 		end
-		(* dont_touch = "true" *) wire load_out_s = skid_v_sl ? sl_out_ready : (sl_in_valid && (sl_out_ready || !out_v_sl));
-		(* dont_touch = "true" *) wire skid_load_s = sl_in_valid && in_r_sl;
-		(* shreg_extract = "no", max_fanout = 16 *) reg [SK_W-1:0] out_sl;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [SK_W-1:0] skid_sl;
+		wire load_out_s, skid_load_s;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_los (.I0(skid_v_sl ? sl_out_ready : (sl_in_valid && (sl_out_ready || !out_v_sl))), .O(load_out_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sls (.I0(sl_in_valid && in_r_sl), .O(skid_load_s));
+`else
+		assign load_out_s = skid_v_sl ? sl_out_ready : (sl_in_valid && (sl_out_ready || !out_v_sl));
+		assign skid_load_s = sl_in_valid && in_r_sl;
+`endif
+		(* shreg_extract = "no" *) reg [SK_W-1:0] out_sl;
+		(* shreg_extract = "no" *) reg [SK_W-1:0] skid_sl;
 		always @(posedge clk) begin
 			if (load_out_s)
 				out_sl <= skid_v_sl ? skid_sl : in_data[gsk*8 +: SK_W];
@@ -173,8 +179,14 @@ module atg_su_wb_fifo #(
 		localparam FF_W = (gff * 8 + 8 <= W) ? 8 : (W - gff * 8);
 		(* ram_style = "distributed" *) reg [FF_W-1:0] mem_sl [0:(1 << DEPTH_LOG2) - 1];
 		(* dont_touch = "true" *) reg [DEPTH_LOG2-1:0] wp_sl, rp_sl;
-		(* dont_touch = "true" *) wire push_s = in_valid && in_rdy_w;
-		(* dont_touch = "true" *) wire pop_s  = r_valid && out_ready;
+		wire push_s, pop_s;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_psh (.I0(in_valid && in_rdy_w), .O(push_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_pop (.I0(r_valid && out_ready), .O(pop_s));
+`else
+		assign push_s = in_valid && in_rdy_w;
+		assign pop_s  = r_valid && out_ready;
+`endif
 		always @(posedge clk) begin
 			if (rst_p) begin
 				wp_sl <= {DEPTH_LOG2{1'b0}};

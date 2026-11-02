@@ -215,7 +215,17 @@ module atg_su_opd #(
 	assign r_grp = a_rf_grp_r;
 	assign r_regs = {a_rf_r2_r, a_rf_r1_r};
 	assign cr_en = (REG_IO != 0) ? cr_en_fast : (a_act && b_adv && (!a_needs_step1 || !a_step));
+`ifdef SYNTH_KINTEX7
+	genvar g_cr_b;
+	generate
+		for (g_cr_b = 0; g_cr_b < 15; g_cr_b = g_cr_b + 1) begin : g_buf_cr_idx
+			wire [14:0] cr_idx_src = {a_n3[4:0], a_n2[4:0], a_n1[4:0]};
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cr (.I0(cr_idx_src[g_cr_b]), .O(cr_idx[g_cr_b]));
+		end
+	endgenerate
+`else
 	assign cr_idx = {a_n3[4:0], a_n2[4:0], a_n1[4:0]};
+`endif
 	assign rq_pop = (REG_IO != 0) ? rq_pop_fast : (a_act && b_adv && a_uop[ATG_UOP_RQS] && !a_pass && (!a_needs_step1 || !a_step));
 
 	wire a_match_wb_1 = fwd_wb_valid && (a_n1 < 7'd63) && (fwd_wb_rd < 7'd63) &&
@@ -437,12 +447,43 @@ module atg_su_opd #(
 		a_use_cw3_lo_r ? cr_data[79:64] : (a_is_104_3_lo_r ? q_exec[15:0]  : a_cval3_r[15:0])
 	};
 	wire [DW-1:0] a_early_va_comb, a_early_vb_comb, a_early_vc_comb;
+
+	wire [2:0] a_k1_pre = opk(a_n1, q_info[ATG_WI_KIND +: 2]);
+	wire [2:0] a_k2_pre = opk(a_n2, q_info[ATG_WI_KIND +: 2]);
+	wire [2:0] a_k3_pre = opk(a_n3, q_info[ATG_WI_KIND +: 2]);
+`ifdef SYNTH_KINTEX7
+	wire [2:0] a_k1_pre_0, a_k1_pre_1;
+	wire [2:0] a_k2_pre_0, a_k2_pre_1;
+	wire [2:0] a_k3_pre_0, a_k3_pre_1;
+	genvar g_k_b;
+	generate
+		for (g_k_b = 0; g_k_b < 3; g_k_b = g_k_b + 1) begin : g_buf_kpre
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_k1_0 (.I0(a_k1_pre[g_k_b]), .O(a_k1_pre_0[g_k_b]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_k1_1 (.I0(a_k1_pre[g_k_b]), .O(a_k1_pre_1[g_k_b]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_k2_0 (.I0(a_k2_pre[g_k_b]), .O(a_k2_pre_0[g_k_b]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_k2_1 (.I0(a_k2_pre[g_k_b]), .O(a_k2_pre_1[g_k_b]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_k3_0 (.I0(a_k3_pre[g_k_b]), .O(a_k3_pre_0[g_k_b]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_k3_1 (.I0(a_k3_pre[g_k_b]), .O(a_k3_pre_1[g_k_b]));
+		end
+	endgenerate
+`else
+	wire [2:0] a_k1_pre_0 = a_k1_pre;
+	wire [2:0] a_k1_pre_1 = a_k1_pre;
+	wire [2:0] a_k2_pre_0 = a_k2_pre;
+	wire [2:0] a_k2_pre_1 = a_k2_pre;
+	wire [2:0] a_k3_pre_0 = a_k3_pre;
+	wire [2:0] a_k3_pre_1 = a_k3_pre;
+`endif
+
 	genvar lb, lbh;
 	generate
 		for (lb = 0; lb < NPHYS; lb = lb + 1) begin : g_aearly
 			wire [4:0] a_ln = a_grp_base[4:0] | lb[4:0];
 			(* dont_touch = "true" *) wire a_fp_l = (a_unit == ATG_UNIT_FPU) || (a_unit == ATG_UNIT_XU);
 			(* dont_touch = "true" *) wire a_pk_l = (a_unit == ATG_UNIT_PK);
+			wire [2:0] a_k1_in = (lb < 4) ? a_k1_pre_0 : a_k1_pre_1;
+			wire [2:0] a_k2_in = (lb < 4) ? a_k2_pre_0 : a_k2_pre_1;
+			wire [2:0] a_k3_in = (lb < 4) ? a_k3_pre_0 : a_k3_pre_1;
 			wire [31:0] a_op1_l, a_op2_l, a_op3_l;
 			assign a_early_va_comb[lb*32 +: 32] = fmod(a_op1_l, a_mods[0], a_mods[1], a_fp_l, a_pk_l);
 			assign a_early_vb_comb[lb*32 +: 32] = fmod(a_op2_l, a_mods[2], a_mods[3], a_fp_l, a_pk_l);
@@ -467,14 +508,14 @@ module atg_su_opd #(
 						a_k3_lo_r <= 3'd0; a_k3_hi_r <= 3'd0;
 					end else begin
 						if (a_k_we_lo) begin
-							a_k1_lo_r <= opk(a_n1, q_info[ATG_WI_KIND +: 2]);
-							a_k2_lo_r <= opk(a_n2, q_info[ATG_WI_KIND +: 2]);
-							a_k3_lo_r <= opk(a_n3, q_info[ATG_WI_KIND +: 2]);
+							a_k1_lo_r <= a_k1_in;
+							a_k2_lo_r <= a_k2_in;
+							a_k3_lo_r <= a_k3_in;
 						end
 						if (a_k_we_hi) begin
-							a_k1_hi_r <= opk(a_n1, q_info[ATG_WI_KIND +: 2]);
-							a_k2_hi_r <= opk(a_n2, q_info[ATG_WI_KIND +: 2]);
-							a_k3_hi_r <= opk(a_n3, q_info[ATG_WI_KIND +: 2]);
+							a_k1_hi_r <= a_k1_in;
+							a_k2_hi_r <= a_k2_in;
+							a_k3_hi_r <= a_k3_in;
 						end
 					end
 				end
