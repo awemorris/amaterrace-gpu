@@ -902,7 +902,7 @@ module atg_su_pk_half #(
 `endif
 			wire [CW4_W-1:0] cw_in = s3_big_s ? s3_big_cw[gcw4*16 +: CW4_W] :
 				s3_near_s ? s3_zal_cw[gcw4*16 +: CW4_W] :
-				(gcw4 == 0 ? 16'd1 : {CW4_W{1'b0}});
+				(gcw4 == 0 ? {{(CW4_W-1){1'b0}}, 1'b1} : {CW4_W{1'b0}});
 			always @(posedge clk) begin
 				if (clr_s)
 					s4_cw[gcw4*16 +: CW4_W] <= {CW4_W{1'b0}};
