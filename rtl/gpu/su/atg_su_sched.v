@@ -607,7 +607,6 @@ module atg_su_sched #(
 			st_free_r <= {NWARPS{1'b1}};
 			st_rdy_r  <= {NWARPS{1'b0}};
 			st_rof_r  <= {NWARPS{1'b0}};
-			pc <= {(NWARPS*16){1'b0}};
 			gap <= {(NWARPS*GAP_W){1'b0}};
 			gap_z_r <= {NWARPS{1'b1}};
 			tag <= {(NWARPS*4){1'b0}};
@@ -639,12 +638,6 @@ module atg_su_sched #(
 
 				if (st_free_r[w])
 					tag[(w)*4 +: 4] <= wg_tag;
-				if (st_free_r[w] || (st[(w)*3 +: 3] == S_ALLOC))
-					pc[(w)*16 +: 16] <= 16'd0;
-				else if ((st[(w)*3 +: 3] == S_FETCH) && fb_valid && (fb_warp == w[WARP_W-1:0]) && (fb_kind == 2'd0))
-					pc[(w)*16 +: 16] <= pc_p1[(w)*16 +: 16];
-				else if ((st[(w)*3 +: 3] == S_WC) && wc_valid && (wc_warp == w[WARP_W-1:0]))
-					pc[(w)*16 +: 16] <= wc_pc;
 			end
 			hold_v <= fsel_v && !f_ready;
 			hold_w <= fsel;
@@ -701,6 +694,51 @@ module atg_su_sched #(
 			end
 		end
 	end
+
+	genvar gwp;
+	generate
+		for (gwp = 0; gwp < NWARPS; gwp = gwp + 1) begin : g_pc_ctrl
+			wire clr_raw   = st_free_r[gwp] || (st[gwp*3 +: 3] == S_ALLOC);
+			wire fetch_raw = (st[gwp*3 +: 3] == S_FETCH) && fb_valid && (fb_warp == gwp[WARP_W-1:0]) && (fb_kind == 2'd0);
+			wire wc_raw    = (st[gwp*3 +: 3] == S_WC) && wc_valid && (wc_warp == gwp[WARP_W-1:0]);
+			wire clr_lo, clr_hi, fetch_lo, fetch_hi, wc_lo, wc_hi;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pclr0 (.I0(clr_raw), .O(clr_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pclr1 (.I0(clr_raw), .O(clr_hi));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pfet0 (.I0(fetch_raw), .O(fetch_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pfet1 (.I0(fetch_raw), .O(fetch_hi));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pwc0  (.I0(wc_raw), .O(wc_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pwc1  (.I0(wc_raw), .O(wc_hi));
+`else
+			assign clr_lo   = clr_raw;
+			assign clr_hi   = clr_raw;
+			assign fetch_lo = fetch_raw;
+			assign fetch_hi = fetch_raw;
+			assign wc_lo    = wc_raw;
+			assign wc_hi    = wc_raw;
+`endif
+			always @(posedge clk) begin
+				if (rst_p) begin
+					pc[gwp*16 +: 8]     <= 8'd0;
+					pc[gwp*16 + 8 +: 8] <= 8'd0;
+				end else begin
+					if (clr_lo)
+						pc[gwp*16 +: 8] <= 8'd0;
+					else if (fetch_lo)
+						pc[gwp*16 +: 8] <= pc_p1[gwp*16 +: 8];
+					else if (wc_lo)
+						pc[gwp*16 +: 8] <= wc_pc[7:0];
+
+					if (clr_hi)
+						pc[gwp*16 + 8 +: 8] <= 8'd0;
+					else if (fetch_hi)
+						pc[gwp*16 + 8 +: 8] <= pc_p1[gwp*16 + 8 +: 8];
+					else if (wc_hi)
+						pc[gwp*16 + 8 +: 8] <= wc_pc[15:8];
+				end
+			end
+		end
+	endgenerate
 
 	wire unused_ok = &{1'b0, fl_info[63:49], wk[3], lanes_r[23:9], rot1[8], slot_rdy_nogap,
 		w_fa_co_unused, wdata_m1_bo_unused, ix_co_unused, iy_co_unused, iz_co_unused,
