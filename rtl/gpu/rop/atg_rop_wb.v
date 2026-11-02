@@ -113,19 +113,12 @@ module atg_rop_wb #(
 	reg wait_rsp;
 	reg [4:0] idle;
 
-	/* Pure-LUT +1 increments for j, g, idle (0 CARRY4s) */
-	wire [1:0] j1 = {j[1] ^ j[0], ~j[0]};
-	wire [1:0] g1 = {g[1] ^ g[0], ~g[0]};
-	wire idle_c1 = idle[1] & idle[0];
-	wire idle_c2 = idle[2] & idle_c1;
-	wire idle_c3 = idle[3] & idle_c2;
-	wire [4:0] idle1 = {
-		idle[4] ^ idle_c3,
-		idle[3] ^ idle_c2,
-		idle[2] ^ idle_c1,
-		idle[1] ^ idle[0],
-		~idle[0]
-	};
+	wire [1:0] j1, g1;
+	wire [4:0] idle1;
+	wire j1_co_unused, g1_co_unused, idle1_co_unused;
+	am_add #(.W(2)) u_inc_j (.a(j), .b(2'd1), .ci(1'b0), .s(j1), .co(j1_co_unused));
+	am_add #(.W(2)) u_inc_g (.a(g), .b(2'd1), .ci(1'b0), .s(g1), .co(g1_co_unused));
+	am_add #(.W(5)) u_inc_idle (.a(idle), .b(5'd1), .ci(1'b0), .s(idle1), .co(idle1_co_unused));
 
 	reg [31:0] xy;
 	reg [15:0] mask;
@@ -1525,7 +1518,7 @@ module atg_rop_wb #(
 `endif
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, pre_in_ps[4:2], (MRT_COUNT != 0),
-		wb_rb1_co, wb_addr_co, tag_x0_co, tag_x1_co, off_p1_co_unused, p_addr, p_addr1, p_row_base1, p_xoff,
+		wb_rb1_co, wb_addr_co, tag_x0_co, tag_x1_co, off_p1_co_unused, j1_co_unused, g1_co_unused, idle1_co_unused, p_addr, p_addr1, p_row_base1, p_xoff,
 		alloc_ready, use_stream_res, commit_v_rep, stream_ok, stream_hit_w, lce_mid, xsh_t0[0],
 		cached_drop, cached_row_base0, cached_row_base1, cached_xsh, cached_multi, cached_np, cached_path, cached_read,
 		cached_tag_x0[LA_W-1:13], cached_tag_x1[LA_W-1:13]};
