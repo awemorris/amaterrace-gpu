@@ -361,6 +361,9 @@ module atg_su_lane #(
 	wire [NPHYS*2-1:0] is_ballot_h_lo, is_ballot_h_hi;
 	wire [NPHYS*2-1:0] is_vote_h_lo, is_vote_h_hi;
 	wire [NPHYS*2-1:0] vote_val_h_lo, vote_val_h_hi;
+	(* shreg_extract = "no" *) reg [NPHYS*2-1:0] is_ballot_d, is_vote_d;
+	(* shreg_extract = "no" *) reg [15:0] bal_h_d [0:NPHYS*2-1];
+	(* shreg_extract = "no" *) reg [NPHYS*2-1:0] vote_val_d;
 	wire emit_ctrl;
 	wire emit_h_raw = (st == S_EMIT);
 	wire emit_h_raw_lo, emit_h_raw_hi;
@@ -430,6 +433,11 @@ module atg_su_lane #(
 			e_cnt <= {GRP_W{1'b0}};
 			for (k = 0; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= {EW{1'b0}};
+			is_ballot_d <= {(NPHYS*2){1'b0}};
+			is_vote_d   <= {(NPHYS*2){1'b0}};
+			vote_val_d  <= {(NPHYS*2){1'b0}};
+			for (kp = 0; kp < NPHYS * 2; kp = kp + 1)
+				bal_h_d[kp] <= 16'd0;
 		end else begin
 			if (emit_ctrl)
 				pipe[0][EW-1:DW] <= {wrd, x_warp, e_cnt, x_uop[ATG_UOP_RD +: 7], z_lanes};
@@ -437,22 +445,34 @@ module atg_su_lane #(
 				pipe[0][EW-1:DW] <= {(EW-DW){1'b0}};
 
 			for (kp = 0; kp < NPHYS * 2; kp = kp + 1) begin
+				is_ballot_d[kp] <= is_ballot_h_lo[kp];
+				is_vote_d[kp]   <= is_vote_h_lo[kp];
+				bal_h_d[kp]     <= bal_h[kp];
+				vote_val_d[kp]  <= vote_val_h_lo[kp];
+
 				if (emit_h_lo[kp])
-					pipe[0][kp*16 +: 8] <= is_ballot_h_lo[kp] ? bal_h[kp][7:0] :
-					                       is_vote_h_lo[kp]   ? {8{vote_val_h_lo[kp]}} :
-					                       z_h[kp][7:0];
+					pipe[0][kp*16 +: 8] <= z_h[kp][7:0];
 				else
 					pipe[0][kp*16 +: 8] <= 8'd0;
 
 				if (emit_h_hi[kp])
-					pipe[0][kp*16 + 8 +: 8] <= is_ballot_h_hi[kp] ? bal_h[kp][15:8] :
-					                          is_vote_h_hi[kp]   ? {8{vote_val_h_hi[kp]}} :
-					                          z_h[kp][15:8];
+					pipe[0][kp*16 + 8 +: 8] <= z_h[kp][15:8];
 				else
 					pipe[0][kp*16 + 8 +: 8] <= 8'd0;
 			end
 
-			for (k = 1; k < SHORT_LAT - 1; k = k + 1)
+			pipe[1][EW-1:DW] <= pipe[0][EW-1:DW];
+			for (kp = 0; kp < NPHYS * 2; kp = kp + 1) begin
+				pipe[1][kp*16 +: 8] <= is_ballot_d[kp] ? bal_h_d[kp][7:0] :
+				                       is_vote_d[kp]   ? {8{vote_val_d[kp]}} :
+				                       pipe[0][kp*16 +: 8];
+
+				pipe[1][kp*16 + 8 +: 8] <= is_ballot_d[kp] ? bal_h_d[kp][15:8] :
+				                          is_vote_d[kp]   ? {8{vote_val_d[kp]}} :
+				                          pipe[0][kp*16 + 8 +: 8];
+			end
+
+			for (k = 2; k < SHORT_LAT - 1; k = k + 1)
 				pipe[k] <= pipe[k-1];
 
 			pipe[SHORT_LAT-1][EW-1:DW] <= r4_valid ?

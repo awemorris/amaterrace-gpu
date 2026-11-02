@@ -388,8 +388,29 @@ module atg_su_pk_half #(
 		 * Stage 1 (EX1): Latch inputs and dedicated multiplier operands (0 Pre-DSP LUTs)
 		 * ===================================================================== */
 		wire s0_is_int = o == ATG_PK_IADD2[3:0] || o == ATG_PK_ISUB2[3:0] || o == ATG_PK_IMUL2[3:0];
-		wire s0_use_hb_b = (o == ATG_PK_FMUL2[3:0] || o == ATG_PK_FFMA2[3:0]);
-		wire [15:0] s0_fy = s0_use_hb_b ? hb : 16'h3C00;
+		reg [15:0] s0_fy, s0_fz;
+		reg        s0_fnoc;
+		always @(*) begin
+			s0_fy = 16'h3C00;
+			s0_fz = hb;
+			s0_fnoc = 1'b0;
+			case (o)
+			ATG_PK_FSUB2[3:0]: s0_fz = {!hb[15], hb[14:0]};
+			ATG_PK_FMUL2[3:0]: begin
+				s0_fy = hb;
+				s0_fz = 16'd0;
+				s0_fnoc = 1'b1;
+			end
+			ATG_PK_FFMA2[3:0]: begin
+				s0_fy = hb;
+				s0_fz = hc;
+			end
+			default: ;
+			endcase
+		end
+		wire [15:0] s0_fa = atg_su_hflush(ha);
+		wire [15:0] s0_fb = atg_su_hflush(s0_fy);
+		wire [15:0] s0_fc = atg_su_hflush(s0_fz);
 		wire s0_za = ha[14:10] == 5'd0;
 		wire s0_zb = s0_fy[14:10] == 5'd0;
 		wire [10:0] s0_ma = {!s0_za, s0_za ? 10'd0 : ha[9:0]};
@@ -400,6 +421,8 @@ module atg_su_pk_half #(
 		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s1_ovr_val;
 		(* shreg_extract = "no", max_fanout = 12 *) reg [3:0]  s1_o;
 		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s1_ha, s1_hb, s1_hc;
+		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s1_fa, s1_fb, s1_fc;
+		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_fnoc;
 		(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s1_r;
 		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_sat;
 		(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s1_xw;
@@ -415,6 +438,10 @@ module atg_su_pk_half #(
 				s1_ha      <= 16'd0;
 				s1_hb      <= 16'd0;
 				s1_hc      <= 16'd0;
+				s1_fa      <= 16'd0;
+				s1_fb      <= 16'd0;
+				s1_fc      <= 16'd0;
+				s1_fnoc    <= 1'b0;
 				s1_r       <= 3'd0;
 				s1_sat     <= 1'b0;
 				s1_xw      <= 32'd0;
@@ -428,6 +455,10 @@ module atg_su_pk_half #(
 				s1_ha      <= ha;
 				s1_hb      <= hb;
 				s1_hc      <= hc;
+				s1_fa      <= s0_fa;
+				s1_fb      <= s0_fb;
+				s1_fc      <= s0_fc;
+				s1_fnoc    <= s0_fnoc;
 				s1_r       <= r;
 				s1_sat     <= sat;
 				s1_xw      <= xw;
@@ -454,30 +485,6 @@ module atg_su_pk_half #(
 		/* =====================================================================
 		 * Stage 1 -> Stage 2: Parallel small adders & operand decode
 		 * ===================================================================== */
-		reg [15:0] s1_fy, s1_fz;
-		reg        s1_fnoc;
-		always @(*) begin
-			s1_fy = 16'h3C00;
-			s1_fz = s1_hb;
-			s1_fnoc = 1'b0;
-			case (s1_o)
-			ATG_PK_FSUB2[3:0]: s1_fz = {!s1_hb[15], s1_hb[14:0]};
-			ATG_PK_FMUL2[3:0]: begin
-				s1_fy = s1_hb;
-				s1_fz = 16'd0;
-				s1_fnoc = 1'b1;
-			end
-			ATG_PK_FFMA2[3:0]: begin
-				s1_fy = s1_hb;
-				s1_fz = s1_hc;
-			end
-			default: ;
-			endcase
-		end
-
-		wire [15:0] s1_fa = atg_su_hflush(s1_ha);
-		wire [15:0] s1_fb = atg_su_hflush(s1_fy);
-		wire [15:0] s1_fc = atg_su_hflush(s1_fz);
 		wire [4:0]  s1_ea = s1_fa[14:10];
 		wire [4:0]  s1_eb = s1_fb[14:10];
 		wire [4:0]  s1_ec = s1_fc[14:10];
@@ -548,7 +555,7 @@ module atg_su_pk_half #(
 		am_addsub #(.W(16)) u_s1_iadd (.a(s1_ha), .b(s1_hb), .sub(s1_o == ATG_PK_ISUB2[3:0]), .s(s1_isum), .co(s1_co_unused[4]));
 		am_sub #(.W(10)) u_s1_erp (.a({2'd0, s1_xw[30:23]}), .b(10'd112), .bi(1'b0), .d(s1_er_p), .bo(s1_co_unused[5]));
 
-		wire [15:0] s1_haf = atg_su_hflush(s1_ha);
+		wire [15:0] s1_haf = s1_fa;
 		wire [15:0] s1_hbf = atg_su_hflush(s1_hb);
 		wire        s1_hb_z = s1_hb[14:10] == 5'd0;
 		wire        s1_hb_nan = s1_hb[14:10] == 5'h1F && s1_hb[9:0] != 10'd0;
