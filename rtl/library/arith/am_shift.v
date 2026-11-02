@@ -53,6 +53,7 @@ module am_shift #(
 			assign rsh = fill ? (log_rsh | mask) : log_rsh;
 		end else begin : g_rsh_tree
 			wire [SW-1:0] amt_br [0:NBR-1];
+			wire [W-1:0] a_br [0:NBR-1];
 			wire fill_br [0:NBR-1];
 			for (g_br = 0; g_br < NBR; g_br = g_br + 1) begin : g_br_buf
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_br_amt
@@ -60,6 +61,13 @@ module am_shift #(
 					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_br (.I0(amt[gb]), .O(amt_br[g_br][gb]));
 `else
 					assign amt_br[g_br][gb] = amt[gb];
+`endif
+				end
+				for (gb = 0; gb < W; gb = gb + 1) begin : g_br_a
+`ifdef SYNTH_KINTEX7
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_ba_br (.I0(a[gb]), .O(a_br[g_br][gb]));
+`else
+					assign a_br[g_br][gb] = a[gb];
 `endif
 				end
 `ifdef SYNTH_KINTEX7
@@ -86,7 +94,7 @@ module am_shift #(
 `else
 				assign fill_nib = fill_br[BR_IDX];
 `endif
-				wire [W-1:0] log_rsh = a >> amt_nib;
+				wire [W-1:0] log_rsh = a_br[BR_IDX] >> amt_nib;
 				wire [W-1:0] mask = ~({W{1'b1}} >> amt_nib);
 				assign rsh[g_nib * 4 +: NIB_W] = fill_nib ?
 					(log_rsh[g_nib * 4 +: NIB_W] | mask[g_nib * 4 +: NIB_W]) :
@@ -107,12 +115,20 @@ module am_shift #(
 			assign lsh = a << amt;
 		end else begin : g_lsh_tree
 			wire [SW-1:0] amt_br [0:NBR-1];
+			wire [W-1:0] a_br [0:NBR-1];
 			for (g_br = 0; g_br < NBR; g_br = g_br + 1) begin : g_br_buf
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_br_amt
 `ifdef SYNTH_KINTEX7
 					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_br (.I0(amt[gb]), .O(amt_br[g_br][gb]));
 `else
 					assign amt_br[g_br][gb] = amt[gb];
+`endif
+				end
+				for (gb = 0; gb < W; gb = gb + 1) begin : g_br_a
+`ifdef SYNTH_KINTEX7
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_ba_br (.I0(a[gb]), .O(a_br[g_br][gb]));
+`else
+					assign a_br[g_br][gb] = a[gb];
 `endif
 				end
 			end
@@ -128,7 +144,7 @@ module am_shift #(
 					assign amt_nib[gb] = amt_br[BR_IDX][gb];
 `endif
 				end
-				wire [W-1:0] lshifted = a << amt_nib;
+				wire [W-1:0] lshifted = a_br[BR_IDX] << amt_nib;
 				assign lsh[g_nib * 4 +: NIB_W] = lshifted[g_nib * 4 +: NIB_W];
 			end
 		end

@@ -808,8 +808,8 @@ module atg_su_pk_half #(
 		am_shift #(.W(47), .SW(6), .DIR(2)) u_s3_al (
 			.a({36'd0, s3_mc_sh}), .amt(s3_dp37[5:0]), .left(1'b1), .arith(1'b0), .y(s3_zal)
 		);
-		wire [36:0] s3_cw = s3_big ? {1'b0, s3_mc_cw, 25'd0} :
-			s3_near ? {s3_zal[46:11], s3_zal[10] | (|s3_zal[9:0])} : 37'd1;
+		wire [36:0] s3_zal_cw = {s3_zal[46:11], s3_zal[10] | (|s3_zal[9:0])};
+		wire [36:0] s3_big_cw = {1'b0, s3_mc_cw, 25'd0};
 		wire [6:0]  s3_eb = (!s3_zc && s3_big) ? s3_eb_c : s3_eb_t;
 
 		reg [7:0] s3_other_lo, s3_other_hi;
@@ -890,16 +890,24 @@ module atg_su_pk_half #(
 			localparam CW4_W = (gcw4 == 2) ? 5 : 16;
 			wire clr_s_raw = rst_p || s3_zc;
 			wire clr_s;
+			wire s3_big_s, s3_near_s;
 `ifdef SYNTH_KINTEX7
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_clr (.I0(clr_s_raw), .O(clr_s));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bg  (.I0(s3_big),    .O(s3_big_s));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_nr  (.I0(s3_near),   .O(s3_near_s));
 `else
 			assign clr_s = clr_s_raw;
+			assign s3_big_s = s3_big;
+			assign s3_near_s = s3_near;
 `endif
+			wire [CW4_W-1:0] cw_in = s3_big_s ? s3_big_cw[gcw4*16 +: CW4_W] :
+				s3_near_s ? s3_zal_cw[gcw4*16 +: CW4_W] :
+				(gcw4 == 0 ? 16'd1 : {CW4_W{1'b0}});
 			always @(posedge clk) begin
 				if (clr_s)
 					s4_cw[gcw4*16 +: CW4_W] <= {CW4_W{1'b0}};
 				else
-					s4_cw[gcw4*16 +: CW4_W] <= s3_cw[gcw4*16 +: CW4_W];
+					s4_cw[gcw4*16 +: CW4_W] <= cw_in;
 			end
 		end
 
