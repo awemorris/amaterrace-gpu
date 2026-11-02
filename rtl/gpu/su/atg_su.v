@@ -37,6 +37,21 @@ module atg_su_skid #(
 	output wire [WIDTH-1:0] out_data
 );
 	localparam N_SL = (WIDTH + SL_S - 1) / SL_S;
+	localparam N_SK_GRP = (N_SL + 3) / 4;
+	wire [N_SK_GRP-1:0] out_ready_g;
+	wire [N_SK_GRP-1:0] in_valid_g;
+	genvar gkg;
+	generate
+		for (gkg = 0; gkg < N_SK_GRP; gkg = gkg + 1) begin : g_sk_grp
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rdy (.I0(out_ready), .O(out_ready_g[gkg]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val (.I0(in_valid),  .O(in_valid_g[gkg]));
+`else
+			assign out_ready_g[gkg] = out_ready;
+			assign in_valid_g[gkg]  = in_valid;
+`endif
+		end
+	endgenerate
 
 	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	(* keep = "true", max_fanout = 12 *) reg skid_valid;
@@ -46,14 +61,16 @@ module atg_su_skid #(
 		for (gs = 0; gs < N_SL; gs = gs + 1) begin : g_skid_sl
 			localparam SL_B = gs * SL_S;
 			localparam SL_W = (SL_B + SL_S <= WIDTH) ? SL_S : (WIDTH - SL_B);
+			wire sl_out_ready = out_ready_g[gs / 4];
+			wire sl_in_valid  = in_valid_g[gs / 4];
 			(* max_fanout = 12 *) reg [SL_W-1:0] out_d_sl;
 			(* max_fanout = 12 *) reg [SL_W-1:0] skid_d_sl;
 			(* dont_touch = "true" *) reg out_v_sl;
 			(* dont_touch = "true" *) reg skid_v_sl;
 			(* dont_touch = "true" *) reg in_r_sl;
-			wire load_out_s = skid_v_sl ? out_ready : (in_valid && (out_ready || !out_v_sl));
-			wire skid_load_s = in_valid && in_r_sl;
-			wire [SL_W-1:0] next_out_s = skid_v_sl ? skid_d_sl : in_data[SL_B +: SL_W];
+			(* dont_touch = "true" *) wire load_out_s = skid_v_sl ? sl_out_ready : (sl_in_valid && (sl_out_ready || !out_v_sl));
+			(* dont_touch = "true" *) wire skid_load_s = sl_in_valid && in_r_sl;
+			(* dont_touch = "true" *) wire [SL_W-1:0] next_out_s = skid_v_sl ? skid_d_sl : in_data[SL_B +: SL_W];
 
 			always @(posedge clk) begin
 				if (rst_p) begin
@@ -68,15 +85,15 @@ module atg_su_skid #(
 					if (skid_load_s)
 						skid_d_sl <= in_data[SL_B +: SL_W];
 					if (skid_v_sl) begin
-						if (out_ready) begin
+						if (sl_out_ready) begin
 							out_v_sl  <= 1'b1;
 							skid_v_sl <= 1'b0;
 							in_r_sl   <= 1'b1;
 						end
 					end else begin
-						if (out_ready || !out_v_sl) begin
-							out_v_sl <= in_valid;
-						end else if (in_valid && in_r_sl) begin
+						if (sl_out_ready || !out_v_sl) begin
+							out_v_sl <= sl_in_valid;
+						end else if (sl_in_valid && in_r_sl) begin
 							skid_v_sl <= 1'b1;
 							in_r_sl   <= 1'b0;
 						end
@@ -829,10 +846,10 @@ module atg_su #(
 		.x_end_out(x_end)
 	);
 
-	wire [DW-1:0] x_a_g0, x_a_g1, x_a_g2, x_a_g3, x_a_g4;
-	wire [DW-1:0] x_b_g0, x_b_g1, x_b_g2, x_b_g3, x_b_g4;
-	wire [DW-1:0] x_c_g0, x_c_g1, x_c_g2, x_c_g3, x_c_g4;
-	wire [NPHYS*2-1:0] x_mask_g0, x_mask_g1, x_mask_g2, x_mask_g3, x_mask_g4;
+	wire [DW-1:0] x_a_g0, x_a_g1, x_a_g2, x_a_g3, x_a_g4, x_a_g5;
+	wire [DW-1:0] x_b_g0, x_b_g1, x_b_g2, x_b_g3, x_b_g4, x_b_g5;
+	wire [DW-1:0] x_c_g0, x_c_g1, x_c_g2, x_c_g3, x_c_g4, x_c_g5;
+	wire [NPHYS*2-1:0] x_mask_g0, x_mask_g1, x_mask_g2, x_mask_g3, x_mask_g4, x_mask_g5;
 	genvar g_opb;
 	generate
 		for (g_opb = 0; g_opb < DW; g_opb = g_opb + 1) begin : g_op_buf
@@ -842,32 +859,38 @@ module atg_su #(
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xa2 (.I0(x_a[g_opb]), .O(x_a_g2[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xa3 (.I0(x_a[g_opb]), .O(x_a_g3[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xa4 (.I0(x_a[g_opb]), .O(x_a_g4[g_opb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xa5 (.I0(x_a[g_opb]), .O(x_a_g5[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xb0 (.I0(x_b[g_opb]), .O(x_b_g0[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xb1 (.I0(x_b[g_opb]), .O(x_b_g1[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xb2 (.I0(x_b[g_opb]), .O(x_b_g2[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xb3 (.I0(x_b[g_opb]), .O(x_b_g3[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xb4 (.I0(x_b[g_opb]), .O(x_b_g4[g_opb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xb5 (.I0(x_b[g_opb]), .O(x_b_g5[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xc0 (.I0(x_c[g_opb]), .O(x_c_g0[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xc1 (.I0(x_c[g_opb]), .O(x_c_g1[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xc2 (.I0(x_c[g_opb]), .O(x_c_g2[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xc3 (.I0(x_c[g_opb]), .O(x_c_g3[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xc4 (.I0(x_c[g_opb]), .O(x_c_g4[g_opb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xc5 (.I0(x_c[g_opb]), .O(x_c_g5[g_opb]));
 `else
 			assign x_a_g0[g_opb] = x_a[g_opb];
 			assign x_a_g1[g_opb] = x_a[g_opb];
 			assign x_a_g2[g_opb] = x_a[g_opb];
 			assign x_a_g3[g_opb] = x_a[g_opb];
 			assign x_a_g4[g_opb] = x_a[g_opb];
+			assign x_a_g5[g_opb] = x_a[g_opb];
 			assign x_b_g0[g_opb] = x_b[g_opb];
 			assign x_b_g1[g_opb] = x_b[g_opb];
 			assign x_b_g2[g_opb] = x_b[g_opb];
 			assign x_b_g3[g_opb] = x_b[g_opb];
 			assign x_b_g4[g_opb] = x_b[g_opb];
+			assign x_b_g5[g_opb] = x_b[g_opb];
 			assign x_c_g0[g_opb] = x_c[g_opb];
 			assign x_c_g1[g_opb] = x_c[g_opb];
 			assign x_c_g2[g_opb] = x_c[g_opb];
 			assign x_c_g3[g_opb] = x_c[g_opb];
 			assign x_c_g4[g_opb] = x_c[g_opb];
+			assign x_c_g5[g_opb] = x_c[g_opb];
 `endif
 		end
 		for (g_opb = 0; g_opb < NPHYS*2; g_opb = g_opb + 1) begin : g_mask_buf
@@ -877,12 +900,14 @@ module atg_su #(
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xm2 (.I0(x_mask[g_opb]), .O(x_mask_g2[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xm3 (.I0(x_mask[g_opb]), .O(x_mask_g3[g_opb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xm4 (.I0(x_mask[g_opb]), .O(x_mask_g4[g_opb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xm5 (.I0(x_mask[g_opb]), .O(x_mask_g5[g_opb]));
 `else
 			assign x_mask_g0[g_opb] = x_mask[g_opb];
 			assign x_mask_g1[g_opb] = x_mask[g_opb];
 			assign x_mask_g2[g_opb] = x_mask[g_opb];
 			assign x_mask_g3[g_opb] = x_mask[g_opb];
 			assign x_mask_g4[g_opb] = x_mask[g_opb];
+			assign x_mask_g5[g_opb] = x_mask[g_opb];
 `endif
 		end
 	endgenerate
@@ -1090,8 +1115,8 @@ module atg_su #(
 	atg_su_pt #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .UOP_W(UOP_W), .PT_ENTRIES(PT_ENTRIES), .VARY_WORDS(VARY_WORDS)) pt (
 		.scrub(scrub_pt), .scrub_busy(scb_pt),
 		.clk(clk), .rst_n(rst_n),
-		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_uop(x_uop), .x_b(x_b_g4),
-		.x_mask(x_mask_g4), .x_info(x_info),
+		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_uop(x_uop), .x_b(x_b_g5),
+		.x_mask(x_mask_g5), .x_info(x_info),
 		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
 		.pt_ok(pt_ok), .pt_take(vl_gnt), .pt_warp(vl_slot), .pt_base(vl_ptbase),
@@ -1104,7 +1129,7 @@ module atg_su #(
 		.pop(rq_pop), .pop_data(rq_pop_data), .push(rq_push), .push_data(rq_push_data),
 		.empty(rq_empty), .full(rq_full),
 		.ctl_valid(x_valid && x_grp == {GRP_W{1'b0}} && x_uop[3:0] == 4'd15),
-		.ctl_data(x_a_g4[31:0]),
+		.ctl_data(x_a_g5[31:0]),
 		.sa_push_valid(sa_push_valid), .sa_push_ready(sa_push_ready),
 		.sa_push_data(sa_push_data), .sa_pop_valid(sa_pop_valid), .sa_pop_ready(sa_pop_ready),
 		.sa_pop_data(sa_pop_data), .sa_ctl_valid(sa_ctl_valid), .sa_ctl_data(sa_ctl_data),
