@@ -57,28 +57,28 @@ module atg_su_pk #(
 
 	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
-	(* max_fanout = 12 *) wire [3:0] op = x_uop[ATG_UOP_OP +: 4];
+	wire [3:0] op = x_uop[ATG_UOP_OP +: 4];
 	/* PK_SHARED: an fp16 operation goes to atg_su_fpu; busy is the cycle
 	 * after it is taken (as atg_su_fpu's). */
 	wire pk_fp = op <= ATG_PK_FMAX2[3:0] || (op >= ATG_PK_FCMPLT2[3:0] && op <= ATG_PK_FCMPNE2[3:0]);
-	(* max_fanout = 12 *) reg busy;
+	reg busy;
 	wire grp = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_PK && x_uop[ATG_UOP_WRD] && !busy;
-	(* max_fanout = 12 *) wire mine = grp && !(SH && pk_fp);
+	wire mine = grp && !(SH && pk_fp);
 	always @(posedge clk)
 		if (rst_p)
 			busy <= 1'b0;
 		else
 			busy <= SH && grp && pk_fp;
-	(* max_fanout = 12 *) wire [2:0] rm = x_uop[ATG_UOP_RM +: 3];
-	(* max_fanout = 12 *) wire [1:0] hsel = x_uop[ATG_UOP_HSEL +: 2];
-	(* max_fanout = 12 *) wire sub = x_uop[ATG_UOP_SUB];
-	(* max_fanout = 12 *) wire sat = x_uop[ATG_UOP_MOD + 6];
+	wire [2:0] rm = x_uop[ATG_UOP_RM +: 3];
+	wire [1:0] hsel = x_uop[ATG_UOP_HSEL +: 2];
+	wire sub = x_uop[ATG_UOP_SUB];
+	wire sat = x_uop[ATG_UOP_MOD + 6];
 
-	(* max_fanout = 12 *) wire is_unpack = (op == ATG_PK_UNPACKH[3:0]);
-	(* max_fanout = 12 *) wire is_swaph  = (op == ATG_PK_SWAPH[3:0]);
-	(* max_fanout = 12 *) wire is_packh  = (op == ATG_PK_PACKH[3:0]);
-	(* max_fanout = 12 *) wire ovr_lo = is_unpack || is_swaph || (!is_packh && (PACKED == 0 || hsel == 2'd2));
-	(* max_fanout = 12 *) wire ovr_hi = is_unpack || is_swaph || (!is_packh && (PACKED == 0 || hsel == 2'd1));
+	wire is_unpack = (op == ATG_PK_UNPACKH[3:0]);
+	wire is_swaph  = (op == ATG_PK_SWAPH[3:0]);
+	wire is_packh  = (op == ATG_PK_PACKH[3:0]);
+	wire ovr_lo = is_unpack || is_swaph || (!is_packh && (PACKED == 0 || hsel == 2'd2));
+	wire ovr_hi = is_unpack || is_swaph || (!is_packh && (PACKED == 0 || hsel == 2'd1));
 
 	genvar l;
 	generate
@@ -93,8 +93,44 @@ module atg_su_pk #(
 		wire [31:0] lc = x_c[l*32 +: 32];
 `endif
 		wire [31:0] lb = hsel == 2'd3 ? {lb0[15:0], lb0[31:16]} : lb0;
+		wire sub_l;
+		wire [3:0] op_lo_l, op_hi_l;
+		wire [2:0] rm_lo_l, rm_hi_l;
+		wire sat_lo_l, sat_hi_l;
+		wire mine_lo_l, mine_hi_l;
+		wire ovr_lo_l, ovr_hi_l;
+`ifdef SYNTH_KINTEX7
+		genvar gob;
+		for (gob = 0; gob < 4; gob = gob + 1) begin : g_op_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bop_lo (.I0(op[gob]), .O(op_lo_l[gob]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bop_hi (.I0(op[gob]), .O(op_hi_l[gob]));
+		end
+		for (gob = 0; gob < 3; gob = gob + 1) begin : g_rm_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_brm_lo (.I0(rm[gob]), .O(rm_lo_l[gob]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_brm_hi (.I0(rm[gob]), .O(rm_hi_l[gob]));
+		end
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsat_lo (.I0(sat), .O(sat_lo_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsat_hi (.I0(sat), .O(sat_hi_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bmine_lo (.I0(mine), .O(mine_lo_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bmine_hi (.I0(mine), .O(mine_hi_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bovr_lo (.I0(ovr_lo), .O(ovr_lo_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bovr_hi (.I0(ovr_hi), .O(ovr_hi_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsub    (.I0(sub),    .O(sub_l));
+`else
+		assign op_lo_l = op;
+		assign op_hi_l = op;
+		assign rm_lo_l = rm;
+		assign rm_hi_l = rm;
+		assign sat_lo_l = sat;
+		assign sat_hi_l = sat;
+		assign mine_lo_l = mine;
+		assign mine_hi_l = mine;
+		assign ovr_lo_l = ovr_lo;
+		assign ovr_hi_l = ovr_hi;
+		assign sub_l = sub;
+`endif
 		wire [31:0] un;
-		am_fp_h2f #(.DENORM(0), .LAT(0)) u_un (.h(sub ? la[31:16] : la[15:0]), .f(un));
+		am_fp_h2f #(.DENORM(0), .LAT(0)) u_un (.h(sub_l ? la[31:16] : la[15:0]), .f(un));
 
 		wire [15:0] ovr_val_lo = is_unpack ? un[15:0]  : is_swaph ? la[31:16] : (PACKED != 0 ? la[15:0]  : 16'd0);
 		wire [15:0] ovr_val_hi = is_unpack ? un[31:16] : is_swaph ? la[15:0]  : (PACKED != 0 ? la[31:16] : 16'd0);
@@ -102,14 +138,14 @@ module atg_su_pk #(
 		wire [15:0] lo, hi;
 		atg_su_pk_half #(.ARITH(PACKED), .FP(!SH), .LAT(SHORT_LAT)) u_lo (
 			.clk(clk), .rst_n(rst_n),
-			.valid_in(mine), .ovr_en(ovr_lo), .ovr_val(ovr_val_lo),
-			.o(op), .ha(la[15:0]), .hb(lb[15:0]), .hc(lc[15:0]), .r(rm), .sat(sat), .xw(la),
+			.valid_in(mine_lo_l), .ovr_en(ovr_lo_l), .ovr_val(ovr_val_lo),
+			.o(op_lo_l), .ha(la[15:0]), .hb(lb[15:0]), .hc(lc[15:0]), .r(rm_lo_l), .sat(sat_lo_l), .xw(la),
 			.y(lo)
 		);
 		atg_su_pk_half #(.ARITH(PACKED), .FP(!SH), .LAT(SHORT_LAT)) u_hi (
 			.clk(clk), .rst_n(rst_n),
-			.valid_in(mine), .ovr_en(ovr_hi), .ovr_val(ovr_val_hi),
-			.o(op), .ha(la[31:16]), .hb(lb[31:16]), .hc(lc[31:16]), .r(rm), .sat(sat), .xw(lb0),
+			.valid_in(mine_hi_l), .ovr_en(ovr_hi_l), .ovr_val(ovr_val_hi),
+			.o(op_hi_l), .ha(la[31:16]), .hb(lb[31:16]), .hc(lc[31:16]), .r(rm_hi_l), .sat(sat_hi_l), .xw(lb0),
 			.y(hi)
 		);
 		assign s_data[l*32 +: 32] = {hi, lo};
@@ -117,7 +153,7 @@ module atg_su_pk #(
 	endgenerate
 
 	/* SHORT_LAT stages of control pipeline matching u_lo / u_hi */
-	(* shreg_extract = "no", max_fanout = 12 *) reg [CW-1:0] pipe [0:SHORT_LAT-1];
+	(* shreg_extract = "no" *) reg [CW-1:0] pipe [0:SHORT_LAT-1];
 	integer k;
 	always @(posedge clk) begin
 		if (rst_p) begin

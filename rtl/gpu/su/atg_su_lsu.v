@@ -258,21 +258,35 @@ module atg_su_lsu #(
 		for (la = 0; la < LB / 16; la = la + 1) begin : g_cwd_sl
 			localparam W_IDX = la / 2;
 			localparam H_IDX = la % 2;
-			(* dont_touch = "true" *) wire [NPHYS-1:0] sl_hit;
+			wire [NPHYS-1:0] sl_hit_0, sl_hit_1;
 			for (gl = 0; gl < NPHYS; gl = gl + 1) begin : g_sl_hit
 				wire [WW-1:0] wo_g = (H_IDX == 0) ? rwo_wr_a_bus[gl*WW +: WW] : rwo_wr_b_bus[gl*WW +: WW];
 				wire lh_g = (H_IDX == 0) ? lhit_a[gl] : lhit_b[gl];
 				wire pd_g = (H_IDX == 0) ? pend_a[gl] : pend_b[gl];
-				assign sl_hit[gl] = pd_g && lh_g && (wo_g == W_IDX[WW-1:0]);
+				wire hit = pd_g && lh_g && (wo_g == W_IDX[WW-1:0]);
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_h0 (.I0(hit), .O(sl_hit_0[gl]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_h1 (.I0(hit), .O(sl_hit_1[gl]));
+`else
+				assign sl_hit_0[gl] = hit;
+				assign sl_hit_1[gl] = hit;
+`endif
 			end
-			reg [15:0] lwd_sl;
+			reg [7:0] lwd_sl_0, lwd_sl_1;
 			integer sl_l;
 			always @(*) begin
-				lwd_sl = 16'd0;
+				lwd_sl_0 = 8'd0;
 				for (sl_l = 0; sl_l < NPHYS; sl_l = sl_l + 1)
-					if (sl_hit[sl_l])
-						lwd_sl = rdat[sl_l*32 + H_IDX*16 +: 16];
+					if (sl_hit_0[sl_l])
+						lwd_sl_0 = rdat[sl_l*32 + H_IDX*16 +: 8];
 			end
+			always @(*) begin
+				lwd_sl_1 = 8'd0;
+				for (sl_l = 0; sl_l < NPHYS; sl_l = sl_l + 1)
+					if (sl_hit_1[sl_l])
+						lwd_sl_1 = rdat[sl_l*32 + H_IDX*16 + 8 +: 8];
+			end
+			wire [15:0] lwd_sl = {lwd_sl_1, lwd_sl_0};
 			(* shreg_extract = "no" *) reg [15:0] cwd_sl;
 			wire cwd_we_sl;
 `ifdef SYNTH_KINTEX7
@@ -441,7 +455,16 @@ module atg_su_lsu #(
 			req_taken <= 1'b1;
 	assign dc_req_valid = st == WAIT && !req_taken;
 	assign dc_req_write = rwr;
+`ifdef SYNTH_KINTEX7
+	genvar g_dcl;
+	generate
+		for (g_dcl = 0; g_dcl < ADDR_W-LINE_SHIFT; g_dcl = g_dcl + 1) begin : g_buf_dcline
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_dcl (.I0(dc_line_r[g_dcl]), .O(dc_req_line[g_dcl]));
+		end
+	endgenerate
+`else
 	assign dc_req_line = dc_line_r;
+`endif
 	assign dc_req_wdata = cwd;
 	assign dc_req_tag = 8'd0;
 	assign dc_inv = inv_q;

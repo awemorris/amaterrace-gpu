@@ -47,18 +47,32 @@ module am_shift #(
 		end else begin : g_rsh_sliced
 			for (g_chunk = 0; g_chunk < (W + 7) / 8; g_chunk = g_chunk + 1) begin : g_sl
 				localparam CHK_W = ((g_chunk + 1) * 8 <= W) ? 8 : (W - g_chunk * 8);
-				wire [SW-1:0] amt_b;
+				localparam NIB_W = (CHK_W <= 4) ? CHK_W : 4;
+				wire [SW-1:0] amt_b_lo, amt_b_hi;
+				wire fill_chunk;
 				genvar gb;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_amt_buf
 `ifdef SYNTH_KINTEX7
-					(* keep = "true" *) LUT1 #(.INIT(2'b10)) u_bamt (.I0(amt[gb]), .O(amt_b[gb]));
+					(* keep = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_lo (.I0(amt[gb]), .O(amt_b_lo[gb]));
+					(* keep = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_hi (.I0(amt[gb]), .O(amt_b_hi[gb]));
 `else
-					assign amt_b[gb] = amt[gb];
+					assign amt_b_lo[gb] = amt[gb];
+					assign amt_b_hi[gb] = amt[gb];
 `endif
 				end
-				wire signed [W:0] ext_chunk = ext_data;
-				wire signed [W:0] shifted_chunk = ext_chunk >>> amt_b;
-				assign rsh[g_chunk * 8 +: CHK_W] = shifted_chunk[g_chunk * 8 +: CHK_W];
+`ifdef SYNTH_KINTEX7
+				(* keep = "true" *) LUT1 #(.INIT(2'b10)) u_bfill (.I0(fill), .O(fill_chunk));
+`else
+				assign fill_chunk = fill;
+`endif
+				wire signed [W:0] ext_chunk_lo = {fill_chunk, a};
+				wire signed [W:0] ext_chunk_hi = {fill_chunk, a};
+				wire signed [W:0] shifted_lo = ext_chunk_lo >>> amt_b_lo;
+				wire signed [W:0] shifted_hi = ext_chunk_hi >>> amt_b_hi;
+				assign rsh[g_chunk * 8 +: NIB_W] = shifted_lo[g_chunk * 8 +: NIB_W];
+				if (CHK_W > 4) begin : g_hi_nib
+					assign rsh[g_chunk * 8 + 4 +: (CHK_W - 4)] = shifted_hi[g_chunk * 8 + 4 +: (CHK_W - 4)];
+				end
 			end
 		end
 	end else begin : g_rsh_stub
@@ -73,17 +87,24 @@ module am_shift #(
 		end else begin : g_lsh_sliced
 			for (g_chunk = 0; g_chunk < (W + 7) / 8; g_chunk = g_chunk + 1) begin : g_sl
 				localparam CHK_W = ((g_chunk + 1) * 8 <= W) ? 8 : (W - g_chunk * 8);
-				wire [SW-1:0] amt_b;
+				localparam NIB_W = (CHK_W <= 4) ? CHK_W : 4;
+				wire [SW-1:0] amt_b_lo, amt_b_hi;
 				genvar gb;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_amt_buf
 `ifdef SYNTH_KINTEX7
-					(* keep = "true" *) LUT1 #(.INIT(2'b10)) u_bamt (.I0(amt[gb]), .O(amt_b[gb]));
+					(* keep = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_lo (.I0(amt[gb]), .O(amt_b_lo[gb]));
+					(* keep = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_hi (.I0(amt[gb]), .O(amt_b_hi[gb]));
 `else
-					assign amt_b[gb] = amt[gb];
+					assign amt_b_lo[gb] = amt[gb];
+					assign amt_b_hi[gb] = amt[gb];
 `endif
 				end
-				wire [W-1:0] lshifted_chunk = a << amt_b;
-				assign lsh[g_chunk * 8 +: CHK_W] = lshifted_chunk[g_chunk * 8 +: CHK_W];
+				wire [W-1:0] lshifted_lo = a << amt_b_lo;
+				wire [W-1:0] lshifted_hi = a << amt_b_hi;
+				assign lsh[g_chunk * 8 +: NIB_W] = lshifted_lo[g_chunk * 8 +: NIB_W];
+				if (CHK_W > 4) begin : g_hi_nib
+					assign lsh[g_chunk * 8 + 4 +: (CHK_W - 4)] = lshifted_hi[g_chunk * 8 + 4 +: (CHK_W - 4)];
+				end
 			end
 		end
 	end else begin : g_lsh_stub

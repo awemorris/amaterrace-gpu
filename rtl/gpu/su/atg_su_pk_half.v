@@ -308,13 +308,13 @@ module atg_su_pk_half #(
 			co_unused};
 	end else if (!AR) begin : g_lat6_noarith
 		(* dont_touch = "true" *) wire rst_p = !rst_n;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_valid, s2_valid, s3_valid, s4_valid, s5_valid, s6_valid;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_ovr_en, s2_ovr_en;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s1_ovr_val, s2_ovr_val;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_packh, s2_packh;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s1_xw, s2_xw;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [9:0]  s2_er_p;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s3_res, s4_res, s5_res, s6_res;
+		(* shreg_extract = "no" *) reg        s1_valid, s2_valid, s3_valid, s4_valid, s5_valid, s6_valid;
+		(* shreg_extract = "no" *) reg        s1_ovr_en, s2_ovr_en;
+		(* shreg_extract = "no" *) reg [15:0] s1_ovr_val, s2_ovr_val;
+		(* shreg_extract = "no" *) reg        s1_packh, s2_packh;
+		(* shreg_extract = "no" *) reg [31:0] s1_xw, s2_xw;
+		(* shreg_extract = "no" *) reg [9:0]  s2_er_p;
+		(* shreg_extract = "no" *) reg [15:0] s3_res, s4_res, s5_res, s6_res;
 
 		wire [9:0] s1_er_p;
 		wire       s1_erp_bo_unused;
@@ -416,16 +416,16 @@ module atg_su_pk_half #(
 		wire [10:0] s0_ma = {!s0_za, s0_za ? 10'd0 : ha[9:0]};
 		wire [10:0] s0_mb = {!s0_zb, s0_zb ? 10'd0 : s0_fy[9:0]};
 
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_valid;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_ovr_en;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s1_ovr_val;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [3:0]  s1_o;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s1_ha, s1_hb, s1_hc;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s1_fa, s1_fb, s1_fc;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_fnoc;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s1_r;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_sat;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s1_xw;
+		(* shreg_extract = "no" *) reg        s1_valid;
+		(* shreg_extract = "no" *) reg        s1_ovr_en;
+		(* shreg_extract = "no" *) reg [15:0] s1_ovr_val;
+		(* shreg_extract = "no" *) reg [3:0]  s1_o;
+		(* shreg_extract = "no" *) reg [15:0] s1_ha, s1_hb, s1_hc;
+		(* shreg_extract = "no" *) reg [15:0] s1_fa, s1_fb, s1_fc;
+		(* shreg_extract = "no" *) reg        s1_fnoc;
+		(* shreg_extract = "no" *) reg [2:0]  s1_r;
+		(* shreg_extract = "no" *) reg        s1_sat;
+		(* shreg_extract = "no" *) reg [31:0] s1_xw;
 		(* shreg_extract = "no", keep = "true" *) reg [15:0] s1_mul_a;
 		(* shreg_extract = "no", keep = "true" *) reg [15:0] s1_mul_b;
 
@@ -565,22 +565,22 @@ module atg_su_pk_half #(
 		am_sub #(.W(15)) u_s1_ba_lt (.a(s1_hb[14:0]), .b(s1_ha[14:0]), .bi(1'b0), .d(s1_ba_diff_unused), .bo(s1_ba_lt_raw));
 
 		/* --- Stage 2 registers --- */
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s2_valid;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s2_ovr_en;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s2_ovr_val;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [3:0]  s2_o;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s2_r;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s2_sat;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s2_xw;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [10:0] s2_mc;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s2_sp, s2_sc, s2_rdn, s2_zc;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s2_spec_hit;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s2_spec_res;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [9:0]  s2_t, s2_ec_p25, s2_ec_p37, s2_ec_p2, s2_er_p;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s2_isum;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s2_haf, s2_hbf;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s2_za, s2_hb_z, s2_nan_a, s2_hb_nan;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s2_ab_lt_raw, s2_ba_lt_raw;
+		(* shreg_extract = "no" *) reg        s2_valid;
+		(* shreg_extract = "no" *) reg        s2_ovr_en;
+		(* shreg_extract = "no" *) reg [15:0] s2_ovr_val;
+		(* shreg_extract = "no" *) reg [3:0]  s2_o;
+		(* shreg_extract = "no" *) reg [2:0]  s2_r;
+		(* shreg_extract = "no" *) reg        s2_sat;
+		(* shreg_extract = "no" *) reg [31:0] s2_xw;
+		(* shreg_extract = "no" *) reg [10:0] s2_mc;
+		(* shreg_extract = "no" *) reg        s2_sp, s2_sc, s2_rdn, s2_zc;
+		(* shreg_extract = "no" *) reg        s2_spec_hit;
+		(* shreg_extract = "no" *) reg [15:0] s2_spec_res;
+		(* shreg_extract = "no" *) reg [9:0]  s2_t, s2_ec_p25, s2_ec_p37, s2_ec_p2, s2_er_p;
+		(* shreg_extract = "no" *) reg [15:0] s2_isum;
+		(* shreg_extract = "no" *) reg [15:0] s2_haf, s2_hbf;
+		(* shreg_extract = "no" *) reg        s2_za, s2_hb_z, s2_nan_a, s2_hb_nan;
+		(* shreg_extract = "no" *) reg        s2_ab_lt_raw, s2_ba_lt_raw;
 
 		always @(posedge clk) begin
 			if (rst_p) begin
@@ -706,19 +706,19 @@ module atg_su_pk_half #(
 		                         (s2_xw[30:23] == 8'd0)  ? {s2_xw[31], 15'd0} : s2_hr_p;
 
 		/* --- Stage 3 registers --- */
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s3_valid;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s3_ovr_en;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s3_ovr_val;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [3:0]  s3_o;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s3_r;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s3_sat;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [10:0] s3_mc;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s3_sp, s3_sc, s3_rdn, s3_zc;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s3_spec_hit;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s3_spec_res;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [9:0]  s3_k, s3_dp37;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [6:0]  s3_eb_c, s3_eb_t;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s3_xh, s3_isum, s3_fminmax, s3_fcmp;
+		(* shreg_extract = "no" *) reg        s3_valid;
+		(* shreg_extract = "no" *) reg        s3_ovr_en;
+		(* shreg_extract = "no" *) reg [15:0] s3_ovr_val;
+		(* shreg_extract = "no" *) reg [3:0]  s3_o;
+		(* shreg_extract = "no" *) reg [2:0]  s3_r;
+		(* shreg_extract = "no" *) reg        s3_sat;
+		(* shreg_extract = "no" *) reg [10:0] s3_mc;
+		(* shreg_extract = "no" *) reg        s3_sp, s3_sc, s3_rdn, s3_zc;
+		(* shreg_extract = "no" *) reg        s3_spec_hit;
+		(* shreg_extract = "no" *) reg [15:0] s3_spec_res;
+		(* shreg_extract = "no" *) reg [9:0]  s3_k, s3_dp37;
+		(* shreg_extract = "no" *) reg [6:0]  s3_eb_c, s3_eb_t;
+		(* shreg_extract = "no" *) reg [15:0] s3_xh, s3_isum, s3_fminmax, s3_fcmp;
 
 		always @(posedge clk) begin
 			if (rst_p) begin
@@ -771,8 +771,8 @@ module atg_su_pk_half #(
 		/* =====================================================================
 		 * Stage 3 -> Stage 4: Addend shift (u_al) & non-mul result pre-mux
 		 * ===================================================================== */
-		(* max_fanout = 16 *) wire s3_big  = $signed(s3_k) > 10'sd23;
-		(* max_fanout = 16 *) wire s3_near = $signed(s3_k) >= -10'sd12;
+		wire s3_big  = $signed(s3_k) > 10'sd23;
+		wire s3_near = $signed(s3_k) >= -10'sd12;
 		wire [46:0] s3_zal;
 		am_shift #(.W(47), .SW(6), .DIR(2)) u_s3_al (
 			.a({36'd0, s3_mc}), .amt(s3_dp37[5:0]), .left(1'b1), .arith(1'b0), .y(s3_zal)
@@ -794,18 +794,18 @@ module atg_su_pk_half #(
 		end
 
 		/* --- Stage 4 registers (in sync with s4_prod) --- */
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s4_valid;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s4_ovr_en;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s4_ovr_val;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [3:0]  s4_o;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s4_r;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s4_sat;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [36:0] s4_cw;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [6:0]  s4_eb;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s4_big, s4_sp, s4_sc, s4_rdn, s4_zc;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s4_spec_hit;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s4_spec_res;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s4_other_pre;
+		(* shreg_extract = "no" *) reg        s4_valid;
+		(* shreg_extract = "no" *) reg        s4_ovr_en;
+		(* shreg_extract = "no" *) reg [15:0] s4_ovr_val;
+		(* shreg_extract = "no" *) reg [3:0]  s4_o;
+		(* shreg_extract = "no" *) reg [2:0]  s4_r;
+		(* shreg_extract = "no" *) reg        s4_sat;
+		(* shreg_extract = "no" *) reg [36:0] s4_cw;
+		(* shreg_extract = "no" *) reg [6:0]  s4_eb;
+		(* shreg_extract = "no" *) reg        s4_big, s4_sp, s4_sc, s4_rdn, s4_zc;
+		(* shreg_extract = "no" *) reg        s4_spec_hit;
+		(* shreg_extract = "no" *) reg [15:0] s4_spec_res;
+		(* shreg_extract = "no" *) reg [15:0] s4_other_pre;
 
 		always @(posedge clk) begin
 			if (rst_p) begin
@@ -857,10 +857,10 @@ module atg_su_pk_half #(
 		/* =====================================================================
 		 * Stage 4 -> Stage 5: Speculative parallel 37-bit FMA add/sub
 		 * ===================================================================== */
-		(* max_fanout = 16 *) wire s4_eff_sub = !(s4_zc || s4_sp == s4_sc);
+		wire s4_eff_sub = !(s4_zc || s4_sp == s4_sc);
 		wire [36:0] s4_pw = (!s4_zc && s4_big) ? 37'd1 : {13'd0, s4_prod[21:0], 2'b00};
 		wire [36:0] s4_sum_pc, s4_sum_cp;
-		(* max_fanout = 16 *) wire s4_co_pc;
+		wire s4_co_pc;
 		wire s4_bo_cp_unused;
 
 		am_addsub #(.W(37)) u_s4_sum_pc (
@@ -870,7 +870,7 @@ module atg_su_pk_half #(
 			.a(s4_cw), .b(s4_pw), .bi(1'b0), .d(s4_sum_cp), .bo(s4_bo_cp_unused)
 		);
 
-		(* max_fanout = 16 *) wire s4_swap = s4_eff_sub && !s4_co_pc;
+		wire s4_swap = s4_eff_sub && !s4_co_pc;
 		wire [36:0] s4_sum  = s4_swap ? s4_sum_cp : s4_sum_pc;
 		wire        s4_sr   = s4_swap ? s4_sc : s4_sp;
 
@@ -886,19 +886,19 @@ module atg_su_pk_half #(
 		wire [15:0] s4_other = (s4_o == ATG_PK_IMUL2[3:0]) ? (AR ? s4_prod[15:0] : 16'd0) : s4_other_pre;
 
 		/* --- Stage 5 registers --- */
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s5_valid;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s5_ovr_en;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s5_ovr_val;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s5_is_fma;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s5_r;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s5_sat;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [36:0] s5_sum;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s5_sr, s5_rdn;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [3:0]  s5_eb_lo, s5_eb_neg;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [2:0]  s5_eb_hi0, s5_eb_hi1, s5_eb_hi2, s5_eb_hi3;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s5_spec_hit;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s5_spec_res;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s5_other;
+		(* shreg_extract = "no" *) reg        s5_valid;
+		(* shreg_extract = "no" *) reg        s5_ovr_en;
+		(* shreg_extract = "no" *) reg [15:0] s5_ovr_val;
+		(* shreg_extract = "no" *) reg        s5_is_fma;
+		(* shreg_extract = "no" *) reg [2:0]  s5_r;
+		(* shreg_extract = "no" *) reg        s5_sat;
+		(* shreg_extract = "no" *) reg [36:0] s5_sum;
+		(* shreg_extract = "no" *) reg        s5_sr, s5_rdn;
+		(* shreg_extract = "no" *) reg [3:0]  s5_eb_lo, s5_eb_neg;
+		(* shreg_extract = "no" *) reg [2:0]  s5_eb_hi0, s5_eb_hi1, s5_eb_hi2, s5_eb_hi3;
+		(* shreg_extract = "no" *) reg        s5_spec_hit;
+		(* shreg_extract = "no" *) reg [15:0] s5_spec_res;
+		(* shreg_extract = "no" *) reg [15:0] s5_other;
 
 		always @(posedge clk) begin
 			if (rst_p) begin
@@ -1133,16 +1133,16 @@ module atg_su_pk_half #(
 			(s5_sat ? 16'd0 : {s5_rdn, 15'd0});
 
 		/* --- Stage 6 registers --- */
-		(* shreg_extract = "no", max_fanout = 12 *) reg [1:0]  s6_rm_mode;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s6_sat;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [9:0]  s6_m;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [5:0]  s6_er, s6_er_p1;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s6_er0_en, s6_er1_en;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s6_er_lo_all1, s6_er_lo_zero;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s6_trunc_ovf_en;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s6_g, s6_st;
-		(* shreg_extract = "no", max_fanout = 12 *) reg        s6_y15;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [14:0] s6_non_norm;
+		(* shreg_extract = "no" *) reg [1:0]  s6_rm_mode;
+		(* shreg_extract = "no" *) reg        s6_sat;
+		(* shreg_extract = "no" *) reg [9:0]  s6_m;
+		(* shreg_extract = "no" *) reg [5:0]  s6_er, s6_er_p1;
+		(* shreg_extract = "no" *) reg        s6_er0_en, s6_er1_en;
+		(* shreg_extract = "no" *) reg        s6_er_lo_all1, s6_er_lo_zero;
+		(* shreg_extract = "no" *) reg        s6_trunc_ovf_en;
+		(* shreg_extract = "no" *) reg        s6_g, s6_st;
+		(* shreg_extract = "no" *) reg        s6_y15;
+		(* shreg_extract = "no" *) reg [14:0] s6_non_norm;
 
 		always @(posedge clk) begin
 			if (rst_p) begin

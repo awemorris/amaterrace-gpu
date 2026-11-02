@@ -87,16 +87,16 @@ module atg_su_xu #(
 	reg [2:0] st;
 	wire [DW-1:0] rx, rq;
 	reg [NPHYS-1:0] rmask;
-	reg [2:0] rop;
-	(* shreg_extract = "no" *) reg [2:0] rop_pipe, rop_dt, rop_load, rop_we, rop_step;
+	(* dont_touch = "true" *) reg [2:0] rop;
+	(* dont_touch = "true" *) reg [2:0] rop_pipe, rop_dt, rop_load, rop_we, rop_step;
 	reg [6:0] rrd;
 	reg [WARP_W-1:0] rwarp;
 	reg [GRP_W-1:0] rgrp;
 	reg rlast;
 	reg [SBE_W:0] rsbe;
 	reg [LW-1:0] li;
-	reg [5:0] step;
-	(* shreg_extract = "no" *) reg [5:0] step_cnt, step_cordic, step_tab, step_fbit;
+	(* dont_touch = "true" *) reg [5:0] step;
+	(* dont_touch = "true" *) reg [5:0] step_cnt, step_cordic, step_tab, step_fbit;
 	reg ph;			/* rsq: 0 square root, 1 division */
 	/* The engine (registers sliced to bound fanout <= 16). */
 	wire [59:0] n;		/* sqrt: the radicand, two bits per step from the top */
@@ -139,6 +139,7 @@ module atg_su_xu #(
 	reg [31:0] lx;
 	reg [23:0] lm_r;
 	reg [3:0] sub_st;
+	(* dont_touch = "true" *) reg [3:0] sub_st_load, sub_st_step, sub_st_fin;
 	wire ls = lx[31];
 	wire [7:0] le = lx[30:23];
 	wire [23:0] lm = lm_r;
@@ -468,9 +469,9 @@ module atg_su_xu #(
 		localparam TPS_W = (gxl == 2) ? 8 : 16;
 		wire tps_we_sl;
 `ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tps (.I0((st == LOAD) && (sub_st == 4'd6)), .O(tps_we_sl));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tps (.I0((st == LOAD) && (sub_st_load == 4'd6)), .O(tps_we_sl));
 `else
-		assign tps_we_sl = (st == LOAD) && (sub_st == 4'd6);
+		assign tps_we_sl = (st == LOAD) && (sub_st_load == 4'd6);
 `endif
 		reg [TPS_W-1:0] tps_sl;
 		always @(posedge clk)
@@ -482,11 +483,11 @@ module atg_su_xu #(
 		localparam DTR_W = (gxl == 2) ? 3 : 16;
 		wire dtr_we_sl, strl_we_sl;
 `ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_dtr  (.I0((st == STEP) && (sub_st == 4'd0)), .O(dtr_we_sl));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_strl (.I0((st == STEP) && (sub_st == 4'd0)), .O(strl_we_sl));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_dtr  (.I0((st == STEP) && (sub_st_step == 4'd0)), .O(dtr_we_sl));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_strl (.I0((st == STEP) && (sub_st_step == 4'd0)), .O(strl_we_sl));
 `else
-		assign dtr_we_sl = (st == STEP) && (sub_st == 4'd0);
-		assign strl_we_sl = (st == STEP) && (sub_st == 4'd0);
+		assign dtr_we_sl = (st == STEP) && (sub_st_step == 4'd0);
+		assign strl_we_sl = (st == STEP) && (sub_st_step == 4'd0);
 `endif
 		reg [DTR_W-1:0] dtr_sl, strl_sl;
 		always @(posedge clk) begin
@@ -507,35 +508,35 @@ module atg_su_xu #(
 		wire cysh_we_s, cxsh_we_s, atn_we_s, cxn_we_s, cyn_we_s, zn_we_s;
 		wire lva_we_s, nv_we_s, nw_we_s;
 `ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_ev0  (.I0((st == LOAD) && (sub_st == 4'd2)), .O(ev0_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_ev   (.I0((st == LOAD) && (sub_st == 4'd3)), .O(ev_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_t1   (.I0((st == LOAD) && (sub_st == 4'd7)), .O(t1_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_tt   (.I0((st == LOAD) && (sub_st == 4'd8)), .O(tt_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_zq   (.I0((st == LOAD) && (sub_st == 4'd8)), .O(zq_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cysh (.I0((st == STEP) && (sub_st == 4'd0)), .O(cysh_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cxsh (.I0((st == STEP) && (sub_st == 4'd0)), .O(cxsh_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_atn  (.I0((st == STEP) && (sub_st == 4'd0)), .O(atn_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cxn  (.I0((st == STEP) && (sub_st == 4'd1)), .O(cxn_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cyn  (.I0((st == STEP) && (sub_st == 4'd1)), .O(cyn_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_zn   (.I0((st == STEP) && (sub_st == 4'd1)), .O(zn_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lva  (.I0((st == FIN)  && (sub_st == 4'd1)), .O(lva_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nv   (.I0((st == FIN)  && (sub_st == 4'd2)), .O(nv_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nw   (.I0((st == FIN)  && (sub_st == 4'd4)), .O(nw_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_ev0  (.I0((st == LOAD) && (sub_st_load == 4'd2)), .O(ev0_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_ev   (.I0((st == LOAD) && (sub_st_load == 4'd3)), .O(ev_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_t1   (.I0((st == LOAD) && (sub_st_load == 4'd7)), .O(t1_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_tt   (.I0((st == LOAD) && (sub_st_load == 4'd8)), .O(tt_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_zq   (.I0((st == LOAD) && (sub_st_load == 4'd8)), .O(zq_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cysh (.I0((st == STEP) && (sub_st_step == 4'd0)), .O(cysh_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cxsh (.I0((st == STEP) && (sub_st_step == 4'd0)), .O(cxsh_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_atn  (.I0((st == STEP) && (sub_st_step == 4'd0)), .O(atn_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cxn  (.I0((st == STEP) && (sub_st_step == 4'd1)), .O(cxn_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cyn  (.I0((st == STEP) && (sub_st_step == 4'd1)), .O(cyn_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_zn   (.I0((st == STEP) && (sub_st_step == 4'd1)), .O(zn_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lva  (.I0((st == FIN)  && (sub_st_fin == 4'd1)),  .O(lva_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nv   (.I0((st == FIN)  && (sub_st_fin == 4'd2)),  .O(nv_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nw   (.I0((st == FIN)  && (sub_st_fin == 4'd4)),  .O(nw_we_s));
 `else
-		assign ev0_we_s  = (st == LOAD) && (sub_st == 4'd2);
-		assign ev_we_s   = (st == LOAD) && (sub_st == 4'd3);
-		assign t1_we_s   = (st == LOAD) && (sub_st == 4'd7);
-		assign tt_we_s   = (st == LOAD) && (sub_st == 4'd8);
-		assign zq_we_s   = (st == LOAD) && (sub_st == 4'd8);
-		assign cysh_we_s = (st == STEP) && (sub_st == 4'd0);
-		assign cxsh_we_s = (st == STEP) && (sub_st == 4'd0);
-		assign atn_we_s  = (st == STEP) && (sub_st == 4'd0);
-		assign cxn_we_s  = (st == STEP) && (sub_st == 4'd1);
-		assign cyn_we_s  = (st == STEP) && (sub_st == 4'd1);
-		assign zn_we_s   = (st == STEP) && (sub_st == 4'd1);
-		assign lva_we_s  = (st == FIN)  && (sub_st == 4'd1);
-		assign nv_we_s   = (st == FIN)  && (sub_st == 4'd2);
-		assign nw_we_s   = (st == FIN)  && (sub_st == 4'd4);
+		assign ev0_we_s  = (st == LOAD) && (sub_st_load == 4'd2);
+		assign ev_we_s   = (st == LOAD) && (sub_st_load == 4'd3);
+		assign t1_we_s   = (st == LOAD) && (sub_st_load == 4'd7);
+		assign tt_we_s   = (st == LOAD) && (sub_st_load == 4'd8);
+		assign zq_we_s   = (st == LOAD) && (sub_st_load == 4'd8);
+		assign cysh_we_s = (st == STEP) && (sub_st_step == 4'd0);
+		assign cxsh_we_s = (st == STEP) && (sub_st_step == 4'd0);
+		assign atn_we_s  = (st == STEP) && (sub_st_step == 4'd0);
+		assign cxn_we_s  = (st == STEP) && (sub_st_step == 4'd1);
+		assign cyn_we_s  = (st == STEP) && (sub_st_step == 4'd1);
+		assign zn_we_s   = (st == STEP) && (sub_st_step == 4'd1);
+		assign lva_we_s  = (st == FIN)  && (sub_st_fin == 4'd1);
+		assign nv_we_s   = (st == FIN)  && (sub_st_fin == 4'd2);
+		assign nw_we_s   = (st == FIN)  && (sub_st_fin == 4'd4);
 `endif
 		reg [W39-1:0] ev0_sl, ev_sl, zq_sl;
 		reg [W40-1:0] t1_sl, tt_sl, atn_sl;
@@ -576,11 +577,11 @@ module atg_su_xu #(
 		localparam W24 = (gxl == 1) ? 8 : 16;
 		wire nrmp1_we_s, nrr_we_s;
 `ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nrmp1 (.I0((st == FIN) && (sub_st == 4'd5)), .O(nrmp1_we_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nrr   (.I0((st == FIN) && (sub_st == 4'd6)), .O(nrr_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nrmp1 (.I0((st == FIN) && (sub_st_fin == 4'd5)), .O(nrmp1_we_s));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nrr   (.I0((st == FIN) && (sub_st_fin == 4'd6)), .O(nrr_we_s));
 `else
-		assign nrmp1_we_s = (st == FIN) && (sub_st == 4'd5);
-		assign nrr_we_s   = (st == FIN) && (sub_st == 4'd6);
+		assign nrmp1_we_s = (st == FIN) && (sub_st_fin == 4'd5);
+		assign nrr_we_s   = (st == FIN) && (sub_st_fin == 4'd6);
 `endif
 		reg [W24-1:0] nrmp1_sl;
 		reg [15:0] nrr_sl;
@@ -595,61 +596,73 @@ module atg_su_xu #(
 
 	wire lx_we_lo, lx_we_hi, lm_we_lo, lm_we_hi;
 	wire sh1_we_a, sh1_we_b, sh1_we_eamt, sh1_we_ersh, sh1_we_trsh1, sh1_we_trsh2, sh1_we_tsh_lo, sh1_we_tsh_hi;
-	wire load_commit_raw = (st == LOAD) && (sub_st >= 4'd9);
-	wire load_commit_res, load_commit_dat0, load_commit_dat1;
+	wire load_commit_raw = (st == LOAD) && (sub_st_load >= 4'd9);
+	wire load_commit_res;
+	wire cordic_load_commit, y_we_load, fr_we_load;
+	wire root_we_load, rem_we_load, n_we_load_lo, n_we_load_hi;
 	wire load_end_lo, load_end_hi, res_we_lo, res_we_hi;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lx_lo  (.I0((st == LOAD) && (sub_st == 4'd0)), .O(lx_we_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lx_hi  (.I0((st == LOAD) && (sub_st == 4'd0)), .O(lx_we_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lm_lo  (.I0((st == LOAD) && (sub_st == 4'd0)), .O(lm_we_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lm_hi  (.I0((st == LOAD) && (sub_st == 4'd0)), .O(lm_we_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_a  (.I0((st == LOAD) && (sub_st == 4'd1)), .O(sh1_we_a));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_b  (.I0((st == LOAD) && (sub_st == 4'd1)), .O(sh1_we_b));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_ea (.I0((st == LOAD) && (sub_st == 4'd1)), .O(sh1_we_eamt));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_e  (.I0((st == LOAD) && (sub_st == 4'd1)), .O(sh1_we_ersh));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_t1 (.I0((st == LOAD) && (sub_st == 4'd1)), .O(sh1_we_trsh1));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_t2 (.I0((st == LOAD) && (sub_st == 4'd1)), .O(sh1_we_trsh2));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_s1 (.I0((st == LOAD) && (sub_st == 4'd1)), .O(sh1_we_tsh_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_s2 (.I0((st == LOAD) && (sub_st == 4'd1)), .O(sh1_we_tsh_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_res  (.I0(load_commit_raw), .O(load_commit_res));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_dat0 (.I0(load_commit_raw), .O(load_commit_dat0));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_dat1 (.I0(load_commit_raw), .O(load_commit_dat1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lx_lo  (.I0((st == LOAD) && (sub_st_load == 4'd0)), .O(lx_we_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lx_hi  (.I0((st == LOAD) && (sub_st_load == 4'd0)), .O(lx_we_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lm_lo  (.I0((st == LOAD) && (sub_st_load == 4'd0)), .O(lm_we_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lm_hi  (.I0((st == LOAD) && (sub_st_load == 4'd0)), .O(lm_we_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_a  (.I0((st == LOAD) && (sub_st_load == 4'd1)), .O(sh1_we_a));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_b  (.I0((st == LOAD) && (sub_st_load == 4'd1)), .O(sh1_we_b));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_ea (.I0((st == LOAD) && (sub_st_load == 4'd1)), .O(sh1_we_eamt));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_e  (.I0((st == LOAD) && (sub_st_load == 4'd1)), .O(sh1_we_ersh));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_t1 (.I0((st == LOAD) && (sub_st_load == 4'd1)), .O(sh1_we_trsh1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_t2 (.I0((st == LOAD) && (sub_st_load == 4'd1)), .O(sh1_we_trsh2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_s1 (.I0((st == LOAD) && (sub_st_load == 4'd1)), .O(sh1_we_tsh_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sh1_s2 (.I0((st == LOAD) && (sub_st_load == 4'd1)), .O(sh1_we_tsh_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_res (.I0(load_commit_raw), .O(load_commit_res));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_crd (.I0(load_commit_raw), .O(cordic_load_commit));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_y   (.I0(load_commit_raw), .O(y_we_load));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_fr  (.I0(load_commit_raw), .O(fr_we_load));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_rt  (.I0(load_commit_raw), .O(root_we_load));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_rem (.I0(load_commit_raw), .O(rem_we_load));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_nlo (.I0(load_commit_raw), .O(n_we_load_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_nhi (.I0(load_commit_raw), .O(n_we_load_hi));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lend_lo (.I0(load_commit_res), .O(load_end_lo));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lend_hi (.I0(load_commit_res), .O(load_end_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_res_lo (.I0((load_commit_res && !load_go_step_r) || ((st == FIN) && (sub_st >= 4'd7) && !sres)), .O(res_we_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_res_hi (.I0((load_commit_res && !load_go_step_r) || ((st == FIN) && (sub_st >= 4'd7) && !sres)), .O(res_we_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_res_lo (.I0((load_commit_res && !load_go_step_r) || ((st == FIN) && (sub_st_fin >= 4'd7) && !sres)), .O(res_we_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_res_hi (.I0((load_commit_res && !load_go_step_r) || ((st == FIN) && (sub_st_fin >= 4'd7) && !sres)), .O(res_we_hi));
 `else
-	assign lx_we_lo    = (st == LOAD) && (sub_st == 4'd0);
-	assign lx_we_hi    = (st == LOAD) && (sub_st == 4'd0);
-	assign lm_we_lo    = (st == LOAD) && (sub_st == 4'd0);
-	assign lm_we_hi    = (st == LOAD) && (sub_st == 4'd0);
-	assign sh1_we_a    = (st == LOAD) && (sub_st == 4'd1);
-	assign sh1_we_b    = (st == LOAD) && (sub_st == 4'd1);
-	assign sh1_we_eamt = (st == LOAD) && (sub_st == 4'd1);
-	assign sh1_we_ersh = (st == LOAD) && (sub_st == 4'd1);
-	assign sh1_we_trsh1= (st == LOAD) && (sub_st == 4'd1);
-	assign sh1_we_trsh2= (st == LOAD) && (sub_st == 4'd1);
-	assign sh1_we_tsh_lo = (st == LOAD) && (sub_st == 4'd1);
-	assign sh1_we_tsh_hi = (st == LOAD) && (sub_st == 4'd1);
-	assign load_commit_res  = load_commit_raw;
-	assign load_commit_dat0 = load_commit_raw;
-	assign load_commit_dat1 = load_commit_raw;
+	assign lx_we_lo    = (st == LOAD) && (sub_st_load == 4'd0);
+	assign lx_we_hi    = (st == LOAD) && (sub_st_load == 4'd0);
+	assign lm_we_lo    = (st == LOAD) && (sub_st_load == 4'd0);
+	assign lm_we_hi    = (st == LOAD) && (sub_st_load == 4'd0);
+	assign sh1_we_a    = (st == LOAD) && (sub_st_load == 4'd1);
+	assign sh1_we_b    = (st == LOAD) && (sub_st_load == 4'd1);
+	assign sh1_we_eamt = (st == LOAD) && (sub_st_load == 4'd1);
+	assign sh1_we_ersh = (st == LOAD) && (sub_st_load == 4'd1);
+	assign sh1_we_trsh1= (st == LOAD) && (sub_st_load == 4'd1);
+	assign sh1_we_trsh2= (st == LOAD) && (sub_st_load == 4'd1);
+	assign sh1_we_tsh_lo = (st == LOAD) && (sub_st_load == 4'd1);
+	assign sh1_we_tsh_hi = (st == LOAD) && (sub_st_load == 4'd1);
+	assign load_commit_res     = load_commit_raw;
+	assign cordic_load_commit  = load_commit_raw;
+	assign y_we_load           = load_commit_raw;
+	assign fr_we_load          = load_commit_raw;
+	assign root_we_load        = load_commit_raw;
+	assign rem_we_load         = load_commit_raw;
+	assign n_we_load_lo        = load_commit_raw;
+	assign n_we_load_hi        = load_commit_raw;
 	assign load_end_lo = load_commit_res;
 	assign load_end_hi = load_commit_res;
-	assign res_we_lo   = (load_end_lo && !load_go_step_r) || (((st == FIN) && (sub_st >= 4'd7)) && !sres);
-	assign res_we_hi   = (load_end_hi && !load_go_step_r) || (((st == FIN) && (sub_st >= 4'd7)) && !sres);
+	assign res_we_lo   = (load_end_lo && !load_go_step_r) || (((st == FIN) && (sub_st_fin >= 4'd7)) && !sres);
+	assign res_we_hi   = (load_end_hi && !load_go_step_r) || (((st == FIN) && (sub_st_fin >= 4'd7)) && !sres);
 `endif
 	wire step_end_b0, step_end_b1;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_stpe0 (.I0((st == STEP) && (sub_st >= 4'd6)), .O(step_end_b0));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_stpe1 (.I0((st == STEP) && (sub_st >= 4'd6)), .O(step_end_b1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_stpe0 (.I0((st == STEP) && (sub_st_step >= 4'd6)), .O(step_end_b0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_stpe1 (.I0((st == STEP) && (sub_st_step >= 4'd6)), .O(step_end_b1));
 `else
-	assign step_end_b0 = (st == STEP) && (sub_st >= 4'd6);
-	assign step_end_b1 = (st == STEP) && (sub_st >= 4'd6);
+	assign step_end_b0 = (st == STEP) && (sub_st_step >= 4'd6);
+	assign step_end_b1 = (st == STEP) && (sub_st_step >= 4'd6);
 `endif
 	wire step_end   = step_end_b0;
 	wire step_last  = step_end_b0 && (step_cnt == nsteps_m1);
-	wire fin_end    = (st == FIN)  && (sub_st >= 4'd7);
+	wire fin_end    = (st == FIN)  && (sub_st_fin >= 4'd7);
 	wire load_end   = load_end_lo;
 
 	always @(posedge clk) begin
@@ -751,11 +764,11 @@ module atg_su_xu #(
 
 	wire load_res_we_lo, load_res_we_hi;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lres_lo (.I0((st == LOAD) && (sub_st == 4'd8)), .O(load_res_we_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lres_hi (.I0((st == LOAD) && (sub_st == 4'd8)), .O(load_res_we_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lres_lo (.I0((st == LOAD) && (sub_st_load == 4'd8)), .O(load_res_we_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lres_hi (.I0((st == LOAD) && (sub_st_load == 4'd8)), .O(load_res_we_hi));
 `else
-	assign load_res_we_lo = (st == LOAD) && (sub_st == 4'd8);
-	assign load_res_we_hi = (st == LOAD) && (sub_st == 4'd8);
+	assign load_res_we_lo = (st == LOAD) && (sub_st_load == 4'd8);
+	assign load_res_we_hi = (st == LOAD) && (sub_st_load == 4'd8);
 `endif
 
 	reg [15:0] load_res_lo, load_res_hi;
@@ -814,7 +827,6 @@ module atg_su_xu #(
 	wire is_load_cy_lo, is_load_cy_hi;
 	wire is_load_z_lo, is_load_z_mid, is_load_z_hi;
 	wire cordic_step_commit = step_end_b0 && ((rop_we == ATG_XU_SIN[2:0]) || (rop_we == ATG_XU_COS[2:0]));
-	wire cordic_load_commit = load_commit_dat0;
 	wire cordic_we_raw = cordic_load_commit || cordic_step_commit;
 
 `ifdef SYNTH_KINTEX7
@@ -887,21 +899,29 @@ module atg_su_xu #(
 
 	/* Multiplier buffer mb_r */
 	wire mb_we_lo, mb_we_mid, mb_we_hi;
-	wire is_exp2_lo, is_exp2_mid, is_exp2_hi;
+	wire is_exp2_lo0, is_exp2_lo1;
+	wire is_exp2_mid0, is_exp2_mid1;
+	wire is_exp2_hi0, is_exp2_hi1;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_mb_lo  (.I0((st == STEP) && (sub_st == 4'd0)), .O(mb_we_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_mb_mid (.I0((st == STEP) && (sub_st == 4'd0)), .O(mb_we_mid));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_mb_hi  (.I0((st == STEP) && (sub_st == 4'd0)), .O(mb_we_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_lo (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_mid(.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_mid));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_hi (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_mb_lo   (.I0((st == STEP) && (sub_st_step == 4'd0)), .O(mb_we_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_mb_mid  (.I0((st == STEP) && (sub_st_step == 4'd0)), .O(mb_we_mid));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_mb_hi   (.I0((st == STEP) && (sub_st_step == 4'd0)), .O(mb_we_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_lo0 (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_lo0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_lo1 (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_lo1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_m0  (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_mid0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_m1  (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_mid1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_hi0 (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_hi0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_hi1 (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_hi1));
 `else
-	assign mb_we_lo = (st == STEP) && (sub_st == 4'd0);
-	assign mb_we_mid = (st == STEP) && (sub_st == 4'd0);
-	assign mb_we_hi = (st == STEP) && (sub_st == 4'd0);
-	assign is_exp2_lo = rop_load == ATG_XU_EXP2[2:0];
-	assign is_exp2_mid = rop_load == ATG_XU_EXP2[2:0];
-	assign is_exp2_hi = rop_load == ATG_XU_EXP2[2:0];
+	assign mb_we_lo = (st == STEP) && (sub_st_step == 4'd0);
+	assign mb_we_mid = (st == STEP) && (sub_st_step == 4'd0);
+	assign mb_we_hi = (st == STEP) && (sub_st_step == 4'd0);
+	assign is_exp2_lo0  = rop_load == ATG_XU_EXP2[2:0];
+	assign is_exp2_lo1  = rop_load == ATG_XU_EXP2[2:0];
+	assign is_exp2_mid0 = rop_load == ATG_XU_EXP2[2:0];
+	assign is_exp2_mid1 = rop_load == ATG_XU_EXP2[2:0];
+	assign is_exp2_hi0  = rop_load == ATG_XU_EXP2[2:0];
+	assign is_exp2_hi1  = rop_load == ATG_XU_EXP2[2:0];
 `endif
 
 	wire [41:0] expk_val = {2'd0, xu_expk(step_tab[4:0])};
@@ -912,15 +932,14 @@ module atg_su_xu #(
 			mb_r_mid <= 14'd0;
 			mb_r_hi  <= 14'd0;
 		end else begin
-			if (mb_we_lo)  mb_r_lo  <= is_exp2_lo  ? expk_val[13:0]  : y[13:0];
-			if (mb_we_mid) mb_r_mid <= is_exp2_mid ? expk_val[27:14] : y[27:14];
-			if (mb_we_hi)  mb_r_hi  <= is_exp2_hi  ? expk_val[41:28] : y[41:28];
+			if (mb_we_lo)  mb_r_lo  <= {is_exp2_lo1  ? expk_val[13:7]  : y[13:7],  is_exp2_lo0  ? expk_val[6:0]  : y[6:0]};
+			if (mb_we_mid) mb_r_mid <= {is_exp2_mid1 ? expk_val[27:21] : y[27:21], is_exp2_mid0 ? expk_val[20:14] : y[20:14]};
+			if (mb_we_hi)  mb_r_hi  <= {is_exp2_hi1  ? expk_val[41:35] : y[41:35], is_exp2_hi0  ? expk_val[34:28] : y[34:28]};
 		end
 	end
 	assign mb_r = {mb_r_hi, mb_r_mid, mb_r_lo};
 
 	/* Accumulator y */
-	wire y_we_load = load_commit_dat0;
 	wire y_we_exp  = step_end_b0 && (rop_we == ATG_XU_EXP2[2:0]) && fbit;
 	wire y_we_log  = step_end_b0 && (rop_we == ATG_XU_LOG2[2:0]);
 	wire y_we_raw  = y_we_load || y_we_exp || y_we_log;
@@ -976,7 +995,6 @@ module atg_su_xu #(
 	assign y = {y_hi, y_mid, y_lo};
 
 	/* Fraction register fr */
-	wire fr_we_load = load_commit_dat0;
 	wire fr_we_step = step_end_b1 && (rop_we == ATG_XU_LOG2[2:0]);
 	wire fr_we_raw = fr_we_load || fr_we_step;
 
@@ -1004,7 +1022,6 @@ module atg_su_xu #(
 	assign fr = {fr_hi, fr_lo};
 
 	/* Sqrt/div root */
-	wire root_we_load = load_commit_dat1;
 	wire root_we_step = step_end_b1 && ((rop_we == ATG_XU_RCP[2:0]) || (((rop_we == ATG_XU_RSQ[2:0]) || (rop_we == ATG_XU_FSQRT[2:0])) && !ph_root));
 	wire root_we_raw = root_we_load || root_we_step;
 
@@ -1047,7 +1064,6 @@ module atg_su_xu #(
 	assign root = {root_hi, root_lo};
 
 	/* Remainder rem */
-	wire rem_we_load = load_commit_dat1;
 	wire rem_we_step = step_end_b1 && ((rop_we == ATG_XU_RCP[2:0]) || (rop_we == ATG_XU_RSQ[2:0]) || (rop_we == ATG_XU_FSQRT[2:0]));
 	wire rem_we_last = step_last && (rop_we == ATG_XU_RSQ[2:0]) && !ph_rem;
 	wire rem_we_raw = rem_we_load || rem_we_step || rem_we_last;
@@ -1099,22 +1115,22 @@ module atg_su_xu #(
 	assign rem = {rem_s2, rem_s1, rem_s0};
 
 	/* Radicand n */
-	wire n_we_load = load_commit_dat1;
 	wire n_we_step = step_end_b1 && ((rop_we == ATG_XU_RSQ[2:0]) || (rop_we == ATG_XU_FSQRT[2:0]));
 	wire n_we_last = step_last && (rop_we == ATG_XU_RSQ[2:0]) && !ph_n_s0;
-	wire n_we_raw = n_we_load || n_we_step || n_we_last;
+	wire n_we_raw_lo = n_we_load_lo || n_we_step || n_we_last;
+	wire n_we_raw_hi = n_we_load_hi || n_we_step || n_we_last;
 
 	wire n_we_s0, n_we_s1, n_we_s2, n_we_s3;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_n_s0 (.I0(n_we_raw), .O(n_we_s0));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_n_s1 (.I0(n_we_raw), .O(n_we_s1));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_n_s2 (.I0(n_we_raw), .O(n_we_s2));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_n_s3 (.I0(n_we_raw), .O(n_we_s3));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_n_s0 (.I0(n_we_raw_lo), .O(n_we_s0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_n_s1 (.I0(n_we_raw_lo), .O(n_we_s1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_n_s2 (.I0(n_we_raw_hi), .O(n_we_s2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_n_s3 (.I0(n_we_raw_hi), .O(n_we_s3));
 `else
-	assign n_we_s0 = n_we_raw;
-	assign n_we_s1 = n_we_raw;
-	assign n_we_s2 = n_we_raw;
-	assign n_we_s3 = n_we_raw;
+	assign n_we_s0 = n_we_raw_lo;
+	assign n_we_s1 = n_we_raw_lo;
+	assign n_we_s2 = n_we_raw_hi;
+	assign n_we_s3 = n_we_raw_hi;
 `endif
 
 	wire [59:0] n_step_val = {
@@ -1124,8 +1140,9 @@ module atg_su_xu #(
 		ph_n_s0 ? {n[13:0], !dtr34_n} : {n[12:0], 2'b00}
 	};
 	wire [59:0] n_load_val = (rop_load == ATG_XU_RSQ[2:0]) ? {1'b0, lmm, 34'd0} : {1'b0, lmm, 26'd0, 8'd0};
-	wire [59:0] n_next = n_we_load ? n_load_val :
-	                     n_we_last ? {n[59:29], 29'd0} : n_step_val;
+	wire [29:0] n_next_lo = n_we_load_lo ? n_load_val[29:0]  : n_we_last ? 30'd0 : n_step_val[29:0];
+	wire [29:0] n_next_hi = n_we_load_hi ? n_load_val[59:30] : n_we_last ? n[59:30] : n_step_val[59:30];
+	wire [59:0] n_next = {n_next_hi, n_next_lo};
 
 	reg [14:0] n_s0, n_s1, n_s2, n_s3;
 	always @(posedge clk) begin
@@ -1144,15 +1161,18 @@ module atg_su_xu #(
 	assign n = {n_s3, n_s2, n_s1, n_s0};
 
 	wire idle_mine_rmask;
-	wire idle_mine_rop_rd;
+	wire idle_mine_rop;
+	wire idle_mine_rrd;
 	wire idle_mine_warp_grp;
 `ifdef SYNTH_KINTEX7
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_im_rmk (.I0(idle_mine_ctl), .O(idle_mine_rmask));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_im_rrd (.I0(idle_mine_ctl), .O(idle_mine_rop_rd));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_im_rop (.I0(idle_mine_ctl), .O(idle_mine_rop));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_im_rrd (.I0(idle_mine_ctl), .O(idle_mine_rrd));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_im_wgp (.I0(idle_mine_ctl), .O(idle_mine_warp_grp));
 `else
 	assign idle_mine_rmask    = idle_mine_ctl;
-	assign idle_mine_rop_rd   = idle_mine_ctl;
+	assign idle_mine_rop      = idle_mine_ctl;
+	assign idle_mine_rrd      = idle_mine_ctl;
 	assign idle_mine_warp_grp = idle_mine_ctl;
 `endif
 
@@ -1173,13 +1193,15 @@ module atg_su_xu #(
 		end else begin
 			if (idle_mine_rmask)
 				rmask <= x_mask[NPHYS-1:0];
-			if (idle_mine_rop_rd) begin
+			if (idle_mine_rop) begin
 				rop <= x_uop[ATG_UOP_OP +: 3];
 				rop_pipe <= x_uop[ATG_UOP_OP +: 3];
 				rop_dt <= x_uop[ATG_UOP_OP +: 3];
 				rop_load <= x_uop[ATG_UOP_OP +: 3];
 				rop_we <= x_uop[ATG_UOP_OP +: 3];
 				rop_step <= x_uop[ATG_UOP_OP +: 3];
+			end
+			if (idle_mine_rrd) begin
 				rrd <= x_uop[ATG_UOP_RD +: 7];
 			end
 			if (idle_mine_warp_grp) begin
@@ -1193,15 +1215,18 @@ module atg_su_xu #(
 
 	wire lue_we;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lue (.I0((st == FIN) && (sub_st == 4'd0)), .O(lue_we));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lue (.I0((st == FIN) && (sub_st_fin == 4'd0)), .O(lue_we));
 `else
-	assign lue_we = (st == FIN) && (sub_st == 4'd0);
+	assign lue_we = (st == FIN) && (sub_st_fin == 4'd0);
 `endif
 
 	always @(posedge clk) begin
 		if (rst_p) begin
 			st <= IDLE;
 			sub_st <= 4'd0;
+			sub_st_load <= 4'd0;
+			sub_st_step <= 4'd0;
+			sub_st_fin <= 4'd0;
 			li <= {LW{1'b0}};
 			step <= 6'd0;
 			step_cnt <= 6'd0;
@@ -1265,6 +1290,9 @@ module atg_su_xu #(
 			case (st)
 			IDLE: if (mine) begin
 				sub_st <= 4'd0;
+				sub_st_load <= 4'd0;
+				sub_st_step <= 4'd0;
+				sub_st_fin <= 4'd0;
 				if (first == NPHYS[LW:0])
 					st <= RET;
 				else begin
@@ -1274,6 +1302,9 @@ module atg_su_xu #(
 			end
 			LOAD: begin
 				sub_st <= sub_st1;
+				sub_st_load <= sub_st1;
+				sub_st_step <= sub_st1;
+				sub_st_fin <= sub_st1;
 				case (sub_st)
 				4'd0, 4'd1, 4'd2, 4'd3, 4'd4, 4'd5, 4'd7: ;
 				4'd6: begin
@@ -1284,6 +1315,9 @@ module atg_su_xu #(
 				end
 				default: begin
 					sub_st <= 4'd0;
+					sub_st_load <= 4'd0;
+					sub_st_step <= 4'd0;
+					sub_st_fin <= 4'd0;
 					step <= 6'd0;
 					step_cnt <= 6'd0;
 					step_cordic <= 6'd0;
@@ -1300,10 +1334,16 @@ module atg_su_xu #(
 			end
 			STEP: begin
 				sub_st <= sub_st1;
+				sub_st_load <= sub_st1;
+				sub_st_step <= sub_st1;
+				sub_st_fin <= sub_st1;
 				case (sub_st)
 				4'd0, 4'd1, 4'd2, 4'd3, 4'd4, 4'd5: ;
 				default: begin
 					sub_st <= 4'd0;
+					sub_st_load <= 4'd0;
+					sub_st_step <= 4'd0;
+					sub_st_fin <= 4'd0;
 					step <= step1;
 					step_cnt <= step1;
 					step_cordic <= step1;
@@ -1327,6 +1367,9 @@ module atg_su_xu #(
 			end
 			FIN: begin
 				sub_st <= sub_st1;
+				sub_st_load <= sub_st1;
+				sub_st_step <= sub_st1;
+				sub_st_fin <= sub_st1;
 				case (sub_st)
 				4'd0: if (lue_we) lue_r <= lue;
 				4'd1: ;
@@ -1354,6 +1397,9 @@ module atg_su_xu #(
 				4'd6: ;
 				default: begin
 					sub_st <= 4'd0;
+					sub_st_load <= 4'd0;
+					sub_st_step <= 4'd0;
+					sub_st_fin <= 4'd0;
 					st <= STORE;
 				end
 				endcase
@@ -1361,6 +1407,9 @@ module atg_su_xu #(
 			STORE: begin
 				/* The result of FIN is in res: store it, next lane. */
 				sub_st <= 4'd0;
+				sub_st_load <= 4'd0;
+				sub_st_step <= 4'd0;
+				sub_st_fin <= 4'd0;
 				if (after == NPHYS[LW:0])
 					st <= RET;
 				else begin

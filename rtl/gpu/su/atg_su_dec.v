@@ -61,19 +61,32 @@ module atg_su_dec #(
 	wire [31:0] d_hi = {{12{d_w1[31]}}, d_w1[31:22], 10'd0} << 2;
 
 	/* The table lookup: the RISC-V opcodes and custom-0..3. */
+	wire [6:0] d_opc_tab, d_opc_ctl;
+`ifdef SYNTH_KINTEX7
+	genvar g_opc;
+	generate
+		for (g_opc = 0; g_opc < 7; g_opc = g_opc + 1) begin : g_buf_opc
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bopc_t (.I0(d_opc[g_opc]), .O(d_opc_tab[g_opc]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bopc_c (.I0(d_opc[g_opc]), .O(d_opc_ctl[g_opc]));
+		end
+	endgenerate
+`else
+	assign d_opc_tab = d_opc;
+	assign d_opc_ctl = d_opc;
+`endif
 	wire [28:0] tr, tc;
-	(* keep = "true", max_fanout = 12 *) wire custom_lo = d_opc == 7'b0001011 || d_opc == 7'b0101011 || d_opc == 7'b1011011 ||
-		d_opc == 7'b1111011;
-	(* keep = "true", max_fanout = 12 *) wire custom_hi = d_opc == 7'b0001011 || d_opc == 7'b0101011 || d_opc == 7'b1011011 ||
-		d_opc == 7'b1111011;
+	wire custom_lo = d_opc_ctl == 7'b0001011 || d_opc_ctl == 7'b0101011 || d_opc_ctl == 7'b1011011 ||
+		d_opc_ctl == 7'b1111011;
+	wire custom_hi = d_opc_ctl == 7'b0001011 || d_opc_ctl == 7'b0101011 || d_opc_ctl == 7'b1011011 ||
+		d_opc_ctl == 7'b1111011;
 	atg_su_dec_tab tab (
-		.opc(d_opc), .f3(d_f3), .f7(d_f7), .rs2f(d_rs2f), .sub(d_sub), .fmt2(d_w0[26:25]),
+		.opc(d_opc_tab), .f3(d_f3), .f7(d_f7), .rs2f(d_rs2f), .sub(d_sub), .fmt2(d_w0[26:25]),
 		.def(tr[0]), .fmt(tr[3:1]), .unit(tr[7:4]), .op(tr[15:8]), .cls(tr[18:16]),
 		.use1(tr[19]), .use2(tr[20]), .use3(tr[21]), .wrd(tr[22]), .pair(tr[23]),
 		.side(tr[24]), .need_pk(tr[25]), .need_sg(tr[26]), .need_sa(tr[27]), .tex(tr[28])
 	);
 	atg_su_dec_tabc tabc (
-		.opc(d_opc), .f3(d_f3), .f7(d_f7), .rs2f(d_rs2f), .sub(d_sub), .fmt2(d_w0[26:25]),
+		.opc(d_opc_tab), .f3(d_f3), .f7(d_f7), .rs2f(d_rs2f), .sub(d_sub), .fmt2(d_w0[26:25]),
 		.def(tc[0]), .fmt(tc[3:1]), .unit(tc[7:4]), .op(tc[15:8]), .cls(tc[18:16]),
 		.use1(tc[19]), .use2(tc[20]), .use3(tc[21]), .wrd(tc[22]), .pair(tc[23]),
 		.side(tc[24]), .need_pk(tc[25]), .need_sg(tc[26]), .need_sa(tc[27]), .tex(tc[28])
@@ -88,10 +101,10 @@ module atg_su_dec #(
 
 	/* In RISC-V / custom encoding, FM_S only occurs for STORE (0100011), sts (0001011 f3=1),
 	 * and exp (0101011 f3=4); FM_B only occurs for BRANCH (1100011). */
-	(* keep = "true", max_fanout = 16 *) wire d_is_b = (d_opc == 7'b1100011);
-	(* keep = "true", max_fanout = 16 *) wire d_is_s = (d_opc == 7'b0100011) ||
-		(d_opc == 7'b0001011 && d_f3 == 3'd1) ||
-		(d_opc == 7'b0101011 && d_f3 == 3'd4);
+	wire d_is_b = (d_opc_ctl == 7'b1100011);
+	wire d_is_s = (d_opc_ctl == 7'b0100011) ||
+		(d_opc_ctl == 7'b0001011 && d_f3 == 3'd1) ||
+		(d_opc_ctl == 7'b0101011 && d_f3 == 3'd4);
 	wire [31:0] d_lo_i = {{20{d_w0[31]}}, d_w0[31:20]};
 	wire [31:0] d_lo_s = {{20{d_w0[31]}}, d_w0[31:25], d_w0[11:7]};
 	wire [31:0] d_lo_b = {{21{d_w0[31]}}, d_w0[7], d_w0[30:25], d_w0[11:8]};
@@ -103,16 +116,16 @@ module atg_su_dec #(
 		.b(d_hi), .ci(1'b0), .s(d_imm_isb), .co(im_co_unused)
 	);
 
-	(* max_fanout = 12 *) reg s0_valid;
-	(* max_fanout = 12 *) reg [WARP_W-1:0] s0_warp;
-	(* max_fanout = 12 *) reg [15:0] s0_pc;
-	(* max_fanout = 12 *) reg [31:0] s0_w0, s0_w1;
-	(* max_fanout = 12 *) reg [28:0] s0_tab;
-	(* max_fanout = 12 *) reg [6:0] s0_rs1_2;
-	(* max_fanout = 12 *) reg [31:0] s0_imm_isb;
+	reg s0_valid;
+	reg [WARP_W-1:0] s0_warp;
+	reg [15:0] s0_pc;
+	reg [31:0] s0_w0, s0_w1;
+	reg [28:0] s0_tab;
+	reg [6:0] s0_rs1_2;
+	reg [31:0] s0_imm_isb;
 	(* dont_touch = "true" *) reg [2:0] s0_not_fmu_r;
 
-	(* keep = "true", max_fanout = 12 *) wire u_adv = !u_valid || u_ready;
+	wire u_adv = !u_valid || u_ready;
 	assign d_ready = (PIPE_TAB != 0) ? (!s0_valid || u_adv) : u_adv;
 
 	(* keep = "true" *) wire s0_ce_0  = d_ready && d_valid;
@@ -204,7 +217,7 @@ module atg_su_dec #(
 	wire [31:0] imm_u = {w0[31:12], w1[13:2]};
 
 	wire def, use1, use2, use3, wrd, pair, side, need_pk, need_sg, need_sa, tex;
-	(* max_fanout = 12 *) wire [2:0] fmt, cls;
+	wire [2:0] fmt, cls;
 	wire [3:0] unit;
 	wire [7:0] op;
 	assign {tex, need_sa, need_sg, need_pk, side, pair, wrd, use3, use2, use1, cls, op, unit,
@@ -241,7 +254,7 @@ module atg_su_dec #(
 		(tex ? ({25'd0, rd} >= NREGS - 3 || rd >= 7'd60) : ({25'd0, rd} >= NREGS))));
 	/* texsz.s (texsz with op[6] and op[3]) needs MS4. */
 	wire need_ms = unit == ATG_UNIT_TEX && op[1:0] == 2'd3 && op[6] && op[3];
-	(* keep = "true", max_fanout = 12 *) wire ill = w0[1:0] != 2'b11 || !def || (need_pk && PACKED == 0) || (need_ms && MS4 == 0) ||
+	(* keep = "true" *) wire ill = w0[1:0] != 2'b11 || !def || (need_pk && PACKED == 0) || (need_ms && MS4 == 0) ||
 		(need_sg && SUBGROUP == 0) || (need_sa && HAS_SA == 0) ||
 		(use1 && src_bad(rs1)) || (use2 && src_bad(rs2)) || (use3 && !tcmp && src_bad(rs3f)) ||
 		pair_bad || cmp_bad || dst_bad;

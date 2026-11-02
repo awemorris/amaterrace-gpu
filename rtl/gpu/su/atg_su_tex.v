@@ -108,9 +108,9 @@ module atg_su_tex #(
 	reg [6:0] rd;
 	reg last;
 
-	(* max_fanout = 12 *) wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_TEX;
-	(* max_fanout = 12 *) wire cform = x_uop[ATG_UOP_OP + ATG_TEX_CFORM];
-	(* max_fanout = 12 *) wire three = x_uop[ATG_UOP_SUB + 4];	/* a .3 form (atg_su_dec) */
+	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_TEX;
+	wire cform = x_uop[ATG_UOP_OP + ATG_TEX_CFORM];
+	wire three = x_uop[ATG_UOP_SUB + 4];	/* a .3 form (atg_su_dec) */
 	wire wide = cform || three;	/* two operand passes */
 	wire [NPHYS-1:0] exec = x_mask[NPHYS-1:0];
 	wire rq_ready;
@@ -128,10 +128,10 @@ module atg_su_tex #(
 		end
 	end
 	wire take = mine && x_ready;
-	(* max_fanout = 12 *) wire take_idle = (st == IDLE) && rq_ready && mine;
-	(* max_fanout = 12 *) wire take_dref = (st == DREF) && rq_ready && mine;
+	wire take_idle = (st == IDLE) && rq_ready && mine;
+	wire take_dref = (st == DREF) && rq_ready && mine;
 	/* The record goes to the return half with the group's last pass. */
-	(* max_fanout = 12 *) wire push = take && (st == DREF || !wide);
+	wire push = take && (st == DREF || !wide);
 
 	assign x_ready = (st == IDLE || st == DREF) && rq_ready;
 	wire [3:0] qmask = lanes[q*4 +: 4];
@@ -169,7 +169,7 @@ module atg_su_tex #(
 			localparam H_BIT = (ghw % 2) * 16;
 			localparam W_IDX = ghw / 2;
 			wire [QW-1:0] q_sl_lo, q_sl_hi;
-			wire ti_s, td_s, th_s, cf_s;
+			wire [NQ-1:0] ti_s, td_s, th_s, cf_s;
 `ifdef SYNTH_KINTEX7
 			genvar gqw_s;
 			for (gqw_s = 0; gqw_s < QW; gqw_s = gqw_s + 1) begin : g_q_s_buf
@@ -177,17 +177,20 @@ module atg_su_tex #(
 				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qlo (.I0(q_in), .O(q_sl_lo[gqw_s]));
 				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qhi (.I0(q_in), .O(q_sl_hi[gqw_s]));
 			end
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tis (.I0(ti_l), .O(ti_s));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tds (.I0(td_l), .O(td_s));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ths (.I0(th_l), .O(th_s));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cfs (.I0(cf_l), .O(cf_s));
+			genvar gq_b;
+			for (gq_b = 0; gq_b < NQ; gq_b = gq_b + 1) begin : g_q_ctl_buf
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tis (.I0(ti_l), .O(ti_s[gq_b]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tds (.I0(td_l), .O(td_s[gq_b]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ths (.I0(th_l), .O(th_s[gq_b]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cfs (.I0(cf_l), .O(cf_s[gq_b]));
+			end
 `else
 			assign q_sl_lo = (ghw < 5) ? q_lane_0 : q_lane_1;
 			assign q_sl_hi = (ghw < 5) ? q_lane_0 : q_lane_1;
-			assign ti_s = ti_l;
-			assign td_s = td_l;
-			assign th_s = th_l;
-			assign cf_s = cf_l;
+			assign ti_s = {NQ{ti_l}};
+			assign td_s = {NQ{td_l}};
+			assign th_s = {NQ{th_l}};
+			assign cf_s = {NQ{cf_l}};
 `endif
 			wire [NQ*16-1:0] crd_sl;
 
@@ -200,13 +203,13 @@ module atg_su_tex #(
 				wire [15:0] idle_d = (W_IDX == 0) ? xa_h :
 				                     (W_IDX == 1) ? xc_h :
 				                     (W_IDX == 2) ? xb_h : 16'd0;
-				wire [15:0] dref_d = (W_IDX == 3) ? (th_s ? (cf_s ? xc_h : 16'd0) : xa_h) :
-				                     (W_IDX == 4) ? (th_s ? xa_h : 16'd0) :
+				wire [15:0] dref_d = (W_IDX == 3) ? (th_s[gqi] ? (cf_s[gqi] ? xc_h : 16'd0) : xa_h) :
+				                     (W_IDX == 4) ? (th_s[gqi] ? xa_h : 16'd0) :
 				                     crd_inst_r;
 				always @(posedge clk) begin
-					if (ti_s)
+					if (ti_s[gqi])
 						crd_inst_r <= idle_d;
-					else if (td_s && (W_IDX >= 3))
+					else if (td_s[gqi] && (W_IDX >= 3))
 						crd_inst_r <= dref_d;
 				end
 				assign crd_sl[gqi*16 +: 16] = crd_inst_r;
