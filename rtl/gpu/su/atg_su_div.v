@@ -86,24 +86,28 @@ module atg_su_div #(
 	assign x_ready = st == IDLE;
 
 	/* The next lane in the mask at or after lane n (NPHYS when none). */
-	function [LW:0] next_lane;
-		input [NPHYS-1:0] m;
-		input [LW:0] n;
-		integer i;
-		begin
-			next_lane = NPHYS[LW:0];
-			for (i = NPHYS - 1; i >= 0; i = i - 1)
-				if (m[i] && i >= n)
-					next_lane = i[LW:0];
-		end
-	endfunction
+	reg [LW:0] first;
+	integer fi;
+	always @(*) begin
+		first = NPHYS[LW:0];
+		for (fi = NPHYS - 1; fi >= 0; fi = fi - 1)
+			if (x_mask[fi])
+				first = fi[LW:0];
+	end
 
-	wire [LW:0] first = next_lane(x_mask[NPHYS-1:0], {(LW+1){1'b0}});
 	wire [LW:0] li_1;
 	wire l1_co_unused;
 	am_add #(.W(LW + 1)) u_li_1 (.a({1'b0, li}), .b({(LW + 1){1'b0}}), .ci(1'b1), .s(li_1),
 		.co(l1_co_unused));
-	wire [LW:0] after = next_lane(rm, li_1);
+
+	reg [LW:0] after;
+	integer ai;
+	always @(*) begin
+		after = NPHYS[LW:0];
+		for (ai = NPHYS - 1; ai >= 0; ai = ai - 1)
+			if (rm[ai] && ai >= li_1)
+				after = ai[LW:0];
+	end
 	wire [DW-1:0] ra, rb, rq;
 	wire [31:0] la = la_cur_r;
 	wire [31:0] lb = lb_cur_r;

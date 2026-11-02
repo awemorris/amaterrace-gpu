@@ -746,75 +746,6 @@ module atg_su_exp #(
 	reg [3:0] zexp;
 	reg [3:0] smok;
 	integer i;
-	function [15:0] get_rdat_ch;
-		input [NPHYS*192-1:0] all_rdat;
-		input [4:0] l_idx;
-		input [3:0] ch_idx;
-		integer k;
-		begin
-			get_rdat_ch = 16'd0;
-			for (k = 0; k < NPHYS; k = k + 1) begin
-				if (l_idx[4:0] == k[4:0])
-					get_rdat_ch = all_rdat[k * 192 + ch_idx * 16 +: 16];
-			end
-		end
-	endfunction
-
-	function [7:0] get_rdat_ch_lo;
-		input [NPHYS*192-1:0] all_rdat;
-		input [4:0] l_idx;
-		input [3:0] ch_idx;
-		integer k;
-		begin
-			get_rdat_ch_lo = 8'd0;
-			for (k = 0; k < NPHYS; k = k + 1) begin
-				if (l_idx[4:0] == k[4:0])
-					get_rdat_ch_lo = all_rdat[k * 192 + ch_idx * 16 +: 8];
-			end
-		end
-	endfunction
-
-	function [7:0] get_rdat_ch_hi;
-		input [NPHYS*192-1:0] all_rdat;
-		input [4:0] l_idx;
-		input [3:0] ch_idx;
-		integer k;
-		begin
-			get_rdat_ch_hi = 8'd0;
-			for (k = 0; k < NPHYS; k = k + 1) begin
-				if (l_idx[4:0] == k[4:0])
-					get_rdat_ch_hi = all_rdat[k * 192 + ch_idx * 16 + 8 +: 8];
-			end
-		end
-	endfunction
-
-	function [7:0] get_rdat1_ch_lo;
-		input [NPHYS*128-1:0] all_rdat1;
-		input [4:0] l_idx;
-		input [3:0] ch_idx;
-		integer k;
-		begin
-			get_rdat1_ch_lo = 8'd0;
-			for (k = 0; k < NPHYS; k = k + 1) begin
-				if (l_idx[4:0] == k[4:0])
-					get_rdat1_ch_lo = all_rdat1[k * 128 + ch_idx * 16 +: 8];
-			end
-		end
-	endfunction
-
-	function [7:0] get_rdat1_ch_hi;
-		input [NPHYS*128-1:0] all_rdat1;
-		input [4:0] l_idx;
-		input [3:0] ch_idx;
-		integer k;
-		begin
-			get_rdat1_ch_hi = 8'd0;
-			for (k = 0; k < NPHYS; k = k + 1) begin
-				if (l_idx[4:0] == k[4:0])
-					get_rdat1_ch_hi = all_rdat1[k * 128 + ch_idx * 16 + 8 +: 8];
-			end
-		end
-	endfunction
 
 	genvar gi, gch;
 	generate
@@ -864,10 +795,22 @@ module atg_su_exp #(
 					assign lane_col1_ch_hi[glb] = lane_col1[glb];
 `endif
 				end
-				assign col[128 * gi + gch * 16 +: 8]      = get_rdat_ch_lo(rdat, lane_col_ch_lo, gch[3:0]);
-				assign col[128 * gi + gch * 16 + 8 +: 8]  = get_rdat_ch_hi(rdat, lane_col_ch_hi, gch[3:0]);
-				assign col1[128 * gi + gch * 16 +: 8]     = get_rdat1_ch_lo(rdat1, lane_col1_ch_lo, gch[3:0]);
-				assign col1[128 * gi + gch * 16 + 8 +: 8] = get_rdat1_ch_hi(rdat1, lane_col1_ch_hi, gch[3:0]);
+				atg_su_exp_ch_mux #(.NPHYS(NPHYS), .CH_W(192), .HI(0), .CH_IDX(gch)) u_col_lo (
+					.all_rdat(rdat), .l_idx(lane_col_ch_lo),
+					.byte_out(col[128 * gi + gch * 16 +: 8])
+				);
+				atg_su_exp_ch_mux #(.NPHYS(NPHYS), .CH_W(192), .HI(1), .CH_IDX(gch)) u_col_hi (
+					.all_rdat(rdat), .l_idx(lane_col_ch_hi),
+					.byte_out(col[128 * gi + gch * 16 + 8 +: 8])
+				);
+				atg_su_exp_ch_mux #(.NPHYS(NPHYS), .CH_W(128), .HI(0), .CH_IDX(gch)) u_col1_lo (
+					.all_rdat(rdat1), .l_idx(lane_col1_ch_lo),
+					.byte_out(col1[128 * gi + gch * 16 +: 8])
+				);
+				atg_su_exp_ch_mux #(.NPHYS(NPHYS), .CH_W(128), .HI(1), .CH_IDX(gch)) u_col1_hi (
+					.all_rdat(rdat1), .l_idx(lane_col1_ch_hi),
+					.byte_out(col1[128 * gi + gch * 16 + 8 +: 8])
+				);
 			end
 			for (gch = 0; gch < 2; gch = gch + 1) begin : g_d_sl
 				wire [4:0] lane_dep_m4_lo, lane_dep_m4_hi;
@@ -886,10 +829,23 @@ module atg_su_exp #(
 					assign lane_dep_mz_hi[gdb] = lane_dep[gdb];
 `endif
 				end
-				wire [7:0] w_m4_lo = get_rdat_ch_lo(rdat, lane_dep_m4_lo, 4'd8 + gch[3:0]);
-				wire [7:0] w_m4_hi = get_rdat_ch_hi(rdat, lane_dep_m4_hi, 4'd8 + gch[3:0]);
-				wire [7:0] w_mz_lo = get_rdat_ch_lo(rdat, lane_dep_mz_lo, 4'd10 + gch[3:0]);
-				wire [7:0] w_mz_hi = get_rdat_ch_hi(rdat, lane_dep_mz_hi, 4'd10 + gch[3:0]);
+				wire [7:0] w_m4_lo, w_m4_hi, w_mz_lo, w_mz_hi;
+				atg_su_exp_ch_mux #(.NPHYS(NPHYS), .CH_W(192), .HI(0), .CH_IDX(8 + gch)) u_m4_lo (
+					.all_rdat(rdat), .l_idx(lane_dep_m4_lo),
+					.byte_out(w_m4_lo)
+				);
+				atg_su_exp_ch_mux #(.NPHYS(NPHYS), .CH_W(192), .HI(1), .CH_IDX(8 + gch)) u_m4_hi (
+					.all_rdat(rdat), .l_idx(lane_dep_m4_hi),
+					.byte_out(w_m4_hi)
+				);
+				atg_su_exp_ch_mux #(.NPHYS(NPHYS), .CH_W(192), .HI(0), .CH_IDX(10 + gch)) u_mz_lo (
+					.all_rdat(rdat), .l_idx(lane_dep_mz_lo),
+					.byte_out(w_mz_lo)
+				);
+				atg_su_exp_ch_mux #(.NPHYS(NPHYS), .CH_W(192), .HI(1), .CH_IDX(10 + gch)) u_mz_hi (
+					.all_rdat(rdat), .l_idx(lane_dep_mz_hi),
+					.byte_out(w_mz_hi)
+				);
 				wire q_ddw_cur = (gch == 0) ? q_ddw_ch0 : q_ddw_ch1;
 				assign dep[32 * gi + gch * 16 +: 8]      = q_ddw_cur ? w_m4_lo : w_mz_lo;
 				assign dep[32 * gi + gch * 16 + 8 +: 8]  = q_ddw_cur ? w_m4_hi : w_mz_hi;
@@ -1201,6 +1157,27 @@ module atg_su_exp #(
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_a, x_c, x_mask[NPHYS-1:0], x_info,
 		x_uop, fl_info[63:49], fl_data[7:0], tgt, xrow, lane0, zrow, drow, fq, dqs, mesh_done_unused,
 		mesh_pb_10, mesh_vb_10};
+endmodule
+
+module atg_su_exp_ch_mux #(
+	parameter NPHYS = 8,
+	parameter CH_W = 192,
+	parameter HI = 0,
+	parameter integer CH_IDX = 0
+) (
+	input wire [NPHYS*CH_W-1:0] all_rdat,
+	input wire [4:0] l_idx,
+	output reg [7:0] byte_out
+);
+	localparam OFF = CH_IDX * 16 + (HI ? 8 : 0);
+	integer k;
+	always @(*) begin
+		byte_out = 8'd0;
+		for (k = 0; k < NPHYS; k = k + 1) begin
+			if (l_idx[4:0] == k[4:0])
+				byte_out = all_rdat[k * CH_W + OFF +: 8];
+		end
+	end
 endmodule
 
 `default_nettype wire

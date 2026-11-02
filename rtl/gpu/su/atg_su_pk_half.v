@@ -40,98 +40,6 @@ module atg_su_pk_half #(
 	localparam AR = ARITH != 0;
 	localparam FL = ARITH != 0 && FP != 0;
 
-	/* Pure logic 10-bit incrementer (2 LUT6 levels, 0 CARRY4 primitives) */
-	function [9:0] inc10;
-		input [9:0] a;
-		input lo_all1;
-		reg [4:0] lo;
-		reg [4:0] hi;
-		begin
-			lo[0] = ~a[0];
-			lo[1] = a[1] ^ a[0];
-			lo[2] = a[2] ^ (&a[1:0]);
-			lo[3] = a[3] ^ (&a[2:0]);
-			lo[4] = a[4] ^ (&a[3:0]);
-			hi[0] = a[5] ^ lo_all1;
-			hi[1] = a[6] ^ (a[5] & lo_all1);
-			hi[2] = a[7] ^ ((&a[6:5]) & lo_all1);
-			hi[3] = a[8] ^ ((&a[7:5]) & lo_all1);
-			hi[4] = a[9] ^ ((&a[8:5]) & lo_all1);
-			inc10 = {hi, lo};
-		end
-	endfunction
-
-	/* Pure logic 5-bit incrementer (1 LUT5 level, 0 CARRY4 primitives) */
-	function [4:0] inc5;
-		input [4:0] a;
-		begin
-			inc5[0] = ~a[0];
-			inc5[1] = a[1] ^ a[0];
-			inc5[2] = a[2] ^ (&a[1:0]);
-			inc5[3] = a[3] ^ (&a[2:0]);
-			inc5[4] = a[4] ^ (&a[3:0]);
-		end
-	endfunction
-
-	/* Pure logic 3-bit incrementer (1 LUT3 level, 0 CARRY4 primitives) */
-	function [2:0] inc3;
-		input [2:0] a;
-		begin
-			inc3[0] = ~a[0];
-			inc3[1] = a[1] ^ a[0];
-			inc3[2] = a[2] ^ (&a[1:0]);
-		end
-	endfunction
-
-	/* Pure logic 4-bit adder with carry-in and carry-out (1 LUT6 level, 0 CARRY4) */
-	function [4:0] add4_co;
-		input [3:0] x;
-		input [3:0] y_in;
-		input ci;
-		reg c1, c2, c3, c4;
-		begin
-			c1 = (x[0] & y_in[0]) | ((x[0] ^ y_in[0]) & ci);
-			c2 = (x[1] & y_in[1]) | ((x[1] ^ y_in[1]) & c1);
-			c3 = (x[2] & y_in[2]) | ((x[2] ^ y_in[2]) & c2);
-			c4 = (x[3] & y_in[3]) | ((x[3] ^ y_in[3]) & c3);
-			add4_co = {c4, x[3] ^ y_in[3] ^ c3, x[2] ^ y_in[2] ^ c2, x[1] ^ y_in[1] ^ c1, x[0] ^ y_in[0] ^ ci};
-		end
-	endfunction
-
-	/* 6-input sticky helper: (h3 & |l[2:0]) | (h2 & |l[1:0]) | (h1 & l[0]) (1 LUT6) */
-	function st_part6;
-		input [2:0] h31;
-		input [2:0] l20;
-		begin
-			st_part6 = (h31[2] && (|l20[2:0])) || (h31[1] && (|l20[1:0])) || (h31[0] && l20[0]);
-		end
-	endfunction
-
-	/* Pure logic 4-bit two's complement negate (1 LUT4 level, 0 CARRY4) */
-	function [3:0] neg4;
-		input [3:0] a;
-		begin
-			neg4[0] = a[0];
-			neg4[1] = a[1] ^ a[0];
-			neg4[2] = a[2] ^ (|a[1:0]);
-			neg4[3] = a[3] ^ (|a[2:0]);
-		end
-	endfunction
-
-	/* Carry out of bit 1 of (eb_lo[1:0] + msb_nibble(x[3:1])[1:0] + ci) (5 inputs -> 1 LUT5) */
-	function nib_c2;
-		input [2:0] x31;
-		input [1:0] eb10;
-		input ci;
-		reg m1, m0, c1;
-		begin
-			m1 = |x31[2:1];
-			m0 = x31[2] || (!x31[1] && x31[0]);
-			c1 = ci ? (eb10[0] || m0) : (eb10[0] && m0);
-			nib_c2 = (eb10[1] && m1) || ((eb10[1] ^ m1) && c1);
-		end
-	endfunction
-
 	generate
 	if (LAT == 0) begin : g_lat0
 		wire packh = o == ATG_PK_PACKH[3:0];
@@ -325,8 +233,11 @@ module atg_su_pk_half #(
 		wire        s2_p_lo1   = &s2_xw[17:13];
 		wire        s2_p_hi1   = &s2_xw[22:18];
 		wire        s2_p_carry = s2_p_lo1 && s2_p_hi1 && s2_p_up;
-		wire [9:0]  s2_p_mp1   = inc10(s2_xw[22:13], s2_p_lo1);
-		wire [4:0]  s2_p_ep1   = inc5(s2_er_p[4:0]);
+		wire [9:0]  s2_p_mp1;
+		wire [4:0]  s2_p_ep1;
+		wire [1:0]  s2_p_inc_co_unused;
+		am_add #(.W(10)) u_s2_p_mp1 (.a(s2_xw[22:13]), .b(10'd1), .ci(1'b0), .s(s2_p_mp1), .co(s2_p_inc_co_unused[0]));
+		am_add #(.W(5))  u_s2_p_ep1 (.a(s2_er_p[4:0]), .b(5'd1),  .ci(1'b0), .s(s2_p_ep1), .co(s2_p_inc_co_unused[1]));
 		wire [9:0]  s2_p_mr    = s2_p_carry ? 10'd0 : (s2_p_up ? s2_p_mp1 : s2_xw[22:13]);
 		wire [4:0]  s2_p_exp   = s2_p_carry ? s2_p_ep1 : s2_er_p[4:0];
 		wire        s2_p_ovf0  = !s2_er_p[9] && ((|s2_er_p[8:5]) || (&s2_er_p[4:0]));
@@ -715,8 +626,11 @@ module atg_su_pk_half #(
 		wire        s2_p_lo1   = &s2_xw[17:13];
 		wire        s2_p_hi1   = &s2_xw[22:18];
 		wire        s2_p_carry = s2_p_lo1 && s2_p_hi1 && s2_p_up;
-		wire [9:0]  s2_p_mp1   = inc10(s2_xw[22:13], s2_p_lo1);
-		wire [4:0]  s2_p_ep1   = inc5(s2_er_p[4:0]);
+		wire [9:0]  s2_p_mp1;
+		wire [4:0]  s2_p_ep1;
+		wire [1:0]  s2_p_inc_co_unused;
+		am_add #(.W(10)) u_s2_p_mp1 (.a(s2_xw[22:13]), .b(10'd1), .ci(1'b0), .s(s2_p_mp1), .co(s2_p_inc_co_unused[0]));
+		am_add #(.W(5))  u_s2_p_ep1 (.a(s2_er_p[4:0]), .b(5'd1),  .ci(1'b0), .s(s2_p_ep1), .co(s2_p_inc_co_unused[1]));
 		wire [9:0]  s2_p_mr    = s2_p_carry ? 10'd0 : (s2_p_up ? s2_p_mp1 : s2_xw[22:13]);
 		wire [4:0]  s2_p_exp   = s2_p_carry ? s2_p_ep1 : s2_er_p[4:0];
 		wire        s2_p_ovf0  = !s2_er_p[9] && ((|s2_er_p[8:5]) || (&s2_er_p[4:0]));
@@ -981,12 +895,16 @@ module atg_su_pk_half #(
 		};
 		wire        s4_sr   = s4_swap ? s4_sc : s4_sp;
 
-		/* Precompute block exponent bases (+0, +16, +32) and their +1 upper bits (LUT3, 0 CARRY4) */
+		/* Precompute block exponent bases (+0, +16, +32) and their +1 upper bits */
 		wire [2:0] s4_eb_hi0 = s4_eb[6:4];
-		wire [2:0] s4_eb_hi1 = inc3(s4_eb[6:4]);
+		wire [2:0] s4_eb_hi1;
 		wire [2:0] s4_eb_hi2 = {s4_eb[6] ^ s4_eb[5], ~s4_eb[5], s4_eb[4]};
-		wire [2:0] s4_eb_hi3 = inc3(s4_eb_hi2);
-		wire [3:0] s4_eb_neg = neg4(s4_eb[3:0]);
+		wire [2:0] s4_eb_hi3;
+		wire [3:0] s4_eb_neg;
+		wire [2:0] s4_eb_co_unused;
+		am_add #(.W(3)) u_s4_eb_hi1 (.a(s4_eb[6:4]), .b(3'd1), .ci(1'b0), .s(s4_eb_hi1), .co(s4_eb_co_unused[0]));
+		am_add #(.W(3)) u_s4_eb_hi3 (.a(s4_eb_hi2),  .b(3'd1), .ci(1'b0), .s(s4_eb_hi3), .co(s4_eb_co_unused[1]));
+		am_sub #(.W(4)) u_s4_eb_neg (.a(4'd0),        .b(s4_eb[3:0]), .bi(1'b0), .d(s4_eb_neg), .bo(s4_eb_co_unused[2]));
 
 		wire s4_is_fma = FL && (s4_o == ATG_PK_FADD2[3:0] || s4_o == ATG_PK_FSUB2[3:0] ||
 		                        s4_o == ATG_PK_FMUL2[3:0] || s4_o == ATG_PK_FFMA2[3:0]);
@@ -1064,14 +982,9 @@ module atg_su_pk_half #(
 		};
 		(* keep = "true" *) wire b2_g32  = s5_eb_lo[3] && s5_eb_lo[2] && s5_sum[36];
 		(* keep = "true" *) wire b2_p32  = s5_eb_lo[3] ? (s5_eb_lo[2] || s5_sum[36]) : (s5_eb_lo[2] && s5_sum[36]);
-		(* keep = "true" *) wire b2_c2_0 = nib_c2(
-			{!s5_sum[36] && s5_sum[35], !s5_sum[36] && s5_sum[34], !s5_sum[36] && s5_sum[33]},
-			s5_eb_lo[1:0], 1'b0
-		);
-		(* keep = "true" *) wire b2_c2_1 = nib_c2(
-			{!s5_sum[36] && s5_sum[35], !s5_sum[36] && s5_sum[34], !s5_sum[36] && s5_sum[33]},
-			s5_eb_lo[1:0], 1'b1
-		);
+		(* keep = "true" *) wire b2_c2_0, b2_c2_1;
+		atg_su_pk_nib_c2 u_b2_c2_0 ({!s5_sum[36] && s5_sum[35], !s5_sum[36] && s5_sum[34], !s5_sum[36] && s5_sum[33]}, s5_eb_lo[1:0], 1'b0, b2_c2_0);
+		atg_su_pk_nib_c2 u_b2_c2_1 ({!s5_sum[36] && s5_sum[35], !s5_sum[36] && s5_sum[34], !s5_sum[36] && s5_sum[33]}, s5_eb_lo[1:0], 1'b1, b2_c2_1);
 
 		(* keep = "true" *) wire b1_h3   = |s5_sum[31:28], b1_h2   = |s5_sum[27:24], b1_h1 = |s5_sum[23:20], b1_h0 = |s5_sum[19:16];
 		(* keep = "true" *) wire b1_h3_s = |s5_sum[31:28], b1_h2_s = |s5_sum[27:24];
@@ -1079,36 +992,41 @@ module atg_su_pk_half #(
 		(* keep = "true" *) wire b1_m1_2 = |s5_sum[27:26], b1_m0_2 = s5_sum[27] || (!s5_sum[26] && s5_sum[25]);
 		(* keep = "true" *) wire b1_m1_1 = |s5_sum[23:22], b1_m0_1 = s5_sum[23] || (!s5_sum[22] && s5_sum[21]);
 		(* keep = "true" *) wire b1_m1_0 = |s5_sum[19:18], b1_m0_0 = s5_sum[19] || (!s5_sum[18] && s5_sum[17]);
-		(* keep = "true" *) wire b1_c2_0_3 = nib_c2(s5_sum[31:29], s5_eb_lo[1:0], 1'b0);
-		(* keep = "true" *) wire b1_c2_0_2 = nib_c2(s5_sum[27:25], s5_eb_lo[1:0], 1'b0);
-		(* keep = "true" *) wire b1_c2_0_1 = nib_c2(s5_sum[23:21], s5_eb_lo[1:0], 1'b0);
-		(* keep = "true" *) wire b1_c2_0_0 = nib_c2(s5_sum[19:17], s5_eb_lo[1:0], 1'b0);
-		(* keep = "true" *) wire b1_c2_1_3 = nib_c2(s5_sum[31:29], s5_eb_lo[1:0], 1'b1);
-		(* keep = "true" *) wire b1_c2_1_2 = nib_c2(s5_sum[27:25], s5_eb_lo[1:0], 1'b1);
-		(* keep = "true" *) wire b1_c2_1_1 = nib_c2(s5_sum[23:21], s5_eb_lo[1:0], 1'b1);
-		(* keep = "true" *) wire b1_c2_1_0 = nib_c2(s5_sum[19:17], s5_eb_lo[1:0], 1'b1);
+		(* keep = "true" *) wire b1_c2_0_3, b1_c2_0_2, b1_c2_0_1, b1_c2_0_0;
+		(* keep = "true" *) wire b1_c2_1_3, b1_c2_1_2, b1_c2_1_1, b1_c2_1_0;
+		atg_su_pk_nib_c2 u_b1_c2_0_3 (s5_sum[31:29], s5_eb_lo[1:0], 1'b0, b1_c2_0_3);
+		atg_su_pk_nib_c2 u_b1_c2_0_2 (s5_sum[27:25], s5_eb_lo[1:0], 1'b0, b1_c2_0_2);
+		atg_su_pk_nib_c2 u_b1_c2_0_1 (s5_sum[23:21], s5_eb_lo[1:0], 1'b0, b1_c2_0_1);
+		atg_su_pk_nib_c2 u_b1_c2_0_0 (s5_sum[19:17], s5_eb_lo[1:0], 1'b0, b1_c2_0_0);
+		atg_su_pk_nib_c2 u_b1_c2_1_3 (s5_sum[31:29], s5_eb_lo[1:0], 1'b1, b1_c2_1_3);
+		atg_su_pk_nib_c2 u_b1_c2_1_2 (s5_sum[27:25], s5_eb_lo[1:0], 1'b1, b1_c2_1_2);
+		atg_su_pk_nib_c2 u_b1_c2_1_1 (s5_sum[23:21], s5_eb_lo[1:0], 1'b1, b1_c2_1_1);
+		atg_su_pk_nib_c2 u_b1_c2_1_0 (s5_sum[19:17], s5_eb_lo[1:0], 1'b1, b1_c2_1_0);
 
 		(* keep = "true" *) wire b0_h3 = |s5_sum[15:12], b0_h2 = |s5_sum[11:8], b0_h1 = |s5_sum[7:4], b0_h0 = |s5_sum[3:0];
 		(* keep = "true" *) wire b0_m1_3 = |s5_sum[15:14], b0_m0_3 = s5_sum[15] || (!s5_sum[14] && s5_sum[13]);
 		(* keep = "true" *) wire b0_m1_2 = |s5_sum[11:10], b0_m0_2 = s5_sum[11] || (!s5_sum[10] && s5_sum[9]);
 		(* keep = "true" *) wire b0_m1_1 = |s5_sum[7:6],   b0_m0_1 = s5_sum[7]  || (!s5_sum[6]  && s5_sum[5]);
 		(* keep = "true" *) wire b0_m1_0 = |s5_sum[3:2],   b0_m0_0 = s5_sum[3]  || (!s5_sum[2]  && s5_sum[1]);
-		(* keep = "true" *) wire b0_c2_0_3 = nib_c2(s5_sum[15:13], s5_eb_lo[1:0], 1'b0);
-		(* keep = "true" *) wire b0_c2_0_2 = nib_c2(s5_sum[11:9],  s5_eb_lo[1:0], 1'b0);
-		(* keep = "true" *) wire b0_c2_0_1 = nib_c2(s5_sum[7:5],   s5_eb_lo[1:0], 1'b0);
-		(* keep = "true" *) wire b0_c2_0_0 = nib_c2(s5_sum[3:1],   s5_eb_lo[1:0], 1'b0);
-		(* keep = "true" *) wire b0_c2_1_3 = nib_c2(s5_sum[15:13], s5_eb_lo[1:0], 1'b1);
-		(* keep = "true" *) wire b0_c2_1_2 = nib_c2(s5_sum[11:9],  s5_eb_lo[1:0], 1'b1);
-		(* keep = "true" *) wire b0_c2_1_1 = nib_c2(s5_sum[7:5],   s5_eb_lo[1:0], 1'b1);
-		(* keep = "true" *) wire b0_c2_1_0 = nib_c2(s5_sum[3:1],   s5_eb_lo[1:0], 1'b1);
+		(* keep = "true" *) wire b0_c2_0_3, b0_c2_0_2, b0_c2_0_1, b0_c2_0_0;
+		(* keep = "true" *) wire b0_c2_1_3, b0_c2_1_2, b0_c2_1_1, b0_c2_1_0;
+		atg_su_pk_nib_c2 u_b0_c2_0_3 (s5_sum[15:13], s5_eb_lo[1:0], 1'b0, b0_c2_0_3);
+		atg_su_pk_nib_c2 u_b0_c2_0_2 (s5_sum[11:9],  s5_eb_lo[1:0], 1'b0, b0_c2_0_2);
+		atg_su_pk_nib_c2 u_b0_c2_0_1 (s5_sum[7:5],   s5_eb_lo[1:0], 1'b0, b0_c2_0_1);
+		atg_su_pk_nib_c2 u_b0_c2_0_0 (s5_sum[3:1],   s5_eb_lo[1:0], 1'b0, b0_c2_0_0);
+		atg_su_pk_nib_c2 u_b0_c2_1_3 (s5_sum[15:13], s5_eb_lo[1:0], 1'b1, b0_c2_1_3);
+		atg_su_pk_nib_c2 u_b0_c2_1_2 (s5_sum[11:9],  s5_eb_lo[1:0], 1'b1, b0_c2_1_2);
+		atg_su_pk_nib_c2 u_b0_c2_1_1 (s5_sum[7:5],   s5_eb_lo[1:0], 1'b1, b0_c2_1_1);
+		atg_su_pk_nib_c2 u_b0_c2_1_0 (s5_sum[3:1],   s5_eb_lo[1:0], 1'b1, b0_c2_1_0);
 
-		(* keep = "true" *) wire st2_p0 = st_part6(s5_sum[35:33], s5_sum[23:21]);
+		(* keep = "true" *) wire st2_p0, st1_p3, st1_p2, st1_p1, st1_p0, st0_p0;
+		atg_su_pk_st_part6 u_st2_p0 (s5_sum[35:33], s5_sum[23:21], st2_p0);
 		(* keep = "true" *) wire st2_p1 = s5_sum[36] && (|s5_sum[24:21]);
-		(* keep = "true" *) wire st1_p3 = st_part6(s5_sum[31:29], s5_sum[19:17]);
-		(* keep = "true" *) wire st1_p2 = st_part6(s5_sum[27:25], s5_sum[15:13]);
-		(* keep = "true" *) wire st1_p1 = st_part6(s5_sum[23:21], s5_sum[11:9]);
-		(* keep = "true" *) wire st1_p0 = st_part6(s5_sum[19:17], s5_sum[7:5]);
-		(* keep = "true" *) wire st0_p0 = st_part6(s5_sum[14:12], s5_sum[2:0]);
+		atg_su_pk_st_part6 u_st1_p3 (s5_sum[31:29], s5_sum[19:17], st1_p3);
+		atg_su_pk_st_part6 u_st1_p2 (s5_sum[27:25], s5_sum[15:13], st1_p2);
+		atg_su_pk_st_part6 u_st1_p1 (s5_sum[23:21], s5_sum[11:9],  st1_p1);
+		atg_su_pk_st_part6 u_st1_p0 (s5_sum[19:17], s5_sum[7:5],   st1_p0);
+		atg_su_pk_st_part6 u_st0_p0 (s5_sum[14:12], s5_sum[2:0],   st0_p0);
 		(* keep = "true" *) wire st0_p1 = s5_sum[15] && (|s5_sum[3:0]);
 		(* keep = "true" *) wire or_4_0   = |s5_sum[4:0];
 		(* keep = "true" *) wire or_8_5   = |s5_sum[8:5];
@@ -1347,6 +1265,26 @@ module atg_su_pk_half #(
 			s2_bo_unused, s2_eb_c[9:7], s2_eb_t[9:7], s3_dp37[9:6], s4_bo_cp_unused};
 	end
 	endgenerate
+endmodule
+
+module atg_su_pk_st_part6 (
+	input wire [2:0] h31,
+	input wire [2:0] l20,
+	output wire st
+);
+	assign st = (h31[2] && (|l20[2:0])) || (h31[1] && (|l20[1:0])) || (h31[0] && l20[0]);
+endmodule
+
+module atg_su_pk_nib_c2 (
+	input wire [2:0] x31,
+	input wire [1:0] eb10,
+	input wire ci,
+	output wire co
+);
+	wire m1 = |x31[2:1];
+	wire m0 = x31[2] || (!x31[1] && x31[0]);
+	wire c1 = ci ? (eb10[0] || m0) : (eb10[0] && m0);
+	assign co = (eb10[1] && m1) || ((eb10[1] ^ m1) && c1);
 endmodule
 
 `default_nettype wire

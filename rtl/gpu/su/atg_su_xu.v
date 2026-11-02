@@ -119,24 +119,29 @@ module atg_su_xu #(
 	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_XU;
 	assign x_ready = st == IDLE;
 
-	function [LW:0] next_lane;
-		input [NPHYS-1:0] m;
-		input [LW:0] k;
-		integer i;
-		begin
-			next_lane = NPHYS[LW:0];
-			for (i = NPHYS - 1; i >= 0; i = i - 1)
-				if (m[i] && i >= k)
-					next_lane = i[LW:0];
-		end
-	endfunction
-
 	wire [27:0] carry_unused;	/* the adders' carries and borrows */
-	wire [LW:0] first = next_lane(x_mask[NPHYS-1:0], {(LW+1){1'b0}});
+
+	reg [LW:0] first;
+	integer fi;
+	always @(*) begin
+		first = NPHYS[LW:0];
+		for (fi = NPHYS - 1; fi >= 0; fi = fi - 1)
+			if (x_mask[fi])
+				first = fi[LW:0];
+	end
+
 	wire [LW:0] li1;
 	am_add #(.W(LW+1)) u_li1 (.a({1'b0, li}), .b({(LW+1){1'b0}}), .ci(1'b1), .s(li1),
 		.co(carry_unused[0]));
-	wire [LW:0] after = next_lane(rmask, li1);
+
+	reg [LW:0] after;
+	integer ai;
+	always @(*) begin
+		after = NPHYS[LW:0];
+		for (ai = NPHYS - 1; ai >= 0; ai = ai - 1)
+			if (rmask[ai] && ai >= li1)
+				after = ai[LW:0];
+	end
 	/* The lane's input, flushed, and its fields (registered in sub_st 0). */
 	wire [31:0] lx_cur_r;
 	wire [31:0] lx_raw = atg_su_flush(lx_cur_r);

@@ -61,13 +61,6 @@ module atg_su_exp_drain #(
 );
 	localparam [1:0] S_IDLE = 2'd0, S_FIRST = 2'd1, S_DRAIN = 2'd2, S_RET = 2'd3;
 
-	/* the lowest attachment of m (0 when none) */
-	function [2:0] low;
-		input [7:0] m;
-		low = m[0] ? 3'd0 : m[1] ? 3'd1 : m[2] ? 3'd2 : m[3] ? 3'd3 :
-		      m[4] ? 3'd4 : m[5] ? 3'd5 : m[6] ? 3'd6 : m[7] ? 3'd7 : 3'd0;
-	endfunction
-
 	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	(* max_fanout = 12 *) reg [NWARPS-1:0] frag, ended;
@@ -140,7 +133,9 @@ module atg_su_exp_drain #(
 	assign xr_valid = vx_v || st == S_RET;
 	assign xr_warp = vx_v ? vx_w : d_warp;
 
-	(* keep = "true" *) wire [2:0] first_low_rtw = low(d_rtw);
+	(* keep = "true" *) wire [2:0] first_low_rtw =
+		d_rtw[0] ? 3'd0 : d_rtw[1] ? 3'd1 : d_rtw[2] ? 3'd2 : d_rtw[3] ? 3'd3 :
+		d_rtw[4] ? 3'd4 : d_rtw[5] ? 3'd5 : d_rtw[6] ? 3'd6 : d_rtw[7] ? 3'd7 : 3'd0;
 
 	always @(posedge clk) begin
 		if (rst_p) begin

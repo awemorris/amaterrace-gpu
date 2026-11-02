@@ -266,78 +266,32 @@ module atg_su_pt #(
 	assign pt_done = {{(8-NB){1'b0}}, done};
 
 	/*
-	 * Pipelined popcount of vl_mask (eliminates 8-deep serial CARRY4 cascade):
+	 * Pipelined popcount of vl_mask:
 	 * - On vl_go with vl_mask == 0, cnt[last_blk] becomes 0 immediately.
-	 * - On vl_go with vl_mask != 0, two 16-bit popcounts (computed in 3 LUT
-	 *   levels with 0 CARRY4s) are latched into p16_lo_r and p16_hi_r, and on
-	 *   the next cycle u_pop32 (1 am_add with 0 Pre-CARRY LUTs) sets cnt[last_blk_d1].
+	 * - On vl_go with vl_mask != 0, two 16-bit popcounts are latched into
+	 *   p16_lo_r and p16_hi_r, and on the next cycle u_pop32 sets cnt[last_blk_d1].
 	 */
-	function [2:0] pop4;
-		input [3:0] x;
-		case (x)
-		4'b0000: pop4 = 3'd0;
-		4'b0001, 4'b0010, 4'b0100, 4'b1000: pop4 = 3'd1;
-		4'b0011, 4'b0101, 4'b0110, 4'b1001, 4'b1010, 4'b1100: pop4 = 3'd2;
-		4'b0111, 4'b1011, 4'b1101, 4'b1110: pop4 = 3'd3;
-		default: pop4 = 3'd4;
-		endcase
-	endfunction
-
-	function [3:0] add_0to4;
-		input [2:0] a;
-		input [2:0] b;
-		reg c0, c1;
-		begin
-			c0 = a[0] & b[0];
-			c1 = (a[1] & b[1]) | ((a[1] ^ b[1]) & c0);
-			add_0to4 = {
-				(a[2] & b[2]) | ((a[2] ^ b[2]) & c1),
-				a[2] ^ b[2] ^ c1,
-				a[1] ^ b[1] ^ c0,
-				a[0] ^ b[0]
-			};
+	wire [2:0] p4_lo [0:3];
+	wire [2:0] p4_hi [0:3];
+	genvar gp4;
+	generate
+		for (gp4 = 0; gp4 < 4; gp4 = gp4 + 1) begin : g_p4
+			atg_su_pt_pop4 u_p4_lo (.x(vl_mask_pt[gp4*4 +: 4]),       .pop(p4_lo[gp4]));
+			atg_su_pt_pop4 u_p4_hi (.x(vl_mask_pt[16 + gp4*4 +: 4]),  .pop(p4_hi[gp4]));
 		end
-	endfunction
+	endgenerate
 
-	function [4:0] add_0to8;
-		input [3:0] a;
-		input [3:0] b;
-		reg c0, c1, c2;
-		begin
-			c0 = a[0] & b[0];
-			c1 = (a[1] & b[1]) | ((a[1] ^ b[1]) & c0);
-			c2 = (a[2] & b[2]) | ((a[2] ^ b[2]) & c1);
-			add_0to8 = {
-				(a[3] & b[3]) | ((a[3] ^ b[3]) & c2),
-				a[3] ^ b[3] ^ c2,
-				a[2] ^ b[2] ^ c1,
-				a[1] ^ b[1] ^ c0,
-				a[0] ^ b[0]
-			};
-		end
-	endfunction
+	wire [3:0] p16_lo_s0, p16_lo_s1;
+	wire [3:0] p16_hi_s0, p16_hi_s1;
+	wire [4:0] p16_lo_comb, p16_hi_comb;
 
-	function [4:0] pop16;
-		input [15:0] x;
-		reg [3:0] s0, s1;
-		begin
-			s0 = add_0to4(pop4(x[3:0]),  pop4(x[7:4]));
-			s1 = add_0to4(pop4(x[11:8]), pop4(x[15:12]));
-			pop16 = add_0to8(s0, s1);
-		end
-	endfunction
+	am_add #(.W(3)) u_p16_lo_add0 (.a(p4_lo[0]), .b(p4_lo[1]), .ci(1'b0), .s(p16_lo_s0[2:0]), .co(p16_lo_s0[3]));
+	am_add #(.W(3)) u_p16_lo_add1 (.a(p4_lo[2]), .b(p4_lo[3]), .ci(1'b0), .s(p16_lo_s1[2:0]), .co(p16_lo_s1[3]));
+	am_add #(.W(4)) u_p16_lo_add2 (.a(p16_lo_s0), .b(p16_lo_s1), .ci(1'b0), .s(p16_lo_comb[3:0]), .co(p16_lo_comb[4]));
 
-	function [5:0] dec6;
-		input [5:0] a;
-		begin
-			dec6[0] = ~a[0];
-			dec6[1] = ~(a[1] ^ a[0]);
-			dec6[2] = a[2] ^ (~(|a[1:0]));
-			dec6[3] = a[3] ^ (~(|a[2:0]));
-			dec6[4] = a[4] ^ (~(|a[3:0]));
-			dec6[5] = a[5] ^ (~(|a[4:0]));
-		end
-	endfunction
+	am_add #(.W(3)) u_p16_hi_add0 (.a(p4_hi[0]), .b(p4_hi[1]), .ci(1'b0), .s(p16_hi_s0[2:0]), .co(p16_hi_s0[3]));
+	am_add #(.W(3)) u_p16_hi_add1 (.a(p4_hi[2]), .b(p4_hi[3]), .ci(1'b0), .s(p16_hi_s1[2:0]), .co(p16_hi_s1[3]));
+	am_add #(.W(4)) u_p16_hi_add2 (.a(p16_hi_s0), .b(p16_hi_s1), .ci(1'b0), .s(p16_hi_comb[3:0]), .co(p16_hi_comb[4]));
 
 	reg vl_go_d1;
 	reg [BW-1:0] last_blk_d1;
@@ -354,6 +308,25 @@ module atg_su_pt #(
 
 	wire [BW-1:0] free_blk = pt_free_idx[5 +: BW];
 	wire vl_mask_zero = (vl_mask_pt == 32'd0);
+
+	reg [5:0] cnt_free;
+	integer mxi;
+	always @(*) begin
+		cnt_free = 6'd0;
+		for (mxi = 0; mxi < NB; mxi = mxi + 1) begin
+			if (free_blk == mxi[BW-1:0])
+				cnt_free = cnt[mxi*6 +: 6];
+		end
+	end
+	wire [5:0] cnt_free_dec;
+	wire [5:0] pop32_dec;
+	wire pt_dec_bo0, pt_dec_bo1;
+	am_sub #(.W(6)) u_cnt_dec (
+		.a(cnt_free), .b(6'd1), .bi(1'b0), .d(cnt_free_dec), .bo(pt_dec_bo0)
+	);
+	am_sub #(.W(6)) u_pop32_dec (
+		.a(pop32_s),  .b(6'd1), .bi(1'b0), .d(pop32_dec),     .bo(pt_dec_bo1)
+	);
 
 	wire [BW-1:0] end_blk = wblk[wc_warp*BW +: BW];
 	wire end_own = wc_end && wv[wc_warp] && own[end_blk*WARP_W +: WARP_W] == wc_warp;
@@ -375,8 +348,8 @@ module atg_su_pt #(
 			vl_go_d1 <= vl_go_pt && !vl_mask_zero;
 			if (vl_go_pt) begin
 				last_blk_d1 <= last_blk;
-				p16_lo_r <= pop16(vl_mask_pt[15:0]);
-				p16_hi_r <= pop16(vl_mask_pt[31:16]);
+				p16_lo_r <= p16_lo_comb;
+				p16_hi_r <= p16_hi_comb;
 			end
 			for (cb_i = 0; cb_i < NB; cb_i = cb_i + 1) begin
 				if (pt_take && fb == cb_i[BW-1:0])
@@ -384,9 +357,9 @@ module atg_su_pt #(
 				else if (vl_go_pt && vl_mask_zero && last_blk == cb_i[BW-1:0])
 					cnt[cb_i*6 +: 6] <= 6'd0;
 				else if (vl_go_d1 && last_blk_d1 == cb_i[BW-1:0])
-					cnt[cb_i*6 +: 6] <= (pt_free && free_blk == cb_i[BW-1:0]) ? dec6(pop32_s) : pop32_s;
+					cnt[cb_i*6 +: 6] <= (pt_free && free_blk == cb_i[BW-1:0]) ? pop32_dec : pop32_s;
 				else if (pt_free && free_blk == cb_i[BW-1:0])
-					cnt[cb_i*6 +: 6] <= dec6(cnt[cb_i*6 +: 6]);
+					cnt[cb_i*6 +: 6] <= cnt_free_dec;
 			end
 			if (end_own)
 				done[end_blk] <= 1'b1;
@@ -403,7 +376,22 @@ module atg_su_pt #(
 	end
 
 	wire unused_ok = &{1'b0, waddr, raddr, rbank, pt_free_idx, x_info, x_uop,
-		sc_a_co_unused, pop32_co_unused};
+		sc_a_co_unused, pop32_co_unused, pt_dec_bo0, pt_dec_bo1};
+endmodule
+
+module atg_su_pt_pop4 (
+	input wire [3:0] x,
+	output reg [2:0] pop
+);
+	always @(*) begin
+		case (x)
+		4'b0000: pop = 3'd0;
+		4'b0001, 4'b0010, 4'b0100, 4'b1000: pop = 3'd1;
+		4'b0011, 4'b0101, 4'b0110, 4'b1001, 4'b1010, 4'b1100: pop = 3'd2;
+		4'b0111, 4'b1011, 4'b1101, 4'b1110: pop = 3'd3;
+		default: pop = 3'd4;
+		endcase
+	end
 endmodule
 
 `default_nettype wire

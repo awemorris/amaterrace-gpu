@@ -100,19 +100,6 @@ module atg_su_lda #(
 		/* verilator lint_on WIDTHTRUNC */
 	endfunction
 
-	/* A selection: warp w's primitive map. */
-	function [23:0] map_of;
-		input [NWARPS*24-1:0] mp;
-		input [WARP_W-1:0] w;
-		integer mi;
-		begin
-			map_of = mp[23:0];
-			for (mi = 1; mi < NWARPS; mi = mi + 1)
-				if (w == mi[WARP_W-1:0])
-					map_of = mp[mi*24 +: 24];
-		end
-	endfunction
-
 	/* The primitive maps. */
 	wire rst_p = !rst_n;
 	(* dont_touch = "true" *) wire scrub_i = scrub;
@@ -230,7 +217,14 @@ module atg_su_lda #(
 `endif
 	(* max_fanout = 12 *) wire [WARP_W-1:0] c_warp = x_ready_w ? x_warp_ctl : l_warp;
 	(* max_fanout = 12 *) wire [GRP_W-1:0] c_grp = x_ready_w ? x_grp : l_grp;
-	wire [23:0] x_map = map_of(pmap, x_warp_map);
+	reg [23:0] x_map;
+	integer mi;
+	always @(*) begin
+		x_map = pmap[23:0];
+		for (mi = 1; mi < NWARPS; mi = mi + 1)
+			if (x_warp_map == mi[WARP_W-1:0])
+				x_map = pmap[mi*24 +: 24];
+	end
 	(* max_fanout = 12 *) wire [23:0] c_map = x_ready_w ? x_map : l_map;
 	(* max_fanout = 12 *) wire [8:0] c_imm = x_ready_w ? x_uop[ATG_UOP_IMM +: 9] : l_imm;
 	always @(posedge clk) begin

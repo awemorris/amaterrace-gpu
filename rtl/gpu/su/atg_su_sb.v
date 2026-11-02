@@ -233,7 +233,7 @@ module atg_su_sb #(
 	reg [NWARPS-1:0] inc_m, inc_t, inc_x;
 
 	/* Each warp's counters: + 1 at an issue of the class, - 1 at its release.
-	 * Pure-LUT +1 and -1 from register outputs (0 CARRY4). */
+	 * Structural am_add and am_sub instances per warp. */
 	wire [NWARPS*CNT_W-1:0] cm_next, ct_next, cx_next;
 	wire [NWARPS*CNT_W-1:0] warp_rcm, warp_rct, warp_rcx;
 	genvar gq;
