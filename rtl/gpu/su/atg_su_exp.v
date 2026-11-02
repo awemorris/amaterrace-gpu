@@ -124,21 +124,6 @@ module atg_su_exp #(
 	localparam RW = ROWS > 1 ? $clog2(ROWS) : 1;
 	localparam G_W = $clog2(G);	/* G is a power of two: warp G + group are disjoint bits */
 
-	/*
-	 * floor of a non-negative fp32 below 65536 (the pixel centre's x or
-	 * y), of fl_data[31:8]: 1.m >> (142 - e) for 127 <= e <= 142 (the
-	 * amount's low 4 bits, 14 - e[3:0]).
-	 */
-	wire [23:0] ff_f = fl_data[31:8];
-	wire [3:0] ff_sh;
-	wire [15:0] ff_m;
-	wire fs_bo_unused;
-	am_sub #(.W(4)) u_ff_sh (.a(4'd14), .b(ff_f[18:15]), .bi(1'b0), .d(ff_sh), .bo(fs_bo_unused));
-	am_shift #(.W(16), .SW(4)) u_ff_m (.a({1'b1, ff_f[14:0]}), .amt(ff_sh), .left(1'b0), .arith(1'b0),
-		.y(ff_m));
-	wire [15:0] fx_floor = ff_f[23] || ff_f[22:15] < 8'd127 ? 16'd0 : ff_f[22:15] > 8'd142 ? 16'hFFFF :
-		ff_m;
-
 	/* ---- Per warp. */
 	reg [NWARPS-1:0] fr;	/* the warp's facing (fl_info[48]) */
 	reg [NWARPS*8-1:0] rtw;	/* the attachments exported (8 attachments) */
@@ -152,11 +137,11 @@ module atg_su_exp #(
 	 * 0x108 + c is the second colour (src1) of attachment 0 for dual-source blending. */
 	wire [31:0] tgt = x_uop[ATG_UOP_IMM +: 32];
 	wire ex_frag = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && x_info[17:16] == 2'd1;
-	wire ex_col = ex_frag && tgt[31:7] == 25'd2 && tgt[3:2] == 2'd0;
-	wire ex_col1 = ex_frag && tgt[31:4] == 28'h010 && tgt[3:2] == 2'b10;
-	wire ex_dep = ex_frag && tgt == 32'h104;
-	wire ex_sm = ex_frag && tgt == 32'h105;
-	wire ex_op = ex_col || ex_dep || ex_sm;
+	(* keep = "true", max_fanout = 12 *) wire ex_col  = ex_frag && tgt[31:7] == 25'd2 && tgt[3:2] == 2'd0;
+	(* keep = "true", max_fanout = 12 *) wire ex_col1 = ex_frag && tgt[31:4] == 28'h010 && tgt[3:2] == 2'b10;
+	(* keep = "true", max_fanout = 12 *) wire ex_dep  = ex_frag && tgt == 32'h104;
+	(* keep = "true", max_fanout = 12 *) wire ex_sm   = ex_frag && tgt == 32'h105;
+	(* keep = "true", max_fanout = 12 *) wire ex_op   = ex_col || ex_dep || ex_sm;
 	wire [2:0] tk = tgt[6:4];
 	wire [1:0] comp = tgt[1:0];
 	wire [31:0] xrow = ({{(32-WARP_W){1'b0}}, x_warp} << G_W) | ({{(32-GRP_W){1'b0}}, x_grp} % G);
@@ -165,20 +150,36 @@ module atg_su_exp #(
 	wire [31:0] side_w;
 	am_shift #(.W(32), .SW(5)) u_side_w (.a({{(32-NPHYS){1'b0}}, side}), .amt(lane0[4:0]), .left(1'b1),
 		.arith(1'b0), .y(side_w));
-	wire [31:0] zrow = ({{(32-WARP_W){1'b0}}, fl_slot} << G_W) | ({27'd0, fl_lane} / NPHYS);
-	wire [31:0] zbank = {27'd0, fl_lane} % NPHYS;
-	wire [31:0] fq = {{(25-WARP_W){1'b0}}, fl_slot, fl_lane[4:2], 4'd0};
-	wire [15:0] fx = fx_floor;
+	(* dont_touch = "true" *) wire [4:0] fl_lane_z = fl_lane;
+	wire [31:0] zrow = ({{(32-WARP_W){1'b0}}, fl_slot} << G_W) | ({27'd0, fl_lane_z} / NPHYS);
+	wire [31:0] zbank = {27'd0, fl_lane_z} % NPHYS;
+	wire [31:0] fq = {{(25-WARP_W){1'b0}}, fl_slot, fl_lane_z[4:2], 4'd0};
 
 	/* ---- The drain (atg_su_exp_drain): the beat of warp dwarp, quad dq, attachment drt. */
 	wire [WARP_W-1:0] dwarp;
 	wire [2:0] dq;
 	wire [2:0] drt;
 	wire dfirst, dlastb, dnocol;
-	wire [31:0] dcov = cov[dwarp*32 +: 32];
+	wire [31:0] dcov, dxp_raw, ddw, dsm, dr6;
+	genvar gwm;
+	generate
+		for (gwm = 0; gwm < 2; gwm = gwm + 1) begin : g_wmux_sl
+			(* dont_touch = "true" *) wire [WARP_W-1:0] dw_cov_s = dwarp;
+			(* dont_touch = "true" *) wire [WARP_W-1:0] dw_xp_s  = dwarp;
+			(* dont_touch = "true" *) wire [WARP_W-1:0] dw_dw_s  = dwarp;
+			(* dont_touch = "true" *) wire [WARP_W-1:0] dw_sm_s  = dwarp;
+			(* dont_touch = "true" *) wire [WARP_W-1:0] dw_r6_s  = dwarp;
+			assign dcov[gwm*16 +: 16]    = cov[dw_cov_s*32 + gwm*16 +: 16];
+			assign dxp_raw[gwm*16 +: 16] = xp[dw_xp_s*32 + gwm*16 +: 16];
+			assign ddw[gwm*16 +: 16]     = dw[dw_dw_s*32 + gwm*16 +: 16];
+			assign dsm[gwm*16 +: 16]     = smw[dw_sm_s*32 + gwm*16 +: 16];
+			assign dr6[gwm*16 +: 16]     = r6w[dw_r6_s*32 + gwm*16 +: 16];
+		end
+	endgenerate
+	(* dont_touch = "true" *) wire [WARP_W-1:0] dw_rtw = dwarp;
 	atg_su_exp_drain #(.NWARPS(NWARPS), .WARP_W(WARP_W)) drain (
 		.clk(clk), .rst_n(rst_n), .fl_go(fl_go), .fl_slot(fl_slot), .fl_seq(fl_info[47:32]),
-		.wc_end(wc_end), .wc_warp(wc_warp), .d_cov(dcov), .d_rtw(rtw[dwarp*8 +: 8]),
+		.wc_end(wc_end), .wc_warp(wc_warp), .d_cov(dcov), .d_rtw(rtw[dw_rtw*8 +: 8]),
 		.d_warp(dwarp), .d_q(dq), .d_rt(drt), .d_first(dfirst), .d_lastb(dlastb),
 		.d_nocol(dnocol), .ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq),
 		.ex_last(ex_last), .ex_next(ex_next), .xr_valid(xr_valid), .xr_warp(xr_warp)
@@ -189,14 +190,11 @@ module atg_su_exp #(
 	wire [RW+2:0] dcrow = {drow[RW-1:0], drt};
 	wire [RW+2:0] xcrow = {xrow[RW-1:0], tk};
 	wire [31:0] dqs = ({{(32-WARP_W){1'b0}}, dwarp} * 8 + {29'd0, dq}) * 16;
-	wire [31:0] dxp = xp[dwarp*32 +: 32] & dcov;
-	wire [31:0] ddw = dw[dwarp*32 +: 32];
-	wire [31:0] dsm = smw[dwarp*32 +: 32];
-	wire [31:0] dr6 = r6w[dwarp*32 +: 32];
+	wire [31:0] dxp = dxp_raw & dcov;
 
 	/* The scrub: rows of the attachments' arrays; the others take its row / 4. */
-	(* max_fanout = 12 *) wire sc_on;
-	(* max_fanout = 12 *) wire [RW+2:0] sc_a;
+	wire sc_on;
+	wire [RW+2:0] sc_a;
 
 	atg_su_scrub #(.DEPTH(ROWS * 8), .AW(RW + 3)) sc (
 		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
@@ -211,13 +209,41 @@ module atg_su_exp #(
 	genvar b, bs, bh;
 	generate
 	for (b = 0; b < NPHYS; b = b + 1) begin : g_bank
-		(* keep = "true" *) wire [RW-1:0] r_wa_m5  = sc_on ? sc_a[RW+2:3] : xrow[RW-1:0];
-		(* keep = "true" *) wire [RW-1:0] z_wa_mr6 = sc_on ? sc_a[RW+2:3] : zrow[RW-1:0];
-		(* keep = "true" *) wire [RW-1:0] drow_rsm = drow[RW-1:0];
-		(* keep = "true" *) wire we_m5 = sc_on || (side[b] && ex_sm);
-		(* keep = "true" *) wire we_mr6 = sc_on || (fl_we && fl_reg == 6'd6 && zbank == b);
-		(* keep = "true" *) wire [3:0] d_m5 = sc_on ? 4'd0 : x_b[32 * b +: 4];
-		(* keep = "true" *) wire [3:0] fd_mr6 = sc_on ? 4'd0 : fl_data[3:0];
+		(* dont_touch = "true" *) wire b_sc_on_c0   = sc_on;
+		(* dont_touch = "true" *) wire b_sc_on_c1   = sc_on;
+		(* dont_touch = "true" *) wire b_sc_on_r0   = sc_on;
+		(* dont_touch = "true" *) wire b_sc_on_r1   = sc_on;
+		(* dont_touch = "true" *) wire [RW+2:0] b_sc_a_c0  = sc_a;
+		(* dont_touch = "true" *) wire [RW+2:0] b_sc_a_c1  = sc_a;
+		(* dont_touch = "true" *) wire [RW-1:0] b_sc_ar_0  = sc_a[RW+2:3];
+		(* dont_touch = "true" *) wire [RW-1:0] b_sc_ar_1  = sc_a[RW+2:3];
+		(* dont_touch = "true" *) wire [RW+2:0] b_xcrow_0  = xcrow;
+		(* dont_touch = "true" *) wire [RW+2:0] b_xcrow_1  = xcrow;
+		(* dont_touch = "true" *) wire [RW-1:0] b_xrow_0   = xrow[RW-1:0];
+		(* dont_touch = "true" *) wire [RW-1:0] b_xrow_1   = xrow[RW-1:0];
+		(* dont_touch = "true" *) wire [RW-1:0] b_zrow     = zrow[RW-1:0];
+		(* dont_touch = "true" *) wire [RW+2:0] b_dcrow_0  = dcrow;
+		(* dont_touch = "true" *) wire [RW+2:0] b_dcrow_1  = dcrow;
+		(* dont_touch = "true" *) wire [RW-1:0] b_drow_0   = drow[RW-1:0];
+		(* dont_touch = "true" *) wire [RW-1:0] b_drow_1   = drow[RW-1:0];
+		(* dont_touch = "true" *) wire b_we_0 = b_sc_on_c0 || (side[b] && ex_col && comp == 2'd0);
+		(* dont_touch = "true" *) wire b_we_1 = b_sc_on_c0 || (side[b] && ex_col && comp == 2'd1);
+		(* dont_touch = "true" *) wire b_we_2 = b_sc_on_c1 || (side[b] && ex_col && comp == 2'd2);
+		(* dont_touch = "true" *) wire b_we_3 = b_sc_on_c1 || (side[b] && ex_col && comp == 2'd3);
+		(* dont_touch = "true" *) wire b_we_s0 = b_sc_on_r0 || (side[b] && ex_col1 && comp == 2'd0);
+		(* dont_touch = "true" *) wire b_we_s1 = b_sc_on_r0 || (side[b] && ex_col1 && comp == 2'd1);
+		(* dont_touch = "true" *) wire b_we_s2 = b_sc_on_r1 || (side[b] && ex_col1 && comp == 2'd2);
+		(* dont_touch = "true" *) wire b_we_s3 = b_sc_on_r1 || (side[b] && ex_col1 && comp == 2'd3);
+		(* dont_touch = "true" *) wire b_we_m4 = b_sc_on_r0 || (side[b] && ex_dep);
+		(* dont_touch = "true" *) wire b_we_mz = b_sc_on_r1 || (fl_we && fl_reg == 6'd3 && zbank == b);
+
+		(* dont_touch = "true" *) wire [RW-1:0] r_wa_m5  = b_sc_on_r1 ? b_sc_ar_1 : b_xrow_1;
+		(* dont_touch = "true" *) wire [RW-1:0] z_wa_mr6 = b_sc_on_r1 ? b_sc_ar_1 : b_zrow;
+		(* dont_touch = "true" *) wire [RW-1:0] drow_rsm = b_drow_1;
+		(* dont_touch = "true" *) wire we_m5 = b_sc_on_r1 || (side[b] && ex_sm);
+		(* dont_touch = "true" *) wire we_mr6 = b_sc_on_r1 || (fl_we && fl_reg == 6'd6 && zbank == b);
+		(* dont_touch = "true" *) wire [3:0] d_m5 = b_sc_on_r1 ? 4'd0 : x_b[32 * b +: 4];
+		(* dont_touch = "true" *) wire [3:0] fd_mr6 = b_sc_on_r1 ? 4'd0 : fl_data[3:0];
 
 		reg [3:0] m5 [0:ROWS-1];
 		reg [3:0] mr6 [0:ROWS-1];
@@ -227,65 +253,68 @@ module atg_su_exp #(
 		end
 		assign rsm[8 * b +: 8] = {m5[drow_rsm], mr6[drow_rsm]};
 
-		for (bs = 0; bs < 4; bs = bs + 1) begin : g_col_sl
-			(* keep = "true" *) wire [RW+2:0] c_wa_0 = sc_on ? sc_a : xcrow;
-			(* keep = "true" *) wire [RW+2:0] c_wa_1 = sc_on ? sc_a : xcrow;
-			(* keep = "true" *) wire [RW+2:0] c_wa_2 = sc_on ? sc_a : xcrow;
-			(* keep = "true" *) wire [RW+2:0] c_wa_3 = sc_on ? sc_a : xcrow;
-			(* keep = "true" *) wire [RW+2:0] dcrow_0 = dcrow;
-			(* keep = "true" *) wire [RW+2:0] dcrow_1 = dcrow;
-			(* keep = "true" *) wire [RW+2:0] dcrow_2 = dcrow;
-			(* keep = "true" *) wire [RW+2:0] dcrow_3 = dcrow;
-			(* keep = "true" *) wire we_0 = sc_on || (side[b] && ex_col && comp == 2'd0);
-			(* keep = "true" *) wire we_1 = sc_on || (side[b] && ex_col && comp == 2'd1);
-			(* keep = "true" *) wire we_2 = sc_on || (side[b] && ex_col && comp == 2'd2);
-			(* keep = "true" *) wire we_3 = sc_on || (side[b] && ex_col && comp == 2'd3);
-			(* keep = "true" *) wire [7:0] d_sl = sc_on ? 8'd0 : x_b[32 * b + bs * 8 +: 8];
+		for (bs = 0; bs < 8; bs = bs + 1) begin : g_col_sl
+			wire b_scon = (bs < 4) ? b_sc_on_c0 : b_sc_on_c1;
+			wire [RW+2:0] b_sca = (bs < 4) ? b_sc_a_c0 : b_sc_a_c1;
+			wire [RW+2:0] b_xcr = (bs < 4) ? b_xcrow_0 : b_xcrow_1;
+			wire [RW+2:0] b_dcr = (bs < 4) ? b_dcrow_0 : b_dcrow_1;
+			(* dont_touch = "true" *) wire [RW+2:0] c_wa_0 = b_scon ? b_sca : b_xcr;
+			(* dont_touch = "true" *) wire [RW+2:0] c_wa_1 = b_scon ? b_sca : b_xcr;
+			(* dont_touch = "true" *) wire [RW+2:0] c_wa_2 = b_scon ? b_sca : b_xcr;
+			(* dont_touch = "true" *) wire [RW+2:0] c_wa_3 = b_scon ? b_sca : b_xcr;
+			(* dont_touch = "true" *) wire [RW+2:0] dcrow_01 = b_dcr;
+			(* dont_touch = "true" *) wire [RW+2:0] dcrow_23 = b_dcr;
+			(* dont_touch = "true" *) wire we_0 = b_we_0;
+			(* dont_touch = "true" *) wire we_1 = b_we_1;
+			(* dont_touch = "true" *) wire we_2 = b_we_2;
+			(* dont_touch = "true" *) wire we_3 = b_we_3;
+			(* dont_touch = "true" *) wire [3:0] d_sl = b_scon ? 4'd0 : x_b[32 * b + bs * 4 +: 4];
 
-			reg [7:0] m0 [0:ROWS*8-1];
-			reg [7:0] m1 [0:ROWS*8-1];
-			reg [7:0] m2 [0:ROWS*8-1];
-			reg [7:0] m3 [0:ROWS*8-1];
+			reg [3:0] m0 [0:ROWS*8-1];
+			reg [3:0] m1 [0:ROWS*8-1];
+			reg [3:0] m2 [0:ROWS*8-1];
+			reg [3:0] m3 [0:ROWS*8-1];
 			always @(posedge clk) begin
 				if (we_0) m0[c_wa_0] <= d_sl;
 				if (we_1) m1[c_wa_1] <= d_sl;
 				if (we_2) m2[c_wa_2] <= d_sl;
 				if (we_3) m3[c_wa_3] <= d_sl;
 			end
-			assign rdat[192 * b + 0   + bs * 8 +: 8] = m0[dcrow_0];
-			assign rdat[192 * b + 32  + bs * 8 +: 8] = m1[dcrow_1];
-			assign rdat[192 * b + 64  + bs * 8 +: 8] = m2[dcrow_2];
-			assign rdat[192 * b + 96  + bs * 8 +: 8] = m3[dcrow_3];
+			assign rdat[192 * b + 0   + bs * 4 +: 4] = m0[dcrow_01];
+			assign rdat[192 * b + 32  + bs * 4 +: 4] = m1[dcrow_01];
+			assign rdat[192 * b + 64  + bs * 4 +: 4] = m2[dcrow_23];
+			assign rdat[192 * b + 96  + bs * 4 +: 4] = m3[dcrow_23];
 		end
 
-		for (bh = 0; bh < 2; bh = bh + 1) begin : g_row_sl
-			(* keep = "true" *) wire [RW-1:0] r_wa_s0 = sc_on ? sc_a[RW+2:3] : xrow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] r_wa_s1 = sc_on ? sc_a[RW+2:3] : xrow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] r_wa_s2 = sc_on ? sc_a[RW+2:3] : xrow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] r_wa_s3 = sc_on ? sc_a[RW+2:3] : xrow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] r_wa_m4 = sc_on ? sc_a[RW+2:3] : xrow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] z_wa_mz = sc_on ? sc_a[RW+2:3] : zrow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] drow_s0 = drow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] drow_s1 = drow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] drow_s2 = drow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] drow_s3 = drow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] drow_m4 = drow[RW-1:0];
-			(* keep = "true" *) wire [RW-1:0] drow_mz = drow[RW-1:0];
-			(* keep = "true" *) wire we_s0 = sc_on || (side[b] && ex_col1 && comp == 2'd0);
-			(* keep = "true" *) wire we_s1 = sc_on || (side[b] && ex_col1 && comp == 2'd1);
-			(* keep = "true" *) wire we_s2 = sc_on || (side[b] && ex_col1 && comp == 2'd2);
-			(* keep = "true" *) wire we_s3 = sc_on || (side[b] && ex_col1 && comp == 2'd3);
-			(* keep = "true" *) wire we_m4 = sc_on || (side[b] && ex_dep);
-			(* keep = "true" *) wire we_mz = sc_on || (fl_we && fl_reg == 6'd3 && zbank == b);
-			(* keep = "true" *) wire [15:0] d_h = sc_on ? 16'd0 : x_b[32 * b + bh * 16 +: 16];
-			(* keep = "true" *) wire [15:0] fd_h = sc_on ? 16'd0 : fl_data[bh * 16 +: 16];
+		for (bh = 0; bh < 4; bh = bh + 1) begin : g_row_sl
+			wire b_scon = (bh < 2) ? b_sc_on_r0 : b_sc_on_r1;
+			wire [RW-1:0] b_scar = (bh < 2) ? b_sc_ar_0 : b_sc_ar_1;
+			wire [RW-1:0] b_xr   = (bh < 2) ? b_xrow_0  : b_xrow_1;
+			wire [RW-1:0] b_dr   = (bh < 2) ? b_drow_0  : b_drow_1;
+			(* dont_touch = "true" *) wire [RW-1:0] r_wa_s0 = b_scon ? b_scar : b_xr;
+			(* dont_touch = "true" *) wire [RW-1:0] r_wa_s1 = b_scon ? b_scar : b_xr;
+			(* dont_touch = "true" *) wire [RW-1:0] r_wa_s2 = b_scon ? b_scar : b_xr;
+			(* dont_touch = "true" *) wire [RW-1:0] r_wa_s3 = b_scon ? b_scar : b_xr;
+			(* dont_touch = "true" *) wire [RW-1:0] r_wa_m4 = b_scon ? b_scar : b_xr;
+			(* dont_touch = "true" *) wire [RW-1:0] z_wa_mz = b_scon ? b_scar : b_zrow;
+			(* dont_touch = "true" *) wire [RW-1:0] drow_s01 = b_dr;
+			(* dont_touch = "true" *) wire [RW-1:0] drow_s23 = b_dr;
+			(* dont_touch = "true" *) wire [RW-1:0] drow_m4z = b_dr;
+			(* dont_touch = "true" *) wire we_s0 = b_we_s0;
+			(* dont_touch = "true" *) wire we_s1 = b_we_s1;
+			(* dont_touch = "true" *) wire we_s2 = b_we_s2;
+			(* dont_touch = "true" *) wire we_s3 = b_we_s3;
+			(* dont_touch = "true" *) wire we_m4 = b_we_m4;
+			(* dont_touch = "true" *) wire we_mz = b_we_mz;
+			(* dont_touch = "true" *) wire [7:0] d_h = b_scon ? 8'd0 : x_b[32 * b + bh * 8 +: 8];
+			(* dont_touch = "true" *) wire [7:0] fd_h = b_scon ? 8'd0 : fl_data[bh * 8 +: 8];
 
-			reg [15:0] ms1_0 [0:ROWS-1];
-			reg [15:0] ms1_1 [0:ROWS-1];
-			reg [15:0] ms1_2 [0:ROWS-1];
-			reg [15:0] ms1_3 [0:ROWS-1];
-			reg [15:0] m4 [0:ROWS-1];
-			reg [15:0] mz [0:ROWS-1];
+			reg [7:0] ms1_0 [0:ROWS-1];
+			reg [7:0] ms1_1 [0:ROWS-1];
+			reg [7:0] ms1_2 [0:ROWS-1];
+			reg [7:0] ms1_3 [0:ROWS-1];
+			reg [7:0] m4 [0:ROWS-1];
+			reg [7:0] mz [0:ROWS-1];
 			always @(posedge clk) begin
 				if (we_s0) ms1_0[r_wa_s0] <= d_h;
 				if (we_s1) ms1_1[r_wa_s1] <= d_h;
@@ -294,12 +323,12 @@ module atg_su_exp #(
 				if (we_m4) m4[r_wa_m4] <= d_h;
 				if (we_mz) mz[z_wa_mz] <= fd_h;
 			end
-			assign rdat1[128 * b + 0  + bh * 16 +: 16] = ms1_0[drow_s0];
-			assign rdat1[128 * b + 32 + bh * 16 +: 16] = ms1_1[drow_s1];
-			assign rdat1[128 * b + 64 + bh * 16 +: 16] = ms1_2[drow_s2];
-			assign rdat1[128 * b + 96 + bh * 16 +: 16] = ms1_3[drow_s3];
-			assign rdat[192 * b + 128 + bh * 16 +: 16] = m4[drow_m4];
-			assign rdat[192 * b + 160 + bh * 16 +: 16] = mz[drow_mz];
+			assign rdat1[128 * b + 0  + bh * 8 +: 8] = ms1_0[drow_s01];
+			assign rdat1[128 * b + 32 + bh * 8 +: 8] = ms1_1[drow_s01];
+			assign rdat1[128 * b + 64 + bh * 8 +: 8] = ms1_2[drow_s23];
+			assign rdat1[128 * b + 96 + bh * 8 +: 8] = ms1_3[drow_s23];
+			assign rdat[192 * b + 128 + bh * 8 +: 8] = m4[drow_m4z];
+			assign rdat[192 * b + 160 + bh * 8 +: 8] = mz[drow_m4z];
 		end
 	end
 	endgenerate
@@ -316,14 +345,14 @@ module atg_su_exp #(
 	generate
 		for (gi = 0; gi < 4; gi = gi + 1) begin : g_qmux
 			for (gch = 0; gch < 8; gch = gch + 1) begin : g_c_sl
-				(* keep = "true" *) wire [2:0] dq_c  = dq;
-				(* keep = "true" *) wire [2:0] dq_c1 = dq;
+				(* dont_touch = "true" *) wire [2:0] dq_c  = dq;
+				(* dont_touch = "true" *) wire [2:0] dq_c1 = dq;
 				assign col[128 * gi + gch * 16 +: 16]  = rdat[192 * (({27'd0, dq_c,  gi[1:0]}) % NPHYS) + gch * 16 +: 16];
 				assign col1[128 * gi + gch * 16 +: 16] = rdat1[128 * (({27'd0, dq_c1, gi[1:0]}) % NPHYS) + gch * 16 +: 16];
 			end
 			for (gch = 0; gch < 2; gch = gch + 1) begin : g_d_sl
-				(* keep = "true" *) wire [2:0] dq_d = dq;
-				(* keep = "true" *) wire q_ddw = ddw[{dq_d, gi[1:0]}];
+				(* dont_touch = "true" *) wire [2:0] dq_d = dq;
+				(* dont_touch = "true" *) wire q_ddw = ddw[{dq_d, gi[1:0]}];
 				wire [15:0] w_m4 = rdat[192 * (({27'd0, dq_d, gi[1:0]}) % NPHYS) + 128 + gch * 16 +: 16];
 				wire [15:0] w_mz = rdat[192 * (({27'd0, dq_d, gi[1:0]}) % NPHYS) + 160 + gch * 16 +: 16];
 				assign dep[32 * gi + gch * 16 +: 16] = q_ddw ? w_m4 : w_mz;
@@ -351,13 +380,15 @@ module atg_su_exp #(
 	genvar gds;
 	generate
 		for (gds = 0; gds < 8; gds = gds + 1) begin : g_dsv_sl
-			(* keep = "true" *) wire [WARP_W-1:0] dw_sl = dwarp;
+			(* dont_touch = "true" *) wire [WARP_W-1:0] dw_sl = dwarp;
 			assign dsv_mux[gds * 16 +: 16] = dsv[{dw_sl, gds[2:0], 4'd0} +: 16];
 		end
 	endgenerate
 
+	(* dont_touch = "true" *) wire [WARP_W+2:0] dqs_x = {dwarp, dq};
+	(* dont_touch = "true" *) wire [WARP_W+2:0] dqs_y = {dwarp, dq};
 	assign x_ready = 1'b1;
-	assign ex_xy = {qy[dqs +: 16], qx[dqs +: 16]};
+	assign ex_xy = {qy[{dqs_y, 4'd0} +: 16], qx[{dqs_x, 4'd0} +: 16]};
 	assign ex_mask = dxp[dl0 +: 4] & smok;
 `ifdef MUT_EXP_FRONT
 	assign ex_aux = {drt, dlastb, dfirst, dnocol, 1'b1, dsv_mux,
@@ -374,14 +405,37 @@ module atg_su_exp #(
 	genvar gw, gq;
 	generate
 		for (gw = 0; gw < NWARPS; gw = gw + 1) begin : g_w_ctrl
-			(* keep = "true" *) wire rst_w = !rst_n;
+			(* dont_touch = "true" *) wire rst_w = !rst_n;
+			(* dont_touch = "true" *) wire [23:0] w_ff_f = fl_data[31:8];
+			wire [3:0] w_ff_sh;
+			wire [15:0] w_ff_m;
+			wire w_fs_bo_unused;
+			wire w_unused_ok = &{1'b0, w_fs_bo_unused};
+			am_sub #(.W(4)) u_w_ff_sh (.a(4'd14), .b(w_ff_f[18:15]), .bi(1'b0), .d(w_ff_sh), .bo(w_fs_bo_unused));
+			am_shift #(.W(16), .SW(4)) u_w_ff_m (.a({1'b1, w_ff_f[14:0]}), .amt(w_ff_sh), .left(1'b0), .arith(1'b0),
+				.y(w_ff_m));
+			(* dont_touch = "true" *) wire [15:0] w_fx_floor =
+				(w_ff_f[23] || w_ff_f[22:15] < 8'd127) ? 16'd0 :
+				(w_ff_f[22:15] > 8'd142) ? 16'hFFFF : w_ff_m;
+
+			(* dont_touch = "true" *) wire [4:0] w_fl_lane_h0 = fl_lane;
+			(* dont_touch = "true" *) wire [4:0] w_fl_lane_h1 = fl_lane;
+			(* dont_touch = "true" *) wire [4:0] w_fl_lane_q  = fl_lane;
+			(* dont_touch = "true" *) wire w_qx_en  = fl_we && (w_fl_lane_q[1:0] == 2'd0) && (fl_reg == 6'd4) && (fl_slot == gw[WARP_W-1:0]);
+			(* dont_touch = "true" *) wire w_qy_en  = fl_we && (w_fl_lane_q[1:0] == 2'd0) && (fl_reg == 6'd5) && (fl_slot == gw[WARP_W-1:0]);
+			(* dont_touch = "true" *) wire w_dsv_en = fl_pw_we && (fl_pw_addr[11:2] == 10'h3FE) && (fl_slot == gw[WARP_W-1:0]);
+
 			for (gq = 0; gq < 2; gq = gq + 1) begin : g_wh
-				(* keep = "true" *) wire rst_wh     = rst_w || (xr_valid && (xr_warp == gw[WARP_W-1:0]));
-				(* keep = "true" *) wire w_go_s     = fl_go && (fl_slot == gw[WARP_W-1:0]);
-				(* keep = "true" *) wire w_ex_op_s  = ex_op && (x_warp == gw[WARP_W-1:0]);
-				(* keep = "true" *) wire w_ex_dep_s = ex_op && ex_dep && (x_warp == gw[WARP_W-1:0]);
-				(* keep = "true" *) wire w_ex_sm_s  = ex_op && ex_sm && (x_warp == gw[WARP_W-1:0]);
-				(* keep = "true" *) wire w_r6_we_s  = fl_we && (fl_reg == 6'd6) && (fl_slot == gw[WARP_W-1:0]) && (fl_lane[4] == gq[0]);
+				wire [4:0] wh_lane = (gq == 0) ? w_fl_lane_h0 : w_fl_lane_h1;
+				(* dont_touch = "true" *) wire rst_wh     = rst_w || (xr_valid && (xr_warp == gw[WARP_W-1:0]));
+				(* dont_touch = "true" *) wire cov_we_s   = fl_go && (fl_slot == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire xp_clr_s   = fl_go && (fl_slot == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire dw_clr_s   = fl_go && (fl_slot == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire smw_clr_s  = fl_go && (fl_slot == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire w_ex_op_s  = ex_op && (x_warp == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire w_ex_dep_s = ex_op && ex_dep && (x_warp == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire w_ex_sm_s  = ex_op && ex_sm && (x_warp == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire w_r6_we_s  = fl_we && (fl_reg == 6'd6) && (fl_slot == gw[WARP_W-1:0]) && (wh_lane[4] == gq[0]);
 				reg [15:0] r6w_sl, cov_sl, xp_sl, dw_sl, smw_sl;
 				integer ib;
 				always @(posedge clk) begin
@@ -389,22 +443,23 @@ module atg_su_exp #(
 						r6w_sl <= 16'd0;
 					end else if (w_r6_we_s) begin
 						for (ib = 0; ib < 16; ib = ib + 1)
-							if (fl_lane[3:0] == ib[3:0])
+							if (wh_lane[3:0] == ib[3:0])
 								r6w_sl[ib] <= 1'b1;
 					end
-					if (w_go_s) begin
+					if (cov_we_s)
 						cov_sl <= fl_info[gq*16 +: 16];
-						xp_sl  <= 16'd0;
-						dw_sl  <= 16'd0;
+					if (xp_clr_s)
+						xp_sl <= 16'd0;
+					else if (w_ex_op_s)
+						xp_sl <= xp_sl | side_w[gq*16 +: 16];
+					if (dw_clr_s)
+						dw_sl <= 16'd0;
+					else if (w_ex_dep_s)
+						dw_sl <= dw_sl | side_w[gq*16 +: 16];
+					if (smw_clr_s)
 						smw_sl <= 16'd0;
-					end else begin
-						if (w_ex_op_s)
-							xp_sl <= xp_sl | side_w[gq*16 +: 16];
-						if (w_ex_dep_s)
-							dw_sl <= dw_sl | side_w[gq*16 +: 16];
-						if (w_ex_sm_s)
-							smw_sl <= smw_sl | side_w[gq*16 +: 16];
-					end
+					else if (w_ex_sm_s)
+						smw_sl <= smw_sl | side_w[gq*16 +: 16];
 				end
 				assign r6w[gw*32 + gq*16 +: 16] = r6w_sl;
 				assign cov[gw*32 + gq*16 +: 16] = cov_sl;
@@ -413,15 +468,10 @@ module atg_su_exp #(
 				assign smw[gw*32 + gq*16 +: 16] = smw_sl;
 			end
 			for (gq = 0; gq < 8; gq = gq + 1) begin : g_wq
-				(* keep = "true" *) wire rst_wq   = rst_w || (xr_valid && (xr_warp == gw[WARP_W-1:0]));
-				(* keep = "true" *) wire dsv_we_s = fl_pw_we && (fl_pw_addr[11:2] == 10'h3FE) &&
-					(fl_slot == gw[WARP_W-1:0]) && (fl_pw_addr[1:0] == gq[2:1]);
-				(* keep = "true" *) wire qx_we_s  = fl_we && (fl_lane[1:0] == 2'd0) && (fl_reg == 6'd4) &&
-					(fl_slot == gw[WARP_W-1:0]) && (fl_lane[4:2] == gq[2:0]);
-				(* keep = "true" *) wire qy_we_s  = fl_we && (fl_lane[1:0] == 2'd0) && (fl_reg == 6'd5) &&
-					(fl_slot == gw[WARP_W-1:0]) && (fl_lane[4:2] == gq[2:0]);
-				(* keep = "true" *) wire [15:0] fx_qx_s = fx;
-				(* keep = "true" *) wire [15:0] fx_qy_s = fx;
+				(* dont_touch = "true" *) wire rst_wq   = rst_w || (xr_valid && (xr_warp == gw[WARP_W-1:0]));
+				(* dont_touch = "true" *) wire dsv_we_s = w_dsv_en && (fl_pw_addr[1:0] == gq[2:1]);
+				(* dont_touch = "true" *) wire qx_we_s  = w_qx_en && (w_fl_lane_q[4:2] == gq[2:0]);
+				(* dont_touch = "true" *) wire qy_we_s  = w_qy_en && (w_fl_lane_q[4:2] == gq[2:0]);
 				reg [15:0] dsv_sl, qx_sl, qy_sl;
 				always @(posedge clk) begin
 					if (rst_wq)
@@ -429,9 +479,9 @@ module atg_su_exp #(
 					else if (dsv_we_s)
 						dsv_sl <= fl_pw_data[(gq[0] * 16) +: 16];
 					if (qx_we_s)
-						qx_sl <= fx_qx_s;
+						qx_sl <= w_fx_floor;
 					if (qy_we_s)
-						qy_sl <= fx_qy_s;
+						qy_sl <= w_fx_floor;
 				end
 				assign dsv[gw*128 + gq*16 +: 16] = dsv_sl;
 				assign qx[(gw*8 + gq)*16 +: 16]  = qx_sl;

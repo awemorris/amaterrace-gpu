@@ -82,11 +82,12 @@ module atg_su_alu #(
 	localparam DW = NPHYS * 32;
 
 	/* Instruction fields */
-	(* max_fanout = 12 *) wire [3:0] unit = x_uop[ATG_UOP_UNIT +: 4];
-	(* max_fanout = 12 *) wire [4:0] op = x_uop[ATG_UOP_OP +: 5];
-	(* max_fanout = 12 *) wire immb = x_uop[ATG_UOP_OP + ATG_ALU_IMMB];
-	(* max_fanout = 12 *) wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
-	(* max_fanout = 12 *) wire mine = x_valid && unit == ATG_UNIT_ALU && x_uop[ATG_UOP_WRD];
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire [3:0] unit = x_uop[ATG_UOP_UNIT +: 4];
+	wire [4:0] op = x_uop[ATG_UOP_OP +: 5];
+	wire immb = x_uop[ATG_UOP_OP + ATG_ALU_IMMB];
+	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
+	wire mine = x_valid && unit == ATG_UNIT_ALU && x_uop[ATG_UOP_WRD];
 
 	function [31:0] rev;
 		input [31:0] w;
@@ -98,7 +99,7 @@ module atg_su_alu #(
 	endfunction
 
 	/*
-	 * Stage 1 (EX1): Latch inputs, compute basic bitwise logic, prepare addsub and shift
+	 * Stage 1 (EX1): Latch inputs, prepare addsub and shift
 	 */
 	(* shreg_extract = "no" *) reg s1_valid;
 	(* shreg_extract = "no" *) reg [WARP_W-1:0] s1_warp;
@@ -107,17 +108,32 @@ module atg_su_alu #(
 	(* shreg_extract = "no" *) reg [NPHYS-1:0]  s1_mask;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [4:0]        s1_op;
 
-	(* shreg_extract = "no" *) reg [DW-1:0] s1_la, s1_lb;
-	(* shreg_extract = "no" *) reg [DW-1:0] s1_and, s1_or, s1_xor, s1_andn, s1_orn, s1_xnor, s1_sel, s1_movi;
-	(* shreg_extract = "no" *) reg [DW-1:0] s1_sv;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [DW-1:0] s1_la, s1_lb;
+	(* shreg_extract = "no" *) reg [DW-1:0] s1_lc;
+	(* shreg_extract = "no" *) reg [31:0] s1_movi_w;
+	(* shreg_extract = "no", dont_touch = "true" *) reg [NPHYS-1:0] s1_is_sll_lo, s1_is_sll_hi;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [NPHYS-1:0] s1_sra;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [NPHYS*5-1:0] s1_amt;
 	(* shreg_extract = "no", max_fanout = 12 *) reg s1_sub;
 
-	(* keep = "true" *) wire rst_s1 = !rst_n;
+`ifdef __ICARUS__
+	wire en_s1 = en && mine;
+	wire en_s2 = en && s1_valid;
+	wire en_s3 = en && s2_valid;
+	wire en_s4 = en && s3_valid;
+	wire en_s5 = en && s4_valid;
+	wire en_s6 = en && s5_valid;
+`else
+	wire en_s1 = en;
+	wire en_s2 = en;
+	wire en_s3 = en;
+	wire en_s4 = en;
+	wire en_s5 = en;
+	wire en_s6 = en;
+`endif
 	integer i1;
 	always @(posedge clk) begin
-		if (rst_s1) begin
+		if (rst_p) begin
 			s1_valid <= 1'b0;
 			s1_warp  <= {WARP_W{1'b0}};
 			s1_grp   <= {GRP_W{1'b0}};
@@ -134,28 +150,22 @@ module atg_su_alu #(
 			s1_op    <= op;
 			s1_sub   <= (op != ATG_ALU_ADD);
 		end
-		if (en) begin
+		if (en_s1) begin
+			s1_lc     <= x_c;
+			s1_movi_w <= imm;
 			for (i1 = 0; i1 < NPHYS; i1 = i1 + 1) begin
-				s1_la[i1*32 +: 32]   <= x_a[i1*32 +: 32];
-				s1_lb[i1*32 +: 32]   <= immb ? imm : x_b[i1*32 +: 32];
-				s1_and[i1*32 +: 32]  <= x_a[i1*32 +: 32] & (immb ? imm : x_b[i1*32 +: 32]);
-				s1_or[i1*32 +: 32]   <= x_a[i1*32 +: 32] | (immb ? imm : x_b[i1*32 +: 32]);
-				s1_xor[i1*32 +: 32]  <= x_a[i1*32 +: 32] ^ (immb ? imm : x_b[i1*32 +: 32]);
-				s1_andn[i1*32 +: 32] <= x_a[i1*32 +: 32] & ~(immb ? imm : x_b[i1*32 +: 32]);
-				s1_orn[i1*32 +: 32]  <= x_a[i1*32 +: 32] | ~(immb ? imm : x_b[i1*32 +: 32]);
-				s1_xnor[i1*32 +: 32] <= ~(x_a[i1*32 +: 32] ^ (immb ? imm : x_b[i1*32 +: 32]));
-				s1_sel[i1*32 +: 32]  <= (x_a[i1*32 +: 32] & (immb ? imm : x_b[i1*32 +: 32])) |
-				                        (~x_a[i1*32 +: 32] & x_c[i1*32 +: 32]);
-				s1_movi[i1*32 +: 32] <= imm;
-				s1_sv[i1*32 +: 32]   <= (op == ATG_ALU_SLL) ? rev(x_a[i1*32 +: 32]) : x_a[i1*32 +: 32];
-				s1_sra[i1]           <= (op == ATG_ALU_SRA) && x_a[i1*32 + 31];
-				s1_amt[i1*5 +: 5]    <= immb ? imm[4:0] : x_b[i1*32 +: 5];
+				s1_la[i1*32 +: 32] <= x_a[i1*32 +: 32];
+				s1_lb[i1*32 +: 32] <= immb ? imm : x_b[i1*32 +: 32];
+				s1_is_sll_lo[i1]   <= (op == ATG_ALU_SLL);
+				s1_is_sll_hi[i1]   <= (op == ATG_ALU_SLL);
+				s1_sra[i1]         <= (op == ATG_ALU_SRA) && x_a[i1*32 + 31];
+				s1_amt[i1*5 +: 5]  <= immb ? imm[4:0] : x_b[i1*32 +: 5];
 			end
 		end
 	end
 
 	/*
-	 * Stage 2 (EX2): 33-bit addition / subtraction
+	 * Stage 2 (EX2): 33-bit addition / subtraction and bitwise logic
 	 */
 	wire [NPHYS*33-1:0] s2_d_comb;
 	wire [NPHYS-1:0] s2_co_unused;
@@ -187,9 +197,9 @@ module atg_su_alu #(
 	(* shreg_extract = "no", max_fanout = 12 *) reg [NPHYS-1:0] s2_sra;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [NPHYS*5-1:0] s2_amt;
 
-	(* keep = "true" *) wire rst_s2 = !rst_n;
+	integer i2;
 	always @(posedge clk) begin
-		if (rst_s2) begin
+		if (rst_p) begin
 			s2_valid <= 1'b0;
 			s2_warp  <= {WARP_W{1'b0}};
 			s2_grp   <= {GRP_W{1'b0}};
@@ -204,21 +214,26 @@ module atg_su_alu #(
 			s2_mask  <= s1_mask;
 			s2_op    <= s1_op;
 		end
-		if (en) begin
-			s2_d     <= s2_d_comb;
-			s2_la    <= s1_la;
-			s2_lb    <= s1_lb;
-			s2_and   <= s1_and;
-			s2_or    <= s1_or;
-			s2_xor   <= s1_xor;
-			s2_andn  <= s1_andn;
-			s2_orn   <= s1_orn;
-			s2_xnor  <= s1_xnor;
-			s2_sel   <= s1_sel;
-			s2_movi  <= s1_movi;
-			s2_sv    <= s1_sv;
-			s2_sra   <= s1_sra;
-			s2_amt   <= s1_amt;
+		if (en_s2) begin
+			s2_d    <= s2_d_comb;
+			s2_la   <= s1_la;
+			s2_lb   <= s1_lb;
+			s2_and  <= s1_la & s1_lb;
+			s2_or   <= s1_la | s1_lb;
+			s2_xor  <= s1_la ^ s1_lb;
+			s2_andn <= s1_la & ~s1_lb;
+			s2_orn  <= s1_la | ~s1_lb;
+			s2_xnor <= ~(s1_la ^ s1_lb);
+			s2_sel  <= (s1_la & s1_lb) | (~s1_la & s1_lc);
+			s2_sra  <= s1_sra;
+			s2_amt  <= s1_amt;
+			for (i2 = 0; i2 < NPHYS; i2 = i2 + 1) begin : blk_s2_sv
+				reg [31:0] la_r;
+				la_r = rev(s1_la[i2*32 +: 32]);
+				s2_movi[i2*32 +: 32]      <= s1_movi_w;
+				s2_sv[i2*32 +: 16]        <= s1_is_sll_lo[i2] ? la_r[15:0]  : s1_la[i2*32 +: 16];
+				s2_sv[i2*32 + 16 +: 16]   <= s1_is_sll_hi[i2] ? la_r[31:16] : s1_la[i2*32 + 16 +: 16];
+			end
 		end
 	end
 
@@ -253,10 +268,9 @@ module atg_su_alu #(
 	(* shreg_extract = "no", max_fanout = 12 *) reg [NPHYS-1:0] s3_slt, s3_ltu;
 	(* shreg_extract = "no" *) reg [DW-1:0] s3_and, s3_or, s3_xor, s3_andn, s3_orn, s3_xnor, s3_sel, s3_movi;
 
-	(* keep = "true" *) wire rst_s3 = !rst_n;
 	integer i3;
 	always @(posedge clk) begin
-		if (rst_s3) begin
+		if (rst_p) begin
 			s3_valid <= 1'b0;
 			s3_warp  <= {WARP_W{1'b0}};
 			s3_grp   <= {GRP_W{1'b0}};
@@ -269,7 +283,7 @@ module atg_su_alu #(
 			s3_rd    <= s2_rd;
 			s3_mask  <= s2_mask;
 		end
-		if (en) begin
+		if (en_s3) begin
 			s3_la    <= s2_la;
 			s3_lb    <= s2_lb;
 			s3_and   <= s2_and;
@@ -331,9 +345,8 @@ module atg_su_alu #(
 	(* shreg_extract = "no" *) reg [NPHYS-1:0]  s4_mask;
 	(* shreg_extract = "no" *) reg [DW-1:0]     s4_data;
 
-	(* keep = "true" *) wire rst_s4 = !rst_n;
 	always @(posedge clk) begin
-		if (rst_s4) begin
+		if (rst_p) begin
 			s4_valid <= 1'b0;
 			s4_warp  <= {WARP_W{1'b0}};
 			s4_grp   <= {GRP_W{1'b0}};
@@ -346,7 +359,7 @@ module atg_su_alu #(
 			s4_rd    <= s3_rd;
 			s4_mask  <= s3_mask;
 		end
-		if (en)
+		if (en_s4)
 			s4_data  <= s4_res_comb;
 	end
 
@@ -360,9 +373,8 @@ module atg_su_alu #(
 	(* shreg_extract = "no" *) reg [NPHYS-1:0]  s5_mask;
 	(* shreg_extract = "no" *) reg [DW-1:0]     s5_data;
 
-	(* keep = "true" *) wire rst_s5 = !rst_n;
 	always @(posedge clk) begin
-		if (rst_s5) begin
+		if (rst_p) begin
 			s5_valid <= 1'b0;
 			s5_warp  <= {WARP_W{1'b0}};
 			s5_grp   <= {GRP_W{1'b0}};
@@ -375,7 +387,7 @@ module atg_su_alu #(
 			s5_rd    <= s4_rd;
 			s5_mask  <= s4_mask;
 		end
-		if (en)
+		if (en_s5)
 			s5_data  <= s4_data;
 	end
 
@@ -389,9 +401,8 @@ module atg_su_alu #(
 	(* shreg_extract = "no" *) reg [NPHYS-1:0]  s6_lanes;
 	(* shreg_extract = "no" *) reg [DW-1:0]     s6_data;
 
-	(* keep = "true" *) wire rst_s6 = !rst_n;
 	always @(posedge clk) begin
-		if (rst_s6) begin
+		if (rst_p) begin
 			s6_valid <= 1'b0;
 			s6_warp  <= {WARP_W{1'b0}};
 			s6_grp   <= {GRP_W{1'b0}};
@@ -404,7 +415,7 @@ module atg_su_alu #(
 			s6_rd    <= s5_rd;
 			s6_lanes <= s5_mask;
 		end
-		if (en)
+		if (en_s6)
 			s6_data  <= s5_data;
 	end
 

@@ -48,10 +48,10 @@ module atg_su_tex_fifo #(
 	am_sub #(.W(DEPTH_LOG2 + 1)) u_used (
 		.a(wp), .b(rp), .bi(1'b0), .d(used), .bo(unused_used_bo)
 	);
-	(* keep = "true", max_fanout = 12 *) wire in_rdy_w = (wp[DEPTH_LOG2-1:0] != rp[DEPTH_LOG2-1:0]) || (wp[DEPTH_LOG2] == rp[DEPTH_LOG2]);
-	(* keep = "true", max_fanout = 12 *) reg r_valid;
-	(* keep = "true", max_fanout = 12 *) wire push = in_valid && in_rdy_w;
-	(* keep = "true", max_fanout = 12 *) wire pop = r_valid && out_ready;
+	(* dont_touch = "true" *) reg r_in_ready;
+	(* dont_touch = "true" *) reg r_valid;
+	(* max_fanout = 12 *) wire push = in_valid && r_in_ready;
+	(* max_fanout = 12 *) wire pop = r_valid && out_ready;
 
 	wire [DEPTH_LOG2:0] wp_next;
 	wire unused_wp_co;
@@ -66,8 +66,9 @@ module atg_su_tex_fifo #(
 	);
 
 	wire will_empty = (rp_next == wp);
+	wire will_full  = (wp_next[DEPTH_LOG2-1:0] == rp[DEPTH_LOG2-1:0]) && (wp_next[DEPTH_LOG2] != rp[DEPTH_LOG2]);
 	assign count = used;
-	assign in_ready = in_rdy_w;
+	assign in_ready = r_in_ready;
 	assign out_valid = r_valid;
 
 	localparam N_TF_SL = (W + 15) / 16;
@@ -76,10 +77,10 @@ module atg_su_tex_fifo #(
 	for (gtf = 0; gtf < N_TF_SL; gtf = gtf + 1) begin : g_tf_sl
 		localparam TF_W = (gtf * 16 + 16 <= W) ? 16 : (W - gtf * 16);
 		(* ram_style = "distributed" *) reg [TF_W-1:0] mem_sl [0:(1 << DEPTH_LOG2) - 1];
-		(* keep = "true" *) wire push_s = push;
-		(* keep = "true" *) wire [DEPTH_LOG2-1:0] wp_s = wp[DEPTH_LOG2-1:0];
-		(* keep = "true" *) wire [DEPTH_LOG2-1:0] rp_s = rp[DEPTH_LOG2-1:0];
-		(* keep = "true" *) wire [TF_W-1:0] wd_s = in_data[gtf*16 +: TF_W];
+		(* dont_touch = "true" *) wire push_s = push;
+		(* dont_touch = "true" *) wire [DEPTH_LOG2-1:0] wp_s = wp[DEPTH_LOG2-1:0];
+		(* dont_touch = "true" *) wire [DEPTH_LOG2-1:0] rp_s = rp[DEPTH_LOG2-1:0];
+		(* dont_touch = "true" *) wire [TF_W-1:0] wd_s = in_data[gtf*16 +: TF_W];
 		always @(posedge clk)
 			if (push_s)
 				mem_sl[wp_s] <= wd_s;
@@ -87,20 +88,27 @@ module atg_su_tex_fifo #(
 	end
 	endgenerate
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	always @(posedge clk) begin
 		if (rst_p) begin
 			wp <= {(DEPTH_LOG2 + 1){1'b0}};
 			rp <= {(DEPTH_LOG2 + 1){1'b0}};
 			r_valid <= 1'b0;
+			r_in_ready <= 1'b1;
 		end else begin
 			if (push)
 				wp <= wp_next;
 			if (pop)
 				rp <= rp_next;
 			case ({push, pop})
-			2'b10: r_valid <= 1'b1;
-			2'b01: r_valid <= !will_empty;
+			2'b10: begin
+				r_valid <= 1'b1;
+				r_in_ready <= !will_full;
+			end
+			2'b01: begin
+				r_valid <= !will_empty;
+				r_in_ready <= 1'b1;
+			end
 			default: ;
 			endcase
 		end
@@ -185,11 +193,11 @@ module atg_su_tex_ret #(
 			for (gh = 0; gh < 2; gh = gh + 1) begin : g_bufq_half
 				localparam L_IDX = gq * 4 + glq;
 				localparam TR_BASE = glq * 128 + gh * 16;
-				(* keep = "true" *) wire bufq_we_0 = gather_we && (q == gq[QW-1:0]);
-				(* keep = "true" *) wire bufq_we_1 = gather_we && (q == gq[QW-1:0]);
-				(* keep = "true" *) wire bufq_we_2 = gather_we && (q == gq[QW-1:0]);
-				(* keep = "true" *) wire bufq_we_3 = gather_we && (q == gq[QW-1:0]);
-				(* keep = "true" *) wire [1:0] c_sl = c;
+				(* dont_touch = "true" *) wire bufq_we_0 = gather_we && (q == gq[QW-1:0]);
+				(* dont_touch = "true" *) wire bufq_we_1 = gather_we && (q == gq[QW-1:0]);
+				(* dont_touch = "true" *) wire bufq_we_2 = gather_we && (q == gq[QW-1:0]);
+				(* dont_touch = "true" *) wire bufq_we_3 = gather_we && (q == gq[QW-1:0]);
+				(* dont_touch = "true" *) wire [1:0] c_sl = c;
 				(* shreg_extract = "no" *) reg [15:0] b_c0, b_c1, b_c2, b_c3;
 				always @(posedge clk) begin
 					if (bufq_we_0) b_c0 <= tr_data[TR_BASE + 0*32 +: 16];
@@ -226,14 +234,21 @@ module atg_su_tex_ret #(
 	assign l_sbe = sbe;
 	assign l_cls = ATG_CLS_T;
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire head_take_a = !rst_p && (st == HEAD) && f_valid;
+	(* dont_touch = "true" *) wire head_take_b = !rst_p && (st == HEAD) && f_valid;
 	always @(posedge clk) begin
+		if (head_take_a) begin
+			{warp, grp, rd, sbe} <= f_data[RW-1 : 2 + NQ + NPHYS];
+		end
+		if (head_take_b) begin
+			{last, sz, qm, lanes} <= f_data[2 + NQ + NPHYS - 1 : 0];
+		end
 		if (rst_p) begin
 			st <= HEAD;
 		end else begin
 			case (st)
 			HEAD: if (f_valid) begin
-				{warp, grp, rd, sbe, last, sz, qm, lanes} <= f_data;
 				q <= {QW{1'b0}};
 				c <= 2'd0;
 				st <= f_data[NPHYS +: NQ] == {NQ{1'b0}} ? BEAT : GATHER;

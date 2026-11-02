@@ -68,7 +68,7 @@ module atg_su_lane #(
 	localparam G = 32 / NPHYS;
 	localparam EW = 1 + WARP_W + GRP_W + 7 + NPHYS + DW;
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	wire [3:0] unit = x_uop[ATG_UOP_UNIT +: 4];
 	wire [7:0] op = x_uop[ATG_UOP_OP +: 8];
 	wire [4:0] sub = x_uop[ATG_UOP_SUB +: 5];
@@ -300,10 +300,13 @@ module atg_su_lane #(
 	(* shreg_extract = "no" *) reg [EW-1:0] pipe [0:SHORT_LAT-1];
 	(* keep = "true" *) wire [DW-1:0] pipe_fb;
 	(* keep = "true" *) wire [31:0] stg_we_lo, stg_we_hi;
+	(* keep = "true" *) wire [NPHYS*2-1:0] emit_h;
+	(* keep = "true" *) wire emit_ctrl = emit;
 	genvar gp;
 	generate
 		for (gp = 0; gp < NPHYS * 2; gp = gp + 1) begin : g_r4v
 			assign pipe_fb[gp*16 +: 16] = r4_use_xa[gp] ? r4_xa[gp*16 +: 16] : pipe[SHORT_LAT-2][gp*16 +: 16];
+			assign emit_h[gp] = (st == S_EMIT);
 		end
 		for (gp = 0; gp < 32; gp = gp + 1) begin : g_stgw
 			assign stg_we_lo[gp] = stage && (gp / NPHYS == {{(32-GRP_W){1'b0}}, x_grp});
@@ -318,10 +321,16 @@ module atg_su_lane #(
 			for (k = 0; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= {EW{1'b0}};
 		end else begin
-			if (emit)
-				pipe[0] <= {wrd, x_warp, e_cnt, x_uop[ATG_UOP_RD +: 7], z_lanes, z};
+			if (emit_ctrl)
+				pipe[0][EW-1:DW] <= {wrd, x_warp, e_cnt, x_uop[ATG_UOP_RD +: 7], z_lanes};
 			else
-				pipe[0] <= {EW{1'b0}};
+				pipe[0][EW-1:DW] <= {(EW-DW){1'b0}};
+			for (kp = 0; kp < NPHYS * 2; kp = kp + 1) begin
+				if (emit_h[kp])
+					pipe[0][kp*16 +: 16] <= z[kp*16 +: 16];
+				else
+					pipe[0][kp*16 +: 16] <= 16'd0;
+			end
 
 			for (k = 1; k < SHORT_LAT - 1; k = k + 1)
 				pipe[k] <= pipe[k-1];
@@ -385,7 +394,7 @@ module atg_su_lane_fsub (
 	input wire [31:0] i_b,
 	output wire [31:0] o_r
 );
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	/* Pure-LUT 5-bit decrementer (0 CARRY4) */
 	function [4:0] dec5;
@@ -691,8 +700,13 @@ module atg_su_lane_fsub (
 	 * Stage 4 (s3 -> s4): 4-LUT block normalizer & exponent subtract (0 CARRY4)
 	 * ===================================================================== */
 	/* Level 1 from s3_*_reg */
-	(* keep = "true" *) wire s3_use_47 = s3_sum[27] || s3_nz4;
-	(* keep = "true" *) wire [1:0] s3_bsel = (s3_sum[27] || s3_nz4 || s3_nz3) ? 2'd3 :
+	(* keep = "true" *) wire s3_use_47_lo = s3_sum[27] || s3_nz4;
+	(* keep = "true" *) wire s3_use_47_hi = s3_sum[27] || s3_nz4;
+	(* keep = "true" *) wire [1:0] s3_bsel_lo = (s3_sum[27] || s3_nz4 || s3_nz3) ? 2'd3 :
+		(s3_nz2 ? 2'd2 : (s3_nz1 ? 2'd1 : 2'd0));
+	(* keep = "true" *) wire [1:0] s3_bsel_hi = (s3_sum[27] || s3_nz4 || s3_nz3) ? 2'd3 :
+		(s3_nz2 ? 2'd2 : (s3_nz1 ? 2'd1 : 2'd0));
+	(* keep = "true" *) wire [1:0] s3_bsel_lz = (s3_sum[27] || s3_nz4 || s3_nz3) ? 2'd3 :
 		(s3_nz2 ? 2'd2 : (s3_nz1 ? 2'd1 : 2'd0));
 	(* keep = "true" *) wire [26:0] s3_n_47 = s3_sum[27] ? {s3_sum[27:2], s3_sum[1] | s3_sum[0]} :
 		(s3_sh4 == 2'd0 ? s3_sum[26:0] : (s3_sh4 == 2'd1 ? {s3_sum[25:0], 1'b0} : {s3_sum[24:0], 2'b00}));
@@ -721,16 +735,21 @@ module atg_su_lane_fsub (
 	(* keep = "true" *) wire [4:0] lzm1_0  = add5_c3(5'd20, s3_sh0);
 
 	/* Level 2 */
-	(* keep = "true" *) wire [26:0] s3_n3_47 = s3_use_47 ? s3_n_47 : (s3_sh3[2] ? w3_45 : w3_03);
+	(* keep = "true" *) wire [26:0] s3_n3_47 = {
+		s3_use_47_hi ? s3_n_47[26:14] : (s3_sh3[2] ? w3_45[26:14] : w3_03[26:14]),
+		s3_use_47_lo ? s3_n_47[13:0]  : (s3_sh3[2] ? w3_45[13:0]  : w3_03[13:0])
+	};
 	(* keep = "true" *) wire [26:0] s3_n2    = s3_sh2[2] ? w2_45 : w2_03;
 	(* keep = "true" *) wire [26:0] s3_n1    = s3_sh1[2] ? w1_45 : w1_03;
 	(* keep = "true" *) wire [26:0] s3_n0    = s3_sh0[2] ? w0_45 : w0_03;
-	(* keep = "true" *) wire [4:0]  s3_lz    = (s3_bsel == 2'd3) ? lz_43   : ((s3_bsel == 2'd2) ? lz_2   : ((s3_bsel == 2'd1) ? lz_1   : lz_0));
-	(* keep = "true" *) wire [4:0]  s3_lz_m1 = (s3_bsel == 2'd3) ? lzm1_43 : ((s3_bsel == 2'd2) ? lzm1_2 : ((s3_bsel == 2'd1) ? lzm1_1 : lzm1_0));
+	(* keep = "true" *) wire [4:0]  s3_lz    = (s3_bsel_lz == 2'd3) ? lz_43   : ((s3_bsel_lz == 2'd2) ? lz_2   : ((s3_bsel_lz == 2'd1) ? lz_1   : lz_0));
+	(* keep = "true" *) wire [4:0]  s3_lz_m1 = (s3_bsel_lz == 2'd3) ? lzm1_43 : ((s3_bsel_lz == 2'd2) ? lzm1_2 : ((s3_bsel_lz == 2'd1) ? lzm1_1 : lzm1_0));
 
 	/* Level 3 */
-	(* keep = "true" *) wire [26:0] s3_n_comb = (s3_bsel == 2'd3) ? s3_n3_47 :
-		((s3_bsel == 2'd2) ? s3_n2 : ((s3_bsel == 2'd1) ? s3_n1 : s3_n0));
+	(* keep = "true" *) wire [26:0] s3_n_comb = {
+		(s3_bsel_hi == 2'd3) ? s3_n3_47[26:14] : ((s3_bsel_hi == 2'd2) ? s3_n2[26:14] : ((s3_bsel_hi == 2'd1) ? s3_n1[26:14] : s3_n0[26:14])),
+		(s3_bsel_lo == 2'd3) ? s3_n3_47[13:0]  : ((s3_bsel_lo == 2'd2) ? s3_n2[13:0]  : ((s3_bsel_lo == 2'd1) ? s3_n1[13:0]  : s3_n0[13:0]))
+	};
 	(* keep = "true" *) wire [3:0] s3_sub0_lo = sub3_ci(s3_ex[2:0], s3_lz[2:0],    1'b1);
 	(* keep = "true" *) wire [3:0] s3_sub1_lo = sub3_ci(s3_ex[2:0], s3_lz_m1[2:0], 1'b1);
 

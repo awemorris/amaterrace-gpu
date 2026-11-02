@@ -115,7 +115,7 @@ module atg_su_cbank #(
 	localparam [3:0] IDLE = 4'd0, LREQ = 4'd1, LWAIT = 4'd2, LWR = 4'd3, ACCESS = 4'd4,
 		DRAIN = 4'd5, DRAIN2 = 4'd6, BEAT = 4'd7, DRAIN3 = 4'd8;
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	reg [31:0] bank [0:CONST_WORDS-1];
 	(* max_fanout = 12 *) reg [3:0] st;
 	(* max_fanout = 12 *) reg valid, lc_pend;
@@ -144,30 +144,52 @@ module atg_su_cbank #(
 	(* max_fanout = 12 *) reg [4:0] cw_wa_r;
 	(* max_fanout = 12 *) reg [31:0] b_wd_r;
 
-	(* max_fanout = 12 *) wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_CBANK;
-	(* max_fanout = 12 *) wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
-	(* max_fanout = 12 *) wire [WW-1:0] lwo = ladr[2 +: WW];
+	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_CBANK;
+	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
+	wire [WW-1:0] lwo = ladr[2 +: WW];
 	wire [31:0] lword = lbuf[lwo*32 +: 32];
 	assign x_ready = st == IDLE && !lc_pend && !lc_kick && !b_we_r;
 
-	/* Sliced distributed RAM cw (4 x 8-bit slices) so each address/WE net drives <= 16 RAM primitives */
+	wire sc_on;
+	wire [CW-1:0] sc_a;
+
+	atg_su_scrub #(.DEPTH(CONST_WORDS), .AW(CW)) sc (
+		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
+	);
+
+	wire [CW-1:0] sc_a_next;
+	wire sc_a_co_unused;
+	am_add #(.W(CW)) u_sc_a_next (.a(sc_a), .b({CW{1'b0}}), .ci(1'b1), .s(sc_a_next), .co(sc_a_co_unused));
+
+	assign scrub_busy = sc_on;
+	wire sc_done = ({{(32-CW){1'b0}}, sc_a} == CONST_WORDS - 1);
+	wire cw_we_next = rst_p ? 1'b0 : scrub ? 1'b1 : sc_on ? (!sc_done && ({{(32-CW){1'b0}}, sc_a_next} < 32)) :
+		(st == LWR) ? (wi < 32) : 1'b0;
+	wire [4:0] cw_wa_next = (rst_p || scrub) ? 5'd0 : sc_on ? sc_a_next[4:0] : wi[4:0];
+	wire valid_next = rst_p ? 1'b0 : inv ? 1'b0 :
+		(st == IDLE && lc_pend && s_region == 32'd0 && s_words != 32'd0) ? 1'b1 : valid;
+
+	/* Sliced distributed RAM cw (8 x 4-bit slices) so each address/WE net drives <= 12 RAM primitives */
 	wire [31:0] cw_r0, cw_r1, cw_r2;
 	genvar gcs, gcl, gch;
 	generate
-	for (gcs = 0; gcs < 4; gcs = gcs + 1) begin : g_cw_sl
-		(* ram_style = "distributed" *) reg [7:0] cw_mem [0:31];
-		(* keep = "true" *) wire cw_we_s = cw_we_r;
-		(* keep = "true" *) wire [4:0] cw_wa_s = cw_wa_r;
-		(* keep = "true" *) wire [7:0] cw_wd_s = b_wd_r[gcs*8 +: 8];
-		(* keep = "true" *) wire [4:0] cr_a0_s = cr_idx[4:0];
-		(* keep = "true" *) wire [4:0] cr_a1_s = cr_idx[9:5];
-		(* keep = "true" *) wire [4:0] cr_a2_s = cr_idx[14:10];
-		always @(posedge clk)
-			if (cw_we_s)
-				cw_mem[cw_wa_s] <= cw_wd_s;
-		assign cw_r0[gcs*8 +: 8] = cw_mem[cr_a0_s];
-		assign cw_r1[gcs*8 +: 8] = cw_mem[cr_a1_s];
-		assign cw_r2[gcs*8 +: 8] = cw_mem[cr_a2_s];
+	for (gcs = 0; gcs < 8; gcs = gcs + 1) begin : g_cw_sl
+		(* ram_style = "distributed" *) reg [3:0] cw_mem [0:31];
+		(* dont_touch = "true" *) reg cw_we_sl_r;
+		(* dont_touch = "true" *) reg [4:0] cw_wa_sl_r;
+		(* dont_touch = "true" *) wire [4:0] cr_a0_s = cr_idx[4:0];
+		(* dont_touch = "true" *) wire [4:0] cr_a1_s = cr_idx[9:5];
+		(* dont_touch = "true" *) wire [4:0] cr_a2_s = cr_idx[14:10];
+		always @(posedge clk) begin
+			cw_we_sl_r <= cw_we_next;
+			if (rst_p || scrub || sc_on || st == LWR)
+				cw_wa_sl_r <= cw_wa_next;
+			if (cw_we_sl_r)
+				cw_mem[cw_wa_sl_r] <= b_wd_r[gcs*4 +: 4];
+		end
+		assign cw_r0[gcs*4 +: 4] = cw_mem[cr_a0_s];
+		assign cw_r1[gcs*4 +: 4] = cw_mem[cr_a1_s];
+		assign cw_r2[gcs*4 +: 4] = cw_mem[cr_a2_s];
 	end
 	endgenerate
 	wire [95:0] cw_rdata = {cw_r2, cw_r1, cw_r0};
@@ -196,28 +218,29 @@ module atg_su_cbank #(
 	generate
 	for (gcl = 0; gcl < NPHYS; gcl = gcl + 1) begin : g_cb_res
 		(* shreg_extract = "no" *) reg [CW-1:0] ridx_l;
-		(* keep = "true" *) wire ridx_we_l = (st == IDLE) && !lc_pend && mine;
+		(* dont_touch = "true" *) wire ridx_we_l = (st == IDLE) && !lc_pend && mine && !rst_p;
 		always @(posedge clk)
 			if (ridx_we_l)
 				ridx_l <= xidx[gcl*CW +: CW];
 		assign ridx[gcl*CW +: CW] = ridx_l;
 		for (gch = 0; gch < 2; gch = gch + 1) begin : g_cb_res_h
 			(* shreg_extract = "no" *) reg [15:0] res_h;
-			(* keep = "true" *) wire res_clr_h = (st == IDLE) && !lc_pend && mine;
-			(* keep = "true" *) wire res_we_h = pval_d2 && (pli_d2 == gcl[LW-1:0]);
-			(* keep = "true" *) wire val_h = valid;
+			(* dont_touch = "true" *) reg valid_res_h;
+			(* dont_touch = "true" *) wire res_clr_h = (st == IDLE) && !lc_pend && mine && !rst_p;
+			(* dont_touch = "true" *) wire res_we_h = pval_d2 && (pli_d2 == gcl[LW-1:0]) && !rst_p;
 			always @(posedge clk) begin
+				valid_res_h <= valid_next;
 				if (res_clr_h)
 					res_h <= 16'd0;
 				else if (res_we_h)
-					res_h <= val_h ? q_pipe[gch*16 +: 16] : 16'd0;
+					res_h <= valid_res_h ? q_pipe[gch*16 +: 16] : 16'd0;
 			end
 			assign res[gcl*32 + gch*16 +: 16] = res_h;
 		end
 	end
 	for (gcl = 0; gcl < LB / 16; gcl = gcl + 1) begin : g_cb_lbuf
 		(* shreg_extract = "no" *) reg [15:0] lbuf_s;
-		(* keep = "true" *) wire lbuf_we_s = (st == LWAIT) && rsp_valid;
+		(* dont_touch = "true" *) wire lbuf_we_s = (st == LWAIT) && rsp_valid && !rst_p;
 		always @(posedge clk)
 			if (lbuf_we_s)
 				lbuf_s <= rsp_rdata[gcl*16 +: 16];
@@ -225,16 +248,32 @@ module atg_su_cbank #(
 	end
 	for (gcl = 0; gcl < 6; gcl = gcl + 1) begin : g_cb_crq
 		(* shreg_extract = "no" *) reg [15:0] crq_s;
-		(* keep = "true" *) wire crq_we_s = cr_en;
-		(* keep = "true" *) wire crq_val_s = valid;
-		always @(posedge clk)
+		(* dont_touch = "true" *) reg valid_crq_s;
+		(* dont_touch = "true" *) reg crq_rdy_s;
+		(* dont_touch = "true" *) wire crq_we_s = cr_en && crq_rdy_s;
+		always @(posedge clk) begin
+			valid_crq_s <= valid_next;
+			crq_rdy_s <= !rst_p;
 			if (crq_we_s)
-				crq_s <= crq_val_s ? cw_rdata[gcl*16 +: 16] : 16'd0;
+				crq_s <= valid_crq_s ? cw_rdata[gcl*16 +: 16] : 16'd0;
+		end
 		assign crq[gcl*16 +: 16] = crq_s;
 	end
 	endgenerate
 
+	(* dont_touch = "true" *) wire s_reg_we_lo = st_we && (st_idx == GHCI_S_LC_REGION) && !rst_p;
+	(* dont_touch = "true" *) wire s_reg_we_hi = st_we && (st_idx == GHCI_S_LC_REGION) && !rst_p;
+	(* dont_touch = "true" *) wire s_adr_we_lo = st_we && (st_idx == GHCI_S_LC_ADDR) && !rst_p;
+	(* dont_touch = "true" *) wire s_adr_we_hi = st_we && (st_idx == GHCI_S_LC_ADDR) && !rst_p;
+	(* dont_touch = "true" *) wire s_wrd_we_lo = st_we && (st_idx == GHCI_S_LC_WORDS) && !rst_p;
+	(* dont_touch = "true" *) wire s_wrd_we_hi = st_we && (st_idx == GHCI_S_LC_WORDS) && !rst_p;
+	(* dont_touch = "true" *) wire ladr_we_lo  = ((st == IDLE && lc_pend) || (st == LWR)) && !rst_p;
+	(* dont_touch = "true" *) wire ladr_we_hi  = ((st == IDLE && lc_pend) || (st == LWR)) && !rst_p;
+	wire [31:0] ladr_mux = (st == IDLE) ? {s_addr[31:2], 2'b00} : ladr_next;
+
 	always @(posedge clk) begin
+		if (ladr_we_lo) ladr[15:0]  <= ladr_mux[15:0];
+		if (ladr_we_hi) ladr[31:16] <= ladr_mux[31:16];
 		if (rst_p) begin
 			st <= IDLE;
 			valid <= 1'b0;
@@ -251,12 +290,12 @@ module atg_su_cbank #(
 			pli_d2 <= {LW{1'b0}};
 			ra_r <= {CW{1'b0}};
 		end else begin
-			if (st_we && st_idx == GHCI_S_LC_REGION)
-				s_region <= st_wdata;
-			if (st_we && st_idx == GHCI_S_LC_ADDR)
-				s_addr <= st_wdata;
-			if (st_we && st_idx == GHCI_S_LC_WORDS)
-				s_words <= st_wdata;
+			if (s_reg_we_lo) s_region[15:0]  <= st_wdata[15:0];
+			if (s_reg_we_hi) s_region[31:16] <= st_wdata[31:16];
+			if (s_adr_we_lo) s_addr[15:0]    <= st_wdata[15:0];
+			if (s_adr_we_hi) s_addr[31:16]   <= st_wdata[31:16];
+			if (s_wrd_we_lo) s_words[15:0]   <= st_wdata[15:0];
+			if (s_wrd_we_hi) s_words[31:16]  <= st_wdata[31:16];
 			if (lc_kick)
 				lc_pend <= 1'b1;
 			pval <= 1'b0;
@@ -268,7 +307,6 @@ module atg_su_cbank #(
 			IDLE:
 				if (lc_pend) begin
 					lc_pend <= lc_kick;
-					ladr <= {s_addr[31:2], 2'b00};
 					wi <= {(CW+1){1'b0}};
 					nw <= s_words > CONST_WORDS ? CONST_WORDS[CW:0] : s_words[CW:0];
 					if (s_region == 32'd0 && s_words != 32'd0) begin
@@ -292,7 +330,6 @@ module atg_su_cbank #(
 			end
 			LWR: begin
 				wi <= wi_next;
-				ladr <= ladr_next;
 				if (wi_next == nw)
 					st <= IDLE;
 				else if (&lwo)
@@ -318,50 +355,42 @@ module atg_su_cbank #(
 		end
 	end
 
-	/* The write port: a load's words, or the scrub's zeros. */
-	wire sc_on;
-	wire [CW-1:0] sc_a;
-
-	atg_su_scrub #(.DEPTH(CONST_WORDS), .AW(CW)) sc (
-		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
-	);
-
-	wire [CW-1:0] sc_a_next;
-	wire sc_a_co_unused;
-	am_add #(.W(CW)) u_sc_a_next (.a(sc_a), .b({CW{1'b0}}), .ci(1'b1), .s(sc_a_next), .co(sc_a_co_unused));
-
-	assign scrub_busy = sc_on;
+	(* dont_touch = "true" *) wire b_wd_zero_lo = rst_p || scrub || sc_on;
+	(* dont_touch = "true" *) wire b_wd_zero_hi = rst_p || scrub || sc_on;
+	(* dont_touch = "true" *) wire b_wd_we_lo   = (st == LWR) && !rst_p;
+	(* dont_touch = "true" *) wire b_wd_we_hi   = (st == LWR) && !rst_p;
 
 	always @(posedge clk) begin
+		if (b_wd_zero_lo)
+			b_wd_r[15:0] <= 16'd0;
+		else if (b_wd_we_lo)
+			b_wd_r[15:0] <= lword[15:0];
+
+		if (b_wd_zero_hi)
+			b_wd_r[31:16] <= 16'd0;
+		else if (b_wd_we_hi)
+			b_wd_r[31:16] <= lword[31:16];
+
 		if (rst_p) begin
 			b_we_r  <= 1'b0;
 			cw_we_r <= 1'b0;
 			b_wa_r  <= {CW{1'b0}};
 			cw_wa_r <= 5'd0;
-			b_wd_r  <= 32'd0;
 		end else if (scrub) begin
 			b_we_r  <= 1'b1;
 			cw_we_r <= 1'b1;
 			b_wa_r  <= {CW{1'b0}};
 			cw_wa_r <= 5'd0;
-			b_wd_r  <= 32'd0;
 		end else if (sc_on) begin
-			if ({{(32-CW){1'b0}}, sc_a} == CONST_WORDS - 1) begin
-				b_we_r  <= 1'b0;
-				cw_we_r <= 1'b0;
-			end else begin
-				b_we_r  <= 1'b1;
-				cw_we_r <= {{(32-CW){1'b0}}, sc_a_next} < 32;
-				b_wa_r  <= sc_a_next;
-				cw_wa_r <= sc_a_next[4:0];
-				b_wd_r  <= 32'd0;
-			end
+			b_we_r  <= !sc_done;
+			cw_we_r <= !sc_done && ({{(32-CW){1'b0}}, sc_a_next} < 32);
+			b_wa_r  <= sc_a_next;
+			cw_wa_r <= sc_a_next[4:0];
 		end else if (st == LWR) begin
 			b_we_r  <= 1'b1;
 			cw_we_r <= wi < 32;
 			b_wa_r  <= wi[CW-1:0];
 			cw_wa_r <= wi[4:0];
-			b_wd_r  <= lword;
 		end else begin
 			b_we_r  <= 1'b0;
 			cw_we_r <= 1'b0;
@@ -400,7 +429,7 @@ module atg_su_cbank #(
 	assign l_cls = ATG_CLS_M;
 
 	wire unused_ok = &{1'b0, x_pc, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop, imm, x_a,
-		rsp_write, rsp_tag, sc_a_co_unused, (NWARPS != 0), ladr[1:0], s_addr[1:0]};
+		rsp_write, rsp_tag, sc_a_co_unused, (NWARPS != 0), ladr[1:0], s_addr[1:0], cw_we_r, cw_wa_r};
 endmodule
 
 `default_nettype wire

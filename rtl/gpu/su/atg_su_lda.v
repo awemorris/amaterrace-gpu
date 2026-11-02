@@ -114,16 +114,17 @@ module atg_su_lda #(
 	endfunction
 
 	/* The primitive maps. */
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire scrub_i = scrub;
 	wire [NWARPS*24-1:0] pmap;
 	wire map_we = pw_we && pw_addr == 12'hFFF;
 	genvar gpm;
 	generate
 		for (gpm = 0; gpm < NWARPS; gpm = gpm + 1) begin : g_pmap_w
-			(* keep = "true" *) wire rst_pm_s = !rst_n;
-			(* keep = "true" *) wire pm_we_s  = map_we && (pw_warp == gpm[WARP_W-1:0]);
+			(* dont_touch = "true" *) wire pm_we_s  = map_we && (pw_warp == gpm[WARP_W-1:0]);
 			reg [23:0] pmap_w_r;
 			always @(posedge clk) begin
-				if (rst_pm_s)
+				if (rst_p)
 					pmap_w_r <= 24'd0;
 				else if (pm_we_s)
 					pmap_w_r <= pw_data[23:0];
@@ -157,7 +158,7 @@ module atg_su_lda #(
 	wire [AW-1:0] sc_a;
 
 	atg_su_scrub #(.DEPTH(DEPTH), .AW(AW)) sc (
-		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
+		.clk(clk), .rst_n(rst_n), .start(scrub_i), .on(sc_on), .a(sc_a)
 	);
 
 	wire [AW-1:0] sc_a_next;
@@ -165,19 +166,17 @@ module atg_su_lda #(
 	am_add #(.W(AW)) u_sc_a_next (.a(sc_a), .b({AW{1'b0}}), .ci(1'b1), .s(sc_a_next), .co(sc_a_co_unused));
 
 	assign scrub_busy = sc_on;
-	(* keep = "true" *) wire rst_p0 = !rst_n;
-	(* keep = "true" *) wire rst_p1 = !rst_n;
-	(* keep = "true" *) wire rst_p2 = !rst_n;
-	(* keep = "true" *) wire rst_p3 = !rst_n;
-	(* keep = "true" *) wire rst_p4 = !rst_n;
 	(* max_fanout = 12 *) reg t_we_r;
 	(* max_fanout = 12 *) reg [AW-1:0] t_wa_r;
-	(* max_fanout = 12 *) reg [31:0] t_wd_r;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] t_wd_lo_r, t_wd_hi_r;
+	wire [31:0] t_wd_r = {t_wd_hi_r, t_wd_lo_r};
+	(* dont_touch = "true" *) wire wd_zero_lo = rst_p || scrub_i || sc_on;
+	(* dont_touch = "true" *) wire wd_zero_hi = rst_p || scrub_i || sc_on;
 	always @(posedge clk) begin
-		if (rst_p0) begin
+		if (rst_p) begin
 			t_we_r <= 1'b0;
 			t_wa_r <= {AW{1'b0}};
-		end else if (scrub) begin
+		end else if (scrub_i) begin
 			t_we_r <= 1'b1;
 			t_wa_r <= {AW{1'b0}};
 		end else if (sc_on) begin
@@ -191,13 +190,14 @@ module atg_su_lda #(
 			t_we_r <= tab_we;
 			t_wa_r <= waddr[AW-1:0];
 		end
-		if (rst_p1) begin
-			t_wd_r <= 32'd0;
-		end else if (scrub || sc_on) begin
-			t_wd_r <= 32'd0;
-		end else begin
-			t_wd_r <= pw_data;
-		end
+		if (wd_zero_lo)
+			t_wd_lo_r <= 16'd0;
+		else
+			t_wd_lo_r <= pw_data[15:0];
+		if (wd_zero_hi)
+			t_wd_hi_r <= 16'd0;
+		else
+			t_wd_hi_r <= pw_data[31:16];
 	end
 
 	/* The read cycle of the group being read: 0 takes a group from x_*. */
@@ -221,24 +221,22 @@ module atg_su_lda #(
 	(* max_fanout = 12 *) wire [23:0] c_map = x_ready_w ? x_map : l_map;
 	(* max_fanout = 12 *) wire [8:0] c_imm = x_ready_w ? x_uop[ATG_UOP_IMM +: 9] : l_imm;
 	always @(posedge clk) begin
-		if (rst_p2) begin
+		if (rst_p) begin
 			ph <= {PW{1'b0}};
 			l_warp <= {WARP_W{1'b0}};
 			l_grp <= {GRP_W{1'b0}};
 			l_imm <= 9'd0;
+			l_map <= 24'd0;
 		end else begin
 			if (take) begin
 				l_warp <= x_warp;
 				l_grp <= x_grp;
 				l_imm <= x_uop[ATG_UOP_IMM +: 9];
+				l_map <= x_map;
 			end
 			if (NR > 1 && (take || !x_ready_w))
 				ph <= ph_next;
 		end
-		if (rst_p3)
-			l_map <= 24'd0;
-		else if (take)
-			l_map <= x_map;
 	end
 
 	(* max_fanout = 12 *) wire [31:0] rvtx = {30'd0, c_imm[1:0]};
@@ -291,9 +289,8 @@ module atg_su_lda #(
 		wire [AW-1:0] raddr_a = (ry << VL) | {{(AW > 7 ? AW - 7 : 0){1'b0}}, rvary};
 		/* verilator lint_on WIDTHTRUNC */
 		wire [31:0] raddr = {{(32-AW){1'b0}}, raddr_a};
-		(* keep = "true" *) wire rst_q = !rst_n;
 		always @(posedge clk) begin
-			if (rst_q) begin
+			if (rst_p) begin
 				raddr_r <= {AW{1'b0}};
 				rok_r <= 1'b0;
 				rq_ok[q] <= 1'b0;
@@ -312,7 +309,7 @@ module atg_su_lda #(
 
 	always @(posedge clk) begin
 		rq_pipe <= rq;
-		if (rst_p4)
+		if (rst_p)
 			rq_ok_pipe <= {NC{1'b0}};
 		else
 			rq_ok_pipe <= rq_ok;
@@ -321,7 +318,7 @@ module atg_su_lda #(
 	/* The reads of a group gathered: read cycle p's data is in rq_pipe 3 cycles after ph. */
 	(* shreg_extract = "no", max_fanout = 12 *) reg [PW-1:0] rph_d1, rph_d2, rph;
 	always @(posedge clk)
-		if (rst_p4) begin
+		if (rst_p) begin
 			rph_d1 <= {PW{1'b0}};
 			rph_d2 <= {PW{1'b0}};
 			rph    <= {PW{1'b0}};
@@ -334,7 +331,7 @@ module atg_su_lda #(
 	genvar c, gs;
 	generate
 	for (c = 0; c < NC; c = c + 1) begin : g_last
-		(* keep = "true" *) wire [7:0] rq_ok_sl;
+		(* dont_touch = "true" *) wire [7:0] rq_ok_sl;
 		wire [127:0] rq_rep = {4{rq_pipe[32 * c +: 32]}};
 		for (gs = 0; gs < 8; gs = gs + 1) begin : g_last_sl
 			assign rq_ok_sl[gs] = rq_ok_pipe[c];
@@ -350,8 +347,8 @@ module atg_su_lda #(
 			for (c = 0; c < NC; c = c + 1) begin : g_c
 				wire [127:0] rq_rep_b = {4{rq_pipe[32 * c +: 32]}};
 				for (gs = 0; gs < 8; gs = gs + 1) begin : g_ybuf_sl
-					(* keep = "true" *) wire ybuf_we_s = (rph == PV);
-					(* keep = "true" *) wire ybuf_ok_s = rq_ok_pipe[c];
+					(* dont_touch = "true" *) wire ybuf_we_s = (rph == PV);
+					(* dont_touch = "true" *) wire ybuf_ok_s = rq_ok_pipe[c];
 					(* shreg_extract = "no" *) reg [15:0] ybuf_sl_r;
 					always @(posedge clk)
 						if (ybuf_we_s)
@@ -368,10 +365,9 @@ module atg_su_lda #(
 
 	/* SHORT_LAT stages of the group's control; stage 0 is registered from x_*. */
 	(* shreg_extract = "no", max_fanout = 12 *) reg [EW-1:0] pipe [0:SHORT_LAT-1];
-	(* keep = "true" *) wire rst_pipe = !rst_n;
 	integer k;
 	always @(posedge clk) begin
-		if (rst_pipe) begin
+		if (rst_p) begin
 			for (k = 0; k < SHORT_LAT; k = k + 1)
 				pipe[k][EW-1] <= 1'b0;
 		end else begin
@@ -407,7 +403,7 @@ module atg_su_lda #(
 	assign s_grp = o[EW-2-WARP_W -: GRP_W];
 	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];
 	assign s_lanes = o[NPHYS-1:0];
-	(* keep = "true" *) wire [NPHYS*2-1:0] s_val_sl;
+	(* dont_touch = "true" *) wire [NPHYS*2-1:0] s_val_sl;
 	generate
 	for (gs = 0; gs < NPHYS*2; gs = gs + 1) begin : g_sd_sl
 		assign s_val_sl[gs] = o[EW-1];

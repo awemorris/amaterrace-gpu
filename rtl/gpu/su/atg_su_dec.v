@@ -110,48 +110,48 @@ module atg_su_dec #(
 	(* max_fanout = 12 *) reg [28:0] s0_tab;
 	(* max_fanout = 12 *) reg [6:0] s0_rs1_2;
 	(* max_fanout = 12 *) reg [31:0] s0_imm_isb;
+	(* dont_touch = "true" *) reg [2:0] s0_not_fmu_r;
 
 	(* keep = "true", max_fanout = 12 *) wire u_adv = !u_valid || u_ready;
 	assign d_ready = (PIPE_TAB != 0) ? (!s0_valid || u_adv) : u_adv;
 
-	(* keep = "true" *) wire s0_ce_0 = d_ready && d_valid;
-	(* keep = "true" *) wire s0_ce_1 = d_ready && d_valid;
-	(* keep = "true" *) wire s0_ce_2 = d_ready && d_valid;
-	(* keep = "true" *) wire s0_ce_3 = d_ready && d_valid;
-	(* keep = "true" *) wire s0_ce_4 = d_ready && d_valid;
-	(* keep = "true" *) wire s0_ce_5 = d_ready && d_valid;
-	(* keep = "true" *) wire s0_ce_6 = d_ready && d_valid;
-	(* keep = "true" *) wire s0_ce_7 = d_ready && d_valid;
-	(* keep = "true" *) wire s0_ce_8 = d_ready && d_valid;
-	(* keep = "true" *) wire s0_ce_9 = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_0  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_1  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_2  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_3  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_4  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_5  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_6  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_7  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_8  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_9  = d_ready && d_valid;
+	(* keep = "true" *) wire s0_ce_10 = d_ready && d_valid;
 
-	(* keep = "true" *) wire rst_s0_0 = !rst_n;
-	(* keep = "true" *) wire rst_s0_1 = !rst_n;
-	(* keep = "true" *) wire rst_s0_2 = !rst_n;
-	(* keep = "true" *) wire rst_s0_3 = !rst_n;
-	(* keep = "true" *) wire rst_s0_4 = !rst_n;
-	(* keep = "true" *) wire rst_s0_5 = !rst_n;
-	(* keep = "true" *) wire rst_u_hdr = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	always @(posedge clk) begin
-		if (rst_s0_0) begin
+		if (rst_p) begin
 			s0_valid <= 1'b0;
 			s0_warp <= {WARP_W{1'b0}};
 			s0_rs1_2 <= 7'd0;
+			s0_not_fmu_r <= 3'd0;
 		end else begin
 			if (d_ready)
 				s0_valid <= d_valid;
 			if (s0_ce_0) begin
-				s0_warp <= d_warp;
 				s0_rs1_2 <= d_rs1_2;
+				s0_not_fmu_r <= {3{d_fmt != FM_U}};
+			end
+			if (s0_ce_10) begin
+				s0_warp <= d_warp;
 			end
 		end
-		if (rst_s0_1)
+		if (rst_p)
 			s0_pc <= 16'd0;
 		else if (s0_ce_1)
 			s0_pc <= d_pc;
 
-		if (rst_s0_2) begin
+		if (rst_p) begin
 			s0_w0 <= 32'd0;
 		end else begin
 			if (s0_ce_2)
@@ -160,7 +160,7 @@ module atg_su_dec #(
 				s0_w0[31:16] <= d_w0[31:16];
 		end
 
-		if (rst_s0_3) begin
+		if (rst_p) begin
 			s0_w1 <= 32'd0;
 		end else begin
 			if (s0_ce_4)
@@ -169,7 +169,7 @@ module atg_su_dec #(
 				s0_w1[31:16] <= d_w1[31:16];
 		end
 
-		if (rst_s0_4) begin
+		if (rst_p) begin
 			s0_tab <= 29'd0;
 		end else begin
 			if (s0_ce_6)
@@ -178,7 +178,7 @@ module atg_su_dec #(
 				s0_tab[28:15] <= d_tab_out[28:15];
 		end
 
-		if (rst_s0_5) begin
+		if (rst_p) begin
 			s0_imm_isb <= 32'd0;
 		end else begin
 			if (s0_ce_8)
@@ -249,8 +249,9 @@ module atg_su_dec #(
 
 	(* keep = "true" *) wire [2:0] fmt_lo = fmt;
 	(* keep = "true" *) wire [2:0] fmt_hi = fmt;
-	(* keep = "true" *) wire not_fmu_0 = (fmt != FM_U);
-	(* keep = "true" *) wire not_fmu_1 = (fmt != FM_U);
+	wire not_fmu_0 = (PIPE_TAB != 0) ? s0_not_fmu_r[0] : (fmt != FM_U);
+	wire not_fmu_1 = (PIPE_TAB != 0) ? s0_not_fmu_r[1] : (fmt != FM_U);
+	wire not_fmu_2 = (PIPE_TAB != 0) ? s0_not_fmu_r[2] : (fmt != FM_U);
 	reg [31:0] imm;
 	always @(*) begin
 		case (fmt_lo)
@@ -289,6 +290,8 @@ module atg_su_dec #(
 		if (not_fmu_1) begin
 			uop_raw[ATG_UOP_RS3 +: 7] = rs3;
 			uop_raw[ATG_UOP_MOD +: 7] = w1[14:8];
+		end
+		if (not_fmu_2) begin
 			uop_raw[ATG_UOP_HSEL +: 2] = w1[16:15];
 			uop_raw[ATG_UOP_SUB +: 5] = {sub[4] | tthree, sub[3:0]};
 			uop_raw[ATG_UOP_RM +: 3] = f3;
@@ -303,14 +306,13 @@ module atg_su_dec #(
 		for (gus = 0; gus < U_SL; gus = gus + 1) begin : g_uop_sl
 			localparam SL_B = gus * 16;
 			localparam SL_W = (SL_B + 16 <= UOP_W) ? 16 : (UOP_W - SL_B);
-			(* keep = "true" *) wire rst_uop_sl = !rst_n;
 			(* keep = "true" *) wire ill_sl = ill;
 			(* keep = "true" *) wire u_ce_sl = u_adv && ((PIPE_TAB != 0) ? s0_valid : d_valid);
 			wire [UOP_W-1:0] ill_vec = ({{(UOP_W-1){1'b0}}, 1'b1} << ATG_UOP_ILL);
 			assign uop[SL_B +: SL_W] = ill_sl ? ill_vec[SL_B +: SL_W] : uop_raw[SL_B +: SL_W];
 			reg [SL_W-1:0] u_uop_sl_r;
 			always @(posedge clk) begin
-				if (rst_uop_sl)
+				if (rst_p)
 					u_uop_sl_r <= {SL_W{1'b0}};
 				else if (u_ce_sl)
 					u_uop_sl_r <= uop[SL_B +: SL_W];
@@ -325,7 +327,7 @@ module atg_su_dec #(
 	(* keep = "true" *) wire u_ce_hdr = u_adv && stg_valid;
 
 	always @(posedge clk) begin
-		if (rst_u_hdr) begin
+		if (rst_p) begin
 			u_valid <= 1'b0;
 			u_warp <= {WARP_W{1'b0}};
 			u_pc <= 16'd0;

@@ -127,7 +127,7 @@ module atg_su_opd #(
 	localparam DW = NPHYS * 32;
 	localparam G = 32 / NPHYS;
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	/* Stage A: the instruction whose next group addresses the RF. */
 	(* max_fanout = 12 *) reg a_act;
@@ -148,6 +148,8 @@ module atg_su_opd #(
 	(* max_fanout = 12 *) reg b_valid, b_last;
 	(* max_fanout = 12 *) reg [3:0] b_unit_r;
 	(* max_fanout = 12 *) reg b_sg_last_r;
+	(* dont_touch = "true" *) reg [1:0] b_rdy_sel0_r, b_rdy_sel1_r, b_rdy_sel2_r, b_rdy_sel3_r;
+	(* dont_touch = "true" *) reg b_is_u13_r, b_valid_last_r;
 	(* max_fanout = 12 *) reg [WARP_W-1:0] b_warp;
 	reg [15:0] b_pc;
 	(* max_fanout = 12 *) reg [UOP_W-1:0] b_uop;
@@ -161,12 +163,29 @@ module atg_su_opd #(
 	wire [DW-1:0] hold_r1;
 	wire [DW-1:0] hold_r2;
 
+	/* 2-LUT unit_ready tree for REG_IO != 0 */
+	(* dont_touch = "true" *) wire u_rdy_g0 = (b_rdy_sel0_r == 2'd0) ? 1'b1 :
+		(b_rdy_sel0_r == 2'd1) ? unit_ready[1] : (b_rdy_sel0_r == 2'd2) ? unit_ready[2] : unit_ready[3];
+	(* dont_touch = "true" *) wire u_rdy_g1 = (b_rdy_sel1_r == 2'd0) ? 1'b1 :
+		(b_rdy_sel1_r == 2'd1) ? unit_ready[4] : (b_rdy_sel1_r == 2'd2) ? unit_ready[5] : unit_ready[6];
+	(* dont_touch = "true" *) wire u_rdy_g2 = (b_rdy_sel2_r == 2'd0) ? 1'b1 :
+		(b_rdy_sel2_r == 2'd1) ? unit_ready[7] : (b_rdy_sel2_r == 2'd2) ? unit_ready[8] : unit_ready[9];
+	(* dont_touch = "true" *) wire u_rdy_g3 = (b_rdy_sel3_r == 2'd0) ? 1'b1 :
+		(b_rdy_sel3_r == 2'd1) ? unit_ready[10] : (b_rdy_sel3_r == 2'd2) ? unit_ready[11] : unit_ready[12];
+	(* dont_touch = "true" *) wire r_en_g4 = a_act && !a_wait && (!b_is_u13_r || unit_ready[13]);
+	(* dont_touch = "true" *) wire cr_en_g4 = a_act && !a_wait && !a_step && (!b_is_u13_r || unit_ready[13]);
+	(* dont_touch = "true" *) wire rq_pop_g4 = a_act && !a_wait && a_uop[ATG_UOP_RQS] && !a_pass && !a_step && (!b_is_u13_r || unit_ready[13]);
+	(* dont_touch = "true" *) wire x_end_g4 = b_valid_last_r && (!b_is_u13_r || unit_ready[13]);
+	(* dont_touch = "true" *) wire b_adv_fast = (!b_is_u13_r || unit_ready[13]) & u_rdy_g0 & u_rdy_g1 & u_rdy_g2 & u_rdy_g3;
+	wire r_en_fast = r_en_g4 & u_rdy_g0 & u_rdy_g1 & u_rdy_g2 & u_rdy_g3;
+	wire cr_en_fast = cr_en_g4 & u_rdy_g0 & u_rdy_g1 & u_rdy_g2 & u_rdy_g3;
+	wire rq_pop_fast = rq_pop_g4 & u_rdy_g0 & u_rdy_g1 & u_rdy_g2 & u_rdy_g3;
+	wire x_end_fast = x_end_g4 & u_rdy_g0 & u_rdy_g1 & u_rdy_g2 & u_rdy_g3;
+
 	wire [3:0] b_unit = b_uop[ATG_UOP_UNIT +: 4];
-	wire b_rdy = (REG_IO != 0) ?
-		(b_sg_last_r ? unit_ready[ATG_UNIT_LANE] : ((b_unit_r == ATG_UNIT_LANE) ? 1'b1 : unit_ready[b_unit_r])) :
-		unit_ready[b_unit];
-	wire b_adv = !b_valid || b_rdy;
-	assign x_end_out = b_valid && b_last && b_rdy;
+	wire b_rdy = (REG_IO != 0) ? b_adv_fast : unit_ready[b_unit];
+	wire b_adv = (REG_IO != 0) ? b_adv_fast : (!b_valid || b_rdy);
+	assign x_end_out = (REG_IO != 0) ? x_end_fast : (b_valid && b_last && b_rdy);
 	wire a_adv = a_act && ((REG_IO != 0) ? a_wait : b_adv);
 	wire a_wide = a_uop[ATG_UOP_PAIR] && a_uop[ATG_UOP_USE3];
 	wire a_needs_step1 = a_uop[ATG_UOP_USE3] || a_uop[ATG_UOP_PAIR];
@@ -191,13 +210,13 @@ module atg_su_opd #(
 	wire [6:0] a_rf_r1 = a_step ? a_n3 : a_r1;
 	wire [6:0] a_rf_r2 = a_step ? 7'd0 : a_n2;
 
-	assign r_en = a_act && (REG_IO ? !a_wait : 1'b1) && b_adv;
+	assign r_en = (REG_IO != 0) ? r_en_fast : (a_act && b_adv);
 	assign r_warp = a_rf_warp_r;
 	assign r_grp = a_rf_grp_r;
 	assign r_regs = {a_rf_r2_r, a_rf_r1_r};
-	assign cr_en = a_act && (REG_IO ? !a_wait : 1'b1) && b_adv && (!a_needs_step1 || !a_step);
+	assign cr_en = (REG_IO != 0) ? cr_en_fast : (a_act && b_adv && (!a_needs_step1 || !a_step));
 	assign cr_idx = {a_n3[4:0], a_n2[4:0], a_n1[4:0]};
-	assign rq_pop = a_act && (REG_IO ? !a_wait : 1'b1) && b_adv && a_uop[ATG_UOP_RQS] && !a_pass && (!a_needs_step1 || !a_step);
+	assign rq_pop = (REG_IO != 0) ? rq_pop_fast : (a_act && b_adv && a_uop[ATG_UOP_RQS] && !a_pass && (!a_needs_step1 || !a_step));
 
 	wire a_match_wb_1 = fwd_wb_valid && (a_n1 < 7'd63) && (fwd_wb_rd < 7'd63) &&
 	                    (fwd_wb_warp == a_warp) && (fwd_wb_grp == a_grp) && (fwd_wb_rd[5:0] == a_n1[5:0]);
@@ -225,13 +244,77 @@ module atg_su_opd #(
 	reg [159:0] b_q_info;
 
 	/* Stage A precomputation registers for REG_IO != 0 */
-	(* max_fanout = 12 *) reg [2:0] a_k1_r, a_k2_r, a_k3_r;
-	(* max_fanout = 12 *) reg a_use_cw1_r, a_use_cw2_r, a_use_cw3_r;
-	(* max_fanout = 12 *) reg a_is_104_1_r, a_is_104_2_r, a_is_104_3_r;
+	(* dont_touch = "true" *) reg [2:0] a_k1_r, a_k2_r, a_k3_r;
+	(* dont_touch = "true" *) reg a_use_cw1_lo_r, a_use_cw1_hi_r;
+	(* dont_touch = "true" *) reg a_use_cw2_lo_r, a_use_cw2_hi_r;
+	(* dont_touch = "true" *) reg a_use_cw3_lo_r, a_use_cw3_hi_r;
+	(* dont_touch = "true" *) reg a_is_104_1_lo_r, a_is_104_1_hi_r;
+	(* dont_touch = "true" *) reg a_is_104_2_lo_r, a_is_104_2_hi_r;
+	(* dont_touch = "true" *) reg a_is_104_3_lo_r, a_is_104_3_hi_r;
 	reg [31:0] a_cval1_r, a_cval2_r, a_cval3_r;
 	wire [DW-1:0] a_cl_r;
 	reg [NPHYS-1:0] a_cov_g_r;
 	reg [31:0] a_info_r;
+
+	/* Buffered q_info[ATG_WI_FRONT] (6 copies, <= 17 loads each) */
+	(* dont_touch = "true" *) wire qi_front_1a = q_info[ATG_WI_FRONT] && !rst_p;
+	(* dont_touch = "true" *) wire qi_front_1b = q_info[ATG_WI_FRONT] && !rst_p;
+	(* dont_touch = "true" *) wire qi_front_2a = q_info[ATG_WI_FRONT] && !rst_p;
+	(* dont_touch = "true" *) wire qi_front_2b = q_info[ATG_WI_FRONT] && !rst_p;
+	(* dont_touch = "true" *) wire qi_front_3a = q_info[ATG_WI_FRONT] && !rst_p;
+	(* dont_touch = "true" *) wire qi_front_3b = q_info[ATG_WI_FRONT] && !rst_p;
+
+	/* Two-level buffered enables for Stage A precomputation, Stage A->B, and Stage A load */
+	(* dont_touch = "true" *) wire a_pre_en_0 = (REG_IO != 0) && a_act && !a_wait;
+	(* dont_touch = "true" *) wire a_pre_en_1 = (REG_IO != 0) && a_act && !a_wait;
+	(* dont_touch = "true" *) wire a_pre_we_0 = a_pre_en_1 && !rst_p;
+	(* dont_touch = "true" *) wire a_pre_we_1 = a_pre_en_1 && !rst_p;
+	(* dont_touch = "true" *) wire a_pre_we_2 = a_pre_en_1 && !rst_p;
+	(* dont_touch = "true" *) wire a_pre_we_3 = a_pre_en_1 && !rst_p;
+	(* dont_touch = "true" *) wire a_pre_we_4 = a_pre_en_1 && !rst_p;
+	(* dont_touch = "true" *) wire a_pre_we_5 = a_pre_en_1 && !rst_p;
+	(* dont_touch = "true" *) wire a_pre_we_6 = a_pre_en_1 && !rst_p;
+	(* dont_touch = "true" *) wire a_pre_we_7 = a_pre_en_1 && !rst_p;
+
+	(* dont_touch = "true" *) wire [NPHYS-1:0] a_stgb_en_g;
+	(* dont_touch = "true" *) wire [NPHYS-1:0] a_hold_en_g;
+	genvar geg;
+	generate
+		for (geg = 0; geg < NPHYS; geg = geg + 1) begin : g_en_grp
+			assign a_stgb_en_g[geg] = (REG_IO != 0) ? (a_act && a_wait && a_step_done) : (b_adv && a_act && a_step_done);
+			assign a_hold_en_g[geg] = a_step && !a_wait;
+		end
+	endgenerate
+
+	(* dont_touch = "true" *) wire a_stgb_ctl_0 = (REG_IO != 0) ? (a_act && a_wait && a_step_done) : (b_adv && a_act && a_step_done);
+	(* dont_touch = "true" *) wire a_stgb_ctl_1 = (REG_IO != 0) ? (a_act && a_wait && a_step_done) : (b_adv && a_act && a_step_done);
+	(* dont_touch = "true" *) wire b_ctl_we_0  = a_stgb_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_1  = a_stgb_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_2  = a_stgb_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_3  = a_stgb_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_4  = a_stgb_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_5  = a_stgb_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_6  = a_stgb_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_7  = a_stgb_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_8  = a_stgb_ctl_1 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_9  = a_stgb_ctl_1 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_10 = a_stgb_ctl_1 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_11 = a_stgb_ctl_1 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_12 = a_stgb_ctl_1 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_13 = a_stgb_ctl_1 && !rst_p;
+	(* dont_touch = "true" *) wire b_ctl_we_14 = a_stgb_ctl_1 && !rst_p;
+
+	(* dont_touch = "true" *) wire a_load_ctl_0 = !a_act || ((REG_IO != 0) ? a_wait_last : (a_adv && a_last));
+	(* dont_touch = "true" *) wire a_load_we_0 = a_load_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire a_load_we_1 = a_load_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire a_load_we_2 = a_load_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire a_load_we_3 = a_load_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire a_load_we_4 = a_load_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire a_load_we_5 = a_load_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire a_load_we_6 = a_load_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire a_load_we_7 = a_load_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire a_load_we_8 = a_load_ctl_0 && !rst_p;
+	(* dont_touch = "true" *) wire a_load_we_9 = a_load_ctl_0 && !rst_p;
 
 	wire [DW-1:0] b_early_va, b_early_vb, b_early_vc;
 	(* max_fanout = 12 *) reg b_use_rf1, b_use_rf2, b_use_rf3;
@@ -258,7 +341,7 @@ module atg_su_opd #(
 			);
 			assign a_cl_comb[la*32 +: 32] = {23'd0, a_cl_s};
 			(* shreg_extract = "no" *) reg [8:0] a_cl_l;
-			(* keep = "true" *) wire a_cl_we_l = (REG_IO != 0) && a_act && !a_wait && b_adv;
+			(* dont_touch = "true" *) wire a_cl_we_l = a_pre_en_0 && !rst_p;
 			always @(posedge clk) begin
 				if (rst_p)
 					a_cl_l <= 9'd0;
@@ -289,31 +372,73 @@ module atg_su_opd #(
 	wire a_fp_unit = a_unit == ATG_UNIT_FPU || a_unit == ATG_UNIT_XU;
 	wire a_pk_unit = a_unit == ATG_UNIT_PK;
 	wire [6:0] a_mods = a_uop[ATG_UOP_MOD +: 7];
-	wire [31:0] a_com1 = a_use_cw1_r ? cr_data[31:0]  : (a_is_104_1_r ? q_exec : a_cval1_r);
-	wire [31:0] a_com2 = a_use_cw2_r ? cr_data[63:32] : (a_is_104_2_r ? q_exec : a_cval2_r);
-	wire [31:0] a_com3 = a_use_cw3_r ? cr_data[95:64] : (a_is_104_3_r ? q_exec : a_cval3_r);
+	(* dont_touch = "true" *) wire [31:0] a_com1 = {
+		a_use_cw1_hi_r ? cr_data[31:16] : (a_is_104_1_hi_r ? q_exec[31:16] : a_cval1_r[31:16]),
+		a_use_cw1_lo_r ? cr_data[15:0]  : (a_is_104_1_lo_r ? q_exec[15:0]  : a_cval1_r[15:0])
+	};
+	(* dont_touch = "true" *) wire [31:0] a_com2 = {
+		a_use_cw2_hi_r ? cr_data[63:48] : (a_is_104_2_hi_r ? q_exec[31:16] : a_cval2_r[31:16]),
+		a_use_cw2_lo_r ? cr_data[47:32] : (a_is_104_2_lo_r ? q_exec[15:0]  : a_cval2_r[15:0])
+	};
+	(* dont_touch = "true" *) wire [31:0] a_com3 = {
+		a_use_cw3_hi_r ? cr_data[95:80] : (a_is_104_3_hi_r ? q_exec[31:16] : a_cval3_r[31:16]),
+		a_use_cw3_lo_r ? cr_data[79:64] : (a_is_104_3_lo_r ? q_exec[15:0]  : a_cval3_r[15:0])
+	};
 	wire [DW-1:0] a_early_va_comb, a_early_vb_comb, a_early_vc_comb;
 	genvar lb, lbh;
 	generate
 		for (lb = 0; lb < NPHYS; lb = lb + 1) begin : g_aearly
 			wire [4:0] a_ln = a_grp_base[4:0] | lb[4:0];
-			wire [31:0] a_op1 = (a_k1_r == 3'd1) ? hold_r1[lb*32 +: 32] :
-				opl(a_k1_r, a_com1, 32'd0, rq_data[lb*32 +: 32], a_ln, a_kill_g[lb], a_cl_r[lb*32 +: 32]);
-			wire [31:0] a_op2 = (a_k2_r == 3'd1) ? hold_r2[lb*32 +: 32] :
-				opl(a_k2_r, a_com2, 32'd0, rq_data[lb*32 +: 32], a_ln, a_kill_g[lb], a_cl_r[lb*32 +: 32]);
-			wire [31:0] a_op3 = (a_k3_r == 3'd1) ? 32'd0 :
-				opl(a_k3_r, a_com3, 32'd0, rq_data[lb*32 +: 32], a_ln, a_kill_g[lb], a_cl_r[lb*32 +: 32]);
-			assign a_early_va_comb[lb*32 +: 32] = fmod(a_op1, a_mods[0], a_mods[1], a_fp_unit, a_pk_unit);
-			assign a_early_vb_comb[lb*32 +: 32] = fmod(a_op2, a_mods[2], a_mods[3], a_fp_unit, a_pk_unit);
-			assign a_early_vc_comb[lb*32 +: 32] = fmod(a_op3, a_mods[4], a_mods[5], a_fp_unit, a_pk_unit);
+			(* dont_touch = "true" *) wire a_fp_l = (a_unit == ATG_UNIT_FPU) || (a_unit == ATG_UNIT_XU);
+			(* dont_touch = "true" *) wire a_pk_l = (a_unit == ATG_UNIT_PK);
+			wire [31:0] a_op1_l, a_op2_l, a_op3_l;
+			assign a_early_va_comb[lb*32 +: 32] = fmod(a_op1_l, a_mods[0], a_mods[1], a_fp_l, a_pk_l);
+			assign a_early_vb_comb[lb*32 +: 32] = fmod(a_op2_l, a_mods[2], a_mods[3], a_fp_l, a_pk_l);
+			assign a_early_vc_comb[lb*32 +: 32] = fmod(a_op3_l, a_mods[4], a_mods[5], a_fp_l, a_pk_l);
 			for (lbh = 0; lbh < 2; lbh = lbh + 1) begin : g_b_early_h
+				(* dont_touch = "true" *) reg [2:0] a_k1_h_r, a_k2_h_r, a_k3_h_r;
+				(* dont_touch = "true" *) wire a_k_we_h = ((lb < 4) ? a_pre_en_0 : a_pre_en_1) && !rst_p;
+				always @(posedge clk) begin
+					if (rst_p) begin
+						a_k1_h_r <= 3'd0;
+						a_k2_h_r <= 3'd0;
+						a_k3_h_r <= 3'd0;
+					end else if (a_k_we_h) begin
+						a_k1_h_r <= opk(a_n1, q_info[ATG_WI_KIND +: 2]);
+						a_k2_h_r <= opk(a_n2, q_info[ATG_WI_KIND +: 2]);
+						a_k3_h_r <= opk(a_n3, q_info[ATG_WI_KIND +: 2]);
+					end
+				end
+				(* dont_touch = "true" *) wire a_kl1_h = a_kill_g[lb] && (a_k1_h_r == 3'd4);
+				(* dont_touch = "true" *) wire a_kl2_h = a_kill_g[lb] && (a_k2_h_r == 3'd4);
+				(* dont_touch = "true" *) wire a_kl3_h = a_kill_g[lb] && (a_k3_h_r == 3'd4);
+				wire [15:0] a_ln_h = (lbh == 0) ? {11'd0, a_ln} : 16'd0;
+				assign a_op1_l[lbh*16 +: 16] = (a_k1_h_r == 3'd1) ? hold_r1[lb*32 + lbh*16 +: 16] :
+					(a_k1_h_r == 3'd2) ? rq_data[lb*32 + lbh*16 +: 16] :
+					(a_k1_h_r == 3'd3) ? a_ln_h :
+					(a_k1_h_r == 3'd4) ? {16{a_kl1_h}} :
+					(a_k1_h_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 +: 16] :
+					a_com1[lbh*16 +: 16];
+				assign a_op2_l[lbh*16 +: 16] = (a_k2_h_r == 3'd1) ? hold_r2[lb*32 + lbh*16 +: 16] :
+					(a_k2_h_r == 3'd2) ? rq_data[lb*32 + lbh*16 +: 16] :
+					(a_k2_h_r == 3'd3) ? a_ln_h :
+					(a_k2_h_r == 3'd4) ? {16{a_kl2_h}} :
+					(a_k2_h_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 +: 16] :
+					a_com2[lbh*16 +: 16];
+				assign a_op3_l[lbh*16 +: 16] = (a_k3_h_r == 3'd1) ? 16'd0 :
+					(a_k3_h_r == 3'd2) ? rq_data[lb*32 + lbh*16 +: 16] :
+					(a_k3_h_r == 3'd3) ? a_ln_h :
+					(a_k3_h_r == 3'd4) ? {16{a_kl3_h}} :
+					(a_k3_h_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 +: 16] :
+					a_com3[lbh*16 +: 16];
+
 				(* shreg_extract = "no" *) reg [15:0] b_va_h, b_vb_h, b_vc_h;
 				(* shreg_extract = "no" *) reg [15:0] hold_r1_h, hold_r2_h;
-				(* keep = "true" *) wire b_va_we_h = (REG_IO != 0) ? (a_adv && a_step_done) : (b_adv && a_adv && a_step_done);
-				(* keep = "true" *) wire b_vb_we_h = (REG_IO != 0) ? (a_adv && a_step_done) : (b_adv && a_adv && a_step_done);
-				(* keep = "true" *) wire b_vc_we_h = (REG_IO != 0) ? (a_adv && a_step_done) : (b_adv && a_adv && a_step_done);
-				(* keep = "true" *) wire hold1_we_h = a_step && !a_wait;
-				(* keep = "true" *) wire hold2_we_h = a_step && !a_wait;
+				(* dont_touch = "true" *) wire b_va_we_h = a_stgb_en_g[lb] && !rst_p;
+				(* dont_touch = "true" *) wire b_vb_we_h = a_stgb_en_g[lb] && !rst_p;
+				(* dont_touch = "true" *) wire b_vc_we_h = a_stgb_en_g[lb] && !rst_p;
+				(* dont_touch = "true" *) wire hold1_we_h = a_hold_en_g[lb] && !rst_p;
+				(* dont_touch = "true" *) wire hold2_we_h = a_hold_en_g[lb] && !rst_p;
 				always @(posedge clk) begin
 					if (rst_p) begin
 						b_va_h <= 16'd0;
@@ -343,7 +468,39 @@ module atg_su_opd #(
 		end
 	endgenerate
 
+	(* dont_touch = "true" *) wire rst_b_rdy = rst_p || (b_adv && !a_wait);
+	wire [31:0] a_cval1_next = opc_spec(a_n1[4:0], a_warp, q_info, qi_front_1a, qi_front_1b);
+	wire [31:0] a_cval2_next = opc_spec(a_n2[4:0], a_warp, q_info, qi_front_2a, qi_front_2b);
+	wire [31:0] a_cval3_next = opc_spec(a_n3[4:0], a_warp, q_info, qi_front_3a, qi_front_3b);
+	wire [UOP_W-1:0] b_uop_next = (REG_IO != 0) ?
+		(a_uop | ({{(UOP_W-1){1'b0}}, a_pass} << (ATG_UOP_OP + ATG_TEX_PASS2))) :
+		a_uop;
+
 	always @(posedge clk) begin
+		if (a_pre_we_0) a_cval1_r[15:0]  <= a_cval1_next[15:0];
+		if (a_pre_we_1) a_cval1_r[31:16] <= a_cval1_next[31:16];
+		if (a_pre_we_2) a_cval2_r[15:0]  <= a_cval2_next[15:0];
+		if (a_pre_we_3) a_cval2_r[31:16] <= a_cval2_next[31:16];
+		if (a_pre_we_4) a_cval3_r[15:0]  <= a_cval3_next[15:0];
+		if (a_pre_we_5) a_cval3_r[31:16] <= a_cval3_next[31:16];
+
+		if (rst_b_rdy) begin
+			b_rdy_sel0_r <= 2'd0;
+			b_rdy_sel1_r <= 2'd0;
+			b_rdy_sel2_r <= 2'd0;
+			b_rdy_sel3_r <= 2'd0;
+			b_is_u13_r   <= 1'b0;
+			b_valid_last_r <= 1'b0;
+		end else if (b_ctl_we_0) begin
+			b_rdy_sel0_r <= (a_unit == 4'd1) ? 2'd1 : (a_unit == 4'd2) ? 2'd2 : (a_unit == 4'd3) ? 2'd3 : 2'd0;
+			b_rdy_sel1_r <= (a_unit == 4'd4) ? 2'd1 : (a_unit == 4'd5) ? 2'd2 : (a_unit == 4'd6) ? 2'd3 : 2'd0;
+			b_rdy_sel2_r <= (a_unit == 4'd7) ? 2'd1 : (a_unit == 4'd8) ? 2'd2 : (a_unit == 4'd9) ? 2'd3 : 2'd0;
+			b_rdy_sel3_r <= (a_unit == 4'd10) ? 2'd1 : (a_unit == 4'd11) ? 2'd2 :
+				(a_last && (a_unit == ATG_UNIT_LANE) && (a_op == ATG_LANE_SHFL || a_op == ATG_LANE_VOTE || a_op == ATG_LANE_BALLOT)) ? 2'd3 : 2'd0;
+			b_is_u13_r   <= (a_unit == 4'd13);
+			b_valid_last_r <= a_last;
+		end
+
 		if (rst_p) begin
 			a_act <= 1'b0;
 			b_valid <= 1'b0;
@@ -389,15 +546,12 @@ module atg_su_opd #(
 			a_k1_r <= 3'd0;
 			a_k2_r <= 3'd0;
 			a_k3_r <= 3'd0;
-			a_use_cw1_r <= 1'b0;
-			a_use_cw2_r <= 1'b0;
-			a_use_cw3_r <= 1'b0;
-			a_is_104_1_r <= 1'b0;
-			a_is_104_2_r <= 1'b0;
-			a_is_104_3_r <= 1'b0;
-			a_cval1_r <= 32'd0;
-			a_cval2_r <= 32'd0;
-			a_cval3_r <= 32'd0;
+			a_use_cw1_lo_r <= 1'b0; a_use_cw1_hi_r <= 1'b0;
+			a_use_cw2_lo_r <= 1'b0; a_use_cw2_hi_r <= 1'b0;
+			a_use_cw3_lo_r <= 1'b0; a_use_cw3_hi_r <= 1'b0;
+			a_is_104_1_lo_r <= 1'b0; a_is_104_1_hi_r <= 1'b0;
+			a_is_104_2_lo_r <= 1'b0; a_is_104_2_hi_r <= 1'b0;
+			a_is_104_3_lo_r <= 1'b0; a_is_104_3_hi_r <= 1'b0;
 			a_cov_g_r <= {NPHYS{1'b0}};
 			a_info_r <= 32'd0;
 			b_use_rf1 <= 1'b0;
@@ -409,60 +563,79 @@ module atg_su_opd #(
 			b_mask_r <= {(2*NPHYS){1'b0}};
 			b_info_r <= 32'd0;
 		end else begin
-			if (REG_IO != 0 && a_act && !a_wait && b_adv) begin
+			if (a_pre_we_6) begin
 				a_k1_r <= opk(a_n1, q_info[ATG_WI_KIND +: 2]);
 				a_k2_r <= opk(a_n2, q_info[ATG_WI_KIND +: 2]);
 				a_k3_r <= opk(a_n3, q_info[ATG_WI_KIND +: 2]);
-				a_use_cw1_r <= (a_n1 < 7'd96);
-				a_use_cw2_r <= (a_n2 < 7'd96);
-				a_use_cw3_r <= (a_n3 < 7'd96);
-				a_is_104_1_r <= (a_n1 == 7'd104);
-				a_is_104_2_r <= (a_n2 == 7'd104);
-				a_is_104_3_r <= (a_n3 == 7'd104);
-				a_cval1_r <= opc(a_n1, 32'd0, a_warp, q_info, 32'd0);
-				a_cval2_r <= opc(a_n2, 32'd0, a_warp, q_info, 32'd0);
-				a_cval3_r <= opc(a_n3, 32'd0, a_warp, q_info, 32'd0);
+				a_use_cw1_lo_r <= (a_n1 < 7'd96); a_use_cw1_hi_r <= (a_n1 < 7'd96);
+				a_use_cw2_lo_r <= (a_n2 < 7'd96); a_use_cw2_hi_r <= (a_n2 < 7'd96);
+				a_use_cw3_lo_r <= (a_n3 < 7'd96);
+			end
+			if (a_pre_we_7) begin
+				a_use_cw3_hi_r <= (a_n3 < 7'd96);
+				a_is_104_1_lo_r <= (a_n1 == 7'd104); a_is_104_1_hi_r <= (a_n1 == 7'd104);
+				a_is_104_2_lo_r <= (a_n2 == 7'd104); a_is_104_2_hi_r <= (a_n2 == 7'd104);
+				a_is_104_3_lo_r <= (a_n3 == 7'd104); a_is_104_3_hi_r <= (a_n3 == 7'd104);
 				a_cov_g_r <= a_cov_g;
 				a_info_r <= {13'd0, q_info[ATG_WI_FRONT], q_info[ATG_WI_KIND +: 2],
 					q_info[ATG_WI_SEQ +: 16]};
 			end
-			if ((REG_IO != 0) ? (a_adv && a_step_done) : (b_adv && a_adv && a_step_done)) begin
-				b_warp <= a_warp;
+			if (REG_IO == 0 && b_adv && a_adv && a_step_done) begin
 				b_q_info <= q_info;
-				b_pc <= a_pc;
-				b_uop <= (REG_IO != 0) ?
-					(a_uop | ({{(UOP_W-1){1'b0}}, a_pass} << (ATG_UOP_OP + ATG_TEX_PASS2))) :
-					a_uop;
+			end
+			if (b_ctl_we_1)  b_pc <= a_pc;
+			if (b_ctl_we_2)  b_uop[15:0] <= b_uop_next[15:0];
+			if (b_ctl_we_3)  b_uop[31:16] <= b_uop_next[31:16];
+			if (b_ctl_we_4)  b_uop[47:32] <= b_uop_next[47:32];
+			if (b_ctl_we_5)  b_uop[63:48] <= b_uop_next[63:48];
+			if (b_ctl_we_6)  b_uop[79:64] <= b_uop_next[79:64];
+			if (b_ctl_we_7)  b_uop[95:80] <= b_uop_next[95:80];
+			if (b_ctl_we_8) begin
+				b_uop[UOP_W-1:96] <= b_uop_next[UOP_W-1:96];
+				b_warp <= a_warp;
+				b_grp <= a_grp;
+			end
+			if (b_ctl_we_9) begin
 				b_unit_r <= a_unit;
 				b_sg_last_r <= a_last && (a_unit == ATG_UNIT_LANE) &&
 					(a_op == ATG_LANE_SHFL || a_op == ATG_LANE_VOTE || a_op == ATG_LANE_BALLOT);
 				b_sbe <= a_sbe;
-				b_grp <= a_grp;
 				b_pass <= a_pass;
 				b_last <= a_last;
 				b_step1 <= a_needs_step1;
-				b_n1 <= a_n1;
-				b_n2 <= a_n2;
-				b_n3 <= a_n3;
-				b_is_gpr1 <= a_n1 < 7'd63;
-				b_is_gpr2 <= a_n2 < 7'd63;
-				b_is_gpr3 <= a_n3 < 7'd63;
 				b_use_rf1 <= (a_k1_r == 3'd1) && !a_needs_step1;
 				b_use_rf2 <= (a_k2_r == 3'd1) && !a_needs_step1;
 				b_use_rf3 <= (a_k3_r == 3'd1);
+			end
+			if (b_ctl_we_10) begin
+				b_n1 <= a_n1;
+				b_n2 <= a_n2;
+				b_is_gpr1 <= a_n1 < 7'd63;
+				b_is_gpr2 <= a_n2 < 7'd63;
+			end
+			if (b_ctl_we_11) begin
+				b_n3 <= a_n3;
+				b_is_gpr3 <= a_n3 < 7'd63;
+				b_mask_r[NPHYS-1:0] <= a_exec_g;
+			end
+			if (b_ctl_we_12) begin
+				b_mask_r[2*NPHYS-1:NPHYS] <= a_exec_g & a_cov_g_r & ~a_kill_g;
 				b_clr31_1 <= (a_fp_unit || a_pk_unit) && a_mods[1];
 				b_inv31_1 <= (a_fp_unit || a_pk_unit) && a_mods[0];
 				b_clr15_1 <= a_pk_unit && a_mods[1];
 				b_inv15_1 <= a_pk_unit && a_mods[0];
 				b_clr31_2 <= (a_fp_unit || a_pk_unit) && a_mods[3];
 				b_inv31_2 <= (a_fp_unit || a_pk_unit) && a_mods[2];
+			end
+			if (b_ctl_we_13) begin
 				b_clr15_2 <= a_pk_unit && a_mods[3];
 				b_inv15_2 <= a_pk_unit && a_mods[2];
 				b_clr31_3 <= (a_fp_unit || a_pk_unit) && a_mods[5];
 				b_inv31_3 <= (a_fp_unit || a_pk_unit) && a_mods[4];
 				b_clr15_3 <= a_pk_unit && a_mods[5];
 				b_inv15_3 <= a_pk_unit && a_mods[4];
-				b_mask_r <= {a_exec_g & a_cov_g_r & ~a_kill_g, a_exec_g};
+			end
+			if (b_ctl_we_14) begin
 				b_info_r <= a_info_r;
 			end
 			if (b_adv) begin
@@ -508,17 +681,25 @@ module atg_su_opd #(
 					a_wait_last <= 1'b0;
 				end
 			end
-			if (i_ready) begin
+			if (a_load_we_0) a_pc <= i_pc;
+			if (a_load_we_1) a_uop[15:0] <= i_uop[15:0];
+			if (a_load_we_2) a_uop[31:16] <= i_uop[31:16];
+			if (a_load_we_3) a_uop[47:32] <= i_uop[47:32];
+			if (a_load_we_4) a_uop[63:48] <= i_uop[63:48];
+			if (a_load_we_5) a_uop[79:64] <= i_uop[79:64];
+			if (a_load_we_6) a_uop[95:80] <= i_uop[95:80];
+			if (a_load_we_7) begin
+				a_uop[UOP_W-1:96] <= i_uop[UOP_W-1:96];
+				a_sbe <= i_sbe;
+			end
+			if (a_load_we_8) begin
 				a_warp <= i_warp;
 				a_rf_warp_r <= i_warp;
-				a_pc <= i_pc;
-				a_uop <= i_uop;
-				a_sbe <= i_sbe;
+				a_act <= i_valid;
+			end
+			if (a_load_we_9) begin
 				a_rf_r1_r <= i_uop[ATG_UOP_RS1 +: 6];
 				a_rf_r2_r <= i_uop[ATG_UOP_RS2 +: 6];
-			end
-			if (i_ready) begin
-				a_act <= i_valid;
 			end
 			if (a_adv) begin
 				if (a_needs_step1 && !a_step) begin
@@ -570,6 +751,38 @@ module atg_su_opd #(
 	end
 	assign a_q_warp = a_warp;
 	assign q_warp = (REG_IO != 0) ? a_warp : b_warp;
+
+	/* Stage A special-operand precomputation (only n[4:0] for n in 96..127) */
+	function [31:0] opc_spec;
+		input [4:0] n_lo;
+		input [WARP_W-1:0] wn;
+		input [159:0] qi;
+		input qf_lo;
+		input qf_hi;
+		begin
+			case (n_lo)
+			5'd0:  opc_spec = 32'd0;
+			5'd1:  opc_spec = 32'h3F800000;
+			5'd2:  opc_spec = 32'd1;
+			5'd3:  opc_spec = 32'h3F000000;
+			5'd4:  opc_spec = 32'h40000000;
+			5'd5:  opc_spec = 32'hBF800000;
+			5'd7:  opc_spec = WARP_BASE[31:0] | {{(32-WARP_W){1'b0}}, wn};
+			5'd10: opc_spec = {16'd0, qi[ATG_WI_WGX +: 16]};
+			5'd11: opc_spec = {16'd0, qi[ATG_WI_WGX + 16 +: 16]};
+			5'd12: opc_spec = {16'd0, qi[ATG_WI_WGX + 32 +: 16]};
+			5'd13, 5'd16: opc_spec = {24'd0, qi[ATG_WI_LID +: 8]};
+			5'd18: opc_spec = {{16{qf_hi}}, {16{qf_lo}}};
+			5'd19: opc_spec = {16'd0, qi[ATG_WI_NWGX +: 16]};
+			5'd20: opc_spec = {16'd0, qi[ATG_WI_NWGX + 16 +: 16]};
+			5'd21: opc_spec = {16'd0, qi[ATG_WI_NWGX + 32 +: 16]};
+			5'd22: opc_spec = 32'h3C003C00;
+			5'd23: opc_spec = qi[ATG_WI_MASK +: 32];
+			5'd24: opc_spec = (qi[ATG_WI_KIND +: 2] == 2'd0) ? {24'd0, qi[ATG_WI_LID +: 8]} : 32'd0;
+			default: opc_spec = 32'd0;
+			endcase
+		end
+	endfunction
 
 	/* The value of operand n, split in two: the part that is the same in every
 	 * lane (constants, warp and workgroup values, the constant word), made once
@@ -859,7 +1072,7 @@ module atg_su_opd #(
 	wire unused_fwd_ex4 = &{1'b0,
 		fwd_fpu_ex4_valid, fwd_fpu_ex4_warp, fwd_fpu_ex4_grp, fwd_fpu_ex4_rd, fwd_fpu_ex4_data, fwd_fpu_ex4_lanes,
 		hit_fpu_ex4_1, hit_fpu_ex4_2, hit_fpu_ex4_3, a_cl_co_unused, a_mods[6]};
-	wire unused_ok = &{1'b0, a_n1, a_n2[6], a_n3[6], a_rf_r1, a_rf_r2, a_wait, mods[6], exec_g, kill_g, cov_g, grp_base, b_q_info, unused_fwd_ex4, cl_co_unused};
+	wire unused_ok = &{1'b0, a_n1, a_n2[6], a_n3[6], a_rf_r1, a_rf_r2, a_wait, mods[6], exec_g, kill_g, cov_g, grp_base, b_q_info, unused_fwd_ex4, cl_co_unused, b_unit_r, b_sg_last_r, unit_ready};
 endmodule
 
 `default_nettype wire

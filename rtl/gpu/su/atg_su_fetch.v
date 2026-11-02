@@ -58,56 +58,86 @@ module atg_su_fetch #(
 	am_add #(.W(2)) u_wp (.a(wp), .b(2'd0), .ci(1'b1), .s(wp_next), .co(wp_co_unused));
 	am_add #(.W(2)) u_fp (.a(fp), .b(2'd0), .ci(1'b1), .s(fp_next), .co(fp_co_unused));
 	am_add #(.W(2)) u_rp (.a(rp), .b(2'd0), .ci(1'b1), .s(rp_next), .co(rp_co_unused));
-	(* max_fanout = 12 *) wire room = used != 2'd2;
+	(* dont_touch = "true" *) wire room = (wp[0] == rp[0]) ? (wp[1] == rp[1]) : 1'b1;
 
-	assign ic_req = f_valid && room;
+	(* dont_touch = "true" *) wire ic_req_w = f_valid && (wp[0] == rp[0] ? wp[1] == rp[1] : 1'b1);
+	assign ic_req = ic_req_w;
 	assign ic_addr = f_addr;
-	assign f_ready = room && ic_ready;
-	(* keep = "true", max_fanout = 12 *) wire push = f_valid && f_ready;
+	(* dont_touch = "true" *) wire f_ready_w = room && ic_ready;
+	assign f_ready = f_ready_w;
+	(* dont_touch = "true" *) wire push_0 = f_valid && !wp[0] && f_ready_w;
+	(* dont_touch = "true" *) wire push_1 = f_valid && wp[0] && f_ready_w;
+	(* dont_touch = "true" *) wire push_w = f_valid && f_ready_w;
+	(* dont_touch = "true" *) wire fill_0 = ic_rvalid && !fp[0];
+	(* dont_touch = "true" *) wire fill_1 = ic_rvalid && fp[0];
 
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	wire h = rp[0];
+	(* dont_touch = "true" *) reg rp0_pc;
 	assign d_valid = used != 2'd0 && q_have[h];
 	assign d_warp = q_warp[h];
-	assign d_pc = q_pc[h];
+	assign d_pc = q_pc[rp0_pc];
 	(* keep = "true", max_fanout = 12 *) wire pop = d_valid && d_ready;
 
 	genvar gqs;
 	generate
 		for (gqs = 0; gqs < 4; gqs = gqs + 1) begin : g_qins_sl
-			(* keep = "true" *) wire fill0_sl = ic_rvalid && !fp[0];
-			(* keep = "true" *) wire fill1_sl = ic_rvalid && fp[0];
-			(* keep = "true" *) wire h_sl = rp[0];
+			(* dont_touch = "true" *) reg fp0_sl;
+			(* dont_touch = "true" *) reg rp0_sl;
+			wire fill0_sl = ic_rvalid && !fp0_sl;
+			wire fill1_sl = ic_rvalid && fp0_sl;
 			(* shreg_extract = "no" *) reg [15:0] q_ins0_r, q_ins1_r;
 			always @(posedge clk) begin
 				if (fill0_sl)
 					q_ins0_r <= ic_rdata[gqs*16 +: 16];
 				if (fill1_sl)
 					q_ins1_r <= ic_rdata[gqs*16 +: 16];
+				if (rst_p) begin
+					fp0_sl <= 1'b0;
+					rp0_sl <= 1'b0;
+				end else begin
+					if (ic_rvalid)
+						fp0_sl <= fp_next[0];
+					if (pop)
+						rp0_sl <= rp_next[0];
+				end
 			end
-			assign d_instr[gqs*16 +: 16] = h_sl ? q_ins1_r : q_ins0_r;
+			assign d_instr[gqs*16 +: 16] = rp0_sl ? q_ins1_r : q_ins0_r;
 		end
 	endgenerate
 
-	(* keep = "true" *) wire rst_p = !rst_n;
 	always @(posedge clk) begin
+		if (push_0) begin
+			q_warp[0] <= f_warp;
+			q_pc[0]   <= f_pc;
+		end
+		if (push_1) begin
+			q_warp[1] <= f_warp;
+			q_pc[1]   <= f_pc;
+		end
 		if (rst_p) begin
 			wp <= 2'd0;
 			rp <= 2'd0;
+			rp0_pc <= 1'b0;
 			fp <= 2'd0;
 			q_have <= 2'b00;
 		end else begin
-			if (push) begin
-				q_warp[wp[0]] <= f_warp;
-				q_pc[wp[0]] <= f_pc;
-				q_have[wp[0]] <= 1'b0;
+			if (push_w)
 				wp <= wp_next;
-			end
-			if (ic_rvalid) begin
-				q_have[fp[0]] <= 1'b1;
+			if (fill_0)
+				q_have[0] <= 1'b1;
+			else if (f_valid && !wp[0] && f_ready_w)
+				q_have[0] <= 1'b0;
+			if (fill_1)
+				q_have[1] <= 1'b1;
+			else if (f_valid && wp[0] && f_ready_w)
+				q_have[1] <= 1'b0;
+			if (ic_rvalid)
 				fp <= fp_next;
-			end
-			if (pop)
+			if (pop) begin
 				rp <= rp_next;
+				rp0_pc <= rp_next[0];
+			end
 		end
 	end
 endmodule

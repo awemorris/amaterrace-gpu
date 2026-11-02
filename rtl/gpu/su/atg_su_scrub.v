@@ -30,7 +30,7 @@ module atg_su_scrub #(
 	wire a_co_unused;
 	am_add #(.W(AW)) u_a (.a(a), .b({AW{1'b0}}), .ci(1'b1), .s(a_next), .co(a_co_unused));
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	always @(posedge clk) begin
 		if (rst_p) begin
 			on <= 1'b0;

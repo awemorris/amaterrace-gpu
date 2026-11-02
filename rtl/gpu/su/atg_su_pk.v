@@ -55,7 +55,7 @@ module atg_su_pk #(
 	localparam CW = 1 + WARP_W + GRP_W + 7 + NPHYS;
 	localparam SH = PK_SHARED != 0 && PACKED != 0;
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	(* max_fanout = 12 *) wire [3:0] op = x_uop[ATG_UOP_OP +: 4];
 	/* PK_SHARED: an fp16 operation goes to atg_su_fpu; busy is the cycle
@@ -83,9 +83,15 @@ module atg_su_pk #(
 	genvar l;
 	generate
 	for (l = 0; l < NPHYS; l = l + 1) begin : g_lane
+`ifdef __ICARUS__
+		wire [31:0] la  = mine ? x_a[l*32 +: 32] : 32'd0;
+		wire [31:0] lb0 = mine ? x_b[l*32 +: 32] : 32'd0;
+		wire [31:0] lc  = mine ? x_c[l*32 +: 32] : 32'd0;
+`else
 		wire [31:0] la = x_a[l*32 +: 32];
 		wire [31:0] lb0 = x_b[l*32 +: 32];
 		wire [31:0] lc = x_c[l*32 +: 32];
+`endif
 		wire [31:0] lb = hsel == 2'd3 ? {lb0[15:0], lb0[31:16]} : lb0;
 		wire [31:0] un;
 		am_fp_h2f #(.DENORM(0), .LAT(0)) u_un (.h(sub ? la[31:16] : la[15:0]), .f(un));
@@ -116,12 +122,15 @@ module atg_su_pk #(
 	always @(posedge clk) begin
 		if (rst_p) begin
 			for (k = 0; k < SHORT_LAT; k = k + 1)
-				pipe[k] <= {CW{1'b0}};
+				pipe[k][CW-1] <= 1'b0;
 		end else begin
-			pipe[0] <= {mine, x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0]};
+			pipe[0][CW-1] <= mine;
 			for (k = 1; k < SHORT_LAT; k = k + 1)
-				pipe[k] <= pipe[k-1];
+				pipe[k][CW-1] <= pipe[k-1][CW-1];
 		end
+		pipe[0][CW-2:0] <= {x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0]};
+		for (k = 1; k < SHORT_LAT; k = k + 1)
+			pipe[k][CW-2:0] <= pipe[k-1][CW-2:0];
 	end
 
 	wire [CW-1:0] o_ctrl = pipe[SHORT_LAT-1];

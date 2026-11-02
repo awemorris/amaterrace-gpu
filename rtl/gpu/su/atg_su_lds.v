@@ -101,12 +101,15 @@ module atg_su_lds #(
 		for (init_i = 0; init_i < NW; init_i = init_i + 1)
 			ram[init_i] = 32'd0;
 	end
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire scrub_i = scrub;
 	(* max_fanout = 12 *) reg [2:0] st;
 	wire [NPHYS*AW-1:0] radr;
 	wire [DW-1:0] rdat, rcmp, res;
 	(* max_fanout = 12 *) reg [NPHYS-1:0] lanes;
-	(* max_fanout = 12 *) reg [31:0] atom_b, atom_c;
+	(* shreg_extract = "no" *) reg [15:0] atom_b_lo, atom_b_hi, atom_c_lo, atom_c_hi;
+	wire [31:0] atom_b = {atom_b_hi, atom_b_lo};
+	wire [31:0] atom_c = {atom_c_hi, atom_c_lo};
 	(* max_fanout = 12 *) reg rsts, ratom, rwrd;
 	(* max_fanout = 12 *) reg [2:0] aph;
 	(* max_fanout = 12 *) reg [3:0] rsub;
@@ -119,28 +122,9 @@ module atg_su_lds #(
 	(* shreg_extract = "no", max_fanout = 12 *) reg pval_1, pval_2, pval_3;
 	reg [AW-1:0] ram_addr_r;
 	(* max_fanout = 12 *) reg ram_we_r;
-	reg [31:0] ram_wd_r;
+	wire [31:0] ram_wd_r;
 	reg [31:0] q;
 	(* dont_touch = "true" *) reg [31:0] q_pipe;
-
-	/* The new value of an atomic's word (the order of docs/ghci.md section 12.5). */
-	function [31:0] atom_op;
-		input [3:0] op;
-		input [31:0] old, a, b;
-		case (op)
-		4'd0: atom_op = old & a;
-		4'd1: atom_op = old | a;
-		4'd2: atom_op = old ^ a;
-		4'd3: atom_op = a;
-		4'd4, 4'd5: atom_op = old; /* Direct-pathed via asum */
-		4'd6: atom_op = $signed(old) > $signed(a) ? old : a;
-		4'd7: atom_op = $signed(old) < $signed(a) ? old : a;
-		4'd8: atom_op = old > a ? old : a;
-		4'd9: atom_op = old < a ? old : a;
-		4'd10: atom_op = old == b ? a : old;
-		default: atom_op = old;
-		endcase
-	endfunction
 
 	(* max_fanout = 12 *) wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_LDS;
 	(* max_fanout = 12 *) wire is_sts = x_uop[ATG_UOP_OP +: 8] == ATG_LDS_STS;
@@ -159,22 +143,28 @@ module atg_su_lds #(
 	(* max_fanout = 12 *) wire lane_on = lanes[li];
 	/* An atom lane's read-modify-write uses q_pipe (dedicated fabric register after BRAM q). */
 	wire [31:0] cur_rdat = rdat[li*32 +: 32];
+	wire [31:0] cur_rcmp = rcmp[li*32 +: 32];
 	wire [31:0] asum;
 	wire as_co_unused;
 	am_addsub #(.W(32)) u_asum (.a(q_pipe), .b(atom_b), .sub(rsub == 4'd5), .s(asum),
 		.co(as_co_unused));
 
-	wire [31:0] anew_other;
+	/* Atomic comparisons (fanout = 2 each into the two 16-bit write-data slices). */
 `ifdef MUT_LDS_ATOM_NOCMP
-	assign anew_other = atom_op(rsub, q_pipe, atom_b, atom_b);
+	wire [31:0] atom_cmp_rhs = atom_b;
 `else
-	assign anew_other = atom_op(rsub, q_pipe, atom_b, atom_c);
+	wire [31:0] atom_cmp_rhs = atom_c;
 `endif
+	wire [31:0] cmp_diff;
+	wire cmp_ult;
+	am_sub #(.W(32)) u_cmp_sub (.a(q_pipe), .b(atom_b), .bi(1'b0), .d(cmp_diff), .bo(cmp_ult));
+	wire cmp_ab_eq = (q_pipe == atom_b);
+	wire cmp_ugt = !cmp_ult && !cmp_ab_eq;
+	wire cmp_slt = (q_pipe[31] != atom_b[31]) ? q_pipe[31] : cmp_ult;
+	wire cmp_sgt = !cmp_slt && !cmp_ab_eq;
+	wire cmp_eq  = (q_pipe == atom_cmp_rhs);
+	wire unused_cmp_diff = &{1'b0, cmp_diff};
 
-	wire is_addsub = (rsub == 4'd4 || rsub == 4'd5);
-	(* keep = "true" *) wire [31:0] w_asum = asum;
-	(* keep = "true" *) wire [31:0] w_other = anew_other;
-	wire [31:0] w_atom = is_addsub ? w_asum : w_other;
 `ifdef MUT_LDS_ATOM_RAW
 	wire atom_active = 1'b0;
 `else
@@ -182,9 +172,16 @@ module atg_su_lds #(
 `endif
 	assign x_ready = st == IDLE && !ram_we_r;
 
+	/* Session protection scrub counter. */
+	wire sc_on;
+	wire [AW-1:0] sc_a;
+
+	atg_su_scrub #(.DEPTH(NW), .AW(AW)) sc (
+		.clk(clk), .rst_n(rst_n), .start(scrub_i), .on(sc_on), .a(sc_a)
+	);
+
 	/* The word addresses of the group on x_*: (rs1 + imm) / 4, its low AW bits. */
-	(* keep = "true", max_fanout = 12 *) wire lds_take_base = !scrub && !sc_on && (st == IDLE) && mine && !ram_we_r;
-	(* keep = "true", max_fanout = 12 *) wire lds_atom_base = !scrub && !sc_on && (st == ACCESS) && ratom && (aph == 3'd3);
+	(* dont_touch = "true" *) wire lds_atom_base = !scrub_i && !sc_on && (st == ACCESS) && ratom && (aph == 3'd3);
 	wire [NPHYS*AW-1:0] xadr;
 	genvar l, glh;
 	generate
@@ -196,7 +193,7 @@ module atg_su_lds #(
 			assign xadr[l*AW +: AW] = ba[AW+1:2];
 			wire unused_b = &{1'b0, ba[1:0]};
 
-			(* keep = "true" *) wire lds_take_l = lds_take_base;
+			(* dont_touch = "true" *) wire lds_take_l = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
 			(* shreg_extract = "no" *) reg [AW-1:0] radr_l_r;
 			always @(posedge clk)
 				if (lds_take_l)
@@ -204,25 +201,60 @@ module atg_su_lds #(
 			assign radr[l*AW +: AW] = radr_l_r;
 
 			for (glh = 0; glh < 2; glh = glh + 1) begin : g_lds_half
-				(* keep = "true" *) wire lds_take_h = lds_take_base;
+				(* dont_touch = "true" *) wire lds_take_dat_h = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
+				(* dont_touch = "true" *) wire lds_take_cmp_h = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
+				(* dont_touch = "true" *) wire lds_take_res_h = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
 				wire lds_atom_we_h = lds_atom_base && lanes[l] && (li == l[LW-1:0]);
 				wire lds_rd_we_h   = pval_3 && (pli_3 == l[LW-1:0]);
-				(* keep = "true" *) wire lds_q_we_h = lds_rd_we_h || lds_atom_we_h;
+				(* dont_touch = "true" *) wire lds_q_we_h = lds_rd_we_h || lds_atom_we_h;
 				(* shreg_extract = "no" *) reg [15:0] rdat_h_r, rcmp_h_r, res_h_r;
 				always @(posedge clk) begin
-					if (lds_take_h) begin
+					if (lds_take_dat_h)
 						rdat_h_r <= x_b[l*32 + glh*16 +: 16];
+					if (lds_take_cmp_h)
 						rcmp_h_r <= x_c[l*32 + glh*16 +: 16];
-					end
-					if (lds_q_we_h)
-						res_h_r <= q_pipe[glh*16 +: 16];
-					else if (lds_take_h)
+					if (lds_take_res_h)
 						res_h_r <= 16'd0;
+					else if (lds_q_we_h)
+						res_h_r <= q_pipe[glh*16 +: 16];
 				end
 				assign rdat[l*32 + glh*16 +: 16] = rdat_h_r;
 				assign rcmp[l*32 + glh*16 +: 16] = rcmp_h_r;
 				assign res[l*32 + glh*16 +: 16]  = res_h_r;
 			end
+		end
+
+		for (glh = 0; glh < 2; glh = glh + 1) begin : g_wd_half
+			(* dont_touch = "true" *) wire [3:0] rsub_h = rsub;
+			(* dont_touch = "true" *) wire use_old_h =
+				(rsub_h == 4'd3)  ? 1'b0 :
+				(rsub_h == 4'd6)  ? cmp_sgt :
+				(rsub_h == 4'd7)  ? cmp_slt :
+				(rsub_h == 4'd8)  ? cmp_ugt :
+				(rsub_h == 4'd9)  ? cmp_ult :
+				(rsub_h == 4'd10) ? !cmp_eq : 1'b1;
+			wire [15:0] old_h = q_pipe[glh*16 +: 16];
+			wire [15:0] b_h   = atom_b[glh*16 +: 16];
+			(* dont_touch = "true" *) wire [15:0] w_other_h =
+				(rsub_h == 4'd0) ? (old_h & b_h) :
+				(rsub_h == 4'd1) ? (old_h | b_h) :
+				(rsub_h == 4'd2) ? (old_h ^ b_h) :
+				(use_old_h ? old_h : b_h);
+			(* dont_touch = "true" *) wire is_addsub_h = (rsub_h == 4'd4 || rsub_h == 4'd5);
+			wire [15:0] w_atom_h = is_addsub_h ? asum[glh*16 +: 16] : w_other_h;
+			(* dont_touch = "true" *) wire wd_zero_h = rst_p || scrub_i || sc_on;
+			(* dont_touch = "true" *) wire wd_atom_h = (st == ACCESS) && atom_active && (aph == 3'd3);
+			(* dont_touch = "true" *) wire wd_sts_h  = (st == ACCESS) && !atom_active && !ratom && rsts && lane_on;
+			(* shreg_extract = "no" *) reg [15:0] ram_wd_h_r;
+			always @(posedge clk) begin
+				if (wd_zero_h)
+					ram_wd_h_r <= 16'd0;
+				else if (wd_atom_h)
+					ram_wd_h_r <= w_atom_h;
+				else if (wd_sts_h)
+					ram_wd_h_r <= cur_rdat[glh*16 +: 16];
+			end
+			assign ram_wd_r[glh*16 +: 16] = ram_wd_h_r;
 		end
 	endgenerate
 
@@ -231,21 +263,39 @@ module atg_su_lds #(
 	wire li_co_unused;
 	am_add #(.W(LW)) u_li (.a(li), .b({LW{1'b0}}), .ci(1'b1), .s(li_next), .co(li_co_unused));
 
-	/* Session protection scrub counter. */
-	wire sc_on;
-	wire [AW-1:0] sc_a;
-
-	atg_su_scrub #(.DEPTH(NW), .AW(AW)) sc (
-		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
-	);
-
 	wire [AW-1:0] sc_a_next;
 	wire sc_a_co_unused;
 	am_add #(.W(AW)) u_sc_a_next (.a(sc_a), .b({AW{1'b0}}), .ci(1'b1), .s(sc_a_next), .co(sc_a_co_unused));
 
 	assign scrub_busy = sc_on;
 
+	(* dont_touch = "true" *) wire lds_idle_ce_a = !rst_p && !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
+	(* dont_touch = "true" *) wire lds_idle_ce_b = !rst_p && !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
+	(* dont_touch = "true" *) wire atom_bc_ce_0  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+	(* dont_touch = "true" *) wire atom_bc_ce_1  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+	(* dont_touch = "true" *) wire atom_bc_ce_2  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+	(* dont_touch = "true" *) wire atom_bc_ce_3  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+
 	always @(posedge clk) begin
+		if (lds_idle_ce_a) begin
+			lanes <= xl;
+			rsts <= is_sts;
+			ratom <= is_atom;
+			rwrd <= x_uop[ATG_UOP_WRD];
+			rsub <= x_uop[ATG_UOP_SUB +: 4];
+		end
+		if (lds_idle_ce_b) begin
+			rrd <= x_uop[ATG_UOP_RD +: 7];
+			rwarp <= x_warp;
+			rgrp <= x_grp;
+			rlast <= x_last;
+			rsbe <= x_sbe;
+		end
+		if (atom_bc_ce_0) atom_b_lo <= cur_rdat[15:0];
+		if (atom_bc_ce_1) atom_b_hi <= cur_rdat[31:16];
+		if (atom_bc_ce_2) atom_c_lo <= cur_rcmp[15:0];
+		if (atom_bc_ce_3) atom_c_hi <= cur_rcmp[31:16];
+
 		if (rst_p) begin
 			st <= IDLE;
 			li <= {LW{1'b0}};
@@ -256,11 +306,8 @@ module atg_su_lds #(
 			pval_2 <= 1'b0;
 			pval_3 <= 1'b0;
 			aph <= 3'd0;
-			atom_b <= 32'd0;
-			atom_c <= 32'd0;
 			ram_addr_r <= {AW{1'b0}};
 			ram_we_r <= 1'b0;
-			ram_wd_r <= 32'd0;
 		end else begin
 			pval_1 <= 1'b0;
 			pval_2 <= pval_1;
@@ -269,29 +316,17 @@ module atg_su_lds #(
 			pli_3 <= pli_2;
 			ram_we_r <= 1'b0;
 
-			if (scrub) begin
+			if (scrub_i) begin
 				ram_we_r <= 1'b1;
 				ram_addr_r <= {AW{1'b0}};
-				ram_wd_r <= 32'd0;
 			end else if (sc_on) begin
 				if ({{(32-AW){1'b0}}, sc_a} != NW - 1) begin
 					ram_we_r <= 1'b1;
 					ram_addr_r <= sc_a_next;
-					ram_wd_r <= 32'd0;
 				end
 			end else begin
 				case (st)
 				IDLE: if (mine && !ram_we_r) begin
-					lanes <= xl;
-					rsts <= is_sts;
-					ratom <= is_atom;
-					rwrd <= x_uop[ATG_UOP_WRD];
-					rsub <= x_uop[ATG_UOP_SUB +: 4];
-					rrd <= x_uop[ATG_UOP_RD +: 7];
-					rwarp <= x_warp;
-					rgrp <= x_grp;
-					rlast <= x_last;
-					rsbe <= x_sbe;
 					li <= {LW{1'b0}};
 					aph <= 3'd0;
 					st <= xl == {NPHYS{1'b0}} ? BEAT : ACCESS;
@@ -300,8 +335,6 @@ module atg_su_lds #(
 					case (aph)
 					3'd0: begin
 						ram_addr_r <= a;
-						atom_b <= cur_rdat;
-						atom_c <= rcmp[li*32 +: 32];
 						aph <= 3'd1;
 					end
 					3'd1: aph <= 3'd2;
@@ -309,7 +342,6 @@ module atg_su_lds #(
 					3'd3: begin
 						ram_we_r <= 1'b1;
 						ram_addr_r <= a;
-						ram_wd_r <= w_atom;
 						aph <= 3'd4;
 					end
 					default: begin
@@ -322,10 +354,8 @@ module atg_su_lds #(
 				end else begin
 					if (!ratom) begin
 						ram_addr_r <= a;
-						if (rsts && lane_on) begin
+						if (rsts && lane_on)
 							ram_we_r <= 1'b1;
-							ram_wd_r <= cur_rdat;
-						end
 					end
 					aph <= 3'd0;
 					pval_1 <= lane_on && !rsts && !ratom;

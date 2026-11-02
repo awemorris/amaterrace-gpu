@@ -307,7 +307,7 @@ module atg_su_pk_half #(
 		wire unused_ok = &{1'b0, clk, rst_n, prod[31:22], sum[36:16], kx[9:6], er_bo_unused, sum_co_unused,
 			co_unused};
 	end else if (!AR) begin : g_lat6_noarith
-		(* keep = "true" *) wire rst_p = !rst_n;
+		(* dont_touch = "true" *) wire rst_p = !rst_n;
 		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_valid, s2_valid, s3_valid, s4_valid, s5_valid, s6_valid;
 		(* shreg_extract = "no", max_fanout = 12 *) reg        s1_ovr_en, s2_ovr_en;
 		(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] s1_ovr_val, s2_ovr_val;
@@ -383,7 +383,7 @@ module atg_su_pk_half #(
 		assign y = s6_res;
 		wire unused_noarith = &{1'b0, ha, hb, hc, r, sat, o, s6_valid, s1_erp_bo_unused};
 	end else begin : g_lat6
-		(* keep = "true" *) wire rst_p = !rst_n;
+		(* dont_touch = "true" *) wire rst_p = !rst_n;
 		/* =====================================================================
 		 * Stage 1 (EX1): Latch inputs and dedicated multiplier operands (0 Pre-DSP LUTs)
 		 * ===================================================================== */
@@ -776,7 +776,6 @@ module atg_su_pk_half #(
 				s4_o         <= 4'd0;
 				s4_r         <= 3'd0;
 				s4_sat       <= 1'b0;
-				s4_cw        <= 37'd0;
 				s4_eb        <= 7'd0;
 				s4_big       <= 1'b0;
 				s4_sp        <= 1'b0;
@@ -793,7 +792,6 @@ module atg_su_pk_half #(
 				s4_o         <= s3_o;
 				s4_r         <= s3_r;
 				s4_sat       <= s3_sat;
-				s4_cw        <= s3_cw;
 				s4_eb        <= s3_eb;
 				s4_big       <= s3_big;
 				s4_sp        <= s3_sp;
@@ -803,6 +801,17 @@ module atg_su_pk_half #(
 				s4_spec_hit  <= s3_spec_hit;
 				s4_spec_res  <= s3_sat ? atg_su_hsat(s3_spec_res) : s3_spec_res;
 				s4_other_pre <= s3_other_pre;
+			end
+		end
+		genvar gcw4;
+		for (gcw4 = 0; gcw4 < 3; gcw4 = gcw4 + 1) begin : g_s4_cw
+			localparam CW4_W = (gcw4 == 2) ? 5 : 16;
+			(* keep = "true" *) wire zc_cw_s = s3_zc;
+			always @(posedge clk) begin
+				if (rst_p || zc_cw_s)
+					s4_cw[gcw4*16 +: CW4_W] <= {CW4_W{1'b0}};
+				else
+					s4_cw[gcw4*16 +: CW4_W] <= s3_cw[gcw4*16 +: CW4_W];
 			end
 		end
 
@@ -900,6 +909,7 @@ module atg_su_pk_half #(
 		 * ===================================================================== */
 		/* --- Level 1 (1 LUT6 per wire from Stage 5 FFs) --- */
 		(* keep = "true" *) wire       nz_b2   = |s5_sum[36:32];
+		(* keep = "true" *) wire       nz_b2_s = |s5_sum[36:32];
 		(* keep = "true" *) wire [3:0] msb_b2  = {
 			1'b0,
 			s5_sum[36],
@@ -917,7 +927,8 @@ module atg_su_pk_half #(
 			s5_eb_lo[1:0], 1'b1
 		);
 
-		(* keep = "true" *) wire b1_h3 = |s5_sum[31:28], b1_h2 = |s5_sum[27:24], b1_h1 = |s5_sum[23:20], b1_h0 = |s5_sum[19:16];
+		(* keep = "true" *) wire b1_h3   = |s5_sum[31:28], b1_h2   = |s5_sum[27:24], b1_h1 = |s5_sum[23:20], b1_h0 = |s5_sum[19:16];
+		(* keep = "true" *) wire b1_h3_s = |s5_sum[31:28], b1_h2_s = |s5_sum[27:24];
 		(* keep = "true" *) wire b1_m1_3 = |s5_sum[31:30], b1_m0_3 = s5_sum[31] || (!s5_sum[30] && s5_sum[29]);
 		(* keep = "true" *) wire b1_m1_2 = |s5_sum[27:26], b1_m0_2 = s5_sum[27] || (!s5_sum[26] && s5_sum[25]);
 		(* keep = "true" *) wire b1_m1_1 = |s5_sum[23:22], b1_m0_1 = s5_sum[23] || (!s5_sum[22] && s5_sum[21]);
@@ -1001,8 +1012,8 @@ module atg_su_pk_half #(
 			                               (msb_b2[0] ? s5_sum[22 + gs] : s5_sum[21 + gs]);
 		end
 		for (gs = 0; gs < 14; gs = gs + 1) begin : g_w10_s2
-			assign w1_s2[gs] = b1_h3 ? s5_sum[17 + gs]   : b1_h2 ? s5_sum[13 + gs]  : b1_h1 ? s5_sum[9 + gs]  : s5_sum[5 + gs];
-			assign w0_s2[gs] = b0_h3 ? win0_pad[12 + gs] : b0_h2 ? win0_pad[8 + gs] : b0_h1 ? win0_pad[4 + gs] : win0_pad[gs];
+			assign w1_s2[gs] = b1_h3_s ? s5_sum[17 + gs]   : b1_h2_s ? s5_sum[13 + gs]  : b1_h1 ? s5_sum[9 + gs]  : s5_sum[5 + gs];
+			assign w0_s2[gs] = b0_h3   ? win0_pad[12 + gs] : b0_h2   ? win0_pad[8 + gs] : b0_h1 ? win0_pad[4 + gs] : win0_pad[gs];
 		end
 
 		/* --- Level 3 (1 LUT6 per wire from Level 2) --- */
@@ -1022,17 +1033,17 @@ module atg_su_pk_half #(
 		(* keep = "true" *) wire       s5_c2_1      = nz_b2 ? b2_c2_1 : nz_b1 ? b1_c2_1 : b0_c2_1;
 		(* keep = "true" *) wire       s5_g32       = nz_b2 ? b2_g32  : nz_b1 ? b1_g32  : b0_g32;
 		(* keep = "true" *) wire       s5_p32       = nz_b2 ? b2_p32  : nz_b1 ? b1_p32  : b0_p32;
-		(* keep = "true" *) wire [2:0] s5_eb_hi     = nz_b2 ? s5_eb_hi2 : nz_b1 ? s5_eb_hi1 : s5_eb_hi0;
-		(* keep = "true" *) wire [2:0] s5_eb_hi_p1  = nz_b2 ? s5_eb_hi3 : nz_b1 ? s5_eb_hi2 : s5_eb_hi1;
-		(* keep = "true" *) wire       s5_norm_ok   = s5_norm_base_ok && (nz_b2 || nz_b1 || nz_b0);
-		(* keep = "true" *) wire       s5_use_norm  = s5_valid && !s5_ovr_en && s5_is_fma && !s5_spec_hit && (nz_b2 || nz_b1 || nz_b0);
+		(* keep = "true" *) wire [2:0] s5_eb_hi     = nz_b2_s ? s5_eb_hi2 : nz_b1 ? s5_eb_hi1 : s5_eb_hi0;
+		(* keep = "true" *) wire [2:0] s5_eb_hi_p1  = nz_b2_s ? s5_eb_hi3 : nz_b1 ? s5_eb_hi2 : s5_eb_hi1;
+		(* keep = "true" *) wire       s5_norm_ok   = s5_norm_base_ok && (nz_b2_s || nz_b1 || nz_b0);
+		(* keep = "true" *) wire       s5_use_norm  = s5_valid && !s5_ovr_en && s5_is_fma && !s5_spec_hit && (nz_b2_s || nz_b1 || nz_b0);
 
 		/* --- Level 4 (1 LUT6 per wire from Level 3, directly into Stage 6 FFs) --- */
-		wire [10:0] s5_mg = nz_b2 ? w2_sh : nz_b1 ? w1_sh : w0_sh;
+		wire [10:0] s5_mg = nz_b2_s ? w2_sh : nz_b1 ? w1_sh : w0_sh;
 		wire [9:0]  s5_m  = s5_mg[10:1];
 		wire        s5_g  = s5_mg[0];
-		wire        s5_st = nz_b2 ? (st_b2 || or_4_0) :
-		                    (b1_h3 || b1_h2) ? (st_b1_32 || or_4_0) :
+		wire        s5_st = nz_b2_s ? (st_b2 || or_4_0) :
+		                    (b1_h3_s || b1_h2_s) ? (st_b1_32 || or_4_0) :
 		                    (b1_h1 || b1_h0) ? (st_b1_10 || or_4_0) : st_b0;
 
 		wire s5_c1_0 = s5_eb_lo[0] && s5_sub_msb[0];

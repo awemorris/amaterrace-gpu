@@ -162,32 +162,39 @@ module atg_su_exp_mesh #(
 
 	assign busy = (st != S_IDLE);
 
-	(* keep = "true" *) wire prim_latch_en0 = (st == S_PRIM_LATCH);
-	(* keep = "true" *) wire prim_latch_en1 = (st == S_PRIM_LATCH);
-	(* keep = "true" *) wire rst_p0 = !rst_n;
-	(* keep = "true" *) wire rst_p1 = !rst_n;
-	(* keep = "true" *) wire rst_p2 = !rst_n;
-	(* keep = "true" *) wire rst_p3 = !rst_n;
-	(* keep = "true" *) wire rst_p4 = !rst_n;
-	(* keep = "true" *) wire rst_p5 = !rst_n;
+	(* dont_touch = "true" *) wire prim_latch_en0 = (st == S_PRIM_LATCH);
+	(* dont_touch = "true" *) wire prim_latch_en1 = (st == S_PRIM_LATCH);
+	(* dont_touch = "true" *) wire kick_en0 = (st == S_IDLE) && kick_valid;
+	(* dont_touch = "true" *) wire kick_en1 = (st == S_IDLE) && kick_valid;
+	(* dont_touch = "true" *) wire kick_en2 = (st == S_IDLE) && kick_valid;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire [31:0] lds_d_a = lds_rd_data;
+	(* dont_touch = "true" *) wire [31:0] lds_d_b = lds_rd_data;
+	(* dont_touch = "true" *) wire lds_dv_a = lds_data_v;
+	(* dont_touch = "true" *) wire lds_dv_b = lds_data_v;
+	(* dont_touch = "true" *) wire [4:0] cap_w_a = cap_w;
+	(* dont_touch = "true" *) wire [4:0] cap_w_b = cap_w;
 	genvar gtw;
 	generate
 		for (gtw = 0; gtw < 21; gtw = gtw + 1) begin : g_tw_we
-			(* keep = "true" *) wire tw_we_lo_s = lds_data_v && (cap_w == gtw[4:0]);
-			(* keep = "true" *) wire tw_we_hi_s = lds_data_v && (cap_w == gtw[4:0]);
+			wire [31:0] tw_din = (gtw < 11) ? lds_d_a : lds_d_b;
+			wire tw_dv         = (gtw < 11) ? lds_dv_a : lds_dv_b;
+			wire [4:0] tw_cw   = (gtw < 11) ? cap_w_a : cap_w_b;
+			(* dont_touch = "true" *) wire tw_we_lo_s = tw_dv && (tw_cw == gtw[4:0]);
+			(* dont_touch = "true" *) wire tw_we_hi_s = tw_dv && (tw_cw == gtw[4:0]);
 			(* shreg_extract = "no" *) reg [15:0] tw_lo_r, tw_hi_r;
 			always @(posedge clk) begin
 				if (tw_we_lo_s)
-					tw_lo_r <= lds_rd_data[15:0];
+					tw_lo_r <= tw_din[15:0];
 				if (tw_we_hi_s)
-					tw_hi_r <= lds_rd_data[31:16];
+					tw_hi_r <= tw_din[31:16];
 			end
 			assign tri_words[gtw] = {tw_hi_r, tw_lo_r};
 		end
 	endgenerate
 
 	always @(posedge clk) begin
-		if (rst_p0) begin
+		if (rst_p) begin
 			st <= S_IDLE;
 			done <= 1'b0;
 			lds_rd_en <= 1'b0;
@@ -218,7 +225,7 @@ module atg_su_exp_mesh #(
 				st <= S_PRIM_LATCH;
 			end
 			S_PRIM_LATCH: begin
-				if (lds_rd_data[31]) begin
+				if (lds_d_b[31]) begin
 					if (next_prim_idx == prim_count_reg)
 						st <= S_DRAIN_WAIT;
 					else
@@ -256,49 +263,49 @@ module atg_su_exp_mesh #(
 			endcase
 		end
 
-		if (rst_p1) begin
+		if (rst_p) begin
 			mesh_id_reg <= 16'd0;
 			prim_count_reg <= 8'd0;
-		end else if (st == S_IDLE && kick_valid) begin
+		end else if (kick_en0) begin
 			mesh_id_reg <= kick_mesh_id;
 			prim_count_reg <= kick_prim_count;
 		end
 
-		if (rst_p2) begin
+		if (rst_p) begin
 			cur_prim_idx <= 8'd0;
 			base_prim <= {AW{1'b0}};
 		end else begin
-			if (st == S_IDLE && kick_valid) begin
+			if (kick_en1) begin
 				cur_prim_idx <= 8'd0;
 				base_prim <= kick_prim_base;
-			end else if ((st == S_PRIM_LATCH && lds_rd_data[31] && next_prim_idx != prim_count_reg) ||
+			end else if ((st == S_PRIM_LATCH && lds_d_b[31] && next_prim_idx != prim_count_reg) ||
 			             (st == S_SKID_WAIT && skid_push_ready && next_prim_idx != prim_count_reg)) begin
 				cur_prim_idx <= next_prim_idx;
 			end
 		end
 
-		if (rst_p3) begin
+		if (rst_p) begin
 			base_pos <= {AW{1'b0}};
 			base_var <= {AW{1'b0}};
-		end else if (st == S_IDLE && kick_valid) begin
+		end else if (kick_en2) begin
 			base_pos <= kick_pos_base;
 			base_var <= kick_var_base;
 		end
 
-		if (rst_p4) begin
+		if (rst_p) begin
 			v0_idx <= 8'd0;
 			v1_idx <= 8'd0;
 			v2_idx <= 8'd0;
 		end else begin
 			if (prim_latch_en0) begin
-				v0_idx <= lds_rd_data[7:0];
-				v1_idx <= lds_rd_data[15:8];
+				v0_idx <= lds_d_b[7:0];
+				v1_idx <= lds_d_b[15:8];
 			end
 			if (prim_latch_en1)
-				v2_idx <= lds_rd_data[23:16];
+				v2_idx <= lds_d_b[23:16];
 		end
 
-		if (rst_p5) begin
+		if (rst_p) begin
 			prim_flags <= 8'd0;
 			req_w <= 5'd0;
 			cap_w <= 5'd0;
@@ -312,9 +319,9 @@ module atg_su_exp_mesh #(
 			lds_rd_en_d2 <= lds_rd_en_d1;
 
 			if (prim_latch_en1)
-				prim_flags <= lds_rd_data[31:24];
+				prim_flags <= lds_d_b[31:24];
 
-			if (st == S_PRIM_LATCH && !lds_rd_data[31]) begin
+			if (st == S_PRIM_LATCH && !lds_d_b[31]) begin
 				req_w <= 5'd0;
 				cap_w <= 5'd0;
 			end else begin
@@ -343,6 +350,12 @@ module atg_su_exp_mesh #(
 	(* max_fanout = 12 *) reg s1_valid;
 
 	(* max_fanout = 12 *) wire w_mesh_ready = mesh_ready;
+	(* dont_touch = "true" *) wire m_rdy0 = mesh_ready;
+	(* dont_touch = "true" *) wire m_rdy1 = mesh_ready;
+	(* dont_touch = "true" *) wire m_rdy2 = mesh_ready;
+	(* dont_touch = "true" *) wire push_v_d0 = (st == S_SKID_WAIT) && skid_push_ready;
+	(* dont_touch = "true" *) wire push_v_d1 = (st == S_SKID_WAIT) && skid_push_ready;
+	(* dont_touch = "true" *) wire push_v_d2 = (st == S_SKID_WAIT) && skid_push_ready;
 	assign skid_push_ready = !s0_valid || w_mesh_ready;
 	assign skid_empty = !s0_valid && !s1_valid;
 
@@ -356,10 +369,36 @@ module atg_su_exp_mesh #(
 		for (gsl = 0; gsl < 44; gsl = gsl + 1) begin : g_skid_sl
 			localparam SL_B = gsl * 16;
 			localparam SL_W = (SL_B + 16 <= 702) ? 16 : (702 - SL_B);
-			(* keep = "true" *) wire s0_we_s = skid_push_valid && s1_valid && !(w_mesh_ready && !s0_valid);
-			(* keep = "true" *) wire s1_we_s = (w_mesh_ready && s1_valid && s0_valid) ||
-				(skid_push_valid && (!s1_valid || (w_mesh_ready && s1_valid && !s0_valid)));
-			(* keep = "true" *) wire s1_from_s0_s = !skid_push_valid;
+			wire sl_mrdy   = (gsl < 15) ? m_rdy0    : (gsl < 30) ? m_rdy1    : m_rdy2;
+			wire sl_push_d = (gsl < 15) ? push_v_d0 : (gsl < 30) ? push_v_d1 : push_v_d2;
+			(* dont_touch = "true" *) reg s0_v_sl, s1_v_sl, push_v_sl;
+			always @(posedge clk) begin
+				if (rst_p) begin
+					s0_v_sl   <= 1'b0;
+					s1_v_sl   <= 1'b0;
+					push_v_sl <= 1'b0;
+				end else begin
+					push_v_sl <= sl_push_d;
+					if (sl_mrdy && s1_v_sl) begin
+						if (s0_v_sl) begin
+							s1_v_sl <= 1'b1;
+							s0_v_sl <= 1'b0;
+						end else begin
+							s1_v_sl <= 1'b0;
+						end
+					end
+					if (push_v_sl) begin
+						if (!s1_v_sl || (sl_mrdy && s1_v_sl && !s0_v_sl))
+							s1_v_sl <= 1'b1;
+						else
+							s0_v_sl <= 1'b1;
+					end
+				end
+			end
+			(* dont_touch = "true" *) wire s0_we_s = push_v_sl && s1_v_sl && !(sl_mrdy && !s0_v_sl);
+			(* dont_touch = "true" *) wire s1_we_s = (sl_mrdy && s1_v_sl && s0_v_sl) ||
+				(push_v_sl && (!s1_v_sl || (sl_mrdy && s1_v_sl && !s0_v_sl)));
+			(* dont_touch = "true" *) wire s1_from_s0_s = !push_v_sl;
 			(* shreg_extract = "no" *) reg [SL_W-1:0] s0_sl_r, s1_sl_r;
 			always @(posedge clk) begin
 				if (s0_we_s)
@@ -372,9 +411,8 @@ module atg_su_exp_mesh #(
 		end
 	endgenerate
 
-	(* keep = "true" *) wire rst_skid = !rst_n;
 	always @(posedge clk) begin
-		if (rst_skid) begin
+		if (rst_p) begin
 			s0_valid <= 1'b0;
 			s0_last <= 1'b0;
 			s1_valid <= 1'b0;

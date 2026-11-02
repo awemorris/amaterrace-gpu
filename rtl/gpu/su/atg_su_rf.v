@@ -92,7 +92,8 @@ module atg_su_rf #(
 
 	assign scrub_busy = sc_on;
 	/* The write port: the scrub's zeros or the write-back's data. */
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire wd_zero_all = rst_p || scrub || sc_on;
 	wire [A_W-1:0] wam = sc_on ? sc_a : wa;
 
 	(* max_fanout = 12 *) reg [NPHYS-1:0] we_r;
@@ -130,7 +131,7 @@ module atg_su_rf #(
 		for (l = 0; l < NPHYS; l = l + 1) begin : lane
 			for (glh = 0; glh < 2; glh = glh + 1) begin : g_wd_half
 				(* shreg_extract = "no" *) reg [15:0] wd_h;
-				(* keep = "true" *) wire wd_zero_h = rst_p || scrub || sc_on;
+				(* dont_touch = "true" *) wire wd_zero_h = wd_zero_all || rst_p;
 				always @(posedge clk) begin
 					if (wd_zero_h)
 						wd_h <= 16'd0;
@@ -149,8 +150,8 @@ module atg_su_rf #(
 			wire [A_W-1:0] waddr2 = REG_IO ? wa_r2 : wam;
 			wire [A_W-1:0] ra1_l = ra1;
 			wire [A_W-1:0] ra2_l = ra2;
-			(* keep = "true" *) wire r_en_l = r_en;
-			(* keep = "true" *) wire wea = REG_IO ? we_r[l] : (sc_on || (w_en && w_lanes[l]));
+			wire r_en_l = r_en;
+			wire wea = REG_IO ? we_r[l] : (sc_on || (w_en && w_lanes[l]));
 
 			always @(posedge clk) begin
 				if (wea) begin

@@ -82,7 +82,10 @@ module atg_su_pt #(
 	/* verilator lint_on WIDTHTRUNC */
 
 	/* ---- The exp writes of vertex warps. */
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire scrub_i = scrub;
+	(* dont_touch = "true" *) wire vl_go_pt = vl_go;
+	(* dont_touch = "true" *) wire [31:0] vl_mask_pt = vl_mask;
 	wire [31:0] tgt = x_uop[ATG_UOP_IMM +: 32];
 	wire is_pos = tgt < 32'd4;
 	wire is_var = tgt >= 32'h10 && tgt < 32'h10 + VARY_WORDS;
@@ -146,7 +149,7 @@ module atg_su_pt #(
 	wire [AW-1:0] sc_a;
 
 	atg_su_scrub #(.DEPTH(DEPTH), .AW(AW)) sc (
-		.clk(clk), .rst_n(rst_n), .start(scrub), .on(sc_on), .a(sc_a)
+		.clk(clk), .rst_n(rst_n), .start(scrub_i), .on(sc_on), .a(sc_a)
 	);
 
 	wire [AW-1:0] sc_a_next;
@@ -161,7 +164,7 @@ module atg_su_pt #(
 		if (rst_p) begin
 			m_we_r <= {NPHYS{1'b0}};
 			m_wa_r <= {AW{1'b0}};
-		end else if (scrub) begin
+		end else if (scrub_i) begin
 			m_we_r <= {NPHYS{1'b1}};
 			m_wa_r <= {AW{1'b0}};
 		end else if (sc_on) begin
@@ -182,7 +185,7 @@ module atg_su_pt #(
 	for (b = 0; b < NPHYS; b = b + 1) begin : g_bank
 		for (gbh = 0; gbh < 2; gbh = gbh + 1) begin : g_wd_half
 			(* shreg_extract = "no" *) reg [15:0] m_wd_h;
-			(* keep = "true" *) wire wd_zero_h = rst_p || scrub || sc_on;
+			(* dont_touch = "true" *) wire wd_zero_h = rst_p || scrub_i || sc_on;
 			always @(posedge clk) begin
 				if (wd_zero_h)
 					m_wd_h <= 16'd0;
@@ -194,7 +197,7 @@ module atg_su_pt #(
 		(* ram_style = "block" *) reg [31:0] m [0:DEPTH-1];
 		reg [31:0] rd_q_b;
 		(* dont_touch = "true" *) reg [31:0] rd_q_pipe_b;
-		(* keep = "true" *) wire pt_rd_b = pt_rd_r1;
+		(* dont_touch = "true" *) wire pt_rd_b = pt_rd_r1;
 		always @(posedge clk) begin
 			if (m_we_r[b])
 				m[m_wa_r] <= m_wd_r[32 * b +: 32];
@@ -225,11 +228,20 @@ module atg_su_pt #(
 			rb_r3 <= rb_r2;
 		end
 	end
-	(* keep = "true" *) wire [$clog2(NPHYS)-1:0] rb_r3_lo = rb_r3;
-	(* keep = "true" *) wire [$clog2(NPHYS)-1:0] rb_r3_hi = rb_r3;
-	wire [31:0] rdata_lo_w = rd_q_pipe[32 * rb_r3_lo +: 32];
-	wire [31:0] rdata_hi_w = rd_q_pipe[32 * rb_r3_hi +: 32];
-	assign pt_rdata = {rdata_hi_w[31:16], rdata_lo_w[15:0]};
+	generate
+	for (gbh = 0; gbh < 4; gbh = gbh + 1) begin : g_rdata_sl
+		(* dont_touch = "true" *) wire [$clog2(NPHYS)-1:0] rb_r3_sl = rb_r3;
+		reg [7:0] rdata_sl_w;
+		integer rbi;
+		always @(*) begin
+			rdata_sl_w = rd_q_pipe[gbh*8 +: 8];
+			for (rbi = 1; rbi < NPHYS; rbi = rbi + 1)
+				if (rb_r3_sl == rbi[$clog2(NPHYS)-1:0])
+					rdata_sl_w = rd_q_pipe[rbi*32 + gbh*8 +: 8];
+		end
+		assign pt_rdata[gbh*8 +: 8] = rdata_sl_w;
+	end
+	endgenerate
 
 	/* ---- The allocator. */
 	reg [NB*6-1:0] cnt;	/* entries in use, 0..32 */
@@ -341,7 +353,7 @@ module atg_su_pt #(
 	);
 
 	wire [BW-1:0] free_blk = pt_free_idx[5 +: BW];
-	wire vl_mask_zero = (vl_mask == 32'd0);
+	wire vl_mask_zero = (vl_mask_pt == 32'd0);
 
 	wire [BW-1:0] end_blk = wblk[wc_warp*BW +: BW];
 	wire end_own = wc_end && wv[wc_warp] && own[end_blk*WARP_W +: WARP_W] == wc_warp;
@@ -360,16 +372,16 @@ module atg_su_pt #(
 			wblk <= {(NWARPS*BW){1'b0}};
 			wv <= {NWARPS{1'b0}};
 		end else begin
-			vl_go_d1 <= vl_go && !vl_mask_zero;
-			if (vl_go) begin
+			vl_go_d1 <= vl_go_pt && !vl_mask_zero;
+			if (vl_go_pt) begin
 				last_blk_d1 <= last_blk;
-				p16_lo_r <= pop16(vl_mask[15:0]);
-				p16_hi_r <= pop16(vl_mask[31:16]);
+				p16_lo_r <= pop16(vl_mask_pt[15:0]);
+				p16_hi_r <= pop16(vl_mask_pt[31:16]);
 			end
 			for (cb_i = 0; cb_i < NB; cb_i = cb_i + 1) begin
 				if (pt_take && fb == cb_i[BW-1:0])
 					cnt[cb_i*6 +: 6] <= 6'd32;
-				else if (vl_go && vl_mask_zero && last_blk == cb_i[BW-1:0])
+				else if (vl_go_pt && vl_mask_zero && last_blk == cb_i[BW-1:0])
 					cnt[cb_i*6 +: 6] <= 6'd0;
 				else if (vl_go_d1 && last_blk_d1 == cb_i[BW-1:0])
 					cnt[cb_i*6 +: 6] <= (pt_free && free_blk == cb_i[BW-1:0]) ? dec6(pop32_s) : pop32_s;

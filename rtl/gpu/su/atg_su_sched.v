@@ -83,7 +83,7 @@ module atg_su_sched #(
 		S_WC = 3'd4, S_REPLAY = 3'd5, S_BAR = 3'd6, S_ENDED = 3'd7;
 	localparam [1:0] K_VERT = 2'd0, K_FRAG = 2'd1, K_COMP = 2'd2;
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	/* STATE: program bases, WG_SIZE, the DISPATCH grid. */
 	reg [31:0] vs_base, fs_base, cs_base;
@@ -93,23 +93,39 @@ module atg_su_sched #(
 	wire [15:0] st_wdata_m1;
 	wire wdata_m1_bo_unused;
 	am_sub #(.W(16)) u_wdata_m1 (.a(st_wdata[15:0]), .b(16'd0), .bi(1'b1), .d(st_wdata_m1), .bo(wdata_m1_bo_unused));
+	(* keep = "true" *) wire we_vs_lo = st_we && (st_idx == GHCI_S_VS_BASE);
+	(* keep = "true" *) wire we_vs_hi = st_we && (st_idx == GHCI_S_VS_BASE);
+	(* keep = "true" *) wire we_fs_lo = st_we && (st_idx == GHCI_S_FS_BASE);
+	(* keep = "true" *) wire we_fs_hi = st_we && (st_idx == GHCI_S_FS_BASE);
+	(* keep = "true" *) wire we_cs_lo = st_we && (st_idx == GHCI_S_CS_BASE);
+	(* keep = "true" *) wire we_cs_hi = st_we && (st_idx == GHCI_S_CS_BASE);
+	(* keep = "true" *) wire we_wgsz  = st_we && (st_idx == GHCI_S_WG_SIZE);
+	(* keep = "true" *) wire we_gx    = st_we && (st_idx == GHCI_S_GRID_X);
+	(* keep = "true" *) wire we_gx_m1 = st_we && (st_idx == GHCI_S_GRID_X);
+	(* keep = "true" *) wire we_gy    = st_we && (st_idx == GHCI_S_GRID_Y);
+	(* keep = "true" *) wire we_gy_m1 = st_we && (st_idx == GHCI_S_GRID_Y);
+	(* keep = "true" *) wire we_gz    = st_we && (st_idx == GHCI_S_GRID_Z);
+	(* keep = "true" *) wire we_gz_m1 = st_we && (st_idx == GHCI_S_GRID_Z);
 	always @(posedge clk) begin
 		if (rst_p) begin
 			{vs_base, fs_base, cs_base} <= 96'd0;
 			{wg_x, wg_y, wg_z} <= {8'd1, 8'd1, 8'd1};
 			{grid_x, grid_y, grid_z} <= {16'd1, 16'd1, 16'd1};
 			{grid_x_m1, grid_y_m1, grid_z_m1} <= {16'd0, 16'd0, 16'd0};
-		end else if (st_we) begin
-			case (st_idx)
-			GHCI_S_VS_BASE: vs_base <= st_wdata;
-			GHCI_S_FS_BASE: fs_base <= st_wdata;
-			GHCI_S_CS_BASE: cs_base <= st_wdata;
-			GHCI_S_WG_SIZE: {wg_z, wg_y, wg_x} <= st_wdata[23:0];
-			GHCI_S_GRID_X: begin grid_x <= st_wdata[15:0]; grid_x_m1 <= st_wdata_m1; end
-			GHCI_S_GRID_Y: begin grid_y <= st_wdata[15:0]; grid_y_m1 <= st_wdata_m1; end
-			GHCI_S_GRID_Z: begin grid_z <= st_wdata[15:0]; grid_z_m1 <= st_wdata_m1; end
-			default: ;
-			endcase
+		end else begin
+			if (we_vs_lo) vs_base[15:0]  <= st_wdata[15:0];
+			if (we_vs_hi) vs_base[31:16] <= st_wdata[31:16];
+			if (we_fs_lo) fs_base[15:0]  <= st_wdata[15:0];
+			if (we_fs_hi) fs_base[31:16] <= st_wdata[31:16];
+			if (we_cs_lo) cs_base[15:0]  <= st_wdata[15:0];
+			if (we_cs_hi) cs_base[31:16] <= st_wdata[31:16];
+			if (we_wgsz)  {wg_z, wg_y, wg_x} <= st_wdata[23:0];
+			if (we_gx)    grid_x    <= st_wdata[15:0];
+			if (we_gx_m1) grid_x_m1 <= st_wdata_m1;
+			if (we_gy)    grid_y    <= st_wdata[15:0];
+			if (we_gy_m1) grid_y_m1 <= st_wdata_m1;
+			if (we_gz)    grid_z    <= st_wdata[15:0];
+			if (we_gz_m1) grid_z_m1 <= st_wdata_m1;
 		end
 	end
 
@@ -126,8 +142,12 @@ module atg_su_sched #(
 
 	/* Per slot. */
 	(* max_fanout = 12 *) reg [NWARPS*3-1:0] st;
+	(* max_fanout = 12 *) reg [NWARPS-1:0] st_free_r;
+	(* max_fanout = 12 *) reg [NWARPS-1:0] st_rdy_r;
+	(* max_fanout = 12 *) reg [NWARPS-1:0] st_rof_r;
 	(* max_fanout = 12 *) reg [NWARPS*16-1:0] pc;
 	(* max_fanout = 12 *) reg [NWARPS*GAP_W-1:0] gap;
+	(* max_fanout = 12 *) reg [NWARPS-1:0] gap_z_r;
 	wire [NWARPS*160-1:0] info;
 	(* max_fanout = 12 *) reg [NWARPS*4-1:0] tag;	/* workgroup of a compute warp (barriers) */
 
@@ -143,6 +163,7 @@ module atg_su_sched #(
 	wire [15:0] lanes_xy;
 	wire [23:0] lanes;
 	(* dont_touch = "true" *) reg [23:0] lanes_r;
+	(* dont_touch = "true" *) reg [4:0]  lanes_r_b;
 	am_mul #(.AW(8), .BW(8), .LAT(2)) u_lxy (.clk(clk), .en(1'b1), .a(wg_x), .b(wg_y), .p(lanes_xy));
 	am_mul #(.AW(16), .BW(8), .LAT(2)) u_lanes (.clk(clk), .en(1'b1), .a(lanes_xy), .b(wg_z_r2), .p(lanes));
 
@@ -156,15 +177,17 @@ module atg_su_sched #(
 	(* max_fanout = 12 *) reg [3:0] nw;
 	always @(posedge clk) begin
 		if (rst_p) begin
-			wg_z_r1 <= 8'd1;
-			wg_z_r2 <= 8'd1;
-			lanes_r <= 24'd1;
-			nw      <= 4'd1;
+			wg_z_r1   <= 8'd1;
+			wg_z_r2   <= 8'd1;
+			lanes_r   <= 24'd1;
+			lanes_r_b <= 5'd1;
+			nw        <= 4'd1;
 		end else begin
-			wg_z_r1 <= wg_z;
-			wg_z_r2 <= wg_z_r1;
-			lanes_r <= lanes;
-			nw      <= nw_ovf ? NWARPS[3:0] : nw_cand;
+			wg_z_r1   <= wg_z;
+			wg_z_r2   <= wg_z_r1;
+			lanes_r   <= lanes;
+			lanes_r_b <= lanes[4:0];
+			nw        <= nw_ovf ? NWARPS[3:0] : nw_cand;
 		end
 	end
 	wire mine_wg = {24'd0, rot} == SU_INDEX;
@@ -178,17 +201,13 @@ module atg_su_sched #(
 	(* keep = "true" *) wire id_z_last = (id_z == grid_z_m1);
 	wire last_id = id_x_last && id_y_last && id_z_last;
 
-	/* Free slots (pure LUTs, 0 CARRY4s, <= 2 LUT levels from st). */
-	(* keep = "true" *) wire [NWARPS-1:0] slot_free;
-	genvar gf;
-	generate
-		for (gf = 0; gf < NWARPS; gf = gf + 1) begin : g_free
-			assign slot_free[gf] = (st[gf*3 +: 3] == S_FREE);
-		end
-	endgenerate
-	(* keep = "true", max_fanout = 12 *) wire any_free = |slot_free;
-	(* keep = "true", max_fanout = 12 *) wire [WARP_W-1:0] free_slot;
-	(* keep = "true", max_fanout = 12 *) wire [4:0] n_free;
+	/* Free slots directly from registered 1-bit flags st_free_r (0 LUTs!). */
+	wire [NWARPS-1:0] slot_free = st_free_r;
+	wire any_free = |slot_free;
+	wire [WARP_W-1:0] free_slot;
+	wire [4:0] n_free;
+	wire n_free_ge_nw;
+	wire n_free_gt_frag;
 	generate
 		if (NWARPS == 4) begin : g_nfree4
 			assign free_slot = slot_free[0] ? 2'd0 : slot_free[1] ? 2'd1 : slot_free[2] ? 2'd2 : 2'd3;
@@ -197,6 +216,9 @@ module atg_su_sched #(
 			                   ((slot_free[0] ^ slot_free[1]) & (slot_free[2] ^ slot_free[3]));
 			assign n_free[2] = &slot_free;
 			assign n_free[4:3] = 2'b00;
+			(* keep = "true" *) wire [2:0] nf3 = n_free[2:0];
+			assign n_free_ge_nw   = (nf3 >= nw[2:0]);
+			assign n_free_gt_frag = ({27'd0, n_free} > FRAG_RESERVE);
 		end else begin : g_nfree_gen
 			reg [WARP_W-1:0] fs_r;
 			reg [4:0] nf_r;
@@ -212,46 +234,54 @@ module atg_su_sched #(
 			end
 			assign free_slot = fs_r;
 			assign n_free = nf_r;
+			assign n_free_ge_nw   = ({1'b0, n_free} >= {2'b00, nw});
+			assign n_free_gt_frag = ({27'd0, n_free} > FRAG_RESERVE);
 		end
 	endgenerate
 
-	/* Grants (one outstanding per source); compute launches hold them off. */
+	/* Grants (one outstanding per source); compute launches hold them off (<= 3 LUTs from FFs). */
 	(* max_fanout = 12 *) reg vl_wait, fl_wait;
 	(* max_fanout = 12 *) reg vl_gnt_r, fl_gnt_r;
 	(* max_fanout = 12 *) reg [WARP_W-1:0] vl_s, fl_s;
-	(* keep = "true", max_fanout = 12 *) wire cs_try = cs_act && !launching && mine_wg && ({1'b0, n_free} >= {2'b00, nw});
-	(* keep = "true", max_fanout = 12 *) wire cs_skip = cs_act && !launching && !mine_wg;
-	(* keep = "true", max_fanout = 12 *) wire fl_g = fl_req && !fl_wait && any_free && !launching && !cs_try;
-	(* keep = "true", max_fanout = 12 *) wire vl_g = vl_req && !vl_wait && !fl_g && pt_ok && !launching && !cs_try &&
-		({27'd0, n_free} > FRAG_RESERVE);
+	(* keep = "true" *) wire cs_try  = cs_act && !launching && mine_wg && n_free_ge_nw;
+	(* keep = "true" *) wire cs_skip = cs_act && !launching && !mine_wg;
+	wire fl_req_can = fl_req && !fl_wait && any_free;
+	wire vl_req_can = vl_req && !vl_wait && pt_ok && n_free_gt_frag;
+	wire fl_g = fl_req_can && !launching && !cs_try;
+	wire vl_g = vl_req_can && !fl_req_can && !launching && !cs_try;
 	assign fl_gnt = fl_gnt_r;
 	assign vl_gnt = vl_gnt_r;
 	assign fl_slot = fl_s;
 	assign vl_slot = vl_s;
 
-	/* Initial EXEC: vertex/fragment go, else the next compute warp (0 CARRY4s). */
+	/* Initial EXEC: vertex/fragment go, else the next compute warp (0 CARRY4s, fanout <= 16). */
 	reg [31:0] lmask;	/* (1 << lanes_r[4:0]) - 1 */
 	integer li;
-	always @(*)
-		for (li = 0; li < 32; li = li + 1)
+	always @(*) begin
+		for (li = 0; li < 16; li = li + 1)
 			lmask[li] = li < {27'd0, lanes_r[4:0]};
-	wire wl_ge32 = hi_nz || (q_lanes > wk);
-	wire [31:0] cmask = wl_ge32 ? 32'hFFFFFFFF : lmask;
+		for (li = 16; li < 32; li = li + 1)
+			lmask[li] = li < {27'd0, lanes_r_b};
+	end
+	(* keep = "true" *) wire wl_ge32_lo = hi_nz || (q_lanes > wk);
+	(* keep = "true" *) wire wl_ge32_hi = hi_nz || (q_lanes > wk);
+	(* keep = "true" *) wire [15:0] cmask_lo = wl_ge32_lo ? 16'hFFFF : lmask[15:0];
+	(* keep = "true" *) wire [15:0] cmask_hi = wl_ge32_hi ? 16'hFFFF : lmask[31:16];
+	wire [31:0] cmask = {cmask_hi, cmask_lo};
 	(* keep = "true", max_fanout = 12 *) wire cs_launch = launching && !vl_go && !fl_go && any_free;
 	assign init_valid = vl_go || fl_go || cs_launch;
 	assign init_warp = vl_go ? vl_s : fl_go ? fl_s : free_slot;
-	assign init_mask = vl_go ? vl_mask : fl_go ? fl_mask : cmask;
+	(* keep = "true" *) wire vl_go_lo = vl_go, vl_go_hi = vl_go;
+	(* keep = "true" *) wire fl_go_lo = fl_go, fl_go_hi = fl_go;
+	assign init_mask = {
+		vl_go_hi ? vl_mask[31:16] : (fl_go_hi ? fl_mask[31:16] : cmask_hi),
+		vl_go_lo ? vl_mask[15:0]  : (fl_go_lo ? fl_mask[15:0]  : cmask_lo)
+	};
 
-	/* Candidates: slots that are READY, out of gap, and warp_ready from scoreboard */
-	(* keep = "true" *) wire [NWARPS-1:0] slot_rdy_nogap;
-	(* max_fanout = 12 *) wire [NWARPS-1:0] cand;
+	/* Candidates: slots that are READY, out of gap, and warp_ready from scoreboard (1 LUT3 per warp!) */
+	wire [NWARPS-1:0] slot_rdy_nogap = st_rdy_r & gap_z_r;
+	(* keep = "true", max_fanout = 12 *) wire [NWARPS-1:0] cand = st_rdy_r & gap_z_r & warp_ready;
 	genvar gc;
-	generate
-		for (gc = 0; gc < NWARPS; gc = gc + 1) begin : g_cand
-			assign slot_rdy_nogap[gc] = (st[gc*3 +: 3] == S_READY) && (gap[gc*GAP_W +: GAP_W] == {GAP_W{1'b0}});
-			assign cand[gc] = slot_rdy_nogap[gc] && warp_ready[gc];
-		end
-	endgenerate
 
 	/* Registered pairwise relative ages for GTO Oldest policy (0 CARRY4s, 0 Pre-LUTs!) */
 	(* max_fanout = 12 *) reg cmp01_r, cmp02_r, cmp03_r, cmp12_r, cmp13_r, cmp23_r;
@@ -274,40 +304,36 @@ module atg_su_sched #(
 		end
 	end
 
-	/* Selection: GTO (Greedy-Then-Oldest, level-pinned 3-LUT) or Round-Robin */
+	/* Selection: GTO (Greedy-Then-Oldest, <= 3 LUTs from FFs) or Round-Robin */
 	reg [WARP_W-1:0] rr;
 	reg [WARP_W-1:0] last_warp;
 	reg active_valid;
 	(* max_fanout = 12 *) reg hold_v;
 	(* max_fanout = 12 *) reg [WARP_W-1:0] hold_w;
 
-	/* Level 1 wires for GTO / active warp check */
-	(* keep = "true" *) wire [NWARPS-1:0] slot_rdy_or_fetch;
-	generate
-		for (gc = 0; gc < NWARPS; gc = gc + 1) begin : g_rof
-			assign slot_rdy_or_fetch[gc] = (st[gc*3 +: 3] == S_READY) || (st[gc*3 +: 3] == S_FETCH);
-		end
-	endgenerate
-	(* keep = "true" *) wire active_st_ok = slot_rdy_or_fetch[last_warp];
-	(* keep = "true" *) wire [WARP_W-1:0] fixed_w = hold_v ? hold_w : last_warp;
+	wire [NWARPS-1:0] slot_rdy_or_fetch = st_rof_r;
+	wire active_st_ok = slot_rdy_or_fetch[last_warp];
+	wire [WARP_W-1:0] fixed_w = hold_v ? hold_w : last_warp;
 
-	/* Level 2 wires for GTO tournament (each <= 6 Level-1 inputs -> 1 LUT6) */
 	(* keep = "true" *) wire active_live = active_valid && active_st_ok && warp_ready[last_warp];
-	(* keep = "true" *) wire use_fixed   = hold_v || (active_valid && active_st_ok && warp_ready[last_warp]);
-	(* keep = "true" *) wire w0_ok03 = (slot_rdy_nogap[0] && warp_ready[0]) && !(slot_rdy_nogap[3] && warp_ready[3] && cmp03_r);
-	(* keep = "true" *) wire w0_ok12 = !(slot_rdy_nogap[1] && warp_ready[1] && cmp01_r) && !(slot_rdy_nogap[2] && warp_ready[2] && cmp02_r);
-	(* keep = "true" *) wire w1_ok13 = (slot_rdy_nogap[1] && warp_ready[1]) && !(slot_rdy_nogap[3] && warp_ready[3] && cmp13_r);
-	(* keep = "true" *) wire w1_ok02 = !(slot_rdy_nogap[0] && warp_ready[0] && !cmp01_r) && !(slot_rdy_nogap[2] && warp_ready[2] && cmp12_r);
-	(* keep = "true" *) wire w2_ok23 = (slot_rdy_nogap[2] && warp_ready[2]) && !(slot_rdy_nogap[3] && warp_ready[3] && cmp23_r);
-	(* keep = "true" *) wire w2_ok01 = !(slot_rdy_nogap[0] && warp_ready[0] && !cmp02_r) && !(slot_rdy_nogap[1] && warp_ready[1] && !cmp12_r);
+	(* keep = "true" *) wire use_fixed   = hold_v || active_live;
+	wire w0_ok03 = cand[0] && !(cand[3] && cmp03_r);
+	wire w0_ok12 = !(cand[1] && cmp01_r) && !(cand[2] && cmp02_r);
+	wire w1_ok13 = cand[1] && !(cand[3] && cmp13_r);
+	wire w1_ok02 = !(cand[0] && !cmp01_r) && !(cand[2] && cmp12_r);
+	wire w2_ok23 = cand[2] && !(cand[3] && cmp23_r);
+	wire w2_ok01 = !(cand[0] && !cmp02_r) && !(cand[1] && !cmp12_r);
 
-	(* keep = "true", max_fanout = 12 *) wire [WARP_W-1:0] fsel;
-	(* keep = "true", max_fanout = 12 *) wire fsel_v;
+	(* keep = "true" *) wire w0_win = w0_ok03 && w0_ok12;
+	(* keep = "true" *) wire w1_win = w1_ok13 && w1_ok02;
+	(* keep = "true" *) wire w2_win = w2_ok23 && w2_ok01;
+
+	(* max_fanout = 12 *) wire [WARP_W-1:0] fsel;
+	(* max_fanout = 12 *) wire fsel_v;
 	generate
 		if (GTO != 0 && NWARPS == 4) begin : g_sel_gto4
-			/* Level 3 (each <= 6 Level-2 inputs -> 1 LUT6) */
-			assign fsel[1] = use_fixed ? fixed_w[1] : (!(w0_ok03 && w0_ok12) && !(w1_ok13 && w1_ok02));
-			assign fsel[0] = use_fixed ? fixed_w[0] : (!(w0_ok03 && w0_ok12) && !(w2_ok23 && w2_ok01));
+			assign fsel[1] = use_fixed ? fixed_w[1] : (!w0_win && !w1_win);
+			assign fsel[0] = use_fixed ? fixed_w[0] : (!w0_win && !w2_win);
 			assign fsel_v  = hold_v || (active_live ? cand[last_warp] : (|cand));
 		end else begin : g_sel_rr
 			reg [WARP_W-1:0] sel_rr;
@@ -347,8 +373,12 @@ module atg_su_sched #(
 	genvar g_fa;
 	generate
 		for (g_fa = 0; g_fa < NWARPS; g_fa = g_fa + 1) begin : g_faddr
-			wire [1:0] w_sk = info[g_fa*160 + ATG_WI_KIND +: 2];
-			wire [31:0] w_base = w_sk == K_VERT ? vs_base : w_sk == K_FRAG ? fs_base : cs_base;
+			(* keep = "true" *) wire [1:0] w_sk_lo = info[g_fa*160 + ATG_WI_KIND +: 2];
+			(* keep = "true" *) wire [1:0] w_sk_hi = info[g_fa*160 + ATG_WI_KIND +: 2];
+			wire [31:0] w_base = {
+				w_sk_hi == K_VERT ? vs_base[31:16] : w_sk_hi == K_FRAG ? fs_base[31:16] : cs_base[31:16],
+				w_sk_lo == K_VERT ? vs_base[15:0]  : w_sk_lo == K_FRAG ? fs_base[15:0]  : cs_base[15:0]
+			};
 			am_add #(.W(32)) u_fa_w (
 				.a(w_base),
 				.b({13'd0, pc[g_fa*16 +: 16], 3'd0}),
@@ -401,15 +431,21 @@ module atg_su_sched #(
 	wire [3:0] wk1  = {wk[3] ^ (&wk[2:0]), wk[2] ^ (&wk[1:0]), wk[1] ^ wk[0], ~wk[0]};
 	wire [3:0] tag1 = {wg_tag[3] ^ (&wg_tag[2:0]), wg_tag[2] ^ (&wg_tag[1:0]), wg_tag[1] ^ wg_tag[0], ~wg_tag[0]};
 
-	/* Barrier: every warp of the workgroup is parked. */
+	/* Barrier: every warp of the workgroup is parked (level-pinned <= 3 LUTs). */
+	(* keep = "true" *) wire [NWARPS-1:0] w_bar_blk;
+	generate
+		for (gc = 0; gc < NWARPS; gc = gc + 1) begin : g_bar_blk
+			assign w_bar_blk[gc] = (info[gc*160 + ATG_WI_KIND +: 2] == K_COMP) &&
+				!st_free_r[gc] && (st[gc*3 +: 3] != S_BAR) && (st[gc*3 +: 3] != S_ENDED);
+		end
+	endgenerate
 	reg [NWARPS-1:0] bar_go;
 	integer a, b;
 	always @(*) begin
 		for (a = 0; a < NWARPS; a = a + 1) begin
 			bar_go[a] = st[(a)*3 +: 3] == S_BAR;
 			for (b = 0; b < NWARPS; b = b + 1)
-				if (b != a && tag[(b)*4 +: 4] == tag[(a)*4 +: 4] && info[(b)*160 + ATG_WI_KIND +: 2] == K_COMP &&
-				    st[(b)*3 +: 3] != S_FREE && st[(b)*3 +: 3] != S_BAR && st[(b)*3 +: 3] != S_ENDED)
+				if (b != a && (tag[(b)*4 +: 4] == tag[(a)*4 +: 4]) && w_bar_blk[b])
 					bar_go[a] = 1'b0;
 		end
 	end
@@ -422,32 +458,89 @@ module atg_su_sched #(
 	genvar gwi, gws;
 	generate
 	for (gwi = 0; gwi < NWARPS; gwi = gwi + 1) begin : g_info_w
-		for (gws = 0; gws < 10; gws = gws + 1) begin : g_info_sl
-			(* keep = "true" *) wire vl_we_s = vl_go && (vl_s == gwi[WARP_W-1:0]);
-			(* keep = "true" *) wire fl_we_s = fl_go && (fl_s == gwi[WARP_W-1:0]);
-			(* keep = "true" *) wire cs_we_s = cs_launch && (free_slot == gwi[WARP_W-1:0]);
-			(* shreg_extract = "no" *) reg [15:0] info_sl_r;
+		for (gws = 0; gws < 20; gws = gws + 1) begin : g_info_sl
+			(* dont_touch = "true" *) wire vl_we_s = vl_go && (vl_s == gwi[WARP_W-1:0]);
+			(* dont_touch = "true" *) wire fl_we_s = fl_go && (fl_s == gwi[WARP_W-1:0]);
+			(* dont_touch = "true" *) wire cs_we_s = cs_launch && (free_slot == gwi[WARP_W-1:0]);
+			(* shreg_extract = "no" *) reg [7:0] info_sl_r;
 			always @(posedge clk) begin
 				if (rst_p)
-					info_sl_r <= 16'd0;
+					info_sl_r <= 8'd0;
 				else if (cs_we_s)
-					info_sl_r <= wi_cs[gws*16 +: 16];
+					info_sl_r <= wi_cs[gws*8 +: 8];
 				else if (fl_we_s)
-					info_sl_r <= wi_fl[gws*16 +: 16];
+					info_sl_r <= wi_fl[gws*8 +: 8];
 				else if (vl_we_s)
-					info_sl_r <= wi_vl[gws*16 +: 16];
+					info_sl_r <= wi_vl[gws*8 +: 8];
 			end
-			assign info[gwi*160 + gws*16 +: 16] = info_sl_r;
+			assign info[gwi*160 + gws*8 +: 8] = info_sl_r;
 		end
 	end
 	endgenerate
 
+	/* Level-pinned state transitions per warp (strictly <= 4 LUTs on all paths) */
+	(* keep = "true" *) wire vf_any_req = !launching && (fl_req_can || vl_req_can);
+	(* keep = "true" *) wire [NWARPS-1:0] s_rdy_free;
+	(* keep = "true" *) wire [NWARPS-1:0] s_alloc_free;
+	(* keep = "true" *) wire [NWARPS*3-1:0] nxt_st_nonfree;
+	generate
+		for (gc = 0; gc < NWARPS; gc = gc + 1) begin : g_nxt_st
+			assign s_rdy_free[gc] = (cs_launch && (free_slot == gc[WARP_W-1:0])) ||
+				(vl_go && (vl_s == gc[WARP_W-1:0])) || (fl_go && (fl_s == gc[WARP_W-1:0]));
+			assign s_alloc_free[gc] = !s_rdy_free[gc] && vf_any_req && !cs_try && (free_slot == gc[WARP_W-1:0]);
+
+			reg [2:0] nf_st;
+			always @(*) begin
+				nf_st = st[gc*3 +: 3];
+				case (st[gc*3 +: 3])
+				S_ALLOC:
+					if ((vl_go && vl_s == gc[WARP_W-1:0]) || (fl_go && fl_s == gc[WARP_W-1:0]))
+						nf_st = S_READY;
+				S_READY:
+					if (fsel_v && f_ready && (fsel == gc[WARP_W-1:0]))
+						nf_st = S_FETCH;
+				S_FETCH:
+					if (fb_valid && fb_warp == gc[WARP_W-1:0]) begin
+						if (fb_kind == 2'd0)
+							nf_st = S_READY;
+						else if (fb_kind == 2'd1)
+							nf_st = S_WC;
+						else
+							nf_st = wake[gc] ? S_READY : S_REPLAY;
+					end
+				S_REPLAY:
+					if (wake[gc])
+						nf_st = S_READY;
+				S_WC:
+					if (wc_valid && wc_warp == gc[WARP_W-1:0])
+						nf_st = wc_op == 2'd1 ? S_ENDED : wc_op == 2'd2 ? S_BAR : S_READY;
+				S_BAR:
+					if (bar_go[gc])
+						nf_st = S_READY;
+				S_ENDED:
+					if (xr_valid && xr_warp == gc[WARP_W-1:0])
+						nf_st = S_FREE;
+				default: ;
+				endcase
+			end
+			assign nxt_st_nonfree[gc*3 +: 3] = nf_st;
+		end
+	endgenerate
+
+	(* keep = "true" *) wire cs_adv_id_x  = cs_skip || (cs_launch && (wk1 == nw));
+	(* keep = "true" *) wire cs_adv_id_yz = cs_skip || (cs_launch && (wk1 == nw));
+
 	integer w;
+	reg [2:0] nxt_st_w;
 	always @(posedge clk) begin
 		if (rst_p) begin
 			st <= {NWARPS{S_FREE}};
+			st_free_r <= {NWARPS{1'b1}};
+			st_rdy_r  <= {NWARPS{1'b0}};
+			st_rof_r  <= {NWARPS{1'b0}};
 			pc <= {(NWARPS*16){1'b0}};
 			gap <= {(NWARPS*GAP_W){1'b0}};
+			gap_z_r <= {NWARPS{1'b1}};
 			tag <= {(NWARPS*4){1'b0}};
 			{rr, hold_v, hold_w} <= {(2*WARP_W+1){1'b0}};
 			last_warp <= {WARP_W{1'b0}};
@@ -461,58 +554,28 @@ module atg_su_sched #(
 			wk <= 4'd0;
 		end else begin
 			for (w = 0; w < NWARPS; w = w + 1) begin
-				if (fsel_v && f_ready && (fsel == w[WARP_W-1:0]))
+				if (fsel_v && f_ready && (fsel == w[WARP_W-1:0])) begin
 					gap[w*GAP_W +: GAP_W] <= GAP_INIT;
-				else if (gap[(w)*GAP_W +: GAP_W] != {GAP_W{1'b0}})
+					gap_z_r[w] <= (GAP_INIT == {GAP_W{1'b0}});
+				end else if (!gap_z_r[w]) begin
 					gap[(w)*GAP_W +: GAP_W] <= gap_m1[(w)*GAP_W +: GAP_W];
+					gap_z_r[w] <= (gap[(w)*GAP_W +: GAP_W] == 3'd1);
+				end
 
-				/* Single flat per-state transition case (<= 4 LUTs) */
-				case (st[(w)*3 +: 3])
-				S_FREE: begin
+				nxt_st_w = st_free_r[w] ? {1'b0, s_rdy_free[w], s_alloc_free[w]} : nxt_st_nonfree[w*3 +: 3];
+				st[(w)*3 +: 3] <= nxt_st_w;
+				st_free_r[w]   <= (nxt_st_w == S_FREE);
+				st_rdy_r[w]    <= (nxt_st_w == S_READY);
+				st_rof_r[w]    <= (nxt_st_w == S_READY) || (nxt_st_w == S_FETCH);
+
+				if (st_free_r[w])
+					tag[(w)*4 +: 4] <= wg_tag;
+				if (st_free_r[w] || (st[(w)*3 +: 3] == S_ALLOC))
 					pc[(w)*16 +: 16] <= 16'd0;
-					tag[(w)*4 +: 4]  <= wg_tag;
-					if (cs_launch && (free_slot == w[WARP_W-1:0]))
-						st[(w)*3 +: 3] <= S_READY;
-					else if ((vl_go && vl_s == w[WARP_W-1:0]) || (fl_go && fl_s == w[WARP_W-1:0]))
-						st[(w)*3 +: 3] <= S_READY;
-					else if ((vl_g || fl_g) && (free_slot == w[WARP_W-1:0]))
-						st[(w)*3 +: 3] <= S_ALLOC;
-				end
-				S_ALLOC: begin
-					pc[(w)*16 +: 16] <= 16'd0;
-					if ((vl_go && vl_s == w[WARP_W-1:0]) || (fl_go && fl_s == w[WARP_W-1:0]))
-						st[(w)*3 +: 3] <= S_READY;
-				end
-				S_READY: begin
-					if (fsel_v && f_ready && (fsel == w[WARP_W-1:0]))
-						st[(w)*3 +: 3] <= S_FETCH;
-				end
-				S_FETCH:
-					if (fb_valid && fb_warp == w[WARP_W-1:0]) begin
-						if (fb_kind == 2'd0) begin
-							st[(w)*3 +: 3] <= S_READY;
-							pc[(w)*16 +: 16] <= pc_p1[(w)*16 +: 16];
-						end else if (fb_kind == 2'd1)
-							st[(w)*3 +: 3] <= S_WC;
-						else
-							st[(w)*3 +: 3] <= wake[w] ? S_READY : S_REPLAY;
-					end
-				S_REPLAY:
-					if (wake[w])
-						st[(w)*3 +: 3] <= S_READY;
-				S_WC:
-					if (wc_valid && wc_warp == w[WARP_W-1:0]) begin
-						pc[(w)*16 +: 16] <= wc_pc;
-						st[(w)*3 +: 3] <= wc_op == 2'd1 ? S_ENDED : wc_op == 2'd2 ? S_BAR : S_READY;
-					end
-				S_BAR:
-					if (bar_go[w])
-						st[(w)*3 +: 3] <= S_READY;
-				S_ENDED:
-					if (xr_valid && xr_warp == w[WARP_W-1:0])
-						st[(w)*3 +: 3] <= S_FREE;
-				default: ;
-				endcase
+				else if ((st[(w)*3 +: 3] == S_FETCH) && fb_valid && (fb_warp == w[WARP_W-1:0]) && (fb_kind == 2'd0))
+					pc[(w)*16 +: 16] <= pc_p1[(w)*16 +: 16];
+				else if ((st[(w)*3 +: 3] == S_WC) && wc_valid && (wc_warp == w[WARP_W-1:0]))
+					pc[(w)*16 +: 16] <= wc_pc;
 			end
 			hold_v <= fsel_v && !f_ready;
 			hold_w <= fsel;
@@ -551,13 +614,13 @@ module atg_su_sched #(
 				if (last_id)
 					cs_act <= 1'b0;
 			end
-			if (cs_skip || (cs_launch && (wk1 == nw))) begin
+			if (cs_adv_id_x) begin
 				id_x <= id_x_last ? 16'd0 : id_x1;
-				if (id_x_last) begin
-					id_y <= id_y_last ? 16'd0 : id_y1;
-					if (id_y_last)
-						id_z <= id_z1;
-				end
+			end
+			if (cs_adv_id_yz && id_x_last) begin
+				id_y <= id_y_last ? 16'd0 : id_y1;
+				if (id_y_last)
+					id_z <= id_z1;
 			end
 			if (cs_launch) begin
 				wk <= wk1;
@@ -569,7 +632,7 @@ module atg_su_sched #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, fl_info[63:49], wk[3], lanes_r[23:9], rot1[8],
+	wire unused_ok = &{1'b0, fl_info[63:49], wk[3], lanes_r[23:9], rot1[8], slot_rdy_nogap,
 		w_fa_co_unused, wdata_m1_bo_unused, ix_co_unused, iy_co_unused, iz_co_unused,
 		rot_co_unused, (NSU != 0)};
 endmodule

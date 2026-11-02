@@ -32,10 +32,9 @@ module atg_su_wb_skid #(
 	input wire out_ready,
 	output wire [WIDTH-1:0] out_data
 );
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	(* keep = "true", max_fanout = 12 *) reg skid_valid;
 
-	wire load_out = skid_valid ? out_ready : (in_valid && (out_ready || !out_valid));
 	wire skid_load = in_valid && in_ready;
 
 	localparam N_SK_SL = (WIDTH + 15) / 16;
@@ -43,20 +42,38 @@ module atg_su_wb_skid #(
 	generate
 	for (gsk = 0; gsk < N_SK_SL; gsk = gsk + 1) begin : g_sk_sl
 		localparam SK_W = (gsk * 16 + 16 <= WIDTH) ? 16 : (WIDTH - gsk * 16);
-		(* keep = "true" *) wire load_out_s = skid_valid ? out_ready : (in_valid && (out_ready || !out_valid));
-		(* keep = "true" *) wire skid_load_s = in_valid && in_ready;
+		(* dont_touch = "true" *) reg out_v_sl, skid_v_sl, in_r_sl;
+		always @(posedge clk) begin
+			if (rst_p) begin
+				in_r_sl   <= 1'b1;
+				out_v_sl  <= 1'b0;
+				skid_v_sl <= 1'b0;
+			end else begin
+				if (skid_v_sl) begin
+					if (out_ready) begin
+						out_v_sl  <= 1'b1;
+						skid_v_sl <= 1'b0;
+						in_r_sl   <= 1'b1;
+					end
+				end else begin
+					if (out_ready || !out_v_sl) begin
+						out_v_sl <= in_valid;
+					end else if (in_valid && in_r_sl) begin
+						skid_v_sl <= 1'b1;
+						in_r_sl   <= 1'b0;
+					end
+				end
+			end
+		end
+		(* dont_touch = "true" *) wire load_out_s = skid_v_sl ? out_ready : (in_valid && (out_ready || !out_v_sl));
+		(* dont_touch = "true" *) wire skid_load_s = in_valid && in_r_sl;
 		(* shreg_extract = "no", max_fanout = 16 *) reg [SK_W-1:0] out_sl;
 		(* shreg_extract = "no", max_fanout = 12 *) reg [SK_W-1:0] skid_sl;
 		always @(posedge clk) begin
-			if (rst_p) begin
-				out_sl  <= {SK_W{1'b0}};
-				skid_sl <= {SK_W{1'b0}};
-			end else begin
-				if (load_out_s)
-					out_sl <= skid_valid ? skid_sl : in_data[gsk*16 +: SK_W];
-				if (skid_load_s)
-					skid_sl <= in_data[gsk*16 +: SK_W];
-			end
+			if (load_out_s)
+				out_sl <= skid_v_sl ? skid_sl : in_data[gsk*16 +: SK_W];
+			if (skid_load_s)
+				skid_sl <= in_data[gsk*16 +: SK_W];
 		end
 		assign out_data[gsk*16 +: SK_W] = out_sl;
 	end
@@ -100,7 +117,7 @@ module atg_su_wb_fifo #(
 	output wire [W-1:0] out_data,
 	output wire [DEPTH_LOG2:0] count
 );
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	(* max_fanout = 12 *) reg [DEPTH_LOG2:0] wp;
 	(* max_fanout = 12 *) reg [DEPTH_LOG2:0] rp;
 
@@ -131,17 +148,29 @@ module atg_su_wb_fifo #(
 	assign in_ready = in_rdy_w;
 	assign out_valid = r_valid;
 
-	localparam N_FF_SL = (W + 15) / 16;
+	localparam N_FF_SL = (W + 7) / 8;
 	genvar gff;
 	generate
 	for (gff = 0; gff < N_FF_SL; gff = gff + 1) begin : g_ff_sl
-		localparam FF_W = (gff * 16 + 16 <= W) ? 16 : (W - gff * 16);
+		localparam FF_W = (gff * 8 + 8 <= W) ? 8 : (W - gff * 8);
 		(* ram_style = "distributed" *) reg [FF_W-1:0] mem_sl [0:(1 << DEPTH_LOG2) - 1];
-		(* keep = "true" *) wire push_s = in_valid && in_rdy_w;
-		always @(posedge clk)
+		(* dont_touch = "true" *) reg [DEPTH_LOG2-1:0] wp_sl, rp_sl;
+		(* dont_touch = "true" *) wire push_s = in_valid && in_rdy_w;
+		(* dont_touch = "true" *) wire pop_s  = r_valid && out_ready;
+		always @(posedge clk) begin
+			if (rst_p) begin
+				wp_sl <= {DEPTH_LOG2{1'b0}};
+				rp_sl <= {DEPTH_LOG2{1'b0}};
+			end else begin
+				if (push_s)
+					wp_sl <= wp_next[DEPTH_LOG2-1:0];
+				if (pop_s)
+					rp_sl <= rp_next[DEPTH_LOG2-1:0];
+			end
 			if (push_s)
-				mem_sl[wp[DEPTH_LOG2-1:0]] <= in_data[gff*16 +: FF_W];
-		assign out_data[gff*16 +: FF_W] = mem_sl[rp[DEPTH_LOG2-1:0]];
+				mem_sl[wp_sl] <= in_data[gff*8 +: FF_W];
+		end
+		assign out_data[gff*8 +: FF_W] = mem_sl[rp_sl];
 	end
 	endgenerate
 
@@ -235,7 +264,7 @@ module atg_su_wb #(
 	 */
 	localparam IN_LOG2 = $clog2(2 * (SHORT_LAT + 2 * G + 2));
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	/* The short result of this cycle: structured balanced 2-level MUX tree (at most one valid per cycle) */
 	wire v_01 = s_valid[0] || s_valid[1];
@@ -245,9 +274,12 @@ module atg_su_wb #(
 	genvar gsd;
 	generate
 	for (gsd = 0; gsd < DW / 16; gsd = gsd + 1) begin : g_sd_sl
-		(* keep = "true" *) wire [15:0] sd_01_s = s_valid[0] ? s_data[0*DW + gsd*16 +: 16] : s_data[1*DW + gsd*16 +: 16];
-		(* keep = "true" *) wire [15:0] sd_23_s = s_valid[2] ? s_data[2*DW + gsd*16 +: 16] : s_data[3*DW + gsd*16 +: 16];
-		(* keep = "true" *) wire [15:0] sd_45_s = s_valid[4] ? s_data[4*DW + gsd*16 +: 16] : s_data[5*DW + gsd*16 +: 16];
+		(* dont_touch = "true" *) wire sv0_s = s_valid[0];
+		(* dont_touch = "true" *) wire sv2_s = s_valid[2];
+		(* dont_touch = "true" *) wire sv4_s = s_valid[4];
+		(* dont_touch = "true" *) wire [15:0] sd_01_s = sv0_s ? s_data[0*DW + gsd*16 +: 16] : s_data[1*DW + gsd*16 +: 16];
+		(* dont_touch = "true" *) wire [15:0] sd_23_s = sv2_s ? s_data[2*DW + gsd*16 +: 16] : s_data[3*DW + gsd*16 +: 16];
+		(* dont_touch = "true" *) wire [15:0] sd_45_s = sv4_s ? s_data[4*DW + gsd*16 +: 16] : s_data[5*DW + gsd*16 +: 16];
 		assign sd[gsd*16 +: 16] = v_01 ? sd_01_s : (v_23 ? sd_23_s : sd_45_s);
 	end
 	endgenerate
@@ -407,6 +439,7 @@ module atg_su_wb #(
 
 		/* 1-entry registered input-FIFO output stage (fq_*) */
 		(* keep = "true", max_fanout = 16 *) reg fq_valid;
+		(* dont_touch = "true" *) reg [DW/16-1:0] fq_valid_sl;
 		(* max_fanout = 16 *) reg [WARP_W-1:0] fq_warp;
 		(* max_fanout = 16 *) reg [GRP_W-1:0]  fq_grp;
 		(* max_fanout = 16 *) reg [5:0]        fq_reg;
@@ -414,24 +447,35 @@ module atg_su_wb #(
 		(* max_fanout = 16 *) reg [NPHYS-1:0]  fq_lanes;
 
 		wire fq_can_load = !fq_valid || !sv_arb;
+		(* dont_touch = "true" *) wire fq_ld_ctrl = !fq_valid || !sv_arb;
+		(* dont_touch = "true" *) wire fq_ld_wlo  = !fq_valid || !sv_arb;
+		(* dont_touch = "true" *) wire fq_ld_whi  = !fq_valid || !sv_arb;
+		(* dont_touch = "true" *) wire fq_ld_vsl  = !fq_valid || !sv_arb;
 		assign fi_ready = fq_can_load ? (fi_valid[0] ? 2'b01 : (fi_valid[1] ? 2'b10 : 2'b00)) : 2'b00;
 
 		always @(posedge clk) begin
 			if (rst_p) begin
-				fq_valid <= 1'b0;
-				fq_warp  <= {WARP_W{1'b0}};
-				fq_grp   <= {GRP_W{1'b0}};
-				fq_reg   <= 6'd0;
-				fq_word  <= 32'd0;
-				fq_lanes <= {NPHYS{1'b0}};
-			end else if (fq_can_load) begin
-				fq_valid <= |fi_valid;
-				fq_warp  <= fe[IW-1 -: WARP_W];
-				fq_grp   <= fe_grp[GRP_W-1:0];
-				fq_reg   <= fe[42:37];
-				fq_word  <= fe[31:0];
-				fq_lanes <= fe_lanes;
+				fq_valid    <= 1'b0;
+				fq_valid_sl <= {(DW/16){1'b0}};
+				fq_warp     <= {WARP_W{1'b0}};
+				fq_grp      <= {GRP_W{1'b0}};
+				fq_reg      <= 6'd0;
+				fq_lanes    <= {NPHYS{1'b0}};
+			end else begin
+				if (fq_ld_ctrl) begin
+					fq_valid <= |fi_valid;
+					fq_warp  <= fe[IW-1 -: WARP_W];
+					fq_grp   <= fe_grp[GRP_W-1:0];
+					fq_reg   <= fe[42:37];
+					fq_lanes <= fe_lanes;
+				end
+				if (fq_ld_vsl)
+					fq_valid_sl <= {(DW/16){|fi_valid}};
 			end
+			if (fq_ld_wlo)
+				fq_word[15:0]  <= fe[15:0];
+			if (fq_ld_whi)
+				fq_word[31:16] <= fe[31:16];
 		end
 
 		wire [DW-1:0] fq_data = {NPHYS{fq_word}};
@@ -472,7 +516,6 @@ module atg_su_wb #(
 		reg [WARP_W-1:0] lk_s_warp;
 		reg [GRP_W-1:0]  lk_s_grp;
 		reg [6:0]        lk_s_rd;
-		reg [DW-1:0]     lk_s_data;
 		reg [NPHYS-1:0]  lk_s_lanes;
 		reg              lk_s_wr;
 		reg              lk_s_we;
@@ -486,7 +529,6 @@ module atg_su_wb #(
 			lk_s_warp  = lk_warp[WARP_W-1:0];
 			lk_s_grp   = lk_grp[GRP_W-1:0];
 			lk_s_rd    = lk_rd[6:0];
-			lk_s_data  = lk_data[DW-1:0];
 			lk_s_lanes = lk_lanes[NPHYS-1:0];
 			lk_s_wr    = lk_wr[0];
 			lk_s_we    = lk_we_in[0];
@@ -500,7 +542,6 @@ module atg_su_wb #(
 					lk_s_warp  = lk_warp[mk*WARP_W +: WARP_W];
 					lk_s_grp   = lk_grp[mk*GRP_W +: GRP_W];
 					lk_s_rd    = lk_rd[mk*7 +: 7];
-					lk_s_data  = lk_data[mk*DW +: DW];
 					lk_s_lanes = lk_lanes[mk*NPHYS +: NPHYS];
 					lk_s_wr    = lk_wr[mk];
 					lk_s_we    = lk_we_in[mk];
@@ -530,23 +571,69 @@ module atg_su_wb #(
 
 		assign lk_ready = (ksel_v && lq_can_load) ? lk_s_one : {NL{1'b0}};
 
-		(* keep = "true" *) wire wb_sel1 = !(s_valid[0] || s_valid[1] || s_valid[2] || s_valid[3]);
-		(* keep = "true" *) wire wb_sel0 = !(s_valid[0] || s_valid[1]) && (s_valid[2] || s_valid[3] || !(s_valid[4] || s_valid[5]));
+		(* dont_touch = "true" *) wire rr_en_a = ksel_v && lq_can_load;
+		(* dont_touch = "true" *) wire rr_en_b = ksel_v && lq_can_load;
+		(* dont_touch = "true" *) wire [LP_W-1:0] rr_nx_a = next_rr(ksel);
+		(* dont_touch = "true" *) wire [LP_W-1:0] rr_nx_b = next_rr(ksel);
 
-		genvar glqd;
+		genvar glqd, glqh;
 		for (glqd = 0; glqd < DW / 16; glqd = glqd + 1) begin : g_lqd_sl
-			(* keep = "true" *) wire lq_ld_s = !lq_valid || !lq_wr || (!sv && !fq_valid);
+			(* dont_touch = "true" *) wire [NL-1:0] lkv_sl = lk_valid;
+			(* dont_touch = "true" *) reg [LP_W-1:0] rr_sl;
+			always @(posedge clk) begin
+				if (rst_p)
+					rr_sl <= {LP_W{1'b0}};
+				else if ((glqd < 8) ? rr_en_a : rr_en_b)
+					rr_sl <= (glqd < 8) ? rr_nx_a : rr_nx_b;
+			end
+			(* dont_touch = "true" *) wire lq_ld_s = !lq_valid || !lq_wr || (!sv && !fq_valid_sl[glqd]);
+			(* dont_touch = "true" *) wire wb_sel1_w = !(s_valid[0] || s_valid[1] || s_valid[2] || s_valid[3]);
+			(* dont_touch = "true" *) wire wb_sel0_w = !(s_valid[0] || s_valid[1]) && (s_valid[2] || s_valid[3] || !(s_valid[4] || s_valid[5]));
+			(* dont_touch = "true" *) wire wb_sel1_r = !(s_valid[0] || s_valid[1] || s_valid[2] || s_valid[3]);
+			(* dont_touch = "true" *) wire wb_sel0_r = !(s_valid[0] || s_valid[1]) && (s_valid[2] || s_valid[3] || !(s_valid[4] || s_valid[5]));
+
+			wire [15:0] lk_s_data_sl;
+			for (glqh = 0; glqh < 2; glqh = glqh + 1) begin : g_lqd_h
+				reg kh_hv;
+				reg [LP_W-1:0] kh_sel, kh_lo;
+				integer ikh;
+				always @(*) begin
+					kh_hv  = 1'b0;
+					kh_sel = {LP_W{1'b0}};
+					kh_lo  = {LP_W{1'b0}};
+					for (ikh = NL - 1; ikh >= 0; ikh = ikh - 1) begin
+						if (lkv_sl[ikh]) begin
+							kh_lo = ikh[LP_W-1:0];
+							if (ikh[LP_W-1:0] >= rr_sl) begin
+								kh_hv  = 1'b1;
+								kh_sel = ikh[LP_W-1:0];
+							end
+						end
+					end
+					if (!kh_hv)
+						kh_sel = kh_lo;
+				end
+				(* dont_touch = "true" *) wire [LP_W-1:0] ksel_h = kh_sel;
+				reg [7:0] d_h;
+				integer imh;
+				always @(*) begin
+					d_h = lk_data[glqd*16 + glqh*8 +: 8];
+					for (imh = 1; imh < NL; imh = imh + 1)
+						if (ksel_h == imh[LP_W-1:0])
+							d_h = lk_data[imh*DW + glqd*16 + glqh*8 +: 8];
+				end
+				assign lk_s_data_sl[glqh*8 +: 8] = d_h;
+			end
+
 			(* shreg_extract = "no", max_fanout = 12 *) reg [15:0] lq_d_sl;
 			always @(posedge clk)
-				if (rst_p)
-					lq_d_sl <= 16'd0;
-				else if (lq_ld_s)
-					lq_d_sl <= lk_s_data[glqd*16 +: 16];
-			(* keep = "true" *) wire [15:0] sd_fl_s = fq_valid ? fq_data[glqd*16 +: 16] : lq_d_sl;
-			assign w_data[glqd*16 +: 16] = wb_sel1 ? (wb_sel0 ? sd_fl_s : g_sd_sl[glqd].sd_45_s) :
-				(wb_sel0 ? g_sd_sl[glqd].sd_23_s : g_sd_sl[glqd].sd_01_s);
-			assign rq_data[glqd*16 +: 16] = wb_sel1 ? (wb_sel0 ? lq_d_sl : g_sd_sl[glqd].sd_45_s) :
-				(wb_sel0 ? g_sd_sl[glqd].sd_23_s : g_sd_sl[glqd].sd_01_s);
+				if (lq_ld_s)
+					lq_d_sl <= lk_s_data_sl;
+			(* dont_touch = "true" *) wire [15:0] sd_fl_s = fq_valid_sl[glqd] ? fq_data[glqd*16 +: 16] : lq_d_sl;
+			assign w_data[glqd*16 +: 16] = wb_sel1_w ? (wb_sel0_w ? sd_fl_s : g_sd_sl[glqd].sd_45_s) :
+				(wb_sel0_w ? g_sd_sl[glqd].sd_23_s : g_sd_sl[glqd].sd_01_s);
+			assign rq_data[glqd*16 +: 16] = wb_sel1_r ? (wb_sel0_r ? lq_d_sl : g_sd_sl[glqd].sd_45_s) :
+				(wb_sel0_r ? g_sd_sl[glqd].sd_23_s : g_sd_sl[glqd].sd_01_s);
 		end
 
 		always @(posedge clk) begin

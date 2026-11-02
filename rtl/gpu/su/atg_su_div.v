@@ -67,7 +67,6 @@ module atg_su_div #(
 	localparam [1:0] IDLE = 2'd0, DIV = 2'd1, RET = 2'd2;
 
 	(* max_fanout = 12 *) reg [1:0] st;
-	wire [DW-1:0] ra, rb, rq;
 	(* max_fanout = 12 *) reg [NPHYS-1:0] rm;
 	(* max_fanout = 12 *) reg [1:0] rop;
 	reg [6:0] rrd;
@@ -80,7 +79,8 @@ module atg_su_div #(
 	/* The divider of the current lane. */
 	(* max_fanout = 12 *) reg [31:0] dn, dd, q;
 	(* max_fanout = 12 *) reg [32:0] r;
-	(* max_fanout = 12 *) reg neg_q, neg_r;
+	(* max_fanout = 12 *) reg neg_q, neg_r, lb_zero_r;
+	(* max_fanout = 12 *) reg [31:0] la_cur_r, lb_cur_r;
 
 	(* max_fanout = 12 *) wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_DIV;
 	assign x_ready = st == IDLE;
@@ -104,8 +104,9 @@ module atg_su_div #(
 	am_add #(.W(LW + 1)) u_li_1 (.a({1'b0, li}), .b({(LW + 1){1'b0}}), .ci(1'b1), .s(li_1),
 		.co(l1_co_unused));
 	wire [LW:0] after = next_lane(rm, li_1);
-	wire [31:0] la = ra[li*32 +: 32];
-	wire [31:0] lb = rb[li*32 +: 32];
+	wire [DW-1:0] ra, rb, rq;
+	wire [31:0] la = la_cur_r;
+	wire [31:0] lb = lb_cur_r;
 	wire sgn = !rop[0];	/* div, rem */
 
 	/*
@@ -124,9 +125,9 @@ module atg_su_div #(
 		.d(d0), .bo(d0_bo_unused));
 	am_sub #(.W(32)) u_neg_b (.a(32'd0), .b(lb), .bi(1'b0), .d(neg_b), .bo(nb_bo_unused));
 	am_add #(.W(6)) u_step (.a(step), .b(6'd0), .ci(1'b1), .s(step_next), .co(sn_co_unused));
-	wire [32:0] trial = d0;
+	(* keep = "true", max_fanout = 12 *) wire trial_pos = !d0[32];
 
-	wire [31:0] div_res = (lb == 32'd0) ? (rop[1] ? la : 32'hFFFFFFFF) :
+	wire [31:0] div_res = lb_zero_r ? (rop[1] ? la : 32'hFFFFFFFF) :
 		rop[1] ? (neg_r ? d0[31:0] : r[31:0]) :
 		(neg_q ? d0[31:0] : q);
 
@@ -134,31 +135,60 @@ module atg_su_div #(
 	generate
 	for (gdl = 0; gdl < NPHYS; gdl = gdl + 1) begin : g_div_lane
 		for (gdh = 0; gdh < 2; gdh = gdh + 1) begin : g_div_half
-			(* keep = "true" *) wire idle_we_h = (st == IDLE) && mine;
+			(* keep = "true" *) wire ra_we_h = (st == IDLE) && mine;
+			(* keep = "true" *) wire rb_we_h = (st == IDLE) && mine;
+			(* keep = "true" *) wire rq_clr_h = (st == IDLE) && mine;
 			(* keep = "true" *) wire rq_we_h = (st == DIV) && s_end && (li == gdl[LW-1:0]);
 			(* shreg_extract = "no" *) reg [15:0] ra_h_r, rb_h_r, rq_h_r;
 			always @(posedge clk) begin
-				if (idle_we_h) begin
+				if (ra_we_h)
 					ra_h_r <= x_a[gdl*32 + gdh*16 +: 16];
+				if (rb_we_h)
 					rb_h_r <= x_b[gdl*32 + gdh*16 +: 16];
+				if (rq_clr_h)
 					rq_h_r <= 16'd0;
-				end else if (rq_we_h) begin
+				else if (rq_we_h)
 					rq_h_r <= div_res[gdh*16 +: 16];
-				end
 			end
 			assign ra[gdl*32 + gdh*16 +: 16] = ra_h_r;
 			assign rb[gdl*32 + gdh*16 +: 16] = rb_h_r;
 			assign rq[gdl*32 + gdh*16 +: 16] = rq_h_r;
 		end
 	end
+	for (gdh = 0; gdh < 2; gdh = gdh + 1) begin : g_div_op
+		(* keep = "true" *) wire load_lo_h = (st == DIV) && s_load;
+		(* keep = "true" *) wire step_lo_h = (st == DIV) && !s_load && !s_end;
+		always @(posedge clk) begin
+			if (load_lo_h) begin
+				dn[gdh*16 +: 16] <= (sgn && la[31]) ? d0[gdh*16 +: 16] : la[gdh*16 +: 16];
+				dd[gdh*16 +: 16] <= (sgn && lb[31]) ? neg_b[gdh*16 +: 16] : lb[gdh*16 +: 16];
+				q[gdh*16 +: 16]  <= 16'd0;
+				r[gdh*16 +: 16]  <= 16'd0;
+			end else if (step_lo_h) begin
+				if (gdh == 0) begin
+					dn[15:0] <= {dn[14:0], 1'b0};
+					q[15:0]  <= {q[14:0], trial_pos};
+					r[15:0]  <= trial_pos ? d0[15:0] : {r[14:0], dn[31]};
+				end else begin
+					dn[31:16] <= dn[30:15];
+					q[31:16]  <= q[30:15];
+					r[31:16]  <= trial_pos ? d0[31:16] : r[30:15];
+				end
+			end
+		end
+	end
 	endgenerate
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	always @(posedge clk) begin
 		if (rst_p) begin
 			st <= IDLE;
 			li <= {LW{1'b0}};
 			step <= 6'd0;
+			r[32] <= 1'b0;
+			la_cur_r <= 32'd0;
+			lb_cur_r <= 32'd0;
+			lb_zero_r <= 1'b0;
 		end else begin
 			case (st)
 			IDLE: if (mine) begin
@@ -174,35 +204,31 @@ module atg_su_div #(
 					st <= RET;
 				else begin
 					li <= first[LW-1:0];
+					la_cur_r <= x_a[first[LW-1:0]*32 +: 32];
+					lb_cur_r <= x_b[first[LW-1:0]*32 +: 32];
 					st <= DIV;
 				end
 			end
 			DIV: begin
 				if (step == 6'd0) begin
 					/* Load the lane: magnitudes and the signs of the results. */
-					dn <= sgn && la[31] ? d0[31:0] : la;
-					dd <= sgn && lb[31] ? neg_b : lb;
 					neg_q <= sgn && (la[31] ^ lb[31]);
 					neg_r <= sgn && la[31];
-					r <= 33'd0;
-					q <= 32'd0;
+					lb_zero_r <= (lb == 32'd0);
+					r[32] <= 1'b0;
 					step <= 6'd1;
 				end else if (step <= 6'd32) begin
-					if (!trial[32]) begin
-						r <= trial;
-						q <= {q[30:0], 1'b1};
-					end else begin
-						r <= {r[31:0], dn[31]};
-						q <= {q[30:0], 1'b0};
-					end
-					dn <= {dn[30:0], 1'b0};
+					r[32] <= trial_pos ? d0[32] : r[31];
 					step <= step_next;
 				end else begin
 					step <= 6'd0;
 					if (after == NPHYS[LW:0])
 						st <= RET;
-					else
+					else begin
 						li <= after[LW-1:0];
+						la_cur_r <= ra[after[LW-1:0]*32 +: 32];
+						lb_cur_r <= rb[after[LW-1:0]*32 +: 32];
+					end
 				end
 			end
 			default: if (l_ready)

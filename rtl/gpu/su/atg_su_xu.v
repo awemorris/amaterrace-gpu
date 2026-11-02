@@ -82,7 +82,7 @@ module atg_su_xu #(
 	localparam LW = NPHYS > 1 ? $clog2(NPHYS) : 1;
 	localparam [2:0] IDLE = 3'd0, LOAD = 3'd1, STEP = 3'd2, FIN = 3'd3, STORE = 3'd4, RET = 3'd5;
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	(* max_fanout = 12 *) reg [2:0] st;
 	wire [DW-1:0] rx, rq;
@@ -132,7 +132,8 @@ module atg_su_xu #(
 		.co(carry_unused[0]));
 	wire [LW:0] after = next_lane(rmask, li1);
 	/* The lane's input, flushed, and its fields (registered in sub_st 0). */
-	wire [31:0] lx_raw = atg_su_flush(rx[li*32 +: 32]);
+	(* max_fanout = 12 *) reg [31:0] lx_cur_r;
+	wire [31:0] lx_raw = atg_su_flush(lx_cur_r);
 	(* max_fanout = 12 *) reg [31:0] lx;
 	(* max_fanout = 12 *) reg [23:0] lm_r;
 	(* max_fanout = 12 *) reg [3:0] sub_st;
@@ -142,6 +143,9 @@ module atg_su_xu #(
 	(* max_fanout = 12 *) wire lnan = le == 8'hFF && lx[22:0] != 0;
 	(* max_fanout = 12 *) wire linf = le == 8'hFF && lx[22:0] == 0;
 	(* max_fanout = 12 *) wire lzero = le == 8'd0;
+	(* max_fanout = 12 *) reg lnan_r, linf_r, lzero_r, le_ge135_r, le_lt115_r;
+	(* max_fanout = 12 *) reg load_go_step_r;
+	(* max_fanout = 12 *) reg [31:0] load_res_r;
 	wire lodd = le[0];	/* e - 150 odd */
 	wire [24:0] lmm = lodd ? {lm, 1'b0} : {1'b0, lm};
 	/* ee/2 with ee = e - 150 (- 1 when odd). */
@@ -158,7 +162,7 @@ module atg_su_xu #(
 	am_sub #(.W(12)) u_esh (.a({4'd0, le}), .b(12'd120), .bi(1'b0), .d(esh), .bo(carry_unused[2]));
 	am_sub #(.W(7)) u_ersh (.a(7'd120), .b(le[6:0]), .bi(1'b0), .d(ersh), .bo(carry_unused[3]));
 	wire [38:0] ev0, ev;
-	reg [38:0] ev0_r, ev_r;
+	wire [38:0] ev0_r, ev_r;
 	am_shift #(.W(39), .SW(7)) u_ev0 (.a({15'd0, lm}), .amt(esh_r[11] ? ersh_r : {3'd0, esh_r[3:0]}),
 		.left(!esh_r[11]), .arith(1'b0), .y(ev0));
 	am_addsub #(.W(39)) u_ev (.a(39'd0), .b(ev0_r), .sub(ls), .s(ev), .co(carry_unused[6]));
@@ -187,7 +191,7 @@ module atg_su_xu #(
 		.arith(1'b0), .y(tps));
 	wire [39:0] t0 = $signed(tsh_r) >= 12'sd40 ? 40'd0 : tps_r[39:0];
 	wire [39:0] t1, tt;
-	reg [39:0] t1_r, tt_r;
+	wire [39:0] t1_r, tt_r;
 	am_addsub #(.W(40)) u_t1 (.a(40'd0), .b(t0), .sub(ls), .s(t1), .co(carry_unused[7]));
 	am_add #(.W(40)) u_tt (.a(t1_r), .b(rop == ATG_XU_COS[2:0] ? 40'h4000000000 : 40'd0), .ci(1'b0),
 		.s(tt), .co(carry_unused[8]));
@@ -203,7 +207,7 @@ module atg_su_xu #(
 	(* dont_touch = "true" *) reg [25:0] p12_r;
 	wire [83:0] psum0, psum1, prod;
 	reg [83:0] psum0_r, psum1_r;
-	(* dont_touch = "true" *) reg [83:0] prod_r;
+	(* dont_touch = "true", max_fanout = 12 *) reg [83:0] prod_r;
 	am_mul #(.AW(24), .BW(17), .LAT(2)) u_p00 (.clk(clk), .en(1'b1), .a(y[23:0]),  .b(mb_r[16:0]),  .p(p00));
 	am_mul #(.AW(24), .BW(17), .LAT(2)) u_p01 (.clk(clk), .en(1'b1), .a(y[23:0]),  .b(mb_r[33:17]), .p(p01));
 	am_mul #(.AW(24), .BW(8),  .LAT(2)) u_p02 (.clk(clk), .en(1'b1), .a(y[23:0]),  .b(mb_r[41:34]), .p(p02));
@@ -229,13 +233,13 @@ module atg_su_xu #(
 		rop == ATG_XU_RSQ[2:0] ? (ph ? 6'd28 : 6'd29) :
 		(rop == ATG_XU_SIN[2:0] || rop == ATG_XU_COS[2:0]) ? 6'd25 : 6'd29;
 	wire [39:0] atn = xu_atan(step[4:0]);
-	(* rom_style = "distributed", ram_style = "distributed" *) reg [39:0] atn_r;
+	(* rom_style = "distributed", ram_style = "distributed" *) wire [39:0] atn_r;
 	wire [10:0] lue;
-	reg [10:0] lue_r;
+	(* max_fanout = 12 *) reg [10:0] lue_r;
 	am_sub #(.W(11)) u_lue (.a({3'd0, le}), .b(11'd127), .bi(1'b0), .d(lue), .bo(carry_unused[11]));
 	wire [40:0] lv = {lue_r, fr};	/* log2: (e - 127) << 30 | fraction, signed */
 	wire [40:0] lva;
-	reg [40:0] lva_r;
+	wire [40:0] lva_r;
 	am_addsub #(.W(41)) u_lva (.a(41'd0), .b(lv), .sub(lv[40]), .s(lva), .co(carry_unused[12]));
 	/* The result of a finished lane (state FIN): an integer v (< 2^41) times 2^e, sign s, to
 	 * fp32 (RNE, flushed). */
@@ -243,10 +247,10 @@ module atg_su_xu #(
 	reg [40:0] nv;
 	reg [11:0] ne;
 	reg [5:0] np;
-	reg ns_r, nst_r, nz_r;
-	reg [40:0] nv_r;
-	reg [11:0] ne_r;
-	reg [5:0] np_r;
+	(* max_fanout = 12 *) reg ns_r, nst_r, nz_r;
+	wire [40:0] nv_r;
+	(* max_fanout = 12 *) reg [11:0] ne_r;
+	(* max_fanout = 12 *) reg [5:0] np_r;
 	integer pi;
 	always @(*) begin
 		{ns, nst, nz, ne} = {3'b000, ex};
@@ -270,10 +274,10 @@ module atg_su_xu #(
 	wire [5:0] nsh;
 	(* max_fanout = 12 *) reg [5:0] nsh_r;
 	wire [40:0] nw;
-	(* max_fanout = 12 *) reg [40:0] nw_r;
-	reg nst_all_r, nw_all1_r;
+	wire [40:0] nw_r;
+	(* max_fanout = 12 *) reg nst_all_r, nw_all1_r;
 	wire [11:0] ne127, nexp;
-	reg [11:0] ne127_r;
+	(* max_fanout = 12 *) reg [11:0] ne127_r;
 	(* max_fanout = 12 *) reg [11:0] nexp_r;
 	am_sub #(.W(6)) u_nsh (.a(6'd40), .b(np_r), .bi(1'b0), .d(nsh), .bo(carry_unused[13]));
 	am_shift #(.W(41), .SW(6)) u_nw (.a(nv_r), .amt(nsh_r), .left(1'b1), .arith(1'b0), .y(nw));
@@ -289,16 +293,21 @@ module atg_su_xu #(
 	wire nr_up_d    = nw_r[16] && (nst_all_r || nw_r[17]);
 	wire nr_carry_d = nw_all1_r && nw_r[16] && (nst_all_r || nw_r[17]);
 
-	reg [23:0] nr_mp1_r;
-	reg [11:0] nr_ep1_r;
-	reg nr_up_r, nr_carry_r;
-	reg [31:0] nr_r;
+	wire [23:0] nr_mp1_r;
+	(* max_fanout = 12 *) reg [11:0] nr_ep1_r;
+	(* max_fanout = 12 *) reg nr_up_r, nr_carry_r;
+	wire [31:0] nr_r;
 
 	wire [11:0] nr_e_final = nr_carry_r ? nr_ep1_r : nexp_r;
-	wire nr_udf = nr_e_final[11] || !(|nr_e_final[10:0]);
-	wire nr_ovf = !nr_e_final[11] && ((|nr_e_final[10:8]) || (&nr_e_final[7:0]));
+	(* keep = "true" *) wire nr_udf_lo = nr_e_final[11] || !(|nr_e_final[10:0]);
+	(* keep = "true" *) wire nr_udf_hi = nr_e_final[11] || !(|nr_e_final[10:0]);
+	(* keep = "true" *) wire nr_ovf_lo = !nr_e_final[11] && ((|nr_e_final[10:8]) || (&nr_e_final[7:0]));
+	(* keep = "true" *) wire nr_ovf_hi = !nr_e_final[11] && ((|nr_e_final[10:8]) || (&nr_e_final[7:0]));
 	wire [22:0] nr_m_final = nr_carry_r ? 23'd0 : (nr_up_r ? nr_mp1_r[22:0] : nw_r[39:17]);
-	wire [31:0] nr = nr_ovf ? {ns_r, 8'hFF, 23'd0} : nr_udf ? {ns_r, 31'd0} : {ns_r, nr_e_final[7:0], nr_m_final};
+	wire [31:0] nr = {
+		nr_ovf_hi ? {ns_r, 8'hFF, 7'd0} : nr_udf_hi ? {ns_r, 15'd0} : {ns_r, nr_e_final[7:0], nr_m_final[22:16]},
+		(nr_ovf_lo || nr_udf_lo) ? 16'd0 : nr_m_final[15:0]
+	};
 	wire [31:0] fin = nz_r ? 32'd0 : nr_r;
 
 	/* LOAD: the result's exponent (rcp, rsq, fsqrt, exp2); z of sin/cos. */
@@ -306,19 +315,67 @@ module atg_su_xu #(
 		rop == ATG_XU_RSQ[2:0] ? {-12'sd40, hee_r} : rop == ATG_XU_FSQRT[2:0] ? {hee_r, 12'd13} :
 		{{3{ev_r[38]}}, ev_r[38:30], 12'd38};
 	wire [11:0] ex_l;
-	reg [11:0] ex_l_r;
+	(* max_fanout = 12 *) reg [11:0] ex_l_r;
 	wire [38:0] zq;
-	reg [38:0] zq_r;
+	wire [38:0] zq_r;
 	am_sub #(.W(12)) u_ex (.a(exab[23:12]), .b(exab[11:0]), .bi(1'b0), .d(ex_l), .bo(carry_unused[16]));
 	am_sub #(.W(39)) u_zq (.a(39'h4000000000), .b({1'b0, t1_r[37:0]}), .bi(1'b0), .d(zq),
 		.bo(carry_unused[17]));
+
+	/* Precomputed LOAD special condition and result (registered in LOAD sub_st 8) */
+	reg load_go_step_w;
+	reg [31:0] load_res_w;
+	always @(*) begin
+		load_go_step_w = 1'b0;
+		load_res_w = 32'h7FC00000;
+		case (rop)
+		ATG_XU_RCP[2:0]:
+			if (lzero_r || linf_r)
+				load_res_w = {ls, linf_r ? 31'd0 : {8'hFF, 23'd0}};
+			else if (!lnan_r)
+				load_go_step_w = 1'b1;
+		ATG_XU_RSQ[2:0], ATG_XU_FSQRT[2:0]:
+			if (lzero_r)
+				load_res_w = rop == ATG_XU_RSQ[2:0] ? {ls, 8'hFF, 23'd0} : lx;
+			else if (lnan_r || ls)
+				load_res_w = 32'h7FC00000;
+			else if (linf_r)
+				load_res_w = rop == ATG_XU_RSQ[2:0] ? 32'd0 : lx;
+			else
+				load_go_step_w = 1'b1;
+		ATG_XU_EXP2[2:0]:
+			if (lzero_r)
+				load_res_w = 32'h3F800000;
+			else if (linf_r || (!lnan_r && le_ge135_r))
+				load_res_w = ls ? 32'd0 : 32'h7F800000;
+			else if (!lnan_r)
+				load_go_step_w = 1'b1;
+		ATG_XU_LOG2[2:0]:
+			if (lzero_r)
+				load_res_w = 32'hFF800000;
+			else if (lnan_r || ls)
+				load_res_w = 32'h7FC00000;
+			else if (linf_r)
+				load_res_w = lx;
+			else
+				load_go_step_w = 1'b1;
+		default:
+			if (lnan_r || linf_r)
+				load_res_w = 32'h7FC00000;
+			else if (le_lt115_r)
+				load_res_w = rop == ATG_XU_SIN[2:0] ? lx : 32'h3F800000;
+			else
+				load_go_step_w = 1'b1;
+		endcase
+	end
+
 	/* STEP: the step count and the CORDIC rotation. */
 	wire [5:0] step1;
 	am_add #(.W(6)) u_step (.a(step), .b(6'd0), .ci(1'b1), .s(step1), .co(carry_unused[18]));
 	wire [35:0] cysh, cxsh, cx_n, cy_n;
-	reg [35:0] cysh_r, cxsh_r, cx_n_r, cy_n_r;
+	wire [35:0] cysh_r, cxsh_r, cx_n_r, cy_n_r;
 	wire [40:0] z_n;
-	reg [40:0] z_n_r;
+	wire [40:0] z_n_r;
 	wire [34:0] dtr_r, strl_r;
 	wire [33:0] snext_r = strl_r[34] ? srem : strl_r[33:0];
 	am_shift #(.W(36), .SW(6)) u_cysh (.a(cy), .amt(step), .left(1'b0), .arith(1'b1), .y(cysh));
@@ -331,7 +388,7 @@ module atg_su_xu #(
 	wire sub_st_co_unused;
 	am_add #(.W(4)) u_sub_st (.a(sub_st), .b(4'd0), .ci(1'b1), .s(sub_st1), .co(sub_st_co_unused));
 
-	/* Sliced wide registers rx, rq, tps_r, dtr_r, strl_r to bound CE fanout <= 16 */
+	/* Sliced wide registers to bound CE fanout <= 16 */
 	genvar gxl, gxh;
 	generate
 	for (gxl = 0; gxl < NPHYS; gxl = gxl + 1) begin : g_xu_lane_reg
@@ -364,16 +421,123 @@ module atg_su_xu #(
 	for (gxl = 0; gxl < 3; gxl = gxl + 1) begin : g_dtr_sl
 		localparam DTR_W = (gxl == 2) ? 3 : 16;
 		(* keep = "true" *) wire dtr_we_sl = (st == STEP) && (sub_st == 4'd0);
+		(* keep = "true" *) wire strl_we_sl = (st == STEP) && (sub_st == 4'd0);
 		(* max_fanout = 12 *) reg [DTR_W-1:0] dtr_sl, strl_sl;
-		always @(posedge clk)
-			if (dtr_we_sl) begin
+		always @(posedge clk) begin
+			if (dtr_we_sl)
 				dtr_sl <= dtr[gxl*16 +: DTR_W];
+			if (strl_we_sl)
 				strl_sl <= strl[gxl*16 +: DTR_W];
-			end
+		end
 		assign dtr_r[gxl*16 +: DTR_W] = dtr_sl;
 		assign strl_r[gxl*16 +: DTR_W] = strl_sl;
 	end
+	for (gxl = 0; gxl < 3; gxl = gxl + 1) begin : g_xu_wide_sl
+		localparam W39 = (gxl == 2) ? 7 : 16;
+		localparam W40 = (gxl == 2) ? 8 : 16;
+		localparam W41 = (gxl == 2) ? 9 : 16;
+		localparam W36 = (gxl == 2) ? 4 : 16;
+		(* keep = "true" *) wire ev0_we_s  = (st == LOAD) && (sub_st == 4'd2);
+		(* keep = "true" *) wire ev_we_s   = (st == LOAD) && (sub_st == 4'd3);
+		(* keep = "true" *) wire t1_we_s   = (st == LOAD) && (sub_st == 4'd7);
+		(* keep = "true" *) wire tt_we_s   = (st == LOAD) && (sub_st == 4'd8);
+		(* keep = "true" *) wire zq_we_s   = (st == LOAD) && (sub_st == 4'd8);
+		(* keep = "true" *) wire cysh_we_s = (st == STEP) && (sub_st == 4'd0);
+		(* keep = "true" *) wire cxsh_we_s = (st == STEP) && (sub_st == 4'd0);
+		(* keep = "true" *) wire atn_we_s  = (st == STEP) && (sub_st == 4'd0);
+		(* keep = "true" *) wire cxn_we_s  = (st == STEP) && (sub_st == 4'd1);
+		(* keep = "true" *) wire cyn_we_s  = (st == STEP) && (sub_st == 4'd1);
+		(* keep = "true" *) wire zn_we_s   = (st == STEP) && (sub_st == 4'd1);
+		(* keep = "true" *) wire lva_we_s  = (st == FIN)  && (sub_st == 4'd1);
+		(* keep = "true" *) wire nv_we_s   = (st == FIN)  && (sub_st == 4'd2);
+		(* keep = "true" *) wire nw_we_s   = (st == FIN)  && (sub_st == 4'd4);
+		(* max_fanout = 12 *) reg [W39-1:0] ev0_sl, ev_sl, zq_sl;
+		(* max_fanout = 12 *) reg [W40-1:0] t1_sl, tt_sl, atn_sl;
+		(* max_fanout = 12 *) reg [W36-1:0] cysh_sl, cxsh_sl, cxn_sl, cyn_sl;
+		(* max_fanout = 12 *) reg [W41-1:0] zn_sl, lva_sl, nv_sl, nw_sl;
+		always @(posedge clk) begin
+			if (ev0_we_s)  ev0_sl  <= ev0[gxl*16 +: W39];
+			if (ev_we_s)   ev_sl   <= ev[gxl*16 +: W39];
+			if (t1_we_s)   t1_sl   <= t1[gxl*16 +: W40];
+			if (tt_we_s)   tt_sl   <= tt[gxl*16 +: W40];
+			if (zq_we_s)   zq_sl   <= zq[gxl*16 +: W39];
+			if (cysh_we_s) cysh_sl <= cysh[gxl*16 +: W36];
+			if (cxsh_we_s) cxsh_sl <= cxsh[gxl*16 +: W36];
+			if (atn_we_s)  atn_sl  <= atn[gxl*16 +: W40];
+			if (cxn_we_s)  cxn_sl  <= cx_n[gxl*16 +: W36];
+			if (cyn_we_s)  cyn_sl  <= cy_n[gxl*16 +: W36];
+			if (zn_we_s)   zn_sl   <= z_n[gxl*16 +: W41];
+			if (lva_we_s)  lva_sl  <= lva[gxl*16 +: W41];
+			if (nv_we_s)   nv_sl   <= nv[gxl*16 +: W41];
+			if (nw_we_s)   nw_sl   <= nw[gxl*16 +: W41];
+		end
+		assign ev0_r[gxl*16 +: W39]  = ev0_sl;
+		assign ev_r[gxl*16 +: W39]   = ev_sl;
+		assign t1_r[gxl*16 +: W40]   = t1_sl;
+		assign tt_r[gxl*16 +: W40]   = tt_sl;
+		assign zq_r[gxl*16 +: W39]   = zq_sl;
+		assign cysh_r[gxl*16 +: W36] = cysh_sl;
+		assign cxsh_r[gxl*16 +: W36] = cxsh_sl;
+		assign atn_r[gxl*16 +: W40]  = atn_sl;
+		assign cx_n_r[gxl*16 +: W36] = cxn_sl;
+		assign cy_n_r[gxl*16 +: W36] = cyn_sl;
+		assign z_n_r[gxl*16 +: W41]  = zn_sl;
+		assign lva_r[gxl*16 +: W41]  = lva_sl;
+		assign nv_r[gxl*16 +: W41]   = nv_sl;
+		assign nw_r[gxl*16 +: W41]   = nw_sl;
+	end
+	for (gxl = 0; gxl < 2; gxl = gxl + 1) begin : g_xu_nr_sl
+		localparam W24 = (gxl == 1) ? 8 : 16;
+		(* keep = "true" *) wire nrmp1_we_s = (st == FIN) && (sub_st == 4'd5);
+		(* keep = "true" *) wire nrr_we_s   = (st == FIN) && (sub_st == 4'd6);
+		(* max_fanout = 12 *) reg [W24-1:0] nrmp1_sl;
+		(* max_fanout = 12 *) reg [15:0] nrr_sl;
+		always @(posedge clk) begin
+			if (nrmp1_we_s) nrmp1_sl <= nr_mp1_d[gxl*16 +: W24];
+			if (nrr_we_s)   nrr_sl   <= nr[gxl*16 +: 16];
+		end
+		assign nr_mp1_r[gxl*16 +: W24] = nrmp1_sl;
+		assign nr_r[gxl*16 +: 16]      = nrr_sl;
+	end
 	endgenerate
+
+	(* keep = "true" *) wire lx_we_lo   = (st == LOAD) && (sub_st == 4'd0);
+	(* keep = "true" *) wire lx_we_hi   = (st == LOAD) && (sub_st == 4'd0);
+	(* keep = "true" *) wire lm_we_lo   = (st == LOAD) && (sub_st == 4'd0);
+	(* keep = "true" *) wire lm_we_hi   = (st == LOAD) && (sub_st == 4'd0);
+	(* keep = "true" *) wire sh1_we_a   = (st == LOAD) && (sub_st == 4'd1);
+	(* keep = "true" *) wire sh1_we_b   = (st == LOAD) && (sub_st == 4'd1);
+	(* keep = "true" *) wire sh1_we_c   = (st == LOAD) && (sub_st == 4'd1);
+	(* keep = "true" *) wire sh1_we_d   = (st == LOAD) && (sub_st == 4'd1);
+	(* keep = "true" *) wire load_end   = (st == LOAD) && (sub_st >= 4'd9);
+	(* keep = "true" *) wire step_end   = (st == STEP) && (sub_st >= 4'd6);
+	(* keep = "true" *) wire step_last  = (st == STEP) && (sub_st >= 4'd6) && (step == nsteps_m1);
+	(* keep = "true" *) wire fin_end    = (st == FIN)  && (sub_st >= 4'd7);
+	(* keep = "true" *) wire res_we_lo  = (load_end && !load_go_step_r) || (fin_end && !sres);
+	(* keep = "true" *) wire res_we_hi  = (load_end && !load_go_step_r) || (fin_end && !sres);
+
+	always @(posedge clk) begin
+		if (lx_we_lo) lx[15:0]   <= lx_raw[15:0];
+		if (lx_we_hi) lx[31:16]  <= lx_raw[31:16];
+		if (lm_we_lo) lm_r[15:0] <= lx_raw[15:0];
+		if (lm_we_hi) lm_r[23:16] <= {1'b1, lx_raw[22:16]};
+		if (sh1_we_a) begin
+			hee_r  <= hee;
+			lnan_r <= lnan;
+			linf_r <= linf;
+			lzero_r <= lzero;
+			le_ge135_r <= (le >= 8'd135);
+			le_lt115_r <= (le < 8'd115);
+		end
+		if (sh1_we_b) esh_r  <= esh;
+		if (sh1_we_c) begin
+			ersh_r <= ersh;
+			trsh_r <= trsh;
+		end
+		if (sh1_we_d) tsh_r  <= tsh;
+		if (res_we_lo) res[15:0]  <= load_end ? load_res_r[15:0]  : fin[15:0];
+		if (res_we_hi) res[31:16] <= load_end ? load_res_r[31:16] : fin[31:16];
+	end
 
 	always @(posedge clk) begin
 		if (rst_p) begin
@@ -382,8 +546,9 @@ module atg_su_xu #(
 			li <= {LW{1'b0}};
 			step <= 6'd0;
 			ph <= 1'b0;
-			lx <= 32'd0;
-			lm_r <= 24'd0;
+			lx_cur_r <= 32'd0;
+			load_go_step_r <= 1'b0;
+			load_res_r <= 32'd0;
 			mb_r <= 42'd0;
 			tp0_r <= 41'd0;
 			tp1_r <= 41'd0;
@@ -432,114 +597,38 @@ module atg_su_xu #(
 					st <= RET;
 				else begin
 					li <= first[LW-1:0];
+					lx_cur_r <= x_a[first[LW-1:0]*32 +: 32];
 					st <= LOAD;
 				end
 			end
 			LOAD: begin
 				sub_st <= sub_st1;
 				case (sub_st)
-				4'd0: begin
-					lx <= lx_raw;
-					lm_r <= {1'b1, lx_raw[22:0]};
-				end
-				4'd1: begin
-					hee_r <= hee;
-					esh_r <= esh;
-					ersh_r <= ersh;
-					tsh_r <= tsh;
-					trsh_r <= trsh;
-				end
-				4'd2: begin
-					ev0_r <= ev0;
-				end
-				4'd3: begin
-					ev_r <= ev;
-				end
-				4'd4, 4'd5: ;
+				4'd0, 4'd1, 4'd2, 4'd3, 4'd4, 4'd5, 4'd7: ;
 				4'd6: begin
 					ex_l_r <= ex_l;
 				end
-				4'd7: begin
-					t1_r <= t1;
-				end
 				4'd8: begin
-					tt_r <= tt;
-					zq_r <= zq;
+					load_go_step_r <= load_go_step_w;
+					load_res_r <= load_res_w;
 				end
 				default: begin
 					sub_st <= 4'd0;
 					step <= 6'd0;
 					ph <= 1'b0;
 					stk <= 1'b0;
-					sres <= 1'b1;
-					res <= 32'h7FC00000;
-					st <= FIN;
-					case (rop)
-					ATG_XU_RCP[2:0]:
-						if (lzero || linf)
-							res <= {ls, linf ? 31'd0 : {8'hFF, 23'd0}};
-						else if (!lnan) begin
-							sres <= 1'b0;
-							rem <= 34'h000400000;
-							root <= 30'd0;
-							ex <= ex_l_r;
-							st <= STEP;
-						end
-					ATG_XU_RSQ[2:0], ATG_XU_FSQRT[2:0]:
-						if (lzero)
-							res <= rop == ATG_XU_RSQ[2:0] ? {ls, 8'hFF, 23'd0} : lx;
-						else if (lnan || ls)
-							res <= 32'h7FC00000;
-						else if (linf)
-							res <= rop == ATG_XU_RSQ[2:0] ? 32'd0 : lx;
-						else begin
-							sres <= 1'b0;
-							n <= rop == ATG_XU_RSQ[2:0] ? {1'b0, lmm, 34'd0} :
-								{1'b0, lmm, 26'd0, 8'd0};
-							rem <= 34'd0;
-							root <= 30'd0;
-							ex <= ex_l_r;
-							st <= STEP;
-						end
-					ATG_XU_EXP2[2:0]:
-						if (lzero)
-							res <= 32'h3F800000;
-						else if (linf || (!lnan && le >= 8'd135))
-							res <= ls ? 32'd0 : 32'h7F800000;
-						else if (!lnan) begin
-							sres <= 1'b0;
-							y <= 42'd1 << 38;
-							fr <= ev_r[29:0];
-							ex <= ex_l_r;
-							st <= STEP;
-						end
-					ATG_XU_LOG2[2:0]:
-						if (lzero)
-							res <= 32'hFF800000;
-						else if (lnan || ls)
-							res <= 32'h7FC00000;
-						else if (linf)
-							res <= lx;
-						else begin
-							sres <= 1'b0;
-							y <= {1'b0, lm, 17'd0};
-							fr <= 30'd0;
-							st <= STEP;
-						end
-					default:	/* sin, cos */
-						if (lnan || linf)
-							res <= 32'h7FC00000;
-						else if (le < 8'd115)
-							res <= rop == ATG_XU_SIN[2:0] ? lx : 32'h3F800000;
-						else begin
-							sres <= 1'b0;
-							qneg <= tt_r[39];
-							z <= tt_r[38] ? $signed({2'b0, zq_r}) : $signed({3'b0, tt_r[37:0]});
-							cx <= $signed({1'b0, XU_CG[34:0]});
-							cy <= 36'sd0;
-							st <= STEP;
-						end
-					endcase
+					sres <= !load_go_step_r;
+					st <= load_go_step_r ? STEP : FIN;
+					ex <= ex_l_r;
+					rem <= (rop == ATG_XU_RCP[2:0]) ? 34'h000400000 : 34'd0;
+					root <= 30'd0;
+					n <= (rop == ATG_XU_RSQ[2:0]) ? {1'b0, lmm, 34'd0} : {1'b0, lmm, 26'd0, 8'd0};
+					y <= (rop == ATG_XU_EXP2[2:0]) ? (42'd1 << 38) : {1'b0, lm, 17'd0};
+					fr <= (rop == ATG_XU_EXP2[2:0]) ? ev_r[29:0] : 30'd0;
+					qneg <= tt_r[39];
+					z <= tt_r[38] ? $signed({2'b0, zq_r}) : $signed({3'b0, tt_r[37:0]});
+					cx <= $signed({1'b0, XU_CG[34:0]});
+					cy <= 36'sd0;
 				end
 				endcase
 			end
@@ -548,16 +637,8 @@ module atg_su_xu #(
 				case (sub_st)
 				4'd0: begin
 					mb_r <= rop == ATG_XU_EXP2[2:0] ? {2'd0, xu_expk(step[4:0])} : y;
-					cysh_r <= cysh;
-					cxsh_r <= cxsh;
-					atn_r <= atn;
 				end
-				4'd1: begin
-					cx_n_r <= cx_n;
-					cy_n_r <= cy_n;
-					z_n_r <= z_n;
-				end
-				4'd2, 4'd3, 4'd4, 4'd5: ;
+				4'd1, 4'd2, 4'd3, 4'd4, 4'd5: ;
 				default: begin
 					sub_st <= 4'd0;
 					step <= step1;
@@ -600,7 +681,7 @@ module atg_su_xu #(
 					default:
 						{cx, cy, z} <= {cx_n_r, cy_n_r, z_n_r};
 					endcase
-					if (step == nsteps_m1) begin
+					if (step_last) begin
 						step <= 6'd0;
 						if (rop == ATG_XU_RSQ[2:0] && !ph) begin
 							/* 2^57 / t: t = the root (30 bits). */
@@ -618,12 +699,11 @@ module atg_su_xu #(
 				sub_st <= sub_st1;
 				case (sub_st)
 				4'd0: lue_r <= lue;
-				4'd1: lva_r <= lva;
+				4'd1: ;
 				4'd2: begin
 					ns_r <= ns;
 					nst_r <= nst;
 					nz_r <= nz;
-					nv_r <= nv;
 					ne_r <= ne;
 					np_r <= np;
 				end
@@ -632,24 +712,18 @@ module atg_su_xu #(
 					ne127_r <= ne127;
 				end
 				4'd4: begin
-					nw_r <= nw;
 					nexp_r <= nexp;
 					nst_all_r <= (|nw[15:0]) || nst_r;
 					nw_all1_r <= &nw[40:17];
 				end
 				4'd5: begin
-					nr_mp1_r <= nr_mp1_d;
 					nr_ep1_r <= nr_ep1_d;
 					nr_up_r <= nr_up_d;
 					nr_carry_r <= nr_carry_d;
 				end
-				4'd6: begin
-					nr_r <= nr;
-				end
+				4'd6: ;
 				default: begin
 					sub_st <= 4'd0;
-					if (!sres)
-						res <= fin;
 					st <= STORE;
 				end
 				endcase
@@ -661,6 +735,7 @@ module atg_su_xu #(
 					st <= RET;
 				else begin
 					li <= after[LW-1:0];
+					lx_cur_r <= rx[after[LW-1:0]*32 +: 32];
 					st <= LOAD;
 				end
 			end
@@ -683,7 +758,7 @@ module atg_su_xu #(
 
 	wire unused_ok = &{1'b0, x_pc, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
 		snext, prod_r, tp_r[82:40], tps_r[82:40], y[41], esh_r[10:4], carry_unused[27],
-		sub_st_co_unused, nr_ep1_co_unused, nr_mp1_r[23], nw_r[40], nw_r[15:0], (NWARPS != 0)};
+		sub_st_co_unused, step_end, nr_ep1_co_unused, nr_mp1_r[23], nw_r[40], nw_r[15:0], (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

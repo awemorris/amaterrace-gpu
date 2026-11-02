@@ -70,35 +70,43 @@ module atg_su_dcache #(
 
 	localparam TW_LO = TW / 2;
 	localparam TW_HI = TW - TW_LO;
+	localparam LA_LO = LA_W / 2;
+	localparam LA_HI = LA_W - LA_LO;
+	localparam LB_HALF = LB / 2;
 	localparam N_SL = LB / 16;
 	localparam V_SL = (NL >= 16) ? (NL / 16) : 1;
 	localparam V_SW = NL / V_SL;
 	localparam N_TEQ = (TW + 2) / 3;
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	(* max_fanout = 12 *) reg [2:0] st;
 	wire [NL-1:0] valid;
 	reg [TW_LO-1:0] tags_lo [0:NL-1];
 	reg [TW_HI-1:0] tags_hi [0:NL-1];
-	(* ram_style = "block" *) reg [LB-1:0] data [0:NL-1];
+	(* ram_style = "block" *) reg [LB_HALF-1:0] data_lo [0:NL-1];
+	(* ram_style = "block" *) reg [LB_HALF-1:0] data_hi [0:NL-1];
 	/* The request in progress. */
 	(* max_fanout = 12 *) reg q_write, q_drop;
-	(* max_fanout = 12 *) reg [LA_W-1:0] q_line;
-	(* dont_touch = "true" *) reg [IW-1:0] q_idx_d, q_idx_lo_r, q_idx_hi_r;
-	(* max_fanout = 12 *) reg [LINE_BYTES-1:0] q_be;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [LA_LO-1:0] q_line_lo;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [LA_HI-1:0] q_line_hi;
+	wire [LA_W-1:0] q_line = {q_line_hi, q_line_lo};
+	(* dont_touch = "true" *) reg [IW-1:0] q_idx_d_lo, q_idx_d_hi, q_idx_rlo_r, q_idx_rhi_r, q_idx_wlo_r, q_idx_whi_r;
+	wire [LINE_BYTES-1:0] q_be;
 	wire [LB-1:0] q_wdata;
 	(* max_fanout = 12 *) reg [7:0] q_tag;
 	/* The response. */
 	(* max_fanout = 12 *) reg r_write, r_error;
 	wire [LB-1:0] r_rdata;
 
-	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] u_idx_v = u_req_line[IW-1:0];
-	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] u_idx_lo = u_req_line[IW-1:0];
-	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] u_idx_hi = u_req_line[IW-1:0];
+	(* dont_touch = "true" *) wire [IW-1:0] u_idx_v  = u_req_line[IW-1:0];
+	(* dont_touch = "true" *) wire [IW-1:0] u_idx_lo = u_req_line[IW-1:0];
+	(* dont_touch = "true" *) wire [IW-1:0] u_idx_hi = u_req_line[IW-1:0];
+	(* dont_touch = "true" *) wire [IW-1:0] u_idx_d_lo = u_req_line[IW-1:0];
+	(* dont_touch = "true" *) wire [IW-1:0] u_idx_d_hi = u_req_line[IW-1:0];
 	wire [TW-1:0] u_tag_rd = {tags_hi[u_idx_hi], tags_lo[u_idx_lo]};
 	wire [TW-1:0] u_tag_in = u_req_line[LA_W-1:IW];
-	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] q_idx_v = q_line[IW-1:0];
-	wire [TW-1:0] q_tag_rd = {tags_hi[q_idx_hi_r], tags_lo[q_idx_lo_r]};
+	(* dont_touch = "true" *) wire [IW-1:0] q_idx_v = q_line[IW-1:0];
+	wire [TW-1:0] q_tag_rd = {tags_hi[q_idx_rhi_r], tags_lo[q_idx_rlo_r]};
 	wire [TW-1:0] q_tag_in = q_line[LA_W-1:IW];
 
 	/* Pure-LUT 3-bit chunk tag comparators (0 CARRY4s, 2 LUT levels) */
@@ -120,17 +128,21 @@ module atg_su_dcache #(
 	(* keep = "true" *) wire q_hit_hi = &q_teq_g[N_TEQ-1:N_TEQ/2];
 	wire q_hit = q_hit_lo && q_hit_hi;
 	wire take = st == IDLE && u_req_valid;
+	(* dont_touch = "true" *) wire take_d_lo = (st == IDLE) && u_req_valid;
+	(* dont_touch = "true" *) wire take_d_hi = (st == IDLE) && u_req_valid;
 
 	/* The data are read synchronously (block RAM): d_q is the request's
 	 * line, read when it is taken; d_q_pipe is the dedicated fabric output
 	 * register (Rule 4: 0 LUTs after BRAM DOUT). */
-	reg [LB-1:0] d_q;
+	reg [LB_HALF-1:0] d_q_lo, d_q_hi;
 	(* dont_touch = "true" *) reg [LB-1:0] d_q_pipe;
 	(* max_fanout = 12 *) reg r_hit;	/* the response is d_q_pipe (a read hit) */
 	always @(posedge clk) begin
-		if (take)
-			d_q <= data[u_req_line[IW-1:0]];
-		d_q_pipe <= d_q;
+		if (take_d_lo)
+			d_q_lo <= data_lo[u_idx_d_lo];
+		if (take_d_hi)
+			d_q_hi <= data_hi[u_idx_d_hi];
+		d_q_pipe <= {d_q_hi, d_q_lo};
 	end
 	/* The line with the written bytes merged, plus 16-bit sliced registers/muxes. */
 	wire [LB-1:0] q_old = d_q_pipe;
@@ -140,27 +152,31 @@ module atg_su_dcache #(
 	generate
 		for (gsl = 0; gsl < N_SL; gsl = gsl + 1) begin : g_dc_sl
 			(* shreg_extract = "no" *) reg [15:0] q_wdata_sl, r_rdata_sl;
-			(* keep = "true" *) wire take_sl = (st == IDLE) && u_req_valid;
-			(* keep = "true" *) wire rsp_sl = (st == MWAIT) && m_rsp_valid;
-			(* keep = "true" *) wire r_hit_sl = r_hit;
-			(* keep = "true" *) wire q_wr_sl = q_write;
+			(* shreg_extract = "no" *) reg [1:0] q_be_sl;
+			(* dont_touch = "true" *) wire take_sl = (st == IDLE) && u_req_valid;
+			(* dont_touch = "true" *) wire rsp_sl = (st == MWAIT) && m_rsp_valid;
+			(* dont_touch = "true" *) wire r_hit_sl = r_hit;
+			(* dont_touch = "true" *) wire q_wr_sl = q_write;
 			always @(posedge clk) begin
-				if (take_sl)
+				if (take_sl) begin
 					q_wdata_sl <= u_req_wdata[gsl*16 +: 16];
+					q_be_sl    <= u_req_be[gsl*2 +: 2];
+				end
 				if (rsp_sl)
 					r_rdata_sl <= m_rsp_rdata[gsl*16 +: 16];
 			end
 			assign q_wdata[gsl*16 +: 16] = q_wdata_sl;
+			assign q_be[gsl*2 +: 2]      = q_be_sl;
 			assign r_rdata[gsl*16 +: 16] = r_rdata_sl;
-			assign merged[gsl*16 +: 8] = q_be[gsl*2] ? q_wdata_sl[7:0] : q_old[gsl*16 +: 8];
-			assign merged[gsl*16 + 8 +: 8] = q_be[gsl*2 + 1] ? q_wdata_sl[15:8] : q_old[gsl*16 + 8 +: 8];
+			assign merged[gsl*16 +: 8] = q_be_sl[0] ? q_wdata_sl[7:0] : q_old[gsl*16 +: 8];
+			assign merged[gsl*16 + 8 +: 8] = q_be_sl[1] ? q_wdata_sl[15:8] : q_old[gsl*16 + 8 +: 8];
 			assign dc_wdata_in[gsl*16 +: 16] = q_wr_sl ? merged[gsl*16 +: 16] : m_rsp_rdata[gsl*16 +: 16];
 			assign u_rsp_rdata[gsl*16 +: 16] = r_hit_sl ? d_q_pipe[gsl*16 +: 16] : r_rdata_sl;
 		end
 		for (gvs = 0; gvs < V_SL; gvs = gvs + 1) begin : g_val_sl
 			wire [35:0] q_idx_pad = {{(36-IW){1'b0}}, q_idx_v};
-			(* keep = "true" *) wire v_clr_sl = rst_p || inv;
-			(* keep = "true" *) wire v_set_sl = (st == MWAIT) && m_rsp_valid && !m_rsp_error && !q_drop && !q_write &&
+			(* dont_touch = "true" *) wire v_clr_sl = rst_p || inv;
+			(* dont_touch = "true" *) wire v_set_sl = (st == MWAIT) && m_rsp_valid && !m_rsp_error && !q_drop && !q_write &&
 				(q_idx_pad[35:4] == gvs);
 			for (gvi = 0; gvi < V_SW; gvi = gvi + 1) begin : g_val_bit
 				reg valid_bit;
@@ -175,38 +191,56 @@ module atg_su_dcache #(
 		end
 	endgenerate
 
-	(* keep = "true" *) wire tag_we_lo = (st == MWAIT) && m_rsp_valid && !m_rsp_error && !q_drop && !inv && !q_write;
-	(* keep = "true" *) wire tag_we_hi = (st == MWAIT) && m_rsp_valid && !m_rsp_error && !q_drop && !inv && !q_write;
-	(* keep = "true" *) wire data_we = (st == MWAIT) && m_rsp_valid && !m_rsp_error && !q_drop && !inv && (!q_write || q_hit);
+	(* dont_touch = "true" *) wire tag_we_lo  = (st == MWAIT) && m_rsp_valid && !m_rsp_error && !q_drop && !inv && !q_write;
+	(* dont_touch = "true" *) wire tag_we_hi  = (st == MWAIT) && m_rsp_valid && !m_rsp_error && !q_drop && !inv && !q_write;
+	(* dont_touch = "true" *) wire data_we_lo = (st == MWAIT) && m_rsp_valid && !m_rsp_error && !q_drop && !inv && (!q_write || q_hit);
+	(* dont_touch = "true" *) wire data_we_hi = (st == MWAIT) && m_rsp_valid && !m_rsp_error && !q_drop && !inv && (!q_write || q_hit);
 	always @(posedge clk) begin
 		if (tag_we_lo)
-			tags_lo[q_idx_lo_r] <= q_line[IW +: TW_LO];
+			tags_lo[q_idx_wlo_r] <= q_line[IW +: TW_LO];
 		if (tag_we_hi)
-			tags_hi[q_idx_hi_r] <= q_line[IW + TW_LO +: TW_HI];
-		if (data_we)
-			data[q_idx_d] <= dc_wdata_in;
+			tags_hi[q_idx_whi_r] <= q_line[IW + TW_LO +: TW_HI];
+		if (data_we_lo)
+			data_lo[q_idx_d_lo] <= dc_wdata_in[LB_HALF-1:0];
+		if (data_we_hi)
+			data_hi[q_idx_d_hi] <= dc_wdata_in[LB-1:LB_HALF];
 	end
 
+	(* dont_touch = "true" *) wire dc_idle_ce_0 = !rst_p && (st == IDLE) && u_req_valid;
+	(* dont_touch = "true" *) wire dc_idle_ce_1 = !rst_p && (st == IDLE) && u_req_valid;
+	(* dont_touch = "true" *) wire dc_idle_ce_2 = !rst_p && (st == IDLE) && u_req_valid;
+	(* dont_touch = "true" *) wire dc_idle_ce_3 = !rst_p && (st == IDLE) && u_req_valid;
+
 	always @(posedge clk) begin
+		if (dc_idle_ce_0) begin
+			q_line_lo <= u_req_line[LA_LO-1:0];
+			q_write   <= u_req_write;
+		end
+		if (dc_idle_ce_1) begin
+			q_line_hi <= u_req_line[LA_W-1:LA_LO];
+		end
+		if (dc_idle_ce_2) begin
+			q_tag <= u_req_tag;
+			q_idx_d_lo  <= u_req_line[IW-1:0];
+			q_idx_d_hi  <= u_req_line[IW-1:0];
+		end
+		if (dc_idle_ce_3) begin
+			q_idx_rlo_r <= u_req_line[IW-1:0];
+			q_idx_rhi_r <= u_req_line[IW-1:0];
+			q_idx_wlo_r <= u_req_line[IW-1:0];
+		end
+
 		if (rst_p) begin
 			st <= IDLE;
 			q_drop <= 1'b0;
 			r_write <= 1'b0;
 			r_error <= 1'b0;
 			r_hit <= 1'b0;
-			q_idx_d <= {IW{1'b0}};
-			q_idx_lo_r <= {IW{1'b0}};
-			q_idx_hi_r <= {IW{1'b0}};
+			q_idx_whi_r <= {IW{1'b0}};
 		end else begin
 			case (st)
 			IDLE: if (take) begin
-				q_write <= u_req_write;
-				q_line <= u_req_line;
-				q_idx_d <= u_req_line[IW-1:0];
-				q_idx_lo_r <= u_req_line[IW-1:0];
-				q_idx_hi_r <= u_req_line[IW-1:0];
-				q_be <= u_req_be;
-				q_tag <= u_req_tag;
+				q_idx_whi_r <= u_req_line[IW-1:0];
 				q_drop <= 1'b0;
 				r_write <= u_req_write;
 				r_error <= 1'b0;

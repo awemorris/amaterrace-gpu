@@ -98,7 +98,7 @@ module atg_su_tex #(
 	localparam QS = $clog2(NQ);	/* the quad number's bits in a group (0 for NPHYS 4) */
 	localparam [1:0] IDLE = 2'd0, SEND = 2'd1, DREF = 2'd2;
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	(* fsm_encoding = "none", max_fanout = 12 *) reg [1:0] st;
 	(* max_fanout = 12 *) reg [QW-1:0] q, lastq;
@@ -148,15 +148,16 @@ module atg_su_tex #(
 			localparam SL_IDX = gq_l * 10 + ghw;
 			localparam H_BIT = (ghw % 2) * 16;
 			localparam W_IDX = ghw / 2;
-			(* keep = "true" *) wire ti_s = take_idle;
-			(* keep = "true" *) wire td_s = take_dref;
-			(* keep = "true" *) wire th_s = three;
-			(* keep = "true" *) wire cf_s = cform;
-			(* keep = "true" *) wire [QW-1:0] q_sl = q;
-			(* shreg_extract = "no" *) reg [NQ*16-1:0] crd_sl;
+			(* dont_touch = "true" *) wire [QW-1:0] q_sl = q;
+			wire [NQ*16-1:0] crd_sl;
 
 			for (gqi = 0; gqi < NQ; gqi = gqi + 1) begin : g_qinst
 				localparam L_IDX = gqi * 4 + gq_l;
+				(* dont_touch = "true" *) wire ti_s = take_idle;
+				(* dont_touch = "true" *) wire td_s = take_dref;
+				(* dont_touch = "true" *) wire th_s = three;
+				(* dont_touch = "true" *) wire cf_s = cform;
+				(* shreg_extract = "no" *) reg [15:0] crd_inst_r;
 				wire [15:0] xa_h = x_a[L_IDX*32 + H_BIT +: 16];
 				wire [15:0] xb_h = x_b[L_IDX*32 + H_BIT +: 16];
 				wire [15:0] xc_h = x_c[L_IDX*32 + H_BIT +: 16];
@@ -165,13 +166,14 @@ module atg_su_tex #(
 				                     (W_IDX == 2) ? xb_h : 16'd0;
 				wire [15:0] dref_d = (W_IDX == 3) ? (th_s ? (cf_s ? xc_h : 16'd0) : xa_h) :
 				                     (W_IDX == 4) ? (th_s ? xa_h : 16'd0) :
-				                     crd_sl[gqi*16 +: 16];
+				                     crd_inst_r;
 				always @(posedge clk) begin
 					if (ti_s)
-						crd_sl[gqi*16 +: 16] <= idle_d;
+						crd_inst_r <= idle_d;
 					else if (td_s && (W_IDX >= 3))
-						crd_sl[gqi*16 +: 16] <= dref_d;
+						crd_inst_r <= dref_d;
 				end
+				assign crd_sl[gqi*16 +: 16] = crd_inst_r;
 			end
 
 			reg [15:0] q_crd_s;
@@ -197,22 +199,33 @@ module atg_su_tex #(
 	assign tx_tag = {3'd0, wpad[2:0], qnum, rd};
 	assign tx_last = last && q == lastq;
 
+	(* dont_touch = "true" *) wire take_idle_a = !rst_p && take_idle;
+	(* dont_touch = "true" *) wire take_idle_b = !rst_p && take_idle;
+	(* dont_touch = "true" *) wire take_idle_c = !rst_p && take_idle;
+
 	always @(posedge clk) begin
+		if (take_idle_a) begin
+			warp <= x_warp;
+			grp <= x_grp;
+			rd <= x_uop[ATG_UOP_RD +: 7];
+			tx_vs <= x_info[17:16] == 2'd0;
+		end
+		if (take_idle_b) begin
+			tx_op <= {1'b0, x_uop[ATG_UOP_OP +: 7]};
+			tx_slot <= x_uop[ATG_UOP_SUB +: 4];
+			tx_samp_slot <= x_uop[ATG_UOP_SAMP_SLOT +: 4];
+		end
+		if (take_idle_c) begin
+			tx_off <= x_uop[ATG_UOP_IMM +: 12];
+		end
+
 		if (rst_p) begin
 			st <= IDLE;
 		end else begin
 			case (st)
 			IDLE: if (take_idle) begin
 				lanes <= exec;
-				warp <= x_warp;
-				grp <= x_grp;
-				rd <= x_uop[ATG_UOP_RD +: 7];
 				last <= x_last;
-				tx_op <= {1'b0, x_uop[ATG_UOP_OP +: 7]};
-				tx_slot <= x_uop[ATG_UOP_SUB +: 4];
-				tx_samp_slot <= x_uop[ATG_UOP_SAMP_SLOT +: 4];
-				tx_vs <= x_info[17:16] == 2'd0;
-				tx_off <= x_uop[ATG_UOP_IMM +: 12];
 				q <= {QW{1'b0}};
 				lastq <= ql;
 				if (wide)

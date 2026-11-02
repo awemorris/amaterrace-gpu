@@ -68,7 +68,7 @@ module atg_su_exp_drain #(
 		      m[4] ? 3'd4 : m[5] ? 3'd5 : m[6] ? 3'd6 : m[7] ? 3'd7 : 3'd0;
 	endfunction
 
-	(* keep = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	(* max_fanout = 12 *) reg [NWARPS-1:0] frag, ended;
 	reg [NWARPS*16-1:0] seq;
@@ -76,7 +76,13 @@ module atg_su_exp_drain #(
 	(* max_fanout = 12 *) reg vx_v;	/* a vertex/compute warp's release, this cycle */
 	(* max_fanout = 12 *) reg [WARP_W-1:0] vx_w;
 
-	/* the attachments above and below the beat's */
+	/* Pre-latched in S_FIRST for the draining warp (valid throughout S_DRAIN) */
+	(* max_fanout = 12 *) reg [7:0] rtw_r;
+	(* max_fanout = 12 *) reg [2:0] low_rtw_r;
+	(* max_fanout = 12 *) reg       nocol_r;
+	(* max_fanout = 12 *) reg [7:1] q_nz_r;
+
+	/* the attachments above and below the beat's (using registered rtw_r) */
 	reg [7:0] above_m, below_m;
 	integer ab;
 	always @(*)
@@ -84,25 +90,34 @@ module atg_su_exp_drain #(
 			above_m[ab] = ab > d_rt;
 			below_m[ab] = ab < d_rt;
 		end
-	wire [7:0] above = d_rtw & above_m;
-	wire [7:0] below = d_rtw & below_m;
+	(* keep = "true" *) wire [7:0] above = rtw_r & above_m;
+	(* keep = "true" *) wire [7:0] below = rtw_r & below_m;
 	wire [2:0] dq1 = {d_q[2] ^ (&d_q[1:0]), d_q[1] ^ d_q[0], ~d_q[0]};
 
-	(* keep = "true" *) wire [7:1] q_nz = {
+	wire [7:1] q_nz = {
 		|d_cov[31:28], |d_cov[27:24], |d_cov[23:20], |d_cov[19:16],
 		|d_cov[15:12], |d_cov[11:8],  |d_cov[7:4]
 	};
-	(* keep = "true" *) wire qlast_lo = (d_q[1:0] == 2'd0) ? !q_nz[1] :
-	                                    (d_q[1:0] == 2'd1) ? !q_nz[2] :
-	                                    (d_q[1:0] == 2'd2) ? !q_nz[3] : !q_nz[4];
-	(* keep = "true" *) wire qlast_hi = (d_q[1:0] == 2'd0) ? !q_nz[5] :
-	                                    (d_q[1:0] == 2'd1) ? !q_nz[6] :
-	                                    (d_q[1:0] == 2'd2) ? !q_nz[7] : 1'b1;
-	wire qlast = d_q[2] ? qlast_hi : qlast_lo;
+	(* keep = "true" *) wire qlast_lo = (d_q[1:0] == 2'd0) ? !q_nz_r[1] :
+	                                    (d_q[1:0] == 2'd1) ? !q_nz_r[2] :
+	                                    (d_q[1:0] == 2'd2) ? !q_nz_r[3] : !q_nz_r[4];
+	(* keep = "true" *) wire qlast_hi = (d_q[1:0] == 2'd0) ? !q_nz_r[5] :
+	                                    (d_q[1:0] == 2'd1) ? !q_nz_r[6] :
+	                                    (d_q[1:0] == 2'd2) ? !q_nz_r[7] : 1'b1;
+	(* keep = "true" *) wire qlast = d_q[2] ? qlast_hi : qlast_lo;
 
-	assign d_nocol = d_rtw == 8'd0;
+	(* keep = "true" *) wire above_lo_nz = |above[3:1];
+	(* keep = "true" *) wire above_hi_nz = |above[7:4];
+	(* keep = "true" *) wire d_lastb_w   = !above_lo_nz && !above_hi_nz;
+
+	(* keep = "true" *) wire [2:0] low_above = {
+		!above_lo_nz,
+		above[1] ? 1'b0 : (above[2] || above[3]) ? 1'b1 : (above[4] || above[5]) ? 1'b0 : 1'b1,
+		above[1] || (!above[2] && (above[3] || (!above[4] && (above[5] || !above[6]))))
+	};
+
+	assign d_nocol = nocol_r;
 	assign d_first = below == 8'd0;
-	(* keep = "true" *) wire d_lastb_w = above == 8'd0;
 	assign d_lastb = d_lastb_w;
 
 	/* An ended fragment warp whose sequence number is the ROP's next one. */
@@ -121,9 +136,11 @@ module atg_su_exp_drain #(
 
 	assign ex_valid = st == S_DRAIN;
 	assign ex_seq = seq[d_warp*16 +: 16];
-	assign ex_last = d_lastb_w && (d_q[2] ? qlast_hi : qlast_lo);
+	assign ex_last = d_lastb_w && qlast;
 	assign xr_valid = vx_v || st == S_RET;
 	assign xr_warp = vx_v ? vx_w : d_warp;
+
+	(* keep = "true" *) wire [2:0] first_low_rtw = low(d_rtw);
 
 	always @(posedge clk) begin
 		if (rst_p) begin
@@ -135,6 +152,10 @@ module atg_su_exp_drain #(
 			d_warp <= {WARP_W{1'b0}};
 			d_q <= 3'd0;
 			d_rt <= 3'd0;
+			rtw_r <= 8'd0;
+			low_rtw_r <= 3'd0;
+			nocol_r <= 1'b1;
+			q_nz_r <= 7'd0;
 		end else begin
 			vx_v <= wc_end && !frag[wc_warp];
 			vx_w <= wc_warp;
@@ -153,18 +174,22 @@ module atg_su_exp_drain #(
 					st <= S_FIRST;
 				end
 			S_FIRST: begin
-				d_rt <= low(d_rtw);
+				rtw_r <= d_rtw;
+				low_rtw_r <= first_low_rtw;
+				nocol_r <= (d_rtw == 8'd0);
+				q_nz_r <= q_nz;
+				d_rt <= first_low_rtw;
 				st <= S_DRAIN;
 			end
 			S_DRAIN:
 				if (ex_ready) begin
-					if (!d_lastb)
-						d_rt <= low(above);
+					if (!d_lastb_w)
+						d_rt <= low_above;
 					else if (qlast)
 						st <= S_RET;
 					else begin
 						d_q <= dq1;
-						d_rt <= low(d_rtw);
+						d_rt <= low_rtw_r;
 					end
 				end
 			default:	/* S_RET: the release (after a vertex warp's of this cycle) */
