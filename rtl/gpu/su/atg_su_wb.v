@@ -572,12 +572,10 @@ module atg_su_wb #(
 `ifdef SYNTH_KINTEX7
 		wire [LP_W-1:0] ksel_w0, ksel_w1;
 		genvar gks;
-		generate
-			for (gks = 0; gks < LP_W; gks = gks + 1) begin : g_ks_buf
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ks0 (.I0(ksel[gks]), .O(ksel_w0[gks]));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ks1 (.I0(ksel[gks]), .O(ksel_w1[gks]));
-			end
-		endgenerate
+		for (gks = 0; gks < LP_W; gks = gks + 1) begin : g_ks_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ks0 (.I0(ksel[gks]), .O(ksel_w0[gks]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ks1 (.I0(ksel[gks]), .O(ksel_w1[gks]));
+		end
 `else
 		wire [LP_W-1:0] ksel_w0 = ksel;
 		wire [LP_W-1:0] ksel_w1 = ksel;
