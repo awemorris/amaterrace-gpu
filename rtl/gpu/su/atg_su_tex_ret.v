@@ -193,10 +193,19 @@ module atg_su_tex_ret #(
 			for (gh = 0; gh < 2; gh = gh + 1) begin : g_bufq_half
 				localparam L_IDX = gq * 4 + glq;
 				localparam TR_BASE = glq * 128 + gh * 16;
-				(* dont_touch = "true" *) wire bufq_we_0 = gather_we && (q == gq[QW-1:0]);
-				(* dont_touch = "true" *) wire bufq_we_1 = gather_we && (q == gq[QW-1:0]);
-				(* dont_touch = "true" *) wire bufq_we_2 = gather_we && (q == gq[QW-1:0]);
-				(* dont_touch = "true" *) wire bufq_we_3 = gather_we && (q == gq[QW-1:0]);
+				wire bufq_we_raw = gather_we && (q == gq[QW-1:0]);
+				wire bufq_we_0, bufq_we_1, bufq_we_2, bufq_we_3;
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe0 (.I0(bufq_we_raw), .O(bufq_we_0));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe1 (.I0(bufq_we_raw), .O(bufq_we_1));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe2 (.I0(bufq_we_raw), .O(bufq_we_2));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe3 (.I0(bufq_we_raw), .O(bufq_we_3));
+`else
+				assign bufq_we_0 = bufq_we_raw;
+				assign bufq_we_1 = bufq_we_raw;
+				assign bufq_we_2 = bufq_we_raw;
+				assign bufq_we_3 = bufq_we_raw;
+`endif
 				(* dont_touch = "true" *) wire [1:0] c_sl = c;
 				(* shreg_extract = "no" *) reg [15:0] b_c0, b_c1, b_c2, b_c3;
 				always @(posedge clk) begin
