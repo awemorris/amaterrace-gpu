@@ -164,9 +164,11 @@ module atg_su_exp #(
 		end
 	endgenerate
 	wire [31:0] lane0 = {{(32-GRP_W){1'b0}}, x_grp} * NPHYS;
-	wire [31:0] side_w;
-	am_shift #(.W(32), .SW(5)) u_side_w (.a({{(32-NPHYS){1'b0}}, side_shf}), .amt(lane0[4:0]), .left(1'b1),
-		.arith(1'b0), .y(side_w));
+	wire [31:0] side_w =
+		(x_grp[1:0] == 2'd0) ? {24'd0, side_shf} :
+		(x_grp[1:0] == 2'd1) ? {16'd0, side_shf, 8'd0} :
+		(x_grp[1:0] == 2'd2) ? {8'd0, side_shf, 16'd0} :
+		                       {side_shf, 24'd0};
 	wire [4:0] fl_lane_z;
 	genvar gzln;
 	generate
@@ -412,28 +414,30 @@ module atg_su_exp #(
 	reg [3:0] zexp;
 	reg [3:0] smok;
 	integer i;
-	function [191:0] get_rdat_lane;
+	function [15:0] get_rdat_ch;
 		input [NPHYS*192-1:0] all_rdat;
 		input [4:0] l_idx;
+		input [3:0] ch_idx;
 		integer k;
 		begin
-			get_rdat_lane = 192'd0;
+			get_rdat_ch = 16'd0;
 			for (k = 0; k < NPHYS; k = k + 1) begin
 				if (l_idx[4:0] == k[4:0])
-					get_rdat_lane = all_rdat[k * 192 +: 192];
+					get_rdat_ch = all_rdat[k * 192 + ch_idx * 16 +: 16];
 			end
 		end
 	endfunction
 
-	function [127:0] get_rdat1_lane;
+	function [15:0] get_rdat1_ch;
 		input [NPHYS*128-1:0] all_rdat1;
 		input [4:0] l_idx;
+		input [3:0] ch_idx;
 		integer k;
 		begin
-			get_rdat1_lane = 128'd0;
+			get_rdat1_ch = 16'd0;
 			for (k = 0; k < NPHYS; k = k + 1) begin
 				if (l_idx[4:0] == k[4:0])
-					get_rdat1_lane = all_rdat1[k * 128 +: 128];
+					get_rdat1_ch = all_rdat1[k * 128 + ch_idx * 16 +: 16];
 			end
 		end
 	endfunction
@@ -441,42 +445,38 @@ module atg_su_exp #(
 	genvar gi, gch;
 	generate
 		for (gi = 0; gi < 4; gi = gi + 1) begin : g_qmux
-			wire [2:0] dq_c_lo, dq_c_hi, dq_c1_lo, dq_c1_hi;
-			genvar gdq;
-			for (gdq = 0; gdq < 3; gdq = gdq + 1) begin : g_dq_buf
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc_lo  (.I0(dq[gdq]), .O(dq_c_lo[gdq]));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc_hi  (.I0(dq[gdq]), .O(dq_c_hi[gdq]));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc1_lo (.I0(dq[gdq]), .O(dq_c1_lo[gdq]));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc1_hi (.I0(dq[gdq]), .O(dq_c1_hi[gdq]));
-`else
-				assign dq_c_lo[gdq]  = dq[gdq];
-				assign dq_c_hi[gdq]  = dq[gdq];
-				assign dq_c1_lo[gdq] = dq[gdq];
-				assign dq_c1_hi[gdq] = dq[gdq];
-`endif
-			end
-			wire [4:0] lane_c_lo  = {dq_c_lo,  gi[1:0]} & (NPHYS - 1);
-			wire [4:0] lane_c_hi  = {dq_c_hi,  gi[1:0]} & (NPHYS - 1);
-			wire [4:0] lane_c1_lo = {dq_c1_lo, gi[1:0]} & (NPHYS - 1);
-			wire [4:0] lane_c1_hi = {dq_c1_hi, gi[1:0]} & (NPHYS - 1);
-
-			wire [191:0] rdat_lo  = get_rdat_lane(rdat, lane_c_lo);
-			wire [191:0] rdat_hi  = get_rdat_lane(rdat, lane_c_hi);
-			wire [127:0] rdat1_lo = get_rdat1_lane(rdat1, lane_c1_lo);
-			wire [127:0] rdat1_hi = get_rdat1_lane(rdat1, lane_c1_hi);
-
 			for (gch = 0; gch < 8; gch = gch + 1) begin : g_c_sl
-				wire [191:0] rdat_sel = (gch < 4) ? rdat_lo : rdat_hi;
-				wire [127:0] rdat1_sel = (gch < 4) ? rdat1_lo : rdat1_hi;
-				assign col[128 * gi + gch * 16 +: 16]  = rdat_sel[gch * 16 +: 16];
-				assign col1[128 * gi + gch * 16 +: 16] = rdat1_sel[gch * 16 +: 16];
+				wire [2:0] dq_col;
+				wire [2:0] dq_col1;
+				genvar gdq;
+				for (gdq = 0; gdq < 3; gdq = gdq + 1) begin : g_dq_buf
+`ifdef SYNTH_KINTEX7
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc  (.I0(dq[gdq]), .O(dq_col[gdq]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc1 (.I0(dq[gdq]), .O(dq_col1[gdq]));
+`else
+					assign dq_col[gdq]  = dq[gdq];
+					assign dq_col1[gdq] = dq[gdq];
+`endif
+				end
+				wire [4:0] lane_col  = {dq_col,  gi[1:0]} & (NPHYS - 1);
+				wire [4:0] lane_col1 = {dq_col1, gi[1:0]} & (NPHYS - 1);
+				assign col[128 * gi + gch * 16 +: 16]  = get_rdat_ch(rdat, lane_col, gch[3:0]);
+				assign col1[128 * gi + gch * 16 +: 16] = get_rdat1_ch(rdat1, lane_col1, gch[3:0]);
 			end
 			for (gch = 0; gch < 2; gch = gch + 1) begin : g_d_sl
-				wire [2:0] dq_d = dq_c_lo;
-				(* dont_touch = "true" *) wire q_ddw = ddw[{dq_d, gi[1:0]}];
-				wire [15:0] w_m4 = rdat_lo[128 + gch * 16 +: 16];
-				wire [15:0] w_mz = rdat_lo[160 + gch * 16 +: 16];
+				wire [2:0] dq_dep;
+				genvar gdq;
+				for (gdq = 0; gdq < 3; gdq = gdq + 1) begin : g_dq_buf
+`ifdef SYNTH_KINTEX7
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqd (.I0(dq[gdq]), .O(dq_dep[gdq]));
+`else
+					assign dq_dep[gdq] = dq[gdq];
+`endif
+				end
+				wire [4:0] lane_dep = {dq_dep, gi[1:0]} & (NPHYS - 1);
+				(* dont_touch = "true" *) wire q_ddw = ddw[{dq_dep, gi[1:0]}];
+				wire [15:0] w_m4 = get_rdat_ch(rdat, lane_dep, 4'd8 + gch[3:0]);
+				wire [15:0] w_mz = get_rdat_ch(rdat, lane_dep, 4'd10 + gch[3:0]);
 				assign dep[32 * gi + gch * 16 +: 16] = q_ddw ? w_m4 : w_mz;
 			end
 		end
@@ -502,7 +502,15 @@ module atg_su_exp #(
 	genvar gds;
 	generate
 		for (gds = 0; gds < 8; gds = gds + 1) begin : g_dsv_sl
-			(* dont_touch = "true" *) wire [WARP_W-1:0] dw_sl = dwarp;
+			wire [WARP_W-1:0] dw_sl;
+			genvar gwb;
+			for (gwb = 0; gwb < WARP_W; gwb = gwb + 1) begin : g_dw_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_dw (.I0(dwarp[gwb]), .O(dw_sl[gwb]));
+`else
+				assign dw_sl[gwb] = dwarp[gwb];
+`endif
+			end
 			assign dsv_mux[gds * 16 +: 16] = dsv[{dw_sl, gds[2:0], 4'd0} +: 16];
 		end
 	endgenerate
@@ -510,7 +518,28 @@ module atg_su_exp #(
 	(* dont_touch = "true" *) wire [WARP_W+2:0] dqs_x = {dwarp, dq};
 	(* dont_touch = "true" *) wire [WARP_W+2:0] dqs_y = {dwarp, dq};
 	assign x_ready = 1'b1;
-	assign ex_xy = {qy[{dqs_y, 4'd0} +: 16], qx[{dqs_x, 4'd0} +: 16]};
+
+	wire [15:0] qx_out, qy_out;
+	genvar gq_nib;
+	generate
+		for (gq_nib = 0; gq_nib < 4; gq_nib = gq_nib + 1) begin : g_qx_mux
+			wire [WARP_W+2:0] dqs_x_nib;
+			wire [WARP_W+2:0] dqs_y_nib;
+			genvar gb;
+			for (gb = 0; gb < WARP_W+3; gb = gb + 1) begin : g_sel_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qx_sel (.I0(dqs_x[gb]), .O(dqs_x_nib[gb]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qy_sel (.I0(dqs_y[gb]), .O(dqs_y_nib[gb]));
+`else
+				assign dqs_x_nib[gb] = dqs_x[gb];
+				assign dqs_y_nib[gb] = dqs_y[gb];
+`endif
+			end
+			assign qx_out[gq_nib*4 +: 4] = qx[{dqs_x_nib, gq_nib[1:0], 2'b00} +: 4];
+			assign qy_out[gq_nib*4 +: 4] = qy[{dqs_y_nib, gq_nib[1:0], 2'b00} +: 4];
+		end
+	endgenerate
+	assign ex_xy = {qy_out, qx_out};
 	assign ex_mask = dxp[dl0 +: 4] & smok;
 `ifdef MUT_EXP_FRONT
 	assign ex_aux = {drt, dlastb, dfirst, dnocol, 1'b1, dsv_mux,
@@ -539,11 +568,29 @@ module atg_su_exp #(
 				assign w_ff_f_cmp[gwf] = fl_data[8+gwf];
 `endif
 			end
+			wire [3:0] w_ff_f_exp;
+			genvar gwe;
+			for (gwe = 0; gwe < 4; gwe = gwe + 1) begin : g_wexp_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_exp (.I0(fl_data[8+15+gwe]), .O(w_ff_f_exp[gwe]));
+`else
+				assign w_ff_f_exp[gwe] = fl_data[8+15+gwe];
+`endif
+			end
+			wire [3:0] w_ff_sh_raw;
 			wire [3:0] w_ff_sh;
+			genvar gsh;
+			for (gsh = 0; gsh < 4; gsh = gsh + 1) begin : g_sh_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_shamt (.I0(w_ff_sh_raw[gsh]), .O(w_ff_sh[gsh]));
+`else
+				assign w_ff_sh[gsh] = w_ff_sh_raw[gsh];
+`endif
+			end
 			wire [15:0] w_ff_m;
 			wire w_fs_bo_unused;
 			wire w_unused_ok = &{1'b0, w_fs_bo_unused};
-			am_sub #(.W(4)) u_w_ff_sh (.a(4'd14), .b(w_ff_f_sh[18:15]), .bi(1'b0), .d(w_ff_sh), .bo(w_fs_bo_unused));
+			am_sub #(.W(4)) u_w_ff_sh (.a(4'd14), .b(w_ff_f_exp), .bi(1'b0), .d(w_ff_sh_raw), .bo(w_fs_bo_unused));
 			am_shift #(.W(16), .SW(4)) u_w_ff_m (.a({1'b1, w_ff_f_sh[14:0]}), .amt(w_ff_sh), .left(1'b0), .arith(1'b0),
 				.y(w_ff_m));
 			(* dont_touch = "true" *) wire [15:0] w_fx_floor =

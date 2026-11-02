@@ -141,23 +141,23 @@ module atg_su_sched #(
 	endfunction
 
 	/* Per slot. */
-	(* max_fanout = 12 *) reg [NWARPS*3-1:0] st;
-	(* max_fanout = 12 *) reg [NWARPS-1:0] st_free_r;
-	(* max_fanout = 12 *) reg [NWARPS-1:0] st_rdy_r;
-	(* max_fanout = 12 *) reg [NWARPS-1:0] st_rof_r;
-	(* max_fanout = 12 *) reg [NWARPS*16-1:0] pc;
-	(* max_fanout = 12 *) reg [NWARPS*GAP_W-1:0] gap;
-	(* max_fanout = 12 *) reg [NWARPS-1:0] gap_z_r;
+	reg [NWARPS*3-1:0] st;
+	reg [NWARPS-1:0] st_free_r;
+	reg [NWARPS-1:0] st_rdy_r;
+	reg [NWARPS-1:0] st_rof_r;
+	reg [NWARPS*16-1:0] pc;
+	reg [NWARPS*GAP_W-1:0] gap;
+	reg [NWARPS-1:0] gap_z_r;
 	wire [NWARPS*160-1:0] info;
-	(* max_fanout = 12 *) reg [NWARPS*4-1:0] tag;	/* workgroup of a compute warp (barriers) */
+	reg [NWARPS*4-1:0] tag;	/* workgroup of a compute warp (barriers) */
 
 	/* Compute launch: the next workgroup id, its warps, and whose it is. */
-	(* max_fanout = 12 *) reg cs_act;
-	(* max_fanout = 12 *) reg [15:0] id_x, id_y, id_z;
-	(* max_fanout = 12 *) reg [7:0] rot;	/* linear id % NSU */
-	(* max_fanout = 12 *) reg [3:0] wg_tag;
-	(* max_fanout = 12 *) reg [3:0] wk;	/* next warp of the workgroup being launched */
-	(* max_fanout = 12 *) reg launching;
+	reg cs_act;
+	reg [15:0] id_x, id_y, id_z;
+	reg [7:0] rot;	/* linear id % NSU */
+	reg [3:0] wg_tag;
+	reg [3:0] wk;	/* next warp of the workgroup being launched */
+	reg launching;
 	/* Compute workgroup size pipelined over 5 cycles (DSP LAT=2 + fabric output reg) */
 	reg [7:0] wg_z_r1, wg_z_r2;
 	wire [15:0] lanes_xy;
@@ -174,7 +174,7 @@ module atg_su_sched #(
 	wire [3:0] q_p1    = {q_lanes[3] ^ (&q_lanes[2:0]), q_lanes[2] ^ (&q_lanes[1:0]), q_lanes[1] ^ q_lanes[0], ~q_lanes[0]};
 	wire [3:0] nw_cand = rem_nz ? q_p1 : q_lanes;
 	wire       nw_ovf  = hi_nz || (rem_nz && (&q_lanes)) || ({28'd0, nw_cand} > NWARPS);
-	(* max_fanout = 12 *) reg [3:0] nw;
+	reg [3:0] nw;
 	always @(posedge clk) begin
 		if (rst_p) begin
 			wg_z_r1   <= 8'd1;
@@ -250,9 +250,9 @@ module atg_su_sched #(
 	endgenerate
 
 	/* Grants (one outstanding per source); compute launches hold them off (<= 3 LUTs from FFs). */
-	(* max_fanout = 12 *) reg vl_wait, fl_wait;
-	(* max_fanout = 12 *) reg vl_gnt_r, fl_gnt_r;
-	(* max_fanout = 12 *) reg [WARP_W-1:0] vl_s, fl_s;
+	reg vl_wait, fl_wait;
+	reg vl_gnt_r, fl_gnt_r;
+	reg [WARP_W-1:0] vl_s, fl_s;
 	(* keep = "true" *) wire cs_try  = cs_act && !launching && mine_wg && n_free_ge_nw;
 	(* keep = "true" *) wire cs_skip = cs_act && !launching && !mine_wg;
 	wire fl_req_can = fl_req && !fl_wait && any_free;
@@ -278,7 +278,7 @@ module atg_su_sched #(
 	(* keep = "true" *) wire [15:0] cmask_lo = wl_ge32_lo ? 16'hFFFF : lmask[15:0];
 	(* keep = "true" *) wire [15:0] cmask_hi = wl_ge32_hi ? 16'hFFFF : lmask[31:16];
 	wire [31:0] cmask = {cmask_hi, cmask_lo};
-	(* keep = "true", max_fanout = 12 *) wire cs_launch = launching && !vl_go && !fl_go && any_free;
+	(* keep = "true" *) wire cs_launch = launching && !vl_go && !fl_go && any_free;
 	assign init_valid = vl_go || fl_go || cs_launch;
 	assign init_warp = vl_go ? vl_s : fl_go ? fl_s : free_slot;
 	(* keep = "true" *) wire vl_go_lo = vl_go, vl_go_hi = vl_go;
@@ -290,11 +290,11 @@ module atg_su_sched #(
 
 	/* Candidates: slots that are READY, out of gap, and warp_ready from scoreboard (1 LUT3 per warp!) */
 	wire [NWARPS-1:0] slot_rdy_nogap = st_rdy_r & gap_z_r;
-	(* keep = "true", max_fanout = 12 *) wire [NWARPS-1:0] cand = st_rdy_r & gap_z_r & warp_ready;
+	(* keep = "true" *) wire [NWARPS-1:0] cand = st_rdy_r & gap_z_r & warp_ready;
 	genvar gc;
 
 	/* Registered pairwise relative ages for GTO Oldest policy (0 CARRY4s, 0 Pre-LUTs!) */
-	(* max_fanout = 12 *) reg cmp01_r, cmp02_r, cmp03_r, cmp12_r, cmp13_r, cmp23_r;
+	reg cmp01_r, cmp02_r, cmp03_r, cmp12_r, cmp13_r, cmp23_r;
 	always @(posedge clk) begin
 		if (rst_p) begin
 			{cmp01_r, cmp02_r, cmp03_r, cmp12_r, cmp13_r, cmp23_r} <= 6'd0;
@@ -318,8 +318,8 @@ module atg_su_sched #(
 	reg [WARP_W-1:0] rr;
 	reg [WARP_W-1:0] last_warp;
 	reg active_valid;
-	(* max_fanout = 12 *) reg hold_v;
-	(* max_fanout = 12 *) reg [WARP_W-1:0] hold_w;
+	reg hold_v;
+	reg [WARP_W-1:0] hold_w;
 
 	wire [NWARPS-1:0] slot_rdy_or_fetch = st_rof_r;
 	wire active_st_ok = slot_rdy_or_fetch[last_warp];
@@ -338,8 +338,8 @@ module atg_su_sched #(
 	(* keep = "true" *) wire w1_win = w1_ok13 && w1_ok02;
 	(* keep = "true" *) wire w2_win = w2_ok23 && w2_ok01;
 
-	(* max_fanout = 12 *) wire [WARP_W-1:0] fsel;
-	(* max_fanout = 12 *) wire fsel_v;
+	wire [WARP_W-1:0] fsel;
+	wire fsel_v;
 	generate
 		if (GTO != 0 && NWARPS == 4) begin : g_sel_gto4
 			assign fsel[1] = use_fixed ? fixed_w[1] : (!w0_win && !w1_win);
@@ -366,16 +366,32 @@ module atg_su_sched #(
 			assign fsel_v = hold_v || sel_v_rr;
 		end
 	endgenerate
-	reg [159:0] q_i;
-	integer y;
-	always @(*) begin
-		q_i = 160'd0;
-		for (y = 0; y < NWARPS; y = y + 1) begin
-			if (q_warp == y[WARP_W-1:0])
-				q_i = info[y*160 +: 160];
+	wire [159:0] q_info_out;
+	genvar gqi;
+	generate
+		for (gqi = 0; gqi < 10; gqi = gqi + 1) begin : g_qinfo_sl
+			wire [WARP_W-1:0] q_warp_sl;
+			genvar gqb;
+			for (gqb = 0; gqb < WARP_W; gqb = gqb + 1) begin : g_qw_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qw (.I0(q_warp[gqb]), .O(q_warp_sl[gqb]));
+`else
+				assign q_warp_sl[gqb] = q_warp[gqb];
+`endif
+			end
+			reg [15:0] q_i_sl;
+			integer y;
+			always @(*) begin
+				q_i_sl = 16'd0;
+				for (y = 0; y < NWARPS; y = y + 1) begin
+					if (q_warp_sl == y[WARP_W-1:0])
+						q_i_sl = info[y*160 + gqi*16 +: 16];
+				end
+			end
+			assign q_info_out[gqi*16 +: 16] = q_i_sl;
 		end
-	end
-	assign q_info = q_i;
+	endgenerate
+	assign q_info = q_info_out;
 
 	/* Precompute fetch address per warp independently from selection tournament */
 	wire [NWARPS-1:0] w_fa_co_unused;
@@ -485,28 +501,25 @@ module atg_su_sched #(
 	genvar gwi, gws;
 	generate
 	for (gwi = 0; gwi < NWARPS; gwi = gwi + 1) begin : g_info_w
-		wire vl_we_g0, vl_we_g1;
-		wire fl_we_g0, fl_we_g1;
-		wire cs_we_g0, cs_we_g1;
+		wire [9:0] vl_we_g;
+		wire [9:0] fl_we_g;
+		wire [9:0] cs_we_g;
+		genvar gwe;
+		for (gwe = 0; gwe < 10; gwe = gwe + 1) begin : g_we_buf
 `ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vl0 (.I0(vl_go && (vl_s == gwi[WARP_W-1:0])), .O(vl_we_g0));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vl1 (.I0(vl_go && (vl_s == gwi[WARP_W-1:0])), .O(vl_we_g1));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fl0 (.I0(fl_go && (fl_s == gwi[WARP_W-1:0])), .O(fl_we_g0));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fl1 (.I0(fl_go && (fl_s == gwi[WARP_W-1:0])), .O(fl_we_g1));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cs0 (.I0(cs_launch && (free_slot == gwi[WARP_W-1:0])), .O(cs_we_g0));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cs1 (.I0(cs_launch && (free_slot == gwi[WARP_W-1:0])), .O(cs_we_g1));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vl (.I0(vl_go && (vl_s == gwi[WARP_W-1:0])), .O(vl_we_g[gwe]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fl (.I0(fl_go && (fl_s == gwi[WARP_W-1:0])), .O(fl_we_g[gwe]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cs (.I0(cs_launch && (free_slot == gwi[WARP_W-1:0])), .O(cs_we_g[gwe]));
 `else
-		assign vl_we_g0 = vl_go && (vl_s == gwi[WARP_W-1:0]);
-		assign vl_we_g1 = vl_go && (vl_s == gwi[WARP_W-1:0]);
-		assign fl_we_g0 = fl_go && (fl_s == gwi[WARP_W-1:0]);
-		assign fl_we_g1 = fl_go && (fl_s == gwi[WARP_W-1:0]);
-		assign cs_we_g0 = cs_launch && (free_slot == gwi[WARP_W-1:0]);
-		assign cs_we_g1 = cs_launch && (free_slot == gwi[WARP_W-1:0]);
+			assign vl_we_g[gwe] = vl_go && (vl_s == gwi[WARP_W-1:0]);
+			assign fl_we_g[gwe] = fl_go && (fl_s == gwi[WARP_W-1:0]);
+			assign cs_we_g[gwe] = cs_launch && (free_slot == gwi[WARP_W-1:0]);
 `endif
+		end
 		for (gws = 0; gws < 20; gws = gws + 1) begin : g_info_sl
-			wire vl_we_s = (gws < 10) ? vl_we_g0 : vl_we_g1;
-			wire fl_we_s = (gws < 10) ? fl_we_g0 : fl_we_g1;
-			wire cs_we_s = (gws < 10) ? cs_we_g0 : cs_we_g1;
+			wire vl_we_s = vl_we_g[gws / 2];
+			wire fl_we_s = fl_we_g[gws / 2];
+			wire cs_we_s = cs_we_g[gws / 2];
 			(* shreg_extract = "no" *) reg [7:0] info_sl_r;
 			always @(posedge clk) begin
 				if (rst_p)

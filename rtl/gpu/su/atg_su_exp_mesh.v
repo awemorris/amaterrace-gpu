@@ -69,10 +69,10 @@ module atg_su_exp_mesh #(
 		S_DRAIN_WAIT  = 4'd7,
 		S_PRIM_WAIT2  = 4'd8;
 
-	(* max_fanout = 12 *) reg [3:0] st;
+	reg [3:0] st;
 
 	/* Latched Meshlet parameters */
-	(* max_fanout = 12 *) reg [15:0] mesh_id_reg;
+	reg [15:0] mesh_id_reg;
 	reg [7:0] prim_count_reg;
 	reg [7:0] cur_prim_idx;
 	reg [AW-1:0] base_prim;
@@ -82,10 +82,10 @@ module atg_su_exp_mesh #(
 	/* Current primitive under assembly */
 	reg [7:0] v0_idx, v1_idx, v2_idx;
 	reg [7:0] prim_flags;
-	(* max_fanout = 12 *) reg [4:0] req_w;	/* 0..20: words requested */
-	(* max_fanout = 12 *) reg [4:0] cap_w;	/* 0..21: words captured */
+	reg [4:0] req_w;	/* 0..20: words requested */
+	reg [4:0] cap_w;	/* 0..21: words captured */
 	reg lds_rd_en_d1;
-	(* max_fanout = 12 *) reg lds_rd_en_d2;
+	reg lds_rd_en_d2;
 	wire lds_data_v = lds_rd_en_d2;
 
 	/* 21 words of triangle vertex data */
@@ -140,7 +140,7 @@ module atg_su_exp_mesh #(
 	am_add #(.W(AW)) u_bpv (.a(cur_base), .b(v_scaled), .ci(1'b0), .s(vert_word_addr), .co(co_bpv));
 
 	/* Skid Buffer Signals */
-	(* max_fanout = 12 *) reg skid_push_valid;
+	reg skid_push_valid;
 	reg skid_push_last;
 	wire [701:0] skid_push_data;
 	wire skid_push_ready;
@@ -343,35 +343,28 @@ module atg_su_exp_mesh #(
 	 * ---------------------------------------------------------------- */
 	wire [701:0] s0_tri;
 	reg s0_last;
-	(* max_fanout = 12 *) reg s0_valid;
+	reg s0_valid;
 
 	wire [701:0] s1_tri;
 	reg s1_last;
-	(* max_fanout = 12 *) reg s1_valid;
+	reg s1_valid;
 
-	(* max_fanout = 12 *) wire w_mesh_ready = mesh_ready;
-	wire m_rdy0, m_rdy1, m_rdy2, m_rdy3;
-	wire push_v_d0, push_v_d1, push_v_d2, push_v_d3;
+	wire w_mesh_ready = mesh_ready;
+	wire [10:0] m_rdy;
+	wire [10:0] push_v_d;
 	wire push_v_d_raw = (st == S_SKID_WAIT) && skid_push_ready;
+	genvar gbf;
+	generate
+		for (gbf = 0; gbf < 11; gbf = gbf + 1) begin : g_skid_buf
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr0 (.I0(mesh_ready), .O(m_rdy0));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr1 (.I0(mesh_ready), .O(m_rdy1));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr2 (.I0(mesh_ready), .O(m_rdy2));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr3 (.I0(mesh_ready), .O(m_rdy3));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv0 (.I0(push_v_d_raw), .O(push_v_d0));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv1 (.I0(push_v_d_raw), .O(push_v_d1));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv2 (.I0(push_v_d_raw), .O(push_v_d2));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv3 (.I0(push_v_d_raw), .O(push_v_d3));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr (.I0(mesh_ready), .O(m_rdy[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv (.I0(push_v_d_raw), .O(push_v_d[gbf]));
 `else
-	assign m_rdy0 = mesh_ready;
-	assign m_rdy1 = mesh_ready;
-	assign m_rdy2 = mesh_ready;
-	assign m_rdy3 = mesh_ready;
-	assign push_v_d0 = push_v_d_raw;
-	assign push_v_d1 = push_v_d_raw;
-	assign push_v_d2 = push_v_d_raw;
-	assign push_v_d3 = push_v_d_raw;
+			assign m_rdy[gbf] = mesh_ready;
+			assign push_v_d[gbf] = push_v_d_raw;
 `endif
+		end
+	endgenerate
 	assign skid_push_ready = !s0_valid || w_mesh_ready;
 	assign skid_empty = !s0_valid && !s1_valid;
 
@@ -385,8 +378,8 @@ module atg_su_exp_mesh #(
 		for (gsl = 0; gsl < 44; gsl = gsl + 1) begin : g_skid_sl
 			localparam SL_B = gsl * 16;
 			localparam SL_W = (SL_B + 16 <= 702) ? 16 : (702 - SL_B);
-			wire sl_mrdy   = (gsl < 11) ? m_rdy0    : (gsl < 22) ? m_rdy1    : (gsl < 33) ? m_rdy2    : m_rdy3;
-			wire sl_push_d = (gsl < 11) ? push_v_d0 : (gsl < 22) ? push_v_d1 : (gsl < 33) ? push_v_d2 : push_v_d3;
+			wire sl_mrdy   = m_rdy[gsl / 4];
+			wire sl_push_d = push_v_d[gsl / 4];
 			(* dont_touch = "true" *) reg s0_v_sl, s1_v_sl, push_v_sl;
 			always @(posedge clk) begin
 				if (rst_p) begin

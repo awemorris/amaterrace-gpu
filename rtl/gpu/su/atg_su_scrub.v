@@ -23,8 +23,8 @@ module atg_su_scrub #(
 	input wire clk,
 	input wire rst_n,
 	input wire start,
-	(* keep = "true", max_fanout = 12 *) output reg on,
-	(* keep = "true", max_fanout = 12 *) output reg [AW-1:0] a
+	output reg on,
+	output reg [AW-1:0] a
 );
 	wire [AW-1:0] a_next;
 	wire a_co_unused;
