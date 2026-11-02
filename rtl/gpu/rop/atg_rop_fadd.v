@@ -62,49 +62,12 @@ module atg_rop_fadd #(
 	wire inf_a = ea_ff && !(|a_mnz);
 	wire inf_b = eb_ff && !(|b_mnz);
 
-	/* Pure-LUT 8-bit exponent differences dab = ea - eb, dba = eb - ea (3 LUT levels) */
-	(* keep = "true" *) wire [3:0] eq_e2, lt_e2, gt_e2;
 	genvar gc;
-	generate
-	for (gc = 0; gc < 4; gc = gc + 1) begin : g_exp_cmp2
-		wire [1:0] sa = ea[2 * gc +: 2];
-		wire [1:0] sb = eb[2 * gc +: 2];
-		assign eq_e2[gc] = (sa == sb);
-		assign lt_e2[gc] = (~sa[1] & sb[1]) | ((sa[1] ~^ sb[1]) & (~sa[0] & sb[0]));
-		assign gt_e2[gc] = (sa[1] & ~sb[1]) | ((sa[1] ~^ sb[1]) & (sa[0] & ~sb[0]));
-	end
-	endgenerate
-
-	(* keep = "true" *) wire [3:0] bo_ab, bo_ba;
-	assign bo_ab[0] = 1'b0;
-	assign bo_ab[1] = lt_e2[0];
-	assign bo_ab[2] = lt_e2[1] | (eq_e2[1] & lt_e2[0]);
-	assign bo_ab[3] = lt_e2[2] | (eq_e2[2] & lt_e2[1]) | (eq_e2[2] & eq_e2[1] & lt_e2[0]);
-
-	assign bo_ba[0] = 1'b0;
-	assign bo_ba[1] = gt_e2[0];
-	assign bo_ba[2] = gt_e2[1] | (eq_e2[1] & gt_e2[0]);
-	assign bo_ba[3] = gt_e2[2] | (eq_e2[2] & gt_e2[1]) | (eq_e2[2] & eq_e2[1] & gt_e2[0]);
-
-	(* keep = "true" *) wire [7:0] dab, dba;
-	generate
-	for (gc = 0; gc < 4; gc = gc + 1) begin : g_exp_diff2
-		wire a0 = ea[2 * gc];
-		wire a1 = ea[2 * gc + 1];
-		wire b0 = eb[2 * gc];
-		wire b1 = eb[2 * gc + 1];
-		wire bab = bo_ab[gc];
-		wire bba = bo_ba[gc];
-		wire b0_ab = (~a0 & b0) | ((~a0 | b0) & bab);
-		wire b0_ba = (~b0 & a0) | ((~b0 | a0) & bba);
-		assign dab[2 * gc]     = a0 ^ b0 ^ bab;
-		assign dab[2 * gc + 1] = a1 ^ b1 ^ b0_ab;
-		assign dba[2 * gc]     = b0 ^ a0 ^ bba;
-		assign dba[2 * gc + 1] = b1 ^ a1 ^ b0_ba;
-	end
-	endgenerate
-
-	(* keep = "true" *) wire ea_lt_eb = lt_e2[3] | (eq_e2[3] & bo_ab[3]);
+	wire [7:0] dab, dba;
+	wire dab_bo_unused, dba_bo_unused;
+	am_sub #(.W(8)) u_sub_dab (.a(ea), .b(eb), .bi(1'b0), .d(dab), .bo(dab_bo_unused));
+	am_sub #(.W(8)) u_sub_dba (.a(eb), .b(ea), .bi(1'b0), .d(dba), .bo(dba_bo_unused));
+	wire ea_lt_eb = dab_bo_unused;
 
 	/* Pure-LUT 31-bit magnitude comparison (Level 1..3 -> folded into Level 4 muxes) */
 	(* keep = "true" *) wire [10:0] lt0, eq0;
@@ -335,27 +298,10 @@ module atg_rop_fadd #(
 		d1_e0 ? close_diff_d1[12:0]  : close_diff_d0[12:0]
 	};
 
-	/* Pure-LUT 8-bit ex1 + 1 and ex1 - 1 (0 CARRY4s, 2 LUT levels) */
-	(* keep = "true" *) wire ex_p1_c4  = &ex1[3:0];
-	(* keep = "true" *) wire ex_m1_b4  = (ex1[3:0] == 4'd0);
 	wire [7:0] ex2_p1_w, ex2_sub1_w;
-	assign ex2_p1_w[0] = ~ex1[0];
-	assign ex2_p1_w[1] = ex1[1] ^ ex1[0];
-	assign ex2_p1_w[2] = ex1[2] ^ (&ex1[1:0]);
-	assign ex2_p1_w[3] = ex1[3] ^ (&ex1[2:0]);
-	assign ex2_p1_w[4] = ex1[4] ^ ex_p1_c4;
-	assign ex2_p1_w[5] = ex1[5] ^ (ex_p1_c4 & ex1[4]);
-	assign ex2_p1_w[6] = ex1[6] ^ (ex_p1_c4 & (&ex1[5:4]));
-	assign ex2_p1_w[7] = ex1[7] ^ (ex_p1_c4 & (&ex1[6:4]));
-
-	assign ex2_sub1_w[0] = ~ex1[0];
-	assign ex2_sub1_w[1] = ex1[1] ^ ~ex1[0];
-	assign ex2_sub1_w[2] = ex1[2] ^ (ex1[1:0] == 2'd0);
-	assign ex2_sub1_w[3] = ex1[3] ^ (ex1[2:0] == 3'd0);
-	assign ex2_sub1_w[4] = ex1[4] ^ ex_m1_b4;
-	assign ex2_sub1_w[5] = ex1[5] ^ (ex_m1_b4 & ~ex1[4]);
-	assign ex2_sub1_w[6] = ex1[6] ^ (ex_m1_b4 & (ex1[5:4] == 2'd0));
-	assign ex2_sub1_w[7] = ex1[7] ^ (ex_m1_b4 & (ex1[6:4] == 3'd0));
+	wire ex2_p1_co_unused, ex2_sub1_bo_unused;
+	am_add #(.W(8)) u_ex2_p1 (.a(ex1), .b(8'd1), .ci(1'b0), .s(ex2_p1_w), .co(ex2_p1_co_unused));
+	am_sub #(.W(8)) u_ex2_sub1 (.a(ex1), .b(8'd1), .bi(1'b0), .d(ex2_sub1_w), .bo(ex2_sub1_bo_unused));
 
 	wire v2_w          = rst_n && v1;
 	wire sp2_w         = sp1;
@@ -703,23 +649,9 @@ module atg_rop_fadd #(
 	endgenerate
 	(* keep = "true", dont_touch = "true" *) wire close_m22 = lz3_b[4] ? nl_hi1[23] : nl_hi0[23];
 
-	/* Pure-LUT 8-bit subtractor close_e = ex2_3 - {3'd0, lz3_b} (2 LUT levels, 0 CARRY4s) */
-	(* keep = "true", dont_touch = "true" *) wire ce_b1 = ~ex2_3[0] & lz3_b[0];
-	(* keep = "true", dont_touch = "true" *) wire ce_b2 = (~ex2_3[1] & lz3_b[1]) | ((ex2_3[1] ~^ lz3_b[1]) & ce_b1);
-	(* keep = "true", dont_touch = "true" *) wire ce_b3 = (ex2_3[2:0] < lz3_b[2:0]);
-	(* keep = "true", dont_touch = "true" *) wire ce_b4 = (~ex2_3[3] & lz3_b[3]) | ((ex2_3[3] ~^ lz3_b[3]) & ce_b3);
-	(* keep = "true", dont_touch = "true" *) wire ce_b5 = (~ex2_3[4] & lz3_b[4]) |
-	                                                      ((ex2_3[4] ~^ lz3_b[4]) & (~ex2_3[3] & lz3_b[3])) |
-	                                                      ((ex2_3[4] ~^ lz3_b[4]) & (ex2_3[3] ~^ lz3_b[3]) & ce_b3);
-	(* keep = "true", dont_touch = "true" *) wire [7:0] close_e;
-	assign close_e[0] = ex2_3[0] ^ lz3_b[0];
-	assign close_e[1] = ex2_3[1] ^ lz3_b[1] ^ ce_b1;
-	assign close_e[2] = ex2_3[2] ^ lz3_b[2] ^ ce_b2;
-	assign close_e[3] = ex2_3[3] ^ lz3_b[3] ^ ce_b3;
-	assign close_e[4] = ex2_3[4] ^ lz3_b[4] ^ ce_b4;
-	assign close_e[5] = ex2_3[5] ^ ce_b5;
-	assign close_e[6] = ex2_3[6] ^ (ce_b5 & ~ex2_3[5]);
-	assign close_e[7] = ex2_3[7] ^ (ce_b5 & (ex2_3[6:5] == 2'd0));
+	wire [7:0] close_e;
+	wire close_e_bo_unused;
+	am_sub #(.W(8)) u_close_e (.a(ex2_3), .b({3'd0, lz3_b}), .bi(1'b0), .d(close_e), .bo(close_e_bo_unused));
 
 	(* keep = "true", dont_touch = "true" *) wire cudf_lo = (ex2_3[2:0] <= lz3_a[2:0]);
 	(* keep = "true", dont_touch = "true" *) wire cudf_eq = is_close_a && ex2_le31_3 && (ex2_3[4:3] == lz3_a[4:3]);
@@ -854,7 +786,8 @@ module atg_rop_fadd #(
 	wire unused_bits = &{1'b0, shr_0[26:8], shr_0[0], shr_1[26:15], shr_1[7:0], shr_2[14:0],
 		nl_hi0[24], nl_hi0[0], nl_hi1[24], dab[7:5], dba[7:5], r_sub2_b, r_sub2_c,
 		c_in_pad[27:25], nl_s1_pad[11:0], en_s3[11],
-		close_bo0_unused, close_bo1_unused, sum_co_unused, LAT[31:0]};
+		close_bo0_unused, close_bo1_unused, sum_co_unused,
+		dab_bo_unused, dba_bo_unused, ex2_p1_co_unused, ex2_sub1_bo_unused, close_e_bo_unused, LAT[31:0]};
 endmodule
 
 `default_nettype wire
