@@ -709,10 +709,10 @@ module atg_su_pk_half #(
 		(* shreg_extract = "no" *) reg        s3_valid;
 		(* shreg_extract = "no" *) reg        s3_ovr_en;
 		(* shreg_extract = "no" *) reg [15:0] s3_ovr_val;
-		(* shreg_extract = "no" *) reg [3:0]  s3_o;
+		(* shreg_extract = "no" *) reg [3:0]  s3_o_pipe, s3_o_mux;
 		(* shreg_extract = "no" *) reg [2:0]  s3_r;
 		(* shreg_extract = "no" *) reg        s3_sat;
-		(* shreg_extract = "no" *) reg [10:0] s3_mc;
+		(* shreg_extract = "no" *) reg [10:0] s3_mc_sh, s3_mc_cw;
 		(* shreg_extract = "no" *) reg        s3_sp, s3_sc, s3_rdn, s3_zc;
 		(* shreg_extract = "no" *) reg        s3_spec_hit;
 		(* shreg_extract = "no" *) reg [15:0] s3_spec_res;
@@ -725,10 +725,12 @@ module atg_su_pk_half #(
 				s3_valid    <= 1'b0;
 				s3_ovr_en   <= 1'b0;
 				s3_ovr_val  <= 16'd0;
-				s3_o        <= 4'd0;
+				s3_o_pipe   <= 4'd0;
+				s3_o_mux    <= 4'd0;
 				s3_r        <= 3'd0;
 				s3_sat      <= 1'b0;
-				s3_mc       <= 11'd0;
+				s3_mc_sh    <= 11'd0;
+				s3_mc_cw    <= 11'd0;
 				s3_sp       <= 1'b0;
 				s3_sc       <= 1'b0;
 				s3_rdn      <= 1'b0;
@@ -747,10 +749,12 @@ module atg_su_pk_half #(
 				s3_valid    <= s2_valid;
 				s3_ovr_en   <= s2_ovr_en;
 				s3_ovr_val  <= s2_ovr_val;
-				s3_o        <= s2_o;
+				s3_o_pipe   <= s2_o;
+				s3_o_mux    <= s2_o;
 				s3_r        <= s2_r;
 				s3_sat      <= s2_sat;
-				s3_mc       <= s2_mc;
+				s3_mc_sh    <= s2_mc;
+				s3_mc_cw    <= s2_mc;
 				s3_sp       <= s2_sp;
 				s3_sc       <= s2_sc;
 				s3_rdn      <= s2_rdn;
@@ -775,15 +779,15 @@ module atg_su_pk_half #(
 		wire s3_near = $signed(s3_k) >= -10'sd12;
 		wire [46:0] s3_zal;
 		am_shift #(.W(47), .SW(6), .DIR(2)) u_s3_al (
-			.a({36'd0, s3_mc}), .amt(s3_dp37[5:0]), .left(1'b1), .arith(1'b0), .y(s3_zal)
+			.a({36'd0, s3_mc_sh}), .amt(s3_dp37[5:0]), .left(1'b1), .arith(1'b0), .y(s3_zal)
 		);
-		wire [36:0] s3_cw = s3_zc ? 37'd0 : s3_big ? {1'b0, s3_mc, 25'd0} :
+		wire [36:0] s3_cw = s3_zc ? 37'd0 : s3_big ? {1'b0, s3_mc_cw, 25'd0} :
 			s3_near ? {s3_zal[46:11], s3_zal[10] | (|s3_zal[9:0])} : 37'd1;
 		wire [6:0]  s3_eb = (!s3_zc && s3_big) ? s3_eb_c : s3_eb_t;
 
 		reg [15:0] s3_other_pre;
 		always @(*) begin
-			case (s3_o)
+			case (s3_o_mux)
 			ATG_PK_PACKH[3:0]: s3_other_pre = s3_xh;
 			ATG_PK_FMIN2[3:0], ATG_PK_FMAX2[3:0]: s3_other_pre = FL ? (s3_sat ? atg_su_hsat(s3_fminmax) : s3_fminmax) : 16'd0;
 			ATG_PK_IADD2[3:0], ATG_PK_ISUB2[3:0]: s3_other_pre = AR ? s3_isum : 16'd0;
@@ -828,7 +832,7 @@ module atg_su_pk_half #(
 				s4_valid     <= s3_valid;
 				s4_ovr_en    <= s3_ovr_en;
 				s4_ovr_val   <= s3_ovr_val;
-				s4_o         <= s3_o;
+				s4_o         <= s3_o_pipe;
 				s4_r         <= s3_r;
 				s4_sat       <= s3_sat;
 				s4_eb        <= s3_eb;
@@ -845,9 +849,15 @@ module atg_su_pk_half #(
 		genvar gcw4;
 		for (gcw4 = 0; gcw4 < 3; gcw4 = gcw4 + 1) begin : g_s4_cw
 			localparam CW4_W = (gcw4 == 2) ? 5 : 16;
-			(* keep = "true" *) wire zc_cw_s = s3_zc;
+			wire clr_s_raw = rst_p || s3_zc;
+			wire clr_s;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_clr (.I0(clr_s_raw), .O(clr_s));
+`else
+			assign clr_s = clr_s_raw;
+`endif
 			always @(posedge clk) begin
-				if (rst_p || zc_cw_s)
+				if (clr_s)
 					s4_cw[gcw4*16 +: CW4_W] <= {CW4_W{1'b0}};
 				else
 					s4_cw[gcw4*16 +: CW4_W] <= s3_cw[gcw4*16 +: CW4_W];
@@ -857,8 +867,38 @@ module atg_su_pk_half #(
 		/* =====================================================================
 		 * Stage 4 -> Stage 5: Speculative parallel 37-bit FMA add/sub
 		 * ===================================================================== */
-		wire s4_eff_sub = !(s4_zc || s4_sp == s4_sc);
-		wire [36:0] s4_pw = (!s4_zc && s4_big) ? 37'd1 : {13'd0, s4_prod[21:0], 2'b00};
+		wire s4_zc_sub, s4_zc_pw;
+		wire s4_big_pw;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_zc_sub (.I0(s4_zc), .O(s4_zc_sub));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_zc_pw  (.I0(s4_zc), .O(s4_zc_pw));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_big_pw (.I0(s4_big), .O(s4_big_pw));
+`else
+		assign s4_zc_sub = s4_zc;
+		assign s4_zc_pw  = s4_zc;
+		assign s4_big_pw = s4_big;
+`endif
+
+		wire s4_eff_sub_raw = !(s4_zc_sub || s4_sp == s4_sc);
+		wire s4_eff_sub;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_esub (.I0(s4_eff_sub_raw), .O(s4_eff_sub));
+`else
+		assign s4_eff_sub = s4_eff_sub_raw;
+`endif
+
+		wire s4_pw_sel = !s4_zc_pw && s4_big_pw;
+		wire s4_pw_sel_0, s4_pw_sel_1;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_pw0 (.I0(s4_pw_sel), .O(s4_pw_sel_0));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_pw1 (.I0(s4_pw_sel), .O(s4_pw_sel_1));
+`else
+		assign s4_pw_sel_0 = s4_pw_sel;
+		assign s4_pw_sel_1 = s4_pw_sel;
+`endif
+
+		wire [21:0] s4_prod_m = {s4_pw_sel_1 ? 11'd0 : s4_prod[21:11], s4_pw_sel_0 ? 11'd0 : s4_prod[10:0]};
+		wire [36:0] s4_pw = {13'd0, s4_prod_m, 1'b0, s4_pw_sel_0};
 		wire [36:0] s4_sum_pc, s4_sum_cp;
 		wire s4_co_pc;
 		wire s4_bo_cp_unused;
@@ -871,7 +911,18 @@ module atg_su_pk_half #(
 		);
 
 		wire s4_swap = s4_eff_sub && !s4_co_pc;
-		wire [36:0] s4_sum  = s4_swap ? s4_sum_cp : s4_sum_pc;
+		wire s4_swap_lo, s4_swap_hi;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sw0 (.I0(s4_swap), .O(s4_swap_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sw1 (.I0(s4_swap), .O(s4_swap_hi));
+`else
+		assign s4_swap_lo = s4_swap;
+		assign s4_swap_hi = s4_swap;
+`endif
+		wire [36:0] s4_sum  = {
+			s4_swap_hi ? s4_sum_cp[36:19] : s4_sum_pc[36:19],
+			s4_swap_lo ? s4_sum_cp[18:0]  : s4_sum_pc[18:0]
+		};
 		wire        s4_sr   = s4_swap ? s4_sc : s4_sp;
 
 		/* Precompute block exponent bases (+0, +16, +32) and their +1 upper bits (LUT3, 0 CARRY4) */

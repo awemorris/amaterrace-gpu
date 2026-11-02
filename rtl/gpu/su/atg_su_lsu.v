@@ -455,16 +455,7 @@ module atg_su_lsu #(
 			req_taken <= 1'b1;
 	assign dc_req_valid = st == WAIT && !req_taken;
 	assign dc_req_write = rwr;
-`ifdef SYNTH_KINTEX7
-	genvar g_dcl;
-	generate
-		for (g_dcl = 0; g_dcl < ADDR_W-LINE_SHIFT; g_dcl = g_dcl + 1) begin : g_buf_dcline
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_dcl (.I0(dc_line_r[g_dcl]), .O(dc_req_line[g_dcl]));
-		end
-	endgenerate
-`else
 	assign dc_req_line = dc_line_r;
-`endif
 	assign dc_req_wdata = cwd;
 	assign dc_req_tag = 8'd0;
 	assign dc_inv = inv_q;

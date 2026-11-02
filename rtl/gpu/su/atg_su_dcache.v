@@ -104,13 +104,34 @@ module atg_su_dcache #(
 	(* max_fanout = 12 *) reg r_write, r_error;
 	wire [LB-1:0] r_rdata;
 
-	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] u_idx_v = u_req_line[IW-1:0];
-	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] u_idx_0 = u_req_line[IW-1:0];
-	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] u_idx_1 = u_req_line[IW-1:0];
-	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] u_idx_2 = u_req_line[IW-1:0];
-	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] u_idx_3 = u_req_line[IW-1:0];
+	wire [LA_W-1:0] u_req_line_tag;
+	wire [LA_W-1:0] u_req_line_reg;
+	wire [IW-1:0] u_idx_v0, u_idx_v1;
+`ifdef SYNTH_KINTEX7
+	genvar grl;
+	generate
+		for (grl = 0; grl < LA_W; grl = grl + 1) begin : g_buf_rl
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_tag (.I0(u_req_line[grl]), .O(u_req_line_tag[grl]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_reg (.I0(u_req_line[grl]), .O(u_req_line_reg[grl]));
+		end
+		for (grl = 0; grl < IW; grl = grl + 1) begin : g_buf_v
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_v0 (.I0(u_req_line[grl]), .O(u_idx_v0[grl]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_v1 (.I0(u_req_line[grl]), .O(u_idx_v1[grl]));
+		end
+	endgenerate
+`else
+	assign u_req_line_tag = u_req_line;
+	assign u_req_line_reg = u_req_line;
+	assign u_idx_v0 = u_req_line[IW-1:0];
+	assign u_idx_v1 = u_req_line[IW-1:0];
+`endif
+
+	(* keep = "true" *) wire [IW-1:0] u_idx_0 = u_req_line_tag[IW-1:0];
+	(* keep = "true" *) wire [IW-1:0] u_idx_1 = u_req_line_tag[IW-1:0];
+	(* keep = "true" *) wire [IW-1:0] u_idx_2 = u_req_line_tag[IW-1:0];
+	(* keep = "true" *) wire [IW-1:0] u_idx_3 = u_req_line_tag[IW-1:0];
 	wire [TW-1:0] u_tag_rd = {tags_3[u_idx_3], tags_2[u_idx_2], tags_1[u_idx_1], tags_0[u_idx_0]};
-	wire [TW-1:0] u_tag_in = u_req_line[LA_W-1:IW];
+	wire [TW-1:0] u_tag_in = u_req_line_tag[LA_W-1:IW];
 	(* keep = "true", max_fanout = 12 *) wire [IW-1:0] q_idx_v = q_line[IW-1:0];
 	wire [TW-1:0] q_tag_rd = {tags_3[q_idx_r3_r], tags_2[q_idx_r2_r], tags_1[q_idx_r1_r], tags_0[q_idx_r0_r]};
 	wire [TW-1:0] q_tag_in = q_line[LA_W-1:IW];
@@ -127,7 +148,12 @@ module atg_su_dcache #(
 			assign q_teq_g[gteq] = (q_tag_rd[TB +: TW_C] == q_tag_in[TB +: TW_C]);
 		end
 	endgenerate
-	(* keep = "true" *) wire u_hit_lo = valid[u_idx_v] && (&u_teq_g[N_TEQ/2-1:0]);
+	wire [1:0] val_u_pair = {
+		valid[{1'b1, u_idx_v1[IW-2:0]}],
+		valid[{1'b0, u_idx_v0[IW-2:0]}]
+	};
+	wire val_u = val_u_pair[u_idx_v0[IW-1]];
+	(* keep = "true" *) wire u_hit_lo = val_u && (&u_teq_g[N_TEQ/2-1:0]);
 	(* keep = "true" *) wire u_hit_hi = &u_teq_g[N_TEQ-1:N_TEQ/2];
 	wire u_hit = u_hit_lo && u_hit_hi;
 	(* keep = "true" *) wire q_hit_lo = valid[q_idx_v] && (&q_teq_g[N_TEQ/2-1:0]);
@@ -240,26 +266,26 @@ module atg_su_dcache #(
 
 	always @(posedge clk) begin
 		if (dc_idle_ce_0) begin
-			q_line_lo <= u_req_line[LA_LO-1:0];
+			q_line_lo <= u_req_line_reg[LA_LO-1:0];
 			q_write   <= u_req_write;
 		end
 		if (dc_idle_ce_1) begin
-			q_line_hi <= u_req_line[LA_W-1:LA_LO];
+			q_line_hi <= u_req_line_reg[LA_W-1:LA_LO];
 		end
 		if (dc_idle_ce_2) begin
 			q_tag <= u_req_tag;
-			q_idx_d_lo  <= u_req_line[IW-1:0];
-			q_idx_d_hi  <= u_req_line[IW-1:0];
+			q_idx_d_lo  <= u_req_line_reg[IW-1:0];
+			q_idx_d_hi  <= u_req_line_reg[IW-1:0];
 		end
 		if (dc_idle_ce_3) begin
-			q_idx_r0_r <= u_req_line[IW-1:0];
-			q_idx_r1_r <= u_req_line[IW-1:0];
-			q_idx_r2_r <= u_req_line[IW-1:0];
+			q_idx_r0_r <= u_req_line_reg[IW-1:0];
+			q_idx_r1_r <= u_req_line_reg[IW-1:0];
+			q_idx_r2_r <= u_req_line_reg[IW-1:0];
 		end
 		if (dc_idle_ce_4) begin
-			q_idx_r3_r <= u_req_line[IW-1:0];
-			q_idx_w0_r <= u_req_line[IW-1:0];
-			q_idx_w1_r <= u_req_line[IW-1:0];
+			q_idx_r3_r <= u_req_line_reg[IW-1:0];
+			q_idx_w0_r <= u_req_line_reg[IW-1:0];
+			q_idx_w1_r <= u_req_line_reg[IW-1:0];
 		end
 
 		if (rst_p) begin
@@ -273,8 +299,8 @@ module atg_su_dcache #(
 		end else begin
 			case (st)
 			IDLE: if (take) begin
-				q_idx_w2_r <= u_req_line[IW-1:0];
-				q_idx_w3_r <= u_req_line[IW-1:0];
+				q_idx_w2_r <= u_req_line_reg[IW-1:0];
+				q_idx_w3_r <= u_req_line_reg[IW-1:0];
 				q_drop <= 1'b0;
 				r_write <= u_req_write;
 				r_error <= 1'b0;
