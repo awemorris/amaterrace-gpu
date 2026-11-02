@@ -196,7 +196,15 @@ module atg_su_sched #(
 	am_add #(.W(16)) u_idx1 (.a(id_x), .b(16'd0), .ci(1'b1), .s(id_x1), .co(ix_co_unused));
 	am_add #(.W(16)) u_idy1 (.a(id_y), .b(16'd0), .ci(1'b1), .s(id_y1), .co(iy_co_unused));
 	am_add #(.W(16)) u_idz1 (.a(id_z), .b(16'd0), .ci(1'b1), .s(id_z1), .co(iz_co_unused));
-	(* keep = "true" *) wire id_x_last = (id_x == grid_x_m1);
+	wire id_x_last_raw = (id_x == grid_x_m1);
+	wire id_x_last, id_x_last_yz;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_idxl  (.I0(id_x_last_raw), .O(id_x_last));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_idxly (.I0(id_x_last_raw), .O(id_x_last_yz));
+`else
+	assign id_x_last    = id_x_last_raw;
+	assign id_x_last_yz = id_x_last_raw;
+`endif
 	(* keep = "true" *) wire id_y_last = (id_y == grid_y_m1);
 	(* keep = "true" *) wire id_z_last = (id_z == grid_z_m1);
 	wire last_id = id_x_last && id_y_last && id_z_last;
@@ -373,8 +381,17 @@ module atg_su_sched #(
 	genvar g_fa;
 	generate
 		for (g_fa = 0; g_fa < NWARPS; g_fa = g_fa + 1) begin : g_faddr
-			(* keep = "true" *) wire [1:0] w_sk_lo = info[g_fa*160 + ATG_WI_KIND +: 2];
-			(* keep = "true" *) wire [1:0] w_sk_hi = info[g_fa*160 + ATG_WI_KIND +: 2];
+			wire [1:0] w_sk_raw = info[g_fa*160 + ATG_WI_KIND +: 2];
+			wire [1:0] w_sk_lo, w_sk_hi;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadlo0 (.I0(w_sk_raw[0]), .O(w_sk_lo[0]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadlo1 (.I0(w_sk_raw[1]), .O(w_sk_lo[1]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadhi0 (.I0(w_sk_raw[0]), .O(w_sk_hi[0]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadhi1 (.I0(w_sk_raw[1]), .O(w_sk_hi[1]));
+`else
+			assign w_sk_lo = w_sk_raw;
+			assign w_sk_hi = w_sk_raw;
+`endif
 			wire [31:0] w_base = {
 				w_sk_hi == K_VERT ? vs_base[31:16] : w_sk_hi == K_FRAG ? fs_base[31:16] : cs_base[31:16],
 				w_sk_lo == K_VERT ? vs_base[15:0]  : w_sk_lo == K_FRAG ? fs_base[15:0]  : cs_base[15:0]
@@ -617,7 +634,7 @@ module atg_su_sched #(
 			if (cs_adv_id_x) begin
 				id_x <= id_x_last ? 16'd0 : id_x1;
 			end
-			if (cs_adv_id_yz && id_x_last) begin
+			if (cs_adv_id_yz && id_x_last_yz) begin
 				id_y <= id_y_last ? 16'd0 : id_y1;
 				if (id_y_last)
 					id_z <= id_z1;
