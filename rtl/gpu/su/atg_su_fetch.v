@@ -74,24 +74,35 @@ module atg_su_fetch #(
 	(* dont_touch = "true" *) wire rst_p = !rst_n;
 	wire h = rp[0];
 	(* dont_touch = "true" *) reg rp0_pc;
+	wire rp0_pc_lo, rp0_pc_hi;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rpc_l (.I0(rp0_pc), .O(rp0_pc_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rpc_h (.I0(rp0_pc), .O(rp0_pc_hi));
+`else
+	assign rp0_pc_lo = rp0_pc;
+	assign rp0_pc_hi = rp0_pc;
+`endif
 	assign d_valid = used != 2'd0 && q_have[h];
 	assign d_warp = q_warp[h];
-	assign d_pc = q_pc[rp0_pc];
+	assign d_pc = {
+		rp0_pc_hi ? q_pc[1][15:8] : q_pc[0][15:8],
+		rp0_pc_lo ? q_pc[1][7:0]  : q_pc[0][7:0]
+	};
 	(* keep = "true", max_fanout = 12 *) wire pop = d_valid && d_ready;
 
 	genvar gqs;
 	generate
-		for (gqs = 0; gqs < 4; gqs = gqs + 1) begin : g_qins_sl
+		for (gqs = 0; gqs < 8; gqs = gqs + 1) begin : g_qins_sl
 			(* dont_touch = "true" *) reg fp0_sl;
 			(* dont_touch = "true" *) reg rp0_sl;
 			wire fill0_sl = ic_rvalid && !fp0_sl;
 			wire fill1_sl = ic_rvalid && fp0_sl;
-			(* shreg_extract = "no" *) reg [15:0] q_ins0_r, q_ins1_r;
+			(* shreg_extract = "no" *) reg [7:0] q_ins0_r, q_ins1_r;
 			always @(posedge clk) begin
 				if (fill0_sl)
-					q_ins0_r <= ic_rdata[gqs*16 +: 16];
+					q_ins0_r <= ic_rdata[gqs*8 +: 8];
 				if (fill1_sl)
-					q_ins1_r <= ic_rdata[gqs*16 +: 16];
+					q_ins1_r <= ic_rdata[gqs*8 +: 8];
 				if (rst_p) begin
 					fp0_sl <= 1'b0;
 					rp0_sl <= 1'b0;
@@ -102,7 +113,7 @@ module atg_su_fetch #(
 						rp0_sl <= rp_next[0];
 				end
 			end
-			assign d_instr[gqs*16 +: 16] = rp0_sl ? q_ins1_r : q_ins0_r;
+			assign d_instr[gqs*8 +: 8] = rp0_sl ? q_ins1_r : q_ins0_r;
 		end
 	endgenerate
 
