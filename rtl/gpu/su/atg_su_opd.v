@@ -130,34 +130,34 @@ module atg_su_opd #(
 	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
 	/* Stage A: the instruction whose next group addresses the RF. */
-	(* max_fanout = 12 *) reg a_act;
-	(* max_fanout = 12 *) reg [WARP_W-1:0] a_warp;
+	reg a_act;
+	reg [WARP_W-1:0] a_warp;
 	reg [15:0] a_pc;
-	(* max_fanout = 12 *) reg [UOP_W-1:0] a_uop;
+	reg [UOP_W-1:0] a_uop;
 	reg [SBE_W:0] a_sbe;
-	(* max_fanout = 12 *) reg [GRP_W-1:0] a_grp;
-	(* max_fanout = 12 *) reg a_step;	/* 0 = step 0 (reads rs1, rs2), 1 = step 1 (reads rs3) */
-	(* max_fanout = 12 *) reg a_pass;	/* the second operand pass of a four-operand uop */
-	(* max_fanout = 12 *) reg a_wait;	/* 1 = waiting for registered RF output (when REG_IO == 1) */
-	(* max_fanout = 12 *) reg a_wait_last;
+	reg [GRP_W-1:0] a_grp;
+	reg a_step;	/* 0 = step 0 (reads rs1, rs2), 1 = step 1 (reads rs3) */
+	reg a_pass;	/* the second operand pass of a four-operand uop */
+	reg a_wait;	/* 1 = waiting for registered RF output (when REG_IO == 1) */
+	reg a_wait_last;
 	(* dont_touch = "true" *) reg [WARP_W-1:0] a_rf_warp_r;
 	(* dont_touch = "true" *) reg [GRP_W-1:0] a_rf_grp_r;
 	(* dont_touch = "true" *) reg [5:0] a_rf_r1_r;
 	(* dont_touch = "true" *) reg [5:0] a_rf_r2_r;
 	/* Stage B: the group on x_*. */
-	(* max_fanout = 12 *) reg b_valid, b_last;
-	(* max_fanout = 12 *) reg [3:0] b_unit_r;
-	(* max_fanout = 12 *) reg b_sg_last_r;
+	reg b_valid, b_last;
+	reg [3:0] b_unit_r;
+	reg b_sg_last_r;
 	(* dont_touch = "true" *) reg [1:0] b_rdy_sel0_r, b_rdy_sel1_r, b_rdy_sel2_r, b_rdy_sel3_r;
 	(* dont_touch = "true" *) reg b_is_u13_r, b_valid_last_r;
-	(* max_fanout = 12 *) reg [WARP_W-1:0] b_warp;
+	reg [WARP_W-1:0] b_warp;
 	reg [15:0] b_pc;
-	(* max_fanout = 12 *) reg [UOP_W-1:0] b_uop;
+	reg [UOP_W-1:0] b_uop;
 	reg [SBE_W:0] b_sbe;
-	(* max_fanout = 12 *) reg [GRP_W-1:0] b_grp;
+	reg [GRP_W-1:0] b_grp;
 	reg b_pass;
 	reg b_step1;
-	(* max_fanout = 12 *) reg [6:0] b_n1, b_n2, b_n3;
+	reg [6:0] b_n1, b_n2, b_n3;
 	reg b_is_gpr1, b_is_gpr2, b_is_gpr3;
 	reg b_hit_rf_1, b_hit_rf_2, b_hit_rf_3;
 	wire [DW-1:0] hold_r1;
@@ -369,10 +369,10 @@ module atg_su_opd #(
 `endif
 
 	wire [DW-1:0] b_early_va, b_early_vb, b_early_vc;
-	(* max_fanout = 12 *) reg b_use_rf1, b_use_rf2, b_use_rf3;
-	(* max_fanout = 12 *) reg b_clr31_1, b_inv31_1, b_clr15_1, b_inv15_1;
-	(* max_fanout = 12 *) reg b_clr31_2, b_inv31_2, b_clr15_2, b_inv15_2;
-	(* max_fanout = 12 *) reg b_clr31_3, b_inv31_3, b_clr15_3, b_inv15_3;
+	reg b_use_rf1, b_use_rf2, b_use_rf3;
+	reg b_clr31_1, b_inv31_1, b_clr15_1, b_inv15_1;
+	reg b_clr31_2, b_inv31_2, b_clr15_2, b_inv15_2;
+	reg b_clr31_3, b_inv31_3, b_clr15_3, b_inv15_3;
 	reg [2*NPHYS-1:0] b_mask_r;
 	reg [31:0] b_info_r;
 
@@ -448,49 +448,100 @@ module atg_su_opd #(
 			assign a_early_vb_comb[lb*32 +: 32] = fmod(a_op2_l, a_mods[2], a_mods[3], a_fp_l, a_pk_l);
 			assign a_early_vc_comb[lb*32 +: 32] = fmod(a_op3_l, a_mods[4], a_mods[5], a_fp_l, a_pk_l);
 			for (lbh = 0; lbh < 2; lbh = lbh + 1) begin : g_b_early_h
-				(* dont_touch = "true" *) reg [2:0] a_k1_h_r, a_k2_h_r, a_k3_h_r;
-				(* dont_touch = "true" *) wire a_k_we_h = ((lb < 4) ? a_pre_en_0 : a_pre_en_1) && !rst_p;
+				(* dont_touch = "true" *) reg [2:0] a_k1_lo_r, a_k1_hi_r;
+				(* dont_touch = "true" *) reg [2:0] a_k2_lo_r, a_k2_hi_r;
+				(* dont_touch = "true" *) reg [2:0] a_k3_lo_r, a_k3_hi_r;
+				wire a_k_we_raw = ((lb < 4) ? a_pre_en_0 : a_pre_en_1) && !rst_p;
+				wire a_k_we_lo, a_k_we_hi;
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_kwe_lo (.I0(a_k_we_raw), .O(a_k_we_lo));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_kwe_hi (.I0(a_k_we_raw), .O(a_k_we_hi));
+`else
+				assign a_k_we_lo = a_k_we_raw;
+				assign a_k_we_hi = a_k_we_raw;
+`endif
 				always @(posedge clk) begin
 					if (rst_p) begin
-						a_k1_h_r <= 3'd0;
-						a_k2_h_r <= 3'd0;
-						a_k3_h_r <= 3'd0;
-					end else if (a_k_we_h) begin
-						a_k1_h_r <= opk(a_n1, q_info[ATG_WI_KIND +: 2]);
-						a_k2_h_r <= opk(a_n2, q_info[ATG_WI_KIND +: 2]);
-						a_k3_h_r <= opk(a_n3, q_info[ATG_WI_KIND +: 2]);
+						a_k1_lo_r <= 3'd0; a_k1_hi_r <= 3'd0;
+						a_k2_lo_r <= 3'd0; a_k2_hi_r <= 3'd0;
+						a_k3_lo_r <= 3'd0; a_k3_hi_r <= 3'd0;
+					end else begin
+						if (a_k_we_lo) begin
+							a_k1_lo_r <= opk(a_n1, q_info[ATG_WI_KIND +: 2]);
+							a_k2_lo_r <= opk(a_n2, q_info[ATG_WI_KIND +: 2]);
+							a_k3_lo_r <= opk(a_n3, q_info[ATG_WI_KIND +: 2]);
+						end
+						if (a_k_we_hi) begin
+							a_k1_hi_r <= opk(a_n1, q_info[ATG_WI_KIND +: 2]);
+							a_k2_hi_r <= opk(a_n2, q_info[ATG_WI_KIND +: 2]);
+							a_k3_hi_r <= opk(a_n3, q_info[ATG_WI_KIND +: 2]);
+						end
 					end
 				end
-				(* dont_touch = "true" *) wire a_kl1_h = a_kill_g[lb] && (a_k1_h_r == 3'd4);
-				(* dont_touch = "true" *) wire a_kl2_h = a_kill_g[lb] && (a_k2_h_r == 3'd4);
-				(* dont_touch = "true" *) wire a_kl3_h = a_kill_g[lb] && (a_k3_h_r == 3'd4);
+				(* dont_touch = "true" *) wire a_kl1_lo = a_kill_g[lb] && (a_k1_lo_r == 3'd4);
+				(* dont_touch = "true" *) wire a_kl1_hi = a_kill_g[lb] && (a_k1_hi_r == 3'd4);
+				(* dont_touch = "true" *) wire a_kl2_lo = a_kill_g[lb] && (a_k2_lo_r == 3'd4);
+				(* dont_touch = "true" *) wire a_kl2_hi = a_kill_g[lb] && (a_k2_hi_r == 3'd4);
+				(* dont_touch = "true" *) wire a_kl3_lo = a_kill_g[lb] && (a_k3_lo_r == 3'd4);
+				(* dont_touch = "true" *) wire a_kl3_hi = a_kill_g[lb] && (a_k3_hi_r == 3'd4);
 				wire [15:0] a_ln_h = (lbh == 0) ? {11'd0, a_ln} : 16'd0;
-				assign a_op1_l[lbh*16 +: 16] = (a_k1_h_r == 3'd1) ? hold_r1[lb*32 + lbh*16 +: 16] :
-					(a_k1_h_r == 3'd2) ? rq_data[lb*32 + lbh*16 +: 16] :
-					(a_k1_h_r == 3'd3) ? a_ln_h :
-					(a_k1_h_r == 3'd4) ? {16{a_kl1_h}} :
-					(a_k1_h_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 +: 16] :
-					a_com1[lbh*16 +: 16];
-				assign a_op2_l[lbh*16 +: 16] = (a_k2_h_r == 3'd1) ? hold_r2[lb*32 + lbh*16 +: 16] :
-					(a_k2_h_r == 3'd2) ? rq_data[lb*32 + lbh*16 +: 16] :
-					(a_k2_h_r == 3'd3) ? a_ln_h :
-					(a_k2_h_r == 3'd4) ? {16{a_kl2_h}} :
-					(a_k2_h_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 +: 16] :
-					a_com2[lbh*16 +: 16];
-				assign a_op3_l[lbh*16 +: 16] = (a_k3_h_r == 3'd1) ? 16'd0 :
-					(a_k3_h_r == 3'd2) ? rq_data[lb*32 + lbh*16 +: 16] :
-					(a_k3_h_r == 3'd3) ? a_ln_h :
-					(a_k3_h_r == 3'd4) ? {16{a_kl3_h}} :
-					(a_k3_h_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 +: 16] :
-					a_com3[lbh*16 +: 16];
+
+				assign a_op1_l[lbh*16 +: 8] = (a_k1_lo_r == 3'd1) ? hold_r1[lb*32 + lbh*16 +: 8] :
+					(a_k1_lo_r == 3'd2) ? rq_data[lb*32 + lbh*16 +: 8] :
+					(a_k1_lo_r == 3'd3) ? a_ln_h[0 +: 8] :
+					(a_k1_lo_r == 3'd4) ? {8{a_kl1_lo}} :
+					(a_k1_lo_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 +: 8] :
+					a_com1[lbh*16 +: 8];
+				assign a_op1_l[lbh*16 + 8 +: 8] = (a_k1_hi_r == 3'd1) ? hold_r1[lb*32 + lbh*16 + 8 +: 8] :
+					(a_k1_hi_r == 3'd2) ? rq_data[lb*32 + lbh*16 + 8 +: 8] :
+					(a_k1_hi_r == 3'd3) ? a_ln_h[8 +: 8] :
+					(a_k1_hi_r == 3'd4) ? {8{a_kl1_hi}} :
+					(a_k1_hi_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 + 8 +: 8] :
+					a_com1[lbh*16 + 8 +: 8];
+
+				assign a_op2_l[lbh*16 +: 8] = (a_k2_lo_r == 3'd1) ? hold_r2[lb*32 + lbh*16 +: 8] :
+					(a_k2_lo_r == 3'd2) ? rq_data[lb*32 + lbh*16 +: 8] :
+					(a_k2_lo_r == 3'd3) ? a_ln_h[0 +: 8] :
+					(a_k2_lo_r == 3'd4) ? {8{a_kl2_lo}} :
+					(a_k2_lo_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 +: 8] :
+					a_com2[lbh*16 +: 8];
+				assign a_op2_l[lbh*16 + 8 +: 8] = (a_k2_hi_r == 3'd1) ? hold_r2[lb*32 + lbh*16 + 8 +: 8] :
+					(a_k2_hi_r == 3'd2) ? rq_data[lb*32 + lbh*16 + 8 +: 8] :
+					(a_k2_hi_r == 3'd3) ? a_ln_h[8 +: 8] :
+					(a_k2_hi_r == 3'd4) ? {8{a_kl2_hi}} :
+					(a_k2_hi_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 + 8 +: 8] :
+					a_com2[lbh*16 + 8 +: 8];
+
+				assign a_op3_l[lbh*16 +: 8] = (a_k3_lo_r == 3'd1) ? 8'd0 :
+					(a_k3_lo_r == 3'd2) ? rq_data[lb*32 + lbh*16 +: 8] :
+					(a_k3_lo_r == 3'd3) ? a_ln_h[0 +: 8] :
+					(a_k3_lo_r == 3'd4) ? {8{a_kl3_lo}} :
+					(a_k3_lo_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 +: 8] :
+					a_com3[lbh*16 +: 8];
+				assign a_op3_l[lbh*16 + 8 +: 8] = (a_k3_hi_r == 3'd1) ? 8'd0 :
+					(a_k3_hi_r == 3'd2) ? rq_data[lb*32 + lbh*16 + 8 +: 8] :
+					(a_k3_hi_r == 3'd3) ? a_ln_h[8 +: 8] :
+					(a_k3_hi_r == 3'd4) ? {8{a_kl3_hi}} :
+					(a_k3_hi_r == 3'd5) ? a_cl_r[lb*32 + lbh*16 + 8 +: 8] :
+					a_com3[lbh*16 + 8 +: 8];
 
 				(* shreg_extract = "no" *) reg [15:0] b_va_h, b_vb_h, b_vc_h;
 				(* shreg_extract = "no" *) reg [15:0] hold_r1_h, hold_r2_h;
-				(* dont_touch = "true" *) wire b_va_we_h = a_stgb_en_g[lb] && !rst_p;
-				(* dont_touch = "true" *) wire b_vb_we_h = a_stgb_en_g[lb] && !rst_p;
-				(* dont_touch = "true" *) wire b_vc_we_h = a_stgb_en_g[lb] && !rst_p;
-				(* dont_touch = "true" *) wire hold1_we_h = a_hold_en_g[lb] && !rst_p;
-				(* dont_touch = "true" *) wire hold2_we_h = a_hold_en_g[lb] && !rst_p;
+				wire b_va_we_h, b_vb_we_h, b_vc_we_h;
+				wire hold1_we_h, hold2_we_h;
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bva  (.I0(a_stgb_en_g[lb] && !rst_p), .O(b_va_we_h));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bvb  (.I0(a_stgb_en_g[lb] && !rst_p), .O(b_vb_we_h));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bvc  (.I0(a_stgb_en_g[lb] && !rst_p), .O(b_vc_we_h));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_hld1 (.I0(a_hold_en_g[lb] && !rst_p), .O(hold1_we_h));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_hld2 (.I0(a_hold_en_g[lb] && !rst_p), .O(hold2_we_h));
+`else
+				assign b_va_we_h = a_stgb_en_g[lb] && !rst_p;
+				assign b_vb_we_h = a_stgb_en_g[lb] && !rst_p;
+				assign b_vc_we_h = a_stgb_en_g[lb] && !rst_p;
+				assign hold1_we_h = a_hold_en_g[lb] && !rst_p;
+				assign hold2_we_h = a_hold_en_g[lb] && !rst_p;
+`endif
 				always @(posedge clk) begin
 					if (rst_p) begin
 						b_va_h <= 16'd0;
