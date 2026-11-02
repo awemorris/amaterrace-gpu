@@ -37,7 +37,7 @@ module atg_su_skid #(
 	output wire [WIDTH-1:0] out_data
 );
 	localparam N_SL = (WIDTH + SL_S - 1) / SL_S;
-	localparam N_SK_GRP = (N_SL + 3) / 4;
+	localparam N_SK_GRP = (N_SL + 1) / 2;
 	wire [N_SK_GRP-1:0] out_ready_g;
 	wire [N_SK_GRP-1:0] in_valid_g;
 	genvar gkg;
@@ -61,13 +61,13 @@ module atg_su_skid #(
 		for (gs = 0; gs < N_SL; gs = gs + 1) begin : g_skid_sl
 			localparam SL_B = gs * SL_S;
 			localparam SL_W = (SL_B + SL_S <= WIDTH) ? SL_S : (WIDTH - SL_B);
-			wire sl_out_ready = out_ready_g[gs / 4];
-			wire sl_in_valid  = in_valid_g[gs / 4];
+			wire sl_out_ready = out_ready_g[gs / 2];
+			wire sl_in_valid  = in_valid_g[gs / 2];
 			(* shreg_extract = "no" *) reg [SL_W-1:0] out_d_sl;
 			(* shreg_extract = "no" *) reg [SL_W-1:0] skid_d_sl;
-			(* dont_touch = "true" *) reg out_v_sl;
-			(* dont_touch = "true" *) reg skid_v_sl;
-			(* dont_touch = "true" *) reg in_r_sl;
+			reg out_v_sl;
+			reg skid_v_sl;
+			reg in_r_sl;
 			wire load_out_s, skid_load_s;
 `ifdef SYNTH_KINTEX7
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_los (.I0(skid_v_sl ? sl_out_ready : (sl_in_valid && (sl_out_ready || !out_v_sl))), .O(load_out_s));

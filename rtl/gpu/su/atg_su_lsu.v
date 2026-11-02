@@ -118,6 +118,14 @@ module atg_su_lsu #(
 
 	wire rst_p = !rst_n;
 	wire take_lsu_raw = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
+	wire take_lsu_h0, take_lsu_h1;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_lh0 (.I0(take_lsu_raw), .O(take_lsu_h0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_lh1 (.I0(take_lsu_raw), .O(take_lsu_h1));
+`else
+	assign take_lsu_h0 = take_lsu_raw;
+	assign take_lsu_h1 = take_lsu_raw;
+`endif
 	(* max_fanout = 12 *) reg [2:0] st;
 	wire [DW-1:0] radr, rdat, rcmp, res;
 	(* dont_touch = "true" *) reg [NPHYS-1:0] pend, pend_a, pend_b, pend_be;
@@ -218,14 +226,15 @@ module atg_su_lsu #(
 			(* keep = "true" *) wire leq_hi = &leq_g[N_LEQ-1:N_LEQ/2];
 			assign line_eq[la] = leq_lo && leq_hi;
 
+			wire take_lsu_h = (la < NPHYS/2) ? take_lsu_h0 : take_lsu_h1;
 			wire take_wo;
 			wire take_byte_l;
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_wo (.I0(take_lsu_raw), .O(take_wo));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_b  (.I0(take_lsu_raw), .O(take_byte_l));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_wo (.I0(take_lsu_h), .O(take_wo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_b  (.I0(take_lsu_h), .O(take_byte_l));
 `else
-			assign take_wo     = take_lsu_raw;
-			assign take_byte_l = take_lsu_raw;
+			assign take_wo     = take_lsu_h;
+			assign take_byte_l = take_lsu_h;
 `endif
 			(* dont_touch = "true" *) reg [WW-1:0] rwo_rd_0, rwo_rd_1, rwo_rd_2, rwo_rd_3, rwo_wr_a, rwo_wr_b, rwo_wr_be;
 			always @(posedge clk) begin
@@ -366,10 +375,19 @@ module atg_su_lsu #(
 
 	wire lsu_idle_ce_a = !rst_p && (st == IDLE) && take;
 	wire lsu_idle_ce_b = !rst_p && (st == IDLE) && take;
-	wire line_ce_0 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
-	wire line_ce_1 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
-	wire line_ce_2 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
-	wire line_ce_3 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
+	wire line_ce_raw = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
+	wire line_ce_0, line_ce_1, line_ce_2, line_ce_3;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_lce0 (.O(line_ce_0), .I0(line_ce_raw));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_lce1 (.O(line_ce_1), .I0(line_ce_raw));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_lce2 (.O(line_ce_2), .I0(line_ce_raw));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_lce3 (.O(line_ce_3), .I0(line_ce_raw));
+`else
+	assign line_ce_0 = line_ce_raw;
+	assign line_ce_1 = line_ce_raw;
+	assign line_ce_2 = line_ce_raw;
+	assign line_ce_3 = line_ce_raw;
+`endif
 	wire line_hit_ce = !rst_p && (st == LINE_HIT);
 	wire line_hit_ce_0, line_hit_ce_1;
 `ifdef SYNTH_KINTEX7
@@ -380,40 +398,28 @@ module atg_su_lsu #(
 	assign line_hit_ce_1 = line_hit_ce;
 `endif
 
-	(* dont_touch = "true" *) reg [NPHYS-1:0] pend_nxt, pend_a_nxt, pend_b_nxt, pend_be_nxt;
-	always @(*) begin
-		pend_nxt    = pend;
-		pend_a_nxt  = pend_a;
-		pend_b_nxt  = pend_b;
-		pend_be_nxt = pend_be;
-		if (rst_p) begin
-			pend_nxt    = {NPHYS{1'b0}};
-			pend_a_nxt  = {NPHYS{1'b0}};
-			pend_b_nxt  = {NPHYS{1'b0}};
-			pend_be_nxt = {NPHYS{1'b0}};
-		end else if (st == IDLE && take) begin
-			pend_nxt    = amask;
-			pend_a_nxt  = amask;
-			pend_b_nxt  = amask;
-			pend_be_nxt = amask;
-		end else if (st == WAIT && dc_rsp_valid) begin
-			pend_nxt    = pend & ~cur;
-			pend_a_nxt  = pend_a & ~cur;
-			pend_b_nxt  = pend_b & ~cur;
-			pend_be_nxt = pend_be & ~cur;
-		end else if (st == AWAIT && at_rsp_valid) begin
-			pend_nxt[ali]    = 1'b0;
-			pend_a_nxt[ali]  = 1'b0;
-			pend_b_nxt[ali]  = 1'b0;
-			pend_be_nxt[ali] = 1'b0;
-		end
-	end
-
 	always @(posedge clk) begin
-		pend    <= pend_nxt;
-		pend_a  <= pend_a_nxt;
-		pend_b  <= pend_b_nxt;
-		pend_be <= pend_be_nxt;
+		if (rst_p) begin
+			pend    <= {NPHYS{1'b0}};
+			pend_a  <= {NPHYS{1'b0}};
+			pend_b  <= {NPHYS{1'b0}};
+			pend_be <= {NPHYS{1'b0}};
+		end else if (st == IDLE && take) begin
+			pend    <= amask;
+			pend_a  <= amask;
+			pend_b  <= amask;
+			pend_be <= amask;
+		end else if (st == WAIT && dc_rsp_valid) begin
+			pend    <= pend & ~cur;
+			pend_a  <= pend_a & ~cur;
+			pend_b  <= pend_b & ~cur;
+			pend_be <= pend_be & ~cur;
+		end else if (st == AWAIT && at_rsp_valid) begin
+			pend[ali]    <= 1'b0;
+			pend_a[ali]  <= 1'b0;
+			pend_b[ali]  <= 1'b0;
+			pend_be[ali] <= 1'b0;
+		end
 		if (lsu_idle_ce_a) begin
 			rwr <= op == ATG_LSU_SW;
 			ratom <= op == ATG_LSU_ATOM;

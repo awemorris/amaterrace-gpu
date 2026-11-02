@@ -61,18 +61,20 @@ module atg_su_dec #(
 	wire [31:0] d_hi = {{12{d_w1[31]}}, d_w1[31:22], 10'd0} << 2;
 
 	/* The table lookup: the RISC-V opcodes and custom-0..3. */
-	wire [6:0] d_opc_tab, d_opc_ctl;
+	wire [6:0] d_opc_tab_r, d_opc_tab_c, d_opc_ctl;
 `ifdef SYNTH_KINTEX7
 	genvar g_opc;
 	generate
 		for (g_opc = 0; g_opc < 7; g_opc = g_opc + 1) begin : g_buf_opc
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bopc_t (.I0(d_opc[g_opc]), .O(d_opc_tab[g_opc]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bopc_tr(.I0(d_opc[g_opc]), .O(d_opc_tab_r[g_opc]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bopc_tc(.I0(d_opc[g_opc]), .O(d_opc_tab_c[g_opc]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bopc_c (.I0(d_opc[g_opc]), .O(d_opc_ctl[g_opc]));
 		end
 	endgenerate
 `else
-	assign d_opc_tab = d_opc;
-	assign d_opc_ctl = d_opc;
+	assign d_opc_tab_r = d_opc;
+	assign d_opc_tab_c = d_opc;
+	assign d_opc_ctl   = d_opc;
 `endif
 	wire [28:0] tr, tc;
 	wire custom_lo = d_opc_ctl == 7'b0001011 || d_opc_ctl == 7'b0101011 || d_opc_ctl == 7'b1011011 ||
@@ -80,13 +82,13 @@ module atg_su_dec #(
 	wire custom_hi = d_opc_ctl == 7'b0001011 || d_opc_ctl == 7'b0101011 || d_opc_ctl == 7'b1011011 ||
 		d_opc_ctl == 7'b1111011;
 	atg_su_dec_tab tab (
-		.opc(d_opc_tab), .f3(d_f3), .f7(d_f7), .rs2f(d_rs2f), .sub(d_sub), .fmt2(d_w0[26:25]),
+		.opc(d_opc_tab_r), .f3(d_f3), .f7(d_f7), .rs2f(d_rs2f), .sub(d_sub), .fmt2(d_w0[26:25]),
 		.def(tr[0]), .fmt(tr[3:1]), .unit(tr[7:4]), .op(tr[15:8]), .cls(tr[18:16]),
 		.use1(tr[19]), .use2(tr[20]), .use3(tr[21]), .wrd(tr[22]), .pair(tr[23]),
 		.side(tr[24]), .need_pk(tr[25]), .need_sg(tr[26]), .need_sa(tr[27]), .tex(tr[28])
 	);
 	atg_su_dec_tabc tabc (
-		.opc(d_opc_tab), .f3(d_f3), .f7(d_f7), .rs2f(d_rs2f), .sub(d_sub), .fmt2(d_w0[26:25]),
+		.opc(d_opc_tab_c), .f3(d_f3), .f7(d_f7), .rs2f(d_rs2f), .sub(d_sub), .fmt2(d_w0[26:25]),
 		.def(tc[0]), .fmt(tc[3:1]), .unit(tc[7:4]), .op(tc[15:8]), .cls(tc[18:16]),
 		.use1(tc[19]), .use2(tc[20]), .use3(tc[21]), .wrd(tc[22]), .pair(tc[23]),
 		.side(tc[24]), .need_pk(tc[25]), .need_sg(tc[26]), .need_sa(tc[27]), .tex(tc[28])

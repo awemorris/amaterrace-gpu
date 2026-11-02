@@ -85,20 +85,36 @@ module atg_su_icache #(
 	assign st_mwait_nxt_d = st_mwait_nxt;
 	assign st_mwait_nxt_f = st_mwait_nxt;
 `endif
-	(* dont_touch = "true" *) reg [3:0] st_mwait_f_r;
+	(* dont_touch = "true" *) reg [N_SL-1:0] st_mwait_f_r;
 	always @(posedge clk) begin
 		if (rst_p)
-			st_mwait_f_r <= 4'd0;
+			st_mwait_f_r <= {N_SL{1'b0}};
 		else
-			st_mwait_f_r <= {4{st_mwait_nxt_f}};
+			st_mwait_f_r <= {N_SL{st_mwait_nxt_f}};
 	end
 
-	wire [IX_W-1:0] idx_v  = ic_addr[OFF_W-1:LINE_SHIFT];
-	wire [IX_W-1:0] idx_lo = ic_addr[OFF_W-1:LINE_SHIFT];
-	wire [IX_W-1:0] idx_hi = ic_addr[OFF_W-1:LINE_SHIFT];
-	wire [TAG_W-1:0] tag = ic_addr[ADDR_W-1:OFF_W];
-	wire [ADDR_W-LINE_SHIFT-1:0] line = ic_addr[ADDR_W-1:LINE_SHIFT];
-	wire [WS_W-1:0] wsel = WPL > 1 ? ic_addr[LINE_SHIFT-1:3] : {WS_W{1'b0}};
+	wire [31:0] ic_addr_tag, ic_addr_ram_lo, ic_addr_ram_hi;
+`ifdef SYNTH_KINTEX7
+	genvar gia;
+	generate
+		for (gia = 0; gia < 32; gia = gia + 1) begin : g_ic_addr_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_iat (.I0(ic_addr[gia]), .O(ic_addr_tag[gia]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_iar0(.I0(ic_addr[gia]), .O(ic_addr_ram_lo[gia]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_iar1(.I0(ic_addr[gia]), .O(ic_addr_ram_hi[gia]));
+		end
+	endgenerate
+`else
+	assign ic_addr_tag    = ic_addr;
+	assign ic_addr_ram_lo = ic_addr;
+	assign ic_addr_ram_hi = ic_addr;
+`endif
+
+	wire [IX_W-1:0] idx_v  = ic_addr_tag[OFF_W-1:LINE_SHIFT];
+	wire [IX_W-1:0] idx_lo = ic_addr_tag[OFF_W-1:LINE_SHIFT];
+	wire [IX_W-1:0] idx_hi = ic_addr_tag[OFF_W-1:LINE_SHIFT];
+	wire [TAG_W-1:0] tag = ic_addr_tag[ADDR_W-1:OFF_W];
+	wire [ADDR_W-LINE_SHIFT-1:0] line = ic_addr_tag[ADDR_W-1:LINE_SHIFT];
+	wire [WS_W-1:0] wsel = WPL > 1 ? ic_addr_tag[LINE_SHIFT-1:3] : {WS_W{1'b0}};
 	wire [TAG_W-1:0] tag_rd = {tags_hi[idx_hi], tags_lo[idx_lo]};
 
 	/* Pure-LUT 3-bit chunk tag and line comparators (0 CARRY4s, 2 LUT levels) */
@@ -151,11 +167,12 @@ module atg_su_icache #(
 `else
 			assign miss_d_sl = miss_d_raw;
 `endif
+			wire [31:0] ic_addr_ram = (gdsl < 4) ? ic_addr_ram_lo : ic_addr_ram_hi;
 			always @(posedge clk) begin
 				if (data_we_sl)
 					data_sl[m_idx_d_sl] <= rsp_rdata[gdsl*64 +: 64];
 				if (take)
-					rline_sl <= data_sl[ic_addr[OFF_W-1:LINE_SHIFT]];
+					rline_sl <= data_sl[ic_addr_ram[OFF_W-1:LINE_SHIFT]];
 				rline_pipe_sl <= rline_sl;
 				if (rst_p) begin
 					st_mwait_d_sl <= 1'b0;
@@ -171,7 +188,13 @@ module atg_su_icache #(
 		for (gsl = 0; gsl < N_SL; gsl = gsl + 1) begin : g_ic_sl
 			(* shreg_extract = "no" *) reg [15:0] fill_sl, fill_pipe_sl;
 			(* dont_touch = "true" *) reg rfill_sl;
-			wire fill_we_sl = st_mwait_f_r[gsl / 4] && rsp_valid && !rsp_write;
+			wire fill_we_sl_raw = st_mwait_f_r[gsl] && rsp_valid && !rsp_write;
+			wire fill_we_sl;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fwe (.I0(fill_we_sl_raw), .O(fill_we_sl));
+`else
+			assign fill_we_sl = fill_we_sl_raw;
+`endif
 			always @(posedge clk) begin
 				if (fill_we_sl)
 					fill_sl <= rsp_error ? 16'd0 : rsp_rdata[gsl*16 +: 16];

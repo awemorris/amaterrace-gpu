@@ -162,14 +162,19 @@ module atg_su_sb #(
 
 	wire rst_p = !rst_n;
 
-	wire [WARP_W-1:0] u_warp_r, u_warp_h0, u_warp_h1, u_warp_m, u_warp_f, u_warp_c, u_warp_w, u_warp_out;
+	wire [WARP_W-1:0] u_warp_r, u_warp_ev, u_warp_r0, u_warp_r1, u_warp_r2, u_warp_r3, u_warp_cnt;
+	wire [WARP_W-1:0] u_warp_m, u_warp_f, u_warp_c, u_warp_w, u_warp_out;
 `ifdef SYNTH_KINTEX7
 	genvar guw;
 	generate
 		for (guw = 0; guw < WARP_W; guw = guw + 1) begin : g_buf_uwarp
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwr (.I0(u_warp[guw]), .O(u_warp_r[guw]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwh0(.I0(u_warp[guw]), .O(u_warp_h0[guw]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwh1(.I0(u_warp[guw]), .O(u_warp_h1[guw]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwev(.I0(u_warp[guw]), .O(u_warp_ev[guw]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwr0(.I0(u_warp[guw]), .O(u_warp_r0[guw]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwr1(.I0(u_warp[guw]), .O(u_warp_r1[guw]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwr2(.I0(u_warp[guw]), .O(u_warp_r2[guw]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwr3(.I0(u_warp[guw]), .O(u_warp_r3[guw]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwct(.I0(u_warp[guw]), .O(u_warp_cnt[guw]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwm (.I0(u_warp[guw]), .O(u_warp_m[guw]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwf (.I0(u_warp[guw]), .O(u_warp_f[guw]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_uwc (.I0(u_warp[guw]), .O(u_warp_c[guw]));
@@ -179,8 +184,12 @@ module atg_su_sb #(
 	endgenerate
 `else
 	assign u_warp_r   = u_warp;
-	assign u_warp_h0  = u_warp;
-	assign u_warp_h1  = u_warp;
+	assign u_warp_ev  = u_warp;
+	assign u_warp_r0  = u_warp;
+	assign u_warp_r1  = u_warp;
+	assign u_warp_r2  = u_warp;
+	assign u_warp_r3  = u_warp;
+	assign u_warp_cnt = u_warp;
 	assign u_warp_m   = u_warp;
 	assign u_warp_f   = u_warp;
 	assign u_warp_c   = u_warp;
@@ -590,7 +599,7 @@ module atg_su_sb #(
 			end
 			if (s0_we_7) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h0 == sw[WARP_W-1:0]) begin
+					if (u_warp_ev == sw[WARP_W-1:0]) begin
 						w_ev_r  <= ev_comb[sw*SB_ENTRIES +: SB_ENTRIES];
 						w_ewd_r <= e_wide[sw*SB_ENTRIES +: SB_ENTRIES];
 					end
@@ -598,63 +607,63 @@ module atg_su_sb #(
 			end
 			if (s0_we_8a) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h0 == sw[WARP_W-1:0]) begin
+					if (u_warp_r0 == sw[WARP_W-1:0]) begin
 						w_er0_r[SB_ENTRIES*3-1:0] <= e_r0[sw*SB_ENTRIES*6 +: SB_ENTRIES*3];
 					end
 				end
 			end
 			if (s0_we_8b) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h0 == sw[WARP_W-1:0]) begin
+					if (u_warp_r0 == sw[WARP_W-1:0]) begin
 						w_er0_r[SB_ENTRIES*6-1:SB_ENTRIES*3] <= e_r0[sw*SB_ENTRIES*6 + SB_ENTRIES*3 +: SB_ENTRIES*3];
 					end
 				end
 			end
 			if (s0_we_9a) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h0 == sw[WARP_W-1:0]) begin
+					if (u_warp_r1 == sw[WARP_W-1:0]) begin
 						w_er1_r[SB_ENTRIES*3-1:0] <= e_r1[sw*SB_ENTRIES*6 +: SB_ENTRIES*3];
 					end
 				end
 			end
 			if (s0_we_9b) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h0 == sw[WARP_W-1:0]) begin
+					if (u_warp_r1 == sw[WARP_W-1:0]) begin
 						w_er1_r[SB_ENTRIES*6-1:SB_ENTRIES*3] <= e_r1[sw*SB_ENTRIES*6 + SB_ENTRIES*3 +: SB_ENTRIES*3];
 					end
 				end
 			end
 			if (s0_we_10a) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h1 == sw[WARP_W-1:0]) begin
+					if (u_warp_r2 == sw[WARP_W-1:0]) begin
 						w_er2_r[SB_ENTRIES*3-1:0] <= e_r2[sw*SB_ENTRIES*6 +: SB_ENTRIES*3];
 					end
 				end
 			end
 			if (s0_we_10b) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h1 == sw[WARP_W-1:0]) begin
+					if (u_warp_r2 == sw[WARP_W-1:0]) begin
 						w_er2_r[SB_ENTRIES*6-1:SB_ENTRIES*3] <= e_r2[sw*SB_ENTRIES*6 + SB_ENTRIES*3 +: SB_ENTRIES*3];
 					end
 				end
 			end
 			if (s0_we_11a) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h1 == sw[WARP_W-1:0]) begin
+					if (u_warp_r3 == sw[WARP_W-1:0]) begin
 						w_er3_r[SB_ENTRIES*3-1:0] <= e_r3[sw*SB_ENTRIES*6 +: SB_ENTRIES*3];
 					end
 				end
 			end
 			if (s0_we_11b) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h1 == sw[WARP_W-1:0]) begin
+					if (u_warp_r3 == sw[WARP_W-1:0]) begin
 						w_er3_r[SB_ENTRIES*6-1:SB_ENTRIES*3] <= e_r3[sw*SB_ENTRIES*6 + SB_ENTRIES*3 +: SB_ENTRIES*3];
 					end
 				end
 			end
 			if (s0_we_cnt) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
-					if (u_warp_h1 == sw[WARP_W-1:0]) begin
+					if (u_warp_cnt == sw[WARP_W-1:0]) begin
 						w_rcm_r <= cm_next[sw*CNT_W +: CNT_W];
 						w_rct_r <= ct_next[sw*CNT_W +: CNT_W];
 						w_rcx_r <= cx_next[sw*CNT_W +: CNT_W];

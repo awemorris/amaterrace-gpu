@@ -204,15 +204,10 @@ module atg_su_lds #(
 			wire unused_b = &{1'b0, ba[1:0]};
 
 			wire lds_take_l;
-			wire lds_take_h0, lds_take_h1;
 `ifdef SYNTH_KINTEX7
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_a (.I0(lds_take_raw), .O(lds_take_l));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_0 (.I0(lds_take_raw), .O(lds_take_h0));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_1 (.I0(lds_take_raw), .O(lds_take_h1));
 `else
 			assign lds_take_l  = lds_take_raw;
-			assign lds_take_h0 = lds_take_raw;
-			assign lds_take_h1 = lds_take_raw;
 `endif
 			(* shreg_extract = "no" *) reg [AW-1:0] radr_l_r;
 			always @(posedge clk)
@@ -221,17 +216,26 @@ module atg_su_lds #(
 			assign radr[l*AW +: AW] = radr_l_r;
 
 			for (glh = 0; glh < 2; glh = glh + 1) begin : g_lds_half
-				wire lds_take_half = (glh == 0) ? lds_take_h0 : lds_take_h1;
+				wire lds_take_dat, lds_take_cmp, lds_take_res;
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_dat (.I0(lds_take_l), .O(lds_take_dat));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_cmp (.I0(lds_take_l), .O(lds_take_cmp));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_res (.I0(lds_take_l), .O(lds_take_res));
+`else
+				assign lds_take_dat = lds_take_l;
+				assign lds_take_cmp = lds_take_l;
+				assign lds_take_res = lds_take_l;
+`endif
 				wire lds_atom_we_h = lds_atom_base && lanes[l] && (li == l[LW-1:0]);
 				wire lds_rd_we_h   = pval_3 && (pli_3 == l[LW-1:0]);
 				(* dont_touch = "true" *) wire lds_q_we_h = lds_rd_we_h || lds_atom_we_h;
 				(* shreg_extract = "no" *) reg [15:0] rdat_h_r, rcmp_h_r, res_h_r;
 				always @(posedge clk) begin
-					if (lds_take_half)
+					if (lds_take_dat)
 						rdat_h_r <= x_b[l*32 + glh*16 +: 16];
-					if (lds_take_half)
+					if (lds_take_cmp)
 						rcmp_h_r <= x_c[l*32 + glh*16 +: 16];
-					if (lds_take_half)
+					if (lds_take_res)
 						res_h_r <= 16'd0;
 					else if (lds_q_we_h)
 						res_h_r <= q_pipe[glh*16 +: 16];
@@ -289,10 +293,19 @@ module atg_su_lds #(
 
 	wire lds_idle_ce_a = !rst_p && !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
 	wire lds_idle_ce_b = !rst_p && !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
-	wire atom_bc_ce_0  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
-	wire atom_bc_ce_1  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
-	wire atom_bc_ce_2  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
-	wire atom_bc_ce_3  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+	wire atom_bc_ce_raw = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+	wire atom_bc_ce_0, atom_bc_ce_1, atom_bc_ce_2, atom_bc_ce_3;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_atb0 (.I0(atom_bc_ce_raw), .O(atom_bc_ce_0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_atb1 (.I0(atom_bc_ce_raw), .O(atom_bc_ce_1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_atc0 (.I0(atom_bc_ce_raw), .O(atom_bc_ce_2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_atc1 (.I0(atom_bc_ce_raw), .O(atom_bc_ce_3));
+`else
+	assign atom_bc_ce_0 = atom_bc_ce_raw;
+	assign atom_bc_ce_1 = atom_bc_ce_raw;
+	assign atom_bc_ce_2 = atom_bc_ce_raw;
+	assign atom_bc_ce_3 = atom_bc_ce_raw;
+`endif
 
 	always @(posedge clk) begin
 		if (lds_idle_ce_a) begin

@@ -195,7 +195,7 @@ module atg_su_cbank #(
 `ifdef SYNTH_KINTEX7
 		genvar gwa;
 		for (gwa = 0; gwa < 5; gwa = gwa + 1) begin : g_cw_wa_buf
-			LUT1 #(.INIT(2'h2)) u_buf_wa (.O(cw_wa_sl_buf[gwa]), .I0(cw_wa_sl_r[gwa]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_wa (.O(cw_wa_sl_buf[gwa]), .I0(cw_wa_sl_r[gwa]));
 		end
 `else
 		assign cw_wa_sl_buf = cw_wa_sl_r;
@@ -204,9 +204,16 @@ module atg_su_cbank #(
 		wire [4:0] cr_a0_s = cr_idx_sl[4:0];
 		wire [4:0] cr_a1_s = cr_idx_sl[9:5];
 		wire [4:0] cr_a2_s = cr_idx_sl[14:10];
+		wire cw_wa_ce_raw = (rst_p || scrub || sc_on || st == LWR);
+		wire cw_wa_ce_s;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_wace (.I0(cw_wa_ce_raw), .O(cw_wa_ce_s));
+`else
+		assign cw_wa_ce_s = cw_wa_ce_raw;
+`endif
 		always @(posedge clk) begin
 			cw_we_sl_r <= cw_we_next;
-			if (rst_p || scrub || sc_on || st == LWR)
+			if (cw_wa_ce_s)
 				cw_wa_sl_r <= cw_wa_next;
 			if (cw_we_sl_r)
 				cw_mem[cw_wa_sl_buf] <= b_wd_r[gcs*4 +: 4];
@@ -264,7 +271,13 @@ module atg_su_cbank #(
 	generate
 	for (gcl = 0; gcl < NPHYS; gcl = gcl + 1) begin : g_cb_res
 		(* shreg_extract = "no" *) reg [CW-1:0] ridx_l;
-		(* dont_touch = "true" *) wire ridx_we_l = (st == IDLE) && !lc_pend && mine && !rst_p;
+		wire ridx_we_raw = (st == IDLE) && !lc_pend && mine && !rst_p;
+		wire ridx_we_l;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rwl (.I0(ridx_we_raw), .O(ridx_we_l));
+`else
+		assign ridx_we_l = ridx_we_raw;
+`endif
 		always @(posedge clk)
 			if (ridx_we_l)
 				ridx_l <= xidx[gcl*CW +: CW];
@@ -329,7 +342,7 @@ module atg_su_cbank #(
 	generate
 		for (gladr = 0; gladr < 4; gladr = gladr + 1) begin : g_ladr_we
 `ifdef SYNTH_KINTEX7
-			LUT1 #(.INIT(2'h2)) u_buf_ladr_we (.O(ladr_we_b[gladr]), .I0(ladr_we_raw));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_ladr_we (.O(ladr_we_b[gladr]), .I0(ladr_we_raw));
 `else
 			assign ladr_we_b[gladr] = ladr_we_raw;
 `endif
@@ -430,8 +443,8 @@ module atg_su_cbank #(
 	generate
 		for (gbw = 0; gbw < 4; gbw = gbw + 1) begin : g_bwd_we
 `ifdef SYNTH_KINTEX7
-			LUT1 #(.INIT(2'h2)) u_buf_bwd_we (.O(b_wd_we_b[gbw]), .I0(b_wd_we_raw));
-			LUT1 #(.INIT(2'h2)) u_buf_bwd_z  (.O(b_wd_zero_b[gbw]), .I0(rst_p || scrub || sc_on));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_bwd_we (.O(b_wd_we_b[gbw]), .I0(b_wd_we_raw));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_bwd_z  (.O(b_wd_zero_b[gbw]), .I0(rst_p || scrub || sc_on));
 `else
 			assign b_wd_we_b[gbw] = b_wd_we_raw;
 			assign b_wd_zero_b[gbw] = rst_p || scrub || sc_on;

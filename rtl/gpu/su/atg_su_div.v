@@ -276,7 +276,7 @@ module atg_su_div #(
 	genvar gdl, gdh;
 	generate
 	for (gdl = 0; gdl < NPHYS; gdl = gdl + 1) begin : g_div_lane
-		wire idle_mine_sl = idle_mine_g[gdl / 2];
+		wire idle_mine_sl = idle_mine_g[(gdl * 4) / NPHYS];
 		for (gdh = 0; gdh < 2; gdh = gdh + 1) begin : g_div_half
 			wire ra_we_b, rb_we_b, rq_clr_b, rq_we_b;
 `ifdef SYNTH_KINTEX7

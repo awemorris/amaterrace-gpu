@@ -138,7 +138,8 @@ module atg_su_opd #(
 	reg [GRP_W-1:0] a_grp;
 	reg a_step;	/* 0 = step 0 (reads rs1, rs2), 1 = step 1 (reads rs3) */
 	(* dont_touch = "true" *) reg a_pass_ctl;	/* control/FSM pass */
-	(* dont_touch = "true" *) reg a_pass_r1;	/* operand r1 mux pass */
+	(* dont_touch = "true" *) reg a_pass_r1_lo, a_pass_r1_hi;	/* operand r1 mux pass */
+	wire a_pass_r1 = a_pass_r1_lo;
 	(* dont_touch = "true" *) reg a_pass_out;	/* output uop/rq_pop pass */
 	reg a_wait;	/* 1 = waiting for registered RF output (when REG_IO == 1) */
 	reg a_wait_last;
@@ -198,7 +199,8 @@ module atg_su_opd #(
 
 	/* Operand numbers; operand 3 is rs1+1 for the PAIR instructions;
 	 * operands 1 and 3 are rs3 and rs3+1 on a second pass. */
-	wire [6:0] a_r1 = a_pass_r1 ? a_uop[ATG_UOP_RS3 +: 7] : a_uop[ATG_UOP_RS1 +: 7];
+	wire [6:0] a_r1 = {a_pass_r1_hi ? a_uop[ATG_UOP_RS3 + 3 +: 4] : a_uop[ATG_UOP_RS1 + 3 +: 4],
+	                   a_pass_r1_lo ? a_uop[ATG_UOP_RS3 +: 3]     : a_uop[ATG_UOP_RS1 +: 3]};
 	wire [6:0] a_n1 = a_r1;
 	wire [6:0] a_n2 = a_uop[ATG_UOP_RS2 +: 7];
 	wire [6:0] a_r1p;
@@ -218,34 +220,46 @@ module atg_su_opd #(
 	assign r_regs = {a_rf_r2_r, a_rf_r1_r};
 	assign cr_en = (REG_IO != 0) ? cr_en_fast : (a_act && b_adv && (!a_needs_step1 || !a_step));
 	wire [4:0] a_n1_cr, a_n2_cr, a_n3_cr;
-	wire [4:0] a_n1_opc_lo, a_n1_opc_hi;
-	wire [4:0] a_n2_opc_lo, a_n2_opc_hi;
-	wire [4:0] a_n3_opc_lo, a_n3_opc_hi;
+	wire [4:0] a_n1_opc_0, a_n1_opc_1, a_n1_opc_2, a_n1_opc_3;
+	wire [4:0] a_n2_opc_0, a_n2_opc_1, a_n2_opc_2, a_n2_opc_3;
+	wire [4:0] a_n3_opc_0, a_n3_opc_1, a_n3_opc_2, a_n3_opc_3;
 `ifdef SYNTH_KINTEX7
 	genvar gnb;
 	generate
 		for (gnb = 0; gnb < 5; gnb = gnb + 1) begin : g_nb_buf
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1cr     (.I0(a_n1[gnb]), .O(a_n1_cr[gnb]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2cr     (.I0(a_n2[gnb]), .O(a_n2_cr[gnb]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3cr     (.I0(a_n3[gnb]), .O(a_n3_cr[gnb]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1opc_lo (.I0(a_n1[gnb]), .O(a_n1_opc_lo[gnb]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1opc_hi (.I0(a_n1[gnb]), .O(a_n1_opc_hi[gnb]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2opc_lo (.I0(a_n2[gnb]), .O(a_n2_opc_lo[gnb]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2opc_hi (.I0(a_n2[gnb]), .O(a_n2_opc_hi[gnb]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3opc_lo (.I0(a_n3[gnb]), .O(a_n3_opc_lo[gnb]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3opc_hi (.I0(a_n3[gnb]), .O(a_n3_opc_hi[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1cr  (.I0(a_n1[gnb]), .O(a_n1_cr[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2cr  (.I0(a_n2[gnb]), .O(a_n2_cr[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3cr  (.I0(a_n3[gnb]), .O(a_n3_cr[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1o0  (.I0(a_n1[gnb]), .O(a_n1_opc_0[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1o1  (.I0(a_n1[gnb]), .O(a_n1_opc_1[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1o2  (.I0(a_n1[gnb]), .O(a_n1_opc_2[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1o3  (.I0(a_n1[gnb]), .O(a_n1_opc_3[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2o0  (.I0(a_n2[gnb]), .O(a_n2_opc_0[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2o1  (.I0(a_n2[gnb]), .O(a_n2_opc_1[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2o2  (.I0(a_n2[gnb]), .O(a_n2_opc_2[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2o3  (.I0(a_n2[gnb]), .O(a_n2_opc_3[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3o0  (.I0(a_n3[gnb]), .O(a_n3_opc_0[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3o1  (.I0(a_n3[gnb]), .O(a_n3_opc_1[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3o2  (.I0(a_n3[gnb]), .O(a_n3_opc_2[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3o3  (.I0(a_n3[gnb]), .O(a_n3_opc_3[gnb]));
 		end
 	endgenerate
 `else
-	assign a_n1_cr     = a_n1[4:0];
-	assign a_n2_cr     = a_n2[4:0];
-	assign a_n3_cr     = a_n3[4:0];
-	assign a_n1_opc_lo = a_n1[4:0];
-	assign a_n1_opc_hi = a_n1[4:0];
-	assign a_n2_opc_lo = a_n2[4:0];
-	assign a_n2_opc_hi = a_n2[4:0];
-	assign a_n3_opc_lo = a_n3[4:0];
-	assign a_n3_opc_hi = a_n3[4:0];
+	assign a_n1_cr    = a_n1[4:0];
+	assign a_n2_cr    = a_n2[4:0];
+	assign a_n3_cr    = a_n3[4:0];
+	assign a_n1_opc_0 = a_n1[4:0];
+	assign a_n1_opc_1 = a_n1[4:0];
+	assign a_n1_opc_2 = a_n1[4:0];
+	assign a_n1_opc_3 = a_n1[4:0];
+	assign a_n2_opc_0 = a_n2[4:0];
+	assign a_n2_opc_1 = a_n2[4:0];
+	assign a_n2_opc_2 = a_n2[4:0];
+	assign a_n2_opc_3 = a_n2[4:0];
+	assign a_n3_opc_0 = a_n3[4:0];
+	assign a_n3_opc_1 = a_n3[4:0];
+	assign a_n3_opc_2 = a_n3[4:0];
+	assign a_n3_opc_3 = a_n3[4:0];
 `endif
 	assign cr_idx = {a_n3_cr, a_n2_cr, a_n1_cr};
 	assign rq_pop = (REG_IO != 0) ? rq_pop_fast : (a_act && b_adv && a_uop[ATG_UOP_RQS] && !a_pass_out && (!a_needs_step1 || !a_step));
@@ -642,12 +656,26 @@ module atg_su_opd #(
 	endgenerate
 
 	(* dont_touch = "true" *) wire rst_b_rdy = rst_p || (b_adv && !a_wait);
-	wire [15:0] a_cval1_next_lo = opc_spec_lo(a_n1_opc_lo, a_warp, q_info, qi_front_1a);
-	wire [15:0] a_cval1_next_hi = opc_spec_hi(a_n1_opc_hi, a_warp, q_info, qi_front_1b);
-	wire [15:0] a_cval2_next_lo = opc_spec_lo(a_n2_opc_lo, a_warp, q_info, qi_front_2a);
-	wire [15:0] a_cval2_next_hi = opc_spec_hi(a_n2_opc_hi, a_warp, q_info, qi_front_2b);
-	wire [15:0] a_cval3_next_lo = opc_spec_lo(a_n3_opc_lo, a_warp, q_info, qi_front_3a);
-	wire [15:0] a_cval3_next_hi = opc_spec_hi(a_n3_opc_hi, a_warp, q_info, qi_front_3b);
+	wire [7:0] a_cval1_next_lo_b0 = opc_spec_lo_b0(a_n1_opc_0, a_warp, q_info, qi_front_1a);
+	wire [7:0] a_cval1_next_lo_b1 = opc_spec_lo_b1(a_n1_opc_1, a_warp, q_info, qi_front_1a);
+	wire [7:0] a_cval1_next_hi_b0 = opc_spec_hi_b0(a_n1_opc_2, a_warp, q_info, qi_front_1b);
+	wire [7:0] a_cval1_next_hi_b1 = opc_spec_hi_b1(a_n1_opc_3, a_warp, q_info, qi_front_1b);
+	wire [15:0] a_cval1_next_lo = {a_cval1_next_lo_b1, a_cval1_next_lo_b0};
+	wire [15:0] a_cval1_next_hi = {a_cval1_next_hi_b1, a_cval1_next_hi_b0};
+
+	wire [7:0] a_cval2_next_lo_b0 = opc_spec_lo_b0(a_n2_opc_0, a_warp, q_info, qi_front_2a);
+	wire [7:0] a_cval2_next_lo_b1 = opc_spec_lo_b1(a_n2_opc_1, a_warp, q_info, qi_front_2a);
+	wire [7:0] a_cval2_next_hi_b0 = opc_spec_hi_b0(a_n2_opc_2, a_warp, q_info, qi_front_2b);
+	wire [7:0] a_cval2_next_hi_b1 = opc_spec_hi_b1(a_n2_opc_3, a_warp, q_info, qi_front_2b);
+	wire [15:0] a_cval2_next_lo = {a_cval2_next_lo_b1, a_cval2_next_lo_b0};
+	wire [15:0] a_cval2_next_hi = {a_cval2_next_hi_b1, a_cval2_next_hi_b0};
+
+	wire [7:0] a_cval3_next_lo_b0 = opc_spec_lo_b0(a_n3_opc_0, a_warp, q_info, qi_front_3a);
+	wire [7:0] a_cval3_next_lo_b1 = opc_spec_lo_b1(a_n3_opc_1, a_warp, q_info, qi_front_3a);
+	wire [7:0] a_cval3_next_hi_b0 = opc_spec_hi_b0(a_n3_opc_2, a_warp, q_info, qi_front_3b);
+	wire [7:0] a_cval3_next_hi_b1 = opc_spec_hi_b1(a_n3_opc_3, a_warp, q_info, qi_front_3b);
+	wire [15:0] a_cval3_next_lo = {a_cval3_next_lo_b1, a_cval3_next_lo_b0};
+	wire [15:0] a_cval3_next_hi = {a_cval3_next_hi_b1, a_cval3_next_hi_b0};
 	wire [31:0] a_cval1_next = {a_cval1_next_hi, a_cval1_next_lo};
 	wire [31:0] a_cval2_next = {a_cval2_next_hi, a_cval2_next_lo};
 	wire [31:0] a_cval3_next = {a_cval3_next_hi, a_cval3_next_lo};
@@ -694,7 +722,8 @@ module atg_su_opd #(
 			a_rf_grp_r <= {GRP_W{1'b0}};
 			a_step <= 1'b0;
 			a_pass_ctl <= 1'b0;
-			a_pass_r1 <= 1'b0;
+			a_pass_r1_lo <= 1'b0;
+			a_pass_r1_hi <= 1'b0;
 			a_pass_out <= 1'b0;
 			a_wait <= 1'b0;
 			a_wait_last <= 1'b0;
@@ -893,13 +922,15 @@ module atg_su_opd #(
 					a_step <= 1'b0;
 					if (a_wide && !a_pass_ctl) begin
 						a_pass_ctl <= 1'b1;
-						a_pass_r1 <= 1'b1;
+						a_pass_r1_lo <= 1'b1;
+						a_pass_r1_hi <= 1'b1;
 						a_pass_out <= 1'b1;
 						a_rf_r1_r <= a_uop[ATG_UOP_RS3 +: 6];
 						a_rf_r2_r <= a_uop[ATG_UOP_RS2 +: 6];
 					end else begin
 						a_pass_ctl <= 1'b0;
-						a_pass_r1 <= 1'b0;
+						a_pass_r1_lo <= 1'b0;
+			a_pass_r1_hi <= 1'b0;
 						a_pass_out <= 1'b0;
 						if (a_last) begin
 							a_grp <= {GRP_W{1'b0}};
@@ -951,58 +982,121 @@ module atg_su_opd #(
 	assign q_warp = (REG_IO != 0) ? a_warp : b_warp;
 
 	/* Stage A special-operand precomputation (only n[4:0] for n in 96..127) */
-	function [15:0] opc_spec_lo;
+	function [7:0] opc_spec_lo_b0;
 		input [4:0] n_lo;
 		input [WARP_W-1:0] wn;
 		input [159:0] qi;
 		input qf_lo;
+		reg [15:0] full;
 		begin
 			case (n_lo)
-			5'd0:  opc_spec_lo = 16'd0;
-			5'd1:  opc_spec_lo = 16'h0000;
-			5'd2:  opc_spec_lo = 16'd1;
-			5'd3:  opc_spec_lo = 16'h0000;
-			5'd4:  opc_spec_lo = 16'h0000;
-			5'd5:  opc_spec_lo = 16'h0000;
-			5'd7:  opc_spec_lo = WARP_BASE[15:0] | {{(16-WARP_W){1'b0}}, wn};
-			5'd10: opc_spec_lo = qi[ATG_WI_WGX +: 16];
-			5'd11: opc_spec_lo = qi[ATG_WI_WGX + 16 +: 16];
-			5'd12: opc_spec_lo = qi[ATG_WI_WGX + 32 +: 16];
-			5'd13, 5'd16: opc_spec_lo = {8'd0, qi[ATG_WI_LID +: 8]};
-			5'd18: opc_spec_lo = {16{qf_lo}};
-			5'd19: opc_spec_lo = qi[ATG_WI_NWGX +: 16];
-			5'd20: opc_spec_lo = qi[ATG_WI_NWGX + 16 +: 16];
-			5'd21: opc_spec_lo = qi[ATG_WI_NWGX + 32 +: 16];
-			5'd22: opc_spec_lo = 16'h3C00;
-			5'd23: opc_spec_lo = qi[ATG_WI_MASK +: 16];
-			5'd24: opc_spec_lo = (qi[ATG_WI_KIND +: 2] == 2'd0) ? {8'd0, qi[ATG_WI_LID +: 8]} : 16'd0;
-			default: opc_spec_lo = 16'd0;
+			5'd0:  full = 16'd0;
+			5'd1:  full = 16'h0000;
+			5'd2:  full = 16'd1;
+			5'd3:  full = 16'h0000;
+			5'd4:  full = 16'h0000;
+			5'd5:  full = 16'h0000;
+			5'd7:  full = WARP_BASE[15:0] | {{(16-WARP_W){1'b0}}, wn};
+			5'd10: full = qi[ATG_WI_WGX +: 16];
+			5'd11: full = qi[ATG_WI_WGX + 16 +: 16];
+			5'd12: full = qi[ATG_WI_WGX + 32 +: 16];
+			5'd13, 5'd16: full = {8'd0, qi[ATG_WI_LID +: 8]};
+			5'd18: full = {16{qf_lo}};
+			5'd19: full = qi[ATG_WI_NWGX +: 16];
+			5'd20: full = qi[ATG_WI_NWGX + 16 +: 16];
+			5'd21: full = qi[ATG_WI_NWGX + 32 +: 16];
+			5'd22: full = 16'h3C00;
+			5'd23: full = qi[ATG_WI_MASK +: 16];
+			5'd24: full = (qi[ATG_WI_KIND +: 2] == 2'd0) ? {8'd0, qi[ATG_WI_LID +: 8]} : 16'd0;
+			default: full = 16'd0;
 			endcase
+			opc_spec_lo_b0 = full[7:0];
 		end
 	endfunction
 
-	function [15:0] opc_spec_hi;
+	function [7:0] opc_spec_lo_b1;
+		input [4:0] n_lo;
+		input [WARP_W-1:0] wn;
+		input [159:0] qi;
+		input qf_lo;
+		reg [15:0] full;
+		begin
+			case (n_lo)
+			5'd0:  full = 16'd0;
+			5'd1:  full = 16'h0000;
+			5'd2:  full = 16'd1;
+			5'd3:  full = 16'h0000;
+			5'd4:  full = 16'h0000;
+			5'd5:  full = 16'h0000;
+			5'd7:  full = WARP_BASE[15:0] | {{(16-WARP_W){1'b0}}, wn};
+			5'd10: full = qi[ATG_WI_WGX +: 16];
+			5'd11: full = qi[ATG_WI_WGX + 16 +: 16];
+			5'd12: full = qi[ATG_WI_WGX + 32 +: 16];
+			5'd13, 5'd16: full = {8'd0, qi[ATG_WI_LID +: 8]};
+			5'd18: full = {16{qf_lo}};
+			5'd19: full = qi[ATG_WI_NWGX +: 16];
+			5'd20: full = qi[ATG_WI_NWGX + 16 +: 16];
+			5'd21: full = qi[ATG_WI_NWGX + 32 +: 16];
+			5'd22: full = 16'h3C00;
+			5'd23: full = qi[ATG_WI_MASK +: 16];
+			5'd24: full = (qi[ATG_WI_KIND +: 2] == 2'd0) ? {8'd0, qi[ATG_WI_LID +: 8]} : 16'd0;
+			default: full = 16'd0;
+			endcase
+			opc_spec_lo_b1 = full[15:8];
+		end
+	endfunction
+
+	function [7:0] opc_spec_hi_b0;
 		input [4:0] n_lo;
 		input [WARP_W-1:0] wn;
 		input [159:0] qi;
 		input qf_hi;
+		reg [15:0] full;
 		begin
 			case (n_lo)
-			5'd0:  opc_spec_hi = 16'd0;
-			5'd1:  opc_spec_hi = 16'h3F80;
-			5'd2:  opc_spec_hi = 16'd0;
-			5'd3:  opc_spec_hi = 16'h3F00;
-			5'd4:  opc_spec_hi = 16'h4000;
-			5'd5:  opc_spec_hi = 16'hBF80;
-			5'd7:  opc_spec_hi = WARP_BASE[31:16];
-			5'd10, 5'd11, 5'd12, 5'd13, 5'd16: opc_spec_hi = 16'd0;
-			5'd18: opc_spec_hi = {16{qf_hi}};
-			5'd19, 5'd20, 5'd21: opc_spec_hi = 16'd0;
-			5'd22: opc_spec_hi = 16'h3C00;
-			5'd23: opc_spec_hi = qi[ATG_WI_MASK + 16 +: 16];
-			5'd24: opc_spec_hi = 16'd0;
-			default: opc_spec_hi = 16'd0;
+			5'd0:  full = 16'd0;
+			5'd1:  full = 16'h3F80;
+			5'd2:  full = 16'd0;
+			5'd3:  full = 16'h3F00;
+			5'd4:  full = 16'h4000;
+			5'd5:  full = 16'hBF80;
+			5'd7:  full = WARP_BASE[31:16];
+			5'd10, 5'd11, 5'd12, 5'd13, 5'd16: full = 16'd0;
+			5'd18: full = {16{qf_hi}};
+			5'd19, 5'd20, 5'd21: full = 16'd0;
+			5'd22: full = 16'h3C00;
+			5'd23: full = qi[ATG_WI_MASK + 16 +: 16];
+			5'd24: full = 16'd0;
+			default: full = 16'd0;
 			endcase
+			opc_spec_hi_b0 = full[7:0];
+		end
+	endfunction
+
+	function [7:0] opc_spec_hi_b1;
+		input [4:0] n_lo;
+		input [WARP_W-1:0] wn;
+		input [159:0] qi;
+		input qf_hi;
+		reg [15:0] full;
+		begin
+			case (n_lo)
+			5'd0:  full = 16'd0;
+			5'd1:  full = 16'h3F80;
+			5'd2:  full = 16'd0;
+			5'd3:  full = 16'h3F00;
+			5'd4:  full = 16'h4000;
+			5'd5:  full = 16'hBF80;
+			5'd7:  full = WARP_BASE[31:16];
+			5'd10, 5'd11, 5'd12, 5'd13, 5'd16: full = 16'd0;
+			5'd18: full = {16{qf_hi}};
+			5'd19, 5'd20, 5'd21: full = 16'd0;
+			5'd22: full = 16'h3C00;
+			5'd23: full = qi[ATG_WI_MASK + 16 +: 16];
+			5'd24: full = 16'd0;
+			default: full = 16'd0;
+			endcase
+			opc_spec_hi_b1 = full[15:8];
 		end
 	endfunction
 

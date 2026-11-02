@@ -99,7 +99,7 @@ module atg_su_xu #(
 	reg [SBE_W:0] rsbe;
 	reg [LW-1:0] li;
 	(* dont_touch = "true" *) reg [5:0] step;
-	(* dont_touch = "true" *) reg [5:0] step_cnt, step_cordic, step_tab, step_fbit;
+	(* dont_touch = "true" *) reg [5:0] step_cnt, step_cordic, step_tab, step_fbit_lo, step_fbit_hi;
 	(* dont_touch = "true" *) reg [5:0] step_tab_atan, step_tab_expk;
 	reg ph;			/* rsq: 0 square root, 1 division */
 	/* The engine (registers sliced to bound fanout <= 16). */
@@ -155,7 +155,20 @@ module atg_su_xu #(
 	assign ls_t1  = lx[31];
 	assign ls_res = lx[31];
 `endif
-	wire [7:0] le = lx[30:23];
+	wire [7:0] le_sub, le_cmp;
+`ifdef SYNTH_KINTEX7
+	genvar gle;
+	generate
+		for (gle = 0; gle < 8; gle = gle + 1) begin : g_le_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lesub (.I0(lx[23+gle]), .O(le_sub[gle]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lecmp (.I0(lx[23+gle]), .O(le_cmp[gle]));
+		end
+	endgenerate
+`else
+	assign le_sub = lx[30:23];
+	assign le_cmp = lx[30:23];
+`endif
+	wire [7:0] le = le_sub;
 	wire [23:0] lm = lm_r;
 	wire [23:0] lm_lmm, lm_ev0, lm_dtr, lm_y;
 	genvar glm;
@@ -174,9 +187,9 @@ module atg_su_xu #(
 `endif
 		end
 	endgenerate
-	wire lnan = le == 8'hFF && lx[22:0] != 0;
-	wire linf = le == 8'hFF && lx[22:0] == 0;
-	wire lzero = le == 8'd0;
+	wire lnan = le_cmp == 8'hFF && lx[22:0] != 0;
+	wire linf = le_cmp == 8'hFF && lx[22:0] == 0;
+	wire lzero = le_cmp == 8'd0;
 	reg lnan_r, linf_r, lzero_r, le_ge135_r, le_lt115_r;
 	reg load_go_step_r;
 	wire [31:0] load_res_r;
@@ -407,8 +420,11 @@ module atg_su_xu #(
 			if (nv[pi])
 				np = pi[5:0];
 		fbit = 1'b0;
-		for (pi = 0; pi < 30; pi = pi + 1)
-			if (step_fbit[4:0] == pi[4:0])
+		for (pi = 0; pi < 15; pi = pi + 1)
+			if (step_fbit_lo[4:0] == pi[4:0])
+				fbit = fr[29 - pi];
+		for (pi = 15; pi < 30; pi = pi + 1)
+			if (step_fbit_hi[4:0] == pi[4:0])
 				fbit = fr[29 - pi];
 	end
 	wire [5:0] nsh;
@@ -862,8 +878,8 @@ module atg_su_xu #(
 			lnan_r <= lnan;
 			linf_r <= linf;
 			lzero_r <= lzero;
-			le_ge135_r <= (le >= 8'd135);
-			le_lt115_r <= (le < 8'd115);
+			le_ge135_r <= (le_cmp >= 8'd135);
+			le_lt115_r <= (le_cmp < 8'd115);
 		end
 		if (sh1_we_b) esh_r  <= esh;
 		if (sh1_we_eamt) begin
@@ -1549,7 +1565,8 @@ module atg_su_xu #(
 			step_tab <= 6'd0;
 			step_tab_atan <= 6'd0;
 			step_tab_expk <= 6'd0;
-			step_fbit <= 6'd0;
+			step_fbit_lo  <= 6'd0;
+			step_fbit_hi  <= 6'd0;
 			ph <= 1'b0;
 			load_go_step_r <= 1'b0;
 			stk <= 1'b0;
@@ -1622,7 +1639,7 @@ module atg_su_xu #(
 				sub_st_load <= sub_st1;
 				sub_st_step <= sub_st1;
 				sub_st_fin <= sub_st1;
-				case (sub_st)
+				case (sub_st_load)
 				4'd0, 4'd1, 4'd2, 4'd3, 4'd4, 4'd5, 4'd7: ;
 				4'd6: begin
 					ex_l_r <= ex_l;
@@ -1641,7 +1658,8 @@ module atg_su_xu #(
 					step_tab <= 6'd0;
 					step_tab_atan <= 6'd0;
 					step_tab_expk <= 6'd0;
-					step_fbit <= 6'd0;
+					step_fbit_lo <= 6'd0;
+					step_fbit_hi <= 6'd0;
 					ph <= 1'b0;
 					stk <= 1'b0;
 					sres <= !load_go_step_r;
@@ -1656,7 +1674,7 @@ module atg_su_xu #(
 				sub_st_load <= sub_st1;
 				sub_st_step <= sub_st1;
 				sub_st_fin <= sub_st1;
-				case (sub_st)
+				case (sub_st_step)
 				4'd0, 4'd1, 4'd2, 4'd3, 4'd4, 4'd5: ;
 				default: begin
 					sub_st <= 4'd0;
@@ -1669,7 +1687,8 @@ module atg_su_xu #(
 					step_tab      <= step_last ? 6'd0 : step1;
 					step_tab_atan <= step_last ? 6'd0 : step1;
 					step_tab_expk <= step_last ? 6'd0 : step1;
-					step_fbit     <= step_last ? 6'd0 : step1;
+					step_fbit_lo  <= step_last ? 6'd0 : step1;
+					step_fbit_hi  <= step_last ? 6'd0 : step1;
 					if (step_last) begin
 						if (rop == ATG_XU_RSQ[2:0] && !ph_step) begin
 							/* 2^57 / t: t = the root (30 bits). */
@@ -1686,7 +1705,7 @@ module atg_su_xu #(
 				sub_st_load <= sub_st1;
 				sub_st_step <= sub_st1;
 				sub_st_fin <= sub_st1;
-				case (sub_st)
+				case (sub_st_fin)
 				4'd0: if (lue_we) lue_r <= lue;
 				4'd1: ;
 				4'd2: begin

@@ -146,6 +146,24 @@ Design Rules:
      (`ready = 0`), an `am_skid` buffer must be used to decouple downstream `ready`
      from upstream `valid` generation.
 
+6. Architecture-First Arithmetic & Floating-Point Pipeline Discipline (No FPGA Overfitting)
+   - **Prohibition of FPGA-Specific Bit-Hacks**: RTL must never implement manual LUT
+     decompositions, ad-hoc prefix trees, or bit-twiddling hacks tailored exclusively to
+     dodge or mimic FPGA primitives (e.g. `CARRY4`, `LUT6_2`). Such overfitting creates
+     unbalanced, irregular logic networks that prevent ASIC synthesis tools (e.g. Design
+     Compiler, Genus) from inferring optimal carry-lookahead, Kogge-Stone/Brent-Kung
+     adders, Booth multipliers, or Wallace/CSA trees, severely degrading 5nm ASIC timing.
+   - **Mandatory Use of Unified Libraries**: All floating-point operations must use the
+     unified, canonical modules in `rtl/library/fp/` (`am_fp_*`, `am_fpu_core`). All integer
+     arithmetic must instantiate modules in `rtl/library/arith/` (`am_add`, `am_sub`,
+     `am_addsub`, `am_mul`, `am_div`, `am_shift`).
+   - **No Inline Module Duplication**: Shared library modules (such as `am_fpu_core`) must
+     never be copied, renamed, or inlined into caller files (e.g. `atg_su_fpu.v`). Modules
+     must reside in their canonical library files according to the one-module-per-file rule.
+   - **Balanced Pipelining for 1.5 GHz**: Floating-point and multi-cycle arithmetic datapaths
+     must maintain balanced pipeline stages with <= 15-20 FO4 inverter delays per stage
+     (observed as <= 3-4 LUT levels on the FPGA surrogate).
+
 FPGA Surrogate Verification Metric:
 On Kintex-7 speedgrade -2 (`xc7k325tffg900-2`), achieving out-of-context (OOC) timing
 closure at 250 MHz (period 4.000 ns, WNS >= 0.000 ns) while strictly adhering to these

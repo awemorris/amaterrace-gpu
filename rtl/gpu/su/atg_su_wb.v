@@ -313,8 +313,31 @@ module atg_su_wb #(
 	end
 	endgenerate
 
-	wire v_01 = s_valid_mux[0] || s_valid_mux[1];
-	wire v_23 = s_valid_mux[2] || s_valid_mux[3];
+	wire v_01_q0, v_01_q1, v_01_q2, v_01_q3, v_01_c;
+	wire v_23_q0, v_23_q1, v_23_q2, v_23_q3, v_23_c;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v01_q0 (.I0(s_valid_mux[0]), .I1(s_valid_mux[1]), .O(v_01_q0));
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v01_q1 (.I0(s_valid_mux[0]), .I1(s_valid_mux[1]), .O(v_01_q1));
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v01_q2 (.I0(s_valid_mux[0]), .I1(s_valid_mux[1]), .O(v_01_q2));
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v01_q3 (.I0(s_valid_mux[0]), .I1(s_valid_mux[1]), .O(v_01_q3));
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v01_c  (.I0(s_valid_mux[0]), .I1(s_valid_mux[1]), .O(v_01_c));
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v23_q0 (.I0(s_valid_mux[2]), .I1(s_valid_mux[3]), .O(v_23_q0));
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v23_q1 (.I0(s_valid_mux[2]), .I1(s_valid_mux[3]), .O(v_23_q1));
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v23_q2 (.I0(s_valid_mux[2]), .I1(s_valid_mux[3]), .O(v_23_q2));
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v23_q3 (.I0(s_valid_mux[2]), .I1(s_valid_mux[3]), .O(v_23_q3));
+	(* dont_touch = "true" *) LUT2 #(.INIT(4'he)) u_b_v23_c  (.I0(s_valid_mux[2]), .I1(s_valid_mux[3]), .O(v_23_c));
+`else
+	assign v_01_q0 = s_valid_mux[0] || s_valid_mux[1];
+	assign v_01_q1 = s_valid_mux[0] || s_valid_mux[1];
+	assign v_01_q2 = s_valid_mux[0] || s_valid_mux[1];
+	assign v_01_q3 = s_valid_mux[0] || s_valid_mux[1];
+	assign v_01_c  = s_valid_mux[0] || s_valid_mux[1];
+	assign v_23_q0 = s_valid_mux[2] || s_valid_mux[3];
+	assign v_23_q1 = s_valid_mux[2] || s_valid_mux[3];
+	assign v_23_q2 = s_valid_mux[2] || s_valid_mux[3];
+	assign v_23_q3 = s_valid_mux[2] || s_valid_mux[3];
+	assign v_23_c  = s_valid_mux[2] || s_valid_mux[3];
+`endif
 
 	wire [DW-1:0] sd;
 	genvar gsd;
@@ -323,32 +346,34 @@ module atg_su_wb #(
 		(* dont_touch = "true" *) wire sv0_s = s_valid_sd[0];
 		(* dont_touch = "true" *) wire sv2_s = s_valid_sd[2];
 		(* dont_touch = "true" *) wire sv4_s = s_valid_sd[4];
+		wire v01_s = (gsd < 8) ? v_01_q0 : ((gsd < 16) ? v_01_q1 : ((gsd < 24) ? v_01_q2 : v_01_q3));
+		wire v23_s = (gsd < 8) ? v_23_q0 : ((gsd < 16) ? v_23_q1 : ((gsd < 24) ? v_23_q2 : v_23_q3));
 		(* dont_touch = "true" *) wire [15:0] sd_01_s = sv0_s ? s_data[0*DW + gsd*16 +: 16] : s_data[1*DW + gsd*16 +: 16];
 		(* dont_touch = "true" *) wire [15:0] sd_23_s = sv2_s ? s_data[2*DW + gsd*16 +: 16] : s_data[3*DW + gsd*16 +: 16];
 		(* dont_touch = "true" *) wire [15:0] sd_45_s = sv4_s ? s_data[4*DW + gsd*16 +: 16] : s_data[5*DW + gsd*16 +: 16];
-		assign sd[gsd*16 +: 16] = v_01 ? sd_01_s : (v_23 ? sd_23_s : sd_45_s);
+		assign sd[gsd*16 +: 16] = v01_s ? sd_01_s : (v23_s ? sd_23_s : sd_45_s);
 	end
 	endgenerate
 
 	wire [6:0] srd_01 = s_valid_mux[0] ? s_rd[0*7 +: 7] : s_rd[1*7 +: 7];
 	wire [6:0] srd_23 = s_valid_mux[2] ? s_rd[2*7 +: 7] : s_rd[3*7 +: 7];
 	wire [6:0] srd_45 = s_valid_mux[4] ? s_rd[4*7 +: 7] : s_rd[5*7 +: 7];
-	wire [6:0] srd = v_01 ? srd_01 : (v_23 ? srd_23 : srd_45);
+	wire [6:0] srd = v_01_c ? srd_01 : (v_23_c ? srd_23 : srd_45);
 
 	wire [WARP_W-1:0] sw_01 = s_valid_mux[0] ? s_warp[0*WARP_W +: WARP_W] : s_warp[1*WARP_W +: WARP_W];
 	wire [WARP_W-1:0] sw_23 = s_valid_mux[2] ? s_warp[2*WARP_W +: WARP_W] : s_warp[3*WARP_W +: WARP_W];
 	wire [WARP_W-1:0] sw_45 = s_valid_mux[4] ? s_warp[4*WARP_W +: WARP_W] : s_warp[5*WARP_W +: WARP_W];
-	wire [WARP_W-1:0] sw = v_01 ? sw_01 : (v_23 ? sw_23 : sw_45);
+	wire [WARP_W-1:0] sw = v_01_c ? sw_01 : (v_23_c ? sw_23 : sw_45);
 
 	wire [GRP_W-1:0] sg_01 = s_valid_mux[0] ? s_grp[0*GRP_W +: GRP_W] : s_grp[1*GRP_W +: GRP_W];
 	wire [GRP_W-1:0] sg_23 = s_valid_mux[2] ? s_grp[2*GRP_W +: GRP_W] : s_grp[3*GRP_W +: GRP_W];
 	wire [GRP_W-1:0] sg_45 = s_valid_mux[4] ? s_grp[4*GRP_W +: GRP_W] : s_grp[5*GRP_W +: GRP_W];
-	wire [GRP_W-1:0] sg = v_01 ? sg_01 : (v_23 ? sg_23 : sg_45);
+	wire [GRP_W-1:0] sg = v_01_c ? sg_01 : (v_23_c ? sg_23 : sg_45);
 
 	wire [NPHYS-1:0] sl_01 = s_valid_mux[0] ? s_lanes[0*NPHYS +: NPHYS] : s_lanes[1*NPHYS +: NPHYS];
 	wire [NPHYS-1:0] sl_23 = s_valid_mux[2] ? s_lanes[2*NPHYS +: NPHYS] : s_lanes[3*NPHYS +: NPHYS];
 	wire [NPHYS-1:0] sl_45 = s_valid_mux[4] ? s_lanes[4*NPHYS +: NPHYS] : s_lanes[5*NPHYS +: NPHYS];
-	wire [NPHYS-1:0] sl = v_01 ? sl_01 : (v_23 ? sl_23 : sl_45);
+	wire [NPHYS-1:0] sl = v_01_c ? sl_01 : (v_23_c ? sl_23 : sl_45);
 
 	wire sv = |s_valid_mux;
 
@@ -408,7 +433,16 @@ module atg_su_wb #(
 		end
 	endfunction
 
-	wire sv_arb = sv;
+	wire sv_arb, sv_arb_fq, sv_arb_lq;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sva  (.I0(sv), .O(sv_arb));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_svaf (.I0(sv), .O(sv_arb_fq));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sval (.I0(sv), .O(sv_arb_lq));
+`else
+	assign sv_arb    = sv;
+	assign sv_arb_fq = sv;
+	assign sv_arb_lq = sv;
+`endif
 	(* max_fanout = 16 *) reg [LP_W-1:0] rr;
 	(* max_fanout = 16 *) reg [2:0] wait_n;
 
@@ -492,11 +526,19 @@ module atg_su_wb #(
 		(* max_fanout = 16 *) reg [31:0]       fq_word;
 		(* max_fanout = 16 *) reg [NPHYS-1:0]  fq_lanes;
 
-		wire fq_can_load = !fq_valid || !sv_arb;
-		(* dont_touch = "true" *) wire fq_ld_ctrl = !fq_valid || !sv_arb;
-		(* dont_touch = "true" *) wire fq_ld_wlo  = !fq_valid || !sv_arb;
-		(* dont_touch = "true" *) wire fq_ld_whi  = !fq_valid || !sv_arb;
-		(* dont_touch = "true" *) wire fq_ld_vsl  = !fq_valid || !sv_arb;
+		wire fq_can_load = !fq_valid || !sv_arb_fq;
+		wire fq_ld_ctrl, fq_ld_wlo, fq_ld_whi, fq_ld_vsl;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT2 #(.INIT(4'h1)) u_b_fq_c  (.I0(fq_valid), .I1(sv_arb_fq), .O(fq_ld_ctrl));
+		(* dont_touch = "true" *) LUT2 #(.INIT(4'h1)) u_b_fq_wl (.I0(fq_valid), .I1(sv_arb_fq), .O(fq_ld_wlo));
+		(* dont_touch = "true" *) LUT2 #(.INIT(4'h1)) u_b_fq_wh (.I0(fq_valid), .I1(sv_arb_fq), .O(fq_ld_whi));
+		(* dont_touch = "true" *) LUT2 #(.INIT(4'h1)) u_b_fq_vs (.I0(fq_valid), .I1(sv_arb_fq), .O(fq_ld_vsl));
+`else
+		assign fq_ld_ctrl = !fq_valid || !sv_arb_fq;
+		assign fq_ld_wlo  = !fq_valid || !sv_arb_fq;
+		assign fq_ld_whi  = !fq_valid || !sv_arb_fq;
+		assign fq_ld_vsl  = !fq_valid || !sv_arb_fq;
+`endif
 		assign fi_ready = fq_can_load ? (fi_valid[0] ? 2'b01 : (fi_valid[1] ? 2'b10 : 2'b00)) : 2'b00;
 
 		always @(posedge clk) begin
@@ -612,7 +654,7 @@ module atg_su_wb #(
 		(* max_fanout = 12 *) reg [SBE_W:0]    lq_sbe;
 		(* max_fanout = 12 *) reg [2:0]        lq_cls;
 
-		wire lq_done     = !lq_wr || (!sv_arb && !fq_valid);
+		wire lq_done     = !lq_wr || (!sv_arb_lq && !fq_valid);
 		wire lq_can_load_raw = !lq_valid || lq_done;
 		wire lq_can_load, lq_can_load_ctl0, lq_can_load_ctl1;
 		wire rr_en_raw = ksel_v && lq_can_load;
@@ -621,44 +663,30 @@ module atg_su_wb #(
 		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_lqcl   (.I0(lq_can_load_raw), .O(lq_can_load));
 		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_lqctl0 (.I0(lq_can_load_raw), .O(lq_can_load_ctl0));
 		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_lqctl1 (.I0(lq_can_load_raw), .O(lq_can_load_ctl1));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rrena  (.I0(rr_en_raw),       .O(rr_en_a));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rrenb  (.I0(rr_en_raw),       .O(rr_en_b));
 `else
 		assign lq_can_load      = lq_can_load_raw;
 		assign lq_can_load_ctl0 = lq_can_load_raw;
 		assign lq_can_load_ctl1 = lq_can_load_raw;
-		assign rr_en_a          = rr_en_raw;
-		assign rr_en_b          = rr_en_raw;
 `endif
 
-		wire [NL-1:0] lk_valid_g [0:3];
-		genvar glkv;
-		for (glkv = 0; glkv < 4; glkv = glkv + 1) begin : g_lkv_buf
-			genvar glkn;
-			for (glkn = 0; glkn < NL; glkn = glkn + 1) begin : g_lkv_bit
+		assign lk_ready = (ksel_v && lq_can_load) ? lk_s_one : {NL{1'b0}};
+
+		localparam N_KS_GRP = (DW / 16 + 3) / 4;
+		wire [LP_W-1:0] ksel_grp [0:N_KS_GRP-1];
+		genvar gkg;
+		for (gkg = 0; gkg < N_KS_GRP; gkg = gkg + 1) begin : g_ksel_grp
+			genvar gkb;
+			for (gkb = 0; gkb < LP_W; gkb = gkb + 1) begin : g_ksel_grp_bit
 `ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_lkv (.I0(lk_valid[glkn]), .O(lk_valid_g[glkv][glkn]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ksel_g (.I0(ksel[gkb]), .O(ksel_grp[gkg][gkb]));
 `else
-				assign lk_valid_g[glkv][glkn] = lk_valid[glkn];
+				assign ksel_grp[gkg][gkb] = ksel[gkb];
 `endif
 			end
 		end
 
-		assign lk_ready = (ksel_v && lq_can_load) ? lk_s_one : {NL{1'b0}};
-
-		(* dont_touch = "true" *) wire [LP_W-1:0] rr_nx_a = next_rr(ksel);
-		(* dont_touch = "true" *) wire [LP_W-1:0] rr_nx_b = next_rr(ksel);
-
 		genvar glqd, glqh;
 		for (glqd = 0; glqd < DW / 16; glqd = glqd + 1) begin : g_lqd_sl
-			(* dont_touch = "true" *) wire [NL-1:0] lkv_sl = lk_valid_g[glqd / 4];
-			(* dont_touch = "true" *) reg [LP_W-1:0] rr_sl;
-			always @(posedge clk) begin
-				if (rst_p)
-					rr_sl <= {LP_W{1'b0}};
-				else if ((glqd < 8) ? rr_en_a : rr_en_b)
-					rr_sl <= (glqd < 8) ? rr_nx_a : rr_nx_b;
-			end
 			(* dont_touch = "true" *) wire lq_ld_s = !lq_valid || !lq_wr || (!sv && !fq_valid_sl[glqd]);
 			(* dont_touch = "true" *) wire wb_sel1_w = !(s_valid_sel[0] || s_valid_sel[1] || s_valid_sel[2] || s_valid_sel[3]);
 			(* dont_touch = "true" *) wire wb_sel0_w = !(s_valid_sel[0] || s_valid_sel[1]) && (s_valid_sel[2] || s_valid_sel[3] || !(s_valid_sel[4] || s_valid_sel[5]));
@@ -667,26 +695,19 @@ module atg_su_wb #(
 
 			wire [15:0] lk_s_data_sl;
 			for (glqh = 0; glqh < 2; glqh = glqh + 1) begin : g_lqd_h
-				reg kh_hv;
-				reg [LP_W-1:0] kh_sel, kh_lo;
-				integer ikh;
-				always @(*) begin
-					kh_hv  = 1'b0;
-					kh_sel = {LP_W{1'b0}};
-					kh_lo  = {LP_W{1'b0}};
-					for (ikh = NL - 1; ikh >= 0; ikh = ikh - 1) begin
-						if (lkv_sl[ikh]) begin
-							kh_lo = ikh[LP_W-1:0];
-							if (ikh[LP_W-1:0] >= rr_sl) begin
-								kh_hv  = 1'b1;
-								kh_sel = ikh[LP_W-1:0];
-							end
-						end
-					end
-					if (!kh_hv)
-						kh_sel = kh_lo;
+				wire [LP_W-1:0] ksel_h;
+				genvar ghb;
+				for (ghb = 0; ghb < LP_W; ghb = ghb + 1) begin : g_ksel_h_bit
+`ifdef SYNTH_KINTEX7
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ksel_h (
+						.I0(ksel_grp[glqd / 4][ghb]),
+						.O(ksel_h[ghb])
+					);
+`else
+					assign ksel_h[ghb] = ksel_grp[glqd / 4][ghb];
+`endif
 				end
-				(* dont_touch = "true" *) wire [LP_W-1:0] ksel_h = kh_sel;
+
 				reg [7:0] d_h;
 				integer imh;
 				always @(*) begin
@@ -741,7 +762,7 @@ module atg_su_wb #(
 			end
 		end
 
-		wire l_stalled = lq_valid && lq_wr && (sv_arb || fq_valid);
+		wire l_stalled = lq_valid && lq_wr && (sv_arb_lq || fq_valid);
 		always @(posedge clk) begin
 			if (rst_p) begin
 				rr     <= {LP_W{1'b0}};

@@ -215,9 +215,22 @@ module atg_su_lda #(
 	(* max_fanout = 12 *) reg [GRP_W-1:0] l_grp;
 	(* max_fanout = 12 *) reg [23:0] l_map;
 	(* max_fanout = 12 *) reg [8:0] l_imm;
-	(* max_fanout = 12 *) wire [WARP_W-1:0] c_warp = x_ready_w ? x_warp : l_warp;
+	wire [WARP_W-1:0] x_warp_map, x_warp_ctl;
+`ifdef SYNTH_KINTEX7
+	genvar glw;
+	generate
+		for (glw = 0; glw < WARP_W; glw = glw + 1) begin : g_buf_xwl
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_xwm (.I0(x_warp[glw]), .O(x_warp_map[glw]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_xwc (.I0(x_warp[glw]), .O(x_warp_ctl[glw]));
+		end
+	endgenerate
+`else
+	assign x_warp_map = x_warp;
+	assign x_warp_ctl = x_warp;
+`endif
+	(* max_fanout = 12 *) wire [WARP_W-1:0] c_warp = x_ready_w ? x_warp_ctl : l_warp;
 	(* max_fanout = 12 *) wire [GRP_W-1:0] c_grp = x_ready_w ? x_grp : l_grp;
-	wire [23:0] x_map = map_of(pmap, x_warp);
+	wire [23:0] x_map = map_of(pmap, x_warp_map);
 	(* max_fanout = 12 *) wire [23:0] c_map = x_ready_w ? x_map : l_map;
 	(* max_fanout = 12 *) wire [8:0] c_imm = x_ready_w ? x_uop[ATG_UOP_IMM +: 9] : l_imm;
 	always @(posedge clk) begin
@@ -229,7 +242,7 @@ module atg_su_lda #(
 			l_map <= 24'd0;
 		end else begin
 			if (take) begin
-				l_warp <= x_warp;
+				l_warp <= x_warp_ctl;
 				l_grp <= x_grp;
 				l_imm <= x_uop[ATG_UOP_IMM +: 9];
 				l_map <= x_map;
@@ -375,7 +388,7 @@ module atg_su_lda #(
 			for (k = 1; k < SHORT_LAT; k = k + 1)
 				pipe[k][EW-1] <= pipe[k-1][EW-1];
 		end
-		pipe[0][EW-2:0] <= {x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0]};
+		pipe[0][EW-2:0] <= {x_warp_ctl, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0]};
 		for (k = 1; k < SHORT_LAT; k = k + 1)
 			pipe[k][EW-2:0] <= pipe[k-1][EW-2:0];
 	end

@@ -142,7 +142,7 @@ module atg_su_sched #(
 
 	/* Per slot. */
 	reg [NWARPS*3-1:0] st;
-	reg [NWARPS-1:0] st_free_r, st_free_r_out;
+	(* dont_touch = "true" *) reg [NWARPS-1:0] st_free_r, st_free_r_out, st_free_r_pc, st_free_r_bar;
 	reg [NWARPS-1:0] st_rdy_r;
 	reg [NWARPS-1:0] st_rof_r;
 	reg [NWARPS*16-1:0] pc;
@@ -502,7 +502,7 @@ module atg_su_sched #(
 	generate
 		for (gc = 0; gc < NWARPS; gc = gc + 1) begin : g_bar_blk
 			assign w_bar_blk[gc] = (info[gc*160 + ATG_WI_KIND +: 2] == K_COMP) &&
-				!st_free_r[gc] && (st[gc*3 +: 3] != S_BAR) && (st[gc*3 +: 3] != S_ENDED);
+				!st_free_r_bar[gc] && (st[gc*3 +: 3] != S_BAR) && (st[gc*3 +: 3] != S_ENDED);
 		end
 	endgenerate
 	reg [NWARPS-1:0] bar_go;
@@ -629,6 +629,8 @@ module atg_su_sched #(
 			st <= {NWARPS{S_FREE}};
 			st_free_r     <= {NWARPS{1'b1}};
 			st_free_r_out <= {NWARPS{1'b1}};
+			st_free_r_pc  <= {NWARPS{1'b1}};
+			st_free_r_bar <= {NWARPS{1'b1}};
 			st_rdy_r  <= {NWARPS{1'b0}};
 			st_rof_r  <= {NWARPS{1'b0}};
 			gap <= {(NWARPS*GAP_W){1'b0}};
@@ -658,6 +660,8 @@ module atg_su_sched #(
 				st[(w)*3 +: 3] <= nxt_st_w;
 				st_free_r[w]     <= (nxt_st_w == S_FREE);
 				st_free_r_out[w] <= (nxt_st_w == S_FREE);
+				st_free_r_pc[w]  <= (nxt_st_w == S_FREE);
+				st_free_r_bar[w] <= (nxt_st_w == S_FREE);
 				st_rdy_r[w]    <= (nxt_st_w == S_READY);
 				st_rof_r[w]    <= (nxt_st_w == S_READY) || (nxt_st_w == S_FETCH);
 
@@ -723,7 +727,7 @@ module atg_su_sched #(
 	genvar gwp;
 	generate
 		for (gwp = 0; gwp < NWARPS; gwp = gwp + 1) begin : g_pc_ctrl
-			wire clr_raw   = st_free_r[gwp] || (st[gwp*3 +: 3] == S_ALLOC);
+			wire clr_raw   = st_free_r_pc[gwp] || (st[gwp*3 +: 3] == S_ALLOC);
 			wire fetch_raw = (st[gwp*3 +: 3] == S_FETCH) && fb_valid && (fb_warp == gwp[WARP_W-1:0]) && (fb_kind == 2'd0);
 			wire wc_raw    = (st[gwp*3 +: 3] == S_WC) && wc_valid && (wc_warp == gwp[WARP_W-1:0]);
 			wire clr_lo, clr_hi, fetch_lo, fetch_hi, wc_lo, wc_hi;

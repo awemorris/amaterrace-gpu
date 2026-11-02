@@ -72,7 +72,23 @@ module atg_su_exec #(
 	(* max_fanout = 12 *) wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXEC;
 	(* max_fanout = 12 *) wire [7:0] op = x_uop[ATG_UOP_OP +: 8];
 	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
-	(* max_fanout = 12 *) wire [31:0] wexec = exec_r[x_warp*32 +: 32];
+	wire [WARP_W-1:0] x_warp_wex;
+	wire [GRP_W-1:0]  x_grp_wex;
+`ifdef SYNTH_KINTEX7
+	genvar gxw;
+	generate
+		for (gxw = 0; gxw < WARP_W; gxw = gxw + 1) begin : g_buf_xww
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_xww (.I0(x_warp[gxw]), .O(x_warp_wex[gxw]));
+		end
+		for (gxw = 0; gxw < GRP_W; gxw = gxw + 1) begin : g_buf_xgw
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_xgw (.I0(x_grp[gxw]), .O(x_grp_wex[gxw]));
+		end
+	endgenerate
+`else
+	assign x_warp_wex = x_warp;
+	assign x_grp_wex  = x_grp;
+`endif
+	(* max_fanout = 12 *) wire [31:0] wexec = exec_r[x_warp_wex*32 +: 32];
 
 	/* Direct group mux for NPHYS-aligned operations */
 	(* max_fanout = 12 *) reg [NPHYS-1:0] wexec_g;
@@ -80,7 +96,7 @@ module atg_su_exec #(
 	always @(*) begin
 		wexec_g = {NPHYS{1'b0}};
 		for (gi = 0; gi < 32/NPHYS; gi = gi + 1) begin
-			if (x_grp == gi[GRP_W-1:0]) begin
+			if (x_grp_wex == gi[GRP_W-1:0]) begin
 				wexec_g = wexec[gi*NPHYS +: NPHYS];
 			end
 		end
@@ -181,7 +197,7 @@ module atg_su_exec #(
 	wire [1:0] op_w [0:NWARPS-1];
 	wire [WARP_W-1:0] x_warp_w [0:NWARPS-1];
 	wire exec_op_match_w [0:NWARPS-1];
-	wire [WARP_W-1:0] q_warp_ex, q_warp_kl;
+	wire [WARP_W-1:0] q_warp_ex_lo, q_warp_ex_hi, q_warp_kl_lo, q_warp_kl_hi;
 	genvar gwb, gbb;
 	generate
 	for (gwb = 0; gwb < NWARPS; gwb = gwb + 1) begin : g_buf_w
@@ -207,11 +223,15 @@ module atg_su_exec #(
 	end
 	for (gbb = 0; gbb < WARP_W; gbb = gbb + 1) begin : g_buf_qw
 `ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_qwe (.I0(q_warp[gbb]), .O(q_warp_ex[gbb]));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_qwk (.I0(q_warp[gbb]), .O(q_warp_kl[gbb]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_qwe_l (.I0(q_warp[gbb]), .O(q_warp_ex_lo[gbb]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_qwe_h (.I0(q_warp[gbb]), .O(q_warp_ex_hi[gbb]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_qwk_l (.I0(q_warp[gbb]), .O(q_warp_kl_lo[gbb]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_qwk_h (.I0(q_warp[gbb]), .O(q_warp_kl_hi[gbb]));
 `else
-		assign q_warp_ex[gbb] = q_warp[gbb];
-		assign q_warp_kl[gbb] = q_warp[gbb];
+		assign q_warp_ex_lo[gbb] = q_warp[gbb];
+		assign q_warp_ex_hi[gbb] = q_warp[gbb];
+		assign q_warp_kl_lo[gbb] = q_warp[gbb];
+		assign q_warp_kl_hi[gbb] = q_warp[gbb];
 `endif
 	end
 	endgenerate
@@ -221,6 +241,7 @@ module atg_su_exec #(
 		for (gw = 0; gw < NWARPS; gw = gw + 1) begin : g_warp_state
 			wire w_match = mine && (x_warp_w[gw] == gw[WARP_W-1:0]);
 			wire exec_op_match = exec_op_match_w[gw];
+			wire [1:0] op_gw = op_w[gw];
 
 			for (gg = 0; gg < 32/NPHYS; gg = gg + 1) begin : g_grp_state
 				(* dont_touch = "true" *) wire w_init_kl = init_valid && (init_warp == gw[WARP_W-1:0]);
@@ -244,7 +265,7 @@ module atg_su_exec #(
 				always @(*) begin
 					if (w_init_ex)
 						exec_d = init_mask[gg*NPHYS +: NPHYS];
-					else case (op_w[gw])
+					else case (op_gw)
 						ATG_EXEC_SET[1:0]: exec_d = bt;
 						ATG_EXEC_AND[1:0]: exec_d = cur_exec & bt;
 						default:           exec_d = cur_exec | bt;
@@ -277,8 +298,12 @@ module atg_su_exec #(
 	assign wc_warp = wc_w;
 	assign wc_op = wc_o;
 	assign wc_pc = wc_take ? wc_pc_tgt : wc_pc_p1;
-	assign q_exec = exec_r[q_warp_ex*32 +: 32];
-	assign q_killed = kill_r[q_warp_kl*32 +: 32];
+	wire [15:0] q_exec_lo = exec_r[{q_warp_ex_lo, 5'd0} +: 16];
+	wire [15:0] q_exec_hi = exec_r[{q_warp_ex_hi, 5'd16} +: 16];
+	wire [15:0] q_kill_lo = kill_r[{q_warp_kl_lo, 5'd0} +: 16];
+	wire [15:0] q_kill_hi = kill_r[{q_warp_kl_hi, 5'd16} +: 16];
+	assign q_exec   = {q_exec_hi, q_exec_lo};
+	assign q_killed = {q_kill_hi, q_kill_lo};
 
 	wire [EW-1:0] o = pipe[SHORT_LAT-1];
 	assign s_valid = o[EW-1];

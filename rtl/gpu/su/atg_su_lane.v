@@ -92,16 +92,27 @@ module atg_su_lane #(
 	wire [2:0] sub_pipe;
 	wire [2:0] sub_ctl_vote;
 `ifdef SYNTH_KINTEX7
+	wire [2:0] sub_p0, sub_p1, sub_qa;
+	genvar gsb_pre;
+	generate
+		for (gsb_pre = 0; gsb_pre < 3; gsb_pre = gsb_pre + 1) begin : g_sub_pre
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_p0 (.I0(sub[gsb_pre]), .O(sub_p0[gsb_pre]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_p1 (.I0(sub[gsb_pre]), .O(sub_p1[gsb_pre]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_qa (.I0(sub[gsb_pre]), .O(sub_qa[gsb_pre]));
+		end
+	endgenerate
+
 	genvar gsb, gsp;
 	generate
 		for (gsp = 0; gsp < 16; gsp = gsp + 1) begin : g_sub_p
+			wire [2:0] sub_src = (gsp < 8) ? sub_p0 : sub_p1;
 			for (gsb = 0; gsb < 3; gsb = gsb + 1) begin : g_sub_b
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_ctl (.I0(sub[gsb]), .O(sub_ctl_p[gsp*3 + gsb]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_ctl (.I0(sub_src[gsb]), .O(sub_ctl_p[gsp*3 + gsb]));
 			end
 		end
 		for (gsb = 0; gsb < 3; gsb = gsb + 1) begin : g_sub_buf
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_pip (.I0(sub[gsb]), .O(sub_pipe[gsb]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_vot (.I0(sub[gsb]), .O(sub_ctl_vote[gsb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_pip (.I0(sub_qa[gsb]), .O(sub_pipe[gsb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_vot (.I0(sub_qa[gsb]), .O(sub_ctl_vote[gsb]));
 		end
 	endgenerate
 `else
@@ -116,10 +127,10 @@ module atg_su_lane #(
 			wire sub0_qa_lo, sub0_qa_hi;
 			wire sub0_qb_lo, sub0_qb_hi;
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qa_lo (.I0(sub[0]), .O(sub0_qa_lo));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qa_hi (.I0(sub[0]), .O(sub0_qa_hi));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qb_lo (.I0(sub[0]), .O(sub0_qb_lo));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qb_hi (.I0(sub[0]), .O(sub0_qb_hi));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qa_lo (.I0(sub_qa[0]), .O(sub0_qa_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qa_hi (.I0(sub_qa[0]), .O(sub0_qa_hi));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qb_lo (.I0(sub_qa[0]), .O(sub0_qb_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qb_hi (.I0(sub_qa[0]), .O(sub0_qb_hi));
 `else
 			assign sub0_qa_lo = sub[0];
 			assign sub0_qa_hi = sub[0];
