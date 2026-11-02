@@ -258,10 +258,22 @@ module atg_su_exp #(
 			wire [RW+2:0] b_sca = (bs < 4) ? b_sc_a_c0 : b_sc_a_c1;
 			wire [RW+2:0] b_xcr = (bs < 4) ? b_xcrow_0 : b_xcrow_1;
 			wire [RW+2:0] b_dcr = (bs < 4) ? b_dcrow_0 : b_dcrow_1;
-			(* dont_touch = "true" *) wire [RW+2:0] c_wa_0 = b_scon ? b_sca : b_xcr;
-			(* dont_touch = "true" *) wire [RW+2:0] c_wa_1 = b_scon ? b_sca : b_xcr;
-			(* dont_touch = "true" *) wire [RW+2:0] c_wa_2 = b_scon ? b_sca : b_xcr;
-			(* dont_touch = "true" *) wire [RW+2:0] c_wa_3 = b_scon ? b_sca : b_xcr;
+			wire [RW+2:0] c_wa_raw = b_scon ? b_sca : b_xcr;
+			wire [RW+2:0] c_wa_0, c_wa_1, c_wa_2, c_wa_3;
+			genvar gbw;
+			for (gbw = 0; gbw <= RW+2; gbw = gbw + 1) begin : g_cwa_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_cwa0 (.I0(c_wa_raw[gbw]), .O(c_wa_0[gbw]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_cwa1 (.I0(c_wa_raw[gbw]), .O(c_wa_1[gbw]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_cwa2 (.I0(c_wa_raw[gbw]), .O(c_wa_2[gbw]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_cwa3 (.I0(c_wa_raw[gbw]), .O(c_wa_3[gbw]));
+`else
+				assign c_wa_0[gbw] = c_wa_raw[gbw];
+				assign c_wa_1[gbw] = c_wa_raw[gbw];
+				assign c_wa_2[gbw] = c_wa_raw[gbw];
+				assign c_wa_3[gbw] = c_wa_raw[gbw];
+`endif
+			end
 			(* dont_touch = "true" *) wire [RW+2:0] dcrow_01 = b_dcr;
 			(* dont_touch = "true" *) wire [RW+2:0] dcrow_23 = b_dcr;
 			(* dont_touch = "true" *) wire we_0 = b_we_0;
@@ -344,14 +356,29 @@ module atg_su_exp #(
 	genvar gi, gch;
 	generate
 		for (gi = 0; gi < 4; gi = gi + 1) begin : g_qmux
+			wire [2:0] dq_c_lo, dq_c_hi, dq_c1_lo, dq_c1_hi;
+			genvar gdq;
+			for (gdq = 0; gdq < 3; gdq = gdq + 1) begin : g_dq_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc_lo  (.I0(dq[gdq]), .O(dq_c_lo[gdq]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc_hi  (.I0(dq[gdq]), .O(dq_c_hi[gdq]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc1_lo (.I0(dq[gdq]), .O(dq_c1_lo[gdq]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_dqc1_hi (.I0(dq[gdq]), .O(dq_c1_hi[gdq]));
+`else
+				assign dq_c_lo[gdq]  = dq[gdq];
+				assign dq_c_hi[gdq]  = dq[gdq];
+				assign dq_c1_lo[gdq] = dq[gdq];
+				assign dq_c1_hi[gdq] = dq[gdq];
+`endif
+			end
 			for (gch = 0; gch < 8; gch = gch + 1) begin : g_c_sl
-				(* dont_touch = "true" *) wire [2:0] dq_c  = dq;
-				(* dont_touch = "true" *) wire [2:0] dq_c1 = dq;
+				wire [2:0] dq_c  = (gch < 4) ? dq_c_lo  : dq_c_hi;
+				wire [2:0] dq_c1 = (gch < 4) ? dq_c1_lo : dq_c1_hi;
 				assign col[128 * gi + gch * 16 +: 16]  = rdat[192 * (({27'd0, dq_c,  gi[1:0]}) % NPHYS) + gch * 16 +: 16];
 				assign col1[128 * gi + gch * 16 +: 16] = rdat1[128 * (({27'd0, dq_c1, gi[1:0]}) % NPHYS) + gch * 16 +: 16];
 			end
 			for (gch = 0; gch < 2; gch = gch + 1) begin : g_d_sl
-				(* dont_touch = "true" *) wire [2:0] dq_d = dq;
+				wire [2:0] dq_d = dq_c_lo;
 				(* dont_touch = "true" *) wire q_ddw = ddw[{dq_d, gi[1:0]}];
 				wire [15:0] w_m4 = rdat[192 * (({27'd0, dq_d, gi[1:0]}) % NPHYS) + 128 + gch * 16 +: 16];
 				wire [15:0] w_mz = rdat[192 * (({27'd0, dq_d, gi[1:0]}) % NPHYS) + 160 + gch * 16 +: 16];
@@ -406,17 +433,27 @@ module atg_su_exp #(
 	generate
 		for (gw = 0; gw < NWARPS; gw = gw + 1) begin : g_w_ctrl
 			(* dont_touch = "true" *) wire rst_w = !rst_n;
-			(* dont_touch = "true" *) wire [23:0] w_ff_f = fl_data[31:8];
+			wire [23:0] w_ff_f_sh, w_ff_f_cmp;
+			genvar gwf;
+			for (gwf = 0; gwf < 24; gwf = gwf + 1) begin : g_wff_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sh  (.I0(fl_data[8+gwf]), .O(w_ff_f_sh[gwf]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cmp (.I0(fl_data[8+gwf]), .O(w_ff_f_cmp[gwf]));
+`else
+				assign w_ff_f_sh[gwf]  = fl_data[8+gwf];
+				assign w_ff_f_cmp[gwf] = fl_data[8+gwf];
+`endif
+			end
 			wire [3:0] w_ff_sh;
 			wire [15:0] w_ff_m;
 			wire w_fs_bo_unused;
 			wire w_unused_ok = &{1'b0, w_fs_bo_unused};
-			am_sub #(.W(4)) u_w_ff_sh (.a(4'd14), .b(w_ff_f[18:15]), .bi(1'b0), .d(w_ff_sh), .bo(w_fs_bo_unused));
-			am_shift #(.W(16), .SW(4)) u_w_ff_m (.a({1'b1, w_ff_f[14:0]}), .amt(w_ff_sh), .left(1'b0), .arith(1'b0),
+			am_sub #(.W(4)) u_w_ff_sh (.a(4'd14), .b(w_ff_f_sh[18:15]), .bi(1'b0), .d(w_ff_sh), .bo(w_fs_bo_unused));
+			am_shift #(.W(16), .SW(4)) u_w_ff_m (.a({1'b1, w_ff_f_sh[14:0]}), .amt(w_ff_sh), .left(1'b0), .arith(1'b0),
 				.y(w_ff_m));
 			(* dont_touch = "true" *) wire [15:0] w_fx_floor =
-				(w_ff_f[23] || w_ff_f[22:15] < 8'd127) ? 16'd0 :
-				(w_ff_f[22:15] > 8'd142) ? 16'hFFFF : w_ff_m;
+				(w_ff_f_cmp[23] || w_ff_f_cmp[22:15] < 8'd127) ? 16'd0 :
+				(w_ff_f_cmp[22:15] > 8'd142) ? 16'hFFFF : w_ff_m;
 
 			(* dont_touch = "true" *) wire [4:0] w_fl_lane_h0 = fl_lane;
 			(* dont_touch = "true" *) wire [4:0] w_fl_lane_h1 = fl_lane;

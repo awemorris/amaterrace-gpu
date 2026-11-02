@@ -350,12 +350,28 @@ module atg_su_exp_mesh #(
 	(* max_fanout = 12 *) reg s1_valid;
 
 	(* max_fanout = 12 *) wire w_mesh_ready = mesh_ready;
-	(* dont_touch = "true" *) wire m_rdy0 = mesh_ready;
-	(* dont_touch = "true" *) wire m_rdy1 = mesh_ready;
-	(* dont_touch = "true" *) wire m_rdy2 = mesh_ready;
-	(* dont_touch = "true" *) wire push_v_d0 = (st == S_SKID_WAIT) && skid_push_ready;
-	(* dont_touch = "true" *) wire push_v_d1 = (st == S_SKID_WAIT) && skid_push_ready;
-	(* dont_touch = "true" *) wire push_v_d2 = (st == S_SKID_WAIT) && skid_push_ready;
+	wire m_rdy0, m_rdy1, m_rdy2, m_rdy3;
+	wire push_v_d0, push_v_d1, push_v_d2, push_v_d3;
+	wire push_v_d_raw = (st == S_SKID_WAIT) && skid_push_ready;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr0 (.I0(mesh_ready), .O(m_rdy0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr1 (.I0(mesh_ready), .O(m_rdy1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr2 (.I0(mesh_ready), .O(m_rdy2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr3 (.I0(mesh_ready), .O(m_rdy3));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv0 (.I0(push_v_d_raw), .O(push_v_d0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv1 (.I0(push_v_d_raw), .O(push_v_d1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv2 (.I0(push_v_d_raw), .O(push_v_d2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv3 (.I0(push_v_d_raw), .O(push_v_d3));
+`else
+	assign m_rdy0 = mesh_ready;
+	assign m_rdy1 = mesh_ready;
+	assign m_rdy2 = mesh_ready;
+	assign m_rdy3 = mesh_ready;
+	assign push_v_d0 = push_v_d_raw;
+	assign push_v_d1 = push_v_d_raw;
+	assign push_v_d2 = push_v_d_raw;
+	assign push_v_d3 = push_v_d_raw;
+`endif
 	assign skid_push_ready = !s0_valid || w_mesh_ready;
 	assign skid_empty = !s0_valid && !s1_valid;
 
@@ -369,8 +385,8 @@ module atg_su_exp_mesh #(
 		for (gsl = 0; gsl < 44; gsl = gsl + 1) begin : g_skid_sl
 			localparam SL_B = gsl * 16;
 			localparam SL_W = (SL_B + 16 <= 702) ? 16 : (702 - SL_B);
-			wire sl_mrdy   = (gsl < 15) ? m_rdy0    : (gsl < 30) ? m_rdy1    : m_rdy2;
-			wire sl_push_d = (gsl < 15) ? push_v_d0 : (gsl < 30) ? push_v_d1 : push_v_d2;
+			wire sl_mrdy   = (gsl < 11) ? m_rdy0    : (gsl < 22) ? m_rdy1    : (gsl < 33) ? m_rdy2    : m_rdy3;
+			wire sl_push_d = (gsl < 11) ? push_v_d0 : (gsl < 22) ? push_v_d1 : (gsl < 33) ? push_v_d2 : push_v_d3;
 			(* dont_touch = "true" *) reg s0_v_sl, s1_v_sl, push_v_sl;
 			always @(posedge clk) begin
 				if (rst_p) begin
