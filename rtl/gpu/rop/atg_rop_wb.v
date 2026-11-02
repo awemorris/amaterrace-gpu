@@ -140,21 +140,6 @@ module atg_rop_wb #(
 	reg r_look_hit;
 	reg r_edirty_nz;
 
-	/* Pure-LUT LINE_SHIFT-bit adder for off_p1_comb = addr[LINE_SHIFT-1:0] + ext_ps (0 CARRY4s) */
-	function [LINE_SHIFT-1:0] add_ls_lut;
-		input [LINE_SHIFT-1:0] a;
-		input [LINE_SHIFT-1:0] b_in;
-		reg [LINE_SHIFT:0] c;
-		integer bi;
-		begin
-			c[0] = 1'b0;
-			for (bi = 0; bi < LINE_SHIFT; bi = bi + 1) begin
-				add_ls_lut[bi] = a[bi] ^ b_in[bi] ^ c[bi];
-				c[bi + 1] = (a[bi] & b_in[bi]) | ((a[bi] ^ b_in[bi]) & c[bi]);
-			end
-		end
-	endfunction
-
 	/* Interface wires to/from atg_rop_wpix */
 	wire [31:0] p_addr, p_addr1;
 	wire [31:0] p_row_base0, p_row_base1, p_stride, p_xoff_j;
@@ -180,7 +165,15 @@ module atg_rop_wb #(
 
 	wire [31:0] p_ps_32 = {27'd0, p_ps};
 	wire [LINE_SHIFT-1:0] ext_ps = p_ps_32[LINE_SHIFT-1:0];
-	(* keep = "true" *) wire [LINE_SHIFT-1:0] off_p1_comb = add_ls_lut(addr[LINE_SHIFT-1:0], ext_ps);
+	wire [LINE_SHIFT-1:0] off_p1_comb;
+	wire off_p1_co_unused;
+	am_add #(.W(LINE_SHIFT)) u_off_p1 (
+		.a(addr[LINE_SHIFT-1:0]),
+		.b(ext_ps),
+		.ci(1'b0),
+		.s(off_p1_comb),
+		.co(off_p1_co_unused)
+	);
 
 	(* keep = "true", dont_touch = "true" *) reg is_idle_reg;
 	(* keep = "true", dont_touch = "true" *) reg [7:0] is_idle_bdst;
@@ -1532,7 +1525,7 @@ module atg_rop_wb #(
 `endif
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, pre_in_ps[4:2], (MRT_COUNT != 0),
-		wb_rb1_co, wb_addr_co, tag_x0_co, tag_x1_co, p_addr, p_addr1, p_row_base1, p_xoff,
+		wb_rb1_co, wb_addr_co, tag_x0_co, tag_x1_co, off_p1_co_unused, p_addr, p_addr1, p_row_base1, p_xoff,
 		alloc_ready, use_stream_res, commit_v_rep, stream_ok, stream_hit_w, lce_mid, xsh_t0[0],
 		cached_drop, cached_row_base0, cached_row_base1, cached_xsh, cached_multi, cached_np, cached_path, cached_read,
 		cached_tag_x0[LA_W-1:13], cached_tag_x1[LA_W-1:13]};

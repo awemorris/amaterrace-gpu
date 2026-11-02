@@ -311,22 +311,15 @@ module atg_rop_ds #(
 	am_sub #(.W(40)) u_u16_p (.a({1'b1, test_zl[22:0], 16'd0}), .b({16'd0, 1'b1, test_zl[22:0]}), .bi(1'b0), .d(u16_p),
 		.bo(u16_p_bo));
 
-	/* Pure-LUT 5'd30 - test_zl[27:23] (0 CARRY4s, 1 LUT5 per bit) */
-	function [4:0] sub30_5;
-		input [4:0] b;
-		begin
-			case (b)
-			5'd0:  sub30_5 = 5'd30; 5'd1:  sub30_5 = 5'd29; 5'd2:  sub30_5 = 5'd28; 5'd3:  sub30_5 = 5'd27;
-			5'd4:  sub30_5 = 5'd26; 5'd5:  sub30_5 = 5'd25; 5'd6:  sub30_5 = 5'd24; 5'd7:  sub30_5 = 5'd23;
-			5'd8:  sub30_5 = 5'd22; 5'd9:  sub30_5 = 5'd21; 5'd10: sub30_5 = 5'd20; 5'd11: sub30_5 = 5'd19;
-			5'd12: sub30_5 = 5'd18; 5'd13: sub30_5 = 5'd17; 5'd14: sub30_5 = 5'd16; 5'd15: sub30_5 = 5'd15;
-			5'd16: sub30_5 = 5'd14; 5'd17: sub30_5 = 5'd13; 5'd18: sub30_5 = 5'd12; 5'd19: sub30_5 = 5'd11;
-			5'd20: sub30_5 = 5'd10; 5'd21: sub30_5 = 5'd9;  5'd22: sub30_5 = 5'd8;  5'd23: sub30_5 = 5'd7;
-			5'd24: sub30_5 = 5'd6;  5'd25: sub30_5 = 5'd5;  5'd26: sub30_5 = 5'd4;  5'd27: sub30_5 = 5'd3;
-			5'd28: sub30_5 = 5'd2;  5'd29: sub30_5 = 5'd1;  5'd30: sub30_5 = 5'd0;  default: sub30_5 = 5'd31;
-			endcase
-		end
-	endfunction
+	wire [4:0] sub30_w;
+	wire sub30_bo_unused;
+	am_sub #(.W(5)) u_sub30 (
+		.a(5'd30),
+		.b(test_zl[27:23]),
+		.bi(1'b0),
+		.d(sub30_w),
+		.bo(sub30_bo_unused)
+	);
 
 	(* keep = "true" *) wire [3:0] zl_mnz;
 	assign zl_mnz[0] = (test_zl[5:0]   != 6'd0);
@@ -428,21 +421,15 @@ module atg_rop_ds #(
 	wire [71:0] zun_mn;
 	am_shift #(.W(72), .SW(5)) u_zun_mn (.a(zun_s0a_r), .amt(zun_s0a_lz), .left(1'b1), .arith(1'b0), .y(zun_mn));
 
-	/* Pure-LUT 8'd126 - lz and 8'd127 - lz for 5-bit lz (0 CARRY4s) */
-	function [7:0] sub126_5;
-		input [4:0] lz;
-		begin
-			case (lz)
-			5'd0:  sub126_5 = 8'd126; 5'd1:  sub126_5 = 8'd125; 5'd2:  sub126_5 = 8'd124; 5'd3:  sub126_5 = 8'd123;
-			5'd4:  sub126_5 = 8'd122; 5'd5:  sub126_5 = 8'd121; 5'd6:  sub126_5 = 8'd120; 5'd7:  sub126_5 = 8'd119;
-			5'd8:  sub126_5 = 8'd118; 5'd9:  sub126_5 = 8'd117; 5'd10: sub126_5 = 8'd116; 5'd11: sub126_5 = 8'd115;
-			5'd12: sub126_5 = 8'd114; 5'd13: sub126_5 = 8'd113; 5'd14: sub126_5 = 8'd112; 5'd15: sub126_5 = 8'd111;
-			5'd16: sub126_5 = 8'd110; 5'd17: sub126_5 = 8'd109; 5'd18: sub126_5 = 8'd108; 5'd19: sub126_5 = 8'd107;
-			5'd20: sub126_5 = 8'd106; 5'd21: sub126_5 = 8'd105; 5'd22: sub126_5 = 8'd104; 5'd23: sub126_5 = 8'd103;
-			default: sub126_5 = 8'd102;
-			endcase
-		end
-	endfunction
+	wire [7:0] sub126_w;
+	wire sub126_bo_unused;
+	am_sub #(.W(8)) u_sub126 (
+		.a(8'd126),
+		.b({3'd0, zun_s0a_lz}),
+		.bi(1'b0),
+		.d(sub126_w),
+		.bo(sub126_bo_unused)
+	);
 
 	reg [22:0] zun_s0_mn_hi;
 	reg zun_s0_round;
@@ -868,7 +855,7 @@ module atg_rop_ds #(
 		/* S_TEST0A latches */
 		u24_s0a_p <= u24_p;
 		u16_s0a_p <= u16_p;
-		u24_s0a_t <= sub30_5(test_zl[27:23]);
+		u24_s0a_t <= sub30_w;
 		zl_s0a_st <= zl_st_w;
 		zun_s0a_r <= zun_r[79:8];
 		zun_s0a_lz <= zun_lz;
@@ -886,7 +873,7 @@ module atg_rop_ds #(
 		zun_s0_round <= zun_mn[47];
 		zun_s0_found <= zun_s0a_found;
 		zun_s0_mn_hi <= zun_mn[70:48];
-		zun_s0_e0 <= sub126_5(zun_s0a_lz);
+		zun_s0_e0 <= sub126_w;
 		zun_s0_e1 <= {3'b011, ~zun_s0a_lz};
 
 		/* S_TEST1 latches */
@@ -1123,6 +1110,7 @@ module atg_rop_ds #(
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_error, STENCIL != 0, WPL != 0, WB != 0, bo[0], yrs[48:32],
 		yr_co_unused, ra_co_unused, rb1_co_unused, rd_co_unused, bo_co_unused,
+		sub30_bo_unused, sub126_bo_unused,
 		u24_p_bo, u16_p_bo, u24_r_co, u16_r_co, u24_sh[22:0], u16_sh[22:0],
 		zun_mn[71], zun_mn[46:0], zun_carry_unused, sinc_co_unused, sdec_bo_unused,
 		zkey_co_unused, skey_co_unused, addr[LINE_SHIFT-1:0],

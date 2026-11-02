@@ -850,39 +850,6 @@ module atg_rop_wpix #(
 		endcase
 	endfunction
 
-	/* Pure-LUT 4-bit + 2-bit constant addition (0 CARRY4s, 1 LUT4 per bit) */
-	function [3:0] add4_const_lut;
-		input [3:0] a;
-		input [1:0] k_val;
-		reg c0, c1, c2;
-		begin
-			c0 = a[0] & k_val[0];
-			c1 = (a[1] & k_val[1]) | ((a[1] ^ k_val[1]) & c0);
-			c2 = a[2] & c1;
-			add4_const_lut = {
-				a[3] ^ c2,
-				a[2] ^ c1,
-				a[1] ^ k_val[1] ^ c0,
-				a[0] ^ k_val[0]
-			};
-		end
-	endfunction
-
-	/* Pure-LUT LINE_SHIFT-bit addition for slot byte offset (0 CARRY4s) */
-	function [LINE_SHIFT-1:0] add_ls_lut;
-		input [LINE_SHIFT-1:0] a;
-		input [LINE_SHIFT-1:0] b;
-		reg [LINE_SHIFT:0] c;
-		integer bi;
-		begin
-			c[0] = 1'b0;
-			for (bi = 0; bi < LINE_SHIFT; bi = bi + 1) begin
-				add_ls_lut[bi] = a[bi] ^ b[bi] ^ c[bi];
-				c[bi + 1] = (a[bi] & b[bi]) | ((a[bi] ^ b[bi]) & c[bi]);
-			end
-		end
-	endfunction
-
 	/* 2-stage pipelined slot gather (S_BLEND_PREP1 -> S_BLEND_PREP2 -> S_BLEND):
 	 * Stage 1 latches slot_o_r, slot_o_rep, slot_en_r, slot_en_rep, slot_mk_r, slot_src_r.
 	 * Stage 2 latches slot_dst128_r from i_line0/i_line1.
@@ -909,12 +876,29 @@ module atg_rop_wpix #(
 		assign i_g_k = i_g;
 `endif
 		wire [3:0] nj = shift_left_el(i_j, el);
-		(* keep = "true" *) wire [3:0] n = add4_const_lut(nj, K2);
+		wire [3:0] n;
+		wire n_co_unused;
+		am_add #(.W(4)) u_add_n (
+			.a(nj),
+			.b({2'b00, K2}),
+			.ci(1'b0),
+			.s(n),
+			.co(n_co_unused)
+		);
 		wire [1:0] ln = multi_slot[k] ? {i_r, n[2]} : K2;
 		wire [LINE_SHIFT-1:0] o1s = shift_left_psl(ms4 ? {k[0], i_g_k} : {2'b00, k[0]}, psl_slot[k]);
 		wire [LINE_SHIFT-1:0] off_base = (k >= 2) ? i_off1 : i_off0;
 		wire [LINE_SHIFT-1:0] off_p1_base = (k >= 2) ? i_off1_p1 : i_off0_p1;
-		(* keep = "true" *) wire [LINE_SHIFT-1:0] o1_ms = add_ls_lut(off_base, o1s);
+		wire [LINE_SHIFT-1:0] o1_ms;
+		wire o1_ms_co_unused;
+		am_add #(.W(LINE_SHIFT)) u_add_o1_ms (
+			.a(off_base),
+			.b(o1s),
+			.ci(1'b0),
+			.s(o1_ms),
+			.co(o1_ms_co_unused)
+		);
+		wire unused_slot = &{1'b0, n_co_unused, o1_ms_co_unused};
 		wire [LINE_SHIFT-1:0] o1 = ms4 ? o1_ms : (k[0] ? off_p1_base : off_base);
 		wire [LINE_SHIFT-1:0] om = shift_left_psl({1'b0, K2}, psl_slot[k]);
 		(* keep = "true" *) wire [LINE_SHIFT-1:0] o = multi_slot[k] ? om : o1;
