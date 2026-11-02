@@ -116,7 +116,8 @@ module atg_su_lsu #(
 	localparam [2:0] IDLE = 3'd0, LINE = 3'd1, WAIT = 3'd2, AREQ = 3'd3, AWAIT = 3'd4,
 		BEAT = 3'd5, LINE_HIT = 3'd6, LINE_DAT = 3'd7;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
+	wire take_lsu_raw = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
 	(* max_fanout = 12 *) reg [2:0] st;
 	wire [DW-1:0] radr, rdat, rcmp, res;
 	(* dont_touch = "true" *) reg [NPHYS-1:0] pend, pend_a, pend_b, pend_be;
@@ -196,7 +197,15 @@ module atg_su_lsu #(
 			(* keep = "true" *) wire leq_hi = &leq_g[N_LEQ-1:N_LEQ/2];
 			assign line_eq[la] = leq_lo && leq_hi;
 
-			(* dont_touch = "true" *) wire take_wo = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
+			wire take_wo;
+			wire take_byte_l;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_wo (.I0(take_lsu_raw), .O(take_wo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_b  (.I0(take_lsu_raw), .O(take_byte_l));
+`else
+			assign take_wo     = take_lsu_raw;
+			assign take_byte_l = take_lsu_raw;
+`endif
 			(* dont_touch = "true" *) reg [WW-1:0] rwo_rd_0, rwo_rd_1, rwo_rd_2, rwo_rd_3, rwo_wr_a, rwo_wr_b, rwo_wr_be;
 			always @(posedge clk) begin
 				if (take_wo) begin
@@ -226,22 +235,18 @@ module atg_su_lsu #(
 							rsel_h = dc_rsp_rdata[rwi*32 + gh*8 +: 8];
 				end
 				(* shreg_extract = "no" *) reg [7:0] radr_h, rdat_h, rcmp_h, res_h;
-				(* dont_touch = "true" *) wire take_adr_h = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
-				(* dont_touch = "true" *) wire take_dat_h = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
-				(* dont_touch = "true" *) wire take_cmp_h = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
-				(* dont_touch = "true" *) wire take_res_h = x_valid && (unit == ATG_UNIT_LSU) && (st == IDLE) && (op != ATG_LSU_FENCE);
-				(* dont_touch = "true" *) wire dc_we_h = (st == WAIT) && dc_rsp_valid && cur[la];
-				(* dont_touch = "true" *) wire dc_err_h = dc_rsp_error;
-				(* dont_touch = "true" *) wire at_we_h = (st == AWAIT) && at_rsp_valid && (ali == la[LW-1:0]);
-				(* dont_touch = "true" *) wire at_err_h = at_error;
+				wire dc_we_h = (st == WAIT) && dc_rsp_valid && cur[la];
+				wire dc_err_h = dc_rsp_error;
+				wire at_we_h = (st == AWAIT) && at_rsp_valid && (ali == la[LW-1:0]);
+				wire at_err_h = at_error;
 				always @(posedge clk) begin
-					if (take_adr_h)
+					if (take_byte_l)
 						radr_h <= x_adr[la*32 + gh*8 +: 8];
-					if (take_dat_h)
+					if (take_byte_l)
 						rdat_h <= x_b[la*32 + gh*8 +: 8];
-					if (take_cmp_h)
+					if (take_byte_l)
 						rcmp_h <= x_c[la*32 + gh*8 +: 8];
-					if (take_res_h) begin
+					if (take_byte_l) begin
 						res_h <= 8'd0;
 					end else if (dc_we_h) begin
 						res_h <= dc_err_h ? 8'd0 : rsel_h;

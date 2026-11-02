@@ -55,7 +55,7 @@ module atg_su_pk #(
 	localparam CW = 1 + WARP_W + GRP_W + 7 + NPHYS;
 	localparam SH = PK_SHARED != 0 && PACKED != 0;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 
 	wire [3:0] op = x_uop[ATG_UOP_OP +: 4];
 	/* PK_SHARED: an fp16 operation goes to atg_su_fpu; busy is the cycle
@@ -195,8 +195,13 @@ module atg_su_pk #(
 		wire [31:0] un;
 		am_fp_h2f #(.DENORM(0), .LAT(0)) u_un (.h(sub_l ? la[31:16] : la[15:0]), .f(un));
 
-		wire [15:0] ovr_val_lo = is_unpack ? un[15:0]  : is_swaph ? la[31:16] : (PACKED != 0 ? la[15:0]  : 16'd0);
-		wire [15:0] ovr_val_hi = is_unpack ? un[31:16] : is_swaph ? la[15:0]  : (PACKED != 0 ? la[31:16] : 16'd0);
+		wire is_unpack_lo = (op_lo_l == ATG_PK_UNPACKH[3:0]);
+		wire is_swaph_lo  = (op_lo_l == ATG_PK_SWAPH[3:0]);
+		wire [15:0] ovr_val_lo = is_unpack_lo ? un[15:0]  : is_swaph_lo ? la[31:16] : (PACKED != 0 ? la[15:0]  : 16'd0);
+
+		wire is_unpack_hi = (op_hi_l == ATG_PK_UNPACKH[3:0]);
+		wire is_swaph_hi  = (op_hi_l == ATG_PK_SWAPH[3:0]);
+		wire [15:0] ovr_val_hi = is_unpack_hi ? un[31:16] : is_swaph_hi ? la[15:0]  : (PACKED != 0 ? la[31:16] : 16'd0);
 
 		wire [15:0] lo, hi;
 		atg_su_pk_half #(.ARITH(PACKED), .FP(!SH), .LAT(SHORT_LAT)) u_lo (

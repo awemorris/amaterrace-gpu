@@ -101,8 +101,9 @@ module atg_su_lds #(
 		for (init_i = 0; init_i < NW; init_i = init_i + 1)
 			ram[init_i] = 32'd0;
 	end
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
-	(* dont_touch = "true" *) wire scrub_i = scrub;
+	wire rst_p = !rst_n;
+	wire scrub_i = scrub;
+	wire lds_take_raw = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
 	(* max_fanout = 12 *) reg [2:0] st;
 	wire [NPHYS*AW-1:0] radr;
 	wire [DW-1:0] rdat, rcmp, res;
@@ -186,14 +187,33 @@ module atg_su_lds #(
 	genvar l, glh;
 	generate
 		for (l = 0; l < NPHYS; l = l + 1) begin : g_adr
+			wire [AW+1:0] imm_l;
+`ifdef SYNTH_KINTEX7
+			genvar gbimm;
+			for (gbimm = 0; gbimm < AW+2; gbimm = gbimm + 1) begin : g_buf_imm
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_imm (.I0(imm[gbimm]), .O(imm_l[gbimm]));
+			end
+`else
+			assign imm_l = imm[AW+1:0];
+`endif
 			wire [AW+1:0] ba;
 			wire co_unused;
-			am_add #(.W(AW + 2)) u_ba (.a(x_a[l*32 +: AW + 2]), .b(imm[AW+1:0]), .ci(1'b0), .s(ba),
+			am_add #(.W(AW + 2)) u_ba (.a(x_a[l*32 +: AW + 2]), .b(imm_l), .ci(1'b0), .s(ba),
 				.co(co_unused));
 			assign xadr[l*AW +: AW] = ba[AW+1:2];
 			wire unused_b = &{1'b0, ba[1:0]};
 
-			(* dont_touch = "true" *) wire lds_take_l = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
+			wire lds_take_l;
+			wire lds_take_h0, lds_take_h1;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_a (.I0(lds_take_raw), .O(lds_take_l));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_0 (.I0(lds_take_raw), .O(lds_take_h0));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_1 (.I0(lds_take_raw), .O(lds_take_h1));
+`else
+			assign lds_take_l  = lds_take_raw;
+			assign lds_take_h0 = lds_take_raw;
+			assign lds_take_h1 = lds_take_raw;
+`endif
 			(* shreg_extract = "no" *) reg [AW-1:0] radr_l_r;
 			always @(posedge clk)
 				if (lds_take_l)
@@ -201,19 +221,17 @@ module atg_su_lds #(
 			assign radr[l*AW +: AW] = radr_l_r;
 
 			for (glh = 0; glh < 2; glh = glh + 1) begin : g_lds_half
-				(* dont_touch = "true" *) wire lds_take_dat_h = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
-				(* dont_touch = "true" *) wire lds_take_cmp_h = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
-				(* dont_touch = "true" *) wire lds_take_res_h = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
+				wire lds_take_half = (glh == 0) ? lds_take_h0 : lds_take_h1;
 				wire lds_atom_we_h = lds_atom_base && lanes[l] && (li == l[LW-1:0]);
 				wire lds_rd_we_h   = pval_3 && (pli_3 == l[LW-1:0]);
 				(* dont_touch = "true" *) wire lds_q_we_h = lds_rd_we_h || lds_atom_we_h;
 				(* shreg_extract = "no" *) reg [15:0] rdat_h_r, rcmp_h_r, res_h_r;
 				always @(posedge clk) begin
-					if (lds_take_dat_h)
+					if (lds_take_half)
 						rdat_h_r <= x_b[l*32 + glh*16 +: 16];
-					if (lds_take_cmp_h)
+					if (lds_take_half)
 						rcmp_h_r <= x_c[l*32 + glh*16 +: 16];
-					if (lds_take_res_h)
+					if (lds_take_half)
 						res_h_r <= 16'd0;
 					else if (lds_q_we_h)
 						res_h_r <= q_pipe[glh*16 +: 16];
@@ -242,9 +260,9 @@ module atg_su_lds #(
 				(use_old_h ? old_h : b_h);
 			(* dont_touch = "true" *) wire is_addsub_h = (rsub_h == 4'd4 || rsub_h == 4'd5);
 			wire [15:0] w_atom_h = is_addsub_h ? asum[glh*16 +: 16] : w_other_h;
-			(* dont_touch = "true" *) wire wd_zero_h = rst_p || scrub_i || sc_on;
-			(* dont_touch = "true" *) wire wd_atom_h = (st == ACCESS) && atom_active && (aph == 3'd3);
-			(* dont_touch = "true" *) wire wd_sts_h  = (st == ACCESS) && !atom_active && !ratom && rsts && lane_on;
+			wire wd_zero_h = rst_p || scrub_i || sc_on;
+			wire wd_atom_h = (st == ACCESS) && atom_active && (aph == 3'd3);
+			wire wd_sts_h  = (st == ACCESS) && !atom_active && !ratom && rsts && lane_on;
 			(* shreg_extract = "no" *) reg [15:0] ram_wd_h_r;
 			always @(posedge clk) begin
 				if (wd_zero_h)
@@ -269,12 +287,12 @@ module atg_su_lds #(
 
 	assign scrub_busy = sc_on;
 
-	(* dont_touch = "true" *) wire lds_idle_ce_a = !rst_p && !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
-	(* dont_touch = "true" *) wire lds_idle_ce_b = !rst_p && !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
-	(* dont_touch = "true" *) wire atom_bc_ce_0  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
-	(* dont_touch = "true" *) wire atom_bc_ce_1  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
-	(* dont_touch = "true" *) wire atom_bc_ce_2  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
-	(* dont_touch = "true" *) wire atom_bc_ce_3  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+	wire lds_idle_ce_a = !rst_p && !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
+	wire lds_idle_ce_b = !rst_p && !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
+	wire atom_bc_ce_0  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+	wire atom_bc_ce_1  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+	wire atom_bc_ce_2  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
+	wire atom_bc_ce_3  = !rst_p && !scrub_i && !sc_on && (st == ACCESS) && atom_active && (aph == 3'd0);
 
 	always @(posedge clk) begin
 		if (lds_idle_ce_a) begin

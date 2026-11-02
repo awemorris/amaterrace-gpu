@@ -32,13 +32,13 @@ module atg_su_wb_skid #(
 	input wire out_ready,
 	output wire [WIDTH-1:0] out_data
 );
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* keep = "true" *) reg skid_valid;
 
 	wire skid_load = in_valid && in_ready;
 
 	localparam N_SK_SL = (WIDTH + 7) / 8;
-	localparam N_SK_GRP = (N_SK_SL + 3) / 4;
+	localparam N_SK_GRP = (N_SK_SL + 1) / 2;
 	wire [N_SK_GRP-1:0] out_ready_g;
 	wire [N_SK_GRP-1:0] in_valid_g;
 	genvar gkg;
@@ -58,8 +58,8 @@ module atg_su_wb_skid #(
 	generate
 	for (gsk = 0; gsk < N_SK_SL; gsk = gsk + 1) begin : g_sk_sl
 		localparam SK_W = (gsk * 8 + 8 <= WIDTH) ? 8 : (WIDTH - gsk * 8);
-		wire sl_out_ready = out_ready_g[gsk / 4];
-		wire sl_in_valid  = in_valid_g[gsk / 4];
+		wire sl_out_ready = out_ready_g[gsk / 2];
+		wire sl_in_valid  = in_valid_g[gsk / 2];
 		(* dont_touch = "true" *) reg out_v_sl, skid_v_sl, in_r_sl;
 		always @(posedge clk) begin
 			if (rst_p) begin
@@ -141,7 +141,7 @@ module atg_su_wb_fifo #(
 	output wire [W-1:0] out_data,
 	output wire [DEPTH_LOG2:0] count
 );
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* max_fanout = 12 *) reg [DEPTH_LOG2:0] wp;
 	(* max_fanout = 12 *) reg [DEPTH_LOG2:0] rp;
 
@@ -294,7 +294,7 @@ module atg_su_wb #(
 	 */
 	localparam IN_LOG2 = $clog2(2 * (SHORT_LAT + 2 * G + 2));
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 
 	/* The short result of this cycle: structured balanced 2-level MUX tree (at most one valid per cycle) */
 	wire v_01 = s_valid[0] || s_valid[1];

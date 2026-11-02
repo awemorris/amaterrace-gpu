@@ -64,7 +64,7 @@ module atg_su_icache #(
 	localparam N_TEQ = (TAG_W + 2) / 3;
 	localparam N_LEQ = (LA_W + 2) / 3;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* max_fanout = 12 *) reg [1:0] state;
 	(* dont_touch = "true" *) reg [3:0] st_idle_m_r;
 	(* dont_touch = "true" *) reg st_mwait_tlo_r, st_mwait_thi_r;
@@ -75,6 +75,23 @@ module atg_su_icache #(
 	(* dont_touch = "true" *) reg [IX_W-1:0] m_idx_d_r;
 	wire [LB-1:0] fill;
 	(* max_fanout = 12 *) reg inv_seen;
+
+	wire st_mwait_nxt = (state == S_MREQ) ? req_ready : ((state == S_MWAIT) ? !(rsp_valid && !rsp_write) : 1'b0);
+	wire st_mwait_nxt_d, st_mwait_nxt_f;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mwn_d (.I0(st_mwait_nxt), .O(st_mwait_nxt_d));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mwn_f (.I0(st_mwait_nxt), .O(st_mwait_nxt_f));
+`else
+	assign st_mwait_nxt_d = st_mwait_nxt;
+	assign st_mwait_nxt_f = st_mwait_nxt;
+`endif
+	(* dont_touch = "true" *) reg [3:0] st_mwait_f_r;
+	always @(posedge clk) begin
+		if (rst_p)
+			st_mwait_f_r <= 4'd0;
+		else
+			st_mwait_f_r <= {4{st_mwait_nxt_f}};
+	end
 
 	wire [IX_W-1:0] idx_v  = ic_addr[OFF_W-1:LINE_SHIFT];
 	wire [IX_W-1:0] idx_lo = ic_addr[OFF_W-1:LINE_SHIFT];
@@ -127,7 +144,13 @@ module atg_su_icache #(
 			(* dont_touch = "true" *) reg st_mwait_d_sl;
 			(* dont_touch = "true" *) reg [IX_W-1:0] m_idx_d_sl;
 			wire data_we_sl = st_mwait_d_sl && rsp_valid && !rsp_write && !rsp_error && !inv_seen && !inv;
-			wire miss_d_sl  = st_idle_m_r[gdsl % 4] && ic_req && !(hit_m_a && hit_m_b);
+			wire miss_d_raw = st_idle_m_r[gdsl % 4] && ic_req && !(hit_m_a && hit_m_b);
+			wire miss_d_sl;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_miss_d (.I0(miss_d_raw), .O(miss_d_sl));
+`else
+			assign miss_d_sl = miss_d_raw;
+`endif
 			always @(posedge clk) begin
 				if (data_we_sl)
 					data_sl[m_idx_d_sl] <= rsp_rdata[gdsl*64 +: 64];
@@ -140,34 +163,23 @@ module atg_su_icache #(
 				end else begin
 					if (miss_d_sl)
 						m_idx_d_sl <= line[IX_W-1:0];
-					case (state)
-					S_MREQ: if (req_ready) st_mwait_d_sl <= 1'b1;
-					S_MWAIT: if (rsp_valid && !rsp_write) st_mwait_d_sl <= 1'b0;
-					default: st_mwait_d_sl <= 1'b0;
-					endcase
+					st_mwait_d_sl <= st_mwait_nxt_d;
 				end
 			end
 			assign rline_pipe[gdsl*64 +: 64] = rline_pipe_sl;
 		end
 		for (gsl = 0; gsl < N_SL; gsl = gsl + 1) begin : g_ic_sl
 			(* shreg_extract = "no" *) reg [15:0] fill_sl, fill_pipe_sl;
-			(* dont_touch = "true" *) reg st_mwait_f_sl;
 			(* dont_touch = "true" *) reg rfill_sl;
-			wire fill_we_sl = st_mwait_f_sl && rsp_valid && !rsp_write;
+			wire fill_we_sl = st_mwait_f_r[gsl / 4] && rsp_valid && !rsp_write;
 			always @(posedge clk) begin
 				if (fill_we_sl)
 					fill_sl <= rsp_error ? 16'd0 : rsp_rdata[gsl*16 +: 16];
 				fill_pipe_sl <= fill_sl;
 				if (rst_p) begin
-					st_mwait_f_sl <= 1'b0;
 					rfill_sl <= 1'b0;
 				end else begin
 					rfill_sl <= rfill;
-					case (state)
-					S_MREQ: if (req_ready) st_mwait_f_sl <= 1'b1;
-					S_MWAIT: if (rsp_valid && !rsp_write) st_mwait_f_sl <= 1'b0;
-					default: st_mwait_f_sl <= 1'b0;
-					endcase
 				end
 			end
 			assign fill[gsl*16 +: 16] = fill_sl;

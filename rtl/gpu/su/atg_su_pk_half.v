@@ -307,7 +307,7 @@ module atg_su_pk_half #(
 		wire unused_ok = &{1'b0, clk, rst_n, prod[31:22], sum[36:16], kx[9:6], er_bo_unused, sum_co_unused,
 			co_unused};
 	end else if (!AR) begin : g_lat6_noarith
-		(* dont_touch = "true" *) wire rst_p = !rst_n;
+		wire rst_p = !rst_n;
 		(* shreg_extract = "no" *) reg        s1_valid, s2_valid, s3_valid, s4_valid, s5_valid, s6_valid;
 		(* shreg_extract = "no" *) reg        s1_ovr_en, s2_ovr_en;
 		(* shreg_extract = "no" *) reg [15:0] s1_ovr_val, s2_ovr_val;
@@ -383,7 +383,7 @@ module atg_su_pk_half #(
 		assign y = s6_res;
 		wire unused_noarith = &{1'b0, ha, hb, hc, r, sat, o, s6_valid, s1_erp_bo_unused};
 	end else begin : g_lat6
-		(* dont_touch = "true" *) wire rst_p = !rst_n;
+		wire rst_p = !rst_n;
 		/* =====================================================================
 		 * Stage 1 (EX1): Latch inputs and dedicated multiplier operands (0 Pre-DSP LUTs)
 		 * ===================================================================== */

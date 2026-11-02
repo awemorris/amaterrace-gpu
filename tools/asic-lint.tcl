@@ -282,6 +282,10 @@ foreach n $internal_nets {
     if {[lsearch -exact $rst_top_nets $n] != -1} {
         continue
     }
+    set parent [get_property -quiet PARENT $n]
+    if {[string match "*rst*" $parent] || [string match "*reset*" $parent]} {
+        continue
+    }
     set pin_cnt [get_property FLAT_PIN_COUNT $n]
     # Subtract driver pin to get fanout
     set fo [expr {$pin_cnt - 1}]

@@ -82,10 +82,21 @@ module atg_su_alu #(
 	localparam DW = NPHYS * 32;
 
 	/* Instruction fields */
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	wire [3:0] unit = x_uop[ATG_UOP_UNIT +: 4];
 	wire [4:0] op = x_uop[ATG_UOP_OP +: 5];
 	wire immb = x_uop[ATG_UOP_OP + ATG_ALU_IMMB];
+	wire [NPHYS*2-1:0] immb_buf;
+`ifdef SYNTH_KINTEX7
+	genvar g_ib;
+	generate
+		for (g_ib = 0; g_ib < NPHYS*2; g_ib = g_ib + 1) begin : g_immb_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ib (.I0(immb), .O(immb_buf[g_ib]));
+		end
+	endgenerate
+`else
+	assign immb_buf = {(NPHYS*2){immb}};
+`endif
 	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
 	wire mine = x_valid && unit == ATG_UNIT_ALU && x_uop[ATG_UOP_WRD];
 
@@ -155,11 +166,12 @@ module atg_su_alu #(
 			s1_movi_w <= imm;
 			for (i1 = 0; i1 < NPHYS; i1 = i1 + 1) begin
 				s1_la[i1*32 +: 32] <= x_a[i1*32 +: 32];
-				s1_lb[i1*32 +: 32] <= immb ? imm : x_b[i1*32 +: 32];
+				s1_lb[i1*32 +: 16] <= immb_buf[i1*2]   ? imm[15:0]  : x_b[i1*32 +: 16];
+				s1_lb[i1*32+16 +: 16] <= immb_buf[i1*2+1] ? imm[31:16] : x_b[i1*32+16 +: 16];
 				s1_is_sll_lo[i1]   <= (op == ATG_ALU_SLL);
 				s1_is_sll_hi[i1]   <= (op == ATG_ALU_SLL);
 				s1_sra[i1]         <= (op == ATG_ALU_SRA) && x_a[i1*32 + 31];
-				s1_amt[i1*5 +: 5]  <= immb ? imm[4:0] : x_b[i1*32 +: 5];
+				s1_amt[i1*5 +: 5]  <= immb_buf[i1*2]   ? imm[4:0]   : x_b[i1*32 +: 5];
 			end
 		end
 	end

@@ -465,6 +465,27 @@ module atg_su #(
 	(* dont_touch = "true" *) wire [4:0] fl_lane_wb  = fl_lane & {5{!rst_p}};
 	(* dont_touch = "true" *) wire [31:0] fl_data_exp = fl_data & {32{!rst_p}};
 	(* dont_touch = "true" *) wire [31:0] fl_data_wb  = fl_data & {32{!rst_p}};
+
+	wire [WARP_W-1:0] fl_slot_rf, fl_slot_exp, fl_slot_wb;
+	wire [WARP_W-1:0] vl_slot_rf, vl_slot_wb;
+`ifdef SYNTH_KINTEX7
+	genvar g_fls;
+	generate
+		for (g_fls = 0; g_fls < WARP_W; g_fls = g_fls + 1) begin : g_fls_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fls_rf  (.I0(fl_slot[g_fls]), .O(fl_slot_rf[g_fls]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fls_exp (.I0(fl_slot[g_fls]), .O(fl_slot_exp[g_fls]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fls_wb  (.I0(fl_slot[g_fls]), .O(fl_slot_wb[g_fls]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vls_rf  (.I0(vl_slot[g_fls]), .O(vl_slot_rf[g_fls]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vls_wb  (.I0(vl_slot[g_fls]), .O(vl_slot_wb[g_fls]));
+		end
+	endgenerate
+`else
+	assign fl_slot_rf  = fl_slot;
+	assign fl_slot_exp = fl_slot;
+	assign fl_slot_wb  = fl_slot;
+	assign vl_slot_rf  = vl_slot;
+	assign vl_slot_wb  = vl_slot;
+`endif
 	wire scb_rf, scb_lda, scb_lds, scb_cbank, scb_exp, scb_pt;
 	localparam DW = NPHYS * 32;
 	localparam LA_W = ADDR_W - LINE_SHIFT;
@@ -1092,7 +1113,7 @@ module atg_su #(
 		.x_info(x_info), .x_ready(lda_ready),
 		.s_valid(lda_s_valid), .s_warp(lda_s_warp), .s_grp(lda_s_grp), .s_rd(lda_s_rd),
 		.s_data(lda_s_data), .s_lanes(lda_s_lanes),
-		.pw_we(fl_pw_we), .pw_warp(fl_slot), .pw_addr(fl_pw_addr), .pw_data(fl_pw_data)
+		.pw_we(fl_pw_we), .pw_warp(fl_slot_rf), .pw_addr(fl_pw_addr), .pw_data(fl_pw_data)
 	);
 
 	atg_su_exec #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT)) exec (
@@ -1226,7 +1247,7 @@ module atg_su #(
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(ex_color1), .ex_has_src1(ex_has_src1), .ex_depth(ex_depth), .ex_last(ex_last),
 		.ex_next(ex_next),
-		.fl_we(fl_we), .fl_slot(fl_slot), .fl_reg(fl_reg), .fl_lane(fl_lane_exp), .fl_data(fl_data_exp),
+		.fl_we(fl_we), .fl_slot(fl_slot_exp), .fl_reg(fl_reg), .fl_lane(fl_lane_exp), .fl_data(fl_data_exp),
 		.fl_go(fl_go_exp), .fl_info(fl_info),
 		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_aux(ex_aux),
 		.xr_valid(xr_valid), .xr_warp(xr_warp),
@@ -1243,7 +1264,7 @@ module atg_su #(
 		.x_mask(x_mask_pt), .x_info(x_info),
 		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
-		.pt_ok(pt_ok), .pt_take(vl_gnt), .pt_warp(vl_slot), .pt_base(vl_ptbase),
+		.pt_ok(pt_ok), .pt_take(vl_gnt), .pt_warp(vl_slot_rf), .pt_base(vl_ptbase),
 		.vl_go(vl_go_pt), .vl_mask(vl_mask), .pt_done(pt_done),
 		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp)
 	);
@@ -1280,7 +1301,7 @@ module atg_su #(
 		.l_last({div_l_last, xu_l_last, tex_l_last, cbank_l_last, lds_l_last, lsu_l_last}),
 		.l_sbe({div_l_sbe, xu_l_sbe, tex_l_sbe, cbank_l_sbe, lds_l_sbe, lsu_l_sbe}),
 		.l_cls({div_l_cls, xu_l_cls, tex_l_cls, cbank_l_cls, lds_l_cls, lsu_l_cls}),
-		.in_we({fl_we, vl_we}), .in_warp({fl_slot, vl_slot}), .in_reg({fl_reg, vl_reg}),
+		.in_we({fl_we, vl_we}), .in_warp({fl_slot_wb, vl_slot_wb}), .in_reg({fl_reg, vl_reg}),
 		.in_lane({fl_lane_wb, vl_lane}), .in_data({fl_data_wb, vl_data}),
 		.w_en(w_en), .w_warp(w_warp), .w_grp(w_grp), .w_reg(w_reg), .w_data(w_data),
 		.w_lanes(w_lanes),
