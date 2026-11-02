@@ -197,13 +197,15 @@ module atg_su_sched #(
 	am_add #(.W(16)) u_idy1 (.a(id_y), .b(16'd0), .ci(1'b1), .s(id_y1), .co(iy_co_unused));
 	am_add #(.W(16)) u_idz1 (.a(id_z), .b(16'd0), .ci(1'b1), .s(id_z1), .co(iz_co_unused));
 	wire id_x_last_raw = (id_x == grid_x_m1);
-	wire id_x_last, id_x_last_yz;
+	wire id_x_last, id_x_last_y, id_x_last_z;
 `ifdef SYNTH_KINTEX7
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_idxl  (.I0(id_x_last_raw), .O(id_x_last));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_idxly (.I0(id_x_last_raw), .O(id_x_last_yz));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_idxly (.I0(id_x_last_raw), .O(id_x_last_y));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_idxlz (.I0(id_x_last_raw), .O(id_x_last_z));
 `else
-	assign id_x_last    = id_x_last_raw;
-	assign id_x_last_yz = id_x_last_raw;
+	assign id_x_last   = id_x_last_raw;
+	assign id_x_last_y = id_x_last_raw;
+	assign id_x_last_z = id_x_last_raw;
 `endif
 	(* keep = "true" *) wire id_y_last = (id_y == grid_y_m1);
 	(* keep = "true" *) wire id_z_last = (id_z == grid_z_m1);
@@ -382,19 +384,27 @@ module atg_su_sched #(
 	generate
 		for (g_fa = 0; g_fa < NWARPS; g_fa = g_fa + 1) begin : g_faddr
 			wire [1:0] w_sk_raw = info[g_fa*160 + ATG_WI_KIND +: 2];
-			wire [1:0] w_sk_lo, w_sk_hi;
+			wire [1:0] w_sk_b0, w_sk_b1, w_sk_b2, w_sk_b3;
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadlo0 (.I0(w_sk_raw[0]), .O(w_sk_lo[0]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadlo1 (.I0(w_sk_raw[1]), .O(w_sk_lo[1]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadhi0 (.I0(w_sk_raw[0]), .O(w_sk_hi[0]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadhi1 (.I0(w_sk_raw[1]), .O(w_sk_hi[1]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadb0_0 (.I0(w_sk_raw[0]), .O(w_sk_b0[0]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadb0_1 (.I0(w_sk_raw[1]), .O(w_sk_b0[1]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadb1_0 (.I0(w_sk_raw[0]), .O(w_sk_b1[0]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadb1_1 (.I0(w_sk_raw[1]), .O(w_sk_b1[1]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadb2_0 (.I0(w_sk_raw[0]), .O(w_sk_b2[0]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadb2_1 (.I0(w_sk_raw[1]), .O(w_sk_b2[1]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadb3_0 (.I0(w_sk_raw[0]), .O(w_sk_b3[0]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fadb3_1 (.I0(w_sk_raw[1]), .O(w_sk_b3[1]));
 `else
-			assign w_sk_lo = w_sk_raw;
-			assign w_sk_hi = w_sk_raw;
+			assign w_sk_b0 = w_sk_raw;
+			assign w_sk_b1 = w_sk_raw;
+			assign w_sk_b2 = w_sk_raw;
+			assign w_sk_b3 = w_sk_raw;
 `endif
 			wire [31:0] w_base = {
-				w_sk_hi == K_VERT ? vs_base[31:16] : w_sk_hi == K_FRAG ? fs_base[31:16] : cs_base[31:16],
-				w_sk_lo == K_VERT ? vs_base[15:0]  : w_sk_lo == K_FRAG ? fs_base[15:0]  : cs_base[15:0]
+				w_sk_b3 == K_VERT ? vs_base[31:24] : w_sk_b3 == K_FRAG ? fs_base[31:24] : cs_base[31:24],
+				w_sk_b2 == K_VERT ? vs_base[23:16] : w_sk_b2 == K_FRAG ? fs_base[23:16] : cs_base[23:16],
+				w_sk_b1 == K_VERT ? vs_base[15:8]  : w_sk_b1 == K_FRAG ? fs_base[15:8]  : cs_base[15:8],
+				w_sk_b0 == K_VERT ? vs_base[7:0]   : w_sk_b0 == K_FRAG ? fs_base[7:0]   : cs_base[7:0]
 			};
 			am_add #(.W(32)) u_fa_w (
 				.a(w_base),
@@ -475,10 +485,28 @@ module atg_su_sched #(
 	genvar gwi, gws;
 	generate
 	for (gwi = 0; gwi < NWARPS; gwi = gwi + 1) begin : g_info_w
+		wire vl_we_g0, vl_we_g1;
+		wire fl_we_g0, fl_we_g1;
+		wire cs_we_g0, cs_we_g1;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vl0 (.I0(vl_go && (vl_s == gwi[WARP_W-1:0])), .O(vl_we_g0));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vl1 (.I0(vl_go && (vl_s == gwi[WARP_W-1:0])), .O(vl_we_g1));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fl0 (.I0(fl_go && (fl_s == gwi[WARP_W-1:0])), .O(fl_we_g0));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fl1 (.I0(fl_go && (fl_s == gwi[WARP_W-1:0])), .O(fl_we_g1));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cs0 (.I0(cs_launch && (free_slot == gwi[WARP_W-1:0])), .O(cs_we_g0));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cs1 (.I0(cs_launch && (free_slot == gwi[WARP_W-1:0])), .O(cs_we_g1));
+`else
+		assign vl_we_g0 = vl_go && (vl_s == gwi[WARP_W-1:0]);
+		assign vl_we_g1 = vl_go && (vl_s == gwi[WARP_W-1:0]);
+		assign fl_we_g0 = fl_go && (fl_s == gwi[WARP_W-1:0]);
+		assign fl_we_g1 = fl_go && (fl_s == gwi[WARP_W-1:0]);
+		assign cs_we_g0 = cs_launch && (free_slot == gwi[WARP_W-1:0]);
+		assign cs_we_g1 = cs_launch && (free_slot == gwi[WARP_W-1:0]);
+`endif
 		for (gws = 0; gws < 20; gws = gws + 1) begin : g_info_sl
-			(* dont_touch = "true" *) wire vl_we_s = vl_go && (vl_s == gwi[WARP_W-1:0]);
-			(* dont_touch = "true" *) wire fl_we_s = fl_go && (fl_s == gwi[WARP_W-1:0]);
-			(* dont_touch = "true" *) wire cs_we_s = cs_launch && (free_slot == gwi[WARP_W-1:0]);
+			wire vl_we_s = (gws < 10) ? vl_we_g0 : vl_we_g1;
+			wire fl_we_s = (gws < 10) ? fl_we_g0 : fl_we_g1;
+			wire cs_we_s = (gws < 10) ? cs_we_g0 : cs_we_g1;
 			(* shreg_extract = "no" *) reg [7:0] info_sl_r;
 			always @(posedge clk) begin
 				if (rst_p)
@@ -544,8 +572,19 @@ module atg_su_sched #(
 		end
 	endgenerate
 
-	(* keep = "true" *) wire cs_adv_id_x  = cs_skip || (cs_launch && (wk1 == nw));
-	(* keep = "true" *) wire cs_adv_id_yz = cs_skip || (cs_launch && (wk1 == nw));
+	wire cs_adv_id_raw = cs_skip || (cs_launch && (wk1 == nw));
+	wire cs_adv_id_x;
+	wire cs_adv_id_y;
+	wire cs_adv_id_z;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_adv_x (.I0(cs_adv_id_raw), .O(cs_adv_id_x));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_adv_y (.I0(cs_adv_id_raw), .O(cs_adv_id_y));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_adv_z (.I0(cs_adv_id_raw), .O(cs_adv_id_z));
+`else
+	assign cs_adv_id_x = cs_adv_id_raw;
+	assign cs_adv_id_y = cs_adv_id_raw;
+	assign cs_adv_id_z = cs_adv_id_raw;
+`endif
 
 	integer w;
 	reg [2:0] nxt_st_w;
@@ -634,10 +673,11 @@ module atg_su_sched #(
 			if (cs_adv_id_x) begin
 				id_x <= id_x_last ? 16'd0 : id_x1;
 			end
-			if (cs_adv_id_yz && id_x_last_yz) begin
+			if (cs_adv_id_y && id_x_last_y) begin
 				id_y <= id_y_last ? 16'd0 : id_y1;
-				if (id_y_last)
-					id_z <= id_z1;
+			end
+			if (cs_adv_id_z && id_x_last_z && id_y_last) begin
+				id_z <= id_z1;
 			end
 			if (cs_launch) begin
 				wk <= wk1;
