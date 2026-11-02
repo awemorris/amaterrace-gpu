@@ -270,7 +270,12 @@ module atg_su_lsu #(
 						lwd_sl = rdat[sl_l*32 + H_IDX*16 +: 16];
 			end
 			(* shreg_extract = "no" *) reg [15:0] cwd_sl;
-			(* dont_touch = "true" *) wire cwd_we_sl = (st == LINE_DAT);
+			wire cwd_we_sl;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cwdwe (.I0(st == LINE_DAT), .O(cwd_we_sl));
+`else
+			assign cwd_we_sl = (st == LINE_DAT);
+`endif
 			always @(posedge clk)
 				if (cwd_we_sl)
 					cwd_sl <= lwd_sl;
@@ -424,12 +429,27 @@ module atg_su_lsu #(
 	assign dc_req_tag = 8'd0;
 	assign dc_inv = inv_q;
 
-	(* dont_touch = "true" *) wire [LW-1:0] an_addr_lo = anext[LW-1:0];
-	(* dont_touch = "true" *) wire [LW-1:0] an_addr_hi = anext[LW-1:0];
-	(* dont_touch = "true" *) wire [LW-1:0] an_a_lo    = anext[LW-1:0];
-	(* dont_touch = "true" *) wire [LW-1:0] an_a_hi    = anext[LW-1:0];
-	(* dont_touch = "true" *) wire [LW-1:0] an_b_lo    = anext[LW-1:0];
-	(* dont_touch = "true" *) wire [LW-1:0] an_b_hi    = anext[LW-1:0];
+	wire [LW-1:0] an_addr_lo, an_addr_hi, an_a_lo, an_a_hi, an_b_lo, an_b_hi;
+	genvar gan;
+	generate
+		for (gan = 0; gan < LW; gan = gan + 1) begin : g_an_buf
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_adlo (.I0(anext[gan]), .O(an_addr_lo[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_adhi (.I0(anext[gan]), .O(an_addr_hi[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_alo  (.I0(anext[gan]), .O(an_a_lo[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_ahi  (.I0(anext[gan]), .O(an_a_hi[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_blo  (.I0(anext[gan]), .O(an_b_lo[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_bhi  (.I0(anext[gan]), .O(an_b_hi[gan]));
+`else
+			assign an_addr_lo[gan] = anext[gan];
+			assign an_addr_hi[gan] = anext[gan];
+			assign an_a_lo[gan]    = anext[gan];
+			assign an_a_hi[gan]    = anext[gan];
+			assign an_b_lo[gan]    = anext[gan];
+			assign an_b_hi[gan]    = anext[gan];
+`endif
+		end
+	endgenerate
 	reg [15:0] at_addr_lo, at_a_lo, at_a_hi, at_b_lo, at_b_hi;
 	reg [13:0] at_addr_hi;
 	integer ai;
