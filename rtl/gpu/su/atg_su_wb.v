@@ -38,10 +38,28 @@ module atg_su_wb_skid #(
 	wire skid_load = in_valid && in_ready;
 
 	localparam N_SK_SL = (WIDTH + 15) / 16;
+	localparam N_SK_GRP = (N_SK_SL + 3) / 4;
+	wire [N_SK_GRP-1:0] out_ready_g;
+	wire [N_SK_GRP-1:0] in_valid_g;
+	genvar gkg;
+	generate
+		for (gkg = 0; gkg < N_SK_GRP; gkg = gkg + 1) begin : g_sk_grp
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rdy (.I0(out_ready), .O(out_ready_g[gkg]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val (.I0(in_valid),  .O(in_valid_g[gkg]));
+`else
+			assign out_ready_g[gkg] = out_ready;
+			assign in_valid_g[gkg]  = in_valid;
+`endif
+		end
+	endgenerate
+
 	genvar gsk;
 	generate
 	for (gsk = 0; gsk < N_SK_SL; gsk = gsk + 1) begin : g_sk_sl
 		localparam SK_W = (gsk * 16 + 16 <= WIDTH) ? 16 : (WIDTH - gsk * 16);
+		wire sl_out_ready = out_ready_g[gsk / 4];
+		wire sl_in_valid  = in_valid_g[gsk / 4];
 		(* dont_touch = "true" *) reg out_v_sl, skid_v_sl, in_r_sl;
 		always @(posedge clk) begin
 			if (rst_p) begin
@@ -50,23 +68,23 @@ module atg_su_wb_skid #(
 				skid_v_sl <= 1'b0;
 			end else begin
 				if (skid_v_sl) begin
-					if (out_ready) begin
+					if (sl_out_ready) begin
 						out_v_sl  <= 1'b1;
 						skid_v_sl <= 1'b0;
 						in_r_sl   <= 1'b1;
 					end
 				end else begin
-					if (out_ready || !out_v_sl) begin
-						out_v_sl <= in_valid;
-					end else if (in_valid && in_r_sl) begin
+					if (sl_out_ready || !out_v_sl) begin
+						out_v_sl <= sl_in_valid;
+					end else if (sl_in_valid && in_r_sl) begin
 						skid_v_sl <= 1'b1;
 						in_r_sl   <= 1'b0;
 					end
 				end
 			end
 		end
-		(* dont_touch = "true" *) wire load_out_s = skid_v_sl ? out_ready : (in_valid && (out_ready || !out_v_sl));
-		(* dont_touch = "true" *) wire skid_load_s = in_valid && in_r_sl;
+		(* dont_touch = "true" *) wire load_out_s = skid_v_sl ? sl_out_ready : (sl_in_valid && (sl_out_ready || !out_v_sl));
+		(* dont_touch = "true" *) wire skid_load_s = sl_in_valid && in_r_sl;
 		(* shreg_extract = "no", max_fanout = 16 *) reg [SK_W-1:0] out_sl;
 		(* shreg_extract = "no", max_fanout = 12 *) reg [SK_W-1:0] skid_sl;
 		always @(posedge clk) begin
@@ -567,12 +585,24 @@ module atg_su_wb #(
 		(* max_fanout = 12 *) reg [2:0]        lq_cls;
 
 		wire lq_done     = !lq_wr || (!sv_arb && !fq_valid);
-		wire lq_can_load = !lq_valid || lq_done;
+		wire lq_can_load_raw = !lq_valid || lq_done;
+		wire lq_can_load, lq_can_load_ctl;
+		wire rr_en_raw = ksel_v && lq_can_load;
+		wire rr_en_a, rr_en_b;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_lqcl  (.I0(lq_can_load_raw), .O(lq_can_load));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_lqctl (.I0(lq_can_load_raw), .O(lq_can_load_ctl));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rrena (.I0(rr_en_raw),       .O(rr_en_a));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rrenb (.I0(rr_en_raw),       .O(rr_en_b));
+`else
+		assign lq_can_load     = lq_can_load_raw;
+		assign lq_can_load_ctl = lq_can_load_raw;
+		assign rr_en_a         = rr_en_raw;
+		assign rr_en_b         = rr_en_raw;
+`endif
 
 		assign lk_ready = (ksel_v && lq_can_load) ? lk_s_one : {NL{1'b0}};
 
-		(* dont_touch = "true" *) wire rr_en_a = ksel_v && lq_can_load;
-		(* dont_touch = "true" *) wire rr_en_b = ksel_v && lq_can_load;
 		(* dont_touch = "true" *) wire [LP_W-1:0] rr_nx_a = next_rr(ksel);
 		(* dont_touch = "true" *) wire [LP_W-1:0] rr_nx_b = next_rr(ksel);
 
@@ -649,7 +679,7 @@ module atg_su_wb #(
 				lq_last  <= 1'b0;
 				lq_sbe   <= {(SBE_W+1){1'b0}};
 				lq_cls   <= 3'd0;
-			end else if (lq_can_load) begin
+			end else if (lq_can_load_ctl) begin
 				lq_valid <= ksel_v;
 				lq_warp  <= lk_s_warp;
 				lq_grp   <= lk_s_grp;
@@ -670,7 +700,7 @@ module atg_su_wb #(
 				rr     <= {LP_W{1'b0}};
 				wait_n <= 3'd0;
 			end else begin
-				if (ksel_v && lq_can_load)
+				if (ksel_v && lq_can_load_ctl)
 					rr <= next_rr(ksel);
 				if (l_stalled)
 					wait_n <= inc3(wait_n);
