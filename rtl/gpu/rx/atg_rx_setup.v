@@ -737,76 +737,6 @@ module atg_rx_setup (
 	wire e_empty_buf;
 	`RX_BUF1(u_buf_empty, e_empty, e_empty_buf);
 
-	function [4:0] inc5;
-		input [4:0] v;
-		case (v)
-		5'd0: inc5 = 5'd1;
-		5'd1: inc5 = 5'd2;
-		5'd2: inc5 = 5'd3;
-		5'd3: inc5 = 5'd4;
-		5'd4: inc5 = 5'd5;
-		5'd5: inc5 = 5'd6;
-		5'd6: inc5 = 5'd7;
-		5'd7: inc5 = 5'd8;
-		5'd8: inc5 = 5'd9;
-		5'd9: inc5 = 5'd10;
-		5'd10: inc5 = 5'd11;
-		5'd11: inc5 = 5'd12;
-		5'd12: inc5 = 5'd13;
-		5'd13: inc5 = 5'd14;
-		5'd14: inc5 = 5'd15;
-		5'd15: inc5 = 5'd16;
-		5'd16: inc5 = 5'd17;
-		5'd17: inc5 = 5'd18;
-		5'd18: inc5 = 5'd19;
-		5'd19: inc5 = 5'd20;
-		5'd20: inc5 = 5'd21;
-		5'd21: inc5 = 5'd22;
-		5'd22: inc5 = 5'd23;
-		5'd23: inc5 = 5'd24;
-		5'd24: inc5 = 5'd25;
-		5'd25: inc5 = 5'd26;
-		5'd26: inc5 = 5'd27;
-		5'd27: inc5 = 5'd28;
-		5'd28: inc5 = 5'd29;
-		5'd29: inc5 = 5'd30;
-		5'd30: inc5 = 5'd31;
-		default: inc5 = 5'd0;
-		endcase
-	endfunction
-
-	function [3:0] inc4;
-		input [3:0] v;
-		case (v)
-		4'd0: inc4 = 4'd1;
-		4'd1: inc4 = 4'd2;
-		4'd2: inc4 = 4'd3;
-		4'd3: inc4 = 4'd4;
-		4'd4: inc4 = 4'd5;
-		4'd5: inc4 = 4'd6;
-		4'd6: inc4 = 4'd7;
-		4'd7: inc4 = 4'd8;
-		4'd8: inc4 = 4'd9;
-		4'd9: inc4 = 4'd10;
-		4'd10: inc4 = 4'd11;
-		4'd11: inc4 = 4'd12;
-		4'd12: inc4 = 4'd13;
-		4'd13: inc4 = 4'd14;
-		4'd14: inc4 = 4'd15;
-		default: inc4 = 4'd0;
-		endcase
-	endfunction
-
-	function [1:0] inc2;
-		input [1:0] v;
-		case (v)
-		2'd0: inc2 = 2'd1;
-		2'd1: inc2 = 2'd2;
-		2'd2: inc2 = 2'd3;
-		default: inc2 = 2'd0;
-		endcase
-	endfunction
-
 	/* the bias's r for D16 (2^-16) and D24 (2^-24) */
 `ifdef MUT_BIAS_R
 	localparam [31:0] R24 = 32'h34000000;
@@ -1955,8 +1885,22 @@ module atg_rx_setup (
 	/* 9. Main Control FSM: Compute st_next, seq_next, p_step_next ONCE combinationally
 	 * so replicating st_rep_*, seq_step_rep_*, p_step_rep_* does NOT duplicate next-state logic cones! */
 	wire ps_ne_0100 = (point_size != 16'h0100);
-	(* keep = "true" *) wire [4:0] seq_inc = inc5(seq_step_rep_b);
-	(* keep = "true" *) wire [4:0] seq_inc_hi = inc5(seq_step_hi);
+	wire [4:0] seq_inc, seq_inc_hi;
+	wire seq_inc_co_unused, seq_inc_hi_co_unused;
+	am_add #(.W(5)) u_inc_seq (
+		.a(seq_step_rep_b),
+		.b(5'd1),
+		.ci(1'b0),
+		.s(seq_inc),
+		.co(seq_inc_co_unused)
+	);
+	am_add #(.W(5)) u_inc_seq_hi (
+		.a(seq_step_hi),
+		.b(5'd1),
+		.ci(1'b0),
+		.s(seq_inc_hi),
+		.co(seq_inc_hi_co_unused)
+	);
 	(* keep = "true" *) wire xyz_use_fa = (seq_step_rep_b == 5'd3 || seq_step_rep_b == 5'd6 || seq_step_rep_b == 5'd9 ||
 		seq_step_rep_b == 5'd14 || seq_step_rep_b == 5'd17 || seq_step_rep_b == 5'd20 ||
 		seq_step_rep_b == 5'd25 || seq_step_rep_b == 5'd28 || seq_step_rep_b == 5'd31);
@@ -2111,6 +2055,26 @@ module atg_rx_setup (
 	end
 	(* keep = "true" *) wire [4:0] seq_next = {seq_next_hi, seq_next_lo};
 
+	wire [3:0] p_step_ctrl_inc;
+	wire p_step_ctrl_inc_co_unused;
+	am_add #(.W(4)) u_inc_p_step (
+		.a(p_step_ctrl),
+		.b(4'd1),
+		.ci(1'b0),
+		.s(p_step_ctrl_inc),
+		.co(p_step_ctrl_inc_co_unused)
+	);
+
+	wire [1:0] p_plane_inc;
+	wire p_plane_inc_co_unused;
+	am_add #(.W(2)) u_inc_p_plane (
+		.a(p_plane),
+		.b(2'd1),
+		.ci(1'b0),
+		.s(p_plane_inc),
+		.co(p_plane_inc_co_unused)
+	);
+
 	(* keep = "true" *) reg [3:0] p_step_next;
 	always @(*) begin
 		p_step_next = p_step_ctrl;
@@ -2125,9 +2089,9 @@ module atg_rx_setup (
 				case (p_step_ctrl)
 				4'd0: p_step_next = 4'd1;
 				4'd1, 4'd2, 4'd5, 4'd9, 4'd13:
-					if (fa_o_c_ps) p_step_next = inc4(p_step_ctrl);
+					if (fa_o_c_ps) p_step_next = p_step_ctrl_inc;
 				4'd3, 4'd4, 4'd6, 4'd7, 4'd8, 4'd10, 4'd11, 4'd12:
-					if (fm_o_c_ps) p_step_next = inc4(p_step_ctrl);
+					if (fm_o_c_ps) p_step_next = p_step_ctrl_inc;
 				default:
 					if (fa_o_c_ps) p_step_next = 4'd0;
 				endcase
@@ -2273,7 +2237,7 @@ module atg_rx_setup (
 				fa_sub <= 1'b0;
 			end
 			default: if (fa_o_c_v) begin
-				if (!raw && (p_plane != 2'd3)) p_plane <= inc2(p_plane);
+				if (!raw && (p_plane != 2'd3)) p_plane <= p_plane_inc;
 				else if (!raw && (kind == 2'd1)) more <= !sub;
 			end
 			endcase
@@ -2321,7 +2285,8 @@ module atg_rx_setup (
 	assign sp_tri[767:736] = {1'b0, kind_out, raw, e_front, more ? 3'd0 : keep[26:24], keep[23:0]};
 
 	wire unused_ok = &{1'b0, fd_busy, rm[2:1], su_bo_unused, max_z[31], max_z[22:0],
-		lw_fix[23:16], ps_fix[23:16], div_busy, mesh_id, in_valid_ctrl, in_valid_fd};
+		lw_fix[23:16], ps_fix[23:16], div_busy, mesh_id, in_valid_ctrl, in_valid_fd,
+		seq_inc_co_unused, seq_inc_hi_co_unused, p_step_ctrl_inc_co_unused, p_plane_inc_co_unused};
 
 `undef RX_BUF1
 endmodule
