@@ -387,23 +387,26 @@ module atg_su_pk_half #(
 		/* =====================================================================
 		 * Stage 1 (EX1): Latch inputs and dedicated multiplier operands (0 Pre-DSP LUTs)
 		 * ===================================================================== */
-		wire [3:0] o_mux_y, o_mux_z, o_is_int, o_pipe;
+		wire [3:0] o_mux_y, o_mux_z, o_is_int_a, o_is_int_b, o_pipe;
 		genvar go;
 		for (go = 0; go < 4; go = go + 1) begin : g_o_buf
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_y (.I0(o[go]), .O(o_mux_y[go]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_z (.I0(o[go]), .O(o_mux_z[go]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_i (.I0(o[go]), .O(o_is_int[go]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_p (.I0(o[go]), .O(o_pipe[go]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_y  (.I0(o[go]), .O(o_mux_y[go]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_z  (.I0(o[go]), .O(o_mux_z[go]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_ia (.I0(o[go]), .O(o_is_int_a[go]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_ib (.I0(o[go]), .O(o_is_int_b[go]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_p  (.I0(o[go]), .O(o_pipe[go]));
 `else
-			assign o_mux_y[go]  = o[go];
-			assign o_mux_z[go]  = o[go];
-			assign o_is_int[go] = o[go];
-			assign o_pipe[go]   = o[go];
+			assign o_mux_y[go]    = o[go];
+			assign o_mux_z[go]    = o[go];
+			assign o_is_int_a[go] = o[go];
+			assign o_is_int_b[go] = o[go];
+			assign o_pipe[go]     = o[go];
 `endif
 		end
 
-		wire s0_is_int = o_is_int == ATG_PK_IADD2[3:0] || o_is_int == ATG_PK_ISUB2[3:0] || o_is_int == ATG_PK_IMUL2[3:0];
+		wire s0_is_int_a = o_is_int_a == ATG_PK_IADD2[3:0] || o_is_int_a == ATG_PK_ISUB2[3:0] || o_is_int_a == ATG_PK_IMUL2[3:0];
+		wire s0_is_int_b = o_is_int_b == ATG_PK_IADD2[3:0] || o_is_int_b == ATG_PK_ISUB2[3:0] || o_is_int_b == ATG_PK_IMUL2[3:0];
 		reg [15:0] s0_fy;
 		reg        s0_fnoc;
 		always @(*) begin
@@ -484,8 +487,8 @@ module atg_su_pk_half #(
 				s1_r       <= r;
 				s1_sat     <= sat;
 				s1_xw      <= xw;
-				s1_mul_a   <= s0_is_int ? ha : {5'd0, s0_ma};
-				s1_mul_b   <= s0_is_int ? hb : {5'd0, s0_mb};
+				s1_mul_a   <= s0_is_int_a ? ha : {5'd0, s0_ma};
+				s1_mul_b   <= s0_is_int_b ? hb : {5'd0, s0_mb};
 			end
 		end
 
@@ -731,7 +734,7 @@ module atg_su_pk_half #(
 		(* shreg_extract = "no" *) reg        s3_valid;
 		(* shreg_extract = "no" *) reg        s3_ovr_en;
 		(* shreg_extract = "no" *) reg [15:0] s3_ovr_val;
-		(* dont_touch = "true" *) reg [3:0]  s3_o_pipe, s3_o_mux;
+		(* dont_touch = "true" *) reg [3:0]  s3_o_pipe, s3_o_mux_lo, s3_o_mux_hi;
 		(* shreg_extract = "no" *) reg [2:0]  s3_r;
 		(* shreg_extract = "no" *) reg        s3_sat;
 		(* dont_touch = "true" *) reg [10:0] s3_mc_sh, s3_mc_cw;
@@ -748,7 +751,8 @@ module atg_su_pk_half #(
 				s3_ovr_en   <= 1'b0;
 				s3_ovr_val  <= 16'd0;
 				s3_o_pipe   <= 4'd0;
-				s3_o_mux    <= 4'd0;
+				s3_o_mux_lo <= 4'd0;
+				s3_o_mux_hi <= 4'd0;
 				s3_r        <= 3'd0;
 				s3_sat      <= 1'b0;
 				s3_mc_sh    <= 11'd0;
@@ -772,7 +776,8 @@ module atg_su_pk_half #(
 				s3_ovr_en   <= s2_ovr_en;
 				s3_ovr_val  <= s2_ovr_val;
 				s3_o_pipe   <= s2_o;
-				s3_o_mux    <= s2_o;
+				s3_o_mux_lo <= s2_o;
+				s3_o_mux_hi <= s2_o;
 				s3_r        <= s2_r;
 				s3_sat      <= s2_sat;
 				s3_mc_sh    <= s2_mc;
@@ -807,17 +812,29 @@ module atg_su_pk_half #(
 			s3_near ? {s3_zal[46:11], s3_zal[10] | (|s3_zal[9:0])} : 37'd1;
 		wire [6:0]  s3_eb = (!s3_zc && s3_big) ? s3_eb_c : s3_eb_t;
 
-		reg [15:0] s3_other_pre;
+		reg [7:0] s3_other_lo, s3_other_hi;
+		wire [15:0] s3_fminmax_sat = s3_sat ? atg_su_hsat(s3_fminmax) : s3_fminmax;
 		always @(*) begin
-			case (s3_o_mux)
-			ATG_PK_PACKH[3:0]: s3_other_pre = s3_xh;
-			ATG_PK_FMIN2[3:0], ATG_PK_FMAX2[3:0]: s3_other_pre = FL ? (s3_sat ? atg_su_hsat(s3_fminmax) : s3_fminmax) : 16'd0;
-			ATG_PK_IADD2[3:0], ATG_PK_ISUB2[3:0]: s3_other_pre = AR ? s3_isum : 16'd0;
+			case (s3_o_mux_lo)
+			ATG_PK_PACKH[3:0]: s3_other_lo = s3_xh[7:0];
+			ATG_PK_FMIN2[3:0], ATG_PK_FMAX2[3:0]: s3_other_lo = FL ? s3_fminmax_sat[7:0] : 8'd0;
+			ATG_PK_IADD2[3:0], ATG_PK_ISUB2[3:0]: s3_other_lo = AR ? s3_isum[7:0] : 8'd0;
 			ATG_PK_FCMPLT2[3:0], ATG_PK_FCMPGE2[3:0], ATG_PK_FCMPEQ2[3:0], ATG_PK_FCMPNE2[3:0]:
-				s3_other_pre = FL ? s3_fcmp : 16'd0;
-			default: s3_other_pre = 16'd0;
+				s3_other_lo = FL ? s3_fcmp[7:0] : 8'd0;
+			default: s3_other_lo = 8'd0;
 			endcase
 		end
+		always @(*) begin
+			case (s3_o_mux_hi)
+			ATG_PK_PACKH[3:0]: s3_other_hi = s3_xh[15:8];
+			ATG_PK_FMIN2[3:0], ATG_PK_FMAX2[3:0]: s3_other_hi = FL ? s3_fminmax_sat[15:8] : 8'd0;
+			ATG_PK_IADD2[3:0], ATG_PK_ISUB2[3:0]: s3_other_hi = AR ? s3_isum[15:8] : 8'd0;
+			ATG_PK_FCMPLT2[3:0], ATG_PK_FCMPGE2[3:0], ATG_PK_FCMPEQ2[3:0], ATG_PK_FCMPNE2[3:0]:
+				s3_other_hi = FL ? s3_fcmp[15:8] : 8'd0;
+			default: s3_other_hi = 8'd0;
+			endcase
+		end
+		wire [15:0] s3_other_pre = {s3_other_hi, s3_other_lo};
 
 		/* --- Stage 4 registers (in sync with s4_prod) --- */
 		(* shreg_extract = "no" *) reg        s4_valid;

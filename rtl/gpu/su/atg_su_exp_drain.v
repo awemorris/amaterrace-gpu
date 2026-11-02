@@ -43,9 +43,9 @@ module atg_su_exp_drain #(
 	/* The draining warp (atg_su_exp's buffer, selected by d_warp) */
 	input wire [31:0] d_cov,
 	input wire [7:0] d_rtw,
-	(* max_fanout = 12 *) output reg [WARP_W-1:0] d_warp,
-	(* max_fanout = 12 *) output reg [2:0] d_q,
-	(* max_fanout = 12 *) output reg [2:0] d_rt,
+	output reg [WARP_W-1:0] d_warp,
+	output reg [2:0] d_q,
+	output reg [2:0] d_rt,
 	output wire d_first,
 	output wire d_lastb,
 	output wire d_nocol,

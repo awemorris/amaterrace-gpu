@@ -344,17 +344,28 @@ module atg_su_exp #(
 	end
 
 	for (b = 0; b < NPHYS; b = b + 1) begin : g_bank
-		wire b_sc_on_c0, b_sc_on_c1, b_sc_on_r0, b_sc_on_r1;
+		wire b_sc_on_c0_we, b_sc_on_c0_sl;
+		wire b_sc_on_c1_we, b_sc_on_c1_sl;
+		wire b_sc_on_r0_we, b_sc_on_r0_sl;
+		wire b_sc_on_r1_we, b_sc_on_r1_sl;
 `ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconc0 (.I0(sc_on_bnk[b]), .O(b_sc_on_c0));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconc1 (.I0(sc_on_bnk[b]), .O(b_sc_on_c1));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconr0 (.I0(sc_on_bnk[b]), .O(b_sc_on_r0));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconr1 (.I0(sc_on_bnk[b]), .O(b_sc_on_r1));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconc0_w (.I0(sc_on_bnk[b]), .O(b_sc_on_c0_we));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconc0_s (.I0(sc_on_bnk[b]), .O(b_sc_on_c0_sl));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconc1_w (.I0(sc_on_bnk[b]), .O(b_sc_on_c1_we));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconc1_s (.I0(sc_on_bnk[b]), .O(b_sc_on_c1_sl));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconr0_w (.I0(sc_on_bnk[b]), .O(b_sc_on_r0_we));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconr0_s (.I0(sc_on_bnk[b]), .O(b_sc_on_r0_sl));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconr1_w (.I0(sc_on_bnk[b]), .O(b_sc_on_r1_we));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sconr1_s (.I0(sc_on_bnk[b]), .O(b_sc_on_r1_sl));
 `else
-		assign b_sc_on_c0 = sc_on_bnk[b];
-		assign b_sc_on_c1 = sc_on_bnk[b];
-		assign b_sc_on_r0 = sc_on_bnk[b];
-		assign b_sc_on_r1 = sc_on_bnk[b];
+		assign b_sc_on_c0_we = sc_on_bnk[b];
+		assign b_sc_on_c0_sl = sc_on_bnk[b];
+		assign b_sc_on_c1_we = sc_on_bnk[b];
+		assign b_sc_on_c1_sl = sc_on_bnk[b];
+		assign b_sc_on_r0_we = sc_on_bnk[b];
+		assign b_sc_on_r0_sl = sc_on_bnk[b];
+		assign b_sc_on_r1_we = sc_on_bnk[b];
+		assign b_sc_on_r1_sl = sc_on_bnk[b];
 `endif
 		(* dont_touch = "true" *) wire [RW+2:0] b_sc_a_c0  = sc_a;
 		(* dont_touch = "true" *) wire [RW+2:0] b_sc_a_c1  = sc_a;
@@ -386,24 +397,24 @@ module atg_su_exp #(
 		wire [RW+2:0] b_dcrow_1  = dcrow;
 		wire [RW-1:0] b_drow_0   = drow[RW-1:0];
 		wire [RW-1:0] b_drow_1   = drow[RW-1:0];
-		wire b_we_0 = b_sc_on_c0 || (side_bnk[b] && col_match_q[b/4][0]);
-		wire b_we_1 = b_sc_on_c0 || (side_bnk[b] && col_match_q[b/4][1]);
-		wire b_we_2 = b_sc_on_c1 || (side_bnk[b] && col_match_q[b/4][2]);
-		wire b_we_3 = b_sc_on_c1 || (side_bnk[b] && col_match_q[b/4][3]);
-		wire b_we_s0 = b_sc_on_r0 || (side_bnk[b] && col1_match_q[b/4][0]);
-		wire b_we_s1 = b_sc_on_r0 || (side_bnk[b] && col1_match_q[b/4][1]);
-		wire b_we_s2 = b_sc_on_r1 || (side_bnk[b] && col1_match_q[b/4][2]);
-		wire b_we_s3 = b_sc_on_r1 || (side_bnk[b] && col1_match_q[b/4][3]);
-		wire b_we_m4 = b_sc_on_r0 || (side_bnk[b] && dep_q[b/4]);
-		wire b_we_mz = b_sc_on_r1 || (fl_we && fl_reg == 6'd3 && zbank == b);
+		wire b_we_0 = b_sc_on_c0_we || (side_bnk[b] && col_match_q[b/4][0]);
+		wire b_we_1 = b_sc_on_c0_we || (side_bnk[b] && col_match_q[b/4][1]);
+		wire b_we_2 = b_sc_on_c1_we || (side_bnk[b] && col_match_q[b/4][2]);
+		wire b_we_3 = b_sc_on_c1_we || (side_bnk[b] && col_match_q[b/4][3]);
+		wire b_we_s0 = b_sc_on_r0_we || (side_bnk[b] && col1_match_q[b/4][0]);
+		wire b_we_s1 = b_sc_on_r0_we || (side_bnk[b] && col1_match_q[b/4][1]);
+		wire b_we_s2 = b_sc_on_r1_we || (side_bnk[b] && col1_match_q[b/4][2]);
+		wire b_we_s3 = b_sc_on_r1_we || (side_bnk[b] && col1_match_q[b/4][3]);
+		wire b_we_m4 = b_sc_on_r0_we || (side_bnk[b] && dep_q[b/4]);
+		wire b_we_mz = b_sc_on_r1_we || (fl_we && fl_reg == 6'd3 && zbank == b);
 
-		wire [RW-1:0] r_wa_m5  = b_sc_on_r1 ? b_sc_ar_1 : b_xrow_1;
-		wire [RW-1:0] z_wa_mr6 = b_sc_on_r1 ? b_sc_ar_1 : b_zrow;
+		wire [RW-1:0] r_wa_m5  = b_sc_on_r1_we ? b_sc_ar_1 : b_xrow_1;
+		wire [RW-1:0] z_wa_mr6 = b_sc_on_r1_we ? b_sc_ar_1 : b_zrow;
 		wire [RW-1:0] drow_rsm = b_drow_1;
-		wire we_m5 = b_sc_on_r1 || (side_bnk[b] && sm_q[b/4]);
-		wire we_mr6 = b_sc_on_r1 || (fl_we && fl_reg == 6'd6 && zbank == b);
-		wire [3:0] d_m5 = b_sc_on_r1 ? 4'd0 : x_b[32 * b +: 4];
-		wire [3:0] fd_mr6 = b_sc_on_r1 ? 4'd0 : fl_data[3:0];
+		wire we_m5 = b_sc_on_r1_we || (side_bnk[b] && sm_q[b/4]);
+		wire we_mr6 = b_sc_on_r1_we || (fl_we && fl_reg == 6'd6 && zbank == b);
+		wire [3:0] d_m5 = b_sc_on_r1_we ? 4'd0 : x_b[32 * b +: 4];
+		wire [3:0] fd_mr6 = b_sc_on_r1_we ? 4'd0 : fl_data[3:0];
 
 		reg [3:0] m5 [0:ROWS-1];
 		reg [3:0] mr6 [0:ROWS-1];
@@ -414,12 +425,14 @@ module atg_su_exp #(
 		assign rsm[8 * b +: 8] = {m5[drow_rsm], mr6[drow_rsm]};
 
 		for (bs = 0; bs < 8; bs = bs + 1) begin : g_col_sl
-			wire b_scon_raw = (bs < 4) ? b_sc_on_c0 : b_sc_on_c1;
-			wire b_scon;
+			wire b_scon_raw = (bs < 4) ? b_sc_on_c0_sl : b_sc_on_c1_sl;
+			wire b_scon_a, b_scon_d;
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_scon_sl (.I0(b_scon_raw), .O(b_scon));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_scon_sla (.I0(b_scon_raw), .O(b_scon_a));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_scon_sld (.I0(b_scon_raw), .O(b_scon_d));
 `else
-			assign b_scon = b_scon_raw;
+			assign b_scon_a = b_scon_raw;
+			assign b_scon_d = b_scon_raw;
 `endif
 			wire [RW+2:0] b_sca_raw = (bs < 4) ? b_sc_a_c0 : b_sc_a_c1;
 			wire [RW+2:0] b_sca;
@@ -433,7 +446,7 @@ module atg_su_exp #(
 			end
 			wire [RW+2:0] b_xcr = (bs < 4) ? b_xcrow_0 : b_xcrow_1;
 			wire [RW+2:0] b_dcr = (bs < 4) ? b_dcrow_0 : b_dcrow_1;
-			wire [RW+2:0] c_wa_raw = b_scon ? b_sca : b_xcr;
+			wire [RW+2:0] c_wa_raw = b_scon_a ? b_sca : b_xcr;
 			wire [RW+2:0] c_wa_0, c_wa_1, c_wa_2, c_wa_3;
 			genvar gbw;
 			for (gbw = 0; gbw <= RW+2; gbw = gbw + 1) begin : g_cwa_buf
@@ -451,11 +464,19 @@ module atg_su_exp #(
 			end
 			wire [RW+2:0] dcrow_01 = b_dcr;
 			wire [RW+2:0] dcrow_23 = b_dcr;
-			wire we_0 = b_we_0;
-			wire we_1 = b_we_1;
-			wire we_2 = b_we_2;
-			wire we_3 = b_we_3;
-			wire [3:0] d_sl = b_scon ? 4'd0 : x_b[32 * b + bs * 4 +: 4];
+			wire we_0, we_1, we_2, we_3;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we0 (.I0(b_we_0), .O(we_0));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we1 (.I0(b_we_1), .O(we_1));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we2 (.I0(b_we_2), .O(we_2));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we3 (.I0(b_we_3), .O(we_3));
+`else
+			assign we_0 = b_we_0;
+			assign we_1 = b_we_1;
+			assign we_2 = b_we_2;
+			assign we_3 = b_we_3;
+`endif
+			wire [3:0] d_sl = b_scon_d ? 4'd0 : x_b[32 * b + bs * 4 +: 4];
 
 			reg [3:0] m0 [0:ROWS*8-1];
 			reg [3:0] m1 [0:ROWS*8-1];
@@ -474,7 +495,7 @@ module atg_su_exp #(
 		end
 
 		for (bh = 0; bh < 4; bh = bh + 1) begin : g_row_sl
-			wire b_scon_raw = (bh < 2) ? b_sc_on_r0 : b_sc_on_r1;
+			wire b_scon_raw = (bh < 2) ? b_sc_on_r0_sl : b_sc_on_r1_sl;
 			wire b_scon_a, b_scon_d;
 `ifdef SYNTH_KINTEX7
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_scona (.I0(b_scon_raw), .O(b_scon_a));
@@ -486,21 +507,46 @@ module atg_su_exp #(
 			wire [RW-1:0] b_scar = (bh < 2) ? b_sc_ar_0 : b_sc_ar_1;
 			wire [RW-1:0] b_xr   = (bh < 2) ? b_xrow_0  : b_xrow_1;
 			wire [RW-1:0] b_dr   = (bh < 2) ? b_drow_0  : b_drow_1;
-			wire [RW-1:0] r_wa_s0 = b_scon_a ? b_scar : b_xr;
-			wire [RW-1:0] r_wa_s1 = b_scon_a ? b_scar : b_xr;
-			wire [RW-1:0] r_wa_s2 = b_scon_a ? b_scar : b_xr;
-			wire [RW-1:0] r_wa_s3 = b_scon_a ? b_scar : b_xr;
-			wire [RW-1:0] r_wa_m4 = b_scon_a ? b_scar : b_xr;
-			wire [RW-1:0] z_wa_mz = b_scon_a ? b_scar : b_zrow;
+			wire [RW-1:0] r_wa_raw = b_scon_a ? b_scar : b_xr;
+			wire [RW-1:0] z_wa_raw = b_scon_a ? b_scar : b_zrow;
+			wire [RW-1:0] r_wa_s0, r_wa_s1, r_wa_s2, r_wa_s3, r_wa_m4, z_wa_mz;
+			genvar grw;
+			for (grw = 0; grw < RW; grw = grw + 1) begin : g_rwa_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_rwa0 (.I0(r_wa_raw[grw]), .O(r_wa_s0[grw]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_rwa1 (.I0(r_wa_raw[grw]), .O(r_wa_s1[grw]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_rwa2 (.I0(r_wa_raw[grw]), .O(r_wa_s2[grw]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_rwa3 (.I0(r_wa_raw[grw]), .O(r_wa_s3[grw]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_rwam (.I0(r_wa_raw[grw]), .O(r_wa_m4[grw]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_zwaz (.I0(z_wa_raw[grw]), .O(z_wa_mz[grw]));
+`else
+				assign r_wa_s0[grw] = r_wa_raw[grw];
+				assign r_wa_s1[grw] = r_wa_raw[grw];
+				assign r_wa_s2[grw] = r_wa_raw[grw];
+				assign r_wa_s3[grw] = r_wa_raw[grw];
+				assign r_wa_m4[grw] = r_wa_raw[grw];
+				assign z_wa_mz[grw] = z_wa_raw[grw];
+`endif
+			end
 			wire [RW-1:0] drow_s01 = b_dr;
 			wire [RW-1:0] drow_s23 = b_dr;
 			wire [RW-1:0] drow_m4z = b_dr;
-			wire we_s0 = b_we_s0;
-			wire we_s1 = b_we_s1;
-			wire we_s2 = b_we_s2;
-			wire we_s3 = b_we_s3;
-			wire we_m4 = b_we_m4;
-			wire we_mz = b_we_mz;
+			wire we_s0, we_s1, we_s2, we_s3, we_m4, we_mz;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wes0 (.I0(b_we_s0), .O(we_s0));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wes1 (.I0(b_we_s1), .O(we_s1));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wes2 (.I0(b_we_s2), .O(we_s2));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wes3 (.I0(b_we_s3), .O(we_s3));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wesm (.I0(b_we_m4), .O(we_m4));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wesz (.I0(b_we_mz), .O(we_mz));
+`else
+			assign we_s0 = b_we_s0;
+			assign we_s1 = b_we_s1;
+			assign we_s2 = b_we_s2;
+			assign we_s3 = b_we_s3;
+			assign we_m4 = b_we_m4;
+			assign we_mz = b_we_mz;
+`endif
 			wire [7:0] d_h = b_scon_d ? 8'd0 : x_b[32 * b + bh * 8 +: 8];
 			wire [7:0] fd_h = b_scon_d ? 8'd0 : fl_data[bh * 8 +: 8];
 
