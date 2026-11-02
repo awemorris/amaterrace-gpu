@@ -706,7 +706,7 @@ module atg_su_xu #(
 	wire load_commit_raw = (st == LOAD) && (sub_st_load >= 4'd9);
 	wire load_commit_res;
 	wire cordic_load_commit, y_we_load, fr_we_load;
-	wire root_we_load, rem_we_load, n_we_load_lo, n_we_load_hi;
+	wire root_we_load_we, root_we_load_lo, root_we_load_hi, rem_we_load, n_we_load_lo, n_we_load_hi;
 	wire load_end_lo, load_end_hi, res_we_lo, res_we_hi;
 `ifdef SYNTH_KINTEX7
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lx_lo  (.I0((st == LOAD) && (sub_st_load == 4'd0)), .O(lx_we_lo));
@@ -725,7 +725,9 @@ module atg_su_xu #(
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_crd (.I0(load_commit_raw), .O(cordic_load_commit));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_y   (.I0(load_commit_raw), .O(y_we_load));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_fr  (.I0(load_commit_raw), .O(fr_we_load));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_rt  (.I0(load_commit_raw), .O(root_we_load));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_rtw (.I0(load_commit_raw), .O(root_we_load_we));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_rtl (.I0(load_commit_raw), .O(root_we_load_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_rth (.I0(load_commit_raw), .O(root_we_load_hi));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_rem (.I0(load_commit_raw), .O(rem_we_load));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_nlo (.I0(load_commit_raw), .O(n_we_load_lo));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lcom_nhi (.I0(load_commit_raw), .O(n_we_load_hi));
@@ -750,7 +752,9 @@ module atg_su_xu #(
 	assign cordic_load_commit  = load_commit_raw;
 	assign y_we_load           = load_commit_raw;
 	assign fr_we_load          = load_commit_raw;
-	assign root_we_load        = load_commit_raw;
+	assign root_we_load_we     = load_commit_raw;
+	assign root_we_load_lo     = load_commit_raw;
+	assign root_we_load_hi     = load_commit_raw;
 	assign rem_we_load         = load_commit_raw;
 	assign n_we_load_lo        = load_commit_raw;
 	assign n_we_load_hi        = load_commit_raw;
@@ -1166,7 +1170,7 @@ module atg_su_xu #(
 
 	/* Sqrt/div root */
 	wire root_we_step = step_end_b1 && ((rop_we == ATG_XU_RCP[2:0]) || (((rop_we == ATG_XU_RSQ[2:0]) || (rop_we == ATG_XU_FSQRT[2:0])) && !ph_root));
-	wire root_we_raw = root_we_load || root_we_step;
+	wire root_we_raw = root_we_load_we || root_we_step;
 
 	wire root_we_lo, root_we_hi;
 `ifdef SYNTH_KINTEX7
@@ -1193,7 +1197,9 @@ module atg_su_xu #(
 	assign dtr34_n      = dtr_r[34];
 `endif
 
-	wire [29:0] root_next = root_we_load ? 30'd0 : {root[28:0], (rop_step == ATG_XU_RCP[2:0]) ? !dtr34_root : !strl34_root};
+	wire [14:0] root_next_lo = root_we_load_lo ? 15'd0 : {root[13:0], (rop_step == ATG_XU_RCP[2:0]) ? !dtr34_root : !strl34_root};
+	wire [14:0] root_next_hi = root_we_load_hi ? 15'd0 : root[28:14];
+	wire [29:0] root_next = {root_next_hi, root_next_lo};
 	reg [14:0] root_lo, root_hi;
 	always @(posedge clk) begin
 		if (rst_p) begin
@@ -1271,8 +1277,22 @@ module atg_su_xu #(
 	/* Radicand n */
 	wire n_we_step = step_end_b1 && ((rop_we == ATG_XU_RSQ[2:0]) || (rop_we == ATG_XU_FSQRT[2:0]));
 	wire n_we_last = step_last && (rop_we == ATG_XU_RSQ[2:0]) && !ph_n_s0;
-	wire n_we_raw_lo = n_we_load_lo || n_we_step || n_we_last;
-	wire n_we_raw_hi = n_we_load_hi || n_we_step || n_we_last;
+	wire n_we_last_we, n_we_last_lo0, n_we_last_lo1, n_we_last_hi0, n_we_last_hi1;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nw_we  (.I0(n_we_last), .O(n_we_last_we));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nw_lo0 (.I0(n_we_last), .O(n_we_last_lo0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nw_lo1 (.I0(n_we_last), .O(n_we_last_lo1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nw_hi0 (.I0(n_we_last), .O(n_we_last_hi0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_nw_hi1 (.I0(n_we_last), .O(n_we_last_hi1));
+`else
+	assign n_we_last_we  = n_we_last;
+	assign n_we_last_lo0 = n_we_last;
+	assign n_we_last_lo1 = n_we_last;
+	assign n_we_last_hi0 = n_we_last;
+	assign n_we_last_hi1 = n_we_last;
+`endif
+	wire n_we_raw_lo = n_we_load_lo || n_we_step || n_we_last_we;
+	wire n_we_raw_hi = n_we_load_hi || n_we_step || n_we_last_we;
 
 	wire n_we_s0, n_we_s1, n_we_s2, n_we_s3;
 `ifdef SYNTH_KINTEX7
@@ -1308,12 +1328,12 @@ module atg_su_xu #(
 	assign n_we_load_hi1 = n_we_load_hi;
 `endif
 	wire [29:0] n_next_lo = {
-		n_we_load_lo1 ? n_load_val[29:15] : n_we_last ? 15'd0 : n_step_val[29:15],
-		n_we_load_lo0 ? n_load_val[14:0]  : n_we_last ? 15'd0 : n_step_val[14:0]
+		n_we_load_lo1 ? n_load_val[29:15] : n_we_last_lo1 ? 15'd0 : n_step_val[29:15],
+		n_we_load_lo0 ? n_load_val[14:0]  : n_we_last_lo0 ? 15'd0 : n_step_val[14:0]
 	};
 	wire [29:0] n_next_hi = {
-		n_we_load_hi1 ? n_load_val[59:45] : n_we_last ? n[59:45] : n_step_val[59:45],
-		n_we_load_hi0 ? n_load_val[44:30] : n_we_last ? n[44:30] : n_step_val[44:30]
+		n_we_load_hi1 ? n_load_val[59:45] : n_we_last_hi1 ? n[59:45] : n_step_val[59:45],
+		n_we_load_hi0 ? n_load_val[44:30] : n_we_last_hi0 ? n[44:30] : n_step_val[44:30]
 	};
 	wire [59:0] n_next = {n_next_hi, n_next_lo};
 

@@ -40,46 +40,33 @@ module am_shift #(
 	generate
 	if (DIR != 2) begin : g_rsh_gen
 		wire fill = ((DIR == 1) ? arith : (!left && arith)) ? a[W - 1] : 1'b0;
-		if (W <= 8) begin : g_rsh_direct
+		if (W <= 16) begin : g_rsh_direct
 			wire [W-1:0] log_rsh = a >> amt;
 			wire [W-1:0] mask = ~({W{1'b1}} >> amt);
 			assign rsh = fill ? (log_rsh | mask) : log_rsh;
 		end else begin : g_rsh_sliced
-			for (g_chunk = 0; g_chunk < (W + 7) / 8; g_chunk = g_chunk + 1) begin : g_sl
-				localparam CHK_W = ((g_chunk + 1) * 8 <= W) ? 8 : (W - g_chunk * 8);
-				localparam NIB_W = (CHK_W <= 4) ? CHK_W : 4;
-				wire [SW-1:0] amt_b_lo, amt_b_hi;
+			for (g_chunk = 0; g_chunk < (W + 15) / 16; g_chunk = g_chunk + 1) begin : g_sl
+				localparam CHK_W = ((g_chunk + 1) * 16 <= W) ? 16 : (W - g_chunk * 16);
+				wire [SW-1:0] amt_b;
 				genvar gb;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_amt_buf
 `ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_lo (.I0(amt[gb]), .O(amt_b_lo[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_hi (.I0(amt[gb]), .O(amt_b_hi[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt (.I0(amt[gb]), .O(amt_b[gb]));
 `else
-					assign amt_b_lo[gb] = amt[gb];
-					assign amt_b_hi[gb] = amt[gb];
+					assign amt_b[gb] = amt[gb];
 `endif
 				end
-				wire fill_chunk_lo, fill_chunk_hi;
+				wire fill_chunk;
 `ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_lo (.I0(fill), .O(fill_chunk_lo));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_hi (.I0(fill), .O(fill_chunk_hi));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill (.I0(fill), .O(fill_chunk));
 `else
-				assign fill_chunk_lo = fill;
-				assign fill_chunk_hi = fill;
+				assign fill_chunk = fill;
 `endif
-				wire [W-1:0] log_rsh_lo = a >> amt_b_lo;
-				wire [W-1:0] mask_lo = ~({W{1'b1}} >> amt_b_lo);
-				assign rsh[g_chunk * 8 +: NIB_W] = fill_chunk_lo ?
-					(log_rsh_lo[g_chunk * 8 +: NIB_W] | mask_lo[g_chunk * 8 +: NIB_W]) :
-					log_rsh_lo[g_chunk * 8 +: NIB_W];
-
-				if (CHK_W > 4) begin : g_hi_nib
-					wire [W-1:0] log_rsh_hi = a >> amt_b_hi;
-					wire [W-1:0] mask_hi = ~({W{1'b1}} >> amt_b_hi);
-					assign rsh[g_chunk * 8 + 4 +: (CHK_W - 4)] = fill_chunk_hi ?
-						(log_rsh_hi[g_chunk * 8 + 4 +: (CHK_W - 4)] | mask_hi[g_chunk * 8 + 4 +: (CHK_W - 4)]) :
-						log_rsh_hi[g_chunk * 8 + 4 +: (CHK_W - 4)];
-				end
+				wire [W-1:0] log_rsh = a >> amt_b;
+				wire [W-1:0] mask = ~({W{1'b1}} >> amt_b);
+				assign rsh[g_chunk * 16 +: CHK_W] = fill_chunk ?
+					(log_rsh[g_chunk * 16 +: CHK_W] | mask[g_chunk * 16 +: CHK_W]) :
+					log_rsh[g_chunk * 16 +: CHK_W];
 			end
 		end
 	end else begin : g_rsh_stub
@@ -89,29 +76,22 @@ module am_shift #(
 
 	generate
 	if (DIR != 1) begin : g_lsh_gen
-		if (W <= 8) begin : g_lsh_direct
+		if (W <= 16) begin : g_lsh_direct
 			assign lsh = a << amt;
 		end else begin : g_lsh_sliced
-			for (g_chunk = 0; g_chunk < (W + 7) / 8; g_chunk = g_chunk + 1) begin : g_sl
-				localparam CHK_W = ((g_chunk + 1) * 8 <= W) ? 8 : (W - g_chunk * 8);
-				localparam NIB_W = (CHK_W <= 4) ? CHK_W : 4;
-				wire [SW-1:0] amt_b_lo, amt_b_hi;
+			for (g_chunk = 0; g_chunk < (W + 15) / 16; g_chunk = g_chunk + 1) begin : g_sl
+				localparam CHK_W = ((g_chunk + 1) * 16 <= W) ? 16 : (W - g_chunk * 16);
+				wire [SW-1:0] amt_b;
 				genvar gb;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_amt_buf
 `ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_lo (.I0(amt[gb]), .O(amt_b_lo[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_hi (.I0(amt[gb]), .O(amt_b_hi[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt (.I0(amt[gb]), .O(amt_b[gb]));
 `else
-					assign amt_b_lo[gb] = amt[gb];
-					assign amt_b_hi[gb] = amt[gb];
+					assign amt_b[gb] = amt[gb];
 `endif
 				end
-				wire [W-1:0] lshifted_lo = a << amt_b_lo;
-				wire [W-1:0] lshifted_hi = a << amt_b_hi;
-				assign lsh[g_chunk * 8 +: NIB_W] = lshifted_lo[g_chunk * 8 +: NIB_W];
-				if (CHK_W > 4) begin : g_hi_nib
-					assign lsh[g_chunk * 8 + 4 +: (CHK_W - 4)] = lshifted_hi[g_chunk * 8 + 4 +: (CHK_W - 4)];
-				end
+				wire [W-1:0] lshifted = a << amt_b;
+				assign lsh[g_chunk * 16 +: CHK_W] = lshifted[g_chunk * 16 +: CHK_W];
 			end
 		end
 	end else begin : g_lsh_stub
@@ -125,19 +105,19 @@ module am_shift #(
 	end else if (DIR == 2) begin : g_out_l
 		assign y = lsh;
 	end else begin : g_out_dyn
-		if (W <= 8) begin : g_omux_direct
+		if (W <= 16) begin : g_omux_direct
 			assign y = left ? lsh : rsh;
 		end else begin : g_omux_sliced
 			genvar g_om;
-			for (g_om = 0; g_om < (W + 7) / 8; g_om = g_om + 1) begin : g_sl
-				localparam CHK_W = ((g_om + 1) * 8 <= W) ? 8 : (W - g_om * 8);
+			for (g_om = 0; g_om < (W + 15) / 16; g_om = g_om + 1) begin : g_sl
+				localparam CHK_W = ((g_om + 1) * 16 <= W) ? 16 : (W - g_om * 16);
 				wire left_b;
 `ifdef SYNTH_KINTEX7
 				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bl (.I0(left), .O(left_b));
 `else
 				assign left_b = left;
 `endif
-				assign y[g_om * 8 +: CHK_W] = left_b ? lsh[g_om * 8 +: CHK_W] : rsh[g_om * 8 +: CHK_W];
+				assign y[g_om * 16 +: CHK_W] = left_b ? lsh[g_om * 16 +: CHK_W] : rsh[g_om * 16 +: CHK_W];
 			end
 		end
 	end

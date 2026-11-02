@@ -387,24 +387,46 @@ module atg_su_pk_half #(
 		/* =====================================================================
 		 * Stage 1 (EX1): Latch inputs and dedicated multiplier operands (0 Pre-DSP LUTs)
 		 * ===================================================================== */
-		wire s0_is_int = o == ATG_PK_IADD2[3:0] || o == ATG_PK_ISUB2[3:0] || o == ATG_PK_IMUL2[3:0];
-		reg [15:0] s0_fy, s0_fz;
+		wire [3:0] o_mux_y, o_mux_z, o_is_int, o_pipe;
+		genvar go;
+		for (go = 0; go < 4; go = go + 1) begin : g_o_buf
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_y (.I0(o[go]), .O(o_mux_y[go]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_z (.I0(o[go]), .O(o_mux_z[go]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_i (.I0(o[go]), .O(o_is_int[go]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bo_p (.I0(o[go]), .O(o_pipe[go]));
+`else
+			assign o_mux_y[go]  = o[go];
+			assign o_mux_z[go]  = o[go];
+			assign o_is_int[go] = o[go];
+			assign o_pipe[go]   = o[go];
+`endif
+		end
+
+		wire s0_is_int = o_is_int == ATG_PK_IADD2[3:0] || o_is_int == ATG_PK_ISUB2[3:0] || o_is_int == ATG_PK_IMUL2[3:0];
+		reg [15:0] s0_fy;
 		reg        s0_fnoc;
 		always @(*) begin
 			s0_fy = 16'h3C00;
-			s0_fz = hb;
 			s0_fnoc = 1'b0;
-			case (o)
-			ATG_PK_FSUB2[3:0]: s0_fz = {!hb[15], hb[14:0]};
+			case (o_mux_y)
 			ATG_PK_FMUL2[3:0]: begin
 				s0_fy = hb;
-				s0_fz = 16'd0;
 				s0_fnoc = 1'b1;
 			end
 			ATG_PK_FFMA2[3:0]: begin
 				s0_fy = hb;
-				s0_fz = hc;
 			end
+			default: ;
+			endcase
+		end
+		reg [15:0] s0_fz;
+		always @(*) begin
+			s0_fz = hb;
+			case (o_mux_z)
+			ATG_PK_FSUB2[3:0]: s0_fz = {!hb[15], hb[14:0]};
+			ATG_PK_FMUL2[3:0]: s0_fz = 16'd0;
+			ATG_PK_FFMA2[3:0]: s0_fz = hc;
 			default: ;
 			endcase
 		end
@@ -451,7 +473,7 @@ module atg_su_pk_half #(
 				s1_valid   <= valid_in;
 				s1_ovr_en  <= ovr_en;
 				s1_ovr_val <= ovr_val;
-				s1_o       <= o;
+				s1_o       <= o_pipe;
 				s1_ha      <= ha;
 				s1_hb      <= hb;
 				s1_hc      <= hc;
@@ -709,10 +731,10 @@ module atg_su_pk_half #(
 		(* shreg_extract = "no" *) reg        s3_valid;
 		(* shreg_extract = "no" *) reg        s3_ovr_en;
 		(* shreg_extract = "no" *) reg [15:0] s3_ovr_val;
-		(* shreg_extract = "no" *) reg [3:0]  s3_o_pipe, s3_o_mux;
+		(* dont_touch = "true" *) reg [3:0]  s3_o_pipe, s3_o_mux;
 		(* shreg_extract = "no" *) reg [2:0]  s3_r;
 		(* shreg_extract = "no" *) reg        s3_sat;
-		(* shreg_extract = "no" *) reg [10:0] s3_mc_sh, s3_mc_cw;
+		(* dont_touch = "true" *) reg [10:0] s3_mc_sh, s3_mc_cw;
 		(* shreg_extract = "no" *) reg        s3_sp, s3_sc, s3_rdn, s3_zc;
 		(* shreg_extract = "no" *) reg        s3_spec_hit;
 		(* shreg_extract = "no" *) reg [15:0] s3_spec_res;
@@ -781,7 +803,7 @@ module atg_su_pk_half #(
 		am_shift #(.W(47), .SW(6), .DIR(2)) u_s3_al (
 			.a({36'd0, s3_mc_sh}), .amt(s3_dp37[5:0]), .left(1'b1), .arith(1'b0), .y(s3_zal)
 		);
-		wire [36:0] s3_cw = s3_zc ? 37'd0 : s3_big ? {1'b0, s3_mc_cw, 25'd0} :
+		wire [36:0] s3_cw = s3_big ? {1'b0, s3_mc_cw, 25'd0} :
 			s3_near ? {s3_zal[46:11], s3_zal[10] | (|s3_zal[9:0])} : 37'd1;
 		wire [6:0]  s3_eb = (!s3_zc && s3_big) ? s3_eb_c : s3_eb_t;
 
@@ -888,26 +910,35 @@ module atg_su_pk_half #(
 `endif
 
 		wire s4_pw_sel = !s4_zc_pw && s4_big_pw;
-		wire s4_pw_sel_0, s4_pw_sel_1;
+		wire s4_pw_sel_pc_0, s4_pw_sel_pc_1;
+		wire s4_pw_sel_cp_0, s4_pw_sel_cp_1;
 `ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_pw0 (.I0(s4_pw_sel), .O(s4_pw_sel_0));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_pw1 (.I0(s4_pw_sel), .O(s4_pw_sel_1));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_pw_pc0 (.I0(s4_pw_sel), .O(s4_pw_sel_pc_0));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_pw_pc1 (.I0(s4_pw_sel), .O(s4_pw_sel_pc_1));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_pw_cp0 (.I0(s4_pw_sel), .O(s4_pw_sel_cp_0));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_pw_cp1 (.I0(s4_pw_sel), .O(s4_pw_sel_cp_1));
 `else
-		assign s4_pw_sel_0 = s4_pw_sel;
-		assign s4_pw_sel_1 = s4_pw_sel;
+		assign s4_pw_sel_pc_0 = s4_pw_sel;
+		assign s4_pw_sel_pc_1 = s4_pw_sel;
+		assign s4_pw_sel_cp_0 = s4_pw_sel;
+		assign s4_pw_sel_cp_1 = s4_pw_sel;
 `endif
 
-		wire [21:0] s4_prod_m = {s4_pw_sel_1 ? 11'd0 : s4_prod[21:11], s4_pw_sel_0 ? 11'd0 : s4_prod[10:0]};
-		wire [36:0] s4_pw = {13'd0, s4_prod_m, 1'b0, s4_pw_sel_0};
+		wire [21:0] s4_prod_m_pc = {s4_pw_sel_pc_1 ? 11'd0 : s4_prod[21:11], s4_pw_sel_pc_0 ? 11'd0 : s4_prod[10:0]};
+		wire [36:0] s4_pw_pc = {13'd0, s4_prod_m_pc, 1'b0, s4_pw_sel_pc_0};
+
+		wire [21:0] s4_prod_m_cp = {s4_pw_sel_cp_1 ? 11'd0 : s4_prod[21:11], s4_pw_sel_cp_0 ? 11'd0 : s4_prod[10:0]};
+		wire [36:0] s4_pw_cp = {13'd0, s4_prod_m_cp, 1'b0, s4_pw_sel_cp_0};
+
 		wire [36:0] s4_sum_pc, s4_sum_cp;
 		wire s4_co_pc;
 		wire s4_bo_cp_unused;
 
 		am_addsub #(.W(37)) u_s4_sum_pc (
-			.a(s4_pw), .b(s4_cw), .sub(s4_eff_sub), .s(s4_sum_pc), .co(s4_co_pc)
+			.a(s4_pw_pc), .b(s4_cw), .sub(s4_eff_sub), .s(s4_sum_pc), .co(s4_co_pc)
 		);
 		am_sub #(.W(37)) u_s4_sum_cp (
-			.a(s4_cw), .b(s4_pw), .bi(1'b0), .d(s4_sum_cp), .bo(s4_bo_cp_unused)
+			.a(s4_cw), .b(s4_pw_cp), .bi(1'b0), .d(s4_sum_cp), .bo(s4_bo_cp_unused)
 		);
 
 		wire s4_swap = s4_eff_sub && !s4_co_pc;
