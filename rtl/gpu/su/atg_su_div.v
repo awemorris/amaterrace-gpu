@@ -198,13 +198,13 @@ module atg_su_div #(
 			lb_cur_hi <= 16'd0;
 		end else begin
 			if (cur_load_alo)
-				la_cur_lo <= idle_sel_alo ? x_a[first_a_lo*32 +: 16] : ra[after_a_lo*32 +: 16];
+				la_cur_lo <= idle_sel_alo ? x_a[{first_a_lo, 5'd0} +: 16] : ra[{after_a_lo, 5'd0} +: 16];
 			if (cur_load_ahi)
-				la_cur_hi <= idle_sel_ahi ? x_a[first_a_hi*32 + 16 +: 16] : ra[after_a_hi*32 + 16 +: 16];
+				la_cur_hi <= idle_sel_ahi ? x_a[{first_a_hi, 5'd16} +: 16] : ra[{after_a_hi, 5'd16} +: 16];
 			if (cur_load_blo)
-				lb_cur_lo <= idle_sel_blo ? x_b[first_b_lo*32 +: 16] : rb[after_b_lo*32 +: 16];
+				lb_cur_lo <= idle_sel_blo ? x_b[{first_b_lo, 5'd0} +: 16] : rb[{after_b_lo, 5'd0} +: 16];
 			if (cur_load_bhi)
-				lb_cur_hi <= idle_sel_bhi ? x_b[first_b_hi*32 + 16 +: 16] : rb[after_b_hi*32 + 16 +: 16];
+				lb_cur_hi <= idle_sel_bhi ? x_b[{first_b_hi, 5'd16} +: 16] : rb[{after_b_hi, 5'd16} +: 16];
 		end
 	end
 	assign la_cur_r = {la_cur_hi, la_cur_lo};
