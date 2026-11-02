@@ -556,8 +556,17 @@ module atg_su_exp #(
 				assign c_wa_3[gbw] = c_wa_raw[gbw];
 `endif
 			end
-			wire [RW+2:0] dcrow_01 = b_dcr;
-			wire [RW+2:0] dcrow_23 = b_dcr;
+			wire [RW+2:0] dcrow_01, dcrow_23;
+`ifdef SYNTH_KINTEX7
+			genvar gdc;
+			for (gdc = 0; gdc <= RW+2; gdc = gdc + 1) begin : g_buf_dc
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bdc01 (.I0(b_dcr[gdc]), .O(dcrow_01[gdc]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bdc23 (.I0(b_dcr[gdc]), .O(dcrow_23[gdc]));
+			end
+`else
+			assign dcrow_01 = b_dcr;
+			assign dcrow_23 = b_dcr;
+`endif
 			wire we_0, we_1, we_2, we_3;
 `ifdef SYNTH_KINTEX7
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_we0 (.I0(b_we_0), .O(we_0));
@@ -622,9 +631,19 @@ module atg_su_exp #(
 				assign z_wa_mz[grw] = z_wa_raw[grw];
 `endif
 			end
-			wire [RW-1:0] drow_s01 = b_dr;
-			wire [RW-1:0] drow_s23 = b_dr;
-			wire [RW-1:0] drow_m4z = b_dr;
+			wire [RW-1:0] drow_s01, drow_s23, drow_m4z;
+`ifdef SYNTH_KINTEX7
+			genvar gdr;
+			for (gdr = 0; gdr < RW; gdr = gdr + 1) begin : g_buf_dr
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bdr01 (.I0(b_dr[gdr]), .O(drow_s01[gdr]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bdr23 (.I0(b_dr[gdr]), .O(drow_s23[gdr]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bdrmz (.I0(b_dr[gdr]), .O(drow_m4z[gdr]));
+			end
+`else
+			assign drow_s01 = b_dr;
+			assign drow_s23 = b_dr;
+			assign drow_m4z = b_dr;
+`endif
 			wire we_s0, we_s1, we_s2, we_s3, we_m4, we_mz;
 `ifdef SYNTH_KINTEX7
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_wes0 (.I0(b_we_s0), .O(we_s0));

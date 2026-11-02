@@ -245,37 +245,11 @@ module atg_su_fpu_core (
 	};
 	wire [65:0] mo_s0 = {mo_b_s0, mo_a_s0};
 
-	wire [31:0] nega_s0;
-	wire carry_unused0_neg;
-	am_sub #(.W(32)) u_neg0 (.a(32'd0), .b(a), .bi(1'b0), .d(nega_s0), .bo(carry_unused0_neg));
-	(* keep = "true", max_fanout = 12 *) wire cv_neg_lo_s0 = (op == OP_FCVTSW) && a[31];
-	(* keep = "true", max_fanout = 12 *) wire cv_neg_hi_s0 = (op == OP_FCVTSW) && a[31];
-	wire [31:0] cv_mag_s0 = {cv_neg_hi_s0 ? nega_s0[31:16] : a[31:16], cv_neg_lo_s0 ? nega_s0[15:0] : a[15:0]};
-	wire is_cv_s0 = (op == OP_FCVTSW) || (op == OP_FCVTSWU);
-
-	wire a_exp_nz_s0 = (a[30:23] != 8'd0);
-	wire [23:0] m_s0 = {a_exp_nz_s0, a[22:0]};
-	(* max_fanout = 16 *) wire [4:0] f5_s0 = f5_150(a[27:23]);
-	(* max_fanout = 16 *) wire [4:0] fm1_s0 = f5_149(a[27:23]);
-	wire [23:0] q0_s0;
-	wire [23:0] smk_s0;
-	am_shift #(.W(24), .SW(5), .DIR(1)) u_q0 (.a(m_s0), .amt(f5_s0), .left(1'b0), .arith(1'b0), .y(q0_s0));
-	am_shift #(.W(24), .SW(5), .DIR(2)) u_smk0 (.a(24'hFFFFFF), .amt(fm1_s0), .left(1'b1), .arith(1'b0), .y(smk_s0));
-	wire f_ge24_s0 = !a[30] && !(&a[29:23]);
-	wire f_gt24_s0 = !a[30] && !(&a[29:24]);
-	wire f_ne0_s0 = (a[30:23] != 8'd150);
-	wire g_bit_s0 = m_s0[fm1_s0];
-	wire st_raw_s0 = |(m_s0 & ~smk_s0);
-
 	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s1_a, s1_b, s1_c;
 	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [4:0] s1_op;
 	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [2:0] s1_rm;
 	(* shreg_extract = "no", max_fanout = 12 *) reg s1_sat;
 	(* shreg_extract = "no", keep = "true", max_fanout = 12 *) reg [65:0] s1_mo;
-	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s1_cv_mag;
-	(* shreg_extract = "no", max_fanout = 12 *) reg s1_is_cv;
-	(* shreg_extract = "no", max_fanout = 12 *) reg [23:0] s1_q;
-	(* shreg_extract = "no", max_fanout = 12 *) reg s1_g_bit, s1_st_raw, s1_f_ge24, s1_f_gt24, s1_f_ne0, s1_m_nz;
 
 	always @(posedge clk) begin
 		if (rst_p) begin
@@ -286,15 +260,6 @@ module atg_su_fpu_core (
 			s1_rm     <= 3'd0;
 			s1_sat    <= 1'b0;
 			s1_mo     <= 66'd0;
-			s1_cv_mag <= 32'd0;
-			s1_is_cv  <= 1'b0;
-			s1_q      <= 24'd0;
-			s1_g_bit  <= 1'b0;
-			s1_st_raw <= 1'b0;
-			s1_f_ge24 <= 1'b0;
-			s1_f_gt24 <= 1'b0;
-			s1_f_ne0  <= 1'b0;
-			s1_m_nz   <= 1'b0;
 		end else if (en) begin
 			s1_a      <= a;
 			s1_b      <= b;
@@ -303,15 +268,6 @@ module atg_su_fpu_core (
 			s1_rm     <= rm;
 			s1_sat    <= sat;
 			s1_mo     <= mo_s0;
-			s1_cv_mag <= cv_mag_s0;
-			s1_is_cv  <= is_cv_s0;
-			s1_q      <= q0_s0;
-			s1_g_bit  <= g_bit_s0;
-			s1_st_raw <= st_raw_s0;
-			s1_f_ge24 <= f_ge24_s0;
-			s1_f_gt24 <= f_gt24_s0;
-			s1_f_ne0  <= f_ne0_s0;
-			s1_m_nz   <= a_exp_nz_s0;
 		end
 	end
 
@@ -334,9 +290,30 @@ module atg_su_fpu_core (
 	end
 
 	/* --- Stage 1 -> Stage 2 --- */
-	wire [23:0] s1_q_eff = s1_f_ge24 ? 24'd0 : s1_q;
-	wire s1_g = s1_f_gt24 ? 1'b0 : s1_g_bit;
-	wire s1_st = s1_f_gt24 ? s1_m_nz : (s1_f_ne0 && s1_st_raw);
+	wire [31:0] nega_s1;
+	wire carry_unused1_neg;
+	am_sub #(.W(32)) u_neg1 (.a(32'd0), .b(s1_a), .bi(1'b0), .d(nega_s1), .bo(carry_unused1_neg));
+	(* keep = "true", max_fanout = 12 *) wire cv_neg_lo_s1 = (s1_op == OP_FCVTSW) && s1_a[31];
+	(* keep = "true", max_fanout = 12 *) wire cv_neg_hi_s1 = (s1_op == OP_FCVTSW) && s1_a[31];
+	wire [31:0] cv_mag_s1 = {cv_neg_hi_s1 ? nega_s1[31:16] : s1_a[31:16], cv_neg_lo_s1 ? nega_s1[15:0] : s1_a[15:0]};
+
+	wire a_exp_nz_s1 = (s1_a[30:23] != 8'd0);
+	wire [23:0] m_s1 = {a_exp_nz_s1, s1_a[22:0]};
+	(* max_fanout = 16 *) wire [4:0] f5_s1 = f5_150(s1_a[27:23]);
+	(* max_fanout = 16 *) wire [4:0] fm1_s1 = f5_149(s1_a[27:23]);
+	wire [23:0] q0_s1;
+	wire [23:0] smk_s1;
+	am_shift #(.W(24), .SW(5), .DIR(1)) u_q1 (.a(m_s1), .amt(f5_s1), .left(1'b0), .arith(1'b0), .y(q0_s1));
+	am_shift #(.W(24), .SW(5), .DIR(2)) u_smk1 (.a(24'hFFFFFF), .amt(fm1_s1), .left(1'b1), .arith(1'b0), .y(smk_s1));
+	wire f_ge24_s1 = !s1_a[30] && !(&s1_a[29:23]);
+	wire f_gt24_s1 = !s1_a[30] && !(&s1_a[29:24]);
+	wire f_ne0_s1  = (s1_a[30:23] != 8'd150);
+	wire g_bit_s1  = m_s1[fm1_s1];
+	wire st_raw_s1 = |(m_s1 & ~smk_s1);
+
+	wire [23:0] s1_q_eff = f_ge24_s1 ? 24'd0 : q0_s1;
+	wire s1_g = f_gt24_s1 ? 1'b0 : g_bit_s1;
+	wire s1_st = f_gt24_s1 ? a_exp_nz_s1 : (f_ne0_s1 && st_raw_s1);
 	wire [2:0] s1_rint_rm = (s1_op == OP_FRACT) ? 3'd2 : s1_rm;
 	reg s1_up;
 	always @(*) begin
@@ -349,6 +326,7 @@ module atg_su_fpu_core (
 		endcase
 	end
 
+	wire is_cv_s1 = (s1_op == OP_FCVTSW) || (s1_op == OP_FCVTSWU);
 	wire [24:0] s1_q_p1;
 	wire carry_unused1_qp1;
 	am_add #(.W(25)) u_q1_p1 (.a({1'b0, s1_q_eff}), .b(25'd1), .ci(1'b0), .s(s1_q_p1), .co(carry_unused1_qp1));
@@ -358,23 +336,23 @@ module atg_su_fpu_core (
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1up_n_hi  (.I0(s1_up), .O(s1_up_n_hi));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1up_in_lo (.I0(s1_up), .O(s1_up_in_lo));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1up_in_hi (.I0(s1_up), .O(s1_up_in_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1cv_lo    (.I0(s1_is_cv), .O(s1_is_cv_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1cv_hi    (.I0(s1_is_cv), .O(s1_is_cv_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1cv_lo    (.I0(is_cv_s1), .O(s1_is_cv_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1cv_hi    (.I0(is_cv_s1), .O(s1_is_cv_hi));
 `else
 	assign s1_up_n_lo  = s1_up;
 	assign s1_up_n_hi  = s1_up;
 	assign s1_up_in_lo = s1_up;
 	assign s1_up_in_hi = s1_up;
-	assign s1_is_cv_lo = s1_is_cv;
-	assign s1_is_cv_hi = s1_is_cv;
+	assign s1_is_cv_lo = is_cv_s1;
+	assign s1_is_cv_hi = is_cv_s1;
 `endif
 	wire [24:0] s1_n = {
 		s1_up_n_hi ? s1_q_p1[24:12] : {1'b0, s1_q_eff[23:12]},
 		s1_up_n_lo ? s1_q_p1[11:0]  : s1_q_eff[11:0]
 	};
 	wire [31:0] s1_in_n = {
-		s1_is_cv_hi ? s1_cv_mag[31:16] : (s1_up_in_hi ? {7'd0, s1_q_p1[24:16]} : {8'd0, s1_q_eff[23:16]}),
-		s1_is_cv_lo ? s1_cv_mag[15:0]  : (s1_up_in_lo ? s1_q_p1[15:0]          : s1_q_eff[15:0])
+		s1_is_cv_hi ? cv_mag_s1[31:16] : (s1_up_in_hi ? {7'd0, s1_q_p1[24:16]} : {8'd0, s1_q_eff[23:16]}),
+		s1_is_cv_lo ? cv_mag_s1[15:0]  : (s1_up_in_lo ? s1_q_p1[15:0]          : s1_q_eff[15:0])
 	};
 
 	(* keep = "true", max_fanout = 12 *) wire [4:0] s1_op_lo = s1_op;
@@ -1909,7 +1887,7 @@ module atg_su_fpu_core (
 		(s6_mc_ovr_l1 ? (s6_ovr_hit ? s6_ovr_l2[22:0] : 23'h7FFFFF) : s6_m_rnd);
 	assign res = {res_hdr, res_man};
 
-	wire unused_core_ok = &{1'b0, carry_unused0_neg, carry_unused1_qp1, s1_fma_carry_unused,
+	wire unused_core_ok = &{1'b0, carry_unused1_neg, carry_unused1_qp1, s1_fma_carry_unused,
 		unused_ab_d2, unused_ba_d2, s2_fma_sub_carry_unused,
 		carry_unused3_mr, carry_unused3_f2i,
 		carry_unused_c_p, carry_unused4_eb,

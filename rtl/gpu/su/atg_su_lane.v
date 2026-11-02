@@ -264,11 +264,24 @@ module atg_su_lane #(
 	 */
 	wire [NPHYS-1:0] c_ok;
 	wire [NPHYS*5-1:0] c_src;
+	wire [GRP_W-1:0] x_grp_src, x_grp_stg;
+`ifdef SYNTH_KINTEX7
+	genvar gxg;
+	generate
+		for (gxg = 0; gxg < GRP_W; gxg = gxg + 1) begin : g_xgrp_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bxgrp_src (.I0(x_grp[gxg]), .O(x_grp_src[gxg]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bxgrp_stg (.I0(x_grp[gxg]), .O(x_grp_stg[gxg]));
+		end
+	endgenerate
+`else
+	assign x_grp_src = x_grp;
+	assign x_grp_stg = x_grp;
+`endif
 	genvar gl;
 	generate
 		for (gl = 0; gl < NPHYS; gl = gl + 1) begin : g_src
 			/* verilator lint_off WIDTHTRUNC */
-			wire [4:0] ln = ({{(32-GRP_W){1'b0}}, x_grp} << $clog2(NPHYS)) | gl;
+			wire [4:0] ln = ({{(32-GRP_W){1'b0}}, x_grp_src} << $clog2(NPHYS)) | gl;
 			/* verilator lint_on WIDTHTRUNC */
 			wire [31:0] bv = x_b[gl*32 +: 32];
 			wire [2:0] sub_ctl_l = (gl / 2 < 16) ? sub_ctl_p[(gl/2)*3 +: 3] : 3'd0;
@@ -349,26 +362,26 @@ module atg_su_lane #(
 	generate
 		for (gzl = 0; gzl < NPHYS; gzl = gzl + 1) begin: g_shfl_lane
 			wire [GRP_W-1:0] e_cnt_lane = (gzl < NPHYS/2) ? e_cnt_g0 : e_cnt_g1;
-			/* verilator lint_off WIDTHTRUNC */
-			/* verilator lint_off WIDTHEXPAND */
-			wire [4:0] el_l_raw = ({{(32-GRP_W){1'b0}}, e_cnt_lane} << $clog2(NPHYS)) | {27'd0, gzl[4:0]};
-			/* verilator lint_on WIDTHEXPAND */
-			/* verilator lint_on WIDTHTRUNC */
-			wire [4:0] el_l_es;
-			wire [4:0] el_l_h0;
-			wire [4:0] el_l_h1;
+			wire [GRP_W-1:0] ec_es, ec_h0, ec_h1;
 `ifdef SYNTH_KINTEX7
-			genvar gel;
-			for (gel = 0; gel < 5; gel = gel + 1) begin : g_el_buf
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bel_es (.I0(el_l_raw[gel]), .O(el_l_es[gel]));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bel_h0 (.I0(el_l_raw[gel]), .O(el_l_h0[gel]));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bel_h1 (.I0(el_l_raw[gel]), .O(el_l_h1[gel]));
+			genvar gec;
+			for (gec = 0; gec < GRP_W; gec = gec + 1) begin : g_ec_lane_buf
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bec_es (.I0(e_cnt_lane[gec]), .O(ec_es[gec]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bec_h0 (.I0(e_cnt_lane[gec]), .O(ec_h0[gec]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bec_h1 (.I0(e_cnt_lane[gec]), .O(ec_h1[gec]));
 			end
 `else
-			assign el_l_es = el_l_raw;
-			assign el_l_h0 = el_l_raw;
-			assign el_l_h1 = el_l_raw;
+			assign ec_es = e_cnt_lane;
+			assign ec_h0 = e_cnt_lane;
+			assign ec_h1 = e_cnt_lane;
 `endif
+			/* verilator lint_off WIDTHTRUNC */
+			/* verilator lint_off WIDTHEXPAND */
+			wire [4:0] el_l_es = ({{(32-GRP_W){1'b0}}, ec_es} << $clog2(NPHYS)) | {27'd0, gzl[4:0]};
+			wire [4:0] el_l_h0 = ({{(32-GRP_W){1'b0}}, ec_h0} << $clog2(NPHYS)) | {27'd0, gzl[4:0]};
+			wire [4:0] el_l_h1 = ({{(32-GRP_W){1'b0}}, ec_h1} << $clog2(NPHYS)) | {27'd0, gzl[4:0]};
+			/* verilator lint_on WIDTHEXPAND */
+			/* verilator lint_on WIDTHTRUNC */
 			reg [4:0] es_l;
 			integer sl_idx;
 			always @(*) begin
@@ -501,7 +514,7 @@ module atg_su_lane #(
 		wire [G-1:0] stage_grp;
 		genvar gg;
 		for (gg = 0; gg < G; gg = gg + 1) begin : g_stg_grp
-			assign stage_grp[gg] = stage && (gg[GRP_W-1:0] == x_grp);
+			assign stage_grp[gg] = stage && (gg[GRP_W-1:0] == x_grp_stg);
 		end
 		for (gp = 0; gp < 32; gp = gp + 1) begin : g_stgw
 			wire stg_cond = (gp / NPHYS < G) ? stage_grp[gp / NPHYS] : 1'b0;

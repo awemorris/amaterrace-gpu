@@ -80,34 +80,46 @@ module am_shift #(
 			for (g_nib = 0; g_nib < NNIB; g_nib = g_nib + 1) begin : g_nib_sl
 				localparam NIB_W = ((g_nib + 1) * 4 <= W) ? 4 : (W - g_nib * 4);
 				localparam BR_IDX = g_nib / 4;
-				wire [SW-1:0] amt_nib_01, amt_nib_23;
-				wire fill_nib_01, fill_nib_23;
+				wire [SW-1:0] amt_b0, amt_b1, amt_b2, amt_b3;
+				wire fill_nib_0, fill_nib_1, fill_nib_2, fill_nib_3;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_nib_amt
 `ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_01 (.I0(amt_br[BR_IDX][gb]), .O(amt_nib_01[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_23 (.I0(amt_br[BR_IDX][gb]), .O(amt_nib_23[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_0 (.I0(amt_br[BR_IDX][gb]), .O(amt_b0[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_1 (.I0(amt_br[BR_IDX][gb]), .O(amt_b1[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_2 (.I0(amt_br[BR_IDX][gb]), .O(amt_b2[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_3 (.I0(amt_br[BR_IDX][gb]), .O(amt_b3[gb]));
 `else
-					assign amt_nib_01[gb] = amt_br[BR_IDX][gb];
-					assign amt_nib_23[gb] = amt_br[BR_IDX][gb];
+					assign amt_b0[gb] = amt_br[BR_IDX][gb];
+					assign amt_b1[gb] = amt_br[BR_IDX][gb];
+					assign amt_b2[gb] = amt_br[BR_IDX][gb];
+					assign amt_b3[gb] = amt_br[BR_IDX][gb];
 `endif
 				end
 `ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_01 (.I0(fill_br[BR_IDX]), .O(fill_nib_01));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_23 (.I0(fill_br[BR_IDX]), .O(fill_nib_23));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_0 (.I0(fill_br[BR_IDX]), .O(fill_nib_0));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_1 (.I0(fill_br[BR_IDX]), .O(fill_nib_1));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_2 (.I0(fill_br[BR_IDX]), .O(fill_nib_2));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_3 (.I0(fill_br[BR_IDX]), .O(fill_nib_3));
 `else
-				assign fill_nib_01 = fill_br[BR_IDX];
-				assign fill_nib_23 = fill_br[BR_IDX];
+				assign fill_nib_0 = fill_br[BR_IDX];
+				assign fill_nib_1 = fill_br[BR_IDX];
+				assign fill_nib_2 = fill_br[BR_IDX];
+				assign fill_nib_3 = fill_br[BR_IDX];
 `endif
-				wire [NNIB*4-1:0] log_rsh_01 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_nib_01)};
-				wire [NNIB*4-1:0] mask_01    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_nib_01))};
-				wire [NNIB*4-1:0] log_rsh_23 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_nib_23)};
-				wire [NNIB*4-1:0] mask_23    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_nib_23))};
+				wire [NNIB*4-1:0] log_rsh_0 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_b0)};
+				wire [NNIB*4-1:0] mask_0    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_b0))};
+				wire [NNIB*4-1:0] log_rsh_1 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_b1)};
+				wire [NNIB*4-1:0] mask_1    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_b1))};
+				wire [NNIB*4-1:0] log_rsh_2 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_b2)};
+				wire [NNIB*4-1:0] mask_2    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_b2))};
+				wire [NNIB*4-1:0] log_rsh_3 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] >> amt_b3)};
+				wire [NNIB*4-1:0] mask_3    = {{(NNIB*4-W){1'b0}}, (~({W{1'b1}} >> amt_b3))};
 
 				wire [3:0] rsh_out;
-				assign rsh_out[0] = fill_nib_01 ? (log_rsh_01[g_nib * 4 + 0] | mask_01[g_nib * 4 + 0]) : log_rsh_01[g_nib * 4 + 0];
-				assign rsh_out[1] = fill_nib_01 ? (log_rsh_01[g_nib * 4 + 1] | mask_01[g_nib * 4 + 1]) : log_rsh_01[g_nib * 4 + 1];
-				assign rsh_out[2] = fill_nib_23 ? (log_rsh_23[g_nib * 4 + 2] | mask_23[g_nib * 4 + 2]) : log_rsh_23[g_nib * 4 + 2];
-				assign rsh_out[3] = fill_nib_23 ? (log_rsh_23[g_nib * 4 + 3] | mask_23[g_nib * 4 + 3]) : log_rsh_23[g_nib * 4 + 3];
+				assign rsh_out[0] = fill_nib_0 ? (log_rsh_0[g_nib * 4 + 0] | mask_0[g_nib * 4 + 0]) : log_rsh_0[g_nib * 4 + 0];
+				assign rsh_out[1] = fill_nib_1 ? (log_rsh_1[g_nib * 4 + 1] | mask_1[g_nib * 4 + 1]) : log_rsh_1[g_nib * 4 + 1];
+				assign rsh_out[2] = fill_nib_2 ? (log_rsh_2[g_nib * 4 + 2] | mask_2[g_nib * 4 + 2]) : log_rsh_2[g_nib * 4 + 2];
+				assign rsh_out[3] = fill_nib_3 ? (log_rsh_3[g_nib * 4 + 3] | mask_3[g_nib * 4 + 3]) : log_rsh_3[g_nib * 4 + 3];
 				assign rsh[g_nib * 4 +: NIB_W] = rsh_out[0 +: NIB_W];
 			end
 		end
@@ -146,23 +158,29 @@ module am_shift #(
 			for (g_nib = 0; g_nib < NNIB; g_nib = g_nib + 1) begin : g_nib_sl
 				localparam NIB_W = ((g_nib + 1) * 4 <= W) ? 4 : (W - g_nib * 4);
 				localparam BR_IDX = g_nib / 4;
-				wire [SW-1:0] amt_nib_01, amt_nib_23;
+				wire [SW-1:0] amt_b0, amt_b1, amt_b2, amt_b3;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_nib_amt
 `ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_01 (.I0(amt_br[BR_IDX][gb]), .O(amt_nib_01[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_23 (.I0(amt_br[BR_IDX][gb]), .O(amt_nib_23[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_0 (.I0(amt_br[BR_IDX][gb]), .O(amt_b0[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_1 (.I0(amt_br[BR_IDX][gb]), .O(amt_b1[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_2 (.I0(amt_br[BR_IDX][gb]), .O(amt_b2[gb]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_3 (.I0(amt_br[BR_IDX][gb]), .O(amt_b3[gb]));
 `else
-					assign amt_nib_01[gb] = amt_br[BR_IDX][gb];
-					assign amt_nib_23[gb] = amt_br[BR_IDX][gb];
+					assign amt_b0[gb] = amt_br[BR_IDX][gb];
+					assign amt_b1[gb] = amt_br[BR_IDX][gb];
+					assign amt_b2[gb] = amt_br[BR_IDX][gb];
+					assign amt_b3[gb] = amt_br[BR_IDX][gb];
 `endif
 				end
-				wire [NNIB*4-1:0] lshifted_01 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_nib_01)};
-				wire [NNIB*4-1:0] lshifted_23 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_nib_23)};
+				wire [NNIB*4-1:0] lshifted_0 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_b0)};
+				wire [NNIB*4-1:0] lshifted_1 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_b1)};
+				wire [NNIB*4-1:0] lshifted_2 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_b2)};
+				wire [NNIB*4-1:0] lshifted_3 = {{(NNIB*4-W){1'b0}}, (a_br[BR_IDX] << amt_b3)};
 				wire [3:0] lsh_out;
-				assign lsh_out[0] = lshifted_01[g_nib * 4 + 0];
-				assign lsh_out[1] = lshifted_01[g_nib * 4 + 1];
-				assign lsh_out[2] = lshifted_23[g_nib * 4 + 2];
-				assign lsh_out[3] = lshifted_23[g_nib * 4 + 3];
+				assign lsh_out[0] = lshifted_0[g_nib * 4 + 0];
+				assign lsh_out[1] = lshifted_1[g_nib * 4 + 1];
+				assign lsh_out[2] = lshifted_2[g_nib * 4 + 2];
+				assign lsh_out[3] = lshifted_3[g_nib * 4 + 3];
 				assign lsh[g_nib * 4 +: NIB_W] = lsh_out[0 +: NIB_W];
 			end
 		end
