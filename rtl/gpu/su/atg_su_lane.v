@@ -88,7 +88,54 @@ module atg_su_lane #(
 	(* shreg_extract = "no" *) reg [DW-1:0]     r0_xa;
 	(* shreg_extract = "no" *) reg [(NPHYS/4)*32-1:0] r0_qa_a, r0_qa_b, r0_qb_a, r0_qb_b;
 
-	integer qi;
+	wire [2:0] sub_ctl, sub_pipe;
+`ifdef SYNTH_KINTEX7
+	genvar gsb;
+	generate
+		for (gsb = 0; gsb < 3; gsb = gsb + 1) begin : g_sub_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_ctl (.I0(sub[gsb]), .O(sub_ctl[gsb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_pip (.I0(sub[gsb]), .O(sub_pipe[gsb]));
+		end
+	endgenerate
+`else
+	assign sub_ctl = sub[2:0];
+	assign sub_pipe = sub[2:0];
+`endif
+
+	genvar gqi;
+	generate
+		for (gqi = 0; gqi < NPHYS / 4; gqi = gqi + 1) begin : g_qa_mux
+			wire sub0_qa_lo, sub0_qa_hi;
+			wire sub0_qb_lo, sub0_qb_hi;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qa_lo (.I0(sub[0]), .O(sub0_qa_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qa_hi (.I0(sub[0]), .O(sub0_qa_hi));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qb_lo (.I0(sub[0]), .O(sub0_qb_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs0_qb_hi (.I0(sub[0]), .O(sub0_qb_hi));
+`else
+			assign sub0_qa_lo = sub[0];
+			assign sub0_qa_hi = sub[0];
+			assign sub0_qb_lo = sub[0];
+			assign sub0_qb_hi = sub[0];
+`endif
+			always @(posedge clk) begin
+				if (rst_p) begin
+					r0_qa_a[gqi*32 +: 32] <= 32'd0;
+					r0_qa_b[gqi*32 +: 32] <= 32'd0;
+					r0_qb_a[gqi*32 +: 32] <= 32'd0;
+					r0_qb_b[gqi*32 +: 32] <= 32'd0;
+				end else begin
+					r0_qa_b[gqi*32 +: 32] <= x_a[(4*gqi)*32 +: 32];
+					r0_qb_a[gqi*32 +: 32] <= x_a[(4*gqi + 3)*32 +: 32];
+					r0_qa_a[gqi*32 +: 16] <= sub0_qa_lo ? x_a[(4*gqi + 2)*32 +: 16] : x_a[(4*gqi + 1)*32 +: 16];
+					r0_qa_a[gqi*32+16 +: 16] <= sub0_qa_hi ? x_a[(4*gqi + 2)*32+16 +: 16] : x_a[(4*gqi + 1)*32+16 +: 16];
+					r0_qb_b[gqi*32 +: 16] <= sub0_qb_lo ? x_a[(4*gqi + 1)*32 +: 16] : x_a[(4*gqi + 2)*32 +: 16];
+					r0_qb_b[gqi*32+16 +: 16] <= sub0_qb_hi ? x_a[(4*gqi + 1)*32+16 +: 16] : x_a[(4*gqi + 2)*32+16 +: 16];
+				end
+			end
+		end
+	endgenerate
+
 	always @(posedge clk) begin
 		if (rst_p) begin
 			r0_valid <= 1'b0;
@@ -98,24 +145,14 @@ module atg_su_lane #(
 			r0_mask  <= {NPHYS{1'b0}};
 			r0_sub   <= 3'd0;
 			r0_xa    <= {DW{1'b0}};
-			r0_qa_a  <= {((NPHYS/4)*32){1'b0}};
-			r0_qa_b  <= {((NPHYS/4)*32){1'b0}};
-			r0_qb_a  <= {((NPHYS/4)*32){1'b0}};
-			r0_qb_b  <= {((NPHYS/4)*32){1'b0}};
 		end else begin
 			r0_valid <= mine;
 			r0_warp  <= x_warp;
 			r0_grp   <= x_grp;
 			r0_rd    <= x_uop[ATG_UOP_RD +: 7];
 			r0_mask  <= x_mask[NPHYS-1:0];
-			r0_sub   <= sub[2:0];
+			r0_sub   <= sub_pipe;
 			r0_xa    <= x_a;
-			for (qi = 0; qi < NPHYS / 4; qi = qi + 1) begin
-				r0_qa_a[qi*32 +: 32] <= sub[0] ? x_a[(4*qi + 2)*32 +: 32] : x_a[(4*qi + 1)*32 +: 32];
-				r0_qa_b[qi*32 +: 32] <= x_a[(4*qi)*32 +: 32];
-				r0_qb_a[qi*32 +: 32] <= x_a[(4*qi + 3)*32 +: 32];
-				r0_qb_b[qi*32 +: 32] <= sub[0] ? x_a[(4*qi + 1)*32 +: 32] : x_a[(4*qi + 2)*32 +: 32];
-			end
 		end
 	end
 
@@ -228,7 +265,7 @@ module atg_su_lane #(
 			wire [31:0] bv = x_b[gl*32 +: 32];
 			wire [5:0] sum;
 			wire co_unused;
-			am_addsub #(.W(6)) u_sum (.a({1'b0, ln}), .b({1'b0, bv[4:0]}), .sub(sub[2:0] == 3'd2),
+			am_addsub #(.W(6)) u_sum (.a({1'b0, ln}), .b({1'b0, bv[4:0]}), .sub(sub_ctl[2:0] == 3'd2),
 				.s(sum), .co(co_unused));
 			(* keep = "true" *) wire nz0 = |bv[9:5];
 			(* keep = "true" *) wire nz1 = |bv[15:10];
@@ -241,7 +278,7 @@ module atg_su_lane #(
 			reg [4:0] src;
 			always @(*) begin
 				ok = ok_hi;
-				case (sub[2:0])
+				case (sub_ctl[2:0])
 				3'd0: src = bv[4:0];
 				3'd2, 3'd3: begin
 					src = sum[4:0];
@@ -270,7 +307,7 @@ module atg_su_lane #(
 	end
 	wire is_ballot = (op == ATG_LANE_BALLOT);
 	wire is_vote   = (op == ATG_LANE_VOTE);
-	wire vote_val  = sub[0] ? (bal == s_ex) : (bal != 32'd0);
+	wire vote_val  = sub_ctl[0] ? (bal == s_ex) : (bal != 32'd0);
 	/* shfl writes the EXEC lanes; vote and ballot every lane. */
 	wire [31:0] e_base = {{(32-GRP_W){1'b0}}, e_cnt} * NPHYS;
 	wire [31:0] ex_g;

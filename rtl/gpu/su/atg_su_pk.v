@@ -79,10 +79,63 @@ module atg_su_pk #(
 	wire is_packh  = (op == ATG_PK_PACKH[3:0]);
 	wire ovr_lo = is_unpack || is_swaph || (!is_packh && (PACKED == 0 || hsel == 2'd2));
 	wire ovr_hi = is_unpack || is_swaph || (!is_packh && (PACKED == 0 || hsel == 2'd1));
+	wire hsel_swap = (hsel == 2'd3);
+
+	wire [3:0] op_q0, op_q1;
+	wire [2:0] rm_q0, rm_q1;
+	wire sat_q0, sat_q1, mine_q0, mine_q1;
+	wire ovr_lo_q0, ovr_lo_q1, ovr_hi_q0, ovr_hi_q1;
+	wire hsel_sw_q0, hsel_sw_q1;
+`ifdef SYNTH_KINTEX7
+	genvar gqb;
+	generate
+		for (gqb = 0; gqb < 4; gqb = gqb + 1) begin : g_q_op
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_op0 (.I0(op[gqb]), .O(op_q0[gqb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_op1 (.I0(op[gqb]), .O(op_q1[gqb]));
+		end
+		for (gqb = 0; gqb < 3; gqb = gqb + 1) begin : g_q_rm
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_rm0 (.I0(rm[gqb]), .O(rm_q0[gqb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_rm1 (.I0(rm[gqb]), .O(rm_q1[gqb]));
+		end
+	endgenerate
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_sat0 (.I0(sat), .O(sat_q0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_sat1 (.I0(sat), .O(sat_q1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_min0 (.I0(mine), .O(mine_q0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_min1 (.I0(mine), .O(mine_q1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_ovl0 (.I0(ovr_lo), .O(ovr_lo_q0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_ovl1 (.I0(ovr_lo), .O(ovr_lo_q1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_ovh0 (.I0(ovr_hi), .O(ovr_hi_q0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_ovh1 (.I0(ovr_hi), .O(ovr_hi_q1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_hsw0 (.I0(hsel_swap), .O(hsel_sw_q0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bq_hsw1 (.I0(hsel_swap), .O(hsel_sw_q1));
+`else
+	assign op_q0 = op;
+	assign op_q1 = op;
+	assign rm_q0 = rm;
+	assign rm_q1 = rm;
+	assign sat_q0 = sat;
+	assign sat_q1 = sat;
+	assign mine_q0 = mine;
+	assign mine_q1 = mine;
+	assign ovr_lo_q0 = ovr_lo;
+	assign ovr_lo_q1 = ovr_lo;
+	assign ovr_hi_q0 = ovr_hi;
+	assign ovr_hi_q1 = ovr_hi;
+	assign hsel_sw_q0 = hsel_swap;
+	assign hsel_sw_q1 = hsel_swap;
+`endif
 
 	genvar l;
 	generate
 	for (l = 0; l < NPHYS; l = l + 1) begin : g_lane
+		wire [3:0] op_lane = (l < 4) ? op_q0 : op_q1;
+		wire [2:0] rm_lane = (l < 4) ? rm_q0 : rm_q1;
+		wire sat_lane      = (l < 4) ? sat_q0 : sat_q1;
+		wire mine_lane     = (l < 4) ? mine_q0 : mine_q1;
+		wire ovr_lo_lane   = (l < 4) ? ovr_lo_q0 : ovr_lo_q1;
+		wire ovr_hi_lane   = (l < 4) ? ovr_hi_q0 : ovr_hi_q1;
+		wire hsel_sw_lane  = (l < 4) ? hsel_sw_q0 : hsel_sw_q1;
+
 `ifdef __ICARUS__
 		wire [31:0] la  = mine ? x_a[l*32 +: 32] : 32'd0;
 		wire [31:0] lb0 = mine ? x_b[l*32 +: 32] : 32'd0;
@@ -92,7 +145,17 @@ module atg_su_pk #(
 		wire [31:0] lb0 = x_b[l*32 +: 32];
 		wire [31:0] lc = x_c[l*32 +: 32];
 `endif
-		wire [31:0] lb = hsel == 2'd3 ? {lb0[15:0], lb0[31:16]} : lb0;
+		wire hsel_sw_lo_l, hsel_sw_hi_l;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_hsw0 (.I0(hsel_sw_lane), .O(hsel_sw_lo_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_hsw1 (.I0(hsel_sw_lane), .O(hsel_sw_hi_l));
+`else
+		assign hsel_sw_lo_l = hsel_sw_lane;
+		assign hsel_sw_hi_l = hsel_sw_lane;
+`endif
+		wire [15:0] lb_lo = hsel_sw_lo_l ? lb0[31:16] : lb0[15:0];
+		wire [15:0] lb_hi = hsel_sw_hi_l ? lb0[15:0]  : lb0[31:16];
+		wire [31:0] lb = {lb_hi, lb_lo};
 		wire sub_l;
 		wire [3:0] op_lo_l, op_hi_l;
 		wire [2:0] rm_lo_l, rm_hi_l;
@@ -102,31 +165,31 @@ module atg_su_pk #(
 `ifdef SYNTH_KINTEX7
 		genvar gob;
 		for (gob = 0; gob < 4; gob = gob + 1) begin : g_op_buf
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bop_lo (.I0(op[gob]), .O(op_lo_l[gob]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bop_hi (.I0(op[gob]), .O(op_hi_l[gob]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bop_lo (.I0(op_lane[gob]), .O(op_lo_l[gob]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bop_hi (.I0(op_lane[gob]), .O(op_hi_l[gob]));
 		end
 		for (gob = 0; gob < 3; gob = gob + 1) begin : g_rm_buf
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_brm_lo (.I0(rm[gob]), .O(rm_lo_l[gob]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_brm_hi (.I0(rm[gob]), .O(rm_hi_l[gob]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_brm_lo (.I0(rm_lane[gob]), .O(rm_lo_l[gob]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_brm_hi (.I0(rm_lane[gob]), .O(rm_hi_l[gob]));
 		end
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsat_lo (.I0(sat), .O(sat_lo_l));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsat_hi (.I0(sat), .O(sat_hi_l));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bmine_lo (.I0(mine), .O(mine_lo_l));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bmine_hi (.I0(mine), .O(mine_hi_l));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bovr_lo (.I0(ovr_lo), .O(ovr_lo_l));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bovr_hi (.I0(ovr_hi), .O(ovr_hi_l));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsub    (.I0(sub),    .O(sub_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsat_lo (.I0(sat_lane), .O(sat_lo_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsat_hi (.I0(sat_lane), .O(sat_hi_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bmine_lo (.I0(mine_lane), .O(mine_lo_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bmine_hi (.I0(mine_lane), .O(mine_hi_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bovr_lo (.I0(ovr_lo_lane), .O(ovr_lo_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bovr_hi (.I0(ovr_hi_lane), .O(ovr_hi_l));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsub    (.I0(sub),          .O(sub_l));
 `else
-		assign op_lo_l = op;
-		assign op_hi_l = op;
-		assign rm_lo_l = rm;
-		assign rm_hi_l = rm;
-		assign sat_lo_l = sat;
-		assign sat_hi_l = sat;
-		assign mine_lo_l = mine;
-		assign mine_hi_l = mine;
-		assign ovr_lo_l = ovr_lo;
-		assign ovr_hi_l = ovr_hi;
+		assign op_lo_l = op_lane;
+		assign op_hi_l = op_lane;
+		assign rm_lo_l = rm_lane;
+		assign rm_hi_l = rm_lane;
+		assign sat_lo_l = sat_lane;
+		assign sat_hi_l = sat_lane;
+		assign mine_lo_l = mine_lane;
+		assign mine_hi_l = mine_lane;
+		assign ovr_lo_l = ovr_lo_lane;
+		assign ovr_hi_l = ovr_hi_lane;
 		assign sub_l = sub;
 `endif
 		wire [31:0] un;
