@@ -170,6 +170,20 @@ module atg_su_cbank #(
 		(st == IDLE && lc_pend && s_region == 32'd0 && s_words != 32'd0) ? 1'b1 : valid;
 
 	/* Sliced distributed RAM cw (8 x 4-bit slices) so each address/WE net drives <= 12 RAM primitives */
+	wire [14:0] cr_idx_g [0:3];
+	genvar gcg, gcb;
+	generate
+		for (gcg = 0; gcg < 4; gcg = gcg + 1) begin : g_cr_grp
+			for (gcb = 0; gcb < 15; gcb = gcb + 1) begin : g_cr_bit
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cr (.I0(cr_idx[gcb]), .O(cr_idx_g[gcg][gcb]));
+`else
+				assign cr_idx_g[gcg][gcb] = cr_idx[gcb];
+`endif
+			end
+		end
+	endgenerate
+
 	wire [31:0] cw_r0, cw_r1, cw_r2;
 	genvar gcs, gcl, gch;
 	generate
@@ -177,9 +191,10 @@ module atg_su_cbank #(
 		(* ram_style = "distributed" *) reg [3:0] cw_mem [0:31];
 		(* dont_touch = "true" *) reg cw_we_sl_r;
 		(* dont_touch = "true" *) reg [4:0] cw_wa_sl_r;
-		(* dont_touch = "true" *) wire [4:0] cr_a0_s = cr_idx[4:0];
-		(* dont_touch = "true" *) wire [4:0] cr_a1_s = cr_idx[9:5];
-		(* dont_touch = "true" *) wire [4:0] cr_a2_s = cr_idx[14:10];
+		wire [14:0] cr_idx_sl = cr_idx_g[gcs / 2];
+		wire [4:0] cr_a0_s = cr_idx_sl[4:0];
+		wire [4:0] cr_a1_s = cr_idx_sl[9:5];
+		wire [4:0] cr_a2_s = cr_idx_sl[14:10];
 		always @(posedge clk) begin
 			cw_we_sl_r <= cw_we_next;
 			if (rst_p || scrub || sc_on || st == LWR)

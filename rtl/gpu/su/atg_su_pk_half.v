@@ -972,7 +972,17 @@ module atg_su_pk_half #(
 		(* keep = "true" *) wire s5_norm_base_ok = s5_valid && !s5_ovr_en && s5_is_fma && !s5_spec_hit && !(s5_sat && s5_sr);
 
 		/* --- Level 2 (1 LUT6 per wire from Level 1) --- */
-		(* keep = "true" *) wire       nz_b1  = b1_h3 || b1_h2 || b1_h1 || b1_h0;
+		wire       nz_b1_raw = b1_h3 || b1_h2 || b1_h1 || b1_h0;
+		wire       nz_b1_a, nz_b1_b, nz_b1_c;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_nzb1_a (.I0(nz_b1_raw), .O(nz_b1_a));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_nzb1_b (.I0(nz_b1_raw), .O(nz_b1_b));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_nzb1_c (.I0(nz_b1_raw), .O(nz_b1_c));
+`else
+		assign nz_b1_a = nz_b1_raw;
+		assign nz_b1_b = nz_b1_raw;
+		assign nz_b1_c = nz_b1_raw;
+`endif
 		(* keep = "true" *) wire       nz_b0  = b0_h3 || b0_h2 || b0_h1 || b0_h0;
 		(* keep = "true" *) wire [3:0] msb_b1 = {
 			b1_h3 || b1_h2,
@@ -1026,20 +1036,20 @@ module atg_su_pk_half #(
 			                               (msb_b0[0] ? w0_s2[gs + 1] : w0_s2[gs]);
 		end
 
-		(* keep = "true" *) wire [3:0] s5_sub_msb   = nz_b2 ? msb_b2 : nz_b1 ? msb_b1 : msb_b0;
-		(* keep = "true" *) wire [3:0] s5_msb_x_eb  = (nz_b2 ? msb_b2 : nz_b1 ? msb_b1 : msb_b0) ^ s5_eb_lo;
-		(* keep = "true" *) wire [3:0] s5_msb_x_neg = (nz_b2 ? msb_b2 : nz_b1 ? msb_b1 : msb_b0) ^ s5_eb_neg;
-		(* keep = "true" *) wire       s5_c2_0      = nz_b2 ? b2_c2_0 : nz_b1 ? b1_c2_0 : b0_c2_0;
-		(* keep = "true" *) wire       s5_c2_1      = nz_b2 ? b2_c2_1 : nz_b1 ? b1_c2_1 : b0_c2_1;
-		(* keep = "true" *) wire       s5_g32       = nz_b2 ? b2_g32  : nz_b1 ? b1_g32  : b0_g32;
-		(* keep = "true" *) wire       s5_p32       = nz_b2 ? b2_p32  : nz_b1 ? b1_p32  : b0_p32;
-		(* keep = "true" *) wire [2:0] s5_eb_hi     = nz_b2_s ? s5_eb_hi2 : nz_b1 ? s5_eb_hi1 : s5_eb_hi0;
-		(* keep = "true" *) wire [2:0] s5_eb_hi_p1  = nz_b2_s ? s5_eb_hi3 : nz_b1 ? s5_eb_hi2 : s5_eb_hi1;
-		(* keep = "true" *) wire       s5_norm_ok   = s5_norm_base_ok && (nz_b2_s || nz_b1 || nz_b0);
-		(* keep = "true" *) wire       s5_use_norm  = s5_valid && !s5_ovr_en && s5_is_fma && !s5_spec_hit && (nz_b2_s || nz_b1 || nz_b0);
+		(* keep = "true" *) wire [3:0] s5_sub_msb   = nz_b2 ? msb_b2 : nz_b1_a ? msb_b1 : msb_b0;
+		(* keep = "true" *) wire [3:0] s5_msb_x_eb  = (nz_b2 ? msb_b2 : nz_b1_a ? msb_b1 : msb_b0) ^ s5_eb_lo;
+		(* keep = "true" *) wire [3:0] s5_msb_x_neg = (nz_b2 ? msb_b2 : nz_b1_a ? msb_b1 : msb_b0) ^ s5_eb_neg;
+		(* keep = "true" *) wire       s5_c2_0      = nz_b2 ? b2_c2_0 : nz_b1_b ? b1_c2_0 : b0_c2_0;
+		(* keep = "true" *) wire       s5_c2_1      = nz_b2 ? b2_c2_1 : nz_b1_b ? b1_c2_1 : b0_c2_1;
+		(* keep = "true" *) wire       s5_g32       = nz_b2 ? b2_g32  : nz_b1_b ? b1_g32  : b0_g32;
+		(* keep = "true" *) wire       s5_p32       = nz_b2 ? b2_p32  : nz_b1_b ? b1_p32  : b0_p32;
+		(* keep = "true" *) wire [2:0] s5_eb_hi     = nz_b2_s ? s5_eb_hi2 : nz_b1_b ? s5_eb_hi1 : s5_eb_hi0;
+		(* keep = "true" *) wire [2:0] s5_eb_hi_p1  = nz_b2_s ? s5_eb_hi3 : nz_b1_b ? s5_eb_hi2 : s5_eb_hi1;
+		(* keep = "true" *) wire       s5_norm_ok   = s5_norm_base_ok && (nz_b2_s || nz_b1_b || nz_b0);
+		(* keep = "true" *) wire       s5_use_norm  = s5_valid && !s5_ovr_en && s5_is_fma && !s5_spec_hit && (nz_b2_s || nz_b1_b || nz_b0);
 
 		/* --- Level 4 (1 LUT6 per wire from Level 3, directly into Stage 6 FFs) --- */
-		wire [10:0] s5_mg = nz_b2_s ? w2_sh : nz_b1 ? w1_sh : w0_sh;
+		wire [10:0] s5_mg = nz_b2_s ? w2_sh : nz_b1_c ? w1_sh : w0_sh;
 		wire [9:0]  s5_m  = s5_mg[10:1];
 		wire        s5_g  = s5_mg[0];
 		wire        s5_st = nz_b2_s ? (st_b2 || or_4_0) :
