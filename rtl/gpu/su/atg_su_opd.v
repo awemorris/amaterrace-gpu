@@ -267,14 +267,28 @@ module atg_su_opd #(
 	/* Two-level buffered enables for Stage A precomputation, Stage A->B, and Stage A load */
 	(* dont_touch = "true" *) wire a_pre_en_0 = (REG_IO != 0) && a_act && !a_wait;
 	(* dont_touch = "true" *) wire a_pre_en_1 = (REG_IO != 0) && a_act && !a_wait;
-	(* dont_touch = "true" *) wire a_pre_we_0 = a_pre_en_1 && !rst_p;
-	(* dont_touch = "true" *) wire a_pre_we_1 = a_pre_en_1 && !rst_p;
-	(* dont_touch = "true" *) wire a_pre_we_2 = a_pre_en_1 && !rst_p;
-	(* dont_touch = "true" *) wire a_pre_we_3 = a_pre_en_1 && !rst_p;
-	(* dont_touch = "true" *) wire a_pre_we_4 = a_pre_en_1 && !rst_p;
-	(* dont_touch = "true" *) wire a_pre_we_5 = a_pre_en_1 && !rst_p;
-	(* dont_touch = "true" *) wire a_pre_we_6 = a_pre_en_1 && !rst_p;
-	(* dont_touch = "true" *) wire a_pre_we_7 = a_pre_en_1 && !rst_p;
+	wire a_pre_we_raw = a_pre_en_1 && !rst_p;
+	wire a_pre_we_0, a_pre_we_1, a_pre_we_2, a_pre_we_3;
+	wire a_pre_we_4, a_pre_we_5, a_pre_we_6, a_pre_we_7;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre0 (.I0(a_pre_we_raw), .O(a_pre_we_0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre1 (.I0(a_pre_we_raw), .O(a_pre_we_1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre2 (.I0(a_pre_we_raw), .O(a_pre_we_2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre3 (.I0(a_pre_we_raw), .O(a_pre_we_3));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre4 (.I0(a_pre_we_raw), .O(a_pre_we_4));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre5 (.I0(a_pre_we_raw), .O(a_pre_we_5));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre6 (.I0(a_pre_we_raw), .O(a_pre_we_6));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre7 (.I0(a_pre_we_raw), .O(a_pre_we_7));
+`else
+	assign a_pre_we_0 = a_pre_we_raw;
+	assign a_pre_we_1 = a_pre_we_raw;
+	assign a_pre_we_2 = a_pre_we_raw;
+	assign a_pre_we_3 = a_pre_we_raw;
+	assign a_pre_we_4 = a_pre_we_raw;
+	assign a_pre_we_5 = a_pre_we_raw;
+	assign a_pre_we_6 = a_pre_we_raw;
+	assign a_pre_we_7 = a_pre_we_raw;
+`endif
 
 	(* dont_touch = "true" *) wire [NPHYS-1:0] a_stgb_en_g;
 	(* dont_touch = "true" *) wire [NPHYS-1:0] a_hold_en_g;
@@ -288,33 +302,71 @@ module atg_su_opd #(
 
 	(* dont_touch = "true" *) wire a_stgb_ctl_0 = (REG_IO != 0) ? (a_act && a_wait && a_step_done) : (b_adv && a_act && a_step_done);
 	(* dont_touch = "true" *) wire a_stgb_ctl_1 = (REG_IO != 0) ? (a_act && a_wait && a_step_done) : (b_adv && a_act && a_step_done);
-	(* dont_touch = "true" *) wire b_ctl_we_0  = a_stgb_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_1  = a_stgb_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_2  = a_stgb_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_3  = a_stgb_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_4  = a_stgb_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_5  = a_stgb_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_6  = a_stgb_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_7  = a_stgb_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_8  = a_stgb_ctl_1 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_9  = a_stgb_ctl_1 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_10 = a_stgb_ctl_1 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_11 = a_stgb_ctl_1 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_12 = a_stgb_ctl_1 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_13 = a_stgb_ctl_1 && !rst_p;
-	(* dont_touch = "true" *) wire b_ctl_we_14 = a_stgb_ctl_1 && !rst_p;
+	wire b_ctl_we_raw0 = a_stgb_ctl_0 && !rst_p;
+	wire b_ctl_we_raw1 = a_stgb_ctl_1 && !rst_p;
+	wire b_ctl_we_0, b_ctl_we_1, b_ctl_we_2, b_ctl_we_3, b_ctl_we_4, b_ctl_we_5, b_ctl_we_6, b_ctl_we_7;
+	wire b_ctl_we_8, b_ctl_we_9, b_ctl_we_10, b_ctl_we_11, b_ctl_we_12, b_ctl_we_13, b_ctl_we_14;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl0  (.I0(b_ctl_we_raw0), .O(b_ctl_we_0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl1  (.I0(b_ctl_we_raw0), .O(b_ctl_we_1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl2  (.I0(b_ctl_we_raw0), .O(b_ctl_we_2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl3  (.I0(b_ctl_we_raw0), .O(b_ctl_we_3));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl4  (.I0(b_ctl_we_raw0), .O(b_ctl_we_4));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl5  (.I0(b_ctl_we_raw0), .O(b_ctl_we_5));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl6  (.I0(b_ctl_we_raw0), .O(b_ctl_we_6));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl7  (.I0(b_ctl_we_raw0), .O(b_ctl_we_7));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl8  (.I0(b_ctl_we_raw1), .O(b_ctl_we_8));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl9  (.I0(b_ctl_we_raw1), .O(b_ctl_we_9));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl10 (.I0(b_ctl_we_raw1), .O(b_ctl_we_10));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl11 (.I0(b_ctl_we_raw1), .O(b_ctl_we_11));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl12 (.I0(b_ctl_we_raw1), .O(b_ctl_we_12));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl13 (.I0(b_ctl_we_raw1), .O(b_ctl_we_13));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bctl14 (.I0(b_ctl_we_raw1), .O(b_ctl_we_14));
+`else
+	assign b_ctl_we_0  = b_ctl_we_raw0;
+	assign b_ctl_we_1  = b_ctl_we_raw0;
+	assign b_ctl_we_2  = b_ctl_we_raw0;
+	assign b_ctl_we_3  = b_ctl_we_raw0;
+	assign b_ctl_we_4  = b_ctl_we_raw0;
+	assign b_ctl_we_5  = b_ctl_we_raw0;
+	assign b_ctl_we_6  = b_ctl_we_raw0;
+	assign b_ctl_we_7  = b_ctl_we_raw0;
+	assign b_ctl_we_8  = b_ctl_we_raw1;
+	assign b_ctl_we_9  = b_ctl_we_raw1;
+	assign b_ctl_we_10 = b_ctl_we_raw1;
+	assign b_ctl_we_11 = b_ctl_we_raw1;
+	assign b_ctl_we_12 = b_ctl_we_raw1;
+	assign b_ctl_we_13 = b_ctl_we_raw1;
+	assign b_ctl_we_14 = b_ctl_we_raw1;
+`endif
 
 	(* dont_touch = "true" *) wire a_load_ctl_0 = !a_act || ((REG_IO != 0) ? a_wait_last : (a_adv && a_last));
-	(* dont_touch = "true" *) wire a_load_we_0 = a_load_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire a_load_we_1 = a_load_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire a_load_we_2 = a_load_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire a_load_we_3 = a_load_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire a_load_we_4 = a_load_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire a_load_we_5 = a_load_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire a_load_we_6 = a_load_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire a_load_we_7 = a_load_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire a_load_we_8 = a_load_ctl_0 && !rst_p;
-	(* dont_touch = "true" *) wire a_load_we_9 = a_load_ctl_0 && !rst_p;
+	wire a_load_we_raw = a_load_ctl_0 && !rst_p;
+	wire a_load_we_0, a_load_we_1, a_load_we_2, a_load_we_3, a_load_we_4;
+	wire a_load_we_5, a_load_we_6, a_load_we_7, a_load_we_8, a_load_we_9;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload0 (.I0(a_load_we_raw), .O(a_load_we_0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload1 (.I0(a_load_we_raw), .O(a_load_we_1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload2 (.I0(a_load_we_raw), .O(a_load_we_2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload3 (.I0(a_load_we_raw), .O(a_load_we_3));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload4 (.I0(a_load_we_raw), .O(a_load_we_4));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload5 (.I0(a_load_we_raw), .O(a_load_we_5));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload6 (.I0(a_load_we_raw), .O(a_load_we_6));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload7 (.I0(a_load_we_raw), .O(a_load_we_7));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload8 (.I0(a_load_we_raw), .O(a_load_we_8));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_aload9 (.I0(a_load_we_raw), .O(a_load_we_9));
+`else
+	assign a_load_we_0 = a_load_we_raw;
+	assign a_load_we_1 = a_load_we_raw;
+	assign a_load_we_2 = a_load_we_raw;
+	assign a_load_we_3 = a_load_we_raw;
+	assign a_load_we_4 = a_load_we_raw;
+	assign a_load_we_5 = a_load_we_raw;
+	assign a_load_we_6 = a_load_we_raw;
+	assign a_load_we_7 = a_load_we_raw;
+	assign a_load_we_8 = a_load_we_raw;
+	assign a_load_we_9 = a_load_we_raw;
+`endif
 
 	wire [DW-1:0] b_early_va, b_early_vb, b_early_vc;
 	(* max_fanout = 12 *) reg b_use_rf1, b_use_rf2, b_use_rf3;
