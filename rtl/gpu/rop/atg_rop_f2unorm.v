@@ -50,23 +50,10 @@ module atg_rop_f2unorm #(
 		.bo(p_bo_unused)
 	);
 
-	/* Pure-LUT 6-bit subtractors sa = 22 - f[28:23] and sa1 = 21 - f[28:23] (1 LUT6 per bit, 0 CARRY4s) */
-	function [5:0] sub6_const;
-		input [5:0] c_val;
-		input [5:0] x_val;
-		reg [6:0] b_ch;
-		integer bi;
-		begin
-			b_ch[0] = 1'b0;
-			for (bi = 0; bi < 6; bi = bi + 1) begin
-				sub6_const[bi] = c_val[bi] ^ x_val[bi] ^ b_ch[bi];
-				b_ch[bi + 1] = (~c_val[bi] & x_val[bi]) | ((~c_val[bi] | x_val[bi]) & b_ch[bi]);
-			end
-		end
-	endfunction
-
-	(* keep = "true" *) wire [5:0] sa_s1  = sub6_const(6'd22, f[28:23]);
-	(* keep = "true" *) wire [5:0] sa1_s1 = sub6_const(6'd21, f[28:23]);
+	wire [5:0] sa_s1, sa1_s1;
+	wire sa_bo_unused, sa1_bo_unused;
+	am_sub #(.W(6)) u_sub_sa  (.a(6'd22), .b(f[28:23]), .bi(1'b0), .d(sa_s1),  .bo(sa_bo_unused));
+	am_sub #(.W(6)) u_sub_sa1 (.a(6'd21), .b(f[28:23]), .bi(1'b0), .d(sa1_s1), .bo(sa1_bo_unused));
 
 	/* Pure-LUT exponent & NaN classification (0 CARRY4s, <= 3 LUT levels) */
 	(* keep = "true" *) wire [3:0] f_mnz;
@@ -244,7 +231,7 @@ module atg_rop_f2unorm #(
 
 	assign u = r3_u;
 
-	wire unused_ok = &{1'b0, p_bo_unused, r1_sa_b[3:0], ps_s1[31:16]};
+	wire unused_ok = &{1'b0, p_bo_unused, sa_bo_unused, sa1_bo_unused, r1_sa_b[3:0], ps_s1[31:16]};
 endmodule
 
 `default_nettype wire

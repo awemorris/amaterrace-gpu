@@ -282,37 +282,15 @@ module atg_rop #(
 		end
 	endfunction
 
-	function [3:0] add3_lut;
-		input [2:0] a;
-		input [2:0] b;
-		reg c0, c1, c2;
-		begin
-			c0 = a[0] & b[0];
-			c1 = (a[1] & b[1]) | ((a[1] ^ b[1]) & c0);
-			c2 = (a[2] & b[2]) | ((a[2] ^ b[2]) & c1);
-			add3_lut = {c2, a[2] ^ b[2] ^ c1, a[1] ^ b[1] ^ c0, a[0] ^ b[0]};
-		end
-	endfunction
-
 	(* keep = "true" *) wire [2:0] d_pop4_0 = pop4_lut(d_smask[3:0]);
 	(* keep = "true" *) wire [2:0] d_pop4_1 = pop4_lut(d_smask[7:4]);
 	(* keep = "true" *) wire [2:0] d_pop4_2 = pop4_lut(d_smask[11:8]);
 	(* keep = "true" *) wire [2:0] d_pop4_3 = pop4_lut(d_smask[15:12]);
-	(* keep = "true" *) wire [3:0] d_pop8_0 = add3_lut(d_pop4_0, d_pop4_1);
-	(* keep = "true" *) wire [3:0] d_pop8_1 = add3_lut(d_pop4_2, d_pop4_3);
-	(* keep = "true" *) wire d_pop_c1 = (d_pop8_0[1] & d_pop8_1[1]) |
-		((d_pop8_0[1] ^ d_pop8_1[1]) & (d_pop8_0[0] & d_pop8_1[0]));
-	(* keep = "true" *) wire d_pop_c2 = (d_pop8_0[2] & d_pop8_1[2]) |
-		((d_pop8_0[2] ^ d_pop8_1[2]) & d_pop_c1);
-	(* keep = "true" *) wire d_pop_c3 = (d_pop8_0[3] & d_pop8_1[3]) |
-		((d_pop8_0[3] ^ d_pop8_1[3]) & d_pop_c2);
-	wire [4:0] d_pop = {
-		d_pop_c3,
-		d_pop8_0[3] ^ d_pop8_1[3] ^ d_pop_c2,
-		d_pop8_0[2] ^ d_pop8_1[2] ^ d_pop_c1,
-		d_pop8_0[1] ^ d_pop8_1[1] ^ (d_pop8_0[0] & d_pop8_1[0]),
-		d_pop8_0[0] ^ d_pop8_1[0]
-	};
+	wire [3:0] d_pop8_0, d_pop8_1;
+	am_add #(.W(3)) u_add_pop8_0 (.a(d_pop4_0), .b(d_pop4_1), .ci(1'b0), .s(d_pop8_0[2:0]), .co(d_pop8_0[3]));
+	am_add #(.W(3)) u_add_pop8_1 (.a(d_pop4_2), .b(d_pop4_3), .ci(1'b0), .s(d_pop8_1[2:0]), .co(d_pop8_1[3]));
+	wire [4:0] d_pop;
+	am_add #(.W(4)) u_add_pop16  (.a(d_pop8_0), .b(d_pop8_1), .ci(1'b0), .s(d_pop[3:0]),   .co(d_pop[4]));
 
 	reg occ_inc_v;
 	reg [4:0] occ_inc_n;
