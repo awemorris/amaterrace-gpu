@@ -500,11 +500,43 @@ module atg_su_pk_half #(
 		wire        s1_spec_inf_c = s1_inf_c && !s1_spec_nan && !s1_spec_inf_ab;
 		wire        s1_spec_zero = (s1_za || s1_zb) && !s1_spec_nan && !s1_spec_inf_ab && !s1_spec_inf_c;
 		wire        s1_spec_hit = s1_spec_nan || s1_spec_inf_ab || s1_spec_inf_c || s1_spec_zero;
-		wire [15:0] s1_spec_res =
-			s1_spec_nan ? 16'h7E00 :
-			s1_spec_inf_ab ? (s1_inf_c && s1_sc != s1_sp ? 16'h7E00 : {s1_sp, 5'h1F, 10'd0}) :
-			s1_spec_inf_c ? s1_fc :
-			(!s1_zc ? s1_fc : s1_fnoc ? {s1_sp, 15'd0} : {s1_rdn ? (s1_sp | s1_sc) : (s1_sp & s1_sc), 15'd0});
+
+		wire s1_spec_nan_lo, s1_spec_nan_hi;
+		wire s1_spec_inf_ab_lo, s1_spec_inf_ab_hi;
+		wire s1_spec_inf_c_lo, s1_spec_inf_c_hi;
+		wire s1_zc_lo, s1_zc_hi;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_snan_l (.I0(s1_spec_nan),    .O(s1_spec_nan_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_snan_h (.I0(s1_spec_nan),    .O(s1_spec_nan_hi));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sinf_l (.I0(s1_spec_inf_ab), .O(s1_spec_inf_ab_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sinf_h (.I0(s1_spec_inf_ab), .O(s1_spec_inf_ab_hi));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sc_l   (.I0(s1_spec_inf_c),  .O(s1_spec_inf_c_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sc_h   (.I0(s1_spec_inf_c),  .O(s1_spec_inf_c_hi));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_zc_l   (.I0(s1_zc),          .O(s1_zc_lo));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_zc_h   (.I0(s1_zc),          .O(s1_zc_hi));
+`else
+		assign s1_spec_nan_lo    = s1_spec_nan;
+		assign s1_spec_nan_hi    = s1_spec_nan;
+		assign s1_spec_inf_ab_lo = s1_spec_inf_ab;
+		assign s1_spec_inf_ab_hi = s1_spec_inf_ab;
+		assign s1_spec_inf_c_lo  = s1_spec_inf_c;
+		assign s1_spec_inf_c_hi  = s1_spec_inf_c;
+		assign s1_zc_lo          = s1_zc;
+		assign s1_zc_hi          = s1_zc;
+`endif
+		wire [7:0] s1_spec_res_lo =
+			s1_spec_nan_lo ? 8'h00 :
+			s1_spec_inf_ab_lo ? 8'h00 :
+			s1_spec_inf_c_lo ? s1_fc[7:0] :
+			(!s1_zc_lo ? s1_fc[7:0] : 8'd0);
+
+		wire [7:0] s1_spec_res_hi =
+			s1_spec_nan_hi ? 8'h7E :
+			s1_spec_inf_ab_hi ? (s1_inf_c && s1_sc != s1_sp ? 8'h7E : {s1_sp, 5'h1F, 2'd0}) :
+			s1_spec_inf_c_hi ? s1_fc[15:8] :
+			(!s1_zc_hi ? s1_fc[15:8] : s1_fnoc ? {s1_sp, 7'd0} : {s1_rdn ? (s1_sp | s1_sc) : (s1_sp & s1_sc), 7'd0});
+
+		wire [15:0] s1_spec_res = {s1_spec_res_hi, s1_spec_res_lo};
 
 		wire [9:0] s1_t, s1_ec_p25, s1_ec_p37, s1_ec_p2, s1_er_p;
 		wire [15:0] s1_isum;
