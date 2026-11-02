@@ -33,35 +33,11 @@ module atg_tu_eac (
 	input wire i_sg,
 	output wire [10:0] o_v
 );
-	/* -x as 5 bits (x below 16). */
-	function [4:0] neg5;
-		input [3:0] x;
-		case (x)
-		4'd0: neg5 = 5'h00;
-		4'd1: neg5 = 5'h1F;
-		4'd2: neg5 = 5'h1E;
-		4'd3: neg5 = 5'h1D;
-		4'd4: neg5 = 5'h1C;
-		4'd5: neg5 = 5'h1B;
-		4'd6: neg5 = 5'h1A;
-		4'd7: neg5 = 5'h19;
-		4'd8: neg5 = 5'h18;
-		4'd9: neg5 = 5'h17;
-		4'd10: neg5 = 5'h16;
-		4'd11: neg5 = 5'h15;
-		4'd12: neg5 = 5'h14;
-		4'd13: neg5 = 5'h13;
-		4'd14: neg5 = 5'h12;
-		default: neg5 = 5'h11;
-		endcase
-	endfunction
-
-	/* The EAC modifier of table ti, index ix (signed). */
-	function [4:0] eacm;
+	/* The EAC modifier table lookup of table ti, index ix (4-bit magnitude). */
+	function [3:0] eac_mg;
 		input [3:0] ti;
 		input [2:0] ix;
 		reg [31:0] r;	/* the row: eight 4-bit magnitudes, the first four negative */
-		reg [3:0] mg;
 		begin
 			case (ti)
 			4'd0: r = 32'hE852F963;
@@ -81,8 +57,7 @@ module atg_tu_eac (
 			4'd14: r = 32'h87539864;
 			default: r = 32'h86429753;
 			endcase
-			mg = r[4 * ix +: 4];
-			eacm = ix[2] ? {1'b0, mg} : neg5(mg);
+			eac_mg = r[4 * ix +: 4];
 		end
 	endfunction
 
@@ -110,7 +85,18 @@ module atg_tu_eac (
 	endfunction
 
 	/* ---- E0 -> E1 ---- */
-	wire [4:0] m = eacm(i_w[51:48], i_w[eacp(i_k) +: 3]);
+	wire [2:0] eac_ix = i_w[eacp(i_k) +: 3];
+	wire [3:0] eac_mg_val = eac_mg(i_w[51:48], eac_ix);
+	wire [4:0] neg_mg;
+	wire neg_bo_unused;
+	am_sub #(.W(5)) u_neg_mg (
+		.a(5'd0),
+		.b({1'b0, eac_mg_val}),
+		.bi(1'b0),
+		.d(neg_mg),
+		.bo(neg_bo_unused)
+	);
+	wire [4:0] m = eac_ix[2] ? {1'b0, eac_mg_val} : neg_mg;
 	wire [13:0] vb = !i_r11 ? {6'd0, i_w[63:56]} : !i_sg ? {3'd0, i_w[63:56], 3'd4} :
 		i_w[63:56] == 8'h80 ? -14'sd1016 : {{3{i_w[63]}}, i_w[63:56], 3'd0};
 
@@ -176,7 +162,7 @@ module atg_tu_eac (
 		!sg3 ? (v < 0 ? 11'd0 : v > 2047 ? 11'd2047 : v[10:0]) :
 		(v < -1023 ? 11'h401 : v > 1023 ? 11'h3FF : v[10:0]);
 
-	wire unused_ok = &{1'b0, e_nc, mu1[0]};
+	wire unused_ok = &{1'b0, e_nc, mu1[0], neg_bo_unused};
 endmodule
 
 `default_nettype wire

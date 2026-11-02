@@ -47,16 +47,6 @@ module atg_tu_etc (
 );
 	integer c;
 
-	/* The 64-bit integer of bytes 8k..8k+7, byte 8k the most significant. */
-	function [63:0] w64;
-		input [127:0] b;
-		input k;
-		integer i;
-		begin
-			for (i = 0; i < 8; i = i + 1)
-				w64[63 - 8 * i -: 8] = b[64 * k + 8 * i +: 8];
-		end
-	endfunction
 
 	function [7:0] clamp8;
 		input signed [11:0] v;
@@ -118,7 +108,26 @@ module atg_tu_etc (
 	endfunction
 
 	/* ---- E0: the block's two words, the colour block's word, pre-additions ---- */
-	wire [63:0] wa_i = w64(i_block, 1'b0), wb_i = w64(i_block, 1'b1);
+	wire [63:0] wa_i = {
+		i_block[7:0],
+		i_block[15:8],
+		i_block[23:16],
+		i_block[31:24],
+		i_block[39:32],
+		i_block[47:40],
+		i_block[55:48],
+		i_block[63:56]
+	};
+	wire [63:0] wb_i = {
+		i_block[71:64],
+		i_block[79:72],
+		i_block[87:80],
+		i_block[95:88],
+		i_block[103:96],
+		i_block[111:104],
+		i_block[119:112],
+		i_block[127:120]
+	};
 	wire rgbb_i_raw = i_fmt == 4'd4 || i_fmt == 4'd5;	/* RGBA8: the colour block second */
 	(* dont_touch = "true" *) wire [7:0] rgbb_i_s = {8{rgbb_i_raw}};
 	(* keep = "true" *) wire rgbb_i_eac = !rgbb_i_raw;
