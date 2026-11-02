@@ -162,7 +162,7 @@ module atg_su_fpu #(
 			wire [31:0] lb = pk ? fb : x_b[gl*32 +: 32];
 			wire [31:0] lc = pk ? fc : x_c[gl*32 +: 32];
 			wire [2:0] lr = pk ? ((busy ? k_rm : rm) == 3'd2 ? 3'd6 : 3'd5) : rm;
-			am_fpu_core #(.LAT(4)) u_core (
+			am_fpu_core #(.LAT(SHORT_LAT)) u_core (
 				.clk(clk),
 				.rst_n(rst_n),
 				.en(en),
@@ -207,7 +207,7 @@ module atg_su_fpu #(
 			wire [31:0] sim_b   = x_b[gl*32 +: 32];
 			wire [31:0] sim_c   = x_c[gl*32 +: 32];
 `endif
-			am_fpu_core #(.LAT(4)) u_core (
+			am_fpu_core #(.LAT(SHORT_LAT)) u_core (
 				.clk(clk),
 				.rst_n(rst_n),
 				.en(en),
@@ -365,18 +365,7 @@ module atg_su_fpu #(
 
 		assign s_data = s6_data;
 	end else begin : g_nosh_pipe
-		(* shreg_extract = "no" *) reg [DW-1:0] s5_data;
-		(* shreg_extract = "no", max_fanout = 12 *) reg [DW-1:0] s6_data;
-		always @(posedge clk) begin
-			if (rst_p) begin
-				s5_data <= {DW{1'b0}};
-				s6_data <= {DW{1'b0}};
-			end else if (en) begin
-				s5_data <= fpu_res;
-				s6_data <= s5_data;
-			end
-		end
-		assign s_data = s6_data;
+		assign s_data = fpu_res;
 	end
 	endgenerate
 
