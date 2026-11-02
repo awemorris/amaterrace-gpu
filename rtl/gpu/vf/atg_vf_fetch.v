@@ -566,19 +566,6 @@ module atg_vf_fetch #(
 
 	reg [7:0] hit1_mask_r, pnd1_mask_r, hit2_mask_r, pnd2_mask_r, free_mask_r;
 
-	function [2:0] inc3;
-		input [2:0] v;
-		case (v)
-		3'd0: inc3 = 3'd1;
-		3'd1: inc3 = 3'd2;
-		3'd2: inc3 = 3'd3;
-		3'd3: inc3 = 3'd4;
-		3'd4: inc3 = 3'd5;
-		3'd5: inc3 = 3'd6;
-		3'd6: inc3 = 3'd7;
-		default: inc3 = 3'd0;
-		endcase
-	endfunction
 
 	function [7:0] dec8;
 		input [2:0] idx;
@@ -663,7 +650,15 @@ module atg_vf_fetch #(
 	assign rr0_b = rr0_r;
 `endif
 	wire       f2_v_r = (f1_idx_r != f2_idx_r);
-	wire [2:0] rr1_w  = inc3(rr0_b);
+	wire [2:0] rr1_w;
+	wire       rr1_co_unused;
+	am_add #(.W(3)) u_inc_rr0 (
+		.a(rr0_b),
+		.b(3'd1),
+		.ci(1'b0),
+		.s(rr1_w),
+		.co(rr1_co_unused)
+	);
 	(* keep = "true" *) wire vic1_avoid = match2_r && (rr0_b == m2_idx_r);
 	wire [2:0] vic1_w = vic1_avoid ? rr1_w : rr0_b;
 
@@ -1662,7 +1657,7 @@ module atg_vf_fetch #(
 		pair_full[511:384], sh1_r[191:184], div_diff[8], lim_diff_unused,
 		num_bo_unused, elm_co_unused, eld_co_unused, div_cnt_bo_unused,
 		ad_co_unused, bnd_co_unused, l2_co_unused, osum_co_unused,
-		ce_remn_b[1], emit_take_b[2]};
+		ce_remn_b[1], emit_take_b[2], rr1_co_unused};
 endmodule
 
 `default_nettype wire

@@ -45,44 +45,15 @@ module atg_vf_vc #(
 	reg [NENTRIES-1:0] entry_valid;
 	reg [SLOT_W-1:0]  victim_ptr;
 
-	function [4:0] inc5;
-		input [4:0] v;
-		case (v)
-		5'd0: inc5 = 5'd1;
-		5'd1: inc5 = 5'd2;
-		5'd2: inc5 = 5'd3;
-		5'd3: inc5 = 5'd4;
-		5'd4: inc5 = 5'd5;
-		5'd5: inc5 = 5'd6;
-		5'd6: inc5 = 5'd7;
-		5'd7: inc5 = 5'd8;
-		5'd8: inc5 = 5'd9;
-		5'd9: inc5 = 5'd10;
-		5'd10: inc5 = 5'd11;
-		5'd11: inc5 = 5'd12;
-		5'd12: inc5 = 5'd13;
-		5'd13: inc5 = 5'd14;
-		5'd14: inc5 = 5'd15;
-		5'd15: inc5 = 5'd16;
-		5'd16: inc5 = 5'd17;
-		5'd17: inc5 = 5'd18;
-		5'd18: inc5 = 5'd19;
-		5'd19: inc5 = 5'd20;
-		5'd20: inc5 = 5'd21;
-		5'd21: inc5 = 5'd22;
-		5'd22: inc5 = 5'd23;
-		5'd23: inc5 = 5'd24;
-		5'd24: inc5 = 5'd25;
-		5'd25: inc5 = 5'd26;
-		5'd26: inc5 = 5'd27;
-		5'd27: inc5 = 5'd28;
-		5'd28: inc5 = 5'd29;
-		5'd29: inc5 = 5'd30;
-		5'd30: inc5 = 5'd31;
-		5'd31: inc5 = 5'd0;
-		default: inc5 = 5'd0;
-		endcase
-	endfunction
+	wire [SLOT_W-1:0] victim_ptr_next;
+	wire victim_ptr_co_unused;
+	am_add #(.W(SLOT_W)) u_inc_victim (
+		.a(victim_ptr),
+		.b({{SLOT_W-1{1'b0}}, 1'b1}),
+		.ci(1'b0),
+		.s(victim_ptr_next),
+		.co(victim_ptr_co_unused)
+	);
 
 	function [4:0] prio32;
 		input [31:0] m;
@@ -171,9 +142,11 @@ module atg_vf_vc #(
 			entry_idx[alloc_slot]   <= commit_index;
 			entry_vdata[alloc_slot] <= commit_vdata;
 			if (!commit_hit && !has_free)
-				victim_ptr <= inc5(victim_ptr);
+				victim_ptr <= victim_ptr_next;
 		end
 	end
+
+	wire unused_ok = &{1'b0, victim_ptr_co_unused};
 endmodule
 
 `default_nettype wire
