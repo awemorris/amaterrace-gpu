@@ -283,9 +283,9 @@ module atg_su_lane #(
 		.co(ec_co_unused));
 	wire [NPHYS-1:0] z_lanes = op == ATG_LANE_SHFL ? ex_g[NPHYS-1:0] : {NPHYS{1'b1}};
 
-	/* Sliced shuffle data multiplexers per lane and per 4-bit quad */
+	/* Sliced shuffle data multiplexers per lane and per 2-bit pair */
 	wire [15:0] z_h [0:NPHYS*2-1];
-	genvar gzl, gzh, gzq;
+	genvar gzl, gzh, gzp;
 	generate
 		for (gzl = 0; gzl < NPHYS; gzl = gzl + 1) begin: g_shfl_lane
 			/* verilator lint_off WIDTHTRUNC */
@@ -308,29 +308,32 @@ module atg_su_lane #(
 			wire [31:0] s_d_el_l = s_d[{el_l, 5'd0} +: 32];
 
 			for (gzh = 0; gzh < 2; gzh = gzh + 1) begin: g_half
-				wire [3:0] z_q [0:3];
-				for (gzq = 0; gzq < 4; gzq = gzq + 1) begin: g_quad
-					wire [4:0] es_q;
-					wire sel_q;
+				wire [1:0] z_pair [0:7];
+				for (gzp = 0; gzp < 8; gzp = gzp + 1) begin: g_pair
+					wire [4:0] es_p;
+					wire sel_p;
 `ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes0 (.I0(es_l[0]), .O(es_q[0]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes1 (.I0(es_l[1]), .O(es_q[1]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes2 (.I0(es_l[2]), .O(es_q[2]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes3 (.I0(es_l[3]), .O(es_q[3]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes4 (.I0(es_l[4]), .O(es_q[4]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsel (.I0(sel_shfl_l), .O(sel_q));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes0 (.I0(es_l[0]), .O(es_p[0]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes1 (.I0(es_l[1]), .O(es_p[1]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes2 (.I0(es_l[2]), .O(es_p[2]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes3 (.I0(es_l[3]), .O(es_p[3]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bes4 (.I0(es_l[4]), .O(es_p[4]));
+					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bsel (.I0(sel_shfl_l), .O(sel_p));
 `else
-					assign es_q  = es_l;
-					assign sel_q = sel_shfl_l;
+					assign es_p  = es_l;
+					assign sel_p = sel_shfl_l;
 `endif
 					genvar gbit;
-					for (gbit = 0; gbit < 4; gbit = gbit + 1) begin: g_bit
-						localparam [4:0] B_IDX = {gzh[0], gzq[1:0], gbit[1:0]};
-						assign z_q[gzq][gbit] = sel_q ? s_d[{es_q, B_IDX}] : s_d_el_l[B_IDX];
+					for (gbit = 0; gbit < 2; gbit = gbit + 1) begin: g_bit
+						localparam [4:0] B_IDX = {gzh[0], gzp[2:0], gbit[0]};
+						assign z_pair[gzp][gbit] = sel_p ? s_d[{es_p, B_IDX}] : s_d_el_l[B_IDX];
 					end
 				end
 				localparam integer H_IDX = gzl*2 + gzh;
-				assign z_h[H_IDX] = {z_q[3], z_q[2], z_q[1], z_q[0]};
+				assign z_h[H_IDX] = {
+					z_pair[7], z_pair[6], z_pair[5], z_pair[4],
+					z_pair[3], z_pair[2], z_pair[1], z_pair[0]
+				};
 			end
 		end
 	endgenerate
@@ -361,38 +364,57 @@ module atg_su_lane #(
 	wire emit_ctrl;
 	wire emit_h_raw = (st == S_EMIT);
 	wire emit_h_raw_lo, emit_h_raw_hi;
+	wire is_ballot_g0, is_ballot_g1;
+	wire is_vote_g0, is_vote_g1;
+	wire vote_val_g0, vote_val_g1;
 `ifdef SYNTH_KINTEX7
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit_ctrl (.I0(emit), .O(emit_ctrl));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_eraw_lo   (.I0(emit_h_raw), .O(emit_h_raw_lo));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_eraw_hi   (.I0(emit_h_raw), .O(emit_h_raw_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bg0       (.I0(is_ballot),  .O(is_ballot_g0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bg1       (.I0(is_ballot),  .O(is_ballot_g1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vt0       (.I0(is_vote),    .O(is_vote_g0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vt1       (.I0(is_vote),    .O(is_vote_g1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vg0       (.I0(vote_val),   .O(vote_val_g0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vg1       (.I0(vote_val),   .O(vote_val_g1));
 `else
-	assign emit_ctrl = emit;
+	assign emit_ctrl     = emit;
 	assign emit_h_raw_lo = emit_h_raw;
 	assign emit_h_raw_hi = emit_h_raw;
+	assign is_ballot_g0  = is_ballot;
+	assign is_ballot_g1  = is_ballot;
+	assign is_vote_g0    = is_vote;
+	assign is_vote_g1    = is_vote;
+	assign vote_val_g0   = vote_val;
+	assign vote_val_g1   = vote_val;
 `endif
 
 	genvar gp;
 	generate
 		for (gp = 0; gp < NPHYS * 2; gp = gp + 1) begin : g_r4v
 			assign pipe_fb[gp*16 +: 16] = r4_use_xa[gp] ? r4_xa[gp*16 +: 16] : pipe[SHORT_LAT-2][gp*16 +: 16];
+			wire emit_h_raw_gp = (gp < NPHYS) ? emit_h_raw_lo : emit_h_raw_hi;
+			wire is_ballot_gp  = (gp < NPHYS) ? is_ballot_g0  : is_ballot_g1;
+			wire is_vote_gp    = (gp < NPHYS) ? is_vote_g0    : is_vote_g1;
+			wire vote_val_gp   = (gp < NPHYS) ? vote_val_g0   : vote_val_g1;
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit_lo (.I0(emit_h_raw_lo), .O(emit_h_lo[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit_hi (.I0(emit_h_raw_hi), .O(emit_h_hi[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bal_lo  (.I0(is_ballot),      .O(is_ballot_h_lo[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bal_hi  (.I0(is_ballot),      .O(is_ballot_h_hi[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vot_lo  (.I0(is_vote),        .O(is_vote_h_lo[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vot_hi  (.I0(is_vote),        .O(is_vote_h_hi[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val_lo  (.I0(vote_val),       .O(vote_val_h_lo[gp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val_hi  (.I0(vote_val),       .O(vote_val_h_hi[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit_lo (.I0(emit_h_raw_gp), .O(emit_h_lo[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_emit_hi (.I0(emit_h_raw_gp), .O(emit_h_hi[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bal_lo  (.I0(is_ballot_gp),  .O(is_ballot_h_lo[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bal_hi  (.I0(is_ballot_gp),  .O(is_ballot_h_hi[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vot_lo  (.I0(is_vote_gp),    .O(is_vote_h_lo[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vot_hi  (.I0(is_vote_gp),    .O(is_vote_h_hi[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val_lo  (.I0(vote_val_gp),   .O(vote_val_h_lo[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val_hi  (.I0(vote_val_gp),   .O(vote_val_h_hi[gp]));
 `else
-			assign emit_h_lo[gp]      = emit_h_raw_lo;
-			assign emit_h_hi[gp]      = emit_h_raw_hi;
-			assign is_ballot_h_lo[gp] = is_ballot;
-			assign is_ballot_h_hi[gp] = is_ballot;
-			assign is_vote_h_lo[gp]   = is_vote;
-			assign is_vote_h_hi[gp]   = is_vote;
-			assign vote_val_h_lo[gp]  = vote_val;
-			assign vote_val_h_hi[gp]  = vote_val;
+			assign emit_h_lo[gp]      = emit_h_raw_gp;
+			assign emit_h_hi[gp]      = emit_h_raw_gp;
+			assign is_ballot_h_lo[gp] = is_ballot_gp;
+			assign is_ballot_h_hi[gp] = is_ballot_gp;
+			assign is_vote_h_lo[gp]   = is_vote_gp;
+			assign is_vote_h_hi[gp]   = is_vote_gp;
+			assign vote_val_h_lo[gp]  = vote_val_gp;
+			assign vote_val_h_hi[gp]  = vote_val_gp;
 `endif
 		end
 		for (gp = 0; gp < 32; gp = gp + 1) begin : g_stgw
