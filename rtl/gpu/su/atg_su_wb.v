@@ -569,7 +569,19 @@ module atg_su_wb #(
 			assign lk_rq_in[gwe] = lk_valid[gwe] && lk_wr[gwe] && (lk_rd[gwe*7 +: 7] == 7'd63);
 		end
 
-		wire [LP_W-1:0] ksel_w = ksel;
+`ifdef SYNTH_KINTEX7
+		wire [LP_W-1:0] ksel_w0, ksel_w1;
+		genvar gks;
+		generate
+			for (gks = 0; gks < LP_W; gks = gks + 1) begin : g_ks_buf
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ks0 (.I0(ksel[gks]), .O(ksel_w0[gks]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ks1 (.I0(ksel[gks]), .O(ksel_w1[gks]));
+			end
+		endgenerate
+`else
+		wire [LP_W-1:0] ksel_w0 = ksel;
+		wire [LP_W-1:0] ksel_w1 = ksel;
+`endif
 
 		reg [WARP_W-1:0] lk_s_warp;
 		reg [GRP_W-1:0]  lk_s_grp;
@@ -595,7 +607,7 @@ module atg_su_wb #(
 			lk_s_sbe   = lk_sbe[SBE_W:0];
 			lk_s_cls   = lk_cls[2:0];
 			for (mk = 0; mk < NL; mk = mk + 1) begin
-				lk_s_one[mk] = (ksel_w == mk[LP_W-1:0]);
+				lk_s_one[mk] = ((mk < (NL/2)) ? (ksel_w0 == mk[LP_W-1:0]) : (ksel_w1 == mk[LP_W-1:0]));
 				if (mk > 0 && lk_s_one[mk]) begin
 					lk_s_warp  = lk_warp[mk*WARP_W +: WARP_W];
 					lk_s_grp   = lk_grp[mk*GRP_W +: GRP_W];
@@ -658,10 +670,10 @@ module atg_su_wb #(
 		genvar glqd, glqh;
 		for (glqd = 0; glqd < DW / 16; glqd = glqd + 1) begin : g_lqd_sl
 			(* dont_touch = "true" *) wire lq_ld_s = !lq_valid || !lq_wr || (!sv && !fq_valid_sl[glqd]);
-			(* dont_touch = "true" *) wire wb_sel1_w = !(s_valid_sel[0] || s_valid_sel[1] || s_valid_sel[2] || s_valid_sel[3]);
-			(* dont_touch = "true" *) wire wb_sel0_w = !(s_valid_sel[0] || s_valid_sel[1]) && (s_valid_sel[2] || s_valid_sel[3] || !(s_valid_sel[4] || s_valid_sel[5]));
-			(* dont_touch = "true" *) wire wb_sel1_r = !(s_valid_sel[0] || s_valid_sel[1] || s_valid_sel[2] || s_valid_sel[3]);
-			(* dont_touch = "true" *) wire wb_sel0_r = !(s_valid_sel[0] || s_valid_sel[1]) && (s_valid_sel[2] || s_valid_sel[3] || !(s_valid_sel[4] || s_valid_sel[5]));
+			(* keep = "true", max_fanout = 12 *) wire wb_sel1_w = !(s_valid_sel[0] || s_valid_sel[1] || s_valid_sel[2] || s_valid_sel[3]);
+			(* keep = "true", max_fanout = 12 *) wire wb_sel0_w = !(s_valid_sel[0] || s_valid_sel[1]) && (s_valid_sel[2] || s_valid_sel[3] || !(s_valid_sel[4] || s_valid_sel[5]));
+			(* keep = "true", max_fanout = 12 *) wire wb_sel1_r = !(s_valid_sel[0] || s_valid_sel[1] || s_valid_sel[2] || s_valid_sel[3]);
+			(* keep = "true", max_fanout = 12 *) wire wb_sel0_r = !(s_valid_sel[0] || s_valid_sel[1]) && (s_valid_sel[2] || s_valid_sel[3] || !(s_valid_sel[4] || s_valid_sel[5]));
 
 			wire [15:0] lk_s_data_sl;
 			for (glqh = 0; glqh < 2; glqh = glqh + 1) begin : g_lqd_h

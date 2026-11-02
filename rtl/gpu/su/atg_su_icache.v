@@ -93,20 +93,18 @@ module atg_su_icache #(
 			st_mwait_f_r <= {N_SL{st_mwait_nxt_f}};
 	end
 
-	wire [31:0] ic_addr_tag, ic_addr_ram_lo, ic_addr_ram_hi;
+	wire [31:0] ic_addr_tag;
+	wire [31:0] ic_addr_ram_lo = ic_addr;
+	wire [31:0] ic_addr_ram_hi = ic_addr;
 `ifdef SYNTH_KINTEX7
 	genvar gia;
 	generate
 		for (gia = 0; gia < 32; gia = gia + 1) begin : g_ic_addr_buf
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_iat (.I0(ic_addr[gia]), .O(ic_addr_tag[gia]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_iar0(.I0(ic_addr[gia]), .O(ic_addr_ram_lo[gia]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_iar1(.I0(ic_addr[gia]), .O(ic_addr_ram_hi[gia]));
 		end
 	endgenerate
 `else
-	assign ic_addr_tag    = ic_addr;
-	assign ic_addr_ram_lo = ic_addr;
-	assign ic_addr_ram_hi = ic_addr;
+	assign ic_addr_tag = ic_addr;
 `endif
 
 	wire [IX_W-1:0] idx_v  = ic_addr_tag[OFF_W-1:LINE_SHIFT];

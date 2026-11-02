@@ -318,22 +318,10 @@ module atg_su_pk_half #(
 
 		wire s0_is_int_a = o_is_int_a == ATG_PK_IADD2[3:0] || o_is_int_a == ATG_PK_ISUB2[3:0] || o_is_int_a == ATG_PK_IMUL2[3:0];
 		wire s0_is_int_b = o_is_int_b == ATG_PK_IADD2[3:0] || o_is_int_b == ATG_PK_ISUB2[3:0] || o_is_int_b == ATG_PK_IMUL2[3:0];
-		reg [15:0] s0_fy;
-		reg        s0_fnoc;
-		always @(*) begin
-			s0_fy = 16'h3C00;
-			s0_fnoc = 1'b0;
-			case (o_mux_y)
-			ATG_PK_FMUL2[3:0]: begin
-				s0_fy = hb;
-				s0_fnoc = 1'b1;
-			end
-			ATG_PK_FFMA2[3:0]: begin
-				s0_fy = hb;
-			end
-			default: ;
-			endcase
-		end
+		(* max_fanout = 12 *) wire s0_use_hb = (o_mux_y == ATG_PK_FMUL2[3:0] || o_mux_y == ATG_PK_FFMA2[3:0]);
+		wire s0_fnoc = (o_mux_y == ATG_PK_FMUL2[3:0]);
+		wire [15:0] s0_fy = s0_use_hb ? hb : 16'h3C00;
+
 		reg [15:0] s0_fz;
 		always @(*) begin
 			s0_fz = hb;
@@ -515,7 +503,8 @@ module atg_su_pk_half #(
 		(* shreg_extract = "no" *) reg [9:0]  s2_t, s2_ec_p25, s2_ec_p37, s2_ec_p2, s2_er_p;
 		(* shreg_extract = "no" *) reg [15:0] s2_isum;
 		(* shreg_extract = "no" *) reg [15:0] s2_haf, s2_hbf;
-		(* shreg_extract = "no" *) reg        s2_za, s2_hb_z, s2_nan_a, s2_hb_nan;
+		(* shreg_extract = "no" *) reg        s2_za, s2_hb_z, s2_nan_a;
+		(* shreg_extract = "no", max_fanout = 12 *) reg s2_hb_nan;
 		(* shreg_extract = "no" *) reg        s2_ab_lt_raw, s2_ba_lt_raw;
 
 		always @(posedge clk) begin

@@ -295,7 +295,7 @@ module atg_su_sb #(
 		 * State 1: Register per-entry long/short hazard matches, free entry, and counter checks (<= 4 LUTs)
 		 * State 2: Combine hazard flags and drive i_valid / u_ready / fb_valid / alloc (<= 3 LUTs)
 		 */
-		reg [1:0] st_issue;
+		(* fsm_encoding = "none", max_fanout = 12 *) reg [1:0] st_issue;
 
 		/* Stage 0 -> 1 registers */
 		reg [5:0] r_rs1, r_rs2, r_rs3, r_rs1p, r_rs3p;
