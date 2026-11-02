@@ -356,29 +356,72 @@ module atg_su_sb #(
 					w_free_e_s1 = s1j[SBE_W:0];
 		end
 
-		(* dont_touch = "true" *) wire s0_en_a = u_valid && (st_issue == 2'd0);
-		(* dont_touch = "true" *) wire s0_en_b = u_valid && (st_issue == 2'd0);
-		(* dont_touch = "true" *) wire s0_we_0  = s0_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_1  = s0_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_2  = s0_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_3  = s0_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_4  = s0_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_5  = s0_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_6  = s0_en_b && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_7  = s0_en_b && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_8  = s0_en_b && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_9  = s0_en_b && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_10 = s0_en_b && !rst_p;
-		(* dont_touch = "true" *) wire s0_we_11 = s0_en_b && !rst_p;
+		wire s0_en = u_valid && (st_issue == 2'd0) && !rst_p;
+		wire s1_en = u_valid && (st_issue == 2'd1) && !rst_p;
 
-		(* dont_touch = "true" *) wire s1_en_a = u_valid && (st_issue == 2'd1);
-		(* dont_touch = "true" *) wire s1_we_0 = s1_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s1_we_1 = s1_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s1_we_2 = s1_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s1_we_3 = s1_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s1_we_4 = s1_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s1_we_5 = s1_en_a && !rst_p;
-		(* dont_touch = "true" *) wire s1_we_6 = s1_en_a && !rst_p;
+		wire s0_we_0, s0_we_1, s0_we_2, s0_we_3, s0_we_4, s0_we_5, s0_we_6, s0_we_7;
+		wire s0_we_8a, s0_we_8b, s0_we_9a, s0_we_9b, s0_we_10a, s0_we_10b, s0_we_11a, s0_we_11b;
+		wire s0_we_cnt;
+
+		wire s1_we_0, s1_we_1, s1_we_2a, s1_we_2b, s1_we_3a, s1_we_3b, s1_we_4, s1_we_5, s1_we_6;
+
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_0   (.I0(s0_en), .O(s0_we_0));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_1   (.I0(s0_en), .O(s0_we_1));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_2   (.I0(s0_en), .O(s0_we_2));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_3   (.I0(s0_en), .O(s0_we_3));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_4   (.I0(s0_en), .O(s0_we_4));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_5   (.I0(s0_en), .O(s0_we_5));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_6   (.I0(s0_en), .O(s0_we_6));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_7   (.I0(s0_en), .O(s0_we_7));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_8a  (.I0(s0_en), .O(s0_we_8a));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_8b  (.I0(s0_en), .O(s0_we_8b));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_9a  (.I0(s0_en), .O(s0_we_9a));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_9b  (.I0(s0_en), .O(s0_we_9b));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_10a (.I0(s0_en), .O(s0_we_10a));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_10b (.I0(s0_en), .O(s0_we_10b));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_11a (.I0(s0_en), .O(s0_we_11a));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_11b (.I0(s0_en), .O(s0_we_11b));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s0_cnt (.I0(s0_en), .O(s0_we_cnt));
+
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s1_0   (.I0(s1_en), .O(s1_we_0));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s1_1   (.I0(s1_en), .O(s1_we_1));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s1_2a  (.I0(s1_en), .O(s1_we_2a));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s1_2b  (.I0(s1_en), .O(s1_we_2b));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s1_3a  (.I0(s1_en), .O(s1_we_3a));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s1_3b  (.I0(s1_en), .O(s1_we_3b));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s1_4   (.I0(s1_en), .O(s1_we_4));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s1_5   (.I0(s1_en), .O(s1_we_5));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_s1_6   (.I0(s1_en), .O(s1_we_6));
+`else
+		assign s0_we_0   = s0_en;
+		assign s0_we_1   = s0_en;
+		assign s0_we_2   = s0_en;
+		assign s0_we_3   = s0_en;
+		assign s0_we_4   = s0_en;
+		assign s0_we_5   = s0_en;
+		assign s0_we_6   = s0_en;
+		assign s0_we_7   = s0_en;
+		assign s0_we_8a  = s0_en;
+		assign s0_we_8b  = s0_en;
+		assign s0_we_9a  = s0_en;
+		assign s0_we_9b  = s0_en;
+		assign s0_we_10a = s0_en;
+		assign s0_we_10b = s0_en;
+		assign s0_we_11a = s0_en;
+		assign s0_we_11b = s0_en;
+		assign s0_we_cnt = s0_en;
+
+		assign s1_we_0   = s1_en;
+		assign s1_we_1   = s1_en;
+		assign s1_we_2a  = s1_en;
+		assign s1_we_2b  = s1_en;
+		assign s1_we_3a  = s1_en;
+		assign s1_we_3b  = s1_en;
+		assign s1_we_4   = s1_en;
+		assign s1_we_5   = s1_en;
+		assign s1_we_6   = s1_en;
+`endif
 
 		integer sw, sj, sm;
 		always @(posedge clk) begin
@@ -442,31 +485,65 @@ module atg_su_sb #(
 					end
 				end
 			end
-			if (s0_we_8) begin
+			if (s0_we_8a) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
 					if (u_warp == sw[WARP_W-1:0]) begin
-						w_er0_r <= e_r0[sw*SB_ENTRIES*6 +: SB_ENTRIES*6];
+						w_er0_r[SB_ENTRIES*3-1:0] <= e_r0[sw*SB_ENTRIES*6 +: SB_ENTRIES*3];
 					end
 				end
 			end
-			if (s0_we_9) begin
+			if (s0_we_8b) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
 					if (u_warp == sw[WARP_W-1:0]) begin
-						w_er1_r <= e_r1[sw*SB_ENTRIES*6 +: SB_ENTRIES*6];
+						w_er0_r[SB_ENTRIES*6-1:SB_ENTRIES*3] <= e_r0[sw*SB_ENTRIES*6 + SB_ENTRIES*3 +: SB_ENTRIES*3];
 					end
 				end
 			end
-			if (s0_we_10) begin
+			if (s0_we_9a) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
 					if (u_warp == sw[WARP_W-1:0]) begin
-						w_er2_r <= e_r2[sw*SB_ENTRIES*6 +: SB_ENTRIES*6];
+						w_er1_r[SB_ENTRIES*3-1:0] <= e_r1[sw*SB_ENTRIES*6 +: SB_ENTRIES*3];
 					end
 				end
 			end
-			if (s0_we_11) begin
+			if (s0_we_9b) begin
 				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
 					if (u_warp == sw[WARP_W-1:0]) begin
-						w_er3_r <= e_r3[sw*SB_ENTRIES*6 +: SB_ENTRIES*6];
+						w_er1_r[SB_ENTRIES*6-1:SB_ENTRIES*3] <= e_r1[sw*SB_ENTRIES*6 + SB_ENTRIES*3 +: SB_ENTRIES*3];
+					end
+				end
+			end
+			if (s0_we_10a) begin
+				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
+					if (u_warp == sw[WARP_W-1:0]) begin
+						w_er2_r[SB_ENTRIES*3-1:0] <= e_r2[sw*SB_ENTRIES*6 +: SB_ENTRIES*3];
+					end
+				end
+			end
+			if (s0_we_10b) begin
+				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
+					if (u_warp == sw[WARP_W-1:0]) begin
+						w_er2_r[SB_ENTRIES*6-1:SB_ENTRIES*3] <= e_r2[sw*SB_ENTRIES*6 + SB_ENTRIES*3 +: SB_ENTRIES*3];
+					end
+				end
+			end
+			if (s0_we_11a) begin
+				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
+					if (u_warp == sw[WARP_W-1:0]) begin
+						w_er3_r[SB_ENTRIES*3-1:0] <= e_r3[sw*SB_ENTRIES*6 +: SB_ENTRIES*3];
+					end
+				end
+			end
+			if (s0_we_11b) begin
+				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
+					if (u_warp == sw[WARP_W-1:0]) begin
+						w_er3_r[SB_ENTRIES*6-1:SB_ENTRIES*3] <= e_r3[sw*SB_ENTRIES*6 + SB_ENTRIES*3 +: SB_ENTRIES*3];
+					end
+				end
+			end
+			if (s0_we_cnt) begin
+				for (sw = 0; sw < NWARPS; sw = sw + 1) begin
+					if (u_warp == sw[WARP_W-1:0]) begin
 						w_rcm_r <= cm_next[sw*CNT_W +: CNT_W];
 						w_rct_r <= ct_next[sw*CNT_W +: CNT_W];
 						w_rcx_r <= cx_next[sw*CNT_W +: CNT_W];
@@ -505,15 +582,29 @@ module atg_su_sb #(
 					(r_cls == ATG_CLS_X && w_rcx_r == {CNT_W{1'b1}})
 				);
 			end
-			if (s1_we_2) begin
-				for (sw = 0; sw < NE; sw = sw + 1) begin
+			if (s1_we_2a) begin
+				for (sw = 0; sw < NE/2; sw = sw + 1) begin
 					r_alloc_mask[sw] <= r_need_e && !w_ev_r[sw[SBE_W-1:0]] &&
 						(w_free_e_s1[SBE_W-1:0] == sw[SBE_W-1:0]) &&
 						(r_warp == sw[NE_W-1:SBE_W]);
 				end
 			end
-			if (s1_we_3) begin
-				for (sw = 0; sw < NE; sw = sw + 1) begin
+			if (s1_we_2b) begin
+				for (sw = NE/2; sw < NE; sw = sw + 1) begin
+					r_alloc_mask[sw] <= r_need_e && !w_ev_r[sw[SBE_W-1:0]] &&
+						(w_free_e_s1[SBE_W-1:0] == sw[SBE_W-1:0]) &&
+						(r_warp == sw[NE_W-1:SBE_W]);
+				end
+			end
+			if (s1_we_3a) begin
+				for (sw = 0; sw < NE/2; sw = sw + 1) begin
+					r_alloc_mask_hi[sw] <= r_need_e && !w_ev_r[sw[SBE_W-1:0]] &&
+						(w_free_e_s1[SBE_W-1:0] == sw[SBE_W-1:0]) &&
+						(r_warp == sw[NE_W-1:SBE_W]);
+				end
+			end
+			if (s1_we_3b) begin
+				for (sw = NE/2; sw < NE; sw = sw + 1) begin
 					r_alloc_mask_hi[sw] <= r_need_e && !w_ev_r[sw[SBE_W-1:0]] &&
 						(w_free_e_s1[SBE_W-1:0] == sw[SBE_W-1:0]) &&
 						(r_warp == sw[NE_W-1:SBE_W]);
