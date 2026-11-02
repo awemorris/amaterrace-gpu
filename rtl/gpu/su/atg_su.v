@@ -309,7 +309,7 @@ module atg_su #(
 	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
 ) (
 	input wire clk,
-	input wire rst_n,
+	(* keep = "true" *) input wire rst_n,
 	/* STATE broadcast (from atg_cp_state) */
 	input wire st_we,
 	input wire [8:0] st_idx,

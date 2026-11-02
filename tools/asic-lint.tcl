@@ -265,6 +265,12 @@ set r2_errors 0
 set r2_warnings 0
 
 # Check non-clock, non-reset and non-constant internal nets
+set rst_ports [get_ports -quiet -filter {NAME =~ "*rst*" || NAME =~ "*reset*"}]
+set rst_top_nets [list]
+if {[llength $rst_ports] > 0} {
+    set rst_top_nets [get_nets -quiet -top_net_of_hierarchical_group -of_objects $rst_ports]
+}
+
 set internal_nets [get_nets -hierarchical -top_net_of_hierarchical_group -filter {
     TYPE != "GLOBAL_CLOCK" && TYPE != "LOCAL_CLOCK" && TYPE != "GROUND" && TYPE != "POWER" &&
     NAME !~ "*clk*" && NAME !~ "*rst*" && NAME !~ "*reset*" &&
@@ -273,6 +279,9 @@ set internal_nets [get_nets -hierarchical -top_net_of_hierarchical_group -filter
 
 set top_high_fo [list]
 foreach n $internal_nets {
+    if {[lsearch -exact $rst_top_nets $n] != -1} {
+        continue
+    }
     set pin_cnt [get_property FLAT_PIN_COUNT $n]
     # Subtract driver pin to get fanout
     set fo [expr {$pin_cnt - 1}]
