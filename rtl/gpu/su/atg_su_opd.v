@@ -1106,9 +1106,30 @@ module atg_su_opd #(
 			wire [31:0] rf_va1_0 = fmod(r_data[l*32 +: 32], mods[0], mods[1], fp_unit, pk_unit);
 			wire [31:0] rf_va1_r = {(r_data[l*32 + 31] & ~b_clr31_1) ^ b_inv31_1, r_data[l*32 + 16 +: 15],
 				(r_data[l*32 + 15] & ~b_clr15_1) ^ b_inv15_1, r_data[l*32 +: 15]};
-			assign va[l*32 +: 32] = (REG_IO != 0) ?
-				(b_use_rf1 ? rf_va1_r : b_early_va[l*32 +: 32]) :
-				(use_rf1 ? rf_va1_0 : early_va1);
+			wire b_use_rf1_lo, b_use_rf1_hi;
+			wire b_use_rf2_lo, b_use_rf2_hi;
+			wire b_use_rf3_lo, b_use_rf3_hi;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rf1_lo (.I0(b_use_rf1), .O(b_use_rf1_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rf1_hi (.I0(b_use_rf1), .O(b_use_rf1_hi));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rf2_lo (.I0(b_use_rf2), .O(b_use_rf2_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rf2_hi (.I0(b_use_rf2), .O(b_use_rf2_hi));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rf3_lo (.I0(b_use_rf3), .O(b_use_rf3_lo));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rf3_hi (.I0(b_use_rf3), .O(b_use_rf3_hi));
+`else
+			assign b_use_rf1_lo = b_use_rf1;
+			assign b_use_rf1_hi = b_use_rf1;
+			assign b_use_rf2_lo = b_use_rf2;
+			assign b_use_rf2_hi = b_use_rf2;
+			assign b_use_rf3_lo = b_use_rf3;
+			assign b_use_rf3_hi = b_use_rf3;
+`endif
+			assign va[l*32 +: 16] = (REG_IO != 0) ?
+				(b_use_rf1_lo ? rf_va1_r[15:0] : b_early_va[l*32 +: 16]) :
+				(use_rf1 ? rf_va1_0[15:0] : early_va1[15:0]);
+			assign va[l*32 + 16 +: 16] = (REG_IO != 0) ?
+				(b_use_rf1_hi ? rf_va1_r[31:16] : b_early_va[l*32 + 16 +: 16]) :
+				(use_rf1 ? rf_va1_0[31:16] : early_va1[31:16]);
 
 			wire fwd_hit_2 = (hit_alu_ex4_2 && fwd_alu_ex4_lanes[l]) ||
 			                 (hit_alu_ex5_2 && fwd_alu_ex5_lanes[l]) ||
@@ -1129,9 +1150,12 @@ module atg_su_opd #(
 			wire [31:0] rf_vb2_0 = fmod(r_data[DW + l*32 +: 32], mods[2], mods[3], fp_unit, pk_unit);
 			wire [31:0] rf_vb2_r = {(r_data[DW + l*32 + 31] & ~b_clr31_2) ^ b_inv31_2, r_data[DW + l*32 + 16 +: 15],
 				(r_data[DW + l*32 + 15] & ~b_clr15_2) ^ b_inv15_2, r_data[DW + l*32 +: 15]};
-			assign vb[l*32 +: 32] = (REG_IO != 0) ?
-				(b_use_rf2 ? rf_vb2_r : b_early_vb[l*32 +: 32]) :
-				(use_rf2 ? rf_vb2_0 : early_vb2);
+			assign vb[l*32 +: 16] = (REG_IO != 0) ?
+				(b_use_rf2_lo ? rf_vb2_r[15:0] : b_early_vb[l*32 +: 16]) :
+				(use_rf2 ? rf_vb2_0[15:0] : early_vb2[15:0]);
+			assign vb[l*32 + 16 +: 16] = (REG_IO != 0) ?
+				(b_use_rf2_hi ? rf_vb2_r[31:16] : b_early_vb[l*32 + 16 +: 16]) :
+				(use_rf2 ? rf_vb2_0[31:16] : early_vb2[31:16]);
 
 			wire fwd_hit_3 = (hit_alu_ex4_3 && fwd_alu_ex4_lanes[l]) ||
 			                 (hit_alu_ex5_3 && fwd_alu_ex5_lanes[l]) ||
@@ -1151,9 +1175,12 @@ module atg_su_opd #(
 			wire [31:0] rf_vc3_0 = fmod(r_data[0 + l*32 +: 32], mods[4], mods[5], fp_unit, pk_unit);
 			wire [31:0] rf_vc3_r = {(r_data[l*32 + 31] & ~b_clr31_3) ^ b_inv31_3, r_data[l*32 + 16 +: 15],
 				(r_data[l*32 + 15] & ~b_clr15_3) ^ b_inv15_3, r_data[l*32 +: 15]};
-			assign vc[l*32 +: 32] = (REG_IO != 0) ?
-				(b_use_rf3 ? rf_vc3_r : b_early_vc[l*32 +: 32]) :
-				(use_rf3 ? rf_vc3_0 : early_vc3);
+			assign vc[l*32 +: 16] = (REG_IO != 0) ?
+				(b_use_rf3_lo ? rf_vc3_r[15:0] : b_early_vc[l*32 +: 16]) :
+				(use_rf3 ? rf_vc3_0[15:0] : early_vc3[15:0]);
+			assign vc[l*32 + 16 +: 16] = (REG_IO != 0) ?
+				(b_use_rf3_hi ? rf_vc3_r[31:16] : b_early_vc[l*32 + 16 +: 16]) :
+				(use_rf3 ? rf_vc3_0[31:16] : early_vc3[31:16]);
 		end
 	endgenerate
 

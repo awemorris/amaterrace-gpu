@@ -88,6 +88,7 @@ module atg_su_xu #(
 	wire [DW-1:0] rx, rq;
 	reg [NPHYS-1:0] rmask;
 	reg [2:0] rop;
+	(* shreg_extract = "no" *) reg [2:0] rop_pipe, rop_dt, rop_load, rop_we, rop_step;
 	reg [6:0] rrd;
 	reg [WARP_W-1:0] rwarp;
 	reg [GRP_W-1:0] rgrp;
@@ -95,6 +96,7 @@ module atg_su_xu #(
 	reg [SBE_W:0] rsbe;
 	reg [LW-1:0] li;
 	reg [5:0] step;
+	(* shreg_extract = "no" *) reg [5:0] step_cnt, step_cordic, step_tab, step_fbit;
 	reg ph;			/* rsq: 0 square root, 1 division */
 	/* The engine (registers sliced to bound fanout <= 16). */
 	wire [59:0] n;		/* sqrt: the radicand, two bits per step from the top */
@@ -211,7 +213,7 @@ module atg_su_xu #(
 	wire [39:0] t1, tt;
 	wire [39:0] t1_r, tt_r;
 	am_addsub #(.W(40)) u_t1 (.a(40'd0), .b(t0), .sub(ls), .s(t1), .co(carry_unused[7]));
-	am_add #(.W(40)) u_tt (.a(t1_r), .b(rop == ATG_XU_COS[2:0] ? 40'h4000000000 : 40'd0), .ci(1'b0),
+	am_add #(.W(40)) u_tt (.a(t1_r), .b(rop_dt == ATG_XU_COS[2:0] ? 40'h4000000000 : 40'd0), .ci(1'b0),
 		.s(tt), .co(carry_unused[8]));
 	/* The shared multiplier (exp2: y * K, log2: y * y), split into 6 single-DSP <=24x<=17 multiplies. */
 	wire [41:0] mb_r;
@@ -241,16 +243,16 @@ module atg_su_xu #(
 	/* The division step (rcp, rsq phase 1) and the sqrt step. */
 	wire [34:0] dtr, strl;
 	wire [33:0] srem = {rem[31:0], n[59:58]};
-	am_sub #(.W(35)) u_dtr (.a({rem, 1'b0}), .b(rop == ATG_XU_RCP[2:0] ? {11'd0, lm} : {5'd0, root}),
+	am_sub #(.W(35)) u_dtr (.a({rem, 1'b0}), .b(rop_dt == ATG_XU_RCP[2:0] ? {11'd0, lm} : {5'd0, root}),
 		.bi(1'b0), .d(dtr), .bo(carry_unused[9]));
 	am_sub #(.W(35)) u_strl (.a({1'b0, srem}), .b({3'd0, root, 2'b01}), .bi(1'b0), .d(strl),
 		.bo(carry_unused[10]));
 	wire [33:0] snext = strl[34] ? srem : strl[33:0];
 	/* The step counts, less one. */
-	wire [5:0] nsteps_m1 = rop == ATG_XU_RCP[2:0] ? 6'd27 : rop == ATG_XU_FSQRT[2:0] ? 6'd25 :
-		rop == ATG_XU_RSQ[2:0] ? (ph_step ? 6'd28 : 6'd29) :
-		(rop == ATG_XU_SIN[2:0] || rop == ATG_XU_COS[2:0]) ? 6'd25 : 6'd29;
-	wire [39:0] atn = xu_atan(step[4:0]);
+	wire [5:0] nsteps_m1 = rop_pipe == ATG_XU_RCP[2:0] ? 6'd27 : rop_pipe == ATG_XU_FSQRT[2:0] ? 6'd25 :
+		rop_pipe == ATG_XU_RSQ[2:0] ? (ph_step ? 6'd28 : 6'd29) :
+		(rop_pipe == ATG_XU_SIN[2:0] || rop_pipe == ATG_XU_COS[2:0]) ? 6'd25 : 6'd29;
+	wire [39:0] atn = xu_atan(step_tab[4:0]);
 	(* rom_style = "distributed", ram_style = "distributed" *) wire [39:0] atn_r;
 	wire [10:0] lue;
 	reg [10:0] lue_r;
@@ -286,7 +288,7 @@ module atg_su_xu #(
 				np = pi[5:0];
 		fbit = 1'b0;
 		for (pi = 0; pi < 30; pi = pi + 1)
-			if (step[4:0] == pi[4:0])
+			if (step_fbit[4:0] == pi[4:0])
 				fbit = fr[29 - pi];
 	end
 	wire [5:0] nsh;
@@ -298,7 +300,7 @@ module atg_su_xu #(
 	reg [11:0] ne127_r;
 	reg [11:0] nexp_r;
 	am_sub #(.W(6)) u_nsh (.a(6'd40), .b(np_r), .bi(1'b0), .d(nsh), .bo(carry_unused[13]));
-	am_shift #(.W(41), .SW(6)) u_nw (.a(nv_r), .amt(nsh_r), .left(1'b1), .arith(1'b0), .y(nw));
+	am_shift #(.W(41), .SW(6), .DIR(2)) u_nw (.a(nv_r), .amt(nsh_r), .left(1'b1), .arith(1'b0), .y(nw));
 	am_add #(.W(12)) u_ne (.a(ne_r), .b(12'd127), .ci(1'b0), .s(ne127), .co(carry_unused[14]));
 	am_add #(.W(12)) u_nx (.a(ne127_r), .b({6'd0, np_r}), .ci(1'b0), .s(nexp), .co(carry_unused[15]));
 
@@ -329,8 +331,8 @@ module atg_su_xu #(
 	wire [31:0] fin = nz_r ? 32'd0 : nr_r;
 
 	/* LOAD: the result's exponent (rcp, rsq, fsqrt, exp2); z of sin/cos. */
-	wire [23:0] exab = rop == ATG_XU_RCP[2:0] ? {12'd100, 4'd0, le} :	/* -50 - (e - 150) */
-		rop == ATG_XU_RSQ[2:0] ? {-12'sd40, hee_r} : rop == ATG_XU_FSQRT[2:0] ? {hee_r, 12'd13} :
+	wire [23:0] exab = rop_dt == ATG_XU_RCP[2:0] ? {12'd100, 4'd0, le} :	/* -50 - (e - 150) */
+		rop_dt == ATG_XU_RSQ[2:0] ? {-12'sd40, hee_r} : rop_dt == ATG_XU_FSQRT[2:0] ? {hee_r, 12'd13} :
 		{{3{ev_r[38]}}, ev_r[38:30], 12'd38};
 	wire [11:0] ex_l;
 	reg [11:0] ex_l_r;
@@ -346,7 +348,7 @@ module atg_su_xu #(
 	always @(*) begin
 		load_go_step_w = 1'b0;
 		load_res_w = 32'h7FC00000;
-		case (rop)
+		case (rop_load)
 		ATG_XU_RCP[2:0]:
 			if (lzero_r || linf_r)
 				load_res_w = {ls, linf_r ? 31'd0 : {8'hFF, 23'd0}};
@@ -354,11 +356,11 @@ module atg_su_xu #(
 				load_go_step_w = 1'b1;
 		ATG_XU_RSQ[2:0], ATG_XU_FSQRT[2:0]:
 			if (lzero_r)
-				load_res_w = rop == ATG_XU_RSQ[2:0] ? {ls, 8'hFF, 23'd0} : lx;
+				load_res_w = rop_load == ATG_XU_RSQ[2:0] ? {ls, 8'hFF, 23'd0} : lx;
 			else if (lnan_r || ls)
 				load_res_w = 32'h7FC00000;
 			else if (linf_r)
-				load_res_w = rop == ATG_XU_RSQ[2:0] ? 32'd0 : lx;
+				load_res_w = rop_load == ATG_XU_RSQ[2:0] ? 32'd0 : lx;
 			else
 				load_go_step_w = 1'b1;
 		ATG_XU_EXP2[2:0]:
@@ -381,7 +383,7 @@ module atg_su_xu #(
 			if (lnan_r || linf_r)
 				load_res_w = 32'h7FC00000;
 			else if (le_lt115_r)
-				load_res_w = rop == ATG_XU_SIN[2:0] ? lx : 32'h3F800000;
+				load_res_w = rop_load == ATG_XU_SIN[2:0] ? lx : 32'h3F800000;
 			else
 				load_go_step_w = 1'b1;
 		endcase
@@ -389,7 +391,7 @@ module atg_su_xu #(
 
 	/* STEP: the step count and the CORDIC rotation. */
 	wire [5:0] step1;
-	am_add #(.W(6)) u_step (.a(step), .b(6'd0), .ci(1'b1), .s(step1), .co(carry_unused[18]));
+	am_add #(.W(6)) u_step (.a(step_cnt), .b(6'd0), .ci(1'b1), .s(step1), .co(carry_unused[18]));
 	wire [35:0] cysh, cxsh, cx_n, cy_n;
 	wire [35:0] cysh_r, cxsh_r, cx_n_r, cy_n_r;
 	wire [40:0] z_n;
@@ -411,8 +413,8 @@ module atg_su_xu #(
 	assign z40_cy = z[40];
 	assign z40_z  = !z[40];
 `endif
-	am_shift #(.W(36), .SW(6)) u_cysh (.a({cy35_sh, cy[34:0]}), .amt(step), .left(1'b0), .arith(1'b1), .y(cysh));
-	am_shift #(.W(36), .SW(6)) u_cxsh (.a({cx35_sh, cx[34:0]}), .amt(step), .left(1'b0), .arith(1'b1), .y(cxsh));
+	am_shift #(.W(36), .SW(6), .DIR(1)) u_cysh (.a({cy35_sh, cy[34:0]}), .amt(step_cordic), .left(1'b0), .arith(1'b1), .y(cysh));
+	am_shift #(.W(36), .SW(6), .DIR(1)) u_cxsh (.a({cx35_sh, cx[34:0]}), .amt(step_cordic), .left(1'b0), .arith(1'b1), .y(cxsh));
 	am_addsub #(.W(36)) u_cx (.a(cx), .b(cysh_r), .sub(z40_cx), .s(cx_n), .co(carry_unused[19]));
 	am_addsub #(.W(36)) u_cy (.a(cy), .b(cxsh_r), .sub(z40_cy), .s(cy_n), .co(carry_unused[20]));
 	am_addsub #(.W(41)) u_z  (.a(z),  .b({1'b0, atn_r}), .sub(z40_z),  .s(z_n),  .co(carry_unused[21]));
@@ -638,7 +640,7 @@ module atg_su_xu #(
 	assign res_we_hi   = (load_end_hi && !load_go_step_r) || (((st == FIN) && (sub_st >= 4'd7)) && !sres);
 `endif
 	wire step_end   = (st == STEP) && (sub_st >= 4'd6);
-	wire step_last  = (st == STEP) && (sub_st >= 4'd6) && (step == nsteps_m1);
+	wire step_last  = (st == STEP) && (sub_st >= 4'd6) && (step_cnt == nsteps_m1);
 	wire fin_end    = (st == FIN)  && (sub_st >= 4'd7);
 	wire load_end   = load_end_lo;
 
@@ -803,7 +805,7 @@ module atg_su_xu #(
 	wire is_load_cx_lo, is_load_cx_hi;
 	wire is_load_cy_lo, is_load_cy_hi;
 	wire is_load_z_lo, is_load_z_mid, is_load_z_hi;
-	wire cordic_step_commit = (st == STEP) && (sub_st >= 4'd6) && ((rop == ATG_XU_SIN[2:0]) || (rop == ATG_XU_COS[2:0]));
+	wire cordic_step_commit = (st == STEP) && (sub_st >= 4'd6) && ((rop_we == ATG_XU_SIN[2:0]) || (rop_we == ATG_XU_COS[2:0]));
 	wire cordic_load_commit = load_commit_dat0;
 	wire cordic_we_raw = cordic_load_commit || cordic_step_commit;
 
@@ -882,19 +884,19 @@ module atg_su_xu #(
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_mb_lo  (.I0((st == STEP) && (sub_st == 4'd0)), .O(mb_we_lo));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_mb_mid (.I0((st == STEP) && (sub_st == 4'd0)), .O(mb_we_mid));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_mb_hi  (.I0((st == STEP) && (sub_st == 4'd0)), .O(mb_we_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_lo (.I0(rop == ATG_XU_EXP2[2:0]), .O(is_exp2_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_mid(.I0(rop == ATG_XU_EXP2[2:0]), .O(is_exp2_mid));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_hi (.I0(rop == ATG_XU_EXP2[2:0]), .O(is_exp2_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_lo (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_mid(.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_mid));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_exp_hi (.I0(rop_load == ATG_XU_EXP2[2:0]), .O(is_exp2_hi));
 `else
 	assign mb_we_lo = (st == STEP) && (sub_st == 4'd0);
 	assign mb_we_mid = (st == STEP) && (sub_st == 4'd0);
 	assign mb_we_hi = (st == STEP) && (sub_st == 4'd0);
-	assign is_exp2_lo = rop == ATG_XU_EXP2[2:0];
-	assign is_exp2_mid = rop == ATG_XU_EXP2[2:0];
-	assign is_exp2_hi = rop == ATG_XU_EXP2[2:0];
+	assign is_exp2_lo = rop_load == ATG_XU_EXP2[2:0];
+	assign is_exp2_mid = rop_load == ATG_XU_EXP2[2:0];
+	assign is_exp2_hi = rop_load == ATG_XU_EXP2[2:0];
 `endif
 
-	wire [41:0] expk_val = {2'd0, xu_expk(step[4:0])};
+	wire [41:0] expk_val = {2'd0, xu_expk(step_tab[4:0])};
 	reg [13:0] mb_r_lo, mb_r_mid, mb_r_hi;
 	always @(posedge clk) begin
 		if (rst_p) begin
@@ -911,8 +913,8 @@ module atg_su_xu #(
 
 	/* Accumulator y */
 	wire y_we_load = load_commit_dat0;
-	wire y_we_exp  = (st == STEP) && (sub_st >= 4'd6) && (rop == ATG_XU_EXP2[2:0]) && fbit;
-	wire y_we_log  = (st == STEP) && (sub_st >= 4'd6) && (rop == ATG_XU_LOG2[2:0]);
+	wire y_we_exp  = (st == STEP) && (sub_st >= 4'd6) && (rop_we == ATG_XU_EXP2[2:0]) && fbit;
+	wire y_we_log  = (st == STEP) && (sub_st >= 4'd6) && (rop_we == ATG_XU_LOG2[2:0]);
 	wire y_we_raw  = y_we_load || y_we_exp || y_we_log;
 
 	wire y_we_lo, y_we_mid, y_we_hi;
@@ -940,7 +942,7 @@ module atg_su_xu #(
 	assign y_we_exp_hi   = y_we_exp;
 `endif
 
-	wire [41:0] y_load_val = (rop == ATG_XU_EXP2[2:0]) ? (42'd1 << 38) : {1'b0, lm, 17'd0};
+	wire [41:0] y_load_val = (rop_load == ATG_XU_EXP2[2:0]) ? (42'd1 << 38) : {1'b0, lm, 17'd0};
 	wire [13:0] y_next_lo = y_we_load_lo ? y_load_val[13:0] :
 	                        y_we_exp_lo  ? prod_r[51:38] :
 	                        (prod_r_81_a0 ? prod_r[54:41] : prod_r[53:40]);
@@ -967,7 +969,7 @@ module atg_su_xu #(
 
 	/* Fraction register fr */
 	wire fr_we_load = load_commit_dat0;
-	wire fr_we_step = (st == STEP) && (sub_st >= 4'd6) && (rop == ATG_XU_LOG2[2:0]);
+	wire fr_we_step = (st == STEP) && (sub_st >= 4'd6) && (rop_we == ATG_XU_LOG2[2:0]);
 	wire fr_we_raw = fr_we_load || fr_we_step;
 
 	wire fr_we_lo, fr_we_hi;
@@ -979,7 +981,7 @@ module atg_su_xu #(
 	assign fr_we_hi = fr_we_raw;
 `endif
 
-	wire [29:0] fr_next = fr_we_load ? ((rop == ATG_XU_EXP2[2:0]) ? ev_r[29:0] : 30'd0) :
+	wire [29:0] fr_next = fr_we_load ? ((rop_load == ATG_XU_EXP2[2:0]) ? ev_r[29:0] : 30'd0) :
 	                      {fr[28:0], prod_r_81_b};
 	reg [14:0] fr_lo, fr_hi;
 	always @(posedge clk) begin
@@ -995,7 +997,7 @@ module atg_su_xu #(
 
 	/* Sqrt/div root */
 	wire root_we_load = load_commit_dat1;
-	wire root_we_step = (st == STEP) && (sub_st >= 4'd6) && ((rop == ATG_XU_RCP[2:0]) || (((rop == ATG_XU_RSQ[2:0]) || (rop == ATG_XU_FSQRT[2:0])) && !ph_root));
+	wire root_we_step = (st == STEP) && (sub_st >= 4'd6) && ((rop_we == ATG_XU_RCP[2:0]) || (((rop_we == ATG_XU_RSQ[2:0]) || (rop_we == ATG_XU_FSQRT[2:0])) && !ph_root));
 	wire root_we_raw = root_we_load || root_we_step;
 
 	wire root_we_lo, root_we_hi;
@@ -1023,7 +1025,7 @@ module atg_su_xu #(
 	assign dtr34_n      = dtr_r[34];
 `endif
 
-	wire [29:0] root_next = root_we_load ? 30'd0 : {root[28:0], (rop == ATG_XU_RCP[2:0]) ? !dtr34_root : !strl_r[34]};
+	wire [29:0] root_next = root_we_load ? 30'd0 : {root[28:0], (rop_step == ATG_XU_RCP[2:0]) ? !dtr34_root : !strl_r[34]};
 	reg [14:0] root_lo, root_hi;
 	always @(posedge clk) begin
 		if (rst_p) begin
@@ -1038,8 +1040,8 @@ module atg_su_xu #(
 
 	/* Remainder rem */
 	wire rem_we_load = load_commit_dat1;
-	wire rem_we_step = (st == STEP) && (sub_st >= 4'd6) && ((rop == ATG_XU_RCP[2:0]) || (rop == ATG_XU_RSQ[2:0]) || (rop == ATG_XU_FSQRT[2:0]));
-	wire rem_we_last = step_last && (rop == ATG_XU_RSQ[2:0]) && !ph_rem;
+	wire rem_we_step = (st == STEP) && (sub_st >= 4'd6) && ((rop_we == ATG_XU_RCP[2:0]) || (rop_we == ATG_XU_RSQ[2:0]) || (rop_we == ATG_XU_FSQRT[2:0]));
+	wire rem_we_last = step_last && (rop_we == ATG_XU_RSQ[2:0]) && !ph_rem;
 	wire rem_we_raw = rem_we_load || rem_we_step || rem_we_last;
 
 	wire rem_we_s0, rem_we_s1, rem_we_s2;
@@ -1053,7 +1055,7 @@ module atg_su_xu #(
 	assign rem_we_s2 = rem_we_raw;
 `endif
 
-	wire rem_step_cond = (rop == ATG_XU_RCP[2:0]) || ph_rem;
+	wire rem_step_cond = (rop_step == ATG_XU_RCP[2:0]) || ph_rem;
 	wire dtr34_rem_lo, dtr34_rem_hi;
 	wire rem_cond_lo, rem_cond_hi;
 `ifdef SYNTH_KINTEX7
@@ -1070,7 +1072,7 @@ module atg_su_xu #(
 	wire [16:0] rem_step_lo = rem_cond_lo ? (!dtr34_rem_lo ? dtr_r[16:0] : {rem[15:0], 1'b0}) : snext_r[16:0];
 	wire [16:0] rem_step_hi = rem_cond_hi ? (!dtr34_rem_hi ? dtr_r[33:17] : rem[32:16]) : snext_r[33:17];
 	wire [33:0] rem_step_val = {rem_step_hi, rem_step_lo};
-	wire [33:0] rem_next = rem_we_load ? ((rop == ATG_XU_RCP[2:0]) ? 34'h000400000 : 34'd0) :
+	wire [33:0] rem_next = rem_we_load ? ((rop_step == ATG_XU_RCP[2:0]) ? 34'h000400000 : 34'd0) :
 	                       rem_we_last ? 34'h010000000 : rem_step_val;
 
 	reg [11:0] rem_s0, rem_s1;
@@ -1090,8 +1092,8 @@ module atg_su_xu #(
 
 	/* Radicand n */
 	wire n_we_load = load_commit_dat1;
-	wire n_we_step = (st == STEP) && (sub_st >= 4'd6) && ((rop == ATG_XU_RSQ[2:0]) || (rop == ATG_XU_FSQRT[2:0]));
-	wire n_we_last = step_last && (rop == ATG_XU_RSQ[2:0]) && !ph_n_s0;
+	wire n_we_step = (st == STEP) && (sub_st >= 4'd6) && ((rop_we == ATG_XU_RSQ[2:0]) || (rop_we == ATG_XU_FSQRT[2:0]));
+	wire n_we_last = step_last && (rop_we == ATG_XU_RSQ[2:0]) && !ph_n_s0;
 	wire n_we_raw = n_we_load || n_we_step || n_we_last;
 
 	wire n_we_s0, n_we_s1, n_we_s2, n_we_s3;
@@ -1113,7 +1115,7 @@ module atg_su_xu #(
 		ph_n_s1 ? {n[29], n[27:14]} : n[27:13],
 		ph_n_s0 ? {n[13:0], !dtr34_n} : {n[12:0], 2'b00}
 	};
-	wire [59:0] n_load_val = (rop == ATG_XU_RSQ[2:0]) ? {1'b0, lmm, 34'd0} : {1'b0, lmm, 26'd0, 8'd0};
+	wire [59:0] n_load_val = (rop_load == ATG_XU_RSQ[2:0]) ? {1'b0, lmm, 34'd0} : {1'b0, lmm, 26'd0, 8'd0};
 	wire [59:0] n_next = n_we_load ? n_load_val :
 	                     n_we_last ? {n[59:29], 29'd0} : n_step_val;
 
@@ -1150,6 +1152,11 @@ module atg_su_xu #(
 		if (rst_p) begin
 			rmask <= {NPHYS{1'b0}};
 			rop <= 3'd0;
+			rop_pipe <= 3'd0;
+			rop_dt <= 3'd0;
+			rop_load <= 3'd0;
+			rop_we <= 3'd0;
+			rop_step <= 3'd0;
 			rrd <= 7'd0;
 			rwarp <= {WARP_W{1'b0}};
 			rgrp <= {GRP_W{1'b0}};
@@ -1160,6 +1167,11 @@ module atg_su_xu #(
 				rmask <= x_mask[NPHYS-1:0];
 			if (idle_mine_rop_rd) begin
 				rop <= x_uop[ATG_UOP_OP +: 3];
+				rop_pipe <= x_uop[ATG_UOP_OP +: 3];
+				rop_dt <= x_uop[ATG_UOP_OP +: 3];
+				rop_load <= x_uop[ATG_UOP_OP +: 3];
+				rop_we <= x_uop[ATG_UOP_OP +: 3];
+				rop_step <= x_uop[ATG_UOP_OP +: 3];
 				rrd <= x_uop[ATG_UOP_RD +: 7];
 			end
 			if (idle_mine_warp_grp) begin
@@ -1184,6 +1196,10 @@ module atg_su_xu #(
 			sub_st <= 4'd0;
 			li <= {LW{1'b0}};
 			step <= 6'd0;
+			step_cnt <= 6'd0;
+			step_cordic <= 6'd0;
+			step_tab <= 6'd0;
+			step_fbit <= 6'd0;
 			ph <= 1'b0;
 			load_go_step_r <= 1'b0;
 			stk <= 1'b0;
@@ -1261,6 +1277,10 @@ module atg_su_xu #(
 				default: begin
 					sub_st <= 4'd0;
 					step <= 6'd0;
+					step_cnt <= 6'd0;
+					step_cordic <= 6'd0;
+					step_tab <= 6'd0;
+					step_fbit <= 6'd0;
 					ph <= 1'b0;
 					stk <= 1'b0;
 					sres <= !load_go_step_r;
@@ -1277,8 +1297,16 @@ module atg_su_xu #(
 				default: begin
 					sub_st <= 4'd0;
 					step <= step1;
+					step_cnt <= step1;
+					step_cordic <= step1;
+					step_tab <= step1;
+					step_fbit <= step1;
 					if (step_last) begin
 						step <= 6'd0;
+						step_cnt <= 6'd0;
+						step_cordic <= 6'd0;
+						step_tab <= 6'd0;
+						step_fbit <= 6'd0;
 						if (rop == ATG_XU_RSQ[2:0] && !ph_step) begin
 							/* 2^57 / t: t = the root (30 bits). */
 							ph <= 1'b1;

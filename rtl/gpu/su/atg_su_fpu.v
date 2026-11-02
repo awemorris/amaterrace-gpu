@@ -259,8 +259,8 @@ module atg_su_fpu_core (
 	(* max_fanout = 16 *) wire [4:0] fm1_s0 = f5_149(a[27:23]);
 	wire [23:0] q0_s0;
 	wire [23:0] smk_s0;
-	am_shift #(.W(24), .SW(5)) u_q0 (.a(m_s0), .amt(f5_s0), .left(1'b0), .arith(1'b0), .y(q0_s0));
-	am_shift #(.W(24), .SW(5)) u_smk0 (.a(24'hFFFFFF), .amt(fm1_s0), .left(1'b1), .arith(1'b0), .y(smk_s0));
+	am_shift #(.W(24), .SW(5), .DIR(1)) u_q0 (.a(m_s0), .amt(f5_s0), .left(1'b0), .arith(1'b0), .y(q0_s0));
+	am_shift #(.W(24), .SW(5), .DIR(2)) u_smk0 (.a(24'hFFFFFF), .amt(fm1_s0), .left(1'b1), .arith(1'b0), .y(smk_s0));
 	wire f_ge24_s0 = !a[30] && !(&a[29:23]);
 	wire f_gt24_s0 = !a[30] && !(&a[29:24]);
 	wire f_ne0_s0 = (a[30:23] != 8'd150);
@@ -634,7 +634,7 @@ module atg_su_fpu_core (
 	/* Stage 2: f2i barrel shift (negation in Stage 3) */
 	(* max_fanout = 16 *) wire [4:0] s2_f2i_sh = sh5_22(s2_xf[27:23]);
 	wire [31:0] s2_f2i_mw;
-	am_shift #(.W(32), .SW(5)) u_f2i_mw2 (.a({8'd0, 1'b1, s2_xf[22:0]}), .amt(s2_f2i_sh), .left(1'b1), .arith(1'b0), .y(s2_f2i_mw));
+	am_shift #(.W(32), .SW(5), .DIR(2)) u_f2i_mw2 (.a({8'd0, 1'b1, s2_xf[22:0]}), .amt(s2_f2i_sh), .left(1'b1), .arith(1'b0), .y(s2_f2i_mw));
 	wire [31:0] s2_f2i_mag = {
 		s2_exp_ge150_hi ? s2_f2i_mw[31:16] : {7'd0, s2_n[24:16]},
 		s2_exp_ge150_lo ? s2_f2i_mw[15:0]  : s2_n[15:0]
@@ -1025,11 +1025,11 @@ module atg_su_fpu_core (
 	wire fma3_kbig = !(s3_is_fract && s3_fract_ge1) && s3_ks_gt49;
 
 	wire [76:0] fma3_csl;
-	am_shift #(.W(77), .SW(7)) u_fma3_csl (.a({53'd0, s3_fma_mc_sh}), .amt(s3_cs_amt), .left(1'b1), .arith(1'b0), .y(fma3_csl));
+	am_shift #(.W(77), .SW(7), .DIR(2)) u_fma3_csl (.a({53'd0, s3_fma_mc_sh}), .amt(s3_cs_amt), .left(1'b1), .arith(1'b0), .y(fma3_csl));
 	wire [23:0] fma3_csr;
-	am_shift #(.W(24), .SW(5)) u_fma3_csr (.a(s3_fma_mc_sh), .amt(s3_fma_rs), .left(1'b0), .arith(1'b0), .y(fma3_csr));
+	am_shift #(.W(24), .SW(5), .DIR(1)) u_fma3_csr (.a(s3_fma_mc_sh), .amt(s3_fma_rs), .left(1'b0), .arith(1'b0), .y(fma3_csr));
 	wire [23:0] fma3_cmk;
-	am_shift #(.W(24), .SW(5)) u_fma3_cmk (.a(24'hFFFFFF), .amt(s3_fma_rs), .left(1'b1), .arith(1'b0), .y(fma3_cmk));
+	am_shift #(.W(24), .SW(5), .DIR(2)) u_fma3_cmk (.a(24'hFFFFFF), .amt(s3_fma_rs), .left(1'b1), .arith(1'b0), .y(fma3_cmk));
 	wire fma3_cst = |(s3_fma_mc_sh & ~fma3_cmk);
 	(* keep = "true" *) wire s3_fr_inc_lo = s3_fract_inc;
 	(* keep = "true" *) wire s3_fr_inc_hi = s3_fract_inc;

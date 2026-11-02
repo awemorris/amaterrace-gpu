@@ -849,6 +849,7 @@ module atg_su #(
 	localparam N_OGRP = 14;
 	wire [N_OGRP*DW-1:0] x_a_grp, x_b_grp, x_c_grp;
 	wire [N_OGRP*NPHYS*2-1:0] x_mask_grp;
+	wire [N_OGRP*UOP_W-1:0] x_uop_grp;
 	genvar g_grp, g_opb;
 	generate
 		for (g_grp = 0; g_grp < N_OGRP; g_grp = g_grp + 1) begin : g_ogrp
@@ -870,42 +871,63 @@ module atg_su #(
 				assign x_mask_grp[g_grp*NPHYS*2 + g_opb] = x_mask[g_opb];
 `endif
 			end
+			for (g_opb = 0; g_opb < UOP_W; g_opb = g_opb + 1) begin : g_uop_buf
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xu (.I0(x_uop[g_opb]), .O(x_uop_grp[g_grp*UOP_W + g_opb]));
+`else
+				assign x_uop_grp[g_grp*UOP_W + g_opb] = x_uop[g_opb];
+`endif
+			end
 		end
 	endgenerate
 
 	wire [DW-1:0] x_a_alu = x_a_grp[0*DW +: DW], x_b_alu = x_b_grp[0*DW +: DW], x_c_alu = x_c_grp[0*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_alu = x_mask_grp[0*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_alu = x_uop_grp[0*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_fpu = x_a_grp[1*DW +: DW], x_b_fpu = x_b_grp[1*DW +: DW], x_c_fpu = x_c_grp[1*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_fpu = x_mask_grp[1*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_fpu = x_uop_grp[1*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_pk  = x_a_grp[2*DW +: DW], x_b_pk  = x_b_grp[2*DW +: DW], x_c_pk  = x_c_grp[2*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_pk  = x_mask_grp[2*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_pk  = x_uop_grp[2*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_lane= x_a_grp[3*DW +: DW], x_b_lane= x_b_grp[3*DW +: DW], x_c_lane= x_c_grp[3*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_lane= x_mask_grp[3*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_lane= x_uop_grp[3*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_lda = x_a_grp[4*DW +: DW], x_b_lda = x_b_grp[4*DW +: DW], x_c_lda = x_c_grp[4*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_lda = x_mask_grp[4*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_lda = x_uop_grp[4*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_exec= x_a_grp[5*DW +: DW], x_b_exec= x_b_grp[5*DW +: DW], x_c_exec= x_c_grp[5*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_exec= x_mask_grp[5*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_exec= x_uop_grp[5*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_lsu = x_a_grp[6*DW +: DW], x_b_lsu = x_b_grp[6*DW +: DW], x_c_lsu = x_c_grp[6*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_lsu = x_mask_grp[6*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_lsu = x_uop_grp[6*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_lds = x_a_grp[7*DW +: DW], x_b_lds = x_b_grp[7*DW +: DW], x_c_lds = x_c_grp[7*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_lds = x_mask_grp[7*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_lds = x_uop_grp[7*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_cb  = x_a_grp[8*DW +: DW], x_b_cb  = x_b_grp[8*DW +: DW], x_c_cb  = x_c_grp[8*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_cb  = x_mask_grp[8*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_cb  = x_uop_grp[8*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_tex = x_a_grp[9*DW +: DW], x_b_tex = x_b_grp[9*DW +: DW], x_c_tex = x_c_grp[9*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_tex = x_mask_grp[9*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_tex = x_uop_grp[9*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_div = x_a_grp[10*DW +: DW], x_b_div = x_b_grp[10*DW +: DW], x_c_div = x_c_grp[10*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_div = x_mask_grp[10*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_div = x_uop_grp[10*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_xu  = x_a_grp[11*DW +: DW], x_b_xu  = x_b_grp[11*DW +: DW], x_c_xu  = x_c_grp[11*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_xu  = x_mask_grp[11*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_xu  = x_uop_grp[11*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_exp = x_a_grp[12*DW +: DW], x_b_exp = x_b_grp[12*DW +: DW], x_c_exp = x_c_grp[12*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_exp = x_mask_grp[12*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_exp = x_uop_grp[12*UOP_W +: UOP_W];
 	wire [DW-1:0] x_a_pt  = x_a_grp[13*DW +: DW], x_b_pt  = x_b_grp[13*DW +: DW];
 	wire [NPHYS*2-1:0] x_mask_pt  = x_mask_grp[13*NPHYS*2 +: NPHYS*2];
+	wire [UOP_W-1:0] x_uop_pt  = x_uop_grp[13*UOP_W +: UOP_W];
 
 	atg_su_alu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT)) alu (
 		.clk(clk), .rst_n(rst_n), .en(1'b1),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_alu), .x_b(x_b_alu), .x_c(x_c_alu), .x_mask(x_mask_alu),
+		.x_pc(x_pc), .x_uop(x_uop_alu), .x_a(x_a_alu), .x_b(x_b_alu), .x_c(x_c_alu), .x_mask(x_mask_alu),
 		.x_info(x_info), .x_ready(alu_ready),
 		.s_valid(alu_s_valid), .s_warp(alu_s_warp), .s_grp(alu_s_grp), .s_rd(alu_s_rd),
 		.s_data(alu_s_data), .s_lanes(alu_s_lanes),
@@ -921,7 +943,7 @@ module atg_su #(
 		.PACKED(PACKED), .PK_SHARED(PK_SHARED)) fpu (
 		.clk(clk), .rst_n(rst_n), .en(1'b1),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_fpu), .x_b(x_b_fpu), .x_c(x_c_fpu), .x_mask(x_mask_fpu),
+		.x_pc(x_pc), .x_uop(x_uop_fpu), .x_a(x_a_fpu), .x_b(x_b_fpu), .x_c(x_c_fpu), .x_mask(x_mask_fpu),
 		.x_info(x_info), .x_ready(fpu_ready),
 		.s_valid(fpu_s_valid), .s_warp(fpu_s_warp), .s_grp(fpu_s_grp), .s_rd(fpu_s_rd),
 		.s_data(fpu_s_data), .s_lanes(fpu_s_lanes),
@@ -935,7 +957,7 @@ module atg_su #(
 		.PK_SHARED(PK_SHARED)) pk (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_pk), .x_b(x_b_pk), .x_c(x_c_pk), .x_mask(x_mask_pk),
+		.x_pc(x_pc), .x_uop(x_uop_pk), .x_a(x_a_pk), .x_b(x_b_pk), .x_c(x_c_pk), .x_mask(x_mask_pk),
 		.x_info(x_info), .x_ready(pk_ready),
 		.s_valid(pk_s_valid), .s_warp(pk_s_warp), .s_grp(pk_s_grp), .s_rd(pk_s_rd),
 		.s_data(pk_s_data), .s_lanes(pk_s_lanes)
@@ -944,7 +966,7 @@ module atg_su #(
 	atg_su_lane #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT), .SUBGROUP(SUBGROUP)) lane (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_lane), .x_b(x_b_lane), .x_c(x_c_lane), .x_mask(x_mask_lane),
+		.x_pc(x_pc), .x_uop(x_uop_lane), .x_a(x_a_lane), .x_b(x_b_lane), .x_c(x_c_lane), .x_mask(x_mask_lane),
 		.x_info(x_info), .x_ready(lane_ready), .sg_emit_done(lane_sg_emit_done),
 		.s_valid(lane_s_valid), .s_warp(lane_s_warp), .s_grp(lane_s_grp), .s_rd(lane_s_rd),
 		.s_data(lane_s_data), .s_lanes(lane_s_lanes)
@@ -954,7 +976,7 @@ module atg_su #(
 		.scrub(scrub_lda), .scrub_busy(scb_lda),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_lda), .x_b(x_b_lda), .x_c(x_c_lda), .x_mask(x_mask_lda),
+		.x_pc(x_pc), .x_uop(x_uop_lda), .x_a(x_a_lda), .x_b(x_b_lda), .x_c(x_c_lda), .x_mask(x_mask_lda),
 		.x_info(x_info), .x_ready(lda_ready),
 		.s_valid(lda_s_valid), .s_warp(lda_s_warp), .s_grp(lda_s_grp), .s_rd(lda_s_rd),
 		.s_data(lda_s_data), .s_lanes(lda_s_lanes),
@@ -964,7 +986,7 @@ module atg_su #(
 	atg_su_exec #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .SHORT_LAT(SHORT_LAT)) exec (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_exec), .x_b(x_b_exec), .x_c(x_c_exec), .x_mask(x_mask_exec),
+		.x_pc(x_pc), .x_uop(x_uop_exec), .x_a(x_a_exec), .x_b(x_b_exec), .x_c(x_c_exec), .x_mask(x_mask_exec),
 		.x_info(x_info), .x_ready(exec_ready),
 		.s_valid(exec_s_valid), .s_warp(exec_s_warp), .s_grp(exec_s_grp), .s_rd(exec_s_rd),
 		.s_data(exec_s_data), .s_lanes(exec_s_lanes),
@@ -976,7 +998,7 @@ module atg_su #(
 	atg_su_lsu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) lsu (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_lsu), .x_b(x_b_lsu), .x_c(x_c_lsu), .x_mask(x_mask_lsu),
+		.x_pc(x_pc), .x_uop(x_uop_lsu), .x_a(x_a_lsu), .x_b(x_b_lsu), .x_c(x_c_lsu), .x_mask(x_mask_lsu),
 		.x_info(x_info), .x_ready(lsu_ready),
 		.l_valid(lsu_l_valid), .l_ready(lsu_l_ready), .l_warp(lsu_l_warp),
 		.l_grp(lsu_l_grp), .l_rd(lsu_l_rd), .l_data(lsu_l_data), .l_lanes(lsu_l_lanes),
@@ -996,7 +1018,7 @@ module atg_su #(
 		.scrub(scrub_lds), .scrub_busy(scb_lds),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_lds), .x_b(x_b_lds), .x_c(x_c_lds), .x_mask(x_mask_lds),
+		.x_pc(x_pc), .x_uop(x_uop_lds), .x_a(x_a_lds), .x_b(x_b_lds), .x_c(x_c_lds), .x_mask(x_mask_lds),
 		.x_info(x_info), .x_ready(lds_ready),
 		.l_valid(lds_l_valid), .l_ready(lds_l_ready), .l_warp(lds_l_warp),
 		.l_grp(lds_l_grp), .l_rd(lds_l_rd), .l_data(lds_l_data), .l_lanes(lds_l_lanes),
@@ -1008,7 +1030,7 @@ module atg_su #(
 		.scrub(scrub_cbank), .scrub_busy(scb_cbank),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_cb), .x_b(x_b_cb), .x_c(x_c_cb), .x_mask(x_mask_cb),
+		.x_pc(x_pc), .x_uop(x_uop_cb), .x_a(x_a_cb), .x_b(x_b_cb), .x_c(x_c_cb), .x_mask(x_mask_cb),
 		.x_info(x_info), .x_ready(cbank_ready),
 		.l_valid(cbank_l_valid), .l_ready(cbank_l_ready), .l_warp(cbank_l_warp),
 		.l_grp(cbank_l_grp), .l_rd(cbank_l_rd), .l_data(cbank_l_data), .l_lanes(cbank_l_lanes),
@@ -1022,7 +1044,7 @@ module atg_su #(
 	atg_su_tex #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) tex (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_tex), .x_b(x_b_tex), .x_c(x_c_tex), .x_mask(x_mask_tex),
+		.x_pc(x_pc), .x_uop(x_uop_tex), .x_a(x_a_tex), .x_b(x_b_tex), .x_c(x_c_tex), .x_mask(x_mask_tex),
 		.x_info(x_info), .x_ready(tex_ready),
 		.l_valid(tex_l_valid), .l_ready(tex_l_ready), .l_warp(tex_l_warp),
 		.l_grp(tex_l_grp), .l_rd(tex_l_rd), .l_data(tex_l_data), .l_lanes(tex_l_lanes),
@@ -1041,7 +1063,7 @@ module atg_su #(
 			atg_su_xu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) xu (
 				.clk(clk), .rst_n(rst_n),
 				.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-				.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_xu), .x_b(x_b_xu), .x_c(x_c_xu), .x_mask(x_mask_xu),
+				.x_pc(x_pc), .x_uop(x_uop_xu), .x_a(x_a_xu), .x_b(x_b_xu), .x_c(x_c_xu), .x_mask(x_mask_xu),
 				.x_info(x_info), .x_ready(xu_ready),
 				.l_valid(xu_l_valid), .l_ready(xu_l_ready), .l_warp(xu_l_warp),
 				.l_grp(xu_l_grp), .l_rd(xu_l_rd), .l_data(xu_l_data), .l_lanes(xu_l_lanes),
@@ -1066,7 +1088,7 @@ module atg_su #(
 	atg_su_div #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) div (
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_div), .x_b(x_b_div), .x_c(x_c_div), .x_mask(x_mask_div),
+		.x_pc(x_pc), .x_uop(x_uop_div), .x_a(x_a_div), .x_b(x_b_div), .x_c(x_c_div), .x_mask(x_mask_div),
 		.x_info(x_info), .x_ready(div_ready),
 		.l_valid(div_l_valid), .l_ready(div_l_ready), .l_warp(div_l_warp),
 		.l_grp(div_l_grp), .l_rd(div_l_rd), .l_data(div_l_data), .l_lanes(div_l_lanes),
@@ -1087,7 +1109,7 @@ module atg_su #(
 		.scrub(scrub_exp), .scrub_busy(scb_exp),
 		.clk(clk), .rst_n(rst_n),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a_exp), .x_b(x_b_exp), .x_c(x_c_exp), .x_mask(x_mask_exp),
+		.x_pc(x_pc), .x_uop(x_uop_exp), .x_a(x_a_exp), .x_b(x_b_exp), .x_c(x_c_exp), .x_mask(x_mask_exp),
 		.x_info(x_info), .x_ready(exp_ready),
 		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
 		.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(ex_color1), .ex_has_src1(ex_has_src1), .ex_depth(ex_depth), .ex_last(ex_last),
@@ -1105,7 +1127,7 @@ module atg_su #(
 	atg_su_pt #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .UOP_W(UOP_W), .PT_ENTRIES(PT_ENTRIES), .VARY_WORDS(VARY_WORDS)) pt (
 		.scrub(scrub_pt), .scrub_busy(scb_pt),
 		.clk(clk), .rst_n(rst_n),
-		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_uop(x_uop), .x_b(x_b_pt),
+		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_uop(x_uop_pt), .x_b(x_b_pt),
 		.x_mask(x_mask_pt), .x_info(x_info),
 		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
 		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
@@ -1118,7 +1140,7 @@ module atg_su #(
 		.clk(clk), .rst_n(rst_n),
 		.pop(rq_pop), .pop_data(rq_pop_data), .push(rq_push), .push_data(rq_push_data),
 		.empty(rq_empty), .full(rq_full),
-		.ctl_valid(x_valid && x_grp == {GRP_W{1'b0}} && x_uop[3:0] == 4'd15),
+		.ctl_valid(x_valid && x_grp == {GRP_W{1'b0}} && x_uop_pt[3:0] == 4'd15),
 		.ctl_data(x_a_pt[31:0]),
 		.sa_push_valid(sa_push_valid), .sa_push_ready(sa_push_ready),
 		.sa_push_data(sa_push_data), .sa_pop_valid(sa_pop_valid), .sa_pop_ready(sa_pop_ready),
