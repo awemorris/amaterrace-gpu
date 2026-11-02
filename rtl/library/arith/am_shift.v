@@ -40,7 +40,33 @@ module am_shift #(
 	end
 	endgenerate
 
-	wire [W-1:0] in_data = left ? rev_a : a;
+	wire [W-1:0] in_data;
+	wire [W-1:0] rev_shifted;
+	wire [W-1:0] shifted;
+	wire [W-1:0] y_out;
+
+	genvar g_chk;
+	generate
+	if (W <= 16) begin : g_left_direct
+		assign in_data = left ? rev_a : a;
+		assign y_out = left ? rev_shifted : shifted;
+	end else begin : g_left_sliced
+		for (g_chk = 0; g_chk < (W + 15) / 16; g_chk = g_chk + 1) begin : g_buf_l
+			localparam CHK_W = ((g_chk + 1) * 16 <= W) ? 16 : (W - g_chk * 16);
+			wire left_in_b, left_out_b;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bin  (.I0(left), .O(left_in_b));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bout (.I0(left), .O(left_out_b));
+`else
+			assign left_in_b  = left;
+			assign left_out_b = left;
+`endif
+			assign in_data[g_chk * 16 +: CHK_W] = left_in_b ? rev_a[g_chk * 16 +: CHK_W] : a[g_chk * 16 +: CHK_W];
+			assign y_out[g_chk * 16 +: CHK_W]   = left_out_b ? rev_shifted[g_chk * 16 +: CHK_W] : shifted[g_chk * 16 +: CHK_W];
+		end
+	end
+	endgenerate
+
 	wire fill = (!left && arith) ? a[W - 1] : 1'b0;
 
 	/*
@@ -49,17 +75,16 @@ module am_shift #(
 	 */
 	wire signed [W:0] ext_data = {fill, in_data};
 	wire signed [W:0] shifted_ext = ext_data >>> amt;
-	wire [W-1:0] shifted = shifted_ext[W-1:0];
+	assign shifted = shifted_ext[W-1:0];
 
 	/* Bit reversal of output for left shift (wiring only, 0 LUTs) */
-	wire [W-1:0] rev_shifted;
 	generate
 	for (gi = 0; gi < W; gi = gi + 1) begin : g_rev_out
 		assign rev_shifted[gi] = shifted[W - 1 - gi];
 	end
 	endgenerate
 
-	assign y = left ? rev_shifted : shifted;
+	assign y = y_out;
 
 	wire unused_ok = &{1'b0, shifted_ext[W]};
 endmodule
