@@ -403,36 +403,6 @@ module atg_su_wb #(
 		end
 	endgenerate
 
-	/* Pure-LUT 3-bit incrementers (0 CARRY4) */
-	function [2:0] inc3;
-		input [2:0] x;
-		begin
-			case (x)
-			3'd0: inc3 = 3'd1;
-			3'd1: inc3 = 3'd2;
-			3'd2: inc3 = 3'd3;
-			3'd3: inc3 = 3'd4;
-			3'd4: inc3 = 3'd5;
-			3'd5: inc3 = 3'd6;
-			default: inc3 = 3'd7;
-			endcase
-		end
-	endfunction
-
-	function [LP_W-1:0] next_rr;
-		input [LP_W-1:0] x;
-		reg [2:0] x3, n3;
-		begin
-			x3 = {{(3-LP_W){1'b0}}, x};
-			if ({{(32-LP_W){1'b0}}, x} == NL - 1)
-				next_rr = {LP_W{1'b0}};
-			else begin
-				n3 = inc3(x3);
-				next_rr = n3[LP_W-1:0];
-			end
-		end
-	endfunction
-
 	wire sv_arb, sv_arb_fq, sv_arb_lq;
 `ifdef SYNTH_KINTEX7
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sva  (.I0(sv), .O(sv_arb));
@@ -762,6 +732,26 @@ module atg_su_wb #(
 			end
 		end
 
+		wire [LP_W-1:0] ksel_p1;
+		am_add #(.W(LP_W)) u_add_ksel (
+			.a(ksel),
+			.b({{(LP_W-1){1'b0}}, 1'b1}),
+			.ci(1'b0),
+			.s(ksel_p1),
+			.co()
+		);
+		wire [LP_W-1:0] rr_next = ({{(32-LP_W){1'b0}}, ksel} == NL - 1) ? {LP_W{1'b0}} : ksel_p1;
+
+		wire [2:0] wait_n_p1;
+		am_add #(.W(3)) u_add_wait (
+			.a(wait_n),
+			.b(3'd1),
+			.ci(1'b0),
+			.s(wait_n_p1),
+			.co()
+		);
+		wire [2:0] wait_n_next = (&wait_n) ? 3'd7 : wait_n_p1;
+
 		wire l_stalled = lq_valid && lq_wr && (sv_arb_lq || fq_valid);
 		always @(posedge clk) begin
 			if (rst_p) begin
@@ -769,9 +759,9 @@ module atg_su_wb #(
 				wait_n <= 3'd0;
 			end else begin
 				if (ksel_v && lq_can_load_ctl0)
-					rr <= next_rr(ksel);
+					rr <= rr_next;
 				if (l_stalled)
-					wait_n <= inc3(wait_n);
+					wait_n <= wait_n_next;
 				else
 					wait_n <= 3'd0;
 			end
@@ -912,15 +902,35 @@ module atg_su_wb #(
 		assign rq_push = sv ? s_rq     : (!fi_has && l_rq_free);
 		assign rq_data = sv ? sd       : l_s_data_free;
 
+		wire [LP_W-1:0] lsel_p1;
+		am_add #(.W(LP_W)) u_add_lsel (
+			.a(lsel),
+			.b({{(LP_W-1){1'b0}}, 1'b1}),
+			.ci(1'b0),
+			.s(lsel_p1),
+			.co()
+		);
+		wire [LP_W-1:0] rr_l_next = ({{(32-LP_W){1'b0}}, lsel} == NL - 1) ? {LP_W{1'b0}} : lsel_p1;
+
+		wire [2:0] wait_nl_p1;
+		am_add #(.W(3)) u_add_waitl (
+			.a(wait_n),
+			.b(3'd1),
+			.ci(1'b0),
+			.s(wait_nl_p1),
+			.co()
+		);
+		wire [2:0] wait_nl_next = (&wait_n) ? 3'd7 : wait_nl_p1;
+
 		always @(posedge clk) begin
 			if (rst_p) begin
 				rr <= {LP_W{1'b0}};
 				wait_n <= 3'd0;
 			end else begin
 				if (lsel_v)
-					rr <= next_rr(lsel);
+					rr <= rr_l_next;
 				if (|(l_valid & ~l_ready))
-					wait_n <= inc3(wait_n);
+					wait_n <= wait_nl_next;
 				else
 					wait_n <= 3'd0;
 			end
