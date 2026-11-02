@@ -799,8 +799,9 @@ module atg_su_fpu_core (
 	end
 
 	/* --- Stage 3 -> Stage 4 --- */
-	(* keep = "true" *) wire [1:0] s3_sh_lo_a = s3_sh_lo;
-	(* keep = "true" *) wire [1:0] s3_sh_lo_b = s3_sh_lo;
+	(* keep = "true" *) wire [1:0] s3_sh_lo_a  = s3_sh_lo;
+	(* keep = "true" *) wire [1:0] s3_sh_lo_b0 = s3_sh_lo;
+	(* keep = "true" *) wire [1:0] s3_sh_lo_b1 = s3_sh_lo;
 	reg [15:0] s3_w_lo, s3_w_hi;
 	always @(*) begin
 		case (s3_sh_lo_a)
@@ -809,11 +810,17 @@ module atg_su_fpu_core (
 		2'd2: s3_w_lo = {s3_w_pre[13:0], 2'b00};
 		default: s3_w_lo = {s3_w_pre[12:0], 3'b000};
 		endcase
-		case (s3_sh_lo_b)
-		2'd0: s3_w_hi = s3_w_pre[31:16];
-		2'd1: s3_w_hi = s3_w_pre[30:15];
-		2'd2: s3_w_hi = s3_w_pre[29:14];
-		default: s3_w_hi = s3_w_pre[28:13];
+		case (s3_sh_lo_b0)
+		2'd0: s3_w_hi[7:0] = s3_w_pre[23:16];
+		2'd1: s3_w_hi[7:0] = s3_w_pre[22:15];
+		2'd2: s3_w_hi[7:0] = s3_w_pre[21:14];
+		default: s3_w_hi[7:0] = s3_w_pre[20:13];
+		endcase
+		case (s3_sh_lo_b1)
+		2'd0: s3_w_hi[15:8] = s3_w_pre[31:24];
+		2'd1: s3_w_hi[15:8] = s3_w_pre[30:23];
+		2'd2: s3_w_hi[15:8] = s3_w_pre[29:22];
+		default: s3_w_hi[15:8] = s3_w_pre[28:21];
 		endcase
 	end
 	wire [31:0] s3_w = {s3_w_hi, s3_w_lo};
@@ -848,23 +855,27 @@ module atg_su_fpu_core (
 	wire carry_unused3_mr;
 	am_add #(.W(25)) u_mr3_p1 (.a({1'b0, s3_w[31:8]}), .b(25'd1), .ci(1'b0), .s(s3_w_p1), .co(carry_unused3_mr));
 	wire s3_w_b8 = s3_w[8] | (((s3_rm == 3'd5 || s3_rm == 3'd6) && (cvsw3 || cvswu3)) && (s3_g || s3_st));
-	(* keep = "true" *) wire s3_up_lo = s3_up;
-	(* keep = "true" *) wire s3_up_hi = s3_up;
+	(* keep = "true" *) wire s3_up_lo  = s3_up;
+	(* keep = "true" *) wire s3_up_hi0 = s3_up;
+	(* keep = "true" *) wire s3_up_hi1 = s3_up;
 	wire [24:0] s3_mr0 = {
-		s3_up_hi ? s3_w_p1[24:12] : {1'b0, s3_w[31:20]},
-		s3_up_lo ? s3_w_p1[11:0]  : {s3_w[19:9], s3_w_b8}
+		s3_up_hi1 ? s3_w_p1[24:19] : {1'b0, s3_w[31:27]},
+		s3_up_hi0 ? s3_w_p1[18:12] : s3_w[26:20],
+		s3_up_lo  ? s3_w_p1[11:0]  : {s3_w[19:9], s3_w_b8}
 	};
 	(* keep = "true" *) wire s3_mr_ovf_lo = s3_mr0[24];
-	(* keep = "true" *) wire s3_mr_ovf_hi = s3_mr0[24];
-	wire [7:0]  s3_er = s3_mr_ovf_hi ? s3_e_p1[7:0] : s3_e[7:0];
+	(* keep = "true" *) wire s3_mr_ovf_e  = s3_mr0[24];
+	(* keep = "true" *) wire s3_mr_ovf_m  = s3_mr0[24];
+	wire [7:0]  s3_er = s3_mr_ovf_e ? s3_e_p1[7:0] : s3_e[7:0];
 	wire [22:0] s3_mr = {
-		s3_mr_ovf_hi ? s3_mr0[23:16] : s3_mr0[22:15],
+		s3_mr_ovf_m  ? s3_mr0[23:16] : s3_mr0[22:15],
 		s3_mr_ovf_lo ? s3_mr0[15:1]  : s3_mr0[14:0]
 	};
 	(* keep = "true" *) wire s3_nz_lo = s3_nz;
+	(* keep = "true" *) wire s3_nz_iv = s3_nz;
 	(* keep = "true" *) wire s3_nz_hi = s3_nz;
 	wire [31:0] s3_iv = {
-		!s3_nz_hi ? {s3_s, 15'd0} : {s3_s, s3_er, s3_mr[22:16]},
+		!s3_nz_iv ? {s3_s, 15'd0} : {s3_s, s3_er, s3_mr[22:16]},
 		!s3_nz_lo ? 16'd0         : s3_mr[15:0]
 	};
 	(* keep = "true" *) wire s3_fl_nan_lo  = s3_fl_nan;
@@ -994,14 +1005,18 @@ module atg_su_fpu_core (
 		(s3_bf_val[31] && !s3_af_nan && s3_xf_val[31] && s3_ab_lt);
 	(* keep = "true" *) wire s3_both_nan_lo = s3_af_nan && s3_bf_nan;
 	(* keep = "true" *) wire s3_both_nan_hi = s3_af_nan && s3_bf_nan;
+	(* keep = "true" *) wire s3_both_nan_min_lo = s3_both_nan_lo;
+	(* keep = "true" *) wire s3_both_nan_max_lo = s3_both_nan_lo;
+	(* keep = "true" *) wire s3_both_nan_min_hi = s3_both_nan_hi;
+	(* keep = "true" *) wire s3_both_nan_max_hi = s3_both_nan_hi;
 	(* keep = "true" *) wire s3_pick_b_min_lo = !s3_both_nan_lo && (s3_af_nan || (!s3_bf_nan && s3_flt_ba_lo));
 	(* keep = "true" *) wire s3_pick_b_min_hi = !s3_both_nan_hi && (s3_af_nan || (!s3_bf_nan && s3_flt_ba_hi));
 	(* keep = "true" *) wire s3_pick_b_max_lo = !s3_both_nan_lo && (s3_af_nan || (!s3_bf_nan && s3_flt_ab_lo));
 	(* keep = "true" *) wire s3_pick_b_max_hi = !s3_both_nan_hi && (s3_af_nan || (!s3_bf_nan && s3_flt_ab_hi));
-	(* keep = "true" *) wire [15:0] s3_fmin_lo = s3_both_nan_lo ? 16'h0000 : (s3_pick_b_min_lo ? s3_bf_val[15:0]  : s3_xf_val[15:0]);
-	(* keep = "true" *) wire [15:0] s3_fmin_hi = s3_both_nan_hi ? 16'h7FC0 : (s3_pick_b_min_hi ? s3_bf_val[31:16] : s3_xf_val[31:16]);
-	(* keep = "true" *) wire [15:0] s3_fmax_lo = s3_both_nan_lo ? 16'h0000 : (s3_pick_b_max_lo ? s3_bf_val[15:0]  : s3_xf_val[15:0]);
-	(* keep = "true" *) wire [15:0] s3_fmax_hi = s3_both_nan_hi ? 16'h7FC0 : (s3_pick_b_max_hi ? s3_bf_val[31:16] : s3_xf_val[31:16]);
+	(* keep = "true" *) wire [15:0] s3_fmin_lo = s3_both_nan_min_lo ? 16'h0000 : (s3_pick_b_min_lo ? s3_bf_val[15:0]  : s3_xf_val[15:0]);
+	(* keep = "true" *) wire [15:0] s3_fmin_hi = s3_both_nan_min_hi ? 16'h7FC0 : (s3_pick_b_min_hi ? s3_bf_val[31:16] : s3_xf_val[31:16]);
+	(* keep = "true" *) wire [15:0] s3_fmax_lo = s3_both_nan_max_lo ? 16'h0000 : (s3_pick_b_max_lo ? s3_bf_val[15:0]  : s3_xf_val[15:0]);
+	(* keep = "true" *) wire [15:0] s3_fmax_hi = s3_both_nan_max_hi ? 16'h7FC0 : (s3_pick_b_max_hi ? s3_bf_val[31:16] : s3_xf_val[31:16]);
 	wire s3_un = s3_af_nan || s3_bf_nan;
 	wire s3_lt_cmp = !s3_ab_eq && s3_flt_ab_lo;
 
@@ -1161,11 +1176,50 @@ module atg_su_fpu_core (
 	am_sub #(.W(12)) u_eb4 (.a(s4_t1), .b(12'd111), .bi(1'b0), .d(s4_eb4), .bo(carry_unused4_eb[4]));
 	am_sub #(.W(12)) u_eb5 (.a(s4_t1), .b(12'd95),  .bi(1'b0), .d(s4_eb5), .bo(carry_unused4_eb[5]));
 
+	/* Stage 4: Non-multiplier other-result selection & float saturation (strictly <= 2 LUTs) */
+	(* keep = "true" *) wire [4:0] s4_op_lo = s4_op;
+	(* keep = "true" *) wire [4:0] s4_op_hi = s4_op;
+	reg [15:0] s4_other_pre2_lo, s4_other_pre2_hi;
+	always @(*) begin
+		s4_other_pre2_lo = s4_other_pre[15:0];
+		s4_other_pre2_hi = s4_other_pre[31:16];
+		case (s4_op_lo)
+		OP_FCVTSW, OP_FCVTSWU: s4_other_pre2_lo = s4_iv[15:0];
+		OP_FROUND:             s4_other_pre2_lo = s4_fl[15:0];
+		default: ;
+		endcase
+		case (s4_op_hi)
+		OP_FCVTSW, OP_FCVTSWU: s4_other_pre2_hi = s4_iv[31:16];
+		OP_FROUND:             s4_other_pre2_hi = s4_fl[31:16];
+		default: ;
+		endcase
+	end
+	wire [31:0] s4_other_pre2 = {s4_other_pre2_hi, s4_other_pre2_lo};
+
+	(* keep = "true" *) wire s4_ot_m_nz_lo = |s4_other_pre2[22:0];
+	(* keep = "true" *) wire s4_ot_m_nz_hi = |s4_other_pre2[22:0];
+	(* keep = "true" *) wire s4_ot_e7f_lo  = &s4_other_pre2[29:23];
+	(* keep = "true" *) wire s4_ot_e7f_hi  = &s4_other_pre2[29:23];
+	(* keep = "true" *) wire s4_ot_nan_lo  = s4_other_pre2[30] && s4_ot_e7f_lo && s4_ot_m_nz_lo;
+	(* keep = "true" *) wire s4_ot_nan_hi  = s4_other_pre2[30] && s4_ot_e7f_hi && s4_ot_m_nz_hi;
+	(* keep = "true" *) wire s4_ot_gt1_lo  = s4_other_pre2[30] || (s4_ot_e7f_lo && s4_ot_m_nz_lo);
+	(* keep = "true" *) wire s4_ot_gt1_hi  = s4_other_pre2[30] || (s4_ot_e7f_hi && s4_ot_m_nz_hi);
+	(* keep = "true" *) wire s4_ot_z_lo = s4_sat && s4_is_flt && (s4_ot_nan_lo || s4_other_pre2[31]);
+	(* keep = "true" *) wire s4_ot_z_hi = s4_sat && s4_is_flt && (s4_ot_nan_hi || s4_other_pre2[31]);
+	(* keep = "true" *) wire s4_ot_o_lo = s4_sat && s4_is_flt && !s4_ot_nan_lo && !s4_other_pre2[31] && s4_ot_gt1_lo;
+	(* keep = "true" *) wire s4_ot_o_hi = s4_sat && s4_is_flt && !s4_ot_nan_hi && !s4_other_pre2[31] && s4_ot_gt1_hi;
+	(* keep = "true" *) wire [31:0] s4_other_sat = {
+		s4_ot_z_hi ? 16'd0 : (s4_ot_o_hi ? 16'h3F80 : s4_other_pre2[31:16]),
+		s4_ot_z_lo ? 16'd0 : (s4_ot_o_lo ? 16'h0000 : s4_other_pre2[15:0])
+	};
+	wire s4_is_mul  = (s4_op == OP_MUL);
+	wire s4_is_mulh = (s4_op == OP_MULH) || (s4_op == OP_MULHSU) || (s4_op == OP_MULHU);
+
 	/* --- Stage 5 -> Stage 6 --- */
 	(* shreg_extract = "no", max_fanout = 12 *) reg [63:0] s5_pr;
-	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s5_other_pre;
-	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s5_iv;
-	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s5_fl;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s5_other_sat;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_is_mul;
+	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_is_mulh;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [4:0]  s5_op;
 	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_fma;
 	(* shreg_extract = "no", max_fanout = 12 *) reg        s5_sat;
@@ -1183,9 +1237,9 @@ module atg_su_fpu_core (
 	always @(posedge clk) begin
 		if (rst_p) begin
 			s5_pr        <= 64'd0;
-			s5_other_pre <= 32'd0;
-			s5_iv        <= 32'd0;
-			s5_fl        <= 32'd0;
+			s5_other_sat <= 32'd0;
+			s5_is_mul    <= 1'b0;
+			s5_is_mulh   <= 1'b0;
 			s5_op        <= 5'd0;
 			s5_fma       <= 1'b0;
 			s5_sat       <= 1'b0;
@@ -1206,9 +1260,9 @@ module atg_su_fpu_core (
 			s5_spec_res  <= 32'd0;
 		end else if (en) begin
 			s5_pr        <= pr_s4[63:0];
-			s5_other_pre <= s4_other_pre;
-			s5_iv        <= s4_iv;
-			s5_fl        <= s4_fl;
+			s5_other_sat <= s4_other_sat;
+			s5_is_mul    <= s4_is_mul;
+			s5_is_mulh   <= s4_is_mulh;
 			s5_op        <= s4_op;
 			s5_fma       <= s4_fma;
 			s5_sat       <= s4_sat;
@@ -1254,9 +1308,13 @@ module atg_su_fpu_core (
 		(* keep = "true" *) wire B``_msb3_a = |(H[7:4]); \
 		(* keep = "true" *) wire B``_msb3_b = |(H[7:4]); \
 		(* keep = "true" *) wire B``_msb3_c = |(H[7:4]); \
+		(* keep = "true" *) wire B``_msb3_d = |(H[7:4]); \
+		(* keep = "true" *) wire B``_msb3_e = |(H[7:4]); \
 		(* keep = "true" *) wire B``_msb2_a = H[7] || H[6] || (!H[5] && !H[4] && (H[3] || H[2])); \
 		(* keep = "true" *) wire B``_msb2_b = H[7] || H[6] || (!H[5] && !H[4] && (H[3] || H[2])); \
 		(* keep = "true" *) wire B``_msb2_c = H[7] || H[6] || (!H[5] && !H[4] && (H[3] || H[2])); \
+		(* keep = "true" *) wire B``_msb2_d = H[7] || H[6] || (!H[5] && !H[4] && (H[3] || H[2])); \
+		(* keep = "true" *) wire B``_msb2_e = H[7] || H[6] || (!H[5] && !H[4] && (H[3] || H[2])); \
 		(* keep = "true" *) wire B``_lo_nz  = |(H[3:0]); \
 		(* keep = "true" *) wire B``_m1_hi  = (|X[15:14]) || (!(|X[13:12]) && (|X[11:10])); \
 		(* keep = "true" *) wire B``_m1_lo  = (|X[7:6])   || (!(|X[5:4])   && (|X[3:2])); \
@@ -1451,55 +1509,30 @@ module atg_su_fpu_core (
 	wire b0_ovf_max = (s5_rm == 3'd1 || s5_rm == 3'd5 || s5_rm == 3'd6 || (s5_rm == 3'd2 && !s5_sr) || (s5_rm == 3'd3 && s5_sr));
 	wire s5_use_b0  = s5_fma && !s5_spec_hit && !nz_b4321 && nz_b0;
 
-	(* keep = "true" *) wire [4:0] s5_op_lo = s5_op;
-	(* keep = "true" *) wire [4:0] s5_op_hi = s5_op;
-	(* keep = "true" *) reg [15:0] s5_other_lat6_lo, s5_other_lat6_hi;
-	always @(*) begin
-		s5_other_lat6_lo = s5_other_pre[15:0];
-		s5_other_lat6_hi = s5_other_pre[31:16];
-		case (s5_op_lo)
-		OP_FCVTSW, OP_FCVTSWU: s5_other_lat6_lo = s5_iv[15:0];
-		OP_FROUND:             s5_other_lat6_lo = s5_fl[15:0];
-		OP_MUL:                s5_other_lat6_lo = s5_pr[15:0];
-		OP_MULH, OP_MULHSU, OP_MULHU: s5_other_lat6_lo = s5_pr[47:32];
-		default: ;
-		endcase
-		case (s5_op_hi)
-		OP_FCVTSW, OP_FCVTSWU: s5_other_lat6_hi = s5_iv[31:16];
-		OP_FROUND:             s5_other_lat6_hi = s5_fl[31:16];
-		OP_MUL:                s5_other_lat6_hi = s5_pr[31:16];
-		OP_MULH, OP_MULHSU, OP_MULHU: s5_other_lat6_hi = s5_pr[63:48];
-		default: ;
-		endcase
-	end
-	wire [31:0] s5_other_lat6 = {s5_other_lat6_hi, s5_other_lat6_lo};
-	(* keep = "true" *) wire s5_ot_m_nz_lo = |s5_other_lat6[22:0];
-	(* keep = "true" *) wire s5_ot_m_nz_hi = |s5_other_lat6[22:0];
-	(* keep = "true" *) wire s5_ot_e7f_lo  = &s5_other_lat6[29:23];
-	(* keep = "true" *) wire s5_ot_e7f_hi  = &s5_other_lat6[29:23];
-	(* keep = "true" *) wire s5_ot_nan_lo  = s5_other_lat6[30] && s5_ot_e7f_lo && s5_ot_m_nz_lo;
-	(* keep = "true" *) wire s5_ot_nan_hi  = s5_other_lat6[30] && s5_ot_e7f_hi && s5_ot_m_nz_hi;
-	(* keep = "true" *) wire s5_ot_gt1_lo  = s5_other_lat6[30] || (s5_ot_e7f_lo && s5_ot_m_nz_lo);
-	(* keep = "true" *) wire s5_ot_gt1_hi  = s5_other_lat6[30] || (s5_ot_e7f_hi && s5_ot_m_nz_hi);
-	(* keep = "true" *) wire s5_ot_z_lo = s5_sat && s5_flt && (s5_ot_nan_lo || s5_other_lat6[31]);
-	(* keep = "true" *) wire s5_ot_z_hi = s5_sat && s5_flt && (s5_ot_nan_hi || s5_other_lat6[31]);
-	(* keep = "true" *) wire s5_ot_o_lo = s5_sat && s5_flt && !s5_ot_nan_lo && !s5_other_lat6[31] && s5_ot_gt1_lo;
-	(* keep = "true" *) wire s5_ot_o_hi = s5_sat && s5_flt && !s5_ot_nan_hi && !s5_other_lat6[31] && s5_ot_gt1_hi;
-	(* keep = "true" *) wire [31:0] s5_other_final = {
-		s5_ot_z_hi ? 16'd0 : (s5_ot_o_hi ? 16'h3F80 : s5_other_lat6[31:16]),
-		s5_ot_z_lo ? 16'd0 : (s5_ot_o_lo ? 16'h0000 : s5_other_lat6[15:0])
-	};
-	wire [31:0] s5_zero_res = s5_sat ? 32'd0 : {s5_rdn, 31'd0};
-
-	wire s5_ovr_hit = !s5_fma || s5_spec_hit || !nz_b4321;
 	(* keep = "true" *) wire s5_fma_lo = s5_fma;
 	(* keep = "true" *) wire s5_fma_hi = s5_fma;
 	(* keep = "true" *) wire s5_sp_hit_lo = s5_spec_hit;
 	(* keep = "true" *) wire s5_sp_hit_hi = s5_spec_hit;
+	(* keep = "true" *) wire s5_is_mul_lo = s5_is_mul;
+	(* keep = "true" *) wire s5_is_mul_hi = s5_is_mul;
+	(* keep = "true" *) wire s5_is_mulh_lo = s5_is_mulh;
+	(* keep = "true" *) wire s5_is_mulh_hi = s5_is_mulh;
+
+	wire [15:0] s5_zero_res_lo = 16'd0;
+	wire [15:0] s5_zero_res_hi = s5_sat ? 16'd0 : {s5_rdn, 15'd0};
+	wire [15:0] s5_fma_res_lo  = s5_sp_hit_lo ? s5_spec_res[15:0]  : s5_zero_res_lo;
+	wire [15:0] s5_fma_res_hi  = s5_sp_hit_hi ? s5_spec_res[31:16] : s5_zero_res_hi;
+
+	wire [15:0] s5_mul_res_lo  = s5_is_mul_lo  ? s5_pr[15:0]  : s5_pr[47:32];
+	wire [15:0] s5_mul_res_hi  = s5_is_mul_hi  ? s5_pr[31:16] : s5_pr[63:48];
+	wire [15:0] s5_non_fma_lo  = (s5_is_mul_lo || s5_is_mulh_lo) ? s5_mul_res_lo : s5_other_sat[15:0];
+	wire [15:0] s5_non_fma_hi  = (s5_is_mul_hi || s5_is_mulh_hi) ? s5_mul_res_hi : s5_other_sat[31:16];
+
 	wire [31:0] s5_ovr_res = {
-		!s5_fma_hi ? s5_other_final[31:16] : (s5_sp_hit_hi ? s5_spec_res[31:16] : s5_zero_res[31:16]),
-		!s5_fma_lo ? s5_other_final[15:0]  : (s5_sp_hit_lo ? s5_spec_res[15:0]  : s5_zero_res[15:0])
+		s5_fma_hi ? s5_fma_res_hi : s5_non_fma_hi,
+		s5_fma_lo ? s5_fma_res_lo : s5_non_fma_lo
 	};
+	wire s5_ovr_hit = !s5_fma || s5_spec_hit || !nz_b4321;
 
 	/* Precompute 4-bit / 6-bit group ANDs at Level 1..4 (strictly 4 LUTs total) */
 	`define FPU_PQ_BLK(B, W) \
@@ -1518,14 +1551,14 @@ module atg_su_fpu_core (
 				assign q6_w_``B[gs_``B] = &W[gs_``B+22 : gs_``B+19]; \
 			end \
 		endgenerate \
-		(* keep = "true" *) wire [3:0] p0_s1_``B = B``_msb3_c ? (B``_msb2_c ? p0_w_``B[15:12] : p0_w_``B[11:8]) : (B``_msb2_c ? p0_w_``B[7:4] : p0_w_``B[3:0]); \
-		(* keep = "true" *) wire [3:0] p1_s1_``B = B``_msb3_c ? (B``_msb2_c ? p1_w_``B[15:12] : p1_w_``B[11:8]) : (B``_msb2_c ? p1_w_``B[7:4] : p1_w_``B[3:0]); \
-		(* keep = "true" *) wire [3:0] p2_s1_``B = B``_msb3_c ? (B``_msb2_c ? p2_w_``B[15:12] : p2_w_``B[11:8]) : (B``_msb2_c ? p2_w_``B[7:4] : p2_w_``B[3:0]); \
-		(* keep = "true" *) wire [3:0] p3_s1_``B = B``_msb3_c ? (B``_msb2_c ? p3_w_``B[15:12] : p3_w_``B[11:8]) : (B``_msb2_c ? p3_w_``B[7:4] : p3_w_``B[3:0]); \
-		(* keep = "true" *) wire [3:0] q0_s1_``B = B``_msb3_c ? (B``_msb2_c ? q0_w_``B[15:12] : q0_w_``B[11:8]) : (B``_msb2_c ? q0_w_``B[7:4] : q0_w_``B[3:0]); \
-		(* keep = "true" *) wire [3:0] q2_s1_``B = B``_msb3_c ? (B``_msb2_c ? q2_w_``B[15:12] : q2_w_``B[11:8]) : (B``_msb2_c ? q2_w_``B[7:4] : q2_w_``B[3:0]); \
-		(* keep = "true" *) wire [3:0] q4_s1_``B = B``_msb3_c ? (B``_msb2_c ? q4_w_``B[15:12] : q4_w_``B[11:8]) : (B``_msb2_c ? q4_w_``B[7:4] : q4_w_``B[3:0]); \
-		(* keep = "true" *) wire [3:0] q6_s1_``B = B``_msb3_c ? (B``_msb2_c ? q6_w_``B[15:12] : q6_w_``B[11:8]) : (B``_msb2_c ? q6_w_``B[7:4] : q6_w_``B[3:0]); \
+		(* keep = "true" *) wire [3:0] p0_s1_``B = B``_msb3_d ? (B``_msb2_d ? p0_w_``B[15:12] : p0_w_``B[11:8]) : (B``_msb2_d ? p0_w_``B[7:4] : p0_w_``B[3:0]); \
+		(* keep = "true" *) wire [3:0] p1_s1_``B = B``_msb3_d ? (B``_msb2_d ? p1_w_``B[15:12] : p1_w_``B[11:8]) : (B``_msb2_d ? p1_w_``B[7:4] : p1_w_``B[3:0]); \
+		(* keep = "true" *) wire [3:0] p2_s1_``B = B``_msb3_d ? (B``_msb2_d ? p2_w_``B[15:12] : p2_w_``B[11:8]) : (B``_msb2_d ? p2_w_``B[7:4] : p2_w_``B[3:0]); \
+		(* keep = "true" *) wire [3:0] p3_s1_``B = B``_msb3_d ? (B``_msb2_d ? p3_w_``B[15:12] : p3_w_``B[11:8]) : (B``_msb2_d ? p3_w_``B[7:4] : p3_w_``B[3:0]); \
+		(* keep = "true" *) wire [3:0] q0_s1_``B = B``_msb3_e ? (B``_msb2_e ? q0_w_``B[15:12] : q0_w_``B[11:8]) : (B``_msb2_e ? q0_w_``B[7:4] : q0_w_``B[3:0]); \
+		(* keep = "true" *) wire [3:0] q2_s1_``B = B``_msb3_e ? (B``_msb2_e ? q2_w_``B[15:12] : q2_w_``B[11:8]) : (B``_msb2_e ? q2_w_``B[7:4] : q2_w_``B[3:0]); \
+		(* keep = "true" *) wire [3:0] q4_s1_``B = B``_msb3_e ? (B``_msb2_e ? q4_w_``B[15:12] : q4_w_``B[11:8]) : (B``_msb2_e ? q4_w_``B[7:4] : q4_w_``B[3:0]); \
+		(* keep = "true" *) wire [3:0] q6_s1_``B = B``_msb3_e ? (B``_msb2_e ? q6_w_``B[15:12] : q6_w_``B[11:8]) : (B``_msb2_e ? q6_w_``B[7:4] : q6_w_``B[3:0]); \
 		(* keep = "true" *) wire p0_``B = B``_msb1_c ? (B``_msb0_c ? p0_s1_``B[3] : p0_s1_``B[2]) : (B``_msb0_c ? p0_s1_``B[1] : p0_s1_``B[0]); \
 		(* keep = "true" *) wire p1_``B = B``_msb1_c ? (B``_msb0_c ? p1_s1_``B[3] : p1_s1_``B[2]) : (B``_msb0_c ? p1_s1_``B[1] : p1_s1_``B[0]); \
 		(* keep = "true" *) wire p2_``B = B``_msb1_c ? (B``_msb0_c ? p2_s1_``B[3] : p2_s1_``B[2]) : (B``_msb0_c ? p2_s1_``B[1] : p2_s1_``B[0]); \
