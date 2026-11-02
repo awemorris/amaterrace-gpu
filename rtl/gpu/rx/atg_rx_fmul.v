@@ -112,31 +112,12 @@ module atg_rx_fmul #(
 	wire [7:0] ef3_0, ef3_1, ef3_2;
 	wire mz3_0, mz3_1;
 
-	/* Stage 4: 0 CARRY4s, <= 3 LUT levels factored-carry rounding & packing. */
+	/* Stage 4: Rounding and packing using am_add */
 	(* keep = "true" *) wire round_inc = g3 && (m3_lo[0] || (|st_c3));
-	(* keep = "true" *) wire p4_0 = &m3_lo[4:0];
-	(* keep = "true" *) wire p5_0 = &m3_lo[5:0];
-	(* keep = "true" *) wire ga6  = p47_c ? ga6_1  : ga6_0;
-	(* keep = "true" *) wire ga12 = p47_c ? ga12_1 : ga12_0;
-	(* keep = "true" *) wire ga18 = p47_c ? ga18_1 : ga18_0;
-
-	wire cin_6  = round_inc & p5_0;
-	wire cin_12 = round_inc & p5_0 & ga6;
-	wire cin_18 = round_inc & p5_0 & ga6 & ga12;
-	(* keep = "true" *) wire m0_cout = round_inc & p5_0 & ga6 & ga12 & ga18;
 	(* keep = "true" *) wire mz_a    = p47_a ? mz3_1 : mz3_0;
 	(* keep = "true" *) wire mz_b    = p47_b ? mz3_1 : mz3_0;
 
-	(* keep = "true" *) wire [22:0] m_rounded;
-	assign m_rounded[0] = m3_lo[0] ^ round_inc;
-	assign m_rounded[1] = m3_lo[1] ^ (round_inc & m3_lo[0]);
-	assign m_rounded[2] = m3_lo[2] ^ (round_inc & (&m3_lo[1:0]));
-	assign m_rounded[3] = m3_lo[3] ^ (round_inc & (&m3_lo[2:0]));
-	assign m_rounded[4] = m3_lo[4] ^ (round_inc & (&m3_lo[3:0]));
-	assign m_rounded[5] = m3_lo[5] ^ (round_inc & p4_0);
-
 	(* keep = "true" *) wire [22:6] mu_hi;
-	(* keep = "true" *) wire [22:6] sp_hi;
 	genvar gi;
 	generate
 	for (gi = 6; gi < 15; gi = gi + 1) begin : g_mu_6_14
@@ -145,42 +126,17 @@ module atg_rx_fmul #(
 	for (gi = 15; gi < 23; gi = gi + 1) begin : g_mu_15_22
 		assign mu_hi[gi] = p47_b ? p3_hi[gi + 24] : p3_hi[gi + 23];
 	end
-
-	/* Slice [11:6] local prefix-ANDs (<= 6 inputs each = 1 LUT) */
-	assign sp_hi[6]  = 1'b1;
-	assign sp_hi[7]  = p47_a ? p3_hi[30] : p3_hi[29];
-	assign sp_hi[8]  = p47_a ? (&p3_hi[31:30]) : (&p3_hi[30:29]);
-	assign sp_hi[9]  = p47_a ? (&p3_hi[32:30]) : (&p3_hi[31:29]);
-	assign sp_hi[10] = p47_a ? (&p3_hi[33:30]) : (&p3_hi[32:29]);
-	(* keep = "true" *) wire sp11_hi = p47_a ? (&p3_hi[34:31]) : (&p3_hi[33:30]);
-	assign sp_hi[11] = sp_hi[7] & sp11_hi;
-
-	/* Slice [17:12] local prefix-ANDs (<= 6 inputs each = 1 LUT) */
-	assign sp_hi[12] = 1'b1;
-	assign sp_hi[13] = p47_a ? p3_hi[36] : p3_hi[35];
-	assign sp_hi[14] = p47_a ? (&p3_hi[37:36]) : (&p3_hi[36:35]);
-	assign sp_hi[15] = p47_b ? (&p3_hi[38:36]) : (&p3_hi[37:35]);
-	assign sp_hi[16] = p47_b ? (&p3_hi[39:36]) : (&p3_hi[38:35]);
-	(* keep = "true" *) wire sp17_hi = p47_b ? (&p3_hi[40:37]) : (&p3_hi[39:36]);
-	assign sp_hi[17] = sp_hi[13] & sp17_hi;
-
-	/* Slice [22:18] local prefix-ANDs (<= 6 inputs each = 1 LUT) */
-	assign sp_hi[18] = 1'b1;
-	assign sp_hi[19] = p47_b ? p3_hi[42] : p3_hi[41];
-	assign sp_hi[20] = p47_b ? (&p3_hi[43:42]) : (&p3_hi[42:41]);
-	assign sp_hi[21] = p47_b ? (&p3_hi[44:42]) : (&p3_hi[43:41]);
-	assign sp_hi[22] = p47_b ? (&p3_hi[45:42]) : (&p3_hi[44:41]);
-
-	for (gi = 6; gi <= 11; gi = gi + 1) begin : g_mr_6_11
-		assign m_rounded[gi] = mu_hi[gi] ^ (cin_6 & sp_hi[gi]);
-	end
-	for (gi = 12; gi <= 17; gi = gi + 1) begin : g_mr_12_17
-		assign m_rounded[gi] = mu_hi[gi] ^ (cin_12 & sp_hi[gi]);
-	end
-	for (gi = 18; gi <= 22; gi = gi + 1) begin : g_mr_18_22
-		assign m_rounded[gi] = mu_hi[gi] ^ (cin_18 & sp_hi[gi]);
-	end
 	endgenerate
+
+	wire [22:0] m_rounded;
+	wire m0_cout;
+	am_add #(.W(23)) u_add_round (
+		.a({mu_hi, m3_lo}),
+		.b(23'd0),
+		.ci(round_inc),
+		.s(m_rounded),
+		.co(m0_cout)
+	);
 
 	wire [22:0] m_out;
 	generate
@@ -201,7 +157,8 @@ module atg_rx_fmul #(
 	end
 	endgenerate
 
-	wire unused_m = &{1'b0, eab_co_unused, e2_0_bo_unused, e2_1_bo_unused, e2_2_bo_unused};
+	wire unused_m = &{1'b0, eab_co_unused, e2_0_bo_unused, e2_1_bo_unused, e2_2_bo_unused,
+		ga6_0, ga6_1, ga12_0, ga12_1, ga18_0, ga18_1};
 
 	wire o_valid_comb = rst_n && v3;
 	wire [31:0] o_r_comb = {s3, e_out, m_out};
