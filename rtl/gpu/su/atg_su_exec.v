@@ -130,15 +130,13 @@ module atg_su_exec #(
 	(* max_fanout = 12 *) reg wc_is_br, wc_static, wc_any, wc_all;
 	(* max_fanout = 12 *) reg [2:0] wc_br_op;
 	(* max_fanout = 12 *) reg [15:0] wc_pc_tgt, wc_pc_p1;
-	(* keep = "true" *) wire rst_p0 = !rst_n;
-	(* keep = "true" *) wire rst_p1 = !rst_n;
-	(* keep = "true" *) wire rst_p2 = !rst_n;
-	(* keep = "true" *) wire wc_ce_ctrl = mine && x_last && (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR);
-	(* keep = "true" *) wire wc_ce_tgt  = mine && x_last && (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR);
-	(* keep = "true" *) wire wc_ce_p1   = mine && x_last && (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR);
+	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	(* dont_touch = "true" *) wire wc_ce_ctrl = mine && x_last && (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR);
+	(* dont_touch = "true" *) wire wc_ce_tgt  = mine && x_last && (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR);
+	(* dont_touch = "true" *) wire wc_ce_p1   = mine && x_last && (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR);
 	integer k;
 	always @(posedge clk) begin
-		if (rst_p0) begin
+		if (rst_p) begin
 			wc_v <= 1'b0;
 			wc_w <= {WARP_W{1'b0}};
 			wc_o <= 2'd0;
@@ -147,6 +145,10 @@ module atg_su_exec #(
 			wc_any <= 1'b0;
 			wc_all <= 1'b0;
 			wc_br_op <= 3'd0;
+			wc_pc_tgt <= 16'd0;
+			wc_pc_p1 <= 16'd0;
+			for (k = 0; k < SHORT_LAT; k = k + 1)
+				pipe[k][EW-1] <= 1'b0;
 		end else begin
 			wc_v <= wc_ce_ctrl;
 			if (wc_ce_ctrl) begin
@@ -158,13 +160,6 @@ module atg_su_exec #(
 				wc_all <= all_now;
 				wc_br_op <= op[2:0];
 			end
-		end
-		if (rst_p1) begin
-			wc_pc_tgt <= 16'd0;
-			wc_pc_p1 <= 16'd0;
-			for (k = 0; k < SHORT_LAT; k = k + 1)
-				pipe[k][EW-1] <= 1'b0;
-		end else begin
 			pipe[0][EW-1] <= s_in;
 			for (k = 1; k < SHORT_LAT; k = k + 1)
 				pipe[k][EW-1] <= pipe[k-1][EW-1];
@@ -190,24 +185,23 @@ module atg_su_exec #(
 			wire exec_op_match = (op == ATG_EXEC_SET || op == ATG_EXEC_AND || op == ATG_EXEC_OR);
 
 			for (gg = 0; gg < 32/NPHYS; gg = gg + 1) begin : g_grp_state
-				(* keep = "true" *) wire rst_grp = !rst_n;
-				(* keep = "true" *) wire w_init_kl = init_valid && (init_warp == gw[WARP_W-1:0]);
-				(* keep = "true" *) wire w_init_ex = init_valid && (init_warp == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire w_init_kl = init_valid && (init_warp == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire w_init_ex = init_valid && (init_warp == gw[WARP_W-1:0]);
 				wire g_match = w_match && (x_grp == gg[GRP_W-1:0]);
-				(* keep = "true" *) wire kill_ce = w_init_kl || (g_match && op == ATG_EXEC_KILL);
+				(* dont_touch = "true" *) wire kill_ce = w_init_kl || (g_match && op == ATG_EXEC_KILL);
 				(* max_fanout = 12 *) reg [NPHYS-1:0] exec_sl_r, kill_sl_r;
 				wire [NPHYS-1:0] cur_exec = exec_sl_r;
 				wire [NPHYS-1:0] cur_kill = kill_sl_r;
 				wire [NPHYS-1:0] kill_d = w_init_kl ? {NPHYS{1'b0}} : (cur_kill | (bt & cur_exec));
 
 				always @(posedge clk) begin
-					if (rst_grp)
+					if (rst_p)
 						kill_sl_r <= {NPHYS{1'b0}};
 					else if (kill_ce)
 						kill_sl_r <= kill_d;
 				end
 
-				(* keep = "true" *) wire exec_ce = w_init_ex || (g_match && exec_op_match);
+				(* dont_touch = "true" *) wire exec_ce = w_init_ex || (g_match && exec_op_match);
 				reg [NPHYS-1:0] exec_d;
 				always @(*) begin
 					if (w_init_ex)
@@ -220,7 +214,7 @@ module atg_su_exec #(
 				end
 
 				always @(posedge clk) begin
-					if (rst_grp)
+					if (rst_p)
 						exec_sl_r <= {NPHYS{1'b0}};
 					else if (exec_ce)
 						exec_sl_r <= exec_d;
@@ -232,7 +226,7 @@ module atg_su_exec #(
 	endgenerate
 
 	always @(posedge clk) begin
-		if (rst_p2) begin
+		if (rst_p) begin
 			acc_any <= 1'b0;
 			acc_all <= 1'b1;
 		end else if (mine) begin

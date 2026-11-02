@@ -430,11 +430,30 @@ module atg_su_lsu #(
 	(* dont_touch = "true" *) wire [LW-1:0] an_a_hi    = anext[LW-1:0];
 	(* dont_touch = "true" *) wire [LW-1:0] an_b_lo    = anext[LW-1:0];
 	(* dont_touch = "true" *) wire [LW-1:0] an_b_hi    = anext[LW-1:0];
+	reg [15:0] at_addr_lo, at_a_lo, at_a_hi, at_b_lo, at_b_hi;
+	reg [13:0] at_addr_hi;
+	integer ai;
+	always @(*) begin
+		at_addr_lo = radr[2 +: 16];
+		at_addr_hi = radr[18 +: 14];
+		at_a_lo    = rdat[0 +: 16];
+		at_a_hi    = rdat[16 +: 16];
+		at_b_lo    = rcmp[0 +: 16];
+		at_b_hi    = rcmp[16 +: 16];
+		for (ai = 1; ai < NPHYS; ai = ai + 1) begin
+			if (an_addr_lo == ai[LW-1:0]) at_addr_lo = radr[ai*32 + 2 +: 16];
+			if (an_addr_hi == ai[LW-1:0]) at_addr_hi = radr[ai*32 + 18 +: 14];
+			if (an_a_lo    == ai[LW-1:0]) at_a_lo    = rdat[ai*32 +: 16];
+			if (an_a_hi    == ai[LW-1:0]) at_a_hi    = rdat[ai*32 + 16 +: 16];
+			if (an_b_lo    == ai[LW-1:0]) at_b_lo    = rcmp[ai*32 +: 16];
+			if (an_b_hi    == ai[LW-1:0]) at_b_hi    = rcmp[ai*32 + 16 +: 16];
+		end
+	end
 	assign at_valid = st == AREQ && anext != NPHYS[LW:0];
 	assign at_op = rsub;
-	assign at_addr = {radr[an_addr_hi*32 + 18 +: 14], radr[an_addr_lo*32 + 2 +: 16]};
-	assign at_a = {rdat[an_a_hi*32 + 16 +: 16], rdat[an_a_lo*32 +: 16]};
-	assign at_b = {rcmp[an_b_hi*32 + 16 +: 16], rcmp[an_b_lo*32 +: 16]};
+	assign at_addr = {at_addr_hi, at_addr_lo};
+	assign at_a = {at_a_hi, at_a_lo};
+	assign at_b = {at_b_hi, at_b_lo};
 
 	assign l_valid = st == BEAT;
 	assign l_warp = rwarp;

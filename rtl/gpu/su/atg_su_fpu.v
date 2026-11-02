@@ -218,14 +218,39 @@ module atg_su_fpu_core (
 		endcase
 	endfunction
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	(* keep = "true" *) wire rst_p = !rst_n;
 
 	/* --- Stage 0 -> Stage 1 --- */
-	wire [65:0] mo_s0 = mulops(op, a, b);
+	(* keep = "true", max_fanout = 12 *) wire mo_is_fma_a_lo = (op <= OP_FNMADD) || (op == OP_FRACT);
+	(* keep = "true", max_fanout = 12 *) wire mo_is_fma_a_hi = (op <= OP_FNMADD) || (op == OP_FRACT);
+	(* keep = "true", max_fanout = 12 *) wire mo_is_fma_b_lo = (op <= OP_FNMADD) || (op == OP_FRACT);
+	(* keep = "true", max_fanout = 12 *) wire mo_is_fma_b_hi = (op <= OP_FNMADD) || (op == OP_FRACT);
+	(* keep = "true", max_fanout = 12 *) wire mo_b_use_b_lo  = (op >= OP_FMUL) && (op <= OP_FNMADD);
+	(* keep = "true", max_fanout = 12 *) wire mo_b_use_b_hi  = (op >= OP_FMUL) && (op <= OP_FNMADD);
+	(* keep = "true", max_fanout = 12 *) wire mo_a_nz_lo = (a[30:23] != 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire mo_a_nz_hi = (a[30:23] != 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire mo_b_nz_lo = (b[30:23] != 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire mo_b_nz_hi = (b[30:23] != 8'd0);
+	wire [15:0] mo_sg_a_lo = mo_a_nz_lo ? a[15:0] : 16'd0;
+	wire [7:0]  mo_sg_a_hi = mo_a_nz_hi ? {1'b1, a[22:16]} : 8'd0;
+	wire [15:0] mo_sg_b_lo = mo_b_use_b_lo ? (mo_b_nz_lo ? b[15:0] : 16'd0) : 16'd0;
+	wire [7:0]  mo_sg_b_hi = mo_b_use_b_hi ? (mo_b_nz_hi ? {1'b1, b[22:16]} : 8'd0) : 8'h80;
+	wire [32:0] mo_a_s0 = {
+		mo_is_fma_a_hi ? {9'd0, mo_sg_a_hi} : {op != OP_MULHU && a[31], a[31:16]},
+		mo_is_fma_a_lo ? mo_sg_a_lo : a[15:0]
+	};
+	wire [32:0] mo_b_s0 = {
+		mo_is_fma_b_hi ? {9'd0, mo_sg_b_hi} : {(op == OP_MUL || op == OP_MULH) && b[31], b[31:16]},
+		mo_is_fma_b_lo ? mo_sg_b_lo : b[15:0]
+	};
+	wire [65:0] mo_s0 = {mo_b_s0, mo_a_s0};
+
 	wire [31:0] nega_s0;
 	wire carry_unused0_neg;
 	am_sub #(.W(32)) u_neg0 (.a(32'd0), .b(a), .bi(1'b0), .d(nega_s0), .bo(carry_unused0_neg));
-	wire [31:0] cv_mag_s0 = (op == OP_FCVTSW && a[31]) ? nega_s0 : a;
+	(* keep = "true", max_fanout = 12 *) wire cv_neg_lo_s0 = (op == OP_FCVTSW) && a[31];
+	(* keep = "true", max_fanout = 12 *) wire cv_neg_hi_s0 = (op == OP_FCVTSW) && a[31];
+	wire [31:0] cv_mag_s0 = {cv_neg_hi_s0 ? nega_s0[31:16] : a[31:16], cv_neg_lo_s0 ? nega_s0[15:0] : a[15:0]};
 	wire is_cv_s0 = (op == OP_FCVTSW) || (op == OP_FCVTSWU);
 
 	wire a_exp_nz_s0 = (a[30:23] != 8'd0);
@@ -327,58 +352,81 @@ module atg_su_fpu_core (
 	wire [24:0] s1_q_p1;
 	wire carry_unused1_qp1;
 	am_add #(.W(25)) u_q1_p1 (.a({1'b0, s1_q_eff}), .b(25'd1), .ci(1'b0), .s(s1_q_p1), .co(carry_unused1_qp1));
-	wire [24:0] s1_n = s1_up ? s1_q_p1 : {1'b0, s1_q_eff};
-	wire [31:0] s1_in_n = s1_is_cv ? s1_cv_mag : (s1_up ? {7'd0, s1_q_p1} : {8'd0, s1_q_eff});
+	(* keep = "true", max_fanout = 12 *) wire s1_up_n_lo  = s1_up;
+	(* keep = "true", max_fanout = 12 *) wire s1_up_n_hi  = s1_up;
+	(* keep = "true", max_fanout = 12 *) wire s1_up_in_lo = s1_up;
+	(* keep = "true", max_fanout = 12 *) wire s1_up_in_hi = s1_up;
+	(* keep = "true", max_fanout = 12 *) wire s1_is_cv_lo = s1_is_cv;
+	(* keep = "true", max_fanout = 12 *) wire s1_is_cv_hi = s1_is_cv;
+	wire [24:0] s1_n = {
+		s1_up_n_hi ? s1_q_p1[24:12] : {1'b0, s1_q_eff[23:12]},
+		s1_up_n_lo ? s1_q_p1[11:0]  : s1_q_eff[11:0]
+	};
+	wire [31:0] s1_in_n = {
+		s1_is_cv_hi ? s1_cv_mag[31:16] : (s1_up_in_hi ? {7'd0, s1_q_p1[24:16]} : {8'd0, s1_q_eff[23:16]}),
+		s1_is_cv_lo ? s1_cv_mag[15:0]  : (s1_up_in_lo ? s1_q_p1[15:0]          : s1_q_eff[15:0])
+	};
 
-	(* keep = "true" *) wire [4:0] s1_op_lo = s1_op;
-	(* keep = "true" *) wire [4:0] s1_op_hi = s1_op;
-	(* keep = "true" *) wire s1_a_ez_lo = (s1_a[30:23] == 8'd0);
-	(* keep = "true" *) wire s1_a_ez_hi = (s1_a[30:23] == 8'd0);
-	(* keep = "true" *) wire s1_b_ez_lo = (s1_b[30:23] == 8'd0);
-	(* keep = "true" *) wire s1_b_ez_hi = (s1_b[30:23] == 8'd0);
-	(* keep = "true" *) wire s1_c_ez_lo = (s1_c[30:23] == 8'd0);
-	(* keep = "true" *) wire s1_c_ez_hi = (s1_c[30:23] == 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire [4:0] s1_op_lo = s1_op;
+	(* keep = "true", max_fanout = 12 *) wire [4:0] s1_op_hi = s1_op;
+	(* keep = "true", max_fanout = 12 *) wire [4:0] s1_op_fz_lo = s1_op;
+	(* keep = "true", max_fanout = 12 *) wire [4:0] s1_op_fz_hi = s1_op;
+	(* keep = "true", max_fanout = 12 *) wire s1_a_ez_lo = (s1_a[30:23] == 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire s1_a_ez_hi = (s1_a[30:23] == 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire s1_b_ez_lo = (s1_b[30:23] == 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire s1_b_ez_hi = (s1_b[30:23] == 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire s1_b_ez_c_lo = (s1_b[30:23] == 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire s1_b_ez_c_hi = (s1_b[30:23] == 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire s1_c_ez_lo = (s1_c[30:23] == 8'd0);
+	(* keep = "true", max_fanout = 12 *) wire s1_c_ez_hi = (s1_c[30:23] == 8'd0);
 
-	reg [31:0] s1_fx, s1_fy, s1_fz;
+	reg [31:0] s1_fx, s1_fy;
+	reg [15:0] s1_fz_lo, s1_fz_hi;
 	reg [15:0] s1_fma_b_lo, s1_fma_b_hi, s1_fma_c_lo, s1_fma_c_hi;
 	reg [2:0]  s1_rr;
 	reg        s1_noc;
 	always @(*) begin
 		s1_fx = s1_a;
 		s1_fy = 32'h3F800000;
-		s1_fz = s1_b;
 		s1_noc = 1'b0;
 		s1_rr = s1_rm;
 		case (s1_op)
-		OP_FADD:   ;
-		OP_FSUB:   s1_fz = {!s1_b[31], s1_b[30:0]};
 		OP_FMUL:   begin
 			s1_fy = s1_b;
 			s1_noc = 1'b1;
 		end
-		OP_FMADD:  begin
+		OP_FMADD, OP_FMSUB: begin
 			s1_fy = s1_b;
-			s1_fz = s1_c;
 		end
-		OP_FMSUB:  begin
-			s1_fy = s1_b;
-			s1_fz = {!s1_c[31], s1_c[30:0]};
-		end
-		OP_FNMSUB: begin
+		OP_FNMSUB, OP_FNMADD: begin
 			s1_fx = {!s1_a[31], s1_a[30:0]};
 			s1_fy = s1_b;
-			s1_fz = s1_c;
-		end
-		OP_FNMADD: begin
-			s1_fx = {!s1_a[31], s1_a[30:0]};
-			s1_fy = s1_b;
-			s1_fz = {!s1_c[31], s1_c[30:0]};
 		end
 		OP_FRACT:  begin
-			s1_fz = 32'd0;
 			s1_rr = 3'd0;
 		end
 		default: ;
+		endcase
+
+		case (s1_op_fz_lo)
+		OP_FMADD, OP_FMSUB, OP_FNMSUB, OP_FNMADD:
+			s1_fz_lo = s1_c[15:0];
+		OP_FRACT:
+			s1_fz_lo = 16'd0;
+		default:
+			s1_fz_lo = s1_b[15:0];
+		endcase
+		case (s1_op_fz_hi)
+		OP_FSUB:
+			s1_fz_hi = {!s1_b[31], s1_b[30:16]};
+		OP_FMADD, OP_FNMSUB:
+			s1_fz_hi = s1_c[31:16];
+		OP_FMSUB, OP_FNMADD:
+			s1_fz_hi = {!s1_c[31], s1_c[30:16]};
+		OP_FRACT:
+			s1_fz_hi = 16'd0;
+		default:
+			s1_fz_hi = s1_b[31:16];
 		endcase
 
 		case (s1_op_lo)
@@ -400,7 +448,7 @@ module atg_su_fpu_core (
 		OP_FRACT:
 			s1_fma_c_lo = 16'd0;
 		default:
-			s1_fma_c_lo = s1_b_ez_lo ? 16'd0 : s1_b[15:0];
+			s1_fma_c_lo = s1_b_ez_c_lo ? 16'd0 : s1_b[15:0];
 		endcase
 		case (s1_op_hi)
 		OP_FMADD, OP_FNMSUB:
@@ -410,11 +458,12 @@ module atg_su_fpu_core (
 		OP_FRACT:
 			s1_fma_c_hi = 16'd0;
 		OP_FSUB:
-			s1_fma_c_hi = s1_b_ez_hi ? {!s1_b[31], 15'd0} : {!s1_b[31], s1_b[30:16]};
+			s1_fma_c_hi = s1_b_ez_c_hi ? {!s1_b[31], 15'd0} : {!s1_b[31], s1_b[30:16]};
 		default:
-			s1_fma_c_hi = s1_b_ez_hi ? {s1_b[31], 15'd0} : s1_b[31:16];
+			s1_fma_c_hi = s1_b_ez_c_hi ? {s1_b[31], 15'd0} : s1_b[31:16];
 		endcase
 	end
+	wire [31:0] s1_fz = {s1_fz_hi, s1_fz_lo};
 
 	wire [31:0] s1_fma_a = {s1_a_ez_hi ? {s1_fx[31], 15'd0} : s1_fx[31:16], s1_a_ez_lo ? 16'd0 : s1_fx[15:0]};
 	wire [31:0] s1_fma_b = {s1_fma_b_hi, s1_fma_b_lo};
@@ -429,7 +478,7 @@ module atg_su_fpu_core (
 	am_add #(.W(12)) u_fma1_c101 (.a({4'd0, s1_c_exp}),        .b(12'd101),                 .ci(1'b0), .s(s1_fma_c101), .co(s1_fma_carry_unused[3]));
 
 	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s2_a, s2_b, s2_c;
-	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s2_xf_r, s2_bf_r;
+	(* shreg_extract = "no", keep = "true", max_fanout = 12 *) reg [31:0] s2_xf_r, s2_bf_r;
 	(* shreg_extract = "no", max_fanout = 12 *) reg        s2_xf_ez_r, s2_bf_ez_r, s2_c_ez_r;
 	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [4:0] s2_op;
 	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [2:0] s2_rm;
@@ -441,14 +490,35 @@ module atg_su_fpu_core (
 	(* shreg_extract = "no", max_fanout = 12 *) reg        s2_noc;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [31:0] s2_fma_a, s2_fma_b, s2_fma_c;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [11:0] s2_fma_ab, s2_fma_c150, s2_fma_c152, s2_fma_c101;
+	(* keep = "true", max_fanout = 12 *) wire rst_s2_xf_lo = rst_p || (en && s1_a_ez_lo);
+	(* keep = "true", max_fanout = 12 *) wire rst_s2_xf_hi = rst_p || (en && s1_a_ez_hi);
+	(* keep = "true", max_fanout = 12 *) wire rst_s2_bf_lo = rst_p || (en && s1_b_ez_lo);
+	(* keep = "true", max_fanout = 12 *) wire rst_s2_bf_hi = rst_p || (en && s1_b_ez_hi);
 
 	always @(posedge clk) begin
+		if (rst_s2_xf_lo)
+			s2_xf_r[15:0] <= 16'd0;
+		else if (en)
+			s2_xf_r[15:0] <= s1_a[15:0];
+		if (rst_s2_xf_hi)
+			s2_xf_r[30:16] <= 15'd0;
+		else if (en)
+			s2_xf_r[30:16] <= s1_a[30:16];
+		if (rst_s2_bf_lo)
+			s2_bf_r[15:0] <= 16'd0;
+		else if (en)
+			s2_bf_r[15:0] <= s1_b[15:0];
+		if (rst_s2_bf_hi)
+			s2_bf_r[30:16] <= 15'd0;
+		else if (en)
+			s2_bf_r[30:16] <= s1_b[30:16];
+
 		if (rst_p) begin
 			s2_a        <= 32'd0;
 			s2_b        <= 32'd0;
 			s2_c        <= 32'd0;
-			s2_xf_r     <= 32'd0;
-			s2_bf_r     <= 32'd0;
+			s2_xf_r[31] <= 1'b0;
+			s2_bf_r[31] <= 1'b0;
 			s2_xf_ez_r  <= 1'b0;
 			s2_bf_ez_r  <= 1'b0;
 			s2_c_ez_r   <= 1'b0;
@@ -473,11 +543,11 @@ module atg_su_fpu_core (
 			s2_a        <= s1_a;
 			s2_b        <= s1_b;
 			s2_c        <= s1_c;
-			s2_xf_r     <= {s1_a_ez_hi ? {s1_a[31], 15'd0} : s1_a[31:16], s1_a_ez_lo ? 16'd0 : s1_a[15:0]};
-			s2_bf_r     <= {s1_b_ez_hi ? {s1_b[31], 15'd0} : s1_b[31:16], s1_b_ez_lo ? 16'd0 : s1_b[15:0]};
+			s2_xf_r[31] <= s1_a[31];
+			s2_bf_r[31] <= s1_b[31];
 			s2_xf_ez_r  <= s1_a_ez_lo;
 			s2_bf_ez_r  <= s1_b_ez_lo;
-			s2_c_ez_r   <= (s1_fz[30:23] == 8'd0);
+			s2_c_ez_r   <= (s1_fz_hi[14:7] == 8'd0);
 			s2_op       <= s1_op;
 			s2_rm       <= s1_rm;
 			s2_sat      <= s1_sat;
@@ -577,12 +647,12 @@ module atg_su_fpu_core (
 	wire [1:0]  s2_fma_sub_carry_unused;
 	am_sub #(.W(12)) u_fma2_k   (.a(s2_fma_c150), .b(s2_fma_ab), .bi(1'b0), .d(s2_fma_k),   .bo(s2_fma_sub_carry_unused[0]));
 	am_sub #(.W(12)) u_fma2_kp2 (.a(s2_fma_c152), .b(s2_fma_ab), .bi(1'b0), .d(s2_fma_kp2), .bo(s2_fma_sub_carry_unused[1]));
-	(* keep = "true" *) wire s2_fr_ge1 = (s2_op == OP_FRACT) && s2_fract_ge1;
-	(* keep = "true" *) wire [4:0] s2_fma_rs = neg5(s2_fma_kp2[4:0]);
-	(* keep = "true" *) wire [3:0] s2_cs_left_rep = {4{s2_fr_ge1 || !s2_fma_kp2[11]}};
-	(* keep = "true" *) wire [6:0] s2_cs_amt = s2_fma_kp2[6:0];
-	(* keep = "true" *) wire s2_mc_zero_lo = (s2_op == OP_FRACT) || s2_noc || s2_c_ez_r;
-	(* keep = "true" *) wire s2_mc_zero_hi = (s2_op == OP_FRACT) || s2_noc || s2_c_ez_r;
+	(* keep = "true", max_fanout = 12 *) wire s2_fr_ge1 = (s2_op == OP_FRACT) && s2_fract_ge1;
+	(* keep = "true", max_fanout = 12 *) wire [4:0] s2_fma_rs = neg5(s2_fma_kp2[4:0]);
+	(* keep = "true", max_fanout = 12 *) wire [3:0] s2_cs_left_rep = {4{s2_fr_ge1 || !s2_fma_kp2[11]}};
+	(* keep = "true", max_fanout = 12 *) wire [6:0] s2_cs_amt = s2_fma_kp2[6:0];
+	(* keep = "true", max_fanout = 12 *) wire s2_mc_zero_lo = (s2_op == OP_FRACT) || s2_noc || s2_c_ez_r;
+	(* keep = "true", max_fanout = 12 *) wire s2_mc_zero_hi = (s2_op == OP_FRACT) || s2_noc || s2_c_ez_r;
 	wire [23:0] s2_fma_mc_sh = {
 		(s2_op == OP_FRACT) ? 1'b1 : !s2_mc_zero_hi,
 		s2_mc_zero_hi ? 7'd0  : s2_fma_c[22:16],
