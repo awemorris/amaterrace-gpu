@@ -132,31 +132,50 @@ module atg_su_div #(
 		(neg_q ? d0[31:0] : q);
 
 	/* Buffered control and index signals */
-	wire [LW-1:0] first_a_lo, first_a_hi, first_b_lo, first_b_hi;
-	wire [LW-1:0] after_a_lo, after_a_hi, after_b_lo, after_b_hi;
+	/* Buffered control and index signals */
+	wire [LW-1:0] first_a_b0, first_a_b1, first_a_b2, first_a_b3;
+	wire [LW-1:0] first_b_b0, first_b_b1, first_b_b2, first_b_b3;
+	wire [LW-1:0] after_a_b0, after_a_b1, after_a_b2, after_a_b3;
+	wire [LW-1:0] after_b_b0, after_b_b1, after_b_b2, after_b_b3;
 	genvar gbf;
 	generate
 		for (gbf = 0; gbf < LW; gbf = gbf + 1) begin : g_buf_sel
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_alo (.I0(first[gbf]), .O(first_a_lo[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_ahi (.I0(first[gbf]), .O(first_a_hi[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_blo (.I0(first[gbf]), .O(first_b_lo[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_bhi (.I0(first[gbf]), .O(first_b_hi[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_ab0 (.I0(first[gbf]), .O(first_a_b0[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_ab1 (.I0(first[gbf]), .O(first_a_b1[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_ab2 (.I0(first[gbf]), .O(first_a_b2[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_ab3 (.I0(first[gbf]), .O(first_a_b3[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_bb0 (.I0(first[gbf]), .O(first_b_b0[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_bb1 (.I0(first[gbf]), .O(first_b_b1[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_bb2 (.I0(first[gbf]), .O(first_b_b2[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_bb3 (.I0(first[gbf]), .O(first_b_b3[gbf]));
 
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_alo (.I0(after[gbf]), .O(after_a_lo[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ahi (.I0(after[gbf]), .O(after_a_hi[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_blo (.I0(after[gbf]), .O(after_b_lo[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bhi (.I0(after[gbf]), .O(after_b_hi[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab0 (.I0(after[gbf]), .O(after_a_b0[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab1 (.I0(after[gbf]), .O(after_a_b1[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab2 (.I0(after[gbf]), .O(after_a_b2[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab3 (.I0(after[gbf]), .O(after_a_b3[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb0 (.I0(after[gbf]), .O(after_b_b0[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb1 (.I0(after[gbf]), .O(after_b_b1[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb2 (.I0(after[gbf]), .O(after_b_b2[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb3 (.I0(after[gbf]), .O(after_b_b3[gbf]));
 `else
-			assign first_a_lo[gbf] = first[gbf];
-			assign first_a_hi[gbf] = first[gbf];
-			assign first_b_lo[gbf] = first[gbf];
-			assign first_b_hi[gbf] = first[gbf];
+			assign first_a_b0[gbf] = first[gbf];
+			assign first_a_b1[gbf] = first[gbf];
+			assign first_a_b2[gbf] = first[gbf];
+			assign first_a_b3[gbf] = first[gbf];
+			assign first_b_b0[gbf] = first[gbf];
+			assign first_b_b1[gbf] = first[gbf];
+			assign first_b_b2[gbf] = first[gbf];
+			assign first_b_b3[gbf] = first[gbf];
 
-			assign after_a_lo[gbf] = after[gbf];
-			assign after_a_hi[gbf] = after[gbf];
-			assign after_b_lo[gbf] = after[gbf];
-			assign after_b_hi[gbf] = after[gbf];
+			assign after_a_b0[gbf] = after[gbf];
+			assign after_a_b1[gbf] = after[gbf];
+			assign after_a_b2[gbf] = after[gbf];
+			assign after_a_b3[gbf] = after[gbf];
+			assign after_b_b0[gbf] = after[gbf];
+			assign after_b_b1[gbf] = after[gbf];
+			assign after_b_b2[gbf] = after[gbf];
+			assign after_b_b3[gbf] = after[gbf];
 `endif
 		end
 	endgenerate
@@ -165,65 +184,110 @@ module atg_su_div #(
 	                    ((st == DIV) && s_end && (after != NPHYS[LW:0]));
 	wire idle_sel_raw = (st == IDLE);
 
-	wire cur_load_alo, cur_load_ahi, cur_load_blo, cur_load_bhi;
-	wire idle_sel_alo, idle_sel_ahi, idle_sel_blo, idle_sel_bhi;
+	wire cur_load_ab0, cur_load_ab1, cur_load_ab2, cur_load_ab3;
+	wire cur_load_bb0, cur_load_bb1, cur_load_bb2, cur_load_bb3;
+	wire idle_sel_ab0, idle_sel_ab1, idle_sel_ab2, idle_sel_ab3;
+	wire idle_sel_bb0, idle_sel_bb1, idle_sel_bb2, idle_sel_bb3;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_alo (.I0(cur_load_raw), .O(cur_load_alo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_ahi (.I0(cur_load_raw), .O(cur_load_ahi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_blo (.I0(cur_load_raw), .O(cur_load_blo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_bhi (.I0(cur_load_raw), .O(cur_load_bhi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_ab0 (.I0(cur_load_raw), .O(cur_load_ab0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_ab1 (.I0(cur_load_raw), .O(cur_load_ab1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_ab2 (.I0(cur_load_raw), .O(cur_load_ab2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_ab3 (.I0(cur_load_raw), .O(cur_load_ab3));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_bb0 (.I0(cur_load_raw), .O(cur_load_bb0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_bb1 (.I0(cur_load_raw), .O(cur_load_bb1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_bb2 (.I0(cur_load_raw), .O(cur_load_bb2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_cl_bb3 (.I0(cur_load_raw), .O(cur_load_bb3));
 
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_alo (.I0(idle_sel_raw), .O(idle_sel_alo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_ahi (.I0(idle_sel_raw), .O(idle_sel_ahi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_blo (.I0(idle_sel_raw), .O(idle_sel_blo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_bhi (.I0(idle_sel_raw), .O(idle_sel_bhi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_ab0 (.I0(idle_sel_raw), .O(idle_sel_ab0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_ab1 (.I0(idle_sel_raw), .O(idle_sel_ab1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_ab2 (.I0(idle_sel_raw), .O(idle_sel_ab2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_ab3 (.I0(idle_sel_raw), .O(idle_sel_ab3));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_bb0 (.I0(idle_sel_raw), .O(idle_sel_bb0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_bb1 (.I0(idle_sel_raw), .O(idle_sel_bb1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_bb2 (.I0(idle_sel_raw), .O(idle_sel_bb2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_is_bb3 (.I0(idle_sel_raw), .O(idle_sel_bb3));
 `else
-	assign cur_load_alo = cur_load_raw;
-	assign cur_load_ahi = cur_load_raw;
-	assign cur_load_blo = cur_load_raw;
-	assign cur_load_bhi = cur_load_raw;
+	assign cur_load_ab0 = cur_load_raw;
+	assign cur_load_ab1 = cur_load_raw;
+	assign cur_load_ab2 = cur_load_raw;
+	assign cur_load_ab3 = cur_load_raw;
+	assign cur_load_bb0 = cur_load_raw;
+	assign cur_load_bb1 = cur_load_raw;
+	assign cur_load_bb2 = cur_load_raw;
+	assign cur_load_bb3 = cur_load_raw;
 
-	assign idle_sel_alo = idle_sel_raw;
-	assign idle_sel_ahi = idle_sel_raw;
-	assign idle_sel_blo = idle_sel_raw;
-	assign idle_sel_bhi = idle_sel_raw;
+	assign idle_sel_ab0 = idle_sel_raw;
+	assign idle_sel_ab1 = idle_sel_raw;
+	assign idle_sel_ab2 = idle_sel_raw;
+	assign idle_sel_ab3 = idle_sel_raw;
+	assign idle_sel_bb0 = idle_sel_raw;
+	assign idle_sel_bb1 = idle_sel_raw;
+	assign idle_sel_bb2 = idle_sel_raw;
+	assign idle_sel_bb3 = idle_sel_raw;
 `endif
 
-	reg [15:0] la_cur_lo, la_cur_hi, lb_cur_lo, lb_cur_hi;
+	reg [7:0] la_cur_b0, la_cur_b1, la_cur_b2, la_cur_b3;
+	reg [7:0] lb_cur_b0, lb_cur_b1, lb_cur_b2, lb_cur_b3;
 	always @(posedge clk) begin
 		if (rst_p) begin
-			la_cur_lo <= 16'd0;
-			la_cur_hi <= 16'd0;
-			lb_cur_lo <= 16'd0;
-			lb_cur_hi <= 16'd0;
+			la_cur_b0 <= 8'd0;
+			la_cur_b1 <= 8'd0;
+			la_cur_b2 <= 8'd0;
+			la_cur_b3 <= 8'd0;
+			lb_cur_b0 <= 8'd0;
+			lb_cur_b1 <= 8'd0;
+			lb_cur_b2 <= 8'd0;
+			lb_cur_b3 <= 8'd0;
 		end else begin
-			if (cur_load_alo)
-				la_cur_lo <= idle_sel_alo ? x_a[{first_a_lo, 5'd0} +: 16] : ra[{after_a_lo, 5'd0} +: 16];
-			if (cur_load_ahi)
-				la_cur_hi <= idle_sel_ahi ? x_a[{first_a_hi, 5'd16} +: 16] : ra[{after_a_hi, 5'd16} +: 16];
-			if (cur_load_blo)
-				lb_cur_lo <= idle_sel_blo ? x_b[{first_b_lo, 5'd0} +: 16] : rb[{after_b_lo, 5'd0} +: 16];
-			if (cur_load_bhi)
-				lb_cur_hi <= idle_sel_bhi ? x_b[{first_b_hi, 5'd16} +: 16] : rb[{after_b_hi, 5'd16} +: 16];
+			if (cur_load_ab0)
+				la_cur_b0 <= idle_sel_ab0 ? x_a[{first_a_b0, 5'd0} +: 8] : ra[{after_a_b0, 5'd0} +: 8];
+			if (cur_load_ab1)
+				la_cur_b1 <= idle_sel_ab1 ? x_a[{first_a_b1, 5'd8} +: 8] : ra[{after_a_b1, 5'd8} +: 8];
+			if (cur_load_ab2)
+				la_cur_b2 <= idle_sel_ab2 ? x_a[{first_a_b2, 5'd16} +: 8] : ra[{after_a_b2, 5'd16} +: 8];
+			if (cur_load_ab3)
+				la_cur_b3 <= idle_sel_ab3 ? x_a[{first_a_b3, 5'd24} +: 8] : ra[{after_a_b3, 5'd24} +: 8];
+
+			if (cur_load_bb0)
+				lb_cur_b0 <= idle_sel_bb0 ? x_b[{first_b_b0, 5'd0} +: 8] : rb[{after_b_b0, 5'd0} +: 8];
+			if (cur_load_bb1)
+				lb_cur_b1 <= idle_sel_bb1 ? x_b[{first_b_b1, 5'd8} +: 8] : rb[{after_b_b1, 5'd8} +: 8];
+			if (cur_load_bb2)
+				lb_cur_b2 <= idle_sel_bb2 ? x_b[{first_b_b2, 5'd16} +: 8] : rb[{after_b_b2, 5'd16} +: 8];
+			if (cur_load_bb3)
+				lb_cur_b3 <= idle_sel_bb3 ? x_b[{first_b_b3, 5'd24} +: 8] : rb[{after_b_b3, 5'd24} +: 8];
 		end
 	end
-	assign la_cur_r = {la_cur_hi, la_cur_lo};
-	assign lb_cur_r = {lb_cur_hi, lb_cur_lo};
+	assign la_cur_r = {la_cur_b3, la_cur_b2, la_cur_b1, la_cur_b0};
+	assign lb_cur_r = {lb_cur_b3, lb_cur_b2, lb_cur_b1, lb_cur_b0};
+
+	wire [3:0] idle_mine_g;
+	genvar gimg;
+	generate
+		for (gimg = 0; gimg < 4; gimg = gimg + 1) begin : g_im_buf
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_im (.I0((st == IDLE) && mine), .O(idle_mine_g[gimg]));
+`else
+			assign idle_mine_g[gimg] = (st == IDLE) && mine;
+`endif
+		end
+	endgenerate
 
 	genvar gdl, gdh;
 	generate
 	for (gdl = 0; gdl < NPHYS; gdl = gdl + 1) begin : g_div_lane
+		wire idle_mine_sl = idle_mine_g[gdl / 2];
 		for (gdh = 0; gdh < 2; gdh = gdh + 1) begin : g_div_half
 			wire ra_we_b, rb_we_b, rq_clr_b, rq_we_b;
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ra_we  (.I0((st == IDLE) && mine), .O(ra_we_b));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rb_we  (.I0((st == IDLE) && mine), .O(rb_we_b));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rq_clr (.I0((st == IDLE) && mine), .O(rq_clr_b));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ra_we  (.I0(idle_mine_sl), .O(ra_we_b));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rb_we  (.I0(idle_mine_sl), .O(rb_we_b));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rq_clr (.I0(idle_mine_sl), .O(rq_clr_b));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rq_we  (.I0((st == DIV) && s_end && (li == gdl[LW-1:0])), .O(rq_we_b));
 `else
-			assign ra_we_b = (st == IDLE) && mine;
-			assign rb_we_b = (st == IDLE) && mine;
-			assign rq_clr_b = (st == IDLE) && mine;
+			assign ra_we_b = idle_mine_sl;
+			assign rb_we_b = idle_mine_sl;
+			assign rq_clr_b = idle_mine_sl;
 			assign rq_we_b = (st == DIV) && s_end && (li == gdl[LW-1:0]);
 `endif
 			(* shreg_extract = "no" *) reg [15:0] ra_h_r, rb_h_r, rq_h_r;
@@ -242,7 +306,28 @@ module atg_su_div #(
 			assign rq[gdl*32 + gdh*16 +: 16] = rq_h_r;
 		end
 	end
+	wire [1:0] la31_b, lb31_b;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_la31_0 (.I0(la[31]), .O(la31_b[0]));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_la31_1 (.I0(la[31]), .O(la31_b[1]));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lb31_0 (.I0(lb[31]), .O(lb31_b[0]));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_lb31_1 (.I0(lb[31]), .O(lb31_b[1]));
+`else
+	assign la31_b[0] = la[31];
+	assign la31_b[1] = la[31];
+	assign lb31_b[0] = lb[31];
+	assign lb31_b[1] = lb[31];
+`endif
+
 	for (gdh = 0; gdh < 2; gdh = gdh + 1) begin : g_div_op
+		wire sgn_la31_h, sgn_lb31_h;
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sla (.I0(sgn && la31_b[gdh]), .O(sgn_la31_h));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_slb (.I0(sgn && lb31_b[gdh]), .O(sgn_lb31_h));
+`else
+		assign sgn_la31_h = sgn && la31_b[gdh];
+		assign sgn_lb31_h = sgn && lb31_b[gdh];
+`endif
 		wire load_dn, load_dd, load_q, load_r;
 		wire step_dn, step_q, step_r;
 `ifdef SYNTH_KINTEX7
@@ -264,7 +349,7 @@ module atg_su_div #(
 `endif
 		always @(posedge clk) begin
 			if (load_dn)
-				dn[gdh*16 +: 16] <= (sgn && la[31]) ? d0[gdh*16 +: 16] : la[gdh*16 +: 16];
+				dn[gdh*16 +: 16] <= sgn_la31_h ? d0[gdh*16 +: 16] : la[gdh*16 +: 16];
 			else if (step_dn) begin
 				if (gdh == 0)
 					dn[15:0] <= {dn[14:0], 1'b0};
@@ -274,7 +359,7 @@ module atg_su_div #(
 		end
 		always @(posedge clk) begin
 			if (load_dd)
-				dd[gdh*16 +: 16] <= (sgn && lb[31]) ? neg_b[gdh*16 +: 16] : lb[gdh*16 +: 16];
+				dd[gdh*16 +: 16] <= sgn_lb31_h ? neg_b[gdh*16 +: 16] : lb[gdh*16 +: 16];
 		end
 		always @(posedge clk) begin
 			if (load_q)
