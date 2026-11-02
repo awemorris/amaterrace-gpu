@@ -189,22 +189,31 @@ module atg_su_tex_ret #(
 	genvar gq, glq, gh;
 	generate
 	for (gq = 0; gq < NQ; gq = gq + 1) begin : g_bufq_quad
+		wire bufq_we_raw = gather_we && (q == gq[QW-1:0]);
+		wire [3:0] bufq_we_lane;
+		genvar glb;
+		for (glb = 0; glb < 4; glb = glb + 1) begin : g_bwe_l
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_lane (.I0(bufq_we_raw), .O(bufq_we_lane[glb]));
+`else
+			assign bufq_we_lane[glb] = bufq_we_raw;
+`endif
+		end
 		for (glq = 0; glq < 4; glq = glq + 1) begin : g_bufq_lane
 			for (gh = 0; gh < 2; gh = gh + 1) begin : g_bufq_half
 				localparam L_IDX = gq * 4 + glq;
 				localparam TR_BASE = glq * 128 + gh * 16;
-				wire bufq_we_raw = gather_we && (q == gq[QW-1:0]);
 				wire bufq_we_0, bufq_we_1, bufq_we_2, bufq_we_3;
 `ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe0 (.I0(bufq_we_raw), .O(bufq_we_0));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe1 (.I0(bufq_we_raw), .O(bufq_we_1));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe2 (.I0(bufq_we_raw), .O(bufq_we_2));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe3 (.I0(bufq_we_raw), .O(bufq_we_3));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe0 (.I0(bufq_we_lane[glq]), .O(bufq_we_0));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe1 (.I0(bufq_we_lane[glq]), .O(bufq_we_1));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe2 (.I0(bufq_we_lane[glq]), .O(bufq_we_2));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_bwe3 (.I0(bufq_we_lane[glq]), .O(bufq_we_3));
 `else
-				assign bufq_we_0 = bufq_we_raw;
-				assign bufq_we_1 = bufq_we_raw;
-				assign bufq_we_2 = bufq_we_raw;
-				assign bufq_we_3 = bufq_we_raw;
+				assign bufq_we_0 = bufq_we_lane[glq];
+				assign bufq_we_1 = bufq_we_lane[glq];
+				assign bufq_we_2 = bufq_we_lane[glq];
+				assign bufq_we_3 = bufq_we_lane[glq];
 `endif
 				(* dont_touch = "true" *) wire [1:0] c_sl = c;
 				(* shreg_extract = "no" *) reg [15:0] b_c0, b_c1, b_c2, b_c3;

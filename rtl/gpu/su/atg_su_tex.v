@@ -100,13 +100,13 @@ module atg_su_tex #(
 
 	(* dont_touch = "true" *) wire rst_p = !rst_n;
 
-	(* fsm_encoding = "none", max_fanout = 12 *) reg [1:0] st;
-	(* max_fanout = 12 *) reg [QW-1:0] q, lastq;
-	(* max_fanout = 12 *) reg [NPHYS-1:0] lanes;
-	(* max_fanout = 12 *) reg [WARP_W-1:0] warp;
-	(* max_fanout = 12 *) reg [GRP_W-1:0] grp;
-	(* max_fanout = 12 *) reg [6:0] rd;
-	(* max_fanout = 12 *) reg last;
+	(* fsm_encoding = "none" *) reg [1:0] st;
+	reg [QW-1:0] q, lastq;
+	reg [NPHYS-1:0] lanes;
+	reg [WARP_W-1:0] warp;
+	reg [GRP_W-1:0] grp;
+	reg [6:0] rd;
+	reg last;
 
 	(* max_fanout = 12 *) wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_TEX;
 	(* max_fanout = 12 *) wire cform = x_uop[ATG_UOP_OP + ATG_TEX_CFORM];
@@ -144,11 +144,33 @@ module atg_su_tex #(
 	genvar gq_l, ghw, gqi;
 	generate
 	for (gq_l = 0; gq_l < 4; gq_l = gq_l + 1) begin : g_qlane
+		wire [QW-1:0] q_lane_0, q_lane_1;
+`ifdef SYNTH_KINTEX7
+		genvar gqw_l;
+		for (gqw_l = 0; gqw_l < QW; gqw_l = gqw_l + 1) begin : g_q_l_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ql0 (.I0(q[gqw_l]), .O(q_lane_0[gqw_l]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ql1 (.I0(q[gqw_l]), .O(q_lane_1[gqw_l]));
+		end
+`else
+		assign q_lane_0 = q;
+		assign q_lane_1 = q;
+`endif
 		for (ghw = 0; ghw < 10; ghw = ghw + 1) begin : g_qhw
 			localparam SL_IDX = gq_l * 10 + ghw;
 			localparam H_BIT = (ghw % 2) * 16;
 			localparam W_IDX = ghw / 2;
-			(* dont_touch = "true" *) wire [QW-1:0] q_sl = q;
+			wire [QW-1:0] q_sl_lo, q_sl_hi;
+`ifdef SYNTH_KINTEX7
+			genvar gqw_s;
+			for (gqw_s = 0; gqw_s < QW; gqw_s = gqw_s + 1) begin : g_q_s_buf
+				wire q_in = (ghw < 5) ? q_lane_0[gqw_s] : q_lane_1[gqw_s];
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qlo (.I0(q_in), .O(q_sl_lo[gqw_s]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qhi (.I0(q_in), .O(q_sl_hi[gqw_s]));
+			end
+`else
+			assign q_sl_lo = (ghw < 5) ? q_lane_0 : q_lane_1;
+			assign q_sl_hi = (ghw < 5) ? q_lane_0 : q_lane_1;
+`endif
 			wire [NQ*16-1:0] crd_sl;
 
 			for (gqi = 0; gqi < NQ; gqi = gqi + 1) begin : g_qinst
@@ -176,15 +198,19 @@ module atg_su_tex #(
 				assign crd_sl[gqi*16 +: 16] = crd_inst_r;
 			end
 
-			reg [15:0] q_crd_s;
+			reg [7:0] q_crd_lo, q_crd_hi;
 			integer qsi;
 			always @(*) begin
-				q_crd_s = crd_sl[0 +: 16];
-				for (qsi = 1; qsi < NQ; qsi = qsi + 1)
-					if (q_sl == qsi[QW-1:0])
-						q_crd_s = crd_sl[qsi*16 +: 16];
+				q_crd_lo = crd_sl[0 +: 8];
+				q_crd_hi = crd_sl[8 +: 8];
+				for (qsi = 1; qsi < NQ; qsi = qsi + 1) begin
+					if (q_sl_lo == qsi[QW-1:0])
+						q_crd_lo = crd_sl[qsi*16 +: 8];
+					if (q_sl_hi == qsi[QW-1:0])
+						q_crd_hi = crd_sl[qsi*16 + 8 +: 8];
+				end
 			end
-			assign q_crd[SL_IDX*16 +: 16] = q_crd_s;
+			assign q_crd[SL_IDX*16 +: 16] = {q_crd_hi, q_crd_lo};
 		end
 	end
 	endgenerate
