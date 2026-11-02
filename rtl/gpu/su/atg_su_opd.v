@@ -137,7 +137,9 @@ module atg_su_opd #(
 	reg [SBE_W:0] a_sbe;
 	reg [GRP_W-1:0] a_grp;
 	reg a_step;	/* 0 = step 0 (reads rs1, rs2), 1 = step 1 (reads rs3) */
-	reg a_pass;	/* the second operand pass of a four-operand uop */
+	(* dont_touch = "true" *) reg a_pass_ctl;	/* control/FSM pass */
+	(* dont_touch = "true" *) reg a_pass_r1;	/* operand r1 mux pass */
+	(* dont_touch = "true" *) reg a_pass_out;	/* output uop/rq_pop pass */
 	reg a_wait;	/* 1 = waiting for registered RF output (when REG_IO == 1) */
 	reg a_wait_last;
 	(* dont_touch = "true" *) reg [WARP_W-1:0] a_rf_warp_r;
@@ -174,7 +176,7 @@ module atg_su_opd #(
 		(b_rdy_sel3_r == 2'd1) ? unit_ready[10] : (b_rdy_sel3_r == 2'd2) ? unit_ready[11] : unit_ready[12];
 	(* dont_touch = "true" *) wire r_en_g4 = a_act && !a_wait && (!b_is_u13_r || unit_ready[13]);
 	(* dont_touch = "true" *) wire cr_en_g4 = a_act && !a_wait && !a_step && (!b_is_u13_r || unit_ready[13]);
-	(* dont_touch = "true" *) wire rq_pop_g4 = a_act && !a_wait && a_uop[ATG_UOP_RQS] && !a_pass && !a_step && (!b_is_u13_r || unit_ready[13]);
+	(* dont_touch = "true" *) wire rq_pop_g4 = a_act && !a_wait && a_uop[ATG_UOP_RQS] && !a_pass_out && !a_step && (!b_is_u13_r || unit_ready[13]);
 	(* dont_touch = "true" *) wire x_end_g4 = b_valid_last_r && (!b_is_u13_r || unit_ready[13]);
 	(* dont_touch = "true" *) wire b_adv_fast = (!b_is_u13_r || unit_ready[13]) & u_rdy_g0 & u_rdy_g1 & u_rdy_g2 & u_rdy_g3;
 	wire r_en_fast = r_en_g4 & u_rdy_g0 & u_rdy_g1 & u_rdy_g2 & u_rdy_g3;
@@ -190,13 +192,13 @@ module atg_su_opd #(
 	wire a_wide = a_uop[ATG_UOP_PAIR] && a_uop[ATG_UOP_USE3];
 	wire a_needs_step1 = a_uop[ATG_UOP_USE3] || a_uop[ATG_UOP_PAIR];
 	wire a_step_done = !a_needs_step1 || a_step;
-	wire a_pass_done = (!a_wide || a_pass) && a_step_done;
+	wire a_pass_done = (!a_wide || a_pass_ctl) && a_step_done;
 	wire a_last = ({{(32-GRP_W){1'b0}}, a_grp} == G - 1) && a_pass_done;
 	assign i_ready = !a_act || ((REG_IO != 0) ? a_wait_last : (a_adv && a_last));
 
 	/* Operand numbers; operand 3 is rs1+1 for the PAIR instructions;
 	 * operands 1 and 3 are rs3 and rs3+1 on a second pass. */
-	wire [6:0] a_r1 = a_pass ? a_uop[ATG_UOP_RS3 +: 7] : a_uop[ATG_UOP_RS1 +: 7];
+	wire [6:0] a_r1 = a_pass_r1 ? a_uop[ATG_UOP_RS3 +: 7] : a_uop[ATG_UOP_RS1 +: 7];
 	wire [6:0] a_n1 = a_r1;
 	wire [6:0] a_n2 = a_uop[ATG_UOP_RS2 +: 7];
 	wire [6:0] a_r1p;
@@ -215,18 +217,30 @@ module atg_su_opd #(
 	assign r_grp = a_rf_grp_r;
 	assign r_regs = {a_rf_r2_r, a_rf_r1_r};
 	assign cr_en = (REG_IO != 0) ? cr_en_fast : (a_act && b_adv && (!a_needs_step1 || !a_step));
+	wire [4:0] a_n1_cr, a_n2_cr, a_n3_cr;
+	wire [4:0] a_n1_opc, a_n2_opc, a_n3_opc;
 `ifdef SYNTH_KINTEX7
-	genvar g_cr_b;
+	genvar gnb;
 	generate
-		for (g_cr_b = 0; g_cr_b < 15; g_cr_b = g_cr_b + 1) begin : g_buf_cr_idx
-			wire [14:0] cr_idx_src = {a_n3[4:0], a_n2[4:0], a_n1[4:0]};
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cr (.I0(cr_idx_src[g_cr_b]), .O(cr_idx[g_cr_b]));
+		for (gnb = 0; gnb < 5; gnb = gnb + 1) begin : g_nb_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1cr  (.I0(a_n1[gnb]), .O(a_n1_cr[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2cr  (.I0(a_n2[gnb]), .O(a_n2_cr[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3cr  (.I0(a_n3[gnb]), .O(a_n3_cr[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n1opc (.I0(a_n1[gnb]), .O(a_n1_opc[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n2opc (.I0(a_n2[gnb]), .O(a_n2_opc[gnb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_n3opc (.I0(a_n3[gnb]), .O(a_n3_opc[gnb]));
 		end
 	endgenerate
 `else
-	assign cr_idx = {a_n3[4:0], a_n2[4:0], a_n1[4:0]};
+	assign a_n1_cr  = a_n1[4:0];
+	assign a_n2_cr  = a_n2[4:0];
+	assign a_n3_cr  = a_n3[4:0];
+	assign a_n1_opc = a_n1[4:0];
+	assign a_n2_opc = a_n2[4:0];
+	assign a_n3_opc = a_n3[4:0];
 `endif
-	assign rq_pop = (REG_IO != 0) ? rq_pop_fast : (a_act && b_adv && a_uop[ATG_UOP_RQS] && !a_pass && (!a_needs_step1 || !a_step));
+	assign cr_idx = {a_n3_cr, a_n2_cr, a_n1_cr};
+	assign rq_pop = (REG_IO != 0) ? rq_pop_fast : (a_act && b_adv && a_uop[ATG_UOP_RQS] && !a_pass_out && (!a_needs_step1 || !a_step));
 
 	wire a_match_wb_1 = fwd_wb_valid && (a_n1 < 7'd63) && (fwd_wb_rd < 7'd63) &&
 	                    (fwd_wb_warp == a_warp) && (fwd_wb_grp == a_grp) && (fwd_wb_rd[5:0] == a_n1[5:0]);
@@ -279,7 +293,7 @@ module atg_su_opd #(
 	(* dont_touch = "true" *) wire a_pre_en_1 = (REG_IO != 0) && a_act && !a_wait;
 	wire a_pre_we_raw = a_pre_en_1 && !rst_p;
 	wire a_pre_we_0, a_pre_we_1, a_pre_we_2, a_pre_we_3;
-	wire a_pre_we_4, a_pre_we_5, a_pre_we_6, a_pre_we_7;
+	wire a_pre_we_4, a_pre_we_5, a_pre_we_6, a_pre_we_7a, a_pre_we_7b;
 `ifdef SYNTH_KINTEX7
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre0 (.I0(a_pre_we_raw), .O(a_pre_we_0));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre1 (.I0(a_pre_we_raw), .O(a_pre_we_1));
@@ -288,7 +302,8 @@ module atg_su_opd #(
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre4 (.I0(a_pre_we_raw), .O(a_pre_we_4));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre5 (.I0(a_pre_we_raw), .O(a_pre_we_5));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre6 (.I0(a_pre_we_raw), .O(a_pre_we_6));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre7 (.I0(a_pre_we_raw), .O(a_pre_we_7));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre7a (.I0(a_pre_we_raw), .O(a_pre_we_7a));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_apre7b (.I0(a_pre_we_raw), .O(a_pre_we_7b));
 `else
 	assign a_pre_we_0 = a_pre_we_raw;
 	assign a_pre_we_1 = a_pre_we_raw;
@@ -297,7 +312,8 @@ module atg_su_opd #(
 	assign a_pre_we_4 = a_pre_we_raw;
 	assign a_pre_we_5 = a_pre_we_raw;
 	assign a_pre_we_6 = a_pre_we_raw;
-	assign a_pre_we_7 = a_pre_we_raw;
+	assign a_pre_we_7a = a_pre_we_raw;
+	assign a_pre_we_7b = a_pre_we_raw;
 `endif
 
 	(* dont_touch = "true" *) wire [NPHYS-1:0] a_stgb_en_g;
@@ -403,7 +419,12 @@ module atg_su_opd #(
 			);
 			assign a_cl_comb[la*32 +: 32] = {23'd0, a_cl_s};
 			(* shreg_extract = "no" *) reg [8:0] a_cl_l;
-			(* dont_touch = "true" *) wire a_cl_we_l = a_pre_en_0 && !rst_p;
+			wire a_cl_we_l;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_aclwe (.I0(a_pre_en_0 && !rst_p), .O(a_cl_we_l));
+`else
+			assign a_cl_we_l = a_pre_en_0 && !rst_p;
+`endif
 			always @(posedge clk) begin
 				if (rst_p)
 					a_cl_l <= 9'd0;
@@ -613,11 +634,11 @@ module atg_su_opd #(
 	endgenerate
 
 	(* dont_touch = "true" *) wire rst_b_rdy = rst_p || (b_adv && !a_wait);
-	wire [31:0] a_cval1_next = opc_spec(a_n1[4:0], a_warp, q_info, qi_front_1a, qi_front_1b);
-	wire [31:0] a_cval2_next = opc_spec(a_n2[4:0], a_warp, q_info, qi_front_2a, qi_front_2b);
-	wire [31:0] a_cval3_next = opc_spec(a_n3[4:0], a_warp, q_info, qi_front_3a, qi_front_3b);
+	wire [31:0] a_cval1_next = opc_spec(a_n1_opc, a_warp, q_info, qi_front_1a, qi_front_1b);
+	wire [31:0] a_cval2_next = opc_spec(a_n2_opc, a_warp, q_info, qi_front_2a, qi_front_2b);
+	wire [31:0] a_cval3_next = opc_spec(a_n3_opc, a_warp, q_info, qi_front_3a, qi_front_3b);
 	wire [UOP_W-1:0] b_uop_next = (REG_IO != 0) ?
-		(a_uop | ({{(UOP_W-1){1'b0}}, a_pass} << (ATG_UOP_OP + ATG_TEX_PASS2))) :
+		(a_uop | ({{(UOP_W-1){1'b0}}, a_pass_out} << (ATG_UOP_OP + ATG_TEX_PASS2))) :
 		a_uop;
 
 	always @(posedge clk) begin
@@ -658,7 +679,9 @@ module atg_su_opd #(
 			a_grp <= {GRP_W{1'b0}};
 			a_rf_grp_r <= {GRP_W{1'b0}};
 			a_step <= 1'b0;
-			a_pass <= 1'b0;
+			a_pass_ctl <= 1'b0;
+			a_pass_r1 <= 1'b0;
+			a_pass_out <= 1'b0;
 			a_wait <= 1'b0;
 			a_wait_last <= 1'b0;
 			a_rf_r1_r <= 6'd0;
@@ -715,12 +738,14 @@ module atg_su_opd #(
 				a_use_cw2_lo_r <= (a_n2 < 7'd96); a_use_cw2_hi_r <= (a_n2 < 7'd96);
 				a_use_cw3_lo_r <= (a_n3 < 7'd96);
 			end
-			if (a_pre_we_7) begin
+			if (a_pre_we_7a) begin
 				a_use_cw3_hi_r <= (a_n3 < 7'd96);
 				a_is_104_1_lo_r <= (a_n1 == 7'd104); a_is_104_1_hi_r <= (a_n1 == 7'd104);
 				a_is_104_2_lo_r <= (a_n2 == 7'd104); a_is_104_2_hi_r <= (a_n2 == 7'd104);
 				a_is_104_3_lo_r <= (a_n3 == 7'd104); a_is_104_3_hi_r <= (a_n3 == 7'd104);
 				a_cov_g_r <= a_cov_g;
+			end
+			if (a_pre_we_7b) begin
 				a_info_r <= {13'd0, q_info[ATG_WI_FRONT], q_info[ATG_WI_KIND +: 2],
 					q_info[ATG_WI_SEQ +: 16]};
 			end
@@ -744,7 +769,7 @@ module atg_su_opd #(
 				b_sg_last_r <= a_last && (a_unit == ATG_UNIT_LANE) &&
 					(a_op == ATG_LANE_SHFL || a_op == ATG_LANE_VOTE || a_op == ATG_LANE_BALLOT);
 				b_sbe <= a_sbe;
-				b_pass <= a_pass;
+				b_pass <= a_pass_out;
 				b_last <= a_last;
 				b_step1 <= a_needs_step1;
 				b_use_rf1 <= (a_k1_r == 3'd1) && !a_needs_step1;
@@ -852,12 +877,16 @@ module atg_su_opd #(
 					a_rf_r2_r <= 6'd0;
 				end else begin
 					a_step <= 1'b0;
-					if (a_wide && !a_pass) begin
-						a_pass <= 1'b1;
+					if (a_wide && !a_pass_ctl) begin
+						a_pass_ctl <= 1'b1;
+						a_pass_r1 <= 1'b1;
+						a_pass_out <= 1'b1;
 						a_rf_r1_r <= a_uop[ATG_UOP_RS3 +: 6];
 						a_rf_r2_r <= a_uop[ATG_UOP_RS2 +: 6];
 					end else begin
-						a_pass <= 1'b0;
+						a_pass_ctl <= 1'b0;
+						a_pass_r1 <= 1'b0;
+						a_pass_out <= 1'b0;
 						if (a_last) begin
 							a_grp <= {GRP_W{1'b0}};
 							a_rf_grp_r <= {GRP_W{1'b0}};
