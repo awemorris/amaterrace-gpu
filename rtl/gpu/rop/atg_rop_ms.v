@@ -269,15 +269,13 @@ module atg_rop_ms (
 	(* equivalent_register_removal = "no" *) reg [1:0] zs_pipe2_uhi;
 	reg [31:0] fa_in_a;
 	reg [31:0] fa_in_b;
-	/* Pure-LUT co = c[3:0] - 4 and c1 = c + 1 (0 CARRY4s) */
-	(* keep = "true" *) wire [3:0] co = {c[3] ^ ~c[2], ~c[2], c[1:0]};
-	(* keep = "true" *) wire [4:0] c1 = {
-		c[4] ^ (c[3] & c[2] & c[1] & c[0]),
-		c[3] ^ (c[2] & c[1] & c[0]),
-		c[2] ^ (c[1] & c[0]),
-		c[1] ^ c[0],
-		~c[0]
-	};
+	wire [3:0] co;
+	wire co_bo_unused;
+	am_sub #(.W(4)) u_sub_co (.a(c[3:0]), .b(4'd4), .bi(1'b0), .d(co), .bo(co_bo_unused));
+
+	wire [4:0] c1;
+	wire c1_co_unused;
+	am_add #(.W(5)) u_add_c1 (.a(c), .b(5'd1), .ci(1'b0), .s(c1), .co(c1_co_unused));
 `ifdef SYNTH_KINTEX7
 	wire [1:0] co_hi_a, co_hi_b;
 	wire [1:0] c1_hi_a, c1_hi_b, c1_lo_a, c1_lo_b;
@@ -697,7 +695,7 @@ module atg_rop_ms (
 		end
 	end
 
-	wire unused_ok = &{1'b0, st_wdata[31:10], st_wdata[7:4], fa_o, co_pipe2_rep[1], co_pipe2_rep[2], co_pipe2_rep[3]};
+	wire unused_ok = &{1'b0, st_wdata[31:10], st_wdata[7:4], fa_o, co_pipe2_rep[1], co_pipe2_rep[2], co_pipe2_rep[3], co_bo_unused, c1_co_unused};
 endmodule
 
 /* Pure-LUT 4-level fp32 <= comparator (0 CARRY4s, strictly <= 4 LUT6 levels) */
