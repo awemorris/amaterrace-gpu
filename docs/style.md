@@ -39,6 +39,24 @@ Verilog
   `verilator lint_off` / `lint_on` for that line only.
 - Indentation with tabs; lines up to about 100 columns.
 
+Functions
+---------
+
+- Functions (`function ... endfunction`) are strictly restricted to maintain timing visibility,
+  prevent sim-synth discrepancies, and ensure ASIC synthesis tool optimization:
+  1. **Constant / Elaboration Functions**: Permitted and encouraged for parameter derivation
+     and elaboration-time constants (e.g. `log2`, width and size calculations).
+  2. **Bit Manipulation & Formatting**: Permitted for pure bit-slicing, repacking, byte-swapping,
+     or simple 1-level 1-to-1 decodes that consume no cascaded logic.
+  3. **No Arithmetic or Datapath Logic in Functions**: Functions must NEVER implement
+     arithmetic operations (adders, subtractors, incrementers, decrementers, multipliers,
+     or shifters) or multi-level combinational logic. All arithmetic and datapath
+     transformations must be structural module instantiations from `rtl/library/arith/`
+     or `rtl/library/fp/`. Bypassing module libraries by embedding manual ripple-carry or
+     Boolean pseudo-adders inside functions is strictly prohibited.
+  4. **No Iterative / Loop Synthesis in Functions**: Functions must NEVER contain `for` loops
+     or iterative constructs to synthesize datapath hardware.
+
 Arithmetic
 ----------
 
