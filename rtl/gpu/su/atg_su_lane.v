@@ -88,18 +88,26 @@ module atg_su_lane #(
 	(* shreg_extract = "no" *) reg [DW-1:0]     r0_xa;
 	(* shreg_extract = "no" *) reg [(NPHYS/4)*32-1:0] r0_qa_a, r0_qa_b, r0_qb_a, r0_qb_b;
 
-	wire [2:0] sub_ctl, sub_pipe;
+	wire [16*3-1:0] sub_ctl_p;
+	wire [2:0] sub_pipe;
+	wire [2:0] sub_ctl_vote;
 `ifdef SYNTH_KINTEX7
-	genvar gsb;
+	genvar gsb, gsp;
 	generate
+		for (gsp = 0; gsp < 16; gsp = gsp + 1) begin : g_sub_p
+			for (gsb = 0; gsb < 3; gsb = gsb + 1) begin : g_sub_b
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_ctl (.I0(sub[gsb]), .O(sub_ctl_p[gsp*3 + gsb]));
+			end
+		end
 		for (gsb = 0; gsb < 3; gsb = gsb + 1) begin : g_sub_buf
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_ctl (.I0(sub[gsb]), .O(sub_ctl[gsb]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_pip (.I0(sub[gsb]), .O(sub_pipe[gsb]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bs_vot (.I0(sub[gsb]), .O(sub_ctl_vote[gsb]));
 		end
 	endgenerate
 `else
-	assign sub_ctl = sub[2:0];
+	assign sub_ctl_p = {16{sub[2:0]}};
 	assign sub_pipe = sub[2:0];
+	assign sub_ctl_vote = sub[2:0];
 `endif
 
 	genvar gqi;
@@ -263,9 +271,10 @@ module atg_su_lane #(
 			wire [4:0] ln = ({{(32-GRP_W){1'b0}}, x_grp} << $clog2(NPHYS)) | gl;
 			/* verilator lint_on WIDTHTRUNC */
 			wire [31:0] bv = x_b[gl*32 +: 32];
+			wire [2:0] sub_ctl_l = (gl / 2 < 16) ? sub_ctl_p[(gl/2)*3 +: 3] : 3'd0;
 			wire [5:0] sum;
 			wire co_unused;
-			am_addsub #(.W(6)) u_sum (.a({1'b0, ln}), .b({1'b0, bv[4:0]}), .sub(sub_ctl[2:0] == 3'd2),
+			am_addsub #(.W(6)) u_sum (.a({1'b0, ln}), .b({1'b0, bv[4:0]}), .sub(sub_ctl_l == 3'd2),
 				.s(sum), .co(co_unused));
 			(* keep = "true" *) wire nz0 = |bv[9:5];
 			(* keep = "true" *) wire nz1 = |bv[15:10];
@@ -278,7 +287,7 @@ module atg_su_lane #(
 			reg [4:0] src;
 			always @(*) begin
 				ok = ok_hi;
-				case (sub_ctl[2:0])
+				case (sub_ctl_l)
 				3'd0: src = bv[4:0];
 				3'd2, 3'd3: begin
 					src = sum[4:0];
@@ -307,7 +316,7 @@ module atg_su_lane #(
 	end
 	wire is_ballot = (op == ATG_LANE_BALLOT);
 	wire is_vote   = (op == ATG_LANE_VOTE);
-	wire vote_val  = sub_ctl[0] ? (bal == s_ex) : (bal != 32'd0);
+	wire vote_val  = sub_ctl_vote[0] ? (bal == s_ex) : (bal != 32'd0);
 	/* shfl writes the EXEC lanes; vote and ballot every lane. */
 	wire [31:0] e_base = {{(32-GRP_W){1'b0}}, e_cnt} * NPHYS;
 	wire [31:0] ex_g;
@@ -320,31 +329,62 @@ module atg_su_lane #(
 		.co(ec_co_unused));
 	wire [NPHYS-1:0] z_lanes = op == ATG_LANE_SHFL ? ex_g[NPHYS-1:0] : {NPHYS{1'b1}};
 
+	wire [GRP_W-1:0] e_cnt_g0, e_cnt_g1;
+`ifdef SYNTH_KINTEX7
+	genvar gec;
+	generate
+		for (gec = 0; gec < GRP_W; gec = gec + 1) begin : g_ec_buf
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_ec0 (.I0(e_cnt[gec]), .O(e_cnt_g0[gec]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_ec1 (.I0(e_cnt[gec]), .O(e_cnt_g1[gec]));
+		end
+	endgenerate
+`else
+	assign e_cnt_g0 = e_cnt;
+	assign e_cnt_g1 = e_cnt;
+`endif
+
 	/* Sliced shuffle data multiplexers per lane and per 2-bit pair */
 	wire [15:0] z_h [0:NPHYS*2-1];
 	genvar gzl, gzh, gzp;
 	generate
 		for (gzl = 0; gzl < NPHYS; gzl = gzl + 1) begin: g_shfl_lane
+			wire [GRP_W-1:0] e_cnt_lane = (gzl < NPHYS/2) ? e_cnt_g0 : e_cnt_g1;
 			/* verilator lint_off WIDTHTRUNC */
 			/* verilator lint_off WIDTHEXPAND */
-			wire [4:0] el_l = ({{(32-GRP_W){1'b0}}, e_cnt} << $clog2(NPHYS)) | {27'd0, gzl[4:0]};
+			wire [4:0] el_l_raw = ({{(32-GRP_W){1'b0}}, e_cnt_lane} << $clog2(NPHYS)) | {27'd0, gzl[4:0]};
 			/* verilator lint_on WIDTHEXPAND */
 			/* verilator lint_on WIDTHTRUNC */
+			wire [4:0] el_l_es;
+			wire [4:0] el_l_h0;
+			wire [4:0] el_l_h1;
+`ifdef SYNTH_KINTEX7
+			genvar gel;
+			for (gel = 0; gel < 5; gel = gel + 1) begin : g_el_buf
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bel_es (.I0(el_l_raw[gel]), .O(el_l_es[gel]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bel_h0 (.I0(el_l_raw[gel]), .O(el_l_h0[gel]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bel_h1 (.I0(el_l_raw[gel]), .O(el_l_h1[gel]));
+			end
+`else
+			assign el_l_es = el_l_raw;
+			assign el_l_h0 = el_l_raw;
+			assign el_l_h1 = el_l_raw;
+`endif
 			reg [4:0] es_l;
 			integer sl_idx;
 			always @(*) begin
 				es_l = s_src[4:0];
 				for (sl_idx = 1; sl_idx < 32; sl_idx = sl_idx + 1) begin
-					if (el_l == sl_idx[4:0])
+					if (el_l_es == sl_idx[4:0])
 						es_l = s_src[sl_idx*5 +: 5];
 				end
 			end
-			wire s_ok_l = s_ok[el_l];
+			wire s_ok_l = s_ok[el_l_es];
 			wire s_ex_l = s_ex[es_l];
 			wire sel_shfl_l = s_ok_l && s_ex_l;
-			wire [31:0] s_d_el_l = s_d[{el_l, 5'd0} +: 32];
 
 			for (gzh = 0; gzh < 2; gzh = gzh + 1) begin: g_half
+				wire [4:0] el_l_h = gzh[0] ? el_l_h1 : el_l_h0;
+				wire [15:0] s_d_el_half = s_d[{el_l_h, gzh[0], 4'd0} +: 16];
 				wire [1:0] z_pair [0:7];
 				for (gzp = 0; gzp < 8; gzp = gzp + 1) begin: g_pair
 					wire [4:0] es_p;
@@ -363,7 +403,8 @@ module atg_su_lane #(
 					genvar gbit;
 					for (gbit = 0; gbit < 2; gbit = gbit + 1) begin: g_bit
 						localparam [4:0] B_IDX = {gzh[0], gzp[2:0], gbit[0]};
-						assign z_pair[gzp][gbit] = sel_p ? s_d[{es_p, B_IDX}] : s_d_el_l[B_IDX];
+						localparam [3:0] BH_IDX = {gzp[2:0], gbit[0]};
+						assign z_pair[gzp][gbit] = sel_p ? s_d[{es_p, B_IDX}] : s_d_el_half[BH_IDX];
 					end
 				end
 				localparam integer H_IDX = gzl*2 + gzh;
@@ -457,9 +498,20 @@ module atg_su_lane #(
 			assign vote_val_h_hi[gp]  = vote_val_gp;
 `endif
 		end
+		wire [G-1:0] stage_grp;
+		genvar gg;
+		for (gg = 0; gg < G; gg = gg + 1) begin : g_stg_grp
+			assign stage_grp[gg] = stage && (gg[GRP_W-1:0] == x_grp);
+		end
 		for (gp = 0; gp < 32; gp = gp + 1) begin : g_stgw
-			assign stg_we_lo[gp] = stage && (gp / NPHYS == {{(32-GRP_W){1'b0}}, x_grp});
-			assign stg_we_hi[gp] = stage && (gp / NPHYS == {{(32-GRP_W){1'b0}}, x_grp});
+			wire stg_cond = (gp / NPHYS < G) ? stage_grp[gp / NPHYS] : 1'b0;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_stgw_l (.I0(stg_cond), .O(stg_we_lo[gp]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_stgw_h (.I0(stg_cond), .O(stg_we_hi[gp]));
+`else
+			assign stg_we_lo[gp] = stg_cond;
+			assign stg_we_hi[gp] = stg_cond;
+`endif
 		end
 	endgenerate
 
