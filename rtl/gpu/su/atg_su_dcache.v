@@ -133,9 +133,22 @@ module atg_su_dcache #(
 	(* keep = "true" *) wire q_hit_lo = valid[q_idx_v] && (&q_teq_g[N_TEQ/2-1:0]);
 	(* keep = "true" *) wire q_hit_hi = &q_teq_g[N_TEQ-1:N_TEQ/2];
 	wire q_hit = q_hit_lo && q_hit_hi;
-	(* keep = "true", max_fanout = 12 *) wire take = st == IDLE && u_req_valid;
-	(* keep = "true", max_fanout = 12 *) wire take_d_lo = (st == IDLE) && u_req_valid;
-	(* keep = "true", max_fanout = 12 *) wire take_d_hi = (st == IDLE) && u_req_valid;
+	wire u_req_valid_ctl;
+	wire u_req_valid_sl0;
+	wire u_req_valid_sl1;
+`ifdef SYNTH_KINTEX7
+	LUT1 #(.INIT(2'h2)) u_buf_rq_ctl (.O(u_req_valid_ctl), .I0(u_req_valid));
+	LUT1 #(.INIT(2'h2)) u_buf_rq_sl0 (.O(u_req_valid_sl0), .I0(u_req_valid));
+	LUT1 #(.INIT(2'h2)) u_buf_rq_sl1 (.O(u_req_valid_sl1), .I0(u_req_valid));
+`else
+	assign u_req_valid_ctl = u_req_valid;
+	assign u_req_valid_sl0 = u_req_valid;
+	assign u_req_valid_sl1 = u_req_valid;
+`endif
+
+	(* keep = "true", max_fanout = 12 *) wire take = st == IDLE && u_req_valid_ctl;
+	(* keep = "true", max_fanout = 12 *) wire take_d_lo = (st == IDLE) && u_req_valid_ctl;
+	(* keep = "true", max_fanout = 12 *) wire take_d_hi = (st == IDLE) && u_req_valid_ctl;
 
 	/* The data are read synchronously (block RAM): d_q is the request's
 	 * line, read when it is taken; d_q_pipe is the dedicated fabric output
@@ -159,7 +172,7 @@ module atg_su_dcache #(
 		for (gsl = 0; gsl < N_SL; gsl = gsl + 1) begin : g_dc_sl
 			(* shreg_extract = "no" *) reg [15:0] q_wdata_sl, r_rdata_sl;
 			(* shreg_extract = "no" *) reg [1:0] q_be_sl;
-			(* keep = "true", max_fanout = 12 *) wire take_sl = (st == IDLE) && u_req_valid;
+			(* keep = "true", max_fanout = 12 *) wire take_sl = (st == IDLE) && ((gsl < 8) ? u_req_valid_sl0 : u_req_valid_sl1);
 			(* keep = "true", max_fanout = 12 *) wire rsp_sl = (st == MWAIT) && m_rsp_valid;
 			(* keep = "true", max_fanout = 12 *) wire r_hit_sl = r_hit;
 			(* keep = "true", max_fanout = 12 *) wire q_wr_sl = q_write;
@@ -219,11 +232,11 @@ module atg_su_dcache #(
 			data_hi[q_idx_d_hi] <= dc_wdata_in[LB-1:LB_HALF];
 	end
 
-	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_0 = (st == IDLE) && u_req_valid;
-	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_1 = (st == IDLE) && u_req_valid;
-	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_2 = (st == IDLE) && u_req_valid;
-	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_3 = (st == IDLE) && u_req_valid;
-	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_4 = (st == IDLE) && u_req_valid;
+	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_0 = (st == IDLE) && u_req_valid_ctl;
+	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_1 = (st == IDLE) && u_req_valid_ctl;
+	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_2 = (st == IDLE) && u_req_valid_ctl;
+	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_3 = (st == IDLE) && u_req_valid_ctl;
+	(* keep = "true", max_fanout = 12 *) wire dc_idle_ce_4 = (st == IDLE) && u_req_valid_ctl;
 
 	always @(posedge clk) begin
 		if (dc_idle_ce_0) begin

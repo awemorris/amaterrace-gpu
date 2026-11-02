@@ -309,6 +309,15 @@ module atg_su_lsu #(
 	(* dont_touch = "true" *) wire line_ce_1 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
 	(* dont_touch = "true" *) wire line_ce_2 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
 	(* dont_touch = "true" *) wire line_ce_3 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
+	wire line_hit_ce = !rst_p && (st == LINE_HIT);
+	wire line_hit_ce_0, line_hit_ce_1;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_lhit0 (.O(line_hit_ce_0), .I0(line_hit_ce));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_lhit1 (.O(line_hit_ce_1), .I0(line_hit_ce));
+`else
+	assign line_hit_ce_0 = line_hit_ce;
+	assign line_hit_ce_1 = line_hit_ce;
+`endif
 
 	(* dont_touch = "true" *) reg [NPHYS-1:0] pend_nxt, pend_a_nxt, pend_b_nxt, pend_be_nxt;
 	always @(*) begin
@@ -362,6 +371,14 @@ module atg_su_lsu #(
 		if (line_ce_1) cline_hi     <= lline[LA_W-1:LA_LO];
 		if (line_ce_2) dc_line_lo_r <= lline[LA_LO-1:0];
 		if (line_ce_3) dc_line_hi_r <= lline[LA_W-1:LA_LO];
+		if (line_hit_ce_0) begin
+			lhit   <= line_eq;
+			lhit_a <= line_eq;
+		end
+		if (line_hit_ce_1) begin
+			lhit_b  <= line_eq;
+			lhit_be <= line_eq;
+		end
 
 		if (rst_p) begin
 			st <= IDLE;
@@ -386,10 +403,6 @@ module atg_su_lsu #(
 					st <= LINE_HIT;
 			end
 			LINE_HIT: begin
-				lhit    <= line_eq;
-				lhit_a  <= line_eq;
-				lhit_b  <= line_eq;
-				lhit_be <= line_eq;
 				st <= LINE_DAT;
 			end
 			LINE_DAT: begin
@@ -429,51 +442,79 @@ module atg_su_lsu #(
 	assign dc_req_tag = 8'd0;
 	assign dc_inv = inv_q;
 
-	wire [LW-1:0] an_addr_lo, an_addr_hi, an_a_lo, an_a_hi, an_b_lo, an_b_hi;
+	wire [LW-1:0] an_ad_b0, an_ad_b1, an_ad_b2, an_ad_b3;
+	wire [LW-1:0] an_a_b0, an_a_b1, an_a_b2, an_a_b3;
+	wire [LW-1:0] an_b_b0, an_b_b1, an_b_b2, an_b_b3;
 	genvar gan;
 	generate
 		for (gan = 0; gan < LW; gan = gan + 1) begin : g_an_buf
 `ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_adlo (.I0(anext[gan]), .O(an_addr_lo[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_adhi (.I0(anext[gan]), .O(an_addr_hi[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_alo  (.I0(anext[gan]), .O(an_a_lo[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_ahi  (.I0(anext[gan]), .O(an_a_hi[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_blo  (.I0(anext[gan]), .O(an_b_lo[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_an_bhi  (.I0(anext[gan]), .O(an_b_hi[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ad0 (.I0(anext[gan]), .O(an_ad_b0[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ad1 (.I0(anext[gan]), .O(an_ad_b1[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ad2 (.I0(anext[gan]), .O(an_ad_b2[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ad3 (.I0(anext[gan]), .O(an_ad_b3[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_a0  (.I0(anext[gan]), .O(an_a_b0[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_a1  (.I0(anext[gan]), .O(an_a_b1[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_a2  (.I0(anext[gan]), .O(an_a_b2[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_a3  (.I0(anext[gan]), .O(an_a_b3[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_b0  (.I0(anext[gan]), .O(an_b_b0[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_b1  (.I0(anext[gan]), .O(an_b_b1[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_b2  (.I0(anext[gan]), .O(an_b_b2[gan]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_b3  (.I0(anext[gan]), .O(an_b_b3[gan]));
 `else
-			assign an_addr_lo[gan] = anext[gan];
-			assign an_addr_hi[gan] = anext[gan];
-			assign an_a_lo[gan]    = anext[gan];
-			assign an_a_hi[gan]    = anext[gan];
-			assign an_b_lo[gan]    = anext[gan];
-			assign an_b_hi[gan]    = anext[gan];
+			assign an_ad_b0[gan] = anext[gan];
+			assign an_ad_b1[gan] = anext[gan];
+			assign an_ad_b2[gan] = anext[gan];
+			assign an_ad_b3[gan] = anext[gan];
+			assign an_a_b0[gan]  = anext[gan];
+			assign an_a_b1[gan]  = anext[gan];
+			assign an_a_b2[gan]  = anext[gan];
+			assign an_a_b3[gan]  = anext[gan];
+			assign an_b_b0[gan]  = anext[gan];
+			assign an_b_b1[gan]  = anext[gan];
+			assign an_b_b2[gan]  = anext[gan];
+			assign an_b_b3[gan]  = anext[gan];
 `endif
 		end
 	endgenerate
-	reg [15:0] at_addr_lo, at_a_lo, at_a_hi, at_b_lo, at_b_hi;
-	reg [13:0] at_addr_hi;
+	reg [7:0] at_ad_0, at_ad_1;
+	reg [6:0] at_ad_2, at_ad_3;
+	reg [7:0] at_a_0, at_a_1, at_a_2, at_a_3;
+	reg [7:0] at_b_0, at_b_1, at_b_2, at_b_3;
 	integer ai;
 	always @(*) begin
-		at_addr_lo = radr[2 +: 16];
-		at_addr_hi = radr[18 +: 14];
-		at_a_lo    = rdat[0 +: 16];
-		at_a_hi    = rdat[16 +: 16];
-		at_b_lo    = rcmp[0 +: 16];
-		at_b_hi    = rcmp[16 +: 16];
+		at_ad_0 = radr[2 +: 8];
+		at_ad_1 = radr[10 +: 8];
+		at_ad_2 = radr[18 +: 7];
+		at_ad_3 = radr[25 +: 7];
+		at_a_0  = rdat[0 +: 8];
+		at_a_1  = rdat[8 +: 8];
+		at_a_2  = rdat[16 +: 8];
+		at_a_3  = rdat[24 +: 8];
+		at_b_0  = rcmp[0 +: 8];
+		at_b_1  = rcmp[8 +: 8];
+		at_b_2  = rcmp[16 +: 8];
+		at_b_3  = rcmp[24 +: 8];
 		for (ai = 1; ai < NPHYS; ai = ai + 1) begin
-			if (an_addr_lo == ai[LW-1:0]) at_addr_lo = radr[ai*32 + 2 +: 16];
-			if (an_addr_hi == ai[LW-1:0]) at_addr_hi = radr[ai*32 + 18 +: 14];
-			if (an_a_lo    == ai[LW-1:0]) at_a_lo    = rdat[ai*32 +: 16];
-			if (an_a_hi    == ai[LW-1:0]) at_a_hi    = rdat[ai*32 + 16 +: 16];
-			if (an_b_lo    == ai[LW-1:0]) at_b_lo    = rcmp[ai*32 +: 16];
-			if (an_b_hi    == ai[LW-1:0]) at_b_hi    = rcmp[ai*32 + 16 +: 16];
+			if (an_ad_b0 == ai[LW-1:0]) at_ad_0 = radr[ai*32 + 2 +: 8];
+			if (an_ad_b1 == ai[LW-1:0]) at_ad_1 = radr[ai*32 + 10 +: 8];
+			if (an_ad_b2 == ai[LW-1:0]) at_ad_2 = radr[ai*32 + 18 +: 7];
+			if (an_ad_b3 == ai[LW-1:0]) at_ad_3 = radr[ai*32 + 25 +: 7];
+			if (an_a_b0  == ai[LW-1:0]) at_a_0  = rdat[ai*32 + 0 +: 8];
+			if (an_a_b1  == ai[LW-1:0]) at_a_1  = rdat[ai*32 + 8 +: 8];
+			if (an_a_b2  == ai[LW-1:0]) at_a_2  = rdat[ai*32 + 16 +: 8];
+			if (an_a_b3  == ai[LW-1:0]) at_a_3  = rdat[ai*32 + 24 +: 8];
+			if (an_b_b0  == ai[LW-1:0]) at_b_0  = rcmp[ai*32 + 0 +: 8];
+			if (an_b_b1  == ai[LW-1:0]) at_b_1  = rcmp[ai*32 + 8 +: 8];
+			if (an_b_b2  == ai[LW-1:0]) at_b_2  = rcmp[ai*32 + 16 +: 8];
+			if (an_b_b3  == ai[LW-1:0]) at_b_3  = rcmp[ai*32 + 24 +: 8];
 		end
 	end
 	assign at_valid = st == AREQ && anext != NPHYS[LW:0];
 	assign at_op = rsub;
-	assign at_addr = {at_addr_hi, at_addr_lo};
-	assign at_a = {at_a_hi, at_a_lo};
-	assign at_b = {at_b_hi, at_b_lo};
+	assign at_addr = {at_ad_3, at_ad_2, at_ad_1, at_ad_0};
+	assign at_a = {at_a_3, at_a_2, at_a_1, at_a_0};
+	assign at_b = {at_b_3, at_b_2, at_b_1, at_b_0};
 
 	assign l_valid = st == BEAT;
 	assign l_warp = rwarp;
