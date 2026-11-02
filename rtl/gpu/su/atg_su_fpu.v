@@ -855,33 +855,59 @@ module atg_su_fpu_core (
 	wire carry_unused3_mr;
 	am_add #(.W(25)) u_mr3_p1 (.a({1'b0, s3_w[31:8]}), .b(25'd1), .ci(1'b0), .s(s3_w_p1), .co(carry_unused3_mr));
 	wire s3_w_b8 = s3_w[8] | (((s3_rm == 3'd5 || s3_rm == 3'd6) && (cvsw3 || cvswu3)) && (s3_g || s3_st));
-	(* keep = "true" *) wire s3_up_lo  = s3_up;
-	(* keep = "true" *) wire s3_up_hi0 = s3_up;
-	(* keep = "true" *) wire s3_up_hi1 = s3_up;
+	wire s3_up_lo, s3_up_hi0, s3_up_hi1;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3up_lo  (.I0(s3_up), .O(s3_up_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3up_hi0 (.I0(s3_up), .O(s3_up_hi0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3up_hi1 (.I0(s3_up), .O(s3_up_hi1));
+`else
+	assign s3_up_lo  = s3_up;
+	assign s3_up_hi0 = s3_up;
+	assign s3_up_hi1 = s3_up;
+`endif
 	wire [24:0] s3_mr0 = {
 		s3_up_hi1 ? s3_w_p1[24:19] : {1'b0, s3_w[31:27]},
 		s3_up_hi0 ? s3_w_p1[18:12] : s3_w[26:20],
 		s3_up_lo  ? s3_w_p1[11:0]  : {s3_w[19:9], s3_w_b8}
 	};
-	(* keep = "true" *) wire s3_mr_ovf_lo = s3_mr0[24];
-	(* keep = "true" *) wire s3_mr_ovf_e  = s3_mr0[24];
-	(* keep = "true" *) wire s3_mr_ovf_m  = s3_mr0[24];
+	wire s3_mr_ovf_lo, s3_mr_ovf_e, s3_mr_ovf_m;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_lo (.I0(s3_mr0[24]), .O(s3_mr_ovf_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_e  (.I0(s3_mr0[24]), .O(s3_mr_ovf_e));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_m  (.I0(s3_mr0[24]), .O(s3_mr_ovf_m));
+`else
+	assign s3_mr_ovf_lo = s3_mr0[24];
+	assign s3_mr_ovf_e  = s3_mr0[24];
+	assign s3_mr_ovf_m  = s3_mr0[24];
+`endif
 	wire [7:0]  s3_er = s3_mr_ovf_e ? s3_e_p1[7:0] : s3_e[7:0];
 	wire [22:0] s3_mr = {
 		s3_mr_ovf_m  ? s3_mr0[23:16] : s3_mr0[22:15],
 		s3_mr_ovf_lo ? s3_mr0[15:1]  : s3_mr0[14:0]
 	};
-	(* keep = "true" *) wire s3_nz_lo = s3_nz;
-	(* keep = "true" *) wire s3_nz_iv = s3_nz;
-	(* keep = "true" *) wire s3_nz_hi = s3_nz;
+	wire s3_nz_lo, s3_nz_iv, s3_nz_hi;
+	wire s3_fl_nan_lo, s3_fl_nan_hi, s3_fl_pass_lo, s3_fl_pass_hi;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_lo  (.I0(s3_nz), .O(s3_nz_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_iv  (.I0(s3_nz), .O(s3_nz_iv));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_hi  (.I0(s3_nz), .O(s3_nz_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nan_lo (.I0(s3_fl_nan), .O(s3_fl_nan_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nan_hi (.I0(s3_fl_nan), .O(s3_fl_nan_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3pas_lo (.I0(s3_fl_pass), .O(s3_fl_pass_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3pas_hi (.I0(s3_fl_pass), .O(s3_fl_pass_hi));
+`else
+	assign s3_nz_lo      = s3_nz;
+	assign s3_nz_iv      = s3_nz;
+	assign s3_nz_hi      = s3_nz;
+	assign s3_fl_nan_lo  = s3_fl_nan;
+	assign s3_fl_nan_hi  = s3_fl_nan;
+	assign s3_fl_pass_lo = s3_fl_pass;
+	assign s3_fl_pass_hi = s3_fl_pass;
+`endif
 	wire [31:0] s3_iv = {
 		!s3_nz_iv ? {s3_s, 15'd0} : {s3_s, s3_er, s3_mr[22:16]},
 		!s3_nz_lo ? 16'd0         : s3_mr[15:0]
 	};
-	(* keep = "true" *) wire s3_fl_nan_lo  = s3_fl_nan;
-	(* keep = "true" *) wire s3_fl_nan_hi  = s3_fl_nan;
-	(* keep = "true" *) wire s3_fl_pass_lo = s3_fl_pass;
-	(* keep = "true" *) wire s3_fl_pass_hi = s3_fl_pass;
 	wire [31:0] s3_fl = {
 		s3_fl_nan_hi ? 16'h7FC0 : s3_fl_pass_hi ? s3_xf_val[31:16] : s3_iv[31:16],
 		s3_fl_nan_lo ? 16'h0000 : s3_fl_pass_lo ? s3_xf_val[15:0]  : s3_iv[15:0]
@@ -893,14 +919,29 @@ module atg_su_fpu_core (
 	am_sub #(.W(32)) u_f2i_neg3 (.a(32'd0), .b(s3_f2i_mag), .bi(1'b0), .d(s3_f2i_neg), .bo(carry_unused3_f2i));
 	wire s3_f2i_uns = (s3_op == OP_FCVTWUS);
 	wire s3_f2i_sat_s = s3_f2i_big || (!s3_f2i_s && s3_f2i_mag[31]) || (s3_f2i_s && s3_f2i_gt80);
-	(* keep = "true" *) wire s3_ri_zero_lo = s3_f2i_uns && s3_f2i_s;
-	(* keep = "true" *) wire s3_ri_zero_hi = s3_f2i_uns && s3_f2i_s;
-	(* keep = "true" *) wire s3_ri_fmax_lo = s3_f2i_uns ? (!s3_f2i_s && s3_f2i_big) : (s3_f2i_sat_s && !s3_f2i_s);
-	(* keep = "true" *) wire s3_ri_fmax_hi = s3_f2i_uns ? (!s3_f2i_s && s3_f2i_big) : (s3_f2i_sat_s && !s3_f2i_s);
-	(* keep = "true" *) wire s3_ri_smin_lo = !s3_f2i_uns && s3_f2i_sat_s && s3_f2i_s;
-	(* keep = "true" *) wire s3_ri_smin_hi = !s3_f2i_uns && s3_f2i_sat_s && s3_f2i_s;
-	(* keep = "true" *) wire s3_ri_neg_lo  = !s3_f2i_uns && !s3_f2i_sat_s && s3_f2i_s;
-	(* keep = "true" *) wire s3_ri_neg_hi  = !s3_f2i_uns && !s3_f2i_sat_s && s3_f2i_s;
+	wire s3_ri_zero_lo, s3_ri_zero_hi;
+	wire s3_ri_fmax_lo, s3_ri_fmax_hi;
+	wire s3_ri_smin_lo, s3_ri_smin_hi;
+	wire s3_ri_neg_lo,  s3_ri_neg_hi;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3riz_lo (.I0(s3_f2i_uns && s3_f2i_s), .O(s3_ri_zero_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3riz_hi (.I0(s3_f2i_uns && s3_f2i_s), .O(s3_ri_zero_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3rif_lo (.I0(s3_f2i_uns ? (!s3_f2i_s && s3_f2i_big) : (s3_f2i_sat_s && !s3_f2i_s)), .O(s3_ri_fmax_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3rif_hi (.I0(s3_f2i_uns ? (!s3_f2i_s && s3_f2i_big) : (s3_f2i_sat_s && !s3_f2i_s)), .O(s3_ri_fmax_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3rim_lo (.I0(!s3_f2i_uns && s3_f2i_sat_s && s3_f2i_s), .O(s3_ri_smin_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3rim_hi (.I0(!s3_f2i_uns && s3_f2i_sat_s && s3_f2i_s), .O(s3_ri_smin_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3rin_lo (.I0(!s3_f2i_uns && !s3_f2i_sat_s && s3_f2i_s), .O(s3_ri_neg_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3rin_hi (.I0(!s3_f2i_uns && !s3_f2i_sat_s && s3_f2i_s), .O(s3_ri_neg_hi));
+`else
+	assign s3_ri_zero_lo = s3_f2i_uns && s3_f2i_s;
+	assign s3_ri_zero_hi = s3_f2i_uns && s3_f2i_s;
+	assign s3_ri_fmax_lo = s3_f2i_uns ? (!s3_f2i_s && s3_f2i_big) : (s3_f2i_sat_s && !s3_f2i_s);
+	assign s3_ri_fmax_hi = s3_f2i_uns ? (!s3_f2i_s && s3_f2i_big) : (s3_f2i_sat_s && !s3_f2i_s);
+	assign s3_ri_smin_lo = !s3_f2i_uns && s3_f2i_sat_s && s3_f2i_s;
+	assign s3_ri_smin_hi = !s3_f2i_uns && s3_f2i_sat_s && s3_f2i_s;
+	assign s3_ri_neg_lo  = !s3_f2i_uns && !s3_f2i_sat_s && s3_f2i_s;
+	assign s3_ri_neg_hi  = !s3_f2i_uns && !s3_f2i_sat_s && s3_f2i_s;
+`endif
 	wire [31:0] s3_ri = {
 		s3_ri_zero_hi ? 16'd0 : s3_ri_fmax_hi ? {s3_f2i_uns, 15'h7FFF} : s3_ri_smin_hi ? 16'h8000 : s3_ri_neg_hi ? s3_f2i_neg[31:16] : s3_f2i_mag[31:16],
 		s3_ri_zero_lo ? 16'd0 : s3_ri_fmax_lo ? 16'hFFFF               : s3_ri_smin_lo ? 16'h0000 : s3_ri_neg_lo ? s3_f2i_neg[15:0]  : s3_f2i_mag[15:0]
