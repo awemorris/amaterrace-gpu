@@ -139,10 +139,10 @@ module atg_su_cbank #(
 	reg [31:0] q;
 	(* dont_touch = "true" *) reg [31:0] q_pipe;
 	wire [95:0] crq;
-	(* max_fanout = 12 *) reg b_we_r, cw_we_r;
+	reg b_we_r, cw_we_r;
 	(* dont_touch = "true" *) reg [CW-1:0] b_wa_r;
-	(* max_fanout = 12 *) reg [4:0] cw_wa_r;
-	(* max_fanout = 12 *) reg [31:0] b_wd_r;
+	reg [4:0] cw_wa_r;
+	reg [31:0] b_wd_r;
 
 	wire mine = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_CBANK;
 	wire [31:0] imm = x_uop[ATG_UOP_IMM +: 32];
@@ -191,6 +191,15 @@ module atg_su_cbank #(
 		(* ram_style = "distributed" *) reg [3:0] cw_mem [0:31];
 		(* dont_touch = "true" *) reg cw_we_sl_r;
 		(* dont_touch = "true" *) reg [4:0] cw_wa_sl_r;
+		wire [4:0] cw_wa_sl_buf;
+`ifdef SYNTH_KINTEX7
+		genvar gwa;
+		for (gwa = 0; gwa < 5; gwa = gwa + 1) begin : g_cw_wa_buf
+			LUT1 #(.INIT(2'h2)) u_buf_wa (.O(cw_wa_sl_buf[gwa]), .I0(cw_wa_sl_r[gwa]));
+		end
+`else
+		assign cw_wa_sl_buf = cw_wa_sl_r;
+`endif
 		wire [14:0] cr_idx_sl = cr_idx_g[gcs / 2];
 		wire [4:0] cr_a0_s = cr_idx_sl[4:0];
 		wire [4:0] cr_a1_s = cr_idx_sl[9:5];
@@ -200,7 +209,7 @@ module atg_su_cbank #(
 			if (rst_p || scrub || sc_on || st == LWR)
 				cw_wa_sl_r <= cw_wa_next;
 			if (cw_we_sl_r)
-				cw_mem[cw_wa_sl_r] <= b_wd_r[gcs*4 +: 4];
+				cw_mem[cw_wa_sl_buf] <= b_wd_r[gcs*4 +: 4];
 		end
 		assign cw_r0[gcs*4 +: 4] = cw_mem[cr_a0_s];
 		assign cw_r1[gcs*4 +: 4] = cw_mem[cr_a1_s];
@@ -230,6 +239,28 @@ module atg_su_cbank #(
 	am_add #(.W(LW)) u_li (.a(li), .b({LW{1'b0}}), .ci(1'b1), .s(li_next), .co(li_co_unused));
 
 	/* Sliced wide registers res, lbuf, ridx, crq to bound CE fanout <= 16 */
+	wire res_clr_raw = (st == IDLE) && !lc_pend && mine && !rst_p;
+	wire [NPHYS-1:0] res_clr_lane;
+	generate
+	for (gcl = 0; gcl < NPHYS; gcl = gcl + 1) begin : g_cb_res_clr
+`ifdef SYNTH_KINTEX7
+		LUT1 #(.INIT(2'h2)) u_buf_clr (.O(res_clr_lane[gcl]), .I0(res_clr_raw));
+`else
+		assign res_clr_lane[gcl] = res_clr_raw;
+`endif
+	end
+	endgenerate
+
+	wire lbuf_we_raw = (st == LWAIT) && rsp_valid && !rst_p;
+	wire lbuf_we_h0, lbuf_we_h1;
+`ifdef SYNTH_KINTEX7
+	LUT1 #(.INIT(2'h2)) u_buf_lbh0 (.O(lbuf_we_h0), .I0(lbuf_we_raw));
+	LUT1 #(.INIT(2'h2)) u_buf_lbh1 (.O(lbuf_we_h1), .I0(lbuf_we_raw));
+`else
+	assign lbuf_we_h0 = lbuf_we_raw;
+	assign lbuf_we_h1 = lbuf_we_raw;
+`endif
+
 	generate
 	for (gcl = 0; gcl < NPHYS; gcl = gcl + 1) begin : g_cb_res
 		(* shreg_extract = "no" *) reg [CW-1:0] ridx_l;
@@ -241,7 +272,12 @@ module atg_su_cbank #(
 		for (gch = 0; gch < 2; gch = gch + 1) begin : g_cb_res_h
 			(* shreg_extract = "no" *) reg [15:0] res_h;
 			(* dont_touch = "true" *) reg valid_res_h;
-			(* dont_touch = "true" *) wire res_clr_h = (st == IDLE) && !lc_pend && mine && !rst_p;
+			wire res_clr_h;
+`ifdef SYNTH_KINTEX7
+			LUT1 #(.INIT(2'h2)) u_buf_clrh (.O(res_clr_h), .I0(res_clr_lane[gcl]));
+`else
+			assign res_clr_h = res_clr_lane[gcl];
+`endif
 			(* dont_touch = "true" *) wire res_we_h = pval_d2 && (pli_d2 == gcl[LW-1:0]) && !rst_p;
 			always @(posedge clk) begin
 				valid_res_h <= valid_next;
@@ -255,7 +291,12 @@ module atg_su_cbank #(
 	end
 	for (gcl = 0; gcl < LB / 16; gcl = gcl + 1) begin : g_cb_lbuf
 		(* shreg_extract = "no" *) reg [15:0] lbuf_s;
-		(* dont_touch = "true" *) wire lbuf_we_s = (st == LWAIT) && rsp_valid && !rst_p;
+		wire lbuf_we_s;
+`ifdef SYNTH_KINTEX7
+		LUT1 #(.INIT(2'h2)) u_buf_we (.O(lbuf_we_s), .I0((gcl < 8) ? lbuf_we_h0 : lbuf_we_h1));
+`else
+		assign lbuf_we_s = (gcl < 8) ? lbuf_we_h0 : lbuf_we_h1;
+`endif
 		always @(posedge clk)
 			if (lbuf_we_s)
 				lbuf_s <= rsp_rdata[gcl*16 +: 16];
@@ -282,13 +323,25 @@ module atg_su_cbank #(
 	(* dont_touch = "true" *) wire s_adr_we_hi = st_we && (st_idx == GHCI_S_LC_ADDR) && !rst_p;
 	(* dont_touch = "true" *) wire s_wrd_we_lo = st_we && (st_idx == GHCI_S_LC_WORDS) && !rst_p;
 	(* dont_touch = "true" *) wire s_wrd_we_hi = st_we && (st_idx == GHCI_S_LC_WORDS) && !rst_p;
-	(* dont_touch = "true" *) wire ladr_we_lo  = ((st == IDLE && lc_pend) || (st == LWR)) && !rst_p;
-	(* dont_touch = "true" *) wire ladr_we_hi  = ((st == IDLE && lc_pend) || (st == LWR)) && !rst_p;
+	wire ladr_we_raw = ((st == IDLE && lc_pend) || (st == LWR)) && !rst_p;
+	wire [3:0] ladr_we_b;
+	genvar gladr;
+	generate
+		for (gladr = 0; gladr < 4; gladr = gladr + 1) begin : g_ladr_we
+`ifdef SYNTH_KINTEX7
+			LUT1 #(.INIT(2'h2)) u_buf_ladr_we (.O(ladr_we_b[gladr]), .I0(ladr_we_raw));
+`else
+			assign ladr_we_b[gladr] = ladr_we_raw;
+`endif
+		end
+	endgenerate
 	wire [31:0] ladr_mux = (st == IDLE) ? {s_addr[31:2], 2'b00} : ladr_next;
 
 	always @(posedge clk) begin
-		if (ladr_we_lo) ladr[15:0]  <= ladr_mux[15:0];
-		if (ladr_we_hi) ladr[31:16] <= ladr_mux[31:16];
+		if (ladr_we_b[0]) ladr[7:0]   <= ladr_mux[7:0];
+		if (ladr_we_b[1]) ladr[15:8]  <= ladr_mux[15:8];
+		if (ladr_we_b[2]) ladr[23:16] <= ladr_mux[23:16];
+		if (ladr_we_b[3]) ladr[31:24] <= ladr_mux[31:24];
 		if (rst_p) begin
 			st <= IDLE;
 			valid <= 1'b0;
@@ -370,21 +423,42 @@ module atg_su_cbank #(
 		end
 	end
 
-	(* dont_touch = "true" *) wire b_wd_zero_lo = rst_p || scrub || sc_on;
-	(* dont_touch = "true" *) wire b_wd_zero_hi = rst_p || scrub || sc_on;
-	(* dont_touch = "true" *) wire b_wd_we_lo   = (st == LWR) && !rst_p;
-	(* dont_touch = "true" *) wire b_wd_we_hi   = (st == LWR) && !rst_p;
+	wire b_wd_we_raw = (st == LWR) && !rst_p;
+	wire [3:0] b_wd_we_b;
+	wire [3:0] b_wd_zero_b;
+	genvar gbw;
+	generate
+		for (gbw = 0; gbw < 4; gbw = gbw + 1) begin : g_bwd_we
+`ifdef SYNTH_KINTEX7
+			LUT1 #(.INIT(2'h2)) u_buf_bwd_we (.O(b_wd_we_b[gbw]), .I0(b_wd_we_raw));
+			LUT1 #(.INIT(2'h2)) u_buf_bwd_z  (.O(b_wd_zero_b[gbw]), .I0(rst_p || scrub || sc_on));
+`else
+			assign b_wd_we_b[gbw] = b_wd_we_raw;
+			assign b_wd_zero_b[gbw] = rst_p || scrub || sc_on;
+`endif
+		end
+	endgenerate
 
 	always @(posedge clk) begin
-		if (b_wd_zero_lo)
-			b_wd_r[15:0] <= 16'd0;
-		else if (b_wd_we_lo)
-			b_wd_r[15:0] <= lword[15:0];
+		if (b_wd_zero_b[0])
+			b_wd_r[7:0] <= 8'd0;
+		else if (b_wd_we_b[0])
+			b_wd_r[7:0] <= lword[7:0];
 
-		if (b_wd_zero_hi)
-			b_wd_r[31:16] <= 16'd0;
-		else if (b_wd_we_hi)
-			b_wd_r[31:16] <= lword[31:16];
+		if (b_wd_zero_b[1])
+			b_wd_r[15:8] <= 8'd0;
+		else if (b_wd_we_b[1])
+			b_wd_r[15:8] <= lword[15:8];
+
+		if (b_wd_zero_b[2])
+			b_wd_r[23:16] <= 8'd0;
+		else if (b_wd_we_b[2])
+			b_wd_r[23:16] <= lword[23:16];
+
+		if (b_wd_zero_b[3])
+			b_wd_r[31:24] <= 8'd0;
+		else if (b_wd_we_b[3])
+			b_wd_r[31:24] <= lword[31:24];
 
 		if (rst_p) begin
 			b_we_r  <= 1'b0;
