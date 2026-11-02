@@ -384,7 +384,7 @@ module atg_su_div #(
 	end
 	endgenerate
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	wire idle_mine_rm;
 	wire idle_mine_ctl1, idle_mine_ctl2;
 `ifdef SYNTH_KINTEX7

@@ -307,7 +307,7 @@ module atg_su_exp #(
 `endif
 	wire [4:0] dl0 = {dq_dl, 2'b00};
 	wire [31:0] drow = {{(32-WARP_W){1'b0}}, dwarp} * G + {27'd0, dl0} / NPHYS;
-	wire [RW+2:0] dcrow = {drow[RW-1:0], drt};
+	(* dont_touch = "true" *) wire [RW+2:0] dcrow = {drow[RW-1:0], drt};
 	wire [RW+2:0] xcrow = {xrow[RW-1:0], tk_xcrow};
 	wire [31:0] dqs = ({{(32-WARP_W){1'b0}}, dwarp} * 8 + {29'd0, dq}) * 16;
 	wire [31:0] dxp = dxp_raw & dcov;
@@ -332,8 +332,13 @@ module atg_su_exp #(
 	generate
 		for (gmq = 0; gmq < 2; gmq = gmq + 1) begin : g_match_q
 			for (gmc = 0; gmc < 4; gmc = gmc + 1) begin : g_match_c
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_q_cm  (.I0(col_comp_match[gmc]),  .O(col_match_q[gmq][gmc]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_q_c1m (.I0(col1_comp_match[gmc]), .O(col1_match_q[gmq][gmc]));
+`else
 				assign col_match_q[gmq][gmc]  = col_comp_match[gmc];
 				assign col1_match_q[gmq][gmc] = col1_comp_match[gmc];
+`endif
 			end
 			assign dep_q[gmq] = ex_dep;
 			assign sm_q[gmq]  = ex_sm;
@@ -1012,9 +1017,15 @@ module atg_su_exp #(
 				assign w_fl_lane_q[gln]  = fl_lane[gln];
 `endif
 			end
-			(* dont_touch = "true" *) wire w_qx_en  = fl_we && (w_fl_lane_q[1:0] == 2'd0) && (fl_reg == 6'd4) && (fl_slot == gw[WARP_W-1:0]);
-			(* dont_touch = "true" *) wire w_qy_en  = fl_we && (w_fl_lane_q[1:0] == 2'd0) && (fl_reg == 6'd5) && (fl_slot == gw[WARP_W-1:0]);
-			(* dont_touch = "true" *) wire w_dsv_en = fl_pw_we && (fl_pw_addr[11:2] == 10'h3FE) && (fl_slot == gw[WARP_W-1:0]);
+			wire fl_slot_gw;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_flsgw (.I0(fl_slot == gw[WARP_W-1:0]), .O(fl_slot_gw));
+`else
+			assign fl_slot_gw = (fl_slot == gw[WARP_W-1:0]);
+`endif
+			(* dont_touch = "true" *) wire w_qx_en  = fl_we && (w_fl_lane_q[1:0] == 2'd0) && (fl_reg == 6'd4) && fl_slot_gw;
+			(* dont_touch = "true" *) wire w_qy_en  = fl_we && (w_fl_lane_q[1:0] == 2'd0) && (fl_reg == 6'd5) && fl_slot_gw;
+			(* dont_touch = "true" *) wire w_dsv_en = fl_pw_we && (fl_pw_addr[11:2] == 10'h3FE) && fl_slot_gw;
 			wire w_warp_hit = (x_warp_ctrl == gw[WARP_W-1:0]);
 			wire w_ex_op_w  = ex_op && w_warp_hit;
 			wire w_ex_dep_w = ex_dep && w_warp_hit;
@@ -1023,14 +1034,14 @@ module atg_su_exp #(
 			for (gq = 0; gq < 2; gq = gq + 1) begin : g_wh
 				wire [4:0] wh_lane = (gq == 0) ? w_fl_lane_h0 : w_fl_lane_h1;
 				(* dont_touch = "true" *) wire rst_wh     = rst_w || (xr_valid && (xr_warp == gw[WARP_W-1:0]));
-				(* dont_touch = "true" *) wire cov_we_s   = fl_go && (fl_slot == gw[WARP_W-1:0]);
-				(* dont_touch = "true" *) wire xp_clr_s   = fl_go && (fl_slot == gw[WARP_W-1:0]);
-				(* dont_touch = "true" *) wire dw_clr_s   = fl_go && (fl_slot == gw[WARP_W-1:0]);
-				(* dont_touch = "true" *) wire smw_clr_s  = fl_go && (fl_slot == gw[WARP_W-1:0]);
+				(* dont_touch = "true" *) wire cov_we_s   = fl_go && fl_slot_gw;
+				(* dont_touch = "true" *) wire xp_clr_s   = fl_go && fl_slot_gw;
+				(* dont_touch = "true" *) wire dw_clr_s   = fl_go && fl_slot_gw;
+				(* dont_touch = "true" *) wire smw_clr_s  = fl_go && fl_slot_gw;
 				(* dont_touch = "true" *) wire w_ex_op_s  = w_ex_op_w;
 				(* dont_touch = "true" *) wire w_ex_dep_s = w_ex_dep_w;
 				(* dont_touch = "true" *) wire w_ex_sm_s  = w_ex_sm_w;
-				(* dont_touch = "true" *) wire w_r6_we_s  = fl_we && (fl_reg == 6'd6) && (fl_slot == gw[WARP_W-1:0]) && (wh_lane[4] == gq[0]);
+				(* dont_touch = "true" *) wire w_r6_we_s  = fl_we && (fl_reg == 6'd6) && fl_slot_gw && (wh_lane[4] == gq[0]);
 				reg [15:0] r6w_sl, cov_sl, xp_sl, dw_sl, smw_sl;
 				wire [15:0] side_w_sl;
 				genvar gsw;

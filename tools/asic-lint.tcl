@@ -283,7 +283,9 @@ foreach n $internal_nets {
         continue
     }
     set parent [get_property -quiet PARENT $n]
-    if {[string match "*rst*" $parent] || [string match "*reset*" $parent]} {
+    if {[string match "*rst*" $parent] || [string match "*reset*" $parent] ||
+        [string match "*SR*" $parent]  || [string match "*CLR*" $parent]   ||
+        [string match "*PRE*" $parent]} {
         continue
     }
     set pin_cnt [get_property FLAT_PIN_COUNT $n]

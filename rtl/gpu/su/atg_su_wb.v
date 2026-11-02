@@ -297,16 +297,32 @@ module atg_su_wb #(
 	wire rst_p = !rst_n;
 
 	/* The short result of this cycle: structured balanced 2-level MUX tree (at most one valid per cycle) */
-	wire v_01 = s_valid[0] || s_valid[1];
-	wire v_23 = s_valid[2] || s_valid[3];
+	wire [NS-1:0] s_valid_sd, s_valid_mux, s_valid_sel;
+	genvar gsv;
+	generate
+	for (gsv = 0; gsv < NS; gsv = gsv + 1) begin : g_buf_sv
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sv_sd  (.I0(s_valid[gsv]), .O(s_valid_sd[gsv]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sv_mux (.I0(s_valid[gsv]), .O(s_valid_mux[gsv]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_sv_sel (.I0(s_valid[gsv]), .O(s_valid_sel[gsv]));
+`else
+		assign s_valid_sd[gsv]  = s_valid[gsv];
+		assign s_valid_mux[gsv] = s_valid[gsv];
+		assign s_valid_sel[gsv] = s_valid[gsv];
+`endif
+	end
+	endgenerate
+
+	wire v_01 = s_valid_mux[0] || s_valid_mux[1];
+	wire v_23 = s_valid_mux[2] || s_valid_mux[3];
 
 	wire [DW-1:0] sd;
 	genvar gsd;
 	generate
 	for (gsd = 0; gsd < DW / 16; gsd = gsd + 1) begin : g_sd_sl
-		(* dont_touch = "true" *) wire sv0_s = s_valid[0];
-		(* dont_touch = "true" *) wire sv2_s = s_valid[2];
-		(* dont_touch = "true" *) wire sv4_s = s_valid[4];
+		(* dont_touch = "true" *) wire sv0_s = s_valid_sd[0];
+		(* dont_touch = "true" *) wire sv2_s = s_valid_sd[2];
+		(* dont_touch = "true" *) wire sv4_s = s_valid_sd[4];
 		(* dont_touch = "true" *) wire [15:0] sd_01_s = sv0_s ? s_data[0*DW + gsd*16 +: 16] : s_data[1*DW + gsd*16 +: 16];
 		(* dont_touch = "true" *) wire [15:0] sd_23_s = sv2_s ? s_data[2*DW + gsd*16 +: 16] : s_data[3*DW + gsd*16 +: 16];
 		(* dont_touch = "true" *) wire [15:0] sd_45_s = sv4_s ? s_data[4*DW + gsd*16 +: 16] : s_data[5*DW + gsd*16 +: 16];
@@ -314,27 +330,27 @@ module atg_su_wb #(
 	end
 	endgenerate
 
-	wire [6:0] srd_01 = s_valid[0] ? s_rd[0*7 +: 7] : s_rd[1*7 +: 7];
-	wire [6:0] srd_23 = s_valid[2] ? s_rd[2*7 +: 7] : s_rd[3*7 +: 7];
-	wire [6:0] srd_45 = s_valid[4] ? s_rd[4*7 +: 7] : s_rd[5*7 +: 7];
+	wire [6:0] srd_01 = s_valid_mux[0] ? s_rd[0*7 +: 7] : s_rd[1*7 +: 7];
+	wire [6:0] srd_23 = s_valid_mux[2] ? s_rd[2*7 +: 7] : s_rd[3*7 +: 7];
+	wire [6:0] srd_45 = s_valid_mux[4] ? s_rd[4*7 +: 7] : s_rd[5*7 +: 7];
 	wire [6:0] srd = v_01 ? srd_01 : (v_23 ? srd_23 : srd_45);
 
-	wire [WARP_W-1:0] sw_01 = s_valid[0] ? s_warp[0*WARP_W +: WARP_W] : s_warp[1*WARP_W +: WARP_W];
-	wire [WARP_W-1:0] sw_23 = s_valid[2] ? s_warp[2*WARP_W +: WARP_W] : s_warp[3*WARP_W +: WARP_W];
-	wire [WARP_W-1:0] sw_45 = s_valid[4] ? s_warp[4*WARP_W +: WARP_W] : s_warp[5*WARP_W +: WARP_W];
+	wire [WARP_W-1:0] sw_01 = s_valid_mux[0] ? s_warp[0*WARP_W +: WARP_W] : s_warp[1*WARP_W +: WARP_W];
+	wire [WARP_W-1:0] sw_23 = s_valid_mux[2] ? s_warp[2*WARP_W +: WARP_W] : s_warp[3*WARP_W +: WARP_W];
+	wire [WARP_W-1:0] sw_45 = s_valid_mux[4] ? s_warp[4*WARP_W +: WARP_W] : s_warp[5*WARP_W +: WARP_W];
 	wire [WARP_W-1:0] sw = v_01 ? sw_01 : (v_23 ? sw_23 : sw_45);
 
-	wire [GRP_W-1:0] sg_01 = s_valid[0] ? s_grp[0*GRP_W +: GRP_W] : s_grp[1*GRP_W +: GRP_W];
-	wire [GRP_W-1:0] sg_23 = s_valid[2] ? s_grp[2*GRP_W +: GRP_W] : s_grp[3*GRP_W +: GRP_W];
-	wire [GRP_W-1:0] sg_45 = s_valid[4] ? s_grp[4*GRP_W +: GRP_W] : s_grp[5*GRP_W +: GRP_W];
+	wire [GRP_W-1:0] sg_01 = s_valid_mux[0] ? s_grp[0*GRP_W +: GRP_W] : s_grp[1*GRP_W +: GRP_W];
+	wire [GRP_W-1:0] sg_23 = s_valid_mux[2] ? s_grp[2*GRP_W +: GRP_W] : s_grp[3*GRP_W +: GRP_W];
+	wire [GRP_W-1:0] sg_45 = s_valid_mux[4] ? s_grp[4*GRP_W +: GRP_W] : s_grp[5*GRP_W +: GRP_W];
 	wire [GRP_W-1:0] sg = v_01 ? sg_01 : (v_23 ? sg_23 : sg_45);
 
-	wire [NPHYS-1:0] sl_01 = s_valid[0] ? s_lanes[0*NPHYS +: NPHYS] : s_lanes[1*NPHYS +: NPHYS];
-	wire [NPHYS-1:0] sl_23 = s_valid[2] ? s_lanes[2*NPHYS +: NPHYS] : s_lanes[3*NPHYS +: NPHYS];
-	wire [NPHYS-1:0] sl_45 = s_valid[4] ? s_lanes[4*NPHYS +: NPHYS] : s_lanes[5*NPHYS +: NPHYS];
+	wire [NPHYS-1:0] sl_01 = s_valid_mux[0] ? s_lanes[0*NPHYS +: NPHYS] : s_lanes[1*NPHYS +: NPHYS];
+	wire [NPHYS-1:0] sl_23 = s_valid_mux[2] ? s_lanes[2*NPHYS +: NPHYS] : s_lanes[3*NPHYS +: NPHYS];
+	wire [NPHYS-1:0] sl_45 = s_valid_mux[4] ? s_lanes[4*NPHYS +: NPHYS] : s_lanes[5*NPHYS +: NPHYS];
 	wire [NPHYS-1:0] sl = v_01 ? sl_01 : (v_23 ? sl_23 : sl_45);
 
-	wire sv = |s_valid;
+	wire sv = |s_valid_mux;
 
 	/* Input writes: one FIFO per source (VF, RX), since they cannot wait. */
 	(* max_fanout = 16 *) wire [1:0] fi_valid;
@@ -644,10 +660,10 @@ module atg_su_wb #(
 					rr_sl <= (glqd < 8) ? rr_nx_a : rr_nx_b;
 			end
 			(* dont_touch = "true" *) wire lq_ld_s = !lq_valid || !lq_wr || (!sv && !fq_valid_sl[glqd]);
-			(* dont_touch = "true" *) wire wb_sel1_w = !(s_valid[0] || s_valid[1] || s_valid[2] || s_valid[3]);
-			(* dont_touch = "true" *) wire wb_sel0_w = !(s_valid[0] || s_valid[1]) && (s_valid[2] || s_valid[3] || !(s_valid[4] || s_valid[5]));
-			(* dont_touch = "true" *) wire wb_sel1_r = !(s_valid[0] || s_valid[1] || s_valid[2] || s_valid[3]);
-			(* dont_touch = "true" *) wire wb_sel0_r = !(s_valid[0] || s_valid[1]) && (s_valid[2] || s_valid[3] || !(s_valid[4] || s_valid[5]));
+			(* dont_touch = "true" *) wire wb_sel1_w = !(s_valid_sel[0] || s_valid_sel[1] || s_valid_sel[2] || s_valid_sel[3]);
+			(* dont_touch = "true" *) wire wb_sel0_w = !(s_valid_sel[0] || s_valid_sel[1]) && (s_valid_sel[2] || s_valid_sel[3] || !(s_valid_sel[4] || s_valid_sel[5]));
+			(* dont_touch = "true" *) wire wb_sel1_r = !(s_valid_sel[0] || s_valid_sel[1] || s_valid_sel[2] || s_valid_sel[3]);
+			(* dont_touch = "true" *) wire wb_sel0_r = !(s_valid_sel[0] || s_valid_sel[1]) && (s_valid_sel[2] || s_valid_sel[3] || !(s_valid_sel[4] || s_valid_sel[5]));
 
 			wire [15:0] lk_s_data_sl;
 			for (glqh = 0; glqh < 2; glqh = glqh + 1) begin : g_lqd_h

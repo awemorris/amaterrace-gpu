@@ -80,7 +80,7 @@ module atg_su_dcache #(
 	localparam V_SW = NL / V_SL;
 	localparam N_TEQ = (TW + 2) / 3;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* max_fanout = 12 *) reg [2:0] st;
 	wire [NL-1:0] valid;
 	reg [TW0-1:0] tags_0 [0:NL-1];

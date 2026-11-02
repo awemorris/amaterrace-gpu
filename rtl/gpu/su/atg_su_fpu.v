@@ -1997,7 +1997,7 @@ module atg_su_fpu #(
 
 	localparam SH = PK_SHARED != 0 && PACKED != 0;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 
 	/* busy: the cycle of the high halves of a packed group (PK_SHARED). */
 	(* max_fanout = 12 *) reg busy;
@@ -2083,9 +2083,26 @@ module atg_su_fpu #(
 			wire [31:0] sim_b   = mine ? x_b[gl*32 +: 32] : 32'd0;
 			wire [31:0] sim_c   = mine ? x_c[gl*32 +: 32] : 32'd0;
 `else
-			wire [4:0]  sim_op  = op;
-			wire [2:0]  sim_rm  = rm;
-			wire        sim_sat = sat;
+			wire [4:0] op_l;
+			wire [2:0] rm_l;
+			wire       sat_l;
+`ifdef SYNTH_KINTEX7
+			genvar gbop;
+			for (gbop = 0; gbop < 5; gbop = gbop + 1) begin : g_buf_op
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_op (.I0(op[gbop]), .O(op_l[gbop]));
+			end
+			for (gbop = 0; gbop < 3; gbop = gbop + 1) begin : g_buf_rm
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rm (.I0(rm[gbop]), .O(rm_l[gbop]));
+			end
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sat (.I0(sat), .O(sat_l));
+`else
+			assign op_l  = op;
+			assign rm_l  = rm;
+			assign sat_l = sat;
+`endif
+			wire [4:0]  sim_op  = op_l;
+			wire [2:0]  sim_rm  = rm_l;
+			wire        sim_sat = sat_l;
 			wire [31:0] sim_a   = x_a[gl*32 +: 32];
 			wire [31:0] sim_b   = x_b[gl*32 +: 32];
 			wire [31:0] sim_c   = x_c[gl*32 +: 32];

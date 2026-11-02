@@ -98,7 +98,7 @@ module atg_su_tex #(
 	localparam QS = $clog2(NQ);	/* the quad number's bits in a group (0 for NPHYS 4) */
 	localparam [1:0] IDLE = 2'd0, SEND = 2'd1, DREF = 2'd2;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 
 	(* fsm_encoding = "none" *) reg [1:0] st;
 	reg [QW-1:0] q, lastq;

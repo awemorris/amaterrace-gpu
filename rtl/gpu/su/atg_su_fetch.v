@@ -71,7 +71,7 @@ module atg_su_fetch #(
 	(* dont_touch = "true" *) wire fill_0 = ic_rvalid && !fp[0];
 	(* dont_touch = "true" *) wire fill_1 = ic_rvalid && fp[0];
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	wire h = rp[0];
 	(* dont_touch = "true" *) reg rp0_pc;
 	wire rp0_pc_lo, rp0_pc_hi;

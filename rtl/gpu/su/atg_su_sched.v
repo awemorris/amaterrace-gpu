@@ -83,7 +83,7 @@ module atg_su_sched #(
 		S_WC = 3'd4, S_REPLAY = 3'd5, S_BAR = 3'd6, S_ENDED = 3'd7;
 	localparam [1:0] K_VERT = 2'd0, K_FRAG = 2'd1, K_COMP = 2'd2;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 
 	/* STATE: program bases, WG_SIZE, the DISPATCH grid. */
 	reg [31:0] vs_base, fs_base, cs_base;

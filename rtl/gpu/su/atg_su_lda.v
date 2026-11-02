@@ -114,7 +114,7 @@ module atg_su_lda #(
 	endfunction
 
 	/* The primitive maps. */
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* dont_touch = "true" *) wire scrub_i = scrub;
 	wire [NWARPS*24-1:0] pmap;
 	wire map_we = pw_we && pw_addr == 12'hFFF;

@@ -53,7 +53,7 @@ module atg_su_skid #(
 		end
 	endgenerate
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* keep = "true" *) reg skid_valid;
 
 	genvar gs;
@@ -172,7 +172,7 @@ module atg_su_amb_mux #(
 	localparam SLB = LINE_BYTES * 8;
 	localparam TAG_LO = 8 - ID_W;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* dont_touch = "true" *) reg [3:0] lock_r;
 	(* dont_touch = "true" *) reg [4*ID_W-1:0] lock_k_r;
 	reg [ID_W-1:0] pick;

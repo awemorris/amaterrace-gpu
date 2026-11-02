@@ -115,7 +115,7 @@ module atg_su_cbank #(
 	localparam [3:0] IDLE = 4'd0, LREQ = 4'd1, LWAIT = 4'd2, LWR = 4'd3, ACCESS = 4'd4,
 		DRAIN = 4'd5, DRAIN2 = 4'd6, BEAT = 4'd7, DRAIN3 = 4'd8;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	reg [31:0] bank [0:CONST_WORDS-1];
 	(* max_fanout = 12 *) reg [3:0] st;
 	(* max_fanout = 12 *) reg valid, lc_pend;

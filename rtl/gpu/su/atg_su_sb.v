@@ -160,7 +160,7 @@ module atg_su_sb #(
 		end
 	endfunction
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 
 	wire [WARP_W-1:0] u_warp_r, u_warp_h0, u_warp_h1, u_warp_m, u_warp_f, u_warp_c, u_warp_w, u_warp_out;
 `ifdef SYNTH_KINTEX7

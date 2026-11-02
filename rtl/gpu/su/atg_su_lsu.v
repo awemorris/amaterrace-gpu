@@ -181,11 +181,32 @@ module atg_su_lsu #(
 	localparam N_LEQ = (LA_W + 2) / 3;
 	wire [DW-1:0] x_adr;
 	wire [NPHYS*WW-1:0] rwo_wr_a_bus, rwo_wr_b_bus, rwo_wr_be_bus;
+
+	wire [7:0] op_l [0:NPHYS-1];
+	wire at_err_l [0:NPHYS-1];
+	genvar gop_l, gop_b;
+	generate
+	for (gop_l = 0; gop_l < NPHYS; gop_l = gop_l + 1) begin : g_buf_opl
+		for (gop_b = 0; gop_b < 8; gop_b = gop_b + 1) begin : g_buf_opb
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_op (.I0(op[gop_b]), .O(op_l[gop_l][gop_b]));
+`else
+			assign op_l[gop_l][gop_b] = op[gop_b];
+`endif
+		end
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_ae (.I0(at_error), .O(at_err_l[gop_l]));
+`else
+		assign at_err_l[gop_l] = at_error;
+`endif
+	end
+	endgenerate
+
 	genvar la, gh, gleq, gl;
 	generate
 		for (la = 0; la < NPHYS; la = la + 1) begin : g_adr
 			wire co_unused;
-			am_add #(.W(32)) u_adr (.a(x_a[la*32 +: 32]), .b(op == ATG_LSU_ATOM ? 32'd0 : imm),
+			am_add #(.W(32)) u_adr (.a(x_a[la*32 +: 32]), .b(op_l[la] == ATG_LSU_ATOM ? 32'd0 : imm),
 				.ci(1'b0), .s(x_adr[la*32 +: 32]), .co(co_unused));
 			(* keep = "true" *) wire [N_LEQ-1:0] leq_g;
 			for (gleq = 0; gleq < N_LEQ; gleq = gleq + 1) begin : g_leq
@@ -222,6 +243,15 @@ module atg_su_lsu #(
 			assign rwo_wr_b_bus[la*WW +: WW]  = rwo_wr_b;
 			assign rwo_wr_be_bus[la*WW +: WW] = rwo_wr_be;
 
+			wire at_err_la0, at_err_la1;
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_ae0 (.I0(at_err_l[la]), .O(at_err_la0));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_ae1 (.I0(at_err_l[la]), .O(at_err_la1));
+`else
+			assign at_err_la0 = at_err_l[la];
+			assign at_err_la1 = at_err_l[la];
+`endif
+
 			for (gh = 0; gh < 4; gh = gh + 1) begin : g_lsu_half
 				wire [WW-1:0] rwo_rd_h = (gh == 0) ? rwo_rd_0 :
 				                         (gh == 1) ? rwo_rd_1 :
@@ -238,15 +268,23 @@ module atg_su_lsu #(
 				wire dc_we_h = (st == WAIT) && dc_rsp_valid && cur[la];
 				wire dc_err_h = dc_rsp_error;
 				wire at_we_h = (st == AWAIT) && at_rsp_valid && (ali == la[LW-1:0]);
-				wire at_err_h = at_error;
+				wire at_err_h = (gh < 2) ? at_err_la0 : at_err_la1;
+				wire take_rd_h, take_cr_h;
+`ifdef SYNTH_KINTEX7
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_trd (.I0(take_byte_l), .O(take_rd_h));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_tcr (.I0(take_byte_l), .O(take_cr_h));
+`else
+				assign take_rd_h = take_byte_l;
+				assign take_cr_h = take_byte_l;
+`endif
 				always @(posedge clk) begin
-					if (take_byte_l)
+					if (take_rd_h)
 						radr_h <= x_adr[la*32 + gh*8 +: 8];
-					if (take_byte_l)
+					if (take_rd_h)
 						rdat_h <= x_b[la*32 + gh*8 +: 8];
-					if (take_byte_l)
+					if (take_cr_h)
 						rcmp_h <= x_c[la*32 + gh*8 +: 8];
-					if (take_byte_l) begin
+					if (take_cr_h) begin
 						res_h <= 8'd0;
 					end else if (dc_we_h) begin
 						res_h <= dc_err_h ? 8'd0 : rsel_h;
@@ -326,12 +364,12 @@ module atg_su_lsu #(
 		end
 	endgenerate
 
-	(* dont_touch = "true" *) wire lsu_idle_ce_a = !rst_p && (st == IDLE) && take;
-	(* dont_touch = "true" *) wire lsu_idle_ce_b = !rst_p && (st == IDLE) && take;
-	(* dont_touch = "true" *) wire line_ce_0 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
-	(* dont_touch = "true" *) wire line_ce_1 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
-	(* dont_touch = "true" *) wire line_ce_2 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
-	(* dont_touch = "true" *) wire line_ce_3 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
+	wire lsu_idle_ce_a = !rst_p && (st == IDLE) && take;
+	wire lsu_idle_ce_b = !rst_p && (st == IDLE) && take;
+	wire line_ce_0 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
+	wire line_ce_1 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
+	wire line_ce_2 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
+	wire line_ce_3 = !rst_p && (st == LINE) && (lead != NPHYS[LW:0]);
 	wire line_hit_ce = !rst_p && (st == LINE_HIT);
 	wire line_hit_ce_0, line_hit_ce_1;
 `ifdef SYNTH_KINTEX7

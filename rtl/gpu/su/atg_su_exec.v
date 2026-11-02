@@ -130,7 +130,7 @@ module atg_su_exec #(
 	(* max_fanout = 12 *) reg wc_is_br, wc_static, wc_any, wc_all;
 	(* max_fanout = 12 *) reg [2:0] wc_br_op;
 	(* max_fanout = 12 *) reg [15:0] wc_pc_tgt, wc_pc_p1;
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* dont_touch = "true" *) wire wc_ce_ctrl = mine && x_last && (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR);
 	(* dont_touch = "true" *) wire wc_ce_tgt  = mine && x_last && (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR);
 	(* dont_touch = "true" *) wire wc_ce_p1   = mine && x_last && (is_br || op == ATG_EXEC_END || op == ATG_EXEC_BAR);
@@ -178,11 +178,49 @@ module atg_su_exec #(
 	                            (wc_br_op == ATG_EXEC_BANY[2:0] && wc_any) ||
 	                            (wc_br_op == ATG_EXEC_BNONE[2:0] && !wc_any));
 
+	wire [1:0] op_w [0:NWARPS-1];
+	wire [WARP_W-1:0] x_warp_w [0:NWARPS-1];
+	wire exec_op_match_w [0:NWARPS-1];
+	wire [WARP_W-1:0] q_warp_ex, q_warp_kl;
+	genvar gwb, gbb;
+	generate
+	for (gwb = 0; gwb < NWARPS; gwb = gwb + 1) begin : g_buf_w
+		for (gbb = 0; gbb < 2; gbb = gbb + 1) begin : g_buf_op
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_op (.I0(op[gbb]), .O(op_w[gwb][gbb]));
+`else
+			assign op_w[gwb][gbb] = op[gbb];
+`endif
+		end
+		for (gbb = 0; gbb < WARP_W; gbb = gbb + 1) begin : g_buf_xw
+`ifdef SYNTH_KINTEX7
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_xw (.I0(x_warp[gbb]), .O(x_warp_w[gwb][gbb]));
+`else
+			assign x_warp_w[gwb][gbb] = x_warp[gbb];
+`endif
+		end
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_eom (.I0(op == ATG_EXEC_SET || op == ATG_EXEC_AND || op == ATG_EXEC_OR), .O(exec_op_match_w[gwb]));
+`else
+		assign exec_op_match_w[gwb] = (op == ATG_EXEC_SET || op == ATG_EXEC_AND || op == ATG_EXEC_OR);
+`endif
+	end
+	for (gbb = 0; gbb < WARP_W; gbb = gbb + 1) begin : g_buf_qw
+`ifdef SYNTH_KINTEX7
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_qwe (.I0(q_warp[gbb]), .O(q_warp_ex[gbb]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_qwk (.I0(q_warp[gbb]), .O(q_warp_kl[gbb]));
+`else
+		assign q_warp_ex[gbb] = q_warp[gbb];
+		assign q_warp_kl[gbb] = q_warp[gbb];
+`endif
+	end
+	endgenerate
+
 	genvar gw, gg;
 	generate
 		for (gw = 0; gw < NWARPS; gw = gw + 1) begin : g_warp_state
-			wire w_match = mine && (x_warp == gw[WARP_W-1:0]);
-			wire exec_op_match = (op == ATG_EXEC_SET || op == ATG_EXEC_AND || op == ATG_EXEC_OR);
+			wire w_match = mine && (x_warp_w[gw] == gw[WARP_W-1:0]);
+			wire exec_op_match = exec_op_match_w[gw];
 
 			for (gg = 0; gg < 32/NPHYS; gg = gg + 1) begin : g_grp_state
 				(* dont_touch = "true" *) wire w_init_kl = init_valid && (init_warp == gw[WARP_W-1:0]);
@@ -206,7 +244,7 @@ module atg_su_exec #(
 				always @(*) begin
 					if (w_init_ex)
 						exec_d = init_mask[gg*NPHYS +: NPHYS];
-					else case (op[1:0])
+					else case (op_w[gw])
 						ATG_EXEC_SET[1:0]: exec_d = bt;
 						ATG_EXEC_AND[1:0]: exec_d = cur_exec & bt;
 						default:           exec_d = cur_exec | bt;
@@ -239,8 +277,8 @@ module atg_su_exec #(
 	assign wc_warp = wc_w;
 	assign wc_op = wc_o;
 	assign wc_pc = wc_take ? wc_pc_tgt : wc_pc_p1;
-	assign q_exec = exec_r[q_warp*32 +: 32];
-	assign q_killed = kill_r[q_warp*32 +: 32];
+	assign q_exec = exec_r[q_warp_ex*32 +: 32];
+	assign q_killed = kill_r[q_warp_kl*32 +: 32];
 
 	wire [EW-1:0] o = pipe[SHORT_LAT-1];
 	assign s_valid = o[EW-1];

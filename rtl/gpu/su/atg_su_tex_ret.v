@@ -88,7 +88,7 @@ module atg_su_tex_fifo #(
 	end
 	endgenerate
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	always @(posedge clk) begin
 		if (rst_p) begin
 			wp <= {(DEPTH_LOG2 + 1){1'b0}};
@@ -252,7 +252,7 @@ module atg_su_tex_ret #(
 	assign l_sbe = sbe;
 	assign l_cls = ATG_CLS_T;
 
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* dont_touch = "true" *) wire head_take_a = !rst_p && (st == HEAD) && f_valid;
 	(* dont_touch = "true" *) wire head_take_b = !rst_p && (st == HEAD) && f_valid;
 	always @(posedge clk) begin

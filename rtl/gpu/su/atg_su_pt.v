@@ -82,7 +82,7 @@ module atg_su_pt #(
 	/* verilator lint_on WIDTHTRUNC */
 
 	/* ---- The exp writes of vertex warps. */
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
+	wire rst_p = !rst_n;
 	(* dont_touch = "true" *) wire scrub_i = scrub;
 	(* dont_touch = "true" *) wire vl_go_pt = vl_go;
 	(* dont_touch = "true" *) wire [31:0] vl_mask_pt = vl_mask;
