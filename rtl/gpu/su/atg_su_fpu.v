@@ -352,12 +352,22 @@ module atg_su_fpu_core (
 	wire [24:0] s1_q_p1;
 	wire carry_unused1_qp1;
 	am_add #(.W(25)) u_q1_p1 (.a({1'b0, s1_q_eff}), .b(25'd1), .ci(1'b0), .s(s1_q_p1), .co(carry_unused1_qp1));
-	(* keep = "true", max_fanout = 12 *) wire s1_up_n_lo  = s1_up;
-	(* keep = "true", max_fanout = 12 *) wire s1_up_n_hi  = s1_up;
-	(* keep = "true", max_fanout = 12 *) wire s1_up_in_lo = s1_up;
-	(* keep = "true", max_fanout = 12 *) wire s1_up_in_hi = s1_up;
-	(* keep = "true", max_fanout = 12 *) wire s1_is_cv_lo = s1_is_cv;
-	(* keep = "true", max_fanout = 12 *) wire s1_is_cv_hi = s1_is_cv;
+	wire s1_up_n_lo, s1_up_n_hi, s1_up_in_lo, s1_up_in_hi, s1_is_cv_lo, s1_is_cv_hi;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1up_n_lo  (.I0(s1_up), .O(s1_up_n_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1up_n_hi  (.I0(s1_up), .O(s1_up_n_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1up_in_lo (.I0(s1_up), .O(s1_up_in_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1up_in_hi (.I0(s1_up), .O(s1_up_in_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1cv_lo    (.I0(s1_is_cv), .O(s1_is_cv_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s1cv_hi    (.I0(s1_is_cv), .O(s1_is_cv_hi));
+`else
+	assign s1_up_n_lo  = s1_up;
+	assign s1_up_n_hi  = s1_up;
+	assign s1_up_in_lo = s1_up;
+	assign s1_up_in_hi = s1_up;
+	assign s1_is_cv_lo = s1_is_cv;
+	assign s1_is_cv_hi = s1_is_cv;
+`endif
 	wire [24:0] s1_n = {
 		s1_up_n_hi ? s1_q_p1[24:12] : {1'b0, s1_q_eff[23:12]},
 		s1_up_n_lo ? s1_q_p1[11:0]  : s1_q_eff[11:0]
@@ -648,7 +658,16 @@ module atg_su_fpu_core (
 	am_sub #(.W(12)) u_fma2_k   (.a(s2_fma_c150), .b(s2_fma_ab), .bi(1'b0), .d(s2_fma_k),   .bo(s2_fma_sub_carry_unused[0]));
 	am_sub #(.W(12)) u_fma2_kp2 (.a(s2_fma_c152), .b(s2_fma_ab), .bi(1'b0), .d(s2_fma_kp2), .bo(s2_fma_sub_carry_unused[1]));
 	(* keep = "true", max_fanout = 12 *) wire s2_fr_ge1 = (s2_op == OP_FRACT) && s2_fract_ge1;
-	(* keep = "true", max_fanout = 12 *) wire [4:0] s2_fma_rs = neg5(s2_fma_kp2[4:0]);
+	wire [4:0] s2_fma_rs_raw = neg5(s2_fma_kp2[4:0]);
+	wire [4:0] s2_fma_rs;
+`ifdef SYNTH_KINTEX7
+	genvar g_rs;
+	for (g_rs = 0; g_rs < 5; g_rs = g_rs + 1) begin: g_buf_rs
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rs (.I0(s2_fma_rs_raw[g_rs]), .O(s2_fma_rs[g_rs]));
+	end
+`else
+	assign s2_fma_rs = s2_fma_rs_raw;
+`endif
 	(* keep = "true", max_fanout = 12 *) wire [3:0] s2_cs_left_rep = {4{s2_fr_ge1 || !s2_fma_kp2[11]}};
 	(* keep = "true", max_fanout = 12 *) wire [6:0] s2_cs_amt = s2_fma_kp2[6:0];
 	(* keep = "true", max_fanout = 12 *) wire s2_mc_zero_lo = (s2_op == OP_FRACT) || s2_noc || s2_c_ez_r;
@@ -855,62 +874,81 @@ module atg_su_fpu_core (
 	wire carry_unused3_mr;
 	am_add #(.W(25)) u_mr3_p1 (.a({1'b0, s3_w[31:8]}), .b(25'd1), .ci(1'b0), .s(s3_w_p1), .co(carry_unused3_mr));
 	wire s3_w_b8 = s3_w[8] | (((s3_rm == 3'd5 || s3_rm == 3'd6) && (cvsw3 || cvswu3)) && (s3_g || s3_st));
-	wire s3_up_lo, s3_up_hi0, s3_up_hi1;
+	wire s3_up_lo0, s3_up_lo1, s3_up_hi0, s3_up_hi1;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3up_lo  (.I0(s3_up), .O(s3_up_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3up_lo0 (.I0(s3_up), .O(s3_up_lo0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3up_lo1 (.I0(s3_up), .O(s3_up_lo1));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3up_hi0 (.I0(s3_up), .O(s3_up_hi0));
 	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3up_hi1 (.I0(s3_up), .O(s3_up_hi1));
 `else
-	assign s3_up_lo  = s3_up;
+	assign s3_up_lo0 = s3_up;
+	assign s3_up_lo1 = s3_up;
 	assign s3_up_hi0 = s3_up;
 	assign s3_up_hi1 = s3_up;
 `endif
 	wire [24:0] s3_mr0 = {
 		s3_up_hi1 ? s3_w_p1[24:19] : {1'b0, s3_w[31:27]},
 		s3_up_hi0 ? s3_w_p1[18:12] : s3_w[26:20],
-		s3_up_lo  ? s3_w_p1[11:0]  : {s3_w[19:9], s3_w_b8}
+		s3_up_lo1 ? s3_w_p1[11:6]  : s3_w[19:14],
+		s3_up_lo0 ? s3_w_p1[5:0]   : {s3_w[13:9], s3_w_b8}
 	};
-	wire s3_mr_ovf_lo, s3_mr_ovf_e, s3_mr_ovf_m;
+	wire s3_mr_ovf_lo0, s3_mr_ovf_lo1, s3_mr_ovf_e, s3_mr_ovf_m;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_lo (.I0(s3_mr0[24]), .O(s3_mr_ovf_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_e  (.I0(s3_mr0[24]), .O(s3_mr_ovf_e));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_m  (.I0(s3_mr0[24]), .O(s3_mr_ovf_m));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_lo0 (.I0(s3_mr0[24]), .O(s3_mr_ovf_lo0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_lo1 (.I0(s3_mr0[24]), .O(s3_mr_ovf_lo1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_e   (.I0(s3_mr0[24]), .O(s3_mr_ovf_e));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3ovf_m   (.I0(s3_mr0[24]), .O(s3_mr_ovf_m));
 `else
-	assign s3_mr_ovf_lo = s3_mr0[24];
-	assign s3_mr_ovf_e  = s3_mr0[24];
-	assign s3_mr_ovf_m  = s3_mr0[24];
+	assign s3_mr_ovf_lo0 = s3_mr0[24];
+	assign s3_mr_ovf_lo1 = s3_mr0[24];
+	assign s3_mr_ovf_e   = s3_mr0[24];
+	assign s3_mr_ovf_m   = s3_mr0[24];
 `endif
 	wire [7:0]  s3_er = s3_mr_ovf_e ? s3_e_p1[7:0] : s3_e[7:0];
 	wire [22:0] s3_mr = {
-		s3_mr_ovf_m  ? s3_mr0[23:16] : s3_mr0[22:15],
-		s3_mr_ovf_lo ? s3_mr0[15:1]  : s3_mr0[14:0]
+		s3_mr_ovf_m   ? s3_mr0[23:16] : s3_mr0[22:15],
+		s3_mr_ovf_lo1 ? s3_mr0[15:8]  : s3_mr0[14:7],
+		s3_mr_ovf_lo0 ? s3_mr0[7:1]   : s3_mr0[6:0]
 	};
-	wire s3_nz_lo, s3_nz_iv, s3_nz_hi;
-	wire s3_fl_nan_lo, s3_fl_nan_hi, s3_fl_pass_lo, s3_fl_pass_hi;
+	wire s3_nz_lo0, s3_nz_lo1, s3_nz_iv0, s3_nz_iv1, s3_nz_hi;
+	wire s3_fl_nan_lo, s3_fl_nan_hi;
+	wire s3_fl_pass_lo0, s3_fl_pass_lo1, s3_fl_pass_hi0, s3_fl_pass_hi1;
 `ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_lo  (.I0(s3_nz), .O(s3_nz_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_iv  (.I0(s3_nz), .O(s3_nz_iv));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_hi  (.I0(s3_nz), .O(s3_nz_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nan_lo (.I0(s3_fl_nan), .O(s3_fl_nan_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nan_hi (.I0(s3_fl_nan), .O(s3_fl_nan_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3pas_lo (.I0(s3_fl_pass), .O(s3_fl_pass_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3pas_hi (.I0(s3_fl_pass), .O(s3_fl_pass_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_lo0  (.I0(s3_nz), .O(s3_nz_lo0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_lo1  (.I0(s3_nz), .O(s3_nz_lo1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_iv0  (.I0(s3_nz), .O(s3_nz_iv0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_iv1  (.I0(s3_nz), .O(s3_nz_iv1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nz_hi   (.I0(s3_nz), .O(s3_nz_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nan_lo  (.I0(s3_fl_nan), .O(s3_fl_nan_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3nan_hi  (.I0(s3_fl_nan), .O(s3_fl_nan_hi));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3pas_lo0 (.I0(s3_fl_pass), .O(s3_fl_pass_lo0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3pas_lo1 (.I0(s3_fl_pass), .O(s3_fl_pass_lo1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3pas_hi0 (.I0(s3_fl_pass), .O(s3_fl_pass_hi0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_s3pas_hi1 (.I0(s3_fl_pass), .O(s3_fl_pass_hi1));
 `else
-	assign s3_nz_lo      = s3_nz;
-	assign s3_nz_iv      = s3_nz;
-	assign s3_nz_hi      = s3_nz;
-	assign s3_fl_nan_lo  = s3_fl_nan;
-	assign s3_fl_nan_hi  = s3_fl_nan;
-	assign s3_fl_pass_lo = s3_fl_pass;
-	assign s3_fl_pass_hi = s3_fl_pass;
+	assign s3_nz_lo0      = s3_nz;
+	assign s3_nz_lo1      = s3_nz;
+	assign s3_nz_iv0      = s3_nz;
+	assign s3_nz_iv1      = s3_nz;
+	assign s3_nz_hi       = s3_nz;
+	assign s3_fl_nan_lo   = s3_fl_nan;
+	assign s3_fl_nan_hi   = s3_fl_nan;
+	assign s3_fl_pass_lo0 = s3_fl_pass;
+	assign s3_fl_pass_lo1 = s3_fl_pass;
+	assign s3_fl_pass_hi0 = s3_fl_pass;
+	assign s3_fl_pass_hi1 = s3_fl_pass;
 `endif
 	wire [31:0] s3_iv = {
-		!s3_nz_iv ? {s3_s, 15'd0} : {s3_s, s3_er, s3_mr[22:16]},
-		!s3_nz_lo ? 16'd0         : s3_mr[15:0]
+		!s3_nz_iv1 ? {s3_s, 7'd0} : {s3_s, s3_er[7:1]},
+		!s3_nz_iv0 ? 8'd0         : {s3_er[0], s3_mr[22:16]},
+		!s3_nz_lo1 ? 8'd0         : s3_mr[15:8],
+		!s3_nz_lo0 ? 8'd0         : s3_mr[7:0]
 	};
 	wire [31:0] s3_fl = {
-		s3_fl_nan_hi ? 16'h7FC0 : s3_fl_pass_hi ? s3_xf_val[31:16] : s3_iv[31:16],
-		s3_fl_nan_lo ? 16'h0000 : s3_fl_pass_lo ? s3_xf_val[15:0]  : s3_iv[15:0]
+		s3_fl_nan_hi  ? 8'h7F : (s3_fl_pass_hi1 ? s3_xf_val[31:24] : s3_iv[31:24]),
+		s3_fl_nan_hi  ? 8'hC0 : (s3_fl_pass_hi0 ? s3_xf_val[23:16] : s3_iv[23:16]),
+		s3_fl_nan_lo  ? 8'h00 : (s3_fl_pass_lo1 ? s3_xf_val[15:8]  : s3_iv[15:8]),
+		s3_fl_nan_lo  ? 8'h00 : (s3_fl_pass_lo0 ? s3_xf_val[7:0]   : s3_iv[7:0])
 	};
 
 	/* Stage 3: f2i negation & saturation (pre=0, post=1 around CARRY4) */
@@ -965,8 +1003,14 @@ module atg_su_fpu_core (
 	wire fma3_rdn = s3_rr == 3'd2 || s3_rr == 3'd6;
 	wire fma3_zc = s3_noc || (s3_is_fract ? (!s3_fl_nan && (s3_fl_pass ? s3_xf_ez : !s3_nz)) : s3_c_ez);
 
-	(* keep = "true" *) wire s3_mc_fr_pass_lo = s3_fl_pass;
-	(* keep = "true" *) wire s3_mc_fr_pass_hi = s3_fl_pass;
+	wire s3_mc_fr_pass_lo, s3_mc_fr_pass_hi;
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mcfr_lo (.I0(s3_fl_pass), .O(s3_mc_fr_pass_lo));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mcfr_hi (.I0(s3_fl_pass), .O(s3_mc_fr_pass_hi));
+`else
+	assign s3_mc_fr_pass_lo = s3_fl_pass;
+	assign s3_mc_fr_pass_hi = s3_fl_pass;
+`endif
 	wire [23:0] fma3_mc_fr = {
 		1'b1,
 		s3_mc_fr_pass_hi ? s3_xf_val[22:12] : s3_w[30:20],
@@ -1070,40 +1114,86 @@ module atg_su_fpu_core (
 		default: s3_cmp_bit = s3_un || !s3_ab_eq;
 		endcase
 	end
-	(* keep = "true" *) wire s3_cmp_lo = s3_cmp_bit;
-	(* keep = "true" *) wire s3_cmp_hi = s3_cmp_bit;
-	(* keep = "true" *) wire [4:0] s3_op_lo = s3_op;
-	(* keep = "true" *) wire [4:0] s3_op_hi = s3_op;
+	wire [4:0] s3_op_b0, s3_op_b1, s3_op_b2, s3_op_b3;
+	wire s3_cmp_b0, s3_cmp_b1, s3_cmp_b2, s3_cmp_b3;
+`ifdef SYNTH_KINTEX7
+	genvar g_b;
+	for (g_b = 0; g_b < 5; g_b = g_b + 1) begin: g_buf_opb
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b0 (.I0(s3_op[g_b]), .O(s3_op_b0[g_b]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b1 (.I0(s3_op[g_b]), .O(s3_op_b1[g_b]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b2 (.I0(s3_op[g_b]), .O(s3_op_b2[g_b]));
+		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b3 (.I0(s3_op[g_b]), .O(s3_op_b3[g_b]));
+	end
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cmp0 (.I0(s3_cmp_bit), .O(s3_cmp_b0));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cmp1 (.I0(s3_cmp_bit), .O(s3_cmp_b1));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cmp2 (.I0(s3_cmp_bit), .O(s3_cmp_b2));
+	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_cmp3 (.I0(s3_cmp_bit), .O(s3_cmp_b3));
+`else
+	assign s3_op_b0 = s3_op;
+	assign s3_op_b1 = s3_op;
+	assign s3_op_b2 = s3_op;
+	assign s3_op_b3 = s3_op;
+	assign s3_cmp_b0 = s3_cmp_bit;
+	assign s3_cmp_b1 = s3_cmp_bit;
+	assign s3_cmp_b2 = s3_cmp_bit;
+	assign s3_cmp_b3 = s3_cmp_bit;
+`endif
 
-	(* keep = "true" *) reg [15:0] s3_other_lo, s3_other_hi;
+	reg [7:0] s3_other_b0, s3_other_b1, s3_other_b2, s3_other_b3;
 	reg s3_is_flt;
 	always @(*) begin
+		s3_other_b0 = 8'd0;
+		case (s3_op_b0)
+		OP_FSGNJ:              s3_other_b0 = s3_a[7:0];
+		OP_FMIN:               s3_other_b0 = s3_fmin_lo[7:0];
+		OP_FMAX:               s3_other_b0 = s3_fmax_lo[7:0];
+		OP_FCVTWS, OP_FCVTWUS: s3_other_b0 = s3_ri[7:0];
+		OP_FEQ, OP_FLT, OP_FLE, OP_FNE: s3_other_b0 = {8{s3_cmp_b0}};
+		default: ;
+		endcase
+	end
+	always @(*) begin
+		s3_other_b1 = 8'd0;
+		case (s3_op_b1)
+		OP_FSGNJ:              s3_other_b1 = s3_a[15:8];
+		OP_FMIN:               s3_other_b1 = s3_fmin_lo[15:8];
+		OP_FMAX:               s3_other_b1 = s3_fmax_lo[15:8];
+		OP_FCVTWS, OP_FCVTWUS: s3_other_b1 = s3_ri[15:8];
+		OP_FEQ, OP_FLT, OP_FLE, OP_FNE: s3_other_b1 = {8{s3_cmp_b1}};
+		default: ;
+		endcase
+	end
+	always @(*) begin
+		s3_other_b2 = 8'd0;
+		case (s3_op_b2)
+		OP_FSGNJ:              s3_other_b2 = s3_a[23:16];
+		OP_FMIN:               s3_other_b2 = s3_fmin_hi[7:0];
+		OP_FMAX:               s3_other_b2 = s3_fmax_hi[7:0];
+		OP_FCVTWS, OP_FCVTWUS: s3_other_b2 = s3_ri[23:16];
+		OP_FEQ, OP_FLT, OP_FLE, OP_FNE: s3_other_b2 = {8{s3_cmp_b2}};
+		default: ;
+		endcase
+	end
+	always @(*) begin
+		s3_other_b3 = 8'd0;
+		case (s3_op_b3)
+		OP_FSGNJ:              s3_other_b3 = {s3_b[31], s3_a[30:24]};
+		OP_FMIN:               s3_other_b3 = s3_fmin_hi[15:8];
+		OP_FMAX:               s3_other_b3 = s3_fmax_hi[15:8];
+		OP_FCVTWS, OP_FCVTWUS: s3_other_b3 = s3_ri[31:24];
+		OP_FEQ, OP_FLT, OP_FLE, OP_FNE: s3_other_b3 = {8{s3_cmp_b3}};
+		default: ;
+		endcase
+	end
+	always @(*) begin
 		s3_is_flt = 1'b1;
-		s3_other_lo = 16'd0;
-		s3_other_hi = 16'd0;
-		case (s3_op_lo)
-		OP_FSGNJ:              s3_other_lo = s3_a[15:0];
-		OP_FMIN:               s3_other_lo = s3_fmin_lo;
-		OP_FMAX:               s3_other_lo = s3_fmax_lo;
-		OP_FCVTWS, OP_FCVTWUS: s3_other_lo = s3_ri[15:0];
-		OP_FEQ, OP_FLT, OP_FLE, OP_FNE: s3_other_lo = {16{s3_cmp_lo}};
-		default: ;
-		endcase
-		case (s3_op_hi)
-		OP_FSGNJ:              s3_other_hi = {s3_b[31], s3_a[30:16]};
-		OP_FMIN:               s3_other_hi = s3_fmin_hi;
-		OP_FMAX:               s3_other_hi = s3_fmax_hi;
-		OP_FCVTWS, OP_FCVTWUS: s3_other_hi = s3_ri[31:16];
-		OP_FEQ, OP_FLT, OP_FLE, OP_FNE: s3_other_hi = {16{s3_cmp_hi}};
-		default: ;
-		endcase
 		case (s3_op)
 		OP_FCVTWS, OP_FCVTWUS, OP_FEQ, OP_FLT, OP_FLE, OP_FNE,
 		OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU: s3_is_flt = 1'b0;
 		default: ;
 		endcase
 	end
-	wire [31:0] s3_other = {s3_other_hi, s3_other_lo};
+	wire [31:0] s3_other = {s3_other_b3, s3_other_b2, s3_other_b1, s3_other_b0};
 
 	/* --- Stage 4 -> Stage 5 --- */
 	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 12 *) reg [4:0] s4_op;
