@@ -353,6 +353,32 @@ module atg_su_exp #(
 	reg [3:0] zexp;
 	reg [3:0] smok;
 	integer i;
+	function [191:0] get_rdat_lane;
+		input [NPHYS*192-1:0] all_rdat;
+		input [4:0] l_idx;
+		integer k;
+		begin
+			get_rdat_lane = 192'd0;
+			for (k = 0; k < NPHYS; k = k + 1) begin
+				if (l_idx[4:0] == k[4:0])
+					get_rdat_lane = all_rdat[k * 192 +: 192];
+			end
+		end
+	endfunction
+
+	function [127:0] get_rdat1_lane;
+		input [NPHYS*128-1:0] all_rdat1;
+		input [4:0] l_idx;
+		integer k;
+		begin
+			get_rdat1_lane = 128'd0;
+			for (k = 0; k < NPHYS; k = k + 1) begin
+				if (l_idx[4:0] == k[4:0])
+					get_rdat1_lane = all_rdat1[k * 128 +: 128];
+			end
+		end
+	endfunction
+
 	genvar gi, gch;
 	generate
 		for (gi = 0; gi < 4; gi = gi + 1) begin : g_qmux
@@ -371,17 +397,27 @@ module atg_su_exp #(
 				assign dq_c1_hi[gdq] = dq[gdq];
 `endif
 			end
+			wire [4:0] lane_c_lo  = {dq_c_lo,  gi[1:0]} & (NPHYS - 1);
+			wire [4:0] lane_c_hi  = {dq_c_hi,  gi[1:0]} & (NPHYS - 1);
+			wire [4:0] lane_c1_lo = {dq_c1_lo, gi[1:0]} & (NPHYS - 1);
+			wire [4:0] lane_c1_hi = {dq_c1_hi, gi[1:0]} & (NPHYS - 1);
+
+			wire [191:0] rdat_lo  = get_rdat_lane(rdat, lane_c_lo);
+			wire [191:0] rdat_hi  = get_rdat_lane(rdat, lane_c_hi);
+			wire [127:0] rdat1_lo = get_rdat1_lane(rdat1, lane_c1_lo);
+			wire [127:0] rdat1_hi = get_rdat1_lane(rdat1, lane_c1_hi);
+
 			for (gch = 0; gch < 8; gch = gch + 1) begin : g_c_sl
-				wire [2:0] dq_c  = (gch < 4) ? dq_c_lo  : dq_c_hi;
-				wire [2:0] dq_c1 = (gch < 4) ? dq_c1_lo : dq_c1_hi;
-				assign col[128 * gi + gch * 16 +: 16]  = rdat[192 * (({27'd0, dq_c,  gi[1:0]}) % NPHYS) + gch * 16 +: 16];
-				assign col1[128 * gi + gch * 16 +: 16] = rdat1[128 * (({27'd0, dq_c1, gi[1:0]}) % NPHYS) + gch * 16 +: 16];
+				wire [191:0] rdat_sel = (gch < 4) ? rdat_lo : rdat_hi;
+				wire [127:0] rdat1_sel = (gch < 4) ? rdat1_lo : rdat1_hi;
+				assign col[128 * gi + gch * 16 +: 16]  = rdat_sel[gch * 16 +: 16];
+				assign col1[128 * gi + gch * 16 +: 16] = rdat1_sel[gch * 16 +: 16];
 			end
 			for (gch = 0; gch < 2; gch = gch + 1) begin : g_d_sl
 				wire [2:0] dq_d = dq_c_lo;
 				(* dont_touch = "true" *) wire q_ddw = ddw[{dq_d, gi[1:0]}];
-				wire [15:0] w_m4 = rdat[192 * (({27'd0, dq_d, gi[1:0]}) % NPHYS) + 128 + gch * 16 +: 16];
-				wire [15:0] w_mz = rdat[192 * (({27'd0, dq_d, gi[1:0]}) % NPHYS) + 160 + gch * 16 +: 16];
+				wire [15:0] w_m4 = rdat_lo[128 + gch * 16 +: 16];
+				wire [15:0] w_mz = rdat_lo[160 + gch * 16 +: 16];
 				assign dep[32 * gi + gch * 16 +: 16] = q_ddw ? w_m4 : w_mz;
 			end
 		end
