@@ -88,78 +88,6 @@ module atg_su_sb #(
 	localparam NIF = 4;
 	localparam NE_W = $clog2(NE);	/* issued, not yet past atg_su_opd */
 
-	/* Pure-LUT 6-bit arithmetic helpers (6 inputs -> 1 LUT6 per bit, 0 CARRY4) */
-	function [5:0] add6_1;
-		input [5:0] x;
-		begin
-			add6_1[0] = ~x[0];
-			add6_1[1] = x[1] ^ x[0];
-			add6_1[2] = x[2] ^ (&x[1:0]);
-			add6_1[3] = x[3] ^ (&x[2:0]);
-			add6_1[4] = x[4] ^ (&x[3:0]);
-			add6_1[5] = x[5] ^ (&x[4:0]);
-		end
-	endfunction
-
-	function [5:0] add6_2;
-		input [5:0] x;
-		begin
-			add6_2[0] = x[0];
-			add6_2[1] = ~x[1];
-			add6_2[2] = x[2] ^ x[1];
-			add6_2[3] = x[3] ^ (&x[2:1]);
-			add6_2[4] = x[4] ^ (&x[3:1]);
-			add6_2[5] = x[5] ^ (&x[4:1]);
-		end
-	endfunction
-
-	function [5:0] add6_3;
-		input [5:0] x;
-		begin
-			add6_3 = add6_1(add6_2(x));
-		end
-	endfunction
-
-	function [5:0] sub6_1;
-		input [5:0] x;
-		begin
-			sub6_1[0] = ~x[0];
-			sub6_1[1] = x[1] ^ (~x[0]);
-			sub6_1[2] = x[2] ^ (~|x[1:0]);
-			sub6_1[3] = x[3] ^ (~|x[2:0]);
-			sub6_1[4] = x[4] ^ (~|x[3:0]);
-			sub6_1[5] = x[5] ^ (~|x[4:0]);
-		end
-	endfunction
-
-	/* Pure-LUT 6-bit <= 4-bit unsigned comparison (0 CARRY4) */
-	function le6_u4;
-		input [5:0] c;
-		input [3:0] lim;
-		reg lt_hi, eq_hi, le_lo;
-		begin
-			lt_hi = (~c[3] & lim[3]) | ((c[3] == lim[3]) & (~c[2] & lim[2]));
-			eq_hi = (c[3:2] == lim[3:2]);
-			le_lo = (~c[1] & lim[1]) | ((c[1] == lim[1]) & (~c[0] | lim[0]));
-			le6_u4 = (c[5:4] == 2'b00) && (lt_hi || (eq_hi && le_lo));
-		end
-	endfunction
-
-	/* Pure-LUT WARP_W-bit + 1-bit carry-in (0 CARRY4) */
-	function [WARP_W-1:0] add_warp_ci;
-		input [WARP_W-1:0] w_in;
-		input ci;
-		integer wi;
-		reg c_run;
-		begin
-			c_run = ci;
-			for (wi = 0; wi < WARP_W; wi = wi + 1) begin
-				add_warp_ci[wi] = w_in[wi] ^ c_run;
-				c_run = c_run & w_in[wi];
-			end
-		end
-	endfunction
-
 	wire rst_p = !rst_n;
 
 	wire [WARP_W-1:0] u_warp_r, u_warp_ev, u_warp_r0, u_warp_r1, u_warp_r2, u_warp_r3, u_warp_cnt;
@@ -213,8 +141,9 @@ module atg_su_sb #(
 	wire rs3_lt62 = !rs3[6] && (rs3[5:1] != 5'h1F);
 	wire rd_lt63  = !rd[6]  && (rd[5:0]  != 6'h3F);
 
-	wire [5:0] rs1p_lo = add6_1(rs1[5:0]);
-	wire [5:0] rs3p_lo = add6_1(rs3[5:0]);
+	wire [5:0] rs1p_lo, rs3p_lo;
+	am_add #(.W(6)) u_add_rs1p (.a(rs1[5:0]), .b(6'd1), .ci(1'b0), .s(rs1p_lo), .co());
+	am_add #(.W(6)) u_add_rs3p (.a(rs3[5:0]), .b(6'd1), .ci(1'b0), .s(rs3p_lo), .co());
 	wire [6:0] rs1p = {1'b0, rs1p_lo};
 	wire [6:0] rs3p = {1'b0, rs3p_lo};
 
@@ -229,9 +158,10 @@ module atg_su_sb #(
 	wire src3 = u_uop[ATG_UOP_USE3] && rs3_lt63;
 	wire src4 = pair && rs1_lt62;
 	/* A texture .3 form with Dref also reads rs1+3 (rs3 + 1). */
-	wire [5:0] rd_p1 = add6_1(rd[5:0]);
-	wire [5:0] rd_p2 = add6_2(rd[5:0]);
-	wire [5:0] rd_p3 = add6_3(rd[5:0]);
+	wire [5:0] rd_p1, rd_p2, rd_p3;
+	am_add #(.W(6)) u_add_rdp1 (.a(rd[5:0]), .b(6'd1), .ci(1'b0), .s(rd_p1), .co());
+	am_add #(.W(6)) u_add_rdp2 (.a(rd[5:0]), .b(6'd2), .ci(1'b0), .s(rd_p2), .co());
+	am_add #(.W(6)) u_add_rdp3 (.a(rd[5:0]), .b(6'd3), .ci(1'b0), .s(rd_p3), .co());
 	wire src5 = unit == ATG_UNIT_TEX && u_uop[ATG_UOP_SUB + 4] && op[ATG_TEX_CFORM] &&
 		rs3_lt62;
 	wire dst = wrd && rd_lt63;
@@ -250,7 +180,14 @@ module atg_su_sb #(
 	/* The release of this cycle, applied before the checks when FAST_REL != 0. */
 	wire rel_e = rel_valid && rel_sbe != {(SBE_W+1){1'b1}};
 	/* warp SB_ENTRIES + entry (an entry index's top bit carries into the warp). */
-	wire [WARP_W-1:0] rel_w = add_warp_ci(rel_warp, rel_sbe[SBE_W]);
+	wire [WARP_W-1:0] rel_w;
+	am_add #(.W(WARP_W)) u_add_relw (
+		.a(rel_warp),
+		.b({{(WARP_W-1){1'b0}}, rel_sbe[SBE_W]}),
+		.ci(1'b0),
+		.s(rel_w),
+		.co()
+	);
 	wire [NE_W-1:0] rel_idx = {rel_w, rel_sbe[SBE_W-1:0]};
 	reg [NE-1:0] ev_comb;
 	integer n;
@@ -311,12 +248,16 @@ module atg_su_sb #(
 			wire [CNT_W-1:0] w_ct = ct[gq*CNT_W +: CNT_W];
 			wire [CNT_W-1:0] w_cx = cx[gq*CNT_W +: CNT_W];
 
-			wire [CNT_W-1:0] w_cm_p1 = add6_1(w_cm);
-			wire [CNT_W-1:0] w_cm_m1 = sub6_1(w_cm);
-			wire [CNT_W-1:0] w_ct_p1 = add6_1(w_ct);
-			wire [CNT_W-1:0] w_ct_m1 = sub6_1(w_ct);
-			wire [CNT_W-1:0] w_cx_p1 = add6_1(w_cx);
-			wire [CNT_W-1:0] w_cx_m1 = sub6_1(w_cx);
+			wire [CNT_W-1:0] w_cm_p1, w_cm_m1;
+			wire [CNT_W-1:0] w_ct_p1, w_ct_m1;
+			wire [CNT_W-1:0] w_cx_p1, w_cx_m1;
+
+			am_add #(.W(CNT_W)) u_cm_p1 (.a(w_cm), .b(6'd1), .ci(1'b0), .s(w_cm_p1), .co());
+			am_sub #(.W(CNT_W)) u_cm_m1 (.a(w_cm), .b(6'd1), .bi(1'b0), .d(w_cm_m1), .bo());
+			am_add #(.W(CNT_W)) u_ct_p1 (.a(w_ct), .b(6'd1), .ci(1'b0), .s(w_ct_p1), .co());
+			am_sub #(.W(CNT_W)) u_ct_m1 (.a(w_ct), .b(6'd1), .bi(1'b0), .d(w_ct_m1), .bo());
+			am_add #(.W(CNT_W)) u_cx_p1 (.a(w_cx), .b(6'd1), .ci(1'b0), .s(w_cx_p1), .co());
+			am_sub #(.W(CNT_W)) u_cx_m1 (.a(w_cx), .b(6'd1), .bi(1'b0), .d(w_cx_m1), .bo());
 
 			assign cm_next[gq*CNT_W +: CNT_W] = (im && !rm) ? w_cm_p1 : (rm && !im) ? w_cm_m1 : w_cm;
 			assign ct_next[gq*CNT_W +: CNT_W] = (it && !rt) ? w_ct_p1 : (rt && !it) ? w_ct_m1 : w_ct;
@@ -693,7 +634,7 @@ module atg_su_sb #(
 			if (s1_we_1) begin
 				r_have_free <= ~(&w_ev_r_free);
 				r_free_e    <= w_free_e_s1;
-				r_cnt_wait <= (r_is_wait && !(le6_u4(w_rcm_r, r_imm12[3:0]) && le6_u4(w_rct_r, r_imm12[7:4]) && le6_u4(w_rcx_r, r_imm12[11:8]))) ||
+				r_cnt_wait <= (r_is_wait && !((w_rcm_r <= {2'd0, r_imm12[3:0]}) && (w_rct_r <= {2'd0, r_imm12[7:4]}) && (w_rcx_r <= {2'd0, r_imm12[11:8]}))) ||
 					(r_is_fence && r_imm12[0] && (w_rcm_r != 0)) ||
 					(r_is_end && (w_rcm_r != 0 || w_rct_r != 0 || w_rcx_r != 0));
 				r_cnt_full <= r_is_long && (
@@ -894,7 +835,7 @@ module atg_su_sb #(
 		assign hz_short = hz_short_c;
 
 		wire inc_any = inc_m[u_warp_c] || inc_t[u_warp_c] || inc_x[u_warp_c];
-		wire wait_ok = !inc_any && le6_u4(rcm, imm[3:0]) && le6_u4(rct, imm[7:4]) && le6_u4(rcx, imm[11:8]);
+		wire wait_ok = !inc_any && (rcm <= {2'd0, imm[3:0]}) && (rct <= {2'd0, imm[7:4]}) && (rcx <= {2'd0, imm[11:8]});
 		assign cnt_wait = (is_wait && !wait_ok) || (is_fence && imm[0] && (rcm != 0 || inc_m[u_warp_c])) ||
 			(is_end && (rcm != 0 || rct != 0 || rcx != 0 || inc_any));
 		wire [CNT_W-1:0] rcc = cls == ATG_CLS_M ? rcm : cls == ATG_CLS_T ? rct : rcx;
