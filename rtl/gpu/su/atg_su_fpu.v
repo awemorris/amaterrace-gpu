@@ -363,7 +363,7 @@ module atg_su_fpu #(
 			end
 		end
 
-		assign s_data = s6_data;
+		assign s_data = s6_pk ? s6_data : fpu_res;
 	end else begin : g_nosh_pipe
 		assign s_data = fpu_res;
 	end

@@ -175,37 +175,40 @@ module atg_su_lane #(
 		end
 	end
 
-	/* Stage 1 to 4 pipeline match for QD control & operands (quad-swap pre-muxed at r0 -> r1) */
+	/* Stage 1 to 5 pipeline match for QD control & operands (quad-swap pre-muxed at r0 -> r1) */
 	(* shreg_extract = "no" *) reg r1_valid, r2_valid, r3_valid;
-	(* shreg_extract = "no", max_fanout = 12 *) reg r4_valid;
-	(* shreg_extract = "no" *) reg [WARP_W-1:0] r1_warp, r2_warp, r3_warp, r4_warp;
-	(* shreg_extract = "no" *) reg [GRP_W-1:0]  r1_grp,  r2_grp,  r3_grp,  r4_grp;
-	(* shreg_extract = "no" *) reg [6:0]        r1_rd,   r2_rd,   r3_rd,   r4_rd;
-	(* shreg_extract = "no" *) reg [NPHYS-1:0]  r1_mask, r2_mask, r3_mask, r4_mask;
-	(* shreg_extract = "no" *) reg [2:0]        r1_sub,  r2_sub,  r3_sub;
-	(* shreg_extract = "no", max_fanout = 12 *) reg [2:0] r4_sub;
-	(* shreg_extract = "no" *) reg [DW-1:0]     r1_xa,   r2_xa,   r3_xa,   r4_xa;
+	(* shreg_extract = "no", max_fanout = 12 *) reg r4_valid, r5_valid;
+	(* shreg_extract = "no" *) reg [WARP_W-1:0] r1_warp, r2_warp, r3_warp, r4_warp, r5_warp;
+	(* shreg_extract = "no" *) reg [GRP_W-1:0]  r1_grp,  r2_grp,  r3_grp,  r4_grp,  r5_grp;
+	(* shreg_extract = "no" *) reg [6:0]        r1_rd,   r2_rd,   r3_rd,   r4_rd,   r5_rd;
+	(* shreg_extract = "no" *) reg [NPHYS-1:0]  r1_mask, r2_mask, r3_mask, r4_mask, r5_mask;
+	(* shreg_extract = "no" *) reg [2:0]        r1_sub,  r2_sub,  r3_sub,  r4_sub;
+	(* shreg_extract = "no" *) reg [DW-1:0]     r1_xa,   r2_xa,   r3_xa,   r4_xa,   r5_xa;
 	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 16 *) reg [NPHYS*2-1:0] r4_use_qa, r4_use_qb, r4_use_xa;
+	(* shreg_extract = "no", keep = "true", equivalent_register_removal = "no", max_fanout = 16 *) reg [NPHYS*2-1:0] r5_use_qa, r5_use_qb, r5_use_xa;
 
 	integer qm;
 	always @(posedge clk) begin
 		if (rst_p) begin
-			r1_valid <= 1'b0; r2_valid <= 1'b0; r3_valid <= 1'b0; r4_valid <= 1'b0;
-			r1_warp  <= {WARP_W{1'b0}}; r2_warp <= {WARP_W{1'b0}}; r3_warp <= {WARP_W{1'b0}}; r4_warp <= {WARP_W{1'b0}};
-			r1_grp   <= {GRP_W{1'b0}};  r2_grp  <= {GRP_W{1'b0}};  r3_grp  <= {GRP_W{1'b0}};  r4_grp  <= {GRP_W{1'b0}};
-			r1_rd    <= 7'd0;           r2_rd   <= 7'd0;           r3_rd   <= 7'd0;           r4_rd   <= 7'd0;
-			r1_mask  <= {NPHYS{1'b0}};  r2_mask <= {NPHYS{1'b0}};  r3_mask <= {NPHYS{1'b0}};  r4_mask <= {NPHYS{1'b0}};
+			r1_valid <= 1'b0; r2_valid <= 1'b0; r3_valid <= 1'b0; r4_valid <= 1'b0; r5_valid <= 1'b0;
+			r1_warp  <= {WARP_W{1'b0}}; r2_warp <= {WARP_W{1'b0}}; r3_warp <= {WARP_W{1'b0}}; r4_warp <= {WARP_W{1'b0}}; r5_warp <= {WARP_W{1'b0}};
+			r1_grp   <= {GRP_W{1'b0}};  r2_grp  <= {GRP_W{1'b0}};  r3_grp  <= {GRP_W{1'b0}};  r4_grp  <= {GRP_W{1'b0}};  r5_grp  <= {GRP_W{1'b0}};
+			r1_rd    <= 7'd0;           r2_rd   <= 7'd0;           r3_rd   <= 7'd0;           r4_rd   <= 7'd0;           r5_rd   <= 7'd0;
+			r1_mask  <= {NPHYS{1'b0}};  r2_mask <= {NPHYS{1'b0}};  r3_mask <= {NPHYS{1'b0}};  r4_mask <= {NPHYS{1'b0}};  r5_mask <= {NPHYS{1'b0}};
 			r1_sub   <= 3'd0;           r2_sub  <= 3'd0;           r3_sub  <= 3'd0;           r4_sub  <= 3'd0;
-			r1_xa    <= {DW{1'b0}};     r2_xa   <= {DW{1'b0}};     r3_xa   <= {DW{1'b0}};     r4_xa   <= {DW{1'b0}};
+			r1_xa    <= {DW{1'b0}};     r2_xa   <= {DW{1'b0}};     r3_xa   <= {DW{1'b0}};     r4_xa   <= {DW{1'b0}};     r5_xa   <= {DW{1'b0}};
 			r4_use_qa <= {(NPHYS*2){1'b0}};
 			r4_use_qb <= {(NPHYS*2){1'b0}};
 			r4_use_xa <= {(NPHYS*2){1'b0}};
+			r5_use_qa <= {(NPHYS*2){1'b0}};
+			r5_use_qb <= {(NPHYS*2){1'b0}};
+			r5_use_xa <= {(NPHYS*2){1'b0}};
 		end else begin
-			r1_valid <= r0_valid; r2_valid <= r1_valid; r3_valid <= r2_valid; r4_valid <= r3_valid;
-			r1_warp  <= r0_warp;  r2_warp  <= r1_warp;  r3_warp  <= r2_warp;  r4_warp  <= r3_warp;
-			r1_grp   <= r0_grp;   r2_grp   <= r1_grp;   r3_grp   <= r2_grp;   r4_grp   <= r3_grp;
-			r1_rd    <= r0_rd;    r2_rd    <= r1_rd;    r3_rd    <= r2_rd;    r4_rd    <= r3_rd;
-			r1_mask  <= r0_mask;  r2_mask  <= r1_mask;  r3_mask  <= r2_mask;  r4_mask  <= r3_mask;
+			r1_valid <= r0_valid; r2_valid <= r1_valid; r3_valid <= r2_valid; r4_valid <= r3_valid; r5_valid <= r4_valid;
+			r1_warp  <= r0_warp;  r2_warp  <= r1_warp;  r3_warp  <= r2_warp;  r4_warp  <= r3_warp;  r5_warp  <= r4_warp;
+			r1_grp   <= r0_grp;   r2_grp   <= r1_grp;   r3_grp   <= r2_grp;   r4_grp   <= r3_grp;   r5_grp   <= r4_grp;
+			r1_rd    <= r0_rd;    r2_rd    <= r1_rd;    r3_rd    <= r2_rd;    r4_rd    <= r3_rd;    r5_rd    <= r4_rd;
+			r1_mask  <= r0_mask;  r2_mask  <= r1_mask;  r3_mask  <= r2_mask;  r4_mask  <= r3_mask;  r5_mask  <= r4_mask;
 			r1_sub   <= r0_sub;   r2_sub   <= r1_sub;   r3_sub   <= r2_sub;   r4_sub   <= r3_sub;
 			for (qm = 0; qm < NPHYS; qm = qm + 1) begin
 				r1_xa[qm*32 +: 32] <= (r0_sub == 3'd2) ? r0_xa[(qm ^ 1)*32 +: 32] :
@@ -216,7 +219,10 @@ module atg_su_lane #(
 				r4_use_qb[qm*2 +: 2] <= {2{r3_valid && ((r3_sub == 3'd0 && (qm & 2) != 0) || (r3_sub == 3'd1 && (qm & 1) != 0))}};
 				r4_use_xa[qm*2 +: 2] <= {2{r3_valid && (r3_sub >= 3'd2)}};
 			end
-			r2_xa <= r1_xa; r3_xa <= r2_xa; r4_xa <= r3_xa;
+			r2_xa <= r1_xa; r3_xa <= r2_xa; r4_xa <= r3_xa; r5_xa <= r4_xa;
+			r5_use_qa <= r4_use_qa;
+			r5_use_qb <= r4_use_qb;
+			r5_use_xa <= r4_use_xa;
 		end
 	end
 
@@ -230,13 +236,13 @@ module atg_su_lane #(
 		for (gq = 0; gq < NPHYS / 4; gq = gq + 1) begin : g_qd
 			wire [31:0] qa, qb;
 			wire unused_qa_v, unused_qb_v;
-			am_fp_add #(.LAT(4)) u_qa (
+			am_fp_add #(.LAT(5)) u_qa (
 				.clk(clk), .rst_n(rst_n), .i_valid(1'b1),
 				.i_a(r0_qa_a[gq*32 +: 32]),
 				.i_b(r0_qa_b[gq*32 +: 32]), .i_sub(1'b1),
 				.o_valid(unused_qa_v), .o_r(qa)
 			);
-			am_fp_add #(.LAT(4)) u_qb (
+			am_fp_add #(.LAT(5)) u_qb (
 				.clk(clk), .rst_n(rst_n), .i_valid(1'b1),
 				.i_a(r0_qb_a[gq*32 +: 32]),
 				.i_b(r0_qb_b[gq*32 +: 32]), .i_sub(1'b1),
@@ -586,16 +592,9 @@ module atg_su_lane #(
 				                          pipe[0][kp*16 + 8 +: 8];
 			end
 
-			for (k = 2; k < SHORT_LAT - 1; k = k + 1)
+			for (k = 2; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= pipe[k-1];
 
-			pipe[SHORT_LAT-1][EW-1:DW] <= r4_valid ?
-				{1'b1, r4_warp, r4_grp, r4_rd, r4_mask} :
-				pipe[SHORT_LAT-2][EW-1:DW];
-			for (kp = 0; kp < NPHYS * 2; kp = kp + 1) begin
-				pipe[SHORT_LAT-1][kp*16 +: 16] <= r4_use_qa[kp] ? qa_all[kp*16 +: 16] :
-					(r4_use_qb[kp] ? qb_all[kp*16 +: 16] : pipe_fb[kp*16 +: 16]);
-			end
 			if (stage && x_last) begin
 				st <= S_EMIT;
 				e_cnt <= {GRP_W{1'b0}};
@@ -625,15 +624,24 @@ module atg_su_lane #(
 	end
 
 	wire [EW-1:0] o = pipe[SHORT_LAT-1];
-	assign s_valid = o[EW-1];
-	assign s_warp = o[EW-2 -: WARP_W];
-	assign s_grp = o[EW-2-WARP_W -: GRP_W];
-	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];
-	assign s_lanes = o[DW +: NPHYS];
-	assign s_data = o[DW-1:0];
+	assign s_valid = r5_valid ? 1'b1 : o[EW-1];
+	assign s_warp  = r5_valid ? r5_warp : o[EW-2 -: WARP_W];
+	assign s_grp   = r5_valid ? r5_grp : o[EW-2-WARP_W -: GRP_W];
+	assign s_rd    = r5_valid ? r5_rd : o[EW-2-WARP_W-GRP_W -: 7];
+	assign s_lanes = r5_valid ? r5_mask : o[DW +: NPHYS];
+
+	genvar g_sd;
+	generate
+		for (g_sd = 0; g_sd < NPHYS * 2; g_sd = g_sd + 1) begin : g_s_data
+			assign s_data[g_sd*16 +: 16] = r5_use_qa[g_sd] ? qa_all[g_sd*16 +: 16] :
+			                               r5_use_qb[g_sd] ? qb_all[g_sd*16 +: 16] :
+			                               r5_use_xa[g_sd] ? r5_xa[g_sd*16 +: 16]  :
+			                               o[g_sd*16 +: 16];
+		end
+	endgenerate
 
 	wire unused_ok = &{1'b0, x_sbe, x_pc, x_c, x_mask[2*NPHYS-1:NPHYS], x_info,
-		x_uop, sub[4:3], ex_g, (NWARPS != 0)};
+		x_uop, sub[4:3], ex_g, pipe_fb, (NWARPS != 0)};
 endmodule
 
 

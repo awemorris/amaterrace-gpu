@@ -379,42 +379,55 @@ module am_fpu_core #(
 			.bo(carry_unused1_neg)
 		);
 
+		wire cvsw1 = (s1_op == OP_FCVTSW);
+		wire cvswu1 = (s1_op == OP_FCVTSWU);
+		wire s1_s_val = cvsw1 ? s1_a[31] : cvswu1 ? 1'b0 : s1_xf[31];
+		wire [31:0] s1_in_n = cvsw1 ? (s1_a[31] ? s1_nega : s1_a) : cvswu1 ? s1_a : {7'd0, s1_n};
+		wire s1_fl_nan = (s1_xf[30:23] == 8'hFF && s1_xf[22:0] != 23'd0);
+		wire s1_fl_pass = (s1_xf[30:23] >= 8'd150 || s1_xf[30:23] == 8'd0);
+
 		/* --- Stage 2: Pipeline match & LOD/Shift (Register 2) --- */
 		reg [31:0] s2_a, s2_b, s2_c;
 		(* keep = "true", equivalent_register_removal = "no" *) reg [4:0]  s2_op;
 		(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  s2_rm;
 		reg        s2_sat;
 		reg [24:0] s2_n;
-		reg [31:0] s2_nega;
+		reg [31:0] s2_in_n;
+		reg        s2_s_val;
+		reg        s2_fl_nan_r;
+		reg        s2_fl_pass_r;
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
-				s2_a    <= 32'd0;
-				s2_b    <= 32'd0;
-				s2_c    <= 32'd0;
-				s2_op   <= 5'd0;
-				s2_rm   <= 3'd0;
-				s2_sat  <= 1'b0;
-				s2_n    <= 25'd0;
-				s2_nega <= 32'd0;
+				s2_a         <= 32'd0;
+				s2_b         <= 32'd0;
+				s2_c         <= 32'd0;
+				s2_op        <= 5'd0;
+				s2_rm        <= 3'd0;
+				s2_sat       <= 1'b0;
+				s2_n         <= 25'd0;
+				s2_in_n      <= 32'd0;
+				s2_s_val     <= 1'b0;
+				s2_fl_nan_r  <= 1'b0;
+				s2_fl_pass_r <= 1'b0;
 			end else if (en) begin
-				s2_a    <= s1_a;
-				s2_b    <= s1_b;
-				s2_c    <= s1_c;
-				s2_op   <= s1_op;
-				s2_rm   <= s1_rm;
-				s2_sat  <= s1_sat;
-				s2_n    <= s1_n;
-				s2_nega <= s1_nega;
+				s2_a         <= s1_a;
+				s2_b         <= s1_b;
+				s2_c         <= s1_c;
+				s2_op        <= s1_op;
+				s2_rm        <= s1_rm;
+				s2_sat       <= s1_sat;
+				s2_n         <= s1_n;
+				s2_in_n      <= s1_in_n;
+				s2_s_val     <= s1_s_val;
+				s2_fl_nan_r  <= s1_fl_nan;
+				s2_fl_pass_r <= s1_fl_pass;
 			end
 		end
 
 		/* Stage 2: i2f LOD and shift, f2i -> latched into Stage 3 */
 		wire [31:0] s2_xf = f_flush(s2_a);
-		wire cvsw2 = (s2_op == OP_FCVTSW);
-		wire cvswu2 = (s2_op == OP_FCVTSWU);
-		wire s2_s = cvsw2 ? s2_a[31] : cvswu2 ? 1'b0 : s2_xf[31];
-		wire [31:0] s2_in_n = cvsw2 ? (s2_a[31] ? s2_nega : s2_a) : cvswu2 ? s2_a : {7'd0, s2_n};
+		wire s2_s = s2_s_val;
 
 		wire [4:0] s2_msb;
 		wire s2_nz;
@@ -434,8 +447,8 @@ module am_fpu_core #(
 			.r(s2_ri)
 		);
 
-		wire s2_fl_nan = (s2_xf[30:23] == 8'hFF && s2_xf[22:0] != 23'd0);
-		wire s2_fl_pass = (s2_xf[30:23] >= 8'd150 || s2_xf[30:23] == 8'd0);
+		wire s2_fl_nan = s2_fl_nan_r;
+		wire s2_fl_pass = s2_fl_pass_r;
 		wire [31:0] s2_rint_rnd = {s2_s, s2_e[7:0], s2_w[30:8]};
 		wire [31:0] s2_rint_iv = !s2_nz ? {s2_s, 31'd0} : s2_rint_rnd;
 		wire [31:0] s2_rint_fl = s2_fl_nan ? 32'h7FC00000 : s2_fl_pass ? s2_xf : s2_rint_iv;

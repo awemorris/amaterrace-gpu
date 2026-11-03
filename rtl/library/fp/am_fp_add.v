@@ -188,7 +188,7 @@ module am_fp_add #(
 			assign o_r = o_r_comb;
 
 			wire unused_clk = &{1'b0, clk, v1_w, v2_w, v3_w};
-		end else begin : g_lat4
+		end else if (LAT == 4) begin : g_lat4
 			reg r_v1, r_sp1, r_sx1, r_sub1;
 			reg [31:0] r_spv1;
 			reg [7:0] r_ex1, r_d1;
@@ -274,6 +274,138 @@ module am_fp_add #(
 
 			assign o_valid = r_ovalid;
 			assign o_r     = r_or;
+		end else begin : g_lat5
+			reg r_v1, r_sp1, r_sx1, r_sub1;
+			reg [31:0] r_spv1;
+			reg [7:0] r_ex1, r_d1;
+			reg [23:0] r_mx1, r_my1;
+
+			always @(posedge clk) begin
+				r_v1   <= v1_w;
+				r_sp1  <= sp1_w;
+				r_spv1 <= spv1_w;
+				r_sx1  <= sx1_w;
+				r_sub1 <= sub1_w;
+				r_ex1  <= ex1_w;
+				r_mx1  <= mx1_w;
+				r_my1  <= my1_w;
+				r_d1   <= d1_w;
+			end
+
+			assign v1 = r_v1;
+			assign sp1 = r_sp1;
+			assign spv1 = r_spv1;
+			assign sx1 = r_sx1;
+			assign sub1 = r_sub1;
+			assign ex1 = r_ex1;
+			assign mx1 = r_mx1;
+			assign my1 = r_my1;
+			assign d1 = r_d1;
+
+			reg r_v2, r_sp2, r_sx2, r_sub2;
+			reg [31:0] r_spv2;
+			reg [7:0] r_ex2;
+			reg [26:0] r_px2, r_py2;
+
+			always @(posedge clk) begin
+				r_v2   <= v2_w;
+				r_sp2  <= sp2_w;
+				r_spv2 <= spv2_w;
+				r_sx2  <= sx2_w;
+				r_sub2 <= sub2_w;
+				r_ex2  <= ex2_w;
+				r_px2  <= px2_w;
+				r_py2  <= py2_w;
+			end
+
+			assign v2 = r_v2;
+			assign sp2 = r_sp2;
+			assign spv2 = r_spv2;
+			assign sx2 = r_sx2;
+			assign sub2 = r_sub2;
+			assign ex2 = r_ex2;
+			assign px2 = r_px2;
+			assign py2 = r_py2;
+
+			/* Stage 3: Add/Sub & Leading Zero Count */
+			reg r_v3, r_sp3, r_sx3, r_sz3;
+			reg [31:0] r_spv3;
+			reg [7:0] r_ex3;
+			reg [27:0] r_sum3;
+			reg [4:0] r_lz3;
+
+			always @(posedge clk) begin
+				r_v3   <= rst_n && r_v2;
+				r_sp3  <= r_sp2;
+				r_spv3 <= r_spv2;
+				r_sx3  <= r_sx2;
+				r_sz3  <= sz_comb;
+				r_ex3  <= r_ex2;
+				r_sum3 <= sum;
+				r_lz3  <= lz;
+			end
+
+			/* Stage 4: Normalise shift & exponent adjustment */
+			wire [26:0] nl5;
+			am_shift #(.W(27), .SW(5)) u_nl5 (.a(r_sum3[26:0]), .amt(r_lz3), .left(1'b1), .arith(1'b0), .y(nl5));
+			wire [26:0] n_comb5 = r_sum3[27] ? {r_sum3[27:2], r_sum3[1] | r_sum3[0]} : nl5;
+			wire [9:0] e0_comb5;
+			wire e0_co_unused5;
+			am_addsub #(.W(10)) u_e0_5 (.a({2'b00, r_ex3}), .b(r_sum3[27] ? 10'd1 : {5'd0, r_lz3}), .sub(!r_sum3[27]),
+				.s(e0_comb5), .co(e0_co_unused5));
+
+			reg r_v4, r_sp4, r_sx4, r_sz4;
+			reg [31:0] r_spv4;
+			reg [26:0] r_n4;
+			reg [9:0] r_e0_4;
+
+			always @(posedge clk) begin
+				r_v4   <= rst_n && r_v3;
+				r_sp4  <= r_sp3;
+				r_spv4 <= r_spv3;
+				r_sx4  <= r_sx3;
+				r_sz4  <= r_sz3;
+				r_n4   <= n_comb5;
+				r_e0_4 <= e0_comb5;
+			end
+
+			/* Stage 5: Round & pack */
+			wire inc5 = r_n4[2] && (r_n4[1] || r_n4[0] || r_n4[3]);
+			wire [24:0] m0_5;
+			wire m_co_unused5;
+			am_add #(.W(25)) u_m0_5 (.a({1'b0, r_n4[26:3]}), .b(25'd0), .ci(inc5), .s(m0_5), .co(m_co_unused5));
+			wire [24:0] m5 = m0_5[24] ? {1'b0, m0_5[24:1]} : m0_5;
+			wire [9:0] e5;
+			wire e_co_unused5;
+			am_add #(.W(10)) u_e_5 (.a(r_e0_4), .b(10'd0), .ci(m0_5[24]), .s(e5), .co(e_co_unused5));
+
+			wire [31:0] o_r_comb5 = r_sp4 ? r_spv4 :
+				r_sz4 ? 32'd0 :
+				(!e5[9] && e5 >= 10'd255) ? {r_sx4, 8'hFF, 23'd0} :
+				(e5[9] || e5 == 10'd0) ? {r_sx4, 31'd0} :
+				{r_sx4, e5[7:0], m5[22:0]};
+
+			reg r_ovalid5;
+			(* extract_reset = "no" *) reg [31:0] r_or5;
+
+			always @(posedge clk) begin
+				r_ovalid5 <= rst_n && r_v4;
+				r_or5     <= o_r_comb5;
+			end
+
+			assign o_valid = r_ovalid5;
+			assign o_r     = r_or5;
+
+			assign n3   = 27'd0;
+			assign e0_3 = 10'd0;
+			assign v3   = 1'b0;
+			assign sp3  = 1'b0;
+			assign spv3 = 32'd0;
+			assign sx3  = 1'b0;
+			assign sz3  = 1'b0;
+
+			wire unused_lat5 = &{1'b0, m5[24:23], e0_co_unused5, e_co_unused5, m_co_unused5,
+				n3_w, e0_3_w, o_valid_comb, o_r_comb, v3_w, sp3_w, spv3_w, sx3_w, sz3_w};
 		end
 	endgenerate
 endmodule
