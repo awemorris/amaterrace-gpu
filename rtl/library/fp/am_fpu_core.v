@@ -444,7 +444,7 @@ module am_fpu_core #(
 		wire [31:0] s2_w;
 		wire [11:0] s2_e;
 		wire carry_unused2_e;
-		am_shift #(.W(32), .SW(5)) u_w2 (.a(s2_in_n), .amt(~s2_msb), .left(1'b1), .arith(1'b0), .y(s2_w));
+		am_shift #(.W(32), .SW(5), .DIR(2)) u_w2 (.a(s2_in_n), .amt(~s2_msb), .left(1'b1), .arith(1'b0), .y(s2_w));
 		am_add #(.W(12)) u_e2 (.a({7'd0, s2_msb}), .b(12'd127), .ci(1'b0), .s(s2_e), .co(carry_unused2_e));
 
 		wire [4:0] s2_rint_msb;
@@ -993,7 +993,7 @@ module am_fpu_core #(
 		                     (s5_top_blk == 3'd1) ? win1 : win0;
 
 		wire [39:0] s5_win_shifted;
-		am_shift #(.W(40), .SW(4)) u_fma_nrm (
+		am_shift #(.W(40), .SW(4), .DIR(1)) u_fma_nrm (
 			.a(s5_win),
 			.amt(s5_sub_msb),
 			.left(1'b0),
