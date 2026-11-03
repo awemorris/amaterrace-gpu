@@ -435,17 +435,10 @@ module am_fpu_core #(
 		/* Stage 2: i2f LOD and shift, f2i -> latched into Stage 3 */
 		wire [31:0] s2_xf = f_flush(s2_a);
 		wire s2_s = s2_s_val;
-		wire [31:0] s2_in_n = s2_is_i2f ? s2_i2f_in : {7'd0, s2_n};
 
-		wire [4:0] s2_msb;
-		wire s2_nz;
-		am_msb #(.W(32), .SW(5)) u_msb2 (.a(s2_in_n), .n(s2_msb), .nz(s2_nz));
-
-		wire [31:0] s2_w;
-		wire [11:0] s2_e;
-		wire carry_unused2_e;
-		am_shift #(.W(32), .SW(5), .DIR(2)) u_w2 (.a(s2_in_n), .amt(~s2_msb), .left(1'b1), .arith(1'b0), .y(s2_w));
-		am_add #(.W(12)) u_e2 (.a({7'd0, s2_msb}), .b(12'd127), .ci(1'b0), .s(s2_e), .co(carry_unused2_e));
+		wire [4:0] s2_i2f_msb;
+		wire s2_i2f_nz;
+		am_msb #(.W(32), .SW(5)) u_msb_i2f (.a(s2_i2f_in), .n(s2_i2f_msb), .nz(s2_i2f_nz));
 
 		wire [4:0] s2_rint_msb;
 		wire s2_rint_nz;
@@ -453,6 +446,16 @@ module am_fpu_core #(
 		wire carry_unused2_rint_e;
 		am_msb #(.W(25), .SW(5)) u_msb_rint (.a(s2_n), .n(s2_rint_msb), .nz(s2_rint_nz));
 		am_add #(.W(12)) u_rint_e2 (.a({7'd0, s2_rint_msb}), .b(12'd127), .ci(1'b0), .s(s2_rint_e), .co(carry_unused2_rint_e));
+
+		wire [4:0] s2_msb = s2_is_i2f ? s2_i2f_msb : s2_rint_msb;
+		wire s2_nz = s2_is_i2f ? s2_i2f_nz : s2_rint_nz;
+
+		wire [31:0] s2_in_n = s2_is_i2f ? s2_i2f_in : {7'd0, s2_n};
+		wire [31:0] s2_w;
+		wire [11:0] s2_e;
+		wire carry_unused2_e;
+		am_shift #(.W(32), .SW(5), .DIR(2)) u_w2 (.a(s2_in_n), .amt(~s2_msb), .left(1'b1), .arith(1'b0), .y(s2_w));
+		am_add #(.W(12)) u_e2 (.a({7'd0, s2_msb}), .b(12'd127), .ci(1'b0), .s(s2_e), .co(carry_unused2_e));
 
 		wire [31:0] s3_ri;
 		am_fp_f2i #(.LAT(1)) u_f2i2 (
