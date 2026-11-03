@@ -447,6 +447,13 @@ module am_fpu_core #(
 		am_shift #(.W(32), .SW(5)) u_w2 (.a(s2_in_n), .amt(~s2_msb), .left(1'b1), .arith(1'b0), .y(s2_w));
 		am_add #(.W(12)) u_e2 (.a({7'd0, s2_msb}), .b(12'd127), .ci(1'b0), .s(s2_e), .co(carry_unused2_e));
 
+		wire [4:0] s2_rint_msb;
+		wire s2_rint_nz;
+		wire [11:0] s2_rint_e;
+		wire carry_unused2_rint_e;
+		am_msb #(.W(25), .SW(5)) u_msb_rint (.a(s2_n), .n(s2_rint_msb), .nz(s2_rint_nz));
+		am_add #(.W(12)) u_rint_e2 (.a({7'd0, s2_rint_msb}), .b(12'd127), .ci(1'b0), .s(s2_rint_e), .co(carry_unused2_rint_e));
+
 		wire [31:0] s3_ri;
 		am_fp_f2i #(.LAT(1)) u_f2i2 (
 			.clk(clk),
@@ -460,7 +467,7 @@ module am_fpu_core #(
 
 		wire s2_fl_nan = s2_fl_nan_r;
 		wire s2_fl_pass = s2_fl_pass_r;
-		wire [7:0]  s2_rint_exp = s2_fl_nan ? 8'hFF : s2_fl_pass ? s2_xf[30:23] : (!s2_nz ? 8'd0 : s2_e[7:0]);
+		wire [7:0]  s2_rint_exp = s2_fl_nan ? 8'hFF : s2_fl_pass ? s2_xf[30:23] : (!s2_rint_nz ? 8'd0 : s2_rint_e[7:0]);
 
 		/* Precompute FMA operands & exponents in Stage 2 -> latched into Stage 3 */
 		reg [31:0] s2_fx, s2_fy, s2_fz;
@@ -1187,7 +1194,7 @@ module am_fpu_core #(
 		wire        cur_flt = (LAT >= 5) ? s5_flt : s4_is_flt;
 
 		assign res = (LAT >= 6) ? cur_rs : ((cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs);
-		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused3_mr, carry_unused3_ep,
+		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused2_rint_e, carry_unused3_mr, carry_unused3_ep,
 			fma3_carry_unused, carry_unused_c_p, fma_carry_unused5, need_bo_unused, span_diff_unused,
 			s2_fma_sub_carry_unused, s2_fract_carry_unused,
 			s3_e_p1[11:8], pr_s4[65:64], s6_rnd_carry_unused, s6_mr[24:23], s6_m_p1[24], s5_win_shifted[39:25]};
