@@ -790,18 +790,22 @@ module am_fpu_core #(
 
 		/* Legacy FMA instance for LAT < 6 */
 		wire [31:0] fma_r;
-		am_fp_fma_p #(.LAT(LAT >= 5 ? 1 : 0)) u_fma4 (
-			.clk(clk),
-			.rst_n(rst_n),
-			.en(en),
-			.a0(s4_fx),
-			.b0(s4_fy),
-			.c0(s4_fz),
-			.rm(s4_rr),
-			.noc(s4_noc),
-			.p(pr_s4[47:0]),
-			.r(fma_r)
-		);
+		if (LAT < 6) begin : g_legacy_fma
+			am_fp_fma_p #(.LAT(LAT >= 5 ? 1 : 0)) u_fma4 (
+				.clk(clk),
+				.rst_n(rst_n),
+				.en(en),
+				.a0(s4_fx),
+				.b0(s4_fy),
+				.c0(s4_fz),
+				.rm(s4_rr),
+				.noc(s4_noc),
+				.p(pr_s4[47:0]),
+				.r(fma_r)
+			);
+		end else begin : g_no_legacy_fma
+			assign fma_r = 32'd0;
+		end
 
 		/* Stage 4: Speculative Parallel 77-bit add/sub (eliminates serial 77-bit comparator) */
 		wire [76:0] s4_pw = !s4_zc && s4_kbig ? {76'd0, 1'b1} : {27'd0, pr_s4[47:0], 2'b00};
