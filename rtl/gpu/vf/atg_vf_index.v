@@ -263,13 +263,17 @@ module atg_vf_index #(
 	endgenerate
 
 	/* Carry-free 27-bit equality checks: l0 == lend and rq_l == lend_m1 */
+	wire [26:0] l0_ext = {{(27-LA_W){1'b0}}, l0};
+	wire [26:0] lend_ext = {{(27-LA_W){1'b0}}, lend};
+	wire [26:0] rql_ext = {{(27-LA_W){1'b0}}, rq_l};
+	wire [26:0] lend_m1_ext = {{(27-LA_W){1'b0}}, lend_m1};
 	(* keep = "true" *) wire [8:0] l0_eq_c;
 	(* keep = "true" *) wire [8:0] rql_eq_c;
 	genvar ge;
 	generate
 		for (ge = 0; ge < 9; ge = ge + 1) begin : g_eq27
-			assign l0_eq_c[ge]  = (l0[3*ge +: 3]   == lend[3*ge +: 3]);
-			assign rql_eq_c[ge] = (rq_l[3*ge +: 3] == lend_m1[3*ge +: 3]);
+			assign l0_eq_c[ge]  = (l0_ext[3*ge +: 3]   == lend_ext[3*ge +: 3]);
+			assign rql_eq_c[ge] = (rql_ext[3*ge +: 3] == lend_m1_ext[3*ge +: 3]);
 		end
 	endgenerate
 	(* keep = "true" *) wire l0_eq_lo  = &l0_eq_c[4:0];
