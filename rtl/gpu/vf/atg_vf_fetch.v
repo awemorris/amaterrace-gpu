@@ -548,12 +548,15 @@ module atg_vf_fetch #(
 		for (gb = 0; gb < 8; gb = gb + 1) begin : g_stag_cmp
 			wire [LA_W-1:0] ref_l1 = (gb < 4) ? l1_r0 : l1_r1;
 			wire [LA_W-1:0] ref_l2 = (gb < 4) ? l2_r0 : l2_r1;
+			wire [26:0] cur_stag_ext = {{(27-LA_W){1'b0}}, cur_stag[gb]};
+			wire [26:0] ref_l1_ext = {{(27-LA_W){1'b0}}, ref_l1};
+			wire [26:0] ref_l2_ext = {{(27-LA_W){1'b0}}, ref_l2};
 			(* keep = "true" *) wire [8:0] c1_p;
 			(* keep = "true" *) wire [8:0] c2_p;
 			genvar gp;
 			for (gp = 0; gp < 9; gp = gp + 1) begin : g_p
-				assign c1_p[gp] = (cur_stag[gb][3*gp +: 3] == ref_l1[3*gp +: 3]);
-				assign c2_p[gp] = (cur_stag[gb][3*gp +: 3] == ref_l2[3*gp +: 3]);
+				assign c1_p[gp] = (cur_stag_ext[3*gp +: 3] == ref_l1_ext[3*gp +: 3]);
+				assign c2_p[gp] = (cur_stag_ext[3*gp +: 3] == ref_l2_ext[3*gp +: 3]);
 			end
 			(* keep = "true" *) wire m1_lo = &c1_p[4:0];
 			(* keep = "true" *) wire m1_hi = &c1_p[8:5];
