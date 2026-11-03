@@ -381,9 +381,9 @@ module am_fpu_core #(
 
 		wire cvsw1 = (s1_op == OP_FCVTSW);
 		wire cvswu1 = (s1_op == OP_FCVTSWU);
+		wire s1_is_i2f = cvsw1 || cvswu1;
 		wire s1_s_val = cvsw1 ? s1_a[31] : cvswu1 ? 1'b0 : s1_xf[31];
 		wire [31:0] s1_i2f_in = cvsw1 ? (s1_a[31] ? s1_nega : s1_a) : s1_a;
-		wire [31:0] s1_in_n = (cvsw1 || cvswu1) ? s1_i2f_in : {7'd0, s1_n};
 		wire s1_fl_nan = (s1_xf[30:23] == 8'hFF && s1_xf[22:0] != 23'd0);
 		wire s1_fl_pass = (s1_xf[30:23] >= 8'd150 || s1_xf[30:23] == 8'd0);
 
@@ -393,7 +393,8 @@ module am_fpu_core #(
 		(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  s2_rm;
 		reg        s2_sat;
 		reg [24:0] s2_n;
-		reg [31:0] s2_in_n;
+		reg [31:0] s2_i2f_in;
+		reg        s2_is_i2f;
 		reg        s2_s_val;
 		reg        s2_fl_nan_r;
 		reg        s2_fl_pass_r;
@@ -407,7 +408,8 @@ module am_fpu_core #(
 				s2_rm        <= 3'd0;
 				s2_sat       <= 1'b0;
 				s2_n         <= 25'd0;
-				s2_in_n      <= 32'd0;
+				s2_i2f_in    <= 32'd0;
+				s2_is_i2f    <= 1'b0;
 				s2_s_val     <= 1'b0;
 				s2_fl_nan_r  <= 1'b0;
 				s2_fl_pass_r <= 1'b0;
@@ -419,7 +421,8 @@ module am_fpu_core #(
 				s2_rm        <= s1_rm;
 				s2_sat       <= s1_sat;
 				s2_n         <= s1_n;
-				s2_in_n      <= s1_in_n;
+				s2_i2f_in    <= s1_i2f_in;
+				s2_is_i2f    <= s1_is_i2f;
 				s2_s_val     <= s1_s_val;
 				s2_fl_nan_r  <= s1_fl_nan;
 				s2_fl_pass_r <= s1_fl_pass;
@@ -429,6 +432,7 @@ module am_fpu_core #(
 		/* Stage 2: i2f LOD and shift, f2i -> latched into Stage 3 */
 		wire [31:0] s2_xf = f_flush(s2_a);
 		wire s2_s = s2_s_val;
+		wire [31:0] s2_in_n = s2_is_i2f ? s2_i2f_in : {7'd0, s2_n};
 
 		wire [4:0] s2_msb;
 		wire s2_nz;
@@ -450,9 +454,6 @@ module am_fpu_core #(
 
 		wire s2_fl_nan = s2_fl_nan_r;
 		wire s2_fl_pass = s2_fl_pass_r;
-		wire [31:0] s2_rint_rnd = {s2_s, s2_e[7:0], s2_w[30:8]};
-		wire [31:0] s2_rint_iv = !s2_nz ? {s2_s, 31'd0} : s2_rint_rnd;
-		wire [31:0] s2_rint_fl = s2_fl_nan ? 32'h7FC00000 : s2_fl_pass ? s2_xf : s2_rint_iv;
 		wire [7:0]  s2_rint_exp = s2_fl_nan ? 8'hFF : s2_fl_pass ? s2_xf[30:23] : (!s2_nz ? 8'd0 : s2_e[7:0]);
 
 		/* Precompute FMA operands & exponents in Stage 2 -> latched into Stage 3 */
@@ -545,7 +546,6 @@ module am_fpu_core #(
 		reg        s3_fl_nan;
 		reg        s3_fl_pass;
 		reg [31:0] s3_xf_val;
-		reg [31:0] s3_rint_fl;
 
 		/* Precomputed FMA operands latched into Stage 3 */
 		reg [31:0] s3_fx, s3_fy, s3_fz;
@@ -571,7 +571,6 @@ module am_fpu_core #(
 				s3_fl_nan     <= 1'b0;
 				s3_fl_pass    <= 1'b0;
 				s3_xf_val     <= 32'd0;
-				s3_rint_fl    <= 32'd0;
 				s3_fx         <= 32'd0;
 				s3_fy         <= 32'd0;
 				s3_fz         <= 32'd0;
@@ -602,7 +601,6 @@ module am_fpu_core #(
 				s3_fl_nan     <= s2_fl_nan;
 				s3_fl_pass    <= s2_fl_pass;
 				s3_xf_val     <= s2_xf;
-				s3_rint_fl    <= s2_rint_fl;
 				s3_fx         <= s2_fx;
 				s3_fy         <= s2_fy;
 				s3_fz         <= s2_fz;
@@ -659,6 +657,9 @@ module am_fpu_core #(
 		wire [31:0] s3_fl = s3_fl_nan ? 32'h7FC00000 : s3_fl_pass ? s3_xf_val : s3_iv;
 
 		/* --- Stage 3: FMA Alignment Precomputation for LAT >= 6 --- */
+		wire [31:0] s3_rint_rnd = {s3_s, s3_e[7:0], s3_w[30:8]};
+		wire [31:0] s3_rint_iv = !s3_nz ? {s3_s, 31'd0} : s3_rint_rnd;
+		wire [31:0] s3_rint_fl = s3_fl_nan ? 32'h7FC00000 : s3_fl_pass ? s3_xf_val : s3_rint_iv;
 		wire fract3 = (s3_op == OP_FRACT);
 		wire [31:0] s3_fract_c = {!s3_rint_fl[31], s3_rint_fl[30:0]};
 		wire [31:0] s3_fract_fma_c = s3_fract_c[30:23] == 8'd0 ? {s3_fract_c[31], 31'd0} : s3_fract_c;
