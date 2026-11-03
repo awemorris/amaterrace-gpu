@@ -93,7 +93,7 @@ module atg_su_fpu_op (
 	end
 	wire [31:0] fr, ri;
 	am_fp_fma_p #(.LAT(0)) u_fma (.clk(1'b0), .rst_n(1'b1), .en(1'b1), .a0(fx), .b0(fy), .c0(fz), .rm(rr), .noc(noc), .p(pr[47:0]), .r(fr));
-	am_fp_f2i #(.LAT(0)) u_f2i (.x(xf), .n(n), .uns(o == ATG_FPU_FCVTWUS[4:0]), .r(ri));
+	am_fp_f2i #(.LAT(0)) u_f2i (.clk(1'b0), .rst_n(1'b1), .en(1'b1), .x(xf), .n(n), .uns(o == ATG_FPU_FCVTWUS[4:0]), .r(ri));
 
 	wire fma = o <= ATG_FPU_FNMADD[4:0] || o == ATG_FPU_FRACT[4:0];
 	reg [31:0] rs;

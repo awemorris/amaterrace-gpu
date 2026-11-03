@@ -262,6 +262,9 @@ module am_fpu_core #(
 		);
 
 		am_fp_f2i #(.LAT(0)) u_f2i (
+			.clk(clk),
+			.rst_n(rst_n),
+			.en(en),
 			.x(xf),
 			.n(n),
 			.uns(op == OP_FCVTWUS),
@@ -444,12 +447,15 @@ module am_fpu_core #(
 		am_shift #(.W(32), .SW(5)) u_w2 (.a(s2_in_n), .amt(~s2_msb), .left(1'b1), .arith(1'b0), .y(s2_w));
 		am_add #(.W(12)) u_e2 (.a({7'd0, s2_msb}), .b(12'd127), .ci(1'b0), .s(s2_e), .co(carry_unused2_e));
 
-		wire [31:0] s2_ri;
-		am_fp_f2i #(.LAT(0)) u_f2i2 (
+		wire [31:0] s3_ri;
+		am_fp_f2i #(.LAT(1)) u_f2i2 (
+			.clk(clk),
+			.rst_n(rst_n),
+			.en(en),
 			.x(s2_xf),
 			.n(s2_n),
 			.uns(s2_op == OP_FCVTWUS),
-			.r(s2_ri)
+			.r(s3_ri)
 		);
 
 		wire s2_fl_nan = s2_fl_nan_r;
@@ -545,7 +551,6 @@ module am_fpu_core #(
 		reg [11:0] s3_e;
 		reg [31:0] s3_w;
 		reg        s3_nz;
-		reg [31:0] s3_ri;
 		reg        s3_fl_nan;
 		reg        s3_fl_pass;
 		reg [31:0] s3_xf_val;
@@ -571,7 +576,6 @@ module am_fpu_core #(
 				s3_e          <= 12'd0;
 				s3_w          <= 32'd0;
 				s3_nz         <= 1'b0;
-				s3_ri         <= 32'd0;
 				s3_fl_nan     <= 1'b0;
 				s3_fl_pass    <= 1'b0;
 				s3_xf_val     <= 32'd0;
@@ -602,7 +606,6 @@ module am_fpu_core #(
 				s3_e          <= s2_e;
 				s3_w          <= s2_w;
 				s3_nz         <= s2_nz;
-				s3_ri         <= s2_ri;
 				s3_fl_nan     <= s2_fl_nan;
 				s3_fl_pass    <= s2_fl_pass;
 				s3_xf_val     <= s2_xf;
