@@ -532,6 +532,9 @@ module am_fpu_core #(
 		wire [11:0] s2_sel_k    = s2_is_fract ? s2_fract_k    : s2_fma_k;
 		wire [11:0] s2_sel_kadj = s2_is_fract ? s2_fract_kadj : s2_fma_kadj;
 		wire [11:0] s2_sel_kp2  = s2_is_fract ? s2_fract_kp2  : s2_fma_kp2;
+		wire s2_fma_zc   = s2_noc || (s2_fz[30:23] == 8'd0);
+		wire s2_fract_zc = (s2_rint_exp == 8'd0);
+		wire s2_sel_zc   = s2_is_fract ? s2_fract_zc : s2_fma_zc;
 
 		/* --- Stage 3: Rounding, operand & other formation (Register 3) --- */
 		reg [31:0] s3_a, s3_b, s3_c;
@@ -554,6 +557,7 @@ module am_fpu_core #(
 		reg [31:0] s3_fma_a, s3_fma_b, s3_fma_c;
 		reg [11:0] s3_fma_ab, s3_fma_c150, s3_fma_c152, s3_fma_c101;
 		reg [11:0] s3_fma_k, s3_fma_kadj, s3_fma_kp2;
+		reg        s3_zc;
 
 		always @(posedge clk) begin
 			if (!rst_n) begin
@@ -586,6 +590,7 @@ module am_fpu_core #(
 				s3_fma_k      <= 12'd0;
 				s3_fma_kadj   <= 12'd0;
 				s3_fma_kp2    <= 12'd0;
+				s3_zc         <= 1'b0;
 			end else if (en) begin
 				s3_a          <= s2_a;
 				s3_b          <= s2_b;
@@ -616,6 +621,7 @@ module am_fpu_core #(
 				s3_fma_k      <= s2_sel_k;
 				s3_fma_kadj   <= s2_sel_kadj;
 				s3_fma_kp2    <= s2_sel_kp2;
+				s3_zc         <= s2_sel_zc;
 			end
 		end
 
@@ -667,7 +673,7 @@ module am_fpu_core #(
 		wire [31:0] fma3_b = s3_fma_b;
 		wire [31:0] fma3_c = fract3 ? s3_fract_fma_c : s3_fma_c;
 		wire fma3_sp = fma3_a[31] ^ fma3_b[31];
-		wire fma3_sc = fma3_c[31];
+		wire fma3_sc = fract3 ? !s3_s : fma3_c[31];
 		wire fma3_rdn = s3_rr == 3'd2 || s3_rr == 3'd6;
 		wire fma3_nan_a = fma3_a[30:23] == 8'hFF && fma3_a[22:0] != 0;
 		wire fma3_nan_b = fma3_b[30:23] == 8'hFF && fma3_b[22:0] != 0;
@@ -677,8 +683,10 @@ module am_fpu_core #(
 		wire fma3_inf_c = !s3_noc && fma3_c[30:23] == 8'hFF && fma3_c[22:0] == 0;
 		wire fma3_za = fma3_a[30:23] == 8'd0;
 		wire fma3_zb = fma3_b[30:23] == 8'd0;
-		wire fma3_zc = s3_noc || fma3_c[30:23] == 8'd0;
-		wire [23:0] fma3_mc = fma3_zc ? 24'd0 : {1'b1, fma3_c[22:0]};
+		wire fma3_zc = s3_zc;
+		wire [23:0] s3_fract_mc = (s3_fl_nan || s3_fl_pass) ? {1'b1, s3_xf_val[22:0]} : {1'b1, s3_w[30:8]};
+		wire [23:0] fma3_raw_mc = fract3 ? s3_fract_mc : {1'b1, s3_fma_c[22:0]};
+		wire [23:0] fma3_mc = fma3_zc ? 24'd0 : fma3_raw_mc;
 		wire [0:0] fma3_carry_unused;
 
 		wire [11:0] fma3_ab   = s3_fma_ab;
