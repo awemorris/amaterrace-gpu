@@ -983,7 +983,7 @@ module atg_su_exp #(
 			wire w_fs_bo_unused;
 			wire w_unused_ok = &{1'b0, w_fs_bo_unused};
 			am_sub #(.W(4)) u_w_ff_sh (.a(4'd14), .b(w_ff_f_exp), .bi(1'b0), .d(w_ff_sh_raw), .bo(w_fs_bo_unused));
-			am_shift #(.W(16), .SW(4)) u_w_ff_m (.a({1'b1, w_ff_f_sh[14:0]}), .amt(w_ff_sh), .left(1'b0), .arith(1'b0),
+			am_shift #(.W(16), .SW(4), .DIR(1)) u_w_ff_m (.a({1'b1, w_ff_f_sh[14:0]}), .amt(w_ff_sh), .left(1'b0), .arith(1'b0),
 				.y(w_ff_m));
 			(* dont_touch = "true" *) wire [15:0] w_fx_floor =
 				(w_ff_f_cmp[23] || w_ff_f_cmp[22:15] < 8'd127) ? 16'd0 :

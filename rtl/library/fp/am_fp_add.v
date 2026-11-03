@@ -71,7 +71,7 @@ module am_fp_add #(
 
 	wire [26:0] shi = {my1, 3'b000};
 	wire [26:0] shr;	/* (d1 < 27 where it is used) */
-	am_shift #(.W(27), .SW(5)) u_shr (.a(shi), .amt(d1[4:0]), .left(1'b0), .arith(1'b0),
+	am_shift #(.W(27), .SW(5), .DIR(1)) u_shr (.a(shi), .amt(d1[4:0]), .left(1'b0), .arith(1'b0),
 		.y(shr));
 	always @(*) begin
 		stk = 1'b0;
@@ -115,7 +115,7 @@ module am_fp_add #(
 	end
 
 	wire [26:0] nl;
-	am_shift #(.W(27), .SW(5)) u_nl (.a(sum[26:0]), .amt(lz), .left(1'b1), .arith(1'b0), .y(nl));
+	am_shift #(.W(27), .SW(5), .DIR(2)) u_nl (.a(sum[26:0]), .amt(lz), .left(1'b1), .arith(1'b0), .y(nl));
 	wire [26:0] n_comb = sum[27] ? {sum[27:2], sum[1] | sum[0]} : nl;
 	wire [9:0] e0_comb;
 	wire e0_co_unused;
@@ -347,7 +347,7 @@ module am_fp_add #(
 
 			/* Stage 4: Normalise shift & exponent adjustment */
 			wire [26:0] nl5;
-			am_shift #(.W(27), .SW(5)) u_nl5 (.a(r_sum3[26:0]), .amt(r_lz3), .left(1'b1), .arith(1'b0), .y(nl5));
+			am_shift #(.W(27), .SW(5), .DIR(2)) u_nl5 (.a(r_sum3[26:0]), .amt(r_lz3), .left(1'b1), .arith(1'b0), .y(nl5));
 			wire [26:0] n_comb5 = r_sum3[27] ? {r_sum3[27:2], r_sum3[1] | r_sum3[0]} : nl5;
 			wire [9:0] e0_comb5;
 			wire e0_co_unused5;

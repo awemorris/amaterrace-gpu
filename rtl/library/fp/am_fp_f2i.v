@@ -38,7 +38,7 @@ module am_fp_f2i #(
 	wire [31:0] mw;
 	wire [0:0] carry_unused_sh;
 	am_sub #(.W(5)) u_sh (.a(x[27:23]), .b(5'd22), .bi(1'b0), .d(sh), .bo(carry_unused_sh[0]));
-	am_shift #(.W(32), .SW(5)) u_mw (.a({8'd0, 1'b1, x[22:0]}), .amt(sh), .left(1'b1), .arith(1'b0), .y(mw));
+	am_shift #(.W(32), .SW(5), .DIR(2)) u_mw (.a({8'd0, 1'b1, x[22:0]}), .amt(sh), .left(1'b1), .arith(1'b0), .y(mw));
 	wire [31:0] mag = x[30:23] >= 8'd150 ? mw : {7'd0, n};
 
 	generate

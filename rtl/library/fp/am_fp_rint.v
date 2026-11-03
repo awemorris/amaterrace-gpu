@@ -36,7 +36,7 @@ module am_fp_rint #(
 	am_sub #(.W(8)) u_fm2 (.a(8'd148), .b(x[30:23]), .bi(1'b0), .d(fm2_w), .bo(carry_unused[2]));
 	wire [4:0] fm1 = fm1_w[4:0];
 	wire [4:0] fm2 = fm2_w[4:0];
-	am_shift #(.W(24), .SW(5)) u_q (.a(m), .amt(f[4:0]), .left(1'b0), .arith(1'b0), .y(q0));
+	am_shift #(.W(24), .SW(5), .DIR(1)) u_q (.a(m), .amt(f[4:0]), .left(1'b0), .arith(1'b0), .y(q0));
 	wire [23:0] q = f >= 8'd24 ? 24'd0 : q0;
 	wire g = f > 8'd24 ? 1'b0 : m[fm1];
 

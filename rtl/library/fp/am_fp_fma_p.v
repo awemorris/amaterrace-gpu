@@ -78,7 +78,7 @@ module am_fp_fma_p #(
 		.arith(1'b0), .y(cs));
 	/* the sticky bit: the bits of mc below rs */
 	wire [23:0] cmk;
-	am_shift #(.W(24), .SW(5)) u_cmk (.a(24'hFFFFFF), .amt(rs), .left(1'b1), .arith(1'b0), .y(cmk));
+	am_shift #(.W(24), .SW(5), .DIR(2)) u_cmk (.a(24'hFFFFFF), .amt(rs), .left(1'b1), .arith(1'b0), .y(cmk));
 	wire cst = |(mc & ~cmk);
 	wire [11:0] adj = !zc && kbig ? kadj : 12'd0;
 	wire [76:0] pw = !zc && kbig ? {76'd0, 1'b1} : {27'd0, p, 2'b00};
@@ -212,7 +212,7 @@ module am_fp_fma_p #(
 	wire [76:0] nrm;
 	wire [11:0] t1, t2, er;
 	am_sub #(.W(7)) u_nsh (.a(7'd76), .b(msb), .bi(1'b0), .d(nsh), .bo(carry_unused[9]));
-	am_shift #(.W(77), .SW(7)) u_nrm (.a(s1_sum), .amt(nsh), .left(1'b1), .arith(1'b0), .y(nrm));
+	am_shift #(.W(77), .SW(7), .DIR(2)) u_nrm (.a(s1_sum), .amt(nsh), .left(1'b1), .arith(1'b0), .y(nrm));
 	am_add #(.W(12)) u_t1 (.a(s1_ab), .b(s1_adj), .ci(1'b0), .s(t1), .co(carry_unused[10]));
 	am_add #(.W(12)) u_t2 (.a(t1), .b({5'd0, msb}), .ci(1'b0), .s(t2), .co(carry_unused[11]));
 	am_sub #(.W(12)) u_er (.a(t2), .b(12'd175), .bi(1'b0), .d(er), .bo(carry_unused[12]));

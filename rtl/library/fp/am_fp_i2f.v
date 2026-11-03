@@ -31,7 +31,7 @@ module am_fp_i2f #(
 	wire [31:0] w;
 	wire [11:0] e;
 	wire carry_unused;
-	am_shift #(.W(32), .SW(5)) u_w (.a(n), .amt(~msb), .left(1'b1), .arith(1'b0), .y(w));
+	am_shift #(.W(32), .SW(5), .DIR(2)) u_w (.a(n), .amt(~msb), .left(1'b1), .arith(1'b0), .y(w));
 	am_add #(.W(12)) u_e (.a({7'd0, msb}), .b(12'd127), .ci(1'b0), .s(e), .co(carry_unused));
 	wire [31:0] rnd;
 	am_fp_rnd #(.LAT(0)) u_rnd (.s(s), .e(e), .m(w[31:8]), .g(w[7]), .st(|w[6:0]), .rm(rm), .r(rnd));

@@ -49,7 +49,7 @@ module am_fp_fix2f #(
 				lz = TOP - b[4:0];
 	end
 
-	am_shift #(.W(W), .SW(5)) u_mn (.a(m), .amt(lz), .left(1'b1), .arith(1'b0), .y(mn));
+	am_shift #(.W(W), .SW(5), .DIR(2)) u_mn (.a(m), .amt(lz), .left(1'b1), .arith(1'b0), .y(mn));
 	am_sub #(.W(8)) u_e (.a(E0), .b({3'd0, lz}), .bi(1'b0), .d(e), .bo(e_bo_unused));
 
 	localparam PAD = 24 - W;

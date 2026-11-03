@@ -353,7 +353,7 @@ module atg_su_lane #(
 	wire [31:0] ex_g;
 	wire [GRP_W-1:0] e_cnt_next;
 	wire ec_co_unused;
-	am_shift #(.W(32), .SW(6)) u_ex_g (.a(s_ex), .amt(e_base[5:0]), .left(1'b0), .arith(1'b0),
+	am_shift #(.W(32), .SW(6), .DIR(1)) u_ex_g (.a(s_ex), .amt(e_base[5:0]), .left(1'b0), .arith(1'b0),
 		.y(ex_g));
 	wire unused_eb = &{1'b0, e_base[31:6]};
 	am_add #(.W(GRP_W)) u_e_cnt (.a(e_cnt), .b({GRP_W{1'b0}}), .ci(1'b1), .s(e_cnt_next),
