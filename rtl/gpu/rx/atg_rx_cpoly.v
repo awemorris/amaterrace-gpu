@@ -64,37 +64,37 @@ module atg_rx_cpoly (
 	reg [31:0] dd [0:9];	/* the distances */
 	reg [127:0] r_vd;	/* registered vertex {x, y, z, w} for S_DOP */
 	reg half;	/* the current polygon's half */
-	(* dont_touch = "true" *) reg [9:0] r_half_v;
-	(* dont_touch = "true" *) reg [13:0] r_half_w0;
-	(* dont_touch = "true" *) reg [13:0] r_half_w1;
-	(* dont_touch = "true" *) reg [13:0] r_half_d0;
-	(* dont_touch = "true" *) reg [13:0] r_half_d1;
+	reg [9:0] r_half_v;
+	reg [13:0] r_half_w0;
+	reg [13:0] r_half_w1;
+	reg [13:0] r_half_d0;
+	reg [13:0] r_half_d1;
 	(* max_fanout = 16 *) reg [3:0] n;	/* its vertex count */
 	(* max_fanout = 16 *) reg line;
 	(* max_fanout = 16 *) reg r_cut_end;
 	(* max_fanout = 16 *) reg [2:0] plane;
-	(* dont_touch = "true" *) reg [2:0] r_plane_a [0:7];
-	(* dont_touch = "true" *) reg [2:0] r_plane_b [0:7];
-	(* dont_touch = "true" *) reg [1:0] r_gy_c;
-	(* dont_touch = "true" *) reg [1:0] r_gy_sc;
-	(* dont_touch = "true" *) reg [1:0] r_gy_of;
+	reg [2:0] r_plane_a [0:7];
+	reg [2:0] r_plane_b [0:7];
+	reg [1:0] r_gy_c;
+	reg [1:0] r_gy_sc;
+	reg [1:0] r_gy_of;
 	(* max_fanout = 16 *) reg [3:0] i;	/* DIST: vertex */
-	(* dont_touch = "true", extract_reset = "no" *) reg [3:0] r_i_rep [0:3];
+	(* extract_reset = "no" *) reg [3:0] r_i_rep [0:3];
 	(* max_fanout = 16 *) reg [2:0] ph;	/* operation of a sequence */
-	(* dont_touch = "true", extract_reset = "no" *) reg [2:0] r_ph_a [0:7];
-	(* dont_touch = "true", extract_reset = "no" *) reg [2:0] r_ph_b [0:7];
-	(* dont_touch = "true", extract_reset = "no" *) reg [7:0] r_st_dop_a, r_st_dop_b;
-	(* dont_touch = "true", extract_reset = "no" *) reg [9:0] r_st_dop_dd_lo, r_st_dop_dd_hi;
-	(* dont_touch = "true", extract_reset = "no" *) reg r_st_dop_ins;
+	(* extract_reset = "no" *) reg [2:0] r_ph_a [0:7];
+	(* extract_reset = "no" *) reg [2:0] r_ph_b [0:7];
+	(* extract_reset = "no" *) reg [7:0] r_st_dop_a, r_st_dop_b;
+	(* extract_reset = "no" *) reg [9:0] r_st_dop_dd_lo, r_st_dop_dd_hi;
+	(* extract_reset = "no" *) reg r_st_dop_ins;
 	reg r_d_last;
 	reg [31:0] t0, t1;
 	reg [3:0] j, k, m;	/* CUT: start, edge, vertices written */
-	(* dont_touch = "true" *) reg [3:0] r_m_w0 [0:13];
-	(* dont_touch = "true" *) reg [3:0] r_m_w1 [0:13];
+	reg [3:0] r_m_w0 [0:13];
+	reg [3:0] r_m_w1 [0:13];
 	(* max_fanout = 16 *) reg [1:0] cdone;	/* CUT: edge k's vertex handled (1: copy p, 3: write isect) */
 	reg [9:0] r_ins;
 	(* extract_reset = "no" *) reg [9:0] r_ins_succ;
-	(* dont_touch = "true", extract_reset = "no" *) reg r_ins_pi, r_ins_pbp, r_ins_qi;
+	(* extract_reset = "no" *) reg r_ins_pi, r_ins_pbp, r_ins_qi;
 	(* extract_reset = "no" *) reg [3:0] r_nm1;
 	reg [223:0] r_pbp;
 	(* max_fanout = 16 *) reg dec_step;
@@ -102,14 +102,14 @@ module atg_rx_cpoly (
 	(* max_fanout = 16 *) reg r_all_in, r_none_in;
 	reg iop_rdy;
 	(* max_fanout = 16 *) reg [3:0] ia, ib;	/* the edge's inside and outside vertices */
-	(* dont_touch = "true", extract_reset = "no" *) reg [3:0] r_pi_rep [0:3];
-	(* dont_touch = "true" *) reg [3:0] r_ia_rep [0:3];
-	(* dont_touch = "true" *) reg [3:0] r_ib_rep [0:3];
-	(* dont_touch = "true" *) reg [3:0] r_ia_da [0:3];
-	(* dont_touch = "true" *) reg [3:0] r_ib_db [0:3];
+	(* extract_reset = "no" *) reg [3:0] r_pi_rep [0:3];
+	reg [3:0] r_ia_rep [0:3];
+	reg [3:0] r_ib_rep [0:3];
+	reg [3:0] r_ia_da [0:3];
+	reg [3:0] r_ib_db [0:3];
 	(* max_fanout = 16 *) reg [2:0] c;	/* ISECT: word */
-	(* dont_touch = "true" *) reg [2:0] r_c_va [0:3];
-	(* dont_touch = "true" *) reg [2:0] r_c_vb [0:3];
+	reg [2:0] r_c_va [0:3];
+	reg [2:0] r_c_vb [0:3];
 	reg [191:0] xi;
 	integer q, gs_idx;
 
@@ -214,58 +214,32 @@ module atg_rx_cpoly (
 	wire [3:0] rd_idx_l1 [0:3];
 	generate
 	for (gi_s = 0; gi_s < 4; gi_s = gi_s + 1) begin : g_idx_l1
-		for (gi_b = 0; gi_b < 4; gi_b = gi_b + 1) begin : g_b
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ld_l1 (.I0(ld_idx[gi_b]), .O(ld_idx_l1[gi_s][gi_b]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rd_l1 (.I0(rd_idx[gi_b]), .O(rd_idx_l1[gi_s][gi_b]));
-`else
-			assign ld_idx_l1[gi_s][gi_b] = ld_idx[gi_b];
-			assign rd_idx_l1[gi_s][gi_b] = rd_idx[gi_b];
-`endif
-		end
+		assign ld_idx_l1[gi_s] = ld_idx;
+		assign rd_idx_l1[gi_s] = rd_idx;
 	end
 
-	wire ld_we_0, ld_we_1;
-`ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ld_we0 (.I0(ld_we), .O(ld_we_0));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ld_we1 (.I0(ld_we), .O(ld_we_1));
-`else
-	assign ld_we_0 = ld_we;
-	assign ld_we_1 = ld_we;
-`endif
+	wire ld_we_0 = ld_we;
+	wire ld_we_1 = ld_we;
 
 	for (gi_s = 0; gi_s < 14; gi_s = gi_s + 1) begin : g_pb_slice
-		wire [3:0] ld_idx_w0, ld_idx_w1;
-		for (gi_b = 0; gi_b < 4; gi_b = gi_b + 1) begin : g_ldb
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ld0 (.I0(ld_idx_l1[gi_s / 4][gi_b]), .O(ld_idx_w0[gi_b]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ld1 (.I0(ld_idx_l1[gi_s / 4][gi_b]), .O(ld_idx_w1[gi_b]));
-`else
-			assign ld_idx_w0[gi_b] = ld_idx_l1[gi_s / 4][gi_b];
-			assign ld_idx_w1[gi_b] = ld_idx_l1[gi_s / 4][gi_b];
-`endif
-		end
+		wire [3:0] ld_idx_w0 = ld_idx_l1[gi_s / 4];
+		wire [3:0] ld_idx_w1 = ld_idx_l1[gi_s / 4];
 
-		(* dont_touch = "true" *) wire en_ld0  = !r_half_w0[gi_s] && (st == S_IDLE) && ld_we_0;
-		(* dont_touch = "true" *) wire en_cut0 =  r_half_w0[gi_s] && (st == S_CUT)  && cdone[0];
-		(* dont_touch = "true" *) wire en_ld1  =  r_half_w1[gi_s] && (st == S_IDLE) && ld_we_1;
-		(* dont_touch = "true" *) wire en_cut1 = !r_half_w1[gi_s] && (st == S_CUT)  && cdone[0];
+		wire en_ld0  = !r_half_w0[gi_s] && (st == S_IDLE) && ld_we_0;
+		wire en_cut0 =  r_half_w0[gi_s] && (st == S_CUT)  && cdone[0];
+		wire en_ld1  =  r_half_w1[gi_s] && (st == S_IDLE) && ld_we_1;
+		wire en_cut1 = !r_half_w1[gi_s] && (st == S_CUT)  && cdone[0];
 
-		(* dont_touch = "true" *) wire [15:0] wdata0 = r_half_d0[gi_s] ? r_pbp[16 * gi_s +: 16] : ld_data[16 * gi_s +: 16];
-		(* dont_touch = "true" *) wire [15:0] wdata1 = r_half_d1[gi_s] ? ld_data[16 * gi_s +: 16] : r_pbp[16 * gi_s +: 16];
+		wire [15:0] wdata0 = r_half_d0[gi_s] ? r_pbp[16 * gi_s +: 16] : ld_data[16 * gi_s +: 16];
+		wire [15:0] wdata1 = r_half_d1[gi_s] ? ld_data[16 * gi_s +: 16] : r_pbp[16 * gi_s +: 16];
 
 		for (gi_v = 0; gi_v < 10; gi_v = gi_v + 1) begin : g_vtx
-			wire half_rv;
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_hr (.I0(r_half_v[gi_v]), .O(half_rv));
-`else
-			assign half_rv = r_half_v[gi_v];
-`endif
+			wire half_rv = r_half_v[gi_v];
 			assign pb_cur[gi_s][gi_v] = half_rv ? pb1[gi_s][gi_v] : pb0[gi_s][gi_v];
 
-			(* dont_touch = "true" *) wire we0 = (en_ld0 && ld_idx_w0 == gi_v[3:0]) ||
+			wire we0 = (en_ld0 && ld_idx_w0 == gi_v[3:0]) ||
 				(en_cut0 && r_m_w0[gi_s] == gi_v[3:0]);
-			(* dont_touch = "true" *) wire we1 = (en_ld1 && ld_idx_w1 == gi_v[3:0]) ||
+			wire we1 = (en_ld1 && ld_idx_w1 == gi_v[3:0]) ||
 				(en_cut1 && r_m_w1[gi_s] == gi_v[3:0]);
 
 			always @(posedge clk) begin
@@ -286,26 +260,17 @@ module atg_rx_cpoly (
 	wire [3:0] i_b [0:31];
 	wire [223:0] pb_rd_data, pb_p_data, pb_va_data, pb_vb_data;
 	wire [127:0] pb_vd_data;
-	(* dont_touch = "true" *) wire [31:0] res, res_dd;
+	wire [31:0] res, res_dd;
 	wire [223:0] iw_full_w = {res, xi};
 
 	generate
 	for (gi_sub = 0; gi_sub < 56; gi_sub = gi_sub + 1) begin : g_pb_read
 		localparam integer SL = gi_sub / 4;
 		localparam integer OF = (gi_sub % 4) * 4;
-		for (gi_b = 0; gi_b < 4; gi_b = gi_b + 1) begin : g_rb
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rd (.I0(rd_idx_l1[gi_sub / 14][gi_b]), .O(rd_idx_b[gi_sub][gi_b]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_pi (.I0(r_pi_rep[gi_sub / 14][gi_b]),  .O(pi_b[gi_sub][gi_b]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ia (.I0(r_ia_rep[gi_sub / 14][gi_b]),  .O(ia_b[gi_sub][gi_b]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ib (.I0(r_ib_rep[gi_sub / 14][gi_b]),  .O(ib_b[gi_sub][gi_b]));
-`else
-			assign rd_idx_b[gi_sub][gi_b] = rd_idx_l1[gi_sub / 14][gi_b];
-			assign pi_b[gi_sub][gi_b]     = r_pi_rep[gi_sub / 14][gi_b];
-			assign ia_b[gi_sub][gi_b]     = r_ia_rep[gi_sub / 14][gi_b];
-			assign ib_b[gi_sub][gi_b]     = r_ib_rep[gi_sub / 14][gi_b];
-`endif
-		end
+		assign rd_idx_b[gi_sub] = rd_idx_l1[gi_sub / 14];
+		assign pi_b[gi_sub]     = r_pi_rep[gi_sub / 14];
+		assign ia_b[gi_sub]     = r_ia_rep[gi_sub / 14];
+		assign ib_b[gi_sub]     = r_ib_rep[gi_sub / 14];
 
 		assign pb_rd_data[4 * gi_sub +: 4] = pb_cur[SL][rd_idx_b[gi_sub]][OF +: 4];
 		assign pb_va_data[4 * gi_sub +: 4] = pb_cur[SL][ia_b[gi_sub]][OF +: 4];
@@ -329,13 +294,7 @@ module atg_rx_cpoly (
 	for (gi_sub = 0; gi_sub < 32; gi_sub = gi_sub + 1) begin : g_vd_read
 		localparam integer SL = gi_sub / 4;
 		localparam integer OF = (gi_sub % 4) * 4;
-		for (gi_b = 0; gi_b < 4; gi_b = gi_b + 1) begin : g_vb
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_i (.I0(r_i_rep[gi_sub / 8][gi_b]), .O(i_b[gi_sub][gi_b]));
-`else
-			assign i_b[gi_sub][gi_b] = r_i_rep[gi_sub / 8][gi_b];
-`endif
-		end
+		assign i_b[gi_sub] = r_i_rep[gi_sub / 8];
 		assign pb_vd_data[4 * gi_sub +: 4] = pb_cur[SL][i_b[gi_sub]][OF +: 4];
 	end
 	endgenerate
@@ -457,43 +416,19 @@ module atg_rx_cpoly (
 		.i_b(r_op_b), .i_sub(r_op_sub), .o_valid(fa_o), .o_r(fa_r));
 	atg_rx_fmul #(.LAT(4)) fmul (.clk(clk), .rst_n(rst_n), .i_valid(r_fm_v), .i_a(r_op_a),
 		.i_b(r_op_b), .o_valid(fm_o), .o_r(fm_r));
-	atg_rx_fdiv fdiv (.clk(clk), .rst_n(rst_n), .i_start(r_fd_v), .i_a(r_op_a),
+	am_fp_div fdiv (.clk(clk), .rst_n(rst_n), .i_start(r_fd_v), .i_a(r_op_a),
 		.i_b(r_op_b), .busy(fd_busy), .o_done(fd_o), .o_r(fd_r));
 
 	wire res_v_raw = fa_o || fm_o || fd_o;
-	wire [6:0] res_v_b;
-	wire [2:0] cmd_valid_b;
-	generate
-	for (gi_b = 0; gi_b < 7; gi_b = gi_b + 1) begin : g_res_vb
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rv (.I0(res_v_raw), .O(res_v_b[gi_b]));
-`else
-		assign res_v_b[gi_b] = res_v_raw;
-`endif
-	end
-	for (gi_b = 0; gi_b < 3; gi_b = gi_b + 1) begin : g_cmd_vb
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_cv (.I0(cmd_valid), .O(cmd_valid_b[gi_b]));
-`else
-		assign cmd_valid_b[gi_b] = cmd_valid;
-`endif
-	end
-	endgenerate
+	wire [6:0] res_v_b = {7{res_v_raw}};
+	wire [2:0] cmd_valid_b = {3{cmd_valid}};
 
 	generate
 	for (gi_s = 0; gi_s < 2; gi_s = gi_s + 1) begin : g_res_mux
-		wire fa_s, fm_s, fa_d, fm_d;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fa  (.I0(fa_o), .O(fa_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fm  (.I0(fm_o), .O(fm_s));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fad (.I0(fa_o), .O(fa_d));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fmd (.I0(fm_o), .O(fm_d));
-`else
-		assign fa_s = fa_o;
-		assign fm_s = fm_o;
-		assign fa_d = fa_o;
-		assign fm_d = fm_o;
-`endif
+		wire fa_s = fa_o;
+		wire fm_s = fm_o;
+		wire fa_d = fa_o;
+		wire fm_d = fm_o;
 		assign res[16 * gi_s +: 16] = fa_s ? fa_r[16 * gi_s +: 16] :
 			fm_s ? fm_r[16 * gi_s +: 16] : fd_r[16 * gi_s +: 16];
 		assign res_dd[16 * gi_s +: 16] = fa_d ? fa_r[16 * gi_s +: 16] :
@@ -508,50 +443,28 @@ module atg_rx_cpoly (
 
 	/* Split clock enables for 32-bit, 128-bit, and 224-bit datapath registers (max 16 FFs per CE) */
 	wire op_we_raw = ((st == S_DOP) && (plane != 3'd1)) || ((st == S_IOP) && iop_rdy);
-	wire opa_we_lo, opa_we_hi, opb_we_lo, opb_we_hi;
+	wire opa_we_lo = op_we_raw;
+	wire opa_we_hi = op_we_raw;
+	wire opb_we_lo = op_we_raw;
+	wire opb_we_hi = op_we_raw;
 	wire op_we_sub = op_we_raw;
-`ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_opa_lo (.I0(op_we_raw), .O(opa_we_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_opa_hi (.I0(op_we_raw), .O(opa_we_hi));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_opb_lo (.I0(op_we_raw), .O(opb_we_lo));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_opb_hi (.I0(op_we_raw), .O(opb_we_hi));
-`else
-	assign opa_we_lo = op_we_raw;
-	assign opa_we_hi = op_we_raw;
-	assign opb_we_lo = op_we_raw;
-	assign opb_we_hi = op_we_raw;
-`endif
 
 	(* keep = "true" *) wire t0_en = ((st == S_DW) && !r_d_last && (ph == 3'd0 || ph == 3'd2)) ||
 		((st == S_IW) && (ph == 3'd0 || ph == 3'd2 || ph == 3'd3));
 	(* keep = "true" *) wire t1_en = ((st == S_DW) && !r_d_last && !(ph == 3'd0 || ph == 3'd2)) ||
 		((st == S_IW) && (ph == 3'd1));
-	wire t0_we_lo, t0_we_hi, t1_we_lo, t1_we_hi;
-`ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT2 #(.INIT(4'h8)) u_t0_lo (.I0(t0_en), .I1(res_v_b[0]), .O(t0_we_lo));
-	(* dont_touch = "true" *) LUT2 #(.INIT(4'h8)) u_t0_hi (.I0(t0_en), .I1(res_v_b[0]), .O(t0_we_hi));
-	(* dont_touch = "true" *) LUT2 #(.INIT(4'h8)) u_t1_lo (.I0(t1_en), .I1(res_v_b[0]), .O(t1_we_lo));
-	(* dont_touch = "true" *) LUT2 #(.INIT(4'h8)) u_t1_hi (.I0(t1_en), .I1(res_v_b[0]), .O(t1_we_hi));
-`else
-	assign t0_we_lo = t0_en && res_v_b[0];
-	assign t0_we_hi = t0_en && res_v_b[0];
-	assign t1_we_lo = t1_en && res_v_b[0];
-	assign t1_we_hi = t1_en && res_v_b[0];
-`endif
+	wire t0_we_lo = t0_en && res_v_b[0];
+	wire t0_we_hi = t0_en && res_v_b[0];
+	wire t1_we_lo = t1_en && res_v_b[0];
+	wire t1_we_hi = t1_en && res_v_b[0];
 
 	wire vd_we_raw  = (st == S_DFETCH);
 	wire vab_we_raw = (st == S_IOP) && iop_rdy && (ph == 3'd0);
 	(* keep = "true" *) wire pbp_cut_en = (st == S_CUT) && !cdone[0] && !r_cut_end && (cdone == 2'd0);
 	(* keep = "true" *) wire pbp_iw_en  = (st == S_IW) && (ph == 3'd4) && (c == 3'd6);
 
-	wire vab_we_l1_a, vab_we_l1_b;
-`ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_vab_l1_a  (.I0(vab_we_raw), .O(vab_we_l1_a));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_vab_l1_b  (.I0(vab_we_raw), .O(vab_we_l1_b));
-`else
-	assign vab_we_l1_a = vab_we_raw;
-	assign vab_we_l1_b = vab_we_raw;
-`endif
+	wire vab_we_l1_a = vab_we_raw;
+	wire vab_we_l1_b = vab_we_raw;
 
 	/* 2-LUT explicit tree for cin(fa_r) and cin(r_vd[95:64]) + 1-LUT mux into r_ins (<= 3-4 LUTs total) */
 	(* keep = "true" *) wire fa_m0 = (&fa_r[30:29]) && (fa_r[3:0]   != 4'd0);
@@ -578,16 +491,11 @@ module atg_rx_cpoly (
 	(* keep = "true" *) wire vd_bad0 = vd_ef && (vd_m0 || vd_m1 || vd_m2 || vd_m3 || vd_m4);
 	(* keep = "true" *) wire vd_bad1 = (vd_ef && vd_m5) || vd_nh || vd_nl;
 
-	(* dont_touch = "true" *) wire ins_wdata = r_st_dop_ins ? (!vd_bad0 && !vd_bad1) : (!fa_bad0 && !fa_bad1);
+	wire ins_wdata = r_st_dop_ins ? (!vd_bad0 && !vd_bad1) : (!fa_bad0 && !fa_bad1);
 
 	generate
 	for (gi_s = 0; gi_s < 8; gi_s = gi_s + 1) begin : g_vd_reg
-		wire vd_we;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_vd_we (.I0(vd_we_raw), .O(vd_we));
-`else
-		assign vd_we = vd_we_raw;
-`endif
+		wire vd_we = vd_we_raw;
 		always @(posedge clk) begin
 			if (vd_we)
 				r_vd[16 * gi_s +: 16] <= pb_vd_data[16 * gi_s +: 16];
@@ -598,9 +506,9 @@ module atg_rx_cpoly (
 		wire sel_dop_hi = r_st_dop_dd_hi[gi_v];
 		(* keep = "true" *) wire dd_dop = (st == S_DOP) && (plane == 3'd1) && (i == gi_v[3:0]);
 		(* keep = "true" *) wire dd_dw  = (st == S_DW)  && r_d_last        && (i == gi_v[3:0]);
-		(* dont_touch = "true" *) wire dd_we_lo = dd_dop || (dd_dw && res_v_b[0]);
-		(* dont_touch = "true" *) wire dd_we_hi = dd_dop || (dd_dw && res_v_b[1]);
-		(* dont_touch = "true" *) wire ins_we   = dd_dop || (dd_dw && res_v_b[4]);
+		wire dd_we_lo = dd_dop || (dd_dw && res_v_b[0]);
+		wire dd_we_hi = dd_dop || (dd_dw && res_v_b[1]);
+		wire ins_we   = dd_dop || (dd_dw && res_v_b[4]);
 		always @(posedge clk) begin
 			if (dd_we_lo)
 				dd[gi_v][15:0] <= sel_dop_lo ? r_vd[79:64] : res_dd[15:0];
@@ -614,14 +522,8 @@ module atg_rx_cpoly (
 	end
 	for (gi_v = 0; gi_v < 6; gi_v = gi_v + 1) begin : g_xi_reg
 		(* keep = "true" *) wire xi_en = (st == S_IW) && (ph == 3'd4) && (c == gi_v[2:0]);
-		wire xi_we_lo, xi_we_hi;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT2 #(.INIT(4'h8)) u_xi_lo (.I0(xi_en), .I1(res_v_b[2]), .O(xi_we_lo));
-		(* dont_touch = "true" *) LUT2 #(.INIT(4'h8)) u_xi_hi (.I0(xi_en), .I1(res_v_b[2]), .O(xi_we_hi));
-`else
-		assign xi_we_lo = xi_en && res_v_b[2];
-		assign xi_we_hi = xi_en && res_v_b[2];
-`endif
+		wire xi_we_lo = xi_en && res_v_b[2];
+		wire xi_we_hi = xi_en && res_v_b[2];
 		always @(posedge clk) begin
 			if (xi_we_lo)
 				xi[32 * gi_v +: 16] <= res[15:0];
@@ -630,16 +532,9 @@ module atg_rx_cpoly (
 		end
 	end
 	for (gi_s = 0; gi_s < 14; gi_s = gi_s + 1) begin : g_wide_regs
-		wire va_we, vb_we, pbp_we;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2))    u_va_we (.I0(vab_we_l1_a), .O(va_we));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2))    u_vb_we (.I0(vab_we_l1_b), .O(vb_we));
-		(* dont_touch = "true" *) LUT4 #(.INIT(16'hF888)) u_pb_we (.I0(r_ins_pbp), .I1(pbp_cut_en), .I2(res_v_b[3]), .I3(pbp_iw_en), .O(pbp_we));
-`else
-		assign va_we  = vab_we_l1_a;
-		assign vb_we  = vab_we_l1_b;
-		assign pbp_we = (pbp_cut_en && r_ins_pbp) || (pbp_iw_en && res_v_b[3]);
-`endif
+		wire va_we  = vab_we_l1_a;
+		wire vb_we  = vab_we_l1_b;
+		wire pbp_we = (pbp_cut_en && r_ins_pbp) || (pbp_iw_en && res_v_b[3]);
 
 		always @(posedge clk) begin
 			if (va_we)
@@ -653,23 +548,13 @@ module atg_rx_cpoly (
 	endgenerate
 
 	/* Single-cycle shadow copies (CE = 1, R = 0 -> zero control fanout, fanout <= 14) */
-	(* dont_touch = "true" *) wire nh_v  = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
-	(* dont_touch = "true" *) wire nh_w0 = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
-	(* dont_touch = "true" *) wire nh_w1 = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
-	(* dont_touch = "true" *) wire nh_d0 = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
-	(* dont_touch = "true" *) wire nh_d1 = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
-	wire [3:0] m_b0, m_b1;
-	generate
-	for (gi_b = 0; gi_b < 4; gi_b = gi_b + 1) begin : g_mbuf
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_mb0 (.I0(m[gi_b]), .O(m_b0[gi_b]));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_mb1 (.I0(m[gi_b]), .O(m_b1[gi_b]));
-`else
-		assign m_b0[gi_b] = m[gi_b];
-		assign m_b1[gi_b] = m[gi_b];
-`endif
-	end
-	endgenerate
+	wire nh_v  = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
+	wire nh_w0 = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
+	wire nh_w1 = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
+	wire nh_d0 = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
+	wire nh_d1 = rst_sync ? 1'b0 : ((st == S_CUT && !cdone[0] && r_cut_end) ? !half : half);
+	wire [3:0] m_b0 = m;
+	wire [3:0] m_b1 = m;
 
 	/* Unconditional shadow copies (CE = 1, R = 0 -> zero CE fanout, <= 3 LUT levels) */
 	wire [3:0] pi_nxt = (st == S_DEC) ? r_jsel :
@@ -683,10 +568,10 @@ module atg_rx_cpoly (
 	wire [2:0] ph_nxt = (st == S_IDLE || st == S_CUT) ? 3'd0 :
 		((st == S_DW && res_v_b[5]) ? (r_d_last ? 3'd0 : ph1) :
 		((st == S_IW && res_v_b[5]) ? (ph == 3'd4 ? 3'd2 : ph1) : ph));
-	(* dont_touch = "true" *) wire st_dop_nxt_a = !rst_sync && ((st == S_DFETCH) || (st == S_DW && res_v_b[5] && !r_d_last));
-	(* dont_touch = "true" *) wire st_dop_nxt_b = !rst_sync && ((st == S_DFETCH) || (st == S_DW && res_v_b[5] && !r_d_last));
-	(* dont_touch = "true" *) wire st_dop_nxt_c = !rst_sync && ((st == S_DFETCH) || (st == S_DW && res_v_b[5] && !r_d_last));
-	(* dont_touch = "true" *) wire st_dop_nxt_d = !rst_sync && ((st == S_DFETCH) || (st == S_DW && res_v_b[5] && !r_d_last));
+	wire st_dop_nxt_a = !rst_sync && ((st == S_DFETCH) || (st == S_DW && res_v_b[5] && !r_d_last));
+	wire st_dop_nxt_b = !rst_sync && ((st == S_DFETCH) || (st == S_DW && res_v_b[5] && !r_d_last));
+	wire st_dop_nxt_c = !rst_sync && ((st == S_DFETCH) || (st == S_DW && res_v_b[5] && !r_d_last));
+	wire st_dop_nxt_d = !rst_sync && ((st == S_DFETCH) || (st == S_DW && res_v_b[5] && !r_d_last));
 
 	always @(posedge clk) begin
 		r_nm1          <= nm1;
