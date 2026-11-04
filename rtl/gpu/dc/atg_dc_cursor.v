@@ -100,14 +100,9 @@ module atg_dc_cursor #(
 	assign req_tag = 8'd0;
 
 `ifdef SYNTH_KINTEX7
-	(* keep = "true" *) wire cur_rst_high;
-	LUT1 #(.INIT(2'b01)) u_cur_rst (.I0(rst_n), .O(cur_rst_high));
-	wire rst_high = cur_rst_high;
-
-	(* keep = "true" *) wire pipe_clr_rst_lo, pipe_clr_rst_hi;
-	LUT3 #(.INIT(8'hFE)) u_buf_pclr_l (.I0(cur_rst_high), .I1(frame_start), .I2(!enable), .O(pipe_clr_rst_lo));
-	LUT3 #(.INIT(8'hFE)) u_buf_pclr_h (.I0(cur_rst_high), .I1(frame_start), .I2(!enable), .O(pipe_clr_rst_hi));
-	(* keep = "true" *) wire pipe_clr_rst = pipe_clr_rst_lo;
+	wire rst_high = !rst_n;
+	(* keep = "true" *) wire pipe_clr_rst = rst_high || frame_start || !enable;
+	wire pipe_clr_rst_lo = pipe_clr_rst, pipe_clr_rst_hi = pipe_clr_rst;
 `else
 	wire rst_high = !rst_n;
 	(* keep = "true" *) wire pipe_clr_rst = rst_high || frame_start || !enable;
@@ -179,19 +174,15 @@ module atg_dc_cursor #(
 	localparam NUM_FF_SLICES = LW / 16;
 `ifdef SYNTH_KINTEX7
 	localparam NUM_FF_GROUPS = NUM_FF_SLICES;
-	wire [NUM_FF_GROUPS-1:0] ff_push_grp;
+	wire [NUM_FF_GROUPS-1:0] ff_push_grp = {NUM_FF_GROUPS{ff_push}};
 	wire [1:0] ff_wp_grp [0:NUM_FF_GROUPS-1];
 	wire [1:0] ff_rp_grp [0:NUM_FF_GROUPS-1];
-	wire [NUM_FF_GROUPS-1:0] ff_err_grp;
+	wire [NUM_FF_GROUPS-1:0] ff_err_grp = {NUM_FF_GROUPS{rsp_error}};
 	genvar gfg;
 	generate
 		for (gfg = 0; gfg < NUM_FF_GROUPS; gfg = gfg + 1) begin : g_ff_buf
-			LUT1 #(.INIT(2'b10)) u_buf_push (.I0(ff_push), .O(ff_push_grp[gfg]));
-			LUT1 #(.INIT(2'b10)) u_buf_wp0 (.I0(ff_wp[0]), .O(ff_wp_grp[gfg][0]));
-			LUT1 #(.INIT(2'b10)) u_buf_wp1 (.I0(ff_wp[1]), .O(ff_wp_grp[gfg][1]));
-			LUT1 #(.INIT(2'b10)) u_buf_rp0 (.I0(ff_rp[0]), .O(ff_rp_grp[gfg][0]));
-			LUT1 #(.INIT(2'b10)) u_buf_rp1 (.I0(ff_rp[1]), .O(ff_rp_grp[gfg][1]));
-			LUT1 #(.INIT(2'b10)) u_buf_err (.I0(rsp_error), .O(ff_err_grp[gfg]));
+			assign ff_wp_grp[gfg] = ff_wp;
+			assign ff_rp_grp[gfg] = ff_rp;
 		end
 	endgenerate
 `endif
@@ -274,8 +265,8 @@ module atg_dc_cursor #(
 	wire pend_base_en = flip_valid && !stop;
 	wire pend_base_en_lo, pend_base_en_hi;
 `ifdef SYNTH_KINTEX7
-	LUT1 #(.INIT(2'b10)) u_buf_pbe_l (.I0(pend_base_en), .O(pend_base_en_lo));
-	LUT1 #(.INIT(2'b10)) u_buf_pbe_h (.I0(pend_base_en), .O(pend_base_en_hi));
+	assign pend_base_en_lo = pend_base_en;
+	assign pend_base_en_hi = pend_base_en;
 `else
 	assign pend_base_en_lo = pend_base_en;
 	assign pend_base_en_hi = pend_base_en;
@@ -298,8 +289,8 @@ module atg_dc_cursor #(
 	wire cur_base_en = (st == S_READY) && !stop && frame_start;
 	wire cur_base_en_lo, cur_base_en_hi;
 `ifdef SYNTH_KINTEX7
-	LUT1 #(.INIT(2'b10)) u_buf_cbe_l (.I0(cur_base_en), .O(cur_base_en_lo));
-	LUT1 #(.INIT(2'b10)) u_buf_cbe_h (.I0(cur_base_en), .O(cur_base_en_hi));
+	assign cur_base_en_lo = cur_base_en;
+	assign cur_base_en_hi = cur_base_en;
 `else
 	assign cur_base_en_lo = cur_base_en;
 	assign cur_base_en_hi = cur_base_en;
@@ -322,8 +313,8 @@ module atg_dc_cursor #(
 	wire req_line_en = (st == S_LOAD) && !stop && (!req_valid && rq_n != NLINES && used < 3'd4);
 	wire req_line_en_lo, req_line_en_hi;
 `ifdef SYNTH_KINTEX7
-	LUT1 #(.INIT(2'b10)) u_buf_rle_l (.I0(req_line_en), .O(req_line_en_lo));
-	LUT1 #(.INIT(2'b10)) u_buf_rle_h (.I0(req_line_en), .O(req_line_en_hi));
+	assign req_line_en_lo = req_line_en;
+	assign req_line_en_hi = req_line_en;
 `else
 	assign req_line_en_lo = req_line_en;
 	assign req_line_en_hi = req_line_en;
@@ -449,11 +440,7 @@ module atg_dc_cursor #(
 	assign i_ready = pipe_en;
 
 `ifdef SYNTH_KINTEX7
-	(* keep = "true" *) wire skid_rst_n_0, skid_rst_n_1, skid_rst_n_2, skid_rst_n_3;
-	LUT1 #(.INIT(2'b10)) u_skrst_0 (.I0(rst_n), .O(skid_rst_n_0));
-	LUT1 #(.INIT(2'b10)) u_skrst_1 (.I0(rst_n), .O(skid_rst_n_1));
-	LUT1 #(.INIT(2'b10)) u_skrst_2 (.I0(rst_n), .O(skid_rst_n_2));
-	LUT1 #(.INIT(2'b10)) u_skrst_3 (.I0(rst_n), .O(skid_rst_n_3));
+	wire skid_rst_n_0 = rst_n, skid_rst_n_1 = rst_n, skid_rst_n_2 = rst_n, skid_rst_n_3 = rst_n;
 `else
 	wire skid_rst_n_0 = rst_n, skid_rst_n_1 = rst_n, skid_rst_n_2 = rst_n, skid_rst_n_3 = rst_n;
 `endif
@@ -512,85 +499,61 @@ module atg_dc_cursor #(
 
 	/* Pipeline enable buffer tree */
 `ifdef SYNTH_KINTEX7
-	wire pe_b0, pe_b1, pe_b2, pe_b3, pe_b4, pe_b5;
-	LUT1 #(.INIT(2'b10)) u_pe_b0 (.I0(pipe_en), .O(pe_b0));
-	LUT1 #(.INIT(2'b10)) u_pe_b1 (.I0(pipe_en), .O(pe_b1));
-	LUT1 #(.INIT(2'b10)) u_pe_b2 (.I0(pipe_en), .O(pe_b2));
-	LUT1 #(.INIT(2'b10)) u_pe_b3 (.I0(pipe_en), .O(pe_b3));
-	LUT1 #(.INIT(2'b10)) u_pe_b4 (.I0(pipe_en), .O(pe_b4));
-	LUT1 #(.INIT(2'b10)) u_pe_b5 (.I0(pipe_en), .O(pe_b5));
-
-	wire pe_s0a_pxl, pe_s0a_pxh, pe_s0a_ctl;
-	wire pe_s0b_pxl, pe_s0b_pxh, pe_s0b_ctl;
-	wire pe_s0c_pxl, pe_s0c_pxh, pe_s0c_ctl;
-	LUT1 #(.INIT(2'b10)) u_pe_s0a_l (.I0(pe_b0), .O(pe_s0a_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s0a_h (.I0(pe_b0), .O(pe_s0a_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s0a_c (.I0(pe_b0), .O(pe_s0a_ctl));
-	LUT1 #(.INIT(2'b10)) u_pe_s0b_l (.I0(pe_b0), .O(pe_s0b_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s0b_h (.I0(pe_b0), .O(pe_s0b_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s0b_c (.I0(pe_b0), .O(pe_s0b_ctl));
-	LUT1 #(.INIT(2'b10)) u_pe_s0c_l (.I0(pe_b0), .O(pe_s0c_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s0c_h (.I0(pe_b0), .O(pe_s0c_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s0c_c (.I0(pe_b0), .O(pe_s0c_ctl));
-
-	wire pe_s1_pxl, pe_s1_pxh, pe_s1_c, pe_s1_ctl;
-	wire pe_s1b_pxl, pe_s1b_pxh, pe_s1b_pa0, pe_s1b_pa1, pe_s1b_pa2, pe_s1b_c, pe_s1b_ctl;
-	LUT1 #(.INIT(2'b10)) u_pe_s1_l (.I0(pe_b1), .O(pe_s1_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s1_h (.I0(pe_b1), .O(pe_s1_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s1_c (.I0(pe_b1), .O(pe_s1_c));
-	LUT1 #(.INIT(2'b10)) u_pe_s1_ct (.I0(pe_b1), .O(pe_s1_ctl));
-	LUT1 #(.INIT(2'b10)) u_pe_s1b_l (.I0(pe_b1), .O(pe_s1b_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s1b_h (.I0(pe_b1), .O(pe_s1b_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s1b_p0 (.I0(pe_b1), .O(pe_s1b_pa0));
-	LUT1 #(.INIT(2'b10)) u_pe_s1b_p1 (.I0(pe_b1), .O(pe_s1b_pa1));
-	LUT1 #(.INIT(2'b10)) u_pe_s1b_p2 (.I0(pe_b1), .O(pe_s1b_pa2));
-	LUT1 #(.INIT(2'b10)) u_pe_s1b_c (.I0(pe_b1), .O(pe_s1b_c));
-	LUT1 #(.INIT(2'b10)) u_pe_s1b_ct (.I0(pe_b1), .O(pe_s1b_ctl));
-
-	wire pe_s2a_pxl, pe_s2a_pxh, pe_s2a_t0, pe_s2a_t1, pe_s2a_t2, pe_s2a_c, pe_s2a_ctl;
-	LUT1 #(.INIT(2'b10)) u_pe_s2a_l (.I0(pe_b2), .O(pe_s2a_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s2a_h (.I0(pe_b2), .O(pe_s2a_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s2a_t0 (.I0(pe_b2), .O(pe_s2a_t0));
-	LUT1 #(.INIT(2'b10)) u_pe_s2a_t1 (.I0(pe_b2), .O(pe_s2a_t1));
-	LUT1 #(.INIT(2'b10)) u_pe_s2a_t2 (.I0(pe_b2), .O(pe_s2a_t2));
-	LUT1 #(.INIT(2'b10)) u_pe_s2a_c (.I0(pe_b2), .O(pe_s2a_c));
-	LUT1 #(.INIT(2'b10)) u_pe_s2a_ct (.I0(pe_b2), .O(pe_s2a_ctl));
-
-	wire pe_s2b_pxl, pe_s2b_pxh, pe_s2b_u0, pe_s2b_u1, pe_s2b_u2, pe_s2b_c, pe_s2b_ctl;
-	wire pe_s2c_pxl, pe_s2c_pxh, pe_s2c_v, pe_s2c_ctl;
-	LUT1 #(.INIT(2'b10)) u_pe_s2b_l (.I0(pe_b3), .O(pe_s2b_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s2b_h (.I0(pe_b3), .O(pe_s2b_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s2b_u0 (.I0(pe_b3), .O(pe_s2b_u0));
-	LUT1 #(.INIT(2'b10)) u_pe_s2b_u1 (.I0(pe_b3), .O(pe_s2b_u1));
-	LUT1 #(.INIT(2'b10)) u_pe_s2b_u2 (.I0(pe_b3), .O(pe_s2b_u2));
-	LUT1 #(.INIT(2'b10)) u_pe_s2b_c (.I0(pe_b3), .O(pe_s2b_c));
-	LUT1 #(.INIT(2'b10)) u_pe_s2b_ct (.I0(pe_b3), .O(pe_s2b_ctl));
-	LUT1 #(.INIT(2'b10)) u_pe_s2c_l (.I0(pe_b3), .O(pe_s2c_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s2c_h (.I0(pe_b3), .O(pe_s2c_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s2c_v (.I0(pe_b3), .O(pe_s2c_v));
-	LUT1 #(.INIT(2'b10)) u_pe_s2c_ct (.I0(pe_b3), .O(pe_s2c_ctl));
-
-	wire pe_s3a_pxl, pe_s3a_pxh, pe_s3a_vm0, pe_s3a_vm1, pe_s3a_vm2, pe_s3a_v, pe_s3a_ctl;
-	LUT1 #(.INIT(2'b10)) u_pe_s3a_l (.I0(pe_b4), .O(pe_s3a_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s3a_h (.I0(pe_b4), .O(pe_s3a_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s3a_v0 (.I0(pe_b4), .O(pe_s3a_vm0));
-	LUT1 #(.INIT(2'b10)) u_pe_s3a_v1 (.I0(pe_b4), .O(pe_s3a_vm1));
-	LUT1 #(.INIT(2'b10)) u_pe_s3a_v2 (.I0(pe_b4), .O(pe_s3a_vm2));
-	LUT1 #(.INIT(2'b10)) u_pe_s3a_v (.I0(pe_b4), .O(pe_s3a_v));
-	LUT1 #(.INIT(2'b10)) u_pe_s3a_ct (.I0(pe_b4), .O(pe_s3a_ctl));
-
-	wire pe_s3b_pxl, pe_s3b_pxh, pe_s3b_nt0, pe_s3b_nt1, pe_s3b_nt2, pe_s3b_v, pe_s3b_ctl;
-	wire pe_out_l, pe_out_h, pe_out_ctl;
-	LUT1 #(.INIT(2'b10)) u_pe_s3b_l (.I0(pe_b5), .O(pe_s3b_pxl));
-	LUT1 #(.INIT(2'b10)) u_pe_s3b_h (.I0(pe_b5), .O(pe_s3b_pxh));
-	LUT1 #(.INIT(2'b10)) u_pe_s3b_n0 (.I0(pe_b5), .O(pe_s3b_nt0));
-	LUT1 #(.INIT(2'b10)) u_pe_s3b_n1 (.I0(pe_b5), .O(pe_s3b_nt1));
-	LUT1 #(.INIT(2'b10)) u_pe_s3b_n2 (.I0(pe_b5), .O(pe_s3b_nt2));
-	LUT1 #(.INIT(2'b10)) u_pe_s3b_v (.I0(pe_b5), .O(pe_s3b_v));
-	LUT1 #(.INIT(2'b10)) u_pe_s3b_ct (.I0(pe_b5), .O(pe_s3b_ctl));
-	LUT1 #(.INIT(2'b10)) u_pe_out_l (.I0(pe_b5), .O(pe_out_l));
-	LUT1 #(.INIT(2'b10)) u_pe_out_h (.I0(pe_b5), .O(pe_out_h));
-	LUT1 #(.INIT(2'b10)) u_pe_out_ct (.I0(pe_b5), .O(pe_out_ctl));
+	wire pe_s0a_pxl = pipe_en;
+	wire pe_s0a_pxh = pipe_en;
+	wire pe_s0a_ctl = pipe_en;
+	wire pe_s0b_pxl = pipe_en;
+	wire pe_s0b_pxh = pipe_en;
+	wire pe_s0b_ctl = pipe_en;
+	wire pe_s0c_pxl = pipe_en;
+	wire pe_s0c_pxh = pipe_en;
+	wire pe_s0c_ctl = pipe_en;
+	wire pe_s1_pxl = pipe_en;
+	wire pe_s1_pxh = pipe_en;
+	wire pe_s1_c = pipe_en;
+	wire pe_s1_ctl = pipe_en;
+	wire pe_s1b_pxl = pipe_en;
+	wire pe_s1b_pxh = pipe_en;
+	wire pe_s1b_pa0 = pipe_en;
+	wire pe_s1b_pa1 = pipe_en;
+	wire pe_s1b_pa2 = pipe_en;
+	wire pe_s1b_c = pipe_en;
+	wire pe_s1b_ctl = pipe_en;
+	wire pe_s2a_pxl = pipe_en;
+	wire pe_s2a_pxh = pipe_en;
+	wire pe_s2a_t0 = pipe_en;
+	wire pe_s2a_t1 = pipe_en;
+	wire pe_s2a_t2 = pipe_en;
+	wire pe_s2a_c = pipe_en;
+	wire pe_s2a_ctl = pipe_en;
+	wire pe_s2b_pxl = pipe_en;
+	wire pe_s2b_pxh = pipe_en;
+	wire pe_s2b_u0 = pipe_en;
+	wire pe_s2b_u1 = pipe_en;
+	wire pe_s2b_u2 = pipe_en;
+	wire pe_s2b_c = pipe_en;
+	wire pe_s2b_ctl = pipe_en;
+	wire pe_s2c_pxl = pipe_en;
+	wire pe_s2c_pxh = pipe_en;
+	wire pe_s2c_v = pipe_en;
+	wire pe_s2c_ctl = pipe_en;
+	wire pe_s3a_pxl = pipe_en;
+	wire pe_s3a_pxh = pipe_en;
+	wire pe_s3a_vm0 = pipe_en;
+	wire pe_s3a_vm1 = pipe_en;
+	wire pe_s3a_vm2 = pipe_en;
+	wire pe_s3a_v = pipe_en;
+	wire pe_s3a_ctl = pipe_en;
+	wire pe_s3b_pxl = pipe_en;
+	wire pe_s3b_pxh = pipe_en;
+	wire pe_s3b_nt0 = pipe_en;
+	wire pe_s3b_nt1 = pipe_en;
+	wire pe_s3b_nt2 = pipe_en;
+	wire pe_s3b_v = pipe_en;
+	wire pe_s3b_ctl = pipe_en;
+	wire pe_out_l = pipe_en;
+	wire pe_out_h = pipe_en;
+	wire pe_out_ctl = pipe_en;
 `else
 	wire pe_s0a_pxl = pipe_en;
 	wire pe_s0a_pxh = pipe_en;
@@ -706,15 +669,12 @@ module atg_dc_cursor #(
 
 	wire pe_s0a_valid = pe_s0a_ctl && i_valid;
 `ifdef SYNTH_KINTEX7
-	wire pe_s0a_v_addr, pe_s0a_v_x, pe_s0a_v_y, pe_s0a_v_ctl;
-	LUT1 #(.INIT(2'b10)) u_buf_s0a_a (.I0(pe_s0a_valid), .O(pe_s0a_v_addr));
-	LUT1 #(.INIT(2'b10)) u_buf_s0a_x (.I0(pe_s0a_valid), .O(pe_s0a_v_x));
-	LUT1 #(.INIT(2'b10)) u_buf_s0a_y (.I0(pe_s0a_valid), .O(pe_s0a_v_y));
-	LUT1 #(.INIT(2'b10)) u_buf_s0a_c (.I0(pe_s0a_valid), .O(pe_s0a_v_ctl));
-
-	wire x_is_eol_x, x_is_eol_y;
-	LUT1 #(.INIT(2'b10)) u_buf_eol_x (.I0(x_is_eol), .O(x_is_eol_x));
-	LUT1 #(.INIT(2'b10)) u_buf_eol_y (.I0(x_is_eol), .O(x_is_eol_y));
+	wire pe_s0a_v_addr = pe_s0a_valid;
+	wire pe_s0a_v_x = pe_s0a_valid;
+	wire pe_s0a_v_y = pe_s0a_valid;
+	wire pe_s0a_v_ctl = pe_s0a_valid;
+	wire x_is_eol_x = x_is_eol;
+	wire x_is_eol_y = x_is_eol;
 `else
 	wire pe_s0a_v_addr = pe_s0a_valid;
 	wire pe_s0a_v_x = pe_s0a_valid;
@@ -874,19 +834,10 @@ module atg_dc_cursor #(
 
 `ifdef SYNTH_KINTEX7
 	localparam CURSOR_MUL_LAT = 2;
-	wire [7:0] not_ca_0, not_ca_1, not_ca_2;
-	genvar gca;
-	generate
-		for (gca = 0; gca < 8; gca = gca + 1) begin : g_ca_buf
-			LUT1 #(.INIT(2'b01)) u_buf0 (.I0(ca[gca]), .O(not_ca_0[gca]));
-			LUT1 #(.INIT(2'b01)) u_buf1 (.I0(ca[gca]), .O(not_ca_1[gca]));
-			LUT1 #(.INIT(2'b01)) u_buf2 (.I0(ca[gca]), .O(not_ca_2[gca]));
-		end
-	endgenerate
 	wire [7:0] not_ca_arr [0:2];
-	assign not_ca_arr[0] = not_ca_0;
-	assign not_ca_arr[1] = not_ca_1;
-	assign not_ca_arr[2] = not_ca_2;
+	assign not_ca_arr[0] = ~ca;
+	assign not_ca_arr[1] = ~ca;
+	assign not_ca_arr[2] = ~ca;
 `else
 	localparam CURSOR_MUL_LAT = 1;
 	wire [7:0] not_ca_arr [0:2];
@@ -1362,10 +1313,8 @@ module atg_dc_cursor #(
 
 	wire [1:0] st3b_fmt_lo, st3b_fmt_hi;
 `ifdef SYNTH_KINTEX7
-	LUT1 #(.INIT(2'b10)) u_buf_fmt_l0 (.I0(st3b_fmt[0]), .O(st3b_fmt_lo[0]));
-	LUT1 #(.INIT(2'b10)) u_buf_fmt_l1 (.I0(st3b_fmt[1]), .O(st3b_fmt_lo[1]));
-	LUT1 #(.INIT(2'b10)) u_buf_fmt_h0 (.I0(st3b_fmt[0]), .O(st3b_fmt_hi[0]));
-	LUT1 #(.INIT(2'b10)) u_buf_fmt_h1 (.I0(st3b_fmt[1]), .O(st3b_fmt_hi[1]));
+	assign st3b_fmt_lo = st3b_fmt;
+	assign st3b_fmt_hi = st3b_fmt;
 `else
 	assign st3b_fmt_lo = st3b_fmt;
 	assign st3b_fmt_hi = st3b_fmt;
@@ -1387,8 +1336,8 @@ module atg_dc_cursor #(
 
 	wire st3b_in_lo, st3b_in_hi;
 `ifdef SYNTH_KINTEX7
-	LUT1 #(.INIT(2'b10)) u_buf_in_l (.I0(st3b_in), .O(st3b_in_lo));
-	LUT1 #(.INIT(2'b10)) u_buf_in_h (.I0(st3b_in), .O(st3b_in_hi));
+	assign st3b_in_lo = st3b_in;
+	assign st3b_in_hi = st3b_in;
 `else
 	assign st3b_in_lo = st3b_in;
 	assign st3b_in_hi = st3b_in;
