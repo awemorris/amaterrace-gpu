@@ -45,8 +45,8 @@ module atg_tu_lod #(
 	wire rst_inv = !rst_n;
 
 	/* Delay cs, ct, w0, h0, d0 for LAT >= 4 to match u_fx pipeline */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [80:0] r_cs, r_ct, r2_cs, r2_ct;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r_w0_in, r_h0_in, r_d0_in, r2_w0_in, r2_h0_in, r2_d0_in;
+	reg [80:0] r_cs, r_ct, r2_cs, r2_ct;
+	reg [15:0] r_w0_in, r_h0_in, r_d0_in, r2_w0_in, r2_h0_in, r2_d0_in;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r_cs     <= 81'd0;
@@ -81,7 +81,7 @@ module atg_tu_lod #(
 
 	/* The axis' fixed-point lane values: floor(x × 2^16), or the cube's
 	 * >> 8, and its size. */
-	(* keep = "true" *) wire [95:0] fa_comb;
+	wire [95:0] fa_comb;
 	genvar gi;
 	generate
 	for (gi = 0; gi < 3; gi = gi + 1) begin : g_fa
@@ -90,7 +90,7 @@ module atg_tu_lod #(
 		wire [3:0] ax0_in_s  = {4{ax[0]}};
 		wire [3:0] cube_fa_s = {4{cube && !ax[1]}};
 		wire [3:0] ax0_fa_s  = {4{ax[0]}};
-		(* keep = "true" *) wire [31:0] f_in = {
+		wire [31:0] f_in = {
 			ax1_in_s[3] ? w[gi*32 + 24 +: 8] : ax0_in_s[3] ? v[gi*32 + 24 +: 8] : u[gi*32 + 24 +: 8],
 			ax1_in_s[2] ? w[gi*32 + 16 +: 8] : ax0_in_s[2] ? v[gi*32 + 16 +: 8] : u[gi*32 + 16 +: 8],
 			ax1_in_s[1] ? w[gi*32 + 8  +: 8] : ax0_in_s[1] ? v[gi*32 + 8  +: 8] : u[gi*32 + 8  +: 8],
@@ -118,10 +118,10 @@ module atg_tu_lod #(
 	end
 
 	/* --- Stage 0A -> Stage 0B Pipeline Registers (LAT >= 2) --- */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [95:0] r_fa;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r_n0;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [3:0]  r_p_n;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r_is3d0;
+	reg [95:0] r_fa;
+	reg [15:0] r_n0;
+	reg [3:0]  r_p_n;
+	reg        r_is3d0;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -161,9 +161,9 @@ module atg_tu_lod #(
 	wire [13:0] nl2_comb = {2'b00, p_n, m_n_comb};
 
 	/* Stage 0B1 -> Stage 0B2 Pipeline Registers (when LAT >= 5) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [32:0] r_d1, r_d2;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [13:0] r_nl2;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r_is3d_b1;
+	reg [32:0] r_d1, r_d2;
+	reg [13:0] r_nl2;
+	reg        r_is3d_b1;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r_d1      <= 33'd0;
@@ -183,10 +183,10 @@ module atg_tu_lod #(
 	wire [13:0] s_nl2   = (LAT >= 5) ? r_nl2     : nl2_comb;
 	wire        is3d_b1 = (LAT >= 5) ? r_is3d_b1 : is3d_s0b;
 
-	(* keep = "true" *) wire d1_s_lo = s_d1[32];
-	(* keep = "true" *) wire d1_s_hi = s_d1[32];
-	(* keep = "true" *) wire d2_s_lo = s_d2[32];
-	(* keep = "true" *) wire d2_s_hi = s_d2[32];
+	wire d1_s_lo = s_d1[32];
+	wire d1_s_hi = s_d1[32];
+	wire d2_s_lo = s_d2[32];
+	wire d2_s_hi = s_d2[32];
 	am_add #(.W(33)) u_m1 (
 		.a(33'd0),
 		.b({{17{d1_s_hi}} ^ s_d1[32:16], {16{d1_s_lo}} ^ s_d1[15:0]}),
@@ -207,9 +207,9 @@ module atg_tu_lod #(
 	wire [16:0] n_bias_comb = {n_bias_hi, s_nl2[11:0]};
 
 	/* Stage 0B2 -> Stage 0B3 Pipeline Registers (when LAT >= 5) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [32:0] r_m1, r_m2;
-	(* keep = "true", equivalent_register_removal = "no", srl_style = "register" *) reg [16:0] r_nbias_b2;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r_is3d_b2;
+	reg [32:0] r_m1, r_m2;
+	(* srl_style = "register" *) reg [16:0] r_nbias_b2;
+	reg        r_is3d_b2;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r_m1       <= 33'd0;
@@ -234,10 +234,10 @@ module atg_tu_lod #(
 	am_sub #(.W(33)) u_mcmp (.a(s_m1), .b(s_m2), .bi(1'b0), .d(m_cmp_d_unused), .bo(m_cmp_bo));
 
 	/* Stage 0B3 -> Stage 0B4 Pipeline Registers (when LAT >= 5) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [32:0] r_m1_b3, r_m2_b3;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r_m1_ge_m2_lo, r_m1_ge_m2_hi;
-	(* keep = "true", equivalent_register_removal = "no", srl_style = "register" *) reg [16:0] r_nbias_b3;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r_is3d_b3;
+	reg [32:0] r_m1_b3, r_m2_b3;
+	reg        r_m1_ge_m2_lo, r_m1_ge_m2_hi;
+	(* srl_style = "register" *) reg [16:0] r_nbias_b3;
+	reg        r_is3d_b3;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r_m1_b3       <= 33'd0;
@@ -264,9 +264,9 @@ module atg_tu_lod #(
 	wire        s0_is3d_out = (LAT >= 5) ? r_is3d_b3  : is3d_b2;
 
 	/* --- Stage 0B -> Stage 1 Pipeline Registers (LAT >= 1) --- */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [32:0] r0_mx;
-	(* keep = "true", equivalent_register_removal = "no", srl_style = "register" *) reg [16:0] r0_nbias;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r0_is3d;
+	reg [32:0] r0_mx;
+	(* srl_style = "register" *) reg [16:0] r0_nbias;
+	reg        r0_is3d;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -293,15 +293,15 @@ module atg_tu_lod #(
 			if (s1_mx[bi])
 				p_mx_comb = bi[5:0];
 	end
-	(* keep = "true" *) wire [5:0] p_mx_w = p_mx_comb;
+	wire [5:0] p_mx_w = p_mx_comb;
 	wire mx_zero_comb = (s1_mx == 33'd0);
 
 	/* Stage 1A -> Stage 1B Pipeline Registers (when LAT >= 5) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [5:0]  r1a_p_mx_0, r1a_p_mx_1, r1a_p_mx_2, r1a_p_mx_3, r1a_p_mx_c;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [32:0] r1a_mx;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1a_mx_zero;
-	(* keep = "true", equivalent_register_removal = "no", srl_style = "register" *) reg [16:0] r1a_nbias;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1a_is3d;
+	reg [5:0]  r1a_p_mx_0, r1a_p_mx_1, r1a_p_mx_2, r1a_p_mx_3, r1a_p_mx_c;
+	reg [32:0] r1a_mx;
+	reg        r1a_mx_zero;
+	(* srl_style = "register" *) reg [16:0] r1a_nbias;
+	reg        r1a_is3d;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r1a_p_mx_0  <= 6'd0;
@@ -355,10 +355,10 @@ module atg_tu_lod #(
 	wire [13:0] l2_mx_comb = {s1b_p_mx_c, m_mx_comb};
 
 	/* Stage 1B -> Stage 1C Pipeline Registers (when LAT >= 5) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [13:0] r1b_l2_mx;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1b_mx_zero;
-	(* keep = "true", equivalent_register_removal = "no", srl_style = "register" *) reg [16:0] r1b_nbias;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1b_is3d;
+	reg [13:0] r1b_l2_mx;
+	reg        r1b_mx_zero;
+	(* srl_style = "register" *) reg [16:0] r1b_nbias;
+	reg        r1b_is3d;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r1b_l2_mx   <= 14'd0;
@@ -384,9 +384,9 @@ module atg_tu_lod #(
 		.co(lod_carry_unused[5]));
 
 	/* Stage 1C -> Stage 1D Pipeline Registers (when LAT >= 5) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [16:0] r1c_lsum;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1c_mx_zero;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1c_is3d;
+	reg [16:0] r1c_lsum;
+	reg        r1c_mx_zero;
+	reg        r1c_is3d;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r1c_lsum    <= 17'd0;
@@ -406,7 +406,7 @@ module atg_tu_lod #(
 	wire signed [16:0] lam_comb = ax[1] && !s1d_is3d ? LAM_MIN : s1d_mx_zero ? LAM_MIN : s1d_lsum;
 
 	/* --- Stage 1 -> Output Pipeline Register (LAT >= 3) --- */
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [16:0] r_lam;
+	reg signed [16:0] r_lam;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r_lam <= 17'sd0;

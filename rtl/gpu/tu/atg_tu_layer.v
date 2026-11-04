@@ -36,9 +36,9 @@ module atg_tu_layer #(
 	wire kin_s0 = !k_s0[8] && k_s0 >= 9'd1 && k_s0 <= 9'd24;
 
 	/* Stage 0A -> Stage 0B Pipeline Registers (when LAT >= 3) */
-	(* equivalent_register_removal = "no", max_fanout = 12 *) reg [8:0]  r0_k, r0_k_rb, r0_k_sb;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r0_kin_q_lo, r0_kin_q_hi, r0_kin_rb, r0_kin_sb;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r0_f;
+	(* max_fanout = 12 *) reg [8:0]  r0_k, r0_k_rb, r0_k_sb;
+	reg        r0_kin_q_lo, r0_kin_q_hi, r0_kin_rb, r0_kin_sb;
+	reg [31:0] r0_f;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r0_k        <= 9'd0;
@@ -89,11 +89,11 @@ module atg_tu_layer #(
 	end
 
 	/* Pipeline register when LAT >= 1 */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [23:0] r_q;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r_round_bit, r_sticky_bit;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [8:0]  r_k;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r_cnt;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r_f;
+	reg [23:0] r_q;
+	reg        r_round_bit, r_sticky_bit;
+	reg [8:0]  r_k;
+	reg [15:0] r_cnt;
+	reg [31:0] r_f;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin

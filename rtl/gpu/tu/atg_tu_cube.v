@@ -63,28 +63,28 @@ module atg_tu_cube (
 	(* extract_reset = "no" *) reg rfix;
 	(* extract_reset = "no" *) reg [2:0] rfface;
 
-	(* keep = "true" *) wire rx_z_lo = (rx[30:23] == 8'd0) || (rx[30:23] == 8'hFF && rx[22:0] != 23'd0);
-	(* keep = "true" *) wire rx_z_hi = (rx[30:23] == 8'd0) || (rx[30:23] == 8'hFF && rx[22:0] != 23'd0);
-	(* keep = "true" *) wire rx_i_lo = (rx[30:23] == 8'hFF);
-	(* keep = "true" *) wire rx_i_hi = (rx[30:23] == 8'hFF);
+	wire rx_z_lo = (rx[30:23] == 8'd0) || (rx[30:23] == 8'hFF && rx[22:0] != 23'd0);
+	wire rx_z_hi = (rx[30:23] == 8'd0) || (rx[30:23] == 8'hFF && rx[22:0] != 23'd0);
+	wire rx_i_lo = (rx[30:23] == 8'hFF);
+	wire rx_i_hi = (rx[30:23] == 8'hFF);
 	wire [31:0] cx_w = {
 		rx_z_hi ? 16'd0 : rx_i_hi ? {rx[31], 15'h7F7F} : rx[31:16],
 		rx_z_lo ? 16'd0 : rx_i_lo ? 16'hFFFF           : rx[15:0]
 	};
 
-	(* keep = "true" *) wire ry_z_lo = (ry[30:23] == 8'd0) || (ry[30:23] == 8'hFF && ry[22:0] != 23'd0);
-	(* keep = "true" *) wire ry_z_hi = (ry[30:23] == 8'd0) || (ry[30:23] == 8'hFF && ry[22:0] != 23'd0);
-	(* keep = "true" *) wire ry_i_lo = (ry[30:23] == 8'hFF);
-	(* keep = "true" *) wire ry_i_hi = (ry[30:23] == 8'hFF);
+	wire ry_z_lo = (ry[30:23] == 8'd0) || (ry[30:23] == 8'hFF && ry[22:0] != 23'd0);
+	wire ry_z_hi = (ry[30:23] == 8'd0) || (ry[30:23] == 8'hFF && ry[22:0] != 23'd0);
+	wire ry_i_lo = (ry[30:23] == 8'hFF);
+	wire ry_i_hi = (ry[30:23] == 8'hFF);
 	wire [31:0] cy_w = {
 		ry_z_hi ? 16'd0 : ry_i_hi ? {ry[31], 15'h7F7F} : ry[31:16],
 		ry_z_lo ? 16'd0 : ry_i_lo ? 16'hFFFF           : ry[15:0]
 	};
 
-	(* keep = "true" *) wire rz_z_lo = (rz[30:23] == 8'd0) || (rz[30:23] == 8'hFF && rz[22:0] != 23'd0);
-	(* keep = "true" *) wire rz_z_hi = (rz[30:23] == 8'd0) || (rz[30:23] == 8'hFF && rz[22:0] != 23'd0);
-	(* keep = "true" *) wire rz_i_lo = (rz[30:23] == 8'hFF);
-	(* keep = "true" *) wire rz_i_hi = (rz[30:23] == 8'hFF);
+	wire rz_z_lo = (rz[30:23] == 8'd0) || (rz[30:23] == 8'hFF && rz[22:0] != 23'd0);
+	wire rz_z_hi = (rz[30:23] == 8'd0) || (rz[30:23] == 8'hFF && rz[22:0] != 23'd0);
+	wire rz_i_lo = (rz[30:23] == 8'hFF);
+	wire rz_i_hi = (rz[30:23] == 8'hFF);
 	wire [31:0] cz_w = {
 		rz_z_hi ? 16'd0 : rz_i_hi ? {rz[31], 15'h7F7F} : rz[31:16],
 		rz_z_lo ? 16'd0 : rz_i_lo ? 16'hFFFF           : rz[15:0]
@@ -96,7 +96,7 @@ module atg_tu_cube (
 	am_sub #(.W(31)) u_cmp_zx (.a(cz_q[30:0]), .b(cx_q[30:0]), .bi(1'b0), .d(cmp_zx_d), .bo(bo_zx));
 	am_sub #(.W(31)) u_cmp_zy (.a(cz_q[30:0]), .b(cy_q[30:0]), .bi(1'b0), .d(cmp_zy_d), .bo(bo_zy));
 	am_sub #(.W(31)) u_cmp_yx (.a(cy_q[30:0]), .b(cx_q[30:0]), .bi(1'b0), .d(cmp_yx_d), .bo(bo_yx));
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0] f_vm_0, f_vm_1, f_vm_2, f_vm_3, f_vs_lo, f_vs_hi, f_vt_lo, f_vt_hi, f_face;
+	(* extract_reset = "no" *) reg [2:0] f_vm_0, f_vm_1, f_vm_2, f_vm_3, f_vs_lo, f_vs_hi, f_vt_lo, f_vt_hi, f_face;
 
 	wire az_wins_p0b = !bo_zx && !bo_zy;
 	wire ay_wins_p0b = !bo_yx;
@@ -134,11 +134,11 @@ module atg_tu_cube (
 
 	(* max_fanout = 16 *) reg [3:0] st;
 	(* max_fanout = 16 *) reg [4:0] n;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] zero_s_r, zero_t_r;
+	(* extract_reset = "no" *) reg [3:0] zero_s_r, zero_t_r;
 	(* extract_reset = "no", max_fanout = 16 *) reg [23:0] mm;
 	(* extract_reset = "no", max_fanout = 16 *) reg [26:0] ns_num, nt_num;	/* sc' + 3 m, tc' + 3 m */
-	(* keep = "true", extract_reset = "no" *) reg [24:0] rs, rt;
-	(* keep = "true", extract_reset = "no" *) reg [25:0] qs, qt;
+	(* extract_reset = "no" *) reg [24:0] rs, rt;
+	(* extract_reset = "no" *) reg [25:0] qs, qt;
 	/* The numerator's next bit: num[2:0] then 23 zeros (num << 23). */
 	(* extract_reset = "no" *) reg bs_q, bt_q;
 	wire [25:0] ts = {rs, bs_q}, tt = {rt, bt_q};
@@ -162,9 +162,9 @@ module atg_tu_cube (
 	wire [6:0]  ce_idle = {7{st == IDLE && go}};
 	wire [5:0]  ce_p0a  = {6{st == P0A}};
 	wire [2:0]  ce_p0b  = {3{st == P0B}};
-	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0]  ce_p0;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [12:0] ce_p5;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [12:0] ce_div;
+	reg [9:0]  ce_p0;
+	reg [12:0] ce_p5;
+	reg [12:0] ce_div;
 	wire vm_zero_w = (vm_w[30:23] == 8'd0);
 
 	always @(posedge clk) begin
@@ -281,7 +281,7 @@ module atg_tu_cube (
 
 	assign bsy = st != IDLE;
 	wire [26:0] c_mid = 27'sd8388608;
-	(* keep = "true" *) wire [26:0] s_out, t_out;
+	wire [26:0] s_out, t_out;
 	assign s_out[6:0]   = zero_s_r[0] ? c_mid[6:0]   : s_q[6:0];
 	assign s_out[13:7]  = zero_s_r[1] ? c_mid[13:7]  : s_q[13:7];
 	assign s_out[20:14] = zero_s_r[2] ? c_mid[20:14] : s_q[20:14];

@@ -56,14 +56,14 @@ module atg_tu_tcrd #(
 	atg_tu_unnorm #(.LAT(LAT)) u_un1 (.clk(clk), .rst_n(rst_n), .en(en), .f(cw1_un), .c(un1));
 
 	/* LAT >= 1 pipeline registers */
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [29:0] r_nu, r_nv, r_nw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [29:0] r_un0, r_un1;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [29:0] r_un0_d, r_un1_d;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [29:0] r_un0_d2, r_un1_d2;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [26:0] r_fcs, r_fct;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_cube, r_unn;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_cube_d, r_unn_d;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_cube_d2, r_unn_d2;
+	reg signed [29:0] r_nu, r_nv, r_nw;
+	reg signed [29:0] r_un0, r_un1;
+	reg signed [29:0] r_un0_d, r_un1_d;
+	reg signed [29:0] r_un0_d2, r_un1_d2;
+	reg signed [26:0] r_fcs, r_fct;
+	reg r_cube, r_unn;
+	reg r_cube_d, r_unn_d;
+	reg r_cube_d2, r_unn_d2;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -130,11 +130,11 @@ module atg_tu_tcrd #(
 		.p(qv));
 
 	/* Post-DSP output registers (when LAT >= 2) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [30:0] r2_pu, r2_pv, r2_pw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [27:0] r2_qu, r2_qv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [29:0] r_un0_d3, r_un1_d3;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_cube_u_lo, r_cube_u_hi, r_cube_v_lo, r_cube_v_hi;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_unn_u_lo, r_unn_u_hi, r_unn_v_lo, r_unn_v_hi;
+	reg signed [30:0] r2_pu, r2_pv, r2_pw;
+	reg signed [27:0] r2_qu, r2_qv;
+	reg signed [29:0] r_un0_d3, r_un1_d3;
+	reg r_cube_u_lo, r_cube_u_hi, r_cube_v_lo, r_cube_v_hi;
+	reg r_unn_u_lo, r_unn_u_hi, r_unn_v_lo, r_unn_v_hi;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r2_pu       <= 31'sd0;
@@ -178,14 +178,14 @@ module atg_tu_tcrd #(
 	wire signed [27:0] s2_qv    = (LAT >= 2) ? r2_qv     : qv[43:16];
 	wire signed [29:0] s2_un0   = (LAT >= 2) ? r_un0_d3  : un0_val;
 	wire signed [29:0] s2_un1   = (LAT >= 2) ? r_un1_d3  : un1_val;
-	(* keep = "true" *) wire s2_cube_u_lo = (LAT >= 2) ? r_cube_u_lo : final_cube;
-	(* keep = "true" *) wire s2_cube_u_hi = (LAT >= 2) ? r_cube_u_hi : final_cube;
-	(* keep = "true" *) wire s2_cube_v_lo = (LAT >= 2) ? r_cube_v_lo : final_cube;
-	(* keep = "true" *) wire s2_cube_v_hi = (LAT >= 2) ? r_cube_v_hi : final_cube;
-	(* keep = "true" *) wire s2_unn_u_lo  = (LAT >= 2) ? r_unn_u_lo  : final_unn;
-	(* keep = "true" *) wire s2_unn_u_hi  = (LAT >= 2) ? r_unn_u_hi  : final_unn;
-	(* keep = "true" *) wire s2_unn_v_lo  = (LAT >= 2) ? r_unn_v_lo  : final_unn;
-	(* keep = "true" *) wire s2_unn_v_hi  = (LAT >= 2) ? r_unn_v_hi  : final_unn;
+	wire s2_cube_u_lo = (LAT >= 2) ? r_cube_u_lo : final_cube;
+	wire s2_cube_u_hi = (LAT >= 2) ? r_cube_u_hi : final_cube;
+	wire s2_cube_v_lo = (LAT >= 2) ? r_cube_v_lo : final_cube;
+	wire s2_cube_v_hi = (LAT >= 2) ? r_cube_v_hi : final_cube;
+	wire s2_unn_u_lo  = (LAT >= 2) ? r_unn_u_lo  : final_unn;
+	wire s2_unn_u_hi  = (LAT >= 2) ? r_unn_u_hi  : final_unn;
+	wire s2_unn_v_lo  = (LAT >= 2) ? r_unn_v_lo  : final_unn;
+	wire s2_unn_v_hi  = (LAT >= 2) ? r_unn_v_hi  : final_unn;
 
 	wire [30:0] qu_ext  = {{3{s2_qu[27]}}, s2_qu};
 	wire [30:0] qv_ext  = {{3{s2_qv[27]}}, s2_qv};

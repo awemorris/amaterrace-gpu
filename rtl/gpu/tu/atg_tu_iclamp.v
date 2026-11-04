@@ -31,8 +31,8 @@ module atg_tu_iclamp #(
 	wire v_lt0_s0 = v[32];
 	wire v_ge_n_s0 = !v[32] && ((v[31:16] != 16'd0) || !cmp_bo);
 
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg        r_lt0, r_ge_n;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [15:0] r_n1, r_v;
+	(* extract_reset = "no" *) reg        r_lt0, r_ge_n;
+	(* extract_reset = "no" *) reg [15:0] r_n1, r_v;
 	always @(posedge clk) begin
 		if (en) begin
 			r_lt0  <= v_lt0_s0;

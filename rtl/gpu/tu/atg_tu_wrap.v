@@ -31,7 +31,7 @@ module atg_tu_wrap #(
 	wire lt = i < 0;
 	wire mode0_lo = mode[0];
 	wire mode0_hi = mode[0];
-	(* keep = "true" *) wire [16:0] p = {mode0_hi ? n[15:8] : {1'b0, n[15:9]}, mode0_lo ? {n[7:0], 1'b0} : n[8:0]};
+	wire [16:0] p = {mode0_hi ? n[15:8] : {1'b0, n[15:9]}, mode0_lo ? {n[7:0], 1'b0} : n[8:0]};
 
 	/* Parallel arithmetic operations directly on inputs i and n (no cascading) */
 	wire [16:0] mb;
@@ -91,10 +91,10 @@ module atg_tu_wrap #(
 	wire p_ge16_s0 = (p[16:4] != 13'd0);
 
 	/* Stage 0 -> Stage 1 Pipeline Registers (when LAT >= 1) */
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg        r_lt_lo, r_lt_hi, r_lt_n_lo, r_lt_n_hi, r_ge_n_lo, r_ge_n_hi, r_ge_p_lo, r_ge_p_hi, r_p_ge16_lo, r_p_ge16_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [15:0] r_mb, r_mir, r_n1, r_i;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no", rom_style = "distributed" *) reg [3:0]  r_m_small;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [1:0]  r_mode_lo, r_mode_hi;
+	(* extract_reset = "no" *) reg        r_lt_lo, r_lt_hi, r_lt_n_lo, r_lt_n_hi, r_ge_n_lo, r_ge_n_hi, r_ge_p_lo, r_ge_p_hi, r_p_ge16_lo, r_p_ge16_hi;
+	(* extract_reset = "no" *) reg [15:0] r_mb, r_mir, r_n1, r_i;
+	(* extract_reset = "no", rom_style = "distributed" *) reg [3:0]  r_m_small;
+	(* extract_reset = "no" *) reg [1:0]  r_mode_lo, r_mode_hi;
 	always @(posedge clk) begin
 		if (en) begin
 			r_lt_lo     <= lt;       r_lt_hi     <= lt;
@@ -138,7 +138,7 @@ module atg_tu_wrap #(
 		s_p_ge16_lo ? ((s_lt_n_lo || s_ge_p_lo) ? s_mb[7:0]  : s_lt_lo ? ~s_i[7:0]  : s_ge_n_lo ? s_mir[7:0]  : s_i[7:0])  : {4'd0, s_m_small}
 	};
 
-	(* keep = "true" *) wire [16:0] w_out;
+	wire [16:0] w_out;
 	assign w_out[7:0]  = s_mode_lo == 2'd0 ? rep_res[7:0]  : s_mode_lo == 2'd1 ? mir_res[7:0]  : (s_lt_lo ? 8'd0 : s_ge_n_lo ? s_n1[7:0]  : s_i[7:0]);
 	assign w_out[15:8] = s_mode_hi == 2'd0 ? rep_res[15:8] : s_mode_hi == 2'd1 ? mir_res[15:8] : (s_lt_hi ? 8'd0 : s_ge_n_hi ? s_n1[15:8] : s_i[15:8]);
 	assign w_out[16]   = (s_mode_hi == 2'd0 || s_mode_hi == 2'd1) ? 1'b0 : (s_mode_hi[0] && (s_lt_hi || s_ge_n_hi));

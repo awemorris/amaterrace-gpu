@@ -43,14 +43,14 @@ module atg_tu_addr (
 	/* To atg_tu_cache */
 	output wire ta_valid,
 	input wire ta_ready,
-	(* keep = "true", extract_reset = "no" *) output reg [511:0] ta_addr,
-	(* keep = "true" *) output reg [15:0] ta_bord,
-	(* keep = "true", extract_reset = "no" *) output reg [127:0] ta_wts,
-	(* keep = "true" *) output reg [15:0] ta_tag,
-	(* keep = "true" *) output reg [3:0] ta_mask,
+	(* extract_reset = "no" *) output reg [511:0] ta_addr,
+	output reg [15:0] ta_bord,
+	(* extract_reset = "no" *) output reg [127:0] ta_wts,
+	output reg [15:0] ta_tag,
+	output reg [3:0] ta_mask,
 	output wire [49:0] ta_ctl,
-	(* keep = "true", extract_reset = "no" *) output reg [127:0] ta_value,
-	(* keep = "true" *) output reg ta_last
+	(* extract_reset = "no" *) output reg [127:0] ta_value,
+	output reg ta_last
 );
 	`include "atg_config.vh"
 	`include "ghci_regs.vh"
@@ -111,99 +111,99 @@ module atg_tu_addr (
 
 	wire rst_inv = !rst_n;
 
-	(* keep = "true", max_fanout = 12 *) reg [5:0] st;
-	(* keep = "true", max_fanout = 12 *) reg [3:0] pas;	/* {column, row, level, slice} */
-	(* keep = "true", max_fanout = 12 *) reg [7:0] opr;
-	(* keep = "true", max_fanout = 12 *) reg [4:0] slot;
-	(* keep = "true", max_fanout = 12 *) reg [4:0] samp_slot;
-	(* keep = "true", extract_reset = "no" *) reg [639:0] crd;
-	(* keep = "true", extract_reset = "no" *) reg [31:0] r_tcrd_w0 [0:3];
-	(* keep = "true", extract_reset = "no" *) reg [31:0] r_tcrd_w1 [0:3];
-	(* keep = "true", extract_reset = "no" *) reg [31:0] r_tcrd_w4 [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [31:0] r_tcrd_un0 [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [31:0] r_tcrd_un1 [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [31:0] r_lyr_w4 [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  r_cw4_neg_lo, r_cw4_neg_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [31:0] r_sfl [0:3];
-	(* keep = "true", extract_reset = "no" *) reg [31:0] r_foot_x [0:3];
-	(* keep = "true", extract_reset = "no" *) reg [31:0] r_foot_y [0:3];
-	(* keep = "true", extract_reset = "no" *) reg [31:0] r_foot_z [0:3];
-	(* keep = "true", extract_reset = "no" *) reg [1:0]  r_foot_smp [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [11:0] r_foot_off [0:3];
-	(* keep = "true", max_fanout = 12 *) reg [11:0] offs;
-	(* keep = "true", max_fanout = 12 *) reg linq, depf, mipf;
-	(* keep = "true" *) reg cb_lod, cb_lane;	/* a cube quad: the LOD projections, the lanes' own */
-	(* keep = "true", max_fanout = 12 *) reg [2:0] job;	/* the cube projection being computed */
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [2:0] cf [0:3];	/* cube: each lane's face, s, t */
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [26:0] cs [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [26:0] ct [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [26:0] ls1, lt1, ls2, lt2;	/* lanes 1, 2 on lane 0's face (LOD) */
+	(* max_fanout = 12 *) reg [5:0] st;
+	(* max_fanout = 12 *) reg [3:0] pas;	/* {column, row, level, slice} */
+	(* max_fanout = 12 *) reg [7:0] opr;
+	(* max_fanout = 12 *) reg [4:0] slot;
+	(* max_fanout = 12 *) reg [4:0] samp_slot;
+	(* extract_reset = "no" *) reg [639:0] crd;
+	(* extract_reset = "no" *) reg [31:0] r_tcrd_w0 [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_tcrd_w1 [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_tcrd_w4 [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_tcrd_un0 [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_tcrd_un1 [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_lyr_w4 [0:3];
+	(* extract_reset = "no" *) reg [3:0]  r_cw4_neg_lo, r_cw4_neg_hi;
+	(* extract_reset = "no" *) reg [31:0] r_sfl [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_foot_x [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_foot_y [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_foot_z [0:3];
+	(* extract_reset = "no" *) reg [1:0]  r_foot_smp [0:3];
+	(* extract_reset = "no" *) reg [11:0] r_foot_off [0:3];
+	(* max_fanout = 12 *) reg [11:0] offs;
+	(* max_fanout = 12 *) reg linq, depf, mipf;
+	reg cb_lod, cb_lane;	/* a cube quad: the LOD projections, the lanes' own */
+	(* max_fanout = 12 *) reg [2:0] job;	/* the cube projection being computed */
+	(* max_fanout = 12, extract_reset = "no" *) reg [2:0] cf [0:3];	/* cube: each lane's face, s, t */
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [26:0] cs [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [26:0] ct [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [26:0] ls1, lt1, ls2, lt2;	/* lanes 1, 2 on lane 0's face (LOD) */
 
 	/* Intermediate registers for pipelined Stage A */
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lam_u, r_lam_v, r_lam_w;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lam_uv, r_lam_w_d;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg r_uv_ge_v, r_uv_ge_w_lo, r_uv_ge_w_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg signed [16:0] r_lam_quad [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [31:0] r_lfx [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lam1 [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [32:0] r_lsum [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lraw [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [32:0] r_bsum [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lamp [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg r_gt_maxlod [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg r_lt_minlod [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lam [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [16:0] r_lrnd [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [3:0]  r_lnx [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [3:0]  r_lfetch [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg        r_mag [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg        r_lend [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [3:0]  r_lsize [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [15:0] r_wl_s [0:3], r_hl_s [0:3], r_dl_s [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg        r_sfl_ge_cnt [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg        r_sfl_gt5 [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [15:0] r_cnt1 [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [15:0] r_lay [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [31:0] r_lstr [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [31:0] r_lb1 [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [3:0] r_lvl [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg r_lin_a [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [7:0] r_fl_a [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [15:0] r_dq [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lam_u, r_lam_v, r_lam_w;
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lam_uv, r_lam_w_d;
+	(* extract_reset = "no" *) reg r_uv_ge_v, r_uv_ge_w_lo, r_uv_ge_w_hi;
+	(* extract_reset = "no" *) reg signed [16:0] r_lam_quad [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [31:0] r_lfx [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lam1 [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [32:0] r_lsum [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lraw [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [32:0] r_bsum [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lamp [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg r_gt_maxlod [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg r_lt_minlod [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_lam [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [16:0] r_lrnd [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [3:0]  r_lnx [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [3:0]  r_lfetch [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg        r_mag [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg        r_lend [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [3:0]  r_lsize [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [15:0] r_wl_s [0:3], r_hl_s [0:3], r_dl_s [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg        r_sfl_ge_cnt [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg        r_sfl_gt5 [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [15:0] r_cnt1 [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [15:0] r_lay [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [31:0] r_lstr [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [31:0] r_lb1 [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [3:0] r_lvl [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg r_lin_a [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [7:0] r_fl_a [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [15:0] r_dq [0:3];
 
 	/* Lane stages A -> B registers (4 lanes parallel) */
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg r_lin [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_lin_wts;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [7:0] r_fl [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [15:0] r_wl [0:3], r_hl [0:3], r_dl [0:3], r_hl1 [0:3];
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [31:0] r_lbase [0:3], r_plane [0:3], r_val [0:3];
+	(* extract_reset = "no" *) reg r_lin [0:3];
+	(* extract_reset = "no" *) reg [3:0] r_lin_wts;
+	(* max_fanout = 12, extract_reset = "no" *) reg [7:0] r_fl [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [15:0] r_wl [0:3], r_hl [0:3], r_dl [0:3], r_hl1 [0:3];
+	(* max_fanout = 12, extract_reset = "no" *) reg [31:0] r_lbase [0:3], r_plane [0:3], r_val [0:3];
 
 	/* Quad slot descriptor snapshot registers (latched on quad start) */
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [31:0] r_base, r_stride;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [15:0] r_w0_a, r_w0_b, r_h0_a, r_h0_b;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [15:0] r_cnt;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [3:0]  r_nlev, r_maxl;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [12:0] r_fc;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg        r_legacy, r_depth, r_blk, r_f565, r_ms, r_tiled, r_unn, r_is3dr, r_arr, r_cube;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0] r_is3d_lod, r_cube_lod;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_is3d_foot, r_is3d_dsz;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_cube_hl, r_cube_tcrd, r_cube_lay, r_cube_foot;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_qlod_lraw, r_not_texb_lraw;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] r_val_dsz_b0, r_val_dsz_b1, r_val_texsz_lo_b0, r_val_texsz_lo_b1, r_val_texsz_hi, r_val_qlod_lo, r_val_qlod_hi, r_val_cmp_lo, r_val_cmp_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [31:0] r_nofetch_a;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  r_nofetch_bord;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [2:0]  r_psl;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_minlod, r_maxlod, r_sbias;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg        r_max_lt_min;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_mu, r_mv, r_mw;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg        r_samp_cmp, r_samp_mag_lin, r_samp_min_lin, r_samp_miplin;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [2:0]  r_cmp_op;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_bcls;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_rowa;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [20:0] r_tfmt;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_gwi;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [31:0] r_dsize_raw, r_image_raw, r_samp_raw, r_dlod_raw;
-	(* keep = "true", max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_row_raw;
+	(* max_fanout = 12, extract_reset = "no" *) reg [31:0] r_base, r_stride;
+	(* extract_reset = "no" *) reg [15:0] r_w0_a, r_w0_b, r_h0_a, r_h0_b;
+	(* max_fanout = 12, extract_reset = "no" *) reg [15:0] r_cnt;
+	(* max_fanout = 12, extract_reset = "no" *) reg [3:0]  r_nlev, r_maxl;
+	(* max_fanout = 12, extract_reset = "no" *) reg [12:0] r_fc;
+	(* max_fanout = 12, extract_reset = "no" *) reg        r_legacy, r_depth, r_blk, r_f565, r_ms, r_tiled, r_unn, r_is3dr, r_arr, r_cube;
+	(* extract_reset = "no" *) reg [2:0] r_is3d_lod, r_cube_lod;
+	(* extract_reset = "no" *) reg [3:0] r_is3d_foot, r_is3d_dsz;
+	(* extract_reset = "no" *) reg [3:0] r_cube_hl, r_cube_tcrd, r_cube_lay, r_cube_foot;
+	(* extract_reset = "no" *) reg [3:0] r_qlod_lraw, r_not_texb_lraw;
+	(* extract_reset = "no" *) reg [3:0] r_val_dsz_b0, r_val_dsz_b1, r_val_texsz_lo_b0, r_val_texsz_lo_b1, r_val_texsz_hi, r_val_qlod_lo, r_val_qlod_hi, r_val_cmp_lo, r_val_cmp_hi;
+	(* extract_reset = "no" *) reg [31:0] r_nofetch_a;
+	(* extract_reset = "no" *) reg [3:0]  r_nofetch_bord;
+	(* max_fanout = 12, extract_reset = "no" *) reg [2:0]  r_psl;
+	(* max_fanout = 12, extract_reset = "no" *) reg signed [16:0] r_minlod, r_maxlod, r_sbias;
+	(* max_fanout = 12, extract_reset = "no" *) reg        r_max_lt_min;
+	(* max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_mu, r_mv, r_mw;
+	(* max_fanout = 12, extract_reset = "no" *) reg        r_samp_cmp, r_samp_mag_lin, r_samp_min_lin, r_samp_miplin;
+	(* max_fanout = 12, extract_reset = "no" *) reg [2:0]  r_cmp_op;
+	(* max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_bcls;
+	(* max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_rowa;
+	(* max_fanout = 12, extract_reset = "no" *) reg [20:0] r_tfmt;
+	(* max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_gwi;
+	(* max_fanout = 12, extract_reset = "no" *) reg [31:0] r_dsize_raw, r_image_raw, r_samp_raw, r_dlod_raw;
+	(* max_fanout = 12, extract_reset = "no" *) reg [1:0]  r_row_raw;
 
 	/* The descriptor of the quad's slot (4 parallel level read ports). */
 	wire [3:0] lvl_l [0:3];
@@ -232,10 +232,10 @@ module atg_tu_addr (
 	wire w0_zero_b = (r_dsize_raw[15:0]  == 16'd0);
 	wire h0_zero_a = (r_dsize_raw[31:16] == 16'd0);
 	wire h0_zero_b = (r_dsize_raw[31:16] == 16'd0);
-	(* keep = "true" *) wire [15:0] w0_a = w0_zero_a ? 16'd1 : r_dsize_raw[15:0];
-	(* keep = "true" *) wire [15:0] w0_b = w0_zero_b ? 16'd1 : r_dsize_raw[15:0];
-	(* keep = "true" *) wire [15:0] h0_a = h0_zero_a ? 16'd1 : r_dsize_raw[31:16];
-	(* keep = "true" *) wire [15:0] h0_b = h0_zero_b ? 16'd1 : r_dsize_raw[31:16];
+	wire [15:0] w0_a = w0_zero_a ? 16'd1 : r_dsize_raw[15:0];
+	wire [15:0] w0_b = w0_zero_b ? 16'd1 : r_dsize_raw[15:0];
+	wire [15:0] h0_a = h0_zero_a ? 16'd1 : r_dsize_raw[31:16];
+	wire [15:0] h0_b = h0_zero_b ? 16'd1 : r_dsize_raw[31:16];
 	wire [3:0] nlev = r_image_raw[3:0] == 4'd0 ? 4'd1 : r_image_raw[3:0] > 4'd13 ? 4'd13 : r_image_raw[3:0];
 	wire [3:0] maxl;
 	wire maxl_bo_unused;
@@ -389,7 +389,7 @@ module atg_tu_addr (
 	wire uv_ge_v_hi = r_uv_ge_v;
 	wire signed [16:0] lam_uv_sel = $signed({uv_ge_v_hi ? r_lam_u[16:9] : r_lam_v[16:9], uv_ge_v_lo ? r_lam_u[8:0] : r_lam_v[8:0]});
 	am_sub #(.W(17)) u_uvw_cmp (.a({~r_lam_uv[16], r_lam_uv[15:0]}), .b({~r_lam_w_d[16], r_lam_w_d[15:0]}), .bi(1'b0), .d(uvw_cmp_d), .bo(uvw_cmp_bo));
-	(* keep = "true" *) wire signed [16:0] lam_quad = $signed({r_uv_ge_w_hi ? r_lam_uv[16:9] : r_lam_w_d[16:9], r_uv_ge_w_lo ? r_lam_uv[8:0] : r_lam_w_d[8:0]});
+	wire signed [16:0] lam_quad = $signed({r_uv_ge_w_hi ? r_lam_uv[16:9] : r_lam_w_d[16:9], r_uv_ge_w_lo ? r_lam_uv[8:0] : r_lam_w_d[8:0]});
 
 	/* 4 Lanes Parallel Stage A and Stage B */
 	wire [31:0] lfx_w_l [0:3];
@@ -516,8 +516,8 @@ module atg_tu_addr (
 		am_add #(.W(4)) u_lnx (.a(r_lam[gl][11:8]), .b(4'd0), .ci(pas[1]), .s(lnx), .co(lvl_carry_unused[gl*2 + 1]));
 		assign lrnd_l[gl]   = lrnd;
 		assign lnx_l[gl]    = lnx;
-		(* keep = "true" *) wire [3:0] lfetch_w = cw2[31] ? 4'd0 : (cw2[30:4] != 27'd0 || cw2[3:0] > r_maxl) ? r_maxl : cw2[3:0];
-		(* keep = "true" *) wire [3:0] lsize_w  = cw0[31:4] != 28'd0 ? 4'd15 : cw0[3:0];
+		wire [3:0] lfetch_w = cw2[31] ? 4'd0 : (cw2[30:4] != 27'd0 || cw2[3:0] > r_maxl) ? r_maxl : cw2[3:0];
+		wire [3:0] lsize_w  = cw0[31:4] != 28'd0 ? 4'd15 : cw0[3:0];
 		assign lfetch_l[gl] = lfetch_w;
 		assign mag_l[gl]    = r_lam[gl][16] || (r_lam[gl][15:0] == 16'd0);
 		assign lend_l[gl]   = (r_lam[gl][15:12] != 4'd0 || r_lam[gl][11:8] >= r_maxl);
@@ -536,9 +536,9 @@ module atg_tu_addr (
 		wire miplin_lvl = miplin;
 		assign fl_l[gl] = miplin_fl ? r_lam[gl][7:0] : 8'd0;
 		wire [3:0] lsize = r_lsize[gl];
-		(* keep = "true" *) wire [3:0] lvl_w = op == OP_TEXSZ ? lsize : op == OP_TEXF ? (r_ms ? 4'd0 : r_lfetch[gl]) : gather_lane[gl] || mag ? 4'd0 :
+		wire [3:0] lvl_w = op == OP_TEXSZ ? lsize : op == OP_TEXF ? (r_ms ? 4'd0 : r_lfetch[gl]) : gather_lane[gl] || mag ? 4'd0 :
 			miplin_lvl ? llin : lmin;
-		(* keep = "true" *) wire lin_w = op[1] || qlod ? 1'b0 : gather_lane[gl] ? 1'b1 : filt && (mag ? r_samp_mag_lin : r_samp_min_lin);
+		wire lin_w = op[1] || qlod ? 1'b0 : gather_lane[gl] ? 1'b1 : filt && (mag ? r_samp_mag_lin : r_samp_min_lin);
 		assign lvl_l[gl] = lvl_w;
 		assign lin_l[gl] = lin_w;
 		assign lrnd_unused[gl] = {r_lrnd[gl][16], r_lrnd[gl][7:0]};
@@ -635,7 +635,7 @@ module atg_tu_addr (
 			.stride(r_stride), .addr(f_addr_l[gl]), .bord(f_bord_l[gl]),
 			.fuv(f_fuv_l[gl]), .fw(f_fw_l[gl])
 		);
-		(* keep = "true" *) wire [15:0] wts_lo_w = r_lin_wts[gl] ? f_fuv_l[gl] : 16'd0;
+		wire [15:0] wts_lo_w = r_lin_wts[gl] ? f_fuv_l[gl] : 16'd0;
 		assign wts_lo_l[gl] = wts_lo_w;
 	end
 	endgenerate
@@ -655,7 +655,7 @@ module atg_tu_addr (
 	wire [1:0] tsz = r_legacy ? 2'd0 : r_psl == 3'd0 ? 2'd2 : r_psl == 3'd1 ? 2'd1 : 2'd0;
 	wire [1:0] nsl = r_psl == 3'd3 ? 2'd1 : r_psl == 3'd4 ? 2'd2 : 2'd0;
 	wire [7:0] vkf = r_legacy || r_fc[4] ? 8'd0 : r_tfmt[7:0];
-	(* keep = "true" *) wire [49:0] ta_ctl_w = {quad, pas[3], r_tfmt[20:9], r_fc[8], vkf, nsl, tsz, pas[2], split, f32, r_f565,
+	wire [49:0] ta_ctl_w = {quad, pas[3], r_tfmt[20:9], r_fc[8], vkf, nsl, tsz, pas[2], split, f32, r_f565,
 		pas[1:0], qlod, gather_ctl ? opr[5:4] : 2'd0, gather_ctl, r_cmp_op, cmp, r_depth, r_bcls, pas != 4'd0,
 		!nxt[4],
 		op == OP_TEXF, nofetch_ctl, r_fc[9], linq};
@@ -673,12 +673,12 @@ module atg_tu_addr (
 	wire [1:0]  la1b_en = {2{st == LA1BA}};
 	wire [1:0]  la2d_en = {2{st == LA2C}};
 	wire [3:0]  lb3_en = {4{st == LB2F}};
-	(* keep = "true", equivalent_register_removal = "no" *) reg [32:0] wdesc1_ce;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [52:0] wdesc2_ce;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] lb3_ce_a;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  lb3_ce_wts;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  lb3_ce_val;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        lb3_ce_bord;
+	reg [32:0] wdesc1_ce;
+	reg [52:0] wdesc2_ce;
+	reg [31:0] lb3_ce_a;
+	reg [7:0]  lb3_ce_wts;
+	reg [7:0]  lb3_ce_val;
+	reg        lb3_ce_bord;
 	genvar gs;
 	generate
 	for (gs = 0; gs < 8; gs = gs + 1) begin : g_ce_grp
@@ -690,9 +690,9 @@ module atg_tu_addr (
 	endgenerate
 
 	/* Fanout-decoupled state enables (<= 16 FFs per enable flip-flop) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] ld_desc_ce;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [22:0] dec_desc_ce;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0]  dec_desc2_ce;
+	reg [15:0] ld_desc_ce;
+	reg [22:0] dec_desc_ce;
+	reg [9:0]  dec_desc2_ce;
 
 	wire [3:0]  cwait_rdy = {4{(st == CWAIT) && !c_bsy}};
 	wire [3:0]  cwait_j1_ce = {4{cwait_rdy[0] && (job == 3'd1)}};
@@ -723,11 +723,11 @@ module atg_tu_addr (
 	wire [7:0]  la0g_ce   = {8{st == LA0G}};
 	wire [1:0]  la1a_g    = {2{st == LA1A}};
 	wire [11:0] la1a_ce   = {{6{la1a_g[1]}}, {6{la1a_g[0]}}};
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] la1_ce;
+	reg [15:0] la1_ce;
 	wire [1:0]  la1ba_g   = {2{st == LA1BA}};
 	wire [11:0] la1ba_ce  = {{6{la1ba_g[1]}}, {6{la1ba_g[0]}}};
-	(* keep = "true", equivalent_register_removal = "no" *) reg [17:0] la1b_ce;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [23:0] la2d_ce;
+	reg [17:0] la1b_ce;
+	reg [23:0] la2d_ce;
 
 	integer k, si;
 	always @(posedge clk) begin

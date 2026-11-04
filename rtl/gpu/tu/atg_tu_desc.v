@@ -97,18 +97,18 @@ module atg_tu_desc (
 	wire rst_inv = !rst_n;
 
 	/* Clean single-cycle BRAMs for slot words 0-7 (rd_slot/rd_samp_slot port and cs port) */
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] wslot_q0, wslot_q1, wslot_q2, wslot_q3;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] wslot_base_lo, wslot_base_hi, wslot_size_lo, wslot_size_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] wslot_img_lo, wslot_img_hi, wslot_str_lo, wslot_str_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] wslot_samp_lo, wslot_samp_hi, wslot_lod_lo, wslot_lod_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] wslot_fmt_lo, wslot_fmt_hi, wslot_row_lo, wslot_row_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] wslot_v4_lo, wslot_v4_hi;
-	(* keep = "true", extract_reset = "no", max_fanout = 16 *) reg [31:0] wdata_q;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg we_base_q, we_size_q, we_img_q, we_str_q, we_samp_q, we_lod_q, we_fmt_q, we_row_q;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg we_size_cs_q, we_img_cs_q, we_fmt_cs_q, we_row_cs_q;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg we_base_vlo, we_base_vhi, we_size_vlo, we_size_vhi, we_img_vlo, we_img_vhi, we_str_vlo, we_str_vhi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg we_samp_vlo, we_samp_vhi, we_lod_vlo, we_lod_vhi, we_fmt_vlo, we_fmt_vhi, we_row_vlo, we_row_vhi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg mark_q_lo, mark_q_hi;
+	(* extract_reset = "no" *) reg [4:0] wslot_q0, wslot_q1, wslot_q2, wslot_q3;
+	(* extract_reset = "no" *) reg [4:0] wslot_base_lo, wslot_base_hi, wslot_size_lo, wslot_size_hi;
+	(* extract_reset = "no" *) reg [4:0] wslot_img_lo, wslot_img_hi, wslot_str_lo, wslot_str_hi;
+	(* extract_reset = "no" *) reg [4:0] wslot_samp_lo, wslot_samp_hi, wslot_lod_lo, wslot_lod_hi;
+	(* extract_reset = "no" *) reg [4:0] wslot_fmt_lo, wslot_fmt_hi, wslot_row_lo, wslot_row_hi;
+	(* extract_reset = "no" *) reg [4:0] wslot_v4_lo, wslot_v4_hi;
+	(* extract_reset = "no", max_fanout = 16 *) reg [31:0] wdata_q;
+	(* extract_reset = "no" *) reg we_base_q, we_size_q, we_img_q, we_str_q, we_samp_q, we_lod_q, we_fmt_q, we_row_q;
+	(* extract_reset = "no" *) reg we_size_cs_q, we_img_cs_q, we_fmt_cs_q, we_row_cs_q;
+	(* extract_reset = "no" *) reg we_base_vlo, we_base_vhi, we_size_vlo, we_size_vhi, we_img_vlo, we_img_vhi, we_str_vlo, we_str_vhi;
+	(* extract_reset = "no" *) reg we_samp_vlo, we_samp_vhi, we_lod_vlo, we_lod_vhi, we_fmt_vlo, we_fmt_vhi, we_row_vlo, we_row_vhi;
+	(* extract_reset = "no" *) reg mark_q_lo, mark_q_hi;
 	reg [31:0] base_vld, size_vld, img_vld, str_vld, samp_vld, lod_vld, fmt_vld, row_vld, off_vld;
 
 	wire [31:0] bram_base_rdata, bram_size_rdata, bram_img_rdata, bram_str_rdata, bram_samp_rdata, bram_lod_rdata;
@@ -118,23 +118,23 @@ module atg_tu_desc (
 	wire [20:0] cs_fmt_rdata;
 	wire [1:0]  cs_row_rdata;
 
-	(* keep = "true", extract_reset = "no" *) reg [31:0] rd_base_q, rd_size_q, rd_img_q, rd_str_q, rd_samp_q, rd_lod_q;
-	(* keep = "true", extract_reset = "no" *) reg [20:0] rd_fmt_q;
-	(* keep = "true", extract_reset = "no" *) reg [1:0]  rd_row_q;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] rd_slot_d1_base, rd_slot_d1_size, rd_slot_d1_img, rd_slot_d1_str;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] rd_slot_d1_samp, rd_slot_d1_lod, rd_slot_d1_fmt, rd_slot_d1_row;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] rd_slot_d1_off, rd_slot_d1_pl;
+	(* extract_reset = "no" *) reg [31:0] rd_base_q, rd_size_q, rd_img_q, rd_str_q, rd_samp_q, rd_lod_q;
+	(* extract_reset = "no" *) reg [20:0] rd_fmt_q;
+	(* extract_reset = "no" *) reg [1:0]  rd_row_q;
+	(* extract_reset = "no" *) reg [4:0] rd_slot_d1_base, rd_slot_d1_size, rd_slot_d1_img, rd_slot_d1_str;
+	(* extract_reset = "no" *) reg [4:0] rd_slot_d1_samp, rd_slot_d1_lod, rd_slot_d1_fmt, rd_slot_d1_row;
+	(* extract_reset = "no" *) reg [4:0] rd_slot_d1_off, rd_slot_d1_pl;
 	reg rd_row_vld_d2;
 	reg rd_off_vld_d1,  rd_off_vld_d2;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg rd_base_vld_d2_lo, rd_base_vld_d2_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg rd_size_vld_d2_lo, rd_size_vld_d2_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg rd_img_vld_d2_lo,  rd_img_vld_d2_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg rd_str_vld_d2_lo,  rd_str_vld_d2_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg rd_samp_vld_d2_lo, rd_samp_vld_d2_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg rd_lod_vld_d2_lo,  rd_lod_vld_d2_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg rd_fmt_vld_d2_0, rd_fmt_vld_d2_1, rd_fmt_vld_d2_2;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] rd_loff_en_lo, rd_loff_en_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] rd_pl_en_lo,   rd_pl_en_hi;
+	(* extract_reset = "no" *) reg rd_base_vld_d2_lo, rd_base_vld_d2_hi;
+	(* extract_reset = "no" *) reg rd_size_vld_d2_lo, rd_size_vld_d2_hi;
+	(* extract_reset = "no" *) reg rd_img_vld_d2_lo,  rd_img_vld_d2_hi;
+	(* extract_reset = "no" *) reg rd_str_vld_d2_lo,  rd_str_vld_d2_hi;
+	(* extract_reset = "no" *) reg rd_samp_vld_d2_lo, rd_samp_vld_d2_hi;
+	(* extract_reset = "no" *) reg rd_lod_vld_d2_lo,  rd_lod_vld_d2_hi;
+	(* extract_reset = "no" *) reg rd_fmt_vld_d2_0, rd_fmt_vld_d2_1, rd_fmt_vld_d2_2;
+	(* extract_reset = "no" *) reg [3:0] rd_loff_en_lo, rd_loff_en_hi;
+	(* extract_reset = "no" *) reg [3:0] rd_pl_en_lo,   rd_pl_en_hi;
 
 	am_bram_sdp #(.W(32), .ADDR_W(5)) u_bram_base (
 		.clk(clk), .we(we_base_q), .waddr(wslot_q0), .wdata(wdata_q),
@@ -188,20 +188,20 @@ module atg_tu_desc (
 	);
 
 	/* Clean single-cycle BRAMs for d_off and d_plane (4 parallel read ports) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg b_we_off_q, b_we_pl_q;
-	(* keep = "true", extract_reset = "no" *) reg [8:0] b_waddr_off_q;
-	(* keep = "true", extract_reset = "no" *) reg [8:0] b_waddr_pl_q;
-	(* keep = "true", extract_reset = "no" *) reg [25:0] b_wdata_off_q;
-	(* keep = "true", extract_reset = "no" *) reg [25:0] b_wdata_pl_q;
+	reg b_we_off_q, b_we_pl_q;
+	(* extract_reset = "no" *) reg [8:0] b_waddr_off_q;
+	(* extract_reset = "no" *) reg [8:0] b_waddr_pl_q;
+	(* extract_reset = "no" *) reg [25:0] b_wdata_off_q;
+	(* extract_reset = "no" *) reg [25:0] b_wdata_pl_q;
 
-	(* keep = "true", extract_reset = "no" *) reg [8:0] raddr_off0_q, raddr_off1_q, raddr_off2_q, raddr_off3_q;
-	(* keep = "true", extract_reset = "no" *) reg [8:0] raddr_pl0_q,  raddr_pl1_q,  raddr_pl2_q,  raddr_pl3_q;
+	(* extract_reset = "no" *) reg [8:0] raddr_off0_q, raddr_off1_q, raddr_off2_q, raddr_off3_q;
+	(* extract_reset = "no" *) reg [8:0] raddr_pl0_q,  raddr_pl1_q,  raddr_pl2_q,  raddr_pl3_q;
 	(* extract_reset = "no" *) reg [3:0] rlvl0_d1, rlvl1_d1, rlvl2_d1, rlvl3_d1;
 
 	wire [25:0] bram_off0_rdata, bram_off1_rdata, bram_off2_rdata, bram_off3_rdata;
 	wire [25:0] bram_pl0_rdata,  bram_pl1_rdata,  bram_pl2_rdata,  bram_pl3_rdata;
-	(* keep = "true", extract_reset = "no" *) reg [25:0] rd_off0_q, rd_off1_q, rd_off2_q, rd_off3_q;
-	(* keep = "true", extract_reset = "no" *) reg [25:0] rd_pl0_q,  rd_pl1_q,  rd_pl2_q,  rd_pl3_q;
+	(* extract_reset = "no" *) reg [25:0] rd_off0_q, rd_off1_q, rd_off2_q, rd_off3_q;
+	(* extract_reset = "no" *) reg [25:0] rd_pl0_q,  rd_pl1_q,  rd_pl2_q,  rd_pl3_q;
 
 	am_bram_sdp #(.W(26), .ADDR_W(9)) u_bram_off0 (
 		.clk(clk), .we(b_we_off_q), .waddr(b_waddr_off_q), .wdata(b_wdata_off_q),
@@ -241,13 +241,13 @@ module atg_tu_desc (
 	am_sub #(.W(9)) u_s_fs (.a(st_idx[8:0]), .b(GHCI_S_TU), .bi(1'b0), .d(s_fs), .bo(carry_unused[0]));
 	wire in_fs = !st_idx[9] && st_idx[8:0] >= GHCI_S_TU && st_idx[8:0] < GHCI_S_TU + 9'd256;
 	wire in_vs = st_idx[9:8] == GHCI_S_TU_VS[9:8];
-	(* keep = "true" *) wire in_tu = st_we && (in_fs || in_vs);
-	(* keep = "true" *) wire in_tu_a = in_tu;
-	(* keep = "true" *) wire in_tu_b = in_tu;
+	wire in_tu = st_we && (in_fs || in_vs);
+	wire in_tu_a = in_tu;
+	wire in_tu_b = in_tu;
 	/* The slot (vertex: 16-31) and the word. */
-	(* keep = "true" *) wire [8:0] s_off = in_vs ? {1'b1, st_idx[7:0]} : {1'b0, s_fs[7:0]};
-	(* keep = "true" *) wire [4:0] wslot_d_a = s_off[8:4];
-	(* keep = "true" *) wire [4:0] wslot_d_b = s_off[8:4];
+	wire [8:0] s_off = in_vs ? {1'b1, st_idx[7:0]} : {1'b0, s_fs[7:0]};
+	wire [4:0] wslot_d_a = s_off[8:4];
+	wire [4:0] wslot_d_b = s_off[8:4];
 	wire mark = in_tu_b && (s_off[3:0] == GHCI_TEX_SIZE || s_off[3:0] == GHCI_TEX_IMAGE ||
 		s_off[3:0] == GHCI_TEX_FORMAT || s_off[3:0] == GHCI_TEX_ROW);
 
@@ -262,30 +262,30 @@ module atg_tu_desc (
 
 	(* max_fanout = 16 *) reg [3:0] st;
 	reg [31:0] dirty;
-	(* keep = "true", max_fanout = 16 *) reg r_busy;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [4:0] cs_0, cs_1, cs_2, cs_3, cs_bram;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [4:0] cs_vld_clr_lo, cs_vld_clr_hi, cs_vld_off_lo, cs_vld_off_hi, cs_waddr;
-	(* keep = "true", max_fanout = 16, equivalent_register_removal = "no" *) reg [3:0] cl;
+	(* max_fanout = 16 *) reg r_busy;
+	reg [4:0] cs_0, cs_1, cs_2, cs_3, cs_bram;
+	reg [4:0] cs_vld_clr_lo, cs_vld_clr_hi, cs_vld_off_lo, cs_vld_off_hi, cs_waddr;
+	(* max_fanout = 16 *) reg [3:0] cl;
 	(* extract_reset = "no" *) reg [31:0] acc;
 
 	/* Registers for pipelined calculation (1 level per cycle in S_RUN) */
-	(* keep = "true", extract_reset = "no" *) reg [31:0] r_sz_raw;
-	(* keep = "true", extract_reset = "no" *) reg [31:0] r_img_raw;
-	(* keep = "true", extract_reset = "no" *) reg [20:0] r_fmt_raw;
-	(* keep = "true", extract_reset = "no" *) reg [1:0]  r_row_raw;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg cs_size_vld_lo, cs_size_vld_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg cs_img_vld_lo,  cs_img_vld_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg cs_fmt_vld_lo,  cs_fmt_vld_hi;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg cs_row_vld_q;
-	(* keep = "true", extract_reset = "no", max_fanout = 16 *) reg [31:0] r_sz;
-	(* keep = "true", extract_reset = "no", max_fanout = 16 *) reg [31:0] r_img;
-	(* keep = "true", extract_reset = "no", max_fanout = 16, rom_style = "distributed" *) reg [20:0] r_fmt;
+	(* extract_reset = "no" *) reg [31:0] r_sz_raw;
+	(* extract_reset = "no" *) reg [31:0] r_img_raw;
+	(* extract_reset = "no" *) reg [20:0] r_fmt_raw;
+	(* extract_reset = "no" *) reg [1:0]  r_row_raw;
+	(* extract_reset = "no" *) reg cs_size_vld_lo, cs_size_vld_hi;
+	(* extract_reset = "no" *) reg cs_img_vld_lo,  cs_img_vld_hi;
+	(* extract_reset = "no" *) reg cs_fmt_vld_lo,  cs_fmt_vld_hi;
+	(* extract_reset = "no" *) reg cs_row_vld_q;
+	(* extract_reset = "no", max_fanout = 16 *) reg [31:0] r_sz;
+	(* extract_reset = "no", max_fanout = 16 *) reg [31:0] r_img;
+	(* extract_reset = "no", max_fanout = 16, rom_style = "distributed" *) reg [20:0] r_fmt;
 	(* extract_reset = "no", max_fanout = 16 *) reg [1:0]  r_row;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no", rom_style = "distributed" *) reg [6:0] r_clay_a, r_clay_b0, r_clay_c;
-	(* equivalent_register_removal = "no", extract_reset = "no", max_fanout = 10, rom_style = "distributed" *) reg [6:0] r_clay_b1;
+	(* extract_reset = "no", rom_style = "distributed" *) reg [6:0] r_clay_a, r_clay_b0, r_clay_c;
+	(* extract_reset = "no", max_fanout = 10, rom_style = "distributed" *) reg [6:0] r_clay_b1;
 
 	reg [8:0]  v_p;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [6:0] v_p9_s;
+	reg [6:0] v_p9_s;
 	(* extract_reset = "no", srl_style = "register" *) reg [3:0]  cl_p  [0:9];
 	(* extract_reset = "no", srl_style = "register" *) reg [3:0]  cl1_p [0:9];
 
@@ -307,8 +307,8 @@ module atg_tu_desc (
 	(* extract_reset = "no" *) reg [31:0] r_pd;
 
 	/* Fast 3-level 6-input-bounded priority encoder for lowest marked slot (<= 4 LUTs) */
-	(* keep = "true" *) wire [7:0] nib_nz;
-	(* keep = "true" *) wire [1:0] nib_lo [0:7];
+	wire [7:0] nib_nz;
+	wire [1:0] nib_lo [0:7];
 	genvar gn;
 	generate
 	for (gn = 0; gn < 8; gn = gn + 1) begin : g_nib
@@ -319,8 +319,8 @@ module atg_tu_desc (
 	end
 	endgenerate
 
-	(* keep = "true" *) wire [3:0] pair_nz;
-	(* keep = "true" *) wire [2:0] pair_lo [0:3];
+	wire [3:0] pair_nz;
+	wire [2:0] pair_lo [0:3];
 	genvar gp;
 	generate
 	for (gp = 0; gp < 4; gp = gp + 1) begin : g_pair
@@ -329,10 +329,10 @@ module atg_tu_desc (
 	end
 	endgenerate
 
-	(* keep = "true" *) wire lo_half_nz = pair_nz[0] | pair_nz[1];
-	(* keep = "true" *) wire dirty_nz   = lo_half_nz | pair_nz[2] | pair_nz[3];
-	(* keep = "true" *) wire [3:0] half_lo0 = pair_nz[0] ? {1'b0, pair_lo[0]} : {1'b1, pair_lo[1]};
-	(* keep = "true" *) wire [3:0] half_lo1 = pair_nz[2] ? {1'b0, pair_lo[2]} : {1'b1, pair_lo[3]};
+	wire lo_half_nz = pair_nz[0] | pair_nz[1];
+	wire dirty_nz   = lo_half_nz | pair_nz[2] | pair_nz[3];
+	wire [3:0] half_lo0 = pair_nz[0] ? {1'b0, pair_lo[0]} : {1'b1, pair_lo[1]};
+	wire [3:0] half_lo1 = pair_nz[2] ? {1'b0, pair_lo[2]} : {1'b1, pair_lo[3]};
 	wire [4:0] lo = lo_half_nz ? {1'b0, half_lo0} : {1'b1, half_lo1};
 
 	/* Stage S_DIM combinational logic (from r_w0, r_h0, r_cnt, r_is3d, cl) */
@@ -342,7 +342,7 @@ module atg_tu_desc (
 	am_shift #(.W(16), .SW(4)) u_dsh (.a(r_cnt), .amt(cl), .left(1'b0), .arith(1'b0), .y(dsh));
 	wire [15:0] w = ws == 16'd0 ? 16'd1 : ws;
 	wire [15:0] h = hs == 16'd0 ? 16'd1 : hs;
-	(* keep = "true" *) wire [6:0] clay = layout(r_img, r_fmt, r_row);
+	wire [6:0] clay = layout(r_img, r_fmt, r_row);
 	wire [16:0] m = r_clay_a[6:5] == 2'd0 ? 17'd0 : r_clay_a[6:5] == 2'd1 ? 17'd1 : r_clay_a[6:5] == 2'd2 ? 17'd3 : 17'd7;
 	wire [16:0] wm;
 	am_add #(.W(17)) u_wm (.a({1'b0, r_w}), .b(m), .ci(1'b0), .s(wm), .co(carry_unused[1]));
@@ -367,7 +367,7 @@ module atg_tu_desc (
 	wire [3:0] clay4_s    = {4{r_clay_b0[4]}};
 	wire [3:0] clay3_s    = {4{r_clay_c[3]}};
 	wire [3:0] clay_is1_s = {4{r_clay_c[2:0] == 3'd1}};
-	(* keep = "true" *) wire [33:0] ps_in = {
+	wire [33:0] ps_in = {
 		clay4_s[3] ? {2'b00, r_t[31:25]} : {1'b0, r_wrh[32:25]},
 		clay4_s[2] ? r_t[24:17]          : r_wrh[24:17],
 		clay4_s[1] ? r_t[16:9]           : r_wrh[16:9],
@@ -378,7 +378,7 @@ module atg_tu_desc (
 		.amt(r_clay_b1[2:0]), .left(1'b1), .arith(1'b0), .y(ps));
 	wire [33:0] t5_1 = {r_t5[28:0], 5'd0};
 	wire [33:0] t5_2 = {r_t5[27:0], 6'd0};
-	(* keep = "true" *) wire [33:0] p_in = {
+	wire [33:0] p_in = {
 		clay3_s[3] ? (clay_is1_s[3] ? t5_1[33:25] : t5_2[33:25]) : r_ps[33:25],
 		clay3_s[2] ? (clay_is1_s[2] ? t5_1[24:17] : t5_2[24:17]) : r_ps[24:17],
 		clay3_s[1] ? (clay_is1_s[1] ? t5_1[16:9]  : t5_2[16:9])  : r_ps[16:9],
@@ -399,11 +399,11 @@ module atg_tu_desc (
 	am_add #(.W(4)) u_cl1 (.a(cl), .b(4'd0), .ci(1'b1), .s(cl1), .co(carry_unused[6]));
 
 	/* the slot taken (cs in S_LOAD) and the slot marked (wslot_v4), one-hot */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [4:0] load_clr_s;
-	(* keep = "true", equivalent_register_removal = "no" *) reg acc_clr_lo_q, acc_clr_hi_q;
+	reg [4:0] load_clr_s;
+	reg acc_clr_lo_q, acc_clr_hi_q;
 	wire done_lo     = (st == S_DONE);
 	wire done_hi     = (st == S_DONE);
-	(* keep = "true", equivalent_register_removal = "no" *) reg [6:0] ce_lw;
+	reg [6:0] ce_lw;
 	wire [5:0] ce_lf = {6{st == S_LOAD_FMT}};
 	wire we_base_d = in_tu_a && (s_off[3:0] == GHCI_TEX_BASE);
 	wire we_size_d = in_tu_a && (s_off[3:0] == GHCI_TEX_SIZE);

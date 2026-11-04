@@ -32,7 +32,7 @@ module atg_tu_fx32 #(
 
 	/* k = e - 150 + sh: 1.f << k (0 <= k < 8) or >> -k with the sticky (-24 < k < 0) */
 	wire [9:0] k_bias;
-	(* keep = "true" *) wire [9:0] k_s0, nk_s0;
+	wire [9:0] k_s0, nk_s0;
 	wire [31:0] r;
 	wire [3:0] carry_unused;
 	am_sub #(.W(10)) u_kbias (.a(10'd150), .b({5'd0, sh}), .bi(1'b0), .d(k_bias),
@@ -41,9 +41,9 @@ module atg_tu_fx32 #(
 	am_sub #(.W(10)) u_nk (.a(k_bias), .b({2'b00, f[30:23]}), .bi(1'b0), .d(nk_s0), .bo(carry_unused[2]));
 
 	/* Stage 0A -> Stage 0B Pipeline Registers (when LAT >= 2) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0]  r0_k_a, r0_k_b, r0_k_c;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0]  r0_nk_a, r0_nk_b, r0_nk_c;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r0_f_l, r0_f_r, r0_f_s;
+	reg [9:0]  r0_k_a, r0_k_b, r0_k_c;
+	reg [9:0]  r0_nk_a, r0_nk_b, r0_nk_c;
+	reg [31:0] r0_f_l, r0_f_r, r0_f_s;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r0_k_a  <= 10'd0;
@@ -100,7 +100,7 @@ module atg_tu_fx32 #(
 			if (kr_st && {27'd0, nk[4:0]} > b)
 				st = st | f_s[b];
 	end
-	(* keep = "true" *) wire [31:0] qv_s0 = {
+	wire [31:0] qv_s0 = {
 		kl_s[3] ? qs_l[31:24] : kr_s[3] ? qs_r[31:24] : 8'd0,
 		kl_s[2] ? qs_l[23:16] : kr_s[2] ? qs_r[23:16] : 8'd0,
 		kl_s[1] ? qs_l[15:8]  : kr_s[1] ? qs_r[15:8]  : 8'd0,
@@ -112,11 +112,11 @@ module atg_tu_fx32 #(
 	wire ovf_s0  = (f_s[30:23] == 8'hFF) || (!k[9] && k[8:3] != 6'd0);
 
 	/* Stage 0 -> Stage 1 Pipeline Registers (when LAT >= 1) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r_qv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_st;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_sign_r_lo, r_sign_r_hi, r_sign_q_lo, r_sign_q_hi;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_zero_lo, r_zero_hi;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_ovf_lo, r_ovf_hi;
+	reg [31:0] r_qv;
+	reg r_st;
+	reg r_sign_r_lo, r_sign_r_hi, r_sign_q_lo, r_sign_q_hi;
+	reg r_zero_lo, r_zero_hi;
+	reg r_ovf_lo, r_ovf_hi;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -163,7 +163,7 @@ module atg_tu_fx32 #(
 		.s(r),
 		.co(carry_unused[3])
 	);
-	(* keep = "true" *) wire [31:0] q_out;
+	wire [31:0] q_out;
 	assign q_out[15:0]  = s1_zero_lo ? 16'd0 : s1_ovf_lo ? (s1_sign_q_lo ? 16'h0000 : 16'hFFFF) : r[15:0];
 	assign q_out[31:16] = s1_zero_hi ? 16'd0 : s1_ovf_hi ? (s1_sign_q_hi ? 16'h8000 : 16'h7FFF) : r[31:16];
 	assign q = q_out;

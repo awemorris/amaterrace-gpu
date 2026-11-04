@@ -33,17 +33,17 @@ module atg_tu_coord #(
 	wire rst_inv = !rst_n;
 
 	/* Stage 0: k = e - 126: 1.f << k (0 <= k < 25) or >> -k with the sticky (-24 < k < 0) */
-	(* keep = "true" *) wire [9:0] k_s0, nk_s0;
+	wire [9:0] k_s0, nk_s0;
 	wire [1:0] carry_unused_0;
 	am_sub #(.W(10)) u_k (.a({2'b00, f[30:23]}), .b(10'd126), .bi(1'b0), .d(k_s0),
 		.bo(carry_unused_0[0]));
 	am_sub #(.W(10)) u_nk (.a(10'd126), .b({2'b00, f[30:23]}), .bi(1'b0), .d(nk_s0), .bo(carry_unused_0[1]));
 
 	/* Stage 0A -> Stage 0B Pipeline Registers (when LAT >= 2) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0]  r0_k_a, r0_k_b, r0_k_c;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0]  r0_nk_a, r0_nk_b, r0_nk_c;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r0_f_l, r0_f_r, r0_f_s;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  r0_mode;
+	reg [9:0]  r0_k_a, r0_k_b, r0_k_c;
+	reg [9:0]  r0_nk_a, r0_nk_b, r0_nk_c;
+	reg [31:0] r0_f_l, r0_f_r, r0_f_s;
+	reg [1:0]  r0_mode;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r0_k_a  <= 10'd0;
@@ -112,14 +112,14 @@ module atg_tu_coord #(
 	wire k_ge25_0 = (!k[9] && !kl_lo);
 
 	/* Stage 1 Pipeline Registers (LAT >= 1) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [14:0] r_q_lo;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [13:0] r_q_hi;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_st;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_sign_lo, r_sign_hi;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0] r_exp;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_nan;
-	(* keep = "true", equivalent_register_removal = "no" *) reg r_k_ge25;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0] r_mode;
+	reg [14:0] r_q_lo;
+	reg [13:0] r_q_hi;
+	reg r_st;
+	reg r_sign_lo, r_sign_hi;
+	reg [7:0] r_exp;
+	reg r_nan;
+	reg r_k_ge25;
+	reg [1:0] r_mode;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -147,8 +147,8 @@ module atg_tu_coord #(
 
 	wire [28:0] s_q      = (LAT >= 1) ? {r_q_hi, r_q_lo} : q;
 	wire        s_st     = (LAT >= 1) ? r_st      : st;
-	(* keep = "true" *) wire s_sign_lo = (LAT >= 1) ? r_sign_lo : f_s[31];
-	(* keep = "true" *) wire s_sign_hi = (LAT >= 1) ? r_sign_hi : f_s[31];
+	wire s_sign_lo = (LAT >= 1) ? r_sign_lo : f_s[31];
+	wire s_sign_hi = (LAT >= 1) ? r_sign_hi : f_s[31];
 	wire [7:0]  s_exp    = (LAT >= 1) ? r_exp     : f_s[30:23];
 	wire        s_nan    = (LAT >= 1) ? r_nan     : nan_0;
 	wire        s_k_ge25 = (LAT >= 1) ? r_k_ge25  : k_ge25_0;
@@ -166,10 +166,10 @@ module atg_tu_coord #(
 	);
 
 	/* Stage 2A -> Stage 2B Pipeline Registers (when LAT >= 2) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [29:0] r2_tv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r2_sign, r2_nan, r2_k_ge25;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  r2_exp;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  r2_mode;
+	reg [29:0] r2_tv;
+	reg        r2_sign, r2_nan, r2_k_ge25;
+	reg [7:0]  r2_exp;
+	reg [1:0]  r2_mode;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r2_tv     <= 30'd0;
@@ -200,17 +200,17 @@ module atg_tu_coord #(
 	wire tv_lt_min = tvs[29] && !tvs[28];
 	wire tv_gt_max = !tvs[29] && (tvs[28] && tvs[27:24] != 4'd0 && (tvs[27:24] != 4'd1 || tvs[23:0] != 24'd0));
 	wire exp_ge131 = f_exp[7] && (f_exp[6:2] != 5'd0 || f_exp[1:0] == 2'b11);
-	(* keep = "true" *) wire zero_nan_lo = (f_exp == 8'd0 || f_nan);
-	(* keep = "true" *) wire zero_nan_hi = (f_exp == 8'd0 || f_nan);
-	(* keep = "true" *) wire mode1_lo = f_mode[1];
-	(* keep = "true" *) wire mode1_hi = f_mode[1];
-	(* keep = "true" *) wire mode0_hi = f_mode[0];
-	(* keep = "true" *) wire clamp_min_lo = (exp_ge131 ? f_sign : tv_lt_min);
-	(* keep = "true" *) wire clamp_min_hi = (exp_ge131 ? f_sign : tv_lt_min);
-	(* keep = "true" *) wire clamp_max_lo = (exp_ge131 ? !f_sign : tv_gt_max);
-	(* keep = "true" *) wire clamp_max_hi = (exp_ge131 ? !f_sign : tv_gt_max);
-	(* keep = "true" *) wire wrap_zero_lo = (f_exp == 8'hFF || f_k_ge25);
-	(* keep = "true" *) wire wrap_zero_hi = (f_exp == 8'hFF || f_k_ge25);
+	wire zero_nan_lo = (f_exp == 8'd0 || f_nan);
+	wire zero_nan_hi = (f_exp == 8'd0 || f_nan);
+	wire mode1_lo = f_mode[1];
+	wire mode1_hi = f_mode[1];
+	wire mode0_hi = f_mode[0];
+	wire clamp_min_lo = (exp_ge131 ? f_sign : tv_lt_min);
+	wire clamp_min_hi = (exp_ge131 ? f_sign : tv_lt_min);
+	wire clamp_max_lo = (exp_ge131 ? !f_sign : tv_gt_max);
+	wire clamp_max_hi = (exp_ge131 ? !f_sign : tv_gt_max);
+	wire wrap_zero_lo = (f_exp == 8'hFF || f_k_ge25);
+	wire wrap_zero_hi = (f_exp == 8'hFF || f_k_ge25);
 	wire [29:0] c_min = -30'sd268435456;
 	wire [29:0] c_max =  30'sd285212672;
 	wire [29:0] c_wrap = {5'd0, mode0_hi ? t[24] : 1'b0, t[23:0]};

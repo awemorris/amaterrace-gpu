@@ -33,12 +33,12 @@ module atg_tu_cube_sc (
 	am_sub #(.W(9)) u_sh (.a({1'b0, v[30:23]}), .b({1'b0, em}), .bi(1'b0), .d(sh_w), .bo(carry_unused[0]));
 	am_sub #(.W(9)) u_k (.a({1'b0, em}), .b({1'b0, v[30:23]}), .bi(1'b0), .d(k_w), .bo(carry_unused[1]));
 
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] v_p1;
-	(* keep = "true", equivalent_register_removal = "no" *) reg neg_p1;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [8:0] sh_p1, k_p1_st0, k_p1_st1;
-	(* equivalent_register_removal = "no", max_fanout = 12 *) reg [8:0] k_p1_sh_lo, k_p1_sh_hi;
-	(* keep = "true", equivalent_register_removal = "no" *) reg v_zero_p1, sh_gt2_p1, k_lt24_p1;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [26:0] m3_p1;
+	reg [31:0] v_p1;
+	reg neg_p1;
+	reg [8:0] sh_p1, k_p1_st0, k_p1_st1;
+	(* max_fanout = 12 *) reg [8:0] k_p1_sh_lo, k_p1_sh_hi;
+	reg v_zero_p1, sh_gt2_p1, k_lt24_p1;
+	reg [26:0] m3_p1;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -96,7 +96,7 @@ module atg_tu_cube_sc (
 	wire [3:0] sh8_s  = {4{sh_p1[8]}};
 	wire [3:0] k24_s  = {4{k_lt24_p1}};
 
-	(* keep = "true" *) wire [26:0] q_w = {
+	wire [26:0] q_w = {
 		vz_s[3] ? 6'd0 : sgt2_s[3] ? m3_p1[26:21] : !sh8_s[3] ? qs_l[26:21] : k24_s[3] ? qs_r[26:21] : 6'd0,
 		vz_s[2] ? 7'd0 : sgt2_s[2] ? m3_p1[20:14] : !sh8_s[2] ? qs_l[20:14] : k24_s[2] ? qs_r[20:14] : 7'd0,
 		vz_s[1] ? 7'd0 : sgt2_s[1] ? m3_p1[13:7]  : !sh8_s[1] ? qs_l[13:7]  : k24_s[1] ? qs_r[13:7]  : 7'd0,
@@ -119,8 +119,8 @@ module atg_tu_cube_sc (
 		end
 	end
 
-	(* keep = "true", equivalent_register_removal = "no" *) reg [26:0] q_p2, m3_p2;
-	(* keep = "true", equivalent_register_removal = "no" *) reg sticky_p2, ng_p2, v_zero_p2;
+	reg [26:0] q_p2, m3_p2;
+	reg sticky_p2, ng_p2, v_zero_p2;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -142,15 +142,15 @@ module atg_tu_cube_sc (
 	wire [26:0] qm_d_unused;
 	wire qm_bo;
 	am_sub #(.W(27)) u_qm (.a(m3_p2), .b(q_p2), .bi(1'b0), .d(qm_d_unused), .bo(qm_bo));
-	(* keep = "true" *) wire gt_m3_lo = qm_bo;
-	(* keep = "true" *) wire gt_m3_hi = qm_bo;
+	wire gt_m3_lo = qm_bo;
+	wire gt_m3_hi = qm_bo;
 	wire [26:0] q_c = {
 		gt_m3_hi ? m3_p2[26:14] : q_p2[26:14],
 		gt_m3_lo ? m3_p2[13:0]  : q_p2[13:0]
 	};
 
-	(* keep = "true", equivalent_register_removal = "no" *) reg [26:0] q_p3, m3_p3;
-	(* keep = "true", equivalent_register_removal = "no" *) reg sticky_p3, ng_p3_lo, ng_p3_hi, v_zero_p3;
+	reg [26:0] q_p3, m3_p3;
+	reg sticky_p3, ng_p3_lo, ng_p3_hi, v_zero_p3;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -181,8 +181,8 @@ module atg_tu_cube_sc (
 		.co(carry_unused[3])
 	);
 
-	(* keep = "true", equivalent_register_removal = "no" *) reg [26:0] qst_p4, r_p4, m3_p4;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [3:0] ng_p4, v_zero_p4;
+	reg [26:0] qst_p4, r_p4, m3_p4;
+	reg [3:0] ng_p4, v_zero_p4;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -205,7 +205,7 @@ module atg_tu_cube_sc (
 	wire qst_lt_m3;
 	am_sub #(.W(27)) u_qst_cmp (.a(qst_p4), .b(m3_p4), .bi(1'b0), .d(qst_cmp_unused), .bo(qst_lt_m3));
 	wire [3:0] qst_lt_m3_s = {4{qst_lt_m3}};
-	(* keep = "true" *) wire [26:0] o_mux;
+	wire [26:0] o_mux;
 	assign o_mux[6:0]   = v_zero_p4[0] ? m3_p4[6:0]   : (ng_p4[0] && !qst_lt_m3_s[0]) ? 7'd0 : r_p4[6:0];
 	assign o_mux[13:7]  = v_zero_p4[1] ? m3_p4[13:7]  : (ng_p4[1] && !qst_lt_m3_s[1]) ? 7'd0 : r_p4[13:7];
 	assign o_mux[20:14] = v_zero_p4[2] ? m3_p4[20:14] : (ng_p4[2] && !qst_lt_m3_s[2]) ? 7'd0 : r_p4[20:14];

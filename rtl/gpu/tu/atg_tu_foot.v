@@ -70,12 +70,12 @@ module atg_tu_foot #(
 
 	wire rst_inv = !rst_n;
 
-	(* keep = "true" *) wire off_u_s_lo = off[3];
-	(* keep = "true" *) wire off_u_s_hi = off[3];
-	(* keep = "true" *) wire off_v_s_lo = off[7];
-	(* keep = "true" *) wire off_v_s_hi = off[7];
-	(* keep = "true" *) wire off_w_s_lo = off[11];
-	(* keep = "true" *) wire off_w_s_hi = off[11];
+	wire off_u_s_lo = off[3];
+	wire off_u_s_hi = off[3];
+	wire off_v_s_lo = off[7];
+	wire off_v_s_hi = off[7];
+	wire off_w_s_lo = off[11];
+	wire off_w_s_hi = off[11];
 	wire signed [23:0] du_w = {{12{off_u_s_hi}}, {8{off_u_s_lo}}, off[3:0]};
 	wire signed [23:0] dv_w = {{12{off_v_s_hi}}, {8{off_v_s_lo}}, off[7:4]};
 	wire signed [23:0] dw_w = {{12{off_w_s_hi}}, {8{off_w_s_lo}}, off[11:8]};
@@ -90,19 +90,19 @@ module atg_tu_foot #(
 	am_sub #(.W(5)) u_dw_m1 (.a({off[11], off[11:8]}), .b(5'd1), .bi(1'b0), .d(dw_m1_5), .bo(carry_unused[0]));
 	am_sub #(.W(5)) u_du_m1 (.a({off[3],  off[3:0]}),  .b(5'd1), .bi(1'b0), .d(du_m1_5), .bo(carry_unused[3]));
 	am_sub #(.W(5)) u_dv_m1 (.a({off[7],  off[7:4]}),  .b(5'd1), .bi(1'b0), .d(dv_m1_5), .bo(carry_unused[4]));
-	(* keep = "true" *) wire du_m1_s_lo = du_m1_5[4];
-	(* keep = "true" *) wire du_m1_s_hi = du_m1_5[4];
-	(* keep = "true" *) wire dv_m1_s_lo = dv_m1_5[4];
-	(* keep = "true" *) wire dv_m1_s_hi = dv_m1_5[4];
-	(* keep = "true" *) wire dw_m1_s_lo = dw_m1_5[4];
-	(* keep = "true" *) wire dw_m1_s_hi = dw_m1_5[4];
+	wire du_m1_s_lo = du_m1_5[4];
+	wire du_m1_s_hi = du_m1_5[4];
+	wire dv_m1_s_lo = dv_m1_5[4];
+	wire dv_m1_s_hi = dv_m1_5[4];
+	wire dw_m1_s_lo = dw_m1_5[4];
+	wire dw_m1_s_hi = dw_m1_5[4];
 	wire signed [23:0] du_m1_w = {{12{du_m1_s_hi}}, {7{du_m1_s_lo}}, du_m1_5};
 	wire signed [23:0] dv_m1_w = {{12{dv_m1_s_hi}}, {7{dv_m1_s_lo}}, dv_m1_5};
 	wire signed [23:0] dw_m1_w = {{12{dw_m1_s_hi}}, {7{dw_m1_s_lo}}, dw_m1_5};
 
 	/* Pre-register steady texel offsets when LAT >= 2 so Stage 0A adders see <= 1 Pre-LUT */
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [23:0] r_du, r_dv, r_dw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [23:0] r_du_m1, r_dv_m1, r_dw_m1;
+	reg signed [23:0] r_du, r_dv, r_dw;
+	reg signed [23:0] r_du_m1, r_dv_m1, r_dw_m1;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r_du    <= 24'sd0;
@@ -128,8 +128,8 @@ module atg_tu_foot #(
 	wire signed [23:0] dv_m1 = (LAT >= 2) ? r_dv_m1 : dv_m1_w;
 	wire signed [23:0] dw_m1 = (LAT >= 2) ? r_dw_m1 : dw_m1_w;
 
-	(* keep = "true" *) wire dw_sel_lo = (dlin && !cw[7]);
-	(* keep = "true" *) wire dw_sel_hi = (dlin && !cw[7]);
+	wire dw_sel_lo = (dlin && !cw[7]);
+	wire dw_sel_hi = (dlin && !cw[7]);
 	wire signed [23:0] dw_adj = {dw_sel_hi ? dw_m1[23:12] : dw[23:12], dw_sel_lo ? dw_m1[11:0] : dw[11:0]};
 
 	wire signed [23:0] cw_int = {cw[30], cw[30:8]};
@@ -139,10 +139,10 @@ module atg_tu_foot #(
 	wire signed [23:0] cu_int = {cu[30], cu[30:8]};
 	wire signed [23:0] cv_int = {cv[30], cv[30:8]};
 
-	(* keep = "true" *) wire du_sel_lo = (lin && !cu[7]);
-	(* keep = "true" *) wire du_sel_hi = (lin && !cu[7]);
-	(* keep = "true" *) wire dv_sel_lo = (lin && !cv[7]);
-	(* keep = "true" *) wire dv_sel_hi = (lin && !cv[7]);
+	wire du_sel_lo = (lin && !cu[7]);
+	wire du_sel_hi = (lin && !cu[7]);
+	wire dv_sel_lo = (lin && !cv[7]);
+	wire dv_sel_hi = (lin && !cv[7]);
 	wire signed [23:0] du_adj = {du_sel_hi ? du_m1[23:12] : du[23:12], du_sel_lo ? du_m1[11:0] : du[11:0]};
 	wire signed [23:0] dv_adj = {dv_sel_hi ? dv_m1[23:12] : dv[23:12], dv_sel_lo ? dv_m1[11:0] : dv[11:0]};
 
@@ -151,11 +151,11 @@ module atg_tu_foot #(
 	wire [15:0] s0_fuv = {cv2_lo, cu2_lo};
 
 	/* Pre-adder pipeline registers (when LAT >= 5, capturing in LA2D so Stage 0A adders see 0 Pre-LUTs) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [23:0] r_pre_cw_int, r_pre_cu_int_i0, r_pre_cu_int_i1, r_pre_cv_int_j0, r_pre_cv_int_j1;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [23:0] r_pre_dw_adj, r_pre_du_adj, r_pre_dv_adj;
-	(* keep = "true", equivalent_register_removal = "no" *) reg               r_pre_ki_ci, r_pre_i1_ci, r_pre_j1_ci;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0]        r_pre_fuv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]         r_pre_fw;
+	reg signed [23:0] r_pre_cw_int, r_pre_cu_int_i0, r_pre_cu_int_i1, r_pre_cv_int_j0, r_pre_cv_int_j1;
+	reg signed [23:0] r_pre_dw_adj, r_pre_du_adj, r_pre_dv_adj;
+	reg               r_pre_ki_ci, r_pre_i1_ci, r_pre_j1_ci;
+	reg [15:0]        r_pre_fuv;
+	reg [7:0]         r_pre_fw;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			r_pre_cw_int    <= 24'sd0;
@@ -204,7 +204,7 @@ module atg_tu_foot #(
 
 	am_add #(.W(24)) u_ki (.a(a_cw_int), .b(a_dw_adj), .ci(a_ki_ci), .s(ki),
 		.co(carry_unused[1]));
-	(* keep = "true" *) wire dw_s_ext = dw[23];
+	wire dw_s_ext = dw[23];
 	am_add #(.W(33)) u_zd (.a({z[31], z}), .b({{9{dw_s_ext}}, dw}), .ci(1'b0), .s(zd),
 		.co(carry_unused[2]));
 
@@ -218,8 +218,8 @@ module atg_tu_foot #(
 	am_add #(.W(24)) u_j1 (.a(a_cv_int_j1), .b(dv), .ci(a_j1_ci), .s(j1),
 		.co(carry_unused[8]));
 
-	(* keep = "true" *) wire du_s_ext = du[23];
-	(* keep = "true" *) wire dv_s_ext = dv[23];
+	wire du_s_ext = du[23];
+	wire dv_s_ext = dv[23];
 	am_add #(.W(33)) u_xd (.a({x[31], x}), .b({{9{du_s_ext}}, du}), .ci(1'b0), .s(xd),
 		.co(carry_unused[9]));
 	am_add #(.W(33)) u_yd (.a({y[31], y}), .b({{9{dv_s_ext}}, dv}), .ci(1'b0), .s(yd),
@@ -228,27 +228,27 @@ module atg_tu_foot #(
 	/* ========================================================================= */
 	/* Stage 0A -> Stage 0B Pipeline Registers (when LAT >= 2)                   */
 	/* ========================================================================= */
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [23:0] rA_i0_wi, rA_i0_c00, rA_i0_c01, rA_i0_ci;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [23:0] rA_i1_wi, rA_i1_c10, rA_i1_c11;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [23:0] rA_j0_wj, rA_j0_c00, rA_j0_c10, rA_j0_cj;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [23:0] rA_j1_wj, rA_j1_c01, rA_j1_c11;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [23:0] rA_ki;
-	(* keep = "true", equivalent_register_removal = "no" *) reg signed [32:0] rA_zd, rA_xd, rA_yd;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] rA_fuv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  rA_fw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] rA_wl_wi0, rA_wl_wi1, rA_wl_fi, rA_wl_c00, rA_wl_c10, rA_wl_c01, rA_wl_c11, rA_wl_ci, rA_wl_cj, rA_wl_misc;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] rA_hl_wj0, rA_hl_wj1, rA_hl_fj;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] rA_dl_kw, rA_dl_kf;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rA_mu_0, rA_mu_1, rA_mv_0, rA_mv_1, rA_mw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  rA_face_0, rA_face_1, rA_face_2, rA_face_3, rA_face;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] rA_stride, rA_lbase, rA_plane;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rA_op;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rA_gather, rA_cube, rA_is3d, rA_tiled, rA_lin, rA_ms;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rA_smp;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  rA_psl;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rA_ra;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rA_blk, rA_row, rA_col;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rA_gwi;
+	reg signed [23:0] rA_i0_wi, rA_i0_c00, rA_i0_c01, rA_i0_ci;
+	reg signed [23:0] rA_i1_wi, rA_i1_c10, rA_i1_c11;
+	reg signed [23:0] rA_j0_wj, rA_j0_c00, rA_j0_c10, rA_j0_cj;
+	reg signed [23:0] rA_j1_wj, rA_j1_c01, rA_j1_c11;
+	reg signed [23:0] rA_ki;
+	reg signed [32:0] rA_zd, rA_xd, rA_yd;
+	reg [15:0] rA_fuv;
+	reg [7:0]  rA_fw;
+	reg [15:0] rA_wl_wi0, rA_wl_wi1, rA_wl_fi, rA_wl_c00, rA_wl_c10, rA_wl_c01, rA_wl_c11, rA_wl_ci, rA_wl_cj, rA_wl_misc;
+	reg [15:0] rA_hl_wj0, rA_hl_wj1, rA_hl_fj;
+	reg [15:0] rA_dl_kw, rA_dl_kf;
+	reg [1:0]  rA_mu_0, rA_mu_1, rA_mv_0, rA_mv_1, rA_mw;
+	reg [2:0]  rA_face_0, rA_face_1, rA_face_2, rA_face_3, rA_face;
+	reg [31:0] rA_stride, rA_lbase, rA_plane;
+	reg [1:0]  rA_op;
+	reg        rA_gather, rA_cube, rA_is3d, rA_tiled, rA_lin, rA_ms;
+	reg [1:0]  rA_smp;
+	reg [2:0]  rA_psl;
+	reg [1:0]  rA_ra;
+	reg        rA_blk, rA_row, rA_col;
+	reg [1:0]  rA_gwi;
 
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -405,18 +405,18 @@ module atg_tu_foot #(
 	atg_tu_iclamp #(.LAT(W_LAT)) u_cj0 (.clk(clk), .rst_n(rst_n), .en(en), .v({{9{inB_j0_cj[23]}}, inB_j0_cj}), .n(inB_wl_cj), .c(cj0));
 
 	/* Stage 0B1 -> Stage 0B2 Pipeline Registers (when LAT >= 5, matching W_LAT = 1) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] rB1_wms;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [16:0] rB1_wr;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] rB1_fuv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  rB1_fw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  rB1_face;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] rB1_stride, rB1_lbase, rB1_plane;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rB1_op;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rB1_gather, rB1_cube, rB1_is3d, rB1_tiled, rB1_lin, rB1_ms;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rB1_smp;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  rB1_psl;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rB1_blk, rB1_row, rB1_col;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rB1_gwi;
+	reg [15:0] rB1_wms;
+	reg [16:0] rB1_wr;
+	reg [15:0] rB1_fuv;
+	reg [7:0]  rB1_fw;
+	reg [2:0]  rB1_face;
+	reg [31:0] rB1_stride, rB1_lbase, rB1_plane;
+	reg [1:0]  rB1_op;
+	reg        rB1_gather, rB1_cube, rB1_is3d, rB1_tiled, rB1_lin, rB1_ms;
+	reg [1:0]  rB1_smp;
+	reg [2:0]  rB1_psl;
+	reg        rB1_blk, rB1_row, rB1_col;
+	reg [1:0]  rB1_gwi;
 	always @(posedge clk) begin
 		if (rst_inv) begin
 			rB1_wms    <= 16'd0;
@@ -505,26 +505,26 @@ module atg_tu_foot #(
 	endgenerate
 
 	/* Stage 0B2 -> Stage 0B3 Pipeline Registers (when LAT >= 5, registering pure-LUT outputs of wrap/iclamp/cube_edge) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [16:0] rB2_kw, rB2_wi0, rB2_wi1, rB2_wj0, rB2_wj1;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] rB2_kf, rB2_fi, rB2_fj, rB2_ci0, rB2_cj0;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [34:0] rB2_c00l, rB2_c10, rB2_c01, rB2_c11;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] rB2_wms;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [16:0] rB2_wr;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] rB2_fuv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  rB2_fw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  rB2_face;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] rB2_stride, rB2_lbase, rB2_plane;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rB2_op;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rB2_gather, rB2_cube, rB2_is3d, rB2_tiled, rB2_lin, rB2_ms, rB2_msf_wr_lo, rB2_msf_wr_hi, rB2_msf_tw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rB2_smp;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  rB2_psl;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rB2_blk, rB2_row, rB2_col;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rB2_gwi;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rB2_texf_i [0:3], rB2_texf_j [0:3], rB2_texf_f [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rB2_msf_i [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rB2_cube_i [0:3], rB2_cube_j [0:3], rB2_cube_f [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        rB2_lin_c00_i [0:3], rB2_lin_c00_j [0:3], rB2_lin_f [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  rB2_ft0_ct_i_lo [0:3], rB2_ft0_ct_i_hi [0:3], rB2_ft0_ct_j_lo [0:3], rB2_ft0_ct_j_hi [0:3], rB2_ft0_ti [0:3], rB2_ft0_f [0:3], rB2_pt0 [0:3];
+	reg [16:0] rB2_kw, rB2_wi0, rB2_wi1, rB2_wj0, rB2_wj1;
+	reg [15:0] rB2_kf, rB2_fi, rB2_fj, rB2_ci0, rB2_cj0;
+	reg [34:0] rB2_c00l, rB2_c10, rB2_c01, rB2_c11;
+	reg [15:0] rB2_wms;
+	reg [16:0] rB2_wr;
+	reg [15:0] rB2_fuv;
+	reg [7:0]  rB2_fw;
+	reg [2:0]  rB2_face;
+	reg [31:0] rB2_stride, rB2_lbase, rB2_plane;
+	reg [1:0]  rB2_op;
+	reg        rB2_gather, rB2_cube, rB2_is3d, rB2_tiled, rB2_lin, rB2_ms, rB2_msf_wr_lo, rB2_msf_wr_hi, rB2_msf_tw;
+	reg [1:0]  rB2_smp;
+	reg [2:0]  rB2_psl;
+	reg        rB2_blk, rB2_row, rB2_col;
+	reg [1:0]  rB2_gwi;
+	reg        rB2_texf_i [0:3], rB2_texf_j [0:3], rB2_texf_f [0:3];
+	reg        rB2_msf_i [0:3];
+	reg        rB2_cube_i [0:3], rB2_cube_j [0:3], rB2_cube_f [0:3];
+	reg        rB2_lin_c00_i [0:3], rB2_lin_c00_j [0:3], rB2_lin_f [0:3];
+	reg [1:0]  rB2_ft0_ct_i_lo [0:3], rB2_ft0_ct_i_hi [0:3], rB2_ft0_ct_j_lo [0:3], rB2_ft0_ct_j_hi [0:3], rB2_ft0_ti [0:3], rB2_ft0_f [0:3], rB2_pt0 [0:3];
 	integer kb2;
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -690,8 +690,8 @@ module atg_tu_foot #(
 	wire s0_bk = sB_is3d && !sB_texf && sB_kw[16];
 	wire [15:0] fim = {sB_fi[13:0], sB_smp};
 
-	(* keep = "true" *) wire [15:0] ti_s0 [0:3];
-	(* keep = "true" *) wire [15:0] tj_s0 [0:3];
+	wire [15:0] ti_s0 [0:3];
+	wire [15:0] tj_s0 [0:3];
 	wire [2:0]  tf_s0 [0:3];
 	wire [1:0]  part_s0 [0:3];
 	wire        tb_s0 [0:3];
@@ -724,13 +724,13 @@ module atg_tu_foot #(
 		wire [1:0] ft0_f    = (LAT >= 5) ? rB2_ft0_f[gt0]    : ft0_raw;
 		wire [1:0] pt0      = (LAT >= 5) ? rB2_pt0[gt0]      : pt0_raw;
 
-		(* keep = "true" *) wire [15:0] c00_i = lin_c00_i ? sB_c00l[31:16] : sB_ci0;
-		(* keep = "true" *) wire [15:0] c00_j = lin_c00_j ? sB_c00l[15:0]  : sB_cj0;
+		wire [15:0] c00_i = lin_c00_i ? sB_c00l[31:16] : sB_ci0;
+		wire [15:0] c00_j = lin_c00_j ? sB_c00l[15:0]  : sB_cj0;
 		wire [2:0]  c00_f = lin_f ? sB_c00l[34:32] : sB_face;
-		(* keep = "true" *) wire [7:0] ct0_i_lo = ft0_ct_i_lo == 2'd0 ? c00_i[7:0]  : ft0_ct_i_lo == 2'd1 ? sB_c10[23:16] : ft0_ct_i_lo == 2'd2 ? sB_c01[23:16] : sB_c11[23:16];
-		(* keep = "true" *) wire [7:0] ct0_i_hi = ft0_ct_i_hi == 2'd0 ? c00_i[15:8] : ft0_ct_i_hi == 2'd1 ? sB_c10[31:24] : ft0_ct_i_hi == 2'd2 ? sB_c01[31:24] : sB_c11[31:24];
-		(* keep = "true" *) wire [7:0] ct0_j_lo = ft0_ct_j_lo == 2'd0 ? c00_j[7:0]  : ft0_ct_j_lo == 2'd1 ? sB_c10[7:0]   : ft0_ct_j_lo == 2'd2 ? sB_c01[7:0]   : sB_c11[7:0];
-		(* keep = "true" *) wire [7:0] ct0_j_hi = ft0_ct_j_hi == 2'd0 ? c00_j[15:8] : ft0_ct_j_hi == 2'd1 ? sB_c10[15:8]  : ft0_ct_j_hi == 2'd2 ? sB_c01[15:8]  : sB_c11[15:8];
+		wire [7:0] ct0_i_lo = ft0_ct_i_lo == 2'd0 ? c00_i[7:0]  : ft0_ct_i_lo == 2'd1 ? sB_c10[23:16] : ft0_ct_i_lo == 2'd2 ? sB_c01[23:16] : sB_c11[23:16];
+		wire [7:0] ct0_i_hi = ft0_ct_i_hi == 2'd0 ? c00_i[15:8] : ft0_ct_i_hi == 2'd1 ? sB_c10[31:24] : ft0_ct_i_hi == 2'd2 ? sB_c01[31:24] : sB_c11[31:24];
+		wire [7:0] ct0_j_lo = ft0_ct_j_lo == 2'd0 ? c00_j[7:0]  : ft0_ct_j_lo == 2'd1 ? sB_c10[7:0]   : ft0_ct_j_lo == 2'd2 ? sB_c01[7:0]   : sB_c11[7:0];
+		wire [7:0] ct0_j_hi = ft0_ct_j_hi == 2'd0 ? c00_j[15:8] : ft0_ct_j_hi == 2'd1 ? sB_c10[15:8]  : ft0_ct_j_hi == 2'd2 ? sB_c01[15:8]  : sB_c11[15:8];
 		wire [15:0] ct0_i = {ct0_i_hi, ct0_i_lo};
 		wire [15:0] ct0_j = {ct0_j_hi, ct0_j_lo};
 		wire [2:0]  ct0_f = (!lin_f || ft0_f == 2'd0) ? c00_f : ft0_f == 2'd1 ? sB_c10[34:32] : ft0_f == 2'd2 ? sB_c01[34:32] : sB_c11[34:32];
@@ -742,8 +742,8 @@ module atg_tu_foot #(
 	end
 	endgenerate
 
-	(* keep = "true" *) wire [16:0] s0_wr = {sB_msf_wr_hi ? {1'b0, sB_wms[15:8]} : sB_wr[16:8], sB_msf_wr_lo ? sB_wms[7:0] : sB_wr[7:0]};
-	(* keep = "true" *) wire [15:0] s0_wr_tw = sB_msf_tw ? sB_wms : sB_wr[15:0];
+	wire [16:0] s0_wr = {sB_msf_wr_hi ? {1'b0, sB_wms[15:8]} : sB_wr[16:8], sB_msf_wr_lo ? sB_wms[7:0] : sB_wr[7:0]};
+	wire [15:0] s0_wr_tw = sB_msf_tw ? sB_wms : sB_wr[15:0];
 	wire [15:0] s0_tw;
 	wire carry_tw_unused;
 	am_add #(.W(16)) u_tw (.a({2'b00, s0_wr_tw[15:2]}), .b(16'd0), .ci(s0_wr_tw[1:0] != 2'd0), .s(s0_tw),
@@ -752,25 +752,25 @@ module atg_tu_foot #(
 	/* ========================================================================= */
 	/* Stage 0B -> Stage 1 Pipeline Registers (LAT >= 1)                         */
 	/* ========================================================================= */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r0_k;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r0_lbase;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r0_plane;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r0_stride;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [16:0] r0_wr;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r0_tw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r0_fuv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  r0_fw;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r0_tiled;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  r0_psl;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r0_blk;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r0_cube;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r0_texf;
+	reg [15:0] r0_k;
+	reg [31:0] r0_lbase;
+	reg [31:0] r0_plane;
+	reg [31:0] r0_stride;
+	reg [16:0] r0_wr;
+	reg [15:0] r0_tw;
+	reg [15:0] r0_fuv;
+	reg [7:0]  r0_fw;
+	reg        r0_tiled;
+	reg [2:0]  r0_psl;
+	reg        r0_blk;
+	reg        r0_cube;
+	reg        r0_texf;
 
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r0_ti [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r0_tj [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  r0_tf [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  r0_part [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r0_tb [0:3];
+	reg [15:0] r0_ti [0:3];
+	reg [15:0] r0_tj [0:3];
+	reg [2:0]  r0_tf [0:3];
+	reg [1:0]  r0_part [0:3];
+	reg        r0_tb [0:3];
 
 	integer ki0;
 	always @(posedge clk) begin
@@ -852,9 +852,9 @@ module atg_tu_foot #(
 		wire [15:0] s1_ti_w   = (LAT >= 1) ? r0_ti[gt1]   : ti_s0[gt1];
 		wire [15:0] s1_tj_w   = (LAT >= 1) ? r0_tj[gt1]   : tj_s0[gt1];
 		wire [2:0]  s1_tf_w   = (LAT >= 1) ? r0_tf[gt1]   : tf_s0[gt1];
-		(* keep = "true" *) wire tb_w_a    = s1_tiled || s1_blk;
-		(* keep = "true" *) wire tb_w_b_lo = s1_tiled || s1_blk;
-		(* keep = "true" *) wire tb_w_b_hi = s1_tiled || s1_blk;
+		wire tb_w_a    = s1_tiled || s1_blk;
+		wire tb_w_b_lo = s1_tiled || s1_blk;
+		wire tb_w_b_hi = s1_tiled || s1_blk;
 		wire [16:0] b_m = {tb_w_b_hi ? {1'b0, s1_tw[15:8]} : s1_wr[16:8], tb_w_b_lo ? s1_tw[7:0] : s1_wr[7:0]};
 
 		am_mul #(.AW(32), .BW(3), .LAT(M_LAT)) u_fs (.clk(m_clk), .en(en), .a(s1_stride), .b(s1_tf_w), .p(fs_comb[gt1]));
@@ -864,23 +864,23 @@ module atg_tu_foot #(
 	endgenerate
 
 	/* Stage 1A -> Stage 1B Pipeline Registers (when LAT >= 3) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r1_lbase, r1b_lbase, r1c_lbase;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r1_ti [0:3], r1b_ti [0:3], r1c_ti [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r1_tj [0:3], r1b_tj [0:3], r1c_tj [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  r1_part [0:3], r1b_part [0:3], r1c_part [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1_tb [0:3], r1b_tb [0:3], r1c_tb [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1_tiled, r1b_tiled, r1c_tiled;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1_blk, r1b_blk, r1c_blk;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1_cube, r1b_cube, r1c_cube;
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1_texf, r1b_texf, r1c_texf;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  r1_psl, r1b_psl, r1c_psl;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r1_fuv, r1b_fuv, r1c_fuv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  r1_fw, r1b_fw, r1c_fw;
+	reg [31:0] r1_lbase, r1b_lbase, r1c_lbase;
+	reg [15:0] r1_ti [0:3], r1b_ti [0:3], r1c_ti [0:3];
+	reg [15:0] r1_tj [0:3], r1b_tj [0:3], r1c_tj [0:3];
+	reg [1:0]  r1_part [0:3], r1b_part [0:3], r1c_part [0:3];
+	reg        r1_tb [0:3], r1b_tb [0:3], r1c_tb [0:3];
+	reg        r1_tiled, r1b_tiled, r1c_tiled;
+	reg        r1_blk, r1b_blk, r1c_blk;
+	reg        r1_cube, r1b_cube, r1c_cube;
+	reg        r1_texf, r1b_texf, r1c_texf;
+	reg [2:0]  r1_psl, r1b_psl, r1c_psl;
+	reg [15:0] r1_fuv, r1b_fuv, r1c_fuv;
+	reg [7:0]  r1_fw, r1b_fw, r1c_fw;
 
 	/* Post-DSP output registers (when LAT >= 5) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r1c_kp;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r1c_fs [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r1c_m [0:3];
+	reg [31:0] r1c_kp;
+	reg [31:0] r1c_fs [0:3];
+	reg [31:0] r1c_m [0:3];
 
 	integer ki1;
 	always @(posedge clk) begin
@@ -951,23 +951,23 @@ module atg_tu_foot #(
 	for (gt_s1 = 0; gt_s1 < 4; gt_s1 = gt_s1 + 1) begin : g_slot_1b_s1
 		wire [31:0] m_in  = (LAT >= 5) ? r1c_m[gt_s1]  : m_comb[gt_s1][31:0];
 		wire [15:0] ti_in = (LAT >= 5) ? r1c_ti[gt_s1] : (LAT >= 3) ? r1b_ti[gt_s1] : (LAT >= 1) ? r0_ti[gt_s1] : ti_s0[gt_s1];
-		(* keep = "true" *) wire tb_in = s1b_tiled || s1b_blk;
+		wire tb_in = s1b_tiled || s1b_blk;
 		am_add #(.W(32)) u_s1 (.a(m_in), .b(tb_in ? {18'd0, ti_in[15:2]} : {16'd0, ti_in}), .ci(1'b0), .s(s1_comb[gt_s1]),
 			.co(cu_t1[gt_s1]));
 	end
 	endgenerate
 
 	/* Stage 1C -> Stage 1D Pipeline Registers (when LAT >= 5, separating u_lbk/u_s1 from u_a1/u_sh) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r1d_lbk;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r1d_s1 [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r1d_fs [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r1d_ti [0:3], r1d_tj [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  r1d_part [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1d_tb [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r1d_tiled, r1d_blk, r1d_cube, r1d_texf;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0]  r1d_psl [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r1d_fuv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  r1d_fw;
+	reg [31:0] r1d_lbk;
+	reg [31:0] r1d_s1 [0:3];
+	reg [31:0] r1d_fs [0:3];
+	reg [15:0] r1d_ti [0:3], r1d_tj [0:3];
+	reg [1:0]  r1d_part [0:3];
+	reg        r1d_tb [0:3];
+	reg        r1d_tiled, r1d_blk, r1d_cube, r1d_texf;
+	reg [2:0]  r1d_psl [0:3];
+	reg [15:0] r1d_fuv;
+	reg [7:0]  r1d_fw;
 	integer ki1d;
 	always @(posedge clk) begin
 		if (rst_inv) begin
@@ -1026,16 +1026,16 @@ module atg_tu_foot #(
 		wire [15:0] ti = (LAT >= 5) ? r1d_ti[gt] : (LAT >= 3) ? r1b_ti[gt] : (LAT >= 1) ? r0_ti[gt] : ti_s0[gt];
 		wire [15:0] tj = (LAT >= 5) ? r1d_tj[gt] : (LAT >= 3) ? r1b_tj[gt] : (LAT >= 1) ? r0_tj[gt] : tj_s0[gt];
 		wire [2:0]  psl_slot = (LAT >= 5) ? r1d_psl[gt] : s1b_psl;
-		(* keep = "true" *) wire [2:0] psl_sh_lo = psl_slot;
-		(* keep = "true" *) wire [2:0] psl_sh_hi = psl_slot;
-		(* keep = "true" *) wire psl_is1_lo = (psl_slot == 3'd1);
-		(* keep = "true" *) wire psl_is1_hi = (psl_slot == 3'd1);
-		(* keep = "true" *) wire blk_lo   = s1d_blk;
-		(* keep = "true" *) wire blk_hi   = s1d_blk;
-		(* keep = "true" *) wire tiled_lo = s1d_tiled;
-		(* keep = "true" *) wire tiled_hi = s1d_tiled;
-		(* keep = "true" *) wire cf_lo    = s1d_cube && !s1d_texf;
-		(* keep = "true" *) wire cf_hi    = s1d_cube && !s1d_texf;
+		wire [2:0] psl_sh_lo = psl_slot;
+		wire [2:0] psl_sh_hi = psl_slot;
+		wire psl_is1_lo = (psl_slot == 3'd1);
+		wire psl_is1_hi = (psl_slot == 3'd1);
+		wire blk_lo   = s1d_blk;
+		wire blk_hi   = s1d_blk;
+		wire tiled_lo = s1d_tiled;
+		wire tiled_hi = s1d_tiled;
+		wire cf_lo    = s1d_cube && !s1d_texf;
+		wire cf_hi    = s1d_cube && !s1d_texf;
 
 		wire [31:0] sh_lo_w, sh_hi_w;
 		am_shift #(.W(32), .SW(3)) u_sh_lo (.a(s1), .amt(psl_sh_lo), .left(1'b1), .arith(1'b0), .y(sh_lo_w));
@@ -1052,15 +1052,15 @@ module atg_tu_foot #(
 	endgenerate
 
 	/* Stage 1B -> Stage 2 Pipeline Registers (when LAT >= 4) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r2_to [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r2_a1 [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  r2_part [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  r2_ti [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0]  r2_tj [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r2_tb [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r2_blk;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r2_fuv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  r2_fw;
+	reg [31:0] r2_to [0:3];
+	reg [31:0] r2_a1 [0:3];
+	reg [1:0]  r2_part [0:3];
+	reg [1:0]  r2_ti [0:3];
+	reg [1:0]  r2_tj [0:3];
+	reg        r2_tb [0:3];
+	reg        r2_blk;
+	reg [15:0] r2_fuv;
+	reg [7:0]  r2_fw;
 
 	integer ki2;
 	always @(posedge clk) begin
@@ -1113,11 +1113,11 @@ module atg_tu_foot #(
 	endgenerate
 
 	/* Stage 2A -> Stage 2B Pipeline Registers (when LAT >= 5, separating u_a2 and u_a) */
-	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] r2b_a2 [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [3:0]  r2b_part_off [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg        r2b_tb [0:3];
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] r2b_fuv;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [7:0]  r2b_fw;
+	reg [31:0] r2b_a2 [0:3];
+	reg [3:0]  r2b_part_off [0:3];
+	reg        r2b_tb [0:3];
+	reg [15:0] r2b_fuv;
+	reg [7:0]  r2b_fw;
 	integer ki2b;
 	always @(posedge clk) begin
 		if (rst_inv) begin
