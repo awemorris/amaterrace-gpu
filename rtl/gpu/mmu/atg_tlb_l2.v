@@ -25,38 +25,13 @@ module atg_ram64x1d_array #(
 	input wire [5:0] raddr,
 	output wire [WIDTH-1:0] dout
 );
-`ifdef SYNTH_KINTEX7
-	genvar i;
-	generate
-		for (i = 0; i < WIDTH; i = i + 1) begin : g_bit
-			RAM64X1D u_ram (
-				.WCLK(clk),
-				.WE(we),
-				.D(din[i]),
-				.A0(waddr[0]),
-				.A1(waddr[1]),
-				.A2(waddr[2]),
-				.A3(waddr[3]),
-				.A4(waddr[4]),
-				.A5(waddr[5]),
-				.DPRA0(raddr[0]),
-				.DPRA1(raddr[1]),
-				.DPRA2(raddr[2]),
-				.DPRA3(raddr[3]),
-				.DPRA4(raddr[4]),
-				.DPRA5(raddr[5]),
-				.SPO(),
-				.DPO(dout[i])
-			);
-		end
-	endgenerate
-`else
+
 	reg [WIDTH-1:0] mem [0:63];
 	always @(posedge clk) begin
 		if (we) mem[waddr] <= din;
 	end
 	assign dout = mem[raddr];
-`endif
+
 endmodule
 
 module atg_tlb_l2 #(
@@ -214,21 +189,12 @@ module atg_tlb_l2 #(
 	);
 
 	wire [1:0] next_ptr_g0, next_ptr_g1, next_ptr_g2, next_ptr_g3;
-`ifdef SYNTH_KINTEX7
-	LUT1 #(.INIT(2'h2)) u_b_ptr0_0 (.I0(next_ptr[0]), .O(next_ptr_g0[0]));
-	LUT1 #(.INIT(2'h2)) u_b_ptr0_1 (.I0(next_ptr[1]), .O(next_ptr_g0[1]));
-	LUT1 #(.INIT(2'h2)) u_b_ptr1_0 (.I0(next_ptr[0]), .O(next_ptr_g1[0]));
-	LUT1 #(.INIT(2'h2)) u_b_ptr1_1 (.I0(next_ptr[1]), .O(next_ptr_g1[1]));
-	LUT1 #(.INIT(2'h2)) u_b_ptr2_0 (.I0(next_ptr[0]), .O(next_ptr_g2[0]));
-	LUT1 #(.INIT(2'h2)) u_b_ptr2_1 (.I0(next_ptr[1]), .O(next_ptr_g2[1]));
-	LUT1 #(.INIT(2'h2)) u_b_ptr3_0 (.I0(next_ptr[0]), .O(next_ptr_g3[0]));
-	LUT1 #(.INIT(2'h2)) u_b_ptr3_1 (.I0(next_ptr[1]), .O(next_ptr_g3[1]));
-`else
+
 	assign next_ptr_g0 = next_ptr;
 	assign next_ptr_g1 = next_ptr;
 	assign next_ptr_g2 = next_ptr;
 	assign next_ptr_g3 = next_ptr;
-`endif
+
 
 	/* Sliced Write Enables per way and field (fanout <= 15 per WE net) */
 	(* keep = "true", equivalent_register_removal = "no" *) reg we0_vpn_a, we0_vpn_b, we0_vpn_c;
@@ -391,107 +357,7 @@ module atg_tlb_l2 #(
 	wire [1:0] ref_set_in_g0, ref_set_in_g1, ref_set_in_g2, ref_set_in_g3;
 	wire [3:0] ref_set_hi_g0, ref_set_hi_g1, ref_set_hi_g2, ref_set_hi_g3;
 
-`ifdef SYNTH_KINTEX7
-	LUT1 #(.INIT(2'h2)) u_b_w0_sl0_0 (.I0(lookup_set_w0_sl[0]), .O(l2_set_w0_sl_g0[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_sl0_1 (.I0(lookup_set_w0_sl[1]), .O(l2_set_w0_sl_g0[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_sl1_0 (.I0(lookup_set_w0_sl[0]), .O(l2_set_w0_sl_g1[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_sl1_1 (.I0(lookup_set_w0_sl[1]), .O(l2_set_w0_sl_g1[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_sl2_0 (.I0(lookup_set_w0_sl[0]), .O(l2_set_w0_sl_g2[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_sl2_1 (.I0(lookup_set_w0_sl[1]), .O(l2_set_w0_sl_g2[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_sl3_0 (.I0(lookup_set_w0_sl[0]), .O(l2_set_w0_sl_g3[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_sl3_1 (.I0(lookup_set_w0_sl[1]), .O(l2_set_w0_sl_g3[1]));
 
-	LUT1 #(.INIT(2'h2)) u_b_w1_sl0_0 (.I0(lookup_set_w1_sl[0]), .O(l2_set_w1_sl_g0[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_sl0_1 (.I0(lookup_set_w1_sl[1]), .O(l2_set_w1_sl_g0[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_sl1_0 (.I0(lookup_set_w1_sl[0]), .O(l2_set_w1_sl_g1[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_sl1_1 (.I0(lookup_set_w1_sl[1]), .O(l2_set_w1_sl_g1[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_sl2_0 (.I0(lookup_set_w1_sl[0]), .O(l2_set_w1_sl_g2[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_sl2_1 (.I0(lookup_set_w1_sl[1]), .O(l2_set_w1_sl_g2[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_sl3_0 (.I0(lookup_set_w1_sl[0]), .O(l2_set_w1_sl_g3[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_sl3_1 (.I0(lookup_set_w1_sl[1]), .O(l2_set_w1_sl_g3[1]));
-
-	LUT1 #(.INIT(2'h2)) u_b_w2_sl0_0 (.I0(lookup_set_w2_sl[0]), .O(l2_set_w2_sl_g0[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_sl0_1 (.I0(lookup_set_w2_sl[1]), .O(l2_set_w2_sl_g0[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_sl1_0 (.I0(lookup_set_w2_sl[0]), .O(l2_set_w2_sl_g1[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_sl1_1 (.I0(lookup_set_w2_sl[1]), .O(l2_set_w2_sl_g1[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_sl2_0 (.I0(lookup_set_w2_sl[0]), .O(l2_set_w2_sl_g2[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_sl2_1 (.I0(lookup_set_w2_sl[1]), .O(l2_set_w2_sl_g2[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_sl3_0 (.I0(lookup_set_w2_sl[0]), .O(l2_set_w2_sl_g3[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_sl3_1 (.I0(lookup_set_w2_sl[1]), .O(l2_set_w2_sl_g3[1]));
-
-	LUT1 #(.INIT(2'h2)) u_b_w3_sl0_0 (.I0(lookup_set_w3_sl[0]), .O(l2_set_w3_sl_g0[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_sl0_1 (.I0(lookup_set_w3_sl[1]), .O(l2_set_w3_sl_g0[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_sl1_0 (.I0(lookup_set_w3_sl[0]), .O(l2_set_w3_sl_g1[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_sl1_1 (.I0(lookup_set_w3_sl[1]), .O(l2_set_w3_sl_g1[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_sl2_0 (.I0(lookup_set_w3_sl[0]), .O(l2_set_w3_sl_g2[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_sl2_1 (.I0(lookup_set_w3_sl[1]), .O(l2_set_w3_sl_g2[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_sl3_0 (.I0(lookup_set_w3_sl[0]), .O(l2_set_w3_sl_g3[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_sl3_1 (.I0(lookup_set_w3_sl[1]), .O(l2_set_w3_sl_g3[1]));
-
-	/* Buffer lookup_set_w*_sl[5:2] */
-	LUT1 #(.INIT(2'h2)) u_b_w0_hi_a0 (.I0(lookup_set_w0_sl[2]), .O(l2_set_w0_sl_hi_a[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_hi_a1 (.I0(lookup_set_w0_sl[3]), .O(l2_set_w0_sl_hi_a[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_hi_a2 (.I0(lookup_set_w0_sl[4]), .O(l2_set_w0_sl_hi_a[2]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_hi_a3 (.I0(lookup_set_w0_sl[5]), .O(l2_set_w0_sl_hi_a[3]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_hi_b0 (.I0(lookup_set_w0_sl[2]), .O(l2_set_w0_sl_hi_b[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_hi_b1 (.I0(lookup_set_w0_sl[3]), .O(l2_set_w0_sl_hi_b[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_hi_b2 (.I0(lookup_set_w0_sl[4]), .O(l2_set_w0_sl_hi_b[2]));
-	LUT1 #(.INIT(2'h2)) u_b_w0_hi_b3 (.I0(lookup_set_w0_sl[5]), .O(l2_set_w0_sl_hi_b[3]));
-
-	LUT1 #(.INIT(2'h2)) u_b_w1_hi_a0 (.I0(lookup_set_w1_sl[2]), .O(l2_set_w1_sl_hi_a[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_hi_a1 (.I0(lookup_set_w1_sl[3]), .O(l2_set_w1_sl_hi_a[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_hi_a2 (.I0(lookup_set_w1_sl[4]), .O(l2_set_w1_sl_hi_a[2]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_hi_a3 (.I0(lookup_set_w1_sl[5]), .O(l2_set_w1_sl_hi_a[3]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_hi_b0 (.I0(lookup_set_w1_sl[2]), .O(l2_set_w1_sl_hi_b[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_hi_b1 (.I0(lookup_set_w1_sl[3]), .O(l2_set_w1_sl_hi_b[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_hi_b2 (.I0(lookup_set_w1_sl[4]), .O(l2_set_w1_sl_hi_b[2]));
-	LUT1 #(.INIT(2'h2)) u_b_w1_hi_b3 (.I0(lookup_set_w1_sl[5]), .O(l2_set_w1_sl_hi_b[3]));
-
-	LUT1 #(.INIT(2'h2)) u_b_w2_hi_a0 (.I0(lookup_set_w2_sl[2]), .O(l2_set_w2_sl_hi_a[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_hi_a1 (.I0(lookup_set_w2_sl[3]), .O(l2_set_w2_sl_hi_a[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_hi_a2 (.I0(lookup_set_w2_sl[4]), .O(l2_set_w2_sl_hi_a[2]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_hi_a3 (.I0(lookup_set_w2_sl[5]), .O(l2_set_w2_sl_hi_a[3]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_hi_b0 (.I0(lookup_set_w2_sl[2]), .O(l2_set_w2_sl_hi_b[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_hi_b1 (.I0(lookup_set_w2_sl[3]), .O(l2_set_w2_sl_hi_b[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_hi_b2 (.I0(lookup_set_w2_sl[4]), .O(l2_set_w2_sl_hi_b[2]));
-	LUT1 #(.INIT(2'h2)) u_b_w2_hi_b3 (.I0(lookup_set_w2_sl[5]), .O(l2_set_w2_sl_hi_b[3]));
-
-	LUT1 #(.INIT(2'h2)) u_b_w3_hi_a0 (.I0(lookup_set_w3_sl[2]), .O(l2_set_w3_sl_hi_a[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_hi_a1 (.I0(lookup_set_w3_sl[3]), .O(l2_set_w3_sl_hi_a[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_hi_a2 (.I0(lookup_set_w3_sl[4]), .O(l2_set_w3_sl_hi_a[2]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_hi_a3 (.I0(lookup_set_w3_sl[5]), .O(l2_set_w3_sl_hi_a[3]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_hi_b0 (.I0(lookup_set_w3_sl[2]), .O(l2_set_w3_sl_hi_b[0]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_hi_b1 (.I0(lookup_set_w3_sl[3]), .O(l2_set_w3_sl_hi_b[1]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_hi_b2 (.I0(lookup_set_w3_sl[4]), .O(l2_set_w3_sl_hi_b[2]));
-	LUT1 #(.INIT(2'h2)) u_b_w3_hi_b3 (.I0(lookup_set_w3_sl[5]), .O(l2_set_w3_sl_hi_b[3]));
-
-	/* Buffer refill_set_in */
-	LUT1 #(.INIT(2'h2)) u_b_rsi0_0 (.I0(refill_set_in[0]), .O(ref_set_in_g0[0]));
-	LUT1 #(.INIT(2'h2)) u_b_rsi0_1 (.I0(refill_set_in[1]), .O(ref_set_in_g0[1]));
-	LUT1 #(.INIT(2'h2)) u_b_rsi1_0 (.I0(refill_set_in[0]), .O(ref_set_in_g1[0]));
-	LUT1 #(.INIT(2'h2)) u_b_rsi1_1 (.I0(refill_set_in[1]), .O(ref_set_in_g1[1]));
-	LUT1 #(.INIT(2'h2)) u_b_rsi2_0 (.I0(refill_set_in[0]), .O(ref_set_in_g2[0]));
-	LUT1 #(.INIT(2'h2)) u_b_rsi2_1 (.I0(refill_set_in[1]), .O(ref_set_in_g2[1]));
-	LUT1 #(.INIT(2'h2)) u_b_rsi3_0 (.I0(refill_set_in[0]), .O(ref_set_in_g3[0]));
-	LUT1 #(.INIT(2'h2)) u_b_rsi3_1 (.I0(refill_set_in[1]), .O(ref_set_in_g3[1]));
-
-	LUT1 #(.INIT(2'h2)) u_b_rsh0_0 (.I0(refill_set_in[2]), .O(ref_set_hi_g0[0]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh0_1 (.I0(refill_set_in[3]), .O(ref_set_hi_g0[1]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh0_2 (.I0(refill_set_in[4]), .O(ref_set_hi_g0[2]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh0_3 (.I0(refill_set_in[5]), .O(ref_set_hi_g0[3]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh1_0 (.I0(refill_set_in[2]), .O(ref_set_hi_g1[0]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh1_1 (.I0(refill_set_in[3]), .O(ref_set_hi_g1[1]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh1_2 (.I0(refill_set_in[4]), .O(ref_set_hi_g1[2]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh1_3 (.I0(refill_set_in[5]), .O(ref_set_hi_g1[3]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh2_0 (.I0(refill_set_in[2]), .O(ref_set_hi_g2[0]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh2_1 (.I0(refill_set_in[3]), .O(ref_set_hi_g2[1]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh2_2 (.I0(refill_set_in[4]), .O(ref_set_hi_g2[2]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh2_3 (.I0(refill_set_in[5]), .O(ref_set_hi_g2[3]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh3_0 (.I0(refill_set_in[2]), .O(ref_set_hi_g3[0]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh3_1 (.I0(refill_set_in[3]), .O(ref_set_hi_g3[1]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh3_2 (.I0(refill_set_in[4]), .O(ref_set_hi_g3[2]));
-	LUT1 #(.INIT(2'h2)) u_b_rsh3_3 (.I0(refill_set_in[5]), .O(ref_set_hi_g3[3]));
-`else
 	assign l2_set_w0_sl_g0 = lookup_set_w0_sl[1:0];
 	assign l2_set_w0_sl_g1 = lookup_set_w0_sl[1:0];
 	assign l2_set_w0_sl_g2 = lookup_set_w0_sl[1:0];
@@ -530,7 +396,7 @@ module atg_tlb_l2 #(
 	assign ref_set_hi_g1 = refill_set_in[5:2];
 	assign ref_set_hi_g2 = refill_set_in[5:2];
 	assign ref_set_hi_g3 = refill_set_in[5:2];
-`endif
+
 
 	/* 16 Slices: Distributed Flush registers, Replacement pointers, and Valid/Session storage */
 	wire [15:0] sl_v0_out, sl_v1_out, sl_v2_out, sl_v3_out;
@@ -816,27 +682,7 @@ module atg_tlb_l2 #(
 	wire m2_pfn_lo, m2_pfn_hi, m2_flg, m2_hit;
 	wire m3_pfn_lo, m3_pfn_hi, m3_flg, m3_hit;
 
-`ifdef SYNTH_KINTEX7
-	LUT2 #(.INIT(4'h8)) u_m0_pfn_lo (.I0(m0_lo), .I1(m0_hi), .O(m0_pfn_lo));
-	LUT2 #(.INIT(4'h8)) u_m0_pfn_hi (.I0(m0_lo), .I1(m0_hi), .O(m0_pfn_hi));
-	LUT2 #(.INIT(4'h8)) u_m0_flg    (.I0(m0_lo), .I1(m0_hi), .O(m0_flg));
-	LUT2 #(.INIT(4'h8)) u_m0_hit    (.I0(m0_lo), .I1(m0_hi), .O(m0_hit));
 
-	LUT2 #(.INIT(4'h8)) u_m1_pfn_lo (.I0(m1_lo), .I1(m1_hi), .O(m1_pfn_lo));
-	LUT2 #(.INIT(4'h8)) u_m1_pfn_hi (.I0(m1_lo), .I1(m1_hi), .O(m1_pfn_hi));
-	LUT2 #(.INIT(4'h8)) u_m1_flg    (.I0(m1_lo), .I1(m1_hi), .O(m1_flg));
-	LUT2 #(.INIT(4'h8)) u_m1_hit    (.I0(m1_lo), .I1(m1_hi), .O(m1_hit));
-
-	LUT2 #(.INIT(4'h8)) u_m2_pfn_lo (.I0(m2_lo), .I1(m2_hi), .O(m2_pfn_lo));
-	LUT2 #(.INIT(4'h8)) u_m2_pfn_hi (.I0(m2_lo), .I1(m2_hi), .O(m2_pfn_hi));
-	LUT2 #(.INIT(4'h8)) u_m2_flg    (.I0(m2_lo), .I1(m2_hi), .O(m2_flg));
-	LUT2 #(.INIT(4'h8)) u_m2_hit    (.I0(m2_lo), .I1(m2_hi), .O(m2_hit));
-
-	LUT2 #(.INIT(4'h8)) u_m3_pfn_lo (.I0(m3_lo), .I1(m3_hi), .O(m3_pfn_lo));
-	LUT2 #(.INIT(4'h8)) u_m3_pfn_hi (.I0(m3_lo), .I1(m3_hi), .O(m3_pfn_hi));
-	LUT2 #(.INIT(4'h8)) u_m3_flg    (.I0(m3_lo), .I1(m3_hi), .O(m3_flg));
-	LUT2 #(.INIT(4'h8)) u_m3_hit    (.I0(m3_lo), .I1(m3_hi), .O(m3_hit));
-`else
 	assign m0_pfn_lo = m0_lo & m0_hi;
 	assign m0_pfn_hi = m0_lo & m0_hi;
 	assign m0_flg    = m0_lo & m0_hi;
@@ -856,7 +702,7 @@ module atg_tlb_l2 #(
 	assign m3_pfn_hi = m3_lo & m3_hi;
 	assign m3_flg    = m3_lo & m3_hi;
 	assign m3_hit    = m3_lo & m3_hi;
-`endif
+
 
 	wire next_hit = r1_valid & (m0_hit | m1_hit | m2_hit | m3_hit);
 
