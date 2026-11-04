@@ -162,26 +162,26 @@ module atg_su_exp_mesh #(
 
 	assign busy = (st != S_IDLE);
 
-	(* dont_touch = "true" *) wire prim_latch_en0 = (st == S_PRIM_LATCH);
-	(* dont_touch = "true" *) wire prim_latch_en1 = (st == S_PRIM_LATCH);
-	(* dont_touch = "true" *) wire kick_en0 = (st == S_IDLE) && kick_valid;
-	(* dont_touch = "true" *) wire kick_en1 = (st == S_IDLE) && kick_valid;
-	(* dont_touch = "true" *) wire kick_en2 = (st == S_IDLE) && kick_valid;
-	(* dont_touch = "true" *) wire rst_p = !rst_n;
-	(* dont_touch = "true" *) wire [31:0] lds_d_a = lds_rd_data;
-	(* dont_touch = "true" *) wire [31:0] lds_d_b = lds_rd_data;
-	(* dont_touch = "true" *) wire lds_dv_a = lds_data_v;
-	(* dont_touch = "true" *) wire lds_dv_b = lds_data_v;
-	(* dont_touch = "true" *) wire [4:0] cap_w_a = cap_w;
-	(* dont_touch = "true" *) wire [4:0] cap_w_b = cap_w;
+	wire prim_latch_en0 = (st == S_PRIM_LATCH);
+	wire prim_latch_en1 = (st == S_PRIM_LATCH);
+	wire kick_en0 = (st == S_IDLE) && kick_valid;
+	wire kick_en1 = (st == S_IDLE) && kick_valid;
+	wire kick_en2 = (st == S_IDLE) && kick_valid;
+	wire rst_p = !rst_n;
+	wire [31:0] lds_d_a = lds_rd_data;
+	wire [31:0] lds_d_b = lds_rd_data;
+	wire lds_dv_a = lds_data_v;
+	wire lds_dv_b = lds_data_v;
+	wire [4:0] cap_w_a = cap_w;
+	wire [4:0] cap_w_b = cap_w;
 	genvar gtw;
 	generate
 		for (gtw = 0; gtw < 21; gtw = gtw + 1) begin : g_tw_we
 			wire [31:0] tw_din = (gtw < 11) ? lds_d_a : lds_d_b;
 			wire tw_dv         = (gtw < 11) ? lds_dv_a : lds_dv_b;
 			wire [4:0] tw_cw   = (gtw < 11) ? cap_w_a : cap_w_b;
-			(* dont_touch = "true" *) wire tw_we_lo_s = tw_dv && (tw_cw == gtw[4:0]);
-			(* dont_touch = "true" *) wire tw_we_hi_s = tw_dv && (tw_cw == gtw[4:0]);
+			wire tw_we_lo_s = tw_dv && (tw_cw == gtw[4:0]);
+			wire tw_we_hi_s = tw_dv && (tw_cw == gtw[4:0]);
 			(* shreg_extract = "no" *) reg [15:0] tw_lo_r, tw_hi_r;
 			always @(posedge clk) begin
 				if (tw_we_lo_s)
@@ -356,13 +356,10 @@ module atg_su_exp_mesh #(
 	genvar gbf;
 	generate
 		for (gbf = 0; gbf < 11; gbf = gbf + 1) begin : g_skid_buf
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_mr (.I0(mesh_ready), .O(m_rdy[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pv (.I0(push_v_d_raw), .O(push_v_d[gbf]));
-`else
+
 			assign m_rdy[gbf] = mesh_ready;
 			assign push_v_d[gbf] = push_v_d_raw;
-`endif
+
 		end
 	endgenerate
 	assign skid_push_ready = !s0_valid || w_mesh_ready;
@@ -380,7 +377,7 @@ module atg_su_exp_mesh #(
 			localparam SL_W = (SL_B + 16 <= 702) ? 16 : (702 - SL_B);
 			wire sl_mrdy   = m_rdy[gsl / 4];
 			wire sl_push_d = push_v_d[gsl / 4];
-			(* dont_touch = "true" *) reg s0_v_sl, s1_v_sl, push_v_sl;
+			reg s0_v_sl, s1_v_sl, push_v_sl;
 			always @(posedge clk) begin
 				if (rst_p) begin
 					s0_v_sl   <= 1'b0;
@@ -404,10 +401,10 @@ module atg_su_exp_mesh #(
 					end
 				end
 			end
-			(* dont_touch = "true" *) wire s0_we_s = push_v_sl && s1_v_sl && !(sl_mrdy && !s0_v_sl);
-			(* dont_touch = "true" *) wire s1_we_s = (sl_mrdy && s1_v_sl && s0_v_sl) ||
+			wire s0_we_s = push_v_sl && s1_v_sl && !(sl_mrdy && !s0_v_sl);
+			wire s1_we_s = (sl_mrdy && s1_v_sl && s0_v_sl) ||
 				(push_v_sl && (!s1_v_sl || (sl_mrdy && s1_v_sl && !s0_v_sl)));
-			(* dont_touch = "true" *) wire s1_from_s0_s = !push_v_sl;
+			wire s1_from_s0_s = !push_v_sl;
 			(* shreg_extract = "no" *) reg [SL_W-1:0] s0_sl_r, s1_sl_r;
 			always @(posedge clk) begin
 				if (s0_we_s)
