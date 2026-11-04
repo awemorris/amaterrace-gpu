@@ -154,8 +154,8 @@ module atg_cp_ring #(
 	(* max_fanout = 16 *) reg [4:0] size [0:2];
 	(* keep = "true", dont_touch = "true" *) wire ring_core_rst_high;
 	(* keep = "true", dont_touch = "true" *) wire ring_rst_high;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_ring_crst (.I0(core_rst_n), .O(ring_core_rst_high));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_ring_rst  (.I0(rst_n),      .O(ring_rst_high));
+	assign ring_core_rst_high = !core_rst_n;
+	assign ring_rst_high = !rst_n;
 `else
 	reg [4:0] size [0:2];
 `endif
@@ -348,8 +348,8 @@ module atg_cp_ring #(
 	genvar g_aqb;
 	generate
 		for (g_aqb = 0; g_aqb < 12; g_aqb = g_aqb + 1) begin : g_aqid_buf
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_aq0 (.I0(active_qid[0]), .O(aqid_b[g_aqb][0]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_aq1 (.I0(active_qid[1]), .O(aqid_b[g_aqb][1]));
+			assign aqid_b[g_aqb][0] = active_qid[0];
+			assign aqid_b[g_aqb][1] = active_qid[1];
 		end
 	endgenerate
 	wire [17:0] wptr_act   = {wptr[aqid_b[1]][17:9], wptr[aqid_b[0]][8:0]};
@@ -524,12 +524,12 @@ module atg_cp_ring #(
 	(* DONT_TOUCH = "TRUE" *) reg [2:0] pa_idx_r [0:3];
 	(* DONT_TOUCH = "TRUE" *) reg [2:0] pa_widx_r [0:1];
 	wire [2:0] pa_widx_lo, pa_widx_hi;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pwl0 (.I0(pa_widx_r[1][0]), .O(pa_widx_lo[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pwl1 (.I0(pa_widx_r[1][1]), .O(pa_widx_lo[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pwl2 (.I0(pa_widx_r[1][2]), .O(pa_widx_lo[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pwh0 (.I0(pa_widx_r[1][0]), .O(pa_widx_hi[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pwh1 (.I0(pa_widx_r[1][1]), .O(pa_widx_hi[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pwh2 (.I0(pa_widx_r[1][2]), .O(pa_widx_hi[2]));
+	assign pa_widx_lo[0] = pa_widx_r[1][0];
+	assign pa_widx_lo[1] = pa_widx_r[1][1];
+	assign pa_widx_lo[2] = pa_widx_r[1][2];
+	assign pa_widx_hi[0] = pa_widx_r[1][0];
+	assign pa_widx_hi[1] = pa_widx_r[1][1];
+	assign pa_widx_hi[2] = pa_widx_r[1][2];
 `else
 	(* max_fanout = 16 *) reg [ADDR_W-1:0] pa;
 `endif
@@ -543,10 +543,10 @@ module atg_cp_ring #(
 	genvar g_wt;
 	generate
 		for (g_wt = 0; g_wt < 3; g_wt = g_wt + 1) begin : g_widx_tag_buf
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wt0 (.I0(pa_widx_r[0][g_wt]), .O(widx_tag0[g_wt]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wt1 (.I0(pa_widx_r[0][g_wt]), .O(widx_tag1[g_wt]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wt2 (.I0(pa_widx_r[0][g_wt]), .O(widx_tag2[g_wt]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wt3 (.I0(pa_widx_r[0][g_wt]), .O(widx_tag3[g_wt]));
+			assign widx_tag0[g_wt] = pa_widx_r[0][g_wt];
+			assign widx_tag1[g_wt] = pa_widx_r[0][g_wt];
+			assign widx_tag2[g_wt] = pa_widx_r[0][g_wt];
+			assign widx_tag3[g_wt] = pa_widx_r[0][g_wt];
 		end
 	endgenerate
 
@@ -584,9 +584,7 @@ module atg_cp_ring #(
 			for (g_by = 0; g_by < 4; g_by = g_by + 1) begin : gen_line_byte
 				wire [2:0] w_sel;
 				for (g_wb2 = 0; g_wb2 < 3; g_wb2 = g_wb2 + 1) begin : gen_wsel_bit
-					(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsel (
-						.I0(pa_word_r[g_by][g_wb2]), .O(w_sel[g_wb2])
-					);
+					assign w_sel[g_wb2] = pa_word_r[g_by][g_wb2];
 				end
 				for (g_bt = 0; g_bt < 8; g_bt = g_bt + 1) begin : gen_lw_bit
 					wire lw_lo, lw_hi;
@@ -727,8 +725,8 @@ module atg_cp_ring #(
 	);
 `ifdef SYNTH_KINTEX7
 	wire [1:0] is_ghci_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_igh0 (.I0(is_ghci), .O(is_ghci_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_igh1 (.I0(is_ghci), .O(is_ghci_b[1]));
+	assign is_ghci_b[0] = is_ghci;
+	assign is_ghci_b[1] = is_ghci;
 	wire [1:0] h_class = is_ghci_b[0] ? 2'd0 : hdr_data[31:30];
 	wire [15:0] h_n = is_ghci_b[1] ? {8'd0, ghci_n} : (h_class[1] ? hdr_data[15:0] : {8'd0, hdr_data[7:0]});
 `else
@@ -817,8 +815,8 @@ module atg_cp_ring #(
 	genvar g_stb;
 	generate
 		for (g_stb = 0; g_stb < 4; g_stb = g_stb + 1) begin : g_st_buf
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stb0 (.I0(st[g_stb]), .O(st_b0[g_stb]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_stb1 (.I0(st[g_stb]), .O(st_b1[g_stb]));
+			assign st_b0[g_stb] = st[g_stb];
+			assign st_b1[g_stb] = st[g_stb];
 		end
 	endgenerate
 	wire [7:0] st_idle_sel_b;
@@ -969,10 +967,10 @@ module atg_cp_ring #(
 	genvar g_nt;
 	generate
 		for (g_nt = 0; g_nt < 3; g_nt = g_nt + 1) begin : g_nidx_tag_buf
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_nt0 (.I0(next_idx[g_nt]), .O(nidx_tag0[g_nt]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_nt1 (.I0(next_idx[g_nt]), .O(nidx_tag1[g_nt]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_nt2 (.I0(next_idx[g_nt]), .O(nidx_tag2[g_nt]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_nt3 (.I0(next_idx[g_nt]), .O(nidx_tag3[g_nt]));
+			assign nidx_tag0[g_nt] = next_idx[g_nt];
+			assign nidx_tag1[g_nt] = next_idx[g_nt];
+			assign nidx_tag2[g_nt] = next_idx[g_nt];
+			assign nidx_tag3[g_nt] = next_idx[g_nt];
 		end
 	endgenerate
 `endif
@@ -1006,8 +1004,8 @@ module atg_cp_ring #(
 	end
 	wire pf_start = pf_trigger_r;
 	wire [1:0] pf_line_we_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pfl0 (.I0(pf_st == PF_IDLE && pf_start), .O(pf_line_we_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pfl1 (.I0(pf_st == PF_IDLE && pf_start), .O(pf_line_we_b[1]));
+	assign pf_line_we_b[0] = pf_st == PF_IDLE && pf_start;
+	assign pf_line_we_b[1] = pf_st == PF_IDLE && pf_start;
 `else
 	wire pf_trigger = (st == R_N) && (k != n) && !next_hit && (pf_st == PF_IDLE) &&
 		(st != R_REQ) && (st != R_RSP) && !ctx_req && go;
@@ -1041,7 +1039,7 @@ module atg_cp_ring #(
 	genvar g_pn;
 	generate
 		for (g_pn = 0; g_pn < 6; g_pn = g_pn + 1) begin : gen_pa_nxt
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_pn (.I0(pa_nxt_7_2_raw[g_pn]), .O(pa_nxt_7_2[g_pn]));
+			assign pa_nxt_7_2[g_pn] = pa_nxt_7_2_raw[g_pn];
 		end
 	endgenerate
 
@@ -1158,12 +1156,12 @@ module atg_cp_ring #(
 
 `ifdef SYNTH_KINTEX7
 	wire [1:0] ctx_req_b, demand_req_b, ctx_save_req_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_crb0 (.I0(ctx_req),      .O(ctx_req_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_crb1 (.I0(ctx_req),      .O(ctx_req_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_drb0 (.I0(demand_req),   .O(demand_req_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_drb1 (.I0(demand_req),   .O(demand_req_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_csb0 (.I0(ctx_save_req), .O(ctx_save_req_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_csb1 (.I0(ctx_save_req), .O(ctx_save_req_b[1]));
+	assign ctx_req_b[0] = ctx_req;
+	assign ctx_req_b[1] = ctx_req;
+	assign demand_req_b[0] = demand_req;
+	assign demand_req_b[1] = demand_req;
+	assign ctx_save_req_b[0] = ctx_save_req;
+	assign ctx_save_req_b[1] = ctx_save_req;
 	(* dont_touch = "true" *) reg r_req_valid;
 	(* dont_touch = "true", extract_reset = "no" *) reg r_req_write;
 	(* dont_touch = "true", extract_reset = "no" *) reg [LA_W-1:0] r_req_line;
@@ -1212,30 +1210,30 @@ module atg_cp_ring #(
 
 	wire [1:0] we_b0lo_b, we_b0hi_b, we_b1_b, we_b2_b, we_dmab_b, we_dmad_b, we_ctxb_b, we_dext_b;
 	wire [3:0] we_rs_b, we_ss_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb0l0 (.I0(we_b0lo_raw), .O(we_b0lo_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb0l1 (.I0(we_b0lo_raw), .O(we_b0lo_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb0h0 (.I0(we_b0hi_raw), .O(we_b0hi_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb0h1 (.I0(we_b0hi_raw), .O(we_b0hi_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb1_0 (.I0(we_b1_raw),   .O(we_b1_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb1_1 (.I0(we_b1_raw),   .O(we_b1_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb2_0 (.I0(we_b2_raw),   .O(we_b2_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb2_1 (.I0(we_b2_raw),   .O(we_b2_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdb_0 (.I0(we_dmab_raw), .O(we_dmab_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdb_1 (.I0(we_dmab_raw), .O(we_dmab_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdd_0 (.I0(we_dmad_raw), .O(we_dmad_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wdd_1 (.I0(we_dmad_raw), .O(we_dmad_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wrs_0 (.I0(we_rs_raw),   .O(we_rs_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wrs_1 (.I0(we_rs_raw),   .O(we_rs_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wrs_2 (.I0(we_rs_raw),   .O(we_rs_b[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wrs_3 (.I0(we_rs_raw),   .O(we_rs_b[3]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wss_0 (.I0(we_ss_raw),   .O(we_ss_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wss_1 (.I0(we_ss_raw),   .O(we_ss_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wss_2 (.I0(we_ss_raw),   .O(we_ss_b[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wss_3 (.I0(we_ss_raw),   .O(we_ss_b[3]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wcb_0 (.I0(we_ctxb_raw), .O(we_ctxb_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wcb_1 (.I0(we_ctxb_raw), .O(we_ctxb_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wde_0 (.I0(we_dext_raw), .O(we_dext_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wde_1 (.I0(we_dext_raw), .O(we_dext_b[1]));
+	assign we_b0lo_b[0] = we_b0lo_raw;
+	assign we_b0lo_b[1] = we_b0lo_raw;
+	assign we_b0hi_b[0] = we_b0hi_raw;
+	assign we_b0hi_b[1] = we_b0hi_raw;
+	assign we_b1_b[0] = we_b1_raw;
+	assign we_b1_b[1] = we_b1_raw;
+	assign we_b2_b[0] = we_b2_raw;
+	assign we_b2_b[1] = we_b2_raw;
+	assign we_dmab_b[0] = we_dmab_raw;
+	assign we_dmab_b[1] = we_dmab_raw;
+	assign we_dmad_b[0] = we_dmad_raw;
+	assign we_dmad_b[1] = we_dmad_raw;
+	assign we_rs_b[0] = we_rs_raw;
+	assign we_rs_b[1] = we_rs_raw;
+	assign we_rs_b[2] = we_rs_raw;
+	assign we_rs_b[3] = we_rs_raw;
+	assign we_ss_b[0] = we_ss_raw;
+	assign we_ss_b[1] = we_ss_raw;
+	assign we_ss_b[2] = we_ss_raw;
+	assign we_ss_b[3] = we_ss_raw;
+	assign we_ctxb_b[0] = we_ctxb_raw;
+	assign we_ctxb_b[1] = we_ctxb_raw;
+	assign we_dext_b[0] = we_dext_raw;
+	assign we_dext_b[1] = we_dext_raw;
 
 	wire dmasem_hcr_we = hcr_we_dma && (widx_b[5:0] == I_DMA_SEM[5:0]);
 	wire dmasem_inc_we = dma_active && dma_done;
@@ -1245,38 +1243,38 @@ module atg_cp_ring #(
 
 	wire st_is_rhdr_raw = (st == R_HDR);
 	wire [2:0] st_rhdr_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srh0 (.I0(st_is_rhdr_raw), .O(st_rhdr_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srh1 (.I0(st_is_rhdr_raw), .O(st_rhdr_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srh2 (.I0(st_is_rhdr_raw), .O(st_rhdr_b[2]));
+	assign st_rhdr_b[0] = st_is_rhdr_raw;
+	assign st_rhdr_b[1] = st_is_rhdr_raw;
+	assign st_rhdr_b[2] = st_is_rhdr_raw;
 
 	wire st_is_rdec_raw = (st == R_DEC);
 	wire [1:0] st_rdec_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srd0 (.I0(st_is_rdec_raw), .O(st_rdec_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srd1 (.I0(st_is_rdec_raw), .O(st_rdec_b[1]));
+	assign st_rdec_b[0] = st_is_rdec_raw;
+	assign st_rdec_b[1] = st_is_rdec_raw;
 
 	wire st_is_rdec2_raw = (st == R_DEC2);
 	wire [1:0] st_rdec2_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srd2_0 (.I0(st_is_rdec2_raw), .O(st_rdec2_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srd2_1 (.I0(st_is_rdec2_raw), .O(st_rdec2_b[1]));
+	assign st_rdec2_b[0] = st_is_rdec2_raw;
+	assign st_rdec2_b[1] = st_is_rdec2_raw;
 
 	wire [1:0] save_rptr_we_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srp0 (.I0(save_rptr_raw), .O(save_rptr_we_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_srp1 (.I0(save_rptr_raw), .O(save_rptr_we_b[1]));
+	assign save_rptr_we_b[0] = save_rptr_raw;
+	assign save_rptr_we_b[1] = save_rptr_raw;
 
 	wire [1:0] dma_wptr_we_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dww0 (.I0(hcr_we_dma && widx_b[5:0] == I_DMA_WPTR[5:0]), .O(dma_wptr_we_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_dww1 (.I0(hcr_we_dma && widx_b[5:0] == I_DMA_WPTR[5:0]), .O(dma_wptr_we_b[1]));
+	assign dma_wptr_we_b[0] = hcr_we_dma && widx_b[5:0] == I_DMA_WPTR[5:0];
+	assign dma_wptr_we_b[1] = hcr_we_dma && widx_b[5:0] == I_DMA_WPTR[5:0];
 
 	wire we_sz0_raw = hcr_we_cfg_b[3] && (widx_b[5:0] == I_SIZE0[5:0]) && wmask_c[0];
 	wire we_sz1_raw = hcr_we_cfg_b[3] && (widx_b[5:0] == I_SIZE1[5:0]) && wmask_c[0];
 	wire we_sz2_raw = hcr_we_cfg_b[4] && open && (widx_b[5:0] == I_SIZE2[5:0]) && wmask_c[0];
 	wire [1:0] we_sz0_b, we_sz1_b, we_sz2_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsz0_0 (.I0(we_sz0_raw), .O(we_sz0_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsz0_1 (.I0(we_sz0_raw), .O(we_sz0_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsz1_0 (.I0(we_sz1_raw), .O(we_sz1_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsz1_1 (.I0(we_sz1_raw), .O(we_sz1_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsz2_0 (.I0(we_sz2_raw), .O(we_sz2_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wsz2_1 (.I0(we_sz2_raw), .O(we_sz2_b[1]));
+	assign we_sz0_b[0] = we_sz0_raw;
+	assign we_sz0_b[1] = we_sz0_raw;
+	assign we_sz1_b[0] = we_sz1_raw;
+	assign we_sz1_b[1] = we_sz1_raw;
+	assign we_sz2_b[0] = we_sz2_raw;
+	assign we_sz2_b[1] = we_sz2_raw;
 	wire [4:0] sz_clamp_c = wdata_c[4:0] < 5'd10 ? 5'd10 : (wdata_c[4:0] > 5'd20 ? 5'd20 : wdata_c[4:0]);
 `endif
 
@@ -1967,15 +1965,15 @@ module atg_cp_ring #(
 	wire [1:0] ridx_sel_hi [0:5];
 	wire [5:0] rgrp_en_lo, rgrp_en_hi;
 	wire ridx_b3_lo, ridx_b3_hi;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rb3_lo (.I0(hcr_ridx[3]), .O(ridx_b3_lo));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rb3_hi (.I0(hcr_ridx[3]), .O(ridx_b3_hi));
+	assign ridx_b3_lo = hcr_ridx[3];
+	assign ridx_b3_hi = hcr_ridx[3];
 	genvar g_rg;
 	generate
 		for (g_rg = 0; g_rg < 6; g_rg = g_rg + 1) begin : gen_ridx_sel
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rsl0 (.I0(hcr_ridx[0]), .O(ridx_sel_lo[g_rg][0]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rsl1 (.I0(hcr_ridx[1]), .O(ridx_sel_lo[g_rg][1]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rsh0 (.I0(hcr_ridx[0]), .O(ridx_sel_hi[g_rg][0]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rsh1 (.I0(hcr_ridx[1]), .O(ridx_sel_hi[g_rg][1]));
+			assign ridx_sel_lo[g_rg][0] = hcr_ridx[0];
+			assign ridx_sel_lo[g_rg][1] = hcr_ridx[1];
+			assign ridx_sel_hi[g_rg][0] = hcr_ridx[0];
+			assign ridx_sel_hi[g_rg][1] = hcr_ridx[1];
 		end
 	endgenerate
 	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0020)) u_rge0_lo (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_lo[0]));
