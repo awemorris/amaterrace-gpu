@@ -87,41 +87,25 @@ module atg_vf_fetch #(
 	genvar gb, gc;
 	generate
 		for (gb = 0; gb < 32; gb = gb + 1) begin : g_wd_buf32
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wb (.O(st_wd_base[gb]), .I0(st_wdata[gb]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wd (.O(st_wd_desc[gb]), .I0(st_wdata[gb]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wl (.O(st_wd_lim[gb]),  .I0(st_wdata[gb]));
-`else
+
 			assign st_wd_base[gb] = st_wdata[gb];
 			assign st_wd_desc[gb] = st_wdata[gb];
 			assign st_wd_lim[gb]  = st_wdata[gb];
-`endif
+
 		end
 		for (gb = 0; gb < 8; gb = gb + 1) begin : g_wd_buf8
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wv (.O(st_wd_vk[gb]),   .I0(st_wdata[24 + gb]));
-`else
+
 			assign st_wd_vk[gb]   = st_wdata[24 + gb];
-`endif
+
 		end
 		for (gb = 0; gb < 4; gb = gb + 1) begin : g_st_ctrl_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_we (.O(st_we_b[gb]), .I0(st_we));
-`else
+
 			assign st_we_b[gb] = st_we;
-`endif
+
 			for (gc = 0; gc < 9; gc = gc + 1) begin : g_idx
-`ifdef SYNTH_KINTEX7
-				(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-				LUT1 #(.INIT(2'b10)) u_ix (.O(st_idx_b[gb][gc]), .I0(st_idx[gc]));
-`else
+
 				assign st_idx_b[gb][gc] = st_idx[gc];
-`endif
+
 			end
 		end
 	endgenerate
@@ -143,15 +127,10 @@ module atg_vf_fetch #(
 	wire [15:0] we_dst;
 	wire [15:0] we_lim_lo, we_lim_hi;
 
-`ifdef SYNTH_KINTEX7
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_fi0 (.O(we_finst_b[0]), .I0(we_finst));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_fi1 (.O(we_finst_b[1]), .I0(we_finst));
-`else
+
 	assign we_finst_b[0] = we_finst;
 	assign we_finst_b[1] = we_finst;
-`endif
+
 
 	generate
 		for (gb = 0; gb < 16; gb = gb + 1) begin : g_attr_we
@@ -163,27 +142,14 @@ module atg_vf_fetch #(
 			wire ws = st_we_b[B] && (st_idx_b[B][8:4] == GHCI_S_ATTR_DST[8:4])   && (st_idx_b[B][3:0] == gb[3:0]);
 			wire wl = st_we_b[B] && (st_idx_b[B][8:4] == GHCI_S_ATTR_LIMIT[8:4]) && (st_idx_b[B][3:0] == gb[3:0]);
 			assign we_dst[gb] = ws;
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wbl (.O(we_base_lo[gb]), .I0(wb));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wbh (.O(we_base_hi[gb]), .I0(wb));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wdl (.O(we_desc_lo[gb]), .I0(wd));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wdh (.O(we_desc_hi[gb]), .I0(wd));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wll (.O(we_lim_lo[gb]),  .I0(wl));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wlh (.O(we_lim_hi[gb]),  .I0(wl));
-`else
+
 			assign we_base_lo[gb] = wb;
 			assign we_base_hi[gb] = wb;
 			assign we_desc_lo[gb] = wd;
 			assign we_desc_hi[gb] = wd;
 			assign we_lim_lo[gb]  = wl;
 			assign we_lim_hi[gb]  = wl;
-`endif
+
 		end
 	endgenerate
 
@@ -324,43 +290,23 @@ module atg_vf_fetch #(
 
 	generate
 		for (gb = 0; gb < 5; gb = gb + 1) begin : g_klo_l1
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_0 (.O(k_lo_l1[gb][0]), .I0(k_r[0]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_1 (.O(k_lo_l1[gb][1]), .I0(k_r[1]));
-`else
+
 			assign k_lo_l1[gb] = k_r[1:0];
-`endif
+
 		end
-`ifdef SYNTH_KINTEX7
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'b10)) u_khi_l1_0 (.O(k_hi_l1[0]), .I0(k_r[2]));
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'b10)) u_khi_l1_1 (.O(k_hi_l1[1]), .I0(k_r[3]));
-`else
+
 		assign k_hi_l1 = k_r[3:2];
-`endif
+
 		for (gb = 0; gb < 36; gb = gb + 1) begin : g_klo_l2
 			localparam integer L1G = gb / 8;
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_0 (.O(k_lo_b[gb][0]), .I0(k_lo_l1[L1G][0]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_1 (.O(k_lo_b[gb][1]), .I0(k_lo_l1[L1G][1]));
-`else
+
 			assign k_lo_b[gb] = k_lo_l1[L1G];
-`endif
+
 		end
 		for (gb = 0; gb < 7; gb = gb + 1) begin : g_khi_l2
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_0 (.O(k_hi_b[gb][0]), .I0(k_hi_l1[0]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_1 (.O(k_hi_b[gb][1]), .I0(k_hi_l1[1]));
-`else
+
 			assign k_hi_b[gb] = k_hi_l1;
-`endif
+
 		end
 	endgenerate
 
@@ -471,32 +417,19 @@ module atg_vf_fetch #(
 	wire       off_0_b  [0:7];
 	generate
 		for (gb = 0; gb < 12; gb = gb + 1) begin : g_off43_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_3 (.O(off_43_b[gb][0]), .I0(off_r[3]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_4 (.O(off_43_b[gb][1]), .I0(off_r[4]));
-`else
+
 			assign off_43_b[gb] = off_r[4:3];
-`endif
+
 		end
 		for (gb = 0; gb < 9; gb = gb + 1) begin : g_off21_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_1 (.O(off_21_b[gb][0]), .I0(off_r[1]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_2 (.O(off_21_b[gb][1]), .I0(off_r[2]));
-`else
+
 			assign off_21_b[gb] = off_r[2:1];
-`endif
+
 		end
 		for (gb = 0; gb < 8; gb = gb + 1) begin : g_off0_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_0 (.O(off_0_b[gb]), .I0(off_r[0]));
-`else
+
 			assign off_0_b[gb] = off_r[0];
-`endif
+
 		end
 	endgenerate
 
@@ -531,14 +464,9 @@ module atg_vf_fetch #(
 	generate
 		for (gb = 0; gb < 16; gb = gb + 1) begin : g_str_stag_buf
 			localparam integer L1G = gb / 4;
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_0 (.O(s_str_stag_b[gb][0]), .I0(k_lo_l1[L1G][0]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_1 (.O(s_str_stag_b[gb][1]), .I0(k_lo_l1[L1G][1]));
-`else
+
 			assign s_str_stag_b[gb] = k_lo_l1[L1G];
-`endif
+
 		end
 	endgenerate
 
@@ -642,16 +570,9 @@ module atg_vf_fetch #(
 	reg [2:0]  f1_idx_r, f2_idx_r;
 
 	wire [2:0] rr0_b;
-`ifdef SYNTH_KINTEX7
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_rr0_0 (.O(rr0_b[0]), .I0(rr0_r[0]));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_rr0_1 (.O(rr0_b[1]), .I0(rr0_r[1]));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_rr0_2 (.O(rr0_b[2]), .I0(rr0_r[2]));
-`else
+
 	assign rr0_b = rr0_r;
-`endif
+
 	wire       f2_v_r = (f1_idx_r != f2_idx_r);
 	wire [2:0] rr1_w;
 	wire       rr1_co_unused;
@@ -696,12 +617,9 @@ module atg_vf_fetch #(
 
 	generate
 		for (gb = 0; gb < 16; gb = gb + 1) begin : g_rsperr_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_re (.O(rsp_err_b[gb]), .I0(rsp_error));
-`else
+
 			assign rsp_err_b[gb] = rsp_error;
-`endif
+
 		end
 	endgenerate
 
@@ -722,56 +640,26 @@ module atg_vf_fetch #(
 	wire [1:0]   sstr_bank_b [0:3];
 
 	generate
-`ifdef SYNTH_KINTEX7
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'b10)) u_p2_l1_0 (.O(p2_l1[0]), .I0(st_is_plan2));
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'b10)) u_p2_l1_1 (.O(p2_l1[1]), .I0(st_is_plan2));
-`else
+
 		assign p2_l1 = {2{st_is_plan2}};
-`endif
+
 		for (gb = 0; gb < 4; gb = gb + 1) begin : g_ram_bank_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_rr (.O(rd_rsp_bank_b[gb]),    .I0(rd_rsp));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s10 (.O(sel1_bank_b[gb][0]),  .I0(sel1_calc[0]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s11 (.O(sel1_bank_b[gb][1]),  .I0(sel1_calc[1]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s12 (.O(sel1_bank_b[gb][2]),  .I0(sel1_calc[2]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s20 (.O(sel2_bank_b[gb][0]),  .I0(sel2_calc[0]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s21 (.O(sel2_bank_b[gb][1]),  .I0(sel2_calc[1]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s22 (.O(sel2_bank_b[gb][2]),  .I0(sel2_calc[2]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_st0 (.O(sstr_bank_b[gb][0]),  .I0(k_lo_l1[gb][0]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_st1 (.O(sstr_bank_b[gb][1]),  .I0(k_lo_l1[gb][1]));
-`else
+
 			assign rd_rsp_bank_b[gb] = rd_rsp;
 			assign sel1_bank_b[gb]   = sel1_calc;
 			assign sel2_bank_b[gb]   = sel2_calc;
 			assign sstr_bank_b[gb]   = k_lo_l1[gb];
-`endif
+
 			for (gc = 0; gc < 5; gc = gc + 1) begin : g_ri
-`ifdef SYNTH_KINTEX7
-				(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-				LUT1 #(.INIT(2'b10)) u_ri (.O(rsp_idx_bank_b[gb][gc]), .I0(rsp_idx[gc]));
-`else
+
 				assign rsp_idx_bank_b[gb][gc] = rsp_idx[gc];
-`endif
+
 			end
 		end
 		for (gb = 0; gb < 16; gb = gb + 1) begin : g_p2_ce_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_p2 (.O(p2_ce_b[gb]), .I0(p2_l1[gb / 8]));
-`else
+
 			assign p2_ce_b[gb] = p2_l1[gb / 8];
-`endif
+
 		end
 		for (gb = 0; gb < 32; gb = gb + 1) begin : g_sdat_slice
 			localparam integer BK = gb / 8;
@@ -875,42 +763,7 @@ module atg_vf_fetch #(
 
 	generate
 		for (gb = 0; gb < 2; gb = gb + 1) begin : g_ce2_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_nm (.O(ce_num_b[gb]),   .I0(st_is_attr1));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_em (.O(ce_elm_b[gb]),   .I0(st_is_attr1));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_rn (.O(ce_remn_b[gb]),  .I0(st_is_attr1));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_cb (.O(ce_cbase_b[gb]), .I0(st_is_attr2));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_cl (.O(ce_clim_b[gb]),  .I0(st_is_attr2));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_dq (.O(ce_divq_b[gb]),  .I0(ce_divq_all));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_sd (.O(sel_divq_b[gb]), .I0(st_is_div));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_ad (.O(ce_addr_b[gb]),  .I0(st_is_addr));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_bd (.O(ce_bnd_b[gb]),   .I0(st_is_addr));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_10 (.O(ce_l1_0_b[gb]),  .I0(st_is_oob));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_11 (.O(ce_l1_1_b[gb]),  .I0(st_is_oob));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_20 (.O(ce_l2_0_b[gb]),  .I0(st_is_oob));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_21 (.O(ce_l2_1_b[gb]),  .I0(st_is_oob));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_ob (.O(ce_oob_b[gb]),   .I0(st_is_oob));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_mn (.O(ce_mnum_b[gb]),  .I0(st_is_div_add));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_mq (.O(ce_mq_b[gb]),    .I0(st_is_div_add));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_p1 (.O(ce_plan1_b[gb]), .I0(st_is_plan1));
-`else
+
 			assign ce_num_b[gb]   = st_is_attr1;
 			assign ce_elm_b[gb]   = st_is_attr1;
 			assign ce_remn_b[gb]  = st_is_attr1;
@@ -928,76 +781,44 @@ module atg_vf_fetch #(
 			assign ce_mnum_b[gb]  = st_is_div_add;
 			assign ce_mq_b[gb]    = st_is_div_add;
 			assign ce_plan1_b[gb] = st_is_plan1;
-`endif
+
 		end
 		for (gb = 0; gb < 4; gb = gb + 1) begin : g_elem_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_el (.O(ce_elem_b[gb]),    .I0(ce_elem_all));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s0 (.O(sel_el0_b[gb]),    .I0(sel_el_0));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s1 (.O(sel_el1_b[gb]),    .I0(sel_el_1));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_da (.O(sel_divadd_b[gb]), .I0(st_is_div_add));
-`else
+
 			assign ce_elem_b[gb]    = ce_elem_all;
 			assign sel_el0_b[gb]    = sel_el_0;
 			assign sel_el1_b[gb]    = sel_el_1;
 			assign sel_divadd_b[gb] = st_is_div_add;
-`endif
+
 		end
 		for (gb = 0; gb < 5; gb = gb + 1) begin : g_vin_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_vi (.O(ce_vin_b[gb]), .I0(ce_v_in));
-`else
+
 			assign ce_vin_b[gb] = ce_v_in;
-`endif
+
 		end
 		for (gb = 0; gb < 3; gb = gb + 1) begin : g_ce3_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_tm (.O(ce_tmask_b[gb]),  .I0(ce_tag_masks));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_a2 (.O(ce_attr2_b[gb]),  .I0(st_is_attr2));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_bf (.O(ce_boff_b[gb]),   .I0(st_is_mul4));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_et (.O(emit_take_b[gb]), .I0(emit_take));
-`else
+
 			assign ce_tmask_b[gb]  = ce_tag_masks;
 			assign ce_attr2_b[gb]  = st_is_attr2;
 			assign ce_boff_b[gb]   = st_is_mul4;
 			assign emit_take_b[gb] = emit_take;
-`endif
+
 		end
 		for (gb = 0; gb < 12; gb = gb + 1) begin : g_sh1_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s1 (.O(ce_sh1_b[gb]),   .I0(st_is_sh1));
-`else
+
 			assign ce_sh1_b[gb]   = st_is_sh1;
-`endif
+
 		end
 		for (gb = 0; gb < 9; gb = gb + 1) begin : g_sh2_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_s2 (.O(ce_sh2_b[gb]),   .I0(st_is_sh2));
-`else
+
 			assign ce_sh2_b[gb]   = st_is_sh2;
-`endif
+
 		end
 		for (gb = 0; gb < 8; gb = gb + 1) begin : g_af_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_ar (.O(ce_afraw_b[gb]),    .I0(ce_afraw_all));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_az (.O(sel_af_zero_b[gb]), .I0(sel_af_zero));
-`else
+
 			assign ce_afraw_b[gb]    = ce_afraw_all;
 			assign sel_af_zero_b[gb] = sel_af_zero;
-`endif
+
 		end
 	endgenerate
 
@@ -1011,14 +832,9 @@ module atg_vf_fetch #(
 	(* keep = "true" *) wire [4:0] miss_idx = {k_lo_b[34], miss1 ? sel1 : sel2};
 	(* keep = "true" *) wire req_issue = st_is_req && !rq_pend && (miss1 || miss2);
 	wire [1:0] miss1_line_b;
-`ifdef SYNTH_KINTEX7
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_m1l0 (.O(miss1_line_b[0]), .I0(miss1));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_m1l1 (.O(miss1_line_b[1]), .I0(miss1));
-`else
+
 	assign miss1_line_b = {2{miss1}};
-`endif
+
 	(* keep = "true" *) wire [LA_W-1:0] miss_line_w = {
 		miss1_line_b[1] ? l1_r0[LA_W-1:14] : l2_r0[LA_W-1:14],
 		miss1_line_b[0] ? l1_r0[13:0]      : l2_r0[13:0]
@@ -1044,71 +860,40 @@ module atg_vf_fetch #(
 	(* keep = "true" *) wire [1:0] ce_rqline_b;
 	(* keep = "true" *) wire       ce_rqtag_b;
 	(* keep = "true" *) wire       ce_rqpend_b;
-`ifdef SYNTH_KINTEX7
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_rql0 (.O(ce_rqline_b[0]), .I0(req_issue));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_rql1 (.O(ce_rqline_b[1]), .I0(req_issue));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_rqt  (.O(ce_rqtag_b),     .I0(req_issue));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_rqp  (.O(ce_rqpend_b),    .I0(req_issue));
-`else
+
 	assign ce_rqline_b = {2{req_issue}};
 	assign ce_rqtag_b  = req_issue;
 	assign ce_rqpend_b = req_issue;
-`endif
+
 
 	generate
 		for (gb = 0; gb < LA_W; gb = gb + 1) begin : g_mline_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_ml0 (.O(miss_line_b0[gb]), .I0(miss_line_w[gb]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_ml1 (.O(miss_line_b1[gb]), .I0(miss_line_w[gb]));
-`else
+
 			assign miss_line_b0[gb] = miss_line_w[gb];
 			assign miss_line_b1[gb] = miss_line_w[gb];
-`endif
+
 		end
 		for (gb = 0; gb < 4; gb = gb + 1) begin : g_midx_buf
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_ri (.O(req_issue_b[gb]), .I0(req_issue));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_rd (.O(rsp_done_b[gb]),  .I0(rsp_done_r));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_cc (.O(clr_cache_b[gb]), .I0(clr_cache_raw));
-`else
+
 			assign req_issue_b[gb] = req_issue;
 			assign rsp_done_b[gb]  = rsp_done_r;
 			assign clr_cache_b[gb] = clr_cache_raw;
-`endif
+
 			for (gc = 0; gc < 5; gc = gc + 1) begin : g_mi
-`ifdef SYNTH_KINTEX7
-				(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-				LUT1 #(.INIT(2'b10)) u_mi (.O(miss_idx_b[gb][gc]), .I0(miss_idx[gc]));
-				(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-				LUT1 #(.INIT(2'b10)) u_di (.O(rsp_didx_b[gb][gc]), .I0(rsp_done_idx_r[gc]));
-`else
+
 				assign miss_idx_b[gb][gc] = miss_idx[gc];
 				assign rsp_didx_b[gb][gc] = rsp_done_idx_r[gc];
-`endif
+
 			end
 		end
 		for (gb = 0; gb < 32; gb = gb + 1) begin : g_stag_we
 			localparam integer QTR = gb / 8;
 			assign req_hit_dec[gb] = req_issue_b[QTR] && (miss_idx_b[QTR] == gb[4:0]);
 			assign rsp_hit_dec[gb] = rsp_done_b[QTR]  && (rsp_didx_b[QTR] == gb[4:0]);
-`ifdef SYNTH_KINTEX7
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wl (.O(we_stag_lo[gb]), .I0(req_hit_dec[gb]));
-			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-			LUT1 #(.INIT(2'b10)) u_wh (.O(we_stag_hi[gb]), .I0(req_hit_dec[gb]));
-`else
+
 			assign we_stag_lo[gb] = req_hit_dec[gb];
 			assign we_stag_hi[gb] = req_hit_dec[gb];
-`endif
+
 		end
 	endgenerate
 
