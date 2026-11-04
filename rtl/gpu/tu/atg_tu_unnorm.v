@@ -27,7 +27,7 @@ module atg_tu_unnorm #(
 	input wire [31:0] f,
 	output wire signed [29:0] c
 );
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 	wire [31:0] tx_s0;
 	atg_tu_fx32 #(.LAT(LAT >= 2 ? 2 : LAT)) u_tx (.clk(clk), .rst_n(rst_n), .en(en), .f(f), .sh(5'd8), .q(tx_s0));
 

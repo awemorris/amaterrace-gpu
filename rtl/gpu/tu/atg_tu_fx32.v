@@ -28,7 +28,7 @@ module atg_tu_fx32 #(
 	input wire [4:0] sh,
 	output wire [31:0] q
 );
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	/* k = e - 150 + sh: 1.f << k (0 <= k < 8) or >> -k with the sticky (-24 < k < 0) */
 	wire [9:0] k_bias;
@@ -78,9 +78,9 @@ module atg_tu_fx32 #(
 	wire [31:0] f_s_r = (LAT >= 2) ? r0_f_r  : f;
 	wire [31:0] f_s   = (LAT >= 2) ? r0_f_s  : f;
 
-	(* dont_touch = "true" *) wire [3:0] kl_s = {4{!k[9] && k[8:3] == 6'd0}};	/* a left shift (0 <= k < 8) */
-	(* dont_touch = "true" *) wire [3:0] kr_s = {4{k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11)}};	/* a right shift (-24 < k < 0) */
-	(* dont_touch = "true" *) wire kr_st = k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11);
+	wire [3:0] kl_s = {4{!k[9] && k[8:3] == 6'd0}};	/* a left shift (0 <= k < 8) */
+	wire [3:0] kr_s = {4{k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11)}};	/* a right shift (-24 < k < 0) */
+	wire kr_st = k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11);
 	wire [31:0] qs_l_lo, qs_l_hi, qs_r_lo, qs_r_hi;
 	am_shift #(.W(32), .SW(3)) u_qs_l_lo (.a({8'd0, 1'b1, f_s_l[22:0]}), .amt(k_a[2:0]), .left(1'b1),
 		.arith(1'b0), .y(qs_l_lo));
@@ -146,14 +146,14 @@ module atg_tu_fx32 #(
 
 	wire [31:0] s1_qv   = (LAT >= 1) ? r_qv        : qv_s0;
 	wire        s1_st   = (LAT >= 1) ? r_st        : st_s0;
-	(* dont_touch = "true" *) wire s1_sign_r_lo = (LAT >= 1) ? r_sign_r_lo : sign_s0;
-	(* dont_touch = "true" *) wire s1_sign_r_hi = (LAT >= 1) ? r_sign_r_hi : sign_s0;
-	(* dont_touch = "true" *) wire s1_sign_q_lo = (LAT >= 1) ? r_sign_q_lo : sign_s0;
-	(* dont_touch = "true" *) wire s1_sign_q_hi = (LAT >= 1) ? r_sign_q_hi : sign_s0;
-	(* dont_touch = "true" *) wire s1_zero_lo   = (LAT >= 1) ? r_zero_lo   : zero_s0;
-	(* dont_touch = "true" *) wire s1_zero_hi   = (LAT >= 1) ? r_zero_hi   : zero_s0;
-	(* dont_touch = "true" *) wire s1_ovf_lo    = (LAT >= 1) ? r_ovf_lo    : ovf_s0;
-	(* dont_touch = "true" *) wire s1_ovf_hi    = (LAT >= 1) ? r_ovf_hi    : ovf_s0;
+	wire s1_sign_r_lo = (LAT >= 1) ? r_sign_r_lo : sign_s0;
+	wire s1_sign_r_hi = (LAT >= 1) ? r_sign_r_hi : sign_s0;
+	wire s1_sign_q_lo = (LAT >= 1) ? r_sign_q_lo : sign_s0;
+	wire s1_sign_q_hi = (LAT >= 1) ? r_sign_q_hi : sign_s0;
+	wire s1_zero_lo   = (LAT >= 1) ? r_zero_lo   : zero_s0;
+	wire s1_zero_hi   = (LAT >= 1) ? r_zero_hi   : zero_s0;
+	wire s1_ovf_lo    = (LAT >= 1) ? r_ovf_lo    : ovf_s0;
+	wire s1_ovf_hi    = (LAT >= 1) ? r_ovf_hi    : ovf_s0;
 
 	/* the negative value -(q + st) = ~q + !st */
 	am_add #(.W(32)) u_r (

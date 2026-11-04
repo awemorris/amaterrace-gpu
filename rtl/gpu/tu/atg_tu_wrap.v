@@ -29,8 +29,8 @@ module atg_tu_wrap #(
 	output wire [16:0] w
 );
 	wire lt = i < 0;
-	(* dont_touch = "true" *) wire mode0_lo = mode[0];
-	(* dont_touch = "true" *) wire mode0_hi = mode[0];
+	wire mode0_lo = mode[0];
+	wire mode0_hi = mode[0];
 	(* keep = "true" *) wire [16:0] p = {mode0_hi ? n[15:8] : {1'b0, n[15:9]}, mode0_lo ? {n[7:0], 1'b0} : n[8:0]};
 
 	/* Parallel arithmetic operations directly on inputs i and n (no cascading) */
@@ -83,10 +83,10 @@ module atg_tu_wrap #(
 		end
 	end
 
-	(* dont_touch = "true" *) wire [10:0] lut_a0 = {mode[0], p[3:0], i[5:0]};
-	(* dont_touch = "true" *) wire [10:0] lut_a1 = {mode[0], p[3:0], i[5:0]};
-	(* dont_touch = "true" *) wire [10:0] lut_a2 = {mode[0], p[3:0], i[5:0]};
-	(* dont_touch = "true" *) wire [10:0] lut_a3 = {mode[0], p[3:0], i[5:0]};
+	wire [10:0] lut_a0 = {mode[0], p[3:0], i[5:0]};
+	wire [10:0] lut_a1 = {mode[0], p[3:0], i[5:0]};
+	wire [10:0] lut_a2 = {mode[0], p[3:0], i[5:0]};
+	wire [10:0] lut_a3 = {mode[0], p[3:0], i[5:0]};
 	wire [3:0] m_small_s0 = {lut_wrap[lut_a3][3], lut_wrap[lut_a2][2], lut_wrap[lut_a1][1], lut_wrap[lut_a0][0]};
 	wire p_ge16_s0 = (p[16:4] != 13'd0);
 

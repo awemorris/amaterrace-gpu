@@ -24,7 +24,7 @@ module atg_tu_layer #(
 	input wire [15:0] cnt,
 	output wire [15:0] l
 );
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	/* k = 150 - e: for 1 <= k <= 24, 1.f >> k, the remainder and half the step */
 	wire [8:0] k_s0;
@@ -72,8 +72,8 @@ module atg_tu_layer #(
 
 	am_shift #(.W(24), .SW(5)) u_qs (.a({1'b1, f_s[22:0]}), .amt(k[4:0]), .left(1'b0), .arith(1'b0),
 		.y(qs));
-	(* dont_touch = "true" *) wire [11:0] q_lo = kin_q_lo ? qs[11:0]  : 12'd0;
-	(* dont_touch = "true" *) wire [11:0] q_hi = kin_q_hi ? qs[23:12] : 12'd0;
+	wire [11:0] q_lo = kin_q_lo ? qs[11:0]  : 12'd0;
+	wire [11:0] q_hi = kin_q_hi ? qs[23:12] : 12'd0;
 	wire [23:0] q = {q_hi, q_lo};
 	reg round_bit, sticky_bit;
 	integer b;

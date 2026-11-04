@@ -44,7 +44,7 @@ module atg_tu_tcrd #(
 	output wire signed [30:0] cv,
 	output wire signed [30:0] cw
 );
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	wire signed [29:0] nu, nv, nw, un0, un1;
 	wire signed [46:0] pu, pv, pw;

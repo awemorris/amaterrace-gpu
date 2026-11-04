@@ -68,7 +68,7 @@ module atg_tu_foot #(
 	output wire [7:0] fw
 );
 
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	(* keep = "true" *) wire off_u_s_lo = off[3];
 	(* keep = "true" *) wire off_u_s_hi = off[3];

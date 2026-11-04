@@ -42,7 +42,7 @@ module atg_tu_lod #(
 	`include "atg_tu_fn.vh"
 	localparam signed [16:0] LAM_MIN = -17'sd32768;
 
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	/* Delay cs, ct, w0, h0, d0 for LAT >= 4 to match u_fx pipeline */
 	(* keep = "true", equivalent_register_removal = "no" *) reg [80:0] r_cs, r_ct, r2_cs, r2_ct;
@@ -86,10 +86,10 @@ module atg_tu_lod #(
 	generate
 	for (gi = 0; gi < 3; gi = gi + 1) begin : g_fa
 		wire [31:0] fx;
-		(* dont_touch = "true" *) wire [3:0] ax1_in_s  = {4{ax[1]}};
-		(* dont_touch = "true" *) wire [3:0] ax0_in_s  = {4{ax[0]}};
-		(* dont_touch = "true" *) wire [3:0] cube_fa_s = {4{cube && !ax[1]}};
-		(* dont_touch = "true" *) wire [3:0] ax0_fa_s  = {4{ax[0]}};
+		wire [3:0] ax1_in_s  = {4{ax[1]}};
+		wire [3:0] ax0_in_s  = {4{ax[0]}};
+		wire [3:0] cube_fa_s = {4{cube && !ax[1]}};
+		wire [3:0] ax0_fa_s  = {4{ax[0]}};
 		(* keep = "true" *) wire [31:0] f_in = {
 			ax1_in_s[3] ? w[gi*32 + 24 +: 8] : ax0_in_s[3] ? v[gi*32 + 24 +: 8] : u[gi*32 + 24 +: 8],
 			ax1_in_s[2] ? w[gi*32 + 16 +: 8] : ax0_in_s[2] ? v[gi*32 + 16 +: 8] : u[gi*32 + 16 +: 8],

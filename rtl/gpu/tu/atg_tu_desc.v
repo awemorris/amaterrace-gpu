@@ -94,7 +94,7 @@ module atg_tu_desc (
 		end
 	endfunction
 
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	/* Clean single-cycle BRAMs for slot words 0-7 (rd_slot/rd_samp_slot port and cs port) */
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [4:0] wslot_q0, wslot_q1, wslot_q2, wslot_q3;
@@ -136,64 +136,52 @@ module atg_tu_desc (
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] rd_loff_en_lo, rd_loff_en_hi;
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0] rd_pl_en_lo,   rd_pl_en_hi;
 
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(32), .ADDR_W(5)) u_bram_base (
 		.clk(clk), .we(we_base_q), .waddr(wslot_q0), .wdata(wdata_q),
 		.re(1'b1), .raddr(rd_slot), .rdata(bram_base_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(32), .ADDR_W(5)) u_bram_size (
 		.clk(clk), .we(we_size_q), .waddr(wslot_q0), .wdata(wdata_q),
 		.re(1'b1), .raddr(rd_slot), .rdata(bram_size_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(32), .ADDR_W(5)) u_bram_img (
 		.clk(clk), .we(we_img_q), .waddr(wslot_q0), .wdata(wdata_q),
 		.re(1'b1), .raddr(rd_slot), .rdata(bram_img_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(32), .ADDR_W(5)) u_bram_str (
 		.clk(clk), .we(we_str_q), .waddr(wslot_q1), .wdata(wdata_q),
 		.re(1'b1), .raddr(rd_slot), .rdata(bram_str_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(32), .ADDR_W(5)) u_bram_samp (
 		.clk(clk), .we(we_samp_q), .waddr(wslot_q1), .wdata(wdata_q),
 		.re(1'b1), .raddr(rd_samp_slot), .rdata(bram_samp_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(32), .ADDR_W(5)) u_bram_lod (
 		.clk(clk), .we(we_lod_q), .waddr(wslot_q1), .wdata(wdata_q),
 		.re(1'b1), .raddr(rd_slot), .rdata(bram_lod_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(21), .ADDR_W(5)) u_bram_fmt (
 		.clk(clk), .we(we_fmt_q), .waddr(wslot_q2), .wdata(wdata_q[20:0]),
 		.re(1'b1), .raddr(rd_slot), .rdata(bram_fmt_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(2), .ADDR_W(5)) u_bram_row (
 		.clk(clk), .we(we_row_q), .waddr(wslot_q2), .wdata(wdata_q[GHCI_TROW_ALIGN +: 2]),
 		.re(1'b1), .raddr(rd_slot), .rdata(bram_row_rdata)
 	);
 
 	/* Second read port for cs (used by level offset calculation in S_LOAD) */
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(32), .ADDR_W(5)) u_bram_cs_size (
 		.clk(clk), .we(we_size_cs_q), .waddr(wslot_q2), .wdata(wdata_q),
 		.re(1'b1), .raddr(cs_bram), .rdata(cs_size_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(32), .ADDR_W(5)) u_bram_cs_img (
 		.clk(clk), .we(we_img_cs_q), .waddr(wslot_q3), .wdata(wdata_q),
 		.re(1'b1), .raddr(cs_bram), .rdata(cs_img_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(21), .ADDR_W(5)) u_bram_cs_fmt (
 		.clk(clk), .we(we_fmt_cs_q), .waddr(wslot_q3), .wdata(wdata_q[20:0]),
 		.re(1'b1), .raddr(cs_bram), .rdata(cs_fmt_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(2), .ADDR_W(5)) u_bram_cs_row (
 		.clk(clk), .we(we_row_cs_q), .waddr(wslot_q3), .wdata(wdata_q[GHCI_TROW_ALIGN +: 2]),
 		.re(1'b1), .raddr(cs_bram), .rdata(cs_row_rdata)
@@ -215,43 +203,35 @@ module atg_tu_desc (
 	(* keep = "true", extract_reset = "no" *) reg [25:0] rd_off0_q, rd_off1_q, rd_off2_q, rd_off3_q;
 	(* keep = "true", extract_reset = "no" *) reg [25:0] rd_pl0_q,  rd_pl1_q,  rd_pl2_q,  rd_pl3_q;
 
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(26), .ADDR_W(9)) u_bram_off0 (
 		.clk(clk), .we(b_we_off_q), .waddr(b_waddr_off_q), .wdata(b_wdata_off_q),
 		.re(1'b1), .raddr(raddr_off0_q), .rdata(bram_off0_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(26), .ADDR_W(9)) u_bram_off1 (
 		.clk(clk), .we(b_we_off_q), .waddr(b_waddr_off_q), .wdata(b_wdata_off_q),
 		.re(1'b1), .raddr(raddr_off1_q), .rdata(bram_off1_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(26), .ADDR_W(9)) u_bram_off2 (
 		.clk(clk), .we(b_we_off_q), .waddr(b_waddr_off_q), .wdata(b_wdata_off_q),
 		.re(1'b1), .raddr(raddr_off2_q), .rdata(bram_off2_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(26), .ADDR_W(9)) u_bram_off3 (
 		.clk(clk), .we(b_we_off_q), .waddr(b_waddr_off_q), .wdata(b_wdata_off_q),
 		.re(1'b1), .raddr(raddr_off3_q), .rdata(bram_off3_rdata)
 	);
 
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(26), .ADDR_W(9)) u_bram_pl0 (
 		.clk(clk), .we(b_we_pl_q), .waddr(b_waddr_pl_q), .wdata(b_wdata_pl_q),
 		.re(1'b1), .raddr(raddr_pl0_q), .rdata(bram_pl0_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(26), .ADDR_W(9)) u_bram_pl1 (
 		.clk(clk), .we(b_we_pl_q), .waddr(b_waddr_pl_q), .wdata(b_wdata_pl_q),
 		.re(1'b1), .raddr(raddr_pl1_q), .rdata(bram_pl1_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(26), .ADDR_W(9)) u_bram_pl2 (
 		.clk(clk), .we(b_we_pl_q), .waddr(b_waddr_pl_q), .wdata(b_wdata_pl_q),
 		.re(1'b1), .raddr(raddr_pl2_q), .rdata(bram_pl2_rdata)
 	);
-	(* dont_touch = "true" *)
 	am_bram_sdp #(.W(26), .ADDR_W(9)) u_bram_pl3 (
 		.clk(clk), .we(b_we_pl_q), .waddr(b_waddr_pl_q), .wdata(b_wdata_pl_q),
 		.re(1'b1), .raddr(raddr_pl3_q), .rdata(bram_pl3_rdata)
@@ -384,9 +364,9 @@ module atg_tu_desc (
 	am_mul #(.AW(17), .BW(16), .LAT(2)) u_wrh (.clk(clk), .en(1'b1), .a(r_wr), .b(r_h1), .p(wrh_w));
 
 	/* Stage 5..6: plane size calculation */
-	(* dont_touch = "true" *) wire [3:0] clay4_s    = {4{r_clay_b0[4]}};
-	(* dont_touch = "true" *) wire [3:0] clay3_s    = {4{r_clay_c[3]}};
-	(* dont_touch = "true" *) wire [3:0] clay_is1_s = {4{r_clay_c[2:0] == 3'd1}};
+	wire [3:0] clay4_s    = {4{r_clay_b0[4]}};
+	wire [3:0] clay3_s    = {4{r_clay_c[3]}};
+	wire [3:0] clay_is1_s = {4{r_clay_c[2:0] == 3'd1}};
 	(* keep = "true" *) wire [33:0] ps_in = {
 		clay4_s[3] ? {2'b00, r_t[31:25]} : {1'b0, r_wrh[32:25]},
 		clay4_s[2] ? r_t[24:17]          : r_wrh[24:17],
@@ -421,10 +401,10 @@ module atg_tu_desc (
 	/* the slot taken (cs in S_LOAD) and the slot marked (wslot_v4), one-hot */
 	(* keep = "true", equivalent_register_removal = "no" *) reg [4:0] load_clr_s;
 	(* keep = "true", equivalent_register_removal = "no" *) reg acc_clr_lo_q, acc_clr_hi_q;
-	(* dont_touch = "true" *) wire done_lo     = (st == S_DONE);
-	(* dont_touch = "true" *) wire done_hi     = (st == S_DONE);
+	wire done_lo     = (st == S_DONE);
+	wire done_hi     = (st == S_DONE);
 	(* keep = "true", equivalent_register_removal = "no" *) reg [6:0] ce_lw;
-	(* dont_touch = "true" *) wire [5:0] ce_lf = {6{st == S_LOAD_FMT}};
+	wire [5:0] ce_lf = {6{st == S_LOAD_FMT}};
 	wire we_base_d = in_tu_a && (s_off[3:0] == GHCI_TEX_BASE);
 	wire we_size_d = in_tu_a && (s_off[3:0] == GHCI_TEX_SIZE);
 	wire we_img_d  = in_tu_a && (s_off[3:0] == GHCI_TEX_IMAGE);

@@ -109,7 +109,7 @@ module atg_tu_addr (
 	                 WAIT_DESC1   = 6'd48,
 	                 WAIT_DESC2   = 6'd49;
 
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	(* keep = "true", max_fanout = 12 *) reg [5:0] st;
 	(* keep = "true", max_fanout = 12 *) reg [3:0] pas;	/* {column, row, level, slice} */
@@ -228,10 +228,10 @@ module atg_tu_addr (
 	);
 
 	/* Pipelined decode of registered descriptor outputs (used in DECODE_DESC & DECODE_DESC2) */
-	(* dont_touch = "true" *) wire w0_zero_a = (r_dsize_raw[15:0]  == 16'd0);
-	(* dont_touch = "true" *) wire w0_zero_b = (r_dsize_raw[15:0]  == 16'd0);
-	(* dont_touch = "true" *) wire h0_zero_a = (r_dsize_raw[31:16] == 16'd0);
-	(* dont_touch = "true" *) wire h0_zero_b = (r_dsize_raw[31:16] == 16'd0);
+	wire w0_zero_a = (r_dsize_raw[15:0]  == 16'd0);
+	wire w0_zero_b = (r_dsize_raw[15:0]  == 16'd0);
+	wire h0_zero_a = (r_dsize_raw[31:16] == 16'd0);
+	wire h0_zero_b = (r_dsize_raw[31:16] == 16'd0);
 	(* keep = "true" *) wire [15:0] w0_a = w0_zero_a ? 16'd1 : r_dsize_raw[15:0];
 	(* keep = "true" *) wire [15:0] w0_b = w0_zero_b ? 16'd1 : r_dsize_raw[15:0];
 	(* keep = "true" *) wire [15:0] h0_a = h0_zero_a ? 16'd1 : r_dsize_raw[31:16];
@@ -283,18 +283,18 @@ module atg_tu_addr (
 
 	/* Active quad operations (derived from registered opr and registered descriptor) */
 	wire [1:0] op = opr[1:0];
-	(* dont_touch = "true" *) wire [3:0] gather_foot = {4{op == OP_TEXL && opr[3]}};
-	(* dont_touch = "true" *) wire [3:0] gather_lane = {4{op == OP_TEXL && opr[3]}};
-	(* dont_touch = "true" *) wire       gather_ctl  = (op == OP_TEXL && opr[3]);
+	wire [3:0] gather_foot = {4{op == OP_TEXL && opr[3]}};
+	wire [3:0] gather_lane = {4{op == OP_TEXL && opr[3]}};
+	wire       gather_ctl  = (op == OP_TEXL && opr[3]);
 	wire qlod = op == OP_TEXB && opr[6];
 	wire nlevq = op == OP_TEXSZ && opr[6] && !opr[3];
 	wire dszq = op == OP_TEXSZ && opr[3] && !opr[6];
 	wire smpq = op == OP_TEXSZ && opr[6] && opr[3];	/* texsz.s */
-	(* dont_touch = "true" *) wire nofetch      = op == OP_TEXSZ || qlod;
-	(* dont_touch = "true" *) wire nofetch_ctl  = op == OP_TEXSZ || qlod;
-	(* dont_touch = "true" *) wire nofetch_bord = op == OP_TEXSZ || qlod;
-	(* dont_touch = "true" *) wire nofetch_a_lo = op == OP_TEXSZ || qlod;
-	(* dont_touch = "true" *) wire nofetch_a_hi = op == OP_TEXSZ || qlod;
+	wire nofetch      = op == OP_TEXSZ || qlod;
+	wire nofetch_ctl  = op == OP_TEXSZ || qlod;
+	wire nofetch_bord = op == OP_TEXSZ || qlod;
+	wire nofetch_a_lo = op == OP_TEXSZ || qlod;
+	wire nofetch_a_hi = op == OP_TEXSZ || qlod;
 
 	wire cmp = r_depth && r_samp_cmp && !op[1] && !qlod;
 	wire filt = r_legacy ? !r_depth || cmp : r_fc[6] || cmp;
@@ -318,12 +318,12 @@ module atg_tu_addr (
 	wire jfix = job == 3'd1 || job == 3'd2;
 	wire [2:0] jnext = job == 3'd0 && !cb_lod ? 3'd3 : job == 3'd2 && !cb_lane ? 3'd6 : job1;
 
-	(* dont_touch = "true" *) wire [1:0] jlane_xl = jlane;
-	(* dont_touch = "true" *) wire [1:0] jlane_xh = jlane;
-	(* dont_touch = "true" *) wire [1:0] jlane_yl = jlane;
-	(* dont_touch = "true" *) wire [1:0] jlane_yh = jlane;
-	(* dont_touch = "true" *) wire [1:0] jlane_zl = jlane;
-	(* dont_touch = "true" *) wire [1:0] jlane_zh = jlane;
+	wire [1:0] jlane_xl = jlane;
+	wire [1:0] jlane_xh = jlane;
+	wire [1:0] jlane_yl = jlane;
+	wire [1:0] jlane_yh = jlane;
+	wire [1:0] jlane_zl = jlane;
+	wire [1:0] jlane_zh = jlane;
 	wire [31:0] jcrd_x = {
 		jlane_xh[1] ? (jlane_xh[0] ? r_foot_x[3][31:16] : r_foot_x[2][31:16]) : (jlane_xh[0] ? r_foot_x[1][31:16] : r_foot_x[0][31:16]),
 		jlane_xl[1] ? (jlane_xl[0] ? r_foot_x[3][15:0]  : r_foot_x[2][15:0])  : (jlane_xl[0] ? r_foot_x[1][15:0]  : r_foot_x[0][15:0])
@@ -385,8 +385,8 @@ module atg_tu_addr (
 	wire [16:0] uv_cmp_d, uvw_cmp_d;
 	wire        uv_cmp_bo, uvw_cmp_bo;
 	am_sub #(.W(17)) u_uv_cmp (.a({~r_lam_u[16], r_lam_u[15:0]}), .b({~r_lam_v[16], r_lam_v[15:0]}), .bi(1'b0), .d(uv_cmp_d), .bo(uv_cmp_bo));
-	(* dont_touch = "true" *) wire uv_ge_v_lo = r_uv_ge_v;
-	(* dont_touch = "true" *) wire uv_ge_v_hi = r_uv_ge_v;
+	wire uv_ge_v_lo = r_uv_ge_v;
+	wire uv_ge_v_hi = r_uv_ge_v;
 	wire signed [16:0] lam_uv_sel = $signed({uv_ge_v_hi ? r_lam_u[16:9] : r_lam_v[16:9], uv_ge_v_lo ? r_lam_u[8:0] : r_lam_v[8:0]});
 	am_sub #(.W(17)) u_uvw_cmp (.a({~r_lam_uv[16], r_lam_uv[15:0]}), .b({~r_lam_w_d[16], r_lam_w_d[15:0]}), .bi(1'b0), .d(uvw_cmp_d), .bo(uvw_cmp_bo));
 	(* keep = "true" *) wire signed [16:0] lam_quad = $signed({r_uv_ge_w_hi ? r_lam_uv[16:9] : r_lam_w_d[16:9], r_uv_ge_w_lo ? r_lam_uv[8:0] : r_lam_w_d[8:0]});
@@ -453,10 +453,10 @@ module atg_tu_addr (
 		assign lam1_l[gl] = lam1_sat;
 
 		/* Stage A0B: LOD Raw Selection (using r_lam_quad[gl] and r_lam1[gl]) */
-		(* dont_touch = "true" *) wire lq_s_lo   = r_lam_quad[gl][16];
-		(* dont_touch = "true" *) wire lq_s_hi   = r_lam_quad[gl][16];
-		(* dont_touch = "true" *) wire lam1_s_lo = r_lam1[gl][16];
-		(* dont_touch = "true" *) wire lam1_s_hi = r_lam1[gl][16];
+		wire lq_s_lo   = r_lam_quad[gl][16];
+		wire lq_s_hi   = r_lam_quad[gl][16];
+		wire lam1_s_lo = r_lam1[gl][16];
+		wire lam1_s_hi = r_lam1[gl][16];
 		wire [32:0] lsum;
 		am_add #(.W(33)) u_lsum (
 			.a({{8{lq_s_hi}}, {8{lq_s_lo}}, r_lam_quad[gl]}),
@@ -471,10 +471,10 @@ module atg_tu_addr (
 		});
 
 		/* Stage A0C: LOD Bias Accumulation & Clamp (using r_lraw) */
-		(* dont_touch = "true" *) wire lraw_s_lo  = r_lraw[gl][16];
-		(* dont_touch = "true" *) wire lraw_s_hi  = r_lraw[gl][16];
-		(* dont_touch = "true" *) wire sbias_s_lo = r_sbias[16];
-		(* dont_touch = "true" *) wire sbias_s_hi = r_sbias[16];
+		wire lraw_s_lo  = r_lraw[gl][16];
+		wire lraw_s_hi  = r_lraw[gl][16];
+		wire sbias_s_lo = r_sbias[16];
+		wire sbias_s_hi = r_sbias[16];
 		wire [32:0] bsum;
 		am_add #(.W(33)) u_bsum (
 			.a({{8{lraw_s_hi}}, {8{lraw_s_lo}}, r_lraw[gl]}),
@@ -482,8 +482,8 @@ module atg_tu_addr (
 			.ci(1'b0), .s(bsum), .co(lsum_carry_unused[gl*2 + 1])
 		);
 		assign bsum_l[gl] = bsum;
-		(* dont_touch = "true" *) wire lamp_unn_lo = r_unn;
-		(* dont_touch = "true" *) wire lamp_unn_hi = r_unn;
+		wire lamp_unn_lo = r_unn;
+		wire lamp_unn_hi = r_unn;
 		wire signed [16:0] bsum_sat = tu_sat16(r_bsum[gl]);
 		assign lamp_l[gl] = $signed({
 			lamp_unn_hi ? 8'd0 : bsum_sat[16:9],
@@ -496,12 +496,12 @@ module atg_tu_addr (
 		am_sub #(.W(17)) u_minlod_cmp (.a({~r_lamp[gl][16], r_lamp[gl][15:0]}), .b({~r_minlod[16], r_minlod[15:0]}), .bi(1'b0), .d(minlod_cmp_d), .bo(minlod_cmp_bo));
 		assign gt_maxlod_l[gl] = maxlod_cmp_bo;
 		assign lt_minlod_l[gl] = minlod_cmp_bo;
-		(* dont_touch = "true" *) wire gt_max_lo = r_gt_maxlod[gl];
-		(* dont_touch = "true" *) wire gt_max_hi = r_gt_maxlod[gl];
-		(* dont_touch = "true" *) wire lam_unn_lo = r_unn;
-		(* dont_touch = "true" *) wire lam_unn_hi = r_unn;
-		(* dont_touch = "true" *) wire use_min_lo = r_lt_minlod[gl] || r_max_lt_min;
-		(* dont_touch = "true" *) wire use_min_hi = r_lt_minlod[gl] || r_max_lt_min;
+		wire gt_max_lo = r_gt_maxlod[gl];
+		wire gt_max_hi = r_gt_maxlod[gl];
+		wire lam_unn_lo = r_unn;
+		wire lam_unn_hi = r_unn;
+		wire use_min_lo = r_lt_minlod[gl] || r_max_lt_min;
+		wire use_min_hi = r_lt_minlod[gl] || r_max_lt_min;
 		wire [8:0] lamc_lo = gt_max_lo ? r_maxlod[8:0]  : r_lamp[gl][8:0];
 		wire [7:0] lamc_hi = gt_max_hi ? r_maxlod[16:9] : r_lamp[gl][16:9];
 		assign lam_l[gl] = $signed({
@@ -526,14 +526,14 @@ module atg_tu_addr (
 		/* Stage A1: Level Selection (using r_lam, r_lrnd, r_lnx, r_lfetch, r_mag, r_lend, r_lsize) */
 		wire mag = r_mag[gl];
 		wire signed [16:0] lmaxf = $signed({5'd0, r_maxl, 8'd0});
-		(* dont_touch = "true" *) wire lam_gt_lmaxf = !r_lam[gl][16] && (r_lam[gl][15:12] != 4'd0 || r_lam[gl][11:8] > r_maxl || (r_lam[gl][11:8] == r_maxl && r_lam[gl][7:0] != 8'd0));
-		(* dont_touch = "true" *) wire lam_neg_dq   = r_lam[gl][16];
+		wire lam_gt_lmaxf = !r_lam[gl][16] && (r_lam[gl][15:12] != 4'd0 || r_lam[gl][11:8] > r_maxl || (r_lam[gl][11:8] == r_maxl && r_lam[gl][7:0] != 8'd0));
+		wire lam_neg_dq   = r_lam[gl][16];
 		assign dq_l[gl] = lam_neg_dq ? 16'd0 : lam_gt_lmaxf ? lmaxf[15:0] : r_lam[gl][15:0];
 		wire [3:0] lmin = (r_lrnd[gl][15:12] != 4'd0 || r_lrnd[gl][11:8] > r_maxl) ? r_maxl : r_lrnd[gl][11:8];
 		wire lend = r_lend[gl];
 		wire [3:0] llin = lend ? r_maxl : r_lnx[gl];
-		(* dont_touch = "true" *) wire miplin_fl  = !mag && miplin && !lend && !op[1] && !qlod;
-		(* dont_touch = "true" *) wire miplin_lvl = miplin;
+		wire miplin_fl  = !mag && miplin && !lend && !op[1] && !qlod;
+		wire miplin_lvl = miplin;
 		assign fl_l[gl] = miplin_fl ? r_lam[gl][7:0] : 8'd0;
 		wire [3:0] lsize = r_lsize[gl];
 		(* keep = "true" *) wire [3:0] lvl_w = op == OP_TEXSZ ? lsize : op == OP_TEXF ? (r_ms ? 4'd0 : r_lfetch[gl]) : gather_lane[gl] || mag ? 4'd0 :
@@ -555,7 +555,7 @@ module atg_tu_addr (
 
 		wire [15:0] wl_nxt = r_wl_s[gl] == 16'd0 ? 16'd1 : r_wl_s[gl];
 		wire [15:0] hl1_nxt = r_hl_s[gl] == 16'd0 ? 16'd1 : r_hl_s[gl];
-		(* dont_touch = "true" *) wire is3dr_dl_l = r_is3dr;
+		wire is3dr_dl_l = r_is3dr;
 		wire [15:0] hl_nxt = r_cube_hl[gl] ? wl_nxt : hl1_nxt;
 		wire [15:0] dl_nxt = !is3dr_dl_l || r_dl_s[gl] == 16'd0 ? 16'd1 : r_dl_s[gl];
 		assign wl_l[gl] = wl_nxt;
@@ -586,9 +586,9 @@ module atg_tu_addr (
 		assign sfl_gt5_l[gl]    = (sfl[31:3] != 29'd0) || (sfl[2:1] == 2'b11);
 		wire unused_sfl_cmp = &{1'b0, sfl_cmp_d, unused_lod_cmp};
 
-		(* dont_touch = "true" *) wire lay_texf_arr  = (op == OP_TEXF) && r_arr;
-		(* dont_touch = "true" *) wire lay_texf_cube = (op == OP_TEXF) && !r_arr && r_cube_lay[gl];
-		(* dont_touch = "true" *) wire lay_norm_arr  = (op != OP_TEXF) && r_arr;
+		wire lay_texf_arr  = (op == OP_TEXF) && r_arr;
+		wire lay_texf_cube = (op == OP_TEXF) && !r_arr && r_cube_lay[gl];
+		wire lay_norm_arr  = (op != OP_TEXF) && r_arr;
 		wire [15:0] lay = lay_texf_arr  ? (r_sfl_ge_cnt[gl] ? r_cnt1[gl] : sfl[15:0]) :
 		                  lay_texf_cube ? (r_sfl_gt5[gl]    ? 16'd5      : sfl[15:0]) :
 		                  lay_norm_arr  ? lyr : 16'd0;
@@ -601,8 +601,8 @@ module atg_tu_addr (
 		am_add #(.W(32)) u_lbase (.a(r_lb1[gl]), .b(loff_l[gl]), .ci(1'b0), .s(lbase_n_l[gl]),
 			.co(lbase_co_unused[gl]));
 
-		(* dont_touch = "true" *) wire dsz_arr  = r_arr;
-		(* dont_touch = "true" *) wire dsz_is3d = !r_arr && r_is3d_dsz[gl];
+		wire dsz_arr  = r_arr;
+		wire dsz_is3d = !r_arr && r_is3d_dsz[gl];
 		wire [15:0] dsz = dsz_arr ? r_cnt : dsz_is3d ? r_dl[gl] : 16'd1;
 		wire [15:0] val_lo_s0 = smpq ? (r_ms ? 16'd4 : 16'd1) : nlevq ? {12'd0, r_nlev} : 16'd0;
 		wire [15:0] val_lo = {
@@ -648,7 +648,7 @@ module atg_tu_addr (
 	wire [4:0] nxt = quad && !pas[3] ? {2'b01, pas[2:0]} : quad && !pas[2] ? {3'b001, pas[1:0]} :
 		split && !pas[2] ? {3'b001, pas[1:0]} : {nxb[2], 2'b00, nxb[1:0]};
 
-	(* dont_touch = "true" *) wire [4:0] desc_busy_b = {5{desc_busy}};
+	wire [4:0] desc_busy_b = {5{desc_busy}};
 	assign tx_ready = (st == IDLE) && !desc_busy_b[0];
 	assign ta_valid = st == OUT;
 
@@ -662,17 +662,17 @@ module atg_tu_addr (
 	assign ta_ctl = ta_ctl_w;
 
 	/* Fanout-decoupled slice enables for wide registers crd (640b) and ta_addr/ta_wts/ta_value */
-	(* dont_touch = "true" *) wire [7:0]  idle_ce_g;
-	(* dont_touch = "true" *) wire [79:0] idle_ce_s;
-	(* dont_touch = "true" *) wire [7:0]  idle_meta_ce = {8{(st == IDLE) && tx_valid && !desc_busy_b[0]}};
-	(* dont_touch = "true" *) wire [2:0]  wdesc1_en = {3{(st == IDLE) && tx_valid && !desc_busy_b[0]}};
-	(* dont_touch = "true" *) wire [4:0]  wdesc2_en = {5{st == WAIT_DESC1}};
-	(* dont_touch = "true" *) wire [1:0]  ld_desc_en = {2{st == WAIT_DESC2}};
-	(* dont_touch = "true" *) wire [1:0]  dec_desc_en = {2{st == LOAD_DESC}};
-	(* dont_touch = "true" *) wire [1:0]  la1_en = {2{st == LA1A}};
-	(* dont_touch = "true" *) wire [1:0]  la1b_en = {2{st == LA1BA}};
-	(* dont_touch = "true" *) wire [1:0]  la2d_en = {2{st == LA2C}};
-	(* dont_touch = "true" *) wire [3:0]  lb3_en = {4{st == LB2F}};
+	wire [7:0]  idle_ce_g;
+	wire [79:0] idle_ce_s;
+	wire [7:0]  idle_meta_ce = {8{(st == IDLE) && tx_valid && !desc_busy_b[0]}};
+	wire [2:0]  wdesc1_en = {3{(st == IDLE) && tx_valid && !desc_busy_b[0]}};
+	wire [4:0]  wdesc2_en = {5{st == WAIT_DESC1}};
+	wire [1:0]  ld_desc_en = {2{st == WAIT_DESC2}};
+	wire [1:0]  dec_desc_en = {2{st == LOAD_DESC}};
+	wire [1:0]  la1_en = {2{st == LA1A}};
+	wire [1:0]  la1b_en = {2{st == LA1BA}};
+	wire [1:0]  la2d_en = {2{st == LA2C}};
+	wire [3:0]  lb3_en = {4{st == LB2F}};
 	(* keep = "true", equivalent_register_removal = "no" *) reg [32:0] wdesc1_ce;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [52:0] wdesc2_ce;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [31:0] lb3_ce_a;
@@ -694,38 +694,38 @@ module atg_tu_addr (
 	(* keep = "true", equivalent_register_removal = "no" *) reg [22:0] dec_desc_ce;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0]  dec_desc2_ce;
 
-	(* dont_touch = "true" *) wire [3:0]  cwait_rdy = {4{(st == CWAIT) && !c_bsy}};
-	(* dont_touch = "true" *) wire [3:0]  cwait_j1_ce = {4{cwait_rdy[0] && (job == 3'd1)}};
-	(* dont_touch = "true" *) wire [3:0]  cwait_j2_ce = {4{cwait_rdy[0] && (job == 3'd2)}};
-	(* dont_touch = "true" *) wire [3:0]  cwait_l0_ce = {4{cwait_rdy[0] && (job != 3'd1) && (job != 3'd2) && (jlane == 2'd0)}};
-	(* dont_touch = "true" *) wire [3:0]  cwait_l1_ce = {4{cwait_rdy[1] && (job != 3'd1) && (job != 3'd2) && (jlane == 2'd1)}};
-	(* dont_touch = "true" *) wire [3:0]  cwait_l2_ce = {4{cwait_rdy[2] && (job != 3'd1) && (job != 3'd2) && (jlane == 2'd2)}};
-	(* dont_touch = "true" *) wire [3:0]  cwait_l3_ce = {4{cwait_rdy[3] && (job != 3'd1) && (job != 3'd2) && (jlane == 2'd3)}};
+	wire [3:0]  cwait_rdy = {4{(st == CWAIT) && !c_bsy}};
+	wire [3:0]  cwait_j1_ce = {4{cwait_rdy[0] && (job == 3'd1)}};
+	wire [3:0]  cwait_j2_ce = {4{cwait_rdy[0] && (job == 3'd2)}};
+	wire [3:0]  cwait_l0_ce = {4{cwait_rdy[0] && (job != 3'd1) && (job != 3'd2) && (jlane == 2'd0)}};
+	wire [3:0]  cwait_l1_ce = {4{cwait_rdy[1] && (job != 3'd1) && (job != 3'd2) && (jlane == 2'd1)}};
+	wire [3:0]  cwait_l2_ce = {4{cwait_rdy[2] && (job != 3'd1) && (job != 3'd2) && (jlane == 2'd2)}};
+	wire [3:0]  cwait_l3_ce = {4{cwait_rdy[3] && (job != 3'd1) && (job != 3'd2) && (jlane == 2'd3)}};
 
-	(* dont_touch = "true" *) wire [4:0]  la0_ce    = {5{st == LA0}};
-	(* dont_touch = "true" *) wire [7:0]  la0bb_ce  = {8{st == LA0BB}};
-	(* dont_touch = "true" *) wire [1:0]  la0bc_g   = {2{st == LA0BC}};
-	(* dont_touch = "true" *) wire [11:0] la0bc_ce  = {{6{la0bc_g[1]}}, {6{la0bc_g[0]}}};
-	(* dont_touch = "true" *) wire [7:0]  la0bf_ce  = {8{st == LA0BF}};
-	(* dont_touch = "true" *) wire [7:0]  la0bg_ce  = {8{st == LA0BG}};
-	(* dont_touch = "true" *) wire [5:0]  la0bh_ce  = {6{st == LA0BH}};
-	(* dont_touch = "true" *) wire [1:0]  la0bi_ce  = {2{st == LA0BI}};
-	(* dont_touch = "true" *) wire [1:0]  la0bj_ce  = {2{st == LA0BJ}};
-	(* dont_touch = "true" *) wire        la0bk_ce  = (st == LA0BK);
-	(* dont_touch = "true" *) wire [7:0]  la0c_ce   = {8{st == LA0C}};
-	(* dont_touch = "true" *) wire [1:0]  la0c2_g   = {2{st == LA0C2}};
-	(* dont_touch = "true" *) wire [11:0] la0c2_ce  = {{6{la0c2_g[1]}}, {6{la0c2_g[0]}}};
-	(* dont_touch = "true" *) wire [7:0]  la0d_ce   = {8{st == LA0D}};
-	(* dont_touch = "true" *) wire [1:0]  la0e_g    = {2{st == LA0E}};
-	(* dont_touch = "true" *) wire [11:0] la0e_ce   = {{6{la0e_g[1]}}, {6{la0e_g[0]}}};
-	(* dont_touch = "true" *) wire [7:0]  la0e2_ce  = {8{st == LA0E2}};
-	(* dont_touch = "true" *) wire        la0f_ce   = (st == LA0F);
-	(* dont_touch = "true" *) wire [7:0]  la0g_ce   = {8{st == LA0G}};
-	(* dont_touch = "true" *) wire [1:0]  la1a_g    = {2{st == LA1A}};
-	(* dont_touch = "true" *) wire [11:0] la1a_ce   = {{6{la1a_g[1]}}, {6{la1a_g[0]}}};
+	wire [4:0]  la0_ce    = {5{st == LA0}};
+	wire [7:0]  la0bb_ce  = {8{st == LA0BB}};
+	wire [1:0]  la0bc_g   = {2{st == LA0BC}};
+	wire [11:0] la0bc_ce  = {{6{la0bc_g[1]}}, {6{la0bc_g[0]}}};
+	wire [7:0]  la0bf_ce  = {8{st == LA0BF}};
+	wire [7:0]  la0bg_ce  = {8{st == LA0BG}};
+	wire [5:0]  la0bh_ce  = {6{st == LA0BH}};
+	wire [1:0]  la0bi_ce  = {2{st == LA0BI}};
+	wire [1:0]  la0bj_ce  = {2{st == LA0BJ}};
+	wire        la0bk_ce  = (st == LA0BK);
+	wire [7:0]  la0c_ce   = {8{st == LA0C}};
+	wire [1:0]  la0c2_g   = {2{st == LA0C2}};
+	wire [11:0] la0c2_ce  = {{6{la0c2_g[1]}}, {6{la0c2_g[0]}}};
+	wire [7:0]  la0d_ce   = {8{st == LA0D}};
+	wire [1:0]  la0e_g    = {2{st == LA0E}};
+	wire [11:0] la0e_ce   = {{6{la0e_g[1]}}, {6{la0e_g[0]}}};
+	wire [7:0]  la0e2_ce  = {8{st == LA0E2}};
+	wire        la0f_ce   = (st == LA0F);
+	wire [7:0]  la0g_ce   = {8{st == LA0G}};
+	wire [1:0]  la1a_g    = {2{st == LA1A}};
+	wire [11:0] la1a_ce   = {{6{la1a_g[1]}}, {6{la1a_g[0]}}};
 	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] la1_ce;
-	(* dont_touch = "true" *) wire [1:0]  la1ba_g   = {2{st == LA1BA}};
-	(* dont_touch = "true" *) wire [11:0] la1ba_ce  = {{6{la1ba_g[1]}}, {6{la1ba_g[0]}}};
+	wire [1:0]  la1ba_g   = {2{st == LA1BA}};
+	wire [11:0] la1ba_ce  = {{6{la1ba_g[1]}}, {6{la1ba_g[0]}}};
 	(* keep = "true", equivalent_register_removal = "no" *) reg [17:0] la1b_ce;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [23:0] la2d_ce;
 

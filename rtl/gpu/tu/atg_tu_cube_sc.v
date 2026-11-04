@@ -25,7 +25,7 @@ module atg_tu_cube_sc (
 	input wire [26:0] m3,
 	output wire [26:0] o
 );
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	/* Stage 1 (P0 -> P1): sh = e - em, k = em - e */
 	wire [8:0] sh_w, k_w;
@@ -81,8 +81,8 @@ module atg_tu_cube_sc (
 		.left(1'b0), .arith(1'b0), .y(qs_r_hi)
 	);
 	wire [26:0] qs_r = {qs_r_hi[26:14], qs_r_lo[13:0]};
-	(* dont_touch = "true" *) wire [1:0] sh_lo = sh_p1[1:0];
-	(* dont_touch = "true" *) wire [1:0] sh_hi = sh_p1[1:0];
+	wire [1:0] sh_lo = sh_p1[1:0];
+	wire [1:0] sh_hi = sh_p1[1:0];
 	wire [26:0] qs_l_0 = {3'd0, 1'b1, v_p1[22:0]};
 	wire [26:0] qs_l_1 = {2'd0, 1'b1, v_p1[22:0], 1'b0};
 	wire [26:0] qs_l_2 = {1'd0, 1'b1, v_p1[22:0], 2'b00};
@@ -91,10 +91,10 @@ module atg_tu_cube_sc (
 		(sh_lo == 2'd0) ? qs_l_0[13:0]  : (sh_lo == 2'd1) ? qs_l_1[13:0]  : qs_l_2[13:0]
 	};
 
-	(* dont_touch = "true" *) wire [3:0] vz_s   = {4{v_zero_p1}};
-	(* dont_touch = "true" *) wire [3:0] sgt2_s = {4{sh_gt2_p1}};
-	(* dont_touch = "true" *) wire [3:0] sh8_s  = {4{sh_p1[8]}};
-	(* dont_touch = "true" *) wire [3:0] k24_s  = {4{k_lt24_p1}};
+	wire [3:0] vz_s   = {4{v_zero_p1}};
+	wire [3:0] sgt2_s = {4{sh_gt2_p1}};
+	wire [3:0] sh8_s  = {4{sh_p1[8]}};
+	wire [3:0] k24_s  = {4{k_lt24_p1}};
 
 	(* keep = "true" *) wire [26:0] q_w = {
 		vz_s[3] ? 6'd0 : sgt2_s[3] ? m3_p1[26:21] : !sh8_s[3] ? qs_l[26:21] : k24_s[3] ? qs_r[26:21] : 6'd0,
@@ -204,7 +204,7 @@ module atg_tu_cube_sc (
 	wire [26:0] qst_cmp_unused;
 	wire qst_lt_m3;
 	am_sub #(.W(27)) u_qst_cmp (.a(qst_p4), .b(m3_p4), .bi(1'b0), .d(qst_cmp_unused), .bo(qst_lt_m3));
-	(* dont_touch = "true" *) wire [3:0] qst_lt_m3_s = {4{qst_lt_m3}};
+	wire [3:0] qst_lt_m3_s = {4{qst_lt_m3}};
 	(* keep = "true" *) wire [26:0] o_mux;
 	assign o_mux[6:0]   = v_zero_p4[0] ? m3_p4[6:0]   : (ng_p4[0] && !qst_lt_m3_s[0]) ? 7'd0 : r_p4[6:0];
 	assign o_mux[13:7]  = v_zero_p4[1] ? m3_p4[13:7]  : (ng_p4[1] && !qst_lt_m3_s[1]) ? 7'd0 : r_p4[13:7];

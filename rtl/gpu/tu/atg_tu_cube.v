@@ -57,7 +57,7 @@ module atg_tu_cube (
 	                 P5   = 4'd8,
 	                 DIV  = 4'd9;
 
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	(* extract_reset = "no" *) reg [31:0] rx, ry, rz;
 	(* extract_reset = "no" *) reg rfix;
@@ -149,19 +149,19 @@ module atg_tu_cube (
 	wire [26:0] s_q, t_q;
 	am_sub #(.W(25)) u_rs_m (.a(ts[24:0]), .b({1'b0, mm}), .bi(1'b0), .d(rs_m), .bo(bo_rs));
 	am_sub #(.W(25)) u_rt_m (.a(tt[24:0]), .b({1'b0, mm}), .bi(1'b0), .d(rt_m), .bo(bo_rt));
-	(* dont_touch = "true" *) wire gs = ts[25] || !bo_rs;
-	(* dont_touch = "true" *) wire gt = tt[25] || !bo_rt;
-	(* dont_touch = "true" *) wire [3:0] gs_s = {4{gs}};
-	(* dont_touch = "true" *) wire [3:0] gt_s = {4{gt}};
+	wire gs = ts[25] || !bo_rs;
+	wire gt = tt[25] || !bo_rt;
+	wire [3:0] gs_s = {4{gs}};
+	wire [3:0] gt_s = {4{gt}};
 	assign carry_unused[1] = 1'b0;
 	assign carry_unused[2] = 1'b0;
 	am_sub #(.W(5)) u_n1 (.a(n), .b(5'd0), .bi(1'b1), .d(n1), .bo(carry_unused[3]));
 	am_sub #(.W(27)) u_s_q (.a({1'b0, qs}), .b(27'd16777216), .bi(1'b0), .d(s_q), .bo(carry_unused[4]));
 	am_sub #(.W(27)) u_t_q (.a({1'b0, qt}), .b(27'd16777216), .bi(1'b0), .d(t_q), .bo(carry_unused[5]));
 
-	(* dont_touch = "true" *) wire [6:0]  ce_idle = {7{st == IDLE && go}};
-	(* dont_touch = "true" *) wire [5:0]  ce_p0a  = {6{st == P0A}};
-	(* dont_touch = "true" *) wire [2:0]  ce_p0b  = {3{st == P0B}};
+	wire [6:0]  ce_idle = {7{st == IDLE && go}};
+	wire [5:0]  ce_p0a  = {6{st == P0A}};
+	wire [2:0]  ce_p0b  = {3{st == P0B}};
 	(* keep = "true", equivalent_register_removal = "no" *) reg [9:0]  ce_p0;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [12:0] ce_p5;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [12:0] ce_div;

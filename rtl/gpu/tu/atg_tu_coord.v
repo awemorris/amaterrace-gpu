@@ -30,7 +30,7 @@ module atg_tu_coord #(
 	input wire [1:0] mode,
 	output wire signed [29:0] c
 );
-	(* dont_touch = "true" *) wire rst_inv = !rst_n;
+	wire rst_inv = !rst_n;
 
 	/* Stage 0: k = e - 126: 1.f << k (0 <= k < 25) or >> -k with the sticky (-24 < k < 0) */
 	(* keep = "true" *) wire [9:0] k_s0, nk_s0;
@@ -81,11 +81,11 @@ module atg_tu_coord #(
 	wire [31:0] f_s    = (LAT >= 2) ? r0_f_s  : f;
 	wire [1:0]  mode_s = (LAT >= 2) ? r0_mode : mode;
 
-	(* dont_touch = "true" *) wire kl_lo = !k[9] && k[8:5] == 4'd0 && (k[4:3] != 2'b11 || k[2:0] == 3'd0);
-	(* dont_touch = "true" *) wire kl_hi = !k[9] && k[8:5] == 4'd0 && (k[4:3] != 2'b11 || k[2:0] == 3'd0);
-	(* dont_touch = "true" *) wire kr_lo = k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11);
-	(* dont_touch = "true" *) wire kr_hi = k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11);
-	(* dont_touch = "true" *) wire kr_st = k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11);
+	wire kl_lo = !k[9] && k[8:5] == 4'd0 && (k[4:3] != 2'b11 || k[2:0] == 3'd0);
+	wire kl_hi = !k[9] && k[8:5] == 4'd0 && (k[4:3] != 2'b11 || k[2:0] == 3'd0);
+	wire kr_lo = k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11);
+	wire kr_hi = k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11);
+	wire kr_st = k[9] && nk[9:5] == 5'd0 && (nk[4:3] != 2'b11);
 	wire [28:0] qs_l_lo, qs_l_hi, qs_r_lo, qs_r_hi;
 	am_shift #(.W(29), .SW(5)) u_qs_l_lo (.a({5'd0, 1'b1, f_s_l[22:0]}), .amt(k_a[4:0]), .left(1'b1),
 		.arith(1'b0), .y(qs_l_lo));
@@ -105,8 +105,8 @@ module atg_tu_coord #(
 			if (kr_st && {27'd0, nk[4:0]} > b)
 				st = st | f_s[b];
 	end
-	(* dont_touch = "true" *) wire [14:0] q_lo = kl_lo ? qs_l[14:0]  : kr_lo ? qs_r[14:0]  : 15'd0;
-	(* dont_touch = "true" *) wire [13:0] q_hi = kl_hi ? qs_l[28:15] : kr_hi ? qs_r[28:15] : 14'd0;
+	wire [14:0] q_lo = kl_lo ? qs_l[14:0]  : kr_lo ? qs_r[14:0]  : 15'd0;
+	wire [13:0] q_hi = kl_hi ? qs_l[28:15] : kr_hi ? qs_r[28:15] : 14'd0;
 	wire [28:0] q = {q_hi, q_lo};
 	wire nan_0 = (f_s[30:23] == 8'hFF && f_s[22:0] != 23'd0);
 	wire k_ge25_0 = (!k[9] && !kl_lo);
