@@ -55,10 +55,6 @@ module am_fp_mul #(
 	wire [9:0] e1;
 	wire [23:0] ma1, mb1;
 
-	/* Stage 2: the product (DSPs). */
-	wire [47:0] p1;
-	am_mul #(.AW(24), .BW(24)) u_p1 (.clk(clk), .en(1'b1), .a(ma1), .b(mb1), .p(p1));
-
 	wire v2, sp2, s2;
 	wire [31:0] spv2;
 	wire [9:0] e2;
@@ -98,6 +94,9 @@ module am_fp_mul #(
 
 	generate
 		if (LAT == 0) begin : g_lat0
+			wire [47:0] p0;
+			am_mul #(.AW(24), .BW(24), .LAT(0)) u_p0 (.clk(clk), .en(1'b1), .a(ma1_w), .b(mb1_w), .p(p0));
+
 			assign v1 = i_valid;
 			assign sp1 = sp1_w;
 			assign spv1 = spv1_w;
@@ -111,7 +110,7 @@ module am_fp_mul #(
 			assign spv2 = spv1;
 			assign s2 = s1;
 			assign e2 = e1;
-			assign p2 = p1;
+			assign p2 = p0;
 
 			assign v3 = v2;
 			assign sp3 = sp2;
@@ -150,10 +149,12 @@ module am_fp_mul #(
 			assign ma1 = r_ma1;
 			assign mb1 = r_mb1;
 
+			wire [47:0] p_mul;
+			am_mul #(.AW(24), .BW(24), .LAT(1)) u_p1 (.clk(clk), .en(1'b1), .a(ma1), .b(mb1), .p(p_mul));
+
 			reg r_v2, r_sp2, r_s2;
 			reg [31:0] r_spv2;
 			reg [9:0] r_e2;
-			reg [47:0] r_p2;
 
 			always @(posedge clk) begin
 				r_v2 <= rst_n && v1;
@@ -161,7 +162,6 @@ module am_fp_mul #(
 				r_spv2 <= spv1;
 				r_s2 <= s1;
 				r_e2 <= e1;
-				r_p2 <= p1;
 			end
 
 			assign v2 = r_v2;
@@ -169,7 +169,7 @@ module am_fp_mul #(
 			assign spv2 = r_spv2;
 			assign s2 = r_s2;
 			assign e2 = r_e2;
-			assign p2 = r_p2;
+			assign p2 = p_mul;
 
 			reg r_v3, r_sp3, r_s3, r_g3, r_st3;
 			reg [31:0] r_spv3;
