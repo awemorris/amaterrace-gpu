@@ -44,7 +44,20 @@ module am_arith_tb;
 	am_sub #(.W(32)) sub32 (.a(a32), .b(b32), .bi(c32), .d(sub32_d), .bo(sub32_bo));
 	am_addsub #(.W(32)) as32 (.a(a32), .b(b32), .sub(s32), .s(as32_s), .co(as32_co));
 
-	/* ---- shift */
+	/* ---- dot */
+	reg [17:0] dot_a0, dot_a1;
+	reg [17:0] dot_b0, dot_b1;
+	reg [35:0] dot_c;
+	wire [37:0] dot_s_p, dot_u_p, dot_sub_p;
+	am_dot #(.AW(18), .BW(18), .CW(36), .PW(38), .SIGNED(1), .LAT(0), .SUB1(0))
+		u_dot_s (.clk(clk), .en(1'b1), .a0(dot_a0), .b0(dot_b0), .a1(dot_a1), .b1(dot_b1), .c(dot_c), .p(dot_s_p));
+	am_dot #(.AW(18), .BW(18), .CW(36), .PW(38), .SIGNED(0), .LAT(0), .SUB1(0))
+		u_dot_u (.clk(clk), .en(1'b1), .a0(dot_a0), .b0(dot_b0), .a1(dot_a1), .b1(dot_b1), .c(dot_c), .p(dot_u_p));
+	am_dot #(.AW(18), .BW(18), .CW(36), .PW(38), .SIGNED(1), .LAT(0), .SUB1(1))
+		u_dot_sub (.clk(clk), .en(1'b1), .a0(dot_a0), .b0(dot_b0), .a1(dot_a1), .b1(dot_b1), .c(dot_c), .p(dot_sub_p));
+
+	reg signed [37:0] exp_dot_s, exp_dot_sub;
+	reg [37:0] exp_dot_u;
 	reg [7:0] sh8_a;
 	reg [2:0] sh8_n;
 	reg sh_left, sh_arith;
@@ -244,6 +257,26 @@ module am_arith_tb;
 			es_q[0] = es;
 		end
 		group("mul");
+
+		/* dot */
+		for (i = 0; i < 500; i = i + 1) begin
+			dot_a0 = $random(seed);
+			dot_b0 = $random(seed);
+			dot_a1 = $random(seed);
+			dot_b1 = $random(seed);
+			dot_c  = $random(seed);
+			#1;
+			exp_dot_s = $signed(dot_a0) * $signed(dot_b0) + $signed(dot_a1) * $signed(dot_b1) + $signed(dot_c);
+			exp_dot_sub = $signed(dot_a0) * $signed(dot_b0) - $signed(dot_a1) * $signed(dot_b1) + $signed(dot_c);
+			exp_dot_u = dot_a0 * dot_b0 + dot_a1 * dot_b1 + dot_c;
+			if (dot_s_p !== exp_dot_s)
+				fail("dot signed");
+			if (dot_sub_p !== exp_dot_sub)
+				fail("dot sub");
+			if (dot_u_p !== exp_dot_u)
+				fail("dot unsigned");
+		end
+		group("dot");
 
 		/* div */
 		for (i = 0; i < 256; i = i + 1)
