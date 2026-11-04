@@ -94,24 +94,16 @@ module atg_rx_scan #(
 		S_Z = 4'd4, S_EMIT = 4'd5, S_LAST = 4'd6, S_FREE = 4'd7, S_FQ = 4'd8, S_STEP = 4'd9,
 		S_SAMP = 4'd10, S_EVAL = 4'd11;
 `ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire rst_inv_net;
-	LUT1 #(.INIT(2'b01)) u_rst_inv (.I0(rst_n), .O(rst_inv_net));
-	wire rst_n_inv = rst_inv_net;
-
-	(* keep = "true", dont_touch = "true" *) wire ctv_fsm, ctv_edge;
-	LUT1 #(.INIT(2'h2)) u_ctv_f (.I0(coarse_tile_valid), .O(ctv_fsm));
-	LUT1 #(.INIT(2'h2)) u_ctv_e (.I0(coarse_tile_valid), .O(ctv_edge));
-
-	(* keep = "true", dont_touch = "true" *) wire sp_val_fsm, sp_val_edge;
-	(* keep = "true", dont_touch = "true" *) wire sp_val_qx, sp_val_qy;
-	(* keep = "true", dont_touch = "true" *) wire we_ent_lo, we_ent_hi, sp_val_ctrl;
-	LUT1 #(.INIT(2'h2)) u_spv_f  (.I0(sp_valid), .O(sp_val_fsm));
-	LUT1 #(.INIT(2'h2)) u_spv_e  (.I0(sp_valid), .O(sp_val_edge));
-	LUT1 #(.INIT(2'h2)) u_spv_qx (.I0(sp_valid), .O(sp_val_qx));
-	LUT1 #(.INIT(2'h2)) u_spv_qy (.I0(sp_valid), .O(sp_val_qy));
-	LUT1 #(.INIT(2'h2)) u_went_l (.I0(sp_valid), .O(we_ent_lo));
-	LUT1 #(.INIT(2'h2)) u_went_h (.I0(sp_valid), .O(we_ent_hi));
-	LUT1 #(.INIT(2'h2)) u_spv_c  (.I0(sp_valid), .O(sp_val_ctrl));
+	wire rst_n_inv = !rst_n;
+	wire ctv_fsm = coarse_tile_valid;
+	wire ctv_edge = coarse_tile_valid;
+	wire sp_val_fsm = sp_valid;
+	wire sp_val_edge = sp_valid;
+	wire sp_val_qx = sp_valid;
+	wire sp_val_qy = sp_valid;
+	wire we_ent_lo = sp_valid;
+	wire we_ent_hi = sp_valid;
+	wire sp_val_ctrl = sp_valid;
 `else
 	wire rst_n_inv = !rst_n;
 	wire ctv_fsm = coarse_tile_valid;
@@ -126,47 +118,29 @@ module atg_rx_scan #(
 `endif
 	(* fsm_encoding = "none", extract_enable = "no", max_fanout = 16 *) reg [3:0] st;
 `ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire [3:0] st_fsm_0, st_fsm_1, st_fsm_2, st_fsm_3;
-	(* keep = "true", dont_touch = "true" *) wire [3:0] st_fsm_4, st_fsm_5, st_fsm_6, st_fsm_7, st_fsm_8;
-	(* keep = "true", dont_touch = "true" *) wire [3:0] st_fsm_main, st_fsm_m1, st_fsm_m2, st_fsm_m3, st_fsm_m4, st_fsm_m5, st_fsm_m6, st_fsm_m7;
-	genvar gst;
-	generate
-		for (gst = 0; gst < 4; gst = gst + 1) begin : g_st_bufs
-			LUT1 #(.INIT(2'h2)) u_st0 (.I0(st[gst]), .O(st_fsm_0[gst]));
-			LUT1 #(.INIT(2'h2)) u_st1 (.I0(st[gst]), .O(st_fsm_1[gst]));
-			LUT1 #(.INIT(2'h2)) u_st2 (.I0(st[gst]), .O(st_fsm_2[gst]));
-			LUT1 #(.INIT(2'h2)) u_st3 (.I0(st[gst]), .O(st_fsm_3[gst]));
-			LUT1 #(.INIT(2'h2)) u_st4 (.I0(st[gst]), .O(st_fsm_4[gst]));
-			LUT1 #(.INIT(2'h2)) u_st5 (.I0(st[gst]), .O(st_fsm_5[gst]));
-			LUT1 #(.INIT(2'h2)) u_st6 (.I0(st[gst]), .O(st_fsm_6[gst]));
-			LUT1 #(.INIT(2'h2)) u_st7 (.I0(st[gst]), .O(st_fsm_7[gst]));
-			LUT1 #(.INIT(2'h2)) u_st8 (.I0(st[gst]), .O(st_fsm_8[gst]));
-			LUT1 #(.INIT(2'h2)) u_stm (.I0(st[gst]), .O(st_fsm_main[gst]));
-			LUT1 #(.INIT(2'h2)) u_stm1 (.I0(st[gst]), .O(st_fsm_m1[gst]));
-			LUT1 #(.INIT(2'h2)) u_stm2 (.I0(st[gst]), .O(st_fsm_m2[gst]));
-			LUT1 #(.INIT(2'h2)) u_stm3 (.I0(st[gst]), .O(st_fsm_m3[gst]));
-			LUT1 #(.INIT(2'h2)) u_stm4 (.I0(st[gst]), .O(st_fsm_m4[gst]));
-			LUT1 #(.INIT(2'h2)) u_stm5 (.I0(st[gst]), .O(st_fsm_m5[gst]));
-			LUT1 #(.INIT(2'h2)) u_stm6 (.I0(st_fsm_0[gst]), .O(st_fsm_m6[gst]));
-			LUT1 #(.INIT(2'h2)) u_stm7 (.I0(st_fsm_3[gst]), .O(st_fsm_m7[gst]));
-		end
-	endgenerate
-
-	(* keep = "true", dont_touch = "true" *) wire [4:0] zc_0, zc_1, zc_2, zc_3;
-	genvar gzc;
-	generate
-		for (gzc = 0; gzc < 5; gzc = gzc + 1) begin : g_zc_bufs
-			LUT1 #(.INIT(2'h2)) u_zc0 (.I0(zc[gzc]), .O(zc_0[gzc]));
-			LUT1 #(.INIT(2'h2)) u_zc1 (.I0(zc[gzc]), .O(zc_1[gzc]));
-			LUT1 #(.INIT(2'h2)) u_zc2 (.I0(zc[gzc]), .O(zc_2[gzc]));
-			LUT1 #(.INIT(2'h2)) u_zc3 (.I0(zc[gzc]), .O(zc_3[gzc]));
-		end
-	endgenerate
-
-	(* keep = "true", dont_touch = "true" *) wire cur_trivial_cov, cur_trivial_scov;
-	LUT1 #(.INIT(2'h2)) u_triv_c (.I0(cur_trivial), .O(cur_trivial_cov));
-	LUT1 #(.INIT(2'h2)) u_triv_s (.I0(cur_trivial), .O(cur_trivial_scov));
-
+	wire [3:0] st_fsm_0 = st;
+	wire [3:0] st_fsm_1 = st;
+	wire [3:0] st_fsm_2 = st;
+	wire [3:0] st_fsm_3 = st;
+	wire [3:0] st_fsm_4 = st;
+	wire [3:0] st_fsm_5 = st;
+	wire [3:0] st_fsm_6 = st;
+	wire [3:0] st_fsm_7 = st;
+	wire [3:0] st_fsm_8 = st;
+	wire [3:0] st_fsm_main = st;
+	wire [3:0] st_fsm_m1 = st;
+	wire [3:0] st_fsm_m2 = st;
+	wire [3:0] st_fsm_m3 = st;
+	wire [3:0] st_fsm_m4 = st;
+	wire [3:0] st_fsm_m5 = st;
+	wire [3:0] st_fsm_m6 = st;
+	wire [3:0] st_fsm_m7 = st;
+	wire [4:0] zc_0 = zc;
+	wire [4:0] zc_1 = zc;
+	wire [4:0] zc_2 = zc;
+	wire [4:0] zc_3 = zc;
+	wire cur_trivial_cov = cur_trivial;
+	wire cur_trivial_scov = cur_trivial;
 `define SET_ST(val) begin st[1:0] <= (val); end
 `define SET_ST_HI(val) begin st[3:2] <= ((val) >> 2); end
 `define SET_ZC(val) begin zc <= (val); end
@@ -267,8 +241,7 @@ module atg_rx_scan #(
 	wire [143:0] lowmv;
 	wire [143:0] cov_op, cov_oq;
 `ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire we_sp_cv;
-	LUT1 #(.INIT(2'h2)) u_wsp_cv (.I0((st_fsm_5 == S_IDLE) && sp_val_fsm), .O(we_sp_cv));
+	wire we_sp_cv = (st_fsm_5 == S_IDLE) && sp_val_fsm;
 `else
 	wire we_sp_cv = (st == S_IDLE) && sp_valid;
 `endif
@@ -304,93 +277,32 @@ module atg_rx_scan #(
 	wire s_e2_b_scan = s_e2_b_scan_ext;
 
 `ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire s_e0_a_coarse_eval, s_e0_b_coarse_eval;
-	(* keep = "true", dont_touch = "true" *) wire s_e1_a_coarse_eval, s_e1_b_coarse_eval;
-	(* keep = "true", dont_touch = "true" *) wire s_e2_a_coarse_eval, s_e2_b_coarse_eval;
-	(* keep = "true", dont_touch = "true" *) wire s_e0_a_coarse_reg, s_e0_b_coarse_reg;
-	(* keep = "true", dont_touch = "true" *) wire s_e1_a_coarse_reg, s_e1_b_coarse_reg;
-	(* keep = "true", dont_touch = "true" *) wire s_e2_a_coarse_reg, s_e2_b_coarse_reg;
-	(* keep = "true", dont_touch = "true" *) wire s_e0_a_scan_ext, s_e0_b_scan_ext;
-	(* keep = "true", dont_touch = "true" *) wire s_e1_a_scan_ext, s_e1_b_scan_ext;
-	(* keep = "true", dont_touch = "true" *) wire s_e2_a_scan_ext, s_e2_b_scan_ext;
+	wire [2:0] se0a_ce_l = {3{sp_tri[23]}}, se0b_ce_l = {3{sp_tri[47]}};
+	wire [2:0] se1a_ce_l = {3{sp_tri[119]}}, se1b_ce_l = {3{sp_tri[143]}};
+	wire [2:0] se2a_ce_l = {3{sp_tri[215]}}, se2b_ce_l = {3{sp_tri[239]}};
+	wire s_e0_a_coarse_reg = sp_tri[23], s_e0_b_coarse_reg = sp_tri[47];
+	wire s_e1_a_coarse_reg = sp_tri[119], s_e1_b_coarse_reg = sp_tri[143];
+	wire s_e2_a_coarse_reg = sp_tri[215], s_e2_b_coarse_reg = sp_tri[239];
+	wire s_e0_a_scan_ext = sp_tri[23], s_e0_b_scan_ext = sp_tri[47];
+	wire s_e1_a_scan_ext = sp_tri[119], s_e1_b_scan_ext = sp_tri[143];
+	wire s_e2_a_scan_ext = sp_tri[215], s_e2_b_scan_ext = sp_tri[239];
 
-	(* keep = "true", dont_touch = "true" *) wire [2:0] se0a_ce_l, se0b_ce_l;
-	(* keep = "true", dont_touch = "true" *) wire [2:0] se1a_ce_l, se1b_ce_l;
-	(* keep = "true", dont_touch = "true" *) wire [2:0] se2a_ce_l, se2b_ce_l;
-	LUT1 #(.INIT(2'b10)) u_buf_se0ace_0 (.I0(sp_tri[23]),  .O(se0a_ce_l[0]));
-	LUT1 #(.INIT(2'b10)) u_buf_se0ace_1 (.I0(sp_tri[23]),  .O(se0a_ce_l[1]));
-	LUT1 #(.INIT(2'b10)) u_buf_se0ace_2 (.I0(sp_tri[23]),  .O(se0a_ce_l[2]));
-	LUT1 #(.INIT(2'b10)) u_buf_se0bce_0 (.I0(sp_tri[47]),  .O(se0b_ce_l[0]));
-	LUT1 #(.INIT(2'b10)) u_buf_se0bce_1 (.I0(sp_tri[47]),  .O(se0b_ce_l[1]));
-	LUT1 #(.INIT(2'b10)) u_buf_se0bce_2 (.I0(sp_tri[47]),  .O(se0b_ce_l[2]));
-	LUT1 #(.INIT(2'b10)) u_buf_se1ace_0 (.I0(sp_tri[119]), .O(se1a_ce_l[0]));
-	LUT1 #(.INIT(2'b10)) u_buf_se1ace_1 (.I0(sp_tri[119]), .O(se1a_ce_l[1]));
-	LUT1 #(.INIT(2'b10)) u_buf_se1ace_2 (.I0(sp_tri[119]), .O(se1a_ce_l[2]));
-	LUT1 #(.INIT(2'b10)) u_buf_se1bce_0 (.I0(sp_tri[143]), .O(se1b_ce_l[0]));
-	LUT1 #(.INIT(2'b10)) u_buf_se1bce_1 (.I0(sp_tri[143]), .O(se1b_ce_l[1]));
-	LUT1 #(.INIT(2'b10)) u_buf_se1bce_2 (.I0(sp_tri[143]), .O(se1b_ce_l[2]));
-	LUT1 #(.INIT(2'b10)) u_buf_se2ace_0 (.I0(sp_tri[215]), .O(se2a_ce_l[0]));
-	LUT1 #(.INIT(2'b10)) u_buf_se2ace_1 (.I0(sp_tri[215]), .O(se2a_ce_l[1]));
-	LUT1 #(.INIT(2'b10)) u_buf_se2ace_2 (.I0(sp_tri[215]), .O(se2a_ce_l[2]));
-	LUT1 #(.INIT(2'b10)) u_buf_se2bce_0 (.I0(sp_tri[239]), .O(se2b_ce_l[0]));
-	LUT1 #(.INIT(2'b10)) u_buf_se2bce_1 (.I0(sp_tri[239]), .O(se2b_ce_l[1]));
-	LUT1 #(.INIT(2'b10)) u_buf_se2bce_2 (.I0(sp_tri[239]), .O(se2b_ce_l[2]));
+	wire ms4_misc = ms4;
+	wire ms4_act = ms4;
+	wire [47:0] lowm0_muxed = ms4 ? lowmv[0 +: 48] : 48'd0;
+	wire [47:0] lowm1_muxed = ms4 ? lowmv[48 +: 48] : 48'd0;
+	wire [47:0] lowm2_muxed = ms4 ? lowmv[96 +: 48] : 48'd0;
 
-	LUT1 #(.INIT(2'b10)) u_buf_se0acr (.I0(sp_tri[23]), .O(s_e0_a_coarse_reg));
-	LUT1 #(.INIT(2'b10)) u_buf_se0bcr (.I0(sp_tri[47]), .O(s_e0_b_coarse_reg));
-	LUT1 #(.INIT(2'b10)) u_buf_se1acr (.I0(sp_tri[119]), .O(s_e1_a_coarse_reg));
-	LUT1 #(.INIT(2'b10)) u_buf_se1bcr (.I0(sp_tri[143]), .O(s_e1_b_coarse_reg));
-	LUT1 #(.INIT(2'b10)) u_buf_se2acr (.I0(sp_tri[215]), .O(s_e2_a_coarse_reg));
-	LUT1 #(.INIT(2'b10)) u_buf_se2bcr (.I0(sp_tri[239]), .O(s_e2_b_coarse_reg));
-
-	LUT1 #(.INIT(2'b10)) u_buf_se0as (.I0(sp_tri[23]), .O(s_e0_a_scan_ext));
-	LUT1 #(.INIT(2'b10)) u_buf_se0bs (.I0(sp_tri[47]), .O(s_e0_b_scan_ext));
-	LUT1 #(.INIT(2'b10)) u_buf_se1as (.I0(sp_tri[119]), .O(s_e1_a_scan_ext));
-	LUT1 #(.INIT(2'b10)) u_buf_se1bs (.I0(sp_tri[143]), .O(s_e1_b_scan_ext));
-	LUT1 #(.INIT(2'b10)) u_buf_se2as (.I0(sp_tri[215]), .O(s_e2_a_scan_ext));
-	LUT1 #(.INIT(2'b10)) u_buf_se2bs (.I0(sp_tri[239]), .O(s_e2_b_scan_ext));
-
-	wire [2:0] ms4_m0, ms4_m1, ms4_m2;
-	wire ms4_misc, ms4_act;
-	wire [47:0] lowm0_muxed, lowm1_muxed, lowm2_muxed;
-	genvar gms;
-	generate
-		for (gms = 0; gms < 3; gms = gms + 1) begin : g_ms4_buf
-			LUT1 #(.INIT(2'h2)) u_m0 (.I0(ms4), .O(ms4_m0[gms]));
-			LUT1 #(.INIT(2'h2)) u_m1 (.I0(ms4), .O(ms4_m1[gms]));
-			LUT1 #(.INIT(2'h2)) u_m2 (.I0(ms4), .O(ms4_m2[gms]));
-			assign lowm0_muxed[gms*16 +: 16] = ms4_m0[gms] ? lowmv[gms*16 +: 16] : 16'd0;
-			assign lowm1_muxed[gms*16 +: 16] = ms4_m1[gms] ? lowmv[48 + gms*16 +: 16] : 16'd0;
-			assign lowm2_muxed[gms*16 +: 16] = ms4_m2[gms] ? lowmv[96 + gms*16 +: 16] : 16'd0;
-		end
-	endgenerate
-	LUT1 #(.INIT(2'h2)) u_ms4_misc (.I0(ms4), .O(ms4_misc));
-	LUT1 #(.INIT(2'h2)) u_ms4_act  (.I0(ms4), .O(ms4_act));
-
-`ifdef SYNTH_KINTEX7
 	wire we_tile_x_raw = (st_fsm_4 == S_TILE_WAIT && ctv_edge) ||
 	                     (st_fsm_4 == S_STEP && r_tile_row_end && r_tile_col_end && !cur_last_tile && ctv_edge) ||
 	                     (st_fsm_4 == S_SEQ && COARSE_SCAN == 0);
-`else
-	wire we_tile_x_raw = (st == S_TILE_WAIT && coarse_tile_valid) ||
-	                     (st == S_STEP && r_tile_row_end && r_tile_col_end && !cur_last_tile && coarse_tile_valid) ||
-	                     (st == S_SEQ && COARSE_SCAN == 0);
-`endif
-	(* keep = "true", dont_touch = "true" *) wire we_tile_x, we_tile_y;
-	LUT1 #(.INIT(2'h2)) u_wtx (.I0(we_tile_x_raw), .O(we_tile_x));
-	LUT1 #(.INIT(2'h2)) u_wty (.I0(we_tile_x_raw), .O(we_tile_y));
+	wire we_tile_x = we_tile_x_raw;
+	wire we_tile_y = we_tile_x_raw;
 
-`ifdef SYNTH_KINTEX7
 	wire [15:0] next_tile_tx = (COARSE_SCAN == 0 && st_fsm_4 == S_SEQ) ? {bx0[15:1], 1'b0} : coarse_tile_x;
 	wire [15:0] next_tile_ty = (COARSE_SCAN == 0 && st_fsm_8 == S_SEQ) ? {by0[15:1], 1'b0} : coarse_tile_y;
 	wire next_tile_triv = (COARSE_SCAN == 0 && st_fsm_4 == S_SEQ) ? 1'b0 : coarse_tile_trivial;
 	wire next_tile_last = (COARSE_SCAN == 0 && st_fsm_4 == S_SEQ) ? 1'b1 : coarse_tile_last;
-`else
-	wire [15:0] next_tile_tx = (st == S_SEQ) ? {bx0[15:1], 1'b0} : coarse_tile_x;
-	wire [15:0] next_tile_ty = (st == S_SEQ) ? {by0[15:1], 1'b0} : coarse_tile_y;
-	wire next_tile_triv = (st == S_SEQ) ? 1'b0 : coarse_tile_trivial;
-	wire next_tile_last = (st == S_SEQ) ? 1'b1 : coarse_tile_last;
-`endif
 
 	always @(posedge clk) begin
 		if (rst_n_inv) begin
@@ -413,21 +325,9 @@ module atg_rx_scan #(
 	end
 
 	wire we_fa_raw = (st_fsm_1 == S_Z) && ((zc_0 >= 5'd10 && zc_0 <= 5'd13) || (zc_0 >= 5'd15 && zc_0 <= 5'd18));
-	(* keep = "true", dont_touch = "true" *) wire [3:0] we_fa_leaf;
-	LUT1 #(.INIT(2'h2)) u_wfa0 (.I0(we_fa_raw), .O(we_fa_leaf[0]));
-	LUT1 #(.INIT(2'h2)) u_wfa1 (.I0(we_fa_raw), .O(we_fa_leaf[1]));
-	LUT1 #(.INIT(2'h2)) u_wfa2 (.I0(we_fa_raw), .O(we_fa_leaf[2]));
-	LUT1 #(.INIT(2'h2)) u_wfa3 (.I0(we_fa_raw), .O(we_fa_leaf[3]));
-
-	(* keep = "true", dont_touch = "true" *) wire [3:0] sel_zc_lo, sel_zc_hi;
-	LUT1 #(.INIT(2'h2)) u_szc0_l (.I0(zc_2 == 5'd10), .O(sel_zc_lo[0]));
-	LUT1 #(.INIT(2'h2)) u_szc1_l (.I0(zc_2 == 5'd11), .O(sel_zc_lo[1]));
-	LUT1 #(.INIT(2'h2)) u_szc2_l (.I0(zc_2 == 5'd12), .O(sel_zc_lo[2]));
-	LUT1 #(.INIT(2'h2)) u_szc3_l (.I0(zc_2 == 5'd13), .O(sel_zc_lo[3]));
-	LUT1 #(.INIT(2'h2)) u_szc0_h (.I0(zc_2 == 5'd10), .O(sel_zc_hi[0]));
-	LUT1 #(.INIT(2'h2)) u_szc1_h (.I0(zc_2 == 5'd11), .O(sel_zc_hi[1]));
-	LUT1 #(.INIT(2'h2)) u_szc2_h (.I0(zc_2 == 5'd12), .O(sel_zc_hi[2]));
-	LUT1 #(.INIT(2'h2)) u_szc3_h (.I0(zc_2 == 5'd13), .O(sel_zc_hi[3]));
+	wire [3:0] we_fa_leaf = {4{we_fa_raw}};
+	wire [3:0] sel_zc_lo = {zc_2 == 5'd13, zc_2 == 5'd12, zc_2 == 5'd11, zc_2 == 5'd10};
+	wire [3:0] sel_zc_hi = sel_zc_lo;
 
 	wire [15:0] next_fa_a_lo = sel_zc_lo[0] ? t1_0[15:0] :
 	                           sel_zc_lo[1] ? t1_1[15:0] :
@@ -438,9 +338,8 @@ module atg_rx_scan #(
 	                           sel_zc_hi[2] ? t1_2[31:16] :
 	                           sel_zc_hi[3] ? t1_3[31:16] : fa_r[31:16];
 
-	(* keep = "true", dont_touch = "true" *) wire sel_zc_b_lo, sel_zc_b_hi;
-	LUT1 #(.INIT(2'h2)) u_szcb_l (.I0(zc_0 >= 5'd10 && zc_0 <= 5'd13), .O(sel_zc_b_lo));
-	LUT1 #(.INIT(2'h2)) u_szcb_h (.I0(zc_0 >= 5'd10 && zc_0 <= 5'd13), .O(sel_zc_b_hi));
+	wire sel_zc_b_lo = (zc_0 >= 5'd10 && zc_0 <= 5'd13);
+	wire sel_zc_b_hi = sel_zc_b_lo;
 	wire [15:0] next_fa_b_lo = sel_zc_b_lo ? fm_r[15:0] : cz[15:0];
 	wire [15:0] next_fa_b_hi = sel_zc_b_hi ? fm_r[31:16] : cz[31:16];
 
@@ -468,8 +367,7 @@ module atg_rx_scan #(
 `endif
 
 `ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire rst_n_coarse;
-	LUT1 #(.INIT(2'h2)) u_rst_coarse (.I0(rst_n), .O(rst_n_coarse));
+	wire rst_n_coarse = rst_n;
 `else
 	wire rst_n_coarse = rst_n;
 `endif
@@ -592,22 +490,10 @@ module atg_rx_scan #(
 	/* Pipelined lve register to break carry chains between lve and sample adders */
 	(* extract_reset = "no" *) reg [12*48-1:0] r_lve;
 `ifdef SYNTH_KINTEX7
-	wire [2:0] we_lve_mid;
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wlm0 (.I0(st_fsm_6 == S_WALK), .O(we_lve_mid[0]));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wlm1 (.I0(st_fsm_6 == S_WALK), .O(we_lve_mid[1]));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wlm2 (.I0(st_fsm_6 == S_WALK), .O(we_lve_mid[2]));
-	wire [35:0] we_lve_leaf;
-	genvar glv;
-	generate
-		for (glv = 0; glv < 36; glv = glv + 1) begin : g_we_lve_tree
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wlvl (.I0(we_lve_mid[glv / 12]), .O(we_lve_leaf[glv]));
-			always @(posedge clk) begin
-				if (we_lve_leaf[glv]) begin
-					r_lve[glv * 16 +: 16] <= lve_comb[glv * 16 +: 16];
-				end
-			end
-		end
-	endgenerate
+	always @(posedge clk) begin
+		if (st_fsm_6 == S_WALK)
+			r_lve <= lve_comb;
+	end
 `else
 	always @(posedge clk) begin
 		if (st == S_WALK)
@@ -662,9 +548,15 @@ module atg_rx_scan #(
 	endgenerate
 
 	/* Registered sample signs and edge signs to break carry chain before coverage logic */
+`ifndef SYNTH_KINTEX7
 	(* dont_touch = "true", extract_reset = "no" *) reg [47:0] r_esamp_sign;
 	(* dont_touch = "true", extract_reset = "no" *) reg [11:0] r_lve_sign;
 	(* dont_touch = "true", extract_reset = "no" *) reg [3:0] r_inb;
+`else
+	(* extract_reset = "no" *) reg [47:0] r_esamp_sign;
+	(* extract_reset = "no" *) reg [11:0] r_lve_sign;
+	(* extract_reset = "no" *) reg [3:0] r_inb;
+`endif
 
 	/* Quad lane in-bounds logic: evaluated at S_WALK, registered to r_inb */
 	wire [3:0] inb_comb;
@@ -733,7 +625,11 @@ module atg_rx_scan #(
 	(* extract_enable = "no", extract_reset = "no" *) reg [3:0] ccov_reg;
 	(* extract_enable = "no", extract_reset = "no" *) reg [3:0] cov_reg;
 `ifdef SYNTH_KINTEX7
+`ifndef SYNTH_KINTEX7
 	(* extract_enable = "no", extract_reset = "no", keep = "true", dont_touch = "true" *) reg [3:0] cov_reg_scov;
+`else
+	(* extract_enable = "no", extract_reset = "no" *) reg [3:0] cov_reg_scov;
+`endif
 `endif
 
 	wire [3:0] cov1_edge = cov_edge & ~{4{kill[0]}};
@@ -823,13 +719,17 @@ module atg_rx_scan #(
 	wire r_zl_co_unused;
 	am_add #(.W(2)) u_zl_inc (.a(r_zl), .b(2'd0), .ci(1'b1), .s(r_zl_next), .co(r_zl_co_unused));
 
+`ifndef SYNTH_KINTEX7
 	(* dont_touch = "true" *) reg r_is_bz_a, r_is_bz_b;
+`else
+	reg r_is_bz_a, r_is_bz_b;
+`endif
 	reg r_fm_v;
 	wire fm_v = r_fm_v;
 `ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) reg r_is_bz_a_l, r_is_bz_a_h;
-	(* keep = "true", dont_touch = "true" *) reg r_is_bz_b_l, r_is_bz_b_h0, r_is_bz_b_h1;
-	(* keep = "true", dont_touch = "true" *) reg [1:0] r_zl_l, r_zl_h;
+	reg r_is_bz_a_l, r_is_bz_a_h;
+	reg r_is_bz_b_l, r_is_bz_b_h0, r_is_bz_b_h1;
+	reg [1:0] r_zl_l, r_zl_h;
 
 `define SET_BZA(val) begin r_is_bz_a <= (val); r_is_bz_a_l <= (val); r_is_bz_a_h <= (val); end
 `define SET_BZB(val) begin r_is_bz_b <= (val); r_is_bz_b_l <= (val); r_is_bz_b_h0 <= (val); r_is_bz_b_h1 <= (val); end
@@ -865,16 +765,10 @@ module atg_rx_scan #(
 	atg_rx_fadd #(.LAT(4)) fadd (.clk(clk), .rst_n(rst_n), .i_valid(r_fa_v), .i_a(r_fa_a), .i_b(r_fa_b),
 		.i_sub(1'b0), .o_valid(fa_o), .o_r(fa_r));
 `ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire zcl_zero_lo, zcl_zero_hi;
-	(* keep = "true", dont_touch = "true" *) wire zcl_sat_lo, zcl_sat_hi;
 	wire is_nan_or_neg = fa_r[31] || (fa_r[30:23] == 8'hFF && fa_r[22:0] != 23'd0);
 	wire is_sat = fa_r > 32'h3F800000;
-	LUT1 #(.INIT(2'h2)) u_zcl_zlo (.I0(is_nan_or_neg), .O(zcl_zero_lo));
-	LUT1 #(.INIT(2'h2)) u_zcl_zhi (.I0(is_nan_or_neg), .O(zcl_zero_hi));
-	LUT1 #(.INIT(2'h2)) u_zcl_slo (.I0(is_sat), .O(zcl_sat_lo));
-	LUT1 #(.INIT(2'h2)) u_zcl_shi (.I0(is_sat), .O(zcl_sat_hi));
-	wire [15:0] zcl_lo = zcl_zero_lo ? 16'd0 : (zcl_sat_lo ? 16'h0000 : fa_r[15:0]);
-	wire [15:0] zcl_hi = zcl_zero_hi ? 16'd0 : (zcl_sat_hi ? 16'h3F80 : fa_r[31:16]);
+	wire [15:0] zcl_lo = is_nan_or_neg ? 16'd0 : (is_sat ? 16'h0000 : fa_r[15:0]);
+	wire [15:0] zcl_hi = is_nan_or_neg ? 16'd0 : (is_sat ? 16'h3F80 : fa_r[31:16]);
 	wire [31:0] zcl = {zcl_hi, zcl_lo};
 `else
 	wire [31:0] zcl = fa_r[31] || (fa_r[30:23] == 8'hFF && fa_r[22:0] != 23'd0) ? 32'd0 :
@@ -903,10 +797,7 @@ module atg_rx_scan #(
 	wire [1:0] we_pxy_leaf;
 
 	wire dx_stall = !(dx_valid && dx_ready);
-	(* keep = "true", dont_touch = "true" *) wire [2:0] dx_stall_b;
-	LUT1 #(.INIT(2'h2)) u_dxst0 (.I0(dx_stall), .O(dx_stall_b[0]));
-	LUT1 #(.INIT(2'h2)) u_dxst1 (.I0(dx_stall), .O(dx_stall_b[1]));
-	LUT1 #(.INIT(2'h2)) u_dxst2 (.I0(dx_stall), .O(dx_stall_b[2]));
+	wire [2:0] dx_stall_b = {3{dx_stall}};
 
 	wire we_pz_raw = (st_fsm_3 == S_EMIT) && (!pend || !dx_stall_b[0]);
 	wire we_dxd_raw = dx_stall_b[1] && (((st_fsm_3 == S_EMIT) && pend) || (st_fsm_3 == S_LAST));
@@ -914,17 +805,19 @@ module atg_rx_scan #(
 	wire we_pxy_raw = we_pz_raw;
 
 	wire sel_last_raw = (st_fsm_3 == S_LAST) && !pend;
-	(* keep = "true", dont_touch = "true" *) wire [7:0] sel_last_d_leaf;
-	(* keep = "true", dont_touch = "true" *) wire [1:0] sel_last_xy_leaf;
+	wire [7:0] sel_last_d_leaf = {8{sel_last_raw}};
+	wire [1:0] sel_last_xy_leaf = {2{sel_last_raw}};
+
+	assign clr_zv_leaf = {8{st_fsm_1 == S_Z && zc_3 == 5'd0}};
+	assign we_pz_leaf = {8{we_pz_raw}};
+	assign we_dxd_leaf = {8{we_dxd_raw}};
+	assign we_dxy_leaf = {2{we_dxy_raw}};
+	assign we_pxy_leaf = {2{we_pxy_raw}};
 
 	genvar gzs;
 	generate
 		for (gzs = 0; gzs < 8; gzs = gzs + 1) begin : g_zv_slices
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_czv (.I0(st_fsm_1 == S_Z && zc_3 == 5'd0), .O(clr_zv_leaf[gzs]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wzv (.I0(st_fsm_1 == S_Z && zc_3 == (5'd20 + (gzs / 2)) && zmask[gzs / 2]), .O(we_zv_leaf[gzs]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wpz (.I0(we_pz_raw), .O(we_pz_leaf[gzs]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdz (.I0(we_dxd_raw), .O(we_dxd_leaf[gzs]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_sld (.I0(sel_last_raw), .O(sel_last_d_leaf[gzs]));
+			assign we_zv_leaf[gzs] = (st_fsm_1 == S_Z && zc_3 == (5'd20 + (gzs / 2)) && zmask[gzs / 2]);
 
 			always @(posedge clk) begin
 				if (clr_zv_leaf[gzs])
@@ -944,10 +837,6 @@ module atg_rx_scan #(
 			end
 		end
 		for (gzs = 0; gzs < 2; gzs = gzs + 1) begin : g_xy_slices
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdx (.I0(we_dxy_raw), .O(we_dxy_leaf[gzs]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wpx (.I0(we_pxy_raw), .O(we_pxy_leaf[gzs]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_slx (.I0(sel_last_raw), .O(sel_last_xy_leaf[gzs]));
-
 			always @(posedge clk) begin
 				if (we_pxy_leaf[gzs])
 					p_xy[gzs * 16 +: 16] <= (gzs == 0) ? qx : qy;
@@ -962,39 +851,19 @@ module atg_rx_scan #(
 		end
 	endgenerate
 
-`ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire we_seq;
-	LUT1 #(.INIT(2'h2)) u_wseq (.I0(st_fsm_3 == S_SEQ), .O(we_seq));
+	wire we_seq = (st_fsm_3 == S_SEQ);
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) seq <= 16'd0;
 		else if (we_seq) seq <= sq_seq;
 	end
-`endif
 
 	wire we_sp_idle = (st_fsm_5 == S_IDLE) && sp_val_fsm;
-	(* keep = "true", dont_touch = "true" *) wire [3:0] we_sp_branch;
-	LUT1 #(.INIT(2'h2)) u_sp_b0 (.I0(we_sp_idle), .O(we_sp_branch[0]));
-	LUT1 #(.INIT(2'h2)) u_sp_b1 (.I0(we_sp_idle), .O(we_sp_branch[1]));
-	LUT1 #(.INIT(2'h2)) u_sp_b2 (.I0(we_sp_idle), .O(we_sp_branch[2]));
-	LUT1 #(.INIT(2'h2)) u_sp_b3 (.I0(we_sp_idle), .O(we_sp_branch[3]));
+	wire [3:0] we_sp_branch = {4{we_sp_idle}};
 
-	(* keep = "true", dont_touch = "true" *) wire [8:0] we_a8_l, we_b8_l;
-	(* keep = "true", dont_touch = "true" *) wire [3:0] we_bbox_l;
-	(* keep = "true", dont_touch = "true" *) wire [5:0] we_z_l;
-	genvar gsp;
-	generate
-		for (gsp = 0; gsp < 9; gsp = gsp + 1) begin : g_sp_leaves
-			localparam integer BR = (gsp < 3) ? 0 : (gsp < 6) ? 1 : 2;
-			LUT1 #(.INIT(2'h2)) u_wea (.I0(we_sp_branch[BR]), .O(we_a8_l[gsp]));
-			LUT1 #(.INIT(2'h2)) u_web (.I0(we_sp_branch[BR]), .O(we_b8_l[gsp]));
-		end
-		for (gsp = 0; gsp < 4; gsp = gsp + 1) begin : g_bbox_leaves
-			LUT1 #(.INIT(2'h2)) u_webb (.I0(we_sp_branch[0]), .O(we_bbox_l[gsp]));
-		end
-		for (gsp = 0; gsp < 6; gsp = gsp + 1) begin : g_z_leaves
-			LUT1 #(.INIT(2'h2)) u_wez (.I0(we_sp_branch[1]), .O(we_z_l[gsp]));
-		end
-	endgenerate
+	wire [8:0] we_a8_l = {3{we_sp_branch[2], we_sp_branch[1], we_sp_branch[0]}};
+	wire [8:0] we_b8_l = we_a8_l;
+	wire [3:0] we_bbox_l = {4{we_sp_branch[0]}};
+	wire [5:0] we_z_l = {6{we_sp_branch[1]}};
 
 	wire [47:0] in_a8_comb [0:2];
 	wire [47:0] in_b8_comb [0:2];
@@ -1005,6 +874,7 @@ module atg_rx_scan #(
 	assign in_a8_comb[2] = {{16{s_e2_a_scan_ext}}, sp_tri[192 +: 24], 8'd0};
 	assign in_b8_comb[2] = {{16{s_e2_b_scan_ext}}, sp_tri[216 +: 24], 8'd0};
 
+	genvar gsp;
 	generate
 		for (gsp = 0; gsp < 9; gsp = gsp + 1) begin : g_a8_b8_reg
 			localparam integer EK = gsp / 3;
@@ -1033,13 +903,7 @@ module atg_rx_scan #(
 	end
 
 	wire we_dx_raw = (st_fsm_1 == S_Z) && (zc_1 == 5'd0);
-	(* keep = "true", dont_touch = "true" *) wire [7:0] we_dx_leaf;
-	genvar gdx;
-	generate
-		for (gdx = 0; gdx < 8; gdx = gdx + 1) begin : g_we_dx
-			LUT1 #(.INIT(2'h2)) u_wdx (.I0(we_dx_raw), .O(we_dx_leaf[gdx]));
-		end
-	endgenerate
+	wire [7:0] we_dx_leaf = {8{we_dx_raw}};
 	always @(posedge clk) begin
 		if (we_dx_leaf[0]) r_dx0[15:0]  <= dx0_comb[15:0];
 		if (we_dx_leaf[1]) r_dx0[16]    <= dx0_comb[16];
@@ -1052,12 +916,7 @@ module atg_rx_scan #(
 	end
 
 	wire we_fdx_raw = (st_fsm_1 == S_Z) && (zc_1 == 5'd1);
-	(* keep = "true", dont_touch = "true" *) wire [7:0] we_fdx_leaf;
-	generate
-		for (gdx = 0; gdx < 8; gdx = gdx + 1) begin : g_we_fdx
-			LUT1 #(.INIT(2'h2)) u_wfdx (.I0(we_fdx_raw), .O(we_fdx_leaf[gdx]));
-		end
-	endgenerate
+	wire [7:0] we_fdx_leaf = {8{we_fdx_raw}};
 	always @(posedge clk) begin
 		if (we_fdx_leaf[0]) r_fdx0[15:0]  <= f_dx0_comb[15:0];
 		if (we_fdx_leaf[1]) r_fdx0[31:16] <= f_dx0_comb[31:16];
@@ -1069,15 +928,15 @@ module atg_rx_scan #(
 		if (we_fdx_leaf[7]) r_fdy1[31:16] <= f_dy1_comb[31:16];
 	end
 
-	(* keep = "true", dont_touch = "true" *) wire [7:0] we_t1_leaf;
-	LUT1 #(.INIT(2'h2)) u_wt0_l (.I0((st_fsm_1 == S_Z) && (zc_2 == 5'd6)), .O(we_t1_leaf[0]));
-	LUT1 #(.INIT(2'h2)) u_wt0_h (.I0((st_fsm_1 == S_Z) && (zc_2 == 5'd6)), .O(we_t1_leaf[1]));
-	LUT1 #(.INIT(2'h2)) u_wt1_l (.I0((st_fsm_1 == S_Z) && (zc_2 == 5'd7)), .O(we_t1_leaf[2]));
-	LUT1 #(.INIT(2'h2)) u_wt1_h (.I0((st_fsm_1 == S_Z) && (zc_2 == 5'd7)), .O(we_t1_leaf[3]));
-	LUT1 #(.INIT(2'h2)) u_wt2_l (.I0((st_fsm_1 == S_Z) && (zc_2 == 5'd8)), .O(we_t1_leaf[4]));
-	LUT1 #(.INIT(2'h2)) u_wt2_h (.I0((st_fsm_1 == S_Z) && (zc_2 == 5'd8)), .O(we_t1_leaf[5]));
-	LUT1 #(.INIT(2'h2)) u_wt3_l (.I0((st_fsm_1 == S_Z) && (zc_2 == 5'd9)), .O(we_t1_leaf[6]));
-	LUT1 #(.INIT(2'h2)) u_wt3_h (.I0((st_fsm_1 == S_Z) && (zc_2 == 5'd9)), .O(we_t1_leaf[7]));
+	wire [7:0] we_t1_leaf;
+	assign we_t1_leaf[0] = (st_fsm_1 == S_Z) && (zc_2 == 5'd6);
+	assign we_t1_leaf[1] = we_t1_leaf[0];
+	assign we_t1_leaf[2] = (st_fsm_1 == S_Z) && (zc_2 == 5'd7);
+	assign we_t1_leaf[3] = we_t1_leaf[2];
+	assign we_t1_leaf[4] = (st_fsm_1 == S_Z) && (zc_2 == 5'd8);
+	assign we_t1_leaf[5] = we_t1_leaf[4];
+	assign we_t1_leaf[6] = (st_fsm_1 == S_Z) && (zc_2 == 5'd9);
+	assign we_t1_leaf[7] = we_t1_leaf[6];
 
 	always @(posedge clk) begin
 		if (we_t1_leaf[0]) t1_0[15:0]  <= fm_r[15:0];
@@ -1090,69 +949,41 @@ module atg_rx_scan #(
 		if (we_t1_leaf[7]) t1_3[31:16] <= fm_r[31:16];
 	end
 
-`ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire [2:0] cond_step_r_b, cond_step_c_b, cond_coarse_e_b, cond_we_er_b, cond_we_ec_b;
-	genvar gqb;
-	generate
-		for (gqb = 0; gqb < 3; gqb = gqb + 1) begin : g_qte_branches
-			(* dont_touch = "true" *) wire qte;
-			LUT2 #(.INIT(4'h8)) u_qte (.I0(r_tile_row_end), .I1(r_tile_col_end), .O(qte));
-			wire cce = (st_fsm_2 == S_TILE_WAIT && ctv_edge) ||
-			           (st_fsm_2 == S_STEP && qte && !cur_last_tile && ctv_edge);
-			wire er0_b = (st_fsm_0 == S_SEQ && COARSE_SCAN == 0);
-			wire cstep = (st_fsm_0 == S_STEP && !qte);
-			wire cstep_r = cstep && r_tile_row_end;
-			wire cstep_c = cstep && !r_tile_row_end;
+	wire qte = (r_tile_row_end && r_tile_col_end);
+	wire cce = (st_fsm_2 == S_TILE_WAIT && ctv_edge) ||
+	           (st_fsm_2 == S_STEP && qte && !cur_last_tile && ctv_edge);
+	wire er0_b = (st_fsm_0 == S_SEQ && COARSE_SCAN == 0);
+	wire cstep = (st_fsm_0 == S_STEP && !qte);
+	wire cstep_r = cstep && r_tile_row_end;
+	wire cstep_c = cstep && !r_tile_row_end;
 
-			assign cond_coarse_e_b[gqb] = cce;
-			assign cond_step_r_b[gqb] = cstep_r;
-			assign cond_step_c_b[gqb] = cstep_c;
-			assign cond_we_er_b[gqb] = er0_b || cce || cstep_r;
-			assign cond_we_ec_b[gqb] = er0_b || cce || cstep;
-		end
-	endgenerate
-`else
-	wire q_tile_end = (r_tile_row_end && r_tile_col_end);
-	wire cond_coarse_e = (st_fsm_2 == S_TILE_WAIT && coarse_tile_valid) ||
-	                     (st_fsm_2 == S_STEP && q_tile_end && !cur_last_tile && coarse_tile_valid);
-	wire cond_er0 = (st_fsm_0 == S_IDLE && sp_val_fsm) || (st_fsm_0 == S_SEQ && COARSE_SCAN == 0);
-	wire cond_step = (st_fsm_0 == S_STEP && !q_tile_end);
-	wire cond_step_r = cond_step && r_tile_row_end;
-	wire cond_step_c = cond_step && !r_tile_row_end;
+	wire [2:0] cond_coarse_e_b = {3{cce}};
+	wire [2:0] cond_step_r_b = {3{cstep_r}};
+	wire [2:0] cond_step_c_b = {3{cstep_c}};
+	wire [2:0] cond_we_er_b = {3{er0_b || cce || cstep_r}};
+	wire [2:0] cond_we_ec_b = {3{er0_b || cce || cstep}};
 
-	wire cond_we_er = cond_er0 || cond_coarse_e || cond_step_r;
-	wire cond_we_ec = cond_er0 || cond_coarse_e || cond_step;
-`endif
-
-	(* keep = "true", dont_touch = "true" *) wire [8:0] sel_step_r_er_l, sel_coarse_er_l;
-	(* keep = "true", dont_touch = "true" *) wire [8:0] sel_step_c_ec_l, sel_step_r_ec_l, sel_coarse_ec_l;
-	(* keep = "true", dont_touch = "true" *) wire [8:0] we_er_leaf;
-	(* keep = "true", dont_touch = "true" *) wire [8:0] we_ec_leaf;
-	(* keep = "true", dont_touch = "true" *) wire [8:0] we_ab8_leaf;
+	wire [8:0] sel_step_r_er_l;
+	wire [8:0] sel_coarse_er_l;
+	wire [8:0] sel_step_c_ec_l;
+	wire [8:0] sel_step_r_ec_l;
+	wire [8:0] sel_coarse_ec_l;
+	wire [8:0] we_er_leaf;
+	wire [8:0] we_ec_leaf;
+	wire [8:0] we_ab8_leaf = {9{st_fsm_0 == S_SEQ}};
 	genvar gsk;
 	generate
 		for (gsk = 0; gsk < 9; gsk = gsk + 1) begin : g_slice_er_ec
 			localparam integer EK = gsk / 3;
 			localparam integer SK = gsk % 3;
 
-`ifdef SYNTH_KINTEX7
-			LUT1 #(.INIT(2'h2)) u_srer  (.I0(cond_step_r_b[EK]), .O(sel_step_r_er_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_scer  (.I0(cond_coarse_e_b[EK]), .O(sel_coarse_er_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_scec  (.I0(cond_step_c_b[EK]), .O(sel_step_c_ec_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_srec  (.I0(cond_step_r_b[EK]), .O(sel_step_r_ec_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_scoe  (.I0(cond_coarse_e_b[EK]), .O(sel_coarse_ec_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_wer   (.I0(cond_we_er_b[EK]), .O(we_er_leaf[gsk]));
-			LUT1 #(.INIT(2'h2)) u_wec   (.I0(cond_we_ec_b[EK]), .O(we_ec_leaf[gsk]));
-`else
-			LUT1 #(.INIT(2'h2)) u_srer  (.I0(cond_step_r), .O(sel_step_r_er_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_scer  (.I0(cond_coarse_e), .O(sel_coarse_er_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_scec  (.I0(cond_step_c), .O(sel_step_c_ec_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_srec  (.I0(cond_step_r), .O(sel_step_r_ec_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_scoe  (.I0(cond_coarse_e), .O(sel_coarse_ec_l[gsk]));
-			LUT1 #(.INIT(2'h2)) u_wer   (.I0(cond_we_er), .O(we_er_leaf[gsk]));
-			LUT1 #(.INIT(2'h2)) u_wec   (.I0(cond_we_ec), .O(we_ec_leaf[gsk]));
-`endif
-			LUT1 #(.INIT(2'h2)) u_wab8  (.I0(st_fsm_0 == S_SEQ), .O(we_ab8_leaf[gsk]));
+			assign sel_step_r_er_l[gsk] = cond_step_r_b[EK];
+			assign sel_coarse_er_l[gsk] = cond_coarse_e_b[EK];
+			assign sel_step_c_ec_l[gsk] = cond_step_c_b[EK];
+			assign sel_step_r_ec_l[gsk] = cond_step_r_b[EK];
+			assign sel_coarse_ec_l[gsk] = cond_coarse_e_b[EK];
+			assign we_er_leaf[gsk]      = cond_we_er_b[EK];
+			assign we_ec_leaf[gsk]      = cond_we_ec_b[EK];
 
 			wire [15:0] in_coarse_e = (EK == 0) ? coarse_tile_e0[SK*16 +: 16] :
 			                          (EK == 1) ? coarse_tile_e1[SK*16 +: 16] :
@@ -1176,11 +1007,10 @@ module atg_rx_scan #(
 	endgenerate
 
 	wire we_resamp_raw = (st_fsm_7 == S_IDLE && sp_val_fsm) || (st_fsm_7 == S_SAMP);
-	(* keep = "true", dont_touch = "true" *) wire [2:0] we_resamp_leaf;
+	wire [2:0] we_resamp_leaf = {3{we_resamp_raw}};
 	genvar gres;
 	generate
 		for (gres = 0; gres < 3; gres = gres + 1) begin : g_we_resamp
-			LUT1 #(.INIT(2'h2)) u_wres (.I0(we_resamp_raw), .O(we_resamp_leaf[gres]));
 			always @(posedge clk) begin
 				if (we_resamp_leaf[gres])
 					r_esamp_sign[gres*16 +: 16] <= (st_fsm_7 == S_IDLE) ? 16'd0 : esamp_sign[gres*16 +: 16];
