@@ -75,9 +75,9 @@
 	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] vp_arr [0:7][0:15];
 	(* extract_reset = "no" *) reg [15:0] r_vp_l1 [0:7][0:3];
 	(* max_fanout = 16 *) reg [3:0] vp_idx;
-	(* dont_touch = "true", extract_reset = "no" *) reg [3:0] r_vp_idx_w [0:7];
-	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_vp_idx_r [0:7][0:3];
-	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_vp_idx_hi [0:7];
+	(* extract_reset = "no" *) reg [3:0] r_vp_idx_w [0:7];
+	(* extract_reset = "no" *) reg [1:0] r_vp_idx_r [0:7][0:3];
+	(* extract_reset = "no" *) reg [1:0] r_vp_idx_hi [0:7];
 	(* extract_reset = "no" *) reg [127:0] r_vp;
 	wire [127:0] vp = r_vp;
 
@@ -85,53 +85,28 @@
 	reg discard;
 	integer vpi, s_idx, g_idx;
 
-	/* Buffered st_wdata tree (fanout <= 9 for rw, <= 16 per slice for vp_arr) */
-	wire [31:0] st_wdata_rw;
+	wire [31:0] st_wdata_rw = st_wdata;
 	wire [15:0] st_wdata_vp [0:7];
 	genvar g_b, g_rw, g_vs, g_ve;
 	generate
-	for (g_b = 0; g_b < 32; g_b = g_b + 1) begin : g_wd_buf
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdrw (.I0(st_wdata[g_b]), .O(st_wdata_rw[g_b]));
-`else
-		assign st_wdata_rw[g_b] = st_wdata[g_b];
-`endif
-	end
 
 	for (g_rw = 0; g_rw < 9; g_rw = g_rw + 1) begin : g_rw_word
 		localparam [8:0] WORD_ADDR = GHCI_S_RAW + g_rw;
-		(* keep = "true" *) wire rw_hit = st_we && (st_idx == WORD_ADDR);
-		wire rw_we_lo, rw_we_hi;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rw_lo (.I0(rw_hit), .O(rw_we_lo));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_rw_hi (.I0(rw_hit), .O(rw_we_hi));
-`else
-		assign rw_we_lo = rw_hit;
-		assign rw_we_hi = rw_hit;
-`endif
+		wire rw_hit = st_we && (st_idx == WORD_ADDR);
 		always @(posedge clk) begin
-			if (rw_we_lo)
-				rw[g_rw][15:0] <= st_wdata_rw[15:0];
-			if (rw_we_hi)
-				rw[g_rw][31:16] <= st_wdata_rw[31:16];
+			if (rw_hit)
+				rw[g_rw] <= st_wdata_rw;
 		end
 	end
 
 	for (g_vs = 0; g_vs < 8; g_vs = g_vs + 1) begin : g_vp_slice
 		localparam [8:0] VP_WORD_ADDR = GHCI_S_VIEWPORT + (g_vs / 2);
 		localparam integer HI = (g_vs % 2) * 16;
-		(* keep = "true" *) wire vp_s_we = st_we && (st_idx == VP_WORD_ADDR);
-
-		for (g_b = 0; g_b < 16; g_b = g_b + 1) begin : g_vp_wdb
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdv (.I0(st_wdata[HI + g_b]), .O(st_wdata_vp[g_vs][g_b]));
-`else
-			assign st_wdata_vp[g_vs][g_b] = st_wdata[HI + g_b];
-`endif
-		end
+		wire vp_s_we = st_we && (st_idx == VP_WORD_ADDR);
+		assign st_wdata_vp[g_vs] = st_wdata[HI +: 16];
 
 		for (g_ve = 0; g_ve < 16; g_ve = g_ve + 1) begin : g_ve_entry
-			(* dont_touch = "true" *) wire ve_we = vp_s_we && (r_vp_idx_w[g_vs] == g_ve[3:0]);
+			wire ve_we = vp_s_we && (r_vp_idx_w[g_vs] == g_ve[3:0]);
 			always @(posedge clk) begin
 				if (rst_sync)
 					vp_arr[g_vs][g_ve] <= 16'd0;
@@ -152,12 +127,12 @@
 	end
 	endgenerate
 
-	(* dont_touch = "true" *) wire [3:0] vp_idx_nxt_lo = rst_sync ? 4'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[3:0] : vp_idx);
-	(* dont_touch = "true" *) wire [3:0] vp_idx_nxt_hi = rst_sync ? 4'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[3:0] : vp_idx);
-	(* dont_touch = "true" *) wire [1:0] vp_idx_r_lo0  = rst_sync ? 2'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[1:0] : vp_idx[1:0]);
-	(* dont_touch = "true" *) wire [1:0] vp_idx_r_lo1  = rst_sync ? 2'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[1:0] : vp_idx[1:0]);
-	(* dont_touch = "true" *) wire [1:0] vp_idx_r_hi0  = rst_sync ? 2'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[1:0] : vp_idx[1:0]);
-	(* dont_touch = "true" *) wire [1:0] vp_idx_r_hi1  = rst_sync ? 2'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[1:0] : vp_idx[1:0]);
+	wire [3:0] vp_idx_nxt_lo = rst_sync ? 4'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[3:0] : vp_idx);
+	wire [3:0] vp_idx_nxt_hi = rst_sync ? 4'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[3:0] : vp_idx);
+	wire [1:0] vp_idx_r_lo0  = rst_sync ? 2'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[1:0] : vp_idx[1:0]);
+	wire [1:0] vp_idx_r_lo1  = rst_sync ? 2'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[1:0] : vp_idx[1:0]);
+	wire [1:0] vp_idx_r_hi0  = rst_sync ? 2'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[1:0] : vp_idx[1:0]);
+	wire [1:0] vp_idx_r_hi1  = rst_sync ? 2'd0 : ((st_we && st_idx == GHCI_S_VIEWPORT_IDX) ? st_wdata[1:0] : vp_idx[1:0]);
 	always @(posedge clk) begin
 		for (s_idx = 0; s_idx < 4; s_idx = s_idx + 1) begin
 			r_vp_idx_w[s_idx]  <= vp_idx_nxt_lo;
@@ -226,39 +201,19 @@
 	(* max_fanout = 16 *) reg [2:0] es;	/* EMIT: read step */
 	integer k;
 
-	/* Buffered pt_rdata -> vv_pos write (fanout = 12 per bit, 16 FFs per WE) */
-	wire [31:0] pt_rdata_b;
+	wire [31:0] pt_rdata_b = pt_rdata;
 	genvar g_v, g_w;
 	generate
-	for (g_b = 0; g_b < 32; g_b = g_b + 1) begin : g_pt_buf
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_ptb (.I0(pt_rdata[g_b]), .O(pt_rdata_b[g_b]));
-`else
-		assign pt_rdata_b[g_b] = pt_rdata[g_b];
-`endif
-	end
-
 	for (g_v = 0; g_v < 3; g_v = g_v + 1) begin : g_vv_vtx
 		for (g_w = 0; g_w < 4; g_w = g_w + 1) begin : g_vv_word
 			localparam [3:0] WK = {g_v[1:0], g_w[1:0]};
-			(* keep = "true" *) wire vvw_hit = (st == S_READ) && rd_v && (rd_k == WK);
-			wire vvw_we_lo, vvw_we_hi;
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_vw_lo (.I0(vvw_hit), .O(vvw_we_lo));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_vw_hi (.I0(vvw_hit), .O(vvw_we_hi));
-`else
-			assign vvw_we_lo = vvw_hit;
-			assign vvw_we_hi = vvw_hit;
-`endif
+			wire vvw_hit = (st == S_READ) && rd_v && (rd_k == WK);
 			always @(posedge clk) begin
 				if (rst_sync) begin
 					vv_pos[g_v][32 * g_w +: 16]      <= 16'd0;
 					vv_pos[g_v][32 * g_w + 16 +: 16] <= 16'd0;
-				end else begin
-					if (vvw_we_lo)
-						vv_pos[g_v][32 * g_w +: 16] <= pt_rdata_b[15:0];
-					if (vvw_we_hi)
-						vv_pos[g_v][32 * g_w + 16 +: 16] <= pt_rdata_b[31:16];
+				end else if (vvw_hit) begin
+					vv_pos[g_v][32 * g_w +: 32]      <= pt_rdata_b;
 				end
 			end
 		end
@@ -308,7 +263,7 @@
 	wire [7:0] we_w [0:2];
 	wire [2:0] we_co_unused;
 	(* extract_reset = "no" *) reg [7:0] r_we [0:2];
-	(* dont_touch = "true", extract_reset = "no" *) reg [2:0] r_w_ge_253_lo, r_w_ge_253_hi;
+	(* extract_reset = "no" *) reg [2:0] r_w_ge_253_lo, r_w_ge_253_hi;
 	(* extract_reset = "no" *) reg [2:0] r_w_exp_ff, r_w_exp_nz, r_w_frac_nz;
 	(* extract_reset = "no" *) reg [2:0] r_z_exp_ff, r_z_exp_nz, r_z_frac_nz;
 	(* extract_reset = "no" *) reg [2:0] r_bo_w_eps, r_bo_w_z, r_bo_z_w;
@@ -400,8 +355,8 @@
 	reg ld_we;
 	reg [3:0] r_ld_idx;
 	assign ld_idx = r_ld_idx;
-	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_ld_sel_s [0:13];
-	(* dont_touch = "true" *) reg [13:0] r_ld_we_s;
+	(* extract_reset = "no" *) reg [1:0] r_ld_sel_s [0:13];
+	reg [13:0] r_ld_we_s;
 	(* extract_reset = "no" *) reg [223:0] ld_data;
 	reg cmd_valid;
 	reg [2:0] cmd_plane;
@@ -422,7 +377,7 @@
 	end
 	endgenerate
 
-	(* dont_touch = "true" *) reg r_ld_line;
+	reg r_ld_line;
 	always @(posedge clk)
 		r_ld_line <= (kind == 2'd1);
 
@@ -446,12 +401,12 @@
 	 *   r_osel{0,1,2}_s: 0 = EMPTY, 1 = RAW, 2 = VV, 3 = RD (rd_data)
 	 *   r_ovv{1,2}_s:    0 = (vv0, vv0, vv0), 1 = (vv0, vv1, vv1), 2 = (vv0, vv1, vv2)
 	 */
-	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_osel0_s [0:13];
-	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_osel1_s [0:13];
-	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_osel2_s [0:13];
-	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_ovv1_s [0:13];
-	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_ovv2_s [0:13];
-	(* dont_touch = "true" *) reg [13:0] r_owe0_s, r_owe1_s, r_owe2_s;
+	(* extract_reset = "no" *) reg [1:0] r_osel0_s [0:13];
+	(* extract_reset = "no" *) reg [1:0] r_osel1_s [0:13];
+	(* extract_reset = "no" *) reg [1:0] r_osel2_s [0:13];
+	(* extract_reset = "no" *) reg [1:0] r_ovv1_s [0:13];
+	(* extract_reset = "no" *) reg [1:0] r_ovv2_s [0:13];
+	reg [13:0] r_owe0_s, r_owe1_s, r_owe2_s;
 
 	wire [223:0] raw_o0 = {64'd0, ONE, ONE, rw[2], rw[1], rw[0]};
 	wire [223:0] raw_o1 = {32'd0, ONE, 32'd0, ONE, rw[5], rw[4], rw[3]};
@@ -510,7 +465,7 @@
 	/* Pre-computed next control signals for ld_data and o0/o1/o2 slices */
 	wire ld_trig_triv = (st == S_TRIV) && (triv_step == 2'd2);
 	wire ld_trig_load = (st == S_LOAD) && !ld_we && !r_ld_we_s[0] && (ld1 < {2'd0, nv});
-	(* dont_touch = "true" *) wire ld_we_nxt = !rst_sync && (ld_trig_triv || ld_trig_load);
+	wire ld_we_nxt = !rst_sync && (ld_trig_triv || ld_trig_load);
 	wire [1:0] ld_sel_nxt = (st == S_TRIV) ? 2'd0 : ((r_ld_idx == 4'd0) ? 2'd1 : 2'd2);
 
 	wire out_raw_trig   = (st == S_IDLE) && raw_kick;
@@ -521,15 +476,15 @@
 	wire out_cwait_drop = (st == S_CWAIT) && cp_done && (n_out == 4'd0);
 	wire out_all_trig   = out_raw_trig || out_disc_trig || out_pt_ok || out_pt_drop || out_triv_acc || out_cwait_drop;
 
-	(* dont_touch = "true" *) wire [1:0] osel_nxt_lo = (st == S_EMIT) ? 2'd3 :
+	wire [1:0] osel_nxt_lo = (st == S_EMIT) ? 2'd3 :
 		(out_raw_trig ? 2'd1 : ((out_pt_ok || out_triv_acc) ? 2'd2 : 2'd0));
-	(* dont_touch = "true" *) wire [1:0] osel_nxt_hi = (st == S_EMIT) ? 2'd3 :
+	wire [1:0] osel_nxt_hi = (st == S_EMIT) ? 2'd3 :
 		(out_raw_trig ? 2'd1 : ((out_pt_ok || out_triv_acc) ? 2'd2 : 2'd0));
-	(* dont_touch = "true" *) wire [1:0] ovv_nxt_lo  = out_pt_ok ? 2'd0 : ((kind == 2'd1) ? 2'd1 : 2'd2);
-	(* dont_touch = "true" *) wire [1:0] ovv_nxt_hi  = out_pt_ok ? 2'd0 : ((kind == 2'd1) ? 2'd1 : 2'd2);
-	(* dont_touch = "true" *) wire owe0_nxt = !rst_sync && (out_all_trig || (st == S_EMIT && es == 3'd1));
-	(* dont_touch = "true" *) wire owe1_nxt = !rst_sync && (out_all_trig || (st == S_EMIT && es == 3'd2));
-	(* dont_touch = "true" *) wire owe2_nxt = !rst_sync && (out_all_trig || (st == S_EMIT && es == 3'd3));
+	wire [1:0] ovv_nxt_lo  = out_pt_ok ? 2'd0 : ((kind == 2'd1) ? 2'd1 : 2'd2);
+	wire [1:0] ovv_nxt_hi  = out_pt_ok ? 2'd0 : ((kind == 2'd1) ? 2'd1 : 2'd2);
+	wire owe0_nxt = !rst_sync && (out_all_trig || (st == S_EMIT && es == 3'd1));
+	wire owe1_nxt = !rst_sync && (out_all_trig || (st == S_EMIT && es == 3'd2));
+	wire owe2_nxt = !rst_sync && (out_all_trig || (st == S_EMIT && es == 3'd3));
 
 	always @(posedge clk) begin
 		r_ld_we_s <= {14{ld_we_nxt}};
@@ -554,10 +509,10 @@
 		end
 	end
 
-	(* dont_touch = "true" *) wire ent_we_lo = (st == S_IDLE) && (raw_kick || prim_valid);
-	(* dont_touch = "true" *) wire ent_we_hi = (st == S_IDLE) && (raw_kick || prim_valid);
-	(* dont_touch = "true" *) wire hdr_we_lo = (st == S_OUT)  && !(cl_valid && cl_ready);
-	(* dont_touch = "true" *) wire hdr_we_hi = (st == S_OUT)  && !(cl_valid && cl_ready);
+	wire ent_we_lo = (st == S_IDLE) && (raw_kick || prim_valid);
+	wire ent_we_hi = (st == S_IDLE) && (raw_kick || prim_valid);
+	wire hdr_we_lo = (st == S_OUT)  && !(cl_valid && cl_ready);
+	wire hdr_we_hi = (st == S_OUT)  && !(cl_valid && cl_ready);
 
 	always @(posedge clk) begin
 		if (ent_we_lo)
