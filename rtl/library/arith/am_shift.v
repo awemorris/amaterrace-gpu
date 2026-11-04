@@ -33,11 +33,38 @@ module am_shift #(
 	input wire arith,
 	output wire [W-1:0] y
 );
-	localparam NNIB = (W + 3) / 4;
-	localparam NBR = (NNIB + 3) / 4;
-
 	wire [W-1:0] rsh;
 	wire [W-1:0] lsh;
+
+`ifdef SYNTH_KINTEX7
+	/* Kintex-7 FPGA implementation: direct shift operations mapped to LUT6/MUXF7/MUXF8 */
+	generate
+	if (DIR != 2) begin : g_rsh_k7
+		wire fill = ((DIR == 1) ? arith : (!left && arith)) ? a[W - 1] : 1'b0;
+		wire [W-1:0] log_rsh = a >> amt;
+		wire [W-1:0] mask = ~({W{1'b1}} >> amt);
+		assign rsh = fill ? (log_rsh | mask) : log_rsh;
+	end else begin : g_rsh_stub
+		assign rsh = {W{1'b0}};
+	end
+
+	if (DIR != 1) begin : g_lsh_k7
+		assign lsh = a << amt;
+	end else begin : g_lsh_stub
+		assign lsh = {W{1'b0}};
+	end
+
+	if (DIR == 1) begin : g_out_r
+		assign y = rsh;
+	end else if (DIR == 2) begin : g_out_l
+		assign y = lsh;
+	end else begin : g_out_dyn
+		assign y = left ? lsh : rsh;
+	end
+	endgenerate
+`else
+	localparam NNIB = (W + 3) / 4;
+	localparam NBR = (NNIB + 3) / 4;
 
 	genvar g_br, g_nib, gb;
 
@@ -57,24 +84,12 @@ module am_shift #(
 			wire fill_br [0:NBR-1];
 			for (g_br = 0; g_br < NBR; g_br = g_br + 1) begin : g_br_buf
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_br_amt
-`ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_br (.I0(amt[gb]), .O(amt_br[g_br][gb]));
-`else
 					assign amt_br[g_br][gb] = amt[gb];
-`endif
 				end
 				for (gb = 0; gb < W; gb = gb + 1) begin : g_br_a
-`ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_ba_br (.I0(a[gb]), .O(a_br[g_br][gb]));
-`else
 					assign a_br[g_br][gb] = a[gb];
-`endif
 				end
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_br (.I0(fill), .O(fill_br[g_br]));
-`else
 				assign fill_br[g_br] = fill;
-`endif
 			end
 
 			for (g_nib = 0; g_nib < NNIB; g_nib = g_nib + 1) begin : g_nib_sl
@@ -83,29 +98,15 @@ module am_shift #(
 				wire [SW-1:0] amt_b0, amt_b1, amt_b2, amt_b3;
 				wire fill_nib_0, fill_nib_1, fill_nib_2, fill_nib_3;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_nib_amt
-`ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_0 (.I0(amt_br[BR_IDX][gb]), .O(amt_b0[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_1 (.I0(amt_br[BR_IDX][gb]), .O(amt_b1[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_2 (.I0(amt_br[BR_IDX][gb]), .O(amt_b2[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_3 (.I0(amt_br[BR_IDX][gb]), .O(amt_b3[gb]));
-`else
 					assign amt_b0[gb] = amt_br[BR_IDX][gb];
 					assign amt_b1[gb] = amt_br[BR_IDX][gb];
 					assign amt_b2[gb] = amt_br[BR_IDX][gb];
 					assign amt_b3[gb] = amt_br[BR_IDX][gb];
-`endif
 				end
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_0 (.I0(fill_br[BR_IDX]), .O(fill_nib_0));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_1 (.I0(fill_br[BR_IDX]), .O(fill_nib_1));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_2 (.I0(fill_br[BR_IDX]), .O(fill_nib_2));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bfill_3 (.I0(fill_br[BR_IDX]), .O(fill_nib_3));
-`else
 				assign fill_nib_0 = fill_br[BR_IDX];
 				assign fill_nib_1 = fill_br[BR_IDX];
 				assign fill_nib_2 = fill_br[BR_IDX];
 				assign fill_nib_3 = fill_br[BR_IDX];
-`endif
 				wire [W-1:0] rsh_f_0 = a_br[BR_IDX] >> amt_b0[1:0];
 				wire [W-1:0] msk_f_0 = ~({W{1'b1}} >> amt_b0[1:0]);
 				wire [NNIB*4-1:0] log_rsh_0 = {{(NNIB*4-W){1'b0}}, (rsh_f_0 >> {amt_b0[SW-1:2], 2'b00})};
@@ -151,18 +152,10 @@ module am_shift #(
 			wire [W-1:0] a_br [0:NBR-1];
 			for (g_br = 0; g_br < NBR; g_br = g_br + 1) begin : g_br_buf
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_br_amt
-`ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_br (.I0(amt[gb]), .O(amt_br[g_br][gb]));
-`else
 					assign amt_br[g_br][gb] = amt[gb];
-`endif
 				end
 				for (gb = 0; gb < W; gb = gb + 1) begin : g_br_a
-`ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_ba_br (.I0(a[gb]), .O(a_br[g_br][gb]));
-`else
 					assign a_br[g_br][gb] = a[gb];
-`endif
 				end
 			end
 
@@ -171,17 +164,10 @@ module am_shift #(
 				localparam BR_IDX = g_nib / 4;
 				wire [SW-1:0] amt_b0, amt_b1, amt_b2, amt_b3;
 				for (gb = 0; gb < SW; gb = gb + 1) begin : g_nib_amt
-`ifdef SYNTH_KINTEX7
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_0 (.I0(amt_br[BR_IDX][gb]), .O(amt_b0[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_1 (.I0(amt_br[BR_IDX][gb]), .O(amt_b1[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_2 (.I0(amt_br[BR_IDX][gb]), .O(amt_b2[gb]));
-					(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bamt_3 (.I0(amt_br[BR_IDX][gb]), .O(amt_b3[gb]));
-`else
 					assign amt_b0[gb] = amt_br[BR_IDX][gb];
 					assign amt_b1[gb] = amt_br[BR_IDX][gb];
 					assign amt_b2[gb] = amt_br[BR_IDX][gb];
 					assign amt_b3[gb] = amt_br[BR_IDX][gb];
-`endif
 				end
 				wire [W-1:0] lsh_f_0 = a_br[BR_IDX] << amt_b0[1:0];
 				wire [NNIB*4-1:0] lshifted_0 = {{(NNIB*4-W){1'b0}}, (lsh_f_0 << {amt_b0[SW-1:2], 2'b00})};
@@ -221,27 +207,20 @@ module am_shift #(
 		end else begin : g_omux_tree
 			wire left_br [0:NBR-1];
 			for (g_br = 0; g_br < NBR; g_br = g_br + 1) begin : g_br_buf
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bleft_br (.I0(left), .O(left_br[g_br]));
-`else
 				assign left_br[g_br] = left;
-`endif
 			end
 
 			for (g_nib = 0; g_nib < NNIB; g_nib = g_nib + 1) begin : g_nib_sl
 				localparam NIB_W = ((g_nib + 1) * 4 <= W) ? 4 : (W - g_nib * 4);
 				localparam BR_IDX = g_nib / 4;
 				wire left_nib;
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bleft_nib (.I0(left_br[BR_IDX]), .O(left_nib));
-`else
 				assign left_nib = left_br[BR_IDX];
-`endif
 				assign y[g_nib * 4 +: NIB_W] = left_nib ? lsh[g_nib * 4 +: NIB_W] : rsh[g_nib * 4 +: NIB_W];
 			end
 		end
 	end
 	endgenerate
+`endif
 
 	wire unused_ok = &{1'b0, left, arith, rsh, lsh};
 endmodule
