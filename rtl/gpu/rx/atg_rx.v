@@ -103,14 +103,8 @@ module atg_rx #(
 	wire cl_valid, cl_ready, cl_last;
 	wire [701:0] cl_tri;
 	wire sp_valid, sp_ready, sp_last;
-`ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire sp_valid_scan, sp_valid_frag;
-	LUT1 #(.INIT(2'b10)) u_spv_scn (.I0(sp_valid), .O(sp_valid_scan));
-	LUT1 #(.INIT(2'b10)) u_spv_frg (.I0(sp_valid), .O(sp_valid_frag));
-`else
 	wire sp_valid_scan = sp_valid;
 	wire sp_valid_frag = sp_valid;
-`endif
 	wire [767:0] sp_tri;
 	wire c_pt_rd, f_pt_rd, f_pt_busy;
 	wire [7:0] c_pt_idx, f_pt_idx;
@@ -119,12 +113,7 @@ module atg_rx #(
 	wire [15:0] sq_seq;
 	wire clip_busy, setup_busy, scan_busy, frag_busy;
 	wire fq_valid, fq_ready, fq_end;
-`ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire fq_ready_scan;
-	LUT1 #(.INIT(2'h2)) u_fqr_scan (.I0(fq_ready), .O(fq_ready_scan));
-`else
 	wire fq_ready_scan = fq_ready;
-`endif
 	wire [31:0] fq_xy;
 	wire [15:0] fq_scov;
 	wire [3:0] fq_ccov;
@@ -144,12 +133,7 @@ module atg_rx #(
 	wire prim_pipe_ready_lo, prim_pipe_ready_hi;
 	wire [14:0] prim_pipe_data_lo, prim_pipe_data_hi;
 
-`ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire rst_sync;
-	LUT1 #(.INIT(2'b01)) u_rst_inv (.I0(rst_n), .O(rst_sync));
-`else
 	wire rst_sync = !rst_n;
-`endif
 
 	atg_rx_skid #(.W(15)) u_prim_skid_lo (
 		.clk(clk),
@@ -209,69 +193,12 @@ module atg_rx #(
 	assign fl_pw_addr = r_fl_pw_addr;
 	assign fl_pw_data = r_fl_pw_data;
 
-`ifdef SYNTH_KINTEX7
-	wire clip_st_we, setup_st_we, scan_st_we, frag_st_we;
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_buf_we_c (.I0(st_we), .O(clip_st_we));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_buf_we_u (.I0(st_we), .O(setup_st_we));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_buf_we_s (.I0(st_we), .O(scan_st_we));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_buf_we_f (.I0(st_we), .O(frag_st_we));
-
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	wire rst_n_clip, rst_n_setup, rst_n_scan, rst_n_frag, rst_n_order;
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_rst_c (.I0(rst_n), .O(rst_n_clip));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_rst_u (.I0(rst_n), .O(rst_n_setup));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_rst_s (.I0(rst_n), .O(rst_n_scan));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_rst_f (.I0(rst_n), .O(rst_n_frag));
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_rst_o (.I0(rst_n), .O(rst_n_order));
-
-	wire cl_valid_setup = cl_valid;
-
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *) wire dx_ready_scan;
-	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'h2)) u_buf_dxr (.I0(dx_ready), .O(dx_ready_scan));
-
-	wire [8:0] clip_st_idx, setup_st_idx, scan_st_idx, frag_st_idx;
-	wire [31:0] clip_st_wdata, setup_st_wdata, scan_st_wdata, frag_st_wdata;
-	genvar g_st;
-	generate
-	for (g_st = 0; g_st < 9; g_st = g_st + 1) begin : g_buf_st_idx
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'h2)) u_idx_c (.I0(st_idx[g_st]), .O(clip_st_idx[g_st]));
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'h2)) u_idx_u (.I0(st_idx[g_st]), .O(setup_st_idx[g_st]));
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'h2)) u_idx_s (.I0(st_idx[g_st]), .O(scan_st_idx[g_st]));
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'h2)) u_idx_f (.I0(st_idx[g_st]), .O(frag_st_idx[g_st]));
-	end
-	for (g_st = 0; g_st < 32; g_st = g_st + 1) begin : g_buf_st_wdata
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'h2)) u_wd_c (.I0(st_wdata[g_st]), .O(clip_st_wdata[g_st]));
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'h2)) u_wd_u (.I0(st_wdata[g_st]), .O(setup_st_wdata[g_st]));
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'h2)) u_wd_s (.I0(st_wdata[g_st]), .O(scan_st_wdata[g_st]));
-		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-		LUT1 #(.INIT(2'h2)) u_wd_f (.I0(st_wdata[g_st]), .O(frag_st_wdata[g_st]));
-	end
-	endgenerate
-`else
 	wire clip_st_we = st_we, setup_st_we = st_we, scan_st_we = st_we, frag_st_we = st_we;
 	wire [8:0] clip_st_idx = st_idx, setup_st_idx = st_idx, scan_st_idx = st_idx, frag_st_idx = st_idx;
 	wire [31:0] clip_st_wdata = st_wdata, setup_st_wdata = st_wdata, scan_st_wdata = st_wdata, frag_st_wdata = st_wdata;
 	wire cl_valid_setup = cl_valid;
 	wire dx_ready_scan = dx_ready;
 	wire rst_n_clip = rst_n, rst_n_setup = rst_n, rst_n_scan = rst_n, rst_n_frag = rst_n, rst_n_order = rst_n;
-`endif
 
 	atg_rx_clip clip (
 		.clk(clk), .rst_n(rst_n_clip), .st_we(clip_st_we), .st_idx(clip_st_idx), .st_wdata(clip_st_wdata),
