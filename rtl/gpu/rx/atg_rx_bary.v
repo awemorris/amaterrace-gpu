@@ -51,10 +51,10 @@ module atg_rx_bary (
 
 	/* Registered inputs to isolate RX/Frag logic from Bary arithmetic */
 	(* extract_reset = "no" *) reg [383:0] r_pl;
-	(* dont_touch = "true", extract_reset = "no" *) reg [15:0] r_qx_l [0:3];
-	(* dont_touch = "true", extract_reset = "no" *) reg [15:0] r_qy_l [0:3];
-	(* dont_touch = "true", extract_reset = "no" *) reg [15:0] r_bx0_l [0:3];
-	(* dont_touch = "true", extract_reset = "no" *) reg [15:0] r_by0_l [0:3];
+	(* extract_reset = "no" *) reg [15:0] r_qx_l [0:3];
+	(* extract_reset = "no" *) reg [15:0] r_qy_l [0:3];
+	(* extract_reset = "no" *) reg [15:0] r_bx0_l [0:3];
+	(* extract_reset = "no" *) reg [15:0] r_by0_l [0:3];
 	reg [11:0] r_osel;
 
 	/* Stage 0->1: Lane coordinates (i, j) in eighths with offset */
@@ -80,12 +80,7 @@ module atg_rx_bary (
 	generate
 	for (gs = 0; gs < 24; gs = gs + 1) begin : g_pl_reg
 		wire pl_we_raw = !rst_sync && (st == S_IDLE) && (i_start || i_dz);
-		wire pl_we_s;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_plw (.I0(pl_we_raw), .O(pl_we_s));
-`else
-		assign pl_we_s = pl_we_raw;
-`endif
+		wire pl_we_s = pl_we_raw;
 		always @(posedge clk) begin
 			if (pl_we_s)
 				r_pl[16 * gs +: 16] <= i_pl[16 * gs +: 16];
@@ -94,18 +89,10 @@ module atg_rx_bary (
 
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_coord
 		wire idle_start_raw = !rst_sync && (st == S_IDLE) && i_start;
-		wire we_qx, we_qy, we_bx0, we_by0;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wqx  (.I0(idle_start_raw), .O(we_qx));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wqy  (.I0(idle_start_raw), .O(we_qy));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wbx0 (.I0(idle_start_raw), .O(we_bx0));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wby0 (.I0(idle_start_raw), .O(we_by0));
-`else
-		assign we_qx  = idle_start_raw;
-		assign we_qy  = idle_start_raw;
-		assign we_bx0 = idle_start_raw;
-		assign we_by0 = idle_start_raw;
-`endif
+		wire we_qx  = idle_start_raw;
+		wire we_qy  = idle_start_raw;
+		wire we_bx0 = idle_start_raw;
+		wire we_by0 = idle_start_raw;
 
 		always @(posedge clk) begin
 			if (we_qx)  r_qx_l[gl]  <= i_qx;
@@ -160,18 +147,6 @@ module atg_rx_bary (
 		wire we_di_lo, we_dj_lo, we_didj_hi;
 		wire we_i8_lo, we_j8_lo, we_i8j8_hi;
 		wire we_fi_lo, we_fi_hi, we_fj_lo, we_fj_hi;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdil (.I0(prep0_raw), .O(we_di_lo));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdjl (.I0(prep0_raw), .O(we_dj_lo));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wdih (.I0(prep0_raw), .O(we_didj_hi));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wi8l (.I0(prep1_raw), .O(we_i8_lo));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wj8l (.I0(prep1_raw), .O(we_j8_lo));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wi8h (.I0(prep1_raw), .O(we_i8j8_hi));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wfil (.I0(prep2_raw), .O(we_fi_lo));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wfih (.I0(prep2_raw), .O(we_fi_hi));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wfjl (.I0(prep2_raw), .O(we_fj_lo));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_wfjh (.I0(prep2_raw), .O(we_fj_hi));
-`else
 		assign we_di_lo   = prep0_raw;
 		assign we_dj_lo   = prep0_raw;
 		assign we_didj_hi = prep0_raw;
@@ -182,7 +157,6 @@ module atg_rx_bary (
 		assign we_fi_hi   = prep2_raw;
 		assign we_fj_lo   = prep2_raw;
 		assign we_fj_hi   = prep2_raw;
-`endif
 
 		always @(posedge clk) begin
 			if (we_di_lo) r_di[gl][15:0] <= di_comb[gl][15:0];
@@ -246,22 +220,22 @@ module atg_rx_bary (
 	end
 	endgenerate
 
-	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fm_a [0:3];
-	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fm_b [0:3];
-	(* dont_touch = "true" *) reg [3:0] r_fm_v;
+	(* extract_reset = "no" *) reg [31:0] r_fm_a [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_fm_b [0:3];
+	reg [3:0] r_fm_v;
 	wire fm_o [0:3];
 	wire [31:0] fm_r [0:3];
 
-	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fa1_a [0:3];
-	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fa1_b [0:3];
-	(* dont_touch = "true" *) reg [3:0] r_fa1_sub;
-	(* dont_touch = "true" *) reg [3:0] r_fa1_v;
+	(* extract_reset = "no" *) reg [31:0] r_fa1_a [0:3];
+	(* extract_reset = "no" *) reg [31:0] r_fa1_b [0:3];
+	reg [3:0] r_fa1_sub;
+	reg [3:0] r_fa1_v;
 	wire fa1_o [0:3];
 	wire [31:0] fa1_r [0:3];
 
-	(* dont_touch = "true", extract_reset = "no" *) reg [31:0] r_fa2_a [0:3];
-	(* dont_touch = "true" *) reg [3:0] r_fa2_sub;
-	(* dont_touch = "true" *) reg [3:0] r_fa2_v;
+	(* extract_reset = "no" *) reg [31:0] r_fa2_a [0:3];
+	reg [3:0] r_fa2_sub;
+	reg [3:0] r_fa2_v;
 	wire fa2_o [0:3];
 	wire [31:0] fa2_r [0:3];
 
@@ -289,51 +263,26 @@ module atg_rx_bary (
 		wire [31:0] ds_nxt = fa1_r[gl];
 `endif
 
-		wire is_bc_l, c0_l, c1_l, c2_l;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bcl (.I0(is_bc_raw), .O(is_bc_l));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c0l (.I0(c[0]),      .O(c0_l));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c1l (.I0(c[1]),      .O(c1_l));
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c2l (.I0(c[2]),      .O(c2_l));
-`else
-		assign is_bc_l = is_bc_raw;
-		assign c0_l    = c[0];
-		assign c1_l    = c[1];
-		assign c2_l    = c[2];
-`endif
+		wire is_bc_l = is_bc_raw;
+		wire c0_l    = c[0];
+		wire c1_l    = c[1];
+		wire c2_l    = c[2];
 
 		for (gh = 0; gh < 2; gh = gh + 1) begin : g_half
 			wire is_pl_raw_h = (st == S_PL);
 			wire pl_c0_raw_h = (st == S_PL) && c[0];
 			wire dz_c0_raw_h = (st != S_PL) && (st != S_BC) && c[0];
-			wire is_pl_fmb, is_bc_fma, is_bc_fmb, is_bc_fa1;
-			wire c0_fma, pl_c0_fmb, dz_c0_fmb;
-			wire c1_a, c2_a, c1_b, c2_b;
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_pl_b  (.I0(is_pl_raw_h), .O(is_pl_fmb));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bc_a  (.I0(is_bc_l),     .O(is_bc_fma));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bc_b  (.I0(is_bc_l),     .O(is_bc_fmb));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bc_f1 (.I0(is_bc_l),     .O(is_bc_fa1));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c0_a  (.I0(c0_l),        .O(c0_fma));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c1_a  (.I0(c1_l),        .O(c1_a));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c2_a  (.I0(c2_l),        .O(c2_a));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c1_b  (.I0(c1_l),        .O(c1_b));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_c2_b  (.I0(c2_l),        .O(c2_b));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_pc0_b (.I0(pl_c0_raw_h), .O(pl_c0_fmb));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_dc0_b (.I0(dz_c0_raw_h), .O(dz_c0_fmb));
-`else
-			assign is_pl_fmb = is_pl_raw_h;
-			assign is_bc_fma = is_bc_l;
-			assign is_bc_fmb = is_bc_l;
-			assign is_bc_fa1 = is_bc_l;
-			assign c0_fma    = c0_l;
-			assign c1_a      = c1_l;
-			assign c2_a      = c2_l;
-			assign c1_b      = c1_l;
-			assign c2_b      = c2_l;
-			assign pl_c0_fmb = pl_c0_raw_h;
-			assign dz_c0_fmb = dz_c0_raw_h;
-`endif
+			wire is_pl_fmb = is_pl_raw_h;
+			wire is_bc_fma = is_bc_l;
+			wire is_bc_fmb = is_bc_l;
+			wire is_bc_fa1 = is_bc_l;
+			wire c0_fma    = c0_l;
+			wire c1_a      = c1_l;
+			wire c2_a      = c2_l;
+			wire c1_b      = c1_l;
+			wire c2_b      = c2_l;
+			wire pl_c0_fmb = pl_c0_raw_h;
+			wire dz_c0_fmb = dz_c0_raw_h;
 
 			(* keep = "true" *) wire [15:0] cur_pl_a_s = c2_a ?
 				(c1_a ? pl_a[3][16 * gh +: 16] : pl_a[2][16 * gh +: 16]) :
@@ -349,38 +298,30 @@ module atg_rx_bary (
 				(dz_c0_fmb ? sdy_c[16 * gh +: 16] : sdx_c[16 * gh +: 16]));
 			wire [15:0] fa1_a_s = is_bc_fa1 ? ONE[16 * gh +: 16] : r_t1_curr[gl][16 * gh +: 16];
 
-			(* dont_touch = "true" *) wire we_t1_s = !rst_sync && (
+			wire we_t1_s = !rst_sync && (
 				(st == S_PL && (c == 6'd5 || c == 6'd7 || c == 6'd9 || c == 6'd11)) ||
 				(st == S_DZ && c == 6'd5));
-			(* dont_touch = "true" *) wire we_fa2b_s = !rst_sync && (
+			wire we_fa2b_s = !rst_sync && (
 				(st == S_PL && (c == 6'd11 || c == 6'd13 || c == 6'd15 || c == 6'd17)) ||
 				(st == S_BC && c == 6'd9));
 			wire fa2b_c0_raw = (c == 6'd11);
 			wire fa2b_c1_raw = (c == 6'd13);
 			wire fa2b_c2_raw = (c == 6'd15);
-			wire fa2b_bc_s, fa2b_c0_s, fa2b_c1_s, fa2b_c2_s;
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fbc (.I0(is_bc_l),     .O(fa2b_bc_s));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fc0 (.I0(fa2b_c0_raw), .O(fa2b_c0_s));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fc1 (.I0(fa2b_c1_raw), .O(fa2b_c1_s));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fc2 (.I0(fa2b_c2_raw), .O(fa2b_c2_s));
-`else
-			assign fa2b_bc_s = is_bc_l;
-			assign fa2b_c0_s = fa2b_c0_raw;
-			assign fa2b_c1_s = fa2b_c1_raw;
-			assign fa2b_c2_s = fa2b_c2_raw;
-`endif
+			wire fa2b_bc_s = is_bc_l;
+			wire fa2b_c0_s = fa2b_c0_raw;
+			wire fa2b_c1_s = fa2b_c1_raw;
+			wire fa2b_c2_s = fa2b_c2_raw;
 
 			wire [15:0] fa2b_plc_s = fa2b_c0_s ? pl_c[0][16 * gh +: 16] :
 				fa2b_c1_s ? pl_c[1][16 * gh +: 16] :
 				fa2b_c2_s ? pl_c[2][16 * gh +: 16] : pl_c[3][16 * gh +: 16];
 			wire [15:0] fa2b_nxt_s = fa2b_bc_s ? b1[gl][16 * gh +: 16] : fa2b_plc_s;
 
-			(* dont_touch = "true" *) wire we_rw_s = !rst_sync && (st == S_DIV) && fd_done[0];
-			(* dont_touch = "true" *) wire we_b0_s = !rst_sync && (st == S_BC) && (c == 6'd5);
-			(* dont_touch = "true" *) wire we_b1_s = !rst_sync && (st == S_BC) && (c == 6'd6);
-			(* dont_touch = "true" *) wire we_b2_s = !rst_sync && (st == S_BC) && (c == 6'd15);
-			(* dont_touch = "true" *) wire we_ds_s = !rst_sync && (st == S_DZ) && (c == 6'd11);
+			wire we_rw_s = !rst_sync && (st == S_DIV) && fd_done[0];
+			wire we_b0_s = !rst_sync && (st == S_BC) && (c == 6'd5);
+			wire we_b1_s = !rst_sync && (st == S_BC) && (c == 6'd6);
+			wire we_b2_s = !rst_sync && (st == S_BC) && (c == 6'd15);
+			wire we_ds_s = !rst_sync && (st == S_DZ) && (c == 6'd11);
 
 			always @(posedge clk) begin
 				r_fm_a[gl][16 * gh +: 16]  <= fm_a_s;
@@ -399,7 +340,7 @@ module atg_rx_bary (
 
 			for (gp = 0; gp < 4; gp = gp + 1) begin : g_v_plane
 				localparam [5:0] V_CYC = 6'd16 + 2 * gp;
-				(* dont_touch = "true" *) wire we_v_s = !rst_sync && (st == S_PL) && (c == V_CYC);
+				wire we_v_s = !rst_sync && (st == S_PL) && (c == V_CYC);
 				always @(posedge clk) begin
 					if (we_v_s)
 						v[gp][gl][16 * gh +: 16] <= fa2_r[gl][16 * gh +: 16];
@@ -415,19 +356,19 @@ module atg_rx_bary (
 			r_fa2_sub[gl] <= is_bc_raw;
 		end
 
-		atg_rx_fmul #(.LAT(4)) u_fmul (
+		am_fp_mul #(.LAT(4)) u_fmul (
 			.clk(clk), .rst_n(rst_n),
 			.i_valid(r_fm_v[gl]), .i_a(r_fm_a[gl]), .i_b(r_fm_b[gl]),
 			.o_valid(fm_o[gl]), .o_r(fm_r[gl])
 		);
 
-		atg_rx_fadd #(.LAT(4)) u_fadd1 (
+		am_fp_add #(.LAT(4)) u_fadd1 (
 			.clk(clk), .rst_n(rst_n),
 			.i_valid(r_fa1_v[gl]), .i_a(r_fa1_a[gl]), .i_b(r_fa1_b[gl]),
 			.i_sub(r_fa1_sub[gl]), .o_valid(fa1_o[gl]), .o_r(fa1_r[gl])
 		);
 
-		atg_rx_fadd #(.LAT(4)) u_fadd2 (
+		am_fp_add #(.LAT(4)) u_fadd2 (
 			.clk(clk), .rst_n(rst_n),
 			.i_valid(r_fa2_v[gl]), .i_a(r_fa2_a[gl]), .i_b(r_fa2_b[gl]),
 			.i_sub(r_fa2_sub[gl]), .o_valid(fa2_o[gl]), .o_r(fa2_r[gl])
@@ -437,7 +378,7 @@ module atg_rx_bary (
 
 	generate
 	for (gl = 0; gl < 4; gl = gl + 1) begin : g_fdiv
-		atg_rx_fdiv u_fdiv (
+		am_fp_div u_fdiv (
 			.clk(clk), .rst_n(rst_n),
 			.i_start(div_start), .i_a(ONE), .i_b(v[1][gl]),
 			.busy(fd_busy[gl]), .o_done(fd_done[gl]), .o_r(fd_r[gl])
