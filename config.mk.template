@@ -159,9 +159,21 @@ CONFIG_ROP_DUAL_SOURCE   ?= 0
 #   1: Enabled, 0: Standard alpha blending only.
 CONFIG_ROP_ENABLE_LOGICOP ?= 0
 
+# CONFIG_HAS_BLT: Hardware 2D blitter execution engine (atg_blt).
+#   1: Enabled (CMD_COPY_*, CMD_BLIT), 0: Omitted from synthesis (copies/clears via compute/graphics shaders).
+CONFIG_HAS_BLT           ?= 1
+
 # CONFIG_BLT_ENABLE_SCALE: Hardware 2D blitter arbitrary scaling and window alignment.
 #   1: Enabled (atg_blt_align), 0: 1:1 direct rectangular copies & fills only.
 CONFIG_BLT_ENABLE_SCALE  ?= 1
+
+# CONFIG_BLT_ENABLE_BLEND: Blitter 32-bit color blend-over acceleration.
+#   1: Enabled (atg_blt_blend), 0: Opaque transfers and fills only.
+CONFIG_BLT_ENABLE_BLEND  ?= 1
+
+# CONFIG_BLT_ENABLE_TILE: Blitter 4x4 optimal tiled layout conversions (TILE/UNTILE).
+#   1: Enabled, 0: Linear memory layouts only (tiling via compute/graphics shaders).
+CONFIG_BLT_ENABLE_TILE   ?= 1
 
 # CONFIG_ROP_FAST_CLEAR: Tile metadata fast clear mechanism.
 #   1: Enabled (clears color/depth tile buffer tags instantaneously), 0: Direct write clear.

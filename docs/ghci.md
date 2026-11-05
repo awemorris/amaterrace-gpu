@@ -262,7 +262,7 @@ It is the primary authoritative source for device capabilities (M01, M04, N18):
 | [26] | CAP_ROP_PACK | `CONFIG_ROP_ENABLE_PACK` | 1 = ROP Path 2 integer/float RT packer present; 0 = Path 0 UNORM formats only |
 | [27] | CAP_TASK_SHADER | `CONFIG_SU_ENABLE_MESH` | 1 = VK_EXT Task Shader capability supported |
 | [28] | CAP_MESH_SHADER | `CONFIG_SU_ENABLE_MESH` | 1 = VK_EXT Mesh Shader capability supported |
-| [29] | CAP_BLT | `CONFIG_HAS_BLT` | 1 = Hardware 2D blitter engine present (`CMD_COPY_*`, `CMD_BLIT`) |
+| [29] | CAP_BLT | `CONFIG_HAS_BLT` | 1 = Hardware 2D blitter engine present (`atg_blt`, `CMD_COPY_*`, `CMD_BLIT`). When 0, blitter is omitted from synthesis and transfers/clears are executed by driver via compute/graphics shaders |
 | [30] | CAP_DISP | `CONFIG_HAS_DISP` | 1 = Display controller present (DISP2 capability at `0x200`) |
 | [31] | CAP_MSAA | `CONFIG_RX_ENABLE_MSAA` | 1 = Hardware multisample anti-aliasing (2x/4x) supported (authoritative flag, M01) |
 
@@ -307,7 +307,9 @@ Provides immediate hardware texture format support flags without MMIO register w
 - `[11]`: `CAP_FFILT_FP32` — Floating-point linear texture filtering for FP32 formats.
 - `[15:12]`: `MAX_COLOR_ATTACHMENTS` — Hardware color attachment count limit (reports 8, mirroring `EXT_CAP_FEATURE[19:16]`).
 - `[16]`: `CAP_TU_BILINEAR` — Hardware bilinear texture filtering supported for normalized texture formats (`CONFIG_TU_ENABLE_BILINEAR`, mirroring legacy `GHCI_CAPS[8]`). When 1, 4-texel footprint generation and bilinear filtering (`atg_tu_foot` / `atg_tu_filter`) are enabled. When 0, texture sampling is restricted to nearest-neighbor (point) filtering (`VK_FILTER_NEAREST`).
-- `[31:17]`: Reserved (reads 0).
+- `[17]`: `CAP_BLT_BLEND` — 32-bit color blend-over acceleration supported in blitter (`CONFIG_BLT_ENABLE_BLEND`, `atg_blt_blend`). When 0, blitter performs opaque fills and copies only; blending operations are dispatched to shaders or ROP.
+- `[18]`: `CAP_BLT_TILE` — Hardware 4x4 optimal tiled layout conversion supported (`CONFIG_BLT_ENABLE_TILE`, `CMD_COPY_BUFFER_TO_IMAGE` / `CMD_COPY_IMAGE_TO_BUFFER`). When 0, blitter operates on linear memory layouts only; optimal tiling conversions are handled by shaders.
+- `[31:19]`: Reserved (reads 0).
 
 #### 3.2.3 Clocks, Timestamps and PCI Identification (K06)
 

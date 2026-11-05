@@ -312,6 +312,8 @@ extern "C" {
 #define GHCI_EXT_FMT_BC6H (1u << 5)
 #define GHCI_EXT_FMT_BC7 (1u << 6)
 #define GHCI_EXT_FMT_TU_BILINEAR (1u << 16)
+#define GHCI_EXT_FMT_BLT_BLEND   (1u << 17)
+#define GHCI_EXT_FMT_BLT_TILE    (1u << 18)
 
 #define GHCI_EXT_FEAT_LOGIC_OP (1u << 0)
 #define GHCI_EXT_FEAT_EARLY_Z (1u << 1)

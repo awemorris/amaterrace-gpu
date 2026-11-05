@@ -35,12 +35,26 @@
 `define ATG_DEFAULT_BLT_ENABLE_SCALE 1
 `endif
 
+`ifdef CFG_BLT_ENABLE_BLEND
+`define ATG_DEFAULT_BLT_ENABLE_BLEND (`CFG_BLT_ENABLE_BLEND != 0)
+`else
+`define ATG_DEFAULT_BLT_ENABLE_BLEND 1
+`endif
+
+`ifdef CFG_BLT_ENABLE_TILE
+`define ATG_DEFAULT_BLT_ENABLE_TILE (`CFG_BLT_ENABLE_TILE != 0)
+`else
+`define ATG_DEFAULT_BLT_ENABLE_TILE 1
+`endif
+
 module atg_blt #(
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter MS4 = 0,		/* RESOLVE (CAPS[29]) */
-	parameter ENABLE_SCALE = `ATG_DEFAULT_BLT_ENABLE_SCALE
+	parameter ENABLE_SCALE = `ATG_DEFAULT_BLT_ENABLE_SCALE,
+	parameter ENABLE_BLEND = `ATG_DEFAULT_BLT_ENABLE_BLEND,
+	parameter ENABLE_TILE = `ATG_DEFAULT_BLT_ENABLE_TILE
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -125,7 +139,9 @@ module atg_blt #(
 		.ADDR_W(ADDR_W),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
-		.ENABLE_SCALE(ENABLE_SCALE)
+		.ENABLE_SCALE(ENABLE_SCALE),
+		.ENABLE_BLEND(ENABLE_BLEND),
+		.ENABLE_TILE(ENABLE_TILE)
 	) b2d (
 		.clk(clk),
 		.rst_n(rst_n),

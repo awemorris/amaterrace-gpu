@@ -36,7 +36,9 @@ module atg_blt_2d #(
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter ENABLE_SCALE = 1
+	parameter ENABLE_SCALE = 1,
+	parameter ENABLE_BLEND = 1,
+	parameter ENABLE_TILE = 1
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -89,7 +91,11 @@ module atg_blt_2d #(
 	wire c_op2;
 	wire [8:0] c_resolve;
 
-	atg_blt_cfg #(.LINE_BYTES(LINE_BYTES)) cfg (
+	atg_blt_cfg #(
+		.LINE_BYTES(LINE_BYTES),
+		.ENABLE_BLEND(ENABLE_BLEND),
+		.ENABLE_TILE(ENABLE_TILE)
+	) cfg (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.op(o_op), .op2(c_op2), .resolve(c_resolve), .blend(o_blend), .rev(o_rev), .psl(o_psl), .keep(o_keep), .op_ok(op_ok),
 		.x0(clip_x0), .y0(clip_y0), .x1(clip_x1), .y1(clip_y1), .dx(dx), .dy(dy),
@@ -1186,17 +1192,26 @@ module atg_blt_2d #(
 			end
 		end
 	endgenerate
-
-	atg_blt_blend #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) bl (
-		.clk(clk), .rst_n(rst_n), .go(bl_go), .src(r_bl_src),
-		.dst(bufd), .done(bl_done), .out(bl_out)
-	);
-`else
-	atg_blt_blend #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) bl (
-		.clk(clk), .rst_n(rst_n), .go(bl_go), .src(bl_src),
-		.dst(bufd), .done(bl_done), .out(bl_out)
-	);
 `endif
+
+	generate
+	if (ENABLE_BLEND != 0) begin : gen_bl
+`ifdef SYNTH_KINTEX7
+		atg_blt_blend #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) bl (
+			.clk(clk), .rst_n(rst_n), .go(bl_go), .src(r_bl_src),
+			.dst(bufd), .done(bl_done), .out(bl_out)
+		);
+`else
+		atg_blt_blend #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) bl (
+			.clk(clk), .rst_n(rst_n), .go(bl_go), .src(bl_src),
+			.dst(bufd), .done(bl_done), .out(bl_out)
+		);
+`endif
+	end else begin : gen_no_bl
+		assign bl_done = 1'b1;
+		assign bl_out = {LINE_BITS{1'b0}};
+	end
+	endgenerate
 
 	/* Legacy port instance */
 	wire leg_req_valid, leg_req_write;
@@ -2760,7 +2775,7 @@ module atg_blt_2d #(
 			r_mr_walk_lo <= 1'b0;
 		end else if (ik_cfg_copy) begin
 			m_copy <= o_op != GHCI_BLT_FILL;
-			m_blend <= o_blend;
+			m_blend <= (ENABLE_BLEND != 0) && o_blend;
 			m_rev <= o_rev;
 			r_mr_px <= o_rev;
 			r_mr_spx <= o_rev;
@@ -2772,7 +2787,7 @@ module atg_blt_2d #(
 		if (rst_b2d_high) begin
 			m_dtile <= 1'b0;
 		end else if (ik_cfg_dtile) begin
-			m_dtile <= o_op == GHCI_BLT_TILE;
+			m_dtile <= (ENABLE_TILE != 0) && (o_op == GHCI_BLT_TILE);
 		end
 	end
 
@@ -2780,7 +2795,7 @@ module atg_blt_2d #(
 		if (rst_b2d_high) begin
 			m_stile <= 1'b0;
 		end else if (ik_cfg_stile) begin
-			m_stile <= o_op == GHCI_BLT_UNTILE;
+			m_stile <= (ENABLE_TILE != 0) && (o_op == GHCI_BLT_UNTILE);
 		end
 	end
 

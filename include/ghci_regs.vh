@@ -111,6 +111,8 @@ localparam GHCI_EXT_FMT_BC5            = 4;
 localparam GHCI_EXT_FMT_BC6H           = 5;
 localparam GHCI_EXT_FMT_BC7            = 6;
 localparam GHCI_EXT_FMT_TU_BILINEAR     = 16;
+localparam GHCI_EXT_FMT_BLT_BLEND       = 17;
+localparam GHCI_EXT_FMT_BLT_TILE        = 18;
 
 /* EXT_CAP_FEATURE bits (0x084) */
 localparam GHCI_EXT_FEAT_LOGIC_OP      = 0;

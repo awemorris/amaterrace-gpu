@@ -30,7 +30,9 @@
 
 (* keep_hierarchy = "yes" *)
 module atg_blt_cfg #(
-	parameter LINE_BYTES = 32
+	parameter LINE_BYTES = 32,
+	parameter ENABLE_BLEND = 1,
+	parameter ENABLE_TILE = 1
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -337,7 +339,10 @@ module atg_blt_cfg #(
 	wire [1:0] bpp_in = st_wdata_a[9:8];
 	wire [2:0] psl_in = p128_in ? 3'd4 : bpp_in == 2'd0 ? 3'd2 : bpp_in == 2'd1 ? 3'd1 : bpp_in == 2'd2 ? 3'd3 : 3'd0;
 	wire tiled_in = op_in == GHCI_BLT_TILE || op_in == GHCI_BLT_UNTILE;
-	wire op_ok_in = !(p128_in && bpp_in != 2'd0) && !(blend_in && (psl_in != 3'd2 || tiled_in)) &&
+	wire op_ok_blend = (ENABLE_BLEND != 0) || !blend_in;
+	wire op_ok_tile  = (ENABLE_TILE != 0) || !tiled_in;
+	wire op_ok_in = op_ok_blend && op_ok_tile &&
+		!(p128_in && bpp_in != 2'd0) && !(blend_in && (psl_in != 3'd2 || tiled_in)) &&
 		!(rev_in && tiled_in) && !(tiled_in && psl_in != 3'd1 && psl_in != 3'd2) &&
 		!(keep_in != 4'd0 && (tiled_in || blend_in || psl_in != 3'd2));
 

@@ -64,6 +64,11 @@ module atg_top #(
 	parameter ROP_STENCIL = 0,
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29] with VF, RX, ROP, TU and an SU): the
 				 * blitter's RESOLVE, texsz.s */
+`ifdef CFG_HAS_BLT
+	parameter HAS_BLT = (`CFG_HAS_BLT != 0),
+`else
+	parameter HAS_BLT = 1,
+`endif
 	/* The SUs' shape (design §3.7). */
 	parameter SU_NPHYS = 8,	/* Physical lanes of an SU: 4, 8, 16 or 32 */
 	parameter SU_NWARPS = 4,
@@ -632,36 +637,59 @@ module atg_top #(
 		.diag_pipe_fsm(diag_pipe_fsm)
 	);
 
-	atg_blt #(
-		.ADDR_W(32),
-		.LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT),
-		.MS4(MS4)
-	) blt (
-		.clk(clk),
-		.rst_n(core_rst_n),
-		.st_we(ust_we),
-		.st_idx(ust_idx),
-		.st_wdata(st_wdata),
-		.kick(blt_kick),
-		.busy(blt_busy),
-		.done(blt_done),
-		.error(blt_error),
-		.error_kind(blt_error_kind),
-		.req_valid(c_req_valid[1]),
-		.req_ready(c_req_ready[1]),
-		.req_write(c_req_write[1]),
-		.req_line(c_req_line[1*LA_W +: LA_W]),
-		.req_be(c_req_be[1*LINE_BYTES +: LINE_BYTES]),
-		.req_wdata(c_req_wdata[1*LINE_BITS +: LINE_BITS]),
-		.req_tag(c_req_tag[1*8 +: 8]),
-		.rsp_valid(rsp_valid[1]),
-		.rsp_write(rsp_write_v[1]),
-		.rsp_tag(rsp_tag_v[1*8 +: 8]),
-		.rsp_rdata(rsp_rdata_v[1*LINE_BITS +: LINE_BITS]),
-		.rsp_error(rsp_error_v[1]),
-		.fsm(blt_fsm)
-	);
+	generate
+	if (HAS_BLT != 0) begin : gen_blt
+		atg_blt #(
+			.ADDR_W(32),
+			.LINE_BYTES(LINE_BYTES),
+			.LINE_SHIFT(LINE_SHIFT),
+			.MS4(MS4)
+		) blt (
+			.clk(clk),
+			.rst_n(core_rst_n),
+			.st_we(ust_we),
+			.st_idx(ust_idx),
+			.st_wdata(st_wdata),
+			.kick(blt_kick),
+			.busy(blt_busy),
+			.done(blt_done),
+			.error(blt_error),
+			.error_kind(blt_error_kind),
+			.req_valid(c_req_valid[1]),
+			.req_ready(c_req_ready[1]),
+			.req_write(c_req_write[1]),
+			.req_line(c_req_line[1*LA_W +: LA_W]),
+			.req_be(c_req_be[1*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(c_req_wdata[1*LINE_BITS +: LINE_BITS]),
+			.req_tag(c_req_tag[1*8 +: 8]),
+			.rsp_valid(rsp_valid[1]),
+			.rsp_write(rsp_write_v[1]),
+			.rsp_tag(rsp_tag_v[1*8 +: 8]),
+			.rsp_rdata(rsp_rdata_v[1*LINE_BITS +: LINE_BITS]),
+			.rsp_error(rsp_error_v[1]),
+			.fsm(blt_fsm)
+		);
+	end else begin : gen_no_blt
+		reg r_blt_err;
+		always @(posedge clk) begin
+			if (!core_rst_n)
+				r_blt_err <= 1'b0;
+			else
+				r_blt_err <= blt_kick;
+		end
+		assign blt_busy = 1'b0;
+		assign blt_done = 1'b0;
+		assign blt_error = r_blt_err;
+		assign blt_error_kind = 4'd1;	/* OPCODE error */
+		assign blt_fsm = 4'd0;
+		assign c_req_valid[1] = 1'b0;
+		assign c_req_write[1] = 1'b0;
+		assign c_req_line[1*LA_W +: LA_W] = {LA_W{1'b0}};
+		assign c_req_be[1*LINE_BYTES +: LINE_BYTES] = {LINE_BYTES{1'b0}};
+		assign c_req_wdata[1*LINE_BITS +: LINE_BITS] = {LINE_BITS{1'b0}};
+		assign c_req_tag[1*8 +: 8] = 8'd0;
+	end
+	endgenerate
 
 	wire [31:0] mc_awaddr, mc_araddr;
 	assign m_awaddr = { 32'd0, mc_awaddr };

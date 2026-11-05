@@ -227,10 +227,25 @@ endif
 ifeq ($(CONFIG_ROP_ENABLE_LOGICOP),1)
 	@echo "\`define CFG_ROP_ENABLE_LOGICOP 1" >> $@
 endif
+ifeq ($(CONFIG_HAS_BLT),1)
+	@echo "\`define CFG_HAS_BLT 1" >> $@
+else
+	@echo "\`define CFG_HAS_BLT 0" >> $@
+endif
 ifeq ($(CONFIG_BLT_ENABLE_SCALE),1)
 	@echo "\`define CFG_BLT_ENABLE_SCALE 1" >> $@
 else
 	@echo "\`define CFG_BLT_ENABLE_SCALE 0" >> $@
+endif
+ifeq ($(CONFIG_BLT_ENABLE_BLEND),1)
+	@echo "\`define CFG_BLT_ENABLE_BLEND 1" >> $@
+else
+	@echo "\`define CFG_BLT_ENABLE_BLEND 0" >> $@
+endif
+ifeq ($(CONFIG_BLT_ENABLE_TILE),1)
+	@echo "\`define CFG_BLT_ENABLE_TILE 1" >> $@
+else
+	@echo "\`define CFG_BLT_ENABLE_TILE 0" >> $@
 endif
 ifeq ($(CONFIG_ROP_FAST_CLEAR),1)
 	@echo "\`define CFG_ROP_FAST_CLEAR 1" >> $@
