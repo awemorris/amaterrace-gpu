@@ -126,6 +126,11 @@ if {[env_or VIVADO_SYNTH_ONLY 0]} {
 	report_utilization -file [file join $out utilization.rpt]
 	report_utilization -hierarchical -hierarchical_depth 4 -file [file join $out utilization_hier.rpt]
 	report_timing_summary -max_paths 10 -file [file join $out timing_summary.rpt]
+	if {[env_or VIVADO_REPORT_OPT 1]} {
+		opt_design
+		report_utilization -file [file join $out opt_utilization.rpt]
+		report_utilization -hierarchical -hierarchical_depth 4 -file [file join $out opt_utilization_hier.rpt]
+	}
 	puts "vivado-build: synthesis completed (VIVADO_SYNTH_ONLY=1)"
 	return
 }
