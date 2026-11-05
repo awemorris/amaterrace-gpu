@@ -187,14 +187,8 @@ module atg_dc #(
 	wire        plane2_colorkey_en, plane2_yuv_mode;
 	wire [23:0] plane2_colorkey;
 
-`ifdef SYNTH_KINTEX7
-	wire clk_g;
-	BUFG u_bufg_clk (.I(clk), .O(clk_g));
-	wire p_clk = clk_g;
-`else
 	wire clk_g = clk;
 	wire p_clk = pclk;
-`endif
 
 	(* keep = "true" *) wire rst_n_net = rst_n;
 	(* max_fanout = 16 *) wire rsp_error_b = rsp_error;
