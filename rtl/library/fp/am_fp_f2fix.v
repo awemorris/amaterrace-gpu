@@ -21,7 +21,8 @@ module am_fp_f2fix #(
 	parameter SIGNED = 1,       /* 1 = signed two's complement, 0 = unsigned */
 	parameter ROUND = 1,        /* 1 = round to nearest even (RNE), 0 = truncate */
 	parameter SATURATE = 1,     /* 1 = saturate to max/min, 0 = wrap */
-	parameter SAT_BITS = 0      /* saturation bit count (0 = full magnitude W-SIGNED) */
+	parameter SAT_BITS = 0,     /* saturation bit count (0 = full magnitude W-SIGNED) */
+	parameter USE_DSP = 0       /* 1 = map shifter/internal arithmetic to DSP */
 ) (
 	input wire [31:0] f,
 	output wire [W-1:0] q
@@ -44,7 +45,12 @@ module am_fp_f2fix #(
 
 	/* Place 1.mantissa at top of 48-bit word, shift right by shift_amt */
 	wire [47:0] shifted;
-	am_shift #(.W(48), .SW(8)) u_sh (
+	am_shift #(
+		.W(48),
+		.SW(8),
+		.DIR(1),
+		.USE_DSP(USE_DSP)
+	) u_sh (
 		.a({1'b1, mant, 24'd0}),
 		.amt(shift_amt),
 		.left(1'b0),

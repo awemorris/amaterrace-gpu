@@ -17,205 +17,24 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_rx_f2fix (
+module atg_rx_f2fix #(
+	parameter USE_DSP = 0
+) (
 	input wire [31:0] f,
 	output wire [23:0] q
 );
-	localparam [7:0] E_BASE = 8'd142;
-	localparam [7:0] E_MIN  = 8'd118;
-
-	(* keep = "true" *) wire [31:0] f_0 = f;
-	(* keep = "true" *) wire [31:0] f_1 = f;
-	(* keep = "true" *) wire [31:0] f_2 = f;
-
-	wire sign_l = f_0[31];
-	wire sign_h = f_1[31];
-
-	wire [7:0] exp0 = f_0[30:23];
-	wire [7:0] exp1 = f_1[30:23];
-	wire [7:0] exp2 = f_2[30:23];
-
-	wire is_nan = (&exp2) && (|f_2[22:0]);
-	wire is_zero = ~|exp2;
-
-`ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire is_nan_l, is_nan_h;
-	LUT1 #(.INIT(2'h2)) u_nan_l (.I0(is_nan), .O(is_nan_l));
-	LUT1 #(.INIT(2'h2)) u_nan_h (.I0(is_nan), .O(is_nan_h));
-`else
-	wire is_nan_l = is_nan;
-	wire is_nan_h = is_nan;
-`endif
-
-	(* keep = "true" *) wire [7:0] sh_w0;
-	(* keep = "true" *) wire [7:0] sh_w1;
-	(* keep = "true" *) wire [7:0] sh_w2;
-	wire bo_s0, bo_s1, bo_s2, bo_udf_w, bo_lt_ebase_w;
-
-	am_sub #(.W(8)) u_s0 (.a(E_BASE), .b(exp0), .bi(1'b0), .d(sh_w0), .bo(bo_s0));
-	am_sub #(.W(8)) u_s1 (.a(E_BASE), .b(exp1), .bi(1'b0), .d(sh_w1), .bo(bo_s1));
-	am_sub #(.W(8)) u_s2 (.a(E_BASE), .b(exp2), .bi(1'b0), .d(sh_w2), .bo(bo_s2));
-	am_sub #(.W(8)) u_uf (.a(exp2),   .b(E_MIN),  .bi(1'b0), .d(),      .bo(bo_udf_w));
-	am_sub #(.W(8)) u_ov (.a(exp2),   .b(E_BASE), .bi(1'b0), .d(),      .bo(bo_lt_ebase_w));
-
-`ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire [2:0] sh0_lo_amt, sh0_hi_amt;
-	(* keep = "true", dont_touch = "true" *) wire [1:0] sh0_c_amt;
-	LUT1 #(.INIT(2'h2)) u_s0_l0 (.I0(sh_w0[0]), .O(sh0_lo_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s0_l1 (.I0(sh_w0[1]), .O(sh0_lo_amt[1]));
-	LUT1 #(.INIT(2'h2)) u_s0_l2 (.I0(sh_w0[2]), .O(sh0_lo_amt[2]));
-	LUT1 #(.INIT(2'h2)) u_s0_h0 (.I0(sh_w0[0]), .O(sh0_hi_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s0_h1 (.I0(sh_w0[1]), .O(sh0_hi_amt[1]));
-	LUT1 #(.INIT(2'h2)) u_s0_h2 (.I0(sh_w0[2]), .O(sh0_hi_amt[2]));
-	LUT1 #(.INIT(2'h2)) u_s0_c0 (.I0(sh_w0[3]), .O(sh0_c_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s0_c1 (.I0(sh_w0[4]), .O(sh0_c_amt[1]));
-
-	(* keep = "true", dont_touch = "true" *) wire [2:0] sh1_lo_amt, sh1_hi_amt;
-	(* keep = "true", dont_touch = "true" *) wire [1:0] sh1_c_amt;
-	LUT1 #(.INIT(2'h2)) u_s1_l0 (.I0(sh_w1[0]), .O(sh1_lo_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s1_l1 (.I0(sh_w1[1]), .O(sh1_lo_amt[1]));
-	LUT1 #(.INIT(2'h2)) u_s1_l2 (.I0(sh_w1[2]), .O(sh1_lo_amt[2]));
-	LUT1 #(.INIT(2'h2)) u_s1_h0 (.I0(sh_w1[0]), .O(sh1_hi_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s1_h1 (.I0(sh_w1[1]), .O(sh1_hi_amt[1]));
-	LUT1 #(.INIT(2'h2)) u_s1_h2 (.I0(sh_w1[2]), .O(sh1_hi_amt[2]));
-	LUT1 #(.INIT(2'h2)) u_s1_c0 (.I0(sh_w1[3]), .O(sh1_c_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s1_c1 (.I0(sh_w1[4]), .O(sh1_c_amt[1]));
-
-	(* keep = "true", dont_touch = "true" *) wire [2:0] sh2_lo_amt, sh2_hi_amt;
-	(* keep = "true", dont_touch = "true" *) wire [1:0] sh2_c_lo_amt, sh2_c_hi_amt;
-	LUT1 #(.INIT(2'h2)) u_s2_l0 (.I0(sh_w2[0]), .O(sh2_lo_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s2_l1 (.I0(sh_w2[1]), .O(sh2_lo_amt[1]));
-	LUT1 #(.INIT(2'h2)) u_s2_l2 (.I0(sh_w2[2]), .O(sh2_lo_amt[2]));
-	LUT1 #(.INIT(2'h2)) u_s2_h0 (.I0(sh_w2[0]), .O(sh2_hi_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s2_h1 (.I0(sh_w2[1]), .O(sh2_hi_amt[1]));
-	LUT1 #(.INIT(2'h2)) u_s2_h2 (.I0(sh_w2[2]), .O(sh2_hi_amt[2]));
-	LUT1 #(.INIT(2'h2)) u_s2_cl0 (.I0(sh_w2[3]), .O(sh2_c_lo_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s2_cl1 (.I0(sh_w2[4]), .O(sh2_c_lo_amt[1]));
-	LUT1 #(.INIT(2'h2)) u_s2_ch0 (.I0(sh_w2[3]), .O(sh2_c_hi_amt[0]));
-	LUT1 #(.INIT(2'h2)) u_s2_ch1 (.I0(sh_w2[4]), .O(sh2_c_hi_amt[1]));
-`else
-	wire [2:0] sh0_lo_amt = sh_w0[2:0];
-	wire [2:0] sh0_hi_amt = sh_w0[2:0];
-	wire [1:0] sh0_c_amt  = sh_w0[4:3];
-
-	wire [2:0] sh1_lo_amt = sh_w1[2:0];
-	wire [2:0] sh1_hi_amt = sh_w1[2:0];
-	wire [1:0] sh1_c_amt  = sh_w1[4:3];
-
-	wire [2:0] sh2_lo_amt = sh_w2[2:0];
-	wire [2:0] sh2_hi_amt = sh_w2[2:0];
-	wire [1:0] sh2_c_lo_amt = sh_w2[4:3];
-	wire [1:0] sh2_c_hi_amt = sh_w2[4:3];
-`endif
-
-	wire [47:0] in_data0 = {1'b1, f_0[22:0], 24'd0};
-	wire [47:0] in_data1 = {1'b1, f_1[22:0], 24'd0};
-	wire [47:0] in_data2 = {1'b1, f_2[22:0], 24'd0};
-
-	wire [31:0] s_coarse;
-	assign s_coarse[15:0]  = (sh_w0[7:5] != 3'd0) ? 16'd0 :
-	                         (sh0_c_amt == 2'd0)  ? in_data0[15:0] :
-	                         (sh0_c_amt == 2'd1)  ? in_data0[23:8] :
-	                         (sh0_c_amt == 2'd2)  ? in_data0[31:16] : in_data0[39:24];
-
-	assign s_coarse[31:16] = (sh_w1[7:5] != 3'd0) ? 16'd0 :
-	                         (sh1_c_amt == 2'd0)  ? in_data1[31:16] :
-	                         (sh1_c_amt == 2'd1)  ? in_data1[39:24] :
-	                         (sh1_c_amt == 2'd2)  ? in_data1[47:32] : {8'd0, in_data1[47:40]};
-
-`ifdef SYNTH_KINTEX7
-	(* keep = "true" *) wire sh_w2_nz_lo, sh_w2_nz_hi0, sh_w2_nz_hi1;
-	LUT3 #(.INIT(8'hFE)) u_w2nz_l  (.I0(sh_w2[5]), .I1(sh_w2[6]), .I2(sh_w2[7]), .O(sh_w2_nz_lo));
-	LUT3 #(.INIT(8'hFE)) u_w2nz_h0 (.I0(sh_w2[5]), .I1(sh_w2[6]), .I2(sh_w2[7]), .O(sh_w2_nz_hi0));
-	LUT3 #(.INIT(8'hFE)) u_w2nz_h1 (.I0(sh_w2[5]), .I1(sh_w2[6]), .I2(sh_w2[7]), .O(sh_w2_nz_hi1));
-`else
-	wire sh_w2_nz_lo  = (sh_w2[7:5] != 3'd0);
-	wire sh_w2_nz_hi0 = (sh_w2[7:5] != 3'd0);
-	wire sh_w2_nz_hi1 = (sh_w2[7:5] != 3'd0);
-`endif
-
-	wire [15:0] s_coarse2_lo = sh_w2_nz_lo ? 16'd0 :
-	                           (sh2_c_lo_amt == 2'd0)  ? in_data2[47:32] :
-	                           (sh2_c_lo_amt == 2'd1)  ? {8'd0, in_data2[47:40]} : 16'd0;
-	wire [15:0] s_coarse2_hi;
-	assign s_coarse2_hi[7:0]  = sh_w2_nz_hi0 ? 8'd0 :
-	                            (sh2_c_hi_amt == 2'd0)  ? in_data2[39:32] :
-	                            (sh2_c_hi_amt == 2'd1)  ? in_data2[47:40] : 8'd0;
-	assign s_coarse2_hi[15:8] = sh_w2_nz_hi1 ? 8'd0 :
-	                            (sh2_c_hi_amt == 2'd0)  ? in_data2[47:40] : 8'd0;
-
-	wire [38:0] c_pad = {7'd0, s_coarse};
-	wire [22:0] c_pad2_lo = {7'd0, s_coarse2_lo};
-	wire [22:0] c_pad2_hi = {7'd0, s_coarse2_hi};
-	wire [47:0] shifted;
-
-	wire [15:0] f0_lo = sh0_lo_amt[1] ?
-		(sh0_lo_amt[0] ? c_pad[3 +: 16] : c_pad[2 +: 16]) :
-		(sh0_lo_amt[0] ? c_pad[1 +: 16] : c_pad[0 +: 16]);
-	wire [15:0] f0_hi = sh0_hi_amt[1] ?
-		(sh0_hi_amt[0] ? c_pad[7 +: 16] : c_pad[6 +: 16]) :
-		(sh0_hi_amt[0] ? c_pad[5 +: 16] : c_pad[4 +: 16]);
-	assign shifted[15:0] = sh0_hi_amt[2] ? f0_hi : f0_lo;
-
-	wire [15:0] f1_lo = sh1_lo_amt[1] ?
-		(sh1_lo_amt[0] ? c_pad[16 + 3 +: 16] : c_pad[16 + 2 +: 16]) :
-		(sh1_lo_amt[0] ? c_pad[16 + 1 +: 16] : c_pad[16 + 0 +: 16]);
-	wire [15:0] f1_hi = sh1_hi_amt[1] ?
-		(sh1_hi_amt[0] ? c_pad[16 + 7 +: 16] : c_pad[16 + 6 +: 16]) :
-		(sh1_hi_amt[0] ? c_pad[16 + 5 +: 16] : c_pad[16 + 4 +: 16]);
-	assign shifted[31:16] = sh1_hi_amt[2] ? f1_hi : f1_lo;
-
-	wire [15:0] f2_lo = sh2_lo_amt[1] ?
-		(sh2_lo_amt[0] ? c_pad2_lo[3 +: 16] : c_pad2_lo[2 +: 16]) :
-		(sh2_lo_amt[0] ? c_pad2_lo[1 +: 16] : c_pad2_lo[0 +: 16]);
-	wire [15:0] f2_hi = sh2_hi_amt[1] ?
-		(sh2_hi_amt[0] ? c_pad2_hi[7 +: 16] : c_pad2_hi[6 +: 16]) :
-		(sh2_hi_amt[0] ? c_pad2_hi[5 +: 16] : c_pad2_hi[4 +: 16]);
-	assign shifted[47:32] = sh2_hi_amt[2] ? f2_hi : f2_lo;
-
-	wire [23:0] unrounded = shifted[47:24];
-	wire guard = shifted[23];
-	(* keep = "true" *) wire st_0 = |shifted[5:0];
-	(* keep = "true" *) wire st_1 = |shifted[11:6];
-	(* keep = "true" *) wire st_2 = |shifted[17:12];
-	(* keep = "true" *) wire st_3 = |shifted[22:18];
-	wire sticky = st_0 || st_1 || st_2 || st_3;
-	wire round_up = guard && (sticky || unrounded[0]);
-
-	wire [23:0] rounded_mag;
-	wire rnd_carry;
-	am_add #(.W(24)) u_rnd (.a(unrounded), .b(24'd0), .ci(round_up), .s(rounded_mag), .co(rnd_carry));
-
-	wire overflow_l_val = is_nan || (!bo_lt_ebase_w) || rnd_carry || (rounded_mag[23:22] != 2'd0);
-	wire overflow_h_val = is_nan || (!bo_lt_ebase_w) || rnd_carry || (rounded_mag[23:22] != 2'd0);
-	wire underflow_l_val = bo_udf_w || is_zero;
-	wire underflow_h_val = bo_udf_w || is_zero;
-
-`ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire ovf_l, ovf_h;
-	LUT1 #(.INIT(2'h2)) u_ovf_l (.I0(overflow_l_val), .O(ovf_l));
-	LUT1 #(.INIT(2'h2)) u_ovf_h (.I0(overflow_h_val), .O(ovf_h));
-	(* keep = "true", dont_touch = "true" *) wire udf_l, udf_h;
-	LUT1 #(.INIT(2'h2)) u_udf_l (.I0(underflow_l_val), .O(udf_l));
-	LUT1 #(.INIT(2'h2)) u_udf_h (.I0(underflow_h_val), .O(udf_h));
-`else
-	wire ovf_l = overflow_l_val;
-	wire ovf_h = overflow_h_val;
-	wire udf_l = underflow_l_val;
-	wire udf_h = underflow_h_val;
-`endif
-
-	wire [23:0] pos_val = {
-		ovf_h  ? 12'h3FF : (udf_h ? 12'd0 : rounded_mag[23:12]),
-		ovf_l  ? 12'hFFF : (udf_l ? 12'd0 : rounded_mag[11:0])
-	};
-	wire [23:0] neg_val;
-	am_sub #(.W(24)) u_neg (.a(24'd0), .b(pos_val), .bi(1'b0), .d(neg_val), .bo());
-
-	assign q = {
-		is_nan_h ? 12'd0 : (sign_h ? neg_val[23:12] : pos_val[23:12]),
-		is_nan_l ? 12'd0 : (sign_l ? neg_val[11:0]  : pos_val[11:0])
-	};
+	am_fp_f2fix #(
+		.W(24),
+		.F(8),
+		.SIGNED(1),
+		.ROUND(1),
+		.SATURATE(1),
+		.SAT_BITS(22),
+		.USE_DSP(USE_DSP)
+	) u_impl (
+		.f(f),
+		.q(q)
+	);
 endmodule
 
 /*

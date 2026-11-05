@@ -90,8 +90,12 @@ module atg_rx_setup (
 	wire rst_n_fpu = rst_n;
 	wire [31:0] st_wdata_vp_b = st_wdata;
 	wire [31:0] st_wdata_sc_b = st_wdata;
-	wire [31:0] st_wdata_fpu_lw = st_wdata;
-	wire [31:0] st_wdata_fpu_ps = st_wdata;
+	(* keep = "true" *) reg r_st_lw_we;
+	(* keep = "true" *) reg [31:0] r_st_lw_data;
+	(* keep = "true" *) reg r_st_ps_we;
+	(* keep = "true" *) reg [31:0] r_st_ps_data;
+	wire [31:0] st_wdata_fpu_lw = r_st_lw_data;
+	wire [31:0] st_wdata_fpu_ps = r_st_ps_data;
 	wire [31:0] st_wdata_cfg_reg = st_wdata;
 	wire [15:0] vp_w_lo [0:5];
 	wire [15:0] vp_w_hi [0:5];
@@ -168,8 +172,8 @@ module atg_rx_setup (
 	endgenerate
 
 	wire [23:0] lw_fix, ps_fix;
-	atg_rx_f2fix u_lw_fix (.f(st_wdata_fpu_lw), .q(lw_fix));
-	atg_rx_f2fix u_ps_fix (.f(st_wdata_fpu_ps), .q(ps_fix));
+	atg_rx_f2fix #(.USE_DSP(1)) u_lw_fix (.f(st_wdata_fpu_lw), .q(lw_fix));
+	atg_rx_f2fix #(.USE_DSP(1)) u_ps_fix (.f(st_wdata_fpu_ps), .q(ps_fix));
 
 	wire [31:0] ps_in_fp32;
 	am_fp_fix2f #(.W(16), .F(8), .SIGNED(0)) u_ps2f (.v(st_wdata_fpu_ps[15:0]), .f(ps_in_fp32));
@@ -202,6 +206,10 @@ module atg_rx_setup (
 	integer e;
 	always @(posedge clk)
 		if (rst_setup_high) begin
+			r_st_lw_we <= 1'b0;
+			r_st_lw_data <= 32'd0;
+			r_st_ps_we <= 1'b0;
+			r_st_ps_data <= 32'd0;
 			vp_idx <= 4'd0;
 			line_width <= 16'h0100;
 			point_size <= 16'h0100;
@@ -238,20 +246,29 @@ module atg_rx_setup (
 				if (we_smax_lo && (vp_idx_ws_smx_l == e[3:0])) smax_array_lo[e] <= smax_lo_buf;
 				if (we_smax_hi && (vp_idx_ws_smx_h == e[3:0])) smax_array_hi[e] <= smax_hi_buf;
 			end
+			r_st_lw_we <= st_we && (st_idx == GHCI_S_LINE_WIDTH);
+			if (st_we && (st_idx == GHCI_S_LINE_WIDTH))
+				r_st_lw_data <= st_wdata;
+
+			r_st_ps_we <= st_we && (st_idx == GHCI_S_POINT_SIZE);
+			if (st_we && (st_idx == GHCI_S_POINT_SIZE))
+				r_st_ps_data <= st_wdata;
+
 			div_inv_start <= 1'b0;
+			if (r_st_lw_we) begin
+				line_width <= (r_st_lw_data[31:23] != 9'd0) ? lw_fix[15:0] : r_st_lw_data[15:0];
+			end
+			if (r_st_ps_we) begin
+				point_size <= (r_st_ps_data[31:23] != 9'd0) ? ps_fix[15:0] : r_st_ps_data[15:0];
+				if (r_st_ps_data == 32'h0100 || r_st_ps_data == 32'h3F800000) begin
+					inv_ps_lo <= 16'h0000;
+					inv_ps_hi <= 16'h3F80;
+				end else
+					div_inv_start <= 1'b1;
+			end
 			if (st_we) begin
 				if (st_idx == GHCI_S_VIEWPORT_IDX)
 					vp_idx <= st_wdata_cfg_reg[3:0];
-				if (st_idx == GHCI_S_LINE_WIDTH)
-					line_width <= (st_wdata_cfg_reg[31:23] != 9'd0) ? lw_fix[15:0] : st_wdata_cfg_reg[15:0];
-				if (st_idx == GHCI_S_POINT_SIZE) begin
-					point_size <= (st_wdata_cfg_reg[31:23] != 9'd0) ? ps_fix[15:0] : st_wdata_cfg_reg[15:0];
-					if (st_wdata_cfg_reg == 32'h0100 || st_wdata_cfg_reg == 32'h3F800000) begin
-						inv_ps_lo <= 16'h0000;
-						inv_ps_hi <= 16'h3F80;
-					end else
-						div_inv_start <= 1'b1;
-				end
 				if (st_idx == GHCI_S_CULL)
 					cull <= st_wdata_cfg_reg[2:0];
 				if (st_idx == GHCI_S_RAST_MODE)
@@ -2063,7 +2080,8 @@ module atg_rx_setup (
 
 	wire unused_ok = &{1'b0, fd_busy, rm[2:1], su_bo_unused, max_z[31], max_z[22:0],
 		lw_fix[23:16], ps_fix[23:16], div_busy, mesh_id, in_valid_ctrl, in_valid_fd,
-		seq_inc_co_unused, seq_inc_hi_co_unused, p_step_ctrl_inc_co_unused, p_plane_inc_co_unused};
+		seq_inc_co_unused, seq_inc_hi_co_unused, p_step_ctrl_inc_co_unused, p_plane_inc_co_unused,
+		is_flw, is_fps};
 
 `undef RX_BUF1
 endmodule
