@@ -40,12 +40,19 @@
 `define ATG_DEFAULT_COARSE_SCAN 0
 `endif
 
+`ifdef CFG_RX_ENABLE_CPOLY
+`define ATG_DEFAULT_RX_ENABLE_CPOLY (`CFG_RX_ENABLE_CPOLY != 0)
+`else
+`define ATG_DEFAULT_RX_ENABLE_CPOLY 1
+`endif
+
 module atg_rx #(
 	parameter HAS_SU = 1,	/* Fragment warps to an SU (0: DEBUG_COLOR quads to the ROP) */
 	parameter ENABLE_MSAA = `ATG_DEFAULT_ENABLE_MSAA,
 	parameter MSAA_SAMPLES = `ATG_DEFAULT_MSAA_SAMPLES,
 	parameter ENABLE_EARLY_Z = `ATG_DEFAULT_ENABLE_EARLY_Z,
-	parameter COARSE_SCAN = `ATG_DEFAULT_COARSE_SCAN
+	parameter COARSE_SCAN = `ATG_DEFAULT_COARSE_SCAN,
+	parameter ENABLE_CPOLY = `ATG_DEFAULT_RX_ENABLE_CPOLY
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -200,7 +207,9 @@ module atg_rx #(
 	wire dx_ready_scan = dx_ready;
 	wire rst_n_clip = rst_n, rst_n_setup = rst_n, rst_n_scan = rst_n, rst_n_frag = rst_n, rst_n_order = rst_n;
 
-	atg_rx_clip clip (
+	atg_rx_clip #(
+		.ENABLE_CPOLY(ENABLE_CPOLY)
+	) clip (
 		.clk(clk), .rst_n(rst_n_clip), .st_we(clip_st_we), .st_idx(clip_st_idx), .st_wdata(clip_st_wdata),
 		.raw_kick(raw_kick),
 		.prim_valid(prim_c_valid), .prim_ready(prim_c_ready), .prim_vtx(prim_c_vtx),

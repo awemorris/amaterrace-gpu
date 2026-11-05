@@ -34,6 +34,13 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+`ifdef CFG_TU_ENABLE_BILINEAR
+	localparam ENABLE_BILINEAR = `CFG_TU_ENABLE_BILINEAR;
+`else
+	localparam ENABLE_BILINEAR = 1;
+`endif
+
 module atg_tu_filter (
 	input wire clk,
 	input wire rst_n,
@@ -262,7 +269,7 @@ module atg_tu_filter (
 	wire [31:0] fa5;
 
 	atg_tu_fpre pre (
-		.clk(clk), .i_vw(vw1), .i_lt(lt1), .i_wl(wl1), .i_bil(ctl1[0]), .i_p17(ctl1[17]),
+		.clk(clk), .i_vw(vw1), .i_lt(lt1), .i_wl(wl1), .i_bil(ENABLE_BILINEAR ? ctl1[0] : 1'b0), .i_p17(ctl1[17]),
 		.i_p18(ctl1[18]), .i_d32(ctl1[1]), .i_d16(ctl1[34:27] == 8'd124), .i_op(ctl1[12:10]),
 		.o_ok(ok), .o_w(w5), .o_wp(wp5), .o_fa(fa5)
 	);

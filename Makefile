@@ -138,6 +138,15 @@ ifeq ($(CONFIG_RX_COARSE_SCAN),1)
 	@echo "\`define CFG_COARSE_SCAN 1" >> $@
 	@echo "\`endif" >> $@
 endif
+ifeq ($(CONFIG_RX_ENABLE_CPOLY),1)
+	@echo "\`ifndef CFG_RX_ENABLE_CPOLY" >> $@
+	@echo "\`define CFG_RX_ENABLE_CPOLY 1" >> $@
+	@echo "\`endif" >> $@
+else
+	@echo "\`ifndef CFG_RX_ENABLE_CPOLY" >> $@
+	@echo "\`define CFG_RX_ENABLE_CPOLY 0" >> $@
+	@echo "\`endif" >> $@
+endif
 	@echo "" >> $@
 	@echo "/* 3. Texture Unit (TU) */" >> $@
 ifeq ($(CONFIG_TU_ENABLE_BC),1)
@@ -160,6 +169,11 @@ ifeq ($(CONFIG_TU_ENABLE_ARRAY),1)
 endif
 ifeq ($(CONFIG_TU_ENABLE_TRILINEAR),1)
 	@echo "\`define CFG_ENABLE_TRILINEAR 1" >> $@
+endif
+ifeq ($(CONFIG_TU_ENABLE_BILINEAR),1)
+	@echo "\`define CFG_TU_ENABLE_BILINEAR 1" >> $@
+else
+	@echo "\`define CFG_TU_ENABLE_BILINEAR 0" >> $@
 endif
 ifeq ($(CONFIG_TU_ENABLE_3D_CUBE),1)
 	@echo "\`define CFG_ENABLE_3D_CUBE 1" >> $@
@@ -212,6 +226,11 @@ ifeq ($(CONFIG_ROP_DUAL_SOURCE),1)
 endif
 ifeq ($(CONFIG_ROP_ENABLE_LOGICOP),1)
 	@echo "\`define CFG_ROP_ENABLE_LOGICOP 1" >> $@
+endif
+ifeq ($(CONFIG_BLT_ENABLE_SCALE),1)
+	@echo "\`define CFG_BLT_ENABLE_SCALE 1" >> $@
+else
+	@echo "\`define CFG_BLT_ENABLE_SCALE 0" >> $@
 endif
 ifeq ($(CONFIG_ROP_FAST_CLEAR),1)
 	@echo "\`define CFG_ROP_FAST_CLEAR 1" >> $@

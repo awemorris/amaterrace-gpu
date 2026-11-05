@@ -57,6 +57,11 @@ module atg_tu_addr (
 	`include "atg_fmt_info.vh"
 	`include "atg_tu_fmt.vh"
 	`include "atg_tu_fn.vh"
+`ifdef CFG_TU_ENABLE_BILINEAR
+	localparam ENABLE_BILINEAR = `CFG_TU_ENABLE_BILINEAR;
+`else
+	localparam ENABLE_BILINEAR = 1;
+`endif
 	localparam [1:0] OP_TEXL = 2'd0, OP_TEXB = 2'd1, OP_TEXF = 2'd2, OP_TEXSZ = 2'd3;
 	localparam [5:0] IDLE         = 6'd0,
 	                 CUBE         = 6'd1,
@@ -538,7 +543,8 @@ module atg_tu_addr (
 		wire [3:0] lsize = r_lsize[gl];
 		wire [3:0] lvl_w = op == OP_TEXSZ ? lsize : op == OP_TEXF ? (r_ms ? 4'd0 : r_lfetch[gl]) : gather_lane[gl] || mag ? 4'd0 :
 			miplin_lvl ? llin : lmin;
-		wire lin_w = op[1] || qlod ? 1'b0 : gather_lane[gl] ? 1'b1 : filt && (mag ? r_samp_mag_lin : r_samp_min_lin);
+		wire lin_filt = ENABLE_BILINEAR ? (filt && (mag ? r_samp_mag_lin : r_samp_min_lin)) : 1'b0;
+		wire lin_w = op[1] || qlod ? 1'b0 : gather_lane[gl] ? 1'b1 : lin_filt;
 		assign lvl_l[gl] = lvl_w;
 		assign lin_l[gl] = lin_w;
 		assign lrnd_unused[gl] = {r_lrnd[gl][16], r_lrnd[gl][7:0]};

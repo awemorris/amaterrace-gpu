@@ -35,7 +35,8 @@
 module atg_blt_2d #(
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
-	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
+	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
+	parameter ENABLE_SCALE = 1
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -1124,14 +1125,20 @@ module atg_blt_2d #(
 	wire [2*LINE_BITS-1:0] both = {buf1, buf0};
 	wire [LINE_BITS-1:0] copy_line;
 
-	atg_blt_align #(
-		.LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT)
-	) leg_align (
-		.in_data(both),
-		.off(src_off),
-		.out_data(copy_line)
-	);
+	generate
+	if (ENABLE_SCALE != 0) begin : gen_leg_align
+		atg_blt_align #(
+			.LINE_BYTES(LINE_BYTES),
+			.LINE_SHIFT(LINE_SHIFT)
+		) leg_align (
+			.in_data(both),
+			.off(src_off),
+			.out_data(copy_line)
+		);
+	end else begin : gen_no_leg_align
+		assign copy_line = buf0;
+	end
+	endgenerate
 
 	/* Blend-over. */
 	wire bl_done;
@@ -1589,14 +1596,20 @@ module atg_blt_2d #(
 	wire [2*LINE_BITS-1:0] pp_both = {s2_sdata1_sim, s2_sdata0_sim};
 	wire [LINE_BITS-1:0] pp_copy_line;
 
-	atg_blt_align #(
-		.LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT)
-	) pp_align (
-		.in_data(pp_both),
-		.off(s2_off_sim),
-		.out_data(pp_copy_line)
-	);
+	generate
+	if (ENABLE_SCALE != 0) begin : gen_pp_align
+		atg_blt_align #(
+			.LINE_BYTES(LINE_BYTES),
+			.LINE_SHIFT(LINE_SHIFT)
+		) pp_align (
+			.in_data(pp_both),
+			.off(s2_off_sim),
+			.out_data(pp_copy_line)
+		);
+	end else begin : gen_no_pp_align
+		assign pp_copy_line = s2_sdata0_sim;
+	end
+	endgenerate
 `endif
 
 	/* Burst requests to AMB */

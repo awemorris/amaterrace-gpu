@@ -35,7 +35,9 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-(* keep_hierarchy = "yes" *) module atg_rx_clip (
+(* keep_hierarchy = "yes" *) module atg_rx_clip #(
+	parameter ENABLE_CPOLY = 1
+) (
 	input wire clk,
 	input wire rst_n,
 	/* STATE broadcast (from atg_cp_state) */
@@ -381,11 +383,20 @@
 	always @(posedge clk)
 		r_ld_line <= (kind == 2'd1);
 
-	atg_rx_cpoly cpoly (.clk(clk), .rst_n(rst_n), .vp(vp), .ld_we(ld_we), .ld_idx(ld_idx),
-		.ld_data(ld_data), .ld_n({2'd0, nv}), .ld_line(r_ld_line),
-		.cmd_valid(cmd_valid), .cmd_ready(cmd_ready), .cmd_plane(cmd_plane),
-		.cmd_first(first), .done(cp_done), .n_out(n_out), .rd_idx(rd_idx),
-		.rd_data(rd_data));
+	generate
+	if (ENABLE_CPOLY != 0) begin : gen_cpoly
+		atg_rx_cpoly cpoly (.clk(clk), .rst_n(rst_n), .vp(vp), .ld_we(ld_we), .ld_idx(ld_idx),
+			.ld_data(ld_data), .ld_n({2'd0, nv}), .ld_line(r_ld_line),
+			.cmd_valid(cmd_valid), .cmd_ready(cmd_ready), .cmd_plane(cmd_plane),
+			.cmd_first(first), .done(cp_done), .n_out(n_out), .rd_idx(rd_idx),
+			.rd_data(rd_data));
+	end else begin : gen_no_cpoly
+		assign cmd_ready = 1'b1;
+		assign cp_done = 1'b1;
+		assign n_out = 4'd0;
+		assign rd_data = 224'd0;
+	end
+	endgenerate
 
 	/* the lowest plane still to cut */
 	reg [2:0] pnext;
@@ -473,8 +484,9 @@
 	wire out_pt_ok      = (st == S_TRIV) && (triv_step == 2'd3) && (kind == 2'd0) && (r_t0[1:0] == 2'b11);
 	wire out_pt_drop    = (st == S_TRIV) && (triv_step == 2'd3) && (kind == 2'd0) && (r_t0[1:0] != 2'b11);
 	wire out_triv_acc   = (st == S_TRIV) && (triv_step == 2'd3) && (kind != 2'd0) && r_accept;
+	wire out_poly_drop  = !ENABLE_CPOLY && (st == S_TRIV) && (triv_step == 2'd3) && (kind != 2'd0) && !r_accept;
 	wire out_cwait_drop = (st == S_CWAIT) && cp_done && (n_out == 4'd0);
-	wire out_all_trig   = out_raw_trig || out_disc_trig || out_pt_ok || out_pt_drop || out_triv_acc || out_cwait_drop;
+	wire out_all_trig   = out_raw_trig || out_disc_trig || out_pt_ok || out_pt_drop || out_triv_acc || out_poly_drop || out_cwait_drop;
 
 	wire [1:0] osel_nxt_lo = (st == S_EMIT) ? 2'd3 :
 		(out_raw_trig ? 2'd1 : ((out_pt_ok || out_triv_acc) ? 2'd2 : 2'd0));
@@ -589,6 +601,9 @@
 						kind <= 2'd2;
 					st <= S_OUT;
 				end else if (r_accept) begin
+					st <= S_OUT;
+				end else if (!ENABLE_CPOLY) begin
+					kind <= 2'd2;
 					st <= S_OUT;
 				end else begin
 					pl <= {{4{r_guard}}, p_far, p_near, 1'b1} & PL_MUT;

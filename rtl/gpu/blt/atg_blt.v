@@ -28,11 +28,19 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "atg_config.vh"
+`ifdef CFG_BLT_ENABLE_SCALE
+`define ATG_DEFAULT_BLT_ENABLE_SCALE (`CFG_BLT_ENABLE_SCALE != 0)
+`else
+`define ATG_DEFAULT_BLT_ENABLE_SCALE 1
+`endif
+
 module atg_blt #(
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter MS4 = 0		/* RESOLVE (CAPS[29]) */
+	parameter MS4 = 0,		/* RESOLVE (CAPS[29]) */
+	parameter ENABLE_SCALE = `ATG_DEFAULT_BLT_ENABLE_SCALE
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -116,7 +124,8 @@ module atg_blt #(
 	atg_blt_2d #(
 		.ADDR_W(ADDR_W),
 		.LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT)
+		.LINE_SHIFT(LINE_SHIFT),
+		.ENABLE_SCALE(ENABLE_SCALE)
 	) b2d (
 		.clk(clk),
 		.rst_n(rst_n),
