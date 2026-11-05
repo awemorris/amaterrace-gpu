@@ -110,6 +110,7 @@ localparam GHCI_EXT_FMT_BC4            = 3;
 localparam GHCI_EXT_FMT_BC5            = 4;
 localparam GHCI_EXT_FMT_BC6H           = 5;
 localparam GHCI_EXT_FMT_BC7            = 6;
+localparam GHCI_EXT_FMT_TU_BILINEAR     = 16;
 
 /* EXT_CAP_FEATURE bits (0x084) */
 localparam GHCI_EXT_FEAT_LOGIC_OP      = 0;
@@ -119,6 +120,8 @@ localparam GHCI_EXT_FEAT_COLOR_LUT     = 3;
 localparam GHCI_EXT_FEAT_DUAL_SOURCE   = 8;
 localparam GHCI_EXT_FEAT_COARSE_SCAN   = 9;
 localparam GHCI_EXT_FEAT_FAST_CLEAR    = 10;
+localparam GHCI_EXT_FEAT_CLIP_POLY     = 30;
+localparam GHCI_EXT_FEAT_BLT_SCALE     = 31;
 
 /* Legacy Host control register offsets (bytes in the 128 KiB decode). */
 localparam [16:0] GHCI_MAGIC = 17'h00000;

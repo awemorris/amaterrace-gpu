@@ -311,6 +311,7 @@ extern "C" {
 #define GHCI_EXT_FMT_BC5 (1u << 4)
 #define GHCI_EXT_FMT_BC6H (1u << 5)
 #define GHCI_EXT_FMT_BC7 (1u << 6)
+#define GHCI_EXT_FMT_TU_BILINEAR (1u << 16)
 
 #define GHCI_EXT_FEAT_LOGIC_OP (1u << 0)
 #define GHCI_EXT_FEAT_EARLY_Z (1u << 1)
@@ -320,6 +321,8 @@ extern "C" {
 #define GHCI_EXT_FEAT_DUAL_SOURCE (1u << 8)
 #define GHCI_EXT_FEAT_COARSE_SCAN (1u << 9)
 #define GHCI_EXT_FEAT_FAST_CLEAR (1u << 10)
+#define GHCI_EXT_FEAT_CLIP_POLY (1u << 30)
+#define GHCI_EXT_FEAT_BLT_SCALE (1u << 31)
 
 /* CAPS2. */
 #define GHCI_CAPS2_QUEUES(c) ((c) & 0xFFu)

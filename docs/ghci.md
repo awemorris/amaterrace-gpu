@@ -294,7 +294,8 @@ When querying hardware capabilities and address sizes without walking the EXTCAP
 - `[27:20] CAP_LDS_SIZE_KB`: Local Data Share capacity in KiB per Shader Unit (8-bit value, 0..255) (N24, N31). Reports 4 for KC705 FPGA prototype (4 KiB); reports 16 (or higher) for production ASIC (16 KiB Vulkan 1.0 minimum).
 - `[28] CAP_FP16`: Half-precision 16-bit floating-point arithmetic supported (mirror of `DEVICE_CAPS[6]`, N16).
 - `[29] CAP_SUBGROUP`: Native subgroup shuffle/ballot instructions supported (N16).
-- `[31:30]`: Reserved (reads 0).
+- `[30] CAP_CLIP_POLY`: Dedicated hardware Sutherland-Hodgman polygon clipper present (`CONFIG_RX_ENABLE_CPOLY`). When 1, primitives crossing view volume and near/far clip boundaries are mathematically subdivided into polygons in hardware (`atg_rx_cpoly`). When 0, guard-band bypass clipping is active (primitives within the guard band are rasterized directly and scissored; primitives crossing behind the camera near plane are culled or delegated to driver/geometry software fallback).
+- `[31] CAP_BLT_SCALE`: Hardware 2D blitter scaling and unaligned byte window alignment supported (`CONFIG_BLT_ENABLE_SCALE`). When 1, `CMD_BLIT` supports arbitrary resolution scaling via `atg_blt_align`. When 0, `atg_blt_2d` is configured for 1:1 direct rectangular copies and fills only (`BLT-B-MIN`), and arbitrary scaling blits are delegated to 3D pipeline draw passes.
 
 **EXT_CAP_FMT0 (0x080, N19, N31) - Fast Texture Format Shortcut**:
 Provides immediate hardware texture format support flags without MMIO register window indexing:
@@ -305,7 +306,8 @@ Provides immediate hardware texture format support flags without MMIO register w
 - `[10]`: `CAP_FFILT_FP16` — Floating-point linear texture filtering for FP16 formats (`CAP_TEX_FFILT`).
 - `[11]`: `CAP_FFILT_FP32` — Floating-point linear texture filtering for FP32 formats.
 - `[15:12]`: `MAX_COLOR_ATTACHMENTS` — Hardware color attachment count limit (reports 8, mirroring `EXT_CAP_FEATURE[19:16]`).
-- `[31:16]`: Reserved (reads 0).
+- `[16]`: `CAP_TU_BILINEAR` — Hardware bilinear texture filtering supported for normalized texture formats (`CONFIG_TU_ENABLE_BILINEAR`, mirroring legacy `GHCI_CAPS[8]`). When 1, 4-texel footprint generation and bilinear filtering (`atg_tu_foot` / `atg_tu_filter`) are enabled. When 0, texture sampling is restricted to nearest-neighbor (point) filtering (`VK_FILTER_NEAREST`).
+- `[31:17]`: Reserved (reads 0).
 
 #### 3.2.3 Clocks, Timestamps and PCI Identification (K06)
 
@@ -503,6 +505,12 @@ A driver reports its format properties from these hardware registers, with `EXT_
 
 - **EXTCAP Linked List vs Fixed Offsets (M06, N28)**: Drivers may discover capabilities by walking the linked list starting at `EXTCAP_PTR` (`0x00C` -> `0x100`) or by using canonical fixed offsets (`0x1E0` MEM, `0x140` FMT, `0x180` VEND, `0x1D0` PROT, `0x200` DISP2). Capability ID 5 (MMU) and ID 6 (CPFW) are internal/informational; the host driver does not program MMU or CPFW registers.
 
+- **Bilinear texture filtering (`CONFIG_TU_ENABLE_BILINEAR`, `CAP_TU_BILINEAR`):**
+  When `CONFIG_TU_ENABLE_BILINEAR = 0`, 4-texel footprint generation (`atg_tu_foot`)
+  and weighted bilinear accumulation (`atg_tu_fsum` / `atg_tu_filter`) are excluded from
+  hardware synthesis. `FMT_OPTIMAL` and `FMT_LINEAR` report 0 for
+  `VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT` (bit 1) across all formats;
+  texture sampling operates strictly in nearest-neighbor (point) mode (`VK_FILTER_NEAREST`).
 - **Floating-point texture filtering (`CONFIG_TU_ENABLE_FFILT`):**
   When `CONFIG_TU_ENABLE_FFILT = 0`, the floating-point filter unit (`atg_tu_ffilt`)
   is omitted from hardware synthesis. For 16-bit and 32-bit floating-point image
@@ -1030,6 +1038,7 @@ Image copy with scaling and format conversion via hardware Blitter (12 dwords, 4
 - `dword 9`: `dst_min_xy` (`[15:0] x0`, `[31:16] y0`)
 - `dword 10`: `dst_max_xy` (`[15:0] x1`, `[31:16] y1`)
 - `dword 11`: `formats_and_filter` (`[7:0] src_format` (`VkFormat`), `[15:8] dst_format` (`VkFormat`), `[16] filter` (0: Nearest, 1: Linear), `[17] src_tiled`, `[18] dst_tiled`)
+- *Blit Scaling Capability (`CAP_BLT_SCALE`)*: Arbitrary resolution scaling in `CMD_BLIT` ($src\_extent \ne dst\_extent$) requires hardware 2D scaling support (`EXT_CAP_FEATURE[31]` `CAP_BLT_SCALE = 1`). In minimal hardware profiles where `CAP_BLT_SCALE = 0`, `CMD_BLIT` supports 1:1 direct rectangular copies ($src\_extent == dst\_extent$), while scaling blits are executed by the driver via 3D pipeline draw passes.
 
 #### `CMD_FILL_BUFFER` (0x43)
 Fills buffer range with 32-bit pattern (5 dwords, 20 bytes):
@@ -2398,6 +2407,7 @@ Vertex shaders write output values to the Post-Transform Buffer (PT, `atg_su_pt`
     $$y_w = \frac{\text{height}}{2} y_d + \left(y + \frac{\text{height}}{2}\right) \quad (\text{or negated when height} < 0)$$
     $$z_w = \text{minDepth} + z_d \times (\text{maxDepth} - \text{minDepth})$$
   - Depth Clamp (`PSO.flags[4] = 1`): Disables near/far plane clipping; rasterizer clamps resulting depth to $[\text{minDepth}, \text{maxDepth}]$.
+  - **Hardware Polygon Clipping (`CAP_CLIP_POLY`)**: Controlled by `EXT_CAP_FEATURE[30]` (`CAP_CLIP_POLY`, `CONFIG_RX_ENABLE_CPOLY`). When 1, primitives crossing the clip boundaries are mathematically subdivided into polygons in hardware via `atg_rx_cpoly`. When 0, hardware operates in guard-band bypass mode (primitives within the guard band pass directly to rasterization and viewport scissoring; primitives crossing behind the camera near plane are trivially rejected or handled by driver/geometry software fallback).
 
 - **Primitive Assembly & Provoking Vertex (N41)**:
   - Vertex index $k \in \{0, 1, 2\}$ in `lda` instruction corresponds directly to barycentric coordinates $b_k$ (`r0, r1, r2`).
