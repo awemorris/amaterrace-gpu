@@ -394,6 +394,40 @@ module atg_dc_regs #(
 	integer k;
 
 	always @(posedge clk) begin
+		if (rst_high) begin
+			r_fb_base_lo <= 16'd0;
+			r_fb_base_hi <= 16'd0;
+			r_fb_next_lo <= 16'd0;
+			r_fb_next_hi <= 16'd0;
+		end else begin
+			if (ev_vsync && pend) begin
+				r_fb_base_lo <= r_fb_next_lo;
+				r_fb_base_hi <= r_fb_next_hi;
+			end else begin
+				if (flip_valid_b0 && !en_eff_blo)
+					r_fb_base_lo <= flip_base[15:0];
+				else if (w_next_l && !en_eff_blo)
+					r_fb_base_lo <= next_new[15:0];
+
+				if (flip_valid_b1 && !en_eff_bhi)
+					r_fb_base_hi <= flip_base[31:16];
+				else if (w_next_h && !en_eff_bhi)
+					r_fb_base_hi <= next_new[31:16];
+			end
+
+			if (flip_valid_n0 && en_eff_nlo)
+				r_fb_next_lo <= flip_base[15:0];
+			else if (w_next_l)
+				r_fb_next_lo <= next_new[15:0];
+
+			if (flip_valid_n1 && en_eff_nhi)
+				r_fb_next_hi <= flip_base[31:16];
+			else if (w_next_h)
+				r_fb_next_hi <= next_new[31:16];
+		end
+	end
+
+	always @(posedge clk) begin
 		taken <= 1'b0;
 		taken_cancel <= 1'b0;
 		ev_error <= 1'b0;
@@ -402,8 +436,6 @@ module atg_dc_regs #(
 			r_test <= 1'b0;
 			r_output <= 1'b0;
 			r_format <= 2'd0;
-			r_fb_base_lo <= 16'd0; r_fb_base_hi <= 16'd0;
-			r_fb_next_lo <= 16'd0; r_fb_next_hi <= 16'd0;
 			r_stride_lo <= 16'd0; r_stride_hi <= 16'd0;
 			r_size_lo <= 16'd0; r_size_hi <= 16'd0;
 
@@ -490,32 +522,10 @@ module atg_dc_regs #(
 					pend_cp <= 1'b0;
 				end
 			end else if (ev_vsync && pend) begin
-				r_fb_base_lo <= r_fb_next_lo;
-				r_fb_base_hi <= r_fb_next_hi;
 				pend <= 1'b0;
 				if (pend_cp)
 					taken <= 1'b1;
 			end
-
-			if (flip_valid_b0 && !en_eff_blo)
-				r_fb_base_lo <= flip_base[15:0];
-			else if (w_next_l && !en_eff_blo)
-				r_fb_base_lo <= next_new[15:0];
-
-			if (flip_valid_b1 && !en_eff_bhi)
-				r_fb_base_hi <= flip_base[31:16];
-			else if (w_next_h && !en_eff_bhi)
-				r_fb_base_hi <= next_new[31:16];
-
-			if (flip_valid_n0 && en_eff_nlo)
-				r_fb_next_lo <= flip_base[15:0];
-			else if (w_next_l)
-				r_fb_next_lo <= next_new[15:0];
-
-			if (flip_valid_n1 && en_eff_nhi)
-				r_fb_next_hi <= flip_base[31:16];
-			else if (w_next_h)
-				r_fb_next_hi <= next_new[31:16];
 
 			r_flip_ready <= (d_we && idx == I_FLIP_READY && wbits[0]) || flip_valid_ctl || w_next_ctl;
 			if (w_ctrl) begin
