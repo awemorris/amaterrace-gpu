@@ -41,17 +41,9 @@ module am_addsub #(
 	output wire [W-1:0] s,
 	output wire co
 );
-`ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) wire [W-1:0] bx;
-`else
 	wire [W-1:0] bx;
-`endif
 	wire sub_ci;
-`ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ci (.I0(sub), .O(sub_ci));
-`else
 	assign sub_ci = sub;
-`endif
 	genvar gbi;
 	generate
 	if (W <= 16) begin : g_sub_direct
@@ -59,12 +51,7 @@ module am_addsub #(
 	end else begin : g_sub_sliced
 		for (gbi = 0; gbi < (W + 15) / 16; gbi = gbi + 1) begin : g_sub_sl
 			localparam BW = ((gbi + 1) * 16 <= W) ? 16 : (W - gbi * 16);
-			wire sub_b;
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sub (.I0(sub), .O(sub_b));
-`else
-			assign sub_b = sub;
-`endif
+			wire sub_b = sub;
 			assign bx[gbi * 16 +: BW] = b[gbi * 16 +: BW] ^ {BW{sub_b}};
 		end
 	end

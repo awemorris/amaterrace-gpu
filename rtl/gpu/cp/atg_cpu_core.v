@@ -96,17 +96,17 @@ module atg_cpu_core (
 	wire pc_f_co;
 
 	am_add #(.W(32)) pc_f_add (.a(pc_f), .b(32'd4), .ci(1'b0), .s(pc_f_4), .co(pc_f_co));
-	(* DONT_TOUCH = "TRUE" *) reg [31:0] pc_d;	/* address of the instruction in D (i_rdata) */
+	reg [31:0] pc_d;	/* address of the instruction in D (i_rdata) */
 	reg d_vld;
-	(* DONT_TOUCH = "TRUE" *) reg [31:0] pc_e;	/* address of the instruction in E */
-	(* DONT_TOUCH = "TRUE" *) reg [31:0] ir_e;
-	(* DONT_TOUCH = "TRUE" *) reg [31:0] rs1_e, rs2_e;	/* its operands as read in D */
-	(* DONT_TOUCH = "TRUE" *) reg fwd1_e, fwd2_e;	/* take them from W instead (decided in D: timing) */
+	reg [31:0] pc_e;	/* address of the instruction in E */
+	reg [31:0] ir_e;
+	reg [31:0] rs1_e, rs2_e;	/* its operands as read in D */
+	reg fwd1_e, fwd2_e;	/* take them from W instead (decided in D: timing) */
 	reg e_vld;
 	reg e_busy;	/* its access or multiply/divide has started */
-	(* DONT_TOUCH = "TRUE" *) reg w_wen;	/* W: the last completed instruction writes w_rd */
-	(* DONT_TOUCH = "TRUE" *) reg [4:0] w_rd;
-	(* DONT_TOUCH = "TRUE" *) reg [31:0] w_val;
+	reg w_wen;	/* W: the last completed instruction writes w_rd */
+	reg [4:0] w_rd;
+	reg [31:0] w_val;
 	reg faulted;
 	reg in_irq;
 	reg [31:0] mepc;
@@ -220,6 +220,16 @@ module atg_cpu_core (
 		endcase
 	end
 
+	/* The data address and JALR target have their own dedicated adder
+	 * (not through the ALU's result mux: timing). */
+	wire [31:0] ea_full;
+	wire ea_co;
+
+	am_add #(.W(32)) ea_add (
+		.a(rs1), .b(is_st ? imm_s : imm_i), .ci(1'b0), .s(ea_full), .co(ea_co)
+	);
+	wire [1:0] ea = ea_full[1:0];
+
 	/* PC arithmetic. */
 	wire [31:0] pc_imm, link;
 	wire pc_imm_co, link_co;
@@ -229,7 +239,7 @@ module atg_cpu_core (
 		.co(pc_imm_co)
 	);
 	am_add #(.W(32)) link_add (.a(pc_e), .b(32'd4), .ci(1'b0), .s(link), .co(link_co));
-	wire [31:0] jalr_t = {alu_y[31:1], 1'b0};
+	wire [31:0] jalr_t = {ea_full[31:1], 1'b0};
 	wire taken = is_jal || is_jalr || (is_br && br_cond) || is_mret;
 	wire [31:0] target = is_mret ? mepc : is_jalr ? jalr_t : pc_imm;
 
@@ -238,14 +248,6 @@ module atg_cpu_core (
 	wire [31:0] md_y;
 
 	/* Faults of the instruction in E. */
-	/* The data address has its own adder (not through the ALU's result mux: timing). */
-	wire [31:0] ea_full;
-	wire ea_co;
-
-	am_add #(.W(32)) ea_add (
-		.a(rs1), .b(is_st ? imm_s : imm_i), .ci(1'b0), .s(ea_full), .co(ea_co)
-	);
-	wire [1:0] ea = ea_full[1:0];
 	wire mis_mem = is_mem && (f3[1:0] == 2'd2 ? ea != 2'd0 :
 		f3[1:0] == 2'd1 ? ea[0] : 1'b0);
 	wire mis_jump = taken && target[1:0] != 2'd0;
