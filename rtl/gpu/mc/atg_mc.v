@@ -223,15 +223,15 @@ module atg_mc #(
 	wire [NCLIENT-1:0] dc_preempt = (HAS_DC != 0 && (dc_urgent || dc_panic) && c_req_valid[RC]) ?
 		(~({{(NCLIENT-1){1'b0}}, 1'b1} << RC) & ~{{(NCLIENT-1){1'b0}}, 1'b1}) : {NCLIENT{1'b0}};
 
-	reg quiesce_q;
+	reg [NCLIENT-1:0] tree_hold_r;
 	always @(posedge clk) begin
 		if (!rst_n)
-			quiesce_q <= 1'b0;
+			tree_hold_r <= {NCLIENT{1'b0}};
 		else
-			quiesce_q <= quiesce;
+			tree_hold_r <= ({NCLIENT{quiesce}} & ~QUIESCE_EXEMPT) | dc_preempt;
 	end
 
-	wire [NCLIENT-1:0] tree_hold = ({NCLIENT{quiesce_q}} & ~QUIESCE_EXEMPT) | dc_preempt;
+	wire [NCLIENT-1:0] tree_hold = tree_hold_r;
 	wire [NCLIENT-1:0] c_req_ready_raw;
 	wire m_bready_raw;
 
