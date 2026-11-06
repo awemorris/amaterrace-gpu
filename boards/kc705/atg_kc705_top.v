@@ -195,7 +195,7 @@ module atg_kc705_top #(
 	wire p2_arvalid, p2_arready, p2_rlast, p2_rvalid, p2_rready;
 	wire [127:0] p2_wdata, p2_rdata;
 	wire [15:0] p2_wstrb;
-	/* The split's outputs: d_* to the MIG, h_* to the host. */
+	/* The split's outputs: d_* to the MIG, h_* to the host (via host_pipe). */
 	wire d_awid, d_arid, h_awid, h_arid, h_bid, h_rid;
 	wire [63:0] d_awaddr, d_araddr, h_awaddr, h_araddr;
 	wire [7:0] d_awlen, d_arlen, h_awlen, h_arlen;
@@ -208,6 +208,18 @@ module atg_kc705_top #(
 	wire h_arvalid, h_arready, h_rlast, h_rvalid, h_rready;
 	wire [511:0] d_wdata, d_rdata, h_wdata, h_rdata;
 	wire [63:0] d_wstrb, h_wstrb;
+
+	/* Pipeline slice between split m1 and PCIe host port */
+	wire hp_awid, hp_arid, hp_bid, hp_rid;
+	wire [63:0] hp_awaddr, hp_araddr;
+	wire [7:0] hp_awlen, hp_arlen;
+	wire [2:0] hp_awsize, hp_arsize, hp_awprot, hp_arprot;
+	wire [1:0] hp_awburst, hp_arburst, hp_bresp, hp_rresp;
+	wire [3:0] hp_awcache, hp_arcache;
+	wire hp_awvalid, hp_awready, hp_wlast, hp_wvalid, hp_wready, hp_bvalid, hp_bready;
+	wire hp_arvalid, hp_arready, hp_rlast, hp_rvalid, hp_rready;
+	wire [511:0] hp_wdata, hp_rdata;
+	wire [63:0] hp_wstrb;
 	wire msi_req, msi_ack;
 	/* BAR2 after the gate, to the MIG's second port. */
 	wire [25:0] g2_awaddr, g2_araddr;
@@ -241,16 +253,16 @@ module atg_kc705_top #(
 		.m2_arsize(p2_arsize), .m2_arburst(p2_arburst), .m2_arvalid(p2_arvalid),
 		.m2_arready(p2_arready), .m2_rdata(p2_rdata), .m2_rid(p2_rid), .m2_rresp(p2_rresp),
 		.m2_rlast(p2_rlast), .m2_rvalid(p2_rvalid), .m2_rready(p2_rready),
-		/* GPU -> host memory (gclk), the split's m1 */
+		/* GPU -> host memory (gclk), the split's m1 (via host_pipe) */
 		.s_clk(clk), .s_rst_n(rst_n),
-		.s_awaddr(h_awaddr), .s_awid({3'd0, h_awid}), .s_awlen(h_awlen), .s_awsize(h_awsize),
-		.s_awburst(h_awburst), .s_awvalid(h_awvalid), .s_awready(h_awready),
-		.s_wdata(h_wdata), .s_wstrb(h_wstrb), .s_wlast(h_wlast), .s_wvalid(h_wvalid),
-		.s_wready(h_wready), .s_bid(h_bid4), .s_bresp(h_bresp), .s_bvalid(h_bvalid),
-		.s_bready(h_bready), .s_araddr(h_araddr), .s_arid({3'd0, h_arid}), .s_arlen(h_arlen),
-		.s_arsize(h_arsize), .s_arburst(h_arburst), .s_arvalid(h_arvalid),
-		.s_arready(h_arready), .s_rdata(h_rdata), .s_rid(h_rid4), .s_rresp(h_rresp),
-		.s_rlast(h_rlast), .s_rvalid(h_rvalid), .s_rready(h_rready),
+		.s_awaddr(hp_awaddr), .s_awid({3'd0, hp_awid}), .s_awlen(hp_awlen), .s_awsize(hp_awsize),
+		.s_awburst(hp_awburst), .s_awvalid(hp_awvalid), .s_awready(hp_awready),
+		.s_wdata(hp_wdata), .s_wstrb(hp_wstrb), .s_wlast(hp_wlast), .s_wvalid(hp_wvalid),
+		.s_wready(hp_wready), .s_bid(h_bid4), .s_bresp(hp_bresp), .s_bvalid(hp_bvalid),
+		.s_bready(hp_bready), .s_araddr(hp_araddr), .s_arid({3'd0, hp_arid}), .s_arlen(hp_arlen),
+		.s_arsize(hp_arsize), .s_arburst(hp_arburst), .s_arvalid(hp_arvalid),
+		.s_arready(hp_arready), .s_rdata(hp_rdata), .s_rid(h_rid4), .s_rresp(hp_rresp),
+		.s_rlast(hp_rlast), .s_rvalid(hp_rvalid), .s_rready(hp_rready),
 		.msi_req(msi_req), .msi_ack(msi_ack)
 	);
 
@@ -404,8 +416,36 @@ module atg_kc705_top #(
 		.m1_rresp(h_rresp), .m1_rlast(h_rlast), .m1_rvalid(h_rvalid), .m1_rready(h_rready)
 	);
 
-	assign h_bid = h_bid4[0];
-	assign h_rid = h_rid4[0];
+	/* Register slice for GPU -> host memory AXI channel (breaks long PCIe <-> split/MC route) */
+	am_axi_pipe #(
+		.A_W(64), .D_W(512), .ID_W(1),
+		.PIPE_AW(1), .PIPE_W(1), .PIPE_B(1), .PIPE_AR(1), .PIPE_R(1)
+	) host_pipe (
+		.clk(clk), .rst_n(rst_n),
+		.s_awid(h_awid), .s_awaddr(h_awaddr), .s_awlen(h_awlen), .s_awsize(h_awsize),
+		.s_awburst(h_awburst), .s_awcache(h_awcache), .s_awprot(h_awprot),
+		.s_awvalid(h_awvalid), .s_awready(h_awready),
+		.s_wdata(h_wdata), .s_wstrb(h_wstrb), .s_wlast(h_wlast), .s_wvalid(h_wvalid), .s_wready(h_wready),
+		.s_bid(h_bid), .s_bresp(h_bresp), .s_bvalid(h_bvalid), .s_bready(h_bready),
+		.s_arid(h_arid), .s_araddr(h_araddr), .s_arlen(h_arlen), .s_arsize(h_arsize),
+		.s_arburst(h_arburst), .s_arcache(h_arcache), .s_arprot(h_arprot),
+		.s_arvalid(h_arvalid), .s_arready(h_arready),
+		.s_rid(h_rid), .s_rdata(h_rdata), .s_rresp(h_rresp), .s_rlast(h_rlast),
+		.s_rvalid(h_rvalid), .s_rready(h_rready),
+		.m_awid(hp_awid), .m_awaddr(hp_awaddr), .m_awlen(hp_awlen), .m_awsize(hp_awsize),
+		.m_awburst(hp_awburst), .m_awcache(hp_awcache), .m_awprot(hp_awprot),
+		.m_awvalid(hp_awvalid), .m_awready(hp_awready),
+		.m_wdata(hp_wdata), .m_wstrb(hp_wstrb), .m_wlast(hp_wlast), .m_wvalid(hp_wvalid), .m_wready(hp_wready),
+		.m_bid(hp_bid), .m_bresp(hp_bresp), .m_bvalid(hp_bvalid), .m_bready(hp_bready),
+		.m_arid(hp_arid), .m_araddr(hp_araddr), .m_arlen(hp_arlen), .m_arsize(hp_arsize),
+		.m_arburst(hp_arburst), .m_arcache(hp_arcache), .m_arprot(hp_arprot),
+		.m_arvalid(hp_arvalid), .m_arready(hp_arready),
+		.m_rid(hp_rid), .m_rdata(hp_rdata), .m_rresp(hp_rresp), .m_rlast(hp_rlast),
+		.m_rvalid(hp_rvalid), .m_rready(hp_rready)
+	);
+
+	assign hp_bid = h_bid4[0];
+	assign hp_rid = h_rid4[0];
 
 	/* The local window's gate (MEM WINDOW_CTRL.ENABLE) in user_clk. */
 	am_sync #(.W(1), .RESET_VALUE(1'b1)) win_sync (
