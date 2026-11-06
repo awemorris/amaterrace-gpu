@@ -94,6 +94,11 @@ module atg_rx_setup (
 	(* keep = "true" *) reg [31:0] r_st_lw_data;
 	(* keep = "true" *) reg r_st_ps_we;
 	(* keep = "true" *) reg [31:0] r_st_ps_data;
+	(* keep = "true" *) reg r_st_lw_valid;
+	(* keep = "true" *) reg [15:0] r_st_lw_val;
+	(* keep = "true" *) reg r_st_ps_valid;
+	(* keep = "true" *) reg [15:0] r_st_ps_val;
+	(* keep = "true" *) reg [31:0] r_st_ps_raw;
 	wire [31:0] st_wdata_fpu_lw = r_st_lw_data;
 	wire [31:0] st_wdata_fpu_ps = r_st_ps_data;
 	wire [31:0] st_wdata_cfg_reg = st_wdata;
@@ -210,6 +215,11 @@ module atg_rx_setup (
 			r_st_lw_data <= 32'd0;
 			r_st_ps_we <= 1'b0;
 			r_st_ps_data <= 32'd0;
+			r_st_lw_valid <= 1'b0;
+			r_st_lw_val <= 16'd0;
+			r_st_ps_valid <= 1'b0;
+			r_st_ps_val <= 16'd0;
+			r_st_ps_raw <= 32'd0;
 			vp_idx <= 4'd0;
 			line_width <= 16'h0100;
 			point_size <= 16'h0100;
@@ -254,13 +264,23 @@ module atg_rx_setup (
 			if (st_we && (st_idx == GHCI_S_POINT_SIZE))
 				r_st_ps_data <= st_wdata;
 
-			div_inv_start <= 1'b0;
-			if (r_st_lw_we) begin
-				line_width <= (r_st_lw_data[31:23] != 9'd0) ? lw_fix[15:0] : r_st_lw_data[15:0];
-			end
+			r_st_lw_valid <= r_st_lw_we;
+			if (r_st_lw_we)
+				r_st_lw_val <= (r_st_lw_data[31:23] != 9'd0) ? lw_fix[15:0] : r_st_lw_data[15:0];
+
+			r_st_ps_valid <= r_st_ps_we;
 			if (r_st_ps_we) begin
-				point_size <= (r_st_ps_data[31:23] != 9'd0) ? ps_fix[15:0] : r_st_ps_data[15:0];
-				if (r_st_ps_data == 32'h0100 || r_st_ps_data == 32'h3F800000) begin
+				r_st_ps_val <= (r_st_ps_data[31:23] != 9'd0) ? ps_fix[15:0] : r_st_ps_data[15:0];
+				r_st_ps_raw <= r_st_ps_data;
+			end
+
+			div_inv_start <= 1'b0;
+			if (r_st_lw_valid) begin
+				line_width <= r_st_lw_val;
+			end
+			if (r_st_ps_valid) begin
+				point_size <= r_st_ps_val;
+				if (r_st_ps_raw == 32'h0100 || r_st_ps_raw == 32'h3F800000) begin
 					inv_ps_lo <= 16'h0000;
 					inv_ps_hi <= 16'h3F80;
 				end else
