@@ -96,17 +96,17 @@ module atg_cpu_core (
 	wire pc_f_co;
 
 	am_add #(.W(32)) pc_f_add (.a(pc_f), .b(32'd4), .ci(1'b0), .s(pc_f_4), .co(pc_f_co));
-	reg [31:0] pc_d;	/* address of the instruction in D (i_rdata) */
+	(* DONT_TOUCH = "TRUE" *) reg [31:0] pc_d;	/* address of the instruction in D (i_rdata) */
 	reg d_vld;
-	reg [31:0] pc_e;	/* address of the instruction in E */
-	reg [31:0] ir_e;
-	reg [31:0] rs1_e, rs2_e;	/* its operands as read in D */
-	reg fwd1_e, fwd2_e;	/* take them from W instead (decided in D: timing) */
+	(* DONT_TOUCH = "TRUE" *) reg [31:0] pc_e;	/* address of the instruction in E */
+	(* DONT_TOUCH = "TRUE" *) reg [31:0] ir_e;
+	(* DONT_TOUCH = "TRUE" *) reg [31:0] rs1_e, rs2_e;	/* its operands as read in D */
+	(* DONT_TOUCH = "TRUE" *) reg fwd1_e, fwd2_e;	/* take them from W instead (decided in D: timing) */
 	reg e_vld;
 	reg e_busy;	/* its access or multiply/divide has started */
-	reg w_wen;	/* W: the last completed instruction writes w_rd */
-	reg [4:0] w_rd;
-	reg [31:0] w_val;
+	(* DONT_TOUCH = "TRUE" *) reg w_wen;	/* W: the last completed instruction writes w_rd */
+	(* DONT_TOUCH = "TRUE" *) reg [4:0] w_rd;
+	(* DONT_TOUCH = "TRUE" *) reg [31:0] w_val;
 	reg faulted;
 	reg in_irq;
 	reg [31:0] mepc;
