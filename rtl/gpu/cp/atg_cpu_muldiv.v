@@ -32,12 +32,13 @@ module atg_cpu_muldiv (
 	output reg done,
 	output reg [31:0] y
 );
-	localparam [1:0] S_IDLE = 2'd0;
-	localparam [1:0] S_MUL = 2'd1;	/* product into p */
-	localparam [1:0] S_MSEL = 2'd2;	/* select the half */
-	localparam [1:0] S_DIV = 2'd3;	/* 32 steps, then the sign fix */
+	localparam [2:0] S_IDLE = 3'd0;
+	localparam [2:0] S_MUL  = 3'd1;	/* product into DSP MREG */
+	localparam [2:0] S_MUL2 = 3'd2;	/* product into DSP PREG */
+	localparam [2:0] S_MSEL = 3'd3;	/* select the half */
+	localparam [2:0] S_DIV  = 3'd4;	/* 32 steps, then the sign fix */
 
-	reg [1:0] state;
+	reg [2:0] state;
 	reg [1:0] op_r;	/* funct3[1:0]: the MUL half or REM */
 	/* Multiplier: operands extended to 33 bits by their signedness. */
 	reg signed [32:0] ma, mb;
@@ -82,11 +83,11 @@ module atg_cpu_muldiv (
 	am_add #(.W(6)) cnt_add (.a(cnt), .b(6'd0), .ci(1'b1), .s(cnt_n), .co(ar_bo[3]));
 	wire take = !tsub[32];
 
-	/* The 33 x 33 signed product, registered in S_MUL (one DSP multiply). */
+	/* The 33 x 33 signed product, registered across 2 DSP pipeline stages. */
 	wire [65:0] p;
 
-	am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(1)) mul (
-		.clk(clk), .en(state == S_MUL), .a(ma), .b(mb), .p(p)
+	am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(2)) mul (
+		.clk(clk), .en(state == S_MUL || state == S_MUL2), .a(ma), .b(mb), .p(p)
 	);
 
 	always @(posedge clk) begin
@@ -119,6 +120,8 @@ module atg_cpu_muldiv (
 					end
 				end
 			S_MUL:
+				state <= S_MUL2;
+			S_MUL2:
 				state <= S_MSEL;
 			S_MSEL: begin
 				y <= (op_r[1:0] == 2'd0) ? p[31:0] : p[63:32];

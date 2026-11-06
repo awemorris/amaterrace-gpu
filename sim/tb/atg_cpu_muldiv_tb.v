@@ -90,7 +90,7 @@ module atg_cpu_muldiv_tb;
 				@(negedge clk);
 				n = n + 1;
 			end
-			if (n != (o[2] ? 34 : 3)) begin
+			if (n != (o[2] ? 34 : 4)) begin
 				$display("FAIL latency op=%0d %0d cycles", o, n);
 				errors = errors + 1;
 			end
