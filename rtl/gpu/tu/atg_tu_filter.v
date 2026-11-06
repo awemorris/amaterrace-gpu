@@ -35,13 +35,13 @@
 `default_nettype none
 
 `include "atg_config.vh"
+module atg_tu_filter #(
 `ifdef CFG_TU_ENABLE_BILINEAR
-	localparam ENABLE_BILINEAR = `CFG_TU_ENABLE_BILINEAR;
+	parameter ENABLE_BILINEAR = `CFG_TU_ENABLE_BILINEAR
 `else
-	localparam ENABLE_BILINEAR = 1;
+	parameter ENABLE_BILINEAR = 1
 `endif
-
-module atg_tu_filter (
+) (
 	input wire clk,
 	input wire rst_n,
 	/* From atg_tu_cache */

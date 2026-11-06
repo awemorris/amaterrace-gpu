@@ -58,16 +58,16 @@ module atg_su_fetch #(
 	am_add #(.W(2)) u_wp (.a(wp), .b(2'd0), .ci(1'b1), .s(wp_next), .co(wp_co_unused));
 	am_add #(.W(2)) u_fp (.a(fp), .b(2'd0), .ci(1'b1), .s(fp_next), .co(fp_co_unused));
 	am_add #(.W(2)) u_rp (.a(rp), .b(2'd0), .ci(1'b1), .s(rp_next), .co(rp_co_unused));
-	(* dont_touch = "true" *) wire room = (wp[0] == rp[0]) ? (wp[1] == rp[1]) : 1'b1;
+	wire room = (wp[0] == rp[0]) ? (wp[1] == rp[1]) : 1'b1;
 
-	(* dont_touch = "true" *) wire ic_req_w = f_valid && (wp[0] == rp[0] ? wp[1] == rp[1] : 1'b1);
+	wire ic_req_w = f_valid && room;
 	assign ic_req = ic_req_w;
 	assign ic_addr = f_addr;
-	(* dont_touch = "true" *) wire f_ready_w = room && ic_ready;
+	wire f_ready_w = room && ic_ready;
 	assign f_ready = f_ready_w;
-	(* dont_touch = "true" *) wire push_0 = f_valid && !wp[0] && f_ready_w;
-	(* dont_touch = "true" *) wire push_1 = f_valid && wp[0] && f_ready_w;
-	(* dont_touch = "true" *) wire push_w = f_valid && f_ready_w;
+	wire push_0 = f_valid && !wp[0] && f_ready_w;
+	wire push_1 = f_valid && wp[0] && f_ready_w;
+	wire push_w = f_valid && f_ready_w;
 	(* dont_touch = "true" *) wire fill_0 = ic_rvalid && !fp[0];
 	(* dont_touch = "true" *) wire fill_1 = ic_rvalid && fp[0];
 

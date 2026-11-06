@@ -43,13 +43,8 @@ module atg_su_skid #(
 	genvar gkg;
 	generate
 		for (gkg = 0; gkg < N_SK_GRP; gkg = gkg + 1) begin : g_sk_grp
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rdy (.I0(out_ready), .O(out_ready_g[gkg]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_val (.I0(in_valid),  .O(in_valid_g[gkg]));
-`else
 			assign out_ready_g[gkg] = out_ready;
 			assign in_valid_g[gkg]  = in_valid;
-`endif
 		end
 	endgenerate
 
@@ -68,14 +63,8 @@ module atg_su_skid #(
 			reg out_v_sl;
 			reg skid_v_sl;
 			reg in_r_sl;
-			wire load_out_s, skid_load_s;
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_los (.I0(skid_v_sl ? sl_out_ready : (sl_in_valid && (sl_out_ready || !out_v_sl))), .O(load_out_s));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_sls (.I0(sl_in_valid && in_r_sl), .O(skid_load_s));
-`else
-			assign load_out_s = skid_v_sl ? sl_out_ready : (sl_in_valid && (sl_out_ready || !out_v_sl));
-			assign skid_load_s = sl_in_valid && in_r_sl;
-`endif
+			wire load_out_s = skid_v_sl ? sl_out_ready : (sl_in_valid && (sl_out_ready || !out_v_sl));
+			wire skid_load_s = sl_in_valid && in_r_sl;
 			wire [SL_W-1:0] next_out_s = skid_v_sl ? skid_d_sl : in_data[SL_B +: SL_W];
 
 			always @(posedge clk) begin

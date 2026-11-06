@@ -93,19 +93,9 @@ module atg_su_icache #(
 			st_mwait_f_r <= {N_SL{st_mwait_nxt_f}};
 	end
 
-	wire [31:0] ic_addr_tag;
+	wire [31:0] ic_addr_tag = ic_addr;
 	wire [31:0] ic_addr_ram_lo = ic_addr;
 	wire [31:0] ic_addr_ram_hi = ic_addr;
-`ifdef SYNTH_KINTEX7
-	genvar gia;
-	generate
-		for (gia = 0; gia < 32; gia = gia + 1) begin : g_ic_addr_buf
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_iat (.I0(ic_addr[gia]), .O(ic_addr_tag[gia]));
-		end
-	endgenerate
-`else
-	assign ic_addr_tag = ic_addr;
-`endif
 
 	wire [IX_W-1:0] idx_v  = ic_addr_tag[OFF_W-1:LINE_SHIFT];
 	wire [IX_W-1:0] idx_lo = ic_addr_tag[OFF_W-1:LINE_SHIFT];
@@ -131,15 +121,15 @@ module atg_su_icache #(
 			assign fill_leq_g[gleq] = (line[LB_B +: LW_C] == mline[LB_B +: LW_C]);
 		end
 	endgenerate
-	(* dont_touch = "true" *) wire hit_idle_a = (state == S_IDLE) && valid[idx_v] && (&hit_teq_g[N_TEQ/2-1:0]);
-	(* dont_touch = "true" *) wire hit_idle_b = (state == S_IDLE) && (&hit_teq_g[N_TEQ-1:N_TEQ/2]);
-	(* dont_touch = "true" *) wire hit_m_a    = valid[idx_v] && (&hit_teq_g[N_TEQ/2-1:0]);
-	(* dont_touch = "true" *) wire hit_m_b    = &hit_teq_g[N_TEQ-1:N_TEQ/2];
+	wire hit_idle_a = (state == S_IDLE) && valid[idx_v] && (&hit_teq_g[N_TEQ/2-1:0]);
+	wire hit_idle_b = (state == S_IDLE) && (&hit_teq_g[N_TEQ-1:N_TEQ/2]);
+	wire hit_m_a    = valid[idx_v] && (&hit_teq_g[N_TEQ/2-1:0]);
+	wire hit_m_b    = &hit_teq_g[N_TEQ-1:N_TEQ/2];
 	(* keep = "true" *) wire fill_eq_0 = &fill_leq_g[N_LEQ/2-1:0];
 	(* keep = "true" *) wire fill_eq_1 = (state == S_RESP) && (&fill_leq_g[N_LEQ-1:N_LEQ/2]);
-	(* dont_touch = "true" *) wire from_fill = fill_eq_0 && fill_eq_1;
+	wire from_fill = fill_eq_0 && fill_eq_1;
 	assign ic_ready = (hit_idle_a && hit_idle_b) || from_fill;
-	(* dont_touch = "true" *) wire take = ic_req && ((hit_idle_a && hit_idle_b) || from_fill);
+	wire take = ic_req && ((hit_idle_a && hit_idle_b) || from_fill);
 
 	/* The answer, 2 cycles after the request (BRAM rline + dedicated fabric rline_pipe, Rule 4). */
 	(* shreg_extract = "no", max_fanout = 12 *) reg rv, rv_pipe, rfill, rfill_pipe;

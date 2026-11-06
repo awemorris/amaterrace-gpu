@@ -215,6 +215,7 @@ module atg_su_exp #(
 			assign grp_sel1 = {1'b0, x_grp_sw1[0]};
 		end
 	endgenerate
+	/* verilator lint_off WIDTHEXPAND */
 	wire [15:0] side_w_lo =
 		(grp_sel0 == 2'd0) ? {8'd0, side_shf} :
 		(grp_sel0 == 2'd1) ? {side_shf, 8'd0} :
@@ -223,6 +224,7 @@ module atg_su_exp #(
 		(grp_sel1 == 2'd2) ? {8'd0, side_shf} :
 		(grp_sel1 == 2'd3) ? {side_shf, 8'd0} :
 		                     16'd0;
+	/* verilator lint_on WIDTHEXPAND */
 	wire [31:0] side_w = {side_w_hi, side_w_lo};
 	wire [4:0] fl_lane_z;
 	genvar gzln;
