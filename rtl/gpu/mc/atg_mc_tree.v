@@ -347,12 +347,7 @@ module atg_mc_tree #(
 					.O(gidx_b[0])
 				);
 			end else begin : g_idx_gen
-				for (gb_m = 0; gb_m < CW; gb_m = gb_m + 1) begin : g_idx_buf
-					(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_gi (
-						.I0(grant_idx[gb_m]),
-						.O(gidx_b[gb_m])
-					);
-				end
+				assign gidx_b = grant_idx;
 			end
 			reg [15:0] slice_mux;
 			integer mx_s;
@@ -467,13 +462,7 @@ module atg_mc_tree #(
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ss (
 				.I0(sk_sv_g[GRP]), .O(sk_ss_b[gs_k])
 			);
-			wire [BW-1:0] slice_next;
-			for (gb_k = 0; gb_k < BW; gb_k = gb_k + 1) begin : g_sk_bit
-				(* DONT_TOUCH = "TRUE" *) LUT3 #(.INIT(8'hCA)) u_mx (
-					.I0(sk_in_vec[B0 + gb_k]), .I1(sk_data[B0 + gb_k]), .I2(sk_ss_b[gs_k]),
-					.O(slice_next[gb_k])
-				);
-			end
+			wire [BW-1:0] slice_next = sk_sv_g[GRP] ? sk_data[B0 +: BW] : sk_in_vec[B0 +: BW];
 			always @(posedge clk) begin
 				if (sk_lo_b[gs_k])
 					sk_out_data[B0 +: BW] <= slice_next;

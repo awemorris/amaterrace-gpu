@@ -75,7 +75,7 @@ module atg_mc_atom #(
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam WPL = LINE_BYTES / 4;
 	localparam WW = LINE_SHIFT - 2;
-	localparam [2:0] IDLE = 3'd0, RREQ = 3'd1, RWAIT = 3'd2, WREQ = 3'd3, WWAIT = 3'd4;
+	localparam [2:0] IDLE = 3'd0, RREQ = 3'd1, RWAIT = 3'd2, CALC = 3'd5, WREQ = 3'd3, WWAIT = 3'd4;
 
 
 	reg [2:0] st;
@@ -84,6 +84,8 @@ module atg_mc_atom #(
 	reg [LA_W-1:0] rline;
 	reg [WW-1:0] rwi;
 	reg [31:0] ra, rb, rold;
+	reg [LINE_BYTES*8-1:0] rwdata;
+	reg [LINE_BYTES-1:0] rbe;
 
 	/*
 	 * The next requester: the first valid one after rr, round the ring:
@@ -160,8 +162,13 @@ module atg_mc_atom #(
 					st <= IDLE;
 				end else begin
 					rold <= rword;
-					st <= WREQ;
+					st <= CALC;
 				end
+			end
+			CALC: begin
+				rwdata <= {WPL{new_word}};
+				rbe <= be_w;
+				st <= WREQ;
 			end
 			WREQ: if (req_ready)
 				st <= WWAIT;
@@ -185,7 +192,7 @@ module atg_mc_atom #(
 	always @(*)
 		for (i = 0; i < WPL; i = i + 1)
 			be_w[i*4 +: 4] = {{(32 - WW){1'b0}}, rwi} == i ? 4'hF : 4'h0;
-	assign req_be = st == WREQ ? be_w : {LINE_BYTES{1'b0}};
+	assign req_be = st == WREQ ? rbe : {LINE_BYTES{1'b0}};
 
 	/* The new value of the word: ADD and SUB share one adder-subtractor. */
 	wire [31:0] as_s;
@@ -210,7 +217,7 @@ module atg_mc_atom #(
 		default: new_word = rold;
 		endcase
 	end
-	assign req_wdata = {WPL{new_word}};
+	assign req_wdata = rwdata;
 	assign req_tag = 8'd0;
 
 	wire unused_ok = &{1'b0, rsp_tag, badr[1:0], as_co};

@@ -162,8 +162,8 @@ module atg_su_amb_mux #(
 	localparam TAG_LO = 8 - ID_W;
 
 	wire rst_p = !rst_n;
-	(* dont_touch = "true" *) reg [3:0] lock_r;
-	(* dont_touch = "true" *) reg [4*ID_W-1:0] lock_k_r;
+	reg [3:0] lock_r;
+	reg [4*ID_W-1:0] lock_k_r;
 	reg [ID_W-1:0] pick;
 	reg any;
 	integer i;

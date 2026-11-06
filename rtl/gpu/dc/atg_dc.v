@@ -126,9 +126,7 @@ module atg_dc #(
 	wire rsp_error_b0, rsp_error_b1;
 	LUT1 #(.INIT(2'b10)) u_buf_re0 (.I0(rsp_error), .O(rsp_error_b0));
 	LUT1 #(.INIT(2'b10)) u_buf_re1 (.I0(rsp_error), .O(rsp_error_b1));
-	wire d_we_b0, d_we_b1;
-	LUT1 #(.INIT(2'b10)) u_buf_we0 (.I0(d_we), .O(d_we_b0));
-	LUT1 #(.INIT(2'b10)) u_buf_we1 (.I0(d_we), .O(d_we_b1));
+	wire d_we_b0 = d_we, d_we_b1 = d_we;
 	wire [5:0] d_idx_b0, d_idx_b1;
 	wire [5:0] d_ridx_b0, d_ridx_b1;
 	genvar gib;

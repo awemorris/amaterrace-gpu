@@ -163,13 +163,7 @@ module atg_dc_regs #(
 			LUT1 #(.INIT(2'b10)) u_buf_ieh (.I0(d_idx[gidx]), .O(idx_ext_h[gidx]));
 		end
 	endgenerate
-	wire d_we_ctl, d_we_cfg, d_we_cfg_l, d_we_cfg_h, d_we_ext_l, d_we_ext_h;
-	LUT1 #(.INIT(2'b10)) u_buf_wect (.I0(d_we), .O(d_we_ctl));
-	LUT1 #(.INIT(2'b10)) u_buf_wecf (.I0(d_we), .O(d_we_cfg));
-	LUT1 #(.INIT(2'b10)) u_buf_wecl (.I0(d_we), .O(d_we_cfg_l));
-	LUT1 #(.INIT(2'b10)) u_buf_wech (.I0(d_we), .O(d_we_cfg_h));
-	LUT1 #(.INIT(2'b10)) u_buf_weel (.I0(d_we), .O(d_we_ext_l));
-	LUT1 #(.INIT(2'b10)) u_buf_weeh (.I0(d_we), .O(d_we_ext_h));
+	wire d_we_ctl = d_we, d_we_cfg = d_we, d_we_cfg_l = d_we, d_we_cfg_h = d_we, d_we_ext_l = d_we, d_we_ext_h = d_we;
 	wire flip_valid_b0, flip_valid_b1, flip_valid_n0, flip_valid_n1, flip_valid_ctl;
 	LUT1 #(.INIT(2'b10)) u_buf_fvb0 (.I0(flip_valid), .O(flip_valid_b0));
 	LUT1 #(.INIT(2'b10)) u_buf_fvb1 (.I0(flip_valid), .O(flip_valid_b1));
