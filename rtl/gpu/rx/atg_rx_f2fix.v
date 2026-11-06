@@ -18,8 +18,11 @@
 `default_nettype none
 
 module atg_rx_f2fix #(
-	parameter USE_DSP = 0
+	parameter USE_DSP = 0,
+	parameter LAT = 0
 ) (
+	input wire clk,
+	input wire en,
 	input wire [31:0] f,
 	output wire [23:0] q
 );
@@ -30,8 +33,11 @@ module atg_rx_f2fix #(
 		.ROUND(1),
 		.SATURATE(1),
 		.SAT_BITS(22),
-		.USE_DSP(USE_DSP)
+		.USE_DSP(USE_DSP),
+		.LAT(LAT)
 	) u_impl (
+		.clk(clk),
+		.en(en),
 		.f(f),
 		.q(q)
 	);

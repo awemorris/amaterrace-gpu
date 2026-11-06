@@ -95,9 +95,11 @@ module atg_rx_setup (
 	(* keep = "true" *) reg r_st_ps_we;
 	(* keep = "true" *) reg [31:0] r_st_ps_data;
 	(* keep = "true" *) reg r_st_lw_valid;
-	(* keep = "true" *) reg [15:0] r_st_lw_val;
+	(* keep = "true" *) reg r_st_lw_is_fp;
+	(* keep = "true" *) reg [15:0] r_st_lw_raw_lo;
 	(* keep = "true" *) reg r_st_ps_valid;
-	(* keep = "true" *) reg [15:0] r_st_ps_val;
+	(* keep = "true" *) reg r_st_ps_is_fp;
+	(* keep = "true" *) reg [15:0] r_st_ps_raw_lo;
 	(* keep = "true" *) reg [31:0] r_st_ps_raw;
 	wire [31:0] st_wdata_fpu_lw = r_st_lw_data;
 	wire [31:0] st_wdata_fpu_ps = r_st_ps_data;
@@ -177,8 +179,8 @@ module atg_rx_setup (
 	endgenerate
 
 	wire [23:0] lw_fix, ps_fix;
-	atg_rx_f2fix #(.USE_DSP(1)) u_lw_fix (.f(st_wdata_fpu_lw), .q(lw_fix));
-	atg_rx_f2fix #(.USE_DSP(1)) u_ps_fix (.f(st_wdata_fpu_ps), .q(ps_fix));
+	atg_rx_f2fix #(.USE_DSP(1), .LAT(1)) u_lw_fix (.clk(clk), .en(r_st_lw_we), .f(st_wdata_fpu_lw), .q(lw_fix));
+	atg_rx_f2fix #(.USE_DSP(1), .LAT(1)) u_ps_fix (.clk(clk), .en(r_st_ps_we), .f(st_wdata_fpu_ps), .q(ps_fix));
 
 	wire [31:0] ps_in_fp32;
 	am_fp_fix2f #(.W(16), .F(8), .SIGNED(0)) u_ps2f (.v(st_wdata_fpu_ps[15:0]), .f(ps_in_fp32));
@@ -216,9 +218,11 @@ module atg_rx_setup (
 			r_st_ps_we <= 1'b0;
 			r_st_ps_data <= 32'd0;
 			r_st_lw_valid <= 1'b0;
-			r_st_lw_val <= 16'd0;
+			r_st_lw_is_fp <= 1'b0;
+			r_st_lw_raw_lo <= 16'd0;
 			r_st_ps_valid <= 1'b0;
-			r_st_ps_val <= 16'd0;
+			r_st_ps_is_fp <= 1'b0;
+			r_st_ps_raw_lo <= 16'd0;
 			r_st_ps_raw <= 32'd0;
 			vp_idx <= 4'd0;
 			line_width <= 16'h0100;
@@ -265,21 +269,24 @@ module atg_rx_setup (
 				r_st_ps_data <= st_wdata;
 
 			r_st_lw_valid <= r_st_lw_we;
-			if (r_st_lw_we)
-				r_st_lw_val <= (r_st_lw_data[31:23] != 9'd0) ? lw_fix[15:0] : r_st_lw_data[15:0];
+			if (r_st_lw_we) begin
+				r_st_lw_is_fp <= (r_st_lw_data[31:23] != 9'd0);
+				r_st_lw_raw_lo <= r_st_lw_data[15:0];
+			end
 
 			r_st_ps_valid <= r_st_ps_we;
 			if (r_st_ps_we) begin
-				r_st_ps_val <= (r_st_ps_data[31:23] != 9'd0) ? ps_fix[15:0] : r_st_ps_data[15:0];
+				r_st_ps_is_fp <= (r_st_ps_data[31:23] != 9'd0);
+				r_st_ps_raw_lo <= r_st_ps_data[15:0];
 				r_st_ps_raw <= r_st_ps_data;
 			end
 
 			div_inv_start <= 1'b0;
 			if (r_st_lw_valid) begin
-				line_width <= r_st_lw_val;
+				line_width <= r_st_lw_is_fp ? lw_fix[15:0] : r_st_lw_raw_lo;
 			end
 			if (r_st_ps_valid) begin
-				point_size <= r_st_ps_val;
+				point_size <= r_st_ps_is_fp ? ps_fix[15:0] : r_st_ps_raw_lo;
 				if (r_st_ps_raw == 32'h0100 || r_st_ps_raw == 32'h3F800000) begin
 					inv_ps_lo <= 16'h0000;
 					inv_ps_hi <= 16'h3F80;

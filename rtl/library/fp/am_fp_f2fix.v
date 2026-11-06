@@ -22,8 +22,11 @@ module am_fp_f2fix #(
 	parameter ROUND = 1,        /* 1 = round to nearest even (RNE), 0 = truncate */
 	parameter SATURATE = 1,     /* 1 = saturate to max/min, 0 = wrap */
 	parameter SAT_BITS = 0,     /* saturation bit count (0 = full magnitude W-SIGNED) */
-	parameter USE_DSP = 0       /* 1 = map shifter/internal arithmetic to DSP */
+	parameter USE_DSP = 0,      /* 1 = map shifter/internal arithmetic to DSP */
+	parameter LAT = 0           /* 0 = combinational, 1 = 1 pipeline stage after shift */
 ) (
+	input wire clk,
+	input wire en,
 	input wire [31:0] f,
 	output wire [W-1:0] q
 );
@@ -44,7 +47,7 @@ module am_fp_f2fix #(
 	am_sub #(.W(8)) u_s (.a(E_BASE), .b(exp), .bi(1'b0), .d(shift_amt), .bo(s_bo_unused));
 
 	/* Place 1.mantissa at top of 48-bit word, shift right by shift_amt */
-	wire [47:0] shifted;
+	wire [47:0] shifted_comb;
 	am_shift #(
 		.W(48),
 		.SW(8),
@@ -55,8 +58,31 @@ module am_fp_f2fix #(
 		.amt(shift_amt),
 		.left(1'b0),
 		.arith(1'b0),
-		.y(shifted)
+		.y(shifted_comb)
 	);
+
+	/* Pipeline register stage (LAT = 1) */
+	reg [47:0] r_shifted;
+	reg [7:0]  r_exp;
+	reg        r_sign;
+	reg        r_is_nan;
+	reg        r_is_zero;
+
+	always @(posedge clk) begin
+		if (en) begin
+			r_shifted <= shifted_comb;
+			r_exp     <= exp;
+			r_sign    <= sign;
+			r_is_nan  <= is_nan;
+			r_is_zero <= is_zero;
+		end
+	end
+
+	wire [47:0] shifted   = (LAT != 0) ? r_shifted : shifted_comb;
+	wire [7:0]  act_exp   = (LAT != 0) ? r_exp     : exp;
+	wire        act_sign  = (LAT != 0) ? r_sign    : sign;
+	wire        act_nan   = (LAT != 0) ? r_is_nan  : is_nan;
+	wire        act_zero  = (LAT != 0) ? r_is_zero : is_zero;
 
 	/* Rounding */
 	wire [W-1:0] unrounded = shifted[47:48-W];
@@ -83,7 +109,7 @@ module am_fp_f2fix #(
 			am_addsub #(.W(W)) u_rs (
 				.a({W{1'b0}}),
 				.b(rounded),
-				.sub(sign),
+				.sub(act_sign),
 				.s(signed_res),
 				.co(rs_co_unused)
 			);
@@ -121,16 +147,16 @@ module am_fp_f2fix #(
 	endgenerate
 
 	/* Overflow & Underflow detection */
-	wire is_overflow = (exp >= E_BASE) || (rounded > sat_pos);
-	wire is_underflow = (exp < E_MIN) || is_zero;
+	wire is_overflow = (act_exp >= E_BASE) || (rounded > sat_pos);
+	wire is_underflow = (act_exp < E_MIN) || act_zero;
 
-	wire [W-1:0] sat_res = (!SIGNED && sign) ? {W{1'b0}} :
-		(sign ? sat_neg : sat_pos);
+	wire [W-1:0] sat_res = (!SIGNED && act_sign) ? {W{1'b0}} :
+		(act_sign ? sat_neg : sat_pos);
 
-	assign q = is_nan || is_underflow ? {W{1'b0}} :
+	assign q = act_nan || is_underflow ? {W{1'b0}} :
 		(SATURATE && is_overflow) ? sat_res : signed_res;
 
-	wire unused_ok = &{1'b0, s_bo_unused, r_co_unused, rs_co_unused, sn_co_unused};
+	wire unused_ok = &{1'b0, s_bo_unused, r_co_unused, rs_co_unused, sn_co_unused, clk, en};
 endmodule
 
 `default_nettype wire
