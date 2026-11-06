@@ -118,6 +118,7 @@ module atg_su_cbank #(
 	wire rst_p = !rst_n;
 	reg [31:0] bank [0:CONST_WORDS-1];
 	(* max_fanout = 12 *) reg [3:0] st;
+	reg req_valid_r;
 	(* max_fanout = 12 *) reg valid, lc_pend;
 	reg [31:0] s_region, s_addr, s_words;
 	/* Load. */
@@ -246,52 +247,25 @@ module atg_su_cbank #(
 	am_add #(.W(LW)) u_li (.a(li), .b({LW{1'b0}}), .ci(1'b1), .s(li_next), .co(li_co_unused));
 
 	/* Sliced wide registers res, lbuf, ridx, crq to bound CE fanout <= 16 */
-	wire res_clr_raw = (st == IDLE) && !lc_pend && mine && !rst_p;
-	wire [NPHYS-1:0] res_clr_lane;
-	generate
-	for (gcl = 0; gcl < NPHYS; gcl = gcl + 1) begin : g_cb_res_clr
-`ifdef SYNTH_KINTEX7
-		LUT1 #(.INIT(2'h2)) u_buf_clr (.O(res_clr_lane[gcl]), .I0(res_clr_raw));
-`else
-		assign res_clr_lane[gcl] = res_clr_raw;
-`endif
-	end
-	endgenerate
+	wire res_clr_raw = (st == IDLE) && !lc_pend && mine;
+	wire [NPHYS-1:0] res_clr_lane = {NPHYS{res_clr_raw}};
 
-	wire lbuf_we_raw = (st == LWAIT) && rsp_valid && !rst_p;
-	wire lbuf_we_h0, lbuf_we_h1;
-`ifdef SYNTH_KINTEX7
-	LUT1 #(.INIT(2'h2)) u_buf_lbh0 (.O(lbuf_we_h0), .I0(lbuf_we_raw));
-	LUT1 #(.INIT(2'h2)) u_buf_lbh1 (.O(lbuf_we_h1), .I0(lbuf_we_raw));
-`else
-	assign lbuf_we_h0 = lbuf_we_raw;
-	assign lbuf_we_h1 = lbuf_we_raw;
-`endif
+	wire lbuf_we_raw = (st == LWAIT) && rsp_valid;
+	wire lbuf_we_h0 = lbuf_we_raw, lbuf_we_h1 = lbuf_we_raw;
 
 	generate
 	for (gcl = 0; gcl < NPHYS; gcl = gcl + 1) begin : g_cb_res
 		(* shreg_extract = "no" *) reg [CW-1:0] ridx_l;
-		wire ridx_we_raw = (st == IDLE) && !lc_pend && mine && !rst_p;
-		wire ridx_we_l;
-`ifdef SYNTH_KINTEX7
-		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_rwl (.I0(ridx_we_raw), .O(ridx_we_l));
-`else
-		assign ridx_we_l = ridx_we_raw;
-`endif
+		wire ridx_we_l = (st == IDLE) && !lc_pend && mine;
 		always @(posedge clk)
 			if (ridx_we_l)
 				ridx_l <= xidx[gcl*CW +: CW];
 		assign ridx[gcl*CW +: CW] = ridx_l;
 		for (gch = 0; gch < 2; gch = gch + 1) begin : g_cb_res_h
 			(* shreg_extract = "no" *) reg [15:0] res_h;
-			(* dont_touch = "true" *) reg valid_res_h;
-			wire res_clr_h;
-`ifdef SYNTH_KINTEX7
-			LUT1 #(.INIT(2'h2)) u_buf_clrh (.O(res_clr_h), .I0(res_clr_lane[gcl]));
-`else
-			assign res_clr_h = res_clr_lane[gcl];
-`endif
-			(* dont_touch = "true" *) wire res_we_h = pval_d2 && (pli_d2 == gcl[LW-1:0]) && !rst_p;
+			reg valid_res_h;
+			wire res_clr_h = res_clr_lane[gcl];
+			wire res_we_h = pval_d2 && (pli_d2 == gcl[LW-1:0]);
 			always @(posedge clk) begin
 				valid_res_h <= valid_next;
 				if (res_clr_h)
@@ -304,12 +278,7 @@ module atg_su_cbank #(
 	end
 	for (gcl = 0; gcl < LB / 16; gcl = gcl + 1) begin : g_cb_lbuf
 		(* shreg_extract = "no" *) reg [15:0] lbuf_s;
-		wire lbuf_we_s;
-`ifdef SYNTH_KINTEX7
-		LUT1 #(.INIT(2'h2)) u_buf_we (.O(lbuf_we_s), .I0((gcl < 8) ? lbuf_we_h0 : lbuf_we_h1));
-`else
-		assign lbuf_we_s = (gcl < 8) ? lbuf_we_h0 : lbuf_we_h1;
-`endif
+		wire lbuf_we_s = (gcl < 8) ? lbuf_we_h0 : lbuf_we_h1;
 		always @(posedge clk)
 			if (lbuf_we_s)
 				lbuf_s <= rsp_rdata[gcl*16 +: 16];
@@ -317,9 +286,9 @@ module atg_su_cbank #(
 	end
 	for (gcl = 0; gcl < 6; gcl = gcl + 1) begin : g_cb_crq
 		(* shreg_extract = "no" *) reg [15:0] crq_s;
-		(* dont_touch = "true" *) reg valid_crq_s;
-		(* dont_touch = "true" *) reg crq_rdy_s;
-		(* dont_touch = "true" *) wire crq_we_s = cr_en && crq_rdy_s;
+		reg valid_crq_s;
+		reg crq_rdy_s;
+		wire crq_we_s = cr_en && crq_rdy_s;
 		always @(posedge clk) begin
 			valid_crq_s <= valid_next;
 			crq_rdy_s <= !rst_p;
@@ -330,24 +299,13 @@ module atg_su_cbank #(
 	end
 	endgenerate
 
-	(* dont_touch = "true" *) wire s_reg_we_lo = st_we && (st_idx == GHCI_S_LC_REGION) && !rst_p;
-	(* dont_touch = "true" *) wire s_reg_we_hi = st_we && (st_idx == GHCI_S_LC_REGION) && !rst_p;
-	(* dont_touch = "true" *) wire s_adr_we_lo = st_we && (st_idx == GHCI_S_LC_ADDR) && !rst_p;
-	(* dont_touch = "true" *) wire s_adr_we_hi = st_we && (st_idx == GHCI_S_LC_ADDR) && !rst_p;
-	(* dont_touch = "true" *) wire s_wrd_we_lo = st_we && (st_idx == GHCI_S_LC_WORDS) && !rst_p;
-	(* dont_touch = "true" *) wire s_wrd_we_hi = st_we && (st_idx == GHCI_S_LC_WORDS) && !rst_p;
-	wire ladr_we_raw = ((st == IDLE && lc_pend) || (st == LWR)) && !rst_p;
-	wire [3:0] ladr_we_b;
-	genvar gladr;
-	generate
-		for (gladr = 0; gladr < 4; gladr = gladr + 1) begin : g_ladr_we
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_ladr_we (.O(ladr_we_b[gladr]), .I0(ladr_we_raw));
-`else
-			assign ladr_we_b[gladr] = ladr_we_raw;
-`endif
-		end
-	endgenerate
+	wire s_reg_we_lo = st_we && (st_idx == GHCI_S_LC_REGION);
+	wire s_reg_we_hi = st_we && (st_idx == GHCI_S_LC_REGION);
+	wire s_adr_we_lo = st_we && (st_idx == GHCI_S_LC_ADDR);
+	wire s_adr_we_hi = st_we && (st_idx == GHCI_S_LC_ADDR);
+	wire s_wrd_we_lo = st_we && (st_idx == GHCI_S_LC_WORDS);
+	wire s_wrd_we_hi = st_we && (st_idx == GHCI_S_LC_WORDS);
+	wire [3:0] ladr_we_b = {4{(st == IDLE && lc_pend) || (st == LWR)}};
 	wire [31:0] ladr_mux = (st == IDLE) ? {s_addr[31:2], 2'b00} : ladr_next;
 
 	always @(posedge clk) begin
@@ -357,6 +315,7 @@ module atg_su_cbank #(
 		if (ladr_we_b[3]) ladr[31:24] <= ladr_mux[31:24];
 		if (rst_p) begin
 			st <= IDLE;
+			req_valid_r <= 1'b0;
 			valid <= 1'b0;
 			lc_pend <= 1'b0;
 			s_region <= 32'd0;
@@ -393,6 +352,7 @@ module atg_su_cbank #(
 					if (s_region == 32'd0 && s_words != 32'd0) begin
 						valid <= 1'b1;
 						st <= LREQ;
+						req_valid_r <= 1'b1;
 					end
 				end else if (mine) begin
 					lanes <= x_mask[NPHYS-1:0];
@@ -404,8 +364,10 @@ module atg_su_cbank #(
 					li <= {LW{1'b0}};
 					st <= x_mask[NPHYS-1:0] == {NPHYS{1'b0}} ? BEAT : ACCESS;
 				end
-			LREQ: if (req_ready)
+			LREQ: if (req_ready) begin
 				st <= LWAIT;
+				req_valid_r <= 1'b0;
+			end
 			LWAIT: if (rsp_valid) begin
 				st <= rsp_error ? IDLE : LWR;
 			end
@@ -413,8 +375,10 @@ module atg_su_cbank #(
 				wi <= wi_next;
 				if (wi_next == nw)
 					st <= IDLE;
-				else if (&lwo)
+				else if (&lwo) begin
 					st <= LREQ;
+					req_valid_r <= 1'b1;
+				end
 			end
 			ACCESS: begin
 				pval <= lanes[li];
@@ -512,7 +476,7 @@ module atg_su_cbank #(
 
 	assign cr_data = crq;
 	assign busy = st == LREQ || st == LWAIT || st == LWR || lc_pend || (b_we_r && !sc_on);
-	assign req_valid = st == LREQ;
+	assign req_valid = req_valid_r;
 	assign req_write = 1'b0;
 	assign req_line = ladr[ADDR_W-1:LINE_SHIFT];
 	assign req_be = {LINE_BYTES{1'b0}};
