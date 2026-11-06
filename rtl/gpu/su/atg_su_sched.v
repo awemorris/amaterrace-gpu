@@ -198,15 +198,9 @@ module atg_su_sched #(
 	am_add #(.W(16)) u_idz1 (.a(id_z), .b(16'd0), .ci(1'b1), .s(id_z1), .co(iz_co_unused));
 	wire id_x_last_raw = (id_x == grid_x_m1);
 	wire id_x_last, id_x_last_y, id_x_last_z;
-`ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_idxl  (.I0(id_x_last_raw), .O(id_x_last));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_idxly (.I0(id_x_last_raw), .O(id_x_last_y));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_idxlz (.I0(id_x_last_raw), .O(id_x_last_z));
-`else
 	assign id_x_last   = id_x_last_raw;
 	assign id_x_last_y = id_x_last_raw;
 	assign id_x_last_z = id_x_last_raw;
-`endif
 	(* keep = "true" *) wire id_y_last = (id_y == grid_y_m1);
 	(* keep = "true" *) wire id_z_last = (id_z == grid_z_m1);
 	wire last_id = id_x_last && id_y_last && id_z_last;
@@ -612,15 +606,9 @@ module atg_su_sched #(
 	wire cs_adv_id_x;
 	wire cs_adv_id_y;
 	wire cs_adv_id_z;
-`ifdef SYNTH_KINTEX7
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_adv_x (.I0(cs_adv_id_raw), .O(cs_adv_id_x));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_adv_y (.I0(cs_adv_id_raw), .O(cs_adv_id_y));
-	(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_adv_z (.I0(cs_adv_id_raw), .O(cs_adv_id_z));
-`else
 	assign cs_adv_id_x = cs_adv_id_raw;
 	assign cs_adv_id_y = cs_adv_id_raw;
 	assign cs_adv_id_z = cs_adv_id_raw;
-`endif
 
 	integer w;
 	reg [2:0] nxt_st_w;

@@ -434,47 +434,27 @@ module atg_su #(
 	output wire [31:0] fault_addr
 );
 	/* The memories' scrubs (session protection). */
-	(* keep = "true" *) wire rst_p;
-`ifdef SYNTH_KINTEX7
-	LUT1 #(.INIT(2'b01)) u_b_rst (.I0(rst_n), .O(rst_p));
-`else
-	assign rst_p = !rst_n;
-`endif
-	(* dont_touch = "true" *) wire scrub_rf    = scrub && !rst_p;
-	(* dont_touch = "true" *) wire scrub_lda   = scrub && !rst_p;
-	(* dont_touch = "true" *) wire scrub_lds   = scrub && !rst_p;
-	(* dont_touch = "true" *) wire scrub_cbank = scrub && !rst_p;
-	(* dont_touch = "true" *) wire scrub_exp   = scrub && !rst_p;
-	(* dont_touch = "true" *) wire scrub_pt    = scrub && !rst_p;
-	(* dont_touch = "true" *) wire fl_go_sch   = fl_go && !rst_p;
-	(* dont_touch = "true" *) wire fl_go_exp   = fl_go && !rst_p;
-	(* dont_touch = "true" *) wire vl_go_sch   = vl_go && !rst_p;
-	(* dont_touch = "true" *) wire vl_go_pt    = vl_go && !rst_p;
-	(* dont_touch = "true" *) wire [4:0] fl_lane_exp = fl_lane & {5{!rst_p}};
-	(* dont_touch = "true" *) wire [4:0] fl_lane_wb  = fl_lane & {5{!rst_p}};
-	(* dont_touch = "true" *) wire [31:0] fl_data_exp = fl_data & {32{!rst_p}};
-	(* dont_touch = "true" *) wire [31:0] fl_data_wb  = fl_data & {32{!rst_p}};
+	wire rst_p = !rst_n;
+	wire scrub_rf    = scrub;
+	wire scrub_lda   = scrub;
+	wire scrub_lds   = scrub;
+	wire scrub_cbank = scrub;
+	wire scrub_exp   = scrub;
+	wire scrub_pt    = scrub;
+	wire fl_go_sch   = fl_go;
+	wire fl_go_exp   = fl_go;
+	wire vl_go_sch   = vl_go;
+	wire vl_go_pt    = vl_go;
+	wire [4:0] fl_lane_exp = fl_lane;
+	wire [4:0] fl_lane_wb  = fl_lane;
+	wire [31:0] fl_data_exp = fl_data;
+	wire [31:0] fl_data_wb  = fl_data;
 
-	wire [WARP_W-1:0] fl_slot_rf, fl_slot_exp, fl_slot_wb;
-	wire [WARP_W-1:0] vl_slot_rf, vl_slot_wb;
-`ifdef SYNTH_KINTEX7
-	genvar g_fls;
-	generate
-		for (g_fls = 0; g_fls < WARP_W; g_fls = g_fls + 1) begin : g_fls_buf
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fls_rf  (.I0(fl_slot[g_fls]), .O(fl_slot_rf[g_fls]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fls_exp (.I0(fl_slot[g_fls]), .O(fl_slot_exp[g_fls]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_fls_wb  (.I0(fl_slot[g_fls]), .O(fl_slot_wb[g_fls]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vls_rf  (.I0(vl_slot[g_fls]), .O(vl_slot_rf[g_fls]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_vls_wb  (.I0(vl_slot[g_fls]), .O(vl_slot_wb[g_fls]));
-		end
-	endgenerate
-`else
-	assign fl_slot_rf  = fl_slot;
-	assign fl_slot_exp = fl_slot;
-	assign fl_slot_wb  = fl_slot;
-	assign vl_slot_rf  = vl_slot;
-	assign vl_slot_wb  = vl_slot;
-`endif
+	wire [WARP_W-1:0] fl_slot_rf  = fl_slot;
+	wire [WARP_W-1:0] fl_slot_exp = fl_slot;
+	wire [WARP_W-1:0] fl_slot_wb  = fl_slot;
+	wire [WARP_W-1:0] vl_slot_rf  = vl_slot;
+	wire [WARP_W-1:0] vl_slot_wb  = vl_slot;
 	wire scb_rf, scb_lda, scb_lds, scb_cbank, scb_exp, scb_pt;
 	localparam DW = NPHYS * 32;
 	localparam LA_W = ADDR_W - LINE_SHIFT;
@@ -879,59 +859,16 @@ module atg_su #(
 	genvar g_grp, g_opb;
 	generate
 		for (g_grp = 0; g_grp < N_OGRP; g_grp = g_grp + 1) begin : g_ogrp
-			for (g_opb = 0; g_opb < DW; g_opb = g_opb + 1) begin : g_dw_buf
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xa (.I0(x_a[g_opb]), .O(x_a_grp[g_grp*DW + g_opb]));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xb (.I0(x_b[g_opb]), .O(x_b_grp[g_grp*DW + g_opb]));
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xc (.I0(x_c[g_opb]), .O(x_c_grp[g_grp*DW + g_opb]));
-`else
-				assign x_a_grp[g_grp*DW + g_opb] = x_a[g_opb];
-				assign x_b_grp[g_grp*DW + g_opb] = x_b[g_opb];
-				assign x_c_grp[g_grp*DW + g_opb] = x_c[g_opb];
-`endif
-			end
-			for (g_opb = 0; g_opb < NPHYS*2; g_opb = g_opb + 1) begin : g_mask_buf
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xm (.I0(x_mask[g_opb]), .O(x_mask_grp[g_grp*NPHYS*2 + g_opb]));
-`else
-				assign x_mask_grp[g_grp*NPHYS*2 + g_opb] = x_mask[g_opb];
-`endif
-			end
-			for (g_opb = 0; g_opb < UOP_W; g_opb = g_opb + 1) begin : g_uop_buf
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xu (.I0(x_uop[g_opb]), .O(x_uop_grp[g_grp*UOP_W + g_opb]));
-`else
-				assign x_uop_grp[g_grp*UOP_W + g_opb] = x_uop[g_opb];
-`endif
-			end
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xv (.I0(x_valid), .O(x_valid_grp[g_grp]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xl (.I0(x_last),  .O(x_last_grp[g_grp]));
-`else
+			assign x_a_grp[g_grp*DW +: DW] = x_a;
+			assign x_b_grp[g_grp*DW +: DW] = x_b;
+			assign x_c_grp[g_grp*DW +: DW] = x_c;
+			assign x_mask_grp[g_grp*NPHYS*2 +: NPHYS*2] = x_mask;
+			assign x_uop_grp[g_grp*UOP_W +: UOP_W] = x_uop;
 			assign x_valid_grp[g_grp] = x_valid;
 			assign x_last_grp[g_grp]  = x_last;
-`endif
-			for (g_opb = 0; g_opb < WARP_W; g_opb = g_opb + 1) begin : g_warp_buf
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xw (.I0(x_warp[g_opb]), .O(x_warp_grp[g_grp*WARP_W + g_opb]));
-`else
-				assign x_warp_grp[g_grp*WARP_W + g_opb] = x_warp[g_opb];
-`endif
-			end
-			for (g_opb = 0; g_opb < GRP_W; g_opb = g_opb + 1) begin : g_grp_buf
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xg (.I0(x_grp[g_opb]), .O(x_grp_grp[g_grp*GRP_W + g_opb]));
-`else
-				assign x_grp_grp[g_grp*GRP_W + g_opb] = x_grp[g_opb];
-`endif
-			end
-			for (g_opb = 0; g_opb < SBE_W+1; g_opb = g_opb + 1) begin : g_sbe_buf
-`ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_xs (.I0(x_sbe[g_opb]), .O(x_sbe_grp[g_grp*(SBE_W+1) + g_opb]));
-`else
-				assign x_sbe_grp[g_grp*(SBE_W+1) + g_opb] = x_sbe[g_opb];
-`endif
-			end
+			assign x_warp_grp[g_grp*WARP_W +: WARP_W] = x_warp;
+			assign x_grp_grp[g_grp*GRP_W +: GRP_W] = x_grp;
+			assign x_sbe_grp[g_grp*(SBE_W+1) +: (SBE_W+1)] = x_sbe;
 		end
 	endgenerate
 
