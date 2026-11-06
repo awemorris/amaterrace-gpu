@@ -105,77 +105,59 @@ module atg_mc_cnt #(
 	wire ax_dec_s    = ax_dec;
 `endif
 
-	wire [8*(NCLIENT+1)-1:0] t_c, tc_c;
-	wire [10*(NCLIENT+1)-1:0] ui_c;
-	wire [3*NCLIENT-1:0] chain_co;
+	/*
+	 * Population count trees for active increment/decrement events across clients.
+	 * Evaluated in O(log2 NCLIENT) depth (<= 2 LUT levels) rather than an O(N) daisy-chain.
+	 */
+	wire [4:0] n_take;
+	wire [4:0] n_take_chk;
+	wire [4:0] n_unit_take;
+	wire [4:0] n_unit_rsp;
 
-	assign t_c[7:0] = {8{done_s && !done_keep_s}};
-	assign tc_c[7:0] = {8{done_chk_s}};
-	assign ui_c[9:0] = 10'd0;
+	am_popcount #(.W(NCLIENT), .OW(5)) u_pop_take (
+		.i_vec(take_s & ~KEEP_MASK),
+		.o_cnt(n_take)
+	);
+	am_popcount #(.W(NCLIENT), .OW(5)) u_pop_take_chk (
+		.i_vec(take_s & take_chk_s),
+		.o_cnt(n_take_chk)
+	);
+	am_popcount #(.W(NCLIENT), .OW(5)) u_pop_u_take (
+		.i_vec(take_s & UNIT_MASK),
+		.o_cnt(n_unit_take)
+	);
+	am_popcount #(.W(NCLIENT), .OW(5)) u_pop_u_rsp (
+		.i_vec(rsp_s & UNIT_MASK),
+		.o_cnt(n_unit_rsp)
+	);
 
-	genvar g;
-	generate
-		for (g = 0; g < NCLIENT; g = g + 1) begin : pc
-			am_add #(.W(8)) t_add (
-				.a(t_c[8*g +: 8]), .b(8'd0), .ci(take_s[g] && !KEEP_MASK[g]),
-				.s(t_c[8*(g+1) +: 8]), .co(chain_co[3*g])
-			);
-			am_add #(.W(8)) tc_add (
-				.a(tc_c[8*g +: 8]), .b(8'd0), .ci(take_s[g] && take_chk_s[g]),
-				.s(tc_c[8*(g+1) +: 8]), .co(chain_co[3*g+1])
-			);
-			am_add #(.W(10)) ui_add (
-				.a(ui_c[10*g +: 10]), .b({10{rsp_s[g] && UNIT_MASK[g]}}),
-				.ci(take_s[g] && UNIT_MASK[g]),
-				.s(ui_c[10*(g+1) +: 10]), .co(chain_co[3*g+2])
-			);
-		end
-	endgenerate
-
+	/* Net deltas computed by single-level subtractors */
 	wire [7:0] t_n;
 	wire [7:0] tc_n;
 	wire [9:0] u_delta;
-`ifdef SYNTH_KINTEX7
-	generate
-		if (NCLIENT == 2) begin : g_fast_n2
-			wire t_i0 = take_s[0] && !KEEP_MASK[0];
-			wire t_i1 = take_s[1] && !KEEP_MASK[1];
-			wire t_d  = done_s && !done_keep_s;
-			wire t_neg = !t_i0 && !t_i1 && t_d;
-			assign t_n[0]   = t_i0 ^ t_i1 ^ t_d;
-			assign t_n[1]   = (t_i0 && t_i1 && !t_d) || t_neg;
-			assign t_n[7:2] = {6{t_neg}};
+	wire sub_t_bo_unused, sub_tc_bo_unused, sub_u_bo_unused;
 
-			wire tc_i0 = take_s[0] && take_chk_s[0];
-			wire tc_i1 = take_s[1] && take_chk_s[1];
-			wire tc_d  = done_chk_s;
-			wire tc_neg = !tc_i0 && !tc_i1 && tc_d;
-			assign tc_n[0]   = tc_i0 ^ tc_i1 ^ tc_d;
-			assign tc_n[1]   = (tc_i0 && tc_i1 && !tc_d) || tc_neg;
-			assign tc_n[7:2] = {6{tc_neg}};
-
-			wire u_i0 = take_s[0] && UNIT_MASK[0];
-			wire u_i1 = take_s[1] && UNIT_MASK[1];
-			wire u_d0 = rsp_s[0] && UNIT_MASK[0];
-			wire u_d1 = rsp_s[1] && UNIT_MASK[1];
-			wire u_neg = (!u_i0 && !u_i1 && (u_d0 || u_d1)) || ((u_i0 ^ u_i1) && u_d0 && u_d1);
-			wire u_odd = u_i0 ^ u_i1 ^ u_d0 ^ u_d1;
-			wire u_p2  = u_i0 && u_i1 && !u_d0 && !u_d1;
-			assign u_delta[0]   = u_odd;
-			assign u_delta[1]   = u_p2 || (u_neg && u_odd);
-			assign u_delta[9:2] = {8{u_neg}};
-			wire unused_chains = &{1'b0, t_c, tc_c, ui_c};
-		end else begin : g_gen_n
-			assign t_n = t_c[8*NCLIENT +: 8];
-			assign tc_n = tc_c[8*NCLIENT +: 8];
-			assign u_delta = ui_c[10*NCLIENT +: 10];
-		end
-	endgenerate
-`else
-	assign t_n = t_c[8*NCLIENT +: 8];
-	assign tc_n = tc_c[8*NCLIENT +: 8];
-	assign u_delta = ui_c[10*NCLIENT +: 10];
-`endif
+	am_sub #(.W(8)) u_sub_t (
+		.a({{3{1'b0}}, n_take}),
+		.b({7'd0, done_s && !done_keep_s}),
+		.bi(1'b0),
+		.d(t_n),
+		.bo(sub_t_bo_unused)
+	);
+	am_sub #(.W(8)) u_sub_tc (
+		.a({{3{1'b0}}, n_take_chk}),
+		.b({7'd0, done_chk_s}),
+		.bi(1'b0),
+		.d(tc_n),
+		.bo(sub_tc_bo_unused)
+	);
+	am_sub #(.W(10)) u_sub_u (
+		.a({{5{1'b0}}, n_unit_take}),
+		.b({{5{1'b0}}, n_unit_rsp}),
+		.bi(1'b0),
+		.d(u_delta),
+		.bo(sub_u_bo_unused)
+	);
 
 	/* Each counter: n + this cycle's net delta in a single adder. */
 	wire [7:0] pend_n, chk_nx;
@@ -219,7 +201,7 @@ module atg_mc_cnt #(
 
 	assign ax_zero = ax_n == 8'd0;
 
-	wire unused_ok = &{1'b0, ax_co_unused, chain_co, cnt_co};
+	wire unused_ok = &{1'b0, ax_co_unused, cnt_co, sub_t_bo_unused, sub_tc_bo_unused, sub_u_bo_unused};
 endmodule
 
 `default_nettype wire
