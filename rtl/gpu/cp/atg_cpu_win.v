@@ -116,13 +116,16 @@ module atg_cpu_win #(
 	 * does the window's work from those registers and answers (d_ready),
 	 * or waits while a UOP write finds the FIFO full.  Nothing in the
 	 * answer path depends on d_addr in the same cycle (timing). */
-	localparam S_IDLE = 1'b0;
-	localparam S_ACK = 1'b1;
+	localparam [1:0] S_IDLE  = 2'd0;
+	localparam [1:0] S_DMEM  = 2'd1;
+	localparam [1:0] S_ACK   = 2'd2;
 
-	reg state;
+	reg [1:0] state;
 	reg q_dmem, q_own, q_sub, q_write;
 	reg [5:0] q_idx;
 	reg [31:0] q_wdata;
+	reg [31:0] q_addr;
+	reg [3:0]  q_be;
 
 	wire in_dmem = d_addr[31:16] == 16'h0002;
 	wire in_win = d_addr[31:8] == 24'hF0_0000;
@@ -174,11 +177,11 @@ module atg_cpu_win #(
 	assign st_ridx = st_idx;
 	assign d_ready = ack && !stall;
 
-	/* DMEM: accessed in the cycle the access is taken. */
-	assign m_en = take && in_dmem;
-	assign m_we = d_write ? d_be : 4'd0;
-	assign m_addr = {16'd0, d_addr[15:0]};
-	assign m_wdata = d_wdata;
+	/* DMEM: accessed in S_DMEM stage (isolated from core decode/adder timing). */
+	assign m_en = (state == S_DMEM) && q_dmem;
+	assign m_we = q_write ? q_be : 4'd0;
+	assign m_addr = {16'd0, q_addr[15:0]};
+	assign m_wdata = q_wdata;
 
 	/* Sub-bus: in the answer cycle. */
 	assign sb_we = ack && q_sub && q_write;
@@ -215,6 +218,8 @@ module atg_cpu_win #(
 			q_idx <= idx;
 			q_wdata <= d_wdata;
 			q_write <= d_write;
+			q_addr <= d_addr;
+			q_be <= d_be;
 		end
 	end
 
@@ -240,10 +245,12 @@ module atg_cpu_win #(
 			v_done <= 1'b0;
 			ev_result <= 1'b0;
 			if (take) begin
-				state <= S_ACK;
+				state <= in_dmem ? S_DMEM : S_ACK;
 				q_dmem <= in_dmem;
 				q_own <= in_win && !idx[5] && !idx[4];
 				q_sub <= in_win && (idx[5] || idx[4]);
+			end else if (state == S_DMEM) begin
+				state <= S_ACK;
 			end else if (ack && !stall) begin
 				state <= S_IDLE;
 			end
