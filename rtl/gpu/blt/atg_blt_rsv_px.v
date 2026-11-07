@@ -142,7 +142,7 @@ module atg_blt_rsv_px #(
 
 	/* The group: n pixels at x. */
 	wire [2:0] sh4;	/* log2 of 4 ps, modulo 8 as the 3-bit sum was */
-	wire [LS:0] nfit, room_b, room_l;
+	wire [LS:0] nfit;
 	wire [ADDR_W-1:0] x_b, daddr;
 	wire [2:0] room_t;
 	wire [3:0] grp_co_unused;
@@ -157,11 +157,44 @@ module atg_blt_rsv_px #(
 	wire dals_co_unused;
 	am_add #(.W(LS)) a_dals (.a(drow[LS-1:0]), .b(x_b[LS-1:0]), .ci(1'b0), .s(daddr_ls), .co(dals_co_unused));
 	am_add #(.W(ADDR_W)) a_da (.a(drow), .b(x_b), .ci(1'b0), .s(daddr), .co(grp_co_unused[1]));
-	am_sub #(.W(LS + 1)) s_room (.a(LB_V), .b({1'b0, daddr_ls}), .bi(1'b0), .d(room_b), .bo(grp_co_unused[2]));
-	am_shift #(.W(LS + 1), .SW(3)) h_room (.a(room_b), .amt(psl), .left(1'b0), .arith(1'b0), .y(room_l));
+	assign grp_co_unused[2] = 1'b0;
 	am_sub #(.W(3)) s_rt (.a(3'd4), .b({1'b0, x[1:0]}), .bi(1'b0), .d(room_t), .bo(grp_co_unused[3]));
 	wire [2:0] rem_limit = (|rem[16:3]) ? 3'd4 : rem[2:0];
-	wire [2:0] room_l_limit = (|room_l[LS:3]) ? 3'd4 : room_l[2:0];
+
+	wire [7:0] daddr_ls_pad = {{(8 - LS){1'b0}}, daddr_ls};
+
+	function [2:0] sub4_2b;
+		input [1:0] b;
+		case (b)
+		2'd0: sub4_2b = 3'd4;
+		2'd1: sub4_2b = 3'd3;
+		2'd2: sub4_2b = 3'd2;
+		2'd3: sub4_2b = 3'd1;
+		endcase
+	endfunction
+
+	reg [2:0] room_l_limit;
+	always @(*) begin
+		if (LS >= 6) begin
+			case (psl)
+			3'd0: room_l_limit = (daddr_ls_pad[5:2] == 4'b1111) ? sub4_2b(daddr_ls_pad[1:0]) : 3'd4;
+			3'd1: room_l_limit = (daddr_ls_pad[5:3] == 3'b111)  ? sub4_2b(daddr_ls_pad[2:1]) : 3'd4;
+			3'd2: room_l_limit = (daddr_ls_pad[5:4] == 2'b11)   ? sub4_2b(daddr_ls_pad[3:2]) : 3'd4;
+			3'd3: room_l_limit = daddr_ls_pad[5]                ? sub4_2b(daddr_ls_pad[4:3]) : 3'd4;
+			3'd4: room_l_limit = sub4_2b(daddr_ls_pad[5:4]);
+			default: room_l_limit = 3'd4;
+			endcase
+		end else begin
+			case (psl)
+			3'd0: room_l_limit = (daddr_ls_pad[4:2] == 3'b111)  ? sub4_2b(daddr_ls_pad[1:0]) : 3'd4;
+			3'd1: room_l_limit = (daddr_ls_pad[4:3] == 2'b11)   ? sub4_2b(daddr_ls_pad[2:1]) : 3'd4;
+			3'd2: room_l_limit = daddr_ls_pad[4]                ? sub4_2b(daddr_ls_pad[3:2]) : 3'd4;
+			3'd3: room_l_limit = sub4_2b(daddr_ls_pad[4:3]);
+			3'd4: room_l_limit = (daddr_ls_pad[4] ? 3'd1 : 3'd2);
+			default: room_l_limit = 3'd4;
+			endcase
+		end
+	end
 	reg [2:0] n;
 
 	always @(*) begin
@@ -227,7 +260,7 @@ module atg_blt_rsv_px #(
 	wire wr_free = !wr_valid || wr_ready;
 	wire a_same = b_v && b_line == a_line;
 	wire a_take = a_v && (!b_v || a_same || wr_free);
-	wire a_free = !a_v || a_take;
+	wire a_free = !a_v || !b_v || (b_line == a_line) || wr_free;
 	wire fire = active && v0 && (!need2 || v1) && a_free && !a_pend;
 
 	reg fv_start;
@@ -449,7 +482,7 @@ module atg_blt_rsv_px #(
 				n, ptr, v0, v1, avg[63:0], win[127:0]);
 `endif
 
-	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB], room_b[1:0], pend,
+	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB], pend,
 		grp_co_unused, gb_co_unused, row_co_unused, dals_co_unused};
 endmodule
 
