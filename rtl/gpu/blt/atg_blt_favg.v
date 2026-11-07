@@ -56,7 +56,8 @@ module atg_blt_favg (
 	reg [2:0] m_fmt, m_psl, m_n;
 	reg [1:0] p;		/* the pixel */
 	reg [2:0] j;		/* its channel */
-	reg [1:0] step, fma_wait;
+	reg [1:0] step;
+	reg [2:0] fma_wait;
 	reg [31:0] r01, r23, sm, r_final;
 	reg [31:0] r_fa, r_fb, r_fc;
 
@@ -140,7 +141,7 @@ module atg_blt_favg (
 	/* The fma: fb is 1.0 or 0.25 (a significand of 2^23), so the product of
 	 * the significands is fa's shifted (no multiplier). */
 	wire [31:0] fr;
-	am_fp_fma_p #(.LAT(2)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(r_fa), .b0(r_fb), .c0(r_fc), .rm(3'd0), .noc(1'b0),
+	am_fp_fma_p #(.LAT(3)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(r_fa), .b0(r_fb), .c0(r_fc), .rm(3'd0), .noc(1'b0),
 		.p({1'b0, r_fa[30:23] != 8'd0 ? {1'b1, r_fa[22:0]} : 24'd0, 23'd0}), .r(fr));
 	wire [15:0] fh;
 	am_fp_f2h #(.LAT(0)) u_fh (.f(r_final), .h(fh));
@@ -204,7 +205,7 @@ module atg_blt_favg (
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= IDLE;
-			fma_wait <= 2'd0;
+			fma_wait <= 3'd0;
 			r_final <= 32'd0;
 		end else begin
 			case (st)
@@ -216,22 +217,23 @@ module atg_blt_favg (
 				p <= 2'd0;
 				j <= 3'd0;
 				step <= 2'd0;
-				fma_wait <= 2'd0;
+				fma_wait <= 3'd0;
 				out_p <= 128'd0;
 				st <= RUN;
 			end
 			RUN: begin
 				case (fma_wait)
-				2'd0: begin
+				3'd0: begin
 					r_fa <= fa;
 					r_fb <= fb;
 					r_fc <= fc;
-					fma_wait <= 2'd1;
+					fma_wait <= 3'd1;
 				end
-				2'd1: fma_wait <= 2'd2;
-				2'd2: fma_wait <= 2'd3;
-				2'd3: begin
-					fma_wait <= 2'd0;
+				3'd1: fma_wait <= 3'd2;
+				3'd2: fma_wait <= 3'd3;
+				3'd3: fma_wait <= 3'd4;
+				3'd4: begin
+					fma_wait <= 3'd0;
 					if (step == 2'd0) begin
 						r01 <= fr;
 						step <= step_inc;
@@ -250,6 +252,7 @@ module atg_blt_favg (
 							st <= COMMIT;
 					end
 				end
+				default: fma_wait <= 3'd0;
 				endcase
 			end
 			ENC_START: begin
@@ -261,7 +264,7 @@ module atg_blt_favg (
 				st <= IDLE;
 			endcase
 			if (take) begin
-				fma_wait <= 2'd0;
+				fma_wait <= 3'd0;
 				if (m_fmt == 3'd3)
 					out_p[{op_s[28:0], 3'b000} +: 8] <= e_code;
 				else if (m_fmt == 3'd4)

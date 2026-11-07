@@ -194,7 +194,7 @@ module am_fp_fma_p #(
 		end
 	end
 
-	/* --- Stage 2: LOD, Normalization, Rounding --- */
+	/* --- Stage 2: LOD, Normalization --- */
 	wire [76:0] s1_sum      = (LAT >= 1) ? r1_sum      : sum;
 	wire        s1_sr       = (LAT >= 1) ? r1_sr       : s0_sr;
 	wire [11:0] s1_ab       = (LAT >= 1) ? r1_ab       : s0_ab;
@@ -216,11 +216,62 @@ module am_fp_fma_p #(
 	am_add #(.W(12)) u_t1 (.a(s1_ab), .b(s1_adj), .ci(1'b0), .s(t1), .co(carry_unused[10]));
 	am_add #(.W(12)) u_t2 (.a(t1), .b({5'd0, msb}), .ci(1'b0), .s(t2), .co(carry_unused[11]));
 	am_sub #(.W(12)) u_er (.a(t2), .b(12'd175), .bi(1'b0), .d(er), .bo(carry_unused[12]));
-	wire [31:0] rnd;
-	am_fp_rnd #(.LAT(0)) u_rnd (.s(s1_sr), .e(er), .m(nrm[76:53]), .g(nrm[52]), .st(|nrm[51:0]), .rm(s1_rm), .r(rnd));
 
-	assign r = s1_spec_hit ? s1_spec_res :
-		!sum_nz ? {s1_rdn, 31'd0} : rnd;
+	/* --- Stage 2 -> Stage 3 Pipeline Register (LAT >= 3) --- */
+	reg        r2_sr;
+	reg [11:0] r2_er;
+	reg [23:0] r2_m;
+	reg        r2_g;
+	reg        r2_st;
+	reg [2:0]  r2_rm;
+	reg        r2_rdn;
+	reg        r2_spec_hit;
+	reg [31:0] r2_spec_res;
+	reg        r2_sum_nz;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r2_sr       <= 1'b0;
+			r2_er       <= 12'd0;
+			r2_m        <= 24'd0;
+			r2_g        <= 1'b0;
+			r2_st       <= 1'b0;
+			r2_rm       <= 3'd0;
+			r2_rdn      <= 1'b0;
+			r2_spec_hit <= 1'b0;
+			r2_spec_res <= 32'd0;
+			r2_sum_nz   <= 1'b0;
+		end else if (en) begin
+			r2_sr       <= s1_sr;
+			r2_er       <= er;
+			r2_m        <= nrm[76:53];
+			r2_g        <= nrm[52];
+			r2_st       <= |nrm[51:0];
+			r2_rm       <= s1_rm;
+			r2_rdn      <= s1_rdn;
+			r2_spec_hit <= s1_spec_hit;
+			r2_spec_res <= s1_spec_res;
+			r2_sum_nz   <= sum_nz;
+		end
+	end
+
+	/* --- Stage 3: Rounding and Final Result --- */
+	wire        s2_sr       = (LAT >= 3) ? r2_sr       : s1_sr;
+	wire [11:0] s2_er       = (LAT >= 3) ? r2_er       : er;
+	wire [23:0] s2_m        = (LAT >= 3) ? r2_m        : nrm[76:53];
+	wire        s2_g        = (LAT >= 3) ? r2_g        : nrm[52];
+	wire        s2_st       = (LAT >= 3) ? r2_st       : |nrm[51:0];
+	wire [2:0]  s2_rm       = (LAT >= 3) ? r2_rm       : s1_rm;
+	wire        s2_rdn      = (LAT >= 3) ? r2_rdn      : s1_rdn;
+	wire        s2_spec_hit = (LAT >= 3) ? r2_spec_hit : s1_spec_hit;
+	wire [31:0] s2_spec_res = (LAT >= 3) ? r2_spec_res : s1_spec_res;
+	wire        s2_sum_nz   = (LAT >= 3) ? r2_sum_nz   : sum_nz;
+
+	wire [31:0] rnd;
+	am_fp_rnd #(.LAT(0)) u_rnd (.s(s2_sr), .e(s2_er), .m(s2_m), .g(s2_g), .st(s2_st), .rm(s2_rm), .r(rnd));
+
+	assign r = s2_spec_hit ? s2_spec_res :
+		!s2_sum_nz ? {s2_rdn, 31'd0} : rnd;
 
 	wire unused_lat0 = (LAT == 0) ? &{1'b0, clk, rst_n, en} : 1'b0;
 	wire unused_ok = &{1'b0, kp2[10:7], carry_unused, unused_lat0};
