@@ -157,14 +157,24 @@ module atg_blt_rsv_px #(
 	am_shift #(.W(ADDR_W), .SW(3)) h_x (.a(tiled ? {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} :
 		{{(ADDR_W - 17){1'b0}}, x}), .amt(psl), .left(1'b1), .arith(1'b0), .y(x_b));
 	wire [LS-1:0] daddr_ls;
-	wire dals_co_unused;
+	wire dals_co_unused, dals_next_co, dals_init_co;
 	am_add #(.W(LS)) a_dals (.a(drow[LS-1:0]), .b(x_b[LS-1:0]), .ci(1'b0), .s(daddr_ls), .co(dals_co_unused));
 	am_add #(.W(ADDR_W)) a_da (.a(drow), .b(x_b), .ci(1'b0), .s(daddr), .co(grp_co_unused[1]));
 	assign grp_co_unused[2] = 1'b0;
 	am_sub #(.W(3)) s_rt (.a(3'd4), .b({1'b0, x[1:0]}), .bi(1'b0), .d(room_t), .bo(grp_co_unused[3]));
 	wire [2:0] rem_limit = (|rem[16:3]) ? 3'd4 : rem[2:0];
 
-	wire [7:0] daddr_ls_pad = {{(8 - LS){1'b0}}, daddr_ls};
+	reg [LS-1:0] daddr_ls_r;
+	wire [LS-1:0] daddr_ls_next;
+	am_add #(.W(LS)) a_dals_step (.a(daddr_ls_r), .b({{(LS-5){1'b0}}, grp_nb}), .ci(1'b0), .s(daddr_ls_next), .co(dals_next_co));
+
+	wire [ADDR_W-1:0] d_x_b;
+	am_shift #(.W(ADDR_W), .SW(3)) h_dx (.a(tiled ? {{(ADDR_W - 19){1'b0}}, d_x[16:2], 2'b00, d_x[1:0]} :
+		{{(ADDR_W - 17){1'b0}}, d_x}), .amt(psl), .left(1'b1), .arith(1'b0), .y(d_x_b));
+	wire [LS-1:0] daddr_ls_init;
+	am_add #(.W(LS)) a_dals_init (.a(d_drow[LS-1:0]), .b(d_x_b[LS-1:0]), .ci(1'b0), .s(daddr_ls_init), .co(dals_init_co));
+
+	wire [7:0] daddr_ls_pad = {{(8 - LS){1'b0}}, daddr_ls_r};
 
 	function [2:0] sub4_2b;
 		input [1:0] b;
@@ -377,6 +387,7 @@ module atg_blt_rsv_px #(
 			v0 <= 1'b0;
 			v1 <= 1'b0;
 			ptr <= {LS{1'b0}};
+			daddr_ls_r <= {LS{1'b0}};
 			p_v <= 1'b0;
 			p_win <= 512'd0;
 			p_line <= {LA_W{1'b0}};
@@ -405,6 +416,7 @@ module atg_blt_rsv_px #(
 				drow <= d_drow;
 				lines_left <= d_nl;
 				ptr <= d_off;
+				daddr_ls_r <= daddr_ls_init;
 				v0 <= 1'b0;
 				v1 <= 1'b0;
 				head <= 1'b0;
@@ -435,6 +447,7 @@ module atg_blt_rsv_px #(
 				if (fire) begin
 					x <= x_next;
 					rem <= rem_next;
+					daddr_ls_r <= daddr_ls_next;
 					if (row_end)
 						active <= 1'b0;
 				end
@@ -516,7 +529,7 @@ module atg_blt_rsv_px #(
 `endif
 
 	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB], pend,
-		grp_co_unused, gb_co_unused, row_co_unused, dals_co_unused};
+		grp_co_unused, gb_co_unused, row_co_unused, dals_co_unused, dals_next_co, dals_init_co};
 endmodule
 
 `default_nettype wire
