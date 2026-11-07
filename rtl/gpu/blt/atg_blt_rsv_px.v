@@ -153,8 +153,11 @@ module atg_blt_rsv_px #(
 	/* The pixel's bytes in the row (linear or in 4x4 tiles), its address, the room to the line's end. */
 	am_shift #(.W(ADDR_W), .SW(3)) h_x (.a(tiled ? {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} :
 		{{(ADDR_W - 17){1'b0}}, x}), .amt(psl), .left(1'b1), .arith(1'b0), .y(x_b));
+	wire [LS-1:0] daddr_ls;
+	wire dals_co_unused;
+	am_add #(.W(LS)) a_dals (.a(drow[LS-1:0]), .b(x_b[LS-1:0]), .ci(1'b0), .s(daddr_ls), .co(dals_co_unused));
 	am_add #(.W(ADDR_W)) a_da (.a(drow), .b(x_b), .ci(1'b0), .s(daddr), .co(grp_co_unused[1]));
-	am_sub #(.W(LS + 1)) s_room (.a(LB_V), .b({1'b0, daddr[LS-1:0]}), .bi(1'b0), .d(room_b), .bo(grp_co_unused[2]));
+	am_sub #(.W(LS + 1)) s_room (.a(LB_V), .b({1'b0, daddr_ls}), .bi(1'b0), .d(room_b), .bo(grp_co_unused[2]));
 	am_shift #(.W(LS + 1), .SW(3)) h_room (.a(room_b), .amt(psl), .left(1'b0), .arith(1'b0), .y(room_l));
 	am_sub #(.W(3)) s_rt (.a(3'd4), .b({1'b0, x[1:0]}), .bi(1'b0), .d(room_t), .bo(grp_co_unused[3]));
 	wire [2:0] rem_limit = (|rem[16:3]) ? 3'd4 : rem[2:0];
@@ -249,7 +252,8 @@ module atg_blt_rsv_px #(
 		.clk(clk), .rst_n(frst_n), .i_valid(fv_start), .i_ready(f_ready), .fmt(fmt), .psl(psl),
 		.npx(fv_n), .in_s(fv_in_s), .o_valid(f_valid), .o_ready(1'b1), .out_p(favg)
 	);
-	wire row_end = fire && rem == {14'd0, n};
+	wire is_last_group = (rem[16:3] == 14'd0) && (rem[2:0] == n);
+	wire row_end = fire && is_last_group;
 
 	/* The window after this cycle's group (before a load). */
 	reg [LBITS-1:0] nw0;
@@ -292,9 +296,9 @@ module atg_blt_rsv_px #(
 	end
 
 `ifdef MUT_RSV_ROWEND
-	wire may_load = active && !row_end;
+	wire may_load = active && !is_last_group;
 `else
-	wire may_load = active && !row_end && lines_left != 17'd0;
+	wire may_load = active && !is_last_group && lines_left != 17'd0;
 `endif
 	assign lq_pop = may_load && lq_valid && (!v0 || !v1);
 	assign rq_pop = !active && rq_valid;
@@ -450,7 +454,7 @@ module atg_blt_rsv_px #(
 `endif
 
 	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB], room_b[1:0], pend,
-		grp_co_unused, gb_co_unused, row_co_unused};
+		grp_co_unused, gb_co_unused, row_co_unused, dals_co_unused};
 endmodule
 
 `default_nettype wire
