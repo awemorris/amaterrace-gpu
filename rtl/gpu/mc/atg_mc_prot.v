@@ -239,12 +239,32 @@ module atg_mc_prot #(
 	reg [LB-1:0] p_data;
 	reg [LA_W-1:0] p_line;
 
+	/* ------------------------------------------- Stage 2 registers */
+
+	reg j2_v;
+	reg j2_src_p;
+	reg j2_p_err;
+	reg [HPW-1:0] j2_head;
+	reg [LB-1:0] j2_data;
+	reg [LA_W-1:0] j2_line;
+	reg [GW-1:0] j2_idx;
+	reg j2_rng;
+	reg [7:0] j2_b;
+	reg j2_hit;
+	reg j2_cam;
+
 	wire [7:0] a_client = a_head[19:12];
 	wire [7:0] j_client = j_head[19:12];
 	wire [7:0] p_client = p_head[19:12];
+	wire [7:0] j2_client = j2_head[19:12];
 
-	/* The judge: P when it is not waiting for a walk, else J. */
-	wire src_p = p_v && !p_walk;
+	/* Stage 1: P when ready, else J. Neither is presented if already in Stage 2. */
+	wire j1_has_p = p_v && !p_walk && !(j2_v && j2_src_p);
+	wire j_blocked = p_v && p_client == j_client;
+	wire j1_has_j = j_v && !j_blocked && !(j2_v && !j2_src_p);
+	wire src_p = j1_has_p;
+	wire j1_valid = P && (j1_has_p || j1_has_j);
+
 	wire [HPW-1:0] s_head = src_p ? p_head : j_head;
 	wire [LA_W-1:0] s_line = src_p ? p_line : j_line;
 	wire s_write = s_head[1] || rmw_of(s_head[19:12]);
@@ -271,12 +291,6 @@ module atg_mc_prot #(
 	);
 
 	wire [7:0] s_b = s_pline[{s_byte, 3'b000} +: 8];
-`ifdef MUT_PROT_RO
-	wire s_own = s_slot != 6'd0 && s_b[5:0] == s_slot;
-`else
-	wire s_own = s_slot != 6'd0 && s_b[5:0] == s_slot && !(s_write && s_b[6]);
-`endif
-	wire s_pub = s_b[7] && !s_write;
 	wire s_cam;
 
 	atg_mc_grant #(.NGRANT(NGRANT), .IDX_W(GIDX_W)) cam (
@@ -285,8 +299,18 @@ module atg_mc_prot #(
 		.slot(s_slot), .g(s_g), .write(s_write), .hit(s_cam)
 	);
 
-	wire s_ok = s_rng && (s_cam || pl_hit && (s_own || s_pub));
-	wire s_refuse = !s_rng || pl_hit && !s_own && !s_pub && !s_cam;
+	/* Stage 2 evaluation */
+	wire j2_write = j2_head[1] || rmw_of(j2_head[19:12]);
+	wire [5:0] j2_slot = j2_head[HW+1 +: 6];
+`ifdef MUT_PROT_RO
+	wire s_own = j2_slot != 6'd0 && j2_b[5:0] == j2_slot;
+`else
+	wire s_own = j2_slot != 6'd0 && j2_b[5:0] == j2_slot && !(j2_write && j2_b[6]);
+`endif
+	wire s_pub = j2_b[7] && !j2_write;
+
+	wire s_ok = j2_rng && (j2_cam || j2_hit && (s_own || s_pub));
+	wire s_refuse = !j2_rng || j2_hit && !s_own && !s_pub && !j2_cam;
 	wire s_miss = !s_ok && !s_refuse;
 
 `ifdef MUT_PROT_RECHECK
@@ -294,14 +318,15 @@ module atg_mc_prot #(
 `else
 	wire chg = fill || inv_valid || gw_valid;
 `endif
-	wire j_blocked = p_v && p_client == j_client;
-	wire x_valid = P && !chg && (src_p || j_v && !j_blocked);
-	wire x_axi = x_valid && !(src_p && p_err) && s_ok;
-	wire x_bad = x_valid && (src_p && p_err || s_refuse);
-	wire x_walk = x_valid && src_p && !p_err && s_miss;
-	wire j_to_p = x_valid && !src_p && s_miss && !p_v;
 
-	wire a_blocked = j_v && j_client == a_client || p_v && p_client == a_client;
+	wire x_valid = P && !chg && j2_v;
+	wire x_axi = x_valid && !(j2_src_p && j2_p_err) && s_ok;
+	wire x_bad = x_valid && (j2_src_p && j2_p_err || s_refuse);
+	wire x_walk = x_valid && j2_src_p && !j2_p_err && s_miss;
+	wire j_to_p = x_valid && !j2_src_p && s_miss && !p_v;
+
+	wire a_blocked = j_v && j_client == a_client || p_v && p_client == a_client ||
+		j2_v && j2_client == a_client;
 	wire a_axi = a_valid && a_direct && !a_isbad && !a_blocked;
 	wire a_bad = a_valid && a_direct && a_isbad && !a_blocked;
 
@@ -324,11 +349,11 @@ module atg_mc_prot #(
 	assign g_valid = !err_busy && (sel_d || sel_w || sel_x || sel_a);
 	wire g_fire = g_valid && g_ready;
 
-	wire [LB-1:0] g_head = sel_d ? d_head : sel_x ? {{(LB-HPW){1'b0}}, s_head} : a_head;
+	wire [LB-1:0] g_head = sel_d ? d_head : sel_x ? {{(LB-HPW){1'b0}}, j2_head} : a_head;
 	assign g_write = !sel_w && g_head[1];
-	assign g_line = sel_w ? w_line : sel_d ? d_line : sel_x ? s_line : a_line;
+	assign g_line = sel_w ? w_line : sel_d ? d_line : sel_x ? j2_line : a_line;
 	assign g_be = g_head[20+RW+LAW +: LINE_BYTES];
-	assign g_wdata = sel_d ? d_data : sel_x ? (src_p ? p_data : j_data) : a_data;
+	assign g_wdata = sel_d ? d_data : sel_x ? j2_data : a_data;
 	assign g_user = sel_w ? {{RW{1'b0}}, 8'hFF, 8'h00} : {g_head[20 +: RW], g_head[19:4]};
 
 	/* The refusal: D, J or P, A; only when no AXI grant is made. */
@@ -336,11 +361,11 @@ module atg_mc_prot #(
 	wire bd_x = !bd_d && x_bad;
 	wire bd_a = !bd_d && !bd_x && a_bad;
 	assign bad = !err_busy && !g_fire && (bd_d || bd_x || bd_a);
-	wire [LB-1:0] b_head = bd_d ? d_head : bd_x ? {{(LB-HPW){1'b0}}, s_head} : a_head;
+	wire [LB-1:0] b_head = bd_d ? d_head : bd_x ? {{(LB-HPW){1'b0}}, j2_head} : a_head;
 	assign bad_head = b_head[HPW-1:0];
-	assign bad_line = bd_d ? d_line : bd_x ? s_line : a_line;
-	assign bad_prot = bd_x && !(src_p && p_err) || bd_a && a_inside;
-	assign bad_mem = bd_x && src_p && p_err;
+	assign bad_line = bd_d ? d_line : bd_x ? j2_line : a_line;
+	assign bad_prot = bd_x && !(j2_src_p && j2_p_err) || bd_a && a_inside;
+	assign bad_mem = bd_x && j2_src_p && j2_p_err;
 
 	wire fired_x = g_fire && sel_x || bad && bd_x;
 	wire fired_a = g_fire && sel_a || bad && bd_a;
@@ -348,7 +373,10 @@ module atg_mc_prot #(
 	assign done = g_fire && !sel_w || bad;
 	assign done_chk = fired_x || fired_a && a_chk;
 
-	wire j_leave = fired_x && !src_p || j_to_p;
+	wire j2_done = fired_x || (g_fire && sel_w) || j_to_p;
+	wire j1_advance = j1_valid && !chg && (!j2_v || j2_done);
+
+	wire j_leave = fired_x && !j2_src_p || j_to_p;
 	wire a_to_j = P && a_valid && !a_direct && !j_v;
 	assign a_take = fired_a || a_to_j;
 
@@ -357,6 +385,32 @@ module atg_mc_prot #(
 	wire w_stale = p_stale || p_inv;
 	assign fill = P && w_valid && !w_error && !w_stale;
 	assign inv_pending = inv_pend;
+
+	/* ------------------------------------------- Pipeline control */
+
+	always @(posedge clk) begin
+		if (!rst_n || flush || !P) begin
+			j2_v <= 1'b0;
+		end else begin
+			if (j2_v && chg) begin
+				j2_v <= 1'b0;
+			end else if (j1_advance) begin
+				j2_v <= 1'b1;
+				j2_src_p <= src_p;
+				j2_p_err <= src_p && p_err;
+				j2_head <= s_head;
+				j2_data <= src_p ? p_data : j_data;
+				j2_line <= s_line;
+				j2_idx <= s_idx;
+				j2_rng <= s_rng;
+				j2_b <= s_b;
+				j2_hit <= pl_hit;
+				j2_cam <= s_cam;
+			end else if (j2_done) begin
+				j2_v <= 1'b0;
+			end
+		end
+	end
 
 	/* ------------------------------------------- J and P registers */
 
@@ -373,7 +427,7 @@ module atg_mc_prot #(
 				j_v <= 1'b0;
 			if (a_to_j)
 				j_v <= 1'b1;
-			if (fired_x && src_p) begin
+			if (fired_x && j2_src_p) begin
 				p_v <= 1'b0;
 				inv_pend <= 1'b0;
 			end
@@ -407,16 +461,17 @@ module atg_mc_prot #(
 			j_rng <= a_rng;
 		end
 		if (j_to_p) begin
-			p_head <= j_head;
-			p_data <= j_data;
-			p_line <= j_line;
-			p_idx <= j_idx;
-			p_rng <= j_rng;
+			p_head <= j2_head;
+			p_data <= j2_data;
+			p_line <= j2_line;
+			p_idx <= j2_idx;
+			p_rng <= j2_rng;
 		end
 	end
 
 	wire unused_ok = &{1'b0, a_head, d_head, g_head, b_head, j_head, s_head, lim_up, tgran,
-		p_idx, tend, a_idx_bo, w_line_co, lim_up_co, g_diff_bo, tgran_co, tend_co};
+		p_idx, tend, a_idx_bo, w_line_co, lim_up_co, g_diff_bo, tgran_co, tend_co,
+		j2_head, j2_idx};
 endmodule
 
 `default_nettype wire
