@@ -470,12 +470,16 @@ module atg_blt_rsv_px #(
 			end
 
 			/* Stage P. */
-			if (fire && !slow) begin
-				p_v <= 1'b1;
+			if (p_free) begin
 				p_win <= win[511:0];
 				p_line <= daddr[ADDR_W-1:LS];
 				p_off <= daddr[LS-1:0];
 				p_nb <= grp_nb;
+			end
+			if (rq_pop) begin
+				p_v <= 1'b0;
+			end else if (fire && !slow) begin
+				p_v <= 1'b1;
 			end else if (a_free) begin
 				p_v <= 1'b0;
 			end
@@ -490,6 +494,9 @@ module atg_blt_rsv_px #(
 			end else if (a_pend && f_valid) begin
 				a_v <= 1'b1;
 				a_pend <= 1'b0;
+				a_line <= p_line;
+				a_off <= p_off;
+				a_nb <= p_nb;
 				a_px <= favg;
 			end else if (a_take) begin
 				a_v <= 1'b0;
@@ -497,9 +504,6 @@ module atg_blt_rsv_px #(
 
 			if (fire && slow) begin
 				a_pend <= 1'b1;
-				a_line <= daddr[ADDR_W-1:LS];
-				a_off <= daddr[LS-1:0];
-				a_nb <= grp_nb;
 			end
 		end
 	end
