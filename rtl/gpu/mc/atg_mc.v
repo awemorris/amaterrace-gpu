@@ -323,7 +323,7 @@ module atg_mc #(
 	);
 
 	/* The error response of a refused request. */
-	reg err_v;
+	reg err_v, bad_r;
 	reg [RW-1:0] err_route;
 	reg [7:0] err_tag;
 	reg err_write;
@@ -360,7 +360,7 @@ module atg_mc #(
 		.aperture_base(aperture_base), .aperture_limit(aperture_limit),
 		.g_valid(g_valid), .g_ready(g_ready), .g_write(g_write), .g_line(g_line), .g_be(g_be),
 		.g_wdata(g_wdata), .g_user(g_user),
-		.err_busy(err_v), .bad(bad), .bad_head(bad_head), .bad_line(bad_line),
+		.err_busy(err_v || bad_r), .bad(bad), .bad_head(bad_head), .bad_line(bad_line),
 		.bad_prot(bad_prot), .bad_mem(bad_mem), .done(done), .done_chk(done_chk),
 		.w_valid(l2_rsp_valid && l2_walk), .w_error(l2_rsp_error), .w_rdata(l2_rsp_rdata),
 		.tbase(prot_tbase), .inv_valid(prot_inv_valid), .inv_g(prot_inv_g),
@@ -462,8 +462,28 @@ module atg_mc #(
 		(m_idle && l2_idle) && !err_v) && t_rsp_idle && pend_zero;
 
 	/* flush drops a refusal's response, but not the root client's (ROOT_KEEP). */
+	reg [HPW-1:0] bad_head_r;
+	reg [LA_W-1:0] bad_line_r;
+	reg bad_prot_r, bad_mem_r;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			bad_r <= 1'b0;
+			bad_head_r <= {HPW{1'b0}};
+			bad_line_r <= {LA_W{1'b0}};
+			bad_prot_r <= 1'b0;
+			bad_mem_r <= 1'b0;
+		end else begin
+			bad_r <= bad && (!flush || bad_keep);
+			bad_head_r <= bad_head;
+			bad_line_r <= bad_line;
+			bad_prot_r <= bad_prot;
+			bad_mem_r <= bad_mem;
+		end
+	end
+
 `ifdef SYNTH_KINTEX7
-	wire err_load_raw = bad && (!flush || bad_keep);
+	wire err_load_raw = bad_r;
 	wire [3:0] err_load_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_el0 (.I0(err_load_raw), .O(err_load_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_el1 (.I0(err_load_raw), .O(err_load_b[1]));
@@ -486,22 +506,22 @@ module atg_mc #(
 	end
 	always @(posedge clk) begin
 		if (err_load_b[0]) begin
-			err_route <= bad_head[20 +: RW];
-			err_tag <= bad_head[11:4];
-			err_write <= bad_head[1];
+			err_route <= bad_head_r[20 +: RW];
+			err_tag <= bad_head_r[11:4];
+			err_write <= bad_head_r[1];
 		end
 		if (err_load_b[1]) begin
-			fault_client <= bad_head[19:12];
-			fault_write <= bad_head[1];
-			fault_prot <= bad_prot;
-			fault_slot <= bad_head[HW+1 +: 6];
-			fault_mem <= bad_mem;
+			fault_client <= bad_head_r[19:12];
+			fault_write <= bad_head_r[1];
+			fault_prot <= bad_prot_r;
+			fault_slot <= bad_head_r[HW+1 +: 6];
+			fault_mem <= bad_mem_r;
 		end
 		if (err_load_b[2]) begin
-			fault_addr[15:0] <= {bad_line[15-LINE_SHIFT:0], {LINE_SHIFT{1'b0}}};
+			fault_addr[15:0] <= {bad_line_r[15-LINE_SHIFT:0], {LINE_SHIFT{1'b0}}};
 		end
 		if (err_load_b[3]) begin
-			fault_addr[ADDR_W-1:16] <= bad_line[LA_W-1:16-LINE_SHIFT];
+			fault_addr[ADDR_W-1:16] <= bad_line_r[LA_W-1:16-LINE_SHIFT];
 		end
 	end
 `else
@@ -520,18 +540,18 @@ module atg_mc #(
 			fault_mem <= 1'b0;
 		end else begin
 			fault <= 1'b0;
-			if (bad && (!flush || bad_keep)) begin
+			if (bad_r) begin
 				err_v <= 1'b1;
-				err_route <= bad_head[20 +: RW];
-				err_tag <= bad_head[11:4];
-				err_write <= bad_head[1];
+				err_route <= bad_head_r[20 +: RW];
+				err_tag <= bad_head_r[11:4];
+				err_write <= bad_head_r[1];
 				fault <= 1'b1;
-				fault_client <= bad_head[19:12];
-				fault_addr <= {bad_line, {LINE_SHIFT{1'b0}}};
-				fault_write <= bad_head[1];
-				fault_prot <= bad_prot;
-				fault_slot <= bad_head[HW+1 +: 6];
-				fault_mem <= bad_mem;
+				fault_client <= bad_head_r[19:12];
+				fault_addr <= {bad_line_r, {LINE_SHIFT{1'b0}}};
+				fault_write <= bad_head_r[1];
+				fault_prot <= bad_prot_r;
+				fault_slot <= bad_head_r[HW+1 +: 6];
+				fault_mem <= bad_mem_r;
 			end else if (err_out || flush && !err_keep) begin
 				err_v <= 1'b0;
 			end
