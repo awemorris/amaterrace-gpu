@@ -222,7 +222,7 @@ module am_fp_fma_p #(
 	reg [11:0] r2_er;
 	reg [23:0] r2_m;
 	reg        r2_g;
-	reg        r2_st;
+	reg [7:0]  r2_st_part;
 	reg [2:0]  r2_rm;
 	reg        r2_rdn;
 	reg        r2_spec_hit;
@@ -235,7 +235,7 @@ module am_fp_fma_p #(
 			r2_er       <= 12'd0;
 			r2_m        <= 24'd0;
 			r2_g        <= 1'b0;
-			r2_st       <= 1'b0;
+			r2_st_part  <= 8'd0;
 			r2_rm       <= 3'd0;
 			r2_rdn      <= 1'b0;
 			r2_spec_hit <= 1'b0;
@@ -246,7 +246,14 @@ module am_fp_fma_p #(
 			r2_er       <= er;
 			r2_m        <= nrm[76:53];
 			r2_g        <= nrm[52];
-			r2_st       <= |nrm[51:0];
+			r2_st_part[0] <= |nrm[6:0];
+			r2_st_part[1] <= |nrm[13:7];
+			r2_st_part[2] <= |nrm[20:14];
+			r2_st_part[3] <= |nrm[27:21];
+			r2_st_part[4] <= |nrm[34:28];
+			r2_st_part[5] <= |nrm[41:35];
+			r2_st_part[6] <= |nrm[48:42];
+			r2_st_part[7] <= |nrm[51:49];
 			r2_rm       <= s1_rm;
 			r2_rdn      <= s1_rdn;
 			r2_spec_hit <= s1_spec_hit;
@@ -260,7 +267,7 @@ module am_fp_fma_p #(
 	wire [11:0] s2_er       = (LAT >= 3) ? r2_er       : er;
 	wire [23:0] s2_m        = (LAT >= 3) ? r2_m        : nrm[76:53];
 	wire        s2_g        = (LAT >= 3) ? r2_g        : nrm[52];
-	wire        s2_st       = (LAT >= 3) ? r2_st       : |nrm[51:0];
+	wire        s2_st       = (LAT >= 3) ? (|r2_st_part) : |nrm[51:0];
 	wire [2:0]  s2_rm       = (LAT >= 3) ? r2_rm       : s1_rm;
 	wire        s2_rdn      = (LAT >= 3) ? r2_rdn      : s1_rdn;
 	wire        s2_spec_hit = (LAT >= 3) ? r2_spec_hit : s1_spec_hit;

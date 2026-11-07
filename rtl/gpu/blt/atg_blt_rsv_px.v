@@ -132,6 +132,7 @@ module atg_blt_rsv_px #(
 	reg active;
 	reg [16:0] x;
 	reg [16:0] rem;
+	reg rem_has_high;
 	reg [ADDR_W-1:0] drow;
 	reg [16:0] lines_left;
 	reg [LBITS-1:0] buf0;
@@ -162,7 +163,7 @@ module atg_blt_rsv_px #(
 	am_add #(.W(ADDR_W)) a_da (.a(drow), .b(x_b), .ci(1'b0), .s(daddr), .co(grp_co_unused[1]));
 	assign grp_co_unused[2] = 1'b0;
 	am_sub #(.W(3)) s_rt (.a(3'd4), .b({1'b0, x[1:0]}), .bi(1'b0), .d(room_t), .bo(grp_co_unused[3]));
-	wire [2:0] rem_limit = (|rem[16:3]) ? 3'd4 : rem[2:0];
+	wire [2:0] rem_limit = rem_has_high ? 3'd4 : rem[2:0];
 
 	reg [LS-1:0] daddr_ls_r;
 	wire [LS-1:0] daddr_ls_next;
@@ -302,7 +303,7 @@ module atg_blt_rsv_px #(
 		.clk(clk), .rst_n(frst_n), .i_valid(fv_start), .i_ready(f_ready), .fmt(fmt), .psl(psl),
 		.npx(fv_n), .in_s(fv_in_s), .o_valid(f_valid), .o_ready(1'b1), .out_p(favg)
 	);
-	wire is_last_group = (rem[16:3] == 14'd0) && (rem[2:0] == n);
+	wire is_last_group = !rem_has_high && (rem[2:0] == n);
 	wire row_end = fire && is_last_group;
 
 	/* gend less one or two lines (the window's lines the group used up; only one is taken in a cycle). */
@@ -379,6 +380,7 @@ module atg_blt_rsv_px #(
 			active <= 1'b0;
 			x <= 17'd0;
 			rem <= 17'd0;
+			rem_has_high <= 1'b0;
 			drow <= {ADDR_W{1'b0}};
 			lines_left <= 17'd0;
 			buf0 <= {LBITS{1'b0}};
@@ -413,6 +415,7 @@ module atg_blt_rsv_px #(
 				active <= 1'b1;
 				x <= d_x;
 				rem <= d_w;
+				rem_has_high <= |d_w[16:3];
 				drow <= d_drow;
 				lines_left <= d_nl;
 				ptr <= d_off;
@@ -447,6 +450,7 @@ module atg_blt_rsv_px #(
 				if (fire) begin
 					x <= x_next;
 					rem <= rem_next;
+					rem_has_high <= |rem_next[16:3];
 					daddr_ls_r <= daddr_ls_next;
 					if (row_end)
 						active <= 1'b0;
