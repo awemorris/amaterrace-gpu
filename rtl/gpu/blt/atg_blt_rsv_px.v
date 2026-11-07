@@ -135,6 +135,7 @@ module atg_blt_rsv_px #(
 	reg rem_has_high;
 	reg [ADDR_W-1:0] drow;
 	reg [16:0] lines_left;
+	reg lines_left_nz;
 	reg [LBITS-1:0] buf0;
 	reg [LBITS-1:0] buf1;
 	reg head;
@@ -324,11 +325,7 @@ module atg_blt_rsv_px #(
 	wire wr_buf0 = lq_pop && (head == v0);
 	wire wr_buf1 = lq_pop && (head != v0);
 
-`ifdef MUT_RSV_ROWEND
-	wire may_load = active && !row_end;
-`else
-	wire may_load = active && !row_end && lines_left != 17'd0;
-`endif
+	wire may_load = active && lines_left_nz;
 	assign lq_pop = may_load && lq_valid && (!v0 || !v1);
 	assign rq_pop = !active && rq_valid;
 
@@ -375,6 +372,7 @@ module atg_blt_rsv_px #(
 			rem_has_high <= 1'b0;
 			drow <= {ADDR_W{1'b0}};
 			lines_left <= 17'd0;
+			lines_left_nz <= 1'b0;
 			buf0 <= {LBITS{1'b0}};
 			buf1 <= {LBITS{1'b0}};
 			head <= 1'b0;
@@ -411,6 +409,7 @@ module atg_blt_rsv_px #(
 				rem_has_high <= |d_w[16:3];
 				drow <= d_drow;
 				lines_left <= d_nl;
+				lines_left_nz <= (d_nl != 17'd0);
 				ptr <= d_off;
 				v0 <= 1'b0;
 				v1 <= 1'b0;
@@ -439,8 +438,10 @@ module atg_blt_rsv_px #(
 					else
 						v1 <= 1'b1;
 				end
-				if (lq_pop)
+				if (lq_pop) begin
 					lines_left <= ll_dec;
+					lines_left_nz <= (ll_dec != 17'd0);
+				end
 				if (fire) begin
 					x <= x_next;
 					rem <= rem_next;
