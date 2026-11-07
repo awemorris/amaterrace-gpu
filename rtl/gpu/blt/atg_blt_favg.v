@@ -48,16 +48,16 @@ module atg_blt_favg (
 	output reg [127:0] out_p
 );
 	`include "atg_srgb.vh"
-	localparam [1:0] IDLE = 2'd0, RUN = 2'd1, ENC = 2'd2, OUT = 2'd3;
+	localparam [2:0] IDLE = 3'd0, RUN = 3'd1, ENC_START = 3'd2, ENC = 3'd3, COMMIT = 3'd4, OUT = 3'd5;
 	localparam [31:0] ONE = 32'h3F800000, QUARTER = 32'h3E800000;
 
-	reg [1:0] st;
+	reg [2:0] st;
 	reg [511:0] s_in;
 	reg [2:0] m_fmt, m_psl, m_n;
 	reg [1:0] p;		/* the pixel */
 	reg [2:0] j;		/* its channel */
 	reg [1:0] step, fma_wait;
-	reg [31:0] r01, r23, sm;
+	reg [31:0] r01, r23, sm, r_final;
 
 	/* The pixel's bytes, 2^psl in 5 bits (0 from 32 bytes), by table. */
 	reg [4:0] ps;
@@ -142,7 +142,7 @@ module atg_blt_favg (
 	am_fp_fma_p #(.LAT(2)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(fa), .b0(fb), .c0(fc), .rm(3'd0), .noc(1'b0),
 		.p({1'b0, fa[30:23] != 8'd0 ? {1'b1, fa[22:0]} : 24'd0, 23'd0}), .r(fr));
 	wire [15:0] fh;
-	am_fp_f2h #(.LAT(0)) u_fh (.f(fr), .h(fh));
+	am_fp_f2h #(.LAT(0)) u_fh (.f(r_final), .h(fh));
 	wire [2:0] cpp_last, n_last;
 	wire [1:0] last_co_unused;
 
@@ -155,8 +155,8 @@ module atg_blt_favg (
 	wire e_ready, e_valid;
 	wire [7:0] e_code;
 	atg_fmt_srgbenc enc (
-		.clk(clk), .rst_n(rst_n), .i_valid(st == RUN && step == 2'd3 && fma_wait == 2'd2 && m_fmt == 3'd3),
-		.i_ready(e_ready), .i_x(fr), .o_valid(e_valid), .o_ready(st == ENC), .o_code(e_code)
+		.clk(clk), .rst_n(rst_n), .i_valid(st == ENC_START),
+		.i_ready(e_ready), .i_x(r_final), .o_valid(e_valid), .o_ready(st == ENC), .o_code(e_code)
 	);
 
 	/* sRGB alpha: byte 3, the UNORM8 average of the four samples, ties to even. */
@@ -184,7 +184,7 @@ module atg_blt_favg (
 	assign o_valid = st == OUT;
 
 	/* The channel's result goes in, at its place in the output (as the samples' places, sample 0). */
-	wire take = (st == RUN && step == 2'd3 && fma_wait == 2'd2 && m_fmt != 3'd3) || (st == ENC && e_valid);
+	wire take = (st == COMMIT) || (st == ENC && e_valid);
 	wire [31:0] tp_sh, tp_ps, op_s, op_h, op_f;
 	wire [2:0] j_inc;
 	wire [1:0] p_inc, step_inc;
@@ -204,6 +204,7 @@ module atg_blt_favg (
 		if (!rst_n) begin
 			st <= IDLE;
 			fma_wait <= 2'd0;
+			r_final <= 32'd0;
 		end else begin
 			case (st)
 			IDLE: if (i_valid) begin
@@ -221,15 +222,23 @@ module atg_blt_favg (
 			RUN: begin
 				if (fma_wait == 2'd2) begin
 					fma_wait <= 2'd0;
-					step <= step_inc;
-					if (step == 2'd0)
+					if (step == 2'd0) begin
 						r01 <= fr;
-					if (step == 2'd1)
+						step <= step_inc;
+					end else if (step == 2'd1) begin
 						r23 <= fr;
-					if (step == 2'd2)
+						step <= step_inc;
+					end else if (step == 2'd2) begin
 						sm <= fr;
-					if (step == 2'd3 && m_fmt == 3'd3)
-						st <= ENC;
+						step <= step_inc;
+					end else begin
+						r_final <= fr;
+						step <= 2'd0;
+						if (m_fmt == 3'd3)
+							st <= ENC_START;
+						else
+							st <= COMMIT;
+					end
 				end else begin
 					case (fma_wait)
 					2'd0: fma_wait <= 2'd1;
@@ -238,7 +247,11 @@ module atg_blt_favg (
 					endcase
 				end
 			end
+			ENC_START: begin
+				st <= ENC;
+			end
 			ENC: ;
+			COMMIT: ;
 			default: if (o_ready)
 				st <= IDLE;
 			endcase
@@ -249,7 +262,7 @@ module atg_blt_favg (
 				else if (m_fmt == 3'd4)
 					out_p[op_h +: 16] <= fh;
 				else
-					out_p[op_f +: 32] <= fr;
+					out_p[op_f +: 32] <= r_final;
 				j <= lastj ? 3'd0 : j_inc;
 				if (lastj)
 					p <= p_inc;
