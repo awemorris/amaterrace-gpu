@@ -156,17 +156,19 @@ module atg_blt_rsv_px #(
 	am_shift #(.W(LS + 1), .SW(3)) h_fit (.a(LB_V), .amt(sh4), .left(1'b0), .arith(1'b0), .y(nfit));
 	wire [2:0] nmax = nfit == {(LS + 1){1'b0}} ? 3'd1 : nfit >= 4 ? 3'd4 : nfit[2:0];
 	/* The pixel's bytes in the row (linear or in 4x4 tiles), its address, the room to the line's end. */
+	wire [ADDR_W-1:0] x_b_lin;
+	am_shift #(.W(ADDR_W), .SW(3)) h_x_lin (.a({{(ADDR_W - 17){1'b0}}, x}), .amt(psl), .left(1'b1), .arith(1'b0), .y(x_b_lin));
 	am_shift #(.W(ADDR_W), .SW(3)) h_x (.a(tiled ? {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} :
 		{{(ADDR_W - 17){1'b0}}, x}), .amt(psl), .left(1'b1), .arith(1'b0), .y(x_b));
-	wire [LS-1:0] daddr_ls;
-	wire dals_co_unused;
-	am_add #(.W(LS)) a_dals (.a(drow[LS-1:0]), .b(x_b[LS-1:0]), .ci(1'b0), .s(daddr_ls), .co(dals_co_unused));
+	wire [LS-1:0] daddr_ls_lin;
+	wire dals_lin_co;
+	am_add #(.W(LS)) a_dals_lin (.a(drow[LS-1:0]), .b(x_b_lin[LS-1:0]), .ci(1'b0), .s(daddr_ls_lin), .co(dals_lin_co));
 	am_add #(.W(ADDR_W)) a_da (.a(drow), .b(x_b), .ci(1'b0), .s(daddr), .co(grp_co_unused[1]));
 	assign grp_co_unused[2] = 1'b0;
 	am_sub #(.W(3)) s_rt (.a(3'd4), .b({1'b0, x[1:0]}), .bi(1'b0), .d(room_t), .bo(grp_co_unused[3]));
 	wire [2:0] rem_limit = rem_has_high ? 3'd4 : rem[2:0];
 
-	wire [7:0] daddr_ls_pad = {{(8 - LS){1'b0}}, daddr_ls};
+	wire [7:0] daddr_ls_pad = {{(8 - LS){1'b0}}, daddr_ls_lin};
 
 	function [2:0] sub4_2b;
 		input [1:0] b;
@@ -221,6 +223,7 @@ module atg_blt_rsv_px #(
 	wire [6:0] gb;
 	wire [7:0] gend;
 	wire [1:0] gb_co_unused;
+	assign gb_co_unused[1] = 1'b0;
 
 	am_shift #(.W(7), .SW(3)) h_gb (.a({4'd0, n}), .amt(sh4), .left(1'b1), .arith(1'b0), .y(gb));
 	am_add #(.W(8)) a_gend (.a({{(8 - LS){1'b0}}, ptr}), .b({1'b0, gb}), .ci(1'b0), .s(gend), .co(gb_co_unused[0]));
@@ -299,26 +302,16 @@ module atg_blt_rsv_px #(
 	wire is_last_group = !rem_has_high && (rem[2:0] == n);
 	wire row_end = fire && is_last_group;
 
-	/* gend less one or two lines (the window's lines the group used up; only one is taken in a cycle). */
-	wire two_used = gend >= {{(6 - LS){1'b0}}, LB_V, 1'b0};
-	wire [7:0] gend_left;
+	wire shift_win = fire && (gend >= {{(7 - LS){1'b0}}, LB_V});
+	wire drop_both = fire && row_end;
 
-	am_sub #(.W(8)) s_gl (.a(gend), .b(two_used ? {{(6 - LS){1'b0}}, LB_V, 1'b0} : {{(7 - LS){1'b0}}, LB_V}),
-		.bi(1'b0), .d(gend_left), .bo(gb_co_unused[1]));
-
-	wire shift_win = fire && (gend >= {{(7 - LS){1'b0}}, LB_V}) && !two_used;
-	wire drop_both = fire && (two_used || row_end);
-
+	/* The window after this cycle's group (before a load). */
 	reg [LS-1:0] nptr;
-	reg [7:0] pend;
 
 	always @(*) begin
 		nptr = ptr;
-		pend = gend;
 		if (fire) begin
-			if (two_used || (gend >= {{(7 - LS){1'b0}}, LB_V}))
-				pend = gend_left;
-			nptr = pend[LS-1:0];
+			nptr = gend[LS-1:0];
 		end
 	end
 
@@ -528,8 +521,8 @@ module atg_blt_rsv_px #(
 				n, ptr, v0, v1, avg[63:0], win[127:0]);
 `endif
 
-	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB], pend,
-		grp_co_unused, gb_co_unused, row_co_unused, dals_co_unused};
+	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB],
+		grp_co_unused, gb_co_unused, row_co_unused, dals_lin_co};
 endmodule
 
 `default_nettype wire

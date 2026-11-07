@@ -128,7 +128,7 @@ module atg_blt_rsv #(
 
 	/* The mode, taken at the kick. */
 	reg [2:0] psl, m_fmt;
-	reg m_tiled;
+	(* max_fanout = 16 *) reg m_tiled;
 
 	/*
 	 * The constants of a pixel size, by table (no shift): 4 ps - 1 (the
