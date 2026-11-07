@@ -61,6 +61,7 @@ module atg_blt_favg (
 	reg [31:0] r01, r23, sm, r_final;
 	reg [31:0] r_fa, r_fb, r_fc;
 	reg [31:0] r_xa, r_xc;
+	reg [31:0] ia_s_r, ic_s_r, ia_h_r, ic_h_r, ia_f_r, ic_f_r;
 
 	/* The pixel's bytes, 2^psl in 5 bits (0 from 32 bytes), by table. */
 	reg [4:0] ps;
@@ -115,8 +116,8 @@ module atg_blt_favg (
 
 	/* Sample sn of channel j of pixel p, as fp32 (the places are 32-bit, as the former expressions were). */
 	wire [31:0] ha, hc;	/* the two fp16 samples as fp32 */
-	am_fp_h2f #(.DENORM(1), .LAT(0)) u_ha (.h(s_in[ia_h +: 16]), .f(ha));
-	am_fp_h2f #(.DENORM(1), .LAT(0)) u_hc (.h(s_in[ic_h +: 16]), .f(hc));
+	am_fp_h2f #(.DENORM(1), .LAT(0)) u_ha (.h(s_in[ia_h_r +: 16]), .f(ha));
+	am_fp_h2f #(.DENORM(1), .LAT(0)) u_hc (.h(s_in[ic_h_r +: 16]), .f(hc));
 	/* verilator lint_off UNUSEDSIGNAL */
 	function [31:0] xs;	/* (everything it reads is an argument) */
 		input [511:0] si;
@@ -134,8 +135,8 @@ module atg_blt_favg (
 		end
 	endfunction
 	/* verilator lint_on UNUSEDSIGNAL */
-	wire [31:0] xa = xs(s_in, m_fmt, ia_s, ha, ia_f);
-	wire [31:0] xc = xs(s_in, m_fmt, ic_s, hc, ic_f);
+	wire [31:0] xa = xs(s_in, m_fmt, ia_s_r, ha, ia_f_r);
+	wire [31:0] xc = xs(s_in, m_fmt, ic_s_r, hc, ic_f_r);
 	/* The fma: fb is 1.0 or 0.25 (a significand of 2^23), so the product of
 	 * the significands is fa's shifted (no multiplier). */
 	wire [31:0] fr;
@@ -210,6 +211,12 @@ module atg_blt_favg (
 			r_fc <= 32'd0;
 			r_xa <= 32'd0;
 			r_xc <= 32'd0;
+			ia_s_r <= 32'd0;
+			ic_s_r <= 32'd0;
+			ia_h_r <= 32'd0;
+			ic_h_r <= 32'd0;
+			ia_f_r <= 32'd0;
+			ic_f_r <= 32'd0;
 			out_p <= 128'd0;
 		end else begin
 			case (st)
@@ -227,20 +234,29 @@ module atg_blt_favg (
 			RUN: begin
 				case (fma_wait)
 				3'd0: begin
-					r_xa <= xa;
-					r_xc <= xc;
+					ia_s_r <= ia_s;
+					ic_s_r <= ic_s;
+					ia_h_r <= ia_h;
+					ic_h_r <= ic_h;
+					ia_f_r <= ia_f;
+					ic_f_r <= ic_f;
 					fma_wait <= 3'd1;
 				end
 				3'd1: begin
+					r_xa <= xa;
+					r_xc <= xc;
+					fma_wait <= 3'd2;
+				end
+				3'd2: begin
 					r_fa <= step[1] ? (step[0] ? sm : r01) : r_xa;
 					r_fb <= step == 2'd3 ? QUARTER : ONE;
 					r_fc <= step[1] ? (step[0] ? 32'h80000000 : r23) : r_xc;
-					fma_wait <= 3'd2;
+					fma_wait <= 3'd3;
 				end
-				3'd2: fma_wait <= 3'd3;
 				3'd3: fma_wait <= 3'd4;
 				3'd4: fma_wait <= 3'd5;
-				3'd5: begin
+				3'd5: fma_wait <= 3'd6;
+				3'd6: begin
 					fma_wait <= 3'd0;
 					if (step == 2'd0) begin
 						r01 <= fr;
