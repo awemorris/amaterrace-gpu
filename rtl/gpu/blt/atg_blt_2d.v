@@ -301,7 +301,7 @@ module atg_blt_2d #(
 	reg ydl_b_is_3_lo, ydl_b_is_3_hi, ysl_b_is_3;
 	reg [ADDR_W-1:0] dst_row_b, src_row_b;
 	reg [ADDR_W-1:0] r_dst_back, r_src_back;
-	reg [31:0] r_dst_neg, r_src_neg;
+	reg [ADDR_W-1:0] r_dst_neg, r_src_neg;
 	reg [ADDR_W-1:0] r_tile_step;
 	reg [31:0] r_dstride, r_sstride, r_dbase, r_sbase;
 	reg r_seg_last;
@@ -2076,24 +2076,25 @@ module atg_blt_2d #(
 	/* The segment's end: the next pixel, or the next row. */
 	wire [16:0] sn17 = {{(16 - US){1'b0}}, sn};
 	wire seg_last = r_seg_last;
+	wire [ADDR_W-1:0] ext_dstride = r_dstride;
+	wire [ADDR_W-1:0] ext_sstride = r_sstride;
 	wire [ADDR_W-1:0] tile_step = tile_bytes(psl_leg, 1'b0);
 	wire [ADDR_W-1:0] tile_back = tile_bytes(psl_leg, 1'b1);
-	wire [ADDR_W-1:0] dst_back, src_back;
-	wire [31:0] dst_neg, src_neg;
+	wire [ADDR_W-1:0] dst_back, src_back, dst_neg, src_neg;
 	wire [16:0] y1_last, ys_rev;
 	wire [5:0] step_co_unused;
 
-	am_sub #(.W(ADDR_W)) s_dback (.a(r_dstride), .b(tile_back), .bi(1'b0), .d(dst_back), .bo(step_co_unused[0]));
-	am_sub #(.W(ADDR_W)) s_sback (.a(r_sstride), .b(tile_back), .bi(1'b0), .d(src_back), .bo(step_co_unused[1]));
-	am_sub #(.W(32)) s_dneg (.a(32'd0), .b(r_dstride), .bi(1'b0), .d(dst_neg), .bo(step_co_unused[2]));
-	am_sub #(.W(32)) s_sneg (.a(32'd0), .b(r_sstride), .bi(1'b0), .d(src_neg), .bo(step_co_unused[3]));
+	am_sub #(.W(ADDR_W)) s_dback (.a(ext_dstride), .b(tile_back), .bi(1'b0), .d(dst_back), .bo(step_co_unused[0]));
+	am_sub #(.W(ADDR_W)) s_sback (.a(ext_sstride), .b(tile_back), .bi(1'b0), .d(src_back), .bo(step_co_unused[1]));
+	am_sub #(.W(ADDR_W)) s_dneg (.a({ADDR_W{1'b0}}), .b(ext_dstride), .bi(1'b0), .d(dst_neg), .bo(step_co_unused[2]));
+	am_sub #(.W(ADDR_W)) s_sneg (.a({ADDR_W{1'b0}}), .b(ext_sstride), .bi(1'b0), .d(src_neg), .bo(step_co_unused[3]));
 	wire [ADDR_W-1:0] dst_step = {
-		mdt_step1 ? (ydl == 2'd3 ? r_dst_back[ADDR_W-1:16] : r_tile_step[ADDR_W-1:16]) : r_dstride[ADDR_W-1:16],
-		mdt_step0 ? (ydl == 2'd3 ? r_dst_back[15:0]        : r_tile_step[15:0])        : r_dstride[15:0]
+		mdt_step1 ? (ydl == 2'd3 ? r_dst_back[ADDR_W-1:16] : r_tile_step[ADDR_W-1:16]) : ext_dstride[ADDR_W-1:16],
+		mdt_step0 ? (ydl == 2'd3 ? r_dst_back[15:0]        : r_tile_step[15:0])        : ext_dstride[15:0]
 	};
 	wire [ADDR_W-1:0] src_step = {
-		mst_step1 ? (ysl == 2'd3 ? r_src_back[ADDR_W-1:16] : r_tile_step[ADDR_W-1:16]) : r_sstride[ADDR_W-1:16],
-		mst_step0 ? (ysl == 2'd3 ? r_src_back[15:0]        : r_tile_step[15:0])        : r_sstride[15:0]
+		mst_step1 ? (ysl == 2'd3 ? r_src_back[ADDR_W-1:16] : r_tile_step[ADDR_W-1:16]) : ext_sstride[ADDR_W-1:16],
+		mst_step0 ? (ysl == 2'd3 ? r_src_back[15:0]        : r_tile_step[15:0])        : ext_sstride[15:0]
 	};
 
 	/* S_START: the first row (the last one when reversed). */
@@ -2273,12 +2274,12 @@ module atg_blt_2d #(
 	wire ysl_is_3_cur = ysl_b_is_3;
 `endif
 	wire [ADDR_W-1:0] b_dst_step_norm = {
-		mdt_bstep1 ? r_tile_step[ADDR_W-1:16] : r_dstride[ADDR_W-1:16],
-		mdt_bstep0 ? r_tile_step[15:0]        : r_dstride[15:0]
+		mdt_bstep1 ? r_tile_step[ADDR_W-1:16] : ext_dstride[ADDR_W-1:16],
+		mdt_bstep0 ? r_tile_step[15:0]        : ext_dstride[15:0]
 	};
 	wire [ADDR_W-1:0] b_dst_step_back = {
-		mdt_bstep1 ? r_dst_back[ADDR_W-1:16]  : r_dstride[ADDR_W-1:16],
-		mdt_bstep0 ? r_dst_back[15:0]         : r_dstride[15:0]
+		mdt_bstep1 ? r_dst_back[ADDR_W-1:16]  : ext_dstride[ADDR_W-1:16],
+		mdt_bstep0 ? r_dst_back[15:0]         : ext_dstride[15:0]
 	};
 	wire [ADDR_W-1:0] b_dst_delta_norm = {
 		mr_walk_dt1 ? r_dst_neg[ADDR_W-1:16] : b_dst_step_norm[ADDR_W-1:16],
@@ -2293,12 +2294,12 @@ module atg_blt_2d #(
 		ydl_is_3_lo ? r_dst_delta_back[15:0]         : r_dst_delta_norm[15:0]
 	};
 	wire [ADDR_W-1:0] b_src_step_norm = {
-		mst_bstep1 ? r_tile_step[ADDR_W-1:16] : r_sstride[ADDR_W-1:16],
-		mst_bstep0 ? r_tile_step[15:0]        : r_sstride[15:0]
+		mst_bstep1 ? r_tile_step[ADDR_W-1:16] : ext_sstride[ADDR_W-1:16],
+		mst_bstep0 ? r_tile_step[15:0]        : ext_sstride[15:0]
 	};
 	wire [ADDR_W-1:0] b_src_step_back = {
-		mst_bstep1 ? r_src_back[ADDR_W-1:16]  : r_sstride[ADDR_W-1:16],
-		mst_bstep0 ? r_src_back[15:0]         : r_sstride[15:0]
+		mst_bstep1 ? r_src_back[ADDR_W-1:16]  : ext_sstride[ADDR_W-1:16],
+		mst_bstep0 ? r_src_back[15:0]         : ext_sstride[15:0]
 	};
 	wire [ADDR_W-1:0] b_src_delta_norm = {
 		mr_walk_st1 ? r_src_neg[ADDR_W-1:16] : b_src_step_norm[ADDR_W-1:16],
@@ -3280,8 +3281,8 @@ module atg_blt_2d #(
 			src_row_b <= {ADDR_W{1'b0}};
 			r_dst_back <= {ADDR_W{1'b0}};
 			r_src_back <= {ADDR_W{1'b0}};
-			r_dst_neg <= 32'd0;
-			r_src_neg <= 32'd0;
+			r_dst_neg <= {ADDR_W{1'b0}};
+			r_src_neg <= {ADDR_W{1'b0}};
 			r_tile_step <= {ADDR_W{1'b0}};
 			r_dstride <= 32'd0;
 			r_sstride <= 32'd0;
@@ -3355,9 +3356,9 @@ module atg_blt_2d #(
 				if (cl_ss0)  r_sstride[15:0] <= sstride_u[15:0];
 				if (cl_ss1)  r_sstride[31:16] <= sstride_u[31:16];
 				if (cl_db0)  r_dbase[15:0] <= dbase_u[15:0];
-				if (cl_db1)  r_dbase[ADDR_W-1:16] <= dbase_u[ADDR_W-1:16];
+				if (cl_db1)  r_dbase[31:16] <= dbase_u[31:16];
 				if (cl_sb0)  r_sbase[15:0] <= sbase_u[15:0];
-				if (cl_sb1)  r_sbase[ADDR_W-1:16] <= sbase_u[ADDR_W-1:16];
+				if (cl_sb1)  r_sbase[31:16] <= sbase_u[31:16];
 			end
 			S_START: begin
 				if (st_px)  px_row <= mr_px_row ? x1_last : x0;
@@ -3377,9 +3378,9 @@ module atg_blt_2d #(
 				if (st_sb0) r_src_back[15:0] <= src_back[15:0];
 				if (st_sb1) r_src_back[ADDR_W-1:16] <= src_back[ADDR_W-1:16];
 				if (st_dn0) r_dst_neg[15:0] <= dst_neg[15:0];
-				if (st_dn1) r_dst_neg[31:16] <= dst_neg[31:16];
+				if (st_dn1) r_dst_neg[ADDR_W-1:16] <= dst_neg[ADDR_W-1:16];
 				if (st_sn0) r_src_neg[15:0] <= src_neg[15:0];
-				if (st_sn1) r_src_neg[31:16] <= src_neg[31:16];
+				if (st_sn1) r_src_neg[ADDR_W-1:16] <= src_neg[ADDR_W-1:16];
 			end
 			S_START1: begin
 			end
