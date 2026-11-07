@@ -348,7 +348,7 @@ module atg_mc_prot #(
 	assign done_chk = fired_x || fired_a && a_chk;
 
 	wire j_leave = fired_x && !src_p || j_to_p;
-	wire a_to_j = P && a_valid && !a_direct && (!j_v || j_leave);
+	wire a_to_j = P && a_valid && !a_direct && !j_v;
 	assign a_take = fired_a || a_to_j;
 
 	/* ------------------------------------------- invalidation */
