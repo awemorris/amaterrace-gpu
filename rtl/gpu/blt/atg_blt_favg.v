@@ -60,6 +60,7 @@ module atg_blt_favg (
 	reg [2:0] fma_wait;
 	reg [31:0] r01, r23, sm, r_final;
 	reg [31:0] r_fa, r_fb, r_fc;
+	reg [31:0] r_xa, r_xc;
 
 	/* The pixel's bytes, 2^psl in 5 bits (0 from 32 bytes), by table. */
 	reg [4:0] ps;
@@ -135,9 +136,6 @@ module atg_blt_favg (
 	/* verilator lint_on UNUSEDSIGNAL */
 	wire [31:0] xa = xs(s_in, m_fmt, ia_s, ha, ia_f);
 	wire [31:0] xc = xs(s_in, m_fmt, ic_s, hc, ic_f);
-	wire [31:0] fa = step[1] ? (step[0] ? sm : r01) : xa;
-	wire [31:0] fb = step == 2'd3 ? QUARTER : ONE;
-	wire [31:0] fc = step[1] ? (step[0] ? 32'h80000000 : r23) : xc;
 	/* The fma: fb is 1.0 or 0.25 (a significand of 2^23), so the product of
 	 * the significands is fa's shifted (no multiplier). */
 	wire [31:0] fr;
@@ -207,6 +205,11 @@ module atg_blt_favg (
 			st <= IDLE;
 			fma_wait <= 3'd0;
 			r_final <= 32'd0;
+			r_fa <= 32'd0;
+			r_fb <= 32'd0;
+			r_fc <= 32'd0;
+			r_xa <= 32'd0;
+			r_xc <= 32'd0;
 			out_p <= 128'd0;
 		end else begin
 			case (st)
@@ -224,15 +227,20 @@ module atg_blt_favg (
 			RUN: begin
 				case (fma_wait)
 				3'd0: begin
-					r_fa <= fa;
-					r_fb <= fb;
-					r_fc <= fc;
+					r_xa <= xa;
+					r_xc <= xc;
 					fma_wait <= 3'd1;
 				end
-				3'd1: fma_wait <= 3'd2;
+				3'd1: begin
+					r_fa <= step[1] ? (step[0] ? sm : r01) : r_xa;
+					r_fb <= step == 2'd3 ? QUARTER : ONE;
+					r_fc <= step[1] ? (step[0] ? 32'h80000000 : r23) : r_xc;
+					fma_wait <= 3'd2;
+				end
 				3'd2: fma_wait <= 3'd3;
 				3'd3: fma_wait <= 3'd4;
-				3'd4: begin
+				3'd4: fma_wait <= 3'd5;
+				3'd5: begin
 					fma_wait <= 3'd0;
 					if (step == 2'd0) begin
 						r01 <= fr;
