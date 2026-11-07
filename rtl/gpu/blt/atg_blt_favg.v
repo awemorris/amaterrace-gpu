@@ -186,20 +186,14 @@ module atg_blt_favg (
 
 	/* The channel's result goes in, at its place in the output (as the samples' places, sample 0). */
 	wire take = (st == COMMIT) || (st == ENC && e_valid);
-	wire [31:0] tp_sh, tp_ps, op_s, op_h, op_f;
 	wire [2:0] j_inc;
 	wire [1:0] p_inc, step_inc;
-	wire [5:0] out_co_unused;
+	wire [2:0] out_co_unused;
 	integer k;
 
-	am_shift #(.W(32), .SW(3)) h_tp (.a({30'd0, p}), .amt(m_psl), .left(1'b1), .arith(1'b0), .y(tp_sh));
-	assign tp_ps = at_ps(tp_sh, ps);
-	am_add #(.W(32)) a_ops (.a({28'd0, p, 2'b00}), .b({29'd0, j}), .ci(1'b0), .s(op_s), .co(out_co_unused[0]));
-	am_add #(.W(32)) a_oph (.a({tp_ps[28:0], 3'b000}), .b({25'd0, j, 4'b0000}), .ci(1'b0), .s(op_h), .co(out_co_unused[1]));
-	am_add #(.W(32)) a_opf (.a({tp_ps[28:0], 3'b000}), .b({24'd0, j, 5'b00000}), .ci(1'b0), .s(op_f), .co(out_co_unused[2]));
-	am_add #(.W(3)) a_j (.a(j), .b(3'd0), .ci(1'b1), .s(j_inc), .co(out_co_unused[3]));
-	am_add #(.W(2)) a_p (.a(p), .b(2'd0), .ci(1'b1), .s(p_inc), .co(out_co_unused[4]));
-	am_add #(.W(2)) a_step (.a(step), .b(2'd0), .ci(1'b1), .s(step_inc), .co(out_co_unused[5]));
+	am_add #(.W(3)) a_j (.a(j), .b(3'd0), .ci(1'b1), .s(j_inc), .co(out_co_unused[0]));
+	am_add #(.W(2)) a_p (.a(p), .b(2'd0), .ci(1'b1), .s(p_inc), .co(out_co_unused[1]));
+	am_add #(.W(2)) a_step (.a(step), .b(2'd0), .ci(1'b1), .s(step_inc), .co(out_co_unused[2]));
 
 	always @(posedge clk) begin
 		if (!rst_n) begin
@@ -292,11 +286,11 @@ module atg_blt_favg (
 			if (take) begin
 				fma_wait <= 3'd0;
 				if (m_fmt == 3'd3)
-					out_p[{op_s[28:0], 3'b000} +: 8] <= e_code;
+					out_p[8 * {p, j[1:0]} +: 8] <= e_code;
 				else if (m_fmt == 3'd4)
-					out_p[op_h +: 16] <= fh;
+					out_p[16 * {p[0], j[1:0]} +: 16] <= fh;
 				else
-					out_p[op_f +: 32] <= r_final;
+					out_p[32 * j[1:0] +: 32] <= r_final;
 				j <= lastj ? 3'd0 : j_inc;
 				if (lastj)
 					p <= p_inc;
@@ -314,7 +308,7 @@ module atg_blt_favg (
 	end
 
 	wire unused_ok = &{1'b0, e_ready, idx_co_unused, last_co_unused, out_co_unused, ta_ps[31:29], tc_ps[31:29],
-		tp_ps[31:29], op_s[31:29], op_h[31:7], op_f[31:7], ia_h[31:9], ic_h[31:9]};
+		ia_h[31:9], ic_h[31:9], ps};
 endmodule
 
 `default_nettype wire
