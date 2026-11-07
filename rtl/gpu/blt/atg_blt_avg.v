@@ -33,63 +33,6 @@ module atg_blt_avg (
 	input wire [511:0] in_s,
 	output reg [127:0] out_p
 );
-	/*
-	 * The code of channel c of sample word wd: byte c (fmt 0), or field c
-	 * of the format (fmt 1, 6, 7; the fields from the low bits), 0 when
-	 * the format has no such field.  Called with c constant, so each case
-	 * is a fixed part-select.
-	 */
-	function [9:0] chan;
-		input [2:0] f;
-		input [1:0] c;
-		input [31:0] wd;
-		begin
-			chan = 10'd0;
-			case ({f, c})
-			{3'd0, 2'd0}: chan = {2'd0, wd[7:0]};
-			{3'd0, 2'd1}: chan = {2'd0, wd[15:8]};
-			{3'd0, 2'd2}: chan = {2'd0, wd[23:16]};
-			{3'd0, 2'd3}: chan = {2'd0, wd[31:24]};
-			{3'd1, 2'd0}: chan = {5'd0, wd[4:0]};
-			{3'd1, 2'd1}: chan = {4'd0, wd[10:5]};
-			{3'd1, 2'd2}: chan = {5'd0, wd[15:11]};
-			{3'd6, 2'd0}: chan = wd[9:0];
-			{3'd6, 2'd1}: chan = wd[19:10];
-			{3'd6, 2'd2}: chan = wd[29:20];
-			{3'd6, 2'd3}: chan = {8'd0, wd[31:30]};
-			{3'd7, 2'd0}: chan = {5'd0, wd[4:0]};
-			{3'd7, 2'd1}: chan = {5'd0, wd[9:5]};
-			{3'd7, 2'd2}: chan = {5'd0, wd[14:10]};
-			{3'd7, 2'd3}: chan = {9'd0, wd[15]};
-			default: chan = 10'd0;
-			endcase
-		end
-	endfunction
-
-	/* Average avg of channel c placed in its field of a 32-bit pixel word (fmt 1, 6, 7; c constant). */
-	function [31:0] place;
-		input [2:0] f;
-		input [1:0] c;
-		input [9:0] avg;
-		begin
-			place = 32'd0;
-			case ({f, c})
-			{3'd1, 2'd0}: place = {27'd0, avg[4:0]};
-			{3'd1, 2'd1}: place = {21'd0, avg[5:0], 5'd0};
-			{3'd1, 2'd2}: place = {16'd0, avg[4:0], 11'd0};
-			{3'd6, 2'd0}: place = {22'd0, avg};
-			{3'd6, 2'd1}: place = {12'd0, avg, 10'd0};
-			{3'd6, 2'd2}: place = {2'd0, avg, 20'd0};
-			{3'd6, 2'd3}: place = {avg[1:0], 30'd0};
-			{3'd7, 2'd0}: place = {27'd0, avg[4:0]};
-			{3'd7, 2'd1}: place = {22'd0, avg[4:0], 5'd0};
-			{3'd7, 2'd2}: place = {17'd0, avg[4:0], 10'd0};
-			{3'd7, 2'd3}: place = {16'd0, avg[0], 15'd0};
-			default: place = 32'd0;
-			endcase
-		end
-	endfunction
-
 	/* SAMPLE0: the bytes of sample 0 of each pixel, for a pixel of 2^pl bytes (pl constant). */
 	function [127:0] sample0;
 		input [2:0] pl;
@@ -119,34 +62,55 @@ module atg_blt_avg (
 	genvar j, sm;
 	generate
 	for (j = 0; j < 16; j = j + 1) begin : g_avg
-		localparam integer CH_I = j % 4;	/* the channel */
-		localparam [1:0] CH = CH_I[1:0];
+		localparam integer PP = j / 4;
+		localparam integer CH = j % 4;
 		wire [9:0] v [0:3];
 
 		for (sm = 0; sm < 4; sm = sm + 1) begin : g_s
-			reg [31:0] wd;
-			reg [2:0] cf;
+			localparam integer S_SLOT = 4 * PP + sm;
+			wire [7:0] in_b = in_s[8 * S_SLOT +: 8];
+			wire [15:0] in_h = in_s[16 * S_SLOT +: 16];
+			wire [31:0] in_w = in_s[32 * S_SLOT +: 32];
+			reg [9:0] v_val;
 
-			/* Sample sm of pixel j / 4: the word of its slot, and the channel's format. */
 			always @(*) begin
-				wd = 32'd0;
-				cf = fmt;
-				if (fmt == 3'd0) begin
+				case (fmt)
+				3'd0: begin
 					case (psl)
-					3'd0: wd = (j % 4) < 1 ? {24'd0, in_s[8 * (4 * (j / 4) + sm) +: 8]} : 32'd0;
-					3'd1: wd = (j % 4) < 2 ? {16'd0, in_s[16 * (4 * (j / 4) + sm) +: 16]} : 32'd0;
-					3'd2: wd = in_s[32 * (4 * (j / 4) + sm) +: 32];
-					default: wd = 32'd0;
+					3'd0: v_val = (CH == 0) ? {2'd0, in_b} : 10'd0;
+					3'd1: v_val = (CH == 0) ? {2'd0, in_h[7:0]} : (CH == 1) ? {2'd0, in_h[15:8]} : 10'd0;
+					3'd2: v_val = (CH == 0) ? {2'd0, in_w[7:0]} : (CH == 1) ? {2'd0, in_w[15:8]} : (CH == 2) ? {2'd0, in_w[23:16]} : {2'd0, in_w[31:24]};
+					default: v_val = 10'd0;
 					endcase
-				end else if (fmt == 3'd6) begin
-					wd = in_s[32 * (4 * (j / 4) + sm) +: 32];
-				end else if (fmt == 3'd1 || fmt == 3'd7) begin
-					wd = {16'd0, in_s[16 * (4 * (j / 4) + sm) +: 16]};
-				end else begin
-					cf = 3'd2;
 				end
+				3'd1: begin
+					case (CH)
+					0: v_val = {5'd0, in_h[4:0]};
+					1: v_val = {4'd0, in_h[10:5]};
+					2: v_val = {5'd0, in_h[15:11]};
+					default: v_val = 10'd0;
+					endcase
+				end
+				3'd6: begin
+					case (CH)
+					0: v_val = in_w[9:0];
+					1: v_val = in_w[19:10];
+					2: v_val = in_w[29:20];
+					default: v_val = {8'd0, in_w[31:30]};
+					endcase
+				end
+				3'd7: begin
+					case (CH)
+					0: v_val = {5'd0, in_h[4:0]};
+					1: v_val = {5'd0, in_h[9:5]};
+					2: v_val = {5'd0, in_h[14:10]};
+					default: v_val = {9'd0, in_h[15]};
+					endcase
+				end
+				default: v_val = 10'd0;
+				endcase
 			end
-			assign v[sm] = chan(cf, CH, wd);
+			assign v[sm] = v_val;
 		end
 
 		wire [11:0] s01, s23, sum;
@@ -167,48 +131,63 @@ module atg_blt_avg (
 	end
 	endgenerate
 
+	wire [127:0] px_fields;
+	genvar p_gen;
+	generate
+	for (p_gen = 0; p_gen < 4; p_gen = p_gen + 1) begin : g_fields
+		wire [9:0] q0 = q[10 * (4 * p_gen + 0) +: 10];
+		wire [9:0] q1 = q[10 * (4 * p_gen + 1) +: 10];
+		wire [9:0] q2 = q[10 * (4 * p_gen + 2) +: 10];
+		wire [9:0] q3 = q[10 * (4 * p_gen + 3) +: 10];
+		assign px_fields[32 * p_gen +: 32] =
+			(fmt == 3'd6) ? {q3[1:0], q2[9:0], q1[9:0], q0[9:0]} :
+			(fmt == 3'd1) ? {16'd0, q2[4:0], q1[5:0], q0[4:0]} :
+			/* fmt == 3'd7 */ {16'd0, q3[0], q2[4:0], q1[4:0], q0[4:0]};
+	end
+	endgenerate
+
 	/* The output pixels of each format and pixel size. */
-	reg [31:0] px;
 	integer pp, cc;
 
 	always @(*) begin
 		out_p = 128'd0;
-		px = 32'd0;
 		case (fmt)
-		3'd0:
+		3'd0: begin
 			case (psl)
-			3'd0:
+			3'd0: begin
 				for (pp = 0; pp < 4; pp = pp + 1)
 					out_p[8 * pp +: 8] = q[10 * (4 * pp) +: 8];
-			3'd1:
+			end
+			3'd1: begin
 				for (pp = 0; pp < 4; pp = pp + 1)
 					for (cc = 0; cc < 2; cc = cc + 1)
 						out_p[8 * (2 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
-			3'd2:
+			end
+			3'd2: begin
 				for (pp = 0; pp < 4; pp = pp + 1)
 					for (cc = 0; cc < 4; cc = cc + 1)
 						out_p[8 * (4 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
-			default:	/* above 4 bytes: nothing */
-				out_p = 128'd0;
-			endcase
-		3'd1, 3'd6, 3'd7:	/* the fields: any size */
-			for (pp = 0; pp < 4; pp = pp + 1) begin
-				px = place(fmt, 2'd0, q[10 * (4 * pp) +: 10]) | place(fmt, 2'd1, q[10 * (4 * pp + 1) +: 10]) |
-					place(fmt, 2'd2, q[10 * (4 * pp + 2) +: 10]) | place(fmt, 2'd3, q[10 * (4 * pp + 3) +: 10]);
-				if (fmt == 3'd6)
-					out_p[32 * pp +: 32] = px;
-				else
-					out_p[16 * pp +: 16] = px[15:0];
 			end
-		default:	/* SAMPLE0 */
+			default: out_p = 128'd0;
+			endcase
+		end
+		3'd1, 3'd7: begin
+			for (pp = 0; pp < 4; pp = pp + 1)
+				out_p[16 * pp +: 16] = px_fields[32 * pp +: 16];
+		end
+		3'd6: begin
+			out_p = px_fields;
+		end
+		default: begin
 			case (psl)
 			3'd0: out_p = sample0(3'd0, in_s);
 			3'd1: out_p = sample0(3'd1, in_s);
 			3'd2: out_p = sample0(3'd2, in_s);
 			3'd3: out_p = sample0(3'd3, in_s);
 			3'd4: out_p = sample0(3'd4, in_s);
-			default: out_p = sample0(3'd5, in_s);	/* 32 bytes and more: as 16 */
+			default: out_p = sample0(3'd5, in_s);
 			endcase
+		end
 		endcase
 	end
 
