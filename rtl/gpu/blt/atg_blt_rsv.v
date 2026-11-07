@@ -167,6 +167,7 @@ module atg_blt_rsv #(
 	localparam [2:0] S_CLIP = 3'd1;		/* size, source origin, multiplier */
 	localparam [2:0] S_MUL = 3'd2;		/* row addresses: y * stride */
 	localparam [2:0] S_RCALC = 3'd3;	/* the row's source lines */
+	localparam [2:0] S_RCALC1 = 3'd6;
 	localparam [2:0] S_RISSUE = 3'd4;	/* the descriptor and the reads */
 	localparam [2:0] S_DRAIN = 3'd5;	/* wait for every response */
 
@@ -195,9 +196,10 @@ module atg_blt_rsv #(
 	am_shift #(.W(ADDR_W), .SW(3)) h_w (.a({{(ADDR_W - 17){1'b0}}, width}), .amt(sh4), .left(1'b1), .arith(1'b0),
 		.y(w_b));
 	am_add #(.W(ADDR_W)) a_first (.a(src_row), .b(sx_b), .ci(1'b0), .s(r_first), .co(rc_co_unused[1]));
-	am_add #(.W(ADDR_W)) a_end (.a(r_first), .b(w_b), .ci(1'b0), .s(r_end), .co(rc_co_unused[2]));
+	reg [ADDR_W-1:0] r_first_r;
+	am_add #(.W(ADDR_W)) a_end (.a(r_first_r), .b(w_b), .ci(1'b0), .s(r_end), .co(rc_co_unused[2]));
 	am_sub #(.W(ADDR_W)) s_last (.a(r_end), .b({ADDR_W{1'b0}}), .bi(1'b1), .d(r_last), .bo(rc_co_unused[3]));
-	am_sub #(.W(LA_W)) s_span (.a(r_last[ADDR_W-1:LS]), .b(r_first[ADDR_W-1:LS]), .bi(1'b0), .d(r_span),
+	am_sub #(.W(LA_W)) s_span (.a(r_last[ADDR_W-1:LS]), .b(r_first_r[ADDR_W-1:LS]), .bi(1'b0), .d(r_span),
 		.bo(rc_co_unused[4]));
 	am_add #(.W(LA_W)) a_nl (.a(r_span), .b({LA_W{1'b0}}), .ci(1'b1), .s(r_nl), .co(rc_co_unused[5]));
 
@@ -345,6 +347,7 @@ module atg_blt_rsv #(
 			width <= 17'd0;
 			rows <= 17'd0;
 			sx0 <= 17'd0;
+			r_first_r <= {ADDR_W{1'b0}};
 			ydl <= 2'd0;
 			desc_pend <= 1'b0;
 			desc <= {RD_W{1'b0}};
@@ -423,10 +426,17 @@ module atg_blt_rsv #(
 				if (fail) begin
 					state <= S_DRAIN;
 				end else begin
+					state <= S_RCALC1;
+					r_first_r <= r_first;
+				end
+			S_RCALC1:
+				if (fail) begin
+					state <= S_DRAIN;
+				end else begin
 					state <= S_RISSUE;
 					desc_pend <= 1'b1;
-					desc <= {r_first[LS-1:0], r_nl[16:0], width, x0, dst_row};
-					rd_line <= r_first[ADDR_W-1:LS];
+					desc <= {r_first_r[LS-1:0], r_nl[16:0], width, x0, dst_row};
+					rd_line <= r_first_r[ADDR_W-1:LS];
 					rd_left <= r_nl[16:0];
 				end
 			S_RISSUE:
