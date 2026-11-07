@@ -296,7 +296,7 @@ module atg_blt_rsv_px #(
 `else
 	wire may_load = active && !row_end && lines_left != 17'd0;
 `endif
-	assign lq_pop = may_load && lq_valid && (!nv0 || !nv1);
+	assign lq_pop = may_load && lq_valid && (!v0 || !v1);
 	assign rq_pop = !active && rq_valid;
 
 	/* The merge: the group's bytes at their offset of the line. */
@@ -379,7 +379,7 @@ module atg_blt_rsv_px #(
 				ptr <= nptr;
 				if (lq_pop) begin
 					lines_left <= ll_dec;
-					if (!nv0) begin
+					if (!v0) begin
 						w0 <= lq_data;
 						v0 <= 1'b1;
 					end else begin
