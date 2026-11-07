@@ -157,19 +157,21 @@ module atg_blt_rsv_px #(
 	am_sub #(.W(LS + 1)) s_room (.a(LB_V), .b({1'b0, daddr[LS-1:0]}), .bi(1'b0), .d(room_b), .bo(grp_co_unused[2]));
 	am_shift #(.W(LS + 1), .SW(3)) h_room (.a(room_b), .amt(psl), .left(1'b0), .arith(1'b0), .y(room_l));
 	am_sub #(.W(3)) s_rt (.a(3'd4), .b({1'b0, x[1:0]}), .bi(1'b0), .d(room_t), .bo(grp_co_unused[3]));
+	wire [2:0] rem_limit = (|rem[16:3]) ? 3'd4 : rem[2:0];
+	wire [2:0] room_l_limit = (|room_l[LS:3]) ? 3'd4 : room_l[2:0];
 	reg [2:0] n;
 
 	always @(*) begin
 		n = nmax;
-		if (rem < {14'd0, n})
-			n = rem[2:0];
+		if (rem_limit < n)
+			n = rem_limit;
 		if (tiled) begin
 			if (room_t < n)
 				n = room_t;
 		end else begin
 `ifndef MUT_RSV_SPLIT
-			if (room_l < {{(LS - 2){1'b0}}, n})
-				n = room_l[2:0];
+			if (room_l_limit < n)
+				n = room_l_limit;
 `endif
 		end
 	end
@@ -225,9 +227,27 @@ module atg_blt_rsv_px #(
 	wire a_free = !a_v || a_take;
 	wire fire = active && v0 && (!need2 || v1) && a_free && !a_pend;
 
+	reg fv_start;
+	reg [2:0] fv_n;
+	reg [511:0] fv_in_s;
+
+	always @(posedge clk) begin
+		if (!rst_n || stop) begin
+			fv_start <= 1'b0;
+			fv_n <= 3'd0;
+			fv_in_s <= 512'd0;
+		end else begin
+			fv_start <= fire && slow;
+			if (fire && slow) begin
+				fv_n <= n;
+				fv_in_s <= win[511:0];
+			end
+		end
+	end
+
 	atg_blt_favg fv (
-		.clk(clk), .rst_n(frst_n), .i_valid(fire && slow), .i_ready(f_ready), .fmt(fmt), .psl(psl),
-		.npx(n), .in_s(win[511:0]), .o_valid(f_valid), .o_ready(1'b1), .out_p(favg)
+		.clk(clk), .rst_n(frst_n), .i_valid(fv_start), .i_ready(f_ready), .fmt(fmt), .psl(psl),
+		.npx(fv_n), .in_s(fv_in_s), .o_valid(f_valid), .o_ready(1'b1), .out_p(favg)
 	);
 	wire row_end = fire && rem == {14'd0, n};
 

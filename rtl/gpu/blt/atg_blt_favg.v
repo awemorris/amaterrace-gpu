@@ -207,6 +207,7 @@ module atg_blt_favg (
 			st <= IDLE;
 			fma_wait <= 3'd0;
 			r_final <= 32'd0;
+			out_p <= 128'd0;
 		end else begin
 			case (st)
 			IDLE: if (i_valid) begin
@@ -218,7 +219,6 @@ module atg_blt_favg (
 				j <= 3'd0;
 				step <= 2'd0;
 				fma_wait <= 3'd0;
-				out_p <= 128'd0;
 				st <= RUN;
 			end
 			RUN: begin
@@ -260,8 +260,10 @@ module atg_blt_favg (
 			end
 			ENC: ;
 			COMMIT: ;
-			default: if (o_ready)
+			default: if (o_ready) begin
 				st <= IDLE;
+				out_p <= 128'd0;
+			end
 			endcase
 			if (take) begin
 				fma_wait <= 3'd0;
