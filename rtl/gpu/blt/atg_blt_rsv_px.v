@@ -134,8 +134,11 @@ module atg_blt_rsv_px #(
 	reg [16:0] rem;
 	reg [ADDR_W-1:0] drow;
 	reg [16:0] lines_left;
-	reg [LBITS-1:0] w0;
-	reg [LBITS-1:0] w1;
+	reg [LBITS-1:0] buf0;
+	reg [LBITS-1:0] buf1;
+	reg head;
+	wire [LBITS-1:0] w0 = head ? buf1 : buf0;
+	wire [LBITS-1:0] w1 = head ? buf0 : buf1;
 	reg v0;
 	reg v1;
 	reg [LS-1:0] ptr;
@@ -237,10 +240,17 @@ module atg_blt_rsv_px #(
 	reg a_pend;	/* a slow group is being averaged */
 	wire f_valid, f_ready;
 
+	/* Stage P: Pipeline register between window extraction and average computation */
+	reg p_v;
+	reg [511:0] p_win;
+	reg [LA_W-1:0] p_line;
+	reg [LS-1:0] p_off;
+	reg [4:0] p_nb;
+
 	atg_blt_avg av (
 		.fmt(fmt),
 		.psl(psl),
-		.in_s(win[511:0]),
+		.in_s(p_win),
 		.out_p(avg)
 	);
 
@@ -261,7 +271,8 @@ module atg_blt_rsv_px #(
 	wire a_same = b_v && b_line == a_line;
 	wire a_take = a_v && (!b_v || a_same || wr_free);
 	wire a_free = !a_v || !b_v || (b_line == a_line) || wr_free;
-	wire fire = active && v0 && (!need2 || v1) && a_free && !a_pend;
+	wire p_free = !p_v || a_free;
+	wire fire = active && v0 && (!need2 || v1) && (slow ? (!p_v && a_free) : p_free) && !a_pend;
 
 	reg fv_start;
 	reg [2:0] fv_n;
@@ -284,13 +295,6 @@ module atg_blt_rsv_px #(
 	wire is_last_group = (rem[16:3] == 14'd0) && (rem[2:0] == n);
 	wire row_end = fire && is_last_group;
 
-	/* The window after this cycle's group (before a load). */
-	reg [LBITS-1:0] nw0;
-	reg nv0;
-	reg nv1;
-	reg [LS-1:0] nptr;
-	reg [7:0] pend;
-
 	/* gend less one or two lines (the window's lines the group used up; only one is taken in a cycle). */
 	wire two_used = gend >= {{(6 - LS){1'b0}}, LB_V, 1'b0};
 	wire [7:0] gend_left;
@@ -298,31 +302,31 @@ module atg_blt_rsv_px #(
 	am_sub #(.W(8)) s_gl (.a(gend), .b(two_used ? {{(6 - LS){1'b0}}, LB_V, 1'b0} : {{(7 - LS){1'b0}}, LB_V}),
 		.bi(1'b0), .d(gend_left), .bo(gb_co_unused[1]));
 
+	wire shift_win = fire && (gend >= {{(7 - LS){1'b0}}, LB_V}) && !two_used;
+	wire drop_both = fire && (two_used || row_end);
+
+	reg [LS-1:0] nptr;
+	reg [7:0] pend;
+
 	always @(*) begin
-		nw0 = w0;
-		nv0 = v0;
-		nv1 = v1;
 		nptr = ptr;
 		pend = gend;
 		if (fire) begin
-			if (two_used) begin
-				/* both lines used (16-byte pixels, 32-byte lines) */
-				nv0 = 1'b0;
-				nv1 = 1'b0;
+			if (two_used || (gend >= {{(7 - LS){1'b0}}, LB_V}))
 				pend = gend_left;
-			end else if (gend >= {{(7 - LS){1'b0}}, LB_V}) begin
-				nw0 = w1;
-				nv0 = v1;
-				nv1 = 1'b0;
-				pend = gend_left;
-			end
 			nptr = pend[LS-1:0];
-			if (row_end) begin
-				nv0 = 1'b0;
-				nv1 = 1'b0;
-			end
 		end
 	end
+
+	wire wr_buf0 = lq_pop && (
+		drop_both ||
+		(shift_win && !head) ||
+		(!shift_win && !drop_both && (!head ? !v0 : v0))
+	);
+	wire wr_buf1 = lq_pop && (
+		(shift_win && head) ||
+		(!shift_win && !drop_both && (!head ? v0 : !v0))
+	);
 
 `ifdef MUT_RSV_ROWEND
 	wire may_load = active && !is_last_group;
@@ -364,7 +368,7 @@ module atg_blt_rsv_px #(
 			a_sh[8 * i +: 8] = a_be[i] ? a_shf[8 * i +: 8] : 8'd0;
 	end
 
-	wire idle_now = !active && !rq_valid && !a_v && !a_pend;
+	wire idle_now = !active && !rq_valid && !p_v && !a_v && !a_pend;
 	assign idle = idle_now && !b_v && !wr_valid;
 
 	always @(posedge clk) begin
@@ -374,11 +378,17 @@ module atg_blt_rsv_px #(
 			rem <= 17'd0;
 			drow <= {ADDR_W{1'b0}};
 			lines_left <= 17'd0;
-			w0 <= {LBITS{1'b0}};
-			w1 <= {LBITS{1'b0}};
+			buf0 <= {LBITS{1'b0}};
+			buf1 <= {LBITS{1'b0}};
+			head <= 1'b0;
 			v0 <= 1'b0;
 			v1 <= 1'b0;
 			ptr <= {LS{1'b0}};
+			p_v <= 1'b0;
+			p_win <= 512'd0;
+			p_line <= {LA_W{1'b0}};
+			p_off <= {LS{1'b0}};
+			p_nb <= 5'd0;
 			a_v <= 1'b0;
 			a_pend <= 1'b0;
 			a_line <= {LA_W{1'b0}};
@@ -404,22 +414,31 @@ module atg_blt_rsv_px #(
 				ptr <= d_off;
 				v0 <= 1'b0;
 				v1 <= 1'b0;
+				head <= 1'b0;
+				p_v <= 1'b0;
 			end else begin
-				/* The window: the group, then a load. */
-				w0 <= nw0;
-				v0 <= nv0;
-				v1 <= nv1;
+				/* The window: load into ping-pong buffers */
 				ptr <= nptr;
-				if (lq_pop) begin
-					lines_left <= ll_dec;
-					if (!v0) begin
-						w0 <= lq_data;
+				if (wr_buf0)
+					buf0 <= lq_data;
+				if (wr_buf1)
+					buf1 <= lq_data;
+				if (drop_both) begin
+					head <= 1'b0;
+					v0 <= lq_pop ? 1'b1 : 1'b0;
+					v1 <= 1'b0;
+				end else if (shift_win) begin
+					head <= ~head;
+					v0 <= v1;
+					v1 <= lq_pop ? 1'b1 : 1'b0;
+				end else if (lq_pop) begin
+					if (!v0)
 						v0 <= 1'b1;
-					end else begin
-						w1 <= lq_data;
+					else
 						v1 <= 1'b1;
-					end
 				end
+				if (lq_pop)
+					lines_left <= ll_dec;
 				if (fire) begin
 					x <= x_next;
 					rem <= rem_next;
@@ -457,13 +476,23 @@ module atg_blt_rsv_px #(
 				b_v <= 1'b0;
 			end
 
+			/* Stage P. */
+			if (fire && !slow) begin
+				p_v <= 1'b1;
+				p_win <= win[511:0];
+				p_line <= daddr[ADDR_W-1:LS];
+				p_off <= daddr[LS-1:0];
+				p_nb <= grp_nb;
+			end else if (a_free) begin
+				p_v <= 1'b0;
+			end
+
 			/* Stage A. */
-			if (fire) begin
-				a_v <= !slow;
-				a_pend <= slow;
-				a_line <= daddr[ADDR_W-1:LS];
-				a_off <= daddr[LS-1:0];
-				a_nb <= grp_nb;
+			if (p_v && a_free) begin
+				a_v <= 1'b1;
+				a_line <= p_line;
+				a_off <= p_off;
+				a_nb <= p_nb;
 				a_px <= avg;
 			end else if (a_pend && f_valid) begin
 				a_v <= 1'b1;
@@ -471,6 +500,13 @@ module atg_blt_rsv_px #(
 				a_px <= favg;
 			end else if (a_take) begin
 				a_v <= 1'b0;
+			end
+
+			if (fire && slow) begin
+				a_pend <= 1'b1;
+				a_line <= daddr[ADDR_W-1:LS];
+				a_off <= daddr[LS-1:0];
+				a_nb <= grp_nb;
 			end
 		end
 	end

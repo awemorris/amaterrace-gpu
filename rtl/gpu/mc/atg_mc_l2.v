@@ -375,14 +375,15 @@ module atg_mc_l2 #(
 		end
 	endgenerate
 
-	wire set_has_dirty = |set_dirty;
+	reg [WAYS-1:0] set_dirty_r;
+	wire set_has_dirty = |set_dirty_r;
 
 	reg [WAY_W-1:0] first_dirty_way;
 	integer fdw_i;
 	always @(*) begin
 		first_dirty_way = {WAY_W{1'b0}};
 		for (fdw_i = WAYS - 1; fdw_i >= 0; fdw_i = fdw_i - 1) begin
-			if (set_dirty[fdw_i])
+			if (set_dirty_r[fdw_i])
 				first_dirty_way = fdw_i[WAY_W-1:0];
 		end
 	end
@@ -418,6 +419,7 @@ module atg_mc_l2 #(
 			m_req_id <= 1'b0;
 			m_req_key <= 8'd0;
 			ctrl_inv_done <= 1'b0;
+			set_dirty_r <= {WAYS{1'b0}};
 			flush_set <= {SET_W{1'b0}};
 			inv_clean_r <= 1'b0;
 			inv_range_r <= 1'b0;
@@ -681,22 +683,27 @@ module atg_mc_l2 #(
 						wait_phase  <= 1'b0;
 						saved_state <= S_FLUSH_STEP;
 						state       <= S_READ_WAIT;
-					end else if (set_has_dirty) begin
-						active_victim_way <= first_dirty_way;
-						for (init_w = 0; init_w < WAYS; init_w = init_w + 1)
-							bram_raddr[init_w] <= flush_set;
-						wait_phase <= 1'b0;
-						state      <= S_FLUSH_RWAIT;
+					end else if (!wait_phase) begin
+						wait_phase  <= 1'b1;
+						set_dirty_r <= set_dirty;
 					end else begin
-						for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
-							valid_mem[init_w][flush_set] <= 1'b0;
-							dirty_mem[init_w][flush_set] <= 1'b0;
-						end
-						if (flush_set == MAX_SET) begin
-							ctrl_inv_done <= 1'b1;
-							state <= S_IDLE;
+						wait_phase <= 1'b0;
+						if (set_has_dirty) begin
+							active_victim_way <= first_dirty_way;
+							for (init_w = 0; init_w < WAYS; init_w = init_w + 1)
+								bram_raddr[init_w] <= flush_set;
+							state <= S_FLUSH_RWAIT;
 						end else begin
-							flush_set <= next_flush_set;
+							for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
+								valid_mem[init_w][flush_set] <= 1'b0;
+								dirty_mem[init_w][flush_set] <= 1'b0;
+							end
+							if (flush_set == MAX_SET) begin
+								ctrl_inv_done <= 1'b1;
+								state <= S_IDLE;
+							end else begin
+								flush_set <= next_flush_set;
+							end
 						end
 					end
 				end
@@ -721,6 +728,7 @@ module atg_mc_l2 #(
 					if (m_rsp_valid && m_rsp_write) begin
 						dirty_mem[active_victim_way][flush_set] <= 1'b0;
 						valid_mem[active_victim_way][flush_set] <= 1'b0;
+						wait_phase <= 1'b0;
 						state <= S_FLUSH_STEP;
 					end
 				end
@@ -741,6 +749,7 @@ module atg_mc_l2 #(
 							valid_mem[active_victim_way][flush_set] <= 1'b0;
 							dirty_mem[active_victim_way][flush_set] <= 1'b0;
 						end
+						wait_phase <= 1'b0;
 						state <= S_FLUSH_STEP;
 					end
 				end
