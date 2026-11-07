@@ -127,8 +127,28 @@ module atg_mc_l2 #(
 	reg wait_phase;
 	assign fsm = state;
 
-	/* Tag array and metadata: 16 ways x 256 sets */
-	(* ram_style = "registers" *) reg [TAG_W-1:0] tag_mem [0:WAYS-1][0:NSETS-1];
+	localparam WAY_W = WAYS > 8 ? 4 : (WAYS > 4 ? 3 : (WAYS > 2 ? 2 : 1));
+
+	/* Tag array and metadata: 16 ways x NSETS */
+	wire [TAG_W-1:0] way_tag [0:WAYS-1];
+	reg tag_we;
+	reg [SET_W-1:0] tag_waddr;
+	reg [TAG_W-1:0] tag_wdata;
+	reg [WAY_W-1:0] tag_way;
+	wire [SET_W-1:0] tag_raddr = (state == S_FLUSH_STEP || state == S_FLUSH_EVICT || state == S_FLUSH_WAIT || state == S_FLUSH_READ || state == S_FLUSH_RWAIT) ? flush_set : req_set;
+
+	genvar gw;
+	generate
+		for (gw = 0; gw < WAYS; gw = gw + 1) begin : g_tag
+			(* ram_style = "distributed" *) reg [TAG_W-1:0] tag_ram [0:NSETS-1];
+			always @(posedge clk) begin
+				if (tag_we && tag_way == gw[WAY_W-1:0])
+					tag_ram[tag_waddr] <= tag_wdata;
+			end
+			assign way_tag[gw] = tag_ram[tag_raddr];
+		end
+	endgenerate
+
 	(* ram_style = "registers" *) reg valid_mem [0:WAYS-1][0:NSETS-1];
 	(* ram_style = "registers" *) reg dirty_mem [0:WAYS-1][0:NSETS-1];
 
@@ -180,19 +200,16 @@ module atg_mc_l2 #(
 	/* Hit detection */
 	wire [WAYS-1:0] way_hit;
 	wire [WAYS-1:0] way_valid;
-	wire [TAG_W-1:0] way_tag [0:WAYS-1];
 
 	genvar w;
 	generate
 		for (w = 0; w < WAYS; w = w + 1) begin : g_hit
 			assign way_valid[w] = valid_mem[w][req_set];
-			assign way_tag[w]   = tag_mem[w][req_set];
 			assign way_hit[w]   = way_valid[w] && (way_tag[w] == req_tag);
 		end
 	endgenerate
 
 	wire hit = |way_hit;
-	localparam WAY_W = WAYS > 8 ? 4 : (WAYS > 4 ? 3 : (WAYS > 2 ? 2 : 1));
 
 	/* Priority encoder for hit way */
 	reg [WAY_W-1:0] hit_way_idx;
@@ -361,7 +378,7 @@ module atg_mc_l2 #(
 		end
 	end
 
-	wire [TAG_W-1:0] flush_line_tag = tag_mem[active_victim_way][flush_set];
+	wire [TAG_W-1:0] flush_line_tag = way_tag[active_victim_way];
 	wire [LA_W-1:0] flush_line_addr = {flush_line_tag, flush_set};
 
 	/* Range check for Range Invalidation */
@@ -412,6 +429,10 @@ module atg_mc_l2 #(
 			pending_rsp_user <= {UW{1'b0}};
 			pending_rsp_rdata <= {LINE_BITS{1'b0}};
 			pending_rsp_error <= 1'b0;
+			tag_we <= 1'b0;
+			tag_way <= {WAY_W{1'b0}};
+			tag_waddr <= {SET_W{1'b0}};
+			tag_wdata <= {TAG_W{1'b0}};
 			for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
 				bram_raddr[init_w] <= {SET_W{1'b0}};
 				bram_waddr[init_w] <= {SET_W{1'b0}};
@@ -427,6 +448,7 @@ module atg_mc_l2 #(
 			s_rsp_valid <= 1'b0;
 			ctrl_inv_done <= 1'b0;
 			bram_we_r <= {WAYS{1'b0}};
+			tag_we <= 1'b0;
 
 			case (state)
 				S_IDLE: begin
@@ -520,7 +542,7 @@ module atg_mc_l2 #(
 							/* Victim is dirty: evict to AXI master */
 							m_req_valid <= 1'b1;
 							m_req_write <= 1'b1;
-							m_req_line  <= {tag_mem[victim_way_idx][req_set], req_set};
+							m_req_line  <= {way_tag[victim_way_idx], req_set};
 							m_req_be    <= {LINE_BYTES{1'b1}};
 							m_req_wdata <= way_rdata_r[victim_way_idx];
 							m_req_user  <= {UW{1'b0}};
@@ -584,7 +606,10 @@ module atg_mc_l2 #(
 				S_REFILL_WAIT: begin
 					if (m_rsp_valid && !m_rsp_write) begin
 						plru_mem[req_set] <= plru_out_tree;
-						tag_mem[active_victim_way][req_set] <= req_tag;
+						tag_we <= 1'b1;
+						tag_way <= active_victim_way;
+						tag_waddr <= req_set;
+						tag_wdata <= req_tag;
 						valid_mem[active_victim_way][req_set] <= 1'b1;
 						for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
 							bram_we_r[init_w] <= (active_victim_way == init_w[WAY_W-1:0]);
