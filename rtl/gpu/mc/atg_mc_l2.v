@@ -201,15 +201,22 @@ module atg_mc_l2 #(
 
 	/* Hit detection */
 	wire [WAYS-1:0] way_hit;
-	wire [WAYS-1:0] way_valid;
+	reg [WAYS-1:0] way_valid_r;
+	reg [14:0] cur_plru_r;
 
 	genvar w;
 	generate
 		for (w = 0; w < WAYS; w = w + 1) begin : g_hit
-			assign way_valid[w] = valid_mem[w][req_set];
-			assign way_hit[w]   = way_valid[w] && (way_tag_r[w] == req_tag);
+			always @(posedge clk) begin
+				way_valid_r[w] <= valid_mem[w][req_set];
+			end
+			assign way_hit[w] = way_valid_r[w] && (way_tag_r[w] == req_tag);
 		end
 	endgenerate
+
+	always @(posedge clk) begin
+		cur_plru_r <= plru_mem[req_set];
+	end
 
 	wire hit = |way_hit;
 
@@ -225,7 +232,7 @@ module atg_mc_l2 #(
 	end
 
 	/* Tree-PLRU victim selection for 16 or 4 ways */
-	wire [14:0] cur_plru = plru_mem[req_set];
+	wire [14:0] cur_plru = cur_plru_r;
 	reg [WAY_W-1:0] victim_way_idx;
 	/* verilator lint_off WIDTHTRUNC */
 	/* verilator lint_off WIDTHEXPAND */
@@ -278,7 +285,7 @@ module atg_mc_l2 #(
 	/* Combinational Tree-PLRU update */
 	wire [WAY_W-1:0] cur_access_way = (state == S_LOOKUP) ? hit_way_idx : active_victim_way;
 	wire [3:0] plru_access_way = {{ (4-WAY_W){1'b0} }, cur_access_way};
-	wire [14:0] plru_in_tree = plru_mem[req_set];
+	wire [14:0] plru_in_tree = cur_plru_r;
 	reg [14:0] plru_out_tree;
 
 	always @(*) begin
