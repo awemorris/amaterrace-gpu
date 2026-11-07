@@ -130,12 +130,12 @@ module atg_mc_l2 #(
 	localparam WAY_W = WAYS > 8 ? 4 : (WAYS > 4 ? 3 : (WAYS > 2 ? 2 : 1));
 
 	/* Tag array and metadata: 16 ways x NSETS */
-	wire [TAG_W-1:0] way_tag [0:WAYS-1];
+	reg [TAG_W-1:0] way_tag_r [0:WAYS-1];
 	reg tag_we;
 	reg [SET_W-1:0] tag_waddr;
 	reg [TAG_W-1:0] tag_wdata;
 	reg [WAY_W-1:0] tag_way;
-	wire [SET_W-1:0] tag_raddr = (state == S_FLUSH_STEP || state == S_FLUSH_EVICT || state == S_FLUSH_WAIT || state == S_FLUSH_READ || state == S_FLUSH_RWAIT) ? flush_set : req_set;
+	wire [SET_W-1:0] tag_raddr = (state == S_FLUSH_STEP || state == S_FLUSH_RWAIT) ? flush_set : req_set;
 
 	genvar gw;
 	generate
@@ -145,7 +145,9 @@ module atg_mc_l2 #(
 				if (tag_we && tag_way == gw[WAY_W-1:0])
 					tag_ram[tag_waddr] <= tag_wdata;
 			end
-			assign way_tag[gw] = tag_ram[tag_raddr];
+			always @(posedge clk) begin
+				way_tag_r[gw] <= tag_ram[tag_raddr];
+			end
 		end
 	endgenerate
 
@@ -205,7 +207,7 @@ module atg_mc_l2 #(
 	generate
 		for (w = 0; w < WAYS; w = w + 1) begin : g_hit
 			assign way_valid[w] = valid_mem[w][req_set];
-			assign way_hit[w]   = way_valid[w] && (way_tag[w] == req_tag);
+			assign way_hit[w]   = way_valid[w] && (way_tag_r[w] == req_tag);
 		end
 	endgenerate
 
@@ -378,7 +380,7 @@ module atg_mc_l2 #(
 		end
 	end
 
-	wire [TAG_W-1:0] flush_line_tag = way_tag[active_victim_way];
+	wire [TAG_W-1:0] flush_line_tag = way_tag_r[active_victim_way];
 	wire [LA_W-1:0] flush_line_addr = {flush_line_tag, flush_set};
 
 	/* Range check for Range Invalidation */
@@ -542,7 +544,7 @@ module atg_mc_l2 #(
 							/* Victim is dirty: evict to AXI master */
 							m_req_valid <= 1'b1;
 							m_req_write <= 1'b1;
-							m_req_line  <= {way_tag[victim_way_idx], req_set};
+							m_req_line  <= {way_tag_r[victim_way_idx], req_set};
 							m_req_be    <= {LINE_BYTES{1'b1}};
 							m_req_wdata <= way_rdata_r[victim_way_idx];
 							m_req_user  <= {UW{1'b0}};
