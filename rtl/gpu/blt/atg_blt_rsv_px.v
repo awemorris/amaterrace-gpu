@@ -237,15 +237,11 @@ module atg_blt_rsv_px #(
 	always @(posedge clk) begin
 		if (!rst_n || stop) begin
 			fv_start <= 1'b0;
-			fv_n <= 3'd0;
-			fv_in_s <= 512'd0;
 		end else begin
 			fv_start <= fire && slow;
-			if (fire && slow) begin
-				fv_n <= n;
-				fv_in_s <= win[511:0];
-			end
 		end
+		fv_n <= n;
+		fv_in_s <= win[511:0];
 	end
 
 	atg_blt_favg fv (
