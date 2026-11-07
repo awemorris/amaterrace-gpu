@@ -318,15 +318,8 @@ module atg_blt_rsv_px #(
 		end
 	end
 
-	wire wr_buf0 = lq_pop && (
-		drop_both ||
-		(shift_win && !head) ||
-		(!shift_win && !drop_both && (!head ? !v0 : v0))
-	);
-	wire wr_buf1 = lq_pop && (
-		(shift_win && head) ||
-		(!shift_win && !drop_both && (!head ? v0 : !v0))
-	);
+	wire wr_buf0 = lq_pop && (head == v0);
+	wire wr_buf1 = lq_pop && (head != v0);
 
 `ifdef MUT_RSV_ROWEND
 	wire may_load = active && !is_last_group;
@@ -425,12 +418,12 @@ module atg_blt_rsv_px #(
 					buf1 <= lq_data;
 				if (drop_both) begin
 					head <= 1'b0;
-					v0 <= lq_pop ? 1'b1 : 1'b0;
+					v0 <= 1'b0;
 					v1 <= 1'b0;
 				end else if (shift_win) begin
 					head <= ~head;
-					v0 <= v1;
-					v1 <= lq_pop ? 1'b1 : 1'b0;
+					v0 <= v1 | lq_pop;
+					v1 <= 1'b0;
 				end else if (lq_pop) begin
 					if (!v0)
 						v0 <= 1'b1;
