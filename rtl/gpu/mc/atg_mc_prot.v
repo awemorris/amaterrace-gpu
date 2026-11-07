@@ -208,6 +208,12 @@ module atg_mc_prot #(
 	wire [LA_W-1:0] a_line = line_of(a_head[20+RW +: LAW]);
 	wire [LA_W-1:0] d_line = line_of(d_head[20+RW +: LAW]);
 
+	wire [GW-1:0] a_g = a_line[LA_W-1:GS];
+	wire a_rng = tb_on && a_g >= g0 && {1'b0, a_g} < g1;
+	wire [GW-1:0] a_idx;
+	wire a_idx_bo;
+	am_sub #(.W(GW)) a_idx_sub (.a(a_g), .b(g0), .bi(1'b0), .d(a_idx), .bo(a_idx_bo));
+
 	wire a_inside = a_ap && !a_head[2];
 	wire a_tw = tw_bad_of(a_head, a_line);
 `ifdef MUT_PROT_NOCHK
@@ -226,6 +232,8 @@ module atg_mc_prot #(
 	reg [HPW-1:0] j_head;
 	reg [LB-1:0] j_data;
 	reg [LA_W-1:0] j_line;
+	reg [GW-1:0] j_idx, p_idx;
+	reg j_rng, p_rng;
 	reg p_v, p_walk, p_stale, p_err, inv_pend;
 	reg [HPW-1:0] p_head;
 	reg [LB-1:0] p_data;
@@ -242,11 +250,8 @@ module atg_mc_prot #(
 	wire s_write = s_head[1] || rmw_of(s_head[19:12]);
 	wire [5:0] s_slot = s_head[HW+1 +: 6];
 	wire [GW-1:0] s_g = s_line[LA_W-1:GS];
-	wire s_rng = tb_on && s_g >= g0 && {1'b0, s_g} < g1;
-	wire [GW-1:0] s_idx;
-	wire s_idx_bo;
-
-	am_sub #(.W(GW)) s_idx_sub (.a(s_g), .b(g0), .bi(1'b0), .d(s_idx), .bo(s_idx_bo));
+	wire s_rng = src_p ? p_rng : j_rng;
+	wire [GW-1:0] s_idx = src_p ? p_idx : j_idx;
 	wire [TAGW-1:0] s_tag = s_idx[GW-1:LINE_SHIFT];
 	wire [LINE_SHIFT-1:0] s_byte = s_idx[LINE_SHIFT-1:0];
 
@@ -302,13 +307,9 @@ module atg_mc_prot #(
 
 	/* --------------------------------------------- the selection */
 
-	wire [GW-1:0] p_idx;
 	wire [LA_W-1:0] w_line;
-	wire p_idx_bo, w_line_co;
+	wire w_line_co;
 
-	am_sub #(.W(GW)) p_idx_sub (
-		.a(p_line[LA_W-1:GS]), .b(g0), .bi(1'b0), .d(p_idx), .bo(p_idx_bo)
-	);
 	assign p_tag = p_idx[GW-1:LINE_SHIFT];
 	am_add #(.W(LA_W)) w_line_add (
 		.a(tbase[ADDR_W-1:LINE_SHIFT]), .b({{(LA_W-TAGW){1'b0}}, p_tag}), .ci(1'b0),
@@ -402,16 +403,20 @@ module atg_mc_prot #(
 			j_head <= a_head[HPW-1:0];
 			j_data <= a_data;
 			j_line <= a_line;
+			j_idx <= a_idx;
+			j_rng <= a_rng;
 		end
 		if (j_to_p) begin
 			p_head <= j_head;
 			p_data <= j_data;
 			p_line <= j_line;
+			p_idx <= j_idx;
+			p_rng <= j_rng;
 		end
 	end
 
 	wire unused_ok = &{1'b0, a_head, d_head, g_head, b_head, j_head, s_head, lim_up, tgran,
-		p_idx, tend, s_idx_bo, p_idx_bo, w_line_co, lim_up_co, g_diff_bo, tgran_co, tend_co};
+		p_idx, tend, a_idx_bo, w_line_co, lim_up_co, g_diff_bo, tgran_co, tend_co};
 endmodule
 
 `default_nettype wire
