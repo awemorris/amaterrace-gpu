@@ -36,7 +36,7 @@ module atg_mc_asm #(
 	/* A write's header is in, its data flit is not. */
 	reg hdr;
 
-	assign t_ready = !full || take;
+	assign t_ready = !full;
 
 	wire head_en = t_valid && t_ready && !hdr;
 	wire data_en = t_valid && hdr;
@@ -88,9 +88,9 @@ module atg_mc_asm #(
 		for (gs = 0; gs < NSLICE; gs = gs + 1) begin : g_en_buf
 			localparam HGRP = (gs >= 11) ? 2 : ((gs >= 5) ? 1 : 0);
 			localparam FGRP = (gs >= 8) ? 1 : 0;
-			/* head_en = t_valid && !hdr && (!full || take) in 1 LUT4 */
-			(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h00A2)) u_he (
-				.I0(tv_g[HGRP]), .I1(full_g[FGRP]), .I2(take), .I3(hdr_g[HGRP]),
+			/* head_en = t_valid && !hdr && !full in 1 LUT4 */
+			(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0002)) u_he (
+				.I0(tv_g[HGRP]), .I1(full_g[FGRP]), .I2(1'b0), .I3(hdr_g[HGRP]),
 				.O(head_en_b[gs])
 			);
 			/* data_en = t_valid && hdr in 1 LUT2 (full is always 0 when hdr is 1) */
