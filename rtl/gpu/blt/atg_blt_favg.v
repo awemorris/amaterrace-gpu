@@ -58,6 +58,7 @@ module atg_blt_favg (
 	reg [2:0] j;		/* its channel */
 	reg [1:0] step, fma_wait;
 	reg [31:0] r01, r23, sm, r_final;
+	reg [31:0] r_fa, r_fb, r_fc;
 
 	/* The pixel's bytes, 2^psl in 5 bits (0 from 32 bytes), by table. */
 	reg [4:0] ps;
@@ -139,8 +140,8 @@ module atg_blt_favg (
 	/* The fma: fb is 1.0 or 0.25 (a significand of 2^23), so the product of
 	 * the significands is fa's shifted (no multiplier). */
 	wire [31:0] fr;
-	am_fp_fma_p #(.LAT(2)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(fa), .b0(fb), .c0(fc), .rm(3'd0), .noc(1'b0),
-		.p({1'b0, fa[30:23] != 8'd0 ? {1'b1, fa[22:0]} : 24'd0, 23'd0}), .r(fr));
+	am_fp_fma_p #(.LAT(2)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(r_fa), .b0(r_fb), .c0(r_fc), .rm(3'd0), .noc(1'b0),
+		.p({1'b0, r_fa[30:23] != 8'd0 ? {1'b1, r_fa[22:0]} : 24'd0, 23'd0}), .r(fr));
 	wire [15:0] fh;
 	am_fp_f2h #(.LAT(0)) u_fh (.f(r_final), .h(fh));
 	wire [2:0] cpp_last, n_last;
@@ -220,7 +221,16 @@ module atg_blt_favg (
 				st <= RUN;
 			end
 			RUN: begin
-				if (fma_wait == 2'd2) begin
+				case (fma_wait)
+				2'd0: begin
+					r_fa <= fa;
+					r_fb <= fb;
+					r_fc <= fc;
+					fma_wait <= 2'd1;
+				end
+				2'd1: fma_wait <= 2'd2;
+				2'd2: fma_wait <= 2'd3;
+				2'd3: begin
 					fma_wait <= 2'd0;
 					if (step == 2'd0) begin
 						r01 <= fr;
@@ -239,13 +249,8 @@ module atg_blt_favg (
 						else
 							st <= COMMIT;
 					end
-				end else begin
-					case (fma_wait)
-					2'd0: fma_wait <= 2'd1;
-					2'd1: fma_wait <= 2'd2;
-					default: fma_wait <= 2'd0;
-					endcase
 				end
+				endcase
 			end
 			ENC_START: begin
 				st <= ENC;
