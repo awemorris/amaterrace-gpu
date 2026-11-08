@@ -155,7 +155,7 @@ module atg_blt_rsv_px #(
 	am_add #(.W(3)) a_sh4 (.a(psl), .b(3'd2), .ci(1'b0), .s(sh4), .co(grp_co_unused[0]));
 	am_shift #(.W(LS + 1), .SW(3)) h_fit (.a(LB_V), .amt(sh4), .left(1'b0), .arith(1'b0), .y(nfit));
 	wire [2:0] nmax = nfit == {(LS + 1){1'b0}} ? 3'd1 : nfit >= 4 ? 3'd4 : nfit[2:0];
-	reg [2:0] sh4_r, nmax_r, psl_r;
+	reg [2:0] sh4_r, nmax_r, psl_r, n_geom_r;
 	/* The pixel's bytes in the row (linear or in 4x4 tiles), its address, the room to the line's end. */
 	am_shift #(.W(ADDR_W), .SW(3)) h_x (.a(tiled ? {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} :
 		{{(ADDR_W - 17){1'b0}}, x}), .amt(psl), .left(1'b1), .arith(1'b0), .y(x_b));
@@ -217,18 +217,10 @@ module atg_blt_rsv_px #(
 	reg [2:0] n;
 
 	always @(*) begin
-		n = nmax_r;
-		if (rem_limit < n)
-			n = rem_limit;
-		if (tiled) begin
-			if (room_t < n)
-				n = room_t;
-		end else begin
-`ifndef MUT_RSV_SPLIT
-			if (room_l_limit_r < n)
-				n = room_l_limit_r;
-`endif
-		end
+		if (rem_has_high || rem[2:0] >= n_geom_r)
+			n = n_geom_r;
+		else
+			n = rem[2:0];
 	end
 
 	/* The group's source bytes: 4 n ps, at ptr of the window. */
@@ -313,7 +305,7 @@ module atg_blt_rsv_px #(
 		.clk(clk), .rst_n(frst_n), .i_valid(fv_start), .i_ready(f_ready), .fmt(fmt), .psl(psl),
 		.npx(fv_n), .in_s(fv_in_s), .o_valid(f_valid), .o_ready(1'b1), .out_p(favg)
 	);
-	wire rem_fits = (rem[2:0] <= nmax_r) && (tiled ? (rem[2:0] <= room_t) : (rem[2:0] <= room_l_limit_r));
+	wire rem_fits = rem[2:0] <= n_geom_r;
 	wire is_last_group = !rem_has_high && rem_fits;
 	wire row_end = fire_ctrl && is_last_group;
 
@@ -363,6 +355,24 @@ module atg_blt_rsv_px #(
 	am_add #(.W(17)) a_x (.a(x), .b({14'd0, n}), .ci(1'b0), .s(x_next), .co(row_co_unused[1]));
 	am_sub #(.W(17)) s_rem (.a(rem), .b({14'd0, n}), .bi(1'b0), .d(rem_next), .bo(row_co_unused[2]));
 	am_shift #(.W(5), .SW(3)) h_nb (.a({2'd0, n}), .amt(psl_r), .left(1'b1), .arith(1'b0), .y(grp_nb));
+
+	wire [2:0] room_l_next = get_room_l_limit({{(8 - LS){1'b0}}, daddr_ls_step}, psl_r);
+	wire [2:0] room_t_next = sub4_2b(x_next[1:0]);
+	wire [2:0] n_geom_next = tiled ? (room_t_next < nmax_r ? room_t_next : nmax_r) :
+`ifndef MUT_RSV_SPLIT
+		(room_l_next < nmax_r ? room_l_next : nmax_r);
+`else
+		nmax_r;
+`endif
+
+	wire [2:0] room_l_init = get_room_l_limit({{(8 - LS){1'b0}}, daddr_ls_init}, psl);
+	wire [2:0] room_t_init = sub4_2b(d_x[1:0]);
+	wire [2:0] n_geom_init = tiled ? (room_t_init < nmax ? room_t_init : nmax) :
+`ifndef MUT_RSV_SPLIT
+		(room_l_init < nmax ? room_l_init : nmax);
+`else
+		nmax;
+`endif
 	reg [LBITS-1:0] a_sh;	/* only the group's bytes: the average's other pixels are 0 */
 	integer i;
 
@@ -385,6 +395,7 @@ module atg_blt_rsv_px #(
 			lines_left_nz <= 1'b0;
 			daddr_ls_lin_r <= {LS{1'b0}};
 			room_l_limit_r <= 3'd4;
+			n_geom_r <= 3'd4;
 			sh4_r <= 3'd2;
 			nmax_r <= 3'd4;
 			psl_r <= 3'd0;
@@ -426,7 +437,8 @@ module atg_blt_rsv_px #(
 				lines_left <= d_nl;
 				lines_left_nz <= (d_nl != 17'd0);
 				daddr_ls_lin_r <= daddr_ls_init;
-				room_l_limit_r <= get_room_l_limit({{(8 - LS){1'b0}}, daddr_ls_init}, psl);
+				room_l_limit_r <= room_l_init;
+				n_geom_r <= n_geom_init;
 				sh4_r <= sh4;
 				nmax_r <= nmax;
 				psl_r <= psl;
@@ -467,7 +479,8 @@ module atg_blt_rsv_px #(
 					rem <= rem_next;
 					rem_has_high <= |rem_next[16:3];
 					daddr_ls_lin_r <= daddr_ls_step;
-					room_l_limit_r <= get_room_l_limit({{(8 - LS){1'b0}}, daddr_ls_step}, psl_r);
+					room_l_limit_r <= room_l_next;
+					n_geom_r <= n_geom_next;
 					if (row_end)
 						active <= 1'b0;
 				end
