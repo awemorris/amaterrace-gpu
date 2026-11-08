@@ -40,8 +40,10 @@ module atg_mc_plb #(
 
 	input wire [GW-1:0] g0,
 	input wire [TAGW-1:0] tag,
+	input wire [LINE_SHIFT-1:0] byte_idx,
 	output reg hit,
 	output wire [LINE_BYTES*8-1:0] data,
+	output wire [7:0] byte_data,
 
 	input wire fill,
 	input wire [TAGW-1:0] fill_tag,
@@ -71,6 +73,15 @@ module atg_mc_plb #(
 			end
 	end
 
+	wire [7:0] way_byte [0:PLB-1];
+	genvar gk_b;
+	generate
+		for (gk_b = 0; gk_b < PLB; gk_b = gk_b + 1) begin : g_wb
+			assign way_byte[gk_b] = pl_data[gk_b][{byte_idx, 3'b000} +: 8];
+		end
+	endgenerate
+
+	assign byte_data = way_byte[idx];
 	assign data = pl_data[idx];
 
 	/*

@@ -277,7 +277,7 @@ module atg_mc_prot #(
 
 	/* The PLB (the walk's line: p_tag, below). */
 	wire pl_hit, p_inv;
-	wire [LB-1:0] s_pline;
+	wire [7:0] s_b;
 	wire [TAGW-1:0] p_tag;
 	wire fill;
 
@@ -285,12 +285,11 @@ module atg_mc_prot #(
 		.PLB(PLB), .PLB_W(PLB_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .GW(GW),
 		.TAGW(TAGW)
 	) plb (
-		.clk(clk), .rst_n(rst_n), .flush(flush), .en(P), .g0(g0), .tag(s_tag), .hit(pl_hit),
-		.data(s_pline), .fill(fill), .fill_tag(p_tag), .fill_data(w_rdata),
+		.clk(clk), .rst_n(rst_n), .flush(flush), .en(P), .g0(g0), .tag(s_tag),
+		.byte_idx(s_byte), .hit(pl_hit), .data(), .byte_data(s_b),
+		.fill(fill), .fill_tag(p_tag), .fill_data(w_rdata),
 		.inv_valid(inv_valid), .inv_g(inv_g), .inv_n(inv_n), .w_tag(p_tag), .w_inv(p_inv)
 	);
-
-	wire [7:0] s_b = s_pline[{s_byte, 3'b000} +: 8];
 	wire s_cam;
 
 	atg_mc_grant #(.NGRANT(NGRANT), .IDX_W(GIDX_W)) cam (
