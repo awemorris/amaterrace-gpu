@@ -133,54 +133,67 @@ module atg_blt_avg (
 	end
 	endgenerate
 
-	wire [127:0] px_fields;
-	genvar p_gen;
-	generate
-	for (p_gen = 0; p_gen < 4; p_gen = p_gen + 1) begin : g_fields
-		wire [9:0] q0 = q[10 * (4 * p_gen + 0) +: 10];
-		wire [9:0] q1 = q[10 * (4 * p_gen + 1) +: 10];
-		wire [9:0] q2 = q[10 * (4 * p_gen + 2) +: 10];
-		wire [9:0] q3 = q[10 * (4 * p_gen + 3) +: 10];
-		assign px_fields[32 * p_gen +: 32] =
-			(fmt == 3'd6) ? {q3[1:0], q2[9:0], q1[9:0], q0[9:0]} :
-			(fmt == 3'd1) ? {16'd0, q2[4:0], q1[5:0], q0[4:0]} :
-			/* fmt == 3'd7 */ {16'd0, q3[0], q2[4:0], q1[4:0], q0[4:0]};
-	end
-	endgenerate
+	wire [9:0] q0_0 = q[10 * 0 +: 10];
+	wire [9:0] q0_1 = q[10 * 1 +: 10];
+	wire [9:0] q0_2 = q[10 * 2 +: 10];
+	wire [9:0] q0_3 = q[10 * 3 +: 10];
+	wire [9:0] q1_0 = q[10 * 4 +: 10];
+	wire [9:0] q1_1 = q[10 * 5 +: 10];
+	wire [9:0] q1_2 = q[10 * 6 +: 10];
+	wire [9:0] q1_3 = q[10 * 7 +: 10];
+	wire [9:0] q2_0 = q[10 * 8 +: 10];
+	wire [9:0] q2_1 = q[10 * 9 +: 10];
+	wire [9:0] q2_2 = q[10 * 10 +: 10];
+	wire [9:0] q2_3 = q[10 * 11 +: 10];
+	wire [9:0] q3_0 = q[10 * 12 +: 10];
+	wire [9:0] q3_1 = q[10 * 13 +: 10];
+	wire [9:0] q3_2 = q[10 * 14 +: 10];
+	wire [9:0] q3_3 = q[10 * 15 +: 10];
 
-	/* The output pixels of each format and pixel size. */
-	integer pp, cc;
+	/* Format 6: UNORM2_10_10_10 (4 x 32 bits = 128 bits) */
+	wire [127:0] f6_out = {
+		q3_3[1:0], q3_2, q3_1, q3_0,
+		q2_3[1:0], q2_2, q2_1, q2_0,
+		q1_3[1:0], q1_2, q1_1, q1_0,
+		q0_3[1:0], q0_2, q0_1, q0_0
+	};
+
+	/* Format 1: UNORM565 (4 x 16 bits = 64 bits, high 64 bits 0) */
+	wire [127:0] f1_out = {
+		64'd0,
+		q3_2[4:0], q3_1[5:0], q3_0[4:0],
+		q2_2[4:0], q2_1[5:0], q2_0[4:0],
+		q1_2[4:0], q1_1[5:0], q1_0[4:0],
+		q0_2[4:0], q0_1[5:0], q0_0[4:0]
+	};
+
+	/* Format 7: UNORM1555 (4 x 16 bits = 64 bits, high 64 bits 0) */
+	wire [127:0] f7_out = {
+		64'd0,
+		q3_3[0], q3_2[4:0], q3_1[4:0], q3_0[4:0],
+		q2_3[0], q2_2[4:0], q2_1[4:0], q2_0[4:0],
+		q1_3[0], q1_2[4:0], q1_1[4:0], q1_0[4:0],
+		q0_3[0], q0_2[4:0], q0_1[4:0], q0_0[4:0]
+	};
+
+	/* Format 0: UNORM8 (psl = 0, 1, 2) */
+	wire [127:0] f0_p0 = {96'd0, q3_0[7:0], q2_0[7:0], q1_0[7:0], q0_0[7:0]};
+	wire [127:0] f0_p1 = {64'd0, q3_1[7:0], q3_0[7:0], q2_1[7:0], q2_0[7:0], q1_1[7:0], q1_0[7:0], q0_1[7:0], q0_0[7:0]};
+	wire [127:0] f0_p2 = {
+		q3_3[7:0], q3_2[7:0], q3_1[7:0], q3_0[7:0],
+		q2_3[7:0], q2_2[7:0], q2_1[7:0], q2_0[7:0],
+		q1_3[7:0], q1_2[7:0], q1_1[7:0], q1_0[7:0],
+		q0_3[7:0], q0_2[7:0], q0_1[7:0], q0_0[7:0]
+	};
+	wire [127:0] f0_out = (psl == 3'd0) ? f0_p0 : (psl == 3'd1 ? f0_p1 : f0_p2);
+
 	reg [127:0] avg_core;
-
 	always @(*) begin
-		avg_core = 128'd0;
 		case (fmt)
-		3'd0: begin
-			case (psl)
-			3'd0: begin
-				for (pp = 0; pp < 4; pp = pp + 1)
-					avg_core[8 * pp +: 8] = q[10 * (4 * pp) +: 8];
-			end
-			3'd1: begin
-				for (pp = 0; pp < 4; pp = pp + 1)
-					for (cc = 0; cc < 2; cc = cc + 1)
-						avg_core[8 * (2 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
-			end
-			3'd2: begin
-				for (pp = 0; pp < 4; pp = pp + 1)
-					for (cc = 0; cc < 4; cc = cc + 1)
-						avg_core[8 * (4 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
-			end
-			default: avg_core = 128'd0;
-			endcase
-		end
-		3'd1, 3'd7: begin
-			for (pp = 0; pp < 4; pp = pp + 1)
-				avg_core[16 * pp +: 16] = px_fields[32 * pp +: 16];
-		end
-		3'd6: begin
-			avg_core = px_fields;
-		end
+		3'd0: avg_core = f0_out;
+		3'd1: avg_core = f1_out;
+		3'd6: avg_core = f6_out;
+		3'd7: avg_core = f7_out;
 		default: avg_core = 128'd0;
 		endcase
 	end
