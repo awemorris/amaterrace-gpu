@@ -186,28 +186,33 @@ module atg_blt_rsv_px #(
 		endcase
 	endfunction
 
-	reg [2:0] room_l_limit;
-	always @(*) begin
-		if (LS >= 6) begin
-			case (psl)
-			3'd0: room_l_limit = (daddr_ls_pad[5:2] == 4'b1111) ? sub4_2b(daddr_ls_pad[1:0]) : 3'd4;
-			3'd1: room_l_limit = (daddr_ls_pad[5:3] == 3'b111)  ? sub4_2b(daddr_ls_pad[2:1]) : 3'd4;
-			3'd2: room_l_limit = (daddr_ls_pad[5:4] == 2'b11)   ? sub4_2b(daddr_ls_pad[3:2]) : 3'd4;
-			3'd3: room_l_limit = daddr_ls_pad[5]                ? sub4_2b(daddr_ls_pad[4:3]) : 3'd4;
-			3'd4: room_l_limit = sub4_2b(daddr_ls_pad[5:4]);
-			default: room_l_limit = 3'd4;
-			endcase
-		end else begin
-			case (psl)
-			3'd0: room_l_limit = (daddr_ls_pad[4:2] == 3'b111)  ? sub4_2b(daddr_ls_pad[1:0]) : 3'd4;
-			3'd1: room_l_limit = (daddr_ls_pad[4:3] == 2'b11)   ? sub4_2b(daddr_ls_pad[2:1]) : 3'd4;
-			3'd2: room_l_limit = daddr_ls_pad[4]                ? sub4_2b(daddr_ls_pad[3:2]) : 3'd4;
-			3'd3: room_l_limit = sub4_2b(daddr_ls_pad[4:3]);
-			3'd4: room_l_limit = (daddr_ls_pad[4] ? 3'd1 : 3'd2);
-			default: room_l_limit = 3'd4;
-			endcase
+	function [2:0] get_room_l_limit;
+		input [7:0] pad;
+		input [2:0] p_psl;
+		begin
+			if (LS >= 6) begin
+				case (p_psl)
+				3'd0: get_room_l_limit = (pad[5:2] == 4'b1111) ? sub4_2b(pad[1:0]) : 3'd4;
+				3'd1: get_room_l_limit = (pad[5:3] == 3'b111)  ? sub4_2b(pad[2:1]) : 3'd4;
+				3'd2: get_room_l_limit = (pad[5:4] == 2'b11)   ? sub4_2b(pad[3:2]) : 3'd4;
+				3'd3: get_room_l_limit = pad[5]                ? sub4_2b(pad[4:3]) : 3'd4;
+				3'd4: get_room_l_limit = sub4_2b(pad[5:4]);
+				default: get_room_l_limit = 3'd4;
+				endcase
+			end else begin
+				case (p_psl)
+				3'd0: get_room_l_limit = (pad[4:2] == 3'b111)  ? sub4_2b(pad[1:0]) : 3'd4;
+				3'd1: get_room_l_limit = (pad[4:3] == 2'b11)   ? sub4_2b(pad[2:1]) : 3'd4;
+				3'd2: get_room_l_limit = pad[4]                ? sub4_2b(pad[3:2]) : 3'd4;
+				3'd3: get_room_l_limit = sub4_2b(pad[4:3]);
+				3'd4: get_room_l_limit = (pad[4] ? 3'd1 : 3'd2);
+				default: get_room_l_limit = 3'd4;
+				endcase
+			end
 		end
-	end
+	endfunction
+
+	reg [2:0] room_l_limit_r;
 	reg [2:0] n;
 
 	always @(*) begin
@@ -219,8 +224,8 @@ module atg_blt_rsv_px #(
 				n = room_t;
 		end else begin
 `ifndef MUT_RSV_SPLIT
-			if (room_l_limit < n)
-				n = room_l_limit;
+			if (room_l_limit_r < n)
+				n = room_l_limit_r;
 `endif
 		end
 	end
@@ -375,6 +380,7 @@ module atg_blt_rsv_px #(
 			lines_left <= 17'd0;
 			lines_left_nz <= 1'b0;
 			daddr_ls_lin_r <= {LS{1'b0}};
+			room_l_limit_r <= 3'd4;
 			buf0 <= {LBITS{1'b0}};
 			buf1 <= {LBITS{1'b0}};
 			head <= 1'b0;
@@ -413,6 +419,7 @@ module atg_blt_rsv_px #(
 				lines_left <= d_nl;
 				lines_left_nz <= (d_nl != 17'd0);
 				daddr_ls_lin_r <= daddr_ls_init;
+				room_l_limit_r <= get_room_l_limit({{(8 - LS){1'b0}}, daddr_ls_init}, psl);
 				ptr <= d_off;
 				v0 <= 1'b0;
 				v1 <= 1'b0;
@@ -450,6 +457,7 @@ module atg_blt_rsv_px #(
 					rem <= rem_next;
 					rem_has_high <= |rem_next[16:3];
 					daddr_ls_lin_r <= daddr_ls_step;
+					room_l_limit_r <= get_room_l_limit({{(8 - LS){1'b0}}, daddr_ls_step}, psl);
 					if (row_end)
 						active <= 1'b0;
 				end
