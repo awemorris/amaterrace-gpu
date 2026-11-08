@@ -59,6 +59,9 @@ module atg_blt_avg (
 	 */
 	wire [159:0] q;	/* average j at bits 10 j */
 
+	(* keep = "true" *) wire [11:0] p_fmt_px = {4{fmt}};
+	(* keep = "true" *) wire [11:0] p_psl_px = {4{psl}};
+
 	genvar j, sm;
 	generate
 	for (j = 0; j < 16; j = j + 1) begin : g_avg
@@ -74,9 +77,9 @@ module atg_blt_avg (
 			reg [9:0] v_val;
 
 			always @(*) begin
-				case (fmt)
+				case (p_fmt_px[3 * PP +: 3])
 				3'd0: begin
-					case (psl)
+					case (p_psl_px[3 * PP +: 3])
 					3'd0: v_val = (CH == 0) ? {2'd0, in_b} : 10'd0;
 					3'd1: v_val = (CH == 0) ? {2'd0, in_h[7:0]} : (CH == 1) ? {2'd0, in_h[15:8]} : 10'd0;
 					3'd2: v_val = (CH == 0) ? {2'd0, in_w[7:0]} : (CH == 1) ? {2'd0, in_w[15:8]} : (CH == 2) ? {2'd0, in_w[23:16]} : {2'd0, in_w[31:24]};
@@ -140,8 +143,8 @@ module atg_blt_avg (
 		wire [9:0] q2 = q[10 * (4 * p_gen + 2) +: 10];
 		wire [9:0] q3 = q[10 * (4 * p_gen + 3) +: 10];
 		assign px_fields[32 * p_gen +: 32] =
-			(fmt == 3'd6) ? {q3[1:0], q2[9:0], q1[9:0], q0[9:0]} :
-			(fmt == 3'd1) ? {16'd0, q2[4:0], q1[5:0], q0[4:0]} :
+			(p_fmt_px[3 * p_gen +: 3] == 3'd6) ? {q3[1:0], q2[9:0], q1[9:0], q0[9:0]} :
+			(p_fmt_px[3 * p_gen +: 3] == 3'd1) ? {16'd0, q2[4:0], q1[5:0], q0[4:0]} :
 			/* fmt == 3'd7 */ {16'd0, q3[0], q2[4:0], q1[4:0], q0[4:0]};
 	end
 	endgenerate

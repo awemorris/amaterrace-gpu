@@ -255,8 +255,8 @@ module atg_blt_rsv_px #(
 	reg [LA_W-1:0] p_line;
 	reg [LS-1:0] p_off;
 	reg [4:0] p_nb;
-	(* max_fanout = 16 *) reg [2:0] p_fmt;
-	(* max_fanout = 16 *) reg [2:0] p_psl;
+	(* max_fanout = 8 *) reg [2:0] p_fmt;
+	(* max_fanout = 8 *) reg [2:0] p_psl;
 
 	atg_blt_avg av (
 		.fmt(p_fmt),
