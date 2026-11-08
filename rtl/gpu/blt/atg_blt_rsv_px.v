@@ -255,12 +255,22 @@ module atg_blt_rsv_px #(
 	reg [LA_W-1:0] p_line;
 	reg [LS-1:0] p_off;
 	reg [4:0] p_nb;
-	(* max_fanout = 16 *) reg [2:0] p_fmt;
-	(* max_fanout = 16 *) reg [2:0] p_psl;
+	(* max_fanout = 8 *) reg [2:0] p_fmt;
+	(* max_fanout = 8 *) reg [2:0] p_psl;
+	(* max_fanout = 8 *) reg p_fmt_0, p_fmt_1, p_fmt_6, p_fmt_7, p_fmt_s0;
+	(* max_fanout = 8 *) reg p_psl_0, p_psl_1, p_psl_2;
 
 	atg_blt_avg av (
 		.fmt(p_fmt),
 		.psl(p_psl),
+		.fmt_is_0(p_fmt_0),
+		.fmt_is_1(p_fmt_1),
+		.fmt_is_6(p_fmt_6),
+		.fmt_is_7(p_fmt_7),
+		.fmt_is_s0(p_fmt_s0),
+		.psl_is_0(p_psl_0),
+		.psl_is_1(p_psl_1),
+		.psl_is_2(p_psl_2),
 		.in_s(p_win),
 		.out_p(avg)
 	);
@@ -415,6 +425,14 @@ module atg_blt_rsv_px #(
 			p_nb <= 5'd0;
 			p_fmt <= 3'd0;
 			p_psl <= 3'd0;
+			p_fmt_0 <= 1'b0;
+			p_fmt_1 <= 1'b0;
+			p_fmt_6 <= 1'b0;
+			p_fmt_7 <= 1'b0;
+			p_fmt_s0 <= 1'b0;
+			p_psl_0 <= 1'b0;
+			p_psl_1 <= 1'b0;
+			p_psl_2 <= 1'b0;
 			a_v <= 1'b0;
 			a_slow <= 1'b0;
 			a_pend <= 1'b0;
@@ -454,6 +472,14 @@ module atg_blt_rsv_px #(
 				p_v <= 1'b0;
 				p_fmt <= fmt;
 				p_psl <= psl;
+				p_fmt_0 <= (fmt == 3'd0);
+				p_fmt_1 <= (fmt == 3'd1);
+				p_fmt_6 <= (fmt == 3'd6);
+				p_fmt_7 <= (fmt == 3'd7);
+				p_fmt_s0 <= (fmt != 3'd0 && fmt != 3'd1 && fmt != 3'd6 && fmt != 3'd7);
+				p_psl_0 <= (psl == 3'd0);
+				p_psl_1 <= (psl == 3'd1);
+				p_psl_2 <= (psl == 3'd2);
 			end else begin
 				/* The window: load into ping-pong buffers */
 				ptr <= nptr;
