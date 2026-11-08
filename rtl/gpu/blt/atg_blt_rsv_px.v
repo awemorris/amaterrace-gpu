@@ -255,35 +255,31 @@ module atg_blt_rsv_px #(
 	reg [LA_W-1:0] p_line;
 	reg [LS-1:0] p_off;
 	reg [4:0] p_nb;
-	(* max_fanout = 8 *) reg [2:0] p_fmt;
-	(* max_fanout = 8 *) reg [2:0] p_psl;
-	(* max_fanout = 8 *) reg p_fmt_0, p_fmt_1, p_fmt_6, p_fmt_7, p_fmt_s0;
-	(* max_fanout = 8 *) reg p_psl_0, p_psl_1, p_psl_2;
+	(* max_fanout = 16 *) reg [2:0] p_fmt;
+	(* max_fanout = 16 *) reg [2:0] p_psl;
+	reg p_is_s0;
+
+	wire [127:0] s0_val;
 
 	atg_blt_avg av (
 		.fmt(p_fmt),
 		.psl(p_psl),
-		.fmt_is_0(p_fmt_0),
-		.fmt_is_1(p_fmt_1),
-		.fmt_is_6(p_fmt_6),
-		.fmt_is_7(p_fmt_7),
-		.fmt_is_s0(p_fmt_s0),
-		.psl_is_0(p_psl_0),
-		.psl_is_1(p_psl_1),
-		.psl_is_2(p_psl_2),
 		.in_s(p_win),
-		.out_p(avg)
+		.out_p(),
+		.avg_only(avg),
+		.s0_only(s0_val)
 	);
 
 	/* Stage A: the average of the group. */
 	reg a_v;
-	reg a_slow;
+	reg [1:0] a_src;	/* 0: avg, 1: s0, 2: flt */
 	reg [LA_W-1:0] a_line;
 	reg [LS-1:0] a_off;
 	reg [4:0] a_nb;		/* bytes */
-	reg [127:0] a_px_int;
+	reg [127:0] a_px_avg;
+	reg [127:0] a_px_s0;
 	reg [127:0] a_px_flt;
-	wire [127:0] a_px = a_slow ? a_px_flt : a_px_int;
+	wire [127:0] a_px = (a_src == 2'd2) ? a_px_flt : (a_src == 2'd1 ? a_px_s0 : a_px_avg);
 
 	/* Stage B: the line being assembled. */
 	reg b_v;
@@ -425,21 +421,15 @@ module atg_blt_rsv_px #(
 			p_nb <= 5'd0;
 			p_fmt <= 3'd0;
 			p_psl <= 3'd0;
-			p_fmt_0 <= 1'b0;
-			p_fmt_1 <= 1'b0;
-			p_fmt_6 <= 1'b0;
-			p_fmt_7 <= 1'b0;
-			p_fmt_s0 <= 1'b0;
-			p_psl_0 <= 1'b0;
-			p_psl_1 <= 1'b0;
-			p_psl_2 <= 1'b0;
+			p_is_s0 <= 1'b0;
 			a_v <= 1'b0;
-			a_slow <= 1'b0;
+			a_src <= 2'd0;
 			a_pend <= 1'b0;
 			a_line <= {LA_W{1'b0}};
 			a_off <= {LS{1'b0}};
 			a_nb <= 5'd0;
-			a_px_int <= 128'd0;
+			a_px_avg <= 128'd0;
+			a_px_s0 <= 128'd0;
 			a_px_flt <= 128'd0;
 			b_v <= 1'b0;
 			b_line <= {LA_W{1'b0}};
@@ -472,14 +462,7 @@ module atg_blt_rsv_px #(
 				p_v <= 1'b0;
 				p_fmt <= fmt;
 				p_psl <= psl;
-				p_fmt_0 <= (fmt == 3'd0);
-				p_fmt_1 <= (fmt == 3'd1);
-				p_fmt_6 <= (fmt == 3'd6);
-				p_fmt_7 <= (fmt == 3'd7);
-				p_fmt_s0 <= (fmt != 3'd0 && fmt != 3'd1 && fmt != 3'd6 && fmt != 3'd7);
-				p_psl_0 <= (psl == 3'd0);
-				p_psl_1 <= (psl == 3'd1);
-				p_psl_2 <= (psl == 3'd2);
+				p_is_s0 <= (fmt != 3'd0 && fmt != 3'd1 && fmt != 3'd6 && fmt != 3'd7);
 			end else begin
 				/* The window: load into ping-pong buffers */
 				ptr <= nptr;
@@ -564,14 +547,19 @@ module atg_blt_rsv_px #(
 			/* Stage A. */
 			if (p_v && a_free) begin
 				a_v <= 1'b1;
-				a_slow <= 1'b0;
 				a_line <= p_line;
 				a_off <= p_off;
 				a_nb <= p_nb;
-				a_px_int <= avg;
+				if (p_is_s0) begin
+					a_src <= 2'd1;
+					a_px_s0 <= s0_val;
+				end else begin
+					a_src <= 2'd0;
+					a_px_avg <= avg;
+				end
 			end else if (a_pend && f_valid) begin
 				a_v <= 1'b1;
-				a_slow <= 1'b1;
+				a_src <= 2'd2;
 				a_pend <= 1'b0;
 				a_line <= p_line;
 				a_off <= p_off;

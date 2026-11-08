@@ -25,20 +25,7 @@ module atg_blt_avg_tb;
 	integer e0 = 0, e1 = 0, e2 = 0;
 	integer sum, p, k, s, f, v, w, seed;
 
-	atg_blt_avg dut (
-		.fmt(fmt),
-		.psl(is16 ? 3'd1 : 3'd2),
-		.fmt_is_0(fmt == 3'd0),
-		.fmt_is_1(fmt == 3'd1),
-		.fmt_is_6(fmt == 3'd6),
-		.fmt_is_7(fmt == 3'd7),
-		.fmt_is_s0(fmt != 3'd0 && fmt != 3'd1 && fmt != 3'd6 && fmt != 3'd7),
-		.psl_is_0(1'b0),
-		.psl_is_1(is16),
-		.psl_is_2(!is16),
-		.in_s(in_s),
-		.out_p(out_p)
-	);
+	atg_blt_avg dut (.fmt(fmt), .psl(is16 ? 3'd1 : 3'd2), .in_s(in_s), .out_p(out_p));
 
 	function integer rne4;
 		input integer x;

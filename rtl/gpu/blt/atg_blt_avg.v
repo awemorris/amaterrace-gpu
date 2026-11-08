@@ -30,16 +30,10 @@
 module atg_blt_avg (
 	input wire [2:0] fmt,
 	input wire [2:0] psl,	/* log2 of the pixel's bytes */
-	input wire fmt_is_0,
-	input wire fmt_is_1,
-	input wire fmt_is_6,
-	input wire fmt_is_7,
-	input wire fmt_is_s0,
-	input wire psl_is_0,
-	input wire psl_is_1,
-	input wire psl_is_2,
 	input wire [511:0] in_s,
-	output reg [127:0] out_p
+	output reg [127:0] out_p,
+	output wire [127:0] avg_only,
+	output wire [127:0] s0_only
 );
 	/* SAMPLE0: the bytes of sample 0 of each pixel, for a pixel of 2^pl bytes (pl constant). */
 	function [127:0] sample0;
@@ -82,39 +76,41 @@ module atg_blt_avg (
 			reg [9:0] v_val;
 
 			always @(*) begin
-				if (fmt_is_0) begin
-					if (psl_is_0)
-						v_val = (CH == 0) ? {2'd0, in_b} : 10'd0;
-					else if (psl_is_1)
-						v_val = (CH == 0) ? {2'd0, in_h[7:0]} : (CH == 1) ? {2'd0, in_h[15:8]} : 10'd0;
-					else if (psl_is_2)
-						v_val = (CH == 0) ? {2'd0, in_w[7:0]} : (CH == 1) ? {2'd0, in_w[15:8]} : (CH == 2) ? {2'd0, in_w[23:16]} : {2'd0, in_w[31:24]};
-					else
-						v_val = 10'd0;
-				end else if (fmt_is_1) begin
+				case (fmt)
+				3'd0: begin
+					case (psl)
+					3'd0: v_val = (CH == 0) ? {2'd0, in_b} : 10'd0;
+					3'd1: v_val = (CH == 0) ? {2'd0, in_h[7:0]} : (CH == 1) ? {2'd0, in_h[15:8]} : 10'd0;
+					3'd2: v_val = (CH == 0) ? {2'd0, in_w[7:0]} : (CH == 1) ? {2'd0, in_w[15:8]} : (CH == 2) ? {2'd0, in_w[23:16]} : {2'd0, in_w[31:24]};
+					default: v_val = 10'd0;
+					endcase
+				end
+				3'd1: begin
 					case (CH)
 					0: v_val = {5'd0, in_h[4:0]};
 					1: v_val = {4'd0, in_h[10:5]};
 					2: v_val = {5'd0, in_h[15:11]};
 					default: v_val = 10'd0;
 					endcase
-				end else if (fmt_is_6) begin
+				end
+				3'd6: begin
 					case (CH)
 					0: v_val = in_w[9:0];
 					1: v_val = in_w[19:10];
 					2: v_val = in_w[29:20];
 					default: v_val = {8'd0, in_w[31:30]};
 					endcase
-				end else if (fmt_is_7) begin
+				end
+				3'd7: begin
 					case (CH)
 					0: v_val = {5'd0, in_h[4:0]};
 					1: v_val = {5'd0, in_h[9:5]};
 					2: v_val = {5'd0, in_h[14:10]};
 					default: v_val = {9'd0, in_h[15]};
 					endcase
-				end else begin
-					v_val = 10'd0;
 				end
+				default: v_val = 10'd0;
+				endcase
 			end
 			assign v[sm] = v_val;
 		end
@@ -146,48 +142,71 @@ module atg_blt_avg (
 		wire [9:0] q2 = q[10 * (4 * p_gen + 2) +: 10];
 		wire [9:0] q3 = q[10 * (4 * p_gen + 3) +: 10];
 		assign px_fields[32 * p_gen +: 32] =
-			fmt_is_6 ? {q3[1:0], q2[9:0], q1[9:0], q0[9:0]} :
-			fmt_is_1 ? {16'd0, q2[4:0], q1[5:0], q0[4:0]} :
-			/* fmt_is_7 */ {16'd0, q3[0], q2[4:0], q1[4:0], q0[4:0]};
+			(fmt == 3'd6) ? {q3[1:0], q2[9:0], q1[9:0], q0[9:0]} :
+			(fmt == 3'd1) ? {16'd0, q2[4:0], q1[5:0], q0[4:0]} :
+			/* fmt == 3'd7 */ {16'd0, q3[0], q2[4:0], q1[4:0], q0[4:0]};
 	end
 	endgenerate
 
 	/* The output pixels of each format and pixel size. */
 	integer pp, cc;
+	reg [127:0] avg_core;
 
 	always @(*) begin
-		out_p = 128'd0;
-		if (fmt_is_0) begin
-			if (psl_is_0) begin
+		avg_core = 128'd0;
+		case (fmt)
+		3'd0: begin
+			case (psl)
+			3'd0: begin
 				for (pp = 0; pp < 4; pp = pp + 1)
-					out_p[8 * pp +: 8] = q[10 * (4 * pp) +: 8];
-			end else if (psl_is_1) begin
+					avg_core[8 * pp +: 8] = q[10 * (4 * pp) +: 8];
+			end
+			3'd1: begin
 				for (pp = 0; pp < 4; pp = pp + 1)
 					for (cc = 0; cc < 2; cc = cc + 1)
-						out_p[8 * (2 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
-			end else if (psl_is_2) begin
+						avg_core[8 * (2 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
+			end
+			3'd2: begin
 				for (pp = 0; pp < 4; pp = pp + 1)
 					for (cc = 0; cc < 4; cc = cc + 1)
-						out_p[8 * (4 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
+						avg_core[8 * (4 * pp + cc) +: 8] = q[10 * (4 * pp + cc) +: 8];
 			end
-		end else if (fmt_is_1 || fmt_is_7) begin
-			for (pp = 0; pp < 4; pp = pp + 1)
-				out_p[16 * pp +: 16] = px_fields[32 * pp +: 16];
-		end else if (fmt_is_6) begin
-			out_p = px_fields;
-		end else if (fmt_is_s0) begin
-			case (psl)
-			3'd0: out_p = sample0(3'd0, in_s);
-			3'd1: out_p = sample0(3'd1, in_s);
-			3'd2: out_p = sample0(3'd2, in_s);
-			3'd3: out_p = sample0(3'd3, in_s);
-			3'd4: out_p = sample0(3'd4, in_s);
-			default: out_p = sample0(3'd5, in_s);
+			default: avg_core = 128'd0;
 			endcase
 		end
+		3'd1, 3'd7: begin
+			for (pp = 0; pp < 4; pp = pp + 1)
+				avg_core[16 * pp +: 16] = px_fields[32 * pp +: 16];
+		end
+		3'd6: begin
+			avg_core = px_fields;
+		end
+		default: avg_core = 128'd0;
+		endcase
 	end
 
-	wire unused_fmt = &{1'b0, fmt};
+	assign avg_only = avg_core;
+
+	reg [127:0] s0_data;
+	always @(*) begin
+		case (psl)
+		3'd0: s0_data = sample0(3'd0, in_s);
+		3'd1: s0_data = sample0(3'd1, in_s);
+		3'd2: s0_data = sample0(3'd2, in_s);
+		3'd3: s0_data = sample0(3'd3, in_s);
+		3'd4: s0_data = sample0(3'd4, in_s);
+		default: s0_data = sample0(3'd5, in_s);
+		endcase
+	end
+
+	assign s0_only = s0_data;
+
+	always @(*) begin
+		if (fmt != 3'd0 && fmt != 3'd1 && fmt != 3'd6 && fmt != 3'd7)
+			out_p = s0_data;
+		else
+			out_p = avg_core;
+	end
 
 endmodule
 
