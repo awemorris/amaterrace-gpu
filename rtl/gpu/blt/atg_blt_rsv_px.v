@@ -255,8 +255,8 @@ module atg_blt_rsv_px #(
 	reg [LA_W-1:0] p_line;
 	reg [LS-1:0] p_off;
 	reg [4:0] p_nb;
-	(* max_fanout = 8 *) reg [2:0] p_fmt;
-	(* max_fanout = 8 *) reg [2:0] p_psl;
+	(* max_fanout = 16 *) reg [2:0] p_fmt;
+	(* max_fanout = 16 *) reg [2:0] p_psl;
 
 	atg_blt_avg av (
 		.fmt(p_fmt),
@@ -521,8 +521,6 @@ module atg_blt_rsv_px #(
 				p_line <= daddr[ADDR_W-1:LS];
 				p_off <= daddr[LS-1:0];
 				p_nb <= grp_nb;
-				p_fmt <= fmt;
-				p_psl <= psl;
 			end
 			if (rq_pop) begin
 				p_v <= 1'b0;
