@@ -316,7 +316,7 @@ module atg_mc_prot #(
 `ifdef MUT_PROT_RECHECK
 	wire chg = 1'b0;
 `else
-	wire chg = fill || inv_valid || gw_valid;
+	wire chg = fill_raw || inv_valid || gw_valid;
 `endif
 
 	wire x_valid = P && !chg && j2_v;
@@ -382,8 +382,9 @@ module atg_mc_prot #(
 
 	/* ------------------------------------------- invalidation */
 
+	wire fill_raw = P && w_valid && !w_error && !p_stale;
 	wire w_stale = p_stale || p_inv;
-	assign fill = P && w_valid && !w_error && !w_stale;
+	assign fill = fill_raw && !p_inv;
 	assign inv_pending = inv_pend;
 
 	/* ------------------------------------------- Pipeline control */
