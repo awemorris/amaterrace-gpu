@@ -267,10 +267,13 @@ module atg_blt_rsv_px #(
 
 	/* Stage A: the average of the group. */
 	reg a_v;
+	reg a_slow;
 	reg [LA_W-1:0] a_line;
 	reg [LS-1:0] a_off;
 	reg [4:0] a_nb;		/* bytes */
-	reg [127:0] a_px;
+	reg [127:0] a_px_int;
+	reg [127:0] a_px_flt;
+	wire [127:0] a_px = a_slow ? a_px_flt : a_px_int;
 
 	/* Stage B: the line being assembled. */
 	reg b_v;
@@ -413,11 +416,13 @@ module atg_blt_rsv_px #(
 			p_fmt <= 3'd0;
 			p_psl <= 3'd0;
 			a_v <= 1'b0;
+			a_slow <= 1'b0;
 			a_pend <= 1'b0;
 			a_line <= {LA_W{1'b0}};
 			a_off <= {LS{1'b0}};
 			a_nb <= 5'd0;
-			a_px <= 128'd0;
+			a_px_int <= 128'd0;
+			a_px_flt <= 128'd0;
 			b_v <= 1'b0;
 			b_line <= {LA_W{1'b0}};
 			b_d <= {LBITS{1'b0}};
@@ -533,17 +538,19 @@ module atg_blt_rsv_px #(
 			/* Stage A. */
 			if (p_v && a_free) begin
 				a_v <= 1'b1;
+				a_slow <= 1'b0;
 				a_line <= p_line;
 				a_off <= p_off;
 				a_nb <= p_nb;
-				a_px <= avg;
+				a_px_int <= avg;
 			end else if (a_pend && f_valid) begin
 				a_v <= 1'b1;
+				a_slow <= 1'b1;
 				a_pend <= 1'b0;
 				a_line <= p_line;
 				a_off <= p_off;
 				a_nb <= p_nb;
-				a_px <= favg;
+				a_px_flt <= favg;
 			end else if (a_take) begin
 				a_v <= 1'b0;
 			end
