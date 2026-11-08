@@ -581,15 +581,41 @@ module atg_mc #(
 		wire l2_ctrl_inv_done;
 		wire [3:0] l2_fsm;
 
+		localparam SKID_W = 1 + LA_W + LINE_BYTES + LINE_BITS + UW + 3;
+		wire l2_s_req_valid, l2_s_req_ready;
+		wire [SKID_W-1:0] l2_s_req_data;
+
+		am_skid #(
+			.WIDTH(SKID_W)
+		) u_l2_skid (
+			.clk(clk),
+			.rst_n(rst_n && !flush),
+			.in_valid(g_valid),
+			.in_ready(g_ready),
+			.in_data({g_write, g_line, g_be, g_wdata, g_user, g_host, g_host, s_high}),
+			.out_valid(l2_s_req_valid),
+			.out_ready(l2_s_req_ready),
+			.out_data(l2_s_req_data)
+		);
+
+		wire l2_req_write = l2_s_req_data[SKID_W-1];
+		wire [LA_W-1:0] l2_req_line = l2_s_req_data[SKID_W-2 -: LA_W];
+		wire [LINE_BYTES-1:0] l2_req_be = l2_s_req_data[SKID_W-2-LA_W -: LINE_BYTES];
+		wire [LINE_BITS-1:0] l2_req_wdata = l2_s_req_data[UW+3 +: LINE_BITS];
+		wire [UW-1:0] l2_req_user = l2_s_req_data[3 +: UW];
+		wire l2_req_id = l2_s_req_data[2];
+		wire l2_req_nc = l2_s_req_data[1];
+		wire l2_req_high = l2_s_req_data[0];
+
 		atg_mc_l2 #(
 			.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.UW(UW), .WAYS(L2_WAYS), .SET_W(L2_SET_W)
 		) l2 (
 			.clk(clk), .rst_n(rst_n), .flush(flush), .quiesce(quiesce),
-			.s_req_valid(g_valid), .s_req_ready(g_ready), .s_req_write(g_write),
-			.s_req_line(g_line), .s_req_be(g_be), .s_req_wdata(g_wdata),
-			.s_req_user(g_user), .s_req_id(g_host), .s_req_nc(g_host),
-			.s_req_high(s_high),
+			.s_req_valid(l2_s_req_valid), .s_req_ready(l2_s_req_ready), .s_req_write(l2_req_write),
+			.s_req_line(l2_req_line), .s_req_be(l2_req_be), .s_req_wdata(l2_req_wdata),
+			.s_req_user(l2_req_user), .s_req_id(l2_req_id), .s_req_nc(l2_req_nc),
+			.s_req_high(l2_req_high),
 			.s_rsp_valid(l2_rsp_valid), .s_rsp_write(l2_rsp_write), .s_rsp_user(l2_rsp_user),
 			.s_rsp_rdata(l2_rsp_rdata), .s_rsp_error(l2_rsp_error),
 			.m_req_valid(axi_req_valid), .m_req_ready(axi_req_ready), .m_req_write(axi_req_write),
