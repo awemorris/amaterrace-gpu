@@ -308,8 +308,10 @@ module atg_blt_rsv_px #(
 	wire is_last_group = !rem_has_high && (rem[2:0] == n);
 	wire row_end = fire && is_last_group;
 
-	wire shift_win = fire && (gend >= {{(7 - LS){1'b0}}, LB_V});
-	wire drop_both = fire && row_end;
+	/* gend less one or two lines (the window's lines the group used up; only one is taken in a cycle). */
+	wire two_used = gend >= {{(6 - LS){1'b0}}, LB_V, 1'b0};
+	wire shift_win = fire && (gend >= {{(7 - LS){1'b0}}, LB_V}) && !two_used;
+	wire drop_both = fire && (two_used || row_end);
 
 	/* The window after this cycle's group (before a load). */
 	reg [LS-1:0] nptr;
@@ -483,7 +485,7 @@ module atg_blt_rsv_px #(
 			end
 
 			/* Stage P. */
-			if (p_free) begin
+			if (fire) begin
 				p_win <= win[511:0];
 				p_line <= daddr[ADDR_W-1:LS];
 				p_off <= daddr[LS-1:0];

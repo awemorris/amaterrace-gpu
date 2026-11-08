@@ -209,13 +209,59 @@ module am_fp_fma_p #(
 	wire sum_nz;
 	am_msb #(.W(77), .SW(7)) u_msb (.a(s1_sum), .n(msb), .nz(sum_nz));
 	wire [6:0] nsh;
-	wire [76:0] nrm;
 	wire [11:0] t1, t2, er;
 	am_sub #(.W(7)) u_nsh (.a(7'd76), .b(msb), .bi(1'b0), .d(nsh), .bo(carry_unused[9]));
-	am_shift #(.W(77), .SW(7), .DIR(2)) u_nrm (.a(s1_sum), .amt(nsh), .left(1'b1), .arith(1'b0), .y(nrm));
 	am_add #(.W(12)) u_t1 (.a(s1_ab), .b(s1_adj), .ci(1'b0), .s(t1), .co(carry_unused[10]));
 	am_add #(.W(12)) u_t2 (.a(t1), .b({5'd0, msb}), .ci(1'b0), .s(t2), .co(carry_unused[11]));
 	am_sub #(.W(12)) u_er (.a(t2), .b(12'd175), .bi(1'b0), .d(er), .bo(carry_unused[12]));
+
+	/* --- Stage 2a -> Stage 2b Pipeline Register (LAT >= 4) --- */
+	reg [76:0] r1b_sum;
+	reg [6:0]  r1b_nsh;
+	reg [11:0] r1b_er;
+	reg        r1b_sum_nz;
+	reg        r1b_sr;
+	reg [2:0]  r1b_rm;
+	reg        r1b_rdn;
+	reg        r1b_spec_hit;
+	reg [31:0] r1b_spec_res;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			r1b_sum      <= 77'd0;
+			r1b_nsh      <= 7'd0;
+			r1b_er       <= 12'd0;
+			r1b_sum_nz   <= 1'b0;
+			r1b_sr       <= 1'b0;
+			r1b_rm       <= 3'd0;
+			r1b_rdn      <= 1'b0;
+			r1b_spec_hit <= 1'b0;
+			r1b_spec_res <= 32'd0;
+		end else if (en) begin
+			r1b_sum      <= s1_sum;
+			r1b_nsh      <= nsh;
+			r1b_er       <= er;
+			r1b_sum_nz   <= sum_nz;
+			r1b_sr       <= s1_sr;
+			r1b_rm       <= s1_rm;
+			r1b_rdn      <= s1_rdn;
+			r1b_spec_hit <= s1_spec_hit;
+			r1b_spec_res <= s1_spec_res;
+		end
+	end
+
+	wire [76:0] s1b_sum      = (LAT >= 4) ? r1b_sum      : s1_sum;
+	wire [6:0]  s1b_nsh      = (LAT >= 4) ? r1b_nsh      : nsh;
+	wire [11:0] s1b_er       = (LAT >= 4) ? r1b_er       : er;
+	wire        s1b_sum_nz   = (LAT >= 4) ? r1b_sum_nz   : sum_nz;
+	wire        s1b_sr       = (LAT >= 4) ? r1b_sr       : s1_sr;
+	wire [2:0]  s1b_rm       = (LAT >= 4) ? r1b_rm       : s1_rm;
+	wire        s1b_rdn      = (LAT >= 4) ? r1b_rdn      : s1_rdn;
+	wire        s1b_spec_hit = (LAT >= 4) ? r1b_spec_hit : s1_spec_hit;
+	wire [31:0] s1b_spec_res = (LAT >= 4) ? r1b_spec_res : s1_spec_res;
+
+	wire [76:0] nrm;
+	am_shift #(.W(77), .SW(7), .DIR(2)) u_nrm (.a(s1b_sum), .amt(s1b_nsh), .left(1'b1), .arith(1'b0), .y(nrm));
 
 	/* --- Stage 2 -> Stage 3 Pipeline Register (LAT >= 3) --- */
 	reg        r2_sr;
@@ -242,8 +288,8 @@ module am_fp_fma_p #(
 			r2_spec_res <= 32'd0;
 			r2_sum_nz   <= 1'b0;
 		end else if (en) begin
-			r2_sr       <= s1_sr;
-			r2_er       <= er;
+			r2_sr       <= s1b_sr;
+			r2_er       <= s1b_er;
 			r2_m        <= nrm[76:53];
 			r2_g        <= nrm[52];
 			r2_st_part[0] <= |nrm[6:0];
@@ -254,11 +300,11 @@ module am_fp_fma_p #(
 			r2_st_part[5] <= |nrm[41:35];
 			r2_st_part[6] <= |nrm[48:42];
 			r2_st_part[7] <= |nrm[51:49];
-			r2_rm       <= s1_rm;
-			r2_rdn      <= s1_rdn;
-			r2_spec_hit <= s1_spec_hit;
-			r2_spec_res <= s1_spec_res;
-			r2_sum_nz   <= sum_nz;
+			r2_rm       <= s1b_rm;
+			r2_rdn      <= s1b_rdn;
+			r2_spec_hit <= s1b_spec_hit;
+			r2_spec_res <= s1b_spec_res;
+			r2_sum_nz   <= s1b_sum_nz;
 		end
 	end
 

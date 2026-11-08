@@ -140,7 +140,7 @@ module atg_blt_favg (
 	/* The fma: fb is 1.0 or 0.25 (a significand of 2^23), so the product of
 	 * the significands is fa's shifted (no multiplier). */
 	wire [31:0] fr;
-	am_fp_fma_p #(.LAT(3)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(r_fa), .b0(r_fb), .c0(r_fc), .rm(3'd0), .noc(1'b0),
+	am_fp_fma_p #(.LAT(4)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(r_fa), .b0(r_fb), .c0(r_fc), .rm(3'd0), .noc(1'b0),
 		.p({1'b0, r_fa[30:23] != 8'd0 ? {1'b1, r_fa[22:0]} : 24'd0, 23'd0}), .r(fr));
 	wire [15:0] fh;
 	am_fp_f2h #(.LAT(0)) u_fh (.f(r_final), .h(fh));
@@ -250,7 +250,8 @@ module atg_blt_favg (
 				3'd3: fma_wait <= 3'd4;
 				3'd4: fma_wait <= 3'd5;
 				3'd5: fma_wait <= 3'd6;
-				3'd6: begin
+				3'd6: fma_wait <= 3'd7;
+				3'd7: begin
 					fma_wait <= 3'd0;
 					if (step == 2'd0) begin
 						r01 <= fr;
