@@ -290,7 +290,9 @@ module atg_blt_rsv_px #(
 	wire a_take = a_v && (!b_v || a_same || wr_free);
 	wire a_free = !a_v || !b_v || (b_line == a_line) || wr_free;
 	wire p_free = !p_v || a_free;
-	wire fire = active && v0 && (!need2 || v1) && (slow ? (!p_v && a_free) : p_free) && !a_pend;
+	wire fire_cond = active && v0 && (!need2 || v1) && (slow ? (!p_v && a_free) : p_free) && !a_pend;
+	(* max_fanout = 16 *) wire fire_data = fire_cond;
+	wire fire_ctrl = fire_cond;
 
 	reg fv_start;
 	reg [2:0] fv_n;
@@ -300,7 +302,7 @@ module atg_blt_rsv_px #(
 		if (!rst_n || stop) begin
 			fv_start <= 1'b0;
 		end else begin
-			fv_start <= fire && slow;
+			fv_start <= fire_ctrl && slow;
 		end
 		fv_n <= n;
 		fv_in_s <= win[511:0];
@@ -310,20 +312,21 @@ module atg_blt_rsv_px #(
 		.clk(clk), .rst_n(frst_n), .i_valid(fv_start), .i_ready(f_ready), .fmt(fmt), .psl(psl),
 		.npx(fv_n), .in_s(fv_in_s), .o_valid(f_valid), .o_ready(1'b1), .out_p(favg)
 	);
-	wire is_last_group = !rem_has_high && (rem[2:0] == n);
-	wire row_end = fire && is_last_group;
+	wire rem_fits = (rem[2:0] <= nmax) && (tiled ? (rem[2:0] <= room_t) : (rem[2:0] <= room_l_limit_r));
+	wire is_last_group = !rem_has_high && rem_fits;
+	wire row_end = fire_ctrl && is_last_group;
 
 	/* gend less one or two lines (the window's lines the group used up; only one is taken in a cycle). */
 	wire two_used = gend >= {{(6 - LS){1'b0}}, LB_V, 1'b0};
-	wire shift_win = fire && (gend >= {{(7 - LS){1'b0}}, LB_V}) && !two_used;
-	wire drop_both = fire && (two_used || row_end);
+	wire shift_win = fire_ctrl && (gend >= {{(7 - LS){1'b0}}, LB_V}) && !two_used;
+	wire drop_both = fire_ctrl && (two_used || row_end);
 
 	/* The window after this cycle's group (before a load). */
 	reg [LS-1:0] nptr;
 
 	always @(*) begin
 		nptr = ptr;
-		if (fire) begin
+		if (fire_ctrl) begin
 			nptr = gend[LS-1:0];
 		end
 	end
@@ -452,7 +455,7 @@ module atg_blt_rsv_px #(
 					lines_left <= ll_dec;
 					lines_left_nz <= (ll_dec != 17'd0);
 				end
-				if (fire) begin
+				if (fire_ctrl) begin
 					x <= x_next;
 					rem <= rem_next;
 					rem_has_high <= |rem_next[16:3];
@@ -493,7 +496,7 @@ module atg_blt_rsv_px #(
 			end
 
 			/* Stage P. */
-			if (fire) begin
+			if (fire_data) begin
 				p_win <= win[511:0];
 				p_line <= daddr[ADDR_W-1:LS];
 				p_off <= daddr[LS-1:0];
@@ -503,7 +506,7 @@ module atg_blt_rsv_px #(
 			end
 			if (rq_pop) begin
 				p_v <= 1'b0;
-			end else if (fire && !slow) begin
+			end else if (fire_ctrl && !slow) begin
 				p_v <= 1'b1;
 			end else if (a_free) begin
 				p_v <= 1'b0;
@@ -527,7 +530,7 @@ module atg_blt_rsv_px #(
 				a_v <= 1'b0;
 			end
 
-			if (fire && slow) begin
+			if (fire_ctrl && slow) begin
 				a_pend <= 1'b1;
 			end
 		end
@@ -535,7 +538,7 @@ module atg_blt_rsv_px #(
 
 `ifdef RSV_TRACE
 	always @(posedge clk)
-		if (fire)
+		if (fire_ctrl)
 			$display("%m t=%0t group daddr %h n %0d ptr %0d v %b%b avg %h win0 %h", $time, daddr,
 				n, ptr, v0, v1, avg[63:0], win[127:0]);
 `endif
