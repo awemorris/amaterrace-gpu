@@ -263,7 +263,11 @@ make oxc           # Run openXC7 (Yosys + nextpnr) open-source FPGA flow
 
 ### FPGA Synthesis & Timing Results (Minimal Preset)
 
-The complete board top-level system (`atg_kc705_top`)—integrating the full GPU core (`atg_top`), PCIe Gen2 x4 endpoint, MIG DDR3 controller, Display Controller (`atg_dc`), and CDC infrastructure—synthesizes cleanly for the **Xilinx Kintex-7 KC705** (`xc7k325tffg900-2`) using the `minimal` preset (`config/minimal.mk`).
+The complete board top-level system (`atg_kc705_top`)—integrating the
+full GPU core (`atg_top`), PCIe Gen2 x4 endpoint, MIG DDR3 controller,
+Display Controller (`atg_dc`), and CDC infrastructure—synthesizes
+cleanly for the **Xilinx Kintex-7 KC705** (`xc7k325tffg900-2`) using
+the `minimal` preset (`config/minimal.mk`).
 
 #### Timing Closure Summary (200 MHz Target)
 
@@ -299,9 +303,18 @@ The complete board top-level system (`atg_kc705_top`)—integrating the full GPU
 
 ### High-Performance Full-Feature Synthesis (OOC Breakdown)
 
-For maximum performance targeting 5nm ASIC (1.7 GHz) or large-scale FPGAs (e.g. Xilinx Zynq UltraScale+ ZCU106 / Virtex-7), the high-performance preset (`config/high-perf.mk`) enables all architectural features: 32-wide SIMD SU lanes, 4× MSAA, trilinear anisotropic texture filtering, 16-way 128KB L2 cache, session memory protection, 8 MRTs, FP16/FP32 pipelines, and 2D blit scaling/blending.
+For maximum performance targeting 5nm ASIC (1.7 GHz) or large-scale
+FPGAs (e.g. Xilinx Zynq UltraScale+ ZCU106 / Virtex-7), the
+high-performance preset (`config/high-perf.mk`) enables all
+architectural features: 32-wide SIMD SU lanes, 4× MSAA, trilinear
+anisotropic texture filtering, 16-way 128KB L2 cache, session memory
+protection, 8 MRTs, FP16/FP32 pipelines, and 2D blit scaling/blending.
 
-Because the full-feature configuration (~548k LUTs) exceeds a single Kintex-7 KC705 device, each individual execution block is synthesized Out-of-Context (OOC) under the target Kintex-7 `-2` speed grade with a 200 MHz target constraint (5.000 ns period). All 9 major modules achieve timing closure with **$F_{\max} \ge 200\text{ MHz}$** (**$\text{WNS} \ge 0.000\text{ ns}$**):
+Because the full-feature configuration (~548k LUTs) exceeds a single
+Kintex-7 KC705 device, each individual execution block is synthesized
+Out-of-Context (OOC) under the target Kintex-7 `-2` speed grade with a
+200 MHz target constraint (5.000 ns period). All 9 major modules
+achieve timing closure with **Fmax >= 200 MHz** (**WNS >= 0.000 ns**):
 
 | Module | RTL File | Description & Key Parameters | Slice LUTs | Slice FFs | BRAM (Tile) | DSP48E1 | Setup Slack (WNS) | $F_{\max}$ |
 | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
