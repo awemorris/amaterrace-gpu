@@ -41,6 +41,7 @@ Table of Contents
    - [Memory Hierarchy & Display Subsystem](#memory-hierarchy--display-subsystem)
 5. [Building, Simulation & Toolchain](#5-building-simulation--toolchain)
    - [Verification & Linting Tools](#verification--linting-tools)
+   - [FPGA Synthesis & Timing Results (Minimal Preset)](#fpga-synthesis--timing-results-minimal-preset)
 6. [Repository Structure](#6-repository-structure)
 7. [Misc & Trivia](#7-misc--trivia)
 
@@ -258,6 +259,42 @@ make oxc           # Run openXC7 (Yosys + nextpnr) open-source FPGA flow
 - **Arithmetic Linter:** `python3 tools/arith-lint.py` verifies that all signal arithmetic operators (`+`, `-`, `*`, etc.) remain strictly confined to `rtl/library/arith/`, guaranteeing DSP primitive mapping and 0 bare operators.
 - **Golden Reference Models:** Reference simulators for rasterization, barycentric interpolation, texture filtering, and floating-point arithmetic are located under `tools/`.
 - **Diagram Verification:** `python3 docs/svg/generate_svgs.py` generates and validates all architecture SVG diagrams with 100% compliant XML parsing.
+
+### FPGA Synthesis & Timing Results (Minimal Preset)
+
+The complete board top-level system (`atg_kc705_top`)—integrating the full GPU core (`atg_top`), PCIe Gen2 x4 endpoint, MIG DDR3 controller, Display Controller (`atg_dc`), and CDC infrastructure—synthesizes cleanly for the **Xilinx Kintex-7 KC705** (`xc7k325tffg900-2`) using the `minimal` preset (`config/minimal.mk`).
+
+#### Timing Closure Summary (200 MHz Target)
+
+| Clock Domain | Period / Frequency | Setup Slack (WNS) | TNS | Failing Endpoints | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **`g_out` (GPU Core `gclk`)** | **5.000 ns / 200.00 MHz** | **+0.019 ns** | **0.000 ns** | **0 / 402,347** | **PASS** |
+| `sysclk` (Board Input) | 5.000 ns / 200.00 MHz | +3.181 ns | 0.000 ns | 0 / 128 | PASS |
+| `pcie_refclk` (PCIe Reference) | 10.000 ns / 100.00 MHz | +8.863 ns | 0.000 ns | 0 / 28 | PASS |
+| **Full Design Timing** | — | **+0.019 ns** | **0.000 ns** | **0 / 496,443** | **PASS** |
+
+#### Device Resource Utilization (KC705: `xc7k325tffg900-2`)
+
+| Resource | Post-Synthesis Used | Post-Opt Used | Available | Utilization (Post-Opt) |
+| :--- | :---: | :---: | :---: | :---: |
+| **Slice LUTs** | 201,100 (98.68%) | **185,093** | 203,800 | **90.82%** |
+| **Slice Registers (FF)** | 210,137 (51.55%) | **195,891** | 407,600 | **48.06%** |
+| **Block RAM Tile** | 169.5 | 169.5 | 445 | **38.09%** |
+| **DSP48E1** | 229 | 229 | 840 | **27.26%** |
+
+#### Module Hierarchy Breakdown (`gpu` / `atg_top`)
+
+| Module Instance | RTL Block | Slice LUTs | Slice FFs | BRAM (36/18) | DSP48E1 |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `gpu` | [`atg_top`](rtl/gpu/top/atg_top.v) (Total Core) | 160,539 | 170,453 | 129 / 43 | 229 |
+| ├── `g_su[0].su` | [`atg_su`](rtl/gpu/su/atg_su.v) (Shader Unit, 4 PEs) | 39,081 | 36,592 | 27 / 5 | 18 |
+| ├── `g_tu.tu` | [`atg_tu`](rtl/gpu/tu/atg_tu.v) (Texture Unit, 2KB L1) | 38,977 | 46,195 | 32 / 36 | 133 |
+| ├── `g_rop.rop` | [`atg_rop`](rtl/gpu/rop/atg_rop.v) (Render Output Backend) | 24,171 | 24,357 | 0 / 0 | 36 |
+| ├── `mc` | [`atg_mc`](rtl/gpu/mc/atg_mc.v) (Memory Controller, 4KB L2) | 8,248 | 7,502 | 14 / 2 | 0 |
+| ├── `g_dc.dc` | [`atg_dc`](rtl/gpu/dc/atg_dc.v) (Display Controller) | 7,527 | 6,440 | 6 / 0 | 22 |
+| └── `g_vf.vf` | [`atg_vf`](rtl/gpu/vf/atg_vf.v) (Vertex Fetcher) | 6,738 | 12,510 | 0 / 0 | 2 |
+
+*(Note: In the minimal preset `CONFIG_HAS_BLT = 0`, the 2D Blitter is omitted from the FPGA board top to fit within the KC705 LUT budget. In standalone out-of-context synthesis, [`atg_blt`](rtl/gpu/blt/atg_blt.v) independently achieves $F_{\max} = 203.3\text{ MHz}$ / WNS +0.082 ns).*
 
 ---
 
