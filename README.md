@@ -42,6 +42,7 @@ Table of Contents
 5. [Building, Simulation & Toolchain](#5-building-simulation--toolchain)
    - [Verification & Linting Tools](#verification--linting-tools)
    - [FPGA Synthesis & Timing Results (Minimal Preset)](#fpga-synthesis--timing-results-minimal-preset)
+   - [High-Performance Full-Feature Synthesis (OOC Breakdown)](#high-performance-full-feature-synthesis-ooc-breakdown)
 6. [Repository Structure](#6-repository-structure)
 7. [Misc & Trivia](#7-misc--trivia)
 
@@ -295,6 +296,25 @@ The complete board top-level system (`atg_kc705_top`)—integrating the full GPU
 | └── `g_vf.vf` | [`atg_vf`](rtl/gpu/vf/atg_vf.v) (Vertex Fetcher) | 6,738 | 12,510 | 0 / 0 | 2 |
 
 *(Note: In the minimal preset `CONFIG_HAS_BLT = 0`, the 2D Blitter is omitted from the FPGA board top to fit within the KC705 LUT budget. In standalone out-of-context synthesis, [`atg_blt`](rtl/gpu/blt/atg_blt.v) independently achieves $F_{\max} = 203.3\text{ MHz}$ / WNS +0.082 ns).*
+
+### High-Performance Full-Feature Synthesis (OOC Breakdown)
+
+For maximum performance targeting 5nm ASIC (1.7 GHz) or large-scale FPGAs (e.g. Xilinx Zynq UltraScale+ ZCU106 / Virtex-7), the high-performance preset (`config/high-perf.mk`) enables all architectural features: 32-wide SIMD SU lanes, 4× MSAA, trilinear anisotropic texture filtering, 16-way 128KB L2 cache, session memory protection, 8 MRTs, FP16/FP32 pipelines, and 2D blit scaling/blending.
+
+Because the full-feature configuration (~548k LUTs) exceeds a single Kintex-7 KC705 device, each individual execution block is synthesized Out-of-Context (OOC) under the target Kintex-7 `-2` speed grade with a 200 MHz target constraint (5.000 ns period). All 9 major modules achieve timing closure with **$F_{\max} \ge 200\text{ MHz}$** (**$\text{WNS} \ge 0.000\text{ ns}$**):
+
+| Module | RTL File | Description & Key Parameters | Slice LUTs | Slice FFs | BRAM (Tile) | DSP48E1 | Setup Slack (WNS) | $F_{\max}$ |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`atg_cp`** | [`atg_cp.v`](rtl/gpu/cp/atg_cp.v) | RV32IM, Hardware PTW, Unified TLBs | 5,733 | 7,111 | 2.5 | 0 | +1.105 ns | 256.7 MHz |
+| **`atg_vf`** | [`atg_vf.v`](rtl/gpu/vf/atg_vf.v) | PT-VC, 16-Stream Attribute DMA Unpack | 6,759 | 12,517 | 0 | 2 | +2.016 ns | 335.1 MHz |
+| **`atg_rx`** | [`atg_rx.v`](rtl/gpu/rx/atg_rx.v) | 4× MSAA, Early-Z Hi-Z, Coarse/Fine Quad Scan | 41,392 | 38,574 | 0 | 16 | +0.246 ns | 210.3 MHz |
+| **`atg_su`** | [`atg_su.v`](rtl/gpu/su/atg_su.v) | 32 Physical PEs, FP16×2, SFU, 16KB LDS | 280,256 | 221,826 | 73.5 | 204 | +0.363 ns | 215.7 MHz |
+| **`atg_tu`** | [`atg_tu.v`](rtl/gpu/tu/atg_tu.v) | 64KB L1, BC/ETC2, Trilinear, 16× Aniso, MSHR | 50,968 | 56,085 | 50 | 139 | +1.708 ns | 303.8 MHz |
+| **`atg_rop`** | [`atg_rop.v`](rtl/gpu/rop/atg_rop.v) | 8 MRTs, FP16/32, Dual-Source Alpha Blend | 100,824 | 85,486 | 0 | 100 | +0.924 ns | 245.3 MHz |
+| **`atg_blt`** | [`atg_blt.v`](rtl/gpu/blt/atg_blt.v) | 4-Sample Parallel Resolve, Scale/Blend/Tile | 25,905 | 18,569 | 0 | 4 | +0.082 ns | 203.3 MHz |
+| **`atg_mc`** | [`atg_mc.v`](rtl/gpu/mc/atg_mc.v) | 128KB L2 (16-Way), PROT (Early Byte Extraction) | 27,873 | 24,496 | 120 | 0 | +0.231 ns | 209.7 MHz |
+| **`atg_dc`** | [`atg_dc.v`](rtl/gpu/dc/atg_dc.v) | Hardware Cursor, Asynchronous CDC AFIFO | 8,134 | 6,531 | 6 | 22 | +1.610 ns | 295.0 MHz |
+| **Total (Sum)** | — | Full-Feature Architecture Footprint | **547,844** | **471,195** | **252** | **487** | — | **$\ge 203.3\text{ MHz}$** |
 
 ---
 
