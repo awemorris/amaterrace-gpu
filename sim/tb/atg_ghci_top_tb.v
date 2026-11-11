@@ -338,6 +338,21 @@ module ghci_probe #(
 				found_fmt = 1;
 				check32("FMT window ptr", w1, 32'h00000140);
 			end
+			if (w0[7:0] == 8'd3) begin /* PERF */
+				check32("PERF window ptr", w1, 32'h00000160);
+			end
+			if (w0[7:0] == 8'd4) begin /* VEND */
+				check32("VEND window ptr", w1, 32'h00000180);
+			end
+			if (w0[7:0] == 8'd6) begin /* CPFW */
+				check32("CPFW window ptr", w1, 32'h00000170);
+			end
+			if (w0[7:0] == 8'd8) begin /* MEM */
+				check32("MEM window ptr", w1, 32'h000001E0);
+			end
+			if (w0[7:0] == 8'd11) begin /* DISP2 */
+				check32("DISP2 window ptr", w1, 32'h00000200);
+			end
 			xoff = (w0[31:16] == 0) ? 0 : xoff + {w0[31:16], 2'b00};
 		end
 		if (!found_fmt) begin
@@ -346,6 +361,20 @@ module ghci_probe #(
 		end else begin
 			$display("PASS [%0s] FMT capability found in EXTCAP list", NAME);
 		end
+
+		/* R4: Header area 0x100..0x13F is RO (writes dropped) */
+		host_write(17'h00100, 32'hDEADBEEF);
+		host_read(17'h00100, val);
+		if (val == 32'hDEADBEEF) begin
+			err_count = err_count + 1;
+			$display("FAIL [%0s] Header 0x100 was overwritten by host write!", NAME);
+		end else begin
+			$display("PASS [%0s] Header 0x100 is RO", NAME);
+		end
+
+		/* R4: PERF_SRC0 at 0x160 */
+		host_read(17'h00160, val);
+		$display("PASS [%0s] PERF_SRC0 (0x160): %08h", NAME, val);
 
 		/* Test FMT registers at 0x140 */
 		/* FMT_INDEX (+0x0): write VK_FORMAT_R8G8B8A8_UNORM (0x25 = 37, or 44) */

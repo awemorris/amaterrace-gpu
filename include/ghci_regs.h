@@ -235,14 +235,16 @@ extern "C" {
 #define GHCI_DBG_ADDR 0x0A0u
 #define GHCI_DBG_DATA 0x0A4u
 #define GHCI_DBG_STATUS 0x0A8u
-#define GHCI_CPFW_CTRL 0x120u /* the CPFW capability (id 6) */
-#define GHCI_CPFW_STATUS 0x124u
-#define GHCI_CPFW_IBASE 0x128u
-#define GHCI_CPFW_IWORDS 0x12Cu
-#define GHCI_CPFW_DBASE 0x130u
-#define GHCI_CPFW_DWORDS 0x134u
-#define GHCI_CPFW_VERSION 0x138u
-#define GHCI_CPFW_MBOX(n) (0x150u + 4u * (n)) /* n = 0..3, after SA's 0x140-0x14F */
+#define GHCI_PERF_SRC0 0x160u
+#define GHCI_PERF_SRC(n) (0x160u + 4u * (n))
+#define GHCI_CPFW_CTRL 0x170u /* the CPFW capability (id 6) */
+#define GHCI_CPFW_STATUS 0x174u
+#define GHCI_CPFW_VERSION 0x178u
+#define GHCI_CPFW_IBASE 0x1A0u
+#define GHCI_CPFW_IWORDS 0x1A4u
+#define GHCI_CPFW_DBASE 0x1A8u
+#define GHCI_CPFW_DWORDS 0x1ACu
+#define GHCI_CPFW_MBOX(n) (0x1B0u + 4u * (n)) /* n = 0..3 */
 #define GHCI_KICK 0xF00u
 #define GHCI_STATE(i) (0x1000u + 4u * (i))
 #define GHCI_STATE_COUNT 512u

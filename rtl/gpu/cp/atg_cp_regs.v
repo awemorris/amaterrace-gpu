@@ -349,7 +349,7 @@ module atg_cp_regs #(
 		GHCI_REG_WDT_CYCLES:    hcr_reg_widx = HCR_IDX_WDT_CYCLES;
 		GHCI_REG_CP_HEAP_BASE:  hcr_reg_widx = HCR_IDX_CP_HEAP_BASE;
 		GHCI_REG_CP_HEAP_LIMIT: hcr_reg_widx = HCR_IDX_CP_HEAP_LIMIT;
-		default:                hcr_reg_widx = (addr >= 17'h00100 && addr <= 17'h003FF) ? addr[11:2] : HCR_IDX_INVALID;
+		default:                hcr_reg_widx = (addr >= 17'h00140 && addr <= 17'h003FF) ? addr[11:2] : HCR_IDX_INVALID;
 		endcase
 	endfunction
 
@@ -365,7 +365,7 @@ module atg_cp_regs #(
 	                  (reg_waddr == GHCI_REG_WDT_CYCLES) ||
 	                  (reg_waddr == GHCI_REG_CP_HEAP_BASE) ||
 	                  (reg_waddr == GHCI_REG_CP_HEAP_LIMIT) ||
-	                  (reg_waddr >= 17'h00100 && reg_waddr <= 17'h003FF);
+	                  (reg_waddr >= 17'h00140 && reg_waddr <= 17'h003FF);
 
 	/* Writes. */
 	assign hcr_we = reg_wr && hcr_we_ok;
@@ -606,9 +606,10 @@ module atg_cp_regs #(
 		input integer id;
 		case (id)
 		1: xcap_ptr = DISP_OFFSET;
-		3: xcap_ptr = {15'd0, GHCI_PERF_SRC0};
+		2: xcap_ptr = 32'd0;
+		3: xcap_ptr = 32'h00000160;
 		4: xcap_ptr = 32'h00000180;
-		6: xcap_ptr = 32'h00000120;
+		6: xcap_ptr = 32'h00000170;
 		7: xcap_ptr = 32'h00000140;
 		8: xcap_ptr = {20'd0, MEM_OFF};
 		9: xcap_ptr = 32'h000001D0;	/* PROT: atg_cp_prot answers its registers */
@@ -678,6 +679,10 @@ module atg_cp_regs #(
 		GHCI_REG_DIAG_CP_STATUS: own = diag_cp_status;
 		GHCI_REG_EXT_CAP_FMT0: own = eff_fmt0;
 		GHCI_REG_EXT_CAP_FEATURE: own = eff_feat;
+		17'h00160: own = {24'd0, PERF_SRC[7:0]};
+		17'h00164: own = {24'd0, PERF_SRC[15:8]};
+		17'h00168: own = {24'd0, PERF_SRC[23:16]};
+		17'h0016C: own = {24'd0, PERF_SRC[31:24]};
 		17'h00180: own = VENDOR_ID;
 		17'h00184: own = DEVICE_ID;
 		17'h00190: own = GCLK_HZ;
@@ -731,6 +736,10 @@ module atg_cp_regs #(
 			GHCI_REG_NATIVE_ISA_ID: v = 32'h47534931;
 			GHCI_REG_EXT_CAP_FMT0: v = eff_fmt0;
 			GHCI_REG_EXT_CAP_FEATURE: v = eff_feat;
+			17'h00160: v = {24'd0, PERF_SRC[7:0]};
+			17'h00164: v = {24'd0, PERF_SRC[15:8]};
+			17'h00168: v = {24'd0, PERF_SRC[23:16]};
+			17'h0016C: v = {24'd0, PERF_SRC[31:24]};
 			17'h00180: v = VENDOR_ID;
 			17'h00184: v = DEVICE_ID;
 			17'h00190: v = GCLK_HZ;
