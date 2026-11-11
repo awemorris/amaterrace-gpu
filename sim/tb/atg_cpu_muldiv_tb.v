@@ -7,7 +7,7 @@
 
 /*
  * atg_cpu_muldiv_tb: all eight RV32M operations on corner and random
- * operands against a behavioural reference, checking the latency (MUL 3,
+ * operands against a behavioural reference, checking the latency (MUL 4,
  * DIV 34 cycles from start to done), busy, and that y holds after done.
  */
 
@@ -90,7 +90,7 @@ module atg_cpu_muldiv_tb;
 				@(negedge clk);
 				n = n + 1;
 			end
-			if (n != (o[2] ? 34 : 4)) begin
+			if (n != (o[2] ? 34 : 5)) begin
 				$display("FAIL latency op=%0d %0d cycles", o, n);
 				errors = errors + 1;
 			end

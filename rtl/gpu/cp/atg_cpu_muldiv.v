@@ -6,12 +6,12 @@
  */
 
 /*
- * atg_cpu_muldiv: The RV32M unit: MUL/MULH/MULHSU/MULHU on a DSP (3
+ * atg_cpu_muldiv: The RV32M unit: MUL/MULH/MULHSU/MULHU on a DSP (4
  * cycles) and DIV/DIVU/REM/REMU by a 32-step restoring divider.
  *
  * start (one cycle) takes op (funct3), a and b.  busy is 1 from the
  * cycle after start until the cycle before done; done is a one-cycle
- * pulse in the cycle y is first valid (start + 3 for MUL*, start + 34
+ * pulse in the cycle y is first valid (start + 4 for MUL*, start + 34
  * for DIV/REM*), and y holds until the next start.  A start while busy
  * is ignored.  Division by zero gives quotient all ones and remainder a;
  * INT_MIN / -1 gives INT_MIN and remainder 0 (RISC-V).
@@ -33,10 +33,11 @@ module atg_cpu_muldiv (
 	output reg [31:0] y
 );
 	localparam [2:0] S_IDLE = 3'd0;
-	localparam [2:0] S_MUL  = 3'd1;	/* product into DSP MREG */
-	localparam [2:0] S_MUL2 = 3'd2;	/* product into DSP PREG */
-	localparam [2:0] S_MSEL = 3'd3;	/* select the half */
-	localparam [2:0] S_DIV  = 3'd4;	/* 32 steps, then the sign fix */
+	localparam [2:0] S_MUL  = 3'd1;	/* product into DSP AREG */
+	localparam [2:0] S_MUL2 = 3'd2;	/* product into DSP MREG */
+	localparam [2:0] S_MUL3 = 3'd3;	/* product into DSP PREG / cascade */
+	localparam [2:0] S_MSEL = 3'd4;	/* select the half */
+	localparam [2:0] S_DIV  = 3'd5;	/* 32 steps, then the sign fix */
 
 	reg [2:0] state;
 	reg [1:0] op_r;	/* funct3[1:0]: the MUL half or REM */
@@ -83,11 +84,11 @@ module atg_cpu_muldiv (
 	am_add #(.W(6)) cnt_add (.a(cnt), .b(6'd0), .ci(1'b1), .s(cnt_n), .co(ar_bo[3]));
 	wire take = !tsub[32];
 
-	/* The 33 x 33 signed product, registered across 2 DSP pipeline stages. */
+	/* The 33 x 33 signed product, registered across 3 DSP pipeline stages. */
 	wire [65:0] p;
 
-	am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(2)) mul (
-		.clk(clk), .en(state == S_MUL || state == S_MUL2), .a(ma), .b(mb), .p(p)
+	am_mul #(.AW(33), .BW(33), .SIGNED(1), .LAT(3)) mul (
+		.clk(clk), .en(state == S_MUL || state == S_MUL2 || state == S_MUL3), .a(ma), .b(mb), .p(p)
 	);
 
 	always @(posedge clk) begin
@@ -122,6 +123,8 @@ module atg_cpu_muldiv (
 			S_MUL:
 				state <= S_MUL2;
 			S_MUL2:
+				state <= S_MUL3;
+			S_MUL3:
 				state <= S_MSEL;
 			S_MSEL: begin
 				y <= (op_r[1:0] == 2'd0) ? p[31:0] : p[63:32];

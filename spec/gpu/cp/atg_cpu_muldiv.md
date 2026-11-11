@@ -4,7 +4,7 @@ RTL: `rtl/gpu/cp/atg_cpu_muldiv.v`.  Parent: atg_cpu_core.  Implemented in: p017
 
 ## 1. Purpose and place
 
-The RV32M unit: MUL/MULH/MULHSU/MULHU on a DSP (3 cycles) and DIV/DIVU/REM/REMU by a 32-step restoring divider.
+The RV32M unit: MUL/MULH/MULHSU/MULHU on a DSP (4 cycles) and DIV/DIVU/REM/REMU by a 32-step restoring divider.
 
 ## 2. Parameters
 
@@ -23,7 +23,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `a` | in | 32 | rs1. |
 | `b` | in | 32 | rs2. |
 | `busy` | out | 1 | 1 from the cycle after start until the cycle before done (0 in the done cycle). |
-| `done` | out | 1 | One-cycle pulse in the first cycle y is valid: start + 3 (MUL*) or start + 34 (DIV/REM*). |
+| `done` | out | 1 | One-cycle pulse in the first cycle y is valid: start + 4 (MUL*) or start + 34 (DIV/REM*). |
 | `y` | out | 32 | Result, held until the next start. |
 
 9 ports.
@@ -34,11 +34,11 @@ RISC-V semantics including division by zero (quotient all ones, remainder a) and
 
 ## 5. State machine
 
-IDLE →(start)→ MUL1..MUL3 | DIV (32 steps) + FIX (signs) → IDLE (done).
+IDLE →(start)→ MUL1..MUL4 | DIV (32 steps) + FIX (signs) → IDLE (done).
 
 ## 6. Latency and throughput
 
-MUL 3 cycles, DIV 34 cycles; one operation at a time.
+MUL 4 cycles, DIV 34 cycles; one operation at a time.
 
 ## 7. Corner cases and errors
 

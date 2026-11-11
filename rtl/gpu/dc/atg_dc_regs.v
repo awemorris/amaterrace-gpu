@@ -129,13 +129,15 @@ module atg_dc_regs #(
 	localparam [5:0] I_SCAN_SUM = GHCI_DC_SCAN_SUM[7:2];
 	localparam [5:0] I_SCAN_WORDS = GHCI_DC_SCAN_WORDS[7:2];
 
+	(* keep = "true" *) reg do_reset_q;
+
 `ifdef SYNTH_KINTEX7
 	(* keep = "true", DONT_TOUCH = "TRUE" *) wire regs_rst_high;
 	LUT1 #(.INIT(2'b01)) u_regs_rst (.I0(rst_n), .O(regs_rst_high));
 	wire rst_high = regs_rst_high;
 
 	(* keep = "true", DONT_TOUCH = "TRUE" *) wire regs_dc_rst;
-	LUT2 #(.INIT(4'b1110)) u_buf_dcrst (.I0(regs_rst_high), .I1(do_reset), .O(regs_dc_rst));
+	LUT2 #(.INIT(4'b1110)) u_buf_dcrst (.I0(regs_rst_high), .I1(do_reset_q), .O(regs_dc_rst));
 	wire dc_regs_rst = regs_dc_rst;
 
 	wire [31:0] d_wdata_b0, d_wdata_b1, d_wdata_b2;
@@ -176,7 +178,7 @@ module atg_dc_regs #(
 	LUT1 #(.INIT(2'b10)) u_buf_wnc (.I0(w_next), .O(w_next_ctl));
 `else
 	(* keep = "true" *) wire rst_high = !rst_n;
-	(* keep = "true" *) wire dc_regs_rst = rst_high || do_reset;
+	(* keep = "true" *) wire dc_regs_rst = rst_high || do_reset_q;
 	wire [31:0] d_wdata_b0 = d_wdata, d_wdata_b1 = d_wdata, d_wdata_b2 = d_wdata;
 	wire [31:0] d_wmask_b0 = d_wmask, d_wmask_b1 = d_wmask, d_wmask_b2 = d_wmask;
 	wire [5:0] idx_ctl = d_idx, idx_cfg = d_idx;
@@ -269,12 +271,19 @@ module atg_dc_regs #(
 	wire w_ctrl = d_we && idx == I_CTRL;
 	wire do_reset = w_ctrl && d_wmask[GHCI_DC_CTRL_RESET] && d_wdata[GHCI_DC_CTRL_RESET];
 
+	always @(posedge clk) begin
+		if (rst_high)
+			do_reset_q <= 1'b0;
+		else
+			do_reset_q <= do_reset;
+	end
+
 	(* keep = "true" *) reg dc_reset_q;
 	always @(posedge clk) begin
 		if (rst_high)
 			dc_reset_q <= 1'b0;
 		else
-			dc_reset_q <= (reset_left != 6'd0) || do_reset;
+			dc_reset_q <= (reset_left != 6'd0) || do_reset_q;
 	end
 	assign dc_reset = dc_reset_q;
 	assign pending = pend;
@@ -463,7 +472,7 @@ module atg_dc_regs #(
 			disp_irq_enable <= 6'd0;
 			connected_q <= 1'b0;
 			ev_hotplug_q <= 1'b0;
-		end else if (do_reset) begin
+		end else if (do_reset_q) begin
 			r_enable <= 1'b0;
 			st_underflow <= 1'b0;
 			st_rd_err <= 1'b0;
