@@ -120,6 +120,9 @@ CONFIG_TU_L1_BANKS       ?= 4
 #   1: Non-blocking MSHR pipeline, 0: Blocking single-issue cache access.
 CONFIG_TU_ENABLE_MSHR    ?= 1
 
+# CONFIG_TU_L1_CACHE_KB: Texture L1 Cache size in KB (4, 8, 16). Default: 8.
+CONFIG_TU_L1_CACHE_KB    ?= 8
+
 # ------------------------------------------------------------------------------
 # 4. Render Output Backend (ROP) & Formats
 # ------------------------------------------------------------------------------
@@ -212,6 +215,12 @@ CONFIG_CP_USE_RV32_CORE  ?= 1
 
 # CONFIG_MC_L2_CACHE_KB: Shared Last-Level Cache (L2) capacity in KB (0, 16, 32, 64, 128). Default: 64.
 CONFIG_MC_L2_CACHE_KB    ?= 64
+
+# CONFIG_MC_L2_WAYS: Shared L2 Cache associativity ways (4, 8, 16). Default: 8.
+CONFIG_MC_L2_WAYS        ?= 8
+
+# CONFIG_VF_CACHE_LINES: Vertex Fetch Cache capacity in lines (4, 8, 16). Default: 8.
+CONFIG_VF_CACHE_LINES    ?= 8
 
 # CONFIG_DC_ENABLE_CURSOR: Display Controller hardware cursor plane.
 #   1: Hardware cursor plane active, 0: Software cursor.
