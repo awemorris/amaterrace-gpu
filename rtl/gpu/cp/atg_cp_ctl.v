@@ -213,6 +213,7 @@ module atg_cp_ctl #(
 		hcr_widx == I_RING_SIZE
 	);
 	wire locked_bad = wr_locked && !open;
+	wire wr_fault_info = hcr_we && (hcr_widx == I_FAULT_INFO);
 
 `ifdef SYNTH_KINTEX7
 	reg wdt_fire_r;
@@ -539,15 +540,19 @@ module atg_cp_ctl #(
 	always @(posedge clk) begin
 		if (fault_rst_b[0]) fault_info[7:0] <= 8'd0;
 		else if (tf_buf[0]) fault_info[7:0] <= n_info[7:0];
+		else if (wr_fault_info) fault_info[7:0] <= fault_info[7:0] & ~(hcr_wdata[7:0] & hcr_wmask[7:0]);
 
 		if (fault_rst_b[1]) fault_info[15:8] <= 8'd0;
 		else if (tf_buf[1]) fault_info[15:8] <= n_info[15:8];
+		else if (wr_fault_info) fault_info[15:8] <= fault_info[15:8] & ~(hcr_wdata[15:8] & hcr_wmask[15:8]);
 
 		if (fault_rst_b[2]) fault_info[23:16] <= 8'd0;
 		else if (tf_buf[2]) fault_info[23:16] <= n_info[23:16];
+		else if (wr_fault_info) fault_info[23:16] <= fault_info[23:16] & ~(hcr_wdata[23:16] & hcr_wmask[23:16]);
 
 		if (fault_rst_b[3]) fault_info[31:24] <= 8'd0;
 		else if (tf_buf[3]) fault_info[31:24] <= n_info[31:24];
+		else if (wr_fault_info) fault_info[31:24] <= fault_info[31:24] & ~(hcr_wdata[31:24] & hcr_wmask[31:24]);
 
 		if (fault_rst_b[4]) fault_addr[15:0] <= 16'd0;
 		else if (tf_buf[4]) fault_addr[15:0] <= n_addr[15:0];
@@ -636,6 +641,8 @@ module atg_cp_ctl #(
 			if (take_fault) begin
 				fault_info <= n_info;
 				fault_addr <= n_addr;
+			end else if (wr_fault_info) begin
+				fault_info <= fault_info & ~(hcr_wdata & hcr_wmask);
 			end
 `endif
 

@@ -400,6 +400,7 @@ module atg_cp_regs #(
 	reg [31:0] scratch;
 	reg win_q;
 	reg [31:0] counter;
+	reg [31:0] counter_hi;
 	reg [127:0] perf;	/* PERF0..3, PERFn in bits 32n+31:32n */
 	wire perf_clear_raw = perf_reset ||
 		(hcr_we && hcr_widx == I_PERF_CTRL && reg_wstrb[0] && hcr_wdata[0]);
@@ -423,11 +424,16 @@ module atg_cp_regs #(
 
 	/* COUNTER + 1 and PERFn + busy: one incrementer each. */
 	wire [31:0] counter_n;
+	wire [31:0] counter_hi_n;
+	wire counter_hi_co;
 	wire [127:0] perf_n;
 	wire [4:0] inc_co;
 
 	am_add #(.W(32)) counter_add (
 		.a(counter), .b(32'd0), .ci(1'b1), .s(counter_n), .co(inc_co[4])
+	);
+	am_add #(.W(32)) counter_hi_add (
+		.a(counter_hi), .b(32'd0), .ci(inc_co[4]), .s(counter_hi_n), .co(counter_hi_co)
 	);
 
 	genvar g;
@@ -445,9 +451,11 @@ module atg_cp_regs #(
 		if (regs_rst_high) begin
 			scratch <= 32'd0;
 			counter <= 32'd0;
+			counter_hi <= 32'd0;
 			win_q <= HAS_WINDOW;
 		end else begin
 			counter <= counter_n;
+			counter_hi <= counter_hi_n;
 			if (scratch_we_b[0])
 				scratch[15:0] <= (scratch[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]);
 			if (scratch_we_b[1])
@@ -464,9 +472,11 @@ module atg_cp_regs #(
 		if (!rst_n) begin
 			scratch <= 32'd0;
 			counter <= 32'd0;
+			counter_hi <= 32'd0;
 			win_q <= HAS_WINDOW;
 		end else begin
 			counter <= counter_n;
+			counter_hi <= counter_hi_n;
 			if (is_scratch_wr)
 				scratch <= (scratch & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 			if (HAS_WINDOW && hcr_we && hcr_widx == I_WINDOW_CTRL && reg_wstrb[0])
@@ -658,9 +668,10 @@ module atg_cp_regs #(
 		GHCI_REG_FAULT_ADDR_HI: own = 32'd0;
 		GHCI_REG_RING_BASE_HI: own = 32'd0;
 		GHCI_REG_SCRATCH: own = scratch;
-		GHCI_REG_SESSION_ACTIVE: own = 32'd0;
+		GHCI_REG_RESIDENT_WARPS: own = {8'd0, NREGS, RESIDENT_WARPS};
+		GHCI_REG_SESSION_ACTIVE: own = 32'h00000001;
 		GHCI_REG_TIMESTAMP_LO: own = counter;
-		GHCI_REG_TIMESTAMP_HI: own = 32'd0;
+		GHCI_REG_TIMESTAMP_HI: own = counter_hi;
 		GHCI_REG_GCLK_HZ: own = GCLK_HZ;
 		GHCI_REG_NATIVE_ISA_ID: own = 32'h47534931;
 		GHCI_REG_DIAG_CP_PC: own = diag_cp_pc;
@@ -683,9 +694,9 @@ module atg_cp_regs #(
 	wire sel_prf_raw = 1'b0;
 	wire sel_pc_raw  = (roff_sel_in == GHCI_REG_DIAG_CP_PC[11:0]);
 	wire sel_st_raw  = (roff_sel_in == GHCI_REG_DIAG_CP_STATUS[11:0]);
-	wire sel_pf_raw  = 1'b0;
+	wire sel_cnthi_raw = (roff_sel_in == GHCI_REG_TIMESTAMP_HI[11:0]);
 
-	wire [1:0] sel_scr_b, sel_cnt_b, sel_prf_b, sel_pc_b, sel_st_b, sel_pf_b;
+	wire [1:0] sel_scr_b, sel_cnt_b, sel_prf_b, sel_pc_b, sel_st_b, sel_cnthi_b;
 	genvar g_os;
 	generate
 		for (g_os = 0; g_os < 2; g_os = g_os + 1) begin : g_own_sel_buf
@@ -694,7 +705,7 @@ module atg_cp_regs #(
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sprf (.I0(sel_prf_raw), .O(sel_prf_b[g_os]));
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_spc  (.I0(sel_pc_raw),  .O(sel_pc_b[g_os]));
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sst  (.I0(sel_st_raw),  .O(sel_st_b[g_os]));
-			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_spf  (.I0(sel_pf_raw),  .O(sel_pf_b[g_os]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_scnth (.I0(sel_cnthi_raw), .O(sel_cnthi_b[g_os]));
 		end
 	endgenerate
 	wire [1:0] prf_idx_lo, prf_idx_hi;
@@ -714,6 +725,8 @@ module atg_cp_regs #(
 			GHCI_REG_VERSION: v = 32'h00010000;
 			GHCI_REG_DEVICE_CAPS: v = eff_dev_caps;
 			GHCI_REG_EXTCAP_PTR: v = (XCAP_MASK != 11'd0) ? 32'h00000100 : 32'd0;
+			GHCI_REG_RESIDENT_WARPS: v = {8'd0, NREGS, RESIDENT_WARPS};
+			GHCI_REG_SESSION_ACTIVE: v = 32'h00000001;
 			GHCI_REG_GCLK_HZ: v = GCLK_HZ;
 			GHCI_REG_NATIVE_ISA_ID: v = 32'h47534931;
 			GHCI_REG_EXT_CAP_FMT0: v = eff_fmt0;
@@ -748,7 +761,7 @@ module atg_cp_regs #(
 			(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'hFFFFF888F888F888)) u_ob (
 				.I0(diag_cp_pc[g_ob]),     .I1(sel_pc_b[g_ob >> 4]),
 				.I2(diag_cp_status[g_ob]), .I3(sel_st_b[g_ob >> 4]),
-				.I4(diag_pipe_fsm[g_ob]),  .I5(sel_pf_b[g_ob >> 4]),
+				.I4(counter_hi[g_ob]),     .I5(sel_cnthi_b[g_ob >> 4]),
 				.O(own_b_pre[g_ob])
 			);
 		end

@@ -379,9 +379,37 @@ module ghci_probe #(
 		check32("STATUS.FAULTED on locked RING_SIZE write", {31'd0, val[GHCI_STATUS_FAULT]}, 32'd1);
 		host_read(GHCI_REG_FAULT_INFO, val);
 		check32("FAULT_INFO kind 7 (LOCKED_REG)", {28'd0, val[15:12]}, 32'd7);
+
+		/* R3: FAULT_INFO W1C (write 1 to clear) */
+		host_write(GHCI_REG_FAULT_INFO, 32'h00007000); /* Clear kind [15:12] */
+		host_read(GHCI_REG_FAULT_INFO, val);
+		check32("FAULT_INFO kind cleared by W1C", {28'd0, val[15:12]}, 32'd0);
+		host_write(GHCI_REG_FAULT_INFO, 32'hFFFFFFFF); /* Clear all */
+		host_read(GHCI_REG_FAULT_INFO, val);
+		check32("FAULT_INFO fully cleared by W1C", val, 32'd0);
+
 		/* Reset engine */
 		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RESET)); /* CTRL.RESET */
 		#50;
+
+		/* R3: RESIDENT_WARPS (0x04C) */
+		host_read(GHCI_REG_RESIDENT_WARPS, val);
+		check32("RESIDENT_WARPS (0x04C)", val, 32'h00200004);
+
+		/* R3: SESSION_ACTIVE (0x058) */
+		host_read(GHCI_REG_SESSION_ACTIVE, val);
+		check32("SESSION_ACTIVE (0x058)", val, 32'h00000001);
+
+		/* R3: TIMESTAMP_LO / TIMESTAMP_HI (0x05C / 0x060) */
+		host_read(GHCI_REG_TIMESTAMP_LO, val);
+		if (val == 32'd0) begin
+			err_count = err_count + 1;
+			$display("FAIL [%0s] TIMESTAMP_LO returned 0", NAME);
+		end else begin
+			$display("PASS [%0s] TIMESTAMP_LO = %08h", NAME, val);
+		end
+		host_read(GHCI_REG_TIMESTAMP_HI, val);
+		check32("TIMESTAMP_HI (0x060)", val, 32'd0);
 
 		done = 1;
 	end
