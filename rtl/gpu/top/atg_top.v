@@ -23,7 +23,7 @@
 `include "atg_config.vh"
 
 module atg_top #(
-	parameter [31:0] GCLK_HZ = 32'd200000000,
+	parameter [31:0] GCLK_HZ = 32'd0,
 	parameter S_ID_W = 12,
 	parameter S_LEN_W = 4,
 	parameter LINE_BYTES = 32,

@@ -49,7 +49,7 @@ module atg_cp #(
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter [31:0] GCLK_HZ = 32'd200000000,
+	parameter [31:0] GCLK_HZ = 32'd0,
 	parameter [31:0] VENDOR_ID = 32'h414D4154,	/* "AMAT" */
 	parameter [31:0] DEVICE_ID = 32'h41544731,	/* "ATG1" */
 	parameter [31:0] DEVICE_VERSION = 32'h00000003,	/* 0.3: CP with the ring */

@@ -289,7 +289,7 @@
 }
 
 module atg_cp_regs #(
-	parameter GCLK_HZ = 32'd200000000,	/* GCLK_HZ register */
+	parameter GCLK_HZ = 32'd0,	/* GCLK_HZ register */
 	parameter VENDOR_ID = 32'h414D4154,	/* "AMAT" */
 	parameter DEVICE_ID = 32'h41544731,	/* "ATG1" */
 	parameter DEVICE_VERSION = 32'h00000002,	/* Implementation version */
