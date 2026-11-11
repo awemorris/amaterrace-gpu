@@ -25,9 +25,14 @@
 module ghci_probe #(
 	parameter NAME = "dut",
 	parameter [3:0] EXP_MRT = 4'd1,
-	parameter [31:0] EXP_DEV_CAPS = 32'h40010480,
-	parameter [31:0] EXP_FMT0 = 32'h00001200,
-	parameter [31:0] EXP_FEAT = 32'h00110000,
+	parameter VA_BITS = 32,
+	parameter PA_BITS = 40,
+	parameter HAS_PROT = 0,
+	parameter HAS_CPU = 0,
+	parameter NSU = 1,
+	parameter HAS_INDIRECT_DRAW = 0,
+	parameter HAS_SECONDARY_RING = 0,
+	parameter HAS_ETC = 0,
 	parameter [31:0] EXP_GCLK = 32'd200000000,
 	parameter [31:0] LOCAL_BASE = 32'd0,
 	parameter [31:0] LOCAL_BYTES = 32'd0,
@@ -52,6 +57,65 @@ module ghci_probe #(
 	output reg [31:0] err_count
 );
 	`include "ghci_regs.vh"
+
+	localparam [31:0] RAW_VA_ENC = (VA_BITS >= 30) ? (VA_BITS - 30) : 0;
+	localparam [3:0] CALC_VA_ENC = RAW_VA_ENC[3:0];
+	localparam [31:0] RAW_PA_ENC = (PA_BITS >= 40) ? (PA_BITS - 40) : 0;
+	localparam [3:0] CALC_PA_ENC = RAW_PA_ENC[3:0];
+	localparam [7:0] CALC_LDS_KB = (SU_LDS_BYTES >> 10);
+
+	localparam [31:0] CALC_DEV_CAPS = {
+		(MS4 != 0) ? 1'b1 : 1'b0,                  /* [31] MSAA */
+		1'b1,                                      /* [30] DISP */
+		(HAS_BLT != 0) ? 1'b1 : 1'b0,              /* [29] BLT */
+		1'b0,                                      /* [28] MESH */
+		1'b0,                                      /* [27] TASK (mirrors MESH) */
+		1'b0,                                      /* [26] ROP_PACK */
+		1'b0,                                      /* [25] FFILT */
+		(HAS_PROT != 0) ? 1'b1 : 1'b0,             /* [24] PROT */
+		NSU[7:0],                                  /* [23:16] NUM_SU */
+		SU_NPHYS[7:0],                             /* [15:8] PHYS_LANES */
+		(NSU != 0) ? 1'b1 : 1'b0,                  /* [7] GSI1 */
+		(SU_PACKED != 0) ? 1'b1 : 1'b0,            /* [6] FP16 */
+		1'b0,                                      /* [5] DUAL_SRC */
+		(HAS_SECONDARY_RING != 0) ? 1'b1 : 1'b0,   /* [4] SECONDARY_RING */
+		(HAS_INDIRECT_DRAW != 0) ? 1'b1 : 1'b0,    /* [3] INDIRECT_DRAW */
+		1'b0,                                      /* [2] HW_WALKER */
+		2'b00                                      /* [1:0] */
+	};
+
+	localparam [31:0] CALC_FMT0 = {
+		13'd0,                                     /* [31:19] reserved */
+		1'b0,                                      /* [18] BLT_TILE */
+		1'b0,                                      /* [17] BLT_BLEND */
+		(TU_BILINEAR != 0) ? 1'b1 : 1'b0,          /* [16] TU_BILINEAR */
+		EXP_MRT[3:0],                              /* [15:12] MAX_MRT */
+		1'b0,                                      /* [11] FFILT_FP32 */
+		1'b0,                                      /* [10] FFILT_FP16 */
+		1'b1,                                      /* [9] SRGB */
+		1'b0,                                      /* [8] ASTC */
+		(HAS_ETC != 0) ? 1'b1 : 1'b0,              /* [7] ETC2 */
+		7'd0                                       /* [6:0] BC */
+	};
+
+	localparam [31:0] CALC_FEAT = {
+		1'b0,                                      /* [31] BLT_SCALE */
+		1'b0,                                      /* [30] CLIP_POLY */
+		(SU_SUBGROUP != 0) ? 1'b1 : 1'b0,          /* [29] SUBGROUP */
+		(SU_PACKED != 0) ? 1'b1 : 1'b0,            /* [28] FP16 */
+		CALC_LDS_KB,                               /* [27:20] LDS_KB */
+		EXP_MRT[3:0],                              /* [19:16] MAX_MRT */
+		(EXP_MRT >= 4'd2) ? 1'b1 : 1'b0,           /* [15] MRT_BLEND */
+		1'b0,                                      /* [14] COLOR_LUT */
+		1'b0,                                      /* [13] CURSOR */
+		1'b0,                                      /* [12] EARLY_Z */
+		1'b0,                                      /* [11] LOGICOP */
+		1'b0,                                      /* [10] FAST_CLEAR */
+		1'b0,                                      /* [9] COARSE_SCAN */
+		1'b0,                                      /* [8] DUAL_SRC */
+		CALC_PA_ENC,                               /* [7:4] PA_BITS_ENC */
+		CALC_VA_ENC                                /* [3:0] VA_BITS_ENC */
+	};
 
 	localparam LINE_BYTES = 64;
 	localparam LINE_SHIFT = 6;
@@ -102,9 +166,9 @@ module ghci_probe #(
 		.DATA_W(DATA_W),
 		.GCLK_HZ(EXP_GCLK),
 		.MRT_COUNT(EXP_MRT),
-		.DEVICE_CAPS(EXP_DEV_CAPS),
-		.EXT_CAP_FMT0(EXP_FMT0),
-		.EXT_CAP_FEATURE(EXP_FEAT),
+		.VA_BITS(VA_BITS),
+		.PA_BITS(PA_BITS),
+		.NSU(NSU),
 		.SU_NPHYS(SU_NPHYS),
 		.SU_NWARPS(4),
 		.SU_WARP_W(2),
@@ -115,8 +179,7 @@ module ghci_probe #(
 		.SU_LDS_BYTES(SU_LDS_BYTES),
 		.MS4(MS4),
 		.ROP_STENCIL(ROP_STENCIL),
-		.HAS_CPU(0),
-		.NSU(1),
+		.HAS_CPU(HAS_CPU),
 		.HAS_VF(1),
 		.HAS_RX(1),
 		.HAS_TU(1),
@@ -124,6 +187,10 @@ module ghci_probe #(
 		.HAS_BLT(HAS_BLT),
 		.HAS_DISP(1),
 		.HAS_JTAG(HAS_JTAG),
+		.HAS_PROT(HAS_PROT),
+		.HAS_INDIRECT_DRAW(HAS_INDIRECT_DRAW),
+		.HAS_SECONDARY_RING(HAS_SECONDARY_RING),
+		.HAS_ETC(HAS_ETC),
 		.LOCAL_BASE(LOCAL_BASE),
 		.LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
@@ -206,8 +273,9 @@ module ghci_probe #(
 		check32("GHCI_VERSION", val, 32'h00010000);
 
 		/* 2. DEVICE_CAPS */
+		$display("[%0s] Calculated CAPS=%08h FMT0=%08h FEAT=%08h", NAME, CALC_DEV_CAPS, CALC_FMT0, CALC_FEAT);
 		host_read(GHCI_REG_DEVICE_CAPS, val);
-		check32("DEVICE_CAPS", val, EXP_DEV_CAPS);
+		check32("DEVICE_CAPS", val, CALC_DEV_CAPS);
 		if (val[3] !== 1'b0 || val[4] !== 1'b0) begin
 			err_count = err_count + 1;
 			$display("FAIL [%0s] DEVICE_CAPS[4:3] must be 0", NAME);
@@ -312,7 +380,7 @@ module ghci_probe #(
 
 		/* 6. W2: EXT_CAP_FMT0 */
 		host_read(GHCI_REG_EXT_CAP_FMT0, val);
-		check32("EXT_CAP_FMT0 (0x080)", val, EXP_FMT0);
+		check32("EXT_CAP_FMT0 (0x080)", val, CALC_FMT0);
 		if (val[15:12] !== EXP_MRT) begin
 			err_count = err_count + 1;
 			$display("FAIL [%0s] EXT_CAP_FMT0[15:12] = %0d, expected %0d", NAME, val[15:12], EXP_MRT);
@@ -320,7 +388,7 @@ module ghci_probe #(
 
 		/* 7. W5: EXT_CAP_FEATURE */
 		host_read(GHCI_REG_EXT_CAP_FEATURE, val);
-		check32("EXT_CAP_FEATURE (0x084)", val, EXP_FEAT);
+		check32("EXT_CAP_FEATURE (0x084)", val, CALC_FEAT);
 		if (val[14] !== 1'b0) begin
 			err_count = err_count + 1;
 			$display("FAIL [%0s] EXT_CAP_FEATURE[14] COLOR_LUT must be 0", NAME);
@@ -492,9 +560,10 @@ module atg_ghci_top_tb;
 	ghci_probe #(
 		.NAME("minimal"),
 		.EXP_MRT(4'd1),
-		.EXP_DEV_CAPS(32'h40010480),
-		.EXP_FMT0(32'h00001200),
-		.EXP_FEAT(32'h00110000),
+		.VA_BITS(30),
+		.PA_BITS(40),
+		.HAS_PROT(0),
+		.HAS_CPU(0),
 		.EXP_GCLK(32'd200000000),
 		.LOCAL_BYTES(32'd0),
 		.WINDOW_BYTES(32'd0),
@@ -506,6 +575,7 @@ module atg_ghci_top_tb;
 		.ROP_STENCIL(0),
 		.HAS_BLT(0),
 		.HAS_JTAG(0),
+		.TU_BILINEAR(0),
 		.SEED(1)
 	) probe_min (
 		.clk(clk),
@@ -518,9 +588,10 @@ module atg_ghci_top_tb;
 	ghci_probe #(
 		.NAME("balanced"),
 		.EXP_MRT(4'd4),
-		.EXP_DEV_CAPS(32'hE70108E4),
-		.EXP_FMT0(32'h0007425F),
-		.EXP_FEAT(32'hF044BF02),
+		.VA_BITS(32),
+		.PA_BITS(40),
+		.HAS_PROT(1),
+		.HAS_CPU(1),
 		.EXP_GCLK(32'd200000000),
 		.LOCAL_BASE(32'h80000000),
 		.LOCAL_BYTES(32'h40000000),

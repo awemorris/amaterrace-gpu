@@ -47,10 +47,12 @@
 
 `ifdef CFG_ROP_DUAL_SOURCE
 `define ATG_DEF_DUAL_SRC ((`CFG_ROP_DUAL_SOURCE != 0) ? 1'b1 : 1'b0)
-`elsif defined(CFG_ENABLE_DUAL_SOURCE)
+`else
+`ifdef CFG_ENABLE_DUAL_SOURCE
 `define ATG_DEF_DUAL_SRC ((`CFG_ENABLE_DUAL_SOURCE != 0) ? 1'b1 : 1'b0)
 `else
 `define ATG_DEF_DUAL_SRC 1'b0
+`endif
 `endif
 
 `ifdef CFG_ENABLE_MESH
@@ -91,10 +93,12 @@
 
 `ifdef CFG_ROP_ENABLE_LOGICOP
 `define ATG_DEF_LOGICOP ((`CFG_ROP_ENABLE_LOGICOP != 0) ? 1'b1 : 1'b0)
-`elsif defined(CFG_ENABLE_LOGICOP)
+`else
+`ifdef CFG_ENABLE_LOGICOP
 `define ATG_DEF_LOGICOP ((`CFG_ENABLE_LOGICOP != 0) ? 1'b1 : 1'b0)
 `else
 `define ATG_DEF_LOGICOP 1'b0
+`endif
 `endif
 
 `ifdef CFG_ENABLE_EARLY_Z
@@ -130,43 +134,43 @@
 `ifdef CFG_RX_ENABLE_CPOLY
 `define ATG_DEF_CLIP_POLY ((`CFG_RX_ENABLE_CPOLY != 0) ? 1'b1 : 1'b0)
 `else
-`define ATG_DEF_CLIP_POLY 1'b1
+`define ATG_DEF_CLIP_POLY 1'b0
 `endif
 
 `ifdef CFG_HAS_BLT
 `define ATG_DEF_HAS_BLT ((`CFG_HAS_BLT != 0) ? 1'b1 : 1'b0)
 `else
-`define ATG_DEF_HAS_BLT 1'b1
+`define ATG_DEF_HAS_BLT 1'b0
 `endif
 
 `ifdef CFG_BLT_ENABLE_SCALE
 `define ATG_DEF_BLT_SCALE ((`ATG_DEF_HAS_BLT && (`CFG_BLT_ENABLE_SCALE != 0)) ? 1'b1 : 1'b0)
 `else
-`define ATG_DEF_BLT_SCALE `ATG_DEF_HAS_BLT
+`define ATG_DEF_BLT_SCALE 1'b0
 `endif
 
 `ifdef CFG_BLT_ENABLE_BLEND
 `define ATG_DEF_BLT_BLEND ((`ATG_DEF_HAS_BLT && (`CFG_BLT_ENABLE_BLEND != 0)) ? 1'b1 : 1'b0)
 `else
-`define ATG_DEF_BLT_BLEND `ATG_DEF_HAS_BLT
+`define ATG_DEF_BLT_BLEND 1'b0
 `endif
 
 `ifdef CFG_BLT_ENABLE_TILE
 `define ATG_DEF_BLT_TILE ((`ATG_DEF_HAS_BLT && (`CFG_BLT_ENABLE_TILE != 0)) ? 1'b1 : 1'b0)
 `else
-`define ATG_DEF_BLT_TILE `ATG_DEF_HAS_BLT
+`define ATG_DEF_BLT_TILE 1'b0
 `endif
 
 `ifdef CFG_TU_ENABLE_BILINEAR
 `define ATG_DEF_TU_BILINEAR ((`CFG_TU_ENABLE_BILINEAR != 0) ? 1'b1 : 1'b0)
 `else
-`define ATG_DEF_TU_BILINEAR 1'b1
+`define ATG_DEF_TU_BILINEAR 1'b0
 `endif
 
 `ifdef CFG_HAS_DISP
 `define ATG_DEF_DISP ((`CFG_HAS_DISP != 0) ? 1'b1 : 1'b0)
 `else
-`define ATG_DEF_DISP 1'b1
+`define ATG_DEF_DISP 1'b0
 `endif
 
 `ifdef CFG_ENABLE_TASK
@@ -301,13 +305,27 @@ module atg_cp_regs #(
 	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0007,
 	parameter [31:0] MEM_CACHE_CFG = 32'd0,
 	parameter [3:0] MRT_COUNT = 4'd1,
+	parameter VA_BITS = 32,
+	parameter PA_BITS = 40,
+	parameter NSU = 0,
+	parameter SU_NPHYS = 8,
+	parameter SU_PACKED = 0,
+	parameter SU_SUBGROUP = 0,
+	parameter SU_LDS_KB = 0,
+	parameter HAS_BLT = 0,
+	parameter HAS_DISP = 0,
+	parameter HAS_TU = 0,
+	parameter TU_BILINEAR = 0,
+	parameter HAS_ETC = 0,
+	parameter MS4 = 0,
+	parameter HAS_PROT = 0,
 	parameter HAS_INDIRECT_DRAW = 0,
 	parameter HAS_SECONDARY_RING = 0,
 	parameter [31:0] DEVICE_CAPS = 32'd0,	/* 0: dynamic from config macros */
 	parameter CAPS = 32'h00500002,	/* CAPS value (design §2.2), set by atg_top from its parameters */
 	parameter CAPS2 = 32'h00000003,	/* CAPS2 value: [7:0] = 3 independent queues (Graphics, Compute, Copy/DMA) */
-	parameter [31:0] EXT_CAP_FMT0 = `ATG_DEF_EXT_CAP_FMT0,
-	parameter [31:0] EXT_CAP_FEATURE = `ATG_DEF_EXT_CAP_FEATURE,
+	parameter [31:0] EXT_CAP_FMT0 = 32'd0,
+	parameter [31:0] EXT_CAP_FEATURE = 32'd0,
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
 	parameter [10:0] XCAP_MASK = 11'h00C,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, PROT 9, FMT 10, DISP2 11) */
 	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
@@ -678,14 +696,68 @@ module atg_cp_regs #(
 		end
 	endfunction
 
-	wire [31:0] def_fmt0 = `ATG_DEF_EXT_CAP_FMT0;
-	wire [31:0] def_feat = `ATG_DEF_EXT_CAP_FEATURE;
-	wire [31:0] eff_dev_caps = (DEVICE_CAPS != 32'd0) ? DEVICE_CAPS : `ATG_DEF_DEVICE_CAPS;
+	localparam [31:0] RAW_VA_ENC = (VA_BITS >= 30) ? (VA_BITS - 30) : 0;
+	localparam [3:0] CALC_VA_ENC = RAW_VA_ENC[3:0];
+	localparam [31:0] RAW_PA_ENC = (PA_BITS >= 40) ? (PA_BITS - 40) : 0;
+	localparam [3:0] CALC_PA_ENC = RAW_PA_ENC[3:0];
+
+	localparam [31:0] CALC_DEVICE_CAPS = {
+		(MS4 != 0) ? 1'b1 : 1'b0,                  /* [31] MSAA */
+		(HAS_DISP != 0) ? 1'b1 : 1'b0,             /* [30] DISP */
+		(HAS_BLT != 0) ? 1'b1 : 1'b0,              /* [29] BLT */
+		`ATG_DEF_MESH,                             /* [28] MESH */
+		`ATG_DEF_MESH,                             /* [27] TASK (mirrors MESH) */
+		`ATG_DEF_ROP_PACK,                         /* [26] ROP_PACK */
+		(`ATG_DEF_FFILT && `ATG_DEF_FP16) ? 1'b1 : 1'b0, /* [25] FFILT (FP16 & FFILT) */
+		(HAS_PROT != 0) ? 1'b1 : 1'b0,             /* [24] PROT */
+		NSU[7:0],                                  /* [23:16] NUM_SU */
+		SU_NPHYS[7:0],                             /* [15:8] PHYS_LANES */
+		(NSU != 0) ? 1'b1 : 1'b0,                  /* [7] GSI1 */
+		(SU_PACKED != 0) ? 1'b1 : 1'b0,            /* [6] FP16 */
+		`ATG_DEF_DUAL_SRC,                         /* [5] DUAL_SRC */
+		(HAS_SECONDARY_RING != 0) ? 1'b1 : 1'b0,   /* [4] SECONDARY_RING */
+		(HAS_INDIRECT_DRAW != 0) ? 1'b1 : 1'b0,    /* [3] INDIRECT_DRAW */
+		1'b0,                                      /* [2] HW_WALKER */
+		2'b00                                      /* [1:0] */
+	};
+
+	localparam [31:0] CALC_EXT_CAP_FMT0 = {
+		13'd0,                                     /* [31:19] reserved */
+		((HAS_BLT != 0) && `ATG_DEF_BLT_TILE) ? 1'b1 : 1'b0,  /* [18] BLT_TILE */
+		((HAS_BLT != 0) && `ATG_DEF_BLT_BLEND) ? 1'b1 : 1'b0, /* [17] BLT_BLEND */
+		((HAS_TU != 0) && (TU_BILINEAR != 0)) ? 1'b1 : 1'b0,  /* [16] TU_BILINEAR */
+		MRT_COUNT[3:0],                            /* [15:12] MAX_MRT */
+		1'b0,                                      /* [11] FFILT_FP32 */
+		(`ATG_DEF_FFILT && `ATG_DEF_FP16) ? 1'b1 : 1'b0, /* [10] FFILT_FP16 */
+		1'b1,                                      /* [9] SRGB */
+		1'b0,                                      /* [8] ASTC */
+		(HAS_ETC != 0) ? 1'b1 : 1'b0,              /* [7] ETC2 */
+		7'd0                                       /* [6:0] BC */
+	};
+
+	localparam [31:0] CALC_EXT_CAP_FEATURE = {
+		((HAS_BLT != 0) && `ATG_DEF_BLT_SCALE) ? 1'b1 : 1'b0, /* [31] BLT_SCALE */
+		`ATG_DEF_CLIP_POLY,                        /* [30] CLIP_POLY */
+		(SU_SUBGROUP != 0) ? 1'b1 : 1'b0,          /* [29] SUBGROUP */
+		(SU_PACKED != 0) ? 1'b1 : 1'b0,            /* [28] FP16 */
+		SU_LDS_KB[7:0],                            /* [27:20] LDS_KB */
+		MRT_COUNT[3:0],                            /* [19:16] MAX_MRT */
+		(MRT_COUNT >= 4'd2) ? 1'b1 : 1'b0,         /* [15] MRT_BLEND */
+		1'b0,                                      /* [14] COLOR_LUT */
+		((HAS_DISP != 0) && `ATG_DEF_CURSOR) ? 1'b1 : 1'b0, /* [13] CURSOR */
+		`ATG_DEF_EARLY_Z,                          /* [12] EARLY_Z */
+		`ATG_DEF_LOGICOP,                          /* [11] LOGICOP */
+		`ATG_DEF_FAST_CLEAR,                       /* [10] FAST_CLEAR */
+		`ATG_DEF_COARSE_SCAN,                      /* [9] COARSE_SCAN */
+		`ATG_DEF_DUAL_SRC,                         /* [8] DUAL_SRC */
+		CALC_PA_ENC,                               /* [7:4] PA_BITS_ENC */
+		CALC_VA_ENC                                /* [3:0] VA_BITS_ENC */
+	};
+
+	wire [31:0] eff_dev_caps = (DEVICE_CAPS != 32'd0) ? DEVICE_CAPS : CALC_DEVICE_CAPS;
 	wire [31:0] eff_caps = (CAPS != 32'h00500002) ? CAPS : `ATG_DEF_CAPS;
-	wire [31:0] eff_fmt0 = (EXT_CAP_FMT0 != 32'd0) ? EXT_CAP_FMT0 :
-		{def_fmt0[31:16], MRT_COUNT, def_fmt0[11:0]};
-	wire [31:0] eff_feat = (EXT_CAP_FEATURE != 32'd0) ? EXT_CAP_FEATURE :
-		{def_feat[31:20], MRT_COUNT, (MRT_COUNT >= 4'd2 ? 1'b1 : 1'b0), def_feat[14:0]};
+	wire [31:0] eff_fmt0 = (EXT_CAP_FMT0 != 32'd0) ? EXT_CAP_FMT0 : CALC_EXT_CAP_FMT0;
+	wire [31:0] eff_feat = (EXT_CAP_FEATURE != 32'd0) ? EXT_CAP_FEATURE : CALC_EXT_CAP_FEATURE;
 	wire [31:0] eff_mem_cache_cfg = (MEM_CACHE_CFG != 32'd0) ? MEM_CACHE_CFG : `ATG_DEF_MEM_CACHE_CFG;
 
 	reg [31:0] own;
@@ -888,8 +960,7 @@ module atg_cp_regs #(
 `endif
 
 	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0], inc_co, raddr_q[1:0],
-		def_fmt0[15:12], def_feat[19:15], eff_caps, diag_pipe_fsm,
-		(HAS_INDIRECT_DRAW != 0), (HAS_SECONDARY_RING != 0)};
+		eff_caps, diag_pipe_fsm};
 
 endmodule
 
