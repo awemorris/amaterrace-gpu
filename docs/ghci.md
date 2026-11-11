@@ -230,6 +230,7 @@ All pipeline state is submitted through in-memory Pipeline State Objects
 | 0x060 | TIMESTAMP_HI | RO | 64-bit GPU cycle timestamp [63:32] |
 | 0x064 | GCLK_HZ | RO | Core clock frequency in Hz (for timestampPeriod, section 3.2.3, K06) |
 | 0x068 | NATIVE_ISA_ID | RO | Shader ISA architecture identification (reports `"GSI1"` = `0x47534931`, N16) |
+| 0x06C | EXT_CAP_ISA | RO | Optional shader instruction groups (section 3.2.4) |
 | 0x074 | DIAG_CP_PC | RO | Current RV32IM Program Counter of CP firmware (debug) |
 | 0x078 | DIAG_CP_STATUS | RO | CP internal FSM state and in-flight draw counter (debug) |
 | 0x080 | EXT_CAP_FMT0 | RO | Fast texture format bitmap shortcut (BC1-BC7) (section 8.5.1, J06) |
@@ -324,6 +325,18 @@ Provides immediate hardware texture format support flags without MMIO register w
   - KC705 PCIe Gen2 Endpoint: `Vendor ID = 0x10EE` (Xilinx), `Device ID = 0x7024`, `Subsystem Vendor ID = 0x10EE`, `Subsystem Device ID = 0x0007`.
   - Dedicated Amaterrace ASIC/Emulator ID: `Vendor ID = 0x5441` (ASCII `"AT"`), `Device ID = 0x4748` (ASCII `"GH"`).
   - EXTCAP `VEND` block (`0x180`) provides supplementary FourCC string `"AMAT"`.
+
+#### 3.2.4 EXT_CAP_ISA (0x06C) - Optional Shader Instruction Groups
+
+`EXT_CAP_ISA` (0x06C) reports the optional GSI1 instruction groups that are not
+already reported by `DEVICE_CAPS` or `EXT_CAP_FEATURE` (section 12.5):
+- `[0] CAP_SFU`: Special function unit present (`CONFIG_SU_ENABLE_SFU`). When 1,
+  the transcendental instructions (custom-3 funct3 011: `rcp`, `rsq`, `exp2`,
+  `log2`, `sin`, `cos`) and `fsqrt.s` execute. When 0, these instructions are
+  optional instructions without their capability bit (section 12.5): a driver
+  must not emit them and computes the values with other instructions instead.
+  `fract` (custom-3 funct3 011 sub 6) is not part of this group and is always present.
+- `[31:1]`: Reserved (reads 0).
 
 ### 3.3 CTRL and STATUS (0x014, 0x010, J02)
 
@@ -1981,6 +1994,7 @@ Under GHCI 1.0, memory protection is enforced hardware-wide through **per-sessio
   Instruction subsets are governed by host-visible registers:
   - Subgroup operations (`shfl`, `vote`, `ballot`): governed by `EXT_CAP_FEATURE[29]` (`CAP_SUBGROUP`, legacy GSI1 CAPS[24]).
   - Packed FP16 arithmetic (custom-2): governed by `DEVICE_CAPS[6]` / `EXT_CAP_FEATURE[28]` (`CAP_FP16`, legacy GSI1 CAPS[28]).
+  - Transcendentals (`rcp`, `rsq`, `exp2`, `log2`, `sin`, `cos`) and `fsqrt.s`: governed by `EXT_CAP_ISA[0]` (`CAP_SFU`, section 3.2.4).
   - Advanced texture addressing (.3 forms for 2D array, 3D, cube, depth compare `.c`, and gather `texg`): standard GSI1 ISA operations supported by the Texture Unit on all configurations (`GHCI_CAP_GSI1 == 1`). `DEVICE_CAPS[25]` (`CAP_TEX_FFILT`) specifically indicates whether floating-point linear filtering (`atg_tu_ffilt`) is synthesized in hardware; when `CAP_TEX_FFILT == 0`, UNORM8 bilinear filtering is performed, while FP16/FP32 textures fall back to nearest point-sampling, without restricting 2D array, 3D, or cube sampling (N16).
   - Multisampling queries (`texsz.s`): governed by `DEVICE_CAPS[31]` (`CAP_MSAA_4X`, legacy GSI1 CAPS[29]).
   - ROP format packing: governed by `DEVICE_CAPS[26]` (`CAP_ROP_PACK`, legacy GSI1 CAPS[30]).
@@ -2122,7 +2136,9 @@ word1 (bits 63:32):
   - `vote` and `ballot` write the same value to every lane.
 - **Optional instructions:** the packed arithmetic (everything of custom-2
   except `packh` and `unpackh`) needs `DEVICE_CAPS[6]` / `EXT_CAP_FEATURE[28]` (`CAP_FP16`); `shfl`, `vote` and
-  `ballot` need `EXT_CAP_FEATURE[29]` (`CAP_SUBGROUP`); systolic instructions
+  `ballot` need `EXT_CAP_FEATURE[29]` (`CAP_SUBGROUP`); the transcendentals
+  `rcp`, `rsq`, `exp2`, `log2`, `sin`, `cos` (custom-3 funct3 011 sub 0-5) and
+  `fsqrt.s` need `EXT_CAP_ISA[0]` (`CAP_SFU`, section 3.2.4; `fract` needs no bit); systolic instructions
   (`rq`, `sactl`) are reserved under legacy CAPS[25] and raise `GHCI_FAULT_KIND_INVALID_OP` (N77).
 
 ### 12.6 ISA faults (N20)
@@ -2176,7 +2192,7 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
   an integral value under rm (0-3) and keeps the sign of zero.
   `fract x` = RNE(x - floor(x)) (it can give 1.0 for tiny negative x).
 - `sat` clamps a float result to [0, 1]; NaN, negatives and -0 give +0.
-- **Transcendentals** (draft accuracy): `rcp` and `fsqrt.s` are correctly
+- **Transcendentals** (draft accuracy; present with `CAP_SFU`, section 3.2.4): `rcp` and `fsqrt.s` are correctly
   rounded; `rsq` and `exp2` within 1 ulp; `log2` within 2^-21 absolute in
   [0.5, 2] and 2 ulp elsewhere; `sin` and `cos` within 2^-20 absolute on
   [-pi, pi]. Special values follow IEEE: `rcp(±0)` = ±inf, `rsq(-0)` =
