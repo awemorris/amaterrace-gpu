@@ -49,7 +49,7 @@ module atg_cp #(
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
-	parameter [31:0] GCLK_HZ = 32'd100000000,
+	parameter [31:0] GCLK_HZ = 32'd200000000,
 	parameter [31:0] VENDOR_ID = 32'h414D4154,	/* "AMAT" */
 	parameter [31:0] DEVICE_ID = 32'h41544731,	/* "ATG1" */
 	parameter [31:0] DEVICE_VERSION = 32'h00000003,	/* 0.3: CP with the ring */
@@ -66,13 +66,17 @@ module atg_cp #(
 	parameter CORE1 = 0,	/* Vulkan 1.0 core rendering (CAPS[30], CAPS[9]) */
 	parameter HAS_FMT = 0,	/* the FMT capability (with CAPS[30]) */
 	parameter HAS_ETC = 0,	/* the TU's ETC2/EAC decoder (FMT reports those formats) */
+	parameter [3:0] MRT_COUNT = 4'd1,	/* colour attachments */
 	parameter [15:0] RESIDENT_WARPS = 16'd0,	/* RESIDENT_WARPS: NSU x NWARPS (0: no shader unit) */
 	parameter [7:0] NREGS = 8'd0,	/* RESIDENT_WARPS[23:16]: general registers per lane (0: no SU) */
 	parameter [31:0] LOCAL_BASE = 32'd0,	/* the MEM capability (listed when LOCAL_BYTES is not 0) */
 	parameter [31:0] LOCAL_BYTES = 32'd0,
 	parameter [31:0] WINDOW_BYTES = 32'd0,
 	parameter [31:0] HOST_LIMIT = 32'd0,
-	parameter HAS_PROT = 0	/* session protection: the PROT capability is listed (atg_cp_prot) */
+	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
+	parameter [31:0] DEVICE_CAPS = 32'd0,
+	parameter [31:0] EXT_CAP_FMT0 = 32'd0,
+	parameter [31:0] EXT_CAP_FEATURE = 32'd0
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -460,7 +464,11 @@ module atg_cp #(
 		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS),
 		.NREGS(NREGS), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
-		.HOST_LIMIT(HOST_LIMIT)
+		.HOST_LIMIT(HOST_LIMIT),
+		.DEVICE_CAPS(DEVICE_CAPS),
+		.EXT_CAP_FMT0(EXT_CAP_FMT0),
+		.EXT_CAP_FEATURE(EXT_CAP_FEATURE),
+		.MRT_COUNT(MRT_COUNT)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr_regs), .reg_wdata(reg_wdata_regs), .reg_wstrb(reg_wstrb_regs),
@@ -475,10 +483,10 @@ module atg_cp #(
 		.diag_cp_pc(diag_cp_pc), .diag_cp_status(diag_cp_status), .diag_pipe_fsm(diag_pipe_fsm)
 	);
 
-	/* The FMT capability (id 10) at 0x160. */
+	/* The FMT capability (id 10) at 0x140. */
 	generate
 	if (HAS_FMT != 0) begin : g_fmt
-		atg_cp_fmt #(.BASE(10'h058), .HAS_ETC(HAS_ETC), .NRT(4'd4)) u_fmt (
+		atg_cp_fmt #(.BASE(10'h050), .HAS_ETC(HAS_ETC), .NRT(MRT_COUNT)) u_fmt (
 			.clk(clk), .rst_n(rst_n),
 			.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
 			.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx), .hcr_rdata(s_fmt_rdata)

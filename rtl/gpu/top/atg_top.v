@@ -23,7 +23,7 @@
 `include "atg_config.vh"
 
 module atg_top #(
-	parameter [31:0] GCLK_HZ = 32'd100000000,
+	parameter [31:0] GCLK_HZ = 32'd200000000,
 	parameter S_ID_W = 12,
 	parameter S_LEN_W = 4,
 	parameter LINE_BYTES = 32,
@@ -62,6 +62,11 @@ module atg_top #(
 	parameter DC_PX_FMT = 0,	/* atg_dc's parallel output (1: the ADV7511's YCbCr 4:2:2) */
 	parameter DC_TEST_MODE = 0,	/* 1: atg_dc names a simulation's one small mode (the Verilator link) */
 	parameter ROP_STENCIL = 0,
+`ifdef CFG_ROP_MRT_COUNT
+	parameter [3:0] MRT_COUNT = `CFG_ROP_MRT_COUNT,
+`else
+	parameter [3:0] MRT_COUNT = 4'd1,
+`endif
 	parameter MS4 = 0,	/* 4x multisampling (CAPS[29] with VF, RX, ROP, TU and an SU): the
 				 * blitter's RESOLVE, texsz.s */
 `ifdef CFG_HAS_BLT
@@ -93,7 +98,10 @@ module atg_top #(
 	parameter PROT_PLB_W = 2,
 	parameter HAS_L2 = 0,
 	parameter L2_WAYS = 16,
-	parameter L2_SET_W = 8
+	parameter L2_SET_W = 8,
+	parameter [31:0] DEVICE_CAPS = 32'd0,
+	parameter [31:0] EXT_CAP_FMT0 = 32'd0,
+	parameter [31:0] EXT_CAP_FEATURE = 32'd0
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -525,9 +533,13 @@ module atg_top #(
 		.HOST_LIMIT(HOST_LIMIT),
 		.MS4(MS4),
 		.CORE1(CORE1),
-		.HAS_FMT(CORE1),
+		.HAS_FMT(1),
 		.HAS_ETC(HAS_TU != 0),	/* the TU decodes ETC2 and EAC */
-		.HAS_PROT(PROT)
+		.HAS_PROT(PROT),
+		.DEVICE_CAPS(DEVICE_CAPS),
+		.EXT_CAP_FMT0(EXT_CAP_FMT0),
+		.EXT_CAP_FEATURE(EXT_CAP_FEATURE),
+		.MRT_COUNT(MRT_COUNT)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -1158,7 +1170,8 @@ module atg_top #(
 	if (HAS_ROP != 0) begin : g_rop
 		atg_rop #(
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
-			.STENCIL(ROP_STENCIL)
+			.STENCIL(ROP_STENCIL),
+			.MRT_COUNT(MRT_COUNT)
 		) rop (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.busy(rop_busy), .fsm(rop_fsm),

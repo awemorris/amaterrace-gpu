@@ -15,7 +15,7 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `DEVICE_ID` | `32'h41544731` | "ATG1". |
 | `DEVICE_VERSION` | `32'h00000002` | Implementation version. |
 | `ISA_ID` | `32'h47534931` | "GSI1"; 0 when there is no SU. |
-| `NATIVE_ISA_ID` | `32'h47534931` | NATIVE_ISA_ID (0x048). |
+| `NATIVE_ISA_ID` | `32'h47534931` | NATIVE_ISA_ID (0x068). |
 | `RESIDENT_WARPS` | `16'd0` | RESIDENT_WARPS (0x04C) [15:0]: the warps the GPU runs at once over its SUs (atg_top: NSU x SU_NWARPS). |
 | `NREGS` | `8'd0` | RESIDENT_WARPS [23:16]: the general registers of a lane (atg_top: SU_NREGS with an SU, else 0). |
 | `LOCAL_BASE` | `32'd0` | MEM capability LOCAL_BASE (0x1E0). |
@@ -24,11 +24,11 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `HOST_LIMIT` | `32'd0` | MEM capability HOST_LIMIT (0x1EC): host addresses below it; 0 = all (GHCI §11.2). |
 | `CAPS` | `32'h00500002` | CAPS value (design §2.2), set by atg_top from its parameters or dynamically populated from `atg_config.vh`. |
 | `CAPS2` | `32'h00000001` | CAPS2 value. |
-| `DEVICE_CAPS` | `32'd0` | GHCI 2.0 device capabilities bitfield (PHYS_LANES, Task/Mesh Shader, FP16, etc.; 0: dynamically populated from `atg_config.vh`). |
+| `DEVICE_CAPS` | `32'd0` | GHCI 1.0 device capabilities bitfield (PHYS_LANES, Task/Mesh Shader, FP16, etc.; 0: dynamically populated from `atg_config.vh`). |
 | `EXT_CAP_FMT0` | dynamic | Extended capability format bitmap (BC1-BC7 texture compression support). |
 | `EXT_CAP_FEATURE` | dynamic | Extended capability feature bitmap (LogicOp, EarlyZ, HW Cursor, MRT count, etc.). |
-| `VEND` | `256'd0` | The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0. |
-| `XCAP_MASK` | `11'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8 at 0x1E0, PROT 9 at 0x1D0 (atg_cp_prot), FMT 10 at 0x160, atg_cp_fmt; DISP2 11 at 0x200, atg_cp_disp).  At most ten entries fit in the list (0x100-0x10F, 0x180-0x1BF): DISP and DISP2 are not set together. |
+| `VEND` | `256'd0` | The 8 VEND words (0x180-0x19F), word 0 in bits 31:0. |
+| `XCAP_MASK` | `11'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4 at 0x180, CPFW 6 at 0x120, SA 7, MEM 8 at 0x1E0, PROT 9 at 0x1D0 (atg_cp_prot), FMT 10 at 0x140, atg_cp_fmt; DISP2 11 at 0x200, atg_cp_disp). |
 | `DISP_OFFSET` | `32'h00010000` | Where the DISP entry points (KC705 +0x10000). |
 | `PERF_SRC` | `32'hFFFFFFFF` | PERF_SRC0..3 (byte n = PERF_SRCn; 0xFF unused). Amaterrace 2D: 0xFFFF0801 (BLT busy, memory). |
 
@@ -76,19 +76,19 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-- Writes: `hcr_we` for 0x00000-0x00FFC (also KICK at 0xF00; atg_cp_ctl snoops it), `alias_we` for
-  0x01000-0x017FC with WSTRB = 4'hF.  0x10000 and above are not the CP's (the top decodes the DC).
-  This module itself keeps SCRATCH (0x028) and PERF_CTRL; everything else belongs to the module that
+- Writes: `hcr_we` is asserted for valid host MMIO writable registers in GHCI 1.0 (CTRL 0x014,
+  IRQ_STATUS 0x038, IRQ_ENABLE 0x03C, IRQ_SET 0x040, RING_BASE_LO 0x024, RING_BASE_HI 0x028,
+  RING_SIZE 0x02C, RING_WPTR 0x030, WDT_CYCLES 0x048, CP_HEAP_BASE 0x050, CP_HEAP_LIMIT 0x054).
+  Legacy APERTURE (0x060/0x064), KICK (0xF00) and STATE (0x1000..0x1BFC) writes are eliminated
+  and ignored. This module itself keeps SCRATCH (0x044); everything else belongs to the module that
   uses it (snoop rule: a module takes the writes of its own word indices).
 - Reads: the cycle after `reg_rd`, `reg_rdata` = this module's own register at `hcr_ridx`
-  (MAGIC, VERSION, VENDOR_ID, DEVICE_ID, ISA_ID, DEVICE_VERSION, EXTCAP = 0x100, GCLK_HZ, CAPS, CAPS2,
-  SCRATCH, COUNTER, NATIVE_ISA_ID, VEND, PERF0-3, PERF_CTRL, PERF_SRCn, the EXTCAP list at 0x100) OR
-  the `*_rdata` inputs, or `state_rdata` for the alias range, or 0 elsewhere.
-- EXTCAP list at 0x100: one 2-word entry per set bit of XCAP_MASK in id order; the first two at 0x100
-  and 0x108, the others from 0x180 (0x110-0x17F hold PERF, CPFW and SA registers); EXTCAP reads 0
-  when XCAP_MASK is 0 (PERF keeps its
-  registers at 0x110, design §2.4.10; VEND 0x0C0; CPFW 0x120; SA 0x140; after the room of a full list
-  (0x100-0x1BF) PROT 0x1D0 (atg_cp_prot) and MEM 0x1E0; DISP at DISP_OFFSET; DBG 0).
+  (MAGIC 0x000, VERSION 0x004, DEVICE_CAPS 0x008, EXTCAP_PTR 0x00C, SCRATCH 0x044, TIMESTAMP_LO 0x05C,
+  TIMESTAMP_HI 0x060, GCLK_HZ 0x064, DIAG_CP_PC 0x074, DIAG_CP_STATUS 0x078, EXT_CAP_FMT0 0x080,
+  EXT_CAP_FEATURE 0x084, the EXTCAP list at 0x100, VEND at 0x180) OR the `*_rdata` inputs, or 0 elsewhere.
+- EXTCAP list at 0x100: one 2-word entry per set bit of XCAP_MASK in id order; EXTCAP reads 0
+  when XCAP_MASK is 0. Canonical capability windows reside in 0x100..0x3FF: FMT at 0x140,
+  PERF/CPFW at 0x160/0x120, VEND at 0x180, PROT at 0x1D0, MEM at 0x1E0, DISP2 at 0x200.
 - MEM (XCAP_MASK[7]): 0x1E0 LOCAL_BASE, 0x1E4 LOCAL_BYTES, 0x1E8 WINDOW_BYTES, 0x1EC HOST_LIMIT (read only),
   0x1F0 WINDOW_CTRL ([0] ENABLE, RW, `win_en`); they read 0 when MEM is not listed.  WINDOW_CTRL.ENABLE
   is 1 after `rst_n` (the board's reset: CTRL.RESET does not reach this module) and takes writes whose

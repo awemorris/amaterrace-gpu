@@ -123,8 +123,8 @@ module atg_cp_ctl #(
 	localparam [9:0] I_AP_LIMIT = GHCI_APERTURE_LIMIT[11:2];
 	localparam [9:0] I_FAULT_ADDR = GHCI_FAULT_ADDR[11:2];
 	localparam [9:0] I_FAULT_INFO = GHCI_FAULT_INFO[11:2];
-	localparam [9:0] I_HEAP_BASE = 10'h02C;	/* CP_HEAP_BASE 0x0B0 */
-	localparam [9:0] I_HEAP_LIMIT = 10'h02D;	/* CP_HEAP_LIMIT 0x0B4 */
+	localparam [9:0] I_HEAP_BASE = 10'h014;	/* CP_HEAP_BASE 0x050 */
+	localparam [9:0] I_HEAP_LIMIT = 10'h015;	/* CP_HEAP_LIMIT 0x054 */
 	localparam [9:0] I_KICK = GHCI_KICK[11:2];
 	localparam [31:0] AP_MASK = ~((32'd1 << LINE_SHIFT) - 32'd1);
 
@@ -135,6 +135,8 @@ module atg_cp_ctl #(
 	reg [31:0] wdt_cycles;
 	reg [31:0] ap_base;
 	reg [31:0] ap_limit;
+	reg [31:0] heap_base;
+	reg [31:0] heap_limit;
 	(* max_fanout = 16 *) reg [31:0] fault_addr;
 	(* max_fanout = 16 *) reg [31:0] fault_info;
 	reg [31:0] wdt_count;
@@ -517,15 +519,15 @@ module atg_cp_ctl #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ww0 (.I0(wr_wdt), .O(wr_wdt_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ww1 (.I0(wr_wdt), .O(wr_wdt_b[1]));
 
-	wire wr_ap_b = hcr_we && open_r[1] && (hcr_widx == I_AP_BASE);
-	wire [1:0] wr_ap_b_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapb0 (.I0(wr_ap_b), .O(wr_ap_b_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapb1 (.I0(wr_ap_b), .O(wr_ap_b_b[1]));
+	wire wr_heap_b = hcr_we && open_r[1] && (hcr_widx == I_HEAP_BASE);
+	wire [1:0] wr_heap_b_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_whpb0 (.I0(wr_heap_b), .O(wr_heap_b_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_whpb1 (.I0(wr_heap_b), .O(wr_heap_b_b[1]));
 
-	wire wr_ap_l = hcr_we && open_r[2] && (hcr_widx == I_AP_LIMIT);
-	wire [1:0] wr_ap_l_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapl0 (.I0(wr_ap_l), .O(wr_ap_l_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wapl1 (.I0(wr_ap_l), .O(wr_ap_l_b[1]));
+	wire wr_heap_l = hcr_we && open_r[2] && (hcr_widx == I_HEAP_LIMIT);
+	wire [1:0] wr_heap_l_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_whpl0 (.I0(wr_heap_l), .O(wr_heap_l_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_whpl1 (.I0(wr_heap_l), .O(wr_heap_l_b[1]));
 
 	wire stuck_en = halt_int && !mc_idle_stuck_r && !(stuck_count >= {wdt_cycles, 2'b00});
 	wire [1:0] stuck_en_b;
@@ -582,7 +584,9 @@ module atg_cp_ctl #(
 			ctrl_wdt_en <= 1'b0;
 			wdt_cycles <= WDT_RESET;
 			ap_base <= 32'd0;
-			ap_limit <= 32'd0;
+			ap_limit <= 32'hFFFFFFFF;
+			heap_base <= 32'd0;
+			heap_limit <= 32'd0;
 `ifndef SYNTH_KINTEX7
 			fault_addr <= 32'd0;
 			fault_info <= 32'd0;
@@ -600,19 +604,19 @@ module atg_cp_ctl #(
 `ifdef SYNTH_KINTEX7
 			if (wr_wdt_b[0]) wdt_cycles[15:0] <= (wdt_cycles[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]);
 			if (wr_wdt_b[1]) wdt_cycles[31:16] <= (wdt_cycles[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]);
-			if (wr_ap_b_b[0]) ap_base[15:0] <= ((ap_base[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0])) & AP_MASK[15:0];
-			if (wr_ap_b_b[1]) ap_base[31:16] <= ((ap_base[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16])) & AP_MASK[31:16];
-			if (wr_ap_l_b[0]) ap_limit[15:0] <= ((ap_limit[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0])) & AP_MASK[15:0];
-			if (wr_ap_l_b[1]) ap_limit[31:16] <= ((ap_limit[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16])) & AP_MASK[31:16];
+			if (wr_heap_b_b[0]) heap_base[15:0] <= (heap_base[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]);
+			if (wr_heap_b_b[1]) heap_base[31:16] <= (heap_base[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]);
+			if (wr_heap_l_b[0]) heap_limit[15:0] <= (heap_limit[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]);
+			if (wr_heap_l_b[1]) heap_limit[31:16] <= (heap_limit[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]);
 			if (halt_int && !mc_idle_stuck_r && (stuck_count >= {wdt_cycles, 2'b00}))
 				axi_stuck <= 1'b1;
 `else
 			if (hcr_we && hcr_widx == I_WDT)
 				wdt_cycles <= (wdt_cycles & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-			if (hcr_we && open && hcr_widx == I_AP_BASE)
-				ap_base <= ((ap_base & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & AP_MASK;
-			if (hcr_we && open && hcr_widx == I_AP_LIMIT)
-				ap_limit <= ((ap_limit & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & AP_MASK;
+			if (hcr_we && open && hcr_widx == I_HEAP_BASE)
+				heap_base <= (heap_base & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
+			if (hcr_we && open && hcr_widx == I_HEAP_LIMIT)
+				heap_limit <= (heap_limit & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 
 			/* The watchdog. */
 			if (ctrl_wdt_en && cmd_active && !faulted) begin
@@ -786,6 +790,16 @@ module atg_cp_ctl #(
 		.O(ctl_en1_b[1])
 	);
 
+	wire [1:0] ctl_en2_b;
+	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000400)) u_ce2_0 (
+		.I0(hcr_ridx[1]), .I1(hcr_ridx[2]), .I2(hcr_ridx[3]), .I3(hcr_ridx[4]), .I4(hcr_ridx[5]),
+		.O(ctl_en2_b[0])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000400)) u_ce2_1 (
+		.I0(hcr_ridx[1]), .I1(hcr_ridx[2]), .I2(hcr_ridx[3]), .I3(hcr_ridx[4]), .I4(hcr_ridx[5]),
+		.O(ctl_en2_b[1])
+	);
+
 	wire [3:0] cridx0_b, cridx1_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr0_0 (.I0(hcr_ridx[0]), .O(cridx0_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr0_1 (.I0(hcr_ridx[0]), .O(cridx0_b[1]));
@@ -803,14 +817,15 @@ module atg_cp_ctl #(
 		cridx1_b[1] ? (cridx0_b[1] ? status[31:16] : 16'd0) : wdt_cycles[31:16];
 
 	(* keep = "true" *) wire [15:0] ctl_grp1_lo =
-		cridx1_b[2] ? (cridx0_b[2] ? fault_info[15:0]  : fault_addr[15:0]) :
-		              (cridx0_b[2] ? ap_limit[15:0]    : ap_base[15:0]);
+		cridx0_b[2] ? fault_info[15:0]  : fault_addr[15:0];
 	(* keep = "true" *) wire [15:0] ctl_grp1_hi =
-		cridx1_b[3] ? (cridx0_b[3] ? fault_info[31:16] : fault_addr[31:16]) :
-		              (cridx0_b[3] ? ap_limit[31:16]   : ap_base[31:16]);
+		cridx0_b[3] ? fault_info[31:16] : fault_addr[31:16];
 
-	wire [15:0] rd_lo = (ctl_en0_b[0] ? ctl_grp0_lo : 16'd0) | (ctl_en1_b[0] ? ctl_grp1_lo : 16'd0);
-	wire [15:0] rd_hi = (ctl_en0_b[1] ? ctl_grp0_hi : 16'd0) | (ctl_en1_b[1] ? ctl_grp1_hi : 16'd0);
+	(* keep = "true" *) wire [15:0] ctl_grp2_lo = cridx0_b[2] ? heap_limit[15:0] : heap_base[15:0];
+	(* keep = "true" *) wire [15:0] ctl_grp2_hi = cridx0_b[3] ? heap_limit[31:16] : heap_base[31:16];
+
+	wire [15:0] rd_lo = (ctl_en0_b[0] ? ctl_grp0_lo : 16'd0) | (ctl_en1_b[0] ? ctl_grp1_lo : 16'd0) | (ctl_en2_b[0] ? ctl_grp2_lo : 16'd0);
+	wire [15:0] rd_hi = (ctl_en0_b[1] ? ctl_grp0_hi : 16'd0) | (ctl_en1_b[1] ? ctl_grp1_hi : 16'd0) | (ctl_en2_b[1] ? ctl_grp2_hi : 16'd0);
 
 	assign hcr_rdata = {rd_hi, rd_lo};
 `else
@@ -821,10 +836,10 @@ module atg_cp_ctl #(
 		I_CTRL: rd = {25'd0, 1'b0, ctrl_wdt_en, 1'b0, 1'b0, ctrl_halt, ctrl_run, resetting};
 		I_STATUS: rd = status;
 		I_WDT: rd = wdt_cycles;
-		I_AP_BASE: rd = ap_base;
-		I_AP_LIMIT: rd = ap_limit;
 		I_FAULT_ADDR: rd = fault_addr;
 		I_FAULT_INFO: rd = fault_info;
+		I_HEAP_BASE: rd = heap_base;
+		I_HEAP_LIMIT: rd = heap_limit;
 		default: rd = 32'd0;
 		endcase
 	end

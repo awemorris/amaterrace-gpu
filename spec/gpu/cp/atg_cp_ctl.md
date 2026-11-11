@@ -73,11 +73,11 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-- Registers: CTRL 0x030, STATUS 0x034 (read), WDT_CYCLES 0x044, FAULT_ADDR 0x068, FAULT_INFO 0x06C,
-  KICK 0xF00 (write).  STATUS = {busy_in, AXI_IDLE = mc_idle, FAULT, HALTED, RING_EMPTY, MEM_READY,
-  AXI_STUCK, QUIESCED, state} as design §2.2.
-- Locked writes (RING_BASE/SIZE, APERTURE_*, CP_HEAP_* outside open) and KICK while RUNNING are faults
-  of kind 7 and 6, found by snooping.
+- Registers: STATUS 0x010, CTRL 0x014, FAULT_INFO 0x018, FAULT_ADDR_LO 0x01C, FAULT_ADDR_HI 0x020,
+  WDT_CYCLES 0x048, CP_HEAP_BASE 0x050, CP_HEAP_LIMIT 0x054. STATUS = {busy_in, AXI_IDLE = mc_idle,
+  FAULT, HALTED, RING_EMPTY, MEM_READY, AXI_STUCK, QUIESCED, state}.
+- Locked writes (RING_BASE/SIZE, CP_HEAP_* outside open) while RUNNING are faults
+  of kind 7, found by snooping. Legacy APERTURE (0x060/0x064) and KICK (0xF00) writes are eliminated.
 - The first fault wins: FAULT_INFO = {tag, block (source number or MC client), kind, write, client},
   FAULT_ADDR; then FAULTED and quiesce until RESET.  MC faults of client 0 (the CP's own debug port)
   are not device faults (atg_cp_dbg reports them).

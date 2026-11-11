@@ -227,11 +227,11 @@ module atg_cp_tb;
 			$display("PASS: EARLY_Z feature bit correctly reflected");
 		end
 
-		if (rdata[7:4] !== 4'd`CFG_ROP_MRT_COUNT) begin
-			$display("FAIL: MAX_MRT_COUNT = %0d (expected %0d)", rdata[7:4], `CFG_ROP_MRT_COUNT);
+		if (rdata[19:16] !== 4'd`CFG_ROP_MRT_COUNT) begin
+			$display("FAIL: MAX_MRT_COUNT = %0d (expected %0d)", rdata[19:16], `CFG_ROP_MRT_COUNT);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: MAX_MRT_COUNT = %0d correctly reflected", rdata[7:4]);
+			$display("PASS: MAX_MRT_COUNT = %0d correctly reflected", rdata[19:16]);
 		end
 
 		/* Test 4: Verify Custom Instance Overrides */

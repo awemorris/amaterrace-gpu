@@ -76,9 +76,15 @@ PERF1 = memory busy (PERF_SRC 1, 8, 0xFF, 0xFF).
   - Eliminates all 512+ fixed-function `STATE` registers (0x1000..0x1BFC) from host MMIO.
   - Total host BAR0 footprint fits within a single 4KB page:
     - Identification: `MAGIC` (0x000, "GHCI"), `VERSION` (0x004, 0x00010000), `DEVICE_CAPS` (0x008), `EXTCAP_PTR` (0x00C).
-    - Control & Status: `CTRL` (0x010), `STATUS` (0x014), `IRQ_STATUS` (0x018), `IRQ_ENABLE` (0x01C).
-    - Command Ring: `RING_BASE_LO` (0x020), `RING_BASE_HI` (0x024), `RING_SIZE` (0x028), `RING_RPTR` (0x02C), `RING_WPTR` (0x030 / Doorbell).
-    - Diagnostics & Fault: `FAULT_INFO` (0x034), `FAULT_ADDR_LO` (0x038), `FAULT_ADDR_HI` (0x03C), `DIAG_CP_PC` (0x040), `DIAG_CP_STATUS` (0x044), `SCRATCH` (0x048).
+    - Status & Control: `STATUS` (0x010), `CTRL` (0x014).
+    - Fault reporting: `FAULT_INFO` (0x018), `FAULT_ADDR_LO` (0x01C), `FAULT_ADDR_HI` (0x020).
+    - Command Ring: `RING_BASE_LO` (0x024), `RING_BASE_HI` (0x028), `RING_SIZE` (0x02C), `RING_WPTR` (0x030 / Doorbell), `RING_RPTR` (0x034).
+    - Interrupts: `IRQ_STATUS` (0x038), `IRQ_ENABLE` (0x03C), `IRQ_SET` (0x040).
+    - Scratch & Watchdog: `SCRATCH` (0x044), `WDT_CYCLES` (0x048), `RESIDENT_WARPS` (0x04C).
+    - Heap: `CP_HEAP_BASE` (0x050), `CP_HEAP_LIMIT` (0x054), `SESSION_ACTIVE` (0x058).
+    - Timestamps & Clock: `TIMESTAMP_LO` (0x05C), `TIMESTAMP_HI` (0x060), `GCLK_HZ` (0x064), `NATIVE_ISA_ID` (0x068).
+    - Diagnostics: `DIAG_CP_PC` (0x074), `DIAG_CP_STATUS` (0x078).
+    - Fast Shortcuts: `EXT_CAP_FMT0` (0x080), `EXT_CAP_FEATURE` (0x084).
 
 - **Structured Command Packets**:
   - Replaces legacy repetitive `SET_REG` packets with high-level command packets:

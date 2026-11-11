@@ -221,7 +221,7 @@ All pipeline state is submitted through in-memory Pipeline State Objects
 | 0x03C | IRQ_ENABLE | RW | Interrupt delivery enable mask (section 3.4, J02) |
 | 0x040 | IRQ_SET | W1S | Software interrupt trigger (bit 5 sets IRQ_STATUS.SOFT) |
 | 0x044 | SCRATCH | RW | 32-bit scratchpad register for host bring-up and liveness tests |
-| 0x048 | WDT_CYCLES | RW | Watchdog timeout limit in core clock cycles (reset default: `0x10000000` = 2^28 cycles, ~2.68s @ 100 MHz GCLK, N26, N30) |
+| 0x048 | WDT_CYCLES | RW | Watchdog timeout limit in core clock cycles (reset default: `0x10000000` = 2^28 cycles, ~1.34s @ 200 MHz GCLK, N26, N30) |
 | 0x04C | RESIDENT_WARPS | RO | [15:0] resident warp capacity (constant maximum warps across all shader units), [23:16] registers per lane |
 | 0x050 | CP_HEAP_BASE | RW | Dynamic page table allocation heap base [BASE, LIMIT) (section 11.2, J12) |
 | 0x054 | CP_HEAP_LIMIT | RW | Dynamic page table allocation heap limit (exclusive) |
@@ -250,8 +250,8 @@ It is the primary authoritative source for device capabilities (M01, M04, N18):
 | [0] | CAP_UMA | Board / Platform | 1 = Unified Memory Architecture (Shared DRAM), 0 = Discrete VRAM. Authoritative: when 1, MEM capability `LOCAL_SIZE` is 0 (M04) |
 | [1] | CAP_IOMMU | Platform | 1 = System / Platform IOMMU translation active for GPU PCIe device (set by platform firmware / bootloader, M58) |
 | [2] | CAP_HW_WALKER | `CONFIG_CP_AUTONOMOUS_MMU` | 1 = CP contains autonomous hardware page table walker; 0 = Flat physical mode (J07) |
-| [3] | CAP_INDIRECT_DRAW | `CONFIG_CP_USE_RV32_CORE` | 1 = Native MultiDrawIndirect and indirect dispatch supported (requires `NUM_SU > 0` for compute dispatch; `CMD_DRAW_INDIRECT`, `CMD_DISPATCH_INDIRECT`, J14) |
-| [4] | CAP_SECONDARY_RING | `CONFIG_CP_USE_RV32_CORE` | 1 = Secondary command buffer direct execution supported (`CMD_EXECUTE_COMMANDS`, J24) |
+| [3] | CAP_INDIRECT_DRAW | Firmware / hardware support | 1 = Native MultiDrawIndirect and indirect dispatch supported (requires `NUM_SU > 0` for compute dispatch; `CMD_DRAW_INDIRECT`, `CMD_DISPATCH_INDIRECT`, J14) |
+| [4] | CAP_SECONDARY_RING | Firmware / hardware support | 1 = Secondary command buffer direct execution supported (`CMD_EXECUTE_COMMANDS`, J24) |
 | [5] | CAP_DUAL_SOURCE | `CONFIG_ROP_DUAL_SOURCE` | 1 = Dual-source color blending supported (`Src1Color` / `Src1Alpha`, mirrored in `EXT_CAP_FEATURE[8]`) |
 | [6] | CAP_FP16 | `CONFIG_SU_ENABLE_FP16` | 1 = Packed 16-bit float/integer arithmetic supported (authoritative flag, M01) |
 | [7] | CAP_GSI1 | Fixed (1) | 1 = Native GSI1 standard shader ISA execution |
@@ -290,7 +290,7 @@ When querying hardware capabilities and address sizes without walking the EXTCAP
 - `[14] CAP_COLOR_LUT`: Programmable display gamma / color lookup table present.
 - `[15] CAP_MRT_BLEND`: Independent per-target color blending supported (N14).
 - `[19:16] MAX_MRT`: Maximum simultaneously bound color render targets (1..8) (M05, N31).
-  `EXT_CAP_FEATURE[19:16]` is the primary authoritative source for `maxColorAttachments` (reports 8 on standard Amaterrace GPU, matching `EXT_CAP_FMT0[15:12]` and `FMT_LIMITS[3:0]`).
+  `EXT_CAP_FEATURE[19:16]` is the primary authoritative source for `maxColorAttachments` (reports the implemented colour attachment count, e.g. 8 on the full configuration and 1 on the minimal configuration, matching `EXT_CAP_FMT0[15:12]` and `FMT_LIMITS[3:0]`).
 - `[27:20] CAP_LDS_SIZE_KB`: Local Data Share capacity in KiB per Shader Unit (8-bit value, 0..255) (N24, N31). Reports 4 for KC705 FPGA prototype (4 KiB); reports 16 (or higher) for production ASIC (16 KiB Vulkan 1.0 minimum).
 - `[28] CAP_FP16`: Half-precision 16-bit floating-point arithmetic supported (mirror of `DEVICE_CAPS[6]`, N16).
 - `[29] CAP_SUBGROUP`: Native subgroup shuffle/ballot instructions supported (N16).
@@ -305,7 +305,7 @@ Provides immediate hardware texture format support flags without MMIO register w
 - `[9]`: `CAP_SRGB` — Hardware sRGB format support and automatic gamma 2.2 decode/encode present.
 - `[10]`: `CAP_FFILT_FP16` — Floating-point linear texture filtering for FP16 formats (`CAP_TEX_FFILT`).
 - `[11]`: `CAP_FFILT_FP32` — Floating-point linear texture filtering for FP32 formats.
-- `[15:12]`: `MAX_COLOR_ATTACHMENTS` — Hardware color attachment count limit (reports 8, mirroring `EXT_CAP_FEATURE[19:16]`).
+- `[15:12]`: `MAX_COLOR_ATTACHMENTS` — Hardware color attachment count limit (the implemented count, mirroring `EXT_CAP_FEATURE[19:16]`).
 - `[16]`: `CAP_TU_BILINEAR` — Hardware bilinear texture filtering supported for normalized texture formats (`CONFIG_TU_ENABLE_BILINEAR`, mirroring legacy `GHCI_CAPS[8]`). When 1, 4-texel footprint generation and bilinear filtering (`atg_tu_foot` / `atg_tu_filter`) are enabled. When 0, texture sampling is restricted to nearest-neighbor (point) filtering (`VK_FILTER_NEAREST`).
 - `[17]`: `CAP_BLT_BLEND` — 32-bit color blend-over acceleration supported in blitter (`CONFIG_BLT_ENABLE_BLEND`, `atg_blt_blend`). When 0, blitter performs opaque fills and copies only; blending operations are dispatched to shaders or ROP.
 - `[18]`: `CAP_BLT_TILE` — Hardware 4x4 optimal tiled layout conversion supported (`CONFIG_BLT_ENABLE_TILE`, `CMD_COPY_BUFFER_TO_IMAGE` / `CMD_COPY_IMAGE_TO_BUFFER`). When 0, blitter operates on linear memory layouts only; optimal tiling conversions are handled by shaders.
@@ -315,11 +315,11 @@ Provides immediate hardware texture format support flags without MMIO register w
 
 - **`GHCI_REG_GCLK_HZ` (`0x064`, RO)**:
   Exposes the core clock frequency in Hertz as an integer.
-  - Kintex-7 KC705 implementation: `100,000,000` (100 MHz, `0x05F5E100`).
+  - Kintex-7 KC705 implementation: `200,000,000` (200 MHz, `0x0BEBC200`).
   - Simulator / ASIC configurations: Dynamically reflects target clock frequency.
 - **Vulkan `timestampPeriod` Calculation**:
   $$\text{timestampPeriod} = \frac{1\,000\,000\,000}{\text{GCLK\_HZ}} \quad (\text{ns})$$
-  At 100 MHz, `timestampPeriod = 10.0` ns.
+  At 200 MHz, `timestampPeriod = 5.0` ns.
 - **PCI Configuration Space IDs**:
   - KC705 PCIe Gen2 Endpoint: `Vendor ID = 0x10EE` (Xilinx), `Device ID = 0x7024`, `Subsystem Vendor ID = 0x10EE`, `Subsystem Device ID = 0x0007`.
   - Dedicated Amaterrace ASIC/Emulator ID: `Vendor ID = 0x5441` (ASCII `"AT"`), `Device ID = 0x4748` (ASCII `"GH"`).
@@ -502,7 +502,7 @@ offset (a window of 32 bytes): `+0x0 FMT_INDEX` (RW, a `VkFormat` value),
 `bit 7: BLIT_DST` (`VK_FORMAT_FEATURE_BLIT_DST_BIT`),
 `bit 8: STORAGE_IMAGE` (`VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT`)),
 `+0x8 FMT_LINEAR` (the same flags for linear tiling), `+0xC FMT_BUFFER` (the buffer features),
-`+0x10 FMT_LIMITS` (RO: `[3:0] colour attachments` = 8, `[11:4] 0`).
+`+0x10 FMT_LIMITS` (RO: `[3:0] colour attachments` (the implemented count, mirroring `EXT_CAP_FEATURE[19:16]`), `[11:4] 0`).
 A driver reports its format properties from these hardware registers, with `EXT_CAP_FMT0` (`0x080`) providing a fast shortcut (M07, M51, N19). Writing `FMT_INDEX` is taken in every CP state; reads have no side effects.
 
 - **EXTCAP Linked List vs Fixed Offsets (M06, N28)**: Drivers may discover capabilities by walking the linked list starting at `EXTCAP_PTR` (`0x00C` -> `0x100`) or by using canonical fixed offsets (`0x1E0` MEM, `0x140` FMT, `0x180` VEND, `0x1D0` PROT, `0x200` DISP2). Capability ID 5 (MMU) and ID 6 (CPFW) are internal/informational; the host driver does not program MMU or CPFW registers.
@@ -1593,13 +1593,13 @@ to the following architectural parameters:
 | `maxVertexInputBindings` | 16 | Hardware vertex stream buffer slots (0..15) |
 | `maxVertexInputAttributeOffset` | 524,287 | 19-bit packed attribute offset field in `GhciPipelineState` (512 KiB range, K11) |
 | `maxVertexInputBindingStride` | 4,095 | Fallback 8-bit default in PSO, or up to 4095 dynamic stride via `CMD_BIND_VERTEX_BUFFERS` (N14) |
-| `maxColorAttachments` | 8 | Reported authoritatively via `EXT_CAP_FEATURE[19:16]`, mirroring `EXT_CAP_FMT0[15:12]` and `FMT_LIMITS[3:0]` (N31) |
+| `maxColorAttachments` | 1..8 (implemented count) | Reported authoritatively via `EXT_CAP_FEATURE[19:16]`, mirroring `EXT_CAP_FMT0[15:12]` and `FMT_LIMITS[3:0]` (N31) |
 | `maxComputeWorkGroupCount[3]` | {65535, 65535, 65535} | 16-bit workgroup dispatch counters |
 | `maxComputeWorkGroupInvocations` | 256 | 8 warps × 32 lanes per Shader Unit |
 | `maxComputeWorkGroupSize[3]` | {256, 256, 64} | Max workgroup dimensions (total invocations $\le 256$, N01) |
 | `maxComputeSharedMemorySize` | 16,384 bytes | On-chip Local Data Share (LDS) RAM per SU (reported via `EXT_CAP_FEATURE[27:20]`, N24, N31). KC705 FPGA config provides 4,096 B (spill to scratch/disable compute queue for strict Vulkan 1.0 conformance); standard ASIC provides 16,384 B |
 | `subGroupSize` | 32 | Native SIMD warp width |
-| `timestampPeriod` | 10.0 ns nominal | Core clock 100 MHz (`1.0e9 / GCLK_HZ`; dynamic based on `GHCI_REG_GCLK_HZ`, N30) |
+| `timestampPeriod` | 5.0 ns nominal | Core clock 200 MHz (`1.0e9 / GCLK_HZ`; dynamic based on `GHCI_REG_GCLK_HZ`, N30) |
 | `subPixelPrecisionBits` | 4 | 4 bits subpixel precision (1/16 pixel grid rasterization, N71) |
 | `viewportSubPixelBits` | 0 | Integer viewport coordinate snapping (N71) |
 | `maxViewportDimensions[2]` | {16384, 16384} | Maximum viewport width and height (N71) |
@@ -1652,7 +1652,7 @@ to the following architectural parameters:
     - When `STATUS.FAULTED` is set, CP enters `CP_STATE = 7 (FAULT)` and quiesces. Recovery requires `CTRL.RESET = 1`.
 - **Watchdog Execution Monitor (CTRL.WDT_EN, N26)**:
   - The watchdog timer monitors command execution duration to prevent system hangs.
-  - Initial reset value: `WDT_CYCLES = 0x10000000` ($2^{28}$ core clock cycles, $\approx 2.68$ seconds at 100 MHz core clock).
+  - Initial reset value: `WDT_CYCLES = 0x10000000` ($2^{28}$ core clock cycles, $\approx 1.34$ seconds at 200 MHz core clock).
   - **Per-Packet Counting**: The counter resets to 0 at the start of each new command packet; it does NOT accumulate across packets.
   - While `CTRL.WDT_EN == 1`, the hardware counter increments every core clock cycle that the current packet is actively executing.
   - **Pause on External Events (`wdt_hold`, N26)**: The counter **pauses (`wdt_hold`)** when waiting for external events:

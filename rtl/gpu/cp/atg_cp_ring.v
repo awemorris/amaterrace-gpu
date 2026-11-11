@@ -98,10 +98,10 @@ module atg_cp_ring #(
 
 	localparam [9:0] I_BASE0_LO = GHCI_REG_RING_BASE_LO[11:2];
 	localparam [9:0] I_BASE0_HI = GHCI_REG_RING_BASE_HI[11:2];
-	localparam [9:0] I_BASE0    = GHCI_RING_BASE[11:2];
-	localparam [9:0] I_SIZE0    = GHCI_RING_SIZE[11:2];
-	localparam [9:0] I_WPTR0 = GHCI_RING_WPTR[11:2];
-	localparam [9:0] I_RPTR0 = GHCI_RING_RPTR[11:2];
+	localparam [9:0] I_BASE0    = GHCI_REG_RING_BASE_LO[11:2];
+	localparam [9:0] I_SIZE0    = GHCI_REG_RING_SIZE[11:2];
+	localparam [9:0] I_WPTR0    = GHCI_REG_RING_WPTR[11:2];
+	localparam [9:0] I_RPTR0    = GHCI_REG_RING_RPTR[11:2];
 
 	localparam [9:0] I_BASE1 = GHCI_RING1_BASE[11:2];
 	localparam [9:0] I_SIZE1 = GHCI_RING1_SIZE[11:2];
