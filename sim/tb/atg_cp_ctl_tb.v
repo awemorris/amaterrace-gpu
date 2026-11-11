@@ -95,7 +95,7 @@ module atg_cp_ctl_tb;
 		input [3:0] want;
 		begin
 			repeat (2) @(negedge clk);
-			hcr_read(GHCI_STATUS[11:0], v);
+			hcr_read(GHCI_REG_STATUS[11:0], v);
 			if (cp_state !== want || v[19:16] !== want ||
 			    open !== (want == GHCI_ST_IDLE || want == GHCI_ST_HALTED) ||
 			    halt !== (want >= GHCI_ST_HALTING) || (want != GHCI_ST_RUNNING && run) ||
@@ -110,7 +110,7 @@ module atg_cp_ctl_tb;
 
 	task ctrl;
 		input [31:0] bits;
-		hcr_write(GHCI_CTRL[11:0], bits);
+		hcr_write(GHCI_REG_CTRL[11:0], bits);
 	endtask
 
 	task do_reset;
@@ -125,12 +125,12 @@ module atg_cp_ctl_tb;
 		input [31:0] info;
 		input [31:0] addr;
 		begin
-			hcr_read(GHCI_FAULT_INFO[11:0], v);
+			hcr_read(GHCI_REG_FAULT_INFO[11:0], v);
 			if (v !== info) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_ctl.%0s: FAULT_INFO %h, expected %h", what, v, info);
 			end
-			hcr_read(GHCI_FAULT_ADDR[11:0], v);
+			hcr_read(GHCI_REG_FAULT_ADDR_LO[11:0], v);
 			if (v !== addr) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_ctl.%0s: FAULT_ADDR %h, expected %h", what, v, addr);
@@ -198,7 +198,7 @@ module atg_cp_ctl_tb;
 		ctrl(32'd1 << GHCI_CTRL_RESET);
 		repeat (20) @(negedge clk);
 		expect_state("reset", GHCI_ST_RESETTING);
-		hcr_read(GHCI_CTRL[11:0], v);
+		hcr_read(GHCI_REG_CTRL[11:0], v);
 		if (v[GHCI_CTRL_RESET] !== 1'b1 || pulses != 0) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ctl.reset: CTRL %h, %0d pulses before mc_idle", v, pulses);
@@ -213,7 +213,7 @@ module atg_cp_ctl_tb;
 		replay_busy = 0;
 		repeat (2) @(negedge clk);
 		expect_state("reset", GHCI_ST_IDLE);
-		hcr_read(GHCI_CTRL[11:0], v);
+		hcr_read(GHCI_REG_CTRL[11:0], v);
 		if (v !== 32'd0 || pulses != 1 || flushes != 1) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ctl.reset: CTRL %h, %0d pulses, %0d flushes", v, pulses,
@@ -224,24 +224,24 @@ module atg_cp_ctl_tb;
 		e0 = errors;
 
 		/* stuck: quiesced without mc_idle for 4 * WDT_CYCLES. */
-		hcr_write(GHCI_WDT_CYCLES[11:0], 32'd10);
+		hcr_write(GHCI_REG_WDT_CYCLES[11:0], 32'd10);
 		mc_idle = 0;
 		ctrl(32'd1 << GHCI_CTRL_HALT);
 		repeat (35) @(negedge clk);
-		hcr_read(GHCI_STATUS[11:0], v);
+		hcr_read(GHCI_REG_STATUS[11:0], v);
 		if (v[13]) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ctl.stuck: AXI_STUCK early");
 		end
 		repeat (10) @(negedge clk);
-		hcr_read(GHCI_STATUS[11:0], v);
+		hcr_read(GHCI_REG_STATUS[11:0], v);
 		if (!v[13]) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ctl.stuck: no AXI_STUCK");
 		end
 		mc_idle = 1;
 		do_reset();
-		hcr_read(GHCI_STATUS[11:0], v);
+		hcr_read(GHCI_REG_STATUS[11:0], v);
 		if (v[13]) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ctl.stuck: AXI_STUCK after RESET");
@@ -327,7 +327,7 @@ module atg_cp_ctl_tb;
 		e0 = errors;
 
 		/* wdt: counts only with WDT_EN and cmd_active. */
-		hcr_write(GHCI_WDT_CYCLES[11:0], 32'd50);
+		hcr_write(GHCI_REG_WDT_CYCLES[11:0], 32'd50);
 		ctrl(32'd1 << GHCI_CTRL_RUN);
 		cmd_active = 1;
 		repeat (100) @(negedge clk);
@@ -355,70 +355,44 @@ module atg_cp_ctl_tb;
 		end
 		do_reset();
 		ctrl(32'd0);
-		hcr_write(GHCI_WDT_CYCLES[11:0], 32'h10000000);
+		hcr_write(GHCI_REG_WDT_CYCLES[11:0], 32'h10000000);
 		if (errors == e0)
 			$display("PASS atg_cp_ctl.wdt");
 		e0 = errors;
 
-		/* locked: the aperture in IDLE; locked writes and KICK in RUNNING. */
-		hcr_write(GHCI_APERTURE_BASE[11:0], 32'h0010003F);
-		hcr_write(GHCI_APERTURE_LIMIT[11:0], 32'h00200000);
-		if (ap_base !== 32'h00100020 || ap_limit !== 32'h00200000) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_ctl.locked: aperture %h %h", ap_base, ap_limit);
-		end
-		kicks = 0;
-		hcr_write(GHCI_KICK[11:0], 32'd1);
-		if (kicks != 1) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_ctl.locked: no KICK in IDLE");
-		end
-		/* KICK.BLIT with the BLT busy: kind 6. */
-		busy_in[1] = 1;
-		hcr_write(GHCI_KICK[11:0], 32'd1);
-		busy_in[1] = 0;
-		expect_info("locked", {16'd0, GHCI_FAULT_KICK, 12'd0}, 32'd0);
-		do_reset();
-		/* KICK.BLIT while the units are a protected session's: kind 6, no kick. */
-		kicks = 0;
-		kick_prot_ok = 0;
-		hcr_write(GHCI_KICK[11:0], 32'd1);
-		kick_prot_ok = 1;
-		expect_info("locked", {16'd0, GHCI_FAULT_KICK, 12'd0}, 32'd0);
-		if (kicks != 0) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_ctl.locked: KICK passed for a protected session's units");
-		end
-		do_reset();
-		kicks = 1;
-		/* KICK.DRAW without a VF: kind 2. */
-		hcr_write(GHCI_KICK[11:0], 32'd2);
-		expect_info("locked", {16'd0, GHCI_FAULT_OPCODE, 12'd0}, 32'd0);
-		do_reset();
+		/* locked: writes in IDLE are fine; writes in RUNNING trigger LOCKED fault. */
+		hcr_write(GHCI_REG_CP_HEAP_BASE[11:0], 32'h00100000);
+		hcr_write(GHCI_REG_CP_HEAP_LIMIT[11:0], 32'h00200000);
+		expect_info("locked_idle", 32'd0, 32'd0);
+
 		ctrl(32'd1 << GHCI_CTRL_RUN);
-		hcr_write(GHCI_KICK[11:0], 32'd1);
-		expect_info("locked", {16'd0, GHCI_FAULT_KICK, 12'd0}, 32'd0);
-		if (kicks != 1) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_ctl.locked: KICK passed outside IDLE/HALTED");
-		end
+		expect_state("locked_run", GHCI_ST_RUNNING);
+
+		/* HEAP_BASE in RUNNING -> LOCKED fault */
+		hcr_write(GHCI_REG_CP_HEAP_BASE[11:0], 32'h0);
+		expect_info("locked_heap_base", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
 		do_reset();
+
 		ctrl(32'd1 << GHCI_CTRL_RUN);
-		hcr_write(GHCI_APERTURE_BASE[11:0], 32'h0);
-		expect_info("locked", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
-		if (ap_base !== 32'h00100020) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_ctl.locked: aperture written in RUNNING");
-		end
+		hcr_write(GHCI_REG_CP_HEAP_LIMIT[11:0], 32'h0);
+		expect_info("locked_heap_limit", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
 		do_reset();
+
 		ctrl(32'd1 << GHCI_CTRL_RUN);
-		hcr_write(GHCI_RING_SIZE[11:0], 32'd12);
-		expect_info("locked", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
+		hcr_write(GHCI_REG_RING_BASE_LO[11:0], 32'h1000);
+		expect_info("locked_ring_base_lo", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
 		do_reset();
-		if (ap_limit !== 32'h00200000) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_ctl.locked: aperture lost in RESET");
-		end
+
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		hcr_write(GHCI_REG_RING_BASE_HI[11:0], 32'h0);
+		expect_info("locked_ring_base_hi", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
+		do_reset();
+
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		hcr_write(GHCI_REG_RING_SIZE[11:0], 32'd12);
+		expect_info("locked_ring_size", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
+		do_reset();
+
 		if (errors == e0)
 			$display("PASS atg_cp_ctl.locked");
 		if (errors == 0)

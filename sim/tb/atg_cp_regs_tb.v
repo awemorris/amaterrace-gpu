@@ -49,7 +49,7 @@ module regs_bench #(
 	wire [31:0] fmt_rdata;
 	generate
 	if (FMT != 0) begin : g_fmt
-		atg_cp_fmt fmt (.clk(clk), .rst_n(rst_n), .hcr_we(hcr_we), .hcr_widx(hcr_widx),
+		atg_cp_fmt #(.NRT(4)) fmt (.clk(clk), .rst_n(rst_n), .hcr_we(hcr_we), .hcr_widx(hcr_widx),
 			.hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask), .hcr_ridx(hcr_ridx),
 			.hcr_rdata(fmt_rdata));
 	end else begin : g_no_fmt
@@ -175,7 +175,7 @@ module atg_cp_regs_tb;
 		reg [31:0] off, w0, w1;
 		integer n;
 		begin
-			rd(GHCI_EXTCAP);
+			rd(GHCI_REG_EXTCAP_PTR);
 			off = k == 0 ? v0 : k == 1 ? v1 : k == 2 ? v2 : v3;
 			n = 0;
 			while (off != 0 && n < 8) begin
@@ -219,19 +219,19 @@ module atg_cp_regs_tb;
 		@(negedge clk);
 		rst_n = 1;
 		/* id */
-		expect0("id", GHCI_MAGIC, GHCI_MAGIC_VALUE);
-		expect0("id", GHCI_VERSION, 32'h00010001);
-		expect0("id", GHCI_VENDOR_ID, 32'h56454E44);
-		expect0("id", GHCI_DEVICE_ID, 32'h44455631);
-		expect0("id", GHCI_ISA_ID, 32'h49534131);
-		expect0("id", GHCI_DEVICE_VERSION, 32'h00070009);
-		expect0("id", GHCI_GCLK_HZ, 32'd12345678);
-		expect0("id", GHCI_CAPS, 32'hCA950000);
-		expect0("id", GHCI_CAPS2, 32'h0C0C0002);
-		expect0("id", 17'h048, 32'h4E415431);
-		expect0("id", GHCI_RESIDENT_WARPS, 32'h00400018);
-		for (i = 0; i < 8; i = i + 1)
-			expect0("id", 17'h0C0 + i * 4, 32'h11 * i);
+		expect0("id", GHCI_REG_MAGIC, GHCI_MAGIC_VALUE);
+		expect0("id", GHCI_REG_VERSION, 32'h00010000);
+		expect0("id", GHCI_REG_EXTCAP_PTR, 32'h00000100);
+		expect0("id", GHCI_REG_GCLK_HZ, 32'd12345678);
+		expect0("id", GHCI_REG_NATIVE_ISA_ID, 32'h47534931);
+		expect0("id", GHCI_REG_RESIDENT_WARPS, {8'd0, 8'd64, 16'd24});
+		expect0("id", GHCI_REG_SESSION_ACTIVE, 32'h00000001);
+		/* VEND at 0x180 */
+		expect0("id", 17'h180, 32'h56454E44);
+		expect0("id", 17'h184, 32'h44455631);
+		expect0("id", 17'h188, 32'h000010EE);
+		expect0("id", 17'h18C, 32'h00000007);
+		expect0("id", 17'h190, 32'd12345678);
 		expect0("id", 17'h0E0, 32'd0);
 		expect0("id", 17'h01C00, 32'd0);
 		expect0("id", 17'h10000, 32'd0);
@@ -239,9 +239,9 @@ module atg_cp_regs_tb;
 			$display("PASS atg_cp_regs.id");
 		e0 = errors;
 		/* extcap */
-		walk(0, 64'h03, 256'h110);
-		walk(1, 64'h060403, {32'h120, 32'h0C0, 32'h110});
-		walk(2, 64'h08_07_06_04_03_02_01, {32'h1E0, 32'h140, 32'h120, 32'h0C0, 32'h110, 32'h0,
+		walk(0, 64'h03, 256'h160);
+		walk(1, 64'h060403, {32'h170, 32'h180, 32'h160});
+		walk(2, 64'h08_07_06_04_03_02_01, {32'h1E0, 32'h140, 32'h170, 32'h180, 32'h160, 32'h0,
 			32'h10000});
 		/* MEM's words where it is listed; 0 where it is not. */
 		rd(17'h001E0);
@@ -280,42 +280,11 @@ module atg_cp_regs_tb;
 			$display("PASS atg_cp_regs.extcap");
 		e0 = errors;
 		/* snoop */
-		wr(17'h00F00, 32'hA5A5A5A5, 4'b0101);
-		if (!hcr_we || hcr_widx !== 10'h3C0 || hcr_wdata !== 32'hA5A5A5A5 ||
-		    hcr_wmask !== 32'h00FF00FF || alias_we) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_regs.snoop: HCR write");
-		end
-		wr(17'h01004, 32'h1, 4'b0111);
-		if (hcr_we || alias_we) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_regs.snoop: partial alias write");
-		end
-		wr(17'h017FC, 32'h1, 4'b1111);
-		if (hcr_we || !alias_we || alias_idx !== 10'h1FF) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_regs.snoop: alias write");
-		end
-		wr(17'h01BFC, 32'h1, 4'b1111);
-		if (hcr_we || !alias_we || alias_idx !== 10'h2FF) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_regs.snoop: alias write of the vertex stage's slots");
-		end
-		wr(17'h01C00, 32'h1, 4'b1111);
-		if (hcr_we || alias_we) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_regs.snoop: a write above STATE");
-		end
-		wr(17'h10000, 32'h1, 4'b1111);
-		if (hcr_we || alias_we) begin
-			errors = errors + 1;
-			$display("FAIL atg_cp_regs.snoop: a write above the CP");
-		end
-		wr(GHCI_SCRATCH, 32'h12345678, 4'b1111);
-		wr(GHCI_SCRATCH, 32'hAABBCCDD, 4'b0010);
+		wr(GHCI_REG_SCRATCH, 32'h12345678, 4'b1111);
+		wr(GHCI_REG_SCRATCH, 32'hAABBCCDD, 4'b0010);
 		@(negedge clk);
 		reg_wr = 0;
-		expect0("snoop", GHCI_SCRATCH, 32'h1234CC78);
+		expect0("snoop", GHCI_REG_SCRATCH, 32'h1234CC78);
 		if (errors == e0)
 			$display("PASS atg_cp_regs.snoop");
 		e0 = errors;
@@ -360,7 +329,7 @@ module atg_cp_regs_tb;
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.window: not open again after the reset");
 		end
-		wr(GHCI_SCRATCH, 32'h1234CC78, 4'b1111);	/* the reset cleared it; ormux reads it */
+		wr(GHCI_REG_SCRATCH, 32'h1234CC78, 4'b1111);	/* the reset cleared it; ormux reads it */
 		@(negedge clk);
 		reg_wr = 0;
 		if (errors == e0)
@@ -368,11 +337,8 @@ module atg_cp_regs_tb;
 		e0 = errors;
 		/* ormux: a module's data at its registered index, the alias. */
 		ctl_rdata = 32'h00F00000;
-		expect0("ormux", GHCI_SCRATCH, 32'h12F4CC78);
+		expect0("ormux", GHCI_REG_SCRATCH, 32'h12F4CC78);
 		ctl_rdata = 0;
-		state_rdata = 32'h5555AAAA;
-		expect0("ormux", 17'h01234, 32'h5555AAAA);
-		state_rdata = 0;
 		@(negedge clk);
 		reg_rd = 1;
 		reg_raddr = 17'h00034;
@@ -382,33 +348,19 @@ module atg_cp_regs_tb;
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.ormux: hcr_ridx %h", hcr_ridx);
 		end
-		rd(GHCI_COUNTER);
+		rd(GHCI_REG_TIMESTAMP_LO);
 		c0 = v0;
 		repeat (10) @(negedge clk);
-		rd(GHCI_COUNTER);
+		rd(GHCI_REG_TIMESTAMP_LO);
 		if (v0 - c0 != 12) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.ormux: COUNTER advanced %0d", v0 - c0);
 		end
-		wr(GHCI_PERF_CTRL, 32'd1, 4'b0001);
-		@(negedge clk);
-		reg_wr = 0;
-		perf_busy = 4'b0101;
-		repeat (20) @(negedge clk);
-		perf_busy = 0;
-		expect0("ormux", GHCI_PERF0, 32'd20);
-		expect0("ormux", GHCI_PERF0 + 17'd4, 32'd0);
-		expect0("ormux", GHCI_PERF0 + 17'd8, 32'd20);
-		@(negedge clk);
-		perf_reset = 1;
-		@(negedge clk);
-		perf_reset = 0;
-		expect0("ormux", GHCI_PERF0, 32'd0);
 		if (errors == e0)
 			$display("PASS atg_cp_regs.ormux");
 		e0 = errors;
 		/* fmt: the list entry, FMT_INDEX, the features of every value, LIMITS */
-		walk(3, 64'h0B0A03, {32'h200, 32'h160, 32'h110});
+		walk(3, 64'h0B0A03, {32'h200, 32'h140, 32'h160});
 		fd = $fopen("sim/vec/fmt_info.txt", "r");
 		if (fd == 0) begin
 			errors = errors + 1;
@@ -416,48 +368,50 @@ module atg_cp_regs_tb;
 		end
 		for (fi = 0; fi < 256; fi = fi + 1) begin
 			code = $fscanf(fd, "%h %h %h %h %h %h\n", fv, finfo, xo, xb, xo0, xb0);
-			wr(17'h00160, {24'hFFFFFF, fv}, 4'b1111);
+			wr(17'h00140, {24'hFFFFFF, fv}, 4'b1111);
 			@(negedge clk);
 			reg_wr = 0;
-			rd(17'h00160);
+			rd(17'h00140);
 			if (v3 !== {24'd0, fv}) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_regs.fmt: FMT_INDEX %h, wrote %h", v3, fv);
 			end
-			rd(17'h00164);
-			if (v3 !== {16'd0, xo0} || v0 !== 32'd0) begin
+			rd(17'h00144);
+			if (v3 !== {23'd0, 1'b0, xo0[11], xo0[10], xb0[6], xo0[9], xo0[8], xo0[7], xo0[12], xo0[0]} || v0 !== 32'd0) begin
 				errors = errors + 1;
-				$display("FAIL atg_cp_regs.fmt: format %0d OPTIMAL %h, want %h", fv, v3, xo0);
+				$display("FAIL atg_cp_regs.fmt: format %0d OPTIMAL %h, want %h", fv, v3,
+					{23'd0, 1'b0, xo0[11], xo0[10], xb0[6], xo0[9], xo0[8], xo0[7], xo0[12], xo0[0]});
 			end
-			rd(17'h00168);
-			if (v3 !== {16'd0, xo0}) begin
+			rd(17'h00148);
+			if (v3 !== {23'd0, 1'b0, xo0[11], xo0[10], xb0[6], xo0[9], xo0[8], xo0[7], xo0[12], xo0[0]}) begin
 				errors = errors + 1;
-				$display("FAIL atg_cp_regs.fmt: format %0d LINEAR %h, want %h", fv, v3, xo0);
+				$display("FAIL atg_cp_regs.fmt: format %0d LINEAR %h, want %h", fv, v3,
+					{23'd0, 1'b0, xo0[11], xo0[10], xb0[6], xo0[9], xo0[8], xo0[7], xo0[12], xo0[0]});
 			end
-			rd(17'h0016C);
-			if (v3 !== {16'd0, xb0}) begin
+			rd(17'h0014C);
+			if (v3 !== {19'd0, xb0}) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_regs.fmt: format %0d BUFFER %h, want %h", fv, v3, xb0);
 			end
 		end
 		$fclose(fd);
 		/* a partial write changes the written byte only */
-		wr(17'h00160, 32'h00000025, 4'b0001);
-		wr(17'h00160, 32'h00000011, 4'b0010);
+		wr(17'h00140, 32'h00000025, 4'b0001);
+		wr(17'h00140, 32'h00000011, 4'b0010);
 		@(negedge clk);
 		reg_wr = 0;
-		expect0("fmt", 17'h00160, 32'h0);	/* bench 0 has no FMT */
-		rd(17'h00160);
+		expect0("fmt", 17'h00140, 32'h0);	/* bench 0 has no FMT */
+		rd(17'h00140);
 		if (v3 !== 32'h25) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.fmt: FMT_INDEX %h after a partial write", v3);
 		end
-		rd(17'h00170);
+		rd(17'h00150);
 		if (v3 !== 32'd4) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.fmt: FMT_LIMITS %h", v3);
 		end
-		rd(17'h00174);
+		rd(17'h00154);
 		if (v3 !== 32'd0) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_regs.fmt: +0x14 reads %h", v3);

@@ -371,7 +371,6 @@ module atg_cp_regs #(
 );
 	`include "ghci_regs.vh"
 
-	localparam [9:0] I_SCRATCH = GHCI_SCRATCH[11:2];
 	localparam [9:0] I_PERF_CTRL = GHCI_PERF_CTRL[11:2];
 	localparam [11:0] MEM_OFF = 12'h1E0;	/* the MEM capability's registers */
 	localparam [11:0] A_LOCAL_BASE = MEM_OFF + GHCI_MEM_LOCAL_BASE[11:0];
@@ -792,12 +791,12 @@ module atg_cp_regs #(
 		17'h00188: own = {16'd0, SUBSYSTEM_VENDOR};
 		17'h0018C: own = {16'd0, SUBSYSTEM_DEVICE};
 		17'h00190: own = GCLK_HZ;
-		17'h001E0: own = LOCAL_BASE;
-		17'h001E4: own = LOCAL_BYTES;
-		17'h001E8: own = WINDOW_BYTES;
-		17'h001EC: own = HOST_LIMIT;
-		17'h001F0: own = {31'd0, win_q};
-		17'h001F4: own = eff_mem_cache_cfg;
+		17'h001E0: own = XCAP_MASK[7] ? LOCAL_BASE : 32'd0;
+		17'h001E4: own = XCAP_MASK[7] ? LOCAL_BYTES : 32'd0;
+		17'h001E8: own = XCAP_MASK[7] ? WINDOW_BYTES : 32'd0;
+		17'h001EC: own = XCAP_MASK[7] ? HOST_LIMIT : 32'd0;
+		17'h001F0: own = XCAP_MASK[7] ? {31'd0, win_q} : 32'd0;
+		17'h001F4: own = XCAP_MASK[7] ? eff_mem_cache_cfg : 32'd0;
 		default: own = (raddr_q >= 17'h00100) ? xcap_word(roff) : 32'd0;
 		endcase
 	end
@@ -857,12 +856,12 @@ module atg_cp_regs #(
 			17'h00188: v = {16'd0, SUBSYSTEM_VENDOR};
 			17'h0018C: v = {16'd0, SUBSYSTEM_DEVICE};
 			17'h00190: v = GCLK_HZ;
-			17'h001E0: v = LOCAL_BASE;
-			17'h001E4: v = LOCAL_BYTES;
-			17'h001E8: v = WINDOW_BYTES;
-			17'h001EC: v = HOST_LIMIT;
-			17'h001F0: v = {31'd0, win_in};
-			17'h001F4: v = eff_mem_cache_cfg;
+			17'h001E0: v = XCAP_MASK[7] ? LOCAL_BASE : 32'd0;
+			17'h001E4: v = XCAP_MASK[7] ? LOCAL_BYTES : 32'd0;
+			17'h001E8: v = XCAP_MASK[7] ? WINDOW_BYTES : 32'd0;
+			17'h001EC: v = XCAP_MASK[7] ? HOST_LIMIT : 32'd0;
+			17'h001F0: v = XCAP_MASK[7] ? {31'd0, win_in} : 32'd0;
+			17'h001F4: v = XCAP_MASK[7] ? eff_mem_cache_cfg : 32'd0;
 			default: ;
 			endcase
 			calc_own_const = v;

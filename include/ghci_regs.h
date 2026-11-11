@@ -71,6 +71,7 @@ extern "C" {
 #define GHCI_REG_TIMESTAMP_LO    0x05Cu  /* RO: 64-bit GPU cycle timestamp [31:0] */
 #define GHCI_REG_TIMESTAMP_HI    0x060u  /* RO: 64-bit GPU cycle timestamp [63:32] */
 #define GHCI_REG_GCLK_HZ         0x064u  /* RO: Core clock frequency in Hz (timestampPeriod = 1e9 / GCLK_HZ, K06) */
+#define GHCI_REG_NATIVE_ISA_ID   0x068u  /* RO: Shader ISA architecture identification (reports "GSI1" = 0x47534931, N16) */
 
 /* Command Processor Diagnostics */
 #define GHCI_REG_DIAG_CP_PC      0x074u  /* RO: Current RV32IM Program Counter of CP firmware */
@@ -192,28 +193,28 @@ extern "C" {
 
 /*
  * ============================================================================
- * Legacy GHCI 1.1 Host Control Register Map (128 KiB window)
+ * Legacy GHCI Host Control Register Map (128 KiB window, pre-1.0 prototype)
  * ============================================================================
  */
-#define GHCI_MAGIC 0x000u
-#define GHCI_VERSION 0x004u
-#define GHCI_VENDOR_ID 0x008u
-#define GHCI_DEVICE_ID 0x00Cu
-#define GHCI_ISA_ID 0x010u
-#define GHCI_DEVICE_VERSION 0x014u
-#define GHCI_EXTCAP 0x018u
-#define GHCI_GCLK_HZ 0x01Cu
-#define GHCI_CAPS 0x020u
-#define GHCI_CAPS2 0x024u
-#define GHCI_SCRATCH 0x028u
-#define GHCI_COUNTER 0x02Cu
-#define GHCI_CTRL 0x030u
-#define GHCI_STATUS 0x034u
-#define GHCI_IRQ_STATUS 0x038u
-#define GHCI_IRQ_ENABLE 0x03Cu
-#define GHCI_IRQ_SET 0x040u
-#define GHCI_WDT_CYCLES 0x044u
-#define GHCI_RESIDENT_WARPS 0x04Cu	/* R: [15:0] the warps the GPU runs at once (NSU x NWARPS), [23:16] registers per lane */
+#define GHCI_LEGACY_MAGIC 0x000u
+#define GHCI_LEGACY_VERSION 0x004u
+#define GHCI_LEGACY_VENDOR_ID 0x008u
+#define GHCI_LEGACY_DEVICE_ID 0x00Cu
+#define GHCI_LEGACY_ISA_ID 0x010u
+#define GHCI_LEGACY_DEVICE_VERSION 0x014u
+#define GHCI_LEGACY_EXTCAP 0x018u
+#define GHCI_LEGACY_GCLK_HZ 0x01Cu
+#define GHCI_LEGACY_CAPS 0x020u
+#define GHCI_LEGACY_CAPS2 0x024u
+#define GHCI_LEGACY_SCRATCH 0x028u
+#define GHCI_LEGACY_COUNTER 0x02Cu
+#define GHCI_LEGACY_CTRL 0x030u
+#define GHCI_LEGACY_STATUS 0x034u
+#define GHCI_LEGACY_IRQ_STATUS 0x038u
+#define GHCI_LEGACY_IRQ_ENABLE 0x03Cu
+#define GHCI_LEGACY_IRQ_SET 0x040u
+#define GHCI_LEGACY_WDT_CYCLES 0x044u
+#define GHCI_LEGACY_RESIDENT_WARPS 0x04Cu	/* R: [15:0] the warps the GPU runs at once (NSU x NWARPS), [23:16] registers per lane */
 #define GHCI_RESIDENT_WARPS_COUNT(v) ((v) & 0xFFFFu)
 #define GHCI_RESIDENT_WARPS_NREGS(v) (((v) >> 16) & 0xFFu) /* general registers per lane (32 or 64) */
 
@@ -226,15 +227,23 @@ extern "C" {
 #define GHCI_LEGACY_APERTURE_LIMIT 0x064u
 #define GHCI_LEGACY_FAULT_ADDR 0x068u
 #define GHCI_LEGACY_FAULT_INFO 0x06Cu
-#define GHCI_FENCE_LAST 0x070u
-#define GHCI_CP_PC 0x074u
-#define GHCI_CP_STATUS 0x078u
-#define GHCI_PIPE_FSM 0x07Cu
-#define GHCI_PERF(n) (0x080u + 4u * (n))
-#define GHCI_PERF_CTRL 0x090u
-#define GHCI_DBG_ADDR 0x0A0u
-#define GHCI_DBG_DATA 0x0A4u
-#define GHCI_DBG_STATUS 0x0A8u
+#define GHCI_LEGACY_FENCE_LAST 0x070u
+#define GHCI_LEGACY_CP_PC 0x074u
+#define GHCI_LEGACY_CP_STATUS 0x078u
+#define GHCI_LEGACY_PIPE_FSM 0x07Cu
+#define GHCI_LEGACY_PERF(n) (0x080u + 4u * (n))
+#define GHCI_LEGACY_PERF_CTRL 0x090u
+#define GHCI_LEGACY_DBG_ADDR 0x0A0u
+#define GHCI_LEGACY_DBG_DATA 0x0A4u
+#define GHCI_LEGACY_DBG_STATUS 0x0A8u
+#define GHCI_FENCE_LAST GHCI_LEGACY_FENCE_LAST
+#define GHCI_CP_PC GHCI_LEGACY_CP_PC
+#define GHCI_CP_STATUS GHCI_LEGACY_CP_STATUS
+#define GHCI_PIPE_FSM GHCI_LEGACY_PIPE_FSM
+#define GHCI_DBG_ADDR GHCI_LEGACY_DBG_ADDR
+#define GHCI_DBG_DATA GHCI_LEGACY_DBG_DATA
+#define GHCI_DBG_STATUS GHCI_LEGACY_DBG_STATUS
+#define GHCI_KICK GHCI_LEGACY_KICK
 #define GHCI_PERF_SRC0 0x160u
 #define GHCI_PERF_SRC(n) (0x160u + 4u * (n))
 #define GHCI_CPFW_CTRL 0x170u /* the CPFW capability (id 6) */
@@ -245,7 +254,7 @@ extern "C" {
 #define GHCI_CPFW_DBASE 0x1A8u
 #define GHCI_CPFW_DWORDS 0x1ACu
 #define GHCI_CPFW_MBOX(n) (0x1B0u + 4u * (n)) /* n = 0..3 */
-#define GHCI_KICK 0xF00u
+#define GHCI_LEGACY_KICK 0xF00u
 #define GHCI_STATE(i) (0x1000u + 4u * (i))
 #define GHCI_STATE_COUNT 512u
 
@@ -299,8 +308,14 @@ extern "C" {
 #define GHCI_DEV_CAP_GSI1 (1u << 7)
 #define GHCI_DEV_CAP_PHYS_LANES(c) (((c) >> 8) & 0xFFu)
 #define GHCI_DEV_CAP_NUM_SU(c) (((c) >> 16) & 0xFFu)
-#define GHCI_DEV_CAP_TASK_SHADER (1u << 30)
-#define GHCI_DEV_CAP_MESH_SHADER (1u << 31)
+#define GHCI_DEV_CAP_PROT (1u << 24)
+#define GHCI_DEV_CAP_TEX_FFILT (1u << 25)
+#define GHCI_DEV_CAP_ROP_PACK (1u << 26)
+#define GHCI_DEV_CAP_TASK_SHADER (1u << 27)
+#define GHCI_DEV_CAP_MESH_SHADER (1u << 28)
+#define GHCI_DEV_CAP_BLT (1u << 29)
+#define GHCI_DEV_CAP_DISP (1u << 30)
+#define GHCI_DEV_CAP_MSAA (1u << 31)
 
 /* EXT_CAP_* registers (0x080+) */
 #define GHCI_EXT_CAP_FMT0 0x080u
@@ -317,16 +332,22 @@ extern "C" {
 #define GHCI_EXT_FMT_BLT_BLEND   (1u << 17)
 #define GHCI_EXT_FMT_BLT_TILE    (1u << 18)
 
-#define GHCI_EXT_FEAT_LOGIC_OP (1u << 0)
-#define GHCI_EXT_FEAT_EARLY_Z (1u << 1)
-#define GHCI_EXT_FEAT_HW_CURSOR (1u << 2)
-#define GHCI_EXT_FEAT_COLOR_LUT (1u << 3)
-#define GHCI_EXT_FEAT_MAX_MRT(c) (((c) >> 4) & 0xFu)
-#define GHCI_EXT_FEAT_DUAL_SOURCE (1u << 8)
-#define GHCI_EXT_FEAT_COARSE_SCAN (1u << 9)
-#define GHCI_EXT_FEAT_FAST_CLEAR (1u << 10)
-#define GHCI_EXT_FEAT_CLIP_POLY (1u << 30)
-#define GHCI_EXT_FEAT_BLT_SCALE (1u << 31)
+#define GHCI_EXT_FEAT_VA_BITS(f)       ((f) & 0x0Fu)
+#define GHCI_EXT_FEAT_PA_BITS(f)       (((f) >> 4) & 0x0Fu)
+#define GHCI_EXT_FEAT_DUAL_SOURCE      (1u << 8)
+#define GHCI_EXT_FEAT_COARSE_SCAN      (1u << 9)
+#define GHCI_EXT_FEAT_FAST_CLEAR       (1u << 10)
+#define GHCI_EXT_FEAT_LOGIC_OP         (1u << 11)
+#define GHCI_EXT_FEAT_EARLY_Z          (1u << 12)
+#define GHCI_EXT_FEAT_HW_CURSOR        (1u << 13)
+#define GHCI_EXT_FEAT_COLOR_LUT        (1u << 14)
+#define GHCI_EXT_FEAT_MRT_BLEND        (1u << 15)
+#define GHCI_EXT_FEAT_MAX_MRT(c)       (((c) >> 16) & 0xFu)
+#define GHCI_EXT_FEAT_LDS_KB(c)        (((c) >> 20) & 0xFFu)
+#define GHCI_EXT_FEAT_FP16             (1u << 28)
+#define GHCI_EXT_FEAT_SUBGROUP         (1u << 29)
+#define GHCI_EXT_FEAT_CLIP_POLY        (1u << 30)
+#define GHCI_EXT_FEAT_BLT_SCALE        (1u << 31)
 
 /* CAPS2. */
 #define GHCI_CAPS2_QUEUES(c) ((c) & 0xFFu)

@@ -35,7 +35,7 @@ module ring_bench #(
 	localparam LA = 32 - LINE_SHIFT;
 	localparam LB = LINE_BYTES * 8;
 	localparam [31:0] BASE = 32'h00000400;
-	localparam NW = 256;	/* RING_SIZE 10 */
+	localparam NW = 1024;	/* RING_SIZE 4096 bytes (4 KiB) */
 
 	reg hcr_we = 0;
 	reg [9:0] hcr_widx = 0, hcr_ridx = 0;
@@ -154,7 +154,7 @@ module ring_bench #(
 	endtask
 
 	task doorbell;
-		hcr_write(GHCI_RING_WPTR[11:0], wp);
+		hcr_write(GHCI_REG_RING_WPTR[11:0], wp);
 	endtask
 
 	/* The sequencer and the firmware models. */
@@ -202,10 +202,10 @@ module ring_bench #(
 		reg [31:0] rp;
 		begin
 			t = 0;
-			hcr_read(GHCI_RING_RPTR[11:0], rp);
+			hcr_read(GHCI_REG_RING_RPTR[11:0], rp);
 			while ((rp != wp || busy) && t < 20000) begin
 				@(negedge clk);
-				hcr_read(GHCI_RING_RPTR[11:0], rp);
+				hcr_read(GHCI_REG_RING_RPTR[11:0], rp);
 				t = t + 1;
 			end
 			repeat (2) @(negedge clk);
@@ -224,15 +224,15 @@ module ring_bench #(
 	initial begin
 		@(posedge rst_n);
 		repeat (2) @(negedge clk);
-		hcr_write(GHCI_RING_BASE[11:0], BASE | 32'h1F);
-		hcr_write(GHCI_RING_SIZE[11:0], 32'd3);	/* clamped to 10 */
-		hcr_read(GHCI_RING_BASE[11:0], v);
+		hcr_write(GHCI_REG_RING_BASE_LO[11:0], BASE | 32'h1F);
+		hcr_write(GHCI_REG_RING_SIZE[11:0], 32'd4096);	/* 4 KiB */
+		hcr_read(GHCI_REG_RING_BASE_LO[11:0], v);
 		if (v !== BASE) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ring: RING_BASE %h", v);
 		end
-		hcr_read(GHCI_RING_SIZE[11:0], v);
-		if (v !== 32'd10) begin
+		hcr_read(GHCI_REG_RING_SIZE[11:0], v);
+		if (v !== 32'd4096) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ring: RING_SIZE %h", v);
 		end
@@ -294,10 +294,10 @@ module ring_bench #(
 			if (($random(seed) % 4) == 0)
 				drain("wrap");
 			/* Keep space: wait while more than half is pending. */
-			hcr_read(GHCI_RING_RPTR[11:0], v);
+			hcr_read(GHCI_REG_RING_RPTR[11:0], v);
 			while (((wp - v + NW) % NW) > NW / 2) begin
 				@(negedge clk);
-				hcr_read(GHCI_RING_RPTR[11:0], v);
+				hcr_read(GHCI_REG_RING_RPTR[11:0], v);
 			end
 		end
 		drain("wrap");
@@ -336,7 +336,7 @@ module ring_bench #(
 		e0 = errors;
 
 		/* fault: a header whose n passes WPTR; or class V without a CPU. */
-		hcr_read(GHCI_RING_RPTR[11:0], v);
+		hcr_read(GHCI_REG_RING_RPTR[11:0], v);
 		if (CLASS_V == 0) begin
 			put({2'b10, 6'd0, 8'h99, 16'd1});
 			put(32'd0);
@@ -355,7 +355,7 @@ module ring_bench #(
 			core_rst_n = 1;
 			wp = 0;
 			faults = 0;
-			hcr_read(GHCI_RING_BASE[11:0], v);
+			hcr_read(GHCI_REG_RING_BASE_LO[11:0], v);
 			if (v !== BASE) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_ring.fault: RING_BASE lost in the core reset");
@@ -363,7 +363,7 @@ module ring_bench #(
 			pkt_n(1'b0, 6'd1, 8'd2);
 			doorbell();
 			drain("fault");
-			hcr_read(GHCI_RING_RPTR[11:0], v);
+			hcr_read(GHCI_REG_RING_RPTR[11:0], v);
 		end
 		put({2'b00, 6'd1, 8'h77, 8'd0, 8'd6});
 		put(32'd1);
@@ -375,7 +375,7 @@ module ring_bench #(
 			$display("FAIL atg_cp_ring.fault: %0d faults kind %h tag %h addr %h", faults,
 				fault_kind, fault_tag, fault_addr);
 		end
-		hcr_read(GHCI_RING_RPTR[11:0], k);
+		hcr_read(GHCI_REG_RING_RPTR[11:0], k);
 		if (k != v) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ring.fault: RPTR moved");
