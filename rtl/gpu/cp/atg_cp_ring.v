@@ -96,12 +96,12 @@ module atg_cp_ring #(
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam WS = LINE_SHIFT - 2;
 
-	localparam [9:0] I_BASE0_LO = GHCI_REG_RING_BASE_LO[11:2];
-	localparam [9:0] I_BASE0_HI = GHCI_REG_RING_BASE_HI[11:2];
-	localparam [9:0] I_BASE0    = GHCI_REG_RING_BASE_LO[11:2];
-	localparam [9:0] I_SIZE0    = GHCI_REG_RING_SIZE[11:2];
-	localparam [9:0] I_WPTR0    = GHCI_REG_RING_WPTR[11:2];
-	localparam [9:0] I_RPTR0    = GHCI_REG_RING_RPTR[11:2];
+	localparam [9:0] I_BASE0_LO = HCR_IDX_RING_BASE_LO;
+	localparam [9:0] I_BASE0_HI = HCR_IDX_RING_BASE_HI;
+	localparam [9:0] I_BASE0    = HCR_IDX_RING_BASE_LO;
+	localparam [9:0] I_SIZE0    = HCR_IDX_RING_SIZE;
+	localparam [9:0] I_WPTR0    = HCR_IDX_RING_WPTR;
+	localparam [9:0] I_RPTR0    = HCR_IDX_RING_RPTR;
 
 	localparam [9:0] I_BASE1 = GHCI_RING1_BASE[11:2];
 	localparam [9:0] I_SIZE1 = GHCI_RING1_SIZE[11:2];
@@ -1960,95 +1960,6 @@ module atg_cp_ring #(
 		end
 	end
 
-`ifdef SYNTH_KINTEX7
-	wire [1:0] ridx_sel_lo [0:5];
-	wire [1:0] ridx_sel_hi [0:5];
-	wire [5:0] rgrp_en_lo, rgrp_en_hi;
-	wire ridx_b3_lo, ridx_b3_hi;
-	assign ridx_b3_lo = hcr_ridx[3];
-	assign ridx_b3_hi = hcr_ridx[3];
-	genvar g_rg;
-	generate
-		for (g_rg = 0; g_rg < 6; g_rg = g_rg + 1) begin : gen_ridx_sel
-			assign ridx_sel_lo[g_rg][0] = hcr_ridx[0];
-			assign ridx_sel_lo[g_rg][1] = hcr_ridx[1];
-			assign ridx_sel_hi[g_rg][0] = hcr_ridx[0];
-			assign ridx_sel_hi[g_rg][1] = hcr_ridx[1];
-		end
-	endgenerate
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0020)) u_rge0_lo (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_lo[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0020)) u_rge0_hi (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_hi[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0800)) u_rge1_lo (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_lo[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0800)) u_rge1_hi (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_hi[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h1000)) u_rge2_lo (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_lo[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h1000)) u_rge2_hi (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_hi[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h4000)) u_rge3_lo (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_lo[3]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h4000)) u_rge3_hi (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_hi[3]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h8000)) u_rge4_lo (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_lo[4]));
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h8000)) u_rge4_hi (.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]), .O(rgrp_en_hi[4]));
-	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0010000000000600)) u_rge5_lo (
-		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]),
-		.I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]), .O(rgrp_en_lo[5])
-	);
-	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0010000000000600)) u_rge5_hi (
-		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]),
-		.I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]), .O(rgrp_en_hi[5])
-	);
-
-	(* keep = "true" *) wire [31:0] rgrp0 = {
-		ridx_sel_hi[0] == 2'd0 ? base[0][31:16] : ridx_sel_hi[0] == 2'd1 ? 16'd0 : ridx_sel_hi[0] == 2'd2 ? {14'd0, wptr[0][17:16]} : {14'd0, rptr[0][17:16]},
-		ridx_sel_lo[0] == 2'd0 ? base[0][15:0]  : ridx_sel_lo[0] == 2'd1 ? {11'd0, size[0]} : ridx_sel_lo[0] == 2'd2 ? wptr[0][15:0] : rptr[0][15:0]
-	};
-	(* keep = "true" *) wire [31:0] rgrp1 = {
-		ridx_sel_hi[1] == 2'd0 ? base[1][31:16] : ridx_sel_hi[1] == 2'd1 ? 16'd0 : ridx_sel_hi[1] == 2'd2 ? {14'd0, wptr[1][17:16]} : {14'd0, rptr[1][17:16]},
-		ridx_sel_lo[1] == 2'd0 ? base[1][15:0]  : ridx_sel_lo[1] == 2'd1 ? {11'd0, size[1]} : ridx_sel_lo[1] == 2'd2 ? wptr[1][15:0] : rptr[1][15:0]
-	};
-	(* keep = "true" *) wire [31:0] rgrp2 = {
-		ridx_sel_hi[2] == 2'd0 ? dma_sem[31:16] : ridx_sel_hi[2] == 2'd1 ? dma_dst_base_r[31:16] : ridx_sel_hi[2] == 2'd2 ? dma_src_row_stride_r[31:16] : dma_src_slice_stride_r[31:16],
-		ridx_sel_lo[2] == 2'd0 ? dma_sem[15:0]  : ridx_sel_lo[2] == 2'd1 ? dma_dst_base_r[15:0]  : ridx_sel_lo[2] == 2'd2 ? dma_src_row_stride_r[15:0]  : dma_src_slice_stride_r[15:0]
-	};
-	(* keep = "true" *) wire [31:0] rgrp3 = {
-		ridx_sel_hi[3] == 2'd0 ? base[2][31:16] : ridx_sel_hi[3] == 2'd1 ? 16'd0 : ridx_sel_hi[3] == 2'd2 ? {14'd0, wptr[2][17:16]} : {14'd0, rptr[2][17:16]},
-		ridx_sel_lo[3] == 2'd0 ? base[2][15:0]  : ridx_sel_lo[3] == 2'd1 ? {11'd0, size[2]} : ridx_sel_lo[3] == 2'd2 ? wptr[2][15:0] : rptr[2][15:0]
-	};
-	wire [31:0] pr_val   = {24'd0, interrupted_qid, 2'd0, preempt_saved, preempt_pending, preempt_active, 1'b0};
-	wire [31:0] prst_val = {16'd0, 7'd0, hw_sel[2], hw_sel[1], hw_sel[0], 4'd0, active_qid};
-	wire [31:0] sema_val = {13'd0, queue_sema_wait, sema[1], sema[0]};
-	(* keep = "true" *) wire [31:0] rgrp4 = {
-		ridx_sel_hi[4] == 2'd0 ? pr_val[31:16] : ridx_sel_hi[4] == 2'd1 ? prst_val[31:16] : ridx_sel_hi[4] == 2'd2 ? ctx_base[31:16] : sema_val[31:16],
-		ridx_sel_lo[4] == 2'd0 ? pr_val[15:0]  : ridx_sel_lo[4] == 2'd1 ? prst_val[15:0]  : ridx_sel_lo[4] == 2'd2 ? ctx_base[15:0]  : sema_val[15:0]
-	};
-	wire [31:0] dext_val = {dma_copy_d_r[7:0], dma_copy_h_r[7:0], dma_copy_w_r};
-	(* keep = "true" *) wire [31:0] rgrp5 = {
-		ridx_sel_hi[5] == 2'd0 ? dext_val[31:16] : ridx_sel_hi[5] == 2'd1 ? base[0][31:16] : ridx_sel_hi[5] == 2'd2 ? base[0][63:48] : 16'd0,
-		ridx_sel_lo[5] == 2'd0 ? dext_val[15:0]  : ridx_sel_lo[5] == 2'd1 ? base[0][15:0]  : ridx_sel_lo[5] == 2'd2 ? base[0][47:32] : 16'd0
-	};
-
-	wire [31:0] ring_half_0, ring_half_1;
-	genvar g_rh;
-	generate
-		for (g_rh = 0; g_rh < 32; g_rh = g_rh + 1) begin : gen_ring_rdata_mux
-			(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'hFFFFF888F888F888)) u_rh0 (
-				.I0(rgrp0[g_rh]), .I1(g_rh < 16 ? rgrp_en_lo[0] : rgrp_en_hi[0]),
-				.I2(rgrp2[g_rh]), .I3(g_rh < 16 ? rgrp_en_lo[2] : rgrp_en_hi[2]),
-				.I4(rgrp5[g_rh]), .I5(g_rh < 16 ? rgrp_en_lo[5] : rgrp_en_hi[5]),
-				.O(ring_half_0[g_rh])
-			);
-			(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'hFFFFF888F888F888)) u_rh1 (
-				.I0(rgrp1[g_rh]), .I1(g_rh < 16 ? rgrp_en_lo[1] : rgrp_en_hi[1]),
-				.I2(rgrp3[g_rh]), .I3(g_rh < 16 ? rgrp_en_lo[3] : rgrp_en_hi[3]),
-				.I4(rgrp4[g_rh]), .I5(g_rh < 16 ? rgrp_en_lo[4] : rgrp_en_hi[4]),
-				.O(ring_half_1[g_rh])
-			);
-			(* DONT_TOUCH = "TRUE" *) MUXF7 u_rmf7 (
-				.I0(ring_half_0[g_rh]),
-				.I1(ring_half_1[g_rh]),
-				.S(g_rh < 16 ? ridx_b3_lo : ridx_b3_hi),
-				.O(hcr_rdata[g_rh])
-			);
-		end
-	endgenerate
-`else
 	assign hcr_rdata =
 		(hcr_ridx == I_BASE0_LO || hcr_ridx == I_BASE0) ? base[0][31:0] :
 		(hcr_ridx == I_BASE0_HI) ? base[0][63:32] :
@@ -2076,7 +1987,6 @@ module atg_cp_ring #(
 		(hcr_ridx == I_PREEMPT_STATUS) ? {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid} :
 		(hcr_ridx == I_CTX_BASE) ? ctx_base :
 		(hcr_ridx == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
-`endif
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag[7:2], h_end[18], avail_bo, h_end_co, p_end_co, pa_4_co,
 		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci_n_bo,

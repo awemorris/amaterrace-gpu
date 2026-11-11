@@ -224,6 +224,64 @@ module ghci_probe #(
 		host_read(GHCI_REG_CP_HEAP_BASE, val);
 		check32("CP_HEAP_BASE unchanged by 0x060 write", val, 32'h80010000);
 
+		/* C1: Ring registers write / read */
+		host_write(GHCI_REG_RING_BASE_LO, 32'h12345000);
+		host_read(GHCI_REG_RING_BASE_LO, val);
+		check32("RING_BASE_LO write/read", val, 32'h12345000);
+
+		host_write(GHCI_REG_RING_BASE_HI, 32'h00000001);
+		host_read(GHCI_REG_RING_BASE_HI, val);
+		check32("RING_BASE_HI write/read", val, 32'h00000001);
+
+		host_write(GHCI_REG_RING_SIZE, 32'd16);
+		host_read(GHCI_REG_RING_SIZE, val);
+		check32("RING_SIZE write/read", val, 32'd16);
+
+		host_write(GHCI_REG_RING_WPTR, 32'd4);
+		host_read(GHCI_REG_RING_WPTR, val);
+		check32("RING_WPTR write/read", val, 32'd4);
+
+		/* C1: Writing CTRL does NOT corrupt RING_WPTR */
+		host_write(GHCI_REG_CTRL, 32'd0);
+		host_read(GHCI_REG_RING_WPTR, val);
+		check32("RING_WPTR preserved after CTRL write", val, 32'd4);
+
+		/* C1: Writing CP_HEAP_BASE does NOT corrupt RING_BASE_LO */
+		host_read(GHCI_REG_RING_BASE_LO, val);
+		check32("RING_BASE_LO preserved after HEAP write", val, 32'h12345000);
+
+		/* C2: NATIVE_ISA_ID (0x068) */
+		host_read(17'h00068, val);
+		check32("NATIVE_ISA_ID (0x068)", val, 32'h47534931);
+
+		/* C2: Unmapped registers in §3.1 return 0 */
+		host_read(17'h0006C, val);
+		check32("Unmapped 0x06C reads 0", val, 32'd0);
+		host_read(17'h00070, val);
+		check32("Unmapped 0x070 reads 0", val, 32'd0);
+		host_read(17'h0007C, val);
+		check32("Unmapped 0x07C reads 0", val, 32'd0);
+		host_read(17'h00088, val);
+		check32("Unmapped 0x088 reads 0", val, 32'd0);
+		host_read(17'h00090, val);
+		check32("Unmapped 0x090 reads 0", val, 32'd0);
+		host_read(17'h000A0, val);
+		check32("Unmapped 0x0A0 reads 0", val, 32'd0);
+		host_read(17'h000B0, val);
+		check32("Unmapped 0x0B0 reads 0", val, 32'd0);
+		host_read(17'h000C0, val);
+		check32("Unmapped 0x0C0 reads 0", val, 32'd0);
+		host_read(17'h000F0, val);
+		check32("Unmapped 0x0F0 reads 0", val, 32'd0);
+
+		/* C2: Verify no OR-mixing on distinct patterns */
+		host_read(GHCI_REG_SCRATCH, val);
+		check32("SCRATCH distinct", val, 32'hDEADBEEF);
+		host_read(GHCI_REG_CP_HEAP_BASE, val);
+		check32("CP_HEAP_BASE distinct", val, 32'h80010000);
+		host_read(GHCI_REG_CP_HEAP_LIMIT, val);
+		check32("CP_HEAP_LIMIT distinct", val, 32'h90010000);
+
 		/* 5. W6: GCLK_HZ */
 		host_read(GHCI_REG_GCLK_HZ, val);
 		check32("GCLK_HZ (0x064)", val, EXP_GCLK);

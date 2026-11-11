@@ -114,18 +114,14 @@ module atg_cp_ctl #(
 	localparam [2:0] S_RS_PULSE = 3'd6;
 	localparam [2:0] S_RS_REPLAY = 3'd7;
 
-	localparam [9:0] I_CTRL = GHCI_CTRL[11:2];
-	localparam [9:0] I_STATUS = GHCI_STATUS[11:2];
-	localparam [9:0] I_WDT = GHCI_WDT_CYCLES[11:2];
-	localparam [9:0] I_RING_BASE = GHCI_RING_BASE[11:2];
-	localparam [9:0] I_RING_SIZE = GHCI_RING_SIZE[11:2];
-	localparam [9:0] I_AP_BASE = GHCI_APERTURE_BASE[11:2];
-	localparam [9:0] I_AP_LIMIT = GHCI_APERTURE_LIMIT[11:2];
-	localparam [9:0] I_FAULT_ADDR = GHCI_FAULT_ADDR[11:2];
-	localparam [9:0] I_FAULT_INFO = GHCI_FAULT_INFO[11:2];
-	localparam [9:0] I_HEAP_BASE = 10'h014;	/* CP_HEAP_BASE 0x050 */
-	localparam [9:0] I_HEAP_LIMIT = 10'h015;	/* CP_HEAP_LIMIT 0x054 */
-	localparam [9:0] I_KICK = GHCI_KICK[11:2];
+	localparam [9:0] I_STATUS       = HCR_IDX_STATUS;
+	localparam [9:0] I_CTRL         = HCR_IDX_CTRL;
+	localparam [9:0] I_FAULT_INFO   = HCR_IDX_FAULT_INFO;
+	localparam [9:0] I_FAULT_ADDR   = HCR_IDX_FAULT_ADDR_LO;
+	localparam [9:0] I_FAULT_ADDR_HI= HCR_IDX_FAULT_ADDR_HI;
+	localparam [9:0] I_WDT          = HCR_IDX_WDT_CYCLES;
+	localparam [9:0] I_HEAP_BASE    = HCR_IDX_CP_HEAP_BASE;
+	localparam [9:0] I_HEAP_LIMIT   = HCR_IDX_CP_HEAP_LIMIT;
 	localparam [31:0] AP_MASK = ~((32'd1 << LINE_SHIFT) - 32'd1);
 
 	(* max_fanout = 16 *) reg [2:0] st;
@@ -194,27 +190,19 @@ module atg_cp_ctl #(
 
 	/* Host writes. */
 	wire w0 = hcr_we && hcr_wmask[0];
-`ifdef SYNTH_KINTEX7
-	wire wr_ctrl = w0 && (hcr_widx[5:0] == I_CTRL[5:0]);
-`else
-	wire wr_ctrl = w0 && hcr_widx == I_CTRL;
-`endif
+	wire wr_ctrl = w0 && (hcr_widx == I_CTRL);
 	wire wr_reset = wr_ctrl && hcr_wdata[GHCI_CTRL_RESET];
 	assign step = wr_ctrl && hcr_wdata[GHCI_CTRL_STEP] && st == S_HALTED;
 
-	wire wr_kick = w0 && hcr_widx == I_KICK;
-	wire [2:0] kick_bits = wr_kick ? {hcr_wdata[GHCI_KICK_DISPATCH], hcr_wdata[GHCI_KICK_DRAW],
-		hcr_wdata[GHCI_KICK_BLIT]} : 3'd0;
+	wire [2:0] kick_bits = 3'd0;
 	wire [2:0] kick_present = {UNITS[6], UNITS[2], UNITS[1]};
 	wire [2:0] kick_busy = {busy_in[6], busy_in[2], busy_in[1]};
-	wire [2:0] kick_ok = kick_bits & kick_present & ~kick_busy & {3{open && kick_prot_ok}};
-	assign host_kick = kick_ok;
-	wire kick_absent = |(kick_bits & ~kick_present);
-	wire kick_bad = |(kick_bits & kick_present & ~kick_ok);
+	wire [2:0] kick_ok = 3'd0;
+	assign host_kick = 3'd0;
+	wire kick_absent = 1'b0;
+	wire kick_bad = 1'b0;
 
-	wire wr_locked = hcr_we && (hcr_widx == I_RING_BASE || hcr_widx == I_RING_SIZE ||
-		hcr_widx == I_AP_BASE || hcr_widx == I_AP_LIMIT || hcr_widx == I_HEAP_BASE ||
-		hcr_widx == I_HEAP_LIMIT);
+	wire wr_locked = hcr_we && (hcr_widx == I_HEAP_BASE || hcr_widx == I_HEAP_LIMIT);
 	wire locked_bad = wr_locked && !open;
 
 `ifdef SYNTH_KINTEX7
@@ -771,81 +759,23 @@ module atg_cp_ctl #(
 	wire [31:0] status = {12'd0, cp_state, 1'b0, halt_int, axi_stuck, mem_ready, ring_empty,
 		st == S_HALTED, faulted, mc_idle, busy_in[7:1], busy_in[0] || resetting};
 
-`ifdef SYNTH_KINTEX7
-	wire [1:0] ctl_en0_b, ctl_en1_b;
-	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000000023000)) u_ce0_0 (
-		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
-		.O(ctl_en0_b[0])
-	);
-	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000000023000)) u_ce0_1 (
-		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
-		.O(ctl_en0_b[1])
-	);
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0040)) u_ce1_0 (
-		.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]),
-		.O(ctl_en1_b[0])
-	);
-	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h0040)) u_ce1_1 (
-		.I0(hcr_ridx[2]), .I1(hcr_ridx[3]), .I2(hcr_ridx[4]), .I3(hcr_ridx[5]),
-		.O(ctl_en1_b[1])
-	);
-
-	wire [1:0] ctl_en2_b;
-	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000400)) u_ce2_0 (
-		.I0(hcr_ridx[1]), .I1(hcr_ridx[2]), .I2(hcr_ridx[3]), .I3(hcr_ridx[4]), .I4(hcr_ridx[5]),
-		.O(ctl_en2_b[0])
-	);
-	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000400)) u_ce2_1 (
-		.I0(hcr_ridx[1]), .I1(hcr_ridx[2]), .I2(hcr_ridx[3]), .I3(hcr_ridx[4]), .I4(hcr_ridx[5]),
-		.O(ctl_en2_b[1])
-	);
-
-	wire [3:0] cridx0_b, cridx1_b;
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr0_0 (.I0(hcr_ridx[0]), .O(cridx0_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr0_1 (.I0(hcr_ridx[0]), .O(cridx0_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr0_2 (.I0(hcr_ridx[0]), .O(cridx0_b[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr0_3 (.I0(hcr_ridx[0]), .O(cridx0_b[3]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr1_0 (.I0(hcr_ridx[2]), .O(cridx1_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr1_1 (.I0(hcr_ridx[2]), .O(cridx1_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr1_2 (.I0(hcr_ridx[1]), .O(cridx1_b[2]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cr1_3 (.I0(hcr_ridx[1]), .O(cridx1_b[3]));
-
-	wire [15:0] ctrl_word_lo = {9'd0, 1'b0, ctrl_wdt_en, 1'b0, 1'b0, ctrl_halt, ctrl_run, resetting};
-	(* keep = "true" *) wire [15:0] ctl_grp0_lo =
-		cridx1_b[0] ? (cridx0_b[0] ? status[15:0] : ctrl_word_lo) : wdt_cycles[15:0];
-	(* keep = "true" *) wire [15:0] ctl_grp0_hi =
-		cridx1_b[1] ? (cridx0_b[1] ? status[31:16] : 16'd0) : wdt_cycles[31:16];
-
-	(* keep = "true" *) wire [15:0] ctl_grp1_lo =
-		cridx0_b[2] ? fault_info[15:0]  : fault_addr[15:0];
-	(* keep = "true" *) wire [15:0] ctl_grp1_hi =
-		cridx0_b[3] ? fault_info[31:16] : fault_addr[31:16];
-
-	(* keep = "true" *) wire [15:0] ctl_grp2_lo = cridx0_b[2] ? heap_limit[15:0] : heap_base[15:0];
-	(* keep = "true" *) wire [15:0] ctl_grp2_hi = cridx0_b[3] ? heap_limit[31:16] : heap_base[31:16];
-
-	wire [15:0] rd_lo = (ctl_en0_b[0] ? ctl_grp0_lo : 16'd0) | (ctl_en1_b[0] ? ctl_grp1_lo : 16'd0) | (ctl_en2_b[0] ? ctl_grp2_lo : 16'd0);
-	wire [15:0] rd_hi = (ctl_en0_b[1] ? ctl_grp0_hi : 16'd0) | (ctl_en1_b[1] ? ctl_grp1_hi : 16'd0) | (ctl_en2_b[1] ? ctl_grp2_hi : 16'd0);
-
-	assign hcr_rdata = {rd_hi, rd_lo};
-`else
 	reg [31:0] rd;
 
 	always @(*) begin
 		case (hcr_ridx)
-		I_CTRL: rd = {25'd0, 1'b0, ctrl_wdt_en, 1'b0, 1'b0, ctrl_halt, ctrl_run, resetting};
-		I_STATUS: rd = status;
-		I_WDT: rd = wdt_cycles;
-		I_FAULT_ADDR: rd = fault_addr;
-		I_FAULT_INFO: rd = fault_info;
-		I_HEAP_BASE: rd = heap_base;
-		I_HEAP_LIMIT: rd = heap_limit;
-		default: rd = 32'd0;
+		I_STATUS:        rd = status;
+		I_CTRL:          rd = {25'd0, 1'b0, ctrl_wdt_en, 1'b0, 1'b0, ctrl_halt, ctrl_run, resetting};
+		I_FAULT_INFO:    rd = fault_info;
+		I_FAULT_ADDR:    rd = fault_addr;
+		I_FAULT_ADDR_HI: rd = 32'd0;
+		I_WDT:           rd = wdt_cycles;
+		I_HEAP_BASE:     rd = heap_base;
+		I_HEAP_LIMIT:    rd = heap_limit;
+		default:         rd = 32'd0;
 		endcase
 	end
 
 	assign hcr_rdata = rd;
-`endif
 	wire unused_co = &{1'b0, wdt_co, stuck_co, hcr_ridx[9:6]};
 endmodule
 

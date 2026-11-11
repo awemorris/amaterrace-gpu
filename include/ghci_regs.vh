@@ -51,10 +51,49 @@ localparam [16:0] GHCI_REG_SESSION_ACTIVE = 17'h00058;
 localparam [16:0] GHCI_REG_TIMESTAMP_LO   = 17'h0005C;
 localparam [16:0] GHCI_REG_TIMESTAMP_HI   = 17'h00060;
 localparam [16:0] GHCI_REG_GCLK_HZ         = 17'h00064;
+localparam [16:0] GHCI_REG_NATIVE_ISA_ID  = 17'h00068;
 localparam [16:0] GHCI_REG_DIAG_CP_PC     = 17'h00074;
 localparam [16:0] GHCI_REG_DIAG_CP_STATUS = 17'h00078;
 localparam [16:0] GHCI_REG_EXT_CAP_FMT0   = 17'h00080;
 localparam [16:0] GHCI_REG_EXT_CAP_FEATURE= 17'h00084;
+
+/*
+ * ============================================================================
+ * Canonical HCR Register Indices (Page 0 Slim MMIO, 10-bit word offset)
+ * ============================================================================
+ */
+localparam [9:0] HCR_IDX_MAGIC          = GHCI_REG_MAGIC[11:2];          /* 0  (0x000) */
+localparam [9:0] HCR_IDX_VERSION        = GHCI_REG_VERSION[11:2];        /* 1  (0x004) */
+localparam [9:0] HCR_IDX_DEVICE_CAPS    = GHCI_REG_DEVICE_CAPS[11:2];    /* 2  (0x008) */
+localparam [9:0] HCR_IDX_EXTCAP_PTR     = GHCI_REG_EXTCAP_PTR[11:2];     /* 3  (0x00C) */
+localparam [9:0] HCR_IDX_STATUS         = GHCI_REG_STATUS[11:2];         /* 4  (0x010) */
+localparam [9:0] HCR_IDX_CTRL           = GHCI_REG_CTRL[11:2];           /* 5  (0x014) */
+localparam [9:0] HCR_IDX_FAULT_INFO     = GHCI_REG_FAULT_INFO[11:2];     /* 6  (0x018) */
+localparam [9:0] HCR_IDX_FAULT_ADDR_LO  = GHCI_REG_FAULT_ADDR_LO[11:2];  /* 7  (0x01C) */
+localparam [9:0] HCR_IDX_FAULT_ADDR_HI  = GHCI_REG_FAULT_ADDR_HI[11:2];  /* 8  (0x020) */
+localparam [9:0] HCR_IDX_RING_BASE_LO   = GHCI_REG_RING_BASE_LO[11:2];   /* 9  (0x024) */
+localparam [9:0] HCR_IDX_RING_BASE_HI   = GHCI_REG_RING_BASE_HI[11:2];   /* 10 (0x028) */
+localparam [9:0] HCR_IDX_RING_SIZE      = GHCI_REG_RING_SIZE[11:2];      /* 11 (0x02C) */
+localparam [9:0] HCR_IDX_RING_WPTR      = GHCI_REG_RING_WPTR[11:2];      /* 12 (0x030) */
+localparam [9:0] HCR_IDX_RING_RPTR      = GHCI_REG_RING_RPTR[11:2];      /* 13 (0x034) */
+localparam [9:0] HCR_IDX_IRQ_STATUS     = GHCI_REG_IRQ_STATUS[11:2];     /* 14 (0x038) */
+localparam [9:0] HCR_IDX_IRQ_ENABLE     = GHCI_REG_IRQ_ENABLE[11:2];     /* 15 (0x03C) */
+localparam [9:0] HCR_IDX_IRQ_SET        = GHCI_REG_IRQ_SET[11:2];        /* 16 (0x040) */
+localparam [9:0] HCR_IDX_SCRATCH        = GHCI_REG_SCRATCH[11:2];        /* 17 (0x044) */
+localparam [9:0] HCR_IDX_WDT_CYCLES     = GHCI_REG_WDT_CYCLES[11:2];     /* 18 (0x048) */
+localparam [9:0] HCR_IDX_RESIDENT_WARPS = GHCI_REG_RESIDENT_WARPS[11:2]; /* 19 (0x04C) */
+localparam [9:0] HCR_IDX_CP_HEAP_BASE   = GHCI_REG_CP_HEAP_BASE[11:2];   /* 20 (0x050) */
+localparam [9:0] HCR_IDX_CP_HEAP_LIMIT  = GHCI_REG_CP_HEAP_LIMIT[11:2];  /* 21 (0x054) */
+localparam [9:0] HCR_IDX_SESSION_ACTIVE = GHCI_REG_SESSION_ACTIVE[11:2]; /* 22 (0x058) */
+localparam [9:0] HCR_IDX_TIMESTAMP_LO   = GHCI_REG_TIMESTAMP_LO[11:2];   /* 23 (0x05C) */
+localparam [9:0] HCR_IDX_TIMESTAMP_HI   = GHCI_REG_TIMESTAMP_HI[11:2];   /* 24 (0x060) */
+localparam [9:0] HCR_IDX_GCLK_HZ         = GHCI_REG_GCLK_HZ[11:2];         /* 25 (0x064) */
+localparam [9:0] HCR_IDX_NATIVE_ISA_ID  = GHCI_REG_NATIVE_ISA_ID[11:2];  /* 26 (0x068) */
+localparam [9:0] HCR_IDX_DIAG_CP_PC     = GHCI_REG_DIAG_CP_PC[11:2];     /* 29 (0x074) */
+localparam [9:0] HCR_IDX_DIAG_CP_STATUS = GHCI_REG_DIAG_CP_STATUS[11:2]; /* 30 (0x078) */
+localparam [9:0] HCR_IDX_EXT_CAP_FMT0   = GHCI_REG_EXT_CAP_FMT0[11:2];   /* 32 (0x080) */
+localparam [9:0] HCR_IDX_EXT_CAP_FEATURE= GHCI_REG_EXT_CAP_FEATURE[11:2];/* 33 (0x084) */
+localparam [9:0] HCR_IDX_INVALID        = 10'h3FF;
 
 /* Backward compatibility aliases */
 localparam [16:0] GHCI_2_REG_MAGIC          = GHCI_REG_MAGIC;

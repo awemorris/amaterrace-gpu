@@ -37,9 +37,9 @@ module atg_cp_irq (
 );
 	`include "ghci_regs.vh"
 
-	localparam [9:0] I_STATUS = GHCI_IRQ_STATUS[11:2];
-	localparam [9:0] I_ENABLE = GHCI_IRQ_ENABLE[11:2];
-	localparam [9:0] I_SET = GHCI_IRQ_SET[11:2];
+	localparam [9:0] I_STATUS = HCR_IDX_IRQ_STATUS;
+	localparam [9:0] I_ENABLE = HCR_IDX_IRQ_ENABLE;
+	localparam [9:0] I_SET = HCR_IDX_IRQ_SET;
 
 	reg [12:0] status;
 	reg [12:0] enable;
@@ -85,17 +85,8 @@ module atg_cp_irq (
 	end
 
 	assign irq = irq_q;
-`ifdef SYNTH_KINTEX7
-	wire irq_rd_en_b;
-	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000080)) u_ird (
-		.I0(hcr_ridx[1]), .I1(hcr_ridx[2]), .I2(hcr_ridx[3]), .I3(hcr_ridx[4]), .I4(hcr_ridx[5]),
-		.O(irq_rd_en_b)
-	);
-	assign hcr_rdata = {19'd0, irq_rd_en_b ? (hcr_ridx[0] ? enable : status) : 13'd0};
-`else
 	assign hcr_rdata = hcr_ridx == I_STATUS ? {19'd0, status} :
 		hcr_ridx == I_ENABLE ? {19'd0, enable} : 32'd0;
-`endif
 
 	wire unused_ok = &{1'b0, hcr_wdata[31:13], hcr_wmask[31:13], hcr_ridx[9:6]};
 endmodule

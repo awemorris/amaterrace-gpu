@@ -336,22 +336,25 @@ module atg_cp_regs #(
 	function [9:0] hcr_reg_widx;
 		input [16:0] addr;
 		case (addr)
-		GHCI_REG_CTRL: hcr_reg_widx = GHCI_CTRL[11:2];
-		GHCI_REG_IRQ_STATUS: hcr_reg_widx = GHCI_IRQ_STATUS[11:2];
-		GHCI_REG_IRQ_ENABLE: hcr_reg_widx = GHCI_IRQ_ENABLE[11:2];
-		GHCI_REG_IRQ_SET: hcr_reg_widx = GHCI_IRQ_SET[11:2];
-		GHCI_REG_RING_BASE_LO: hcr_reg_widx = GHCI_RING_BASE[11:2];
-		GHCI_REG_RING_BASE_HI: hcr_reg_widx = GHCI_REG_RING_BASE_HI[11:2];
-		GHCI_REG_RING_SIZE: hcr_reg_widx = GHCI_RING_SIZE[11:2];
-		GHCI_REG_RING_WPTR: hcr_reg_widx = GHCI_RING_WPTR[11:2];
-		GHCI_REG_WDT_CYCLES: hcr_reg_widx = GHCI_WDT_CYCLES[11:2];
-		GHCI_REG_CP_HEAP_BASE: hcr_reg_widx = 10'h014;
-		GHCI_REG_CP_HEAP_LIMIT: hcr_reg_widx = 10'h015;
-		default: hcr_reg_widx = addr[11:2];
+		GHCI_REG_CTRL:          hcr_reg_widx = HCR_IDX_CTRL;
+		GHCI_REG_FAULT_INFO:    hcr_reg_widx = HCR_IDX_FAULT_INFO;
+		GHCI_REG_RING_BASE_LO:  hcr_reg_widx = HCR_IDX_RING_BASE_LO;
+		GHCI_REG_RING_BASE_HI:  hcr_reg_widx = HCR_IDX_RING_BASE_HI;
+		GHCI_REG_RING_SIZE:     hcr_reg_widx = HCR_IDX_RING_SIZE;
+		GHCI_REG_RING_WPTR:     hcr_reg_widx = HCR_IDX_RING_WPTR;
+		GHCI_REG_IRQ_STATUS:    hcr_reg_widx = HCR_IDX_IRQ_STATUS;
+		GHCI_REG_IRQ_ENABLE:    hcr_reg_widx = HCR_IDX_IRQ_ENABLE;
+		GHCI_REG_IRQ_SET:       hcr_reg_widx = HCR_IDX_IRQ_SET;
+		GHCI_REG_SCRATCH:       hcr_reg_widx = HCR_IDX_SCRATCH;
+		GHCI_REG_WDT_CYCLES:    hcr_reg_widx = HCR_IDX_WDT_CYCLES;
+		GHCI_REG_CP_HEAP_BASE:  hcr_reg_widx = HCR_IDX_CP_HEAP_BASE;
+		GHCI_REG_CP_HEAP_LIMIT: hcr_reg_widx = HCR_IDX_CP_HEAP_LIMIT;
+		default:                hcr_reg_widx = (addr >= 17'h00100 && addr <= 17'h003FF) ? addr[11:2] : HCR_IDX_INVALID;
 		endcase
 	endfunction
 
 	wire hcr_we_ok = (reg_waddr == GHCI_REG_CTRL) ||
+	                  (reg_waddr == GHCI_REG_FAULT_INFO) ||
 	                  (reg_waddr == GHCI_REG_IRQ_STATUS) ||
 	                  (reg_waddr == GHCI_REG_IRQ_ENABLE) ||
 	                  (reg_waddr == GHCI_REG_IRQ_SET) ||
@@ -480,22 +483,38 @@ module atg_cp_regs #(
 	function [9:0] hcr_reg_ridx;
 		input [16:0] addr;
 		case (addr)
-		GHCI_REG_STATUS: hcr_reg_ridx = GHCI_STATUS[11:2];
-		GHCI_REG_CTRL: hcr_reg_ridx = GHCI_CTRL[11:2];
-		GHCI_REG_FAULT_INFO: hcr_reg_ridx = GHCI_FAULT_INFO[11:2];
-		GHCI_REG_FAULT_ADDR_LO: hcr_reg_ridx = GHCI_FAULT_ADDR[11:2];
-		GHCI_REG_RING_BASE_LO: hcr_reg_ridx = GHCI_RING_BASE[11:2];
-		GHCI_REG_RING_BASE_HI: hcr_reg_ridx = GHCI_REG_RING_BASE_HI[11:2];
-		GHCI_REG_RING_SIZE: hcr_reg_ridx = GHCI_RING_SIZE[11:2];
-		GHCI_REG_RING_RPTR: hcr_reg_ridx = GHCI_RING_RPTR[11:2];
-		GHCI_REG_RING_WPTR: hcr_reg_ridx = GHCI_RING_WPTR[11:2];
-		GHCI_REG_IRQ_STATUS: hcr_reg_ridx = GHCI_IRQ_STATUS[11:2];
-		GHCI_REG_IRQ_ENABLE: hcr_reg_ridx = GHCI_IRQ_ENABLE[11:2];
-		GHCI_REG_WDT_CYCLES: hcr_reg_ridx = GHCI_WDT_CYCLES[11:2];
-		GHCI_REG_RESIDENT_WARPS: hcr_reg_ridx = GHCI_RESIDENT_WARPS[11:2];
-		GHCI_REG_CP_HEAP_BASE: hcr_reg_ridx = 10'h014;
-		GHCI_REG_CP_HEAP_LIMIT: hcr_reg_ridx = 10'h015;
-		default: hcr_reg_ridx = addr[11:2];
+		GHCI_REG_MAGIC:          hcr_reg_ridx = HCR_IDX_MAGIC;
+		GHCI_REG_VERSION:        hcr_reg_ridx = HCR_IDX_VERSION;
+		GHCI_REG_DEVICE_CAPS:    hcr_reg_ridx = HCR_IDX_DEVICE_CAPS;
+		GHCI_REG_EXTCAP_PTR:     hcr_reg_ridx = HCR_IDX_EXTCAP_PTR;
+		GHCI_REG_STATUS:         hcr_reg_ridx = HCR_IDX_STATUS;
+		GHCI_REG_CTRL:           hcr_reg_ridx = HCR_IDX_CTRL;
+		GHCI_REG_FAULT_INFO:     hcr_reg_ridx = HCR_IDX_FAULT_INFO;
+		GHCI_REG_FAULT_ADDR_LO:  hcr_reg_ridx = HCR_IDX_FAULT_ADDR_LO;
+		GHCI_REG_FAULT_ADDR_HI:  hcr_reg_ridx = HCR_IDX_FAULT_ADDR_HI;
+		GHCI_REG_RING_BASE_LO:   hcr_reg_ridx = HCR_IDX_RING_BASE_LO;
+		GHCI_REG_RING_BASE_HI:   hcr_reg_ridx = HCR_IDX_RING_BASE_HI;
+		GHCI_REG_RING_SIZE:      hcr_reg_ridx = HCR_IDX_RING_SIZE;
+		GHCI_REG_RING_WPTR:      hcr_reg_ridx = HCR_IDX_RING_WPTR;
+		GHCI_REG_RING_RPTR:      hcr_reg_ridx = HCR_IDX_RING_RPTR;
+		GHCI_REG_IRQ_STATUS:     hcr_reg_ridx = HCR_IDX_IRQ_STATUS;
+		GHCI_REG_IRQ_ENABLE:     hcr_reg_ridx = HCR_IDX_IRQ_ENABLE;
+		GHCI_REG_IRQ_SET:        hcr_reg_ridx = HCR_IDX_IRQ_SET;
+		GHCI_REG_SCRATCH:        hcr_reg_ridx = HCR_IDX_SCRATCH;
+		GHCI_REG_WDT_CYCLES:     hcr_reg_ridx = HCR_IDX_WDT_CYCLES;
+		GHCI_REG_RESIDENT_WARPS: hcr_reg_ridx = HCR_IDX_RESIDENT_WARPS;
+		GHCI_REG_CP_HEAP_BASE:   hcr_reg_ridx = HCR_IDX_CP_HEAP_BASE;
+		GHCI_REG_CP_HEAP_LIMIT:  hcr_reg_ridx = HCR_IDX_CP_HEAP_LIMIT;
+		GHCI_REG_SESSION_ACTIVE: hcr_reg_ridx = HCR_IDX_SESSION_ACTIVE;
+		GHCI_REG_TIMESTAMP_LO:   hcr_reg_ridx = HCR_IDX_TIMESTAMP_LO;
+		GHCI_REG_TIMESTAMP_HI:   hcr_reg_ridx = HCR_IDX_TIMESTAMP_HI;
+		GHCI_REG_GCLK_HZ:        hcr_reg_ridx = HCR_IDX_GCLK_HZ;
+		GHCI_REG_NATIVE_ISA_ID:  hcr_reg_ridx = HCR_IDX_NATIVE_ISA_ID;
+		GHCI_REG_DIAG_CP_PC:     hcr_reg_ridx = HCR_IDX_DIAG_CP_PC;
+		GHCI_REG_DIAG_CP_STATUS: hcr_reg_ridx = HCR_IDX_DIAG_CP_STATUS;
+		GHCI_REG_EXT_CAP_FMT0:   hcr_reg_ridx = HCR_IDX_EXT_CAP_FMT0;
+		GHCI_REG_EXT_CAP_FEATURE:hcr_reg_ridx = HCR_IDX_EXT_CAP_FEATURE;
+		default:                 hcr_reg_ridx = (addr >= 17'h00100 && addr <= 17'h003FF) ? addr[11:2] : HCR_IDX_INVALID;
 		endcase
 	endfunction
 
@@ -526,8 +545,7 @@ module atg_cp_regs #(
 	endgenerate
 
 	wire [9:0] ridx_next = hcr_reg_ridx(raddr_b0);
-	wire rd_hcr_next = (raddr_b0 <= 17'h00084 ||
-		(raddr_b0 >= 17'h00100 && raddr_b0 <= 17'h003FF));
+	wire rd_hcr_next = (ridx_next != HCR_IDX_INVALID);
 	reg rd_hcr_lo_q, rd_hcr_hi_q;
 
 	always @(posedge clk) begin
@@ -559,8 +577,7 @@ module atg_cp_regs #(
 		end else if (reg_rd) begin
 			raddr_q <= reg_raddr;
 			ridx_q <= hcr_reg_ridx(reg_raddr);
-			rd_hcr_q <= (reg_raddr <= 17'h00084 ||
-			             (reg_raddr >= 17'h00100 && reg_raddr <= 17'h003FF));
+			rd_hcr_q <= (hcr_reg_ridx(reg_raddr) != HCR_IDX_INVALID);
 			rd_state_q <= 1'b0;
 		end
 	end
@@ -645,6 +662,7 @@ module atg_cp_regs #(
 		GHCI_REG_TIMESTAMP_LO: own = counter;
 		GHCI_REG_TIMESTAMP_HI: own = 32'd0;
 		GHCI_REG_GCLK_HZ: own = GCLK_HZ;
+		GHCI_REG_NATIVE_ISA_ID: own = 32'h47534931;
 		GHCI_REG_DIAG_CP_PC: own = diag_cp_pc;
 		GHCI_REG_DIAG_CP_STATUS: own = diag_cp_status;
 		GHCI_REG_EXT_CAP_FMT0: own = eff_fmt0;
@@ -697,6 +715,7 @@ module atg_cp_regs #(
 			GHCI_REG_DEVICE_CAPS: v = eff_dev_caps;
 			GHCI_REG_EXTCAP_PTR: v = (XCAP_MASK != 11'd0) ? 32'h00000100 : 32'd0;
 			GHCI_REG_GCLK_HZ: v = GCLK_HZ;
+			GHCI_REG_NATIVE_ISA_ID: v = 32'h47534931;
 			GHCI_REG_EXT_CAP_FMT0: v = eff_fmt0;
 			GHCI_REG_EXT_CAP_FEATURE: v = eff_feat;
 			17'h00180: v = VENDOR_ID;

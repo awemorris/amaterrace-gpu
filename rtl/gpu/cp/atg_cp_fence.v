@@ -119,16 +119,6 @@ module atg_cp_fence #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fop0 (.I0(f_op == 2'd1), .O(f_op1_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fop1 (.I0(f_op == 2'd1), .O(f_op1_b[1]));
 
-	wire [1:0] rd_last_b;
-	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000010000000)) u_rdl0 (
-		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
-		.O(rd_last_b[0])
-	);
-	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000010000000)) u_rdl1 (
-		.I0(hcr_ridx[0]), .I1(hcr_ridx[1]), .I2(hcr_ridx[2]), .I3(hcr_ridx[3]), .I4(hcr_ridx[4]), .I5(hcr_ridx[5]),
-		.O(rd_last_b[1])
-	);
-
 	wire mem_word_we = (st == F_RSP) && rsp_valid && !rsp_error && (op == 2'd2);
 	wire [1:0] mem_word_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_mw0 (.I0(mem_word_we), .O(mem_word_we_b[0]));
@@ -333,14 +323,7 @@ module atg_cp_fence #(
 		end
 	end
 
-`ifdef SYNTH_KINTEX7
-	assign hcr_rdata = {
-		rd_last_b[1] ? last[31:16] : 16'd0,
-		rd_last_b[0] ? last[15:0]  : 16'd0
-	};
-`else
-	assign hcr_rdata = hcr_ridx == I_LAST ? last : 32'd0;
-`endif
+	assign hcr_rdata = (hcr_ridx == I_LAST) ? last : 32'd0;
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo, f_addr[2:0], hcr_ridx[9:6]};
 endmodule
