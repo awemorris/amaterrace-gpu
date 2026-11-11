@@ -75,9 +75,7 @@ module atg_cp_tb;
 	wire [9:0] alias_idx;
 	wire [9:0] alias_ridx;
 
-	atg_cp_regs #(
-		.SLIM_MMIO(1)
-	) u_cp_regs_default (
+	atg_cp_regs u_cp_regs_default (
 		.clk(clk),
 		.rst_n(rst_n),
 		.reg_wr(reg_wr),
@@ -127,8 +125,7 @@ module atg_cp_tb;
 	atg_cp_regs #(
 		.DEVICE_CAPS(CUSTOM_DEV_CAPS),
 		.EXT_CAP_FMT0(CUSTOM_FMT0),
-		.EXT_CAP_FEATURE(CUSTOM_FEAT),
-		.SLIM_MMIO(1)
+		.EXT_CAP_FEATURE(CUSTOM_FEAT)
 	) u_cp_regs_custom (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -139,33 +136,6 @@ module atg_cp_tb;
 		.reg_rd(c_reg_rd),
 		.reg_raddr(c_reg_raddr),
 		.reg_rdata(c_reg_rdata),
-		.hcr_we(), .hcr_widx(), .hcr_wdata(), .hcr_wmask(), .hcr_ridx(),
-		.alias_we(), .alias_idx(), .alias_ridx(),
-		.ctl_rdata(32'd0), .irq_rdata(32'd0), .ring_rdata(32'd0), .fence_rdata(32'd0),
-		.dbg_rdata(32'd0), .state_rdata(32'd0), .x_rdata(32'd0),
-		.perf_busy(4'd0), .perf_reset(1'b0), .win_en(),
-		.diag_cp_pc(32'd0), .diag_cp_status(32'd0), .diag_pipe_fsm(32'd0)
-	);
-
-	/* -------------------------------------------------------------
-	 * 3. Legacy Full Layout Instance
-	 * ------------------------------------------------------------- */
-	reg leg_reg_rd = 1'b0;
-	reg [16:0] leg_reg_raddr = 17'd0;
-	wire [31:0] leg_reg_rdata;
-
-	atg_cp_regs #(
-		.SLIM_MMIO(0)
-	) u_cp_regs_legacy (
-		.clk(clk),
-		.rst_n(rst_n),
-		.reg_wr(1'b0),
-		.reg_waddr(17'd0),
-		.reg_wdata(32'd0),
-		.reg_wstrb(4'd0),
-		.reg_rd(leg_reg_rd),
-		.reg_raddr(leg_reg_raddr),
-		.reg_rdata(leg_reg_rdata),
 		.hcr_we(), .hcr_widx(), .hcr_wdata(), .hcr_wmask(), .hcr_ridx(),
 		.alias_we(), .alias_idx(), .alias_ridx(),
 		.ctl_rdata(32'd0), .irq_rdata(32'd0), .ring_rdata(32'd0), .fence_rdata(32'd0),
@@ -199,20 +169,6 @@ module atg_cp_tb;
 			c_reg_rd <= 1'b0;
 			#1;
 			data = c_reg_rdata;
-		end
-	endtask
-
-	task legacy_read;
-		input [16:0] addr;
-		output [31:0] data;
-		begin
-			@(posedge clk);
-			leg_reg_rd <= 1'b1;
-			leg_reg_raddr <= addr;
-			@(posedge clk);
-			leg_reg_rd <= 1'b0;
-			#1;
-			data = leg_reg_rdata;
 		end
 	endtask
 
@@ -301,16 +257,6 @@ module atg_cp_tb;
 			errors = errors + 1;
 		end else begin
 			$display("PASS: Custom EXT_CAP_FEATURE verified");
-		end
-
-		/* Test 5: Verify Legacy CAPS (0x020) */
-		legacy_read(GHCI_CAPS, rdata);
-		$display("Legacy CAPS = 0x%08h", rdata);
-		if (rdata[29] !== `EXP_CFG_MSAA || rdata[24] !== `EXP_CFG_SUBGROUP) begin
-			$display("FAIL: Legacy CAPS bits mismatch (MSAA=%b, SUBGROUP=%b)", rdata[29], rdata[24]);
-			errors = errors + 1;
-		end else begin
-			$display("PASS: Legacy CAPS bits (MSAA, SUBGROUP, PACKED, TEX_ADV) verified");
 		end
 
 		if (errors == 0) begin

@@ -7,32 +7,13 @@
 
 /*
  * atg_cp_regs: the GHCI register bus decoder of the CP: identification,
- * CAPS, the extended capability list, VEND, SCRATCH, COUNTER and the PERF
- * registers, plus the HCR snoop bus and the STATE alias that the other CP
- * modules (and atg_cpu) use for their own registers.
+ * DEVICE_CAPS, extended capabilities, SCRATCH, TIMESTAMP and diagnostics,
+ * plus the HCR snoop bus for other CP modules (and atg_cpu).
  *
- * Writes to 0x000-0xFFC go out on hcr_* in the cycle of reg_wr (every
- * module takes the writes of its own word indices); whole-word writes to
- * 0x1000-0x1BFC go out on alias_* (a partial-strobe alias write is
- * dropped here).  Reads: the answer is due the cycle after reg_rd; the
- * index is registered (hcr_ridx) and every module answers its own
- * registers combinationally from it, this module ORs them with its own,
- * or returns the state RAM's word for the alias, or 0 elsewhere
- * (0x1800-0x1FFFF).
- *
- * The extended capability list at 0x100: one two-word entry per set bit
- * of XCAP_MASK in id order; the first two entries at 0x100 and 0x108, the
- * rest from 0x180 (0x110-0x17F hold the PERF, CPFW, SA and FMT registers).
- * The PROT capability's registers (atg_cp_prot's, through x_rdata) are at
- * 0x1D0, after the room of a full list; the MEM capability's five words
- * (LOCAL_BASE, LOCAL_SIZE, WINDOW_SIZE, HOST_LIMIT, WINDOW_CTRL) at 0x1E0.
- * DISP2 points to its window at 0x200 (atg_cp_disp answers it through
- * x_rdata).  At most ten entries fit in the list (0x100-0x10F and
- * 0x180-0x1BF): DISP and DISP2 are not listed together.
- * WINDOW_CTRL.ENABLE (win_en, docs/ghci.md section 11.1) is 1 after rst_n
- * (the board's reset, not CTRL.RESET) and takes host writes only when the
- * GPU has a local window (WINDOW_BYTES != 0); without one it reads 0 and
- * win_en stays 0.
+ * Writes to valid GHCI register addresses go out on hcr_* in the cycle
+ * of reg_wr. Reads: the answer is due the cycle after reg_rd; the address
+ * is registered and decoded combinationally, this module ORs them with its own,
+ * returning 0 elsewhere.
  */
 
 `timescale 1ns / 1ps
@@ -232,8 +213,7 @@ module atg_cp_regs #(
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
 	parameter [10:0] XCAP_MASK = 11'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, PROT 9, FMT 10, DISP2 11) */
 	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
-	parameter PERF_SRC = 32'hFFFFFFFF,	/* PERF_SRC0..3 (byte n = PERF_SRCn) */
-	parameter SLIM_MMIO = 1		/* 1: GHCI 1.0 Slim 19 MMIO registers (0x00..0x48), eliminating STATE from host MMIO */
+	parameter PERF_SRC = 32'hFFFFFFFF	/* PERF_SRC0..3 (byte n = PERF_SRCn) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -286,25 +266,25 @@ module atg_cp_regs #(
 	localparam [9:0] I_WINDOW_CTRL = A_WINDOW_CTRL[11:2];
 	localparam [0:0] HAS_WINDOW = XCAP_MASK[7] && WINDOW_BYTES != 32'd0;
 
-	function [9:0] slim_widx;
+	function [9:0] hcr_reg_widx;
 		input [16:0] addr;
 		case (addr)
-		GHCI_REG_CTRL: slim_widx = GHCI_CTRL[11:2];
-		GHCI_REG_IRQ_STATUS: slim_widx = GHCI_IRQ_STATUS[11:2];
-		GHCI_REG_IRQ_ENABLE: slim_widx = GHCI_IRQ_ENABLE[11:2];
-		GHCI_REG_IRQ_SET: slim_widx = GHCI_IRQ_SET[11:2];
-		GHCI_REG_RING_BASE_LO: slim_widx = GHCI_RING_BASE[11:2];
-		GHCI_REG_RING_BASE_HI: slim_widx = GHCI_REG_RING_BASE_HI[11:2];
-		GHCI_REG_RING_SIZE: slim_widx = GHCI_RING_SIZE[11:2];
-		GHCI_REG_RING_WPTR: slim_widx = GHCI_RING_WPTR[11:2];
-		GHCI_REG_WDT_CYCLES: slim_widx = GHCI_WDT_CYCLES[11:2];
-		GHCI_REG_CP_HEAP_BASE: slim_widx = GHCI_APERTURE_BASE[11:2];
-		GHCI_REG_CP_HEAP_LIMIT: slim_widx = GHCI_APERTURE_LIMIT[11:2];
-		default: slim_widx = addr[11:2];
+		GHCI_REG_CTRL: hcr_reg_widx = GHCI_CTRL[11:2];
+		GHCI_REG_IRQ_STATUS: hcr_reg_widx = GHCI_IRQ_STATUS[11:2];
+		GHCI_REG_IRQ_ENABLE: hcr_reg_widx = GHCI_IRQ_ENABLE[11:2];
+		GHCI_REG_IRQ_SET: hcr_reg_widx = GHCI_IRQ_SET[11:2];
+		GHCI_REG_RING_BASE_LO: hcr_reg_widx = GHCI_RING_BASE[11:2];
+		GHCI_REG_RING_BASE_HI: hcr_reg_widx = GHCI_REG_RING_BASE_HI[11:2];
+		GHCI_REG_RING_SIZE: hcr_reg_widx = GHCI_RING_SIZE[11:2];
+		GHCI_REG_RING_WPTR: hcr_reg_widx = GHCI_RING_WPTR[11:2];
+		GHCI_REG_WDT_CYCLES: hcr_reg_widx = GHCI_WDT_CYCLES[11:2];
+		GHCI_REG_CP_HEAP_BASE: hcr_reg_widx = GHCI_APERTURE_BASE[11:2];
+		GHCI_REG_CP_HEAP_LIMIT: hcr_reg_widx = GHCI_APERTURE_LIMIT[11:2];
+		default: hcr_reg_widx = addr[11:2];
 		endcase
 	endfunction
 
-	wire slim_we_ok = (reg_waddr == GHCI_REG_CTRL) ||
+	wire hcr_we_ok = (reg_waddr == GHCI_REG_CTRL) ||
 	                  (reg_waddr == GHCI_REG_IRQ_STATUS) ||
 	                  (reg_waddr == GHCI_REG_IRQ_ENABLE) ||
 	                  (reg_waddr == GHCI_REG_IRQ_SET) ||
@@ -317,9 +297,8 @@ module atg_cp_regs #(
 	                  (reg_waddr == GHCI_REG_CP_HEAP_LIMIT);
 
 	/* Writes. */
-	assign hcr_we = SLIM_MMIO ? (reg_wr && slim_we_ok) :
-	                            (reg_wr && reg_waddr[16:12] == 5'd0);
-	assign hcr_widx = SLIM_MMIO ? slim_widx(reg_waddr) : reg_waddr[11:2];
+	assign hcr_we = reg_wr && hcr_we_ok;
+	assign hcr_widx = hcr_reg_widx(reg_waddr);
 	assign hcr_wdata = reg_wdata;
 `ifdef SYNTH_KINTEX7
 	(* keep = "true", dont_touch = "true" *) wire regs_rst_high;
@@ -340,15 +319,12 @@ module atg_cp_regs #(
 `else
 	assign hcr_wmask = {{8{reg_wstrb[3]}}, {8{reg_wstrb[2]}}, {8{reg_wstrb[1]}}, {8{reg_wstrb[0]}}};
 `endif
-	/* 0x1000-0x1BFC: STATE[0..0x2FF]. Eliminated in SLIM_MMIO mode. */
-	assign alias_we = !SLIM_MMIO && (reg_wr && reg_waddr[16:12] == 5'b00001 && reg_waddr[11:10] != 2'b11 &&
-		reg_wstrb == 4'hF);
-	assign alias_idx = reg_waddr[11:2];
-	assign alias_ridx = reg_raddr[11:2];
+	/* 0x1000-0x1BFC: STATE[0..0x2FF]. Eliminated in GHCI 1.0. */
+	assign alias_we = 1'b0;
+	assign alias_idx = 10'd0;
+	assign alias_ridx = 10'd0;
 
-	wire is_scratch_wr = SLIM_MMIO ?
-		(reg_wr && reg_waddr == GHCI_REG_SCRATCH) :
-		(hcr_we && hcr_widx == I_SCRATCH);
+	wire is_scratch_wr = (reg_wr && reg_waddr == GHCI_REG_SCRATCH);
 
 	reg [31:0] scratch;
 	reg win_q;
@@ -433,25 +409,25 @@ module atg_cp_regs #(
 `endif
 	end
 
-	function [9:0] slim_ridx;
+	function [9:0] hcr_reg_ridx;
 		input [16:0] addr;
 		case (addr)
-		GHCI_REG_STATUS: slim_ridx = GHCI_STATUS[11:2];
-		GHCI_REG_CTRL: slim_ridx = GHCI_CTRL[11:2];
-		GHCI_REG_FAULT_INFO: slim_ridx = GHCI_FAULT_INFO[11:2];
-		GHCI_REG_FAULT_ADDR_LO: slim_ridx = GHCI_FAULT_ADDR[11:2];
-		GHCI_REG_RING_BASE_LO: slim_ridx = GHCI_RING_BASE[11:2];
-		GHCI_REG_RING_BASE_HI: slim_ridx = GHCI_REG_RING_BASE_HI[11:2];
-		GHCI_REG_RING_SIZE: slim_ridx = GHCI_RING_SIZE[11:2];
-		GHCI_REG_RING_RPTR: slim_ridx = GHCI_RING_RPTR[11:2];
-		GHCI_REG_RING_WPTR: slim_ridx = GHCI_RING_WPTR[11:2];
-		GHCI_REG_IRQ_STATUS: slim_ridx = GHCI_IRQ_STATUS[11:2];
-		GHCI_REG_IRQ_ENABLE: slim_ridx = GHCI_IRQ_ENABLE[11:2];
-		GHCI_REG_WDT_CYCLES: slim_ridx = GHCI_WDT_CYCLES[11:2];
-		GHCI_REG_RESIDENT_WARPS: slim_ridx = GHCI_RESIDENT_WARPS[11:2];
-		GHCI_REG_CP_HEAP_BASE: slim_ridx = GHCI_APERTURE_BASE[11:2];
-		GHCI_REG_CP_HEAP_LIMIT: slim_ridx = GHCI_APERTURE_LIMIT[11:2];
-		default: slim_ridx = addr[11:2];
+		GHCI_REG_STATUS: hcr_reg_ridx = GHCI_STATUS[11:2];
+		GHCI_REG_CTRL: hcr_reg_ridx = GHCI_CTRL[11:2];
+		GHCI_REG_FAULT_INFO: hcr_reg_ridx = GHCI_FAULT_INFO[11:2];
+		GHCI_REG_FAULT_ADDR_LO: hcr_reg_ridx = GHCI_FAULT_ADDR[11:2];
+		GHCI_REG_RING_BASE_LO: hcr_reg_ridx = GHCI_RING_BASE[11:2];
+		GHCI_REG_RING_BASE_HI: hcr_reg_ridx = GHCI_REG_RING_BASE_HI[11:2];
+		GHCI_REG_RING_SIZE: hcr_reg_ridx = GHCI_RING_SIZE[11:2];
+		GHCI_REG_RING_RPTR: hcr_reg_ridx = GHCI_RING_RPTR[11:2];
+		GHCI_REG_RING_WPTR: hcr_reg_ridx = GHCI_RING_WPTR[11:2];
+		GHCI_REG_IRQ_STATUS: hcr_reg_ridx = GHCI_IRQ_STATUS[11:2];
+		GHCI_REG_IRQ_ENABLE: hcr_reg_ridx = GHCI_IRQ_ENABLE[11:2];
+		GHCI_REG_WDT_CYCLES: hcr_reg_ridx = GHCI_WDT_CYCLES[11:2];
+		GHCI_REG_RESIDENT_WARPS: hcr_reg_ridx = GHCI_RESIDENT_WARPS[11:2];
+		GHCI_REG_CP_HEAP_BASE: hcr_reg_ridx = GHCI_APERTURE_BASE[11:2];
+		GHCI_REG_CP_HEAP_LIMIT: hcr_reg_ridx = GHCI_APERTURE_LIMIT[11:2];
+		default: hcr_reg_ridx = addr[11:2];
 		endcase
 	endfunction
 
@@ -481,9 +457,9 @@ module atg_cp_regs #(
 		end
 	endgenerate
 
-	wire [9:0] ridx_next = SLIM_MMIO ? slim_ridx(raddr_b0) : raddr_b0[11:2];
-	wire rd_hcr_next = SLIM_MMIO ? (raddr_b0 <= 17'h00084 ||
-		(raddr_b0 >= 17'h00100 && raddr_b0 <= 17'h003FF)) : (raddr_b0[16:12] == 5'd0);
+	wire [9:0] ridx_next = hcr_reg_ridx(raddr_b0);
+	wire rd_hcr_next = (raddr_b0 <= 17'h00084 ||
+		(raddr_b0 >= 17'h00100 && raddr_b0 <= 17'h003FF));
 	reg rd_hcr_lo_q, rd_hcr_hi_q;
 
 	always @(posedge clk) begin
@@ -502,7 +478,7 @@ module atg_cp_regs #(
 				rd_hcr_lo_q <= rd_hcr_next && (ridx_next[9:6] == 4'd0);
 				rd_hcr_hi_q <= rd_hcr_next && (ridx_next[9:6] != 4'd0);
 			end
-			if (reg_rd_b[3]) rd_state_q <= !SLIM_MMIO && (raddr_b0[16:12] == 5'b00001 && raddr_b0[11:10] != 2'b11);
+			if (reg_rd_b[3]) rd_state_q <= 1'b0;
 		end
 	end
 `else
@@ -514,10 +490,10 @@ module atg_cp_regs #(
 			rd_state_q <= 1'b0;
 		end else if (reg_rd) begin
 			raddr_q <= reg_raddr;
-			ridx_q <= SLIM_MMIO ? slim_ridx(reg_raddr) : reg_raddr[11:2];
-			rd_hcr_q <= SLIM_MMIO ? (reg_raddr <= 17'h00084 ||
-			                         (reg_raddr >= 17'h00100 && reg_raddr <= 17'h003FF)) : (reg_raddr[16:12] == 5'd0);
-			rd_state_q <= !SLIM_MMIO && (reg_raddr[16:12] == 5'b00001 && reg_raddr[11:10] != 2'b11);
+			ridx_q <= hcr_reg_ridx(reg_raddr);
+			rd_hcr_q <= (reg_raddr <= 17'h00084 ||
+			             (reg_raddr >= 17'h00100 && reg_raddr <= 17'h003FF));
+			rd_state_q <= 1'b0;
 		end
 	end
 `endif
@@ -582,73 +558,36 @@ module atg_cp_regs #(
 	wire [11:0] roff = {ridx_q, 2'b00};
 
 	always @(*) begin
-		if (SLIM_MMIO) begin
-			own = 32'd0;
-			case (raddr_q)
-			GHCI_REG_MAGIC: own = GHCI_MAGIC_VALUE;
-			GHCI_REG_VERSION: own = 32'h00010000;
-			GHCI_REG_DEVICE_CAPS: own = eff_dev_caps;
-			GHCI_REG_EXTCAP_PTR: own = (XCAP_MASK != 11'd0) ? 32'h00000100 : 32'd0;
-			GHCI_REG_FAULT_ADDR_HI: own = 32'd0;
-			GHCI_REG_RING_BASE_HI: own = 32'd0;
-			GHCI_REG_SCRATCH: own = scratch;
-			GHCI_REG_SESSION_ACTIVE: own = 32'd0;
-			GHCI_REG_TIMESTAMP_LO: own = counter;
-			GHCI_REG_TIMESTAMP_HI: own = 32'd0;
-			GHCI_REG_DIAG_CP_PC: own = diag_cp_pc;
-			GHCI_REG_DIAG_CP_STATUS: own = diag_cp_status;
-			GHCI_REG_EXT_CAP_FMT0: own = EXT_CAP_FMT0;
-			GHCI_REG_EXT_CAP_FEATURE: own = EXT_CAP_FEATURE;
-			default: own = (raddr_q >= 17'h00100) ? xcap_word(roff) : 32'd0;
-			endcase
-		end else begin
-			own = xcap_word(roff);
-			case (roff)
-			GHCI_MAGIC[11:0]: own = GHCI_MAGIC_VALUE;
-			GHCI_VERSION[11:0]: own = {GHCI_VERSION_MAJOR, GHCI_VERSION_MINOR};
-			GHCI_VENDOR_ID[11:0]: own = VENDOR_ID;
-			GHCI_DEVICE_ID[11:0]: own = DEVICE_ID;
-			GHCI_ISA_ID[11:0]: own = ISA_ID;
-			GHCI_DEVICE_VERSION[11:0]: own = DEVICE_VERSION;
-			GHCI_EXTCAP[11:0]: own = XCAP_MASK != 11'd0 ? {15'd0, GHCI_EXTCAP_LIST} : 32'd0;
-			GHCI_GCLK_HZ[11:0]: own = GCLK_HZ;
-			GHCI_CAPS[11:0]: own = eff_caps;
-			GHCI_CAPS2[11:0]: own = CAPS2;
-			GHCI_SCRATCH[11:0]: own = scratch;
-			GHCI_COUNTER[11:0]: own = counter;
-			12'h048: own = NATIVE_ISA_ID;
-			GHCI_RESIDENT_WARPS[11:0]: own = {8'd0, NREGS, RESIDENT_WARPS};
-			12'h080, 12'h084, 12'h088, 12'h08c:
-				own = (roff == 12'h080 && !XCAP_MASK[2]) ? EXT_CAP_FMT0 :
-				      (roff == 12'h084 && !XCAP_MASK[2]) ? EXT_CAP_FEATURE :
-				      perf[roff[3:2] * 32 +: 32];
-			12'h090, 12'h094, 12'h098, 12'h09c:
-				if (XCAP_MASK[2]) own = {24'd0, PERF_SRC[roff[3:2] * 8 +: 8]};
-			12'h0c0, 12'h0c4, 12'h0c8, 12'h0cc, 12'h0d0, 12'h0d4, 12'h0d8, 12'h0dc:
-				own = VEND[roff[4:2] * 32 +: 32];
-			A_LOCAL_BASE: if (XCAP_MASK[7]) own = LOCAL_BASE;
-			A_LOCAL_SIZE: if (XCAP_MASK[7]) own = LOCAL_BYTES;
-			A_WINDOW_SIZE: if (XCAP_MASK[7]) own = WINDOW_BYTES;
-			A_HOST_LIMIT: if (XCAP_MASK[7]) own = HOST_LIMIT;
-			A_WINDOW_CTRL: if (XCAP_MASK[7]) own = {31'd0, win_q};
-			GHCI_CP_PC[11:0]: own = diag_cp_pc;
-			GHCI_CP_STATUS[11:0]: own = diag_cp_status;
-			GHCI_PIPE_FSM[11:0]: own = diag_pipe_fsm;
-			default: ;
-			endcase
-		end
+		own = 32'd0;
+		case (raddr_q)
+		GHCI_REG_MAGIC: own = GHCI_MAGIC_VALUE;
+		GHCI_REG_VERSION: own = 32'h00010000;
+		GHCI_REG_DEVICE_CAPS: own = eff_dev_caps;
+		GHCI_REG_EXTCAP_PTR: own = (XCAP_MASK != 11'd0) ? 32'h00000100 : 32'd0;
+		GHCI_REG_FAULT_ADDR_HI: own = 32'd0;
+		GHCI_REG_RING_BASE_HI: own = 32'd0;
+		GHCI_REG_SCRATCH: own = scratch;
+		GHCI_REG_SESSION_ACTIVE: own = 32'd0;
+		GHCI_REG_TIMESTAMP_LO: own = counter;
+		GHCI_REG_TIMESTAMP_HI: own = 32'd0;
+		GHCI_REG_DIAG_CP_PC: own = diag_cp_pc;
+		GHCI_REG_DIAG_CP_STATUS: own = diag_cp_status;
+		GHCI_REG_EXT_CAP_FMT0: own = EXT_CAP_FMT0;
+		GHCI_REG_EXT_CAP_FEATURE: own = EXT_CAP_FEATURE;
+		default: own = (raddr_q >= 17'h00100) ? xcap_word(roff) : 32'd0;
+		endcase
 	end
 
 `ifdef SYNTH_KINTEX7
 	wire [11:0] roff_pre_lo = {raddr_b1_lo[11:2], 2'b00};
 	wire [11:0] roff_pre_hi = {raddr_b1_hi[11:2], 2'b00};
 	wire [11:0] roff_sel_in = {reg_raddr[11:2], 2'b00};
-	wire sel_scr_raw = SLIM_MMIO ? (roff_sel_in == GHCI_REG_SCRATCH[11:0])        : (roff_sel_in == GHCI_SCRATCH[11:0]);
-	wire sel_cnt_raw = SLIM_MMIO ? (roff_sel_in == GHCI_REG_TIMESTAMP_LO[11:0])   : (roff_sel_in == GHCI_COUNTER[11:0]);
-	wire sel_prf_raw = !SLIM_MMIO && (roff_sel_in[11:4] == 8'h08) && (XCAP_MASK[2] || roff_sel_in[3]);
-	wire sel_pc_raw  = SLIM_MMIO ? (roff_sel_in == GHCI_REG_DIAG_CP_PC[11:0])     : (roff_sel_in == GHCI_CP_PC[11:0]);
-	wire sel_st_raw  = SLIM_MMIO ? (roff_sel_in == GHCI_REG_DIAG_CP_STATUS[11:0]) : (roff_sel_in == GHCI_CP_STATUS[11:0]);
-	wire sel_pf_raw  = !SLIM_MMIO && (roff_sel_in == GHCI_PIPE_FSM[11:0]);
+	wire sel_scr_raw = (roff_sel_in == GHCI_REG_SCRATCH[11:0]);
+	wire sel_cnt_raw = (roff_sel_in == GHCI_REG_TIMESTAMP_LO[11:0]);
+	wire sel_prf_raw = 1'b0;
+	wire sel_pc_raw  = (roff_sel_in == GHCI_REG_DIAG_CP_PC[11:0]);
+	wire sel_st_raw  = (roff_sel_in == GHCI_REG_DIAG_CP_STATUS[11:0]);
+	wire sel_pf_raw  = 1'b0;
 
 	wire [1:0] sel_scr_b, sel_cnt_b, sel_prf_b, sel_pc_b, sel_st_b, sel_pf_b;
 	genvar g_os;
@@ -673,47 +612,17 @@ module atg_cp_regs #(
 		input win_in;
 		reg [31:0] v;
 		begin
-			if (SLIM_MMIO) begin
-				v = (roff_in >= 12'h100) ? xcap_word(roff_in) : 32'd0;
-				case ({5'd0, roff_in})
-				GHCI_REG_MAGIC: v = GHCI_MAGIC_VALUE;
-				GHCI_REG_VERSION: v = 32'h00010000;
-				GHCI_REG_DEVICE_CAPS: v = eff_dev_caps;
-				GHCI_REG_EXTCAP_PTR: v = (XCAP_MASK != 11'd0) ? 32'h00000100 : 32'd0;
-				GHCI_REG_EXT_CAP_FMT0: v = EXT_CAP_FMT0;
-				GHCI_REG_EXT_CAP_FEATURE: v = EXT_CAP_FEATURE;
-				default: ;
-				endcase
-			end else begin
-				v = xcap_word(roff_in);
-				case (roff_in)
-				GHCI_MAGIC[11:0]: v = GHCI_MAGIC_VALUE;
-				GHCI_VERSION[11:0]: v = {GHCI_VERSION_MAJOR, GHCI_VERSION_MINOR};
-				GHCI_VENDOR_ID[11:0]: v = VENDOR_ID;
-				GHCI_DEVICE_ID[11:0]: v = DEVICE_ID;
-				GHCI_ISA_ID[11:0]: v = ISA_ID;
-				GHCI_DEVICE_VERSION[11:0]: v = DEVICE_VERSION;
-				GHCI_EXTCAP[11:0]: v = XCAP_MASK != 11'd0 ? {15'd0, GHCI_EXTCAP_LIST} : 32'd0;
-				GHCI_GCLK_HZ[11:0]: v = GCLK_HZ;
-				GHCI_CAPS[11:0]: v = eff_caps;
-				GHCI_CAPS2[11:0]: v = CAPS2;
-				12'h048: v = NATIVE_ISA_ID;
-				GHCI_RESIDENT_WARPS[11:0]: v = {8'd0, NREGS, RESIDENT_WARPS};
-				12'h080: if (!XCAP_MASK[2]) v = EXT_CAP_FMT0;
-				12'h084: if (!XCAP_MASK[2]) v = EXT_CAP_FEATURE;
-				12'h090, 12'h094, 12'h098, 12'h09c:
-					if (XCAP_MASK[2]) v = {24'd0, PERF_SRC[roff_in[3:2] * 8 +: 8]};
-				12'h0c0, 12'h0c4, 12'h0c8, 12'h0cc, 12'h0d0, 12'h0d4, 12'h0d8, 12'h0dc:
-					v = VEND[roff_in[4:2] * 32 +: 32];
-				A_LOCAL_BASE: if (XCAP_MASK[7]) v = LOCAL_BASE;
-				A_LOCAL_SIZE: if (XCAP_MASK[7]) v = LOCAL_BYTES;
-				A_WINDOW_SIZE: if (XCAP_MASK[7]) v = WINDOW_BYTES;
-				A_HOST_LIMIT: if (XCAP_MASK[7]) v = HOST_LIMIT;
-				A_WINDOW_CTRL: if (XCAP_MASK[7]) v = {31'd0, win_in};
-				default: ;
-				endcase
-			end
-			calc_own_const = v;
+			v = (roff_in >= 12'h100) ? xcap_word(roff_in) : 32'd0;
+			case ({5'd0, roff_in})
+			GHCI_REG_MAGIC: v = GHCI_MAGIC_VALUE;
+			GHCI_REG_VERSION: v = 32'h00010000;
+			GHCI_REG_DEVICE_CAPS: v = eff_dev_caps;
+			GHCI_REG_EXTCAP_PTR: v = (XCAP_MASK != 11'd0) ? 32'h00000100 : 32'd0;
+			GHCI_REG_EXT_CAP_FMT0: v = EXT_CAP_FMT0;
+			GHCI_REG_EXT_CAP_FEATURE: v = EXT_CAP_FEATURE;
+			default: ;
+			endcase
+			calc_own_const = v | {32{win_in & 1'b0}};
 		end
 	endfunction
 

@@ -72,8 +72,7 @@ module atg_cp #(
 	parameter [31:0] LOCAL_BYTES = 32'd0,
 	parameter [31:0] WINDOW_BYTES = 32'd0,
 	parameter [31:0] HOST_LIMIT = 32'd0,
-	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
-	parameter SLIM_MMIO = 1	/* 1: GHCI 1.0 Slim 19 MMIO registers (0x00..0x48) */
+	parameter HAS_PROT = 0	/* session protection: the PROT capability is listed (atg_cp_prot) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -461,8 +460,7 @@ module atg_cp #(
 		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS),
 		.NREGS(NREGS), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
-		.HOST_LIMIT(HOST_LIMIT),
-		.SLIM_MMIO(SLIM_MMIO)
+		.HOST_LIMIT(HOST_LIMIT)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr_regs), .reg_wdata(reg_wdata_regs), .reg_wstrb(reg_wstrb_regs),

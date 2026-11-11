@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_ghci_slim_tb: verification testbench for GHCI 1.0 Slim MMIO architecture,
+ * atg_ghci_tb: verification testbench for GHCI 1.0 MMIO architecture,
  * host STATE MMIO elimination, and structured command packets
  * (Phase 007 / ws001-p007).
  */
@@ -14,7 +14,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_ghci_slim_tb;
+module atg_ghci_tb;
 	`include "ghci_regs.vh"
 
 	reg clk = 1'b0;
@@ -24,7 +24,7 @@ module atg_ghci_slim_tb;
 	integer errors = 0;
 
 	/* -------------------------------------------------------------
-	 * 1. GHCI 1.0 Slim MMIO Register Bus Signals
+	 * 1. GHCI 1.0 MMIO Register Bus Signals
 	 * ------------------------------------------------------------- */
 	reg reg_wr = 1'b0;
 	reg [16:0] reg_waddr = 17'd0;
@@ -54,9 +54,8 @@ module atg_ghci_slim_tb;
 	atg_cp_regs #(
 		.DEVICE_CAPS(32'h00500002),
 		.CAPS(32'h00500002),
-		.XCAP_MASK(11'd0),
-		.SLIM_MMIO(1)
-	) u_slim_regs (
+		.XCAP_MASK(11'd0)
+	) u_cp_regs (
 		.clk(clk),
 		.rst_n(rst_n),
 		.reg_wr(reg_wr),
@@ -100,6 +99,7 @@ module atg_ghci_slim_tb;
 	atg_cp_seq_dec #(.UNITS(8'hFF)) u_seq_dec (
 		.hdr(test_hdr),
 		.hdr_fw(1'b0),
+		.is_ghci_in(1'b1),
 		.h_known(h_known),
 		.h_absent(h_absent),
 		.h_need(h_need),
@@ -214,10 +214,10 @@ module atg_ghci_slim_tb;
 		rst_n = 1'b1;
 		#20;
 
-		$display("=== atg_ghci_slim_tb: Starting Verification ===");
+		$display("=== atg_ghci_tb: Starting Verification ===");
 
 		/* ---------------------------------------------------------
-		 * Step 1: Verify GHCI 1.0 Slim Identification & Capability Regs
+		 * Step 1: Verify GHCI 1.0 Identification & Capability Regs
 		 * --------------------------------------------------------- */
 		mmio_read(GHCI_REG_MAGIC, rdata);
 		if (rdata !== GHCI_MAGIC_VALUE) begin
@@ -252,7 +252,7 @@ module atg_ghci_slim_tb;
 		end
 
 		/* ---------------------------------------------------------
-		 * Step 2: Verify Diagnostics & Scratchpad in Slim MMIO
+		 * Step 2: Verify Diagnostics & Scratchpad in MMIO
 		 * --------------------------------------------------------- */
 		mmio_read(GHCI_REG_DIAG_CP_PC, rdata);
 		if (rdata !== 32'h00000100) begin
@@ -461,9 +461,9 @@ module atg_ghci_slim_tb;
 		 * --------------------------------------------------------- */
 		#20;
 		if (errors == 0) begin
-			$display("PASS atg_ghci_slim");
+			$display("PASS atg_ghci");
 		end else begin
-			$display("FAIL atg_ghci_slim: %0d errors", errors);
+			$display("FAIL atg_ghci: %0d errors", errors);
 		end
 		$finish;
 	end

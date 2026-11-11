@@ -93,8 +93,7 @@ module atg_top #(
 	parameter PROT_PLB_W = 2,
 	parameter HAS_L2 = 0,
 	parameter L2_WAYS = 16,
-	parameter L2_SET_W = 8,
-	parameter SLIM_MMIO = 0
+	parameter L2_SET_W = 8
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -528,8 +527,7 @@ module atg_top #(
 		.CORE1(CORE1),
 		.HAS_FMT(CORE1),
 		.HAS_ETC(HAS_TU != 0),	/* the TU decodes ETC2 and EAC */
-		.HAS_PROT(PROT),
-		.SLIM_MMIO(SLIM_MMIO)
+		.HAS_PROT(PROT)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
