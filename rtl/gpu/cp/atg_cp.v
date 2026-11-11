@@ -235,20 +235,6 @@ module atg_cp #(
 	/* verilator lint_off WIDTHTRUNC */
 	localparam [3:0] LS4 = LINE_SHIFT;
 	/* verilator lint_on WIDTHTRUNC */
-	/* CAPS[27]: graphics (VF, RX and ROP); CAPS[28]: packed; CAPS[26]: the TU's mip linear,
-	 * border, depth formats and compare; CAPS[24]: subgroup; CAPS[29]: 4x multisampling
-	 * (with graphics, the TU and an SU); CAPS[30] and CAPS[9]: Vulkan 1.0 core rendering
-	 * with its stencil (with graphics, the TU and an SU). */
-	localparam [0:0] CORE = CORE1 != 0 && UNITS[2] && UNITS[3] && UNITS[4] && UNITS[5] && UNITS[6];
-	localparam [31:0] CAPS = {1'b0, CORE,
-		MS4 != 0 && UNITS[2] && UNITS[3] && UNITS[4] && UNITS[5] && UNITS[6],
-		UNITS[6] && PACKED != 0, UNITS[2] && UNITS[3] && UNITS[4],
-		UNITS[5], 1'b0,
-		UNITS[6] && SUBGROUP != 0,
-		LS4, 1'b0, HAS_CPU != 0, HAS_CPU != 0, 1'b0, 4'd1, 1'b1,
-		HAS_VSYNC != 0, CORE, UNITS[5], UNITS[6] ? 4'd5 : 4'd0, HAS_DISP != 0, UNITS[6], UNITS[1], 1'b1};
-	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4; CAPS2[7:0]: 3 queues. */
-	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 16'd0, 8'd3};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
 	/* PERF and VEND always; CPFW with the CPU; DISP2, DBG, MEM, PROT and FMT when present (bit id - 1). */
 	localparam [10:0] XCAP = 11'h004 | 11'h008 | (HAS_CPU != 0 ? 11'h020 : 11'h000) |
@@ -479,8 +465,8 @@ module atg_cp #(
 	wire [31:0] s_fmt_rdata, s_disp_rdata;
 	atg_cp_regs #(
 		.GCLK_HZ(GCLK_HZ), .VENDOR_ID(VENDOR_ID), .DEVICE_ID(DEVICE_ID),
-		.DEVICE_VERSION(DEVICE_VERSION), .ISA_ID(ISA), .NATIVE_ISA_ID(ISA), .CAPS(CAPS),
-		.CAPS2(CAPS2), .XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS),
+		.DEVICE_VERSION(DEVICE_VERSION), .ISA_ID(ISA), .NATIVE_ISA_ID(ISA),
+		.XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS),
 		.NREGS(NREGS), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
 		.HOST_LIMIT(HOST_LIMIT),

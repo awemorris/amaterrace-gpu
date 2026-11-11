@@ -103,29 +103,7 @@ module atg_cp_ring #(
 	localparam [9:0] I_WPTR0    = HCR_IDX_RING_WPTR;
 	localparam [9:0] I_RPTR0    = HCR_IDX_RING_RPTR;
 
-	localparam [9:0] I_BASE1 = GHCI_RING1_BASE[11:2];
-	localparam [9:0] I_SIZE1 = GHCI_RING1_SIZE[11:2];
-	localparam [9:0] I_WPTR1 = GHCI_RING1_WPTR[11:2];
-	localparam [9:0] I_RPTR1 = GHCI_RING1_RPTR[11:2];
-
-	localparam [9:0] I_BASE2 = GHCI_RING2_BASE[11:2];
-	localparam [9:0] I_SIZE2 = GHCI_RING2_SIZE[11:2];
-	localparam [9:0] I_WPTR2 = GHCI_RING2_WPTR[11:2];
-	localparam [9:0] I_RPTR2 = GHCI_RING2_RPTR[11:2];
-
-	localparam [9:0] I_PREEMPT        = GHCI_CP_PREEMPT[11:2];
-	localparam [9:0] I_PREEMPT_STATUS = GHCI_CP_PREEMPT_STATUS[11:2];
-	localparam [9:0] I_CTX_BASE       = GHCI_CP_CTX_BASE[11:2];
-	localparam [9:0] I_SEMA           = GHCI_CP_SEMA[11:2];
-	localparam [9:0] I_DMA_BASE         = GHCI_RING_DMA_BASE[11:2];
-	localparam [9:0] I_DMA_SIZE         = GHCI_RING_DMA_SIZE[11:2];
-	localparam [9:0] I_DMA_WPTR         = GHCI_RING_DMA_WPTR[11:2];
-	localparam [9:0] I_DMA_RPTR         = GHCI_RING_DMA_RPTR[11:2];
-	localparam [9:0] I_DMA_SEM          = GHCI_DMA_SEMAPHORE[11:2];
-	localparam [9:0] I_DMA_DST_BASE     = GHCI_DMA_DST_BASE[11:2];
-	localparam [9:0] I_DMA_ROW_STRIDE   = GHCI_DMA_ROW_STRIDE[11:2];
-	localparam [9:0] I_DMA_SLICE_STRIDE = GHCI_DMA_SLICE_STRIDE[11:2];
-	localparam [9:0] I_DMA_EXTENT       = GHCI_DMA_EXTENT[11:2];
+	/* Legacy multi-ring and DMA MMIO indices removed in GHCI 1.0 */
 
 	localparam [3:0] R_IDLE         = 4'd0;
 	localparam [3:0] R_HDR          = 4'd1;	/* fetch the header at cur */
@@ -722,8 +700,8 @@ module atg_cp_ring #(
 	/* Doorbells for the 3 queues */
 	wire [2:0] doorbell;
 	assign doorbell[0] = hcr_we_db && (widx_b == I_WPTR0);
-	assign doorbell[1] = hcr_we_db && (widx_b == I_WPTR1);
-	assign doorbell[2] = hcr_we_db && (widx_b == I_WPTR2);
+	assign doorbell[1] = 1'b0;
+	assign doorbell[2] = 1'b0;
 `endif
 
 	wire [21:0] wptr_new0 = ((wptr[0] & ~wmask_c[21:0]) | (wdata_c[21:0] & wmask_c[21:0])) & mask[0];
@@ -1218,14 +1196,14 @@ module atg_cp_ring #(
 `ifdef SYNTH_KINTEX7
 	wire we_b0lo_raw = hcr_we_cfg_b[0] && (widx_a[5:0] == I_BASE0_LO[5:0] || widx_a[5:0] == I_BASE0[5:0]);
 	wire we_b0hi_raw = hcr_we_cfg_b[0] && (widx_a[5:0] == I_BASE0_HI[5:0]);
-	wire we_b1_raw   = hcr_we_cfg_b[0] && (widx_a[5:0] == I_BASE1[5:0]);
-	wire we_b2_raw   = hcr_we_cfg_b[0] && (widx_a[5:0] == I_BASE2[5:0]);
-	wire we_dmab_raw = hcr_we_cfg_b[1] && (widx_a[5:0] == I_DMA_BASE[5:0]);
-	wire we_dmad_raw = hcr_we_cfg_b[1] && (widx_a[5:0] == I_DMA_DST_BASE[5:0]);
-	wire we_rs_raw   = hcr_we_cfg_b[1] && (widx_a[5:0] == I_DMA_ROW_STRIDE[5:0]);
-	wire we_ss_raw   = hcr_we_cfg_b[1] && (widx_a[5:0] == I_DMA_SLICE_STRIDE[5:0]);
-	wire we_ctxb_raw = hcr_we_cfg_b[2] && (widx_a[5:0] == I_CTX_BASE[5:0]);
-	wire we_dext_raw = hcr_we_cfg_b[2] && (widx_a[5:0] == I_DMA_EXTENT[5:0]);
+	wire we_b1_raw   = 1'b0;
+	wire we_b2_raw   = 1'b0;
+	wire we_dmab_raw = 1'b0;
+	wire we_dmad_raw = 1'b0;
+	wire we_rs_raw   = 1'b0;
+	wire we_ss_raw   = 1'b0;
+	wire we_ctxb_raw = 1'b0;
+	wire we_dext_raw = 1'b0;
 
 	wire [1:0] we_b0lo_b, we_b0hi_b, we_b1_b, we_b2_b, we_dmab_b, we_dmad_b, we_ctxb_b, we_dext_b;
 	wire [3:0] we_rs_b, we_ss_b;
@@ -1254,7 +1232,7 @@ module atg_cp_ring #(
 	assign we_dext_b[0] = we_dext_raw;
 	assign we_dext_b[1] = we_dext_raw;
 
-	wire dmasem_hcr_we = hcr_we_dma && (widx_b[5:0] == I_DMA_SEM[5:0]);
+	wire dmasem_hcr_we = 1'b0;
 	wire dmasem_inc_we = dma_active && dma_done;
 	wire [1:0] dmasem_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_dsm0 (.I0(dmasem_hcr_we), .I1(dmasem_inc_we), .O(dmasem_we_b[0]));
@@ -1281,12 +1259,12 @@ module atg_cp_ring #(
 	assign save_rptr_we_b[1] = save_rptr_raw;
 
 	wire [1:0] dma_wptr_we_b;
-	assign dma_wptr_we_b[0] = hcr_we_dma && widx_b[5:0] == I_DMA_WPTR[5:0];
-	assign dma_wptr_we_b[1] = hcr_we_dma && widx_b[5:0] == I_DMA_WPTR[5:0];
+	assign dma_wptr_we_b[0] = 1'b0;
+	assign dma_wptr_we_b[1] = 1'b0;
 
 	wire we_sz0_raw = hcr_we_cfg_b[3] && (widx_b[5:0] == I_SIZE0[5:0]) && wmask_c[0];
-	wire we_sz1_raw = hcr_we_cfg_b[3] && (widx_b[5:0] == I_SIZE1[5:0]) && wmask_c[0];
-	wire we_sz2_raw = hcr_we_cfg_b[4] && open && (widx_b[5:0] == I_SIZE2[5:0]) && wmask_c[0];
+	wire we_sz1_raw = 1'b0;
+	wire we_sz2_raw = 1'b0;
 	wire [1:0] we_sz0_b, we_sz1_b, we_sz2_b;
 	assign we_sz0_b[0] = we_sz0_raw;
 	assign we_sz0_b[1] = we_sz0_raw;
@@ -1384,44 +1362,6 @@ module atg_cp_ring #(
 						base[0][63:32] <= (base[0][63:32] & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 					if (hcr_widx == I_SIZE0 && (decode_ring_size(hcr_wdata) != 5'd0))
 						size[0] <= decode_ring_size(hcr_wdata);
-
-					if (hcr_widx == I_BASE1)
-						base[1][31:0] <= ((base[1][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
-					if (hcr_widx == I_SIZE1 && (decode_ring_size(hcr_wdata) != 5'd0))
-						size[1] <= decode_ring_size(hcr_wdata);
-
-					if (hcr_widx == I_BASE2)
-						base[2][31:0] <= ((base[2][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
-					if (hcr_widx == I_SIZE2 && (decode_ring_size(hcr_wdata) != 5'd0))
-						size[2] <= decode_ring_size(hcr_wdata);
-
-					if (hcr_widx == I_DMA_BASE)
-						dma_base <= ((dma_base & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
-					if (hcr_widx == I_DMA_SIZE && hcr_wmask[0])
-						dma_size <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
-							hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
-					if (hcr_widx == I_DMA_DST_BASE)
-						dma_dst_base_r <= (dma_dst_base_r & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-					if (hcr_widx == I_DMA_ROW_STRIDE) begin
-						dma_src_row_stride_r <= (dma_src_row_stride_r & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-						dma_dst_row_stride_r <= (dma_dst_row_stride_r & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-					end
-					if (hcr_widx == I_DMA_SLICE_STRIDE) begin
-						dma_src_slice_stride_r <= (dma_src_slice_stride_r & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-						dma_dst_slice_stride_r <= (dma_dst_slice_stride_r & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-					end
-					if (hcr_widx == I_DMA_EXTENT) begin
-						dma_copy_w_r <= hcr_wdata[15:0];
-						dma_copy_h_r <= hcr_wdata[23:16] != 8'd0 ? {8'd0, hcr_wdata[23:16]} : 16'd128;
-						dma_copy_d_r <= hcr_wdata[31:24] != 8'd0 ? {8'd0, hcr_wdata[31:24]} : 16'd64;
-					end
-
-					if (hcr_widx == I_CTX_BASE)
-						ctx_base <= ((ctx_base & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
-				end
-				if (hcr_widx == I_PREEMPT && hcr_wmask[0]) begin
-					prio_mode <= hcr_wdata[7:4];
-					preempt_auto <= hcr_wdata[4];
 				end
 			end
 `endif
@@ -1592,10 +1532,7 @@ module atg_cp_ring #(
 			if (dmasem_we_b[1])
 				dma_sem[31:16] <= dmasem_inc_we ? dma_sem_next[31:16] : ((dma_sem[31:16] & ~wmask_c[31:16]) | (wdata_c[31:16] & wmask_c[31:16]));
 `else
-			if (hcr_we_dma && widx_b == I_DMA_WPTR)
-				dma_wptr <= (dma_wptr & ~wmask_c[17:0]) | (wdata_c[17:0] & wmask_c[17:0]);
-			if (hcr_we_dma && hcr_widx == I_DMA_SEM)
-				dma_sem <= (dma_sem & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
+			/* Host MMIO DMA writes retired in GHCI 1.0 */
 `endif
 
 			if (!dma_active && (dma_wptr != dma_rptr) && go) begin
@@ -1613,31 +1550,9 @@ module atg_cp_ring #(
 `endif
 			end
 
-			/* Preemption request from host */
-			if (hcr_we_sync && (widx_b == I_PREEMPT)) begin
-				if (wdata_d[0] && !preempt_active)
-					preempt_pending <= 1'b1;
-			end
-
 			/* Auto-preempt when Queue 0 receives work during Queue 1/2 execution */
 			if (preempt_auto && hw_sel[0] && (active_qid != 2'd0) && !preempt_active)
 				preempt_pending <= 1'b1;
-
-			/* Semaphore update from host or ring */
-			if (hcr_we_sync && (widx_b == I_SEMA)) begin
-				if (sema_set_q_wait && (sema_w_qid < 2'd3)) begin
-					queue_sema_wait[sema_w_qid] <= 1'b1;
-					queue_sema_id[sema_w_qid]   <= sema_w_id;
-				end
-				if (sema_clr_q_wait && (sema_w_qid < 2'd3)) begin
-					queue_sema_wait[sema_w_qid] <= 1'b0;
-				end
-				if (sema_cmd == 2'd1 || sema_cmd == 2'd2) begin
-					sema[sema_w_id] <= sema_next;
-				end else if (sema_cmd == 2'd3) begin
-					sema[sema_w_id] <= wdata_d[23:16];
-				end
-			end
 
 			if (step)
 				step_pend <= 1'b1;
@@ -1979,33 +1894,17 @@ module atg_cp_ring #(
 		(hcr_ridx == I_BASE0_HI) ? base[0][63:32] :
 		(hcr_ridx == I_SIZE0) ? encode_ring_size(size[0]) :
 		(hcr_ridx == I_WPTR0) ? {10'd0, wptr[0]} :
-		(hcr_ridx == I_RPTR0) ? {10'd0, rptr[0]} :
-		(hcr_ridx == I_BASE1) ? base[1][31:0] :
-		(hcr_ridx == I_SIZE1) ? encode_ring_size(size[1]) :
-		(hcr_ridx == I_WPTR1) ? {10'd0, wptr[1]} :
-		(hcr_ridx == I_RPTR1) ? {10'd0, rptr[1]} :
-		(hcr_ridx == I_BASE2) ? base[2][31:0] :
-		(hcr_ridx == I_SIZE2) ? encode_ring_size(size[2]) :
-		(hcr_ridx == I_WPTR2) ? {10'd0, wptr[2]} :
-		(hcr_ridx == I_RPTR2) ? {10'd0, rptr[2]} :
-		(hcr_ridx == I_DMA_BASE)         ? dma_base :
-		(hcr_ridx == I_DMA_SIZE)         ? {27'd0, dma_size} :
-		(hcr_ridx == I_DMA_WPTR)         ? {14'd0, dma_wptr} :
-		(hcr_ridx == I_DMA_RPTR)         ? {14'd0, dma_rptr} :
-		(hcr_ridx == I_DMA_SEM)          ? dma_sem :
-		(hcr_ridx == I_DMA_DST_BASE)     ? dma_dst_base_r :
-		(hcr_ridx == I_DMA_ROW_STRIDE)   ? dma_src_row_stride_r :
-		(hcr_ridx == I_DMA_SLICE_STRIDE) ? dma_src_slice_stride_r :
-		(hcr_ridx == I_DMA_EXTENT)       ? {dma_copy_d_r[7:0], dma_copy_h_r[7:0], dma_copy_w_r} :
-		(hcr_ridx == I_PREEMPT) ? {24'd0, interrupted_qid, 2'd0, preempt_saved, preempt_pending, preempt_active, 1'b0} :
-		(hcr_ridx == I_PREEMPT_STATUS) ? {16'd0, 7'd0, has_work[2], has_work[1], has_work[0], 4'd0, active_qid} :
-		(hcr_ridx == I_CTX_BASE) ? ctx_base :
-		(hcr_ridx == I_SEMA) ? {13'd0, queue_sema_wait, sema[1], sema[0]} : 32'd0;
+		(hcr_ridx == I_RPTR0) ? {10'd0, rptr[0]} : 32'd0;
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag[7:2], h_end[18], avail_bo, h_end_co, p_end_co, pa_4_co,
 		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci_n_bo,
 		base_act, rem_words_bo, rem_words_bo_r, rem_words_s[18], hit, next_hit,
-		h_bad_r, h_bad_words_r, h_bad_avail_r, h_bad};
+		h_bad_r, h_bad_words_r, h_bad_avail_r, h_bad,
+		base[1], base[2], size[1], size[2], wptr[1], wptr[2], rptr[1], rptr[2],
+		dma_base, dma_wptr, dma_rptr, dma_sem, dma_dst_base_r, dma_src_row_stride_r,
+		dma_src_slice_stride_r, dma_copy_d_r, dma_copy_h_r, dma_copy_w_r,
+		interrupted_qid, preempt_saved, preempt_pending, preempt_active, has_work,
+		active_qid, ctx_base, queue_sema_wait, sema[1], sema[0]};
 
 endmodule
 

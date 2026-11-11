@@ -322,8 +322,6 @@ module atg_cp_regs #(
 	parameter HAS_INDIRECT_DRAW = 0,
 	parameter HAS_SECONDARY_RING = 0,
 	parameter [31:0] DEVICE_CAPS = 32'd0,	/* 0: dynamic from config macros */
-	parameter CAPS = 32'h00500002,	/* CAPS value (design §2.2), set by atg_top from its parameters */
-	parameter CAPS2 = 32'h00000003,	/* CAPS2 value: [7:0] = 3 independent queues (Graphics, Compute, Copy/DMA) */
 	parameter [31:0] EXT_CAP_FMT0 = 32'd0,
 	parameter [31:0] EXT_CAP_FEATURE = 32'd0,
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
@@ -754,7 +752,6 @@ module atg_cp_regs #(
 	};
 
 	wire [31:0] eff_dev_caps = (DEVICE_CAPS != 32'd0) ? DEVICE_CAPS : CALC_DEVICE_CAPS;
-	wire [31:0] eff_caps = (CAPS != 32'h00500002) ? CAPS : `ATG_DEF_CAPS;
 	wire [31:0] eff_fmt0 = (EXT_CAP_FMT0 != 32'd0) ? EXT_CAP_FMT0 : CALC_EXT_CAP_FMT0;
 	wire [31:0] eff_feat = (EXT_CAP_FEATURE != 32'd0) ? EXT_CAP_FEATURE : CALC_EXT_CAP_FEATURE;
 	wire [31:0] eff_mem_cache_cfg = (MEM_CACHE_CFG != 32'd0) ? MEM_CACHE_CFG : `ATG_DEF_MEM_CACHE_CFG;
@@ -959,7 +956,7 @@ module atg_cp_regs #(
 `endif
 
 	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0], inc_co, raddr_q[1:0],
-		eff_caps, diag_pipe_fsm};
+		diag_pipe_fsm};
 
 endmodule
 

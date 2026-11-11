@@ -56,9 +56,7 @@ module atg_cp_dbg #(
 	`include "ghci_regs.vh"
 
 	localparam WS = LINE_SHIFT - 2;	/* log2(words per line) */
-	localparam [9:0] I_ADDR = GHCI_DBG_ADDR[11:2];
-	localparam [9:0] I_DATA = GHCI_DBG_DATA[11:2];
-	localparam [9:0] I_STATUS = GHCI_DBG_STATUS[11:2];
+	/* DBG MMIO indices removed in GHCI 1.0 (unmapped) */
 
 	reg busy;
 	reg err;
@@ -69,8 +67,8 @@ module atg_cp_dbg #(
 	reg [31:0] q_word;
 	reg [3:0] q_strb;
 
-	wire wr_addr = hcr_we && hcr_widx == I_ADDR;
-	wire wr_data = hcr_we && hcr_widx == I_DATA;
+	wire wr_addr = 1'b0;
+	wire wr_data = 1'b0;
 	wire [31:0] wmerge_a = (addr & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 	wire [31:0] wmerge_d = (data & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 	wire [WS-1:0] word = addr[LINE_SHIFT-1:2];
@@ -238,17 +236,9 @@ module atg_cp_dbg #(
 		end
 	end
 
-`ifdef SYNTH_KINTEX7
-	assign hcr_rdata = {
-		rd_addr_b[1] ? addr[31:16] : rd_data_b[1] ? data[31:16] : 16'd0,
-		rd_addr_b[0] ? addr[15:0]  : rd_data_b[0] ? data[15:0]  : (rd_stat_dbg ? {14'd0, err, busy} : 16'd0)
-	};
-`else
-	assign hcr_rdata = hcr_ridx == I_ADDR ? addr : hcr_ridx == I_DATA ? data :
-		hcr_ridx == I_STATUS ? {30'd0, err, busy} : 32'd0;
-`endif
+	assign hcr_rdata = 32'd0;
 
-	wire unused_ok = &{1'b0, rsp_tag, hcr_ridx[9:6]};
+	wire unused_ok = &{1'b0, rsp_tag, hcr_ridx, wmerge_a, wmerge_d, hcr_wmask};
 endmodule
 
 `default_nettype wire

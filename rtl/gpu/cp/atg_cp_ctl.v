@@ -33,11 +33,9 @@
  * (KICK, locked write, watchdog), then src 0..NSRC-1):
  *   MC refusal of client c != 0: FAULT_INFO {0, c, 1, 0, write, c}
  *   src k: {tag, SRC_BLOCK[k], kind, 0, 0, SRC_CLIENT[k]}, FAULT_ADDR addr
- *   KICK not open, unit busy, or (session protection, kick_prot_ok = 0)
- *   the units still another session's: kind 6; KICK of an absent unit: kind 2;
  *   watchdog: kind 4, [31:24] wdt_tag (session protection: the session whose
  *   work the units are draining, else 0);
- *   RING_BASE/SIZE, APERTURE_*, CP_HEAP_* written when not open: kind 7.
+ *   RING_BASE_LO/HI, RING_SIZE, CP_HEAP_* written when running (not IDLE): kind 7 (LOCKED_REG).
  * MC refusals of client 0 (the CP's own port) are reported by the ring,
  * the fence unit or the debug port themselves; those of DC_CLIENT (a
  * DISP2 controller's scan-out reads) are not a device fault: the DC shows
@@ -197,10 +195,6 @@ module atg_cp_ctl #(
 	wire wr_reset = wr_ctrl && hcr_wdata[GHCI_CTRL_RESET];
 	assign step = wr_ctrl && hcr_wdata[GHCI_CTRL_STEP] && st == S_HALTED;
 
-	wire [2:0] kick_bits = 3'd0;
-	wire [2:0] kick_present = {UNITS[6], UNITS[2], UNITS[1]};
-	wire [2:0] kick_busy = {busy_in[6], busy_in[2], busy_in[1]};
-	wire [2:0] kick_ok = 3'd0;
 	assign host_kick = 3'd0;
 	wire kick_absent = 1'b0;
 	wire kick_bad = 1'b0;
@@ -792,7 +786,7 @@ module atg_cp_ctl #(
 	end
 
 	assign hcr_rdata = rd;
-	wire unused_co = &{1'b0, wdt_co, stuck_co, hcr_ridx[9:6]};
+	wire unused_co = &{1'b0, wdt_co, stuck_co, hcr_ridx[9:6], kick_prot_ok};
 endmodule
 
 `default_nettype wire
