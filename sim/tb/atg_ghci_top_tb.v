@@ -233,9 +233,23 @@ module ghci_probe #(
 		host_read(GHCI_REG_RING_BASE_HI, val);
 		check32("RING_BASE_HI write/read", val, 32'h00000001);
 
-		host_write(GHCI_REG_RING_SIZE, 32'd16);
+		/* R1: RING_SIZE accepts byte size (power of 2, 4 KiB .. 16 MiB) */
+		host_write(GHCI_REG_RING_SIZE, 32'h00010000); /* 64 KiB */
 		host_read(GHCI_REG_RING_SIZE, val);
-		check32("RING_SIZE write/read", val, 32'd16);
+		check32("RING_SIZE write/read 64KiB", val, 32'h00010000);
+
+		/* R1: Non-power-of-2 write should be ignored (preserves previous value) */
+		host_write(GHCI_REG_RING_SIZE, 32'h00012345);
+		host_read(GHCI_REG_RING_SIZE, val);
+		check32("RING_SIZE non-power-of-2 ignored", val, 32'h00010000);
+
+		/* R1: 16 MiB maximum size */
+		host_write(GHCI_REG_RING_SIZE, 32'h01000000);
+		host_read(GHCI_REG_RING_SIZE, val);
+		check32("RING_SIZE write/read 16MiB", val, 32'h01000000);
+
+		/* Restore to 64 KiB */
+		host_write(GHCI_REG_RING_SIZE, 32'h00010000);
 
 		host_write(GHCI_REG_RING_WPTR, 32'd4);
 		host_read(GHCI_REG_RING_WPTR, val);

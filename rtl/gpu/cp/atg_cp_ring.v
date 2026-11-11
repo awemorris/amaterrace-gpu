@@ -142,6 +142,46 @@ module atg_cp_ring #(
 	localparam [3:0] R_CTX_REST_REQ = 4'd10;	/* preemption context restore AMB read req */
 	localparam [3:0] R_CTX_REST_RSP = 4'd11;	/* preemption context restore AMB read rsp */
 
+	function [4:0] decode_ring_size;
+		input [31:0] bytes;
+		case (bytes)
+			32'h0000_1000: decode_ring_size = 5'd12;
+			32'h0000_2000: decode_ring_size = 5'd13;
+			32'h0000_4000: decode_ring_size = 5'd14;
+			32'h0000_8000: decode_ring_size = 5'd15;
+			32'h0001_0000: decode_ring_size = 5'd16;
+			32'h0002_0000: decode_ring_size = 5'd17;
+			32'h0004_0000: decode_ring_size = 5'd18;
+			32'h0008_0000: decode_ring_size = 5'd19;
+			32'h0010_0000: decode_ring_size = 5'd20;
+			32'h0020_0000: decode_ring_size = 5'd21;
+			32'h0040_0000: decode_ring_size = 5'd22;
+			32'h0080_0000: decode_ring_size = 5'd23;
+			32'h0100_0000: decode_ring_size = 5'd24;
+			default:       decode_ring_size = 5'd0;
+		endcase
+	endfunction
+
+	function [31:0] encode_ring_size;
+		input [4:0] sz;
+		case (sz)
+			5'd12: encode_ring_size = 32'h0000_1000;
+			5'd13: encode_ring_size = 32'h0000_2000;
+			5'd14: encode_ring_size = 32'h0000_4000;
+			5'd15: encode_ring_size = 32'h0000_8000;
+			5'd16: encode_ring_size = 32'h0001_0000;
+			5'd17: encode_ring_size = 32'h0002_0000;
+			5'd18: encode_ring_size = 32'h0004_0000;
+			5'd19: encode_ring_size = 32'h0008_0000;
+			5'd20: encode_ring_size = 32'h0010_0000;
+			5'd21: encode_ring_size = 32'h0020_0000;
+			5'd22: encode_ring_size = 32'h0040_0000;
+			5'd23: encode_ring_size = 32'h0080_0000;
+			5'd24: encode_ring_size = 32'h0100_0000;
+			default: encode_ring_size = 32'h0000_1000;
+		endcase
+	endfunction
+
 	localparam [1:0] PF_IDLE = 2'd0;
 	localparam [1:0] PF_REQ  = 2'd1;
 	localparam [1:0] PF_RSP  = 2'd2;
@@ -159,8 +199,8 @@ module atg_cp_ring #(
 `else
 	reg [4:0] size [0:2];
 `endif
-	reg [17:0] wptr [0:2];
-	reg [17:0] rptr [0:2];
+	reg [21:0] wptr [0:2];
+	reg [21:0] rptr [0:2];
 
 	/* Dedicated DMA Transfer Queue registers */
 	reg [31:0] dma_base;
@@ -200,36 +240,36 @@ module atg_cp_ring #(
 	wire [4:0] size1 = size[1];
 	wire [4:0] size2 = size[2];
 
-	reg [17:0] mask0, mask1, mask2;
-	reg [18:0] nwords0, nwords1, nwords2;
+	reg [21:0] mask0, mask1, mask2;
+	reg [22:0] nwords0, nwords1, nwords2;
 
 	integer mi;
 	always @(*) begin
-		for (mi = 0; mi < 18; mi = mi + 1) begin
+		for (mi = 0; mi < 22; mi = mi + 1) begin
 			mask0[mi] = {27'd0, size0} > mi + 2;
 			mask1[mi] = {27'd0, size1} > mi + 2;
 			mask2[mi] = {27'd0, size2} > mi + 2;
 		end
-		for (mi = 0; mi < 19; mi = mi + 1) begin
+		for (mi = 0; mi < 23; mi = mi + 1) begin
 			nwords0[mi] = {27'd0, size0} == mi + 2;
 			nwords1[mi] = {27'd0, size1} == mi + 2;
 			nwords2[mi] = {27'd0, size2} == mi + 2;
 		end
 	end
 
-	wire [17:0] mask [0:2];
+	wire [21:0] mask [0:2];
 	assign mask[0] = mask0;
 	assign mask[1] = mask1;
 	assign mask[2] = mask2;
 
-	wire [18:0] nwords [0:2];
+	wire [22:0] nwords [0:2];
 	assign nwords[0] = nwords0;
 	assign nwords[1] = nwords1;
 	assign nwords[2] = nwords2;
 
 	(* max_fanout = 16 *) reg [1:0] active_qid;
 	reg [1:0] interrupted_qid;
-	reg [17:0] saved_rptr;
+	reg [21:0] saved_rptr;
 	reg [31:0] ctx_base;
 	reg ctx_base_z_r;
 	reg preempt_pending;
@@ -313,30 +353,9 @@ module atg_cp_ring #(
 	 * Active Queue Signals & Status
 	 */
 	wire [2:0] q_empty;
-`ifdef SYNTH_KINTEX7
-	genvar g_qe, g_qeb;
-	generate
-		for (g_qe = 0; g_qe < 3; g_qe = g_qe + 1) begin : gen_q_empty
-			wire [5:0] qe_grp;
-			for (g_qeb = 0; g_qeb < 6; g_qeb = g_qeb + 1) begin : gen_qe_grp
-				(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h8040201008040201)) u_qeg (
-					.I0(wptr[g_qe][g_qeb*3 + 0]), .I1(wptr[g_qe][g_qeb*3 + 1]), .I2(wptr[g_qe][g_qeb*3 + 2]),
-					.I3(rptr[g_qe][g_qeb*3 + 0]), .I4(rptr[g_qe][g_qeb*3 + 1]), .I5(rptr[g_qe][g_qeb*3 + 2]),
-					.O(qe_grp[g_qeb])
-				);
-			end
-			(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h8000000000000000)) u_qe_all (
-				.I0(qe_grp[0]), .I1(qe_grp[1]), .I2(qe_grp[2]),
-				.I3(qe_grp[3]), .I4(qe_grp[4]), .I5(qe_grp[5]),
-				.O(q_empty[g_qe])
-			);
-		end
-	endgenerate
-`else
 	assign q_empty[0] = (wptr[0] == rptr[0]);
 	assign q_empty[1] = (wptr[1] == rptr[1]);
 	assign q_empty[2] = (wptr[2] == rptr[2]);
-`endif
 
 	wire [2:0] has_work;
 	assign has_work[0] = !q_empty[0] && !(queue_sema_wait[0] && (sema[queue_sema_id[0]] == 8'd0));
@@ -352,17 +371,17 @@ module atg_cp_ring #(
 			assign aqid_b[g_aqb][1] = active_qid[1];
 		end
 	endgenerate
-	wire [17:0] wptr_act   = {wptr[aqid_b[1]][17:9], wptr[aqid_b[0]][8:0]};
-	wire [17:0] rptr_act   = {rptr[aqid_b[3]][17:9], rptr[aqid_b[2]][8:0]};
+	wire [21:0] wptr_act   = {wptr[aqid_b[1]][21:11], wptr[aqid_b[0]][10:0]};
+	wire [21:0] rptr_act   = {rptr[aqid_b[3]][21:11], rptr[aqid_b[2]][10:0]};
 	wire [63:0] base_act   = {32'd0, base[aqid_b[11]][31:24], base[aqid_b[10]][23:16], base[aqid_b[5]][15:8], base[aqid_b[4]][7:0]};
-	wire [17:0] mask_act   = {mask[aqid_b[7]][17:9], mask[aqid_b[6]][8:0]};
-	wire [18:0] nwords_act = {nwords[aqid_b[9]][18:10], nwords[aqid_b[8]][9:0]};
+	wire [21:0] mask_act   = {mask[aqid_b[7]][21:11], mask[aqid_b[6]][10:0]};
+	wire [22:0] nwords_act = {nwords[aqid_b[9]][22:11], nwords[aqid_b[8]][10:0]};
 `else
-	wire [17:0] wptr_act   = wptr[active_qid];
-	wire [17:0] rptr_act   = rptr[active_qid];
+	wire [21:0] wptr_act   = wptr[active_qid];
+	wire [21:0] rptr_act   = rptr[active_qid];
 	wire [63:0] base_act   = base[active_qid];
-	wire [17:0] mask_act   = mask[active_qid];
-	wire [18:0] nwords_act = nwords[active_qid];
+	wire [21:0] mask_act   = mask[active_qid];
+	wire [22:0] nwords_act = nwords[active_qid];
 `endif
 
 	/*
@@ -408,7 +427,7 @@ module atg_cp_ring #(
 
 	(* max_fanout = 16, extract_enable = "no" *) reg [3:0] st;
 	reg ret_n;	/* the read is for R_N (else R_HDR) */
-	reg [17:0] cur;	/* the header's dword index */
+	reg [21:0] cur;	/* the header's dword index */
 	reg [15:0] n;	/* dwords after the header */
 	(* max_fanout = 16 *) reg [15:0] k;	/* R_N: dword of the packet on n_data (0 = header) */
 	reg [7:0] tag;
@@ -707,9 +726,9 @@ module atg_cp_ring #(
 	assign doorbell[2] = hcr_we_db && (widx_b == I_WPTR2);
 `endif
 
-	wire [17:0] wptr_new0 = ((wptr[0] & ~wmask_c[17:0]) | (wdata_c[17:0] & wmask_c[17:0])) & mask[0];
-	wire [17:0] wptr_new1 = ((wptr[1] & ~wmask_c[17:0]) | (wdata_c[17:0] & wmask_c[17:0])) & mask[1];
-	wire [17:0] wptr_new2 = ((wptr[2] & ~wmask_c[17:0]) | (wdata_c[17:0] & wmask_c[17:0])) & mask[2];
+	wire [21:0] wptr_new0 = ((wptr[0] & ~wmask_c[21:0]) | (wdata_c[21:0] & wmask_c[21:0])) & mask[0];
+	wire [21:0] wptr_new1 = ((wptr[1] & ~wmask_c[21:0]) | (wdata_c[21:0] & wmask_c[21:0])) & mask[1];
+	wire [21:0] wptr_new2 = ((wptr[2] & ~wmask_c[21:0]) | (wdata_c[21:0] & wmask_c[21:0])) & mask[2];
 
 	/* Header decode (from registered hdr_data) */
 	wire is_ghci = (
@@ -734,46 +753,46 @@ module atg_cp_ring #(
 	wire [15:0] h_n = is_ghci ? {8'd0, ghci_n} : (h_class[1] ? hdr_data[15:0] : {8'd0, hdr_data[7:0]});
 `endif
 
-	wire [17:0] avail_d, avail;
+	wire [21:0] avail_d, avail;
 	wire avail_bo;
 
-	am_sub #(.W(18)) avail_sub (.a(wptr_act), .b(cur), .bi(1'b0), .d(avail_d), .bo(avail_bo));
+	am_sub #(.W(22)) avail_sub (.a(wptr_act), .b(cur), .bi(1'b0), .d(avail_d), .bo(avail_bo));
 	assign avail = avail_d & mask_act;
 
-	(* max_fanout = 16 *) reg [17:0] avail_r;
+	(* max_fanout = 16 *) reg [21:0] avail_r;
 	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
 		if (ring_rst_high)
 `else
 		if (!rst_n)
 `endif
-			avail_r <= 18'd0;
+			avail_r <= 22'd0;
 		else
 			avail_r <= avail;
 	end
 
 `ifdef SYNTH_KINTEX7
-	wire [17:0] avail_check = avail_r;
-	reg [18:0] nwords_act_r;
+	wire [21:0] avail_check = avail_r;
+	reg [22:0] nwords_act_r;
 	always @(posedge clk) begin
 		if (ring_rst_high)
-			nwords_act_r <= 19'd0;
+			nwords_act_r <= 23'd0;
 		else
 			nwords_act_r <= nwords_act;
 	end
-	wire [18:0] rem_sub_a = nwords_act_r;
+	wire [22:0] rem_sub_a = nwords_act_r;
 `else
-	wire [17:0] avail_check = avail;
-	wire [18:0] rem_sub_a = nwords_act;
+	wire [21:0] avail_check = avail;
+	wire [22:0] rem_sub_a = nwords_act;
 `endif
 
-	wire [18:0] rem_words_s;
+	wire [22:0] rem_words_s;
 	wire rem_words_bo;
-	am_sub #(.W(19)) u_rem_sub (
+	am_sub #(.W(23)) u_rem_sub (
 		.a(rem_sub_a), .b({1'b0, cur}), .bi(1'b1), .d(rem_words_s), .bo(rem_words_bo)
 	);
 
-	(* max_fanout = 16 *) reg [18:0] rem_words_r;
+	(* max_fanout = 16 *) reg [22:0] rem_words_r;
 	(* max_fanout = 16 *) reg rem_words_bo_r;
 	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
@@ -781,7 +800,7 @@ module atg_cp_ring #(
 `else
 		if (!rst_n) begin
 `endif
-			rem_words_r    <= 19'd0;
+			rem_words_r    <= 23'd0;
 			rem_words_bo_r <= 1'b0;
 		end else begin
 			rem_words_r    <= rem_words_s;
@@ -789,26 +808,26 @@ module atg_cp_ring #(
 		end
 	end
 
-	wire [18:0] h_end_s, p_end_s;
+	wire [22:0] h_end_s, p_end_s;
 	wire h_end_co, p_end_co;
-	am_add #(.W(19)) u_h_end_add (
-		.a({1'b0, cur}), .b({3'd0, h_n}), .ci(1'b1), .s(h_end_s), .co(h_end_co)
+	am_add #(.W(23)) u_h_end_add (
+		.a({1'b0, cur}), .b({7'd0, h_n}), .ci(1'b1), .s(h_end_s), .co(h_end_co)
 	);
-	am_add #(.W(19)) u_p_end_add (
-		.a({1'b0, cur}), .b({3'd0, n}), .ci(1'b1), .s(p_end_s), .co(p_end_co)
+	am_add #(.W(23)) u_p_end_add (
+		.a({1'b0, cur}), .b({7'd0, n}), .ci(1'b1), .s(p_end_s), .co(p_end_co)
 	);
-	wire [18:0] h_end = h_end_s;
+	wire [22:0] h_end = h_end_s;
 `ifdef SYNTH_KINTEX7
-	wire h_novf_words = rem_words_bo_r || ({3'd0, h_n} > rem_words_r);
+	wire h_novf_words = rem_words_bo_r || ({7'd0, h_n} > rem_words_r);
 	wire h_bad_words = h_novf_words;
-	wire h_bad_avail = ({3'd0, h_n} >= {1'b0, avail_check});
+	wire h_bad_avail = ({7'd0, h_n} >= {1'b0, avail_check});
 	wire h_bad = h_bad_words || h_bad_avail;
 `else
 	wire h_novf_words = h_end > nwords_act;
-	wire h_bad = h_novf_words || ({3'd0, h_n} >= {1'b0, avail_check});
+	wire h_bad = h_novf_words || ({7'd0, h_n} >= {1'b0, avail_check});
 `endif
 	wire h_novf = (h_class == 2'd2) && (CLASS_V == 0);
-	wire [17:0] p_end = p_end_s[17:0] & mask_act;
+	wire [21:0] p_end = p_end_s[21:0] & mask_act;
 
 `ifdef SYNTH_KINTEX7
 	(* dont_touch = "true" *) wire [3:0] st_b0, st_b1;
@@ -879,21 +898,21 @@ module atg_cp_ring #(
 
 	always @(posedge clk) begin
 		if (ring_core_rst_high) begin
-			rptr[0] <= 18'd0;
-			rptr[1] <= 18'd0;
-			rptr[2] <= 18'd0;
+			rptr[0] <= 22'd0;
+			rptr[1] <= 22'd0;
+			rptr[2] <= 22'd0;
 		end else begin
 			if (rptr_we_q0) begin
-				rptr[0][13:0]  <= st_radv_b[0] ? p_end[13:0]  : saved_rptr[13:0];
-				rptr[0][17:14] <= st_radv_b[1] ? p_end[17:14] : saved_rptr[17:14];
+				rptr[0][10:0]  <= st_radv_b[0] ? p_end[10:0]  : saved_rptr[10:0];
+				rptr[0][21:11] <= st_radv_b[1] ? p_end[21:11] : saved_rptr[21:11];
 			end
 			if (rptr_we_q1) begin
-				rptr[1][9:0]   <= st_radv_b[1] ? p_end[9:0]   : saved_rptr[9:0];
-				rptr[1][17:10] <= st_radv_b[2] ? p_end[17:10] : saved_rptr[17:10];
+				rptr[1][10:0]  <= st_radv_b[1] ? p_end[10:0]  : saved_rptr[10:0];
+				rptr[1][21:11] <= st_radv_b[2] ? p_end[21:11] : saved_rptr[21:11];
 			end
 			if (rptr_we_q2) begin
-				rptr[2][5:0]   <= st_radv_b[2] ? p_end[5:0]   : saved_rptr[5:0];
-				rptr[2][17:6]  <= st_radv_b[3] ? p_end[17:6]  : saved_rptr[17:6];
+				rptr[2][10:0]  <= st_radv_b[2] ? p_end[10:0]  : saved_rptr[10:0];
+				rptr[2][21:11] <= st_radv_b[3] ? p_end[21:11] : saved_rptr[21:11];
 			end
 		end
 	end
@@ -905,7 +924,7 @@ module atg_cp_ring #(
 
 	am_add #(.W(ADDR_W)) pa_4_add (.a(pa), .b({{(ADDR_W-3){1'b0}}, 3'd4}), .ci(1'b0), .s(pa_4), .co(pa_4_co));
 	am_add #(.W(ADDR_W)) pa_hdr_add (
-		.a(base_act[ADDR_W-1:0]), .b({{(ADDR_W-20){1'b0}}, rptr_act, 2'b00}), .ci(1'b0), .s(pa_hdr), .co(pa_hdr_co)
+		.a(base_act[ADDR_W-1:0]), .b({{(ADDR_W-24){1'b0}}, rptr_act, 2'b00}), .ci(1'b0), .s(pa_hdr), .co(pa_hdr_co)
 	);
 `ifdef SYNTH_KINTEX7
 	(* keep = "true" *) wire [15:0] k_add_in = k;
@@ -1152,7 +1171,7 @@ module atg_cp_ring #(
 	wire demand_req = (st == R_REQ);
 	wire [LA_W-1:0] ctx_line = ctx_base[31:LINE_SHIFT];
 	wire [LINE_BYTES*8-1:0] ctx_save_wdata =
-		{{(LINE_BYTES*8 > 80 ? LINE_BYTES*8 - 80 : 1){1'b0}}, 14'd0, saved_rptr, 14'd0, interrupted_qid, 32'h43545853};
+		{{(LINE_BYTES*8 > 80 ? LINE_BYTES*8 - 80 : 1){1'b0}}, 10'd0, saved_rptr, 14'd0, interrupted_qid, 32'h43545853};
 
 `ifdef SYNTH_KINTEX7
 	wire [1:0] ctx_req_b, demand_req_b, ctx_save_req_b;
@@ -1275,6 +1294,7 @@ module atg_cp_ring #(
 	assign we_sz1_b[1] = we_sz1_raw;
 	assign we_sz2_b[0] = we_sz2_raw;
 	assign we_sz2_b[1] = we_sz2_raw;
+	wire [4:0] dec_sz_c = decode_ring_size(wdata_c);
 	wire [4:0] sz_clamp_c = wdata_c[4:0] < 5'd10 ? 5'd10 : (wdata_c[4:0] > 5'd20 ? 5'd20 : wdata_c[4:0]);
 `endif
 
@@ -1342,12 +1362,9 @@ module atg_cp_ring #(
 				dma_copy_d_r <= wdata_b[31:24] != 8'd0 ? {8'd0, wdata_b[31:24]} : 16'd64;
 			end
 
-			if (we_sz0_b[0]) size[0][2:0] <= sz_clamp_c[2:0];
-			if (we_sz0_b[1]) size[0][4:3] <= sz_clamp_c[4:3];
-			if (we_sz1_b[0]) size[1][2:0] <= sz_clamp_c[2:0];
-			if (we_sz1_b[1]) size[1][4:3] <= sz_clamp_c[4:3];
-			if (we_sz2_b[0]) size[2][2:0] <= sz_clamp_c[2:0];
-			if (we_sz2_b[1]) size[2][4:3] <= sz_clamp_c[4:3];
+			if (we_sz0_b[0] && (dec_sz_c != 5'd0)) size[0] <= dec_sz_c;
+			if (we_sz1_b[0] && (dec_sz_c != 5'd0)) size[1] <= dec_sz_c;
+			if (we_sz2_b[0] && (dec_sz_c != 5'd0)) size[2] <= dec_sz_c;
 			if (hcr_we_cfg_b[4]) begin
 				if (open) begin
 					if (widx_b == I_DMA_SIZE && wmask_c[0])
@@ -1365,21 +1382,18 @@ module atg_cp_ring #(
 						base[0][31:0] <= ((base[0][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
 					if (hcr_widx == I_BASE0_HI)
 						base[0][63:32] <= (base[0][63:32] & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-					if (hcr_widx == I_SIZE0 && hcr_wmask[0])
-						size[0] <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
-							hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
+					if (hcr_widx == I_SIZE0 && (decode_ring_size(hcr_wdata) != 5'd0))
+						size[0] <= decode_ring_size(hcr_wdata);
 
 					if (hcr_widx == I_BASE1)
 						base[1][31:0] <= ((base[1][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
-					if (hcr_widx == I_SIZE1 && hcr_wmask[0])
-						size[1] <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
-							hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
+					if (hcr_widx == I_SIZE1 && (decode_ring_size(hcr_wdata) != 5'd0))
+						size[1] <= decode_ring_size(hcr_wdata);
 
 					if (hcr_widx == I_BASE2)
 						base[2][31:0] <= ((base[2][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
-					if (hcr_widx == I_SIZE2 && hcr_wmask[0])
-						size[2] <= hcr_wdata[4:0] < 5'd10 ? 5'd10 :
-							hcr_wdata[4:0] > 5'd20 ? 5'd20 : hcr_wdata[4:0];
+					if (hcr_widx == I_SIZE2 && (decode_ring_size(hcr_wdata) != 5'd0))
+						size[2] <= decode_ring_size(hcr_wdata);
 
 					if (hcr_widx == I_DMA_BASE)
 						dma_base <= ((dma_base & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
@@ -1422,9 +1436,9 @@ module atg_cp_ring #(
 		if (!core_rst_n) begin
 `endif
 			for (bi = 0; bi < 3; bi = bi + 1) begin
-				wptr[bi] <= 18'd0;
+				wptr[bi] <= 22'd0;
 `ifndef SYNTH_KINTEX7
-				rptr[bi] <= 18'd0;
+				rptr[bi] <= 22'd0;
 `endif
 				queue_sema_id[bi] <= 3'd0;
 			end
@@ -1440,7 +1454,7 @@ module atg_cp_ring #(
 
 			active_qid      <= 2'd0;
 			interrupted_qid <= 2'd0;
-			saved_rptr      <= 18'd0;
+			saved_rptr      <= 22'd0;
 			preempt_pending <= 1'b0;
 			preempt_active  <= 1'b0;
 			preempt_saved   <= 1'b0;
@@ -1450,7 +1464,7 @@ module atg_cp_ring #(
 			st        <= R_IDLE;
 			ret_n     <= 1'b0;
 			pa        <= {ADDR_W{1'b0}};
-			cur       <= 18'd0;
+			cur       <= 22'd0;
 			n         <= 16'd0;
 			k         <= 16'd0;
 			tag       <= 8'd0;
@@ -1528,13 +1542,13 @@ module atg_cp_ring #(
 			end
 			if (save_rptr_we_b[0]) begin
 				interrupted_qid <= active_qid;
-				saved_rptr[8:0] <= st_idle_sel_b[3] ? rptr[active_qid][8:0] : p_end[8:0];
+				saved_rptr[10:0] <= st_idle_sel_b[3] ? rptr[active_qid][10:0] : p_end[10:0];
 			end
 			if (save_rptr_we_b[1]) begin
-				saved_rptr[17:9] <= st_idle_sel_b[7] ? rptr[active_qid][17:9] : p_end[17:9];
+				saved_rptr[21:11] <= st_idle_sel_b[7] ? rptr[active_qid][21:11] : p_end[21:11];
 			end
-			if (st_idle_sel_b[4]) cur[8:0] <= rptr_act[8:0];
-			if (st_idle_sel_b[5]) cur[17:9] <= rptr_act[17:9];
+			if (st_idle_sel_b[4]) cur[10:0] <= rptr_act[10:0];
+			if (st_idle_sel_b[5]) cur[21:11] <= rptr_act[21:11];
 			if (fa_we_b[0]) f_addr[15:0] <= want_addr[15:0];
 			if (fa_we_b[1]) f_addr[31:16] <= want_addr[31:16];
 `endif
@@ -1963,17 +1977,17 @@ module atg_cp_ring #(
 	assign hcr_rdata =
 		(hcr_ridx == I_BASE0_LO || hcr_ridx == I_BASE0) ? base[0][31:0] :
 		(hcr_ridx == I_BASE0_HI) ? base[0][63:32] :
-		(hcr_ridx == I_SIZE0) ? {27'd0, size[0]} :
-		(hcr_ridx == I_WPTR0) ? {14'd0, wptr[0]} :
-		(hcr_ridx == I_RPTR0) ? {14'd0, rptr[0]} :
+		(hcr_ridx == I_SIZE0) ? encode_ring_size(size[0]) :
+		(hcr_ridx == I_WPTR0) ? {10'd0, wptr[0]} :
+		(hcr_ridx == I_RPTR0) ? {10'd0, rptr[0]} :
 		(hcr_ridx == I_BASE1) ? base[1][31:0] :
-		(hcr_ridx == I_SIZE1) ? {27'd0, size[1]} :
-		(hcr_ridx == I_WPTR1) ? {14'd0, wptr[1]} :
-		(hcr_ridx == I_RPTR1) ? {14'd0, rptr[1]} :
+		(hcr_ridx == I_SIZE1) ? encode_ring_size(size[1]) :
+		(hcr_ridx == I_WPTR1) ? {10'd0, wptr[1]} :
+		(hcr_ridx == I_RPTR1) ? {10'd0, rptr[1]} :
 		(hcr_ridx == I_BASE2) ? base[2][31:0] :
-		(hcr_ridx == I_SIZE2) ? {27'd0, size[2]} :
-		(hcr_ridx == I_WPTR2) ? {14'd0, wptr[2]} :
-		(hcr_ridx == I_RPTR2) ? {14'd0, rptr[2]} :
+		(hcr_ridx == I_SIZE2) ? encode_ring_size(size[2]) :
+		(hcr_ridx == I_WPTR2) ? {10'd0, wptr[2]} :
+		(hcr_ridx == I_RPTR2) ? {10'd0, rptr[2]} :
 		(hcr_ridx == I_DMA_BASE)         ? dma_base :
 		(hcr_ridx == I_DMA_SIZE)         ? {27'd0, dma_size} :
 		(hcr_ridx == I_DMA_WPTR)         ? {14'd0, dma_wptr} :
