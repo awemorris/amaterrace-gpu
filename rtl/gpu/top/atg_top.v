@@ -75,8 +75,11 @@ module atg_top #(
 `else
 	parameter [3:0] MRT_COUNT = 4'd1,
 `endif
-	parameter MS4 = 0,	/* 4x multisampling (CAPS[29] with VF, RX, ROP, TU and an SU): the
-				 * blitter's RESOLVE, texsz.s */
+`ifdef CFG_ENABLE_MSAA
+	parameter MS4 = (`CFG_ENABLE_MSAA != 0 && `CFG_MSAA_SAMPLES == 4),
+`else
+	parameter MS4 = 0,
+`endif
 `ifdef CFG_HAS_BLT
 	parameter HAS_BLT = (`CFG_HAS_BLT != 0),
 `else
@@ -90,22 +93,42 @@ module atg_top #(
 	parameter HAS_INDIRECT_DRAW = 0,
 	parameter HAS_SECONDARY_RING = 0,
 	/* The SUs' shape (design §3.7). */
+`ifdef CFG_SU_NPHYS
+	parameter SU_NPHYS = `CFG_SU_NPHYS,
+`else
 	parameter SU_NPHYS = 8,	/* Physical lanes of an SU: 4, 8, 16 or 32 */
+`endif
 	parameter SU_NWARPS = 4,
 	parameter SU_WARP_W = 2,	/* log2(SU_NWARPS) */
 	parameter SU_GRP_W = 2,	/* log2(32/SU_NPHYS), 1 for SU_NPHYS 32 */
 	parameter SU_NREGS = 32,
 	parameter SU_SB_ENTRIES = 4,
 	parameter SU_SBE_W = 2,	/* log2(SU_SB_ENTRIES) */
+`ifdef CFG_ENABLE_FP16
+	parameter SU_PACKED = `CFG_ENABLE_FP16,
+`else
 	parameter SU_PACKED = 0,
+`endif
 	parameter SU_PK_SHARED = 0,	/* with SU_PACKED: the fp16 arithmetic on the FPU's fp32 datapath, a half a cycle (atg_su_fpu) */
+`ifdef CFG_SU_ENABLE_SUBGROUP
+	parameter SU_SUBGROUP = `CFG_SU_ENABLE_SUBGROUP,
+`else
 	parameter SU_SUBGROUP = 0,
+`endif
 	parameter SU_FRAG_RESERVE = 1,	/* slots kept for fragment warps (design §3.8; KC705 2) */
+`ifdef CFG_SU_LDS_KB
+	parameter SU_LDS_BYTES = (`CFG_SU_LDS_KB * 1024),
+`else
 	parameter SU_LDS_BYTES = 4096,
+`endif
 	parameter SU_VARY_WORDS = 16,
 	/* Session protection (docs/ghci.md section 11.6; needs HAS_CPU): the MC's check, the CP's
 	 * atg_cp_prot.  Slots, grant entries (and clog2), PLB lines (and clog2). */
+`ifdef CFG_MC_ENABLE_PROT
+	parameter HAS_PROT = (`CFG_MC_ENABLE_PROT != 0),
+`else
 	parameter HAS_PROT = 0,
+`endif
 	parameter PROT_SLOTS = 31,
 	parameter PROT_GRANTS = 8,
 	parameter PROT_GIDX_W = 3,

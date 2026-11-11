@@ -43,17 +43,16 @@ module atg_ghci_tb;
 	wire [9:0] alias_idx;
 	wire [9:0] alias_ridx;
 
-	wire [31:0] tb_ctl_rdata = (hcr_ridx == GHCI_STATUS[11:2]) ? 32'h00000001 : 32'h00000000;
+	wire [31:0] tb_ctl_rdata = (hcr_ridx == HCR_IDX_STATUS) ? 32'h00000001 : 32'h00000000;
 	wire [31:0] tb_irq_rdata = 32'h00000000;
-	wire [31:0] tb_ring_rdata = (hcr_ridx == GHCI_RING_BASE[11:2]) ? 32'h10000000 :
-	                            (hcr_ridx == GHCI_RING_SIZE[11:2]) ? 32'h00001000 : 32'h00000000;
+	wire [31:0] tb_ring_rdata = (hcr_ridx == HCR_IDX_RING_BASE_LO) ? 32'h10000000 :
+	                            (hcr_ridx == HCR_IDX_RING_SIZE) ? 32'h00001000 : 32'h00000000;
 	wire [31:0] tb_fence_rdata = 32'h00000000;
 	wire [31:0] tb_dbg_rdata = 32'h00000000;
 	wire [31:0] tb_state_rdata = 32'h12345678;
 
 	atg_cp_regs #(
 		.DEVICE_CAPS(32'h00500002),
-		.CAPS(32'h00500002),
 		.XCAP_MASK(11'd0)
 	) u_cp_regs (
 		.clk(clk),
@@ -279,26 +278,26 @@ module atg_ghci_tb;
 		 * Step 3: Verify Control, Status, IRQ, Ring Registers Translation
 		 * --------------------------------------------------------- */
 		mmio_write(GHCI_REG_CTRL, 32'h00000001);
-		if (hcr_widx !== GHCI_CTRL[11:2]) begin
-			$display("FAIL: CTRL write translated to widx %d (expected %d)", hcr_widx, GHCI_CTRL[11:2]);
+		if (hcr_widx !== HCR_IDX_CTRL) begin
+			$display("FAIL: CTRL write translated to widx %d (expected %d)", hcr_widx, HCR_IDX_CTRL);
 			errors = errors + 1;
 		end
 
 		mmio_write(GHCI_REG_RING_BASE_LO, 32'h10000000);
-		if (hcr_widx !== GHCI_RING_BASE[11:2]) begin
-			$display("FAIL: RING_BASE write translated to widx %d (expected %d)", hcr_widx, GHCI_RING_BASE[11:2]);
+		if (hcr_widx !== HCR_IDX_RING_BASE_LO) begin
+			$display("FAIL: RING_BASE write translated to widx %d (expected %d)", hcr_widx, HCR_IDX_RING_BASE_LO);
 			errors = errors + 1;
 		end
 
 		mmio_write(GHCI_REG_RING_SIZE, 32'h00001000);
-		if (hcr_widx !== GHCI_RING_SIZE[11:2]) begin
-			$display("FAIL: RING_SIZE write translated to widx %d (expected %d)", hcr_widx, GHCI_RING_SIZE[11:2]);
+		if (hcr_widx !== HCR_IDX_RING_SIZE) begin
+			$display("FAIL: RING_SIZE write translated to widx %d (expected %d)", hcr_widx, HCR_IDX_RING_SIZE);
 			errors = errors + 1;
 		end
 
 		mmio_write(GHCI_REG_RING_WPTR, 32'h00000020);
-		if (hcr_widx !== GHCI_RING_WPTR[11:2]) begin
-			$display("FAIL: RING_WPTR (doorbell) write translated to widx %d (expected %d)", hcr_widx, GHCI_RING_WPTR[11:2]);
+		if (hcr_widx !== HCR_IDX_RING_WPTR) begin
+			$display("FAIL: RING_WPTR (doorbell) write translated to widx %d (expected %d)", hcr_widx, HCR_IDX_RING_WPTR);
 			errors = errors + 1;
 		end else begin
 			$display("PASS: GHCI 1.0 Doorbell (RING_WPTR) write to 0x030 verified");

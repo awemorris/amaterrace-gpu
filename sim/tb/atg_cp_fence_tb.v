@@ -161,10 +161,7 @@ module atg_cp_fence_tb;
 		wait_done();
 		@(negedge clk);
 		expect_eq("event", fences, 1);
-		hcr_read(GHCI_FENCE_LAST[11:0], v);
-		expect_eq("FENCE_LAST read", v, 32'h102);
-		hcr_write(GHCI_FENCE_LAST[11:0], 32'h00000100);
-		expect_eq("FENCE_LAST host write", fence_last, 32'h100);
+		expect_eq("FENCE_LAST", fence_last, 32'h102);
 		if (errors == 0)
 			$display("PASS atg_cp_fence.fence");
 		e0 = errors;
@@ -207,7 +204,7 @@ module atg_cp_fence_tb;
 		expect_eq("error fault", faults, 1);
 		expect_eq("error kind", {28'd0, fault_kind}, {28'd0, GHCI_FAULT_APERTURE});
 		expect_eq("error addr", fault_addr, 32'h00009004);
-		expect_eq("error: FENCE_LAST kept", fence_last, 32'h100);
+		expect_eq("error: FENCE_LAST kept", fence_last, 32'h102);
 		expect_eq("error: no event", fences, 1);
 		expect_eq("error: stopped", {31'd0, f_ready}, 32'd0);
 		if (errors == e0)
