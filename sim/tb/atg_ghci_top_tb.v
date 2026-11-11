@@ -71,51 +71,51 @@ module ghci_probe #(
 		(MS4 != 0) ? 1'b1 : 1'b0,                  /* [31] MSAA */
 		1'b1,                                      /* [30] DISP */
 		(HAS_BLT != 0) ? 1'b1 : 1'b0,              /* [29] BLT */
-		1'b0,                                      /* [28] MESH */
-		1'b0,                                      /* [27] TASK (mirrors MESH) */
-		1'b0,                                      /* [26] ROP_PACK */
-		1'b0,                                      /* [25] FFILT */
+		`ifdef CFG_ENABLE_MESH (`CFG_ENABLE_MESH != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [28] MESH */
+		`ifdef CFG_ENABLE_MESH (`CFG_ENABLE_MESH != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [27] TASK (mirrors MESH) */
+		`ifdef CFG_ROP_ENABLE_PACK (`CFG_ROP_ENABLE_PACK != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [26] ROP_PACK */
+		`ifdef CFG_TU_ENABLE_FFILT (`CFG_TU_ENABLE_FFILT != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [25] FFILT */
 		(HAS_PROT != 0) ? 1'b1 : 1'b0,             /* [24] PROT */
 		8'd1,                                      /* [23:16] NUM_SU (KC705 NSU=1) */
 		SU_NPHYS[7:0],                             /* [15:8] PHYS_LANES */
 		1'b1,                                      /* [7] GSI1 */
 		(SU_PACKED != 0) ? 1'b1 : 1'b0,            /* [6] FP16 */
-		1'b0,                                      /* [5] DUAL_SRC */
-		1'b0,                                      /* [4] SECONDARY_RING */
-		1'b0,                                      /* [3] INDIRECT_DRAW */
-		1'b0,                                      /* [2] HW_WALKER */
+		`ifdef CFG_ROP_DUAL_SOURCE (`CFG_ROP_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else (`ifdef CFG_ENABLE_DUAL_SOURCE (`CFG_ENABLE_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif) `endif, /* [5] DUAL_SRC */
+		`ifdef CFG_HAS_SECONDARY_RING (`CFG_HAS_SECONDARY_RING != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif, /* [4] SECONDARY_RING */
+		`ifdef CFG_HAS_INDIRECT_DRAW (`CFG_HAS_INDIRECT_DRAW != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,   /* [3] INDIRECT_DRAW */
+		1'b0,                                      /* [2] HW_WALKER (atg_mmu absent in atg_top, always 0) */
 		2'b00                                      /* [1:0] */
 	};
 
 	localparam [31:0] CALC_FMT0 = {
 		13'd0,                                     /* [31:19] reserved */
-		1'b0,                                      /* [18] BLT_TILE */
-		1'b0,                                      /* [17] BLT_BLEND */
+		`ifdef CFG_BLT_ENABLE_TILE ((HAS_BLT != 0) && (`CFG_BLT_ENABLE_TILE != 0)) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [18] BLT_TILE */
+		`ifdef CFG_BLT_ENABLE_BLEND ((HAS_BLT != 0) && (`CFG_BLT_ENABLE_BLEND != 0)) ? 1'b1 : 1'b0 `else 1'b0 `endif, /* [17] BLT_BLEND */
 		(TU_BILINEAR != 0) ? 1'b1 : 1'b0,          /* [16] TU_BILINEAR */
 		EXP_MRT[3:0],                              /* [15:12] MAX_MRT */
 		1'b0,                                      /* [11] FFILT_FP32 */
-		1'b0,                                      /* [10] FFILT_FP16 */
-		1'b1,                                      /* [9] SRGB */
+		`ifdef CFG_TU_ENABLE_FFILT (`CFG_TU_ENABLE_FFILT != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [10] FFILT_FP16 */
+		`ifdef CFG_FMT_ENABLE_SRGB (`CFG_FMT_ENABLE_SRGB != 0) ? 1'b1 : 1'b0 `else 1'b1 `endif, /* [9] SRGB */
 		1'b0,                                      /* [8] ASTC */
 		(HAS_ETC != 0) ? 1'b1 : 1'b0,              /* [7] ETC2 */
 		7'd0                                       /* [6:0] BC */
 	};
 
 	localparam [31:0] CALC_FEAT = {
-		1'b0,                                      /* [31] BLT_SCALE */
-		1'b0,                                      /* [30] CLIP_POLY */
+		`ifdef CFG_BLT_ENABLE_SCALE ((HAS_BLT != 0) && (`CFG_BLT_ENABLE_SCALE != 0)) ? 1'b1 : 1'b0 `else 1'b0 `endif, /* [31] BLT_SCALE */
+		`ifdef CFG_RX_ENABLE_CPOLY (`CFG_RX_ENABLE_CPOLY != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,   /* [30] CLIP_POLY */
 		(SU_SUBGROUP != 0) ? 1'b1 : 1'b0,          /* [29] SUBGROUP */
 		(SU_PACKED != 0) ? 1'b1 : 1'b0,            /* [28] FP16 */
 		CALC_LDS_KB,                               /* [27:20] LDS_KB */
 		EXP_MRT[3:0],                              /* [19:16] MAX_MRT */
 		(EXP_MRT >= 4'd2) ? 1'b1 : 1'b0,           /* [15] MRT_BLEND */
 		1'b0,                                      /* [14] COLOR_LUT */
-		1'b0,                                      /* [13] CURSOR */
-		1'b0,                                      /* [12] EARLY_Z */
-		1'b0,                                      /* [11] LOGICOP */
-		1'b0,                                      /* [10] FAST_CLEAR */
-		1'b0,                                      /* [9] COARSE_SCAN */
-		1'b0,                                      /* [8] DUAL_SRC */
+		`ifdef CFG_DC_ENABLE_CURSOR (`CFG_DC_ENABLE_CURSOR != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif, /* [13] CURSOR */
+		`ifdef CFG_ENABLE_EARLY_Z (`CFG_ENABLE_EARLY_Z != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,     /* [12] EARLY_Z */
+		`ifdef CFG_ROP_ENABLE_LOGICOP (`CFG_ROP_ENABLE_LOGICOP != 0) ? 1'b1 : 1'b0 `else (`ifdef CFG_ENABLE_LOGICOP (`CFG_ENABLE_LOGICOP != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif) `endif, /* [11] LOGICOP */
+		`ifdef CFG_ROP_FAST_CLEAR (`CFG_ROP_FAST_CLEAR != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,     /* [10] FAST_CLEAR */
+		`ifdef CFG_COARSE_SCAN (`CFG_COARSE_SCAN != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,          /* [9] COARSE_SCAN */
+		`ifdef CFG_ROP_DUAL_SOURCE (`CFG_ROP_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else (`ifdef CFG_ENABLE_DUAL_SOURCE (`CFG_ENABLE_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif) `endif, /* [8] DUAL_SRC */
 		CALC_PA_ENC,                               /* [7:4] PA_BITS_ENC */
 		CALC_VA_ENC                                /* [3:0] VA_BITS_ENC */
 	};
