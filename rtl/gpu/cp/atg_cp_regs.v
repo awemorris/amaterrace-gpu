@@ -956,7 +956,8 @@ module atg_cp_regs #(
 `endif
 
 	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0], inc_co, raddr_q[1:0],
-		diag_pipe_fsm};
+		diag_pipe_fsm, counter_hi_co, DEVICE_VERSION, ISA_ID, NATIVE_ISA_ID, VEND,
+		A_LOCAL_BASE, A_LOCAL_SIZE, A_WINDOW_SIZE, A_HOST_LIMIT};
 
 endmodule
 
