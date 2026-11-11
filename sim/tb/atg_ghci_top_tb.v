@@ -370,6 +370,19 @@ module ghci_probe #(
 		host_read(17'h00190, val);
 		check32("VEND GCLK_HZ", val, EXP_GCLK);
 
+		/* R2: Running ring locked write triggers LOCKED_REG fault */
+		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RUN)); /* CTRL.RUN = 1 */
+		#50;
+		host_write(GHCI_REG_RING_SIZE, 32'h00020000); /* Write while running */
+		#50;
+		host_read(GHCI_REG_STATUS, val);
+		check32("STATUS.FAULTED on locked RING_SIZE write", {31'd0, val[GHCI_STATUS_FAULT]}, 32'd1);
+		host_read(GHCI_REG_FAULT_INFO, val);
+		check32("FAULT_INFO kind 7 (LOCKED_REG)", {28'd0, val[15:12]}, 32'd7);
+		/* Reset engine */
+		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RESET)); /* CTRL.RESET */
+		#50;
+
 		done = 1;
 	end
 endmodule

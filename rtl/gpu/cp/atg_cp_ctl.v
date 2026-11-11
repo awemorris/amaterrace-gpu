@@ -122,6 +122,9 @@ module atg_cp_ctl #(
 	localparam [9:0] I_WDT          = HCR_IDX_WDT_CYCLES;
 	localparam [9:0] I_HEAP_BASE    = HCR_IDX_CP_HEAP_BASE;
 	localparam [9:0] I_HEAP_LIMIT   = HCR_IDX_CP_HEAP_LIMIT;
+	localparam [9:0] I_RING_BASE_LO = HCR_IDX_RING_BASE_LO;
+	localparam [9:0] I_RING_BASE_HI = HCR_IDX_RING_BASE_HI;
+	localparam [9:0] I_RING_SIZE    = HCR_IDX_RING_SIZE;
 	localparam [31:0] AP_MASK = ~((32'd1 << LINE_SHIFT) - 32'd1);
 
 	(* max_fanout = 16 *) reg [2:0] st;
@@ -202,7 +205,13 @@ module atg_cp_ctl #(
 	wire kick_absent = 1'b0;
 	wire kick_bad = 1'b0;
 
-	wire wr_locked = hcr_we && (hcr_widx == I_HEAP_BASE || hcr_widx == I_HEAP_LIMIT);
+	wire wr_locked = hcr_we && (
+		hcr_widx == I_HEAP_BASE ||
+		hcr_widx == I_HEAP_LIMIT ||
+		hcr_widx == I_RING_BASE_LO ||
+		hcr_widx == I_RING_BASE_HI ||
+		hcr_widx == I_RING_SIZE
+	);
 	wire locked_bad = wr_locked && !open;
 
 `ifdef SYNTH_KINTEX7
