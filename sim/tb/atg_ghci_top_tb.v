@@ -35,6 +35,7 @@ module ghci_probe #(
 	parameter [31:0] HOST_LIMIT = 32'd0,
 	parameter [15:0] SUBSYSTEM_VENDOR = 16'h10EE,
 	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0007,
+	parameter TU_BILINEAR = 0,
 	parameter SU_NPHYS = 4,
 	parameter SU_PACKED = 0,
 	parameter SU_SUBGROUP = 0,
@@ -128,7 +129,8 @@ module ghci_probe #(
 		.WINDOW_BYTES(WINDOW_BYTES),
 		.HOST_LIMIT(HOST_LIMIT),
 		.SUBSYSTEM_VENDOR(SUBSYSTEM_VENDOR),
-		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE)
+		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE),
+		.TU_BILINEAR(TU_BILINEAR)
 	) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.win_en(),
@@ -385,15 +387,12 @@ module ghci_probe #(
 		$display("PASS [%0s] PERF_SRC0 (0x160): %08h", NAME, val);
 
 		/* Test FMT registers at 0x140 */
-		/* FMT_INDEX (+0x0): write VK_FORMAT_R8G8B8A8_UNORM (0x25 = 37, or 44) */
+		/* FMT_INDEX (+0x0): write VK_FORMAT_B8G8R8A8_UNORM (44) */
 		host_write(17'h00140, 32'd44);
 		host_read(17'h00144, val); /* FMT_OPTIMAL */
-		if (val == 32'd0) begin
-			err_count = err_count + 1;
-			$display("FAIL [%0s] FMT_OPTIMAL returned 0 for valid format", NAME);
-		end else begin
-			$display("PASS [%0s] FMT_OPTIMAL = %08h", NAME, val);
-		end
+		check32("FMT_OPTIMAL (0x144) format 44", val, (TU_BILINEAR ? 32'h000000EF : 32'h000000ED));
+		host_read(17'h00148, val); /* FMT_LINEAR */
+		check32("FMT_LINEAR (0x148) format 44", val, (TU_BILINEAR ? 32'h000000EF : 32'h000000ED));
 
 		/* FMT_LIMITS (+0x10): [3:0] must equal MRT_COUNT */
 		host_read(17'h00150, val);
@@ -527,6 +526,7 @@ module atg_ghci_top_tb;
 		.LOCAL_BYTES(32'h40000000),
 		.WINDOW_BYTES(32'h04000000),
 		.HOST_LIMIT(32'h80000000),
+		.TU_BILINEAR(1),
 		.SU_NPHYS(8),
 		.SU_PACKED(1),
 		.SU_SUBGROUP(1),

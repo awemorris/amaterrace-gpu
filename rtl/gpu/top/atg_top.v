@@ -44,6 +44,11 @@ module atg_top #(
 	parameter [15:0] SUBSYSTEM_VENDOR = 16'h10EE,
 	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0007,
 	parameter [31:0] MEM_CACHE_CFG = 32'd0,
+`ifdef CFG_TU_ENABLE_BILINEAR
+	parameter TU_BILINEAR = `CFG_TU_ENABLE_BILINEAR,
+`else
+	parameter TU_BILINEAR = 1,
+`endif
 	/* Which blocks are present (design §7.6; 0 = absent). */
 	parameter HAS_CPU = 0,	/* atg_cpu, the CP's firmware processor */
 	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
@@ -537,6 +542,7 @@ module atg_top #(
 		.SUBSYSTEM_VENDOR(SUBSYSTEM_VENDOR),
 		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE),
 		.MEM_CACHE_CFG(MEM_CACHE_CFG),
+		.TU_BILINEAR(TU_BILINEAR),
 		.MS4(MS4),
 		.CORE1(CORE1),
 		.HAS_FMT(1),

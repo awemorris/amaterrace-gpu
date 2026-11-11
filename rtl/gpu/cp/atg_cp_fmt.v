@@ -23,9 +23,10 @@
 `default_nettype none
 
 module atg_cp_fmt #(
-	parameter [9:0] BASE = 10'h058,	/* the window's first HCR dword (byte 0x160) */
+	parameter [9:0] BASE = 10'h050,	/* the window's first HCR dword (byte 0x140) */
 	parameter HAS_ETC = 0,	/* the TU has the ETC2/EAC decoder */
-	parameter [3:0] NRT = 4'd4	/* colour attachments */
+	parameter [3:0] NRT = 4'd4,	/* colour attachments */
+	parameter HAS_BILINEAR = 1	/* bilinear filtering supported in TU */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -51,6 +52,29 @@ module atg_cp_fmt #(
 	wire [2:0] off;
 	wire off_bo;
 
+	/* GHCI §4.1 format feature flags layout:
+	 * bit 0: SAMPLE (feat[0])
+	 * bit 1: FILTER_LINEAR (feat[12] && HAS_BILINEAR)
+	 * bit 2: COLOR_ATTACHMENT (feat[7])
+	 * bit 3: BLEND (feat[8])
+	 * bit 4: DEPTH_STENCIL (feat[9])
+	 * bit 5: VERTEX_BUFFER (feat[19])
+	 * bit 6: BLIT_SRC (feat[10])
+	 * bit 7: BLIT_DST (feat[11])
+	 * bit 8: STORAGE_IMAGE (0)
+	 */
+	wire [8:0] fmt_flags = {
+		1'b0,
+		feat[11],
+		feat[10],
+		feat[19],
+		feat[9],
+		feat[8],
+		feat[7],
+		(feat[12] && (HAS_BILINEAR != 0)),
+		feat[0]
+	};
+
 	am_sub #(.W(3)) off_sub (.a(hcr_ridx[2:0]), .b(BASE[2:0]), .bi(1'b0), .d(off), .bo(off_bo));
 	always @(*)
 		if (hcr_ridx < BASE || hcr_ridx >= BASE + 10'd8)
@@ -58,7 +82,7 @@ module atg_cp_fmt #(
 		else
 			case (off[2:0])
 			3'd0: hcr_rdata = {24'd0, idx};
-			3'd1, 3'd2: hcr_rdata = {19'd0, feat[12:0]};
+			3'd1, 3'd2: hcr_rdata = {23'd0, fmt_flags};
 			3'd3: hcr_rdata = {19'd0, feat[25:13]};
 			3'd4: hcr_rdata = {28'd0, NRT};
 			default: hcr_rdata = 32'd0;
