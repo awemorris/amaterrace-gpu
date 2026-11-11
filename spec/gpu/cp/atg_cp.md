@@ -10,7 +10,7 @@ The command processor: the GHCI host control registers, the state register file,
 with the class N sequencer, fences, interrupts, faults, the RESET order and the debug port.  Children
 (spec/gpu/cp/): `atg_cp_regs` (register bus, identification, CAPS, EXTCAP, PERF; the HCR snoop bus and
 the STATE alias), `atg_cp_state` (STATE[0..511], broadcast, replay), `atg_cp_ctl` (CTRL/STATUS, CP
-states, KICK, quiesce, RESET order, watchdog, aperture, FAULT_*), `atg_cp_ring`, `atg_cp_seq`,
+states, quiesce, RESET order, watchdog, FAULT_*), `atg_cp_ring`, `atg_cp_seq`,
 `atg_cp_fence`, `atg_cp_irq`, `atg_cp_dbg`, and `am_amb_mux` (ring, fence, dbg behind MC client 0).
 The CPU (`atg_cpu`) is outside, in `atg_top`, connected through the `hcr_*`, `v_*`, `fw_*`,
 `cpu_*` ports.
@@ -110,10 +110,9 @@ or changed in p004:
 | `win_en` | out | 1 | MEM WINDOW_CTRL.ENABLE from atg_cp_regs (reset by `rst_n` only, not by CTRL.RESET; ws288 p040) |
 | `mc_quiesce` | out | 1 | `atg_cp_ctl`'s quiesce, lifted while MC client 0 (this module) has a request valid |
 | `mc_flush` | out | 1 | One-cycle pulse with the core reset |
-| `aperture_base/limit` | out | 32 | From `atg_cp_ctl` |
 | `mc_idle`, `mc_fault*` | in | — | From the MC; refusals of client 0 are reported by ring/fence/dbg themselves |
 | `st_we/idx/wdata` | out | 1, 9, 32 | From `atg_cp_state`: every accepted write and the replay, one register stage later (p017: timing of a Zynq-7010 (XC7Z010) with the CPU; a kick follows its last STATE write by at least 2 cycles) |
-| `blt_kick`, `draw_kick`, `cs_kick` | out | 1 | KICK (host, `atg_cp_ctl`) OR the sequencer's µop |
+| `blt_kick`, `draw_kick`, `cs_kick` | out | 1 | From the sequencer's µop |
 | `lc_kick`, `raw_kick`, `inv` | out | 1, 1, 4 | From the sequencer |
 | `blt_busy`, `busy_ext[7:2]`, `blt_error*`, `x_fault*` | in | — | Busy levels and fault sources (STATUS, waits, FAULT_INFO) |
 | `busy_ext[0]` | in | 1 | The units' memory requests not yet answered (atg_mc's `!unit_idle`): for the sequencer's waits only (not in STATUS) |
@@ -138,7 +137,7 @@ None of its own (the CP states are in `atg_cp_ctl`).
 
 ## 6. Latency and throughput
 
-As the children: register read 1 cycle; KICK → `blt_kick` in the cycle of `reg_wr`; a STATE write →
+As the children: register read 1 cycle; a STATE write →
 `st_we` one cycle later (p017); the ring one dword per cycle within a line plus one AMB round trip per
 line; RESET: `mc_idle`, 1 pulse cycle, 513 replay cycles.
 
@@ -154,9 +153,9 @@ No `atg_cp_tb.v` (a wiring module).  Through `sim/tb/atg_top_tb.v` (KC705 shape)
 the CP v0 checks: CAPS[0], DEVICE_VERSION 0.3; a STATE write in FAULTED refused (read back with a full
 mask); the debug port in FAULTED and HALTED; a FILL on the STATE kept over RESET (the replay); the
 ring: SET_REG+BLIT FILL and FENCE with IRQ and RETIRE, padding and wrap, RESULT, DBG_MARK, WAIT_FENCE
-released by a debug write, HALT with STEP one packet at a time, KICK (6) and STATE (7) in RUNNING,
+released by a debug write, HALT with STEP one packet at a time, locked writes (7) in RUNNING,
 class V without firmware (2, address, tag), fault → RESET → the ring from 0 again, a packet past WPTR
-(3), a fence outside the aperture (1, client 0), the watchdog (4).  The Verilator harness: a ring FILL
+(3), a fence fault (1, client 0), the watchdog (4).  The Verilator harness: a ring FILL
 and FENCE with its interrupt.  With `HAS_CPU` and the firmware (p017): `sim/tb/atg_top_fw_tb.v` (KC705
 shape) checks CAPS[17]/[18], the EXTCAP list (PERF, CPFW → 0x120), CPFW start, a class V
 GHCI_FRAME whose fill and copy give the same memory as the class N packet, its result records and

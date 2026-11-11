@@ -28,7 +28,7 @@ The GHCI register bus decoder of the CP: identification, CAPS, EXTCAP list, VEND
 | `EXT_CAP_FMT0` | dynamic | Extended capability format bitmap (BC1-BC7 texture compression support). |
 | `EXT_CAP_FEATURE` | dynamic | Extended capability feature bitmap (LogicOp, EarlyZ, HW Cursor, MRT count, etc.). |
 | `VEND` | `256'd0` | The 8 VEND words (0x180-0x19F), word 0 in bits 31:0. |
-| `XCAP_MASK` | `11'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4 at 0x180, CPFW 6 at 0x120, SA 7, MEM 8 at 0x1E0, PROT 9 at 0x1D0 (atg_cp_prot), FMT 10 at 0x140, atg_cp_fmt; DISP2 11 at 0x200, atg_cp_disp). |
+| `XCAP_MASK` | `11'h004` | Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3 at 0x160, VEND 4 at 0x180, CPFW 6 at 0x170, SA 7, MEM 8 at 0x1E0, PROT 9 at 0x1D0 (atg_cp_prot), FMT 10 at 0x140, atg_cp_fmt; DISP2 11 at 0x200, atg_cp_disp). |
 | `DISP_OFFSET` | `32'h00010000` | Where the DISP entry points (KC705 +0x10000). |
 | `PERF_SRC` | `32'hFFFFFFFF` | PERF_SRC0..3 (byte n = PERF_SRCn; 0xFF unused). Amaterrace 2D: 0xFFFF0801 (BLT busy, memory). |
 
@@ -65,7 +65,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `fence_rdata` | in | 32 | atg_cp_fence. |
 | `dbg_rdata` | in | 32 | atg_cp_dbg. |
 | `state_rdata` | in | 32 | atg_cp_state (registered RAM output for alias_ridx). |
-| `x_rdata` | in | 32 | Outside the CP: atg_cpu's CPFW registers (0x120-0x13F), atg_sa's SA registers; 0 if absent. |
+| `x_rdata` | in | 32 | Outside the CP: atg_cpu's CPFW registers (0x170-0x17F, 0x1B0-0x1C7), atg_sa's SA registers; 0 if absent. |
 | **PERF** | | | |
 | `perf_busy` | in | 4 | Busy levels counted by PERF0-3 (Amaterrace: SU, RX, TU, MC). |
 | `perf_reset` | in | 1 | PERF_RESET µop (one cycle) from atg_cp_seq; PERF_CTRL[0] clears too. |
@@ -76,23 +76,27 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 
 ## 4. Behaviour
 
-- Writes: `hcr_we` is asserted for valid host MMIO writable registers in GHCI 1.0 (CTRL 0x014,
+- Writes: `hcr_we` is asserted for valid host MMIO writable registers in GHCI 1.0 (Page 0: CTRL 0x014,
   IRQ_STATUS 0x038, IRQ_ENABLE 0x03C, IRQ_SET 0x040, RING_BASE_LO 0x024, RING_BASE_HI 0x028,
-  RING_SIZE 0x02C, RING_WPTR 0x030, WDT_CYCLES 0x048, CP_HEAP_BASE 0x050, CP_HEAP_LIMIT 0x054).
+  RING_SIZE 0x02C, RING_WPTR 0x030, SCRATCH 0x044, WDT_CYCLES 0x048, CP_HEAP_BASE 0x050, CP_HEAP_LIMIT 0x054;
+  Windows in 0x100..0x3FF: FMT_INDEX 0x140, PERF_CTRL 0x160, PERF_SRC0..3 0x168..0x16B,
+  CPFW_MBOX_IN0..3 0x1B0..0x1BC, CPFW_DOORBELL 0x1C0, CPFW_RESET 0x1C4, WINDOW_CTRL 0x1F0,
+  WINDOW_OFFSET 0x1F4, and DISP window 0x200..0x2FF). Header region 0x100..0x13F is strictly read-only.
   Legacy APERTURE (0x060/0x064), KICK (0xF00) and STATE (0x1000..0x1BFC) writes are eliminated
-  and ignored. This module itself keeps SCRATCH (0x044); everything else belongs to the module that
-  uses it (snoop rule: a module takes the writes of its own word indices).
+  and ignored. This module itself keeps SCRATCH (0x044) and WINDOW_CTRL (0x1F0); everything else belongs
+  to the module that uses it (snoop rule: a module takes the writes of its own word indices).
 - Reads: the cycle after `reg_rd`, `reg_rdata` = this module's own register at `hcr_ridx`
   (MAGIC 0x000, VERSION 0x004, DEVICE_CAPS 0x008, EXTCAP_PTR 0x00C, SCRATCH 0x044, TIMESTAMP_LO 0x05C,
   TIMESTAMP_HI 0x060, GCLK_HZ 0x064, DIAG_CP_PC 0x074, DIAG_CP_STATUS 0x078, EXT_CAP_FMT0 0x080,
-  EXT_CAP_FEATURE 0x084, the EXTCAP list at 0x100, VEND at 0x180) OR the `*_rdata` inputs, or 0 elsewhere.
+  EXT_CAP_FEATURE 0x084, the EXTCAP list at 0x100, VEND at 0x180, MEM at 0x1E0..0x1F4) OR the `*_rdata` inputs, or 0 elsewhere.
 - EXTCAP list at 0x100: one 2-word entry per set bit of XCAP_MASK in id order; EXTCAP reads 0
   when XCAP_MASK is 0. Canonical capability windows reside in 0x100..0x3FF: FMT at 0x140,
-  PERF/CPFW at 0x160/0x120, VEND at 0x180, PROT at 0x1D0, MEM at 0x1E0, DISP2 at 0x200.
+  PERF at 0x160, CPFW at 0x170, VEND at 0x180, PROT at 0x1D0, MEM at 0x1E0, DISP2 at 0x200.
 - MEM (XCAP_MASK[7]): 0x1E0 LOCAL_BASE, 0x1E4 LOCAL_BYTES, 0x1E8 WINDOW_BYTES, 0x1EC HOST_LIMIT (read only),
-  0x1F0 WINDOW_CTRL ([0] ENABLE, RW, `win_en`); they read 0 when MEM is not listed.  WINDOW_CTRL.ENABLE
-  is 1 after `rst_n` (the board's reset: CTRL.RESET does not reach this module) and takes writes whose
+  0x1F0 WINDOW_CTRL ([0] ENABLE, RW, `win_en`), 0x1F4 WINDOW_OFFSET (RW); they read 0 when MEM is not listed.
+  WINDOW_CTRL.ENABLE is 1 after `rst_n` (the board's reset: CTRL.RESET does not reach this module) and takes writes whose
   byte 0 is enabled; without a window (WINDOW_BYTES 0) it reads 0 and ignores writes (GHCI §11.1, §11.3).
+  Reads to 0x1E0..0x1F4 return parameters and register states when MEM capability is active.
 - COUNTER counts every clk.  PERFn counts cycles with `perf_busy[n]`; cleared by PERF_CTRL[0] or
   `perf_reset`.
 

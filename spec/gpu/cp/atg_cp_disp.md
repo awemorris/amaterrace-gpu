@@ -40,7 +40,6 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 | `kick_idle` | in | 1 | One-cycle pulse: DISP_SET with flags[0] executes (the wait follows). |
 | `seq_tag` | in | 8 | The job tag of `atg_cp_seq`'s current µop (for the fault). |
 | `disp_wait` | out | 1 | Level to `atg_cp_seq`'s busy bit 8 (only while active): the staged FLIP's plane is not free, a DISP_SET wait has not seen the DC idle, or a host write waits in the buffer. |
-| `aperture_base`, `aperture_limit` | in | `ADDR_W` | APERTURE_BASE/LIMIT. |
 | `fault` | out | 1 | One-cycle pulse: a bad FLIP (kind 3). |
 | `fault_kind` | out | 4 | 3. |
 | `fault_addr` | out | 32 | The bad plane, base or record. |

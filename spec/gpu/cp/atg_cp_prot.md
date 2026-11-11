@@ -61,9 +61,8 @@ MC (8), faults (3).
 - **resid** (the owner of the SUs' memories): none / slot / mixed; reset: mixed.  A µop with
   `u_req[1]` while `u_ok` adds prot_unit (none → that slot, another slot → mixed).  The scrub
   makes it none.  Clearing slot s: resid s → mixed; prot_unit s → 0 and unknown.
-- **PROT_TABLE**: written (4 KiB aligned) only while `n_slots` = 0; a write of APERTURE_BASE or
-  APERTURE_LIMIT or the reset sets it to 0.  PROT_TABLE_BYTES = ceil((G1 − G0) / 4096) × 4096,
-  G0 = base >> 12, G1 = ceil(limit / 4096).
+- **PROT_TABLE**: written (4 KiB aligned) only while `n_slots` = 0; the reset sets it to 0.
+  PROT_TABLE_BYTES = ceil((G1 − G0) / 4096) × 4096, G0 = base >> 12, G1 = ceil(limit / 4096).
 - **The window** (sub-bus): 0x29 PROT_INV_G, 0x33 PROT_INV_N (W: starts the invalidation of
   [G, G + N) granules, N 0: all), 0x2A GIDX, 0x2B GBASE (granule), 0x2C GLIMIT (granule,
   exclusive, 21 bits), 0x2D GCTL (W: [0] valid, [1] read, [2] write, [13:8] slot; writes the CAM
@@ -85,11 +84,7 @@ A switch: the drain (the earlier work), one cycle of INV, and the scrub (the SUs
 
 - After a reset the first unit µop (even of slot 0) switches (prot_unit unknown); the first
   protected one scrubs (resid mixed).
-- A host KICK does not go through the switch (it is taken in IDLE and HALTED only): it is taken
-  only while the units are session 0's (kick_ok: prot_unit 0, no switch; 0 after a reset), so its
-  work runs unchecked and never for a protected session; else it is a fault of kind 6.  After a
-  protected session's work the driver runs a µop of session 0 (any packet of tag 0 that starts a
-  unit) before a KICK.  A kicked DRAW or DISPATCH adds owner 0 to resid (su_kick).
+- Host KICK registers are eliminated in GHCI 1.0; all workloads submit via command ring packets.
 - The watchdog during a switch's DRAIN counts the drained session's work: its fault's tag is
   wdt_tag (SLOT_TAG of the old prot_unit).
 

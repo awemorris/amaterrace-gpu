@@ -4,7 +4,7 @@ RTL: `rtl/gpu/mc/atg_mc_aper.v`.  Parent: atg_mc.  Implemented in: p015 (split o
 
 ## 1. Purpose and place
 
-The aperture check of an AMB request: the line is inside [APERTURE_BASE, APERTURE_LIMIT) (line granularity).
+The range check of an AMB request: the line is inside [base, limit) (line granularity). Note: Host MMIO registers APERTURE_BASE/APERTURE_LIMIT (0x060/0x064) are retired in GHCI 1.0; range limits are configured internally or derived from the MEM capability (LOCAL_BASE/LOCAL_BYTES/HOST_LIMIT).
 
 ## 2. Parameters
 

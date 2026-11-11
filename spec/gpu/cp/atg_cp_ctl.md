@@ -4,7 +4,7 @@ RTL: `rtl/gpu/cp/atg_cp_ctl.v`.  Parent: atg_cp.  Implemented in: p004 (done).
 
 ## 1. Purpose and place
 
-The CP's state machine (design §2.6): CTRL (RUN/RESET/HALT/STEP/WDT_EN), STATUS, KICK from the host, HALT and quiesce, the RESET order of design §1.3, the watchdog, and FAULT_ADDR/FAULT_INFO from all fault sources.
+The CP's state machine (design §2.6): CTRL (RUN/RESET/HALT/STEP/WDT_EN), STATUS, HALT and quiesce, the RESET order of design §1.3, the watchdog, and FAULT_ADDR/FAULT_INFO from all fault sources.
 
 ## 2. Parameters
 
@@ -13,8 +13,6 @@ The CP's state machine (design §2.6): CTRL (RUN/RESET/HALT/STEP/WDT_EN), STATUS
 | `NSRC` | `8` | Number of fault sources (0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks; atg_cp: 9, 8 the DISP2 µops' fault 3 of atg_cp_disp). |
 | `DC_CLIENT` | `8'hFF` | The DC's MC client (atg_cp: atg_top's `C_DC` with `HAS_DISP`): its refusals (not for protection) are not device faults (design §18.2); 0xFF none. |
 | `WDT_RESET` | `32'h10000000` | WDT_CYCLES after reset (2^28). |
-| `LINE_SHIFT` | `5` | The aperture registers' alignment. |
-| `UNITS` | `8'h03` | Present blocks (STATUS order): KICK.DRAW needs bit 2, KICK.DISPATCH bit 6, else fault kind 2. |
 | `SRC_BLOCK` | `64'h00_01_00_06_00_00_00_00` | FAULT_INFO[23:16] per source (BLT 1, SU 6, the CP's own 0). |
 | `SRC_CLIENT` | `64'h00_01_00_00_00_00_00_00` | FAULT_INFO[7:0] per source (BLT client 1). |
 
@@ -59,17 +57,13 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `core_rst_n` | out | 1 | Core reset (design §1.3 domain a), low for one cycle in the RESET order. |
 | `open` | out | 1 | IDLE or HALTED. |
 | `cp_state` | out | 4 | STATUS[19:16]. |
-| `host_kick` | out | 3 | KICK [0] BLIT [1] DRAW [2] DISPATCH, pulses, only when open and kick_prot_ok. |
-| `kick_prot_ok` | in | 1 | Session protection: the units are session 0's (atg_cp_prot's kick_ok; 1 without PROT). |
 | `wdt_tag` | in | 8 | FAULT_INFO[31:24] of a watchdog fault (atg_cp_prot: the drained session's during a switch; else 0). |
 | `step` | out | 1 | STEP pulse in HALTED. |
 | `ev_halted` | out | 1 | Pulse: HALTED reached. |
 | `ev_fault` | out | 1 | Pulse: FAULT raised. |
 | `ev_wdt` | out | 1 | Pulse: watchdog expired. |
-| `aperture_base` | out | 32 | APERTURE_BASE (0x060), line-aligned, written only when open, kept over RESET. |
-| `aperture_limit` | out | 32 | APERTURE_LIMIT (0x064), the same. |
 
-38 ports.
+32 ports.
 
 ## 4. Behaviour
 
@@ -89,9 +83,8 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
   (the debug port, a fence poll).  RUNNING → IDLE (RUN = 0) waits for STATUS[0] (CP busy) to be 0.
 - `run` = RUNNING and CTRL.RUN; `halt` = HALTING, HALTED, FAULTED or RESETTING; `quiesce` = `halt`
   (atg_cp lifts it for its own MC client).  STEP pulses `step` only in HALTED.
-- KICK of a present unit when not open, while it is busy or without kick_prot_ok: kind 6; of an absent unit: kind 2.
-- First-fault priority in one cycle: the MC, KICK (6), KICK absent (2), locked (7), the watchdog (4),
-  then src 0..NSRC-1.  FAULT_INFO of src k: {tag, SRC_BLOCK[k], kind, 4'b0, SRC_CLIENT[k]}; of KICK,
+- First-fault priority in one cycle: the MC, locked write (7), the watchdog (4),
+  then src 0..NSRC-1.  FAULT_INFO of src k: {tag, SRC_BLOCK[k], kind, 4'b0, SRC_CLIENT[k]}; of
   locked: {0, 0, kind, 0, 0}; of the watchdog: {wdt_tag, 0, kind, 0, 0}; of the MC: {0, client, 1, 3'b0, write, client}.  AXI_STUCK after 4 × WDT_CYCLES waiting for mc_idle.
 - Watchdog: when WDT_EN, a counter of cycles with `cmd_active` and not `wdt_hold`; reset when
   cmd_active falls, kept while wdt_hold; at WDT_CYCLES → fault kind 4 and ev_wdt.
@@ -120,7 +113,7 @@ Register effects in 1 cycle.
 - `PASS atg_cp_ctl.stuck` — mc_idle never comes: AXI_STUCK after 4 × WDT_CYCLES
 - `PASS atg_cp_ctl.fault` — first fault wins, FAULT_INFO fields, MC client 0 ignored
 - `PASS atg_cp_ctl.wdt` — watchdog fires only with WDT_EN and cmd_active
-- `PASS atg_cp_ctl.locked` — locked writes and KICK in RUNNING fault with kinds 7 and 6
+- `PASS atg_cp_ctl.locked` — locked writes in RUNNING fault with kind 7
 - `PASS atg_cp_ctl` at the end.
 
 ## 9. References
