@@ -276,8 +276,8 @@ It is the primary authoritative source for device capabilities (M01, M04, N18):
 When querying hardware capabilities and address sizes without walking the EXTCAP list,
 `EXT_CAP_FEATURE` (0x084) exposes architecture widths and pipeline flags:
 - `[3:0] VA_BITS_ENC`: Supported GPU virtual address width offset encoding (M03).
-  Encoded as $(VA - 32)$: `0x0` = 32-bit (4 GiB, 2-level page table), `0x8` = 40-bit (1 TiB, 3-level page table).
-  Decoded as: $\text{VA\_BITS} = 32 + (\text{raw} \ \& \ 0\text{xF})$.
+  Encoded as $(VA - 30)$: `0x0` = 30-bit (1 GiB), `0x2` = 32-bit (4 GiB, 2-level page table), `0xA` = 40-bit (1 TiB, 3-level page table).
+  Decoded as: $\text{VA\_BITS} = 30 + (\text{raw} \ \& \ 0\text{xF})$.
 - `[7:4] PA_BITS_ENC`: Supported Host physical address / IOVA width offset encoding (M03).
   Encoded as $(PA - 40)$: `0x0` = 40-bit (1 TiB), `0x8` = 48-bit (256 TiB).
   Decoded as: $\text{PA\_BITS} = 40 + ((\text{raw} >> 4) \ \& \ 0\text{xF})$. (Note: PA refers strictly to physical interconnect / PCIe bus addresses, N11).
