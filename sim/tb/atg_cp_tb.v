@@ -220,7 +220,7 @@ module atg_cp_tb;
 		/* Test 3: Verify Default EXT_CAP_FEATURE (0x084) */
 		mmio_read(GHCI_REG_EXT_CAP_FEATURE, rdata);
 		$display("Default EXT_CAP_FEATURE = 0x%08h", rdata);
-		if (rdata[1] !== `EXP_CFG_EARLY_Z) begin
+		if (rdata[12] !== `EXP_CFG_EARLY_Z) begin
 			$display("FAIL: EARLY_Z feature bit mismatch");
 			errors = errors + 1;
 		end else begin

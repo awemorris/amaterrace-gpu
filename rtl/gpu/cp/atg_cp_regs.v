@@ -308,7 +308,11 @@ module atg_cp_regs #(
 	parameter VA_BITS = 32,
 	parameter PA_BITS = 40,
 	parameter NSU = 0,
+`ifdef CFG_SU_NPHYS
+	parameter SU_NPHYS = `CFG_SU_NPHYS,
+`else
 	parameter SU_NPHYS = 8,
+`endif
 	parameter SU_PACKED = 0,
 	parameter SU_SUBGROUP = 0,
 	parameter SU_LDS_KB = 0,
