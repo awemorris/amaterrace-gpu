@@ -693,8 +693,10 @@ module atg_mc #(
 	wire [AX_SKW-1:0] ax_ar_in_data = {ax_q_id, axi_req_line};
 	wire [AX_SKW-1:0] ax_ar_out_data;
 
-	wire ax_w_other = |(ax_wq_has & ~({{(AX_NID-1){1'b0}}, 1'b1} << ax_q_id));
-	wire ax_r_other = |(ax_rq_has & ~({{(AX_NID-1){1'b0}}, 1'b1} << ax_q_id));
+	wire ax_w_other = (AX_NID == 2) ? (ax_q_id ? ax_wq_has[0] : ax_wq_has[1]) :
+		|(ax_wq_has & ~({{(AX_NID-1){1'b0}}, 1'b1} << ax_q_id));
+	wire ax_r_other = (AX_NID == 2) ? (ax_q_id ? ax_rq_has[0] : ax_rq_has[1]) :
+		|(ax_rq_has & ~({{(AX_NID-1){1'b0}}, 1'b1} << ax_q_id));
 	wire ax_wr_can = ax_aw_in_ready && !ax_w_busy && ax_wq_rdy[ax_q_id] && !ax_w_other;
 	wire ax_rd_can = ax_ar_in_ready && ax_rq_rdy[ax_q_id] && !ax_r_other;
 
@@ -947,15 +949,11 @@ module atg_mc #(
 				(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rpb (.I0(wq_rp[g_fe]), .O(wq_rp_b[g_fe]));
 			end
 			assign ax_wq_user[g_id*UW +: UW] = wq_mem[wq_rp_b];
-			reg wq_match;
-			integer wi;
-			always @(*) begin
-				wq_match = 1'b0;
-				for (wi = 0; wi < AX_D; wi = wi + 1)
-					if (wq_full[wi] && wq_keys[wi*8 +: 8] == axi_req_key)
-						wq_match = 1'b1;
+			wire [AX_D-1:0] wq_entry_match;
+			for (g_fe = 0; g_fe < AX_D; g_fe = g_fe + 1) begin : g_wq_m
+				assign wq_entry_match[g_fe] = wq_full[g_fe] && (wq_keys[g_fe*8 +: 8] == axi_req_key);
 			end
-			assign ax_wq_has[g_id] = wq_match;
+			assign ax_wq_has[g_id] = |wq_entry_match;
 			always @(posedge clk) begin
 				if (mc_rst_sync2) begin
 					wq_wp <= {(AX_O + 1){1'b0}};
@@ -979,6 +977,17 @@ module atg_mc #(
 					);
 					(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(WQ_HIT_INIT)) u_wk (
 						.I0(wv_g[0]), .I1(wr_g[0]), .I2(wq_wp[0]), .I3(wq_wp[1]),
+						.O(wq_we_k)
+					);
+					wire unused_wq_hw = wq_hit_w;
+				end else if (AX_NID == 2 && AX_O == 2) begin : g_wq_we_fast2
+					localparam [31:0] WQ_HIT_INIT = (32'h00000001 << {g_fe[1:0], GID, 2'b11});
+					(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(WQ_HIT_INIT)) u_wm (
+						.I0(wv_g[0]), .I1(wr_g[0]), .I2(ax_q_id), .I3(wq_wp[0]), .I4(wq_wp[1]),
+						.O(wq_we_m)
+					);
+					(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(WQ_HIT_INIT)) u_wk (
+						.I0(wv_g[0]), .I1(wr_g[0]), .I2(ax_q_id), .I3(wq_wp[0]), .I4(wq_wp[1]),
 						.O(wq_we_k)
 					);
 					wire unused_wq_hw = wq_hit_w;
@@ -1023,15 +1032,11 @@ module atg_mc #(
 				(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rpb (.I0(rq_rp[g_fe]), .O(rq_rp_b[g_fe]));
 			end
 			assign ax_rq_user[g_id*UW +: UW] = rq_mem[rq_rp_b];
-			reg rq_match;
-			integer ri;
-			always @(*) begin
-				rq_match = 1'b0;
-				for (ri = 0; ri < AX_D; ri = ri + 1)
-					if (rq_full[ri] && rq_keys[ri*8 +: 8] == axi_req_key)
-						rq_match = 1'b1;
+			wire [AX_D-1:0] rq_entry_match;
+			for (g_fe = 0; g_fe < AX_D; g_fe = g_fe + 1) begin : g_rq_m
+				assign rq_entry_match[g_fe] = rq_full[g_fe] && (rq_keys[g_fe*8 +: 8] == axi_req_key);
 			end
-			assign ax_rq_has[g_id] = rq_match;
+			assign ax_rq_has[g_id] = |rq_entry_match;
 			always @(posedge clk) begin
 				if (mc_rst_sync2) begin
 					rq_wp <= {(AX_O + 1){1'b0}};
@@ -1055,6 +1060,17 @@ module atg_mc #(
 					);
 					(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(RQ_HIT_INIT)) u_wk (
 						.I0(rv_g), .I1(rr_g), .I2(rq_wp[0]), .I3(rq_wp[1]),
+						.O(rq_we_k)
+					);
+					wire unused_rq_hw = rq_hit_w;
+				end else if (AX_NID == 2 && AX_O == 2) begin : g_rq_we_fast2
+					localparam [31:0] RQ_HIT_INIT = (32'h00000001 << {g_fe[1:0], GID, 2'b11});
+					(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(RQ_HIT_INIT)) u_wm (
+						.I0(rv_g), .I1(rr_g), .I2(ax_q_id), .I3(rq_wp[0]), .I4(rq_wp[1]),
+						.O(rq_we_m)
+					);
+					(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(RQ_HIT_INIT)) u_wk (
+						.I0(rv_g), .I1(rr_g), .I2(ax_q_id), .I3(rq_wp[0]), .I4(rq_wp[1]),
 						.O(rq_we_k)
 					);
 					wire unused_rq_hw = rq_hit_w;
