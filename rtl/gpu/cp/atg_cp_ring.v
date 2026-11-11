@@ -684,8 +684,8 @@ module atg_cp_ring #(
 			widx_a            <= hcr_widx;
 			widx_b            <= hcr_widx;
 			doorbell_r[0]     <= hcr_we_lo64 && (hcr_widx[5:0] == I_WPTR0[5:0]);
-			doorbell_r[1]     <= hcr_we_lo64 && (hcr_widx[5:0] == I_WPTR1[5:0]);
-			doorbell_r[2]     <= hcr_we_lo64 && (hcr_widx[5:0] == I_WPTR2[5:0]);
+			doorbell_r[1]     <= 1'b0;
+			doorbell_r[2]     <= 1'b0;
 		end
 	end
 	wire [2:0] doorbell = doorbell_r;
@@ -1343,16 +1343,6 @@ module atg_cp_ring #(
 			if (we_sz0_b[0] && (dec_sz_c != 5'd0)) size[0] <= dec_sz_c;
 			if (we_sz1_b[0] && (dec_sz_c != 5'd0)) size[1] <= dec_sz_c;
 			if (we_sz2_b[0] && (dec_sz_c != 5'd0)) size[2] <= dec_sz_c;
-			if (hcr_we_cfg_b[4]) begin
-				if (open) begin
-					if (widx_b == I_DMA_SIZE && wmask_c[0])
-						dma_size <= sz_clamp_c;
-				end
-				if (widx_b == I_PREEMPT && wmask_c[0]) begin
-					prio_mode <= wdata_c[7:4];
-					preempt_auto <= wdata_c[4];
-				end
-			end
 `else
 			if (hcr_we_cfg) begin
 				if (open) begin
