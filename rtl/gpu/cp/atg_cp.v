@@ -73,6 +73,9 @@ module atg_cp #(
 	parameter [31:0] LOCAL_BYTES = 32'd0,
 	parameter [31:0] WINDOW_BYTES = 32'd0,
 	parameter [31:0] HOST_LIMIT = 32'd0,
+	parameter [15:0] SUBSYSTEM_VENDOR = 16'h10EE,
+	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0007,
+	parameter [31:0] MEM_CACHE_CFG = 32'd0,
 	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
 	parameter [31:0] DEVICE_CAPS = 32'd0,
 	parameter [31:0] EXT_CAP_FMT0 = 32'd0,
@@ -231,8 +234,8 @@ module atg_cp #(
 	/* CAPS[8]: the TU filters bilinear; CAPS2[27:24]: its 16 texture slots / 4; CAPS2[7:0]: 3 queues. */
 	localparam [31:0] CAPS2 = {4'd0, UNITS[5] ? 4'd4 : 4'd0, 16'd0, 8'd3};
 	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
-	/* PERF always; CPFW with the CPU; DISP2, DBG, MEM, PROT and FMT when present (bit id - 1). */
-	localparam [10:0] XCAP = 11'h004 | (HAS_CPU != 0 ? 11'h020 : 11'h000) |
+	/* PERF and VEND always; CPFW with the CPU; DISP2, DBG, MEM, PROT and FMT when present (bit id - 1). */
+	localparam [10:0] XCAP = 11'h004 | 11'h008 | (HAS_CPU != 0 ? 11'h020 : 11'h000) |
 		(HAS_DISP != 0 ? 11'h400 : 11'h000) | (HAS_DBG != 0 ? 11'h002 : 11'h000) |
 		(LOCAL_BYTES != 32'd0 ? 11'h080 : 11'h000) | (HAS_FMT != 0 ? 11'h200 : 11'h000) |
 		(HAS_PROT != 0 ? 11'h100 : 11'h000);
@@ -465,6 +468,9 @@ module atg_cp #(
 		.NREGS(NREGS), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
 		.HOST_LIMIT(HOST_LIMIT),
+		.SUBSYSTEM_VENDOR(SUBSYSTEM_VENDOR),
+		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE),
+		.MEM_CACHE_CFG(MEM_CACHE_CFG),
 		.DEVICE_CAPS(DEVICE_CAPS),
 		.EXT_CAP_FMT0(EXT_CAP_FMT0),
 		.EXT_CAP_FEATURE(EXT_CAP_FEATURE),

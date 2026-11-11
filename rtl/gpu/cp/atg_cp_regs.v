@@ -226,6 +226,34 @@
 `define ATG_DEF_VA_BITS_ENC 4'h0
 `endif
 
+`ifdef CFG_VF_CACHE_LINES
+`define ATG_DEF_VF_CACHE_LINES 4'd`CFG_VF_CACHE_LINES
+`else
+`define ATG_DEF_VF_CACHE_LINES 4'd0
+`endif
+
+`ifdef CFG_TU_L1_CACHE_KB
+`define ATG_DEF_TU_L1_CACHE_KB 4'd`CFG_TU_L1_CACHE_KB
+`else
+`define ATG_DEF_TU_L1_CACHE_KB 4'd0
+`endif
+
+`ifdef CFG_MC_L2_WAYS
+`define ATG_DEF_MC_L2_WAYS 8'd`CFG_MC_L2_WAYS
+`else
+`define ATG_DEF_MC_L2_WAYS 8'd0
+`endif
+
+`ifdef CFG_MC_L2_CACHE_KB
+`define ATG_DEF_MC_L2_CACHE_KB 16'd`CFG_MC_L2_CACHE_KB
+`else
+`define ATG_DEF_MC_L2_CACHE_KB 16'd0
+`endif
+
+`define ATG_DEF_MEM_CACHE_CFG { \
+	`ATG_DEF_VF_CACHE_LINES, `ATG_DEF_TU_L1_CACHE_KB, `ATG_DEF_MC_L2_WAYS, `ATG_DEF_MC_L2_CACHE_KB \
+}
+
 `define ATG_DEF_DEVICE_CAPS { \
 	`ATG_DEF_MSAA, `ATG_DEF_DISP, `ATG_DEF_HAS_BLT, `ATG_DEF_MESH, `ATG_DEF_TASK, \
 	`ATG_DEF_ROP_PACK, `ATG_DEF_FFILT, `ATG_DEF_PROT, \
@@ -269,6 +297,9 @@ module atg_cp_regs #(
 	parameter [31:0] LOCAL_BYTES = 32'd0,	/* MEM: bytes of local memory */
 	parameter [31:0] WINDOW_BYTES = 32'd0,	/* MEM: bytes the local window shows */
 	parameter [31:0] HOST_LIMIT = 32'd0,	/* MEM: host addresses below it (0: all) */
+	parameter [15:0] SUBSYSTEM_VENDOR = 16'h10EE,
+	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0007,
+	parameter [31:0] MEM_CACHE_CFG = 32'd0,
 	parameter [3:0] MRT_COUNT = 4'd1,
 	parameter HAS_INDIRECT_DRAW = 0,
 	parameter HAS_SECONDARY_RING = 0,
@@ -278,7 +309,7 @@ module atg_cp_regs #(
 	parameter [31:0] EXT_CAP_FMT0 = `ATG_DEF_EXT_CAP_FMT0,
 	parameter [31:0] EXT_CAP_FEATURE = `ATG_DEF_EXT_CAP_FEATURE,
 	parameter VEND = 256'd0,	/* The 8 VEND words (0x0C0-0x0DF), word 0 in bits 31:0 */
-	parameter [10:0] XCAP_MASK = 11'h004,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, PROT 9, FMT 10, DISP2 11) */
+	parameter [10:0] XCAP_MASK = 11'h00C,	/* Which extended capabilities are listed: bit id-1 (DISP 1, DBG 2, PERF 3, VEND 4, CPFW 6, SA 7, MEM 8, PROT 9, FMT 10, DISP2 11) */
 	parameter DISP_OFFSET = 32'h00010000,	/* Where the DISP entry points (KC705 +0x10000) */
 	parameter PERF_SRC = 32'hFFFFFFFF	/* PERF_SRC0..3 (byte n = PERF_SRCn) */
 ) (
@@ -655,6 +686,7 @@ module atg_cp_regs #(
 		{def_fmt0[31:16], MRT_COUNT, def_fmt0[11:0]};
 	wire [31:0] eff_feat = (EXT_CAP_FEATURE != 32'd0) ? EXT_CAP_FEATURE :
 		{def_feat[31:20], MRT_COUNT, (MRT_COUNT >= 4'd2 ? 1'b1 : 1'b0), def_feat[14:0]};
+	wire [31:0] eff_mem_cache_cfg = (MEM_CACHE_CFG != 32'd0) ? MEM_CACHE_CFG : `ATG_DEF_MEM_CACHE_CFG;
 
 	reg [31:0] own;
 	wire [11:0] roff = {ridx_q, 2'b00};
@@ -685,7 +717,15 @@ module atg_cp_regs #(
 		17'h0016C: own = {24'd0, PERF_SRC[31:24]};
 		17'h00180: own = VENDOR_ID;
 		17'h00184: own = DEVICE_ID;
+		17'h00188: own = {16'd0, SUBSYSTEM_VENDOR};
+		17'h0018C: own = {16'd0, SUBSYSTEM_DEVICE};
 		17'h00190: own = GCLK_HZ;
+		17'h001E0: own = LOCAL_BASE;
+		17'h001E4: own = LOCAL_BYTES;
+		17'h001E8: own = WINDOW_BYTES;
+		17'h001EC: own = HOST_LIMIT;
+		17'h001F0: own = {31'd0, win_q};
+		17'h001F4: own = eff_mem_cache_cfg;
 		default: own = (raddr_q >= 17'h00100) ? xcap_word(roff) : 32'd0;
 		endcase
 	end
@@ -742,10 +782,18 @@ module atg_cp_regs #(
 			17'h0016C: v = {24'd0, PERF_SRC[31:24]};
 			17'h00180: v = VENDOR_ID;
 			17'h00184: v = DEVICE_ID;
+			17'h00188: v = {16'd0, SUBSYSTEM_VENDOR};
+			17'h0018C: v = {16'd0, SUBSYSTEM_DEVICE};
 			17'h00190: v = GCLK_HZ;
+			17'h001E0: v = LOCAL_BASE;
+			17'h001E4: v = LOCAL_BYTES;
+			17'h001E8: v = WINDOW_BYTES;
+			17'h001EC: v = HOST_LIMIT;
+			17'h001F0: v = {31'd0, win_in};
+			17'h001F4: v = eff_mem_cache_cfg;
 			default: ;
 			endcase
-			calc_own_const = v | {32{win_in & 1'b0}};
+			calc_own_const = v;
 		end
 	endfunction
 

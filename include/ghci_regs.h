@@ -362,6 +362,13 @@ extern "C" {
 #define GHCI_XCAP_FMT 10u
 #define GHCI_XCAP_DISP2 11u /* draft */
 
+/* The VEND capability's registers (from its register offset, section 4.1). */
+#define GHCI_VEND_VENDOR_ID        0x0u
+#define GHCI_VEND_DEVICE_ID        0x4u
+#define GHCI_VEND_SUBSYSTEM_VENDOR 0x8u
+#define GHCI_VEND_SUBSYSTEM_DEVICE 0xCu
+#define GHCI_VEND_GCLK_HZ          0x10u
+
 /* The FMT capability's registers (from its register offset, section 4; draft). */
 #define GHCI_FMT_INDEX 0x00u /* RW: a VkFormat value */
 #define GHCI_FMT_OPTIMAL 0x04u /* R: VkFormatFeatureFlags, optimal tiling */

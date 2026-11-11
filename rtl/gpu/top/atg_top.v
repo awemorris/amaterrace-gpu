@@ -41,6 +41,9 @@ module atg_top #(
 	 * HOST_LIMIT, GHCI §11.2; 0 = all; KC705 0x8000_0000).  With local memory the MC
 	 * sends local accesses with AXI ID 0 and host accesses with ID 1 (m_awid/m_arid). */
 	parameter [31:0] HOST_LIMIT = 32'd0,
+	parameter [15:0] SUBSYSTEM_VENDOR = 16'h10EE,
+	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0007,
+	parameter [31:0] MEM_CACHE_CFG = 32'd0,
 	/* Which blocks are present (design §7.6; 0 = absent). */
 	parameter HAS_CPU = 0,	/* atg_cpu, the CP's firmware processor */
 	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
@@ -531,6 +534,9 @@ module atg_top #(
 		.LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
 		.HOST_LIMIT(HOST_LIMIT),
+		.SUBSYSTEM_VENDOR(SUBSYSTEM_VENDOR),
+		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE),
+		.MEM_CACHE_CFG(MEM_CACHE_CFG),
 		.MS4(MS4),
 		.CORE1(CORE1),
 		.HAS_FMT(1),

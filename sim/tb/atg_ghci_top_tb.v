@@ -29,8 +29,12 @@ module ghci_probe #(
 	parameter [31:0] EXP_FMT0 = 32'h00001200,
 	parameter [31:0] EXP_FEAT = 32'h00110000,
 	parameter [31:0] EXP_GCLK = 32'd200000000,
+	parameter [31:0] LOCAL_BASE = 32'd0,
 	parameter [31:0] LOCAL_BYTES = 32'd0,
 	parameter [31:0] WINDOW_BYTES = 32'd0,
+	parameter [31:0] HOST_LIMIT = 32'd0,
+	parameter [15:0] SUBSYSTEM_VENDOR = 16'h10EE,
+	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0007,
 	parameter SU_NPHYS = 4,
 	parameter SU_PACKED = 0,
 	parameter SU_SUBGROUP = 0,
@@ -119,8 +123,12 @@ module ghci_probe #(
 		.HAS_BLT(HAS_BLT),
 		.HAS_DISP(1),
 		.HAS_JTAG(HAS_JTAG),
+		.LOCAL_BASE(LOCAL_BASE),
 		.LOCAL_BYTES(LOCAL_BYTES),
-		.WINDOW_BYTES(WINDOW_BYTES)
+		.WINDOW_BYTES(WINDOW_BYTES),
+		.HOST_LIMIT(HOST_LIMIT),
+		.SUBSYSTEM_VENDOR(SUBSYSTEM_VENDOR),
+		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE)
 	) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.win_en(),
@@ -396,8 +404,37 @@ module ghci_probe #(
 		check32("VEND VENDOR_ID", val, 32'h414D4154);
 		host_read(17'h00184, val);
 		check32("VEND DEVICE_ID", val, 32'h41544731);
+		host_read(17'h00188, val);
+		check32("VEND SUBSYSTEM_VENDOR", val, {16'd0, SUBSYSTEM_VENDOR});
+		host_read(17'h0018C, val);
+		check32("VEND SUBSYSTEM_DEVICE", val, {16'd0, SUBSYSTEM_DEVICE});
 		host_read(17'h00190, val);
 		check32("VEND GCLK_HZ", val, EXP_GCLK);
+
+		/* R5: MEM registers at 0x1E0 */
+		host_read(17'h001E0, val);
+		check32("MEM LOCAL_BASE", val, LOCAL_BASE);
+		host_read(17'h001E4, val);
+		check32("MEM LOCAL_SIZE", val, LOCAL_BYTES);
+		host_read(17'h001E8, val);
+		check32("MEM WINDOW_SIZE", val, WINDOW_BYTES);
+		host_read(17'h001EC, val);
+		check32("MEM HOST_LIMIT", val, HOST_LIMIT);
+		host_read(17'h001F0, val);
+		check32("MEM WINDOW_CTRL reset", val, (WINDOW_BYTES != 0 ? 32'd1 : 32'd0));
+
+		/* Test WINDOW_CTRL write if window is present */
+		if (WINDOW_BYTES != 0) begin
+			host_write(17'h001F0, 32'd0);
+			host_read(17'h001F0, val);
+			check32("MEM WINDOW_CTRL written 0", val, 32'd0);
+			host_write(17'h001F0, 32'd1);
+			host_read(17'h001F0, val);
+			check32("MEM WINDOW_CTRL written 1", val, 32'd1);
+		end
+
+		host_read(17'h001F4, val);
+		$display("PASS [%0s] MEM MEM_CACHE_CFG = %08h", NAME, val);
 
 		/* R2: Running ring locked write triggers LOCKED_REG fault */
 		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RUN)); /* CTRL.RUN = 1 */
@@ -486,8 +523,10 @@ module atg_ghci_top_tb;
 		.EXP_FMT0(32'h0007425F),
 		.EXP_FEAT(32'hF044BF02),
 		.EXP_GCLK(32'd200000000),
+		.LOCAL_BASE(32'h80000000),
 		.LOCAL_BYTES(32'h40000000),
 		.WINDOW_BYTES(32'h04000000),
+		.HOST_LIMIT(32'h80000000),
 		.SU_NPHYS(8),
 		.SU_PACKED(1),
 		.SU_SUBGROUP(1),

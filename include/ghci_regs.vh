@@ -571,6 +571,12 @@ localparam [7:0] GHCI_XCAP_MEM = 8'd8;
 localparam [7:0] GHCI_XCAP_PROT = 8'd9;
 localparam [7:0] GHCI_XCAP_FMT = 8'd10;
 localparam [7:0] GHCI_XCAP_DISP2 = 8'd11;	/* draft */
+/* The VEND capability's registers (from its register offset, section 4.1). */
+localparam [16:0] GHCI_VEND_VENDOR_ID        = 17'h00000;
+localparam [16:0] GHCI_VEND_DEVICE_ID        = 17'h00004;
+localparam [16:0] GHCI_VEND_SUBSYSTEM_VENDOR = 17'h00008;
+localparam [16:0] GHCI_VEND_SUBSYSTEM_DEVICE = 17'h0000C;
+localparam [16:0] GHCI_VEND_GCLK_HZ          = 17'h00010;
 /* The FMT capability's registers (from its register offset, section 4; draft). */
 localparam [16:0] GHCI_FMT_INDEX = 17'h00000;	/* RW: a VkFormat value */
 localparam [16:0] GHCI_FMT_OPTIMAL = 17'h00004;	/* R: VkFormatFeatureFlags, optimal tiling */
