@@ -73,8 +73,8 @@ module atg_cp #(
 	parameter [31:0] LOCAL_BYTES = 32'd0,
 	parameter [31:0] WINDOW_BYTES = 32'd0,
 	parameter [31:0] HOST_LIMIT = 32'd0,
-	parameter [15:0] SUBSYSTEM_VENDOR = 16'h10EE,
-	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0007,
+	parameter [15:0] SUBSYSTEM_VENDOR = 16'h0000,
+	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0000,
 	parameter [31:0] MEM_CACHE_CFG = 32'd0,
 `ifdef CFG_TU_ENABLE_BILINEAR
 	parameter TU_BILINEAR = `CFG_TU_ENABLE_BILINEAR,
@@ -90,12 +90,11 @@ module atg_cp #(
 	parameter SU_LDS_KB = 0,
 	parameter HAS_BLT = 0,
 	parameter HAS_TU = 0,
+	parameter HAS_FFILT = 0,
+	parameter HAS_ROP_PACK = 0,
 	parameter HAS_INDIRECT_DRAW = 0,
 	parameter HAS_SECONDARY_RING = 0,
-	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
-	parameter [31:0] DEVICE_CAPS = 32'd0,
-	parameter [31:0] EXT_CAP_FMT0 = 32'd0,
-	parameter [31:0] EXT_CAP_FEATURE = 32'd0
+	parameter HAS_PROT = 0	/* session protection: the PROT capability is listed (atg_cp_prot) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -484,14 +483,13 @@ module atg_cp #(
 		.HAS_DISP(HAS_DISP),
 		.HAS_TU(HAS_TU),
 		.TU_BILINEAR(TU_BILINEAR),
+		.HAS_FFILT(HAS_FFILT),
+		.HAS_ROP_PACK(HAS_ROP_PACK),
 		.HAS_ETC(HAS_ETC),
 		.MS4(MS4),
 		.HAS_PROT(HAS_PROT),
 		.HAS_INDIRECT_DRAW(HAS_INDIRECT_DRAW),
 		.HAS_SECONDARY_RING(HAS_SECONDARY_RING),
-		.DEVICE_CAPS(DEVICE_CAPS),
-		.EXT_CAP_FMT0(EXT_CAP_FMT0),
-		.EXT_CAP_FEATURE(EXT_CAP_FEATURE),
 		.MRT_COUNT(MRT_COUNT)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
@@ -514,7 +512,9 @@ module atg_cp #(
 			.BASE(10'h050),
 			.HAS_ETC(HAS_ETC),
 			.NRT(MRT_COUNT),
-			.HAS_BILINEAR(UNITS[5] && (TU_BILINEAR != 0))
+			.HAS_BILINEAR(UNITS[5] && (TU_BILINEAR != 0)),
+			.HAS_FFILT(HAS_FFILT),
+			.HAS_ROP_PACK(HAS_ROP_PACK)
 		) u_fmt (
 			.clk(clk), .rst_n(rst_n),
 			.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),

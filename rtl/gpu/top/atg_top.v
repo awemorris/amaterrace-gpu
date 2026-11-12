@@ -41,8 +41,8 @@ module atg_top #(
 	 * HOST_LIMIT, GHCI §11.2; 0 = all; KC705 0x8000_0000).  With local memory the MC
 	 * sends local accesses with AXI ID 0 and host accesses with ID 1 (m_awid/m_arid). */
 	parameter [31:0] HOST_LIMIT = 32'd0,
-	parameter [15:0] SUBSYSTEM_VENDOR = 16'h10EE,
-	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0007,
+	parameter [15:0] SUBSYSTEM_VENDOR = 16'h0000,
+	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0000,
 	parameter [31:0] MEM_CACHE_CFG = 32'd0,
 `ifdef CFG_TU_ENABLE_BILINEAR
 	parameter TU_BILINEAR = `CFG_TU_ENABLE_BILINEAR,
@@ -85,13 +85,23 @@ module atg_top #(
 `else
 	parameter HAS_BLT = 0,
 `endif
-`ifdef CFG_TU_ENABLE_ETC2
-	parameter HAS_ETC = (`CFG_TU_ENABLE_ETC2 != 0),
+`ifdef CFG_TU_ENABLE_FFILT
+	parameter HAS_FFILT = (`CFG_TU_ENABLE_FFILT != 0),
+`else
+	parameter HAS_FFILT = 0,
+`endif
+`ifdef CFG_ROP_ENABLE_PACK
+	parameter HAS_ROP_PACK = (`CFG_ROP_ENABLE_PACK != 0),
+`else
+	parameter HAS_ROP_PACK = 0,
+`endif
+`ifdef CFG_ENABLE_ETC2
+	parameter HAS_ETC = (`CFG_ENABLE_ETC2 != 0 && `CFG_TU_ENABLE_FFILT != 0),
 `else
 	parameter HAS_ETC = 0,
 `endif
-	parameter HAS_INDIRECT_DRAW = 0,
-	parameter HAS_SECONDARY_RING = 0,
+	parameter HAS_INDIRECT_DRAW = (HAS_CPU != 0) && (NSU > 0),
+	parameter HAS_SECONDARY_RING = (HAS_CPU != 0) && (NSU > 0),
 	/* The SUs' shape (design §3.7). */
 `ifdef CFG_SU_NPHYS
 	parameter SU_NPHYS = `CFG_SU_NPHYS,
@@ -105,21 +115,21 @@ module atg_top #(
 	parameter SU_SB_ENTRIES = 4,
 	parameter SU_SBE_W = 2,	/* log2(SU_SB_ENTRIES) */
 `ifdef CFG_ENABLE_FP16
-	parameter SU_PACKED = `CFG_ENABLE_FP16,
+	parameter SU_PACKED = (NSU > 0) ? `CFG_ENABLE_FP16 : 0,
 `else
 	parameter SU_PACKED = 0,
 `endif
 	parameter SU_PK_SHARED = 0,	/* with SU_PACKED: the fp16 arithmetic on the FPU's fp32 datapath, a half a cycle (atg_su_fpu) */
-`ifdef CFG_SU_ENABLE_SUBGROUP
-	parameter SU_SUBGROUP = `CFG_SU_ENABLE_SUBGROUP,
+`ifdef CFG_ENABLE_SUBGROUP
+	parameter SU_SUBGROUP = (NSU > 0) ? `CFG_ENABLE_SUBGROUP : 0,
 `else
 	parameter SU_SUBGROUP = 0,
 `endif
 	parameter SU_FRAG_RESERVE = 1,	/* slots kept for fragment warps (design §3.8; KC705 2) */
 `ifdef CFG_SU_LDS_KB
-	parameter SU_LDS_BYTES = (`CFG_SU_LDS_KB * 1024),
+	parameter SU_LDS_BYTES = (NSU > 0) ? (`CFG_SU_LDS_KB * 1024) : 0,
 `else
-	parameter SU_LDS_BYTES = 4096,
+	parameter SU_LDS_BYTES = 0,
 `endif
 	parameter SU_VARY_WORDS = 16,
 	/* Session protection (docs/ghci.md section 11.6; needs HAS_CPU): the MC's check, the CP's
@@ -136,10 +146,7 @@ module atg_top #(
 	parameter PROT_PLB_W = 2,
 	parameter HAS_L2 = 0,
 	parameter L2_WAYS = 16,
-	parameter L2_SET_W = 8,
-	parameter [31:0] DEVICE_CAPS = 32'd0,
-	parameter [31:0] EXT_CAP_FMT0 = 32'd0,
-	parameter [31:0] EXT_CAP_FEATURE = 32'd0
+	parameter L2_SET_W = 8
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -582,6 +589,8 @@ module atg_top #(
 		.HAS_BLT(HAS_BLT),
 		.HAS_TU(HAS_TU),
 		.TU_BILINEAR(TU_BILINEAR),
+		.HAS_FFILT(HAS_FFILT && (HAS_TU != 0)),
+		.HAS_ROP_PACK(HAS_ROP_PACK && (HAS_ROP != 0)),
 		.MS4(MS4),
 		.CORE1(CORE1),
 		.HAS_FMT(1),
@@ -589,9 +598,6 @@ module atg_top #(
 		.HAS_PROT(PROT),
 		.HAS_INDIRECT_DRAW(HAS_INDIRECT_DRAW),
 		.HAS_SECONDARY_RING(HAS_SECONDARY_RING),
-		.DEVICE_CAPS(DEVICE_CAPS),
-		.EXT_CAP_FMT0(EXT_CAP_FMT0),
-		.EXT_CAP_FEATURE(EXT_CAP_FEATURE),
 		.MRT_COUNT(MRT_COUNT)
 	) cp (
 		.clk(clk),

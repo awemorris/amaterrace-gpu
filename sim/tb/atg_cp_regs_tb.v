@@ -62,7 +62,8 @@ module regs_bench #(
 		.VEND({32'h77, 32'h66, 32'h55, 32'h44, 32'h33, 32'h22, 32'h11, 32'h00}),
 		.XCAP_MASK(XCAP), .DISP_OFFSET(32'h00010000), .PERF_SRC(32'hFFFF0801),
 		.RESIDENT_WARPS(16'd24), .NREGS(8'd64), .LOCAL_BASE(32'h80000000),
-		.LOCAL_BYTES(32'h40000000), .WINDOW_BYTES(32'h04000000), .HOST_LIMIT(32'h80000000)
+		.LOCAL_BYTES(32'h40000000), .WINDOW_BYTES(32'h04000000), .HOST_LIMIT(32'h80000000),
+		.SUBSYSTEM_VENDOR(16'h10EE), .SUBSYSTEM_DEVICE(16'h0007)
 	) dut (
 		.clk(clk), .rst_n(rst_n),
 		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),

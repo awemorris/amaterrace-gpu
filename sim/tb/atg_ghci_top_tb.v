@@ -44,12 +44,14 @@ module ghci_probe #(
 	localparam TU_BILINEAR = `ifdef CFG_TU_ENABLE_BILINEAR `CFG_TU_ENABLE_BILINEAR `else 0 `endif;
 	localparam SU_NPHYS = `ifdef CFG_SU_NPHYS `CFG_SU_NPHYS `else 8 `endif;
 	localparam SU_PACKED = `ifdef CFG_ENABLE_FP16 (`CFG_ENABLE_FP16 != 0) `else 0 `endif;
-	localparam SU_SUBGROUP = `ifdef CFG_SU_ENABLE_SUBGROUP (`CFG_SU_ENABLE_SUBGROUP != 0) `else 0 `endif;
+	localparam SU_SUBGROUP = `ifdef CFG_ENABLE_SUBGROUP (`CFG_ENABLE_SUBGROUP != 0) `else 0 `endif;
 	localparam SU_LDS_KB = `ifdef CFG_SU_LDS_KB `CFG_SU_LDS_KB `else 4 `endif;
 	localparam MS4 = `ifdef CFG_ENABLE_MSAA (`CFG_ENABLE_MSAA != 0 && `CFG_MSAA_SAMPLES == 4) `else 0 `endif;
 	localparam HAS_BLT = `ifdef CFG_HAS_BLT (`CFG_HAS_BLT != 0) `else 0 `endif;
 	localparam HAS_PROT = `ifdef CFG_MC_ENABLE_PROT (`CFG_MC_ENABLE_PROT != 0) `else 0 `endif;
-	localparam HAS_ETC = `ifdef CFG_TU_ENABLE_ETC2 (`CFG_TU_ENABLE_ETC2 != 0) `else 0 `endif;
+	localparam HAS_ETC = `ifdef CFG_ENABLE_ETC2 (`CFG_ENABLE_ETC2 != 0 && `ifdef CFG_TU_ENABLE_FFILT (`CFG_TU_ENABLE_FFILT != 0) `else 0 `endif) `else 0 `endif;
+	localparam HAS_CPU = 1;
+	localparam NSU = 1;
 
 	/* KC705 board top parameters */
 	localparam [31:0] EXP_GCLK = 32'd200000000;
@@ -81,8 +83,8 @@ module ghci_probe #(
 		1'b1,                                      /* [7] GSI1 */
 		(SU_PACKED != 0) ? 1'b1 : 1'b0,            /* [6] FP16 */
 		`ifdef CFG_ROP_DUAL_SOURCE (`CFG_ROP_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else (`ifdef CFG_ENABLE_DUAL_SOURCE (`CFG_ENABLE_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif) `endif, /* [5] DUAL_SRC */
-		`ifdef CFG_HAS_SECONDARY_RING (`CFG_HAS_SECONDARY_RING != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif, /* [4] SECONDARY_RING */
-		`ifdef CFG_HAS_INDIRECT_DRAW (`CFG_HAS_INDIRECT_DRAW != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,   /* [3] INDIRECT_DRAW */
+		(HAS_CPU != 0 && NSU > 0) ? 1'b1 : 1'b0,   /* [4] SECONDARY_RING */
+		(HAS_CPU != 0 && NSU > 0) ? 1'b1 : 1'b0,   /* [3] INDIRECT_DRAW */
 		1'b0,                                      /* [2] HW_WALKER (atg_mmu absent in atg_top, always 0) */
 		2'b00                                      /* [1:0] */
 	};
@@ -305,10 +307,6 @@ module ghci_probe #(
 		/* 2. DEVICE_CAPS: verified against specification formulas */
 		host_read(GHCI_REG_DEVICE_CAPS, val);
 		check32("DEVICE_CAPS", val, CALC_DEV_CAPS);
-		if (val[3] !== 1'b0 || val[4] !== 1'b0) begin
-			err_count = err_count + 1;
-			$display("FAIL DEVICE_CAPS[4:3] must be 0");
-		end
 
 		/* 3. Item 9: Write ordering check for RING_BASE_LO preservation across CP_HEAP_BASE write */
 		host_write(GHCI_REG_RING_BASE_LO, 32'h12345000);

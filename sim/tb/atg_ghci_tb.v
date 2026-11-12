@@ -52,7 +52,6 @@ module atg_ghci_tb;
 	wire [31:0] tb_state_rdata = 32'h12345678;
 
 	atg_cp_regs #(
-		.DEVICE_CAPS(32'h00500002),
 		.XCAP_MASK(11'd0)
 	) u_cp_regs (
 		.clk(clk),
@@ -235,8 +234,8 @@ module atg_ghci_tb;
 		end
 
 		mmio_read(GHCI_REG_DEVICE_CAPS, rdata);
-		if (rdata !== 32'h00500002) begin
-			$display("FAIL: DEVICE_CAPS = %h (expected 00500002)", rdata);
+		if (rdata[7] !== 1'b1) begin
+			$display("FAIL: DEVICE_CAPS GSI1 bit not set (rdata=%h)", rdata);
 			errors = errors + 1;
 		end else begin
 			$display("PASS: GHCI 1.0 DEVICE_CAPS = %h", rdata);

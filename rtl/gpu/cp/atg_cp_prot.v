@@ -379,6 +379,7 @@ module atg_cp_prot #(
 	always @(*) begin
 		hcr_rdata = 32'd0;
 		case (hcr_ridx)
+		HCR_IDX_SESSION_ACTIVE: hcr_rdata = {16'd0, map_v[15:1], 1'b1};
 		I_CAPS: hcr_rdata = {GRANTS, 8'd12, SLOTS};
 		I_TABLE: hcr_rdata = tbase;
 		I_TBYTES: hcr_rdata = tbytes;

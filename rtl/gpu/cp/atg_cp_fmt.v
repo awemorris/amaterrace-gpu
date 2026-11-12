@@ -26,7 +26,9 @@ module atg_cp_fmt #(
 	parameter [9:0] BASE = 10'h050,	/* the window's first HCR dword (byte 0x140) */
 	parameter HAS_ETC = 0,	/* the TU has the ETC2/EAC decoder */
 	parameter [3:0] NRT = 4'd4,	/* colour attachments */
-	parameter HAS_BILINEAR = 1	/* bilinear filtering supported in TU */
+	parameter HAS_BILINEAR = 1,	/* bilinear filtering supported in TU */
+	parameter HAS_FFILT = 1,	/* TU fast filtering (FP16/FP32 filter linear) */
+	parameter HAS_ROP_PACK = 1	/* ROP format packing (Path 2 integer attachments/blend) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -52,26 +54,36 @@ module atg_cp_fmt #(
 	wire [2:0] off;
 	wire off_bo;
 
+	wire [67:0] info = atg_fmt_info(idx);
+	wire is_fp = (info[11:9] == ATG_FMT_SFLOAT && !info[12]);
+	wire is_p2 = (info[11:9] == ATG_FMT_UINT || info[11:9] == ATG_FMT_SINT ||
+	              idx == 8'd100 || idx == 8'd103 || idx == 8'd109);
+
+	wire eff_filter_linear = feat[12] && (HAS_BILINEAR != 0) && (!is_fp || (HAS_FFILT != 0));
+	wire eff_color_att = feat[7] && (!is_p2 || (HAS_ROP_PACK != 0));
+	wire eff_blend = feat[8] && (!is_p2 || (HAS_ROP_PACK != 0));
+	wire eff_blit_dst = feat[11] && (!is_p2 || (HAS_ROP_PACK != 0));
+
 	/* GHCI §4.1 format feature flags layout:
 	 * bit 0: SAMPLE (feat[0])
-	 * bit 1: FILTER_LINEAR (feat[12] && HAS_BILINEAR)
-	 * bit 2: COLOR_ATTACHMENT (feat[7])
-	 * bit 3: BLEND (feat[8])
+	 * bit 1: FILTER_LINEAR (eff_filter_linear)
+	 * bit 2: COLOR_ATTACHMENT (eff_color_att)
+	 * bit 3: BLEND (eff_blend)
 	 * bit 4: DEPTH_STENCIL (feat[9])
 	 * bit 5: VERTEX_BUFFER (feat[19])
 	 * bit 6: BLIT_SRC (feat[10])
-	 * bit 7: BLIT_DST (feat[11])
+	 * bit 7: BLIT_DST (eff_blit_dst)
 	 * bit 8: STORAGE_IMAGE (0)
 	 */
 	wire [8:0] fmt_flags = {
 		1'b0,
-		feat[11],
+		eff_blit_dst,
 		feat[10],
 		feat[19],
 		feat[9],
-		feat[8],
-		feat[7],
-		(feat[12] && (HAS_BILINEAR != 0)),
+		eff_blend,
+		eff_color_att,
+		eff_filter_linear,
 		feat[0]
 	};
 

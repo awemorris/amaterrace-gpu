@@ -123,9 +123,8 @@ module atg_cp_tb;
 	localparam [31:0] CUSTOM_FEAT = 32'h0000074F; /* MRT=4 */
 
 	atg_cp_regs #(
-		.DEVICE_CAPS(CUSTOM_DEV_CAPS),
-		.EXT_CAP_FMT0(CUSTOM_FMT0),
-		.EXT_CAP_FEATURE(CUSTOM_FEAT)
+		.SU_NPHYS(16),
+		.MRT_COUNT(4)
 	) u_cp_regs_custom (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -236,27 +235,19 @@ module atg_cp_tb;
 
 		/* Test 4: Verify Custom Instance Overrides */
 		custom_read(GHCI_REG_DEVICE_CAPS, rdata);
-		if (rdata !== CUSTOM_DEV_CAPS) begin
-			$display("FAIL: Custom DEVICE_CAPS = %h (expected %h)", rdata, CUSTOM_DEV_CAPS);
+		if (rdata[15:8] !== 8'd16) begin
+			$display("FAIL: Custom DEVICE_CAPS PHYS_LANES = %0d (expected 16)", rdata[15:8]);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: Custom DEVICE_CAPS (PHYS_LANES=16, TASK=1, MESH=1) verified");
-		end
-
-		custom_read(GHCI_REG_EXT_CAP_FMT0, rdata);
-		if (rdata !== CUSTOM_FMT0) begin
-			$display("FAIL: Custom EXT_CAP_FMT0 = %h (expected %h)", rdata, CUSTOM_FMT0);
-			errors = errors + 1;
-		end else begin
-			$display("PASS: Custom EXT_CAP_FMT0 verified");
+			$display("PASS: Custom DEVICE_CAPS (PHYS_LANES=16) verified");
 		end
 
 		custom_read(GHCI_REG_EXT_CAP_FEATURE, rdata);
-		if (rdata !== CUSTOM_FEAT) begin
-			$display("FAIL: Custom EXT_CAP_FEATURE = %h (expected %h)", rdata, CUSTOM_FEAT);
+		if (rdata[19:16] !== 4'd4) begin
+			$display("FAIL: Custom EXT_CAP_FEATURE MAX_MRT = %0d (expected 4)", rdata[19:16]);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: Custom EXT_CAP_FEATURE verified");
+			$display("PASS: Custom EXT_CAP_FEATURE (MAX_MRT=4) verified");
 		end
 
 		if (errors == 0) begin
