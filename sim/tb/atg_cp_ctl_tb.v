@@ -552,6 +552,56 @@ module atg_cp_ctl_tb;
 
 		if (errors == e0)
 			$display("PASS atg_cp_ctl.u4_normalization");
+		e0 = errors;
+
+		/* U6: CP_STATE micro-state normalization (§5.1) */
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+
+		/* 1. CMD_WAIT_FENCE wait state (Q_FWAIT = 5) strictly maps to WAIT_FENCE (4) */
+		seq_st = 4'd5;
+		f_busy = 1;
+		@(negedge clk);
+		hcr_read(GHCI_REG_STATUS[11:0], v);
+		if (v[19:16] !== GHCI_ST_WAIT_FENCE) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.u6: WAIT_FENCE cp_state %0d, expected %0d", v[19:16], GHCI_ST_WAIT_FENCE);
+		end
+
+		/* 2. CMD_FENCE dispatch (Q_FREQ = 4) maps to EXEC (3) */
+		seq_st = 4'd4;
+		f_busy = 0;
+		@(negedge clk);
+		hcr_read(GHCI_REG_STATUS[11:0], v);
+		if (v[19:16] !== GHCI_ST_EXEC) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.u6: FENCE dispatch (Q_FREQ) cp_state %0d, expected %0d", v[19:16], GHCI_ST_EXEC);
+		end
+
+		/* 3. CMD_FENCE memory write in flight (f_busy = 1, seq_st != 5) maps to EXEC (3) */
+		seq_st = 4'd0;
+		f_busy = 1;
+		@(negedge clk);
+		hcr_read(GHCI_REG_STATUS[11:0], v);
+		if (v[19:16] !== GHCI_ST_EXEC) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.u6: FENCE mem write (f_busy) cp_state %0d, expected %0d", v[19:16], GHCI_ST_EXEC);
+		end
+
+		/* 4. CMD_BARRIER pipeline drain (Q_BARRIER = 10) maps to WAIT_MEM (5) */
+		f_busy = 0;
+		seq_st = 4'd10;
+		@(negedge clk);
+		hcr_read(GHCI_REG_STATUS[11:0], v);
+		if (v[19:16] !== GHCI_ST_WAIT_MEM) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.u6: BARRIER drain (Q_BARRIER) cp_state %0d, expected %0d", v[19:16], GHCI_ST_WAIT_MEM);
+		end
+
+		seq_st = 4'd0;
+		do_reset();
+
+		if (errors == e0)
+			$display("PASS atg_cp_ctl.u6_normalization");
 		if (errors == 0)
 			$display("PASS atg_cp_ctl");
 		else

@@ -128,6 +128,7 @@ module atg_cp_seq #(
 	localparam [7:0] OP_QUERY = 8'd14;
 	localparam [7:0] OP_DISP_SET = 8'd15;
 	localparam [7:0] OP_FLIP = 8'd16;
+	localparam [7:0] OP_BARRIER = 8'd20;
 
 	/* GHCI 1.0 Structured Command Opcodes */
 	/* verilator lint_off UNUSEDPARAM */
@@ -146,6 +147,7 @@ module atg_cp_seq #(
 	localparam [7:0] CMD_BARRIER               = 8'h31;
 	localparam [7:0] CMD_EXECUTE_COMMANDS      = 8'h32;
 	localparam [7:0] CMD_FENCE                 = 8'h33;
+	localparam [7:0] CMD_WAIT_FENCE            = 8'h34;
 	/* verilator lint_on UNUSEDPARAM */
 
 	localparam [7:0] VOP_DRAW_RAW = 8'd0;
@@ -169,6 +171,7 @@ module atg_cp_seq #(
 	localparam [3:0] Q_DEAD = 4'd7;
 	localparam [3:0] Q_DEC = 4'd8;
 	localparam [3:0] Q_DEC2 = 4'd9;
+	localparam [3:0] Q_BARRIER = 4'd10;
 
 	(* max_fanout = 16 *) reg [3:0] st;
 	(* max_fanout = 16 *) reg use_fw;
@@ -270,7 +273,7 @@ module atg_cp_seq #(
 `ifdef SYNTH_KINTEX7
 	(* DONT_TOUCH = "TRUE" *) reg is_set_r1, is_dset_r1;
 `endif
-	(* max_fanout = 16 *) reg is_dispatch_r, is_load_const_r, is_draw_raw_r;
+	(* max_fanout = 16 *) reg is_dispatch_r, is_load_const_r, is_draw_raw_r, is_barrier_r;
 
 	/* Payload: what this dword does; the waits (atg_cp_seq_wait). */
 	wire is_set = !vendor && op == OP_SET_REG;
@@ -554,7 +557,7 @@ module atg_cp_seq #(
 
 	wire is_query = !vendor && op == OP_QUERY;
 	wire fence_op = !vendor && (op == OP_FENCE || op == OP_WAIT_FENCE || op == OP_RESULT ||
-		(op == OP_QUERY && !flags[0]) || op == CMD_FENCE);
+		(op == OP_QUERY && !flags[0]) || op == CMD_FENCE || op == CMD_WAIT_FENCE);
 `ifdef SYNTH_KINTEX7
 	wire [3:0] is_q_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_iq0 (.I0(is_query_r), .O(is_q_b[0]));
@@ -569,7 +572,7 @@ module atg_cp_seq #(
 	assign occ_clear = (is_op_std && is_query_r && flags[0]) ||
 		(st == Q_FREQ && f_ready && is_query_r && flags[1]);
 	assign f_valid = st == Q_FREQ;
-	assign f_op = (op == OP_FENCE || is_fence_cmd_r) ? 2'd0 : (op == OP_RESULT || is_query_r) ? 2'd1 : 2'd2;
+	assign f_op = (op == OP_FENCE || op == CMD_FENCE) ? 2'd0 : (op == OP_RESULT || is_query_r) ? 2'd1 : 2'd2;
 	assign f_addr = {
 		is_fc_b[1] ? a0_hi[31:16] : 16'd0,
 		is_fc_b[0] ? a0_hi[15:0]  : 16'd0,
@@ -592,7 +595,7 @@ module atg_cp_seq #(
 		(st == Q_FREQ && f_ready && is_query && flags[1]);
 	assign f_valid = st == Q_FREQ;
 	assign f_op = (op == OP_FENCE || op == CMD_FENCE) ? 2'd0 : op == OP_RESULT || op == OP_QUERY ? 2'd1 : 2'd2;
-	assign f_addr = (op == CMD_FENCE) ? {a0_hi, a0} : {32'd0, a0};
+	assign f_addr = (op == CMD_FENCE || op == CMD_WAIT_FENCE) ? {a0_hi, a0} : {32'd0, a0};
 	assign f_value = (op == OP_QUERY) ? occ_q[31:0] : a1;
 	assign f_aux = (op == OP_QUERY) ? {24'd0, occ_q[39:32]} : a2;
 	assign f_irq = (op == CMD_FENCE) ? fence_flags[0] : flags[0];
@@ -845,6 +848,7 @@ module atg_cp_seq #(
 			is_dispatch_r <= 1'b0;
 			is_load_const_r <= 1'b0;
 			is_draw_raw_r <= 1'b0;
+			is_barrier_r <= 1'b0;
 `ifdef SYNTH_KINTEX7
 			unit_op_r <= 1'b0;
 			fence_op_r <= 1'b0;
@@ -891,11 +895,12 @@ module atg_cp_seq #(
 				is_dset_r <= !h_vendor && (h_op_b == OP_DISP_SET);
 				is_set_r1 <= !h_vendor && (h_op_b == OP_SET_REG);
 				is_dset_r1 <= !h_vendor && (h_op_b == OP_DISP_SET);
-				is_fence_cmd_r <= (h_op_b == CMD_FENCE);
+				is_fence_cmd_r <= (h_op_b == CMD_FENCE || h_op_b == CMD_WAIT_FENCE);
 				is_query_r <= !h_vendor && (h_op_b == OP_QUERY);
 				is_dispatch_r <= !h_vendor && (h_op_b == OP_DISPATCH || h_op_b == CMD_DISPATCH || h_op_b == CMD_DRAW_MESH_TASKS);
 				is_load_const_r <= !h_vendor && (h_op_b == OP_LOAD_CONST);
 				is_draw_raw_r <= h_vendor && (h_op_b == VOP_DRAW_RAW);
+				is_barrier_r <= !h_vendor && (h_op_b == CMD_BARRIER || h_op_b == OP_BARRIER);
 			end
 			if (st_dec_b[4]) begin
 				h_early_fault_r <= is_ghci_hdr_r ? ghci_fault_op : std_fault_op;
@@ -964,11 +969,12 @@ module atg_cp_seq #(
 				op <= h_op;
 				is_set_r <= !h_vendor && (h_op == OP_SET_REG);
 				is_dset_r <= !h_vendor && (h_op == OP_DISP_SET);
-				is_fence_cmd_r <= (h_op == CMD_FENCE);
+				is_fence_cmd_r <= (h_op == CMD_FENCE || h_op == CMD_WAIT_FENCE);
 				is_query_r <= !h_vendor && (h_op == OP_QUERY);
 				is_dispatch_r <= !h_vendor && (h_op == OP_DISPATCH || h_op == CMD_DISPATCH || h_op == CMD_DRAW_MESH_TASKS);
 				is_load_const_r <= !h_vendor && (h_op == OP_LOAD_CONST);
 				is_draw_raw_r <= h_vendor && (h_op == VOP_DRAW_RAW);
+				is_barrier_r <= !h_vendor && (h_op == CMD_BARRIER || h_op == OP_BARRIER);
 				flags <= (h_op == CMD_FENCE) ? 8'd0 : (is_ghci_hdr ? hdr_r[31:24] : hdr_r[15:8]);
 				fence_flags <= 32'd0;
 				tag <= hdr_r[23:16];
@@ -992,7 +998,7 @@ module atg_cp_seq #(
 					st <= Q_DEAD;
 					st_is_pay_r <= 1'b0;
 				end else begin
-					st <= h_zero_r ? Q_EXEC : Q_PAY;
+					st <= h_zero_r ? (is_barrier_r ? Q_BARRIER : Q_EXEC) : Q_PAY;
 					st_is_pay_r <= !h_zero_r;
 				end
 `else
@@ -1001,7 +1007,7 @@ module atg_cp_seq #(
 					f_kind <= dec_short_r ? GHCI_FAULT_KIND_BAD_REG : GHCI_FAULT_KIND_INVALID_OP;
 					st <= Q_DEAD;
 				end else begin
-					st <= h_zero_r ? Q_EXEC : Q_PAY;
+					st <= h_zero_r ? (is_barrier_r ? Q_BARRIER : Q_EXEC) : Q_PAY;
 				end
 `endif
 			end
@@ -1013,7 +1019,7 @@ module atg_cp_seq #(
 					st <= Q_DEAD;
 					st_is_pay_r <= 1'b0;
 				end else if (pay_take_b[3] && p_is_last_r) begin
-					st <= Q_EXEC;
+					st <= is_barrier_r ? Q_BARRIER : Q_EXEC;
 					st_is_pay_r <= 1'b0;
 					settle <= 1'b1;
 				end
@@ -1030,11 +1036,11 @@ module atg_cp_seq #(
 						sidx <= {4'b1111, in_data[7:2]};	/* 0x3C0 + offset / 4 */
 					if (p == 8'd0)
 						a0 <= in_data;
-					if (op == CMD_FENCE && p == 8'd1)
+					if ((op == CMD_FENCE || op == CMD_WAIT_FENCE) && p == 8'd1)
 						a0_hi <= in_data;
-					if ((op == CMD_FENCE && p == 8'd2) || (op != CMD_FENCE && p == 8'd1))
+					if (((op == CMD_FENCE || op == CMD_WAIT_FENCE) && p == 8'd2) || ((op != CMD_FENCE && op != CMD_WAIT_FENCE) && p == 8'd1))
 						a1 <= in_data;
-					if ((op == CMD_FENCE && p == 8'd3) || (op != CMD_FENCE && p == 8'd2))
+					if (((op == CMD_FENCE || op == CMD_WAIT_FENCE) && p == 8'd3) || ((op != CMD_FENCE && op != CMD_WAIT_FENCE) && p == 8'd2))
 						a2 <= in_data;
 					if (op == CMD_FENCE && p == 8'd4) begin
 						fence_flags <= in_data;
@@ -1045,7 +1051,7 @@ module atg_cp_seq #(
 					 * (atg_cp registers the STATE broadcast), so the kick
 					 * waits a cycle (settle). */
 					if (p_n == n) begin
-						st <= Q_EXEC;
+						st <= is_barrier_r ? Q_BARRIER : Q_EXEC;
 						settle <= 1'b1;
 					end
 				end
@@ -1074,10 +1080,18 @@ module atg_cp_seq #(
 					st <= Q_IDLE;
 			Q_FREQ:
 				if (f_ready)
-					st <= op == OP_WAIT_FENCE ? Q_FWAIT : Q_IDLE;
+					st <= (op == OP_WAIT_FENCE || op == CMD_WAIT_FENCE) ? Q_FWAIT : Q_IDLE;
 			Q_FWAIT:
 				if (!f_busy)
 					st <= Q_IDLE;
+			Q_BARRIER:
+`ifdef SYNTH_KINTEX7
+				if (!settle && !pre_busy_0 && !pre_busy_1 && !pre_busy_2)
+					st <= Q_IDLE;
+`else
+				if (!settle && !(|(exec_pre & busy_in)))
+					st <= Q_IDLE;
+`endif
 			Q_VSYNC:
 				if (vsync)
 					st <= Q_IDLE;

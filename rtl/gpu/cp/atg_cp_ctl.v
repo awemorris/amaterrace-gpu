@@ -193,10 +193,10 @@ module atg_cp_ctl #(
 	assign mc_flush = st == S_RS_PULSE;
 	/* Micro-architectural CP_STATE (§3.3) */
 	wire cp_is_fault = faulted;
-	wire cp_is_wait_mem = resetting || (st == S_HALTING && !mc_idle);
+	wire cp_is_wait_mem = resetting || (st == S_HALTING && !mc_idle) || (seq_st == 4'd10); /* Q_BARRIER */
 	wire cp_is_blit = busy_in[1]; /* blt_busy */
-	wire cp_is_wait_fence = (seq_st == 4'd4 || seq_st == 4'd5 || f_busy); /* Q_FREQ, Q_FWAIT */
-	wire cp_is_exec = (seq_st == 4'd1 || seq_st == 4'd2 || seq_st == 4'd3 || seq_st == 4'd6); /* Q_PAY, Q_EXEC, Q_POST, Q_VSYNC */
+	wire cp_is_wait_fence = (seq_st == 4'd5); /* Q_FWAIT strictly */
+	wire cp_is_exec = (seq_st == 4'd1 || seq_st == 4'd2 || seq_st == 4'd3 || seq_st == 4'd4 || seq_st == 4'd6 || (f_busy && seq_st != 4'd5)); /* Q_PAY, Q_EXEC, Q_POST, Q_FREQ, Q_VSYNC, f_busy */
 	wire cp_is_decode = (seq_st == 4'd8 || seq_st == 4'd9); /* Q_DEC, Q_DEC2 */
 	wire cp_is_fetch = ring_busy || (!ring_empty && cmd_active);
 

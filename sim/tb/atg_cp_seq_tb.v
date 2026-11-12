@@ -86,8 +86,32 @@ module atg_cp_seq_tb;
 		.f_valid(f_valid), .f_ready(f_ready), .f_op(f_op), .f_addr(f_addr), .f_value(f_value),
 		.f_aux(f_aux), .f_irq(f_irq), .f_mem(f_mem), .f_flush(f_flush), .f_busy(f_busy),
 		.occ_count(occ_count), .occ_clear(occ_clear),
-		.busy(busy), .cmd_active(cmd_active),
+		.busy(busy), .cmd_active(cmd_active), .seq_st(seq_st),
 		.fault(fault), .fault_kind(fault_kind), .fault_addr(fault_addr), .fault_tag(fault_tag)
+	);
+
+	wire [3:0] seq_st;
+	wire [3:0] cp_state;
+	wire [31:0] ctl_status;
+
+	atg_cp_ctl #(.UNITS(8'hFF)) u_ctl (
+		.clk(clk), .rst_n(rst_n),
+		.hcr_we(1'b0), .hcr_widx(10'd0), .hcr_wdata(32'd0), .hcr_wmask(32'd0),
+		.hcr_ridx(GHCI_REG_STATUS[11:2]), .hcr_rdata(ctl_status),
+		.mc_idle(1'b1), .mem_ready(1'b1),
+		.busy_in(busy_in[7:0]),
+		.ring_empty(1'b0), .ring_busy(1'b0), .cmd_active(cmd_active),
+		.wdt_hold(1'b0), .replay_busy(1'b0),
+		.seq_st(seq_st), .f_busy(f_busy),
+		.mc_fault(1'b0), .mc_fault_client(8'd0), .mc_fault_addr(32'd0),
+		.mc_fault_write(1'b0), .mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0),
+		.wdt_tag(8'd0),
+		.src_fault(8'd0), .src_kind(32'd0), .src_addr(256'd0), .src_tag(64'd0), .src_stage(32'd0),
+		.run(), .halt(), .ctrl_irq_global(), .quiesce(), .mc_flush(),
+		.core_rst_n(), .open(), .cp_state(cp_state), .lc_state(),
+		.host_kick(), .step(),
+		.ev_halted(), .ev_fault(), .ev_wdt(),
+		.aperture_base(), .aperture_limit()
 	);
 
 	/* A second instance with only the CP and the BLT: absent units. */
@@ -706,6 +730,54 @@ module atg_cp_seq_tb;
 		compare("cmd_fence");
 		if (errors == e0)
 			$display("PASS atg_cp_seq.cmd_fence");
+		e0 = errors;
+
+		/* U6: CMD_WAIT_FENCE and CMD_BARRIER micro-state verification (§5.1) */
+		/* CMD_WAIT_FENCE: while condition is unsatisfied (f_busy in Q_FWAIT), STATUS[19:16] == 4 */
+		push(1'b0, {16'd0, 8'd5, 8'h34}, 1'b0); /* CMD_WAIT_FENCE len=5 */
+		push(1'b0, 32'h00008000, 1'b0); /* addr_lo */
+		push(1'b0, 32'h00000000, 1'b0); /* addr_hi */
+		push(1'b0, 32'hCAFE0042, 1'b0); /* wait_val_lo */
+		push(1'b0, 32'h00000000, 1'b1); /* wait_val_hi */
+		expect_ev({8'h09, 6'd0, 2'd2, 1'b0, 15'd0, 32'h8000 ^ 32'hCAFE0042});
+
+		while (dut.seq_st != 4'd5) @(posedge clk);
+		while (dut.seq_st == 4'd5) begin
+			@(negedge clk);
+			if (dut.seq_st == 4'd5 && f_busy) begin
+				if (ctl_status[19:16] !== GHCI_ST_WAIT_FENCE) begin
+					errors = errors + 1;
+					$display("FAIL atg_cp_seq.u6: WAIT_FENCE STATUS[19:16]=%0d, expected %0d",
+						ctl_status[19:16], GHCI_ST_WAIT_FENCE);
+				end
+			end
+		end
+		settle("cmd_wait_fence");
+		compare("cmd_wait_fence");
+
+		/* CMD_BARRIER: during pipeline drain (busy_in non-zero in Q_BARRIER), STATUS[19:16] == 5 */
+		c_mem = 25;
+		push(1'b0, {16'd0, 8'd4, 8'h31}, 1'b0); /* CMD_BARRIER len=4 */
+		push(1'b0, 32'h00000001, 1'b0); /* src_stage_mask */
+		push(1'b0, 32'h00000002, 1'b0); /* dst_stage_mask */
+		push(1'b0, 32'h00000001, 1'b1); /* flags = 1 */
+
+		while (dut.seq_st != 4'd10) @(posedge clk);
+		while (dut.seq_st == 4'd10) begin
+			@(negedge clk);
+			if (dut.seq_st == 4'd10) begin
+				if (ctl_status[19:16] !== GHCI_ST_WAIT_MEM) begin
+					errors = errors + 1;
+					$display("FAIL atg_cp_seq.u6: BARRIER STATUS[19:16]=%0d, expected %0d",
+						ctl_status[19:16], GHCI_ST_WAIT_MEM);
+				end
+			end
+		end
+		settle("cmd_barrier");
+		compare("cmd_barrier");
+
+		if (errors == e0)
+			$display("PASS atg_cp_seq.u6_normalization");
 		e0 = errors;
 
 		/* source: a firmware stream while fw_active, the ring's waits. */
