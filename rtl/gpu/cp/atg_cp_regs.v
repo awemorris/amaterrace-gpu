@@ -276,36 +276,6 @@
 	`ATG_DEF_VF_CACHE_LINES, `ATG_DEF_TU_L1_CACHE_KB, `ATG_DEF_MC_L2_WAYS, `ATG_DEF_MC_L2_CACHE_KB \
 }
 
-`define ATG_DEF_DEVICE_CAPS { \
-	`ATG_DEF_MSAA, `ATG_DEF_DISP, `ATG_DEF_HAS_BLT, `ATG_DEF_MESH, `ATG_DEF_TASK, \
-	`ATG_DEF_ROP_PACK, `ATG_DEF_FFILT, `ATG_DEF_PROT, \
-	8'd1, `ATG_DEF_PHYS_LANES, \
-	1'b1, `ATG_DEF_FP16, `ATG_DEF_DUAL_SRC, `ATG_DEF_SECONDARY_RING, `ATG_DEF_INDIRECT_DRAW, `ATG_DEF_HW_WALKER, 1'b0, 1'b0 \
-}
-
-`define ATG_DEF_LANES_LOG2 ( \
-	(`ATG_DEF_PHYS_LANES == 8'd4)  ? 4'd2 : \
-	(`ATG_DEF_PHYS_LANES == 8'd8)  ? 4'd3 : \
-	(`ATG_DEF_PHYS_LANES == 8'd16) ? 4'd4 : \
-	(`ATG_DEF_PHYS_LANES == 8'd32) ? 4'd5 : 4'd3 \
-)
-
-`define ATG_DEF_CAPS { \
-	1'b0, 1'b0, `ATG_DEF_MSAA, `ATG_DEF_FP16, 1'b1, `ATG_DEF_TRILINEAR, `ATG_DEF_SA, `ATG_DEF_SUBGROUP, \
-	4'd6, 1'b0, 1'b0, `ATG_DEF_RV32, `ATG_DEF_HW_WALKER, 4'd0, 1'b0, 1'b0, \
-	1'b1, 1'b1, `ATG_DEF_LANES_LOG2, 1'b1, 1'b1, 1'b1, 1'b1 \
-}
-
-`define ATG_DEF_EXT_CAP_FMT0 { \
-	13'd0, `ATG_DEF_BLT_TILE, `ATG_DEF_BLT_BLEND, `ATG_DEF_TU_BILINEAR, `ATG_DEF_MRT_COUNT, 2'b00, 1'b1, 2'b00, `ATG_DEF_BC, 1'b0, `ATG_DEF_BC, `ATG_DEF_BC, `ATG_DEF_BC, `ATG_DEF_BC, `ATG_DEF_BC \
-}
-
-`define ATG_DEF_EXT_CAP_FEATURE { \
-	`ATG_DEF_BLT_SCALE, `ATG_DEF_CLIP_POLY, `ATG_DEF_SUBGROUP, `ATG_DEF_FP16, `ATG_DEF_LDS_KB, `ATG_DEF_MRT_COUNT, \
-	`ATG_DEF_MRT_BLEND, `ATG_DEF_COLOR_LUT, `ATG_DEF_CURSOR, `ATG_DEF_EARLY_Z, `ATG_DEF_LOGICOP, `ATG_DEF_FAST_CLEAR, `ATG_DEF_COARSE_SCAN, `ATG_DEF_DUAL_SRC, \
-	`ATG_DEF_PA_BITS_ENC, `ATG_DEF_VA_BITS_ENC \
-}
-
 module atg_cp_regs #(
 	parameter [63:0] TIMESTAMP_INIT = 64'd0,
 	parameter GCLK_HZ = 32'd0,	/* GCLK_HZ register */
@@ -340,7 +310,9 @@ module atg_cp_regs #(
 	parameter HAS_TU = 0,
 	parameter TU_BILINEAR = 0,
 	parameter HAS_FFILT = 0,
+	parameter HAS_ROP = 0,
 	parameter HAS_ROP_PACK = 0,
+	parameter HAS_MESH = 0,
 	parameter HAS_ETC = 0,
 	parameter MS4 = 0,
 	parameter HAS_PROT = 0,
@@ -721,9 +693,9 @@ module atg_cp_regs #(
 		(MS4 != 0) ? 1'b1 : 1'b0,                  /* [31] MSAA */
 		(HAS_DISP != 0) ? 1'b1 : 1'b0,             /* [30] DISP */
 		(HAS_BLT != 0) ? 1'b1 : 1'b0,              /* [29] BLT */
-		`ATG_DEF_MESH,                             /* [28] MESH */
-		`ATG_DEF_MESH,                             /* [27] TASK (mirrors MESH) */
-		`ATG_DEF_ROP_PACK,                         /* [26] ROP_PACK */
+		(HAS_MESH != 0) ? 1'b1 : 1'b0,             /* [28] MESH */
+		(HAS_MESH != 0) ? 1'b1 : 1'b0,             /* [27] TASK (mirrors MESH) */
+		((HAS_ROP_PACK != 0) && (HAS_ROP != 0)) ? 1'b1 : 1'b0, /* [26] ROP_PACK */
 		((HAS_FFILT != 0) || `ATG_DEF_FFILT) ? 1'b1 : 1'b0, /* [25] FFILT */
 		(HAS_PROT != 0) ? 1'b1 : 1'b0,             /* [24] PROT */
 		NSU[7:0],                                  /* [23:16] NUM_SU */

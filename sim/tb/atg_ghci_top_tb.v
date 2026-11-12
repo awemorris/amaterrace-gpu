@@ -75,6 +75,7 @@ module ghci_probe #(
 `endif
 	localparam HAS_CPU = 1;
 	localparam NSU = 1;
+	localparam HAS_ROP = 1;
 
 	localparam [15:0] TOTAL_WARPS = NSU * SU_NWARPS;
 	localparam [31:0] CALC_RESIDENT_WARPS = {
@@ -106,7 +107,7 @@ module ghci_probe #(
 		(HAS_BLT != 0) ? 1'b1 : 1'b0,              /* [29] BLT */
 		`ifdef CFG_ENABLE_MESH (`CFG_ENABLE_MESH != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [28] MESH */
 		`ifdef CFG_ENABLE_MESH (`CFG_ENABLE_MESH != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [27] TASK (mirrors MESH) */
-		`ifdef CFG_ROP_ENABLE_PACK (`CFG_ROP_ENABLE_PACK != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [26] ROP_PACK */
+		`ifdef CFG_ROP_ENABLE_PACK ((HAS_ROP != 0) && (`CFG_ROP_ENABLE_PACK != 0)) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [26] ROP_PACK */
 		`ifdef CFG_TU_ENABLE_FFILT (`CFG_TU_ENABLE_FFILT != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif,  /* [25] FFILT */
 		(HAS_PROT != 0) ? 1'b1 : 1'b0,             /* [24] PROT */
 		8'd1,                                      /* [23:16] NUM_SU (KC705 NSU=1) */
@@ -115,7 +116,7 @@ module ghci_probe #(
 		(SU_PACKED != 0) ? 1'b1 : 1'b0,            /* [6] FP16 */
 		`ifdef CFG_ROP_DUAL_SOURCE (`CFG_ROP_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else (`ifdef CFG_ENABLE_DUAL_SOURCE (`CFG_ENABLE_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif) `endif, /* [5] DUAL_SRC */
 		(HAS_CPU != 0 && NSU > 0) ? 1'b1 : 1'b0,   /* [4] SECONDARY_RING */
-		(HAS_CPU != 0 && NSU > 0) ? 1'b1 : 1'b0,   /* [3] INDIRECT_DRAW */
+		1'b0,                                      /* [3] INDIRECT_DRAW */
 		1'b0,                                      /* [2] HW_WALKER (atg_mmu absent in atg_top, always 0) */
 		2'b00                                      /* [1:0] */
 	};

@@ -118,7 +118,12 @@ module atg_top #(
 `else
 	parameter HAS_ETC = 0,
 `endif
-	parameter HAS_INDIRECT_DRAW = (HAS_CPU != 0) && (NSU > 0),
+`ifdef CFG_ENABLE_MESH
+	parameter HAS_MESH = (`CFG_ENABLE_MESH != 0),
+`else
+	parameter HAS_MESH = 0,
+`endif
+	parameter HAS_INDIRECT_DRAW = 0,
 	parameter HAS_SECONDARY_RING = (HAS_CPU != 0) && (NSU > 0),
 	/* The SUs' shape (design §3.7). */
 `ifdef CFG_SU_NPHYS
@@ -612,7 +617,9 @@ module atg_top #(
 		.HAS_TU(HAS_TU),
 		.TU_BILINEAR(TU_BILINEAR),
 		.HAS_FFILT(HAS_FFILT && (HAS_TU != 0)),
+		.HAS_ROP(HAS_ROP),
 		.HAS_ROP_PACK(HAS_ROP_PACK && (HAS_ROP != 0)),
+		.HAS_MESH(HAS_MESH),
 		.MS4(MS4),
 		.CORE1(CORE1),
 		.HAS_FMT(1),
