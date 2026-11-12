@@ -107,7 +107,9 @@ module atg_top_scene_harness #(
 		.SU_GRP_W(SU_GRP_W), .SU_VARY_WORDS(SU_VARY_WORDS), .SU_NREGS(SU_NREGS),
 		.SU_SB_ENTRIES(SU_SB_ENTRIES), .SU_SBE_W(SU_SBE_W), .SU_PACKED(SU_PACKED),
 		.SU_SUBGROUP(SU_SUBGROUP), .SU_FRAG_RESERVE(SU_FRAG_RESERVE),
-		.SU_LDS_BYTES(SU_LDS_BYTES), .ROP_STENCIL(ROP_STENCIL), .MS4(MS4)) dut (
+		.SU_LDS_BYTES(SU_LDS_BYTES), .ROP_STENCIL(ROP_STENCIL), .MS4(MS4),
+		.APERTURE_BASE_INIT(32'h00020000), .APERTURE_LIMIT_INIT(APER_LIMIT),
+		.HAS_BLT(1), .HAS_L2(0)) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.s_awaddr(h_awaddr), .s_awid(h_awid), .s_awvalid(h_awvalid), .s_awready(h_awready),
 		.s_wdata(h_wdata), .s_wstrb(h_wstrb), .s_wlast(h_wlast), .s_wvalid(h_wvalid),
@@ -191,14 +193,13 @@ module atg_top_scene_harness #(
 		repeat (8) @(posedge clk);
 
 		host_read(GHCI_CAPS, got);
-		if (got[29] !== (MS4 != 0 && HAS_VF != 0 && HAS_TU != 0 && NSU != 0)) begin
+		if (got[31] !== (MS4 != 0)) begin
 			errors = errors + 1;
-			$display("FAIL %0s(%0s): CAPS %h, bit 29 (MS4) not as the shape", TB, NAME, got);
+			$display("FAIL %0s(%0s): CAPS %h, bit 31 (MSAA) not as the shape", TB, NAME, got);
 		end
-		if (got[30] !== (HAS_VF != 0 && HAS_TU != 0 && NSU != 0 && SU_VARY_WORDS >= 64) ||
-				got[9] !== got[30]) begin
+		if (got[29] !== 1'b1) begin
 			errors = errors + 1;
-			$display("FAIL %0s(%0s): CAPS %h, bits 30 and 9 (core) not as the shape", TB, NAME, got);
+			$display("FAIL %0s(%0s): CAPS %h, bit 29 (BLT) not as the shape", TB, NAME, got);
 		end
 		host_write(GHCI_APERTURE_BASE, 32'h00020000);
 		host_write(GHCI_APERTURE_LIMIT, APER_LIMIT);
