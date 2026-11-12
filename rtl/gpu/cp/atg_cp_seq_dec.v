@@ -337,7 +337,7 @@ module atg_cp_seq_dec #(
 	assign pay_bad = !p[0] && (is_set && (in_data[31:10] != 22'd0 || in_data[9:8] == 2'b11) ||
 		is_dset && !off_ok);
 
-	wire unused_ok = &{1'b0, hdr[23:8], p[7:1], ghci_n_bo};
+	wire unused_ok = &{1'b0, hdr[23:8], p[7:1], ghci_n_bo, h_n[0]};
 endmodule
 
 `default_nettype wire

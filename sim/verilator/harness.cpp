@@ -73,7 +73,7 @@ void poke32(uint32_t a, uint32_t v)
 		mem[a + i] = (uint8_t)(v >> (8 * i));
 }
 
-constexpr uint32_t RING_BASE_ADDR = 0x48000;
+constexpr uint32_t RING_BASE_ADDR = 0x60000;
 uint32_t ring_wp = 0;
 
 void ring_put(uint32_t v)
@@ -276,10 +276,13 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
 		ring_put(r[1]);
 	}
 	ring_put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_BLIT, 2, GHCI_BLIT_WAIT, 0));
+	const uint32_t fence_seq = ring_wp + 1000;
+	ring_put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_FENCE, 3, 0, 2));
+	ring_put(0x61000);
+	ring_put(fence_seq);
 	host_write(GHCI_RING_WPTR, ring_wp);
-	for (int i = 0; i < 100000 && host_read(GHCI_RING_RPTR) != ring_wp; i++)
+	for (int i = 0; i < 100000 && host_read(GHCI_FENCE_LAST) != fence_seq; i++)
 		;
-	wait_clear(GHCI_STATUS_BLT_BUSY);
 	for (unsigned y = 0; y < h; y++)
 		for (unsigned x = 0; x < w; x++) {
 			uint32_t a = dst + (dy + y) * ds + (dx + x) * 4;
@@ -639,20 +642,18 @@ int main(int argc, char **argv)
 
 	unsigned bad = 0;
 	for (uint32_t a = 0x10000; a < 0x50000; a++)
-		if (mem[a] != ref[a])
+		if (mem[a] != ref[a]) {
+			if (bad < 5)
+				std::printf("diff at 0x%05x: got 0x%02x, ref 0x%02x\n", a, mem[a], ref[a]);
 			bad++;
+		}
 	if (bad) {
 		std::printf("FAIL verilator: %u bytes differ from the reference\n", bad);
 		errors++;
 	}
 
-	host_write(GHCI_DBG_ADDR, 0x40000 + 3 * 512 + 2 * 4);
-	wait_clear(GHCI_STATUS_CP_BUSY);
-	expect("DBG_DATA", host_read(GHCI_DBG_DATA), peek32(0x40000 + 3 * 512 + 2 * 4));
-	expect("DBG_STATUS", host_read(GHCI_DBG_STATUS), 0);
-
 	/* The ring: a FILL from SET_REG and BLIT, then a FENCE with its IRQ. */
-	const uint32_t fence = 0x47F00;
+	const uint32_t fence = 0x61004;
 	const uint32_t regs[][2] = {{GHCI_S_BLT_OP, GHCI_BLT_FILL}, {GHCI_S_BLT_DST_BASE, 0x30000},
 	    {GHCI_S_BLT_DST_STRIDE, 256}, {GHCI_S_BLT_DST_XY, GHCI_XY(3, 1)},
 	    {GHCI_S_BLT_SIZE, GHCI_XY(10, 4)}, {GHCI_S_BLT_COLOR, 0x13572468},

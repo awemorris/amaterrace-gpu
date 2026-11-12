@@ -471,7 +471,7 @@ module atg_mc_prot #(
 
 	wire unused_ok = &{1'b0, a_head, d_head, g_head, b_head, j_head, s_head, lim_up, tgran,
 		p_idx, tend, a_idx_bo, w_line_co, lim_up_co, g_diff_bo, tgran_co, tend_co,
-		j2_head, j2_idx};
+		j2_head, j2_idx, aperture_base[11:0]};
 endmodule
 
 `default_nettype wire

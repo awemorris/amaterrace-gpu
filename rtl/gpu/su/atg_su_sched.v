@@ -18,6 +18,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+/* verilator lint_off BLKSEQ */
 module atg_su_sched #(
 	parameter NPHYS = 8,	/* Physical lanes: 4, 8, 16 or 32 (a warp is 32 lanes, one instruction takes 32/NPHYS cycles) */
 	parameter NWARPS = 4,	/* Resident warps (slots): 2, 4 or 8 */

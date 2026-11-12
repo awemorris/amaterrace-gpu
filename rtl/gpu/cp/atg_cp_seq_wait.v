@@ -72,6 +72,7 @@ module atg_cp_seq_wait (
 	 */
 	localparam [8:0] S_GRID_Y = GHCI_S_GRID_X + 9'd1;
 	localparam [8:0] S_GRID_Z = GHCI_S_GRID_X + 9'd2;
+	/* verilator lint_off UNUSEDPARAM */
 	localparam [7:0] OP_BLIT = 8'd2;
 	localparam [7:0] OP_DRAW = 8'd3;
 	localparam [7:0] OP_DISPATCH = 8'd4;
@@ -83,6 +84,7 @@ module atg_cp_seq_wait (
 	localparam [7:0] OP_DISP_SET = 8'd15;
 	localparam [7:0] OP_FLIP = 8'd16;
 	localparam [7:0] OP_BARRIER = 8'd20;
+	/* verilator lint_on UNUSEDPARAM */
 	localparam [7:0] OP_SEMAPHORE_SIGNAL = 8'd21;
 	localparam [7:0] OP_SEMAPHORE_WAIT = 8'd22;
 

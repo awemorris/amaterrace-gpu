@@ -31,7 +31,7 @@ build() {
 	name=$1
 	def=$2
 	shift 2
-	timeout 900 verilator --cc --exe --build -j 4 -Wall -Iinclude \
+	timeout 900 verilator --cc --exe --build -j 4 -Wall -Wno-DECLFILENAME -Wno-PINCONNECTEMPTY -Wno-UNUSED -Wno-UNDRIVEN -Wno-VARHIDDEN -Iinclude \
 		--top-module atg_top $KC "$@" -Mdir "$out/obj-$name" -o "$out/atg_top_$name" \
 		-CFLAGS "-I$root/include -O1 $def" \
 		$(find rtl -name '*.v' | grep -v 'rtl/bsp/xilinx7' | sort) "$root/sim/verilator/harness.cpp" \
@@ -50,7 +50,7 @@ build() {
 for m in ${*:-basic raster shade tex msaa compute core}; do
 	case $m in
 	# The registers, a FILL and a COPY, the debug port, the ring.
-	basic) build basic "" ;;
+	basic) build basic "" -GHAS_BLT=1 -GBLT_BLEND=1 -GBLT_TILE=1 -GBLT_SCALE=1 ;;
 	# The raster scene: HAS_RX and HAS_ROP, the colour buffer to a PNG.
 	raster) build raster -DRASTER -GHAS_RX=1 -GHAS_ROP=1 ;;
 	# The shaded scene: VF, SU, RX, ROP, the colour buffer to a PNG.

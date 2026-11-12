@@ -73,6 +73,7 @@ module atg_rx_cov (
 	/* All the bits below the top set bit of v, set (v itself included).
 	 * Implemented with hierarchical prefix-OR across 8 groups of 6 bits
 	 * guaranteeing <= 2 LUT levels. */
+	/* verilator lint_off BLKSEQ */
 	function [47:0] smear;
 		input [47:0] v;
 		reg [7:0] grp;
@@ -98,6 +99,7 @@ module atg_rx_cov (
 			end
 		end
 	endfunction
+	/* verilator lint_on BLKSEQ */
 
 	genvar ge;
 	generate

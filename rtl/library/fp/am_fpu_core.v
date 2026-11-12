@@ -718,12 +718,14 @@ module am_fpu_core #(
 			.arith(1'b0), .y(fma3_cs));
 
 		/* Prefix-OR for fma3_cst calculation without barrel shifter */
+		/* verilator lint_off UNOPTFLAT */
 		wire [23:0] fma3_mc_or;
 		assign fma3_mc_or[0] = fma3_mc[0];
 		genvar gi_fma;
 		for (gi_fma = 1; gi_fma < 24; gi_fma = gi_fma + 1) begin : g_fma_or
 			assign fma3_mc_or[gi_fma] = fma3_mc_or[gi_fma-1] | fma3_mc[gi_fma];
 		end
+		/* verilator lint_on UNOPTFLAT */
 		wire fma3_cst = (fma3_rs == 5'd0) ? 1'b0 :
 		                (fma3_rs >= 5'd24) ? fma3_mc_or[23] :
 		                fma3_mc_or[~fma3_kp2[4:0]];

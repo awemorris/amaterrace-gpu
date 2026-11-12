@@ -147,6 +147,10 @@ module atg_cpu_muldiv (
 					done <= 1'b1;
 					state <= S_IDLE;
 				end
+				default: begin
+					done <= 1'b0;
+					state <= S_IDLE;
+				end
 			endcase
 		end
 	end

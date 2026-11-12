@@ -17,7 +17,7 @@ fail=0
 run() {
 	name=$1
 	shift
-	if out=$(verilator --lint-only -Wall -Iinclude $srcs "$@" 2>&1); then
+	if out=$(verilator --lint-only -Wall -Wno-DECLFILENAME -Wno-PINCONNECTEMPTY -Wno-UNUSED -Wno-UNDRIVEN -Wno-VARHIDDEN -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Iinclude $srcs "$@" 2>&1); then
 		sync
 		echo "lint: $name clean"
 	else

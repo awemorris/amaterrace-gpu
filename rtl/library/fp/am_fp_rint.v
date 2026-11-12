@@ -41,6 +41,7 @@ module am_fp_rint #(
 	wire g = f > 8'd24 ? 1'b0 : m[fm1];
 
 	/* prefix OR of m for fast sticky bit calculation without barrel shifter */
+	/* verilator lint_off UNOPTFLAT */
 	wire [23:0] m_or;
 	assign m_or[0] = m[0];
 	genvar gi;
@@ -49,6 +50,7 @@ module am_fp_rint #(
 			assign m_or[gi] = m_or[gi-1] | m[gi];
 		end
 	endgenerate
+	/* verilator lint_on UNOPTFLAT */
 
 	wire st = f > 8'd24 ? m_or[23] : (fm1 == 5'd0 || f == 8'd0) ? 1'b0 : m_or[fm2];
 	reg up;

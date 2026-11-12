@@ -26,7 +26,9 @@ module am_shift #(
 	parameter W = 32,
 	parameter SW = 5,	/* amount bits */
 	parameter DIR = 0,	/* 0: dynamic (via `left` port), 1: right-only, 2: left-only */
+	/* verilator lint_off UNUSEDPARAM */
 	parameter USE_DSP = 0	/* 0: LUT tree/slice, 1: map to DSP where supported */
+	/* verilator lint_on UNUSEDPARAM */
 ) (
 	input wire [W-1:0] a,
 	input wire [SW-1:0] amt,
@@ -120,6 +122,7 @@ module am_shift #(
 				assign fill_br[g_br] = fill;
 			end
 
+			/* verilator lint_off UNUSEDSIGNAL */
 			for (g_nib = 0; g_nib < NNIB; g_nib = g_nib + 1) begin : g_nib_sl
 				localparam NIB_W = ((g_nib + 1) * 4 <= W) ? 4 : (W - g_nib * 4);
 				localparam BR_IDX = g_nib / 4;
@@ -162,6 +165,7 @@ module am_shift #(
 				assign rsh_out[3] = fill_nib_3 ? (log_rsh_3[g_nib * 4 + 3] | mask_3[g_nib * 4 + 3]) : log_rsh_3[g_nib * 4 + 3];
 				assign rsh[g_nib * 4 +: NIB_W] = rsh_out[0 +: NIB_W];
 			end
+			/* verilator lint_on UNUSEDSIGNAL */
 		end
 	end else begin : g_rsh_stub
 		assign rsh = {W{1'b0}};
@@ -187,6 +191,7 @@ module am_shift #(
 				end
 			end
 
+			/* verilator lint_off UNUSEDSIGNAL */
 			for (g_nib = 0; g_nib < NNIB; g_nib = g_nib + 1) begin : g_nib_sl
 				localparam NIB_W = ((g_nib + 1) * 4 <= W) ? 4 : (W - g_nib * 4);
 				localparam BR_IDX = g_nib / 4;
@@ -215,6 +220,7 @@ module am_shift #(
 				assign lsh_out[3] = lshifted_3[g_nib * 4 + 3];
 				assign lsh[g_nib * 4 +: NIB_W] = lsh_out[0 +: NIB_W];
 			end
+			/* verilator lint_on UNUSEDSIGNAL */
 		end
 	end else begin : g_lsh_stub
 		assign lsh = {W{1'b0}};

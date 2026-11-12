@@ -329,7 +329,6 @@ module atg_blt_cfg #(
 	assign psl_int = psl_raw;
 	assign psl = psl_int;
 `endif
-	wire tiled = op == GHCI_BLT_TILE || op == GHCI_BLT_UNTILE;
 
 	wire [1:0] op_in = st_wdata_a[1:0];
 	wire blend_in = st_wdata_a[GHCI_BLT_OP_BLEND];
@@ -372,7 +371,7 @@ module atg_blt_cfg #(
 	am_add #(.W(17)) a_dye (.a(dy), .b({1'b0, s_size[31:16]}), .ci(1'b0), .s(dy_end), .co(end_co_unused[1]));
 
 	(* max_fanout = 16 *) reg [16:0] r_dx_end, r_dy_end;
-	always @(posedge clk or negedge rst_n) begin
+	always @(posedge clk) begin
 		if (!rst_n) begin
 			r_dx_end <= 17'd0;
 			r_dy_end <= 17'd0;
@@ -422,7 +421,7 @@ module atg_blt_cfg #(
 	/* Bases and strides without the bits below the pixel size. */
 	(* keep = "true", dont_touch = "true" *) wire [31:0] low = low_bits(psl_int);
 	(* keep = "true", dont_touch = "true" *) reg [3:0] r_low_base;
-	always @(posedge clk or negedge rst_n) begin
+	always @(posedge clk) begin
 		if (!rst_n) begin
 			r_low_base <= 4'b0011;
 		end else if (we_op_lo) begin

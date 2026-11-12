@@ -552,7 +552,7 @@ assign nz_r_lo = nz_r;
 		ATG_XU_EXP2[2:0]:
 			load_res_w_lo = 16'd0;
 		ATG_XU_LOG2[2:0]:
-			load_res_lo = 16'd0;
+			load_res_w_lo = 16'd0;
 		default:
 			if (lnan_r || linf_r)
 				load_res_w_lo = 16'd0;

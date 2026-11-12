@@ -20,6 +20,7 @@
 `define CFG_ROP_MRT_COUNT 1
 `endif
 
+/* verilator lint_off BLKSEQ */
 (* keep_hierarchy = "yes" *)
 module atg_rop_blend #(
 	parameter LAT = 11,	/* Pipeline cycles from b_valid to b_rvalid (11 for high-freq ASIC, 3 for legacy) */

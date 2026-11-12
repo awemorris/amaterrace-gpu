@@ -69,6 +69,8 @@ module atg_blt_seg #(
 	wire [US:0] da_px, room_r, back_n, p_end, leg_back_n;
 	wire [ADDR_W-1:0] src_next, src_last;
 	wire [7:0] seg_co_unused;
+	assign seg_co_unused[7] = 1'b0;
+	assign seg_co_unused[1:0] = 2'b00;
 
 	/* Pre-shift da by pixel size (da_px = p_da >> psl) */
 	assign da_px  = use_in_da_px ? in_da_px :

@@ -33,7 +33,9 @@
 
 module am_addsub #(
 	parameter W = 32,
+	/* verilator lint_off UNUSEDPARAM */
 	parameter USE_DSP = 0
+	/* verilator lint_on UNUSEDPARAM */
 ) (
 	input wire [W-1:0] a,
 	input wire [W-1:0] b,
@@ -72,7 +74,7 @@ module am_addsub #(
 	end
 	endgenerate
 `else
-	assign {co, s} = {1'b0, a} + {1'b0, bx} + {{W{1'b0}}, sub};
+	assign {co, s} = {1'b0, a} + {1'b0, bx} + {{W{1'b0}}, sub_ci};
 `endif
 endmodule
 

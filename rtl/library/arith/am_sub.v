@@ -32,7 +32,9 @@
 
 module am_sub #(
 	parameter W = 32,
+	/* verilator lint_off UNUSEDPARAM */
 	parameter USE_DSP = 0
+	/* verilator lint_on UNUSEDPARAM */
 ) (
 	input wire [W-1:0] a,
 	input wire [W-1:0] b,

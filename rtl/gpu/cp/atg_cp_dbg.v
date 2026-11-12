@@ -238,7 +238,7 @@ module atg_cp_dbg #(
 
 	assign hcr_rdata = 32'd0;
 
-	wire unused_ok = &{1'b0, rsp_tag, hcr_ridx, wmerge_a, wmerge_d, hcr_wmask};
+	wire unused_ok = &{1'b0, rsp_tag, hcr_ridx, wmerge_a, wmerge_d, hcr_wmask, hcr_we, hcr_widx, err};
 endmodule
 
 `default_nettype wire

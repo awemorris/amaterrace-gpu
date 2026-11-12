@@ -424,7 +424,7 @@ module atg_blt_2d #(
 	wire [ADDR_W-1:0] cur_sa_full = s_addr;
 
 	/* The segment's geometry (atg_blt_seg, combinational). */
-	wire [US:0] seg_n;
+	wire [US:0] seg_n = leg_seg_n;
 	wire [ADDR_W-1:0] back, src_base_u;
 	reg [ADDR_W-1:0] r_leg_back;
 	wire [LA_W-1:0] last_line;
@@ -2197,6 +2197,8 @@ module atg_blt_2d #(
 	wire [1:0] ydl_inc, ysl_inc;
 	wire [16:0] rows_dec, px_next, spx_next, rem_next;
 	wire [23:0] fsm_co_unused;
+	assign fsm_co_unused[23:20] = 4'd0;
+	assign fsm_co_unused[7] = 1'b0;
 
 	wire cx_empty = (x1 <= x0);
 	wire cy_empty = (y1 <= y0);

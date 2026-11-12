@@ -679,7 +679,7 @@ module atg_rx_edge (
 	wire [47:0] acc_n;
 	am_sub #(.W(48)) u_acc_n (.a(mp[47:0]), .b(48'd0), .bi(!tl[ek]), .d(acc_n), .bo(carry_unused[48]));
 	am_add #(.W(48)) u_eE_n (.a(acc[47:0]), .b(mp[47:0]), .ci(1'b0), .s(eE_n),
-		.co(carry_unused[47]));
+		.co(carry_unused[53]));
 
 	/* Sliced datapath register updates to keep every write-enable and mux select fanout <= 16 */
 	wire c_act = !rst_sync && !start && run;

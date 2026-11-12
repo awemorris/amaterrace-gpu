@@ -53,10 +53,10 @@ module atg_blt_align #(
 	/* Stage 0 Select: off[1:0] */
 	/* Each leaf buffer drives 2 bytes (16 LUT6s) */
 	localparam S0_LEAF_CNT = (S0_OUT_BYTES + 1) / 2;
-	localparam S0_MID_CNT  = (S0_LEAF_CNT + 7) / 8;
 	wire [1:0] s0_sel [0:S0_LEAF_CNT-1];
 
 `ifdef SYNTH_KINTEX7
+	localparam S0_MID_CNT  = (S0_LEAF_CNT + 7) / 8;
 	(* dont_touch = "true" *) wire [1:0] s0_mid [0:S0_MID_CNT-1];
 	genvar sm0, sl0, b0;
 	generate
@@ -80,10 +80,10 @@ module atg_blt_align #(
 
 	/* Stage 1 Select: off[3:2] */
 	localparam S1_LEAF_CNT = (S1_OUT_BYTES + 1) / 2;
-	localparam S1_MID_CNT  = (S1_LEAF_CNT + 7) / 8;
 	wire [1:0] s1_sel [0:S1_LEAF_CNT-1];
 
 `ifdef SYNTH_KINTEX7
+	localparam S1_MID_CNT  = (S1_LEAF_CNT + 7) / 8;
 	(* dont_touch = "true" *) wire [1:0] s1_mid [0:S1_MID_CNT-1];
 	genvar sm1, sl1, b1;
 	generate
@@ -107,10 +107,10 @@ module atg_blt_align #(
 
 	/* Stage 2 Select: off[5:4] (or {1'b0, off[4]} for 32B) */
 	localparam S2_LEAF_CNT = (S2_OUT_BYTES + 1) / 2;
-	localparam S2_MID_CNT  = (S2_LEAF_CNT + 7) / 8;
 	wire [1:0] s2_sel [0:S2_LEAF_CNT-1];
 
 `ifdef SYNTH_KINTEX7
+	localparam S2_MID_CNT  = (S2_LEAF_CNT + 7) / 8;
 	(* dont_touch = "true" *) wire [1:0] s2_mid [0:S2_MID_CNT-1];
 	genvar sm2, sl2, b2;
 	generate
@@ -192,6 +192,7 @@ module atg_blt_align #(
 				                   (sel2 == 2'd1) ? st1_b[i2 + 16] : st1_b[i2];
 			end else begin : g_s2_32
 				assign st2_b[i2] = sel2[0] ? st1_b[i2 + 16] : st1_b[i2];
+				wire unused_sel2 = &{1'b0, sel2[1]};
 			end
 		end
 	endgenerate
