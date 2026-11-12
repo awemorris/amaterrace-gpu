@@ -138,6 +138,14 @@ extern "C" {
 #define GHCI_CP_STATE_BLIT       6u
 #define GHCI_CP_STATE_FAULT      7u
 
+/* Driver-Visible Lifecycle States (§5.2) */
+#define GHCI_LC_IDLE             0u
+#define GHCI_LC_RUNNING          1u
+#define GHCI_LC_HALTING          2u
+#define GHCI_LC_HALTED           3u
+#define GHCI_LC_FAULTED          4u
+#define GHCI_LC_RESETTING        5u
+
 /* IRQ_STATUS & IRQ_ENABLE bits (0x038, 0x03C) */
 #define GHCI_IRQ_FENCE           (1u << 0)  /* Fence completed */
 #define GHCI_IRQ_FAULT           (1u << 1)  /* Hardware / memory translation fault */

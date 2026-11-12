@@ -532,6 +532,7 @@ module atg_cp #(
 	wire s_run, s_halt, s_step, s_open, s_quiesce, s_mc_flush, s_ctrl_irq_global;
 	(* keep = "true", dont_touch = "true" *) wire s_core_rst_n;
 	wire [3:0] s_cp_state;
+	wire [2:0] s_lc_state;
 	wire [2:0] s_host_kick;
 	wire s_ev_halted, s_ev_fault, s_ev_wdt;
 	wire s_replay_busy;
@@ -598,7 +599,7 @@ module atg_cp #(
 		.src_tag({s_disp_fault_tag, x_fault_tag[15:8], 8'd0, 8'd0, x_fault_tag[7:0],
 			s_fence_fault_tag, 8'd0, s_seq_fault_tag, s_ring_fault_tag}),
 		.run(s_run), .halt(s_halt), .ctrl_irq_global(s_ctrl_irq_global), .quiesce(s_quiesce), .mc_flush(s_mc_flush),
-		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state),
+		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state), .lc_state(s_lc_state),
 		.host_kick(s_host_kick), .step(s_step),
 		.ev_halted(s_ev_halted), .ev_fault(s_ev_fault), .ev_wdt(s_ev_wdt),
 		.aperture_base(aperture_base), .aperture_limit(aperture_limit)
@@ -897,7 +898,11 @@ module atg_cp #(
 	wire [1:0] s_f_op;
 	wire [63:0] s_f_addr;
 	wire [31:0] s_f_value, s_f_aux;
-	wire s_seq_halt = s_cp_state == GHCI_ST_FAULT || s_mc_flush;
+	wire lc_halting   = s_lc_state == GHCI_LC_HALTING;
+	wire lc_halted    = s_lc_state == GHCI_LC_HALTED;
+	wire lc_faulted   = s_lc_state == GHCI_LC_FAULTED;
+	wire lc_resetting = s_lc_state == GHCI_LC_RESETTING;
+	wire s_seq_halt = lc_halting || lc_halted || lc_faulted || lc_resetting;
 
 	wire s_fw_valid, s_fw_ready;
 	wire [31:0] s_fw_data;
@@ -1103,8 +1108,7 @@ module atg_cp #(
 			.clk(clk), .rst_n(rst_n),
 			.hcr_we(hcr_we_disp), .hcr_widx(hcr_widx_disp), .hcr_wdata(reg_wdata_disp),
 			.hcr_wmask(hcr_wmask_disp), .hcr_ridx(hcr_ridx_disp), .hcr_rdata(s_disp_rdata),
-			.cp_state(s_cp_state),
-			.cp_open(s_open),
+			.lc_state(s_lc_state),
 			.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
 			.kick_flip(s_kick_flip), .kick_idle(s_kick_idle), .seq_tag(s_seq_fault_tag),
 			.disp_wait(s_disp_wait), .aperture_base(aperture_base),

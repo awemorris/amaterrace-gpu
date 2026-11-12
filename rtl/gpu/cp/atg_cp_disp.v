@@ -61,8 +61,7 @@ module atg_cp_disp #(
 	input wire [31:0] hcr_wmask,
 	input wire [9:0] hcr_ridx,
 	output wire [31:0] hcr_rdata,
-	input wire [3:0] cp_state,
-	input wire cp_open,
+	input wire [2:0] lc_state,
 	/* From atg_cp_seq */
 	input wire uop_we,
 	input wire [9:0] uop_idx,
@@ -114,10 +113,21 @@ module atg_cp_disp #(
 	localparam NW = LINE_BYTES / 8;	/* 8-byte words in a line */
 	localparam WSEL = LINE_SHIFT - 3;
 
-	/* The CP's state (§13.2). Active while processing/executing, host gate in IDLE/FAULT. */
-	wire active = !cp_open;
-	wire host_s = cp_open;
-	wire rec_ok = cp_state != GHCI_ST_FAULT;
+	/* The CP's lifecycle state (§13.2).
+	 * Active while RUNNING or HALTING.
+	 * Host can write Kind S in IDLE, HALTED, or FAULTED.
+	 * Flip records written in IDLE, RUNNING, or HALTING; deferred in HALTED, FAULTED, RESETTING.
+	 */
+	wire lc_idle      = lc_state == GHCI_LC_IDLE;
+	wire lc_running   = lc_state == GHCI_LC_RUNNING;
+	wire lc_halting   = lc_state == GHCI_LC_HALTING;
+	wire lc_halted    = lc_state == GHCI_LC_HALTED;
+	wire lc_faulted   = lc_state == GHCI_LC_FAULTED;
+	wire lc_resetting = lc_state == GHCI_LC_RESETTING;
+
+	wire active = lc_running || lc_halting;
+	wire host_s = lc_idle || lc_halted || lc_faulted;
+	wire rec_ok = lc_idle || lc_running || lc_halting;
 
 	/* ------------------------------------------------ the host's gate */
 
@@ -125,9 +135,9 @@ module atg_cp_disp #(
 	wire [5:0] h_k = hcr_widx[5:0];
 	/* S: CTRL 4, FB_NEXT 9, FB_STRIDE 10, FB_SIZE 11, timing and SYNC_POL 12-20, PCLK_SEL 22. */
 	wire h_s = h_k == 6'd4 || (h_k >= 6'd9 && h_k <= 6'd20) || h_k == 6'd22;
-	/* C 41-42, L 24, 25, 27, I 32, W (STATUS) 5. */
+	/* C 41-42, L 24, 25, 27, I 32, W (STATUS, DISP_IRQ_STATUS) 5, 6, RW (DISP_IRQ_ENABLE) 7. */
 	wire h_any = h_k == 6'd41 || h_k == 6'd42 || h_k == 6'd24 || h_k == 6'd25 ||
-		h_k == 6'd27 || h_k == 6'd32 || h_k == 6'd5;
+		h_k == 6'd27 || h_k == 6'd32 || h_k == 6'd5 || h_k == 6'd6 || h_k == 6'd7;
 `ifdef MUT_DISP_NOGATE
 	wire h_pass = h_in && (h_s || h_any);
 	wire h_bad = 1'b0;
@@ -346,7 +356,7 @@ module atg_cp_disp #(
 	assign hcr_rdata = r_in ? d_rdata | own : 32'd0;
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag, rsp_rdata, slot_val0[31], slot_val1[31],
-		r_addr[2:0]};
+		r_addr[2:0], lc_resetting};
 endmodule
 
 `default_nettype wire

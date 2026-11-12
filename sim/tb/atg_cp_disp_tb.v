@@ -45,7 +45,7 @@ module atg_cp_disp_tb;
 	reg [9:0] hcr_widx = 0, hcr_ridx = 0;
 	reg [31:0] hcr_wdata = 0, hcr_wmask = 0;
 	wire [31:0] hcr_rdata;
-	reg [3:0] cp_state = GHCI_ST_IDLE;
+	reg [2:0] lc_state = GHCI_LC_IDLE;
 	reg uop_we = 0, kick_flip = 0, kick_idle = 0;
 	reg [9:0] uop_idx = 0;
 	reg [31:0] uop_wdata = 0;
@@ -75,7 +75,7 @@ module atg_cp_disp_tb;
 	) dut (
 		.clk(clk), .rst_n(rst_n),
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
-		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata), .cp_state(cp_state),
+		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata), .lc_state(lc_state),
 		.uop_we(uop_we), .uop_idx(uop_idx), .uop_wdata(uop_wdata),
 		.kick_flip(kick_flip), .kick_idle(kick_idle), .seq_tag(8'h5A),
 		.disp_wait(disp_wait), .aperture_base(32'h80000000), .aperture_limit(32'h90000000),
@@ -258,7 +258,7 @@ module atg_cp_disp_tb;
 	initial begin
 		repeat (3) @(posedge clk);
 		rst_n = 1;
-		cp_state = GHCI_ST_RUNNING;
+		lc_state = GHCI_LC_RUNNING;
 
 		/* set */
 		n0 = dw_n;
@@ -371,7 +371,7 @@ module atg_cp_disp_tb;
 
 		/* excl: IDLE, HALTED, FAULTED. */
 		for (k = 0; k < 3; k = k + 1) begin
-			cp_state = k == 0 ? GHCI_ST_IDLE : k == 1 ? GHCI_ST_HALTED : GHCI_ST_FAULTED;
+			lc_state = k == 0 ? GHCI_LC_IDLE : k == 1 ? GHCI_LC_HALTED : GHCI_LC_FAULTED;
 			n0 = dw_n;
 			n1 = flips_n;
 			uop(10'h3C4, 32'h77);
@@ -387,7 +387,7 @@ module atg_cp_disp_tb;
 			check("excl", !disp_wait, "disp_wait outside RUNNING and HALTING");
 			dc_idle = 1;
 		end
-		cp_state = GHCI_ST_HALTING;
+		lc_state = GHCI_LC_HALTING;
 		n1 = flips_n;
 		flip(32'd0, 32'h80040000, 32'd0, 32'h15);
 		check("excl", flips_n == n1 + 1, "no FLIP in HALTING");
@@ -397,7 +397,7 @@ module atg_cp_disp_tb;
 		e0 = errors;
 
 		/* gate */
-		cp_state = GHCI_ST_RUNNING;
+		lc_state = GHCI_LC_RUNNING;
 		n0 = dw_n;
 		n1 = bad_n;
 		hcr_write(12'h210, 32'h1);	/* CTRL, S: dropped */
@@ -417,16 +417,24 @@ module atg_cp_disp_tb;
 		hcr_write(12'h284, 32'h1);	/* MODE_H0, R */
 		@(negedge clk);
 		check("gate", dw_n == n0 + 6 && bad_n == n1 + 3, "R written");
-		cp_state = GHCI_ST_IDLE;
+		lc_state = GHCI_LC_IDLE;
 		hcr_write(12'h210, 32'h51);
 		@(negedge clk);
 		check("gate", dw_n == n0 + 7 && dcw[4] == 32'h51, "S dropped in IDLE");
-		cp_state = GHCI_ST_RESETTING;
+		lc_state = GHCI_LC_HALTED;
+		hcr_write(12'h210, 32'h53);
+		@(negedge clk);
+		check("gate", dw_n == n0 + 8 && dcw[4] == 32'h53, "S dropped in HALTED");
+		lc_state = GHCI_LC_FAULTED;
+		hcr_write(12'h210, 32'h54);
+		@(negedge clk);
+		check("gate", dw_n == n0 + 9 && dcw[4] == 32'h54, "S dropped in FAULTED");
+		lc_state = GHCI_LC_RESETTING;
 		hcr_write(12'h210, 32'h52);
 		@(negedge clk);
-		check("gate", dw_n == n0 + 7 && bad_n == n1 + 4, "S written in RESETTING");
+		check("gate", dw_n == n0 + 9 && bad_n == n1 + 4, "S written in RESETTING");
 		/* A host write in the sequencer's cycle waits in the buffer. */
-		cp_state = GHCI_ST_RUNNING;
+		lc_state = GHCI_LC_RUNNING;
 		@(negedge clk);
 		uop_we = 1;
 		uop_idx = 10'h3EA;
@@ -453,9 +461,9 @@ module atg_cp_disp_tb;
 
 		/* reset: a record due in HALTED, FAULTED or RESETTING waits. */
 		for (k = 0; k < 3; k = k + 1) begin
-			cp_state = GHCI_ST_RUNNING;
+			lc_state = GHCI_LC_RUNNING;
 			flip(32'd0, 32'h80050000, 32'h80002000, 32'h20 + k);
-			cp_state = k == 0 ? GHCI_ST_HALTED : k == 1 ? GHCI_ST_FAULTED : GHCI_ST_RESETTING;
+			lc_state = k == 0 ? GHCI_LC_HALTED : k == 1 ? GHCI_LC_FAULTED : GHCI_LC_RESETTING;
 			n0 = ev_n;
 			n1 = m_n;
 			take(0, 0);
@@ -463,7 +471,7 @@ module atg_cp_disp_tb;
 			check("reset", m_n == n1 && ev_n == n0, "a record written outside IDLE/RUNNING/HALTING");
 			hcr_read(12'h214, v);
 			check("reset", v[31], "STATUS[31] down with a record due");
-			cp_state = GHCI_ST_IDLE;
+			lc_state = GHCI_LC_IDLE;
 			wait_ev(n0 + 1);
 			check("reset", m_data[0 +: 32] == 32'h20 + k, "the record after the reset");
 		end
@@ -472,7 +480,7 @@ module atg_cp_disp_tb;
 		e0 = errors;
 
 		/* err: the record write's error. */
-		cp_state = GHCI_ST_RUNNING;
+		lc_state = GHCI_LC_RUNNING;
 		flip(32'd1, 32'h80060000, 32'h80002018, 32'h30);
 		n0 = ev_n;
 		n1 = rec_err_n;

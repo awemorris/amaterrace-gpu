@@ -44,6 +44,7 @@ module atg_cp_ctl_tb;
 	wire run, halt, quiesce, mc_flush, core_rst_n, open, step, ev_halted, ev_fault, ev_wdt;
 	wire ctrl_irq_global;
 	wire [3:0] cp_state;
+	wire [2:0] lc_state;
 	wire [2:0] host_kick;
 	wire [31:0] ap_base, ap_limit;
 
@@ -60,7 +61,7 @@ module atg_cp_ctl_tb;
 		.mc_fault_write(mc_fault_write),
 		.src_fault(src_fault), .src_kind(src_kind), .src_addr(src_addr), .src_tag(src_tag),
 		.run(run), .halt(halt), .ctrl_irq_global(ctrl_irq_global), .quiesce(quiesce), .mc_flush(mc_flush),
-		.core_rst_n(core_rst_n), .open(open), .cp_state(cp_state), .host_kick(host_kick),
+		.core_rst_n(core_rst_n), .open(open), .cp_state(cp_state), .lc_state(lc_state), .host_kick(host_kick),
 		.step(step), .ev_halted(ev_halted), .ev_fault(ev_fault), .ev_wdt(ev_wdt),
 		.aperture_base(ap_base), .aperture_limit(ap_limit)
 	);
@@ -127,10 +128,11 @@ module atg_cp_ctl_tb;
 			    v[19:16] !== want_cp_state ||
 			    run !== want_run ||
 			    halt !== want_quiesce ||
-			    open !== want_open) begin
+			    open !== want_open ||
+			    lc_state !== want) begin
 				errors = errors + 1;
-				$display("FAIL atg_cp_ctl.%0s: want %0d STATUS %h (run=%b halt=%b fault=%b q=%b cp_st=%0d open=%b)",
-					what, want, v, v[0], v[1], v[2], v[14], v[19:16], open);
+				$display("FAIL atg_cp_ctl.%0s: want %0d STATUS %h (run=%b halt=%b fault=%b q=%b cp_st=%0d open=%b lc=%0d)",
+					what, want, v, v[0], v[1], v[2], v[14], v[19:16], open, lc_state);
 			end
 		end
 	endtask

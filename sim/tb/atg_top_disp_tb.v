@@ -37,6 +37,9 @@
  *   dcerr   in IDLE the host makes the DC scan outside the aperture: the MC
  *           refuses its reads, the DC sets STATUS.read error, the CP stays
  *           IDLE without a fault
+ *   halt_rec in HALTED a FLIP record is deferred until returning to RUNNING
+ *   fault_gate host writes FB_BASE/FB_NEXT in FAULTED without BAD_WRITE;
+ *           host write to Kind S in RUNNING sets BAD_WRITE
  * Not here: a draw (the RX and ROP into a flipped image: atg_top_tex and the
  * Verilator e2e), the cursor plane's image (atg_dc_cursor_tb), firmware.
  */
@@ -168,7 +171,7 @@ module atg_top_disp_tb;
 	endtask
 
 	task group;
-		input [8*8-1:0] name;
+		input [8*12-1:0] name;
 		begin
 			if (errors == before)
 				$display("PASS atg_top_disp.%0s", name);
@@ -331,6 +334,7 @@ module atg_top_disp_tb;
 		host_write(GHCI_RING_BASE, RING);
 		host_write(GHCI_RING_SIZE, 32'h00001000);	/* 4 KiB: RING_N words */
 		host_write(GHCI_IRQ_STATUS, 32'h1FFF);
+		host_write(W + GHCI_DC_IRQ_ENABLE, 32'd1 << GHCI_DC_IRQ_FLIP_DONE);
 		mem.poke32(REC, 32'd0);
 		mem.poke32(REC + 4, 32'd0);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
@@ -355,7 +359,9 @@ module atg_top_disp_tb;
 		wait_reg(GHCI_FENCE_LAST, fence_value, 32'hFFFFFFFF, 4000);
 		wait_mem(REC, 32'd1, 2000);
 		host_read(GHCI_IRQ_STATUS, v);
-		check(v[GHCI_IRQ_FLIP], "IRQ_STATUS.FLIP");
+		check(v[GHCI_IRQ_DISPLAY], "IRQ_STATUS.DISPLAY");
+		host_read(W + GHCI_DC_IRQ_STATUS, v);
+		check(v[GHCI_DC_IRQ_FLIP_DONE], "DISP_IRQ_STATUS.FLIP_DONE");
 		host_read(W + GHCI_DC_FB_BASE, v);
 		check(v == FB0, "FB_BASE");
 		frames(3);
@@ -480,6 +486,67 @@ module atg_top_disp_tb;
 		host_read(W + GHCI_DC_STATUS, v);
 		check(!v[3], "no read error once back inside");
 		group("dcerr");
+
+		/* halt_rec: in HALTED, FLIP record is deferred until returning to RUNNING. */
+		wp = 0;
+		host_write(GHCI_RING_WPTR, 32'd0);
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_RUNNING, 32'd1 << GHCI_STATUS_RUNNING, 2000);
+		mem.poke32(REC, 32'd0);
+		flip(8'd0, FB1, 32'h25A50042);
+		doorbell;
+		wait_reg(W + GHCI_DC_STATUS, 32'h20000000, 32'h20000000, 500);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT));
+		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_HALTED, 32'd1 << GHCI_STATUS_HALTED, 2000);
+		frames(2);
+		host_read(W + GHCI_DC_STATUS, v);
+		check(v[31], "STATUS[31] indicates flip record deferred while HALTED");
+		check(mem.peek32(REC) != 32'h25A50042, "record not written in HALTED");
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_RUNNING, 32'd1 << GHCI_STATUS_RUNNING, 2000);
+		wait_mem(REC, 32'h25A50042, 2000);
+		wait_reg(W + GHCI_DC_STATUS, 32'd0, 32'h80000000, 100);
+		check(!v[31], "STATUS[31] cleared once record written in RUNNING");
+		check(mem.peek32(REC) == 32'h25A50042, "record written after returning to RUNNING");
+		group("halt_rec");
+
+		/* fault_gate: host write to Kind S in RUNNING sets BAD_WRITE; host write in FAULTED allowed. */
+		/* Host write to Kind S (FB_NEXT) in RUNNING sets BAD_WRITE and is ignored */
+		host_write(W + GHCI_DC_STATUS, 32'h3A);
+		host_read(W + GHCI_DC_FB_BASE, v);
+		check(v == FB1, "FB_BASE before host write in RUNNING");
+		host_write(W + GHCI_DC_FB_NEXT, FB0);
+		host_read(W + GHCI_DC_STATUS, v);
+		check(v[5], "Host write to Kind S in RUNNING sets BAD_WRITE");
+		host_write(W + GHCI_DC_STATUS, 32'h20);
+		host_read(W + GHCI_DC_STATUS, v);
+		check(!v[5] && !v[29], "BAD_WRITE cleared, nothing pending");
+		/* Cause a fault by writing locked register in RUNNING */
+		host_write(GHCI_RING_SIZE, 32'h00002000);
+		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_FAULTED, 32'd1 << GHCI_STATUS_FAULTED, 2000);
+		check(v[GHCI_STATUS_FAULTED], "CP FAULTED");
+		/* In FAULTED, host can write FB_BASE (Kind R) and Kind S registers without BAD_WRITE */
+		host_write(W + GHCI_DC_FB_BASE, FB0);
+		host_read(W + GHCI_DC_STATUS, v);
+		check(!v[5], "Host write FB_BASE in FAULTED without BAD_WRITE");
+		host_write(W + GHCI_DC_FB_NEXT, FB0);
+		host_read(W + GHCI_DC_STATUS, v);
+		check(!v[5], "Host write FB_NEXT in FAULTED without BAD_WRITE");
+		/* Writing CTRL with ENABLE=0 allowed in FAULTED */
+		host_write(W + GHCI_DC_CTRL, CTRL_OFF);
+		host_read(W + GHCI_DC_STATUS, v);
+		check(!v[5], "Host write CTRL (ENABLE=0) in FAULTED without BAD_WRITE");
+		/* With ENABLE=0, host can write FB_STRIDE (Kind S) without BAD_WRITE */
+		host_write(W + GHCI_DC_FB_STRIDE, 32'd256);
+		host_read(W + GHCI_DC_STATUS, v);
+		check(!v[5], "Host write FB_STRIDE in FAULTED without BAD_WRITE");
+		host_read(W + GHCI_DC_FB_STRIDE, v);
+		check(v == 32'd256, "FB_STRIDE write took effect in FAULTED");
+		/* Recover GPU via RESET */
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
+		wait_reg(GHCI_STATUS, 32'd0, 32'h000F0000, 4000);
+		check(!v[GHCI_STATUS_FAULTED], "CP recovered to IDLE after RESET");
+		group("fault_gate");
 
 		if (errors == 0)
 			$display("PASS atg_top_disp");

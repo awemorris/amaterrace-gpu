@@ -97,6 +97,7 @@ module atg_cp_ctl #(
 	output wire core_rst_n,
 	output wire open,
 	output wire [3:0] cp_state,
+	output wire [2:0] lc_state,
 	output wire [2:0] host_kick,
 	output wire step,
 	output wire ev_halted,
@@ -206,6 +207,7 @@ module atg_cp_ctl #(
 	                  cp_is_decode ? GHCI_ST_DECODE :
 	                  cp_is_fetch ? GHCI_ST_FETCH :
 	                  GHCI_ST_IDLE;
+	assign lc_state = resetting ? GHCI_LC_RESETTING : st;
 	assign aperture_base = ap_base;
 	assign aperture_limit = ap_limit;
 

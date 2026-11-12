@@ -383,6 +383,14 @@ localparam [3:0] GHCI_ST_BLIT       = 4'd6;
 localparam [3:0] GHCI_ST_FAULT      = 4'd7;
 localparam [3:0] GHCI_ST_FAULTED    = 4'd7;
 
+/* Driver-Visible Lifecycle States (§5.2). */
+localparam [2:0] GHCI_LC_IDLE       = 3'd0;
+localparam [2:0] GHCI_LC_RUNNING    = 3'd1;
+localparam [2:0] GHCI_LC_HALTING    = 3'd2;
+localparam [2:0] GHCI_LC_HALTED     = 3'd3;
+localparam [2:0] GHCI_LC_FAULTED    = 3'd4;
+localparam [2:0] GHCI_LC_RESETTING  = 3'd5;
+
 /* Legacy lifecycle aliases */
 localparam [3:0] GHCI_ST_RUNNING    = 4'd3;
 localparam [3:0] GHCI_ST_HALTING    = 4'd5;
@@ -396,6 +404,7 @@ localparam GHCI_IRQ_FAULT      = 1;
 localparam GHCI_IRQ_WATCHDOG   = 2;
 localparam GHCI_IRQ_DISP       = 3;
 localparam GHCI_IRQ_DISPLAY    = 3;
+localparam GHCI_IRQ_FLIP       = 3; /* Legacy alias for GHCI_IRQ_DISPLAY */
 localparam GHCI_IRQ_DBG_DONE   = 4;
 localparam GHCI_IRQ_SOFT       = 5;
 localparam GHCI_IRQ_HALTED     = 6;
