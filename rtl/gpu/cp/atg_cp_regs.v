@@ -390,12 +390,7 @@ module atg_cp_regs #(
 );
 	`include "ghci_regs.vh"
 
-	localparam [9:0] I_PERF_CTRL = GHCI_PERF_CTRL[11:2];
 	localparam [11:0] MEM_OFF = 12'h1E0;	/* the MEM capability's registers */
-	localparam [11:0] A_LOCAL_BASE = MEM_OFF + GHCI_MEM_LOCAL_BASE[11:0];
-	localparam [11:0] A_LOCAL_SIZE = MEM_OFF + GHCI_MEM_LOCAL_SIZE[11:0];
-	localparam [11:0] A_WINDOW_SIZE = MEM_OFF + GHCI_MEM_WINDOW_SIZE[11:0];
-	localparam [11:0] A_HOST_LIMIT = MEM_OFF + GHCI_MEM_HOST_LIMIT[11:0];
 	localparam [11:0] A_WINDOW_CTRL = MEM_OFF + GHCI_MEM_WINDOW_CTRL[11:0];
 	localparam [9:0] I_WINDOW_CTRL = A_WINDOW_CTRL[11:2];
 	localparam [0:0] HAS_WINDOW = XCAP_MASK[7] && WINDOW_BYTES != 32'd0;
@@ -469,8 +464,7 @@ module atg_cp_regs #(
 	reg [31:0] counter;
 	reg [31:0] counter_hi;
 	reg [127:0] perf;	/* PERF0..3, PERFn in bits 32n+31:32n */
-	wire perf_clear_raw = perf_reset ||
-		(hcr_we && hcr_widx == I_PERF_CTRL && reg_wstrb[0] && hcr_wdata[0]);
+	wire perf_clear_raw = perf_reset;
 `ifdef SYNTH_KINTEX7
 	wire [1:0] scratch_we_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_scwe0 (.I0(is_scratch_wr), .O(scratch_we_b[0]));
@@ -978,7 +972,7 @@ module atg_cp_regs #(
 
 	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0], inc_co, raddr_q[1:0],
 		diag_pipe_fsm, counter_hi_co, DEVICE_VERSION, ISA_ID, NATIVE_ISA_ID, VEND,
-		A_LOCAL_BASE, A_LOCAL_SIZE, A_WINDOW_SIZE, A_HOST_LIMIT};
+		HAS_WINDOW, I_WINDOW_CTRL};
 
 endmodule
 

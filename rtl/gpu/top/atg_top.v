@@ -679,7 +679,6 @@ module atg_top #(
 		.u_req(u_req),
 		.u_tag(u_tag),
 		.u_ok(u_ok),
-		.kick_prot_ok(prot_kick_ok),
 		.wdt_tag(prot_wdt_tag),
 		.f_chk(f_chk),
 		.f_slot(f_slot),

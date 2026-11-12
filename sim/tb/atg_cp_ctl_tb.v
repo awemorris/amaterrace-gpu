@@ -40,7 +40,6 @@ module atg_cp_ctl_tb;
 	reg [31:0] src_kind = 0;
 	reg [255:0] src_addr = 0;
 	reg [63:0] src_tag = 0;
-	reg kick_prot_ok = 1;
 	reg [7:0] wdt_tag = 0;
 	wire run, halt, quiesce, mc_flush, core_rst_n, open, step, ev_halted, ev_fault, ev_wdt;
 	wire [3:0] cp_state;
@@ -50,7 +49,7 @@ module atg_cp_ctl_tb;
 	atg_cp_ctl #(.UNITS(8'h03), .DC_CLIENT(8'd5)) dut (
 		.clk(clk), .rst_n(rst_n),
 		.mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0),
-		.kick_prot_ok(kick_prot_ok), .wdt_tag(wdt_tag),
+		.wdt_tag(wdt_tag),
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
 		.mc_idle(mc_idle), .mem_ready(1'b1), .busy_in(busy_in), .ring_empty(1'b1),

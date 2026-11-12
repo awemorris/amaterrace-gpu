@@ -1273,7 +1273,6 @@ module atg_cp_ring #(
 	assign we_sz2_b[0] = we_sz2_raw;
 	assign we_sz2_b[1] = we_sz2_raw;
 	wire [4:0] dec_sz_c = decode_ring_size(wdata_c);
-	wire [4:0] sz_clamp_c = wdata_c[4:0] < 5'd10 ? 5'd10 : (wdata_c[4:0] > 5'd20 ? 5'd20 : wdata_c[4:0]);
 `endif
 
 	integer bi;
@@ -1350,7 +1349,7 @@ module atg_cp_ring #(
 						base[0][31:0] <= ((base[0][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
 					if (hcr_widx == I_BASE0_HI)
 						base[0][63:32] <= (base[0][63:32] & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-					if (hcr_widx == I_SIZE0 && (decode_ring_size(hcr_wdata) != 5'd0))
+					if (hcr_widx == I_SIZE0 && hcr_wmask[0] && (decode_ring_size(hcr_wdata) != 5'd0))
 						size[0] <= decode_ring_size(hcr_wdata);
 				end
 			end

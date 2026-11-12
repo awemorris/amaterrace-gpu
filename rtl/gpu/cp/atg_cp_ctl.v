@@ -7,9 +7,9 @@
 
 /*
  * atg_cp_ctl: the CP's state machine (design §2.6): CTRL (RUN, RESET,
- * HALT, STEP, WDT_EN), STATUS, KICK from the host, HALT and quiesce, the
+ * HALT, STEP, WDT_EN), STATUS, HALT and quiesce, the
  * RESET order of design §1.3 (with the STATE replay), the watchdog,
- * AXI_STUCK, the aperture registers and FAULT_ADDR/FAULT_INFO from all
+ * AXI_STUCK, and FAULT_ADDR/FAULT_INFO from all
  * fault sources.
  *
  * One state register st:
@@ -30,7 +30,7 @@
  * resets itself.
  *
  * Faults, first one wins (priority in one cycle: the MC, this module's own
- * (KICK, locked write, watchdog), then src 0..NSRC-1):
+ * (locked write, watchdog), then src 0..NSRC-1):
  *   MC refusal of client c != 0: FAULT_INFO {0, c, 1, 0, write, c}
  *   src k: {tag, SRC_BLOCK[k], kind, 0, 0, SRC_CLIENT[k]}, FAULT_ADDR addr
  *   watchdog: kind 4, [31:24] wdt_tag (session protection: the session whose
@@ -48,8 +48,8 @@
 module atg_cp_ctl #(
 	parameter NSRC = 8,	/* Number of fault sources (0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks, 8 DISP) */
 	parameter WDT_RESET = 32'h10000000,	/* WDT_CYCLES after reset (2^28) */
-	parameter LINE_SHIFT = 5,	/* log2 of the line size: the aperture's alignment */
-	parameter [7:0] UNITS = 8'h03,	/* Present blocks, STATUS busy-bit order (KICK.DRAW: 2, DISPATCH: 6) */
+	parameter LINE_SHIFT = 5,	/* log2 of the line size */
+	parameter [7:0] UNITS = 8'h03,	/* Present blocks, STATUS busy-bit order (DRAW: 2, DISPATCH: 6) */
 	parameter [NSRC*8-1:0] SRC_BLOCK = 64'h00_01_00_06_00_00_00_00,	/* FAULT_INFO[23:16] per source */
 	parameter [NSRC*8-1:0] SRC_CLIENT = 64'h00_01_00_00_00_00_00_00,	/* FAULT_INFO[7:0] per source */
 	parameter [7:0] DC_CLIENT = 8'hFF	/* the DC's MC client, whose refusals are not faults (0xFF: none) */
@@ -81,7 +81,6 @@ module atg_cp_ctl #(
 	input wire mc_fault_prot,	/* refused for session protection: FAULT_INFO[9] */
 	input wire mc_fault_mem,	/* a protection table read failed: kind 5 */
 	input wire [7:0] mc_fault_tag,
-	input wire kick_prot_ok,	/* session protection: the units are session 0's (KICK) */
 	input wire [7:0] wdt_tag,	/* the job tag of a watchdog fault */
 	input wire [NSRC-1:0] src_fault,
 	input wire [NSRC*4-1:0] src_kind,
@@ -802,7 +801,7 @@ module atg_cp_ctl #(
 	end
 
 	assign hcr_rdata = rd;
-	wire unused_co = &{1'b0, wdt_co, stuck_co, hcr_ridx[9:6], kick_prot_ok};
+	wire unused_co = &{1'b0, wdt_co, stuck_co, hcr_ridx[9:6]};
 endmodule
 
 `default_nettype wire
