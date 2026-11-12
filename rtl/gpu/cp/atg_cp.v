@@ -892,7 +892,7 @@ module atg_cp #(
 	wire [1:0] s_f_op;
 	wire [63:0] s_f_addr;
 	wire [31:0] s_f_value, s_f_aux;
-	wire s_seq_halt = s_cp_state == GHCI_ST_FAULTED || s_cp_state == GHCI_ST_RESETTING;
+	wire s_seq_halt = s_cp_state == GHCI_ST_FAULT || s_mc_flush;
 
 	wire s_fw_valid, s_fw_ready;
 	wire [31:0] s_fw_data;

@@ -30,6 +30,8 @@ module atg_cp_ctl_tb;
 	reg [31:0] hcr_wdata = 0, hcr_wmask = 0;
 	wire [31:0] hcr_rdata;
 	reg mc_idle = 1, ring_busy = 0, cmd_active = 0, wdt_hold = 0, replay_busy = 0;
+	reg [3:0] seq_st = 0;
+	reg f_busy = 0;
 	reg [7:0] busy_in = 0;
 	reg mc_fault = 0, mc_fault_write = 0;
 	reg [7:0] mc_fault_client = 0;
@@ -53,6 +55,7 @@ module atg_cp_ctl_tb;
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
 		.mc_idle(mc_idle), .mem_ready(1'b1), .busy_in(busy_in), .ring_empty(1'b1),
 		.ring_busy(ring_busy), .cmd_active(cmd_active), .wdt_hold(wdt_hold), .replay_busy(replay_busy),
+		.seq_st(seq_st), .f_busy(f_busy),
 		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
 		.mc_fault_write(mc_fault_write),
 		.src_fault(src_fault), .src_kind(src_kind), .src_addr(src_addr), .src_tag(src_tag),
@@ -90,27 +93,54 @@ module atg_cp_ctl_tb;
 			kicks = kicks + 1;
 	end
 
+	localparam [2:0] LC_IDLE      = 3'd0;
+	localparam [2:0] LC_RUNNING   = 3'd1;
+	localparam [2:0] LC_HALTING   = 3'd2;
+	localparam [2:0] LC_HALTED    = 3'd3;
+	localparam [2:0] LC_FAULTED   = 3'd4;
+	localparam [2:0] LC_RESETTING = 3'd5;
+
+	reg ctrl_run_val = 0;
+
 	task expect_state;
 		input [8*30-1:0] what;
-		input [3:0] want;
+		input [2:0] want;
+		reg want_run, want_halt, want_fault, want_quiesce, want_open;
+		reg [3:0] want_cp_state;
 		begin
 			repeat (2) @(negedge clk);
 			hcr_read(GHCI_REG_STATUS[11:0], v);
-			if (cp_state !== want || v[19:16] !== want ||
-			    open !== (want == GHCI_ST_IDLE || want == GHCI_ST_HALTED) ||
-			    halt !== (want >= GHCI_ST_HALTING) || (want != GHCI_ST_RUNNING && run) ||
-			    v[10] !== (want == GHCI_ST_HALTED) || v[9] !== (want == GHCI_ST_FAULTED) ||
-			    v[14] !== (want >= GHCI_ST_HALTING)) begin
+			want_run = (want == LC_RUNNING) && ctrl_run_val;
+			want_halt = (want == LC_HALTED);
+			want_fault = (want == LC_FAULTED);
+			want_quiesce = (want == LC_HALTING || want == LC_HALTED || want == LC_FAULTED || want == LC_RESETTING);
+			want_open = (want == LC_IDLE || want == LC_HALTED);
+			want_cp_state = (want == LC_FAULTED) ? GHCI_ST_FAULT :
+			                (want == LC_RESETTING) ? GHCI_ST_WAIT_MEM :
+			                (want == LC_HALTING && !mc_idle) ? GHCI_ST_WAIT_MEM :
+			                (want == LC_HALTING && ring_busy) ? GHCI_ST_FETCH :
+			                GHCI_ST_IDLE;
+			if (v[0] !== want_run ||
+			    v[1] !== want_halt ||
+			    v[2] !== want_fault ||
+			    v[14] !== want_quiesce ||
+			    v[19:16] !== want_cp_state ||
+			    run !== want_run ||
+			    halt !== want_quiesce ||
+			    open !== want_open) begin
 				errors = errors + 1;
-				$display("FAIL atg_cp_ctl.%0s: state %0d STATUS %h, expected %0d", what,
-					cp_state, v, want);
+				$display("FAIL atg_cp_ctl.%0s: want %0d STATUS %h (run=%b halt=%b fault=%b q=%b cp_st=%0d open=%b)",
+					what, want, v, v[0], v[1], v[2], v[14], v[19:16], open);
 			end
 		end
 	endtask
 
 	task ctrl;
 		input [31:0] bits;
-		hcr_write(GHCI_REG_CTRL[11:0], bits);
+		begin
+			ctrl_run_val = bits[GHCI_CTRL_RUN];
+			hcr_write(GHCI_REG_CTRL[11:0], bits);
+		end
 	endtask
 
 	task do_reset;
@@ -143,38 +173,38 @@ module atg_cp_ctl_tb;
 		@(negedge clk);
 		rst_n = 1;
 		/* states */
-		expect_state("states", GHCI_ST_IDLE);
+		expect_state("states", LC_IDLE);
 		ctrl(32'd1 << GHCI_CTRL_RUN);
-		expect_state("states", GHCI_ST_RUNNING);
+		expect_state("states", LC_RUNNING);
 		/* RUN = 0 with the CP busy: RUNNING until it is idle. */
 		busy_in[0] = 1;
 		ctrl(32'd0);
-		expect_state("states", GHCI_ST_RUNNING);
+		expect_state("states", LC_RUNNING);
 		busy_in[0] = 0;
-		expect_state("states", GHCI_ST_IDLE);
+		expect_state("states", LC_IDLE);
 		ctrl(32'd1 << GHCI_CTRL_RUN);
 		/* HALT: HALTING until mc_idle and the ring between packets. */
 		mc_idle = 0;
 		ring_busy = 1;
 		ctrl((32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT));
-		expect_state("states", GHCI_ST_HALTING);
+		expect_state("states", LC_HALTING);
 		mc_idle = 1;
-		expect_state("states", GHCI_ST_HALTING);
+		expect_state("states", LC_HALTING);
 		ring_busy = 0;
-		expect_state("states", GHCI_ST_HALTED);
+		expect_state("states", LC_HALTED);
 		/* HALTED stays HALTED when memory is busy again (the debug port). */
 		mc_idle = 0;
-		expect_state("states", GHCI_ST_HALTED);
+		expect_state("states", LC_HALTED);
 		mc_idle = 1;
 		ctrl((32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT) | (32'd1 << GHCI_CTRL_STEP));
 		ctrl(32'd1 << GHCI_CTRL_RUN);
-		expect_state("states", GHCI_ST_RUNNING);
+		expect_state("states", LC_RUNNING);
 		ctrl(32'd1 << GHCI_CTRL_HALT);
-		expect_state("states", GHCI_ST_HALTED);
+		expect_state("states", LC_HALTED);
 		ctrl(32'd0);
-		expect_state("states", GHCI_ST_IDLE);
+		expect_state("states", LC_IDLE);
 		ctrl(32'd1 << GHCI_CTRL_HALT);
-		expect_state("states", GHCI_ST_HALTED);
+		expect_state("states", LC_HALTED);
 		ctrl(32'd0);
 		if (halteds != 3 || steps != 1) begin
 			errors = errors + 1;
@@ -197,7 +227,7 @@ module atg_cp_ctl_tb;
 		flushes = 0;
 		ctrl(32'd1 << GHCI_CTRL_RESET);
 		repeat (20) @(negedge clk);
-		expect_state("reset", GHCI_ST_RESETTING);
+		expect_state("reset", LC_RESETTING);
 		hcr_read(GHCI_REG_CTRL[11:0], v);
 		if (v[GHCI_CTRL_RESET] !== 1'b1 || pulses != 0) begin
 			errors = errors + 1;
@@ -209,10 +239,10 @@ module atg_cp_ctl_tb;
 		replay_busy = 1;
 		mc_idle = 1;
 		repeat (10) @(negedge clk);
-		expect_state("reset", GHCI_ST_RESETTING);
+		expect_state("reset", LC_RESETTING);
 		replay_busy = 0;
 		repeat (2) @(negedge clk);
-		expect_state("reset", GHCI_ST_IDLE);
+		expect_state("reset", LC_IDLE);
 		hcr_read(GHCI_REG_CTRL[11:0], v);
 		if (v !== 32'd0 || pulses != 1 || flushes != 1) begin
 			errors = errors + 1;
@@ -258,14 +288,14 @@ module atg_cp_ctl_tb;
 		mc_fault_client = 0;
 		@(negedge clk);
 		mc_fault = 0;
-		expect_state("fault", GHCI_ST_RUNNING);
+		expect_state("fault", LC_RUNNING);
 		/* The DC's (DC_CLIENT 5) refusal is not a device fault either. */
 		@(negedge clk);
 		mc_fault = 1;
 		mc_fault_client = 8'd5;
 		@(negedge clk);
 		mc_fault = 0;
-		expect_state("fault", GHCI_ST_RUNNING);
+		expect_state("fault", LC_RUNNING);
 		@(negedge clk);
 		mc_fault = 1;
 		mc_fault_client = 8'd3;
@@ -276,18 +306,18 @@ module atg_cp_ctl_tb;
 		@(negedge clk);
 		mc_fault = 0;
 		src_fault = 0;
-		expect_state("fault", GHCI_ST_FAULTED);
-		expect_info("fault", {8'd0, 8'd3, GHCI_FAULT_APERTURE, 3'd0, 1'b1, 8'd3}, 32'h12345680);
+		expect_state("fault", LC_FAULTED);
+		expect_info("fault", {11'd0, 1'b1, 4'd0, 8'd0, 4'd3, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h12345680);
 		@(negedge clk);
 		src_fault[1] = 1;
 		@(negedge clk);
 		src_fault = 0;
-		expect_info("fault", {8'd0, 8'd3, GHCI_FAULT_APERTURE, 3'd0, 1'b1, 8'd3}, 32'h12345680);
+		expect_info("fault", {11'd0, 1'b1, 4'd0, 8'd0, 4'd3, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h12345680);
 		/* RESET is the only way out. */
 		ctrl(32'd0);
-		expect_state("fault", GHCI_ST_FAULTED);
+		expect_state("fault", LC_FAULTED);
 		do_reset();
-		expect_state("fault", GHCI_ST_IDLE);
+		expect_state("fault", LC_IDLE);
 		expect_info("fault", 32'd0, 32'd0);
 		/* A source fault: tag, block, kind, client, address. */
 		@(negedge clk);
@@ -297,7 +327,7 @@ module atg_cp_ctl_tb;
 		src_tag[6 * 8 +: 8] = 8'h5C;
 		@(negedge clk);
 		src_fault = 0;
-		expect_info("fault", {8'h5C, 8'd1, GHCI_FAULT_AXI, 4'd0, 8'd1}, 32'hABCD0000);
+		expect_info("fault", {12'd0, 4'd0, 8'h5C, 4'd1, GHCI_FAULT_KIND_AXI_ERROR}, 32'hABCD0000);
 		do_reset();
 		@(negedge clk);
 		src_fault[0] = 1;
@@ -306,7 +336,7 @@ module atg_cp_ctl_tb;
 		src_tag[7:0] = 8'h77;
 		@(negedge clk);
 		src_fault = 0;
-		expect_info("fault", {8'h77, 8'd0, GHCI_FAULT_RING, 4'd0, 8'd0}, 32'h400);
+		expect_info("fault", {12'd0, 4'd0, 8'h77, 4'd0, GHCI_FAULT_KIND_BAD_REG}, 32'h400);
 		/* A fault during RESETTING is ignored. */
 		mc_idle = 0;
 		ctrl(32'd1 << GHCI_CTRL_RESET);
@@ -316,7 +346,7 @@ module atg_cp_ctl_tb;
 		src_fault = 0;
 		mc_idle = 1;
 		repeat (4) @(negedge clk);
-		expect_state("fault", GHCI_ST_IDLE);
+		expect_state("fault", LC_IDLE);
 		expect_info("fault", 32'd0, 32'd0);
 		if (faults != 3) begin
 			errors = errors + 1;
@@ -331,22 +361,22 @@ module atg_cp_ctl_tb;
 		ctrl(32'd1 << GHCI_CTRL_RUN);
 		cmd_active = 1;
 		repeat (100) @(negedge clk);
-		expect_state("wdt", GHCI_ST_RUNNING);
+		expect_state("wdt", LC_RUNNING);
 		ctrl((32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_WDT_EN));
 		repeat (30) @(negedge clk);
 		cmd_active = 0;	/* restart the count */
 		@(negedge clk);
 		cmd_active = 1;
 		repeat (30) @(negedge clk);
-		expect_state("wdt", GHCI_ST_RUNNING);
+		expect_state("wdt", LC_RUNNING);
 		wdt_hold = 1;	/* the count pauses, it does not restart */
 		repeat (100) @(negedge clk);
-		expect_state("wdt", GHCI_ST_RUNNING);
+		expect_state("wdt", LC_RUNNING);
 		wdt_hold = 0;
 		wdt_tag = 8'h5C;	/* the session the units were draining */
 		repeat (30) @(negedge clk);
-		expect_state("wdt", GHCI_ST_FAULTED);
-		expect_info("wdt", {8'h5C, 8'd0, GHCI_FAULT_WATCHDOG, 12'd0}, 32'd0);
+		expect_state("wdt", LC_FAULTED);
+		expect_info("wdt", {12'd0, 4'd0, 8'h5C, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_WATCHDOG}, 32'd0);
 		wdt_tag = 8'd0;
 		cmd_active = 0;
 		if (wdts != 1) begin
@@ -366,31 +396,31 @@ module atg_cp_ctl_tb;
 		expect_info("locked_idle", 32'd0, 32'd0);
 
 		ctrl(32'd1 << GHCI_CTRL_RUN);
-		expect_state("locked_run", GHCI_ST_RUNNING);
+		expect_state("locked_run", LC_RUNNING);
 
 		/* HEAP_BASE in RUNNING -> LOCKED fault */
 		hcr_write(GHCI_REG_CP_HEAP_BASE[11:0], 32'h0);
-		expect_info("locked_heap_base", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
+		expect_info("locked_heap_base", {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG}, 32'd0);
 		do_reset();
 
 		ctrl(32'd1 << GHCI_CTRL_RUN);
 		hcr_write(GHCI_REG_CP_HEAP_LIMIT[11:0], 32'h0);
-		expect_info("locked_heap_limit", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
+		expect_info("locked_heap_limit", {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG}, 32'd0);
 		do_reset();
 
 		ctrl(32'd1 << GHCI_CTRL_RUN);
 		hcr_write(GHCI_REG_RING_BASE_LO[11:0], 32'h1000);
-		expect_info("locked_ring_base_lo", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
+		expect_info("locked_ring_base_lo", {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG}, 32'd0);
 		do_reset();
 
 		ctrl(32'd1 << GHCI_CTRL_RUN);
 		hcr_write(GHCI_REG_RING_BASE_HI[11:0], 32'h0);
-		expect_info("locked_ring_base_hi", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
+		expect_info("locked_ring_base_hi", {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG}, 32'd0);
 		do_reset();
 
 		ctrl(32'd1 << GHCI_CTRL_RUN);
 		hcr_write(GHCI_REG_RING_SIZE[11:0], 32'd12);
-		expect_info("locked_ring_size", {16'd0, GHCI_FAULT_LOCKED, 12'd0}, 32'd0);
+		expect_info("locked_ring_size", {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG}, 32'd0);
 		do_reset();
 
 		if (errors == e0)

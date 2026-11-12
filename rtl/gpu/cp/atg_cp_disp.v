@@ -113,11 +113,10 @@ module atg_cp_disp #(
 	localparam NW = LINE_BYTES / 8;	/* 8-byte words in a line */
 	localparam WSEL = LINE_SHIFT - 3;
 
-	/* The CP's state. */
-	wire active = cp_state == GHCI_ST_RUNNING || cp_state == GHCI_ST_HALTING;
-	wire host_s = cp_state == GHCI_ST_IDLE || cp_state == GHCI_ST_HALTED ||
-		cp_state == GHCI_ST_FAULTED;
-	wire rec_ok = cp_state == GHCI_ST_IDLE || active;
+	/* The CP's state (§13.2). Active while processing/executing, host gate in IDLE/FAULT. */
+	wire active = cp_state != GHCI_ST_IDLE && cp_state != GHCI_ST_FAULT;
+	wire host_s = cp_state == GHCI_ST_IDLE || cp_state == GHCI_ST_FAULT;
+	wire rec_ok = cp_state != GHCI_ST_FAULT;
 
 	/* ------------------------------------------------ the host's gate */
 

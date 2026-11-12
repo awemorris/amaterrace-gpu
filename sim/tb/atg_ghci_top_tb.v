@@ -484,10 +484,10 @@ module ghci_probe #(
 		host_write(GHCI_REG_CTRL, 32'd0);
 		#100;
 		to_cnt = 0;
-		host_read(GHCI_REG_STATUS, val);
-		while (val[0] && to_cnt < 200) begin
+		host_read(GHCI_REG_CTRL, val);
+		while (val[GHCI_CTRL_RESET] && to_cnt < 2000) begin
 			#50;
-			host_read(GHCI_REG_STATUS, val);
+			host_read(GHCI_REG_CTRL, val);
 			to_cnt = to_cnt + 1;
 		end
 
@@ -560,10 +560,10 @@ module ghci_probe #(
 		host_write(GHCI_REG_CTRL, 32'd0);
 		#100;
 		to_cnt = 0;
-		host_read(GHCI_REG_STATUS, val);
-		while (val[0] && to_cnt < 200) begin
+		host_read(GHCI_REG_CTRL, val);
+		while (val[GHCI_CTRL_RESET] && to_cnt < 2000) begin
 			#50;
-			host_read(GHCI_REG_STATUS, val);
+			host_read(GHCI_REG_CTRL, val);
 			to_cnt = to_cnt + 1;
 		end
 
@@ -589,20 +589,26 @@ module ghci_probe #(
 		$display("--- Testing R2: Locked write while RUNNING triggers FAULT_INFO kind 7 ---");
 		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RUN)); /* Engine RUNNING */
 		#50;
+		host_read(GHCI_REG_STATUS, val);
+		check32("STATUS.RUNNING == 1 while waiting for doorbell", {31'd0, val[GHCI_STATUS_RUNNING_BIT]}, 32'd1);
+		check32("STATUS.CP_STATE == 0 (IDLE) while waiting for doorbell", {28'd0, val[19:16]}, 32'd0);
+
 		host_write(GHCI_REG_RING_SIZE, 32'h00020000);    /* Attempt write while running */
 		#50;
 		host_read(GHCI_REG_STATUS, val);
-		check32("STATUS.FAULTED on locked write", {31'd0, val[GHCI_STATUS_FAULT]}, 32'd1);
+		check32("STATUS.FAULTED on locked write", {31'd0, val[GHCI_STATUS_FAULTED_BIT]}, 32'd1);
+		check32("STATUS.CP_STATE on locked write is FAULT (7)", {28'd0, val[19:16]}, 32'd7);
 		host_read(GHCI_REG_FAULT_INFO, val);
-		check32("FAULT_INFO kind 7 (LOCKED_REG)", {28'd0, val[15:12]}, 32'd7);
+		check32("FAULT_INFO kind 7 (LOCKED_REG)", {28'd0, val[3:0]}, 32'd7);
+		check32("FAULT_INFO unit 0 (CP)", {28'd0, val[7:4]}, 32'd0);
 		host_read(GHCI_REG_RING_SIZE, val);
 		check32("RING_SIZE unchanged by locked write", val, 32'h00010000);
 
 		$display("--- Testing R3: FAULT_INFO W1C and TIMESTAMP_HI increment ---");
-		/* W1C clears kind [15:12] */
-		host_write(GHCI_REG_FAULT_INFO, 32'h00007000);
+		/* W1C clears kind [3:0] */
+		host_write(GHCI_REG_FAULT_INFO, 32'h00000007);
 		host_read(GHCI_REG_FAULT_INFO, val);
-		check32("FAULT_INFO kind cleared by W1C", {28'd0, val[15:12]}, 32'd0);
+		check32("FAULT_INFO kind cleared by W1C", {28'd0, val[3:0]}, 32'd0);
 
 		/* Clear remaining fault bits */
 		host_write(GHCI_REG_FAULT_INFO, 32'hFFFFFFFF);

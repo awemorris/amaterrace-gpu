@@ -340,6 +340,12 @@ localparam [3:0] GHCI_ST_BLIT       = 4'd6;
 localparam [3:0] GHCI_ST_FAULT      = 4'd7;
 localparam [3:0] GHCI_ST_FAULTED    = 4'd7;
 
+/* Legacy lifecycle aliases */
+localparam [3:0] GHCI_ST_RUNNING    = 4'd3;
+localparam [3:0] GHCI_ST_HALTING    = 4'd5;
+localparam [3:0] GHCI_ST_HALTED     = 4'd0;
+localparam [3:0] GHCI_ST_RESETTING  = 4'd5;
+
 /* IRQ_STATUS / IRQ_ENABLE bits (J02, N21). */
 localparam GHCI_IRQ_FENCE      = 0;
 localparam GHCI_IRQ_ERROR      = 1;
