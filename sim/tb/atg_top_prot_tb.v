@@ -267,7 +267,7 @@ module atg_top_prot_tb;
 		ring_frame(TAG_A, 8);
 		ring_fence(TAG_A);
 		host_write(GHCI_RING_WPTR, wp);
-		wait_state(GHCI_ST_FAULTED);
+		wait_state(GHCI_ST_FAULT);
 		host_read(GHCI_FAULT_INFO, v);
 		check(v[3:0] == GHCI_FAULT_KIND_PERM_FAULT && v[15:8] == TAG_A, "FAULT_INFO of the copy");
 		check(mem.peek32(AREA_A) == DATA_A, "a is not written");
@@ -319,7 +319,7 @@ module atg_top_prot_tb;
 		ring_frame(TAG_A, 5);
 		ring_fence(TAG_A);
 		host_write(GHCI_RING_WPTR, wp);
-		wait_state(GHCI_ST_FAULTED);
+		wait_state(GHCI_ST_FAULT);
 		host_read(GHCI_FAULT_INFO, v);
 		check(mem.peek32(RING_RESULT + 48) == 0 && v[3:0] == GHCI_FAULT_KIND_PERM_FAULT &&
 		      v[15:8] == TAG_A, "FAULT_INFO after the revoke");

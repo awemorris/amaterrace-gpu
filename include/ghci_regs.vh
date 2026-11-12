@@ -369,7 +369,6 @@ localparam [3:0] GHCI_ST_WAIT_FENCE = 4'd4;
 localparam [3:0] GHCI_ST_WAIT_MEM   = 4'd5;
 localparam [3:0] GHCI_ST_BLIT       = 4'd6;
 localparam [3:0] GHCI_ST_FAULT      = 4'd7;
-localparam [3:0] GHCI_ST_FAULTED    = 4'd7;
 
 /* Driver-Visible Lifecycle States (§5.2). */
 localparam [2:0] GHCI_LC_IDLE       = 3'd0;

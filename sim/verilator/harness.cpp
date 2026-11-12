@@ -455,17 +455,23 @@ int scene_main()
 	}
 	std::fclose(f);
 #ifdef TEX
-	expect("CAPS[8] (bilinear)", (host_read(GHCI_LEGACY_CAPS) >> 8) & 1, 1);
-	expect("CAPS[26] (the texture unit of GHCI section 8.4)",
-	       (host_read(GHCI_LEGACY_CAPS) & GHCI_LEGACY_CAPS_TU_FULL) != 0, 1);
-	expect("CAPS2[27:24] (texture slots / 4)", (host_read(GHCI_LEGACY_CAPS2) >> 24) & 15, 4);
+	expect("EXT_CAP_FMT0[16] (bilinear)", (host_read(GHCI_REG_EXT_CAP_FMT0) >> 16) & 1, 1);
+	expect("DEVICE_CAPS[25] (texture filter)", (host_read(GHCI_REG_DEVICE_CAPS) >> 25) & 1, 1);
+	uint32_t fmt_regs_tex = 0;
+	for (uint32_t off = host_read(GHCI_EXTCAP), n = 0; off != 0 && n < 16; n++) {
+		uint32_t w0 = host_read(off);
+		if (GHCI_XCAP_ID(w0) == GHCI_XCAP_FMT)
+			fmt_regs_tex = host_read(off + 4);
+		off = GHCI_XCAP_NEXT(w0) ? off + 4 * GHCI_XCAP_NEXT(w0) : 0;
+	}
+	expect("FMT capability listed", fmt_regs_tex != 0, 1);
 #endif
 #if defined(MSAA) || defined(CORE)
-	expect("CAPS[29] (4x multisampling)", (host_read(GHCI_LEGACY_CAPS) & GHCI_LEGACY_CAPS_MS4) != 0, 1);
+	expect("DEVICE_CAPS[31] (4x multisampling)", (host_read(GHCI_REG_DEVICE_CAPS) >> 31) & 1, 1);
 #endif
 #ifdef CORE
-	expect("CAPS[30] (Vulkan 1.0 core rendering)", (host_read(GHCI_LEGACY_CAPS) & GHCI_LEGACY_CAPS_CORE1) != 0, 1);
-	expect("CAPS[9] (stencil)", (host_read(GHCI_LEGACY_CAPS) & GHCI_LEGACY_CAPS_ROP_STENCIL) != 0, 1);
+	expect("DEVICE_CAPS[26] (ROP_PACK)", (host_read(GHCI_REG_DEVICE_CAPS) >> 26) & 1, 1);
+	expect("EXT_CAP_FEATURE[12] (early-z)", (host_read(GHCI_REG_EXT_CAP_FEATURE) >> 12) & 1, 1);
 	uint32_t fmt_regs = 0;
 	for (uint32_t off = host_read(GHCI_EXTCAP), n = 0; off != 0 && n < 16; n++) {
 		uint32_t w0 = host_read(off);
