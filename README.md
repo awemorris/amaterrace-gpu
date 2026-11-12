@@ -377,3 +377,4 @@ amaterrace-gpu/
 - The name `Amaterrace` comes from the Japanese Mythology.
 - The entire SoC that uses `Amaterrace GPU` and [Sukuna RISC](https://github.com/awemorris/sukuna-risc/) is named `Moonphaser`.
 - The OS for the Moonphaser SoC is [zedBSD](https://github.com/awemorris/zedBSD)
+
