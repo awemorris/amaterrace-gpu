@@ -1,4 +1,10 @@
 #!/bin/sh
+
+# Amaterrace GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # Runs the iverilog unit testbenches: sim/tb/NAME_tb.v with all of rtl/ and
 # sim/models/.  A testbench prints "PASS NAME" at its end and "FAIL ..." on
 # any mismatch; the run passes when PASS is printed and FAIL is not.
@@ -39,7 +45,7 @@
 # and BLT unit testbenches run their multisampling cases; and atg_top_core
 # (the Vulkan 1.0 core scene), whose blocks' unit testbenches run in the
 # short run.
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
 set -u
 trap 'sync' EXIT
 root=$(cd "$(dirname -- "$0")/.." && pwd)
