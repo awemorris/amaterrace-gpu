@@ -97,7 +97,15 @@ module atg_cp #(
 	parameter HAS_SECONDARY_RING = 0,
 	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
 	parameter [31:0] APERTURE_BASE_INIT = 32'd0,
-	parameter [31:0] APERTURE_LIMIT_INIT = 32'hFFFFFFFF
+	parameter [31:0] APERTURE_LIMIT_INIT = 32'hFFFFFFFF,
+	parameter C_CPU = 2,
+	parameter C_VF = 3,
+	parameter C_TU = 4,
+	parameter C_ROP = 5,
+	parameter C_ATOM = 6,
+	parameter C_SA = 7,
+	parameter C_DC = 8'hFF,
+	parameter C_SU = 8
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -173,6 +181,7 @@ module atg_cp #(
 	input wire [7:0] x_fault_kind,
 	input wire [63:0] x_fault_addr,
 	input wire [15:0] x_fault_tag,
+	input wire [3:0] su_fault_stage,
 
 	output wire hcr_we,	/* the HCR snoop bus for atg_cpu */
 	output wire [9:0] hcr_widx,
@@ -571,22 +580,7 @@ module atg_cp #(
 `endif
 
 	/* Fault sources: 0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks, 8 DISP. */
-	/* Active shader stage tracking for SU faults (Item U4 / N20, N50). */
-	reg [3:0] auto_su_stage;
-	always @(posedge clk) begin
-		if (!rst_n) begin
-			auto_su_stage <= GHCI_STAGE_VS;
-		end else begin
-			if (cs_kick)
-				auto_su_stage <= GHCI_STAGE_CS;
-			else if (draw_kick)
-				auto_su_stage <= GHCI_STAGE_VS;
-			else if (auto_su_stage == GHCI_STAGE_VS && !busy_ext[2] && (busy_ext[3] || busy_ext[4]))
-				auto_su_stage <= GHCI_STAGE_FS;
-		end
-	end
-
-	wire [3:0] su_effective_stage = (x_fault_tag[11:8] != 4'd0) ? x_fault_tag[11:8] : auto_su_stage;
+	wire [3:0] su_effective_stage = su_fault_stage;
 	wire [3:0] su_fault_kind = (x_fault_kind[3:0] == 4'd8) ? GHCI_FAULT_KIND_INVALID_OP : x_fault_kind[3:0];
 
 	atg_cp_ctl #(
@@ -594,7 +588,15 @@ module atg_cp #(
 		.SRC_BLOCK(72'h00_00_06_00_02_00_00_00_00), .SRC_CLIENT(72'h00_00_00_00_00_00_00_00_00),
 		.DC_CLIENT(HAS_DISP != 0 ? DC_CLIENT : 8'hFF),
 		.APERTURE_BASE_INIT(APERTURE_BASE_INIT),
-		.APERTURE_LIMIT_INIT(APERTURE_LIMIT_INIT)
+		.APERTURE_LIMIT_INIT(APERTURE_LIMIT_INIT),
+		.C_CPU(C_CPU),
+		.C_VF(C_VF),
+		.C_TU(C_TU),
+		.C_ROP(C_ROP),
+		.C_ATOM(C_ATOM),
+		.C_SA(C_SA),
+		.C_DC(C_DC),
+		.C_SU(C_SU)
 	) u_ctl (
 		.clk(clk), .rst_n(rst_n),
 		.hcr_we(hcr_we_ctl), .hcr_widx(hcr_widx_ctl), .hcr_wdata(reg_wdata_ctl),
@@ -619,6 +621,7 @@ module atg_cp #(
 		.src_tag({s_disp_fault_tag, x_fault_tag[15:8], 8'd0, 8'd0, x_fault_tag[7:0],
 			s_fence_fault_tag, 8'd0, s_seq_fault_tag, s_ring_fault_tag}),
 		.src_stage({4'd0, 4'd0, 4'd0, 4'd0, su_effective_stage, 4'd0, 4'd0, 4'd0, 4'd0}),
+		.su_stage(su_effective_stage),
 		.run(s_run), .halt(s_halt), .ctrl_irq_global(s_ctrl_irq_global), .quiesce(s_quiesce), .mc_flush(s_mc_flush),
 		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state), .lc_state(s_lc_state),
 		.host_kick(s_host_kick), .step(s_step),

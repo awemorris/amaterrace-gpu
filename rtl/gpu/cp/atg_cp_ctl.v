@@ -54,7 +54,15 @@ module atg_cp_ctl #(
 	parameter [NSRC*8-1:0] SRC_CLIENT = 64'h00_01_00_00_00_00_00_00,	/* FAULT_INFO[7:0] per source */
 	parameter [7:0] DC_CLIENT = 8'hFF,	/* the DC's MC client, whose refusals are not faults (0xFF: none) */
 	parameter [31:0] APERTURE_BASE_INIT = 32'd0,
-	parameter [31:0] APERTURE_LIMIT_INIT = 32'hFFFFFFFF
+	parameter [31:0] APERTURE_LIMIT_INIT = 32'hFFFFFFFF,
+	parameter C_CPU = 2,
+	parameter C_VF = 3,
+	parameter C_TU = 4,
+	parameter C_ROP = 5,
+	parameter C_ATOM = 6,
+	parameter C_SA = 7,
+	parameter C_DC = 8'hFF,
+	parameter C_SU = 8
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -89,6 +97,7 @@ module atg_cp_ctl #(
 	input wire [NSRC*32-1:0] src_addr,
 	input wire [NSRC*8-1:0] src_tag,
 	input wire [NSRC*4-1:0] src_stage,
+	input wire [3:0] su_stage,
 	/* Outputs */
 	output wire run,
 	output wire halt,
@@ -254,20 +263,26 @@ module atg_cp_ctl #(
 	function [3:0] mc_client_to_unit;
 		input [7:0] client;
 		begin
-			case (client)
-			8'd0: mc_client_to_unit = GHCI_FAULT_UNIT_CP;
-			8'd1: mc_client_to_unit = GHCI_FAULT_UNIT_BLT;
-			8'd2: mc_client_to_unit = GHCI_FAULT_UNIT_CP;
-			8'd3: mc_client_to_unit = GHCI_FAULT_UNIT_VF;
-			8'd4: mc_client_to_unit = GHCI_FAULT_UNIT_TU;
-			8'd5: mc_client_to_unit = (DC_CLIENT == 8'd5) ? GHCI_FAULT_UNIT_CP : GHCI_FAULT_UNIT_ROP;
-			default: begin
-				if (DC_CLIENT != 8'hFF && client == DC_CLIENT)
-					mc_client_to_unit = GHCI_FAULT_UNIT_CP;
-				else
-					mc_client_to_unit = GHCI_FAULT_UNIT_SU;
-			end
-			endcase
+			if (client == 8'd0)
+				mc_client_to_unit = GHCI_FAULT_UNIT_CP;
+			else if (client == 8'd1)
+				mc_client_to_unit = GHCI_FAULT_UNIT_BLT;
+			else if (C_CPU != C_VF && client == C_CPU[7:0])
+				mc_client_to_unit = GHCI_FAULT_UNIT_CP;
+			else if (C_VF != C_TU && client == C_VF[7:0])
+				mc_client_to_unit = GHCI_FAULT_UNIT_VF;
+			else if (C_TU != C_ROP && client == C_TU[7:0])
+				mc_client_to_unit = GHCI_FAULT_UNIT_TU;
+			else if (C_ROP != C_ATOM && client == C_ROP[7:0])
+				mc_client_to_unit = GHCI_FAULT_UNIT_ROP;
+			else if (C_ATOM != C_SA && client == C_ATOM[7:0])
+				mc_client_to_unit = GHCI_FAULT_UNIT_SU;
+			else if (C_SA != C_DC && client == C_SA[7:0])
+				mc_client_to_unit = GHCI_FAULT_UNIT_SU;
+			else if (DC_CLIENT != 8'hFF && client == DC_CLIENT[7:0])
+				mc_client_to_unit = GHCI_FAULT_UNIT_CP;
+			else
+				mc_client_to_unit = GHCI_FAULT_UNIT_SU;
 		end
 	endfunction
 	reg any;
@@ -396,7 +411,9 @@ module atg_cp_ctl #(
 			f_s2_addr_r <= 32'd0;
 		end else begin
 			f_mc_v_r <= {8{mc_gpu}};
-			f_mc_info_r <= {11'd0, mc_fault_write, 4'd0, mc_fault_tag, mc_client_to_unit(mc_fault_client),
+			f_mc_info_r <= {11'd0, mc_fault_write,
+				(mc_client_to_unit(mc_fault_client) == GHCI_FAULT_UNIT_SU ? su_stage : 4'd0),
+				mc_fault_tag, mc_client_to_unit(mc_fault_client),
 				mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
 				(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
 			f_mc_addr_r <= mc_fault_addr;
@@ -482,7 +499,9 @@ module atg_cp_ctl #(
 		n_addr = 32'd0;
 		n_info = 32'd0;
 		if (mc_gpu) begin
-			n_info = {11'd0, mc_fault_write, 4'd0, mc_fault_tag, mc_client_to_unit(mc_fault_client),
+			n_info = {11'd0, mc_fault_write,
+				(mc_client_to_unit(mc_fault_client) == GHCI_FAULT_UNIT_SU ? su_stage : 4'd0),
+				mc_fault_tag, mc_client_to_unit(mc_fault_client),
 				mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
 				(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
 			n_addr = mc_fault_addr;

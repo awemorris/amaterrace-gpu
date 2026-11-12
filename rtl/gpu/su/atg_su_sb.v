@@ -75,6 +75,7 @@ module atg_su_sb #(
 	output wire busy,
 	output wire fault,
 	output wire [15:0] fault_pc,
+	output wire [WARP_W-1:0] fault_warp,
 	output wire [NWARPS-1:0] warp_ready
 );
 `include "atg_su_uop.vh"
@@ -773,6 +774,7 @@ module atg_su_sb #(
 	assign fb_kind = ill ? 2'd1 : replay ? 2'd2 : (issued_cand && wc_kind) ? 2'd1 : 2'd0;
 	assign fault = go && ill;
 	assign fault_pc = u_pc;
+	assign fault_warp = u_warp_out;
 
 	genvar w;
 	generate

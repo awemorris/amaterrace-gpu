@@ -431,7 +431,8 @@ module atg_su #(
 	input wire scrub,
 	output wire scrub_busy,
 	output wire fault,
-	output wire [31:0] fault_addr
+	output wire [31:0] fault_addr,
+	output wire [3:0] fault_stage
 );
 	/* The memories' scrubs (session protection). */
 	wire rst_p = !rst_n;
@@ -518,6 +519,7 @@ module atg_su #(
 	wire sched_busy, sb_busy, cbank_busy;
 	wire sb_fault;
 	wire [15:0] sb_fault_pc;
+	wire [WARP_W-1:0] sb_fault_warp;
 	/* Scoreboard releases, write port, rq. */
 	wire rel_valid, wb_stall;
 	wire [WARP_W-1:0] rel_warp;
@@ -776,7 +778,8 @@ module atg_su #(
 		.warp_ready(warp_ready),
 		.rel_valid(rel_valid), .rel_warp(rel_warp), .rel_sbe(rel_sbe), .rel_cls(rel_cls),
 		.wb_stall(wb_stall), .rq_empty(rq_empty), .rq_full(rq_full),
-		.busy(sb_busy), .fault(sb_fault), .fault_pc(sb_fault_pc)
+		.busy(sb_busy), .fault(sb_fault), .fault_pc(sb_fault_pc),
+		.fault_warp(sb_fault_warp)
 	);
 
 	atg_su_rf #(
@@ -1264,8 +1267,20 @@ module atg_su #(
 	assign busy = sched_busy || sb_busy || cbank_busy;
 	assign fsm = {scrub_busy, cbank_busy, sb_busy, sched_busy};
 	assign scrub_busy = scb_rf || scb_lda || scb_lds || scb_cbank || scb_exp || scb_pt;
+	reg [1:0] warp_stage [0:NWARPS-1];
+	integer wsi;
+	always @(posedge clk) begin
+		if (rst_p) begin
+			for (wsi = 0; wsi < NWARPS; wsi = wsi + 1)
+				warp_stage[wsi] <= 2'd0;
+		end else if (init_valid) begin
+			warp_stage[init_warp] <= vl_go_sch ? 2'd0 : (fl_go_sch ? 2'd1 : 2'd2);
+		end
+	end
+
 	assign fault = sb_fault;
 	assign fault_addr = {16'd0, sb_fault_pc};
+	assign fault_stage = {2'd0, warp_stage[sb_fault_warp]};
 
 	wire unused_ok = &{1'b0, inv[1], mesh_busy_unused};	/* T$: the TU's */
 endmodule

@@ -621,7 +621,15 @@ module atg_top #(
 		.HAS_INDIRECT_DRAW(HAS_INDIRECT_DRAW),
 		.HAS_SECONDARY_RING(HAS_SECONDARY_RING),
 		.TIMESTAMP_INIT(TIMESTAMP_INIT),
-		.MRT_COUNT(MRT_COUNT)
+		.MRT_COUNT(MRT_COUNT),
+		.C_CPU(C_CPU),
+		.C_VF(C_VF),
+		.C_TU(C_TU),
+		.C_ROP(C_ROP),
+		.C_ATOM(C_ATOM),
+		.C_SA(C_SA),
+		.C_DC(C_DC),
+		.C_SU(C_SU)
 	) cp (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -679,9 +687,10 @@ module atg_top #(
 		.busy_ext({sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, 1'b0, !mc_unit_idle}),
 		.vsync(HAS_DISP != 0 ? dc_vsync : x_vsync),
 		.x_fault({1'b0, su_fault}),
-		.x_fault_kind(8'h08),
+		.x_fault_kind(8'h01),
 		.x_fault_addr({32'd0, su_fault_addr}),
-		.x_fault_tag(16'd0),
+		.x_fault_tag({8'd0, prot_unit_tag}),
+		.su_fault_stage(su_fault_stage),
 		.hcr_we(hcr_we),
 		.hcr_widx(hcr_widx),
 		.hcr_wdata(hcr_wdata),
@@ -1064,7 +1073,9 @@ module atg_top #(
 
 	wire vf_busy, rx_busy, tu_busy, rop_busy, sa_busy, su_busy;
 	wire su_fault;
-	wire [31:0] su_fault_addr, sa_hcr_rdata;
+	wire [31:0] su_fault_addr;
+	wire [3:0] su_fault_stage;
+	wire [31:0] sa_hcr_rdata;
 
 	/* VF ↔ SU 0. */
 	wire vl_req, vl_gnt, vl_we, vl_go;
@@ -1132,6 +1143,7 @@ module atg_top #(
 	wire [(NSU > 0 ? NSU : 1)-1:0] su_busy_v, su_fault_v, su_scrub_v;
 	assign su_scrub_any = NSU > 0 && |su_scrub_v;
 	wire [(NSU > 0 ? NSU : 1)*32-1:0] su_fault_addr_v;	/* each SU's fault PC */
+	wire [(NSU > 0 ? NSU : 1)*4-1:0] su_fault_stage_v;	/* each SU's fault stage */
 	wire [(NSU > 0 ? NSU : 1)*4-1:0] su_fsm_v;
 	wire [3:0] su_fsm = NSU > 0 ? su_fsm_v[3:0] : 4'd0;
 	wire [7:0] pipe_busy_mask = {blt_busy, sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, !mc_unit_idle};
@@ -1488,6 +1500,7 @@ module atg_top #(
 			.busy(su_busy_v[k]), .fault(su_fault_v[k]),
 			.scrub(prot_scrub), .scrub_busy(su_scrub_v[k]),
 			.fault_addr(su_fault_addr_v[k*32 +: 32]),
+			.fault_stage(su_fault_stage_v[k*4 +: 4]),
 			.fsm(su_fsm_v[k*4 +: 4])
 		);
 
@@ -1544,17 +1557,22 @@ module atg_top #(
 		 */
 		wire atom_busy;
 		reg [31:0] fault_pc;
+		reg [3:0] fault_stg;
 		integer j;
 
 		always @(*) begin
 			fault_pc = 32'd0;
+			fault_stg = 4'd0;
 			for (j = NSU - 1; j >= 0; j = j - 1)
-				if (su_fault_v[j])
+				if (su_fault_v[j]) begin
 					fault_pc = su_fault_addr_v[j*32 +: 32];
+					fault_stg = su_fault_stage_v[j*4 +: 4];
+				end
 		end
 		assign su_busy = |su_busy_v || atom_busy;
 		assign su_fault = |su_fault_v;
 		assign su_fault_addr = fault_pc;
+		assign su_fault_stage = fault_stg;
 
 		atg_mc_atom #(
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NATOM(NSU),
@@ -1576,6 +1594,7 @@ module atg_top #(
 		assign su_busy = 1'b0;
 		assign su_fault = 1'b0;
 		assign su_fault_addr = 32'd0;
+		assign su_fault_stage = 4'd0;
 		assign vl_gnt = 1'b0;
 		assign vl_ptbase = 8'd0;
 		assign fl_gnt = 1'b0;
