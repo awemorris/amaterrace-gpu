@@ -399,12 +399,6 @@ localparam GHCI_IRQ_DISPLAY    = 3;
 localparam GHCI_IRQ_DBG_DONE   = 4;
 localparam GHCI_IRQ_SOFT       = 5;
 localparam GHCI_IRQ_HALTED     = 6;
-localparam GHCI_IRQ_RESULT     = 7;
-localparam GHCI_IRQ_RETIRE     = 8;
-localparam GHCI_IRQ_VBLANK     = 9;
-localparam GHCI_IRQ_FLIP       = 10;
-localparam GHCI_IRQ_DISP_ERROR = 11;
-localparam GHCI_IRQ_HOTPLUG    = 12;
 
 /* FAULT_INFO fields (J03, N50, N63, N73). */
 localparam [3:0] GHCI_FAULT_KIND_NONE          = 4'd0;

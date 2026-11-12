@@ -26,17 +26,17 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 | `hcr_wmask` | in | 32 | Bit mask from WSTRB (1 = written). |
 | `hcr_ridx` | in | 10 | Word index being read; the read data is due in the same cycle (combinational from this registered index). |
 | `hcr_rdata` | out | 32 | Read data of this module's registers at `hcr_ridx`, 0 for other indices (the parent ORs them). |
-| `ev` | in | 13 | Event pulses: [0] FENCE [1] FAULT [2] RING_EMPTY [3] WATCHDOG [4] DBG_DONE [5] (unused, SOFT is IRQ_SET) [6] HALTED [7] RESULT [8] RETIRE [9] VBLANK [10] FLIP [11] DISP_ERROR [12] HOTPLUG (DISP2). |
+| `ev` | in | 7 | Event pulses: [0] FENCE [1] FAULT [2] WATCHDOG [3] DISPLAY [4] Reserved [5] (unused, SOFT is IRQ_SET) [6] HALTED. |
 | `irq` | out | 1 | Level: OR(IRQ_STATUS & IRQ_ENABLE). |
 
 11 ports.
 
 ## 4. Behaviour
 
-- IRQ_STATUS 0x038: a bit is set by its event pulse; ev[2] is the RING_EMPTY **level** and this
-  module sets bit 2 on its rising edge (its previous value resets to 1, so a core reset does not raise
-  it), cleared by writing 1; a set and a clear in the same cycle leave it set.
-  IRQ_ENABLE 0x03C [8:0]; IRQ_SET 0x040 bit 5 sets SOFT.
+- IRQ_STATUS 0x038: a bit is set by its event pulse (canonical mapping §3.4: [0] FENCE, [1] FAULT,
+  [2] WATCHDOG, [3] DISPLAY, [5] SOFT, [6] HALTED; others reserved/0), cleared by writing 1; a set
+  and a clear in the same cycle leave it set.
+  IRQ_ENABLE 0x03C [6:0]; IRQ_SET 0x040 bit 5 sets SOFT.
 - irq is registered (one cycle after the status changes).
 
 ## 5. State machine

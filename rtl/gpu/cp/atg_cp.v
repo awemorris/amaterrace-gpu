@@ -1074,8 +1074,7 @@ module atg_cp #(
 		.clk(clk), .rst_n(rst_n), .core_rst_n(s_core_rst_n),
 		.hcr_we(hcr_we_irq), .hcr_widx(hcr_widx_irq), .hcr_wdata(reg_wdata_irq),
 		.hcr_wmask(hcr_wmask_irq), .hcr_ridx(hcr_ridx_irq), .hcr_rdata(s_irq_rdata),
-		.ev({dc_ev[2], dc_ev[1], s_ev_flip, dc_ev[0], s_retire, cpu_result, s_ev_halted, 1'b0,
-			s_dbg_done, s_ev_wdt, s_ring_empty, s_ev_fault, cp_fence_ev}),
+		.ev({s_ev_halted, 1'b0, 1'b0, dc_irq_display, s_ev_wdt, s_ev_fault, cp_fence_ev}),
 		.irq(irq)
 	);
 
@@ -1201,7 +1200,8 @@ module atg_cp #(
 		ind_draw_valid, ind_vertex_count, ind_instance_count, ind_first_vertex,
 		ind_first_instance, ind_first_index, ind_vertex_offset};
 
-	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev, unused_indirect, dc_irq_display,
+	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev, unused_indirect,
+		dc_ev, cpu_result, s_retire, s_dbg_done, s_ev_flip,
 		s_f_addr[63:32],
 		s_dma_req_valid, s_dma_empty, s_dma_busy,
 		s_dma_src_base, s_dma_dst_base, s_dma_src_row_stride, s_dma_dst_row_stride,

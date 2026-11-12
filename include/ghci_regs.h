@@ -145,12 +145,6 @@ extern "C" {
 #define GHCI_IRQ_DISPLAY         (1u << 3)  /* Display scanout / VSYNC event */
 #define GHCI_IRQ_SOFT            (1u << 5)  /* Software interrupt (triggered via IRQ_SET) */
 #define GHCI_IRQ_HALTED          (1u << 6)  /* Core execution halted following CTRL.HALT (N69) */
-#define GHCI_IRQ_RESULT          (1u << 7)
-#define GHCI_IRQ_RETIRE          (1u << 8)
-#define GHCI_IRQ_VBLANK          (1u << 9)
-#define GHCI_IRQ_FLIP            (1u << 10)
-#define GHCI_IRQ_DISP_ERROR      (1u << 11)
-#define GHCI_IRQ_HOTPLUG         (1u << 12)
 
 /* FAULT_INFO decoding (0x018, K04, N50, N63) */
 #define GHCI_FAULT_KIND(info)      ((info) & 0x0Fu)        /* [3:0] Fault kind (1:1 mapped) */
