@@ -2205,7 +2205,7 @@ module atg_blt_2d #(
 	am_sub #(.W(17)) s_xempty (.a(x1), .b(x0), .bi(1'b1), .d(unused_x_d), .bo(fsm_co_unused[19]));
 	am_sub #(.W(17)) s_rows (.a(y1), .b(y0), .bi(1'b1), .d(c_rows), .bo(fsm_co_unused[1]));
 	assign empty = cx_empty || cy_empty;
-	wire rows_init_zero = cy_empty;
+	wire rows_init_zero = (c_rows == 17'd0) || cy_empty;
 	am_sub #(.W(17)) s_cdx (.a(x0), .b(dx), .bi(1'b0), .d(c_dx), .bo(fsm_co_unused[2]));
 	am_sub #(.W(17)) s_cdy (.a(y0), .b(dy), .bi(1'b0), .d(c_dy), .bo(fsm_co_unused[3]));
 	am_add #(.W(17)) a_sx0 (.a({1'b0, s_src_xy[15:0]}), .b(c_dx), .ci(1'b0), .s(c_sx0), .co(fsm_co_unused[4]));
@@ -2921,8 +2921,11 @@ module atg_blt_2d #(
 		end
 	end
 
-	wire [US:0] room_last = bst_tiled ? bst_room_t_init : rem_line_row;
-	wire [US:0] room_next = bst_tiled ? {{(US - 2){1'b0}}, tile_room_walk} : line_pixels_b;
+	wire [US:0] bst_room_t_walk = {{(US - 2){1'b0}}, tile_room_walk};
+	wire [US:0] room_last = bst_tiled ?
+		((bst_room_t_init < rem_line_row) ? bst_room_t_init : rem_line_row) : rem_line_row;
+	wire [US:0] room_next = bst_tiled ?
+		((bst_room_t_walk < rem_line_seg_next) ? bst_room_t_walk : rem_line_seg_next) : line_pixels_b;
 	wire bsl_room_fast;
 	LUT4 #(.INIT(16'hF800)) u_bsl_room_fast (
 		.I0(cmp_lo_le),
@@ -2946,9 +2949,14 @@ module atg_blt_2d #(
 		end
 	endgenerate
 `else
+	wire [US:0] bst_room_t_walk = {{(US - 2){1'b0}}, tile_room_walk};
+	wire [US:0] room_last = bst_tiled ?
+		((bst_room_t_init < rem_line_row) ? bst_room_t_init : rem_line_row) : rem_line_row;
+	wire [US:0] room_next = bst_tiled ?
+		((bst_room_t_walk < rem_line_seg_next) ? bst_room_t_walk : rem_line_seg_next) : line_pixels_b;
 	wire [US:0] next_bst_room = (state == S_INIT1) ?
 		((bst_tiled && (bst_room_t_init < rem_line_b)) ? bst_room_t_init : rem_line_b) :
-		(!bst_tiled ? (bsl_room ? rem_line_row : line_pixels_b) : bst_room_t_next);
+		(bsl_room ? room_last : room_next);
 `endif
 
 	always @(posedge clk) begin

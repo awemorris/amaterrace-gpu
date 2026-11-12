@@ -88,6 +88,21 @@ module atg_top #(
 `else
 	parameter HAS_BLT = 0,
 `endif
+`ifdef CFG_BLT_ENABLE_SCALE
+	parameter BLT_SCALE = (`CFG_BLT_ENABLE_SCALE != 0),
+`else
+	parameter BLT_SCALE = 1,
+`endif
+`ifdef CFG_BLT_ENABLE_BLEND
+	parameter BLT_BLEND = (`CFG_BLT_ENABLE_BLEND != 0),
+`else
+	parameter BLT_BLEND = 1,
+`endif
+`ifdef CFG_BLT_ENABLE_TILE
+	parameter BLT_TILE = (`CFG_BLT_ENABLE_TILE != 0),
+`else
+	parameter BLT_TILE = 1,
+`endif
 `ifdef CFG_TU_ENABLE_FFILT
 	parameter HAS_FFILT = (`CFG_TU_ENABLE_FFILT != 0),
 `else
@@ -717,7 +732,10 @@ module atg_top #(
 			.ADDR_W(32),
 			.LINE_BYTES(LINE_BYTES),
 			.LINE_SHIFT(LINE_SHIFT),
-			.MS4(MS4)
+			.MS4(MS4),
+			.ENABLE_SCALE(BLT_SCALE),
+			.ENABLE_BLEND(BLT_BLEND),
+			.ENABLE_TILE(BLT_TILE)
 		) blt (
 			.clk(clk),
 			.rst_n(core_rst_n),

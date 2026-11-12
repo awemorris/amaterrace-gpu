@@ -219,7 +219,7 @@ CONFIG_MC_L2_CACHE_KB    ?= 64
 # CONFIG_MC_L2_WAYS: Shared L2 Cache associativity ways (4, 8, 16). Default: 8.
 CONFIG_MC_L2_WAYS        ?= 8
 
-# CONFIG_VF_CACHE_LINES: Vertex Fetch Cache capacity in lines (4, 8, 16). Default: 8.
+# CONFIG_VF_CACHE_LINES: Vertex Fetch Cache capacity in lines (2, 4, 8, 16). Default: 8.
 CONFIG_VF_CACHE_LINES    ?= 8
 
 # CONFIG_DC_ENABLE_CURSOR: Display Controller hardware cursor plane.

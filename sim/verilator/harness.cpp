@@ -73,6 +73,15 @@ void poke32(uint32_t a, uint32_t v)
 		mem[a + i] = (uint8_t)(v >> (8 * i));
 }
 
+constexpr uint32_t RING_BASE_ADDR = 0x48000;
+uint32_t ring_wp = 0;
+
+void ring_put(uint32_t v)
+{
+	poke32(RING_BASE_ADDR + 4 * ring_wp, v);
+	ring_wp++;
+}
+
 /*
  * One clock: drive the memory's outputs from its state, see the
  * handshakes as they stand before the edge, make the edge, then update
@@ -249,17 +258,27 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
     unsigned dy, unsigned sx, unsigned sy, unsigned w, unsigned h, uint32_t color,
     std::vector<uint8_t> &ref)
 {
-	host_write(GHCI_STATE(GHCI_S_BLT_OP), op);
-	host_write(GHCI_STATE(GHCI_S_BLT_DST_BASE), dst);
-	host_write(GHCI_STATE(GHCI_S_BLT_DST_STRIDE), ds);
-	host_write(GHCI_STATE(GHCI_S_BLT_SRC_BASE), src);
-	host_write(GHCI_STATE(GHCI_S_BLT_SRC_STRIDE), ss);
-	host_write(GHCI_STATE(GHCI_S_BLT_DST_XY), GHCI_XY(dx, dy));
-	host_write(GHCI_STATE(GHCI_S_BLT_SRC_XY), GHCI_XY(sx, sy));
-	host_write(GHCI_STATE(GHCI_S_BLT_SIZE), GHCI_XY(w, h));
-	host_write(GHCI_STATE(GHCI_S_BLT_COLOR), color);
-	host_write(GHCI_STATE(GHCI_S_BLT_CLIP_MAX), 0);
-	host_write(GHCI_KICK, GHCI_KICK_BLIT);
+	const uint32_t regs[][2] = {
+		{GHCI_S_BLT_OP, op},
+		{GHCI_S_BLT_DST_BASE, dst},
+		{GHCI_S_BLT_DST_STRIDE, ds},
+		{GHCI_S_BLT_SRC_BASE, src},
+		{GHCI_S_BLT_SRC_STRIDE, ss},
+		{GHCI_S_BLT_DST_XY, GHCI_XY(dx, dy)},
+		{GHCI_S_BLT_SRC_XY, GHCI_XY(sx, sy)},
+		{GHCI_S_BLT_SIZE, GHCI_XY(w, h)},
+		{GHCI_S_BLT_COLOR, color},
+		{GHCI_S_BLT_CLIP_MAX, 0}
+	};
+	ring_put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_SET_REG, 1, 0, 20));
+	for (const auto &r : regs) {
+		ring_put(r[0]);
+		ring_put(r[1]);
+	}
+	ring_put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_BLIT, 2, GHCI_BLIT_WAIT, 0));
+	host_write(GHCI_RING_WPTR, ring_wp);
+	for (int i = 0; i < 100000 && host_read(GHCI_RING_RPTR) != ring_wp; i++)
+		;
 	wait_clear(GHCI_STATUS_BLT_BUSY);
 	for (unsigned y = 0; y < h; y++)
 		for (unsigned x = 0; x < w; x++) {
@@ -608,11 +627,12 @@ int main(int argc, char **argv)
 	expect("VENDOR_ID", host_read(GHCI_VENDOR_ID), GHCI_FOURCC('A', 'M', 'A', 'T'));
 	expect("DEVICE_ID", host_read(GHCI_DEVICE_ID), GHCI_FOURCC('A', 'T', 'G', '1'));
 	uint32_t caps = host_read(GHCI_CAPS);
-	expect("CAPS.BLT", caps & GHCI_CAPS_BLT, GHCI_CAPS_BLT);
-	expect("CAPS.LINE", GHCI_CAPS_LINE_LOG2(caps), 6);
+	expect("CAPS.BLT", caps & GHCI_CAP_BLT, GHCI_CAP_BLT);
 
-	host_write(GHCI_APERTURE_BASE, 0x10000);
-	host_write(GHCI_APERTURE_LIMIT, 0x50000);
+	host_write(GHCI_RING_BASE, RING_BASE_ADDR);
+	host_write(GHCI_RING_SIZE, 0x1000);
+	host_write(GHCI_IRQ_ENABLE, GHCI_IRQ_FENCE);
+	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
 
 	blit(GHCI_BLT_FILL, 0x20000, 1024, 0, 0, 5, 3, 0, 0, 100, 20, 0x00FF8040, ref);
 	blit(GHCI_BLT_COPY, 0x40000, 512, 0x20000, 1024, 1, 2, 3, 1, 60, 25, 0, ref);
@@ -632,39 +652,30 @@ int main(int argc, char **argv)
 	expect("DBG_STATUS", host_read(GHCI_DBG_STATUS), 0);
 
 	/* The ring: a FILL from SET_REG and BLIT, then a FENCE with its IRQ. */
-	const uint32_t ring = 0x48000, fence = 0x47F00;
-	uint32_t wp = 0;
-	auto put = [&](uint32_t v) {
-		poke32(ring + 4 * wp, v);
-		wp++;
-	};
+	const uint32_t fence = 0x47F00;
 	const uint32_t regs[][2] = {{GHCI_S_BLT_OP, GHCI_BLT_FILL}, {GHCI_S_BLT_DST_BASE, 0x30000},
 	    {GHCI_S_BLT_DST_STRIDE, 256}, {GHCI_S_BLT_DST_XY, GHCI_XY(3, 1)},
 	    {GHCI_S_BLT_SIZE, GHCI_XY(10, 4)}, {GHCI_S_BLT_COLOR, 0x13572468},
 	    {GHCI_S_BLT_CLIP_MAX, 0}};
-	put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_SET_REG, 1, 0, 14));
+	ring_put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_SET_REG, 1, 0, 14));
 	for (const auto &r : regs) {
-		put(r[0]);
-		put(r[1]);
+		ring_put(r[0]);
+		ring_put(r[1]);
 	}
-	put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_BLIT, 2, 0, 0));
-	put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_FENCE, 3, GHCI_FENCE_IRQ, 2));
-	put(fence);
-	put(77);
+	ring_put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_BLIT, 2, 0, 0));
+	ring_put(GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_FENCE, 3, GHCI_FENCE_IRQ, 2));
+	ring_put(fence);
+	ring_put(77);
 	for (unsigned y = 1; y < 5; y++)
 		for (unsigned x = 3; x < 13; x++)
 			for (int i = 0; i < 4; i++)
 				ref[0x30000 + y * 256 + x * 4 + i] = (uint8_t)(0x13572468u >> (8 * i));
-	host_write(GHCI_RING_BASE, ring);
-	host_write(GHCI_RING_SIZE, 10);
-	host_write(GHCI_IRQ_ENABLE, GHCI_IRQ_FENCE);
-	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
-	host_write(GHCI_RING_WPTR, wp);
+	host_write(GHCI_RING_WPTR, ring_wp);
 	for (int i = 0; i < 10000 && host_read(GHCI_FENCE_LAST) != 77; i++)
 		;
 	expect("FENCE_LAST", host_read(GHCI_FENCE_LAST), 77);
 	expect("fence word", peek32(fence), 77);
-	expect("RING_RPTR", host_read(GHCI_RING_RPTR), wp);
+	expect("RING_RPTR", host_read(GHCI_RING_RPTR), ring_wp);
 	expect("IRQ FENCE", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FENCE, GHCI_IRQ_FENCE);
 	expect("irq line", top->irq, 1);
 	bad = 0;
