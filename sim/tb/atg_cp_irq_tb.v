@@ -28,10 +28,12 @@ module atg_cp_irq_tb;
 	reg [31:0] hcr_wdata = 0, hcr_wmask = 0;
 	wire [31:0] hcr_rdata;
 	reg [6:0] ev = 7'b0;
+	reg ctrl_irq_global = 1'b1;
 	wire irq;
 
 	atg_cp_irq dut (
 		.clk(clk), .rst_n(rst_n), .core_rst_n(core_rst_n),
+		.ctrl_irq_global(ctrl_irq_global),
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata), .ev(ev), .irq(irq)
 	);
@@ -174,6 +176,30 @@ module atg_cp_irq_tb;
 		if (irq !== 1'b0) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_irq.line: line up for a masked bit");
+		end
+
+		/* IRQ_GLOBAL master enable check:
+		 * Even if IRQ_STATUS & IRQ_ENABLE != 0, if IRQ_GLOBAL == 0 then irq == 0. When IRQ_GLOBAL == 1, irq == 1. */
+		hcr_write(GHCI_REG_IRQ_STATUS[11:0], 32'h7F);
+		hcr_write(GHCI_REG_IRQ_ENABLE[11:0], 32'h00000020);
+		hcr_write(GHCI_REG_IRQ_SET[11:0], 32'h00000020);
+		expect_status("global_soft", 7'h20);
+		@(negedge clk);
+		if (irq !== 1'b1) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_irq.global: irq not 1 when IRQ_GLOBAL == 1");
+		end
+		ctrl_irq_global = 1'b0;
+		@(negedge clk);
+		if (irq !== 1'b0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_irq.global: irq not 0 when IRQ_GLOBAL == 0");
+		end
+		ctrl_irq_global = 1'b1;
+		@(negedge clk);
+		if (irq !== 1'b1) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_irq.global: irq not restored when IRQ_GLOBAL == 1");
 		end
 
 		/* The core reset clears the status, not the enable */

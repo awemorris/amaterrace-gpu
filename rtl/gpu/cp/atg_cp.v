@@ -529,7 +529,7 @@ module atg_cp #(
 	endgenerate
 
 	/* Control: state machine, RESET order, watchdog, faults. */
-	wire s_run, s_halt, s_step, s_open, s_quiesce, s_mc_flush;
+	wire s_run, s_halt, s_step, s_open, s_quiesce, s_mc_flush, s_ctrl_irq_global;
 	(* keep = "true", dont_touch = "true" *) wire s_core_rst_n;
 	wire [3:0] s_cp_state;
 	wire [2:0] s_host_kick;
@@ -597,7 +597,7 @@ module atg_cp #(
 			x_fault_addr[31:0], s_fence_fault_addr, 32'd0, s_seq_fault_addr, s_ring_fault_addr}),
 		.src_tag({s_disp_fault_tag, x_fault_tag[15:8], 8'd0, 8'd0, x_fault_tag[7:0],
 			s_fence_fault_tag, 8'd0, s_seq_fault_tag, s_ring_fault_tag}),
-		.run(s_run), .halt(s_halt), .quiesce(s_quiesce), .mc_flush(s_mc_flush),
+		.run(s_run), .halt(s_halt), .ctrl_irq_global(s_ctrl_irq_global), .quiesce(s_quiesce), .mc_flush(s_mc_flush),
 		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state),
 		.host_kick(s_host_kick), .step(s_step),
 		.ev_halted(s_ev_halted), .ev_fault(s_ev_fault), .ev_wdt(s_ev_wdt),
@@ -1072,6 +1072,7 @@ module atg_cp #(
 
 	atg_cp_irq u_irq (
 		.clk(clk), .rst_n(rst_n), .core_rst_n(s_core_rst_n),
+		.ctrl_irq_global(s_ctrl_irq_global),
 		.hcr_we(hcr_we_irq), .hcr_widx(hcr_widx_irq), .hcr_wdata(reg_wdata_irq),
 		.hcr_wmask(hcr_wmask_irq), .hcr_ridx(hcr_ridx_irq), .hcr_rdata(s_irq_rdata),
 		.ev({s_ev_halted, 1'b0, 1'b0, dc_irq_display, s_ev_wdt, s_ev_fault, cp_fence_ev}),

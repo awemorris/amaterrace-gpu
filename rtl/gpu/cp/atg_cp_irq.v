@@ -33,6 +33,7 @@ module atg_cp_irq (
 	input wire clk,
 	input wire rst_n,
 	input wire core_rst_n,
+	input wire ctrl_irq_global,
 	/* HCR register snoop (from atg_cp_regs) */
 	input wire hcr_we,
 	input wire [9:0] hcr_widx,
@@ -51,7 +52,6 @@ module atg_cp_irq (
 
 	reg [6:0] status;
 	reg [6:0] enable;
-	reg irq_q;
 
 	wire [6:0] wd = hcr_wdata[6:0] & hcr_wmask[6:0];
 	wire [6:0] clr = (hcr_we && hcr_widx == I_STATUS) ? wd : 7'd0;
@@ -72,11 +72,9 @@ module atg_cp_irq (
 		if (!rst_n) begin
 `endif
 			enable <= 7'd0;
-			irq_q <= 1'b0;
 		end else begin
 			if (hcr_we && hcr_widx == I_ENABLE)
 				enable <= (enable & ~hcr_wmask[6:0]) | (wd & 7'b1101111);
-			irq_q <= |(status & enable);
 		end
 `ifdef SYNTH_KINTEX7
 		if (irq_crst_high) begin
@@ -89,7 +87,7 @@ module atg_cp_irq (
 		end
 	end
 
-	assign irq = irq_q;
+	assign irq = ctrl_irq_global && (| (status & enable));
 	assign hcr_rdata = hcr_ridx == I_STATUS ? {25'd0, status[6:5], 1'b0, status[3:0]} :
 		hcr_ridx == I_ENABLE ? {25'd0, enable[6:5], 1'b0, enable[3:0]} : 32'd0;
 

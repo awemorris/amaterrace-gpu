@@ -91,6 +91,7 @@ module atg_cp_ctl #(
 	/* Outputs */
 	output wire run,
 	output wire halt,
+	output wire ctrl_irq_global,
 	output wire quiesce,
 	output wire mc_flush,
 	output wire core_rst_n,
@@ -132,6 +133,7 @@ module atg_cp_ctl #(
 	reg ctrl_run;
 	reg ctrl_halt;
 	reg ctrl_wdt_en;
+	reg irq_global;
 	reg [31:0] wdt_cycles;
 	reg [31:0] ap_base;
 	reg [31:0] ap_limit;
@@ -173,6 +175,7 @@ module atg_cp_ctl #(
 	(* DONT_TOUCH = "TRUE" *) reg [2:0] halt_r;
 	(* DONT_TOUCH = "TRUE" *) reg st_is_run_r;
 	assign open = open_r[0];
+	assign ctrl_irq_global = irq_global;
 	wire halt_raw = st == S_HALTING || st == S_HALTED || faulted || resetting;
 `ifdef SYNTH_KINTEX7
 	assign run = st_is_run_r && ctrl_run;
@@ -595,6 +598,7 @@ module atg_cp_ctl #(
 			ctrl_run <= 1'b0;
 			ctrl_halt <= 1'b0;
 			ctrl_wdt_en <= 1'b0;
+			irq_global <= 1'b0;
 			wdt_cycles <= WDT_RESET;
 			ap_base <= APERTURE_BASE_INIT;
 			ap_limit <= APERTURE_LIMIT_INIT;
@@ -610,9 +614,21 @@ module atg_cp_ctl #(
 		end else begin
 			/* Registers. */
 			if (wr_ctrl) begin
-				ctrl_run <= hcr_wdata[GHCI_CTRL_RUN];
-				ctrl_halt <= hcr_wdata[GHCI_CTRL_HALT];
-				ctrl_wdt_en <= hcr_wdata[GHCI_CTRL_WDT_EN];
+				if (hcr_wdata[GHCI_CTRL_RESET]) begin
+					ctrl_run <= 1'b0;
+					ctrl_halt <= 1'b0;
+					ctrl_wdt_en <= 1'b0;
+					irq_global <= 1'b0;
+				end else begin
+					if (hcr_wmask[GHCI_CTRL_RUN])
+						ctrl_run <= hcr_wdata[GHCI_CTRL_RUN];
+					if (hcr_wmask[GHCI_CTRL_HALT])
+						ctrl_halt <= hcr_wdata[GHCI_CTRL_HALT];
+					if (hcr_wmask[GHCI_CTRL_WDT_EN])
+						ctrl_wdt_en <= hcr_wdata[GHCI_CTRL_WDT_EN];
+					if (hcr_wmask[GHCI_CTRL_IRQ_GLOBAL])
+						irq_global <= hcr_wdata[GHCI_CTRL_IRQ_GLOBAL];
+				end
 			end
 `ifdef SYNTH_KINTEX7
 			if (wr_wdt_b[0]) wdt_cycles[15:0] <= (wdt_cycles[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]);
@@ -751,6 +767,8 @@ module atg_cp_ctl #(
 					st <= S_RS_REPLAY;
 					ctrl_run <= 1'b0;
 					ctrl_halt <= 1'b0;
+					ctrl_wdt_en <= 1'b0;
+					irq_global <= 1'b0;
 `ifndef SYNTH_KINTEX7
 					fault_addr <= 32'd0;
 					fault_info <= 32'd0;
@@ -791,7 +809,7 @@ module atg_cp_ctl #(
 	always @(*) begin
 		case (hcr_ridx)
 		I_STATUS:        rd = status;
-		I_CTRL:          rd = {25'd0, 1'b0, ctrl_wdt_en, 1'b0, 1'b0, ctrl_halt, ctrl_run, resetting};
+		I_CTRL:          rd = {25'd0, irq_global, ctrl_wdt_en, 1'b0, 1'b0, ctrl_halt, ctrl_run, resetting};
 		I_FAULT_INFO:    rd = fault_info;
 		I_FAULT_ADDR:    rd = fault_addr;
 		I_FAULT_ADDR_HI: rd = 32'd0;

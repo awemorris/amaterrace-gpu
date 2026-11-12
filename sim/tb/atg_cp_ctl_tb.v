@@ -42,6 +42,7 @@ module atg_cp_ctl_tb;
 	reg [63:0] src_tag = 0;
 	reg [7:0] wdt_tag = 0;
 	wire run, halt, quiesce, mc_flush, core_rst_n, open, step, ev_halted, ev_fault, ev_wdt;
+	wire ctrl_irq_global;
 	wire [3:0] cp_state;
 	wire [2:0] host_kick;
 	wire [31:0] ap_base, ap_limit;
@@ -58,7 +59,7 @@ module atg_cp_ctl_tb;
 		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
 		.mc_fault_write(mc_fault_write),
 		.src_fault(src_fault), .src_kind(src_kind), .src_addr(src_addr), .src_tag(src_tag),
-		.run(run), .halt(halt), .quiesce(quiesce), .mc_flush(mc_flush),
+		.run(run), .halt(halt), .ctrl_irq_global(ctrl_irq_global), .quiesce(quiesce), .mc_flush(mc_flush),
 		.core_rst_n(core_rst_n), .open(open), .cp_state(cp_state), .host_kick(host_kick),
 		.step(step), .ev_halted(ev_halted), .ev_fault(ev_fault), .ev_wdt(ev_wdt),
 		.aperture_base(ap_base), .aperture_limit(ap_limit)
@@ -250,6 +251,43 @@ module atg_cp_ctl_tb;
 		end
 		if (errors == e0)
 			$display("PASS atg_cp_ctl.reset");
+		e0 = errors;
+
+		/* CTRL bits 6:5: IRQ_GLOBAL and WDT_EN */
+		ctrl(32'h00000060);
+		hcr_read(GHCI_REG_CTRL[11:0], v);
+		if (v !== 32'h00000060 || ctrl_irq_global !== 1'b1) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.ctrl_bits: CTRL %h (irq_global=%b), expected 00000060", v, ctrl_irq_global);
+		end
+		/* Writing CTRL.RESET clears CTRL to 0 (including WDT_EN and IRQ_GLOBAL) */
+		do_reset();
+		hcr_read(GHCI_REG_CTRL[11:0], v);
+		if (v !== 32'd0 || ctrl_irq_global !== 1'b0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.ctrl_bits: CTRL %h (irq_global=%b) after RESET, expected 0", v, ctrl_irq_global);
+		end
+		/* Also test writing CTRL.RESET with 0x60 in same write */
+		ctrl(32'h00000060);
+		hcr_read(GHCI_REG_CTRL[11:0], v);
+		if (v !== 32'h00000060) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.ctrl_bits: CTRL %h, expected 00000060", v);
+		end
+		ctrl((32'd1 << GHCI_CTRL_RESET) | 32'h60);
+		@(negedge clk);
+		if (ctrl_irq_global !== 1'b0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.ctrl_bits: irq_global not cleared immediately on RESET write");
+		end
+		repeat (5) @(negedge clk);
+		hcr_read(GHCI_REG_CTRL[11:0], v);
+		if (v !== 32'd0 || ctrl_irq_global !== 1'b0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl.ctrl_bits: CTRL %h after RESET, expected 0", v);
+		end
+		if (errors == e0)
+			$display("PASS atg_cp_ctl.ctrl_bits");
 		e0 = errors;
 
 		/* stuck: quiesced without mc_idle for 4 * WDT_CYCLES. */
