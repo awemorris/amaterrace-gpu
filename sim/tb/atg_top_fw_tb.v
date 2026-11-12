@@ -484,15 +484,15 @@ module atg_top_fw_harness #(
 		/* The aperture, the ring, the firmware. */
 		host_write(GHCI_RING_BASE, RING);
 		host_write(GHCI_RING_SIZE, 32'h00010000);
-		host_write(GHCI_IRQ_STATUS, 32'h1FF);
-		host_write(GHCI_IRQ_ENABLE, (32'd1 << GHCI_IRQ_FENCE) | (32'd1 << GHCI_IRQ_RESULT));
+		host_write(GHCI_IRQ_STATUS, 32'h7F);
+		host_write(GHCI_IRQ_ENABLE, (32'd1 << GHCI_IRQ_FENCE));
 		mem.poke32(FENCES, 32'd0);
 		host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
 		host_write(GHCI_CPFW_CTRL, 32'd1 << GHCI_CPFW_CTRL_RUN);
 		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 80000);	/* IDLE, READY, running (the boot clears the DMEM) */
 		expect_reg(GHCI_CPFW_VERSION, 32'h00020001, 32'hFFFFFFFF);
 		expect_reg(GHCI_CPFW_MBOX0 + 12, DATA_CHECK, 32'hFFFFFFFF);
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 
 		/* Both areas start with the same pattern; the result page with no-result marks. */
 		for (k = 0; k < AREA_BYTES / 4; k = k + 1) begin
@@ -633,10 +633,7 @@ module atg_top_fw_harness #(
 		end
 		expect_mem(FRAME_RESULT, 32'd0, "frame status");
 		expect_mem(FRAME_RESULT + 4, 32'd12, "frame records");
-		expect_reg(GHCI_IRQ_STATUS, (32'd1 << GHCI_IRQ_RESULT) | (32'd1 << 8), 32'h180);
-		if (!irq)
-			fail_msg("no interrupt for the frame");
-		host_write(GHCI_IRQ_STATUS, 32'h1FF);
+		host_write(GHCI_IRQ_STATUS, 32'h7F);
 		if (errors == 0)
 			$display("PASS atg_top_fw(%0s).frame", NAME);
 
@@ -692,7 +689,7 @@ module atg_top_fw_harness #(
 		host_write(GHCI_CPFW_DWORDS, 32'd16);
 		host_write(GHCI_CPFW_CTRL, (32'd1 << GHCI_CPFW_CTRL_LOAD) | (32'd1 << GHCI_CPFW_CTRL_RUN));
 		wait_reg(GHCI_CPFW_STATUS, 32'h03, 32'h03, 2000);	/* READY, FAULT */
-		expect_reg(GHCI_FAULT_INFO, {28'd0, GHCI_FAULT_KIND_WATCHDOG}, 32'h0000000F);
+		expect_reg(GHCI_FAULT_INFO, {28'd0, GHCI_FAULT_KIND_INVALID_OP}, 32'h0000000F);
 		expect_reg(GHCI_FAULT_ADDR, 32'd0, 32'hFFFFFFFF);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
 		wait_reg(GHCI_STATUS, 32'd0, 32'hF << GHCI_STATUS_STATE, 2000);

@@ -768,7 +768,6 @@ test_buffers(void)
 	host_check(ok, "the update");
 	host_check(host_uops_of(GHCI_OP_BLIT) >= 4u, "blits went to the FIFO");
 	host_check(host_dones == 3, "DONE after each packet");
-	host_check(host_results == 3, "RESULT after each packet");
 
 	/* The one-time command buffer cannot be submitted again. */
 	host_frame_begin();
@@ -796,9 +795,8 @@ test_buffers(void)
 	uops = host_uop_count;
 	(void)host_frame_run(TAG, 1);
 	host_check(host_result(0) == 0, "submit in a frame of its own");
-	host_check(host_result_uops == uops, "RESULT before the submit's replay");
-	host_check(host_uop_find(GHCI_OP_BLIT, uops) != host_uop_count, "the replay after RESULT");
-	host_check(host_peek(MEMORY_BASE + 0x10u) == 0xC0DE5678u, "the fill of the replay after RESULT");
+	host_check(host_uop_find(GHCI_OP_BLIT, uops) != host_uop_count, "the replay of the submit");
+	host_check(host_peek(MEMORY_BASE + 0x10u) == 0xC0DE5678u, "the fill of the replay");
 
 	/* A record after a submit in its frame sees the submit's work: the replay runs before it. */
 	host_frame_begin();
@@ -820,7 +818,7 @@ test_buffers(void)
 	host_u32(0);
 	(void)host_frame_run(TAG, 6);
 	host_check(host_result(3) == 0 && host_result(4) == 0, "submit, then a reset in its frame");
-	host_check(host_uop_find(GHCI_OP_BLIT, uops) < host_result_uops, "the replay before the next record");
+	host_check(host_uop_find(GHCI_OP_BLIT, uops) != host_uop_count, "the replay before the next record");
 	host_check(host_peek(MEMORY_BASE + 0x10u) == 0xC0DE9ABCu, "the fill of the replay before the reset");
 
 	/* A reset of the spent command buffer, in a frame of its own, then a destroy. */

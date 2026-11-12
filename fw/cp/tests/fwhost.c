@@ -251,10 +251,6 @@ hw_write(
 			host_uop_start = host_uop_count;
 		}
 		return;
-	case HW_RESULT:
-		host_results++;
-		host_result_uops = host_uop_count;
-		return;
 	case HW_DONE:
 		host_dones++;
 		return;

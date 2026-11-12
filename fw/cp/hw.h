@@ -30,7 +30,6 @@
 #define HW_STATE_DATA 0x08u	/* R: STATE[STATE_IDX] */
 #define HW_FENCE_LAST 0x09u	/* R */
 #define HW_CYCLE 0x0Au	/* R: cycle counter */
-#define HW_RESULT 0x0Bu	/* W: raise IRQ_STATUS.RESULT */
 #define HW_IRQ 0x0Cu	/* R: [0] packet, [1] fence, [2] halt request */
 #define HW_IRQ_EN 0x0Du	/* RW: interrupt enables */
 #define HW_DMA_AMB 0x10u	/* RW: GPU address (line aligned) */

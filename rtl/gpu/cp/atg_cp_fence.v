@@ -56,6 +56,7 @@ module atg_cp_fence #(
 	input wire f_irq,
 	input wire f_mem,
 	input wire f_flush,
+	input wire f_64,
 	input wire f_chk,
 	input wire [5:0] f_slot,
 	output wire f_busy,
@@ -103,6 +104,7 @@ module atg_cp_fence #(
 	reg irq_on;
 	(* max_fanout = 16 *) reg [31:0] last;
 	(* extract_enable = "no" *) reg [7:0] gap;
+	reg f_wide_r;
 
 `ifdef SYNTH_KINTEX7
 	(* keep = "true", dont_touch = "true" *) wire fence_rst_high;
@@ -163,19 +165,21 @@ module atg_cp_fence #(
 `endif
 	assign req_write = !is_read;
 	assign req_line = addr[ADDR_W-1:LINE_SHIFT];
-	assign req_wdata = {(LINE_BYTES / 8){aux, value}};
-	/* FENCE & RESULT: the 8-byte pair (8-byte aligned). */
-	reg [LINE_BYTES-1:0] be_pair;
+	assign req_wdata = (f_wide_r || op == 2'd1) ? {(LINE_BYTES / 8){aux, value}} : {(LINE_BYTES / 4){value}};
+	/* FENCE: the word (or 8-byte pair if f_wide); RESULT: the 8-byte pair (8-byte aligned). */
+	reg [LINE_BYTES-1:0] be_word, be_pair;
 	integer bw;
 	always @(*)
 		for (bw = 0; bw < LINE_BYTES / 4; bw = bw + 1) begin
 `ifdef SYNTH_KINTEX7
+			be_word[bw*4 +: 4] = {{(32 - WS){1'b0}}, fword_be} == bw ? 4'hF : 4'h0;
 			be_pair[bw*4 +: 4] = {{(33 - WS){1'b0}}, fword_be[WS-1:1]} == bw / 2 ? 4'hF : 4'h0;
 `else
+			be_word[bw*4 +: 4] = {{(32 - WS){1'b0}}, word} == bw ? 4'hF : 4'h0;
 			be_pair[bw*4 +: 4] = {{(33 - WS){1'b0}}, word[WS-1:1]} == bw / 2 ? 4'hF : 4'h0;
 `endif
 		end
-	assign req_be = is_read ? {LINE_BYTES{1'b0}} : be_pair;
+	assign req_be = is_read ? {LINE_BYTES{1'b0}} : (f_wide_r || op == 2'd1) ? be_pair : be_word;
 	assign req_tag = 8'd0;
 
 `ifdef SYNTH_KINTEX7
@@ -195,12 +199,17 @@ module atg_cp_fence #(
 	reg [63:0] mem_qword_r;
 	wire [63:0] diff64;
 	wire diff_bo;
-	am_sub #(.W(64)) diff_sub (.a(mem_qword_r), .b({aux, value}), .bi(1'b0), .d(diff64), .bo(diff_bo));
+	wire [63:0] sub_a = f_wide_r ? mem_qword_r : {32'd0, mem_qword_r[31:0]};
+	wire [63:0] sub_b = f_wide_r ? {aux, value} : {32'd0, value};
+	am_sub #(.W(64)) diff_sub (.a(sub_a), .b(sub_b), .bi(1'b0), .d(diff64), .bo(diff_bo));
 `else
+	wire [31:0] mem_word = rsp_rdata[{word, 5'd0} +: 32];
 	wire [63:0] mem_qword = rsp_rdata[{word[WS-1:1], 6'd0} +: 64];
 	wire [63:0] diff64;
 	wire diff_bo;
-	am_sub #(.W(64)) diff_sub (.a(mem_qword), .b({aux, value}), .bi(1'b0), .d(diff64), .bo(diff_bo));
+	wire [63:0] sub_a = f_wide_r ? mem_qword : {32'd0, mem_word};
+	wire [63:0] sub_b = f_wide_r ? {aux, value} : {32'd0, value};
+	am_sub #(.W(64)) diff_sub (.a(sub_a), .b(sub_b), .bi(1'b0), .d(diff64), .bo(diff_bo));
 `endif
 
 	/* The gap's count - 1. */
@@ -208,7 +217,7 @@ module atg_cp_fence #(
 	wire gap_bo;
 
 	am_sub #(.W(8)) gap_sub (.a(gap), .b(8'd0), .bi(1'b1), .d(gap_n), .bo(gap_bo));
-	wire passed = !diff64[63];
+	wire passed = f_wide_r ? !diff64[63] : !diff64[31];
 
 	assign fault = st == F_RSP && rsp_valid && rsp_error;
 	assign fault_kind = GHCI_FAULT_KIND_FENCE_ERROR;
@@ -245,6 +254,7 @@ module atg_cp_fence #(
 			last <= 32'd0;
 			gap <= 8'd0;
 			ev_fence_pulse <= 1'b0;
+			f_wide_r <= 1'b0;
 `ifdef SYNTH_KINTEX7
 			mem_qword_r <= 64'd0;
 `endif
@@ -269,15 +279,16 @@ module atg_cp_fence #(
 			F_IDLE:
 				if (f_valid) begin
 					op <= f_op;
+					f_wide_r <= f_64;
 `ifdef SYNTH_KINTEX7
-					if (f_val_b[0]) addr[15:0] <= {f_addr[15:3], 3'b000};
+					if (f_val_b[0]) addr[15:0] <= (f_64 || f_op == 2'd1) ? {f_addr[15:3], 3'b000} : {f_addr[15:2], 2'b00};
 					if (f_val_b[1]) addr[31:16] <= f_addr[31:16];
 					if (f_val_b[2]) value[15:0] <= f_value[15:0];
 					if (f_val_b[3]) value[31:16] <= f_value[31:16];
 					if (f_val_b[4]) aux[15:0] <= f_aux[15:0];
 					if (f_val_b[5]) aux[31:16] <= f_aux[31:16];
 `else
-					addr <= {f_addr[ADDR_W-1:3], 3'b000};
+					addr <= (f_64 || f_op == 2'd1) ? {f_addr[ADDR_W-1:3], 3'b000} : {f_addr[ADDR_W-1:2], 2'b00};
 					value <= f_value;
 					aux <= f_aux;
 `endif
@@ -338,7 +349,7 @@ module atg_cp_fence #(
 
 	assign hcr_rdata = (hcr_ridx == I_LAST) ? last : 32'd0;
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff64[62:0], diff_bo, gap_bo, f_addr[2:0], hcr_ridx[9:6], f_flush};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff64[62:32], diff64[30:0], diff_bo, gap_bo, f_addr[2:0], hcr_ridx[9:6], f_flush};
 endmodule
 
 `default_nettype wire

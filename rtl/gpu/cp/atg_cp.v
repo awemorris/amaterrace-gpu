@@ -924,7 +924,7 @@ module atg_cp #(
 	wire lc_halted    = s_lc_state == GHCI_LC_HALTED;
 	wire lc_faulted   = s_lc_state == GHCI_LC_FAULTED;
 	wire lc_resetting = s_lc_state == GHCI_LC_RESETTING;
-	wire s_seq_halt = lc_halting || lc_halted || lc_faulted || lc_resetting;
+	wire s_seq_halt = lc_halted || lc_faulted || lc_resetting;
 
 	wire s_fw_valid, s_fw_ready;
 	wire [31:0] s_fw_data;
@@ -1017,7 +1017,7 @@ module atg_cp #(
 		.l2_idle(l2_idle),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq),
-		.f_mem(s_f_mem), .f_flush(s_f_flush), .f_busy(s_f_busy),
+		.f_mem(s_f_mem), .f_flush(s_f_flush), .f_64(s_f_64), .f_busy(s_f_busy),
 		.occ_count(occ_count), .occ_clear(s_seq_occ_clear),
 		.busy(s_seq_busy), .cmd_active(s_cmd_active), .seq_st(s_seq_st),
 		.fault(s_seq_fault), .fault_kind(s_seq_fault_kind), .fault_addr(s_seq_fault_addr),
@@ -1067,7 +1067,7 @@ module atg_cp #(
 `endif
 
 	/* Fences. */
-	wire s_ev_fence;
+	wire s_ev_fence, s_f_64;
 `ifdef SYNTH_KINTEX7
 	reg cp_fence_ev_r;
 	always @(posedge clk) begin
@@ -1084,7 +1084,7 @@ module atg_cp #(
 		.hcr_wmask(hcr_wmask_fence), .hcr_ridx(hcr_ridx_fence), .hcr_rdata(s_fence_rdata),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr[ADDR_W-1:0]),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq),
-		.f_mem(s_f_mem), .f_flush(s_f_flush), .f_chk(f_chk),
+		.f_mem(s_f_mem), .f_flush(s_f_flush), .f_64(s_f_64), .f_chk(f_chk),
 		.f_slot(f_slot), .f_busy(s_f_busy),
 		.ev_fence(s_ev_fence), .fence_last(cp_fence_last),
 		.fault(s_fence_fault), .fault_kind(s_fence_fault_kind),

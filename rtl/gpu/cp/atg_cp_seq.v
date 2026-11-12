@@ -91,6 +91,7 @@ module atg_cp_seq #(
 	output wire f_irq,
 	output wire f_mem,
 	output wire f_flush,
+	output wire f_64,
 	input wire f_busy,
 	/* The occlusion counter (atg_rop_occ, QUERY) */
 	input wire [39:0] occ_count,
@@ -271,7 +272,7 @@ module atg_cp_seq #(
 		.pay_bad(pay_bad)
 	);
 
-	(* max_fanout = 16 *) reg is_set_r, is_dset_r, is_fence_cmd_r;
+	(* max_fanout = 16 *) reg is_set_r, is_dset_r, is_fence_cmd_r, is_fc_or_res_r;
 `ifdef SYNTH_KINTEX7
 	(* DONT_TOUCH = "TRUE" *) reg is_set_r1, is_dset_r1;
 `endif
@@ -324,7 +325,7 @@ module atg_cp_seq #(
 	wire [8:0] pay_wait_act;
 	wire pay_hold = |(pay_wait_act & busy_in);
 	wire pay_take = (st == Q_PAY) && in_valid && !pay_hold;
-	wire hdr_take = (st == Q_IDLE) && !halt && hdr_valid;
+	wire hdr_take = (st == Q_IDLE) && hdr_valid;
 
 `ifdef SYNTH_KINTEX7
 	(* DONT_TOUCH = "TRUE" *) reg st_is_pay_r;
@@ -390,10 +391,10 @@ module atg_cp_seq #(
 	end
 	assign pay_wait_act = pay_wait_r;
 
-	wire n_rdy_idle = (st == Q_IDLE) && !halt && !fw_act_b[4];
-	wire fw_rdy_idle = (st == Q_IDLE) && !halt && fw_act_b[4];
-	wire n_rdy_pay = st_is_pay_r && !halt && !use_fw_b[4];
-	wire fw_rdy_pay = st_is_pay_r && !halt && use_fw_b[4];
+	wire n_rdy_idle = (st == Q_IDLE) && !fw_act_b[4];
+	wire fw_rdy_idle = (st == Q_IDLE) && fw_act_b[4];
+	wire n_rdy_pay = st_is_pay_r && !use_fw_b[4];
+	wire fw_rdy_pay = st_is_pay_r && use_fw_b[4];
 	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'hAAAAAAAE)) u_nrdy_lut (
 		.I0(n_rdy_idle), .I1(n_rdy_pay), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .O(n_ready)
 	);
@@ -444,8 +445,8 @@ module atg_cp_seq #(
 	assign uop_wdata = uop_wdata_r;
 `else
 	assign pay_wait_act = pay_wait;
-	assign n_ready = !halt && ((st == Q_IDLE && !fw_active) || (st == Q_PAY && !use_fw && !pay_hold));
-	assign fw_ready = !halt && ((st == Q_IDLE && fw_active) || (st == Q_PAY && use_fw && !pay_hold));
+	assign n_ready = (st == Q_IDLE && !fw_active) || (st == Q_PAY && !use_fw && !pay_hold);
+	assign fw_ready = (st == Q_IDLE && fw_active) || (st == Q_PAY && use_fw && !pay_hold);
 	assign uop_we = pay_take && pay_we && !set_bad;
 	assign uop_idx = pay_idx;
 	assign uop_wdata = in_data;
@@ -571,6 +572,10 @@ module atg_cp_seq #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ifc0 (.I0(is_fence_cmd_r), .O(is_fc_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ifc1 (.I0(is_fence_cmd_r), .O(is_fc_b[1]));
 
+	wire [1:0] is_fcr_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ifcr0 (.I0(is_fc_or_res_r), .O(is_fcr_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ifcr1 (.I0(is_fc_or_res_r), .O(is_fcr_b[1]));
+
 	assign occ_clear = (is_op_std && is_query_r && flags[0]) ||
 		(st == Q_FREQ && f_ready && is_query_r && flags[1]);
 	assign f_valid = st == Q_FREQ;
@@ -586,12 +591,13 @@ module atg_cp_seq #(
 	};
 	assign f_value = f_value_w;
 	assign f_aux = {
-		is_q_b[3] ? 16'd0                : a2[31:16],
-		is_q_b[2] ? {8'd0, occ_q[39:32]} : a2[15:0]
+		is_q_b[3] ? 16'd0                : (is_fcr_b[1] ? a2[31:16] : 16'd0),
+		is_q_b[2] ? {8'd0, occ_q[39:32]} : (is_fcr_b[0] ? a2[15:0]  : 16'd0)
 	};
 	assign f_irq = is_fence_cmd_r ? fence_flags[0] : flags[0];
 	assign f_mem = is_fence_cmd_r ? fence_flags[1] : 1'b1;
 	assign f_flush = (st == Q_FLUSH) && settle;
+	assign f_64 = is_fence_cmd_r;
 `else
 	assign occ_clear = (is_op_std && op == OP_QUERY && flags[0]) ||
 		(st == Q_FREQ && f_ready && is_query && flags[1]);
@@ -599,10 +605,11 @@ module atg_cp_seq #(
 	assign f_op = (op == OP_FENCE || op == CMD_FENCE) ? 2'd0 : op == OP_RESULT || op == OP_QUERY ? 2'd1 : 2'd2;
 	assign f_addr = (op == CMD_FENCE || op == CMD_WAIT_FENCE) ? {a0_hi, a0} : {32'd0, a0};
 	assign f_value = (op == OP_QUERY) ? occ_q[31:0] : a1;
-	assign f_aux = (op == OP_QUERY) ? {24'd0, occ_q[39:32]} : a2;
+	assign f_aux = (op == OP_QUERY) ? {24'd0, occ_q[39:32]} : (is_fence_cmd_r || (!vendor && op == OP_RESULT)) ? a2 : 32'd0;
 	assign f_irq = (op == CMD_FENCE) ? fence_flags[0] : flags[0];
 	assign f_mem = (op == CMD_FENCE) ? fence_flags[1] : 1'b1;
 	assign f_flush = (st == Q_FLUSH) && settle;
+	assign f_64 = is_fence_cmd_r;
 `endif
 
 	reg f_pulse;
@@ -826,6 +833,7 @@ module atg_cp_seq #(
 			h_nlo_r <= 4'd0;
 `endif
 			is_fence_cmd_r <= 1'b0;
+			is_fc_or_res_r <= 1'b0;
 			vendor <= 1'b0;
 			op <= 8'd0;
 			flags <= 8'd0;
@@ -900,6 +908,7 @@ module atg_cp_seq #(
 				is_set_r1 <= !h_vendor && (h_op_b == OP_SET_REG);
 				is_dset_r1 <= !h_vendor && (h_op_b == OP_DISP_SET);
 				is_fence_cmd_r <= (h_op_b == CMD_FENCE || h_op_b == CMD_WAIT_FENCE);
+				is_fc_or_res_r <= (h_op_b == CMD_FENCE || h_op_b == CMD_WAIT_FENCE || (!h_vendor && h_op_b == OP_RESULT));
 				is_query_r <= !h_vendor && (h_op_b == OP_QUERY);
 				is_dispatch_r <= !h_vendor && (h_op_b == OP_DISPATCH || h_op_b == CMD_DISPATCH || h_op_b == CMD_DRAW_MESH_TASKS);
 				is_load_const_r <= !h_vendor && (h_op_b == OP_LOAD_CONST);
@@ -985,6 +994,7 @@ module atg_cp_seq #(
 				is_set_r <= !h_vendor && (h_op == OP_SET_REG);
 				is_dset_r <= !h_vendor && (h_op == OP_DISP_SET);
 				is_fence_cmd_r <= (h_op == CMD_FENCE || h_op == CMD_WAIT_FENCE);
+				is_fc_or_res_r <= (h_op == CMD_FENCE || h_op == CMD_WAIT_FENCE || (!h_vendor && h_op == OP_RESULT));
 				is_query_r <= !h_vendor && (h_op == OP_QUERY);
 				is_dispatch_r <= !h_vendor && (h_op == OP_DISPATCH || h_op == CMD_DISPATCH || h_op == CMD_DRAW_MESH_TASKS);
 				is_load_const_r <= !h_vendor && (h_op == OP_LOAD_CONST);

@@ -299,7 +299,7 @@ void start_case(Case &c)
 		std::printf("  CPFW_STATUS %08x: the firmware does not start\n", status);
 		c.faulted = true;
 	}
-	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
+	host_write(GHCI_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL);
 	uops.clear();
 }
 

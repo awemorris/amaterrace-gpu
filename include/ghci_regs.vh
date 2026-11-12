@@ -386,8 +386,6 @@ localparam GHCI_IRQ_FAULT      = 1;
 localparam GHCI_IRQ_WATCHDOG   = 2;
 localparam GHCI_IRQ_DISP       = 3;
 localparam GHCI_IRQ_DISPLAY    = 3;
-localparam GHCI_IRQ_FLIP       = 3; /* Legacy alias for GHCI_IRQ_DISPLAY */
-localparam GHCI_IRQ_DBG_DONE   = 4;
 localparam GHCI_IRQ_SOFT       = 5;
 localparam GHCI_IRQ_HALTED     = 6;
 

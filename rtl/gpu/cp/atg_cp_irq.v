@@ -21,8 +21,9 @@
  *
  * ev[k] sets IRQ_STATUS[k] (one-cycle pulses). Writing 1 to a bit of
  * IRQ_STATUS clears it; a set and a clear in the same cycle leave it set.
- * IRQ_SET[5] sets SOFT. irq = OR(IRQ_STATUS & IRQ_ENABLE), registered (it
- * follows a change one cycle later). IRQ_STATUS is cleared by the core
+ * IRQ_SET[5] sets SOFT. irq = ctrl_irq_global && (| (status & enable))
+ * (combinational output from registered status & enable).
+ * IRQ_STATUS is cleared by the core
  * reset (CTRL.RESET), IRQ_ENABLE only by rst_n.
  */
 

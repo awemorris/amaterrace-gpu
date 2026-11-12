@@ -490,7 +490,7 @@ int scene_main()
 	host_write(GHCI_LEGACY_APERTURE_LIMIT, SCENE_APER_LIMIT);
 	host_write(GHCI_RING_BASE, ring);
 	host_write(GHCI_RING_SIZE, SCENE_RING_LOG2);	/* 11: 512 words */
-	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
+	host_write(GHCI_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL);
 	host_write(GHCI_RING_WPTR, wp);
 	for (int i = 0; i < SCENE_WAIT && host_read(GHCI_LEGACY_FENCE_LAST) != 1; i++)
 		;
@@ -542,7 +542,7 @@ int compute_main()
 	host_write(GHCI_LEGACY_APERTURE_LIMIT, 0x60000);
 	host_write(GHCI_RING_BASE, ring);
 	host_write(GHCI_RING_SIZE, 10);
-	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
+	host_write(GHCI_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL);
 	while (std::fscanf(f, "%3s", k) == 1) {
 		if (k[0] == 'S' && std::fscanf(f, "%31s", name) == 1) {
 			segs++;
@@ -635,7 +635,7 @@ int main(int argc, char **argv)
 	host_write(GHCI_RING_BASE, RING_BASE_ADDR);
 	host_write(GHCI_RING_SIZE, 0x1000);
 	host_write(GHCI_IRQ_ENABLE, GHCI_IRQ_FENCE);
-	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
+	host_write(GHCI_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL);
 
 	blit(GHCI_BLT_FILL, 0x20000, 1024, 0, 0, 5, 3, 0, 0, 100, 20, 0x00FF8040, ref);
 	blit(GHCI_BLT_COPY, 0x40000, 512, 0x20000, 1024, 1, 2, 3, 1, 60, 25, 0, ref);

@@ -570,7 +570,7 @@ module atg_top_harness #(
 		host_write(GHCI_IRQ_ENABLE, (32'd1 << GHCI_IRQ_FENCE) | (32'd1 << GHCI_IRQ_FAULT));
 		mem_put(FENCES, 32'd0);
 		host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_RUNNING, 32'd1 << GHCI_STATUS_RUNNING);
 
 		/* FILL, COPY at other alignments, a clipped FILL. */
@@ -697,9 +697,9 @@ module atg_top_harness #(
 		ring_fence(8'h18, fence_seq);
 		refm[(FENCES - REF_BASE) / 4] = fence_seq;
 		host_write(GHCI_RING_WPTR, wp);
-		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT));
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		wait_reg(GHCI_STATUS, (32'd1 << GHCI_STATUS_HALTED), (32'd1 << GHCI_STATUS_HALTED));
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		wait_reg(GHCI_LEGACY_FENCE_LAST, fence_seq, 32'hFFFFFFFF);
 		for (n = 2; n < 22; n = n + 1)
 			for (k = 3; k < 53; k = k + 1)
@@ -725,7 +725,7 @@ module atg_top_harness #(
 		if (!irq)
 			fail_msg("no interrupt for the fault");
 		reset_gpu();
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		expect_reg(GHCI_STATUS, 32'd0, 32'd1 << GHCI_STATUS_FAULT);
 		expect_reg(GHCI_FAULT_INFO, 32'd0, 32'hFFFFFFFF);
 		expect_reg(GHCI_IRQ_STATUS, 32'd0, 32'hFFFFFFFF);
@@ -743,7 +743,7 @@ module atg_top_harness #(
 		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_FAULT, 32'd1 << GHCI_STATUS_FAULT);
 		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'd0, GHCI_FAULT_UNIT_BLT, GHCI_FAULT_KIND_INVALID_OP}, 32'hFFFFFFFF);
 		reset_gpu();
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 
 		/* Unsupported operation: blend-over of a tile. */
 		ring_reserve(10);
@@ -754,13 +754,13 @@ module atg_top_harness #(
 		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_FAULT, 32'd1 << GHCI_STATUS_FAULT);
 		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'd0, GHCI_FAULT_UNIT_BLT, GHCI_FAULT_KIND_INVALID_OP}, 32'hFFFFFFFF);
 		reset_gpu();
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 
 		/* HALT, the soft interrupt. */
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_HALT);
 		expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_HALTED, 32'd1 << GHCI_STATUS_HALTED);
 		expect_reg(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_HALTED, 32'hFFFFFFFF);
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		host_write(GHCI_IRQ_STATUS, 32'h1FF);
 		host_write(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_SOFT);
 		host_write(GHCI_IRQ_SET, 32'd1 << GHCI_IRQ_SOFT);
@@ -823,7 +823,7 @@ module atg_top_harness #(
 		compare_ref("WAIT_FENCE");
 
 		/* HALT with an empty ring, two fences, STEP runs one at a time. */
-		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT));
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_HALTED, 32'd1 << GHCI_STATUS_HALTED);
 		ring_fence(8'h51, 32'd10);
 		ring_fence(8'h52, 32'd11);
@@ -831,12 +831,12 @@ module atg_top_harness #(
 		repeat (200) @(posedge clk);
 		expect_reg(GHCI_LEGACY_FENCE_LAST, 32'd3, 32'hFFFFFFFF);
 		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT) |
-			(32'd1 << GHCI_CTRL_STEP));
+			(32'd1 << GHCI_CTRL_STEP) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd10, 32'hFFFFFFFF);
 		repeat (200) @(posedge clk);
 		expect_reg(GHCI_LEGACY_FENCE_LAST, 32'd10, 32'hFFFFFFFF);
 		expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_HALTED, 32'd1 << GHCI_STATUS_HALTED);
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd11, 32'hFFFFFFFF);
 		refm[(FENCES - REF_BASE) / 4] = 32'd11;
 		expect_reg(GHCI_RING_RPTR, wp, 32'hFFFFFFFF);
@@ -844,7 +844,7 @@ module atg_top_harness #(
 		/* A class V packet without firmware: fault kind invalid op with its tag. */
 		reset_gpu();
 		host_write(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_FAULT);
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		ring_put({2'b10, 6'd0, 8'h61, 16'd4});
 		ring_put(32'd0);
 		ring_put(32'd0);
@@ -860,7 +860,7 @@ module atg_top_harness #(
 
 		/* Fault, RESET, recovery: the ring from 0 again. */
 		reset_gpu();
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		ring_fill(32'h00033800, 128, 0, 0, 3, 2, 32'h0FEEDBAC);
 		ring_fence(8'h62, 32'd12);
 		host_write(GHCI_RING_WPTR, wp);
@@ -876,7 +876,7 @@ module atg_top_harness #(
 		reset_gpu();
 
 		/* A fence outside the aperture: fault kind of the CP (client 0). */
-		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		ring_put(hdr(1'b0, 6'd5, 8'h81, 8'd0, 8'd2));
 		ring_put(32'h00001000);
 		ring_put(32'd1);
@@ -889,7 +889,7 @@ module atg_top_harness #(
 		/* The watchdog: a WAIT_FENCE that never passes. */
 		host_write(GHCI_WDT_CYCLES, 32'd300);
 		host_write(GHCI_IRQ_ENABLE, (32'd1 << GHCI_IRQ_FAULT) | (32'd1 << GHCI_IRQ_WATCHDOG));
-		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_WDT_EN));
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_WDT_EN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		ring_put(hdr(1'b0, 6'd9, 8'h91, 8'd0, 8'd2));
 		ring_put(FENCES + 32'h20);
 		ring_put(32'h70000000);

@@ -10,7 +10,7 @@
  * result record's address, then the arguments.  A GHCI_FRAME packet names
  * a frame of staged records instead; each record's result goes to the
  * frame's result page as it is decoded.  At the end the packet's result
- * is stored, every write is answered and IRQ_STATUS.RESULT is raised;
+ * is stored, and every write is answered;
  * then the submits' replays run (vkQueueSubmit has answered while the
  * units work), and DONE lets the ring move on (the µops given meanwhile
  * run first: DONE waits for the FIFO to drain).
@@ -87,8 +87,8 @@ fw_packet_run(
 	if ((flags & GHCI_V_RESULT) != 0)
 		error = packet_result(result, status, aux);
 	flushed = fw_store_flush();
-	if ((flags & GHCI_V_RESULT) != 0 && error == 0 && flushed == 0)
-		hw_write(HW_RESULT, 1);
+	(void)flushed;
+	(void)error;
 
 	/*
 	 * The submits' replays, after the host has the results; DONE comes
