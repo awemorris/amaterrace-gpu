@@ -192,7 +192,7 @@ module atg_top_scene_harness #(
 		@(posedge rst_n);
 		repeat (8) @(posedge clk);
 
-		host_read(GHCI_CAPS, got);
+		host_read(GHCI_REG_DEVICE_CAPS, got);
 		if (got[31] !== (MS4 != 0)) begin
 			errors = errors + 1;
 			$display("FAIL %0s(%0s): CAPS %h, bit 31 (MSAA) not as the shape", TB, NAME, got);

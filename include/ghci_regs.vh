@@ -123,8 +123,6 @@ localparam [16:0] GHCI_2_REG_EXT_CAP_FEATURE= GHCI_REG_EXT_CAP_FEATURE;
 localparam [16:0] GHCI_MAGIC          = GHCI_REG_MAGIC;
 localparam [16:0] GHCI_VERSION        = GHCI_REG_VERSION;
 localparam [16:0] GHCI_DEVICE_CAPS    = GHCI_REG_DEVICE_CAPS;
-localparam [16:0] GHCI_CAPS           = GHCI_REG_DEVICE_CAPS;
-localparam [16:0] GHCI_CAPS2          = GHCI_REG_EXT_CAP_FEATURE;
 localparam [16:0] GHCI_EXTCAP         = GHCI_REG_EXTCAP_PTR;
 localparam [16:0] GHCI_EXTCAP_PTR     = GHCI_REG_EXTCAP_PTR;
 localparam [16:0] GHCI_STATUS         = GHCI_REG_STATUS;
@@ -152,8 +150,6 @@ localparam [16:0] GHCI_TIMESTAMP_LO   = GHCI_REG_TIMESTAMP_LO;
 localparam [16:0] GHCI_TIMESTAMP_HI   = GHCI_REG_TIMESTAMP_HI;
 localparam [16:0] GHCI_GCLK_HZ        = GHCI_REG_GCLK_HZ;
 localparam [16:0] GHCI_NATIVE_ISA_ID  = GHCI_REG_NATIVE_ISA_ID;
-localparam [16:0] GHCI_APERTURE_BASE  = 17'h00060;
-localparam [16:0] GHCI_APERTURE_LIMIT = 17'h00064;
 localparam [16:0] GHCI_VENDOR_ID      = 17'h00180;
 localparam [16:0] GHCI_DEVICE_ID      = 17'h00184;
 localparam [16:0] GHCI_ISA_ID         = 17'h00068;
@@ -176,11 +172,6 @@ localparam GHCI_DEV_CAP_MESH_SHADER    = 28;
 localparam GHCI_DEV_CAP_BLT            = 29;
 localparam GHCI_DEV_CAP_DISP           = 30;
 localparam GHCI_DEV_CAP_MSAA           = 31;
-
-/* CAPS bit aliases */
-localparam GHCI_CAPS_TEX_ADV_BIT       = 26;
-localparam GHCI_CAPS_PACKED_MATH_BIT   = 28;
-localparam GHCI_CAPS_MSAA_BIT          = 29;
 
 /* EXT_CAP_FMT0 bits (0x080) */
 localparam GHCI_EXT_FMT_BC1            = 0;
@@ -281,7 +272,6 @@ localparam [16:0] GHCI_FENCE_LAST = GHCI_LEGACY_FENCE_LAST;
 localparam [16:0] GHCI_CP_PC = GHCI_LEGACY_CP_PC;
 localparam [16:0] GHCI_CP_STATUS = GHCI_LEGACY_CP_STATUS;
 localparam [16:0] GHCI_PIPE_FSM = GHCI_LEGACY_PIPE_FSM;
-localparam [16:0] GHCI_PERF0 = 17'h00080;
 localparam [16:0] GHCI_PERF_CTRL = GHCI_LEGACY_PERF_CTRL;
 localparam [16:0] GHCI_DBG_ADDR = GHCI_LEGACY_DBG_ADDR;
 localparam [16:0] GHCI_DBG_DATA = GHCI_LEGACY_DBG_DATA;
@@ -390,12 +380,6 @@ localparam [2:0] GHCI_LC_HALTING    = 3'd2;
 localparam [2:0] GHCI_LC_HALTED     = 3'd3;
 localparam [2:0] GHCI_LC_FAULTED    = 3'd4;
 localparam [2:0] GHCI_LC_RESETTING  = 3'd5;
-
-/* Legacy lifecycle aliases */
-localparam [3:0] GHCI_ST_RUNNING    = 4'd3;
-localparam [3:0] GHCI_ST_HALTING    = 4'd5;
-localparam [3:0] GHCI_ST_HALTED     = 4'd0;
-localparam [3:0] GHCI_ST_RESETTING  = 4'd5;
 
 /* IRQ_STATUS / IRQ_ENABLE bits (J02, N21). */
 localparam GHCI_IRQ_FENCE      = 0;

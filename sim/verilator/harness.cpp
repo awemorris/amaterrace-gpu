@@ -455,17 +455,17 @@ int scene_main()
 	}
 	std::fclose(f);
 #ifdef TEX
-	expect("CAPS[8] (bilinear)", (host_read(GHCI_CAPS) >> 8) & 1, 1);
+	expect("CAPS[8] (bilinear)", (host_read(GHCI_LEGACY_CAPS) >> 8) & 1, 1);
 	expect("CAPS[26] (the texture unit of GHCI section 8.4)",
-	       (host_read(GHCI_CAPS) & GHCI_CAPS_TU_FULL) != 0, 1);
-	expect("CAPS2[27:24] (texture slots / 4)", (host_read(GHCI_CAPS2) >> 24) & 15, 4);
+	       (host_read(GHCI_LEGACY_CAPS) & GHCI_LEGACY_CAPS_TU_FULL) != 0, 1);
+	expect("CAPS2[27:24] (texture slots / 4)", (host_read(GHCI_LEGACY_CAPS2) >> 24) & 15, 4);
 #endif
 #if defined(MSAA) || defined(CORE)
-	expect("CAPS[29] (4x multisampling)", (host_read(GHCI_CAPS) & GHCI_CAPS_MS4) != 0, 1);
+	expect("CAPS[29] (4x multisampling)", (host_read(GHCI_LEGACY_CAPS) & GHCI_LEGACY_CAPS_MS4) != 0, 1);
 #endif
 #ifdef CORE
-	expect("CAPS[30] (Vulkan 1.0 core rendering)", (host_read(GHCI_CAPS) & GHCI_CAPS_CORE1) != 0, 1);
-	expect("CAPS[9] (stencil)", (host_read(GHCI_CAPS) & GHCI_CAPS_ROP_STENCIL) != 0, 1);
+	expect("CAPS[30] (Vulkan 1.0 core rendering)", (host_read(GHCI_LEGACY_CAPS) & GHCI_LEGACY_CAPS_CORE1) != 0, 1);
+	expect("CAPS[9] (stencil)", (host_read(GHCI_LEGACY_CAPS) & GHCI_LEGACY_CAPS_ROP_STENCIL) != 0, 1);
 	uint32_t fmt_regs = 0;
 	for (uint32_t off = host_read(GHCI_EXTCAP), n = 0; off != 0 && n < 16; n++) {
 		uint32_t w0 = host_read(off);
@@ -629,7 +629,7 @@ int main(int argc, char **argv)
 	expect("GHCI_VERSION", host_read(GHCI_VERSION) >> 16, GHCI_VERSION_MAJOR);
 	expect("VENDOR_ID", host_read(GHCI_VENDOR_ID), GHCI_FOURCC('A', 'M', 'A', 'T'));
 	expect("DEVICE_ID", host_read(GHCI_DEVICE_ID), GHCI_FOURCC('A', 'T', 'G', '1'));
-	uint32_t caps = host_read(GHCI_CAPS);
+	uint32_t caps = host_read(GHCI_REG_DEVICE_CAPS);
 	expect("CAPS.BLT", caps & GHCI_CAP_BLT, GHCI_CAP_BLT);
 
 	host_write(GHCI_RING_BASE, RING_BASE_ADDR);

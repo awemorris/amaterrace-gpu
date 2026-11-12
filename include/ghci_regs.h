@@ -239,6 +239,7 @@ extern "C" {
 #define GHCI_LEGACY_CP_PC 0x074u
 #define GHCI_LEGACY_CP_STATUS 0x078u
 #define GHCI_LEGACY_PIPE_FSM 0x07Cu
+#define GHCI_LEGACY_PERF0 0x080u
 #define GHCI_LEGACY_PERF(n) (0x080u + 4u * (n))
 #define GHCI_LEGACY_PERF_CTRL 0x090u
 #define GHCI_LEGACY_DBG_ADDR 0x0A0u
@@ -252,17 +253,18 @@ extern "C" {
 #define GHCI_DBG_ADDR GHCI_LEGACY_DBG_ADDR
 #define GHCI_DBG_DATA GHCI_LEGACY_DBG_DATA
 #define GHCI_DBG_STATUS GHCI_LEGACY_DBG_STATUS
-#define GHCI_PERF0 0x080u
 #define GHCI_PERF_CTRL GHCI_LEGACY_PERF_CTRL
 #define GHCI_LEGACY_KICK 0xF00u
 #define GHCI_KICK GHCI_LEGACY_KICK
+#define GHCI_LEGACY_CAPS_ROP_STENCIL (1u << 9)
+#define GHCI_LEGACY_CAPS_TU_FULL (1u << 26)
+#define GHCI_LEGACY_CAPS_MS4 (1u << 29)
+#define GHCI_LEGACY_CAPS_CORE1 (1u << 30)
 
 /* Short register aliases mapped to GHCI 1.0 canonical registers */
 #define GHCI_MAGIC           GHCI_REG_MAGIC
 #define GHCI_VERSION         GHCI_REG_VERSION
 #define GHCI_DEVICE_CAPS     GHCI_REG_DEVICE_CAPS
-#define GHCI_CAPS            GHCI_REG_DEVICE_CAPS
-#define GHCI_CAPS2           0x084u
 #define GHCI_EXTCAP          GHCI_REG_EXTCAP_PTR
 #define GHCI_EXTCAP_PTR      GHCI_REG_EXTCAP_PTR
 #define GHCI_STATUS          GHCI_REG_STATUS
@@ -316,33 +318,6 @@ extern "C" {
 #define GHCI_CPFW_STATUS_LOADING (1u << 4)
 #define GHCI_CPFW_STATUS_STATE(s) (((s) >> 8) & 0xFFu)
 
-/* CAPS. */
-#define GHCI_CAPS_CP (1u << 0)
-#define GHCI_CAPS_BLT (1u << 1)
-#define GHCI_CAPS_SHADER (1u << 2)
-#define GHCI_CAPS_DISP (1u << 3)
-#define GHCI_CAPS_LANES_LOG2(c) (((c) >> 4) & 0xFu)
-#define GHCI_CAPS_TU_BILINEAR (1u << 8)
-#define GHCI_CAPS_ROP_STENCIL (1u << 9)
-#define GHCI_CAPS_WAIT_VSYNC (1u << 10)
-#define GHCI_CAPS_TILE4X4 (1u << 11)
-#define GHCI_CAPS_STATE_VERSION(c) (((c) >> 12) & 0xFu)
-#define GHCI_CAPS_MMU (1u << 16)
-#define GHCI_CAPS_FIRMWARE (1u << 17)
-#define GHCI_CAPS_FW_RELOAD (1u << 18)
-#define GHCI_CAPS_NATIVE_ISA (1u << 19) /* ISA_ID differs from GSI1 */
-#define GHCI_CAPS_LINE_LOG2(c) (((c) >> 20) & 0xFu)
-#define GHCI_CAPS_SUBGROUP (1u << 24)
-#define GHCI_CAPS_SA (1u << 25)
-#define GHCI_CAPS_TU_FULL (1u << 26) /* the texture unit of section 8.4: Vulkan 1.0 core */
-#define GHCI_CAPS_GRAPHICS (1u << 27)
-#define GHCI_CAPS_PACKED (1u << 28)
-#define GHCI_CAPS_MS4 (1u << 29) /* 4x multisampling (draft, section 12.11) */
-#define GHCI_CAPS_CORE1 (1u << 30) /* Vulkan 1.0 core rendering (draft, section 8.5) */
-#define GHCI_CAPS_TEX_ADV GHCI_CAPS_TU_FULL
-#define GHCI_CAPS_PACKED_MATH GHCI_CAPS_PACKED
-#define GHCI_CAPS_MSAA GHCI_CAPS_MS4
-
 /* DEVICE_CAPS (0x008) bits */
 #define GHCI_DEV_CAP_UMA (1u << 0)
 #define GHCI_DEV_CAP_IOMMU (1u << 1)
@@ -394,15 +369,6 @@ extern "C" {
 #define GHCI_EXT_FEAT_SUBGROUP         (1u << 29)
 #define GHCI_EXT_FEAT_CLIP_POLY        (1u << 30)
 #define GHCI_EXT_FEAT_BLT_SCALE        (1u << 31)
-
-/* CAPS2. */
-#define GHCI_CAPS2_QUEUES(c) ((c) & 0xFFu)
-#define GHCI_CAPS2_LDS_KIB(c) (((c) >> 8) & 0xFFu)
-#define GHCI_CAPS2_CONST_WORDS(c) ((((c) >> 16) & 0xFFu) * 16u)
-#define GHCI_CAPS2_TEX_SLOTS(c) ((((c) >> 24) & 0xFu) * 4u)
-#define GHCI_CAPS2_ATTRS(c) ((((c) >> 28) & 0xFu) * 4u)
-
-
 
 /* DBG_STATUS. */
 #define GHCI_DBG_BUSY (1u << 0)
