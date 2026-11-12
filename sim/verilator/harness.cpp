@@ -281,7 +281,7 @@ void blit(uint32_t op, uint32_t dst, uint32_t ds, uint32_t src, uint32_t ss, uns
 	ring_put(0x61000);
 	ring_put(fence_seq);
 	host_write(GHCI_RING_WPTR, ring_wp);
-	for (int i = 0; i < 100000 && host_read(GHCI_FENCE_LAST) != fence_seq; i++)
+	for (int i = 0; i < 100000 && host_read(GHCI_LEGACY_FENCE_LAST) != fence_seq; i++)
 		;
 	for (unsigned y = 0; y < h; y++)
 		for (unsigned x = 0; x < w; x++) {
@@ -486,15 +486,15 @@ int scene_main()
 			}
 	}
 #endif
-	host_write(GHCI_APERTURE_BASE, 0x20000);
-	host_write(GHCI_APERTURE_LIMIT, SCENE_APER_LIMIT);
+	host_write(GHCI_LEGACY_APERTURE_BASE, 0x20000);
+	host_write(GHCI_LEGACY_APERTURE_LIMIT, SCENE_APER_LIMIT);
 	host_write(GHCI_RING_BASE, ring);
 	host_write(GHCI_RING_SIZE, SCENE_RING_LOG2);	/* 11: 512 words */
 	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
 	host_write(GHCI_RING_WPTR, wp);
-	for (int i = 0; i < SCENE_WAIT && host_read(GHCI_FENCE_LAST) != 1; i++)
+	for (int i = 0; i < SCENE_WAIT && host_read(GHCI_LEGACY_FENCE_LAST) != 1; i++)
 		;
-	expect("FENCE_LAST", host_read(GHCI_FENCE_LAST), 1);
+	expect("FENCE_LAST", host_read(GHCI_LEGACY_FENCE_LAST), 1);
 	unsigned bad = 0;
 	for (auto &e : exp)
 		if (peek32(e.first) != e.second)
@@ -538,8 +538,8 @@ int compute_main()
 	char k[4], name[32] = "";
 	if (std::fscanf(f, "%3s %u", k, &nr) != 2)
 		return 1;
-	host_write(GHCI_APERTURE_BASE, 0x1000);
-	host_write(GHCI_APERTURE_LIMIT, 0x60000);
+	host_write(GHCI_LEGACY_APERTURE_BASE, 0x1000);
+	host_write(GHCI_LEGACY_APERTURE_LIMIT, 0x60000);
 	host_write(GHCI_RING_BASE, ring);
 	host_write(GHCI_RING_SIZE, 10);
 	host_write(GHCI_CTRL, GHCI_CTRL_RUN);
@@ -552,9 +552,9 @@ int compute_main()
 			poke32(ring + 4 * wp++, v);
 		} else if (k[0] == 'F' && std::fscanf(f, "%x", &v) == 1) {
 			host_write(GHCI_RING_WPTR, wp);
-			for (int i = 0; i < 200000 && host_read(GHCI_FENCE_LAST) != v; i++)
+			for (int i = 0; i < 200000 && host_read(GHCI_LEGACY_FENCE_LAST) != v; i++)
 				;
-			expect("FENCE_LAST", host_read(GHCI_FENCE_LAST), v);
+			expect("FENCE_LAST", host_read(GHCI_LEGACY_FENCE_LAST), v);
 			expect("STATE (RUNNING)", GHCI_STATUS_STATE(host_read(GHCI_STATUS)), 1);
 			expect("RING_RPTR", host_read(GHCI_RING_RPTR), wp);
 			expect("IRQ FENCE", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FENCE, GHCI_IRQ_FENCE);
@@ -568,7 +568,7 @@ int compute_main()
 			expect("FAULT_ADDR (the PC)", host_read(GHCI_FAULT_ADDR), a);
 			expect("FAULT_INFO", host_read(GHCI_FAULT_INFO), v);
 			expect("IRQ FAULT", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FAULT, GHCI_IRQ_FAULT);
-			expect("FENCE_LAST after the fault", host_read(GHCI_FENCE_LAST), fence);
+			expect("FENCE_LAST after the fault", host_read(GHCI_LEGACY_FENCE_LAST), fence);
 		} else if (k[0] == 'E' && std::fscanf(f, "%x %x", &a, &v) == 2) {
 			checked++;
 			if (peek32(a) != v) {
@@ -672,9 +672,9 @@ int main(int argc, char **argv)
 			for (int i = 0; i < 4; i++)
 				ref[0x30000 + y * 256 + x * 4 + i] = (uint8_t)(0x13572468u >> (8 * i));
 	host_write(GHCI_RING_WPTR, ring_wp);
-	for (int i = 0; i < 10000 && host_read(GHCI_FENCE_LAST) != 77; i++)
+	for (int i = 0; i < 10000 && host_read(GHCI_LEGACY_FENCE_LAST) != 77; i++)
 		;
-	expect("FENCE_LAST", host_read(GHCI_FENCE_LAST), 77);
+	expect("FENCE_LAST", host_read(GHCI_LEGACY_FENCE_LAST), 77);
 	expect("fence word", peek32(fence), 77);
 	expect("RING_RPTR", host_read(GHCI_RING_RPTR), ring_wp);
 	expect("IRQ FENCE", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FENCE, GHCI_IRQ_FENCE);

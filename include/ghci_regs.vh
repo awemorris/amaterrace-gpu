@@ -89,7 +89,7 @@ localparam [9:0] HCR_IDX_TIMESTAMP_LO   = GHCI_REG_TIMESTAMP_LO[11:2];   /* 23 (
 localparam [9:0] HCR_IDX_TIMESTAMP_HI   = GHCI_REG_TIMESTAMP_HI[11:2];   /* 24 (0x060) */
 localparam [9:0] HCR_IDX_GCLK_HZ         = GHCI_REG_GCLK_HZ[11:2];         /* 25 (0x064) */
 localparam [9:0] HCR_IDX_NATIVE_ISA_ID  = GHCI_REG_NATIVE_ISA_ID[11:2];  /* 26 (0x068) */
-localparam [9:0] HCR_IDX_FENCE_LAST     = GHCI_REG_FENCE_LAST[11:2];     /* 28 (0x070) */
+localparam [9:0] HCR_IDX_FENCE_LAST     = GHCI_LEGACY_FENCE_LAST[11:2];  /* 28 (0x070) */
 localparam [9:0] HCR_IDX_DIAG_CP_PC     = GHCI_REG_DIAG_CP_PC[11:2];     /* 29 (0x074) */
 localparam [9:0] HCR_IDX_DIAG_CP_STATUS = GHCI_REG_DIAG_CP_STATUS[11:2]; /* 30 (0x078) */
 localparam [9:0] HCR_IDX_EXT_CAP_FMT0   = GHCI_REG_EXT_CAP_FMT0[11:2];   /* 32 (0x080) */
@@ -247,7 +247,6 @@ localparam [16:0] GHCI_LEGACY_APERTURE_BASE = 17'h00060;
 localparam [16:0] GHCI_LEGACY_APERTURE_LIMIT = 17'h00064;
 localparam [16:0] GHCI_LEGACY_FAULT_ADDR = 17'h00068;
 localparam [16:0] GHCI_LEGACY_FAULT_INFO = 17'h0006C;
-localparam [16:0] GHCI_REG_FENCE_LAST = 17'h00070;
 localparam [16:0] GHCI_LEGACY_FENCE_LAST = 17'h00070;
 localparam [16:0] GHCI_LEGACY_CP_PC = 17'h00074;
 localparam [16:0] GHCI_LEGACY_CP_STATUS = 17'h00078;
@@ -268,7 +267,6 @@ localparam [16:0] GHCI_LEGACY_DMA_SLICE_STRIDE = 17'h000CC;
 localparam [16:0] GHCI_LEGACY_DMA_EXTENT = 17'h000D0;
 
 /* Non-colliding legacy aliases (to be cleaned up in R10) */
-localparam [16:0] GHCI_FENCE_LAST = GHCI_LEGACY_FENCE_LAST;
 localparam [16:0] GHCI_CP_PC = GHCI_LEGACY_CP_PC;
 localparam [16:0] GHCI_CP_STATUS = GHCI_LEGACY_CP_STATUS;
 localparam [16:0] GHCI_PIPE_FSM = GHCI_LEGACY_PIPE_FSM;

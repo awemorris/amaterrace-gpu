@@ -239,7 +239,7 @@ module atg_top_cs_harness #(
 
 		host_write(GHCI_RING_BASE, RING);
 		host_write(GHCI_RING_SIZE, 32'h00010000);
-		host_write(GHCI_FENCE_LAST, 32'd0);
+		host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 		fd = $fopen(SCENE, "r");
 		if (fd == 0) begin
@@ -266,7 +266,7 @@ module atg_top_cs_harness #(
 					expect_reg(GHCI_IRQ_STATUS, 0, 32'd1 << GHCI_IRQ_FENCE, "FENCE before");
 					su_seen = 1'b0;
 					host_write(GHCI_RING_WPTR, wp);
-					wait_reg(GHCI_FENCE_LAST, v);
+					wait_reg(GHCI_LEGACY_FENCE_LAST, v);
 					nfence = v;
 					if (!su_seen) begin
 						errors = errors + 1;
@@ -294,7 +294,7 @@ module atg_top_cs_harness #(
 						32'd1 << GHCI_IRQ_FAULT | 32'd1 << GHCI_IRQ_FENCE, "IRQ FAULT, no FENCE");
 					/* nothing after the fault: the FENCE stays unwritten */
 					repeat (2000) @(posedge clk);
-					expect_reg(GHCI_FENCE_LAST, nfence, 32'hFFFFFFFF, "FENCE_LAST kept");
+					expect_reg(GHCI_LEGACY_FENCE_LAST, nfence, 32'hFFFFFFFF, "FENCE_LAST kept");
 				end else if (kind == "E") begin
 					rc = $fscanf(fd, " %h %h\n", a, v);
 					got = mem.peek32(a);

@@ -68,13 +68,13 @@ task bring_up;
 	integer i;
 	begin
 		wp = 0;
-		host_write(GHCI_APERTURE_BASE, APERTURE);
-		host_write(GHCI_APERTURE_LIMIT, 32'h00100000);
+		host_write(GHCI_LEGACY_APERTURE_BASE, APERTURE);
+		host_write(GHCI_LEGACY_APERTURE_LIMIT, 32'h00100000);
 		host_write(GHCI_RING_BASE, RING);
 		host_write(GHCI_RING_SIZE, 32'h00001000);
 		host_write(GHCI_IRQ_STATUS, 32'h1FF);
 		mem.poke32(FENCES, fence_value);
-		host_write(GHCI_FENCE_LAST, fence_value);
+		host_write(GHCI_LEGACY_FENCE_LAST, fence_value);
 		host_write(GHCI_CPFW_CTRL, 32'd1 << GHCI_CPFW_CTRL_RUN);
 		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 80000);	/* the boot clears 64 KiB of DMEM at most */
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
@@ -124,7 +124,7 @@ task ring_doorbell;
 	begin
 		ring_fence(8'd0);
 		host_write(GHCI_RING_WPTR, wp);
-		wait_reg(GHCI_FENCE_LAST, fence_value, 32'hFFFFFFFF, 40000);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, fence_value, 32'hFFFFFFFF, 40000);
 	end
 endtask
 
@@ -210,7 +210,7 @@ task frame_run;
 		ring_frame(tag, records);
 		ring_fence(tag);
 		host_write(GHCI_RING_WPTR, wp);
-		wait_reg(GHCI_FENCE_LAST, fence_value, 32'hFFFFFFFF, 40000);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, fence_value, 32'hFFFFFFFF, 40000);
 	end
 endtask
 

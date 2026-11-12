@@ -201,8 +201,8 @@ module atg_top_scene_harness #(
 			errors = errors + 1;
 			$display("FAIL %0s(%0s): CAPS %h, bit 29 (BLT) not as the shape", TB, NAME, got);
 		end
-		host_write(GHCI_APERTURE_BASE, 32'h00020000);
-		host_write(GHCI_APERTURE_LIMIT, APER_LIMIT);
+		host_write(GHCI_LEGACY_APERTURE_BASE, 32'h00020000);
+		host_write(GHCI_LEGACY_APERTURE_LIMIT, APER_LIMIT);
 		fd = $fopen(SCENE, "r");
 		if (fd == 0) begin
 			errors = errors + 1;
@@ -233,10 +233,10 @@ module atg_top_scene_harness #(
 				check_fmt;
 			host_write(GHCI_RING_BASE, RING);
 			host_write(GHCI_RING_SIZE, 32'h00010000);	/* 64 KiB */
-			host_write(GHCI_FENCE_LAST, 32'd0);
+			host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
 			host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 			host_write(GHCI_RING_WPTR, wp);
-			wait_reg(GHCI_FENCE_LAST, 32'd1, 32'hFFFFFFFF);
+			wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd1, 32'hFFFFFFFF);
 			expect_status;
 			/* The first E or C line's kind was read already. */
 			rc = 1;

@@ -368,13 +368,13 @@ module atg_kc705_top_tb;
 		jw(GHCI_REG_RING_BASE_LO, FB + 32'h10000);
 		jw(GHCI_REG_RING_BASE_HI, 32'd0);
 		jw(GHCI_REG_RING_SIZE, 32'h00010000); /* 64 KiB */
-		jw(GHCI_REG_FENCE_LAST, 32'd0);
+		jw(GHCI_LEGACY_FENCE_LAST, 32'd0);
 		jw(GHCI_REG_CTRL, 32'd1 << GHCI_CTRL_RUN);
 		jw(GHCI_REG_RING_WPTR, wp);
 		n = 0;
-		jr(GHCI_REG_FENCE_LAST, v);
+		jr(GHCI_LEGACY_FENCE_LAST, v);
 		while (v != 32'd1 && n < 200) begin
-			jr(GHCI_REG_FENCE_LAST, v);
+			jr(GHCI_LEGACY_FENCE_LAST, v);
 			n = n + 1;
 		end
 		if (v != 32'd1)

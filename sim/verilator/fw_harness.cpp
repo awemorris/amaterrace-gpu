@@ -278,11 +278,11 @@ void start_case(Case &c)
 		tick();
 	top->rst_n = 1;
 	tick();
-	host_write(GHCI_APERTURE_BASE, 0x10000);
-	host_write(GHCI_APERTURE_LIMIT, MEM_BYTES);
+	host_write(GHCI_LEGACY_APERTURE_BASE, 0x10000);
+	host_write(GHCI_LEGACY_APERTURE_LIMIT, MEM_BYTES);
 	host_write(GHCI_RING_BASE, RING);
 	host_write(GHCI_RING_SIZE, RING_LOG2);
-	host_write(GHCI_FENCE_LAST, 0);
+	host_write(GHCI_LEGACY_FENCE_LAST, 0);
 	host_write(GHCI_CPFW_CTRL, GHCI_CPFW_CTRL_RUN);
 
 	/*
@@ -329,7 +329,7 @@ bool run_step(Case &c, uint32_t tag, const std::vector<uint32_t> &packet)
 	uint64_t t0 = cycles;
 	uint32_t last = 0;
 	while (cycles - t0 < STEP_CYCLES) {
-		last = host_read(GHCI_FENCE_LAST);
+		last = host_read(GHCI_LEGACY_FENCE_LAST);
 		if (last == c.fence)
 			break;
 		if (GHCI_STATUS_STATE(host_read(GHCI_STATUS)) == GHCI_ST_FAULTED)

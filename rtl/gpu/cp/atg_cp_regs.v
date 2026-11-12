@@ -412,7 +412,7 @@ module atg_cp_regs #(
 		GHCI_REG_WDT_CYCLES:    hcr_reg_widx = HCR_IDX_WDT_CYCLES;
 		GHCI_REG_CP_HEAP_BASE:  hcr_reg_widx = HCR_IDX_CP_HEAP_BASE;
 		GHCI_REG_CP_HEAP_LIMIT: hcr_reg_widx = HCR_IDX_CP_HEAP_LIMIT;
-		GHCI_REG_FENCE_LAST:    hcr_reg_widx = HCR_IDX_FENCE_LAST;
+		GHCI_LEGACY_FENCE_LAST:    hcr_reg_widx = HCR_IDX_FENCE_LAST;
 		default:                hcr_reg_widx = (addr >= 17'h00140 && addr <= 17'h003FF) ? addr[11:2] : HCR_IDX_INVALID;
 		endcase
 	endfunction
@@ -429,7 +429,7 @@ module atg_cp_regs #(
 	                  (reg_waddr == GHCI_REG_WDT_CYCLES) ||
 	                  (reg_waddr == GHCI_REG_CP_HEAP_BASE) ||
 	                  (reg_waddr == GHCI_REG_CP_HEAP_LIMIT) ||
-	                  (reg_waddr == GHCI_REG_FENCE_LAST) ||
+	                  (reg_waddr == GHCI_LEGACY_FENCE_LAST) ||
 	                  (reg_waddr >= 17'h00140 && reg_waddr <= 17'h003FF);
 
 	/* Writes. */
@@ -584,7 +584,7 @@ module atg_cp_regs #(
 		GHCI_REG_TIMESTAMP_HI:   hcr_reg_ridx = HCR_IDX_TIMESTAMP_HI;
 		GHCI_REG_GCLK_HZ:        hcr_reg_ridx = HCR_IDX_GCLK_HZ;
 		GHCI_REG_NATIVE_ISA_ID:  hcr_reg_ridx = HCR_IDX_NATIVE_ISA_ID;
-		GHCI_REG_FENCE_LAST:     hcr_reg_ridx = HCR_IDX_FENCE_LAST;
+		GHCI_LEGACY_FENCE_LAST:     hcr_reg_ridx = HCR_IDX_FENCE_LAST;
 		GHCI_REG_DIAG_CP_PC:     hcr_reg_ridx = HCR_IDX_DIAG_CP_PC;
 		GHCI_REG_DIAG_CP_STATUS: hcr_reg_ridx = HCR_IDX_DIAG_CP_STATUS;
 		GHCI_REG_EXT_CAP_FMT0:   hcr_reg_ridx = HCR_IDX_EXT_CAP_FMT0;

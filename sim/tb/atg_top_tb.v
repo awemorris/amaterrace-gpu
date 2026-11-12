@@ -358,7 +358,7 @@ module atg_top_harness #(
 			ring_fence(8'h12, fence_seq);
 			refm[(FENCES - REF_BASE) / 4] = fence_seq;
 			host_write(GHCI_RING_WPTR, wp);
-			wait_reg(GHCI_FENCE_LAST, fence_seq, 32'hFFFFFFFF);
+			wait_reg(GHCI_LEGACY_FENCE_LAST, fence_seq, 32'hFFFFFFFF);
 			is16 = opw[8];
 			ps = is16 ? 2 : 4;
 			mask = is16 ? 32'hFFFFFFFE : 32'hFFFFFFFC;
@@ -427,7 +427,7 @@ module atg_top_harness #(
 			ring_fence(8'h15, fence_seq);
 			refm[(FENCES - REF_BASE) / 4] = fence_seq;
 			host_write(GHCI_RING_WPTR, wp);
-			wait_reg(GHCI_FENCE_LAST, fence_seq, 32'hFFFFFFFF);
+			wait_reg(GHCI_LEGACY_FENCE_LAST, fence_seq, 32'hFFFFFFFF);
 			x = dx;
 			while (x < dx + w) begin
 				xs = x;
@@ -569,7 +569,7 @@ module atg_top_harness #(
 		host_write(GHCI_IRQ_STATUS, 32'h1FF);
 		host_write(GHCI_IRQ_ENABLE, (32'd1 << GHCI_IRQ_FENCE) | (32'd1 << GHCI_IRQ_FAULT));
 		mem_put(FENCES, 32'd0);
-		host_write(GHCI_FENCE_LAST, 32'd0);
+		host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 		expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_RUNNING, 32'd1 << GHCI_STATUS_RUNNING);
 
@@ -700,7 +700,7 @@ module atg_top_harness #(
 		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT));
 		wait_reg(GHCI_STATUS, (32'd1 << GHCI_STATUS_HALTED), (32'd1 << GHCI_STATUS_HALTED));
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
-		wait_reg(GHCI_FENCE_LAST, fence_seq, 32'hFFFFFFFF);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, fence_seq, 32'hFFFFFFFF);
 		for (n = 2; n < 22; n = n + 1)
 			for (k = 3; k < 53; k = k + 1)
 				refm[(32'h00044000 + n * 512 + k * 4 - REF_BASE) / 4] =
@@ -776,11 +776,11 @@ module atg_top_harness #(
 		host_write(GHCI_IRQ_STATUS, 32'h1FF);
 		host_write(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_FENCE);
 		mem_put(FENCES, 32'd0);
-		host_write(GHCI_FENCE_LAST, 32'd0);
+		host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
 		ring_fill(32'h00033000, 256, 2, 1, 7, 4, 32'hC0FFEE01);
 		ring_fence(8'h23, 32'd1);
 		host_write(GHCI_RING_WPTR, wp);
-		wait_reg(GHCI_FENCE_LAST, 32'd1, 32'hFFFFFFFF);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd1, 32'hFFFFFFFF);
 		refm[(FENCES - REF_BASE) / 4] = 32'd1;
 		compare_ref("ring fill and fence");
 		expect_reg(GHCI_RING_RPTR, wp, 32'hFFFFFFFF);
@@ -801,7 +801,7 @@ module atg_top_harness #(
 		ring_put(hdr(1'b0, 6'd6, 8'h32, 8'd0, 8'd0));
 		ring_fence(8'h34, 32'd2);
 		host_write(GHCI_RING_WPTR, wp);
-		wait_reg(GHCI_FENCE_LAST, 32'd2, 32'hFFFFFFFF);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd2, 32'hFFFFFFFF);
 		refm[(FENCES - REF_BASE) / 4] = 32'd2;
 		refm[(FENCES + 32'h10 - REF_BASE) / 4] = 32'hAAAA0001;
 		refm[(FENCES + 32'h14 - REF_BASE) / 4] = 32'hBBBB0002;
@@ -816,9 +816,9 @@ module atg_top_harness #(
 		ring_fence(8'h42, 32'd3);
 		host_write(GHCI_RING_WPTR, wp);
 		repeat (400) @(posedge clk);
-		expect_reg(GHCI_FENCE_LAST, 32'd2, 32'hFFFFFFFF);
+		expect_reg(GHCI_LEGACY_FENCE_LAST, 32'd2, 32'hFFFFFFFF);
 		mem_put(FENCES + 32'h20, 32'h00000007);
-		wait_reg(GHCI_FENCE_LAST, 32'd3, 32'hFFFFFFFF);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd3, 32'hFFFFFFFF);
 		refm[(FENCES - REF_BASE) / 4] = 32'd3;
 		compare_ref("WAIT_FENCE");
 
@@ -829,15 +829,15 @@ module atg_top_harness #(
 		ring_fence(8'h52, 32'd11);
 		host_write(GHCI_RING_WPTR, wp);
 		repeat (200) @(posedge clk);
-		expect_reg(GHCI_FENCE_LAST, 32'd3, 32'hFFFFFFFF);
+		expect_reg(GHCI_LEGACY_FENCE_LAST, 32'd3, 32'hFFFFFFFF);
 		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT) |
 			(32'd1 << GHCI_CTRL_STEP));
-		wait_reg(GHCI_FENCE_LAST, 32'd10, 32'hFFFFFFFF);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd10, 32'hFFFFFFFF);
 		repeat (200) @(posedge clk);
-		expect_reg(GHCI_FENCE_LAST, 32'd10, 32'hFFFFFFFF);
+		expect_reg(GHCI_LEGACY_FENCE_LAST, 32'd10, 32'hFFFFFFFF);
 		expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_HALTED, 32'd1 << GHCI_STATUS_HALTED);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
-		wait_reg(GHCI_FENCE_LAST, 32'd11, 32'hFFFFFFFF);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd11, 32'hFFFFFFFF);
 		refm[(FENCES - REF_BASE) / 4] = 32'd11;
 		expect_reg(GHCI_RING_RPTR, wp, 32'hFFFFFFFF);
 
@@ -864,7 +864,7 @@ module atg_top_harness #(
 		ring_fill(32'h00033800, 128, 0, 0, 3, 2, 32'h0FEEDBAC);
 		ring_fence(8'h62, 32'd12);
 		host_write(GHCI_RING_WPTR, wp);
-		wait_reg(GHCI_FENCE_LAST, 32'd12, 32'hFFFFFFFF);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd12, 32'hFFFFFFFF);
 		refm[(FENCES - REF_BASE) / 4] = 32'd12;
 		compare_ref("ring after fault and RESET");
 

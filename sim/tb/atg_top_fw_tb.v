@@ -340,7 +340,7 @@ module atg_top_fw_harness #(
 		begin
 			t0 = $time;
 			host_write(GHCI_RING_WPTR, wp);
-			wait_reg(GHCI_FENCE_LAST, fence_value, 32'hFFFFFFFF, 20000);
+			wait_reg(GHCI_LEGACY_FENCE_LAST, fence_value, 32'hFFFFFFFF, 20000);
 			expect_reg(GHCI_RING_RPTR, wp, 32'hFFFFFFFF);
 			$display("info atg_top_fw(%0s): %0s: %0d cycles to the fence", NAME, what,
 				($time - t0) / 10);
@@ -487,7 +487,7 @@ module atg_top_fw_harness #(
 		host_write(GHCI_IRQ_STATUS, 32'h1FF);
 		host_write(GHCI_IRQ_ENABLE, (32'd1 << GHCI_IRQ_FENCE) | (32'd1 << GHCI_IRQ_RESULT));
 		mem.poke32(FENCES, 32'd0);
-		host_write(GHCI_FENCE_LAST, 32'd0);
+		host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
 		host_write(GHCI_CPFW_CTRL, 32'd1 << GHCI_CPFW_CTRL_RUN);
 		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 80000);	/* IDLE, READY, running (the boot clears the DMEM) */
 		expect_reg(GHCI_CPFW_VERSION, 32'h00020001, 32'hFFFFFFFF);
@@ -674,7 +674,7 @@ module atg_top_fw_harness #(
 		wp = 0;
 		host_write(GHCI_IRQ_STATUS, 32'h1FF);
 		mem.poke32(FENCES, fence_value);
-		host_write(GHCI_FENCE_LAST, fence_value);
+		host_write(GHCI_LEGACY_FENCE_LAST, fence_value);
 		host_write(GHCI_CPFW_CTRL, 32'd1 << GHCI_CPFW_CTRL_RUN);
 		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF09, 80000);
 		expect_reg(GHCI_CPFW_MBOX0 + 12, DATA_CHECK, 32'hFFFFFFFF);	/* .data restored */

@@ -352,14 +352,14 @@ module atg_top_mesh_tb;
 		$display("[TEST] Configuring GHCI host registers...");
 		host_write(GHCI_RING_BASE, RING);
 		host_write(GHCI_RING_SIZE, 32'h00010000);
-		host_write(GHCI_FENCE_LAST, 32'd0);
+		host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 
 		$display("[TEST] Launching Mesh Shader pipeline via RING_WPTR = %0d...", wp);
 		host_write(GHCI_RING_WPTR, wp);
 
 		$display("[TEST] Waiting for CMD_FENCE completion...");
-		wait_reg(GHCI_FENCE_LAST, 32'd1, 32'hFFFFFFFF);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd1, 32'hFFFFFFFF);
 
 		/* Wait for in-flight rasterizer & ROP memory writeback */
 		repeat (4000) @(posedge clk);
