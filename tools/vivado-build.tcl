@@ -161,8 +161,12 @@ set whs [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -hold]]
 puts "vivado-build: $top on $part WNS $wns ns WHS $whs ns"
 
 if {[expr {$wns < 0 || $whs < 0}]} {
-	puts "vivado-build: ERROR: Timing constraints not met! WNS $wns ns, WHS $whs ns. Aborting bitstream generation."
-	exit 1
+	if {[env_or VIVADO_FORCE_BITSTREAM 0]} {
+		puts "vivado-build: WARNING: Timing constraints not met! WNS $wns ns, WHS $whs ns. Proceeding with bitstream generation (VIVADO_FORCE_BITSTREAM=1)."
+	} else {
+		puts "vivado-build: ERROR: Timing constraints not met! WNS $wns ns, WHS $whs ns. Aborting bitstream generation."
+		exit 1
+	}
 }
 
 write_bitstream -force [file join $out $top.bit]
