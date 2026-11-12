@@ -123,6 +123,8 @@ module atg_cp #(
 
 	output wire mc_quiesce,
 	output wire mc_flush,
+	output wire l2_flush,
+	input wire l2_idle,
 	output wire [ADDR_W-1:0] aperture_base,
 	output wire [ADDR_W-1:0] aperture_limit,
 	input wire mc_idle,
@@ -626,6 +628,7 @@ module atg_cp #(
 
 	assign core_rst_n = s_core_rst_n;
 	assign mc_flush = s_mc_flush;
+	assign l2_flush = s_f_flush;
 	assign cp_halt = s_halt;
 	assign cp_open = open_out;
 
@@ -1011,6 +1014,7 @@ module atg_cp #(
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
 		.kick(s_kick), .kick_code(s_kick_code), .inv(s_seq_inv),
 		.busy_in({s_disp_wait, busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
+		.l2_idle(l2_idle),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq),
 		.f_mem(s_f_mem), .f_flush(s_f_flush), .f_busy(s_f_busy),

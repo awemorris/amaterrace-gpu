@@ -129,6 +129,8 @@ module atg_mc #(
 
 	input wire quiesce,
 	input wire flush,
+	input wire l2_flush,
+	output wire l2_idle_out,
 	input wire [ADDR_W-1:0] aperture_base,
 	input wire [ADDR_W-1:0] aperture_limit,
 	output wire axi_idle,
@@ -623,7 +625,7 @@ module atg_mc #(
 			.m_req_user(axi_req_user), .m_req_id(axi_req_id), .m_req_key(axi_req_key),
 			.m_rsp_valid(ax_rsp_valid), .m_rsp_write(ax_rsp_write), .m_rsp_user(ax_rsp_user),
 			.m_rsp_rdata(ax_rsp_rdata), .m_rsp_error(ax_rsp_error),
-			.ctrl_inv_valid(1'b0), .ctrl_inv_clean(1'b0), .ctrl_inv_range(1'b0),
+			.ctrl_inv_valid(l2_flush), .ctrl_inv_clean(1'b1), .ctrl_inv_range(1'b0),
 			.ctrl_inv_base({LA_W{1'b0}}), .ctrl_inv_limit({LA_W{1'b0}}),
 			.ctrl_inv_done(l2_ctrl_inv_done),
 			.idle(l2_idle), .fsm(l2_fsm)
@@ -1269,6 +1271,7 @@ module atg_mc #(
 	);
 `endif
 
+	assign l2_idle_out = l2_idle;
 	assign fsm = {!(m_idle && l2_idle), !axi_idle, !chk_idle, !unit_idle};
 	wire unused_ok = &{1'b0, bad_head, s_req_valid};
 endmodule

@@ -559,9 +559,10 @@ module ghci_probe #(
 		mem.poke32(32'h00004004, 32'h00008000); /* addr_lo = 0x8000 */
 		mem.poke32(32'h00004008, 32'h00000000); /* addr_hi = 0 */
 		mem.poke32(32'h0000400C, 32'hCAFE0042); /* seq_lo (fence payload value) */
-		mem.poke32(32'h00004010, 32'h00000000); /* seq_hi */
+		mem.poke32(32'h00004010, 32'h00000001); /* seq_hi */
 		mem.poke32(32'h00004014, 32'h00000003); /* flags = 3 (IRQ | MEM_WRITE) */
 		mem.poke32(32'h00008000, 32'd0);        /* Clear target fence memory */
+		mem.poke32(32'h00008004, 32'd0);
 		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF); /* Clear IRQ status */
 
 		/* Write WPTR=6 while engine is IDLE (CTRL.RUN = 0) */
@@ -600,12 +601,12 @@ module ghci_probe #(
 		end
 
 		/* Verify CMD_FENCE write to host memory (flags = 0x3) */
-		if (mem.peek32(32'h00008000) !== 32'hCAFE0042) begin
+		if (mem.peek32(32'h00008000) !== 32'hCAFE0042 || mem.peek32(32'h00008004) !== 32'h00000001) begin
 			err_count = err_count + 1;
-			$display("FAIL Fence target memory: got %08h, expected CAFE0042 (to_cnt=%0d, fence_st=%0d)",
-				mem.peek32(32'h00008000), to_cnt, dut.cp.u_fence.st);
+			$display("FAIL Fence target memory: got {%08h, %08h}, expected {00000001, CAFE0042} (to_cnt=%0d, fence_st=%0d)",
+				mem.peek32(32'h00008004), mem.peek32(32'h00008000), to_cnt, dut.cp.u_fence.st);
 		end else begin
-			$display("PASS CMD_FENCE wrote CAFE0042 to host memory at 0x8000 (flags=0x3)");
+			$display("PASS CMD_FENCE wrote {00000001, CAFE0042} to host memory at 0x8000 (flags=0x3)");
 		end
 
 		/* Verify IRQ_STATUS[0] is set for flags=0x3 */
@@ -698,6 +699,75 @@ module ghci_probe #(
 			$display("FAIL IRQ_STATUS[0] unexpectedly set for flags=0x2 (val=%08h)", val);
 		end else begin
 			$display("PASS IRQ_STATUS[0] NOT set for flags=0x2");
+		end
+
+		/* --- Testing CMD_FENCE with flags = 0x7 (HOST_FLUSH | MEM_WRITE | IRQ) --- */
+		mem.poke32(32'h00004048, 32'h00000633); /* Header: size=6, Opcode=0x33 */
+		mem.poke32(32'h0000404C, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h00004050, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h00004054, 32'h77770001); /* seq_lo */
+		mem.poke32(32'h00004058, 32'h00000002); /* seq_hi */
+		mem.poke32(32'h0000405C, 32'h00000007); /* flags = 7 (HOST_FLUSH | MEM_WRITE | IRQ) */
+		mem.poke32(32'h00008000, 32'd0);
+		mem.poke32(32'h00008004, 32'd0);
+		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF);
+
+		host_write(GHCI_REG_RING_WPTR, 32'd24);
+		to_cnt = 0;
+		val = 0;
+		while (val < 32'd24 && to_cnt < 200) begin
+			#50;
+			host_read(GHCI_REG_RING_RPTR, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("RING_RPTR advanced to 24", val, 32'd24);
+
+		to_cnt = 0;
+		while (mem.peek32(32'h00008000) !== 32'h77770001 && to_cnt < 200) begin
+			#50;
+			to_cnt = to_cnt + 1;
+		end
+		if (mem.peek32(32'h00008000) !== 32'h77770001 || mem.peek32(32'h00008004) !== 32'h00000002) begin
+			err_count = err_count + 1;
+			$display("FAIL flags=7 fence write failed: got {%08h, %08h}",
+				mem.peek32(32'h00008004), mem.peek32(32'h00008000));
+		end else begin
+			$display("PASS CMD_FENCE with flags=0x7 wrote {00000002, 77770001}");
+		end
+
+		/* --- Testing CMD_FENCE with flags = 0x3 immediately following flags = 0x7 --- */
+		/* Verifies that flags[2] (HOST_FLUSH) is not retained from the previous command */
+		mem.poke32(32'h00004060, 32'h00000633); /* Header: size=6, Opcode=0x33 */
+		mem.poke32(32'h00004064, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h00004068, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h0000406C, 32'h33330002); /* seq_lo */
+		mem.poke32(32'h00004070, 32'h00000003); /* seq_hi */
+		mem.poke32(32'h00004074, 32'h00000003); /* flags = 3 (NO HOST_FLUSH) */
+		mem.poke32(32'h00008000, 32'd0);
+		mem.poke32(32'h00008004, 32'd0);
+		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF);
+
+		host_write(GHCI_REG_RING_WPTR, 32'd30);
+		to_cnt = 0;
+		val = 0;
+		while (val < 32'd30 && to_cnt < 200) begin
+			#50;
+			host_read(GHCI_REG_RING_RPTR, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("RING_RPTR advanced to 30", val, 32'd30);
+
+		to_cnt = 0;
+		while (mem.peek32(32'h00008000) !== 32'h33330002 && to_cnt < 200) begin
+			#50;
+			to_cnt = to_cnt + 1;
+		end
+		if (mem.peek32(32'h00008000) !== 32'h33330002 || mem.peek32(32'h00008004) !== 32'h00000003) begin
+			err_count = err_count + 1;
+			$display("FAIL flags=3 fence write failed: got {%08h, %08h}",
+				mem.peek32(32'h00008004), mem.peek32(32'h00008000));
+		end else begin
+			$display("PASS CMD_FENCE with flags=0x3 wrote {00000003, 33330002}");
 		end
 
 		/* -------------------------------------------------------------

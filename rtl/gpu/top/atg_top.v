@@ -483,6 +483,8 @@ module atg_top #(
 	wire core_rst_n;
 	wire mc_quiesce;
 	wire mc_flush;
+	wire l2_flush;
+	wire l2_idle;
 	wire [31:0] aperture_base;
 	wire [31:0] aperture_limit;
 	wire mc_idle;
@@ -636,6 +638,8 @@ module atg_top #(
 		.win_en(win_en),
 		.mc_quiesce(mc_quiesce),
 		.mc_flush(mc_flush),
+		.l2_flush(l2_flush),
+		.l2_idle(l2_idle),
 		.aperture_base(aperture_base),
 		.aperture_limit(aperture_limit),
 		.mc_idle(mc_idle),
@@ -833,6 +837,8 @@ module atg_top #(
 		.rsp_error(rsp_error_v),
 		.quiesce(mc_quiesce),
 		.flush(mc_flush),
+		.l2_flush(l2_flush),
+		.l2_idle_out(l2_idle),
 		.aperture_base(aperture_base),
 		.aperture_limit(aperture_limit),
 		.axi_idle(mc_idle),

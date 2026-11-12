@@ -80,6 +80,7 @@ module atg_cp_seq #(
 	output wire [3:0] inv,
 	input wire [8:0] busy_in,	/* [8]: atg_cp_disp's wait (not in B_ALL) */
 	input wire vsync,
+	input wire l2_idle,
 	/* Fences (to atg_cp_fence) */
 	output wire f_valid,
 	input wire f_ready,
@@ -172,6 +173,7 @@ module atg_cp_seq #(
 	localparam [3:0] Q_DEC = 4'd8;
 	localparam [3:0] Q_DEC2 = 4'd9;
 	localparam [3:0] Q_BARRIER = 4'd10;
+	localparam [3:0] Q_FLUSH = 4'd11;
 
 	(* max_fanout = 16 *) reg [3:0] st;
 	(* max_fanout = 16 *) reg use_fw;
@@ -589,7 +591,7 @@ module atg_cp_seq #(
 	};
 	assign f_irq = is_fence_cmd_r ? fence_flags[0] : flags[0];
 	assign f_mem = is_fence_cmd_r ? fence_flags[1] : 1'b1;
-	assign f_flush = is_fence_cmd_r ? fence_flags[2] : 1'b0;
+	assign f_flush = (st == Q_FLUSH) && settle;
 `else
 	assign occ_clear = (is_op_std && op == OP_QUERY && flags[0]) ||
 		(st == Q_FREQ && f_ready && is_query && flags[1]);
@@ -600,7 +602,7 @@ module atg_cp_seq #(
 	assign f_aux = (op == OP_QUERY) ? {24'd0, occ_q[39:32]} : a2;
 	assign f_irq = (op == CMD_FENCE) ? fence_flags[0] : flags[0];
 	assign f_mem = (op == CMD_FENCE) ? fence_flags[1] : 1'b1;
-	assign f_flush = (op == CMD_FENCE) ? fence_flags[2] : 1'b0;
+	assign f_flush = (st == Q_FLUSH) && settle;
 `endif
 
 	reg f_pulse;
@@ -766,9 +768,11 @@ module atg_cp_seq #(
 			if (a1_we_b[1]) a1[31:16] <= in_data[31:16];
 			if (a2_we_b[0]) a2[15:0] <= in_data[15:0];
 			if (a2_we_b[1]) a2[31:16] <= in_data[31:16];
-			if (fflags_we_b[0]) fence_flags[15:0] <= in_data[15:0];
-			if (fflags_we_b[1]) fence_flags[31:16] <= in_data[31:16];
-			if (fflags_we_b[0]) flags <= in_data[7:0];
+			if (st_dec_b[0]) fence_flags <= 32'd0;
+			else begin
+				if (fflags_we_b[0]) fence_flags[15:0] <= in_data[15:0];
+				if (fflags_we_b[1]) fence_flags[31:16] <= in_data[31:16];
+			end
 			if (sidx_we_b[0]) sidx[4:0] <= is_dset_r ? in_data[6:2] : in_data[4:0];
 			if (sidx_we_b[1]) sidx[9:5] <= is_dset_r ? {4'b1111, in_data[7]} : in_data[9:5];
 			if (f_fa_we_b[0]) f_faddr[15:0] <= in_data[15:0];
@@ -926,6 +930,17 @@ module atg_cp_seq #(
 				p_is_4_r <= p_is_3_r;
 				p_is_last_r <= (p_n == n_m1_r);
 			end
+			if (pay_take_b[0] && is_fence_cmd_r && p_is_4_r) begin
+				if (in_data[2]) begin
+					inv_code_r <= 4'b1111;
+					exec_done_st_r <= Q_FLUSH;
+					exec_settle_r <= 1'b1;
+				end else begin
+					inv_code_r <= 4'd0;
+					exec_done_st_r <= Q_FREQ;
+					exec_settle_r <= 1'b0;
+				end
+			end
 			if (st_dec2_b[0]) begin
 				unit_op_r <= unit_op;
 				fence_op_r <= fence_op;
@@ -1063,9 +1078,13 @@ module atg_cp_seq #(
 						settle <= 1'b1;
 					st <= exec_done_st_r;
 `else
-					if (exec_fence_op)
-						st <= Q_FREQ;
-					else if (exec_vsync_op)
+					if (exec_fence_op) begin
+						if ((op == CMD_FENCE) && fence_flags[2]) begin
+							settle <= 1'b1;
+							st <= Q_FLUSH;
+						end else
+							st <= Q_FREQ;
+					end else if (exec_vsync_op)
 						st <= Q_VSYNC;
 					else if (exec_post_nz) begin
 						settle <= 1'b1;
@@ -1078,6 +1097,9 @@ module atg_cp_seq #(
 			Q_POST:
 				if (!settle && !(|(exec_post & busy_in)))
 					st <= Q_IDLE;
+			Q_FLUSH:
+				if (!settle && l2_idle)
+					st <= Q_FREQ;
 			Q_FREQ:
 				if (f_ready)
 					st <= (op == OP_WAIT_FENCE || op == CMD_WAIT_FENCE) ? Q_FWAIT : Q_IDLE;
