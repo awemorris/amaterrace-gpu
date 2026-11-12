@@ -62,7 +62,8 @@ module atg_cp_ctl #(
 	parameter C_ATOM = 6,
 	parameter C_SA = 7,
 	parameter C_DC = 8'hFF,
-	parameter C_SU = 8
+	parameter C_SU = 8,
+	parameter HAS_PROT = 0
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -113,6 +114,8 @@ module atg_cp_ctl #(
 	output wire ev_halted,
 	output wire ev_fault,
 	output wire ev_wdt,
+	output wire fault_session_clear,
+	output wire [7:0] fault_session_tag,
 	output wire [31:0] aperture_base,
 	output wire [31:0] aperture_limit
 );
@@ -535,6 +538,10 @@ module atg_cp_ctl #(
 		!wr_reset;
 `endif
 
+	wire is_session_fault = (HAS_PROT != 0) && (n_info[15:8] != 8'd0);
+	assign fault_session_clear = take_fault && is_session_fault;
+	assign fault_session_tag = n_info[15:8];
+
 `ifdef SYNTH_KINTEX7
 	wire [5:0] tf_buf;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_tf0 (.I0(take_fault_info), .O(tf_buf[0]));
@@ -722,7 +729,7 @@ module atg_cp_ctl #(
 				can_fault_r <= 4'b0000;
 				halt_r <= 3'b111;
 				st_is_run_r <= 1'b0;
-			end else if (take_fault_st) begin
+			end else if (take_fault_st && !is_session_fault) begin
 				st <= S_FAULTED;
 				open_r <= 4'b0000;
 				can_fault_r <= 4'b0000;

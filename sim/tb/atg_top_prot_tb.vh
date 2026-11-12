@@ -32,6 +32,27 @@ task wait_state;
 	end
 endtask
 
+/* Waits until SESSION_ACTIVE[tag] becomes 0 and FAULT_INFO is populated. */
+task wait_session_fault;
+	input [7:0] tag;
+	reg [31:0] act, info;
+	integer polls;
+	begin
+		polls = 0;
+		host_read(GHCI_REG_SESSION_ACTIVE, act);
+		host_read(GHCI_FAULT_INFO, info);
+		while ((act[tag] != 1'b0 || info == 32'd0) && polls < 40000) begin
+			host_read(GHCI_REG_SESSION_ACTIVE, act);
+			host_read(GHCI_FAULT_INFO, info);
+			polls = polls + 1;
+		end
+		if (act[tag] != 1'b0 || info == 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_top_prot: waiting for session %0d fault (act=%h, info=%h)", tag, act, info);
+		end
+	end
+endtask
+
 /* Waits until a register's masked bits read `want`. */
 task wait_reg;
 	input [16:0] reg_off;
@@ -142,6 +163,20 @@ task ring_open;
 		ring_put(flags);
 		ring_put(32'h00040000);	/* heap limit */
 		ring_put(32'd0);
+		ring_doorbell;
+	end
+endtask
+
+/* GHCI_SESSION_CLOSE of a tag; its result at RING_RESULT + slot * 8. */
+task ring_close;
+	input [7:0] tag;
+	input integer slot;
+	begin
+		ring_put({2'b10, 6'd0, tag, 16'd4});
+		ring_put(32'h00010101);
+		ring_put(32'd2);
+		ring_put(RING_RESULT + slot * 8);
+		ring_put({24'd0, tag});
 		ring_doorbell;
 	end
 endtask

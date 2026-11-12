@@ -207,6 +207,8 @@ module atg_cp #(
 	output wire [1:0] u_req,
 	output wire [7:0] u_tag,
 	input wire u_ok,
+	output wire fault_session_clear,
+	output wire [7:0] fault_session_tag,
 	input wire [7:0] wdt_tag,	/* the job tag of a watchdog fault (the drained session's) */
 	input wire f_chk,
 	input wire [5:0] f_slot,
@@ -600,7 +602,8 @@ module atg_cp #(
 		.C_ATOM(C_ATOM),
 		.C_SA(C_SA),
 		.C_DC(C_DC),
-		.C_SU(C_SU)
+		.C_SU(C_SU),
+		.HAS_PROT(HAS_PROT)
 	) u_ctl (
 		.clk(clk), .rst_n(rst_n),
 		.hcr_we(hcr_we_ctl), .hcr_widx(hcr_widx_ctl), .hcr_wdata(reg_wdata_ctl),
@@ -630,6 +633,7 @@ module atg_cp #(
 		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state), .lc_state(s_lc_state),
 		.host_kick(s_host_kick), .step(s_step),
 		.ev_halted(s_ev_halted), .ev_fault(s_ev_fault), .ev_wdt(s_ev_wdt),
+		.fault_session_clear(fault_session_clear), .fault_session_tag(fault_session_tag),
 		.aperture_base(aperture_base), .aperture_limit(aperture_limit)
 	);
 

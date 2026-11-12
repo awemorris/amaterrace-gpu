@@ -578,6 +578,8 @@ module atg_top #(
 	wire sb_we, sb_re;
 	wire [5:0] sb_idx;
 	wire [31:0] sb_wdata, prot_sb_rdata, prot_hcr_rdata;
+	wire cp_fault_session_clear;
+	wire [7:0] cp_fault_session_tag;
 
 	assign inv = cp_inv | {4{prot_sw_inv}};
 	assign occ_clear = cp_occ_clear || prot_sw_inv;
@@ -721,6 +723,8 @@ module atg_top #(
 		.u_tag(u_tag),
 		.u_ok(u_ok),
 		.wdt_tag(prot_wdt_tag),
+		.fault_session_clear(cp_fault_session_clear),
+		.fault_session_tag(cp_fault_session_tag),
 		.f_chk(f_chk),
 		.f_slot(f_slot),
 		.cpu_st_ridx(cpu_st_ridx),
@@ -1026,7 +1030,9 @@ module atg_top #(
 			.inv_n(prot_inv_n), .inv_pending(mc_inv_pending), .gw_valid(prot_gw_valid),
 			.gw_idx(prot_gw_idx), .gw_data(prot_gw_data),
 			.fault_slot(mc_fault_slot), .fault_tag(prot_fault_tag), .unit_tag(prot_unit_tag),
-			.wdt_tag(prot_wdt_tag), .kick_ok(prot_kick_ok), .su_kick(draw_kick || cs_kick)
+			.wdt_tag(prot_wdt_tag), .fault_clear_en(cp_fault_session_clear),
+			.fault_clear_tag(cp_fault_session_tag),
+			.kick_ok(prot_kick_ok), .su_kick(draw_kick || cs_kick)
 		);
 		/* The MC's refusal: the slot's session; a unit's other faults: prot_unit's. */
 		reg [7:0] f_tag;

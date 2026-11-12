@@ -109,6 +109,8 @@ module atg_cp_prot #(
 	output wire [7:0] fault_tag,
 	output wire [7:0] unit_tag,
 	output wire [7:0] wdt_tag,
+	input wire fault_clear_en,
+	input wire [7:0] fault_clear_tag,
 
 	/* The host's KICK. */
 	output wire kick_ok,
@@ -168,14 +170,19 @@ module atg_cp_prot #(
 			map_v <= 256'd0;
 			tag_v <= 64'd0;
 			n_slots <= 7'd0;
-		end else if (slot_wr) begin
-			map_v[w_tag] <= w_slot != 6'd0;
-			if (slot_gone)
-				tag_v[w_old] <= 1'b0;
-			if (w_slot != 6'd0)
-				tag_v[w_slot] <= 1'b1;
-			if (ns_inc || ns_dec)
-				n_slots <= n_slots_n;
+		end else begin
+			if (fault_clear_en && fault_clear_tag != 8'd0) begin
+				map_v[fault_clear_tag] <= 1'b0;
+			end
+			if (slot_wr) begin
+				map_v[w_tag] <= w_slot != 6'd0;
+				if (slot_gone)
+					tag_v[w_old] <= 1'b0;
+				if (w_slot != 6'd0)
+					tag_v[w_slot] <= 1'b1;
+				if (ns_inc || ns_dec)
+					n_slots <= n_slots_n;
+			end
 		end
 	end
 
