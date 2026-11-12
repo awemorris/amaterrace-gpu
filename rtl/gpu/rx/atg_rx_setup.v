@@ -61,6 +61,18 @@ module atg_rx_setup (
 	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] smin_array_hi [0:15];
 	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] smax_array_lo [0:15];
 	(* ram_style = "registers", extract_reset = "no" *) reg [15:0] smax_array_hi [0:15];
+
+`ifndef SYNTHESIS
+	integer ini_i;
+	initial begin
+		for (ini_i = 0; ini_i < 16; ini_i = ini_i + 1) begin
+			smin_array_lo[ini_i] = 16'd0;
+			smin_array_hi[ini_i] = 16'd0;
+			smax_array_lo[ini_i] = 16'h7FFF;
+			smax_array_hi[ini_i] = 16'h7FFF;
+		end
+	end
+`endif
 	(* max_fanout = 16 *) reg [3:0] vp_idx;
 	reg [15:0] line_width;
 	reg [15:0] point_size;

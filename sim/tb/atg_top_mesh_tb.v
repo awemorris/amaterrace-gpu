@@ -350,10 +350,8 @@ module atg_top_mesh_tb;
 		mem.poke32(RING + wp * 4, 32'd1);        wp = wp + 1;
 
 		$display("[TEST] Configuring GHCI host registers...");
-		host_write(GHCI_APERTURE_BASE, 32'h00000000);
-		host_write(GHCI_APERTURE_LIMIT, 32'h00100000);
 		host_write(GHCI_RING_BASE, RING);
-		host_write(GHCI_RING_SIZE, RING_LOG2);
+		host_write(GHCI_RING_SIZE, 32'h00010000);
 		host_write(GHCI_FENCE_LAST, 32'd0);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 

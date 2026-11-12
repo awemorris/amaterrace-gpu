@@ -46,7 +46,7 @@ module atg_cp_irq_tb;
 		input [8*30-1:0] what;
 		input [12:0] want;
 		begin
-			hcr_read(GHCI_IRQ_STATUS[11:0], v);
+			hcr_read(GHCI_REG_IRQ_STATUS[11:0], v);
 			if (v !== {19'd0, want}) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_irq.%0s: IRQ_STATUS %h, expected %h", what, v, want);
@@ -80,12 +80,12 @@ module atg_cp_irq_tb;
 		ev[2] = 1;
 		repeat (3) @(negedge clk);
 		expect_status("w1c", 13'b0000100000111);
-		hcr_write(GHCI_IRQ_STATUS[11:0], 32'h00000003);
+		hcr_write(GHCI_REG_IRQ_STATUS[11:0], 32'h00000003);
 		expect_status("w1c", 13'b0000100000100);
 		/* set and clear in one cycle: set. */
 		@(negedge clk);
 		hcr_we = 1;
-		hcr_widx = GHCI_IRQ_STATUS[11:2];
+		hcr_widx = GHCI_REG_IRQ_STATUS[11:2];
 		hcr_wdata = 32'h1FFF;
 		hcr_wmask = 32'hFFFFFFFF;
 		ev[4] = 1;
@@ -95,26 +95,26 @@ module atg_cp_irq_tb;
 		expect_status("w1c", 13'b0000000010000);
 		/* byte strobes: a write of byte 1 only clears bit 8 only. */
 		pulse(13'b0000100000001);
-		hcr_write_m(GHCI_IRQ_STATUS[11:0], 32'h1FF, 32'h0000FF00);
+		hcr_write_m(GHCI_REG_IRQ_STATUS[11:0], 32'h1FF, 32'h0000FF00);
 		expect_status("w1c", 13'b0000000010001);
 		/* The DISP2 events, bits 12:9; byte 1 clears 15:8. */
 		pulse(13'b1111000000000);
 		expect_status("w1c", 13'b1111000010001);
-		hcr_write_m(GHCI_IRQ_STATUS[11:0], 32'h1E00, 32'h0000FF00);
+		hcr_write_m(GHCI_REG_IRQ_STATUS[11:0], 32'h1E00, 32'h0000FF00);
 		expect_status("w1c", 13'b0000000010001);
 		if (errors == 0)
 			$display("PASS atg_cp_irq.w1c");
 		e0 = errors;
 
 		/* line */
-		hcr_write(GHCI_IRQ_STATUS[11:0], 32'h1FFF);
-		hcr_write(GHCI_IRQ_ENABLE[11:0], 32'h00000020);
+		hcr_write(GHCI_REG_IRQ_STATUS[11:0], 32'h1FFF);
+		hcr_write(GHCI_REG_IRQ_ENABLE[11:0], 32'h00000020);
 		@(negedge clk);
 		if (irq !== 1'b0) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_irq.line: line up without status");
 		end
-		hcr_write(GHCI_IRQ_SET[11:0], 32'h00000020);
+		hcr_write(GHCI_REG_IRQ_SET[11:0], 32'h00000020);
 		expect_status("line", 13'b0000000100000);
 		@(negedge clk);
 		if (irq !== 1'b1) begin
@@ -122,7 +122,7 @@ module atg_cp_irq_tb;
 			$display("FAIL atg_cp_irq.line: no line for SOFT");
 		end
 		pulse(13'b0000000000010);
-		hcr_write(GHCI_IRQ_STATUS[11:0], 32'h00000020);
+		hcr_write(GHCI_REG_IRQ_STATUS[11:0], 32'h00000020);
 		@(negedge clk);
 		@(negedge clk);
 		if (irq !== 1'b0) begin
@@ -130,16 +130,16 @@ module atg_cp_irq_tb;
 			$display("FAIL atg_cp_irq.line: line up for a masked bit");
 		end
 		/* FLIP (bit 10) enabled raises the line. */
-		hcr_write(GHCI_IRQ_STATUS[11:0], 32'h1FFF);
-		hcr_write(GHCI_IRQ_ENABLE[11:0], 32'h00000420);
+		hcr_write(GHCI_REG_IRQ_STATUS[11:0], 32'h1FFF);
+		hcr_write(GHCI_REG_IRQ_ENABLE[11:0], 32'h00000420);
 		pulse(13'b0010000000000);
 		@(negedge clk);
 		if (irq !== 1'b1) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_irq.line: no line for FLIP");
 		end
-		hcr_write(GHCI_IRQ_STATUS[11:0], 32'h00000400);
-		hcr_write(GHCI_IRQ_ENABLE[11:0], 32'h00000020);
+		hcr_write(GHCI_REG_IRQ_STATUS[11:0], 32'h00000400);
+		hcr_write(GHCI_REG_IRQ_ENABLE[11:0], 32'h00000020);
 		@(negedge clk);
 		@(negedge clk);
 		if (irq !== 1'b0) begin
@@ -153,7 +153,7 @@ module atg_cp_irq_tb;
 		@(negedge clk);
 		core_rst_n = 1;
 		expect_status("line", 13'd0);
-		hcr_read(GHCI_IRQ_ENABLE[11:0], v);
+		hcr_read(GHCI_REG_IRQ_ENABLE[11:0], v);
 		if (v !== 32'h20) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_irq.line: IRQ_ENABLE %h after the core reset", v);

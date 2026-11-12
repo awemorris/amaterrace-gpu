@@ -62,6 +62,7 @@ module atg_cp_disp #(
 	input wire [9:0] hcr_ridx,
 	output wire [31:0] hcr_rdata,
 	input wire [3:0] cp_state,
+	input wire cp_open,
 	/* From atg_cp_seq */
 	input wire uop_we,
 	input wire [9:0] uop_idx,
@@ -114,8 +115,8 @@ module atg_cp_disp #(
 	localparam WSEL = LINE_SHIFT - 3;
 
 	/* The CP's state (§13.2). Active while processing/executing, host gate in IDLE/FAULT. */
-	wire active = cp_state != GHCI_ST_IDLE && cp_state != GHCI_ST_FAULT;
-	wire host_s = cp_state == GHCI_ST_IDLE || cp_state == GHCI_ST_FAULT;
+	wire active = !cp_open;
+	wire host_s = cp_open;
 	wire rec_ok = cp_state != GHCI_ST_FAULT;
 
 	/* ------------------------------------------------ the host's gate */

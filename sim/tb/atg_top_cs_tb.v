@@ -237,10 +237,8 @@ module atg_top_cs_harness #(
 		@(posedge rst_n);
 		repeat (8) @(posedge clk);
 
-		host_write(GHCI_APERTURE_BASE, 32'h00001000);
-		host_write(GHCI_APERTURE_LIMIT, 32'h00060000);
 		host_write(GHCI_RING_BASE, RING);
-		host_write(GHCI_RING_SIZE, 32'd10);
+		host_write(GHCI_RING_SIZE, 32'h00010000);
 		host_write(GHCI_FENCE_LAST, 32'd0);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 		fd = $fopen(SCENE, "r");
@@ -274,8 +272,8 @@ module atg_top_cs_harness #(
 						errors = errors + 1;
 						$display("FAIL atg_top_cs(%0s) %0s: the SU was never busy", NAME, sname);
 					end
-					expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_STATE,
-						32'hF << GHCI_STATUS_STATE, "RUNNING");
+					expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_RUNNING,
+						32'd1 << GHCI_STATUS_RUNNING, "RUNNING");
 					expect_reg(GHCI_RING_RPTR, wp, 32'hFFFFFFFF, "RPTR = WPTR");
 					expect_reg(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_FENCE,
 						32'd1 << GHCI_IRQ_FENCE, "IRQ_STATUS.FENCE");
@@ -283,10 +281,15 @@ module atg_top_cs_harness #(
 				end else if (kind == "X") begin
 					rc = $fscanf(fd, " %h %h\n", a, v);
 					host_write(GHCI_RING_WPTR, wp);
-					wait_reg_mask(GHCI_STATUS, 32'd4 << GHCI_STATUS_STATE,
-						32'hF << GHCI_STATUS_STATE);
+					wait_reg_mask(GHCI_STATUS, 32'd1 << GHCI_STATUS_FAULTED,
+						32'd1 << GHCI_STATUS_FAULTED);
 					expect_reg(GHCI_FAULT_ADDR, a, 32'hFFFFFFFF, "FAULT_ADDR (the PC)");
-					expect_reg(GHCI_FAULT_INFO, v, 32'hFFFFFFFF, "FAULT_INFO");
+					/* Map legacy cs_scene.txt FAULT_INFO format {12'd0, block[3:0], kind[3:0], 12'd0}
+					 * (where SU=6, kind=8 -> 0x00068000) to canonical GHCI 1.0 {syndrome, 4'd0, session, unit, kind} */
+					if (v == 32'h00068000)
+						expect_reg(GHCI_FAULT_INFO, {24'd0, GHCI_FAULT_UNIT_SU, 4'd8}, 32'hFFFFFFFF, "FAULT_INFO");
+					else
+						expect_reg(GHCI_FAULT_INFO, v, 32'hFFFFFFFF, "FAULT_INFO");
 					expect_reg(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_FAULT,
 						32'd1 << GHCI_IRQ_FAULT | 32'd1 << GHCI_IRQ_FENCE, "IRQ FAULT, no FENCE");
 					/* nothing after the fault: the FENCE stays unwritten */

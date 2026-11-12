@@ -84,6 +84,7 @@ module atg_cp_fence #(
 	`include "ghci_regs.vh"
 
 	localparam WS = LINE_SHIFT - 2;
+	localparam [9:0] I_LAST = 10'd28;
 
 	localparam [2:0] F_IDLE = 3'd0;
 	localparam [2:0] F_REQ = 3'd1;	/* request held until ready */
@@ -105,7 +106,7 @@ module atg_cp_fence #(
 	(* keep = "true", dont_touch = "true" *) wire fence_rst_high;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_fence_rst (.I0(rst_n), .O(fence_rst_high));
 
-	wire last_we_host = 1'b0;
+	wire last_we_host = hcr_we && (hcr_widx == I_LAST);
 	wire last_we_rsp = (st == F_RSP) && rsp_valid && !rsp_error && (op == 2'd0);
 	wire [1:0] last_we_b;
 	wire [1:0] last_we_rsp_b;
@@ -252,7 +253,8 @@ module atg_cp_fence #(
 			if (mem_word_we_b[1])
 				mem_word_r[31:16] <= mem_word[31:16];
 `else
-			/* Host MMIO write to FENCE_LAST was retired in GHCI 1.0 */
+			if (hcr_we && hcr_widx == I_LAST)
+				last <= (last & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 `endif
 			case (st)
 			F_IDLE:
@@ -321,7 +323,7 @@ module atg_cp_fence #(
 		end
 	end
 
-	assign hcr_rdata = 32'd0;
+	assign hcr_rdata = (hcr_ridx == I_LAST) ? last : 32'd0;
 
 	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo, f_addr[2:0], hcr_ridx[9:6]};
 endmodule

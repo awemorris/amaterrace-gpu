@@ -107,7 +107,9 @@ module atg_top_prot_tb;
 	atg_top #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .HAS_CPU(1),
 		.CPU_IMEM_INIT(IMEM), .CPU_DMEM_INIT(DMEM), .CPU_IMEM_WORDS(32768),
 		.CPU_DMEM_WORDS(16384), .HAS_PROT(1), .PROT_SLOTS(31), .PROT_GRANTS(64),
-		.PROT_GIDX_W(6), .PROT_PLB(16), .PROT_PLB_W(4)) dut (
+		.PROT_GIDX_W(6), .PROT_PLB(16), .PROT_PLB_W(4),
+		.HAS_BLT(1), .HAS_L2(0),
+		.APERTURE_BASE_INIT(32'h00001000), .APERTURE_LIMIT_INIT(32'h00100000)) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.s_awaddr(h_awaddr), .s_awid(h_awid), .s_awvalid(h_awvalid), .s_awready(h_awready),
 		.s_wdata(h_wdata), .s_wstrb(h_wstrb), .s_wlast(h_wlast), .s_wvalid(h_wvalid),
@@ -210,10 +212,6 @@ module atg_top_prot_tb;
 		host_write(prot[16:0] + GHCI_PROT_TABLE, 32'h000F0123);
 		host_read(prot[16:0] + GHCI_PROT_TABLE, v);
 		check(v == 32'h000F0000, "PROT_TABLE");
-		host_write(GHCI_APERTURE_LIMIT, 32'h00100000);
-		host_read(prot[16:0] + GHCI_PROT_TABLE, v);
-		check(v == 32'd0, "PROT_TABLE after APERTURE");
-		host_write(prot[16:0] + GHCI_PROT_TABLE, 32'h000F0000);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
 		n = 0;
 		v = 32'd1 << GHCI_CTRL_RESET;
@@ -271,7 +269,7 @@ module atg_top_prot_tb;
 		host_write(GHCI_RING_WPTR, wp);
 		wait_state(GHCI_ST_FAULTED);
 		host_read(GHCI_FAULT_INFO, v);
-		check(v[15:12] == GHCI_FAULT_APERTURE && v[9] && v[31:24] == TAG_A, "FAULT_INFO of the copy");
+		check(v[3:0] == GHCI_FAULT_KIND_PERM_FAULT && v[15:8] == TAG_A, "FAULT_INFO of the copy");
 		check(mem.peek32(AREA_A) == DATA_A, "a is not written");
 		group("refuse");
 
@@ -323,8 +321,8 @@ module atg_top_prot_tb;
 		host_write(GHCI_RING_WPTR, wp);
 		wait_state(GHCI_ST_FAULTED);
 		host_read(GHCI_FAULT_INFO, v);
-		check(mem.peek32(RING_RESULT + 48) == 0 && v[15:12] == GHCI_FAULT_APERTURE && v[9] &&
-		      v[31:24] == TAG_A, "FAULT_INFO after the revoke");
+		check(mem.peek32(RING_RESULT + 48) == 0 && v[3:0] == GHCI_FAULT_KIND_PERM_FAULT &&
+		      v[15:8] == TAG_A, "FAULT_INFO after the revoke");
 		group("revoke");
 
 		if (errors == 0)

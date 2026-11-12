@@ -43,15 +43,46 @@ module ghci_probe #(
 	localparam PA_BITS = `ifdef CFG_HOST_PA_BITS `CFG_HOST_PA_BITS `else 40 `endif;
 	localparam TU_BILINEAR = `ifdef CFG_TU_ENABLE_BILINEAR `CFG_TU_ENABLE_BILINEAR `else 0 `endif;
 	localparam SU_NPHYS = `ifdef CFG_SU_NPHYS `CFG_SU_NPHYS `else 8 `endif;
+	localparam SU_NWARPS = `ifdef CFG_SU_NWARPS `CFG_SU_NWARPS `else 4 `endif;
+	localparam SU_GRP_W = `ifdef CFG_SU_GRP_W `CFG_SU_GRP_W `else 3 `endif;
+	localparam SU_NREGS = `ifdef CFG_SU_NREGS `CFG_SU_NREGS `else 32 `endif;
 	localparam SU_PACKED = `ifdef CFG_ENABLE_FP16 (`CFG_ENABLE_FP16 != 0) `else 0 `endif;
 	localparam SU_SUBGROUP = `ifdef CFG_ENABLE_SUBGROUP (`CFG_ENABLE_SUBGROUP != 0) `else 0 `endif;
 	localparam SU_LDS_KB = `ifdef CFG_SU_LDS_KB `CFG_SU_LDS_KB `else 4 `endif;
 	localparam MS4 = `ifdef CFG_ENABLE_MSAA (`CFG_ENABLE_MSAA != 0 && `CFG_MSAA_SAMPLES == 4) `else 0 `endif;
 	localparam HAS_BLT = `ifdef CFG_HAS_BLT (`CFG_HAS_BLT != 0) `else 0 `endif;
 	localparam HAS_PROT = `ifdef CFG_MC_ENABLE_PROT (`CFG_MC_ENABLE_PROT != 0) `else 0 `endif;
-	localparam HAS_ETC = `ifdef CFG_ENABLE_ETC2 (`CFG_ENABLE_ETC2 != 0 && `ifdef CFG_TU_ENABLE_FFILT (`CFG_TU_ENABLE_FFILT != 0) `else 0 `endif) `else 0 `endif;
+	localparam HAS_L2 = `ifdef CFG_MC_L2_CACHE_KB (`CFG_MC_L2_CACHE_KB != 0 ? 1 : 0) `else 0 `endif;
+	localparam L2_CACHE_KB = `ifdef CFG_MC_L2_CACHE_KB `CFG_MC_L2_CACHE_KB `else 0 `endif;
+	localparam L2_WAYS = `ifdef CFG_MC_L2_WAYS `CFG_MC_L2_WAYS `else 2 `endif;
+	localparam L2_SET_W = `ifdef CFG_MC_L2_CACHE_KB (`CFG_MC_L2_CACHE_KB != 0 ? $clog2(((`CFG_MC_L2_CACHE_KB != 0 ? `CFG_MC_L2_CACHE_KB : 16) * 1024) / (64 * `CFG_MC_L2_WAYS)) : 8) `else 8 `endif;
+	localparam TU_L1_CACHE_KB = `ifdef CFG_TU_L1_CACHE_KB `CFG_TU_L1_CACHE_KB `else 0 `endif;
+	localparam VF_CACHE_LINES = `ifdef CFG_VF_CACHE_LINES `CFG_VF_CACHE_LINES `else 0 `endif;
+	localparam [31:0] CALC_MEM_CACHE_CFG = {
+		VF_CACHE_LINES[3:0],
+		TU_L1_CACHE_KB[3:0],
+		L2_WAYS[7:0],
+		L2_CACHE_KB[15:0]
+	};
+`ifdef CFG_ENABLE_ETC2
+  `ifdef CFG_TU_ENABLE_FFILT
+	localparam HAS_ETC = (`CFG_ENABLE_ETC2 != 0) && (`CFG_TU_ENABLE_FFILT != 0);
+  `else
+	localparam HAS_ETC = 0;
+  `endif
+`else
+	localparam HAS_ETC = 0;
+`endif
 	localparam HAS_CPU = 1;
 	localparam NSU = 1;
+
+	localparam [15:0] TOTAL_WARPS = NSU * SU_NWARPS;
+	localparam [31:0] CALC_RESIDENT_WARPS = {
+		8'd0,
+		SU_NREGS[7:0],
+		8'd0,
+		TOTAL_WARPS[7:0]
+	};
 
 	/* KC705 board top parameters */
 	localparam [31:0] EXP_GCLK = 32'd200000000;
@@ -129,7 +160,7 @@ module ghci_probe #(
 	integer seed = SEED;
 
 	reg [16:0] h_awaddr = 0;
-	reg [11:0] h_awid = 0;
+	reg [3:0] h_awid = 0;
 	reg h_awvalid = 1'b0;
 	wire h_awready;
 	reg [63:0] h_wdata = 0;
@@ -137,17 +168,17 @@ module ghci_probe #(
 	reg h_wlast = 1'b0;
 	reg h_wvalid = 1'b0;
 	wire h_wready;
-	wire [11:0] h_bid;
+	wire [3:0] h_bid;
 	wire [1:0] h_bresp;
 	wire h_bvalid;
 	reg h_bready = 1'b0;
 	reg [16:0] h_araddr = 0;
-	reg [11:0] h_arid = 0;
-	reg [3:0] h_arlen = 0;
+	reg [3:0] h_arid = 0;
+	reg [7:0] h_arlen = 0;
 	reg h_arvalid = 1'b0;
 	wire h_arready;
 	wire [63:0] h_rdata;
-	wire [11:0] h_rid;
+	wire [3:0] h_rid;
 	wire [1:0] h_rresp;
 	wire h_rlast;
 	wire h_rvalid;
@@ -199,7 +230,8 @@ module ghci_probe #(
 	/* DUT instantiation without parameter injection of CAPS, GCLK_HZ, MRT_COUNT */
 	atg_top #(
 		.GCLK_HZ(EXP_GCLK),
-		.S_ID_W(12),
+		.S_ID_W(4),
+		.S_LEN_W(8),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
 		.DATA_W(DATA_W),
@@ -209,6 +241,7 @@ module ghci_probe #(
 		.HOST_LIMIT(HOST_LIMIT),
 		.SUBSYSTEM_VENDOR(SUBSYSTEM_VENDOR),
 		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE),
+		.TIMESTAMP_INIT(64'h00000000_FFFFFC00),
 		.HAS_CPU(1),
 		.NSU(1),
 		.HAS_VF(1),
@@ -222,10 +255,24 @@ module ghci_probe #(
 		.DC_PX_FMT(1),
 		.ROP_STENCIL(1),
 		.SU_NPHYS(SU_NPHYS),
+		.SU_NWARPS(SU_NWARPS),
+		.SU_WARP_W($clog2(SU_NWARPS)),
+		.SU_GRP_W(SU_GRP_W),
+		.SU_NREGS(SU_NREGS),
+		.SU_SB_ENTRIES(4),
+		.SU_SBE_W(2),
 		.SU_LDS_BYTES(SU_LDS_KB * 1024),
 		.MS4(MS4),
 		.HAS_BLT(HAS_BLT),
 		.HAS_PROT(HAS_PROT),
+		.PROT_SLOTS(31),
+		.PROT_GRANTS(64),
+		.PROT_GIDX_W(6),
+		.PROT_PLB(16),
+		.PROT_PLB_W(4),
+		.HAS_L2(HAS_L2),
+		.L2_WAYS(L2_WAYS),
+		.L2_SET_W(L2_SET_W),
 		.SU_PACKED(SU_PACKED),
 		.SU_SUBGROUP(SU_SUBGROUP),
 		.SU_VARY_WORDS(16)
@@ -373,7 +420,7 @@ module ghci_probe #(
 			17'h00040: check32("Offset 0x040 (IRQ_SET)", val, 32'd0);
 			17'h00044: check32("Offset 0x044 (SCRATCH)", val, 32'hDEADBEEF);
 			17'h00048: check32("Offset 0x048 (WDT_CYCLES)", val, 32'h0000CAFE);
-			17'h0004C: check32("Offset 0x04C (RESIDENT_WARPS)", val, 32'h00200004);
+			17'h0004C: check32("Offset 0x04C (RESIDENT_WARPS)", val, CALC_RESIDENT_WARPS);
 			17'h00050: check32("Offset 0x050 (CP_HEAP_BASE)", val, 32'h80010000);
 			17'h00054: check32("Offset 0x054 (CP_HEAP_LIMIT)", val, 32'h90010000);
 			17'h00058: check32("Offset 0x058 (SESSION_ACTIVE)", val, 32'h00000001);
@@ -411,6 +458,10 @@ module ghci_probe #(
 			host_read(xoff, w0);
 			host_read(xoff + 4, w1);
 			$display("  EXTCAP entry @ %h: ID=%0d, ver=%0d, ptr=%08h", xoff, w0[7:0], w0[15:8], w1);
+			if (w0[7:0] == 8'd1) begin
+				err_count = err_count + 1;
+				$display("FAIL DBG capability found in EXTCAP list!");
+			end
 			if (w0[7:0] == 8'd10) begin /* FMT */
 				found_fmt = 1;
 				check32("FMT window ptr", w1, 32'h00000140);
@@ -471,6 +522,8 @@ module ghci_probe #(
 		check32("MEM HOST_LIMIT", val, HOST_LIMIT);
 		host_read(17'h001F0, val);
 		check32("MEM WINDOW_CTRL reset", val, 32'd1);
+		host_read(17'h001F4, val);
+		check32("MEM MEM_CACHE_CFG", val, CALC_MEM_CACHE_CFG);
 
 		/* -------------------------------------------------------------
 		 * 7. Item 6: Ring packet execution test with CMD_FENCE
@@ -488,6 +541,12 @@ module ghci_probe #(
 			host_read(GHCI_REG_CTRL, val);
 			to_cnt = to_cnt + 1;
 		end
+
+		/* Item 6: Verify ring pointers after reset in IDLE */
+		host_read(GHCI_REG_RING_RPTR, val);
+		check32("RPTR stays 0 across RESET in IDLE", val, 32'd0);
+		host_read(GHCI_REG_RING_WPTR, val);
+		check32("WPTR stays 0 across RESET in IDLE", val, 32'd0);
 
 		/* Set up ring buffer at address 0x00004000 */
 		host_write(GHCI_REG_RING_BASE_LO, 32'h00004000);
@@ -565,6 +624,12 @@ module ghci_probe #(
 			to_cnt = to_cnt + 1;
 		end
 
+		/* Item 6: Verify ring pointers after reset in IDLE */
+		host_read(GHCI_REG_RING_RPTR, val);
+		check32("RPTR stays 0 across RESET in IDLE", val, 32'd0);
+		host_read(GHCI_REG_RING_WPTR, val);
+		check32("WPTR stays 0 across RESET in IDLE", val, 32'd0);
+
 		/* R1: 64 KiB read/write */
 		host_write(GHCI_REG_RING_SIZE, 32'h00010000);
 		host_read(GHCI_REG_RING_SIZE, val);
@@ -613,13 +678,10 @@ module ghci_probe #(
 		host_read(GHCI_REG_FAULT_INFO, val);
 		check32("FAULT_INFO fully cleared", val, 32'd0);
 
-		/* Test TIMESTAMP_HI increment on 32-bit counter overflow */
-		force dut.cp.u_regs.counter = 32'hFFFFFFFE;
-		@(posedge clk);
-		release dut.cp.u_regs.counter;
-		repeat (5) @(posedge clk);
+		/* Test TIMESTAMP_HI increment on 32-bit counter overflow (without force) */
+		/* Counter started at 32'hFFFFFC00. By this point, >1024 cycles have elapsed naturally. */
 		host_read(GHCI_REG_TIMESTAMP_HI, val);
-		check32("TIMESTAMP_HI advanced on overflow", val, 32'd1);
+		check32("TIMESTAMP_HI advanced on natural overflow", val, 32'd1);
 
 		done = 1;
 	end

@@ -109,6 +109,7 @@ module atg_top_disp_tb;
 	wire px_de, px_hs, px_vs, pclk_sel, scl_t, sda_t;
 
 	atg_top #(.LINE_BYTES(64), .LINE_SHIFT(6), .DATA_W(512), .HAS_DISP(1),
+		.HAS_BLT(1), .HAS_L2(0), .APERTURE_LIMIT_INIT(32'h00080000),
 		.DC_FIFO_LOG2(11)) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.s_awaddr(h_awaddr), .s_awid(h_awid), .s_awvalid(h_awvalid), .s_awready(h_awready),
@@ -307,7 +308,7 @@ module atg_top_disp_tb;
 
 		/* regs */
 		disp = 32'd0;
-		host_read(GHCI_EXTCAP, off);
+		host_read(GHCI_REG_EXTCAP_PTR, off);
 		n = 0;
 		while (off != 32'd0 && n < 16) begin
 			host_read(off[16:0], v);
@@ -327,10 +328,8 @@ module atg_top_disp_tb;
 		group("regs");
 
 		/* on: the ring and the lighting order. */
-		host_write(GHCI_APERTURE_BASE, 32'h00010000);
-		host_write(GHCI_APERTURE_LIMIT, 32'h00080000);
 		host_write(GHCI_RING_BASE, RING);
-		host_write(GHCI_RING_SIZE, 32'd12);	/* 4 KiB: RING_N words */
+		host_write(GHCI_RING_SIZE, 32'h00001000);	/* 4 KiB: RING_N words */
 		host_write(GHCI_IRQ_STATUS, 32'h1FFF);
 		mem.poke32(REC, 32'd0);
 		mem.poke32(REC + 4, 32'd0);
@@ -367,7 +366,7 @@ module atg_top_disp_tb;
 		host_read(W + GHCI_DC_STATUS, v);
 		check(v[0] && !v[1] && !v[3], "STATUS running, no underflow or error");
 		host_read(GHCI_STATUS, v);
-		check(v[19:16] == GHCI_ST_RUNNING, "the CP RUNNING");
+		check(v[GHCI_STATUS_RUNNING], "the CP RUNNING");
 		group("on");
 
 		/* gate */
@@ -380,7 +379,7 @@ module atg_top_disp_tb;
 		host_read(W + GHCI_DC_FB_BASE, v);
 		check(v == FB0, "FB_BASE unchanged");
 		host_read(GHCI_STATUS, v);
-		check(v[19:16] == GHCI_ST_RUNNING, "no device fault");
+		check(!v[GHCI_STATUS_FAULTED], "no device fault");
 		group("gate");
 
 		/* flip: a second image, no FENCE. */
@@ -471,7 +470,7 @@ module atg_top_disp_tb;
 		host_read(W + GHCI_DC_STATUS, v);
 		check(v[3], "STATUS.read error");
 		host_read(GHCI_STATUS, v);
-		check(v[19:16] == GHCI_ST_IDLE, "no device fault for the DC's reads");
+		check(!v[GHCI_STATUS_FAULTED], "no device fault for the DC's reads");
 		host_read(GHCI_FAULT_INFO, v);
 		check(v == 32'd0, "FAULT_INFO empty");
 		host_write(W + GHCI_DC_FB_NEXT, FB0);

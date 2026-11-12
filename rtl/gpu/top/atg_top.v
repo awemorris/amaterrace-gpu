@@ -40,7 +40,10 @@ module atg_top #(
 	/* The host addresses the GPU reaches: below HOST_LIMIT, outside local memory (MEM
 	 * HOST_LIMIT, GHCI §11.2; 0 = all; KC705 0x8000_0000).  With local memory the MC
 	 * sends local accesses with AXI ID 0 and host accesses with ID 1 (m_awid/m_arid). */
+	parameter [63:0] TIMESTAMP_INIT = 64'd0,
 	parameter [31:0] HOST_LIMIT = 32'd0,
+	parameter [31:0] APERTURE_BASE_INIT = 32'd0,
+	parameter [31:0] APERTURE_LIMIT_INIT = 32'hFFFFFFFF,
 	parameter [15:0] SUBSYSTEM_VENDOR = 16'h0000,
 	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0000,
 	parameter [31:0] MEM_CACHE_CFG = 32'd0,
@@ -576,6 +579,8 @@ module atg_top #(
 		.LOCAL_BYTES(LOCAL_BYTES),
 		.WINDOW_BYTES(WINDOW_BYTES),
 		.HOST_LIMIT(HOST_LIMIT),
+		.APERTURE_BASE_INIT(APERTURE_BASE_INIT),
+		.APERTURE_LIMIT_INIT(APERTURE_LIMIT_INIT),
 		.SUBSYSTEM_VENDOR(SUBSYSTEM_VENDOR),
 		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE),
 		.MEM_CACHE_CFG(MEM_CACHE_CFG),
@@ -598,6 +603,7 @@ module atg_top #(
 		.HAS_PROT(PROT),
 		.HAS_INDIRECT_DRAW(HAS_INDIRECT_DRAW),
 		.HAS_SECONDARY_RING(HAS_SECONDARY_RING),
+		.TIMESTAMP_INIT(TIMESTAMP_INIT),
 		.MRT_COUNT(MRT_COUNT)
 	) cp (
 		.clk(clk),

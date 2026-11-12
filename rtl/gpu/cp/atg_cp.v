@@ -46,6 +46,7 @@
 `default_nettype none
 
 module atg_cp #(
+	parameter [63:0] TIMESTAMP_INIT = 64'd0,
 	parameter ADDR_W = 32,
 	parameter LINE_BYTES = 32,
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
@@ -94,7 +95,9 @@ module atg_cp #(
 	parameter HAS_ROP_PACK = 0,
 	parameter HAS_INDIRECT_DRAW = 0,
 	parameter HAS_SECONDARY_RING = 0,
-	parameter HAS_PROT = 0	/* session protection: the PROT capability is listed (atg_cp_prot) */
+	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
+	parameter [31:0] APERTURE_BASE_INIT = 32'd0,
+	parameter [31:0] APERTURE_LIMIT_INIT = 32'hFFFFFFFF
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -489,6 +492,7 @@ module atg_cp #(
 		.HAS_PROT(HAS_PROT),
 		.HAS_INDIRECT_DRAW(HAS_INDIRECT_DRAW),
 		.HAS_SECONDARY_RING(HAS_SECONDARY_RING),
+		.TIMESTAMP_INIT(TIMESTAMP_INIT),
 		.MRT_COUNT(MRT_COUNT)
 	) u_regs (
 		.clk(clk), .rst_n(rst_n),
@@ -567,7 +571,9 @@ module atg_cp #(
 	atg_cp_ctl #(
 		.LINE_SHIFT(LINE_SHIFT), .UNITS(UNITS), .NSRC(9),
 		.SRC_BLOCK(72'h00_00_06_00_02_00_00_00_00), .SRC_CLIENT(72'h00_00_00_00_00_00_00_00_00),
-		.DC_CLIENT(HAS_DISP != 0 ? DC_CLIENT : 8'hFF)
+		.DC_CLIENT(HAS_DISP != 0 ? DC_CLIENT : 8'hFF),
+		.APERTURE_BASE_INIT(APERTURE_BASE_INIT),
+		.APERTURE_LIMIT_INIT(APERTURE_LIMIT_INIT)
 	) u_ctl (
 		.clk(clk), .rst_n(rst_n),
 		.hcr_we(hcr_we_ctl), .hcr_widx(hcr_widx_ctl), .hcr_wdata(reg_wdata_ctl),
@@ -895,10 +901,13 @@ module atg_cp #(
 
 	wire s_fw_valid, s_fw_ready;
 	wire [31:0] s_fw_data;
+	wire [6:0] s_fw_side;
 
 `ifdef SYNTH_KINTEX7
 	reg        fw_in_ready, fw_out_valid, fw_skid_valid;
 	(* max_fanout = 16, extract_reset = "no" *) reg [31:0] fw_out_data, fw_skid_data;
+	(* max_fanout = 16, extract_reset = "no" *) reg [6:0] fw_out_side, fw_skid_side;
+	wire [6:0] fw_side_next = fw_skid_sel_b[0] ? fw_skid_side : fw_side;
 	wire [1:0] fw_load_out_b, fw_load_skid_b, fw_skid_sel_b;
 	wire fw_load_skid_raw = fw_valid && fw_in_ready;
 	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'hF8CC)) u_fwlo0 (
@@ -948,22 +957,25 @@ module atg_cp #(
 		end
 		if (fw_load_out_b[0])  fw_out_data[15:0]   <= fw_out_next[15:0];
 		if (fw_load_out_b[1])  fw_out_data[31:16]  <= fw_out_next[31:16];
+		if (fw_load_out_b[0])  fw_out_side         <= fw_side_next;
 		if (fw_load_skid_b[0]) fw_skid_data[15:0]  <= fw_data[15:0];
 		if (fw_load_skid_b[1]) fw_skid_data[31:16] <= fw_data[31:16];
+		if (fw_load_skid_b[0]) fw_skid_side        <= fw_side;
 	end
 	assign fw_ready   = fw_in_ready;
 	assign s_fw_valid = fw_out_valid;
 	assign s_fw_data  = fw_out_data;
+	assign s_fw_side  = fw_out_side;
 `else
-	am_skid #(.W(32)) u_skid_fw (
+	am_skid #(.W(39)) u_skid_fw (
 		.clk(clk),
 		.rst_n(s_core_rst_n),
 		.in_valid(fw_valid),
 		.in_ready(fw_ready),
-		.in_data(fw_data),
+		.in_data({fw_side, fw_data}),
 		.out_valid(s_fw_valid),
 		.out_ready(s_fw_ready),
-		.out_data(s_fw_data)
+		.out_data({s_fw_side, s_fw_data})
 	);
 `endif
 
@@ -971,7 +983,7 @@ module atg_cp #(
 		.clk(clk), .rst_n(s_core_rst_n),
 		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data),
 		.fw_valid(s_fw_valid), .fw_ready(s_fw_ready), .fw_data(s_fw_data),
-		.fw_active(fw_act_b[0]), .fw_side(fw_side), .halt(s_seq_halt),
+		.fw_active(fw_act_b[0]), .fw_side(s_fw_side), .halt(s_seq_halt),
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
 		.kick(s_kick), .kick_code(s_kick_code), .inv(s_seq_inv),
 		.busy_in({s_disp_wait, busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
@@ -1062,8 +1074,8 @@ module atg_cp #(
 		.clk(clk), .rst_n(rst_n), .core_rst_n(s_core_rst_n),
 		.hcr_we(hcr_we_irq), .hcr_widx(hcr_widx_irq), .hcr_wdata(reg_wdata_irq),
 		.hcr_wmask(hcr_wmask_irq), .hcr_ridx(hcr_ridx_irq), .hcr_rdata(s_irq_rdata),
-		.ev({4'd0, s_retire, cpu_result, s_ev_halted, 1'b0,
-			s_dbg_done, dc_irq_display, s_ev_wdt, s_ev_fault, cp_fence_ev}),
+		.ev({dc_ev[2], dc_ev[1], s_ev_flip, dc_ev[0], s_retire, cpu_result, s_ev_halted, 1'b0,
+			s_dbg_done, s_ev_wdt, s_ring_empty, s_ev_fault, cp_fence_ev}),
 		.irq(irq)
 	);
 
@@ -1092,6 +1104,7 @@ module atg_cp #(
 			.hcr_we(hcr_we_disp), .hcr_widx(hcr_widx_disp), .hcr_wdata(reg_wdata_disp),
 			.hcr_wmask(hcr_wmask_disp), .hcr_ridx(hcr_ridx_disp), .hcr_rdata(s_disp_rdata),
 			.cp_state(s_cp_state),
+			.cp_open(s_open),
 			.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
 			.kick_flip(s_kick_flip), .kick_idle(s_kick_idle), .seq_tag(s_seq_fault_tag),
 			.disp_wait(s_disp_wait), .aperture_base(aperture_base),
@@ -1188,7 +1201,7 @@ module atg_cp #(
 		ind_draw_valid, ind_vertex_count, ind_instance_count, ind_first_vertex,
 		ind_first_instance, ind_first_index, ind_vertex_offset};
 
-	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev, unused_indirect, dc_ev, s_ev_flip,
+	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev, unused_indirect, dc_irq_display,
 		s_f_addr[63:32],
 		s_dma_req_valid, s_dma_empty, s_dma_busy,
 		s_dma_src_base, s_dma_dst_base, s_dma_src_row_stride, s_dma_dst_row_stride,

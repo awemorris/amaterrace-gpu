@@ -39,6 +39,7 @@ task wait_reg;
 	input [31:0] mask;
 	input integer polls;
 	reg [31:0] got;
+	reg [31:0] dbg_st, dbg_fi, dbg_fa;
 	integer n;
 	begin
 		n = 0;
@@ -49,7 +50,11 @@ task wait_reg;
 		end
 		if ((got & mask) != (want & mask)) begin
 			errors = errors + 1;
-			$display("FAIL atg_top_prot: reg %h stays %h, waiting for %h", reg_off, got, want);
+			host_read(GHCI_STATUS, dbg_st);
+			host_read(GHCI_FAULT_INFO, dbg_fi);
+			host_read(GHCI_FAULT_ADDR, dbg_fa);
+			$display("FAIL atg_top_prot: reg %h stays %h, waiting for %h (STATUS=%h FAULT_INFO=%h FAULT_ADDR=%h)",
+				reg_off, got, want, dbg_st, dbg_fi, dbg_fa);
 		end
 	end
 endtask
@@ -66,7 +71,7 @@ task bring_up;
 		host_write(GHCI_APERTURE_BASE, APERTURE);
 		host_write(GHCI_APERTURE_LIMIT, 32'h00100000);
 		host_write(GHCI_RING_BASE, RING);
-		host_write(GHCI_RING_SIZE, 32'd10);
+		host_write(GHCI_RING_SIZE, 32'h00001000);
 		host_write(GHCI_IRQ_STATUS, 32'h1FF);
 		mem.poke32(FENCES, fence_value);
 		host_write(GHCI_FENCE_LAST, fence_value);

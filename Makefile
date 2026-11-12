@@ -47,7 +47,7 @@ BOARD_SRC := boards/$(BOARD)/$(TOP).v $(sort $(wildcard boards/$(BOARD)/lib/*.v)
 XDC := boards/$(BOARD)/$(TOP).xdc
 FW_IMAGES := $(wildcard fw/cp/images/*.hex)
 
-.PHONY: help menuconfig preset-minimal preset-balanced preset-high-perf lint sim sim-quick verilator check oxc-synth oxc-core oxc vivado prog-oxc prog-vivado clean replace-synopsis
+.PHONY: help menuconfig preset-minimal preset-balanced preset-high-perf test-ghci-presets lint sim sim-quick verilator check oxc-synth oxc-core oxc vivado prog-oxc prog-vivado clean replace-synopsis
 .DEFAULT_GOAL := help
 
 help:
@@ -88,6 +88,9 @@ preset-balanced:
 preset-high-perf:
 	cp config/high-perf.mk config.mk
 	@$(MAKE) include/atg_config.vh
+
+test-ghci-presets:
+	$(MAKE) preset-minimal && ./sim/run.sh atg_ghci_top && $(MAKE) preset-balanced && ./sim/run.sh atg_ghci_top
 
 # ---------------------------------------------------------------- configuration header
 

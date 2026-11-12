@@ -62,6 +62,16 @@
 
 module atg_kc705_top #(
 	parameter NSU = 1,	/* Shader units (1 for now; 4 to 6 later) */
+`ifdef CFG_HAS_BLT
+	parameter HAS_BLT = (`CFG_HAS_BLT != 0),
+`else
+	parameter HAS_BLT = 0,
+`endif
+`ifdef CFG_MC_L2_CACHE_KB
+	parameter HAS_L2 = (`CFG_MC_L2_CACHE_KB != 0 ? 1 : 0),
+`else
+	parameter HAS_L2 = 0,
+`endif
 	parameter CPU_IMEM_INIT = "atg1-cp-kc705.imem.hex",	/* CP firmware (Vivado finds it among the sources) */
 	parameter CPU_DMEM_INIT = "atg1-cp-kc705.dmem.hex"
 ) (
@@ -325,6 +335,7 @@ module atg_kc705_top #(
 		.HAS_RX(1),
 		.HAS_TU(1),
 		.HAS_ROP(1),
+		.HAS_BLT(HAS_BLT),
 		.HAS_JTAG(1),
 		.HAS_DISP(1),
 		.DC_HAS_I2C(1),
@@ -360,7 +371,7 @@ module atg_kc705_top #(
 		.PROT_GIDX_W(6),
 		.PROT_PLB(16),
 		.PROT_PLB_W(4),
-		.HAS_L2(`CFG_MC_L2_CACHE_KB != 0 ? 1 : 0),
+		.HAS_L2(HAS_L2),
 		.L2_WAYS(`CFG_MC_L2_WAYS),
 		.L2_SET_W(`CFG_MC_L2_CACHE_KB != 0 ? $clog2(((`CFG_MC_L2_CACHE_KB != 0 ? `CFG_MC_L2_CACHE_KB : 16) * 1024) / (64 * `CFG_MC_L2_WAYS)) : 8)
 	) gpu (

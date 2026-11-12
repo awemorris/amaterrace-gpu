@@ -307,6 +307,7 @@
 }
 
 module atg_cp_regs #(
+	parameter [63:0] TIMESTAMP_INIT = 64'd0,
 	parameter GCLK_HZ = 32'd0,	/* GCLK_HZ register */
 	parameter VENDOR_ID = 32'h414D4154,	/* "AMAT" */
 	parameter DEVICE_ID = 32'h41544731,	/* "ATG1" */
@@ -411,6 +412,7 @@ module atg_cp_regs #(
 		GHCI_REG_WDT_CYCLES:    hcr_reg_widx = HCR_IDX_WDT_CYCLES;
 		GHCI_REG_CP_HEAP_BASE:  hcr_reg_widx = HCR_IDX_CP_HEAP_BASE;
 		GHCI_REG_CP_HEAP_LIMIT: hcr_reg_widx = HCR_IDX_CP_HEAP_LIMIT;
+		GHCI_REG_FENCE_LAST:    hcr_reg_widx = HCR_IDX_FENCE_LAST;
 		default:                hcr_reg_widx = (addr >= 17'h00140 && addr <= 17'h003FF) ? addr[11:2] : HCR_IDX_INVALID;
 		endcase
 	endfunction
@@ -427,6 +429,7 @@ module atg_cp_regs #(
 	                  (reg_waddr == GHCI_REG_WDT_CYCLES) ||
 	                  (reg_waddr == GHCI_REG_CP_HEAP_BASE) ||
 	                  (reg_waddr == GHCI_REG_CP_HEAP_LIMIT) ||
+	                  (reg_waddr == GHCI_REG_FENCE_LAST) ||
 	                  (reg_waddr >= 17'h00140 && reg_waddr <= 17'h003FF);
 
 	/* Writes. */
@@ -511,8 +514,8 @@ module atg_cp_regs #(
 `ifdef SYNTH_KINTEX7
 		if (regs_rst_high) begin
 			scratch <= 32'd0;
-			counter <= 32'd0;
-			counter_hi <= 32'd0;
+			counter <= TIMESTAMP_INIT[31:0];
+			counter_hi <= TIMESTAMP_INIT[63:32];
 			win_q <= HAS_WINDOW;
 		end else begin
 			counter <= counter_n;
@@ -532,8 +535,8 @@ module atg_cp_regs #(
 `else
 		if (!rst_n) begin
 			scratch <= 32'd0;
-			counter <= 32'd0;
-			counter_hi <= 32'd0;
+			counter <= TIMESTAMP_INIT[31:0];
+			counter_hi <= TIMESTAMP_INIT[63:32];
 			win_q <= HAS_WINDOW;
 		end else begin
 			counter <= counter_n;
@@ -581,6 +584,7 @@ module atg_cp_regs #(
 		GHCI_REG_TIMESTAMP_HI:   hcr_reg_ridx = HCR_IDX_TIMESTAMP_HI;
 		GHCI_REG_GCLK_HZ:        hcr_reg_ridx = HCR_IDX_GCLK_HZ;
 		GHCI_REG_NATIVE_ISA_ID:  hcr_reg_ridx = HCR_IDX_NATIVE_ISA_ID;
+		GHCI_REG_FENCE_LAST:     hcr_reg_ridx = HCR_IDX_FENCE_LAST;
 		GHCI_REG_DIAG_CP_PC:     hcr_reg_ridx = HCR_IDX_DIAG_CP_PC;
 		GHCI_REG_DIAG_CP_STATUS: hcr_reg_ridx = HCR_IDX_DIAG_CP_STATUS;
 		GHCI_REG_EXT_CAP_FMT0:   hcr_reg_ridx = HCR_IDX_EXT_CAP_FMT0;

@@ -145,6 +145,12 @@ extern "C" {
 #define GHCI_IRQ_DISPLAY         (1u << 3)  /* Display scanout / VSYNC event */
 #define GHCI_IRQ_SOFT            (1u << 5)  /* Software interrupt (triggered via IRQ_SET) */
 #define GHCI_IRQ_HALTED          (1u << 6)  /* Core execution halted following CTRL.HALT (N69) */
+#define GHCI_IRQ_RESULT          (1u << 7)
+#define GHCI_IRQ_RETIRE          (1u << 8)
+#define GHCI_IRQ_VBLANK          (1u << 9)
+#define GHCI_IRQ_FLIP            (1u << 10)
+#define GHCI_IRQ_DISP_ERROR      (1u << 11)
+#define GHCI_IRQ_HOTPLUG         (1u << 12)
 
 /* FAULT_INFO decoding (0x018, K04, N50, N63) */
 #define GHCI_FAULT_KIND(info)      ((info) & 0x0Fu)        /* [3:0] Fault kind (1:1 mapped) */
@@ -236,7 +242,6 @@ extern "C" {
 #define GHCI_LEGACY_DBG_ADDR 0x0A0u
 #define GHCI_LEGACY_DBG_DATA 0x0A4u
 #define GHCI_LEGACY_DBG_STATUS 0x0A8u
-#define GHCI_FENCE_LAST GHCI_LEGACY_FENCE_LAST
 #define GHCI_CP_PC GHCI_REG_DIAG_CP_PC
 #define GHCI_CP_STATUS GHCI_REG_DIAG_CP_STATUS
 #define GHCI_DIAG_CP_PC GHCI_REG_DIAG_CP_PC
@@ -247,8 +252,44 @@ extern "C" {
 #define GHCI_DBG_STATUS GHCI_LEGACY_DBG_STATUS
 #define GHCI_LEGACY_KICK 0xF00u
 #define GHCI_KICK GHCI_LEGACY_KICK
+
+/* Short register aliases mapped to GHCI 1.0 canonical registers */
+#define GHCI_MAGIC           GHCI_REG_MAGIC
+#define GHCI_VERSION         GHCI_REG_VERSION
+#define GHCI_DEVICE_CAPS     GHCI_REG_DEVICE_CAPS
+#define GHCI_CAPS            GHCI_REG_DEVICE_CAPS
+#define GHCI_CAPS2           0x084u
+#define GHCI_EXTCAP          GHCI_REG_EXTCAP_PTR
+#define GHCI_EXTCAP_PTR      GHCI_REG_EXTCAP_PTR
+#define GHCI_STATUS          GHCI_REG_STATUS
+#define GHCI_CTRL            GHCI_REG_CTRL
+#define GHCI_FAULT_INFO      GHCI_REG_FAULT_INFO
+#define GHCI_FAULT_ADDR      GHCI_REG_FAULT_ADDR_LO
+#define GHCI_RING_BASE       GHCI_REG_RING_BASE_LO
+#define GHCI_RING_SIZE       GHCI_REG_RING_SIZE
+#define GHCI_RING_WPTR       GHCI_REG_RING_WPTR
+#define GHCI_RING_RPTR       GHCI_REG_RING_RPTR
+#define GHCI_IRQ_STATUS      GHCI_REG_IRQ_STATUS
+#define GHCI_IRQ_ENABLE      GHCI_REG_IRQ_ENABLE
+#define GHCI_IRQ_SET         GHCI_REG_IRQ_SET
+#define GHCI_SCRATCH         GHCI_REG_SCRATCH
+#define GHCI_WDT_CYCLES      GHCI_REG_WDT_CYCLES
+#define GHCI_RESIDENT_WARPS  GHCI_REG_RESIDENT_WARPS
+#define GHCI_CP_HEAP_BASE    GHCI_REG_CP_HEAP_BASE
+#define GHCI_CP_HEAP_LIMIT   GHCI_REG_CP_HEAP_LIMIT
+#define GHCI_SESSION_ACTIVE  GHCI_REG_SESSION_ACTIVE
+#define GHCI_TIMESTAMP_LO    GHCI_REG_TIMESTAMP_LO
+#define GHCI_TIMESTAMP_HI    GHCI_REG_TIMESTAMP_HI
+#define GHCI_GCLK_HZ         GHCI_REG_GCLK_HZ
+#define GHCI_NATIVE_ISA_ID   GHCI_REG_NATIVE_ISA_ID
+#define GHCI_APERTURE_BASE   0x060u
+#define GHCI_APERTURE_LIMIT  0x064u
+#define GHCI_REG_FENCE_LAST  0x00070u
+#define GHCI_FENCE_LAST      GHCI_REG_FENCE_LAST
+#define GHCI_VENDOR_ID       0x180u
+#define GHCI_DEVICE_ID       0x184u
+
 #define GHCI_PERF_SRC0 0x160u
-#define GHCI_PERF_SRC(n) (0x160u + 4u * (n))
 #define GHCI_CPFW_CTRL 0x170u /* the CPFW capability (id 6) */
 #define GHCI_CPFW_STATUS 0x174u
 #define GHCI_CPFW_VERSION 0x178u
@@ -299,7 +340,6 @@ extern "C" {
 #define GHCI_CAPS_MSAA GHCI_CAPS_MS4
 
 /* DEVICE_CAPS (0x008) bits */
-#define GHCI_DEVICE_CAPS 0x008u
 #define GHCI_DEV_CAP_UMA (1u << 0)
 #define GHCI_DEV_CAP_IOMMU (1u << 1)
 #define GHCI_DEV_CAP_HW_WALKER (1u << 2)

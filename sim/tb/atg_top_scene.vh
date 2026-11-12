@@ -231,7 +231,7 @@ module atg_top_scene_harness #(
 			if (nfmt != 0)
 				check_fmt;
 			host_write(GHCI_RING_BASE, RING);
-			host_write(GHCI_RING_SIZE, RING_LOG2);	/* 11: 512 words */
+			host_write(GHCI_RING_SIZE, 32'h00010000);	/* 64 KiB */
 			host_write(GHCI_FENCE_LAST, 32'd0);
 			host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
 			host_write(GHCI_RING_WPTR, wp);
@@ -351,7 +351,7 @@ module atg_top_scene_harness #(
 		reg [31:0] st;
 		begin
 			host_read(GHCI_STATUS, st);
-			if ((st >> GHCI_STATUS_STATE & 32'hF) != 32'd1) begin
+			if (!st[GHCI_STATUS_RUNNING] || st[GHCI_STATUS_FAULTED]) begin
 				errors = errors + 1;
 				$display("FAIL %0s(%0s): STATUS %h, not RUNNING (a fault?)", TB, NAME, st);
 			end

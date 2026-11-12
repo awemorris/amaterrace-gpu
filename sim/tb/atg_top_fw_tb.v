@@ -89,9 +89,18 @@ module atg_top_fw_harness #(
 	wire [DATA_W-1:0] wdata, rdata;
 	wire [DATA_W/8-1:0] wstrb;
 
-	atg_top #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .DATA_W(DATA_W), .HAS_CPU(1),
-		.CPU_IMEM_INIT(IMEM), .CPU_DMEM_INIT(DMEM), .CPU_IMEM_WORDS(IMEM_WORDS),
-		.CPU_DMEM_WORDS(DMEM_WORDS)) dut (
+	atg_top #(
+		.LINE_BYTES(LINE_BYTES),
+		.LINE_SHIFT(LINE_SHIFT),
+		.DATA_W(DATA_W),
+		.HAS_CPU(1),
+		.HAS_BLT(1),
+		.HAS_L2(0),
+		.CPU_IMEM_INIT(IMEM),
+		.CPU_DMEM_INIT(DMEM),
+		.CPU_IMEM_WORDS(IMEM_WORDS),
+		.CPU_DMEM_WORDS(DMEM_WORDS)
+	) dut (
 		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
 		.s_awaddr(h_awaddr), .s_awid(h_awid), .s_awvalid(h_awvalid), .s_awready(h_awready),
 		.s_wdata(h_wdata), .s_wstrb(h_wstrb), .s_wlast(h_wlast), .s_wvalid(h_wvalid),
@@ -451,18 +460,30 @@ module atg_top_fw_harness #(
 		repeat (4) @(posedge clk);
 
 		/* Identification of the firmware's capability. */
-		expect_reg(GHCI_CAPS, 32'h00060000, 32'h00060000);
-		expect_reg(GHCI_EXTCAP, 32'h00000100, 32'hFFFFFFFF);
-		expect_reg(32'h100, 32'h00020103, 32'hFFFFFFFF);	/* PERF, next 2 dwords */
-		expect_reg(32'h108, 32'h00000106, 32'hFFFFFFFF);	/* CPFW, the last */
-		expect_reg(32'h10C, 32'h00000120, 32'hFFFFFFFF);
+		expect_reg(GHCI_REG_EXTCAP_PTR, 32'h00000100, 32'hFFFFFFFF);
+		begin : blk_chk_cpfw
+			reg [31:0] off, w0, w1;
+			reg cpfw_found;
+			cpfw_found = 1'b0;
+			host_read(GHCI_REG_EXTCAP_PTR, off);
+			while (off != 32'd0) begin
+				host_read(off, w0);
+				host_read(off + 32'd4, w1);
+				if (w0[7:0] == GHCI_XCAP_CPFW) begin
+					cpfw_found = 1'b1;
+					if (w1 != GHCI_CPFW_CTRL)
+						fail_msg("CPFW pointer does not match GHCI_CPFW_CTRL");
+				end
+				off = (w0[31:16] != 16'd0) ? (off + {14'd0, w0[31:16], 2'b00}) : 32'd0;
+			end
+			if (!cpfw_found)
+				fail_msg("no CPFW capability in EXTCAP");
+		end
 		expect_reg(GHCI_CPFW_STATUS, 32'h00000009, 32'h0000001B);	/* READY, STOPPED */
 
 		/* The aperture, the ring, the firmware. */
-		host_write(GHCI_APERTURE_BASE, AREA_N);
-		host_write(GHCI_APERTURE_LIMIT, 32'h00100000);
 		host_write(GHCI_RING_BASE, RING);
-		host_write(GHCI_RING_SIZE, 32'd10);
+		host_write(GHCI_RING_SIZE, 32'h00010000);
 		host_write(GHCI_IRQ_STATUS, 32'h1FF);
 		host_write(GHCI_IRQ_ENABLE, (32'd1 << GHCI_IRQ_FENCE) | (32'd1 << GHCI_IRQ_RESULT));
 		mem.poke32(FENCES, 32'd0);
@@ -646,8 +667,8 @@ module atg_top_fw_harness #(
 		st(TAG);
 		ring_frame(1);
 		host_write(GHCI_RING_WPTR, wp);
-		wait_reg(GHCI_STATUS, 32'd4 << GHCI_STATUS_STATE, 32'hF << GHCI_STATUS_STATE, 2000);
-		expect_reg(GHCI_FAULT_INFO, {16'd0, GHCI_FAULT_WATCHDOG, 12'd0}, 32'h0000F000);
+		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_FAULTED, 32'd1 << GHCI_STATUS_FAULTED, 2000);
+		expect_reg(GHCI_FAULT_INFO, {28'd0, GHCI_FAULT_KIND_WATCHDOG}, 32'h0000000F);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
 		wait_reg(GHCI_STATUS, 32'd0, 32'hF << GHCI_STATUS_STATE, 2000);
 		wp = 0;
@@ -671,7 +692,7 @@ module atg_top_fw_harness #(
 		host_write(GHCI_CPFW_DWORDS, 32'd16);
 		host_write(GHCI_CPFW_CTRL, (32'd1 << GHCI_CPFW_CTRL_LOAD) | (32'd1 << GHCI_CPFW_CTRL_RUN));
 		wait_reg(GHCI_CPFW_STATUS, 32'h03, 32'h03, 2000);	/* READY, FAULT */
-		expect_reg(GHCI_FAULT_INFO, {16'd0, GHCI_FAULT_WATCHDOG, 12'd0}, 32'h0000F000);
+		expect_reg(GHCI_FAULT_INFO, {28'd0, GHCI_FAULT_KIND_WATCHDOG}, 32'h0000000F);
 		expect_reg(GHCI_FAULT_ADDR, 32'd0, 32'hFFFFFFFF);
 		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
 		wait_reg(GHCI_STATUS, 32'd0, 32'hF << GHCI_STATUS_STATE, 2000);
@@ -684,7 +705,9 @@ module atg_top_fw_harness #(
 				img[k] = DATA_CHECK + 1;
 		end
 		put_image(IMG_D, DMEM_WORDS);
+		host_write(GHCI_CPFW_IBASE, IMG_I);
 		host_write(GHCI_CPFW_IWORDS, IMEM_WORDS);
+		host_write(GHCI_CPFW_DBASE, IMG_D);
 		host_write(GHCI_CPFW_DWORDS, DMEM_WORDS);
 		host_write(GHCI_CPFW_CTRL, (32'd1 << GHCI_CPFW_CTRL_LOAD) | (32'd1 << GHCI_CPFW_CTRL_RUN));
 		wait_reg(GHCI_CPFW_STATUS, 32'h0201, 32'hFF0B, 80000);	/* the load of the whole IMEM, then the boot */

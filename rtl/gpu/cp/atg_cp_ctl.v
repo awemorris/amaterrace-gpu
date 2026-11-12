@@ -52,7 +52,9 @@ module atg_cp_ctl #(
 	parameter [7:0] UNITS = 8'h03,	/* Present blocks, STATUS busy-bit order (DRAW: 2, DISPATCH: 6) */
 	parameter [NSRC*8-1:0] SRC_BLOCK = 64'h00_01_00_06_00_00_00_00,	/* FAULT_INFO[23:16] per source */
 	parameter [NSRC*8-1:0] SRC_CLIENT = 64'h00_01_00_00_00_00_00_00,	/* FAULT_INFO[7:0] per source */
-	parameter [7:0] DC_CLIENT = 8'hFF	/* the DC's MC client, whose refusals are not faults (0xFF: none) */
+	parameter [7:0] DC_CLIENT = 8'hFF,	/* the DC's MC client, whose refusals are not faults (0xFF: none) */
+	parameter [31:0] APERTURE_BASE_INIT = 32'd0,
+	parameter [31:0] APERTURE_LIMIT_INIT = 32'hFFFFFFFF
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -594,8 +596,8 @@ module atg_cp_ctl #(
 			ctrl_halt <= 1'b0;
 			ctrl_wdt_en <= 1'b0;
 			wdt_cycles <= WDT_RESET;
-			ap_base <= 32'd0;
-			ap_limit <= 32'hFFFFFFFF;
+			ap_base <= APERTURE_BASE_INIT;
+			ap_limit <= APERTURE_LIMIT_INIT;
 			heap_base <= 32'd0;
 			heap_limit <= 32'd0;
 `ifndef SYNTH_KINTEX7

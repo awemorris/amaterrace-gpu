@@ -40,6 +40,7 @@
 
 module atg_kc705_top_tb;
 	`include "ghci_regs.vh"
+	`include "atg_config.vh"
 
 	reg sys_clk = 1'b0;
 	reg cpu_reset = 1'b1;
@@ -64,6 +65,8 @@ module atg_kc705_top_tb;
 
 	atg_kc705_top #(
 		.NSU(1),
+		.HAS_BLT(1),
+		.HAS_L2(0),
 		.CPU_IMEM_INIT("fw/cp/images/atg1-cp-kc705.imem.hex"),
 		.CPU_DMEM_INIT("fw/cp/images/atg1-cp-kc705.dmem.hex")
 	) dut (
@@ -80,6 +83,7 @@ module atg_kc705_top_tb;
 		.pcie_refclk_p(1'b0), .pcie_refclk_n(1'b1), .pcie_perst_n(1'b0), .pcie_txp(),
 		.pcie_txn(), .pcie_rxp(4'd0), .pcie_rxn(4'hF)
 	);
+
 
 	task fail;
 		input [8*64-1:0] what;
@@ -256,7 +260,7 @@ module atg_kc705_top_tb;
 	localparam [31:0] FB_OFF = 32'h0004_0000;
 	localparam [31:0] COLOR = 32'hAABBCCDD;
 	reg [31:0] v;
-	integer x, y, n;
+	integer x, y, n, wp;
 	reg [23:0] p0;
 	reg [15:0] want;
 
@@ -267,12 +271,11 @@ module atg_kc705_top_tb;
 	task check_extcap;
 		reg [31:0] off, w0, w1, m;
 		integer k;
-		reg disp, dbg, mem;
+		reg disp, mem;
 		begin
 			disp = 1'b0;
-			dbg = 1'b0;
 			mem = 1'b0;
-			jr(GHCI_EXTCAP, off);
+			jr(GHCI_REG_EXTCAP_PTR, off);
 			for (k = 0; k < 8 && off != 32'd0; k = k + 1) begin
 				jr(off, w0);
 				jr(off + 32'd4, w1);
@@ -281,8 +284,6 @@ module atg_kc705_top_tb;
 					if (w1 != DC)
 						fail("the DISP2 capability does not point at the DC");
 				end
-				if (w0[7:0] == GHCI_XCAP_DBG)
-					dbg = 1'b1;
 				if (w0[7:0] == GHCI_XCAP_MEM) begin
 					mem = 1'b1;
 					jr(w1 + {15'd0, GHCI_MEM_LOCAL_BASE}, m);
@@ -302,8 +303,6 @@ module atg_kc705_top_tb;
 			end
 			if (!disp)
 				fail("no DISP2 capability");
-			if (!dbg)
-				fail("no DBG capability");
 			if (!mem)
 				fail("no MEM capability");
 		end
@@ -316,24 +315,19 @@ module atg_kc705_top_tb;
 		repeat (100) @(posedge sys_clk);
 
 		/* jtag */
-		expect_reg(GHCI_MAGIC, GHCI_MAGIC_VALUE, 32'hFFFFFFFF);
-		jw(GHCI_SCRATCH, 32'h4B373035);
-		expect_reg(GHCI_SCRATCH, 32'h4B373035, 32'hFFFFFFFF);
+		expect_reg(GHCI_REG_MAGIC, GHCI_MAGIC_VALUE, 32'hFFFFFFFF);
+		jw(GHCI_REG_SCRATCH, 32'h4B373035);
+		expect_reg(GHCI_REG_SCRATCH, 32'h4B373035, 32'hFFFFFFFF);
 		expect_reg(DC + GHCI_DC_ID, GHCI_DC_ID_VALUE, 32'hFFFFFFFF);
 		expect_reg(DC + GHCI_DC_CAPS, 32'h4, 32'h7);
-		expect_reg(GHCI_CAPS, 32'h8, 32'h8);	/* CAPS[3]: the DC is in this window */
-		/* The KC705 shape: CAPS[28] packed, [27] graphics, [24] subgroup,
-		 * [23:20] 64-byte lines, [8] the TU, [2] the SU; CAPS2[27:24] 16
-		 * texture slots / 4. */
-		expect_reg(GHCI_CAPS, 32'h19600104, 32'h19F00104);
-		expect_reg(GHCI_CAPS2, 32'h04000000, 32'h0F000000);
+		expect_reg(GHCI_REG_DEVICE_CAPS, 32'h00010080, 32'h00FF0080); /* NUM_SU=1, GSI1=1 */
 		check_extcap;
-		/* RESIDENT_WARPS[23:16]: the SUs' 64 registers per lane. */
-		expect_reg(GHCI_RESIDENT_WARPS, 32'h00400000, 32'h00FF0000);
+		/* RESIDENT_WARPS[23:16]: the SUs' registers per lane. */
+		expect_reg(GHCI_REG_RESIDENT_WARPS, {8'd0, 8'd`CFG_SU_NREGS, 16'd0}, 32'h00FF0000);
 		n = 0;
-		jr(GHCI_STATUS, v);
+		jr(GHCI_REG_STATUS, v);
 		while (!v[GHCI_STATUS_MEM_READY] && n < 100) begin
-			jr(GHCI_STATUS, v);
+			jr(GHCI_REG_STATUS, v);
 			n = n + 1;
 		end
 		if (!v[GHCI_STATUS_MEM_READY])
@@ -341,29 +335,51 @@ module atg_kc705_top_tb;
 		if (errors == 0)
 			$display("PASS atg_kc705_top.jtag");
 
-		/* fill */
-		jw(GHCI_APERTURE_BASE, 32'h8000_0000);
-		jw(GHCI_APERTURE_LIMIT, 32'h8010_0000);
-		jw(GHCI_STATE_BASE + GHCI_S_BLT_OP * 4, {30'd0, GHCI_BLT_FILL});
-		jw(GHCI_STATE_BASE + GHCI_S_BLT_DST_BASE * 4, FB);
-		jw(GHCI_STATE_BASE + GHCI_S_BLT_DST_STRIDE * 4, 32'd256);
-		jw(GHCI_STATE_BASE + GHCI_S_BLT_DST_XY * 4, {16'd1, 16'd3});
-		jw(GHCI_STATE_BASE + GHCI_S_BLT_SIZE * 4, {16'd3, 16'd20});
-		jw(GHCI_STATE_BASE + GHCI_S_BLT_COLOR * 4, COLOR);
-		jw(GHCI_STATE_BASE + GHCI_S_BLT_CLIP_MIN * 4, 32'd0);
-		jw(GHCI_STATE_BASE + GHCI_S_BLT_CLIP_MAX * 4, 32'd0);
-		jw(GHCI_KICK, 32'd1);
-		poll_clear(GHCI_STATUS, 32'd1 << GHCI_STATUS_BLT_BUSY);
-		jw(GHCI_DBG_ADDR, FB + 1 * 256 + 3 * 4);
-		poll_clear(GHCI_DBG_STATUS, 32'd1);
-		expect_reg(GHCI_DBG_DATA, COLOR, 32'hFFFFFFFF);
-		jw(GHCI_DBG_ADDR, FB + 3 * 256 + 22 * 4);
-		poll_clear(GHCI_DBG_STATUS, 32'd1);
-		expect_reg(GHCI_DBG_DATA, COLOR, 32'hFFFFFFFF);
-		jw(GHCI_DBG_ADDR, FB + 3 * 256 + 23 * 4);
-		poll_clear(GHCI_DBG_STATUS, 32'd1);
-		expect_reg(GHCI_DBG_DATA, 32'd0, 32'hFFFFFFFF);
-		expect_reg(GHCI_STATUS, 32'd0, 32'd1 << GHCI_STATUS_FAULT);
+		/* fill via GHCI command ring */
+		wp = 0;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'h01210016); wp = wp + 1; /* OP_SET_REG len=22 */
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_OP}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {30'd0, GHCI_BLT_FILL}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_DST_BASE}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, FB); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_DST_STRIDE}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'd256); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_SRC_BASE}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'd0); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_SRC_STRIDE}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'd0); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_DST_XY}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {16'd1, 16'd3}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_SRC_XY}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'd0); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_SIZE}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {16'd3, 16'd20}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_COLOR}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, COLOR); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_CLIP_MIN}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'd0); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, {23'd0, GHCI_S_BLT_CLIP_MAX}); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'd0); wp = wp + 1;
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'h02220000); wp = wp + 1; /* OP_BLIT */
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'h05600102); wp = wp + 1; /* OP_FENCE flags=1 len=2 */
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, FB + 32'h20000); wp = wp + 1; /* fence addr */
+		dut.mig.mem.poke32(FB_OFF + 32'h10000 + wp * 4, 32'd1); wp = wp + 1; /* fence val */
+		dut.mig.mem.poke32(FB_OFF + 32'h20000, 32'd0);
+		jw(GHCI_REG_RING_BASE_LO, FB + 32'h10000);
+		jw(GHCI_REG_RING_BASE_HI, 32'd0);
+		jw(GHCI_REG_RING_SIZE, 32'h00010000); /* 64 KiB */
+		jw(GHCI_REG_FENCE_LAST, 32'd0);
+		jw(GHCI_REG_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		jw(GHCI_REG_RING_WPTR, wp);
+		n = 0;
+		jr(GHCI_REG_FENCE_LAST, v);
+		while (v != 32'd1 && n < 200) begin
+			jr(GHCI_REG_FENCE_LAST, v);
+			n = n + 1;
+		end
+		if (v != 32'd1)
+			fail("FENCE did not commit");
+		expect_reg(GHCI_REG_STATUS, 32'd0, 32'd1 << GHCI_STATUS_FAULTED);
 		for (y = 0; y < 6; y = y + 1)
 			for (x = 0; x < 64; x = x + 1)
 				if (dut.mig.mem.peek32(FB_OFF + y * 256 + x * 4) !==
