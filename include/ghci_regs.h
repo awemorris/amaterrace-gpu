@@ -243,6 +243,7 @@ extern "C" {
 #define GHCI_DBG_ADDR GHCI_LEGACY_DBG_ADDR
 #define GHCI_DBG_DATA GHCI_LEGACY_DBG_DATA
 #define GHCI_DBG_STATUS GHCI_LEGACY_DBG_STATUS
+#define GHCI_LEGACY_KICK 0xF00u
 #define GHCI_KICK GHCI_LEGACY_KICK
 #define GHCI_PERF_SRC0 0x160u
 #define GHCI_PERF_SRC(n) (0x160u + 4u * (n))
@@ -254,7 +255,6 @@ extern "C" {
 #define GHCI_CPFW_DBASE 0x1A8u
 #define GHCI_CPFW_DWORDS 0x1ACu
 #define GHCI_CPFW_MBOX(n) (0x1B0u + 4u * (n)) /* n = 0..3 */
-#define GHCI_LEGACY_KICK 0xF00u
 #define GHCI_STATE(i) (0x1000u + 4u * (i))
 #define GHCI_STATE_COUNT 512u
 

@@ -533,6 +533,7 @@ module atg_cp #(
 	wire s_ev_halted, s_ev_fault, s_ev_wdt;
 	wire s_replay_busy;
 	wire s_ring_empty, s_retire, s_ring_busy, s_seq_busy, s_cmd_active;
+	wire [3:0] s_seq_st;
 	wire s_lock_fault;
 	wire s_dbg_done, s_dbg_busy;
 	wire s_ring_fault, s_seq_fault, s_fence_fault, s_disp_fault;
@@ -566,7 +567,7 @@ module atg_cp #(
 	/* Fault sources: 0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks, 8 DISP. */
 	atg_cp_ctl #(
 		.LINE_SHIFT(LINE_SHIFT), .UNITS(UNITS), .NSRC(9),
-		.SRC_BLOCK(72'h00_00_01_00_06_00_00_00_00), .SRC_CLIENT(72'h00_00_01_00_00_00_00_00_00),
+		.SRC_BLOCK(72'h00_00_06_00_02_00_00_00_00), .SRC_CLIENT(72'h00_00_00_00_00_00_00_00_00),
 		.DC_CLIENT(HAS_DISP != 0 ? DC_CLIENT : 8'hFF)
 	) u_ctl (
 		.clk(clk), .rst_n(rst_n),
@@ -577,6 +578,7 @@ module atg_cp #(
 		.ring_empty(s_ring_empty), .ring_busy(ring_busy_ctl), .cmd_active(s_cmd_active || v_valid),
 		.wdt_hold(!s_cmd_active && cpu_stall),
 		.replay_busy(s_replay_busy),
+		.seq_st(s_seq_st), .f_busy(s_f_busy),
 		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
 		.mc_fault_write(mc_fault_write), .mc_fault_prot(mc_fault_prot),
 		.mc_fault_mem(mc_fault_mem), .mc_fault_tag(mc_fault_tag),
@@ -977,7 +979,7 @@ module atg_cp #(
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
 		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
 		.occ_count(occ_count), .occ_clear(s_seq_occ_clear),
-		.busy(s_seq_busy), .cmd_active(s_cmd_active),
+		.busy(s_seq_busy), .cmd_active(s_cmd_active), .seq_st(s_seq_st),
 		.fault(s_seq_fault), .fault_kind(s_seq_fault_kind), .fault_addr(s_seq_fault_addr),
 		.fault_tag(s_seq_fault_tag),
 		.u_fw(u_fw), .u_side(u_side), .u_req(u_req), .u_ok(u_ok)

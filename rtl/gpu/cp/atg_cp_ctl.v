@@ -72,6 +72,8 @@ module atg_cp_ctl #(
 	input wire cmd_active,
 	input wire wdt_hold,	/* the count pauses (the CPU waits on its FIFO or memory) */
 	input wire replay_busy,
+	input wire [3:0] seq_st,
+	input wire f_busy,
 	input wire mc_fault,
 	input wire [7:0] mc_fault_client,
 	input wire [31:0] mc_fault_addr,
@@ -183,9 +185,23 @@ module atg_cp_ctl #(
 	assign quiesce = halt_raw;
 `endif
 	assign mc_flush = st == S_RS_PULSE;
-	assign cp_state = resetting ? GHCI_ST_RESETTING : faulted ? GHCI_ST_FAULTED :
-		st == S_HALTED ? GHCI_ST_HALTED : st == S_HALTING ? GHCI_ST_HALTING :
-		st == S_RUN ? GHCI_ST_RUNNING : GHCI_ST_IDLE;
+	/* Micro-architectural CP_STATE (§3.3) */
+	wire cp_is_fault = faulted;
+	wire cp_is_wait_mem = resetting || (st == S_HALTING && !mc_idle);
+	wire cp_is_blit = busy_in[1]; /* blt_busy */
+	wire cp_is_wait_fence = (seq_st == 4'd4 || seq_st == 4'd5 || f_busy); /* Q_FREQ, Q_FWAIT */
+	wire cp_is_exec = (seq_st == 4'd1 || seq_st == 4'd2 || seq_st == 4'd3 || seq_st == 4'd6); /* Q_PAY, Q_EXEC, Q_POST, Q_VSYNC */
+	wire cp_is_decode = (seq_st == 4'd8 || seq_st == 4'd9); /* Q_DEC, Q_DEC2 */
+	wire cp_is_fetch = ring_busy || (!ring_empty && cmd_active);
+
+	assign cp_state = cp_is_fault ? GHCI_ST_FAULT :
+	                  cp_is_wait_mem ? GHCI_ST_WAIT_MEM :
+	                  cp_is_blit ? GHCI_ST_BLIT :
+	                  cp_is_wait_fence ? GHCI_ST_WAIT_FENCE :
+	                  cp_is_exec ? GHCI_ST_EXEC :
+	                  cp_is_decode ? GHCI_ST_DECODE :
+	                  cp_is_fetch ? GHCI_ST_FETCH :
+	                  GHCI_ST_IDLE;
 	assign aperture_base = ap_base;
 	assign aperture_limit = ap_limit;
 
@@ -279,13 +295,13 @@ module atg_cp_ctl #(
 		for (k = 2; k >= 0; k = k - 1) begin
 			if (sf_lo[k]) begin
 				f_s0_v_c = 1'b1;
-				f_s0_info_c[15:0] = {src_kind[k * 4 +: 4], 4'd0, SRC_CLIENT[k * 8 +: 8]};
+				f_s0_info_c[15:0] = {src_tag[k * 8 +: 8], SRC_BLOCK[k * 8 +: 4], src_kind[k * 4 +: 4]};
 			end
 			if (sf_alo[k]) begin
 				f_s0_addr_lo_c = src_addr[k * 32 +: 16];
 			end
 			if (sf_hi[k]) begin
-				f_s0_info_c[31:16] = {src_tag[k * 8 +: 8], SRC_BLOCK[k * 8 +: 8]};
+				f_s0_info_c[31:16] = 16'd0;
 			end
 			if (sf_ahi[k]) begin
 				f_s0_addr_hi_c = src_addr[k * 32 + 16 +: 16];
@@ -297,10 +313,10 @@ module atg_cp_ctl #(
 		for (k = 5; k >= 3; k = k - 1) begin
 			if (sf_lo[k]) begin
 				f_s1_v_c = 1'b1;
-				f_s1_info_c[15:0] = {src_kind[k * 4 +: 4], 4'd0, SRC_CLIENT[k * 8 +: 8]};
+				f_s1_info_c[15:0] = {src_tag[k * 8 +: 8], SRC_BLOCK[k * 8 +: 4], src_kind[k * 4 +: 4]};
 			end
 			if (sf_hi[k]) begin
-				f_s1_info_c[31:16] = {src_tag[k * 8 +: 8], SRC_BLOCK[k * 8 +: 8]};
+				f_s1_info_c[31:16] = 16'd0;
 			end
 		end
 
@@ -311,13 +327,13 @@ module atg_cp_ctl #(
 		for (k = NSRC - 1; k >= 6; k = k - 1) begin
 			if (sf_lo[k]) begin
 				f_s2_v_c = 1'b1;
-				f_s2_info_c[15:0] = {src_kind[k * 4 +: 4], 4'd0, SRC_CLIENT[k * 8 +: 8]};
+				f_s2_info_c[15:0] = {src_tag[k * 8 +: 8], SRC_BLOCK[k * 8 +: 4], src_kind[k * 4 +: 4]};
 			end
 			if (sf_alo[k]) begin
 				f_s2_addr_lo_c = src_addr[k * 32 +: 16];
 			end
 			if (sf_hi[k]) begin
-				f_s2_info_c[31:16] = {src_tag[k * 8 +: 8], SRC_BLOCK[k * 8 +: 8]};
+				f_s2_info_c[31:16] = 16'd0;
 			end
 			if (sf_ahi[k]) begin
 				f_s2_addr_hi_c = src_addr[k * 32 + 16 +: 16];
@@ -353,16 +369,16 @@ module atg_cp_ctl #(
 			f_s2_addr_r <= 32'd0;
 		end else begin
 			f_mc_v_r <= {8{mc_gpu}};
-			f_mc_info_r <= {mc_fault_tag, mc_fault_client,
-				mc_fault_mem ? GHCI_FAULT_AXI : GHCI_FAULT_APERTURE, 2'd0, mc_fault_prot,
-				mc_fault_write, mc_fault_client};
+			f_mc_info_r <= {11'd0, mc_fault_write, 4'd0, mc_fault_tag, mc_fault_client[3:0],
+				mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
+				(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
 			f_mc_addr_r <= mc_fault_addr;
 
 			f_host_v_r <= {8{kick_bad || kick_absent || locked_bad || wdt_fire}};
 			f_wdt_only_r <= wdt_fire && !mc_gpu && !kick_bad && !kick_absent && !locked_bad;
-			f_host_kind_r <= kick_bad ? GHCI_FAULT_KICK :
-				kick_absent ? GHCI_FAULT_OPCODE :
-				locked_bad ? GHCI_FAULT_LOCKED : GHCI_FAULT_WATCHDOG;
+			f_host_kind_r <= kick_bad ? GHCI_FAULT_KIND_KICK_ABSENT :
+				kick_absent ? GHCI_FAULT_KIND_INVALID_OP :
+				locked_bad ? GHCI_FAULT_KIND_LOCKED_REG : GHCI_FAULT_KIND_WATCHDOG;
 			f_host_tag_r <= (kick_bad || kick_absent || locked_bad) ? 8'd0 : wdt_tag;
 
 			f_s0_v_r <= {8{f_s0_v_c}};
@@ -379,7 +395,7 @@ module atg_cp_ctl #(
 		end
 	end
 
-	wire [31:0] f_host_info_w = {f_host_tag_r, 8'd0, f_host_kind_r, 12'd0};
+	wire [31:0] f_host_info_w = {12'd0, 4'd0, f_host_tag_r, GHCI_FAULT_UNIT_CP, f_host_kind_r};
 
 	always @(*) begin
 		any = f_mc_v_r[0] || f_host_v_r[0] || f_s0_v_r[0] || f_s1_v_r[0] || f_s2_v_r[0];
@@ -439,25 +455,25 @@ module atg_cp_ctl #(
 		n_addr = 32'd0;
 		n_info = 32'd0;
 		if (mc_gpu) begin
-			n_info = {mc_fault_tag, mc_fault_client,
-				mc_fault_mem ? GHCI_FAULT_AXI : GHCI_FAULT_APERTURE, 2'd0, mc_fault_prot,
-				mc_fault_write, mc_fault_client};
+			n_info = {11'd0, mc_fault_write, 4'd0, mc_fault_tag, mc_fault_client[3:0],
+				mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
+				(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
 			n_addr = mc_fault_addr;
 		end else if (kick_bad) begin
-			n_info = {16'd0, GHCI_FAULT_KICK, 12'd0};
+			n_info = {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_KICK_ABSENT};
 		end else if (kick_absent) begin
-			n_info = {16'd0, GHCI_FAULT_OPCODE, 12'd0};
+			n_info = {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_INVALID_OP};
 		end else if (locked_bad) begin
-			n_info = {16'd0, GHCI_FAULT_LOCKED, 12'd0};
+			n_info = {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG};
 		end else if (wdt_fire) begin
-			n_info = {wdt_tag, 8'd0, GHCI_FAULT_WATCHDOG, 12'd0};
+			n_info = {12'd0, 4'd0, wdt_tag, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_WATCHDOG};
 		end else begin
 			any = 1'b0;
 			for (k = NSRC - 1; k >= 0; k = k - 1)
 				if (src_fault[k]) begin
 					any = 1'b1;
-					n_info = {src_tag[k * 8 +: 8], SRC_BLOCK[k * 8 +: 8], src_kind[k * 4 +: 4],
-						4'd0, SRC_CLIENT[k * 8 +: 8]};
+					n_info = {12'd0, 4'd0, src_tag[k * 8 +: 8], SRC_BLOCK[k * 8 +: 4],
+						src_kind[k * 4 +: 4]};
 					n_addr = src_addr[k * 32 +: 32];
 				end
 		end
@@ -766,8 +782,8 @@ module atg_cp_ctl #(
 	end
 
 	/* Reads. */
-	wire [31:0] status = {12'd0, cp_state, 1'b0, halt_int, axi_stuck, mem_ready, ring_empty,
-		st == S_HALTED, faulted, mc_idle, busy_in[7:1], busy_in[0] || resetting};
+	wire [31:0] status = {12'd0, cp_state, 1'b0, quiesce, axi_stuck, mem_ready, ring_empty,
+		2'd0, mc_idle, 5'd0, faulted, st == S_HALTED, run && !halt};
 
 	reg [31:0] rd;
 

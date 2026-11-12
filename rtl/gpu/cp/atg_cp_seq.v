@@ -95,6 +95,7 @@ module atg_cp_seq #(
 	/* Status */
 	output wire busy,
 	output wire cmd_active,
+	output wire [3:0] seq_st,
 	/* Fault report to atg_cp_ctl (one source of its `src_*` vectors) */
 	output wire fault,
 	output wire [3:0] fault_kind,
@@ -768,6 +769,7 @@ module atg_cp_seq #(
 	assign fault_tag = tag;
 	assign busy = st != Q_IDLE && st != Q_DEAD;
 	assign cmd_active = busy && !(st == Q_PAY && use_fw && !fw_valid);
+	assign seq_st = st;
 
 	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7

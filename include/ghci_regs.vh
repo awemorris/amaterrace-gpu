@@ -239,7 +239,6 @@ localparam [16:0] GHCI_FENCE_LAST = GHCI_LEGACY_FENCE_LAST;
 localparam [16:0] GHCI_CP_PC = GHCI_LEGACY_CP_PC;
 localparam [16:0] GHCI_CP_STATUS = GHCI_LEGACY_CP_STATUS;
 localparam [16:0] GHCI_PIPE_FSM = GHCI_LEGACY_PIPE_FSM;
-localparam [16:0] GHCI_PERF0 = GHCI_LEGACY_PERF0;
 localparam [16:0] GHCI_PERF_CTRL = GHCI_LEGACY_PERF_CTRL;
 localparam [16:0] GHCI_DBG_ADDR = GHCI_LEGACY_DBG_ADDR;
 localparam [16:0] GHCI_DBG_DATA = GHCI_LEGACY_DBG_DATA;
@@ -265,6 +264,7 @@ localparam [16:0] GHCI_DMA_DST_BASE = GHCI_LEGACY_DMA_DST_BASE;
 localparam [16:0] GHCI_DMA_ROW_STRIDE = GHCI_LEGACY_DMA_ROW_STRIDE;
 localparam [16:0] GHCI_DMA_SLICE_STRIDE = GHCI_LEGACY_DMA_SLICE_STRIDE;
 localparam [16:0] GHCI_DMA_EXTENT = GHCI_LEGACY_DMA_EXTENT;
+localparam [16:0] GHCI_LEGACY_KICK = 17'h00F00;
 localparam [16:0] GHCI_KICK = GHCI_LEGACY_KICK;
 localparam [16:0] GHCI_EXTCAP_LIST = 17'h00100;	/* where EXTCAP points */
 localparam [16:0] GHCI_PERF_SRC0 = 17'h00160;	/* the PERF capability's registers */
@@ -279,7 +279,6 @@ localparam [16:0] GHCI_CPFW_IWORDS = 17'h001A4;
 localparam [16:0] GHCI_CPFW_DBASE = 17'h001A8;
 localparam [16:0] GHCI_CPFW_DWORDS = 17'h001AC;
 localparam [16:0] GHCI_CPFW_MBOX0 = 17'h001B0;
-localparam [16:0] GHCI_LEGACY_KICK = 17'h00F00;
 localparam [16:0] GHCI_STATE_BASE = 17'h01000;	/* STATE[0..511] */
 localparam [16:0] GHCI_DISP_KC705 = 17'h10000;	/* the KC705 DC's former window (DISP, before WS288 p035 D4); unused */
 
@@ -302,7 +301,7 @@ localparam GHCI_CTRL_TLB_FLUSH  = 4;
 localparam GHCI_CTRL_WDT_EN     = 5;
 localparam GHCI_CTRL_IRQ_GLOBAL = 6;
 
-/* STATUS bits (J02). */
+/* STATUS bits (J02, §3.3). */
 localparam GHCI_STATUS_RUNNING_BIT    = 0;
 localparam GHCI_STATUS_HALTED_BIT     = 1;
 localparam GHCI_STATUS_FAULTED_BIT    = 2;
@@ -311,7 +310,12 @@ localparam GHCI_STATUS_RING_EMPTY_BIT = 11;
 localparam GHCI_STATUS_MEM_READY_BIT  = 12;
 localparam GHCI_STATUS_AXI_STUCK_BIT  = 13;
 localparam GHCI_STATUS_QUIESCE_BIT    = 14;
+localparam GHCI_STATUS_STATE          = 16;	/* [19:16] */
 
+localparam GHCI_STATUS_RUNNING = 0;
+localparam GHCI_STATUS_HALTED = 1;
+localparam GHCI_STATUS_FAULT = 2;
+localparam GHCI_STATUS_FAULTED = 2;
 localparam GHCI_STATUS_CP_BUSY = 0;
 localparam GHCI_STATUS_BLT_BUSY = 1;
 localparam GHCI_STATUS_VF_BUSY = 2;
@@ -320,23 +324,21 @@ localparam GHCI_STATUS_ROP_BUSY = 4;
 localparam GHCI_STATUS_TU_BUSY = 5;
 localparam GHCI_STATUS_SU_BUSY = 6;
 localparam GHCI_STATUS_AXI_IDLE = 8;
-localparam GHCI_STATUS_FAULT = 9;
-localparam GHCI_STATUS_HALTED = 10;
 localparam GHCI_STATUS_RING_EMPTY = 11;
 localparam GHCI_STATUS_MEM_READY = 12;
 localparam GHCI_STATUS_AXI_STUCK = 13;
 localparam GHCI_STATUS_QUIESCED = 14;
-localparam GHCI_STATUS_STATE = 16;	/* [19:16] */
 
-/* CP states (STATUS[19:16], J02). */
+/* CP states (STATUS[19:16], J02, §3.3). */
 localparam [3:0] GHCI_ST_IDLE       = 4'd0;
-localparam [3:0] GHCI_ST_RUNNING    = 4'd1;
-localparam [3:0] GHCI_ST_HALTING    = 4'd2;
-localparam [3:0] GHCI_ST_HALTED     = 4'd3;
-localparam [3:0] GHCI_ST_FAULTED    = 4'd4;
-localparam [3:0] GHCI_ST_RESETTING  = 4'd5;
+localparam [3:0] GHCI_ST_FETCH      = 4'd1;
+localparam [3:0] GHCI_ST_DECODE     = 4'd2;
+localparam [3:0] GHCI_ST_EXEC       = 4'd3;
+localparam [3:0] GHCI_ST_WAIT_FENCE = 4'd4;
+localparam [3:0] GHCI_ST_WAIT_MEM   = 4'd5;
 localparam [3:0] GHCI_ST_BLIT       = 4'd6;
-localparam [3:0] GHCI_ST_WAIT_FENCE = 4'd7;
+localparam [3:0] GHCI_ST_FAULT      = 4'd7;
+localparam [3:0] GHCI_ST_FAULTED    = 4'd7;
 
 /* IRQ_STATUS / IRQ_ENABLE bits (J02, N21). */
 localparam GHCI_IRQ_FENCE      = 0;
@@ -385,14 +387,14 @@ localparam [3:0] GHCI_STAGE_CS       = 4'd2;
 localparam [3:0] GHCI_STAGE_MS       = 4'd3;
 
 /* Legacy FAULT_INFO kinds for backward compatibility */
-localparam [3:0] GHCI_FAULT_APERTURE = 4'd1;
-localparam [3:0] GHCI_FAULT_OPCODE = 4'd2;
+localparam [3:0] GHCI_FAULT_APERTURE = 4'd2;
+localparam [3:0] GHCI_FAULT_OPCODE = 4'd1;
 localparam [3:0] GHCI_FAULT_RING = 4'd3;
 localparam [3:0] GHCI_FAULT_WATCHDOG = 4'd4;
 localparam [3:0] GHCI_FAULT_AXI = 4'd5;
-localparam [3:0] GHCI_FAULT_KICK = 4'd6;
+localparam [3:0] GHCI_FAULT_KICK = 4'd2;
 localparam [3:0] GHCI_FAULT_LOCKED = 4'd7;
-localparam [3:0] GHCI_FAULT_ISA = 4'd8;
+localparam [3:0] GHCI_FAULT_ISA = 4'd1;
 localparam [3:0] GHCI_FAULT_GPU_PAGE_FAULT = 4'd9;
 localparam [3:0] GHCI_FAULT_GPU_PERM_VIOLATION = 4'd10;
 
