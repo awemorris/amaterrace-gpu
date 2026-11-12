@@ -206,7 +206,7 @@ module atg_cp_fence #(
 	wire passed = !diff[31];
 
 	assign fault = st == F_RSP && rsp_valid && rsp_error;
-	assign fault_kind = GHCI_FAULT_APERTURE;
+	assign fault_kind = GHCI_FAULT_KIND_FENCE_ERROR;
 	assign fault_addr = addr[31:0];
 	assign fault_tag = 8'd0;
 `ifdef SYNTH_KINTEX7

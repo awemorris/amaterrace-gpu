@@ -389,7 +389,7 @@ module atg_cp_seq_tb;
 	reg [8:0] sidx;
 	reg s_seen = 0;
 	always @(posedge clk)
-		if (s_fault && s_fault_kind == GHCI_FAULT_OPCODE)
+		if (s_fault && s_fault_kind == GHCI_FAULT_KIND_INVALID_OP)
 			s_seen = 1;
 	initial begin
 		repeat (3) @(posedge clk);
@@ -410,7 +410,7 @@ module atg_cp_seq_tb;
 		compare("setreg");
 		pl[0] = 32'h300; pl[1] = 32'h0;
 		packet(1'b0, 1'b0, 6'd1, 8'd0, 8'd2);
-		expect_fault("setreg", GHCI_FAULT_RING, 32'h300);
+		expect_fault("setreg", GHCI_FAULT_KIND_BAD_REG, 32'h300);
 		if (errors == 0)
 			$display("PASS atg_cp_seq.setreg");
 		e0 = errors;
@@ -835,24 +835,24 @@ module atg_cp_seq_tb;
 		/* Bad offsets: FB_NEXT, unaligned, above 0x100; an odd n; from the firmware. */
 		pl[0] = 32'h24; pl[1] = 32'h0;
 		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd2);
-		expect_fault("disp", GHCI_FAULT_RING, 32'h24);
+		expect_fault("disp", GHCI_FAULT_KIND_BAD_REG, 32'h24);
 		pl[0] = 32'h12;
 		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd2);
-		expect_fault("disp", GHCI_FAULT_RING, 32'h12);
+		expect_fault("disp", GHCI_FAULT_KIND_BAD_REG, 32'h12);
 		pl[0] = 32'h1A4;
 		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd2);
-		expect_fault("disp", GHCI_FAULT_RING, 32'h1A4);
+		expect_fault("disp", GHCI_FAULT_KIND_BAD_REG, 32'h1A4);
 		pl[0] = 32'h10;
 		packet(1'b0, 1'b0, 6'd15, 8'd0, 8'd1);
-		expect_fault("disp", GHCI_FAULT_RING, 32'd0);
+		expect_fault("disp", GHCI_FAULT_KIND_BAD_REG, 32'd0);
 		pl[0] = 32'h0; pl[1] = 32'h0; pl[2] = 32'h0; pl[3] = 32'h0;
 		packet(1'b0, 1'b0, 6'd16, 8'd0, 8'd3);
-		expect_fault("disp", GHCI_FAULT_RING, 32'd0);
+		expect_fault("disp", GHCI_FAULT_KIND_BAD_REG, 32'd0);
 		fw_active = 1;
 		packet(1'b1, 1'b0, 6'd16, 8'd0, 8'd4);
-		expect_fault("disp", GHCI_FAULT_OPCODE, 32'd0);
+		expect_fault("disp", GHCI_FAULT_KIND_INVALID_OP, 32'd0);
 		packet(1'b1, 1'b0, 6'd15, 8'd0, 8'd0);
-		expect_fault("disp", GHCI_FAULT_OPCODE, 32'd0);
+		expect_fault("disp", GHCI_FAULT_KIND_INVALID_OP, 32'd0);
 		fw_active = 0;
 		if (errors == e0)
 			$display("PASS atg_cp_seq.disp");
@@ -861,14 +861,14 @@ module atg_cp_seq_tb;
 		/* badop: op 17, vendor op 5, class 2; a short payload (kind 3);
 		 * DRAW without a VF and DISP_SET without HAS_DISP (kind 2). */
 		packet(1'b0, 1'b0, 6'd17, 8'd0, 8'd0);
-		expect_fault("badop", GHCI_FAULT_OPCODE, 32'd0);
+		expect_fault("badop", GHCI_FAULT_KIND_INVALID_OP, 32'd0);
 		packet(1'b0, 1'b1, 6'd5, 8'd0, 8'd0);
-		expect_fault("badop", GHCI_FAULT_OPCODE, 32'd0);
+		expect_fault("badop", GHCI_FAULT_KIND_INVALID_OP, 32'd0);
 		push(1'b0, {2'b10, 6'd0, 8'hA5, 16'd0}, 1'b1);
-		expect_fault("badop", GHCI_FAULT_OPCODE, 32'd0);
+		expect_fault("badop", GHCI_FAULT_KIND_INVALID_OP, 32'd0);
 		pl[0] = 32'h100;
 		packet(1'b0, 1'b0, 6'd5, 8'd0, 8'd1);
-		expect_fault("badop", GHCI_FAULT_RING, 32'd0);
+		expect_fault("badop", GHCI_FAULT_KIND_BAD_REG, 32'd0);
 		@(negedge clk);
 		s_data = hdr(1'b0, 6'd3, 8'd0, 8'd0);
 		s_valid = 1;

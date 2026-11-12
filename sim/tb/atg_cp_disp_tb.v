@@ -216,7 +216,7 @@ module atg_cp_disp_tb;
 		begin
 			n0 = flips_n;
 			flip(plane, base, record, 32'd1);
-			check("flip", f_seen && f_kind_seen == GHCI_FAULT_RING && f_addr_seen == want &&
+			check("flip", f_seen && f_kind_seen == GHCI_FAULT_KIND_BAD_REG && f_addr_seen == want &&
 				f_tag_seen == 8'h5A, "a bad FLIP without its fault 3");
 			@(negedge clk);
 			check("flip", flips_n == n0, "a bad FLIP placed");

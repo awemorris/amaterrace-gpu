@@ -40,6 +40,7 @@ module atg_cp_ctl_tb;
 	reg [31:0] src_kind = 0;
 	reg [255:0] src_addr = 0;
 	reg [63:0] src_tag = 0;
+	reg [31:0] src_stage = 0;
 	reg [7:0] wdt_tag = 0;
 	wire run, halt, quiesce, mc_flush, core_rst_n, open, step, ev_halted, ev_fault, ev_wdt;
 	wire ctrl_irq_global;
@@ -60,6 +61,7 @@ module atg_cp_ctl_tb;
 		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
 		.mc_fault_write(mc_fault_write),
 		.src_fault(src_fault), .src_kind(src_kind), .src_addr(src_addr), .src_tag(src_tag),
+		.src_stage(src_stage),
 		.run(run), .halt(halt), .ctrl_irq_global(ctrl_irq_global), .quiesce(quiesce), .mc_flush(mc_flush),
 		.core_rst_n(core_rst_n), .open(open), .cp_state(cp_state), .lc_state(lc_state), .host_kick(host_kick),
 		.step(step), .ev_halted(ev_halted), .ev_fault(ev_fault), .ev_wdt(ev_wdt),
@@ -341,17 +343,17 @@ module atg_cp_ctl_tb;
 		mc_fault_addr = 32'h12345680;
 		mc_fault_write = 1;
 		src_fault[6] = 1;
-		src_kind[27:24] = GHCI_FAULT_OPCODE;
+		src_kind[27:24] = GHCI_FAULT_KIND_INVALID_OP;
 		@(negedge clk);
 		mc_fault = 0;
 		src_fault = 0;
 		expect_state("fault", LC_FAULTED);
-		expect_info("fault", {11'd0, 1'b1, 4'd0, 8'd0, 4'd3, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h12345680);
+		expect_info("fault", {11'd0, 1'b1, 4'd0, 8'd0, GHCI_FAULT_UNIT_VF, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h12345680);
 		@(negedge clk);
 		src_fault[1] = 1;
 		@(negedge clk);
 		src_fault = 0;
-		expect_info("fault", {11'd0, 1'b1, 4'd0, 8'd0, 4'd3, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h12345680);
+		expect_info("fault", {11'd0, 1'b1, 4'd0, 8'd0, GHCI_FAULT_UNIT_VF, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h12345680);
 		/* RESET is the only way out. */
 		ctrl(32'd0);
 		expect_state("fault", LC_FAULTED);
@@ -361,21 +363,21 @@ module atg_cp_ctl_tb;
 		/* A source fault: tag, block, kind, client, address. */
 		@(negedge clk);
 		src_fault[6] = 1;
-		src_kind[27:24] = GHCI_FAULT_AXI;
+		src_kind[27:24] = GHCI_FAULT_KIND_AXI_ERROR;
 		src_addr[6 * 32 +: 32] = 32'hABCD0000;
 		src_tag[6 * 8 +: 8] = 8'h5C;
 		@(negedge clk);
 		src_fault = 0;
-		expect_info("fault", {12'd0, 4'd0, 8'h5C, 4'd1, GHCI_FAULT_KIND_AXI_ERROR}, 32'hABCD0000);
+		expect_info("fault", {12'd0, 4'd0, 8'h5C, GHCI_FAULT_UNIT_BLT, GHCI_FAULT_KIND_AXI_ERROR}, 32'hABCD0000);
 		do_reset();
 		@(negedge clk);
 		src_fault[0] = 1;
-		src_kind[3:0] = GHCI_FAULT_RING;
+		src_kind[3:0] = GHCI_FAULT_KIND_BAD_REG;
 		src_addr[31:0] = 32'h400;
 		src_tag[7:0] = 8'h77;
 		@(negedge clk);
 		src_fault = 0;
-		expect_info("fault", {12'd0, 4'd0, 8'h77, 4'd0, GHCI_FAULT_KIND_BAD_REG}, 32'h400);
+		expect_info("fault", {12'd0, 4'd0, 8'h77, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_BAD_REG}, 32'h400);
 		/* A fault during RESETTING is ignored. */
 		mc_idle = 0;
 		ctrl(32'd1 << GHCI_CTRL_RESET);
@@ -464,6 +466,92 @@ module atg_cp_ctl_tb;
 
 		if (errors == e0)
 			$display("PASS atg_cp_ctl.locked");
+		e0 = errors;
+
+		/* U4 normalization checks (docs/ghci.md §3.5) */
+		/* 1. BLT MC error reports UNIT 6 */
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		mc_fault = 1;
+		mc_fault_client = 8'd1;
+		mc_fault_addr = 32'h20004000;
+		mc_fault_write = 0;
+		@(negedge clk);
+		mc_fault = 0;
+		expect_info("u4_blt_mc", {11'd0, 1'b0, 4'd0, 8'd0, GHCI_FAULT_UNIT_BLT, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h20004000);
+		do_reset();
+
+		/* 2. VF MC error reports UNIT 1 */
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		mc_fault = 1;
+		mc_fault_client = 8'd3;
+		mc_fault_addr = 32'h30008000;
+		mc_fault_write = 0;
+		@(negedge clk);
+		mc_fault = 0;
+		expect_info("u4_vf_mc", {11'd0, 1'b0, 4'd0, 8'd0, GHCI_FAULT_UNIT_VF, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h30008000);
+		do_reset();
+
+		/* 3. Fence write error reports KIND 5, UNIT 0 */
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		src_fault[3] = 1;
+		src_kind[3 * 4 +: 4] = GHCI_FAULT_KIND_FENCE_ERROR;
+		src_addr[3 * 32 +: 32] = 32'h00001000;
+		src_tag[3 * 8 +: 8] = 8'h81;
+		@(negedge clk);
+		src_fault = 0;
+		expect_info("u4_fence_fault", {12'd0, 4'd0, 8'h81, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_FENCE_ERROR}, 32'h00001000);
+		do_reset();
+
+		/* 4. Ring header error reports KIND 3, UNIT 0 */
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		src_fault[0] = 1;
+		src_kind[0 * 4 +: 4] = GHCI_FAULT_KIND_BAD_REG;
+		src_addr[31:0] = 32'h00000400;
+		src_tag[7:0] = 8'h77;
+		@(negedge clk);
+		src_fault = 0;
+		expect_info("u4_ring_header", {12'd0, 4'd0, 8'h77, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_BAD_REG}, 32'h00000400);
+		do_reset();
+
+		/* 5. Watchdog reports KIND 4, UNIT 0 */
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		hcr_write(GHCI_REG_WDT_CYCLES[11:0], 32'd10);
+		ctrl((32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_WDT_EN));
+		cmd_active = 1;
+		wdt_tag = 8'h44;
+		repeat (15) @(negedge clk);
+		expect_info("u4_wdt", {12'd0, 4'd0, 8'h44, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_WATCHDOG}, 32'd0);
+		cmd_active = 0;
+		wdt_tag = 8'd0;
+		do_reset();
+		ctrl(32'd0);
+		hcr_write(GHCI_REG_WDT_CYCLES[11:0], 32'h10000000);
+
+		/* 6. SU illegal instruction reports KIND 1, UNIT 2, and stage (FS=1, CS=2) */
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		src_fault[4] = 1;
+		src_kind[4 * 4 +: 4] = GHCI_FAULT_KIND_INVALID_OP;
+		src_stage[4 * 4 +: 4] = GHCI_STAGE_FS;
+		src_addr[4 * 32 +: 32] = 32'h000000A0;
+		src_tag[4 * 8 +: 8] = 8'h2A;
+		@(negedge clk);
+		src_fault = 0;
+		expect_info("u4_su_isa_fs", {12'd0, GHCI_STAGE_FS, 8'h2A, GHCI_FAULT_UNIT_SU, GHCI_FAULT_KIND_INVALID_OP}, 32'h000000A0);
+		do_reset();
+
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		src_fault[4] = 1;
+		src_kind[4 * 4 +: 4] = GHCI_FAULT_KIND_INVALID_OP;
+		src_stage[4 * 4 +: 4] = GHCI_STAGE_CS;
+		src_addr[4 * 32 +: 32] = 32'h000001B4;
+		src_tag[4 * 8 +: 8] = 8'h5B;
+		@(negedge clk);
+		src_fault = 0;
+		expect_info("u4_su_isa_cs", {12'd0, GHCI_STAGE_CS, 8'h5B, GHCI_FAULT_UNIT_SU, GHCI_FAULT_KIND_INVALID_OP}, 32'h000001B4);
+		do_reset();
+
+		if (errors == e0)
+			$display("PASS atg_cp_ctl.u4_normalization");
 		if (errors == 0)
 			$display("PASS atg_cp_ctl");
 		else

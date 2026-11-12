@@ -872,7 +872,7 @@ module atg_top_harness #(
 		ring_put(hdr(1'b0, 6'd0, 8'h71, 8'd0, 8'd5));
 		host_write(GHCI_RING_WPTR, wp);
 		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_FAULT, 32'd1 << GHCI_STATUS_FAULT);
-		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'h71, 4'd0, GHCI_FAULT_RING}, 32'hFFFFFFFF);
+		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'h71, 4'd0, GHCI_FAULT_KIND_BAD_REG}, 32'hFFFFFFFF);
 		reset_gpu();
 
 		/* A fence outside the aperture: fault kind of the CP (client 0). */
@@ -882,7 +882,7 @@ module atg_top_harness #(
 		ring_put(32'd1);
 		host_write(GHCI_RING_WPTR, wp);
 		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_FAULT, 32'd1 << GHCI_STATUS_FAULT);
-		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_APERTURE}, 32'hFFFFFFFF);
+		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_FENCE_ERROR}, 32'hFFFFFFFF);
 		expect_reg(GHCI_FAULT_ADDR, 32'h00001000, 32'hFFFFFFFF);
 		reset_gpu();
 

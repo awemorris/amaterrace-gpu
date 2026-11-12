@@ -988,7 +988,7 @@ module atg_cp_seq #(
 `ifdef SYNTH_KINTEX7
 				if (dec_fault_s) begin
 					f_pulse <= 1'b1;
-					f_kind <= dec_short_s ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+					f_kind <= dec_short_s ? GHCI_FAULT_KIND_BAD_REG : GHCI_FAULT_KIND_INVALID_OP;
 					st <= Q_DEAD;
 					st_is_pay_r <= 1'b0;
 				end else begin
@@ -998,7 +998,7 @@ module atg_cp_seq #(
 `else
 				if (dec_fault_r) begin
 					f_pulse <= 1'b1;
-					f_kind <= dec_short_r ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+					f_kind <= dec_short_r ? GHCI_FAULT_KIND_BAD_REG : GHCI_FAULT_KIND_INVALID_OP;
 					st <= Q_DEAD;
 				end else begin
 					st <= h_zero_r ? Q_EXEC : Q_PAY;
@@ -1009,7 +1009,7 @@ module atg_cp_seq #(
 `ifdef SYNTH_KINTEX7
 				if (bad_idx_comb) begin
 					f_pulse <= 1'b1;
-					f_kind <= GHCI_FAULT_RING;
+					f_kind <= GHCI_FAULT_KIND_BAD_REG;
 					st <= Q_DEAD;
 					st_is_pay_r <= 1'b0;
 				end else if (pay_take_b[3] && p_is_last_r) begin
@@ -1020,7 +1020,7 @@ module atg_cp_seq #(
 `else
 				if (pay_take && set_bad) begin
 					f_pulse <= 1'b1;
-					f_kind <= GHCI_FAULT_RING;
+					f_kind <= GHCI_FAULT_KIND_BAD_REG;
 					f_faddr <= in_data;
 					st <= Q_DEAD;
 				end else if (pay_take) begin

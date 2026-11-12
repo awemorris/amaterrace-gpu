@@ -442,17 +442,6 @@ localparam [3:0] GHCI_STAGE_FS       = 4'd1;
 localparam [3:0] GHCI_STAGE_CS       = 4'd2;
 localparam [3:0] GHCI_STAGE_MS       = 4'd3;
 
-/* Legacy FAULT_INFO kinds for backward compatibility */
-localparam [3:0] GHCI_FAULT_APERTURE = 4'd2;
-localparam [3:0] GHCI_FAULT_OPCODE = 4'd1;
-localparam [3:0] GHCI_FAULT_RING = 4'd3;
-localparam [3:0] GHCI_FAULT_WATCHDOG = 4'd4;
-localparam [3:0] GHCI_FAULT_AXI = 4'd5;
-localparam [3:0] GHCI_FAULT_KICK = 4'd2;
-localparam [3:0] GHCI_FAULT_LOCKED = 4'd7;
-localparam [3:0] GHCI_FAULT_ISA = 4'd1;
-localparam [3:0] GHCI_FAULT_GPU_PAGE_FAULT = 4'd9;
-localparam [3:0] GHCI_FAULT_GPU_PERM_VIOLATION = 4'd10;
 
 /* Page Table Entry (PTE) bits (J11). */
 localparam GHCI_PTE_VALID_BIT      = 0;

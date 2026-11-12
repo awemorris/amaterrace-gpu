@@ -3348,7 +3348,7 @@ module atg_blt_2d #(
 				if (kick) begin
 					if (!op_ok) begin
 						error <= 1'b1;
-						error_kind <= GHCI_FAULT_OPCODE;
+						error_kind <= GHCI_FAULT_KIND_INVALID_OP;
 					end
 				end
 			end
@@ -3652,7 +3652,7 @@ module atg_blt_2d #(
 				if (q_free && wr_idle && rd_idle && !rsp_valid) begin
 					if (fail_fsm3) begin
 						error <= 1'b1;
-						error_kind <= GHCI_FAULT_AXI;
+						error_kind <= GHCI_FAULT_KIND_AXI_ERROR;
 					end
 				end
 			end

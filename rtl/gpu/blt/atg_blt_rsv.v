@@ -400,7 +400,7 @@ module atg_blt_rsv #(
 					m_tiled <= s_resolve[8];
 					if (!op_ok) begin
 						error <= 1'b1;
-						error_kind <= GHCI_FAULT_OPCODE;
+						error_kind <= GHCI_FAULT_KIND_INVALID_OP;
 					end else begin
 						state <= S_CLIP;
 						x0 <= clip_x0;
@@ -467,7 +467,7 @@ module atg_blt_rsv #(
 					state <= S_IDLE;
 					if (fail) begin
 						error <= 1'b1;
-						error_kind <= GHCI_FAULT_AXI;
+						error_kind <= GHCI_FAULT_KIND_AXI_ERROR;
 					end else begin
 						done <= 1'b1;
 					end

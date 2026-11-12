@@ -221,7 +221,7 @@ module atg_cp_fence_tb;
 		wait_done();
 		repeat (20) @(negedge clk);
 		expect_eq("error fault", faults, 1);
-		expect_eq("error kind", {28'd0, fault_kind}, {28'd0, GHCI_FAULT_APERTURE});
+		expect_eq("error kind", {28'd0, fault_kind}, {28'd0, GHCI_FAULT_KIND_FENCE_ERROR});
 		expect_eq("error addr", fault_addr, 32'h00009000);
 		expect_eq("error: FENCE_LAST kept", fence_last, 32'h104);
 		expect_eq("error: no event", fences, 2);

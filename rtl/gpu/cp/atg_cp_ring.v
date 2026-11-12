@@ -1694,13 +1694,13 @@ module atg_cp_ring #(
 `ifdef SYNTH_KINTEX7
 				if (rem_words_bo_r || ({3'd0, n} > rem_words_r) || ({3'd0, n} >= {1'b0, avail_check}) || h_novf_r) begin
 					f_pulse <= 1'b1;
-					f_kind  <= (h_novf_r) ? GHCI_FAULT_OPCODE : GHCI_FAULT_RING;
+					f_kind  <= (h_novf_r) ? GHCI_FAULT_KIND_INVALID_OP : GHCI_FAULT_KIND_BAD_REG;
 					st      <= R_FAULT;
 				end else begin
 `else
 				if (h_bad_r || h_novf_r) begin
 					f_pulse <= 1'b1;
-					f_kind  <= h_bad_r ? GHCI_FAULT_RING : GHCI_FAULT_OPCODE;
+					f_kind  <= h_bad_r ? GHCI_FAULT_KIND_BAD_REG : GHCI_FAULT_KIND_INVALID_OP;
 					st      <= R_FAULT;
 				end else begin
 `endif
@@ -1773,7 +1773,7 @@ module atg_cp_ring #(
 				if (rsp_is_tag0_r) begin
 					if (rsp_error_r) begin
 						f_pulse <= 1'b1;
-						f_kind  <= GHCI_FAULT_APERTURE;
+						f_kind  <= GHCI_FAULT_KIND_AXI_ERROR;
 						st      <= R_FAULT;
 					end else begin
 						hdr_wait <= 2'b00;
@@ -1784,7 +1784,7 @@ module atg_cp_ring #(
 				if (rsp_valid && (rsp_tag == 8'd0)) begin
 					if (rsp_error) begin
 						f_pulse <= 1'b1;
-						f_kind  <= GHCI_FAULT_APERTURE;
+						f_kind  <= GHCI_FAULT_KIND_AXI_ERROR;
 						f_addr  <= want_addr[31:0];
 						st      <= R_FAULT;
 					end else begin

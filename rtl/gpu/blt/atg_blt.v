@@ -222,7 +222,7 @@ module atg_blt #(
 			assign r_busy = 1'b0;
 			assign r_done = 1'b0;
 			assign r_error = w_error;
-			assign r_kind = GHCI_FAULT_OPCODE;
+			assign r_kind = GHCI_FAULT_KIND_INVALID_OP;
 			assign r_req_valid = 1'b0;
 			assign r_req_write = 1'b0;
 			assign r_req_line = {LA_W{1'b0}};

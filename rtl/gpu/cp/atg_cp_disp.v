@@ -203,7 +203,7 @@ module atg_cp_disp #(
 	wire f_go = k_flip && !f_bad;
 
 	assign fault = f_bad;
-	assign fault_kind = GHCI_FAULT_RING;
+	assign fault_kind = GHCI_FAULT_KIND_BAD_REG;
 	assign fault_addr = !plane_ok ? st_plane : base_bad ? st_base : st_record;
 	assign fault_tag = seq_tag;
 

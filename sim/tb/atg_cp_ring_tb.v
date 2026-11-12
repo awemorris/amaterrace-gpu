@@ -342,7 +342,7 @@ module ring_bench #(
 			put(32'd0);
 			doorbell();
 			repeat (100) @(negedge clk);
-			if (faults != 1 || fault_kind !== GHCI_FAULT_OPCODE || fault_tag !== 8'h99 ||
+			if (faults != 1 || fault_kind !== GHCI_FAULT_KIND_INVALID_OP || fault_tag !== 8'h99 ||
 			    fault_addr !== BASE + v * 4) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_ring.fault: class V: %0d faults kind %h tag %h addr %h",
@@ -369,7 +369,7 @@ module ring_bench #(
 		put(32'd1);
 		doorbell();
 		repeat (100) @(negedge clk);
-		if (faults != 1 || fault_kind !== GHCI_FAULT_RING || fault_tag !== 8'h77 ||
+		if (faults != 1 || fault_kind !== GHCI_FAULT_KIND_BAD_REG || fault_tag !== 8'h77 ||
 		    fault_addr !== BASE + v * 4 || nq_head != nq_tail || busy) begin
 			errors = errors + 1;
 			$display("FAIL atg_cp_ring.fault: %0d faults kind %h tag %h addr %h", faults,

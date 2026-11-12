@@ -475,13 +475,13 @@ module atg_blt_rsv_tbc #(
 				k == 3 ? 32'h204 : 32'h4);
 			st(GHCI_S_BLT_RESOLVE, k == 4 ? 32'h1 : k == 5 ? 32'h82 : k == 6 ? 32'h12 : 32'h2);
 			run;
-			if (ok !== 1'b0 || ekind != GHCI_FAULT_OPCODE || nreq != n)
+			if (ok !== 1'b0 || ekind != GHCI_FAULT_KIND_INVALID_OP || nreq != n)
 				fail_msg("refused combination");
 		end
 		mk(4, 0, 0, 0, 0, 0, 0, 16, 2, 0, 0);
 		c_sbase = 32'h7F00;	/* runs past the end: error responses */
 		do_case(0);
-		if (ok !== 1'b0 || ekind != GHCI_FAULT_AXI)
+		if (ok !== 1'b0 || ekind != GHCI_FAULT_KIND_AXI_ERROR)
 			fail_msg("no AXI error");
 		for (k = 0; k < MEMB; k = k + 1)
 			rmem[k] = mem[k];
@@ -512,7 +512,7 @@ module atg_blt_rsv_tbc #(
 			n = nreq;
 			st(GHCI_S_BLT_OP, 32'h4);
 			run;
-			if (ok !== 1'b0 || ekind != GHCI_FAULT_OPCODE || nreq != n || busy)
+			if (ok !== 1'b0 || ekind != GHCI_FAULT_KIND_INVALID_OP || nreq != n || busy)
 				fail_msg("RESOLVE without MS4");
 		end
 		st(GHCI_S_BLT_OP, 32'h1);
