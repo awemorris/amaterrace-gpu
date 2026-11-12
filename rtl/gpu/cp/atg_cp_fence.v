@@ -179,23 +179,28 @@ module atg_cp_fence #(
 	assign req_tag = 8'd0;
 
 `ifdef SYNTH_KINTEX7
-	wire [31:0] mem_word = {
+	wire [31:0] mem_lo = {
 		rsp_rdata[{fword_b3, 5'd0} + 24 +: 8],
 		rsp_rdata[{fword_b2, 5'd0} + 16 +: 8],
 		rsp_rdata[{fword_b1, 5'd0} + 8 +: 8],
 		rsp_rdata[{fword_b0, 5'd0} +: 8]
 	};
-`else
-	wire [31:0] mem_word = rsp_rdata[{word, 5'd0} +: 32];
-`endif
-	wire [31:0] diff;
+	wire [31:0] mem_hi = {
+		rsp_rdata[{fword_b3[WS-1:1], 1'b1, 5'd0} + 24 +: 8],
+		rsp_rdata[{fword_b2[WS-1:1], 1'b1, 5'd0} + 16 +: 8],
+		rsp_rdata[{fword_b1[WS-1:1], 1'b1, 5'd0} + 8 +: 8],
+		rsp_rdata[{fword_b0[WS-1:1], 1'b1, 5'd0} +: 8]
+	};
+	wire [63:0] mem_qword = {mem_hi, mem_lo};
+	reg [63:0] mem_qword_r;
+	wire [63:0] diff64;
 	wire diff_bo;
-
-`ifdef SYNTH_KINTEX7
-	reg [31:0] mem_word_r;
-	am_sub #(.W(32)) diff_sub (.a(mem_word_r), .b(value), .bi(1'b0), .d(diff), .bo(diff_bo));
+	am_sub #(.W(64)) diff_sub (.a(mem_qword_r), .b({aux, value}), .bi(1'b0), .d(diff64), .bo(diff_bo));
 `else
-	am_sub #(.W(32)) diff_sub (.a(mem_word), .b(value), .bi(1'b0), .d(diff), .bo(diff_bo));
+	wire [63:0] mem_qword = rsp_rdata[{word[WS-1:1], 6'd0} +: 64];
+	wire [63:0] diff64;
+	wire diff_bo;
+	am_sub #(.W(64)) diff_sub (.a(mem_qword), .b({aux, value}), .bi(1'b0), .d(diff64), .bo(diff_bo));
 `endif
 
 	/* The gap's count - 1. */
@@ -203,7 +208,7 @@ module atg_cp_fence #(
 	wire gap_bo;
 
 	am_sub #(.W(8)) gap_sub (.a(gap), .b(8'd0), .bi(1'b1), .d(gap_n), .bo(gap_bo));
-	wire passed = !diff[31];
+	wire passed = !diff64[63];
 
 	assign fault = st == F_RSP && rsp_valid && rsp_error;
 	assign fault_kind = GHCI_FAULT_KIND_FENCE_ERROR;
@@ -241,7 +246,7 @@ module atg_cp_fence #(
 			gap <= 8'd0;
 			ev_fence_pulse <= 1'b0;
 `ifdef SYNTH_KINTEX7
-			mem_word_r <= 32'd0;
+			mem_qword_r <= 64'd0;
 `endif
 		end else begin
 `ifdef SYNTH_KINTEX7
@@ -250,9 +255,9 @@ module atg_cp_fence #(
 			if (last_we_b[1])
 				last[31:16] <= last_we_fence_b[1] ? fence_last_in[31:16] : ((last[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]));
 			if (mem_word_we_b[0])
-				mem_word_r[15:0] <= mem_word[15:0];
+				mem_qword_r[31:0] <= mem_qword[31:0];
 			if (mem_word_we_b[1])
-				mem_word_r[31:16] <= mem_word[31:16];
+				mem_qword_r[63:32] <= mem_qword[63:32];
 `else
 			if (hcr_we && hcr_widx == I_LAST)
 				last <= (last & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
@@ -265,14 +270,14 @@ module atg_cp_fence #(
 				if (f_valid) begin
 					op <= f_op;
 `ifdef SYNTH_KINTEX7
-					if (f_val_b[0]) addr[15:0] <= f_op[1] ? {f_addr[15:2], 2'b00} : {f_addr[15:3], 3'b000};
+					if (f_val_b[0]) addr[15:0] <= {f_addr[15:3], 3'b000};
 					if (f_val_b[1]) addr[31:16] <= f_addr[31:16];
 					if (f_val_b[2]) value[15:0] <= f_value[15:0];
 					if (f_val_b[3]) value[31:16] <= f_value[31:16];
 					if (f_val_b[4]) aux[15:0] <= f_aux[15:0];
 					if (f_val_b[5]) aux[31:16] <= f_aux[31:16];
 `else
-					addr <= f_op[1] ? {f_addr[ADDR_W-1:2], 2'b00} : {f_addr[ADDR_W-1:3], 3'b000};
+					addr <= {f_addr[ADDR_W-1:3], 3'b000};
 					value <= f_value;
 					aux <= f_aux;
 `endif
@@ -333,7 +338,7 @@ module atg_cp_fence #(
 
 	assign hcr_rdata = (hcr_ridx == I_LAST) ? last : 32'd0;
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo, f_addr[2:0], hcr_ridx[9:6], f_flush};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff64[62:0], diff_bo, gap_bo, f_addr[2:0], hcr_ridx[9:6], f_flush};
 endmodule
 
 `default_nettype wire

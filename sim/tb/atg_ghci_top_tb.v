@@ -770,6 +770,76 @@ module ghci_probe #(
 			$display("PASS CMD_FENCE with flags=0x3 wrote {00000003, 33330002}");
 		end
 
+		/* --- V2: Testing CMD_WAIT_FENCE 64-bit comparison (GHCI 1.0 §7.3) --- */
+		/* Case 1: mem = 0x00000001_00000000, wait = 0x00000000_00000001 -> passes immediately */
+		mem.poke32(32'h00008000, 32'h00000000); /* mem lo */
+		mem.poke32(32'h00008004, 32'h00000001); /* mem hi */
+		mem.poke32(32'h00004078, 32'h00000534); /* Header: size=5, Opcode=0x34 (CMD_WAIT_FENCE) */
+		mem.poke32(32'h0000407C, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h00004080, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h00004084, 32'h00000001); /* wait_val_lo = 1 */
+		mem.poke32(32'h00004088, 32'h00000000); /* wait_val_hi = 0 */
+		host_write(GHCI_REG_RING_WPTR, 32'd35);
+		to_cnt = 0;
+		val = 0;
+		while (val < 32'd35 && to_cnt < 200) begin
+			#50;
+			host_read(GHCI_REG_RING_RPTR, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("CMD_WAIT_FENCE Case 1 passed immediately to RPTR 35", val, 32'd35);
+
+		/* Case 2: mem = 0x00000000_00000005, wait = 0x00000001_00000001 -> must wait, STATUS[19:16]=4 */
+		mem.poke32(32'h00008000, 32'h00000005); /* mem lo */
+		mem.poke32(32'h00008004, 32'h00000000); /* mem hi */
+		mem.poke32(32'h0000408C, 32'h00000534); /* Header: size=5, Opcode=0x34 */
+		mem.poke32(32'h00004090, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h00004094, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h00004098, 32'h00000001); /* wait_val_lo = 1 */
+		mem.poke32(32'h0000409C, 32'h00000001); /* wait_val_hi = 1 */
+		host_write(GHCI_REG_RING_WPTR, 32'd40);
+		to_cnt = 0;
+		val = 0;
+		while (val < 32'd40 && to_cnt < 200) begin
+			#50;
+			host_read(GHCI_REG_RING_RPTR, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("CMD_WAIT_FENCE Case 2 packet fetched to RPTR 40", val, 32'd40);
+
+		/* Verify STATUS[19:16] == 4 (GHCI_ST_WAIT_FENCE) while condition is unsatisfied */
+		host_read(GHCI_REG_STATUS, val);
+		check32("STATUS[19:16] is WAIT_FENCE (4) during wait", {28'd0, val[19:16]}, 32'd4);
+
+		/* Put next packet (CMD_FENCE) at offset 0x40A0 to verify execution stalls behind WAIT_FENCE */
+		mem.poke32(32'h000040A0, 32'h00000633); /* Header: size=6, Opcode=0x33 */
+		mem.poke32(32'h000040A4, 32'h00008000);
+		mem.poke32(32'h000040A8, 32'h00000000);
+		mem.poke32(32'h000040AC, 32'h99990001);
+		mem.poke32(32'h000040B0, 32'h00000000);
+		mem.poke32(32'h000040B4, 32'h00000002);
+		host_write(GHCI_REG_RING_WPTR, 32'd46);
+		repeat (20) #50;
+		host_read(GHCI_REG_RING_RPTR, val);
+		if (val >= 32'd46) begin
+			err_count = err_count + 1;
+			$display("FAIL Next command executed before WAIT_FENCE satisfied (RPTR=%0d)", val);
+		end else begin
+			$display("PASS Engine stalls behind unsatisfied WAIT_FENCE (RPTR=%0d)", val);
+		end
+
+		/* Now satisfy condition: mem advances to 0x00000001_00000002 */
+		mem.poke32(32'h00008000, 32'h00000002);
+		mem.poke32(32'h00008004, 32'h00000001);
+		to_cnt = 0;
+		val = 0;
+		while (val < 32'd46 && to_cnt < 200) begin
+			#50;
+			host_read(GHCI_REG_RING_RPTR, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("CMD_WAIT_FENCE Case 2 resumed and subsequent command reached RPTR 46", val, 32'd46);
+
 		/* -------------------------------------------------------------
 		 * 8. Item 7: R1 / R2 / R3 Dynamic checks
 		 * ------------------------------------------------------------- */

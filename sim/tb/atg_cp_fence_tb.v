@@ -195,8 +195,10 @@ module atg_cp_fence_tb;
 		if (errors == e0)
 			$display("PASS atg_cp_fence.result");
 		e0 = errors;
-		/* wait: 0xFFFFFFF0 has not passed 5; 6 has (across the wrap). */
+		/* wait: 64-bit signed comparison (GHCI 1.0 §7.3). */
+		/* Case A: 0xFFFFFFFF_FFFFFFF0 has not passed +5; +6 has (across 64-bit wrap). */
 		mem.poke(32'h80, 32'hFFFFFFF0);
+		mem.poke(32'h84, 32'hFFFFFFFF);
 		reads = 0;
 		request(2'd2, 32'h00000080, 32'h00000005, 32'h0, 1'b0, 1'b0);
 		repeat (200) @(negedge clk);
@@ -206,13 +208,37 @@ module atg_cp_fence_tb;
 			$display("FAIL atg_cp_fence.wait: %0d polls", reads);
 		end
 		mem.poke(32'h80, 32'h00000006);
+		mem.poke(32'h84, 32'h00000000);
 		wait_done();
 		expect_eq("wait: no write", mem.writes, 3);
-		/* A value already passed: one read. */
+
+		/* Case B (V2): mem = 0x00000001_00000000, wait = 0x00000000_00000001: passes immediately */
+		/* (in 32-bit comparison, low 32-bit 0 - 1 < 0 would stall) */
+		mem.poke(32'h80, 32'h00000000);
+		mem.poke(32'h84, 32'h00000001);
 		reads = 0;
-		request(2'd2, 32'h00000080, 32'h80000007, 32'h0, 1'b0, 1'b0);
+		request(2'd2, 32'h00000080, 32'h00000001, 32'h00000000, 1'b0, 1'b0);
 		wait_done();
-		expect_eq("wait passed", reads, 1);
+		expect_eq("wait 64-bit high pass", reads, 1);
+
+		/* Case C (V2): mem = 0x00000000_00000005, wait = 0x00000001_00000001: must wait */
+		/* (in 32-bit comparison, low 32-bit 5 - 1 > 0 would incorrectly pass) */
+		mem.poke(32'h80, 32'h00000005);
+		mem.poke(32'h84, 32'h00000000);
+		reads = 0;
+		request(2'd2, 32'h00000080, 32'h00000001, 32'h00000001, 1'b0, 1'b0);
+		repeat (200) @(negedge clk);
+		expect_eq("wait 64-bit high stall busy", {31'd0, f_busy}, 32'd1);
+		if (reads < 3) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_fence.wait: %0d polls", reads);
+		end
+		/* Satisfy condition: mem advances to 0x00000001_00000002 */
+		mem.poke(32'h80, 32'h00000002);
+		mem.poke(32'h84, 32'h00000001);
+		wait_done();
+		expect_eq("wait: no write", mem.writes, 3);
+
 		if (errors == e0)
 			$display("PASS atg_cp_fence.wait");
 		e0 = errors;
