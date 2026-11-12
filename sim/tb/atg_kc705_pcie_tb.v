@@ -241,7 +241,7 @@ module atg_kc705_pcie_tb;
 		dut.pcie.host_write(32'h0001_2008, 32'h0000_0000); /* addr HI */
 		dut.pcie.host_write(32'h0001_200C, 32'hC0FF_EE02); /* value LO */
 		dut.pcie.host_write(32'h0001_2010, 32'h0000_0000); /* value HI */
-		dut.pcie.host_write(32'h0001_2014, 32'h0000_0000); /* flags */
+		dut.pcie.host_write(32'h0001_2014, 32'h0000_0002); /* flags: MEM_WRITE */
 		wr(GHCI_RING_BASE, 32'h0001_2000);
 		wr(GHCI_REG_RING_SIZE, 32'h0001_0000);
 		wr(GHCI_REG_CTRL, (32'd1 << GHCI_CTRL_RUN));

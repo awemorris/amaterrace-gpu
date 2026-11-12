@@ -560,8 +560,9 @@ module ghci_probe #(
 		mem.poke32(32'h00004008, 32'h00000000); /* addr_hi = 0 */
 		mem.poke32(32'h0000400C, 32'hCAFE0042); /* seq_lo (fence payload value) */
 		mem.poke32(32'h00004010, 32'h00000000); /* seq_hi */
-		mem.poke32(32'h00004014, 32'h00000001); /* flags = 1 */
+		mem.poke32(32'h00004014, 32'h00000003); /* flags = 3 (IRQ | MEM_WRITE) */
 		mem.poke32(32'h00008000, 32'd0);        /* Clear target fence memory */
+		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF); /* Clear IRQ status */
 
 		/* Write WPTR=6 while engine is IDLE (CTRL.RUN = 0) */
 		host_write(GHCI_REG_RING_WPTR, 32'd6);
@@ -598,13 +599,105 @@ module ghci_probe #(
 			to_cnt = to_cnt + 1;
 		end
 
-		/* Verify CMD_FENCE write to host memory */
+		/* Verify CMD_FENCE write to host memory (flags = 0x3) */
 		if (mem.peek32(32'h00008000) !== 32'hCAFE0042) begin
 			err_count = err_count + 1;
 			$display("FAIL Fence target memory: got %08h, expected CAFE0042 (to_cnt=%0d, fence_st=%0d)",
 				mem.peek32(32'h00008000), to_cnt, dut.cp.u_fence.st);
 		end else begin
-			$display("PASS CMD_FENCE wrote CAFE0042 to host memory at 0x8000");
+			$display("PASS CMD_FENCE wrote CAFE0042 to host memory at 0x8000 (flags=0x3)");
+		end
+
+		/* Verify IRQ_STATUS[0] is set for flags=0x3 */
+		host_read(GHCI_REG_IRQ_STATUS, val);
+		if (!val[0]) begin
+			err_count = err_count + 1;
+			$display("FAIL IRQ_STATUS[0] not set for flags=0x3 (val=%08h)", val);
+		end else begin
+			$display("PASS IRQ_STATUS[0] set for flags=0x3");
+		end
+		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF); /* Clear IRQ status */
+
+		/* --- Testing CMD_FENCE with flags = 0x1 (IRQ only, no MEM_WRITE) --- */
+		mem.poke32(32'h00004018, 32'h00000633); /* Header: size=6, Opcode=0x33 */
+		mem.poke32(32'h0000401C, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h00004020, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h00004024, 32'h12345678); /* seq_lo */
+		mem.poke32(32'h00004028, 32'h00000000); /* seq_hi */
+		mem.poke32(32'h0000402C, 32'h00000001); /* flags = 1 (IRQ only) */
+		mem.poke32(32'h00008000, 32'hDEADBEEF); /* Target memory preset */
+
+		host_write(GHCI_REG_RING_WPTR, 32'd12);
+		to_cnt = 0;
+		val = 0;
+		while (val < 32'd12 && to_cnt < 200) begin
+			#50;
+			host_read(GHCI_REG_RING_RPTR, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("RING_RPTR advanced to 12", val, 32'd12);
+
+		/* Verify memory was NOT written */
+		if (mem.peek32(32'h00008000) !== 32'hDEADBEEF) begin
+			err_count = err_count + 1;
+			$display("FAIL Memory written when flags=0x1: got %08h, expected DEADBEEF",
+				mem.peek32(32'h00008000));
+		end else begin
+			$display("PASS Target memory NOT written for flags=0x1");
+		end
+
+		/* Verify IRQ_STATUS[0] is set for flags=0x1 */
+		host_read(GHCI_REG_IRQ_STATUS, val);
+		if (!val[0]) begin
+			err_count = err_count + 1;
+			$display("FAIL IRQ_STATUS[0] not set for flags=0x1 (val=%08h)", val);
+		end else begin
+			$display("PASS IRQ_STATUS[0] set for flags=0x1");
+		end
+		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF); /* Clear IRQ status */
+
+		/* --- Testing CMD_FENCE with flags = 0x2 (MEM_WRITE only, no IRQ) --- */
+		mem.poke32(32'h00004030, 32'h00000633); /* Header: size=6, Opcode=0x33 */
+		mem.poke32(32'h00004034, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h00004038, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h0000403C, 32'hBEEFCAFE); /* seq_lo */
+		mem.poke32(32'h00004040, 32'h00000000); /* seq_hi */
+		mem.poke32(32'h00004044, 32'h00000002); /* flags = 2 (MEM_WRITE only) */
+		mem.poke32(32'h00008000, 32'd0);        /* Clear target fence memory */
+
+		host_write(GHCI_REG_RING_WPTR, 32'd18);
+		to_cnt = 0;
+		val = 0;
+		while (val < 32'd18 && to_cnt < 200) begin
+			#50;
+			host_read(GHCI_REG_RING_RPTR, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("RING_RPTR advanced to 18", val, 32'd18);
+
+		/* Wait for CMD_FENCE write to host memory */
+		to_cnt = 0;
+		while (mem.peek32(32'h00008000) !== 32'hBEEFCAFE && to_cnt < 200) begin
+			#50;
+			to_cnt = to_cnt + 1;
+		end
+
+		/* Verify memory was written for flags=0x2 */
+		if (mem.peek32(32'h00008000) !== 32'hBEEFCAFE) begin
+			err_count = err_count + 1;
+			$display("FAIL Fence target memory: got %08h, expected BEEFCAFE",
+				mem.peek32(32'h00008000));
+		end else begin
+			$display("PASS CMD_FENCE wrote BEEFCAFE to host memory at 0x8000 (flags=0x2)");
+		end
+
+		/* Verify IRQ_STATUS[0] is NOT set for flags=0x2 */
+		host_read(GHCI_REG_IRQ_STATUS, val);
+		if (val[0]) begin
+			err_count = err_count + 1;
+			$display("FAIL IRQ_STATUS[0] unexpectedly set for flags=0x2 (val=%08h)", val);
+		end else begin
+			$display("PASS IRQ_STATUS[0] NOT set for flags=0x2");
 		end
 
 		/* -------------------------------------------------------------

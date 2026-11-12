@@ -894,7 +894,7 @@ module atg_cp #(
 	wire [2:0] s_kick_code;
 	wire [3:0] s_seq_inv;
 	wire s_seq_occ_clear;
-	wire s_f_valid, s_f_ready, s_f_irq, s_f_busy;
+	wire s_f_valid, s_f_ready, s_f_irq, s_f_mem, s_f_flush, s_f_busy;
 	wire [1:0] s_f_op;
 	wire [63:0] s_f_addr;
 	wire [31:0] s_f_value, s_f_aux;
@@ -993,7 +993,8 @@ module atg_cp #(
 		.kick(s_kick), .kick_code(s_kick_code), .inv(s_seq_inv),
 		.busy_in({s_disp_wait, busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
-		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_busy(s_f_busy),
+		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq),
+		.f_mem(s_f_mem), .f_flush(s_f_flush), .f_busy(s_f_busy),
 		.occ_count(occ_count), .occ_clear(s_seq_occ_clear),
 		.busy(s_seq_busy), .cmd_active(s_cmd_active), .seq_st(s_seq_st),
 		.fault(s_seq_fault), .fault_kind(s_seq_fault_kind), .fault_addr(s_seq_fault_addr),
@@ -1059,7 +1060,8 @@ module atg_cp #(
 		.hcr_we(hcr_we_fence), .hcr_widx(hcr_widx_fence), .hcr_wdata(reg_wdata_fence),
 		.hcr_wmask(hcr_wmask_fence), .hcr_ridx(hcr_ridx_fence), .hcr_rdata(s_fence_rdata),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr[ADDR_W-1:0]),
-		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq), .f_chk(f_chk),
+		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq),
+		.f_mem(s_f_mem), .f_flush(s_f_flush), .f_chk(f_chk),
 		.f_slot(f_slot), .f_busy(s_f_busy),
 		.ev_fence(s_ev_fence), .fence_last(cp_fence_last),
 		.fault(s_fence_fault), .fault_kind(s_fence_fault_kind),

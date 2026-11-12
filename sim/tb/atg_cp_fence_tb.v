@@ -28,6 +28,7 @@ module atg_cp_fence_tb;
 	reg [31:0] hcr_wdata = 0, hcr_wmask = 0;
 	wire [31:0] hcr_rdata;
 	reg f_valid = 0, f_irq = 0;
+	reg f_mem = 1, f_flush = 0;
 	reg [1:0] f_op = 0;
 	reg [31:0] f_addr = 0, f_value = 0, f_aux = 0;
 	wire f_ready, f_busy, ev_fence, fault;
@@ -46,7 +47,7 @@ module atg_cp_fence_tb;
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
 		.f_valid(f_valid), .f_ready(f_ready), .f_op(f_op), .f_addr(f_addr),
-		.f_value(f_value), .f_aux(f_aux), .f_irq(f_irq), .f_busy(f_busy),
+		.f_value(f_value), .f_aux(f_aux), .f_irq(f_irq), .f_mem(f_mem), .f_flush(f_flush), .f_busy(f_busy),
 		.ev_fence(ev_fence), .fence_last(fence_last),
 		.fault(fault), .fault_kind(fault_kind), .fault_addr(fault_addr), .fault_tag(fault_tag),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
@@ -83,7 +84,7 @@ module atg_cp_fence_tb;
 		if (ev_fence) begin
 			fences = fences + 1;
 			/* The word is in memory before the event. */
-			if (mem.peek(f_addr) !== fence_last && mem.peek(f_addr) !== f_value) begin
+			if (f_mem && mem.peek(f_addr) !== fence_last && mem.peek(f_addr) !== f_value) begin
 				errors = errors + 1;
 				$display("FAIL atg_cp_fence.fence: event before the word");
 			end
@@ -100,6 +101,7 @@ module atg_cp_fence_tb;
 		input [31:0] value;
 		input [31:0] aux;
 		input irq;
+		input mem_write;
 		begin
 			@(negedge clk);
 			f_valid = 1;
@@ -108,6 +110,8 @@ module atg_cp_fence_tb;
 			f_value = value;
 			f_aux = aux;
 			f_irq = irq;
+			f_mem = mem_write;
+			f_flush = 0;
 			#1;
 			while (!f_ready) begin
 				@(negedge clk);
@@ -148,38 +152,53 @@ module atg_cp_fence_tb;
 			mem.poke(i * 4, 32'h77000000 + i);
 		repeat (3) @(posedge clk);
 		rst_n = 1;
-		/* fence */
-		request(2'd0, 32'h0000004C, 32'h00000101, 32'h0, 1'b0);
+		/* fence flags = 0x3 (mem = 1, irq = 1): 64-bit write, event */
+		request(2'd0, 32'h00000048, 32'h00000101, 32'h00000202, 1'b1, 1'b1);
 		expect_eq("fence busy", {31'd0, f_busy}, 32'd1);
 		wait_done();
-		expect_eq("fence word", mem.peek(32'h4C), 32'h101);
-		expect_eq("fence neighbours", mem.peek(32'h48), 32'h77000012);
-		expect_eq("fence neighbours", mem.peek(32'h50), 32'h77000014);
+		expect_eq("fence word lo", mem.peek(32'h48), 32'h101);
+		expect_eq("fence word hi", mem.peek(32'h4C), 32'h202);
+		expect_eq("fence neighbours lo", mem.peek(32'h44), 32'h77000011);
+		expect_eq("fence neighbours hi", mem.peek(32'h50), 32'h77000014);
 		expect_eq("FENCE_LAST", fence_last, 32'h101);
-		expect_eq("no event without f_irq", fences, 0);
-		request(2'd0, 32'h00000044, 32'h00000102, 32'h0, 1'b1);
+		expect_eq("event with f_irq", fences, 1);
+
+		/* fence flags = 0x1 (mem = 0, irq = 1): no write, event */
+		mem.poke(32'h58, 32'hA5A5A5A5);
+		mem.poke(32'h5C, 32'h5A5A5A5A);
+		request(2'd0, 32'h00000058, 32'h00000103, 32'h00000303, 1'b1, 1'b0);
 		wait_done();
 		@(negedge clk);
-		expect_eq("event", fences, 1);
-		expect_eq("FENCE_LAST", fence_last, 32'h102);
+		expect_eq("fence no mem lo", mem.peek(32'h58), 32'hA5A5A5A5);
+		expect_eq("fence no mem hi", mem.peek(32'h5C), 32'h5A5A5A5A);
+		expect_eq("FENCE_LAST", fence_last, 32'h103);
+		expect_eq("event with f_irq (no mem)", fences, 2);
+
+		/* fence flags = 0x2 (mem = 1, irq = 0): 64-bit write, no event */
+		request(2'd0, 32'h00000058, 32'h00000104, 32'h00000404, 1'b0, 1'b1);
+		wait_done();
+		expect_eq("fence word lo", mem.peek(32'h58), 32'h104);
+		expect_eq("fence word hi", mem.peek(32'h5C), 32'h404);
+		expect_eq("FENCE_LAST", fence_last, 32'h104);
+		expect_eq("no event without f_irq", fences, 2);
 		if (errors == 0)
 			$display("PASS atg_cp_fence.fence");
 		e0 = errors;
 		/* result */
-		request(2'd1, 32'h00000068, 32'h5A5A0001, 32'hC3C30002, 1'b1);
+		request(2'd1, 32'h00000068, 32'h5A5A0001, 32'hC3C30002, 1'b1, 1'b1);
 		wait_done();
 		expect_eq("result status", mem.peek(32'h68), 32'h5A5A0001);
 		expect_eq("result aux", mem.peek(32'h6C), 32'hC3C30002);
 		expect_eq("result neighbours", mem.peek(32'h64), 32'h77000019);
 		expect_eq("result neighbours", mem.peek(32'h70), 32'h7700001C);
-		expect_eq("result: no fence event", fences, 1);
+		expect_eq("result: no fence event", fences, 2);
 		if (errors == e0)
 			$display("PASS atg_cp_fence.result");
 		e0 = errors;
 		/* wait: 0xFFFFFFF0 has not passed 5; 6 has (across the wrap). */
 		mem.poke(32'h80, 32'hFFFFFFF0);
 		reads = 0;
-		request(2'd2, 32'h00000080, 32'h00000005, 32'h0, 1'b0);
+		request(2'd2, 32'h00000080, 32'h00000005, 32'h0, 1'b0, 1'b0);
 		repeat (200) @(negedge clk);
 		expect_eq("wait busy", {31'd0, f_busy}, 32'd1);
 		if (reads < 3) begin
@@ -191,21 +210,21 @@ module atg_cp_fence_tb;
 		expect_eq("wait: no write", mem.writes, 3);
 		/* A value already passed: one read. */
 		reads = 0;
-		request(2'd2, 32'h00000080, 32'h80000007, 32'h0, 1'b0);
+		request(2'd2, 32'h00000080, 32'h80000007, 32'h0, 1'b0, 1'b0);
 		wait_done();
 		expect_eq("wait passed", reads, 1);
 		if (errors == e0)
 			$display("PASS atg_cp_fence.wait");
 		e0 = errors;
 		/* error */
-		request(2'd0, 32'h00009004, 32'h00000200, 32'h0, 1'b1);
+		request(2'd0, 32'h00009000, 32'h00000200, 32'h0, 1'b1, 1'b1);
 		wait_done();
 		repeat (20) @(negedge clk);
 		expect_eq("error fault", faults, 1);
 		expect_eq("error kind", {28'd0, fault_kind}, {28'd0, GHCI_FAULT_APERTURE});
-		expect_eq("error addr", fault_addr, 32'h00009004);
-		expect_eq("error: FENCE_LAST kept", fence_last, 32'h102);
-		expect_eq("error: no event", fences, 1);
+		expect_eq("error addr", fault_addr, 32'h00009000);
+		expect_eq("error: FENCE_LAST kept", fence_last, 32'h104);
+		expect_eq("error: no event", fences, 2);
 		expect_eq("error: stopped", {31'd0, f_ready}, 32'd0);
 		if (errors == e0)
 			$display("PASS atg_cp_fence.error");

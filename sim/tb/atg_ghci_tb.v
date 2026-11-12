@@ -144,6 +144,8 @@ module atg_ghci_tb;
 		.f_value(f_value),
 		.f_aux(),
 		.f_irq(),
+		.f_mem(),
+		.f_flush(),
 		.f_busy(1'b0),
 		.occ_count(40'd0),
 		.occ_clear(),

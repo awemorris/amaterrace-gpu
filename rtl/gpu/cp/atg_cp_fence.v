@@ -54,6 +54,8 @@ module atg_cp_fence #(
 	input wire [31:0] f_value,
 	input wire [31:0] f_aux,
 	input wire f_irq,
+	input wire f_mem,
+	input wire f_flush,
 	input wire f_chk,
 	input wire [5:0] f_slot,
 	output wire f_busy,
@@ -108,12 +110,15 @@ module atg_cp_fence #(
 
 	wire last_we_host = hcr_we && (hcr_widx == I_LAST);
 	wire last_we_rsp = (st == F_RSP) && rsp_valid && !rsp_error && (op == 2'd0);
+	wire last_we_nomem = (st == F_IDLE) && f_valid && (f_op == 2'd0) && !f_mem;
+	wire [31:0] fence_last_in = last_we_nomem ? f_value : value;
+	wire last_we_fence = last_we_rsp || last_we_nomem;
 	wire [1:0] last_we_b;
-	wire [1:0] last_we_rsp_b;
-	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_lwe0 (.I0(last_we_host), .I1(last_we_rsp), .O(last_we_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_lwe1 (.I0(last_we_host), .I1(last_we_rsp), .O(last_we_b[1]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_lwr0 (.I0(last_we_rsp), .O(last_we_rsp_b[0]));
-	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_lwr1 (.I0(last_we_rsp), .O(last_we_rsp_b[1]));
+	wire [1:0] last_we_fence_b;
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_lwe0 (.I0(last_we_host), .I1(last_we_fence), .O(last_we_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_lwe1 (.I0(last_we_host), .I1(last_we_fence), .O(last_we_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_lwr0 (.I0(last_we_fence), .O(last_we_fence_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_lwr1 (.I0(last_we_fence), .O(last_we_fence_b[1]));
 
 	wire [1:0] f_op1_b;
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fop0 (.I0(f_op == 2'd1), .O(f_op1_b[0]));
@@ -158,25 +163,19 @@ module atg_cp_fence #(
 `endif
 	assign req_write = !is_read;
 	assign req_line = addr[ADDR_W-1:LINE_SHIFT];
-`ifdef SYNTH_KINTEX7
 	assign req_wdata = {(LINE_BYTES / 8){aux, value}};
-`else
-	assign req_wdata = op == 2'd1 ? {(LINE_BYTES / 8){aux, value}} : {(LINE_BYTES / 4){value}};
-`endif
-	/* FENCE: the word; RESULT: the 8-byte pair (8-byte aligned). */
-	reg [LINE_BYTES-1:0] be_word, be_pair;
+	/* FENCE & RESULT: the 8-byte pair (8-byte aligned). */
+	reg [LINE_BYTES-1:0] be_pair;
 	integer bw;
 	always @(*)
 		for (bw = 0; bw < LINE_BYTES / 4; bw = bw + 1) begin
 `ifdef SYNTH_KINTEX7
-			be_word[bw*4 +: 4] = {{(32 - WS){1'b0}}, fword_be} == bw ? 4'hF : 4'h0;
 			be_pair[bw*4 +: 4] = {{(33 - WS){1'b0}}, fword_be[WS-1:1]} == bw / 2 ? 4'hF : 4'h0;
 `else
-			be_word[bw*4 +: 4] = {{(32 - WS){1'b0}}, word} == bw ? 4'hF : 4'h0;
 			be_pair[bw*4 +: 4] = {{(33 - WS){1'b0}}, word[WS-1:1]} == bw / 2 ? 4'hF : 4'h0;
 `endif
 		end
-	assign req_be = is_read ? {LINE_BYTES{1'b0}} : op == 2'd1 ? be_pair : be_word;
+	assign req_be = is_read ? {LINE_BYTES{1'b0}} : be_pair;
 	assign req_tag = 8'd0;
 
 `ifdef SYNTH_KINTEX7
@@ -220,7 +219,8 @@ module atg_cp_fence #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fv5 (.I0(f_valid && (st == F_IDLE)), .O(f_val_b[5]));
 `endif
 
-	assign ev_fence = st == F_RSP && rsp_valid && !rsp_error && op == 2'd0 && irq_on;
+	reg ev_fence_pulse;
+	assign ev_fence = ((st == F_RSP) && rsp_valid && !rsp_error && (op == 2'd0) && irq_on) || ev_fence_pulse;
 	assign fence_last = last;
 
 	always @(posedge clk) begin
@@ -239,15 +239,16 @@ module atg_cp_fence #(
 			req_slot <= 6'd0;
 			last <= 32'd0;
 			gap <= 8'd0;
+			ev_fence_pulse <= 1'b0;
 `ifdef SYNTH_KINTEX7
 			mem_word_r <= 32'd0;
 `endif
 		end else begin
 `ifdef SYNTH_KINTEX7
 			if (last_we_b[0])
-				last[15:0] <= last_we_rsp_b[0] ? value[15:0] : ((last[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]));
+				last[15:0] <= last_we_fence_b[0] ? fence_last_in[15:0] : ((last[15:0] & ~hcr_wmask[15:0]) | (hcr_wdata[15:0] & hcr_wmask[15:0]));
 			if (last_we_b[1])
-				last[31:16] <= last_we_rsp_b[1] ? value[31:16] : ((last[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]));
+				last[31:16] <= last_we_fence_b[1] ? fence_last_in[31:16] : ((last[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]));
 			if (mem_word_we_b[0])
 				mem_word_r[15:0] <= mem_word[15:0];
 			if (mem_word_we_b[1])
@@ -255,27 +256,34 @@ module atg_cp_fence #(
 `else
 			if (hcr_we && hcr_widx == I_LAST)
 				last <= (last & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
+			else if (st == F_IDLE && f_valid && (f_op == 2'd0) && !f_mem)
+				last <= f_value;
 `endif
+			ev_fence_pulse <= (st == F_IDLE) && f_valid && (f_op == 2'd0) && !f_mem && f_irq;
 			case (st)
 			F_IDLE:
 				if (f_valid) begin
 					op <= f_op;
 `ifdef SYNTH_KINTEX7
-					if (f_val_b[0]) addr[15:0] <= f_op == 2'd1 ? {f_addr[15:3], 3'b000} : {f_addr[15:2], 2'b00};
+					if (f_val_b[0]) addr[15:0] <= f_op[1] ? {f_addr[15:2], 2'b00} : {f_addr[15:3], 3'b000};
 					if (f_val_b[1]) addr[31:16] <= f_addr[31:16];
 					if (f_val_b[2]) value[15:0] <= f_value[15:0];
 					if (f_val_b[3]) value[31:16] <= f_value[31:16];
-					if (f_val_b[4]) aux[15:0] <= f_op1_b[0] ? f_aux[15:0] : f_value[15:0];
-					if (f_val_b[5]) aux[31:16] <= f_op1_b[1] ? f_aux[31:16] : f_value[31:16];
+					if (f_val_b[4]) aux[15:0] <= f_aux[15:0];
+					if (f_val_b[5]) aux[31:16] <= f_aux[31:16];
 `else
-					addr <= f_op == 2'd1 ? {f_addr[ADDR_W-1:3], 3'b000} : {f_addr[ADDR_W-1:2], 2'b00};
+					addr <= f_op[1] ? {f_addr[ADDR_W-1:2], 2'b00} : {f_addr[ADDR_W-1:3], 3'b000};
 					value <= f_value;
 					aux <= f_aux;
 `endif
 					irq_on <= f_irq;
 					req_chk <= f_chk;
 					req_slot <= f_slot;
-					st <= F_REQ;
+					if ((f_op == 2'd0) && !f_mem) begin
+						st <= F_IDLE;
+					end else begin
+						st <= F_REQ;
+					end
 				end
 			F_REQ:
 				if (req_ready)
@@ -325,7 +333,7 @@ module atg_cp_fence #(
 
 	assign hcr_rdata = (hcr_ridx == I_LAST) ? last : 32'd0;
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo, f_addr[2:0], hcr_ridx[9:6]};
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag, diff[30:0], diff_bo, gap_bo, f_addr[2:0], hcr_ridx[9:6], f_flush};
 endmodule
 
 `default_nettype wire

@@ -64,7 +64,7 @@ module atg_cp_seq_tb;
 	wire [3:0] inv;
 	reg [8:0] busy_in = 0;
 	reg vsync = 0;
-	wire f_valid, f_irq, busy, cmd_active, fault;
+	wire f_valid, f_irq, f_mem, f_flush, busy, cmd_active, fault;
 	reg f_ready = 0, f_busy = 0;
 	wire [1:0] f_op;
 	wire [63:0] f_addr;
@@ -84,7 +84,7 @@ module atg_cp_seq_tb;
 		.kick(kick), .kick_code(kick_code), .inv(inv), .busy_in(busy_in),
 		.vsync(vsync),
 		.f_valid(f_valid), .f_ready(f_ready), .f_op(f_op), .f_addr(f_addr), .f_value(f_value),
-		.f_aux(f_aux), .f_irq(f_irq), .f_busy(f_busy),
+		.f_aux(f_aux), .f_irq(f_irq), .f_mem(f_mem), .f_flush(f_flush), .f_busy(f_busy),
 		.occ_count(occ_count), .occ_clear(occ_clear),
 		.busy(busy), .cmd_active(cmd_active),
 		.fault(fault), .fault_kind(fault_kind), .fault_addr(fault_addr), .fault_tag(fault_tag)
@@ -102,7 +102,7 @@ module atg_cp_seq_tb;
 		.fw_valid(1'b0), .fw_ready(), .fw_data(32'd0), .fw_active(1'b0),
 		.halt(1'b0), .uop_we(), .uop_idx(), .uop_wdata(),
 		.kick(), .kick_code(), .inv(), .busy_in(9'd0), .vsync(1'b0),
-		.f_valid(), .f_ready(1'b0), .f_op(), .f_addr(), .f_value(), .f_aux(), .f_irq(),
+		.f_valid(), .f_ready(1'b0), .f_op(), .f_addr(), .f_value(), .f_aux(), .f_irq(), .f_mem(), .f_flush(),
 		.f_busy(1'b0), .occ_count(40'd0), .occ_clear(), .busy(), .cmd_active(),
 		.fault(s_fault), .fault_kind(s_fault_kind), .fault_addr(), .fault_tag()
 	);
@@ -675,6 +675,37 @@ module atg_cp_seq_tb;
 		compare("fence");
 		if (errors == e0)
 			$display("PASS atg_cp_seq.fence");
+		e0 = errors;
+
+		/* CMD_FENCE (0x33): flags=3 (IRQ | MEM), flags=1 (IRQ only), flags=2 (MEM only). */
+		push(1'b0, {16'd0, 8'd6, 8'h33}, 1'b0); /* CMD_FENCE len=6 */
+		push(1'b0, 32'h00008000, 1'b0); /* addr_lo */
+		push(1'b0, 32'h00000000, 1'b0); /* addr_hi */
+		push(1'b0, 32'hCAFE0042, 1'b0); /* seq_lo */
+		push(1'b0, 32'h00000000, 1'b0); /* seq_hi */
+		push(1'b0, 32'h00000003, 1'b1); /* flags = 3 */
+		expect_ev({8'h09, 6'd0, 2'd0, 1'b1, 15'd0, 32'h8000 ^ 32'hCAFE0042});
+
+		push(1'b0, {16'd0, 8'd6, 8'h33}, 1'b0);
+		push(1'b0, 32'h00008000, 1'b0);
+		push(1'b0, 32'h00000000, 1'b0);
+		push(1'b0, 32'h12345678, 1'b0);
+		push(1'b0, 32'h00000000, 1'b0);
+		push(1'b0, 32'h00000001, 1'b1); /* flags = 1 (IRQ only) */
+		expect_ev({8'h09, 6'd0, 2'd0, 1'b1, 15'd0, 32'h8000 ^ 32'h12345678});
+
+		push(1'b0, {16'd0, 8'd6, 8'h33}, 1'b0);
+		push(1'b0, 32'h00008000, 1'b0);
+		push(1'b0, 32'h00000000, 1'b0);
+		push(1'b0, 32'h87654321, 1'b0);
+		push(1'b0, 32'h00000000, 1'b0);
+		push(1'b0, 32'h00000002, 1'b1); /* flags = 2 (MEM only) */
+		expect_ev({8'h09, 6'd0, 2'd0, 1'b0, 15'd0, 32'h8000 ^ 32'h87654321});
+
+		settle("cmd_fence");
+		compare("cmd_fence");
+		if (errors == e0)
+			$display("PASS atg_cp_seq.cmd_fence");
 		e0 = errors;
 
 		/* source: a firmware stream while fw_active, the ring's waits. */
