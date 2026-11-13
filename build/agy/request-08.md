@@ -210,5 +210,24 @@
   - `python3 tools/arith-lint.py --top atg_top`: 0 operators
 - **残り**: X6, X7, X8, X9, X3 (docs)
 
+### 2026-11-13T16:10:00+09:00: X6 実装・検証完了
+- **した事**:
+  - `rtl/gpu/top/atg_top.v`:
+    - `parameter HAS_SECONDARY_RING = 0` に変更（依頼 02 W4 承認済み方針に基づき、KC705 / minimal の現状の HW/FW では secondary command buffer 直接実行は未サポートのため 0 に統一）。
+  - `rtl/gpu/cp/atg_cp_regs.v`:
+    - 未使用マクロ定義 `ATG_DEF_MESH`, `ATG_DEF_ROP_PACK`, `ATG_DEF_FFILT`, `ATG_DEF_SECONDARY_RING` を削除。
+    - `CALC_DEVICE_CAPS` [25] FFILT の判定式から `|| \`ATG_DEF_FFILT` を削除し、`(HAS_FFILT != 0) ? 1'b1 : 1'b0` に統一。
+    - `CALC_EXT_CAP_FMT0` [11:10] の判定式から `|| \`ATG_DEF_FFILT` を削除し、`HAS_FFILT` に直接連動。
+    - SU の mesh 回路有無の事実: SU のハードウェア（`rtl/gpu/su/atg_su_exp.v`）は `atg_su_exp_mesh` を常時（無条件に）インスタンス化しており、RX との接続ラインも `atg_top.v` に常に存在。ただし top / preset 側で `CFG_ENABLE_MESH` が有効化されない限り `HAS_MESH = 0` であり、KC705 minimal / balanced のいずれの preset でも `[28:27] == 2'b00`。
+  - `sim/tb/atg_ghci_top_tb.v`:
+    - `CALC_DEV_CAPS` [4] SECONDARY_RING 期待値を `1'b0` に更新。
+    - minimal KC705 の `DEVICE_CAPS`（board top パラメータと §3.2.1 からの計算値 `0x40010480`）の照合ブロックを追加。
+- **試験実行結果**:
+  - `./sim/run.sh atg_cp_regs`: PASS (1 s)
+  - `./sim/run.sh atg_ghci_top`: PASS (53 s, `PASS DEVICE_CAPS: 40010480`, `PASS minimal KC705 DEVICE_CAPS calculation == 0x40010480`)
+  - `python3 tools/arith-lint.py --top atg_top`: 0 operators
+- **残り**: X7, X8, X9, X3 (docs)
+
+
 
 

@@ -124,7 +124,7 @@ module atg_top #(
 	parameter HAS_MESH = 0,
 `endif
 	parameter HAS_INDIRECT_DRAW = 0,
-	parameter HAS_SECONDARY_RING = (HAS_CPU != 0) && (NSU > 0),
+	parameter HAS_SECONDARY_RING = 0,
 	/* The SUs' shape (design §3.7). */
 `ifdef CFG_SU_NPHYS
 	parameter SU_NPHYS = `CFG_SU_NPHYS,

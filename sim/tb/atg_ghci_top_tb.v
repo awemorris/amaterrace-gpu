@@ -115,7 +115,7 @@ module ghci_probe #(
 		1'b1,                                      /* [7] GSI1 */
 		(SU_PACKED != 0) ? 1'b1 : 1'b0,            /* [6] FP16 */
 		`ifdef CFG_ROP_DUAL_SOURCE (`CFG_ROP_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else (`ifdef CFG_ENABLE_DUAL_SOURCE (`CFG_ENABLE_DUAL_SOURCE != 0) ? 1'b1 : 1'b0 `else 1'b0 `endif) `endif, /* [5] DUAL_SRC */
-		(HAS_CPU != 0 && NSU > 0) ? 1'b1 : 1'b0,   /* [4] SECONDARY_RING */
+		1'b0,                                      /* [4] SECONDARY_RING (KC705 / minimal = 0) */
 		1'b0,                                      /* [3] INDIRECT_DRAW */
 		1'b0,                                      /* [2] HW_WALKER (atg_mmu absent in atg_top, always 0) */
 		2'b00                                      /* [1:0] */
@@ -365,6 +365,35 @@ module ghci_probe #(
 		/* 2. DEVICE_CAPS: verified against specification formulas */
 		host_read(GHCI_REG_DEVICE_CAPS, val);
 		check32("DEVICE_CAPS", val, CALC_DEV_CAPS);
+
+		/* Verification of minimal KC705 DEVICE_CAPS per board parameters & §3.2.1 ([4]=0 -> 0x40010480) */
+		begin : blk_min_caps
+			localparam [31:0] MIN_DEV_CAPS = {
+				1'b0,        /* [31] MSAA: 0 */
+				1'b1,        /* [30] DISP: 1 */
+				1'b0,        /* [29] BLT: 0 */
+				1'b0,        /* [28] MESH: 0 */
+				1'b0,        /* [27] TASK: 0 */
+				1'b0,        /* [26] ROP_PACK: 0 */
+				1'b0,        /* [25] FFILT: 0 */
+				1'b0,        /* [24] PROT: 0 */
+				8'd1,        /* [23:16] NUM_SU: 1 */
+				8'd4,        /* [15:8] PHYS_LANES: 4 */
+				1'b1,        /* [7] GSI1: 1 */
+				1'b0,        /* [6] FP16: 0 */
+				1'b0,        /* [5] DUAL_SRC: 0 */
+				1'b0,        /* [4] SECONDARY_RING: 0 */
+				1'b0,        /* [3] INDIRECT_DRAW: 0 */
+				1'b0,        /* [2] HW_WALKER: 0 */
+				2'b00        /* [1:0] */
+			};
+			if (MIN_DEV_CAPS !== 32'h40010480) begin
+				err_count = err_count + 1;
+				$display("FAIL minimal KC705 DEVICE_CAPS: %08h != 40010480", MIN_DEV_CAPS);
+			end else begin
+				$display("PASS minimal KC705 DEVICE_CAPS calculation == 0x40010480");
+			end
+		end
 
 		/* 3. Item 9: Write ordering check for RING_BASE_LO preservation across CP_HEAP_BASE write */
 		host_write(GHCI_REG_RING_BASE_LO, 32'h12345000);

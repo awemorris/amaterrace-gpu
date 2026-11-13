@@ -55,12 +55,6 @@
 `endif
 `endif
 
-`ifdef CFG_ENABLE_MESH
-`define ATG_DEF_MESH ((`CFG_ENABLE_MESH != 0) ? 1'b1 : 1'b0)
-`else
-`define ATG_DEF_MESH 1'b0
-`endif
-
 `ifdef CFG_ENABLE_SUBGROUP
 `define ATG_DEF_SUBGROUP ((`CFG_ENABLE_SUBGROUP != 0) ? 1'b1 : 1'b0)
 `else
@@ -179,18 +173,6 @@
 `define ATG_DEF_TASK 1'b0
 `endif
 
-`ifdef CFG_ROP_ENABLE_PACK
-`define ATG_DEF_ROP_PACK ((`CFG_ROP_ENABLE_PACK != 0) ? 1'b1 : 1'b0)
-`else
-`define ATG_DEF_ROP_PACK 1'b0
-`endif
-
-`ifdef CFG_TU_ENABLE_FFILT
-`define ATG_DEF_FFILT ((`CFG_TU_ENABLE_FFILT != 0) ? 1'b1 : 1'b0)
-`else
-`define ATG_DEF_FFILT 1'b0
-`endif
-
 `ifdef CFG_MC_ENABLE_PROT
 `define ATG_DEF_PROT ((`CFG_MC_ENABLE_PROT != 0) ? 1'b1 : 1'b0)
 `else
@@ -201,12 +183,6 @@
 `define ATG_DEF_INDIRECT_DRAW ((`CFG_HAS_INDIRECT_DRAW != 0) ? 1'b1 : 1'b0)
 `else
 `define ATG_DEF_INDIRECT_DRAW 1'b0
-`endif
-
-`ifdef CFG_HAS_SECONDARY_RING
-`define ATG_DEF_SECONDARY_RING ((`CFG_HAS_SECONDARY_RING != 0) ? 1'b1 : 1'b0)
-`else
-`define ATG_DEF_SECONDARY_RING 1'b0
 `endif
 
 `define ATG_DEF_COLOR_LUT 1'b0
@@ -696,7 +672,7 @@ module atg_cp_regs #(
 		(HAS_MESH != 0) ? 1'b1 : 1'b0,             /* [28] MESH */
 		(HAS_MESH != 0) ? 1'b1 : 1'b0,             /* [27] TASK (mirrors MESH) */
 		((HAS_ROP_PACK != 0) && (HAS_ROP != 0)) ? 1'b1 : 1'b0, /* [26] ROP_PACK */
-		((HAS_FFILT != 0) || `ATG_DEF_FFILT) ? 1'b1 : 1'b0, /* [25] FFILT */
+		(HAS_FFILT != 0) ? 1'b1 : 1'b0,             /* [25] FFILT */
 		(HAS_PROT != 0) ? 1'b1 : 1'b0,             /* [24] PROT */
 		NSU[7:0],                                  /* [23:16] NUM_SU */
 		SU_NPHYS[7:0],                             /* [15:8] PHYS_LANES */
@@ -715,8 +691,8 @@ module atg_cp_regs #(
 		((HAS_BLT != 0) && `ATG_DEF_BLT_BLEND) ? 1'b1 : 1'b0, /* [17] BLT_BLEND */
 		((HAS_TU != 0) && (TU_BILINEAR != 0)) ? 1'b1 : 1'b0,  /* [16] TU_BILINEAR */
 		MRT_COUNT[3:0],                            /* [15:12] MAX_MRT */
-		(((HAS_FFILT != 0) || `ATG_DEF_FFILT) && `ATG_DEF_FMT_FP32) ? 1'b1 : 1'b0, /* [11] FFILT_FP32 */
-		(((HAS_FFILT != 0) || `ATG_DEF_FFILT) && `ATG_DEF_FMT_FP16) ? 1'b1 : 1'b0, /* [10] FFILT_FP16 */
+		(((HAS_FFILT != 0)) && `ATG_DEF_FMT_FP32) ? 1'b1 : 1'b0, /* [11] FFILT_FP32 */
+		(((HAS_FFILT != 0)) && `ATG_DEF_FMT_FP16) ? 1'b1 : 1'b0, /* [10] FFILT_FP16 */
 		`ATG_DEF_FMT_SRGB,                         /* [9] SRGB */
 		1'b0,                                      /* [8] ASTC */
 		(HAS_ETC != 0) ? 1'b1 : 1'b0,              /* [7] ETC2 */
