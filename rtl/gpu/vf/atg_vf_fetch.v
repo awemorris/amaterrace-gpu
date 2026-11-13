@@ -60,6 +60,9 @@ module atg_vf_fetch #(
 	`include "atg_fmt_info.vh"
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	localparam LB = LINE_BYTES * 8;
+	localparam integer NBANKS = LINE_BYTES / 8;
+	localparam integer NPG = LINE_BYTES / 2;
+	localparam integer NP2L1 = LINE_BYTES / 16;
 
 	/* Named synchronous reset net so asic-lint excludes it from data fanout checks */
 	(* keep = "true" *) wire rst_sync = !rst_n;
@@ -279,17 +282,17 @@ module atg_vf_fetch #(
 
 	/*
 	 * 2-level LUT1 buffer tree for k_r[3:0]:
-	 * Level 1: 5 LUT1s per bit of k_r[1:0], 1 LUT1 per bit of k_r[3:2]
+	 * Level 1: 8 LUT1s per bit of k_r[1:0], 1 LUT1 per bit of k_r[3:2]
 	 * Level 2: 36 LUT1s per bit of k_r[1:0] (k_lo_b[0..35], each fanout <= 16),
 	 *          7 LUT1s per bit of k_r[3:2]  (k_hi_b[0..6],  each fanout <= 16).
 	 */
-	wire [1:0] k_lo_l1 [0:4];
+	wire [1:0] k_lo_l1 [0:7];
 	wire [1:0] k_hi_l1;
 	wire [1:0] k_lo_b  [0:35];
 	wire [1:0] k_hi_b  [0:6];
 
 	generate
-		for (gb = 0; gb < 5; gb = gb + 1) begin : g_klo_l1
+		for (gb = 0; gb < 8; gb = gb + 1) begin : g_klo_l1
 
 			assign k_lo_l1[gb] = k_r[1:0];
 
@@ -411,14 +414,24 @@ module atg_vf_fetch #(
 	reg [LINE_SHIFT-1:0] off_r;
 	reg xline_r;
 
-	/* LUT1 buffers for off_r[4:0] into sh1_r, sh2_r, af_raw_r (fanout <= 16) */
-	wire [1:0] off_43_b [0:11];
+	/* Upper bits of off_r for Stage 1 of byte aligner */
+	wire [2:0] off_hi;
+	generate
+		if (LINE_SHIFT == 5) begin : g_off_hi_5
+			assign off_hi = {1'b0, off_r[4:3]};
+		end else begin : g_off_hi_6
+			assign off_hi = off_r[5:3];
+		end
+	endgenerate
+
+	/* LUT1 buffers for off_r into sh1_r, sh2_r, af_raw_r (fanout <= 16) */
+	wire [2:0] off_hi_b [0:11];
 	wire [1:0] off_21_b [0:8];
 	wire       off_0_b  [0:7];
 	generate
-		for (gb = 0; gb < 12; gb = gb + 1) begin : g_off43_buf
+		for (gb = 0; gb < 12; gb = gb + 1) begin : g_offhi_buf
 
-			assign off_43_b[gb] = off_r[4:3];
+			assign off_hi_b[gb] = off_hi;
 
 		end
 		for (gb = 0; gb < 9; gb = gb + 1) begin : g_off21_buf
@@ -613,37 +626,39 @@ module atg_vf_fetch #(
 	wire [4:0] rsp_idx = rsp_tag[4:0];
 	reg        rsp_done_r;
 	reg [4:0]  rsp_done_idx_r;
-	wire [15:0] rsp_err_b;
+	wire [NPG-1:0] rsp_err_b;
+	(* keep = "true" *) wire [NP2L1-1:0] rsp_err_l1;
+	assign rsp_err_l1 = {NP2L1{rsp_error}};
 
 	generate
-		for (gb = 0; gb < 16; gb = gb + 1) begin : g_rsperr_buf
+		for (gb = 0; gb < NPG; gb = gb + 1) begin : g_rsperr_buf
 
-			assign rsp_err_b[gb] = rsp_error;
+			assign rsp_err_b[gb] = rsp_err_l1[gb / 8];
 
 		end
 	endgenerate
 
 	/*
-	 * 32 slices of 8-bit x 32-entry Distributed RAM for s_dat[0:31].
-	 * Grouped into 4 banks of 8 slices. Each 8-bit slice has its own registered
+	 * LINE_BYTES slices of 8-bit x 32-entry Distributed RAM for s_dat[0:31].
+	 * Grouped into NBANKS banks of 8 slices. Each 8-bit slice has its own registered
 	 * write/read addresses (separate waddr1_r/we1_r for mem1 and waddr2_r/we2_r
 	 * for mem2 so RAM pin fanout is <= 12) and registered data outputs (Rule 4).
 	 */
-	wire [255:0] pair_lo;
-	wire [255:0] pair_hi;
-	(* keep = "true" *) wire [3:0]   rd_rsp_bank_b;
-	wire [4:0]   rsp_idx_bank_b [0:3];
-	(* keep = "true" *) wire [1:0]   p2_l1;
-	(* keep = "true" *) wire [15:0]  p2_ce_b;
-	wire [2:0]   sel1_bank_b [0:3];
-	wire [2:0]   sel2_bank_b [0:3];
-	wire [1:0]   sstr_bank_b [0:3];
+	wire [LB-1:0] pair_lo;
+	wire [LB-1:0] pair_hi;
+	(* keep = "true" *) wire [NBANKS-1:0] rd_rsp_bank_b;
+	wire [4:0]   rsp_idx_bank_b [0:NBANKS-1];
+	(* keep = "true" *) wire [NP2L1-1:0]  p2_l1;
+	(* keep = "true" *) wire [NPG-1:0]    p2_ce_b;
+	wire [2:0]   sel1_bank_b [0:NBANKS-1];
+	wire [2:0]   sel2_bank_b [0:NBANKS-1];
+	wire [1:0]   sstr_bank_b [0:NBANKS-1];
 
 	generate
 
-		assign p2_l1 = {2{st_is_plan2}};
+		assign p2_l1 = {NP2L1{st_is_plan2}};
 
-		for (gb = 0; gb < 4; gb = gb + 1) begin : g_ram_bank_buf
+		for (gb = 0; gb < NBANKS; gb = gb + 1) begin : g_ram_bank_buf
 
 			assign rd_rsp_bank_b[gb] = rd_rsp;
 			assign sel1_bank_b[gb]   = sel1_calc;
@@ -656,12 +671,12 @@ module atg_vf_fetch #(
 
 			end
 		end
-		for (gb = 0; gb < 16; gb = gb + 1) begin : g_p2_ce_buf
+		for (gb = 0; gb < NPG; gb = gb + 1) begin : g_p2_ce_buf
 
 			assign p2_ce_b[gb] = p2_l1[gb / 8];
 
 		end
-		for (gb = 0; gb < 32; gb = gb + 1) begin : g_sdat_slice
+		for (gb = 0; gb < LINE_BYTES; gb = gb + 1) begin : g_sdat_slice
 			localparam integer BK = gb / 8;
 			localparam integer PG = gb / 2;
 			(* ram_style = "distributed" *) reg [7:0] mem1 [0:31];
@@ -711,7 +726,15 @@ module atg_vf_fetch #(
 		end
 	endgenerate
 
-	wire [511:0] pair_full = {pair_hi, pair_lo};
+	wire [2*LB-1:0] pair_full = {pair_hi, pair_lo};
+	wire [1023:0]   pair_full_1024;
+	generate
+		if (LINE_BYTES == 32) begin : g_pfull_32
+			assign pair_full_1024 = {{512{1'b0}}, pair_full};
+		end else begin : g_pfull_64
+			assign pair_full_1024 = pair_full;
+		end
+	endgenerate
 
 	/* 3-stage pipelined byte aligner (1 LUT level per stage, fanout <= 16) */
 	reg [191:0] sh1_r;
@@ -1177,11 +1200,15 @@ module atg_vf_fetch #(
 			/* 3-stage byte aligner updates */
 			for (ri = 0; ri < 12; ri = ri + 1) begin
 				if (ce_sh1_b[ri]) begin
-					case (off_43_b[ri])
-					2'd0: sh1_r[16*ri +: 16] <= pair_full[0   + 16*ri +: 16];
-					2'd1: sh1_r[16*ri +: 16] <= pair_full[64  + 16*ri +: 16];
-					2'd2: sh1_r[16*ri +: 16] <= pair_full[128 + 16*ri +: 16];
-					2'd3: sh1_r[16*ri +: 16] <= pair_full[192 + 16*ri +: 16];
+					case (off_hi_b[ri])
+					3'd0: sh1_r[16*ri +: 16] <= pair_full_1024[0   + 16*ri +: 16];
+					3'd1: sh1_r[16*ri +: 16] <= pair_full_1024[64  + 16*ri +: 16];
+					3'd2: sh1_r[16*ri +: 16] <= pair_full_1024[128 + 16*ri +: 16];
+					3'd3: sh1_r[16*ri +: 16] <= pair_full_1024[192 + 16*ri +: 16];
+					3'd4: sh1_r[16*ri +: 16] <= pair_full_1024[256 + 16*ri +: 16];
+					3'd5: sh1_r[16*ri +: 16] <= pair_full_1024[320 + 16*ri +: 16];
+					3'd6: sh1_r[16*ri +: 16] <= pair_full_1024[384 + 16*ri +: 16];
+					3'd7: sh1_r[16*ri +: 16] <= pair_full_1024[448 + 16*ri +: 16];
 					endcase
 				end
 			end
@@ -1441,8 +1468,9 @@ module atg_vf_fetch #(
 		end
 	end
 
+	wire [LB-129:0] pfull_unused = pair_full[2*LB-1 : LB+128];
 	wire unused_ok = &{1'b0, rsp_tag[7:5], vk_inf[67:15], vk_inf[13:6],
-		pair_full[511:384], sh1_r[191:184], div_diff[8], lim_diff_unused,
+		pfull_unused, pair_full_1024[1023:640], sh1_r[191:184], div_diff[8], lim_diff_unused,
 		num_bo_unused, elm_co_unused, eld_co_unused, div_cnt_bo_unused,
 		ad_co_unused, bnd_co_unused, l2_co_unused, osum_co_unused,
 		ce_remn_b[1], emit_take_b[2], rr1_co_unused};

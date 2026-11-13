@@ -64,7 +64,7 @@ Clock/reset domain: clk (gclk) unless the row says otherwise.  Resets are synchr
 - element = index for a per-vertex attribute; for a per-instance one (DESC[20]) Vulkan's rule: FIRST_INSTANCE + (inst − FIRST_INSTANCE) / divisor, and FIRST_INSTANCE for divisor 0 (DESC[31:24]; divisor 1 needs no division; others use a sequential divider, 32 cycles, with a one-entry memo).  addr = ATTR_BASE + stride × element (mod 2^32).  The size comes from the format (4, 8, 12 or 16 bytes; the reserved formats read 4); with CAPS[30] and ATTR_DST[k][31:24] ≠ 0 it is the VkFormat's bytes (`atg_fmt_info`: 1, 2, 4, 8, 12 or 16; a value without an entry, and a compressed block, reads 4); any byte alignment.
 - An attribute is enabled when its whole ATTR_DST word (with [31:24]) is not 0, so a VkFormat attribute may go to r0 with one component.
 - **ATTR_LIMIT[k]** (0x1D0 + k, CAPS[30]): with [31] = 1, an attribute whose bytes pass the limit (offset + size > [30:0], where offset = stride × element, with offset + size computed in 49 bits so it cannot wrap; checked in PLAN, which then goes straight to EMIT) is not read: its af comes with `af_oob` = 1 and atg_vf_conv writes (0, 0, 0, 1).  [31] = 0: no limit (as before).  The robust buffer access of Vulkan's (0, 0, 0, 1) form.
-- **Line buffer architecture**: 4 independent attribute streams (Position, Normal, Color, TexCoord, etc. mapped as $s = k[1:0]$), each equipped with an 8-entry line buffer (256 bytes per stream, 32 entries / 1 KiB total). Each stream independently caches its fetched lines so that fetching one attribute never evicts another attribute's cached lines (eliminating cache thrashing across multiple vertex buffers). An attribute crossing line boundaries uses two entries within its stream buffer without evicting either.
+- **Line buffer architecture**: 4 independent attribute streams (Position, Normal, Color, TexCoord, etc. mapped as $s = k[1:0]$), each equipped with an 8-entry line buffer (8 entries × LINE_BYTES per stream: 256 bytes for LINE_BYTES=32, 512 bytes for LINE_BYTES=64; 32 entries total: 1 KiB for LINE_BYTES=32, 2 KiB for LINE_BYTES=64). Each stream independently caches its fetched lines so that fetching one attribute never evicts another attribute's cached lines (eliminating cache thrashing across multiple vertex buffers). An attribute crossing line boundaries uses two entries within its stream buffer without evicting either.
 - Requests to the AMB use tags `{3'b0, s[1:0], entry[2:0]}` allowing responses to be demultiplexed directly to the targeted stream and entry. The entries are cleared on warp completion. An error response reads as 0 (the MC raises the fault).
 - af_raw byte 0 is the byte at addr; bytes beyond the format's size are unspecified.  Order out: lane-major (all attributes of lane 0, then lane 1) so conv can write as data comes; af_last on the last attribute of the vertex with vb_last.  A warp whose vertices have no enabled attribute still sends one af (attr 0, which is then disabled, af_last) so that atg_vf_conv pulses conv_done.
 
@@ -75,7 +75,7 @@ IDLE →(vb)→ ELEM (element; DIV for a divisor above 1 not in the memo) → MU
 ## 6. Latency and throughput
 
 - On a line buffer hit, `ST_PLAN` transitions directly to `ST_EMIT`, completing the attribute in ~4 cycles (0 DRAM latency).
-- With 4 streams retaining up to 8 lines each (1 KiB total), subsequent vertices within the warp achieve near 100% cache hit rates, boosting vertex delivery rate by 4x over the single 2-line buffer design.
+- With 4 streams retaining up to 8 lines each (1 KiB total for 32-byte lines, 2 KiB total for 64-byte lines), subsequent vertices within the warp achieve near 100% cache hit rates, boosting vertex delivery rate by 4x over the single 2-line buffer design.
 - A miss initiates pipelined AMB burst requests; line responses arrive tagged per stream/entry.
 
 ## 7. Corner cases and errors
@@ -93,6 +93,8 @@ IDLE →(vb)→ ELEM (element; DIV for a divisor above 1 not in the memo) → MU
 - `PASS atg_vf_fetch.limit` — ATTR_LIMIT: attributes just inside and just outside, per vertex and per instance (CAPS[30])
 - `PASS atg_vf_fetch.limit0` — [31] = 1 with 0 bytes: nothing is read
 - `PASS atg_vf_fetch.size12` — R32G32B32 (12 bytes) by VkFormat
+- `PASS atg_vf_fetch.line64_addr` — LINE_BYTES 64 / LINE_SHIFT 6: vertex fetches with offsets >= 32 inside 64-byte lines
+- `PASS atg_vf_fetch.line64_cross` — LINE_BYTES 64 / LINE_SHIFT 6: cross-line attributes with 64-byte lines
 - `PASS atg_vf_fetch` at the end.
 
 ## 9. References

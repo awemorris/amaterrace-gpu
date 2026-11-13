@@ -41,32 +41,83 @@ module atg_vf_fetch_tb;
 	reg [4:0] vb_lane = 0;
 	reg vb_last = 1'b0;
 	reg af_ready = 1'b0;
-	wire vb_ready, af_valid, af_last, af_oob, busy;
-	wire [3:0] af_attr;
-	wire [4:0] af_lane;
-	wire [127:0] af_raw;
-	wire req_valid, req_ready, req_write, rsp_valid, rsp_write, rsp_error;
-	wire [26:0] req_line;
-	wire [31:0] req_be;
-	wire [255:0] req_wdata, rsp_rdata;
-	wire [7:0] req_tag, rsp_tag;
+	reg sel_64 = 1'b0;
 
-	atg_vf_fetch dut (.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
-		.st_wdata(st_wdata), .vb_valid(vb_valid), .vb_ready(vb_ready), .vb_index(vb_index),
-		.vb_inst(vb_inst), .vb_lane(vb_lane), .vb_last(vb_last), .af_valid(af_valid),
-		.af_ready(af_ready), .af_attr(af_attr), .af_lane(af_lane), .af_raw(af_raw),
-		.af_oob(af_oob), .af_last(af_last), .busy(busy),
-		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
-		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
-		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
-		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error));
-	amb_mem #(.MEM_WORDS(8192), .SEED(7)) mem (.clk(clk), .rst_n(rst_n),
-		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
-		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),
-		.rsp_valid(rsp_valid), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
-		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error));
+	/* 32-byte DUT & memory signals */
+	wire vb32_ready, af32_valid, af32_last, af32_oob, busy32;
+	wire [3:0] af32_attr;
+	wire [4:0] af32_lane;
+	wire [127:0] af32_raw;
+	wire req32_valid, req32_ready, req32_write, rsp32_valid, rsp32_write, rsp32_error;
+	wire [26:0] req32_line;
+	wire [31:0] req32_be;
+	wire [255:0] req32_wdata, rsp32_rdata;
+	wire [7:0] req32_tag, rsp32_tag;
+
+	/* 64-byte DUT & memory signals (KC705 configuration) */
+	wire vb64_ready, af64_valid, af64_last, af64_oob, busy64;
+	wire [3:0] af64_attr;
+	wire [4:0] af64_lane;
+	wire [127:0] af64_raw;
+	wire req64_valid, req64_ready, req64_write, rsp64_valid, rsp64_write, rsp64_error;
+	wire [25:0] req64_line;
+	wire [63:0] req64_be;
+	wire [511:0] req64_wdata, rsp64_rdata;
+	wire [7:0] req64_tag, rsp64_tag;
+
+	/* Common interface muxed by sel_64 */
+	wire vb_ready = sel_64 ? vb64_ready : vb32_ready;
+	wire busy     = sel_64 ? busy64     : busy32;
+	wire af_valid = sel_64 ? af64_valid : af32_valid;
+	wire [3:0] af_attr = sel_64 ? af64_attr : af32_attr;
+	wire [4:0] af_lane = sel_64 ? af64_lane : af32_lane;
+	wire [127:0] af_raw = sel_64 ? af64_raw : af32_raw;
+	wire af_oob = sel_64 ? af64_oob : af32_oob;
+	wire af_last = sel_64 ? af64_last : af32_last;
+
+	wire vb32_valid = vb_valid && !sel_64;
+	wire vb64_valid = vb_valid && sel_64;
+	wire af32_ready = af_ready && !sel_64;
+	wire af64_ready = af_ready && sel_64;
+
+	atg_vf_fetch #(.ADDR_W(32), .LINE_BYTES(32), .LINE_SHIFT(5)) dut (
+		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
+		.st_wdata(st_wdata), .vb_valid(vb32_valid), .vb_ready(vb32_ready), .vb_index(vb_index),
+		.vb_inst(vb_inst), .vb_lane(vb_lane), .vb_last(vb_last), .af_valid(af32_valid),
+		.af_ready(af32_ready), .af_attr(af32_attr), .af_lane(af32_lane), .af_raw(af32_raw),
+		.af_oob(af32_oob), .af_last(af32_last), .busy(busy32),
+		.req_valid(req32_valid), .req_ready(req32_ready), .req_write(req32_write),
+		.req_line(req32_line), .req_be(req32_be), .req_wdata(req32_wdata), .req_tag(req32_tag),
+		.rsp_valid(rsp32_valid), .rsp_write(rsp32_write), .rsp_tag(rsp32_tag),
+		.rsp_rdata(rsp32_rdata), .rsp_error(rsp32_error));
+
+	amb_mem #(.ADDR_W(32), .LINE_BYTES(32), .LINE_SHIFT(5), .MEM_WORDS(8192), .SEED(7)) mem (
+		.clk(clk), .rst_n(rst_n),
+		.req_valid(req32_valid), .req_ready(req32_ready), .req_write(req32_write),
+		.req_line(req32_line), .req_be(req32_be), .req_wdata(req32_wdata), .req_tag(req32_tag),
+		.rsp_valid(rsp32_valid), .rsp_write(rsp32_write), .rsp_tag(rsp32_tag),
+		.rsp_rdata(rsp32_rdata), .rsp_error(rsp32_error));
+
+	atg_vf_fetch #(.ADDR_W(32), .LINE_BYTES(64), .LINE_SHIFT(6)) dut64 (
+		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
+		.st_wdata(st_wdata), .vb_valid(vb64_valid), .vb_ready(vb64_ready), .vb_index(vb_index),
+		.vb_inst(vb_inst), .vb_lane(vb_lane), .vb_last(vb_last), .af_valid(af64_valid),
+		.af_ready(af64_ready), .af_attr(af64_attr), .af_lane(af64_lane), .af_raw(af64_raw),
+		.af_oob(af64_oob), .af_last(af64_last), .busy(busy64),
+		.req_valid(req64_valid), .req_ready(req64_ready), .req_write(req64_write),
+		.req_line(req64_line), .req_be(req64_be), .req_wdata(req64_wdata), .req_tag(req64_tag),
+		.rsp_valid(rsp64_valid), .rsp_write(rsp64_write), .rsp_tag(rsp64_tag),
+		.rsp_rdata(rsp64_rdata), .rsp_error(rsp64_error));
+
+	amb_mem #(.ADDR_W(32), .LINE_BYTES(64), .LINE_SHIFT(6), .MEM_WORDS(8192), .SEED(13)) mem64 (
+		.clk(clk), .rst_n(rst_n),
+		.req_valid(req64_valid), .req_ready(req64_ready), .req_write(req64_write),
+		.req_line(req64_line), .req_be(req64_be), .req_wdata(req64_wdata), .req_tag(req64_tag),
+		.rsp_valid(rsp64_valid), .rsp_write(rsp64_write), .rsp_tag(rsp64_tag),
+		.rsp_rdata(rsp64_rdata), .rsp_error(rsp64_error));
 
 	integer seed, i, errs, sect_errs, xn, xg, tmo, w, irange, nreq;
+	reg [31:0] r_val;
 	reg [31:0] finst;
 	reg [31:0] a_base [0:15];
 	reg [15:0] a_stride [0:15];
@@ -100,7 +151,7 @@ module atg_vf_fetch_tb;
 		input [31:0] a;
 		reg [31:0] wd;
 		begin
-			wd = mem.peek(a & ~32'd3);
+			wd = sel_64 ? mem64.peek(a & ~32'd3) : mem.peek(a & ~32'd3);
 			mbyte = wd >> (8 * (a & 3));
 		end
 	endfunction
@@ -201,7 +252,7 @@ module atg_vf_fetch_tb;
 			xg = xg + 1;
 		end
 		af_ready <= ($random(seed) & 3) != 0;
-		if (req_valid && req_ready)
+		if (sel_64 ? (req64_valid && req64_ready) : (req32_valid && req32_ready))
 			nreq = nreq + 1;
 	end
 
@@ -296,8 +347,41 @@ module atg_vf_fetch_tb;
 		end
 	endtask
 
+	task warp_seq;
+		input integer nv;
+		integer v;
+		begin
+			for (v = 0; v < nv; v = v + 1) begin
+				vb_valid <= 1'b1;
+				vb_index <= v;
+				vb_inst <= 32'd0;
+				vb_lane <= v;
+				vb_last <= v == nv - 1;
+				@(negedge clk);
+				while (!vb_ready)
+					@(negedge clk);
+				@(posedge clk);
+				vb_valid <= 1'b0;
+				if ($random(seed) & 1)
+					@(posedge clk);
+			end
+			@(negedge clk);
+			tmo = 0;
+			while ((busy || xg < xn) && tmo < 200000) begin
+				@(negedge clk);
+				tmo = tmo + 1;
+			end
+			if (tmo >= 200000 || xg != xn) begin
+				$display("FAIL atg_vf_fetch: warp_seq of %0d: %0d of %0d af", nv, xg, xn);
+				errs = errs + 1;
+			end
+			xn = 0;
+			xg = 0;
+		end
+	endtask
+
 	task section;
-		input [8*8-1:0] name;
+		input [8*16-1:0] name;
 		begin
 			if (errs == sect_errs)
 				$display("PASS atg_vf_fetch.%0s", name);
@@ -312,8 +396,11 @@ module atg_vf_fetch_tb;
 		sect_errs = 0;
 		xn = 0;
 		xg = 0;
-		for (i = 0; i < 8192; i = i + 1)
-			mem.poke(4 * i, $random(seed));
+		for (i = 0; i < 8192; i = i + 1) begin
+			r_val = $random(seed);
+			mem.poke(4 * i, r_val);
+			mem64.poke(4 * i, r_val);
+		end
 		repeat (3) @(posedge clk);
 		rst_n <= 1'b1;
 		@(posedge clk);
@@ -365,6 +452,47 @@ module atg_vf_fetch_tb;
 			warp(32);
 		end
 		section("size12");
+
+		/* --- LINE_BYTES = 64 (KC705 configuration) tests --- */
+		sel_64 = 1'b1;
+		irange = 100;
+
+		/* Directed KC705 scene: offsets 0, 16, 32, 48 in a single 64-byte line */
+		a_base[0] = 32'h0000;
+		a_stride[0] = 16'd16;
+		a_fmt[0] = 4'd3; /* 16-byte attribute (R32G32B32A32) */
+		a_inst[0] = 1'b0;
+		a_div[0] = 8'd0;
+		a_dst[0] = 8'h01;
+		a_vk[0] = 8'd0;
+		a_lim[0] = 32'd0;
+		st_put(9'h027, 32'd0);
+		st_put(9'h030, a_base[0]);
+		st_put(9'h031, {a_div[0], 3'd0, a_inst[0], a_fmt[0], a_stride[0]});
+		st_put(9'h1C0, {a_vk[0], 16'd0, a_dst[0]});
+		st_put(9'h1D0, a_lim[0]);
+		for (i = 1; i < 16; i = i + 1) begin
+			a_dst[i] = 8'd0;
+			a_vk[i] = 8'd0;
+			st_put(9'h1C0 + i, 32'd0);
+		end
+		warp_seq(4);
+
+		/* Random sets covering offsets >= 32 inside 64-byte lines */
+		for (w = 0; w < 12; w = w + 1) begin
+			setup(1'b0, w == 0 ? 0 : 1 + w, 0);
+			warp(w == 1 ? 32 : 1 + ($unsigned($random(seed)) % 32));
+			warp(1 + ($unsigned($random(seed)) % 32));
+		end
+		section("line64_addr");
+
+		/* Attributes crossing 64-byte line boundaries */
+		for (w = 0; w < 12; w = w + 1) begin
+			setup(1'b1, 1 + w, 0);
+			warp(1 + ($unsigned($random(seed)) % 32));
+			warp(32);
+		end
+		section("line64_cross");
 
 		if (errs == 0)
 			$display("PASS atg_vf_fetch");
