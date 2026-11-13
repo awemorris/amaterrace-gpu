@@ -52,6 +52,7 @@ module atg_su_cbank #(
 	/* Issued instruction, one lane group per cycle (from atg_su_opd, shared by all units) */
 	input wire x_valid,
 	input wire [WARP_W-1:0] x_warp,
+	input wire [NWARPS*2-1:0] warp_stage,
 	input wire [GRP_W-1:0] x_grp,
 	input wire x_last,
 	input wire [SBE_W:0] x_sbe,
@@ -477,11 +478,12 @@ module atg_su_cbank #(
 	assign cr_data = crq;
 	assign busy = st == LREQ || st == LWAIT || st == LWR || lc_pend || (b_we_r && !sc_on);
 	assign req_valid = req_valid_r;
+	wire [1:0] cur_stage = warp_stage[rwarp * 2 +: 2];
 	assign req_write = 1'b0;
 	assign req_line = ladr[ADDR_W-1:LINE_SHIFT];
 	assign req_be = {LINE_BYTES{1'b0}};
 	assign req_wdata = {LB{1'b0}};
-	assign req_tag = 8'd0;
+	assign req_tag = {6'd0, cur_stage};
 
 	assign l_valid = st == BEAT;
 	assign l_warp = rwarp;

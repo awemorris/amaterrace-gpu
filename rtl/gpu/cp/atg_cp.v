@@ -146,6 +146,7 @@ module atg_cp #(
 	input wire mc_fault_prot,	/* the refusal was for session protection (FAULT_INFO[9]) */
 	input wire mc_fault_mem,	/* a protection table read failed (kind 5) */
 	input wire [7:0] mc_fault_tag,	/* the job tag of the refused request's slot */
+	input wire [7:0] mc_fault_req_tag,
 
 	output reg st_we,
 	output reg [9:0] st_idx,
@@ -174,6 +175,7 @@ module atg_cp #(
 	/* The other blocks of design §7.6 and the CPU (atg_cpu). */
 	output wire draw_kick,
 	output wire cs_kick,
+	output wire cs_mesh,
 	output wire lc_kick,
 	output wire raw_kick,
 	output wire [3:0] inv,
@@ -619,6 +621,7 @@ module atg_cp #(
 		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
 		.mc_fault_write(mc_fault_write), .mc_fault_prot(mc_fault_prot),
 		.mc_fault_mem(mc_fault_mem), .mc_fault_tag(mc_fault_tag),
+		.mc_fault_req_tag(mc_fault_req_tag),
 		.wdt_tag(wdt_tag),
 		.src_fault({s_disp_fault, x_fault_b1[0], blt_err_b[0], cpu_fault_b[0], x_fault_b0[0], fence_fault_b[0],
 			s_lock_fault, seq_fault_b[0], ring_fault_b[0]}),
@@ -630,7 +633,6 @@ module atg_cp #(
 		.src_tag({s_disp_fault_tag, x_fault_tag[15:8], s_seq_fault_tag, 8'd0, x_fault_tag[7:0],
 			s_fence_fault_tag, 8'd0, s_seq_fault_tag, s_ring_fault_tag}),
 		.src_stage({4'd0, 4'd0, 4'd0, 4'd0, su_effective_stage, 4'd0, 4'd0, 4'd0, 4'd0}),
-		.su_stage(su_effective_stage),
 		.run(s_run), .halt(s_halt), .ctrl_irq_global(s_ctrl_irq_global), .quiesce(s_quiesce), .mc_flush(s_mc_flush),
 		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state), .lc_state(s_lc_state),
 		.host_kick(s_host_kick), .step(s_step),
@@ -1031,13 +1033,14 @@ module atg_cp #(
 	);
 `endif
 
+	wire s_seq_cs_mesh;
 	atg_cp_seq #(.UNITS(UNITS), .HAS_VSYNC(HAS_VSYNC), .HAS_DISP(HAS_DISP)) u_seq (
 		.clk(clk), .rst_n(s_core_rst_n),
 		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data),
 		.fw_valid(s_fw_valid), .fw_ready(s_fw_ready), .fw_data(s_fw_data),
 		.fw_active(fw_act_b[0]), .fw_side(s_fw_side), .halt(s_seq_halt), .seq_abort(s_seq_abort),
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
-		.kick(s_kick), .kick_code(s_kick_code), .inv(s_seq_inv),
+		.kick(s_kick), .kick_code(s_kick_code), .cs_mesh(s_seq_cs_mesh), .inv(s_seq_inv),
 		.busy_in({s_disp_wait, busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
 		.l2_flush_done(l2_flush_done), .l2_idle(l2_idle),
 		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
@@ -1053,13 +1056,14 @@ module atg_cp #(
 
 	/* The kick codes (atg_cp_seq's K_*). */
 `ifdef SYNTH_KINTEX7
-	reg blt_kick_r, draw_kick_r, cs_kick_r, lc_kick_r, raw_kick_r, occ_clear_r;
+	reg blt_kick_r, draw_kick_r, cs_kick_r, cs_mesh_r, lc_kick_r, raw_kick_r, occ_clear_r;
 	reg perf_reset_r, kick_flip_r, kick_idle_r;
 	(* extract_reset = "no" *) reg [3:0] inv_r;
 	always @(posedge clk) begin
 		blt_kick_r <= s_host_kick[0] || s_kick && s_kick_code == 3'd0;
 		draw_kick_r <= s_host_kick[1] || s_kick && s_kick_code == 3'd1;
 		cs_kick_r <= s_host_kick[2] || s_kick && s_kick_code == 3'd2;
+		cs_mesh_r <= s_seq_cs_mesh;
 		lc_kick_r <= s_kick && s_kick_code == 3'd3;
 		raw_kick_r <= s_kick && s_kick_code == 3'd4;
 		inv_r <= s_seq_inv;
@@ -1071,6 +1075,7 @@ module atg_cp #(
 	assign blt_kick = blt_kick_r;
 	assign draw_kick = draw_kick_r;
 	assign cs_kick = cs_kick_r;
+	assign cs_mesh = cs_mesh_r;
 	assign lc_kick = lc_kick_r;
 	assign raw_kick = raw_kick_r;
 	assign inv = inv_r;
@@ -1082,6 +1087,7 @@ module atg_cp #(
 	assign blt_kick = s_host_kick[0] || s_kick && s_kick_code == 3'd0;
 	assign draw_kick = s_host_kick[1] || s_kick && s_kick_code == 3'd1;
 	assign cs_kick = s_host_kick[2] || s_kick && s_kick_code == 3'd2;
+	assign cs_mesh = s_seq_cs_mesh;
 	assign lc_kick = s_kick && s_kick_code == 3'd3;
 	assign raw_kick = s_kick && s_kick_code == 3'd4;
 	assign inv = s_seq_inv;

@@ -30,6 +30,7 @@ module atg_su_fetch #(
 	input wire [31:0] f_addr,
 	/* I$ port (atg_su_icache) */
 	output wire ic_req,
+	output wire [WARP_W-1:0] ic_warp,
 	input wire ic_ready,
 	output wire [31:0] ic_addr,
 	input wire ic_rvalid,
@@ -62,6 +63,7 @@ module atg_su_fetch #(
 
 	wire ic_req_w = f_valid && room;
 	assign ic_req = ic_req_w;
+	assign ic_warp = f_warp;
 	assign ic_addr = f_addr;
 	wire f_ready_w = room && ic_ready;
 	assign f_ready = f_ready_w;

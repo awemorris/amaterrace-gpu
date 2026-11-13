@@ -142,6 +142,7 @@ module atg_mc #(
 	output reg fault_prot,	/* the refusal was for protection (FAULT_INFO[9]) */
 	output reg [5:0] fault_slot,
 	output reg fault_mem,	/* a protection table read had an AXI error (kind 5) */
+	output reg [7:0] fault_tag,
 	output wire chk_idle,
 	output wire unit_idle,
 	output wire [3:0] fsm,
@@ -519,6 +520,7 @@ module atg_mc #(
 			fault_prot <= bad_prot_r;
 			fault_slot <= bad_head_r[HW+1 +: 6];
 			fault_mem <= bad_mem_r;
+			fault_tag <= bad_head_r[11:4];
 		end
 		if (err_load_b[2]) begin
 			fault_addr[15:0] <= {bad_line_r[15-LINE_SHIFT:0], {LINE_SHIFT{1'b0}}};
@@ -541,6 +543,7 @@ module atg_mc #(
 			fault_prot <= 1'b0;
 			fault_slot <= 6'd0;
 			fault_mem <= 1'b0;
+			fault_tag <= 8'd0;
 		end else begin
 			fault <= 1'b0;
 			if (bad_r) begin
@@ -555,6 +558,7 @@ module atg_mc #(
 				fault_prot <= bad_prot_r;
 				fault_slot <= bad_head_r[HW+1 +: 6];
 				fault_mem <= bad_mem_r;
+				fault_tag <= bad_head_r[11:4];
 			end else if (err_out || flush && !err_keep) begin
 				err_v <= 1'b0;
 			end

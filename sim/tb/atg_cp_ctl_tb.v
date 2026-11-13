@@ -35,6 +35,7 @@ module atg_cp_ctl_tb;
 	reg [7:0] busy_in = 0;
 	reg mc_fault = 0, mc_fault_write = 0;
 	reg [7:0] mc_fault_client = 0;
+	reg [7:0] mc_fault_req_tag = 0;
 	reg [31:0] mc_fault_addr = 0;
 	reg [7:0] src_fault = 0;
 	reg [31:0] src_kind = 0;
@@ -52,6 +53,7 @@ module atg_cp_ctl_tb;
 	atg_cp_ctl #(.UNITS(8'h03), .DC_CLIENT(8'd5)) dut (
 		.clk(clk), .rst_n(rst_n),
 		.mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0),
+		.mc_fault_req_tag(mc_fault_req_tag),
 		.wdt_tag(wdt_tag),
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
@@ -66,6 +68,38 @@ module atg_cp_ctl_tb;
 		.core_rst_n(core_rst_n), .open(open), .cp_state(cp_state), .lc_state(lc_state), .host_kick(host_kick),
 		.step(step), .ev_halted(ev_halted), .ev_fault(ev_fault), .ev_wdt(ev_wdt),
 		.aperture_base(ap_base), .aperture_limit(ap_limit)
+	);
+
+	/* Verification of HAS_CPU=0 configuration where C_CPU == C_VF == 2 */
+	wire [31:0] nocpu_rdata;
+	reg nocpu_mc_fault = 0;
+	atg_cp_ctl #(
+		.C_CPU(2),
+		.C_VF(2),
+		.C_TU(3),
+		.C_ROP(4),
+		.C_ATOM(5),
+		.C_SA(6),
+		.C_SU(7),
+		.DC_CLIENT(8'hFF)
+	) dut_nocpu (
+		.clk(clk), .rst_n(rst_n),
+		.mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0),
+		.mc_fault_req_tag(8'd0),
+		.wdt_tag(8'd0),
+		.hcr_we(1'b0), .hcr_widx(10'd0), .hcr_wdata(32'd0), .hcr_wmask(32'd0),
+		.hcr_ridx(GHCI_REG_FAULT_INFO[11:2]), .hcr_rdata(nocpu_rdata),
+		.mc_idle(1'b1), .mem_ready(1'b1), .busy_in(8'd0), .ring_empty(1'b1),
+		.ring_busy(1'b0), .cmd_active(1'b0), .wdt_hold(1'b0), .replay_busy(1'b0),
+		.seq_st(4'd0), .f_busy(1'b0),
+		.mc_fault(nocpu_mc_fault), .mc_fault_client(8'd2), .mc_fault_addr(32'h30005000),
+		.mc_fault_write(1'b0),
+		.src_fault(8'd0), .src_kind(32'd0), .src_addr(256'd0), .src_tag(64'd0),
+		.src_stage(32'd0),
+		.run(), .halt(), .ctrl_irq_global(), .quiesce(), .mc_flush(),
+		.core_rst_n(), .open(), .cp_state(), .lc_state(), .host_kick(),
+		.step(), .ev_halted(), .ev_fault(), .ev_wdt(),
+		.aperture_base(), .aperture_limit()
 	);
 
 	`include "hcr_snoop.vh"
@@ -549,6 +583,63 @@ module atg_cp_ctl_tb;
 		src_fault = 0;
 		expect_info("u4_su_isa_cs", {12'd0, GHCI_STAGE_CS, 8'h5B, GHCI_FAULT_UNIT_SU, GHCI_FAULT_KIND_INVALID_OP}, 32'h000001B4);
 		do_reset();
+
+		/* 7. SU MC fault reports KIND 3, UNIT 2, and STAGE from mc_fault_req_tag[1:0] */
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		mc_fault = 1;
+		mc_fault_client = 8'd8; /* SU D$ */
+		mc_fault_addr = 32'h20001000;
+		mc_fault_write = 0;
+		mc_fault_req_tag = {6'd0, GHCI_STAGE_FS};
+		@(negedge clk);
+		mc_fault = 0;
+		expect_info("u4_su_mc_fs", {11'd0, 1'b0, GHCI_STAGE_FS, 8'd0, GHCI_FAULT_UNIT_SU, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h20001000);
+		do_reset();
+
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		mc_fault = 1;
+		mc_fault_client = 8'd8; /* SU D$ */
+		mc_fault_addr = 32'h20002000;
+		mc_fault_write = 1;
+		mc_fault_req_tag = {6'd0, GHCI_STAGE_CS};
+		@(negedge clk);
+		mc_fault = 0;
+		expect_info("u4_su_mc_cs", {11'd0, 1'b1, GHCI_STAGE_CS, 8'd0, GHCI_FAULT_UNIT_SU, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h20002000);
+		do_reset();
+
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		mc_fault = 1;
+		mc_fault_client = 8'd6; /* ATOM (C_ATOM) */
+		mc_fault_addr = 32'h20003000;
+		mc_fault_write = 1;
+		mc_fault_req_tag = {6'd0, GHCI_STAGE_MS};
+		@(negedge clk);
+		mc_fault = 0;
+		expect_info("u4_su_mc_ms", {11'd0, 1'b1, GHCI_STAGE_MS, 8'd0, GHCI_FAULT_UNIT_SU, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h20003000);
+		do_reset();
+
+		ctrl(32'd1 << GHCI_CTRL_RUN);
+		mc_fault = 1;
+		mc_fault_client = 8'd9; /* SU I$ */
+		mc_fault_addr = 32'h20004000;
+		mc_fault_write = 0;
+		mc_fault_req_tag = {6'd0, GHCI_STAGE_VS};
+		@(negedge clk);
+		mc_fault = 0;
+		expect_info("u4_su_mc_vs", {11'd0, 1'b0, GHCI_STAGE_VS, 8'd0, GHCI_FAULT_UNIT_SU, GHCI_FAULT_KIND_PAGE_FAULT}, 32'h20004000);
+		do_reset();
+
+		/* 8. HAS_CPU=0 configuration: client 2 (VF) maps to UNIT 1 (GHCI_FAULT_UNIT_VF) */
+		@(negedge clk);
+		nocpu_mc_fault = 1;
+		@(negedge clk);
+		nocpu_mc_fault = 0;
+		#1;
+		if (nocpu_rdata[7:4] !== GHCI_FAULT_UNIT_VF) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_ctl: HAS_CPU=0 VF fault unit %0d, expected %0d (GHCI_FAULT_UNIT_VF)",
+				nocpu_rdata[7:4], GHCI_FAULT_UNIT_VF);
+		end
 
 		if (errors == e0)
 			$display("PASS atg_cp_ctl.u4_normalization");

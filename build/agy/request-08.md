@@ -80,7 +80,46 @@
   - `python3 tools/arith-lint.py --top atg_cp`: 0 operators
 - **残り**: X5, X4, X6, X7, X8, X9, X3 (docs)
 
-### 2026-11-13T14:55:00+09:00: X5 実装・検証完了 (commit `e2f2d0e3`)
+### 2026-11-13T12:30:00+09:00: X2 実装・検証完了 (commit `3c81de26`)
+- **した事**:
+  - `rtl/gpu/mc/atg_mc_l2.v`:
+    - `inv_active_r` レジスタを追加。`ctrl_inv_valid` が 0 の時にクリア、`S_FLUSH_STEP` への遷移サイクルで 1 をラッチ。
+    - `S_IDLE` において `((ctrl_inv_valid && !inv_active_r) || flush)` でフラッシュを開始するように修正し、`ctrl_inv_valid` が保持されている間の重複フラッシュ再起動を防止。
+  - `rtl/gpu/mc/atg_mc.v`:
+    - `output wire l2_flush_done` ポートを追加。
+    - `g_l2` 構成では `assign l2_flush_done = l2_ctrl_inv_done;`、`g_no_l2` 構成では `assign l2_flush_done = 1'b1;` を出力。
+  - `rtl/gpu/top/atg_top.v`:
+    - `u_mc` と `u_cp` 間に `wire l2_flush_done` を配線。
+  - `rtl/gpu/cp/atg_cp.v`:
+    - `input wire l2_flush_done` ポートを追加し、`u_seq.l2_flush_done` へ接続。
+  - `rtl/gpu/cp/atg_cp_seq.v`:
+    - `input wire l2_flush_done` ポートを追加。
+    - `f_flush` を 1 サイクルパルスから `(st == Q_FLUSH)` の連続アサート（ホールド）へ変更。
+    - `Q_FLUSH` 状態において `l2_flush_done` を待ってから `Q_FREQ` へ遷移するように修正。
+  - `rtl/gpu/cp/atg_cp_ctl.v`:
+    - `cp_is_wait_mem` の判定式に `|| (seq_st == 4'd11)` (Q_FLUSH) を追加（§3.3 CP_STATE 5: WAIT_MEM）。
+  - `sim/models/xilinx/LUT.v`:
+    - Xilinx 7-series `LUT1`..`LUT6` シミュレーションモデルを追加。
+  - `sim/tb/atg_cp_seq_synth_tb.v`:
+    - 新規単体テストベンチを追加。`SYNTH_KINTEX7` 構成で flags 0x4 (HOST_FLUSH) 投入時に `f_flush` (st=11) がアサートされ 1 回のフラッシュが走り、直後の flags 0x3 投入時には `f_flush` がアサートされず、フラッシュが 1 回のみ発生することを照合・検証（全 PASS）。
+  - `sim/tb/atg_ghci_top_tb.v`:
+    - L2 dirty データ検証: flags=0x2 でローカルメモリ（`0x80010000`）へ書き込んだフェンス値が DRAM（`axi_mem`）には未反映（L2 内に dirty 保持）であることを確認。
+    - STATUS[19:16] 検証: flags=0x7 (HOST_FLUSH) のフェンス実行中の `Q_FLUSH` (st=11) において `STATUS[19:16] == 5` (WAIT_MEM) を確認。
+    - フラッシュ完了検証: flags=0x7 フェンス完了後に、先ほどの dirty なローカルデータ（`0x80010000`）が DRAM にライトバックされて書き込まれていることを確認。
+    - flags=0x3 非フラッシュ検証: flags=0x7 の直後に投入した flags=0x3 のローカルメモリ書き込み（`0x80010040`）は DRAM に反映されず L2 に保持されることを確認。
+    - DC 走査並行検証: ADV7511/DC を小型モード（32x4）で起動してフレームバッファ（`0x80020000`）からの実スキャンアウト（MC への高優先リクエスト連続発行）を実行中に、flags=0x7 のフェンスを 20 回連続で流し、全 20 回のフェンスが完了して各フェンス値がメモリに書き込まれ、`ctrl_inv_done` が正確に 20 回発生することを確認。
+  - 既存テストベンチ更新:
+    - `sim/tb/atg_cp_mesh_tb.v`, `sim/tb/atg_cp_seq_tb.v`, `sim/tb/atg_ghci_tb.v` に `.l2_flush_done(1'b1)` を接続。
+- **試験実行結果**:
+  - `./sim/run.sh atg_cp_seq`: PASS (1 s)
+  - `./sim/run.sh atg_ghci_top`: PASS (53 s)
+  - `./sim/run.sh atg_cp_seq_synth`: PASS (0 s)
+  - `./sim/run.sh atg_top_disp`: PASS (17 s)
+  - `tools/lint.sh`: clean (全 RTL モジュール, top, board 0 warnings)
+  - `python3 tools/arith-lint.py --top atg_cp`: 0 operators
+  - `python3 tools/arith-lint.py --top atg_mc`: 0 operators
+
+### 2026-11-13T14:55:00+09:00: X5 実装・検証完了 (commit `e2f2d0e3`, `231fa898`)
 - **した事**:
   - `rtl/gpu/cp/atg_cp_ctl.v`:
     - (a) first-fault latch 実装:
@@ -123,43 +162,53 @@
   - `python3 tools/arith-lint.py --top atg_blt`: 0 operators
   - `python3 tools/arith-lint.py --top atg_cp`: 0 operators
 
-
+### 2026-11-13T15:50:00+09:00: X4 実装・検証完了
 - **した事**:
-  - `rtl/gpu/mc/atg_mc_l2.v`:
-    - `inv_active_r` レジスタを追加。`ctrl_inv_valid` が 0 の時にクリア、`S_FLUSH_STEP` への遷移サイクルで 1 をラッチ。
-    - `S_IDLE` において `((ctrl_inv_valid && !inv_active_r) || flush)` でフラッシュを開始するように修正し、`ctrl_inv_valid` が保持されている間の重複フラッシュ再起動を防止。
-  - `rtl/gpu/mc/atg_mc.v`:
-    - `output wire l2_flush_done` ポートを追加。
-    - `g_l2` 構成では `assign l2_flush_done = l2_ctrl_inv_done;`、`g_no_l2` 構成では `assign l2_flush_done = 1'b1;` を出力。
-  - `rtl/gpu/top/atg_top.v`:
-    - `u_mc` と `u_cp` 間に `wire l2_flush_done` を配線。
-  - `rtl/gpu/cp/atg_cp.v`:
-    - `input wire l2_flush_done` ポートを追加し、`u_seq.l2_flush_done` へ接続。
+  - `rtl/gpu/su/atg_su_lsu.v`:
+    - `warp_stage` 入力を追加し、`cur_stage`（2'b00: VS, 2'b01: FS, 2'b10: CS, 2'b11: MS）を生成。
+    - D$ リクエストタグ `dc_req_tag` に `{6'd0, cur_stage}` を設定。
+    - ATOM ユニット用 `at_stage` 出力を配線。
+  - `rtl/gpu/su/atg_su_fetch.v`:
+    - `ic_warp = f_warp` を出力。
+  - `rtl/gpu/su/atg_su_icache.v`:
+    - `ic_tag` 入力を受け、ミス時のメモリリクエスト `req_tag <= ic_tag` を送出。
+  - `rtl/gpu/su/atg_su_cbank.v`:
+    - `warp_stage` 入力を受け、定数バッファミスリクエスト `req_tag <= {6'd0, cur_stage}` を送出。
+  - `rtl/gpu/su/atg_su_dcache.v`:
+    - メモリリクエスト `m_req_tag` に LSU からの `q_tag`（`{6'd0, stage}`）を接続。
+  - `rtl/gpu/mc/atg_mc_atom.v`:
+    - `at_stage` 入力を受け、ATOM リクエスト `req_tag <= {6'd0, rstage}` を送出。
+  - `rtl/gpu/su/atg_su_sched.v`:
+    - `cs_mesh` 入力を受け、`cs_is_mesh_act` ハンドシェイクを出力。
+  - `rtl/gpu/su/atg_su.v`:
+    - `warp_stage = vl_go_sch ? VS : (fl_go_sch ? FS : (cs_is_mesh_act ? MS : CS))` を生成し、fetch, cbank, lsu へ分配。
   - `rtl/gpu/cp/atg_cp_seq.v`:
-    - `input wire l2_flush_done` ポートを追加。
-    - `f_flush` を 1 サイクルパルスから `(st == Q_FLUSH)` の連続アサート（ホールド）へ変更。
-    - `Q_FLUSH` 状態において `l2_flush_done` を待ってから `Q_FREQ` へ遷移するように修正。
+    - `is_mesh_r <= !h_vendor && (h_op == CMD_DRAW_MESH_TASKS)` を生成し、`cs_mesh` を出力。
+  - `rtl/gpu/mc/atg_mc.v`:
+    - リクエスト拒否（refusal）およびフォールト発生時に `bad_head_r[11:4]`（リクエストタグ上位 8 ビット）を `fault_tag` ポートへ出力（Generic および `SYNTH_KINTEX7` の両パス）。
   - `rtl/gpu/cp/atg_cp_ctl.v`:
-    - `cp_is_wait_mem` の判定式に `|| (seq_st == 4'd11)` (Q_FLUSH) を追加（§3.3 CP_STATE 5: WAIT_MEM）。
-  - `sim/models/xilinx/LUT.v`:
-    - Xilinx 7-series `LUT1`..`LUT6` シミュレーションモデルを追加。
-  - `sim/tb/atg_cp_seq_synth_tb.v`:
-    - 新規単体テストベンチを追加。`SYNTH_KINTEX7` 構成で flags 0x4 (HOST_FLUSH) 投入時に `f_flush` (st=11) がアサートされ 1 回のフラッシュが走り、直後の flags 0x3 投入時には `f_flush` がアサートされず、フラッシュが 1 回のみ発生することを照合・検証（全 PASS）。
-  - `sim/tb/atg_ghci_top_tb.v`:
-    - L2 dirty データ検証: flags=0x2 でローカルメモリ（`0x80010000`）へ書き込んだフェンス値が DRAM（`axi_mem`）には未反映（L2 内に dirty 保持）であることを確認。
-    - STATUS[19:16] 検証: flags=0x7 (HOST_FLUSH) のフェンス実行中の `Q_FLUSH` (st=11) において `STATUS[19:16] == 5` (WAIT_MEM) を確認。
-    - フラッシュ完了検証: flags=0x7 フェンス完了後に、先ほどの dirty なローカルデータ（`0x80010000`）が DRAM にライトバックされて書き込まれていることを確認。
-    - flags=0x3 非フラッシュ検証: flags=0x7 の直後に投入した flags=0x3 のローカルメモリ書き込み（`0x80010040`）は DRAM に反映されず L2 に保持されることを確認。
-    - DC 走査並行検証: ADV7511/DC を小型モード（32x4）で起動してフレームバッファ（`0x80020000`）からの実スキャンアウト（MC への高優先リクエスト連続発行）を実行中に、flags=0x7 のフェンスを 20 回連続で流し、全 20 回のフェンスが完了して各フェンス値がメモリに書き込まれ、`ctrl_inv_done` が正確に 20 回発生することを確認。
-  - 既存テストベンチ更新:
-    - `sim/tb/atg_cp_mesh_tb.v`, `sim/tb/atg_cp_seq_tb.v`, `sim/tb/atg_ghci_tb.v` に `.l2_flush_done(1'b1)` を接続。
+    - `mc_fault_req_tag` ポートを追加。
+    - `STAGE` フィールドの抽出式を `(mc_client_to_unit(mc_fault_client) == GHCI_FAULT_UNIT_SU ? {2'd0, mc_fault_req_tag[1:0]} : 4'd0)` に統一。
+    - 未接続のまま残っていた旧 `su_stage` 入力ポートを削除。
+  - `rtl/gpu/cp/atg_cp.v`:
+    - `mc_fault_req_tag` を `atg_cp_ctl` へ配線、旧 `su_stage` 接続を削除。
+  - `rtl/gpu/top/atg_top.v`:
+    - `u_mc` から `u_cp` へ `mc_fault_req_tag` を配線。
+    - `u_cp` から SU へ `cs_mesh` を配線。
+    - SU から `u_mc.u_atom` へ `su_at_stage` を配線。
+  - `sim/tb/atg_cp_ctl_tb.v`:
+    - SU MC フォールトのステージ別（FS=1, CS=2, MS=3, VS=0）テストを追加。
+    - `dut_nocpu` テストを追加し、HAS_CPU=0 時に VF クライアント 2 が UNIT 1 (`GHCI_FAULT_UNIT_VF`) に正しく分類されることを検証。
+  - `sim/tb/atg_top_cs_tb.v`:
+    - 旧フォーマットの FAULT_INFO 照合式を GHCI 1.0 標準フォーマット `{12'd0, GHCI_STAGE_CS, 8'd0, GHCI_FAULT_UNIT_SU, GHCI_FAULT_KIND_INVALID_OP}` へ更新。
 - **試験実行結果**:
+  - `./sim/run.sh atg_cp_ctl`: PASS (0 s)
   - `./sim/run.sh atg_cp_seq`: PASS (1 s)
-  - `./sim/run.sh atg_ghci_top`: PASS (53 s)
-  - `./sim/run.sh atg_cp_seq_synth`: PASS (0 s)
-  - `./sim/run.sh atg_top_disp`: PASS (17 s)
+  - `./sim/run.sh atg_ghci_top`: PASS (52 s)
+  - `./sim/run.sh atg_top_cs`: PASS (3 s)
   - `tools/lint.sh`: clean (全 RTL モジュール, top, board 0 warnings)
-  - `python3 tools/arith-lint.py --top atg_cp`: 0 operators
-  - `python3 tools/arith-lint.py --top atg_mc`: 0 operators
+  - `python3 tools/arith-lint.py --top atg_top`: 0 operators
+- **残り**: X6, X7, X8, X9, X3 (docs)
+
 
 

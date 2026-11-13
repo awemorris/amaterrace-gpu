@@ -92,13 +92,13 @@ module atg_cp_ctl #(
 	input wire mc_fault_prot,	/* refused for session protection: FAULT_INFO[9] */
 	input wire mc_fault_mem,	/* a protection table read failed: kind 5 */
 	input wire [7:0] mc_fault_tag,
+	input wire [7:0] mc_fault_req_tag,
 	input wire [7:0] wdt_tag,	/* the job tag of a watchdog fault */
 	input wire [NSRC-1:0] src_fault,
 	input wire [NSRC*4-1:0] src_kind,
 	input wire [NSRC*32-1:0] src_addr,
 	input wire [NSRC*8-1:0] src_tag,
 	input wire [NSRC*4-1:0] src_stage,
-	input wire [3:0] su_stage,
 	/* Outputs */
 	output wire run,
 	output wire halt,
@@ -415,7 +415,7 @@ module atg_cp_ctl #(
 		end else begin
 			f_mc_v_r <= {8{mc_gpu}};
 			f_mc_info_r <= {11'd0, mc_fault_write,
-				(mc_client_to_unit(mc_fault_client) == GHCI_FAULT_UNIT_SU ? su_stage : 4'd0),
+				(mc_client_to_unit(mc_fault_client) == GHCI_FAULT_UNIT_SU ? {2'd0, mc_fault_req_tag[1:0]} : 4'd0),
 				mc_fault_tag, mc_client_to_unit(mc_fault_client),
 				mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
 				(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
@@ -504,7 +504,7 @@ module atg_cp_ctl #(
 		n_info = 32'd0;
 		if (mc_gpu) begin
 			n_info = {11'd0, mc_fault_write,
-				(mc_client_to_unit(mc_fault_client) == GHCI_FAULT_UNIT_SU ? su_stage : 4'd0),
+				(mc_client_to_unit(mc_fault_client) == GHCI_FAULT_UNIT_SU ? {2'd0, mc_fault_req_tag[1:0]} : 4'd0),
 				mc_fault_tag, mc_client_to_unit(mc_fault_client),
 				mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
 				(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};

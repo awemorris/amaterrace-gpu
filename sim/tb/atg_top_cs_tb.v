@@ -285,9 +285,9 @@ module atg_top_cs_harness #(
 						32'd1 << GHCI_STATUS_FAULTED);
 					expect_reg(GHCI_FAULT_ADDR, a, 32'hFFFFFFFF, "FAULT_ADDR (the PC)");
 					/* Map legacy cs_scene.txt FAULT_INFO format {12'd0, block[3:0], kind[3:0], 12'd0}
-					 * (where SU=6, kind=8 -> 0x00068000) to canonical GHCI 1.0 {syndrome, 4'd0, session, unit, kind} */
+					 * (where SU=6, kind=8 -> 0x00068000) to canonical GHCI 1.0 {syndrome, write, stage, session, unit, kind} */
 					if (v == 32'h00068000)
-						expect_reg(GHCI_FAULT_INFO, {24'd0, GHCI_FAULT_UNIT_SU, 4'd8}, 32'hFFFFFFFF, "FAULT_INFO");
+						expect_reg(GHCI_FAULT_INFO, {12'd0, GHCI_STAGE_CS, 8'd0, GHCI_FAULT_UNIT_SU, GHCI_FAULT_KIND_INVALID_OP}, 32'hFFFFFFFF, "FAULT_INFO");
 					else
 						expect_reg(GHCI_FAULT_INFO, v, 32'hFFFFFFFF, "FAULT_INFO");
 					expect_reg(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_FAULT,

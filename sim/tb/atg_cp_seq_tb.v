@@ -105,7 +105,7 @@ module atg_cp_seq_tb;
 		.seq_st(seq_st), .f_busy(f_busy),
 		.mc_fault(1'b0), .mc_fault_client(8'd0), .mc_fault_addr(32'd0),
 		.mc_fault_write(1'b0), .mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0),
-		.wdt_tag(8'd0), .su_stage(4'd0),
+		.wdt_tag(8'd0), .mc_fault_req_tag(8'd0),
 		.src_fault(8'd0), .src_kind(32'd0), .src_addr(256'd0), .src_tag(64'd0), .src_stage(32'd0),
 		.run(), .halt(), .ctrl_irq_global(), .quiesce(), .mc_flush(),
 		.core_rst_n(), .open(), .cp_state(cp_state), .lc_state(),

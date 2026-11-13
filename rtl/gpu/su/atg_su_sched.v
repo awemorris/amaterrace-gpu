@@ -35,6 +35,8 @@ module atg_su_sched #(
 	input wire [8:0] st_idx,
 	input wire [31:0] st_wdata,
 	input wire cs_kick,
+	input wire cs_mesh,
+	output wire cs_is_mesh_act,
 	/* Vertex warp allocation (VF, via atg_su ports vl_*) */
 	input wire vl_req,
 	output wire vl_gnt,
@@ -153,7 +155,7 @@ module atg_su_sched #(
 	reg [NWARPS*4-1:0] tag;	/* workgroup of a compute warp (barriers) */
 
 	/* Compute launch: the next workgroup id, its warps, and whose it is. */
-	reg cs_act;
+	reg cs_act, cs_is_mesh;
 	reg [15:0] id_x, id_y, id_z;
 	reg [7:0] rot;	/* linear id % NSU */
 	reg [3:0] wg_tag;
@@ -512,6 +514,7 @@ module atg_su_sched #(
 	end
 
 	assign busy = cs_act || launching || (!(&slot_free));
+	assign cs_is_mesh_act = cs_is_mesh;
 
 	wire [159:0] wi_vl = wi(48'd0, 48'd0, 8'd0, K_VERT, 1'b0, 16'd0, vl_mask);
 	wire [159:0] wi_fl = wi(48'd0, 48'd0, 8'd0, K_FRAG, fl_info[48], fl_info[47:32], fl_info[31:0]);
@@ -630,7 +633,7 @@ module atg_su_sched #(
 			active_valid <= 1'b0;
 			{vl_wait, fl_wait, vl_s, fl_s} <= {(2*WARP_W+2){1'b0}};
 			{vl_gnt_r, fl_gnt_r} <= 2'b00;
-			{cs_act, launching} <= 2'b00;
+			{cs_act, cs_is_mesh, launching} <= 3'b000;
 			{id_x, id_y, id_z} <= 48'd0;
 			rot <= 8'd0;
 			wg_tag <= 4'd0;
@@ -682,6 +685,7 @@ module atg_su_sched #(
 			/* Compute. */
 			if (cs_kick && !cs_act) begin
 				cs_act <= 1'b1;
+				cs_is_mesh <= cs_mesh;
 				{id_x, id_y, id_z} <= 48'd0;
 				rot <= 8'd0;
 			end

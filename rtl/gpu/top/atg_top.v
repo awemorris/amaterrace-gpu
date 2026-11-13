@@ -512,6 +512,7 @@ module atg_top #(
 	wire mc_fault_prot, mc_fault_mem, mc_chk_idle, mc_inv_pending;
 	wire [5:0] mc_fault_slot;
 	wire [7:0] mc_fault_tag;
+	wire [7:0] mc_fault_req_tag;
 	wire [NCLIENT-1:0] c_req_chk, c_req_tbl;
 	wire [NCLIENT*6-1:0] c_req_slot;
 	wire [31:0] prot_tbase, prot_inv_n;
@@ -550,7 +551,7 @@ module atg_top #(
 	wire [NCLIENT-1:0] rsp_error_v;
 
 	/* The CP's links to the blocks of design §7.6. */
-	wire draw_kick, cs_kick, lc_kick, raw_kick;
+	wire draw_kick, cs_kick, cs_mesh, lc_kick, raw_kick;
 	wire [3:0] inv, cp_inv;
 	wire hcr_we;
 	wire [9:0] hcr_widx, hcr_ridx;
@@ -669,6 +670,7 @@ module atg_top #(
 		.mc_fault_prot(mc_fault_prot),
 		.mc_fault_mem(mc_fault_mem),
 		.mc_fault_tag(mc_fault_tag),
+		.mc_fault_req_tag(mc_fault_req_tag),
 		.st_we(st_we),
 		.st_idx(st_idx),
 		.st_wdata(st_wdata),
@@ -692,6 +694,7 @@ module atg_top #(
 		.rsp_error(rsp_error_v[0]),
 		.draw_kick(draw_kick),
 		.cs_kick(cs_kick),
+		.cs_mesh(cs_mesh),
 		.lc_kick(lc_kick),
 		.raw_kick(raw_kick),
 		.inv(cp_inv),
@@ -873,6 +876,7 @@ module atg_top #(
 		.fault_prot(mc_fault_prot),
 		.fault_slot(mc_fault_slot),
 		.fault_mem(mc_fault_mem),
+		.fault_tag(mc_fault_req_tag),
 		.chk_idle(mc_chk_idle),
 		.unit_idle(mc_unit_idle),
 		.dc_urgent(dc_urgent),
@@ -1163,6 +1167,7 @@ module atg_top #(
 	assign su_scrub_any = NSU > 0 && |su_scrub_v;
 	wire [(NSU > 0 ? NSU : 1)*32-1:0] su_fault_addr_v;	/* each SU's fault PC */
 	wire [(NSU > 0 ? NSU : 1)*4-1:0] su_fault_stage_v;	/* each SU's fault stage */
+	wire [(NSU > 0 ? NSU : 1)*2-1:0] su_at_stage;
 	wire [(NSU > 0 ? NSU : 1)*4-1:0] su_fsm_v;
 	wire [3:0] su_fsm = NSU > 0 ? su_fsm_v[3:0] : 4'd0;
 	wire [7:0] pipe_busy_mask = {blt_busy, sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, !mc_unit_idle};
@@ -1472,7 +1477,7 @@ module atg_top #(
 			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)
 		) su (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
-			.cs_kick(cs_kick), .lc_kick(lc_kick), .inv(inv),
+			.cs_kick(cs_kick), .cs_mesh(cs_mesh), .lc_kick(lc_kick), .inv(inv),
 			.vl_req(g0 && vl_req), .vl_gnt(s_vl_gnt), .vl_slot(s_vl_slot),
 			.vl_ptbase(s_vl_ptbase), .vl_we(g0 && vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane),
 			.vl_data(vl_data), .vl_go(g0 && vl_go), .vl_mask(vl_mask),
@@ -1508,7 +1513,7 @@ module atg_top #(
 			.i_req_tag(c_req_tag[CI*8 +: 8]),
 			.i_rsp_valid(rsp_valid[CI]), .i_rsp_write(rsp_write_v[CI]), .i_rsp_tag(rsp_tag_v[CI*8 +: 8]),
 			.i_rsp_rdata(rsp_rdata_v[CI*LINE_BITS +: LINE_BITS]), .i_rsp_error(rsp_error_v[CI]),
-			.at_valid(at_valid[k]), .at_ready(at_ready[k]), .at_op(at_op[k*4 +: 4]),
+			.at_valid(at_valid[k]), .at_stage(su_at_stage[k*2 +: 2]), .at_ready(at_ready[k]), .at_op(at_op[k*4 +: 4]),
 			.at_addr(at_addr[k*30 +: 30]), .at_a(at_a[k*32 +: 32]), .at_b(at_b[k*32 +: 32]),
 			.at_rsp_valid(at_rsp_valid[k]), .at_old(at_old), .at_error(at_error),
 			.sa_push_valid(s_sa_push_valid), .sa_push_ready(g0 && sa_push_ready),
@@ -1599,7 +1604,7 @@ module atg_top #(
 		) atom (
 			.clk(clk), .rst_n(core_rst_n),
 			.at_valid(at_valid), .at_ready(at_ready), .at_op(at_op), .at_addr(at_addr),
-			.at_a(at_a), .at_b(at_b), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
+			.at_a(at_a), .at_b(at_b), .at_stage(su_at_stage), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
 			.at_error(at_error), .busy(atom_busy),
 			.req_valid(c_req_valid[C_ATOM]), .req_ready(c_req_ready[C_ATOM]),
 			.req_write(c_req_write[C_ATOM]), .req_line(c_req_line[C_ATOM*LA_W +: LA_W]),
@@ -1610,6 +1615,7 @@ module atg_top #(
 			.rsp_rdata(rsp_rdata_v[C_ATOM*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_ATOM])
 		);
 	end else begin : g_no_su
+		assign su_at_stage = 2'd0;
 		assign su_busy = 1'b0;
 		assign su_fault = 1'b0;
 		assign su_fault_addr = 32'd0;

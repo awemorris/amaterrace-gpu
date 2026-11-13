@@ -305,6 +305,7 @@ module atg_su #(
 	input wire [31:0] st_wdata,
 	/* From the CP */
 	input wire cs_kick,
+	input wire cs_mesh,
 	input wire lc_kick,
 	input wire [3:0] inv,
 	/* Vertex warps from the VF */
@@ -404,6 +405,7 @@ module atg_su #(
 	input wire i_rsp_error,
 	/* Atomics (atg_mc_atom) */
 	output wire at_valid,
+	output wire [1:0] at_stage,
 	input wire at_ready,
 	output wire [3:0] at_op,
 	output wire [29:0] at_addr,
@@ -678,6 +680,26 @@ module atg_su #(
 	wire [7:0] im_rsp_tag;
 	wire [LB-1:0] im_rsp_rdata;
 
+	wire cs_is_mesh_act;
+	reg [1:0] warp_stage [0:NWARPS-1];
+	integer wsi;
+	always @(posedge clk) begin
+		if (rst_p) begin
+			for (wsi = 0; wsi < NWARPS; wsi = wsi + 1)
+				warp_stage[wsi] <= 2'd0;
+		end else if (init_valid) begin
+			warp_stage[init_warp] <= vl_go_sch ? 2'd0 : (fl_go_sch ? 2'd1 : (cs_is_mesh_act ? 2'd3 : 2'd2));
+		end
+	end
+
+	wire [NWARPS*2-1:0] warp_stage_packed;
+	genvar gwstg;
+	generate
+		for (gwstg = 0; gwstg < NWARPS; gwstg = gwstg + 1) begin : g_wstg
+			assign warp_stage_packed[gwstg*2 +: 2] = warp_stage[gwstg];
+		end
+	endgenerate
+
 	wire [NWARPS-1:0] warp_ready;
 	wire sch_f_valid, sch_f_ready;
 	wire [WARP_W-1:0] sch_f_warp;
@@ -689,7 +711,7 @@ module atg_su #(
 		.FRAG_RESERVE(FRAG_RESERVE), .GTO(1)
 	) sched (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
-		.cs_kick(cs_kick),
+		.cs_kick(cs_kick), .cs_mesh(cs_mesh), .cs_is_mesh_act(cs_is_mesh_act),
 		.vl_req(vl_req), .vl_gnt(vl_gnt), .vl_slot(vl_slot), .vl_go(vl_go_sch), .vl_mask(vl_mask),
 		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_slot(fl_slot), .fl_go(fl_go_sch), .fl_mask(fl_mask),
 		.fl_info(fl_info),
@@ -715,17 +737,20 @@ module atg_su #(
 	wire [15:0] fet_d_pc;
 	wire [63:0] fet_d_instr;
 
+	wire [WARP_W-1:0] fet_ic_warp;
+
 	atg_su_fetch #(.WARP_W(WARP_W)) fetch (
 		.clk(clk), .rst_n(rst_n),
 		.f_valid(f_valid), .f_ready(f_ready), .f_warp(f_warp), .f_pc(f_pc), .f_addr(f_addr),
-		.ic_req(ic_req), .ic_ready(ic_ready), .ic_addr(ic_addr), .ic_rvalid(ic_rvalid),
+		.ic_req(ic_req), .ic_warp(fet_ic_warp), .ic_ready(ic_ready), .ic_addr(ic_addr), .ic_rvalid(ic_rvalid),
 		.ic_rdata(ic_rdata),
 		.d_valid(fet_d_valid), .d_ready(fet_d_ready), .d_warp(fet_d_warp), .d_pc(fet_d_pc), .d_instr(fet_d_instr)
 	);
 
 	atg_su_icache #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) icache (
 		.clk(clk), .rst_n(rst_n),
-		.ic_req(ic_req), .ic_ready(ic_ready), .ic_addr(ic_addr), .ic_rvalid(ic_rvalid),
+		.ic_req(ic_req), .ic_ready(ic_ready), .ic_addr(ic_addr), .ic_tag({6'd0, warp_stage[fet_ic_warp]}),
+		.ic_rvalid(ic_rvalid),
 		.ic_rdata(ic_rdata), .inv(inv[3]),
 		.req_valid(ic_m_req_valid), .req_ready(ic_m_req_ready), .req_write(ic_m_req_write), .req_line(ic_m_req_line), .req_be(ic_m_req_be), .req_wdata(ic_m_req_wdata), .req_tag(ic_m_req_tag), .rsp_valid(ic_m_rsp_valid), .rsp_write(ic_m_rsp_write), .rsp_tag(ic_m_rsp_tag), .rsp_rdata(ic_m_rsp_rdata), .rsp_error(ic_m_rsp_error)
 	);
@@ -1059,14 +1084,14 @@ module atg_su #(
 
 	atg_su_lsu #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) lsu (
 		.clk(clk), .rst_n(rst_n),
-		.x_valid(x_valid_lsu), .x_warp(x_warp_lsu), .x_grp(x_grp_lsu), .x_last(x_last_lsu), .x_sbe(x_sbe_lsu),
+		.x_valid(x_valid_lsu), .x_warp(x_warp_lsu), .warp_stage(warp_stage_packed), .x_grp(x_grp_lsu), .x_last(x_last_lsu), .x_sbe(x_sbe_lsu),
 		.x_pc(x_pc), .x_uop(x_uop_lsu), .x_a(x_a_lsu), .x_b(x_b_lsu), .x_c(x_c_lsu), .x_mask(x_mask_lsu),
 		.x_info(x_info), .x_ready(lsu_ready),
 		.l_valid(lsu_l_valid), .l_ready(lsu_l_ready), .l_warp(lsu_l_warp),
 		.l_grp(lsu_l_grp), .l_rd(lsu_l_rd), .l_data(lsu_l_data), .l_lanes(lsu_l_lanes),
 		.l_wr(lsu_l_wr), .l_last(lsu_l_last), .l_sbe(lsu_l_sbe), .l_cls(lsu_l_cls),
 		.dc_req_valid(dc_req_valid), .dc_req_ready(dc_req_ready), .dc_req_write(dc_req_write), .dc_req_line(dc_req_line), .dc_req_be(dc_req_be), .dc_req_wdata(dc_req_wdata), .dc_req_tag(dc_req_tag), .dc_rsp_valid(dc_rsp_valid), .dc_rsp_write(dc_rsp_write), .dc_rsp_tag(dc_rsp_tag), .dc_rsp_rdata(dc_rsp_rdata), .dc_rsp_error(dc_rsp_error),
-		.at_valid(at_valid), .at_ready(at_ready), .at_op(at_op), .at_addr(at_addr),
+		.at_valid(at_valid), .at_stage(at_stage), .at_ready(at_ready), .at_op(at_op), .at_addr(at_addr),
 		.at_a(at_a), .at_b(at_b), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
 		.at_error(at_error), .dc_inv(dc_inv)
 	);
@@ -1091,7 +1116,7 @@ module atg_su #(
 	atg_su_cbank #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) cbank (
 		.scrub(scrub_cbank), .scrub_busy(scb_cbank),
 		.clk(clk), .rst_n(rst_n),
-		.x_valid(x_valid_cb), .x_warp(x_warp_cb), .x_grp(x_grp_cb), .x_last(x_last_cb), .x_sbe(x_sbe_cb),
+		.x_valid(x_valid_cb), .x_warp(x_warp_cb), .warp_stage(warp_stage_packed), .x_grp(x_grp_cb), .x_last(x_last_cb), .x_sbe(x_sbe_cb),
 		.x_pc(x_pc), .x_uop(x_uop_cb), .x_a(x_a_cb), .x_b(x_b_cb), .x_c(x_c_cb), .x_mask(x_mask_cb),
 		.x_info(x_info), .x_ready(cbank_ready),
 		.l_valid(cbank_l_valid), .l_ready(cbank_l_ready), .l_warp(cbank_l_warp),
@@ -1267,16 +1292,6 @@ module atg_su #(
 	assign busy = sched_busy || sb_busy || cbank_busy;
 	assign fsm = {scrub_busy, cbank_busy, sb_busy, sched_busy};
 	assign scrub_busy = scb_rf || scb_lda || scb_lds || scb_cbank || scb_exp || scb_pt;
-	reg [1:0] warp_stage [0:NWARPS-1];
-	integer wsi;
-	always @(posedge clk) begin
-		if (rst_p) begin
-			for (wsi = 0; wsi < NWARPS; wsi = wsi + 1)
-				warp_stage[wsi] <= 2'd0;
-		end else if (init_valid) begin
-			warp_stage[init_warp] <= vl_go_sch ? 2'd0 : (fl_go_sch ? 2'd1 : 2'd2);
-		end
-	end
 
 	assign fault = sb_fault;
 	assign fault_addr = {16'd0, sb_fault_pc};

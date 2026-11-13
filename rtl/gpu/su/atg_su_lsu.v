@@ -57,6 +57,7 @@ module atg_su_lsu #(
 	/* Issued instruction, one lane group per cycle (from atg_su_opd, shared by all units) */
 	input wire x_valid,
 	input wire [WARP_W-1:0] x_warp,
+	input wire [NWARPS*2-1:0] warp_stage,
 	input wire [GRP_W-1:0] x_grp,
 	input wire x_last,
 	input wire [SBE_W:0] x_sbe,
@@ -95,6 +96,7 @@ module atg_su_lsu #(
 	input wire dc_rsp_error,
 	/* Atomic port (to atg_mc_atom) */
 	output wire at_valid,
+	output wire [1:0] at_stage,
 	input wire at_ready,
 	output wire [3:0] at_op,
 	output wire [29:0] at_addr,
@@ -502,11 +504,13 @@ module atg_su_lsu #(
 			req_taken <= 1'b0;
 		else if (dc_req_valid && dc_req_ready)
 			req_taken <= 1'b1;
+	wire [1:0] cur_stage = warp_stage[rwarp * 2 +: 2];
 	assign dc_req_valid = st == WAIT && !req_taken;
 	assign dc_req_write = rwr;
 	assign dc_req_line = dc_line_r;
 	assign dc_req_wdata = cwd;
-	assign dc_req_tag = 8'd0;
+	assign dc_req_tag = {6'd0, cur_stage};
+	assign at_stage = cur_stage;
 	assign dc_inv = inv_q;
 
 	wire [LW-1:0] an_ad_b0, an_ad_b1, an_ad_b2, an_ad_b3;

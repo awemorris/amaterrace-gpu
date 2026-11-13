@@ -336,7 +336,7 @@ module atg_su_dcache #(
 	assign m_req_line = q_line;
 	assign m_req_be = q_be;
 	assign m_req_wdata = q_wdata;
-	assign m_req_tag = 8'd0;
+	assign m_req_tag = q_tag;
 
 	wire unused_ok = &{1'b0, m_rsp_write, m_rsp_tag};
 endmodule

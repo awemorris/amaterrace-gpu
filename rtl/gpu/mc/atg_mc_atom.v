@@ -54,6 +54,7 @@ module atg_mc_atom #(
 	input wire [NATOM*30-1:0] at_addr,
 	input wire [NATOM*32-1:0] at_a,
 	input wire [NATOM*32-1:0] at_b,
+	input wire [NATOM*2-1:0] at_stage,
 	output reg [NATOM-1:0] at_rsp_valid,
 	output reg [31:0] at_old,
 	output reg at_error,
@@ -132,10 +133,12 @@ module atg_mc_atom #(
 	/* The old word in the read's line. */
 	wire [31:0] rword = rsp_rdata[rwi*32 +: 32];
 
+	reg [1:0] rstage;
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			st <= IDLE;
 			rr <= {AW{1'b0}};
+			rstage <= 2'd0;
 			at_rsp_valid <= {NATOM{1'b0}};
 			at_old <= 32'd0;
 			at_error <= 1'b0;
@@ -145,6 +148,7 @@ module atg_mc_atom #(
 			IDLE: if (take) begin
 				rr <= pick;
 				rk <= pick;
+				rstage <= at_stage[pick*2 +: 2];
 				rop <= at_op[pick*4 +: 4];
 				rline <= badr[ADDR_W-1:LINE_SHIFT];
 				rwi <= badr[LINE_SHIFT-1:2];
@@ -218,7 +222,7 @@ module atg_mc_atom #(
 		endcase
 	end
 	assign req_wdata = rwdata;
-	assign req_tag = 8'd0;
+	assign req_tag = {6'd0, rstage};
 
 	wire unused_ok = &{1'b0, rsp_tag, badr[1:0], as_co};
 endmodule

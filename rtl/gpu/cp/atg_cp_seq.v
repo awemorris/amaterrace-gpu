@@ -80,6 +80,7 @@ module atg_cp_seq #(
 	/* Kicks: a one-cycle pulse with its code (K_*) */
 	output wire kick,
 	output wire [2:0] kick_code,
+	output wire cs_mesh,
 	output wire [3:0] inv,
 	input wire [8:0] busy_in,	/* [8]: atg_cp_disp's wait (not in B_ALL) */
 	input wire vsync,
@@ -284,7 +285,8 @@ module atg_cp_seq #(
 `ifdef SYNTH_KINTEX7
 	(* DONT_TOUCH = "TRUE" *) reg is_set_r1, is_dset_r1;
 `endif
-	(* max_fanout = 16 *) reg is_dispatch_r, is_load_const_r, is_draw_raw_r, is_barrier_r;
+	(* max_fanout = 16 *) reg is_dispatch_r, is_mesh_r, is_load_const_r, is_draw_raw_r, is_barrier_r;
+	assign cs_mesh = is_mesh_r;
 
 	/* Payload: what this dword does; the waits (atg_cp_seq_wait). */
 	wire is_set = !vendor && op == OP_SET_REG;
@@ -866,6 +868,7 @@ module atg_cp_seq #(
 			h_zero_r <= 1'b0;
 			is_query_r <= 1'b0;
 			is_dispatch_r <= 1'b0;
+			is_mesh_r <= 1'b0;
 			is_load_const_r <= 1'b0;
 			is_draw_raw_r <= 1'b0;
 			is_barrier_r <= 1'b0;
@@ -921,6 +924,7 @@ module atg_cp_seq #(
 				is_fc_or_res_r <= (h_op_b == CMD_FENCE || h_op_b == CMD_WAIT_FENCE || (!h_vendor && h_op_b == OP_RESULT));
 				is_query_r <= !h_vendor && (h_op_b == OP_QUERY);
 				is_dispatch_r <= !h_vendor && (h_op_b == OP_DISPATCH || h_op_b == CMD_DISPATCH || h_op_b == CMD_DRAW_MESH_TASKS);
+				is_mesh_r <= !h_vendor && (h_op_b == CMD_DRAW_MESH_TASKS);
 				is_load_const_r <= !h_vendor && (h_op_b == OP_LOAD_CONST);
 				is_draw_raw_r <= h_vendor && (h_op_b == VOP_DRAW_RAW);
 				is_barrier_r <= !h_vendor && (h_op_b == CMD_BARRIER || h_op_b == OP_BARRIER);
@@ -1014,6 +1018,7 @@ module atg_cp_seq #(
 				is_fc_or_res_r <= (h_op == CMD_FENCE || h_op == CMD_WAIT_FENCE || (!h_vendor && h_op == OP_RESULT));
 				is_query_r <= !h_vendor && (h_op == OP_QUERY);
 				is_dispatch_r <= !h_vendor && (h_op == OP_DISPATCH || h_op == CMD_DISPATCH || h_op == CMD_DRAW_MESH_TASKS);
+				is_mesh_r <= !h_vendor && (h_op == CMD_DRAW_MESH_TASKS);
 				is_load_const_r <= !h_vendor && (h_op == OP_LOAD_CONST);
 				is_draw_raw_r <= h_vendor && (h_op == VOP_DRAW_RAW);
 				is_barrier_r <= !h_vendor && (h_op == CMD_BARRIER || h_op == OP_BARRIER);

@@ -28,6 +28,7 @@ module atg_su_icache #(
 	input wire ic_req,
 	output wire ic_ready,
 	input wire [31:0] ic_addr,
+	input wire [7:0] ic_tag,
 	output wire ic_rvalid,
 	output wire [63:0] ic_rdata,
 	input wire inv,
@@ -237,12 +238,13 @@ module atg_su_icache #(
 			tags_hi[m_idx_hi] <= mline[IX_W + TAG_LO +: TAG_HI];
 	end
 
+	reg [7:0] m_tag;
 	assign req_valid = state == S_MREQ;
 	assign req_write = 1'b0;
 	assign req_line = mline;
 	assign req_be = {LINE_BYTES{1'b0}};
 	assign req_wdata = {LB{1'b0}};
-	assign req_tag = 8'd0;
+	assign req_tag = m_tag;
 
 	wire miss_0 = st_idle_m_r[0] && ic_req && !(hit_m_a && hit_m_b);
 	wire miss_1 = st_idle_m_r[1] && ic_req && !(hit_m_a && hit_m_b);
@@ -264,6 +266,7 @@ module atg_su_icache #(
 			inv_seen <= 1'b0;
 			mline <= {(ADDR_W-LINE_SHIFT){1'b0}};
 			m_idx_d_r <= {IX_W{1'b0}};
+			m_tag <= 8'd0;
 		end else begin
 			rv <= take;
 			rv_pipe <= rv;
@@ -279,8 +282,10 @@ module atg_su_icache #(
 				mline[17:9] <= line[17:9];
 			if (miss_2)
 				mline[LA_W-1:18] <= line[LA_W-1:18];
-			if (miss_3)
+			if (miss_3) begin
 				m_idx_d_r <= line[IX_W-1:0];
+				m_tag <= ic_tag;
+			end
 			case (state)
 			S_IDLE:
 				if (miss_3) begin
