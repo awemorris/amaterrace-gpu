@@ -314,8 +314,8 @@ module atg_top_fault_tb;
 
 		/* Build command ring */
 		wp = 0;
-		/* 1. SET_REG (32 pairs = 64 dwords) */
-		mem.poke32(RING + wp * 4, 32'h01400040); wp = wp + 1;
+		/* 1. SET_REG (34 pairs = 68 dwords) */
+		mem.poke32(RING + wp * 4, 32'h01400044); wp = wp + 1;
 		mem.poke32(RING + wp * 4, GHCI_S_VIEWPORT + 0); mem.poke32(RING + (wp+1) * 4, 32'h42000000); wp = wp + 2; /* 32.0 */
 		mem.poke32(RING + wp * 4, GHCI_S_VIEWPORT + 1); mem.poke32(RING + (wp+1) * 4, 32'h41C00000); wp = wp + 2; /* 24.0 */
 		mem.poke32(RING + wp * 4, GHCI_S_VIEWPORT + 2); mem.poke32(RING + (wp+1) * 4, 32'h42000000); wp = wp + 2; /* 32.0 */
@@ -410,8 +410,8 @@ module atg_top_fault_tb;
 		mem.poke32(FS_PC +  8, 32'h0002A203); mem.poke32(FS_PC + 12, 32'h00000000); /* lw r4, 0(r5) */
 		mem.poke32(FS_PC + 16, 32'h0000700B); mem.poke32(FS_PC + 20, 32'h00000000); /* end */
 
-		wp = 0;
-		mem.poke32(RING + wp * 4, 32'h01400040); wp = wp + 1;
+		/* 1. SET_REG (34 pairs = 68 dwords) */
+		mem.poke32(RING + wp * 4, 32'h01400044); wp = wp + 1;
 		mem.poke32(RING + wp * 4, GHCI_S_VIEWPORT + 0); mem.poke32(RING + (wp+1) * 4, 32'h42000000); wp = wp + 2;
 		mem.poke32(RING + wp * 4, GHCI_S_VIEWPORT + 1); mem.poke32(RING + (wp+1) * 4, 32'h41C00000); wp = wp + 2;
 		mem.poke32(RING + wp * 4, GHCI_S_VIEWPORT + 2); mem.poke32(RING + (wp+1) * 4, 32'h42000000); wp = wp + 2;

@@ -323,3 +323,18 @@
   - `iverilog -g2005 -Wall -Wno-timescale -Iinclude -Isim/tb -s atg_ghci_top_tb ...`: clean (0 errors, 0 warnings)
 - **残り**: なし（X1〜X9 全項目完了）
 
+### 2026-11-14T02:26:00+09:00: X4 `atg_top_fault` Scenario 1 & 3 のフレーミング不整合修正
+- **不具合と原因の特定**:
+  - `sim/tb/atg_top_fault_tb.v`:
+    - Scenario 1 (line 318) および Scenario 3 (line 414) において、SET_REG パケットヘッダを `32'h01400040` (ペイロード長 64 dwords = 32 ペア) と記述していた。
+    - しかし、後続で poke されていたレジスタ設定は line 319〜352 (Scenario 1) および line 415〜448 (Scenario 3) で合計 **34 ペア = 68 dwords** (`0x0044`) であった。
+    - このため、CP はヘッダで宣言された 64 dwords (dword 1〜64) のみを SET_REG のペイロードとして消費し、**dword 65 (オフセット `0x104`, アドレス `0x00004104`)** にあった 33 ペア目のキー `GHCI_S_ATTR_DST + 0` (`32'h000001C0`) を次のパケットのヘッダとして解釈した。
+    - `32'h000001C0` は `op=0` (`CMD_NOP`) かつ `len=0x01C0` (192 dwords) とデコードされ、リングに投入された残余ワード数 (11 words) を超えるため、`atg_cp_ring.v` において `docs/ghci.md:679` (および §3.5 `docs/ghci.md:422`) のフレーミングエラー / ヘッダ長不整合規則に基づき `GHCI_FAULT_KIND_BAD_REG` (3), `UNIT = 0` (`GHCI_UNIT_CP`), `FAULT_ADDR = 0x00004104` が発生し、後続の `OP_DRAW` (dword 69) やシェーダーディスパッチに到達する前に停止していた。
+- **修正内容**:
+  - `sim/tb/atg_top_fault_tb.v`:
+    - line 318: `32'h01400040` -> `32'h01400044` (68 dwords = 34 ペア)
+    - line 414: `32'h01400040` -> `32'h01400044` (68 dwords = 34 ペア)
+- **構文検証**:
+  - `iverilog -g2005 -Wall -Wno-timescale -Iinclude -Isim/tb -s atg_top_fault_tb ...`: clean (0 errors, 0 warnings)
+
+
