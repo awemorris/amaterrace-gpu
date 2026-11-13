@@ -366,6 +366,7 @@ module atg_blt_2d #(
 	reg br_active;
 `endif
 	reg b_draining;
+	reg bst_rd_err;
 	reg [4:0] burst_wr_out;
 
 	/* Mux inputs to address and segment logic */
@@ -1704,7 +1705,7 @@ module atg_blt_2d #(
 		bst_rd_valid = 1'b0;
 		bst_rd_line = bst_rd_line_w;
 		bst_rd_tag = {1'b0, 2'd0, bw_bank, bw_sub_ctl ? bw_slot_p1 : bw_slot_cnt};
-		if (state == S_BURST && bst_can_fill_p && bst_rd_need) begin
+		if (state == S_BURST && bst_can_fill_p && bst_rd_need && !bst_rd_err) begin
 			bst_rd_valid = 1'b1;
 		end
 	end
@@ -1811,7 +1812,7 @@ module atg_blt_2d #(
 			s1_valid <= 1'b0;
 			s2_valid <= 1'b0;
 			s3_valid <= 1'b0;
-		end else if (!is_burst_ctl0 || fail_burst) begin
+		end else if (!is_burst_ctl0 || fail_burst || bst_rd_err) begin
 			s1_valid <= 1'b0;
 			s2_valid <= 1'b0;
 			s3_valid <= 1'b0;
@@ -1840,7 +1841,7 @@ module atg_blt_2d #(
 			s2_be    <= {LINE_BYTES{1'b0}};
 			s3_be    <= {LINE_BYTES{1'b0}};
 			s3_wdata <= {LINE_BITS{1'b0}};
-		end else if (!is_burst_ctl0 || fail_burst) begin
+		end else if (!is_burst_ctl0 || fail_burst || bst_rd_err) begin
 			s1_valid <= 1'b0;
 			s2_valid <= 1'b0;
 			s3_valid <= 1'b0;
@@ -3256,6 +3257,7 @@ module atg_blt_2d #(
 			br_seg_idx <= 3'd0;
 			br_active <= 1'b0;
 			b_draining <= 1'b0;
+			bst_rd_err <= 1'b0;
 			bank_active <= 2'b00;
 			bank_closed <= 2'b00;
 			bank_ready <= 2'b00;
@@ -3342,10 +3344,14 @@ module atg_blt_2d #(
 				pp_ram[rsp_tag[4:0]] <= rsp_rdata;
 			end
 `endif
+			if (m_burst && rsp_rd_bst && rsp_error) begin
+				bst_rd_err <= 1'b1;
+			end
 
 			case (state)
 			S_IDLE: begin
 				if (kick) begin
+					bst_rd_err <= 1'b0;
 					if (!op_ok) begin
 						error <= 1'b1;
 						error_kind <= GHCI_FAULT_KIND_INVALID_OP;
@@ -3443,6 +3449,7 @@ module atg_blt_2d #(
 				br_seg_idx <= 3'd0;
 				br_active <= 1'b0;
 				b_draining <= 1'b0;
+				bst_rd_err <= 1'b0;
 				bank_active <= 2'b00;
 				bank_closed <= 2'b00;
 				bank_ready <= 2'b00;
@@ -3545,7 +3552,10 @@ module atg_blt_2d #(
 					/*
 					 * 3. Commit & Write Channel
 					 */
-					if (!br_active) begin
+					if (bst_rd_err) begin
+						br_active <= 1'b0;
+						b_draining <= 1'b1;
+					end else if (!br_active) begin
 						if (bank_ready[br_bank]) begin
 							br_active <= 1'b1;
 							br_seg_idx <= 3'd0;

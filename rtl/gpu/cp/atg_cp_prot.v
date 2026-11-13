@@ -84,6 +84,7 @@ module atg_cp_prot #(
 	input wire [6:0] u_side,
 	input wire [1:0] u_req,	/* [0] it starts a unit, [1] it uses the shader units */
 	output wire u_ok,
+	output wire u_active,
 	output wire f_chk,
 	output wire [5:0] f_slot,
 
@@ -138,6 +139,7 @@ module atg_cp_prot #(
 	/* ------------------------------------------- SLOT_MAP, SLOT_TAG */
 
 	reg [255:0] map_v;
+	reg [255:0] map_faulted;
 	reg [5:0] map_d [0:255];
 	reg [63:0] tag_v;
 	reg [7:0] tag_d [0:63];
@@ -168,14 +170,17 @@ module atg_cp_prot #(
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			map_v <= 256'd0;
+			map_faulted <= 256'd0;
 			tag_v <= 64'd0;
 			n_slots <= 7'd0;
 		end else begin
 			if (fault_clear_en && fault_clear_tag != 8'd0) begin
 				map_v[fault_clear_tag] <= 1'b0;
+				map_faulted[fault_clear_tag] <= 1'b1;
 			end
 			if (slot_wr) begin
 				map_v[w_tag] <= w_slot != 6'd0;
+				map_faulted[w_tag] <= 1'b0;
 				if (slot_gone)
 					tag_v[w_old] <= 1'b0;
 				if (w_slot != 6'd0)
@@ -203,6 +208,15 @@ module atg_cp_prot #(
 	assign f_chk = u_fw && !u_side[6] && cur_slot != 6'd0;
 `endif
 	assign f_slot = cur_slot;
+
+	/* Session active check for N05:
+	 * Tag 0 is session 0 (kernel/driver), always active.
+	 * For client sessions (tag != 0), active unless the session has faulted.
+	 * Firmware SELF µops (u_fw && u_side[6]) are always active.
+	 */
+	wire u_tag_faulted = (u_tag != 8'd0) && map_faulted[u_tag];
+	wire u_fw_faulted = !u_side[6] && (u_side[5:0] != 6'd0 ? map_faulted[tag_d[u_side[5:0]]] : u_tag_faulted);
+	assign u_active = !(u_fw ? u_fw_faulted : u_tag_faulted);
 
 	/* ------------------------------------------- the switch */
 

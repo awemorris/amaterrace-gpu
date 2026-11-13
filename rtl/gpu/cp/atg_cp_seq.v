@@ -113,7 +113,8 @@ module atg_cp_seq #(
 	output wire u_fw,
 	output wire [6:0] u_side,
 	output wire [1:0] u_req,	/* [0] it starts a unit, [1] it uses the shader units */
-	input wire u_ok		/* the units run for its slot: it may start them */
+	input wire u_ok,		/* the units run for its slot: it may start them */
+	input wire u_active
 );
 	`include "ghci_regs.vh"
 
@@ -138,6 +139,7 @@ module atg_cp_seq #(
 
 	/* GHCI 1.0 Structured Command Opcodes */
 	/* verilator lint_off UNUSEDPARAM */
+	localparam [7:0] CMD_SESSION_CLOSE         = 8'h13;
 	localparam [7:0] CMD_BIND_PIPELINE         = 8'h20;
 	localparam [7:0] CMD_BIND_VERTEX_BUFFERS   = 8'h21;
 	localparam [7:0] CMD_BIND_INDEX_BUFFER     = 8'h22;
@@ -204,6 +206,8 @@ module atg_cp_seq #(
 	(* max_fanout = 16 *) reg [31:0] fence_flags;
 	(* max_fanout = 16 *) reg [39:0] occ_q;
 	reg settle;
+	(* max_fanout = 16 *) reg nop_r;
+	(* max_fanout = 16 *) reg is_allowed_op_r;
 
 `ifdef SYNTH_KINTEX7
 	(* keep = "true", dont_touch = "true" *) wire seq_rst_high;
@@ -435,7 +439,7 @@ module atg_cp_seq #(
 			pay_mid_r <= 8'd0;
 			pay_off_ok_r <= 1'b0;
 		end else begin
-			uop_we_r <= pay_take_b[0] && pay_we && !bad_idx_comb;
+			uop_we_r <= pay_take_b[0] && pay_we && !bad_idx_comb && !nop_r;
 			uop_idx_r <= pay_idx;
 			uop_wdata_r <= in_data;
 			pay_chk_v_r <= pay_take_b[0] && !p[0];
@@ -451,7 +455,7 @@ module atg_cp_seq #(
 	assign pay_wait_act = pay_wait;
 	assign n_ready = !seq_abort && ((st == Q_IDLE && !halt && !fw_active) || (st == Q_PAY && !use_fw && !pay_hold));
 	assign fw_ready = !seq_abort && ((st == Q_IDLE && !halt && fw_active) || (st == Q_PAY && use_fw && !pay_hold));
-	assign uop_we = pay_take && pay_we && !set_bad;
+	assign uop_we = pay_take && pay_we && !set_bad && !nop_r;
 	assign uop_idx = pay_idx;
 	assign uop_wdata = in_data;
 `endif
@@ -460,7 +464,7 @@ module atg_cp_seq #(
 	wire unit_op = vendor || op == OP_BLIT || op == OP_DRAW || op == OP_DISPATCH ||
 		op == OP_LOAD_CONST || op == CMD_DRAW || op == CMD_DRAW_INDEXED ||
 		op == CMD_DRAW_INDIRECT || op == CMD_DRAW_MESH_TASKS || op == CMD_DISPATCH;
-	assign u_req = seq_abort ? 2'b00 : {st == Q_EXEC && unit_op && (vendor || op != OP_BLIT), st == Q_EXEC && unit_op};
+	assign u_req = (seq_abort || nop_r) ? 2'b00 : {st == Q_EXEC && unit_op && (vendor || op != OP_BLIT), st == Q_EXEC && unit_op};
 	assign u_fw = use_fw;
 	assign u_side = side;
 
@@ -553,11 +557,11 @@ module atg_cp_seq #(
 		(op == CMD_FENCE && fence_flags[2]) ? 4'b1111 : 4'd0;
 
 `ifdef SYNTH_KINTEX7
-	assign kick = !seq_abort && exec_go_b[1] && k_valid_r;
+	assign kick = !seq_abort && !nop_r && exec_go_b[1] && k_valid_r;
 	assign kick_code = k_code_r;
 	assign inv = exec_go_b[1] ? inv_code_r : 4'd0;
 `else
-	assign kick = !seq_abort && exec_go && k_on_dec;
+	assign kick = !seq_abort && !nop_r && exec_go && k_on_dec;
 	assign kick_code = k_code_dec;
 	assign inv = exec_go ? inv_code_dec : 4'd0;
 `endif
@@ -865,6 +869,8 @@ module atg_cp_seq #(
 			is_load_const_r <= 1'b0;
 			is_draw_raw_r <= 1'b0;
 			is_barrier_r <= 1'b0;
+			nop_r <= 1'b0;
+			is_allowed_op_r <= 1'b0;
 `ifdef SYNTH_KINTEX7
 			unit_op_r <= 1'b0;
 			fence_op_r <= 1'b0;
@@ -918,6 +924,11 @@ module atg_cp_seq #(
 				is_load_const_r <= !h_vendor && (h_op_b == OP_LOAD_CONST);
 				is_draw_raw_r <= h_vendor && (h_op_b == VOP_DRAW_RAW);
 				is_barrier_r <= !h_vendor && (h_op_b == CMD_BARRIER || h_op_b == OP_BARRIER);
+				is_allowed_op_r <= !h_vendor && (
+					(h_op_b == CMD_FENCE) || (h_op_b == CMD_WAIT_FENCE) ||
+					(h_op_b == OP_FENCE)  || (h_op_b == OP_WAIT_FENCE) ||
+					(h_op_b == CMD_SESSION_CLOSE)
+				);
 			end
 			if (st_dec_b[4]) begin
 				h_early_fault_r <= is_ghci_hdr_r ? ghci_fault_op : std_fault_op;
@@ -975,7 +986,8 @@ module atg_cp_seq #(
 			st_exec_rdy_r <= ((st == Q_DEC2) && !dec_fault_s && h_zero_r) || ((st == Q_EXEC) && !exec_go_b[0]);
 `endif
 			case (st)
-			Q_IDLE:
+			Q_IDLE: begin
+				nop_r <= 1'b0;
 `ifdef SYNTH_KINTEX7
 				if (hdr_take_b[3]) begin
 					st <= Q_DEC;
@@ -991,6 +1003,7 @@ module atg_cp_seq #(
 					st <= Q_DEC;
 				end
 `endif
+			end
 			Q_DEC: begin
 `ifndef SYNTH_KINTEX7
 				vendor <= h_vendor;
@@ -1004,6 +1017,11 @@ module atg_cp_seq #(
 				is_load_const_r <= !h_vendor && (h_op == OP_LOAD_CONST);
 				is_draw_raw_r <= h_vendor && (h_op == VOP_DRAW_RAW);
 				is_barrier_r <= !h_vendor && (h_op == CMD_BARRIER || h_op == OP_BARRIER);
+				is_allowed_op_r <= !h_vendor && (
+					(h_op == CMD_FENCE) || (h_op == CMD_WAIT_FENCE) ||
+					(h_op == OP_FENCE)  || (h_op == OP_WAIT_FENCE) ||
+					(h_op == CMD_SESSION_CLOSE)
+				);
 				flags <= (h_op == CMD_FENCE) ? 8'd0 : (is_ghci_hdr ? hdr_r[31:24] : hdr_r[15:8]);
 				fence_flags <= 32'd0;
 				tag <= hdr_r[23:16];
@@ -1027,6 +1045,7 @@ module atg_cp_seq #(
 					st <= Q_DEAD;
 					st_is_pay_r <= 1'b0;
 				end else begin
+					nop_r <= !u_active && !is_allowed_op_r;
 					st <= h_zero_r ? (is_barrier_r ? Q_BARRIER : Q_EXEC) : Q_PAY;
 					st_is_pay_r <= !h_zero_r;
 				end
@@ -1036,24 +1055,31 @@ module atg_cp_seq #(
 					f_kind <= dec_short_r ? GHCI_FAULT_KIND_BAD_REG : GHCI_FAULT_KIND_INVALID_OP;
 					st <= Q_DEAD;
 				end else begin
+					nop_r <= !u_active && !is_allowed_op_r;
 					st <= h_zero_r ? (is_barrier_r ? Q_BARRIER : Q_EXEC) : Q_PAY;
 				end
 `endif
 			end
 			Q_PAY:
 `ifdef SYNTH_KINTEX7
-				if (bad_idx_comb) begin
+				if (bad_idx_comb && !nop_r) begin
 					f_pulse <= 1'b1;
 					f_kind <= GHCI_FAULT_KIND_BAD_REG;
 					st <= Q_DEAD;
 					st_is_pay_r <= 1'b0;
 				end else if (pay_take_b[3] && p_is_last_r) begin
-					st <= is_barrier_r ? Q_BARRIER : Q_EXEC;
-					st_is_pay_r <= 1'b0;
-					settle <= 1'b1;
+					if (nop_r) begin
+						st <= Q_IDLE;
+						st_is_pay_r <= 1'b0;
+						settle <= 1'b0;
+					end else begin
+						st <= is_barrier_r ? Q_BARRIER : Q_EXEC;
+						st_is_pay_r <= 1'b0;
+						settle <= 1'b1;
+					end
 				end
 `else
-				if (pay_take && set_bad) begin
+				if (pay_take && set_bad && !nop_r) begin
 					f_pulse <= 1'b1;
 					f_kind <= GHCI_FAULT_KIND_BAD_REG;
 					f_faddr <= in_data;
@@ -1080,13 +1106,21 @@ module atg_cp_seq #(
 					 * (atg_cp registers the STATE broadcast), so the kick
 					 * waits a cycle (settle). */
 					if (p_n == n) begin
-						st <= is_barrier_r ? Q_BARRIER : Q_EXEC;
-						settle <= 1'b1;
+						if (nop_r) begin
+							st <= Q_IDLE;
+							settle <= 1'b0;
+						end else begin
+							st <= is_barrier_r ? Q_BARRIER : Q_EXEC;
+							settle <= 1'b1;
+						end
 					end
 				end
 `endif
 			Q_EXEC: begin
-				if (exec_go) begin
+				if (nop_r) begin
+					st <= Q_IDLE;
+					settle <= 1'b0;
+				end else if (exec_go) begin
 `ifdef SYNTH_KINTEX7
 					if (exec_settle_r)
 						settle <= 1'b1;

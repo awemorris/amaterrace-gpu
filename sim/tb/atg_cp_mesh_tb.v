@@ -54,7 +54,7 @@ module atg_cp_mesh_tb;
 
 	atg_cp_seq #(.UNITS(8'hFF), .HAS_VSYNC(1), .HAS_DISP(1)) dut (
 		.clk(clk), .rst_n(rst_n),
-		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(u_req), .u_ok(1'b1),
+		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(u_req), .u_ok(1'b1), .u_active(1'b1),
 		.n_valid(n_valid), .n_ready(n_ready), .n_data(n_data),
 		.fw_valid(1'b0), .fw_ready(), .fw_data(32'd0),
 		.fw_active(1'b0), .halt(1'b0), .seq_abort(1'b0), .l2_flush_done(1'b1), .l2_idle(1'b1),

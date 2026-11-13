@@ -208,6 +208,7 @@ module atg_cp #(
 	output wire [1:0] u_req,
 	output wire [7:0] u_tag,
 	input wire u_ok,
+	input wire u_active,
 	output wire fault_session_clear,
 	output wire [7:0] fault_session_tag,
 	input wire [7:0] wdt_tag,	/* the job tag of a watchdog fault (the drained session's) */
@@ -626,7 +627,7 @@ module atg_cp #(
 			s_ring_fault_kind}),
 		.src_addr({s_disp_fault_addr, x_fault_addr[63:32], 32'd0, cpu_fault_addr,
 			x_fault_addr[31:0], s_fence_fault_addr, 32'd0, s_seq_fault_addr, s_ring_fault_addr}),
-		.src_tag({s_disp_fault_tag, x_fault_tag[15:8], 8'd0, 8'd0, x_fault_tag[7:0],
+		.src_tag({s_disp_fault_tag, x_fault_tag[15:8], s_seq_fault_tag, 8'd0, x_fault_tag[7:0],
 			s_fence_fault_tag, 8'd0, s_seq_fault_tag, s_ring_fault_tag}),
 		.src_stage({4'd0, 4'd0, 4'd0, 4'd0, su_effective_stage, 4'd0, 4'd0, 4'd0, 4'd0}),
 		.su_stage(su_effective_stage),
@@ -1046,7 +1047,7 @@ module atg_cp #(
 		.busy(s_seq_busy), .cmd_active(s_cmd_active), .seq_st(s_seq_st),
 		.fault(s_seq_fault), .fault_kind(s_seq_fault_kind), .fault_addr(s_seq_fault_addr),
 		.fault_tag(s_seq_fault_tag),
-		.u_fw(u_fw), .u_side(u_side), .u_req(u_req), .u_ok(u_ok)
+		.u_fw(u_fw), .u_side(u_side), .u_req(u_req), .u_ok(u_ok), .u_active(u_active)
 	);
 	assign u_tag = s_seq_fault_tag;
 

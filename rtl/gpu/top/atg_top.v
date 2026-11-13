@@ -570,7 +570,7 @@ module atg_top #(
 	wire occ_clear, cp_occ_clear;
 	/* The sequencer's µop and the CPU's window, for atg_cp_prot. */
 	wire [6:0] fw_side, u_side;
-	wire u_fw, u_ok, f_chk;
+	wire u_fw, u_ok, u_active, f_chk;
 	wire prot_kick_ok;	/* KICK: the units are session 0's */
 	wire [7:0] prot_wdt_tag;	/* a watchdog fault's job tag */
 	wire [1:0] u_req;
@@ -724,6 +724,7 @@ module atg_top #(
 		.u_req(u_req),
 		.u_tag(u_tag),
 		.u_ok(u_ok),
+		.u_active(u_active),
 		.wdt_tag(prot_wdt_tag),
 		.fault_session_clear(cp_fault_session_clear),
 		.fault_session_tag(cp_fault_session_tag),
@@ -1026,6 +1027,7 @@ module atg_top #(
 			.sb_we(sb_we), .sb_idx(sb_idx), .sb_wdata(sb_wdata), .sb_rdata(prot_sb_rdata),
 			.v_tag(v_tag), .v_slot(v_slot),
 			.u_tag(u_tag), .u_fw(u_fw), .u_side(u_side), .u_req(u_req), .u_ok(u_ok),
+			.u_active(u_active),
 			.f_chk(f_chk), .f_slot(f_slot),
 			.drain_ok(drain_ok), .sw_inv(prot_sw_inv), .scrub(prot_scrub),
 			.scrub_busy(su_scrub_any), .prot_unit(prot_unit),
@@ -1055,6 +1057,7 @@ module atg_top #(
 		assign prot_sb_rdata = 32'd0;
 		assign v_slot = 6'd0;
 		assign u_ok = 1'b1;
+		assign u_active = 1'b1;
 		assign f_chk = 1'b0;
 		assign f_slot = 6'd0;
 		assign prot_sw_inv = 1'b0;

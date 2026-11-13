@@ -80,7 +80,50 @@
   - `python3 tools/arith-lint.py --top atg_cp`: 0 operators
 - **残り**: X5, X4, X6, X7, X8, X9, X3 (docs)
 
-### 2026-11-13T11:52:00+09:00: X2 実装・検証完了
+### 2026-11-13T14:55:00+09:00: X5 実装・検証完了
+- **した事**:
+  - `rtl/gpu/cp/atg_cp_ctl.v`:
+    - (a) first-fault latch 実装:
+      `wire fault_info_uncleared = |fault_info;`
+      `wire take_fault_info = any && can_fault_r[2] && !fault_info_uncleared;`
+      `wire take_fault_addr = any && can_fault_r[3] && !fault_info_uncleared;`
+      初回フォールトで `FAULT_INFO` / `FAULT_ADDR` をラッチし、クリアされるまでの後続フォールトによる上書きを阻止。台帳 B34 推奨に従い、whole-device フォールト時の `take_fault_st`（FAULTED 遷移）および IRQ_FAULT、`fault_session_clear` は維持。W1C によるクリアに対応。
+  - `rtl/gpu/cp/atg_cp_prot.v`:
+    - (b) N05 判定およびフォールト履歴管理:
+      `map_faulted` レジスタ配列を追加（`fault_clear_en && fault_clear_tag != 0` で 1 をラッチ、新規 `slot_wr` で 0 クリア）。
+      `output wire u_active` を出力。フォールトしたセッション（`map_faulted[tag] == 1`）のみ非アクティブ（0）とし、非保護（public）セッション（`flags == 0`）はアクティブ（1）を維持。
+  - `rtl/gpu/top/atg_top.v`:
+    - `atg_cp_prot` と `atg_cp` の間に `u_active` を配線（`g_no_prot` では `1'b1`）。
+  - `rtl/gpu/cp/atg_cp.v`:
+    - `input wire u_active` を追加し、`u_seq.u_active` へ接続。
+    - BLT のエラー報告タグを `8'd0` から `s_seq_fault_tag` へ修正し、セッション実行中の BLT エラーが正しくセッションタグを帯有するように修正。
+  - `rtl/gpu/cp/atg_cp_seq.v`:
+    - `input wire u_active` を追加。
+    - `Q_DEC` で `is_allowed_op_r`（`CMD_FENCE`, `CMD_WAIT_FENCE`, `OP_FENCE`, `OP_WAIT_FENCE`, `CMD_SESSION_CLOSE`）をデコード。
+    - `Q_DEC2` で `nop_r <= !u_active && !is_allowed_op_r;` をラッチ。
+    - `Q_PAY`: `nop_r` の場合 `uop_we` を抑止、bad index 検査を無視し、ペイロード終了時に待機せず直接 `Q_IDLE` へ復帰（stall なし、起動なし）。
+    - `Q_EXEC`: `nop_r` の場合 `u_req` / `kick` を出さず直接 `Q_IDLE` へ復帰。
+  - `rtl/gpu/blt/atg_blt_2d.v`:
+    - (d) MC によるリード拒否時（`m_burst && rsp_rd_bst && rsp_error`）に `bst_rd_err <= 1'b1;` をラッチ。
+    - `bst_rd_err` アサート時はバースト書き込みパイプライン（`s1_valid`, `s2_valid`, `s3_valid`）を 0 にクリアし、リード発行（`bst_rd_valid`）を抑止してメモリへの書き込みを完全に防ぎ、安全に `S_IDLE` へドレイン。
+  - `sim/tb/atg_top_prot_tb.v`:
+    - (d) `check(mem.peek32(AREA_A) == DATA_A, "a is not written");` を復元。
+    - (a), (b) N05 テストを追加: フォールトした Session A への後続 CMD_COPY_BUFFER がメモリを変更せず、後続 CMD_FENCE が正常完了し `FENCE_LAST` が更新されること、`FAULT_INFO` が初回値のまま変化しないこと（first-fault latch）、W1C で `FAULT_INFO` が 0 にクリアされることを検証。
+    - (e) open(A=3)・open(B=6)・open(C=7) 後の `SESSION_ACTIVE`（`0x00000049`）を照合。
+  - 既存テストベンチ更新:
+    - `sim/tb/atg_cp_mesh_tb.v`, `sim/tb/atg_cp_seq_synth_tb.v`, `sim/tb/atg_cp_seq_tb.v`, `sim/tb/atg_ghci_tb.v` に `.u_active(1'b1)` を接続。
+- **試験実行結果**:
+  - `./sim/run.sh atg_top_prot`: **PASS** (553 s: regs, own, refuse, grant, revoke 全5グループ PASS、エラー 0 件)
+  - `./sim/run.sh atg_cp_seq`: **PASS** (1 s)
+  - `./sim/run.sh atg_cp_seq_synth`: **PASS** (0 s)
+  - `./sim/run.sh atg_ghci`: **PASS** (1 s)
+  - `./sim/run.sh atg_ghci_top`: **PASS** (52 s)
+  - `tools/lint.sh`: clean (全 RTL モジュール, top, board 0 warnings)
+  - `python3 tools/arith-lint.py --top atg_top`: 0 operators
+  - `python3 tools/arith-lint.py --top atg_blt`: 0 operators
+  - `python3 tools/arith-lint.py --top atg_cp`: 0 operators
+
+
 - **した事**:
   - `rtl/gpu/mc/atg_mc_l2.v`:
     - `inv_active_r` レジスタを追加。`ctrl_inv_valid` が 0 の時にクリア、`S_FLUSH_STEP` への遷移サイクルで 1 をラッチ。

@@ -488,10 +488,11 @@ module atg_cp_ctl #(
 			f_s1_v_r[7]   ? f_s1_addr_r[31:24] : f_s2_addr_r[31:24];
 	end
 
+	wire fault_info_uncleared = |fault_info;
 	wire take_fault = any && can_fault_r[0];
 	wire take_fault_st = any && can_fault_r[1];
-	wire take_fault_info = any && can_fault_r[2];
-	wire take_fault_addr = any && can_fault_r[3];
+	wire take_fault_info = any && can_fault_r[2] && !fault_info_uncleared;
+	wire take_fault_addr = any && can_fault_r[3] && !fault_info_uncleared;
 	assign ev_fault = take_fault;
 	assign ev_wdt = f_wdt_only_r && take_fault;
 	assign ev_halted = st == S_HALTING && ctrl_halt && mc_idle && !ring_busy && !take_fault &&
@@ -528,10 +529,11 @@ module atg_cp_ctl #(
 		end
 	end
 
+	wire fault_info_uncleared = |fault_info;
 	wire take_fault = any && can_fault_r[0];
 	wire take_fault_st = any && can_fault_r[1];
-	wire take_fault_info = any && can_fault_r[2];
-	wire take_fault_addr = any && can_fault_r[3];
+	wire take_fault_info = any && can_fault_r[2] && !fault_info_uncleared;
+	wire take_fault_addr = any && can_fault_r[3] && !fault_info_uncleared;
 	assign ev_fault = take_fault;
 	assign ev_wdt = wdt_fire && take_fault && !mc_gpu && !kick_bad && !kick_absent && !locked_bad;
 	assign ev_halted = st == S_HALTING && ctrl_halt && mc_idle && !ring_busy && !take_fault &&

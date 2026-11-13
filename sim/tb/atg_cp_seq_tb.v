@@ -76,7 +76,7 @@ module atg_cp_seq_tb;
 
 	atg_cp_seq #(.UNITS(8'hFF), .HAS_VSYNC(1), .HAS_DISP(1)) dut (
 		.clk(clk), .rst_n(rst_n),
-		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(u_req), .u_ok(u_ok),
+		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(u_req), .u_ok(u_ok), .u_active(1'b1),
 		.n_valid(n_valid), .n_ready(n_ready), .n_data(n_data),
 		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data),
 		.fw_active(fw_active), .halt(halt), .seq_abort(abort),
@@ -121,7 +121,7 @@ module atg_cp_seq_tb;
 	reg s_valid = 0;
 	atg_cp_seq #(.UNITS(8'h03)) u_small (
 		.clk(clk), .rst_n(rst_n),
-		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(), .u_ok(1'b1),
+		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(), .u_ok(1'b1), .u_active(1'b1),
 		.n_valid(s_valid), .n_ready(s_n_ready), .n_data(s_data),
 		.fw_valid(1'b0), .fw_ready(), .fw_data(32'd0), .fw_active(1'b0),
 		.halt(1'b0), .seq_abort(1'b0), .uop_we(), .uop_idx(), .uop_wdata(),

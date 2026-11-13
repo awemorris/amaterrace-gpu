@@ -233,6 +233,9 @@ module atg_top_prot_tb;
 		check(v == 32'h00000009, "SESSION_ACTIVE after open(TAG_A=3) == 0x9");
 		ring_open(TAG_B, 32'd1, 1);
 		ring_open(TAG_C, 32'd0, 2);
+		wait_reg(GHCI_REG_SESSION_ACTIVE, 32'h00000049, 32'hFFFFFFFF, 2000);
+		host_read(GHCI_REG_SESSION_ACTIVE, v);
+		check(v == 32'h00000049, "SESSION_ACTIVE after open(TAG_A=3, TAG_B=6, TAG_C=7) == 0x49 (C is unprotected)");
 		frame_begin;
 		memory(0, 64'h100, AREA_B, 32'd0);
 		buffer(1, 64'h200, 64'h100, 64'h0);
@@ -280,6 +283,24 @@ module atg_top_prot_tb;
 		check(v[TAG_A] == 1'b0, "SESSION_ACTIVE cleared for faulted session");
 		host_read(GHCI_FAULT_INFO, v);
 		check(v[3:0] == GHCI_FAULT_KIND_PERM_FAULT && v[15:8] == TAG_A, "FAULT_INFO of the copy");
+		check(mem.peek32(AREA_A) == DATA_A, "a is not written");
+
+		/* N05 test: subsequent work in faulted session A is NOP, fence completes */
+		frame_begin;
+		copy(0, 64'h402, 64'h202, 64'h200);
+		ring_frame(TAG_A, 5);
+		fence_value = fence_value + 1;
+		ring_fence(TAG_A);
+		host_write(GHCI_RING_WPTR, wp);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, fence_value, 32'hFFFFFFFF, 40000);
+		check(mem.peek32(AREA_A) == DATA_A, "N05: subsequent copy in faulted session A did not modify memory");
+		host_read(GHCI_FAULT_INFO, v);
+		check(v[3:0] == GHCI_FAULT_KIND_PERM_FAULT && v[15:8] == TAG_A, "FAULT_INFO unchanged (first-fault latch)");
+		/* Clear FAULT_INFO via W1C */
+		host_write(GHCI_REG_FAULT_INFO, v);
+		host_read(GHCI_REG_FAULT_INFO, v);
+		check(v == 32'd0, "FAULT_INFO cleared via W1C");
+
 		ring_close(TAG_B, 1);
 		wait_reg(GHCI_REG_SESSION_ACTIVE, 32'h00000001, 32'hFFFFFFFF, 2000);
 		host_read(GHCI_REG_SESSION_ACTIVE, v);
@@ -293,6 +314,9 @@ module atg_top_prot_tb;
 		ring_open(TAG_A, 32'd1, 0);
 		ring_open(TAG_B, 32'd1, 1);
 		ring_open(TAG_C, 32'd0, 2);
+		wait_reg(GHCI_REG_SESSION_ACTIVE, 32'h00000049, 32'hFFFFFFFF, 2000);
+		host_read(GHCI_REG_SESSION_ACTIVE, v);
+		check(v == 32'h00000049, "SESSION_ACTIVE after open(TAG_A=3, TAG_B=6, TAG_C=7) == 0x49 (C is unprotected)");
 		frame_begin;
 		memory(0, 64'h100, AREA_B, 32'd0);
 		frame_run(TAG_B, 1);
