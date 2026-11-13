@@ -741,7 +741,7 @@ module atg_top_harness #(
 		ring_put(hdr(1'b0, 6'd2, 8'h1C, 8'd0, 8'd0));
 		host_write(GHCI_RING_WPTR, wp);
 		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_FAULT, 32'd1 << GHCI_STATUS_FAULT);
-		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'd0, GHCI_FAULT_UNIT_BLT, GHCI_FAULT_KIND_INVALID_OP}, 32'hFFFFFFFF);
+		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'h1C, GHCI_FAULT_UNIT_BLT, GHCI_FAULT_KIND_INVALID_OP}, 32'hFFFFFFFF);
 		reset_gpu();
 		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 
@@ -752,7 +752,7 @@ module atg_top_harness #(
 		ring_put(hdr(1'b0, 6'd2, 8'h1E, 8'd0, 8'd0));
 		host_write(GHCI_RING_WPTR, wp);
 		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_FAULT, 32'd1 << GHCI_STATUS_FAULT);
-		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'd0, GHCI_FAULT_UNIT_BLT, GHCI_FAULT_KIND_INVALID_OP}, 32'hFFFFFFFF);
+		expect_reg(GHCI_FAULT_INFO, {16'd0, 8'h1E, GHCI_FAULT_UNIT_BLT, GHCI_FAULT_KIND_INVALID_OP}, 32'hFFFFFFFF);
 		reset_gpu();
 		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 
@@ -767,6 +767,24 @@ module atg_top_harness #(
 		expect_reg(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_SOFT, 32'hFFFFFFFF);
 		if (!irq)
 			fail_msg("no soft interrupt");
+		host_write(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_SOFT);
+		expect_reg(GHCI_IRQ_STATUS, 32'd0, 32'hFFFFFFFF);
+		if (irq)
+			fail_msg("soft interrupt not cleared");
+
+		/* X7: IRQ_GLOBAL = 0 test: IRQ_ENABLE[5] = 1, IRQ_SET[5] = 1, CTRL.IRQ_GLOBAL = 0 -> irq = 0.
+		   Then CTRL.IRQ_GLOBAL = 1 -> irq = 1. */
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN); /* IRQ_GLOBAL = 0 */
+		host_write(GHCI_IRQ_STATUS, 32'h1FF);
+		host_write(GHCI_IRQ_ENABLE, 32'd1 << GHCI_IRQ_SOFT);
+		host_write(GHCI_IRQ_SET, 32'd1 << GHCI_IRQ_SOFT);
+		expect_reg(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_SOFT, 32'hFFFFFFFF);
+		if (irq)
+			fail_msg("irq asserted while IRQ_GLOBAL = 0");
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
+		repeat (2) @(posedge clk);
+		if (!irq)
+			fail_msg("irq not asserted after IRQ_GLOBAL = 1");
 		host_write(GHCI_IRQ_STATUS, 32'd1 << GHCI_IRQ_SOFT);
 		expect_reg(GHCI_IRQ_STATUS, 32'd0, 32'hFFFFFFFF);
 		if (irq)
@@ -823,6 +841,7 @@ module atg_top_harness #(
 		compare_ref("WAIT_FENCE");
 
 		/* HALT with an empty ring, two fences, STEP runs one at a time. */
+		repeat (10) @(posedge clk);
 		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT) | (32'd1 << GHCI_CTRL_IRQ_GLOBAL));
 		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_HALTED, 32'd1 << GHCI_STATUS_HALTED);
 		ring_fence(8'h51, 32'd10);

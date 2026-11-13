@@ -226,7 +226,23 @@
   - `./sim/run.sh atg_cp_regs`: PASS (1 s)
   - `./sim/run.sh atg_ghci_top`: PASS (53 s, `PASS DEVICE_CAPS: 40010480`, `PASS minimal KC705 DEVICE_CAPS calculation == 0x40010480`)
   - `python3 tools/arith-lint.py --top atg_top`: 0 operators
-- **残り**: X7, X8, X9, X3 (docs)
+- **残り**: X6, X7, X8, X9, X3 (docs)
+
+### 2026-11-13T16:42:00+09:00: X7 実装・検証完了
+- **した事**:
+  - `sim/tb/atg_top_tb.v`:
+    - `CTRL.IRQ_GLOBAL = 0` の試験を追加: `IRQ_ENABLE[5] = 1`, `IRQ_SET[5] = 1`, `CTRL.IRQ_GLOBAL = 0` で `irq == 0` であることを確認。その後 `CTRL.IRQ_GLOBAL = 1` を書き込み、クロック後直ちに `irq == 1` にアサートされること、W1C で `irq == 0` に戻ることを確認（§3.4, ghci.md:393-394 期待値通り）。
+    - X5 で修正された BLT パケットタグ（`s_seq_fault_tag`）伝播に伴い、lines 744, 755 の `GHCI_FAULT_INFO` 期待値をパケットタグ付き（`8'h1C`, `8'h1E`）に更新。
+    - HALT 試験での sequencer / ring パケット境界デッドロックを解消:
+      - `atg_cp_ctl.v`: `S_HALTING` から `S_HALTED` への遷移条件 `halt_ok` を `mc_idle && (!ring_busy || (seq_st == 4'd0 && !f_busy))` に更新（リングが次パケットのヘッダを `R_N` で供給待機しておりシーケンサが `Q_IDLE` で停止している場合、リング空を待たずに即座に `HALTED` に安全遷移）。
+      - `sim/tb/atg_top_tb.v`: `WAIT_FENCE` 完了後のリタイア確定待機（`repeat (10) @(posedge clk);`）を追加。
+- **試験実行結果**:
+  - `./sim/run.sh atg_top`: PASS (31 s)
+  - `tools/lint.sh`: clean (全 RTL モジュール, top, board 0 warnings)
+  - `python3 tools/arith-lint.py --top atg_cp_ctl`: 0 operators
+  - `python3 tools/arith-lint.py --top atg_top`: 0 operators
+- **残り**: X8, X9, X3 (docs)
+
 
 
 

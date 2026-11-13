@@ -210,7 +210,8 @@ module atg_cp_ctl #(
 	wire cp_is_wait_fence = (seq_st == 4'd5); /* Q_FWAIT strictly */
 	wire cp_is_exec = (seq_st == 4'd1 || seq_st == 4'd2 || seq_st == 4'd3 || seq_st == 4'd4 || seq_st == 4'd6 || (f_busy && seq_st != 4'd5)); /* Q_PAY, Q_EXEC, Q_POST, Q_FREQ, Q_VSYNC, f_busy */
 	wire cp_is_decode = (seq_st == 4'd8 || seq_st == 4'd9); /* Q_DEC, Q_DEC2 */
-	wire cp_is_fetch = ring_busy || (!ring_empty && cmd_active);
+	wire halt_ok = mc_idle && (!ring_busy || (seq_st == 4'd0 && !f_busy));
+	wire cp_is_fetch = (st != S_HALTED) && (ring_busy || (!ring_empty && cmd_active));
 
 	assign cp_state = cp_is_fault ? GHCI_ST_FAULT :
 	                  cp_is_wait_mem ? GHCI_ST_WAIT_MEM :
@@ -495,7 +496,7 @@ module atg_cp_ctl #(
 	wire take_fault_addr = any && can_fault_r[3] && !fault_info_uncleared;
 	assign ev_fault = take_fault;
 	assign ev_wdt = f_wdt_only_r && take_fault;
-	assign ev_halted = st == S_HALTING && ctrl_halt && mc_idle && !ring_busy && !take_fault &&
+	assign ev_halted = st == S_HALTING && ctrl_halt && halt_ok && !take_fault &&
 		!wr_reset;
 `else
 	always @(*) begin
@@ -536,7 +537,7 @@ module atg_cp_ctl #(
 	wire take_fault_addr = any && can_fault_r[3] && !fault_info_uncleared;
 	assign ev_fault = take_fault;
 	assign ev_wdt = wdt_fire && take_fault && !mc_gpu && !kick_bad && !kick_absent && !locked_bad;
-	assign ev_halted = st == S_HALTING && ctrl_halt && mc_idle && !ring_busy && !take_fault &&
+	assign ev_halted = st == S_HALTING && ctrl_halt && halt_ok && !take_fault &&
 		!wr_reset;
 `endif
 
@@ -779,7 +780,7 @@ module atg_cp_ctl #(
 						open_r <= {4{!ctrl_run}};
 						halt_r <= 3'b000;
 						st_is_run_r <= ctrl_run;
-					end else if (mc_idle && !ring_busy) begin
+					end else if (halt_ok) begin
 						st <= S_HALTED;
 						open_r <= 4'b1111;
 						halt_r <= 3'b111;
