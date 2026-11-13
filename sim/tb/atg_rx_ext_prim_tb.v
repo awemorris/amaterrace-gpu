@@ -130,11 +130,13 @@ module atg_rx_ext_prim_tb;
 		.mesh_id(16'd0)
 	);
 
-	/* Mock Page Table for u_rx */
+	/* Mock Page Table for u_rx (3-cycle read latency) */
 	reg [31:0] pt_mem [0:255][0:15];
+	reg [31:0] pt_pipe1, pt_pipe2;
 	always @(posedge clk) begin
-		if (pt_rd)
-			pt_rdata <= pt_mem[pt_idx][pt_word[3:0]];
+		pt_pipe1 <= pt_mem[pt_idx][pt_word[3:0]];
+		pt_pipe2 <= pt_pipe1;
+		pt_rdata <= pt_pipe2;
 	end
 
 	integer err_count = 0;

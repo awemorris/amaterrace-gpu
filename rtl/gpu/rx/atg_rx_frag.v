@@ -59,6 +59,7 @@ module atg_rx_frag (
 	output wire [6:0] pt_word,
 	input wire [31:0] pt_rdata,
 	output wire pt_busy,
+	input wire c_pt_busy,
 	/* Fragment warps to the SU (atg_su fl_*) */
 	output wire fl_req,
 	input wire fl_gnt,
@@ -322,31 +323,36 @@ module atg_rx_frag (
 	end
 	endgenerate
 
-	/* The copy: reads (cv, cw) → writes the next cycle; then the map, then d_s. */
+	/* The copy: reads (cv, cw) → writes 3 cycles later; then the map, then d_s. */
 	(* extract_reset = "no" *) reg [1:0] cv;
 	(* extract_reset = "no" *) reg [6:0] cw;
-	reg rd_done, rv_q, map_done;
+	reg rd_done, map_done;
+	(* shreg_extract = "no" *) reg [2:0] r_rv_q;
+	(* shreg_extract = "no" *) reg [1:0] r_rv_v1, r_rv_v2, r_rv_v3;
+	(* shreg_extract = "no" *) reg [6:0] r_rv_w1, r_rv_w2, r_rv_w3;
+	wire rv_q3 = r_rv_q[2];
+	wire [1:0] rv_v3 = r_rv_v3;
+	wire [6:0] rv_w3 = r_rv_w3;
 	(* max_fanout = 16 *) reg [2:0] dsn;	/* d_s words written */
 	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_dsn_sel [0:1];
-	reg [1:0] rv_v;
-	reg [6:0] rv_w;
-	wire rd_now = st == S_COPY && !rd_done;
+	wire rd_now = st == S_COPY && !rd_done && !c_pt_busy;
 	assign pt_rd = rd_now;
 	assign pt_idx = ent[8 * cv +: 8];
 	wire [7:0] fc_carry_unused;
 	am_add #(.W(7)) u_pt_word (.a(cw), .b(7'd4), .ci(1'b0), .s(pt_word), .co(fc_carry_unused[0]));
-	assign pt_busy = st == S_COPY;
-	(* dont_touch = "true" *) wire map_we    = st == S_COPY && rd_done && !rv_q && !map_done;
-	(* dont_touch = "true" *) wire map_we_ad = st == S_COPY && rd_done && !rv_q && !map_done;
-	(* dont_touch = "true" *) wire map_we_lo = st == S_COPY && rd_done && !rv_q && !map_done;
-	(* dont_touch = "true" *) wire map_we_hi = st == S_COPY && rd_done && !rv_q && !map_done;
+	wire f_pt_in_flight = |r_rv_q || rd_now;
+	assign pt_busy = (st == S_COPY) || f_pt_in_flight;
+	(* dont_touch = "true" *) wire map_we    = st == S_COPY && rd_done && !(|r_rv_q) && !map_done;
+	(* dont_touch = "true" *) wire map_we_ad = st == S_COPY && rd_done && !(|r_rv_q) && !map_done;
+	(* dont_touch = "true" *) wire map_we_lo = st == S_COPY && rd_done && !(|r_rv_q) && !map_done;
+	(* dont_touch = "true" *) wire map_we_hi = st == S_COPY && rd_done && !(|r_rv_q) && !map_done;
 	(* dont_touch = "true" *) wire ds_we     = st == S_COPY && map_done && ms4 && dsn != 3'd4;
 	(* dont_touch = "true" *) wire ds_we_ad  = st == S_COPY && map_done && ms4 && dsn != 3'd4;
 	(* dont_touch = "true" *) wire ds_we_lo  = st == S_COPY && map_done && ms4 && dsn != 3'd4;
 	(* dont_touch = "true" *) wire ds_we_hi  = st == S_COPY && map_done && ms4 && dsn != 3'd4;
-	assign fl_pw_we = rv_q || map_we || ds_we;
+	assign fl_pw_we = rv_q3 || map_we || ds_we;
 	assign fl_pw_addr = map_we_ad ? 12'hFFF : ds_we_ad ? {10'h3FE, dsn[1:0]} :
-		{1'b0, 3'd0, rv_v, rv_w[5:0]};
+		{1'b0, 3'd0, rv_v3, rv_w3[5:0]};
 	wire [31:0] dsv_mux = {dsv[{r_dsn_sel[1], 1'b1, 4'd0} +: 16], dsv[{r_dsn_sel[0], 5'd0} +: 16]};
 	assign fl_pw_data[15:0]  = map_we_lo ? 16'd0 : ds_we_lo ? dsv_mux[15:0]  : pt_rdata[15:0];
 	assign fl_pw_data[31:16] = map_we_hi ? 16'd0 : ds_we_hi ? dsv_mux[31:16] : pt_rdata[31:16];
@@ -500,13 +506,19 @@ module atg_rx_frag (
 			st <= S_COL;
 			n <= 4'd0;
 			qcc <= 32'd0;
-			rv_q <= 1'b0;
+			r_rv_q <= 3'd0;
+			r_rv_v1 <= 2'd0; r_rv_v2 <= 2'd0; r_rv_v3 <= 2'd0;
+			r_rv_w1 <= 7'd0; r_rv_w2 <= 7'd0; r_rv_w3 <= 7'd0;
 			bgo <= 1'b0;
 			dz_done <= 1'b0;
 		end else begin
-			rv_q <= rd_now;
-			rv_v <= cv;
-			rv_w <= cw;
+			r_rv_q  <= {r_rv_q[1:0], rd_now};
+			r_rv_v1 <= cv;
+			r_rv_v2 <= r_rv_v1;
+			r_rv_v3 <= r_rv_v2;
+			r_rv_w1 <= cw;
+			r_rv_w2 <= r_rv_w1;
+			r_rv_w3 <= r_rv_w2;
 			bgo <= 1'b0;
 			if (t_load)
 				dz_done <= 1'b0;
@@ -597,7 +609,7 @@ module atg_rx_frag (
 		end
 	end
 
-	wire unused_ok = &{1'b0, rv_w[6], t_tri[767:764], t_tri[762:760], t_tri[351:320],
+	wire unused_ok = &{1'b0, rv_w3[6], t_tri[767:764], t_tri[762:760], t_tri[351:320],
 		t_tri[287:0], b_busy, fc_carry_unused, xy_bo_unused, z_gt_one_unused, z_sub_d_unused};
 endmodule
 

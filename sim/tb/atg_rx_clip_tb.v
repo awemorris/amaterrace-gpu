@@ -43,7 +43,7 @@ module atg_rx_clip_tb;
 		.st_wdata(st_wdata), .raw_kick(raw_kick), .prim_valid(prim_valid),
 		.prim_ready(prim_ready), .prim_vtx(prim_vtx), .prim_free(prim_free),
 		.prim_last(prim_last), .pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word),
-		.pt_rdata(pt_rdata), .pt_busy(pt_busy), .cl_valid(cl_valid), .cl_ready(cl_ready),
+		.pt_rdata(pt_rdata), .pt_busy(pt_busy), .pt_active(), .cl_valid(cl_valid), .cl_ready(cl_ready),
 		.cl_tri(cl_tri), .cl_last(cl_last), .busy(busy));
 
 	reg [31:0] pt [0:255][0:3];
@@ -67,17 +67,20 @@ module atg_rx_clip_tb;
 	reg [2:0] fr;
 	reg [699:0] cv;
 
-	/* the PT model: data the cycle after pt_rd */
+	/* the PT model: 3-cycle read latency */
+	reg [31:0] pt_pipe1, pt_pipe2;
 	always @(posedge clk) begin
 		pt_busy <= ($random(seed) & 3) == 0;
 		cl_ready <= ($random(seed) & 1) != 0;
 		if (pt_rd) begin
-			pt_rdata <= pt[pt_idx][pt_word[1:0]];
 			if (pt_busy) begin
 				e_busy = e_busy + 1;
 				$display("FAIL atg_rx_clip: PT read under pt_busy");
 			end
 		end
+		pt_pipe1 <= pt[pt_idx][pt_word[1:0]];
+		pt_pipe2 <= pt_pipe1;
+		pt_rdata <= pt_pipe2;
 		if (cl_valid && cl_ready) begin
 			if (got < exp_n && cl_tri[698:696] != 3'd0 && !exp_last[got]) begin
 				e_lu = e_lu + 1;

@@ -133,10 +133,12 @@ module atg_rx_pipeline_tb;
 	reg [31:0] pt_mem [0:255][0:15];
 	reg [255:0] pt_allocated = 256'd0;
 
-	/* PT read latency: 1 cycle */
+	/* PT read latency: 3 cycles */
+	reg [31:0] pt_pipe1, pt_pipe2;
 	always @(posedge clk) begin
-		if (pt_rd)
-			pt_rdata <= pt_mem[pt_idx][pt_word];
+		pt_pipe1 <= pt_mem[pt_idx][pt_word];
+		pt_pipe2 <= pt_pipe1;
+		pt_rdata <= pt_pipe2;
 		if (pt_free)
 			pt_allocated[pt_free_idx] <= 1'b0;
 	end

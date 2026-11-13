@@ -13,7 +13,8 @@
  *
  * Storage: NPHYS banks (bank = entry mod NPHYS, so one lane group writes
  * one word into each bank), WPV = 4 + VARY_WORDS words per entry, read
- * data registered (pt_rdata the cycle after pt_rd).
+ * data registered with 3-cycle latency (pt_rdata valid 3 cycles after pt_rd:
+ * address register -> BRAM synchronous read -> output pipeline register).
  *
  * Allocator: each block counts its entries in use.
  * pt_take (with the warp's slot pt_warp) takes the lowest block whose

@@ -160,7 +160,7 @@ module atg_top_fault_tb;
 		.SU_NPHYS(8),
 		.SU_NWARPS(4),
 		.SU_WARP_W(2),
-		.SU_GRP_W(3),
+		.SU_GRP_W(2),
 		.SU_NREGS(32),
 		.SU_SB_ENTRIES(4),
 		.SU_SBE_W(2),

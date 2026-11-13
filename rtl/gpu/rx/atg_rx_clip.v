@@ -57,6 +57,7 @@
 	output wire [6:0] pt_word,
 	input wire [31:0] pt_rdata,
 	input wire pt_busy,
+	output wire pt_active,
 	/* To atg_rx_setup */
 	output reg cl_valid,
 	input wire cl_ready,
@@ -191,8 +192,11 @@
 	wire [223:0] vv2 = {ONE, 32'd0, 32'd0, vv_pos[2]};
 
 	(* max_fanout = 16 *) reg [3:0] rd_n;	/* PT words requested */
-	(* max_fanout = 16 *) reg rd_v;	/* a word arrives this cycle */
-	(* max_fanout = 16 *) reg [3:0] rd_k;	/* which */
+	(* shreg_extract = "no", max_fanout = 16 *) reg [2:0] r_rd_v;	/* PT read valid shift pipe (3-cycle latency) */
+	(* shreg_extract = "no", max_fanout = 16 *) reg [3:0] r_rd_k1, r_rd_k2, r_rd_k3;	/* which word */
+	wire rd_v3 = r_rd_v[2];
+	wire [3:0] rd_k3 = r_rd_k3;
+	assign pt_active = (st == S_READ) && (|r_rd_v || pt_rd);
 	(* extract_reset = "no" *) reg [223:0] o0, o1, o2;	/* the output primitive */
 	reg [29:0] r_out_hdr;
 	reg ofl;	/* it is the primitive's last output (it carries the flags) */
@@ -209,7 +213,7 @@
 	for (g_v = 0; g_v < 3; g_v = g_v + 1) begin : g_vv_vtx
 		for (g_w = 0; g_w < 4; g_w = g_w + 1) begin : g_vv_word
 			localparam [3:0] WK = {g_v[1:0], g_w[1:0]};
-			wire vvw_hit = (st == S_READ) && rd_v && (rd_k == WK);
+			wire vvw_hit = (st == S_READ) && rd_v3 && (rd_k3 == WK);
 			always @(posedge clk) begin
 				if (rst_sync) begin
 					vv_pos[g_v][32 * g_w +: 16]      <= 16'd0;
@@ -542,10 +546,16 @@
 	end
 
 	always @(posedge clk) begin
-		rd_v <= pt_rd;
-		rd_k <= rd_n;
+		r_rd_v  <= {r_rd_v[1:0], pt_rd};
+		r_rd_k1 <= rd_n;
+		r_rd_k2 <= r_rd_k1;
+		r_rd_k3 <= r_rd_k2;
 		ld_we <= 1'b0;
 		if (rst_sync) begin
+			r_rd_v  <= 3'b000;
+			r_rd_k1 <= 4'd0;
+			r_rd_k2 <= 4'd0;
+			r_rd_k3 <= 4'd0;
 			st <= S_IDLE;
 			cl_valid <= 1'b0;
 			cl_last <= 1'b0;
@@ -580,7 +590,7 @@
 		S_READ: begin
 			if (pt_rd)
 				rd_n <= rd_n1;
-			if (rd_v && rd_k == rd_lim_m1) begin
+			if (rd_v3 && rd_k3 == rd_lim_m1) begin
 				triv_step <= 2'd0;
 				st <= S_TRIV;
 			end

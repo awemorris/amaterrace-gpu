@@ -64,7 +64,7 @@ module atg_rx_frag_tb;
 		.fq_ready(fq_ready), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov), .fq_end(fq_end),
 		.busy(busy),
 		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
-		.pt_busy(pt_busy), .fl_req(fl_req), .fl_gnt(fl_gnt), .fl_we(fl_we), .fl_reg(fl_reg),
+		.pt_busy(pt_busy), .c_pt_busy(1'b0), .fl_req(fl_req), .fl_gnt(fl_gnt), .fl_we(fl_we), .fl_reg(fl_reg),
 		.fl_lane(fl_lane), .fl_data(fl_data), .fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr),
 		.fl_pw_data(fl_pw_data), .fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
 		.sq_req(sq_req), .sq_seq(seq));
@@ -85,9 +85,11 @@ module atg_rx_frag_tb;
 	reg granted;
 
 	/* PT and SU models, monitors. */
+	reg [31:0] pt_pipe1, pt_pipe2;
 	always @(posedge clk) begin
-		if (pt_rd)
-			pt_rdata <= {pt_idx, 1'b0, pt_word, 16'hC0DE};
+		pt_pipe1 <= {pt_idx, 1'b0, pt_word, 16'hC0DE};
+		pt_pipe2 <= pt_pipe1;
+		pt_rdata <= pt_pipe2;
 		if (pt_rd && !pt_busy) begin
 			e_copy = e_copy + 1;
 			$display("FAIL atg_rx_frag.copy: pt_rd without pt_busy");

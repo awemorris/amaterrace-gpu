@@ -113,7 +113,7 @@ module atg_rx #(
 	wire sp_valid_scan = sp_valid;
 	wire sp_valid_frag = sp_valid;
 	wire [767:0] sp_tri;
-	wire c_pt_rd, f_pt_rd, f_pt_busy;
+	wire c_pt_rd, f_pt_rd, f_pt_busy, c_pt_busy;
 	wire [7:0] c_pt_idx, f_pt_idx;
 	wire [6:0] c_pt_word, f_pt_word;
 	wire s_sq_req, f_sq_req, sq_req;
@@ -216,6 +216,7 @@ module atg_rx #(
 		.prim_free(prim_c_free), .prim_last(prim_c_last),
 		.pt_rd(c_pt_rd), .pt_idx(c_pt_idx), .pt_word(c_pt_word), .pt_rdata(pt_rdata),
 		.pt_busy(f_pt_busy),
+		.pt_active(c_pt_busy),
 		.cl_valid(cl_valid), .cl_ready(cl_ready), .cl_tri(cl_tri), .cl_last(cl_last),
 		.busy(clip_busy)
 	);
@@ -261,6 +262,7 @@ module atg_rx #(
 		.fq_end(fq_end), .busy(frag_busy),
 		.pt_rd(f_pt_rd), .pt_idx(f_pt_idx), .pt_word(f_pt_word), .pt_rdata(pt_rdata),
 		.pt_busy(f_pt_busy),
+		.c_pt_busy(c_pt_busy),
 		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_we(fl_we), .fl_reg(fl_reg), .fl_lane(fl_lane),
 		.fl_data(fl_data), .fl_pw_we(w_fl_pw_we), .fl_pw_addr(w_fl_pw_addr), .fl_pw_data(w_fl_pw_data),
 		.fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
