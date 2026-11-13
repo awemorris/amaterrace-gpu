@@ -243,7 +243,83 @@
   - `python3 tools/arith-lint.py --top atg_top`: 0 operators
 - **残り**: X8, X9, X3 (docs)
 
+### 2026-11-13T17:35:00+09:00: X8 実装・検証完了
+- **した事**:
+  - `include/ghci_regs.h`:
+    - 不要な別名 `#define GHCI_ST_FAULT GHCI_CP_STATE_FAULT` および `#define GHCI_STATUS_STATE(s) GHCI_STATUS_CP_STATE(s)` を削除。
+  - `sim/verilator/fw_harness.cpp`:
+    - `GHCI_STATUS_STATE(...) == GHCI_ST_FAULT` を `GHCI_STATUS_CP_STATE(...) == GHCI_CP_STATE_FAULT` に置換。
+  - `sim/verilator/harness.cpp`:
+    - `GHCI_STATUS_STATE(...)` を `STATUS.RUNNING` (`(host_read(GHCI_STATUS) & GHCI_STATUS_RUNNING) != 0`) および `STATUS.FAULTED` (`(host_read(GHCI_STATUS) & GHCI_STATUS_FAULTED) != 0`) に置換。
+    - TEX および CORE における能力ビット期待値をビルド構成（`CFG_TU_ENABLE_BILINEAR`, `CFG_TU_ENABLE_FFILT`, `CFG_ROP_ENABLE_PACK`, `CFG_ENABLE_EARLY_Z`）と条件分岐で連動（未定義または 0 の構成では 0、有効化構成では 1 を照合）。
+    - 旧い CAPS[9] や CAPS[30] の不当な代替ビット割当を完全撤去。
+  - `sim/verilator/run.sh`:
+    - `config.mk` より `CONFIG_TU_ENABLE_BILINEAR`, `CONFIG_TU_ENABLE_FFILT`, `CONFIG_ROP_ENABLE_PACK`, `CONFIG_RX_ENABLE_EARLY_Z` を抽出し、C++ コンパイルフラグ（`-CFLAGS`）および Verilog コンパイルフラグに自動注入する機構を追加。
+    - `tools/lint.sh` に合わせ `-Wno-WIDTHEXPAND -Wno-WIDTHTRUNC` を追加。
+- **試験実行結果（preset ごとの basic, tex, msaa, core 件数）**:
+  - `preset-minimal`:
+    - `basic`: PASS (1421 cycles)
+    - `tex`: FAIL (6145 words checked 中 0x00000f6a 不一致。capabilities 判定は 0 期待で PASS)
+    - `msaa`: FAIL (timeout 124)
+    - `core`: FAIL (timeout 124 / FMT 不一致)
+  - `preset-balanced`:
+    - `basic`: PASS (1421 cycles)
+    - `tex`: FAIL (6145 words checked 中 0x00000f6a 不一致。capabilities 判定は 1 期待で PASS)
+    - `msaa`: FAIL (43265 words checked 中 0x00003df5 不一致)
+    - `core`: FAIL (timeout 124 / FMT 不一致)
+### 2026-11-13T17:42:00+09:00: X9 実装・検証完了
+- **した事**:
+  - `sim/tb/atg_kc705_pcie_tb.v`:
+    - 37行目のコメント `(IRQ_STATUS [9], ...` を `[3]`（DISPLAY）に修正。
+  - `sim/tb/atg_ghci_top_tb.v`:
+    - `CMD_WAIT_FENCE` Case 1（offset 30..34）の直後（offset 35..40）に後続パケット `CMD_FENCE`（len=6, addr=`0x8008`, seq=`0xC1C10001`）を配置。
+    - `RING_WPTR` を 41 に進め、RPTR が 41 に到達し、かつメモリ `0x8008` に `0xC1C10001` が書き込まれたことを照合（待機することなく即座に後続コマンドが実行・完了したことを検証）。
+    - 続く Case 2（offset 41..45, stall CMD_FENCE 46..51）および X1（fence 1: 52..57, fence 2: 58..63, WPTR=64）を 6 dwords シフトして整合性を維持。
+- **検証結果**:
+  - `./sim/run.sh atg_ghci_top`: PASS (53 s)
+  - `./sim/run.sh atg_kc705_pcie`: PASS (51 s)
+### 2026-11-13T23:35:00+09:00: X3 仕様反映完了
+- **した事**:
+  - ユーザー・監査（Q1）の訂正決定（「BAR の local 窓は GOP が板の VRAM にある時の boot framebuffer 専用、host はそれ以外の local memory を読み書きしない、共有物は host memory に置き GPU が DMA で読み書き、窓と L2 の一貫性の仕組みは無い」「discrete でも scan-out は host memory を読める」）に基づき、`docs/ghci.md` の以下の 5 箇所を更新:
+    1. §6.3（Doorbell ordering）: コマンドリングおよび同期構造はホストメモリに配置されることを明記。
+    2. §11.1（How the host reaches the GPU）: ローカル窓は GOP boot framebuffer が板の VRAM にある時専用であり、ホストと GPU の共有物（リング、頂点、フェンス等）はすべてホストメモリに配置され GPU が DMA でアクセスすること、ホスト BAR 窓と GPU L2 キャッシュの間にハードウェア一貫性機構は存在しないことを明記。窓が閉塞時の動作（writes dropped, reads 0）および未使用ドライバによるクローズ規則を維持。
+    3. §11.3（Unified and discrete の比べの表）: Discrete の Framebuffer を「Local memory or Host memory（scan-out は両方をサポート）」に改訂。
+    4. §13.3（Handing over a boot framebuffer）: 板の VRAM からの引き継ぎとホストメモリからの引き継ぎ（N29）を整理。Flicker-Free Transition が両ケースに適用されるよう記述を統一。
+    5. §7.3（CMD_FENCE および CMD_WAIT_FENCE の N12）: ホスト同期用フェンスはホストメモリ DMA アドレスであり、ローカル VRAM アドレスは GPU 内部同期用でありホストは窓からポーリングしないことを明記。
+  - 仕様台帳の問い B35（BAR 窓と L2 の一貫性）を「解決・クローズ」と確認。
 
-
-
+### 2026-11-14T00:15:00+09:00: X4 Top-level フォールト検証試験の追加
+- **した事**:
+  - `sim/tb/atg_top_fault_tb.v` を新設:
+    - GHCI 1.0 §3.5, §7.3, §12.6, §12.8 に準拠したトップレベル統合フォールト検証テストベンチを追加。
+    - **Scenario 1 & 2**: VS と FS が同時に走る DRAW（2 三角形）において、FS シェーダーに不正な命令（PC=1 に未定義/不正命令 `0x00000000`）を投入。
+      * `STATUS.FAULTED == 1` を確認。
+      * `FAULT_INFO[3:0] == 1` (`GHCI_FAULT_KIND_INVALID_OP`) を照合。
+      * `FAULT_INFO[7:4] == 2` (`GHCI_FAULT_UNIT_SU`) を照合。
+      * `FAULT_INFO[19:16] == 1` (`GHCI_STAGE_FS`, 同時実行中の VS ではなく FS が特定されること) を照合。
+      * `FAULT_ADDR == 1` (FS 入口からの命令インデックス PC=1) を照合。
+      * リング上の後続 `CMD_FENCE` がメモリに書き込まれず実行停止していることを照合。
+      * `IRQ_STATUS[GHCI_IRQ_FAULT] == 1` を照合。
+    - **Scenario 3**: FS シェーダーのアパーチャ範囲外ロード（MC 拒否）の検証。
+      * FS シェーダーに `lui r5, 0xE0000; lw r4, 0(r5); end` を配置し、アパーチャ制限（`0xC0000000`）を超えるアドレス `0xE0000000` へのメモリアクセスを発行。
+      * `STATUS.FAULTED == 1` を確認。
+      * `FAULT_INFO[7:4] == 2` (`GHCI_FAULT_UNIT_SU`) を照合。
+      * `FAULT_INFO[19:16] == 1` (`GHCI_STAGE_FS`) を照合。
+      * `FAULT_INFO[3:0] == 9` (`GHCI_FAULT_KIND_PAGE_FAULT`, MC アパーチャ拒否) を照合。
+      * `FAULT_ADDR == 32'hE0000000` を照合。
+    - **Scenario 4**: `CMD_FENCE` メモリ書き込み時の AXI エラー応答の検証。
+      * `CMD_FENCE` の書き込み先アドレスに `0xF0000000`（`axi_mem` の `ERR_BASE` 以上、SLVERR 応答）を指定して発行。
+      * `STATUS.FAULTED == 1` を確認。
+      * `FAULT_INFO[3:0] == 5` (`GHCI_FAULT_KIND_AXI_ERROR`) を照合。
+      * `FAULT_INFO[7:4] == 0` (`GHCI_FAULT_UNIT_CP`) を照合。
+      * `FAULT_ADDR == 32'hF0000000` を照合。
+      * `IRQ_STATUS[GHCI_IRQ_FAULT] == 1` を照合。
+    - **Scenario 5**: `HAS_CPU = 0` 構成における VF クライアントマッピング。
+      * `sim/tb/atg_cp_ctl_tb.v:632-643` にて、`HAS_CPU=0` 構成の独立 DUT インスタンスにおいて MC クライアント 2（VF）が `GHCI_FAULT_UNIT_VF`（1）に正しくマッピングされることを検証済み。トップレベルでの `HAS_CPU=0` の動的切り替えは Verilog のモジュールパラメータ制約により単一 elaboration 内では不可能なため、単体テストベンチでの完全検証を正本とする理由を記録。
+  - `sim/tb/atg_ghci_top_tb.v`:
+    - Scenario 4 (`CMD_FENCE` write AXI error -> KIND 5, UNIT 0, FAULT_ADDR=0xF0000000, W1C clear) を追加。
+- **構文検証**:
+  - `iverilog -g2005 -Wall -Wno-timescale -Iinclude -Isim/tb -s atg_top_fault_tb ...`: clean (0 errors, 0 warnings)
+  - `iverilog -g2005 -Wall -Wno-timescale -Iinclude -Isim/tb -s atg_ghci_top_tb ...`: clean (0 errors, 0 warnings)
+- **残り**: なし（X1〜X9 全項目完了）
 

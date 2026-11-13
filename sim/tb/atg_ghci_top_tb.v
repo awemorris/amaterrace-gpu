@@ -1146,6 +1146,64 @@ module ghci_probe #(
 		/* Disable DC */
 		host_write(32'h00000200 + GHCI_DC_CTRL, 32'd0);
 
+		/* -------------------------------------------------------------
+		 * X4 Scenario 4: CMD_FENCE memory write triggering AXI SLVERR
+		 * ------------------------------------------------------------- */
+		$display("--- Testing X4 Scenario 4: CMD_FENCE write AXI error (KIND 5, UNIT 0) ---");
+		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RESET));
+		#50;
+		host_write(GHCI_REG_CTRL, 32'd0);
+		#100;
+		to_cnt = 0;
+		host_read(GHCI_REG_CTRL, val);
+		while (val[GHCI_CTRL_RESET] && to_cnt < 2000) begin
+			#50;
+			host_read(GHCI_REG_CTRL, val);
+			to_cnt = to_cnt + 1;
+		end
+
+		host_write(GHCI_REG_RING_BASE_LO, 32'h00004000);
+		host_write(GHCI_REG_RING_BASE_HI, 32'h00000000);
+		host_write(GHCI_REG_RING_SIZE,    32'h00010000);
+		host_write(GHCI_REG_RING_WPTR,    32'd0);
+		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RUN) | (1 << GHCI_CTRL_IRQ_GLOBAL));
+		host_write(GHCI_REG_IRQ_ENABLE, (1 << GHCI_IRQ_FAULT));
+
+		/* CMD_FENCE targeting address 0xF0000000 (>= ERR_BASE in axi_mem, answers SLVERR) */
+		mem.poke32(32'h00004000, 32'h00000633); /* CMD_FENCE header, len=6 */
+		mem.poke32(32'h00004004, 32'hF0000000); /* fence_addr lo */
+		mem.poke32(32'h00004008, 32'h00000000); /* fence_addr hi */
+		mem.poke32(32'h0000400C, 32'hDEAD0004); /* seq_lo */
+		mem.poke32(32'h00004010, 32'h00000000); /* seq_hi */
+		mem.poke32(32'h00004014, 32'h00000003); /* flags: MEM_WRITE | IRQ */
+
+		host_write(GHCI_REG_RING_WPTR, 32'd6);
+
+		to_cnt = 0;
+		val = 0;
+		while (!val[GHCI_STATUS_FAULTED] && to_cnt < 5000) begin
+			#50;
+			host_read(GHCI_REG_STATUS, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("X4 Scenario 4: STATUS.FAULTED asserted", {31'd0, val[GHCI_STATUS_FAULTED]}, 32'd1);
+
+		host_read(GHCI_REG_FAULT_INFO, val);
+		check32("X4 Scenario 4: FAULT_INFO kind 5 (AXI_ERROR)", {28'd0, val[3:0]}, 32'd5);
+		check32("X4 Scenario 4: FAULT_INFO unit 0 (CP)", {28'd0, val[7:4]}, 32'd0);
+
+		host_read(GHCI_REG_FAULT_ADDR_LO, val);
+		check32("X4 Scenario 4: FAULT_ADDR_LO matches fence_addr", val, 32'hF0000000);
+
+		host_read(GHCI_REG_IRQ_STATUS, val);
+		check32("X4 Scenario 4: IRQ_STATUS bit 1 (FAULT) asserted", {31'd0, val[GHCI_IRQ_FAULT]}, 32'd1);
+
+		/* Clear fault via W1C and verify FAULT_INFO cleared */
+		host_write(GHCI_REG_FAULT_INFO, 32'hFFFFFFFF);
+		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF);
+		host_read(GHCI_REG_FAULT_INFO, val);
+		check32("X4 Scenario 4: FAULT_INFO cleared via W1C", val, 32'd0);
+
 		done = 1;
 	end
 endmodule
