@@ -198,7 +198,7 @@ module atg_rx_pipeline_tb;
 		begin
 			@(posedge clk);
 			prim_valid <= 1'b1;
-			prim_vtx <= {2'b00, v2, v1, v0};
+			prim_vtx <= {2'd2, v2, v1, v0};
 			prim_free <= free_flags;
 			prim_last <= is_last;
 			pt_allocated[v0] <= 1'b1;
@@ -222,9 +222,9 @@ module atg_rx_pipeline_tb;
 		@(posedge clk);
 
 		/* 1. Setup GPU STATE */
-		/* Viewport: 640 x 480 centred at (320, 240) */
-		write_st(GHCI_S_VIEWPORT + 0, 32'h43A00000); /* sx = 320.0 */
-		write_st(GHCI_S_VIEWPORT + 1, 32'hC3700000); /* sy = -240.0 */
+		/* Viewport: small for fast unit test */
+		write_st(GHCI_S_VIEWPORT + 0, 32'h41800000); /* sx = 16.0 */
+		write_st(GHCI_S_VIEWPORT + 1, 32'hC1400000); /* sy = -12.0 */
 		write_st(GHCI_S_VIEWPORT + 2, 32'h43A00000); /* ox = 320.0 */
 		write_st(GHCI_S_VIEWPORT + 3, 32'h43700000); /* oy = 240.0 */
 		write_st(GHCI_S_VIEWPORT + 4, 32'h3F000000); /* sz = 0.5 */
