@@ -256,8 +256,6 @@ extern "C" {
 #define GHCI_PERF_CTRL GHCI_LEGACY_PERF_CTRL
 #define GHCI_LEGACY_KICK 0xF00u
 #define GHCI_KICK GHCI_LEGACY_KICK
-#define GHCI_ST_FAULT GHCI_CP_STATE_FAULT
-#define GHCI_STATUS_STATE(s) GHCI_STATUS_CP_STATE(s)
 
 /* Short register aliases mapped to GHCI 1.0 canonical registers */
 #define GHCI_MAGIC           GHCI_REG_MAGIC

@@ -332,7 +332,7 @@ bool run_step(Case &c, uint32_t tag, const std::vector<uint32_t> &packet)
 		last = host_read(GHCI_LEGACY_FENCE_LAST);
 		if (last == c.fence)
 			break;
-		if (GHCI_STATUS_STATE(host_read(GHCI_STATUS)) == GHCI_ST_FAULT)
+		if (GHCI_STATUS_CP_STATE(host_read(GHCI_STATUS)) == GHCI_CP_STATE_FAULT)
 			break;
 	}
 	if (last == c.fence)

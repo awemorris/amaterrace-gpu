@@ -26,14 +26,41 @@ SU="-GNSU=1 -GSU_NPHYS=4 -GSU_GRP_W=3 -GSU_NREGS=64 -GSU_SB_ENTRIES=8 -GSU_SBE_W
 	-GSU_PACKED=1 -GSU_SUBGROUP=1 -GSU_FRAG_RESERVE=2 -GSU_LDS_BYTES=16384 -GSU_VARY_WORDS=64"
 GFX="-GHAS_VF=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GROP_STENCIL=1"
 
+CFG_CFLAGS=""
+CFG_VFLAGS=""
+if [ -f "$root/config.mk" ]; then
+	while IFS='=' read -r key val || [ -n "$key" ]; do
+		key=$(echo "$key" | tr -d '[:space:]')
+		val=$(echo "$val" | tr -d '[:space:]')
+		case "$key" in
+		CONFIG_TU_ENABLE_BILINEAR)
+			CFG_CFLAGS="$CFG_CFLAGS -DCFG_TU_ENABLE_BILINEAR=$val"
+			CFG_VFLAGS="$CFG_VFLAGS -DCFG_TU_ENABLE_BILINEAR=$val"
+			;;
+		CONFIG_TU_ENABLE_FFILT)
+			CFG_CFLAGS="$CFG_CFLAGS -DCFG_TU_ENABLE_FFILT=$val"
+			CFG_VFLAGS="$CFG_VFLAGS -DCFG_TU_ENABLE_FFILT=$val"
+			;;
+		CONFIG_ROP_ENABLE_PACK)
+			CFG_CFLAGS="$CFG_CFLAGS -DCFG_ROP_ENABLE_PACK=$val"
+			CFG_VFLAGS="$CFG_VFLAGS -DCFG_ROP_ENABLE_PACK=$val"
+			;;
+		CONFIG_RX_ENABLE_EARLY_Z)
+			CFG_CFLAGS="$CFG_CFLAGS -DCFG_ENABLE_EARLY_Z=$val"
+			CFG_VFLAGS="$CFG_VFLAGS -DCFG_ENABLE_EARLY_Z=$val"
+			;;
+		esac
+	done < "$root/config.mk"
+fi
+
 # build NAME DEFINE PARAMS...: the harness as build/verilator/atg_top_NAME, then its run.
 build() {
 	name=$1
 	def=$2
 	shift 2
-	timeout 900 verilator --cc --exe --build -j 4 -Wall -Wno-DECLFILENAME -Wno-PINCONNECTEMPTY -Wno-UNUSED -Wno-UNDRIVEN -Wno-VARHIDDEN -Iinclude \
+	timeout 900 verilator --cc --exe --build -j 4 -Wall -Wno-DECLFILENAME -Wno-PINCONNECTEMPTY -Wno-UNUSED -Wno-UNDRIVEN -Wno-VARHIDDEN -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Iinclude $CFG_VFLAGS \
 		--top-module atg_top $KC "$@" -Mdir "$out/obj-$name" -o "$out/atg_top_$name" \
-		-CFLAGS "-I$root/include -O1 $def" \
+		-CFLAGS "-I$root/include -O1 $def $CFG_CFLAGS" \
 		$(find rtl -name '*.v' | grep -v 'rtl/bsp/xilinx7' | sort) "$root/sim/verilator/harness.cpp" \
 		>"$out/build-$name.log" 2>&1 || {
 		sync

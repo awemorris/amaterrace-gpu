@@ -455,8 +455,16 @@ int scene_main()
 	}
 	std::fclose(f);
 #ifdef TEX
+#if defined(CFG_TU_ENABLE_BILINEAR) && (CFG_TU_ENABLE_BILINEAR != 0)
 	expect("EXT_CAP_FMT0[16] (bilinear)", (host_read(GHCI_REG_EXT_CAP_FMT0) >> 16) & 1, 1);
+#else
+	expect("EXT_CAP_FMT0[16] (bilinear)", (host_read(GHCI_REG_EXT_CAP_FMT0) >> 16) & 1, 0);
+#endif
+#if defined(CFG_TU_ENABLE_FFILT) && (CFG_TU_ENABLE_FFILT != 0)
 	expect("DEVICE_CAPS[25] (texture filter)", (host_read(GHCI_REG_DEVICE_CAPS) >> 25) & 1, 1);
+#else
+	expect("DEVICE_CAPS[25] (texture filter)", (host_read(GHCI_REG_DEVICE_CAPS) >> 25) & 1, 0);
+#endif
 	uint32_t fmt_regs_tex = 0;
 	for (uint32_t off = host_read(GHCI_EXTCAP), n = 0; off != 0 && n < 16; n++) {
 		uint32_t w0 = host_read(off);
@@ -470,8 +478,16 @@ int scene_main()
 	expect("DEVICE_CAPS[31] (4x multisampling)", (host_read(GHCI_REG_DEVICE_CAPS) >> 31) & 1, 1);
 #endif
 #ifdef CORE
+#if defined(CFG_ROP_ENABLE_PACK) && (CFG_ROP_ENABLE_PACK != 0)
 	expect("DEVICE_CAPS[26] (ROP_PACK)", (host_read(GHCI_REG_DEVICE_CAPS) >> 26) & 1, 1);
+#else
+	expect("DEVICE_CAPS[26] (ROP_PACK)", (host_read(GHCI_REG_DEVICE_CAPS) >> 26) & 1, 0);
+#endif
+#if defined(CFG_ENABLE_EARLY_Z) && (CFG_ENABLE_EARLY_Z != 0)
 	expect("EXT_CAP_FEATURE[12] (early-z)", (host_read(GHCI_REG_EXT_CAP_FEATURE) >> 12) & 1, 1);
+#else
+	expect("EXT_CAP_FEATURE[12] (early-z)", (host_read(GHCI_REG_EXT_CAP_FEATURE) >> 12) & 1, 0);
+#endif
 	uint32_t fmt_regs = 0;
 	for (uint32_t off = host_read(GHCI_EXTCAP), n = 0; off != 0 && n < 16; n++) {
 		uint32_t w0 = host_read(off);
@@ -561,16 +577,16 @@ int compute_main()
 			for (int i = 0; i < 200000 && host_read(GHCI_LEGACY_FENCE_LAST) != v; i++)
 				;
 			expect("FENCE_LAST", host_read(GHCI_LEGACY_FENCE_LAST), v);
-			expect("STATE (RUNNING)", GHCI_STATUS_STATE(host_read(GHCI_STATUS)), 1);
+			expect("STATUS (RUNNING)", (host_read(GHCI_STATUS) & GHCI_STATUS_RUNNING) != 0, 1);
 			expect("RING_RPTR", host_read(GHCI_RING_RPTR), wp);
 			expect("IRQ FENCE", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FENCE, GHCI_IRQ_FENCE);
 			host_write(GHCI_IRQ_STATUS, GHCI_IRQ_FENCE);
 			fence = v;
 		} else if (k[0] == 'X' && std::fscanf(f, "%x %x", &a, &v) == 2) {
 			host_write(GHCI_RING_WPTR, wp);
-			for (int i = 0; i < 200000 && GHCI_STATUS_STATE(host_read(GHCI_STATUS)) != 4; i++)
+			for (int i = 0; i < 200000 && (host_read(GHCI_STATUS) & GHCI_STATUS_FAULTED) == 0; i++)
 				;
-			expect("STATE (FAULTED)", GHCI_STATUS_STATE(host_read(GHCI_STATUS)), 4);
+			expect("STATUS (FAULTED)", (host_read(GHCI_STATUS) & GHCI_STATUS_FAULTED) != 0, 1);
 			expect("FAULT_ADDR (the PC)", host_read(GHCI_FAULT_ADDR), a);
 			expect("FAULT_INFO", host_read(GHCI_FAULT_INFO), v);
 			expect("IRQ FAULT", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FAULT, GHCI_IRQ_FAULT);
