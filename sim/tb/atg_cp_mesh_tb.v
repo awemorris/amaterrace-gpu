@@ -57,7 +57,7 @@ module atg_cp_mesh_tb;
 		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(u_req), .u_ok(1'b1),
 		.n_valid(n_valid), .n_ready(n_ready), .n_data(n_data),
 		.fw_valid(1'b0), .fw_ready(), .fw_data(32'd0),
-		.fw_active(1'b0), .halt(1'b0),
+		.fw_active(1'b0), .halt(1'b0), .seq_abort(1'b0),
 		.uop_we(uop_we), .uop_idx(uop_idx), .uop_wdata(uop_wdata),
 		.kick(kick), .kick_code(kick_code), .inv(inv), .busy_in(busy_in),
 		.vsync(1'b0),

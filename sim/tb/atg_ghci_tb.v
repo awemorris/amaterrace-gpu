@@ -129,6 +129,7 @@ module atg_ghci_tb;
 		.fw_active(1'b0),
 		.fw_side(7'd0),
 		.halt(1'b0),
+		.seq_abort(1'b0),
 		.uop_we(),
 		.uop_idx(),
 		.uop_wdata(),

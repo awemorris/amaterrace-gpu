@@ -44,8 +44,10 @@
  * payload shorter than the op needs, a bad SET_REG index or DISP_SET
  * offset (fault_addr = the dword).  A longer payload is skipped.  The
  * header and payload decoders are atg_cp_seq_dec's.
- * halt is looked at only between packets.  cmd_active (the watchdog) is 1
- * from a header to the end of its µop, except while waiting for the
+ * halt stops the sequencer between packets (in HALTING, HALTED, FAULTED, and
+ * RESETTING).  abort stops the sequencer immediately (in FAULTED and
+ * RESETTING), dropping payload and unit requests.  cmd_active (the watchdog)
+ * is 1 from a header to the end of its µop, except while waiting for the
  * firmware's next dword.
  */
 
@@ -70,6 +72,7 @@ module atg_cp_seq #(
 	input wire fw_active,
 	input wire [6:0] fw_side,	/* session protection: the firmware µop's {SELF, slot} */
 	input wire halt,
+	input wire seq_abort,
 	/* STATE writes (to atg_cp_state) */
 	output wire uop_we,
 	output wire [9:0] uop_idx,
@@ -324,8 +327,8 @@ module atg_cp_seq #(
 
 	wire [8:0] pay_wait_act;
 	wire pay_hold = |(pay_wait_act & busy_in);
-	wire pay_take = (st == Q_PAY) && in_valid && !pay_hold;
-	wire hdr_take = (st == Q_IDLE) && hdr_valid;
+	wire pay_take = (st == Q_PAY) && in_valid && !pay_hold && !seq_abort;
+	wire hdr_take = (st == Q_IDLE) && !halt && !seq_abort && hdr_valid;
 
 `ifdef SYNTH_KINTEX7
 	(* DONT_TOUCH = "TRUE" *) reg st_is_pay_r;
@@ -354,17 +357,17 @@ module atg_cp_seq #(
 	);
 
 	wire [3:0] pay_take_b;
-	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000008)) u_ptk0 (
-		.I0(st_is_pay_r), .I1(in_valid), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .O(pay_take_b[0])
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000000000008)) u_ptk0 (
+		.I0(st_is_pay_r), .I1(in_valid), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .I5(seq_abort), .O(pay_take_b[0])
 	);
-	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000008)) u_ptk1 (
-		.I0(st_is_pay_r), .I1(in_valid), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .O(pay_take_b[1])
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000000000008)) u_ptk1 (
+		.I0(st_is_pay_r), .I1(in_valid), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .I5(seq_abort), .O(pay_take_b[1])
 	);
-	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000008)) u_ptk2 (
-		.I0(st_is_pay_r), .I1(in_valid), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .O(pay_take_b[2])
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000000000008)) u_ptk2 (
+		.I0(st_is_pay_r), .I1(in_valid), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .I5(seq_abort), .O(pay_take_b[2])
 	);
-	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000008)) u_ptk3 (
-		.I0(st_is_pay_r), .I1(in_valid), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .O(pay_take_b[3])
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000000000008)) u_ptk3 (
+		.I0(st_is_pay_r), .I1(in_valid), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .I5(seq_abort), .O(pay_take_b[3])
 	);
 
 	wire [8:0] pw_d;
@@ -391,10 +394,10 @@ module atg_cp_seq #(
 	end
 	assign pay_wait_act = pay_wait_r;
 
-	wire n_rdy_idle = (st == Q_IDLE) && !fw_act_b[4];
-	wire fw_rdy_idle = (st == Q_IDLE) && fw_act_b[4];
-	wire n_rdy_pay = st_is_pay_r && !use_fw_b[4];
-	wire fw_rdy_pay = st_is_pay_r && use_fw_b[4];
+	wire n_rdy_idle = (st == Q_IDLE) && !halt && !seq_abort && !fw_act_b[4];
+	wire fw_rdy_idle = (st == Q_IDLE) && !halt && !seq_abort && fw_act_b[4];
+	wire n_rdy_pay = st_is_pay_r && !seq_abort && !use_fw_b[4];
+	wire fw_rdy_pay = st_is_pay_r && !seq_abort && use_fw_b[4];
 	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'hAAAAAAAE)) u_nrdy_lut (
 		.I0(n_rdy_idle), .I1(n_rdy_pay), .I2(pay_hold_0), .I3(pay_hold_1), .I4(pay_hold_2), .O(n_ready)
 	);
@@ -445,8 +448,8 @@ module atg_cp_seq #(
 	assign uop_wdata = uop_wdata_r;
 `else
 	assign pay_wait_act = pay_wait;
-	assign n_ready = (st == Q_IDLE && !fw_active) || (st == Q_PAY && !use_fw && !pay_hold);
-	assign fw_ready = (st == Q_IDLE && fw_active) || (st == Q_PAY && use_fw && !pay_hold);
+	assign n_ready = !seq_abort && ((st == Q_IDLE && !halt && !fw_active) || (st == Q_PAY && !use_fw && !pay_hold));
+	assign fw_ready = !seq_abort && ((st == Q_IDLE && !halt && fw_active) || (st == Q_PAY && use_fw && !pay_hold));
 	assign uop_we = pay_take && pay_we && !set_bad;
 	assign uop_idx = pay_idx;
 	assign uop_wdata = in_data;
@@ -456,7 +459,7 @@ module atg_cp_seq #(
 	wire unit_op = vendor || op == OP_BLIT || op == OP_DRAW || op == OP_DISPATCH ||
 		op == OP_LOAD_CONST || op == CMD_DRAW || op == CMD_DRAW_INDEXED ||
 		op == CMD_DRAW_INDIRECT || op == CMD_DRAW_MESH_TASKS || op == CMD_DISPATCH;
-	assign u_req = {st == Q_EXEC && unit_op && (vendor || op != OP_BLIT), st == Q_EXEC && unit_op};
+	assign u_req = seq_abort ? 2'b00 : {st == Q_EXEC && unit_op && (vendor || op != OP_BLIT), st == Q_EXEC && unit_op};
 	assign u_fw = use_fw;
 	assign u_side = side;
 
@@ -549,11 +552,11 @@ module atg_cp_seq #(
 		(op == CMD_FENCE && fence_flags[2]) ? 4'b1111 : 4'd0;
 
 `ifdef SYNTH_KINTEX7
-	assign kick = exec_go_b[1] && k_valid_r;
+	assign kick = !seq_abort && exec_go_b[1] && k_valid_r;
 	assign kick_code = k_code_r;
 	assign inv = exec_go_b[1] ? inv_code_r : 4'd0;
 `else
-	assign kick = exec_go && k_on_dec;
+	assign kick = !seq_abort && exec_go && k_on_dec;
 	assign kick_code = k_code_dec;
 	assign inv = exec_go ? inv_code_dec : 4'd0;
 `endif

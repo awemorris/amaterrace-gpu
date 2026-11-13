@@ -842,6 +842,91 @@ module ghci_probe #(
 		check32("CMD_WAIT_FENCE Case 2 resumed and subsequent command reached RPTR 46", val, 32'd46);
 
 		/* -------------------------------------------------------------
+		 * X1: In-flight packet completes during HALTING before HALTED
+		 * ------------------------------------------------------------- */
+		$display("--- Testing X1: In-flight CMD_FENCE completes during HALTING before HALTED ---");
+		/* Ring is currently at RPTR=46, WPTR=46.
+		 * Put CMD_FENCE 1 (6 dwords) at offset 46 (0x40B8..0x40CC), crossing line 5/6 boundary.
+		 * Put CMD_FENCE 2 (6 dwords) at offset 52 (0x40D0..0x40E4).
+		 */
+		mem.poke32(32'h000040B8, 32'h00000633); /* CMD_FENCE header, len=6 */
+		mem.poke32(32'h000040BC, 32'h00008010); /* addr_lo = 0x8010 */
+		mem.poke32(32'h000040C0, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h000040C4, 32'h5555AAAA); /* seq_lo */
+		mem.poke32(32'h000040C8, 32'h00000002); /* seq_hi */
+		mem.poke32(32'h000040CC, 32'h00000002); /* flags = 2 (MEM_WRITE) */
+		mem.poke32(32'h00008010, 32'd0);
+		mem.poke32(32'h00008014, 32'd0);
+
+		/* Second fence at 52..57 (0x40D0..0x40E4) */
+		mem.poke32(32'h000040D0, 32'h00000633);
+		mem.poke32(32'h000040D4, 32'h00008020);
+		mem.poke32(32'h000040D8, 32'h00000000);
+		mem.poke32(32'h000040DC, 32'h99998888);
+		mem.poke32(32'h000040E0, 32'h00000003);
+		mem.poke32(32'h000040E4, 32'h00000002);
+		mem.poke32(32'h00008020, 32'd0);
+		mem.poke32(32'h00008024, 32'd0);
+
+		/* Advance WPTR to 58 (includes both fence 1 at 46..51 and fence 2 at 52..57) */
+		host_write(GHCI_REG_RING_WPTR, 32'd58);
+
+		/* Wait until sequencer enters Q_PAY for fence 1 */
+		to_cnt = 0;
+		while (dut.cp.u_seq.st != 4'd1 && to_cnt < 200) begin
+			@(posedge clk);
+			to_cnt = to_cnt + 1;
+		end
+
+		/* Assert CTRL.HALT = 1 while fence 1 is in flight in Q_PAY */
+		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RUN) | (1 << GHCI_CTRL_HALT));
+		#20;
+
+		/* Verify engine is HALTING, NOT yet HALTED because fence 1 is completing in-flight */
+		host_read(GHCI_REG_STATUS, val);
+		check32("STATUS.HALTED == 0 while completing in-flight packet", {31'd0, val[GHCI_STATUS_HALTED_BIT]}, 32'd0);
+
+		/* Wait for in-flight fence to complete into memory */
+		to_cnt = 0;
+		while (mem.peek32(32'h00008010) !== 32'h5555AAAA && to_cnt < 200) begin
+			#50;
+			to_cnt = to_cnt + 1;
+		end
+		check32("In-flight CMD_FENCE seq_lo written to memory", mem.peek32(32'h00008010), 32'h5555AAAA);
+
+		/* Wait for STATUS.HALTED == 1 */
+		to_cnt = 0;
+		val = 0;
+		while (!val[GHCI_STATUS_HALTED_BIT] && to_cnt < 200) begin
+			#50;
+			host_read(GHCI_REG_STATUS, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("STATUS.HALTED == 1 after in-flight packet completes", {31'd0, val[GHCI_STATUS_HALTED_BIT]}, 32'd1);
+
+		/* Verify RPTR stopped at 52 (second fence not executed) */
+		host_read(GHCI_REG_RING_RPTR, val);
+		check32("RING_RPTR stopped at 52 (second packet not executed)", val, 32'd52);
+		check32("Second fence memory not written while HALTED", mem.peek32(32'h00008020), 32'd0);
+
+		/* Now clear HALT: CTRL.HALT = 0 */
+		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RUN));
+		to_cnt = 0;
+		val = 0;
+		while (val < 32'd58 && to_cnt < 200) begin
+			#50;
+			host_read(GHCI_REG_RING_RPTR, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("RING_RPTR advanced to 58 after clearing HALT", val, 32'd58);
+		to_cnt = 0;
+		while (mem.peek32(32'h00008020) !== 32'h99998888 && to_cnt < 200) begin
+			#50;
+			to_cnt = to_cnt + 1;
+		end
+		check32("Second fence executed and memory written", mem.peek32(32'h00008020), 32'h99998888);
+
+		/* -------------------------------------------------------------
 		 * 8. Item 7: R1 / R2 / R3 Dynamic checks
 		 * ------------------------------------------------------------- */
 		$display("--- Testing R1: Ring size byte validation and WPTR wrap ---");
@@ -900,6 +985,23 @@ module ghci_probe #(
 		check32("FAULT_INFO unit 0 (CP)", {28'd0, val[7:4]}, 32'd0);
 		host_read(GHCI_REG_RING_SIZE, val);
 		check32("RING_SIZE unchanged by locked write", val, 32'h00010000);
+
+		/* FAULTED: any packet appended to the ring is not executed */
+		$display("--- Testing X1: Ring packet queued while FAULTED is not executed ---");
+		mem.poke32(32'h00004100, 32'h00000633);
+		mem.poke32(32'h00004104, 32'h00008030);
+		mem.poke32(32'h00004108, 32'h00000000);
+		mem.poke32(32'h0000410C, 32'hDEADBEEF);
+		mem.poke32(32'h00004110, 32'h00000004);
+		mem.poke32(32'h00004114, 32'h00000002);
+		mem.poke32(32'h00008030, 32'd0);
+		host_read(GHCI_REG_RING_RPTR, val);
+		w0 = val;
+		host_write(GHCI_REG_RING_WPTR, w0 + 32'd6);
+		repeat (30) #50;
+		host_read(GHCI_REG_RING_RPTR, val);
+		check32("RPTR does not advance while FAULTED", val, w0);
+		check32("Memory not written while FAULTED", mem.peek32(32'h00008030), 32'd0);
 
 		$display("--- Testing R3: FAULT_INFO W1C and TIMESTAMP_HI increment ---");
 		/* W1C clears kind [3:0] */

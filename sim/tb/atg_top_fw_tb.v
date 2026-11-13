@@ -736,6 +736,29 @@ module atg_top_fw_harness #(
 		if (errors == 0)
 			$display("PASS atg_top_fw(%0s).reload", NAME);
 
+		/* HALTED: firmware µop is not executed until HALT is lifted. */
+		host_write(GHCI_CTRL, (32'd1 << GHCI_CTRL_RUN) | (32'd1 << GHCI_CTRL_HALT));
+		wait_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_HALTED, 32'd1 << GHCI_STATUS_HALTED, 1000);
+		sp = 0;
+		rec(32'h00010102, 0);
+		st64(64'h100);
+		st64(AREA_V);
+		st64(AREA_BYTES);
+		st(32'd0);
+		ring_frame(1);
+		ring_fence;
+		host_write(GHCI_RING_WPTR, wp);
+		repeat (300) @(posedge clk);
+		expect_reg(GHCI_LEGACY_FENCE_LAST, fence_value - 1, 32'hFFFFFFFF);
+		expect_reg(GHCI_STATUS, 32'd1 << GHCI_STATUS_HALTED, 32'd1 << GHCI_STATUS_HALTED);
+
+		/* Clear HALT and verify it executes. */
+		host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+		wait_reg(GHCI_LEGACY_FENCE_LAST, fence_value, 32'hFFFFFFFF, 20000);
+		expect_reg(GHCI_RING_RPTR, wp, 32'hFFFFFFFF);
+		if (errors == 0)
+			$display("PASS atg_top_fw(%0s).halt", NAME);
+
 		finished = 1'b1;
 	end
 endmodule

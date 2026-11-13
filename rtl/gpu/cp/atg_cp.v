@@ -935,7 +935,19 @@ module atg_cp #(
 	wire lc_halted    = s_lc_state == GHCI_LC_HALTED;
 	wire lc_faulted   = s_lc_state == GHCI_LC_FAULTED;
 	wire lc_resetting = s_lc_state == GHCI_LC_RESETTING;
-	wire s_seq_halt = lc_halted || lc_faulted || lc_resetting;
+	wire s_seq_abort  = lc_faulted || lc_resetting;
+
+	reg step_active;
+	always @(posedge clk) begin
+		if (!s_core_rst_n || !lc_halted || s_seq_abort)
+			step_active <= 1'b0;
+		else if (s_step)
+			step_active <= 1'b1;
+		else if (s_n_valid && s_n_ready && (s_seq_st == 4'd0))
+			step_active <= 1'b0;
+	end
+	wire step_en = step_active || s_step;
+	wire s_seq_halt = lc_halting || (lc_halted && !step_en) || s_seq_abort;
 
 	wire s_fw_valid, s_fw_ready;
 	wire [31:0] s_fw_data;
@@ -1021,7 +1033,7 @@ module atg_cp #(
 		.clk(clk), .rst_n(s_core_rst_n),
 		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data),
 		.fw_valid(s_fw_valid), .fw_ready(s_fw_ready), .fw_data(s_fw_data),
-		.fw_active(fw_act_b[0]), .fw_side(s_fw_side), .halt(s_seq_halt),
+		.fw_active(fw_act_b[0]), .fw_side(s_fw_side), .halt(s_seq_halt), .seq_abort(s_seq_abort),
 		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
 		.kick(s_kick), .kick_code(s_kick_code), .inv(s_seq_inv),
 		.busy_in({s_disp_wait, busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),

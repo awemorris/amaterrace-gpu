@@ -37,7 +37,7 @@ module atg_cp_seq_tb;
 	reg [32:0] fq [0:1023];
 	integer fq_head = 0, fq_tail = 0;
 	reg r_gap = 0, f_gap = 0;
-	reg fw_active = 0, halt = 0;
+	reg fw_active = 0, halt = 0, abort = 0;
 	wire n_valid = rq_head != rq_tail && !r_gap;
 	wire [31:0] n_data = rq[rq_head % 1024][31:0];
 	wire n_last = rq[rq_head % 1024][32];
@@ -79,7 +79,7 @@ module atg_cp_seq_tb;
 		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(u_req), .u_ok(u_ok),
 		.n_valid(n_valid), .n_ready(n_ready), .n_data(n_data),
 		.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data),
-		.fw_active(fw_active), .halt(halt),
+		.fw_active(fw_active), .halt(halt), .seq_abort(abort),
 		.uop_we(uop_we), .uop_idx(uop_idx), .uop_wdata(uop_wdata),
 		.kick(kick), .kick_code(kick_code), .inv(inv), .busy_in(busy_in),
 		.vsync(vsync), .l2_idle(1'b1),
@@ -105,7 +105,7 @@ module atg_cp_seq_tb;
 		.seq_st(seq_st), .f_busy(f_busy),
 		.mc_fault(1'b0), .mc_fault_client(8'd0), .mc_fault_addr(32'd0),
 		.mc_fault_write(1'b0), .mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0),
-		.wdt_tag(8'd0),
+		.wdt_tag(8'd0), .su_stage(4'd0),
 		.src_fault(8'd0), .src_kind(32'd0), .src_addr(256'd0), .src_tag(64'd0), .src_stage(32'd0),
 		.run(), .halt(), .ctrl_irq_global(), .quiesce(), .mc_flush(),
 		.core_rst_n(), .open(), .cp_state(cp_state), .lc_state(),
@@ -124,7 +124,7 @@ module atg_cp_seq_tb;
 		.fw_side(7'd0), .u_fw(), .u_side(), .u_req(), .u_ok(1'b1),
 		.n_valid(s_valid), .n_ready(s_n_ready), .n_data(s_data),
 		.fw_valid(1'b0), .fw_ready(), .fw_data(32'd0), .fw_active(1'b0),
-		.halt(1'b0), .uop_we(), .uop_idx(), .uop_wdata(),
+		.halt(1'b0), .seq_abort(1'b0), .uop_we(), .uop_idx(), .uop_wdata(),
 		.kick(), .kick_code(), .inv(), .busy_in(9'd0), .vsync(1'b0), .l2_idle(1'b1),
 		.f_valid(), .f_ready(1'b0), .f_op(), .f_addr(), .f_value(), .f_aux(), .f_irq(), .f_mem(), .f_flush(),
 		.f_busy(1'b0), .occ_count(40'd0), .occ_clear(), .busy(), .cmd_active(),
