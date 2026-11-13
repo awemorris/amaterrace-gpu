@@ -807,49 +807,64 @@ module ghci_probe #(
 		mem.poke32(32'h00004080, 32'h00000000); /* addr_hi = 0 */
 		mem.poke32(32'h00004084, 32'h00000001); /* wait_val_lo = 1 */
 		mem.poke32(32'h00004088, 32'h00000000); /* wait_val_hi = 0 */
-		host_write(GHCI_REG_RING_WPTR, 32'd35);
+		/* Place subsequent CMD_FENCE at 35..40 (0x408C..0x40A0) to verify immediate execution */
+		mem.poke32(32'h00008008, 32'd0);
+		mem.poke32(32'h0000800C, 32'd0);
+		mem.poke32(32'h0000408C, 32'h00000633); /* CMD_FENCE header, len=6 */
+		mem.poke32(32'h00004090, 32'h00008008); /* addr_lo = 0x8008 */
+		mem.poke32(32'h00004094, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h00004098, 32'hC1C10001); /* seq_lo */
+		mem.poke32(32'h0000409C, 32'h00000000); /* seq_hi */
+		mem.poke32(32'h000040A0, 32'h00000002); /* flags = 2 (MEM_WRITE) */
+		host_write(GHCI_REG_RING_WPTR, 32'd41);
 		to_cnt = 0;
 		val = 0;
-		while (val < 32'd35 && to_cnt < 200) begin
+		while (val < 32'd41 && to_cnt < 200) begin
 			#50;
 			host_read(GHCI_REG_RING_RPTR, val);
 			to_cnt = to_cnt + 1;
 		end
-		check32("CMD_WAIT_FENCE Case 1 passed immediately to RPTR 35", val, 32'd35);
+		check32("CMD_WAIT_FENCE Case 1 passed immediately and executed subsequent CMD_FENCE to RPTR 41", val, 32'd41);
+		to_cnt = 0;
+		while (mem.peek32(32'h00008008) !== 32'hC1C10001 && to_cnt < 200) begin
+			#50;
+			to_cnt = to_cnt + 1;
+		end
+		check32("CMD_WAIT_FENCE Case 1 subsequent CMD_FENCE wrote to memory", mem.peek32(32'h00008008), 32'hC1C10001);
 
 		/* Case 2: mem = 0x00000000_00000005, wait = 0x00000001_00000001 -> must wait, STATUS[19:16]=4 */
 		mem.poke32(32'h00008000, 32'h00000005); /* mem lo */
 		mem.poke32(32'h00008004, 32'h00000000); /* mem hi */
-		mem.poke32(32'h0000408C, 32'h00000534); /* Header: size=5, Opcode=0x34 */
-		mem.poke32(32'h00004090, 32'h00008000); /* addr_lo = 0x8000 */
-		mem.poke32(32'h00004094, 32'h00000000); /* addr_hi = 0 */
-		mem.poke32(32'h00004098, 32'h00000001); /* wait_val_lo = 1 */
-		mem.poke32(32'h0000409C, 32'h00000001); /* wait_val_hi = 1 */
-		host_write(GHCI_REG_RING_WPTR, 32'd40);
+		mem.poke32(32'h000040A4, 32'h00000534); /* Header: size=5, Opcode=0x34 */
+		mem.poke32(32'h000040A8, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h000040AC, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h000040B0, 32'h00000001); /* wait_val_lo = 1 */
+		mem.poke32(32'h000040B4, 32'h00000001); /* wait_val_hi = 1 */
+		host_write(GHCI_REG_RING_WPTR, 32'd46);
 		to_cnt = 0;
 		val = 0;
-		while (val < 32'd40 && to_cnt < 200) begin
+		while (val < 32'd46 && to_cnt < 200) begin
 			#50;
 			host_read(GHCI_REG_RING_RPTR, val);
 			to_cnt = to_cnt + 1;
 		end
-		check32("CMD_WAIT_FENCE Case 2 packet fetched to RPTR 40", val, 32'd40);
+		check32("CMD_WAIT_FENCE Case 2 packet fetched to RPTR 46", val, 32'd46);
 
 		/* Verify STATUS[19:16] == 4 (GHCI_ST_WAIT_FENCE) while condition is unsatisfied */
 		host_read(GHCI_REG_STATUS, val);
 		check32("STATUS[19:16] is WAIT_FENCE (4) during wait", {28'd0, val[19:16]}, 32'd4);
 
-		/* Put next packet (CMD_FENCE) at offset 0x40A0 to verify execution stalls behind WAIT_FENCE */
-		mem.poke32(32'h000040A0, 32'h00000633); /* Header: size=6, Opcode=0x33 */
-		mem.poke32(32'h000040A4, 32'h00008000);
-		mem.poke32(32'h000040A8, 32'h00000000);
-		mem.poke32(32'h000040AC, 32'h99990001);
-		mem.poke32(32'h000040B0, 32'h00000000);
-		mem.poke32(32'h000040B4, 32'h00000002);
-		host_write(GHCI_REG_RING_WPTR, 32'd46);
+		/* Put next packet (CMD_FENCE) at offset 0x40B8 to verify execution stalls behind WAIT_FENCE */
+		mem.poke32(32'h000040B8, 32'h00000633); /* Header: size=6, Opcode=0x33 */
+		mem.poke32(32'h000040BC, 32'h00008000);
+		mem.poke32(32'h000040C0, 32'h00000000);
+		mem.poke32(32'h000040C4, 32'h99990001);
+		mem.poke32(32'h000040C8, 32'h00000000);
+		mem.poke32(32'h000040CC, 32'h00000002);
+		host_write(GHCI_REG_RING_WPTR, 32'd52);
 		repeat (20) #50;
 		host_read(GHCI_REG_RING_RPTR, val);
-		if (val >= 32'd46) begin
+		if (val >= 32'd52) begin
 			err_count = err_count + 1;
 			$display("FAIL Next command executed before WAIT_FENCE satisfied (RPTR=%0d)", val);
 		end else begin
@@ -861,42 +876,42 @@ module ghci_probe #(
 		mem.poke32(32'h00008004, 32'h00000001);
 		to_cnt = 0;
 		val = 0;
-		while (val < 32'd46 && to_cnt < 200) begin
+		while (val < 32'd52 && to_cnt < 200) begin
 			#50;
 			host_read(GHCI_REG_RING_RPTR, val);
 			to_cnt = to_cnt + 1;
 		end
-		check32("CMD_WAIT_FENCE Case 2 resumed and subsequent command reached RPTR 46", val, 32'd46);
+		check32("CMD_WAIT_FENCE Case 2 resumed and subsequent command reached RPTR 52", val, 32'd52);
 
 		/* -------------------------------------------------------------
 		 * X1: In-flight packet completes during HALTING before HALTED
 		 * ------------------------------------------------------------- */
 		$display("--- Testing X1: In-flight CMD_FENCE completes during HALTING before HALTED ---");
-		/* Ring is currently at RPTR=46, WPTR=46.
-		 * Put CMD_FENCE 1 (6 dwords) at offset 46 (0x40B8..0x40CC), crossing line 5/6 boundary.
-		 * Put CMD_FENCE 2 (6 dwords) at offset 52 (0x40D0..0x40E4).
+		/* Ring is currently at RPTR=52, WPTR=52.
+		 * Put CMD_FENCE 1 (6 dwords) at offset 52 (0x40D0..0x40E4).
+		 * Put CMD_FENCE 2 (6 dwords) at offset 58 (0x40E8..0x40FC).
 		 */
-		mem.poke32(32'h000040B8, 32'h00000633); /* CMD_FENCE header, len=6 */
-		mem.poke32(32'h000040BC, 32'h00008010); /* addr_lo = 0x8010 */
-		mem.poke32(32'h000040C0, 32'h00000000); /* addr_hi = 0 */
-		mem.poke32(32'h000040C4, 32'h5555AAAA); /* seq_lo */
-		mem.poke32(32'h000040C8, 32'h00000002); /* seq_hi */
-		mem.poke32(32'h000040CC, 32'h00000002); /* flags = 2 (MEM_WRITE) */
+		mem.poke32(32'h000040D0, 32'h00000633); /* CMD_FENCE header, len=6 */
+		mem.poke32(32'h000040D4, 32'h00008010); /* addr_lo = 0x8010 */
+		mem.poke32(32'h000040D8, 32'h00000000); /* addr_hi = 0 */
+		mem.poke32(32'h000040DC, 32'h5555AAAA); /* seq_lo */
+		mem.poke32(32'h000040E0, 32'h00000002); /* seq_hi */
+		mem.poke32(32'h000040E4, 32'h00000002); /* flags = 2 (MEM_WRITE) */
 		mem.poke32(32'h00008010, 32'd0);
 		mem.poke32(32'h00008014, 32'd0);
 
-		/* Second fence at 52..57 (0x40D0..0x40E4) */
-		mem.poke32(32'h000040D0, 32'h00000633);
-		mem.poke32(32'h000040D4, 32'h00008020);
-		mem.poke32(32'h000040D8, 32'h00000000);
-		mem.poke32(32'h000040DC, 32'h99998888);
-		mem.poke32(32'h000040E0, 32'h00000003);
-		mem.poke32(32'h000040E4, 32'h00000002);
+		/* Second fence at 58..63 (0x40E8..0x40FC) */
+		mem.poke32(32'h000040E8, 32'h00000633);
+		mem.poke32(32'h000040EC, 32'h00008020);
+		mem.poke32(32'h000040F0, 32'h00000000);
+		mem.poke32(32'h000040F4, 32'h99998888);
+		mem.poke32(32'h000040F8, 32'h00000003);
+		mem.poke32(32'h000040FC, 32'h00000002);
 		mem.poke32(32'h00008020, 32'd0);
 		mem.poke32(32'h00008024, 32'd0);
 
-		/* Advance WPTR to 58 (includes both fence 1 at 46..51 and fence 2 at 52..57) */
-		host_write(GHCI_REG_RING_WPTR, 32'd58);
+		/* Advance WPTR to 64 (includes both fence 1 at 52..57 and fence 2 at 58..63) */
+		host_write(GHCI_REG_RING_WPTR, 32'd64);
 
 		/* Wait until sequencer enters Q_PAY for fence 1 */
 		to_cnt = 0;
@@ -931,21 +946,21 @@ module ghci_probe #(
 		end
 		check32("STATUS.HALTED == 1 after in-flight packet completes", {31'd0, val[GHCI_STATUS_HALTED_BIT]}, 32'd1);
 
-		/* Verify RPTR stopped at 52 (second fence not executed) */
+		/* Verify RPTR stopped at 58 (second fence not executed) */
 		host_read(GHCI_REG_RING_RPTR, val);
-		check32("RING_RPTR stopped at 52 (second packet not executed)", val, 32'd52);
+		check32("RING_RPTR stopped at 58 (second packet not executed)", val, 32'd58);
 		check32("Second fence memory not written while HALTED", mem.peek32(32'h00008020), 32'd0);
 
 		/* Now clear HALT: CTRL.HALT = 0 */
 		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RUN));
 		to_cnt = 0;
 		val = 0;
-		while (val < 32'd58 && to_cnt < 200) begin
+		while (val < 32'd64 && to_cnt < 200) begin
 			#50;
 			host_read(GHCI_REG_RING_RPTR, val);
 			to_cnt = to_cnt + 1;
 		end
-		check32("RING_RPTR advanced to 58 after clearing HALT", val, 32'd58);
+		check32("RING_RPTR advanced to 64 after clearing HALT", val, 32'd64);
 		to_cnt = 0;
 		while (mem.peek32(32'h00008020) !== 32'h99998888 && to_cnt < 200) begin
 			#50;

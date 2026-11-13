@@ -34,7 +34,7 @@
  *     of the soft interrupt (IRQ_ENABLE set), again after an IRQ_ENABLE
  *     write that leaves the line 1, none after the IRQ_STATUS write that
  *     clears it, one for the next IRQ_SET; one for the DC's DISPLAY (VSYNC)
- *     (IRQ_STATUS [9], a 32 x 4 test-pattern mode, the CP IDLE so the
+ *     (IRQ_STATUS [3], a 32 x 4 test-pattern mode, the CP IDLE so the
  *     host writes the DISP2 window), and no more while it stays set;
  *   - no fault (STATUS.FAULT 0).
  *
