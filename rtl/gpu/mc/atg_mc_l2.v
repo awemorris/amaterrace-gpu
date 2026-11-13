@@ -189,6 +189,7 @@ module atg_mc_l2 #(
 	reg [LA_W-1:0] inv_base_r;
 	reg [LA_W-1:0] inv_limit_r;
 	reg [SET_W-1:0] flush_set;
+	reg inv_active_r;
 
 	/* Arithmetic for flush counters */
 	wire [SET_W-1:0] next_flush_set;
@@ -421,6 +422,7 @@ module atg_mc_l2 #(
 			ctrl_inv_done <= 1'b0;
 			set_dirty_r <= {WAYS{1'b0}};
 			flush_set <= {SET_W{1'b0}};
+			inv_active_r <= 1'b0;
 			inv_clean_r <= 1'b0;
 			inv_range_r <= 1'b0;
 			inv_base_r <= {LA_W{1'b0}};
@@ -460,6 +462,8 @@ module atg_mc_l2 #(
 			ctrl_inv_done <= 1'b0;
 			bram_we_r <= {WAYS{1'b0}};
 			tag_we <= 1'b0;
+			if (!ctrl_inv_valid)
+				inv_active_r <= 1'b0;
 
 			case (state)
 				S_IDLE: begin
@@ -476,12 +480,13 @@ module atg_mc_l2 #(
 							bram_raddr[init_w] <= s_req_line[SET_W-1:0];
 						wait_phase <= 1'b0;
 						state     <= S_READ_WAIT;
-					end else if (ctrl_inv_valid || flush) begin
+					end else if (((ctrl_inv_valid && !inv_active_r) || flush)) begin
 						inv_clean_r <= ctrl_inv_valid ? ctrl_inv_clean : 1'b1;
 						inv_range_r <= ctrl_inv_valid ? ctrl_inv_range : 1'b0;
 						inv_base_r  <= ctrl_inv_base;
 						inv_limit_r <= ctrl_inv_limit;
 						flush_set   <= {SET_W{1'b0}};
+						inv_active_r <= 1'b1;
 						state       <= S_FLUSH_STEP;
 					end else if (s_req_valid) begin
 						req_write <= s_req_write;

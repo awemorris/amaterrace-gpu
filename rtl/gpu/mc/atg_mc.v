@@ -130,6 +130,7 @@ module atg_mc #(
 	input wire quiesce,
 	input wire flush,
 	input wire l2_flush,
+	output wire l2_flush_done,
 	output wire l2_idle_out,
 	input wire [ADDR_W-1:0] aperture_base,
 	input wire [ADDR_W-1:0] aperture_limit,
@@ -630,7 +631,8 @@ module atg_mc #(
 			.ctrl_inv_done(l2_ctrl_inv_done),
 			.idle(l2_idle), .fsm(l2_fsm)
 		);
-		wire unused_l2 = &{1'b0, l2_ctrl_inv_done, l2_fsm};
+		assign l2_flush_done = l2_ctrl_inv_done;
+		wire unused_l2 = &{1'b0, l2_fsm};
 	end else begin : g_no_l2
 		assign g_ready = axi_req_ready;
 		assign axi_req_valid = g_valid;
@@ -648,6 +650,7 @@ module atg_mc #(
 		assign l2_rsp_rdata = ax_rsp_rdata;
 		assign l2_rsp_error = ax_rsp_error;
 		assign l2_idle = 1'b1;
+		assign l2_flush_done = 1'b1;
 	end
 	endgenerate
 

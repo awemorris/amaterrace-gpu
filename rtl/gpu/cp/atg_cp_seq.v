@@ -83,6 +83,7 @@ module atg_cp_seq #(
 	output wire [3:0] inv,
 	input wire [8:0] busy_in,	/* [8]: atg_cp_disp's wait (not in B_ALL) */
 	input wire vsync,
+	input wire l2_flush_done,
 	input wire l2_idle,
 	/* Fences (to atg_cp_fence) */
 	output wire f_valid,
@@ -599,7 +600,7 @@ module atg_cp_seq #(
 	};
 	assign f_irq = is_fence_cmd_r ? fence_flags[0] : flags[0];
 	assign f_mem = is_fence_cmd_r ? fence_flags[1] : 1'b1;
-	assign f_flush = (st == Q_FLUSH) && settle;
+	assign f_flush = (st == Q_FLUSH);
 	assign f_64 = is_fence_cmd_r;
 `else
 	assign occ_clear = (is_op_std && op == OP_QUERY && flags[0]) ||
@@ -611,7 +612,7 @@ module atg_cp_seq #(
 	assign f_aux = (op == OP_QUERY) ? {24'd0, occ_q[39:32]} : (is_fence_cmd_r || (!vendor && op == OP_RESULT)) ? a2 : 32'd0;
 	assign f_irq = (op == CMD_FENCE) ? fence_flags[0] : flags[0];
 	assign f_mem = (op == CMD_FENCE) ? fence_flags[1] : 1'b1;
-	assign f_flush = (st == Q_FLUSH) && settle;
+	assign f_flush = (st == Q_FLUSH);
 	assign f_64 = is_fence_cmd_r;
 `endif
 
@@ -1111,7 +1112,7 @@ module atg_cp_seq #(
 				if (!settle && !(|(exec_post & busy_in)))
 					st <= Q_IDLE;
 			Q_FLUSH:
-				if (!settle && l2_idle)
+				if (l2_flush_done)
 					st <= Q_FREQ;
 			Q_FREQ:
 				if (f_ready)
@@ -1146,9 +1147,9 @@ module atg_cp_seq #(
 	end
 
 `ifdef SYNTH_KINTEX7
-	wire unused_p = &{1'b0, p_co, ghci_sub_bo, n_m1_bo, is_ghci_hdr, dec_hdr_fault, dec_hdr_short, dec_fault_r, dec_short_r, set_bad, pay_take, s_wait_in[0], s_wait_in[7], pay_wait, fence_flags[31:3]};
+	wire unused_p = &{1'b0, p_co, ghci_sub_bo, n_m1_bo, is_ghci_hdr, dec_hdr_fault, dec_hdr_short, dec_fault_r, dec_short_r, set_bad, pay_take, s_wait_in[0], s_wait_in[7], pay_wait, fence_flags[31:3], l2_idle};
 `else
-	wire unused_p = &{1'b0, p_co, ghci_sub_bo, n_m1_bo, is_ghci_hdr, dec_hdr_fault, dec_hdr_short, dec_fault_r, dec_short_r, set_bad, pay_take, fence_flags[31:3]};
+	wire unused_p = &{1'b0, p_co, ghci_sub_bo, n_m1_bo, is_ghci_hdr, dec_hdr_fault, dec_hdr_short, dec_fault_r, dec_short_r, set_bad, pay_take, fence_flags[31:3], l2_idle};
 `endif
 endmodule
 

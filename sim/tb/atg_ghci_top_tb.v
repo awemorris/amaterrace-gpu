@@ -202,6 +202,16 @@ module ghci_probe #(
 	reg [15:0] aw_id_q = 0;
 	reg [3:0] aw_id_wp = 0, aw_id_rp = 0;
 
+	reg pclk = 1'b0;
+	always #20 pclk = !pclk;
+	wire prst_n = rst_n;
+
+	integer inv_done_count = 0;
+	always @(posedge clk) begin
+		if (rst_n && dut.l2_flush_done)
+			inv_done_count = inv_done_count + 1;
+	end
+
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			ar_id_wp <= 4'd0;
@@ -301,7 +311,7 @@ module ghci_probe #(
 		.x_req_be(64'd0), .x_req_wdata(512'd0), .x_req_tag(8'd0),
 		.x_rsp_valid(), .x_rsp_write(), .x_rsp_tag(), .x_rsp_rdata(), .x_rsp_error(),
 		.x_vsync(1'b0),
-		.pclk(1'b0), .prst_n(1'b0), .scl_i(1'b1), .sda_i(1'b1),
+		.pclk(pclk), .prst_n(prst_n), .scl_i(1'b1), .sda_i(1'b1),
 		.j_wr(1'b0), .j_waddr(17'd0), .j_wdata(32'd0), .j_wstrb(4'd0), .j_rd(1'b0),
 		.j_raddr(17'd0), .j_rdata(), .j_busy()
 	);
@@ -658,14 +668,14 @@ module ghci_probe #(
 		end
 		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF); /* Clear IRQ status */
 
-		/* --- Testing CMD_FENCE with flags = 0x2 (MEM_WRITE only, no IRQ) --- */
+		/* --- Testing CMD_FENCE with flags = 0x2 to LOCAL memory (cached in L2, dirty) --- */
 		mem.poke32(32'h00004030, 32'h00000633); /* Header: size=6, Opcode=0x33 */
-		mem.poke32(32'h00004034, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h00004034, 32'h80010000); /* addr_lo = 0x80010000 (LOCAL MEMORY) */
 		mem.poke32(32'h00004038, 32'h00000000); /* addr_hi = 0 */
 		mem.poke32(32'h0000403C, 32'hBEEFCAFE); /* seq_lo */
 		mem.poke32(32'h00004040, 32'h00000000); /* seq_hi */
 		mem.poke32(32'h00004044, 32'h00000002); /* flags = 2 (MEM_WRITE only) */
-		mem.poke32(32'h00008000, 32'd0);        /* Clear target fence memory */
+		mem.poke32(32'h00010000, 32'd0);        /* Clear DRAM target offset (0x80010000 % 1<<19) */
 
 		host_write(GHCI_REG_RING_WPTR, 32'd18);
 		to_cnt = 0;
@@ -677,21 +687,9 @@ module ghci_probe #(
 		end
 		check32("RING_RPTR advanced to 18", val, 32'd18);
 
-		/* Wait for CMD_FENCE write to host memory */
-		to_cnt = 0;
-		while (mem.peek32(32'h00008000) !== 32'hBEEFCAFE && to_cnt < 200) begin
-			#50;
-			to_cnt = to_cnt + 1;
-		end
-
-		/* Verify memory was written for flags=0x2 */
-		if (mem.peek32(32'h00008000) !== 32'hBEEFCAFE) begin
-			err_count = err_count + 1;
-			$display("FAIL Fence target memory: got %08h, expected BEEFCAFE",
-				mem.peek32(32'h00008000));
-		end else begin
-			$display("PASS CMD_FENCE wrote BEEFCAFE to host memory at 0x8000 (flags=0x2)");
-		end
+		/* Verify write is dirty in L2 and NOT yet written to DRAM */
+		repeat (20) @(posedge clk);
+		check32("Local fence write cached dirty in L2 (DRAM unwritten)", mem.peek32(32'h00010000), 32'd0);
 
 		/* Verify IRQ_STATUS[0] is NOT set for flags=0x2 */
 		host_read(GHCI_REG_IRQ_STATUS, val);
@@ -704,7 +702,7 @@ module ghci_probe #(
 
 		/* --- Testing CMD_FENCE with flags = 0x7 (HOST_FLUSH | MEM_WRITE | IRQ) --- */
 		mem.poke32(32'h00004048, 32'h00000633); /* Header: size=6, Opcode=0x33 */
-		mem.poke32(32'h0000404C, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h0000404C, 32'h00008000); /* addr_lo = 0x8000 (HOST MEMORY) */
 		mem.poke32(32'h00004050, 32'h00000000); /* addr_hi = 0 */
 		mem.poke32(32'h00004054, 32'h77770001); /* seq_lo */
 		mem.poke32(32'h00004058, 32'h00000002); /* seq_hi */
@@ -714,6 +712,12 @@ module ghci_probe #(
 		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF);
 
 		host_write(GHCI_REG_RING_WPTR, 32'd24);
+
+		/* Verify STATUS[19:16] == 5 (GHCI_ST_WAIT_MEM) while CP is in Q_FLUSH (st == 11) */
+		wait (dut.cp.u_seq.st == 4'd11);
+		host_read(GHCI_REG_STATUS, val);
+		check32("STATUS[19:16] is WAIT_MEM (5) during Q_FLUSH", {28'd0, val[19:16]}, 32'd5);
+
 		to_cnt = 0;
 		val = 0;
 		while (val < 32'd24 && to_cnt < 200) begin
@@ -736,16 +740,19 @@ module ghci_probe #(
 			$display("PASS CMD_FENCE with flags=0x7 wrote {00000002, 77770001}");
 		end
 
+		/* Verify the dirty local line at 0x80010000 was flushed to DRAM */
+		check32("flags=0x7 flushed dirty local line to DRAM", mem.peek32(32'h00010000), 32'hBEEFCAFE);
+
 		/* --- Testing CMD_FENCE with flags = 0x3 immediately following flags = 0x7 --- */
 		/* Verifies that flags[2] (HOST_FLUSH) is not retained from the previous command */
+		/* Write to another local line 0x80010040 without HOST_FLUSH */
 		mem.poke32(32'h00004060, 32'h00000633); /* Header: size=6, Opcode=0x33 */
-		mem.poke32(32'h00004064, 32'h00008000); /* addr_lo = 0x8000 */
+		mem.poke32(32'h00004064, 32'h80010040); /* addr_lo = 0x80010040 (LOCAL MEMORY) */
 		mem.poke32(32'h00004068, 32'h00000000); /* addr_hi = 0 */
 		mem.poke32(32'h0000406C, 32'h33330002); /* seq_lo */
 		mem.poke32(32'h00004070, 32'h00000003); /* seq_hi */
 		mem.poke32(32'h00004074, 32'h00000003); /* flags = 3 (NO HOST_FLUSH) */
-		mem.poke32(32'h00008000, 32'd0);
-		mem.poke32(32'h00008004, 32'd0);
+		mem.poke32(32'h00010040, 32'd0);
 		host_write(GHCI_REG_IRQ_STATUS, 32'hFFFFFFFF);
 
 		host_write(GHCI_REG_RING_WPTR, 32'd30);
@@ -758,18 +765,9 @@ module ghci_probe #(
 		end
 		check32("RING_RPTR advanced to 30", val, 32'd30);
 
-		to_cnt = 0;
-		while (mem.peek32(32'h00008000) !== 32'h33330002 && to_cnt < 200) begin
-			#50;
-			to_cnt = to_cnt + 1;
-		end
-		if (mem.peek32(32'h00008000) !== 32'h33330002 || mem.peek32(32'h00008004) !== 32'h00000003) begin
-			err_count = err_count + 1;
-			$display("FAIL flags=3 fence write failed: got {%08h, %08h}",
-				mem.peek32(32'h00008004), mem.peek32(32'h00008000));
-		end else begin
-			$display("PASS CMD_FENCE with flags=0x3 wrote {00000003, 33330002}");
-		end
+		/* Verify local line remains dirty in L2 and is NOT flushed to DRAM */
+		repeat (20) @(posedge clk);
+		check32("flags=3 fence did NOT flush dirty local line to DRAM", mem.peek32(32'h00010040), 32'd0);
 
 		/* --- V2: Testing CMD_WAIT_FENCE 64-bit comparison (GHCI 1.0 §7.3) --- */
 		/* Case 1: mem = 0x00000001_00000000, wait = 0x00000000_00000001 -> passes immediately */
@@ -1018,6 +1016,91 @@ module ghci_probe #(
 		/* Counter started at 32'hFFFFFC00. By this point, >1024 cycles have elapsed naturally. */
 		host_read(GHCI_REG_TIMESTAMP_HI, val);
 		check32("TIMESTAMP_HI advanced on natural overflow", val, 32'd1);
+
+		/* -------------------------------------------------------------
+		 * X2: DC active frame scanout concurrent with 20 flags=0x7 fences
+		 * ------------------------------------------------------------- */
+		$display("--- Testing X2: DC frame scanout concurrent with 20 flags=0x7 fences ---");
+		/* 1. Configure DC for small mode (32x4) reading from frame buffer at local address 0x80020000 */
+		host_write(32'h00000200 + GHCI_DC_TIMING + 32'h00, 32'd32);
+		host_write(32'h00000200 + GHCI_DC_TIMING + 32'h04, 32'd2);
+		host_write(32'h00000200 + GHCI_DC_TIMING + 32'h08, 32'd4);
+		host_write(32'h00000200 + GHCI_DC_TIMING + 32'h0C, 32'd4);
+		host_write(32'h00000200 + GHCI_DC_TIMING + 32'h10, 32'd4);
+		host_write(32'h00000200 + GHCI_DC_TIMING + 32'h14, 32'd1);
+		host_write(32'h00000200 + GHCI_DC_TIMING + 32'h18, 32'd1);
+		host_write(32'h00000200 + GHCI_DC_TIMING + 32'h1C, 32'd1);
+		host_write(32'h00000200 + GHCI_DC_SYNC_POL, 32'd3);
+		host_write(32'h00000200 + GHCI_DC_FB_STRIDE, 32'd128);
+		host_write(32'h00000200 + GHCI_DC_FB_SIZE, {16'd4, 16'd32});
+		host_write(32'h00000200 + GHCI_DC_FB_BASE, 32'h80020000);
+		host_write(32'h00000200 + GHCI_DC_CTRL, (1 << GHCI_DC_CTRL_ENABLE));
+
+		/* Wait for DC DMA to start issuing requests */
+		to_cnt = 0;
+		while (!dut.g_dc.dc.req_valid && to_cnt < 2000) begin
+			@(posedge clk);
+			to_cnt = to_cnt + 1;
+		end
+		$display("PASS DC is actively scanning frame buffer (req_valid asserted)");
+
+		/* 2. Reset ring for 20 fences */
+		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RESET));
+		#50;
+		host_write(GHCI_REG_CTRL, 32'd0);
+		#100;
+		to_cnt = 0;
+		host_read(GHCI_REG_CTRL, val);
+		while (val[GHCI_CTRL_RESET] && to_cnt < 2000) begin
+			#50;
+			host_read(GHCI_REG_CTRL, val);
+			to_cnt = to_cnt + 1;
+		end
+
+		host_write(GHCI_REG_RING_BASE_LO, 32'h00006000);
+		host_write(GHCI_REG_RING_BASE_HI, 32'h00000000);
+		host_write(GHCI_REG_RING_SIZE,    32'h00010000);
+		host_write(GHCI_REG_RING_WPTR,    32'd0);
+		host_write(GHCI_REG_CTRL, (1 << GHCI_CTRL_RUN) | (1 << GHCI_CTRL_IRQ_GLOBAL));
+
+		/* 3. Populate 20 CMD_FENCE packets with flags=7 */
+		inv_done_count = 0;
+		for (off_idx = 0; off_idx < 20; off_idx = off_idx + 1) begin
+			mem.poke32(32'h00006000 + off_idx * 24 + 0, 32'h00000633);
+			mem.poke32(32'h00006000 + off_idx * 24 + 4, 32'h00008200 + off_idx * 8);
+			mem.poke32(32'h00006000 + off_idx * 24 + 8, 32'h00000000);
+			mem.poke32(32'h00006000 + off_idx * 24 + 12, 32'hF0000001 + off_idx);
+			mem.poke32(32'h00006000 + off_idx * 24 + 16, 32'h00000000);
+			mem.poke32(32'h00006000 + off_idx * 24 + 20, 32'h00000007); /* flags=7 (HOST_FLUSH) */
+			mem.poke32(32'h00008200 + off_idx * 8, 32'd0);
+		end
+
+		/* Kick all 20 fences */
+		host_write(GHCI_REG_RING_WPTR, 32'd120);
+
+		/* Wait for RPTR to reach 120 */
+		to_cnt = 0;
+		val = 0;
+		while (val < 32'd120 && to_cnt < 20000) begin
+			#50;
+			host_read(GHCI_REG_RING_RPTR, val);
+			to_cnt = to_cnt + 1;
+		end
+		check32("DC scanout 20 fences: RING_RPTR reached 120", val, 32'd120);
+
+		/* Wait for 20th fence to commit to memory */
+		to_cnt = 0;
+		while (mem.peek32(32'h00008200 + 19 * 8) !== (32'hF0000001 + 19) && to_cnt < 2000) begin
+			#50;
+			to_cnt = to_cnt + 1;
+		end
+
+		check32("DC scanout 20 fences: last fence memory written", mem.peek32(32'h00008200 + 19 * 8), 32'hF0000001 + 19);
+		check32("DC scanout 20 fences: ctrl_inv_done count matches fence count", inv_done_count, 32'd20);
+		$display("PASS 20 flags=0x7 fences executed concurrently with active DC scanout; 20 flushes completed");
+
+		/* Disable DC */
+		host_write(32'h00000200 + GHCI_DC_CTRL, 32'd0);
 
 		done = 1;
 	end

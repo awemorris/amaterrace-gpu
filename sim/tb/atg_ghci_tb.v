@@ -138,6 +138,8 @@ module atg_ghci_tb;
 		.inv(),
 		.busy_in(9'd0),
 		.vsync(1'b0),
+		.l2_flush_done(1'b1),
+		.l2_idle(1'b1),
 		.f_valid(f_valid),
 		.f_ready(1'b1),
 		.f_op(),

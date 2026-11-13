@@ -82,7 +82,7 @@ module atg_cp_seq_tb;
 		.fw_active(fw_active), .halt(halt), .seq_abort(abort),
 		.uop_we(uop_we), .uop_idx(uop_idx), .uop_wdata(uop_wdata),
 		.kick(kick), .kick_code(kick_code), .inv(inv), .busy_in(busy_in),
-		.vsync(vsync), .l2_idle(1'b1),
+		.vsync(vsync), .l2_flush_done(1'b1), .l2_idle(1'b1),
 		.f_valid(f_valid), .f_ready(f_ready), .f_op(f_op), .f_addr(f_addr), .f_value(f_value),
 		.f_aux(f_aux), .f_irq(f_irq), .f_mem(f_mem), .f_flush(f_flush), .f_busy(f_busy),
 		.occ_count(occ_count), .occ_clear(occ_clear),
@@ -125,7 +125,7 @@ module atg_cp_seq_tb;
 		.n_valid(s_valid), .n_ready(s_n_ready), .n_data(s_data),
 		.fw_valid(1'b0), .fw_ready(), .fw_data(32'd0), .fw_active(1'b0),
 		.halt(1'b0), .seq_abort(1'b0), .uop_we(), .uop_idx(), .uop_wdata(),
-		.kick(), .kick_code(), .inv(), .busy_in(9'd0), .vsync(1'b0), .l2_idle(1'b1),
+		.kick(), .kick_code(), .inv(), .busy_in(9'd0), .vsync(1'b0), .l2_flush_done(1'b1), .l2_idle(1'b1),
 		.f_valid(), .f_ready(1'b0), .f_op(), .f_addr(), .f_value(), .f_aux(), .f_irq(), .f_mem(), .f_flush(),
 		.f_busy(1'b0), .occ_count(40'd0), .occ_clear(), .busy(), .cmd_active(),
 		.fault(s_fault), .fault_kind(s_fault_kind), .fault_addr(), .fault_tag()
