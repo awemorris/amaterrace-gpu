@@ -681,10 +681,12 @@ Every memory address inside a command packet belongs to one of three strictly de
 
 ### 6.3 Doorbell ordering
 
-The ring's contents must be visible to the GPU before the RING_WPTR write:
+The command ring and all synchronization structures reside in host memory.
+Their contents must be visible to the GPU before the RING_WPTR write:
 the driver makes its writes visible with the operating system's DMA
-synchronization (nothing on a coherent platform, a cache clean on another;
-section 11.4), then a store barrier, then the register write.
+synchronization (nothing on a cache-coherent platform, a cache clean on a
+non-coherent platform; section 11.4), followed by a store barrier, then
+the register write.
 
 ### 6.4 How the CP reads the ring (N27)
 
@@ -969,7 +971,7 @@ Emits a 64-bit sequence counter to memory upon completion of all earlier work (6
   - `[0]`: `GHCI_FENCE_FLAG_IRQ` (0x1) — Raise `GHCI_IRQ_FENCE` (`IRQ_STATUS[0]`) upon completion
   - `[1]`: `GHCI_FENCE_FLAG_MEM_WRITE` (0x2) — Write 64-bit sequence counter `fence_seq` to memory at `fence_addr`. If bit 1 is 0, memory write is omitted (interrupt-only fence)
   - `[2]`: `GHCI_FENCE_FLAG_HOST_FLUSH` (0x4) — Flush GPU dirty caches before signaling fence
-- *Address Routing (N12)*: If `fence_addr` resides within $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$, it routes to local VRAM. Otherwise, `fence_addr` is a 64-bit host physical DMA address / IOVA routed to the host PCIe AXI bus across full `PA_BITS` ($40..48$ bits) (or constrained below `HOST_LIMIT` on platforms without IOMMU and with a 32-bit DMA controller, N12).
+- *Address Routing (N12)*: For host synchronization, `fence_addr` is a 64-bit host physical DMA address / IOVA in host memory routed to the host PCIe AXI bus across full `PA_BITS` ($40..48$ bits) (or constrained below `HOST_LIMIT` on platforms without IOMMU and with a 32-bit DMA controller, N12). The hardware memory controller also routes physical addresses within $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$ to local VRAM for internal GPU-side synchronization; the host does not poll local VRAM fences through the BAR window.
 
 #### `CMD_WAIT_FENCE` (0x34, K09, N11, N12, N28)
 CP pauses ring execution until memory fence value satisfies condition (5 dwords, 20 bytes).
@@ -979,7 +981,7 @@ CP pauses ring execution until memory fence value satisfies condition (5 dwords,
 - `dword 2`: `fence_addr[63:32]`
 - `dword 3`: `wait_value[31:0]` (64-bit comparison threshold)
 - `dword 4`: `wait_value[63:32]`
-- *Address Routing (N12)*: `fence_addr` physical routing strictly follows the identical rules as `CMD_FENCE`: addresses within $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$ route to local VRAM, while addresses outside this range route to host PCIe DMA memory (constrained below `HOST_LIMIT` on 32-bit DMA platforms without IOMMU).
+- *Address Routing (N12)*: `fence_addr` physical routing follows the identical rules as `CMD_FENCE`: for host synchronization, `fence_addr` is a host memory DMA address; addresses within $[LOCAL\_BASE, LOCAL\_BASE + LOCAL\_SIZE)$ route to local VRAM for internal GPU-side synchronization.
 - **Signed 64-Bit Comparison Condition (K09)**:
   $$\text{(int64\_t)}(\text{current\_seq} - \text{wait\_seq}) \ge 0$$
   This protects against 64-bit sequence number wrap-around and guarantees proper monotonically increasing synchronization ordering.
@@ -1691,18 +1693,19 @@ in host memory, programs and resources in host memory or its own — is made
 by the GPU itself, by DMA. Moving data between host memory and local memory
 (uploads, readbacks) is a copy command, completed by a fence.
 
-The local window is for the framebuffer only (the boot console, a simple
-display path). It is a view of local memory, not memory of its own: what
-the host writes through it is in local memory, and once the driver scans
-out a framebuffer of its own (section 13), the window's range is ordinary
-local memory that the driver allocates like the rest. The window is open
-after reset, so that the platform's firmware (a UEFI GOP, for example) and
-a boot console can use it; a driver that does not use it closes it
-(WINDOW_CTRL.ENABLE = 0 in the MEM capability, section 11.3). While it is
-closed, host writes through the window are dropped and host reads return
-0; the bus transactions still complete normally. Before a doorbell whose
-commands use what the host wrote through the window (a write-combining
-mapping may hold it back), the driver reads back the last word it wrote.
+The local window is for the Graphics Output Protocol (GOP) boot framebuffer
+only, when the platform firmware places that framebuffer in on-board VRAM
+(a boot console, a simple display path). The host does not read or write any
+other local memory through this window: all resources shared between the host
+and GPU—the command ring, command buffers, vertex/index data, staging buffers,
+and synchronization fences—reside in host memory and are accessed by the GPU
+itself by DMA. Consequently, no hardware cache coherency or invalidation
+mechanism exists between the host BAR local window and the GPU L2 cache.
+The window is open after reset, so that the platform's firmware (a UEFI GOP,
+for example) and a boot console can use it; a driver that does not use it
+closes it (WINDOW_CTRL.ENABLE = 0 in the MEM capability, section 11.3).
+While it is closed, host writes through the window are dropped and host reads
+return 0; the bus transactions still complete normally.
 The debug port (section 14) is for bring-up only; a driver does not depend
 on it.
 
@@ -1834,7 +1837,7 @@ dedicated high-bandwidth local memory (VRAM):
 | Where the driver allocates | Everything in host memory | Device-local resources in local memory; host-visible resources (staging, uniforms the host rewrites, readback) in host memory |
 | Ring, command buffers, fences | Host memory | Host memory |
 | Upload and readback | Not needed: the host writes the buffer | A copy command between host and local memory, then a fence |
-| Framebuffer | Host memory | Local memory (a boot framebuffer is written through the local window, section 13) |
+| Framebuffer | Host memory | Local memory or Host memory (scanout supports both; a boot framebuffer in board VRAM is accessed via the local window, section 13) |
 
 Everything else — the registers, the ring, the commands, fences,
 interrupts and the ISA — is the same in both. A Vulkan driver offers one
@@ -2752,14 +2755,35 @@ be taken, section 7.3).
 
 ### 13.3 Handing over a boot framebuffer (N29)
 
-This protocol applies to both DISP and DISP2 controllers. The platform's firmware (UEFI GOP, bootloader, or early kernel) may leave the display controller running on a pre-configured framebuffer in local device memory (discrete GPU) or host system DRAM (UMA platforms):
-- **Discrete GPU Handover**:
-  A driver that finds `CTRL.ENABLE` set when it attaches reads the boot framebuffer configuration from `FB_BASE`, `FB_STRIDE`, `FB_SIZE`, and `CTRL.FORMAT`. It marks that range of local VRAM as reserved and keeps the local window open while the boot console may still write to it.
-- **Unified Memory (UMA) Handover (N29)**:
-  On UMA systems, the boot framebuffer resides in host unified physical DRAM. The driver queries `FB_BASE`, calculates the boot memory footprint ($\text{FB\_STRIDE} \times \text{height}$), and explicitly reserves this physical host memory range in the kernel page allocator, preventing other kernel or user allocations from corrupting the displayed console image.
+This protocol applies to both DISP and DISP2 controllers. The platform's
+firmware (UEFI GOP, bootloader, or early kernel) may configure the display
+controller to scan out from either on-board VRAM (if present) or host
+system memory (supported on both UMA and discrete GPUs):
+- **On-Board VRAM Handover**:
+  When the boot framebuffer resides in on-board VRAM (`FB_BASE` within local
+  memory), a driver that finds `CTRL.ENABLE` set when it attaches reads the
+  boot framebuffer configuration from `FB_BASE`, `FB_STRIDE`, `FB_SIZE`, and
+  `CTRL.FORMAT`. It marks that range of local VRAM as reserved and keeps the
+  local window open while the boot console may still write to it.
+- **Host Memory Handover (N29)**:
+  When the boot framebuffer resides in host memory (`FB_BASE` below
+  `HOST_LIMIT`, on UMA platforms or discrete GPUs), the driver queries
+  `FB_BASE`, calculates the boot memory footprint ($\text{FB\_STRIDE} \times \text{height}$),
+  and explicitly reserves this physical host memory range in the kernel page
+  allocator, preventing other kernel or user allocations from corrupting
+  the displayed console image. Since the driver does not use the local window,
+  it closes it as an unused window (`WINDOW_CTRL.ENABLE = 0`).
 - **Flicker-Free Transition**:
-  Once the driver initializes the graphics pipeline, opens session contexts, and presents its first scanout image via `CMD_FLIP` (or direct register write), it waits for `FB_BASE` to latch the new framebuffer address at VSYNC. Once taken, the driver safely releases the boot console's reserved memory range back to the system memory pool and closes the local window (`WINDOW_CTRL.ENABLE = 0`) if unused, achieving seamless, flicker-free handover without memory leaks.
-- If `CTRL.ENABLE` is found clear at driver attach time, no active boot framebuffer exists: the driver initializes display modes from scratch and immediately closes the local window.
+  Once the driver initializes the graphics pipeline, opens session contexts,
+  and presents its first scanout image via `CMD_FLIP` (or direct register
+  write), it waits for `FB_BASE` to latch the new framebuffer address at
+  VSYNC. Once taken, the driver safely releases the boot console's reserved
+  memory range (in local VRAM or host memory) back to the system memory pool
+  and closes the local window (`WINDOW_CTRL.ENABLE = 0`) if still open,
+  achieving seamless, flicker-free handover without memory leaks.
+- If `CTRL.ENABLE` is found clear at driver attach time, no active boot
+  framebuffer exists: the driver initializes display modes from scratch and
+  immediately closes the local window.
 
 14. Bring-up and Diagnostics
 ------------------------------
