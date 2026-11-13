@@ -337,4 +337,31 @@
 - **構文検証**:
   - `iverilog -g2005 -Wall -Wno-timescale -Iinclude -Isim/tb -s atg_top_fault_tb ...`: clean (0 errors, 0 warnings)
 
+### 2026-11-14T08:35:00+09:00: Issue 3/4: FENCE が draw の終わりを待たない（busy の隙間）の修正と全段監査
+- **不具合と原因**:
+  - `rtl/gpu/rx/atg_rx.v` 277 の `assign busy = clip_busy || setup_busy || scan_busy || frag_busy;` に、プリミティブが入力スキッドバッファ（`u_prim_skid_lo/hi`）に保持されているサイクル（`prim_pipe_valid`）が含まれていなかった。
+  - VF が最後のプリミティブを RX スキッドへハンドシェイクした直後（cycle 600 ハンドシェイク）、VF は busy を落とし（cycle 601 `vf_busy=0`）、RX 側はまだ `clip` が `S_IDLE` であったため `clip_busy=0` となり、全ユニットのビジーマスク `pipe_busy_mask` が 1 サイクルだけ `8'b00000000` となった。
+  - 後続に `FENCE` がある場合、CP シーケンサはこの 1 サイクルの隙間を先行処理完了と誤認して `s_f_valid=1`（FENCE 実行）を発行し、描画完了前にテストハーネスがメモリ照合を行ってしまう原因となっていた。
+- **修正内容**:
+  - `rtl/gpu/rx/atg_rx.v`:
+    - 277 行目: `assign busy = prim_pipe_valid || clip_busy || setup_busy || scan_busy || frag_busy;`
+- **パイプライン全段 skid・FIFO 監査と結論**:
+  1. **VF -> RX (`prim_*`)**: 入力スキッドバッファ `u_prim_skid_lo/hi`。`prim_pipe_valid` が `rx_busy` に含まれておらず隙間が生じていたため修正。
+  2. **RX 内部ステージ (`clip -> setup -> scan/frag`)**:
+     - `clip -> setup`: 直接配線。`cl_valid && cl_ready` 成立サイクル（`clip_busy=1`）の次サイクルで `setup` が `S_IDLE` を脱出し `setup_busy=1` となるため隙間なし。
+     - `setup -> scan/frag`: 直接配線。`sp_valid && sp_ready` 成立サイクル（`setup_busy=1`）の次サイクルで `scan` が `S_SEQ` へ遷移し `scan_busy=1` となるため隙間なし。
+  3. **RX -> SU (`fl_*`)**: 直接配線（スキッド/FIFO なし）。`atg_rx_frag` が `S_ALLOC` で `fl_req` を要求し、`atg_su_sched` が `fl_gnt` でスロットを割り当てた次のサイクルで `!(&slot_free)` により `su_busy=1` となる。この間 `frag_busy=1` が継続しており、RX と SU のビジーが完全にオーバーラップするため隙間なし。
+  4. **RX -> ROP (`ord_*`, `dx_*`)**: 直接配線。`atg_rx_order` が `sq_req` を受け `ord_valid` を送出すると、次サイクルで `atg_rop_order` の `issued != next` となり `rop_busy=1` が立ち上がる。この間 RX もビジーであり、ROP は以降の描画完了までビジーを維持するため隙間なし。
+  5. **SU -> ROP (`ex_*`)**: 直接配線（スキッド/FIFO なし）。シェーダー実行中および `atg_su_exp_drain` のエクスポート中（`S_DRAIN`）、該当ワープは `atg_su_sched` 上で `S_ENDED` に留まり `su_busy=1` を維持する。ROP へ全ビートを送出完了した後の `S_RET` で `xr_valid` を発行して初めてワープ解放（`S_FREE`）される。一方 ROP 側は `ord_valid` 時点から既にビジーであり、両者のビジーが重なるため隙間なし。
+  6. **ROP -> MC**: 直接配線。ROP ライトバックが MC にリクエストを発行すると `mc_unit_idle=0` となり、DRAM/L2 への全書き込みが完了するまで `pipe_busy_mask[0]`（`!mc_unit_idle`）が 1 を維持するため隙間なし。
+- **Top TB アサーション追加**:
+  - `sim/tb/atg_top_shade_tb.v`:
+    - `draw_active` フラグを追加し、`kc705.dut.draw_kick` から ROP の最後のメモリ書き込み完了までの区間において、`kc705.dut.pipe_busy_mask == 8'd0` となるサイクルが存在しないことを検証するアサーションを追加。
+- **単体検証結果**:
+  - `python3 tools/arith-lint.py --top atg_rx`: 0 operators (PASS)
+  - `./sim/run.sh atg_rx_pipeline atg_rx_ext_prim`: 100% PASS
+    - `PASS atg_rx_pipeline (235 s)`
+    - `PASS atg_rx_ext_prim (31 s)`
+
+
 

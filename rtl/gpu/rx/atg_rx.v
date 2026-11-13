@@ -274,7 +274,7 @@ module atg_rx #(
 		.ord_valid(ord_valid), .ord_seq(ord_seq)
 	);
 
-	assign busy = clip_busy || setup_busy || scan_busy || frag_busy;
+	assign busy = prim_pipe_valid || clip_busy || setup_busy || scan_busy || frag_busy;
 	assign fsm = {frag_busy, scan_busy, setup_busy, clip_busy};
 
 	wire unused_ok = &{1'b0, rx_prim_type, rx_line_width, rx_point_size, rx_viewport_idx};

@@ -41,6 +41,42 @@ module atg_top_shade_tb;
 		.clk(clk), .rst_n(rst_n), .finished(done_kc705), .errors(err_kc705)
 	);
 
+	/*
+	 * Assert that during the interval from DRAW kick until the last ROP memory write,
+	 * the pipeline busy mask (all units' busy OR checked by CP before FENCE)
+	 * never drops to zero.
+	 */
+	reg draw_active = 1'b0;
+	reg rop_has_written = 1'b0;
+	wire rop_mem_wr = kc705.dut.g_rop.rop.req_valid && kc705.dut.g_rop.rop.req_ready && kc705.dut.g_rop.rop.req_write;
+
+	always @(posedge clk) begin
+		if (!rst_n) begin
+			draw_active <= 1'b0;
+			rop_has_written <= 1'b0;
+		end else begin
+			if (kc705.dut.draw_kick) begin
+				draw_active <= 1'b1;
+				rop_has_written <= 1'b0;
+			end else if (draw_active && rop_has_written &&
+			             !kc705.dut.rop_busy && !kc705.dut.rx_busy &&
+			             !kc705.dut.su_busy && !kc705.dut.vf_busy) begin
+				draw_active <= 1'b0;
+			end
+
+			if (rop_mem_wr)
+				rop_has_written <= 1'b1;
+
+			if (draw_active) begin
+				if (kc705.dut.pipe_busy_mask == 8'd0) begin
+					$display("FAIL atg_top_shade: pipe_busy_mask == 0 while DRAW in flight (rop_has_written=%b, time=%0t)",
+						rop_has_written, $time);
+					$finish;
+				end
+			end
+		end
+	end
+
 	initial begin
 		repeat (4) @(posedge clk);
 		rst_n <= 1'b1;
