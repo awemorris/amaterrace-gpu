@@ -80,7 +80,7 @@
   - `python3 tools/arith-lint.py --top atg_cp`: 0 operators
 - **残り**: X5, X4, X6, X7, X8, X9, X3 (docs)
 
-### 2026-11-13T14:55:00+09:00: X5 実装・検証完了
+### 2026-11-13T14:55:00+09:00: X5 実装・検証完了 (commit `e2f2d0e3`)
 - **した事**:
   - `rtl/gpu/cp/atg_cp_ctl.v`:
     - (a) first-fault latch 実装:
