@@ -46,12 +46,41 @@ module atg_rx_clip_tb;
 		.pt_rdata(pt_rdata), .pt_busy(pt_busy), .pt_active(), .cl_valid(cl_valid), .cl_ready(cl_ready),
 		.cl_tri(cl_tri), .cl_last(cl_last), .busy(busy));
 
+	/* ENABLE_CPOLY = 0 instance */
+	reg nc_prim_valid = 1'b0, nc_prim_last = 1'b0;
+	reg [25:0] nc_prim_vtx = 26'd0;
+	reg [2:0] nc_prim_free = 3'd0;
+	wire nc_prim_ready, nc_pt_rd, nc_cl_valid, nc_cl_last, nc_busy;
+	wire [7:0] nc_pt_idx;
+	wire [6:0] nc_pt_word;
+	wire [701:0] nc_cl_tri;
+	reg nc_pt_busy = 1'b0, nc_cl_ready = 1'b1;
+	reg [31:0] nc_pt_pipe1 = 32'd0, nc_pt_pipe2 = 32'd0, nc_pt_rdata = 32'd0;
+
+	atg_rx_clip #(.ENABLE_CPOLY(0)) dut_nocpoly (
+		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx),
+		.st_wdata(st_wdata), .raw_kick(raw_kick),
+		.prim_valid(nc_prim_valid), .prim_ready(nc_prim_ready),
+		.prim_vtx(nc_prim_vtx), .prim_free(nc_prim_free),
+		.prim_last(nc_prim_last), .pt_rd(nc_pt_rd), .pt_idx(nc_pt_idx), .pt_word(nc_pt_word),
+		.pt_rdata(nc_pt_rdata), .pt_busy(nc_pt_busy), .pt_active(),
+		.cl_valid(nc_cl_valid), .cl_ready(nc_cl_ready),
+		.cl_tri(nc_cl_tri), .cl_last(nc_cl_last), .busy(nc_busy));
+
+	always @(posedge clk) begin
+		nc_pt_pipe1 <= pt[nc_pt_idx][nc_pt_word[1:0]];
+		nc_pt_pipe2 <= nc_pt_pipe1;
+		nc_pt_rdata <= nc_pt_pipe2;
+	end
+
 	reg [31:0] pt [0:255][0:3];
 	reg [701:0] exp_c [0:MAXC-1];
 	reg exp_l [0:MAXC-1];
 	reg exp_last [0:MAXC-1];	/* the last output of its primitive */
 	integer exp_n = 0, got = 0;
 	integer e_pass = 0, e_near = 0, e_raw = 0, e_busy = 0;
+	integer e_nocpoly = 0, e_guard_w = 0;
+	reg check_exp = 1'b0;
 	integer is_raw [0:MAXC-1];
 	integer is_near [0:MAXC-1];
 	integer sect_of [0:MAXC-1];	/* -1: rx_clip.txt; 0-7: rx_clip2.txt's section */
@@ -81,7 +110,7 @@ module atg_rx_clip_tb;
 		pt_pipe1 <= pt[pt_idx][pt_word[1:0]];
 		pt_pipe2 <= pt_pipe1;
 		pt_rdata <= pt_pipe2;
-		if (cl_valid && cl_ready) begin
+		if (check_exp && cl_valid && cl_ready) begin
 			if (got < exp_n && cl_tri[698:696] != 3'd0 && !exp_last[got]) begin
 				e_lu = e_lu + 1;
 				$display("FAIL atg_rx_clip: output %0d has last-use flags but is not its primitive's last", got);
@@ -116,6 +145,67 @@ module atg_rx_clip_tb;
 		end
 	endtask
 
+	reg nc_got_out;
+	task send_tri_both;
+		input [7:0] i0, i1, i2;
+		input exp_accept;
+		input exp_guard;
+		begin
+			nc_prim_valid <= 1'b1;
+			nc_prim_vtx <= {2'd2, i2, i1, i0};
+			nc_prim_free <= 3'd0;
+			nc_prim_last <= 1'b1;
+
+			prim_valid <= 1'b1;
+			prim_vtx <= {2'd2, i2, i1, i0};
+			prim_free <= 3'd0;
+			prim_last <= 1'b1;
+
+			@(posedge clk);
+			while (!prim_ready || !nc_prim_ready)
+				@(posedge clk);
+			prim_valid <= 1'b0;
+			nc_prim_valid <= 1'b0;
+			@(posedge clk);
+
+			nc_got_out = 1'b0;
+			while (busy || nc_busy) begin
+				if (nc_cl_valid && nc_cl_ready) begin
+					nc_got_out = 1'b1;
+					if (exp_accept) begin
+						if (nc_cl_tri[127:0] === {32'h3F800000, 32'd0, 32'd0, 32'd0} || nc_cl_tri[701:700] !== 2'd2) begin
+							e_nocpoly = e_nocpoly + 1;
+							$display("FAIL atg_rx_clip.nocpoly: triangle (%0d,%0d,%0d) dropped (got EMPTY %h)",
+								i0, i1, i2, nc_cl_tri[31:0]);
+						end
+					end else begin
+						if (nc_cl_tri[127:0] !== {32'h3F800000, 32'd0, 32'd0, 32'd0}) begin
+							e_nocpoly = e_nocpoly + 1;
+							$display("FAIL atg_rx_clip.nocpoly: triangle (%0d,%0d,%0d) expected drop but accepted nc_cl_tri[127:0]=%h",
+								i0, i1, i2, nc_cl_tri[127:0]);
+						end
+					end
+				end
+				@(posedge clk);
+			end
+			if (exp_accept && !nc_got_out) begin
+				e_nocpoly = e_nocpoly + 1;
+				$display("FAIL atg_rx_clip.nocpoly: triangle (%0d,%0d,%0d) no output produced", i0, i1, i2);
+			end
+
+			if (dut.r_guard !== exp_guard) begin
+				e_guard_w = e_guard_w + 1;
+				$display("FAIL atg_rx_clip.guard_w: triangle (%0d,%0d,%0d) r_guard got %b exp %b",
+					i0, i1, i2, dut.r_guard, exp_guard);
+			end
+			if (dut.r_accept !== exp_accept) begin
+				e_nocpoly = e_nocpoly + 1;
+				$display("FAIL atg_rx_clip.guard_w: triangle (%0d,%0d,%0d) dut.r_accept got %b exp %b",
+					i0, i1, i2, dut.r_accept, exp_accept);
+			end
+		end
+	endtask
+
 	initial begin
 		if (!$value$plusargs("seed=%d", seed))
 			seed = 1;
@@ -127,6 +217,38 @@ module atg_rx_clip_tb;
 		repeat (3) @(posedge clk);
 		rst_n <= 1'b1;
 		@(posedge clk);
+
+		/* Directed test: w-transitions across primitives and ENABLE_CPOLY=0 */
+		/* Triangle 0: right after reset (v2 w=0.25). Inside frustum */
+		pt[240][0] = 32'h3D4CCCCD; pt[240][1] = 32'h3D4CCCCD; pt[240][2] = 32'h3D4CCCCD; pt[240][3] = 32'h3E800000;
+		pt[241][0] = 32'hBD4CCCCD; pt[241][1] = 32'h3D4CCCCD; pt[241][2] = 32'h3D4CCCCD; pt[241][3] = 32'h3E800000;
+		pt[242][0] = 32'h00000000; pt[242][1] = 32'hBD4CCCCD; pt[242][2] = 32'h3D4CCCCD; pt[242][3] = 32'h3E800000;
+		send_tri_both(8'd240, 8'd241, 8'd242, 1'b1, 1'b0);
+
+		/* Triangle 1: last vertex w differs from previous (prev w=0.25, now w=2.0, x=1.5). Inside frustum */
+		pt[243][0] = 32'h3DCCCCCD; pt[243][1] = 32'h3DCCCCCD; pt[243][2] = 32'h3F000000; pt[243][3] = 32'h40000000;
+		pt[244][0] = 32'hBDCCCCCD; pt[244][1] = 32'h3DCCCCCD; pt[244][2] = 32'h3F000000; pt[244][3] = 32'h40000000;
+		pt[245][0] = 32'h3FC00000; pt[245][1] = 32'h3FC00000; pt[245][2] = 32'h3F000000; pt[245][3] = 32'h40000000;
+		send_tri_both(8'd243, 8'd244, 8'd245, 1'b1, 1'b0);
+
+		/* Triangle 2: last vertex w differs (prev w=2.0, now w=0.5, 4w=2.0, x=3.0). Outside guard band */
+		pt[246][0] = 32'h3DCCCCCD; pt[246][1] = 32'h3DCCCCCD; pt[246][2] = 32'h3DCCCCCD; pt[246][3] = 32'h3F000000;
+		pt[247][0] = 32'hBDCCCCCD; pt[247][1] = 32'h3DCCCCCD; pt[247][2] = 32'h3DCCCCCD; pt[247][3] = 32'h3F000000;
+		pt[248][0] = 32'h40400000; pt[248][1] = 32'h3DCCCCCD; pt[248][2] = 32'h3DCCCCCD; pt[248][3] = 32'h3F000000;
+		send_tri_both(8'd246, 8'd247, 8'd248, 1'b0, 1'b1);
+
+		/* Triangle 3: last vertex w differs (prev w=0.5, now w=1.0, x=0.5). Back inside frustum */
+		pt[249][0] = 32'h3DCCCCCD; pt[249][1] = 32'h3DCCCCCD; pt[249][2] = 32'h3DCCCCCD; pt[249][3] = 32'h3F800000;
+		pt[250][0] = 32'hBDCCCCCD; pt[250][1] = 32'h3DCCCCCD; pt[250][2] = 32'h3DCCCCCD; pt[250][3] = 32'h3F800000;
+		pt[251][0] = 32'h3F000000; pt[251][1] = 32'h3F000000; pt[251][2] = 32'h3DCCCCCD; pt[251][3] = 32'h3F800000;
+		send_tri_both(8'd249, 8'd250, 8'd251, 1'b1, 1'b0);
+
+		/* Reset DUTs prior to rx_clip.txt vector test */
+		rst_n <= 1'b0;
+		repeat (3) @(posedge clk);
+		rst_n <= 1'b1;
+		@(posedge clk);
+		check_exp <= 1'b1;
 		code = 1;
 		cnt = 0;
 		while (code > 0) begin
@@ -256,7 +378,7 @@ module atg_rx_clip_tb;
 			$display("PASS atg_rx_clip.clampw");
 		if (e_s[3] == 0)
 			$display("PASS atg_rx_clip.wneg");
-		if (e_s[4] == 0)
+		if (e_s[4] == 0 && e_guard_w == 0)
 			$display("PASS atg_rx_clip.guard");
 		if (e_s[5] == 0)
 			$display("PASS atg_rx_clip.guardline");
@@ -264,8 +386,10 @@ module atg_rx_clip_tb;
 			$display("PASS atg_rx_clip.lastuse");
 		if (e_s[7] == 0)
 			$display("PASS atg_rx_clip.discard");
+		if (e_nocpoly == 0)
+			$display("PASS atg_rx_clip.nocpoly");
 		if (e_pass + e_near + e_raw + e_busy + e_lu + e_s[0] + e_s[1] + e_s[2] + e_s[3] +
-			e_s[4] + e_s[5] + e_s[6] + e_s[7] == 0)
+			e_s[4] + e_s[5] + e_s[6] + e_s[7] + e_nocpoly + e_guard_w == 0)
 			$display("PASS atg_rx_clip");
 		$finish;
 	end

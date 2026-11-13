@@ -353,7 +353,7 @@
 	wire [2:0] ta = t0 & (nv == 2'd1 ? 3'b111 : t1) & (nv == 2'd3 ? t2 : 3'b111);
 	wire accept = &ta;
 	wire guard = !ta[2];
-	(* max_fanout = 16 *) reg [1:0] triv_step;
+	(* max_fanout = 16 *) reg [2:0] triv_step;
 	reg [2:0] r_t0;
 	reg r_accept, r_guard;
 
@@ -478,17 +478,17 @@
 	assign busy = (st != S_IDLE);
 
 	/* Pre-computed next control signals for ld_data and o0/o1/o2 slices */
-	wire ld_trig_triv = (st == S_TRIV) && (triv_step == 2'd2);
+	wire ld_trig_triv = (st == S_TRIV) && (triv_step == 3'd3);
 	wire ld_trig_load = (st == S_LOAD) && !ld_we && !r_ld_we_s[0] && (ld1 < {2'd0, nv});
 	wire ld_we_nxt = !rst_sync && (ld_trig_triv || ld_trig_load);
 	wire [1:0] ld_sel_nxt = (st == S_TRIV) ? 2'd0 : ((r_ld_idx == 4'd0) ? 2'd1 : 2'd2);
 
 	wire out_raw_trig   = (st == S_IDLE) && raw_kick;
 	wire out_disc_trig  = (st == S_IDLE) && !raw_kick && prim_valid && discard;
-	wire out_pt_ok      = (st == S_TRIV) && (triv_step == 2'd3) && (kind == 2'd0) && (r_t0[1:0] == 2'b11);
-	wire out_pt_drop    = (st == S_TRIV) && (triv_step == 2'd3) && (kind == 2'd0) && (r_t0[1:0] != 2'b11);
-	wire out_triv_acc   = (st == S_TRIV) && (triv_step == 2'd3) && (kind != 2'd0) && r_accept;
-	wire out_poly_drop  = !ENABLE_CPOLY && (st == S_TRIV) && (triv_step == 2'd3) && (kind != 2'd0) && !r_accept;
+	wire out_pt_ok      = (st == S_TRIV) && (triv_step == 3'd4) && (kind == 2'd0) && (r_t0[1:0] == 2'b11);
+	wire out_pt_drop    = (st == S_TRIV) && (triv_step == 3'd4) && (kind == 2'd0) && (r_t0[1:0] != 2'b11);
+	wire out_triv_acc   = (st == S_TRIV) && (triv_step == 3'd4) && (kind != 2'd0) && r_accept;
+	wire out_poly_drop  = !ENABLE_CPOLY && (st == S_TRIV) && (triv_step == 3'd4) && (kind != 2'd0) && !r_accept;
 	wire out_cwait_drop = (st == S_CWAIT) && cp_done && (n_out == 4'd0);
 	wire out_all_trig   = out_raw_trig || out_disc_trig || out_pt_ok || out_pt_drop || out_triv_acc || out_poly_drop || out_cwait_drop;
 
@@ -560,7 +560,7 @@
 			cl_valid <= 1'b0;
 			cl_last <= 1'b0;
 			cmd_valid <= 1'b0;
-			triv_step <= 2'd0;
+			triv_step <= 3'd0;
 			r_t0 <= 3'd0;
 			r_accept <= 1'b0;
 			r_guard <= 1'b0;
@@ -591,20 +591,22 @@
 			if (pt_rd)
 				rd_n <= rd_n1;
 			if (rd_v3 && rd_k3 == rd_lim_m1) begin
-				triv_step <= 2'd0;
+				triv_step <= 3'd0;
 				st <= S_TRIV;
 			end
 		end
 		S_TRIV: begin
-			if (triv_step != 2'd3) begin
-				triv_step <= {triv_step[1] ^ triv_step[0], ~triv_step[0]};
-				if (triv_step == 2'd2) begin
+			if (triv_step != 3'd4) begin
+				triv_step <= {triv_step[2] ^ (triv_step[1] & triv_step[0]),
+				              triv_step[1] ^ triv_step[0],
+				              ~triv_step[0]};
+				if (triv_step == 3'd3) begin
 					r_t0 <= t0;
 					r_accept <= accept;
 					r_guard <= guard;
 				end
 			end else begin
-				triv_step <= 2'd0;
+				triv_step <= 3'd0;
 				if (kind == 2'd0) begin
 					/* a point: planes 0-2 only */
 					if (r_t0[1:0] != 2'b11)
