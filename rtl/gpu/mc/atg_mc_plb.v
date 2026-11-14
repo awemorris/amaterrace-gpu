@@ -137,8 +137,12 @@ module atg_mc_plb #(
 		for (k = 0; k < PLB; k = k + 1)
 			rr_hot[k] = {{(32 - PLB_W){1'b0}}, pl_rr} == k;
 
-	always @(posedge clk) begin
-		if (!rst_n || flush || !en) begin
+/* verilator lint_off SYNCASYNCNET */
+	wire plb_rst = !rst_n || flush || !en;
+/* verilator lint_on SYNCASYNCNET */
+
+	always @(posedge clk or posedge plb_rst) begin
+		if (plb_rst) begin
 			pl_v <= {PLB{1'b0}};
 			pl_rr <= {PLB_W{1'b0}};
 		end else begin

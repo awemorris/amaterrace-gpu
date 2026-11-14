@@ -168,7 +168,7 @@ module atg_mc_coalesce #(
 
 	integer i;
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
 			active_line <= {LA_W{1'b0}};

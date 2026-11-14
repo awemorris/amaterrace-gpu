@@ -51,8 +51,12 @@ module atg_mc_grant #(
 	reg [NGRANT*21-1:0] e_limit;
 	integer k;
 
-	always @(posedge clk) begin
-		if (!rst_n || flush) begin
+/* verilator lint_off SYNCASYNCNET */
+	wire grant_rst = !rst_n || flush;
+/* verilator lint_on SYNCASYNCNET */
+
+	always @(posedge clk or posedge grant_rst) begin
+		if (grant_rst) begin
 			e_valid <= {NGRANT{1'b0}};
 		end else if (w_valid) begin
 			e_valid[w_idx] <= w_data[0];

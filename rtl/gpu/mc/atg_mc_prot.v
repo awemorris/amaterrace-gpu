@@ -388,8 +388,12 @@ module atg_mc_prot #(
 
 	/* ------------------------------------------- Pipeline control */
 
-	always @(posedge clk) begin
-		if (!rst_n || flush || !P) begin
+/* verilator lint_off SYNCASYNCNET */
+	wire prot_rst = !rst_n || flush || !P;
+/* verilator lint_on SYNCASYNCNET */
+
+	always @(posedge clk or posedge prot_rst) begin
+		if (prot_rst) begin
 			j2_v <= 1'b0;
 		end else begin
 			if (j2_v && chg) begin
@@ -414,8 +418,8 @@ module atg_mc_prot #(
 
 	/* ------------------------------------------- J and P registers */
 
-	always @(posedge clk) begin
-		if (!rst_n || flush || !P) begin
+	always @(posedge clk or posedge prot_rst) begin
+		if (prot_rst) begin
 			j_v <= 1'b0;
 			p_v <= 1'b0;
 			p_walk <= 1'b0;

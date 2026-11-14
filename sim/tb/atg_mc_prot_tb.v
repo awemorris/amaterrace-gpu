@@ -379,7 +379,7 @@ module atg_mc_prot_tb;
 		.c_req_tag(c_req_tag), .c_req_chk(c_req_chk), .c_req_tbl(c_req_tbl),
 		.c_req_slot(c_req_slot), .rsp_valid(rsp_valid), .rsp_write(rsp_write),
 		.rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata), .rsp_error(rsp_error),
-		.quiesce(1'b0), .flush(1'b0),
+		.quiesce(1'b0), .flush(1'b0), .l2_flush(1'b0),
 		.aperture_base(ap_base), .aperture_limit(ap_limit),
 		.axi_idle(axi_idle), .fault(fault), .fault_client(fault_client),
 		.fault_addr(fault_addr), .fault_write(fault_write), .fault_prot(fault_prot),

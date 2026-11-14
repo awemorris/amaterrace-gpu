@@ -401,7 +401,7 @@ module atg_mc_l2 #(
 
 	/* Main state machine */
 	integer init_s, init_w;
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
 			saved_state <= S_IDLE;
