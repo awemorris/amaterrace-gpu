@@ -27,6 +27,7 @@ module atg_cpu #(
 ) (
 	input wire clk,
 	input wire rst_n,
+	input wire por_n,
 	/* HCR register snoop (from atg_cp_regs) */
 	input wire hcr_we,
 	input wire [9:0] hcr_widx,
@@ -168,7 +169,7 @@ module atg_cpu #(
 	);
 
 	atg_cpu_fw fw (
-		.clk(clk), .rst_n(rst_n),
+		.clk(clk), .rst_n(rst_n), .por_n(por_n),
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
 		.sb_we(sb_we), .sb_re(sb_re), .sb_idx(sb_idx), .sb_wdata(sb_wdata), .sb_rdata(fw_rdata),

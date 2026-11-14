@@ -41,6 +41,7 @@ module atg_mc_asm #(
 	wire head_en = t_valid && t_ready && !hdr;
 	wire data_en = t_valid && hdr;
 
+/* verilator lint_off SYNCASYNCNET */
 `ifdef SYNTH_KINTEX7
 	(* keep = "true", dont_touch = "true" *) wire asm_rst_sync;
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hD)) u_asm_rst (
@@ -49,8 +50,9 @@ module atg_mc_asm #(
 `else
 	wire asm_rst_sync = !rst_n || flush;
 `endif
+/* verilator lint_on SYNCASYNCNET */
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge asm_rst_sync) begin
 		if (asm_rst_sync) begin
 			hdr <= 1'b0;
 			full <= 1'b0;
@@ -105,13 +107,15 @@ module atg_mc_asm #(
 			end
 		end
 	endgenerate
-	always @(posedge clk) begin
-		if (head_en_b[0])
+	always @(posedge clk or posedge asm_rst_sync) begin
+		if (asm_rst_sync)
+			ap_ok <= 1'b0;
+		else if (head_en_b[0])
 			ap_ok <= t_ap;
 	end
 `else
-	always @(posedge clk) begin
-		if (!rst_n || flush) begin
+	always @(posedge clk or posedge asm_rst_sync) begin
+		if (asm_rst_sync) begin
 			head <= {LINE_BYTES*8{1'b0}};
 			data <= {LINE_BYTES*8{1'b0}};
 			ap_ok <= 1'b0;

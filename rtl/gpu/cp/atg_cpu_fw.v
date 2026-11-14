@@ -31,6 +31,7 @@
 module atg_cpu_fw (
 	input wire clk,
 	input wire rst_n,
+	input wire por_n,
 	/* HCR register snoop (from atg_cp_regs) */
 	input wire hcr_we,
 	input wire [9:0] hcr_widx,
@@ -160,20 +161,28 @@ module atg_cpu_fw (
 		end
 	end
 
-	/* The kept registers: host writes only. */
-	always @(posedge clk) begin
-		if (hcr_we && hcr_widx == R_IBASE)
-			ibase <= ((ibase & hw_keep) | hw_new);
-		if (hcr_we && hcr_widx == R_IWORDS)
-			iwords <= ((iwords & hw_keep) | hw_new);
-		if (hcr_we && hcr_widx == R_DBASE)
-			dbase <= ((dbase & hw_keep) | hw_new);
-		if (hcr_we && hcr_widx == R_DWORDS)
-			dwords <= ((dwords & hw_keep) | hw_new);
-		if (load_go)
-			ready <= 1'b0;
-		else if (state == S_LOAD_D && ld_done && !ld_error)
+	/* The kept registers: host writes only. Initialized by board reset (por_n). */
+	always @(posedge clk or negedge por_n) begin
+		if (!por_n) begin
+			ibase <= 32'd0;
+			iwords <= 32'd0;
+			dbase <= 32'd0;
+			dwords <= 32'd0;
 			ready <= 1'b1;
+		end else begin
+			if (hcr_we && hcr_widx == R_IBASE)
+				ibase <= ((ibase & hw_keep) | hw_new);
+			if (hcr_we && hcr_widx == R_IWORDS)
+				iwords <= ((iwords & hw_keep) | hw_new);
+			if (hcr_we && hcr_widx == R_DBASE)
+				dbase <= ((dbase & hw_keep) | hw_new);
+			if (hcr_we && hcr_widx == R_DWORDS)
+				dwords <= ((dwords & hw_keep) | hw_new);
+			if (load_go)
+				ready <= 1'b0;
+			else if (state == S_LOAD_D && ld_done && !ld_error)
+				ready <= 1'b1;
+		end
 	end
 
 	always @(posedge clk or negedge rst_n) begin

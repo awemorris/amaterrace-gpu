@@ -74,7 +74,7 @@ module atg_cpu_tb;
 		.ADDR_W(32), .LINE_BYTES(LB), .LINE_SHIFT(LS),
 		.IMEM_INIT("sim/tb/cpu/cpu_top.imem.hex"), .DMEM_INIT("sim/tb/cpu/cpu_top.dmem.hex")
 	) dut (
-		.clk(clk), .rst_n(rst_n),
+		.clk(clk), .rst_n(rst_n), .por_n(rst_n),
 		.fw_side(), .sb_we(), .sb_re(), .sb_idx(), .sb_wdata(), .prot_rdata(32'd0),
 		.v_slot(6'd0), .req_chk(), .req_tbl(), .req_slot(),
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),

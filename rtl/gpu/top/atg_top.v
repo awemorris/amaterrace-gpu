@@ -933,7 +933,7 @@ module atg_top #(
 			.IMEM_WORDS(CPU_IMEM_WORDS), .DMEM_WORDS(CPU_DMEM_WORDS),
 			.IMEM_INIT(CPU_IMEM_INIT), .DMEM_INIT(CPU_DMEM_INIT)
 		) cpu (
-			.clk(clk), .rst_n(core_rst_n),
+			.clk(clk), .rst_n(core_rst_n), .por_n(rst_n),
 			.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata),
 			.hcr_wmask(hcr_wmask), .hcr_ridx(hcr_ridx), .hcr_rdata(cpu_hcr_rdata),
 			.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag),

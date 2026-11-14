@@ -64,7 +64,7 @@ module atg_mc_atom_chk #(
 	) dut (
 		.clk(clk), .rst_n(rst_n),
 		.at_valid(at_valid), .at_ready(at_ready), .at_op(at_op), .at_addr(at_addr),
-		.at_a(at_a), .at_b(at_b), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
+		.at_a(at_a), .at_b(at_b), .at_stage(4'd0), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
 		.at_error(at_error), .busy(busy),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 		.req_line(req_line), .req_be(req_be), .req_wdata(req_wdata), .req_tag(req_tag),

@@ -176,9 +176,11 @@ module atg_mc_tree #(
 
 			(* dont_touch = "true" *) reg data_phase;
 			(* dont_touch = "true" *) reg data_phase_d;
+/* verilator lint_off SELRANGE */
 			wire outside_c = (VRAM_AW < ADDR_W) ?
 				(c_req_line[c*LA_W + LAW_C +: (LA_W - LAW_C > 0 ? LA_W - LAW_C : 1)] !=
 				 VRAM_BASE[ADDR_W-1 : (VRAM_AW < ADDR_W ? VRAM_AW : 0)]) : 1'b0;
+/* verilator lint_on SELRANGE */
 			wire [HW_C-1:0] header_c = {
 				c_req_slot[c*6 +: 6], c_req_tbl[c], c_req_be[c*LINE_BYTES +: LINE_BYTES],
 				c_req_line[c*LA_W +: LAW_C], CRT_C, C8, c_req_tag[c*8 +: 8],

@@ -108,7 +108,9 @@ module atg_mc #(
 	parameter L2_SET_W = 8
 ) (
 	input wire clk,
+/* verilator lint_off SYNCASYNCNET */
 	input wire rst_n,
+/* verilator lint_on SYNCASYNCNET */
 
 	input wire [NCLIENT-1:0] c_req_valid,
 	output wire [NCLIENT-1:0] c_req_ready,
@@ -228,7 +230,7 @@ module atg_mc #(
 		(~({{(NCLIENT-1){1'b0}}, 1'b1} << RC) & ~{{(NCLIENT-1){1'b0}}, 1'b1}) : {NCLIENT{1'b0}};
 
 	reg [NCLIENT-1:0] tree_hold_r;
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n)
 			tree_hold_r <= {NCLIENT{1'b0}};
 		else
@@ -247,7 +249,7 @@ module atg_mc #(
 
 	reg [NCLIENT-1:0] c_req_ready_r;
 	reg m_bready_r;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge mc_rst_sync) begin
 		if (mc_rst_sync) begin
 			c_req_ready_r <= {NCLIENT{1'b0}};
 			m_bready_r <= 1'b0;
@@ -470,7 +472,7 @@ module atg_mc #(
 	reg [LA_W-1:0] bad_line_r;
 	reg bad_prot_r, bad_mem_r;
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			bad_r <= 1'b0;
 			bad_head_r <= {HPW{1'b0}};
@@ -494,7 +496,7 @@ module atg_mc #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_el2 (.I0(err_load_raw), .O(err_load_b[2]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_el3 (.I0(err_load_raw), .O(err_load_b[3]));
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge mc_rst_sync) begin
 		if (mc_rst_sync) begin
 			err_v <= 1'b0;
 			fault <= 1'b0;
@@ -508,29 +510,42 @@ module atg_mc #(
 			end
 		end
 	end
-	always @(posedge clk) begin
-		if (err_load_b[0]) begin
-			err_route <= bad_head_r[20 +: RW];
-			err_tag <= bad_head_r[11:4];
-			err_write <= bad_head_r[1];
-		end
-		if (err_load_b[1]) begin
-			fault_client <= bad_head_r[19:12];
-			fault_write <= bad_head_r[1];
-			fault_prot <= bad_prot_r;
-			fault_slot <= bad_head_r[HW+1 +: 6];
-			fault_mem <= bad_mem_r;
-			fault_tag <= bad_head_r[11:4];
-		end
-		if (err_load_b[2]) begin
-			fault_addr[15:0] <= {bad_line_r[15-LINE_SHIFT:0], {LINE_SHIFT{1'b0}}};
-		end
-		if (err_load_b[3]) begin
-			fault_addr[ADDR_W-1:16] <= bad_line_r[LA_W-1:16-LINE_SHIFT];
+	always @(posedge clk or posedge mc_rst_sync) begin
+		if (mc_rst_sync) begin
+			err_route <= {RW{1'b0}};
+			err_tag <= 8'd0;
+			err_write <= 1'b0;
+			fault_client <= 8'd0;
+			fault_write <= 1'b0;
+			fault_prot <= 1'b0;
+			fault_slot <= 6'd0;
+			fault_mem <= 1'b0;
+			fault_tag <= 8'd0;
+			fault_addr <= {ADDR_W{1'b0}};
+		end else begin
+			if (err_load_b[0]) begin
+				err_route <= bad_head_r[20 +: RW];
+				err_tag <= bad_head_r[11:4];
+				err_write <= bad_head_r[1];
+			end
+			if (err_load_b[1]) begin
+				fault_client <= bad_head_r[19:12];
+				fault_write <= bad_head_r[1];
+				fault_prot <= bad_prot_r;
+				fault_slot <= bad_head_r[HW+1 +: 6];
+				fault_mem <= bad_mem_r;
+				fault_tag <= bad_head_r[11:4];
+			end
+			if (err_load_b[2]) begin
+				fault_addr[15:0] <= {bad_line_r[15-LINE_SHIFT:0], {LINE_SHIFT{1'b0}}};
+			end
+			if (err_load_b[3]) begin
+				fault_addr[ADDR_W-1:16] <= bad_line_r[LA_W-1:16-LINE_SHIFT];
+			end
 		end
 	end
 `else
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			err_v <= 1'b0;
 			err_route <= {RW{1'b0}};
@@ -702,9 +717,11 @@ module atg_mc #(
 	wire [AX_SKW-1:0] ax_ar_in_data = {ax_q_id, axi_req_line};
 	wire [AX_SKW-1:0] ax_ar_out_data;
 
-	wire ax_w_other = (AX_NID == 2) ? (ax_q_id ? ax_wq_has[0] : ax_wq_has[1]) :
+	wire [1:0] ax_wq_has_w = {1'b0, ax_wq_has};
+	wire [1:0] ax_rq_has_w = {1'b0, ax_rq_has};
+	wire ax_w_other = (AX_NID == 2) ? (ax_q_id ? ax_wq_has_w[0] : ax_wq_has_w[1]) :
 		|(ax_wq_has & ~({{(AX_NID-1){1'b0}}, 1'b1} << ax_q_id));
-	wire ax_r_other = (AX_NID == 2) ? (ax_q_id ? ax_rq_has[0] : ax_rq_has[1]) :
+	wire ax_r_other = (AX_NID == 2) ? (ax_q_id ? ax_rq_has_w[0] : ax_rq_has_w[1]) :
 		|(ax_rq_has & ~({{(AX_NID-1){1'b0}}, 1'b1} << ax_q_id));
 	wire ax_wr_can = ax_aw_in_ready && !ax_w_busy && ax_wq_rdy[ax_q_id] && !ax_w_other;
 	wire ax_rd_can = ax_ar_in_ready && ax_rq_rdy[ax_q_id] && !ax_r_other;
@@ -785,7 +802,7 @@ module atg_mc #(
 	assign ax_aw_in_ready = aw_sk_in_rdy;
 	assign ax_aw_out_valid = aw_sk_out_val;
 	assign ax_aw_out_data = aw_sk_out_d;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge mc_rst_sync1) begin
 		if (mc_rst_sync1) begin
 			aw_sk_in_rdy <= 1'b1;
 			aw_sk_out_val <= 1'b0;
@@ -843,7 +860,7 @@ module atg_mc #(
 	assign ax_ar_in_ready = ar_sk_in_rdy;
 	assign ax_ar_out_valid = ar_sk_out_val;
 	assign ax_ar_out_data = ar_sk_out_d;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge mc_rst_sync1) begin
 		if (mc_rst_sync1) begin
 			ar_sk_in_rdy <= 1'b1;
 			ar_sk_out_val <= 1'b0;
@@ -963,7 +980,7 @@ module atg_mc #(
 				assign wq_entry_match[g_fe] = wq_full[g_fe] && (wq_keys[g_fe*8 +: 8] == axi_req_key);
 			end
 			assign ax_wq_has[g_id] = |wq_entry_match;
-			always @(posedge clk) begin
+			always @(posedge clk or posedge mc_rst_sync2) begin
 				if (mc_rst_sync2) begin
 					wq_wp <= {(AX_O + 1){1'b0}};
 					wq_rp <= {(AX_O + 1){1'b0}};
@@ -1004,7 +1021,7 @@ module atg_mc #(
 					(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wm (.I0(wq_hit_w), .O(wq_we_m));
 					(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wk (.I0(wq_hit_w), .O(wq_we_k));
 				end
-				always @(posedge clk) begin
+				always @(posedge clk or posedge mc_rst_sync2) begin
 					if (mc_rst_sync2) begin
 						wq_full[g_fe] <= 1'b0;
 					end else begin
@@ -1046,7 +1063,7 @@ module atg_mc #(
 				assign rq_entry_match[g_fe] = rq_full[g_fe] && (rq_keys[g_fe*8 +: 8] == axi_req_key);
 			end
 			assign ax_rq_has[g_id] = |rq_entry_match;
-			always @(posedge clk) begin
+			always @(posedge clk or posedge mc_rst_sync2) begin
 				if (mc_rst_sync2) begin
 					rq_wp <= {(AX_O + 1){1'b0}};
 					rq_rp <= {(AX_O + 1){1'b0}};
@@ -1087,7 +1104,7 @@ module atg_mc #(
 					(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wm (.I0(rq_hit_w), .O(rq_we_m));
 					(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wk (.I0(rq_hit_w), .O(rq_we_k));
 				end
-				always @(posedge clk) begin
+				always @(posedge clk or posedge mc_rst_sync2) begin
 					if (mc_rst_sync2) begin
 						rq_full[g_fe] <= 1'b0;
 					end else begin
@@ -1125,7 +1142,7 @@ module atg_mc #(
 					end
 				end
 			end
-			always @(posedge clk) begin
+			always @(posedge clk or posedge mc_rst_sync2) begin
 				if (mc_rst_sync2)
 					r_err <= 1'b0;
 				else if (me_r)
@@ -1205,7 +1222,7 @@ module atg_mc #(
 		end
 	endgenerate
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge mc_rst_sync1) begin
 		if (mc_rst_sync1) begin
 			ax_w_busy <= 1'b0;
 			ax_w_beat <= 8'd0;
@@ -1242,16 +1259,19 @@ module atg_mc #(
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_rhe (
 		.I0(ax_r_done), .I1(ax_b_fire), .O(ax_rsp_hdr_en)
 	);
-	always @(posedge clk) begin
+	always @(posedge clk or posedge mc_rst_sync) begin
 		if (mc_rst_sync) begin
 			ax_rsp_valid_r <= 1'b0;
+			ax_rsp_write_r <= 1'b0;
+			ax_rsp_user_r <= {UW{1'b0}};
+			ax_rsp_error_r <= 1'b0;
 		end else begin
 			ax_rsp_valid_r <= ax_r_done || ax_b_fire;
-		end
-		if (ax_rsp_hdr_en) begin
-			ax_rsp_write_r <= !ax_r_done;
-			ax_rsp_user_r <= ax_r_done_u ? ax_rq_user[ax_r_id*UW +: UW] : ax_wq_user[ax_b_id*UW +: UW];
-			ax_rsp_error_r <= ax_r_done ? (ax_r_errs[ax_r_id] | m_rresp[1]) : m_bresp[1];
+			if (ax_rsp_hdr_en) begin
+				ax_rsp_write_r <= !ax_r_done;
+				ax_rsp_user_r <= ax_r_done_u ? ax_rq_user[ax_r_id*UW +: UW] : ax_wq_user[ax_b_id*UW +: UW];
+				ax_rsp_error_r <= ax_r_done ? (ax_r_errs[ax_r_id] | m_rresp[1]) : m_bresp[1];
+			end
 		end
 	end
 	wire unused_ax_ok = &{1'b0, unused_ax_wb_co, m_bresp[0], m_rresp[0]};

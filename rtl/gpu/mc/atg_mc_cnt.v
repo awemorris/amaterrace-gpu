@@ -68,7 +68,7 @@ module atg_mc_cnt #(
 
 	reg [NCLIENT-1:0] take_s, take_chk_s, rsp_s;
 	reg done_s, done_chk_s, done_keep_s, ax_inc_s, ax_dec_s;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge cnt_flush_rst_sync) begin
 		if (cnt_flush_rst_sync) begin
 			take_s      <= {NCLIENT{1'b0}};
 			take_chk_s  <= {NCLIENT{1'b0}};
@@ -84,6 +84,9 @@ module atg_mc_cnt #(
 			done_chk_s  <= done_chk;
 			done_keep_s <= done_keep;
 		end
+	end
+
+	always @(posedge clk or posedge cnt_rst_sync) begin
 		if (cnt_rst_sync) begin
 			ax_inc_s <= 1'b0;
 			ax_dec_s <= 1'b0;
@@ -93,8 +96,10 @@ module atg_mc_cnt #(
 		end
 	end
 `else
+/* verilator lint_off SYNCASYNCNET */
 	wire cnt_flush_rst_sync = !rst_n || flush;
 	wire cnt_rst_sync = !rst_n;
+/* verilator lint_on SYNCASYNCNET */
 	wire [NCLIENT-1:0] take_s     = take;
 	wire [NCLIENT-1:0] take_chk_s = take_chk;
 	wire [NCLIENT-1:0] rsp_s      = rsp;
@@ -168,7 +173,7 @@ module atg_mc_cnt #(
 	am_add #(.W(8)) chk_add (.a(chk_n), .b(tc_n), .ci(1'b0), .s(chk_nx), .co(cnt_co[1]));
 	am_add #(.W(10)) unit_add (.a(unit_n), .b(u_delta), .ci(1'b0), .s(unit_nx), .co(cnt_co[2]));
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge cnt_flush_rst_sync) begin
 		if (cnt_flush_rst_sync) begin
 			pend <= 8'd0;
 			chk_n <= 8'd0;
@@ -193,7 +198,7 @@ module atg_mc_cnt #(
 		.a(ax_n), .b({8{ax_dec_s}}), .ci(ax_inc_s), .s(ax_next), .co(ax_co_unused)
 	);
 
-	always @(posedge clk)
+	always @(posedge clk or posedge cnt_rst_sync)
 		if (cnt_rst_sync)
 			ax_n <= 8'd0;
 		else

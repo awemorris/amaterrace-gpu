@@ -24,6 +24,7 @@ module atg_cpu_fw_tb;
 
 	reg clk = 1'b0;
 	reg rst_n = 1'b0;
+	reg por_n = 1'b0;
 	reg hcr_we = 1'b0;
 	reg [9:0] hcr_widx = 0, hcr_ridx = 0;
 	reg [31:0] hcr_wdata = 0, hcr_wmask = 0;
@@ -56,7 +57,7 @@ module atg_cpu_fw_tb;
 	always #5 clk = !clk;
 
 	atg_cpu_fw dut (
-		.clk(clk), .rst_n(rst_n),
+		.clk(clk), .rst_n(rst_n), .por_n(por_n),
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
 		.sb_we(sb_we), .sb_re(sb_re), .sb_idx(sb_idx), .sb_wdata(sb_wdata), .sb_rdata(sb_rdata),
@@ -181,6 +182,7 @@ module atg_cpu_fw_tb;
 			;
 		repeat (3) @(negedge clk);
 		rst_n = 1'b1;
+		por_n = 1'b1;
 
 		/* regs */
 		e0 = errors;

@@ -123,8 +123,6 @@ module atg_cp_prot #(
 	localparam [9:0] I_CAPS = REG_OFF[11:2];
 	localparam [9:0] I_TABLE = REG_OFF[11:2] + 10'd1;
 	localparam [9:0] I_TBYTES = REG_OFF[11:2] + 10'd2;
-	localparam [9:0] I_AP_BASE = GHCI_LEGACY_APERTURE_BASE[11:2];
-	localparam [9:0] I_AP_LIMIT = GHCI_LEGACY_APERTURE_LIMIT[11:2];
 
 	localparam [5:0] W_SLOT = 6'h28;
 	localparam [5:0] W_INV_G = 6'h29;
@@ -376,9 +374,7 @@ module atg_cp_prot #(
 		end else begin
 			inv_p <= 1'b0;
 			gw_p <= 1'b0;
-			if (hcr_we && (hcr_widx == I_AP_BASE || hcr_widx == I_AP_LIMIT))
-				tbase <= {ADDR_W{1'b0}};
-			else if (hcr_we && hcr_widx == I_TABLE && n_slots == 7'd0)
+			if (hcr_we && hcr_widx == I_TABLE && n_slots == 7'd0)
 				tbase <= ((tbase & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) &
 					~{{(ADDR_W-12){1'b0}}, 12'hFFF};
 			if (sb_we) begin

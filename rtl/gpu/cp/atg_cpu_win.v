@@ -44,7 +44,9 @@ module atg_cpu_win #(
 	parameter UOP_DEPTH_LOG2 = 4	/* UOP_FIFO depth log2 (16 dwords) */
 ) (
 	input wire clk,
+/* verilator lint_off SYNCASYNCNET */
 	input wire rst_n,
+/* verilator lint_on SYNCASYNCNET */
 	/* Core data port */
 	input wire d_valid,
 	input wire d_write,
@@ -213,8 +215,14 @@ module atg_cpu_win #(
 			d_rdata = 32'd0;
 	end
 
-	always @(posedge clk) begin
-		if (take) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			q_idx <= 6'd0;
+			q_wdata <= 32'd0;
+			q_write <= 1'b0;
+			q_addr <= 32'd0;
+			q_be <= 4'd0;
+		end else if (take) begin
 			q_idx <= idx;
 			q_wdata <= d_wdata;
 			q_write <= d_write;
@@ -223,7 +231,7 @@ module atg_cpu_win #(
 		end
 	end
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
 			q_dmem <= 1'b0;

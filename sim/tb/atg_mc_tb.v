@@ -293,7 +293,7 @@ module atg_mc_case #(
 		.c_req_tag(c_req_tag), .c_req_chk({N{1'b0}}), .c_req_tbl({N{1'b0}}),
 		.c_req_slot({6*N{1'b0}}), .rsp_valid(rsp_valid), .rsp_write(rsp_write),
 		.rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata), .rsp_error(rsp_error),
-		.quiesce(quiesce), .flush(flush),
+		.quiesce(quiesce), .flush(flush), .l2_flush(1'b0),
 		.aperture_base(32'h00002000), .aperture_limit(32'h00080000),
 		.axi_idle(axi_idle), .fault(fault), .fault_client(fault_client),
 		.fault_addr(fault_addr), .fault_write(fault_write), .fault_prot(), .fault_slot(),

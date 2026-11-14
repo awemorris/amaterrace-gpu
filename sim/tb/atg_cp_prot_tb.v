@@ -10,8 +10,8 @@
  * (spec/gpu/cp/atg_cp_prot.md), the module alone, driven as the
  * sequencer, the CPU's window and the host would.  Groups (each prints
  * PASS atg_cp_prot.GROUP):
- *   regs    PROT_CAPS, PROT_TABLE (aligned, kept while a slot is mapped,
- *           0 after an aperture write), PROT_TABLE_BYTES, PROT_INFO
+ *   regs    PROT_CAPS, PROT_TABLE (aligned, kept while a slot is mapped),
+ *           PROT_TABLE_BYTES, PROT_INFO
  *   slots   PROT_SLOT: SLOT_MAP (tag 0 stays 0), v_slot, SLOT_TAG (fault_tag)
  *   uslot   the µop's slot: a ring µop's from SLOT_MAP, a firmware µop's from
  *           its side; f_chk only for a firmware µop that is not SELF
@@ -250,9 +250,6 @@ module atg_cp_prot_tb;
 		check(v == 32'h00123000, "PROT_TABLE aligned");
 		sr(6'h2E, v);
 		check(v[1:0] == 2'b11 && v[13:8] == 6'd31 && v[31:16] == 16'd64, "PROT_INFO");
-		hw(12'h060, 32'h00000800);
-		hr(12'h1D4, v);
-		check(v == 32'd0, "aperture clears PROT_TABLE");
 		hw(12'h1D4, 32'h00200000);
 		sw(6'h28, {18'd0, 6'd3, 8'd5});	/* tag 5 -> slot 3 */
 		hw(12'h1D4, 32'h00300000);

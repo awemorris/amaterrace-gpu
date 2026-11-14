@@ -134,11 +134,20 @@ module atg_mc_atom #(
 	wire [31:0] rword = rsp_rdata[rwi*32 +: 32];
 
 	reg [1:0] rstage;
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			st <= IDLE;
 			rr <= {AW{1'b0}};
+			rk <= {AW{1'b0}};
 			rstage <= 2'd0;
+			rop <= 4'd0;
+			rline <= {LA_W{1'b0}};
+			rwi <= {WW{1'b0}};
+			ra <= 32'd0;
+			rb <= 32'd0;
+			rold <= 32'd0;
+			rwdata <= {LINE_BYTES*8{1'b0}};
+			rbe <= {LINE_BYTES{1'b0}};
 			at_rsp_valid <= {NATOM{1'b0}};
 			at_old <= 32'd0;
 			at_error <= 1'b0;
