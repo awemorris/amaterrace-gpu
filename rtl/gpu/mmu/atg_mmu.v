@@ -78,7 +78,6 @@ module atg_mmu #(
 `else
 	(* keep = "true" *) wire clk_mmu = clk;
 `endif
-/* verilator lint_off SYNCASYNCNET */
 `ifdef SYNTH_KINTEX7
 	wire rst_inv;
 	LUT1 #(.INIT(2'h1)) u_rst_inv (.I0(rst_n), .O(rst_inv));
@@ -89,7 +88,6 @@ module atg_mmu #(
 	wire rst_mmu_int = rst_global;
 `endif
 	wire rst_active = rst_mmu_int;
-/* verilator lint_on SYNCASYNCNET */
 
 	/* Buffered input client valid signals to control input port fanout */
 	(* keep = "true", max_fanout = 16 *) wire [NUM_CLIENTS-1:0] req_valid_buf = client_req_valid;

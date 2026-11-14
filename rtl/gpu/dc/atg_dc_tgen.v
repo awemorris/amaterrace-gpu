@@ -78,8 +78,6 @@ module atg_dc_tgen (
 	wire [11:0] t_vbp = timing[235:224];
 	wire [1:0] t_pol = timing[257:256];
 
-	(* keep = "true" *) wire rst_high = !rst_n;
-	(* keep = "true" *) wire tgen_clr_rst = rst_high || !enable;
 
 `ifdef SYNTH_KINTEX7
 	reg vrr_en_q, flip_ready_q;
@@ -262,8 +260,11 @@ module atg_dc_tgen (
 	wire v_act_end_match = ~(|diff_valast);
 
 	reg h_act_r, v_act_r;
-	always @(posedge clk) begin
-		if (tgen_clr_rst) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			h_act_r <= 1'b0;
+			v_act_r <= 1'b0;
+		end else if (!enable) begin
 			h_act_r <= 1'b0;
 			v_act_r <= 1'b0;
 		end else if (!running) begin
@@ -312,8 +313,11 @@ module atg_dc_tgen (
 	wire take = de_c && !tp;
 	assign px_ready = running && px_valid && (take || vs_c);
 
-	always @(posedge clk) begin
-		if (!running || (h == 12'd0 && v == vss)) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			tp <= 1'b0;
+			fmt <= 2'd0;
+		end else if (!running || (h == 12'd0 && v == vss)) begin
 			tp <= test_pattern;
 			fmt <= format;
 		end
@@ -355,8 +359,14 @@ module atg_dc_tgen (
 	(* keep = "true", equivalent_register_removal = "no" *) reg h_last_match_b;
 	(* keep = "true", equivalent_register_removal = "no" *) reg h_last_match_t;
 	wire h_next_is_last = (h_inc == hlast);
-	always @(posedge clk) begin
-		if (tgen_clr_rst || !running) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			h_last_match_h0 <= 1'b0;
+			h_last_match_h1 <= 1'b0;
+			h_last_match_v  <= 1'b0;
+			h_last_match_b  <= 1'b0;
+			h_last_match_t  <= 1'b0;
+		end else if (!enable || !running) begin
 			h_last_match_h0 <= 1'b0;
 			h_last_match_h1 <= 1'b0;
 			h_last_match_v  <= 1'b0;
@@ -384,8 +394,14 @@ module atg_dc_tgen (
 	(* keep = "true", equivalent_register_removal = "no" *) reg h_last_match_b;
 	(* keep = "true", equivalent_register_removal = "no" *) reg h_last_match_t;
 	wire h_next_is_last = (h_inc == hlast);
-	always @(posedge clk) begin
-		if (tgen_clr_rst || !running) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			h_last_match_h0 <= 1'b0;
+			h_last_match_h1 <= 1'b0;
+			h_last_match_v  <= 1'b0;
+			h_last_match_b  <= 1'b0;
+			h_last_match_t  <= 1'b0;
+		end else if (!enable || !running) begin
 			h_last_match_h0 <= 1'b0;
 			h_last_match_h1 <= 1'b0;
 			h_last_match_v  <= 1'b0;
@@ -402,8 +418,10 @@ module atg_dc_tgen (
 `endif
 	wire vrr_take = d_vrr_en && (v == vss) && h_last_match_t && !vrr_hold_t;
 
-	always @(posedge clk) begin
-		if (tgen_clr_rst) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			vrr_flip_latched <= 1'b0;
+		end else if (!enable) begin
 			vrr_flip_latched <= 1'b0;
 		end else begin
 			if (d_flip_ready)
@@ -413,10 +431,10 @@ module atg_dc_tgen (
 		end
 	end
 
-	always @(posedge clk) begin
-		if (tgen_clr_rst) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			h[5:0] <= 6'd0;
-		end else if (!running) begin
+		end else if (!enable || !running) begin
 			h[5:0] <= 6'd0;
 		end else if (h_last_match_h0) begin
 			h[5:0] <= 6'd0;
@@ -425,8 +443,11 @@ module atg_dc_tgen (
 		end
 	end
 
-	always @(posedge clk) begin
-		if (tgen_clr_rst) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			h[11:6] <= 6'd0;
+			running <= 1'b0;
+		end else if (!enable) begin
 			h[11:6] <= 6'd0;
 			running <= 1'b0;
 		end else if (!running) begin
@@ -439,24 +460,32 @@ module atg_dc_tgen (
 		end
 	end
 
-	wire v_ce = tgen_clr_rst || (running && h_last_match_v);
-	wire [11:0] nxt_v = (tgen_clr_rst || vrr_hold_v) ? vss : (v_last_match ? 12'd0 : v_inc);
+	wire v_step = running && h_last_match_v;
+	wire [11:0] v_step_val = vrr_hold_v ? vss : (v_last_match ? 12'd0 : v_inc);
 
-	always @(posedge clk) begin
-		if (v_ce)
-			v <= nxt_v;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			v <= 12'd0;
+		else if (!enable)
+			v <= vss;
+		else if (v_step)
+			v <= v_step_val;
 	end
 
-	always @(posedge clk) begin
-		if (tgen_clr_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			vrr_lines <= 12'd0;
+		else if (!enable)
 			vrr_lines <= 12'd0;
 		else if (running && h_last_match_v)
 			vrr_lines <= vrr_hold_l ? vrr_lines_inc : 12'd0;
 	end
 
-	(* keep = "true" *) wire bx_clr_rst = tgen_clr_rst || !running || h_last_match_b;
-	always @(posedge clk) begin
-		if (bx_clr_rst)
+	wire bx_clr = !enable || !running || h_last_match_b;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			bx <= 12'd0;
+		else if (bx_clr)
 			bx <= 12'd0;
 		else if (bx_match_b)
 			bx <= 12'd0;
@@ -464,8 +493,10 @@ module atg_dc_tgen (
 			bx <= bx_inc;
 	end
 
-	always @(posedge clk) begin
-		if (bx_clr_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			bar <= 3'd0;
+		else if (bx_clr)
 			bar <= 3'd0;
 		else if (bx_match_c)
 			bar <= bar_inc;
@@ -536,8 +567,8 @@ module atg_dc_tgen (
 	wire [29:0] pattern10 = {{pattern[23:16], pattern[23:22]}, {pattern[15:8], pattern[15:14]}, {pattern[7:0], pattern[7:6]}};
 	wire [29:0] px_data10 = convert10(fmt, px_data);
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			rgb <= 24'd0;
 			rgb10 <= 30'd0;
 			de <= 1'b0;

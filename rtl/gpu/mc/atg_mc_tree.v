@@ -51,9 +51,7 @@ module atg_mc_tree #(
 	parameter [ADDR_W-1:0] VRAM_BASE = {ADDR_W{1'b0}}
 ) (
 	input wire clk,
-/* verilator lint_off SYNCASYNCNET */
 	input wire rst_n,
-/* verilator lint_on SYNCASYNCNET */
 	input wire flush,
 	input wire [NCLIENT-1:0] hold,	/* per client: start no new packet (quiesce) */
 

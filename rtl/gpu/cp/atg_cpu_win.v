@@ -44,9 +44,7 @@ module atg_cpu_win #(
 	parameter UOP_DEPTH_LOG2 = 4	/* UOP_FIFO depth log2 (16 dwords) */
 ) (
 	input wire clk,
-/* verilator lint_off SYNCASYNCNET */
 	input wire rst_n,
-/* verilator lint_on SYNCASYNCNET */
 	/* Core data port */
 	input wire d_valid,
 	input wire d_write,

@@ -108,9 +108,7 @@ module atg_mc #(
 	parameter L2_SET_W = 8
 ) (
 	input wire clk,
-/* verilator lint_off SYNCASYNCNET */
 	input wire rst_n,
-/* verilator lint_on SYNCASYNCNET */
 
 	input wire [NCLIENT-1:0] c_req_valid,
 	output wire [NCLIENT-1:0] c_req_ready,

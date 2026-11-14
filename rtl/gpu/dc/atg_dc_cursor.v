@@ -41,9 +41,7 @@ module atg_dc_cursor #(
 	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
 ) (
 	input wire clk,
-	/* verilator lint_off SYNCASYNCNET */
 	input wire rst_n,
-	/* verilator lint_on SYNCASYNCNET */
 	input wire dc_reset,
 	input wire enable,
 	input wire [1:0] format,

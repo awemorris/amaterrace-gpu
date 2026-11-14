@@ -106,13 +106,14 @@ module atg_dc_mode #(
 	wire w_pos_hi = w_pos;
 `endif
 
-	always @(posedge clk) begin
-		ev_hotplug <= 1'b0;
+	always @(posedge clk or posedge mode_rst_lo) begin
 		if (mode_rst_lo) begin
+			ev_hotplug <= 1'b0;
 			r_connected <= 1'b1;
 			r_mode <= 3'd0;
 			r_show <= 1'b0;
 		end else begin
+			ev_hotplug <= 1'b0;
 			if (dc_reset) begin
 				r_connected <= 1'b1;
 			end else if (w_conn) begin
@@ -126,14 +127,14 @@ module atg_dc_mode #(
 		end
 	end
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge mode_rst_lo) begin
 		if (mode_rst_lo)
 			r_pos_lo <= 16'd0;
 		else if (w_pos_lo)
 			r_pos_lo <= (r_pos_lo & ~d_wmask[15:0]) | wbits[15:0];
 	end
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge mode_rst_hi) begin
 		if (mode_rst_hi)
 			r_pos_hi <= 16'd0;
 		else if (w_pos_hi)

@@ -256,10 +256,8 @@ module atg_dc_plane2 #(
 	am_add #(.W(17)) a_sum_b_tot (.a(sum_b_mul),         .b(17'd128),          .ci(1'b0), .s(sum_b_tot), .co(co_b_unused[1]));
 	wire [7:0] b_blend = (d_alpha == 8'hFF) ? d_sel_ov_rgb[7:0]   : ((d_alpha == 8'h00) ? d_prim_rgb[7:0]   : sum_b_tot[15:8]);
 
-	(* keep = "true" *) wire rst_high = !rst_n;
-
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			out_rgb   <= 24'd0;
 			out_valid <= 1'b0;
 		end else begin

@@ -136,10 +136,6 @@ module atg_dc_regs #(
 	LUT1 #(.INIT(2'b01)) u_regs_rst (.I0(rst_n), .O(regs_rst_high));
 	wire rst_high = regs_rst_high;
 
-	(* keep = "true", DONT_TOUCH = "TRUE" *) wire regs_dc_rst;
-	LUT2 #(.INIT(4'b1110)) u_buf_dcrst (.I0(regs_rst_high), .I1(do_reset_q), .O(regs_dc_rst));
-	wire dc_regs_rst = regs_dc_rst;
-
 	wire [31:0] d_wdata_b0, d_wdata_b1, d_wdata_b2;
 	wire [31:0] d_wmask_b0, d_wmask_b1, d_wmask_b2;
 	genvar gwd;
@@ -178,7 +174,6 @@ module atg_dc_regs #(
 	LUT1 #(.INIT(2'b10)) u_buf_wnc (.I0(w_next), .O(w_next_ctl));
 `else
 	(* keep = "true" *) wire rst_high = !rst_n;
-	(* keep = "true" *) wire dc_regs_rst = rst_high || do_reset_q;
 	wire [31:0] d_wdata_b0 = d_wdata, d_wdata_b1 = d_wdata, d_wdata_b2 = d_wdata;
 	wire [31:0] d_wmask_b0 = d_wmask, d_wmask_b1 = d_wmask, d_wmask_b2 = d_wmask;
 	wire [5:0] idx_ctl = d_idx, idx_cfg = d_idx;
@@ -271,7 +266,7 @@ module atg_dc_regs #(
 	wire w_ctrl = d_we && idx == I_CTRL;
 	wire do_reset = w_ctrl && d_wmask[GHCI_DC_CTRL_RESET] && d_wdata[GHCI_DC_CTRL_RESET];
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_high) begin
 		if (rst_high)
 			do_reset_q <= 1'b0;
 		else
@@ -279,7 +274,7 @@ module atg_dc_regs #(
 	end
 
 	(* keep = "true" *) reg dc_reset_q;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_high) begin
 		if (rst_high)
 			dc_reset_q <= 1'b0;
 		else
@@ -315,9 +310,9 @@ module atg_dc_regs #(
 	genvar gtw;
 	generate
 		for (gtw = 0; gtw < 9; gtw = gtw + 1) begin : g_twrite
-			wire we_t_l = d_we_cfg_l && (idx_cfg == (I_TIMING + gtw));
-			wire we_t_h = d_we_cfg_h && (idx_cfg == (I_TIMING + gtw));
-			always @(posedge clk) begin
+			wire we_t_l = d_we_cfg_l && (idx_cfg == (I_TIMING + gtw)) && !quasi_bad;
+			wire we_t_h = d_we_cfg_h && (idx_cfg == (I_TIMING + gtw)) && !quasi_bad;
+			always @(posedge clk or posedge rst_high) begin
 				if (rst_high) begin
 					r_timing_lo[gtw] <= 16'd0;
 					r_timing_hi[gtw] <= 16'd0;
@@ -372,15 +367,19 @@ module atg_dc_regs #(
 	wire ev_vsync_hi = ev_vsync;
 `endif
 
-	always @(posedge clk) begin
-		if (dc_regs_rst)
+	always @(posedge clk or posedge rst_high) begin
+		if (rst_high)
+			r_frame_count_lo <= 16'd0;
+		else if (do_reset)
 			r_frame_count_lo <= 16'd0;
 		else if (ev_vsync_lo)
 			r_frame_count_lo <= frame_inc_lo;
 	end
 
-	always @(posedge clk) begin
-		if (dc_regs_rst)
+	always @(posedge clk or posedge rst_high) begin
+		if (rst_high)
+			r_frame_count_hi <= 16'd0;
+		else if (do_reset)
 			r_frame_count_hi <= 16'd0;
 		else if (ev_vsync_hi)
 			r_frame_count_hi <= frame_inc_hi;
@@ -402,7 +401,7 @@ module atg_dc_regs #(
 
 	integer k;
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_high) begin
 		if (rst_high) begin
 			r_fb_base_lo <= 16'd0;
 			r_fb_base_hi <= 16'd0;
@@ -436,11 +435,11 @@ module atg_dc_regs #(
 		end
 	end
 
-	always @(posedge clk) begin
-		taken <= 1'b0;
-		taken_cancel <= 1'b0;
-		ev_error <= 1'b0;
+	always @(posedge clk or posedge rst_high) begin
 		if (rst_high) begin
+			taken <= 1'b0;
+			taken_cancel <= 1'b0;
+			ev_error <= 1'b0;
 			r_enable <= 1'b0;
 			r_test <= 1'b0;
 			r_output <= 1'b0;
@@ -470,9 +469,12 @@ module atg_dc_regs #(
 			r_flip_ready <= 1'b0;
 			disp_irq_status <= 6'd0;
 			disp_irq_enable <= 6'd0;
-			connected_q <= 1'b0;
+			connected_q <= 1'b1;
 			ev_hotplug_q <= 1'b0;
-		end else if (do_reset_q) begin
+		end else if (do_reset) begin
+			taken <= 1'b0;
+			taken_cancel <= 1'b0;
+			ev_error <= 1'b0;
 			r_enable <= 1'b0;
 			st_underflow <= 1'b0;
 			st_rd_err <= 1'b0;
@@ -487,6 +489,9 @@ module atg_dc_regs #(
 				taken_cancel <= 1'b1;
 			end
 		end else begin
+			taken <= 1'b0;
+			taken_cancel <= 1'b0;
+			ev_error <= 1'b0;
 			if (reset_left != 6'd0)
 				reset_left <= reset_dec;
 			/* The sticky status and DISP_ERROR. */

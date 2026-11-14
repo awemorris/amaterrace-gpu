@@ -109,7 +109,6 @@ module atg_cp #(
 	parameter C_DC = 8'hFF,
 	parameter C_SU = 8
 ) (
-/* verilator lint_off SYNCASYNCNET */
 	input wire clk,
 	input wire rst_n,
 
@@ -130,7 +129,6 @@ module atg_cp #(
 	input wire mem_ready,
 
 	output wire core_rst_n,
-/* verilator lint_on SYNCASYNCNET */
 	output wire win_en,	/* MEM WINDOW_CTRL.ENABLE: the local window is open (rst_n only) */
 
 	output wire mc_quiesce,
@@ -277,9 +275,7 @@ module atg_cp #(
 	wire [31:0] s_st_wdata;
 
 `ifdef SYNTH_KINTEX7
-/* verilator lint_off SYNCASYNCNET */
 	(* keep = "true", dont_touch = "true" *) wire cp_rst_high;
-/* verilator lint_on SYNCASYNCNET */
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_cp_rst (.I0(rst_n), .O(cp_rst_high));
 `endif
 
@@ -622,9 +618,7 @@ module atg_cp #(
 	wire [7:0] s_ring_fault_tag, s_seq_fault_tag, s_fence_fault_tag, s_disp_fault_tag;
 
 `ifdef SYNTH_KINTEX7
-/* verilator lint_off SYNCASYNCNET */
 	(* keep = "true", dont_touch = "true" *) wire s_core_rst_inv;
-/* verilator lint_on SYNCASYNCNET */
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_top_rst_inv (.I0(s_core_rst_n), .O(s_core_rst_inv));
 
 	reg r_ring_busy;

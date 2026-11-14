@@ -130,7 +130,7 @@ module atg_dc_i2c #(
 	/* What follows the byte: STOP, or the end of the command. */
 	wire [2:0] after_byte = c_stop ? S_STOP : S_IDLE;
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
 			q <= 2'd0;
