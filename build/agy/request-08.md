@@ -337,31 +337,48 @@
 - **構文検証**:
   - `iverilog -g2005 -Wall -Wno-timescale -Iinclude -Isim/tb -s atg_top_fault_tb ...`: clean (0 errors, 0 warnings)
 
-### 2026-11-14T08:35:00+09:00: Issue 3/4: FENCE が draw の終わりを待たない（busy の隙間）の修正と全段監査
+### 2026-11-14T09:05:00+09:00: Issue 4/4: atg_rx_scan の E quad 原点調整復元と COARSE_SCAN=1 考察
 - **不具合と原因**:
-  - `rtl/gpu/rx/atg_rx.v` 277 の `assign busy = clip_busy || setup_busy || scan_busy || frag_busy;` に、プリミティブが入力スキッドバッファ（`u_prim_skid_lo/hi`）に保持されているサイクル（`prim_pipe_valid`）が含まれていなかった。
-  - VF が最後のプリミティブを RX スキッドへハンドシェイクした直後（cycle 600 ハンドシェイク）、VF は busy を落とし（cycle 601 `vf_busy=0`）、RX 側はまだ `clip` が `S_IDLE` であったため `clip_busy=0` となり、全ユニットのビジーマスク `pipe_busy_mask` が 1 サイクルだけ `8'b00000000` となった。
-  - 後続に `FENCE` がある場合、CP シーケンサはこの 1 サイクルの隙間を先行処理完了と誤認して `s_f_valid=1`（FENCE 実行）を発行し、描画完了前にテストハーネスがメモリ照合を行ってしまう原因となっていた。
+  - `rtl/gpu/rx/atg_rx_scan.v` 221-231 において、コミット `d1004535` で quad 原点への戻し引き算（`u_er_a`, `u_er0`: $E - bx_0[0] \cdot A \cdot 256 - by_0[0] \cdot B \cdot 256$）が誤って削除され、生のリクエスト値 `assign er0[ge] = sp_tri[96 * ge + 48 +: 48];` に置き換えられていた。
+  - `spec/gpu/rx/atg_rx_scan.md:34` および `atg_rx_setup.md:33` の仕様では、setup が出力する $E$ は bbox 原点 $(bx_0, by_0)$ の画素中心での値である。一方、scan は偶数座標の quad 原点 $(bx_0 \ \& \ \sim 1, by_0 \ \& \ \sim 1)$ から走査を開始するため、$bx_0$ または $by_0$ が奇数の場合、quad 原点 $(bx_0 - 1, by_0 - 1)$ における $E$ の値へと補正する必要がある。
+  - 補正が欠落していたため、カバレッジ判定が $(-1, -1)$ 画素シフトし、単体テスト `atg_rx_scan` で 3869/3879 quads が不一致となり、`ms` テストも FAIL していた。
 - **修正内容**:
-  - `rtl/gpu/rx/atg_rx.v`:
-    - 277 行目: `assign busy = prim_pipe_valid || clip_busy || setup_busy || scan_busy || frag_busy;`
-- **パイプライン全段 skid・FIFO 監査と結論**:
-  1. **VF -> RX (`prim_*`)**: 入力スキッドバッファ `u_prim_skid_lo/hi`。`prim_pipe_valid` が `rx_busy` に含まれておらず隙間が生じていたため修正。
-  2. **RX 内部ステージ (`clip -> setup -> scan/frag`)**:
-     - `clip -> setup`: 直接配線。`cl_valid && cl_ready` 成立サイクル（`clip_busy=1`）の次サイクルで `setup` が `S_IDLE` を脱出し `setup_busy=1` となるため隙間なし。
-     - `setup -> scan/frag`: 直接配線。`sp_valid && sp_ready` 成立サイクル（`setup_busy=1`）の次サイクルで `scan` が `S_SEQ` へ遷移し `scan_busy=1` となるため隙間なし。
-  3. **RX -> SU (`fl_*`)**: 直接配線（スキッド/FIFO なし）。`atg_rx_frag` が `S_ALLOC` で `fl_req` を要求し、`atg_su_sched` が `fl_gnt` でスロットを割り当てた次のサイクルで `!(&slot_free)` により `su_busy=1` となる。この間 `frag_busy=1` が継続しており、RX と SU のビジーが完全にオーバーラップするため隙間なし。
-  4. **RX -> ROP (`ord_*`, `dx_*`)**: 直接配線。`atg_rx_order` が `sq_req` を受け `ord_valid` を送出すると、次サイクルで `atg_rop_order` の `issued != next` となり `rop_busy=1` が立ち上がる。この間 RX もビジーであり、ROP は以降の描画完了までビジーを維持するため隙間なし。
-  5. **SU -> ROP (`ex_*`)**: 直接配線（スキッド/FIFO なし）。シェーダー実行中および `atg_su_exp_drain` のエクスポート中（`S_DRAIN`）、該当ワープは `atg_su_sched` 上で `S_ENDED` に留まり `su_busy=1` を維持する。ROP へ全ビートを送出完了した後の `S_RET` で `xr_valid` を発行して初めてワープ解放（`S_FREE`）される。一方 ROP 側は `ord_valid` 時点から既にビジーであり、両者のビジーが重なるため隙間なし。
-  6. **ROP -> MC**: 直接配線。ROP ライトバックが MC にリクエストを発行すると `mc_unit_idle=0` となり、DRAM/L2 への全書き込みが完了するまで `pipe_busy_mask[0]`（`!mc_unit_idle`）が 1 を維持するため隙間なし。
-- **Top TB アサーション追加**:
-  - `sim/tb/atg_top_shade_tb.v`:
-    - `draw_active` フラグを追加し、`kc705.dut.draw_kick` から ROP の最後のメモリ書き込み完了までの区間において、`kc705.dut.pipe_busy_mask == 8'd0` となるサイクルが存在しないことを検証するアサーションを追加。
-- **単体検証結果**:
+  - `rtl/gpu/rx/atg_rx_scan.v`:
+    - 228-237 行目: `u_er_a` および `u_er0` による `am_sub` 演算モジュールインスタンスを復元。
+      ```verilog
+      wire [47:0] ta8 = {{16{sp_tri[96 * ge + 23]}}, sp_tri[96 * ge +: 24], 8'd0};
+      wire [47:0] tb8 = {{16{sp_tri[96 * ge + 47]}}, sp_tri[96 * ge + 24 +: 24], 8'd0};
+      wire [47:0] er_a;
+      am_sub #(.W(48)) u_er_a (.a(sp_tri[96 * ge + 48 +: 48]), .b(sp_tri[288] ? ta8 : 48'd0),
+          .bi(1'b0), .d(er_a), .bo(ed_carry_unused[4 * ge]));
+      am_sub #(.W(48)) u_er0 (.a(er_a), .b(sp_tri[304] ? tb8 : 48'd0), .bi(1'b0), .d(er0[ge]),
+          .bo(ed_carry_unused[4 * ge + 1]));
+      ```
+    - `unused_ok` に `ed_carry_unused` を追加し、Verilog-2005 / iverilog -Wall の警告をゼロ化。
+    - 算術演算子は `rtl/library/arith/` 配下に完全隔離（生演算子 0 件）。
+- **COARSE_SCAN=1 パスの点検と考察**:
+  - `atg_rx_coarse.v:520-524` において、粗ラスタライザのタイル走査原点は `tile_x <= {bbox_min_x[15:1], 1'b0}; tile_y <= {bbox_min_y[15:1], 1'b0};` と quad 境界にアラインされた原点から初期化される。
+  - `atg_rx_coarse` 内部では $E$ の原点補正（$bx_0[0] \cdot A$, $by_0[0] \cdot B$ の減算）を行わず、入力 `e0_er, e1_er, e2_er` がそのアラインされた原点でのエッジ値であることを前提としている。
+  - `atg_rx_scan.v:388, 391, 394` で `u_coarse` の `e0_er, e1_er, e2_er` に `er0[0..2]` がそのまま接続されているため、`er0` を quad 原点補正済みの値とすることで、`COARSE_SCAN=0` のみならず `COARSE_SCAN=1` においても粗カバレッジ判定およびファインスキャンへの引き渡し（`tile_e0..2`）の整合性が完全に保たれる。
+  - 結論: `COARSE_SCAN=1` も quad 原点補正を必要としており、`er0` を補正することで `atg_rx_coarse` 自体の変更なしに自動的に正しく整合する。
+- **atg_rx_pipeline 実行時間 (235 s) の原因解明**:
+  - ホスト上の並行バックグラウンドプロセス（zedBSD の `make-x86_64-hdd-image.py` による ~2.3 GB の UFS/SWAP/FAT QEMU HDD イメージ作成）により、OS の書き込みキャッシュ（Dirty ページ）が 2 GB 超蓄積していた。
+  - `sim/run.sh` および `~/.local/bin/vvp` のラッパーには各ステップ後に `sync` コマンドが組み込まれており、`sync` 実行時にホスト全体のダーティページが NVMe へ物理フラッシュされるまでの待ち時間（~220 秒）が `sim/run.sh` のタイマー（$t0 \sim t$）に含まれていた。
+  - 今回 Dirty ページ蓄積がない状態で `atg_rx_pipeline` を単体実行した結果、本来の所要時間である **9 s** で PASS することを確認。
+- **検証結果**:
   - `python3 tools/arith-lint.py --top atg_rx`: 0 operators (PASS)
-  - `./sim/run.sh atg_rx_pipeline atg_rx_ext_prim`: 100% PASS
-    - `PASS atg_rx_pipeline (235 s)`
-    - `PASS atg_rx_ext_prim (31 s)`
+  - `./sim/run.sh atg_rx_scan`:
+    - `atg_rx_scan: 49 triangles, 3879 quads`
+    - `PASS atg_rx_scan.coverage`
+    - `PASS atg_rx_scan.direct`
+    - `PASS atg_rx_scan.free`
+    - `PASS atg_rx_scan.ms1x`
+    - `PASS atg_rx_scan` (100% bit-exact PASS)
+  - `./sim/run.sh atg_rx_pipeline atg_rx_ext_prim atg_rx_clip`:
+    - `PASS atg_rx_pipeline (9 s)`
+    - `PASS atg_rx_ext_prim (243 s)`
+    - `PASS atg_rx_clip (197 s)`
+
 
 
 

@@ -227,8 +227,23 @@ module atg_rx_scan #(
 	genvar ge;
 	generate
 	for (ge = 0; ge < 3; ge = ge + 1) begin : g_er
-		assign er0[ge] = sp_tri[96 * ge + 48 +: 48];
-		assign ed_carry_unused[4 * ge +: 2] = 2'b00;
+		wire [47:0] ta8 = {{16{sp_tri[96 * ge + 23]}}, sp_tri[96 * ge +: 24], 8'd0};
+		wire [47:0] tb8 = {{16{sp_tri[96 * ge + 47]}}, sp_tri[96 * ge + 24 +: 24], 8'd0};
+		wire [47:0] er_a;
+		am_sub #(.W(48)) u_er_a (
+			.a(sp_tri[96 * ge + 48 +: 48]),
+			.b(sp_tri[288] ? ta8 : 48'd0),
+			.bi(1'b0),
+			.d(er_a),
+			.bo(ed_carry_unused[4 * ge])
+		);
+		am_sub #(.W(48)) u_er0 (
+			.a(er_a),
+			.b(sp_tri[304] ? tb8 : 48'd0),
+			.bi(1'b0),
+			.d(er0[ge]),
+			.bo(ed_carry_unused[4 * ge + 1])
+		);
 		am_add #(.W(48)) u_ec_n (.a(ec[ge]), .b(a8[ge] <<< 1), .ci(1'b0), .s(ec_n[ge]),
 			.co(ed_carry_unused[4 * ge + 2]));
 		am_add #(.W(48)) u_er_n (.a(er[ge]), .b(b8[ge] <<< 1), .ci(1'b0), .s(er_n[ge]),
@@ -1554,7 +1569,7 @@ module atg_rx_scan #(
 		sp_tri[767:765], sp_tri[735:448], qx1[16], qy1[16], qx2[16], qy2[16],
 		HAS_SU != 0, coarse_tri_ready, cur_last_tile, eb_cov_unused,
 		esamp_carry_unused, esamp_unused, lve_carry_unused, qstep_carry_unused, tend_carry_unused,
-		dxy_carry_unused, r_zl_co_unused, ab8_carry_unused,
+		dxy_carry_unused, r_zl_co_unused, ab8_carry_unused, ed_carry_unused,
 		hiz_cull, hiz_rd_zmax, coarse_tri_valid, coarse_tile_ready, cur_ty, cov_op, cov_oq};
 endmodule
 
