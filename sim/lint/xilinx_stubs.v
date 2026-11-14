@@ -82,6 +82,21 @@ module LUT6 #(
 	assign O = INIT[{I5, I4, I3, I2, I1, I0}];
 endmodule
 
+module RAM32X1D #(
+	parameter [31:0] INIT = 32'h0
+) (
+	input wire D,
+	input wire WCLK,
+	input wire WE,
+	input wire A0, A1, A2, A3, A4,
+	input wire DPRA0, DPRA1, DPRA2, DPRA3, DPRA4,
+	output wire SPO,
+	output wire DPO
+);
+	assign SPO = 1'b0;
+	assign DPO = 1'b0;
+endmodule
+
 /* The clocking (boards/kc705/lib): the ports and parameters the tops use,
  * names as Vivado 2026.1's unisims. */
 module MMCME2_BASE #(

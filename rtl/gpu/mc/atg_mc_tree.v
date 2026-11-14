@@ -51,7 +51,9 @@ module atg_mc_tree #(
 	parameter [ADDR_W-1:0] VRAM_BASE = {ADDR_W{1'b0}}
 ) (
 	input wire clk,
+/* verilator lint_off SYNCASYNCNET */
 	input wire rst_n,
+/* verilator lint_on SYNCASYNCNET */
 	input wire flush,
 	input wire [NCLIENT-1:0] hold,	/* per client: start no new packet (quiesce) */
 
@@ -169,11 +171,6 @@ module atg_mc_tree #(
 			localparam [RW-1:0] CRT_C = client_route(c);
 			localparam PRIO_C = HIGH_MASK[c] ? 1 : 0;
 
-			(* keep = "true", dont_touch = "true" *) wire leaf_rst_sync;
-			(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hD)) u_leaf_rst (
-				.I0(rst_n), .I1(flush), .O(leaf_rst_sync)
-			);
-
 			(* dont_touch = "true" *) reg data_phase;
 			(* dont_touch = "true" *) reg data_phase_d;
 /* verilator lint_off SELRANGE */
@@ -193,8 +190,11 @@ module atg_mc_tree #(
 			assign leaf_req_last[J]  = data_phase || !c_req_write[c];
 			assign c_req_ready[c]    = leaf_req_ready[J] && leaf_req_last[J] && go_c;
 
-			always @(posedge clk) begin
-				if (leaf_rst_sync) begin
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n) begin
+					data_phase   <= 1'b0;
+					data_phase_d <= 1'b0;
+				end else if (flush) begin
 					data_phase   <= 1'b0;
 					data_phase_d <= 1'b0;
 				end else if (leaf_req_valid[J] && leaf_req_ready[J]) begin
@@ -318,11 +318,6 @@ module atg_mc_tree #(
 	wire skid_fire = grant_v && skid_in_ready;
 
 `ifdef SYNTH_KINTEX7
-	(* keep = "true", dont_touch = "true" *) wire tree_rst_sync;
-	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hD)) u_tree_rst (
-		.I0(rst_n), .I1(flush), .O(tree_rst_sync)
-	);
-
 	wire [FW-1:0] grant_data;
 	reg grant_last_mux;
 	integer mxi;
@@ -379,7 +374,6 @@ module atg_mc_tree #(
 	end
 	wire [FW-1:0] grant_data = grant_data_mux;
 	wire grant_last = grant_last_mux;
-	wire tree_rst_sync = !rst_n || flush;
 `endif
 
 	generate
@@ -388,8 +382,12 @@ module atg_mc_tree #(
 	end
 	endgenerate
 
-	always @(posedge clk) begin
-		if (tree_rst_sync) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			locked <= 1'b0;
+			locked_client <= {CW{1'b0}};
+			rr_ptr <= {CW{1'b0}};
+		end else if (flush) begin
 			locked <= 1'b0;
 			locked_client <= {CW{1'b0}};
 			rr_ptr <= {CW{1'b0}};
@@ -414,8 +412,12 @@ module atg_mc_tree #(
 	assign r_req_valid = sk_out_valid;
 	assign {r_req_last, r_req_data} = sk_out_data;
 
-	always @(posedge clk) begin
-		if (tree_rst_sync) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			sk_in_ready <= 1'b1;
+			sk_out_valid <= 1'b0;
+			sk_valid <= 1'b0;
+		end else if (flush) begin
 			sk_in_ready <= 1'b1;
 			sk_out_valid <= 1'b0;
 			sk_valid <= 1'b0;
@@ -488,16 +490,21 @@ module atg_mc_tree #(
 	reg [RFW-1:0] rsp_reg_data;
 
 `ifdef SYNTH_KINTEX7
-	always @(posedge clk) begin
-		if (tree_rst_sync)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			rsp_reg_v <= 1'b0;
+		else if (flush)
 			rsp_reg_v <= 1'b0;
 		else
 			rsp_reg_v <= r_rsp_valid;
 		rsp_reg_data <= r_rsp_data;
 	end
 `else
-	always @(posedge clk) begin
-		if (!rst_n || flush) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			rsp_reg_v <= 1'b0;
+			rsp_reg_data <= {RFW{1'b0}};
+		end else if (flush) begin
 			rsp_reg_v <= 1'b0;
 			rsp_reg_data <= {RFW{1'b0}};
 		end else begin

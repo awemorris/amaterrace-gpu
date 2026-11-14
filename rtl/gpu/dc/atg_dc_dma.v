@@ -100,17 +100,8 @@ module atg_dc_dma #(
 
 	reg enable_q;
 
-`ifdef SYNTH_KINTEX7
-	(* keep = "true" *) wire dma_top_rst_high;
-	LUT2 #(.INIT(4'b1101)) u_dma_top_rst (.I0(rst_n), .I1(clear), .O(dma_top_rst_high));
-	wire rst_high = dma_top_rst_high;
 	(* max_fanout = 16 *) wire abort = frame_start || (enable_q && !enable) || clear;
 	(* max_fanout = 16 *) wire start = frame_start && enable && !clear;
-`else
-	wire rst_high = !rst_n || clear;
-	(* max_fanout = 16 *) wire abort = frame_start || (enable_q && !enable) || clear;
-	(* max_fanout = 16 *) wire start = frame_start && enable && !clear;
-`endif
 	reg [3:0] epoch;
 	reg [3:0] tag_q;
 	assign req_tag = {4'd0, tag_q};
@@ -228,8 +219,10 @@ module atg_dc_dma #(
 	wire issue_step_ctlr = issue_step;
 `endif
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			rq_k <= 16'd0;
+		end else if (clear) begin
 			rq_k <= 16'd0;
 		end else if (start) begin
 			rq_k <= 16'd0;
@@ -241,8 +234,10 @@ module atg_dc_dma #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			rq_row <= 16'd0;
+		end else if (clear) begin
 			rq_row <= 16'd0;
 		end else if (start) begin
 			rq_row <= 16'd0;
@@ -251,8 +246,26 @@ module atg_dc_dma #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			enable_q <= 1'b0;
+			epoch <= 4'd0;
+			tag_q <= 4'd0;
+			rq_active <= 1'b0;
+			req_valid <= 1'b0;
+			inflight <= {(LFIFO_LOG2 + 1){1'b0}};
+			used <= {(LFIFO_LOG2 + 1){1'b0}};
+			f_w <= 16'd0;
+			f_h <= 16'd0;
+			f_nl <= 16'd0;
+			f_nl_last <= 16'd0;
+			f_h_last <= 16'd0;
+			f_16 <= 1'b0;
+			f_16_lo0 <= 1'b0;
+			f_16_lo1 <= 1'b0;
+			f_16_hi0 <= 1'b0;
+			f_16_hi1 <= 1'b0;
+		end else if (clear) begin
 			enable_q <= 1'b0;
 			epoch <= 4'd0;
 			tag_q <= 4'd0;
@@ -312,22 +325,28 @@ module atg_dc_dma #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			req_line_lo <= 14'd0;
+		else if (clear)
 			req_line_lo <= 14'd0;
 		else if (issue_step_rql)
 			req_line_lo <= rq_cur_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			req_line_hi <= {(AW-14){1'b0}};
+		else if (clear)
 			req_line_hi <= {(AW-14){1'b0}};
 		else if (issue_step_rqh)
 			req_line_hi <= rq_cur_hi;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			rq_cur_lo <= 14'd0;
+		else if (clear)
 			rq_cur_lo <= 14'd0;
 		else if (start)
 			rq_cur_lo <= fb_base[LINE_SHIFT +: 14];
@@ -335,8 +354,10 @@ module atg_dc_dma #(
 			rq_cur_lo <= k_is_nl_a1 ? rq_next_row[13:0] : rq_cur_inc[13:0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			rq_cur_hi <= {(AW-14){1'b0}};
+		else if (clear)
 			rq_cur_hi <= {(AW-14){1'b0}};
 		else if (start)
 			rq_cur_hi <= fb_base[LINE_SHIFT + 14 +: AW - 14];
@@ -344,8 +365,10 @@ module atg_dc_dma #(
 			rq_cur_hi <= k_is_nl_b1 ? rq_next_row[AW-1:14] : rq_cur_inc[AW-1:14];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			rq_row_line_lo <= 14'd0;
+		else if (clear)
 			rq_row_line_lo <= 14'd0;
 		else if (start)
 			rq_row_line_lo <= fb_base[LINE_SHIFT +: 14];
@@ -353,8 +376,10 @@ module atg_dc_dma #(
 			rq_row_line_lo <= rq_next_row[13:0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			rq_row_line_hi <= {(AW-14){1'b0}};
+		else if (clear)
 			rq_row_line_hi <= {(AW-14){1'b0}};
 		else if (start)
 			rq_row_line_hi <= fb_base[LINE_SHIFT + 14 +: AW - 14];
@@ -362,15 +387,19 @@ module atg_dc_dma #(
 			rq_row_line_hi <= rq_next_row[AW-1:14];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			f_stride_lo <= 14'd0;
+		else if (clear)
 			f_stride_lo <= 14'd0;
 		else if (start)
 			f_stride_lo <= fb_stride[LINE_SHIFT +: 14];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			f_stride_hi <= {(AW-14){1'b0}};
+		else if (clear)
 			f_stride_hi <= {(AW-14){1'b0}};
 		else if (start)
 			f_stride_hi <= fb_stride[LINE_SHIFT + 14 +: AW - 14];
@@ -383,11 +412,14 @@ module atg_dc_dma #(
 	wire l_in_ready = 1'b1;	/* always 1 when a response comes: the requests wait for room */
 	wire keep = rsp_read && rsp_tag[3:0] == epoch && !abort;
 
-	always @(posedge clk)
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			err <= 1'b0;
+		else if (clear)
 			err <= 1'b0;
 		else
 			err <= keep && rsp_error;
+	end
 
 	localparam NUM_L_SLICES = LW / 16;
 	localparam NUM_L_GROUPS = 4;
@@ -403,10 +435,12 @@ module atg_dc_dma #(
 	wire l_will_empty = (l_rp_next == l_wp);
 	assign l_valid = l_valid_r;
 
-	wire dma_rst = rst_high || abort;
-
-	always @(posedge clk) begin
-		if (dma_rst) begin
+		always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			l_wp <= {(LFIFO_LOG2 + 1){1'b0}};
+			l_rp <= {(LFIFO_LOG2 + 1){1'b0}};
+			l_valid_r <= 1'b0;
+		end else if (abort) begin
 			l_wp <= {(LFIFO_LOG2 + 1){1'b0}};
 			l_rp <= {(LFIFO_LOG2 + 1){1'b0}};
 			l_valid_r <= 1'b0;
@@ -424,7 +458,6 @@ module atg_dc_dma #(
 	end
 
 `ifdef SYNTH_KINTEX7
-	(* keep = "true" *) wire rst_abort = dma_rst;
 	localparam NUM_BUFS = NUM_L_SLICES * 4;
 	wire [NUM_BUFS-1:0] keep_b;
 	wire [NUM_BUFS-1:0] l_pop_b;
@@ -472,8 +505,11 @@ module atg_dc_dma #(
 	(* max_fanout = 16 *) reg [LFIFO_LOG2-1:0] s_wp;
 	(* max_fanout = 16 *) reg [LFIFO_LOG2-1:0] s_rp;
 
-	always @(posedge clk) begin
-		if (dma_rst) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			s_wp <= {LFIFO_LOG2{1'b0}};
+			s_rp <= {LFIFO_LOG2{1'b0}};
+		end else if (abort) begin
 			s_wp <= {LFIFO_LOG2{1'b0}};
 			s_rp <= {LFIFO_LOG2{1'b0}};
 		end else begin
@@ -491,8 +527,11 @@ module atg_dc_dma #(
 `ifdef SYNTH_KINTEX7
 		(* max_fanout = 16 *) reg [LFIFO_LOG2-1:0] s_wp_r;
 		(* max_fanout = 16 *) reg [LFIFO_LOG2-1:0] s_rp_r;
-		always @(posedge clk) begin
-			if (dma_rst) begin
+		always @(posedge clk or negedge rst_n) begin
+			if (!rst_n) begin
+				s_wp_r <= {LFIFO_LOG2{1'b0}};
+				s_rp_r <= {LFIFO_LOG2{1'b0}};
+			end else if (abort) begin
 				s_wp_r <= {LFIFO_LOG2{1'b0}};
 				s_rp_r <= {LFIFO_LOG2{1'b0}};
 			end else begin
@@ -562,8 +601,8 @@ module atg_dc_dma #(
 	wire [15:0] diff_next_w = up_x_inc ^ f_w_last;
 	wire next_is_row_end = ~(|diff_next_w);
 	wire zero_w_last = ~(|f_w_last);
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			row_end_r <= 1'b0;
 		end else if (abort) begin
 			row_end_r <= ~(|calc_w_last);
@@ -598,8 +637,13 @@ module atg_dc_dma #(
 	/* Pipelined pixel accumulator (Rule 1 & Rule 4) */
 	reg [31:0] sum_px;
 	(* keep = "true" *) reg sum_push, sum_push_lo, sum_push_hi;
-	always @(posedge clk) begin
-		if (dma_rst) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			sum_px <= 32'd0;
+			sum_push <= 1'b0;
+			sum_push_lo <= 1'b0;
+			sum_push_hi <= 1'b0;
+		end else if (abort) begin
 			sum_px <= 32'd0;
 			sum_push <= 1'b0;
 			sum_push_lo <= 1'b0;
@@ -645,8 +689,8 @@ module atg_dc_dma #(
 	wire push_idx_hi = push;
 `endif
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			up_active <= 1'b0;
 		else if (abort)
 			up_active <= start && fb_size[15:0] != 16'd0 && fb_size[31:16] != 16'd0;
@@ -654,92 +698,108 @@ module atg_dc_dma #(
 			up_active <= 1'b0;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			f_w_last <= 16'd0;
 		else if (abort)
 			f_w_last <= calc_w_last;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			scan_sum[15:0] <= 16'd0;
 		else if (abort)
 			scan_sum[15:0] <= sum_acc[15:0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			scan_sum[31:16] <= 16'd0;
 		else if (abort)
 			scan_sum[31:16] <= sum_acc[31:16];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			scan_words[15:0] <= 16'd0;
 		else if (abort)
 			scan_words[15:0] <= words_acc[15:0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			scan_words[31:16] <= 16'd0;
 		else if (abort)
 			scan_words[31:16] <= words_acc[31:16];
 	end
 
-	always @(posedge clk) begin
-		if (dma_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			sum_acc[15:0] <= 16'd0;
+		else if (abort)
 			sum_acc[15:0] <= 16'd0;
 		else if (sum_push_lo)
 			sum_acc[15:0] <= sum_next[15:0];
 	end
 
-	always @(posedge clk) begin
-		if (dma_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			sum_acc[31:16] <= 16'd0;
+		else if (abort)
 			sum_acc[31:16] <= 16'd0;
 		else if (sum_push_hi)
 			sum_acc[31:16] <= sum_next[31:16];
 	end
 
-	always @(posedge clk) begin
-		if (dma_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			words_acc[15:0] <= 16'd0;
+		else if (abort)
 			words_acc[15:0] <= 16'd0;
 		else if (push_w_lo)
 			words_acc[15:0] <= words_inc[15:0];
 	end
 
-	always @(posedge clk) begin
-		if (dma_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			words_acc[31:16] <= 16'd0;
+		else if (abort)
 			words_acc[31:16] <= 16'd0;
 		else if (push_w_hi)
 			words_acc[31:16] <= words_inc[31:16];
 	end
 
-	always @(posedge clk) begin
-		if (dma_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			up_x <= 16'd0;
+		else if (abort)
 			up_x <= 16'd0;
 		else if (push_up0)
 			up_x <= row_end ? 16'd0 : up_x_inc;
 	end
 
-	always @(posedge clk) begin
-		if (dma_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			up_idx[2:0] <= 3'd0;
+		else if (abort)
 			up_idx[2:0] <= 3'd0;
 		else if (push_idx_lo)
 			up_idx[2:0] <= row_end ? 3'd0 : (ppl_match ? 3'd0 : up_idx_inc[2:0]);
 	end
 
-	always @(posedge clk) begin
-		if (dma_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			up_idx[5:3] <= 3'd0;
+		else if (abort)
 			up_idx[5:3] <= 3'd0;
 		else if (push_idx_hi)
 			up_idx[5:3] <= row_end ? 3'd0 : (ppl_match ? 3'd0 : up_idx_inc[5:3]);
 	end
 
-	always @(posedge clk) begin
-		if (dma_rst)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			up_row <= 16'd0;
+		else if (abort)
 			up_row <= 16'd0;
 		else if (push_up1 && row_end)
 			up_row <= up_row_inc;

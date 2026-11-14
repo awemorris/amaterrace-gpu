@@ -41,7 +41,9 @@ module atg_dc_cursor #(
 	parameter LINE_SHIFT = 5	/* log2(LINE_BYTES) */
 ) (
 	input wire clk,
+	/* verilator lint_off SYNCASYNCNET */
 	input wire rst_n,
+	/* verilator lint_on SYNCASYNCNET */
 	input wire dc_reset,
 	input wire enable,
 	input wire [1:0] format,
@@ -99,15 +101,8 @@ module atg_dc_cursor #(
 	assign req_wdata = {LW{1'b0}};
 	assign req_tag = 8'd0;
 
-`ifdef SYNTH_KINTEX7
-	wire rst_high = !rst_n;
-	(* keep = "true" *) wire pipe_clr_rst = rst_high || frame_start || !enable;
-	wire pipe_clr_rst_lo = pipe_clr_rst, pipe_clr_rst_hi = pipe_clr_rst;
-`else
-	wire rst_high = !rst_n;
-	(* keep = "true" *) wire pipe_clr_rst = rst_high || frame_start || !enable;
-	wire pipe_clr_rst_lo = pipe_clr_rst, pipe_clr_rst_hi = pipe_clr_rst;
-`endif
+	wire pipe_clr = frame_start || !enable;
+	wire pipe_clr_lo = pipe_clr, pipe_clr_hi = pipe_clr;
 	reg [13:0] req_line_lo;
 	reg [AW-1:14] req_line_hi;
 	assign req_line = {req_line_hi, req_line_lo};
@@ -220,8 +215,13 @@ module atg_dc_cursor #(
 	end
 	endgenerate
 
-	always @(posedge clk) begin
-		if (rst_high || st != S_LOAD || stop) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			ff_wp <= 2'd0;
+			ff_rp <= 2'd0;
+			ff_count <= 3'd0;
+			ff_valid <= 1'b0;
+		end else if (st != S_LOAD || stop) begin
 			ff_wp <= 2'd0;
 			ff_rp <= 2'd0;
 			ff_count <= 3'd0;
@@ -272,15 +272,15 @@ module atg_dc_cursor #(
 	assign pend_base_en_hi = pend_base_en;
 `endif
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			pend_base_lo <= 16'd0;
 		else if (pend_base_en_lo)
 			pend_base_lo <= flip_base[15:0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			pend_base_hi <= 16'd0;
 		else if (pend_base_en_hi)
 			pend_base_hi <= flip_base[31:16];
@@ -296,15 +296,15 @@ module atg_dc_cursor #(
 	assign cur_base_en_hi = cur_base_en;
 `endif
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			cur_base_lo <= 16'd0;
 		else if (cur_base_en_lo)
 			cur_base_lo <= pend_base_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			cur_base_hi <= 16'd0;
 		else if (cur_base_en_hi)
 			cur_base_hi <= pend_base_hi;
@@ -320,25 +320,25 @@ module atg_dc_cursor #(
 	assign req_line_en_hi = req_line_en;
 `endif
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			req_line_lo <= 14'd0;
 		else if (req_line_en_lo)
 			req_line_lo <= rq_line[13:0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			req_line_hi <= {(AW-14){1'b0}};
 		else if (req_line_en_hi)
 			req_line_hi <= rq_line[AW-1:14];
 	end
 
-	always @(posedge clk) begin
-		taken <= 1'b0;
-		taken_cancel <= 1'b0;
-		err <= 1'b0;
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			taken <= 1'b0;
+			taken_cancel <= 1'b0;
+			err <= 1'b0;
 			st <= S_IDLE;
 			pend <= 1'b0;
 			img_ok <= 1'b0;
@@ -349,6 +349,9 @@ module atg_dc_cursor #(
 			up_w <= {WS{1'b0}};
 			req_valid <= 1'b0;
 		end else begin
+			taken <= 1'b0;
+			taken_cancel <= 1'b0;
+			err <= 1'b0;
 			inflight <= infl_next;
 			if (take)
 				req_valid <= 1'b0;
@@ -627,11 +630,23 @@ module atg_dc_cursor #(
 	am_add #(.W(16)) a_x (.a(x), .b(16'd0), .ci(1'b1), .s(x_inc), .co(bl_co_unused[2]));
 	am_add #(.W(16)) a_y (.a(y), .b(16'd0), .ci(1'b1), .s(y_inc), .co(bl_co_unused[3]));
 	am_sub #(.W(16)) s_w (.a(fb_width), .b(16'd1), .bi(1'b0), .d(x_last_w), .bo(bl_co_unused[4]));
-	always @(posedge clk)
-		x_last <= x_last_w;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			x_last <= 16'd0;
+		else if (pipe_clr_lo)
+			x_last <= 16'd0;
+		else
+			x_last <= x_last_w;
+	end
 	reg cur_gate;
-	always @(posedge clk)
-		cur_gate <= vis && img_ok && (st == S_IDLE);
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			cur_gate <= 1'b0;
+		else if (pipe_clr_lo)
+			cur_gate <= 1'b0;
+		else
+			cur_gate <= vis && img_ok && (st == S_IDLE);
+	end
 	wire dx_in = (dx[16:6] == 11'd0);
 	wire dy_in = (dy[16:6] == 11'd0);
 
@@ -650,20 +665,24 @@ module atg_dc_cursor #(
 	reg [15:0] s0a_px_lo, s0a_px_hi;
 	reg [11:0] s0a_addr;
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			vis <= 1'b0;
 		else if (frame_start || !enable)
 			vis <= show;
 	end
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			pos_x <= 16'd0;
+		else if (pipe_clr_lo)
 			pos_x <= pos[15:0];
 	end
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			pos_y <= 16'd0;
+		else if (pipe_clr_lo)
 			pos_y <= pos[31:16];
 	end
 
@@ -684,29 +703,40 @@ module atg_dc_cursor #(
 	wire x_is_eol_y = x_is_eol;
 `endif
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			x <= 16'd0;
+		else if (pipe_clr_lo)
 			x <= 16'd0;
 		else if (pe_s0a_v_x)
 			x <= x_is_eol_x ? 16'd0 : x_inc;
 	end
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			y <= 16'd0;
+		else if (pipe_clr_lo)
 			y <= 16'd0;
 		else if (pe_s0a_v_y && x_is_eol_y)
 			y <= y_inc;
 	end
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			st0a_valid <= 1'b0;
+		else if (pipe_clr_lo)
 			st0a_valid <= 1'b0;
 		else if (pe_s0a_ctl)
 			st0a_valid <= i_valid;
 	end
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			s0a_dx_in <= 1'b0;
+			s0a_dy_in <= 1'b0;
+			s0a_cur_gate <= 1'b0;
+			s0a_fmt <= 2'd0;
+		end else if (pipe_clr_lo) begin
 			s0a_dx_in <= 1'b0;
 			s0a_dy_in <= 1'b0;
 			s0a_cur_gate <= 1'b0;
@@ -719,22 +749,22 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			s0a_addr <= 12'd0;
 		else if (pe_s0a_v_addr)
 			s0a_addr <= {dy[5:0], dx[5:0]};
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			s0a_px_lo <= 16'd0;
 		else if (pe_s0a_pxl && i_valid)
 			s0a_px_lo <= i_data[15:0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			s0a_px_hi <= 16'd0;
 		else if (pe_s0a_pxh && i_valid)
 			s0a_px_hi <= i_data[31:16];
@@ -751,8 +781,12 @@ module atg_dc_cursor #(
 			mem_q <= mem[s0a_addr];
 	end
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st0b_valid <= 1'b0;
+			s0b_in <= 1'b0;
+			s0b_fmt <= 2'd0;
+		end else if (pipe_clr_lo) begin
 			st0b_valid <= 1'b0;
 			s0b_in <= 1'b0;
 			s0b_fmt <= 2'd0;
@@ -763,15 +797,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			s0b_px_lo <= 16'd0;
 		else if (pe_s0b_pxl)
 			s0b_px_lo <= s0a_px_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			s0b_px_hi <= 16'd0;
 		else if (pe_s0b_pxh)
 			s0b_px_hi <= s0a_px_hi;
@@ -788,8 +822,14 @@ module atg_dc_cursor #(
 			q_direct <= mem_q;
 	end
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st0c_valid <= 1'b0;
+			s0c_in <= 1'b0;
+			s0c_fmt_p <= 2'd0;
+			s0c_fmt_c <= 2'd0;
+			s0c_fmt_st1 <= 2'd0;
+		end else if (pipe_clr_lo) begin
 			st0c_valid <= 1'b0;
 			s0c_in <= 1'b0;
 			s0c_fmt_p <= 2'd0;
@@ -804,15 +844,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			s0c_px_lo <= 16'd0;
 		else if (pe_s0c_pxl)
 			s0c_px_lo <= s0b_px_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			s0c_px_hi <= 16'd0;
 		else if (pe_s0c_pxh)
 			s0c_px_hi <= s0b_px_hi;
@@ -857,8 +897,12 @@ module atg_dc_cursor #(
 	end
 	endgenerate
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st1_valid <= 1'b0;
+			st1_in <= 1'b0;
+			st1_fmt <= 2'd0;
+		end else if (pipe_clr_lo) begin
 			st1_valid <= 1'b0;
 			st1_in <= 1'b0;
 			st1_fmt <= 2'd0;
@@ -869,8 +913,8 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			st1_c0 <= 8'd0;
 			st1_c1 <= 8'd0;
 			st1_c2 <= 8'd0;
@@ -881,15 +925,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st1_px_lo <= 16'd0;
 		else if (pe_s1_pxl)
 			st1_px_lo <= s0c_px_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st1_px_hi <= 16'd0;
 		else if (pe_s1_pxh)
 			st1_px_hi <= s0c_px_hi;
@@ -902,8 +946,12 @@ module atg_dc_cursor #(
 	reg st1b_valid, st1b_in;
 	reg [1:0] st1b_fmt;
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st1b_valid <= 1'b0;
+			st1b_in <= 1'b0;
+			st1b_fmt <= 2'd0;
+		end else if (pipe_clr_lo) begin
 			st1b_valid <= 1'b0;
 			st1b_in <= 1'b0;
 			st1b_fmt <= 2'd0;
@@ -914,29 +962,29 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st1b_pa0 <= 16'd0;
 		else if (pe_s1b_pa0)
 			st1b_pa0 <= st1_pa[0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st1b_pa1 <= 16'd0;
 		else if (pe_s1b_pa1)
 			st1b_pa1 <= st1_pa[1];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st1b_pa2 <= 16'd0;
 		else if (pe_s1b_pa2)
 			st1b_pa2 <= st1_pa[2];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			st1b_c0 <= 8'd0;
 			st1b_c1 <= 8'd0;
 			st1b_c2 <= 8'd0;
@@ -947,15 +995,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st1b_px_lo <= 16'd0;
 		else if (pe_s1b_pxl)
 			st1b_px_lo <= st1_px_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st1b_px_hi <= 16'd0;
 		else if (pe_s1b_pxh)
 			st1b_px_hi <= st1_px_hi;
@@ -974,8 +1022,12 @@ module atg_dc_cursor #(
 	reg st2a_valid, st2a_in;
 	reg [1:0] st2a_fmt;
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st2a_valid <= 1'b0;
+			st2a_in <= 1'b0;
+			st2a_fmt <= 2'd0;
+		end else if (pipe_clr_lo) begin
 			st2a_valid <= 1'b0;
 			st2a_in <= 1'b0;
 			st2a_fmt <= 2'd0;
@@ -986,29 +1038,29 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2a_t0 <= 16'd0;
 		else if (pe_s2a_t0)
 			st2a_t0 <= st2a_t_wire[0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2a_t1 <= 16'd0;
 		else if (pe_s2a_t1)
 			st2a_t1 <= st2a_t_wire[1];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2a_t2 <= 16'd0;
 		else if (pe_s2a_t2)
 			st2a_t2 <= st2a_t_wire[2];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			st2a_c0 <= 8'd0;
 			st2a_c1 <= 8'd0;
 			st2a_c2 <= 8'd0;
@@ -1019,15 +1071,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2a_px_lo <= 16'd0;
 		else if (pe_s2a_pxl)
 			st2a_px_lo <= st1b_px_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2a_px_hi <= 16'd0;
 		else if (pe_s2a_pxh)
 			st2a_px_hi <= st1b_px_hi;
@@ -1046,8 +1098,12 @@ module atg_dc_cursor #(
 	reg st2b_valid, st2b_in;
 	reg [1:0] st2b_fmt;
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_lo) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st2b_valid <= 1'b0;
+			st2b_in <= 1'b0;
+			st2b_fmt <= 2'd0;
+		end else if (pipe_clr_lo) begin
 			st2b_valid <= 1'b0;
 			st2b_in <= 1'b0;
 			st2b_fmt <= 2'd0;
@@ -1058,29 +1114,29 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2b_u0 <= 16'd0;
 		else if (pe_s2b_u0)
 			st2b_u0 <= st2b_u_wire[0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2b_u1 <= 16'd0;
 		else if (pe_s2b_u1)
 			st2b_u1 <= st2b_u_wire[1];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2b_u2 <= 16'd0;
 		else if (pe_s2b_u2)
 			st2b_u2 <= st2b_u_wire[2];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			st2b_c0 <= 8'd0;
 			st2b_c1 <= 8'd0;
 			st2b_c2 <= 8'd0;
@@ -1091,15 +1147,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2b_px_lo <= 16'd0;
 		else if (pe_s2b_pxl)
 			st2b_px_lo <= st2a_px_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2b_px_hi <= 16'd0;
 		else if (pe_s2b_pxh)
 			st2b_px_hi <= st2a_px_hi;
@@ -1116,8 +1172,12 @@ module atg_dc_cursor #(
 	reg st2c_valid, st2c_in;
 	reg [1:0] st2c_fmt;
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_hi) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st2c_valid <= 1'b0;
+			st2c_in <= 1'b0;
+			st2c_fmt <= 2'd0;
+		end else if (pipe_clr_hi) begin
 			st2c_valid <= 1'b0;
 			st2c_in <= 1'b0;
 			st2c_fmt <= 2'd0;
@@ -1128,8 +1188,8 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			st2c_v0 <= 8'd0;
 			st2c_v1 <= 8'd0;
 			st2c_v2 <= 8'd0;
@@ -1140,15 +1200,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2c_px_lo <= 16'd0;
 		else if (pe_s2c_pxl)
 			st2c_px_lo <= st2b_px_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st2c_px_hi <= 16'd0;
 		else if (pe_s2c_pxh)
 			st2c_px_hi <= st2b_px_hi;
@@ -1167,8 +1227,12 @@ module atg_dc_cursor #(
 	reg st3a_valid, st3a_in;
 	reg [1:0] st3a_fmt;
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_hi) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st3a_valid <= 1'b0;
+			st3a_in <= 1'b0;
+			st3a_fmt <= 2'd0;
+		end else if (pipe_clr_hi) begin
 			st3a_valid <= 1'b0;
 			st3a_in <= 1'b0;
 			st3a_fmt <= 2'd0;
@@ -1179,29 +1243,29 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3a_vm0 <= 16'd0;
 		else if (pe_s3a_vm0)
 			st3a_vm0 <= st3a_vm_wire[0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3a_vm1 <= 16'd0;
 		else if (pe_s3a_vm1)
 			st3a_vm1 <= st3a_vm_wire[1];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3a_vm2 <= 16'd0;
 		else if (pe_s3a_vm2)
 			st3a_vm2 <= st3a_vm_wire[2];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			st3a_v0 <= 8'd0;
 			st3a_v1 <= 8'd0;
 			st3a_v2 <= 8'd0;
@@ -1212,15 +1276,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3a_px_lo <= 16'd0;
 		else if (pe_s3a_pxl)
 			st3a_px_lo <= st2c_px_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3a_px_hi <= 16'd0;
 		else if (pe_s3a_pxh)
 			st3a_px_hi <= st2c_px_hi;
@@ -1239,8 +1303,12 @@ module atg_dc_cursor #(
 	reg st3b_valid, st3b_in;
 	reg [1:0] st3b_fmt;
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_hi) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st3b_valid <= 1'b0;
+			st3b_in <= 1'b0;
+			st3b_fmt <= 2'd0;
+		end else if (pipe_clr_hi) begin
 			st3b_valid <= 1'b0;
 			st3b_in <= 1'b0;
 			st3b_fmt <= 2'd0;
@@ -1251,29 +1319,29 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3b_nt0 <= 16'd0;
 		else if (pe_s3b_nt0)
 			st3b_nt0 <= st3b_nt_wire[0];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3b_nt1 <= 16'd0;
 		else if (pe_s3b_nt1)
 			st3b_nt1 <= st3b_nt_wire[1];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3b_nt2 <= 16'd0;
 		else if (pe_s3b_nt2)
 			st3b_nt2 <= st3b_nt_wire[2];
 	end
 
-	always @(posedge clk) begin
-		if (rst_high) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
 			st3b_v0 <= 8'd0;
 			st3b_v1 <= 8'd0;
 			st3b_v2 <= 8'd0;
@@ -1284,15 +1352,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3b_px_lo <= 16'd0;
 		else if (pe_s3b_pxl)
 			st3b_px_lo <= st3a_px_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st3b_px_hi <= 16'd0;
 		else if (pe_s3b_pxh)
 			st3b_px_hi <= st3a_px_hi;
@@ -1346,8 +1414,11 @@ module atg_dc_cursor #(
 	wire [15:0] nxt_out_data_lo = st3b_in_lo ? blended_lo : st3b_px_lo;
 	wire [15:0] nxt_out_data_hi = st3b_in_hi ? blended_hi : st3b_px_hi;
 
-	always @(posedge clk) begin
-		if (pipe_clr_rst_hi) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st_out_valid_lo <= 1'b0;
+			st_out_valid_hi <= 1'b0;
+		end else if (pipe_clr_hi) begin
 			st_out_valid_lo <= 1'b0;
 			st_out_valid_hi <= 1'b0;
 		end else if (pe_out_ctl) begin
@@ -1356,15 +1427,15 @@ module atg_dc_cursor #(
 		end
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st_out_data_lo <= 16'd0;
 		else if (pe_out_l)
 			st_out_data_lo <= nxt_out_data_lo;
 	end
 
-	always @(posedge clk) begin
-		if (rst_high)
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
 			st_out_data_hi <= 16'd0;
 		else if (pe_out_h)
 			st_out_data_hi <= nxt_out_data_hi;

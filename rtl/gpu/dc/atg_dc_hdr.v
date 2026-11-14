@@ -55,8 +55,6 @@ module atg_dc_hdr #(
 	localparam HDR_LAT = 0;
 `endif
 
-	(* keep = "true" *) wire prst_high = !prst_n;
-
 	/* Multipliers for Row 0 (R) */
 	wire [21:0] p_r0, p_r1, p_r2;
 	am_mul #(.AW(10), .BW(12), .SIGNED(0), .LAT(HDR_LAT)) u_mul_r0 (.clk(pclk), .en(1'b1), .a(in_r), .b(C00), .p(p_r0));
@@ -178,8 +176,8 @@ module atg_dc_hdr #(
 		`include "atg_dc_pq_lut.vh"
 	end
 
-	always @(posedge pclk) begin
-		if (prst_high) begin
+	always @(posedge pclk or negedge prst_n) begin
+		if (!prst_n) begin
 			out_r <= 10'd0;
 			out_g <= 10'd0;
 			out_b <= 10'd0;

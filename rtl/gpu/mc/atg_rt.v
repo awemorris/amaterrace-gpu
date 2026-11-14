@@ -85,8 +85,15 @@ module atg_rt #(
 	assign p_req_data = q_data;
 	assign p_req_last = q_last;
 
-	always @(posedge clk) begin
-		if (!rst_n || flush) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			q_valid <= 1'b0;
+			q_data <= {FW{1'b0}};
+			q_last <= 1'b0;
+			lock <= 1'b0;
+			owner <= 1'b0;
+			last_won <= 1'b1;
+		end else if (flush) begin
 			q_valid <= 1'b0;
 			q_data <= {FW{1'b0}};
 			q_last <= 1'b0;
@@ -119,8 +126,11 @@ module atg_rt #(
 	assign c0_rsp_data = r_data;
 	assign c1_rsp_data = r_data;
 
-	always @(posedge clk) begin
-		if (!rst_n || flush) begin
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			r_valid <= 1'b0;
+			r_data <= {RFW{1'b0}};
+		end else if (flush) begin
 			r_valid <= 1'b0;
 			r_data <= {RFW{1'b0}};
 		end else if (p_rsp_ready) begin
