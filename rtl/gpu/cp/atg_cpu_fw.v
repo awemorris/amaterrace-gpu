@@ -176,7 +176,7 @@ module atg_cpu_fw (
 			ready <= 1'b1;
 	end
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
 			run <= 1'b0;

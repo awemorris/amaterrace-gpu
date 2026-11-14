@@ -89,7 +89,7 @@ module atg_cpu_dma_harness #(
 	);
 
 	atg_cpu_mem #(.IMEM_WORDS(1024), .DMEM_WORDS(1024)) mem (
-		.clk(clk),
+		.clk(clk), .rst_n(rst_n),
 		.i_en(1'b0), .i_addr(32'd0), .i_rdata(i_rdata),
 		.d_en(1'b0), .d_we(4'd0), .d_addr(32'd0), .d_wdata(32'd0), .d_rdata(d_rdata),
 		.x_en(x_en), .x_we(x_we), .x_imem(x_imem), .x_addr(x_addr), .x_wdata(x_wdata),

@@ -130,7 +130,7 @@ module atg_cpu #(
 		.IMEM_WORDS(IMEM_WORDS), .DMEM_WORDS(DMEM_WORDS),
 		.IMEM_INIT(IMEM_INIT), .DMEM_INIT(DMEM_INIT)
 	) mem (
-		.clk(clk),
+		.clk(clk), .rst_n(rst_n),
 		.i_en(i_en), .i_addr(i_addr), .i_rdata(i_rdata),
 		.d_en(m_en), .d_we(m_we), .d_addr(m_addr), .d_wdata(m_wdata), .d_rdata(m_rdata),
 		.x_en(x_en), .x_we(x_we), .x_imem(x_imem), .x_addr(x_addr), .x_wdata(x_wdata),

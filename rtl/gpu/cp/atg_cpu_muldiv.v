@@ -91,13 +91,22 @@ module atg_cpu_muldiv (
 		.clk(clk), .en(state == S_MUL || state == S_MUL2 || state == S_MUL3), .a(ma), .b(mb), .p(p)
 	);
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
-			done <= 1'b0;
-			y <= 32'd0;
-			op_r <= 2'd0;
-			cnt <= 6'd0;
+			done  <= 1'b0;
+			y     <= 32'd0;
+			op_r  <= 2'd0;
+			cnt   <= 6'd0;
+			ma    <= 33'sd0;
+			mb    <= 33'sd0;
+			dq    <= 32'd0;
+			dd    <= 32'd0;
+			dr    <= 33'd0;
+			neg_q <= 1'b0;
+			neg_r <= 1'b0;
+			dzero <= 1'b0;
+			a_r   <= 32'd0;
 		end else begin
 			done <= 1'b0;
 			case (state)

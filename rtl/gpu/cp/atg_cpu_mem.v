@@ -29,6 +29,7 @@ module atg_cpu_mem #(
 	parameter DMEM_INIT = ""	/* $readmemh file of the DMEM image */
 ) (
 	input wire clk,
+	input wire rst_n,
 	/* Fetch (atg_cpu_core) */
 	input wire i_en,
 	input wire [31:0] i_addr,
@@ -96,9 +97,15 @@ module atg_cpu_mem #(
 	reg [31:0] x_word;
 	reg x_was_imem;
 
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			x_was_imem <= 1'b0;
+		else if (x_en)
+			x_was_imem <= x_imem;
+	end
+
 	always @(posedge clk) begin
 		if (x_en) begin
-			x_was_imem <= x_imem;
 			if (!x_imem) begin
 				x_word <= dmem[xda];
 				if (x_we)

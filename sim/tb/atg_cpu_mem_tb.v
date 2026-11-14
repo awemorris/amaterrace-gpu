@@ -22,6 +22,7 @@ module atg_cpu_mem_tb;
 	localparam DWORDS = 32;
 
 	reg clk = 1'b0;
+	reg rst_n = 1'b1;
 	reg i_en = 1'b0, d_en = 1'b0, x_en = 1'b0, x_we = 1'b0, x_imem = 1'b0;
 	reg [31:0] i_addr = 0, d_addr = 0, d_wdata = 0, x_addr = 0, x_wdata = 0;
 	reg [3:0] d_we = 4'd0;
@@ -39,7 +40,7 @@ module atg_cpu_mem_tb;
 		.IMEM_WORDS(IWORDS), .DMEM_WORDS(DWORDS),
 		.IMEM_INIT("sim/tb/cpu/mem_init_i.hex"), .DMEM_INIT("sim/tb/cpu/mem_init_d.hex")
 	) dut (
-		.clk(clk),
+		.clk(clk), .rst_n(rst_n),
 		.i_en(i_en), .i_addr(i_addr), .i_rdata(i_rdata),
 		.d_en(d_en), .d_we(d_we), .d_addr(d_addr), .d_wdata(d_wdata), .d_rdata(d_rdata),
 		.x_en(x_en), .x_we(x_we), .x_imem(x_imem), .x_addr(x_addr), .x_wdata(x_wdata),

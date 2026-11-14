@@ -355,7 +355,7 @@ module atg_cpu_core (
 		.busy(md_busy), .done(md_done), .y(md_y)
 	);
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			pc_f <= 32'd0;
 			d_vld <= 1'b0;
@@ -419,22 +419,34 @@ module atg_cpu_core (
 		end
 	end
 
-	/* Data registers of the stages (no reset: their valid bits guard them). */
-	always @(posedge clk) begin
-		if (i_en)
-			pc_d <= pc_f;
-		if (d_adv) begin
-			pc_e <= pc_d;
-			ir_e <= i_rdata;
-			rs1_e <= d_rs1;
-			rs2_e <= d_rs2;
-			/* What W will hold while this instruction is in E. */
-			fwd1_e <= d_ra != 5'd0 && (e_done ? (has_rd && rd == d_ra) : (w_wen && w_rd == d_ra));
-			fwd2_e <= d_rb != 5'd0 && (e_done ? (has_rd && rd == d_rb) : (w_wen && w_rd == d_rb));
-		end
-		if (e_done) begin
-			w_rd <= rd;
-			w_val <= wb;
+	/* Data registers of the stages */
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			pc_d   <= 32'd0;
+			pc_e   <= 32'd0;
+			ir_e   <= 32'd0;
+			rs1_e  <= 32'd0;
+			rs2_e  <= 32'd0;
+			fwd1_e <= 1'b0;
+			fwd2_e <= 1'b0;
+			w_rd   <= 5'd0;
+			w_val  <= 32'd0;
+		end else begin
+			if (i_en)
+				pc_d <= pc_f;
+			if (d_adv) begin
+				pc_e <= pc_d;
+				ir_e <= i_rdata;
+				rs1_e <= d_rs1;
+				rs2_e <= d_rs2;
+				/* What W will hold while this instruction is in E. */
+				fwd1_e <= d_ra != 5'd0 && (e_done ? (has_rd && rd == d_ra) : (w_wen && w_rd == d_ra));
+				fwd2_e <= d_rb != 5'd0 && (e_done ? (has_rd && rd == d_rb) : (w_wen && w_rd == d_rb));
+			end
+			if (e_done) begin
+				w_rd <= rd;
+				w_val <= wb;
+			end
 		end
 	end
 

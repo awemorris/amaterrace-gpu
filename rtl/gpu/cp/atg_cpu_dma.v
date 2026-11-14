@@ -240,7 +240,7 @@ module atg_cpu_dma #(
 				wline[k*32 +: 32] <= x_rdata;
 	end
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
 			dma_amb <= 32'd0;
@@ -251,15 +251,30 @@ module atg_cpu_dma #(
 			ld_job <= 1'b0;
 			ld_done <= 1'b0;
 			ld_error <= 1'b0;
+			ld_pimem <= 1'b0;
+			ld_paddr <= 32'd0;
+			ld_pwords <= 32'd0;
 			req_valid <= 1'b0;
 			req_write <= 1'b0;
+			req_line <= {(ADDR_W-LINE_SHIFT){1'b0}};
 			req_tag <= 8'd0;
+			j_imem <= 1'b0;
+			j_line <= {LW{1'b0}};
+			j_mem <= 32'd0;
+			j_rem <= 32'd0;
 			j_chk <= 1'b0;
 			j_tbl <= 1'b0;
 			j_slot <= 6'd0;
 			s_busy <= 4'd0;
 			s_full <= 4'd0;
+			for (k = 0; k < 4; k = k + 1) begin
+				s_dst[k] <= 32'd0;
+				s_nw[k]  <= {(WS + 1){1'b0}};
+			end
 			st_act <= 1'b0;
+			st_slot <= 2'd0;
+			st_w <= {(WS + 1){1'b0}};
+			g_w <= {(WS + 1){1'b0}};
 			g_cap <= 1'b0;
 		end else begin
 			ld_done <= 1'b0;
