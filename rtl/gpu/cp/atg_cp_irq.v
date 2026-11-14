@@ -66,10 +66,11 @@ module atg_cp_irq (
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_irq_crst (.I0(core_rst_n), .O(irq_crst_high));
 `endif
 
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge irq_rst_high) begin
 		if (irq_rst_high) begin
 `else
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 `endif
 			enable <= 7'd0;
@@ -77,9 +78,13 @@ module atg_cp_irq (
 			if (hcr_we && hcr_widx == I_ENABLE)
 				enable <= (enable & ~hcr_wmask[6:0]) | (wd & 7'b1101111);
 		end
+	end
+
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge irq_crst_high) begin
 		if (irq_crst_high) begin
 `else
+	always @(posedge clk or negedge core_rst_n) begin
 		if (!core_rst_n) begin
 `endif
 			status <= 7'd0;

@@ -164,9 +164,12 @@ module atg_cp_disp #(
 	assign d_wdata = s_we ? uop_wdata : hb_v ? hb_data : hcr_wdata;
 	assign d_wmask = s_we ? 32'hFFFFFFFF : hb_v ? hb_mask : hcr_wmask;
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			hb_v <= 1'b0;
+			hb_k <= 6'd0;
+			hb_data <= 32'd0;
+			hb_mask <= 32'd0;
 		end else begin
 			/* A passed write waits when the sequencer or the buffer has the bus. */
 			hb_v <= h_pass && (s_we || hb_v);
@@ -227,7 +230,7 @@ module atg_cp_disp #(
 	wire take_nr = take[0] && slot_rec0 == 32'd0 || take[1] && slot_rec1 == 32'd0;
 	wire rec_done = rs == R_RSP && rsp_valid;
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			st_v <= 1'b0;
 			slot_v <= 2'b00;
@@ -239,6 +242,16 @@ module atg_cp_disp #(
 			rp <= 1'b0;
 			ev_q <= 1'b0;
 			err_q <= 1'b0;
+			st_plane <= 32'd0;
+			st_base <= 32'd0;
+			st_record <= 32'd0;
+			st_value <= 32'd0;
+			slot_rec0 <= 32'd0;
+			slot_rec1 <= 32'd0;
+			slot_val0 <= 32'd0;
+			slot_val1 <= 32'd0;
+			fc0 <= 32'd0;
+			fc1 <= 32'd0;
 		end else begin
 			ev_q <= take_nr || rec_done;
 			err_q <= rec_done && rsp_error;

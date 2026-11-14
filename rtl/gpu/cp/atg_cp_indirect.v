@@ -136,7 +136,7 @@ module atg_cp_indirect (
 	assign dma_req_valid = (st == S_REQ0) || (st == S_REQ1);
 	assign dma_req_line = (st == S_REQ1) ? next_line : cur_addr[30:5];
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			st <= S_IDLE;
 			cur_addr <= 32'd0;

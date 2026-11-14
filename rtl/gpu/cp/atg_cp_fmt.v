@@ -43,7 +43,7 @@ module atg_cp_fmt #(
 	`include "atg_fmt_info.vh"
 
 	reg [7:0] idx;	/* FMT_INDEX */
-	always @(posedge clk)
+	always @(posedge clk or negedge rst_n)
 		if (!rst_n)
 			idx <= 8'd0;
 		else if (hcr_we && hcr_widx == BASE)

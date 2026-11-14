@@ -153,7 +153,7 @@ module atg_cp_fence #(
 	assign f_busy = st != F_IDLE && st != F_DEAD;
 `ifdef SYNTH_KINTEX7
 	reg req_valid_r;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge fence_rst_high) begin
 		if (fence_rst_high)
 			req_valid_r <= 1'b0;
 		else
@@ -237,10 +237,11 @@ module atg_cp_fence #(
 	assign ev_fence = ((st == F_RSP) && rsp_valid && !rsp_error && (op == 2'd0) && irq_on) || ev_fence_pulse;
 	assign fence_last = last;
 
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge fence_rst_high) begin
 		if (fence_rst_high) begin
 `else
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 `endif
 			st <= F_IDLE;

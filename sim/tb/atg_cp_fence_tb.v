@@ -28,7 +28,7 @@ module atg_cp_fence_tb;
 	reg [31:0] hcr_wdata = 0, hcr_wmask = 0;
 	wire [31:0] hcr_rdata;
 	reg f_valid = 0, f_irq = 0;
-	reg f_mem = 1, f_flush = 0;
+	reg f_mem = 1, f_flush = 0, f_64 = 1;
 	reg [1:0] f_op = 0;
 	reg [31:0] f_addr = 0, f_value = 0, f_aux = 0;
 	wire f_ready, f_busy, ev_fence, fault;
@@ -47,7 +47,7 @@ module atg_cp_fence_tb;
 		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx), .hcr_rdata(hcr_rdata),
 		.f_valid(f_valid), .f_ready(f_ready), .f_op(f_op), .f_addr(f_addr),
-		.f_value(f_value), .f_aux(f_aux), .f_irq(f_irq), .f_mem(f_mem), .f_flush(f_flush), .f_busy(f_busy),
+		.f_value(f_value), .f_aux(f_aux), .f_irq(f_irq), .f_mem(f_mem), .f_flush(f_flush), .f_64(f_64), .f_busy(f_busy),
 		.ev_fence(ev_fence), .fence_last(fence_last),
 		.fault(fault), .fault_kind(fault_kind), .fault_addr(fault_addr), .fault_tag(fault_tag),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
