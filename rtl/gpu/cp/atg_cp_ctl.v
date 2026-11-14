@@ -247,7 +247,7 @@ module atg_cp_ctl #(
 
 `ifdef SYNTH_KINTEX7
 	reg wdt_fire_r;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_ctl_int) begin
 		if (rst_ctl_int)
 			wdt_fire_r <= 1'b0;
 		else
@@ -395,7 +395,7 @@ module atg_cp_ctl #(
 	reg [31:0] f_s0_info_r, f_s1_info_r, f_s2_info_r;
 	reg [31:0] f_s0_addr_r, f_s1_addr_r, f_s2_addr_r;
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_ctl_int) begin
 		if (rst_ctl_int) begin
 			f_mc_v_r <= 8'd0;
 			f_host_v_r <= 8'd0;
@@ -569,7 +569,7 @@ module atg_cp_ctl #(
 
 	(* keep = "true", dont_touch = "true" *) wire [1:0] stuck_cnt_rst_b;
 	reg mc_idle_stuck_r;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_ctl_int) begin
 		if (rst_ctl_int)
 			mc_idle_stuck_r <= 1'b1;
 		else
@@ -603,44 +603,51 @@ module atg_cp_ctl #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wce0 (.I0(wdt_cnt_en), .O(wdt_cnt_en_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wce1 (.I0(wdt_cnt_en), .O(wdt_cnt_en_b[1]));
 
-	always @(posedge clk) begin
-		if (fault_rst_b[0]) fault_info[7:0] <= 8'd0;
-		else if (tf_buf[0]) fault_info[7:0] <= n_info[7:0];
-		else if (wr_fault_info) fault_info[7:0] <= fault_info[7:0] & ~(hcr_wdata[7:0] & hcr_wmask[7:0]);
+	always @(posedge clk or posedge rst_ctl_int) begin
+		if (rst_ctl_int) begin
+			fault_info  <= 32'd0;
+			fault_addr  <= 32'd0;
+			wdt_count   <= 32'd0;
+			stuck_count <= 34'd0;
+		end else begin
+			if (fault_rst_b[0]) fault_info[7:0] <= 8'd0;
+			else if (tf_buf[0]) fault_info[7:0] <= n_info[7:0];
+			else if (wr_fault_info) fault_info[7:0] <= fault_info[7:0] & ~(hcr_wdata[7:0] & hcr_wmask[7:0]);
 
-		if (fault_rst_b[1]) fault_info[15:8] <= 8'd0;
-		else if (tf_buf[1]) fault_info[15:8] <= n_info[15:8];
-		else if (wr_fault_info) fault_info[15:8] <= fault_info[15:8] & ~(hcr_wdata[15:8] & hcr_wmask[15:8]);
+			if (fault_rst_b[1]) fault_info[15:8] <= 8'd0;
+			else if (tf_buf[1]) fault_info[15:8] <= n_info[15:8];
+			else if (wr_fault_info) fault_info[15:8] <= fault_info[15:8] & ~(hcr_wdata[15:8] & hcr_wmask[15:8]);
 
-		if (fault_rst_b[2]) fault_info[23:16] <= 8'd0;
-		else if (tf_buf[2]) fault_info[23:16] <= n_info[23:16];
-		else if (wr_fault_info) fault_info[23:16] <= fault_info[23:16] & ~(hcr_wdata[23:16] & hcr_wmask[23:16]);
+			if (fault_rst_b[2]) fault_info[23:16] <= 8'd0;
+			else if (tf_buf[2]) fault_info[23:16] <= n_info[23:16];
+			else if (wr_fault_info) fault_info[23:16] <= fault_info[23:16] & ~(hcr_wdata[23:16] & hcr_wmask[23:16]);
 
-		if (fault_rst_b[3]) fault_info[31:24] <= 8'd0;
-		else if (tf_buf[3]) fault_info[31:24] <= n_info[31:24];
-		else if (wr_fault_info) fault_info[31:24] <= fault_info[31:24] & ~(hcr_wdata[31:24] & hcr_wmask[31:24]);
+			if (fault_rst_b[3]) fault_info[31:24] <= 8'd0;
+			else if (tf_buf[3]) fault_info[31:24] <= n_info[31:24];
+			else if (wr_fault_info) fault_info[31:24] <= fault_info[31:24] & ~(hcr_wdata[31:24] & hcr_wmask[31:24]);
 
-		if (fault_rst_b[4]) fault_addr[15:0] <= 16'd0;
-		else if (tf_buf[4]) fault_addr[15:0] <= n_addr[15:0];
+			if (fault_rst_b[4]) fault_addr[15:0] <= 16'd0;
+			else if (tf_buf[4]) fault_addr[15:0] <= n_addr[15:0];
 
-		if (fault_rst_b[5]) fault_addr[31:16] <= 16'd0;
-		else if (tf_buf[5]) fault_addr[31:16] <= n_addr[31:16];
+			if (fault_rst_b[5]) fault_addr[31:16] <= 16'd0;
+			else if (tf_buf[5]) fault_addr[31:16] <= n_addr[31:16];
 
-		if (wdt_cnt_rst_b[0]) wdt_count[15:0] <= 16'd0;
-		else if (wdt_cnt_en_b[0]) wdt_count[15:0] <= wdt_count_n[15:0];
+			if (wdt_cnt_rst_b[0]) wdt_count[15:0] <= 16'd0;
+			else if (wdt_cnt_en_b[0]) wdt_count[15:0] <= wdt_count_n[15:0];
 
-		if (wdt_cnt_rst_b[1]) wdt_count[31:16] <= 16'd0;
-		else if (wdt_cnt_en_b[1]) wdt_count[31:16] <= wdt_count_n[31:16];
+			if (wdt_cnt_rst_b[1]) wdt_count[31:16] <= 16'd0;
+			else if (wdt_cnt_en_b[1]) wdt_count[31:16] <= wdt_count_n[31:16];
 
-		if (stuck_cnt_rst_b[0]) stuck_count[16:0] <= 17'd0;
-		else if (stuck_en_b[0]) stuck_count[16:0] <= stuck_count_n[16:0];
+			if (stuck_cnt_rst_b[0]) stuck_count[16:0] <= 17'd0;
+			else if (stuck_en_b[0]) stuck_count[16:0] <= stuck_count_n[16:0];
 
-		if (stuck_cnt_rst_b[1]) stuck_count[33:17] <= 17'd0;
-		else if (stuck_en_b[1]) stuck_count[33:17] <= stuck_count_n[33:17];
+			if (stuck_cnt_rst_b[1]) stuck_count[33:17] <= 17'd0;
+			else if (stuck_en_b[1]) stuck_count[33:17] <= stuck_count_n[33:17];
+		end
 	end
 `endif
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_ctl_int) begin
 		if (rst_ctl_int) begin
 			st <= S_IDLE;
 			open_r <= 4'b1111;

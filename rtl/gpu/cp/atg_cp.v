@@ -109,6 +109,7 @@ module atg_cp #(
 	parameter C_DC = 8'hFF,
 	parameter C_SU = 8
 ) (
+/* verilator lint_off SYNCASYNCNET */
 	input wire clk,
 	input wire rst_n,
 
@@ -129,6 +130,7 @@ module atg_cp #(
 	input wire mem_ready,
 
 	output wire core_rst_n,
+/* verilator lint_on SYNCASYNCNET */
 	output wire win_en,	/* MEM WINDOW_CTRL.ENABLE: the local window is open (rst_n only) */
 
 	output wire mc_quiesce,
@@ -275,22 +277,37 @@ module atg_cp #(
 	wire [31:0] s_st_wdata;
 
 `ifdef SYNTH_KINTEX7
+/* verilator lint_off SYNCASYNCNET */
 	(* keep = "true", dont_touch = "true" *) wire cp_rst_high;
+/* verilator lint_on SYNCASYNCNET */
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_cp_rst (.I0(rst_n), .O(cp_rst_high));
 `endif
 
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
-		if (cp_rst_high)
-`else
-		if (!rst_n)
-`endif
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
 			st_we <= 1'b0;
-		else
+			st_idx <= 10'd0;
+			st_wdata <= 32'd0;
+		end else begin
 			st_we <= s_st_we;
-		st_idx <= s_st_idx;
-		st_wdata <= s_st_wdata;
+			st_idx <= s_st_idx;
+			st_wdata <= s_st_wdata;
+		end
 	end
+`else
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st_we <= 1'b0;
+			st_idx <= 10'd0;
+			st_wdata <= 32'd0;
+		end else begin
+			st_we <= s_st_we;
+			st_idx <= s_st_idx;
+			st_wdata <= s_st_wdata;
+		end
+	end
+`endif
 
 	/* The HCR snoop bus. */
 	wire s_hcr_we;
@@ -328,30 +345,56 @@ module atg_cp #(
 	(* dont_touch = "true" *) reg alias_we_state;
 	(* dont_touch = "true" *) reg [9:0] alias_idx_state;
 
-	always @(posedge clk) begin
-		hcr_we_ctl      <= s_hcr_we && (s_hcr_widx[9:6] == 4'd0);
-		hcr_we_fence    <= s_hcr_we;
-		hcr_we_dbg      <= s_hcr_we;
-		hcr_we_disp     <= s_hcr_we;
-		hcr_we_irq      <= s_hcr_we;
-		hcr_widx_ctl    <= s_hcr_widx;
-		hcr_widx_fence  <= s_hcr_widx;
-		hcr_widx_dbg    <= s_hcr_widx;
-		hcr_widx_disp   <= s_hcr_widx;
-		hcr_widx_irq    <= s_hcr_widx;
-		hcr_wmask_ctl   <= s_hcr_wmask;
-		hcr_wmask_fence <= s_hcr_wmask;
-		hcr_wmask_dbg   <= s_hcr_wmask;
-		hcr_wmask_irq   <= s_hcr_wmask;
-		hcr_wmask_disp  <= s_hcr_wmask;
-		reg_wdata_ctl   <= s_hcr_wdata;
-		reg_wdata_fence <= s_hcr_wdata;
-		reg_wdata_dbg   <= s_hcr_wdata;
-		reg_wdata_irq   <= s_hcr_wdata;
-		reg_wdata_state <= s_hcr_wdata;
-		reg_wdata_disp  <= s_hcr_wdata;
-		alias_we_state  <= s_alias_we;
-		alias_idx_state <= s_alias_idx;
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
+			hcr_we_ctl      <= 1'b0;
+			hcr_we_fence    <= 1'b0;
+			hcr_we_dbg      <= 1'b0;
+			hcr_we_disp     <= 1'b0;
+			hcr_we_irq      <= 1'b0;
+			hcr_widx_ctl    <= 10'd0;
+			hcr_widx_fence  <= 10'd0;
+			hcr_widx_dbg    <= 10'd0;
+			hcr_widx_disp   <= 10'd0;
+			hcr_widx_irq    <= 10'd0;
+			hcr_wmask_ctl   <= 32'd0;
+			hcr_wmask_fence <= 32'd0;
+			hcr_wmask_dbg   <= 32'd0;
+			hcr_wmask_irq   <= 32'd0;
+			hcr_wmask_disp  <= 32'd0;
+			reg_wdata_ctl   <= 32'd0;
+			reg_wdata_fence <= 32'd0;
+			reg_wdata_dbg   <= 32'd0;
+			reg_wdata_irq   <= 32'd0;
+			reg_wdata_state <= 32'd0;
+			reg_wdata_disp  <= 32'd0;
+			alias_we_state  <= 1'b0;
+			alias_idx_state <= 10'd0;
+		end else begin
+			hcr_we_ctl      <= s_hcr_we && (s_hcr_widx[9:6] == 4'd0);
+			hcr_we_fence    <= s_hcr_we;
+			hcr_we_dbg      <= s_hcr_we;
+			hcr_we_disp     <= s_hcr_we;
+			hcr_we_irq      <= s_hcr_we;
+			hcr_widx_ctl    <= s_hcr_widx;
+			hcr_widx_fence  <= s_hcr_widx;
+			hcr_widx_dbg    <= s_hcr_widx;
+			hcr_widx_disp   <= s_hcr_widx;
+			hcr_widx_irq    <= s_hcr_widx;
+			hcr_wmask_ctl   <= s_hcr_wmask;
+			hcr_wmask_fence <= s_hcr_wmask;
+			hcr_wmask_dbg   <= s_hcr_wmask;
+			hcr_wmask_irq   <= s_hcr_wmask;
+			hcr_wmask_disp  <= s_hcr_wmask;
+			reg_wdata_ctl   <= s_hcr_wdata;
+			reg_wdata_fence <= s_hcr_wdata;
+			reg_wdata_dbg   <= s_hcr_wdata;
+			reg_wdata_irq   <= s_hcr_wdata;
+			reg_wdata_state <= s_hcr_wdata;
+			reg_wdata_disp  <= s_hcr_wdata;
+			alias_we_state  <= s_alias_we;
+			alias_idx_state <= s_alias_idx;
+		end
 	end
 
 	wire [1:0] blt_err_b, cpu_fault_b;
@@ -449,8 +492,11 @@ module atg_cp #(
 `ifdef SYNTH_KINTEX7
 	reg [31:0] reg_rdata_r;
 	wire [31:0] reg_rdata_raw;
-	always @(posedge clk) begin
-		reg_rdata_r <= reg_rdata_raw;
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high)
+			reg_rdata_r <= 32'd0;
+		else
+			reg_rdata_r <= reg_rdata_raw;
 	end
 	assign reg_rdata = reg_rdata_r;
 
@@ -459,12 +505,20 @@ module atg_cp #(
 	reg [31:0] hcr_wdata_r;
 	reg [31:0] hcr_wmask_r;
 	reg [9:0] hcr_ridx_r;
-	always @(posedge clk) begin
-		hcr_we_r <= s_hcr_we;
-		hcr_widx_r <= s_hcr_widx;
-		hcr_wdata_r <= reg_wdata_disp;
-		hcr_wmask_r <= hcr_wmask_disp;
-		hcr_ridx_r <= hcr_ridx_disp;
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
+			hcr_we_r    <= 1'b0;
+			hcr_widx_r  <= 10'd0;
+			hcr_wdata_r <= 32'd0;
+			hcr_wmask_r <= 32'd0;
+			hcr_ridx_r  <= 10'd0;
+		end else begin
+			hcr_we_r    <= s_hcr_we;
+			hcr_widx_r  <= s_hcr_widx;
+			hcr_wdata_r <= reg_wdata_disp;
+			hcr_wmask_r <= hcr_wmask_disp;
+			hcr_ridx_r  <= hcr_ridx_disp;
+		end
 	end
 	assign hcr_we = hcr_we_r;
 	assign hcr_widx = hcr_widx_r;
@@ -568,12 +622,14 @@ module atg_cp #(
 	wire [7:0] s_ring_fault_tag, s_seq_fault_tag, s_fence_fault_tag, s_disp_fault_tag;
 
 `ifdef SYNTH_KINTEX7
+/* verilator lint_off SYNCASYNCNET */
 	(* keep = "true", dont_touch = "true" *) wire s_core_rst_inv;
+/* verilator lint_on SYNCASYNCNET */
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_top_rst_inv (.I0(s_core_rst_n), .O(s_core_rst_inv));
 
 	reg r_ring_busy;
 	reg r_cp_busy0;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge s_core_rst_inv) begin
 		if (s_core_rst_inv) begin
 			r_ring_busy <= 1'b0;
 			r_cp_busy0 <= 1'b0;
@@ -688,7 +744,7 @@ module atg_cp #(
 		.I0(s_i_req_valid[0]), .I1(s_i_req_valid[1]),
 		.I2(amb_lock_k[1]), .I3(amb_lock), .O(amb_k[1])
 	);
-	always @(posedge clk) begin
+	always @(posedge clk or posedge cp_rst_high) begin
 		if (cp_rst_high) begin
 			amb_lock <= 1'b0;
 			amb_lock_k <= 2'd0;
@@ -746,16 +802,22 @@ module atg_cp #(
 	(* extract_reset = "no" *) reg [LINE_BYTES-1:0] req_be_r;
 	(* extract_reset = "no" *) reg [SLB-1:0] req_wdata_r;
 	(* extract_reset = "no" *) reg [7:0] req_tag_r;
-	always @(posedge clk) begin
-		if (cp_rst_high)
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
 			req_valid_r <= 1'b0;
-		else
+			req_write_r <= 1'b0;
+			req_line_r  <= {SLA_W{1'b0}};
+			req_be_r    <= {LINE_BYTES{1'b0}};
+			req_wdata_r <= {SLB{1'b0}};
+			req_tag_r   <= 8'd0;
+		end else begin
 			req_valid_r <= |s_i_req_valid;
-		req_write_r <= amb_req_write;
-		req_line_r  <= amb_req_line;
-		req_be_r    <= amb_req_be;
-		req_wdata_r <= amb_req_wdata;
-		req_tag_r   <= amb_req_tag;
+			req_write_r <= amb_req_write;
+			req_line_r  <= amb_req_line;
+			req_be_r    <= amb_req_be;
+			req_wdata_r <= amb_req_wdata;
+			req_tag_r   <= amb_req_tag;
+		end
 	end
 	assign req_valid = req_valid_r;
 	assign req_write = req_write_r;
@@ -884,11 +946,13 @@ module atg_cp #(
 		end
 	endgenerate
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge s_core_rst_inv) begin
 		if (s_core_rst_inv) begin
 			rs_in_ready   <= 1'b1;
 			rs_out_valid  <= 1'b0;
 			rs_skid_valid <= 1'b0;
+			rs_out_data   <= 32'd0;
+			rs_skid_data  <= 32'd0;
 		end else begin
 			if (rs_skid_valid) begin
 				if (s_n_ready) begin
@@ -904,11 +968,11 @@ module atg_cp #(
 					rs_in_ready   <= 1'b0;
 				end
 			end
+			if (rs_load_out_b[0])  rs_out_data[15:0]   <= rs_out_next[15:0];
+			if (rs_load_out_b[1])  rs_out_data[31:16]  <= rs_out_next[31:16];
+			if (rs_load_skid_b[0]) rs_skid_data[15:0]  <= s_n_data_raw[15:0];
+			if (rs_load_skid_b[1]) rs_skid_data[31:16] <= s_n_data_raw[31:16];
 		end
-		if (rs_load_out_b[0])  rs_out_data[15:0]   <= rs_out_next[15:0];
-		if (rs_load_out_b[1])  rs_out_data[31:16]  <= rs_out_next[31:16];
-		if (rs_load_skid_b[0]) rs_skid_data[15:0]  <= s_n_data_raw[15:0];
-		if (rs_load_skid_b[1]) rs_skid_data[31:16] <= s_n_data_raw[31:16];
 	end
 	assign s_n_ready_raw = rs_in_ready;
 	assign s_n_valid     = rs_out_valid;
@@ -942,14 +1006,33 @@ module atg_cp #(
 	wire s_seq_abort  = lc_faulted || lc_resetting;
 
 	reg step_active;
-	always @(posedge clk) begin
-		if (!s_core_rst_n || !lc_halted || s_seq_abort)
+`ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge s_core_rst_inv) begin
+		if (s_core_rst_inv) begin
 			step_active <= 1'b0;
-		else if (s_step)
-			step_active <= 1'b1;
-		else if (s_n_valid && s_n_ready && (s_seq_st == 4'd0))
-			step_active <= 1'b0;
+		end else begin
+			if (!lc_halted || s_seq_abort)
+				step_active <= 1'b0;
+			else if (s_step)
+				step_active <= 1'b1;
+			else if (s_n_valid && s_n_ready && (s_seq_st == 4'd0))
+				step_active <= 1'b0;
+		end
 	end
+`else
+	always @(posedge clk or negedge s_core_rst_n) begin
+		if (!s_core_rst_n) begin
+			step_active <= 1'b0;
+		end else begin
+			if (!lc_halted || s_seq_abort)
+				step_active <= 1'b0;
+			else if (s_step)
+				step_active <= 1'b1;
+			else if (s_n_valid && s_n_ready && (s_seq_st == 4'd0))
+				step_active <= 1'b0;
+		end
+	end
+`endif
 	wire step_en = step_active || s_step;
 	wire s_seq_halt = lc_halting || (lc_halted && !step_en) || s_seq_abort;
 
@@ -988,11 +1071,15 @@ module atg_cp #(
 		end
 	endgenerate
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge s_core_rst_inv) begin
 		if (s_core_rst_inv) begin
 			fw_in_ready   <= 1'b1;
 			fw_out_valid  <= 1'b0;
 			fw_skid_valid <= 1'b0;
+			fw_out_data   <= 32'd0;
+			fw_out_side   <= 7'd0;
+			fw_skid_data  <= 32'd0;
+			fw_skid_side  <= 7'd0;
 		end else begin
 			if (fw_skid_valid) begin
 				if (s_fw_ready) begin
@@ -1008,13 +1095,13 @@ module atg_cp #(
 					fw_in_ready   <= 1'b0;
 				end
 			end
+			if (fw_load_out_b[0])  fw_out_data[15:0]   <= fw_out_next[15:0];
+			if (fw_load_out_b[1])  fw_out_data[31:16]  <= fw_out_next[31:16];
+			if (fw_load_out_b[0])  fw_out_side         <= fw_side_next;
+			if (fw_load_skid_b[0]) fw_skid_data[15:0]  <= fw_data[15:0];
+			if (fw_load_skid_b[1]) fw_skid_data[31:16] <= fw_data[31:16];
+			if (fw_load_skid_b[0]) fw_skid_side        <= fw_side;
 		end
-		if (fw_load_out_b[0])  fw_out_data[15:0]   <= fw_out_next[15:0];
-		if (fw_load_out_b[1])  fw_out_data[31:16]  <= fw_out_next[31:16];
-		if (fw_load_out_b[0])  fw_out_side         <= fw_side_next;
-		if (fw_load_skid_b[0]) fw_skid_data[15:0]  <= fw_data[15:0];
-		if (fw_load_skid_b[1]) fw_skid_data[31:16] <= fw_data[31:16];
-		if (fw_load_skid_b[0]) fw_skid_side        <= fw_side;
 	end
 	assign fw_ready   = fw_in_ready;
 	assign s_fw_valid = fw_out_valid;
@@ -1059,18 +1146,32 @@ module atg_cp #(
 	reg blt_kick_r, draw_kick_r, cs_kick_r, cs_mesh_r, lc_kick_r, raw_kick_r, occ_clear_r;
 	reg perf_reset_r, kick_flip_r, kick_idle_r;
 	(* extract_reset = "no" *) reg [3:0] inv_r;
-	always @(posedge clk) begin
-		blt_kick_r <= s_host_kick[0] || s_kick && s_kick_code == 3'd0;
-		draw_kick_r <= s_host_kick[1] || s_kick && s_kick_code == 3'd1;
-		cs_kick_r <= s_host_kick[2] || s_kick && s_kick_code == 3'd2;
-		cs_mesh_r <= s_seq_cs_mesh;
-		lc_kick_r <= s_kick && s_kick_code == 3'd3;
-		raw_kick_r <= s_kick && s_kick_code == 3'd4;
-		inv_r <= s_seq_inv;
-		occ_clear_r <= s_seq_occ_clear;
-		perf_reset_r <= s_kick && s_kick_code == 3'd5;
-		kick_flip_r <= s_kick && s_kick_code == 3'd6;
-		kick_idle_r <= s_kick && s_kick_code == 3'd7;
+	always @(posedge clk or posedge s_core_rst_inv) begin
+		if (s_core_rst_inv) begin
+			blt_kick_r   <= 1'b0;
+			draw_kick_r  <= 1'b0;
+			cs_kick_r    <= 1'b0;
+			cs_mesh_r    <= 1'b0;
+			lc_kick_r    <= 1'b0;
+			raw_kick_r   <= 1'b0;
+			inv_r        <= 4'd0;
+			occ_clear_r  <= 1'b0;
+			perf_reset_r <= 1'b0;
+			kick_flip_r  <= 1'b0;
+			kick_idle_r  <= 1'b0;
+		end else begin
+			blt_kick_r   <= s_host_kick[0] || s_kick && s_kick_code == 3'd0;
+			draw_kick_r  <= s_host_kick[1] || s_kick && s_kick_code == 3'd1;
+			cs_kick_r    <= s_host_kick[2] || s_kick && s_kick_code == 3'd2;
+			cs_mesh_r    <= s_seq_cs_mesh;
+			lc_kick_r    <= s_kick && s_kick_code == 3'd3;
+			raw_kick_r   <= s_kick && s_kick_code == 3'd4;
+			inv_r        <= s_seq_inv;
+			occ_clear_r  <= s_seq_occ_clear;
+			perf_reset_r <= s_kick && s_kick_code == 3'd5;
+			kick_flip_r  <= s_kick && s_kick_code == 3'd6;
+			kick_idle_r  <= s_kick && s_kick_code == 3'd7;
+		end
 	end
 	assign blt_kick = blt_kick_r;
 	assign draw_kick = draw_kick_r;
@@ -1101,8 +1202,11 @@ module atg_cp #(
 	wire s_ev_fence, s_f_64;
 `ifdef SYNTH_KINTEX7
 	reg cp_fence_ev_r;
-	always @(posedge clk) begin
-		cp_fence_ev_r <= s_ev_fence;
+	always @(posedge clk or posedge s_core_rst_inv) begin
+		if (s_core_rst_inv)
+			cp_fence_ev_r <= 1'b0;
+		else
+			cp_fence_ev_r <= s_ev_fence;
 	end
 	assign cp_fence_ev = cp_fence_ev_r;
 `else

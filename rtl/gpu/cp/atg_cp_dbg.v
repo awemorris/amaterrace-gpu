@@ -168,10 +168,11 @@ module atg_cp_dbg #(
 	assign ev_done = rsp_valid && busy;
 	assign dbg_busy = busy;
 
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge dbg_rst_high) begin
 		if (dbg_rst_high) begin
 `else
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 `endif
 			busy <= 1'b0;

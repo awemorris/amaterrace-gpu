@@ -76,7 +76,7 @@ module atg_mmu_walker #(
 	(* max_fanout = 16 *) reg        r_rsp_valid;
 	(* max_fanout = 16 *) reg [63:0] r_rsp_data;
 
-	always @(posedge clk_wlk) begin
+	always @(posedge clk_wlk or posedge rst_wlk_int) begin
 		if (rst_wlk_int) begin
 			r_rsp_valid <= 1'b0;
 			r_rsp_data  <= 64'd0;
@@ -119,7 +119,7 @@ module atg_mmu_walker #(
 `endif
 	wire [PA_BITS-1:0] next_req_addr = (st == ST_IDLE) ? pde_addr : pte_addr;
 
-	always @(posedge clk_wlk) begin
+	always @(posedge clk_wlk or posedge rst_wlk_int) begin
 		if (rst_wlk_int) begin
 			req_addr[31:16] <= 16'd0;
 			req_addr[15:0]  <= 16'd0;
@@ -133,7 +133,7 @@ module atg_mmu_walker #(
 	(* keep = "true", max_fanout = 16 *) wire ce_out = (st == ST_WAIT_PTE && r_rsp_valid && pte_v &&
 	             !((r_access_type == 2'd1 && !pte_w) || (r_access_type == 2'd2 && !pte_x)));
 
-	always @(posedge clk_wlk) begin
+	always @(posedge clk_wlk or posedge rst_wlk_int) begin
 		if (rst_wlk_int) begin
 			out_pfn   <= {PPN_BITS{1'b0}};
 			out_flags <= 6'd0;
@@ -143,10 +143,10 @@ module atg_mmu_walker #(
 		end
 	end
 
-	always @(posedge clk_wlk) begin
-		done <= 1'b0;
-		fault <= 1'b0;
+	always @(posedge clk_wlk or posedge rst_wlk_int) begin
 		if (rst_wlk_int) begin
+			done          <= 1'b0;
+			fault         <= 1'b0;
 			st            <= ST_IDLE;
 			req_valid     <= 1'b0;
 			fault_kind    <= FAULT_NONE;
@@ -155,6 +155,8 @@ module atg_mmu_walker #(
 			r_l2_base_hi  <= {(PPN_BITS-10){1'b0}};
 			r_l2_base_lo  <= 10'd0;
 		end else begin
+			done  <= 1'b0;
+			fault <= 1'b0;
 			case (st)
 			ST_IDLE: begin
 				if (start_fsm) begin

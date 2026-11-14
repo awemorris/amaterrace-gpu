@@ -230,6 +230,24 @@ module BUFGMUX (
 	assign O = S ? I1 : I0;
 endmodule
 
+module MUXF7 (
+	input wire I0,
+	input wire I1,
+	input wire S,
+	output wire O
+);
+	assign O = S ? I1 : I0;
+endmodule
+
+module MUXF8 (
+	input wire I0,
+	input wire I1,
+	input wire S,
+	output wire O
+);
+	assign O = S ? I1 : I0;
+endmodule
+
 /* The KC705 (boards/kc705/lib): IBUFDS, BSCANE2 and ODDR as in Vivado
  * 2026.1's unisims (the ports the tops use), and the two IP cores that
  * TCL is to generate for atg_kc705_mig (port names from PG089 and PG164,

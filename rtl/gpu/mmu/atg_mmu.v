@@ -78,6 +78,7 @@ module atg_mmu #(
 `else
 	(* keep = "true" *) wire clk_mmu = clk;
 `endif
+/* verilator lint_off SYNCASYNCNET */
 `ifdef SYNTH_KINTEX7
 	wire rst_inv;
 	LUT1 #(.INIT(2'h1)) u_rst_inv (.I0(rst_n), .O(rst_inv));
@@ -88,6 +89,7 @@ module atg_mmu #(
 	wire rst_mmu_int = rst_global;
 `endif
 	wire rst_active = rst_mmu_int;
+/* verilator lint_on SYNCASYNCNET */
 
 	/* Buffered input client valid signals to control input port fanout */
 	(* keep = "true", max_fanout = 16 *) wire [NUM_CLIENTS-1:0] req_valid_buf = client_req_valid;
@@ -96,7 +98,7 @@ module atg_mmu #(
 	reg [PPN_BITS-1:0] session_root_pt [0:MAX_SESSIONS-1];
 
 	integer s;
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			for (s = 0; s < MAX_SESSIONS; s = s + 1)
 				session_root_pt[s] <= {PPN_BITS{1'b0}};
@@ -120,7 +122,7 @@ module atg_mmu #(
 		.co(if_co_unused)
 	);
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			r_inflight <= 16'd0;
 		end else if (if_en) begin
@@ -152,7 +154,7 @@ module atg_mmu #(
 	(* max_fanout = 16 *) reg       r_flush_trig;
 	(* max_fanout = 16 *) reg       r_flush_all;
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			r_flush_sess <= 4'd0;
 			r_flush_trig <= 1'b0;
@@ -514,24 +516,38 @@ module atg_mmu #(
 		(* dont_touch = "true" *) reg r_client_ack_l1;
 		(* dont_touch = "true" *) reg r_client_ack_ref;
 
-		always @(posedge clk_mmu) begin
-			r_l1_pa_w0_hi   <= l1_pfn_w0[gout*PPN_BITS + 4 +: 16];
-			r_l1_pa_w0_lo   <= {l1_pfn_w0[gout*PPN_BITS +: 4], client_req_va[gout*VA_BITS +: 12]};
-			r_l1_flg_w0     <= l1_flags_w0[gout*6 +: 6];
+		always @(posedge clk_mmu or posedge rst_mmu_int) begin
+			if (rst_mmu_int) begin
+				r_l1_pa_w0_hi   <= {(PA_BITS-16){1'b0}};
+				r_l1_pa_w0_lo   <= 16'd0;
+				r_l1_flg_w0     <= 6'd0;
+				r_l1_pa_w1_hi   <= {(PA_BITS-16){1'b0}};
+				r_l1_pa_w1_lo   <= 16'd0;
+				r_l1_flg_w1     <= 6'd0;
+				r_l1_hit_w1_pa  <= 1'b0;
+				r_l1_hit_w1_flg <= 1'b0;
+				r_ref_pa_hi     <= {(PA_BITS-16){1'b0}};
+				r_ref_pa_lo     <= 16'd0;
+				r_ref_flg       <= 6'd0;
+			end else begin
+				r_l1_pa_w0_hi   <= l1_pfn_w0[gout*PPN_BITS + 4 +: 16];
+				r_l1_pa_w0_lo   <= {l1_pfn_w0[gout*PPN_BITS +: 4], client_req_va[gout*VA_BITS +: 12]};
+				r_l1_flg_w0     <= l1_flags_w0[gout*6 +: 6];
 
-			r_l1_pa_w1_hi   <= l1_pfn_w1[gout*PPN_BITS + 4 +: 16];
-			r_l1_pa_w1_lo   <= {l1_pfn_w1[gout*PPN_BITS +: 4], client_req_va[gout*VA_BITS +: 12]};
-			r_l1_flg_w1     <= l1_flags_w1[gout*6 +: 6];
+				r_l1_pa_w1_hi   <= l1_pfn_w1[gout*PPN_BITS + 4 +: 16];
+				r_l1_pa_w1_lo   <= {l1_pfn_w1[gout*PPN_BITS +: 4], client_req_va[gout*VA_BITS +: 12]};
+				r_l1_flg_w1     <= l1_flags_w1[gout*6 +: 6];
 
-			r_l1_hit_w1_pa  <= l1_hit_w1[gout];
-			r_l1_hit_w1_flg <= l1_hit_w1[gout];
+				r_l1_hit_w1_pa  <= l1_hit_w1[gout];
+				r_l1_hit_w1_flg <= l1_hit_w1[gout];
 
-			if (refill_now_hi)  r_ref_pa_hi <= r_refill_pfn[19:4];
-			if (refill_now_lo)  r_ref_pa_lo <= {r_refill_pfn[3:0], active_offset};
-			if (refill_now_flg) r_ref_flg   <= r_refill_flags;
+				if (refill_now_hi)  r_ref_pa_hi <= r_refill_pfn[19:4];
+				if (refill_now_lo)  r_ref_pa_lo <= {r_refill_pfn[3:0], active_offset};
+				if (refill_now_flg) r_ref_flg   <= r_refill_flags;
+			end
 		end
 
-		always @(posedge clk_mmu) begin
+		always @(posedge clk_mmu or posedge rst_mmu_int) begin
 			if (rst_mmu_int) begin
 				r_client_ack_l1      <= 1'b0;
 				r_client_ack_ref     <= 1'b0;
@@ -613,7 +629,7 @@ module atg_mmu #(
 
 	/* Client miss priority grant logic (<= 2 LUT levels, zero CARRY4) */
 	(* max_fanout = 16 *) reg [NUM_CLIENTS-1:0] r_client_miss;
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			r_client_miss <= {NUM_CLIENTS{1'b0}};
 		end else begin
@@ -639,7 +655,7 @@ module atg_mmu #(
 	(* dont_touch = "true" *) reg [2:0] act_client_off;
 	(* dont_touch = "true" *) reg [2:0] act_client_meta;
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			active_client     <= 3'd0;
 			act_client_vpn_lo <= 3'd0;
@@ -667,7 +683,7 @@ module atg_mmu #(
 	(* dont_touch = "true" *) reg ce_w2_vpn, ce_w2_pfn, ce_w2_flg;
 	(* dont_touch = "true" *) reg ce_w3_vpn, ce_w3_pfn, ce_w3_flg;
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			ce_w0_vpn <= 1'b0; ce_w0_pfn <= 1'b0; ce_w0_flg <= 1'b0;
 			ce_w1_vpn <= 1'b0; ce_w1_pfn <= 1'b0; ce_w1_flg <= 1'b0;
@@ -819,7 +835,7 @@ module atg_mmu #(
 	assign sel_vpn_ref_w3_flg = raw_lo_ref_b;
 `endif
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			active_session    <= 4'd0;
 			active_type       <= 2'd0;
@@ -847,7 +863,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			active_offset <= 12'd0;
 		end else if (ce_act_offset) begin
@@ -855,7 +871,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			active_vpn[19:10]    <= 10'd0;
 			active_vpn[9:0]      <= 10'd0;
@@ -893,7 +909,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w0_vpn_a <= 6'h00; l2_ref_w0_vpn_b <= 6'h00; l2_ref_w0_vpn_c <= 6'h00;
 		end else if (ce_w0_vpn) begin
@@ -901,7 +917,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w0_pfn_a <= 6'h00; l2_ref_w0_pfn_b <= 6'h00; l2_ref_w0_pfn_c <= 6'h00; l2_ref_w0_pfn_d <= 6'h00;
 		end else if (ce_w0_pfn) begin
@@ -909,7 +925,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w0_flg_a <= 6'h00; l2_ref_w0_flg_b <= 6'h00;
 		end else if (ce_w0_flg) begin
@@ -917,7 +933,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w1_vpn_a <= 6'h01; l2_ref_w1_vpn_b <= 6'h01; l2_ref_w1_vpn_c <= 6'h01;
 		end else if (ce_w1_vpn) begin
@@ -925,7 +941,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w1_pfn_a <= 6'h01; l2_ref_w1_pfn_b <= 6'h01; l2_ref_w1_pfn_c <= 6'h01; l2_ref_w1_pfn_d <= 6'h01;
 		end else if (ce_w1_pfn) begin
@@ -933,7 +949,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w1_flg_a <= 6'h01; l2_ref_w1_flg_b <= 6'h01;
 		end else if (ce_w1_flg) begin
@@ -941,7 +957,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w2_vpn_a <= 6'h02; l2_ref_w2_vpn_b <= 6'h02; l2_ref_w2_vpn_c <= 6'h02;
 		end else if (ce_w2_vpn) begin
@@ -949,7 +965,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w2_pfn_a <= 6'h02; l2_ref_w2_pfn_b <= 6'h02; l2_ref_w2_pfn_c <= 6'h02; l2_ref_w2_pfn_d <= 6'h02;
 		end else if (ce_w2_pfn) begin
@@ -957,7 +973,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w2_flg_a <= 6'h02; l2_ref_w2_flg_b <= 6'h02;
 		end else if (ce_w2_flg) begin
@@ -965,7 +981,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w3_vpn_a <= 6'h03; l2_ref_w3_vpn_b <= 6'h03; l2_ref_w3_vpn_c <= 6'h03;
 		end else if (ce_w3_vpn) begin
@@ -973,7 +989,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w3_pfn_a <= 6'h03; l2_ref_w3_pfn_b <= 6'h03; l2_ref_w3_pfn_c <= 6'h03; l2_ref_w3_pfn_d <= 6'h03;
 		end else if (ce_w3_pfn) begin
@@ -981,7 +997,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_ref_w3_flg_a <= 6'h03; l2_ref_w3_flg_b <= 6'h03;
 		end else if (ce_w3_flg) begin
@@ -989,7 +1005,7 @@ module atg_mmu #(
 		end
 	end
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			l2_lookup_vpn[19:10]      <= 10'd0;
 			l2_lookup_vpn[9:0]        <= 10'd0;
@@ -1062,7 +1078,7 @@ module atg_mmu #(
 	wire [PPN_BITS-1:0] next_refill_pfn = l2_hit_p ? l2_hit_pfn : walker_out_pfn;
 	wire [5:0]          next_refill_flags = l2_hit_f ? l2_hit_flags : walker_out_flags;
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			r_refill_pfn      <= {PPN_BITS{1'b0}};
 			r_refill_flags    <= 6'd0;
@@ -1111,7 +1127,7 @@ module atg_mmu #(
 
 	/* Fault reporting data registers */
 	(* keep = "true", max_fanout = 16 *) wire ce_fault_data = (state == S_WALK) & walker_fault;
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			fault_kind    <= 4'd0;
 			fault_session <= 4'd0;
@@ -1128,7 +1144,7 @@ module atg_mmu #(
 	wire next_is_refill = (state == S_L2_CHECK && l2_hit) || (state == S_WALK && (walker_done || walker_fault));
 	wire next_is_idle   = (state == S_REFILL) || (state == S_IDLE && !any_miss);
 
-	always @(posedge clk_mmu) begin
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			st_is_refill_c0 <= 1'b0;
 			st_is_refill_c1 <= 1'b0;
@@ -1155,25 +1171,38 @@ module atg_mmu #(
 	end
 
 	/* MMU State Machine Control (clean low-fanout control registers) */
-	always @(posedge clk_mmu) begin
-		walker_start_fsm  <= 1'b0;
-		walker_start_meta <= 1'b0;
-		l1_refill_we      <= {NUM_CLIENTS{1'b0}};
-		l2_refill_we_w0   <= 1'b0;
-		l2_refill_we_w1   <= 1'b0;
-		l2_refill_we_w2   <= 1'b0;
-		l2_refill_we_w3   <= 1'b0;
-		l2_refill_we_sl0  <= 1'b0;
-		l2_refill_we_sl1  <= 1'b0;
-		l2_refill_we_sl2  <= 1'b0;
-		l2_refill_we_sl3  <= 1'b0;
-		l2_lookup_valid   <= 1'b0;
-		fault_valid       <= 1'b0;
-
+	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
-			state          <= S_IDLE;
-			r_refill_fault <= 1'b0;
+			walker_start_fsm  <= 1'b0;
+			walker_start_meta <= 1'b0;
+			l1_refill_we      <= {NUM_CLIENTS{1'b0}};
+			l2_refill_we_w0   <= 1'b0;
+			l2_refill_we_w1   <= 1'b0;
+			l2_refill_we_w2   <= 1'b0;
+			l2_refill_we_w3   <= 1'b0;
+			l2_refill_we_sl0  <= 1'b0;
+			l2_refill_we_sl1  <= 1'b0;
+			l2_refill_we_sl2  <= 1'b0;
+			l2_refill_we_sl3  <= 1'b0;
+			l2_lookup_valid   <= 1'b0;
+			fault_valid       <= 1'b0;
+			state             <= S_IDLE;
+			r_refill_fault    <= 1'b0;
 		end else begin
+			walker_start_fsm  <= 1'b0;
+			walker_start_meta <= 1'b0;
+			l1_refill_we      <= {NUM_CLIENTS{1'b0}};
+			l2_refill_we_w0   <= 1'b0;
+			l2_refill_we_w1   <= 1'b0;
+			l2_refill_we_w2   <= 1'b0;
+			l2_refill_we_w3   <= 1'b0;
+			l2_refill_we_sl0  <= 1'b0;
+			l2_refill_we_sl1  <= 1'b0;
+			l2_refill_we_sl2  <= 1'b0;
+			l2_refill_we_sl3  <= 1'b0;
+			l2_lookup_valid   <= 1'b0;
+			fault_valid       <= 1'b0;
+
 			case (state)
 			S_IDLE: begin
 				if (any_miss) begin
